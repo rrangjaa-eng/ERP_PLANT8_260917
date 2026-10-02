@@ -9,8 +9,15 @@ import { listCodeItems as repoListCodeItems } from "@/repositories/code-tables";
 import { createVendor } from "@/domain/vendors";
 import { createAccount } from "@/domain/auth/accounts";
 import { archivePerson } from "@/domain/people";
-import { archive, restore, listArchive, ForbiddenError } from "@/domain/archive";
+import { findHolidayByDate } from "@/repositories/holidays";
+import { archive, restore, listArchive, ForbiddenError, ProtectedRowError } from "@/domain/archive";
+import { ARCHIVABLE_TABLES } from "@/repositories/archive";
+import { addHoliday, deleteHoliday } from "@/domain/holidays/admin";
 import { queryActionLog } from "@/domain/action-log";
+import { db } from "@/db/client";
+import { holidays } from "@/db/schema";
+import { insertRole } from "@/repositories/roles";
+import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 
 let ipCounter = 0;
 function nextTestIp(): string {
@@ -163,5 +170,66 @@ describe("보관함 (ADMN-12, 실제 Postgres)", () => {
       headers: new Headers({ [CLIENT_IP_HEADER]: nextTestIp() }),
     });
     expect(afterRestore.token).toBeTruthy();
+  });
+
+  // ADMN-12(quick 261001-hfi D-01): 공휴일 삭제는 보관이고, 복원은 보관함에서도 한다.
+  // 날짜는 실행일과 무관하게 내일 이후여야 하므로 먼 미래(2034 — 음력 표 범위 안)를 쓴다.
+  it("공휴일: 범용 보관은 거부되고(재계산을 지나는 삭제로만), 보관함 목록에 「공휴일」 · `{날짜} {이름}`으로 나오며, 복원은 보관함 쓰기 권한을 보고 공휴일 복원에 맡긴다", async () => {
+    const { userId } = await createAccount(SYSTEM_VIEWER, { email: uniqueEmail("archive-holiday"), name: "공휴일 관리자", roleId: SYSADMIN_ROLE_ID });
+    const admin = { id: userId, roleId: SYSADMIN_ROLE_ID };
+    const added = await addHoliday(admin, { date: "2034-06-07", kind: "election", name: "보궐선거" });
+
+    await expect(archive(admin, "holiday", added.id)).rejects.toBeInstanceOf(ProtectedRowError);
+    // /review M1 — 범용 setArchived는 재계산 · 소급 금지를 건너뛰므로 직접 불려도 던진다(행은 그대로).
+    const holidayEntry = ARCHIVABLE_TABLES.find((entry) => entry.entity === "holiday");
+    await expect(holidayEntry?.setArchived(admin, added.id, true)).rejects.toThrow();
+    expect(await findHolidayByDate(SYSTEM_VIEWER, "2034-06-07")).toMatchObject({ id: added.id, archivedAt: null });
+
+    await deleteHoliday(admin, added.id);
+    const listed = await listArchive(admin);
+    expect(listed).toContainEqual(
+      expect.objectContaining({ entity: "holiday", label: "공휴일", id: added.id, name: "2034-06-07 보궐선거", archivedBy: "공휴일 관리자" }),
+    );
+
+    const pmViewer = { id: `pm-${randomUUID()}`, roleId: DEFAULT_ROLE_ID };
+    await expect(restore(pmViewer, "holiday", added.id)).rejects.toBeInstanceOf(ForbiddenError);
+    expect(await findHolidayByDate(SYSTEM_VIEWER, "2034-06-07")).toBeNull();
+
+    await restore(admin, "holiday", added.id);
+    expect(await findHolidayByDate(SYSTEM_VIEWER, "2034-06-07")).toMatchObject({ id: added.id, archivedAt: null });
+    const restoreLogs = await queryActionLog(SYSTEM_VIEWER, { actionType: "holiday_change" });
+    expect(restoreLogs.some((log) => log.entityId === added.id && (log.detail as { op?: string }).op === "restore")).toBe(true);
+    expect((await listArchive(admin)).some((item) => item.entity === "holiday" && item.id === added.id)).toBe(false);
+  });
+  // 독립 검토 지적(#138) — 복원할 수 없는 공휴일 행은 「복원」을 내놓지 않는다(§7 할 수 없는 선택지는 숨김).
+  // 지난 날짜(소급 금지)와 공휴일 쓰기 권한이 없는 보관함 쓰기 권한자가 그 경우다.
+  it("공휴일: 지난 날짜 행과 공휴일 쓰기 권한이 없는 사람에게는 restorable이 거짓이고, 그 사람의 복원은 거부된다", async () => {
+    const { userId } = await createAccount(SYSTEM_VIEWER, { email: uniqueEmail("archive-holiday-restorable"), name: "공휴일 관리자", roleId: SYSADMIN_ROLE_ID });
+    const admin = { id: userId, roleId: SYSADMIN_ROLE_ID };
+    const future = await addHoliday(admin, { date: "2034-07-07", kind: "election", name: "복원 판정 선거" });
+    await deleteHoliday(admin, future.id);
+    const [past] = await db
+      .insert(holidays)
+      .values({ date: "2001-07-07", kind: "temporary", name: "지난 보관", archivedAt: new Date(), archivedBy: null })
+      .returning({ id: holidays.id });
+
+    const listed = await listArchive(admin);
+    expect(listed.find((item) => item.id === future.id)).toMatchObject({ restorable: true });
+    expect(listed.find((item) => item.id === past?.id)).toMatchObject({ restorable: false });
+    // 오늘 경계는 KST 날짜로 — 그 날짜 00:00 KST부터는 「오늘」이라 복원 불가(restoreHoliday의 `<= today`와 같다).
+    const atKstMidnight = await listArchive(admin, { now: new Date("2034-07-06T15:00:00Z") });
+    expect(atKstMidnight.find((item) => item.id === future.id)).toMatchObject({ restorable: false });
+    const justBefore = await listArchive(admin, { now: new Date("2034-07-06T14:59:59Z") });
+    expect(justBefore.find((item) => item.id === future.id)).toMatchObject({ restorable: true });
+
+    const roleId = `role-${randomUUID()}`;
+    await insertRole(SYSTEM_VIEWER, { id: roleId, name: `계급 ${roleId.slice(5, 13)}` });
+    for (const action of ["view", "write"] as const) await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "admin.archive", action, allowed: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "archive.value", visible: true });
+    const archiveOnly = { id: `archive-only-${randomUUID()}`, roleId };
+
+    expect((await listArchive(archiveOnly)).find((item) => item.id === future.id)).toMatchObject({ restorable: false });
+    await expect(restore(archiveOnly, "holiday", future.id)).rejects.toThrow("공휴일 복원 권한 없음");
+    expect(await findHolidayByDate(SYSTEM_VIEWER, "2034-07-07")).toBeNull();
   });
 });

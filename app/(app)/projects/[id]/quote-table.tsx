@@ -62,7 +62,7 @@ import type { ProjectStatus } from "@/domain/projects/status-transitions";
 import styles from "./project-detail.module.css";
 
 export type QuoteTableOption = { id: string; name: string };
-export type QuoteTableCodeOption = { value: string; label: string; description?: string | null };
+export type QuoteTableCodeOption = { value: string; label: string; description?: string | null; status?: string };
 
 type DraftLine = {
   clientKey: string;
@@ -505,14 +505,14 @@ export function restoredCellPatch(column: string, value: unknown): Partial<Draft
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function restoredNewLine(value: unknown, defaultSubcategory: string, kindCells: Record<QuoteLineKind, LineCells>, storedId: string): DraftLine | null {
+function restoredNewLine(value: unknown, subcategories: readonly string[], kindCells: Record<QuoteLineKind, LineCells>, storedId: string): DraftLine | null {
   if (!isRecord(value)) return null;
   // 04-23 — 새 줄의 종류를 되살린다(옛 보관본에는 없어 견적 줄). 조정·견적 외 비용은 소분류를 빈 값으로 보낸다.
   const lineKind = QUOTE_LINE_KINDS.find((kind) => kind === value.lineKind) ?? "quote";
   const cells = kindCells[lineKind];
   // 보관된 id가 화면 uuid면 그대로 쓴다 — 응답을 잃은 저장 뒤 복원해 다시 보내도 줄이 두 번 생기지 않는다.
   let line: DraftLine = {
-    ...newDraftLine(lineKind === "quote" ? defaultSubcategory : "", cells, UUID_PATTERN.test(storedId) ? storedId : crypto.randomUUID()),
+    ...newDraftLine(lineKind === "quote" ? (subcategories[0] ?? "") : "", cells, UUID_PATTERN.test(storedId) ? storedId : crypto.randomUUID()),
     lineKind,
     ...(typeof value.duplicatedFrom === "string" && UUID_PATTERN.test(value.duplicatedFrom) ? { duplicatedFrom: value.duplicatedFrom } : {}),
     ...(value.vendorHidden === true ? { vendorHidden: true as const } : {}),
@@ -529,6 +529,8 @@ function restoredNewLine(value: unknown, defaultSubcategory: string, kindCells: 
   ] as const) {
     // 지금 셀 단계에서 편집할 수 없는 칸(정산 새 줄의 수량·단가·상태)은 보관값을 넣지 않는다 — 기본값이 서버와 같다.
     if (cells[field] !== "edit") continue;
+    // Codex 리뷰 P2(PR #138) — 그 사이 꺼지거나 보관된 분류는 되살리지 않는다(첫 활성 분류 그대로).
+    if (field === "subcategory" && !subcategories.includes(value[field] as string)) continue;
     const patch = restoredCellPatch(column, value[field]);
     if (patch) line = { ...line, ...patch };
   }
@@ -541,7 +543,8 @@ function restoredNewLine(value: unknown, defaultSubcategory: string, kindCells: 
 export function mergeRestoredEdits(
   lines: DraftLine[],
   edits: Record<string, unknown>,
-  defaultSubcategory: string,
+  // 고를 수 있는(활성) 견적 분류 — 첫 값이 새 줄 기본값이다.
+  subcategories: readonly string[],
   kindCells: Record<QuoteLineKind, LineCells>,
 ): {
   lines: DraftLine[];
@@ -571,13 +574,15 @@ export function mergeRestoredEdits(
       continue;
     }
     if (column === "new") {
-      const line = restoredNewLine(value, defaultSubcategory, kindCells, owner);
+      const line = restoredNewLine(value, subcategories, kindCells, owner);
       if (line) added.push({ ...line, savedVendor: savedVendorFrom(lines, line.vendorId) });
       continue;
     }
     const patch = restoredCellPatch(column, value);
     const base = readLineBase(edits[`${owner}:base`]);
     if (!patch || !base) continue;
+    // Codex 리뷰 P2(PR #138) — 그 사이 꺼지거나 보관된 분류로 바꾼 편집은 들이지 않는다(다른 칸 편집은 들인다).
+    if (patch.subcategory !== undefined && !subcategories.includes(patch.subcategory)) continue;
     // /review 적대 검토(PR #135) — 보관할 때나 지금 거래처가 가려졌으면 기준값의 거래처는 본 적 없는(또는 볼 수 없는) 값이다.
     // 지금 줄의 기준값으로 바꿔, 아무도 바꾸지 않은 거래처 칸에 충돌이 붙거나 다음 보관이 거래처를 편집으로 남기지 않게 한다.
     // 가림 여부는 지금 줄(DTO)을 따른다.
@@ -928,6 +933,7 @@ export function QuoteLedger({
   vendors,
   vendorShown,
   subcategories,
+  subcategoryLabels,
   structural,
   newLineCells,
   adjustmentStructural,
@@ -977,6 +983,8 @@ export function QuoteLedger({
   /** quick 261001-85g(사용자 결정 2026-10-01) — 거래처 정보가 가려진 계급이면 거짓: 거래처 열을 그리지 않는다. */
   vendorShown: boolean;
   subcategories: QuoteTableCodeOption[];
+  /** quick 261001-hfi(MAST-04) — 이름 읽기용(비활성 · 보관 분류 포함). 선택지는 subcategories. */
+  subcategoryLabels: QuoteTableCodeOption[];
   /** 04-30(사용자 D10) — 줄 구조 편집 가능성(서버 structuralEditability). */
   structural: StructuralEditability;
   /** 04-30(사용자 D12) — 저장 전 새 줄의 칸별 편집 단계(서버 lineCellEditability isNewLine). */
@@ -1312,7 +1320,7 @@ export function QuoteLedger({
 
   // 사용자 결정 2026-09-26(VERDICT.md C-1) — 「버림」·「되돌리기」가 같은 병합 로직을 쓴다.
   function applyRestoredEdits(edits: Record<string, unknown>) {
-    const restored = mergeRestoredEdits(lines, edits, subcategories[0]?.value ?? "", {
+    const restored = mergeRestoredEdits(lines, edits, subcategories.map((option) => option.value), {
       quote: newLineCells,
       out_of_quote: outOfQuoteLineCells,
       adjustment: adjustmentLineCells,
@@ -1420,7 +1428,10 @@ export function QuoteLedger({
   const addLine = useCallback(
     (afterRow?: DraftLine) => {
       // 04-23 — 견적 줄에서만 소분류를 물려받는다(조정·견적 외 비용 줄의 소분류 칸은 종류 값이다).
-      const inheritedSubcategory = (afterRow?.lineKind === "quote" ? afterRow.subcategory : undefined) ?? subcategories[0]?.value ?? "";
+      // /review red team — 끈 · 보관 분류는 물려받지 않는다(새 입력엔 고를 수 없다).
+      const afterSubcategory = afterRow?.lineKind === "quote" ? afterRow.subcategory : undefined;
+      const inheritedSubcategory =
+        (subcategories.some((option) => option.value === afterSubcategory) ? afterSubcategory : undefined) ?? subcategories[0]?.value ?? "";
       persistPendingRef.current = true;
       setLines((prev) => [...prev, newDraftLine(inheritedSubcategory, newLineCells)]);
     },
@@ -1443,9 +1454,14 @@ export function QuoteLedger({
       const source = prev.find((line) => line.clientKey === clientKey);
       // 04-23(D-83) — 조정 줄은 복제하지 않는다(구조는 추가·삭제만).
       if (!source || source.lineKind === "adjustment") return prev;
+      // /review red team — 견적 줄의 끈 · 보관 분류는 복제하지 않는다(새 입력엔 고를 수 없다 — 줄 추가와 같은 기본값).
+      const subcategory =
+        source.lineKind === "quote" && !subcategories.some((option) => option.value === source.subcategory)
+          ? (subcategories[0]?.value ?? "")
+          : source.subcategory;
       const copy: DraftLine = {
         // 04-23(D-48) — 견적 외 비용 줄의 복제는 같은 종류다.
-        ...newDraftLine(source.subcategory, source.lineKind === "out_of_quote" ? outOfQuoteLineCells : newLineCells),
+        ...newDraftLine(subcategory, source.lineKind === "out_of_quote" ? outOfQuoteLineCells : newLineCells),
         lineKind: source.lineKind,
         // Codex 리뷰 P1(PR #125) — 저장되지 않은 줄의 복제는 그 줄의 원본을 잇는다.
         duplicatedFrom: source.isNew ? source.duplicatedFrom : source.id,
@@ -1670,7 +1686,12 @@ export function QuoteLedger({
   }, [saveRequests]);
 
   const vendorLabel = (row: DraftLine) => quoteLineVendorLabel(row, vendors);
-  const subcategoryLabel = (value: string) => subcategories.find((option) => option.value === value)?.label ?? value;
+  const subcategoryLabel = (value: string) => subcategoryLabels.find((option) => option.value === value)?.label ?? value;
+  // /design-review(#138) — 선택지에 남긴 끈 · 보관 분류는 코드표 화면 배지와 같은 꼬리로 고를 수 있는 분류와 구분한다.
+  const retiredSubcategoryLabel = (value: string) => {
+    const status = subcategoryLabels.find((option) => option.value === value)?.status;
+    return status ? `${subcategoryLabel(value)} (${status})` : subcategoryLabel(value);
+  };
 
   // 04-49(DR-36) — 1024 미만이면 셀 편집 가능성을 전부 거둬 캡션 있는 읽기 표로 그린다(dirty 인셋은 그대로).
   const atWidth = (level: CellEditability): CellEditability => (editableWidth ? level : "readonly");
@@ -1698,11 +1719,17 @@ export function QuoteLedger({
           ariaLabel: "소분류",
           initialValue: row.subcategory,
           // 04-23(D-93) — 편집 중에만 고른 소분류의 코드표 설명 한 줄(Select). 그 칸에 오류가 있으면 오류가 이긴다.
-          options: subcategories.map((option) => ({
-            value: option.value,
-            label: option.label,
-            description: row.cellErrors.subcategory ? null : option.description,
-          })),
+          // 끈 · 보관 분류를 쓰는 줄은 그 현재 값만 선택지에 남긴다 — 없으면 select가 빈 값을 골라 칸을 나가기만 해도 값이 지워진다.
+          options: [
+            ...subcategories.map((option) => ({
+              value: option.value,
+              label: option.label,
+              description: row.cellErrors.subcategory ? null : option.description,
+            })),
+            ...(row.subcategory && !subcategories.some((option) => option.value === row.subcategory)
+              ? [{ value: row.subcategory, label: retiredSubcategoryLabel(row.subcategory), description: null }]
+              : []),
+          ],
           onCommit: (value) => {
             commitCell(row.clientKey, "subcategory", { subcategory: value });
             ctx.onCommit(value);
@@ -1905,7 +1932,7 @@ export function QuoteLedger({
   const columns = vendorShown ? allColumns : allColumns.filter((column) => column.key !== "vendor");
   // 04-19 — 격자 Ctrl+C 글자는 04-24 읽기 열의 copyText(견적 줄 복사 글자의 유일한 정의)를 열 키로 붙인다.
   const copyTextByKey = new Map(
-    quoteLineReadColumns<DraftLine>({ subcategories, vendors, vendorShown }, (row) => lines.indexOf(row) + 1).map((column) => [column.key, column.copyText]),
+    quoteLineReadColumns<DraftLine>({ subcategories: subcategoryLabels, vendors, vendorShown }, (row) => lines.indexOf(row) + 1).map((column) => [column.key, column.copyText]),
   );
   for (const column of columns) column.copyText = copyTextByKey.get(column.key);
 
@@ -2370,7 +2397,7 @@ export function QuoteLedger({
         draftScopeId={draftScopeId}
         currentRevisionId={revisionId}
         revisions={revisions}
-        references={{ subcategories, vendors, vendorShown }}
+        references={{ subcategories: subcategoryLabels, vendors, vendorShown }}
         onSharedEditsCarried={dirtyStorage.recount}
       />
       {lockLine ? <p className={styles.lockLine}>{lockLine}</p> : null}

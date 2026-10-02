@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
-import { and, eq, gte, inArray, lte } from "drizzle-orm";
+import { randomInt, randomUUID } from "node:crypto";
+import { and, eq, gte, inArray, isNull, lte } from "drizzle-orm";
 import { test, expect, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
 import { db } from "@/db/client";
@@ -28,7 +28,7 @@ async function holidayCount(year: number): Promise<number> {
   const rows = await db
     .select({ id: holidays.id })
     .from(holidays)
-    .where(and(gte(holidays.date, `${year}-01-01`), lte(holidays.date, `${year}-12-31`)));
+    .where(and(isNull(holidays.archivedAt), gte(holidays.date, `${year}-01-01`), lte(holidays.date, `${year}-12-31`)));
   return rows.length;
 }
 
@@ -333,9 +333,10 @@ test.describe("공휴일 삭제 · 되돌리기(04.2-12)", () => {
     await db.delete(holidays).where(inArray(holidays.date, [ROW_A.date, ROW_B.date]));
   });
 
-  test("규칙 행엔 삭제가 없고, 삭제는 확인 없이 지워 결과 줄 + 되돌리기를 남기며, 되돌리기가 같은 값으로 행을 돌려놓는다", async ({
+  test("규칙 행엔 삭제가 없고, 삭제는 확인 없이 지워 결과 줄 + 되돌리기를 남기며, 되돌리기가 보관된 같은 행을 돌려놓는다", async ({
     page,
   }) => {
+    const [rowBBefore] = await db.select({ id: holidays.id }).from(holidays).where(eq(holidays.date, ROW_B.date));
     await loginAsSysadmin(page);
     await page.goto(`/admin/holidays?year=${NEXT_YEAR}`);
 
@@ -394,6 +395,9 @@ test.describe("공휴일 삭제 · 되돌리기(04.2-12)", () => {
     await expect(restored.getByRole("button", { name: "삭제" })).toBeFocused();
     await expect(page.getByText(`후보 · 공휴일 ${before - 1}일`, { exact: true })).toBeVisible();
     await expect(page.getByRole("status").filter({ hasText: "추가됨" })).toHaveCount(0);
+    // ADMN-12(quick 261001-hfi): 새 행이 아니라 보관된 같은 행이 돌아온다.
+    const rowsB = await db.select({ id: holidays.id, archivedAt: holidays.archivedAt }).from(holidays).where(eq(holidays.date, ROW_B.date));
+    expect(rowsB).toEqual([{ id: rowBBefore?.id, archivedAt: null }]);
   });
 
   test("결과 줄은 연도를 바꾸거나 공휴일 추가 폼을 열면 사라진다", async ({ page }) => {
@@ -444,6 +448,78 @@ test.describe("공휴일 삭제 · 되돌리기(04.2-12)", () => {
     await resultLine.getByRole("button", { name: "되돌리기" }).click();
     await expect(resultLine).toContainText(`되돌리기 실패 · 이미 공휴일(${OTHER_NAME})`);
     await expect(resultLine.getByRole("button", { name: "되돌리기" })).toHaveCount(0);
+  });
+});
+
+// quick 261001-hfi(ADMN-12 · D-01) — 공휴일 삭제는 보관이다. 보관함에 「공휴일」 행으로 나오고 거기서도 복원한다.
+const PAST_ARCHIVED = { date: `${THIS_YEAR - 1}-07-08`, name: "지난 보관 공휴일 테스트" };
+
+test.describe("공휴일 보관함(quick 261001-hfi)", () => {
+  test.beforeEach(async () => {
+    await resetDeleteRows();
+    await db.delete(holidays).where(eq(holidays.name, PAST_ARCHIVED.name));
+  });
+
+  test.afterAll(async () => {
+    await db.delete(holidays).where(inArray(holidays.date, [ROW_A.date, ROW_B.date]));
+    await db.delete(holidays).where(eq(holidays.name, PAST_ARCHIVED.name));
+  });
+
+  test("삭제한 공휴일이 보관함에 「공휴일」 · `{날짜} {이름}`으로 보이고, 복원하면 토스트 뒤 공휴일 목록에 돌아온다", async ({ page }) => {
+    await loginAsSysadmin(page);
+    await page.goto(`/admin/holidays?year=${NEXT_YEAR}`);
+    await rowOf(page, ROW_A.name).getByRole("button", { name: "삭제" }).click();
+    await expect(page.getByRole("status").filter({ hasText: `${ROW_A.date} ${ROW_A.name} 삭제됨` })).toHaveCount(1);
+
+    await page.goto("/admin/archive");
+    const archiveRow = page.locator("tr", { hasText: `${ROW_A.date} ${ROW_A.name}` });
+    await expect(archiveRow).toHaveCount(1);
+    await expect(archiveRow.locator("td").first()).toHaveText("공휴일");
+
+    await archiveRow.getByRole("button", { name: "복원" }).click();
+    await expect(page.getByText(`복원 · ${ROW_A.date} ${ROW_A.name} 복원됨`)).toBeVisible({ timeout: 15000 });
+    await expect(archiveRow).toHaveCount(0);
+
+    await page.goto(`/admin/holidays?year=${NEXT_YEAR}`);
+    await expect(rowOf(page, ROW_A.name)).toHaveCount(1);
+  });
+
+  // 독립 검토(#138) — 복원할 수 없는 행은 「복원」을 내놓지 않는다(§7 할 수 없는 선택지는 숨김). 동작 칸은 빈 칸 표기 「—」.
+  test("지난 날짜로 보관된 공휴일은 보관함에 남되 「복원」 버튼이 없다", async ({ page }) => {
+    await db.insert(holidays).values({ ...PAST_ARCHIVED, kind: "temporary", archivedAt: new Date(), archivedBy: null });
+    await loginAsSysadmin(page);
+    await page.goto("/admin/archive");
+    const archiveRow = page.locator("tr", { hasText: `${PAST_ARCHIVED.date} ${PAST_ARCHIVED.name}` });
+    await expect(archiveRow).toHaveCount(1);
+    await expect(archiveRow.getByRole("button", { name: "복원" })).toHaveCount(0);
+    await expect(archiveRow.locator("td").last()).toHaveText("—");
+  });
+
+  // /review(#138) — 그 날짜에 다른 공휴일이 생긴 행은 복원이 거부되고, 원인이 토스트에 실린다(행은 보관함에 남는다).
+  test("같은 날짜에 다른 공휴일이 있으면 보관함 복원은 원인을 실은 오류 토스트이고 행이 남는다", async ({ page }) => {
+    // 원인 문구는 마지막 「 · 」 앞까지 — 이름에 「 · 」가 든 공휴일과 부딪혀 잘리지 않음을 본다(/review 2차 testing).
+    const date = `2039-${String(1 + randomInt(12)).padStart(2, "0")}-${String(1 + randomInt(28)).padStart(2, "0")}`;
+    const active = { date, name: `충돌 · 활성 ${randomUUID().slice(0, 6)}` };
+    const conflicted = { date, name: `충돌 보관 공휴일 ${randomUUID().slice(0, 6)}` };
+    await db.insert(holidays).values({ ...active, kind: "temporary" });
+    await db.insert(holidays).values({ ...conflicted, kind: "temporary", archivedAt: new Date(), archivedBy: null });
+    try {
+      await loginAsSysadmin(page);
+      await page.goto("/admin/archive");
+      const archiveRow = page.locator("tr", { hasText: `${conflicted.date} ${conflicted.name}` });
+      await expect(archiveRow).toHaveCount(1);
+
+      await archiveRow.getByRole("button", { name: "복원" }).click();
+      await expect(page.getByText(`복원 · 실패 · 이미 공휴일(${active.name})`, { exact: true })).toBeVisible({ timeout: 15000 });
+      // /design-review(#138) — 거부된 행은 다시 눌러도 같은 실패라 「복원」을 치운다(공휴일 되돌리기 거부와 같은 처리).
+      await expect(archiveRow.getByRole("button", { name: "복원" })).toHaveCount(0);
+      await expect(archiveRow.locator("td").last()).toHaveText("—");
+      await page.reload();
+      await expect(archiveRow).toHaveCount(1);
+    } finally {
+      // 이 describe의 다른 정리처럼 날짜로 지운다 — 2039년 행이 쌓이거나 연도 목록에 끼지 않게.
+      await db.delete(holidays).where(eq(holidays.date, date));
+    }
   });
 });
 

@@ -12,6 +12,8 @@ import { findUserById as defaultFindUserById } from "@/repositories/users";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { restoreQuoteLine } from "@/domain/quotes/lines";
 import { canViewReserves, restoreReserve } from "@/domain/reserves";
+import { HOLIDAYS_MENU, restoreHoliday } from "@/domain/holidays/admin";
+import { toKstDate } from "@/domain/holidays/business-day";
 
 // ADMN-12: "지우지 않는다" — archived_at/archived_by 규약의 유일한 진입점.
 // 물리 삭제 문장은 이 리포 어디에도 넣지 않는다 — DB 레벨 권한 회수(REVOKE)는
@@ -75,6 +77,10 @@ const DOMAIN_RESTORERS: Partial<Record<string, (viewer: Viewer, id: string, deps
   quote_line: (viewer, id, deps) => restoreQuoteLine(viewer, id, { recordAction: deps?.recordAction }),
   // 04-07(B-04 · T5) — 리저브 복원은 클라이언트 잠금 · pnl 쓰기 + reserve.amount · 날짜 마감 잔액 판정을 한 트랜잭션에서.
   reserve_entry: (viewer, id, deps) => restoreReserve(viewer, id, { recordAction: deps?.recordAction }),
+  // quick 261001-hfi(ADMN-12) — 공휴일 복원은 달력 잠금 · admin.holidays 쓰기 · 소급 금지 · 재계산 · 로그를 한 트랜잭션에서.
+  holiday: async (viewer, id, deps) => {
+    await restoreHoliday(viewer, id, { recordAction: deps?.recordAction });
+  },
 };
 
 export async function restore(
@@ -109,9 +115,10 @@ export type ArchiveEntryDto = {
   name: string;
   archivedAt: Date;
   archivedBy: string | null;
+  restorable: boolean;
 };
 
-export const ARCHIVE_ENTRY_DTO_SPEC: DtoSpec<ArchivedItem, ArchiveEntryDto> = {
+export const ARCHIVE_ENTRY_DTO_SPEC: DtoSpec<ArchivedItem & { restorable: boolean }, ArchiveEntryDto> = {
   fields: [
     { key: "entity", from: "entity", infoItem: ARCHIVE_INFO_ITEM },
     { key: "label", from: "label", infoItem: ARCHIVE_INFO_ITEM },
@@ -119,6 +126,7 @@ export const ARCHIVE_ENTRY_DTO_SPEC: DtoSpec<ArchivedItem, ArchiveEntryDto> = {
     { key: "name", from: "name", infoItem: ARCHIVE_INFO_ITEM },
     { key: "archivedAt", from: "archivedAt", infoItem: ARCHIVE_INFO_ITEM },
     { key: "archivedBy", from: "archivedBy", infoItem: ARCHIVE_INFO_ITEM },
+    { key: "restorable", from: "restorable", infoItem: ARCHIVE_INFO_ITEM },
   ],
 };
 
@@ -131,6 +139,7 @@ export type ListArchiveDeps = {
   can: typeof defaultCan;
   listArchivedAcrossEntities: typeof defaultListArchivedAcrossEntities;
   findUserById: typeof defaultFindUserById;
+  now: Date;
 };
 
 // 보관함 메뉴 보기 권한 확인 → 여러 표를 훑는 조회(repositories/archive의
@@ -150,6 +159,12 @@ export async function listArchive(viewer: Viewer, deps?: Partial<ListArchiveDeps
   const showReserves = await canViewReserves(viewer);
   const rows = (await listFn(viewer)).filter((row) => row.entity !== "reserve_entry" || showReserves);
 
+  // 독립 검토(#138) — 복원할 수 없는 공휴일 행은 「복원」을 내놓지 않는다(§7). 공휴일 복원은 공휴일 쓰기 권한과
+  // 소급 금지(오늘 이후 날짜)를 요구한다(restoreHoliday) — 같은 판정을 목록에서 미리 한다.
+  const holidayWritable = rows.some((row) => row.entity === "holiday") && (await canFn(viewer, HOLIDAYS_MENU, "write"));
+  const today = toKstDate(deps?.now ?? new Date());
+  const isRestorable = (row: ArchivedItem) => row.entity !== "holiday" || (holidayWritable && row.date !== undefined && row.date > today);
+
   const findUserById = deps?.findUserById ?? defaultFindUserById;
   const archivedByIds = [...new Set(rows.map((row) => row.archivedBy).filter((id): id is string => id !== null))];
   const namesById = new Map(
@@ -162,7 +177,7 @@ export async function listArchive(viewer: Viewer, deps?: Partial<ListArchiveDeps
     rows.map((row) =>
       project(
         viewer,
-        { ...row, archivedBy: row.archivedBy ? (namesById.get(row.archivedBy) ?? row.archivedBy) : null },
+        { ...row, archivedBy: row.archivedBy ? (namesById.get(row.archivedBy) ?? row.archivedBy) : null, restorable: isRestorable(row) },
         ARCHIVE_ENTRY_DTO_SPEC,
       ),
     ),

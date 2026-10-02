@@ -258,9 +258,9 @@ ensure_sql_db_users() {
   if [ -z "$has_version" ]; then
     local admin_password
     admin_password="$(openssl rand -base64 32)"
-    printf '%s' "$admin_password" | run gcloud secrets versions add "$admin_secret" --project="$PROJECT" --data-file=-
     # 값은 로그·trace에 절대 남기지 않는다(디버그 트레이스 플래그를 켜지 않는다).
     run gcloud sql users set-password postgres --instance="$instance" --project="$PROJECT" --password="$admin_password"
+    printf '%s' "$admin_password" | run gcloud secrets versions add "$admin_secret" --project="$PROJECT" --data-file=-
   fi
 }
 

@@ -976,6 +976,25 @@ describe("deploy.sh — 데이터 키는 평문 시크릿(KMS 없음)", () => {
     expect(r.log).not.toContain("sql users set-password");
   });
 
+  it("db-admin-password는 새 환경에서 postgres 비밀번호를 먼저 바꾼 뒤 Secret Manager에 저장한다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"]);
+    expect(r.status).toBe(0);
+    const setIdx = lineIndex(r.log, "sql users set-password postgres");
+    const addIdx = lineIndex(r.log, "secrets versions add db-admin-password-staging");
+    expect(setIdx).toBeGreaterThanOrEqual(0);
+    expect(addIdx).toBeGreaterThanOrEqual(0);
+    expect(setIdx).toBeLessThan(addIdx);
+  });
+
+  it("postgres 비밀번호 변경이 실패하면 db-admin-password 버전을 저장하지 않고 멈춘다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: { "fail-gcloud": "sql users set-password" },
+    });
+    expect(r.status).not.toBe(0);
+    expect(r.log).toContain("sql users set-password postgres");
+    expect(r.log).not.toContain("secrets versions add db-admin-password-staging");
+  });
+
   it("gcloud kms를 부르지 않고 KMS · 감싼 키 환경 변수 · 감싼 시크릿을 붙이지 않는다", () => {
     const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"]);
     expect(r.status).toBe(0);

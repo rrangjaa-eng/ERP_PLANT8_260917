@@ -399,12 +399,12 @@ Plans:
 12. 글자·바탕 대비 4.5:1 미만(큰 글자 3:1)을 자동 검사가 막는다
 13. 시스템 변경은 `docs/design/DECISIONS.md` 기록 → `docs/design/SYSTEM.md` 수정 순서로 한다(`.claude/rules/frontend.md`): radius 0 · 그림자 없음 · 2px 진한 선 결정 뒤집기, D-39 폼 배치 → 옆 패널, 고른 완화 후보
 
-**Plans:** 0/32 plans executed
+**Plans:** 1/32 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 04.6-01-PLAN.md — ① UQ-1·2·3·6·7 확인 → DECISIONS → SYSTEM → 역할 토큰 두 단 · Phase 7 기준 5 · /plan-design-review
+- [x] 04.6-01-PLAN.md — ① UQ-1·2·3·6·7 확인 → DECISIONS → SYSTEM → 역할 토큰 두 단 · Phase 7 기준 5 · /plan-design-review
 - [ ] 04.6-02-PLAN.md — ① lint 관문(stylelint·eslint·화면 틀) · 이관 전 표시 생성 스크립트·래칫
 - [ ] 04.6-03-PLAN.md — ① [위험 경로 별도 PR · 사용자 머지] 시각 회귀 기준 사진 워크플로 + CI 실패 사진 업로드
 

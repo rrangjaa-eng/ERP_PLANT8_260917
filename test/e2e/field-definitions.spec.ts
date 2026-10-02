@@ -661,7 +661,7 @@ test("칸 「삭제」는 보관이다 — 기본 목록 · 거래처 폼 · 노
   }
 });
 
-test("권한 조합: 칸 관리 쓰기만이면 「수정」만, 보관함 쓰기 + 칸 관리 보기면 둘 다 없고 보관함 「복원」이 실패한다", async ({ page }) => {
+test("권한 조합: 칸 관리 쓰기만이면 「수정」만, 보관함 쓰기 + 칸 관리 보기면 둘 다 없고 보관함 「복원」도 없다", async ({ page }) => {
   const active = uniqueLabel();
   const archived = uniqueLabel();
   await seedFieldRow(active, 5);
@@ -693,9 +693,8 @@ test("권한 조합: 칸 관리 쓰기만이면 「수정」만, 보관함 쓰�
   await other.goto("/admin/archive");
   const archiveRow = other.locator("tr", { hasText: archived });
   await expect(archiveRow).toContainText("화면 항목");
-  await archiveRow.getByRole("button", { name: "복원" }).click();
-  await expect(other.getByText("복원 · 실패 · 다시 시도")).toBeVisible({ timeout: 15000 });
-  await expect(other.locator("tr", { hasText: archived })).toHaveCount(1);
+  // 칸 관리 쓰기가 없으면 복원할 수 없는 행이라 「복원」을 내놓지 않는다.
+  await expect(archiveRow.getByRole("button", { name: "복원" })).toHaveCount(0);
 
   await other.goto("/admin/field-definitions?includeArchived=1");
   await expect(listRow(other, archived).locator("td").nth(4)).toHaveText("보관됨");

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { eq, sql } from "drizzle-orm";
 import { db, pool } from "@/db/client";
-import { projects, codeItems, teams, quoteLines } from "@/db/schema";
+import { projects, teams, quoteLines } from "@/db/schema";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
@@ -16,6 +16,7 @@ import { CERT_ENABLED } from "@/domain/settings/keys";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { createCertEvent } from "@/test/e2e/helpers/cert";
+import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 
 // Phase 4(04-32, ENG-D3 ①) — 잠금·풀 시간 제한의 통합 증명. (c)의 describe는
 // 04-22·04-12가 saveProjectLedger 안의 트랜잭션 규약 위반(잠근 트랜잭션 안에서
@@ -33,12 +34,7 @@ async function setupProject() {
   const [team] = await db.select().from(teams).limit(1);
   if (!team) throw new Error("시드된 팀이 없습니다 — domain/seed ORG_SEED 확인 필요");
 
-  const [subcategory] = await db
-    .select()
-    .from(codeItems)
-    .where(eq(codeItems.tableKey, "quote_subcategory"))
-    .limit(1);
-  if (!subcategory) throw new Error("시드된 quote_subcategory 코드 항목이 없습니다");
+  const subcategory = await firstSelectableSubcategory();
 
   const project = await createProject(SYSTEM_VIEWER, {
     clientId: client.id,

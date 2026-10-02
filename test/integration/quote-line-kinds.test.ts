@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
-import { codeItems, projects, quoteLines, settingsSimple, teams } from "@/db/schema";
+import { projects, quoteLines, settingsSimple, teams } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
@@ -14,6 +14,7 @@ import { getCurrentQuoteRevision, listQuoteLines, saveQuoteLines, type QuoteLine
 import { restore } from "@/domain/archive";
 import { listArchivedAcrossEntities } from "@/repositories/archive";
 import { log } from "@/lib/log";
+import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 
 // 04-13(D-83 · D-48 · EXP-14) — 견적 줄의 종류 셋(견적 줄 · 견적 외 비용 · 조정). 조정 줄은 권한표
 // `projects.adjustment` 쓰기가 있는 사람만 상태와 무관하게 만들고 고친다.
@@ -30,8 +31,7 @@ async function setupProject() {
   });
   const [team] = await db.select().from(teams).limit(1);
   if (!team) throw new Error("시드된 팀이 없습니다");
-  const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
-  if (!subcategory) throw new Error("시드된 quote_subcategory 코드 항목이 없습니다");
+  const subcategory = await firstSelectableSubcategory();
   const project = await createProject(SYSTEM_VIEWER, {
     clientId: client.id,
     teamId: team.id,

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { codeItems, projects, quoteLines, revenueEntries, teams } from "@/db/schema";
+import { projects, quoteLines, revenueEntries, teams } from "@/db/schema";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
@@ -11,6 +11,7 @@ import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { saveRevenue } from "@/domain/revenue";
 import { KRW_COLUMN_MAX } from "@/domain/money";
+import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 
 // 버그: 원화 금액 열이 int4라 약 21.4억(2,147,483,647원)을 넘는 금액은 저장할 수 없었다(사용자 보고는
 // "99억 이상"). bigint로 넓힌 뒤 99억 같은 실제 금액과 상한 끝값(999,999,999,999원)이 실제 Postgres에
@@ -30,8 +31,7 @@ async function setupProject(preEstimateAmount?: number) {
   });
   const [team] = await db.select().from(teams).limit(1);
   if (!team) throw new Error("시드된 팀이 없습니다");
-  const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
-  if (!subcategory) throw new Error("시드된 quote_subcategory 코드 항목이 없습니다");
+  const subcategory = await firstSelectableSubcategory();
 
   const project = await createProject(SYSTEM_VIEWER, {
     clientId: client.id,

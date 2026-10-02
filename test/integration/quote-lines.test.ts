@@ -34,6 +34,7 @@ import { deferred, waitForLockWaiter } from "./lock-race";
 import { createRevisionFromCurrent } from "@/domain/quotes/revisions";
 import { revenueEntries } from "@/db/schema";
 import { saveProjectLedgerAction } from "@/app/(app)/projects/actions";
+import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 
 // 04-40(W3) — 거부 봉투를 액션으로 직접 확인하는 케이스용 세션. 이 파일의 다른 케이스는 액션을 부르지 않는다.
 vi.mock("@/lib/viewer", async () => {
@@ -57,12 +58,7 @@ async function setupProject() {
   const [team] = await db.select().from(teams).limit(1);
   if (!team) throw new Error("시드된 팀이 없습니다 — domain/seed ORG_SEED 확인 필요");
 
-  const [subcategory] = await db
-    .select()
-    .from(codeItems)
-    .where(eq(codeItems.tableKey, "quote_subcategory"))
-    .limit(1);
-  if (!subcategory) throw new Error("시드된 quote_subcategory 코드 항목이 없습니다");
+  const subcategory = await firstSelectableSubcategory();
 
   const project = await createProject(SYSTEM_VIEWER, {
     clientId: client.id,

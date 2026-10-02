@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { codeItems, quoteLines, revenueEntries, teams } from "@/db/schema";
+import { quoteLines, revenueEntries, teams } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { createAccount } from "@/domain/auth/accounts";
 import { insertVendor } from "@/repositories/vendors";
@@ -16,6 +16,7 @@ import { saveProjectLedger } from "@/domain/projects/ledger";
 import { restore } from "@/domain/archive";
 import { kstToday } from "@/lib/kst-date";
 import { log } from "@/lib/log";
+import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 
 // 04-40(사용자 D7 · B-07 · ENG-D7 · OV-1 · OV-2 · GAP 1) — 승인된 현재 차수의 견적 합계는 새 차수 없이 바뀌지 않고, 실행가는
 // 계속 고친다. 모든 거부 뒤 승인 차수의 견적 합계(보관 제외)가 승인 직전 값 그대로인지 DB로 단언한다.
@@ -82,8 +83,7 @@ async function setupApproved() {
   const client = await insertVendor(SYSTEM_VIEWER, { name: `거래처-${randomUUID()}`, normalizedName: `거래처-${randomUUID()}` });
   const [team] = await db.select().from(teams).limit(1);
   if (!team) throw new Error("시드된 팀이 없습니다");
-  const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
-  if (!subcategory) throw new Error("시드된 quote_subcategory 코드 항목이 없습니다");
+  const subcategory = await firstSelectableSubcategory();
   const project = await createProject(SYSTEM_VIEWER, { clientId: client.id, teamId: team.id, pmUserId: pm.id, name: `승인 잠금-${randomUUID()}` });
   const first = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
   if (!first) throw new Error("1차 차수가 없습니다");

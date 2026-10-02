@@ -17,8 +17,6 @@ WIF_POOL=github
 WIF_PROVIDER=erp-repo
 DEPLOYER_SA=gha-deployer
 CERT_BUCKET_SUFFIX=cert-signatures   # infra/names.sh cert_bucket과 같은 이름: {프로젝트}-plant8-{환경}-cert-signatures
-KMS_KEYRING_PREFIX=plant8-           # infra/names.sh kms_keyring과 같은 이름: plant8-{환경}
-KMS_KEY=app-data-key                 # infra/names.sh kms_key와 같은 이름
 
 PROJECT=""
 GITHUB_REPO=""
@@ -79,7 +77,7 @@ gcloud services enable \
   cloudresourcemanager.googleapis.com orgpolicy.googleapis.com compute.googleapis.com \
   servicenetworking.googleapis.com run.googleapis.com sqladmin.googleapis.com \
   secretmanager.googleapis.com artifactregistry.googleapis.com monitoring.googleapis.com \
-  logging.googleapis.com storage.googleapis.com cloudkms.googleapis.com \
+  logging.googleapis.com storage.googleapis.com \
   --project="$PROJECT"
 
 # WIF 프로바이더 생성 전에 조직 정책이 외부 IdP를 막는지 확인한다 — 막혀 있으면
@@ -122,37 +120,7 @@ for env in $ENVS; do
   fi
 done
 
-# (c-2) 데이터 키 KMS(04.3-08, E3-12 교차 B-3) — 키링 · 대칭 키는 소유자가 만든다. 런타임은
-# 그 키에 복호화만, 배포자는 그 키에만 감싸기 · 왕복 확인(cryptoKeyEncrypterDecrypter)과 주
-# 버전 확인(viewer)을 받는다. 기밀성은 넓어지지 않는다(배포자는 이미 secretmanager.admin으로
-# 평문 데이터 키를 읽는다) — 권한이 키 단위라 프로젝트의 다른 키에는 미치지 않고, 키 수명주기
-# (버전 만들기 · 파기 · 주 버전 변경) 권한도 주지 않는다.
 DEPLOYER_EMAIL="${DEPLOYER_SA}@${PROJECT}.iam.gserviceaccount.com"
-for env in $ENVS; do
-  keyring="${KMS_KEYRING_PREFIX}${env}"
-  if ! gcloud kms keyrings describe "$keyring" --location="$REGION" --project="$PROJECT" >/dev/null 2>&1; then
-    gcloud kms keyrings create "$keyring" --location="$REGION" --project="$PROJECT"
-  fi
-  if ! gcloud kms keys describe "$KMS_KEY" --keyring="$keyring" --location="$REGION" --project="$PROJECT" >/dev/null 2>&1; then
-    gcloud kms keys create "$KMS_KEY" --keyring="$keyring" --location="$REGION" --purpose=encryption --project="$PROJECT"
-  fi
-  gcloud kms keys add-iam-policy-binding "$KMS_KEY" --keyring="$keyring" --location="$REGION" --project="$PROJECT" \
-    --member="serviceAccount:plant8-${env}-runtime@${PROJECT}.iam.gserviceaccount.com" --role=roles/cloudkms.cryptoKeyDecrypter >/dev/null
-  gcloud kms keys add-iam-policy-binding "$KMS_KEY" --keyring="$keyring" --location="$REGION" --project="$PROJECT" \
-    --member="serviceAccount:${DEPLOYER_EMAIL}" --role=roles/cloudkms.cryptoKeyEncrypterDecrypter >/dev/null
-  gcloud kms keys add-iam-policy-binding "$KMS_KEY" --keyring="$keyring" --location="$REGION" --project="$PROJECT" \
-    --member="serviceAccount:${DEPLOYER_EMAIL}" --role=roles/cloudkms.viewer >/dev/null
-done
-# 예전에 줬을 수 있는 배포자의 프로젝트 단위 KMS 역할을 없앤다(바인딩이 없어도 계속 — 멱등).
-# 실패는 숨기지 않는다(검토 반영 L1) — 바인딩이 없어서인지 권한 오류인지 gcloud 메시지로 보인다.
-remove_deployer_project_role() {
-  local err
-  if ! err="$(gcloud projects remove-iam-policy-binding "$PROJECT" --member="serviceAccount:${DEPLOYER_EMAIL}" --role="$1" 2>&1 >/dev/null)"; then
-    echo "WARNING: could not remove project-level $1 from ${DEPLOYER_SA} (fine if it was never granted): ${err}" >&2
-  fi
-}
-remove_deployer_project_role roles/cloudkms.admin
-remove_deployer_project_role roles/cloudkms.cryptoKeyEncrypterDecrypter
 
 # (d) 배포자 프로젝트 역할(넓게 시작 — 01-08이 실사용 권한으로 좁히는 절차를 문서화한다)
 for role in run.admin cloudsql.admin secretmanager.admin artifactregistry.admin monitoring.editor logging.admin serviceusage.serviceUsageAdmin compute.networkAdmin cloudscheduler.admin; do

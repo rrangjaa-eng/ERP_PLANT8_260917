@@ -39,5 +39,3 @@ policy_backup()   { echo "[$1] Cloud SQL backup failed"; }
 policy_tick()     { echo "[$1] notify tick stale 25h"; }
 tick_metric()     { echo "notify_tick_success_$1"; }
 cert_bucket()     { echo "$2-plant8-$1-cert-signatures"; }  # $1 env, $2 project — 버킷 이름은 전역 유일이라 프로젝트 id를 앞에 둔다(04.3-05)
-kms_keyring()     { echo "plant8-$1"; }              # 04.3-08 — 데이터 키를 감싸는 KMS 키링(bootstrap이 만든다)
-kms_key()         { echo "app-data-key"; }           # 04.3-08 — 그 키링 안의 대칭 키

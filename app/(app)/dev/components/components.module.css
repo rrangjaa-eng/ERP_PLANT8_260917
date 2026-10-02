@@ -1,0 +1,8 @@
+/* 04.6-06 컴포넌트 모음 뼈대 — 표본을 한 줄에 늘어놓는다. 토큰은 역할 이름만. */
+
+.samples {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--s-6);
+}

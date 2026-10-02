@@ -101,10 +101,11 @@ export function VendorForm({
     setDuplicateCount(null);
     const formData = new FormData(event.currentTarget);
 
+    // 04.5-05: 수정은 그린 칸을 빈 값까지 모두 보낸다(서버 계약 — 키 없음 = 안 바꿈 · 빈 값 = 비움). 등록은 빈 칸을 뺀다.
     const customFields: Record<string, unknown> = {};
     for (const def of fieldDefs) {
       const raw = getStringField(formData, `cf_${def.key}`);
-      if (raw === "" && !def.required) continue;
+      if (!isEditing && raw === "" && !def.required) continue;
       customFields[def.key] = raw;
     }
     const baseFields = {

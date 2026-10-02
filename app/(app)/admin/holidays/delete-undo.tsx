@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/ui/button/Button";
 import { restoreHolidayAction } from "./actions";
@@ -8,7 +8,8 @@ import styles from "./holidays.module.css";
 
 // 04.2-UI-SPEC S2-f — 확인 대신 되돌리기. 결과 줄 상태는 URL이 아니라 이 클라이언트
 // 상태가 들고 있다(T-4.2-74 — 만든 링크가 `되돌리기`를 띄우지 못한다). page.tsx가
-// `key={연도:폼}`로 감싸 연도를 바꾸거나 폼을 열면 줄이 사라진다.
+// `key={연도:폼}`로 감싸 연도를 바꾸거나 폼을 열면 줄이 사라진다. 지운 행은 쌓아 두고 맨 나중 것을
+// 보인다 — 되돌리면 그 앞 것이 다시 보인다(04.2 /review 이월 — 다음 삭제가 앞 되돌리기를 지우지 않게).
 export type RemovedHoliday = { id: string; date: string; name: string; kind: "temporary" | "election" };
 
 type UndoResult =
@@ -44,13 +45,20 @@ export function useDeleteUndo(): DeleteUndoContextValue {
 
 export function DeleteUndoSection({ children }: { children: ReactNode }) {
   const router = useRouter();
-  const [removed, setRemoved] = useState<RemovedHoliday | null>(null);
+  const [stack, setStack] = useState<RemovedHoliday[]>([]);
+  // 새로 지울 때만 `되돌리기`를 다시 그려 포커스를 준다 — 되돌린 뒤 앞 것이 보일 때는 복원된 행이 포커스를 받는다.
+  const [shown, setShown] = useState(0);
   const [pending, setPending] = useState(false);
   const [failure, setFailure] = useState<{ text: string; retry: boolean } | null>(null);
   const [focusDate, setFocusDate] = useState<string | null>(null);
+  // 같은 함수를 유지한다 — 먼저 되돌린 행의 효과가 다시 돌며 다음 되돌린 행의 표식을 지우지 않게.
+  const clearFocus = useCallback(() => setFocusDate(null), []);
+
+  const removed = stack.at(-1) ?? null;
 
   function show(next: RemovedHoliday) {
-    setRemoved(next);
+    setStack((current) => [...current.filter((item) => item.id !== next.id), next]);
+    setShown((count) => count + 1);
     setFailure(null);
     setPending(false);
   }
@@ -67,7 +75,7 @@ export function DeleteUndoSection({ children }: { children: ReactNode }) {
     const failed = undoFailure(result);
     if (!failed) {
       setFocusDate(removed.date);
-      setRemoved(null);
+      setStack((current) => current.filter((item) => item.id !== removed.id));
       setPending(false);
       router.refresh();
       return;
@@ -77,7 +85,7 @@ export function DeleteUndoSection({ children }: { children: ReactNode }) {
   }
 
   return (
-    <DeleteUndoContext.Provider value={{ show, focusDate, clearFocus: () => setFocusDate(null) }}>
+    <DeleteUndoContext.Provider value={{ show, focusDate, clearFocus }}>
       {removed ? (
         <p role="status" className={styles.undoLine}>
           <span className={failure ? styles.undoFailed : undefined}>
@@ -85,7 +93,7 @@ export function DeleteUndoSection({ children }: { children: ReactNode }) {
           </span>
           {!failure || failure.retry ? (
             <Button
-              key={removed.date}
+              key={shown}
               variant="tertiary"
               pending={pending}
               autoFocus

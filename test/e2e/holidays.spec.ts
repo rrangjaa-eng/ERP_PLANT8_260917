@@ -389,11 +389,16 @@ test.describe("공휴일 삭제 · 되돌리기(04.2-12)", () => {
     await expect(undoPending).toHaveAttribute("aria-disabled", "true");
     releaseUndo();
 
-    await expect(resultLine).toHaveCount(0);
+    // 04.2 /review 이월 1: 결과 줄은 지운 행을 쌓는다 — B를 되돌리면 앞서 지운 A가 다시 보인다.
+    await expect(resultLine).toContainText(`${ROW_A.date} ${ROW_A.name} 삭제됨`);
     const restored = rowOf(page, ROW_B.name);
     await expect(restored).toContainText("임시공휴일");
     await expect(restored.getByRole("button", { name: "삭제" })).toBeFocused();
     await expect(page.getByText(`후보 · 공휴일 ${before - 1}일`, { exact: true })).toBeVisible();
+    await resultLine.getByRole("button", { name: "되돌리기" }).click();
+    await expect(resultLine).toHaveCount(0);
+    await expect(rowOf(page, ROW_A.name).getByRole("button", { name: "삭제" })).toBeFocused();
+    await expect(page.getByText(`후보 · 공휴일 ${before}일`, { exact: true })).toBeVisible();
     await expect(page.getByRole("status").filter({ hasText: "추가됨" })).toHaveCount(0);
     // ADMN-12(quick 261001-hfi): 새 행이 아니라 보관된 같은 행이 돌아온다.
     const rowsB = await db.select({ id: holidays.id, archivedAt: holidays.archivedAt }).from(holidays).where(eq(holidays.date, ROW_B.date));
@@ -448,6 +453,22 @@ test.describe("공휴일 삭제 · 되돌리기(04.2-12)", () => {
     await resultLine.getByRole("button", { name: "되돌리기" }).click();
     await expect(resultLine).toContainText(`되돌리기 실패 · 이미 공휴일(${OTHER_NAME})`);
     await expect(resultLine.getByRole("button", { name: "되돌리기" })).toHaveCount(0);
+  });
+
+  // 04.2 /review 이월 2: 화면을 연 뒤 지울 수 없게 된 행(여기서는 규칙 행으로 바뀜)은 서버가 거절한다 —
+  // 다시 해도 성공할 수 없으니 원인을 싣고 `삭제`를 치운다.
+  test("화면을 연 뒤 지울 수 없게 된 행을 지우면 원인 문구, 삭제 버튼은 사라진다", async ({ page }) => {
+    await loginAsSysadmin(page);
+    await page.goto(`/admin/holidays?year=${NEXT_YEAR}`);
+    const rowA = rowOf(page, ROW_A.name);
+    await expect(rowA.getByRole("button", { name: "삭제" })).toBeVisible();
+
+    await db.update(holidays).set({ kind: "statutory" }).where(eq(holidays.date, ROW_A.date));
+    await rowA.getByRole("button", { name: "삭제" }).click();
+    await expect(rowA.getByText("삭제 실패 · 지울 수 없는 공휴일", { exact: true })).toBeVisible();
+    await expect(rowA.getByRole("button", { name: "삭제" })).toHaveCount(0);
+    const [row] = await db.select({ archivedAt: holidays.archivedAt }).from(holidays).where(eq(holidays.date, ROW_A.date));
+    expect(row?.archivedAt).toBeNull();
   });
 });
 

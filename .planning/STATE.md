@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: "04.5"
 current_phase_name: 화면 항목 관리 (INSERTED)
-current_plan: 5
+current_plan: 6
 status: executing
-stopped_at: Completed 04.5-02-PLAN.md
-last_updated: "2026-10-02T10:23:03.564Z"
+stopped_at: Completed 04.5-03-PLAN.md
+last_updated: "2026-10-02T11:09:55.503Z"
 last_activity: 2026-10-02
 last_activity_desc: Phase 04.5 execution started
-state_head: 0e3edd4f6673f5d9585e6ab872eacc663248b9f9
+state_head: 95ffd0b564f0823b219666d27541a516719da22c
 progress:
   total_phases: 17
   completed_phases: 7
   total_plans: 178
-  completed_plans: 116
+  completed_plans: 117
   percent: 41
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-30)
 ## Current Position
 
 Phase: 04.5 (화면 항목 관리 (INSERTED)) — EXECUTING
-Current Plan: 5
+Current Plan: 6
 Total Plans in Phase: 9
 Status: Ready to execute
 Last activity: 2026-10-02 — Phase 04.5 execution started
@@ -126,6 +126,7 @@ Progress: [████░░░░░░] 41%
 | Phase 04.5 P08 | 33min | 2 tasks | 15 files |
 | Phase 04.5 P09 | 16min | 1 tasks | 15 files |
 | Phase 04.5 P02 | 43min | 3 tasks | 16 files |
+| Phase 04.5 P03 | 36min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -319,6 +320,8 @@ Recent decisions affecting current work:
 - [Phase 04.5]: 04.5-09: 새 메뉴 시드는 시스템 관리자 루프에서 건너뛰고 view·write를 insertPermissionIfAbsent로 — 재시드가 회수를 되살리지 않음
 - [Phase 04.5]: 04.5-09: 정보 노출표 항목 없는 관리 DTO는 누수 스캔 메뉴 게이트 DTO 축(MENU_GATED_DTOS)으로 검사
 - [Phase 04.5]: 04.5-02: 오류 문구는 UI-SPEC 뜻 그대로 명사형(error-copy-noun-style 결정 우선) · 폼은 등록/수정 래퍼가 useAction을 쥐고 공용 본문에 key를 줌 · 보관 선택지는 서버가 (저장 ∪ 보관 − 제출)로 파생 — 사용자 결정 2026-09-26 · 재검증 뒤 결과 줄 유지 · 선택지 유실 방지
+- [Phase 04.5]: 04.5-03: 커스텀 항목은 읽는 자리 넷(노출표 열·저장 허용·거래처 DTO·누수 스캔)에서 INFO_ITEMS 옆에 더함 — vendor.value AND cf.vendor.<key> 둘 다 켜져야 보임
+- [Phase 04.5]: 04.5-03: createRole이 grantCustomFieldsToRole을 동적 import(roles↔viewer 순환), 실패 시 1회 재시도 후 role.custom_field_grant_failed 경고 · 시드 계급을 더하는 뒤 페이즈는 같은 함수를 불러야 함
 
 ### Pending Todos
 
@@ -409,6 +412,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-02T10:23:03.104Z
-Stopped at: Completed 04.5-02-PLAN.md
+Last session: 2026-10-02T11:09:55.002Z
+Stopped at: Completed 04.5-03-PLAN.md
 Resume file: None

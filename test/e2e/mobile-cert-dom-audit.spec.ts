@@ -402,4 +402,24 @@ test.describe("내부 화면 폰 폭", () => {
       await page.context().close();
     });
   }
+
+  test("I′3 폰 320px — 신청됨 행사: 경품 읽기 표 · 「QR 생성」 없음 · 가로 넘침 0(대조군 1280에서 「QR 생성」 1)", async ({ browser }) => {
+    const ev = await createCertEvent({
+      name: "폰감사 신청 상세",
+      status: "requested",
+      createdBy: pmId,
+      prizes: [{ name: LONG80, unitValueKrw: 581_247 }],
+    });
+    const page = await loggedInPage(browser, manager, 320);
+    await page.goto(`/certs/events/${ev.eventId}`);
+    await expect(page.getByRole("table", { name: "경품" })).toBeVisible();
+    await expect(page.getByRole("grid")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^QR 생성$/ })).toHaveCount(0);
+    await expectNoOverflow(page, 320, "I′3 신청됨 320");
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.reload();
+    await expect(page.getByRole("grid", { name: "경품" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^QR 생성$/ }), "대조군 1280 — 「QR 생성」").toHaveCount(1);
+    await page.context().close();
+  });
 });

@@ -326,6 +326,23 @@ test("1000px — I′3 경품은 읽기 표(편집 입력 · 「QR 생성」 · 
   await expect(page.getByRole("button", { name: "링크 닫기" })).toBeVisible();
   await expectDocFits(page, NARROW_PC.width, "I′3 1000");
 
+  // 신청됨 행사(「QR 생성」이 서는 유일한 상태)도 1000에서는 읽기 표 · 「QR 생성」 없음. 대조군 — 같은 행사를 1280에서 열면 「QR 생성」 1.
+  const requested = await createCertEvent({
+    name: "감사 천폭 신청",
+    status: "requested",
+    createdBy: pmId,
+    prizes: [{ name: LONG80, unitValueKrw: 581_247 }],
+  });
+  await page.goto(`/certs/events/${requested.eventId}`);
+  await expect(page.getByRole("table", { name: "경품" })).toBeVisible();
+  await expect(page.getByRole("grid")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^QR 생성$/ })).toHaveCount(0);
+  await expectDocFits(page, NARROW_PC.width, "I′3 1000 신청됨");
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.reload();
+  await expect(prizeGrid(page)).toBeVisible();
+  await expect(page.getByRole("button", { name: /^QR 생성$/ }), "대조군 1280 — 「QR 생성」").toHaveCount(1);
+
   // I′1 「QR 생성 신청」은 1024 미만에도 있다(1차는 PM 계정).
   await page.context().close();
   const pmPage = await loggedInPage(browser, pm, NARROW_PC.width, NARROW_PC.height);

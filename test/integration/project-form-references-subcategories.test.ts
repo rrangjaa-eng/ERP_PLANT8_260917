@@ -40,8 +40,9 @@ describe("프로젝트 화면 견적 분류 선택지 · 이름표(MAST-04, 실�
     expect(optionValues).not.toContain(inactive.value);
     expect(optionValues).not.toContain(archived.value);
 
-    for (const item of [active, inactive, archived]) {
-      expect(references.subcategoryLabels).toContainEqual({ value: item.value, label: item.label });
-    }
+    // /design-review(#138) — 고를 수 없는 분류는 코드표 화면 배지와 같은 상태 이름을 싣는다(편집 선택지에서 구분).
+    expect(references.subcategoryLabels).toContainEqual({ value: active.value, label: active.label });
+    expect(references.subcategoryLabels).toContainEqual({ value: inactive.value, label: inactive.label, status: "비활성" });
+    expect(references.subcategoryLabels).toContainEqual({ value: archived.value, label: archived.label, status: "보관됨" });
   });
 });

@@ -149,6 +149,8 @@ test("비활성 견적 분류를 쓰던 줄도 편집 · 보기 전용 계정 �
       await expect(offCell.locator("select")).toBeFocused({ timeout: 1000 });
     }).toPass();
     await expect(offCell.locator("select")).toHaveValue(item.value);
+    // /design-review(#138) — 남겨 둔 현재 값은 고를 수 있는 분류와 구분된다(코드표 화면 배지와 같은 「비활성」 꼬리).
+    await expect(offCell.locator(`select option[value="${item.value}"]`)).toHaveText(`${item.label} (비활성)`);
     await page.keyboard.press("Tab");   // 칸을 나가며 커밋 — 다음 칸(항목)이 편집으로 열리므로 Escape로 닫는다
     await page.keyboard.press("Escape");
     await expect(offCell).toHaveText(item.label);

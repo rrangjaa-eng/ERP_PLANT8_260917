@@ -36,7 +36,8 @@ export type ProjectFormReferences = {
   vendorShown: boolean;
   subcategories: CodeOption[];
   // quick 261001-hfi(MAST-04) — 이름표: 비활성 · 보관 분류까지. 그 분류를 쓰던 줄이 코드값이 아니라 이름으로 읽힌다(선택지는 subcategories).
-  subcategoryLabels: { value: string; label: string }[];
+  // status는 고를 수 없는 분류에만 — 코드표 화면 배지와 같은 이름(보관이 비활성보다 먼저).
+  subcategoryLabels: { value: string; label: string; status?: "보관됨" | "비활성" }[];
 };
 
 // quick 261001-85g(ADMN-03) — 선택지도 명세로 투영한다(누수 스캔이 본다). 정보 항목은 각 마스터 DTO의 이름 칸과 같다 —
@@ -117,7 +118,10 @@ export async function listProjectFormReferences(
     subcategories: subcategoryRows
       .filter((row) => row.active && row.archivedAt === null)
       .map((row) => ({ value: row.value, label: row.label, description: row.description })),
-    subcategoryLabels: subcategoryRows.map((row) => ({ value: row.value, label: row.label })),
+    subcategoryLabels: subcategoryRows.map((row) => {
+      const status = row.archivedAt !== null ? "보관됨" : row.active ? undefined : "비활성";
+      return status ? { value: row.value, label: row.label, status } : { value: row.value, label: row.label };
+    }),
   };
 }
 

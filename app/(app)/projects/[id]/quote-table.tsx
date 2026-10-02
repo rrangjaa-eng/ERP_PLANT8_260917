@@ -62,7 +62,7 @@ import type { ProjectStatus } from "@/domain/projects/status-transitions";
 import styles from "./project-detail.module.css";
 
 export type QuoteTableOption = { id: string; name: string };
-export type QuoteTableCodeOption = { value: string; label: string; description?: string | null };
+export type QuoteTableCodeOption = { value: string; label: string; description?: string | null; status?: string };
 
 type DraftLine = {
   clientKey: string;
@@ -1682,6 +1682,11 @@ export function QuoteLedger({
 
   const vendorLabel = (row: DraftLine) => quoteLineVendorLabel(row, vendors);
   const subcategoryLabel = (value: string) => subcategoryLabels.find((option) => option.value === value)?.label ?? value;
+  // /design-review(#138) — 선택지에 남긴 끈 · 보관 분류는 코드표 화면 배지와 같은 꼬리로 고를 수 있는 분류와 구분한다.
+  const retiredSubcategoryLabel = (value: string) => {
+    const status = subcategoryLabels.find((option) => option.value === value)?.status;
+    return status ? `${subcategoryLabel(value)} (${status})` : subcategoryLabel(value);
+  };
 
   // 04-49(DR-36) — 1024 미만이면 셀 편집 가능성을 전부 거둬 캡션 있는 읽기 표로 그린다(dirty 인셋은 그대로).
   const atWidth = (level: CellEditability): CellEditability => (editableWidth ? level : "readonly");
@@ -1717,7 +1722,7 @@ export function QuoteLedger({
               description: row.cellErrors.subcategory ? null : option.description,
             })),
             ...(row.subcategory && !subcategories.some((option) => option.value === row.subcategory)
-              ? [{ value: row.subcategory, label: subcategoryLabel(row.subcategory), description: null }]
+              ? [{ value: row.subcategory, label: retiredSubcategoryLabel(row.subcategory), description: null }]
               : []),
           ],
           onCommit: (value) => {

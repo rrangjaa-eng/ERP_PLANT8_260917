@@ -40,4 +40,10 @@ describe("거래처 폼 이유 자리 (04.5-06)", () => {
   it("칸별 오류를 서버 validationErrors에서 읽는다", () => {
     expect(CODE).toMatch(/validationErrors\?\.customFields/);
   });
+
+  // 04.5-06 Task 2: 보관된 선택지가 현재 값 — 활성화된 옵션(disabled는 FormData에서 빠져 「안 바꿈」과 「지움」을 구분할 수 없다)
+  it("저장값이 활성 선택지에 없을 때 더하는 옵션은 disabled가 아니고 글자가 「{값} (보관됨)」이다", () => {
+    expect(CODE).toMatch(/<option value=\{archivedValue\}>\{archivedValue\} \(보관됨\)<\/option>/);
+    expect(CODE).not.toMatch(/<option[^>]*\bdisabled\b/);
+  });
 });

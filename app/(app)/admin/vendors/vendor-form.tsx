@@ -283,6 +283,9 @@ function VendorCustomField({
   const stringValue = customFieldDefaultValue(def, defaultValue);
   if (def.type === "select") {
     const options = def.options ?? [];
+    // 04.5-06: 저장값이 활성 선택지에 없으면(보관된 선택지) 그 값을 「(보관됨)」 옵션으로 활성화한 채 목록 끝에 더한다 —
+    // disabled 옵션은 FormData에서 빠져 「안 바꿈」과 「지움」을 구분할 수 없다(UI-SPEC O2). 판정은 서버(05)가 한다.
+    const archivedValue = stringValue !== "" && !options.includes(stringValue) ? stringValue : null;
     return (
       <div className={styles.selectLabel}>
         <label htmlFor={id}>{def.label}</label>
@@ -300,6 +303,7 @@ function VendorCustomField({
               {option}
             </option>
           ))}
+          {archivedValue !== null ? <option value={archivedValue}>{archivedValue} (보관됨)</option> : null}
         </select>
         {error ? (
           <p id={errorId} className={styles.fieldError}>

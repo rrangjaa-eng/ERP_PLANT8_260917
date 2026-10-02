@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import {
+  archiveE2EFieldDefinitionOption,
   archiveE2EFieldDefinitions,
   archiveE2EVendor,
   createE2EFieldDefinition,
@@ -12,6 +13,7 @@ import { setPermissionCell } from "@/domain/permissions/matrix";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { findFieldDefinitionById } from "@/repositories/field-definitions";
 import {
+  ARCHIVED_OPTION_MESSAGE,
   REQUIRED_SELECT_EMPTY_MESSAGE,
   REQUIRED_VALUE_EMPTY_MESSAGE,
 } from "@/domain/custom-fields/preserve";
@@ -271,6 +273,93 @@ test.describe("거래처 폼 커스텀 칸 (04.5-06)", () => {
     await expect(group.locator(`#cf_${field.key}`)).toBeVisible();
     await expect(group.getByText(await labelOf(field.id), { exact: true })).toBeVisible();
     await expect(page.locator(`#cf_${field.key}`)).not.toHaveAttribute("required", "");
+  });
+});
+
+// 04.5-06 Task 2: 보관된 선택지가 현재 값
+test.describe("보관된 선택지가 현재 값 (04.5-06)", () => {
+  test("보관된 값은 「(보관됨)」 옵션으로 그 거래처 폼에만 보이고 그대로 저장된다", async ({ page }) => {
+    const editor = await createE2EVendorEditor();
+    const field = await createE2EFieldDefinition({
+      label: label("계약"),
+      type: "select",
+      required: false,
+      options: ["구형", "신형", "표준"],
+      onlyRoleId: editor.roleId,
+    });
+    await login(page, editor);
+    const select = page.locator(`#cf_${field.key}`);
+
+    const nameA = vendorName();
+    const hrefA = await registerVendor(page, nameA, async () => {
+      await select.selectOption("구형");
+    });
+    const nameB = vendorName();
+    const hrefB = await registerVendor(page, nameB);
+
+    await archiveE2EFieldDefinitionOption(field.id, "구형");
+
+    // 그 거래처 — 현재 값이 「구형 (보관됨)」이고 목록 끝에 있다.
+    await page.goto(hrefA);
+    await expect(select).toHaveValue("구형");
+    await expect(select.locator("option:checked")).toHaveText("구형 (보관됨)");
+    await expect(select.locator("option").last()).toHaveText("구형 (보관됨)");
+    await expect(select.locator("option").last()).not.toBeDisabled();
+
+    // 다른 칸만 고쳐 저장 — 성공하고 다시 열어도 그대로다.
+    await page.locator("#businessNo").fill("555-44-33333");
+    await page.getByRole("button", { name: "거래처 수정" }).click();
+    await expect(page.locator("#vendor-form")).toHaveCount(0);
+    await page.goto(hrefA);
+    await expect(select.locator("option:checked")).toHaveText("구형 (보관됨)");
+
+    // 새 등록 폼과 다른 거래처 수정 폼에는 그 옵션이 없다.
+    await page.goto("/admin/vendors?new=1");
+    await expect(select.locator("option", { hasText: "(보관됨)" })).toHaveCount(0);
+    await page.goto(hrefB);
+    await expect(select.locator("option", { hasText: "(보관됨)" })).toHaveCount(0);
+
+    // 폼이 열린 사이 보관된 선택지를 새로 고르면 칸 오류 — 저장값은 그대로다.
+    await select.selectOption("신형");
+    await archiveE2EFieldDefinitionOption(field.id, "신형");
+    await page.getByRole("button", { name: "거래처 수정" }).click();
+    await expect(page.locator(`#cf_${field.key}-error`)).toHaveText(ARCHIVED_OPTION_MESSAGE);
+    await expect(page.locator("#vendor-form-reason")).toContainText(`수정할 수 없음 — ${await labelOf(field.id)} 1칸 · `);
+    await page.reload();
+    await expect(select).toHaveValue("");
+    await expect(page.locator(`#cf_${field.key}-error`)).toHaveCount(0);
+
+    // 「선택 없음」을 고르면 필수 아님 칸은 지워진다.
+    await page.goto(hrefA);
+    await select.selectOption("");
+    await page.getByRole("button", { name: "거래처 수정" }).click();
+    await expect(page.locator("#vendor-form")).toHaveCount(0);
+    await page.goto(hrefA);
+    await expect(select).toHaveValue("");
+    await expect(select.locator("option", { hasText: "(보관됨)" })).toHaveCount(0);
+  });
+
+  test("보관된 값을 가진 필수 선택 칸에서 「선택 없음」을 고르면 막힌다", async ({ page }) => {
+    const editor = await createE2EVendorEditor();
+    const field = await createE2EFieldDefinition({
+      label: label("필선"),
+      type: "select",
+      required: true,
+      options: ["구형", "표준"],
+      onlyRoleId: editor.roleId,
+    });
+    await login(page, editor);
+    const select = page.locator(`#cf_${field.key}`);
+    const href = await registerVendor(page, vendorName(), async () => {
+      await select.selectOption("구형");
+    });
+    await archiveE2EFieldDefinitionOption(field.id, "구형");
+
+    await page.goto(href);
+    await expect(select.locator("option:checked")).toHaveText("구형 (보관됨)");
+    await select.selectOption("");
+    await page.getByRole("button", { name: "거래처 수정" }).click();
+    await expect(page.locator(`#cf_${field.key}-error`)).toHaveText(REQUIRED_SELECT_EMPTY_MESSAGE);
   });
 });
 

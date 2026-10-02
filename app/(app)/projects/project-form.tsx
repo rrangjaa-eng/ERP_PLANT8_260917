@@ -1,16 +1,13 @@
 "use client";
 
-import type { FormEvent, KeyboardEvent } from "react";
+import type { FormEvent } from "react";
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { createProjectAction } from "./actions";
 import { Form } from "@/ui/form/Form";
 import { Select } from "@/ui/select/Select";
-import { Button } from "@/ui/button/Button";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
-import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
-import { isCtrlCombo } from "@/lib/shortcut";
+import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
 import type { ProjectCopySource, ProjectInputFieldError } from "@/domain/projects";
 import type { Currency } from "@/domain/money";
 import { useCommaInput } from "@/ui/input/use-comma-input";
@@ -24,9 +21,8 @@ function getStringField(formData: FormData, key: string): string {
   return typeof value === "string" ? value : "";
 }
 
-// Esc(DR-27) 판정에 쓰는 칸 목록 — 이 칸들의 값이 처음 연 값과 하나라도
-// 다르면 입력이 있다고 본다. isFormPristine은 04-46의 「취소 Esc」 버튼·
-// 확인 모달 부제의 칸 수 계산이 같은 비교를 쓴다.
+// 입력 버리기(DR-27 · DR1 A) 판정에 쓰는 칸 목록 — 이 칸들의 값이 처음 연 값과 하나라도 다르면 입력이 있다고 본다.
+// `PanelForm`의 `dirtyFields`로 넘겨 `SidePanel`의 「입력 버리기」 확인이 뜨는 때와 부제의 칸 수를 정한다(복사 등록의 미리 채운 값이 처음 값).
 const PRISTINE_FIELDS = [
   "clientId",
   "name",
@@ -55,25 +51,15 @@ function snapshotFormValues(formData: FormData): Record<string, string> {
   return values;
 }
 
-function isFormPristine(initial: Record<string, string>, current: Record<string, string>): boolean {
-  return PRISTINE_FIELDS.every((key) => initial[key] === current[key]);
-}
-
-// 04-46 Task 2(⑤, DR-27) — 「입력 버리기」 확인 부제의 칸 수. isFormPristine과
-// 같은 비교에서 다른 칸만 센다.
-function countDifferences(initial: Record<string, string>, current: Record<string, string>): number {
-  return PRISTINE_FIELDS.filter((key) => initial[key] !== current[key]).length;
-}
-
-// SYSTEM.md §7-15 — 프로젝트 등록 폼. 필수 넷(클라이언트·프로젝트명·담당
+// SYSTEM.md §7-15 · §6-3 — 프로젝트 등록 옆 패널 폼(04.6-10: `SidePanel` 안 `PanelForm`). 필수 넷(클라이언트·프로젝트명·담당
 // PM·팀), 기간은 선택(D-49). 상태·번호는 폼에 없다 — 등록은 항상
 // 수주중이고 번호는 서버가 매긴다(D-42). `noValidate`는 `Form`이 이미
 // 걸고 있어 이 파일 어디에도 `required`/`pattern` 네이티브 검증이 없다.
+// 성공 뒤(R9 D · 사용자 답 04.6-ANSWERS.md): 새 프로젝트 상세로 이동한다 — 이동은 `PanelForm`의 `succeed({ href })`가 맡는다.
 export function ProjectForm({
   clients,
   teams,
   pmUsers,
-  cancelHref,
   usdDefaultFxRate,
   copySource = null,
   creatorDefaults = null,
@@ -81,7 +67,6 @@ export function ProjectForm({
   clients: ProjectFormOption[];
   teams: ProjectFormOption[];
   pmUsers: ProjectFormOption[];
-  cancelHref: string;
   /** 04-15(D-71) — 통화를 USD로 고르면 환율 칸의 기본값(설정의 최근 USD 환율 실제 값). */
   usdDefaultFxRate: number;
   /** 04-15(D-70) — 복사 등록이면 출처 기본 정보(미리 채움 = Esc 판정의 처음 값, DR-27)와 줄 수. */
@@ -89,19 +74,15 @@ export function ProjectForm({
   /** 결정 2 — 담당 PM은 등록하는 사람, 팀은 그 사람의 오늘 소속 팀. 좁힌 옵션에 없으면 빈 칸. */
   creatorDefaults?: { pmUserId: string; teamId: string | null } | null;
 }) {
-  const router = useRouter();
+  const panelRef = useRef<PanelFormHandle>(null);
 
   // C-06 · 엔지 리뷰 C §1 P2 — 제출 래치. 성공 뒤 상세로 이동하기 전까지
   // isExecuting은 이미 거짓으로 돌아오므로 그 가드만으로는 이동 지연 사이의
   // 두 번째 제출을 막지 못한다. 래치는 오류(검증·서버) 응답에서만 내리고,
   // 성공이면 이동할 때까지 서 있는다(컴포넌트가 언마운트된다).
   const submittedRef = useRef(false);
-  // Esc(DR-27) 판정 — 렌더 때 한 번 기록한 값 스냅숏. 복사 등록으로 칸이
-  // 채워져 있으면 그 값이 「처음 연 값」이 된다.
+  // 처음 연 값 스냅숏 — 환율 칸을 손댔는지(preEstimateFxRateTouched) 가리는 기준. 복사 등록으로 칸이 채워져 있으면 그 값이 처음 값이다.
   const initialValuesRef = useRef<Record<string, string> | null>(null);
-  // 04-46 Task 2(⑤, DR-27) — 입력이 있는 폼의 Esc·「취소 Esc」가 여는 확인.
-  const [discardOpen, setDiscardOpen] = useState(false);
-  const [discardFieldCount, setDiscardFieldCount] = useState(0);
 
   // 04-15(D-52 · S2) — 총 매출 예상가(금액 + 통화 + 환율). 금액 칸은 04-09 쉼표 입력, KRW면 환율 칸이 숨는다.
   const [preEstimateCurrency, setPreEstimateCurrency] = useState<Currency>("KRW");
@@ -122,7 +103,11 @@ export function ProjectForm({
 
   const { execute, result, isExecuting } = useAction(createProjectAction, {
     onSuccess: ({ data }) => {
-      if (data && "project" in data) router.push(`/projects/${data.project.id}`);
+      if (data && "project" in data) {
+        // R9 D — 새 프로젝트에 상세가 있으므로 상세로 이동한다(패널에 남지 않는다). 래치는 이동할 때까지 선 채로 둔다.
+        const successHref = `/projects/${data.project.id}`;
+        panelRef.current?.succeed({ href: successHref });
+      }
       // 칸 거부(rejected)면 이동하지 않는다 — 래치를 내려 다시 제출할 수 있게 한다.
       else submittedRef.current = false;
     },
@@ -170,57 +155,6 @@ export function ProjectForm({
     });
   }
 
-  // D-94 · C-07 ① · DR-27 — Ctrl+Enter 제출과 Esc 취소를 한 keydown에서
-  // 배선한다. 둘 다 폼 표준 제출·표준 라우터 이동을 부르고 새 경로를
-  // 만들지 않는다.
-  function handleKeyDown(event: KeyboardEvent<HTMLFormElement>) {
-    if (isCtrlCombo(event, "Enter")) {
-      if (isExecuting || submittedRef.current) return;
-      event.preventDefault();
-      event.currentTarget.requestSubmit();
-      return;
-    }
-    if (event.key === "Escape") {
-      // 열린 네이티브 선택 목록·자동 완성이 이벤트를 이미 처리했으면(DR-27
-      // 「내부 컨트롤 먼저」) 이 폼은 아무것도 하지 않는다.
-      if (event.defaultPrevented || event.nativeEvent.isComposing || isExecuting) return;
-      const initial = initialValuesRef.current;
-      if (!initial) return;
-      // 04-46 편차(Rule 1 — ENG-D11) — 이 브라우저 기본 동작(Escape가 열린
-      // 최상위 모달을 닫는다)을 막아 둔다. 막지 않으면 이 Escape 한 번이
-      // 폼 처리(아래 setDiscardOpen(true))로 ConfirmDialog를 연 직후, 같은
-      // keydown의 브라우저 기본 처리가 방금 연 다이얼로그를 즉시 다시
-      // 닫아버린다(showModal()이 React의 동기 discrete-event 플러시 안에서
-      // 실행돼 같은 이벤트 턴에 dialog가 이미 open 상태가 되기 때문 —
-      // 실측: ConfirmDialog effect가 open:true 뒤 바로 open:false로
-      // 두 번 연달아 불렸다). Ctrl+Enter 갈래는 이미 이 줄이 있다.
-      event.preventDefault();
-      const current = snapshotFormValues(new FormData(event.currentTarget));
-      if (isFormPristine(initial, current)) {
-        router.push(cancelHref);
-      } else {
-        // 04-46 Task 2(⑤, DR-27) — 값이 하나라도 다르면 「입력 버리기」 확인을 연다.
-        setDiscardFieldCount(countDifferences(initial, current));
-        setDiscardOpen(true);
-      }
-    }
-  }
-
-  // 04-46 Task 2(⑤, DR-27) — 버튼 줄의 2차 「취소 Esc」도 같은 판정을 탄다.
-  function handleCancelClick() {
-    if (isExecuting) return;
-    const form = document.getElementById("project-form");
-    const initial = initialValuesRef.current;
-    if (!(form instanceof HTMLFormElement) || !initial) return;
-    const current = snapshotFormValues(new FormData(form));
-    if (isFormPristine(initial, current)) {
-      router.push(cancelHref);
-    } else {
-      setDiscardFieldCount(countDifferences(initial, current));
-      setDiscardOpen(true);
-    }
-  }
-
   const clientError = result.validationErrors?.clientId?._errors?.[0];
   const nameError = result.validationErrors?.name?._errors?.[0];
   const pmError = result.validationErrors?.pmUserId?._errors?.[0];
@@ -253,160 +187,148 @@ export function ProjectForm({
   const blockedReason = [clientError, nameError, pmError, teamError, submitReason].filter(Boolean)[0];
 
   return (
-    <>
+    <PanelForm
+      ref={panelRef}
+      id="project-form"
+      label="프로젝트 등록"
+      intent="create"
+      onSubmit={handleSubmit}
+      pending={isExecuting}
+      reason={blockedReason}
+      dirtyFields={PRISTINE_FIELDS}
+    >
       {copySource ? (
         <p className={styles.copySource}>{`${copySource.number} ${copySource.name}에서 복사 · ${copySource.lineCount}줄`}</p>
       ) : null}
-      <Form id="project-form" onSubmit={handleSubmit} onKeyDown={handleKeyDown}>
-        {copySource ? <input type="hidden" name="copyFromProjectId" value={copySource.projectId} /> : null}
-        <Form.Field id="clientId" label="클라이언트" width="select">
-          <Select
-            id="clientId"
-            name="clientId"
-            options={clients.map((c) => ({ value: c.id, label: c.name }))}
-            defaultValue={copySource?.clientId}
-            error={clientError}
-          />
-        </Form.Field>
+      {copySource ? <input type="hidden" name="copyFromProjectId" value={copySource.projectId} /> : null}
+      <Form.Field id="clientId" label="클라이언트" width="select">
+        <Select
+          id="clientId"
+          name="clientId"
+          options={clients.map((c) => ({ value: c.id, label: c.name }))}
+          defaultValue={copySource?.clientId}
+          error={clientError}
+        />
+      </Form.Field>
 
-        <Form.Field id="name" label="프로젝트명" width="long">
+      <Form.Field id="name" label="프로젝트명" width="long">
+        <input
+          id="name"
+          name="name"
+          type="text"
+          className={styles.textInput}
+          autoComplete="off"
+          defaultValue={copySource?.name}
+          aria-invalid={nameError ? true : undefined}
+          aria-describedby={nameError ? "name-error" : undefined}
+        />
+        {nameError ? <Form.Error id="name-error">{nameError}</Form.Error> : null}
+      </Form.Field>
+
+      <Form.Field id="pmUserId" label="담당 PM" width="select">
+        <Select
+          id="pmUserId"
+          name="pmUserId"
+          options={pmUsers.map((u) => ({ value: u.id, label: u.name }))}
+          defaultValue={resolveDefaultOptionId(
+            copySource?.pmUserId,
+            pmUsers,
+            resolveDefaultOptionId(creatorDefaults?.pmUserId, pmUsers),
+          )}
+          error={pmError}
+        />
+      </Form.Field>
+
+      <Form.Field id="project-team" label="팀" width="select">
+        <Select
+          id="project-team"
+          name="teamId"
+          options={teams.map((t) => ({ value: t.id, label: t.name }))}
+          defaultValue={resolveDefaultOptionId(
+            copySource?.teamId,
+            teams,
+            resolveDefaultOptionId(creatorDefaults?.teamId ?? undefined, teams, teams.length === 1 ? teams[0]?.id : undefined),
+          )}
+          error={teamError}
+        />
+      </Form.Field>
+
+      <Form.Field id="startDate" label="시작일" width="short">
+        <input
+          id="startDate"
+          name="startDate"
+          type="date"
+          className={styles.textInput}
+          aria-invalid={startDateError ? true : undefined}
+          aria-describedby={startDateError ? "startDate-error" : undefined}
+        />
+        {startDateError ? <Form.Error id="startDate-error">{startDateError}</Form.Error> : null}
+      </Form.Field>
+
+      <Form.Field id="endDate" label="종료일" width="short">
+        <input
+          id="endDate"
+          name="endDate"
+          type="date"
+          className={styles.textInput}
+          aria-invalid={endDateError ? true : undefined}
+          aria-describedby={endDateError ? "endDate-error" : undefined}
+        />
+        {endDateError ? <Form.Error id="endDate-error">{endDateError}</Form.Error> : null}
+      </Form.Field>
+
+      <Form.Field id="preEstimateAmount" label="총 매출 예상가" width="short">
+        <input
+          id="preEstimateAmount"
+          ref={amountRef}
+          type="text"
+          inputMode={preEstimateCurrency === "KRW" ? "numeric" : "decimal"}
+          autoComplete="off"
+          className={`${styles.textInput} ${styles.numericInput}`}
+          value={amountText}
+          onChange={onAmountChange}
+          aria-invalid={amountError ? true : undefined}
+          aria-describedby={amountError ? "preEstimateAmount-error" : undefined}
+        />
+        <input type="hidden" name="preEstimateAmount" value={amountRawValue} readOnly />
+        {amountError ? <Form.Error id="preEstimateAmount-error">{amountError}</Form.Error> : null}
+      </Form.Field>
+
+      <Form.Field id="preEstimateCurrency" label="통화" width="select">
+        <Select
+          id="preEstimateCurrency"
+          name="preEstimateCurrency"
+          value={preEstimateCurrency}
+          options={[
+            { value: "KRW", label: "KRW" },
+            { value: "USD", label: "USD" },
+          ]}
+          onChange={(event) => setPreEstimateCurrency(event.target.value === "USD" ? "USD" : "KRW")}
+        />
+      </Form.Field>
+
+      {/* KRW는 환율 1이라 칸이 숨는다. 값은 숨은 칸으로 늘 실어 입력 버리기 판정(처음 연 값)이 통화 전환만 센다. */}
+      {preEstimateCurrency === "KRW" ? null : (
+        <Form.Field id="preEstimateFxRate" label="환율" width="short">
           <input
-            id="name"
-            name="name"
+            id="preEstimateFxRate"
+            ref={fxRateRef}
             type="text"
-            className={styles.textInput}
-            autoComplete="off"
-            defaultValue={copySource?.name}
-            aria-invalid={nameError ? true : undefined}
-            aria-describedby={nameError ? "name-error" : undefined}
-          />
-          {nameError ? <Form.Error id="name-error">{nameError}</Form.Error> : null}
-        </Form.Field>
-
-        <Form.Field id="pmUserId" label="담당 PM" width="select">
-          <Select
-            id="pmUserId"
-            name="pmUserId"
-            options={pmUsers.map((u) => ({ value: u.id, label: u.name }))}
-            defaultValue={resolveDefaultOptionId(
-              copySource?.pmUserId,
-              pmUsers,
-              resolveDefaultOptionId(creatorDefaults?.pmUserId, pmUsers),
-            )}
-            error={pmError}
-          />
-        </Form.Field>
-
-        <Form.Field id="teamId" label="팀" width="select">
-          <Select
-            id="teamId"
-            name="teamId"
-            options={teams.map((t) => ({ value: t.id, label: t.name }))}
-            defaultValue={resolveDefaultOptionId(
-              copySource?.teamId,
-              teams,
-              resolveDefaultOptionId(creatorDefaults?.teamId ?? undefined, teams, teams.length === 1 ? teams[0]?.id : undefined),
-            )}
-            error={teamError}
-          />
-        </Form.Field>
-
-        <Form.Field id="startDate" label="시작일" width="short">
-          <input
-            id="startDate"
-            name="startDate"
-            type="date"
-            className={styles.textInput}
-            aria-invalid={startDateError ? true : undefined}
-            aria-describedby={startDateError ? "startDate-error" : undefined}
-          />
-          {startDateError ? <Form.Error id="startDate-error">{startDateError}</Form.Error> : null}
-        </Form.Field>
-
-        <Form.Field id="endDate" label="종료일" width="short">
-          <input
-            id="endDate"
-            name="endDate"
-            type="date"
-            className={styles.textInput}
-            aria-invalid={endDateError ? true : undefined}
-            aria-describedby={endDateError ? "endDate-error" : undefined}
-          />
-          {endDateError ? <Form.Error id="endDate-error">{endDateError}</Form.Error> : null}
-        </Form.Field>
-
-        <Form.Field id="preEstimateAmount" label="총 매출 예상가" width="short">
-          <input
-            id="preEstimateAmount"
-            ref={amountRef}
-            type="text"
-            inputMode={preEstimateCurrency === "KRW" ? "numeric" : "decimal"}
+            inputMode="decimal"
             autoComplete="off"
             className={`${styles.textInput} ${styles.numericInput}`}
-            value={amountText}
-            onChange={onAmountChange}
-            aria-invalid={amountError ? true : undefined}
-            aria-describedby={amountError ? "preEstimateAmount-error" : undefined}
+            value={fxRateText}
+            onChange={onFxRateChange}
+            aria-invalid={fxRateError ? true : undefined}
+            aria-describedby={fxRateError ? "preEstimateFxRate-error" : undefined}
           />
-          <input type="hidden" name="preEstimateAmount" value={amountRawValue} readOnly />
-          {amountError ? <Form.Error id="preEstimateAmount-error">{amountError}</Form.Error> : null}
+          {fxRateError ? <Form.Error id="preEstimateFxRate-error">{fxRateError}</Form.Error> : null}
         </Form.Field>
+      )}
+      <input type="hidden" name="preEstimateFxRate" value={fxRateRawValue} readOnly />
 
-        <Form.Field id="preEstimateCurrency" label="통화" width="select">
-          <Select
-            id="preEstimateCurrency"
-            name="preEstimateCurrency"
-            value={preEstimateCurrency}
-            options={[
-              { value: "KRW", label: "KRW" },
-              { value: "USD", label: "USD" },
-            ]}
-            onChange={(event) => setPreEstimateCurrency(event.target.value === "USD" ? "USD" : "KRW")}
-          />
-        </Form.Field>
+      {result.serverError ? <FormAlert>{result.serverError}</FormAlert> : null}
 
-        {/* KRW는 환율 1이라 칸이 숨는다. 값은 숨은 칸으로 늘 실어 Esc 판정(처음 연 값)이 통화 전환만 센다. */}
-        {preEstimateCurrency === "KRW" ? null : (
-          <Form.Field id="preEstimateFxRate" label="환율" width="short">
-            <input
-              id="preEstimateFxRate"
-              ref={fxRateRef}
-              type="text"
-              inputMode="decimal"
-              autoComplete="off"
-              className={`${styles.textInput} ${styles.numericInput}`}
-              value={fxRateText}
-              onChange={onFxRateChange}
-              aria-invalid={fxRateError ? true : undefined}
-              aria-describedby={fxRateError ? "preEstimateFxRate-error" : undefined}
-            />
-            {fxRateError ? <Form.Error id="preEstimateFxRate-error">{fxRateError}</Form.Error> : null}
-          </Form.Field>
-        )}
-        <input type="hidden" name="preEstimateFxRate" value={fxRateRawValue} readOnly />
-
-        {result.serverError ? <FormAlert>{result.serverError}</FormAlert> : null}
-
-        <Form.Actions>
-          <Button type="submit" variant="primary" pending={isExecuting} shortcut="Ctrl+Enter">
-            프로젝트 등록
-          </Button>
-          {blockedReason ? <span className={styles.blockedReason}>{blockedReason}</span> : null}
-          <Button variant="secondary" shortcut="Esc" disabled={isExecuting} onClick={handleCancelClick}>
-            취소
-          </Button>
-        </Form.Actions>
-      </Form>
-
-      {/* 04-46 Task 2(⑤, DR-27) — <form> 밖(형제)에 렌더해 다이얼로그 안의
-          Esc·Enter가 폼 keydown·폼 제출로 가지 않게 한다. */}
-      <ConfirmDialog
-        open={discardOpen}
-        onClose={() => setDiscardOpen(false)}
-        title="입력 버리기"
-        subtitle={`프로젝트 등록 · ${discardFieldCount}칸`}
-        primary={{ label: "입력 버리기", onConfirm: () => router.push(cancelHref) }}
-      />
-    </>
+    </PanelForm>
   );
 }

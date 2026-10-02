@@ -193,9 +193,7 @@ WIF 풀·프로바이더, 서비스 계정 5개(배포자 + 환경별 런타임�
 접근, 조직 정책 확인. 저장소 수준 GitHub Actions 변수 4개를 설정한다: `GCP_PROJECT_ID`,
 `GCP_PROJECT_NUMBER`, `GCP_REGION`, `ALERT_EMAIL`(Secrets 탭은 비워 둔다 — WIF라 키
 파일이 없다. GitHub Environments도 만들지 않는다).
-(d-2)가 환경별 서명 버킷(`…-cert-signatures`)을 만들고 배포자에게 그 버킷에만 `roles/storage.admin`을 준다.
-이미 부트스트랩된 프로젝트는 PR 머지 전에 PR 브랜치의 `scripts/bootstrap-gcp.sh`를 소유자가 한 번 다시
-돌린다(멱등 · 머지 = 스테이징 자동 배포라 머지 뒤에는 늦다).
+(d-2)가 환경별 서명 버킷(`…-cert-signatures`)을 만들고 배포자에게 그 버킷에만 `roles/storage.admin`을 준다 — 이미 부트스트랩된 프로젝트는 PR 머지 전에 PR 브랜치의 `scripts/bootstrap-gcp.sh`를 소유자가 한 번 다시 돌린다(멱등 · 머지 = 스테이징 자동 배포라 머지 뒤에는 늦다).
 
 ## 9. 시크릿 목록
 
@@ -235,9 +233,8 @@ app-data-key-v1-{env} --member=serviceAccount:plant8-{env}-runtime@… --role=ro
 암호문은 v2이므로 v2 없는 리비전으로 롤백하지 않는다. (2) 그 뒤에만 운영자 ADC로 `APP_DATA_KEY_v1_WRAPPED` ·
 `APP_DATA_KEY_v2_WRAPPED`(감싼 시크릿 `latest` — KMS 암호문이라 비밀 아님) · `APP_DATA_KEY_KMS_KEY`를 두고
 `pnpm db:rotate-key`(확인증 주민등록번호 · QR 토큰 포함). (3) 한 번 더 돌려 모든 대상의 `rotate_key.done`
-`rotated`가 0이면 회전 대상 칸에 v1 암호문이 없다 — 확인 멱등 맵(`cert_winners.verify_idem_outcome`)의
-증표 암호문은 대상 밖이라 v1로 남을 수 있고 기한(`until`)이 지나면 쓰이지 않는다. (4) v1 감싼 시크릿은 떼지
-않는다(회전 전 백업 · 위 증표). (5) v1 유출 대응(서비스에서 v1 분리·KMS 버전 사용 중지)은 이번 범위 밖 — 필요하면 별도 계획.
+`rotated`가 0이면 회전 대상 칸에 v1 암호문이 없다. (4) v1 감싼 시크릿은 떼지 않는다(회전 전 백업). (5) v1 유출
+대응(서비스에서 v1 분리·KMS 버전 사용 중지)은 이번 범위 밖 — 필요하면 별도 계획.
 
 ### 이메일(SMTP) 확인 경로
 
@@ -277,6 +274,9 @@ account·db-bootstrap·restore 다섯만 Job으로 존재한다) — `.env.local
 그 키 이력이 배포 시드 행(2000-01-01 = 기본값)뿐이고, 올해 전 업무 기록(연차 신청 · 조정, 매출,
 리저브, 고객 승인 견적)이 한 건도 없을 때다. 실제 운영된 환경에는 그날 유효값과 같은 무변화 행만
 통과한다(소급 변경 금지). 그래서 이관 순서는 **설정 가져오기 → 업무 데이터 적재**다.
+
+게이트가 꺼진 환경(`CERT_FEATURE_ALLOWED`가 없는 프로덕션)은 게이트가 켜진 환경(스테이징)에서 내보낸 파일의 `cert.enabled`를
+`등록되지 않은 키: cert.enabled`로 거부하고 아무것도 쓰지 않는다 — 의도한 동작이다(꺼진 기능의 스위치가 프로덕션에 들어가지 않는다) · 그 키를 파일에서 지우고 다시 가져온다.
 
 ## 13. Codex 디자인 검토
 

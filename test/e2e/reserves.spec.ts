@@ -491,7 +491,7 @@ test.describe("리저브 대장 — 그룹 머리글 오른쪽 굵은 잔액(리
         const padRight = parseFloat(getComputedStyle(td).paddingRight);
         const tdRect = td.getBoundingClientRect();
         const asideRect = aside?.getBoundingClientRect();
-        const fg = getComputedStyle(document.documentElement).getPropertyValue("--fg").trim();
+        const fg = getComputedStyle(document.documentElement).getPropertyValue("--text-strong").trim();
         const probe = document.createElement("span");
         probe.style.color = fg;
         document.body.append(probe);

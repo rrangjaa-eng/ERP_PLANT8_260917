@@ -7,6 +7,7 @@ import {
   parseCustomFieldInfoItem,
 } from "@/domain/custom-fields/targets";
 import { createFieldDefinitionInput, nameConflictMessage } from "@/domain/custom-fields/admin-input";
+import { addOption, deriveArchivedOptions, normalizeOption, removeOption } from "@/domain/custom-fields/options";
 
 // 04.5-08: 대상 등록부 · 입력 규칙 · 이름 충돌 문구 — DB 없이 도는 순수 계약.
 const valid = { name: "계약 메모", type: "text" as const, required: false, sortOrder: 1 };
@@ -78,7 +79,7 @@ describe("생성 입력 — 칸 오류 문구", () => {
     expect(createFieldDefinitionInput.safeParse({ ...valid, sortOrder: 999 }).success).toBe(true);
   });
 
-  it("entity 키와 선택형은 여전히 거부한다", () => {
+  it("entity 키는 거부하고, 선택형은 선택지 없이는 거부한다", () => {
     expect(createFieldDefinitionInput.safeParse({ ...valid, entity: "project" }).success).toBe(false);
     expect(createFieldDefinitionInput.safeParse({ ...valid, type: "select" }).success).toBe(false);
   });
@@ -97,5 +98,87 @@ describe("이름 충돌 문구", () => {
     expect(nameConflictMessage({ archived: true, canRestore: false })).toBe(
       "보관함에 같은 이름의 화면 항목 있음 · 이름 바꾸기",
     );
+  });
+});
+
+// 04.5-02: 선택지 편집 순수 함수 — 폼과 서버가 같이 쓴다.
+describe("선택지 편집 순수 함수", () => {
+  it("normalizeOption은 앞뒤 공백을 자른다", () => {
+    expect(normalizeOption("  특약 ")).toBe("특약");
+  });
+
+  it("addOption은 앞뒤 공백을 자르고 활성 목록 끝에 더한다", () => {
+    expect(addOption({ active: ["기본"], archived: [] }, "  특약 ")).toEqual({
+      state: { active: ["기본", "특약"], archived: [] },
+    });
+  });
+
+  it("활성과 같은 선택지는 duplicate 오류이고 상태는 그대로다", () => {
+    const state = { active: ["기본"], archived: [] };
+    expect(addOption(state, "기본")).toEqual({ state, error: "duplicate" });
+  });
+
+  it("공백만 있는 선택지는 empty 오류다", () => {
+    const state = { active: ["기본"], archived: [] };
+    expect(addOption(state, "   ")).toEqual({ state, error: "empty" });
+  });
+
+  it("활성이 30개면 limit 오류다", () => {
+    const state = { active: Array.from({ length: 30 }, (_, i) => `선택${i}`), archived: [] };
+    expect(addOption(state, "서른하나")).toEqual({ state, error: "limit" });
+  });
+
+  it("보관 선택지와 같은 문자열을 더하면 보관에서 빼 활성으로 돌린다(복원)", () => {
+    expect(addOption({ active: ["기본"], archived: ["특약"] }, "특약")).toEqual({
+      state: { active: ["기본", "특약"], archived: [] },
+    });
+  });
+
+  it("저장된 선택지를 삭제하면 보관으로 옮기고, 저장 안 한 선택지는 목록에서 뺀다", () => {
+    const saved = ["기본", "특약"];
+    const state = { active: ["기본", "특약", "MOU"], archived: [] };
+    const archivedOne = removeOption(state, "특약", saved);
+    expect(archivedOne).toEqual({ active: ["기본", "MOU"], archived: ["특약"] });
+    expect(removeOption(archivedOne, "MOU", saved)).toEqual({ active: ["기본"], archived: ["특약"] });
+  });
+
+  it("deriveArchivedOptions는 (저장 활성 ∪ 저장 보관) − 제출 활성이고 저장 순서를 지킨다", () => {
+    expect(
+      deriveArchivedOptions({ storedActive: ["a", "b", "c"], storedArchived: ["x"], submittedActive: ["a", "d"] }),
+    ).toEqual(["b", "c", "x"]);
+  });
+
+  it("deriveArchivedOptions는 중복을 만들지 않는다", () => {
+    expect(
+      deriveArchivedOptions({ storedActive: ["a", "b"], storedArchived: ["b"], submittedActive: ["a"] }),
+    ).toEqual(["b"]);
+  });
+});
+
+describe("생성 입력 — 선택형", () => {
+  const select = { ...valid, type: "select" as const };
+
+  it("선택형은 선택지 1~30개 · 각 1~40자를 받고 원소는 앞뒤 공백이 잘린다", () => {
+    const parsed = createFieldDefinitionInput.parse({ ...select, options: [" 기본 ", "특약"] });
+    expect(parsed.options).toEqual(["기본", "특약"]);
+    expect(createFieldDefinitionInput.safeParse({ ...select, options: ["가".repeat(40)] }).success).toBe(true);
+    expect(createFieldDefinitionInput.safeParse({ ...select, options: Array.from({ length: 30 }, (_, i) => `선택${i}`) }).success).toBe(true);
+  });
+
+  it("선택지 0개 · 생략 · 31개 · 41자 · 공백만 · 중복은 거부한다", () => {
+    expect(issueMessages({ ...select, options: [] })).toContain("선택지 0개 · 선택지 추가");
+    expect(issueMessages(select)).toContain("선택지 0개 · 선택지 추가");
+    expect(issueMessages({ ...select, options: Array.from({ length: 31 }, (_, i) => `선택${i}`) })).toContain(
+      "선택지는 30개까지 · 쓰지 않는 선택지 삭제",
+    );
+    expect(createFieldDefinitionInput.safeParse({ ...select, options: ["가".repeat(41)] }).success).toBe(false);
+    expect(issueMessages({ ...select, options: ["   "] })).toContain("선택지 비어 있음 · 선택지 적기");
+    expect(issueMessages({ ...select, options: ["기본", " 기본 "] })).toContain("이미 있는 선택지 · 다른 이름 적기");
+  });
+
+  it("텍스트 타입에 선택지를 실으면 거부하고, 빈 배열이나 생략은 통과한다", () => {
+    expect(createFieldDefinitionInput.safeParse({ ...valid, options: ["기본"] }).success).toBe(false);
+    expect(createFieldDefinitionInput.safeParse({ ...valid, options: [] }).success).toBe(true);
+    expect(createFieldDefinitionInput.safeParse(valid).success).toBe(true);
   });
 });

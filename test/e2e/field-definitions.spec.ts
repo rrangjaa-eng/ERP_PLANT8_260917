@@ -295,3 +295,80 @@ test("기획 PM은 화면 항목 관리와 등록 폼에서 404를 받는다", a
   const form = await page.goto("/admin/field-definitions?new=1");
   expect(form?.status()).toBe(404);
 });
+
+// 04.5-02 Task 1: 선택형 칸 — 선택지 편집기 · 서버 재판정 · 거래처 폼 반영.
+test("선택형 칸: 선택지를 더해 저장하면 거래처 폼 select와 목록 선택지 열에 보인다", async ({ page }) => {
+  await login(page, admin);
+  const label = uniqueLabel();
+
+  await page.goto("/admin/field-definitions?new=1");
+  await page.getByLabel("이름", { exact: true }).fill(label);
+  const submit = page.getByRole("button", { name: "화면 항목 추가" });
+  // 타입이 텍스트일 때는 선택지 편집기가 없다.
+  await expect(page.getByLabel("새 선택지", { exact: true })).toHaveCount(0);
+  await page.getByLabel("타입", { exact: true }).selectOption({ label: "선택" });
+  await expect(page.getByLabel("새 선택지", { exact: true })).toBeVisible();
+
+  // 활성 0개 — 1차 비활성 + 이유 한 번.
+  await expect(submit).toHaveAttribute("aria-disabled", "true");
+  await expect(page.getByText("추가할 수 없음 — 선택지 0개 · 선택지 추가")).toHaveCount(1);
+
+  const newOption = page.getByLabel("새 선택지", { exact: true });
+  await page.getByRole("button", { name: "선택지 추가", exact: true }).click();
+  await expect(page.getByText("선택지 비어 있음 · 선택지 적기")).toBeVisible();
+
+  await newOption.fill("  기본 ");
+  await page.getByRole("button", { name: "선택지 추가", exact: true }).click();
+  await expect(newOption).toHaveValue("");
+  await expect(newOption).toBeFocused();
+  await newOption.fill("특약");
+  await newOption.press("Enter");
+  await expect(page.getByRole("button", { name: "기본 삭제" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "특약 삭제" })).toBeVisible();
+  // Enter는 폼을 제출하지 않는다.
+  await expect(page.getByRole("status").filter({ hasText: "추가됨" })).toHaveCount(0);
+
+  await newOption.fill("기본");
+  await page.getByRole("button", { name: "선택지 추가", exact: true }).click();
+  await expect(page.getByText("이미 있는 선택지 · 다른 이름 적기")).toBeVisible();
+
+  // 저장 안 한 선택지의 삭제는 목록에서 뺀다.
+  await newOption.fill("MOU");
+  await newOption.press("Enter");
+  await page.getByRole("button", { name: "MOU 삭제" }).click();
+  await expect(page.getByRole("button", { name: "MOU 삭제" })).toHaveCount(0);
+  await expect(newOption).toBeFocused();
+
+  await expect(submit).not.toHaveAttribute("aria-disabled", "true");
+  await submit.click();
+  await expect(page.getByRole("status").filter({ hasText: `화면 항목 추가 · ${label} 추가됨` })).toBeVisible();
+
+  const row = page.locator("tbody tr", { has: page.locator('th[scope="row"]', { hasText: label }) });
+  await expect(row.locator("td").nth(0)).toHaveText("선택");
+  await expect(row.locator("td").nth(3)).toHaveText("기본, 특약");
+
+  await page.goto("/admin/vendors?new=1");
+  const select = page.getByLabel(label, { exact: true });
+  await expect(select).toBeVisible();
+  const optionTexts = await select.locator("option").allTextContents();
+  expect(optionTexts).toEqual(expect.arrayContaining(["기본", "특약"]));
+  expect(optionTexts).not.toContain("MOU");
+});
+
+test("선택지는 30개까지이고 30개면 「선택지 추가」가 이유와 함께 비활성이다", async ({ page }) => {
+  await login(page, admin);
+  await page.goto("/admin/field-definitions?new=1");
+  await page.getByLabel("타입", { exact: true }).selectOption({ label: "선택" });
+  const newOption = page.getByLabel("새 선택지", { exact: true });
+  for (let i = 0; i < 30; i += 1) {
+    await newOption.fill(`선택${i}`);
+    await newOption.press("Enter");
+  }
+
+  const addOption = page.getByRole("button", { name: "선택지 추가", exact: true });
+  await expect(addOption).toHaveAttribute("aria-disabled", "true");
+  await expect(page.getByText("선택지는 30개까지 · 쓰지 않는 선택지 삭제")).toHaveCount(1);
+  await expect(page.getByRole("button", { name: /^선택\d+ 삭제$/ })).toHaveCount(30);
+  await page.getByRole("button", { name: "선택0 삭제" }).click();
+  await expect(addOption).not.toHaveAttribute("aria-disabled", "true");
+});

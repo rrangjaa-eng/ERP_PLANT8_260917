@@ -136,6 +136,8 @@ async function insertWithGrants(
         key,
         label: input.name.trim(),
         type: input.type,
+        // 선택형만 활성 선택지를 저장한다 — archived_options는 열 기본 []다.
+        options: input.type === "select" ? input.options : null,
         required: input.required,
         sortOrder: input.sortOrder,
       },

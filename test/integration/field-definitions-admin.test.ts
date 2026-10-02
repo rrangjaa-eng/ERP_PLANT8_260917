@@ -134,9 +134,36 @@ describe("화면 항목 생성 (04.5-01)", () => {
     expect([await countFieldDefinitions(), await countVendorVisibilityRows(), await countFieldLogs()]).toEqual(before);
   });
 
-  it("생성 입력은 대상(entity)과 선택형을 받지 않는다", () => {
+  it("선택형을 만들면 options는 활성 배열 그대로이고 archived_options는 []이다 · 비선택형은 options null", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID);
+
+    const { id } = await createFieldDefinition(admin, { ...input("계약 유형 선택"), type: "select", options: ["기본", "특약"] });
+    const { id: textId } = await createFieldDefinition(admin, input("계약 메모 텍스트"));
+
+    const [row] = await db.select().from(fieldDefinitions).where(eq(fieldDefinitions.id, id));
+    expect(row?.type).toBe("select");
+    expect(row?.options).toEqual(["기본", "특약"]);
+    expect(row?.archivedOptions).toEqual([]);
+    const [textRow] = await db.select().from(fieldDefinitions).where(eq(fieldDefinitions.id, textId));
+    expect(textRow?.options).toBeNull();
+  });
+
+  it("선택형인데 선택지가 0개이거나 31개이면 domain이 거부하고 아무것도 늘지 않는다", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID);
+    const before = [await countFieldDefinitions(), await countVendorVisibilityRows(), await countFieldLogs()];
+
+    await expect(createFieldDefinition(admin, { ...input("빈 선택"), type: "select", options: [] })).rejects.toThrow();
+    await expect(createFieldDefinition(admin, { ...input("없는 선택"), type: "select" })).rejects.toThrow();
+    const many = Array.from({ length: 31 }, (_, i) => `선택${i}`);
+    await expect(createFieldDefinition(admin, { ...input("많은 선택"), type: "select", options: many })).rejects.toThrow();
+
+    expect([await countFieldDefinitions(), await countVendorVisibilityRows(), await countFieldLogs()]).toEqual(before);
+  });
+
+  it("생성 입력은 대상(entity)을 받지 않고 선택형은 선택지가 있어야 한다", () => {
     expect(createFieldDefinitionInput.safeParse({ ...input("칸"), entity: "project" }).success).toBe(false);
     expect(createFieldDefinitionInput.safeParse({ ...input("칸"), type: "select" }).success).toBe(false);
+    expect(createFieldDefinitionInput.safeParse({ ...input("칸"), type: "select", options: ["기본"] }).success).toBe(true);
     for (const type of ["text", "number", "date"] as const) {
       expect(createFieldDefinitionInput.safeParse({ ...input("칸"), type }).success).toBe(true);
     }

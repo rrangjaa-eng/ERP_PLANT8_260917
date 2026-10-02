@@ -118,3 +118,36 @@
   color: var(--muted);
   font-size: var(--fs-sm);
 }
+
+/* 선택지 편집기(§7-15) — 타입이 선택일 때만. 위에 1px 구분선 + --s-6, 목록은 세로로만 늘어난다(가로 스크롤 없음). */
+.optionEditor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  padding-top: var(--s-6);
+  border-top: var(--line-w) solid var(--line);
+}
+
+.optionList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.optionRow {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+}
+
+.optionText {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.optionAdd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--s-4);
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAction } from "next-safe-action/hooks";
@@ -8,19 +8,35 @@ import { Form } from "@/ui/form/Form";
 import { TextField } from "@/ui/input/TextField";
 import { Select } from "@/ui/select/Select";
 import { Button, buttonLinkClassName } from "@/ui/button/Button";
-import { FIELD_NAME_MAX } from "@/domain/custom-fields/targets";
-import { NAME_CONFLICT_ARCHIVED_RESTORE_MESSAGE } from "@/domain/custom-fields/admin-input";
+import { ACTIVE_OPTIONS_MAX, FIELD_NAME_MAX, OPTION_MAX_LENGTH } from "@/domain/custom-fields/targets";
+import {
+  NAME_CONFLICT_ARCHIVED_RESTORE_MESSAGE,
+  OPTION_DUPLICATE_MESSAGE,
+  OPTION_EMPTY_MESSAGE,
+  OPTION_LIMIT_MESSAGE,
+  OPTIONS_ZERO_CAUSE,
+} from "@/domain/custom-fields/admin-input";
+import { addOption, removeOption, type OptionError, type OptionState } from "@/domain/custom-fields/options";
 import { formReason } from "@/lib/actions/form-reason";
 import { createFieldDefinitionAction } from "./actions";
 import styles from "./field-definitions.module.css";
 
-type FieldType = "text" | "number" | "date";
+type FieldType = "text" | "number" | "date" | "select";
 
 const TYPE_OPTIONS: Array<{ value: FieldType; label: string }> = [
   { value: "text", label: "텍스트" },
   { value: "number", label: "숫자" },
   { value: "date", label: "날짜" },
+  { value: "select", label: "선택" },
 ];
+
+const OPTION_ERROR_MESSAGES: Record<OptionError, string> = {
+  empty: OPTION_EMPTY_MESSAGE,
+  duplicate: OPTION_DUPLICATE_MESSAGE,
+  limit: OPTION_LIMIT_MESSAGE,
+};
+
+const NEW_OPTION_ID = "fd-new-option";
 
 function isFieldType(value: string): value is FieldType {
   return TYPE_OPTIONS.some((option) => option.value === value);
@@ -58,6 +74,10 @@ function FieldDefinitionFormBody({
 }: FormProps & { onAddAnother: () => void }) {
   const router = useRouter();
   const [type, setType] = useState<FieldType>("text");
+  // 등록 모드의 선택지는 전부 저장 전이라 삭제는 목록에서 빼기뿐이다(savedOptions 빈 배열).
+  const [options, setOptions] = useState<OptionState>({ active: [], archived: [] });
+  const [newOption, setNewOption] = useState("");
+  const [optionError, setOptionError] = useState<OptionError | null>(null);
   // 서버 재검증으로 page가 새 기본값을 넘겨도 열린 폼의 입력값이 바뀌지 않게 마운트 시점 값을 쥔다.
   const [initialSortOrder] = useState(defaultSortOrder);
   const [addedName, setAddedName] = useState<string | null>(null);
@@ -72,9 +92,44 @@ function FieldDefinitionFormBody({
     if (addedName !== null) resultRef.current?.focus();
   }, [addedName]);
 
+  const isSelect = type === "select";
+  const zeroOptions = isSelect && options.active.length === 0;
+  const atOptionLimit = options.active.length >= ACTIVE_OPTIONS_MAX;
+
+  function focusNewOption() {
+    document.getElementById(NEW_OPTION_ID)?.focus();
+  }
+
+  function handleAddOption() {
+    const next = addOption(options, newOption);
+    if (next.error) {
+      setOptionError(next.error);
+    } else {
+      setOptions(next.state);
+      setNewOption("");
+      setOptionError(null);
+    }
+    focusNewOption();
+  }
+
+  function handleRemoveOption(value: string) {
+    setOptions(removeOption(options, value, []));
+    setOptionError(null);
+    focusNewOption();
+  }
+
+  // Enter는 폼 제출 대신 선택지를 더한다. 한글 조합을 확정하는 Enter(isComposing)는 아무것도 하지 않는다 —
+  // 조합 전 글자가 더해지거나 두 번 더해지지 않게(R9 · D9).
+  function handleNewOptionKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    if (event.nativeEvent.isComposing) return;
+    handleAddOption();
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (isExecuting || addedName !== null) return;
+    if (isExecuting || addedName !== null || zeroOptions) return;
     const data = new FormData(event.currentTarget);
     submittedName.current = stringField(data, "name").trim();
     const sortOrderText = stringField(data, "sortOrder").trim();
@@ -84,12 +139,17 @@ function FieldDefinitionFormBody({
       required: data.get("required") === "on",
       // 빈 칸은 0이 아니라 숫자가 아닌 값으로 보내 서버의 범위 오류 문구를 받는다.
       sortOrder: sortOrderText === "" ? Number.NaN : Number(sortOrderText),
+      options: isSelect ? options.active : undefined,
     });
   }
 
   const done = addedName !== null;
   const nameError = result.validationErrors?.name?._errors?.[0];
   const sortOrderError = result.validationErrors?.sortOrder?._errors?.[0];
+  // 배열 칸의 오류 모양은 칸 전체({ _errors }) 또는 원소별 배열이다 — 칸 전체 오류만 이 칸 아래에 보인다.
+  const optionsErrors = result.validationErrors?.options;
+  const serverOptionsError = optionsErrors && !Array.isArray(optionsErrors) ? optionsErrors._errors?.[0] : undefined;
+  const shownOptionError = optionError ? OPTION_ERROR_MESSAGES[optionError] : serverOptionsError;
   const archivedRestoreLink = nameError === NAME_CONFLICT_ARCHIVED_RESTORE_MESSAGE;
   const reason = result.serverError && !done ? formReason("추가", result.serverError) : null;
 
@@ -147,6 +207,44 @@ function FieldDefinitionFormBody({
           readOnly={done}
           error={sortOrderError}
         />
+        {isSelect ? (
+          <div className={styles.optionEditor}>
+            <div role="list" className={styles.optionList}>
+              {options.active.map((value) => (
+                <div role="listitem" key={value} className={styles.optionRow}>
+                  <span className={styles.optionText}>{value}</span>
+                  {done ? null : (
+                    <Button variant="tertiary" aria-label={`${value} 삭제`} onClick={() => handleRemoveOption(value)}>
+                      삭제
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+            {done ? null : (
+              <div className={styles.optionAdd}>
+                <TextField
+                  id={NEW_OPTION_ID}
+                  label="새 선택지"
+                  autoComplete="off"
+                  maxLength={OPTION_MAX_LENGTH}
+                  value={newOption}
+                  onChange={(event) => setNewOption(event.target.value)}
+                  onKeyDown={handleNewOptionKeyDown}
+                  error={shownOptionError}
+                />
+                <Button
+                  variant="tertiary"
+                  onClick={handleAddOption}
+                  disabled={atOptionLimit}
+                  disabledReason={atOptionLimit ? OPTION_LIMIT_MESSAGE : undefined}
+                >
+                  선택지 추가
+                </Button>
+              </div>
+            )}
+          </div>
+        ) : null}
       </fieldset>
       <Form.Actions>
         {done ? (
@@ -179,6 +277,15 @@ function FieldDefinitionFormBody({
                     새로 불러오기
                   </Button>
                 }
+              >
+                화면 항목 추가
+              </Button>
+            ) : zeroOptions ? (
+              <Button
+                type="submit"
+                variant="primary"
+                disabled
+                disabledReason={formReason("추가", OPTIONS_ZERO_CAUSE).text}
               >
                 화면 항목 추가
               </Button>

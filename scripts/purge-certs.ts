@@ -4,7 +4,7 @@ import { runCertPurge } from "@/domain/certs/purge";
 import { log } from "@/lib/log";
 
 // CERT-02 확인증 파기 CLI. 기본이 미리 보기(dry-run)다 — 대상 수만 보이고 아무것도 바꾸지 않는다(RESEARCH 보안 표
-// 「dry-run 필수」). `--apply`일 때만 개인정보 칸을 비운다. 실행 주기 · 절차는 docs/OPERATIONS.md 「확인증 파기」 절.
+// 「dry-run 필수」). `--apply`일 때만 개인정보 칸을 비운다. 실행 주기 · 절차는 docs/CERT-PURGE.md.
 // scripts/rotate-key.ts와 같은 인자 규약 — 플래그와 값은 별개 argv 원소, 등호 결합(--flag=value) 거부.
 export class UsageError extends Error {}
 

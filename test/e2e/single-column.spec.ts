@@ -151,6 +151,21 @@ test.describe("단일 기둥 최대 폭 — 관리자 화면·폼 전면 적용 
     });
   }
 
+  // 04.6-04: 거래처 폼은 단일 기둥(720)이 아니라 옆 패널이다 — 폭 480 · 화면 오른쪽 끝(PC 1280). 폼 id는 그대로.
+  test("#vendor-form이 옆 패널 폭 480 · 오른쪽 끝에 있다", async ({ page }) => {
+    await loginAs(page, SYSADMIN_ROLE_ID);
+    await page.goto("/admin/vendors");
+    await page.getByRole("link", { name: "거래처 등록" }).first().click();
+    const dialog = page.locator('dialog[data-ui="side-panel"]');
+    await expect(dialog.locator("#vendor-form")).toBeVisible();
+    await expect
+      .poll(async () => {
+        const box = await dialog.boundingBox();
+        return box ? [Math.round(box.width), Math.round(box.x + box.width)] : null;
+      })
+      .toEqual([480, 1280]);
+  });
+
   test("#role-form이 720px 이하로 main h1과 같은 x에서 시작한다", async ({ page }) => {
     await loginAs(page, SYSADMIN_ROLE_ID);
     await page.goto("/admin/people/roles?new=1");

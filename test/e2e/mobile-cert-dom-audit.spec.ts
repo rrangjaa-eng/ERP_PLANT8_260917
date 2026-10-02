@@ -273,6 +273,8 @@ test.describe("내부 화면 폰 폭", () => {
       await primary.click();
       const sheet = page.getByRole("dialog", { name: "QR 생성 신청" });
       await expect(sheet).toBeVisible();
+      // 04.6-04: 열림 모션(--dur-sheet 200ms)이 끝난 뒤에 잰다.
+      await expect.poll(() => sheet.evaluate((el) => el.getAnimations().length)).toBe(0);
       const m = await sheet.evaluate((el) => {
         const rect = el.getBoundingClientRect();
         return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, sw: el.scrollWidth, cw: el.clientWidth, vw: innerWidth, vh: innerHeight };

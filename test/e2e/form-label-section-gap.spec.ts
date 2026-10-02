@@ -260,6 +260,20 @@ test.describe("PC 폼 라벨 왼쪽 96 · select 200, 폰은 라벨 위 (SYSTEM.
     });
   }
 
+  // 04.6-04(M2 ①): 거래처 폼은 옆 패널 — 모든 폭에서 라벨이 칸 위 · select가 묶음 전폭 · 힌트가 묶음 왼쪽 · 가로 넘침 0
+  // (PC 라벨 열 96 격자는 페이지 폼만의 배치다 — SYSTEM §6-3). 폰 측정 도우미를 PC 폭에도 쓴다.
+  test("#vendor-form(옆 패널) select 칸 — 모든 폭에서 라벨 위 · 전폭", async ({ page }) => {
+    await loginAsSysadmin(page);
+    await page.goto("/admin/vendors");
+    await page.getByRole("link", { name: "거래처 등록" }).first().click();
+    await expect(page.locator("#vendor-form")).toBeVisible();
+    for (const width of [...PC_WIDTHS, ...PHONE_WIDTHS]) {
+      await page.setViewportSize({ width, height: 900 });
+      await expect(page.locator("#vendor-form")).toBeVisible();
+      await expectPhoneLabelAbove(page, "#vendor-form");
+    }
+  });
+
   test("코드표 증빙 종류 세금 규칙 select 칸", async ({ page }) => {
     const stamp = randomUUID().slice(0, 8);
     const item = await insertCodeItem(SYSTEM_VIEWER, {

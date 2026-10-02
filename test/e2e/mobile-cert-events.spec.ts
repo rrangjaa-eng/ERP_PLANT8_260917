@@ -74,6 +74,8 @@ test.describe("04.3-10 폰 · 좁은 PC", () => {
 
     const sheet = page.getByRole("dialog", { name: "QR 생성 신청" });
     await expect(sheet).toBeVisible();
+    // 04.6-04: 열림 모션(--dur-sheet 200ms)이 끝난 뒤에 잰다.
+    await expect.poll(() => sheet.evaluate((el) => el.getAnimations().length)).toBe(0);
     // 시트 뒤 목록 표는 움직이지 않는다(DOM 감사 A-M2).
     expect((await listTable.boundingBox())?.y).toBe(tableTopBefore);
     // 막힘(빈 칸)에서도 행동 줄은 2차 왼쪽 · 1차 오른쪽 한 줄, 1차가 2차의 2배 폭(SYSTEM §7-8 — A-M1 · A-L1).

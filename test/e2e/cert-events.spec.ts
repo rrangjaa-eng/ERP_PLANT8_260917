@@ -211,9 +211,12 @@ test.describe("04.3-10 tracer — QR 생성 신청 → QR 생성(1280)", () => {
     await pmPage.getByRole("button", { name: "QR 생성 신청" }).click();
     const panel = pmPage.getByRole("dialog", { name: "QR 생성 신청" });
     await expect(panel).toBeVisible();
+    // 04.6-04: 열림 모션(--dur-sheet 200ms)이 끝난 뒤에 잰다.
+    await expect.poll(() => panel.evaluate((el) => el.getAnimations().length)).toBe(0);
     expect((await listTable.boundingBox())?.y).toBe(tableTopBefore);
     await expect(panel.getByLabel("행사 이름")).toBeFocused();
-    await expect(pmPage.getByRole("button", { name: "QR 생성 신청" })).toHaveCount(1);
+    // 04.6-04(Q1 A · R4): 패널이 열려도 여는 1차는 DOM에 남는다(뒤는 모달이 막는다) — 접근 트리에 둘(여는 1차 + 패널 안 1차).
+    await expect(pmPage.getByRole("button", { name: "QR 생성 신청" })).toHaveCount(2);
     await expect(panel.getByRole("button", { name: "QR 생성 신청" })).toHaveCount(1);
 
     // ② 막힘 한 번에 하나 — 당첨일 빔 → 어제(지난 날짜) → 오늘(계산 줄)

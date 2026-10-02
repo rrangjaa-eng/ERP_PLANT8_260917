@@ -402,6 +402,19 @@ describe("화면 항목 수정 (04.5-02)", () => {
     expect(await countUpdateLogs(id)).toBe(1);
   });
 
+  it("이름 조회와 쓰기 사이 경합으로 이름을 바꾸다 unique 위반이 나면 DuplicateFieldNameError이고 version은 그대로다", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID);
+    const taken = uniqueName("수정경합기존");
+    await createFieldDefinition(admin, input(taken));
+    const { id } = await createFieldDefinition(admin, input(uniqueName("수정경합")));
+
+    const attempt = updateFieldDefinition(admin, edit(id, 1, taken), { findNameConflict: () => Promise.resolve(null) });
+
+    await expect(attempt).rejects.toBeInstanceOf(DuplicateFieldNameError);
+    await expect(attempt).rejects.toMatchObject({ archived: false });
+    expect((await readRow(id)).version).toBe(1);
+  });
+
   it("같은 version으로 두 번 저장하면 두 번째가 충돌로 거부되고 행은 첫 저장 그대로이며, 새 version으로는 통과한다", async () => {
     const admin = await createViewer(SYSADMIN_ROLE_ID);
     const { id } = await createFieldDefinition(admin, input(uniqueName("충돌")));

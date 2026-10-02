@@ -269,7 +269,7 @@ export async function updateFieldDefinition(
   } catch (error) {
     // 조회와 쓰기 사이 경합으로 이름 유일 위반이 나면 같은 조회로 활성 · 보관을 가려 같은 오류로 바꾼다.
     if (isUniqueViolation(error, NAME_UNIQUE_CONSTRAINT)) {
-      const raced = await findNameConflict(viewer, parsed.name, row.id);
+      const raced = await defaultFindOtherNameConflict(viewer, parsed.name, row.id);
       if (raced) throw new DuplicateFieldNameError(raced.archived);
     }
     throw error;

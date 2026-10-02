@@ -2,12 +2,13 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Browser, type Locator, type Page } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { users } from "@/db/schema";
+import { certEvents, users } from "@/db/schema";
 import { setPermissionCell } from "@/domain/permissions/matrix";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertRole, setRoleArchived } from "@/repositories/roles";
+import { REQUEST_UNKNOWN_TEXT } from "@/app/(app)/certs/events/request-rules";
 import { createFixtureUser } from "./fixtures";
 import { createCertEvent, seedIpSubmissionsForTest, seedSubmittedCert, withCertFeatureOff } from "./helpers/cert";
 import { collectCertResponses, leakPatternsFor, scanForLeaks } from "./helpers/cert-leak";
@@ -36,6 +37,18 @@ async function groupHeaders(page: Page): Promise<string[]> {
 
 function eventRow(page: Page, eventName: string) {
   return page.getByRole("row").filter({ has: page.getByRole("link", { name: eventName }) });
+}
+
+// 다음 서버 액션 요청 하나를 서버까지 보내 처리시킨 뒤 브라우저 쪽 응답만 끊는다 — 「결과 모름」(서버는 처리 · 화면은 응답 못 받음).
+async function loseNextActionResponse(page: Page): Promise<void> {
+  let lost = false;
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    if (lost || request.method() !== "POST" || !request.headers()["next-action"]) return route.fallback();
+    lost = true;
+    await route.fetch();
+    await route.abort();
+  });
 }
 
 async function loggedInPage(browser: Browser, account: { email: string; password: string }): Promise<Page> {
@@ -475,5 +488,67 @@ test.describe("04.3-10 Task 2 — I′3 경품 표(1280)", () => {
 
     await mPage.context().close();
     await pPage.context().close();
+  });
+});
+
+// ── PR #88 Codex P2 — 결과 모름 뒤 다시 보내기: 요청 키는 보낸 내용에 묶인다(같은 내용 = 같은 요청 · 고친 내용 = 새 요청) ──
+
+async function countEventsNamed(name: string): Promise<number> {
+  return (await db.select({ id: certEvents.id }).from(certEvents).where(eq(certEvents.name, name))).length;
+}
+
+test.describe("결과 모름 뒤 다시 보내기 — 요청 키(PR #88 Codex)", () => {
+  let pm: { email: string; password: string };
+  let pmId: string;
+
+  test.beforeAll(async () => {
+    pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
+    const [me] = await db.select({ id: users.id }).from(users).where(eq(users.email, pm.email));
+    pmId = me?.id ?? "";
+  });
+
+  test("QR 생성 신청 — 그대로 다시 누르면 행사 하나 · 이름을 고쳐 다시 누르면 그 이름으로 새 신청", async ({ browser }) => {
+    test.setTimeout(120_000);
+    const tail = randomUUID().slice(0, 8);
+    const nameA = `E2E 결과모름 A-${tail}`;
+    const nameB = `E2E 결과모름 B-${tail}`;
+    const nameC = `E2E 결과모름 C-${tail}`;
+    // 목록 표가 서도록 기존 신청 하나(tracer 선례).
+    await createCertEvent({ name: "E2E 기존 신청", status: "requested", createdBy: pmId || null });
+    const page = await loggedInPage(browser, pm);
+    await page.goto("/certs/events");
+    const listPrimary = page.getByRole("button", { name: "QR 생성 신청" });
+    await expect(listPrimary).toBeVisible();
+    const panel = page.getByRole("dialog", { name: "QR 생성 신청" });
+    const panelPrimary = panel.getByRole("button", { name: "QR 생성 신청" });
+
+    // ① 이름 A → 응답 끊김(서버는 처리) → 결과 모름 → 고치지 않고 다시 → 행사 A 하나 · 토스트 A
+    await listPrimary.click();
+    await panel.getByLabel("행사 이름").fill(nameA);
+    await panel.getByLabel("당첨일").fill(kstToday());
+    await loseNextActionResponse(page);
+    await panelPrimary.click();
+    await expect(panel.getByText(REQUEST_UNKNOWN_TEXT)).toBeVisible({ timeout: 30_000 });
+    expect(await countEventsNamed(nameA)).toBe(1);
+    await panelPrimary.click();
+    await expect(panel).toBeHidden();
+    await expect(page.getByRole("status").filter({ hasText: `QR 생성 신청 · ${nameA}` })).toBeVisible();
+    expect(await countEventsNamed(nameA)).toBe(1);
+
+    // ② 이름 B → 응답 끊김(B는 이미 신청됨) → 이름을 C로 고쳐 다시 → C가 실제로 생기고 토스트도 C
+    await listPrimary.click();
+    await panel.getByLabel("행사 이름").fill(nameB);
+    await panel.getByLabel("당첨일").fill(kstToday());
+    await loseNextActionResponse(page);
+    await panelPrimary.click();
+    await expect(panel.getByText(REQUEST_UNKNOWN_TEXT)).toBeVisible({ timeout: 30_000 });
+    await panel.getByLabel("행사 이름").fill(nameC);
+    await panelPrimary.click();
+    await expect(panel).toBeHidden();
+    await expect(page.getByRole("status").filter({ hasText: `QR 생성 신청 · ${nameC}` })).toBeVisible();
+    expect(await countEventsNamed(nameC)).toBe(1);
+    // 먼저 커밋된 B도 신청됨에 남는다 — 되돌리기는 상세 머리 「신청 취소」.
+    expect(await countEventsNamed(nameB)).toBe(1);
+    await page.context().close();
   });
 });

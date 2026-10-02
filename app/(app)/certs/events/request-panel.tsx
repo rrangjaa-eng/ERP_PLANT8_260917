@@ -13,13 +13,15 @@ import {
   linkWindowLine,
   requestBlockReason,
   requestFieldErrorText,
+  requestKeyFor,
   requestOutcome,
+  type RequestKey,
 } from "./request-rules";
 import styles from "./events.module.css";
 
 // 04.3-10 Task 1 ⑧ — I′1 표 위 1차 「QR 생성 신청」 · EMPTY 3차 · I′2 옆 패널(UI-SPEC I′1 · I′2 · T6 · T9). 1차는 모든 폭에
 // 있고(칸 둘 폼이라 D-10 제한이 풀린다) 패널이 열린 동안 렌더하지 않는다(한 화면 1차 하나 — DR-9). 판정(막힘 · 계산 줄 ·
-// 응답 갈래)은 request-rules.ts만 부른다. 요청 키는 패널을 열 때 한 번 만들고 결과 불명 재시도에 같은 키를 쓴다.
+// 응답 갈래)은 request-rules.ts만 부른다. 요청 키는 보낸 이름 · 날짜에 묶는다 — 같은 내용 재시도는 같은 키, 고쳐 보내면 새 키.
 
 const FORM_ID = "cert-qr-request";
 const NAME_ID = "cert-qr-request-name";
@@ -75,7 +77,7 @@ export function RequestEntry({
   const [returnFocus, setReturnFocus] = useState(true);
   const [name, setName] = useState("");
   const [wonOn, setWonOn] = useState("");
-  const [requestId, setRequestId] = useState("");
+  const [requestKey, setRequestKey] = useState<RequestKey | null>(null);
   const [pending, setPending] = useState(false);
   const [resultLine, setResultLine] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<{ name?: string; wonOn?: string }>({});
@@ -104,7 +106,7 @@ export function RequestEntry({
     openedFromRef.current = from;
     // 계산 줄의 「지금」 — 패널을 열 때 한 번(렌더 중 시각을 읽지 않는다).
     setNow(new Date());
-    setRequestId(crypto.randomUUID());
+    setRequestKey(null);
     setReturnFocus(true);
     setResultLine(null);
     setFieldErrors({});
@@ -137,7 +139,9 @@ export function RequestEntry({
     setPending(true);
     setResultLine(null);
     const sentName = name.normalize("NFC").trim();
-    const outcome = requestOutcome(await callWithin(() => requestCertQrAction({ name, wonOn, requestId })));
+    const sent = requestKeyFor(requestKey, { name, wonOn }, () => crypto.randomUUID());
+    setRequestKey(sent);
+    const outcome = requestOutcome(await callWithin(() => requestCertQrAction({ name, wonOn, requestId: sent.key })));
     setPending(false);
     if (outcome.kind === "ok") {
       resetAndClose(false);

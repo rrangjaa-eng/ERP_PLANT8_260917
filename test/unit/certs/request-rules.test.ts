@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { certLinkExpiresAt } from "@/domain/certs/link-window";
-import { linkWindowLine, requestBlockReason, requestOutcome } from "@/app/(app)/certs/events/request-rules";
+import { linkWindowLine, requestBlockReason, requestKeyFor, requestOutcome } from "@/app/(app)/certs/events/request-rules";
 
 // 04.3-10 Task 1 ⑧ — I′2 「QR 생성 신청」 옆 패널의 순수 판정(UD-4 a · DR-5 · N15 a · E8 b).
 
@@ -74,5 +74,41 @@ describe("requestOutcome — 액션 응답 갈래(결과를 알 수 없으면 fa
     for (const response of [{ serverError: "x" }, { validationErrors: {} }, "unreachable", undefined, { data: { kind: "weird" } }]) {
       expect(requestOutcome(response)).toEqual({ kind: "failed" });
     }
+  });
+});
+
+describe("requestKeyFor — 요청 키는 보낸 이름 · 날짜에 묶인다(결과 모름 재시도 = 행사 하나 · PR #88 Codex P2)", () => {
+  it("처음 보내면 새 키를 한 번 만들고 이름은 NFC · 앞뒤 공백 정리한 값으로 둔다", () => {
+    const newKey = vi.fn(() => "key-1");
+    expect(requestKeyFor(null, { name: "  봄 경품 행사 ", wonOn: TODAY }, newKey)).toEqual({
+      key: "key-1",
+      name: "봄 경품 행사",
+      wonOn: TODAY,
+    });
+    expect(newKey).toHaveBeenCalledTimes(1);
+  });
+
+  it("정리한 이름 · 날짜가 같으면(뒤 공백 · NFD 이름) 같은 키를 쓰고 새 키를 만들지 않는다", () => {
+    const prev = { key: "key-1", name: "봄 경품 행사", wonOn: TODAY };
+    const newKey = vi.fn(() => "key-2");
+    expect(requestKeyFor(prev, { name: "봄 경품 행사  ", wonOn: TODAY }, newKey)).toEqual(prev);
+    expect(requestKeyFor(prev, { name: "봄 경품 행사".normalize("NFD"), wonOn: TODAY }, newKey)).toEqual(prev);
+    expect(newKey).not.toHaveBeenCalled();
+  });
+
+  it("이름이나 날짜가 다르면 새 키", () => {
+    const prev = { key: "key-1", name: "봄 경품 행사", wonOn: TODAY };
+    const newKey = vi.fn(() => "key-2");
+    expect(requestKeyFor(prev, { name: "가을 경품 행사", wonOn: TODAY }, newKey)).toEqual({
+      key: "key-2",
+      name: "가을 경품 행사",
+      wonOn: TODAY,
+    });
+    expect(requestKeyFor(prev, { name: "봄 경품 행사", wonOn: "2026-10-02" }, newKey)).toEqual({
+      key: "key-2",
+      name: "봄 경품 행사",
+      wonOn: "2026-10-02",
+    });
+    expect(newKey).toHaveBeenCalledTimes(2);
   });
 });

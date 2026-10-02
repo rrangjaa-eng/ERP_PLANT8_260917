@@ -91,6 +91,15 @@ export function requestFieldErrorText(fieldErrors: RequestFieldErrors): { name?:
   return text;
 }
 
+export type RequestKey = { key: string; name: string; wonOn: string };
+
+// 보낸 내용(정리한 이름 · 당첨일)이 같을 때만 같은 키 — 결과 모름 재시도는 행사 하나, 바꿔 보내면 새 요청(수령자 제출 intake-flow.tsx와 같은 규약).
+export function requestKeyFor(prev: RequestKey | null, input: { name: string; wonOn: string }, newKey: () => string): RequestKey {
+  const name = input.name.normalize("NFC").trim();
+  if (prev && prev.name === name && prev.wonOn === input.wonOn) return prev;
+  return { key: newKey(), name, wonOn: input.wonOn };
+}
+
 // UI-SPEC 문장(`신청했는지 확인하지 못했습니다 · 다시 눌러 주세요`)은 내부 오류 명사형 규칙(DECISIONS 2026-09-26 · 사용자 결정 A
 // 2026-09-29 — test/unit/error-copy-noun-style)과 부딪혀 옛 I2 선례(`만들기 결과 모름 · 다시 누르기`)의 꼴로 쓴다(/design-review 확인 요청).
 export const REQUEST_UNKNOWN_TEXT = "신청 결과 모름 · 다시 누르기";

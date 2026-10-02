@@ -166,7 +166,8 @@ account:reset --email …` / `pnpm account:unlock --email …`. 운영에서는 
 세션이 gcloud를 직접 쓰지 않고 `verify.yml`(workflow_dispatch, WIF)을 띄워 로그를 읽는다 —
 조직 정책 `iam.disableServiceAccountKeyCreation`이 SA 키 생성을 막기 때문이다. gha-deployer에
 읽기 전용 두 역할 `roles/orgpolicy.policyViewer`(조직 수준)·`roles/iam.securityReviewer`만
-준다(쓰기 권한 없음, 2026-09-22 결정).
+준다(쓰기 권한 없음, 2026-09-22 결정). `verify.yml`의 `notify-tick` 점검(스테이징 스케줄러 잡·실행 기록·앱 로그)은
+부트스트랩이 이미 준 `cloudscheduler.admin`·`logging.admin`으로 조회만 한다.
 
 백업 실패 경보 테스트: 이메일 채널에는 콘솔 "테스트 알림 보내기"가 없다. Owner 계정의
 Cloud Shell에서 경보 필터의 `jsonPayload.message` 분기에 맞는 합성 ERROR 로그 한 줄을

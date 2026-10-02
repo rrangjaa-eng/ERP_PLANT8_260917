@@ -116,3 +116,31 @@ test.describe("폰 320 /admin/vendors 행 동작 넘침 없음 (260930-f3l FINDI
     await measureRowActionsOnPhone(page, false);
   });
 });
+
+// 04.6-11 Task 2: 수정 패널(계좌번호 칸 포함)이 폰 390에서 가로로 넘치지 않는다.
+test.describe("폰 390 /admin/vendors 수정 패널 가로 넘침 없음 (04.6-11)", () => {
+  test.use({ viewport: { width: 390, height: 800 } });
+
+  test("계좌번호가 있는 거래처의 수정 패널이 문서·패널 모두 가로로 넘치지 않는다", async ({ page }) => {
+    const vendor = await insertVendor(SYSTEM_VIEWER, {
+      name: `폰패널-${randomUUID().slice(0, 8)}`,
+      normalizedName: `폰패널-${randomUUID()}`,
+      accountNumberLast4: "4455",
+    });
+    try {
+      await loginAsSysadmin(page);
+      await page.goto(`/admin/vendors?editId=${vendor.id}`);
+      const dialog = page.locator('dialog[data-ui="side-panel"]');
+      await expect(dialog.getByLabel("새 계좌번호")).toBeVisible();
+      const overflow = await page.evaluate(() => {
+        const scroller = document.scrollingElement ?? document.documentElement;
+        const panel = document.querySelector('dialog[data-ui="side-panel"]');
+        return { doc: scroller.scrollWidth - scroller.clientWidth, panel: panel ? panel.scrollWidth - panel.clientWidth : 0 };
+      });
+      expect(overflow.doc, "문서 가로 넘침").toBeLessThanOrEqual(0);
+      expect(overflow.panel, "패널 가로 넘침").toBeLessThanOrEqual(0);
+    } finally {
+      await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
+    }
+  });
+});

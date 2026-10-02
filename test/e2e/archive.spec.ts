@@ -52,8 +52,16 @@ test.describe("보관함 화면 (ADMN-12)", () => {
     // 자동으로 사라지므로(§7-6) 2-워커 병렬 실행의 CPU 경합으로 서버
     // 왕복이 늦어지면 기본 5초 타임아웃 안에서도 나타났다 사라질 수 있다
     // — 넉넉한 타임아웃으로 그 경합을 흡수한다.
+    // quick 261002-4jn — 다른 탭이 먼저 복원하면, 아직 그 행이 보이는 이 화면의 복원은 「이미 복원됨」이다.
+    const otherTab = await page.context().newPage();
+    await otherTab.goto("/admin/archive");
+    await otherTab.locator("tr", { hasText: codeLabel }).getByRole("button", { name: "복원" }).click();
+    await expect(otherTab.getByText(`복원 · ${codeLabel} 복원됨`)).toBeVisible({ timeout: 15000 });
+    await otherTab.close();
+
     await archiveRow.getByRole("button", { name: "복원" }).click();
-    await expect(page.getByText(`복원 · ${codeLabel} 복원됨`)).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText(`복원 · ${codeLabel} 이미 복원됨`)).toBeVisible({ timeout: 15000 });
+    await expect(archiveRow).toHaveCount(0);
 
     // 코드표 목록에서 「보관됨」 표시가 사라지고 동작 버튼이 되돌아온다.
     await page.goto("/admin/code-tables");

@@ -232,4 +232,31 @@ describe("보관함 (ADMN-12, 실제 Postgres)", () => {
     await expect(restore(archiveOnly, "holiday", future.id)).rejects.toThrow("공휴일 복원 권한 없음");
     expect(await findHolidayByDate(SYSTEM_VIEWER, "2034-07-07")).toBeNull();
   });
+
+  // quick 261002-4jn(회고 #3) — 낡은 화면 · 동시 복원의 뒤 사람은 성공이 아니라 「이미 복원됨」을 받는다.
+  it("이미 활성인 항목의 복원은 { restored: false }이고 복원 로그를 남기지 않는다", async () => {
+    const { vendor } = await createVendor(SYSTEM_VIEWER, { name: `거래처-${randomUUID()}` });
+    await archive(SYSTEM_VIEWER, "vendor", vendor.id);
+
+    expect(await restore(SYSTEM_VIEWER, "vendor", vendor.id)).toEqual({ restored: true });
+    expect(await restore(SYSTEM_VIEWER, "vendor", vendor.id)).toEqual({ restored: false });
+    const logs = await queryActionLog(SYSTEM_VIEWER, { actionType: "restore" });
+    expect(logs.filter((log) => log.entity === "vendor" && log.entityId === vendor.id)).toHaveLength(1);
+  });
+
+  it("공휴일: 두 번째 복원은 { restored: false }, 동시 복원은 정확히 하나만 참", async () => {
+    const { userId } = await createAccount(SYSTEM_VIEWER, { email: uniqueEmail("archive-holiday-twice"), name: "공휴일 관리자", roleId: SYSADMIN_ROLE_ID });
+    const admin = { id: userId, roleId: SYSADMIN_ROLE_ID };
+    const sequential = await addHoliday(admin, { date: "2034-08-08", kind: "election", name: "두 번 복원 선거" });
+    await deleteHoliday(admin, sequential.id);
+    expect(await restore(admin, "holiday", sequential.id)).toEqual({ restored: true });
+    expect(await restore(admin, "holiday", sequential.id)).toEqual({ restored: false });
+    const logs = await queryActionLog(SYSTEM_VIEWER, { actionType: "holiday_change" });
+    expect(logs.filter((log) => log.entityId === sequential.id && (log.detail as { op?: string }).op === "restore")).toHaveLength(1);
+
+    const concurrent = await addHoliday(admin, { date: "2034-08-09", kind: "election", name: "동시 복원 선거" });
+    await deleteHoliday(admin, concurrent.id);
+    const results = await Promise.all([restore(admin, "holiday", concurrent.id), restore(admin, "holiday", concurrent.id)]);
+    expect(results.filter((result) => result.restored)).toHaveLength(1);
+  });
 });

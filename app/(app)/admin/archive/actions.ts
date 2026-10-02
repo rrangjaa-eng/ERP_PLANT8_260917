@@ -16,8 +16,9 @@ const restoreArchivedSchema = z.object({ entity: z.string().min(1), id: z.string
 export const restoreArchivedAction = authedActionClient
   .schema(restoreArchivedSchema)
   .action(async ({ parsedInput, ctx }) => {
+    let result;
     try {
-      await restore(ctx.viewer, parsedInput.entity, parsedInput.id);
+      result = await restore(ctx.viewer, parsedInput.entity, parsedInput.id);
     } catch (error) {
       // quick 261001-hfi: 공휴일 복원 거부(오늘 이전 · 그 날짜에 다른 공휴일)는 원인을 루트 오류로 — 토스트가 싣는다.
       if (error instanceof HolidayNotRestorableError) {
@@ -34,4 +35,5 @@ export const restoreArchivedAction = authedActionClient
     revalidatePath("/admin/corp-cards");
     revalidatePath("/admin/vendors");
     revalidatePath("/admin/holidays");
+    return { restored: result.restored };
   });

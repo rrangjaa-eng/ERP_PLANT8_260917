@@ -500,3 +500,74 @@ describe("docs/design/SYSTEM.md — Phase 04.4 복원 리허설 · 사람 목록
     expect(headings.some((line) => line.includes("§7-3") && line.includes("금액 열"))).toBe(true);
   });
 });
+
+// Phase 04.6-01 — 스킨 A 개정(DECISIONS 2026-10-02 · 사용자 답 `.planning/phases/04.6-a/04.6-ANSWERS.md`).
+// 사용자 답 인용 값: UQ-1·2·3·6·7 = A · Q1 = A(옆 패널이 뒤를 막는다 — #88 D-d 대체).
+describe("docs/design/SYSTEM.md · DECISIONS.md — 스킨 A 개정(04.6-01)", () => {
+  const sideBySide = section(SYSTEM, "### 7-8", "### 7-9");
+  const roleOnlyPanel = SYSTEM.split("\n").find((line) => line.startsWith("- **(04.6-01 — 04.3-10 ⑰ D-d를 이 계약이 대체한다")) ?? "";
+  const screens = section(SYSTEM, "### 7-20", "## 8. 카피 규칙");
+  const external = section(SYSTEM, "### 6-5", "### 6-6");
+  const tokensTable = section(SYSTEM, "### 4-4", "## 5. 모션");
+
+  it("§7-8 제목이 「팝업 · 모달 · 옆 패널 · 시트」이고 ⑰ 문단이 04.6 계약(뒤를 막는다)으로 바뀌었다(Q1 A)", () => {
+    expect(SYSTEM).toContain("### 7-8. 팝업 · 모달 · 옆 패널 · 시트");
+    expect(roleOnlyPanel).toContain("모든 옆 패널이 뒤를 막는다");
+    expect(roleOnlyPanel).toContain("`--scrim-panel`");
+    expect(roleOnlyPanel).toContain("`inert`");
+    expect(roleOnlyPanel).toContain("여는 요소");
+    expect(sideBySide).not.toContain("그 1차는 렌더하지 않는다");
+  });
+
+  it("DECISIONS에 #88 D-d를 대체하는 새 항목이 있고 사용자 답 파일을 인용한다(Q1 A)", () => {
+    const entry = DECISIONS.split("\n## ").find((e) => e.includes("D-d 대체")) ?? "";
+    expect(entry).toContain("04.6-ANSWERS.md");
+    expect(entry).toContain("A 「막음(04.6 계약)」");
+    // 기록 보존 — D-d 원 항목 본문은 그대로 있다.
+    expect(DECISIONS).toContain("## 2026-10-01 — 옆 패널 부품 · 첫 적용 = 확인증 「QR 생성 신청」(D-d)");
+  });
+
+  it("§4-4 3차 버튼 밑줄 행이 hover 2px 역할 이름을 가리키고 DECISIONS에도 한 줄 있다(M1)", () => {
+    const row = tokensTable.split("\n").find((line) => line.startsWith("| 3차 버튼 밑줄 |")) ?? "";
+    expect(row).toContain("--underline-w-hover");
+    expect(DECISIONS).toContain("`--underline-w-hover`");
+  });
+
+  it("§2-2 · §10 에 외부 수령자 15px 역할 이름 --text-prose 가 있다(Q7)", () => {
+    expect((SYSTEM.match(/--text-prose/g) ?? []).length).toBeGreaterThanOrEqual(2);
+    expect(SYSTEM).toContain("산문·외부 수령자 화면은 15px 이상 — 역할 이름은 `--text-prose`");
+  });
+
+  it("§6-5 에 app/c/** 셸 없는 화면 근거 한 줄이 있다(R12 — 04.6-02 stylelint override의 근거)", () => {
+    expect(external).toContain("`app/c/**`");
+    expect(external).toContain("`--text-title` · `--text-subtitle`을 직접 쓸 수 있고");
+    expect(external).toContain("`--recipient-w`");
+  });
+
+  it("§7-20 에 틀마다 1·2·3순위가 있고 빈 목록은 DR5 A 답으로만 적는다(D5)", () => {
+    for (const frame of ["`ListScreen`", "`DetailScreen`", "`SidePanel` + `PanelForm`"]) {
+      const line = screens.split("\n").find((l) => l.startsWith("- **" + frame));
+      expect(line, frame).toBeDefined();
+    }
+    expect((screens.match(/\*\*행동 순위\*\*: 1차 = .*2차 = .*3차 = /g) ?? []).length).toBe(3);
+    expect(screens).toContain("빈 목록이면 머리 1차를 숨기고 빈 화면 버튼 하나가 같은 등록 행동을 맡는다");
+  });
+
+  it("#88 이 넣은 SYSTEM 줄을 지우지 않았다(Q12 — ⑯ · ①-j · ①-k · 확인증 낱말)", () => {
+    for (const keep of ["⑯", "①-j", "①-k", "신청됨", "접수 전", "접수 중", "닫힘", "제출됨", "대조 제외"]) {
+      expect(SYSTEM, keep).toContain(keep);
+    }
+  });
+
+  it("§6-3 옆 패널 배치가 성공 뒤·닫기 동작을 쓰지 않는다(04.6-04가 쓴다) — 폭·라벨 위·칸 전폭·행동 순서만", () => {
+    const panel = section(SYSTEM, "### 6-3", "### 6-4");
+    const bullet = panel.split("\n").find((line) => line.startsWith("- **옆 패널 배치**")) ?? "";
+    expect(bullet).toContain("`--panel-w` 480");
+    expect(bullet).toContain("라벨 위");
+    expect(bullet).toContain("칸 전폭");
+    expect(bullet).toContain("2차 「취소 Esc」 → 1차");
+    expect(bullet).toContain("`aria-disabled`");
+    expect(bullet).not.toContain("칸만 비우고");
+    expect(bullet).not.toContain("입력 버리기");
+  });
+});

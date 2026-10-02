@@ -466,6 +466,17 @@ describe("domain/quotes/lines saveQuoteLines — 거래처 충돌 이유의 거�
     expect(calls).toHaveLength(1);
     expect([...(calls[0]?.[1] ?? [])].sort()).toEqual([vendorB.id, vendorC.id].sort());
     expect(calls[0]?.[2]).toBeDefined();
+    expect(calls[0]?.[2]).not.toBe(db);
+  });
+
+  it("두 줄이 같은 거래처로 바뀌면 그 id는 한 번만 조회하고 두 줄 다 이름을 싣는다", async () => {
+    const saver = await createSaver(["quote.amount", "project.value", "vendor.value"]);
+    const { conflicts, vendorB } = await twoLineConflict(saver, (_index, vendors) => ({ vendorId: vendors.b, unitPriceAmount: 100 }));
+    const vendorConflicts = conflicts.filter((c) => c.field === "vendorId");
+    expect(vendorConflicts.map((c) => c.theirValue)).toEqual([vendorB.name, vendorB.name]);
+    const calls = vi.mocked(findVendorNamesByIds).mock.calls;
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.[1]).toEqual([vendorB.id]);
   });
 
   it("거래처 칸 충돌이 없으면 거래처 이름을 조회하지 않는다", async () => {

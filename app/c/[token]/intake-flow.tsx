@@ -50,6 +50,9 @@ type Step =
 
 type FocusTarget = "row" | "result" | "prize" | "notice";
 
+// 멱등 키는 시도 단위 — 결과 불명이고 보낼 본문이 그대로일 때만 같은 키를 다시 쓴다.
+type PendingSubmit = { key: string; fingerprint: string };
+
 // E′4 값(서명 획 포함)은 같은 사람의 것이라 메모리에만 있다. 「다른 경품 고르기」로 경품을 바꾸면 주소만
 // 버리고, 표시 없는 뒤로(브라우저 뒤로) · 결과 화면으로 가면 전부 버린다. armedRrn = 되물음(rrnRecheck)을
 // 받은 요청이 보낸 번호.
@@ -241,6 +244,9 @@ export function IntakeFlow({ token, eventName, wonOn, prizes, terms, managerName
   const lastPrizeRef = useRef<string | null>(null);
   // 「다른 경품 고르기」가 부른 history.back()이면 참 — 그 popstate만 값을 남긴다(주소만 버림).
   const keepDraftRef = useRef(false);
+  // 결과 불명 뒤의 멱등 키 — 폼(E′4)이 경품 고르기로 나갔다 돌아와도 남도록 여기 둔다. 확정 결과 · 결과 화면에서만
+  // 비운다(PR #88 /review F1 — 같은 본문을 새 키로 다시 내면 확인증이 둘 생길 수 있다).
+  const pendingSubmitRef = useRef<PendingSubmit | null>(null);
 
   // U12 — 문의 전화는 어디서나 tel: 링크(숫자만)로 건다, 보이는 값은 하이픈 표기.
   const contactLine: ReactNode = (
@@ -317,6 +323,7 @@ export function IntakeFlow({ token, eventName, wonOn, prizes, terms, managerName
   }, []);
 
   function toResult(next: Step) {
+    pendingSubmitRef.current = null;
     setDraft(EMPTY_DRAFT);
     history.replaceState({ step: "result" }, "");
     focusRef.current = "result";
@@ -379,6 +386,7 @@ export function IntakeFlow({ token, eventName, wonOn, prizes, terms, managerName
           busy={busy}
           inquiryText={inquiryText}
           stepRef={stepRef}
+          pendingSubmitRef={pendingSubmitRef}
           onDraft={(patch) => setDraft((d) => ({ ...d, ...patch }))}
           onBusy={(value) => {
             if (value) setShowProgress(false);
@@ -531,6 +539,7 @@ function IntakeForm({
   busy,
   inquiryText,
   stepRef,
+  pendingSubmitRef,
   onDraft,
   onBusy,
   onOtherPrize,
@@ -549,6 +558,7 @@ function IntakeForm({
   busy: boolean;
   inquiryText: ReactNode;
   stepRef: { current: Step };
+  pendingSubmitRef: { current: PendingSubmit | null };
   onDraft: (patch: Partial<FormDraft>) => void;
   onBusy: (busy: boolean) => void;
   onOtherPrize: () => void;
@@ -565,8 +575,6 @@ function IntakeForm({
   const [retryLine, setRetryLine] = useState<"unknown" | "throttled" | null>(null);
   const signatureRef = useRef<SignaturePadHandle>(null);
   const focusFieldRef = useRef<SubmitField | null>(null);
-  // 멱등 키는 시도 단위 — 결과 불명이고 보낼 본문이 그대로일 때만 같은 키를 다시 쓴다.
-  const pendingSubmitRef = useRef<{ key: string; fingerprint: string } | null>(null);
   const dangerLineId = useId();
   const parcel = prize.delivery === "parcel";
 

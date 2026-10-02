@@ -208,6 +208,43 @@ test("되물음 뒤 결과 불명 — 같은 제출 키 · rrnRecheckConfirmed t
   expect(await submissionCount(eventId)).toBe(1);
 });
 
+// PR #88 /review F1 — 멱등 키가 폼 밖(IntakeFlow)에 있어 「다른 경품 고르기」로 나갔다 같은 값으로 돌아와도 같은 키다.
+test("결과 불명 뒤 「다른 경품 고르기」로 나갔다 같은 경품 · 같은 값으로 다시 내면 같은 키 · 제출 줄 하나", async ({ page }) => {
+  const { link, eventId } = await createCertEvent({ name: "제출E2E결과불명왕복" });
+  if (!link) throw new Error("링크 없음");
+  await openForm(page, link, "갤럭시 탭 S10");
+  await fillIntakeForm(page, { phone: "010-4821-7730" });
+  await drawSignature(page);
+
+  let first: Request | undefined;
+  await page.route(link, async (route, request) => {
+    if (!first && isSubmitPost(link, request)) {
+      first = request;
+      await route.fetch(); // 서버는 처리한다
+      await route.abort(); // 응답만 버린다
+      return;
+    }
+    await route.continue();
+  });
+  await submitButton(page).click();
+  await expect(page.getByText("제출됐는지 확인하지 못했습니다 · 다시 눌러 주세요 · 적은 내용은 남아 있습니다")).toBeVisible();
+
+  await page.getByRole("button", { name: "다른 경품 고르기" }).click();
+  await openForm(page, link, "갤럭시 탭 S10");
+  await expect(page.locator("#name")).toHaveValue("김하늘");
+
+  const retryPromise = page.waitForRequest((r) => isSubmitPost(link, r));
+  await submitButton(page).click();
+  const retry = await retryPromise;
+  await expect(page.getByText("제출되었습니다", { exact: true })).toBeVisible();
+
+  if (!first) throw new Error("첫 요청을 잡지 못했다");
+  const keyOf = (body: string) => /"idempotencyKey":"([^"]+)"/.exec(body)?.[1];
+  expect(keyOf(first.postData() ?? "")).toBeDefined();
+  expect(keyOf(retry.postData() ?? "")).toBe(keyOf(first.postData() ?? ""));
+  expect(await submissionCount(eventId)).toBe(1);
+});
+
 test("택배 경품은 주소 칸 · 부제가 있고 현장 경품은 없다 · 경품 아래 문의 줄의 tel:은 숫자만", async ({ page }) => {
   const { link } = await createCertEvent({
     name: "제출E2E택배",

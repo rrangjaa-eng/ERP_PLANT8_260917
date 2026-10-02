@@ -104,9 +104,13 @@ export function SidePanel(props: SidePanelProps) {
     const dialog = dialogRef.current;
     if (!dialog) return;
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    // 스크롤을 잠그면 스크롤바가 사라져 뒤 배치가 그 폭만큼 넓어진다 — 지금 있던 폭만 안쪽 여백으로 채운다(스크롤바가 없던 짧은 쪽은 0).
+    const root = document.documentElement;
+    root.style.paddingInlineEnd = `${window.innerWidth - root.clientWidth}px`;
     if (!dialog.open) dialog.showModal();
     (dialog.querySelector<HTMLElement>(FIRST_FIELD) ?? dialog.querySelector<HTMLElement>('[data-ui="primary-button"]'))?.focus();
     return () => {
+      root.style.paddingInlineEnd = "";
       if (dialog.open) dialog.close();
       if (!returnFocusRef.current) return;
       // 연 요소가 아직 문서에 있으면 거기로, 없으면 화면 제목으로(직접 URL로 들어온 패널 · 연 행이 사라진 경우).

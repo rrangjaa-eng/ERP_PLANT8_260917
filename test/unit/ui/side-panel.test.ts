@@ -34,6 +34,18 @@ describe("SidePanel 소스 계약 — 모든 폭 모달(Q1 A)", () => {
     expect(tsx).not.toContain("PanelDialogLike");
   });
 
+  it("열 때 스크롤바 폭을 재어 html 안쪽 여백으로 채우고 닫을 때 지운다(스크롤바 없던 쪽은 0)", () => {
+    expect(tsx).toMatch(/paddingInlineEnd = `\$\{window\.innerWidth - root\.clientWidth\}px`/);
+    expect(tsx).toMatch(/paddingInlineEnd = ""/);
+    const css = source("ui/side-panel/SidePanel.module.css");
+    expect(css).not.toContain("scrollbar-gutter");
+  });
+
+  it("Tab이 패널 안에서 돈다 — 마지막 칸 Tab · 첫 칸 Shift+Tab이 반대쪽 끝으로 간다", () => {
+    expect(tsx).toContain("wrapTab");
+    expect(tsx).toMatch(/event\.shiftKey && active === first/);
+  });
+
   it("닫기 경로 하나 — closedByUsRef · requestClose · 새로고침 호출 없음", () => {
     expect(tsx).toContain("closedByUsRef");
     expect(tsx).toContain("requestClose");

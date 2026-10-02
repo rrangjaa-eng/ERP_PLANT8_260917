@@ -7,8 +7,7 @@
   position: fixed;
   inset-block: 0;
   inset-inline-start: auto;
-  /* 스크롤 잠금이 비워 둔 스크롤바 자리(scrollbar-gutter)까지 화면 오른쪽 끝에 붙는다 — 고정 위치의 기준 상자는 그 자리를 뺀 폭이다. */
-  inset-inline-end: calc(100% - 100vw);
+  inset-inline-end: 0;
   z-index: var(--z-modal);
   box-sizing: border-box;
   width: var(--panel-w);
@@ -39,10 +38,9 @@
   background: transparent;
 }
 
-/* 열려 있는 동안 뒤 문서 스크롤을 잠근다(D18). 스크롤바가 있던 자리는 그대로 비워 두어 뒤 배치가 움직이지 않는다. */
+/* 열려 있는 동안 뒤 문서 스크롤을 잠근다(D18). 사라지는 스크롤바 폭은 SidePanel이 열 때 재어 html 안쪽 여백(인라인)으로 채우고 닫을 때 지운다 — 뒤 배치가 움직이지 않는다. */
 :global(html:has(dialog[data-ui="side-panel"][open])) {
   overflow: hidden;
-  scrollbar-gutter: stable;
 }
 
 .hd {
@@ -130,9 +128,8 @@
   .panel {
     inset-block-start: auto;
     inset-block-end: 0;
-    inset-inline-start: 0;
-    inset-inline-end: auto;
-    width: 100vw;
+    inset-inline: 0;
+    width: 100%;
     max-width: none;
     height: auto;
     max-height: var(--sheet-max-h);

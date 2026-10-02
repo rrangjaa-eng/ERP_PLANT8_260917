@@ -9,12 +9,14 @@
   color: var(--text-strong);
   font-size: var(--text-title);
   font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-head);
   line-height: var(--lh-tight);
 }
 
 .bar {
   display: flex;
-  align-items: center;
+  /* 필터가 두 줄로 접히면 1차는 마지막 줄 오른쪽 끝 — DOM 순서(필터 → 1차)가 곧 시각 순서다(SYSTEM §10). */
+  align-items: flex-end;
   justify-content: space-between;
   gap: var(--s-4);
   margin: 0 0 var(--s-3);
@@ -26,6 +28,18 @@
   align-items: center;
   gap: var(--s-4);
   min-width: 0;
+}
+
+/* 04.6-10 — 필터가 여러 칸짜리 폼이면(프로젝트 목록) 폰에서 1차를 필터 아래 줄로 내린다 — 한 줄에 두면 필터 폼이 1차 옆 좁은 폭으로 눌린다.
+   링크 하나인 필터(거래처)는 그대로 한 줄. DOM 순서(필터 → 1차)가 곧 시각 순서다. */
+@media (max-width: 699.98px) {
+  .bar:has(form) {
+    flex-wrap: wrap;
+  }
+
+  .bar:has(form) > .filters {
+    flex: 1 1 100%;
+  }
 }
 
 .summary {

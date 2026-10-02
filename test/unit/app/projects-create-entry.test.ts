@@ -27,14 +27,14 @@ describe("projectsEmptyState", () => {
   it("등록할 수 있으면 프로젝트 등록", () => {
     expect(projectsEmptyState({ ...base, clientCount: 3 })).toEqual({
       message: "등록된 프로젝트가 없습니다",
-      action: { label: "프로젝트 등록", href: "/projects?new=1#project-form" },
+      action: { label: "프로젝트 등록", href: "/projects?new=1" },
     });
   });
 
   it("거래처만 없고 거래처를 만들 수 있으면 무엇이 없는지와 거래처 등록", () => {
     expect(projectsEmptyState(base)).toEqual({
       message: "등록된 거래처가 없습니다",
-      action: { label: "거래처 등록", href: "/admin/vendors?new=1#vendor-form" },
+      action: { label: "거래처 등록", href: "/admin/vendors?new=1" },
     });
   });
 

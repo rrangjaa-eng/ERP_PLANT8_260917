@@ -215,7 +215,7 @@ test.describe("폭 320 — 어느 화면도 가로로 넘치지 않는다", () =
       await expectNoOverflow(page, "/projects?new=1");
 
       await page.getByLabel("클라이언트").selectOption({ label: vendor.name });
-      await page.getByLabel("팀").selectOption({ index: 1 });
+      await page.locator("#project-form").getByLabel("팀").selectOption({ index: 1 });
       await page.getByLabel("담당 PM").selectOption({ index: 1 });
       await page.getByLabel("프로젝트명").fill(projectName);
       await page.getByRole("button", { name: "프로젝트 등록" }).click();

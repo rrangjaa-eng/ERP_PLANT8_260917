@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
+import { checkPrinciples } from "./principles-check";
+import { isStrict } from "./design-principles";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { insertVendor } from "@/repositories/vendors";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
@@ -852,13 +854,13 @@ test.describe("프로젝트 목록 — 필터 줄 검토·감사 반영 (04-48)"
 
     await search.focus();
     const collapsed = await tabWalk(page, 4);
-    expect(collapsed.map((stop) => stop.name)).toEqual(["검색", "필터", "프로젝트 등록", "필터 지우기"]);
+    expect(collapsed.map((stop) => stop.name)).toEqual(["검색", "필터", "필터 지우기", "프로젝트 등록"]);
     expect(visualOrderViolations(collapsed)).toEqual([]);
 
     await page.getByRole("button", { name: "필터", exact: true }).click();
     await search.focus();
     const expanded = await tabWalk(page, 9);
-    expect(expanded.map((stop) => stop.name)).toEqual(["검색", "필터", "프로젝트 등록", "상태", "팀", "연도", "기간", "기간 끝", "필터 지우기"]);
+    expect(expanded.map((stop) => stop.name)).toEqual(["검색", "필터", "상태", "팀", "연도", "기간", "기간 끝", "필터 지우기", "프로젝트 등록"]);
     expect(visualOrderViolations(expanded)).toEqual([]);
 
     await page.setViewportSize({ width: 1280, height: 800 });
@@ -903,7 +905,8 @@ test.describe("프로젝트 목록 — 필터 줄 검토·감사 반영 (04-48)"
           const summaryEl = document.querySelector("[data-testid=filter-summary]")!;
           const visible = (selector: string) =>
             [...document.querySelectorAll(selector)].find((el) => el.getClientRects().length > 0 && (el as HTMLElement).offsetParent !== null);
-          const link = (text: string) => [...document.querySelectorAll("form a")].find((a) => a.textContent === text && a.getClientRects().length > 0);
+          // 1차는 `ListScreen`이 필터 폼 밖(같은 줄 오른쪽 끝)에 둔다(04.6-10) — 폼 안 링크(필터 지우기)와 함께 찾는다.
+          const link = (text: string) => [...document.querySelectorAll("form a, [data-ui='primary-button']")].find((a) => a.textContent === text && a.getClientRects().length > 0);
           return {
             summary: box(summaryEl)!,
             parts: [...summaryEl.querySelectorAll("span")].map((span) => ({ text: span.textContent, lines: span.getClientRects().length, ...box(span)! })),
@@ -1154,5 +1157,18 @@ test.describe("프로젝트 목록 — 폰 행 전체 링크 (FINDING-015)", () 
     }, second.id);
     await page.mouse.click(collapsed.x, collapsed.y);
     await expect(page).toHaveURL(new RegExp(`/projects/${second.id}$`));
+  });
+});
+
+// 04.6-10 R11 — 목록 · 등록 패널 · 복사 패널을 막는 모드로 점검한다(`DESIGN_PRINCIPLES_STRICT`가 켜진 실행에서만 위반이 실패다).
+test.describe("프로젝트 목록 — 화면 사용성 원칙 (04.6-10 · R11)", () => {
+  test("화면 사용성 원칙(막는 모드) — 프로젝트 목록", async ({ page }) => {
+    test.setTimeout(120_000);
+    const pm = await setupPm();
+    const source = await createProject(SYSTEM_VIEWER, { clientId: pm.clientId, teamId: pm.teamId, pmUserId: pm.pmUserId, name: `E2E원칙점검-${randomUUID().slice(0, 8)}` });
+    await login(page, pm);
+    await checkPrinciples(page, ["/projects", "/projects?new=1", `/projects?new=1&copyFrom=${source.id}`], {
+      strict: isStrict(process.env.DESIGN_PRINCIPLES_STRICT),
+    });
   });
 });

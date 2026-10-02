@@ -1,14 +1,4 @@
-/* 04.6 스킨 A 이관 전: CSS */
 /* SYSTEM.md §6-1 목록 · §7-15 폼. 색·서체·radius는 tokens.css 변수만(D-20). */
-
-.filterRow {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: var(--s-4);
-  margin: var(--s-3) 0;
-}
 
 .filterFields {
   display: flex;
@@ -20,8 +10,8 @@
 }
 
 /* 04-48(DR-26) — PC(≥700)는 필터 한 줄 그대로: 네 칸 묶음은 레이아웃에서 사라지고(칸이 곧 줄의 항목),
-   「필터」 · 요약 줄은 그리지 않는다(접근성 트리에서도 빠진다). 1차는 줄 오른쪽 끝.
-   포커스 순서 = 시각 순서(SYSTEM.md §10) — CSS order로 바꾸지 않는다. 검색 · 1차는 폰 자리(.phoneSlot)와
+   「필터」 · 요약 줄은 그리지 않는다(접근성 트리에서도 빠진다). 1차는 `ListScreen`이 줄 오른쪽 끝에 둔다.
+   포커스 순서 = 시각 순서(SYSTEM.md §10) — CSS order로 바꾸지 않는다. 검색은 폰 자리(.phoneSlot)와
    PC 자리(.wideSlot) 둘에 그리고 700 중단점에서 하나만 보인다(display: none — 탭 순서에서도 빠진다). */
 .detailFields {
   display: contents;
@@ -29,10 +19,6 @@
 
 .filterBar {
   display: none;
-}
-
-.primarySlot {
-  margin-left: auto;
 }
 
 @media (min-width: 700px) {
@@ -73,8 +59,8 @@
   .filterSummary {
     flex: 1 1 0;
     margin: 0;
-    font-size: var(--fs-sm);
-    color: var(--muted);
+    font-size: var(--text-aux);
+    color: var(--text-muted);
   }
 
   /* §6-0 최소 폭 320 — 묶음이 가장 긴 팀 select만큼 커지지 않게(감사 F2). */
@@ -104,22 +90,22 @@
   gap: var(--s-1);
   /* §6-0 최소 폭 320px — 가장 긴 선택지만큼 넓어진 select가 필터 줄을 밀어내지 않는다. */
   max-width: 100%;
-  font-size: var(--fs-sm);
+  font-size: var(--text-aux);
   font-weight: var(--fw-medium);
-  color: var(--muted);
+  color: var(--text-muted);
 }
 
 .select {
   height: var(--control-h);
-  border: var(--line-w) solid var(--line-ui);
-  background: var(--bg);
-  color: var(--fg);
+  border: var(--line-w) solid var(--border-control);
+  background: var(--surface-base);
+  color: var(--text-strong);
   padding: 0 var(--s-2);
-  font-size: var(--fs-base);
+  font-size: var(--text-body);
 }
 
 .toggle {
-  font-size: var(--fs-sm);
+  font-size: var(--text-aux);
   font-weight: var(--fw-medium);
   color: var(--accent);
   text-decoration: underline;
@@ -130,7 +116,7 @@
 /* §4-4 · §7-1 3차 밑줄 1px → hover 2px(ui/pagination · ui/list-empty와 같다). */
 .toggle:hover,
 .link:hover {
-  text-decoration-thickness: var(--line-w-strong);
+  text-decoration-thickness: var(--underline-w-hover);
 }
 
 @media (max-width: 699.98px) {
@@ -144,31 +130,6 @@
   }
 }
 
-.table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.table th {
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  color: var(--muted);
-  text-align: left;
-  padding: var(--cell-pad-y) var(--cell-pad-x);
-  border-bottom: var(--line-w-strong) solid var(--line-strong);
-}
-
-.table td {
-  min-height: var(--row-min);
-  padding: var(--cell-pad-y) var(--cell-pad-x);
-  font-size: var(--fs-base);
-  border-bottom: var(--line-w) solid var(--line);
-}
-
-.table tbody tr:hover td {
-  background: var(--surface);
-}
-
 .link {
   color: var(--accent);
   text-decoration: underline;
@@ -179,23 +140,23 @@
 .textInput {
   box-sizing: border-box;
   width: 100%;
-  height: var(--control-h);
+  height: var(--field-h, var(--control-h));
   padding: 0 var(--s-2);
-  border: var(--line-w) solid var(--line-ui);
-  border-radius: var(--radius);
-  background: var(--bg);
-  color: var(--fg);
+  border: var(--line-w) solid var(--border-control);
+  border-radius: var(--radius-control);
+  background: var(--surface-base);
+  color: var(--text-strong);
   font-family: var(--font-sans);
-  font-size: var(--fs-base);
+  font-size: var(--text-body);
 }
 
-/* §7-2 자리표시자는 형식 예 — 공용 ui/input과 같은 --faint(UA 회색을 두지 않는다, §4-4). */
+/* §7-2 자리표시자는 형식 예 — 공용 ui/input과 같은 --text-faint(UA 회색을 두지 않는다, §4-4). */
 .textInput::placeholder {
-  color: var(--faint);
+  color: var(--text-faint);
 }
 
 .textInput[aria-invalid="true"] {
-  border-color: var(--danger);
+  border-color: var(--status-danger);
 }
 
 .textInput:focus-visible {
@@ -210,13 +171,12 @@
   flex-wrap: wrap; /* FINDING-013 — 320 폭에서는 고유 폭 두 칸이 한 줄에 못 들어가 종료일이 다음 줄로 간다(가로 스크롤 없음). */
   align-items: center;
   gap: var(--s-1);
-  color: var(--fg);
+  color: var(--text-strong);
 }
 
 .periodInput {
   width: auto;
   padding: 0 var(--cell-pad-x);
-  font-variant-numeric: tabular-nums;
   /* F3 — Chromium 153은 날짜 칸 고유 폭을 들어 있는 날짜 글자 폭으로 잡아 값(빈 칸 · 09-01 · 10-31)마다 1px씩 달라지고, 그만큼 뒤 칸이
      옆으로 밀린다. 가장 넓은 날짜(숫자 8자 + 구분자 + 달력 단추)보다 넓은 최소 폭을 두어 폭이 값과 무관하다. 더 넓은 글꼴 · 지역 형식이면
      고유 폭(auto)이 이겨 날짜가 잘리지 않는다(FINDING-013). */
@@ -224,22 +184,23 @@
 }
 
 .periodInput[aria-invalid="true"] {
-  border-color: var(--danger);
+  border-color: var(--status-danger);
 }
 
 .fieldError {
   margin: 0;
-  color: var(--danger);
-  font-size: var(--fs-sm);
+  color: var(--status-danger);
+  font-size: var(--text-aux);
   font-weight: var(--fw-regular);
 }
 
-/* 감사 F3 — PC 필터 한 줄은 칸 바닥 맞춤이다. 기간 오류 한 줄은 제 높이 + 라벨 묶음 간격(--s-1)만큼 음수 아래 여백으로 정렬 상자 밖(칸 아래)에
+/* 감사 F3 — PC 필터 한 줄은 칸 바닥 맞춤이다. 기간 오류 한 줄은 제 높이(한 줄 = --s-5) + 라벨 묶음 간격(--s-1)만큼 음수 아래 여백으로 정렬 상자 밖(칸 아래)에
    두어 다른 칸을 밀어 내리지 않고, 그 높이만큼 줄 간격 · 폼 아래 여백을 더해 다음 줄 · 합계 줄과 겹치지 않는다. */
 @media (min-width: 700px) {
   /* 폭도 칸 묶음 계산에서 뺀다(inline-size 0 · 묶음 폭만큼 min) — 글꼴이 넓어도 묶음을 넓혀 뒤 칸을 밀지 않고, 한 줄로 오른쪽에 넘친다. */
   .filterFields .fieldError {
-    margin-bottom: calc(-1 * (var(--fs-sm) * var(--lh-body) + var(--s-1)));
+    margin-bottom: calc(-1 * (var(--s-5) + var(--s-1)));
+    block-size: var(--s-5);
     line-height: var(--lh-body);
     inline-size: 0;
     min-inline-size: 100%;
@@ -247,33 +208,25 @@
   }
 
   .filterFields:has(.fieldError) {
-    row-gap: calc(var(--s-4) + var(--fs-sm) * var(--lh-body) + var(--s-1));
-    padding-bottom: calc(var(--fs-sm) * var(--lh-body) + var(--s-1));
+    row-gap: calc(var(--s-4) + var(--s-5) + var(--s-1));
+    padding-bottom: calc(var(--s-5) + var(--s-1));
   }
 }
 
-.blockedReason {
-  color: var(--danger);
-  font-size: var(--fs-sm);
-}
-
-/* 04-17(D-88 · S1) — 표 위 합계 줄. 카드·타일·배경 면 없이 한 줄, 아래 2px 선. 금액은 `라벨 값` 쌍 단위로 줄바꿈한다. */
+/* 04-17(D-88 · S1) — 합계 줄. 면(1px · r8)은 `ListScreen`의 summary 자리가 그린다 — 여기서는 한 줄 배치만. 금액은 `라벨 값` 쌍 단위로 줄바꿈한다. */
 .totals {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: var(--s-2) var(--s-5);
-  margin: 0 0 var(--s-3);
-  padding: var(--s-2) 0;
-  border-bottom: var(--line-w-strong) solid var(--line-strong);
 }
 
 .totalsTitle,
 .totalsPair dt {
   margin: 0;
-  font-size: var(--fs-sm);
+  font-size: var(--text-aux);
   font-weight: var(--fw-medium);
-  color: var(--muted);
+  color: var(--text-muted);
 }
 
 .totalsPairs {
@@ -293,15 +246,14 @@
 
 .totalsPair dd {
   margin: 0;
-  font-size: var(--fs-lg);
+  font-size: var(--text-body);
   font-weight: var(--fw-bold);
-  font-variant-numeric: tabular-nums;
 }
 
 .totalsExclusion {
   margin: 0 0 0 auto;
-  font-size: var(--fs-sm);
-  color: var(--muted);
+  font-size: var(--text-aux);
+  color: var(--text-muted);
 }
 
 @media (max-width: 699.98px) {
@@ -317,16 +269,10 @@
   white-space: nowrap;
 }
 
-/* §7-7 LOADING — 반짝임(shimmer) 없는 정적 --surface 행. */
-.skeletonRow td {
-  height: var(--row-min);
-  background: var(--surface);
-}
-
 /* 04-18(D-87) — 수익금의 기준(견적/발행) 글자. */
 .basisCell {
-  font-size: var(--fs-base);
-  color: var(--muted);
+  font-size: var(--text-body);
+  color: var(--text-muted);
   white-space: nowrap;
 }
 
@@ -336,7 +282,6 @@
   display: inline-block;
   min-width: 5ch;
   white-space: nowrap;
-  font-variant-numeric: tabular-nums;
 }
 
 /* 04-18(S1 열 폭) — 클라이언트는 keep-all 두 줄까지(세 줄째부터 말줄임, DR-32). */
@@ -369,10 +314,10 @@
   white-space: nowrap;
 }
 
-/* D-81 · DR-34 — 종료일 지남: 상태 글자보다 크지 않은 --fs-xs 400 --warning 글자(태그 아님). */
+/* D-81 · DR-34 — 종료일 지남: 상태 글자보다 크지 않은 --text-tag 400 --status-warning 글자(태그 아님). */
 .endDatePassed {
-  color: var(--warning);
-  font-size: var(--fs-xs);
+  color: var(--status-warning);
+  font-size: var(--text-tag);
   font-weight: var(--fw-regular);
   white-space: nowrap;
 }
@@ -392,13 +337,12 @@
 .copySource {
   max-width: var(--form-max);
   margin: 0 0 var(--s-2);
-  font-size: var(--fs-sm);
-  color: var(--muted);
+  font-size: var(--text-aux);
+  color: var(--text-muted);
   overflow-wrap: anywhere;
 }
 
 /* 04-15(D-52 · S15) — 총 매출 예상가 · 환율 칸. 숫자 칸은 오른쪽 정렬 + 고정폭 숫자(ui/input TextField numeric과 같다). */
 .numericInput {
-  font-variant-numeric: tabular-nums;
   text-align: right;
 }

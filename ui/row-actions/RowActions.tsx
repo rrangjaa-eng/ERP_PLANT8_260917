@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { LinkPending } from "@/ui/link-pending/LinkPending";
 import { Children, isValidElement, useId, type MouseEvent, type ReactNode } from "react";
 import styles from "./RowActions.module.css";
 
 // UI-SPEC 「공용 컴포넌트 계약」 행동 링크 — `<RowActions><RowAction href>수정</RowAction><RowAction onClick>숨기기</RowAction>
 // <RowAction danger …>삭제</RowAction></RowActions>`. 링크와 버튼이 같은 모양이고 개수(1~3)와 무관하게 간격이 같다.
-// `danger`는 어디에 적었든 DOM 맨 끝으로 가고 앞 간격이 더 넓다. 페이지 이동이면 href(`next/link` `scroll={false}`),
+// `danger`는 어디에 적었든 DOM 맨 끝으로 가고 앞 간격이 더 넓다. 페이지 이동이면 href(`next/link` `scroll={false}` + 누른 직후 `LinkPending`),
 // 이동이 아니면 onClick(button). button 형은 Button과 같은 규약(aria-disabled · 비활성 이유 · 대기 중 …)을 따른다.
 
 type ActionCommon = {
@@ -61,6 +62,8 @@ export function RowAction(props: RowActionProps) {
     return (
       <Link href={props.href} scroll={false} className={[styles.action, dangerClass, endClass].filter(Boolean).join(" ")}>
         {props.children}
+        {/* D6 — 패널을 여는 링크는 누른 직후 패널이 뜨기 전까지 「진행 중」(`ListScreen.primaryAction`과 같은 표기 · 새 모양 없음) */}
+        <LinkPending />
       </Link>
     );
   }

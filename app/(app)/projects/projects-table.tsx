@@ -6,10 +6,20 @@ import type { TableColumn } from "@/ui/table/types";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import type { ProjectListItemWithGroup, ProjectSortKey } from "@/domain/projects";
 import type { ProjectStatus } from "@/domain/projects/status-transitions";
-import { PROJECT_STATUS_TAG_KIND } from "./status-display";
-import { formatKrw, formatPercent } from "@/lib/format-number";
+import { Num } from "@/ui/num/Num";
+import type { StatusWord } from "@/ui/status-tag/status-map";
+import { PROJECT_COLUMN_LABELS } from "./list-columns";
 import { formatListPeriod, type ListColumnStep } from "@/domain/projects/list-view";
 import styles from "./projects.module.css";
+
+// 상태 값 → 상태 낱말(색은 `status-map.ts` 한 표가 정한다 — 04-UI-SPEC rev 5 Color 「상태 → 색 매핑」 · D-45 미수주는 붉게 칠하지 않는다).
+const PROJECT_STATUS_WORD: Record<ProjectStatus, StatusWord> = {
+  bidding: "수주중",
+  in_progress: "진행",
+  settling: "정산",
+  completed: "완료",
+  lost: "미수주",
+};
 
 // SYSTEM.md §6-1 · 04-UI-SPEC S1 — 목록 표. `ui/table`을 **읽기 형태**로
 // 쓴다(편집 가능 셀 0개, D-61 (가)). 이 파일은 04-04가 고치는 ui/table
@@ -17,7 +27,6 @@ import styles from "./projects.module.css";
 export function ProjectsTable({
   rows,
   viewYear,
-  statusLabels,
   columnStep,
   sort,
   filterQuery,
@@ -25,8 +34,6 @@ export function ProjectsTable({
   rows: ProjectListItemWithGroup[];
   /** 04-48(D-89) — 보기 연도(전체 연도면 null). 기간 칸이 그 해면 월-일만 적는다. */
   viewYear: number | null;
-  /** 코드표 라벨(서버) — 값 → 라벨. */
-  statusLabels: Record<string, string>;
   /** 04-18(S1 열 폭) — 서버가 페이지 금액 글자 수로 판정한 단계. narrow면 1280 이상에서도 좁은 PC 열 집합. */
   columnStep: ListColumnStep;
   /** 04-18 — 서버가 실제로 쓴 정렬(볼 수 없는 열 키는 이미 기본 정렬로 떨어졌다). */
@@ -42,53 +49,49 @@ export function ProjectsTable({
   const amountColumns: TableColumn<ProjectListItemWithGroup>[] = [
     {
       key: "revenueKrw",
-      header: "매출",
+      header: PROJECT_COLUMN_LABELS.revenueKrw,
       priority: "p3",
       collapseBelow: 1280,
       align: "right",
-      cell: (row) => (row.revenueKrw === null || row.revenueKrw === undefined ? "—" : formatKrw(row.revenueKrw)),
+      cell: (row) => (row.revenueKrw === null || row.revenueKrw === undefined ? "—" : row.revenueKrw),
     },
     {
       key: "quoteAmountKrw",
-      header: "견적",
+      header: PROJECT_COLUMN_LABELS.quoteAmountKrw,
       priority: "p1",
       align: "right",
-      cell: (row) => formatKrw(row.quoteAmountKrw ?? 0),
+      cell: (row) => row.quoteAmountKrw ?? 0,
     },
     {
       key: "executionAmountKrw",
-      header: "실행가",
+      header: PROJECT_COLUMN_LABELS.executionAmountKrw,
       priority: "p3",
       collapseBelow: 1280,
       align: "right",
-      cell: (row) => formatKrw(row.executionAmountKrw ?? 0),
+      cell: (row) => row.executionAmountKrw ?? 0,
     },
     {
       key: "profitBasis",
-      header: "기준",
+      header: PROJECT_COLUMN_LABELS.profitBasis,
       priority: "p3",
       collapseBelow: 1024,
       cell: (row) => <span className={styles.basisCell}>{row.profitBasis === "issued" ? "발행" : "견적"}</span>,
     },
     {
       key: "profitKrw",
-      header: "수익금",
+      header: PROJECT_COLUMN_LABELS.profitKrw,
       priority: "p3",
       collapseBelow: 1024,
       align: "right",
-      cell: (row) => formatKrw(row.profitKrw ?? 0),
+      cell: (row) => row.profitKrw ?? 0,
     },
     {
       key: "profitRate",
-      header: "수익률",
+      header: PROJECT_COLUMN_LABELS.profitRate,
       priority: "p3",
       collapseBelow: 1024,
       align: "right",
-      cell: (row) => (
-        <span className={styles.rateCell}>
-          {formatPercent(row.profitRate === null || row.profitRate === undefined ? null : row.profitRate * 100)}
-        </span>
-      ),
+      cell: (row) => <Num value={row.profitRate === null || row.profitRate === undefined ? null : row.profitRate * 100} unit="percent" />,
     },
   ];
   const moneyColumns = amountColumns.filter((column) => rows.some((row) => column.key in row));
@@ -116,21 +119,21 @@ export function ProjectsTable({
   const columns: TableColumn<ProjectListItemWithGroup>[] = [
     {
       key: "number",
-      header: "번호",
+      header: PROJECT_COLUMN_LABELS.number,
       priority: "p3",
       collapseBelow: 1280,
       cell: (row) => <span className={styles.numberCell}>{row.number}</span>,
     },
     {
       key: "clientName",
-      header: "클라이언트",
+      header: PROJECT_COLUMN_LABELS.clientName,
       priority: "p2",
       cell: (row) => <span className={styles.clientCell}>{row.clientName || "—"}</span>,
       summary: (row) => row.clientName || "—",
     },
     {
       key: "name",
-      header: "프로젝트명",
+      header: PROJECT_COLUMN_LABELS.name,
       priority: "p1",
       cell: (row) => (
         <span className={styles.nameCell}>
@@ -140,11 +143,11 @@ export function ProjectsTable({
         </span>
       ),
     },
-    { key: "pmUserName", header: "담당 PM", priority: "p2", cell: (row) => nowrap(row.pmUserName || "—") },
-    { key: "teamName", header: "팀", priority: "p3", collapseBelow: 1280, cell: (row) => nowrap(row.teamName || "—") },
+    { key: "pmUserName", header: PROJECT_COLUMN_LABELS.pmUserName, priority: "p2", cell: (row) => nowrap(row.pmUserName || "—") },
+    { key: "teamName", header: PROJECT_COLUMN_LABELS.teamName, priority: "p3", collapseBelow: 1280, cell: (row) => nowrap(row.teamName || "—") },
     {
       key: "period",
-      header: "기간",
+      header: PROJECT_COLUMN_LABELS.period,
       priority: "p2",
       cell: (row) => <span className={styles.periodCell}>{period(row)}</span>,
       // 04-17(D-90) — 보기 범위 밖에서 끝나는 행만 2행에 귀속(`2027 귀속`).
@@ -171,13 +174,11 @@ export function ProjectsTable({
     ...moneyColumns,
     {
       key: "status",
-      header: "상태",
+      header: PROJECT_COLUMN_LABELS.status,
       priority: "p1",
       cell: (row) => (
         <>
-          <StatusTag kind={PROJECT_STATUS_TAG_KIND[row.status as ProjectStatus] ?? "muted"} variant="text">
-            {statusLabels[row.status] ?? row.status}
-          </StatusTag>
+          <StatusTag status={PROJECT_STATUS_WORD[row.status as ProjectStatus] ?? "수주중"} variant="text" />
           {/* D-81 · DR-34 — 수주중 + 종료일 지남의 2행. 태그가 아니라 상태 글자보다 크지 않은 글자다. */}
           {row.endDatePassed ? <span className={[styles.endDatePassed, styles.statusSecondLine].join(" ")}>종료일 지남</span> : null}
         </>

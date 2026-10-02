@@ -248,7 +248,7 @@ ensure_sql_db_users() {
   local admin_secret
   admin_secret="$(secret_name db-admin-password "$ENV")"
   local has_version
-  has_version="$(run gcloud secrets versions list --secret="$admin_secret" --project="$PROJECT" --filter='state:ENABLED' --format='value(name)' 2>/dev/null || true)"
+  has_version="$(run gcloud secrets versions list "$admin_secret" --project="$PROJECT" --filter='state:ENABLED' --format='value(name)' 2>/dev/null || true)"
   if [ -z "$has_version" ]; then
     if ! run gcloud secrets describe "$admin_secret" --project="$PROJECT" >/dev/null 2>&1; then
       run gcloud secrets create "$admin_secret" --replication-policy=user-managed --locations="$REGION" --project="$PROJECT"
@@ -269,7 +269,7 @@ _ensure_secret() {
     run gcloud secrets create "$name" --replication-policy=user-managed --locations="$REGION" --project="$PROJECT"
   fi
   local has_version
-  has_version="$(run gcloud secrets versions list --secret="$name" --project="$PROJECT" --filter='state:ENABLED' --format='value(name)' 2>/dev/null || true)"
+  has_version="$(run gcloud secrets versions list "$name" --project="$PROJECT" --filter='state:ENABLED' --format='value(name)' 2>/dev/null || true)"
   if [ -z "$has_version" ]; then
     if [ "$seed_bytes" = "sentinel" ]; then
       printf '__unset__' | run gcloud secrets versions add "$name" --project="$PROJECT" --data-file=-
@@ -291,12 +291,12 @@ _ensure_data_key_secret() {
   local name err versions
   name="$(secret_name "$base" "$ENV")"
   if err="$(run gcloud secrets describe "$name" --project="$PROJECT" 2>&1 >/dev/null)"; then
-    versions="$(run gcloud secrets versions list --secret="$name" --project="$PROJECT" --format='value(name)')" || {
+    versions="$(run gcloud secrets versions list "$name" --project="$PROJECT" --format='value(name)')" || {
       echo "cannot list versions of ${name} — stopped before touching the data key" >&2
       return 1
     }
     if [ -n "$versions" ]; then
-      versions="$(run gcloud secrets versions list --secret="$name" --project="$PROJECT" --filter='state:ENABLED' --format='value(name)')" || {
+      versions="$(run gcloud secrets versions list "$name" --project="$PROJECT" --filter='state:ENABLED' --format='value(name)')" || {
         echo "cannot list versions of ${name} — stopped before touching the data key" >&2
         return 1
       }

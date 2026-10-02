@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { and, isNull, like, sql } from "drizzle-orm";
+import { db } from "@/db/client";
+import { fieldDefinitions } from "@/db/schema";
 import { createAccount } from "@/domain/auth/accounts";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
@@ -27,4 +30,13 @@ export async function createFixtureUser(options: {
     await assignTeam(SYSTEM_VIEWER, { userId, teamId: team.id, effectiveFrom: "2020-01-01" });
   }
   return { email, password: tempPassword };
+}
+
+// 04.5: 이 페이즈의 E2E는 만든 화면 항목(칸 정의)을 끝에 항상 보관한다 — 뒤 스펙(거래처 · 노출표)에 칸이 남지 않게.
+// 스펙마다 자기 접두를 쓴다(예: field-definitions.spec.ts는 「E2E칸」).
+export async function archiveE2EFieldDefinitions(labelPrefix: string): Promise<void> {
+  await db
+    .update(fieldDefinitions)
+    .set({ archivedAt: new Date(), version: sql`${fieldDefinitions.version} + 1` })
+    .where(and(like(fieldDefinitions.label, `${labelPrefix}%`), isNull(fieldDefinitions.archivedAt)));
 }

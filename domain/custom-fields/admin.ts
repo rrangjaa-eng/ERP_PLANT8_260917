@@ -25,7 +25,7 @@ const FIELD_ENTITY = FIELD_DEFINITION_TARGETS[0];
 // 이름은 보관된 칸까지 포함해 거래처 안에서 유일하다(D10-12). 문구는 액션이 nameConflictMessage로 고른다.
 export class DuplicateFieldNameError extends UserFacingError {
   constructor(readonly archived: boolean) {
-    super(archived ? "보관함에 같은 이름의 화면 항목이 있습니다" : "같은 이름의 화면 항목이 이미 있습니다");
+    super(archived ? "보관함에 같은 이름의 화면 항목 있음" : "같은 이름의 화면 항목 있음");
     this.name = "DuplicateFieldNameError";
   }
 }

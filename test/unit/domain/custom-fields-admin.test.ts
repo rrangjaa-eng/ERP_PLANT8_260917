@@ -56,7 +56,7 @@ describe("생성 입력 — 칸 오류 문구", () => {
   });
 
   it("공백만 있는 이름은 빈칸 문구로 거부한다", () => {
-    expect(issueMessages({ ...valid, name: "   " })).toContain("이름이 비어 있습니다 · 화면 항목 이름을 적어 주세요");
+    expect(issueMessages({ ...valid, name: "   " })).toContain("이름 비어 있음 · 화면 항목 이름 적기");
   });
 
   it("21자 이름은 거부하고 20자는 통과한다", () => {
@@ -65,12 +65,12 @@ describe("생성 입력 — 칸 오류 문구", () => {
   });
 
   it.each([-1, 1000, 1.5, Number.NaN])("정렬 순서 %s는 범위 문구로 거부한다", (sortOrder) => {
-    expect(issueMessages({ ...valid, sortOrder })).toContain("0~999 사이 정수가 아닙니다 · 숫자 고치기");
+    expect(issueMessages({ ...valid, sortOrder })).toContain("0~999 사이 정수 아님 · 숫자 고치기");
   });
 
   it("숫자가 아닌 정렬 값도 같은 문구로 거부한다", () => {
-    expect(issueMessages({ ...valid, sortOrder: "abc" })).toContain("0~999 사이 정수가 아닙니다 · 숫자 고치기");
-    expect(issueMessages({ ...valid, sortOrder: undefined })).toContain("0~999 사이 정수가 아닙니다 · 숫자 고치기");
+    expect(issueMessages({ ...valid, sortOrder: "abc" })).toContain("0~999 사이 정수 아님 · 숫자 고치기");
+    expect(issueMessages({ ...valid, sortOrder: undefined })).toContain("0~999 사이 정수 아님 · 숫자 고치기");
   });
 
   it("0과 999는 통과한다", () => {
@@ -86,16 +86,16 @@ describe("생성 입력 — 칸 오류 문구", () => {
 
 describe("이름 충돌 문구", () => {
   it("활성 칸과 같으면 이름 바꾸기를 권한다", () => {
-    expect(nameConflictMessage({ archived: false })).toBe("같은 이름의 화면 항목이 이미 있습니다 · 이름 바꾸기");
+    expect(nameConflictMessage({ archived: false })).toBe("같은 이름의 화면 항목 있음 · 이름 바꾸기");
   });
   it("보관된 칸과 같고 복원할 수 있으면 보관함에서 복원을 권한다", () => {
     expect(nameConflictMessage({ archived: true, canRestore: true })).toBe(
-      "보관함에 같은 이름의 화면 항목이 있습니다 · 보관함에서 복원",
+      "보관함에 같은 이름의 화면 항목 있음 · 보관함에서 복원",
     );
   });
   it("보관된 칸과 같고 복원할 수 없으면 이름 바꾸기 평문이다", () => {
     expect(nameConflictMessage({ archived: true, canRestore: false })).toBe(
-      "보관함에 같은 이름의 화면 항목이 있습니다 · 이름 바꾸기",
+      "보관함에 같은 이름의 화면 항목 있음 · 이름 바꾸기",
     );
   });
 });

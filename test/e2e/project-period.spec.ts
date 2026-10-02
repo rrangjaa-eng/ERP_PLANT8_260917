@@ -641,7 +641,7 @@ test.describe("상태 모달 → 기간 칸 · 폰 부제 순서 (04-44, PROJ-04
     return tops as Record<keyof typeof items, number>;
   }
 
-  test("(14) 375×812에서 부제 첫 항목은 `기간 …`이고 나머지 부제(번호 · 차수 → 총 매출 예상가 → 상태 날짜)가 그 아래다 (DR-26)", async ({ page }) => {
+  test("(14) 375×812에서도 메타(번호 · 차수)가 제목 바로 아래이고 그 아래가 기간 → 총 매출 예상가 → 상태 날짜다 (DR-26 → DetailScreen 틀 순서, 04.6-12)", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team);
@@ -652,8 +652,9 @@ test.describe("상태 모달 → 기간 칸 · 폰 부제 순서 (04-44, PROJ-04
     await login(page, lead);
     await page.goto(`/projects/${project.id}`);
     const tops = await headerItemTops(page, project, endDate);
-    expect(tops.period).toBeLessThan(tops.subtitle);
-    expect(tops.subtitle).toBeLessThan(tops.preEstimate);
+    // DetailScreen은 메타 한 줄을 머리 줄 바로 아래에 두므로 폰에서도 PC와 같은 순서다(옛 폰 전용 「기간 먼저」 재배치는 틀로 대체).
+    expect(tops.subtitle).toBeLessThan(tops.period);
+    expect(tops.period).toBeLessThan(tops.preEstimate);
     expect(tops.preEstimate).toBeLessThan(tops.statusDate);
   });
 

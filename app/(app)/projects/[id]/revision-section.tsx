@@ -4,11 +4,11 @@ import { useId, useState } from "react";
 import type { RevisionSummaryDto } from "@/domain/quotes/revisions";
 import { formatKrw } from "@/lib/format-number";
 import { Button } from "@/ui/button/Button";
+import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { Table } from "@/ui/table/Table";
 import type { TableColumn } from "@/ui/table/types";
 import { PreviousRevisionSection, type QuoteLineReadReferences } from "./previous-revision";
-import styles from "./project-detail.module.css";
 
 // 04-24(S5 · U-2 · DR-13) — 차수 섹션. 편집 셀이 없어 ui/table이 캡션 있는 읽기 표로 그린다(모드 prop 없음).
 // 행·상태 낱말은 서버 요약(listRevisionSummaries — 최신 순번부터) 그대로다. ui/history-list는 쓰지 않는다.
@@ -47,9 +47,7 @@ export function RevisionSection({
       // U-2 — 최신 미승인 `현재` · 승인 `승인`(최신이어도 승인만) · 승인 없이 지나간 차수는 빈 칸(`—` 아님).
       cell: (row) =>
         row.statusWord ? (
-          <StatusTag kind={row.statusWord === "승인" ? "success" : "accent"} variant="text">
-            {row.statusWord}
-          </StatusTag>
+          <StatusTag status={row.statusWord} variant="text" />
         ) : (
           ""
         ),
@@ -78,10 +76,9 @@ export function RevisionSection({
 
   return (
     <>
-      <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>차수</h2>
+      <DetailScreen.Section title="차수">
         <Table caption="차수" columns={columns} rows={rows} getRowId={(row) => row.revisionId ?? String(row.seq)} />
-      </section>
+      </DetailScreen.Section>
       <PreviousRevisionSection projectId={projectId} seq={openSeq} headingId={headingId} references={references} />
     </>
   );

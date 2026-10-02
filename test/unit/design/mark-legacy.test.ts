@@ -184,7 +184,8 @@ describe("mark-legacy --audit(공통 §4 (a)~(f))", () => {
         return { code: e.status, out: e.stdout };
       }
     };
-    const bad = run("app/(app)/admin/vendors");
+    // 아직 이관 전 표시가 남은 화면 폴더 — 거래처는 04.6-11이 옮겨 깨끗해졌다(표시가 모두 사라지는 04.6-28에서 픽스처 판으로 바꾼다).
+    const bad = run("app/(app)/pnl");
     expect(bad.code).toBe(1);
     expect(bad.out).toMatch(/\(a\)/);
     expect(run("app/(auth)")).toEqual({ code: 0, out: "" });

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/ui/button/Button";
+import { RowAction } from "@/ui/row-actions/RowActions";
 import styles from "./archive.module.css";
 
 // 03-UI-SPEC.md § Copywriting Contract 「Destructive confirmation」 —
@@ -25,9 +26,9 @@ export function DeleteToArchive({ name, onArchive, failureMessage }: DeleteToArc
 
   if (!confirming) {
     return (
-      <Button variant="tertiary" onClick={() => setConfirming(true)}>
+      <RowAction danger onClick={() => setConfirming(true)}>
         삭제
-      </Button>
+      </RowAction>
     );
   }
 

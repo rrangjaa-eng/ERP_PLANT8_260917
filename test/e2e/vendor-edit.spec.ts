@@ -1,6 +1,9 @@
 import { test, expect, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
 import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
+import { randomUUID } from "node:crypto";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { insertVendor, setVendorHidden } from "@/repositories/vendors";
 
 // 재검증(2026-09-21)이 남긴 사람 판정 항목: 거래처 수정은 도메인·단위 수준은
 // 증명돼 있지만 화면 경로(폼 → 액션 → 도메인)를 태우는 e2e가 없었다
@@ -117,5 +120,34 @@ test.describe("거래처 기본 증빙 종류 설명 힌트 (D-93, S14)", () => 
 
     // `<option>` 안에 설명을 넣지 않는다(§7-2, S14).
     await expect(select.locator("option", { hasText: "원천징수 대상" })).toHaveCount(0);
+  });
+});
+
+// 04.6-11 · D14 · M2: 수정 패널 폼은 라벨 위 · 칸 전폭이고, 「기본 증빙 종류」 select 높이가 같은 패널 「이름」 입력 높이(--field-h)와 같다.
+test.describe("거래처 수정 패널 칸 배치 (04.6-11 D14 · M2)", () => {
+  test("select 높이 = 입력 높이 · 라벨이 칸 위 · 칸이 패널 폭 전체", async ({ page }) => {
+    const vendor = await insertVendor(SYSTEM_VIEWER, {
+      name: `패널칸-${randomUUID().slice(0, 8)}`,
+      normalizedName: `패널칸-${randomUUID()}`,
+      accountNumberLast4: "4455",
+    });
+    try {
+      await loginAsSysadmin(page);
+      await page.goto(`/admin/vendors?editId=${vendor.id}`);
+      const form = page.locator("#vendor-form");
+      const name = form.getByLabel("이름", { exact: true });
+      const select = form.getByLabel("기본 증빙 종류");
+      await expect(select).toBeVisible();
+      const nameBox = await name.boundingBox();
+      const selectBox = await select.boundingBox();
+      expect(Math.abs(selectBox!.height - nameBox!.height), `select ${selectBox!.height}px · 입력 ${nameBox!.height}px`).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(selectBox!.width - nameBox!.width), "select 폭 = 입력 폭(전폭)").toBeLessThanOrEqual(0.5);
+      const labelBox = await form.locator('label[for="defaultEvidenceType"]').boundingBox();
+      expect(labelBox!.y + labelBox!.height, "라벨이 select 위").toBeLessThanOrEqual(selectBox!.y + 0.5);
+      const accountBox = await form.getByLabel("새 계좌번호").boundingBox();
+      expect(Math.abs(accountBox!.width - nameBox!.width), "계좌번호 칸 폭 = 입력 폭(전폭)").toBeLessThanOrEqual(0.5);
+    } finally {
+      await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
+    }
   });
 });

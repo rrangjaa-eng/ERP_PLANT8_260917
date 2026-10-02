@@ -138,7 +138,8 @@ describe("관리자 표 — 빈 상태 칸 em dash (F-08)", () => {
     ["code-tables/page.tsx", ["app", "(app)", "admin", "code-tables", "page.tsx"]],
   ])("%s의 정상 상태 칸이 —를 렌더한다", (_name, parts) => {
     const source = read(...parts);
-    expect(source).toMatch(/<\/StatusTag>\s*\)\s*:\s*"—"\s*\}/);
+    // 04.6: `StatusTag status`는 자식이 없는 자기닫힘 꼴이라 `</StatusTag>`와 `<StatusTag … />` 둘 다 받는다.
+    expect(source).toMatch(/(?:<\/StatusTag>|<StatusTag\b[^>]*\/>)\s*\)\s*:\s*"—"\s*\}/);
   });
 
   // 04.4-05(D8-07): 사람 목록 상태 칸은 보관됨 / 로그인 배지 / — 세 갈래다 — 배지가 0개인 정상 상태가 —다.

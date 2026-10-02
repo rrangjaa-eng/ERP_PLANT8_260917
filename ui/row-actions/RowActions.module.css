@@ -2,9 +2,16 @@
 
 .row {
   display: inline-flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: baseline;
   gap: var(--s-4);
+}
+
+/* PC 폭(≥700)에서는 한 줄을 지킨다(표 칸이 좁아져도 행동이 줄바꿈하지 않는다 — 거래처 행 동작 간격 단언 700·768). 폰은 줄바꿈으로 넘침을 피한다. */
+@media (max-width: 699.98px) {
+  .row {
+    flex-wrap: wrap;
+  }
 }
 
 .action {

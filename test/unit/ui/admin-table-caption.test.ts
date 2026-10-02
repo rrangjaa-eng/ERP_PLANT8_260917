@@ -28,7 +28,6 @@ const cases: Case[] = [
     path: ["app", "(app)", "admin", "people", "roles", "roles-client.tsx"],
     caption: "계급",
   },
-  { name: "거래처 (vendors)", path: ["app", "(app)", "admin", "vendors", "page.tsx"], caption: "거래처" },
 ];
 
 describe.each(cases)("$name 화면 — <table>에 시각적으로 숨긴 caption이 있다(A-M3)", ({ path, caption }) => {
@@ -46,6 +45,26 @@ describe.each(cases)("$name 화면 — <table>에 시각적으로 숨긴 caption
   it(`caption 문자열 안에 화면 제목 "${caption}"이 있다`, () => {
     const match = source.match(/<caption[^>]*>([^<]*)<\/caption>/);
     expect(match?.[1] ?? "").toContain(caption);
+  });
+});
+
+// 거래처(04.6-11 · R1): 서버 페이지가 raw <table> 대신 `ui/table/StaticTable`을 부른다 — 같은 세 불변식(<table> 바로 안 caption ·
+// 시각 숨김 · 제목 포함)을 호출부의 caption 값 + StaticTable의 caption 렌더로 잰다. 나머지 화면의 두 꼴 일반화는 04.6-15.
+describe("거래처 (vendors) 화면 — StaticTable의 caption에 시각적으로 숨긴 caption이 있다(A-M3 · 04.6-11)", () => {
+  const page = read("app", "(app)", "admin", "vendors", "page.tsx");
+  const staticTable = read("ui", "table", "StaticTable.tsx");
+
+  it("<table> 바로 안에 {caption}을 그리는 <caption>이 있다(StaticTable)", () => {
+    expect(staticTable).toMatch(/<table[^>]*>\s*<caption[^>]*>\{caption\}<\/caption>/);
+  });
+
+  it("caption 요소에 시각 숨김 클래스(전역 sr-only)가 붙어 있다(StaticTable)", () => {
+    const match = staticTable.match(/<caption[^>]*>\{caption\}/);
+    expect(match?.[0] ?? "").toMatch(/\bsr-only\b/);
+  });
+
+  it('거래처 page.tsx가 <StaticTable 호출에 caption="거래처"를 넘긴다', () => {
+    expect(page).toMatch(/<StaticTable[\s\S]*?caption="거래처"/);
   });
 });
 

@@ -86,6 +86,8 @@ export async function insertHistorizedValue(
 
 // 과거 행을 수정·삭제하는 경로는 없다 — 이 함수는 domain의
 // cancelHistorizedValue가 "적용 시작일이 미래"임을 확인한 뒤에만 부른다.
+// quick 261002-3mx — 그 판정과 이 삭제 사이에 KST 자정이 지나면 방금 적용된
+// 행이 된다. "아직 미래"를 삭제 조건 자체에 DB 시각으로 다시 넣는다.
 export async function deleteFutureHistorizedValue(
   viewer: Viewer,
   key: string,
@@ -95,7 +97,13 @@ export async function deleteFutureHistorizedValue(
   void viewer;
   const deleted = await tx
     .delete(settingsHistorized)
-    .where(and(eq(settingsHistorized.key, key), eq(settingsHistorized.effectiveFrom, effectiveFrom)))
+    .where(
+      and(
+        eq(settingsHistorized.key, key),
+        eq(settingsHistorized.effectiveFrom, effectiveFrom),
+        sql`${settingsHistorized.effectiveFrom} > (now() at time zone 'Asia/Seoul')::date`,
+      ),
+    )
     .returning({ id: settingsHistorized.id });
   return deleted.length > 0;
 }

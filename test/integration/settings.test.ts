@@ -154,6 +154,27 @@ describe("설정 레지스트리 (ADMN-05, 실제 Postgres)", () => {
     expect((await listSettingHistory(def)).some((entry) => entry.effectiveFrom === "2999-01-01")).toBe(true);
   });
 
+  // quick 261002-3mx — 미래 판정과 삭제 사이에 KST 자정이 지나면 방금 적용된 행이다. 삭제 조건이 DB 시각으로 다시 판정한다.
+  it("취소 판정 뒤 KST 자정이 지나 오늘 적용된 행은 지우지 않고 로그도 없다", async () => {
+    const { queryActionLog } = await import("@/repositories/action-log");
+    const { kstToday } = await import("@/lib/kst-date");
+    const def = historizedDef();
+    const today = kstToday(new Date());
+    await addHistorizedValue(SYSTEM_VIEWER, def, { effectiveFrom: today, value: 0.3 });
+    // 자정 1초 전(KST)에 판정한 것처럼 — JS 판정은 오늘 행을 아직 미래로 본다.
+    const justBeforeMidnight = new Date(new Date(`${today}T00:00:00+09:00`).getTime() - 1000);
+
+    await expect(cancelHistorizedValue(SYSTEM_VIEWER, def, today, { now: justBeforeMidnight })).rejects.toBeInstanceOf(
+      FutureValueNotFoundError,
+    );
+
+    expect((await listSettingHistory(def)).some((entry) => entry.effectiveFrom === today)).toBe(true);
+    const logs = (await queryActionLog(SYSTEM_VIEWER, { actionType: "settings_change" })).filter(
+      (log) => log.entityId === def.key && (log.detail as { cancelled?: boolean } | null)?.cancelled === true,
+    );
+    expect(logs).toHaveLength(0);
+  });
+
   it("없는 미래 예정값 취소는 FutureValueNotFoundError이고 로그가 없다", async () => {
     const { queryActionLog } = await import("@/repositories/action-log");
     const def = historizedDef();

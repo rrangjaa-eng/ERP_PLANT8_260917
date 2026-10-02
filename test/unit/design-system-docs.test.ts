@@ -570,4 +570,29 @@ describe("docs/design/SYSTEM.md · DECISIONS.md — 스킨 A 개정(04.6-01)", (
     expect(bullet).not.toContain("칸만 비우고");
     expect(bullet).not.toContain("입력 버리기");
   });
+
+  // 04.6-04 — 사용자 답(UQ-8 B · R9 D · DR1 A · DR5 A)이 SYSTEM에 줄로 있다. 위 테스트가 지키는 「옆 패널 배치」 줄에는 넣지 않고 별도 줄이다.
+  it("§6-3에 옆 패널 제출 뒤(UQ-8 B · R9 D) · 닫기(DR1 A · D12) 줄이 있다", () => {
+    const panel = section(SYSTEM, "### 6-3", "### 6-4");
+    const submit = panel.split("\n").find((line) => line.startsWith("- **옆 패널 제출 뒤**")) ?? "";
+    expect(submit).toContain("칸을 비우고 첫 칸");
+    expect(submit).toContain("role=\"status\"");
+    expect(submit).toContain("수정은 닫힘");
+    expect(submit).toContain("상세");
+    expect(submit).toContain("?added=");
+    expect(submit).toContain("D7");
+    const close = panel.split("\n").find((line) => line.startsWith("- **옆 패널 닫기**")) ?? "";
+    expect(close).toContain("입력 버리기");
+    expect(close).toContain("`router.back()`");
+    expect(close).toContain("`replace`");
+    expect(close).toContain("requestClose");
+  });
+
+  it("§7-7 빈 화면에 빈 목록 등록 버튼 줄(DR5 A)이 있다 — 머리 1차 숨김 · 빈 화면 버튼 하나", () => {
+    const states = section(SYSTEM, "### 7-7", "### 7-8");
+    const line = states.split("\n").find((row) => row.includes("DR5 A")) ?? "";
+    expect(line).toContain("머리");
+    expect(line).toContain("1차");
+    expect(line).toContain("빈 화면");
+  });
 });

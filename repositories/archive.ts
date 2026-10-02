@@ -23,6 +23,8 @@ import { findUserById, setUserArchived } from "@/repositories/users";
 import { findVendorById, setVendorArchived } from "@/repositories/vendors";
 import { findQuoteLineById, setQuoteLineArchived } from "@/repositories/quote-lines";
 import { findHolidayById, listArchivedHolidays } from "@/repositories/holidays";
+import { findFieldDefinitionById, listArchivedFieldDefinitions, setFieldDefinitionArchived } from "@/repositories/field-definitions";
+import { FIELD_DEFINITION_TARGETS } from "@/domain/custom-fields/targets";
 import { findEntriesByIds as findReserveEntriesByIds, setEntryArchived as setReserveEntryArchived, listArchivedEntryNames as listArchivedReserveEntryNames } from "@/repositories/reserve-entries";
 
 // archive()/restore()(domain/archive/index.ts)가 필요로 하는 최소 행 모양.
@@ -53,6 +55,8 @@ export type ArchivableEntry = {
   // 03-07: 이 표의 보관된 행 전부. listArchivedAcrossEntities가 이 클로저를
   // 순회해 합친다 — 새 표 목록을 별도로 만들지 않는다.
   listArchived(viewer: Viewer): Promise<ArchivedItem[]>;
+  // 04.5-04(UI-SPEC O21): 보관함 권한에 더해 요구하는 메뉴 — 보관 · 복원은 이 메뉴의 write, 보관함 목록은 view.
+  requiredMenu?: string;
 };
 
 // 보관 대상 표의 단일 정본 — 새 마스터 표가 생기면 이 배열에 한 줄을 더하면
@@ -242,6 +246,24 @@ export const ARCHIVABLE_TABLES: ArchivableEntry[] = [
     async listArchived(viewer) {
       const rows = await listArchivedHolidays(viewer);
       return rows.map((row) => ({ entity: "holiday", label: "공휴일", ...row }));
+    },
+  },
+  // 04.5-04(D10-12 · O21) — 화면 항목(칸 정의). 대상 상수 밖(프로젝트 · 견적 줄) 정의는 「없음」으로 본다(O13).
+  {
+    entity: "field_definitions",
+    label: "화면 항목",
+    requiredMenu: "admin.field-definitions",
+    async setArchived(viewer, id, value) {
+      return setFieldDefinitionArchived(viewer, id, value);
+    },
+    async findById(viewer, id) {
+      const row = await findFieldDefinitionById(viewer, id);
+      if (!row || !FIELD_DEFINITION_TARGETS.some((target) => target === row.entity)) return null;
+      return row;
+    },
+    async listArchived(viewer) {
+      const rows = await listArchivedFieldDefinitions(viewer, FIELD_DEFINITION_TARGETS);
+      return rows.map((row) => ({ entity: "field_definitions", label: "화면 항목", id: row.id, name: row.label, archivedAt: row.archivedAt, archivedBy: row.archivedBy }));
     },
   },
 ];

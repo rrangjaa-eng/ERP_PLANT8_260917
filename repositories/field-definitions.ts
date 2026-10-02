@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { fieldDefinitions } from "@/db/schema";
@@ -106,6 +106,38 @@ export async function updateFieldDefinitionIfVersion(
     )
     .returning({ id: fieldDefinitions.id });
   return rows.length > 0;
+}
+
+// 04.5-04(D10-12): 칸 삭제 = 보관. 상태가 실제로 바뀔 때만 쓰는 조건부 UPDATE(setVendorArchived와 같은 모양)이고
+// 같은 문장에서 version을 1 올려 그 전에 열린 수정 폼을 무효로 만든다 — 멱등 보관 · 복원은 버전을 올리지 않는다.
+// 거래처 값(JSONB) · 노출 행 · 선택지는 건드리지 않는다. 바뀐 행이 있었는지를 돌려준다.
+export async function setFieldDefinitionArchived(viewer: Viewer, id: string, value: boolean): Promise<boolean> {
+  const bump = { version: sql`${fieldDefinitions.version} + 1`, updatedAt: sql`now()` };
+  const rows = value
+    ? await db
+        .update(fieldDefinitions)
+        .set({ archivedAt: new Date(), archivedBy: viewer.id, ...bump })
+        .where(and(eq(fieldDefinitions.id, id), isNull(fieldDefinitions.archivedAt)))
+        .returning({ id: fieldDefinitions.id })
+    : await db
+        .update(fieldDefinitions)
+        .set({ archivedAt: null, archivedBy: null, ...bump })
+        .where(and(eq(fieldDefinitions.id, id), isNotNull(fieldDefinitions.archivedAt)))
+        .returning({ id: fieldDefinitions.id });
+  return rows.length > 0;
+}
+
+// 04.5-04: 보관함 목록용 — 주어진 대상(entity) 안의 보관된 정의만.
+export async function listArchivedFieldDefinitions(
+  viewer: Viewer,
+  entities: readonly string[],
+): Promise<Array<{ id: string; label: string; archivedAt: Date; archivedBy: string | null }>> {
+  void viewer;
+  const rows = await db
+    .select({ id: fieldDefinitions.id, label: fieldDefinitions.label, archivedAt: fieldDefinitions.archivedAt, archivedBy: fieldDefinitions.archivedBy })
+    .from(fieldDefinitions)
+    .where(and(inArray(fieldDefinitions.entity, [...entities]), isNotNull(fieldDefinitions.archivedAt)));
+  return rows.map((row) => ({ ...row, archivedAt: row.archivedAt as Date }));
 }
 
 // 트랜잭션 잠금(커밋·롤백 때 저절로 풀림) — 칸 생성과 계급 생성 쪽 노출 행 부여가 이 함수

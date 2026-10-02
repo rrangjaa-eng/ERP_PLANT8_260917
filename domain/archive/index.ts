@@ -6,6 +6,7 @@ import { registerDto } from "@/domain/permissions/dto-registry";
 import {
   ARCHIVABLE_TABLES,
   listArchivedAcrossEntities as defaultListArchivedAcrossEntities,
+  type ArchivableEntry,
   type ArchivedItem,
 } from "@/repositories/archive";
 import { findUserById as defaultFindUserById } from "@/repositories/users";
@@ -47,6 +48,16 @@ async function assertCanWrite(viewer: Viewer, deps?: Partial<ArchiveDeps>): Prom
   }
 }
 
+// 04.5-04(UI-SPEC O21): 항목에 추가 권한 조건(requiredMenu)이 있으면 그 메뉴의 write도 요구한다 — 행 조회 · 쓰기 · 로그 전에.
+// 조건 없는 항목은 그대로다. 문구는 보관함 쓰기 거부와 같다(새 문구 없음).
+async function assertCanWriteEntry(viewer: Viewer, entry: ArchivableEntry, deps?: Partial<ArchiveDeps>): Promise<void> {
+  if (!entry.requiredMenu) return;
+  const canFn = deps?.can ?? defaultCan;
+  if (!(await canFn(viewer, entry.requiredMenu, "write"))) {
+    throw new ForbiddenError("보관함 쓰기 권한 없음");
+  }
+}
+
 // 보관은 대상 행의 보관 시각이 이미 있으면 그 값을 유지한 채 성공으로
 // 돌아온다(멱등 — repositories의 조건부 UPDATE가 보장). 시드 계급은 거부한다
 // (isProtected).
@@ -58,6 +69,7 @@ export async function archive(
 ): Promise<void> {
   await assertCanWrite(viewer, deps);
   const entry = findEntry(entity);
+  await assertCanWriteEntry(viewer, entry, deps);
 
   const row = await entry.findById(viewer, id);
   if (!row) throw new ArchivableRowNotFoundError("대상 찾을 수 없음");
@@ -94,6 +106,7 @@ export async function restore(
   const domainRestorer = DOMAIN_RESTORERS[entity];
   if (domainRestorer) return domainRestorer(viewer, id, deps);
   const entry = findEntry(entity);
+  await assertCanWriteEntry(viewer, entry, deps);
 
   const row = await entry.findById(viewer, id);
   if (!row) throw new ArchivableRowNotFoundError("대상 찾을 수 없음");
@@ -153,6 +166,14 @@ export type ListArchiveDeps = {
 // archivedBy는 raw id가 아니라 이름으로 화면에 낸다(내부 식별자를 그대로
 // 사용자에게 보이지 않는다 — 지난 웨이브 UI 감사가 잡은 결함과 같은 종류를
 // 미리 막는다).
+async function entitiesWithoutRequiredView(viewer: Viewer, canFn: typeof defaultCan): Promise<Set<string>> {
+  const hidden = new Set<string>();
+  for (const entry of ARCHIVABLE_TABLES) {
+    if (entry.requiredMenu && !(await canFn(viewer, entry.requiredMenu, "view"))) hidden.add(entry.entity);
+  }
+  return hidden;
+}
+
 export async function listArchive(viewer: Viewer, deps?: Partial<ListArchiveDeps>): Promise<ArchiveEntryDto[]> {
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, ARCHIVE_MENU, "view"))) {
@@ -162,7 +183,9 @@ export async function listArchive(viewer: Viewer, deps?: Partial<ListArchiveDeps
   const listFn = deps?.listArchivedAcrossEntities ?? defaultListArchivedAcrossEntities;
   // 묶음 ④ /review R3 — 리저브 줄은 리저브를 볼 수 있는 사람에게만(pnl 보기 + reserve.amount, B-15).
   const showReserves = await canViewReserves(viewer);
-  const rows = (await listFn(viewer)).filter((row) => row.entity !== "reserve_entry" || showReserves);
+  // 04.5-04(O21) — 추가 권한 조건이 있는 항목은 그 메뉴 보기 권한이 없으면 행을 뺀다(항목마다 한 번 판정).
+  const hiddenEntities = await entitiesWithoutRequiredView(viewer, canFn);
+  const rows = (await listFn(viewer)).filter((row) => (row.entity !== "reserve_entry" || showReserves) && !hiddenEntities.has(row.entity));
 
   // 독립 검토(#138) — 복원할 수 없는 공휴일 행은 「복원」을 내놓지 않는다(§7). 공휴일 복원은 공휴일 쓰기 권한과
   // 소급 금지(오늘 이후 날짜) · 그 날짜에 다른 공휴일(대체일 제외) 없음을 요구한다(restoreHoliday) — 같은 판정을 목록에서 미리 한다.

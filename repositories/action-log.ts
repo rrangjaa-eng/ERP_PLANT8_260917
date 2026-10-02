@@ -111,7 +111,8 @@ export async function filterActionLog(viewer: Viewer, filter: ActionLogFilterInp
 // (action_log_prune)은 항상 제외한다 — 정리로 추가된 행이 다음 정리의
 // 대상이 되면 두 번의 정리로 정리 흔적이 사라진다(03-RESEARCH.md가
 // 태스크화하라고 지목한 재귀적 요구). 개인정보 접속기록 셋(cert_view · mask_reveal ·
-// cert_correct)도 항상 제외한다 — 월 1회 점검 대상(04.3-14 사용자 결정 5936870579).
+// cert_correct)도 항상 제외한다 — 월 1회 점검 대상(04.3-14 사용자 결정 5936870579). 가액 · 파기
+// 기록(cert_prize_value · cert_purge)도 같다(/review F5) — 목록은 UNPRUNABLE_ACTION_TYPES.
 // 반환값은 정리된 행 수.
 export async function markActionLogRowsPruned(
   viewer: Viewer,

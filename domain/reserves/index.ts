@@ -526,20 +526,21 @@ export async function restoreReserve(
   viewer: Viewer,
   id: string,
   deps?: Partial<Pick<ReserveWriteDeps, "can" | "visible" | "afterLock" | "recordAction">>,
-): Promise<void> {
+): Promise<{ restored: boolean }> {
   if (!(await reserveRights(viewer, "write", deps))) {
     denyWrite(viewer, FORBIDDEN_RULE, { entryIds: [id] }, new ForbiddenError(FORBIDDEN_MESSAGE));
   }
   if (!UUID_SHAPE.test(id)) denyWrite(viewer, "reserve.restore", { entryIds: [id] }, new UserFacingError(ENTRY_NOT_FOUND));
   const recordAction = deps?.recordAction ?? defaultRecordAction;
-  await withTransaction(async (tx) => {
+  return withTransaction(async (tx) => {
     const [before] = await repoFindEntriesByIds(viewer, [id], tx);
     if (!before) denyWrite(viewer, "reserve.restore", { entryIds: [id] }, new UserFacingError(ENTRY_NOT_FOUND));
     // 클라이언트는 첫 저장 뒤 바뀌지 않으므로 잠금 전에 읽어도 된다(사용자 D6).
     await repoLockReserveClients(viewer, [before.clientId], tx);
     await deps?.afterLock?.();
     const [current] = await repoFindEntriesByIds(viewer, [id], tx);
-    if (!current || current.archivedAt === null) return;
+    // quick 261002-4jn — 이미 활성(낡은 화면 · 동시 복원의 뒤 사람)은 로그 없이 「이미 복원됨」.
+    if (!current || current.archivedAt === null) return { restored: false };
     const ledger = (await repoListActiveEntriesByClients(viewer, [current.clientId], tx)).map(toBalanceRow);
     const negative = runningBalance([...ledger, toBalanceRow(current)]).firstNegative;
     if (negative) {
@@ -548,6 +549,7 @@ export async function restoreReserve(
     }
     await repoSetEntryArchived(viewer, id, false, tx);
     await recordAction(viewer, { actionType: "restore", entity: RESERVE_ENTITY, entityId: id, detail: { entryId: id, clientId: current.clientId } }, { tx });
+    return { restored: true };
   });
 }
 

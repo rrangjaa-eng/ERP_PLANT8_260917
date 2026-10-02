@@ -16,6 +16,7 @@ import { addHoliday, deleteHoliday } from "@/domain/holidays/admin";
 import { queryActionLog } from "@/domain/action-log";
 import { db } from "@/db/client";
 import { holidays } from "@/db/schema";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 
@@ -258,6 +259,21 @@ describe("보관함 (ADMN-12, 실제 Postgres)", () => {
     await deleteHoliday(admin, concurrent.id);
     const results = await Promise.all([restore(admin, "holiday", concurrent.id), restore(admin, "holiday", concurrent.id)]);
     expect(results.filter((result) => result.restored)).toHaveLength(1);
+  });
+
+  // /review(#149) 적대 검토 — 도메인 복원기가 있는 항목은 활성 행이라도 그 복원기의 권한 · 형식 판정을 먼저 지난다.
+  it("도메인 복원기 항목: 권한 없는 사람은 활성 행에도 거부되고, 형식이 틀린 id는 사용자 오류로 끝난다", async () => {
+    const { userId } = await createAccount(SYSTEM_VIEWER, { email: uniqueEmail("archive-holiday-active"), name: "공휴일 관리자", roleId: SYSADMIN_ROLE_ID });
+    const admin = { id: userId, roleId: SYSADMIN_ROLE_ID };
+    const active = await addHoliday(admin, { date: "2034-08-14", kind: "election", name: "활성 선거" });
+
+    const roleId = `role-${randomUUID()}`;
+    await insertRole(SYSTEM_VIEWER, { id: roleId, name: `계급 ${roleId.slice(5, 13)}` });
+    for (const action of ["view", "write"] as const) await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "admin.archive", action, allowed: true });
+    const archiveOnly = { id: `archive-only-${randomUUID()}`, roleId };
+
+    await expect(restore(archiveOnly, "holiday", active.id)).rejects.toThrow("공휴일 복원 권한 없음");
+    await expect(restore(SYSTEM_VIEWER, "reserve_entry", "not-a-uuid")).rejects.toBeInstanceOf(UserFacingError);
   });
 
   // quick 261002-4jn(회고 #4) — 그 날짜에 다른 공휴일(대체일 제외)이 있으면 복원은 거부되므로 「복원」을 내놓지 않는다.

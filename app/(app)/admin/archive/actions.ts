@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { returnValidationErrors } from "next-safe-action";
 import { authedActionClient } from "@/lib/actions/client";
-import { restore } from "@/domain/archive";
+import { restore, type RestoreResult } from "@/domain/archive";
 import { HolidayNotRestorableError } from "@/domain/holidays/admin";
 import "./actions.registry";
 
@@ -16,7 +16,7 @@ const restoreArchivedSchema = z.object({ entity: z.string().min(1), id: z.string
 export const restoreArchivedAction = authedActionClient
   .schema(restoreArchivedSchema)
   .action(async ({ parsedInput, ctx }) => {
-    let result;
+    let result: RestoreResult;
     try {
       result = await restore(ctx.viewer, parsedInput.entity, parsedInput.id);
     } catch (error) {

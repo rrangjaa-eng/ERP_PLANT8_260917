@@ -74,15 +74,9 @@ export async function archive(
 // 04-12(A-19 · OV-2) — 도메인 규칙이 있는 엔티티의 복원은 도메인 함수에 통째로 맡긴다(잠금·게이트·보관 해제·로그를
 // 한 트랜잭션에서). 범용 setArchived 경로는 이 표에 없는 엔티티만 탄다(리저브는 04-07 · 그룹 B가 더한다).
 const DOMAIN_RESTORERS: Partial<Record<string, (viewer: Viewer, id: string, deps?: Partial<ArchiveDeps>) => Promise<RestoreResult>>> = {
-  quote_line: async (viewer, id, deps) => {
-    await restoreQuoteLine(viewer, id, { recordAction: deps?.recordAction });
-    return { restored: true };
-  },
+  quote_line: (viewer, id, deps) => restoreQuoteLine(viewer, id, { recordAction: deps?.recordAction }),
   // 04-07(B-04 · T5) — 리저브 복원은 클라이언트 잠금 · pnl 쓰기 + reserve.amount · 날짜 마감 잔액 판정을 한 트랜잭션에서.
-  reserve_entry: async (viewer, id, deps) => {
-    await restoreReserve(viewer, id, { recordAction: deps?.recordAction });
-    return { restored: true };
-  },
+  reserve_entry: (viewer, id, deps) => restoreReserve(viewer, id, { recordAction: deps?.recordAction }),
   // quick 261001-hfi(ADMN-12) — 공휴일 복원은 달력 잠금 · admin.holidays 쓰기 · 소급 금지 · 재계산 · 로그를 한 트랜잭션에서.
   holiday: (viewer, id, deps) => restoreHoliday(viewer, id, { recordAction: deps?.recordAction }),
 };
@@ -96,14 +90,15 @@ export async function restore(
   deps?: Partial<ArchiveDeps>,
 ): Promise<RestoreResult> {
   await assertCanWrite(viewer, deps);
+  // 도메인 복원기는 자기 권한 · 형식 판정 뒤 잠금 안에서 「이미 복원됨」({ restored: false })을 가린다(quick 261002-4jn).
+  const domainRestorer = DOMAIN_RESTORERS[entity];
+  if (domainRestorer) return domainRestorer(viewer, id, deps);
   const entry = findEntry(entity);
 
   const row = await entry.findById(viewer, id);
-  // quick 261002-4jn — 이미 활성인 행(낡은 화면 · 동시 복원의 뒤 사람)은 복원기도 로그도 없이 「이미 복원됨」.
-  if (row && row.archivedAt === null) return { restored: false };
-  const domainRestorer = DOMAIN_RESTORERS[entity];
-  if (domainRestorer) return domainRestorer(viewer, id, deps);
   if (!row) throw new ArchivableRowNotFoundError("대상 찾을 수 없음");
+  // quick 261002-4jn — 이미 활성인 행(낡은 화면 · 동시 복원의 뒤 사람)은 로그 없이 「이미 복원됨」.
+  if (row.archivedAt === null) return { restored: false };
 
   await entry.setArchived(viewer, id, false);
 

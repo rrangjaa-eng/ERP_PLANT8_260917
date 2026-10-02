@@ -828,9 +828,12 @@ describe("보관함 복원(A-19 · OV-2)", () => {
     await archiveLine(line.id);
     await setStatus(project.id, "in_progress");
 
-    await restore(SYSTEM_VIEWER, "quote_line", line.id);
+    expect(await restore(SYSTEM_VIEWER, "quote_line", line.id)).toEqual({ restored: true });
 
     expect((await reloadLine(line.id)).archivedAt).toBeNull();
+    expect(await actionCount(QUOTE_LINE_ENTITY, line.id, "restore")).toBe(1);
+    // quick 261002-4jn — 이미 활성인 줄(낡은 화면 · 동시 복원의 뒤 사람)은 잠금 안 판정으로 「이미 복원됨」, 로그 없음.
+    expect(await restore(SYSTEM_VIEWER, "quote_line", line.id)).toEqual({ restored: false });
     expect(await actionCount(QUOTE_LINE_ENTITY, line.id, "restore")).toBe(1);
   });
 

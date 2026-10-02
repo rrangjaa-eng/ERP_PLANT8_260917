@@ -294,9 +294,9 @@ function buildMenuGatedDtoCases() {
 }
 
 describe("메뉴 게이트 DTO 축 — 정보 노출표 항목이 없는 관리 DTO는 메뉴 view 뒤에서만 나간다 (04.5-09)", () => {
-  it("검토된 목록이 비어 있지 않고 케이스 생성이 결정적이다", () => {
+  it("검토된 목록이 비어 있지 않고 케이스가 DTO마다 시드 계급 수만큼 생긴다", () => {
     expect(MENU_GATED_DTOS.length).toBeGreaterThan(0);
-    expect(buildMenuGatedDtoCases().map((c) => c.name)).toEqual(buildMenuGatedDtoCases().map((c) => c.name));
+    expect(buildMenuGatedDtoCases()).toHaveLength(MENU_GATED_DTOS.length * SEED_ROLES.length);
   });
 
   it.each(MENU_GATED_DTOS)("$name: 메뉴가 MENUS에 있고 DTO 등록부에 없으며 검토된 필드 목록과 DTO 필드 상수가 같다", (dto) => {

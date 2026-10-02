@@ -9,8 +9,14 @@ import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { ForbiddenError } from "@/domain/permissions/can";
 import { createAccount } from "@/domain/auth/accounts";
-import { createFieldDefinition } from "@/domain/custom-fields/admin";
+import {
+  createFieldDefinition,
+  DuplicateFieldNameError,
+  FIELD_DEFINITION_ADMIN_DTO_FIELDS,
+  listFieldDefinitionsForAdmin,
+} from "@/domain/custom-fields/admin";
 import { createFieldDefinitionInput } from "@/domain/custom-fields/admin-input";
+import { PERMISSION_DENIED_CAUSE } from "@/lib/actions/form-reason";
 import { insertVisibilityIfAbsent, upsertPermission } from "@/repositories/permissions";
 import { insertFieldDefinition, listFieldDefinitions } from "@/repositories/field-definitions";
 import { insertRole, setRoleArchived } from "@/repositories/roles";
@@ -211,6 +217,113 @@ describe("화면 항목 생성 (04.5-01)", () => {
 
     expect(generated).toBe(3);
     expect([await countFieldDefinitions(), await countVendorVisibilityRows(), await countFieldLogs()]).toEqual(before);
+  });
+});
+
+// 04.5-08: 이름 예약 · domain 재판정 · 관리 목록(검토된 DTO).
+describe("화면 항목 이름 예약 · 관리 목록 (04.5-08)", () => {
+  beforeEach(async () => {
+    await upsertPermission(SYSTEM_VIEWER, { roleId: SYSADMIN_ROLE_ID, menu: MENU, action: "view", allowed: true });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: SYSADMIN_ROLE_ID, menu: MENU, action: "write", allowed: true });
+  });
+
+  const uniqueName = (prefix: string) => `${prefix}${randomUUID().slice(0, 6)}`;
+
+  async function insertArchivedVendorField(label: string): Promise<string> {
+    const id = `fd-${randomUUID()}`;
+    await insertFieldDefinition(SYSTEM_VIEWER, { id, entity: "vendor", key: `cf_${randomUUID().slice(0, 8)}`, label, type: "text" });
+    await db.update(fieldDefinitions).set({ archivedAt: new Date() }).where(eq(fieldDefinitions.id, id));
+    return id;
+  }
+
+  async function countByLabel(label: string): Promise<number> {
+    const [row] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(fieldDefinitions)
+      .where(eq(fieldDefinitions.label, label));
+    return row?.count ?? 0;
+  }
+
+  it("기획 PM의 거부 메시지는 폼이 비교하는 PERMISSION_DENIED_CAUSE와 같다", async () => {
+    const pm = await createViewer(DEFAULT_ROLE_ID);
+    await expect(createFieldDefinition(pm, input(uniqueName("권한")))).rejects.toThrow(
+      new ForbiddenError(PERMISSION_DENIED_CAUSE).message,
+    );
+  });
+
+  it("이름 앞뒤 공백을 잘라 활성 칸과 같은 이름이면 활성 충돌로 거부하고 아무것도 늘지 않는다", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID);
+    const name = uniqueName("활성칸");
+    await createFieldDefinition(admin, input(name));
+    const before = [await countFieldDefinitions(), await countVendorVisibilityRows(), await countFieldLogs()];
+
+    const attempt = createFieldDefinition(admin, input(`  ${name}  `));
+
+    await expect(attempt).rejects.toBeInstanceOf(DuplicateFieldNameError);
+    await expect(attempt).rejects.toMatchObject({ archived: false });
+    expect([await countFieldDefinitions(), await countVendorVisibilityRows(), await countFieldLogs()]).toEqual(before);
+  });
+
+  it("보관된 칸과 같은 이름이면 보관 충돌로 거부하고 아무것도 늘지 않는다", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID);
+    const name = uniqueName("보관칸");
+    await insertArchivedVendorField(name);
+    const before = [await countFieldDefinitions(), await countVendorVisibilityRows(), await countFieldLogs()];
+
+    const attempt = createFieldDefinition(admin, input(name));
+
+    await expect(attempt).rejects.toBeInstanceOf(DuplicateFieldNameError);
+    await expect(attempt).rejects.toMatchObject({ archived: true });
+    expect([await countFieldDefinitions(), await countVendorVisibilityRows(), await countFieldLogs()]).toEqual(before);
+  });
+
+  it("이름 조회와 쓰기 사이 경합으로 unique 위반이 나면 같은 DuplicateFieldNameError로 바뀐다", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID);
+    const name = uniqueName("경합칸");
+    await createFieldDefinition(admin, input(name));
+
+    const attempt = createFieldDefinition(admin, input(name), { findNameConflict: () => Promise.resolve(null) });
+
+    await expect(attempt).rejects.toBeInstanceOf(DuplicateFieldNameError);
+    await expect(attempt).rejects.toMatchObject({ archived: false });
+    expect(await countByLabel(name)).toBe(1);
+  });
+
+  it("액션을 거치지 않고 21자 이름이나 정렬 1000을 주면 domain이 거부한다", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID);
+    const before = await countFieldDefinitions();
+
+    await expect(createFieldDefinition(admin, input("가".repeat(21)))).rejects.toThrow();
+    await expect(createFieldDefinition(admin, { ...input(uniqueName("범위")), sortOrder: 1000 })).rejects.toThrow();
+    await expect(createFieldDefinition(admin, input("   "))).rejects.toThrow();
+
+    expect(await countFieldDefinitions()).toBe(before);
+  });
+
+  it("관리 목록은 시스템 관리자에게 거래처 정의 전부(보관 포함)를 sortOrder · key 순으로 돌려준다", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID);
+    const activeName = uniqueName("목록활성");
+    const archivedName = uniqueName("목록보관");
+    await createFieldDefinition(admin, { ...input(activeName), sortOrder: 7 });
+    await insertArchivedVendorField(archivedName);
+    await insertFieldDefinition(SYSTEM_VIEWER, { id: `fd-${randomUUID()}`, entity: "project", key: `cf_pj${randomUUID().slice(0, 6)}`, type: "text" });
+
+    const list = await listFieldDefinitionsForAdmin(admin);
+
+    expect(list.find((dto) => dto.label === activeName)?.archived).toBe(false);
+    expect(list.find((dto) => dto.label === archivedName)?.archived).toBe(true);
+    const sortKeys = list.map((dto) => [dto.sortOrder, dto.key] as const);
+    expect(sortKeys).toEqual([...sortKeys].sort((a, b) => a[0] - b[0] || a[1].localeCompare(b[1])));
+    const expected = await listFieldDefinitions(admin, "vendor");
+    expect(list.map((dto) => dto.id)).toEqual(expected.map((row) => row.id));
+    for (const dto of list) {
+      expect(Object.keys(dto).sort()).toEqual([...FIELD_DEFINITION_ADMIN_DTO_FIELDS].sort());
+    }
+  });
+
+  it("관리 목록은 쓰기·보기 권한이 없는 기획 PM에게 ForbiddenError다", async () => {
+    const pm = await createViewer(DEFAULT_ROLE_ID);
+    await expect(listFieldDefinitionsForAdmin(pm)).rejects.toBeInstanceOf(ForbiddenError);
   });
 });
 

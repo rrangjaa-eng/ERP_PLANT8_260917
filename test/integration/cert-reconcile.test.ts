@@ -593,8 +593,9 @@ describe("excludeSubmission — 「대조 제외」(E1 b · 게이트 = 쓰기, 
     expect(review.submission.signatureDataUrl).toBeNull();
 
     expect(await revealRrn(manager, f.a1, { ip: null })).toEqual({ kind: "denied" });
+    // 제외된 줄 정정은 권한 문제가 아니라 없는 제출이다 — 화면이 「다시 불러오기」를 보인다(/review 재검토 F2).
     expect(await correctSubmission(manager, f.a1, { version: row?.version ?? 0, name: "김하늘", phone: "010-9999-0000" }, { ip: null })).toEqual({
-      kind: "denied",
+      kind: "notFound",
     });
     expect(await getCertificatePrint(manager, f.a1, { ip: null })).toEqual({ kind: "notFound" });
   });

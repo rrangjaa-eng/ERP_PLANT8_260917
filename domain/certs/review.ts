@@ -428,7 +428,7 @@ export async function correctSubmission(
   const row = await findSubmissionForReview(viewer, id);
   // 대조 제외된 제출은 고치지 않는다(DR-1). 주민번호만 비운 줄(⑥-b)은 주민등록번호를 정정으로 다시 받지 않는다 — 전체 보기가
   // 없는 줄은 주민등록번호 정정도 없다(D-1106).
-  if (!row || row.purgedAt || row.excludedAt) return { kind: "denied" };
+  if (!row || row.purgedAt || row.excludedAt) return { kind: "notFound" };
   if (row.rrnCleared && data.rrn !== undefined) return { kind: "denied" };
   const isParcel = row.delivery === "parcel";
 
@@ -515,7 +515,7 @@ export async function correctSubmission(
 
   if (!updated) {
     const last = await findLastCorrection(viewer, id);
-    if (!last || last.purgedAt || last.excludedAt) return { kind: "denied" };
+    if (!last || last.purgedAt || last.excludedAt) return { kind: "notFound" };
     return { kind: "conflict", byName: last.byName ?? "", at: last.at.toISOString() };
   }
 

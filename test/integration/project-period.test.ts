@@ -28,7 +28,7 @@ import { log } from "@/lib/log";
 import { addDays, kstDayStart, kstToday } from "@/lib/kst-date";
 import { gate } from "@/domain/rules/gate";
 import { deferred, waitForLockWaiter } from "./lock-race";
-import { firstSelectableSubcategory } from "../support/quote-subcategory";
+import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 
 // S1(04-22 리뷰): 견적 줄 게이트가 어느 행으로 판정했는지 보려고 gate를 통과형 스파이로 감싼다 —
 // 판정 결과는 원본 그대로다. 견적 줄 로그는 커밋 뒤에 남아 seq로는 순서를 증명할 수 없다.

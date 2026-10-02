@@ -11,7 +11,7 @@ import { createProject } from "@/domain/projects";
 import { saveProjectLedger } from "@/domain/projects/ledger";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { saveRevenue } from "@/domain/revenue";
-import { firstSelectableSubcategory } from "../support/quote-subcategory";
+import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 
 // /review(PR #38) — 저장 요청의 줄 id·차수 id가 요청한 프로젝트·차수에
 // 속하는지 확인한다. 다른 프로젝트의 줄을 id·version만으로 덮어쓰면 안 된다.

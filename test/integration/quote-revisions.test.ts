@@ -27,7 +27,7 @@ import { PROJECT_CUSTOMER_APPROVAL_GATE } from "@/domain/settings/keys";
 import { restore } from "@/domain/archive";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { log } from "@/lib/log";
-import { firstSelectableSubcategory } from "../support/quote-subcategory";
+import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 
 // 04-14(D-53 · D-54 · CEO 리뷰 B-02·B-21·B-32 · 엔지 리뷰 GAP 5b · B §1) — 새 차수: 보던 차수 확인 → 견적 줄 전체
 // 복사(계보 · version 1 · 업무 컬럼 보존) → 조정 줄 이동(보관 포함). 두 연결 경합은 04-40.

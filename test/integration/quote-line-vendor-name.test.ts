@@ -10,7 +10,7 @@ import { insertRole } from "@/repositories/roles";
 import { upsertVisibility } from "@/repositories/permissions";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, listQuoteLines, saveQuoteLines } from "@/domain/quotes/lines";
-import { firstSelectableSubcategory } from "../support/quote-subcategory";
+import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 
 // /qa ISSUE-001(PR #121) — 보관 · 숨김 거래처는 선택지(listProjectFormReferences)에 없어 견적 표가 UUID를 그렸다.
 // 줄 DTO가 거래처 이름을 싣는다 — project.value와 vendor.value를 모두 볼 때만(all-of, 리저브 선택지와 같은 결).

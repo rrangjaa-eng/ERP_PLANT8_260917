@@ -28,7 +28,7 @@ import { ForbiddenError } from "@/domain/revenue";
 import { withTransaction } from "@/lib/db-transaction";
 import { log } from "@/lib/log";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
-import { firstSelectableSubcategory } from "../support/quote-subcategory";
+import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 
 // 04-41 — 액션(스키마 → 원장 합성 저장)을 직접 부르는 케이스용 세션 · revalidatePath · 합성 저장 호출 기록.
 // 합성 저장은 실제 구현을 그대로 감싸기만 한다(동작 불변 — 이 파일의 다른 케이스도 실제 경로를 탄다).

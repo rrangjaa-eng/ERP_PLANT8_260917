@@ -11,7 +11,7 @@ import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, listQuoteLines, saveQuoteLines } from "@/domain/quotes/lines";
 import { saveProjectLedger } from "@/domain/projects/ledger";
-import { firstSelectableSubcategory } from "../support/quote-subcategory";
+import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 
 // quick 261001-85g(Codex 리뷰 P1) — 거래처 정보(vendor.value)가 가려진 계급에게 견적 줄 DTO는 vendorId를 싣지 않는다
 // (화면이 열을 빼도 RSC 페이로드에 거래처 id가 남던 경로). 그 계급이 줄을 저장해도 서버가 기존 거래처를 그대로 둔다.

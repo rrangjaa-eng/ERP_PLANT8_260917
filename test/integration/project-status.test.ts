@@ -27,7 +27,7 @@ import { INFO_ITEMS } from "@/domain/permissions/info-items";
 import { findPermission, findVisibility } from "@/repositories/permissions";
 import { withTransaction } from "@/lib/db-transaction";
 import { deferred, waitForLockWaiter } from "./lock-race";
-import { firstSelectableSubcategory } from "../support/quote-subcategory";
+import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 
 // 04-06(D-75) — 프로젝트 상태 다섯 값. 04-20·04-21이 같은 파일에 전환
 // describe를 더한다. 이 목록은 db/migrations/0012_project_status_five_values.sql

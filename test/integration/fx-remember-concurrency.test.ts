@@ -12,7 +12,7 @@ import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { saveRevenue } from "@/domain/revenue";
-import { firstSelectableSubcategory } from "../support/quote-subcategory";
+import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 
 // 과거 버그: rememberFxRate → upsertSimpleValue가 호출자의 트랜잭션이 아니라
 // **전역 풀**(repositories/settings.ts의 db)로 설정을 썼다. 저장

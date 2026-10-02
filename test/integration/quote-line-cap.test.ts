@@ -10,7 +10,7 @@ import { insertVendor } from "@/repositories/vendors";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, restoreQuoteLine, saveQuoteLines, type QuoteLineWriteRow } from "@/domain/quotes/lines";
 import { deferred, waitForLockWaiter } from "./lock-race";
-import { firstSelectableSubcategory } from "../support/quote-subcategory";
+import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 
 // 04-26(D-86 · CEO A-19·A-20·A-36 · ENG-D10) — 차수당 견적 줄 상한. 상한은 설정 키
 // `quote_line.max_per_revision`이고, 여기서는 3·5로 바꾼 뒤 try/finally로 되돌린다(A-17 — E2E는 바꾸지 않는다).

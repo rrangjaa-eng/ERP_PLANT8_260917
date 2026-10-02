@@ -11,7 +11,7 @@ import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { saveRevenue } from "@/domain/revenue";
 import { KRW_COLUMN_MAX } from "@/domain/money";
-import { firstSelectableSubcategory } from "../support/quote-subcategory";
+import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 
 // 버그: 원화 금액 열이 int4라 약 21.4억(2,147,483,647원)을 넘는 금액은 저장할 수 없었다(사용자 보고는
 // "99억 이상"). bigint로 넓힌 뒤 99억 같은 실제 금액과 상한 끝값(999,999,999,999원)이 실제 Postgres에

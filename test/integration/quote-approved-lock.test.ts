@@ -16,7 +16,7 @@ import { saveProjectLedger } from "@/domain/projects/ledger";
 import { restore } from "@/domain/archive";
 import { kstToday } from "@/lib/kst-date";
 import { log } from "@/lib/log";
-import { firstSelectableSubcategory } from "../support/quote-subcategory";
+import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 
 // 04-40(사용자 D7 · B-07 · ENG-D7 · OV-1 · OV-2 · GAP 1) — 승인된 현재 차수의 견적 합계는 새 차수 없이 바뀌지 않고, 실행가는
 // 계속 고친다. 모든 거부 뒤 승인 차수의 견적 합계(보관 제외)가 승인 직전 값 그대로인지 DB로 단언한다.

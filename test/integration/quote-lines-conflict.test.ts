@@ -26,7 +26,7 @@ import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines, SaveRejectedError, type QuoteLineBaseline } from "@/domain/quotes/lines";
 import { updateQuoteLineIfVersionMatches } from "@/repositories/quote-lines";
 import { checkPayloadSize, MAX_ACTION_PAYLOAD_BYTES } from "@/lib/actions/payload-size";
-import { firstSelectableSubcategory } from "../support/quote-subcategory";
+import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 
 async function setupProject() {
   const client = await insertVendor(SYSTEM_VIEWER, {

@@ -34,7 +34,7 @@ import { deferred, waitForLockWaiter } from "./lock-race";
 import { createRevisionFromCurrent } from "@/domain/quotes/revisions";
 import { revenueEntries } from "@/db/schema";
 import { saveProjectLedgerAction } from "@/app/(app)/projects/actions";
-import { firstSelectableSubcategory } from "../support/quote-subcategory";
+import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 
 // 04-40(W3) — 거부 봉투를 액션으로 직접 확인하는 케이스용 세션. 이 파일의 다른 케이스는 액션을 부르지 않는다.
 vi.mock("@/lib/viewer", async () => {

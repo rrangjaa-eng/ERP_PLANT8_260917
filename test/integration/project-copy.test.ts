@@ -14,7 +14,7 @@ import { getSettingValue } from "@/domain/settings/registry";
 import { FX_RECENT_RATE_USD } from "@/domain/settings/keys";
 import { getCurrentQuoteRevision } from "@/domain/quotes/lines";
 import { log } from "@/lib/log";
-import { firstSelectableSubcategory } from "../support/quote-subcategory";
+import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 
 // 04-15(D-70 · PROJ-05 · CEO 리뷰 B-32 · 사용자 D19-10 · D19-3 · B-26) — 프로젝트 복사 등록. 복사는 기본 정보와 견적 줄
 // 구조(견적 줄 · 견적 외 비용, 보관 · 취소 제외)까지만이고 돈 기록(매출 · 조정 · 계보 · 기간 · 총 매출 예상가)은 따라오지 않는다.

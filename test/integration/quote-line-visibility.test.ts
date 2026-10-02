@@ -10,7 +10,7 @@ import { insertVendor } from "@/repositories/vendors";
 import { upsertVisibility } from "@/repositories/permissions";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines, listQuoteLines } from "@/domain/quotes/lines";
-import { firstSelectableSubcategory } from "../support/quote-subcategory";
+import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 
 // 버그: QUOTE_LINE_DTO_SPEC이 id·itemName 등 비금액 필드까지 전부
 // quote.amount로 게이트한다. quote.amount를 꺼두면 줄이 통째로 {}가 되어

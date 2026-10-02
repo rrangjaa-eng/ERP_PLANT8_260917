@@ -14,7 +14,7 @@ import { getCurrentQuoteRevision, listQuoteLines, saveQuoteLines, type QuoteLine
 import { restore } from "@/domain/archive";
 import { listArchivedAcrossEntities } from "@/repositories/archive";
 import { log } from "@/lib/log";
-import { firstSelectableSubcategory } from "../support/quote-subcategory";
+import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 
 // 04-13(D-83 · D-48 · EXP-14) — 견적 줄의 종류 셋(견적 줄 · 견적 외 비용 · 조정). 조정 줄은 권한표
 // `projects.adjustment` 쓰기가 있는 사람만 상태와 무관하게 만들고 고친다.

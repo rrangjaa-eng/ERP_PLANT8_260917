@@ -15,7 +15,7 @@ import { createRevisionFromCurrent, setCustomerApproval } from "@/domain/quotes/
 import { listRevenue } from "@/domain/revenue";
 import { restore } from "@/domain/archive";
 import { kstToday } from "@/lib/kst-date";
-import { firstSelectableSubcategory } from "../support/quote-subcategory";
+import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 
 // 04-16(사용자 D7 · CEO 리뷰 OV-1 · 엔지니어링 리뷰 GAP 1) — 「계약 금액은 항상 승인값과 같다」를 계약 금액 쪽에서 증명한다.
 // 조작은 04-40이 잠근 서버 경로(saveQuoteLines · 보관함 restore)를 그대로 부르고, 매번 listRevenue의 계약 금액과 DB의 승인

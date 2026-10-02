@@ -13,12 +13,12 @@ export function projectsEmptyState(
   input: CreateChoices & { vendorShown: boolean; canWriteVendors: boolean; canViewVendors: boolean },
 ): { message: string; action: { label: string; href: string } | undefined } {
   if (canCreateProject(input)) {
-    return { message: "등록된 프로젝트가 없습니다", action: { label: "프로젝트 등록", href: "/projects?new=1#project-form" } };
+    return { message: "등록된 프로젝트가 없습니다", action: { label: "프로젝트 등록", href: "/projects?new=1" } };
   }
   const onlyClientsMissing = input.clientCount === 0 && canCreateProject({ ...input, clientCount: 1 });
   // Codex 리뷰 P2 — 거래처 화면은 보기 권한이 없으면 404다. 쓰기만 있는 계급에게 링크를 주지 않는다.
   if (onlyClientsMissing && input.vendorShown && input.canWriteVendors && input.canViewVendors) {
-    return { message: "등록된 거래처가 없습니다", action: { label: "거래처 등록", href: "/admin/vendors?new=1#vendor-form" } };
+    return { message: "등록된 거래처가 없습니다", action: { label: "거래처 등록", href: "/admin/vendors?new=1" } };
   }
   return { message: "등록된 프로젝트가 없습니다", action: undefined };
 }

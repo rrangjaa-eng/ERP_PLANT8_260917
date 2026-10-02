@@ -1,7 +1,5 @@
-/* 04.6 스킨 A 이관 전: CSS */
 /* SYSTEM.md §7-14 이력 목록(이력형 설정 값 · 발령일 이력) — §6-3 폼 화면의 한
-   섹션에 딸린 §6-1 목록과 같은 얇은 표. 색·서체·radius는 tokens.css 변수만
-   쓴다(D-20). 간격 리터럴은 허용된다(02-02 결정). */
+   섹션에 딸린 §6-1 목록과 같은 얇은 표. 역할 토큰만 쓴다(스킨 A). */
 
 .wrap {
   width: 100%;
@@ -13,26 +11,25 @@
 }
 
 .table th {
-  font-size: var(--fs-sm);
+  font-size: var(--text-aux);
   font-weight: var(--fw-medium);
-  color: var(--muted);
+  color: var(--text-muted);
   text-align: left;
   padding: var(--cell-pad-y) var(--cell-pad-x);
-  border-bottom: var(--line-w-strong) solid var(--line-strong);
+  border-bottom: var(--line-w) solid var(--border-row);
 }
 
 /* 표 칸에는 min-height가 듣지 않는다 — 전역 border-box라 height가 패딩 포함 최소 높이로 동작한다(holidays.module.css 선례). */
 .table td {
-  height: var(--row-min);
+  height: var(--row-h);
   padding: var(--cell-pad-y) var(--cell-pad-x);
-  font-size: var(--fs-base);
-  border-bottom: var(--line-w) solid var(--line);
+  font-size: var(--text-body);
+  border-bottom: var(--line-w) solid var(--border-row);
 }
 
-/* §2-4: 숫자 칸은 우측 정렬 + tabular-nums + nowrap(corp-cards .last4 선례). */
+/* §2-4: 숫자 칸은 우측 정렬 + nowrap. tabular-nums는 stylelint가 `ui/num`에만 허용하므로 `Num`이 맡는다(04.6-05 — 웨이브 합본에서 값 칸을 `Num`으로 감싼다). */
 .table .num {
   text-align: right;
-  font-variant-numeric: tabular-nums;
   white-space: nowrap;
   letter-spacing: var(--ls-num);
 }
@@ -50,9 +47,9 @@
   display: flex;
   flex-direction: column;
   gap: var(--s-1);
-  font-size: var(--fs-sm);
+  font-size: var(--text-aux);
   font-weight: var(--fw-medium);
-  color: var(--muted);
+  color: var(--text-muted);
 }
 
 .addCheckbox {
@@ -63,15 +60,15 @@
 
 .addSelect {
   height: var(--control-h);
-  border: var(--line-w) solid var(--line-ui);
-  background: var(--bg);
+  border: var(--line-w) solid var(--border-control);
+  background: var(--surface-base);
   padding: 0 var(--s-2);
-  font-size: var(--fs-base);
+  font-size: var(--text-body);
 }
 
 .addError {
-  font-size: var(--fs-sm);
-  color: var(--danger);
+  font-size: var(--text-aux);
+  color: var(--status-danger);
   width: 100%;
 }
 
@@ -91,6 +88,6 @@
 }
 
 .skeletonRow {
-  height: var(--row-min);
-  background: var(--surface);
+  height: var(--row-h);
+  background: var(--surface-muted);
 }

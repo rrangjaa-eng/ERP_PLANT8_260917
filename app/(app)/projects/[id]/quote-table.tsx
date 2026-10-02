@@ -505,14 +505,14 @@ export function restoredCellPatch(column: string, value: unknown): Partial<Draft
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function restoredNewLine(value: unknown, defaultSubcategory: string, kindCells: Record<QuoteLineKind, LineCells>, storedId: string): DraftLine | null {
+function restoredNewLine(value: unknown, subcategories: readonly string[], kindCells: Record<QuoteLineKind, LineCells>, storedId: string): DraftLine | null {
   if (!isRecord(value)) return null;
   // 04-23 — 새 줄의 종류를 되살린다(옛 보관본에는 없어 견적 줄). 조정·견적 외 비용은 소분류를 빈 값으로 보낸다.
   const lineKind = QUOTE_LINE_KINDS.find((kind) => kind === value.lineKind) ?? "quote";
   const cells = kindCells[lineKind];
   // 보관된 id가 화면 uuid면 그대로 쓴다 — 응답을 잃은 저장 뒤 복원해 다시 보내도 줄이 두 번 생기지 않는다.
   let line: DraftLine = {
-    ...newDraftLine(lineKind === "quote" ? defaultSubcategory : "", cells, UUID_PATTERN.test(storedId) ? storedId : crypto.randomUUID()),
+    ...newDraftLine(lineKind === "quote" ? (subcategories[0] ?? "") : "", cells, UUID_PATTERN.test(storedId) ? storedId : crypto.randomUUID()),
     lineKind,
     ...(typeof value.duplicatedFrom === "string" && UUID_PATTERN.test(value.duplicatedFrom) ? { duplicatedFrom: value.duplicatedFrom } : {}),
     ...(value.vendorHidden === true ? { vendorHidden: true as const } : {}),
@@ -529,6 +529,8 @@ function restoredNewLine(value: unknown, defaultSubcategory: string, kindCells: 
   ] as const) {
     // 지금 셀 단계에서 편집할 수 없는 칸(정산 새 줄의 수량·단가·상태)은 보관값을 넣지 않는다 — 기본값이 서버와 같다.
     if (cells[field] !== "edit") continue;
+    // Codex 리뷰 P2(PR #138) — 그 사이 꺼지거나 보관된 분류는 되살리지 않는다(첫 활성 분류 그대로).
+    if (field === "subcategory" && !subcategories.includes(value[field] as string)) continue;
     const patch = restoredCellPatch(column, value[field]);
     if (patch) line = { ...line, ...patch };
   }
@@ -541,7 +543,8 @@ function restoredNewLine(value: unknown, defaultSubcategory: string, kindCells: 
 export function mergeRestoredEdits(
   lines: DraftLine[],
   edits: Record<string, unknown>,
-  defaultSubcategory: string,
+  // 고를 수 있는(활성) 견적 분류 — 첫 값이 새 줄 기본값이다.
+  subcategories: readonly string[],
   kindCells: Record<QuoteLineKind, LineCells>,
 ): {
   lines: DraftLine[];
@@ -571,13 +574,15 @@ export function mergeRestoredEdits(
       continue;
     }
     if (column === "new") {
-      const line = restoredNewLine(value, defaultSubcategory, kindCells, owner);
+      const line = restoredNewLine(value, subcategories, kindCells, owner);
       if (line) added.push({ ...line, savedVendor: savedVendorFrom(lines, line.vendorId) });
       continue;
     }
     const patch = restoredCellPatch(column, value);
     const base = readLineBase(edits[`${owner}:base`]);
     if (!patch || !base) continue;
+    // Codex 리뷰 P2(PR #138) — 그 사이 꺼지거나 보관된 분류로 바꾼 편집은 들이지 않는다(다른 칸 편집은 들인다).
+    if (patch.subcategory !== undefined && !subcategories.includes(patch.subcategory)) continue;
     // /review 적대 검토(PR #135) — 보관할 때나 지금 거래처가 가려졌으면 기준값의 거래처는 본 적 없는(또는 볼 수 없는) 값이다.
     // 지금 줄의 기준값으로 바꿔, 아무도 바꾸지 않은 거래처 칸에 충돌이 붙거나 다음 보관이 거래처를 편집으로 남기지 않게 한다.
     // 가림 여부는 지금 줄(DTO)을 따른다.
@@ -1315,7 +1320,7 @@ export function QuoteLedger({
 
   // 사용자 결정 2026-09-26(VERDICT.md C-1) — 「버림」·「되돌리기」가 같은 병합 로직을 쓴다.
   function applyRestoredEdits(edits: Record<string, unknown>) {
-    const restored = mergeRestoredEdits(lines, edits, subcategories[0]?.value ?? "", {
+    const restored = mergeRestoredEdits(lines, edits, subcategories.map((option) => option.value), {
       quote: newLineCells,
       out_of_quote: outOfQuoteLineCells,
       adjustment: adjustmentLineCells,

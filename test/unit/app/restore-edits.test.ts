@@ -58,27 +58,27 @@ describe("복원 — 보관할 때의 기준값으로 충돌 판정(검토 8)", 
     const stash = editsSnapshot([edited], null, PERIOD_V1, null, null);
 
     const fresh = savedLine(2, 3000); // 동료가 단가를 3,000으로 저장해 version 2
-    const [restored] = mergeRestoredEdits([fresh], stash, "print", KIND_CELLS).lines;
+    const [restored] = mergeRestoredEdits([fresh], stash, ["print"], KIND_CELLS).lines;
 
     expect(restored).toMatchObject({ unitPriceAmountKrw: 5000, dirty: true, version: 1, baseline: { unitPriceAmountKrw: 1000 } });
   });
 
   it("줄 칸: 기준값이 없는 옛 보관본은 칸을 들이지 않는다(조용히 덮지 않는다)", () => {
     const fresh = savedLine(2, 3000);
-    const [restored] = mergeRestoredEdits([fresh], { "line-1:unitPrice": { amount: 5000, currency: "KRW", fxRate: 1 } }, "print", KIND_CELLS).lines;
+    const [restored] = mergeRestoredEdits([fresh], { "line-1:unitPrice": { amount: 5000, currency: "KRW", fxRate: 1 } }, ["print"], KIND_CELLS).lines;
 
     expect(restored).toMatchObject({ unitPriceAmountKrw: 3000, dirty: false });
   });
 
   it("기간: 보관할 때의 기간 기준값을 돌려준다", () => {
     const stash = editsSnapshot([], { start: "2026-10-01", end: "2026-11-15" }, PERIOD_V1, null, null);
-    const restored = mergeRestoredEdits([], stash, "print", KIND_CELLS);
+    const restored = mergeRestoredEdits([], stash, ["print"], KIND_CELLS);
 
     expect(restored.period).toEqual({ end: "2026-11-15", base: PERIOD_V1 });
   });
 
   it("기간: 기준값이 없는 옛 보관본은 기간 칸을 들이지 않는다", () => {
-    const restored = mergeRestoredEdits([], { "period:end": "2026-11-15" }, "print", KIND_CELLS);
+    const restored = mergeRestoredEdits([], { "period:end": "2026-11-15" }, ["print"], KIND_CELLS);
 
     expect(restored.period).toEqual({});
   });
@@ -90,7 +90,7 @@ describe("복원 — 보관할 때의 기준값으로 충돌 판정(검토 8)", 
     const copy: Line = { ...savedLine(1, 1000), clientKey: newId, id: newId, isNew: true, version: undefined, duplicatedFrom: sourceId, dirty: true };
     const stash = JSON.parse(JSON.stringify(editsSnapshot([copy], null, PERIOD_V1, null, null))) as Record<string, unknown>;
 
-    const [restored] = mergeRestoredEdits([], stash, "print", { quote: {} } as KindCells).lines;
+    const [restored] = mergeRestoredEdits([], stash, ["print"], { quote: {} } as KindCells).lines;
 
     expect(restored).toMatchObject({ id: newId, isNew: true, duplicatedFrom: sourceId });
   });
@@ -102,7 +102,7 @@ describe("복원 — 보관할 때의 기준값으로 충돌 판정(검토 8)", 
     const copy: Line = { ...savedLine(1, 1000), clientKey: newId, id: newId, isNew: true, version: undefined, duplicatedFrom: sourceId, vendorHidden: true, dirty: true };
     const stash = JSON.parse(JSON.stringify(editsSnapshot([copy], null, PERIOD_V1, null, null))) as Record<string, unknown>;
 
-    const [restored] = mergeRestoredEdits([], stash, "print", { quote: {} } as KindCells).lines;
+    const [restored] = mergeRestoredEdits([], stash, ["print"], { quote: {} } as KindCells).lines;
 
     expect(restored).toMatchObject({ duplicatedFrom: sourceId, vendorHidden: true });
   });
@@ -113,7 +113,7 @@ describe("복원 — 보관할 때의 기준값으로 충돌 판정(검토 8)", 
     const stash = JSON.parse(JSON.stringify(editsSnapshot([edited], null, PERIOD_V1, null, null))) as Record<string, unknown>;
 
     const fresh = { ...savedLine(2, 1000), vendorId, baseline: { ...savedLine(2, 1000).baseline, vendorId } };
-    const [restored] = mergeRestoredEdits([fresh], stash, "print", KIND_CELLS).lines;
+    const [restored] = mergeRestoredEdits([fresh], stash, ["print"], KIND_CELLS).lines;
 
     expect(restored).toMatchObject({ itemName: "배너 고침", version: 1, vendorId, baseline: { itemName: "배너", vendorId } });
     expect(restored).not.toHaveProperty("vendorHidden");
@@ -130,7 +130,7 @@ describe("복원 — 보관할 때의 기준값으로 충돌 판정(검토 8)", 
     >;
 
     const hidden: Line = { ...savedLine(1, 1000), vendorHidden: true };
-    const [restored] = mergeRestoredEdits([hidden], stash, "print", KIND_CELLS).lines;
+    const [restored] = mergeRestoredEdits([hidden], stash, ["print"], KIND_CELLS).lines;
     if (!restored) throw new Error("복원 줄이 없습니다");
 
     expect(restored).toMatchObject({ itemName: "배너 고침", vendorId: null, vendorHidden: true, baseline: { vendorId: null } });
@@ -141,7 +141,7 @@ describe("복원 — 보관할 때의 기준값으로 충돌 판정(검토 8)", 
     const newId = "6f1c2b8e-3d4a-4f5b-9c6d-7e8f9a0b1c2d";
     for (const duplicatedFrom of ["not-a-uuid", 123]) {
       const stash = { [`${newId}:new`]: { lineKind: "quote", duplicatedFrom, subcategory: "print", itemName: "배너" } };
-      const [restored] = mergeRestoredEdits([], stash, "print", { quote: {} } as KindCells).lines;
+      const [restored] = mergeRestoredEdits([], stash, ["print"], { quote: {} } as KindCells).lines;
       expect(restored).not.toHaveProperty("duplicatedFrom");
     }
   });
@@ -157,8 +157,52 @@ describe("복원 — 새 줄의 보관 거래처 이름", () => {
     const stash = editsSnapshot([added], null, PERIOD_V1, null, null);
     const cells = { quote: { vendorId: "edit" } } as unknown as KindCells;
 
-    const restored = mergeRestoredEdits([saved], stash, "print", cells).lines.at(-1);
+    const restored = mergeRestoredEdits([saved], stash, ["print"], cells).lines.at(-1);
 
     expect(restored).toMatchObject({ vendorId: archived.id, savedVendor: archived });
+  });
+});
+
+// Codex 리뷰 P2(PR #138) — 보관할 때 고를 수 있던 분류가 그 사이 비활성 · 보관되면, 복원이 그 분류를 되살리지 않는다
+// (Ctrl+Enter · 복제와 같은 규칙: 고를 수 있는 분류는 활성 선택지뿐).
+describe("복원 — 고를 수 없게 된 견적 분류", () => {
+  const ACTIVE = ["print", "video"];
+
+  it("새 줄: 보관한 분류가 활성 선택지에 없으면 첫 활성 분류로 둔다", () => {
+    const newId = "6f1c2b8e-3d4a-4f5b-9c6d-7e8f9a0b1c2d";
+    const stash = { [`${newId}:new`]: { lineKind: "quote", subcategory: "retired", itemName: "배너" } };
+    const cells = { quote: { subcategory: "edit", itemName: "edit" } } as unknown as KindCells;
+
+    const [restored] = mergeRestoredEdits([], stash, ACTIVE, cells).lines;
+
+    expect(restored).toMatchObject({ subcategory: "print", itemName: "배너" });
+  });
+
+  it("새 줄: 보관한 분류가 활성이면 그대로 되살린다", () => {
+    const newId = "6f1c2b8e-3d4a-4f5b-9c6d-7e8f9a0b1c2d";
+    const stash = { [`${newId}:new`]: { lineKind: "quote", subcategory: "video", itemName: "배너" } };
+    const cells = { quote: { subcategory: "edit", itemName: "edit" } } as unknown as KindCells;
+
+    const [restored] = mergeRestoredEdits([], stash, ACTIVE, cells).lines;
+
+    expect(restored).toMatchObject({ subcategory: "video" });
+  });
+
+  it("기존 줄: 고를 수 없게 된 분류 편집은 들이지 않고 다른 칸 편집은 들인다", () => {
+    const edited = { ...savedLine(1, 1000), subcategory: "retired", itemName: "배너 고침", dirty: true };
+    const stash = JSON.parse(JSON.stringify(editsSnapshot([edited], null, PERIOD_V1, null, null))) as Record<string, unknown>;
+
+    const [restored] = mergeRestoredEdits([savedLine(1, 1000)], stash, ACTIVE, KIND_CELLS).lines;
+
+    expect(restored).toMatchObject({ subcategory: "print", itemName: "배너 고침", dirty: true });
+  });
+
+  it("기존 줄: 활성 분류 편집은 들인다", () => {
+    const edited = { ...savedLine(1, 1000), subcategory: "video", dirty: true };
+    const stash = JSON.parse(JSON.stringify(editsSnapshot([edited], null, PERIOD_V1, null, null))) as Record<string, unknown>;
+
+    const [restored] = mergeRestoredEdits([savedLine(1, 1000)], stash, ACTIVE, KIND_CELLS).lines;
+
+    expect(restored).toMatchObject({ subcategory: "video", dirty: true });
   });
 });

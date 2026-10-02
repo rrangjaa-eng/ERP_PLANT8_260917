@@ -79,6 +79,20 @@ describe("생성 입력 — 칸 오류 문구", () => {
     expect(createFieldDefinitionInput.safeParse({ ...valid, sortOrder: 999 }).success).toBe(true);
   });
 
+  it("자모가 풀린(NFD) 이름 · 선택지는 NFC로 합쳐 저장 · 길이 판정한다", () => {
+    const nfdName = "계약 메모".normalize("NFD");
+    const parsed = createFieldDefinitionInput.parse({ ...valid, name: ` ${nfdName} `, type: "select", options: [" 갑 ".normalize("NFD")] });
+    expect(parsed.name).toBe("계약 메모".normalize("NFC"));
+    expect(parsed.options).toEqual(["갑"]);
+    expect(createFieldDefinitionInput.safeParse({ ...valid, name: "가".repeat(20).normalize("NFD") }).success).toBe(true);
+    const updated = updateFieldDefinitionInput.parse({ id: "x", version: 1, name: nfdName, required: false, sortOrder: 1 });
+    expect(updated.name).toBe("계약 메모");
+  });
+
+  it("NFC로 합치면 같아지는 선택지는 중복으로 거부한다", () => {
+    expect(issueMessages({ ...valid, type: "select", options: ["갑", "갑".normalize("NFD")] })).toContain("이미 있는 선택지 · 다른 이름 적기");
+  });
+
   it("entity 키는 거부하고, 선택형은 선택지 없이는 거부한다", () => {
     expect(createFieldDefinitionInput.safeParse({ ...valid, entity: "project" }).success).toBe(false);
     expect(createFieldDefinitionInput.safeParse({ ...valid, type: "select" }).success).toBe(false);

@@ -24,7 +24,8 @@ export const OPTIONS_ON_NON_SELECT_MESSAGE = "선택형 아닌 칸의 선택지 
 // 수정 충돌 — 폼을 연 뒤 다른 사람이 먼저 저장·보관·복원. 폼이 이 상수와 같은지로 1차를 켠 채 「새로 불러오기」를 그린다.
 export const FIELD_DEFINITION_CONFLICT_CAUSE = "다른 사람이 먼저 수정함 · 새로 불러오기";
 
-const nameField = z.string().trim().min(1, NAME_EMPTY_MESSAGE).max(FIELD_NAME_MAX, NAME_TOO_LONG_MESSAGE);
+// 자른 뒤 NFC로 합친다 — 자모가 풀린(NFD) 한글이 같아 보이는 다른 이름 · 선택지를 만들지 못하게(길이 · 중복 판정도 합친 뒤).
+const nameField = z.string().trim().normalize("NFC").min(1, NAME_EMPTY_MESSAGE).max(FIELD_NAME_MAX, NAME_TOO_LONG_MESSAGE);
 
 const sortOrderField = z
   .number({ error: SORT_ORDER_RANGE_MESSAGE })
@@ -34,7 +35,7 @@ const sortOrderField = z
 
 // 원소 자르기 · 1~40자 · 최대 30개 · 중복 없음(자른 뒤 기준).
 const optionsField = z
-  .array(z.string().trim().min(1, OPTION_EMPTY_MESSAGE).max(OPTION_MAX_LENGTH, OPTION_TOO_LONG_MESSAGE))
+  .array(z.string().trim().normalize("NFC").min(1, OPTION_EMPTY_MESSAGE).max(OPTION_MAX_LENGTH, OPTION_TOO_LONG_MESSAGE))
   .max(ACTIVE_OPTIONS_MAX, OPTION_LIMIT_MESSAGE)
   .superRefine((options, ctx) => {
     if (new Set(options).size !== options.length) {

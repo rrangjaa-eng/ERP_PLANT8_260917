@@ -1,6 +1,5 @@
-/* 04.6 스킨 A 이관 전: CSS */
 /* SYSTEM.md §7-8 「더보기」 시트. 실물: docs/design/system/sheet-modal.html #sheet-more.
-   색·서체·radius는 토큰 참조만 쓴다(D-20). 네이티브 <dialog>가 가림막(::backdrop)·
+   색·서체·radius는 역할 토큰 참조만 쓴다. 네이티브 <dialog>가 가림막(::backdrop)·
    포커스 트랩을 제공하므로 별도 scrim 요소를 만들지 않는다. */
 
 .sheet {
@@ -12,13 +11,14 @@
   inset-inline: 0;
   width: 100%;
   max-width: none;
-  max-height: 85vh;
+  max-height: var(--sheet-max-h);
   margin: 0;
   padding: 0;
   border: 0;
-  border-top: var(--line-w-strong) solid var(--line-strong);
-  background: var(--bg);
-  color: var(--fg);
+  border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+  background: var(--surface-base);
+  box-shadow: var(--shadow-float);
+  color: var(--text-strong);
 }
 
 .sheet[open] {
@@ -27,7 +27,7 @@
 }
 
 .sheet::backdrop {
-  background: var(--scrim);
+  background: var(--scrim-dialog);
 }
 
 .hd {
@@ -41,7 +41,7 @@
   flex: 1;
   min-width: 0;
   margin: 0;
-  font-size: var(--fs-lg);
+  font-size: var(--text-subtitle);
   font-weight: var(--fw-bold);
   letter-spacing: var(--ls-head);
   line-height: var(--lh-head);
@@ -54,7 +54,7 @@
   margin: calc(var(--s-2) * -1) calc(var(--s-3) * -1) 0 0;
   border: 0;
   background: none;
-  color: var(--muted);
+  color: var(--text-muted);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -79,7 +79,7 @@
 }
 
 .list li {
-  border-bottom: var(--line-w) solid var(--line);
+  border-bottom: var(--line-w) solid var(--border-row);
 }
 
 .list li:last-child {
@@ -95,15 +95,15 @@
   padding: 0 var(--pad-page);
   border: 0;
   background: none;
-  color: var(--fg);
-  font-size: var(--fs-base);
+  color: var(--text-strong);
+  font-size: var(--text-body);
   text-align: left;
   text-decoration: none;
   cursor: pointer;
 }
 
 .link:hover {
-  background: var(--surface);
+  background: var(--surface-muted);
 }
 
 .link:focus-visible {
@@ -111,15 +111,15 @@
   outline-offset: calc(-1 * var(--focus-w));
 }
 
-/* /design-review 발견 3 — §7-3 그룹 머리글 행 규칙(--fs-sm --muted 600, 아래
-   1px --line-strong)을 그대로 쓴다. admin-index.module.css .groupLabel(§6-10)이
-   같은 규칙을 이미 옮겨 쓰고 있다 — 이 시트만 --fs-xs·--faint로 어긋나 있었다. */
+/* /design-review 발견 3 — §7-3 그룹 머리글 행 규칙(--text-aux --text-muted 600, 아래
+   1px --border-strong)을 그대로 쓴다. admin-index.module.css .groupLabel(§6-10)이
+   같은 규칙을 쓰는 자리다. */
 .group {
   padding: var(--s-3) var(--pad-page) var(--s-1);
-  font-size: var(--fs-sm);
+  font-size: var(--text-aux);
   font-weight: var(--fw-medium);
-  color: var(--muted);
-  border-bottom: var(--line-w) solid var(--line-strong);
+  color: var(--text-muted);
+  border-bottom: var(--line-w) solid var(--border-strong);
 }
 
 .searchRow {
@@ -128,14 +128,14 @@
   gap: var(--s-3);
   min-height: var(--touch-min);
   padding: 0 var(--pad-page);
-  background: var(--surface);
-  color: var(--faint);
-  font-size: var(--fs-base);
+  background: var(--surface-muted);
+  color: var(--text-faint);
+  font-size: var(--text-body);
   cursor: not-allowed;
 }
 
 .reason {
   margin-left: auto;
-  color: var(--muted);
-  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-size: var(--text-aux);
 }

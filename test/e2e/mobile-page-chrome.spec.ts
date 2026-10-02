@@ -92,3 +92,15 @@ test.describe("폰 375 설정 체크박스 터치 목표 (F-05)", () => {
     }
   });
 });
+
+test.describe("폰 375 상단 바 — 스킨 A (04.6-08)", () => {
+  test("바 높이가 PC와 같은 --bar-h이고 아래 선이 없다", async ({ page }) => {
+    await loginAs(page, DEFAULT_ROLE_ID);
+    await page.goto("/projects");
+
+    const bar = page.getByRole("banner");
+    const barH = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--bar-h").trim());
+    await expect(bar).toHaveCSS("height", barH);
+    await expect(bar).toHaveCSS("border-bottom-width", "0px");
+  });
+});

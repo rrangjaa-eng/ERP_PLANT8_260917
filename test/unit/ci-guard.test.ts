@@ -97,7 +97,7 @@ describe("ci-guard: .github/workflows 메타 검사", () => {
     expect(indexes).toEqual([...indexes].sort((a, b) => a - b));
   });
 
-  it("quality 잡 내부 순서: lint < typecheck < build:cli < lint:sql < test:unit < 훅 테스트", () => {
+  it("quality 잡 내부 순서: lint < typecheck < build:cli < lint:sql < test:unit < 훅 테스트 < 캐시 저장", () => {
     const ci = readWorkflow("ci.yml");
     const qualityBlock = jobBlock(ci, "quality", "integration");
     const order = [
@@ -107,6 +107,7 @@ describe("ci-guard: .github/workflows 메타 검사", () => {
       "pnpm lint:sql",
       "pnpm test:unit",
       ".claude/hooks/tests",
+      "actions/cache/save@v4",
     ].map((token) => firstLine(qualityBlock, token));
     for (const line of order) expect(line).toBeGreaterThan(-1);
     expect(order).toEqual([...order].sort((a, b) => a - b));
@@ -124,20 +125,38 @@ describe("ci-guard: .github/workflows 메타 검사", () => {
     ]) {
       expect(qualityBlock, `quality 잡에 ${token}이 있어야 한다`).toContain(token);
     }
+    // passed가 건너뛰어지면(draft·재실행) cache-primary-key 출력이 비므로 저장 키는 tree에서 직접 만든다.
+    expect(qualityBlock).not.toContain("cache-primary-key");
+    const save = qualityBlock.slice(qualityBlock.indexOf("actions/cache/save@v4"));
+    expect(save).toContain("key: quality-passed-${{ steps.tree.outputs.tree }}");
   });
 
-  it("quality 잡은 passed 스텝 뒤의 모든 스텝에 cache-hit 가드가 있다", () => {
+  it("quality 잡은 passed 스텝 뒤의 모든 스텝에 cache-hit 가드가 하나씩 있다", () => {
     const ci = readWorkflow("ci.yml");
-    const lines = jobBlock(ci, "quality", "integration").split("\n");
-    const passedAt = lines.findIndex((line) => /^ {6}- id: passed$/.test(line));
+    const block = jobBlock(ci, "quality", "integration");
+    const marker = "\n      - id: passed";
+    const passedAt = block.indexOf(marker);
     expect(passedAt, "quality 잡에 id: passed 스텝이 있어야 한다").toBeGreaterThan(-1);
-    const after = lines.slice(passedAt + 1);
-    const stepCount = after.filter((line) => /^ {6}- /.test(line)).length;
-    const guardCount = after.filter(
-      (line) => line.trim() === "if: steps.passed.outputs.cache-hit != 'true'",
-    ).length;
-    expect(stepCount).toBeGreaterThan(0);
-    expect(guardCount).toBe(stepCount);
+    // 첫 조각은 passed 스텝 자신이라 버린다.
+    const steps = block.slice(passedAt + marker.length).split("\n      - ").slice(1);
+    expect(steps.length).toBeGreaterThan(0);
+    for (const step of steps) {
+      const guards = step.split("\n").filter(
+        (line) => line.trim() === "if: steps.passed.outputs.cache-hit != 'true'",
+      );
+      expect(guards, `가드가 정확히 하나여야 한다: ${step.slice(0, 60)}`).toHaveLength(1);
+    }
+  });
+
+  it("passed 스텝은 ready_for_review 첫 시도에서만 조회한다(재실행·다른 이벤트는 전부 돈다)", () => {
+    const ci = readWorkflow("ci.yml");
+    const block = jobBlock(ci, "quality", "integration");
+    const start = block.indexOf("\n      - id: passed");
+    expect(start).toBeGreaterThan(-1);
+    const end = block.indexOf("\n      - ", start + 1);
+    expect(block.slice(start, end)).toContain(
+      "if: github.event.action == 'ready_for_review' && github.run_attempt == 1",
+    );
   });
 
   it("quality 잡은 if 조건 없이 항상 돈다(draft PR의 빠른 경로)", () => {

@@ -56,10 +56,14 @@ type Values = { name: string; phone: string; address: string | null; quantity: s
 type Outcome =
   | { kind: "saved"; text: string }
   | { kind: "conflict"; text: string }
-  | { kind: "failed"; text: string }
+  | { kind: "failed"; text: string; reload?: boolean }
   | null;
 
 const SAVE_FAILED: Outcome = { kind: "failed", text: "저장 실패 · 다시 시도" };
+// 서버가 확정해 거부한 정정 — 다시 보내도 같은 답이라 「다시 시도」가 아니다(대조 제외 거부와 같은 꼴 · PR #88 /review F2).
+// 그새 없어진 제출은 화면이 낡았으니 충돌과 같은 꼬리 「다시 불러오기」.
+const SAVE_DENIED: Outcome = { kind: "failed", text: "저장 실패 · 권한 없음" };
+const SAVE_NOT_FOUND: Outcome = { kind: "failed", text: "저장 실패 · 없는 제출 · ", reload: true };
 // 04.3-17 「대조 제외」 실패 — 다시 보내면 되는 실패(연결 끊김 · 결과 불명)만 모달 안 실패 줄(§7-17 failure, 1차 안 막음).
 // 서버 거부(버전 충돌 · 권한 없음 · 없는 제출)는 막힘 자리(disabledReason) — 다시 받거나 다시 열 때까지 1차를 막는다(검토 X2 · X3).
 // 충돌은 정정 충돌 꼴(`저장 실패 · …` → `대조 제외 실패 · …`). 명사형은 사용자 결정 A(2026-09-26 — UI-SPEC 「제외하지
@@ -285,6 +289,8 @@ export function ReviewForm(props: {
         return;
       }
       if (data.kind === "unchanged") return setOutcome(null);
+      if (data.kind === "denied") return setOutcome(SAVE_DENIED);
+      if (data.kind === "notFound") return setOutcome(SAVE_NOT_FOUND);
       setOutcome(SAVE_FAILED);
     },
     onError: ({ error }) => {
@@ -490,7 +496,7 @@ export function ReviewForm(props: {
               {showReason && outcome ? (
                 <p id={REASON_ID} className={styles.reason}>
                   {outcome.text}
-                  {outcome.kind === "conflict" ? (
+                  {outcome.kind === "conflict" || (outcome.kind === "failed" && outcome.reload) ? (
                     <Button variant="tertiary" onClick={() => router.refresh()}>
                       다시 불러오기
                     </Button>

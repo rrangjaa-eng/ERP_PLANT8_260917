@@ -563,6 +563,31 @@ test("보기만 계급은 값이 입력 칸이 아니라 글자다(DOM 감사 L3
   }
 });
 
+// PR #88 /review F2 — 화면을 연 뒤 권한이 거둬지면 정정 거부는 「다시 시도」가 아니라 확정 사실 줄(대조 제외 거부와 같은 꼴).
+test("화면을 연 뒤 제출 내용 항목이 꺼지면 저장은 「저장 실패 · 권한 없음」 · 다시 시도 · 다시 불러오기 없음 · 무변경", async ({ page }) => {
+  const roleId = `role-e2e-cert-revoke-${randomUUID()}`;
+  await insertRole(SYSTEM_VIEWER, { id: roleId, name: `E2E 거둠 ${roleId.slice(-12)}`, sortOrder: 99 });
+  await setPermissionCell(SYSTEM_VIEWER, { roleId, menu: "certs.submissions", action: "view", allowed: true });
+  await setPermissionCell(SYSTEM_VIEWER, { roleId, menu: "certs.submissions", action: "write", allowed: true });
+  await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "cert_submission.value", visible: true });
+  const writer = await createFixtureUser({ roleId });
+  const seeded = await seedSubmittedCert();
+
+  try {
+    await login(page, writer);
+    await page.goto(reviewPath(seeded.submissionId));
+    await page.getByLabel("연락처").fill("010-5555-6666");
+    await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "cert_submission.value", visible: false });
+    await saveButton(page).click();
+    await expect(page.getByText("저장 실패 · 권한 없음", { exact: true })).toBeVisible();
+    await expect(page.getByText("저장 실패 · 다시 시도")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "다시 불러오기" })).toHaveCount(0);
+    expect((await submission(seeded.submissionId)).phone).toBe("01048217730");
+  } finally {
+    await setRoleArchived(SYSTEM_VIEWER, roleId, true);
+  }
+});
+
 // 04.3-17 — I4 `수량` 정정(N3 a · E30): 짧은 칸 · 「고친 내용 저장」 · 결과 줄 · 새로 고친 뒤 값.
 test("수량 정정 — 3 → 고친 내용 저장 → 결과 줄 · 새로 고친 뒤 3", async ({ page }) => {
   const seeded = await seedSubmittedCert();

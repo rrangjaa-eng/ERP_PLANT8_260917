@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: "04.5"
 current_phase_name: 화면 항목 관리 (INSERTED)
-current_plan: 7
+current_plan: 8
 status: executing
-stopped_at: Completed 04.5-04-PLAN.md
-last_updated: "2026-10-02T12:04:07.705Z"
+stopped_at: Completed 04.5-05-PLAN.md
+last_updated: "2026-10-02T12:58:03.047Z"
 last_activity: 2026-10-02
 last_activity_desc: Phase 04.5 execution started
-state_head: 0dd8e6fcf4aa4042c2df45ca9499ae78546f25b7
+state_head: 19902e8f3edc7f5331cf72cfe6d30e16e072a0de
 progress:
   total_phases: 17
   completed_phases: 7
   total_plans: 178
-  completed_plans: 118
+  completed_plans: 119
   percent: 41
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-30)
 ## Current Position
 
 Phase: 04.5 (화면 항목 관리 (INSERTED)) — EXECUTING
-Current Plan: 7
+Current Plan: 8
 Total Plans in Phase: 9
 Status: Ready to execute
 Last activity: 2026-10-02 — Phase 04.5 execution started
@@ -128,6 +128,7 @@ Progress: [████░░░░░░] 41%
 | Phase 04.5 P02 | 43min | 3 tasks | 16 files |
 | Phase 04.5 P03 | 36min | 2 tasks | 9 files |
 | Phase 04.5 P04 | 43 min | 2 tasks | 14 files |
+| Phase 04.5 P05 | 51min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -325,6 +326,8 @@ Recent decisions affecting current work:
 - [Phase 04.5]: 04.5-03: createRole이 grantCustomFieldsToRole을 동적 import(roles↔viewer 순환), 실패 시 1회 재시도 후 role.custom_field_grant_failed 경고 · 시드 계급을 더하는 뒤 페이즈는 같은 함수를 불러야 함
 - [Phase 04.5]: 04.5-04: 보관함 등록부 항목별 추가 권한 requiredMenu — 칸 정의 보관·복원은 admin.archive write AND admin.field-definitions write, 보관함 목록은 admin.field-definitions view
 - [Phase 04.5]: 04.5-04: 칸 보관·복원은 같은 UPDATE에서 version + 1(멱등은 불변) — 그 전에 연 수정 폼은 충돌
+- [Phase 04.5]: 04.5-05: 거래처 커스텀 값 저장은 행 잠금(SELECT FOR UPDATE) 뒤 같은 tx로 입력 칸 집합(vendor.value AND 활성 ∩ 칸별 보임)을 한 문으로 읽어 판정 · 합침 — 입력 칸 밖 저장값은 되살리고, 정의에 없는 키만 거부
+- [Phase 04.5]: 04.5-05: 커스텀 칸 오류 문구는 명사형 상수(preserve.ts) — 「필수 칸 비어 있음 · 값 입력」 등. 06은 UI-SPEC 원문이 아니라 이 상수를 기대값으로
 
 ### Pending Todos
 
@@ -415,6 +418,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-02T12:04:07.128Z
-Stopped at: Completed 04.5-04-PLAN.md
+Last session: 2026-10-02T12:58:02.616Z
+Stopped at: Completed 04.5-05-PLAN.md
 Resume file: None

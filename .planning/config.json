@@ -96,5 +96,13 @@
     ],
     "models": {},
     "effort": {}
+  },
+  "model_overrides": {
+    "gsd-plan-checker": "opus",
+    "gsd-code-reviewer": "opus",
+    "gsd-verifier": "opus",
+    "gsd-integration-checker": "opus",
+    "gsd-ui-checker": "opus",
+    "gsd-ui-auditor": "opus"
   }
 }

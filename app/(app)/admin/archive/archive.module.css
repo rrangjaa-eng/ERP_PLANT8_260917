@@ -1,3 +1,4 @@
+/* 04.6 스킨 A 이관 전: CSS */
 /* SYSTEM.md §6-1 목록 템플릿. 색·서체·radius는 tokens.css 변수만 쓴다(D-20).
    이 파일은 보관함 화면과 delete-to-archive.tsx(여섯 마스터 화면이 공유)가
    함께 쓴다 — CSS Module 스코프는 파일 단위라 화면마다 클래스가 새로

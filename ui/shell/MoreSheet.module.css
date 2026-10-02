@@ -1,3 +1,4 @@
+/* 04.6 스킨 A 이관 전: CSS */
 /* SYSTEM.md §7-8 「더보기」 시트. 실물: docs/design/system/sheet-modal.html #sheet-more.
    색·서체·radius는 토큰 참조만 쓴다(D-20). 네이티브 <dialog>가 가림막(::backdrop)·
    포커스 트랩을 제공하므로 별도 scrim 요소를 만들지 않는다. */

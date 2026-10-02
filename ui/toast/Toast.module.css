@@ -1,3 +1,4 @@
+/* 04.6 스킨 A 이관 전: CSS */
 /* SYSTEM.md §7-6 토스트. 실물: docs/design/system/preview.html .toast 블록
    (위치·면·테두리·간격 값 그대로 포트). 나타남 애니메이션은 §5 허용 목록
    (opacity + translateY 160ms ease-out)만 쓰고 tokens.css의

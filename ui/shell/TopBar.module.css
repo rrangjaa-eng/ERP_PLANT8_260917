@@ -1,3 +1,4 @@
+/* 04.6 스킨 A 이관 전: CSS */
 /* SYSTEM.md §6-0 공통 셸 · PC 상단 바. 실물: docs/design/system/preview.html .bar 블록.
    색·서체·radius는 토큰 참조만 쓴다(D-20). 흰색 반전 워드마크의 원래 리터럴 값은
    계산값이 같은 var(--bg)로 옮긴다(02-PATTERNS.md Pitfall 1 — 새 토큰 없이, 픽셀 불변). */

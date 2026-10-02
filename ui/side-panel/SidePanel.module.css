@@ -1,3 +1,4 @@
+/* 04.6 스킨 A 이관 전: CSS */
 /* SYSTEM.md §7-8 개정 ⑰(04.3-10 · D-d) — 옆 패널. 토큰만(docs/design/tokens.css). 새 색 · radius · 그림자 없음.
    PC(700 이상): 오른쪽 고정 480(--modal-w — §7-8 모달과 같은 폭), 목록 위에 겹쳐 서고 밀지 않는다. 스크림 없음 —
    show()로 열려 뒤를 막지 않는다. 폰(700 미만): 아래 @media — §7-8 시트 골격(ui/table/RowSheet.module.css 선례). */

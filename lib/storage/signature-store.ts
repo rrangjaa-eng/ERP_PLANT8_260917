@@ -21,7 +21,7 @@ const KEY_PATTERN = /^signatures\/[A-Za-z0-9._/-]+$/;
 
 function assertValidKey(key: string): void {
   if (!KEY_PATTERN.test(key) || key.includes("..")) {
-    throw new InvalidSignatureKeyError(`서명 객체 키 형식 오류: ${key}`);
+    throw new InvalidSignatureKeyError("서명 객체 키 형식 오류");
   }
 }
 

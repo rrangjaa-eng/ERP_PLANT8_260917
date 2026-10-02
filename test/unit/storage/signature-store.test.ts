@@ -119,3 +119,21 @@ describe("getSignatureStore — 두 드라이버 모두 키 검사를 먼저 한
     await expect(async () => store.delete(key)).rejects.toBeInstanceOf(mod.InvalidSignatureKeyError);
   });
 });
+
+describe("서명 객체 키 검증 — 오류 문장에 키가 없다", () => {
+  it("형식이 틀린 키는 InvalidSignatureKeyError로 거부하고 메시지에 키를 담지 않는다", async () => {
+    const mod = await loadStore({ APP_ENV: "local" });
+    const store = mod.getSignatureStore();
+    const badKey = `../etc/secret-${randomUUID()}.png`;
+
+    let error: unknown = null;
+    try {
+      await store.get(badKey);
+    } catch (e) {
+      error = e;
+    }
+    expect(error).toBeInstanceOf(mod.InvalidSignatureKeyError);
+    expect((error as Error).message).not.toContain(badKey);
+    expect((error as Error).message).not.toContain("secret");
+  });
+});

@@ -600,4 +600,30 @@ test.describe("결과 모름 뒤 다시 보내기 — 요청 키(PR #88 Codex)",
     expect(prize?.unitValueKrw).toBe(73_519);
     await page.context().close();
   });
+
+  // PR #88 /review F3 — 화면을 연 뒤 서버의 경품 줄이 바뀌어 서버가 막으면(noListedPrize · noPrize) 화면 막힘과 같은 줄을 보인다.
+  test("QR 생성 — 화면을 연 뒤 경품 가액이 내려가거나 줄이 지워져 서버가 막으면 막힌 이유 줄 · QR 없음", async ({ browser }) => {
+    test.setTimeout(120_000);
+    const lowered = await createCertEvent({ name: "E2E 서버막힘 가액", status: "requested", createdBy: pmId || null, prizes: [{ name: "스타벅스 카드", unitValueKrw: 73_519 }] });
+    const emptied = await createCertEvent({ name: "E2E 서버막힘 줄", status: "requested", createdBy: pmId || null, prizes: [{ name: "스타벅스 카드", unitValueKrw: 73_519 }] });
+    const page = await loggedInPage(browser, manager);
+    const qr = page.getByRole("button", { name: "QR 생성", exact: true });
+    const tokenOf = async (eventId: string) =>
+      (await db.select({ tokenHash: certEvents.tokenHash }).from(certEvents).where(eq(certEvents.id, eventId)))[0]?.tokenHash ?? null;
+
+    await page.goto(`/certs/events/${lowered.eventId}`);
+    await expect(prizeRows(page)).toHaveCount(1);
+    await db.update(certPrizes).set({ unitValueKrw: 30_000 }).where(eq(certPrizes.eventId, lowered.eventId));
+    await qr.click();
+    await expect(page.getByText("50,000 넘는 경품 없음 · 가액 확인")).toBeVisible();
+    expect(await tokenOf(lowered.eventId)).toBeNull();
+
+    await page.goto(`/certs/events/${emptied.eventId}`);
+    await expect(prizeRows(page)).toHaveCount(1);
+    await db.delete(certPrizes).where(eq(certPrizes.eventId, emptied.eventId));
+    await qr.click();
+    await expect(page.getByText("경품 없음 · 첫 줄 만들기")).toBeVisible();
+    expect(await tokenOf(emptied.eventId)).toBeNull();
+    await page.context().close();
+  });
 });

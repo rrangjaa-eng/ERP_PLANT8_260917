@@ -8,6 +8,8 @@ import {
   resolveConflict,
   withServerLocks,
   prizeChangesBody,
+  qrBlockReason,
+  qrServerBlockText,
   saveOutcome,
   saveResultText,
   submitCellPreview,
@@ -350,5 +352,17 @@ describe("generateKeyFor — 「QR 생성」 요청 키는 보낸 경품 변경 
     const deletedRow = prizeChangesBody(saved, [edited[0]!], [{ id: "p2", version: 1 }]);
     expect(generateKeyFor(prev, deletedRow, newKey).key).toBe("key-2");
     expect(newKey).toHaveBeenCalledTimes(2);
+  });
+});
+
+// PR #88 /review F3 — 서버가 QR 생성을 막은 이유(noPrize · noListedPrize)는 화면 막힘(qrBlockReason)과 같은 줄이다.
+describe("qrServerBlockText", () => {
+  it("noPrize는 경품 0줄 막힘, noListedPrize는 50,000 넘는 경품 0 막힘과 같은 문구", () => {
+    expect(qrServerBlockText("noPrize")).toBe(
+      qrBlockReason({ contactMissing: false, canOpenSettings: true, rowCount: 0, listedCount: 0 })?.text,
+    );
+    expect(qrServerBlockText("noListedPrize")).toBe(
+      qrBlockReason({ contactMissing: false, canOpenSettings: true, rowCount: 1, listedCount: 0 })?.text,
+    );
   });
 });

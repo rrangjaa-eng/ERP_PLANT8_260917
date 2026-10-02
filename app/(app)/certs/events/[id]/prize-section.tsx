@@ -26,6 +26,7 @@ import {
   pinPrizeCellErrors,
   prizeChangesBody,
   qrBlockReason,
+  qrServerBlockText,
   resolveConflict,
   saveOutcome,
   saveResultText,
@@ -493,6 +494,7 @@ function PrizeEditor({ eventId, eventName, status, prizes, contactMissing: initi
         return;
       case "blocked":
         if (outcome.reason === "contactMissing") setContactMissing(true);
+        else setResultLine(qrServerBlockText(outcome.reason));
         return;
       case "invalid":
         setCellErrors(pinPrizeCellErrors(outcome.cellErrors));

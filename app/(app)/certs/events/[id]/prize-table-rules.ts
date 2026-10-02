@@ -162,9 +162,19 @@ export function qrBlockReason(input: {
   listedCount: number;
 }): QrBlock | null {
   if (input.contactMissing) return { text: contactMissingText(input.canOpenSettings), tone: "block" };
-  if (input.rowCount === 0) return { text: "경품 없음 · 첫 줄 만들기", tone: "block" };
-  if (input.listedCount === 0) return { text: "50,000 넘는 경품 없음 · 가액 확인", tone: "block" };
+  if (input.rowCount === 0) return { text: QR_SERVER_BLOCK_TEXT.noPrize, tone: "block" };
+  if (input.listedCount === 0) return { text: QR_SERVER_BLOCK_TEXT.noListedPrize, tone: "block" };
   return null;
+}
+
+const QR_SERVER_BLOCK_TEXT = {
+  noPrize: "경품 없음 · 첫 줄 만들기",
+  noListedPrize: "50,000 넘는 경품 없음 · 가액 확인",
+} as const;
+
+// 서버가 QR 생성을 막은 이유(화면을 연 뒤 경품 줄이 바뀜) — 화면 막힘과 같은 줄(PR #88 /review F3).
+export function qrServerBlockText(reason: keyof typeof QR_SERVER_BLOCK_TEXT): string {
+  return QR_SERVER_BLOCK_TEXT[reason];
 }
 
 // 결과 불명 — 신청과 같은 이유로 명사형(옛 I2 선례 꼴, /design-review 확인 요청).

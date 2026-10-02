@@ -183,6 +183,9 @@ test("가림 · 전체 보기(로그) · 가리기 · 연락처 정정 · 동시
   await page.goto(reviewPath(seeded.submissionId));
 
   await expect(page.getByRole("heading", { name: `기타소득 확인증 — ${seeded.name}` })).toBeVisible();
+  // 문서 제목(브라우저 기록 · 탭)에 수령자 이름이 없다 — 고정 제목.
+  await expect(page).toHaveTitle("확인증 확인");
+  await expect(page).not.toHaveTitle(new RegExp(seeded.name));
   await expect(page.getByText("930412-2******")).toBeVisible();
   expect(await page.content()).not.toContain(RRN_FULL);
   expect(await page.content()).not.toContain("2123458");

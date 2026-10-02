@@ -45,8 +45,9 @@ function reviewPath(id: string): string {
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
-  const review = await loadReview(id);
-  return { title: `확인증 확인 · ${review.submission.name ?? ""}` };
+  await loadReview(id);
+  // 수령자 이름은 문서 제목에 싣지 않는다 — 공용 PC의 브라우저 기록 · 탭에 남는다.
+  return { title: "확인증 확인" };
 }
 
 export default async function CertSubmissionReviewPage({ params }: { params: Promise<{ id: string }> }) {

@@ -38,9 +38,10 @@ export async function findRolesByIds(viewer: Viewer, ids: string[]): Promise<Rol
 export async function insertRole(
   viewer: Viewer,
   input: { id: string; name: string; sortOrder?: number; workScope?: string },
+  tx: DbOrTx = db,
 ): Promise<RoleRow> {
   void viewer;
-  const [row] = await db
+  const [row] = await tx
     .insert(roles)
     .values({
       id: input.id,

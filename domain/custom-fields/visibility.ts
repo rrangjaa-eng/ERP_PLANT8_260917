@@ -1,6 +1,7 @@
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { INFO_ITEMS } from "@/domain/permissions/info-items";
 import { withTransaction } from "@/lib/db-transaction";
+import type { DbOrTx } from "@/repositories/document-counters";
 import {
   listFieldDefinitions as defaultListFieldDefinitions,
   lockCustomFieldGrants,
@@ -45,11 +46,13 @@ export async function grantCustomFieldsToRole(
   viewer: Viewer,
   roleId: string,
   deps?: Partial<GrantCustomFieldsDeps>,
+  outerTx?: DbOrTx,
 ): Promise<void> {
   const listFieldDefinitions = deps?.listFieldDefinitions ?? defaultListFieldDefinitions;
   // T-04.5-07: 칸 생성(01)과 같은 잠금을 첫 문장으로 잡고, 정의는 그 뒤 같은 연결(tx)로 읽는다 — 잠금 뒤의 조회라
   // 먼저 커밋된 칸을 전부 보고, 잠금 보유자가 풀의 두 번째 연결을 요구하지 않는다(풀 고갈 교착 없음).
-  await withTransaction(async (tx) => {
+  // 계급 생성(createRole)은 자기 트랜잭션(outerTx)을 넘긴다 — 부여가 실패하면 계급 행도 함께 롤백된다.
+  const grant = async (tx: DbOrTx) => {
     await lockCustomFieldGrants(viewer, tx);
     for (const entity of FIELD_DEFINITION_TARGETS) {
       const defs = await listFieldDefinitions(viewer, entity, tx);
@@ -61,7 +64,8 @@ export async function grantCustomFieldsToRole(
         );
       }
     }
-  });
+  };
+  await (outerTx ? grant(outerTx) : withTransaction(grant));
 }
 
 // 보는 사람에게 보이는 커스텀 칸 키: 그 대상의 활성 정의 중 보는 사람 계급에 cf.<entity>.<key> 보임 행이 있는 것.

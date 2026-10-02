@@ -7,7 +7,7 @@ import type { recordAction as RecordActionFn } from "@/domain/action-log/record"
 import type { grantCustomFieldsToRole as GrantCustomFieldsFn } from "@/domain/custom-fields/visibility";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { normalizeRoleName } from "@/domain/permissions/role-name";
-import { log } from "@/lib/log";
+import { withTransaction } from "@/lib/db-transaction";
 import {
   findRoleById as defaultFindRoleById,
   listRoles as repoListRoles,
@@ -134,24 +134,14 @@ export async function createRole(
   }
 
   const id = `role-${randomUUID()}`;
-  const row = await repoInsertRole(viewer, { id, name: normalizeRoleName(input.name), sortOrder: input.sortOrder });
-
-  // 04.5-03: 기존 커스텀 항목의 기본 보임 행. 계급은 이미 커밋됐다 — 실패하면 한 번만 다시 시도하고(부여는 자기
-  // 트랜잭션이라 실패한 시도는 롤백되고, 없을 때만 쓰므로 안전), 그래도 실패하면 그 계급에게 칸이 안 보이는
-  // 쪽으로 실패하되 경고 로그가 그 계급을 가리킨다.
+  // 04.5-03: 기존 커스텀 항목의 기본 보임 행을 계급 행과 한 트랜잭션에서 넣는다 — 부여가 실패하면 계급도 생기지 않고
+  // 오류가 관리자에게 간다(칸이 안 보이는 계급이 조용히 남지 않는다).
   const grant = deps?.grantCustomFieldsToRole ?? defaultGrantCustomFields;
-  try {
-    await grant(viewer, row.id);
-  } catch {
-    try {
-      await grant(viewer, row.id);
-    } catch (error) {
-      log.warn("role.custom_field_grant_failed", {
-        roleId: row.id,
-        message: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
+  const row = await withTransaction(async (tx) => {
+    const inserted = await repoInsertRole(viewer, { id, name: normalizeRoleName(input.name), sortOrder: input.sortOrder }, tx);
+    await grant(viewer, inserted.id, undefined, tx);
+    return inserted;
+  });
 
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await recordAction(viewer, { actionType: "permission_change", entity: "roles", entityId: row.id });

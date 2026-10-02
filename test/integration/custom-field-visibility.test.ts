@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { and, eq, like, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { actionLog, fieldDefinitions, visibilityMatrix } from "@/db/schema";
@@ -30,7 +30,6 @@ import { insertFieldDefinition, listFieldDefinitions } from "@/repositories/fiel
 import { insertRole, listRoles } from "@/repositories/roles";
 import { insertVendor } from "@/repositories/vendors";
 import { env } from "@/lib/env";
-import { log } from "@/lib/log";
 
 // 04.5-03: 커스텀 항목(cf.vendor.<key>)이 정보 노출표의 열 · 저장 허용 · 새 계급 기본 행으로 이어진다.
 // 칸은 01의 createFieldDefinition으로 만든다(같은 트랜잭션에서 전 계급 보임 행 — 노출 행 없는 정의에 기대지 않는다).
@@ -207,63 +206,30 @@ describe("나중에 만든 계급의 커스텀 항목 기본 행 (04.5-03)", () 
     expect(rows[0]?.visible).toBe(false);
   });
 
-  it("기본 행 쓰기가 한 번 실패하면 다시 시도해 행이 생기고 경고 로그는 없다", async () => {
-    const admin = await createViewer(SYSADMIN_ROLE_ID);
-    const { key } = await createFieldDefinition(admin, input("재시도 칸"));
-    const warn = vi.spyOn(log, "warn");
-    let calls = 0;
-    try {
-      const role = await createRole(
-        SYSTEM_VIEWER,
-        { name: `재시도 계급-${randomUUID()}` },
-        {
-          grantCustomFieldsToRole: async (...args) => {
-            calls += 1;
-            if (calls === 1) throw new Error("injected");
-            return grantCustomFieldsToRole(...args);
-          },
-        },
-      );
-
-      const rows = await visibilityRows(role.id, customFieldInfoItem("vendor", key));
-      expect(rows).toHaveLength(1);
-      expect(rows[0]?.visible).toBe(true);
-      expect(calls).toBe(2);
-      expect(warn).not.toHaveBeenCalled();
-    } finally {
-      warn.mockRestore();
-    }
-  });
-
-  it("두 번 다 실패하면 계급은 남고 경고 로그 한 줄 · 커스텀 행 0개(숨김 쪽 실패)", async () => {
+  it("기본 행 부여가 실패하면 계급 생성도 실패하고 계급 · 커스텀 행이 남지 않는다(같은 트랜잭션)", async () => {
     const admin = await createViewer(SYSADMIN_ROLE_ID);
     await createFieldDefinition(admin, input("실패 칸"));
-    const warn = vi.spyOn(log, "warn");
-    let calls = 0;
-    try {
-      const role = await createRole(
+    const name = `실패 계급-${randomUUID()}`;
+    let grantedRoleId: string | undefined;
+
+    await expect(
+      createRole(
         SYSTEM_VIEWER,
-        { name: `실패 계급-${randomUUID()}` },
+        { name },
         {
-          grantCustomFieldsToRole: () => {
-            calls += 1;
-            return Promise.reject(new Error("injected"));
+          grantCustomFieldsToRole: async (viewer, roleId, deps, tx) => {
+            await grantCustomFieldsToRole(viewer, roleId, deps, tx);
+            grantedRoleId = roleId;
+            throw new Error("injected");
           },
         },
-      );
+      ),
+    ).rejects.toThrow("injected");
 
-      const roleRows = await listRoles(SYSTEM_VIEWER, { includeArchived: true });
-      expect(roleRows.some((row) => row.id === role.id)).toBe(true);
-      expect(calls).toBe(2);
-      expect(warn).toHaveBeenCalledTimes(1);
-      expect(warn).toHaveBeenCalledWith(
-        "role.custom_field_grant_failed",
-        expect.objectContaining({ roleId: role.id }),
-      );
-      expect(await countCustomRows(role.id)).toBe(0);
-    } finally {
-      warn.mockRestore();
-    }
+    const roleRows = await listRoles(SYSTEM_VIEWER, { includeArchived: true });
+    expect(roleRows.some((row) => row.name === name)).toBe(false);
+    expect(grantedRoleId).toBeDefined();
+    expect(await countCustomRows(grantedRoleId!)).toBe(0);
   });
 
   it("칸 생성과 계급 생성이 겹쳐도 새 계급이 새 칸의 행을 받는다(같은 잠금 · 잠금 뒤 같은 연결로 읽기)", async () => {

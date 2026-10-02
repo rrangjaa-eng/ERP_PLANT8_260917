@@ -144,7 +144,7 @@
         ]
       },
       {
-        "matcher": "Agent|Skill|Bash|Write|Edit|NotebookEdit|mcp__github__merge_pull_request|mcp__github__enable_pr_auto_merge|mcp__github__create_pull_request|mcp__github__update_pull_request",
+        "matcher": "Agent|Skill|Bash|Write|Edit|NotebookEdit|mcp__github__merge_pull_request|mcp__github__enable_pr_auto_merge|mcp__github__create_pull_request|mcp__github__update_pull_request|mcp__hearthbot__reply|mcp__hearthbot__update_message|mcp__hearthbot__update_status|mcp__hearthbot__post_message|mcp__hearthbot__message_thread|mcp__hearthbot__ask_decision|mcp__hearthbot__post_widget|mcp__hearthbot__set_thread_label",
         "hooks": [
           {
             "type": "command",

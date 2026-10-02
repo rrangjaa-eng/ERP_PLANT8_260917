@@ -116,7 +116,7 @@ describe("scripts/install-gstack.sh 고정 계약", () => {
 describe("scripts/install-codex.sh 존재·양성 토큰", () => {
   it.each([
     "CLAUDE_CODE_REMOTE",
-    "CODEX_VERSION=0.155.1",
+    "CODEX_VERSION=0.160.0",
     "CODEX_AUTH_JSON_B64",
     "umask 077",
     "codex login status",

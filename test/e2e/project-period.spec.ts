@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Locator, type Page } from "@playwright/test";
-import { eq } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import { codeItems, projects } from "@/db/schema";
 import { createProject } from "@/domain/projects";
@@ -265,7 +265,7 @@ test.describe("상세 기간 칸 (04-22, PROJ-04)", () => {
     // 합계 행이 있어야 U-6 거부 줄이 붙는다 — 견적 줄 하나를 둔다(빈 표에는 합계 행이 없다).
     const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
     if (!revision) throw new Error("차수가 없습니다");
-    const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
+    const [subcategory] = await db.select().from(codeItems).where(and(eq(codeItems.tableKey, "quote_subcategory"), eq(codeItems.active, true), isNull(codeItems.archivedAt))).orderBy(asc(codeItems.sortOrder), asc(codeItems.value)).limit(1);
     if (!subcategory) throw new Error("시드된 소분류가 없습니다");
     await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
       { id: randomUUID(), isNew: true, subcategory: subcategory.value, itemName: "기간 거부 줄", quantity: 1, unitPrice: { currency: "KRW", amount: 1_000_000, fxRate: 1 }, execution: { currency: "KRW", amount: 500_000, fxRate: 1 } },
@@ -488,7 +488,7 @@ test.describe("상세 총 매출 예상가 칸 (04-44, PROJ-07)", () => {
     // 합계 행이 있어야 U-6 거부 줄이 붙는다(빈 표에는 합계 행이 없다).
     const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
     if (!revision) throw new Error("차수가 없습니다");
-    const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
+    const [subcategory] = await db.select().from(codeItems).where(and(eq(codeItems.tableKey, "quote_subcategory"), eq(codeItems.active, true), isNull(codeItems.archivedAt))).orderBy(asc(codeItems.sortOrder), asc(codeItems.value)).limit(1);
     if (!subcategory) throw new Error("시드된 소분류가 없습니다");
     await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
       { id: randomUUID(), isNew: true, subcategory: subcategory.value, itemName: "예상가 거부 줄", quantity: 1, unitPrice: { currency: "KRW", amount: 1_000_000, fxRate: 1 }, execution: { currency: "KRW", amount: 500_000, fxRate: 1 } },

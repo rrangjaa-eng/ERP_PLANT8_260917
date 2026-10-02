@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Locator, type Page } from "@playwright/test";
-import { eq } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import { codeItems, quoteLines, vendors } from "@/db/schema";
 import { createProject } from "@/domain/projects";
@@ -78,7 +78,7 @@ test.describe("가려진 참조 정보의 화면(quick 261001-85g)", () => {
     });
     const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, created.id);
     if (!revision) throw new Error("1차 차수가 없습니다");
-    const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
+    const [subcategory] = await db.select().from(codeItems).where(and(eq(codeItems.tableKey, "quote_subcategory"), eq(codeItems.active, true), isNull(codeItems.archivedAt))).orderBy(asc(codeItems.sortOrder), asc(codeItems.value)).limit(1);
     if (!subcategory) throw new Error("소분류 코드가 없습니다");
     await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
       rows: [

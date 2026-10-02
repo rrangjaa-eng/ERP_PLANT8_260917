@@ -139,8 +139,24 @@ describe("ci-guard: .github/workflows 메타 검사", () => {
     for (const block of [jobBlock(ci, "integration", "e2e"), jobBlock(ci, "e2e")]) {
       expect(block).toContain("shard: [1, 2]");
       expect(block).toContain("fail-fast: false");
-      expect(block).toContain("--shard=${{ matrix.shard }}/2");
     }
+    expect(jobBlock(ci, "integration", "e2e")).toContain("--shard=${{ matrix.shard }}/2");
+  });
+
+  // 2026-10-02: Playwright는 dependencies로 걸린 프로젝트(desktop·mobile-375)를 샤딩 대상에서
+  // 빼고 맨 끝 프로젝트(desktop-settings, 21건·파일 1개)만 나눈다 — `--shard=2/2`가 0건이었다.
+  // 그래서 desktop만 직접 샤딩하고, 폰·설정 결재선은 2번 샤드가 순서대로 이어 돈다.
+  it("e2e 잡은 dependencies 프로젝트를 --shard로 못 나누므로 desktop만 샤딩하고 폰·설정은 2번 샤드가 잇는다", () => {
+    const ci = readWorkflow("ci.yml");
+    const block = jobBlock(ci, "e2e");
+    expect(block).not.toContain("pnpm test:e2e --shard=");
+    expect(block).toContain("PWTEST_SHARD_WEIGHTS");
+    expect(block).toContain("--project=desktop --shard=${{ matrix.shard }}/2");
+    const desktop = firstLine(block, "--project=desktop --shard=");
+    const tail = firstLine(block, "--project=desktop-settings");
+    expect(tail).toBeGreaterThan(desktop);
+    expect(block).toContain("E2E_SKIP_DESKTOP");
+    expect(block).toMatch(/if: matrix\.shard == 2\n\s+env:\n\s+E2E_SKIP_DESKTOP/);
   });
 
   it("integration 잡 내부 순서: db:migrate < test:integration, e2e는 없다", () => {

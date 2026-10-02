@@ -315,7 +315,8 @@ export function buildPrompt(input: {
 export function codexArgs(prompt: string, imageFiles: string[]): string[] {
   // -i <FILE>...은 뒤 인자를 모두 파일로 먹는다 — 프롬프트를 첫 -i보다 앞에 둔다.
   // --ephemeral: Codex 세션 파일(프롬프트·도구 실행 기록)을 CODEX_HOME에 남기지 않는다.
-  return ["exec", "--ephemeral", "--skip-git-repo-check", "-s", "read-only", prompt, ...imageFiles.flatMap((f) => ["-i", f])];
+  // 모델·추론 강도 고정(사용자 결정 2026-10-02): GPT-6.1 Sol · medium. Codex CLI 0.160.0 이상(scripts/install-codex.sh).
+  return ["exec", "--ephemeral", "--skip-git-repo-check", "-s", "read-only", "-c", "model=gpt-6.1-sol", "-c", "model_reasoning_effort=medium", prompt, ...imageFiles.flatMap((f) => ["-i", f])];
 }
 
 export function parseCodexFindings(stdout: string): Finding[] {

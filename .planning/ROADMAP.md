@@ -399,7 +399,7 @@ Plans:
 12. 글자·바탕 대비 4.5:1 미만(큰 글자 3:1)을 자동 검사가 막는다
 13. 시스템 변경은 `docs/design/DECISIONS.md` 기록 → `docs/design/SYSTEM.md` 수정 순서로 한다(`.claude/rules/frontend.md`): radius 0 · 그림자 없음 · 2px 진한 선 결정 뒤집기, D-39 폼 배치 → 옆 패널, 고른 완화 후보
 
-**Plans:** 25/32 plans executed
+**Plans:** 30/32 plans executed
 
 Plans:
 **Wave 1**
@@ -444,11 +444,11 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 04.6-26-PLAN.md — ⑥ UQ-4·5 사람 확인 → 고른 완화 후보 결정·문서·토큰 + 아이콘 밖 컴포넌트
-- [ ] 04.6-27-PLAN.md — ⑥ E2E 옛 토큰 이름 문자열 → 역할 이름
-- [ ] 04.6-28-PLAN.md — ⑥ 래칫 표시 0 · StatusTag kind 삭제
-- [ ] 04.6-29-PLAN.md — ⑥ 원칙 점검 막는 모드 · a11y 전 화면 · 글자 위계
-- [ ] 04.6-30-PLAN.md — ⑥ [위험 경로 별도 PR · 사용자 머지] CHECKLIST §1 사용자 결정(PR #113 답 직접 인용)
+- [x] 04.6-26-PLAN.md — ⑥ UQ-4·5 사람 확인 → 고른 완화 후보 결정·문서·토큰 + 아이콘 밖 컴포넌트
+- [x] 04.6-27-PLAN.md — ⑥ E2E 옛 토큰 이름 문자열 → 역할 이름
+- [x] 04.6-28-PLAN.md — ⑥ 래칫 표시 0 · StatusTag kind 삭제
+- [x] 04.6-29-PLAN.md — ⑥ 원칙 점검 막는 모드 · a11y 전 화면 · 글자 위계
+- [x] 04.6-30-PLAN.md — ⑥ [위험 경로 별도 PR · 사용자 머지] CHECKLIST §1 사용자 결정(PR #113 답 직접 인용)
 
 **Wave 7** *(blocked on Wave 6 completion)*
 

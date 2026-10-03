@@ -151,7 +151,7 @@ test("tracer — 제출 섹션(읽기 표 · 경품별 그룹 · 가린 연락�
   await expect(headerA).toContainText("· 초과 1건");
   const over = table.getByText("초과 1건", { exact: true });
   expect(await colorOf(over)).toBe(await tokenColor(page, "--warning"));
-  expect(await colorOf(headerA)).toBe(await tokenColor(page, "--muted"));
+  expect(await colorOf(headerA)).toBe(await tokenColor(page, "--text-group"));
   await expect(table.getByText("스타벅스 카드 · 제출 1건 / 당첨 1명", { exact: true })).toBeVisible();
 
   // 줄 — 가린 연락처 · 색 글자 순서(파기 대상 → 같은 연락처 → 같은 이름).
@@ -281,7 +281,7 @@ test("「신청 취소」 — 경품 0 → 확인 없이 목록 + 토스트 · �
   await pmPage.context().close();
 });
 
-test("「대조 제외」 — I4 머리 2차 → 확인 → I′3 그 줄 포커스 · 토스트 · --muted 줄 · 그룹 셈 −1 · 제외된 I4 · 인쇄 404", async ({ browser }) => {
+test("「대조 제외」 — I4 머리 2차 → 확인 → I′3 그 줄 포커스 · 토스트 · --text-muted 줄 · 그룹 셈 −1 · 제외된 I4 · 인쇄 404", async ({ browser }) => {
   const ev = await reconcileEvent("E2E 대조 제외");
   const page = await loggedInPage(browser, manager);
   await page.goto(`/certs/submissions/${ev.a1.id}`);
@@ -305,7 +305,7 @@ test("「대조 제외」 — I4 머리 2차 → 확인 → I′3 그 줄 포커
   const row = table.locator("tr").filter({ has: link });
   await expect(row).toContainText("대조 제외");
   await expect(row).toContainText("—");
-  expect(await colorOf(row.locator("td").first())).toBe(await tokenColor(page, "--muted"));
+  expect(await colorOf(row.locator("td").first())).toBe(await tokenColor(page, "--text-muted"));
   await expect(table.getByText("갤럭시 탭 S10 · 제출 2건 / 당첨 2명", { exact: true })).toBeVisible();
 
   await page.goto(`/certs/submissions/${ev.a1.id}`);

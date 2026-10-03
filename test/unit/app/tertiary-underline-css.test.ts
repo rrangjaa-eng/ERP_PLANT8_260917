@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 // SYSTEM §4-4 · §7-1 「3차 버튼 밑줄 1px → hover 2px」: 글자 밑줄로 그리는 3차 링크 · 버튼은 기본 두께 var(--line-w)와
-// hover 두께 var(--line-w-strong) 규칙을 함께 가진다. 범위는 app/ · ui/ 아래 모든 CSS 모듈(공용 컴포넌트 포함 —
+// hover 두께 var(--underline-w-hover) 규칙을 함께 가진다. 범위는 app/ · ui/ 아래 모든 CSS 모듈(공용 컴포넌트 포함 —
 // 사용자 결정 2026-09-30). ui/button .tertiary도 글자 밑줄이라 이 스윕에 들어온다.
 // 선례: reserves-css.test.ts(소스 문자열 단언) · no-admin-boolean.test.ts(readdirSync 루프).
 const ROOT = process.cwd();
@@ -30,8 +30,8 @@ function parseRules(source: string): Rule[] {
 
 const UNDERLINE = /text-decoration(?:-line)?\s*:[^;]*\bunderline\b/;
 const BASE_THICKNESS = /text-decoration-thickness\s*:\s*var\(--line-w\)/;
-// 과도기(Round 2 M1): 옛 이름과 새 역할 토큰 `--underline-w-hover`(2px)를 둘 다 받는다 — 같은 웨이브 04.6-07·08이 각자 파일을 새 이름으로 옮긴다. 옛 이름 대안은 04.6-28이 지운다.
-const HOVER_THICKNESS = /text-decoration-thickness\s*:\s*var\(--(?:line-w-strong|underline-w-hover)\)/;
+// hover 두께는 역할 토큰 `--underline-w-hover`(2px) 하나만 받는다(Round 2 M1 ④ — 05의 옛 이름 대안은 04.6-28이 지웠다).
+const HOVER_THICKNESS = /text-decoration-thickness\s*:\s*var\(--underline-w-hover\)/;
 // §4-4 「text-underline-offset: 2px」 — 값은 토큰으로(사용자 결정 2026-09-30 /review D1).
 const OFFSET = /text-underline-offset\s*:\s*var\(--underline-offset\)/;
 // 하한은 숫자가 아니라 이름 있는 기준점이다(Round 2 M1) — 화면 플랜이 app/ 밑줄 규칙을 RowActions로 걷어도 내려가지 않는다.
@@ -77,7 +77,7 @@ describe("3차 링크 · 버튼 밑줄 두께 — 1px → hover 2px (SYSTEM §4-
     expect(files.length).toBeGreaterThan(20);
   });
 
-  it("밑줄 규칙마다 기본 var(--line-w) · offset var(--underline-offset)와 :hover 두께(--underline-w-hover · 과도기 --line-w-strong) 규칙이 있다", () => {
+  it("밑줄 규칙마다 기본 var(--line-w) · offset var(--underline-offset)와 :hover 두께(--underline-w-hover) 규칙이 있다", () => {
     const results = files.map((file) => violations(file));
     expect(results.flatMap((result) => result.found)).toEqual([]);
   });
@@ -115,10 +115,10 @@ describe("ui/button .tertiary — 글자 밑줄 (FINDING-002)", () => {
     expect(hover?.body).toMatch(HOVER_THICKNESS);
   });
 
-  // 과도기: 04.6-08이 Button.module.css를 새 역할 이름(--border-strong)으로 옮긴다 — 순서와 무관하게 초록이다.
-  it("aria-disabled 3차는 밑줄 색을 var(--line) 또는 var(--border-strong)으로 흐리게 한다", () => {
+  // 04.6-08이 Button.module.css를 새 역할 이름(--border-strong)으로 옮겼다 — 옛 이름 대안은 받지 않는다.
+  it("aria-disabled 3차는 밑줄 색을 var(--border-strong)으로 흐리게 한다", () => {
     const disabled = rules.find((rule) => rule.selectors.includes('.tertiary[aria-disabled="true"]'));
-    expect(disabled?.body).toMatch(/text-decoration-color\s*:\s*var\(--(?:line|border-strong)\)/);
+    expect(disabled?.body).toMatch(/text-decoration-color\s*:\s*var\(--border-strong\)/);
   });
 
   // PR #111 Codex 리뷰(P2): 대기 중 라벨 span과 「…」 span 사이 .btn gap 8px 때문에 글자 밑줄이 두 토막으로 그어졌다.

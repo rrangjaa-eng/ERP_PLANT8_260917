@@ -11,8 +11,8 @@ import { archive } from "@/domain/archive";
 import { createFixtureUser } from "./fixtures";
 import { loginAsAdmin } from "./people-list-helpers";
 
-// 04.4 후속 항목 6(DR-8): 수작업 표의 주 행(접힌 줄 제외) 높이가 --row-min 이상이다(PC 1280 = 36 · 폰 375 = 44).
-// 표 칸에는 min-height가 적용되지 않는다 — 실측으로 미달이 재현된 표만 CSS(height: var(--row-min))를 고친다.
+// 04.4 후속 항목 6(DR-8): 수작업 표의 주 행(접힌 줄 제외) 높이가 --row-h 이상이다(PC 1280 = 44 · 폰 375 = 44).
+// 표 칸에는 min-height가 적용되지 않는다 — 실측으로 미달이 재현된 표만 CSS(height: var(--row-h))를 고친다.
 const WIDTHS = [
   { width: 1280, height: 720 },
   { width: 375, height: 800 },
@@ -32,10 +32,10 @@ async function loginAs(page: Page, creds: { email: string; password: string }): 
   await expect(page).toHaveURL(/\/account$/);
 }
 
-// 주 행 = tbody의 tr 중 접힌 줄이 아니고 높이가 있는 것. --row-min은 그 폭에서 계산된 값이다.
+// 주 행 = tbody의 tr 중 접힌 줄이 아니고 높이가 있는 것. --row-h는 그 폭에서 계산된 값이다.
 function measure(table: Locator): Promise<{ rowMin: number; heights: number[] }> {
   return table.evaluate((element) => {
-    const rowMin = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--row-min"));
+    const rowMin = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--row-h"));
     const heights = Array.from(element.querySelectorAll("tbody tr"))
       .filter((row) => !Array.from(row.classList).some((name) => name.includes("collapsedRow")))
       .map((row) => row.getBoundingClientRect().height)
@@ -51,11 +51,11 @@ async function expectRowsAtLeastRowMin(page: Page, name: string, table: Locator)
     const { rowMin, heights } = await measure(table);
     expect(heights.length, `${name} @${viewport.width}: 주 행이 없다`).toBeGreaterThan(0);
     const lowest = Math.min(...heights);
-    expect.soft(lowest, `${name} @${viewport.width}: 가장 낮은 주 행 ${lowest}px < --row-min ${rowMin}px`).toBeGreaterThanOrEqual(rowMin - 0.5);
+    expect.soft(lowest, `${name} @${viewport.width}: 가장 낮은 주 행 ${lowest}px < --row-h ${rowMin}px`).toBeGreaterThanOrEqual(rowMin - 0.5);
   }
 }
 
-test.describe("수작업 표 주 행 높이 ≥ --row-min (04.4 후속 항목 6)", () => {
+test.describe("수작업 표 주 행 높이 ≥ --row-h (04.4 후속 항목 6)", () => {
   let personId = "";
 
   test.beforeAll(async () => {

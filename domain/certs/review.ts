@@ -254,34 +254,21 @@ export type CertificatePrintResult =
   | { kind: "ok"; print: Partial<CertificatePrintDto>; printedAt: string }
   | { kind: "notFound" };
 
-// 인쇄 라우트 레이아웃의 읽기 전용 사전 판정(웨이브 6 DOM 감사 P5) — 페이지는 `loading.tsx` 뒤에서 그려져 HTTP 200이 먼저 나가므로
-// 「볼 수 없음 · 없음 · 인쇄 불가」는 스트리밍 전에 알아야 404 상태가 나간다. 활동 기록(cert_view)과 시계(touch)는 건드리지 않고,
-// `getCertificatePrint`의 앞 판정(권한 · 형식 · 행 상태)과 같은 조건이다 — 거기가 바뀌면 여기도 함께 바꾼다.
-export async function isCertificatePrintable(viewer: Viewer, id: string): Promise<boolean> {
-  if (!(await isCertFeatureEnabled())) return false;
-  if (isCertPrivacyBarredRole(viewer)) return false;
-  if (!(await canViewSubmissions(viewer))) return false;
-  if (!isUuid(id)) return false;
-  const row = await findSubmissionForReview(viewer, id);
-  return !(!row || row.purgedAt || row.excludedAt || row.rrnCleared || row.name === null || row.rrnMasked === null || row.phone === null);
-}
+type PrintableCert = { row: NonNullable<Awaited<ReturnType<typeof findSubmissionForReview>>>; print: Partial<CertificatePrintDto> };
 
-// 04.3-14 사용자 결정 U3 a — 인쇄를 열 때도 I4와 같은 cert_view(detail의 via는 print). 기록이 던지면 인쇄도 열리지 않는다.
-export async function getCertificatePrint(
-  viewer: Viewer,
-  id: string,
-  access: CertAccess,
-  deps?: Partial<GetCertificatePrintDeps>,
-): Promise<CertificatePrintResult> {
-  if (!(await isCertFeatureEnabled())) return { kind: "notFound" };
-  if (isCertPrivacyBarredRole(viewer)) return { kind: "notFound" };
-  if (!(await canViewSubmissions(viewer))) return { kind: "notFound" };
-  if (!isUuid(id)) return { kind: "notFound" };
+// 인쇄의 앞 판정 한 곳(게이트 · 대표 · 보기 권한 · 형식 · 행 상태 · 값 항목 투영) — 읽기 전용이라 활동 기록(cert_view)과 시계(touch)는 건드리지 않는다.
+// `getCertificatePrint`와 레이아웃 사전 판정(`isCertificatePrintable`)이 함께 쓴다 — 갈라지면 loading.tsx가 HTTP 200을 먼저 내보낸 뒤 notFound가 난다(04.6-28).
+// 서명은 읽지 않아 null이다 — 값 칸 투영이 비면(값 항목 꺼짐) 인쇄할 수 없다.
+async function resolvePrintableCert(viewer: Viewer, id: string): Promise<PrintableCert | null> {
+  if (!(await isCertFeatureEnabled())) return null;
+  if (isCertPrivacyBarredRole(viewer)) return null;
+  if (!(await canViewSubmissions(viewer))) return null;
+  if (!isUuid(id)) return null;
 
   const row = await findSubmissionForReview(viewer, id);
   // 대조 제외 · 주민번호만 비운 제출(rrnCleared — 제외 여부와 무관한 키)은 인쇄하지 않는다(라우트 404 — DR-1 · ⑥-b).
   if (!row || row.purgedAt || row.excludedAt || row.rrnCleared || row.name === null || row.rrnMasked === null || row.phone === null) {
-    return { kind: "notFound" };
+    return null;
   }
 
   const source: CertificatePrintRow = {
@@ -295,11 +282,35 @@ export async function getCertificatePrint(
     phone: formatPhone(row.phone),
     address: row.delivery === "parcel" ? row.address : null,
     submittedAt: row.submittedAt.toISOString(),
-    signatureDataUrl: await readSignatureDataUrl(deps?.signatureStore ?? getSignatureStore(), row.signatureKey),
+    signatureDataUrl: null,
   };
 
   const print = await project(viewer, source, CERTIFICATE_PRINT_DTO_SPEC);
-  if (Object.keys(print).length === 0) return { kind: "notFound" };
+  if (Object.keys(print).length === 0) return null;
+  return { row, print };
+}
+
+// 인쇄 라우트 레이아웃의 읽기 전용 사전 판정(웨이브 6 DOM 감사 P5) — 페이지는 `loading.tsx` 뒤에서 그려져 HTTP 200이 먼저 나가므로
+// 「볼 수 없음 · 없음 · 인쇄 불가」는 스트리밍 전에 알아야 404 상태가 나간다. `getCertificatePrint`와 같은 앞 판정을 쓴다.
+export async function isCertificatePrintable(viewer: Viewer, id: string): Promise<boolean> {
+  return (await resolvePrintableCert(viewer, id)) !== null;
+}
+
+// 04.3-14 사용자 결정 U3 a — 인쇄를 열 때도 I4와 같은 cert_view(detail의 via는 print). 기록이 던지면 인쇄도 열리지 않는다.
+export async function getCertificatePrint(
+  viewer: Viewer,
+  id: string,
+  access: CertAccess,
+  deps?: Partial<GetCertificatePrintDeps>,
+): Promise<CertificatePrintResult> {
+  const printable = await resolvePrintableCert(viewer, id);
+  if (!printable) return { kind: "notFound" };
+  const { row, print } = printable;
+
+  // 서명은 같은 값 항목으로 보호된 칸이다 — 투영에 남은 경우에만 저장소에서 읽는다.
+  if ("signatureDataUrl" in print) {
+    print.signatureDataUrl = await readSignatureDataUrl(deps?.signatureStore ?? getSignatureStore(), row.signatureKey);
+  }
 
   await recordAction(
     viewer,

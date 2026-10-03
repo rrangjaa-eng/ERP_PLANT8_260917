@@ -16,8 +16,7 @@ import { DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { StaticTable } from "@/ui/table/StaticTable";
 import { RowActions } from "@/ui/row-actions/RowActions";
-import { PcOnly } from "../../pc-only";
-import { usePhoneWidth } from "@/app/(app)/leave/use-phone-width";
+import { PcOnly, PhoneOnly } from "../../pc-only";
 import styles from "../people.module.css";
 
 export type RoleRowView = {
@@ -40,23 +39,25 @@ function RoleNameCell({ role }: { role: RoleRowView }) {
   const [name, setName] = useState(role.name);
   const { execute: executeRename, result: renameResult } =
     useAction(renameRoleAction);
-  // 폰은 읽기만(사용자 결정 2026-10-03 14:57 KST 카드) — 입력 칸 없이 값만.
-  if (usePhoneWidth()) return <>{role.name}</>;
+  // 폰은 읽기만(사용자 결정 2026-10-03 14:57 KST 카드) — 입력 칸은 폰에서 CSS로 숨고 값만 보인다.
   return (
     <>
-      <input
-        className={styles.select}
-        aria-label={`${role.name} 이름`}
-        value={name}
-        onChange={(event) => setName(event.target.value)}
-        onBlur={() => {
-          if (name.trim() && name !== role.name)
-            executeRename({ id: role.id, name });
-        }}
-      />
-      {renameResult.serverError ? (
-        <p className={styles.registeredHint}>{renameResult.serverError}</p>
-      ) : null}
+      <PhoneOnly>{role.name}</PhoneOnly>
+      <PcOnly>
+        <input
+          className={styles.select}
+          aria-label={`${role.name} 이름`}
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          onBlur={() => {
+            if (name.trim() && name !== role.name)
+              executeRename({ id: role.id, name });
+          }}
+        />
+        {renameResult.serverError ? (
+          <p className={styles.registeredHint}>{renameResult.serverError}</p>
+        ) : null}
+      </PcOnly>
     </>
   );
 }
@@ -69,26 +70,28 @@ function RoleWorkScopeCell({ role }: { role: RoleRowView }) {
       onError: () => setWorkScope(role.workScope),
     },
   );
-  if (usePhoneWidth()) return <>{role.workScope === "company" ? "전사" : "자기 팀"}</>;
   return (
     <>
-      <select
-        className={styles.select}
-        aria-label={`${role.name} 업무 범위`}
-        value={workScope}
-        disabled={role.archivedAt !== null}
-        onChange={(event) => {
-          const next = event.target.value === "company" ? "company" : "team";
-          setWorkScope(next);
-          executeWorkScope({ id: role.id, workScope: next });
-        }}
-      >
-        <option value="team">자기 팀</option>
-        <option value="company">전사</option>
-      </select>
-      {workScopeResult.serverError ? (
-        <p className={styles.registeredHint}>{workScopeResult.serverError}</p>
-      ) : null}
+      <PhoneOnly>{role.workScope === "company" ? "전사" : "자기 팀"}</PhoneOnly>
+      <PcOnly>
+        <select
+          className={styles.select}
+          aria-label={`${role.name} 업무 범위`}
+          value={workScope}
+          disabled={role.archivedAt !== null}
+          onChange={(event) => {
+            const next = event.target.value === "company" ? "company" : "team";
+            setWorkScope(next);
+            executeWorkScope({ id: role.id, workScope: next });
+          }}
+        >
+          <option value="team">자기 팀</option>
+          <option value="company">전사</option>
+        </select>
+        {workScopeResult.serverError ? (
+          <p className={styles.registeredHint}>{workScopeResult.serverError}</p>
+        ) : null}
+      </PcOnly>
     </>
   );
 }

@@ -34,7 +34,8 @@ test.describe("폰 375 /admin/people/roles 가로 스크롤 금지 · 머리글 
     await loginAs(page);
     await page.goto("/admin/people/roles");
 
-    await expect(page.locator("table tbody input")).toHaveCount(0);
+    // 편집 요소는 DOM에 있되 폰에서 CSS로 숨는다(첫 렌더부터 — 04.6 W5 D-1) — 의미는 「보이는 입력 0」이다.
+    await expect(page.locator("table tbody input").filter({ visible: true })).toHaveCount(0);
     await expect(page.locator("table tbody").getByRole("cell", { name: "대표", exact: true })).toBeVisible();
   });
 

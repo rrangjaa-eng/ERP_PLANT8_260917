@@ -18,7 +18,7 @@ import { TextField } from "@/ui/input/TextField";
 import { RowAction } from "@/ui/row-actions/RowActions";
 import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
 import { DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
-import { usePhoneWidth } from "@/app/(app)/leave/use-phone-width";
+import { PcOnly, PhoneOnly } from "../pc-only";
 import styles from "./code-tables.module.css";
 
 function getStringField(formData: FormData, key: string): string {
@@ -107,27 +107,28 @@ export function CodeItemLabelInput({ id, label }: { id: string; label: string })
 
   const errorId = `code-item-label-error-${id}`;
 
-  // 폰은 읽기만(사용자 결정 2026-10-03 14:57 KST 카드) — 입력 칸 없이 값만.
-  if (usePhoneWidth()) return <>{label}</>;
-
+  // 폰은 읽기만(사용자 결정 2026-10-03 14:57 KST 카드) — 입력 칸은 폰에서 CSS로 숨고 값만 보인다.
   return (
     <>
-      <input
-        className={[styles.labelInput, errorText ? styles.labelInputError : ""].filter(Boolean).join(" ")}
-        aria-label={`${label} 이름`}
-        aria-invalid={errorText ? true : undefined}
-        aria-describedby={errorText ? errorId : undefined}
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-        onBlur={() => {
-          if (value.trim() && value !== label) execute({ id, label: value });
-        }}
-      />
-      {errorText ? (
-        <p id={errorId} role="alert" className={styles.labelError}>
-          {errorText}
-        </p>
-      ) : null}
+      <PhoneOnly>{label}</PhoneOnly>
+      <PcOnly>
+        <input
+          className={[styles.labelInput, errorText ? styles.labelInputError : ""].filter(Boolean).join(" ")}
+          aria-label={`${label} 이름`}
+          aria-invalid={errorText ? true : undefined}
+          aria-describedby={errorText ? errorId : undefined}
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          onBlur={() => {
+            if (value.trim() && value !== label) execute({ id, label: value });
+          }}
+        />
+        {errorText ? (
+          <p id={errorId} role="alert" className={styles.labelError}>
+            {errorText}
+          </p>
+        ) : null}
+      </PcOnly>
     </>
   );
 }
@@ -162,51 +163,55 @@ export function CodeItemDescriptionInput({
   const instanceId = useId();
   const errorId = `code-item-description-error-${id}-${instanceId}`;
   const countId = `code-item-description-count-${id}-${instanceId}`;
-  if (usePhoneWidth()) return <span className={styles.readOnlyText}>{description ?? "—"}</span>;
   const overLimit = value.length > CODE_ITEM_DESCRIPTION_MAX;
   const describedBy = [errorText ? errorId : null, overLimit ? countId : null].filter(Boolean).join(" ") || undefined;
 
   return (
     <>
-      <span className={styles.descriptionCell}>
-        <input
-          className={[styles.labelInput, errorText ? styles.labelInputError : ""].filter(Boolean).join(" ")}
-          aria-label={`${label} 설명`}
-          aria-invalid={errorText ? true : undefined}
-          aria-describedby={describedBy}
-          value={value}
-          onChange={(event) => setValue(event.target.value)}
-          onBlur={() => {
-            // C-13: 빈 값도 저장한다 — 이름 칸의 「비어 있지 않고 바뀌었을
-            // 때만」 가드를 베끼면 설명을 지울 수 없다. 값이 서버 값과 이미
-            // 같으면(예: 오류 뒤 서버 값으로 직접 되돌려 쳤을 때) 저장할
-            // 것이 없다 — 화면에 보이는 값이 이미 맞으므로 오류 줄도 지운다.
-            if (value.trim() !== (description ?? "")) {
-              execute({ id, description: value });
-            } else {
-              setErrorText(undefined);
-            }
-          }}
-          onKeyDown={(event) => {
-            // Esc(조합 중 아님)만 서버 값으로 되돌린다 — onError는 되돌리지
-            // 않는다(DR-29, 41자를 다시 쓰지 않아도 되게).
-            if (event.key === "Escape" && !event.nativeEvent.isComposing) {
-              setValue(description ?? "");
-              setErrorText(undefined);
-            }
-          }}
-        />
-        {overLimit ? (
-          <span id={countId} className={styles.descriptionCount}>
-            {value.length}/{CODE_ITEM_DESCRIPTION_MAX}
-          </span>
+      <PhoneOnly>
+        <span className={styles.readOnlyText}>{description ?? "—"}</span>
+      </PhoneOnly>
+      <PcOnly>
+        <span className={styles.descriptionCell}>
+          <input
+            className={[styles.labelInput, errorText ? styles.labelInputError : ""].filter(Boolean).join(" ")}
+            aria-label={`${label} 설명`}
+            aria-invalid={errorText ? true : undefined}
+            aria-describedby={describedBy}
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+            onBlur={() => {
+              // C-13: 빈 값도 저장한다 — 이름 칸의 「비어 있지 않고 바뀌었을
+              // 때만」 가드를 베끼면 설명을 지울 수 없다. 값이 서버 값과 이미
+              // 같으면(예: 오류 뒤 서버 값으로 직접 되돌려 쳤을 때) 저장할
+              // 것이 없다 — 화면에 보이는 값이 이미 맞으므로 오류 줄도 지운다.
+              if (value.trim() !== (description ?? "")) {
+                execute({ id, description: value });
+              } else {
+                setErrorText(undefined);
+              }
+            }}
+            onKeyDown={(event) => {
+              // Esc(조합 중 아님)만 서버 값으로 되돌린다 — onError는 되돌리지
+              // 않는다(DR-29, 41자를 다시 쓰지 않아도 되게).
+              if (event.key === "Escape" && !event.nativeEvent.isComposing) {
+                setValue(description ?? "");
+                setErrorText(undefined);
+              }
+            }}
+          />
+          {overLimit ? (
+            <span id={countId} className={styles.descriptionCount}>
+              {value.length}/{CODE_ITEM_DESCRIPTION_MAX}
+            </span>
+          ) : null}
+        </span>
+        {errorText ? (
+          <p id={errorId} role="alert" className={styles.labelError}>
+            {errorText}
+          </p>
         ) : null}
-      </span>
-      {errorText ? (
-        <p id={errorId} role="alert" className={styles.labelError}>
-          {errorText}
-        </p>
-      ) : null}
+      </PcOnly>
     </>
   );
 }

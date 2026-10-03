@@ -5,7 +5,7 @@ import { useAction } from "next-safe-action/hooks";
 import { setEvidenceTypeTaxRuleAction } from "./actions";
 import { TextField } from "@/ui/input/TextField";
 import { parseNumberInput } from "@/lib/format-number";
-import { usePhoneWidth } from "@/app/(app)/leave/use-phone-width";
+import { PcOnly, PhoneOnly } from "../pc-only";
 import styles from "./code-tables.module.css";
 
 type RuleKind = "none" | "vat_surcharge" | "withholding" | "company_borne";
@@ -54,79 +54,50 @@ export function EvidenceTypeFields({ itemId, initialValue }: { itemId: string; i
     execute({ id: itemId, taxRule: next });
   }
 
-  // 폰은 읽기만(사용자 결정 2026-10-03 14:57 KST 카드) — 선택 상자 · 입력 칸 없이 값만 한 줄.
-  if (usePhoneWidth()) {
-    const labelOf = (options: { value: string | number; label: string }[], current: string | number | undefined) =>
-      options.find((option) => option.value === current)?.label;
-    const parts = [
-      labelOf(RULE_KIND_OPTIONS, value.ruleKind),
-      ...(value.ruleKind === "none"
-        ? []
-        : [
-            `${value.roundingUnit ?? 1}원`,
-            labelOf(ROUNDING_METHOD_OPTIONS, value.roundingMethod ?? "round"),
-            `${(value.minWithholdingAmount ?? 0).toLocaleString("ko-KR")}원`,
-            labelOf(BASIS_DATE_OPTIONS, value.basisDate ?? "payment_date"),
-          ]),
-    ];
-    return <div className={styles.taxRuleSection}>{parts.join(" · ")}</div>;
-  }
+  // 폰은 읽기만(사용자 결정 2026-10-03 14:57 KST 카드) — 선택 상자 · 입력 칸은 폰에서 CSS로 숨고 값만 한 줄로 보인다.
+  const labelOf = (options: { value: string | number; label: string }[], current: string | number | undefined) =>
+    options.find((option) => option.value === current)?.label;
+  const phoneText = [
+    labelOf(RULE_KIND_OPTIONS, value.ruleKind),
+    ...(value.ruleKind === "none"
+      ? []
+      : [
+          `${value.roundingUnit ?? 1}원`,
+          labelOf(ROUNDING_METHOD_OPTIONS, value.roundingMethod ?? "round"),
+          `${(value.minWithholdingAmount ?? 0).toLocaleString("ko-KR")}원`,
+          labelOf(BASIS_DATE_OPTIONS, value.basisDate ?? "payment_date"),
+        ]),
+  ].join(" · ");
 
   return (
-    <div className={styles.taxRuleSection}>
-      <div className={styles.selectLabel}>
-        <label htmlFor={`rule-kind-${itemId}`}>규칙 종류</label>
-        <select
-          id={`rule-kind-${itemId}`}
-          className={styles.select}
-          value={value.ruleKind}
-          onChange={(event) => {
-            const ruleKind = event.target.value as RuleKind;
-            if (ruleKind === "none") {
-              save({ ruleKind });
-              return;
-            }
-            save({
-              ruleKind,
-              roundingUnit: value.roundingUnit ?? 1,
-              roundingMethod: value.roundingMethod ?? "round",
-              minWithholdingAmount: value.minWithholdingAmount ?? 0,
-              basisDate: value.basisDate ?? "payment_date",
-            });
-          }}
-        >
-          {RULE_KIND_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {value.ruleKind !== "none" ? (
-        <>
+    <>
+      <PhoneOnly>
+        <div className={styles.taxRuleSection}>{phoneText}</div>
+      </PhoneOnly>
+      <PcOnly>
+        <div className={styles.taxRuleSection}>
           <div className={styles.selectLabel}>
-            <label htmlFor={`rounding-unit-${itemId}`}>절사 단위</label>
+            <label htmlFor={`rule-kind-${itemId}`}>규칙 종류</label>
             <select
-              id={`rounding-unit-${itemId}`}
+              id={`rule-kind-${itemId}`}
               className={styles.select}
-              value={value.roundingUnit ?? 1}
-              onChange={(event) => save({ ...value, roundingUnit: Number(event.target.value) as 1 | 10 })}
+              value={value.ruleKind}
+              onChange={(event) => {
+                const ruleKind = event.target.value as RuleKind;
+                if (ruleKind === "none") {
+                  save({ ruleKind });
+                  return;
+                }
+                save({
+                  ruleKind,
+                  roundingUnit: value.roundingUnit ?? 1,
+                  roundingMethod: value.roundingMethod ?? "round",
+                  minWithholdingAmount: value.minWithholdingAmount ?? 0,
+                  basisDate: value.basisDate ?? "payment_date",
+                });
+              }}
             >
-              <option value={1}>1원</option>
-              <option value={10}>10원</option>
-            </select>
-          </div>
-
-          <div className={styles.selectLabel}>
-            <label htmlFor={`rounding-method-${itemId}`}>절사 방식</label>
-            <select
-              id={`rounding-method-${itemId}`}
-              className={styles.select}
-              value={value.roundingMethod ?? "round"}
-              onChange={(event) => save({ ...value, roundingMethod: event.target.value as RoundingMethod })}
-            >
-              {ROUNDING_METHOD_OPTIONS.map((option) => (
+              {RULE_KIND_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
@@ -134,40 +105,73 @@ export function EvidenceTypeFields({ itemId, initialValue }: { itemId: string; i
             </select>
           </div>
 
-          <TextField
-            id={`min-withholding-${itemId}`}
-            name={`min-withholding-${itemId}`}
-            label="최소 징수액"
-            numberKind="krw"
-            defaultValue={value.minWithholdingAmount ?? 0}
-            onBlur={(event) => {
-              const parsed = parseNumberInput(event.target.value);
-              // "-"·"." 만 남은 칸은 NaN이다 — 0으로 대체하지 않고(??는
-              // null만 대체한다) 이전 값을 유지한 채 저장을 건너뛴다.
-              if (parsed !== null && !Number.isFinite(parsed)) return;
-              save({ ...value, minWithholdingAmount: parsed ?? 0 });
-            }}
-          />
+          {value.ruleKind !== "none" ? (
+            <>
+              <div className={styles.selectLabel}>
+                <label htmlFor={`rounding-unit-${itemId}`}>절사 단위</label>
+                <select
+                  id={`rounding-unit-${itemId}`}
+                  className={styles.select}
+                  value={value.roundingUnit ?? 1}
+                  onChange={(event) => save({ ...value, roundingUnit: Number(event.target.value) as 1 | 10 })}
+                >
+                  <option value={1}>1원</option>
+                  <option value={10}>10원</option>
+                </select>
+              </div>
 
-          <div className={styles.selectLabel}>
-            <label htmlFor={`basis-date-${itemId}`}>적용 기준일 종류</label>
-            <select
-              id={`basis-date-${itemId}`}
-              className={styles.select}
-              value={value.basisDate ?? "payment_date"}
-              onChange={(event) => save({ ...value, basisDate: event.target.value as BasisDate })}
-            >
-              {BASIS_DATE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </>
-      ) : null}
+              <div className={styles.selectLabel}>
+                <label htmlFor={`rounding-method-${itemId}`}>절사 방식</label>
+                <select
+                  id={`rounding-method-${itemId}`}
+                  className={styles.select}
+                  value={value.roundingMethod ?? "round"}
+                  onChange={(event) => save({ ...value, roundingMethod: event.target.value as RoundingMethod })}
+                >
+                  {ROUNDING_METHOD_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-      <p className={styles.taxRuleHint}>세율은 설정 화면에서 적용 시작일과 함께 관리합니다</p>
-    </div>
+              <TextField
+                id={`min-withholding-${itemId}`}
+                name={`min-withholding-${itemId}`}
+                label="최소 징수액"
+                numberKind="krw"
+                defaultValue={value.minWithholdingAmount ?? 0}
+                onBlur={(event) => {
+                  const parsed = parseNumberInput(event.target.value);
+                  // "-"·"." 만 남은 칸은 NaN이다 — 0으로 대체하지 않고(??는
+                  // null만 대체한다) 이전 값을 유지한 채 저장을 건너뛴다.
+                  if (parsed !== null && !Number.isFinite(parsed)) return;
+                  save({ ...value, minWithholdingAmount: parsed ?? 0 });
+                }}
+              />
+
+              <div className={styles.selectLabel}>
+                <label htmlFor={`basis-date-${itemId}`}>적용 기준일 종류</label>
+                <select
+                  id={`basis-date-${itemId}`}
+                  className={styles.select}
+                  value={value.basisDate ?? "payment_date"}
+                  onChange={(event) => save({ ...value, basisDate: event.target.value as BasisDate })}
+                >
+                  {BASIS_DATE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </>
+          ) : null}
+
+          <p className={styles.taxRuleHint}>세율은 설정 화면에서 적용 시작일과 함께 관리합니다</p>
+        </div>
+      </PcOnly>
+    </>
   );
 }

@@ -70,7 +70,8 @@ test.describe("폰 375 /admin/code-tables 설명 접힌 줄 (S14 overflow)", () 
 
     // 사용자 결정 2026-10-03 14:57 KST 카드 「폰은 읽기만」 — 폰의 표 안에는 입력 · 편집 버튼이 없고 이름 · 설명이 글자로 보인다.
     // (옛 단언: 설명 입력이 이름 입력 아래 접힌 줄 · 동작 두 버튼 44px 이상 — 입력과 버튼이 사라져 글자 위치 · 숨김으로 대체.)
-    await expect(page.locator("table input, table select, table button")).toHaveCount(0);
+    // 폰의 편집 요소는 DOM에 있되 CSS로 숨는다(첫 렌더부터 — 04.6 W5 D-1) — 의미는 「보이는 입력 0」이다.
+    await expect(page.locator("table input, table select, table button").filter({ visible: true })).toHaveCount(0);
     const nameText = page.locator("tbody td").filter({ visible: true, hasText: label }).first();
     // 한 번만 — 같은 설명을 폰에서 두 번 보이지 않는다.
     const descriptionText = page.locator("tbody td").filter({ visible: true, hasText: description });

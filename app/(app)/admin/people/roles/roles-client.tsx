@@ -32,6 +32,7 @@ function getStringField(formData: FormData, key: string): string {
   return typeof value === "string" ? value : "";
 }
 
+// 폰 P1은 이름 · 업무 범위 · 동작 3열(SYSTEM §7-3), 시드 여부 · 정렬은 접힌 줄이다(04.6 W1-4 B2·B3).
 // 표는 `StaticTable`(R1 · M4)이다 — 편집 칸(이름 · 업무 범위)은 칸 노드로 들어가는 클라이언트 컴포넌트가 그대로 맡는다.
 function RoleNameCell({ role }: { role: RoleRowView }) {
   const [name, setName] = useState(role.name);
@@ -129,8 +130,8 @@ export function RolesList({
         columns={[
           { key: "name", header: "이름", priority: "p1" },
           { key: "workScope", header: "업무 범위", priority: "p1" },
-          { key: "seed", header: "시드 여부", priority: "p1" },
-          { key: "sortOrder", header: "정렬", priority: "p1", align: "right" },
+          { key: "seed", header: "시드 여부", priority: "p2" },
+          { key: "sortOrder", header: "정렬", priority: "p2", align: "right" },
           { key: "actions", header: "동작", priority: "p1" },
         ]}
         rows={roles.map((role) => ({

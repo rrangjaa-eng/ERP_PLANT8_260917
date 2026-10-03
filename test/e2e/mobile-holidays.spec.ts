@@ -73,13 +73,13 @@ test.describe("폰 375 /admin/holidays", () => {
     await db.delete(holidays).where(inArray(holidays.date, [LONG_ROW.date, SHORT_ROW.date]));
   });
 
-  test("표는 날짜·이름·동작만 칸으로 남고 요일 · 구분은 행 아래 접힌 줄이며 가로 스크롤이 없다", async ({ page }) => {
+  test("표는 이름·동작만 칸으로 남고 날짜 · 요일 · 구분은 행 아래 접힌 줄이며 가로 스크롤이 없다", async ({ page }) => {
     await login(page);
     await page.goto(`/admin/holidays?year=${NEXT_YEAR}`);
     const table = page.getByRole("table", { name: `${NEXT_YEAR}년 공휴일` });
 
     const headers = table.locator("thead th").filter({ visible: true });
-    await expect(headers).toHaveText(["날짜", "이름", "동작"]);
+    await expect(headers).toHaveText(["이름", "동작"]);
 
     const rows = await db
       .select({ date: holidays.date })
@@ -93,8 +93,9 @@ test.describe("폰 375 /admin/holidays", () => {
     const weekday = WEEKDAYS[new Date(`${SHORT_ROW.date}T00:00:00Z`).getUTCDay()];
     await expect(fold).toBeVisible();
     // StaticTable 접힌 줄 — 값 앞에 머리글 라벨(스크린리더용 sr-only 「요일 」 「구분 」)이 붙는다.
-    await expect(fold).toHaveText(`요일 ${weekday} · 구분 선거일`);
-    await expect(mainRow.locator("td").filter({ visible: true })).toHaveCount(3);
+    // 04.6 W1-4 결함 8 — 날짜는 P1이 아니라 접힌 줄이다(SYSTEM §7-3 폰 전략: P1 문자 열 1개).
+    await expect(fold).toHaveText(`날짜 ${SHORT_ROW.date.slice(5)} · 요일 ${weekday} · 구분 선거일`);
+    await expect(mainRow.locator("td").filter({ visible: true })).toHaveCount(2);
 
     await expectNoHorizontalScroll(page);
   });

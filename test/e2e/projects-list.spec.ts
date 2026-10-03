@@ -18,6 +18,7 @@ import { saveRevenue } from "@/domain/revenue";
 import { createAccount } from "@/domain/auth/accounts";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
+import { listCodeItems, updateCodeItemLabel } from "@/repositories/code-tables";
 
 async function findUserIdByEmail(email: string): Promise<string> {
   const [row] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
@@ -1197,5 +1198,36 @@ test.describe("프로젝트 목록 — 화면 사용성 원칙 (04.6-10 · R11)"
     await checkPrinciples(page, ["/projects", "/projects?new=1", `/projects?new=1&copyFrom=${source.id}`], {
       strict: isStrict(process.env.DESIGN_PRINCIPLES_STRICT),
     });
+  });
+});
+
+// 04.6-10 — 상태 이름은 배지 고정(사용자 결정 ⑤)이다. 코드표 라벨이 DB에서 바뀌어 있어도(예전 관리자 편집) 필터 옵션·상세 부제 글자가 배지와 같다.
+test.describe("프로젝트 상태 이름 — 배지·필터·부제가 한 이름", () => {
+  const WORDS = ["수주중", "진행", "정산", "완료", "미수주"];
+
+  test("코드표 라벨을 바꿔 둬도 필터 옵션 글자는 배지 낱말이고 상세 부제도 같다", async ({ page }) => {
+    const marker = `E2E상태이름-${randomUUID().slice(0, 8)}`;
+    const pm = await setupPm();
+    const project = await createProject(SYSTEM_VIEWER, { clientId: pm.clientId, teamId: pm.teamId, pmUserId: pm.pmUserId, name: marker });
+
+    const scope = { rows: "all", includeArchived: false } as const;
+    const rows = await listCodeItems(SYSTEM_VIEWER, { tableKey: "project_status", scope, includeInactive: true });
+    const originals = rows.map((row) => ({ id: row.id, label: row.label }));
+    try {
+      for (const row of rows) await updateCodeItemLabel(SYSTEM_VIEWER, row.id, `바뀜-${row.value}`);
+
+      await login(page, pm);
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await page.goto(`/projects?q=${encodeURIComponent(marker)}&year=all`);
+      const optionTexts = await page.locator("#status option").allTextContents();
+      expect(optionTexts.filter((text) => text !== "전체 상태")).toEqual(WORDS);
+      const row = page.locator("table tbody tr", { hasText: marker });
+      await expect(row.getByText("수주중", { exact: true })).toBeVisible();
+
+      await page.goto(`/projects/${project.id}`);
+      await expect(page.getByText(/^수주중 \d{4}-\d{2}-\d{2}$/)).toBeVisible();
+    } finally {
+      for (const original of originals) await updateCodeItemLabel(SYSTEM_VIEWER, original.id, original.label);
+    }
   });
 });

@@ -8,7 +8,6 @@ import { saveProjectLedgerAction } from "../actions";
 import { DetailScreen, type DetailScreenProps } from "@/ui/detail-screen/DetailScreen";
 import { Num } from "@/ui/num/Num";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
-import type { StatusWord } from "@/ui/status-tag/status-map";
 import { Button, buttonLinkClassName } from "@/ui/button/Button";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
 import { Table } from "@/ui/table/Table";
@@ -61,6 +60,7 @@ import {
   type PreEstimateFieldError,
 } from "./pre-estimate-field";
 import type { ProjectStatus } from "@/domain/projects/status-transitions";
+import { PROJECT_STATUS_WORD } from "@/domain/projects/status-word";
 import styles from "./project-detail.module.css";
 
 export type QuoteTableOption = { id: string; name: string };
@@ -911,15 +911,6 @@ function HeaderCopyActions({ children }: { children?: ReactNode }) {
 // 편집에 들어가는 진짜 grid 계약을 따른다(로빙 tabIndex · 방향키 · Esc ·
 // Delete · 붙여넣기 · 셀 오류·충돌 고정 렌더) — 04-01/04-02의 always-on
 // 인풋 트레이서를 여기서 완성한다.
-// 상태 배지 낱말 — 색은 status-map 한 표가 정한다(수주중·미수주 muted · 진행 accent · 정산 warning · 완료 success — 옛 PROJECT_STATUS_TAG_KIND와 같은 색).
-const PROJECT_STATUS_WORD: Record<ProjectStatus, StatusWord> = {
-  bidding: "수주중",
-  in_progress: "진행",
-  settling: "정산",
-  completed: "완료",
-  lost: "미수주",
-};
-
 export function QuoteLedger({
   viewerId,
   projectId,

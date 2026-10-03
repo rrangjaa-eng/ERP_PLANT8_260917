@@ -284,6 +284,19 @@ test.describe("§6-0 상단 바 — 스킨 A (04.6-08)", () => {
   });
 });
 
+test.describe("§6-0 상단 바 Ctrl+K kbd (웨이브 6 DOM 감사 P4)", () => {
+  test("Ctrl+K kbd는 --text-tag 600이고 radius가 --radius-tag다(SYSTEM §2 태그 글자 · 모서리 표)", async ({ page }) => {
+    await loginAs(page, DEFAULT_ROLE_ID);
+    await page.goto("/projects");
+
+    const kbd = page.getByRole("banner").locator("kbd", { hasText: "Ctrl+K" });
+    await expect(kbd).toBeVisible();
+    await expect(kbd).toHaveCSS("font-size", await tokenValue(page, "--text-tag"));
+    await expect(kbd).toHaveCSS("font-weight", "600");
+    await expect(kbd).toHaveCSS("border-top-left-radius", await tokenValue(page, "--radius-tag"));
+  });
+});
+
 test.describe("§6-0 현재 메뉴(WR-01)", () => {
   test("/projects에서 주 메뉴 현재 링크가 하나이고 계산값이 현재 표시다", async ({ page }) => {
     await loginAs(page, DEFAULT_ROLE_ID);

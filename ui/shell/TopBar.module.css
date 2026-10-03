@@ -98,11 +98,14 @@
   display: flex;
 }
 
+/* SYSTEM §2 태그 글자(--text-tag 11 · 600) · 모서리 표(상태 배지 · kbd = --radius-tag 4) — 웨이브 6 DOM 감사 P4. */
 .kbd {
   border: var(--line-w) solid var(--bar-muted);
+  border-radius: var(--radius-tag);
   color: var(--bar-fg);
   padding: 0 var(--s-1);
   font-size: var(--text-tag);
+  font-weight: var(--fw-medium);
 }
 
 .userWrap {

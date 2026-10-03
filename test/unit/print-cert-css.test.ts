@@ -47,7 +47,8 @@ describe("인쇄 라우트 404 변종(L3 — UI-SPEC 296 「§6-9 404 문구를 
   it("문서 제목은 성공 화면(인쇄 시트)만 정한다 — page.tsx가 제목을 내보내지 않는다", () => {
     const page = readFileSync(resolve(DIR, "page.tsx"), "utf8");
     expect(page).not.toMatch(/export const metadata|generateMetadata/);
-    const sheet = readFileSync(resolve(DIR, "print-sheet.tsx"), "utf8");
-    expect(sheet).toContain('document.title = "확인증 인쇄"');
+    // 제목은 서버 메타데이터가 낸다(c81f4877 — 클라이언트 document.title은 하이드레이션이 덮어써 간헐로 졌다). 성공 화면(printable === true)만 정한다.
+    const layout = readFileSync(resolve(DIR, "layout.tsx"), "utf8");
+    expect(layout).toMatch(/\(await judgePrintable\(id\)\) === true \? \{ title: "확인증 인쇄" \} : \{\}/);
   });
 });

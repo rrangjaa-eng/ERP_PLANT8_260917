@@ -410,3 +410,126 @@ describe("scripts/verify-gcp.sh", () => {
     expect(script).toMatch(/exit\s+"?\$?\{?FAILED/);
   });
 });
+
+// visual-baseline.yml — CI Linux(Chromium)에서 시각 회귀 기준 사진을 만든다(R6: 잡 둘).
+// 테스트 잡은 읽기 권한 · 자격 증명 저장 없음, 쓰기 권한은 아티팩트만 다루는 커밋 잡 하나에만 있다.
+describe("visual-baseline.yml", () => {
+  const raw = readWorkflow("visual-baseline.yml");
+  const body = raw
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("#"))
+    .join("\n");
+
+  function jobBody(name: string, nextName?: string): string {
+    const start = body.indexOf(`\n  ${name}:`);
+    expect(start, `visual-baseline.yml에 ${name} 잡이 있어야 한다`).toBeGreaterThan(-1);
+    const end = nextName ? body.indexOf(`\n  ${nextName}:`) : body.length;
+    expect(end, `visual-baseline.yml에 ${nextName} 잡이 있어야 한다`).toBeGreaterThan(start);
+    return body.slice(start, end);
+  }
+
+  const baseline = () => jobBody("baseline", "commit");
+  const commit = () => jobBody("commit");
+
+  it("workflow_dispatch로만 돌고 입력이 없다", () => {
+    const onBlock = body.slice(body.indexOf("\non:"), body.indexOf("\npermissions:"));
+    expect(onBlock).toContain("workflow_dispatch:");
+    expect(onBlock).not.toMatch(/\n\s+(push|pull_request|schedule|workflow_call):/);
+    expect(onBlock).not.toContain("inputs:");
+  });
+
+  it("최상위 permissions는 contents: read이고 contents: write는 정확히 한 번(커밋 잡)이다", () => {
+    expect(body).toMatch(/\npermissions:\n  contents: read\n/);
+    expect((body.match(/contents: write/g) ?? []).length).toBe(1);
+    expect(commit()).toContain("contents: write");
+    expect(baseline()).not.toContain("contents: write");
+  });
+
+  it("environment: 키·시크릿 참조·drizzle-kit push가 없다", () => {
+    expect(body).not.toMatch(/^\s*environment:/m);
+    expect(body).not.toMatch(/secrets\./);
+    expect(body).not.toMatch(/drizzle-kit\s+push/);
+  });
+
+  // 태그로 디스패치하면 ref_name이 태그 이름이라 커밋 잡이 refs/heads/<태그>로 새 브랜치를 만든다 — 브랜치 ref에서만 돈다.
+  it("두 잡 모두 브랜치 ref에서만, main이 아닐 때만 돈다", () => {
+    for (const block of [baseline(), commit()]) {
+      expect(block).toContain(
+        "if: startsWith(github.ref, 'refs/heads/') && github.ref != 'refs/heads/main'",
+      );
+    }
+  });
+
+  it("테스트 잡은 읽기 권한이고 checkout이 자격 증명을 저장하지 않는다", () => {
+    const block = baseline();
+    expect(block).toMatch(/permissions:\n\s+contents: read\n/);
+    expect(block).toMatch(/uses: actions\/checkout@v4\n\s+with:\n\s+persist-credentials: false/);
+  });
+
+  it("테스트 잡은 --update-snapshots=all 뒤에 같은 프로젝트를 --update-snapshots=none으로 재비교한다", () => {
+    const block = baseline();
+    const all = block.indexOf("--project=visual --update-snapshots=all");
+    const none = block.indexOf("--project=visual --update-snapshots=none");
+    expect(all).toBeGreaterThan(-1);
+    expect(none).toBeGreaterThan(all);
+    expect((body.match(/update-snapshots=none/g) ?? []).length).toBe(1);
+  });
+
+  it("테스트 잡은 재비교 뒤 스냅숏 PNG만 visual-baseline 아티팩트(보존 7일)로 올린다", () => {
+    const block = baseline();
+    const none = block.indexOf("--update-snapshots=none");
+    const upload = block.indexOf("actions/upload-artifact@v4");
+    expect(upload).toBeGreaterThan(none);
+    const tail = block.slice(upload);
+    expect(tail).toContain("name: visual-baseline");
+    expect(tail).toContain("test/e2e/*.spec.ts-snapshots/**/*.png");
+    expect(tail).toContain("retention-days: 7");
+  });
+
+  it("재비교가 실패하면 test-results를 visual-baseline-diff 아티팩트로 올리고 커밋 잡은 받지 않는다", () => {
+    const block = baseline();
+    const none = block.indexOf("--update-snapshots=none");
+    const step = block.indexOf("if: failure()");
+    expect(step, "failure() 조건의 업로드 스텝이 있어야 한다").toBeGreaterThan(none);
+    const tail = block.slice(step);
+    expect(tail).toContain("actions/upload-artifact@v4");
+    expect(tail).toContain("name: visual-baseline-diff");
+    expect(tail).toContain("path: test-results/");
+    expect(tail).toContain("retention-days: 7");
+    expect(tail).toContain("if-no-files-found: ignore");
+    expect(commit()).not.toContain("visual-baseline-diff");
+  });
+
+  it("샤드 값이 없다 — --project=visual만 돈다", () => {
+    for (const token of ["--shard", "PWTEST_SHARD_WEIGHTS", "E2E_SKIP_DESKTOP", "matrix"]) {
+      expect(body, `visual-baseline.yml 본문에 ${token}가 있으면 안 된다`).not.toContain(token);
+    }
+    expect(body).not.toContain("pnpm test:e2e");
+  });
+
+  it("커밋 잡은 테스트 잡 뒤(needs: baseline)에 돌고 checkout·download-artifact·git 셸 스텝뿐이다", () => {
+    const block = commit();
+    expect(block).toMatch(/\n    needs: baseline\n/);
+    const uses = [...block.matchAll(/uses:\s*(\S+)/g)].map((m) => m[1]);
+    expect(uses).toEqual(["actions/checkout@v4", "actions/download-artifact@v4"]);
+  });
+
+  it("커밋 잡 run에 pnpm·npm·npx·node·playwright·corepack이 없다(쓰기 토큰 곁에서 저장소 코드를 돌리지 않는다)", () => {
+    const block = commit();
+    expect(block).toContain("run:");
+    expect(block).not.toMatch(/\b(pnpm|npm|npx|node|playwright|corepack)\b/);
+  });
+
+  it("커밋 잡은 아티팩트를 test/e2e로 받고 스냅숏 PNG만 git add한다", () => {
+    const block = commit();
+    expect(block).toMatch(/name: visual-baseline\n\s+path: test\/e2e\n/);
+    const adds = block.split("\n").filter((line) => /\bgit add\b/.test(line));
+    expect(adds.length).toBeGreaterThan(0);
+    for (const line of adds) {
+      expect(line).toMatch(/test\/e2e\/\*\.spec\.ts-snapshots/);
+      expect(line).toContain(".png");
+      expect(line).not.toMatch(/git add (-A|--all|\.)(\s|$)/);
+    }
+    expect(block).toContain("git push");
+  });
+});

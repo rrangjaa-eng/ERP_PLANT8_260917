@@ -44,6 +44,8 @@ type PanelContextValue = {
   setGuard(guard: PanelGuard): void;
   /** `returnFocus: false`면 이번 닫기만 연 요소로 포커스를 돌리지 않는다 — URL 패널은 서버가 그리므로 `returnFocus` prop을 성공 때 바꿀 수 없다. */
   requestClose(reason: PanelCloseReason, options?: { returnFocus?: boolean }): void;
+  /** 성공 뒤 다른 URL로 이동해 패널이 사라질 때 — 연 요소가 그 화면에 남아 있어도 포커스는 연 요소가 아니라 화면 제목으로 간다(SYSTEM §7-8 「성공으로 닫히면 호출부가 새 결과로」). */
+  moveFocusToResult(): void;
 };
 
 const PanelContext = createContext<PanelContextValue | null>(null);
@@ -117,6 +119,7 @@ export function SidePanel(props: SidePanelProps) {
   const closingRef = useRef(false);
   const returnFocusRef = useRef(returnFocus);
   const skipReturnFocusRef = useRef(false);
+  const resultFocusRef = useRef(false);
   const propsRef = useRef(props);
   const [discardCount, setDiscardCount] = useState<number | null>(null);
 
@@ -138,6 +141,10 @@ export function SidePanel(props: SidePanelProps) {
     return () => {
       root.style.paddingInlineEnd = "";
       if (dialog.open) dialog.close();
+      if (resultFocusRef.current) {
+        focusScreenTitle();
+        return;
+      }
       if (!returnFocusRef.current || skipReturnFocusRef.current) return;
       // 연 요소가 아직 문서에 있으면 거기로, 없으면 화면 제목으로(직접 URL로 들어온 패널 · 연 행이 사라진 경우).
       if (opener && document.contains(opener) && opener !== document.body) opener.focus();
@@ -189,6 +196,9 @@ export function SidePanel(props: SidePanelProps) {
         guardRef.current = guard;
       },
       requestClose,
+      moveFocusToResult() {
+        resultFocusRef.current = true;
+      },
     }),
     [requestClose],
   );

@@ -144,6 +144,7 @@ export function PanelForm({
       succeed(result) {
         const href = result?.href ?? successHref;
         if (href) {
+          panel?.moveFocusToResult();
           router.push(href);
           return;
         }

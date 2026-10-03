@@ -315,6 +315,11 @@ test.describe("공휴일 추가(04.2-12)", () => {
     const cell = page.getByRole("cell", { name: ADDED_NAME, exact: true });
     await expect(cell).toBeVisible();
     expect(await cell.evaluate((el) => getComputedStyle(el).textOverflow)).not.toBe("ellipsis");
+    // 웨이브 6 DOM 감사 D2 · SYSTEM 1035 「성공으로 닫히면 호출부가 새 결과로 옮긴다」 — 추가 성공 뒤 포커스는 여는 링크가 아니라 화면 제목에 있고 머문다.
+    const focusedUi = () => page.evaluate(() => `${document.activeElement?.tagName}:${document.activeElement?.getAttribute("data-ui")}`);
+    await expect.poll(focusedUi, { message: "추가 성공 뒤 포커스" }).toBe("H1:screen-title");
+    await page.waitForTimeout(600);
+    expect(await focusedUi(), "600ms 뒤에도 화면 제목").toBe("H1:screen-title");
     await expect(page.getByRole("button", { name: `${NEXT_YEAR}년 공휴일 확정` })).toBeVisible();
     await expect(page).toHaveURL(new RegExp(`/admin/holidays\\?year=${NEXT_YEAR}$`), { timeout: 8000 });
   });

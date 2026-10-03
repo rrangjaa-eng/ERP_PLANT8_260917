@@ -75,6 +75,26 @@ for (const width of [375, 320]) {
       expect(await brokenWords(names)).toEqual([]);
     });
 
+    // 서브픽셀 경계에서 갈리지 않게 — 행 머리글 칸이 가장 좁아졌을 때(min-width) 안쪽 폭이 가장 긴 낱말 폭보다 4px 넘게 넉넉해야 한다(CI 크로미움에서만 쪼개진 사례).
+    test(`/admin/people ${width} 행 머리글 안쪽 폭이 낱말 폭보다 넉넉하다 (B1)`, async ({ page }) => {
+      await loginAsAdmin(page);
+      await page.goto("/admin/people");
+      const names = page.locator("table tbody th[scope=row]").filter({ hasText: /^E2E (Admin|Employee)$/ });
+      expect(await names.count()).toBeGreaterThan(0);
+      const slack = await names.first().evaluate((th) => {
+        const style = getComputedStyle(th);
+        const inner = parseFloat(style.minWidth) - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+        const probe = document.createElement("span");
+        probe.style.whiteSpace = "nowrap";
+        probe.textContent = "Employee";
+        th.appendChild(probe);
+        const word = probe.getBoundingClientRect().width;
+        probe.remove();
+        return inner - word;
+      });
+      expect(slack).toBeGreaterThan(4);
+    });
+
     test(`/admin/people/roles ${width} 보이는 열이 3개 이하다 (B2·B3)`, async ({ page }) => {
       await loginAsAdmin(page);
       await page.goto("/admin/people/roles");

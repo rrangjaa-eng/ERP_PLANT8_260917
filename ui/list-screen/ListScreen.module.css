@@ -55,3 +55,10 @@
   justify-content: center;
   margin: var(--s-4) 0 0;
 }
+
+/* 폰은 읽기만인 화면의 1차 — 폰(<700)에서 그리지 않는다(사용자 결정 2026-10-03 「폰은 읽기만」). */
+@media (max-width: 699.98px) {
+  .bar > .phoneHidden {
+    display: none;
+  }
+}

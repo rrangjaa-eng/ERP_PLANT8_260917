@@ -8,3 +8,10 @@
     min-height: var(--touch-min);
   }
 }
+
+/* 폰은 읽기만인 화면의 빈 화면 첫 행동 — 폰(<700)에서 그리지 않는다(사용자 결정 2026-10-03 「폰은 읽기만」). */
+@media (max-width: 699.98px) {
+  .action.phoneHidden {
+    display: none;
+  }
+}

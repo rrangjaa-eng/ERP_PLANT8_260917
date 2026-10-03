@@ -29,19 +29,13 @@ test.describe("폰 375 /admin/people/roles 가로 스크롤 금지 · 머리글 
     expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
   });
 
-  test("계급 이름 변경 입력이 컨테이너 폭을 넘지 않는다(width: 100%)", async ({ page }) => {
+  // 사용자 결정 2026-10-03 14:57 KST 카드 「폰은 읽기만」 — 폰에는 표 안 입력이 없고 계급 이름이 글자로 보인다(옛 「입력이 폭을 넘지 않는다」 단언의 대체).
+  test("폰에는 표 안 입력이 없고 계급 이름이 글자로 보인다", async ({ page }) => {
     await loginAs(page);
     await page.goto("/admin/people/roles");
 
-    const inputs = page.locator("table tbody input");
-    const count = await inputs.count();
-    expect(count).toBeGreaterThan(0);
-    const clientWidth = await page.evaluate(() => document.documentElement.clientWidth);
-    for (let i = 0; i < count; i += 1) {
-      const box = await inputs.nth(i).boundingBox();
-      expect(box).not.toBeNull();
-      expect(box!.x + box!.width).toBeLessThanOrEqual(clientWidth);
-    }
+    await expect(page.locator("table tbody input")).toHaveCount(0);
+    await expect(page.locator("table tbody").getByRole("cell", { name: "대표", exact: true })).toBeVisible();
   });
 
   // 재현: 「시드 여부」「정렬」「동작」 머리글이 칸이 굶주려 한 글자씩 세로로

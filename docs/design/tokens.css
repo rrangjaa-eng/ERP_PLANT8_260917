@@ -61,6 +61,7 @@
   --surface-actions:  var(--n-25);    /* 패널 행동 줄 */
   --surface-muted:    var(--n-60);    /* 비활성·뼈대 행 */
   --surface-selected: var(--g-100);   /* 선택 범위 — 위에 --text-faint 금지(4.26) */
+  --surface-dirty:    var(--g-100);   /* 저장 대기 편집 칸 면(UQ-4 후보 7) — 위에 --text-faint 금지(4.26) */
 
   /* 글자 */
   --text-strong:    var(--n-900);   /* on canvas 15.3 · on base 16.8 */
@@ -113,6 +114,7 @@
   /* 깊이 */
   --shadow-surface: 0 1px 2px var(--ink-a05);
   --shadow-float:   0 24px 48px -12px var(--ink-a30), 0 2px 8px var(--ink-a10);   /* 모달·옆 패널·시트 */
+  --shadow-pop:     0 12px 28px -8px var(--ink-a30);   /* 토스트·사용자 메뉴(UQ-4 후보 5 — 1px --border-surface 선과 함께) */
   --scrim-dialog:   var(--ink-a40);
   --scrim-panel:    var(--ink-a20);
   --inset-tab:      inset 0 -2px 0 var(--accent);            /* 현재 탭 밑줄 */
@@ -245,7 +247,6 @@
 
   /* 모션 (응답형만) */
   --dur-hover:     120ms;
-  --dur-toast:     160ms;
   --dur-sheet:     200ms;
   --dur-saved:     600ms;
   --dur-progress:  1200ms;
@@ -282,7 +283,6 @@
 @media (prefers-reduced-motion: reduce) {
   :root {
     --dur-hover:    0.01ms;
-    --dur-toast:    0.01ms;
     --dur-sheet:    0.01ms;
     --dur-saved:    0.01ms;
     --dur-progress: 0.01ms;
@@ -318,6 +318,7 @@
     --surface-actions:  #FFFFFF;
     --surface-muted:    #FFFFFF;
     --surface-selected: #FFFFFF;
+    --surface-dirty:    #FFFFFF;
     /* 글자 */
     --text-strong:    var(--print-ink);
     --text-muted:     var(--print-ink);
@@ -351,6 +352,7 @@
     /* 깊이 */
     --shadow-surface: none;
     --shadow-float:   none;
+    --shadow-pop:     none;
     --scrim-dialog:   #FFFFFF;
     --scrim-panel:    #FFFFFF;
   }

@@ -352,3 +352,33 @@ describe("tokens.css — 사용자 답 값(UQ-1·2·3·6 A — 04.6-ANSWERS.md)"
     expect(PHONE.get("--text-body")).toBe("15px");
   });
 });
+
+// 04.6-26 — UQ-4 완화 후보 답(04.6-ANSWERS.md 「2026-10-03 답」): 5 · 7 · 8 넣음, 4 · 6 · 9 뺌.
+describe("tokens.css — UQ-4 완화 후보(5 · 7 · 8 넣음 / 4 · 6 · 9 뺌)", () => {
+  it("후보 5 — --shadow-pop 은 원시 --ink-a30 그림자다(원안의 .32는 원시 층에 없다)", () => {
+    expect(ROLE.get("--shadow-pop")).toBe("0 12px 28px -8px var(--ink-a30)");
+  });
+
+  it("후보 5 — --shadow-pop 은 인쇄에서 none 이다", () => {
+    expect(PRINT.get("--shadow-pop")).toBe("none");
+  });
+
+  it("후보 7 — 저장 대기 칸 면 --surface-dirty 는 --g-100 계열(--surface-selected 와 같은 값)이다", () => {
+    expect(finalValue("--surface-dirty")).toBe(finalValue("--g-100"));
+    expect(PRINT.get("--surface-dirty")).toBe("#FFFFFF");
+  });
+
+  it("후보 8 — 열림 모션은 기존 --dur-sheet(200ms)와 --ease-sheet를 쓰고 새 모션 토큰은 없다", () => {
+    expect(ROLE.get("--dur-sheet") ?? ALL.get("--dur-sheet")).toBe("200ms");
+    expect(ALL.has("--dur-open")).toBe(false);
+    expect(ALL.has("--motion-shift")).toBe(false);
+  });
+
+  it("후보 4 · 6 · 9 는 토큰이 없다 — 하단 탭 높이·PC 본문 15·네 숫자 19", () => {
+    expect(ALL.has("--tab-h")).toBe(false);
+    expect(ALL.has("--tabbar-h")).toBe(false);
+    expect(ALL.get("--text-body")).toBe("14px");
+    expect(ALL.has("--text-number-lead")).toBe(false);
+    expect(ALL.has("--text-numbers")).toBe(false);
+  });
+});

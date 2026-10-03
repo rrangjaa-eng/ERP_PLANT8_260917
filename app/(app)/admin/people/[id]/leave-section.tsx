@@ -7,12 +7,12 @@ import { Form } from "@/ui/form/Form";
 import { Select } from "@/ui/select/Select";
 import { Button } from "@/ui/button/Button";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
+import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import { Table } from "@/ui/table/Table";
 import type { TableColumn } from "@/ui/table/types";
 import { addLeaveAdjustmentAction, setHireDateAction, setResignationDateAction } from "./actions";
 import leaveStyles from "@/app/(app)/leave/leave.module.css";
 import { DayNumbers } from "@/app/(app)/leave/day-numbers";
-import styles from "../people.module.css";
 
 // 04.1-06 S9 — 관리자 사람 상세 `연차` 섹션. 2px 섹션 선 + 제목(발령 이력 섹션과 같은 모양), 칸은 단일 기둥 720 ·
 // 조정 기록 표만 컨테이너 폭. 입사일 · 퇴직일은 blur 즉시 저장(계급 변경 select 선례), 잔고는 서버가 준 S1과 같은 줄(퇴직
@@ -103,120 +103,120 @@ export function LeaveSection(props: LeaveSectionProps) {
   }
 
   return (
-    <section className={styles.historySection} aria-labelledby="person-leave-title">
-      <h2 id="person-leave-title" className={styles.historySectionTitle}>
-        연차
-      </h2>
-      <div className="single-column">
-        {canWrite && props.datesVisible ? (
-          <Form onSubmit={(event) => event.preventDefault()}>
-            <EmploymentDate userId={userId} id="hireDate" label="입사일" initial={props.hireDate} kind="hire" />
-            <EmploymentDate userId={userId} id="resignationDate" label="퇴직일" initial={props.resignationDate} kind="resignation" />
-          </Form>
-        ) : null}
-        {/* `잔고` 줄 — 사람 상세 위 KvList와 dl을 겹치지 않게(단일 기둥 단언은 main의 dl 하나를 잰다) 라벨 · 값 한 묶음으로. */}
-        <div className={leaveStyles.sectionRow}>
-          <span className={leaveStyles.sectionLabel}>
-            잔고
-          </span>
-          <div>
-            <span className={leaveStyles.yearLine}>
-              <span>{`${year} 회계연도`}</span>
-              {year - 1 >= 2000 ? (
-                <Link href={`/admin/people/${userId}?year=${year - 1}`} className={leaveStyles.link}>
-                  {`${year - 1} 회계연도`}
-                </Link>
-              ) : null}
-              {year !== thisYear ? (
-                <Link href={`/admin/people/${userId}?year=${thisYear}`} className={leaveStyles.link}>
-                  올해 보기
-                </Link>
-              ) : null}
+    // 섹션 틀은 `DetailScreen.Section`(위 1px 선 · 제목) — 접근 가능한 이름 「연차」는 바깥 region이 지킨다.
+    <div role="region" aria-label="연차">
+      <DetailScreen.Section title="연차">
+        <div className="single-column">
+          {canWrite && props.datesVisible ? (
+            <Form onSubmit={(event) => event.preventDefault()}>
+              <EmploymentDate userId={userId} id="hireDate" label="입사일" initial={props.hireDate} kind="hire" />
+              <EmploymentDate userId={userId} id="resignationDate" label="퇴직일" initial={props.resignationDate} kind="resignation" />
+            </Form>
+          ) : null}
+          {/* `잔고` 줄 — 사람 상세 위 KvList와 dl을 겹치지 않게(단일 기둥 단언은 main의 dl 하나를 잰다) 라벨 · 값 한 묶음으로. */}
+          <div className={leaveStyles.sectionRow}>
+            <span className={leaveStyles.sectionLabel}>
+              잔고
             </span>
-            <div data-testid="person-leave-balance" className={leaveStyles.balanceLines}>
-              {props.balanceLines.map((line) => (
-                <p key={line}>
-                  <DayNumbers text={line} />
-                </p>
-              ))}
+            <div>
+              <span className={leaveStyles.yearLine}>
+                <span>{`${year} 회계연도`}</span>
+                {year - 1 >= 2000 ? (
+                  <Link href={`/admin/people/${userId}?year=${year - 1}`} className={leaveStyles.link}>
+                    {`${year - 1} 회계연도`}
+                  </Link>
+                ) : null}
+                {year !== thisYear ? (
+                  <Link href={`/admin/people/${userId}?year=${thisYear}`} className={leaveStyles.link}>
+                    올해 보기
+                  </Link>
+                ) : null}
+              </span>
+              <div data-testid="person-leave-balance" className={leaveStyles.balanceLines}>
+                {props.balanceLines.map((line) => (
+                  <p key={line}>
+                    <DayNumbers text={line} />
+                  </p>
+                ))}
+              </div>
             </div>
           </div>
+          {canWrite ? (
+            <Form id="leave-adjustment-form" onSubmit={handleSubmit}>
+              <Form.Field id="adjustBucket" label="잔고" width="select">
+                <Select
+                  id="adjustBucket"
+                  options={bucketOptions}
+                  value={bucket}
+                  onChange={(event) => setBucket(event.target.value)}
+                  error={fieldError("bucket") ?? fiscalYearError}
+                />
+                {monthlyBlockedReason ? <Form.Hint>{monthlyBlockedReason}</Form.Hint> : null}
+              </Form.Field>
+              <Form.Field id="adjustDays" label="일수" width="short">
+                <input
+                  id="adjustDays"
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  value={amountDays}
+                  onChange={(event) => setAmountDays(event.target.value)}
+                  className={leaveStyles.textInput}
+                  aria-invalid={fieldError("amountDays") ? true : undefined}
+                  aria-describedby={fieldError("amountDays") ? "adjustDays-error" : "adjustDays-hint"}
+                />
+                {fieldError("amountDays") ? (
+                  <Form.Error id="adjustDays-error">{fieldError("amountDays")}</Form.Error>
+                ) : (
+                  <span id="adjustDays-hint">
+                    <Form.Hint>빼려면 -1처럼</Form.Hint>
+                  </span>
+                )}
+              </Form.Field>
+              <Form.Field id="adjustReason" label="사유" width="long">
+                <input
+                  id="adjustReason"
+                  type="text"
+                  maxLength={500}
+                  autoComplete="off"
+                  value={reason}
+                  onChange={(event) => setReason(event.target.value)}
+                  className={leaveStyles.textInput}
+                  aria-invalid={fieldError("reason") ? true : undefined}
+                  aria-describedby={fieldError("reason") ? "adjustReason-error" : undefined}
+                />
+                {fieldError("reason") ? <Form.Error id="adjustReason-error">{fieldError("reason")}</Form.Error> : null}
+              </Form.Field>
+              <Form.Actions>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  pending={isExecuting}
+                  disabled={reasonBlocked}
+                  aria-describedby={reasonBlocked ? "adjust-blocked" : undefined}
+                >
+                  {primaryLabel}
+                </Button>
+                {/* 막힘 줄 = 이유 + 다음 한 수 3차(SYSTEM §7-15 · 신청 폼 blockedLine과 같은 모양, 04.1-06 DOM 감사 #8). */}
+                {reasonBlocked && !isExecuting ? (
+                  <span className={leaveStyles.blockedLine}>
+                    <span id="adjust-blocked" className={leaveStyles.blockedReason}>{`${REASON_CAUSE} · `}</span>
+                    <Button variant="tertiary" onClick={() => document.getElementById("adjustReason")?.focus()}>
+                      {REASON_NEXT}
+                    </Button>
+                  </span>
+                ) : null}
+                {result.serverError ? <span className={leaveStyles.blockedReason}>{result.serverError}</span> : null}
+              </Form.Actions>
+            </Form>
+          ) : null}
         </div>
-        {canWrite ? (
-          <Form id="leave-adjustment-form" onSubmit={handleSubmit}>
-            <Form.Field id="adjustBucket" label="잔고" width="select">
-              <Select
-                id="adjustBucket"
-                options={bucketOptions}
-                value={bucket}
-                onChange={(event) => setBucket(event.target.value)}
-                error={fieldError("bucket") ?? fiscalYearError}
-              />
-              {monthlyBlockedReason ? <Form.Hint>{monthlyBlockedReason}</Form.Hint> : null}
-            </Form.Field>
-            <Form.Field id="adjustDays" label="일수" width="short">
-              <input
-                id="adjustDays"
-                type="text"
-                inputMode="decimal"
-                autoComplete="off"
-                value={amountDays}
-                onChange={(event) => setAmountDays(event.target.value)}
-                className={leaveStyles.textInput}
-                aria-invalid={fieldError("amountDays") ? true : undefined}
-                aria-describedby={fieldError("amountDays") ? "adjustDays-error" : "adjustDays-hint"}
-              />
-              {fieldError("amountDays") ? (
-                <Form.Error id="adjustDays-error">{fieldError("amountDays")}</Form.Error>
-              ) : (
-                <span id="adjustDays-hint">
-                  <Form.Hint>빼려면 -1처럼</Form.Hint>
-                </span>
-              )}
-            </Form.Field>
-            <Form.Field id="adjustReason" label="사유" width="long">
-              <input
-                id="adjustReason"
-                type="text"
-                maxLength={500}
-                autoComplete="off"
-                value={reason}
-                onChange={(event) => setReason(event.target.value)}
-                className={leaveStyles.textInput}
-                aria-invalid={fieldError("reason") ? true : undefined}
-                aria-describedby={fieldError("reason") ? "adjustReason-error" : undefined}
-              />
-              {fieldError("reason") ? <Form.Error id="adjustReason-error">{fieldError("reason")}</Form.Error> : null}
-            </Form.Field>
-            <Form.Actions>
-              <Button
-                type="submit"
-                variant="primary"
-                pending={isExecuting}
-                disabled={reasonBlocked}
-                aria-describedby={reasonBlocked ? "adjust-blocked" : undefined}
-              >
-                {primaryLabel}
-              </Button>
-              {/* 막힘 줄 = 이유 + 다음 한 수 3차(SYSTEM §7-15 · 신청 폼 blockedLine과 같은 모양, 04.1-06 DOM 감사 #8). */}
-              {reasonBlocked && !isExecuting ? (
-                <span className={leaveStyles.blockedLine}>
-                  <span id="adjust-blocked" className={leaveStyles.blockedReason}>{`${REASON_CAUSE} · `}</span>
-                  <Button variant="tertiary" onClick={() => document.getElementById("adjustReason")?.focus()}>
-                    {REASON_NEXT}
-                  </Button>
-                </span>
-              ) : null}
-              {result.serverError ? <span className={leaveStyles.blockedReason}>{result.serverError}</span> : null}
-            </Form.Actions>
-          </Form>
-        ) : null}
-      </div>
-      {props.adjustments.length === 0 ? (
-        <ListEmpty message="연차 조정 기록이 없습니다" />
-      ) : (
-        <Table caption="연차 조정 기록" columns={COLUMNS} rows={props.adjustments} getRowId={(row) => row.id} />
-      )}
-    </section>
+        {props.adjustments.length === 0 ? (
+          <ListEmpty message="연차 조정 기록이 없습니다" />
+        ) : (
+          <Table caption="연차 조정 기록" columns={COLUMNS} rows={props.adjustments} getRowId={(row) => row.id} />
+        )}
+      </DetailScreen.Section>
+    </div>
   );
 }

@@ -89,10 +89,11 @@ describe("관리자 표 — 숫자 칸 정렬 (F-07)", () => {
     expect(source).toMatch(/<td\s+className=\{styles\.num\}>\{item\.sortOrder\}<\/td>/);
   });
 
-  it("roles-client.tsx의 「정렬」 th·sortOrder td가 styles.num을 쓴다", () => {
+  // 04.6-14: 계급 표는 `StaticTable`이다 — 「정렬」 열은 `align: "right"`(오른쪽 정렬 · nowrap은 표 CSS)이고 값은 `Num`이 그린다(tabular-nums는 ui/num 몫).
+  it("roles-client.tsx의 「정렬」 열이 오른쪽 정렬이고 sortOrder 칸이 Num이다", () => {
     const source = read("app", "(app)", "admin", "people", "roles", "roles-client.tsx");
-    expect(source).toMatch(/th\s+scope="col"\s+className=\{styles\.num\}>\s*정렬/);
-    expect(source).toMatch(/<td\s+className=\{styles\.num\}>\{role\.sortOrder\}<\/td>/);
+    expect(source).toMatch(/header: "정렬",[^}]*align: "right"/);
+    expect(source).toMatch(/<Num\b[^>]*value=\{role\.sortOrder\}/);
   });
 
   it("HistoryList.tsx가 숫자형 값에만 styles.num을 건다", () => {
@@ -106,7 +107,6 @@ describe("관리자 표 — 숫자 칸 정렬 (F-07)", () => {
 
   it.each([
     ["code-tables.module.css", ["app", "(app)", "admin", "code-tables", "code-tables.module.css"]],
-    ["people.module.css", ["app", "(app)", "admin", "people", "people.module.css"]],
   ])("%s의 .table .num이 우측 정렬·tabular-nums·nowrap이다", (_name, parts) => {
     const css = read(...parts);
     const match = css.match(/\.table \.num\s*\{[^}]*\}/);

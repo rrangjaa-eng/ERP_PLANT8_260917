@@ -23,27 +23,29 @@ test.describe("사람 목록 「상세」가 §7-1 3차 버튼 모양이다 (A-H
     const detail = page.getByRole("link", { name: "상세" }).first();
     await expect(detail).toBeVisible();
 
+    // 04.6-14: 「상세」는 `RowAction` 링크다 — 색 · 크기 · 굵기는 계산된 역할 토큰 값과 같다(리터럴 기대값 금지).
     const style = await detail.evaluate((el) => {
       const computed = getComputedStyle(el);
-      const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
-      // --accent를 같은 문서에서 rgb로 환산해 비교한다(리터럴 기대값 금지).
       const probe = document.createElement("span");
-      probe.style.color = accent;
+      probe.style.color = "var(--text-link)";
+      probe.style.fontSize = "var(--text-aux)";
+      probe.style.fontWeight = "var(--fw-medium)";
       document.body.append(probe);
-      const accentRgb = getComputedStyle(probe).color;
+      const expected = getComputedStyle(probe);
+      const tokens = { color: expected.color, fontSize: expected.fontSize, fontWeight: expected.fontWeight };
       probe.remove();
       return {
         color: computed.color,
-        accentRgb,
         fontSize: computed.fontSize,
         fontWeight: computed.fontWeight,
         textDecorationLine: computed.textDecorationLine,
+        tokens,
       };
     });
 
-    expect(style.color).toBe(style.accentRgb);
-    expect(style.fontSize).toBe("12px"); // --fs-sm
-    expect(style.fontWeight).toBe("600"); // --fw-medium
+    expect(style.color).toBe(style.tokens.color); // --text-link
+    expect(style.fontSize).toBe(style.tokens.fontSize); // --text-aux
+    expect(style.fontWeight).toBe(style.tokens.fontWeight); // --fw-medium
     expect(style.textDecorationLine).toBe("underline");
   });
 });

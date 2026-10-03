@@ -70,6 +70,13 @@
   vertical-align: top;
 }
 
+/* 행 머리글(`<th scope="row">` — `StaticTable`의 rowHeader 열)은 같은 행 칸과 같은 모양이다 — UA 기본 th의 굵게 · 가운데 정렬을 지운다
+   (사람 목록 DR-4, 사용자 결정 2026-09-30). */
+th.cell {
+  font-weight: var(--fw-regular);
+  text-align: left;
+}
+
 .headerCell:first-child,
 .cell:first-child {
   padding-left: var(--s-4);

@@ -3,7 +3,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PersonDto } from "@/domain/people";
 import listEmptyStyles from "@/ui/list-empty/ListEmpty.module.css";
-import peopleStyles from "@/app/(app)/admin/people/people.module.css";
+import tableStyles from "@/ui/table/Table.module.css";
+import { StaticTable, type StaticTableProps } from "@/ui/table/StaticTable";
 
 // 04.4 UI-REVIEW W1: person.value가 꺼진 계급의 DTO에는 id·archivedAt 키가 없는데(PERSON_DTO_SPEC) 목록 행 key·「상세」
 // 링크·삭제 버튼이 person.id에 기대 key null · /admin/people/undefined · id 없는 삭제 버튼이 그려졌다.
@@ -49,12 +50,13 @@ const visibleIdPeople: Partial<PersonDto>[] = [
   { id: "u-2", name: "다라", email: "b@x.kr", roleId: "role-pm", roleName: "기획 PM", archivedAt: null, currentTeamId: null, currentTeamName: null, firstLoginAt: new Date(), passwordIsTemporary: false },
 ];
 
-function findTbody(node: ReactNode): ReactElement<{ children?: ReactNode }> | null {
+// 표는 `StaticTable` 하나다(M4) — 행 key는 그 props의 rows에서 읽는다.
+function findStaticTable(node: ReactNode): ReactElement<StaticTableProps> | null {
   if (!isValidElement(node)) return null;
-  const element = node as ReactElement<{ children?: ReactNode }>;
-  if (element.type === "tbody") return element;
+  const element = node as ReactElement<StaticTableProps & { children?: ReactNode }>;
+  if (element.type === StaticTable) return element;
   for (const child of Children.toArray(element.props.children)) {
-    const found = findTbody(child);
+    const found = findStaticTable(child);
     if (found) return found;
   }
   return null;
@@ -62,10 +64,9 @@ function findTbody(node: ReactNode): ReactElement<{ children?: ReactNode }> | nu
 
 async function render(searchParams: { new?: string } = {}) {
   const tree = await PeoplePage({ searchParams: Promise.resolve(searchParams) });
-  // 보이는 열이 없으면 표(tbody)가 없다 — 행 key 목록은 비운다.
-  const tbody = findTbody(tree);
-  const rowElements = tbody && Array.isArray(tbody.props.children) ? (tbody.props.children as ReactElement[]) : [];
-  return { keys: rowElements.map((row) => row.key), html: renderToStaticMarkup(createElement("div", null, tree)) };
+  // 보이는 열이 없으면 표가 없다 — 행 key 목록은 비운다.
+  const table = findStaticTable(tree);
+  return { keys: (table?.props.rows ?? []).map((row) => row.key), html: renderToStaticMarkup(createElement("div", null, tree)) };
 }
 
 // describe마다 앞 describe가 남긴 값을 물려받지 않게 기본값으로 되돌린다.
@@ -150,7 +151,7 @@ describe("사람 목록 — 보이는 열이 없다(전부 가림)", () => {
     writeAllowed = true;
     const { html } = await render();
     expect(html).toContain("정보 노출표 · 사람 정보 잠김");
-    expect(html).toContain('href="/admin/people?new=1#person-form"');
+    expect(html).toContain('href="/admin/people?new=1"');
   });
 });
 
@@ -160,8 +161,8 @@ describe("사람 목록 — 계급만 보이는 계급", () => {
     people = [{ roleName: "기획 PM" }, { roleName: "기획 PM" }];
     const { html } = await render();
     expect(headerCells(html).map((header) => header.text)).toEqual(["계급"]);
-    expect(html).toMatch(/<th scope="row" id="people-row-0-name">기획 PM<\/th>/);
-    expect(html).not.toContain(peopleStyles.collapsedRow);
+    expect(html).toMatch(/<th scope="row" id="people-row-0-name"[^>]*>기획 PM<\/th>/);
+    expect(html).not.toContain(tableStyles.collapsedRow);
   });
 });
 
@@ -175,14 +176,14 @@ describe("사람 목록 — 이름 · 이메일이 가려진 계급(계급 · �
     const { html } = await render();
     const headers = headerCells(html);
     expect(headers.map((header) => header.text)).toEqual(["계급", "현재 소속"]);
-    expect(headers[0]?.className).not.toContain(peopleStyles.prioP2);
-    expect(headers[1]?.className).toContain(peopleStyles.prioP2);
+    expect(headers[0]?.className).not.toContain(tableStyles["prio-p2"]);
+    expect(headers[1]?.className).toContain(tableStyles["prio-p2"]);
   });
 
   it("첫 보이는 칸(계급)이 행 머리글이고 접힌 줄은 colspan 2이며 「·」로 시작하지 않는다", async () => {
     const { html } = await render();
-    expect(html).toMatch(/<th scope="row" id="people-row-0-name">기획 PM<\/th>/);
-    expect(html).toMatch(/<th scope="row" id="people-row-1-name">기획 PM<\/th>/);
+    expect(html).toMatch(/<th scope="row" id="people-row-0-name"[^>]*>기획 PM<\/th>/);
+    expect(html).toMatch(/<th scope="row" id="people-row-1-name"[^>]*>기획 PM<\/th>/);
     expect(html).not.toContain("이름");
     expect(html).not.toContain("이메일");
     const folded = firstFoldedCell(html);
@@ -223,7 +224,7 @@ describe("사람 목록 — 모두 보이는 계급(회귀)", () => {
     people = visibleIdPeople;
     const { html } = await render();
     expect(headerCells(html).map((header) => header.text)).toEqual(["이름", "이메일", "계급", "현재 소속", "상태", "동작"]);
-    expect(html).toMatch(/<th scope="row" id="people-row-0-name">가나<\/th>/);
+    expect(html).toMatch(/<th scope="row" id="people-row-0-name"[^>]*>가나<\/th>/);
     const folded = firstFoldedCell(html);
     expect(folded.attrs).toContain('colSpan="6"');
     expect(folded.visible).toBe("a@x.kr · 기획 PM · —");
@@ -247,7 +248,7 @@ describe("사람 목록 — 「사람 등록」은 admin.people 쓰기 권한이
     writeAllowed = true;
     const { html } = await render();
     expect(html).toContain("등록된 사람이 없습니다");
-    expect(html).toContain('href="/admin/people?new=1#person-form"');
+    expect(html).toContain('href="/admin/people?new=1"');
   });
 
   it("쓰기 권한이 없으면 빈 목록 줄에도 「사람 등록」이 없다", async () => {
@@ -260,7 +261,7 @@ describe("사람 목록 — 「사람 등록」은 admin.people 쓰기 권한이
 
   it("쓰기 권한이 있으면 링크가 있고 ?new=1에서 폼이 그려진다", async () => {
     writeAllowed = true;
-    expect((await render()).html).toContain('href="/admin/people?new=1#person-form"');
+    expect((await render()).html).toContain('href="/admin/people?new=1"');
     expect((await render({ new: "1" })).html).toContain("data-person-form");
   });
 });

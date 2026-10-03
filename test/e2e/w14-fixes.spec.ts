@@ -45,6 +45,8 @@ for (const width of [1280, 768]) {
 
 // 7 — 날짜 입력의 포커스 링. Tab으로 도달한 날짜 입력(또는 조상 3단)에 SYSTEM 포커스 링(outline 2px)이 있는가.
 async function focusRingOf(page: Page, selector: string): Promise<{ reached: boolean; width: number; style: string }> {
+  // 칸이 그려지기 전(loading.tsx 뼈대 · 느린 서버 렌더)에 Tab을 누르면 80번이 뼈대 위에서 헛돈다 — 칸이 보일 때까지 기다린 뒤 누른다.
+  await page.locator(selector).waitFor({ state: "visible" });
   for (let i = 0; i < 80; i += 1) {
     const reached = await page.evaluate((sel) => document.activeElement === document.querySelector(sel), selector);
     if (reached) break;

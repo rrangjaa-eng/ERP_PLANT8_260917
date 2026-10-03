@@ -254,6 +254,18 @@ export type CertificatePrintResult =
   | { kind: "ok"; print: Partial<CertificatePrintDto>; printedAt: string }
   | { kind: "notFound" };
 
+// 인쇄 라우트 레이아웃의 읽기 전용 사전 판정(웨이브 6 DOM 감사 P5) — 페이지는 `loading.tsx` 뒤에서 그려져 HTTP 200이 먼저 나가므로
+// 「볼 수 없음 · 없음 · 인쇄 불가」는 스트리밍 전에 알아야 404 상태가 나간다. 활동 기록(cert_view)과 시계(touch)는 건드리지 않고,
+// `getCertificatePrint`의 앞 판정(권한 · 형식 · 행 상태)과 같은 조건이다 — 거기가 바뀌면 여기도 함께 바꾼다.
+export async function isCertificatePrintable(viewer: Viewer, id: string): Promise<boolean> {
+  if (!(await isCertFeatureEnabled())) return false;
+  if (isCertPrivacyBarredRole(viewer)) return false;
+  if (!(await canViewSubmissions(viewer))) return false;
+  if (!isUuid(id)) return false;
+  const row = await findSubmissionForReview(viewer, id);
+  return !(!row || row.purgedAt || row.excludedAt || row.rrnCleared || row.name === null || row.rrnMasked === null || row.phone === null);
+}
+
 // 04.3-14 사용자 결정 U3 a — 인쇄를 열 때도 I4와 같은 cert_view(detail의 via는 print). 기록이 던지면 인쇄도 열리지 않는다.
 export async function getCertificatePrint(
   viewer: Viewer,

@@ -1,13 +1,13 @@
-/* eslint-disable no-restricted-syntax -- 04.6 스킨 A 이관 전 */
 "use client";
 
-import { Fragment, useState } from "react";
+import { useState } from "react";
 import { useAction } from "next-safe-action/hooks";
 import { restoreArchivedAction } from "./actions";
-import { Button } from "@/ui/button/Button";
 import { Toast } from "@/ui/toast/Toast";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
-import styles from "./archive.module.css";
+import { Num } from "@/ui/num/Num";
+import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
+import { StaticTable, type StaticTableColumn } from "@/ui/table/StaticTable";
 
 export type ArchiveTableRow = {
   entity: string;
@@ -18,6 +18,14 @@ export type ArchiveTableRow = {
   archivedBy: string | null;
   restorable: boolean;
 };
+
+const COLUMNS: StaticTableColumn[] = [
+  { key: "label", header: "종류", priority: "p1" },
+  { key: "name", header: "이름", priority: "p1" },
+  { key: "archivedAt", header: "보관 시각", priority: "p2" },
+  { key: "archivedBy", header: "보관한 사람", priority: "p2" },
+  { key: "actions", header: "동작", priority: "p1" },
+];
 
 // ADMN-12: page.tsx가 EMPTY/표 갈림을 여기로 넘긴 이유 — 복원은
 // revalidatePath("/admin/archive")로 이 화면을 곧바로 다시 그리고, 복원된
@@ -48,57 +56,39 @@ export function ArchiveTable({ rows }: { rows: ArchiveTableRow[] }) {
         // 2026-09-20 기록). 다음 한 수를 두지 않는다 — action을 생략한다.
         <ListEmpty message="보관함이 비어 있습니다" />
       ) : (
-        <table className={styles.table}>
-          <caption className={styles.srOnly}>보관함</caption>
-          <thead>
-            <tr>
-              <th scope="col">종류</th>
-              <th scope="col">이름</th>
-              <th scope="col" className={styles.p2}>보관 시각</th>
-              <th scope="col" className={styles.p2}>보관한 사람</th>
-              <th scope="col">동작</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((item) => (
-              // §7-3 폰 전략 — P1(종류·이름·동작)만 열로 남고 보관 시각·보관한
-              // 사람은 행 아래 접힌 줄 하나로 들어간다.
-              <Fragment key={`${item.entity}:${item.id}`}>
-                <tr>
-                  <td>{item.label}</td>
-                  <td>{item.name}</td>
-                  <td className={`${styles.archivedAt} ${styles.p2}`}>{item.archivedAtLabel}</td>
-                  <td className={styles.p2}>{item.archivedBy ?? "—"}</td>
-                  <td>
-                    {/* 복원할 수 없는 행(지난 날짜 공휴일 등)은 버튼을 숨긴다(§7) — 빈 칸 표기는 보관한 사람 칸과 같은 「—」. */}
-                    {item.restorable && !rejected.has(`${item.entity}:${item.id}`) ? (
-                      <RestoreRowButton
-                        entity={item.entity}
-                        id={item.id}
-                        name={item.name}
-                        onRestored={(name, restored) => setToast({ message: `복원 · ${name} ${restored ? "복원됨" : "이미 복원됨"}`, tone: "default" })}
-                        onFailed={(reason) => {
-                          // 원인은 마지막 「 · 」 앞까지 — 이름에 「 · 」가 있어도 잘리지 않게.
-                          const cut = reason ? reason.lastIndexOf(" · ") : -1;
-                          if (reason) setRejected((prev) => new Set(prev).add(`${item.entity}:${item.id}`));
-                          setToast({ message: `복원 · 실패 · ${reason ? (cut < 0 ? reason : reason.slice(0, cut)) : "다시 시도"}`, tone: "error" });
-                        }}
-                      />
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                </tr>
-                <tr className={styles.collapsedRow}>
-                  <td colSpan={5} className={styles.collapsedCell}>
-                    <span className={styles.archivedAt}>{item.archivedAtLabel}</span>
-                    {item.archivedBy ? ` · ${item.archivedBy}` : ""}
-                  </td>
-                </tr>
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
+        <StaticTable
+          caption="보관함"
+          columns={COLUMNS}
+          rows={rows.map((item) => ({
+            key: `${item.entity}:${item.id}`,
+            // §7-3 폰 전략 — P1(종류·이름·동작)만 열로 남고 보관 시각·보관한 사람은 `StaticTable`이 행 아래 접힌 줄 하나로 넣는다.
+            cells: [
+              item.label,
+              item.name,
+              <Num key="archivedAt" value={item.archivedAtLabel} />,
+              item.archivedBy ?? "—",
+              // 복원할 수 없는 행(지난 날짜 공휴일 등)은 버튼을 숨긴다(§7) — 빈 칸 표기는 보관한 사람 칸과 같은 「—」.
+              item.restorable && !rejected.has(`${item.entity}:${item.id}`) ? (
+                <RowActions key="actions">
+                  <RestoreRowButton
+                    entity={item.entity}
+                    id={item.id}
+                    name={item.name}
+                    onRestored={(name, restored) => setToast({ message: `복원 · ${name} ${restored ? "복원됨" : "이미 복원됨"}`, tone: "default" })}
+                    onFailed={(reason) => {
+                      // 원인은 마지막 「 · 」 앞까지 — 이름에 「 · 」가 있어도 잘리지 않게.
+                      const cut = reason ? reason.lastIndexOf(" · ") : -1;
+                      if (reason) setRejected((prev) => new Set(prev).add(`${item.entity}:${item.id}`));
+                      setToast({ message: `복원 · 실패 · ${reason ? (cut < 0 ? reason : reason.slice(0, cut)) : "다시 시도"}`, tone: "error" });
+                    }}
+                  />
+                </RowActions>
+              ) : (
+                "—"
+              ),
+            ],
+          }))}
+        />
       )}
       {toast ? <Toast message={toast.message} tone={toast.tone} onDismiss={() => setToast(null)} /> : null}
     </>
@@ -128,8 +118,8 @@ function RestoreRowButton({
   });
 
   return (
-    <Button variant="tertiary" pending={isExecuting} onClick={() => execute({ entity, id })}>
+    <RowAction pending={isExecuting} onClick={() => execute({ entity, id })}>
       복원
-    </Button>
+    </RowAction>
   );
 }

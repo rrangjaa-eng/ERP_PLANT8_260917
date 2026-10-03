@@ -34,6 +34,8 @@ export type PanelRoute = {
   featureSwitch?: "cert.enabled";
   /** `approval-sheet` — 이동 뒤 결재함 행을 눌러 시트를 연다. */
   open?: "approval-sheet";
+  /** `approval-sheet` 행을 재는 창 폭 — 없으면 폰 390(아래 시트). PC 행은 1280(오른쪽 480 시트 — DR4 A). */
+  width?: number;
 };
 
 export const PANEL_ROUTES: readonly PanelRoute[] = [
@@ -50,6 +52,7 @@ export const PANEL_ROUTES: readonly PanelRoute[] = [
   { id: "codes-new", path: "/admin/code-tables?tableKey={tableKey}&new=1" },
   { id: "holidays-new", path: "/admin/holidays?year={year}&new=1" },
   { id: "approvals-sheet", path: "/approvals", condition: "approval-fixture", open: "approval-sheet" },
+  { id: "approvals-sheet-pc", path: "/approvals", condition: "approval-fixture", open: "approval-sheet", width: 1280 },
   { id: "fielddefs-new", path: "/admin/field-definitions?new=1", condition: "04.5" },
   { id: "fielddefs-edit", path: "/admin/field-definitions?editId={fieldDefId}", condition: "04.5" },
   { id: "events-new", path: "/certs/events?new=1", condition: "04.3", featureSwitch: "cert.enabled" },

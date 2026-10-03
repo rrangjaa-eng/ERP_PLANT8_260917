@@ -1,8 +1,39 @@
 /* 04.1-05 결재함 표(S4) — 폰 행 탭 대상 · 행 행동 간격 · 동시 처리 한 줄. 역할 토큰만(04.6-17). */
 
-/* 폰에서만 보이는 `내 결재` 행 탭 대상 — PC에는 없다(문서 칸 링크 + 행 행동). */
+/* `내 결재` 행의 결재 시트 여는 대상(DR4 A) — 모든 폭에서 문서 칸의 button이고 ::after가 행 전체를 덮는다. PC(≥700)는 3차 링크 모양(처리함 행의 문서 링크와
+   같은 모양, 위치는 문서 칸 안) → 오른쪽 480 시트, 폰은 아래 미디어쿼리의 전폭 행 → 아래 시트. 같은 `SidePanel`이 폭별 모양을 그린다. */
 .rowTap {
-  display: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  line-height: var(--lh-body);
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-thickness: var(--line-w);
+  text-underline-offset: var(--underline-offset);
+  cursor: pointer;
+}
+
+.rowTap:hover {
+  text-decoration-thickness: var(--underline-w-hover);
+}
+
+tr:has(.rowTap) {
+  position: relative;
+}
+
+.rowTap::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+/* 행의 3차 승인 · 반려는 행 덮개 위에 있어야 한다(눌러도 시트가 열리지 않는다) — 위치를 가진 뒤쪽 칸이라 DOM 순서로 덮개 위에 그려진다(z-index 토큰 없이). */
+.rowActions {
+  position: relative;
 }
 
 /* PC 행 행동 — 승인↔반려 사이 --s-4(되돌릴 수 없는 두 행동을 떼어 둔다, #12). */
@@ -42,7 +73,7 @@
 
 @media (max-width: 699.98px) {
   /* 행 전체가 탭 대상 — 문서 칸의 button · 링크가 ::after로 그 행을 덮는다(ui/table은 고치지 않는다). */
-  tr:has(.rowTap, .rowLink, .foldTap) {
+  tr:has(.rowLink, .foldTap) {
     position: relative;
   }
 
@@ -66,7 +97,6 @@
     inset: 0;
   }
 
-  .wideOnly,
   .overdraw {
     display: none;
   }
@@ -75,14 +105,10 @@
     display: block;
     width: 100%;
     min-height: var(--touch-min);
-    padding: 0;
-    border: 0;
-    background: none;
     color: var(--text-strong);
     font-family: var(--font-sans);
     font-size: var(--text-body);
-    text-align: left;
-    cursor: pointer;
+    text-decoration: none;
   }
 
   .rowLink {
@@ -91,7 +117,6 @@
     min-height: var(--touch-min);
   }
 
-  .rowTap::after,
   .rowLink::after {
     content: "";
     position: absolute;

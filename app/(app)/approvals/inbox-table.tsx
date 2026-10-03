@@ -20,9 +20,10 @@ import leaveStyles from "@/app/(app)/leave/leave.module.css";
 import styles from "./inbox-table.module.css";
 
 // 04.1-02 S4 · 04.1-05(S4 · S5 · T4 · ENG-16) — 그룹 `내 결재`(비면 머리글째 없음) · `처리함`. `내 결재` 행의 상태
-// 칸은 비우고(그룹 머리글이 말한다), PC 행동 칸에 3차 `승인` — 확인 없이 즉시(사용자 결정 #3). 폰(<700)에서
-// `내 결재` 행 = 전체 폭 button(aria-haspopup="dialog") → 결재 시트, `처리함` 행 = 전체 폭 문서 링크 → 문서 화면
-// (처리함에는 상세를 미리 읽지 않는다). 갈래는 서버가 넘긴 그룹 값으로 정하고 상태 글자를 보지 않는다.
+// 칸은 비우고(그룹 머리글이 말한다), PC 행동 칸에 3차 `승인` — 확인 없이 즉시(사용자 결정 #3). `내 결재` 행 = 문서 칸 button
+// (aria-haspopup="dialog")이 행 전체를 덮어 → 결재 시트: PC(≥700)는 오른쪽 480 패널, 폰(<700)은 전체 폭 행 → 아래 시트(DR4 A —
+// 같은 `SidePanel` 하나의 폭별 모양이라 JS 폭 판정이 없다). `처리함` 행 = 문서 링크 → 문서 화면(처리함에는 상세를 미리 읽지
+// 않는다). 갈래는 서버가 넘긴 그룹 값으로 정하고 상태 글자를 보지 않는다.
 export type InboxRow = {
   id: string;
   group: "mine" | "processed";
@@ -86,13 +87,6 @@ export function InboxTable({ rows, rejectMessages }: { rows: InboxRow[]; rejectM
       priority: "p1",
       cell: (row) => (
         <span id={documentCellId(row)}>
-          {row.href ? (
-            <Link href={row.href} className={[leaveStyles.link, row.sheet ? styles.wideOnly : styles.rowLink].join(" ")}>
-              {row.document}
-            </Link>
-          ) : (
-            <span className={row.sheet ? styles.wideOnly : undefined}>{row.document}</span>
-          )}
           {row.sheet ? (
             <button
               type="button"
@@ -102,7 +96,13 @@ export function InboxTable({ rows, rejectMessages }: { rows: InboxRow[]; rejectM
             >
               {row.document}
             </button>
-          ) : null}
+          ) : row.href ? (
+            <Link href={row.href} className={[leaveStyles.link, styles.rowLink].join(" ")}>
+              {row.document}
+            </Link>
+          ) : (
+            <span>{row.document}</span>
+          )}
           {row.overdraw ? <span className={styles.overdraw}>{row.overdraw}</span> : null}
         </span>
       ),

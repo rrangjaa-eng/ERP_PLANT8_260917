@@ -78,8 +78,8 @@ test.describe("패널 라우트 표(D20) — 열린 상태의 글자 위계", ()
         test.skip(true, `${route.id} — ${availability.note}`);
         return;
       }
-      // 결재 시트는 폰 폭(< 700px)에만 있다 — 700px 이상은 문서 칸 링크 + 행 행동이라 열릴 패널이 없다(inbox-table.tsx `rowTap`). 그 행만 폰 폭으로 잰다.
-      if (route.open === "approval-sheet") await page.setViewportSize({ width: 390, height: 844 });
+      // 결재 시트 행은 자기 폭으로 잰다 — 폰 390(아래 시트) · PC 1280(오른쪽 480 시트, DR4 A). 둘 다 문서 칸 button이 연다(inbox-table.tsx `rowTap`).
+      if (route.open === "approval-sheet") await page.setViewportSize({ width: route.width ?? 390, height: 844 });
       const [panel, screens] = await Promise.all([createPanelRouteFixtures(), createScreenFixtures()]);
       if (route.open !== "approval-sheet") await loginScreenAccount(page, screens, "sysadmin");
       await openPanelRoute(page, route, panel);

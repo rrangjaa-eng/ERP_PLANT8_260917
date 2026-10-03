@@ -1,0 +1,9 @@
+/* 후보 9 — 네 숫자(견적 · 예상 비용 · 확정 비용 · 수익) 19px, 폰 15px. 비교용(확정 아님).
+ * 네 숫자 줄(PNL-01)은 아직 앱 화면에 없다(Phase 9 — projects/[id]/page.tsx 주석). 지금 켤 수 있는 실물은
+ * 상세 틀 `numbers` 자리(DetailScreen)와 /dev/components 「숫자」 갤러리뿐이라 두 곳에 건다. */
+[class*="DetailScreen-module__"][class*="__numbers"] :is(b, dd, [class*="Num-module__"]),
+[data-gallery="numbers"] dd { font-size: 19px; letter-spacing: var(--ls-head); }
+@media (max-width: 699.98px) {
+  [class*="DetailScreen-module__"][class*="__numbers"] :is(b, dd, [class*="Num-module__"]),
+  [data-gallery="numbers"] dd { font-size: var(--text-body); }
+}

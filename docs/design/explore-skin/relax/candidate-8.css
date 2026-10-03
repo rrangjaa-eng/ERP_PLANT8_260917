@@ -1,0 +1,8 @@
+/* 후보 8 — 열림 모션: 모달 · 토스트 · 메뉴가 200ms 페이드 + 4px 이동으로 열린다. 비교용(확정 아님).
+ * 범위는 모달·토스트·메뉴뿐 — 옆 패널 · 시트 모션은 이미 계약(--dur-sheet)이라 건드리지 않는다. 줄이기 설정이면 없음(tokens.css가 --dur-sheet를 0.01ms로). */
+@keyframes relax-open { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+[class*="Toast-module__"][class*="__toast"],
+ul[role="menu"][class*="userMenu"] { animation: relax-open var(--dur-sheet) var(--ease-sheet); }
+@media (min-width: 700px) {
+  dialog[open]:not([data-ui="side-panel"]) { animation: relax-open var(--dur-sheet) var(--ease-sheet); }
+}

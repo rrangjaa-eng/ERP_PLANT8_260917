@@ -1,0 +1,37 @@
+/* 후보 4 — 아이콘 최소 도입(비교용 오버레이, 확정 아님 · SKIN-EXPLORE §4).
+ * Lucide 모양(ISC) 인라인 SVG를 CSS mask로 얹는다 — 새 의존성 없음, 색은 글자색(currentColor) 그대로.
+ * 자리: 하단 탭 · 「더보기」 시트의 검색 줄 · 상단 바 사용자 메뉴 트리거. 굵기 1.75 · 폰 하단 탭 20px · 탭 높이 44 → 56. */
+:root {
+  --ic-check: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='m9 12 2 2 4-4'/%3E%3C/svg%3E");
+  --ic-folder: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z'/%3E%3C/svg%3E");
+  --ic-receipt: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z'/%3E%3Cpath d='M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8'/%3E%3Cpath d='M12 17.5v-11'/%3E%3C/svg%3E");
+  --ic-stamp: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 13V8.5a2.5 2.5 0 1 0-4 0V13'/%3E%3Cpath d='M5 21h14'/%3E%3Cpath d='M3 17a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v1H3Z'/%3E%3C/svg%3E");
+  --ic-chart: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 3v16a2 2 0 0 0 2 2h16'/%3E%3Cpath d='m7 15 4-4 3 3 5-6'/%3E%3C/svg%3E");
+  --ic-more: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black' stroke='black' stroke-width='1.75' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='1'/%3E%3Ccircle cx='19' cy='12' r='1'/%3E%3Ccircle cx='5' cy='12' r='1'/%3E%3C/svg%3E");
+  --ic-search: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.3-4.3'/%3E%3C/svg%3E");
+  --ic-user: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Ccircle cx='12' cy='10' r='3'/%3E%3Cpath d='M7 20.7a6 6 0 0 1 10 0'/%3E%3C/svg%3E");
+}
+nav[aria-label="하단 탭"] > :is(a, button)::before,
+[class*="MoreSheet-module__"][class*="__searchRow"]::before,
+header [class*="TopBar-module__"][class*="__userTrigger"]::before {
+  content: "";
+  flex: none;
+  width: 20px;
+  height: 20px;
+  background: currentColor;
+  -webkit-mask: var(--ic) center / contain no-repeat;
+  mask: var(--ic) center / contain no-repeat;
+}
+nav[aria-label="하단 탭"] > a[href="/"] { --ic: var(--ic-check); }
+nav[aria-label="하단 탭"] > a[href="/projects"] { --ic: var(--ic-folder); }
+nav[aria-label="하단 탭"] > a[href="/expenses"] { --ic: var(--ic-receipt); }
+nav[aria-label="하단 탭"] > a[href="/approvals"] { --ic: var(--ic-stamp); }
+nav[aria-label="하단 탭"] > a[href="/pnl"] { --ic: var(--ic-chart); }
+nav[aria-label="하단 탭"] > button { --ic: var(--ic-more); }
+[class*="MoreSheet-module__"][class*="__searchRow"] { --ic: var(--ic-search); }
+header [class*="TopBar-module__"][class*="__userTrigger"] { --ic: var(--ic-user); }
+@media (max-width: 699.98px) {
+  nav[aria-label="하단 탭"] { height: 56px !important; }
+  nav[aria-label="하단 탭"] > :is(a, button) { flex-direction: column; gap: 2px; font-size: var(--text-tag); }
+  [class*="Toast-module__"][class*="__toast"] { bottom: calc(56px + var(--s-3)); }
+}

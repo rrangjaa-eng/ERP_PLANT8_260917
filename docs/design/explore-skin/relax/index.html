@@ -1,0 +1,98 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PLANT8 완화 후보 켜고 끄기 보드 (UQ-4 · UQ-5)</title>
+<style>
+:root{--bg:#F2F5F4;--fg:#10201C;--muted:#4E5D59;--line:#D5DEDA;--panel:#FFFFFF;--accent:#005446;--on-accent:#FFFFFF;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0E1714;--fg:#E4ECE9;--muted:#9DB0AA;--line:#2A3833;--panel:#16211E;--accent:#6FBFA9;--on-accent:#00211C;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.6 'Noto Sans KR','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;word-break:keep-all;letter-spacing:-.01em}
+.wrap{padding-inline:16px;padding-block:16px 40px;max-width:1320px;margin:0 auto}
+h1{font-size:20px;margin:0 0 2px}
+.lead{color:var(--muted);margin:0 0 10px;font-size:13px}
+.bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding-block:6px;border-bottom:1px solid var(--line)}
+.ctl{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;padding:4px 0}
+.lb{font-size:12px;font-weight:600;color:var(--muted);min-width:28px}
+.seg{display:flex;flex-wrap:wrap;gap:4px}
+.seg button{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:6px;padding:4px 10px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+.seg button[disabled]{opacity:.4;cursor:not-allowed}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.note{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 14px;margin:10px 0;font-size:13px}
+.note b{font-size:14px}.note p{margin:2px 0 0;color:var(--muted)}
+.note .fact{color:var(--fg)}
+.shot{display:flex;justify-content:center;flex-direction:column;align-items:center;gap:8px}
+.shot img,.shot video{display:block;max-width:100%;height:auto;border:1px solid var(--line);border-radius:6px;background:#fff}
+.shot.phone img{width:390px}
+.empty{color:var(--muted);padding:24px}
+.cmp{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
+.cmp figure{margin:0;flex:1 1 420px;min-width:0}
+.cmp figcaption{font-size:12px;color:var(--muted);text-align:center;margin-bottom:4px}
+</style>
+
+<div class="wrap">
+  <h1>완화 후보 켜고 끄기 보드</h1>
+  <p class="lead">실제 앱(프로덕션 빌드, 실제 컴포넌트·CSS 모듈)에 후보 오버레이(<code>candidate-4.css</code> ~ <code>candidate-9.css</code>)를 하나씩 얹고 찍은 사진입니다. 목업이 아닙니다. 「없음」이 지금 적용된 화면입니다. 어떤 후보도 앱에 들어가 있지 않습니다.</p>
+  <div class="bar">
+    <div class="ctl"><span class="lb">후보</span><div class="seg" id="cand"></div></div>
+    <div class="ctl"><span class="lb">화면</span><div class="seg" id="screen"></div></div>
+    <div class="ctl"><span class="lb">폭</span><div class="seg" id="width"></div></div>
+    <div class="ctl"><span class="lb">비교</span><div class="seg" id="mode"></div></div>
+  </div>
+  <div class="note" id="note"><b></b><p class="fact"></p><p class="cost"></p></div>
+  <div class="shot" id="shot"></div>
+</div>
+
+<script>
+const CANDS = {
+  none: ['없음 — 지금 적용된 화면', '기준. 스킨 A(흰 표 면 · 1px 선 · 옅은 초록 그룹 줄 · 제목 22 · 행 44 · 바 48)와 옆 패널이 이미 들어 있다.', ''],
+  4: ['후보 4 — 아이콘 최소 도입', '폰 하단 탭(내 차례 · 결재 · 손익 · 더보기) · 「더보기」 시트 검색 줄 · 상단 바 사용자 메뉴에 Lucide 모양(굵기 1.75) 아이콘. 하단 탭 44 → 56px.', '비용: 아이콘 소스 결정(UQ-5) · SYSTEM §6-0 「아이콘 없이 글자만」 뒤집기 · 하단 탭이 12px 높아짐.'],
+  5: ['후보 5 — 떠 있는 요소 그림자 (candidate-5)', '토스트 · 사용자 메뉴에 그림자 한 단계 <code>0 12px 28px -8px var(--ink-a30)</code> + 1px 선 <code>var(--border-surface)</code>. 들어갈 값 그대로 찍었다(알파는 원시 --ink-a30).', '비용: 그림자 토큰 1개(<code>--shadow-pop</code>) 신설 · SYSTEM §4-3 「그림자 없음」 예외 1개. 지금 토스트는 그림자 없이 1px 선만, 사용자 메뉴는 아주 옅은 면 그림자(<code>--shadow-surface</code>).'],
+  6: ['후보 6 — 본문 15px (PC)', 'PC 본문 14 → 15px. 폰은 이미 15라 폰 사진은 바뀌지 않는다. 바 높이는 스킨 A가 이미 정했다.', '비용: 밀도와 맞바꿈 — 표 글자 +1px로 열 많은 표(견적 · 프로젝트 목록) 줄바꿈이 늘 수 있다 · SYSTEM §2-2 척도(UQ-2 A: 본문 14) 변경.'],
+  7: ['후보 7 — 포커스 · 저장 대기 칸', '편집 칸 포커스 링이 radius(6)를 따라가고, 저장 대기 칸이 <code>--g-100</code> 옅은 틴트로 보인다(지금은 1px 안쪽 선만). 「화면」에서 「표 편집」을 고르면 보인다.', '비용: 없음(기존 토큰 재사용).'],
+  8: ['후보 8 — 열림 모션 (200ms 페이드 + 4px)', '모달 · 토스트 · 메뉴가 열릴 때 200ms 페이드 + 4px 이동. 사진으로는 안 보여 「화면」에서 「모션 영상」을 고른다(후보 없음 / 8 영상). 줄이기 설정이면 없음.', '사실 1: 이 후보를 고르면 200ms 페이드 + 4px 이동이 SKIN-EXPLORE §5 「계속 금지 … fade-up」의 예외가 된다. 사실 2: 범위는 모달·토스트·메뉴 — 옆 패널·시트 모션은 이미 계약(<code>--dur-sheet</code>)이다. 참고: 토스트는 지금도 160ms 페이드 + 4px로 열린다(<code>toast-in</code>) — 새로 바뀌는 것은 메뉴·모달과 토스트 200ms 곡선이다.'],
+  9: ['후보 9 — 네 숫자 19px (폰 15)', '네 숫자 줄(견적 · 예상 비용 · 확정 비용 · 수익)을 19px(폰 15)로. 네 숫자 줄은 아직 앱 화면에 없다(Phase 9) — 그래서 세 화면 사진은 「없음」과 같고, 「네 숫자」 화면(/dev/components 「숫자」 갤러리)에서만 달라진다.', '비용: 없음. 단 SYSTEM §6-2 「네 숫자 줄은 큰 숫자 타일이 아니라 한 줄 텍스트(본문 크기)」 원칙과 충돌.']
+};
+const SCREENS = { projects: '프로젝트 목록', project: '견적 원장(상세)', vendors: '거래처 등록 패널', float: '토스트 + 사용자 메뉴', more: '폰 「더보기」 시트', edit: '표 편집(PC)', numbers: '네 숫자(갤러리)', motion: '모션 영상(PC)' };
+const AVAIL = { more: [390], edit: [1280], motion: [1280] };
+const state = { cand: '5', screen: 'float', width: innerWidth < 700 ? 390 : 1280, mode: 'one' };
+const $ = (id) => document.getElementById(id);
+function has(screen, cand, width) {
+  if (AVAIL[screen] && !AVAIL[screen].includes(width)) return false;
+  if (screen === 'numbers' && cand !== 'none' && cand !== '9') return false;
+  if (screen === 'motion' && cand !== 'none' && cand !== '8') return false;
+  return true;
+}
+function seg(id, items, key) {
+  $(id).replaceChildren(...items.map(([v, label, disabled]) => {
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.dataset.v = v;
+    b.setAttribute('aria-pressed', String(String(state[key]) === String(v))); if (disabled) b.disabled = true;
+    b.onclick = () => { state[key] = v; render(); }; return b;
+  }));
+}
+function media(screen, cand, width) {
+  if (screen === 'motion') return `<video controls loop muted playsinline src="shots/motion-${cand}-1280.webm"></video>`;
+  return `<img alt="${SCREENS[screen]} · 후보 ${cand} · ${width}" src="shots/${screen}-${cand}-${width}.png">`;
+}
+function render() {
+  seg('cand', Object.keys(CANDS).map((v) => [v, v === 'none' ? '없음' : v + '', false]), 'cand');
+  seg('screen', Object.entries(SCREENS).map(([v, l]) => [v, l, false]), 'screen');
+  seg('width', [[1280, 'PC 1280', false], [390, '폰 390', false]], 'width');
+  seg('mode', [['one', '후보만', false], ['two', '없음과 나란히', false]], 'mode');
+  const c = CANDS[state.cand]; $('note').querySelector('b').textContent = c[0];
+  $('note').querySelector('.fact').innerHTML = c[1]; $('note').querySelector('.cost').innerHTML = c[2];
+  const { cand, screen, mode } = state; const width = Number(state.width);
+  // 모션 화면은 후보 없음/8 영상을 항상 나란히
+  const shot = $('shot'); shot.className = 'shot' + (width < 700 ? ' phone' : '');
+  if (screen === 'motion') {
+    shot.className = 'shot'; shot.innerHTML = `<div class="cmp"><figure><figcaption>없음(지금)</figcaption>${media('motion', 'none', 1280)}</figure><figure><figcaption>후보 8</figcaption>${media('motion', '8', 1280)}</figure></div>`; return;
+  }
+  if (!has(screen, cand, width)) { shot.innerHTML = '<div class="empty">이 조합의 사진은 없습니다(해당 화면에서 이 후보가 달라지는 곳이 없거나 폭이 다름). 다른 화면·폭을 고르세요.</div>'; return; }
+  if (mode === 'two' && cand !== 'none') {
+    shot.className = 'shot'; shot.innerHTML = `<div class="cmp"><figure><figcaption>없음(지금)</figcaption>${media(screen, 'none', width)}</figure><figure><figcaption>후보 ${cand}</figcaption>${media(screen, cand, width)}</figure></div>`; return;
+  }
+  shot.innerHTML = media(screen, cand, width);
+}
+try { Object.assign(state, JSON.parse(localStorage.getItem('relaxboard') || '{}')); } catch (e) {}
+const _render = render; render = function () { _render(); try { localStorage.setItem('relaxboard', JSON.stringify(state)); } catch (e) {} };
+render();
+</script>

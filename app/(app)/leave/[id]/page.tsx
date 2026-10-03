@@ -1,4 +1,3 @@
-// 04.6 스킨 A 이관 전: 화면 틀
 import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/viewer";
 import { kstDateOf } from "@/lib/kst-date";
@@ -11,19 +10,19 @@ import {
   REJECT_REASON_MAX,
   REJECT_REASON_TOO_LONG_MESSAGE,
 } from "@/domain/approvals";
-import { PageHeader } from "@/ui/page-header/PageHeader";
+import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import { KvList, type KvItem } from "@/ui/kv-list/KvList";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { ApprovalRoute } from "@/ui/approval-route/ApprovalRoute";
 import { DayNumbers } from "../day-numbers";
 import { formatLeavePeriod, HALF_LABELS, LEAVE_KIND_LABELS } from "../labels";
-import { leaveStatusDisplay, routeListSteps, seoulMinuteOf, toLeaveStatusKey, withdrawResultLines } from "../status-display";
+import { leaveStatusWord, routeListSteps, seoulMinuteOf, toLeaveStatusKey, withdrawResultLines } from "../status-display";
 import { previewRouteOrBlocked } from "../route-preview";
 import { DocumentActions } from "./document-actions";
 import { SubmittedToast } from "./submitted-toast";
 import styles from "../leave.module.css";
 
-// 04.1-02 S3 첫 형태 + 04.1-05(S3 · A3): 머리(제목 · 번호 · 상태 태그) + KvList(종류 · 기간 · (일수) · 비고 · (잔고) ·
+// 04.1-02 S3 첫 형태 + 04.1-05(S3 · A3): 머리(`DetailScreen` 제목 · 상태 · 번호 메타) + KvList(종류 · 기간 · (일수) · 비고 · (잔고) ·
 // 기안 · 결재선) + 서버가 고른 행동 줄. 메뉴 게이트가 아니라 문서 보임 규칙(기안자 · 지금 후보 · 처리자)만
 // 따른다 — 그 밖은 404(getLeave → null). 행동 줄 · 결재선 · 끝 줄은 getApprovalView가 준 목록을 그대로
 // 넘긴다(화면은 상태로 행동을 고르거나 막힘을 추론하지 않는다). WR-07: 세션 검사를 이 페이지가 직접 한다.
@@ -48,7 +47,6 @@ export default async function LeaveDocumentPage({
   const view = await getApprovalView(viewer, { kind: LEAVE_DOCUMENT_KIND, documentId: id });
 
   const statusKey = toLeaveStatusKey(leave.status);
-  const status = statusKey ? leaveStatusDisplay(statusKey) : null;
   const period = leave.startDate && leave.endDate ? `${leave.startDate}${leave.endDate !== leave.startDate ? ` ~ ${leave.endDate}` : ""}` : "";
   const kindLabel = leave.kind ? `${LEAVE_KIND_LABELS[leave.kind] ?? leave.kind}${leave.half ? ` ${HALF_LABELS[leave.half] ?? leave.half}` : ""}` : "";
 
@@ -113,12 +111,11 @@ export default async function LeaveDocumentPage({
   const skipped = preview?.steps.filter((step) => step.skipped).map((step) => `${step.label ?? ""} 단계 건너뜀(자기 승인 없음)`) ?? [];
 
   return (
-    <>
-      <PageHeader title={formatLeaveTitle(leave)} />
-      <p className={styles.headerLine}>
-        {leave.number ? <span>{leave.number}</span> : null}
-        {status ? <StatusTag kind={status.kind}>{status.label}</StatusTag> : null}
-      </p>
+    <DetailScreen
+      title={formatLeaveTitle(leave)}
+      status={statusKey ? <StatusTag status={leaveStatusWord(statusKey)} /> : undefined}
+      meta={leave.number || undefined}
+    >
       <KvList items={items} />
       <DocumentActions
         instanceId={view?.instanceId ?? null}
@@ -160,6 +157,6 @@ export default async function LeaveDocumentPage({
         }
       />
       {submittedToast ? <SubmittedToast message={submittedToast} href={`/leave/${id}`} /> : null}
-    </>
+    </DetailScreen>
   );
 }

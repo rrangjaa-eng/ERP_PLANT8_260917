@@ -1,5 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { routeListSteps, seoulMinuteOf, withdrawResultLines } from "@/app/(app)/leave/status-display";
+import { leaveStatusDisplay, leaveStatusWord, routeListSteps, seoulMinuteOf, withdrawResultLines, type LeaveStatusKey } from "@/app/(app)/leave/status-display";
+import { statusKind } from "@/ui/status-tag/status-map";
+
+// 04.6-18: `StatusTag status` 낱말 — 색은 상태 배지 표(`status-map.ts`) 한 곳이 정하고, 화면은 낱말만 넘긴다. 낱말과 옛 {kind, label}이 어긋나지 않는다.
+describe("leaveStatusWord", () => {
+  const KEYS: LeaveStatusKey[] = ["draft", "submitted", "in_review", "approved", "rejected", "withdrawn", "mine", "waiting", "vacant"];
+
+  it("모든 문서 상태의 낱말이 옛 표시 글자 · 색과 같다", () => {
+    for (const key of KEYS) {
+      const display = leaveStatusDisplay(key);
+      expect(leaveStatusWord(key)).toBe(display.label);
+      expect(statusKind(leaveStatusWord(key))).toBe(display.kind);
+    }
+  });
+
+  it("결재 중은 단계 이름이 붙은 낱말을 받을 수 있다", () => {
+    expect(leaveStatusWord("in_review", "팀장")).toBe("팀장 결재 중");
+    expect(leaveStatusWord("submitted")).toBe("결재 중");
+  });
+});
 
 // /review(testing): 결재선 목록 · 회수 결과 줄의 갈래 — `(나)`는 후보가 한 명일 때만, 빈 자리 · 막힘은 `—` + `담당 없음`,
 // 자기 승인 건너뜀 자리는 목록에서 빠짐, 회수 둘째 줄, 서울 시각(날짜가 바뀌는 UTC 시각).

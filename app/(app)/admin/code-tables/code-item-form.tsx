@@ -1,7 +1,6 @@
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
-import Link from "next/link";
+import { useId, useRef, useState, type FormEvent } from "react";
 import { useAction } from "next-safe-action/hooks";
 import {
   createCodeItemAction,
@@ -16,8 +15,8 @@ import {
 // 같은 이유).
 import { CODE_ITEM_DESCRIPTION_MAX } from "@/domain/code-tables/description-max";
 import { TextField } from "@/ui/input/TextField";
-import { Button } from "@/ui/button/Button";
-import { FormAlert } from "@/ui/form-alert/FormAlert";
+import { RowAction } from "@/ui/row-actions/RowActions";
+import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
 import { DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
 import styles from "./code-tables.module.css";
 
@@ -26,17 +25,24 @@ function getStringField(formData: FormData, key: string): string {
   return typeof value === "string" ? value : "";
 }
 
-// SYSTEM.md §6-3 폼 템플릿 재사용(D-39) — 목록 위에 펼치는 폼이고 모달이 아니다.
-// §6-1(2026-09-21 이후): page.tsx가 ?new=1일 때만 이 폼을 렌더한다 — 기본
-// 진입에는 없다. cancelHref는 그 쿼리를 뺀 같은 화면으로 돌아간다.
-export function CodeItemForm({ tableKey, cancelHref }: { tableKey: string; cancelHref: string }) {
-  const formRef = useRef<HTMLFormElement>(null);
+// SYSTEM.md §6-3 폼 템플릿(D-39) — 옆 패널 안 폼(04.6-04: `SidePanel` 안 `PanelForm`). page.tsx가 ?new=1일 때만 이 패널을 그린다 —
+// 기본 진입에는 없다. 닫기 경로는 `SidePanel`이 가진다.
+// 성공 뒤(UQ-8 B): 패널을 열어 둔 채 칸을 비우고 첫 칸에 포커스 + 결과 한 줄(`PanelForm.succeed` — 상세 화면이 없는 대상).
+export function CodeItemForm({ tableKey }: { tableKey: string }) {
+  const panelRef = useRef<PanelFormHandle>(null);
+  // 제출 직후 같은 틱의 두 번째 제출(Ctrl+Enter 연타)을 막는 동기 가드 — isExecuting은 다음 렌더에야 참이 된다(D7 · R15-ii).
+  const submitLockRef = useRef(false);
   const { execute, result, isExecuting } = useAction(createCodeItemAction, {
-    onSuccess: () => formRef.current?.reset(),
+    onSuccess: () => panelRef.current?.succeed({ status: "코드 추가됨" }),
+    onSettled: () => {
+      submitLockRef.current = false;
+    },
   });
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submitLockRef.current) return;
+    submitLockRef.current = true;
     const formData = new FormData(event.currentTarget);
     execute({
       tableKey,
@@ -52,27 +58,27 @@ export function CodeItemForm({ tableKey, cancelHref }: { tableKey: string; cance
   const descriptionError = result.validationErrors?.description?._errors?.[0];
 
   return (
-    <form ref={formRef} onSubmit={handleSubmit} id="code-item-form" className="single-column">
+    <PanelForm
+      ref={panelRef}
+      id="code-item-form"
+      label="코드 추가"
+      intent="create"
+      onSubmit={handleSubmit}
+      pending={isExecuting}
+      reason={result.serverError ?? null}
+      reasonId="code-item-form-reason"
+    >
       <TextField id="value" name="value" label="값" required error={valueError} />
       <TextField id="label" name="label" label="이름" required error={labelError} />
       <TextField id="sortOrder" name="sortOrder" label="정렬 순서" type="number" defaultValue={0} />
       {/* S14 「코드 추가」 설명 칸(Task 2 ②) — 선택(required 없음). 40자
           검증은 domain(createCodeItem)이 한다. */}
       <TextField id="description" name="description" label="설명" error={descriptionError} />
-      {result.serverError ? <FormAlert>{result.serverError}</FormAlert> : null}
-      <div className={styles.formActions}>
-        <Button type="submit" variant="primary" pending={isExecuting}>
-          코드 추가
-        </Button>
-        <Link href={cancelHref} className={styles.toggle}>
-          취소
-        </Link>
-      </div>
-    </form>
+    </PanelForm>
   );
 }
 
-// §6-1 목록 행 3차 버튼 — 되돌릴 수 있는 상태 변경이라 확인 모달 없음, 즉시
+// §6-1 목록 행 행동 — 되돌릴 수 있는 상태 변경이라 확인 모달 없음, 즉시
 // 반영(03-UI-SPEC.md 「비활성화 표현」).
 // MAST-04 「수정」 — 계급 화면(roles-client.tsx)의 인라인 이름 입력과 같은 결:
 // 행 안에서 고치고 포커스를 잃을 때 저장한다. 값(value)은 입력칸으로 내보내지
@@ -148,8 +154,10 @@ export function CodeItemDescriptionInput({
     onSuccess: () => setErrorText(undefined),
   });
 
-  const errorId = `code-item-description-error-${id}`;
-  const countId = `code-item-description-count-${id}`;
+  // StaticTable P2 칸은 PC 열과 폰 접힌 줄에 한 번씩 그려진다 — 같은 항목의 두 입력이 id를 나누지 않게 인스턴스마다 다른 id를 쓴다.
+  const instanceId = useId();
+  const errorId = `code-item-description-error-${id}-${instanceId}`;
+  const countId = `code-item-description-count-${id}-${instanceId}`;
   const overLimit = value.length > CODE_ITEM_DESCRIPTION_MAX;
   const describedBy = [errorText ? errorId : null, overLimit ? countId : null].filter(Boolean).join(" ") || undefined;
 
@@ -202,13 +210,9 @@ export function CodeItemActiveToggle({ id, active }: { id: string; active: boole
   const { execute, isExecuting } = useAction(setCodeItemActiveAction);
 
   return (
-    <Button
-      variant="tertiary"
-      pending={isExecuting}
-      onClick={() => execute({ id, active: !active })}
-    >
+    <RowAction pending={isExecuting} onClick={() => execute({ id, active: !active })}>
       {active ? "비활성화" : "활성화"}
-    </Button>
+    </RowAction>
   );
 }
 

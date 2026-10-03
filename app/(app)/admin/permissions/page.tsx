@@ -1,8 +1,7 @@
-// 04.6 스킨 A 이관 전: 화면 틀
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/viewer";
 import { readPermissionGrid, ForbiddenError } from "@/domain/permissions/matrix";
-import { PageHeader } from "@/ui/page-header/PageHeader";
+import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { PermissionGridClient } from "./permission-grid-client";
 import { setPermissionCellAction } from "./actions";
 
@@ -30,8 +29,7 @@ export default async function PermissionsPage() {
   }
 
   return (
-    <>
-      <PageHeader title="권한표" subtitle="계급 × 메뉴 × 동작" />
+    <ListScreen title="권한표">
       <PermissionGridClient
         kind="permission"
         caption="계급별 메뉴 접근 권한표"
@@ -42,6 +40,6 @@ export default async function PermissionsPage() {
         errorMessage={errorMessage}
         toggleAction={setPermissionCellAction}
       />
-    </>
+    </ListScreen>
   );
 }

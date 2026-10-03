@@ -1,8 +1,7 @@
-// 04.6 스킨 A 이관 전: 화면 틀
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/viewer";
 import { readVisibilityGrid, ForbiddenError } from "@/domain/permissions/matrix";
-import { PageHeader } from "@/ui/page-header/PageHeader";
+import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { PermissionGridClient } from "../permissions/permission-grid-client";
 import { setVisibilityCellAction } from "./actions";
 
@@ -30,8 +29,7 @@ export default async function VisibilityPage() {
   }
 
   return (
-    <>
-      <PageHeader title="정보 노출표" subtitle="계급 × 정보 항목" />
+    <ListScreen title="정보 노출표">
       <PermissionGridClient
         kind="visibility"
         caption="계급별 정보 노출표"
@@ -42,6 +40,6 @@ export default async function VisibilityPage() {
         errorMessage={errorMessage}
         toggleAction={setVisibilityCellAction}
       />
-    </>
+    </ListScreen>
   );
 }

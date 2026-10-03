@@ -15,6 +15,8 @@ export type ListScreenProps = {
   filters?: ReactNode;
   /** 필터 줄 아래 합계 면(`--surface-base` 1px 면). */
   summary?: ReactNode;
+  /** `summary`를 면 없이 텍스트 한 줄로 — 머리 잔고 한 줄(연차 목록, SYSTEM §6-1). */
+  summaryPlain?: boolean;
   /** 필터 줄(행동 줄)을 한 열 목록과 같은 720 기둥으로 — 조직(SYSTEM §3 단일 기둥). */
   singleColumn?: boolean;
   /**
@@ -30,7 +32,7 @@ export type ListScreenProps = {
   panel?: ReactNode;
 };
 
-export function ListScreen({ title, primaryAction, filters, summary, singleColumn, empty, children, pagination, panel }: ListScreenProps) {
+export function ListScreen({ title, primaryAction, filters, summary, summaryPlain, singleColumn, empty, children, pagination, panel }: ListScreenProps) {
   // DR5 A — 빈 목록이면 머리 1차는 빈 화면의 버튼 하나로 갈음한다(규칙을 틀 안에 두어 화면마다 조건을 다시 쓰지 않는다).
   const headAction = empty ? undefined : primaryAction;
   return (
@@ -55,7 +57,7 @@ export function ListScreen({ title, primaryAction, filters, summary, singleColum
           ) : null}
         </div>
       ) : null}
-      {summary ? <div className={styles.summary}>{summary}</div> : null}
+      {summary ? <div className={summaryPlain ? styles.summaryPlain : styles.summary}>{summary}</div> : null}
       {empty ?? children}
       {pagination ? <div className={styles.pagination}>{pagination}</div> : null}
       {panel}

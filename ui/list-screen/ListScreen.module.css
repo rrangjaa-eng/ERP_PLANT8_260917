@@ -50,6 +50,11 @@
   background: var(--surface-base);
 }
 
+/* 잔고 한 줄 같은 텍스트 요약 — 면 없이 글자만(SYSTEM §6-1 · DECISIONS 2026-09-29 A4). */
+.summaryPlain {
+  margin: var(--s-3) 0;
+}
+
 /* 1차 버튼 글자는 한 줄 — 필터가 넓은 폭(768)에서 버튼이 눌려 낱말이 갈리지 않게 한다(§7-1). */
 .primaryAction {
   flex: none;

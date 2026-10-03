@@ -1,31 +1,13 @@
-// 04.6 스킨 A 이관 전: 화면 틀
-/* eslint-disable no-restricted-syntax -- 04.6 스킨 A 이관 전 */
-import { PageHeader } from "@/ui/page-header/PageHeader";
-import styles from "./loading.module.css";
+import { ListScreen } from "@/ui/list-screen/ListScreen";
+import { TableSkeleton } from "@/ui/table/TableSkeleton";
+import { INBOX_COLUMN_LABELS, INBOX_SKELETON_COLUMNS } from "./list-columns";
 
-// 04.1-05 §7-7 LOADING — PageHeader + 표 머리글 뼈대 + --surface 행 3개. 반짝임 · 진행 바 없음, 300ms 지연 표시
-// (loading.module.css .delayed). 부제는 그리지 않는다(뒤로가기 캐시의 숨긴 폴백과 글자가 겹치지 않게 — projects 선례).
+// 04.1-05 §7-7 LOADING → UI-SPEC loading(D10 · SC 10) — 제목 + 결재함 표 뼈대만. 머리글은 진짜 열 이름(`list-columns.ts` — 표와 같은 낱말)이고
+// 1차 행동 prop은 넘기지 않는다(동작하지 않는 1차 방지). 300ms 안에 끝나는 스트리밍에서는 뼈대가 보이지 않는다(`TableSkeleton`의 지연 표시).
 export default function ApprovalsLoading() {
   return (
-    <div className={styles.delayed}>
-      <PageHeader title="결재" />
-      <table className={styles.table} aria-hidden="true">
-        <thead>
-          <tr>
-            <th scope="col">문서</th>
-            <th scope="col">기안</th>
-            <th scope="col">일수</th>
-            <th scope="col">상태</th>
-          </tr>
-        </thead>
-        <tbody>
-          {[0, 1, 2].map((index) => (
-            <tr key={index} className={styles.skeletonRow}>
-              <td colSpan={4}>&nbsp;</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <ListScreen title="결재">
+      <TableSkeleton columns={INBOX_SKELETON_COLUMNS.map(({ key, align }) => ({ key, label: INBOX_COLUMN_LABELS[key], align }))} />
+    </ListScreen>
   );
 }

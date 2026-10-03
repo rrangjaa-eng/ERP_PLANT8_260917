@@ -498,10 +498,10 @@ test.describe("거래처 옆 패널 — PC 1280 (04.6-04)", () => {
         for (const record of records) {
           record.addedNodes.forEach((node) => {
             if (!(node instanceof Element)) return;
-            const table = node.matches('table[aria-hidden="true"]') ? node : node.querySelector('table[aria-hidden="true"]');
-            if (!table) return;
+            const skeleton = node.matches('[data-ui="table-skeleton"]') ? node : node.querySelector('[data-ui="table-skeleton"]');
+            if (!skeleton) return;
             probe.skeleton += 1;
-            probe.insertOpacity.push(getComputedStyle(table.parentElement ?? table).opacity);
+            probe.insertOpacity.push(getComputedStyle(skeleton).opacity);
           });
         }
       }).observe(document.body, { childList: true, subtree: true });
@@ -526,8 +526,8 @@ test.describe("거래처 옆 패널 — PC 1280 (04.6-04)", () => {
       // 응답이 늦는 동안(700ms 시점) 뼈대가 보이는지 — 300ms 지연 표시가 지난 뒤라 느린 쪽만 보인다(기록용).
       await page.waitForTimeout(700);
       const midOpacity = await page.evaluate(() => {
-        const table = document.querySelector('table[aria-hidden="true"]');
-        return table ? getComputedStyle(table.parentElement ?? table).opacity : "없음";
+        const skeleton = document.querySelector('[data-ui="table-skeleton"]');
+        return skeleton ? getComputedStyle(skeleton).opacity : "없음";
       });
       expect(["없음", "0"]).toContain(midOpacity);
       await expect(page).toHaveURL(new RegExp(`a1=${tag}$`));
@@ -538,6 +538,31 @@ test.describe("거래처 옆 패널 — PC 1280 (04.6-04)", () => {
       expect(probe.insertOpacity.every((value) => value === "0")).toBe(true);
     }
     console.log(`A1 탐침 — scrollY ${before} → ${await scrollY(page)} · ${results.join(" · ")}`);
+  });
+
+  // A1 양성 대조(04.6-17 · R8 탐침 보존) — 위 탐침이 세는 셀렉터(`[data-ui="table-skeleton"]`)가 빈 셀렉터가 아니다: 다른 화면에서 결재함으로 첫 진입(응답 지연)하면
+  // 같은 셀렉터가 1회 이상 DOM에 붙고 300ms 지연 표시가 지난 뒤 보인다(opacity > 0). 검색 파라미터만 바꾸는 이동은 위 탐침이 0회로 잰다.
+  test("A1 양성 대조 — 다른 화면에서 결재함으로 첫 진입(지연 응답)하면 `table-skeleton`이 보인다", async ({ page }) => {
+    await loginAsSysadmin(page);
+    await page.goto("/account");
+    // 뼈대(loading 틀)는 라우터가 미리 가져온 경우에만 응답이 늦는 동안 보인다 — 먼저 미리 가져오고, 그다음에 응답을 늦춘다.
+    const prefetched = page.waitForResponse((response) => response.url().includes("/approvals") && response.request().headers()["next-router-prefetch"] === "1");
+    await page.evaluate(() => (window as unknown as { next: { router: { prefetch(url: string): void } } }).next.router.prefetch("/approvals"));
+    await prefetched;
+    await page.waitForLoadState("networkidle");
+    await page.route(
+      (url) => url.pathname === "/approvals",
+      async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+        await route.continue();
+      },
+    );
+    await page.evaluate(() => (window as unknown as { next: { router: { push(url: string): void } } }).next.router.push("/approvals"));
+    const skeleton = page.locator('[data-ui="table-skeleton"]');
+    await expect
+      .poll(async () => (await skeleton.count()) > 0 && parseFloat(await skeleton.first().evaluate((element) => getComputedStyle(element).opacity)) > 0)
+      .toBe(true);
+    await expect(page).toHaveURL(/\/approvals$/);
   });
 
   test("M2 — 패널 안 라벨이 칸 위 · 입력이 묶음 전폭 · 힌트가 묶음 왼쪽에서 시작한다(PC 1280)", async ({ page }) => {
@@ -879,7 +904,8 @@ test.describe("합본 뒤 — 프로젝트 패널 (04.6-10)", { tag: "@wave-merg
         await route.continue();
       },
     );
-    const link = page.locator("table tbody tr").first().getByRole("link", { name: "수정" });
+    // 보관된 거래처 행은 행동 칸이 비어 「수정」 링크가 없다 — 링크가 있는 첫 행을 쓴다(앞 테스트가 만든 보관 행의 순서에 기대지 않는다).
+    const link = page.locator("table tbody tr").filter({ has: page.getByRole("link", { name: "수정" }) }).first().getByRole("link", { name: "수정" });
     await link.click();
     await expect(link.locator('[aria-busy="true"]')).toBeVisible();
     await expect(panel(page)).toBeVisible();

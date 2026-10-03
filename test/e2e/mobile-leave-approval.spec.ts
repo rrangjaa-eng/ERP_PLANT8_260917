@@ -20,6 +20,22 @@ async function tapFoldedRow(page: Page, drafterName: string): Promise<void> {
   await page.mouse.click(box.x + box.width * 0.6, box.y + box.height / 2);
 }
 
+
+// 04.6-17 — 토큰 이름으로 계산 값을 잰다(리터럴 px · rgb 기대 금지). 임시 요소에 `var(--토큰)`을 걸어 브라우저가 풀어 준 값을 읽는다.
+async function resolveToken(page: Page, token: string, property: "height" | "width" | "borderTopLeftRadius" | "backgroundColor"): Promise<string> {
+  return page.evaluate(
+    ([name, prop]) => {
+      const probe = document.createElement("div");
+      probe.style.setProperty(prop === "borderTopLeftRadius" ? "border-top-left-radius" : prop === "backgroundColor" ? "background-color" : prop, `var(${name})`);
+      document.body.appendChild(probe);
+      const value = getComputedStyle(probe)[prop as "height"];
+      probe.remove();
+      return value;
+    },
+    [token, property] as const,
+  );
+}
+
 test.describe("폰 결재 시트 (04.1-05)", () => {
   test("팀장이 폰으로 내 결재 행을 탭해 근거를 보고 승인하면 그 행이 처리함 문서 링크가 된다", async ({ browser, baseURL }) => {
     const today = seoulToday();
@@ -80,6 +96,66 @@ test.describe("폰 결재 시트 (04.1-05)", () => {
     await expect(lead).toHaveURL(/\/leave\/[0-9a-f-]{36}$/);
     await expect(lead.getByRole("dialog")).toHaveCount(0);
     await expect(lead.getByText(number, { exact: true })).toBeVisible();
+  });
+
+  // 04.6-17 DR4 A · Q1 A · D17 — 결재 시트는 직접 `<dialog>`가 아니라 공용 옆 패널(`SidePanel` 제어 형태)의 폰 시트 모양이다.
+  // 모양 기대는 계산된 역할 토큰 값과 비교한다(`--sheet-max-h` · `--radius-panel` · `--scrim-dialog`). 행동 줄은 PanelForm의 「취소 → 1차」가 아니라 2차 「반려」 → 1차 「승인」(승인이 2배 폭).
+  test("결재 시트는 공용 옆 패널의 폰 시트 모양이고 행동 줄은 반려 → 승인(2배 폭 · 취소 없음)이다(04.6-17)", async ({ browser, baseURL }) => {
+    const today = seoulToday();
+    const range = leaveWeekdayRange(today, { week: 2, weekdays: 1 });
+    const org = await setupLeaveOrg(today);
+    await submitLeave(org.drafter.viewer, { kind: "full_day", startDate: range.startDate, endDate: range.endDate, half: "" });
+
+    const lead = await loginPage(browser, baseURL, org.teamLead, PHONE);
+    await lead.goto("/approvals");
+    await lead.getByRole("button", { name: documentLabel(range) }).click();
+    const panel = lead.locator('dialog[data-ui="side-panel"]');
+    await expect(panel).toBeVisible();
+    expect(await panel.evaluate((element) => element.matches(":modal"))).toBe(true);
+    await expect(lead.getByRole("dialog")).toHaveCount(1);
+    // 올라오는 애니메이션(`sheetIn`)이 끝난 뒤의 자리를 잰다.
+    await panel.evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
+
+    const geometry = await panel.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return {
+        x: box.x,
+        width: box.width,
+        height: box.height,
+        bottom: box.bottom,
+        viewWidth: window.innerWidth,
+        viewHeight: window.innerHeight,
+        topLeft: style.borderTopLeftRadius,
+        topRight: style.borderTopRightRadius,
+        bottomLeft: style.borderBottomLeftRadius,
+        backdrop: getComputedStyle(element, "::backdrop").backgroundColor,
+      };
+    });
+    expect(geometry.x).toBe(0);
+    expect(geometry.width).toBe(geometry.viewWidth);
+    expect(geometry.bottom).toBe(geometry.viewHeight);
+    expect(geometry.height).toBeLessThanOrEqual(parseFloat(await resolveToken(lead, "--sheet-max-h", "height")) + 0.5);
+    const panelRadius = await resolveToken(lead, "--radius-panel", "borderTopLeftRadius");
+    expect([geometry.topLeft, geometry.topRight]).toEqual([panelRadius, panelRadius]);
+    expect(geometry.bottomLeft).toBe("0px");
+    expect(geometry.backdrop).toBe(await resolveToken(lead, "--scrim-dialog", "backgroundColor"));
+
+    // 행동 줄 — DOM · Tab · 시각 순서 모두 반려 → 승인, 승인이 반려의 2배 폭, 「취소」 버튼 없음(D17).
+    expect(
+      await panel.evaluate((node) =>
+        [...node.querySelectorAll("button")].map((button) => button.textContent?.trim() ?? "").filter((text) => /^(취소|반려|승인)/.test(text)),
+      ),
+    ).toEqual(["반려", expect.stringMatching(/^승인/)]);
+    const [rejectBox, approveBox] = [await panel.getByRole("button", { name: "반려" }).boundingBox(), await panel.getByRole("button", { name: /^승인/ }).boundingBox()];
+    expect((rejectBox?.x ?? 0) + (rejectBox?.width ?? 0)).toBeLessThan(approveBox?.x ?? 0);
+    expect(Math.abs((approveBox?.width ?? 0) - 2 * (rejectBox?.width ?? 0))).toBeLessThanOrEqual(1);
+    await expect(panel.getByRole("button", { name: /^취소/ })).toHaveCount(0);
+
+    // 닫으면(Esc) 포커스가 연 행으로 돌아온다.
+    await lead.keyboard.press("Escape");
+    await expect(panel).toHaveCount(0);
+    await expect(lead.getByRole("button", { name: documentLabel(range) })).toBeFocused();
   });
 
   test("승인을 빠르게 두 번 눌러도 처리 기록은 한 건이고, 제출 중 반려는 aria-disabled이며 disabled 속성이 없다(T7)", async ({ browser, baseURL }) => {

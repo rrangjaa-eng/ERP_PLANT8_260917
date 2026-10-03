@@ -322,7 +322,17 @@ test.describe("PC 폼 라벨 왼쪽 96 · select 200, 폰은 라벨 위 (SYSTEM.
       const taxRuleRow = row.locator('xpath=following-sibling::tr[.//*[contains(@class,"taxRuleSection")]][1]');
       await taxRuleRow.getByLabel("규칙 종류").selectOption("withholding");
       await expect(taxRuleRow.getByLabel("절사 단위")).toBeVisible();
-      await expectLabelLayoutAtAllWidths(page, 'main [class*="taxRuleSection"]');
+      // 폰(<700)은 읽기만(사용자 결정 2026-10-03, 04.6-15 d5fd3542 — 선택 상자는 CSS로 숨고 값 한 줄만 보인다): PC 폭은 라벨 열을 재고, 폰 폭은 보이는 select가 없는지 잰다.
+      const scope = 'main [class*="taxRuleSection"]';
+      for (const width of PC_WIDTHS) {
+        await page.setViewportSize({ width, height: 900 });
+        await expectPcLabelColumn(page, scope, true);
+      }
+      for (const width of PHONE_WIDTHS) {
+        await page.setViewportSize({ width, height: 900 });
+        expect(await measureSelectRows(page, scope), `세금 규칙 select 폰 @${width} 숨김`).toHaveLength(0);
+        await expect(page.locator(`${scope}:visible`, { hasText: "원천징수율과 면제 기준" }).first(), `세금 규칙 값 한 줄 @${width}`).toBeVisible();
+      }
     } finally {
       await setCodeItemActive(SYSTEM_VIEWER, item.id, false);
     }

@@ -96,7 +96,7 @@ export type RouteListStep = {
   key: string;
   person: string;
   label: string;
-  result: { text: string; kind: StatusTagKind };
+  result: { text: string; status: StatusWord };
   at: string | null;
   reason: string | null;
 };
@@ -116,19 +116,19 @@ export function seoulMinuteOf(at: Date): string {
   return `${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
 }
 
-function stepResult(step: RouteStepSource): LeaveStatusDisplay | null {
+function stepStatusKey(step: RouteStepSource): LeaveStatusKey | null {
   switch (step.state) {
     case "approved":
-      return leaveStatusDisplay("approved");
+      return "approved";
     case "rejected":
-      return leaveStatusDisplay("rejected");
+      return "rejected";
     case "current":
-      return leaveStatusDisplay(step.viewerHolds ? "mine" : "submitted");
+      return step.viewerHolds ? "mine" : "submitted";
     case "pending":
-      return leaveStatusDisplay("waiting");
+      return "waiting";
     case "empty":
     case "blocked":
-      return leaveStatusDisplay("vacant");
+      return "vacant";
     default:
       return null;
   }
@@ -145,13 +145,13 @@ function stepPerson(step: RouteStepSource): string {
 export function routeListSteps(steps: RouteStepSource[] | null | undefined): RouteListStep[] {
   const result: RouteListStep[] = [];
   for (const [index, step] of (steps ?? []).entries()) {
-    const display = stepResult(step);
-    if (!display) continue;
+    const key = stepStatusKey(step);
+    if (!key) continue;
     result.push({
       key: `${step.stepIndex ?? index}-${step.label ?? ""}`,
       person: stepPerson(step),
       label: step.label ?? "",
-      result: { text: display.label, kind: display.kind },
+      result: { text: leaveStatusDisplay(key).label, status: leaveStatusWord(key) },
       at: step.actedAt ? seoulMinuteOf(step.actedAt) : null,
       reason: step.state === "rejected" ? (step.reason ?? null) : null,
     });

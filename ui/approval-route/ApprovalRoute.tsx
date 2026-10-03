@@ -1,11 +1,12 @@
 import { Fragment } from "react";
 import { Num } from "@/ui/num/Num";
-import { StatusTag, type StatusTagKind } from "@/ui/status-tag/StatusTag";
+import { StatusTag } from "@/ui/status-tag/StatusTag";
+import type { StatusWord } from "@/ui/status-tag/status-map";
 import styles from "./ApprovalRoute.module.css";
 
 // SYSTEM.md §6-3 결재선 · A3(DECISIONS.md 2026-09-29) — 두 모양. `line` = 제출 전 한 줄(`기안자 → 사람 단계 →
 // … · 결재 규칙`), `list` = 제출 뒤 단계마다 한 줄. 입력은 서버가 해석한 표시 목록이고 이 컴포넌트는 그리기만
-// 한다(지금 담당 · 담당 없음 · 막힘 판정을 하지 않는다). 색은 kind → 의미 토큰(status-display가 준 값)만.
+// 한다(지금 담당 · 담당 없음 · 막힘 판정을 하지 않는다). 색은 status 낱말 → 상태 배지 표(status-map)만.
 
 export type ApprovalRouteLineStep = { person: string; label: string };
 
@@ -14,7 +15,7 @@ export type ApprovalRouteListStep = {
   // 자리가 비면 `—`.
   person: string;
   label: string;
-  result: { text: string; kind: StatusTagKind };
+  result: { text: string; status: StatusWord };
   // `09-18 14:02`(없으면 null).
   at: string | null;
   // 반려 단계의 사유 원문(다음 줄).
@@ -57,9 +58,7 @@ export function ApprovalRoute(props: ApprovalRouteProps) {
         <li key={step.key} className={styles.item}>
           <span>{step.person}</span> <span className={styles.label}>{step.label}</span>
           {" · "}
-          <StatusTag kind={step.result.kind} variant="text" className={styles.result}>
-            {step.result.text}
-          </StatusTag>
+          <StatusTag status={step.result.status} variant="text" className={styles.result} />
           {step.at ? <span className={styles.at}> <Num value={step.at} /></span> : null}
           {step.reason ? <span className={styles.reason}>사유 · {step.reason}</span> : null}
         </li>

@@ -111,6 +111,12 @@ describe("관리자 표 — 숫자 칸 정렬 (F-07)", () => {
     expect(read("ui", "shell", "TopBar.tsx")).toMatch(/<Num value=\{badgeLabel\} \/>/);
   });
 
+  it("ApprovalRoute 결재선 목록은 StatusTag status 낱말로 그린다(kind 직접 지정 없음)", () => {
+    const source = read("ui", "approval-route", "ApprovalRoute.tsx");
+    expect(source).toMatch(/<StatusTag status=\{step\.result\.status\}/);
+    expect(source).not.toMatch(/StatusTag kind=/);
+  });
+
   it("ApprovalRoute 일시(step.at)가 Num으로 그린다", () => {
     expect(read("ui", "approval-route", "ApprovalRoute.tsx")).toMatch(/<Num value=\{step\.at\} \/>/);
   });

@@ -28,7 +28,7 @@ describe("routeListSteps", () => {
     expect(current("김팀장")[0]?.person).toBe("김팀장(나)");
     expect(current("김팀장 · 정팀장")[0]?.person).toBe("김팀장 · 정팀장");
     expect(current("김팀장 외 2명")[0]?.person).toBe("김팀장 외 2명");
-    expect(current("김팀장")[0]?.result).toEqual({ text: "내 결재", kind: "accent" });
+    expect(current("김팀장")[0]?.result).toEqual({ text: "내 결재", status: "내 결재" });
   });
 
   it("빈 자리 · 막힘은 사람 `—` · `담당 없음`, 자기 승인 건너뜀은 빠진다", () => {
@@ -49,7 +49,7 @@ describe("routeListSteps", () => {
       { stepIndex: 2, label: "대표", state: "pending", holderNames: "최대표" },
     ]);
     expect(rows[0]).toMatchObject({ person: "김팀장", at: "09-18 14:02", reason: "일정 겹침" });
-    expect(rows[1]).toMatchObject({ person: "최대표", result: { text: "대기", kind: "muted" }, reason: null });
+    expect(rows[1]).toMatchObject({ person: "최대표", result: { text: "대기", status: "대기" }, reason: null });
   });
 });
 

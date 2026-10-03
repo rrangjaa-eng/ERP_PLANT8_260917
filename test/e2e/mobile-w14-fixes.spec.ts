@@ -112,6 +112,32 @@ for (const width of [375, 320]) {
       }
     });
 
+    // 04.6 사용자 결정 2026-10-03 14:57 KST 카드 「폰은 읽기만」 — 폰의 표 안에는 입력 칸 · 선택 상자 · 편집 버튼이 없고 값은 글자로 보인다(SYSTEM §7-3 「폰에서 셀 편집 없음」).
+    test(`/admin/people/roles ${width} 표 안 입력 0 · 값이 글자 · 계급 추가 숨김 (폰은 읽기만)`, async ({ page }) => {
+      await loginAsAdmin(page);
+      await page.goto("/admin/people/roles");
+      const table = page.locator("table");
+      await expect(table.locator("input, select, button, textarea")).toHaveCount(0);
+      for (const text of ["대표", "본부 책임자", "팀장", "기획 PM", "시스템 관리자"]) {
+        await expect(table.getByRole("cell", { name: text, exact: true }).first()).toBeVisible();
+      }
+      await expect(table.getByRole("cell", { name: "전사", exact: true }).first()).toBeVisible();
+      await expect(page.locator('[data-ui="primary-button"]')).toBeHidden();
+    });
+
+    test(`/admin/code-tables ${width} 두 코드표 표 안 입력 0 · 값이 글자 · 코드 추가 숨김 (폰은 읽기만)`, async ({ page }) => {
+      await loginAsAdmin(page);
+      for (const tableKey of ["project_status", "evidence_type"]) {
+        await page.goto(`/admin/code-tables?tableKey=${tableKey}`);
+        const table = page.locator("table");
+        await expect(table.locator("input, select, button, textarea"), `${tableKey} 표 안 편집 요소`).toHaveCount(0);
+        await expect(table.locator("tbody td").filter({ visible: true }).first()).not.toHaveText("");
+        await expect(page.locator('[data-ui="primary-button"]')).toBeHidden();
+      }
+      await page.goto("/admin/code-tables?tableKey=evidence_type");
+      await expect(page.getByText("세금계산서").first()).toBeVisible();
+    });
+
     // R4 — 패널 안 세로 간격이 어디서 나는지 잰다: 형제 블록 사이 빈칸 중 큰 것(척도 최대 48 초과).
     test(`/admin/field-definitions?new=1 ${width} 패널 안 형제 블록 사이 세로 간격이 척도(≤48) 안이다 (R4)`, async ({ page }) => {
       await loginAsAdmin(page);
@@ -134,3 +160,19 @@ for (const width of [375, 320]) {
     });
   });
 }
+
+// PC 1280 — 폰 읽기 전용이 PC 편집을 건드리지 않는다(같은 두 화면의 표 안 입력이 그대로 있다).
+test.describe("PC 1280 두 화면 표 안 편집 유지 (폰은 읽기만의 대조)", () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test("/admin/people/roles · /admin/code-tables 표 안에 입력 · 선택 상자가 있다", async ({ page }) => {
+    await loginAsAdmin(page);
+    await page.goto("/admin/people/roles");
+    await expect(page.locator("table tbody input").first()).toBeVisible();
+    await expect(page.locator("table tbody select").first()).toBeVisible();
+    await page.goto("/admin/code-tables?tableKey=evidence_type");
+    await expect(page.locator("table tbody input").first()).toBeVisible();
+    await expect(page.locator("table tbody select").first()).toBeVisible();
+    await expect(page.locator('[data-ui="primary-button"]')).toBeVisible();
+  });
+});

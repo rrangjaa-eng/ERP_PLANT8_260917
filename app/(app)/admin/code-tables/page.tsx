@@ -18,6 +18,7 @@ import {
   CodeItemActiveToggle,
   CodeItemDeleteButton,
 } from "./code-item-form";
+import { PcOnly } from "../pc-only";
 import { EvidenceTypeFields } from "./evidence-type-fields";
 import styles from "./code-tables.module.css";
 
@@ -77,7 +78,7 @@ export default async function CodeTablesPage({
     <ListScreen
       title="코드표"
       // DR5 A — 빈 목록이면 머리 1차를 그리지 않고 빈 화면의 「코드 추가」 하나가 등록을 맡는다.
-      primaryAction={canWrite && items.length > 0 ? { label: "코드 추가", href: newHref } : undefined}
+      primaryAction={canWrite && items.length > 0 ? { label: "코드 추가", href: newHref, phoneHidden: true } : undefined}
       filters={
         <>
           {/* 고른 표 이름은 부제 대신 현재 링크 표시(색·굵기·밑줄)와 표 caption이 맡는다. */}
@@ -116,20 +117,20 @@ export default async function CodeTablesPage({
       {items.length === 0 ? (
         <ListEmpty
           message="등록된 코드가 없습니다"
-          action={canWrite ? { label: "코드 추가", href: newHref } : undefined}
+          action={canWrite ? { label: "코드 추가", href: newHref, phoneHidden: true } : undefined}
         />
       ) : (
         <StaticTable
           caption={`코드표 · ${currentLabel}`}
-          // 폰: 이름 · 상태 · 동작이 P1, 설명은 이름 아래 접힌 줄(P2), 값 · 정렬은 숨김(P3). 상세 화면이 없는 목록이라 동작을 P3로 숨기지 않는다
-          // (SYSTEM §7-3 · 사용자 답 Q4 A 「보이게」 — TODOS 183). 동작을 P2 접힌 줄에 두지 않는 이유: StaticTable 접힌 줄은 행 머리글 모드가 아니면 보조 기술이 못 쓴다.
+          // 폰: 이름 · 상태가 P1, 설명은 이름 아래 접힌 줄(P2), 값 · 정렬 · 동작은 숨김(P3). 폰은 읽기만이라 편집 행동(동작)도 폰에서 숨는다
+          // (사용자 결정 2026-10-03 14:57 KST 카드 「폰은 읽기만」 — 04.6-15 Q4 A 「동작 보이게」를 대체).
           columns={[
             { key: "value", header: "값", priority: "p3" },
             { key: "label", header: "이름", priority: "p1" },
             { key: "description", header: "설명", priority: "p2" },
             { key: "sortOrder", header: "정렬", priority: "p3", align: "right" },
             { key: "status", header: "상태", priority: "p1" },
-            ...(hasActions ? [{ key: "actions", header: "동작", priority: "p1" as const }] : []),
+            ...(hasActions ? [{ key: "actions", header: "동작", priority: "p3" as const }] : []),
           ]}
           rows={items.map((item) => ({
             key: item.id,
@@ -155,10 +156,12 @@ export default async function CodeTablesPage({
               ...(hasActions
                 ? [
                     item.archivedAt ? null : (
-                      <RowActions key="actions">
-                        {canWrite ? <CodeItemActiveToggle id={item.id} active={item.active} /> : null}
-                        {canArchive ? <CodeItemDeleteButton id={item.id} label={item.label} /> : null}
-                      </RowActions>
+                      <PcOnly key="actions">
+                        <RowActions>
+                          {canWrite ? <CodeItemActiveToggle id={item.id} active={item.active} /> : null}
+                          {canArchive ? <CodeItemDeleteButton id={item.id} label={item.label} /> : null}
+                        </RowActions>
+                      </PcOnly>
                     ),
                   ]
                 : []),

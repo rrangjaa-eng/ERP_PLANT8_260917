@@ -236,7 +236,7 @@ describe("TableSkeleton — 불러오는 중 뼈대", () => {
 });
 
 type StaticColumn = { key: string; header: string; priority: ColumnPriority; align?: "left" | "right"; rowHeader?: boolean };
-type StaticRow = { key: string; headerId?: string; cells: ReactNode[] };
+type StaticRow = { key: string; headerId?: string; cells: ReactNode[]; detail?: ReactNode };
 
 function staticTable(columns: StaticColumn[], rows: StaticRow[]): string {
   return html(createElement(StaticTable, { caption: "거래처", columns, rows }));
@@ -315,6 +315,33 @@ describe("StaticTable — 서버 렌더 읽기 전용 표(R1)", () => {
   it("P2 열이 없으면 접힌 줄이 없다", () => {
     const markup = staticTable([{ key: "name", header: "이름", priority: "p1" }], [{ key: "r1", cells: ["가나"] }]);
     expect(markup).not.toMatch(/_collapsedRow_/);
+  });
+
+  // 04.6-15 — 코드표 증빙 종류의 세금 규칙 편집 줄: 행 아래 전폭 줄(`rows[i].detail`).
+  it("detail이 있으면 그 행(과 접힌 줄) 뒤에 static-table-detail 줄 하나가 칸 하나 colSpan = 열 수로 그려진다", () => {
+    const markup = staticTable(columns, [{ ...rows[0]!, detail: createElement("p", { id: "tax-rule" }, "세금 규칙") }]);
+    const details = [...markup.matchAll(/<tr data-ui="static-table-detail">([\s\S]*?)<\/tr>/g)];
+    expect(details).toHaveLength(1);
+    const detailRow = details[0]?.[1] ?? "";
+    expect(detailRow).toMatch(/^<td colSpan="4"[^>]*>/i);
+    expect(detailRow).toContain('<p id="tax-rule">세금 규칙</p>');
+    expect((detailRow.match(/<td\b/g) ?? []).length).toBe(1);
+    // 순서: 주 행 → 접힌 줄 → detail 줄.
+    expect(markup.indexOf("가나")).toBeLessThan(markup.indexOf("_collapsedRow_"));
+    expect(markup.indexOf("_collapsedRow_")).toBeLessThan(markup.indexOf("static-table-detail"));
+  });
+
+  it("detail이 없으면 그 줄이 없다(마크업 불변)", () => {
+    const markup = staticTable(columns, rows);
+    expect(markup).not.toContain("static-table-detail");
+  });
+
+  it("detail은 행마다 따로다 — 있는 행에만 줄이 생긴다", () => {
+    const markup = staticTable(columns, [
+      { ...rows[0]!, key: "a", detail: "첫 행 세부" },
+      { ...rows[0]!, key: "b" },
+    ]);
+    expect([...markup.matchAll(/static-table-detail/g)]).toHaveLength(1);
   });
 
   it("rowHeader가 없는 표는 th scope=row가 없다", () => {

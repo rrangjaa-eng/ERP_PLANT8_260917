@@ -22,6 +22,8 @@ export type StaticTableRow = {
   headerId?: string;
   /** 열 순서대로 미리 렌더한 칸. 가린 열은 호출부가 `columns`에서 빼므로 여기에도 없다. */
   cells: ReactNode[];
+  /** 행(과 접힌 줄) 아래 전폭 줄 하나 — 코드표 증빙 종류의 세금 규칙 편집 줄처럼 열에 속하지 않는 세부. 없으면 줄이 없다. */
+  detail?: ReactNode;
 };
 
 export type StaticTableProps = {
@@ -91,6 +93,13 @@ export function StaticTable({ caption, columns, rows }: StaticTableProps) {
                         {value}
                       </Fragment>
                     ))}
+                  </td>
+                </tr>
+              ) : null}
+              {row.detail !== undefined && row.detail !== null && row.detail !== false ? (
+                <tr data-ui="static-table-detail">
+                  <td colSpan={columns.length} className={styles.cell}>
+                    {row.detail}
                   </td>
                 </tr>
               ) : null}

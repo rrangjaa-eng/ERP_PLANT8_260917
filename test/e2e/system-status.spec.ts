@@ -116,8 +116,8 @@ function tokenAsColor(page: Page, name: string): Promise<string> {
 }
 
 async function expectNoStatusColors(page: Page, value: Locator): Promise<void> {
-  const danger = await tokenAsColor(page, "--danger");
-  const success = await tokenAsColor(page, "--success");
+  const danger = await tokenAsColor(page, "--status-danger");
+  const success = await tokenAsColor(page, "--status-success");
   const colors = await value.evaluate((dd) =>
     [dd, ...Array.from(dd.querySelectorAll("*"))].map((el) => getComputedStyle(el).color),
   );

@@ -117,7 +117,7 @@ test.describe("코드표 관리 화면 (MAST-04, ADMN-01, D-36 계약: 화면 �
 
   // DR-P4-01(design-review) — 현재 표 링크가 형제 링크와 계산 스타일이 같아
   // 어느 표가 켜져 있는지 시각으로 구분되지 않았다. §7-16 「현재 번호는
-  // --fg 700, 밑줄 없음」과 같은 결로 aria-current="page" 링크만 구분한다.
+  // --text-strong 700, 밑줄 없음」과 같은 결로 aria-current="page" 링크만 구분한다.
   test("현재 표 링크는 형제 링크와 색·굵기·밑줄로 구분된다", async ({ page }) => {
     const admin = await createFixtureUser({ roleId: "role-sysadmin" });
 
@@ -135,7 +135,7 @@ test.describe("코드표 관리 화면 (MAST-04, ADMN-01, D-36 계약: 화면 �
     await expect(current).toHaveCount(1);
     await expect(sibling).toHaveCount(2);
 
-    // 현재 표 링크 색 = 역할 토큰 --text-strong(04.6-15: 옛 --fg → 스킨 A 역할 토큰). 토큰 값은 hex라 브라우저가 계산하는 rgb() 문자열과 직접
+    // 현재 표 링크 색 = 역할 토큰 --text-strong(04.6-15: 스킨 A 역할 토큰). 토큰 값은 hex라 브라우저가 계산하는 rgb() 문자열과 직접
     // 비교하려고 임시 요소에 먹여 같은 방식으로 정규화한다.
     const fgAsRgb = await page.evaluate(() => {
       const fgHex = getComputedStyle(document.documentElement).getPropertyValue("--text-strong").trim();

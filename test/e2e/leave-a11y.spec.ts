@@ -13,7 +13,16 @@ import { documentLabel, loginPage, setupLeaveOrg, type LeaveOrg } from "./leave-
 
 type Range = { startDate: string; endDate: string };
 
+// 확인 창 · 시트는 열림 모션(opacity 0 -> 1, --dur-sheet)이 도는 동안 axe가 글자 · 면 색을 혼합값으로 재서 정상 대비(--text-faint on --surface-base 5.35)도 4.0으로 나온다.
+// 유한 모션이 끝난 정지 상태를 잰다(규칙은 그대로 전부 건다). 무한 모션(스피너)은 기다리지 않는다.
 async function expectNoAxeViolations(page: Page): Promise<void> {
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => document.getAnimations().filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity && animation.playState === "running").length,
+      ),
+    )
+    .toBe(0);
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations.map((violation) => `${violation.id}: ${violation.nodes.map((node) => node.target.join(" ")).join(", ")}`)).toEqual([]);
 }

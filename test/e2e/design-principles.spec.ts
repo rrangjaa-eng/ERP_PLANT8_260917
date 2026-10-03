@@ -151,6 +151,24 @@ test.describe("카나리 — 수집 훅이 살아 있다", () => {
   });
 });
 
+// ⑦(사용자 답 2026-10-03 「추천대로」): kbd 단축키 범례(표 힌트 줄 — 04.6-12 넘김)는 「긴 설명」 검사에서 뺀다. 견적 줄이 있어야 범례가 그려지므로 수집기에 끼워 넣은 문단으로 잰다.
+test("카나리 — kbd 단축키 범례 문단은 긴 설명 검사에서 빠지고 같은 길이의 일반 문단은 잡힌다", async ({ page }) => {
+  const fixtures = await createScreenFixtures();
+  await loginScreenAccount(page, fixtures, "sysadmin");
+  await page.goto("/account");
+  await page.evaluate(() => {
+    const main = document.querySelector("main") ?? document.body;
+    const legend = document.createElement("p");
+    legend.innerHTML = "<kbd>Enter</kbd> 아래 칸 이동 · <kbd>Tab</kbd> 오른쪽 칸 이동 · <kbd>Ctrl</kbd>+<kbd>Z</kbd> 되돌리기 · 범례 문단";
+    const plain = document.createElement("p");
+    plain.textContent = "이 문단은 단축키 범례가 아니라 길게 늘어놓은 설명 문장이라 안내 문구 최소 규칙에 걸려야 합니다";
+    main.append(legend, plain);
+  });
+  const snapshot = await page.evaluate(collectPrinciplesSnapshot, PRINCIPLE_SELECTORS);
+  expect(snapshot.prose.some((text) => text.includes("아래 칸 이동"))).toBe(false);
+  expect(snapshot.prose.some((text) => text.startsWith("이 문단은 단축키 범례가 아니라"))).toBe(true);
+});
+
 // DR2 A — `.planning/phases/04.6-a/04.6-ANSWERS.md` (2026-10-01 답, 커밋 257e5ea2, 사용자 원문 「전부 추천대로」):
 // 「그해 확정 전엔 「확정」이 1차, 확정 뒤엔 「추가」가 1차」. 확정 상태는 전역 DB 상태이고 `holidays.spec.ts`가 다음 해 확정을 되돌리며 병렬로 돈다 —
 // 그래서 이 단언은 상태를 바꾸지 않고, 화면이 보인 상태(확정 버튼 유무)에 맞는 1차인지를 같은 순간의 DOM으로 가른다(두 해 상태를 만드는 단언은 holidays.spec.ts 몫).

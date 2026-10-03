@@ -63,7 +63,8 @@ export function collectPrinciplesSnapshot(selectors: PrincipleSelectors): Screen
   if (bg.length < 3 || (bg.length === 4 && bg[3] === 0)) bg = [255, 255, 255];
   const subtitle = selectors.subtitle ? main.querySelector(selectors.subtitle) : null;
   const prose = Array.from(main.querySelectorAll("p"))
-    .filter((p) => visible(p) && !p.closest('[role="alert"], [role="status"]'))
+    // kbd 단축키 범례(표 힌트 줄)는 설명 문단이 아니다 — 사용자 답 2026-10-03 ⑦ 「kbd 범례 검사 제외」.
+    .filter((p) => visible(p) && !p.closest('[role="alert"], [role="status"]') && p.querySelector("kbd") === null)
     .map((p) => (p.textContent ?? "").trim())
     .filter(Boolean);
   const rowActionStyles = Array.from(main.querySelectorAll("td"))

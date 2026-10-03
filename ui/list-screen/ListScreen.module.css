@@ -61,6 +61,14 @@
   white-space: nowrap;
 }
 
+/* 폰(<700) 목록 머리 1차 높이 44 — 사용자 결정 ② 「행동 버튼 44」(2026-10-03, 카드 답 2026-10-03 20:15 KST: 44로 올림). 빈 화면 버튼(ListEmptyAction)과 같은
+   min-height 방식이고 CSS 미디어쿼리뿐이다(JS 폭 판정이면 첫 렌더 CLS). PC는 Button의 --control-h(32) 그대로. */
+@media (max-width: 699.98px) {
+  .primaryAction {
+    min-height: var(--touch-min);
+  }
+}
+
 .pagination {
   display: flex;
   justify-content: center;

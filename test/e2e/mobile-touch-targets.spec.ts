@@ -227,6 +227,41 @@ test.describe("폰 터치 목표 44 (quick 260929-npq · 04-UI-REVIEW 지적 1·
   });
 });
 
+// 사용자 카드 답 2026-10-03 20:15 KST: 44로 올림(04.6-10): 사용자 결정 ② 「행동 버튼 44」 — 폰(<700) 목록 머리 1차는 --touch-min, PC는 --control-h 그대로.
+test.describe("목록 머리 1차 높이 — 폰 44 · PC 변함 없음 (사용자 결정 ②)", () => {
+  async function tokenHeight(page: Page, token: string) {
+    return page.evaluate((name) => {
+      const probe = document.createElement("span");
+      probe.style.cssText = `display:block;height:var(${name});`;
+      document.body.append(probe);
+      const height = probe.getBoundingClientRect().height;
+      probe.remove();
+      return height;
+    }, token);
+  }
+
+  test("폰 375·320 「프로젝트 등록」 높이 = --touch-min, 가로 넘침 없음 · PC 1280·700 = --control-h", async ({ page }) => {
+    await login(page, seed.admin);
+    for (const width of WIDTHS_PHONE) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(listUrl());
+      const primary = page.locator('[data-ui="primary-button"]');
+      await expect(primary).toBeVisible();
+      const b = await box(primary, `프로젝트 등록 @${width}`);
+      expect.soft(b.height, `프로젝트 등록 @${width} 높이`).toBeCloseTo(await tokenHeight(page, "--touch-min"), 1);
+      await expectNoOverflow(page, `목록 머리 1차 @${width}`);
+    }
+    for (const width of WIDTHS_PC) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(listUrl());
+      const primary = page.locator('[data-ui="primary-button"]');
+      await expect(primary).toBeVisible();
+      const b = await box(primary, `프로젝트 등록 @${width}`);
+      expect.soft(b.height, `프로젝트 등록 @${width} 높이`).toBeCloseTo(await tokenHeight(page, "--control-h"), 1);
+    }
+  });
+});
+
 // PR #104 후속 F(2) — DR-104-01(/design-review): 폰 복원 줄 「복원」·「버림」 폭이 글자 폭(32)에 그쳐 44 미만.
 // DR-104-05: 폰 머리 줄 DOM · Tab 순서가 보이는 순서와 달랐다(SYSTEM §10 포커스 순서 = 시각 순서).
 test.describe("PR #104 후속 — 폰 복원 줄 44 (DR-104-01) · 머리 줄 Tab 순서 (DR-104-05)", () => {

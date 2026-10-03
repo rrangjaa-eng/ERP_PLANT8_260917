@@ -4,6 +4,8 @@ import Link from "next/link";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
 import { listCodeItems, CODE_TABLES } from "@/domain/code-tables";
+import { PROJECT_STATUS_WORD, isFixedProjectStatusLabel } from "@/domain/projects/status-word";
+import type { ProjectStatus } from "@/domain/projects/status-transitions";
 import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { SidePanel } from "@/ui/side-panel/SidePanel";
@@ -67,6 +69,12 @@ export default async function CodeTablesPage({
     can(session.viewer, "admin.code-tables", "write"),
     can(session.viewer, "admin.archive", "write"),
   ]);
+  // 04.6-10 — 프로젝트 상태 다섯 값의 이름은 고정 낱말이다(배지·필터와 한 이름). 읽기 전용 글자로 보이고 서버도 변경을 거부한다.
+  const shownItems = items.map((item) =>
+    isFixedProjectStatusLabel(item.tableKey, item.value)
+      ? { ...item, label: PROJECT_STATUS_WORD[item.value as ProjectStatus] }
+      : item,
+  );
   const currentLabel = TABLE_OPTIONS.find((option) => option.key === tableKey)?.label ?? tableKey;
   // 「동작」 열의 유무 — 머리글과 행의 칸이 같은 조건을 쓴다(칸을 비우면서 머리글만 남기면 빈 칸이 생긴다).
   const hasActions = canWrite || canArchive;
@@ -132,12 +140,18 @@ export default async function CodeTablesPage({
             { key: "status", header: "상태", priority: "p1" },
             ...(hasActions ? [{ key: "actions", header: "동작", priority: "p1" as const }] : []),
           ]}
-          rows={items.map((item) => ({
+          rows={shownItems.map((item) => ({
             key: item.id,
             cells: [
               item.value,
               // MAST-04 「수정」 — 보관된 항목은 도메인이 거부하므로 입력칸 대신 글자로 보인다(계급 화면과 같은 결).
-              item.archivedAt || !canWrite ? item.label : <CodeItemLabelInput key={item.id} id={item.id} label={item.label} />,
+              item.archivedAt || !canWrite ? (
+                item.label
+              ) : isFixedProjectStatusLabel(item.tableKey, item.value) ? (
+                <span className={styles.readOnlyText}>{item.label}</span>
+              ) : (
+                <CodeItemLabelInput key={item.id} id={item.id} label={item.label} />
+              ),
               // 04-10(D-93) — 설명. 보관·쓰기 불가는 이름 칸과 같은 결로 글자만(「—」는 값 없음, S14). 입력은 StaticTable P2 칸이라
               // PC 열과 폰 접힌 줄에 한 번씩 그려지고 보이는 쪽은 폭마다 하나다.
               item.archivedAt || !canWrite ? (

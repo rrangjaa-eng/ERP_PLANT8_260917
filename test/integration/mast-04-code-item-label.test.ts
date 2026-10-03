@@ -77,4 +77,22 @@ describe("코드표 항목 이름 수정 (MAST-04 「수정」)", () => {
     });
     await expect(updateCodeItemLabel(SYSTEM_VIEWER, created.id, "   ")).rejects.toThrow();
   });
+
+  it("프로젝트 상태 다섯 값의 이름은 서버가 거부한다 — 화면이 고정 낱말을 쓰므로 (04.6-10)", async () => {
+    const items = await listCodeItems(SYSTEM_VIEWER, TABLE_KEY);
+    const seeded = items.filter((item) => ["bidding", "in_progress", "settling", "completed", "lost"].includes(item.value));
+    expect(seeded).toHaveLength(5);
+    for (const item of seeded) {
+      await expect(updateCodeItemLabel(SYSTEM_VIEWER, item.id, "다른 이름")).rejects.toThrow("프로젝트 상태 이름은 고정");
+    }
+    const after = await listCodeItems(SYSTEM_VIEWER, TABLE_KEY);
+    expect(after.find((item) => item.value === "bidding")?.label).toBe("수주중");
+  });
+
+  it("다른 코드표의 이름은 그대로 고칠 수 있다 (04.6-10 범위 밖 회귀)", async () => {
+    const [evidence] = await listCodeItems(SYSTEM_VIEWER, "evidence_type");
+    expect(evidence).toBeDefined();
+    const updated = await updateCodeItemLabel(SYSTEM_VIEWER, evidence!.id, `${evidence!.label}-수정`);
+    expect(updated?.label).toBe(`${evidence!.label}-수정`);
+  });
 });

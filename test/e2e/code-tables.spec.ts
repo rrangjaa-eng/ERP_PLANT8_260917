@@ -508,3 +508,20 @@ test.describe("코드표 옆 패널 (04.6-15)", () => {
     await expect(dialog).toHaveCount(0);
   });
 });
+
+// 04.6-10 — 프로젝트 상태 이름은 화면 전체에서 고정 낱말이라 코드표에서도 읽기 전용이다(서버도 거부 — 통합 테스트). 설명·정렬·활성 등 다른 열은 그대로다.
+test.describe("코드표 프로젝트 상태 — 이름 읽기 전용 (04.6-10)", () => {
+  test("다섯 값의 이름 칸에 입력이 없고 글자만 있으며, 설명 칸과 증빙 종류 표의 이름 칸은 그대로 편집된다", async ({ page }) => {
+    await loginAsSysadmin(page);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/admin/code-tables?tableKey=project_status");
+    for (const word of ["수주중", "진행", "정산", "완료", "미수주"]) {
+      await expect(page.getByLabel(`${word} 이름`)).toHaveCount(0);
+      await expect(page.getByRole("cell", { name: word, exact: true })).toBeVisible();
+    }
+    await expect(page.getByLabel("수주중 설명").locator("visible=true")).toBeVisible();
+
+    await page.goto("/admin/code-tables?tableKey=evidence_type");
+    await expect(page.locator('input[aria-label$=" 이름"]').first()).toBeVisible();
+  });
+});

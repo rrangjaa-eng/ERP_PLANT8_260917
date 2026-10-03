@@ -5,6 +5,9 @@ import { submitLeave } from "@/domain/leave";
 import { seoulToday } from "@/lib/dates";
 import { leaveWeekdayRange } from "./leave-dates";
 import { documentLabel, documentTitle, loginPage, makePerson, setupLeaveOrg, waitForHydration, type LeaveOrg } from "./leave-org";
+import { isStrict } from "./design-principles";
+import { checkPrinciples } from "./principles-check";
+import { tokenNumber } from "./row-actions-helpers";
 
 // 04.1-05 Task 2(EXP-03 · EXP-04 · S3 · S4 · S6): 문서 화면 행동 줄은 서버 가능 행동 그대로 — 결재자 = 승인 + 반려,
 // 기안자 · 결재 중 = 회수, 기안자 · 반려 = 고쳐 쓰는 폼 + 연차 다시 신청. 반려 · 회수는 ui/confirm-dialog.
@@ -260,3 +263,103 @@ test.describe("연차 문서 화면 행동 줄 (04.1-05)", () => {
   });
 });
 
+
+// 04.6-18 — 연차 세 화면을 스킨 A 틀(ListScreen · DetailScreen + Form page)로. 글자 크기·폭은 리터럴이 아니라 계산된 역할 토큰 값과 비교한다.
+test.describe("연차 목록 · 신청 틀 (04.6-18)", () => {
+  test("목록 — 틀 제목 · 부제 없음 · 머리 1차 하나(연차 신청) · 상태 글자", async ({ browser, baseURL }) => {
+    const today = seoulToday();
+    const range = leaveWeekdayRange(today, { week: 12, weekdays: 1 });
+    const org = await setupLeaveOrg(today);
+    await submit(org, range);
+
+    const page = await loginPage(browser, baseURL, org.drafter);
+    await page.goto("/leave");
+    await expect(page.locator('[data-ui="screen-title"]')).toHaveText("연차");
+    await expect(page.locator('[data-ui="screen-meta"]')).toHaveCount(0);
+    const primary = page.locator('[data-ui="primary-button"]');
+    await expect(primary).toHaveCount(1);
+    await expect(primary).toHaveText("연차 신청");
+    await expect(primary).toHaveAttribute("href", "/leave/new");
+    const row = page.getByRole("table", { name: "내 연차" }).getByRole("row").filter({ hasText: "결재 중" }).last();
+    await expect(row).toContainText("결재 중");
+    await page.context().close();
+  });
+
+  test("빈 목록(DR5 A) — 머리 1차 0개, 빈 화면의 「연차 신청」 하나가 /leave/new로 간다", async ({ browser, baseURL }) => {
+    const today = seoulToday();
+    const org = await setupLeaveOrg(today);
+
+    const page = await loginPage(browser, baseURL, org.drafter);
+    await page.goto("/leave");
+    await expect(page.locator('[data-ui="screen-title"]')).toHaveText("연차");
+    await expect(page.locator('[data-ui="primary-button"]')).toHaveCount(0);
+    const link = page.locator('[data-ui="empty-state"]').getByRole("link", { name: "연차 신청" });
+    await expect(link).toHaveCount(1);
+    await expect(link).toHaveAttribute("href", "/leave/new");
+    await expect(page.getByRole("link", { name: "연차 신청" })).toHaveCount(1);
+    await page.context().close();
+  });
+
+  test("뼈대 — 표 머리글과 같은 열 이름의 TableSkeleton", async ({ browser, baseURL }) => {
+    const today = seoulToday();
+    const range = leaveWeekdayRange(today, { week: 12, weekdays: 1 });
+    const org = await setupLeaveOrg(today);
+    await submit(org, range);
+
+    const page = await loginPage(browser, baseURL, org.drafter);
+    await page.goto("/leave");
+    const headers = await page.locator("main table thead th").allInnerTexts();
+    await page.goto("/account");
+    // 뼈대(loading 틀)는 라우터가 미리 가져온 경우에만 응답이 늦는 동안 보인다 — 먼저 미리 가져오고, 그다음에 응답을 늦춘다.
+    const prefetched = page.waitForResponse((response) => response.url().includes("/leave") && response.request().headers()["next-router-prefetch"] === "1");
+    await page.evaluate(() => (window as unknown as { next: { router: { prefetch(url: string): void } } }).next.router.prefetch("/leave"));
+    await prefetched;
+    await page.waitForLoadState("networkidle");
+    await page.route(
+      (url) => url.pathname === "/leave",
+      async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+        await route.continue();
+      },
+    );
+    await page.evaluate(() => (window as unknown as { next: { router: { push(url: string): void } } }).next.router.push("/leave"));
+    const skeleton = page.locator('[data-ui="table-skeleton"]');
+    await expect.poll(async () => (await skeleton.count()) > 0 && parseFloat(await skeleton.first().evaluate((element) => getComputedStyle(element).opacity)) > 0).toBe(true);
+    expect(await skeleton.locator("th").allInnerTexts()).toEqual(headers.slice(0, await skeleton.locator("th").count()));
+    expect(await skeleton.locator("th").count()).toBeGreaterThan(0);
+    await expect(page.locator('[data-ui="screen-title"]:visible')).toHaveText("연차");
+    await expect(page.locator('[data-ui="primary-button"]')).toHaveCount(0);
+    await page.context().close();
+  });
+
+  test("신청 — 틀 제목 · 폼은 --form-max 이하 · 라벨 왼쪽 · 옆 패널 아님 · 1차 하나", async ({ browser, baseURL }) => {
+    const today = seoulToday();
+    const org = await setupLeaveOrg(today);
+
+    const page = await loginPage(browser, baseURL, org.drafter);
+    await page.goto("/leave/new");
+    await expect(page.locator('[data-ui="screen-title"]')).toHaveText("연차 신청");
+    await expect(page.locator('[data-ui="screen-meta"]')).toHaveCount(0);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.locator('[data-ui="primary-button"]')).toHaveCount(1);
+    const formMax = await tokenNumber(page, "--form-max");
+    const form = await page.locator("form#leave-form").boundingBox();
+    expect(form?.width ?? 0).toBeLessThanOrEqual(formMax + 0.5);
+    const [label, control] = [await page.locator('label[for="kind"]').boundingBox(), await page.locator("select#kind").boundingBox()];
+    if (!label || !control) throw new Error("라벨 · 종류 칸 상자 없음");
+    expect(label.x + label.width).toBeLessThanOrEqual(control.x);
+    expect(Math.abs(label.y - control.y)).toBeLessThan(control.height);
+    await page.context().close();
+  });
+
+  test("화면 사용성 원칙(막는 모드) — 연차", async ({ browser, baseURL }) => {
+    const today = seoulToday();
+    const range = leaveWeekdayRange(today, { week: 13, weekdays: 1 });
+    const org = await setupLeaveOrg(today);
+    const doc = await submit(org, range);
+
+    const page = await loginPage(browser, baseURL, org.drafter);
+    await checkPrinciples(page, ["/leave", "/leave/new", `/leave/${doc.leaveId}`], { strict: isStrict(process.env.DESIGN_PRINCIPLES_STRICT) });
+    await page.context().close();
+  });
+});

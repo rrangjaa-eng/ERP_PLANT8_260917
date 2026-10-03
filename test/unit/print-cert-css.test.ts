@@ -44,10 +44,12 @@ describe("인쇄 라우트 404 변종(L3 — UI-SPEC 296 「§6-9 404 문구를 
     expect(source).toMatch(/<main className=\{styles\.root\}>/);
   });
 
-  it("문서 제목은 성공 화면(인쇄 시트)만 정한다 — page.tsx가 제목을 내보내지 않는다", () => {
+  it("문서 제목은 성공 화면(인쇄 가능)만 정한다 — 레이아웃 서버 메타데이터가 내고 page.tsx · 클라이언트 효과는 내지 않는다", () => {
     const page = readFileSync(resolve(DIR, "page.tsx"), "utf8");
     expect(page).not.toMatch(/export const metadata|generateMetadata/);
     const sheet = readFileSync(resolve(DIR, "print-sheet.tsx"), "utf8");
-    expect(sheet).toContain('document.title = "확인증 인쇄"');
+    expect(sheet).not.toContain("document.title");
+    const layout = readFileSync(resolve(DIR, "layout.tsx"), "utf8");
+    expect(layout).toMatch(/=== true \? \{ title: "확인증 인쇄" \} : \{\}/);
   });
 });

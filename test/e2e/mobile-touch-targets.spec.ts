@@ -16,10 +16,11 @@ const TOUCH_MIN = 44;
 const WIDTHS_PHONE = [375, 320] as const;
 const WIDTHS_PC = [1280, 700] as const;
 
-// PC 정렬 머리글 링크 높이(수정 전 실측 · 가드). 폭 1280·700 각각.
+// PC 정렬 머리글 링크 높이(가드). 폭 1280·700 각각. 스킨 A(04.6)가 표 머리글 글자를 12 → 13px(--text-aux)로 키워
+// 링크 높이가 12 × 1.6 = 19.19 → 13 × 1.6 = 20.8이 됐다(줄 높이 --lh-body 그대로). 44 규칙이 PC로 새면 이 값이 커진다.
 const PC_SORT_LINK_HEIGHT: Record<(typeof WIDTHS_PC)[number], { name: number; quote: number }> = {
-  1280: { name: 19.19, quote: 19.19 },
-  700: { name: 19.19, quote: 19.19 },
+  1280: { name: 20.8, quote: 20.8 },
+  700: { name: 20.8, quote: 20.8 },
 };
 
 type Credentials = { email: string; password: string };
@@ -256,7 +257,7 @@ test.describe("PR #104 후속 — 폰 복원 줄 44 (DR-104-01) · 머리 줄 Ta
     }
   });
 
-  test("DR-104-05 — 폰 머리 줄 보이는 순서 = Tab 순서(상태 바꾸기 → 일괄 저장 → 더보기 → 복사해 새 차수 → 프로젝트 복사), PC 1280 순서는 그대로", async ({ page }) => {
+  test("DR-104-05 — 폰 머리 줄 보이는 순서 = Tab 순서(상태 바꾸기 → 더보기 → 복사해 새 차수 → 프로젝트 복사 → 일괄 저장, 1차는 늘 마지막 · D4), PC 1280 순서는 그대로", async ({ page }) => {
     await login(page, seed.admin);
     await page.setViewportSize({ width: 375, height: 800 });
     await page.goto(`/projects/${seed.projectId}`);
@@ -277,20 +278,20 @@ test.describe("PR #104 후속 — 폰 복원 줄 44 (DR-104-01) · 머리 줄 Ta
       await page.setViewportSize({ width, height: 800 });
       const named = [
         ["상태 바꾸기", status],
-        ["일괄 저장", save],
         ["더보기", more],
         ["복사해 새 차수", copyRevision],
         ["프로젝트 복사", copyProject],
+        ["일괄 저장", save],
       ] as const;
       const placed = await Promise.all(named.map(async ([name, locator]) => ({ name, b: await box(locator, `${name} @${width}`) })));
       // 보이는 순서 — 위에서 아래, 같은 줄이면 왼쪽에서 오른쪽(반올림한 y, x). RED에서도 통과해야 하는 가드.
       const visual = placed.sort((a, b) => Math.round(a.b.y) - Math.round(b.b.y) || a.b.x - b.b.x).map((item) => item.name);
-      expect(visual, `보이는 순서 @${width}`).toEqual(["상태 바꾸기", "일괄 저장", "더보기", "복사해 새 차수", "프로젝트 복사"]);
+      expect(visual, `보이는 순서 @${width}`).toEqual(["상태 바꾸기", "더보기", "복사해 새 차수", "프로젝트 복사", "일괄 저장"]);
     }
 
     await page.setViewportSize({ width: 375, height: 800 });
     await status.focus();
-    for (const [name, locator] of [["일괄 저장", save], ["더보기", more], ["복사해 새 차수", copyRevision], ["프로젝트 복사", copyProject]] as const) {
+    for (const [name, locator] of [["더보기", more], ["복사해 새 차수", copyRevision], ["프로젝트 복사", copyProject], ["일괄 저장", save]] as const) {
       await page.keyboard.press("Tab");
       await expect(locator, `폰 Tab → ${name}`).toBeFocused();
     }

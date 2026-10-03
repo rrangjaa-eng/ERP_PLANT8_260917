@@ -230,7 +230,7 @@
 }
 
 /* LOADING — 빈 A4 틀 + 상단 진행 바(글자 · 스피너 없음). 지연 표시: 처음 opacity 0, 300ms 뒤 한 번만 1로(길이 0
-   키프레임) — 300ms 안에 끝나면 아무것도 보이지 않는다(SYSTEM §7-7, approvals/loading.module.css 선례). */
+   키프레임) — 300ms 안에 끝나면 아무것도 보이지 않는다(SYSTEM §7-7, ui/table/TableSkeleton.module.css 선례). */
 @keyframes appear {
   to {
     opacity: 1;

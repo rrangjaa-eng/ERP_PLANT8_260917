@@ -81,7 +81,9 @@ jobs:
           export CODEX_REVIEW_DIR="$GITHUB_WORKSPACE/safari-capture/chromium"
           mkdir -p "$CODEX_REVIEW_DIR"
           pnpm exec playwright test -c playwright.safari-capture.config.ts
+      # 크롬 캡처가 실패해도 사파리 캡처는 돌린다 — 어느 쪽에서만 깨지는지가 보고 싶은 결과다.
       - name: 사파리(WebKit) 캡처
+        if: ${{ !cancelled() }}
         env:
           CAP_BROWSER: webkit
           CODEX_REVIEW_ROUTES: ${{ inputs.routes }}

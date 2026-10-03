@@ -81,6 +81,30 @@ export type SidePanelProps = SidePanelCommon &
     | { /** 제어 패널 — 닫기 요청을 호출부에 넘긴다. 호출부가 열린 동안만 렌더한다. */ onClose: () => void; closeHref?: undefined }
   );
 
+// 화면 제목으로 보낸 포커스는 제목이 갈아 끼워져도 이어진다 — 등록 뒤 상세로 이동할 때 첫 그리기는 `loading.tsx` 뼈대(제목이 하나 있다)이고
+// 본문 제목이 뒤따라 같은 자리를 바꾼다. 포커스를 받은 제목이 사라지고 포커스가 갈 곳 없이 body에 있으면 새 제목으로 한 번 옮긴다.
+const TITLE_FOCUS_WINDOW_MS = 5000;
+
+function focusScreenTitle(): void {
+  let current = document.querySelector<HTMLElement>('[data-ui="screen-title"]');
+  current?.focus();
+  const observer = new MutationObserver(() => {
+    if (current?.isConnected) return;
+    const active = document.activeElement;
+    if (active && active !== document.body) {
+      observer.disconnect();
+      return;
+    }
+    const next = document.querySelector<HTMLElement>('[data-ui="screen-title"]');
+    if (!next) return;
+    current = next;
+    next.focus();
+    observer.disconnect();
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+  window.setTimeout(() => observer.disconnect(), TITLE_FOCUS_WINDOW_MS);
+}
+
 export function SidePanel(props: SidePanelProps) {
   const { title, returnFocus = true, children } = props;
   const router = useRouter();
@@ -117,7 +141,7 @@ export function SidePanel(props: SidePanelProps) {
       if (!returnFocusRef.current || skipReturnFocusRef.current) return;
       // 연 요소가 아직 문서에 있으면 거기로, 없으면 화면 제목으로(직접 URL로 들어온 패널 · 연 행이 사라진 경우).
       if (opener && document.contains(opener) && opener !== document.body) opener.focus();
-      else document.querySelector<HTMLElement>('[data-ui="screen-title"]')?.focus();
+      else focusScreenTitle();
     };
   }, []);
 

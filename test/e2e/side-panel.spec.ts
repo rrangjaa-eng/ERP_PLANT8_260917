@@ -919,9 +919,15 @@ test.describe("합본 뒤 — 프로젝트 패널 (04.6-10)", { tag: "@wave-merg
     await openProjectPanel(page);
     const dialog = panel(page);
     await dialog.getByLabel("클라이언트").selectOption({ index: 1 });
-    await dialog.locator("#name").fill(`${PM_PREFIX}-포커스-${randomUUID().slice(0, 8)}`);
+    const projectName = `${PM_PREFIX}-포커스-${randomUUID().slice(0, 8)}`;
+    await dialog.locator("#name").fill(projectName);
     await page.keyboard.press("Control+Enter");
     await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/);
-    await expect(page.locator('[data-ui="screen-title"]')).toBeFocused();
+    // 이동 직후 첫 그리기는 `projects/loading.tsx`의 목록 뼈대(제목 「프로젝트」)이고 상세 제목은 뒤따라 같은 자리를 갈아 끼운다 —
+    // 아무 `screen-title`이나 잡으면 뼈대 제목의 포커스를 보고 통과한다. 상세 본문 제목(프로젝트 이름)이 그려진 뒤에 그 제목을 본다.
+    const detailTitle = page.getByRole("heading", { name: projectName, level: 1 });
+    await expect(detailTitle).toBeVisible();
+    await expect(detailTitle).toHaveAttribute("data-ui", "screen-title");
+    await expect(detailTitle).toBeFocused();
   });
 });

@@ -427,6 +427,8 @@ test.describe("사람 · 조직 · 계급 옆 패널 (04.6-14)", () => {
       { path: "/admin/people/org?new=team", form: "#team-form", select: "#team-org-unit-id" },
     ]) {
       await page.goto(path);
+      // 패널은 수화 뒤에 열린다 — boundingBox()는 기다리지 않아 부하가 큰 묶음에서 null이었다.
+      await expect(page.locator(`${form} ${select}`)).toBeVisible();
       const label = await page.locator(`${form} label[for="${select.slice(1)}"]`).boundingBox();
       const box = await page.locator(`${form} ${select}`).boundingBox();
       const body = await page.locator(`${form} [data-ui="field-row"] input`).first().boundingBox();

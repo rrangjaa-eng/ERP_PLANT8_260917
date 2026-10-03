@@ -1,0 +1,98 @@
+name: safari capture
+
+# 사파리 엔진(Playwright WebKit)과 크롬(Chromium)으로 같은 화면을 4폭 캡처하고 DOM 실측을 남겨 둘의 어긋남을 비교한다.
+# 손으로만 돌린다(workflow_dispatch). 클라우드 세션 컨테이너에는 WebKit이 없어서 여기서 돈다.
+# 읽기 권한만 쓰고, 결과는 아티팩트로만 남긴다.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 캡처할 브랜치·커밋
+        type: string
+        default: main
+      routes:
+        description: 경로 JSON 배열
+        type: string
+        default: '["/account","/approvals","/projects","/admin/people","/admin/people/org","/admin/people/roles","/admin/permissions","/admin/settings","/admin/system-status","/admin/vendors","/admin/corp-cards","/admin/field-definitions","/admin/holidays?year=2026","/admin/code-tables?tableKey=project_status"]'
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    # 설치(브라우저 둘)와 프로덕션 빌드, 두 번의 캡처를 합쳐도 한 시간 안쪽이다. 멈추면 기본 360분을 기다리므로 끊는다.
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: erp
+          POSTGRES_PASSWORD: erp
+          POSTGRES_DB: erp_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://erp:erp@127.0.0.1:5432/erp_test
+      BETTER_AUTH_URL: http://127.0.0.1:3100
+      APP_ENV: local
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: echo "BETTER_AUTH_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+      - timeout-minutes: 15
+        run: pnpm exec playwright install --with-deps chromium webkit
+      # 앱 코드는 ref 그대로 두고, 브라우저만 갈아 끼우는 임시 설정을 런타임에 쓴다(커밋하지 않는다).
+      - name: 임시 설정 쓰기
+        run: |
+          cat > playwright.safari-capture.config.ts <<'CONFIG'
+          import { defineConfig } from "@playwright/test";
+          import base from "./playwright.codex-design.config";
+
+          export default defineConfig({
+            ...base,
+            projects: [
+              {
+                name: process.env.CAP_BROWSER ?? "chromium",
+                use: { browserName: (process.env.CAP_BROWSER ?? "chromium") as "chromium" | "webkit" },
+              },
+            ],
+          });
+          CONFIG
+      - name: 크롬 캡처
+        env:
+          CAP_BROWSER: chromium
+          CODEX_REVIEW_ROUTES: ${{ inputs.routes }}
+        run: |
+          export CODEX_REVIEW_DIR="$GITHUB_WORKSPACE/safari-capture/chromium"
+          mkdir -p "$CODEX_REVIEW_DIR"
+          pnpm exec playwright test -c playwright.safari-capture.config.ts
+      - name: 사파리(WebKit) 캡처
+        env:
+          CAP_BROWSER: webkit
+          CODEX_REVIEW_ROUTES: ${{ inputs.routes }}
+        run: |
+          export CODEX_REVIEW_DIR="$GITHUB_WORKSPACE/safari-capture/webkit"
+          mkdir -p "$CODEX_REVIEW_DIR"
+          pnpm exec playwright test -c playwright.safari-capture.config.ts
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: safari-capture
+          path: safari-capture/**
+          retention-days: 7
+          if-no-files-found: warn

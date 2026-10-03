@@ -1,7 +1,8 @@
 import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
-import { project, type DtoSpec } from "@/domain/permissions/project";
+import { projectMany, type DtoSpec } from "@/domain/permissions/project";
+import { visible } from "@/domain/permissions/visible";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import {
   ARCHIVABLE_TABLES,
@@ -180,6 +181,9 @@ export async function listArchive(viewer: Viewer, deps?: Partial<ListArchiveDeps
   if (!(await canFn(viewer, ARCHIVE_MENU, "view"))) {
     throw new ForbiddenError("보관함 열람 권한 없음");
   }
+  // DEF-1 — 보관함 정보(archive.value)를 못 보면 행마다 빈 투영이라 화면이 깨지고 행 수가 샌다 — 조회 없이 빈 목록(평소 빈 상태).
+  const showInfo = await visible(viewer, ARCHIVE_INFO_ITEM);
+  if (!showInfo) return [];
 
   const listFn = deps?.listArchivedAcrossEntities ?? defaultListArchivedAcrossEntities;
   // 묶음 ④ /review R3 — 리저브 줄은 리저브를 볼 수 있는 사람에게만(pnl 보기 + reserve.amount, B-15).
@@ -206,13 +210,13 @@ export async function listArchive(viewer: Viewer, deps?: Partial<ListArchiveDeps
     ),
   );
 
-  return Promise.all(
-    rows.map((row) =>
-      project(
-        viewer,
-        { ...row, archivedBy: row.archivedBy ? (namesById.get(row.archivedBy) ?? row.archivedBy) : null, restorable: isRestorable(row) },
-        ARCHIVE_ENTRY_DTO_SPEC,
-      ),
-    ),
-  ) as Promise<ArchiveEntryDto[]>;
+  // 조회 중 archive.value가 바뀌어도 행 투영이 빈 객체가 되지 않게 처음 판정(showInfo)을 그대로 쓴다.
+  const rowsWithExtras = rows.map((row) => ({
+    ...row,
+    archivedBy: row.archivedBy ? (namesById.get(row.archivedBy) ?? row.archivedBy) : null,
+    restorable: isRestorable(row),
+  }));
+  return projectMany(viewer, rowsWithExtras, ARCHIVE_ENTRY_DTO_SPEC, {
+    visible: async (v, item) => (item === ARCHIVE_INFO_ITEM ? showInfo : visible(v, item)),
+  }) as Promise<ArchiveEntryDto[]>;
 }

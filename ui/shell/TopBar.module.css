@@ -175,9 +175,23 @@
   background: var(--surface-base);
   border: var(--line-w) solid var(--border-surface);
   border-radius: var(--radius-surface);
-  box-shadow: var(--shadow-surface);
+  box-shadow: var(--shadow-pop);
   color: var(--text-strong);
   z-index: var(--z-modal);
+  animation: menu-in var(--dur-sheet) var(--ease-sheet);
+}
+
+/* SYSTEM §5 열림 모션(UQ-4 후보 8) — 페이드 + 4px 이동. 줄이기 설정이면 --dur-sheet가 0.01ms. */
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--s-1));
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .userMenuItem {

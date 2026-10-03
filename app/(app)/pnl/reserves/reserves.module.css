@@ -32,6 +32,7 @@
 .cellInputNumeric:focus-visible {
   outline: var(--focus-w) solid var(--focus);
   outline-offset: var(--focus-offset);
+  border-radius: var(--radius-control);
 }
 
 .cellEditError {

@@ -76,6 +76,7 @@
 .cellInputNumeric:focus-visible {
   outline: var(--focus-w) solid var(--focus);
   outline-offset: var(--focus-offset);
+  border-radius: var(--radius-control);
 }
 
 /* 합계 줄의 면 · 위 선은 ui/table(.table tfoot td)이 정한다 — 이 칸은 여백과 글자만. */

@@ -55,7 +55,8 @@ test.describe("프로젝트 목록 — 팀 발령 없는 사람의 빈 목록", 
       page
         .getByText("등록된 프로젝트가 없습니다")
         .or(page.getByText(/년에 걸친 프로젝트가 없습니다$/))
-        .or(page.locator("main table:not([aria-hidden='true'])")),
+        // 로딩 뼈대 표(`TableSkeleton`)는 aria-hidden 래퍼 안에 있어 표 자신에는 aria-hidden이 없다 — 래퍼 안의 표를 뺀다(빈 DB에서 스트리밍 중 뼈대와 빈 문구가 함께 잡혀 strict 위반).
+        .or(page.locator("main table:not([aria-hidden='true'] table)")),
     ).toBeVisible();
     await expect(page.getByRole("link", { name: "프로젝트 등록" })).toHaveCount(0);
   });
@@ -942,7 +943,8 @@ test.describe("프로젝트 목록 — 필터 줄 검토·감사 반영 (04-48)"
     await login(page, pm);
     await withLongTeam(async () => {
       await page.setViewportSize({ width: 320, height: 640 });
-      await page.goto("/projects");
+      // 표 내용은 이 시험이 재는 것이 아니다 — 다른 스펙이 남긴 프로젝트(8자리 금액 + 끊기지 않는 ID 이름)가 표 최소 폭을 키워 문서 가로 스크롤을 만들었다(웨이브 6 합본, 26 N-1 +8). 없는 검색어로 표 없는 빈 목록에서 필터 줄만 잰다.
+      await page.goto(`/projects?q=${randomUUID()}`);
       const toggle = page.getByRole("button", { name: "필터", exact: true });
       await expect(toggle).toBeVisible();
       await toggle.click();

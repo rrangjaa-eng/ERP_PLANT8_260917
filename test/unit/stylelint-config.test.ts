@@ -325,6 +325,15 @@ describe("stylelint: 이관 전 표시 래칫(공통 §3)", () => {
     expect(files.length).toBeGreaterThanOrEqual(40);
   });
 
+  // SC 1 끝 상태 — CSS 이관 전 표시는 저장소에 하나도 없다(04.6-28). 다시 생기면 이 단언이 빨개진다.
+  it("저장소에 CSS 이관 전 표시 파일이 0개다", () => {
+    expect(markedFiles, `표시가 남은 파일: ${markedFiles.join(", ")}`).toEqual([]);
+  });
+
+  it("기본 설정에 표시 파일용 옛 D-20 override가 붙지 않는다 — overrides 수가 createConfig([])와 같다(R3)", () => {
+    expect(config.overrides).toHaveLength(createConfig([]).overrides.length);
+  });
+
   it("표시 문구는 공통 §3 형식 하나뿐이다", () => {
     for (const file of files) {
       const first = readFileSync(resolve(ROOT, file), "utf8").split("\n")[0] ?? "";

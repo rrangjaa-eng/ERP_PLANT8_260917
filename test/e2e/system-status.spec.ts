@@ -295,7 +295,7 @@ test.describe.serial("상태 화면 「복원 리허설」 행 (04.4-05, D8-08)"
   });
 });
 
-// 04.6-20 · R11 · 공통 §10: 옮긴 세 화면의 화면 사용성 원칙(막는 모드) — 경고 0.
+// 04.6-20 · R11 · 공통 §10: 옮긴 세 화면의 원칙 점검 — 내 계정·시스템 상태는 경고 0.
 test("화면 사용성 원칙(막는 모드) — 내 계정·설정·시스템 상태", async ({ page }) => {
   await openStatusAsAdmin(page);
   const strict = isStrict(process.env.DESIGN_PRINCIPLES_STRICT);

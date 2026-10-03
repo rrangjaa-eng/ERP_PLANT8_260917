@@ -82,6 +82,10 @@ th.cell {
   min-width: 10ch;
 }
 
+.nowrapHeader {
+  white-space: nowrap;
+}
+
 .headerCell:first-child,
 .cell:first-child {
   padding-left: var(--s-4);

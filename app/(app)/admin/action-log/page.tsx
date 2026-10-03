@@ -82,13 +82,13 @@ export default async function ActionLogPage({ searchParams }: { searchParams: Pr
   }));
 
   const columns: StaticTableColumn[] = [
-    { key: "occurredAt", header: "발생 시각", priority: "p1" },
-    { key: "actor", header: "행위자", priority: "p2" },
-    { key: "actorRole", header: "행위자 계급", priority: "p2" },
-    { key: "actionType", header: "행동 종류", priority: "p1" },
-    { key: "entity", header: "대상", priority: "p2" },
-    { key: "document", header: "문서", priority: "p2" },
-    { key: "detail", header: "상세", priority: "p2" },
+    { key: "occurredAt", header: "발생 시각", priority: "p1", nowrapHeader: true },
+    { key: "actor", header: "행위자", priority: "p2", nowrapHeader: true },
+    { key: "actorRole", header: "행위자 계급", priority: "p2", nowrapHeader: true },
+    { key: "actionType", header: "행동 종류", priority: "p1", nowrapHeader: true },
+    { key: "entity", header: "대상", priority: "p2", nowrapHeader: true },
+    { key: "document", header: "문서", priority: "p2", nowrapHeader: true },
+    { key: "detail", header: "상세", priority: "p2", nowrapHeader: true },
   ];
 
   // R1 — 서버 페이지는 클라이언트 표에 함수 prop을 넘기지 않는다. 칸은 서버에서 미리 렌더한 노드만 넘긴다.

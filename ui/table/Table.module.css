@@ -25,6 +25,8 @@
   font-size: var(--text-aux);
   font-weight: var(--fw-medium);
   text-align: left;
+  /* body의 overflow-wrap: anywhere는 min-content를 한 글자로 줄여 좁은 표가 머리글 낱말을 쪼갠다(04.6 W1-4 C4·C5) — 머리글은 낱말을 지킨다. */
+  overflow-wrap: normal;
 }
 
 /* 04-18(§6-1) — 정렬 머리글 링크: 머리글 글자 색 · 크기 그대로, 밑줄은 hover · focus에서만(행동 링크처럼 보이지 않게). */
@@ -75,6 +77,9 @@
 th.cell {
   font-weight: var(--fw-regular);
   text-align: left;
+  /* body의 overflow-wrap: anywhere 아래서 다른 칸(nowrap 상태 · 동작)이 폭을 다 가져가면 이름 칸이 한 글자 폭까지 줄어 낱말이 쪼개진다
+     (04.6 W1-4 B1, 320 이름 칸 58px). 바닥 폭 10ch를 두어 짧은 낱말은 지키고, 매우 긴 이름은 그 폭에서 줄바꿈해 가로 넘침을 만들지 않는다. */
+  min-width: 10ch;
 }
 
 .headerCell:first-child,

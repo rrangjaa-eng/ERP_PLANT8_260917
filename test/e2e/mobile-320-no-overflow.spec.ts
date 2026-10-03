@@ -64,14 +64,16 @@ function expectMeasured(label: string, { scrollWidth, clientWidth, culprits, scr
 }
 
 // §7-3 — 폰의 접힌 줄은 자기 행에 붙는다: 주 행 아래에는 선이 없고 접힌 줄 아래에 선이 있다.
-async function expectFoldAttached(page: Page, rowText: string): Promise<void> {
+// SYSTEM §2-4(848행) — 마지막 행 아래 선은 없다(표 면 테두리가 닫는다). 행마다 제 tbody라 마지막 행의 접힌 줄은 선이 0이다.
+async function expectFoldAttached(page: Page, rowText: string, { last }: { last: boolean }): Promise<void> {
   const mainRow = page.locator("tr", { hasText: rowText });
   const fold = mainRow.locator("xpath=following-sibling::tr[1]");
   await expect(fold).toBeVisible();
   const mainBorder = await mainRow.locator("td").first().evaluate((td) => getComputedStyle(td).borderBottomWidth);
   const foldBorder = await fold.locator("td").first().evaluate((td) => getComputedStyle(td).borderBottomWidth);
   expect.soft(mainBorder, `${rowText} 주 행 아래 선`).toBe("0px");
-  expect.soft(foldBorder, `${rowText} 접힌 줄 아래 선`).not.toBe("0px");
+  if (last) expect.soft(foldBorder, `${rowText} 마지막 행 접힌 줄 아래 선 없음`).toBe("0px");
+  else expect.soft(foldBorder, `${rowText} 접힌 줄 아래 선`).not.toBe("0px");
 }
 
 async function expectNoOverflow(page: Page, url: string): Promise<void> {
@@ -177,7 +179,7 @@ test.describe("폭 320 — 어느 화면도 가로로 넘치지 않는다", () =
       const vendorRow = page.locator("tr", { hasText: vendor.name });
       await expect(vendorRow.locator("xpath=following-sibling::tr[1]")).toContainText("123-45-67890");
       await expect(page.getByRole("columnheader", { name: "사업자 번호" })).toBeHidden();
-      await expectFoldAttached(page, vendor.name);
+      await expectFoldAttached(page, vendor.name, { last: false });
 
       // 번호 보기가 실패하면 칸 안에 오류 한 줄이 뜬다 — 그 줄도 넘치지 않는다
       // (자리 표시 암호문이라 복호화가 실패한다).
@@ -241,7 +243,8 @@ test.describe("폭 320 — 어느 화면도 가로로 넘치지 않는다", () =
       await expectNoOverflow(page, "/projects");
       // 목록은 50건씩이라 다른 스펙이 만든 프로젝트에 밀려 첫 쪽에 없을 수 있다 — 이름으로 좁혀서 본다.
       await expectNoOverflow(page, `/projects?q=${encodeURIComponent(projectName)}`);
-      await expectFoldAttached(page, projectName);
+      // 이름으로 좁힌 목록은 한 줄이라 마지막 행이다 — SYSTEM §2-4 「마지막 행 선 없음」(04.6-07 `.table tbody:last-of-type`).
+      await expectFoldAttached(page, projectName, { last: true });
     } finally {
       await setVendorArchived(SYSTEM_VIEWER, vendor.id, true);
     }

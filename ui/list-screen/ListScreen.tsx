@@ -10,7 +10,7 @@ import styles from "./ListScreen.module.css";
 export type ListScreenProps = {
   title: string;
   /** 필터 줄 오른쪽 끝의 1차 — 패널을 여는 링크(`?new=1`). 최대 하나. */
-  primaryAction?: { label: string; href: string };
+  primaryAction?: { label: string; href: string; /** 폰(<700)에서 숨김 — 폰은 읽기만인 화면(2026-10-03 사용자 결정). */ phoneHidden?: boolean };
   /** 필터 줄 왼쪽. */
   filters?: ReactNode;
   /** 필터 줄 아래 합계 면(`--surface-base` 1px 면). */
@@ -45,7 +45,7 @@ export function ListScreen({ title, primaryAction, filters, summary, empty, chil
               href={headAction.href}
               scroll={false}
               data-ui="primary-button"
-              className={`${buttonStyles.btn} ${buttonStyles.primary}`}
+              className={`${buttonStyles.btn} ${buttonStyles.primary}${headAction.phoneHidden ? ` ${styles.phoneHidden}` : ""}`}
             >
               {headAction.label}
               <LinkPending />

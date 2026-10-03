@@ -16,6 +16,8 @@ import { DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { StaticTable } from "@/ui/table/StaticTable";
 import { RowActions } from "@/ui/row-actions/RowActions";
+import { PcOnly } from "../../pc-only";
+import { usePhoneWidth } from "@/app/(app)/leave/use-phone-width";
 import styles from "../people.module.css";
 
 export type RoleRowView = {
@@ -38,6 +40,8 @@ function RoleNameCell({ role }: { role: RoleRowView }) {
   const [name, setName] = useState(role.name);
   const { execute: executeRename, result: renameResult } =
     useAction(renameRoleAction);
+  // 폰은 읽기만(사용자 결정 2026-10-03 14:57 KST 카드) — 입력 칸 없이 값만.
+  if (usePhoneWidth()) return <>{role.name}</>;
   return (
     <>
       <input
@@ -65,6 +69,7 @@ function RoleWorkScopeCell({ role }: { role: RoleRowView }) {
       onError: () => setWorkScope(role.workScope),
     },
   );
+  if (usePhoneWidth()) return <>{role.workScope === "company" ? "전사" : "자기 팀"}</>;
   return (
     <>
       <select
@@ -102,15 +107,17 @@ function RoleActionsCell({
           isProtected가 서버에서도 거부한다). 쓰기 권한이 없는 계급에도
           렌더하지 않는다. */}
       {!role.isSeed && !role.archivedAt && canArchive ? (
-        <RowActions>
-          <DeleteToArchive
-            name={role.name}
-            onArchive={async () => {
-              const result = await archiveRoleAction({ id: role.id });
-              if (result?.serverError) throw new Error(result.serverError);
-            }}
-          />
-        </RowActions>
+        <PcOnly>
+          <RowActions>
+            <DeleteToArchive
+              name={role.name}
+              onArchive={async () => {
+                const result = await archiveRoleAction({ id: role.id });
+                if (result?.serverError) throw new Error(result.serverError);
+              }}
+            />
+          </RowActions>
+        </PcOnly>
       ) : null}
     </>
   );

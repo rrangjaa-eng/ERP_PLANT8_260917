@@ -5,6 +5,7 @@ import { useAction } from "next-safe-action/hooks";
 import { setEvidenceTypeTaxRuleAction } from "./actions";
 import { TextField } from "@/ui/input/TextField";
 import { parseNumberInput } from "@/lib/format-number";
+import { usePhoneWidth } from "@/app/(app)/leave/use-phone-width";
 import styles from "./code-tables.module.css";
 
 type RuleKind = "none" | "vat_surcharge" | "withholding" | "company_borne";
@@ -51,6 +52,24 @@ export function EvidenceTypeFields({ itemId, initialValue }: { itemId: string; i
   function save(next: TaxRuleValue) {
     setValue(next);
     execute({ id: itemId, taxRule: next });
+  }
+
+  // 폰은 읽기만(사용자 결정 2026-10-03 14:57 KST 카드) — 선택 상자 · 입력 칸 없이 값만 한 줄.
+  if (usePhoneWidth()) {
+    const labelOf = (options: { value: string | number; label: string }[], current: string | number | undefined) =>
+      options.find((option) => option.value === current)?.label;
+    const parts = [
+      labelOf(RULE_KIND_OPTIONS, value.ruleKind),
+      ...(value.ruleKind === "none"
+        ? []
+        : [
+            `${value.roundingUnit ?? 1}원`,
+            labelOf(ROUNDING_METHOD_OPTIONS, value.roundingMethod ?? "round"),
+            `${(value.minWithholdingAmount ?? 0).toLocaleString("ko-KR")}원`,
+            labelOf(BASIS_DATE_OPTIONS, value.basisDate ?? "payment_date"),
+          ]),
+    ];
+    return <div className={styles.taxRuleSection}>{parts.join(" · ")}</div>;
   }
 
   return (

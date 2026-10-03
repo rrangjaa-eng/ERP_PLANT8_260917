@@ -18,6 +18,7 @@ import { TextField } from "@/ui/input/TextField";
 import { RowAction } from "@/ui/row-actions/RowActions";
 import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
 import { DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
+import { usePhoneWidth } from "@/app/(app)/leave/use-phone-width";
 import styles from "./code-tables.module.css";
 
 function getStringField(formData: FormData, key: string): string {
@@ -106,6 +107,9 @@ export function CodeItemLabelInput({ id, label }: { id: string; label: string })
 
   const errorId = `code-item-label-error-${id}`;
 
+  // 폰은 읽기만(사용자 결정 2026-10-03 14:57 KST 카드) — 입력 칸 없이 값만.
+  if (usePhoneWidth()) return <>{label}</>;
+
   return (
     <>
       <input
@@ -158,6 +162,7 @@ export function CodeItemDescriptionInput({
   const instanceId = useId();
   const errorId = `code-item-description-error-${id}-${instanceId}`;
   const countId = `code-item-description-count-${id}-${instanceId}`;
+  if (usePhoneWidth()) return <span className={styles.readOnlyText}>{description ?? "—"}</span>;
   const overLimit = value.length > CODE_ITEM_DESCRIPTION_MAX;
   const describedBy = [errorText ? errorId : null, overLimit ? countId : null].filter(Boolean).join(" ") || undefined;
 

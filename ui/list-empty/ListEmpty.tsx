@@ -15,7 +15,7 @@ export type ListEmptyTone = "empty" | "error";
 // 02-06: 다음 한 수가 화면 이동이면 href(<a>), 재시도처럼 이동이 아니면 onClick
 // (<button>)다(§10 — 3차 버튼은 <button>, 페이지 이동이면 <a>). 오류 경계
 // (app/(app)/error.tsx)의 "다시 시도"가 onClick 갈래를 쓴다.
-export type ListEmptyAction = { label: string; href: string } | { label: string; onClick: () => void };
+export type ListEmptyAction = { label: string; href: string; /** 폰(<700)에서 숨김 — 폰은 읽기만인 화면(2026-10-03 사용자 결정). */ phoneHidden?: boolean } | { label: string; onClick: () => void };
 
 export type ListEmptyProps = {
   /** 「무엇이 없다」 부분. */
@@ -33,7 +33,7 @@ export type ListEmptyProps = {
 
 export function ListEmpty({ message, action, tone = "empty" }: ListEmptyProps) {
   const isError = tone === "error";
-  const actionClassName = [buttonStyles.btn, buttonStyles.secondary, actionStyles.action].join(" ");
+  const actionClassName = [buttonStyles.btn, buttonStyles.secondary, actionStyles.action, action && "href" in action && action.phoneHidden ? actionStyles.phoneHidden : ""].filter(Boolean).join(" ");
 
   // data-ui 훅은 바깥 div에 둔다 — 안쪽 `<p class>` 한 줄 마크업은 사람 목록 단위 테스트(people-list-hidden-id)가 읽는다.
   return (

@@ -68,41 +68,32 @@ test.describe("폰 375 /admin/code-tables 설명 접힌 줄 (S14 overflow)", () 
     await page.keyboard.press("Escape");
     await expect(dialog).toHaveCount(0);
 
-    const nameInput = page.getByLabel(`${label} 이름`);
-    // StaticTable P2 설명은 PC 열과 폰 접힌 줄에 한 번씩 그려지고 보이는 쪽은 하나다 — 보이는 입력만 집는다.
-    const descriptionInput = page.getByLabel(`${label} 설명`).locator("visible=true");
-    await expect(descriptionInput).toHaveValue(description);
-
+    // 사용자 결정 2026-10-03 14:57 KST 카드 「폰은 읽기만」 — 폰의 표 안에는 입력 · 편집 버튼이 없고 이름 · 설명이 글자로 보인다.
+    // (옛 단언: 설명 입력이 이름 입력 아래 접힌 줄 · 동작 두 버튼 44px 이상 — 입력과 버튼이 사라져 글자 위치 · 숨김으로 대체.)
+    await expect(page.locator("table input, table select, table button")).toHaveCount(0);
+    const nameText = page.locator("tbody td").filter({ visible: true, hasText: label }).first();
     // 한 번만 — 같은 설명을 폰에서 두 번 보이지 않는다.
-    await expect(descriptionInput).toHaveCount(1);
-    await expect(descriptionInput).toBeVisible();
+    const descriptionText = page.locator("tbody td").filter({ visible: true, hasText: description });
+    await expect(descriptionText).toHaveCount(1);
+    await expect(nameText).toBeVisible();
 
     // P2: 설명은 이름 칸 아래 줄에 있고, 행 폭 전체를 쓴다.
-    const nameBox = await nameInput.boundingBox();
-    const descriptionBox = await descriptionInput.boundingBox();
+    const nameBox = await nameText.boundingBox();
+    const descriptionBox = await descriptionText.boundingBox();
     expect(nameBox).not.toBeNull();
     expect(descriptionBox).not.toBeNull();
     expect(descriptionBox!.y).toBeGreaterThanOrEqual(nameBox!.y + nameBox!.height);
     expect(descriptionBox!.width).toBeGreaterThan(nameBox!.width);
 
-    // P3: 값·정렬 열(머리글과 칸)이 숨는다. P2는 라벨 없이 값만이라 「설명」 머리글도 없다. P1 머리글(이름·상태·동작)이 보이는 것부터
-    // 확인해 표 역할이 살아 있음을 고정한다 — 역할이 사라지면 아래 숨김 단언이 빈 목록에 대해 참이 되어 버린다.
-    // 04.6-15 · 사용자 답 Q4 A 「보이게」(TODOS 183): 동작 열은 P1이라 폰에서도 보이고 두 동작이 44px 이상이다.
-    for (const header of ["이름", "상태", "동작"]) {
+    // P3: 값·정렬·동작 열(머리글과 칸)이 숨는다. P1 머리글(이름·상태)이 보이는 것부터 확인해 표 역할이 살아 있음을 고정한다.
+    // 04.6-15 Q4 A 「보이게」였던 동작 열은 읽기 전용 결정으로 폰에서 P3로 숨는다(편집 행동 없음).
+    for (const header of ["이름", "상태"]) {
       await expect(page.getByRole("columnheader", { name: header, exact: true })).toBeVisible();
     }
-    for (const header of ["값", "설명", "정렬"]) {
+    for (const header of ["값", "설명", "정렬", "동작"]) {
       await expect(page.getByRole("columnheader", { name: header, exact: true })).toBeHidden();
     }
     await expect(page.getByText(value, { exact: true })).toBeHidden();
-    const row = page.locator("tr", { hasText: value });
-    for (const name of ["비활성화", "삭제"]) {
-      const action = row.getByRole("button", { name, exact: true });
-      await expect(action).toBeVisible();
-      const box = await action.boundingBox();
-      expect(box, `${name} 상자`).not.toBeNull();
-      expect(box!.height, `${name} 누르는 영역 높이`).toBeGreaterThanOrEqual(44);
-    }
 
     const { scrollWidth, clientWidth } = await page.evaluate(() => ({
       scrollWidth: document.documentElement.scrollWidth,

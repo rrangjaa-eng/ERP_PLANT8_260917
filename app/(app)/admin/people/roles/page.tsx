@@ -41,7 +41,7 @@ export default async function RolesPage({
     <ListScreen
       title="계급"
       // DR5 A — 계급이 없으면 머리 1차 없이 빈 화면의 「계급 추가」 하나.
-      primaryAction={canWrite && roles.length > 0 ? { label: "계급 추가", href: NEW_ROLE_HREF } : undefined}
+      primaryAction={canWrite && roles.length > 0 ? { label: "계급 추가", href: NEW_ROLE_HREF, phoneHidden: true } : undefined}
       panel={
         showForm ? (
           <SidePanel title="계급 추가" closeHref={ROLES_HREF}>
@@ -53,7 +53,7 @@ export default async function RolesPage({
       {roles.length === 0 ? (
         <ListEmpty
           message="등록된 계급이 없습니다"
-          action={canWrite ? { label: "계급 추가", href: NEW_ROLE_HREF } : undefined}
+          action={canWrite ? { label: "계급 추가", href: NEW_ROLE_HREF, phoneHidden: true } : undefined}
         />
       ) : (
         <RolesList roles={roles} canArchive={canArchive} />

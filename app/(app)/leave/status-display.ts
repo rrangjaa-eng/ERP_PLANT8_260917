@@ -1,4 +1,5 @@
 import type { StatusTagKind } from "@/ui/status-tag/StatusTag";
+import type { StatusWord } from "@/ui/status-tag/status-map";
 
 // 04.1 UI-SPEC Color 「상태 → 색 매핑」(SYSTEM.md §7-5 · A2) — 문서 상태 → kind · 글자의 유일한 출처.
 // 화면 코드는 상태 문자열로 색을 직접 고르지 않고 이 함수만 쓴다. 자리: 제목 옆 `tag`(테두리) ·
@@ -37,6 +38,33 @@ export function leaveStatusDisplay(status: LeaveStatusKey, options?: { stepLabel
       return { kind: "danger", label: "담당 없음" };
     case "draft":
       return { kind: "muted", label: "임시" };
+    default: {
+      const unreachable: never = status;
+      return unreachable;
+    }
+  }
+}
+
+// 04.6-18: `StatusTag status` 낱말 — 색은 상태 배지 표(`status-map.ts`)가 정한다. 낱말은 `leaveStatusDisplay`의 글자와 같다(날짜 없이).
+export function leaveStatusWord(status: LeaveStatusKey, stepLabel?: string | null): StatusWord {
+  switch (status) {
+    case "submitted":
+    case "in_review":
+      return stepLabel ? `${stepLabel} 결재 중` : "결재 중";
+    case "mine":
+      return "내 결재";
+    case "approved":
+      return "승인";
+    case "rejected":
+      return "반려";
+    case "withdrawn":
+      return "회수";
+    case "waiting":
+      return "대기";
+    case "vacant":
+      return "담당 없음";
+    case "draft":
+      return "임시";
     default: {
       const unreachable: never = status;
       return unreachable;

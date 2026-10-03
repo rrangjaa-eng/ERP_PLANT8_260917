@@ -47,7 +47,7 @@ export function ListScreen({ title, primaryAction, filters, summary, singleColum
               href={headAction.href}
               scroll={false}
               data-ui="primary-button"
-              className={`${buttonStyles.btn} ${buttonStyles.primary}${headAction.phoneHidden ? ` ${styles.phoneHidden}` : ""}`}
+              className={`${buttonStyles.btn} ${buttonStyles.primary} ${styles.primaryAction}${headAction.phoneHidden ? ` ${styles.phoneHidden}` : ""}`}
             >
               {headAction.label}
               <LinkPending />

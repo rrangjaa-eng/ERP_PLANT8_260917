@@ -50,6 +50,12 @@
   background: var(--surface-base);
 }
 
+/* 1차 버튼 글자는 한 줄 — 필터가 넓은 폭(768)에서 버튼이 눌려 낱말이 갈리지 않게 한다(§7-1). */
+.primaryAction {
+  flex: none;
+  white-space: nowrap;
+}
+
 .pagination {
   display: flex;
   justify-content: center;

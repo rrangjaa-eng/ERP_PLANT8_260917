@@ -1124,7 +1124,7 @@ test.describe("리저브 대장 — 목록 틀 · Num · 뼈대 (04.6-22)", () =
     const client = await createClient("E2E리저브틀");
     await seedEntries(client.id, [{ date: "2026-08-01", direction: "deposit", amount: 50_000 }]);
     await openLedger(page, roles.finance);
-    await expect(page.locator('h1[data-ui="screen-title"]')).toHaveText("리저브 대장");
+    await expect(page.locator('h1[data-ui="screen-title"]:visible')).toHaveText("리저브 대장");
     await expect(page.getByText("클라이언트별 리저브 입출금")).toHaveCount(0);
     // 금액 칸의 숫자는 `Num` — 고정 폭 숫자(tabular-nums) · 줄바꿈 없음.
     const amountNum = cell(page, 0, COL.amount).locator("span").first();

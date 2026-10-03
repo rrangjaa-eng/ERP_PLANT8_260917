@@ -5,6 +5,7 @@ import { project, type DtoSpec } from "@/domain/permissions/project";
 import { recordAction } from "@/domain/action-log/record";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
+import { isFixedProjectStatusLabel } from "@/domain/projects/status-word";
 import { taxRuleSchema, type TaxRule } from "@/domain/code-tables/tax-rule";
 import { CODE_ITEM_DESCRIPTION_MAX } from "@/domain/code-tables/description-max";
 import {
@@ -164,6 +165,10 @@ export async function updateCodeItemLabel(
   if (!current) return null;
   if (current.archivedAt !== null) {
     throw new ArchivedCodeItemError("보관된 코드표 항목은 수정할 수 없음 · 먼저 복원");
+  }
+  // 04.6-10 — 프로젝트 상태 다섯 값의 이름은 화면 전체가 고정 낱말을 쓴다(사용자 결정 ⑤). 화면에서 막는 것만으로는 부족해 서버도 거부한다.
+  if (isFixedProjectStatusLabel(current.tableKey, current.value)) {
+    throw new UserFacingError("프로젝트 상태 이름은 고정 · 변경 불가");
   }
 
   await repoUpdateCodeItemLabel(viewer, id, trimmed);

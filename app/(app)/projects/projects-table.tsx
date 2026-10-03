@@ -6,20 +6,11 @@ import type { TableColumn } from "@/ui/table/types";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import type { ProjectListItemWithGroup, ProjectSortKey } from "@/domain/projects";
 import type { ProjectStatus } from "@/domain/projects/status-transitions";
+import { PROJECT_STATUS_WORD } from "@/domain/projects/status-word";
 import { Num } from "@/ui/num/Num";
-import type { StatusWord } from "@/ui/status-tag/status-map";
 import { PROJECT_COLUMN_LABELS } from "./list-columns";
 import { formatListPeriod, type ListColumnStep } from "@/domain/projects/list-view";
 import styles from "./projects.module.css";
-
-// 상태 값 → 상태 낱말(색은 `status-map.ts` 한 표가 정한다 — 04-UI-SPEC rev 5 Color 「상태 → 색 매핑」 · D-45 미수주는 붉게 칠하지 않는다).
-const PROJECT_STATUS_WORD: Record<ProjectStatus, StatusWord> = {
-  bidding: "수주중",
-  in_progress: "진행",
-  settling: "정산",
-  completed: "완료",
-  lost: "미수주",
-};
 
 // SYSTEM.md §6-1 · 04-UI-SPEC S1 — 목록 표. `ui/table`을 **읽기 형태**로
 // 쓴다(편집 가능 셀 0개, D-61 (가)). 이 파일은 04-04가 고치는 ui/table

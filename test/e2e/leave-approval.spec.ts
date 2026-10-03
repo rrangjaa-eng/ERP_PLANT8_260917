@@ -85,8 +85,9 @@ test.describe("연차 신청 → 결재함 승인 → 최종 승인 (04.1-02 트
     await expect(drafterPage).toHaveURL(/\/leave\/[0-9a-f-]{36}\?submitted=1$/);
     const documentUrl = new URL(drafterPage.url()).pathname;
     await expect(drafterPage.getByText(/^LV/)).toBeVisible();
-    // 머리 줄(문서 번호 · 상태 태그) 안에서만 본다 — 04.1-05부터 결재선 목록의 지금 단계도 `결재 중`이다(검토 LOW-3).
-    const headerLine = drafterPage.locator("p").filter({ hasText: /^LV/ });
+    // 머리(제목 옆 상태 배지) 안에서만 본다 — 04.1-05부터 결재선 목록의 지금 단계도 `결재 중`이다(검토 LOW-3).
+    // 04.6-18: 번호는 틀 메타 줄로, 상태 배지는 제목과 한 줄(DetailScreen)로 갈라졌다.
+    const headerLine = drafterPage.locator('[data-ui="screen-title"]').locator("..");
     await expect(headerLine.getByText("결재 중", { exact: true })).toBeVisible();
 
     // 결재 차례가 아닌 사람은 404다.

@@ -274,9 +274,9 @@ test.describe("연차 목록 · 신청 틀 (04.6-18)", () => {
 
     const page = await loginPage(browser, baseURL, org.drafter);
     await page.goto("/leave");
-    await expect(page.locator('[data-ui="screen-title"]')).toHaveText("연차");
+    await expect(page.locator('[data-ui="screen-title"]:visible')).toHaveText("연차");
     await expect(page.locator('[data-ui="screen-meta"]')).toHaveCount(0);
-    const primary = page.locator('[data-ui="primary-button"]');
+    const primary = page.locator('[data-ui="primary-button"]:visible');
     await expect(primary).toHaveCount(1);
     await expect(primary).toHaveText("연차 신청");
     await expect(primary).toHaveAttribute("href", "/leave/new");
@@ -291,8 +291,8 @@ test.describe("연차 목록 · 신청 틀 (04.6-18)", () => {
 
     const page = await loginPage(browser, baseURL, org.drafter);
     await page.goto("/leave");
-    await expect(page.locator('[data-ui="screen-title"]')).toHaveText("연차");
-    await expect(page.locator('[data-ui="primary-button"]')).toHaveCount(0);
+    await expect(page.locator('[data-ui="screen-title"]:visible')).toHaveText("연차");
+    await expect(page.locator('[data-ui="primary-button"]:visible')).toHaveCount(0);
     const link = page.locator('[data-ui="empty-state"]').getByRole("link", { name: "연차 신청" });
     await expect(link).toHaveCount(1);
     await expect(link).toHaveAttribute("href", "/leave/new");
@@ -328,7 +328,7 @@ test.describe("연차 목록 · 신청 틀 (04.6-18)", () => {
     expect(await skeleton.locator("th").allInnerTexts()).toEqual(headers.slice(0, await skeleton.locator("th").count()));
     expect(await skeleton.locator("th").count()).toBeGreaterThan(0);
     await expect(page.locator('[data-ui="screen-title"]:visible')).toHaveText("연차");
-    await expect(page.locator('[data-ui="primary-button"]')).toHaveCount(0);
+    await expect(page.locator('[data-ui="primary-button"]:visible')).toHaveCount(0);
     await page.context().close();
   });
 
@@ -338,10 +338,10 @@ test.describe("연차 목록 · 신청 틀 (04.6-18)", () => {
 
     const page = await loginPage(browser, baseURL, org.drafter);
     await page.goto("/leave/new");
-    await expect(page.locator('[data-ui="screen-title"]')).toHaveText("연차 신청");
+    await expect(page.locator('[data-ui="screen-title"]:visible')).toHaveText("연차 신청");
     await expect(page.locator('[data-ui="screen-meta"]')).toHaveCount(0);
     await expect(page.getByRole("dialog")).toHaveCount(0);
-    await expect(page.locator('[data-ui="primary-button"]')).toHaveCount(1);
+    await expect(page.locator('[data-ui="primary-button"]:visible')).toHaveCount(1);
     const formMax = await tokenNumber(page, "--form-max");
     const form = await page.locator("form#leave-form").boundingBox();
     expect(form?.width ?? 0).toBeLessThanOrEqual(formMax + 0.5);

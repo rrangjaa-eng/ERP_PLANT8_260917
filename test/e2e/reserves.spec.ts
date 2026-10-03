@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
+import { isStrict } from "./design-principles";
+import { checkPrinciples } from "./principles-check";
+import { loginAsSysadmin } from "./row-actions-helpers";
 import { db } from "@/db/client";
 import { codeItems, projects, reserveEntries } from "@/db/schema";
 import { insertVendor } from "@/repositories/vendors";
@@ -1111,5 +1114,64 @@ test.describe("리저브 대장 — 폰 복원 줄 44 (DR-104-01)", () => {
         expect.soft(b.width, `${label} @${width} 폭`).toBeGreaterThanOrEqual(44);
       }
     }
+  });
+});
+
+// 04.6-22 — 적립금(리저브 대장)이 목록 틀(`ListScreen`)로 그려지고 숫자는 `Num`이며 표 안 편집은 그대로다(SC 3 · 8 · 10).
+test.describe("리저브 대장 — 목록 틀 · Num · 뼈대 (04.6-22)", () => {
+  test("틀 제목 · 부제 없음 · 금액 칸 Num(tabular-nums) · 1차 일괄 저장 하나", async ({ page }) => {
+    const roles = await createRoles();
+    const client = await createClient("E2E리저브틀");
+    await seedEntries(client.id, [{ date: "2026-08-01", direction: "deposit", amount: 50_000 }]);
+    await openLedger(page, roles.finance);
+    await expect(page.locator('h1[data-ui="screen-title"]')).toHaveText("리저브 대장");
+    await expect(page.getByText("클라이언트별 리저브 입출금")).toHaveCount(0);
+    // 금액 칸의 숫자는 `Num` — 고정 폭 숫자(tabular-nums) · 줄바꿈 없음.
+    const amountNum = cell(page, 0, COL.amount).locator("span").first();
+    await expect(amountNum).toHaveText("50,000");
+    expect(await amountNum.evaluate((element) => getComputedStyle(element).fontVariantNumeric)).toContain("tabular-nums");
+    await expect(page.locator('[data-ui="primary-button"]:visible')).toHaveCount(1);
+  });
+
+  test("느리게 불러오면 300ms 뒤 진짜 열 이름의 뼈대(합계 줄 포함)만 보이고 1차 버튼은 없다(D10)", async ({ page }) => {
+    const roles = await createRoles();
+    const client = await createClient("E2E리저브뼈대");
+    await seedEntries(client.id, [{ date: "2026-08-01", direction: "deposit", amount: 50_000 }]);
+    await openLedger(page, roles.finance);
+    const headers = await page.locator("main table thead th").allInnerTexts();
+    await page.goto("/account");
+    // 뼈대(loading 틀)는 라우터가 미리 가져온 경우에만 응답이 늦는 동안 보인다 — 먼저 미리 가져오고, 그다음에 응답을 늦춘다.
+    const prefetched = page.waitForResponse((response) => response.url().includes("/pnl/reserves") && response.request().headers()["next-router-prefetch"] === "1");
+    await page.evaluate(() => (window as unknown as { next: { router: { prefetch(url: string): void } } }).next.router.prefetch("/pnl/reserves"));
+    await prefetched;
+    await page.waitForLoadState("networkidle");
+    await page.route(
+      (url) => url.pathname === "/pnl/reserves",
+      async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+        await route.continue();
+      },
+    );
+    await page.evaluate(() => (window as unknown as { next: { router: { push(url: string): void } } }).next.router.push("/pnl/reserves"));
+    const skeleton = page.locator('[data-ui="table-skeleton"]');
+    await expect.poll(async () => (await skeleton.count()) > 0 && parseFloat(await skeleton.first().evaluate((element) => getComputedStyle(element).opacity)) > 0).toBe(true);
+    expect(await skeleton.locator("th").allInnerTexts()).toEqual(headers.slice(0, await skeleton.locator("th").count()));
+    await expect(skeleton.locator("tfoot")).toHaveCount(1);
+    await expect(page.locator('[data-ui="screen-title"]:visible')).toHaveText("리저브 대장");
+    await expect(page.locator('[data-ui="primary-button"]')).toHaveCount(0);
+  });
+
+  // 04.6-22 · R11 · 공통 §10 — 옮긴 세 화면(행동 로그 · 보관함 · 적립금)의 원칙 막는 모드: 라우트마다 경고 0.
+  test("화면 사용성 원칙(막는 모드) — 행동 로그·보관함·적립금", async ({ page }) => {
+    const client = await createClient("E2E리저브원칙");
+    await seedEntries(client.id, [
+      { date: "2026-08-01", direction: "deposit", amount: 50_000 },
+      { date: "2026-08-02", direction: "withdrawal", amount: 10_000 },
+    ]);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await loginAsSysadmin(page);
+    await checkPrinciples(page, ["/admin/action-log", "/admin/archive", "/pnl/reserves"], {
+      strict: isStrict(process.env.DESIGN_PRINCIPLES_STRICT),
+    });
   });
 });

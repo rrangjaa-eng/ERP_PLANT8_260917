@@ -26,7 +26,20 @@ describe("reserves.module.css — 다른 쪽 잔액 거부 링크 선 토큰(R15
     expect(link).not.toMatch(/\d+px/);
   });
 
-  it(".batchErrorLink:hover 두께는 --line-w-strong", () => {
-    expect(rule(".batchErrorLink:hover")).toMatch(/text-decoration-thickness:\s*var\(--line-w-strong\)/);
+  it(".batchErrorLink:hover 두께는 --underline-w-hover(M1 — 값 2px 그대로)", () => {
+    expect(rule(".batchErrorLink:hover")).toMatch(/text-decoration-thickness:\s*var\(--underline-w-hover\)/);
+  });
+});
+
+describe("reserves.module.css — 스킨 A 역할 토큰(04.6-22)", () => {
+  it(".footerCell 위 선은 2px 구조선이 아니라 1px --line-w · --border-strong", () => {
+    const footer = rule(".footerCell");
+    expect(footer).toMatch(/border-top:\s*var\(--line-w\)\s+solid\s+var\(--border-strong\)/);
+  });
+
+  it("옛 이름 · 이관 전 표시가 없고 숫자 폭은 Num이 맡는다(font-variant-numeric 없음)", () => {
+    expect(css).not.toContain("이관 전");
+    expect(css).not.toMatch(/--(?:bg|surface|fg|muted|faint|line|line-ui|line-strong|line-w-strong|danger|fs-[a-z]+|row-min)(?![\w-])/);
+    expect(css).not.toContain("font-variant-numeric");
   });
 });

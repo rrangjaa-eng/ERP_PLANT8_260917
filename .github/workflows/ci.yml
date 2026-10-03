@@ -227,7 +227,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report-${{ matrix.shard }}
-          path: playwright-report/
+          path: |
+            playwright-report/
+            test-results/
           retention-days: 7
 
   # 검사한 tree 기록(2026-10-01 사용자 결정 — 배포 CI 중복 제거). PR 병합 결과(refs/pull/N/merge)의

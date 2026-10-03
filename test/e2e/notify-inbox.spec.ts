@@ -383,7 +383,7 @@ test.describe("알림함 목록 완성 (Task 3 · S1-c · S1-d)", () => {
     await expect(secondHeader).toHaveText(olderLabel);
 
     // M1(04.2-09 Task 3 사후 수정 — Opus 적대적 디자인 검토): 그룹 머리글의
-    // 실제 렌더 값이 계약(§7-3 — 위 12px · 아래 1px --line-strong)과 같은지
+    // 실제 렌더 값이 계약(§7-3 — 위 `--s-2` · 아래 선 없음)과 같은지
     // computed style로 잰다. `.table th`가 특이도로 덮어써 죽은 규칙이 되는
     // 회귀를 막는다.
     const firstHeaderStyle = await firstHeader.evaluate((el) => {

@@ -62,7 +62,7 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
     await expect(step1OrgUnit).toHaveValue(await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP1_ORG_UNIT_ID));
     await expect(page.getByLabel("3단 특정 부서")).toBeEnabled();
 
-    // SYSTEM.md §1-2: 비활성 글자는 --faint on --surface, 반투명은 --scrim 하나뿐. 활성 select 글자는 --text-strong(04.6-20 — 값이 바뀌는 교체: --fg #0B1512 → #13201C).
+    // SYSTEM.md §1-2: 비활성 글자는 --text-faint on --surface-muted. 활성 select 글자는 --text-strong(04.6-20 — 값이 바뀌는 교체는 소유 플랜이 이미 옮겼다).
     const tokenColor = (token: string) =>
       page.evaluate((name) => {
         const probe = document.createElement("span");
@@ -78,8 +78,8 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
         return { color: computed.color, background: computed.backgroundColor, opacity: computed.opacity };
       });
     expect(await style("1단 특정 부서")).toEqual({
-      color: await tokenColor("--faint"),
-      background: await tokenColor("--surface"),
+      color: await tokenColor("--text-faint"),
+      background: await tokenColor("--surface-muted"),
       opacity: "1",
     });
     expect((await style("3단 특정 부서")).color).toBe(await tokenColor("--text-strong"));

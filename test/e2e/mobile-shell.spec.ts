@@ -203,7 +203,7 @@ test.describe("폰 375 공통 셸 (성공 기준 3 · §6-0 폰 전략 · §10 �
   // /design-review 발견 1 — 폰 사용자 메뉴(TopBar 트리거가 여는 메뉴, F-05 트리거
   // 자체는 위에서 이미 44×44를 확인한다)의 항목이 12px/400으로 35px 높이였다.
   // §3·§10 폰 터치 목표 44×44는 트리거뿐 아니라 열리는 항목에도 적용된다.
-  test("사용자 메뉴 항목의 터치 목표가 44 이상이고 글자 크기가 --fs-base다", async ({ page }) => {
+  test("사용자 메뉴 항목의 터치 목표가 44 이상이고 글자 크기가 --text-body다", async ({ page }) => {
     await loginAsEmployee(page);
     await page.goto("/");
 
@@ -213,7 +213,7 @@ test.describe("폰 375 공통 셸 (성공 기준 3 · §6-0 폰 전략 · §10 �
     expect(count).toBeGreaterThan(0);
 
     const expectedFontSize = await page.evaluate(() =>
-      getComputedStyle(document.documentElement).getPropertyValue("--fs-base").trim(),
+      getComputedStyle(document.documentElement).getPropertyValue("--text-body").trim(),
     );
 
     for (let i = 0; i < count; i += 1) {
@@ -226,7 +226,7 @@ test.describe("폰 375 공통 셸 (성공 기준 3 · §6-0 폰 전략 · §10 �
     }
   });
 
-  // /design-review 발견 3 — 「더보기」 시트 그룹 머리글("계정")이 11px(--fs-xs)로
+  // /design-review 발견 3 — 「더보기」 시트 그룹 머리글("계정")이 11px(--text-tag)로
   // 렌더됐다. SYSTEM.md §6-10이 admin-index.module.css .groupLabel에 적용한
   // §7-3 그룹 머리글 행 규칙(--text-aux — 04.6 스킨 A, 옛 12 → 13)과 같은 값이어야 한다.
   test("더보기 시트 그룹 머리글 글자 크기가 --text-aux다(§7-3 그룹 머리글 행)", async ({ page }) => {

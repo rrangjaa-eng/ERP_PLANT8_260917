@@ -273,8 +273,8 @@ test.describe("매출 섹션 (Phase 4 Task 3)", () => {
     // 합계 행 — 발행 10,000,000 - 입금 공급가 5,000,000 = 미수 5,000,000.
     const balance = page.getByText("미수 5,000,000");
     await expect(balance).toBeVisible();
-    // 04-16 리뷰 S-1 — 미수·초과 입금 글자는 `--warning`이다(합계 행의 다른 글자는 `--fg`).
-    await expect(balance).toHaveCSS("color", await cssColor(page, "--warning"));
+    // 04-16 리뷰 S-1 — 미수·초과 입금 글자는 `--status-warning`이다(합계 행의 다른 글자는 `--text-strong`).
+    await expect(balance).toHaveCSS("color", await cssColor(page, "--status-warning"));
 
     // 다시 PM으로 로그인해 같은 화면을 연다 — 04-16(D-85): 발행 표는 읽기 표로 보이고, 입금 표·미수는 DOM에 없다(숨김이 아니라 부재).
     await page.goto("/account");
@@ -366,7 +366,7 @@ test.describe("매출 섹션 (Phase 4 Task 3)", () => {
     expect(numberLineCount).toBe(1);
   });
 
-  test("(리뷰 S-4) 1000에서 쓰기 권한자의 발행액 칸은 읽기 전용이고 권한 잠김(--muted)으로 흐려지지 않는다", async ({ page }) => {
+  test("(리뷰 S-4) 1000에서 쓰기 권한자의 발행액 칸은 읽기 전용이고 권한 잠김(--text-muted)으로 흐려지지 않는다", async ({ page }) => {
     const projectUrl = await openWithIssuedEntry(page);
     await page.setViewportSize({ width: 1000, height: 800 });
     await page.goto(projectUrl);
@@ -376,7 +376,7 @@ test.describe("매출 섹션 (Phase 4 Task 3)", () => {
     await expect(page.getByRole("button", { name: "발행 줄 추가" })).toHaveCount(0);
     const muted = await page.evaluate(() => {
       const probe = document.createElement("span");
-      probe.style.color = "var(--muted)";
+      probe.style.color = "var(--text-muted)";
       document.body.append(probe);
       const color = getComputedStyle(probe).color;
       probe.remove();
@@ -546,7 +546,7 @@ test.describe("매출 표 — 발행 읽기 표·입금 표 부재(D-85) · 폰 
     expect(scrollWidth).toBe(clientWidth);
   });
 
-  test("(R2) 견적 줄 칸 하나만 거부된 저장 → 발행·입금 표 합계 행이 각각 `전부 거부 · 다른 칸 오류 1칸`(--danger) · 고쳐 저장하면 모두 사라진다", async ({ page }) => {
+  test("(R2) 견적 줄 칸 하나만 거부된 저장 → 발행·입금 표 합계 행이 각각 `전부 거부 · 다른 칸 오류 1칸`(--status-danger) · 고쳐 저장하면 모두 사라진다", async ({ page }) => {
     // 담당 PM이 견적도 고치고 발행·입금도 보는 계급 — role-pm 권한을 복사하고 매출 쓰기·모든 정보 노출을 더한다.
     const roleId = `role-${randomUUID()}`;
     await insertRole(SYSTEM_VIEWER, { id: roleId, name: `E2E 매출 PM-${randomUUID().slice(0, 8)}` });
@@ -584,7 +584,7 @@ test.describe("매출 표 — 발행 읽기 표·입금 표 부재(D-85) · 폰 
 
     await expect(quantityCell).toHaveAttribute("aria-invalid", "true");
     await expect(quoteTable.locator("tfoot")).toContainText("오류 1칸 · 전부 거부");
-    const danger = await cssColor(page, "--danger");
+    const danger = await cssColor(page, "--status-danger");
     for (const caption of ["발행 줄", "입금 줄"] as const) {
       const note = revenueTable(page, caption).locator("tfoot").getByText("전부 거부 · 다른 칸 오류 1칸", { exact: true });
       await expect(note).toBeVisible();

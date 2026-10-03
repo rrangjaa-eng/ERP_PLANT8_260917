@@ -848,7 +848,7 @@ test.describe("관리자 배너 B1·B2(04.2-13)", () => {
     await expect(b2.getByRole("button")).toHaveCount(0);
     await expect(main.getByRole("status").filter({ hasText: "공휴일 확정 전" })).toHaveCount(0);
 
-    // ③ 시스템 상태 — 같은 B2를 링크 없이, 이메일 줄은 미설정 + 결과 꼬리, 「실패 3건」만 --danger.
+    // ③ 시스템 상태 — 같은 B2를 링크 없이, 이메일 줄은 미설정 + 결과 꼬리, 「실패 3건」만 --status-danger.
     await page.goto("/admin/system-status");
     const statusBanner = main.getByRole("alert");
     await expect(statusBanner).toHaveText(`이메일 발송 실패 3건 (${failedAt})`);
@@ -857,7 +857,7 @@ test.describe("관리자 배너 B1·B2(04.2-13)", () => {
     await expect(emailValue).toHaveText(`미설정 · 실패 3건 (${failedAt})`);
     const danger = await page.evaluate(() => {
       const probe = document.createElement("span");
-      probe.style.color = "var(--danger)";
+      probe.style.color = "var(--status-danger)";
       document.body.append(probe);
       const color = getComputedStyle(probe).color;
       probe.remove();

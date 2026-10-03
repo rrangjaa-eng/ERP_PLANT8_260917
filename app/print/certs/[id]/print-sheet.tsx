@@ -34,11 +34,6 @@ export function PrintSheet(props: Props) {
   const printed = useRef(false);
   const compact = Array.from(props.eventName).length > COMPACT_OVER || Array.from(props.address).length > COMPACT_OVER;
 
-  // 문서 제목은 고정이다 — 이 화면(성공 · 실패 줄)만 정하고 404 변종은 기본 제목을 쓴다(L3).
-  useEffect(() => {
-    document.title = "확인증 인쇄";
-  }, []);
-
   useEffect(() => {
     const image = imageRef.current;
     if (!image) return;

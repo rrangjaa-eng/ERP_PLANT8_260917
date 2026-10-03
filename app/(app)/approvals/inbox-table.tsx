@@ -7,12 +7,14 @@ import { useAction } from "next-safe-action/hooks";
 import { Table } from "@/ui/table/Table";
 import type { TableColumn } from "@/ui/table/types";
 import { Button } from "@/ui/button/Button";
-import { StatusTag, type StatusTagKind } from "@/ui/status-tag/StatusTag";
+import { StatusTag } from "@/ui/status-tag/StatusTag";
+import type { StatusWord } from "@/ui/status-tag/status-map";
 import { Toast, type ToastTone } from "@/ui/toast/Toast";
 import { approveAction } from "./actions";
 import { approveToast } from "./approve-toast";
 import { ApprovalSheet, type ApprovalSheetItem } from "./approval-sheet";
 import { ConflictLine } from "./conflict-line";
+import { INBOX_COLUMN_LABELS } from "./list-columns";
 import { RejectDialog, WithdrawDialog, type DecisionTarget, type RejectMessages } from "./decision-dialogs";
 import leaveStyles from "@/app/(app)/leave/leave.module.css";
 import styles from "./inbox-table.module.css";
@@ -30,7 +32,7 @@ export type InboxRow = {
   document: string;
   drafter: string;
   days: string;
-  status: { kind: StatusTagKind; label: string } | null;
+  status: StatusWord | null;
   // `잔여 초과 N일`(해당할 때만) — PC는 문서 칸 2행, 폰은 접힌 줄 끝(UI-SPEC S4). 막힘이 아니라 경고다.
   overdraw: string | null;
   // 서버 가능 행동(구조 값 — 결재 정보 노출과 무관, 사용자 결정 2026-09-29 A). 처리함은 빈 목록.
@@ -80,7 +82,7 @@ export function InboxTable({ rows, rejectMessages }: { rows: InboxRow[]; rejectM
   const columns: TableColumn<InboxRow>[] = [
     {
       key: "document",
-      header: "문서",
+      header: INBOX_COLUMN_LABELS.document,
       priority: "p1",
       cell: (row) => (
         <span id={documentCellId(row)}>
@@ -107,7 +109,7 @@ export function InboxTable({ rows, rejectMessages }: { rows: InboxRow[]; rejectM
     },
     {
       key: "drafter",
-      header: "기안",
+      header: INBOX_COLUMN_LABELS.drafter,
       priority: "p2",
       cell: (row) => row.drafter,
       // 폰 접힌 줄(`기안자 · MM-DD`)도 행의 일부라 주 행과 같은 곳으로 간다(04.1-07 DOM 감사 ① · `/leave` 04.1-06 #6과 같은 방식).
@@ -131,21 +133,17 @@ export function InboxTable({ rows, rejectMessages }: { rows: InboxRow[]; rejectM
           row.drafter
         ),
     },
-    { key: "days", header: "일수", priority: "p1", align: "right", cell: (row) => row.days },
+    { key: "days", header: INBOX_COLUMN_LABELS.days, priority: "p1", align: "right", cell: (row) => row.days },
     {
       key: "status",
-      header: "상태",
+      header: INBOX_COLUMN_LABELS.status,
       priority: "p1",
       cell: (row) =>
-        row.status ? (
-          <StatusTag kind={row.status.kind} variant="text">
-            {row.status.label}
-          </StatusTag>
-        ) : null,
+        row.status ? <StatusTag status={row.status} variant="text" /> : null,
     },
     {
       key: "actions",
-      header: "행동",
+      header: INBOX_COLUMN_LABELS.actions,
       priority: "p3",
       cell: (row) => {
         if (row.group !== "mine" || !row.instanceId || row.version === null) return null;

@@ -1,4 +1,3 @@
-// 04.6 스킨 A 이관 전: 화면 틀
 import { requireSession } from "@/lib/viewer";
 import { kstDateOf } from "@/lib/kst-date";
 import "@/app/(app)/document-kinds";
@@ -10,9 +9,10 @@ import {
   type ApprovalInboxItemDto,
 } from "@/domain/approvals";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
-import { PageHeader } from "@/ui/page-header/PageHeader";
+import { ListScreen } from "@/ui/list-screen/ListScreen";
+import type { StatusWord } from "@/ui/status-tag/status-map";
 import { formatLeavePeriod, type LeavePeriodSource } from "@/app/(app)/leave/labels";
-import { leaveStatusDisplay, routeListSteps, toLeaveStatusKey, withdrawResultLines } from "@/app/(app)/leave/status-display";
+import { routeListSteps, toLeaveStatusKey, withdrawResultLines, type LeaveStatusKey } from "@/app/(app)/leave/status-display";
 import { InboxTable, type InboxRow } from "./inbox-table";
 import type { ApprovalSheetItem, SheetDetailRow } from "./approval-sheet";
 import type { DecisionTarget } from "./decision-dialogs";
@@ -64,10 +64,28 @@ function toSheet(item: Partial<ApprovalInboxItemDto>): ApprovalSheetItem | null 
   };
 }
 
+// 처리함 상태 낱말 — 문서 상태 → 상태 배지 낱말(색은 `StatusTag`의 표 한 곳이 정한다). 결재선 목록 전용 키는 처리함에 오지 않는다.
+function processedStatusWord(key: LeaveStatusKey | null, stepLabel: string | null | undefined): StatusWord | null {
+  switch (key) {
+    case "submitted":
+    case "in_review":
+      return stepLabel ? `${stepLabel} 결재 중` : "결재 중";
+    case "approved":
+      return "승인";
+    case "rejected":
+      return "반려";
+    case "withdrawn":
+      return "회수";
+    case "draft":
+      return "임시";
+    default:
+      return null;
+  }
+}
+
 function toRow(item: Partial<ApprovalInboxItemDto>, group: InboxRow["group"]): InboxRow {
   const summary = (item.summary ?? {}) as LeaveSummary;
-  const statusKey = group === "processed" ? toLeaveStatusKey(item.status) : null;
-  const status = statusKey ? leaveStatusDisplay(statusKey, { stepLabel: item.stepLabel }) : null;
+  const status = group === "processed" ? processedStatusWord(toLeaveStatusKey(item.status), item.stepLabel) : null;
   return {
     id: `${group}:${item.instanceId ?? item.documentId ?? ""}`,
     group,
@@ -93,8 +111,7 @@ export default async function ApprovalsPage() {
   const rows = [...inbox.mine.map((item) => toRow(item, "mine")), ...inbox.processed.map((item) => toRow(item, "processed"))];
 
   return (
-    <>
-      <PageHeader title="결재" subtitle="내가 처리할 결재 문서" />
+    <ListScreen title="결재">
       {rows.length === 0 ? (
         <ListEmpty message="결재할 건이 없습니다" action={{ label: "연차 목록 보기", href: "/leave" }} />
       ) : (
@@ -103,6 +120,6 @@ export default async function ApprovalsPage() {
           rejectMessages={{ empty: REJECT_REASON_EMPTY_MESSAGE, tooLong: REJECT_REASON_TOO_LONG_MESSAGE, max: REJECT_REASON_MAX }}
         />
       )}
-    </>
+    </ListScreen>
   );
 }

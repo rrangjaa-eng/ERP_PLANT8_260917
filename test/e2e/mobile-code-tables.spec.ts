@@ -2,6 +2,8 @@ import { test, expect } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
 import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { loginAsSysadmin, tokenNumber } from "./row-actions-helpers";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { listCodeItems, setCodeItemActive } from "@/repositories/code-tables";
 
 // §3 터치 목표: 폰에서 모든 행동 요소 최소 44×44. code-tables.module.css의
 // .toggle은 밑줄 링크라 글자 줄 높이(20px 안팎)로 찌그러져 있다 — 공유
@@ -42,6 +44,14 @@ test.describe("폰 375 /admin/code-tables 터치 목표 (§3)", () => {
 // 설명은 P2 — 각 행 아래 접힌 줄에 한 번만 보이고, 값·정렬 열은 P3로
 // 숨는다(SYSTEM.md §7-3 「폰 전략 = 칸 접기」). 가로 스크롤 0.
 test.describe("폰 375 /admin/code-tables 설명 접힌 줄 (S14 overflow)", () => {
+  // 이 스펙이 만든 항목을 비활성으로 돌린다 — 활성으로 남으면 같은 DB에서 뒤따르는 mobile-w5의 CLS 스펙이 보는 project_status 표에
+  // 긴 이름(폰설명…)이 끼어, 동작 칸 폭이 서체 교체(대체 서체 → Pretendard) 전후로 한 줄/두 줄을 오가며 CLS가 0.24가 된다(CI run 37152655467).
+  test.afterAll(async () => {
+    const scope = { rows: "all", includeArchived: false } as const;
+    const rows = await listCodeItems(SYSTEM_VIEWER, { tableKey: "project_status", scope, includeInactive: true });
+    for (const row of rows.filter((item) => item.value.startsWith("m-desc-"))) await setCodeItemActive(SYSTEM_VIEWER, row.id, false);
+  });
+
   test("설명이 이름 아래 접힌 줄에 한 번만 보이고 값·정렬 열이 숨고 동작 열은 보인다, 가로 스크롤 0", async ({ page }) => {
     const admin = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
 

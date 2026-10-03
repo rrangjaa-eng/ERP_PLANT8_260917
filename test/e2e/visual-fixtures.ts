@@ -75,11 +75,12 @@ export async function loginForVisual(page: Page): Promise<VisualFixtures> {
 }
 
 /** 화면을 열고 글꼴 · 본문이 자리잡은 뒤에야 찍는다. */
-export async function openForVisual(page: Page, url: string, ready: (page: Page) => Locator): Promise<void> {
+export async function openForVisual(page: Page, url: string, ready: (page: Page) => Locator, skeletonSpecimens = 0): Promise<void> {
   await page.goto(url);
   await expect(ready(page)).toBeVisible();
   // 라우트 loading.tsx의 뼈대(`data-ui="table-skeleton"` div — 300ms 지연 표시)가 걷힌 뒤에 찍는다 — 뼈대가 사진에 남으면 안 된다.
-  await expect(page.locator('[data-ui="table-skeleton"]')).toHaveCount(0);
+  // 본문에 견본으로 늘 있는 뼈대(`/dev/components`의 「표 불러오는 중」)는 그 수만큼 남는다.
+  await expect(page.locator('[data-ui="table-skeleton"]')).toHaveCount(skeletonSpecimens);
   await page.evaluate(() => document.fonts.ready);
 }
 
@@ -91,6 +92,8 @@ export type VisualScreen = {
   ready: (page: Page) => Locator;
   /** 실행마다 바뀌는 값(날짜 · 일련 번호)만 — 표 행 통째로 가리지 않는다. */
   mask?: (page: Page) => Locator[];
+  /** 본문에 늘 있는 표 뼈대 견본 수 — 로딩 뼈대가 걷혔는지 셀 때 뺀다(기본 0). */
+  skeletonSpecimens?: number;
 };
 
 const TITLE = (page: Page) => page.locator('[data-ui="screen-title"], main h1').first();
@@ -120,6 +123,6 @@ export const VISUAL_SCREENS: readonly VisualScreen[] = [
   { name: "approvals", url: () => "/approvals", ready: TITLE },
   { name: "leave-new", url: () => "/leave/new", ready: TITLE },
   { name: "home", url: () => "/", ready: TITLE },
-  { name: "dev-components", url: () => "/dev/components", ready: TITLE },
-  { name: "dev-components-panel", url: () => "/dev/components?panel=1", ready: (page) => page.locator("dialog:modal") },
+  { name: "dev-components", url: () => "/dev/components", ready: TITLE, skeletonSpecimens: 1 },
+  { name: "dev-components-panel", url: () => "/dev/components?panel=1", ready: (page) => page.locator("dialog:modal"), skeletonSpecimens: 1 },
 ];

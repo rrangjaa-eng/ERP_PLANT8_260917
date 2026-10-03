@@ -13,7 +13,7 @@ test.use({ viewport: { width: 390, height: 844 } });
 for (const screen of VISUAL_SCREENS) {
   test(`화면 사진 — ${screen.name} 390`, async ({ page }) => {
     const fixtures = await loginForVisual(page);
-    await openForVisual(page, screen.url(fixtures), screen.ready);
+    await openForVisual(page, screen.url(fixtures), screen.ready, screen.skeletonSpecimens);
     await expect(page).toHaveScreenshot(`${screen.name}-390.png`, {
       ...VISUAL_SCREENSHOT_OPTIONS,
       mask: screen.mask?.(page) ?? [],

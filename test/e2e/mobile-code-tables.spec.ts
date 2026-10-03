@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
 import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
+import { loginAsSysadmin, tokenNumber } from "./row-actions-helpers";
 
 // §3 터치 목표: 폰에서 모든 행동 요소 최소 44×44. code-tables.module.css의
 // .toggle은 밑줄 링크라 글자 줄 높이(20px 안팎)로 찌그러져 있다 — 공유
@@ -106,5 +107,48 @@ test.describe("폰 375 /admin/code-tables 설명 접힌 줄 (S14 overflow)", () 
       clientWidth: document.documentElement.clientWidth,
     }));
     expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
+  });
+});
+
+// 04.6 W7 O1: 폰 320 증빙 종류 동작 칸(폭 119.8)에서 「삭제」가 줄바꿈될 때 위험 행동 앞 여백이 둘째 줄 첫머리에 남아
+// 「비활성화」보다 --s-4만큼 들여 놓였다(행 높이 128). 줄바꿈되면 들여쓰기 없이 왼쪽 정렬이어야 하고(한 줄이면 오른쪽에 나란히),
+// PC 폭의 위험 행동 끝 간격은 그대로다.
+test.describe("폰 320 /admin/code-tables 동작 칸 줄바꿈 (W7 O1)", () => {
+  test.use({ viewport: { width: 320, height: 640 } });
+
+  test("「삭제」는 「비활성화」와 한 줄이거나 같은 왼쪽 x에서 시작하고, 간격 여백은 줄 끝에만 있다", async ({ page }) => {
+    await loginAsSysadmin(page);
+    await page.goto("/admin/code-tables?tableKey=evidence_type");
+
+    const rows = page.locator("tbody tr").filter({ has: page.getByRole("button", { name: "삭제" }).filter({ visible: true }) });
+    const count = await rows.count();
+    expect(count).toBeGreaterThan(0);
+    for (let index = 0; index < count; index += 1) {
+      const row = rows.nth(index);
+      const toggle = await row.getByRole("button", { name: /^(비활성화|활성화)$/ }).boundingBox();
+      const remove = await row.getByRole("button", { name: "삭제" }).boundingBox();
+      expect(toggle, `${index}행 토글 상자`).not.toBeNull();
+      expect(remove, `${index}행 삭제 상자`).not.toBeNull();
+      const sameLine = Math.abs(remove!.y - toggle!.y) < 1;
+      if (sameLine) {
+        expect(remove!.x, `${index}행 한 줄 — 삭제는 토글 오른쪽`).toBeGreaterThan(toggle!.x + toggle!.width);
+      } else {
+        expect(Math.abs(remove!.x - toggle!.x), `${index}행 줄바꿈 — 삭제 x ${remove!.x} · 토글 x ${toggle!.x}`).toBeLessThanOrEqual(0.5);
+      }
+    }
+  });
+
+  test("위험 행동 앞 여백은 앞 행동 뒤에 붙고 「삭제」 자신에는 없다(줄바꿈해도 들여쓰지 않는다)", async ({ page }) => {
+    await loginAsSysadmin(page);
+    await page.goto("/admin/code-tables?tableKey=evidence_type");
+    const remove = page.locator("tbody").getByRole("button", { name: "삭제" }).filter({ visible: true }).first();
+    const margins = await remove.evaluate((element) => {
+      const style = getComputedStyle(element);
+      const prev = element.previousElementSibling as HTMLElement | null;
+      return { own: style.marginInlineStart, prevEnd: prev ? getComputedStyle(prev).marginInlineEnd : "none" };
+    });
+    const s4 = await tokenNumber(page, "--s-4");
+    expect(margins.own).toBe("0px");
+    expect(parseFloat(margins.prevEnd)).toBeCloseTo(s4, 1);
   });
 });

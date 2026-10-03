@@ -157,8 +157,8 @@ test.describe("프로젝트 등록 폼 — Ctrl+Enter 제출 · Esc 취소 (Phas
     return teamSelect;
   }
 
-  // /design-review FINDING-002 — SYSTEM.md §7-2: 오류 칸은 aria-invalid이고 테두리가 --danger다(선택 칸과 같다).
-  test("(e) 프로젝트명·종료일 오류 칸은 aria-invalid이고 테두리가 --danger다", async ({ page }) => {
+  // /design-review FINDING-002 — SYSTEM.md §7-2: 오류 칸은 aria-invalid이고 테두리가 --status-danger다(선택 칸과 같다).
+  test("(e) 프로젝트명·종료일 오류 칸은 aria-invalid이고 테두리가 --status-danger다", async ({ page }) => {
     const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E오류테두리-${Date.now()}`, normalizedName: `e2e오류테두리-${Date.now()}` });
     await loginAndOpenForm(page);
     await page.getByLabel("클라이언트").selectOption({ label: vendor.name });
@@ -170,7 +170,7 @@ test.describe("프로젝트 등록 폼 — Ctrl+Enter 제출 · Esc 취소 (Phas
     await expect(name).toHaveAttribute("aria-invalid", "true");
     const danger = await page.evaluate(() => {
       const probe = document.createElement("span");
-      probe.style.color = "var(--danger)";
+      probe.style.color = "var(--status-danger)";
       document.body.append(probe);
       const color = getComputedStyle(probe).color;
       probe.remove();

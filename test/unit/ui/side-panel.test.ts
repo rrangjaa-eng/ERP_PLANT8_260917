@@ -121,9 +121,9 @@ describe("SidePanel.module.css — Q1 A 가림막 · 폭 · 폰 시트", () => {
     expect(phone).toContain("var(--sheet-max-h)");
   });
 
-  it("옛 이름 --scrim · --modal-w가 없다(경계 패턴)", () => {
-    expect(css).not.toMatch(/--scrim(?![\w-])/);
-    expect(css).not.toMatch(/--modal-w(?![\w-])/);
+  it("옛 이름 --scrim · --modal-w가 없다(경계 패턴)", () => { // 옛 이름 목록(공통 §4 (d))
+    expect(css).not.toMatch(/--scrim(?![\w-])/); // 옛 이름 목록(공통 §4 (d))
+    expect(css).not.toMatch(/--modal-w(?![\w-])/); // 옛 이름 목록(공통 §4 (d))
   });
 
   it("뒤 스크롤 잠금 + overscroll-behavior contain · 순서 뒤집기 없음", () => {

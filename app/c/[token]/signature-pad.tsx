@@ -42,7 +42,7 @@ export type SignaturePadHandle = {
 };
 
 function strokeColor(el: Element): string {
-  return getComputedStyle(el).getPropertyValue("--fg").trim();
+  return getComputedStyle(el).getPropertyValue("--text-strong").trim();
 }
 
 function drawStrokes(ctx: CanvasRenderingContext2D, strokes: Stroke[], scale: number, width: number, color: string) {

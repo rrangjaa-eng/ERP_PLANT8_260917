@@ -21,7 +21,7 @@ function submittedText(iso: string | undefined): string {
   return iso ? formatSubmittedAtKst(iso).slice(5) : "—";
 }
 
-// 이름 아래 색 글자 — `파기 대상` → `같은 연락처 {N}건` → `같은 이름 {N}건`(T2 순서, 모두 --warning). 대조 제외된 줄은 `대조 제외` 하나만(T3).
+// 이름 아래 색 글자 — `파기 대상` → `같은 연락처 {N}건` → `같은 이름 {N}건`(T2 순서, 모두 --status-warning). 대조 제외된 줄은 `대조 제외` 하나만(T3).
 function marksOf(row: Row): string[] {
   if (row.excluded) return [];
   return [

@@ -1139,7 +1139,7 @@ test.describe("견적 줄 「번호」 열 숫자 규칙 (PR #104 [지시] (나)
   });
 });
 
-// PR #104 후속 F(2) — DR-104-02(/design-review): 비활성 1차 「일괄 저장」 안 kbd가 on-accent 값(opacity 0.8)이라 --surface 면 위 대비 3.34.
+// PR #104 후속 F(2) — DR-104-02(/design-review): 비활성 1차 「일괄 저장」 안 kbd가 on-accent 값(opacity 0.8)이라 --surface-muted 면 위 대비 3.34.
 // DR-104-04: 「번호」 본문 칸 글자가 14px 본문 색이라 행 번호 모양(§7-3 첫 칸: --text-tag · --text-faint)이 아니다. 글자 요소(td 첫 자식, 없으면 td)를 잰다.
 function parseRgb(value: string): [number, number, number] {
   const parts = value.match(/[\d.]+/g)?.slice(0, 3).map(Number);

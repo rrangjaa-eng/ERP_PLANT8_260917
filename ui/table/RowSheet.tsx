@@ -14,7 +14,7 @@ import { KvList, type KvItem } from "@/ui/kv-list/KvList";
 export type RowSheetProps = {
   open: boolean;
   onClose: () => void;
-  /** 항목명(--fs-lg). */
+  /** 항목명(--text-subtitle). */
   title: string;
   /** {소분류} · {거래처}. */
   subtitle: string;

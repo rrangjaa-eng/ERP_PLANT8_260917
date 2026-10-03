@@ -94,7 +94,8 @@ test.describe("§4-4 브라우저 기본 표면 (02-08 Task 1)", () => {
       return { backgroundColor: style.backgroundColor, color: style.color };
     });
     expect(selection.backgroundColor).toBe("rgb(220, 232, 228)");
-    expect(selection.color).toBe("rgb(11, 21, 18)");
+    // 옛 전경색 토큰(#0B1512)이 지워져 선택 글자는 역할 토큰 --text-strong이다(04.6-31 — 의도한 값 변화, 계산 값으로 단언).
+    expect(selection.color).toBe(await tokenAsColor(page, "--text-strong"));
   });
 
   test("/login 컨트롤이 Pretendard 서체로 렌더된다", async ({ page }) => {

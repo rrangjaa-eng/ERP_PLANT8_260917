@@ -12,6 +12,7 @@ import {
   type CertificatePrintRow,
   correctSubmission,
   getCertificatePrint,
+  isCertificatePrintable,
 } from "@/domain/certs/review";
 import { decrypt } from "@/lib/crypto";
 import type { SignatureStore } from "@/lib/storage/signature-store";
@@ -168,6 +169,32 @@ describe("getCertificatePrint — 정보 항목 cert_submission.value 투영(cod
     const allowed = await makeReviewer(FULL_GRANT);
     const projected = await project(allowed, sample, CERTIFICATE_PRINT_DTO_SPEC);
     expect(Object.keys(projected).sort()).toEqual(CERTIFICATE_PRINT_DTO_SPEC.fields.map((f) => f.key).sort());
+  });
+});
+
+// 04.6-28 /review P2 — 레이아웃 사전 판정은 getCertificatePrint의 판정과 같아야 한다(값 항목이 숨겨진 계급은 둘 다 거부 · 활동 기록 0줄).
+describe("isCertificatePrintable — getCertificatePrint와 같은 판정(읽기 전용)", () => {
+  it("보기는 켜고 cert_submission.value는 끈 viewer → false · 켠 viewer → true · cert_view 기록 0줄", async () => {
+    const seeded = await seedSubmittedCert();
+    const off = await makeReviewer({ view: true, write: false, value: false, unmasked: false });
+    const on = await makeReviewer(FULL_GRANT);
+    expect(await isCertificatePrintable(off, seeded.submissionId)).toBe(false);
+    expect(await isCertificatePrintable(on, seeded.submissionId)).toBe(true);
+    expect(await countLogs("cert_view", seeded.submissionId)).toBe(0);
+  });
+
+  it("사전 판정과 본 판정이 같은 viewer · 같은 표본에서 일치한다(값 항목 꺼짐 · 켜짐 · 파기됨)", async () => {
+    const seeded = await seedSubmittedCert();
+    const deps = { signatureStore: storeWith(signaturePngFixture()) };
+    const off = await makeReviewer({ view: true, write: false, value: false, unmasked: false });
+    const on = await makeReviewer(FULL_GRANT);
+    for (const viewer of [off, on]) {
+      const printable = await isCertificatePrintable(viewer, seeded.submissionId);
+      const result = await getCertificatePrint(viewer, seeded.submissionId, { ip: null }, deps);
+      expect(printable).toBe(result.kind === "ok");
+    }
+    await db.update(certSubmissions).set({ purgedAt: new Date() }).where(eq(certSubmissions.id, seeded.submissionId));
+    expect(await isCertificatePrintable(on, seeded.submissionId)).toBe(false);
   });
 });
 

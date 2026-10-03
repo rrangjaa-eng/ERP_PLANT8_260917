@@ -132,3 +132,8 @@
   font-size: var(--text-aux);
   color: var(--status-danger);
 }
+
+/* 조직 계층 목록 — 720 기둥(globals .single-column)이고 UA 기본 위 여백(14·15px)을 지워 행동 줄 아래 --s-3 하나만 남긴다(04.6 W1-4 B7·B9·B10). */
+.orgList {
+  margin: 0;
+}

@@ -144,7 +144,7 @@ export function OrgList({
   canWrite: boolean;
 }) {
   return (
-    <ul>
+    <ul className={`single-column ${styles.orgList}`}>
       {orgUnits.map((org) => (
         <OrgUnitRow key={org.id} orgUnit={org} teams={teams} canArchive={canArchive} canWrite={canWrite} />
       ))}

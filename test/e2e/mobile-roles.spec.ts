@@ -51,9 +51,11 @@ test.describe("폰 375 /admin/people/roles 가로 스크롤 금지 · 머리글 
     await loginAs(page);
     await page.goto("/admin/people/roles");
 
-    const headers = page.locator("th");
+    // 04.6 W1-4 B2·B3 — 폰에서 P2 머리글(시드 여부 · 정렬)은 접혀 안 보인다. 5열 선언은 그대로 두고 보이는 머리글만 줄 수를 잰다.
+    expect(await page.locator("th").count()).toBe(5);
+    const headers = page.locator("th").filter({ visible: true });
     const count = await headers.count();
-    expect(count).toBe(5);
+    expect(count).toBe(3);
     for (let i = 0; i < count; i += 1) {
       const lineCount = await headers.nth(i).evaluate((el) => {
         const range = document.createRange();

@@ -4,6 +4,8 @@ import { createFixtureUser } from "./fixtures";
 import { createVendor } from "@/domain/vendors";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
+import { isStrict } from "./design-principles";
+import { checkPrinciples } from "./principles-check";
 
 // 02-08 갭 클로저 — 페이지 층(body 아홉 선언 · §4-4 브라우저 표면 · 컨트롤 서체 ·
 // FormAlert · KvList · PageHeader · WR-01 aria-current)의 계산값을 고정한다.
@@ -199,27 +201,57 @@ test.describe("§6-0 화면 제목·부제 · §6-9 오류 제목 (02-08 Task 2)
     await expect(subtitle).toHaveCSS("color", await tokenAsColor(page, "--text-muted"));
   });
 
-  test("루트 404(셸 밖) 제목이 --fs-2xl 자간·행간이다", async ({ page }) => {
+  test("루트 404(셸 밖) 제목이 DetailScreen 틀의 --text-title 자간·행간이다", async ({ page }) => {
     await page.goto("/e2e-page-chrome-nonexistent");
 
-    const h1 = page.locator("main h1");
-    await expect(h1).toHaveCSS("font-size", "32px");
+    const h1 = page.locator('main [data-ui="screen-title"]');
+    const titleSize = await tokenValue(page, "--text-title");
+    await expect(h1).toHaveCSS("font-size", titleSize);
     const letterSpacing = await h1.evaluate((el) => getComputedStyle(el).letterSpacing);
-    expect(px(letterSpacing)).toBeCloseTo(-0.64, 1);
+    expect(px(letterSpacing)).toBeCloseTo(px(titleSize) * -0.02, 1);
     const lineHeight = await h1.evaluate((el) => getComputedStyle(el).lineHeight);
-    expect(px(lineHeight)).toBeCloseTo(41.6, 1);
+    expect(px(lineHeight)).toBeCloseTo(px(titleSize) * 1.3, 1);
+    await expect(page.locator("main")).toHaveCount(1);
   });
 
-  test("셸 안 404(직원 → /admin/system-status) 제목이 --fs-2xl 자간·행간이다", async ({ page }) => {
+  test("셸 안 404(직원 → /admin/system-status) 제목이 DetailScreen 틀의 --text-title 자간·행간이다", async ({ page }) => {
     await loginAs(page, DEFAULT_ROLE_ID);
     const response = await page.goto("/admin/system-status");
     expect(response?.status()).toBe(404);
 
-    const h1 = page.locator("main h1");
+    const h1 = page.locator('main [data-ui="screen-title"]');
+    const titleSize = await tokenValue(page, "--text-title");
+    await expect(h1).toHaveCSS("font-size", titleSize);
     const letterSpacing = await h1.evaluate((el) => getComputedStyle(el).letterSpacing);
-    expect(px(letterSpacing)).toBeCloseTo(-0.64, 1);
+    expect(px(letterSpacing)).toBeCloseTo(px(titleSize) * -0.02, 1);
     const lineHeight = await h1.evaluate((el) => getComputedStyle(el).lineHeight);
-    expect(px(lineHeight)).toBeCloseTo(41.6, 1);
+    expect(px(lineHeight)).toBeCloseTo(px(titleSize) * 1.3, 1);
+  });
+
+  test("자리 화면 넷 — 빈 화면 한 줄 + 첫 행동 버튼 하나, 부제 설명문 없음(04.6-19)", async ({ page }) => {
+    await loginAs(page, DEFAULT_ROLE_ID);
+    const places = [
+      { route: "/expenses", title: "지출결의", subtitle: "지급요청·결재 진행 현황", action: "법인카드 보기" },
+      { route: "/cards", title: "법인카드", subtitle: "카드 사용 등록 내역", action: "결재함 보기" },
+      { route: "/pnl", title: "손익", subtitle: "프로젝트·팀 손익 원장", action: "프로젝트 보기" },
+      { route: "/settings", title: "설정", subtitle: "운영 설정", action: "내 정보 보기" },
+    ];
+    for (const place of places) {
+      await page.goto(place.route);
+      await expect(page.locator('[data-ui="screen-title"]'), place.route).toHaveText(place.title);
+      await expect(page.getByText(place.subtitle, { exact: true }), place.route).toHaveCount(0);
+      const empty = page.locator('[data-ui="empty-state"]');
+      await expect(empty, place.route).toHaveCount(1);
+      await expect(empty.getByRole("link"), place.route).toHaveCount(1);
+      await expect(empty.getByRole("link", { name: place.action }), place.route).toBeVisible();
+    }
+  });
+
+  test("화면 사용성 원칙(막는 모드) — 내 차례·알림함·자리", async ({ page }) => {
+    await loginAs(page, DEFAULT_ROLE_ID);
+    const routes = ["/", "/notifications", "/expenses", "/cards", "/pnl", "/settings"];
+    const report = await checkPrinciples(page, routes, { strict: isStrict(process.env.DESIGN_PRINCIPLES_STRICT) });
+    expect(report.map((entry) => entry.route)).toEqual(routes);
   });
 });
 

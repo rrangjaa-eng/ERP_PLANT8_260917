@@ -69,6 +69,7 @@
   --text-faint:     var(--n-600);   /* on canvas 4.88 · on base 5.35 · --surface-selected 위 금지 */
   --text-group:     var(--g-800);   /* on group 9.79 */
   --text-on-accent: var(--n-0);     /* on accent 8.91 */
+  --text-on-tint:   var(--g-950);   /* on --surface-selected(g-100) 13.5 — 편집 표 머리글 글자(SYSTEM 894) */
   --text-link:      var(--accent);
 
   /* 선 */
@@ -325,6 +326,7 @@
     --text-faint:     var(--print-ink);
     --text-group:     var(--print-ink);
     --text-on-accent: #FFFFFF;
+    --text-on-tint:   var(--print-ink);
     --text-link:      var(--print-ink);
     /* 선 */
     --border-surface: var(--print-ink);

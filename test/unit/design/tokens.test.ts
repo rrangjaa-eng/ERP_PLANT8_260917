@@ -157,6 +157,7 @@ describe("tokens.css — ③ 글자 × 면 대비 쌍(허용 쌍 표 · 금지 �
     ["--text-muted", [...BODY_SURFACES, "--surface-group", "--surface-selected"]],
     ["--text-faint", [...BODY_SURFACES, "--surface-group"]],
     ["--text-group", ["--surface-group"]],
+    ["--text-on-tint", ["--surface-selected"]],
     ["--text-link", [...BODY_SURFACES, "--surface-group", "--surface-selected"]],
     ["--status-danger", [...BODY_SURFACES, "--surface-group", "--status-danger-weak"]],
     ["--status-warning", [...BODY_SURFACES, "--surface-group", "--status-warning-weak"]],

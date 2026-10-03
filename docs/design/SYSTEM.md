@@ -111,7 +111,7 @@
 | 무리 | 역할 토큰 → 원시 |
 |---|---|
 | 면 | `--surface-canvas`→n-75(페이지 바탕) · `--surface-base`→n-0(표·폼·패널·모달) · `--surface-head`→n-50(표 머리글) · `--surface-foot`→n-50(합계 줄) · `--surface-group`→g-50(그룹 줄) · `--surface-actions`→n-25(패널 행동 줄) · `--surface-muted`→n-60(비활성·뼈대 행) · `--surface-selected`→g-100 |
-| 글자 | `--text-strong`→n-900 · `--text-muted`→n-700 · `--text-faint`→n-600 · `--text-group`→g-800 · `--text-on-accent`→n-0 · `--text-link`→`--accent` |
+| 글자 | `--text-strong`→n-900 · `--text-muted`→n-700 · `--text-faint`→n-600 · `--text-group`→g-800 · `--text-on-accent`→n-0 · `--text-on-tint`→g-950(편집 표 머리글 글자 — `--surface-selected` 위, §7-3 894) · `--text-link`→`--accent` |
 | 선 | `--border-surface`→n-150(표·패널·합계 면 테두리) · `--border-row`→n-100(행 사이·섹션) · `--border-strong`→n-200(합계 위) · `--border-button`→n-300(2차 버튼) · `--border-control`→n-500(입력 테두리, UQ-7 A) · `--line-w`=1px · `--underline-w-hover`=2px · `--underline-offset`=2px |
 | 강조·상태 | `--accent`→g-700 · `--accent-hover`→g-800 · `--accent-weak`→g-50 · `--status-danger`/`-weak`→red-800/red-50 · `--status-warning`/`-weak`→amber-700/amber-50 · `--status-success`→g-600 · `--status-accent`→g-700 · `--status-muted`→n-700 · `--focus`→g-700 |
 | 상단 바 | `--bar-bg`→g-900 · `--bar-fg`→g-100 · `--bar-muted`→g-300 · `--bar-leaf`→g-400 · `--bar-h`=48 · `--focus-on-bar`→g-100(바 위 포커스 링) |

@@ -1695,3 +1695,15 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 **이유**: 사용자가 이미 고른 결정(DR4 A)이 구현되지 않은 것이라 결정을 바꾸지 않고 구현을 맞춘다. 폭 차이는 CSS 미디어쿼리(`SidePanel`의 700 경계)와 같은 `SidePanel` 하나로 처리해 JS 폭 판정이 없다(첫 렌더 CLS 사례).
 
 **범위**: SYSTEM.md §6-1 결재함 줄, `app/(app)/approvals/inbox-table.tsx` · `inbox-table.module.css`, `test/e2e/panel-routes.ts`(PC 행 `approvals-sheet-pc` 추가).
+
+
+## 2026-10-03 — 편집 표 머리글 글자는 `--g-950` (SYSTEM 894 이행 · 역할 토큰 `--text-on-tint` — 04.6-12 · 웨이브 6 화면 검사 후속)
+
+**결정**: 편집할 수 있는 셀이 하나라도 있는 표의 머리글 글자를 `--text-strong`(n-900)에서 SYSTEM §7-3(894) · §7-13(1095)이 정한 `--g-950`으로 맞춘다. 공용 Table `.editable`을 고치므로 견적 표 · 코드표 · 계급 표 · 갤러리 편집 표가 같아진다(화면 하나만 예외 금지).
+
+**이유**: f2821b1c가 코드표 · 계급에 편집 머리글을 걸면서 글자를 기존 `.editable`의 `--text-strong`에 맞췄지만 SYSTEM 문구는 `--g-950`(on `--g-100` 13.5)이다. 구현이 SYSTEM과 어긋난 것이라 SYSTEM을 바꾸지 않고 구현을 맞춘다.
+
+**토큰**: stylelint 2단 계약이 컴포넌트의 원시 토큰(`--g-*`) 직접 참조를 막으므로 역할 토큰 `--text-on-tint`→g-950 하나를 더한다(새 색 아님 — 기존 g-950의 역할 이름). 인쇄에서는 `--print-ink`. 대비 쌍 `--text-on-tint` on `--surface-selected` 4.5 이상을 단위 시험에 넣는다.
+
+**범위**: `docs/design/tokens.css` · SYSTEM.md §1-2 역할 표, `ui/table/Table.module.css`(`.editable .headerCell`).
+

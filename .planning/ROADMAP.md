@@ -399,7 +399,7 @@ Plans:
 12. 글자·바탕 대비 4.5:1 미만(큰 글자 3:1)을 자동 검사가 막는다
 13. 시스템 변경은 `docs/design/DECISIONS.md` 기록 → `docs/design/SYSTEM.md` 수정 순서로 한다(`.claude/rules/frontend.md`): radius 0 · 그림자 없음 · 2px 진한 선 결정 뒤집기, D-39 폼 배치 → 옆 패널, 고른 완화 후보
 
-**Plans:** 30/32 plans executed
+**Plans:** 32/32 plans executed
 
 Plans:
 **Wave 1**
@@ -452,8 +452,8 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [ ] 04.6-31-PLAN.md — ⑦ 옛 토큰 이름 삭제 · 인쇄 토큰 · SYSTEM §11 · 늦게 머지될 페이즈 알림 · R19는 #150으로 끝남 확인(TODOS 샤드 줄 수 그대로 — 새 줄 없음)
-- [ ] 04.6-33-PLAN.md — ⑦ (UQ-4에 4일 때만) 아이콘 · (UQ-5 B면) lucide-react 사람 확인·판 고정
+- [x] 04.6-31-PLAN.md — ⑦ 옛 토큰 이름 삭제 · 인쇄 토큰 · SYSTEM §11 · 늦게 머지될 페이즈 알림 · R19는 #150으로 끝남 확인(TODOS 샤드 줄 수 그대로 — 새 줄 없음)
+- [x] 04.6-33-PLAN.md — ⑦ (UQ-4에 4일 때만) 아이콘 · (UQ-5 B면) lucide-react 사람 확인·판 고정
 - ~~04.6-32-PLAN.md~~ — superseded → COMMON §9 0단계(오케스트레이터가 웨이브 ⑦ 세션에서 31·33 뒤 CI 기준 사진 — 플랜 아님)
 
 ### Phase 04.1: 결재 모듈·연차 (INSERTED)

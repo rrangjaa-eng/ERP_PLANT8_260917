@@ -145,12 +145,12 @@ test("tracer — 제출 섹션(읽기 표 · 경품별 그룹 · 가린 연락�
   await expect(page.locator('[role="grid"]').filter({ has: page.locator("caption", { hasText: /^제출$/ }) })).toHaveCount(0);
   await expect(table.locator("caption")).toHaveClass(/sr-only/);
 
-  // 그룹 머리글 — 단위 붙은 건수(DR-15) · 당첨 수 · 초과(E6 a · DR-2). `초과 1건`만 --warning.
+  // 그룹 머리글 — 단위 붙은 건수(DR-15) · 당첨 수 · 초과(E6 a · DR-2). `초과 1건`만 --status-warning.
   const headerA = table.getByText("갤럭시 탭 S10 · 제출 3건 / 당첨 2명", { exact: false });
   await expect(headerA).toBeVisible();
   await expect(headerA).toContainText("· 초과 1건");
   const over = table.getByText("초과 1건", { exact: true });
-  expect(await colorOf(over)).toBe(await tokenColor(page, "--warning"));
+  expect(await colorOf(over)).toBe(await tokenColor(page, "--status-warning"));
   expect(await colorOf(headerA)).toBe(await tokenColor(page, "--text-group"));
   await expect(table.getByText("스타벅스 카드 · 제출 1건 / 당첨 1명", { exact: true })).toBeVisible();
 
@@ -164,7 +164,7 @@ test("tracer — 제출 섹션(읽기 표 · 경품별 그룹 · 가린 연락�
   await expect(rowA3).not.toContainText("같은");
   const rowB1 = table.locator("tr").filter({ hasText: "박민수" }).first();
   await expect(rowB1).toContainText("파기 대상");
-  expect(await colorOf(rowB1.getByText("파기 대상", { exact: true }))).toBe(await tokenColor(page, "--warning"));
+  expect(await colorOf(rowB1.getByText("파기 대상", { exact: true }))).toBe(await tokenColor(page, "--status-warning"));
   await expect(table).not.toContainText("4821-7730");
 
   // 「제출 내용」 — 줄마다 보통 Tab 정지 · 접근 이름이 줄마다 다름(DR-8).
@@ -187,7 +187,7 @@ test("tracer — 제출 섹션(읽기 표 · 경품별 그룹 · 가린 연락�
   await expect(page).toHaveURL(new RegExp(`/certs/submissions/${ev.b1.id}$`));
   const rrnGroup = page.getByRole("group", { name: "주민등록번호" });
   await expect(rrnGroup).toContainText("930412-2****** · 파기 대상");
-  expect(await colorOf(rrnGroup.getByText("파기 대상", { exact: false }).last())).toBe(await tokenColor(page, "--warning"));
+  expect(await colorOf(rrnGroup.getByText("파기 대상", { exact: false }).last())).toBe(await tokenColor(page, "--status-warning"));
   await expect(rrnGroup.getByRole("button", { name: "전체 보기" })).toHaveCount(1);
   await page.context().close();
 });
@@ -392,7 +392,7 @@ test("확정된 거부 — 링크 닫기 · 대조 제외 `… 실패 · 권한 
   }
 });
 
-test("경품 표 — 닫힌 행사 당첨 3 · 제출 1 목록 경품 → `1 · 미제출 2`(미제출만 --warning) · 접수 중 같은 줄은 `1`", async ({ browser }) => {
+test("경품 표 — 닫힌 행사 당첨 3 · 제출 1 목록 경품 → `1 · 미제출 2`(미제출만 --status-warning) · 접수 중 같은 줄은 `1`", async ({ browser }) => {
   const make = async (name: string) => {
     const event = await createCertEvent({ name, prizes: [{ name: "다이슨 에어랩", unitValueKrw: 599_000, winnerCount: 3 }] });
     await submitAs(event.token ?? "", event.prizeIds[0] ?? "", "김하늘", "010-4821-7730");
@@ -407,7 +407,7 @@ test("경품 표 — 닫힌 행사 당첨 3 · 제출 1 목록 경품 → `1 · 
     p.locator("table").filter({ has: p.locator("caption", { hasText: /^경품$/ }) }).locator("tbody tr").filter({ hasText: "다이슨 에어랩" });
   await page.goto(`/certs/events/${closed.eventId}`);
   await expect(prizeRow(page)).toContainText("1 · 미제출 2");
-  expect(await colorOf(prizeRow(page).getByText("미제출 2", { exact: true }))).toBe(await tokenColor(page, "--warning"));
+  expect(await colorOf(prizeRow(page).getByText("미제출 2", { exact: true }))).toBe(await tokenColor(page, "--status-warning"));
   await page.goto(`/certs/events/${open.eventId}`);
   await expect(prizeRow(page)).not.toContainText("미제출");
   await page.context().close();

@@ -80,6 +80,8 @@
    첫·끝 칸은 표 면 안쪽 여백 --s-4. 마지막 행 아래 선은 없다(아래 마지막 tbody 규칙). */
 .cell {
   height: var(--row-h);
+  /* SYSTEM §2 `--text-body` 행간 「표 1.5 · 산문 1.6」 — 본문 1.6 상속이 아니다(웨이브 6 J3 · 사용자 채팅 지시 2026-10-03 22:35 KST). 머리글은 본문 행간 1.6 그대로. */
+  line-height: var(--lh-table);
   padding: var(--cell-pad-y) var(--cell-pad-x);
   border-bottom: var(--line-w) solid var(--border-row);
   vertical-align: top;
@@ -275,6 +277,7 @@ th.groupHeader {
   padding: 0 var(--s-4) var(--cell-pad-y);
   color: var(--text-muted);
   font-size: var(--text-aux);
+  line-height: var(--lh-table);
 }
 
 .emptyCell {

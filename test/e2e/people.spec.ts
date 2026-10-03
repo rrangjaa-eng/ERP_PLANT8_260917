@@ -160,19 +160,21 @@ test.describe("사람 목록 로그인 상태 배지 · 행 머리글 (04.4-05, 
     await expect(statusCell(personRow(page, email))).toHaveText("보관됨");
   });
 
-  // 04.6-14: 목록 표가 `StaticTable`(스킨 A 표)이다 — 표 칸은 자기 행간을 정하지 않고 본문 행간(--lh-body)을 이어받는다(옛 --lh-table 폐지).
-  test("목록 표의 머리글 · 행 머리글 · 셀이 본문 행간(--lh-body)이고 행 머리글은 셀과 같은 글자다", async ({ page }) => {
+  // 04.6-14: 목록 표가 `StaticTable`(스킨 A 표)이다 — 머리글은 본문 행간(--lh-body)을 이어받는다.
+  // 웨이브 6 J3(사용자 채팅 지시 2026-10-03 22:35 KST 「1.5로 줄여」, SYSTEM §2 「표 1.5 · 산문 1.6」): 표 셀 · 행 머리글은 `.cell`이 --lh-table(1.5)을 건다 — 기대가 --lh-body에서 바뀐 이유.
+  test("목록 표의 머리글은 본문 행간(--lh-body) · 행 머리글 · 셀은 표 행간(--lh-table)이고 행 머리글은 셀과 같은 글자다", async ({ page }) => {
     await loginAsAdmin(page);
     const email = await registerPerson(page, "줄높이대상");
     const lhBody = await tokenNumber(page, "--lh-body");
+    const lhTable = await tokenNumber(page, "--lh-table");
 
     const row = personRow(page, email);
     const head = await styleOf(page.locator("thead th").first());
     const rowHeader = await styleOf(row.locator("th[scope='row']"));
     const cell = await styleOf(row.locator("td").first());
     expect(ratio(head)).toBeCloseTo(lhBody, 2);
-    expect(ratio(rowHeader)).toBeCloseTo(lhBody, 2);
-    expect(ratio(cell)).toBeCloseTo(lhBody, 2);
+    expect(ratio(rowHeader)).toBeCloseTo(lhTable, 2);
+    expect(ratio(cell)).toBeCloseTo(lhTable, 2);
 
     expect(rowHeader.fontWeight).toBe("400");
     expect(rowHeader.textAlign).toBe("left");
@@ -181,17 +183,19 @@ test.describe("사람 목록 로그인 상태 배지 · 행 머리글 (04.4-05, 
   });
 
   // 04.6-14: 계급 표가 `StaticTable`이다 — 머리글 아래 선은 1px(--line-w) · 글자는 --fw-medium이고 머리글은 한 줄이다(옛 nowrap 대신 줄 수로 잰다).
-  test("계급 화면 표는 --lh-body이고 열 머리글은 한 줄 · 굵게 · 1px 아래선이다", async ({ page }) => {
+  // 웨이브 6 J3: 머리글은 --lh-body, 셀은 --lh-table(1.5) — 위 목록 표 시험과 같은 이유.
+  test("계급 화면 표는 머리글 --lh-body · 셀 --lh-table이고 열 머리글은 한 줄 · 굵게 · 1px 아래선이다", async ({ page }) => {
     await loginAsAdmin(page);
     await page.goto("/admin/people/roles");
     const lhBody = await tokenNumber(page, "--lh-body");
+    const lhTable = await tokenNumber(page, "--lh-table");
     const fwMedium = await tokenNumber(page, "--fw-medium");
     const line = await tokenNumber(page, "--line-w");
 
     const head = await styleOf(page.locator("table thead th").first());
     const cell = await styleOf(page.locator("table tbody td").first());
     expect(ratio(head)).toBeCloseTo(lhBody, 2);
-    expect(ratio(cell)).toBeCloseTo(lhBody, 2);
+    expect(ratio(cell)).toBeCloseTo(lhTable, 2);
     expect(Number(head.fontWeight)).toBe(fwMedium);
     expect(parseFloat(head.borderBottomWidth)).toBe(line);
     const headerLines = await page.locator("table thead th").evaluateAll((cells) =>

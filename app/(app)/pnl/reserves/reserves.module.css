@@ -1,17 +1,10 @@
-/* 04.6 스킨 A 이관 전: CSS */
-/* 04-42 — 리저브 대장(S9). 토큰만 쓴다(docs/design/tokens.css) — 새 색·서체·radius 없음. */
+/* 04-42 — 리저브 대장(S9). 04.6-22: ListScreen 틀로 옮겨 제목 줄 규칙 · 뼈대 규칙을 지웠다. 값은 역할 토큰만 쓴다(스킨 A). */
 
-.header {
+/* 1차 「일괄 저장」 줄 — 제목은 ListScreen이 그리고, 저장 단추는 편집 상태를 가진 이 클라이언트 표가 오른쪽 끝에 둔다. */
+.saveRow {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--s-3);
-}
-
-.titleBlock {
-  min-width: 0;
-  flex: 1 1 auto;
+  justify-content: flex-end;
+  margin: 0 0 var(--s-3);
 }
 
 /* 셀 편집기 — 견적 표 편집 셀(project-detail.module.css)과 같은 모양. */
@@ -24,15 +17,14 @@
   padding: 0 var(--s-1);
   border: 0;
   border-bottom: var(--line-w) solid var(--accent);
-  background: var(--g-50);
-  color: var(--fg);
+  background: var(--accent-weak);
+  color: var(--text-strong);
   font-family: var(--font-sans);
-  font-size: var(--fs-base);
+  font-size: var(--text-body);
 }
 
 .cellInputNumeric {
   text-align: right;
-  font-variant-numeric: tabular-nums;
 }
 
 .cellSelect:focus-visible,
@@ -43,8 +35,8 @@
 }
 
 .cellEditError {
-  color: var(--danger);
-  font-size: var(--fs-sm);
+  color: var(--status-danger);
+  font-size: var(--text-aux);
 }
 
 /* 금액 편집 — 통화 · 금액 · (외화면) 환율 한 줄. */
@@ -54,16 +46,9 @@
   align-items: center;
 }
 
-/* S9 — 잔액은 계산값이지만 값이다: 흐린 색이 아니라 본문 색. */
+/* S9 — 잔액은 계산값이지만 값이다: 흐린 색이 아니라 본문 색. 숫자 폭은 Num이 맡는다. */
 .balance {
-  color: var(--fg);
-  font-variant-numeric: tabular-nums;
-}
-
-/* S9 · §2-4 — 세금계산서 번호는 숫자 고정 폭, 꺾이지 않는다. */
-.taxInvoice {
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  color: var(--text-strong);
 }
 
 /* S9 long-text — 메모는 긴 칸 규칙 아래 PC에서 한 줄 말줄임(행 높이를 늘리지 않는다). */
@@ -77,8 +62,8 @@
 
 .footerCell {
   padding: var(--cell-pad-y) var(--cell-pad-x);
-  border-top: var(--line-w-strong) solid var(--line-strong);
-  color: var(--fg);
+  border-top: var(--line-w) solid var(--border-strong);
+  color: var(--text-strong);
   font-weight: var(--fw-bold);
 }
 
@@ -92,12 +77,12 @@
 /* Codex #7 — 다른 쪽 줄의 잔액 거부. 표 위 한 줄(오류 색 토큰) + 3차 링크. */
 .batchError {
   margin: var(--s-2) 0;
-  color: var(--danger);
-  font-size: var(--fs-sm);
+  color: var(--status-danger);
+  font-size: var(--text-aux);
 }
 
 .batchErrorLink {
-  color: var(--accent);
+  color: var(--text-link);
   font-weight: var(--fw-medium);
   text-decoration: underline;
   text-decoration-thickness: var(--line-w);
@@ -105,7 +90,7 @@
 }
 
 .batchErrorLink:hover {
-  text-decoration-thickness: var(--line-w-strong);
+  text-decoration-thickness: var(--underline-w-hover);
 }
 
 /* 04-04(D-68) — 저장 안 한 편집 복원 줄(견적 원장과 같은 모양). */
@@ -115,8 +100,8 @@
   align-items: center;
   column-gap: var(--s-2);
   margin: var(--s-2) 0;
-  color: var(--muted);
-  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-size: var(--text-aux);
   word-break: keep-all;
 }
 
@@ -129,8 +114,8 @@
 .restoreAction {
   border: 0;
   background: none;
-  color: var(--accent);
-  font-size: var(--fs-sm);
+  color: var(--text-link);
+  font-size: var(--text-aux);
   font-weight: var(--fw-medium);
   text-decoration: underline;
   text-decoration-thickness: var(--line-w);
@@ -140,7 +125,7 @@
 
 /* §4-4 · §7-1 3차 밑줄 1px → hover 2px. */
 .restoreAction:hover:not([aria-disabled="true"]) {
-  text-decoration-thickness: var(--line-w-strong);
+  text-decoration-thickness: var(--underline-w-hover);
 }
 
 @media (max-width: 699.98px) {
@@ -154,15 +139,15 @@
 /* §7-9 · 개정 ⑬ — 힌트 줄(ui/table Table.module.css .hintRow와 같은 모양). */
 .hintRow {
   margin-top: var(--s-3);
-  color: var(--faint);
-  font-size: var(--fs-sm);
+  color: var(--text-faint);
+  font-size: var(--text-aux);
 }
 
 .hintRow kbd {
   padding: 0 var(--s-1);
-  border: var(--line-w) solid var(--line);
-  color: var(--faint);
-  font-size: var(--fs-xs);
+  border: var(--line-w) solid var(--border-row);
+  color: var(--text-faint);
+  font-size: var(--text-tag);
   line-height: var(--lh-head);
 }
 
@@ -170,25 +155,4 @@
   .hintRow {
     display: none;
   }
-}
-
-/* §7-7 LOADING 뼈대(loading.tsx) — projects.module.css 목록 뼈대와 같은 모양. */
-.skeleton {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.skeleton th {
-  padding: var(--cell-pad-y) var(--cell-pad-x);
-  border-bottom: var(--line-w-strong) solid var(--line-strong);
-  color: var(--muted);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  text-align: left;
-}
-
-.skeletonRow td {
-  height: var(--row-min);
-  border-bottom: var(--line-w) solid var(--line);
-  background: var(--surface);
 }

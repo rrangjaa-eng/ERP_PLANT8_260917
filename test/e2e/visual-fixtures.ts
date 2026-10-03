@@ -78,8 +78,8 @@ export async function loginForVisual(page: Page): Promise<VisualFixtures> {
 export async function openForVisual(page: Page, url: string, ready: (page: Page) => Locator): Promise<void> {
   await page.goto(url);
   await expect(ready(page)).toBeVisible();
-  // 라우트 loading.tsx의 뼈대(표 머리글 + 빈 행 3개, 접근성 트리에서 숨김)가 걷힌 뒤에 찍는다 — 뼈대가 사진에 남으면 안 된다.
-  await expect(page.locator('table[aria-hidden="true"]')).toHaveCount(0);
+  // 라우트 loading.tsx의 뼈대(`data-ui="table-skeleton"` div — 300ms 지연 표시)가 걷힌 뒤에 찍는다 — 뼈대가 사진에 남으면 안 된다.
+  await expect(page.locator('[data-ui="table-skeleton"]')).toHaveCount(0);
   await page.evaluate(() => document.fonts.ready);
 }
 

@@ -15,6 +15,8 @@
   font-weight: var(--fw-medium);
   color: var(--text-muted);
   text-align: left;
+  /* §2-4: 머리글은 짧은 낱말이라 폰 320에서 값 칸(긴 팀 이름)에 밀려도 「동│작」처럼 쪼개지지 않는다. */
+  white-space: nowrap;
   padding: var(--cell-pad-y) var(--cell-pad-x);
   border-bottom: var(--line-w) solid var(--border-row);
 }
@@ -25,6 +27,11 @@
   padding: var(--cell-pad-y) var(--cell-pad-x);
   font-size: var(--text-body);
   border-bottom: var(--line-w) solid var(--border-row);
+}
+
+/* §2-4: 날짜 칸(적용 시작일)은 숫자 칸처럼 nowrap — 줄바꿈은 값 칸이 맡는다. */
+.table td:first-child {
+  white-space: nowrap;
 }
 
 /* §2-4: 숫자 칸은 우측 정렬 + nowrap. tabular-nums는 stylelint가 `ui/num`에만 허용하므로 값 칸 안 `Num`이 맡는다. */

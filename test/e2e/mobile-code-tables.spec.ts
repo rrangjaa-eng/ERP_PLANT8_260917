@@ -38,10 +38,10 @@ test.describe("폰 375 /admin/code-tables 터치 목표 (§3)", () => {
 });
 
 // 04-25(D-93 · UI-SPEC S14 overflow, 2026-09-23 사용자 확정): 폰(<700)에서
-// 설명은 P2 — 각 행 아래 접힌 줄에 한 번만 보이고, 값·정렬·동작 열은 P3로
+// 설명은 P2 — 각 행 아래 접힌 줄에 한 번만 보이고, 값·정렬 열은 P3로
 // 숨는다(SYSTEM.md §7-3 「폰 전략 = 칸 접기」). 가로 스크롤 0.
 test.describe("폰 375 /admin/code-tables 설명 접힌 줄 (S14 overflow)", () => {
-  test("설명이 이름 아래 접힌 줄에 한 번만 보이고 값·정렬·동작 열이 숨는다, 가로 스크롤 0", async ({ page }) => {
+  test("설명이 이름 아래 접힌 줄에 한 번만 보이고 값·정렬 열이 숨고 동작 열은 보인다, 가로 스크롤 0", async ({ page }) => {
     const admin = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
 
     await page.goto("/login");
@@ -68,10 +68,11 @@ test.describe("폰 375 /admin/code-tables 설명 접힌 줄 (S14 overflow)", () 
     await page.keyboard.press("Escape");
     await expect(dialog).toHaveCount(0);
 
-    // 사용자 결정 2026-10-03 14:57 KST 카드 「폰은 읽기만」 — 폰의 표 안에는 입력 · 편집 버튼이 없고 이름 · 설명이 글자로 보인다.
-    // (옛 단언: 설명 입력이 이름 입력 아래 접힌 줄 · 동작 두 버튼 44px 이상 — 입력과 버튼이 사라져 글자 위치 · 숨김으로 대체.)
+    // 사용자 결정 2026-10-03 14:57 KST 카드 「폰은 읽기만」 — 폰의 표 안에는 입력 칸 · 선택 상자가 없고 이름 · 설명이 글자로 보인다.
+    // 동작 열(「비활성화」 · 「삭제」)은 Q4 A · SYSTEM 876대로 폰에서도 보인다(아래 44px 단언) — 그 두 버튼 말고 보이는 버튼은 없다.
     // 폰의 편집 요소는 DOM에 있되 CSS로 숨는다(첫 렌더부터 — 04.6 W5 D-1) — 의미는 「보이는 입력 0」이다.
-    await expect(page.locator("table input, table select, table button").filter({ visible: true })).toHaveCount(0);
+    await expect(page.locator("table input, table select").filter({ visible: true })).toHaveCount(0);
+    await expect(page.locator("table button").filter({ visible: true }).filter({ hasNotText: /^(비활성화|활성화|삭제)$/ })).toHaveCount(0);
     const nameText = page.locator("tbody td").filter({ visible: true, hasText: label }).first();
     // 한 번만 — 같은 설명을 폰에서 두 번 보이지 않는다.
     const descriptionText = page.locator("tbody td").filter({ visible: true, hasText: description });
@@ -86,12 +87,16 @@ test.describe("폰 375 /admin/code-tables 설명 접힌 줄 (S14 overflow)", () 
     expect(descriptionBox!.y).toBeGreaterThanOrEqual(nameBox!.y + nameBox!.height);
     expect(descriptionBox!.width).toBeGreaterThan(nameBox!.width);
 
-    // P3: 값·정렬·동작 열(머리글과 칸)이 숨는다. P1 머리글(이름·상태)이 보이는 것부터 확인해 표 역할이 살아 있음을 고정한다.
-    // 04.6-15 Q4 A 「보이게」였던 동작 열은 읽기 전용 결정으로 폰에서 P3로 숨는다(편집 행동 없음).
-    for (const header of ["이름", "상태"]) {
+    // P3: 값·정렬 열(머리글과 칸)이 숨는다. P1 머리글(이름·상태·동작)이 보이는 것부터 확인해 표 역할이 살아 있음을 고정한다.
+    // 04.6-15 Q4 A · SYSTEM 876 — 동작 열은 폰에서도 P1로 보이고 두 버튼은 44px 이상이다(편집 칸 · 추가 행만 폰에 없다).
+    for (const header of ["이름", "상태", "동작"]) {
       await expect(page.getByRole("columnheader", { name: header, exact: true })).toBeVisible();
     }
-    for (const header of ["값", "설명", "정렬", "동작"]) {
+    for (const button of await page.locator("tbody button").filter({ visible: true }).all()) {
+      const box = await button.boundingBox();
+      expect(box!.height).toBeGreaterThanOrEqual(44);
+    }
+    for (const header of ["값", "설명", "정렬"]) {
       await expect(page.getByRole("columnheader", { name: header, exact: true })).toBeHidden();
     }
     await expect(page.getByText(value, { exact: true })).toBeHidden();

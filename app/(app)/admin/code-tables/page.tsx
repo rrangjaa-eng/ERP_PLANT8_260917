@@ -18,7 +18,6 @@ import {
   CodeItemActiveToggle,
   CodeItemDeleteButton,
 } from "./code-item-form";
-import { PcOnly } from "../pc-only";
 import { EvidenceTypeFields } from "./evidence-type-fields";
 import styles from "./code-tables.module.css";
 
@@ -123,15 +122,15 @@ export default async function CodeTablesPage({
         <StaticTable
           editable
           caption={`코드표 · ${currentLabel}`}
-          // 폰: 이름 · 상태가 P1, 설명은 이름 아래 접힌 줄(P2), 값 · 정렬 · 동작은 숨김(P3). 폰은 읽기만이라 편집 행동(동작)도 폰에서 숨는다
-          // (사용자 결정 2026-10-03 14:57 KST 카드 「폰은 읽기만」 — 04.6-15 Q4 A 「동작 보이게」를 대체).
+          // 폰: 이름 · 상태 · 동작이 P1, 설명은 이름 아래 접힌 줄(P2), 값 · 정렬은 숨김(P3). 폰은 읽기만이라 편집 칸 · 추가 행은 없지만
+          // 동작 열(「비활성화」 · 「삭제」)은 44px로 보인다(Q4 A · SYSTEM 876 — 2026-10-03 14:57 KST 「폰은 읽기만」은 편집 칸만 바꿨다).
           columns={[
             { key: "value", header: "값", priority: "p3" },
             { key: "label", header: "이름", priority: "p1" },
             { key: "description", header: "설명", priority: "p2" },
             { key: "sortOrder", header: "정렬", priority: "p3", align: "right" },
             { key: "status", header: "상태", priority: "p1" },
-            ...(hasActions ? [{ key: "actions", header: "동작", priority: "p3" as const }] : []),
+            ...(hasActions ? [{ key: "actions", header: "동작", priority: "p1" as const }] : []),
           ]}
           rows={items.map((item) => ({
             key: item.id,
@@ -157,12 +156,10 @@ export default async function CodeTablesPage({
               ...(hasActions
                 ? [
                     item.archivedAt ? null : (
-                      <PcOnly key="actions">
-                        <RowActions>
-                          {canWrite ? <CodeItemActiveToggle id={item.id} active={item.active} /> : null}
-                          {canArchive ? <CodeItemDeleteButton id={item.id} label={item.label} /> : null}
-                        </RowActions>
-                      </PcOnly>
+                      <RowActions key="actions">
+                        {canWrite ? <CodeItemActiveToggle id={item.id} active={item.active} /> : null}
+                        {canArchive ? <CodeItemDeleteButton id={item.id} label={item.label} /> : null}
+                      </RowActions>
                     ),
                   ]
                 : []),

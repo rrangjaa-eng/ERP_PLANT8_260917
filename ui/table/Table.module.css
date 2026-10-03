@@ -63,6 +63,15 @@
   color: var(--text-on-tint);
 }
 
+/* 입력 칸이 있는 정적 표(코드표 · 계급)는 폰(<700)에서 읽기 전용이라 편집 셀이 0이다 — 머리글은 읽기 표 면 그대로(SYSTEM 894 「없으면 흰 바탕」).
+   폭 판정은 CSS 미디어쿼리라 서버 렌더 첫 화면부터 맞는다(JS 폭 감지는 수화 뒤에 바뀌어 CLS). */
+@media (max-width: 699.98px) {
+  .inputCells.editable .headerCell {
+    background: var(--surface-head);
+    color: var(--text-muted);
+  }
+}
+
 /* §7-2 「표 안 입력: 테두리 없이 아래 1px --accent 밑줄 + focus 링. 셀 배경 --g-50」 — 입력 칸이 있는 정적 표(코드표 · 계급, `StaticTable editable`).
    호출부 입력 클래스(.labelInput · .select — 패널 폼과 공유)보다 앞서도록 표 안 후손 선택자로 건다. 오류(aria-invalid)는 밑줄 색만 위험 색이다. */
 .inputCells :is(input:not([type="checkbox"], [type="radio"], [type="hidden"]), select) {

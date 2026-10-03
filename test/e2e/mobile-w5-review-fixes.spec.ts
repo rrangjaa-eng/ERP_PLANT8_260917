@@ -34,7 +34,7 @@ for (const width of [375, 320]) {
       const noJs = await context.newPage();
       for (const path of D1_PATHS) {
         await noJs.goto(path);
-        const visibleEdit = noJs.locator("table input, table select, table textarea, table button").filter({ visible: true });
+        const visibleEdit = noJs.locator("table input, table select, table textarea, table button").filter({ visible: true }).filter({ hasNotText: /^(비활성화|활성화|삭제)$/ });
         expect(await visibleEdit.count(), `${path} 보이는 편집 요소`).toBe(0);
         await expect(noJs.locator("tbody td").filter({ visible: true, hasText: /\S/ }).first()).toBeVisible();
       }
@@ -54,7 +54,7 @@ for (const width of [375, 320]) {
         await fresh.goto(path);
         await fresh.waitForLoadState("networkidle");
         await fresh.waitForTimeout(800);
-        const visibleEdit = fresh.locator("table input, table select, table textarea, table button").filter({ visible: true });
+        const visibleEdit = fresh.locator("table input, table select, table textarea, table button").filter({ visible: true }).filter({ hasNotText: /^(비활성화|활성화|삭제)$/ });
         expect(await visibleEdit.count(), `${path} 보이는 편집 요소`).toBe(0);
         const cls = await fresh.evaluate(() => (window as unknown as { __cls: number }).__cls);
         expect(cls, `${path} CLS`).toBeLessThan(0.1);

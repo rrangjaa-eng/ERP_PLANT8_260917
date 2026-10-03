@@ -110,17 +110,15 @@ function RoleActionsCell({
           isProtected가 서버에서도 거부한다). 쓰기 권한이 없는 계급에도
           렌더하지 않는다. */}
       {!role.isSeed && !role.archivedAt && canArchive ? (
-        <PcOnly>
-          <RowActions>
-            <DeleteToArchive
-              name={role.name}
-              onArchive={async () => {
-                const result = await archiveRoleAction({ id: role.id });
-                if (result?.serverError) throw new Error(result.serverError);
-              }}
-            />
-          </RowActions>
-        </PcOnly>
+        <RowActions>
+          <DeleteToArchive
+            name={role.name}
+            onArchive={async () => {
+              const result = await archiveRoleAction({ id: role.id });
+              if (result?.serverError) throw new Error(result.serverError);
+            }}
+          />
+        </RowActions>
       ) : null}
     </>
   );

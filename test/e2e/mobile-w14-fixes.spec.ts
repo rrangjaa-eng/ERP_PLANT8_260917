@@ -117,7 +117,8 @@ for (const width of [375, 320]) {
       await loginAsAdmin(page);
       await page.goto("/admin/people/roles");
       const table = page.locator("table");
-      await expect(table.locator("input, select, button, textarea").filter({ visible: true })).toHaveCount(0);
+      await expect(table.locator("input, select, textarea").filter({ visible: true })).toHaveCount(0);
+      await expect(table.locator("button").filter({ visible: true }).filter({ hasNotText: /^(비활성화|활성화|삭제)$/ })).toHaveCount(0);
       for (const text of ["대표", "본부 책임자", "팀장", "기획 PM", "시스템 관리자"]) {
         await expect(table.getByRole("cell", { name: text, exact: true }).first()).toBeVisible();
       }
@@ -130,7 +131,8 @@ for (const width of [375, 320]) {
       for (const tableKey of ["project_status", "evidence_type"]) {
         await page.goto(`/admin/code-tables?tableKey=${tableKey}`);
         const table = page.locator("table");
-        await expect(table.locator("input, select, button, textarea").filter({ visible: true }), `${tableKey} 표 안 보이는 편집 요소`).toHaveCount(0);
+        await expect(table.locator("input, select, textarea").filter({ visible: true }), `${tableKey} 표 안 보이는 편집 요소`).toHaveCount(0);
+        await expect(table.locator("button").filter({ visible: true }).filter({ hasNotText: /^(비활성화|활성화|삭제)$/ }), `${tableKey} 표 안 보이는 편집 버튼`).toHaveCount(0);
         await expect(table.locator("tbody td").filter({ visible: true }).first()).not.toHaveText("");
         await expect(page.locator('[data-ui="primary-button"]')).toBeHidden();
       }

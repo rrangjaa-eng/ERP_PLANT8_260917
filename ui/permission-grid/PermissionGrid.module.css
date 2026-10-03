@@ -167,6 +167,7 @@
   width: 100%;
   height: var(--control-h);
   border: var(--line-w) solid var(--border-control);
+  border-radius: var(--radius-control);
   background: var(--surface-base);
   padding: 0 var(--s-2);
   font-size: var(--text-body);

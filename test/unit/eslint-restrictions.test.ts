@@ -75,8 +75,9 @@ describe("eslint: app/**에서 <table>·<dialog> 직접 금지", () => {
 describe("eslint: TSX 이관 전 표시 래칫(공통 §3)", () => {
   const marked = collectMarked(ROOT, "tsx");
 
-  it("표시 파일 수가 10 이상이다(공허 방지)", () => {
-    expect(marked.length).toBeGreaterThanOrEqual(10);
+  // 웨이브가 화면을 이관할수록 표시 파일이 줄어든다(웨이브 ④ 합본 8개) — 바닥은 「수집기가 파일을 찾는다」만 지키고, 0이 되는 때는 04.6-28의 표시 0 단언이 맡는다.
+  it("표시 파일이 1개 이상이다(공허 방지)", () => {
+    expect(marked.length).toBeGreaterThanOrEqual(1);
   });
 
   it("표시를 떼면 오류가 ≥ 1이다 — 0이면 표시를 지워라", async () => {

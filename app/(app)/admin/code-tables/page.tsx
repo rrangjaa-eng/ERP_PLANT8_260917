@@ -121,6 +121,7 @@ export default async function CodeTablesPage({
         />
       ) : (
         <StaticTable
+          editable
           caption={`코드표 · ${currentLabel}`}
           // 폰: 이름 · 상태가 P1, 설명은 이름 아래 접힌 줄(P2), 값 · 정렬 · 동작은 숨김(P3). 폰은 읽기만이라 편집 행동(동작)도 폰에서 숨는다
           // (사용자 결정 2026-10-03 14:57 KST 카드 「폰은 읽기만」 — 04.6-15 Q4 A 「동작 보이게」를 대체).

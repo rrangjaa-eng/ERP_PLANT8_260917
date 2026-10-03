@@ -30,6 +30,8 @@ export type StaticTableRow = {
 
 export type StaticTableProps = {
   caption: string;
+  /** 칸 안에 입력 · select가 있는 표(코드표 · 계급) — 머리글이 편집 신호 면(§7-3)이고 칸 안 입력은 아래 밑줄만 그린다(§7-2). */
+  editable?: boolean;
   columns: StaticTableColumn[];
   rows: StaticTableRow[];
 };
@@ -42,12 +44,12 @@ function classNames(...names: (string | false | undefined)[]): string {
   return names.filter(Boolean).join(" ");
 }
 
-export function StaticTable({ caption, columns, rows }: StaticTableProps) {
+export function StaticTable({ caption, editable = false, columns, rows }: StaticTableProps) {
   const hasRowHeader = columns.some((column) => column.rowHeader);
   const p2Indexes = columns.flatMap((column, index) => (column.priority === "p2" ? [index] : []));
 
   return (
-    <table className={styles.table}>
+    <table className={classNames(styles.table, editable && styles.editable, editable && styles.inputCells)}>
       <caption className="sr-only">{caption}</caption>
       <thead>
         <tr>

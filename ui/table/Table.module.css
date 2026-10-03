@@ -63,10 +63,25 @@
   color: var(--text-strong);
 }
 
+/* §7-2 「표 안 입력: 테두리 없이 아래 1px --accent 밑줄 + focus 링. 셀 배경 --g-50」 — 입력 칸이 있는 정적 표(코드표 · 계급, `StaticTable editable`).
+   호출부 입력 클래스(.labelInput · .select — 패널 폼과 공유)보다 앞서도록 표 안 후손 선택자로 건다. 오류(aria-invalid)는 밑줄 색만 위험 색이다. */
+.inputCells :is(input:not([type="checkbox"], [type="radio"], [type="hidden"]), select) {
+  border: 0;
+  border-bottom: var(--line-w) solid var(--accent);
+  border-radius: 0;
+  background: var(--accent-weak);
+}
+
+.inputCells :is(input, select)[aria-invalid="true"] {
+  border-bottom-color: var(--status-danger);
+}
+
 /* 행 높이 --row-h는 칸 높이로 건다(table-cell은 min-height가 안 먹는다 — 칸이 줄어들 수 없어 최솟값으로 동작).
    첫·끝 칸은 표 면 안쪽 여백 --s-4. 마지막 행 아래 선은 없다(아래 마지막 tbody 규칙). */
 .cell {
   height: var(--row-h);
+  /* SYSTEM §2 `--text-body` 행간 「표 1.5 · 산문 1.6」 — 본문 1.6 상속이 아니다(웨이브 6 J3 · 사용자 채팅 지시 2026-10-03 22:35 KST). 머리글은 본문 행간 1.6 그대로. */
+  line-height: var(--lh-table);
   padding: var(--cell-pad-y) var(--cell-pad-x);
   border-bottom: var(--line-w) solid var(--border-row);
   vertical-align: top;
@@ -262,6 +277,7 @@ th.groupHeader {
   padding: 0 var(--s-4) var(--cell-pad-y);
   color: var(--text-muted);
   font-size: var(--text-aux);
+  line-height: var(--lh-table);
 }
 
 .emptyCell {

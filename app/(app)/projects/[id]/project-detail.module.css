@@ -185,6 +185,12 @@
   color: var(--text-faint);
 }
 
+/* 웨이브 6 DOM 감사 P3 · SYSTEM §7-3(853) 「폭 --row-number-w(28)」 — 자동 표 배치가 남는 폭을 번호 칸에도 나눠 칸 내용이 28을 넘어 늘었다.
+   번호 칸(td)을 1%로 두면 칸이 내용 폭(= .rowNumber의 28)까지만 쪼그라들고 남는 폭은 다른 열이 가져간다. */
+td:has(> .rowNumber) {
+  width: 1%;
+}
+
 /* §4-4 · §7-1 3차 밑줄 1px → hover 2px. */
 .restoreAction:hover:not([aria-disabled="true"]) {
   text-decoration-thickness: var(--underline-w-hover);

@@ -1,13 +1,13 @@
-// 04.6 스킨 A 이관 전: 화면 틀
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { Form } from "@/ui/form/Form";
 import { KvList, type KvItem } from "@/ui/kv-list/KvList";
 import { Button } from "@/ui/button/Button";
-import { PageHeader } from "@/ui/page-header/PageHeader";
+import { DetailScreen, type DetailScreenProps } from "@/ui/detail-screen/DetailScreen";
+import { Num } from "@/ui/num/Num";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import type { CorrectionField, CorrectionFieldError } from "@/domain/certs/review";
@@ -79,8 +79,12 @@ type ExcludeResponse = Awaited<ReturnType<typeof excludeCertSubmissionAction>> |
 
 export function ReviewForm(props: {
   submissionId: string;
-  title: string;
-  subtitle: string;
+  /** DetailScreen 머리의 제목과 메타 한 줄 — 서버가 만든다(행동 · 상태는 폼 상태에 달려 있어 폼이 그린다). */
+  frame: Pick<DetailScreenProps, "title" | "meta">;
+  /** 행사 이름 — 메타 한 줄이 길어지지 않게 라벨·값 줄로 둔다. */
+  eventName: string;
+  /** 대조 제외된 I4의 `MM-dd HH:mm · {제외한 사람}`(제외 안 됐으면 null). */
+  excludedNote: string | null;
   version: number;
   name: string;
   rrnMasked: string;
@@ -193,67 +197,63 @@ export function ReviewForm(props: {
     />
   ) : null;
 
-  // 머리 줄 — PageHeader에는 행동 자리가 없어(D-25) 폼이 그린다. 2차 「인쇄」는 저장된 값을 찍는 인쇄 라우트를 새 탭으로
-  // 연다 — 고친 칸이 있으면 화면 값과 인쇄물이 달라지므로 비활성 + 이유(aria-disabled, UI-SPEC I4 머리 2차 · D-7).
-  const header = (
-    <div className={styles.header}>
-      <div className={styles.titleBlock}>
-        <PageHeader title={props.title} subtitle={props.subtitle} />
-      </div>
-      {props.excluded ? (
-        <StatusTag kind="muted" variant="tag">
-          대조 제외
-        </StatusTag>
-      ) : (
-        <StatusTag kind="success" variant="tag">
-          제출됨
-        </StatusTag>
-      )}
-      {/* 04.3-17 — 「인쇄」는 대조 제외 · 주민번호만 비운 제출에 없다(인쇄 라우트 404 — DR-1 · ⑥-b). */}
-      {props.canExclude || !(props.excluded || props.rrnCleared) ? (
-        <div className={styles.headerActions}>
-          {/* 04.3-17 「대조 제외」 — 「인쇄」 왼쪽(정정 1차와 떨어진 쪽 · UD-2 a). 저장 안 한 정정 칸이 있어도 켜진다(그 값도 지워질 값). */}
-          {props.canExclude ? (
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setExcludeFailure(null);
-                setExcludeOpen(true);
-              }}
-            >
-              대조 제외
-            </Button>
-          ) : null}
-          {props.excluded || props.rrnCleared ? null : (
-            <Button
-              variant="secondary"
-              disabled={changedCount > 0}
-              disabledReason={changedCount > 0 ? `저장 안 한 칸 ${changedCount} · 먼저 저장` : undefined}
-              onClick={() => window.open(`/print/certs/${props.submissionId}`, "_blank", "noopener")}
-            >
-              <span className={styles.printLabel}>
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 16 16"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                  focusable="false"
-                >
-                  <path d="M4 6V2h8v4" />
-                  <path d="M4 12H2V6h12v6h-2" />
-                  <path d="M4 9.5h8V14H4z" />
-                </svg>
-                인쇄
-              </span>
-            </Button>
-          )}
-        </div>
-      ) : null}
-    </div>
+  // 머리 줄 — DetailScreen의 행동 자리(오른쪽, 2차만 — 1차는 아래 「고친 내용 저장」)에 폼 상태를 읽는 2차를 둔다. 2차 「인쇄」는 저장된
+  // 값을 찍는 인쇄 라우트를 새 탭으로 연다 — 고친 칸이 있으면 화면 값과 인쇄물이 달라지므로 비활성 + 이유(aria-disabled, UI-SPEC I4 머리 2차 · D-7).
+  // 04.3-17 — 「인쇄」는 대조 제외 · 주민번호만 비운 제출에 없다(인쇄 라우트 404 — DR-1 · ⑥-b).
+  const headerActions =
+    props.canExclude || !(props.excluded || props.rrnCleared) ? (
+      <>
+        {/* 04.3-17 「대조 제외」 — 「인쇄」 왼쪽(정정 1차와 떨어진 쪽 · UD-2 a). 저장 안 한 정정 칸이 있어도 켜진다(그 값도 지워질 값). */}
+        {props.canExclude ? (
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setExcludeFailure(null);
+              setExcludeOpen(true);
+            }}
+          >
+            대조 제외
+          </Button>
+        ) : null}
+        {props.excluded || props.rrnCleared ? null : (
+          <Button
+            variant="secondary"
+            disabled={changedCount > 0}
+            disabledReason={changedCount > 0 ? `저장 안 한 칸 ${changedCount} · 먼저 저장` : undefined}
+            onClick={() => window.open(`/print/certs/${props.submissionId}`, "_blank", "noopener")}
+          >
+            <span className={styles.printLabel}>
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinejoin="round"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path d="M4 6V2h8v4" />
+                <path d="M4 12H2V6h12v6h-2" />
+                <path d="M4 9.5h8V14H4z" />
+              </svg>
+              인쇄
+            </span>
+          </Button>
+        )}
+      </>
+    ) : undefined;
+
+  const screen = (body: ReactNode) => (
+    <DetailScreen
+      title={props.frame.title}
+      meta={props.frame.meta}
+      status={props.excluded ? <StatusTag status="대조 제외" variant="tag" /> : <StatusTag status="제출됨" variant="tag" />}
+      actions={{ secondary: headerActions }}
+    >
+      {body}
+    </DetailScreen>
   );
 
   const correct = useAction(correctCertSubmissionAction, {
@@ -384,6 +384,7 @@ export function ReviewForm(props: {
   );
 
   const detailItems: KvItem[] = [
+    { label: "행사", value: props.eventName },
     { label: "경품", value: props.prizeLine },
     { label: "수집 안내", value: props.consentLine },
     {
@@ -423,32 +424,30 @@ export function ReviewForm(props: {
   // 04.3-17 — 대조 제외된 제출(DR-1): 이름 · 수량은 글자, 주민등록번호 · 연락처 · 주소 · 서명 `—`, 행동(저장 · 전체 보기 · 인쇄 ·
   // 대조 제외)은 그리지 않는다.
   if (props.excluded) {
-    return (
-      <>
-        {header}
-        <div className={styles.form}>
-          <KvList
-            items={[
-              { label: FIELD_LABELS.name, value: props.name },
-              { label: FIELD_LABELS.quantity, value: <span className={styles.num}>{props.quantity}</span> },
-              { label: FIELD_LABELS.rrn, value: "—" },
-              { label: FIELD_LABELS.phone, value: "—" },
-              ...(props.address !== null ? [{ label: FIELD_LABELS.address, value: "—" }] : []),
-              { label: "경품", value: props.prizeLine },
-              { label: "수집 안내", value: props.consentLine },
-              { label: "서명", value: "—" },
-            ]}
-          />
-        </div>
-      </>
+    return screen(
+      <div className={styles.form}>
+        <KvList
+          items={[
+            { label: FIELD_LABELS.name, value: props.name },
+            { label: FIELD_LABELS.quantity, value: <Num value={props.quantity} unit="count" /> },
+            { label: FIELD_LABELS.rrn, value: "—" },
+            { label: FIELD_LABELS.phone, value: "—" },
+            ...(props.address !== null ? [{ label: FIELD_LABELS.address, value: "—" }] : []),
+            { label: "행사", value: props.eventName },
+            { label: "경품", value: props.prizeLine },
+            { label: "수집 안내", value: props.consentLine },
+            { label: "서명", value: "—" },
+            ...(props.excludedNote !== null ? [{ label: "대조 제외", value: props.excludedNote }] : []),
+          ]}
+        />
+      </div>,
     );
   }
 
   // 쓰기 권한이 없으면 값은 입력이 아니라 글자다(§6-3 · §7-2 · DOM 감사 L3).
   if (!props.canCorrect) {
-    return (
+    return screen(
       <>
-        {header}
         <div className={styles.form}>
           <KvList
             items={[
@@ -457,25 +456,24 @@ export function ReviewForm(props: {
                 value: values.name,
               },
               { label: FIELD_LABELS.rrn, value: rrnField },
-              { label: FIELD_LABELS.phone, value: <span className={styles.num}>{values.phone}</span> },
+              { label: FIELD_LABELS.phone, value: <Num value={values.phone} /> },
               ...(values.address !== null ? [{ label: FIELD_LABELS.address, value: values.address }] : []),
-              { label: FIELD_LABELS.quantity, value: <span className={styles.num}>{values.quantity}</span> },
+              { label: FIELD_LABELS.quantity, value: <Num value={values.quantity} /> },
               ...detailItems,
             ]}
           />
         </div>
         {excludeDialog}
-      </>
+      </>,
     );
   }
 
   const showSavedText = outcome?.kind === "saved" && changedCount === 0;
   const showReason = changedCount > 0 && outcome !== null && outcome.kind !== "saved" && !correct.isExecuting;
 
-  return (
+  return screen(
     <>
-      {header}
-      <Form id="cert-review-form" className={styles.form} onSubmit={handleSubmit}>
+      <Form id="cert-review-form" layout="page" className={styles.form} onSubmit={handleSubmit}>
         {textField("name", "long")}
         <Form.Field id="cert-review-rrn" label="주민등록번호" width="long">
           {rrnField}
@@ -521,6 +519,6 @@ export function ReviewForm(props: {
         </div>
       </Form>
       {excludeDialog}
-    </>
+    </>,
   );
 }

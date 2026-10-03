@@ -1,30 +1,4 @@
-/* 04.6 스킨 A 이관 전: CSS */
-/* 04.3-07 — I4 확인증 확인 · 정정(SYSTEM §6-3 · §7-15 · UI-SPEC I4). 토큰만(docs/design/tokens.css). */
-
-/* 머리 줄도 폼 열 720에 맞춘다(§6-3). */
-.header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: var(--s-3);
-  max-width: var(--form-max);
-}
-
-.titleBlock {
-  min-width: 0;
-  flex: 1 1 auto;
-  word-break: keep-all;
-  overflow-wrap: anywhere;
-}
-
-/* 머리 줄의 행동 자리 — 2차 「인쇄」(quote-table 머리 줄 선례). 좁은 폭에서는 줄바꿈으로 내려가고 숨기지 않는다. */
-.headerActions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--s-3);
-  margin-left: auto;
-}
+/* 04.3-07 — I4 확인증 확인 · 정정(SYSTEM §6-3 · §7-15 · UI-SPEC I4). 역할 토큰만(docs/design/tokens.css). 제목·상태·행동 줄은 DetailScreen이 맡는다(04.6-24). */
 
 .printLabel {
   display: inline-flex;
@@ -48,12 +22,13 @@
 .fieldError {
   flex-basis: 100%;
   margin: 0;
-  color: var(--danger);
-  font-size: var(--fs-sm);
+  color: var(--status-danger);
+  font-size: var(--text-aux);
 }
 
+/* 숫자 글자 — 서식은 ui/num이 정한다(rrn-field.tsx가 이 이름으로 쓴다). */
 .num {
-  font-variant-numeric: tabular-nums;
+  composes: num from "../../../../../ui/num/Num.module.css";
 }
 
 /* 주민등록번호 — 가린 텍스트(또는 입력 280) + 3차 한 줄. */
@@ -65,9 +40,11 @@
   min-height: var(--control-h);
 }
 
+/* 숫자 폭은 입력 칸 모양의 `.numeric`을 받는다(Q10) — 주민번호는 왼쪽에서 읽으므로 정렬만 되돌린다. */
 .rrnInput {
-  flex: 0 1 280px;
-  font-variant-numeric: tabular-nums;
+  composes: numeric from "../../../../../ui/input/TextField.module.css";
+  flex: 0 1 var(--field-w-short);
+  text-align: left;
 }
 
 .rrnText {
@@ -75,13 +52,13 @@
 }
 
 .unsaved {
-  color: var(--muted);
-  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-size: var(--text-aux);
 }
 
-/* 04.3-17 — 주민등록번호 가린 값 뒤 `파기 대상`(§7-3 ⑮ 색 글자 — --warning, N10 a). */
+/* 04.3-17 — 주민등록번호 가린 값 뒤 `파기 대상`(§7-3 ⑮ 색 글자 — 경고색, N10 a). */
 .purgeMark {
-  color: var(--warning);
+  color: var(--status-warning);
 }
 
 /* 서명 — 읽기 전용 이미지(폭 320 · 비율 520/200, 폰 전폭), 테두리 없이 아래 1px 선. */
@@ -93,11 +70,11 @@
 
 .signatureImage {
   display: block;
-  width: 320px;
+  width: calc(var(--s-8) * 10);
   max-width: 100%;
   aspect-ratio: 520 / 200;
   object-fit: contain;
-  border-bottom: var(--line-w) solid var(--line);
+  border-bottom: var(--line-w) solid var(--border-row);
 }
 
 .signatureError {
@@ -106,18 +83,18 @@
   align-items: center;
   gap: var(--s-1);
   margin: 0;
-  color: var(--danger);
-  font-size: var(--fs-sm);
+  color: var(--status-danger);
+  font-size: var(--text-aux);
 }
 
 .signatureCaption {
-  color: var(--muted);
-  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-size: var(--text-aux);
 }
 
 .savedText {
   margin: 0;
-  color: var(--success);
+  color: var(--status-success);
   font-weight: var(--fw-medium);
 }
 
@@ -127,8 +104,8 @@
   align-items: center;
   gap: var(--s-1);
   margin: 0;
-  color: var(--danger);
-  font-size: var(--fs-sm);
+  color: var(--status-danger);
+  font-size: var(--text-aux);
 }
 
 @media (max-width: 699.98px) {
@@ -139,8 +116,8 @@
   /* §6-3 폰 규칙 — 제출 줄은 하단 탭 위에 얹혀 고정(탭 유지). */
   .actionsBar {
     position: sticky;
-    bottom: calc(var(--touch-min) + var(--line-w-strong));
-    background: var(--bg);
+    bottom: calc(var(--touch-min) + var(--line-w));
+    background: var(--surface-base);
   }
 
   /* §6-3 폰 제출 줄의 1차는 --touch-min(44) 높이 · 줄 폭을 채운다. ui/button .btn(높이 --control-h)보다
@@ -158,7 +135,7 @@
   /* 포커스된 칸이 sticky 제출 줄 · 하단 탭 밑으로 들어가지 않게 — 스크롤 여백 = 탭 + 제출 줄(§6-3 「본문 아래
      여백 = 탭 44 + 제출 줄 높이」 · DOM 감사 L2). 제출 줄이 두 줄로 접히는 오류 상태까지 덮는다. */
   :global(html):has(.actionsBar) {
-    scroll-padding-bottom: calc(var(--touch-min) * 2 + var(--line-w-strong) + var(--s-4) + var(--s-8));
+    scroll-padding-bottom: calc(var(--touch-min) * 2 + var(--line-w) + var(--s-4) + var(--s-8));
   }
 }
 
@@ -177,8 +154,8 @@
   .printLine {
     display: block;
     margin: 0;
-    color: var(--fg);
-    font-size: var(--fs-base);
+    color: var(--text-strong);
+    font-size: var(--text-body);
   }
 }
 

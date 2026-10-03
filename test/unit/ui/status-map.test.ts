@@ -97,12 +97,12 @@ describe("StatusTag — status 낱말을 받는다", () => {
     expect(render({ status: "닫힘" })).toMatch(/_muted_/);
   });
 
-  it("사용 중단 kind도 지금처럼 그린다(화면 플랜이 옮기는 동안만)", () => {
-    expect(render({ kind: "warning", children: "오늘" })).toMatch(/_warning_[^"]*[^>]*>오늘</);
-  });
-
-  it("kind prop은 @deprecated로 표시돼 있다(04.6-28이 지운다)", () => {
-    expect(readFileSync(join(process.cwd(), "ui/status-tag/StatusTag.tsx"), "utf8")).toContain("@deprecated");
+  it("kind prop은 없다 — 호출부가 색을 고를 수 없다(타입 오류 · SC 9)", () => {
+    // @ts-expect-error — kind는 더 이상 받지 않는다(색은 status 낱말이 정한다)
+    void createElement(StatusTag, { kind: "warning", status: "오늘" });
+    const source = readFileSync(join(process.cwd(), "ui/status-tag/StatusTag.tsx"), "utf8");
+    expect(source).not.toContain("@deprecated");
+    expect(source).not.toMatch(/\bkind\??:/);
   });
 });
 

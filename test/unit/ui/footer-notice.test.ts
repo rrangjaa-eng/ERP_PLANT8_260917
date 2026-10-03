@@ -36,7 +36,7 @@ describe("composeFooterNotice — 합계 행 오른쪽 한 줄(DR-16)", () => {
     ).toEqual(["오류 2칸", "300줄 상한 · 상한은 관리자 설정"]);
   });
 
-  it("저장 성공이 있으면 그 하나만(--success) — 나머지를 지운다", () => {
+  it("저장 성공이 있으면 그 하나만(success 톤) — 나머지를 지운다", () => {
     expect(
       pieces([{ tone: "danger", text: "오류 1칸" }, { tone: "muted", text: "붙여넣기 3줄", paste: "head" }], { successText: "저장됨 6줄 14:02" }),
     ).toEqual([{ tone: "success", text: "저장됨 6줄 14:02" }]);

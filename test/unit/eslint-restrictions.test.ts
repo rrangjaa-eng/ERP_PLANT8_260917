@@ -8,7 +8,8 @@ import {
   collectMarked,
   stripMark,
 } from "../../scripts/design/mark-legacy.mjs";
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 
 // app/**의 <table>·<dialog> 직접 그리기 금지(04.6 SC 2) 규칙과 TSX 이관 전 표시 래칫(공통 §3).
 // 타입 정보가 필요 없는 규칙이라 ESLint API에 이 설정 배열과 TS 파서만 올려 lintText로 검증한다.
@@ -75,9 +76,18 @@ describe("eslint: app/**에서 <table>·<dialog> 직접 금지", () => {
 describe("eslint: TSX 이관 전 표시 래칫(공통 §3)", () => {
   const marked = collectMarked(ROOT, "tsx");
 
-  // 웨이브가 화면을 이관할수록 표시 파일이 줄어든다(웨이브 ④ 합본 8개) — 바닥은 「수집기가 파일을 찾는다」만 지키고, 0이 되는 때는 04.6-28의 표시 0 단언이 맡는다.
-  it("표시 파일이 1개 이상이다(공허 방지)", () => {
-    expect(marked.length).toBeGreaterThanOrEqual(1);
+  // 웨이브가 화면을 이관할수록 표시 파일이 줄어든다(웨이브 ④ 8개 → 웨이브 ⑤ 0개). 저장소 표시 수의 바닥은 없다(0 가능) —
+  // 「수집기가 표시 파일을 찾는다」는 임시 픽스처로 지키고, 저장소에 표시가 남아 있으면 아래 두 테스트가 규칙 동작을 잰다.
+  it("수집기는 표시가 있는 TSX를 찾고 없는 TSX는 건너뛴다(공허 방지 — 픽스처)", () => {
+    const dir = mkdtempSync(resolve(tmpdir(), "collect-marked-"));
+    mkdirSync(resolve(dir, "app/(app)/x"), { recursive: true });
+    writeFileSync(resolve(dir, "app/(app)/x/page.tsx"), `${MARKERS.tsx}\n${TABLE}`);
+    writeFileSync(resolve(dir, "app/(app)/x/clean.tsx"), "export const a = 1;\n");
+    expect(collectMarked(dir, "tsx")).toEqual(["app/(app)/x/page.tsx"]);
+  });
+
+  it("저장소 표시 파일 수는 0 이상이다(0이 최종 목표 — 04.6-28)", () => {
+    expect(marked.length).toBeGreaterThanOrEqual(0);
   });
 
   it("표시를 떼면 오류가 ≥ 1이다 — 0이면 표시를 지워라", async () => {

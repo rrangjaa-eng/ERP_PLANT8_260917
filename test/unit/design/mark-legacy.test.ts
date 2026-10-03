@@ -184,8 +184,11 @@ describe("mark-legacy --audit(공통 §4 (a)~(f))", () => {
         return { code: e.status, out: e.stdout };
       }
     };
-    // 아직 이관 전 표시가 남은 화면 폴더 — 거래처는 04.6-11이 옮겨 깨끗해졌다(표시가 모두 사라지는 04.6-28에서 픽스처 판으로 바꾼다).
-    const bad = run("app/(app)/pnl");
+    // 저장소에 이관 전 표시가 남은 화면 폴더가 없어도(04.6-22 뒤 pnl 0개) 「표시 있음 → 코드 1」은 임시 픽스처로 계속 잰다.
+    const dir = fixture({
+      "app/(app)/x/page.tsx": `${MARKERS.tsx}\nexport default function P() { return <table />; }\n`,
+    });
+    const bad = run(join(dir, "app"));
     expect(bad.code).toBe(1);
     expect(bad.out).toMatch(/\(a\)/);
     expect(run("app/(auth)")).toEqual({ code: 0, out: "" });

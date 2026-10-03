@@ -97,6 +97,20 @@ describe("보관함 (ADMN-12, 실제 Postgres)", () => {
     await expect(listArchive(pmViewer)).rejects.toBeInstanceOf(ForbiddenError);
   });
 
+  // DEF-1 — 행마다 빈 투영({})이 되어 보관함 화면이 500(new Date(undefined))이던 결함.
+  it("보관함 메뉴는 있지만 보관함 정보(archive.value)가 숨김인 계급은 빈 목록을 받는다(DEF-1)", async () => {
+    const { vendor } = await createVendor(SYSTEM_VIEWER, { name: `거래처-${randomUUID()}` });
+    await archive(SYSTEM_VIEWER, "vendor", vendor.id);
+
+    const roleId = `role-${randomUUID()}`;
+    await insertRole(SYSTEM_VIEWER, { id: roleId, name: `계급 ${roleId.slice(5, 13)}` });
+    await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "admin.archive", action: "view", allowed: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "archive.value", visible: false });
+    const hiddenViewer = { id: `archive-hidden-${randomUUID()}`, roleId };
+
+    await expect(listArchive(hiddenViewer)).resolves.toEqual([]);
+  });
+
   it("보관·복원이 각각 행동 로그에 남는다", async () => {
     const tableKey = "project_status"; // quick 261002-3mx — 허용 코드표만 추가된다
     const codeItem = await createCodeItem(SYSTEM_VIEWER, { tableKey, value: "a", label: "A" });

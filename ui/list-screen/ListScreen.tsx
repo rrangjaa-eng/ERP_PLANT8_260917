@@ -15,6 +15,8 @@ export type ListScreenProps = {
   filters?: ReactNode;
   /** 필터 줄 아래 합계 면(`--surface-base` 1px 면). */
   summary?: ReactNode;
+  /** 필터 줄(행동 줄)을 한 열 목록과 같은 720 기둥으로 — 조직(SYSTEM §3 단일 기둥). */
+  singleColumn?: boolean;
   /**
    * DR5 A — 등록된 대상이 하나도 없을 때만 넘기는 빈 화면(`ListEmpty` + 등록 행동 하나). 받으면 표 자리에 이것만 그리고 `primaryAction`은 그리지 않는다.
    * 필터 결과 0건은 빈 목록이 아니다 — 그때는 `children`에 필터 빈 화면을 두고 머리 1차를 남긴다.
@@ -28,7 +30,7 @@ export type ListScreenProps = {
   panel?: ReactNode;
 };
 
-export function ListScreen({ title, primaryAction, filters, summary, empty, children, pagination, panel }: ListScreenProps) {
+export function ListScreen({ title, primaryAction, filters, summary, singleColumn, empty, children, pagination, panel }: ListScreenProps) {
   // DR5 A — 빈 목록이면 머리 1차는 빈 화면의 버튼 하나로 갈음한다(규칙을 틀 안에 두어 화면마다 조건을 다시 쓰지 않는다).
   const headAction = empty ? undefined : primaryAction;
   return (
@@ -38,7 +40,7 @@ export function ListScreen({ title, primaryAction, filters, summary, empty, chil
         {title}
       </h1>
       {filters || headAction ? (
-        <div className={styles.bar}>
+        <div className={singleColumn ? `${styles.bar} single-column` : styles.bar}>
           <div className={styles.filters}>{filters}</div>
           {headAction ? (
             <Link

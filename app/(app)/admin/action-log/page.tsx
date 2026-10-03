@@ -1,6 +1,3 @@
-// 04.6 스킨 A 이관 전: 화면 틀
-/* eslint-disable no-restricted-syntax -- 04.6 스킨 A 이관 전 */
-import { Fragment } from "react";
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
@@ -8,8 +5,10 @@ import { queryActionLog, parseActionLogDateBoundary, type ActionLogFilter } from
 import { CORE_ACTION_TYPES, ACTION_TYPE_LABELS, type CoreActionType } from "@/domain/action-log/record";
 import { isPrunableActionType } from "@/domain/action-log/prune-scope";
 import { listPeople } from "@/domain/people";
-import { PageHeader } from "@/ui/page-header/PageHeader";
+import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
+import { Num } from "@/ui/num/Num";
+import { StaticTable, type StaticTableColumn } from "@/ui/table/StaticTable";
 import { FilterBar, ExportButton, PruneControl, type ActionLogFilterValues } from "./filter-bar";
 import styles from "./action-log.module.css";
 
@@ -82,17 +81,54 @@ export default async function ActionLogPage({ searchParams }: { searchParams: Pr
     label: ACTION_TYPE_LABELS[type],
   }));
 
+  const columns: StaticTableColumn[] = [
+    { key: "occurredAt", header: "발생 시각", priority: "p1" },
+    { key: "actor", header: "행위자", priority: "p2" },
+    { key: "actorRole", header: "행위자 계급", priority: "p2" },
+    { key: "actionType", header: "행동 종류", priority: "p1" },
+    { key: "entity", header: "대상", priority: "p2" },
+    { key: "document", header: "문서", priority: "p2" },
+    { key: "detail", header: "상세", priority: "p2" },
+  ];
+
+  // R1 — 서버 페이지는 클라이언트 표에 함수 prop을 넘기지 않는다. 칸은 서버에서 미리 렌더한 노드만 넘긴다.
+  const tableRows = rows.map((row) => {
+    // 대상은 이름으로 보인다 — entityName은 도메인이 읽기 시점에 푼 값이고,
+    // 풀 수 없으면(삭제된 대상·노출표에서 막힌 계급) entityId로 안전하게
+    // 내려앉는다. 원시 UUID를 사람에게 그대로 보이지 않는다.
+    const entity = row.entity
+      ? `${row.entity}${row.entityName ? ` ${row.entityName}` : row.entityId ? ` ${row.entityId}` : ""}`
+      : null;
+    // 상세 열은 노출표에서 상세 항목이 꺼진 계급에는 값이 비어
+    // 있다(project()가 이미 걸렀다 — 필드 부재가 아니라 undefined).
+    const detail = row.detail && Object.keys(row.detail).length > 0 ? JSON.stringify(row.detail) : null;
+    return {
+      key: String(row.seq),
+      // §7-3 폰 전략 — P1(발생 시각·행동 종류)만 열로 남고 나머지는 `StaticTable`이 행 아래 접힌 줄 하나로 넣는다.
+      cells: [
+        <Num key="occurredAt" value={row.occurredAt ? new Date(row.occurredAt).toISOString().slice(0, 19).replace("T", " ") : null} />,
+        row.actorName ?? "—",
+        row.actorRoleName ?? "—",
+        row.actionTypeLabel ?? row.actionType ?? "—",
+        entity ?? "—",
+        row.documentId ?? "—",
+        detail ? <span key="detail" className={styles.detail}>{detail}</span> : "—",
+      ],
+    };
+  });
+
   return (
-    <>
-      <PageHeader title="행동 로그" />
-
-      <FilterBar
-        people={selectablePeople}
-        actionTypes={actionTypeOptions}
-        defaultValues={filterValues}
-        hasFilter={hasFilter}
-      />
-
+    <ListScreen
+      title="행동 로그"
+      filters={
+        <FilterBar
+          people={selectablePeople}
+          actionTypes={actionTypeOptions}
+          defaultValues={filterValues}
+          hasFilter={hasFilter}
+        />
+      }
+    >
       <div className={styles.actionRow}>
         <ExportButton filter={filterValues} />
         {canWrite ? <PruneControl filter={filterValues} count={pruneCount} /> : null}
@@ -108,59 +144,8 @@ export default async function ActionLogPage({ searchParams }: { searchParams: Pr
           />
         )
       ) : (
-        <table className={styles.table}>
-          <caption className={styles.srOnly}>행동 로그</caption>
-          <thead>
-            <tr>
-              <th scope="col">발생 시각</th>
-              <th scope="col" className={styles.p2}>행위자</th>
-              <th scope="col" className={styles.p2}>행위자 계급</th>
-              <th scope="col">행동 종류</th>
-              <th scope="col" className={styles.p2}>대상</th>
-              <th scope="col" className={styles.p2}>문서</th>
-              <th scope="col" className={styles.p2}>상세</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => {
-              // 대상은 이름으로 보인다 — entityName은 도메인이 읽기 시점에 푼 값이고,
-              // 풀 수 없으면(삭제된 대상·노출표에서 막힌 계급) entityId로 안전하게
-              // 내려앉는다. 원시 UUID를 사람에게 그대로 보이지 않는다.
-              const entity = row.entity
-                ? `${row.entity}${row.entityName ? ` ${row.entityName}` : row.entityId ? ` ${row.entityId}` : ""}`
-                : null;
-              // 상세 열은 노출표에서 상세 항목이 꺼진 계급에는 값이 비어
-              // 있다(project()가 이미 걸렀다 — 필드 부재가 아니라 undefined).
-              const detail = row.detail && Object.keys(row.detail).length > 0 ? JSON.stringify(row.detail) : null;
-              // §7-3 폰 전략 — P1(발생 시각·행동 종류)만 열로 남고 나머지는 행 아래
-              // 접힌 줄 하나로 들어간다. 상세 화면이 없어 P3로 숨기지 않는다.
-              const folded = [row.actorName, row.actorRoleName, entity, row.documentId, detail].filter(
-                (value): value is string => !!value,
-              );
-              return (
-                <Fragment key={row.seq}>
-                  <tr>
-                    <td className={styles.occurredAt}>{row.occurredAt ? new Date(row.occurredAt).toISOString().slice(0, 19).replace("T", " ") : "—"}</td>
-                    <td className={styles.p2}>{row.actorName ?? "—"}</td>
-                    <td className={styles.p2}>{row.actorRoleName ?? "—"}</td>
-                    <td>{row.actionTypeLabel ?? row.actionType ?? "—"}</td>
-                    <td className={styles.p2}>{entity ?? "—"}</td>
-                    <td className={styles.p2}>{row.documentId ?? "—"}</td>
-                    <td className={styles.p2}>{detail ?? "—"}</td>
-                  </tr>
-                  {folded.length > 0 ? (
-                    <tr className={styles.collapsedRow}>
-                      <td colSpan={7} className={styles.collapsedCell}>
-                        {folded.join(" · ")}
-                      </td>
-                    </tr>
-                  ) : null}
-                </Fragment>
-              );
-            })}
-          </tbody>
-        </table>
+        <StaticTable caption="행동 로그" columns={columns} rows={tableRows} />
       )}
-    </>
+    </ListScreen>
   );
 }

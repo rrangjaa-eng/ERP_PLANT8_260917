@@ -201,6 +201,7 @@ export function PruneControl({ filter, count }: { filter: ActionLogFilterPayload
         onClick={() => setConfirming(true)}
         disabled={count === 0}
         disabledReason={count === 0 ? "정리할 행이 없습니다" : undefined}
+        reasonTone="info"
       >
         정리
       </Button>

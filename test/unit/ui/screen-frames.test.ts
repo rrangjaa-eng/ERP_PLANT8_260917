@@ -88,9 +88,20 @@ describe("화면 틀 스캔", () => {
 describe("화면 틀 이관 전 표시 래칫(공통 §3)", () => {
   const marked = files.filter((f) => hasMarker(read(f)));
 
-  // 웨이브가 화면을 이관할수록 표시 파일이 줄어든다 — 바닥은 「수집기가 파일을 찾는다」만 지키고, 0이 되는 때는 04.6-28의 표시 0 단언이 맡는다.
-  it("표시 파일이 1개 이상이다(공허 방지)", () => {
-    expect(marked.length).toBeGreaterThanOrEqual(1);
+  // SC 2 끝 상태 — 모든 화면이 틀을 쓰고 표시는 하나도 없다(04.6-28). 다시 생기면 이 단언이 빨개진다.
+  it("저장소에 화면 틀 이관 전 표시가 0개다", () => {
+    expect(marked, `표시가 남은 파일: ${marked.join(", ")}`).toEqual([]);
+  });
+
+  // 저장소 표시가 0이 된 뒤에도 지키는 의미: 수집기가 표시 파일을 찾고(hasMarker), 표시를 떼면 위반이 드러난다.
+  it("수집기는 표시 파일을 찾는다 — 임시 픽스처(표시 + PageHeader import / 깨끗한 파일)", () => {
+    const header = `import { PageHeader } from "@/ui/page-header/PageHeader";\n`;
+    const marked1 = `${MARKER}\n${header}export default function X() { return null; }\n`;
+    const clean = `import { DetailScreen } from "@/ui/detail-screen/DetailScreen";\n`;
+    expect(hasMarker(marked1)).toBe(true);
+    expect(hasMarker(clean)).toBe(false);
+    expect(violations("app/(app)/x/loading.tsx", stripMarker(marked1))).toHaveLength(1);
+    expect(violations("app/(app)/x/loading.tsx", stripMarker(clean))).toEqual([]);
   });
 
   it("표시를 떼도 위반이 0건인 파일이 없다 — 있으면 표시를 지워라", () => {

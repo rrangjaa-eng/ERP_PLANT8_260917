@@ -13,7 +13,7 @@ import { SidePanel, isPanelCloseKey } from "../../../ui/side-panel/SidePanel";
 
 // UI-SPEC 「옆 패널 상호작용 계약」(04.6-04 · Q1 A) — 옆 패널은 모든 폭에서 showModal()로 뒤를 막는다. jsdom이 없어
 // (environment: "node") 열기 · 닫기 · 포커스는 E2E(side-panel.spec.ts)가 재고, 여기서는 소스 계약과 골격 문자열을 본다
-// (confirm-dialog.test.ts 선례). #88의 PC 비모달(show()) · 가림막 없음 · --modal-w 단언은 Q1 A로 대체돼 지웠다.
+// (confirm-dialog.test.ts 선례). #88의 PC 비모달(show()) · 가림막 없음 · 옛 모달 폭 변수 단언은 Q1 A로 대체돼 지웠다.
 
 function source(path: string): string {
   return readFileSync(resolve(process.cwd(), path), "utf8");

@@ -399,14 +399,14 @@ Plans:
 12. 글자·바탕 대비 4.5:1 미만(큰 글자 3:1)을 자동 검사가 막는다
 13. 시스템 변경은 `docs/design/DECISIONS.md` 기록 → `docs/design/SYSTEM.md` 수정 순서로 한다(`.claude/rules/frontend.md`): radius 0 · 그림자 없음 · 2px 진한 선 결정 뒤집기, D-39 폼 배치 → 옆 패널, 고른 완화 후보
 
-**Plans:** 19/32 plans executed
+**Plans:** 25/32 plans executed
 
 Plans:
 **Wave 1**
 
 - [x] 04.6-01-PLAN.md — ① UQ-1·2·3·6·7 확인 → DECISIONS → SYSTEM → 역할 토큰 두 단 · Phase 7 기준 5 · /plan-design-review
 - [x] 04.6-02-PLAN.md — ① lint 관문(stylelint·eslint·화면 틀) · 이관 전 표시 생성 스크립트·래칫
-- [ ] 04.6-03-PLAN.md — ① [위험 경로 별도 PR · 사용자 머지] 시각 회귀 기준 사진 워크플로 + CI 실패 사진 업로드
+- [x] 04.6-03-PLAN.md — ① [위험 경로 별도 PR · 사용자 머지] 시각 회귀 기준 사진 워크플로 + CI 실패 사진 업로드
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -436,11 +436,11 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 04.6-18-PLAN.md — ⑤ 연차 목록·신청·문서
-- [ ] 04.6-19-PLAN.md — ⑤ 내 차례·알림함·자리 화면·오류·404
-- [ ] 04.6-21-PLAN.md — ⑤ 관리 인덱스·권한표·노출표·로그인
-- [ ] 04.6-22-PLAN.md — ⑤ 행동 로그·보관함·적립금
-- [ ] 04.6-24-PLAN.md — ⑤ (04.3 머지 뒤) 확인증 상세·외부 수령자
+- [x] 04.6-18-PLAN.md — ⑤ 연차 목록·신청·문서
+- [x] 04.6-19-PLAN.md — ⑤ 내 차례·알림함·자리 화면·오류·404
+- [x] 04.6-21-PLAN.md — ⑤ 관리 인덱스·권한표·노출표·로그인
+- [x] 04.6-22-PLAN.md — ⑤ 행동 로그·보관함·적립금
+- [x] 04.6-24-PLAN.md — ⑤ (04.3 머지 뒤) 확인증 상세·외부 수령자
 
 **Wave 6** *(blocked on Wave 5 completion)*
 

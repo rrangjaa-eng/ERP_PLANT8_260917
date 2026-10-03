@@ -160,7 +160,7 @@ export default async function HolidaysPage({
             <StaticTable
               caption={`${view.year}년 공휴일`}
               columns={[
-                { key: "date", header: "날짜", priority: "p1" },
+                { key: "date", header: "날짜", priority: "p2" },
                 { key: "weekday", header: "요일", priority: "p2" },
                 { key: "name", header: "이름", priority: "p1" },
                 { key: "kind", header: "구분", priority: "p2" },

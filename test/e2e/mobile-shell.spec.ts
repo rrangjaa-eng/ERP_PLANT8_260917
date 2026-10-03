@@ -211,6 +211,8 @@ test.describe("폰 375 공통 셸 (성공 기준 3 · §6-0 폰 전략 · §10 �
     const items = page.getByRole("menuitem");
     const count = await items.count();
     expect(count).toBeGreaterThan(0);
+    // 04.6-26 후보 8 — 메뉴는 열릴 때 200ms 페이드 + 4px 이동이다. 열리는 중에 재면 소수 위치 때문에 높이가 43.999996처럼 어긋난다(부하가 있으면 재현). 모션이 끝난 뒤 잰다.
+    await page.evaluate(() => Promise.all(document.getAnimations().map((animation) => animation.finished)));
 
     const expectedFontSize = await page.evaluate(() =>
       getComputedStyle(document.documentElement).getPropertyValue("--text-body").trim(),

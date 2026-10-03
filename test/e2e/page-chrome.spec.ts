@@ -111,7 +111,7 @@ test.describe("§4-4 브라우저 기본 표면 (02-08 Task 1)", () => {
 });
 
 test.describe("로그인 실패 문구 — FormAlert (02-08 Task 1, §6-7 A②)", () => {
-  test("form 안 role=alert 문구가 --danger 색이다", async ({ page }) => {
+  test("form 안 role=alert 문구가 --status-danger 색이다", async ({ page }) => {
     const user = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
     await page.goto("/login");
     await page.getByLabel("이메일").fill(user.email);
@@ -309,7 +309,7 @@ test.describe("§6-0 현재 메뉴(WR-01)", () => {
 });
 
 // F-09(260922-o2b) — SYSTEM.md §6-7 「최대 폭 360, 가운데 정렬」. AuthFrame이
-// --modal-w(480)를 재사용하고 있었다 — --auth-max(360)로 좁힌다.
+// --dialog-w(480)를 재사용하고 있었다 — --auth-max(360)로 좁힌다.
 test.describe("로그인 틀 폭 (F-09)", () => {
   test("/login form 폭이 360 이하 · 300 초과이고 가로 중심이 640이다", async ({ page }) => {
     expect(page.viewportSize()?.width).toBe(1280);
@@ -324,7 +324,7 @@ test.describe("로그인 틀 폭 (F-09)", () => {
   });
 });
 
-// F-10(260922-o2b) — SYSTEM.md §2-2 --fs-lg(18/1.4/700). /account의 「비밀번호
+// F-10(260922-o2b) — SYSTEM.md §2-2 --text-subtitle(18/1.4/700). /account의 「비밀번호
 // 변경」 h2는 클래스가 없어 브라우저 기본값(1.5em ≈ 21px)이 적용되고 있었다.
 test.describe("/account 섹션 제목 타입 스케일 (F-10)", () => {
   test("「비밀번호 변경」 h2가 18px·700이다", async ({ page }) => {

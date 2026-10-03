@@ -30,9 +30,13 @@ export const TARGETS = [
   "app/(app)/admin/page.tsx",
   "app/(app)/admin/settings/page.tsx",
   "app/(app)/admin/people/[id]/page.tsx",
-  "app/(app)/admin/people/org/page.tsx",
   "app/(app)/admin/system-status/page.tsx",
-  // 거래처 폼은 04.6-04에서 옆 패널(PanelForm — Form layout="panel")로 옮겨 단일 기둥(.single-column) 대상이 아니다.
+];
+
+// 04.6-04/14/15: 거래처·조직·계급·사람·법인카드·코드 폼은 옆 패널(PanelForm — Form layout="panel", 한 열·라벨 위·입력 전폭)로
+// 옮겨 단일 기둥(.single-column) 대상이 아니다. 한 열 배치는 PanelForm이 준다(단언은 사용처 고정으로 대체).
+export const PANEL_TARGETS = [
+  "app/(app)/admin/people/org/page.tsx",
   "app/(app)/admin/corp-cards/card-form.tsx",
   "app/(app)/admin/code-tables/code-item-form.tsx",
   "app/(app)/admin/people/person-form.tsx",
@@ -98,14 +102,21 @@ describe("적용 대상 화면·폼 — className=\"single-column\"", () => {
 // 파일 안에 두 번째 이상 쓰인 폼이 빠져도(예: card-form.tsx는 CardForm에는
 // 있지만 CardOwnerForm에는 없어도) 통과한다. F-07(system-md-compliance.test.ts)과
 // 같은 방식으로 각 쓰임을 정규식으로 고정한다.
+describe("옆 패널로 옮긴 폼 — single-column 대신 패널 (04.6-14·15)", () => {
+  it.each(PANEL_TARGETS)("%s는 옆 패널(SidePanel·PanelForm)을 쓴다", (relPath) => {
+    const source = read(...relPath.split("/"));
+    expect(source).toMatch(/SidePanel|PanelForm/);
+  });
+});
+
 describe("적용 대상 화면·폼 — 사용처별 single-column 고정 (F-02 후속)", () => {
-  it("card-form.tsx의 CardOwnerForm form이 single-column을 쓴다", () => {
+  it("card-form.tsx의 CardOwnerForm form이 PanelForm을 쓴다", () => {
     const source = read("app", "(app)", "admin", "corp-cards", "card-form.tsx");
-    expect(source).toMatch(/id="corp-card-owner-form"\s+className="single-column"/);
+    expect(source).toMatch(/<PanelForm[^>]*?\sid="corp-card-owner-form"/);
   });
 
-  it("person-form.tsx의 등록 결과 패널이 single-column을 쓴다", () => {
+  it("person-form.tsx의 등록 결과 패널은 옆 패널 안 한 열 flex 칸이다", () => {
     const source = read("app", "(app)", "admin", "people", "person-form.tsx");
-    expect(source).toMatch(/className=\{`\$\{styles\.registeredPanel\} single-column`\}/);
+    expect(source).toMatch(/className=\{styles\.registeredPanel\}/);
   });
 });

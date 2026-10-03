@@ -9,6 +9,8 @@ import { insertRole, listRoles, setRoleArchived } from "@/repositories/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { archive } from "@/domain/archive";
 import { insertVendor, setVendorHidden } from "@/repositories/vendors";
+import { checkPrinciples } from "./principles-check";
+import { isStrict } from "./design-principles";
 
 // 04.5-01 트레이서 + 04.5-08: 관리 화면에서 추가한 거래처 칸이 거래처 폼에 한글 이름으로 보이고,
 // 목록 표 · 등록 폼의 모든 상태(빈 상태 기본값 · 칸 오류 · 이름 예약 · 이유 자리 · 잠금 · 결과 줄)가 UI-SPEC 문구 그대로 보인다.
@@ -275,11 +277,12 @@ test("제출 중에는 1차가 진행 중이고 입력 전체와 취소가 잠�
   await expect(submit).toHaveAttribute("aria-disabled", "true");
   await expect(page.locator("#field-definition-form fieldset")).toHaveAttribute("disabled", "");
   await expect(page.getByLabel("이름", { exact: true })).toBeDisabled();
-  await expect(page.getByRole("link", { name: "취소" })).toHaveCount(0);
+  // 04.6-23: 취소는 패널 행동 줄의 2차 버튼이고 제출 중에는 aria-disabled(닫기도 무시 — D7)다.
+  await expect(page.getByRole("button", { name: /^취소/ })).toHaveAttribute("aria-disabled", "true");
   await expect(page.getByRole("status").filter({ hasText: "추가됨" })).toBeVisible();
 });
 
-test("성공하면 결과 줄에 포커스가 가고 입력은 읽기 전용이며 하나 더 추가는 폼을 초기 상태로 되돌린다", async ({ page }) => {
+test("등록 성공(UQ-8 B) — 패널이 열린 채 칸이 비고 첫 칸에 포커스가 가며 결과 한 줄과 다음 정렬 기본값이 남는다", async ({ page }) => {
   await login(page, admin);
   const label = uniqueLabel();
 
@@ -290,28 +293,73 @@ test("성공하면 결과 줄에 포커스가 가고 입력은 읽기 전용이�
 
   const result = page.getByRole("status").filter({ hasText: `화면 항목 추가 · ${label} 추가됨` });
   await expect(result).toBeVisible();
-  await expect(result).toBeFocused();
-  await expect(page.getByLabel("이름", { exact: true })).toHaveAttribute("readonly", "");
-  await expect(page.getByLabel("정렬 순서", { exact: true })).toHaveAttribute("readonly", "");
-  await expect(page.getByRole("link", { name: "정보 노출표 보기" })).toHaveAttribute("href", "/admin/visibility");
-  await expect(page.getByRole("button", { name: "하나 더 추가" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "닫기" })).toBeVisible();
-  // 아래 목록은 서버 재검증으로 새 행을 보인다.
-  await expect(page.getByRole("table", { name: "화면 항목" }).locator('tbody th[scope="row"]', { hasText: label })).toBeVisible();
-
-  const expected = await expectedDefaultSortOrder();
-  await page.getByRole("button", { name: "하나 더 추가" }).click();
+  const panel = page.getByRole("dialog", { name: "화면 항목 추가" });
+  await expect(panel).toBeVisible();
+  await expect(page).toHaveURL(/\/admin\/field-definitions\?new=1$/);
+  // 칸을 비우고 첫 칸에 포커스 — 타입은 처음 상태(텍스트), 정렬 순서는 방금 쓴 값 다음.
   await expect(page.getByLabel("이름", { exact: true })).toHaveValue("");
   await expect(page.getByLabel("이름", { exact: true })).toBeFocused();
   await expect(page.getByLabel("타입", { exact: true })).toHaveValue("text");
-  await expect(page.getByLabel("정렬 순서", { exact: true })).toHaveValue(String(expected));
-  await expect(page.getByRole("status").filter({ hasText: "추가됨" })).toHaveCount(0);
+  await expect(page.getByLabel("정렬 순서", { exact: true })).toHaveValue(String(await expectedDefaultSortOrder()));
+  await expect(page.getByRole("link", { name: "정보 노출표 보기" })).toHaveAttribute("href", "/admin/visibility");
+  // 「하나 더 추가」 · 「닫기」 단계는 없다 — 패널이 그대로 이어서 입력하는 자리다.
+  await expect(page.getByRole("button", { name: "하나 더 추가" })).toHaveCount(0);
+  // 아래 목록은 서버 재검증으로 새 행을 보인다.
+  await expect(page.getByRole("table", { name: "화면 항목" }).locator('tbody th[scope="row"]', { hasText: label })).toBeVisible();
 
+  // 이어서 하나 더 — 바뀐 칸이 없는 동안(성공 직후)에는 Esc가 확인 없이 닫는다(DR1 A).
   await page.getByLabel("이름", { exact: true }).fill(uniqueLabel());
   await page.getByRole("button", { name: "화면 항목 추가" }).click();
-  await expect(page.getByRole("button", { name: "닫기" })).toBeVisible();
-  await page.getByRole("button", { name: "닫기" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "추가됨" })).toBeVisible();
+  await expect(page.getByLabel("이름", { exact: true })).toHaveValue("");
+  await expect.poll(() => panel.evaluate((el) => el.getAnimations().length)).toBe(0);
+  await page.keyboard.press("Escape");
+  await expect(panel).toBeHidden();
   await expect(page).toHaveURL(/\/admin\/field-definitions$/);
+});
+
+test("입력한 채 닫기(DR1 A) — 바뀐 칸이 있으면 입력 버리기 확인, 선택지만 바꿔도 바뀐 칸이다", async ({ page }) => {
+  await login(page, admin);
+  await seedField(uniqueLabel(), 2);
+  await page.goto("/admin/field-definitions");
+  await page.getByRole("link", { name: "화면 항목 추가", exact: true }).first().click();
+  const panel = page.getByRole("dialog", { name: "화면 항목 추가" });
+  await expect(panel).toBeVisible();
+  await expect.poll(() => panel.evaluate((el) => el.getAnimations().length)).toBe(0);
+
+  // 바뀐 칸 없음 → 확인 없이 닫힘, 포커스는 여는 링크.
+  await page.keyboard.press("Escape");
+  await expect(panel).toBeHidden();
+  await expect(page).toHaveURL(/\/admin\/field-definitions$/);
+  await expect(page.getByRole("link", { name: "화면 항목 추가", exact: true }).first()).toBeFocused();
+
+  // 선택지 한 개만 더해도(숨은 입력) 바뀐 칸 — 입력 버리기 확인.
+  await page.getByRole("link", { name: "화면 항목 추가", exact: true }).first().click();
+  await expect(panel).toBeVisible();
+  await page.getByLabel("타입", { exact: true }).selectOption({ label: "선택" });
+  await page.getByLabel("새 선택지", { exact: true }).fill("특약");
+  await page.getByLabel("새 선택지", { exact: true }).press("Enter");
+  await page.keyboard.press("Escape");
+  const confirm = page.getByRole("dialog", { name: "입력 버리기" });
+  await expect(confirm).toBeVisible();
+  await confirm.getByRole("button", { name: "입력 버리기" }).click();
+  await expect(panel).toBeHidden();
+  await expect(page).toHaveURL(/\/admin\/field-definitions$/);
+});
+
+test("쓰기 권한이 없는 계급은 ?new=1로 와도 패널 · 1차 · 「화면 항목 추가」 링크가 없다(T-04.6-60)", async ({ page }) => {
+  // DR5 A(빈 목록 = 머리 1차 없이 빈 화면 링크 하나)는 공유 DB에 화면 항목이 늘 있어 이 스펙에서 만들 수 없다 — `ListScreen`의 empty 규칙은 test/unit/ui/list-screen.test.ts가 잰다.
+  const { account, roleId } = await createTempRoleUser([{ menu: MENU, action: "view", allowed: true }]);
+  try {
+    await login(page, account);
+    await page.goto("/admin/field-definitions?new=1");
+    await expect(page.getByRole("heading", { name: "화면 항목", level: 1 })).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "화면 항목 추가", exact: true })).toHaveCount(0);
+    await expect(page.locator('[data-ui="primary-button"]')).toHaveCount(0);
+  } finally {
+    await setRoleArchived(SYSTEM_VIEWER, roleId, true);
+  }
 });
 
 test("기획 PM은 화면 항목 관리와 등록 폼에서 404를 받는다", async ({ page }) => {
@@ -401,7 +449,7 @@ test("선택지는 30개까지이고 30개면 「선택지 추가」가 이유�
 });
 
 // 04.5-02 Task 2: 수정 모드 — 타입 읽기 전용 · 버전 조건부 수정 · 충돌 · 보관 · 없는 id.
-test("수정: 목록 「수정」으로 열면 값이 채워지고 타입은 텍스트이며, 저장하면 결과 줄이 남고 이어서 다시 저장해도 충돌이 아니다", async ({ page }) => {
+test("수정: 목록 「수정」으로 열면 값이 채워지고 타입은 텍스트이며, 저장하면 패널이 닫히고 이어서 다시 저장해도 충돌이 아니다", async ({ page }) => {
   await login(page, admin);
   const first = uniqueLabel();
   const second = uniqueLabel();
@@ -421,31 +469,25 @@ test("수정: 목록 「수정」으로 열면 값이 채워지고 타입은 텍
   // 「타입」 라벨이 타입 글자를 가리킨다(label for가 라벨 붙일 수 없는 요소를 가리키지 않는다).
   await expect(form.getByLabel("타입", { exact: true })).toHaveText("텍스트");
   await expect(form.getByRole("link", { name: "새 화면 항목 추가" })).toHaveAttribute("href", "/admin/field-definitions?new=1");
-  // 폼이 열려 있으면 필터 줄 「화면 항목 추가」는 숨는다.
-  await expect(page.getByRole("link", { name: "화면 항목 추가", exact: true })).toHaveCount(0);
+  // R4 — 패널이 열려 있어도 머리 1차 「화면 항목 추가」(여는 요소)는 렌더에 남는다(뒤는 모달이 막는다).
+  await expect(page.getByRole("link", { name: "화면 항목 추가", exact: true })).toHaveCount(1);
   const version = form.locator('input[name="version"]');
   await expect(version).toHaveValue("1");
 
   await page.getByLabel("이름", { exact: true }).fill(second);
   await page.getByRole("button", { name: "화면 항목 수정" }).click();
-  const result = page.getByRole("status").filter({ hasText: `화면 항목 수정 · ${second} 수정됨` });
-  await expect(result).toBeVisible();
-  // 재검증으로 새 version이 와 입력이 다시 마운트돼도 결과 줄은 남고 포커스가 있다.
-  await expect(version).toHaveValue("2");
-  await expect(result).toBeVisible();
-  await expect(result).toBeFocused();
-  await expect(page.getByLabel("이름", { exact: true })).toHaveAttribute("readonly", "");
-
-  await page.getByRole("button", { name: "닫기" }).click();
+  // UQ-8 B — 수정 성공은 패널이 닫히고 포커스가 그 행의 「수정」으로 돌아온다.
+  await expect(page.getByRole("dialog", { name: "화면 항목 수정" })).toBeHidden();
   await expect(page).toHaveURL(/\/admin\/field-definitions$/);
+  await expect(page.getByRole("link", { name: `${second} 수정`, exact: true })).toBeFocused();
 
-  // 닫고 다시 수정으로 이어서 저장 — 새 version이라 충돌이 아니다.
+  // 다시 수정으로 이어서 저장 — 새 version이라 충돌이 아니다.
   await page.getByRole("link", { name: `${second} 수정`, exact: true }).click();
   await expect(form.locator('input[name="version"]')).toHaveValue("2");
   await page.getByLabel("이름", { exact: true }).fill(third);
   await page.getByRole("button", { name: "화면 항목 수정" }).click();
-  await expect(page.getByRole("status").filter({ hasText: `화면 항목 수정 · ${third} 수정됨` })).toBeVisible();
-  await page.getByRole("button", { name: "닫기" }).click();
+  await expect(page.getByRole("dialog", { name: "화면 항목 수정" })).toBeHidden();
+  await expect(page.getByRole("link", { name: `${third} 수정`, exact: true })).toBeVisible();
 
   await page.goto("/admin/vendors?new=1");
   await expect(page.getByLabel(third, { exact: true })).toBeVisible();
@@ -467,7 +509,8 @@ test("수정 충돌: 먼저 저장된 값을 새로 불러오기로 받는다 �
   await page.getByLabel("새 선택지", { exact: true }).fill("MOU");
   await page.getByLabel("새 선택지", { exact: true }).press("Enter");
   await page.getByRole("button", { name: "화면 항목 수정" }).click();
-  await expect(page.getByRole("status").filter({ hasText: `화면 항목 수정 · ${renamed} 수정됨` })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "화면 항목 수정" })).toBeHidden();
+  await expect(page.getByRole("link", { name: `${renamed} 수정`, exact: true })).toBeVisible();
 
   await other.getByLabel("이름", { exact: true }).fill(loser);
   const submit = other.getByRole("button", { name: "화면 항목 수정" });
@@ -544,7 +587,8 @@ test("저장된 선택지 「삭제」는 보관으로 가고 보관 펼침에 �
   await expect(details.getByRole("button")).toHaveCount(0);
 
   await page.getByRole("button", { name: "화면 항목 수정" }).click();
-  await expect(page.getByRole("status").filter({ hasText: `화면 항목 수정 · ${label} 수정됨` })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "화면 항목 수정" })).toBeHidden();
+  await expect(page).toHaveURL(/\/admin\/field-definitions$/);
 
   await page.goto("/admin/vendors?new=1");
   const optionTexts = await page.getByLabel(label, { exact: true }).locator("option").allTextContents();
@@ -573,7 +617,7 @@ test("충돌 뒤 새로 불러오기는 먼저 저장된 보관 선택지를 보
 
   await page.getByRole("button", { name: "특약 삭제" }).click();
   await page.getByRole("button", { name: "화면 항목 수정" }).click();
-  await expect(page.getByRole("status").filter({ hasText: "수정됨" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "화면 항목 수정" })).toBeHidden();
 
   await other.getByLabel("이름", { exact: true }).fill(uniqueLabel());
   await other.getByRole("button", { name: "화면 항목 수정" }).click();
@@ -703,11 +747,24 @@ test("권한 조합: 칸 관리 쓰기만이면 「수정」만, 보관함 쓰�
   await other.context().close();
 });
 
-test("폼이 열려 있으면 화면 어디에도 「화면 항목 추가」 링크가 없다", async ({ page }) => {
+test("패널이 열려 있어도 여는 요소 「화면 항목 추가」 링크가 남는다(R4 — 뒤는 모달이 막는다)", async ({ page }) => {
   await login(page, admin);
+  await seedField(uniqueLabel(), 2);
   await page.goto("/admin/field-definitions?new=1");
   await expect(page.locator("#field-definition-form")).toBeVisible();
-  await expect(page.getByRole("link", { name: "화면 항목 추가", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "화면 항목 추가", exact: true })).toHaveCount(1);
+  expect(await page.getByRole("dialog", { name: "화면 항목 추가" }).evaluate((el) => el.matches(":modal"))).toBe(true);
+});
+
+// R11 — 처리한 화면이 원칙을 막는 모드에서 경고 0이다(목록 · 등록 패널 · 수정 패널).
+test("화면 사용성 원칙(막는 모드) — 화면 항목", async ({ page }) => {
+  await login(page, admin);
+  const fixture = await seedFieldRow(uniqueLabel(), 3);
+  await checkPrinciples(
+    page,
+    ["/admin/field-definitions", "/admin/field-definitions?new=1", `/admin/field-definitions?editId=${fixture.id}`],
+    { strict: isStrict(process.env.DESIGN_PRINCIPLES_STRICT) },
+  );
 });
 
 test("「보관 포함」 토글은 열린 폼의 쿼리를 지킨다", async ({ page }) => {

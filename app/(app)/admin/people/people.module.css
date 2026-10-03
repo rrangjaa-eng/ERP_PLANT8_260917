@@ -106,6 +106,10 @@
   outline-offset: var(--focus-offset);
 }
 
+.selectInvalid {
+  border-color: var(--status-danger);
+}
+
 /* 사람 등록 결과(초기 비밀번호) — 패널 안에 한 번만 보인다(T-03-29 · Q3 A). */
 .registeredPanel {
   display: flex;

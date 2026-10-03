@@ -172,6 +172,9 @@ export function CardOwnerForm({
     });
   }
 
+  const ownerError = result.validationErrors?.holderUserId?._errors?.[0];
+  const ownerSelectClass = ownerError ? `${styles.select} ${styles.selectInvalid}` : styles.select;
+
   return (
     <PanelForm
       ref={panelRef}
@@ -180,7 +183,7 @@ export function CardOwnerForm({
       intent="edit"
       onSubmit={handleSubmit}
       pending={isExecuting}
-      reason={result.serverError ?? null}
+      reason={ownerError ?? result.serverError ?? null}
       reasonId="corp-card-owner-form-reason"
     >
       <p className={styles.hint}>{card.label} 소유자 변경</p>
@@ -209,8 +212,10 @@ export function CardOwnerForm({
             <select
               id="owner-holderUserId"
               name="holderUserId"
-              className={styles.select}
+              className={ownerSelectClass}
               required
+              aria-invalid={ownerError ? true : undefined}
+              aria-describedby={ownerError ? "owner-error" : undefined}
               defaultValue={holders.some((holder) => holder.id === card.holderUserId) ? (card.holderUserId ?? "") : ""}
             >
               <option value="" disabled>
@@ -222,6 +227,7 @@ export function CardOwnerForm({
                 </option>
               ))}
             </select>
+            {ownerError ? <Form.Error id="owner-error">{ownerError}</Form.Error> : null}
           </Form.Field>
         </div>
       ) : (
@@ -230,8 +236,10 @@ export function CardOwnerForm({
             <select
               id="owner-teamId"
               name="teamId"
-              className={styles.select}
+              className={ownerSelectClass}
               required
+              aria-invalid={ownerError ? true : undefined}
+              aria-describedby={ownerError ? "owner-error" : undefined}
               defaultValue={teams.some((team) => team.id === card.teamId) ? (card.teamId ?? "") : ""}
             >
               <option value="" disabled>
@@ -243,6 +251,7 @@ export function CardOwnerForm({
                 </option>
               ))}
             </select>
+            {ownerError ? <Form.Error id="owner-error">{ownerError}</Form.Error> : null}
           </Form.Field>
         </div>
       )}

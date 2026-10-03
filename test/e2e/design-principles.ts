@@ -1,6 +1,5 @@
 // 화면 사용성 원칙(.claude/rules/frontend.md)과 사용자 디자인 결정(.claude/skills/design-gate/CHECKLIST.md §1) 중
-// 잴 수 있는 것만 판정한다. 값은 design-principles.spec.ts가 실제 화면에서 재서 넘긴다(사용자 결정 2026-09-28:
-// 처음에는 경고만, Phase 4 머지 뒤 DESIGN_PRINCIPLES_STRICT=1로 막는 모드).
+// 잴 수 있는 것만 판정한다. 값은 design-principles.spec.ts가 실제 화면에서 재서 넘긴다(막는 모드가 기본 — `DESIGN_PRINCIPLES_STRICT=0`일 때만 경고 모드).
 // 04.6-06(R11): 막는 모드 판정 `isStrict` · DOM 수집 `collectPrinciplesSnapshot` · 선택자 상수가 여기 있다. Playwright를 import하지 않는다 —
 // 단위 테스트가 이 파일을 읽는다. 러너를 쓰는 도우미는 principles-check.ts(`checkPrinciples`).
 
@@ -37,16 +36,14 @@ export function isStrict(v: string | undefined): boolean {
   return v !== "0";
 }
 
-// 옛 CSS 모듈 클래스 선택자 — 아직 `data-ui` 훅이 없는 화면을 위한 합집합 대체. 04.6-29가 전 화면 이관 뒤 이 상수들을 정리한다.
-export const LEGACY_PRIMARY_SELECTOR = '[class*="Button-module__"][class*="__primary"]';
-export const LEGACY_SUBTITLE_SELECTOR = '[class*="PageHeader-module__"][class*="__subtitle"]';
-// 1차 버튼 = 훅 ∪ 옛 선택자 — 한 번의 querySelectorAll이라 같은 요소를 두 번 세지 않는다.
-export const PRIMARY_BUTTON_SELECTOR = `[data-ui="primary-button"], ${LEGACY_PRIMARY_SELECTOR}`;
+// 1차 버튼 = `data-ui` 훅 하나(04.6-29 — 옛 CSS 모듈 클래스 대체 선택자를 지웠다). 부제는 새 틀에 부제 prop이 없어 선택자가 없다(null) —
+// 머리 아래 설명 문단은 `prose`의 긴 설명 규칙이 잡는다.
+export const PRIMARY_BUTTON_SELECTOR = '[data-ui="primary-button"]';
 
-export type PrincipleSelectors = { primary: string; subtitle: string };
+export type PrincipleSelectors = { primary: string; subtitle: string | null };
 export const PRINCIPLE_SELECTORS: PrincipleSelectors = {
   primary: PRIMARY_BUTTON_SELECTOR,
-  subtitle: LEGACY_SUBTITLE_SELECTOR,
+  subtitle: null,
 };
 
 // 브라우저 안에서 도는 수집 함수 — `page.evaluate(collectPrinciplesSnapshot, PRINCIPLE_SELECTORS)`로 넘긴다. 직렬화되므로 바깥 변수를 쓰지 않는다.
@@ -64,9 +61,10 @@ export function collectPrinciplesSnapshot(selectors: PrincipleSelectors): Screen
   let bg = rgb(getComputedStyle(document.body).backgroundColor);
   if (bg.length === 4 && bg[3] === 0) bg = rgb(getComputedStyle(document.documentElement).backgroundColor);
   if (bg.length < 3 || (bg.length === 4 && bg[3] === 0)) bg = [255, 255, 255];
-  const subtitle = main.querySelector(selectors.subtitle);
+  const subtitle = selectors.subtitle ? main.querySelector(selectors.subtitle) : null;
   const prose = Array.from(main.querySelectorAll("p"))
-    .filter((p) => visible(p) && !p.closest('[role="alert"], [role="status"]'))
+    // kbd 단축키 범례(표 힌트 줄)는 설명 문단이 아니다 — 사용자 답 2026-10-03 ⑦ 「kbd 범례 검사 제외」.
+    .filter((p) => visible(p) && !p.closest('[role="alert"], [role="status"]') && p.querySelector("kbd") === null)
     .map((p) => (p.textContent ?? "").trim())
     .filter(Boolean);
   const rowActionStyles = Array.from(main.querySelectorAll("td"))

@@ -7,7 +7,7 @@ import { seoulToday } from "@/lib/dates";
 import "@/domain/leave";
 import { submitLeave } from "@/domain/leave";
 import { leaveWeekdayRange } from "./leave-dates";
-import { documentLabel, loginPage as loginAsPerson, setupLeaveOrg, waitForHydration } from "./leave-org";
+import { documentLabel, documentTitle, loginPage as loginAsPerson, setupLeaveOrg, waitForHydration } from "./leave-org";
 import { isStrict } from "./design-principles";
 import { checkPrinciples } from "./principles-check";
 
@@ -41,8 +41,8 @@ async function loginPage(browser: Browser, baseURL: string | undefined, person: 
 async function approveFromInbox(page: Page, documentLabel: string, toast: string | RegExp): Promise<void> {
   await page.goto("/approvals");
   const row = page.getByRole("row").filter({ hasText: documentLabel });
-  // 문서 링크는 토큰 색(--accent) — 브라우저 기본 파랑이 아니다(SYSTEM §1 · DOM 감사 04.1-02).
-  await expect(row.getByRole("link", { name: documentLabel })).toHaveCSS("color", "rgb(0, 84, 70)");
+  // 문서 칸 대상은 토큰 색(--accent) — 브라우저 기본 파랑이 아니다(SYSTEM §1 · DOM 감사 04.1-02). 04.6-17 DR4 A 이후 `내 결재` 행의 대상은 시트를 여는 button이다.
+  await expect(row.getByRole("button", { name: documentLabel })).toHaveCSS("color", "rgb(0, 84, 70)");
   await waitForHydration(row.getByRole("button", { name: "승인" }));
   await row.getByRole("button", { name: "승인" }).click();
   await expect(page.getByRole("status").filter({ hasText: toast })).toHaveText(toast);
@@ -123,21 +123,20 @@ async function resolveToken(page: Page, token: string, property: "width" | "bord
 }
 
 test.describe("결재함 — 결재 시트 PC 모양 · 뼈대 · 원칙 (04.6-17)", () => {
-  // 결재 시트를 여는 대상(`rowTap`)은 폰 폭에서만 보인다 — 폰 폭에서 열고 창만 PC 폭으로 넓혀(다시 불러오지 않는다) PC 기하를 잰다.
+  // 04.6-17 DR4 A 이행(사용자 카드 답 2026-10-03 22:35 KST: 시트로 고침) — PC 폭에서도 행의 문서 칸 버튼이 결재 시트를 연다.
   test("PC 폭의 결재 시트는 오른쪽 480 패널이고 뒤 막이 있으며 행동 줄은 반려 → 승인이다(DR4 A · Q1 A · D17)", async ({ browser, baseURL }) => {
     const today = seoulToday();
     const range = leaveWeekdayRange(today, { week: 4, weekdays: 1 });
     const org = await setupLeaveOrg(today);
     await submitLeave(org.drafter.viewer, { kind: "full_day", startDate: range.startDate, endDate: range.endDate, half: "" });
 
-    const lead = await loginAsPerson(browser, baseURL, org.teamLead, { width: 375, height: 800 });
+    const lead = await loginAsPerson(browser, baseURL, org.teamLead, { width: 1280, height: 800 });
     await lead.goto("/approvals");
     const trigger = lead.getByRole("button", { name: documentLabel(range) });
     await waitForHydration(trigger);
     await trigger.click();
     const panel = lead.locator('dialog[data-ui="side-panel"]');
     await expect(panel).toBeVisible();
-    await lead.setViewportSize({ width: 1280, height: 800 });
 
     expect(await panel.evaluate((element) => element.matches(":modal"))).toBe(true);
     // 창 폭 변경 뒤 배치가 자리 잡을 때까지 기다린다.
@@ -164,9 +163,99 @@ test.describe("결재함 — 결재 시트 PC 모양 · 뼈대 · 원칙 (04.6-1
     expect(Math.abs((approveBox?.width ?? 0) - 2 * (rejectBox?.width ?? 0))).toBeLessThanOrEqual(1);
     await expect(panel.getByRole("button", { name: /^취소/ })).toHaveCount(0);
 
-    // 닫으면(Esc) 시트가 사라진다. 연 행으로의 포커스 복귀는 여는 대상이 보이는 폰 폭에서 `mobile-leave-approval.spec.ts`가 잰다.
     await lead.keyboard.press("Escape");
     await expect(panel).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+    await lead.context().close();
+  });
+
+  for (const width of [1280, 768]) {
+    // 폭 700 이상은 모두 같은 모양(태블릿 768도 480 유지 — ⑨). 행 어디를 눌러도(문서 칸 버튼 · 다른 칸) 열리고, 행의 3차 승인 · 반려는 시트를 열지 않는다.
+    test(`PC ${width} — 결재함 행 클릭 · Enter가 오른쪽 480 시트를 열고 Esc가 연 행으로 돌린다(DR4 A)`, async ({ browser, baseURL }) => {
+      const today = seoulToday();
+      const range = leaveWeekdayRange(today, { week: 4, weekdays: 1 });
+      const org = await setupLeaveOrg(today);
+      await submitLeave(org.drafter.viewer, { kind: "full_day", startDate: range.startDate, endDate: range.endDate, half: "" });
+
+      const lead = await loginAsPerson(browser, baseURL, org.teamLead, { width, height: 800 });
+      await lead.goto("/approvals");
+      const row = lead.getByRole("row").filter({ hasText: documentLabel(range) });
+      const trigger = row.getByRole("button", { name: documentLabel(range) });
+      await waitForHydration(trigger);
+      await expect(trigger).toHaveAttribute("aria-haspopup", "dialog");
+      const panel = lead.locator('dialog[data-ui="side-panel"]');
+
+      // 문서 칸 밖(일수 칸) 클릭도 연다 — 행 전체가 대상이다.
+      const daysBox = await row.getByRole("cell").nth(2).boundingBox();
+      if (!daysBox) throw new Error("일수 칸 없음");
+      await lead.mouse.click(daysBox.x + daysBox.width / 2, daysBox.y + daysBox.height / 2);
+      await expect(panel).toBeVisible();
+      await panel.evaluate((element) => Promise.all(element.getAnimations({ subtree: true }).map((animation) => animation.finished)));
+      const box = await panel.boundingBox();
+      expect([Math.round((box?.x ?? 0) + (box?.width ?? 0)), `${box?.width}px`]).toEqual([width, await resolveToken(lead, "--panel-w", "width")]);
+      await expect(panel.getByRole("button", { name: "승인" })).toBeFocused();
+      await expect(panel.getByRole("heading", { level: 2 })).toHaveText(documentTitle(range));
+      // 뒤 목록은 막힌다(Q1 A) — 패널 왼쪽 점은 목록이 아니라 dialog(가림막)가 받는다.
+      expect(await lead.evaluate(() => document.elementFromPoint(8, 300)?.matches('dialog[data-ui="side-panel"]') ?? false)).toBe(true);
+      await lead.keyboard.press("Escape");
+      await expect(panel).toHaveCount(0);
+      await expect(trigger).toBeFocused();
+
+      // Enter로도 열린다.
+      await lead.keyboard.press("Enter");
+      await expect(panel).toBeVisible();
+      await expect(panel.getByRole("button", { name: "승인" })).toBeFocused();
+      await lead.keyboard.press("Escape");
+      await expect(panel).toHaveCount(0);
+      await expect(trigger).toBeFocused();
+
+      // 행의 3차 반려는 시트가 아니라 반려 확인 창을 연다.
+      await row.getByRole("button", { name: "반려" }).click();
+      await expect(lead.getByRole("dialog").getByRole("heading", { level: 2 })).toHaveText("연차 반려");
+      await expect(panel).toHaveCount(0);
+      await lead.context().close();
+    });
+  }
+
+  test("PC 결재 시트의 승인은 시트를 닫고 토스트 한 줄 · 그 행이 처리함 문서 링크가 된다(폰 시트와 같은 동작)", async ({ browser, baseURL }) => {
+    const today = seoulToday();
+    const range = leaveWeekdayRange(today, { week: 4, weekdays: 1 });
+    const org = await setupLeaveOrg(today);
+    await submitLeave(org.drafter.viewer, { kind: "full_day", startDate: range.startDate, endDate: range.endDate, half: "" });
+
+    const lead = await loginAsPerson(browser, baseURL, org.teamLead, { width: 1280, height: 800 });
+    await lead.goto("/approvals");
+    const trigger = lead.getByRole("button", { name: documentLabel(range) });
+    await waitForHydration(trigger);
+    await trigger.click();
+    const panel = lead.locator('dialog[data-ui="side-panel"]');
+    await panel.getByRole("button", { name: "승인" }).click();
+    await expect(lead.getByRole("status").filter({ hasText: "승인 · " })).toHaveText(`승인 · 결재 요청됨 → ${org.divisionHead.name}`);
+    await expect(panel).toHaveCount(0);
+    await expect(lead.getByRole("link", { name: documentLabel(range) })).toBeVisible();
+    await expect(lead.getByRole("button", { name: documentLabel(range) })).toHaveCount(0);
+    await lead.context().close();
+  });
+
+  test("PC 결재 시트의 반려는 시트를 닫고 반려 확인 창을 연다(폰 시트와 같은 동작)", async ({ browser, baseURL }) => {
+    const today = seoulToday();
+    const range = leaveWeekdayRange(today, { week: 4, weekdays: 1 });
+    const org = await setupLeaveOrg(today);
+    await submitLeave(org.drafter.viewer, { kind: "full_day", startDate: range.startDate, endDate: range.endDate, half: "" });
+
+    const lead = await loginAsPerson(browser, baseURL, org.teamLead, { width: 1280, height: 800 });
+    await lead.goto("/approvals");
+    const trigger = lead.getByRole("button", { name: documentLabel(range) });
+    await waitForHydration(trigger);
+    await trigger.click();
+    await lead.locator('dialog[data-ui="side-panel"]').getByRole("button", { name: "반려" }).click();
+    const dialogs = lead.getByRole("dialog");
+    await expect(dialogs).toHaveCount(1);
+    await expect(dialogs.getByRole("heading", { level: 2 })).toHaveText("연차 반려");
+    await expect(dialogs.getByLabel("사유")).toBeFocused();
+    await lead.keyboard.press("Escape");
+    await expect(dialogs).toHaveCount(0);
+    await expect(trigger).toBeFocused();
     await lead.context().close();
   });
 

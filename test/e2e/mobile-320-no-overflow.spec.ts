@@ -297,6 +297,7 @@ test.describe("패널 라우트 표(D20) — panel-routes.ts", () => {
     "codes-new",
     "holidays-new",
     "approvals-sheet",
+    "approvals-sheet-pc",
     "fielddefs-new",
     "fielddefs-edit",
     "events-new",
@@ -313,7 +314,7 @@ test.describe("패널 라우트 표(D20) — panel-routes.ts", () => {
     cleanup: { vendorIds: [], cardIds: [], fieldDefLabel: null },
   };
 
-  test("PANEL_ROUTES의 id는 공통 §10 표의 16개와 같다", () => {
+  test("PANEL_ROUTES의 id는 공통 §10 표의 16개에 결재 시트 PC 행(approvals-sheet-pc)을 더한 17개와 같다", () => {
     expect(PANEL_ROUTES.map((route) => route.id)).toEqual(EXPECTED_IDS);
   });
 
@@ -370,11 +371,6 @@ test.describe("태블릿 768 — 패널 열림", () => {
   for (const route of PANEL_ROUTES) {
     test(`${route.id}`, routeDetails(route), async ({ page }) => {
       test.setTimeout(90_000);
-      // 결재 시트는 폰 폭(< 700px)에만 있다 — 700px 이상은 문서 칸 링크 + 행 행동이라 열릴 패널이 없다(inbox-table.tsx `rowTap`).
-      if (route.open === "approval-sheet") {
-        test.info().annotations.push({ type: "패널 라우트 건너뜀", description: `${route.id} — 700px 이상에는 결재 시트가 없다(폰 폭에서만 시트)` });
-        test.skip(true, `${route.id} — 700px 이상에는 결재 시트가 없다`);
-      }
       await openRouteAsAdmin(page, route);
       expectMeasured(`768px ${route.id}`, await measure(page));
       const box = await page.locator("dialog:modal").boundingBox();

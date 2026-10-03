@@ -88,8 +88,9 @@ describe("화면 틀 스캔", () => {
 describe("화면 틀 이관 전 표시 래칫(공통 §3)", () => {
   const marked = files.filter((f) => hasMarker(read(f)));
 
-  it("표시 파일 수가 28 이상이다(공허 방지)", () => {
-    expect(marked.length).toBeGreaterThanOrEqual(28);
+  // 웨이브가 화면을 이관할수록 표시 파일이 줄어든다 — 바닥은 「수집기가 파일을 찾는다」만 지키고, 0이 되는 때는 04.6-28의 표시 0 단언이 맡는다.
+  it("표시 파일이 1개 이상이다(공허 방지)", () => {
+    expect(marked.length).toBeGreaterThanOrEqual(1);
   });
 
   it("표시를 떼도 위반이 0건인 파일이 없다 — 있으면 표시를 지워라", () => {

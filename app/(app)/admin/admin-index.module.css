@@ -1,18 +1,17 @@
-/* 04.6 스킨 A 이관 전: CSS */
 /* SYSTEM.md §6-10 「관리」 인덱스 화면. 그룹 머리글은 §7-3 그룹 머리글 행과
    같은 결, 항목은 §7-8 시트 목록 행과 같은 높이의 링크 — ui/shell/MoreSheet.module.css
-   의 .group·.list·.link 규칙을 그 토큰 그대로 옮겨 쓴다. 카드 없음, 아이콘 없음. */
+   의 .group·.list·.link 규칙을 그 역할 토큰 그대로 옮겨 쓴다. 카드 없음, 아이콘 없음. */
 
 .groupLabel {
   margin: 0;
   padding: var(--s-3) 0 var(--s-1);
-  font-size: var(--fs-sm);
+  font-size: var(--text-aux);
   font-weight: var(--fw-medium);
-  color: var(--muted);
-  /* §7-3 그룹 머리글 행(SYSTEM.md 「위 12px 여백, 아래 1px --line-strong」)의
-     아래 선. 이게 없으면 항목 사이 --line 잔선과 무게가 같아 세 그룹이
+  color: var(--text-muted);
+  /* §7-3 그룹 머리글 행(SYSTEM.md 「위 12px 여백, 아래 1px --border-strong」)의
+     아래 선. 이게 없으면 항목 사이 --border-row 잔선과 무게가 같아 세 그룹이
      시각적으로 갈라지지 않는다. */
-  border-bottom: var(--line-w) solid var(--line-strong);
+  border-bottom: var(--line-w) solid var(--border-strong);
 }
 
 .list {
@@ -22,7 +21,7 @@
 }
 
 .list li {
-  border-bottom: var(--line-w) solid var(--line);
+  border-bottom: var(--line-w) solid var(--border-row);
 }
 
 .list li:last-child {
@@ -38,15 +37,15 @@
   padding: 0;
   border: 0;
   background: none;
-  color: var(--fg);
-  font-size: var(--fs-base);
+  color: var(--text-strong);
+  font-size: var(--text-body);
   text-align: left;
   text-decoration: none;
   cursor: pointer;
 }
 
 .link:hover {
-  background: var(--surface);
+  background: var(--surface-muted);
 }
 
 .link:focus-visible {
@@ -57,7 +56,7 @@
 /* §7-11 배너 안의 다음 한 수 — 3차 링크(공휴일 화면 .yearLink와 같은 모양). 폰에서는
    터치 목표 44px(--touch-min). 04.2-13. */
 .bannerLink {
-  font-size: var(--fs-sm);
+  font-size: var(--text-aux);
   font-weight: var(--fw-medium);
   color: var(--accent);
   text-decoration: underline;
@@ -66,7 +65,7 @@
 }
 
 .bannerLink:hover {
-  text-decoration-thickness: var(--line-w-strong);
+  text-decoration-thickness: var(--underline-w-hover);
 }
 
 @media (max-width: 699.98px) {

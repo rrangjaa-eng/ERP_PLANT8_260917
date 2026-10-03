@@ -1,4 +1,3 @@
-// 04.6 스킨 A 이관 전: 화면 틀
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { getSession } from "@/lib/viewer";
@@ -6,7 +5,7 @@ import { can } from "@/domain/permissions/can";
 import { MENUS } from "@/domain/permissions/menus";
 import { withCertMenusGated } from "@/domain/certs/feature";
 import { adminIndexGroups } from "@/ui/shell/role-menu";
-import { PageHeader } from "@/ui/page-header/PageHeader";
+import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { Banner } from "@/ui/banner/Banner";
 import { emailFailureBanner, emailFailureBannerText } from "@/domain/system-status";
 import { holidayConfirmationBanner } from "@/domain/holidays/admin";
@@ -60,23 +59,24 @@ export default async function AdminIndexPage() {
           </Link>
         </Banner>
       ) : null}
-      <PageHeader title="관리" />
-      <div className="single-column">
-        {groups.map((group) => (
-          <section key={group.label}>
-            <h2 className={styles.groupLabel}>{group.label}</h2>
-            <ul className={styles.list}>
-              {group.items.map((item) => (
-                <li key={item.href}>
-                  <Link href={item.href} className={styles.link}>
-                    {item.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ))}
-      </div>
+      <ListScreen title="관리">
+        <div className="single-column">
+          {groups.map((group) => (
+            <section key={group.label}>
+              <h2 className={styles.groupLabel}>{group.label}</h2>
+              <ul className={styles.list}>
+                {group.items.map((item) => (
+                  <li key={item.href}>
+                    <Link href={item.href} className={styles.link}>
+                      {item.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
+      </ListScreen>
     </>
   );
 }

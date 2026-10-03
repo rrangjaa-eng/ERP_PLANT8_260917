@@ -33,6 +33,12 @@ describe("Num — 숫자 표기(SC 8)", () => {
     expect(html(createElement(Num, { value: null }))).toContain(">—<");
   });
 
+  it("글자 값은 서식 없이 그대로 두고 숫자 칸 모양만 입힌다 — 일시 · 번호 문자열(04.6-20)", () => {
+    const out = html(createElement(Num, { value: "2026-09-24 03:14", fx: { currency: "USD", amount: 1, rate: 1300 } }));
+    expect(out).toContain(">2026-09-24 03:14<");
+    expect(out).not.toContain("USD");
+  });
+
   it("외화 금액은 통화 코드 + 소수 2자리", () => {
     expect(html(createElement(Num, { value: 4400, currency: "USD" }))).toContain(">USD 4,400.00<");
   });

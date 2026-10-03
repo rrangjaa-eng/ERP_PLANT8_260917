@@ -7,8 +7,8 @@ import styles from "./Num.module.css";
 export type NumUnit = "krw" | "count" | "quantity" | "percent";
 
 export type NumProps = {
-  /** 값이 없으면(null) —. */
-  value: number | null;
+  /** 값이 없으면(null) —. 글자(`string`)는 서식 없이 그대로 두고 숫자 칸 모양(고정폭 숫자 · 줄바꿈 없음)만 입힌다 — 일시·번호 문자열용(04.6-20). */
+  value: number | string | null;
   /** 서식 — 기본 원화(쉼표 · 소수 없음). */
   unit?: NumUnit;
   /** 외화 금액 하나(`USD 4,400.00`). KRW면 무시한다. */
@@ -17,8 +17,9 @@ export type NumProps = {
   fx?: { currency: string; amount: number; rate: number };
 };
 
-function formatValue(value: number | null, unit: NumUnit, currency: string | undefined): string {
+function formatValue(value: number | string | null, unit: NumUnit, currency: string | undefined): string {
   if (value === null) return "—";
+  if (typeof value === "string") return value;
   if (currency && currency !== "KRW") return `${currency} ${formatForeignAmount(value)}`;
   switch (unit) {
     case "count":
@@ -34,7 +35,7 @@ function formatValue(value: number | null, unit: NumUnit, currency: string | und
 
 export function Num({ value, unit = "krw", currency, fx }: NumProps) {
   const text = formatValue(value, unit, currency);
-  if (!fx || fx.currency === "KRW") return <span className={styles.num}>{text}</span>;
+  if (typeof value === "string" || !fx || fx.currency === "KRW") return <span className={styles.num}>{text}</span>;
   return (
     <span className={`${styles.num} ${styles.withFx}`}>
       <span className={styles.main}>{text}</span>

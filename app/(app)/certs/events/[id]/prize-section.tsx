@@ -138,7 +138,7 @@ function previewOf(row: Row, closed: boolean): SubmitCell {
   });
 }
 
-// 제출 셀 — 숫자만(열 머리글이 단위 — DR-15), `파기 대상 {p}` · `미제출 {k}`는 --warning(그 낱말만), `확인증 없음`은 --muted.
+// 제출 셀 — 숫자만(열 머리글이 단위 — DR-15), `파기 대상 {p}` · `미제출 {k}`는 --status-warning(그 낱말만), `확인증 없음`은 --text-muted.
 function SubmitCellView({ cell }: { cell: SubmitCell }) {
   if (cell.kind === "noCert") return <span className={styles.mutedText}>확인증 없음</span>;
   if (cell.kind === "purge" || cell.kind === "missing") {

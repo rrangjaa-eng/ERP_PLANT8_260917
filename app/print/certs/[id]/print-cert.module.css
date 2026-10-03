@@ -1,6 +1,7 @@
 /* 04.3-11 — P1 확인증 인쇄물(SYSTEM §6-6 · docs/design/system/print-cert.html). 토큰만(docs/design/tokens.css).
-   인쇄 템플릿은 색 토큰 셋(--print-ink · --print-rule · --print-line)만 쓴다. 화면 바탕은 --surface, 종이 외곽은
-   1px --line(개정 ⑬ — 실물 미리보기 리터럴은 옮기지 않는다). 인쇄 미디어에서는 외곽이 없다. */
+   인쇄 템플릿은 색 토큰 셋(--print-ink · --print-rule · --print-line)만 쓴다. 화면 바탕은 --surface-canvas, 종이 면은
+   --surface-base, 종이 외곽은 1px --border-surface(개정 ⑬ — 실물 미리보기 리터럴은 옮기지 않는다). 인쇄 미디어에서는
+   외곽이 없다. 글자 크기(px)와 2px 구조 선(--print-rule-w)은 인쇄 템플릿 자체의 값이다(app/print/** 인쇄 영구 예외, 04.6-02). */
 
 @page {
   size: A4 portrait;
@@ -10,9 +11,9 @@
 .root {
   min-height: 100vh;
   padding: var(--s-4) 0;
-  background: var(--surface);
+  background: var(--surface-canvas);
   color: var(--print-ink);
-  font-size: var(--fs-base);
+  font-size: 14px;
   line-height: var(--lh-body);
   letter-spacing: var(--ls-body);
   word-break: keep-all;
@@ -24,8 +25,8 @@
   height: 297mm;
   margin: 0 auto;
   padding: 22mm 22mm 20mm;
-  background: var(--bg);
-  outline: var(--line-w) solid var(--line);
+  background: var(--surface-base);
+  outline: var(--line-w) solid var(--border-surface);
   break-inside: avoid;
 }
 
@@ -40,19 +41,19 @@
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  font-size: var(--fs-sm);
+  font-size: 12px;
 }
 
 .mark {
   font-weight: var(--fw-mark);
-  font-size: var(--fs-md);
+  font-size: 15px;
   letter-spacing: var(--ls-head);
   color: var(--print-rule);
 }
 
 .title {
   margin: var(--s-12) 0 0;
-  font-size: var(--fs-xl);
+  font-size: 24px;
   font-weight: var(--fw-bold);
   letter-spacing: var(--ls-head);
   line-height: var(--lh-tight);
@@ -60,7 +61,7 @@
 
 .sub {
   margin: var(--s-1) 0 0;
-  font-size: var(--fs-sm);
+  font-size: 12px;
 }
 
 .subNum {
@@ -69,7 +70,7 @@
 
 .rule {
   margin: var(--s-3) 0 var(--s-6);
-  border-top: var(--line-w-strong) solid var(--print-rule);
+  border-top: var(--print-rule-w) solid var(--print-rule);
 }
 
 .list {
@@ -82,7 +83,7 @@
 .list dt {
   padding: 7px 0;
   border-bottom: var(--line-w) solid var(--print-line);
-  font-size: var(--fs-sm);
+  font-size: 12px;
   font-weight: var(--fw-medium);
 }
 
@@ -95,12 +96,12 @@
 
 .small {
   display: block;
-  font-size: var(--fs-sm);
+  font-size: 12px;
 }
 
 .section {
   margin: var(--s-8) 0 var(--s-1);
-  font-size: var(--fs-sm);
+  font-size: 12px;
   font-weight: var(--fw-medium);
   letter-spacing: 0.08em;
 }
@@ -115,18 +116,18 @@
   display: flex;
   justify-content: space-between;
   padding: 5px 0;
-  font-size: var(--fs-base);
+  font-size: 14px;
 }
 
 .total {
   align-items: baseline;
   margin-top: var(--s-2);
   padding-top: var(--s-3);
-  border-top: var(--line-w-strong) solid var(--print-rule);
+  border-top: var(--print-rule-w) solid var(--print-rule);
 }
 
 .total b {
-  font-size: var(--fs-xl);
+  font-size: 24px;
   font-weight: var(--fw-bold);
   line-height: var(--lh-tight);
 }
@@ -144,7 +145,7 @@
 }
 
 .who {
-  font-size: var(--fs-sm);
+  font-size: 12px;
   text-align: right;
 }
 
@@ -155,7 +156,7 @@
 
 .who b {
   display: block;
-  font-size: var(--fs-base);
+  font-size: 14px;
   font-weight: var(--fw-bold);
 }
 
@@ -166,7 +167,7 @@
   border-bottom: var(--line-w) solid var(--print-ink);
 }
 
-/* 서명 PNG는 바탕 투명 + --fg 획이다 — 색 토큰은 픽셀에 닿지 않으므로 불투명한 모든 픽셀을 검정으로 찍는다(개정 ⑬). */
+/* 서명 PNG는 바탕 투명 + --text-strong 획이다 — 색 토큰은 픽셀에 닿지 않으므로 불투명한 모든 픽셀을 검정으로 찍는다(개정 ⑬). */
 .signature {
   position: absolute;
   right: 4mm;
@@ -182,7 +183,7 @@
   position: absolute;
   bottom: -6mm;
   left: 0;
-  font-size: var(--fs-xs);
+  font-size: 11px;
 }
 
 .foot {
@@ -192,7 +193,7 @@
   left: 22mm;
   display: flex;
   justify-content: space-between;
-  font-size: var(--fs-sm);
+  font-size: 12px;
 }
 
 /* 긴 행사 이름 · 주소로 흐름이 하단 여백(20mm)을 넘지 않게 — 세로 간격만 줄인다(입력 한도 최대치 80자 + 200자에서도
@@ -220,12 +221,12 @@
   gap: var(--s-2);
   margin: 0;
   padding: var(--s-12) var(--s-4);
-  color: var(--danger);
+  color: var(--status-danger);
 }
 
 .errorTitle {
   margin: 0;
-  font-size: var(--fs-base);
+  font-size: 14px;
   font-weight: var(--fw-regular);
 }
 
@@ -242,7 +243,7 @@
   top: 0;
   right: 0;
   left: 0;
-  height: var(--line-w-strong);
+  height: var(--print-rule-w);
   background: var(--accent);
   opacity: 0;
   animation-name: appear;

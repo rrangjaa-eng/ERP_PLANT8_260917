@@ -210,7 +210,7 @@ test.describe("인쇄 라우트", () => {
     await context.close();
   });
 
-  test("404 변종은 제목이 확인증 인쇄로 남지 않고 바탕이 --surface다(L3)", async ({ browser }) => {
+  test("404 변종은 제목이 확인증 인쇄로 남지 않고 바탕이 --surface-canvas다(L3)", async ({ browser }) => {
     const seeded = await seedSubmittedCert();
     const pmSession = await loggedInContext(browser, pm);
     const admin404 = await loggedInContext(browser, admin);
@@ -224,7 +224,7 @@ test.describe("인쇄 라우트", () => {
       await expect(page).not.toHaveTitle("확인증 인쇄");
       const [surface, main] = await page.evaluate(() => {
         const probe = document.createElement("div");
-        probe.style.background = "var(--surface)";
+        probe.style.background = "var(--surface-canvas)";
         document.body.append(probe);
         const expected = getComputedStyle(probe).backgroundColor;
         probe.remove();

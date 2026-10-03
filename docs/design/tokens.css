@@ -2,7 +2,7 @@
  * 출처: docs/design/SYSTEM.md (이 파일과 어긋나면 SYSTEM.md가 맞다)
  * 규칙: 화면·컴포넌트 CSS는 「2단 역할 이름」만 참조한다. 원시 값은 이 파일 안에서 역할을 정의할 때만 쓴다.
  *       새 값이 필요하면 DECISIONS.md → SYSTEM.md → 여기 순서로 추가한다. 다음 스킨 변경 = 2단 역할 층 한 곳.
- * 옛 이름(「옛 이름」 구간)은 아직 옮기지 않은 화면이 쓴다 — 옛 값 그대로 두고, 모든 화면을 옮긴 뒤(04.6-31) 지운다.
+ * 옛 토큰 이름은 04.6-31이 지웠다(test/unit/design/tokens.test.ts ⑥이 없음을 단언한다) — 스킨 값은 2단 역할 층 한 곳에서만 온다.
  * 아래 「==== … ====」 구간 배너 글자는 test/unit/design/tokens.test.ts가 구간을 찾는 표식이다 — 고치지 않는다.
  * 브레이크포인트는 CSS 변수로 쓸 수 없어 주석으로 고정한다:
  *   폰  <700px  · PC ≥1024px · 컨테이너 최대 1280px
@@ -79,7 +79,7 @@
   --border-button:  var(--n-300);   /* 2차 버튼(글자 라벨이 있어 3:1 대상 아님) */
   --border-control: var(--n-500);   /* 입력 테두리 · on base 3.60 (UQ-7 A) */
   --line-w:         1px;
-  --underline-w-hover: 2px;         /* 3차 버튼·행동 링크 호버 밑줄 — 선이 아니라 밑줄 상태 신호(옛 --line-w-strong 자리를 잇는 이름) */
+  --underline-w-hover: 2px;         /* 3차 버튼·행동 링크 호버 밑줄 — 선이 아니라 밑줄 상태 신호 */
   --underline-offset:  2px;
   --focus-w:        2px;
   --focus-offset:   2px;
@@ -172,59 +172,25 @@
   --fw-bold:    700;
   --fw-mark:    800;   /* 로고 워드마크만 */
 
-  /* ==== 옛 이름 (옛 값 그대로 — 04.6-31이 삭제한다) ==== */
-  --bg:            #FFFFFF;
-  --surface:       #F3F7F5;
-  --fg:            #0B1512;   /* on --bg 18.6 */
-  --muted:         #4E5D59;   /* on --bg 6.9 · on --g-100 5.5 */
-  --faint:         #5F6E6A;   /* on --bg 5.4 · on --g-50 4.7 · --g-100 위 금지 */
-
-  --success:       var(--g-600);   /* on --bg 5.3 */
-  --warning:       #8A5A00;        /* on --bg 5.9 · on --warning-weak 5.3 */
-  --warning-weak:  #FBF1DE;
-  --danger:        #9B1C1C;        /* on --bg 8.2 · on --danger-weak 7.0 */
-  --danger-weak:   #FBE9E9;
-
-  --line:          #CFDBD7;        /* 장식선 1px */
-  --line-ui:       #7C8A86;        /* 인식해야 하는 UI 경계 · on --bg 3.6 */
-  --line-strong:   var(--g-900);   /* 2px 강한 선 */
-
-  --bar:           var(--g-900);
-  --scrim:         rgba(0, 33, 28, 0.45);
-
-  --fs-xs:   11px;
-  --fs-sm:   12px;
-  --fs-base: 14px;   /* 폰에서 15px (아래 미디어 쿼리) */
-  --fs-md:   15px;
-  --fs-lg:   18px;
-  --fs-xl:   24px;
-  --fs-2xl:  32px;   /* 대시보드 KPI 타일 큰 숫자만 (2026-09-18 손익 대시보드 결정) */
-
-  --row-min:       36px;         /* 폰 44px */
-  --modal-w:       480px;
-  --radius:        0;
-  --line-w-strong: 2px;
-  --shadow:        none;   /* 그림자 없음. 인셋 선만 허용 */
-
   /* ==== 그 밖 기존 이름 (이 페이즈가 값을 바꾸지 않는다) ==== */
   --on-accent-weak: rgba(255, 255, 255, 0.5);  /* 1차 버튼 위 kbd 테두리 전용(§7-1) — preview.html의 rgba(255,255,255,.5) 값 그대로, 화면 픽셀 불변(2026-09-19, 체크포인트 항목 I②) */
 
   /* 브라우저 기본 표면 (SYSTEM.md §4-4) */
   --sel-bg:        var(--g-100);
-  --sel-fg:        var(--fg);
+  --sel-fg:        var(--text-strong);
   --caret:         var(--g-700);
   --native-accent: var(--g-700);   /* accent-color: 체크박스·라디오·progress */
-  --scrollbar:     var(--line-ui);
+  --scrollbar:     var(--border-control);
 
-  /* 인쇄 전용 (print 라우트에서 --fg/--line-strong를 이것으로 덮는다) */
+  /* 인쇄 전용 (인쇄 템플릿은 이 넷과 역할 이름만 쓴다) */
   --print-ink:     #000000;         /* 글자 · 서명 */
   --print-rule:    var(--g-700);    /* 구조 선: 워드마크 · 제목 괘선 · 명세 머리/합계 · 결재 칸. 인쇄 미디어에서도 유지 (DECISIONS 2026-09-18 인쇄 색) */
   --print-rule-w:  2px;             /* 인쇄 구조 선 두께 — 인쇄 템플릿은 스킨 대상이 아니라 화면의 1px 선 규칙과 무관하다 */
-  --print-line:    #CFDBD7;         /* 구분 가로선 1px (= --line 값. @media print가 --line을 검정으로 덮으므로 따로 둔다) */
+  --print-line:    #CFDBD7;         /* 구분 가로선 1px (@media print가 선 역할 토큰을 검정으로 덮으므로 따로 둔다) */
 
   /* 데이터 색 (손익 대시보드, 2026-09-18) — 색 하나 = 뜻 하나 */
   --viz-1:         var(--g-700);    /* 팀 색 1 = 기획1팀 · 기본 계열 */
-  --viz-2:         var(--blue-700); /* 팀 색 2 = 기획2팀 · #1F5FA8 on #FFFFFF(=--bg) 대비 6.44(양쪽 같은 색 쌍) */
+  --viz-2:         var(--blue-700); /* 팀 색 2 = 기획2팀 · #1F5FA8 on #FFFFFF(=--surface-base) 대비 6.44(양쪽 같은 색 쌍) */
   --viz-2-weak:    var(--blue-100); /* 팀 색 2 바탕 */
   --seg-1:         var(--g-900);    /* 구성 비율(도넛) 5단, 진한 순 = 큰 비중 */
   --seg-2:         var(--g-700);
@@ -272,10 +238,8 @@
   :root {
     --text-body:   15px;
     --panel-pad-x: var(--s-4);
-    --fs-base:   15px;
     --pad-page:  var(--s-4);
     --cell-pad-y: var(--s-3);
-    --row-min:   44px;
     --control-h: 40px;
   }
 }
@@ -294,19 +258,7 @@
  * 색 역할 토큰은 전부 --print-ink 또는 #FFFFFF로, 그림자 역할은 none으로 접는다(test/unit/design/tokens.test.ts ⑦). */
 @media print {
   :root {
-    /* 옛 이름 */
-    --bg:          #FFFFFF;
-    --fg:          var(--print-ink);
-    --muted:       var(--print-ink);
-    --faint:       var(--print-ink);
-    --line:        var(--print-ink);
-    --line-ui:     var(--print-ink);
-    --line-strong: var(--print-ink);
-    --accent:      var(--print-ink);
-    --success:     var(--print-ink);
-    --warning:     var(--print-ink);
-    --danger:      var(--print-ink);
-    --surface:     #FFFFFF;
+    /* 원시 층 — 면 틴트는 흰색으로 접는다(역할 이름이 이 값을 거치지 않아도 인쇄에 틴트가 새지 않게) */
     --g-50:        #FFFFFF;
     --g-100:       #FFFFFF;
 
@@ -335,6 +287,7 @@
     --border-button:  var(--print-ink);
     --border-control: var(--print-ink);
     /* 강조·상태 */
+    --accent:              var(--print-ink);
     --accent-hover:        var(--print-ink);
     --accent-weak:         #FFFFFF;
     --status-danger:       var(--print-ink);

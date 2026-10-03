@@ -18,7 +18,7 @@ export type SelectProps = Omit<SelectHTMLAttributes<HTMLSelectElement>, "id" | "
   error?: string;
 };
 
-// `Form.Hint`와 같은 모양(`--fs-sm --muted`) 한 줄. 공용 `Select`로 아직
+// `Form.Hint`와 같은 모양(`--text-aux --text-muted`) 한 줄. 공용 `Select`로 아직
 // 옮기지 않은 관리자 폼의 네이티브 select(거래처 기본 증빙 종류 — 이관은
 // Phase 7, A-H2)도 같은 줄을 붙이려고 내보낸다.
 export function SelectHint({ id, children }: { id: string; children: ReactNode }) {

@@ -47,7 +47,7 @@ export function RrnField({
   /** 전체 보기 대기 중인지 폼에 알린다 — 그동안 저장도 잠긴다(DOM 감사 L1). */
   onPendingChange: (pending: boolean) => void;
   error?: string;
-  /** 04.3-17 — 가린 값 뒤 ` · 파기 대상`(--warning, N10 a — 표시만, 전체 보기 · 정정은 그대로). */
+  /** 04.3-17 — 가린 값 뒤 ` · 파기 대상`(--status-warning, N10 a — 표시만, 전체 보기 · 정정은 그대로). */
   purgeTarget?: boolean;
 }) {
   const [failed, setFailed] = useState(false);

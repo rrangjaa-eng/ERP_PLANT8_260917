@@ -216,7 +216,7 @@ describe("Button.module.css — 스킨 A 역할 토큰(04.6-08)", () => {
     expect(rule(".wrapExternal .reason,\n.wrapExternal .reasonInfo")).toContain("font-size: var(--text-prose);");
   });
 
-  it("옛 이름(--line · --line-w-strong · --fs-md)이 없다", () => {
-    expect(css).not.toMatch(/var\(--line\)|--line-w-strong|--fs-md/);
+  it("옛 이름(--line · --line-w-strong · --fs-md)이 없다", () => { // 옛 이름 목록(공통 §4 (d))
+    expect(css).not.toMatch(/var\(--line\)|--line-w-strong|--fs-md/); // 옛 이름 목록(공통 §4 (d))
   });
 });

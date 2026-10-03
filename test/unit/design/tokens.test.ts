@@ -9,7 +9,6 @@ const RAW_CSS = readFileSync(resolve(process.cwd(), "docs", "design", "tokens.cs
 
 const BANNER_RAW = "/* ==== 1단 원시 값 ==== */";
 const BANNER_ROLE = "/* ==== 2단 역할 이름 ==== */";
-const BANNER_LEGACY = "/* ==== 옛 이름 (옛 값 그대로 — 04.6-31이 삭제한다) ==== */";
 const BANNER_OTHER = "/* ==== 그 밖 기존 이름 (이 페이즈가 값을 바꾸지 않는다) ==== */";
 
 function stripComments(css: string): string {
@@ -38,8 +37,8 @@ const FIRST_ROOT = RAW_CSS.slice(ROOT_START, ROOT_END);
 const ALL = declarations(FIRST_ROOT);
 
 const RAW = declarations(bannerSlice(BANNER_RAW, BANNER_ROLE));
-const ROLE = declarations(bannerSlice(BANNER_ROLE, BANNER_LEGACY));
-const LEGACY = declarations(bannerSlice(BANNER_LEGACY, BANNER_OTHER));
+const ROLE = declarations(bannerSlice(BANNER_ROLE, BANNER_OTHER));
+const OTHER = declarations(RAW_CSS.slice(RAW_CSS.indexOf(BANNER_OTHER), ROOT_END));
 
 const PHONE_START = RAW_CSS.indexOf("@media (max-width: 699.98px)");
 const PHONE = declarations(RAW_CSS.slice(PHONE_START, RAW_CSS.indexOf("\n}\n", PHONE_START)));
@@ -240,50 +239,52 @@ describe("tokens.css — ⑤ 미정의 · 순환 없음, 역할 층은 원시·�
     }
   });
 
-  it("옛 이름·그 밖 층은 역할 층과 같은 이름을 다시 정의하지 않는다", () => {
-    for (const name of LEGACY.keys()) expect(ROLE.has(name)).toBe(false);
+  it("그 밖 층은 역할 층과 같은 이름을 다시 정의하지 않는다", () => {
+    expect(OTHER.size).toBeGreaterThan(0);
+    for (const name of OTHER.keys()) expect(ROLE.has(name)).toBe(false);
   });
 });
 
-describe("tokens.css — ⑥ 옛 이름은 옛 값 그대로(04.6-31이 「없다」로 뒤집는다)", () => {
-  // 공통 §4 (d) 목록 + 값. 아직 옮기지 않은 화면의 모양이 이 웨이브에서 바뀌지 않는다.
-  const LEGACY_VALUES: Array<[string, string]> = [
-    ["--bg", "#FFFFFF"],
-    ["--surface", "#F3F7F5"],
-    ["--fg", "#0B1512"],
-    ["--muted", "#4E5D59"],
-    ["--faint", "#5F6E6A"],
-    ["--line", "#CFDBD7"],
-    ["--line-ui", "#7C8A86"],
-    ["--line-strong", "var(--g-900)"],
-    ["--line-w-strong", "2px"],
-    ["--radius", "0"],
-    ["--shadow", "none"],
-    ["--modal-w", "480px"],
-    ["--bar", "var(--g-900)"],
-    ["--danger", "#9B1C1C"],
-    ["--danger-weak", "#FBE9E9"],
-    ["--warning", "#8A5A00"],
-    ["--warning-weak", "#FBF1DE"],
-    ["--success", "var(--g-600)"],
-    ["--scrim", "rgba(0, 33, 28, 0.45)"],
-    ["--row-min", "36px"],
-    ["--fs-xs", "11px"],
-    ["--fs-sm", "12px"],
-    ["--fs-base", "14px"],
-    ["--fs-md", "15px"],
-    ["--fs-lg", "18px"],
-    ["--fs-xl", "24px"],
-    ["--fs-2xl", "32px"],
-  ];
+const LEGACY_NAME = /^--(bg|surface|fg|muted|faint|line|line-ui|line-strong|line-w-strong|radius|shadow|modal-w|bar|fs-[a-z0-9]+|danger|danger-weak|warning|warning-weak|success|scrim|row-min)$/; // 옛 이름 목록(공통 §4 (d))
 
-  it.each(LEGACY_VALUES)("%s = %s", (name, value) => {
-    expect(LEGACY.get(name)).toBe(value);
+describe("tokens.css — ⑥ 옛 이름은 정의돼 있지 않다(04.6-31) — 스킨 값은 역할 층 한 곳에서만 온다", () => {
+  const names = [...RAW_CSS.matchAll(/--[\w-]+/g)].map((m) => m[0]);
+
+  it("파일 어디에도(주석 · 첫 :root · 폰 미디어 쿼리 · @media print · var() 참조) 옛 이름이 없다", () => {
+    expect(names.length).toBeGreaterThan(100);
+    expect(names.filter((n) => LEGACY_NAME.test(n))).toEqual([]);
   });
 
-  it("폰 미디어 쿼리의 옛 값도 그대로다(--fs-base 15px · --row-min 44px)", () => {
-    expect(PHONE.get("--fs-base")).toBe("15px");
-    expect(PHONE.get("--row-min")).toBe("44px");
+  it("역할 이름과 이름이 비슷한 토큰은 옛 이름으로 오인하지 않는다(--bar-bg · --line-w · --surface-base · --radius-control)", () => {
+    for (const ok of ["--bar-bg", "--bar-h", "--line-w", "--surface-base", "--radius-control", "--shadow-pop", "--status-danger"]) {
+      expect(LEGACY_NAME.test(ok), ok).toBe(false);
+    }
+    // 옛 이름이 실제로 잡히는지(공허 방지) — 이 파일의 다른 줄에 옛 이름을 쓰지 않으려 이어 붙인다.
+    expect(LEGACY_NAME.test(["-", "-bg"].join(""))).toBe(true);
+    expect(LEGACY_NAME.test(["-", "-fs-md"].join(""))).toBe(true);
+  });
+
+  it("브라우저 기본 표면 파생 토큰은 역할 이름을 가리킨다(--sel-fg → --text-strong · --scrollbar → --border-control)", () => {
+    expect(OTHER.get("--sel-fg")).toBe("var(--text-strong)");
+    expect(OTHER.get("--scrollbar")).toBe("var(--border-control)");
+  });
+
+  it("폰 미디어 쿼리는 역할 이름만 덮는다(--text-body 15px · --control-h 40px)", () => {
+    expect(PHONE.get("--text-body")).toBe("15px");
+    expect(PHONE.get("--control-h")).toBe("40px");
+  });
+
+  it("--print-rule-w 는 2px 이다(인쇄 구조 선 — 인쇄 템플릿은 스킨 대상이 아니다)", () => {
+    expect(ALL.get("--print-rule-w")).toBe("2px");
+  });
+
+  it.each([
+    ["--surface-canvas", "#FFFFFF"], // 인쇄 라우트 화면 바탕 — 옛 화면 바탕 토큰이 접히던 값
+    ["--surface-base", "#FFFFFF"], // 종이 면 — 옛 종이 면 토큰이 접히던 값
+    ["--border-surface", "var(--print-ink)"], // 종이 외곽 — 옛 장식선 토큰이 접히던 값
+    ["--status-danger", "var(--print-ink)"], // 오류 글자 — 옛 오류 색 토큰이 접히던 값
+  ])("인쇄 CSS가 쓰는 %s 는 @media print 에서 %s 로 접힌다(옛 이름이 접히던 값과 같다)", (name, value) => {
+    expect(PRINT.get(name)).toBe(value);
   });
 });
 

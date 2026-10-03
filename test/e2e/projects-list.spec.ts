@@ -100,10 +100,10 @@ async function addQuoteLine(projectId: string, quote: number, execution = 0) {
 }
 
 // 04-18 — 경영관리(시드 계급에 없다): 전사 범위 새 계급에 목록 보기 + 견적 · 발행 금액 노출을 준다(시드 계급을 바꾸지 않는다).
-async function makeManager(): Promise<{ email: string; password: string }> {
+async function makeManager(extraInfoItems: string[] = []): Promise<{ email: string; password: string }> {
   const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E경영관리-${randomUUID().slice(0, 8)}`, workScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
-  for (const infoItem of ["project.value", "quote.amount", "revenue.issued_amount"]) {
+  for (const infoItem of ["project.value", "quote.amount", "revenue.issued_amount", ...extraInfoItems]) {
     await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
   }
   const email = `e2e-list-mgr-${randomUUID()}@example.test`;
@@ -938,13 +938,36 @@ test.describe("프로젝트 목록 — 필터 줄 검토·감사 반영 (04-48)"
     });
   });
 
-  test("(F2) 폰 320에서 긴 팀 이름이 있을 때 「필터」를 펼쳐도 문서 가로 스크롤이 없고 팀 칸이 화면 안이다", async ({ page }) => {
-    const pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID, withTeam: true });
-    await login(page, pm);
-    await withLongTeam(async () => {
+  test("(F2) 폰 320에서 긴 팀 이름 · 10자리 견적 금액 · 긴 이름 행이 표에 있어도 「필터」를 펼쳐 문서 가로 스크롤이 없고 팀 칸이 화면 안이다", async ({ page }) => {
+    // 필터 줄의 팀 select 이름은 team.value 공개가 있어야 보인다.
+    const manager = await makeManager(["team.value"]);
+    const pm = await setupPm();
+    const marker = `E2E폰넘침-${randomUUID().slice(0, 8)}`;
+    await login(page, manager);
+    await withLongTeam(async (teamId) => {
+      // 웨이브 6 DOM 감사 D1 — 표가 있는 상태를 잰다. 04.6-26 N-1(보이는 첫 칸 · 끝 칸 16)이 칸 +16을 더해 8자리 금액부터 320을 넘겼다.
+      // 견적은 8 · 9 · 10자리, 이름은 한국어 긴 이름과 끊기지 않는 영문 토큰, 거래처 이름은 긴 한국어다.
+      const longClient = await insertVendor(SYSTEM_VIEWER, {
+        name: `감사클라이언트가나다라마바사-${randomUUID().slice(0, 4)}`,
+        normalizedName: `e2e폰넘침거래처-${randomUUID()}`,
+      });
+      const amounts = [12_000_000, 123_456_789, 1_234_567_890];
+      const names = [`${marker}-가나다라마바사아자차카타파하거너더러머버서어저처커터퍼허`, `${marker}-abcdefghijklmnopqrstuvwxyz0123456789`, `${marker}-행`];
+      for (const [index, amount] of amounts.entries()) {
+        const project = await createProject(SYSTEM_VIEWER, {
+          clientId: longClient.id,
+          teamId,
+          pmUserId: pm.pmUserId,
+          name: names[index]!,
+          startDate: `${kstYear(new Date())}-09-05`,
+          endDate: `${kstYear(new Date())}-09-20`,
+        });
+        await addQuoteLine(project.id, amount);
+      }
       await page.setViewportSize({ width: 320, height: 640 });
-      // 표 내용은 이 시험이 재는 것이 아니다 — 다른 스펙이 남긴 프로젝트(8자리 금액 + 끊기지 않는 ID 이름)가 표 최소 폭을 키워 문서 가로 스크롤을 만들었다(웨이브 6 합본, 26 N-1 +8). 없는 검색어로 표 없는 빈 목록에서 필터 줄만 잰다.
-      await page.goto(`/projects?q=${randomUUID()}`);
+      await page.goto(`/projects?q=${encodeURIComponent(marker)}&year=all`);
+      await expect(page.locator(`${LIST_TABLE} tbody a[data-row-link]`)).toHaveCount(3);
+      await expect(page.locator(LIST_TABLE).getByText("1,234,567,890", { exact: true }).first()).toBeVisible();
       const toggle = page.getByRole("button", { name: "필터", exact: true });
       await expect(toggle).toBeVisible();
       await toggle.click();
@@ -955,8 +978,10 @@ test.describe("프로젝트 목록 — 필터 줄 검토·감사 반영 (04-48)"
         clientWidth: document.documentElement.clientWidth,
         teamRight: document.querySelector("#teamId")!.getBoundingClientRect().right,
         fieldsRight: document.querySelector("#project-filter-fields")!.getBoundingClientRect().right,
+        tableRight: document.querySelector("main table:not([aria-hidden='true'])")!.getBoundingClientRect().right,
       }));
-      expect(m.scrollWidth).toBeLessThanOrEqual(m.clientWidth);
+      expect(m.scrollWidth, "문서 가로 스크롤").toBeLessThanOrEqual(m.clientWidth);
+      expect(m.tableRight, "표 오른쪽").toBeLessThanOrEqual(m.clientWidth);
       expect(m.fieldsRight).toBeLessThanOrEqual(m.clientWidth);
       expect(m.teamRight).toBeLessThanOrEqual(m.clientWidth);
     });

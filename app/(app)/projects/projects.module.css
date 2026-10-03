@@ -305,6 +305,14 @@
   overflow-wrap: anywhere;
 }
 
+/* 웨이브 6 DOM 감사 D1 — 폰 320의 표 면 안쪽은 288이다. 04.6-26 N-1(보이는 첫 칸 · 끝 칸 16)이 칸 +16을 더하고 견적 칸은 nowrap이라,
+   이름 칸이 9em(폰 135)을 지키면 8자리 금액부터 표가 288을 넘었다. 폰에서는 이름 칸 바닥을 5em으로 낮춰 10자리 금액에서도 넘치지 않게 한다. */
+@media (max-width: 699.98px) {
+  .nameCell {
+    min-width: 5em;
+  }
+}
+
 .nowrap {
   white-space: nowrap;
 }

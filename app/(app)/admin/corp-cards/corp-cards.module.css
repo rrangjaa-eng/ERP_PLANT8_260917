@@ -1,21 +1,11 @@
-/* 04.6 스킨 A 이관 전: CSS */
-/* SYSTEM.md §6-1 목록 · §6-3 폼 템플릿(D-39). 색·서체·radius는 tokens.css
-   변수만 쓴다(D-20). 간격 리터럴은 허용된다(02-02 결정). */
-
-.filterRow {
-  display: flex;
-  justify-content: flex-end;
-  /* 이 줄에 「숨김 포함/제외」와 「법인카드 등록」 두 링크가 함께 있다 —
-     gap이 없으면 code-tables에서 실측된 결함(두 이름이 붙어 보임)이
-     되풀이된다. */
-  gap: var(--s-4);
-  margin: var(--s-3) 0;
-}
+/* SYSTEM.md §6-1 목록 · §6-3 폼 템플릿(D-39). 값은 역할 토큰만 쓴다(스킨 A).
+   04.6-15: 폼이 옆 패널로 옮겨 PC 라벨 열 격자(select 200)를 걷었다 — 모든 폭에서 라벨 위 · 칸 전폭(`Form.Field`가 라벨을 맡는다).
+   표(StaticTable)와 행 행동(RowActions)은 공용 컴포넌트라 화면별 표·행 행동 규칙을 지웠고, 폼 행동 줄은 PanelForm이 맡는다. */
 
 .toggle {
-  font-size: var(--fs-sm);
+  font-size: var(--text-aux);
   font-weight: var(--fw-medium);
-  color: var(--accent);
+  color: var(--text-link);
   text-decoration: underline;
   text-decoration-thickness: var(--line-w);
   text-underline-offset: var(--underline-offset);
@@ -23,7 +13,7 @@
 
 /* §4-4 · §7-1 3차 밑줄 1px → hover 2px. */
 .toggle:hover {
-  text-decoration-thickness: var(--line-w-strong);
+  text-decoration-thickness: var(--underline-w-hover);
 }
 
 /* §3 터치 목표: 폰에서 모든 행동 요소 최소 44×44 — 짧은 글자 링크라 패딩으로
@@ -39,111 +29,32 @@
   }
 }
 
-/* 행 안 동작 사이 --s-4 — SYSTEM §6-1, 사람 목록 people.module.css의 .rowActions와 같은 값이다. 위험한 동작(삭제)은 떨어뜨려 둔다. */
-.rowActions {
-  display: inline-flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: var(--s-4);
+/* 패널 칸 사이 간격 — TextField 줄과 같은 --s-4. */
+.field {
+  margin: 0 0 var(--s-4);
 }
 
-@media (max-width: 699.98px) {
-  .rowActions {
-    flex-wrap: wrap;
-  }
-}
-
-/* 행 「수정」 링크만 줄바꿈 금지 — .toggle은 필터·등록·취소 링크도 쓴다. */
-.rowLink {
-  white-space: nowrap;
-}
-
-.table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.table th {
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  color: var(--muted);
-  text-align: left;
-  padding: var(--cell-pad-y) var(--cell-pad-x);
-  border-bottom: var(--line-w-strong) solid var(--line-strong);
-}
-
-/* 표 칸에는 min-height가 듣지 않는다 — 전역 border-box라 height가 패딩 포함 최소 높이로 동작한다(holidays.module.css 선례). */
-.table td {
-  height: var(--row-min);
-  padding: var(--cell-pad-y) var(--cell-pad-x);
-  font-size: var(--fs-base);
-  border-bottom: var(--line-w) solid var(--line);
-}
-
-.table tbody tr:hover td {
-  background: var(--surface);
-}
-
-/* §2-4: 뒤 4자리는 숫자 칸 — 우측 정렬 + tabular-nums로 자릿수가 흔들리지 않는다. */
-.last4 {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.selectLabel {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s-1);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  color: var(--muted);
-  margin: var(--s-2) 0;
-}
-
-/* §6-3 · §7-2 · §7-15 — PC 폼 라벨 열 96(--label-w) + --s-2(TextField · Form.Field와
-   같은 열), select 200. 폰(<700px)은 위 세로 쌓기가 기본값이다. */
-@media (min-width: 700px) {
-  .selectLabel {
-    display: grid;
-    grid-template-columns: var(--label-w) minmax(0, 1fr);
-    column-gap: var(--s-2);
-    align-items: start;
-  }
-
-  /* 라벨 글자 높이를 TextField 라벨(padding-top --s-1)과 맞춘다. */
-  .selectLabel > label {
-    padding-top: var(--s-1);
-  }
-
-  .selectLabel > :not(label) {
-    grid-column: 2;
-  }
-
-  .selectLabel > select {
-    width: 200px;
-    max-width: 100%;
-  }
-}
-
+/* 패널 안 select 높이는 같은 패널 입력과 같은 --field-h(D14 · ui/select와 같은 꼴). */
 .select {
-  height: var(--control-h);
-  border: var(--line-w) solid var(--line-ui);
-  background: var(--bg);
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--field-h, var(--control-h));
+  border: var(--line-w) solid var(--border-control);
+  border-radius: var(--radius-control);
+  background: var(--surface-base);
+  color: var(--text-strong);
   padding: 0 var(--s-2);
-  font-size: var(--fs-base);
+  font-size: var(--text-body);
 }
 
-/* vendors.module.css와 같은 결 — 폼 제출 버튼 + 취소 링크를 한 줄에. */
-.formActions {
-  display: flex;
-  align-items: center;
-  gap: var(--s-3);
+.select:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
 }
 
-/* 소유자 변경 폼의 대상 표시 한 줄 — vendors.module.css의 .hint와 같은 결. */
+/* 소유자 변경 패널의 대상 표시 한 줄. */
 .hint {
-  font-size: var(--fs-sm);
-  color: var(--muted);
-  margin: 0 0 var(--s-3);
+  font-size: var(--text-aux);
+  color: var(--text-muted);
+  margin: 0 0 var(--s-4);
 }

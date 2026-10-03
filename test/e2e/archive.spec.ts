@@ -22,9 +22,14 @@ test.describe("보관함 화면 (ADMN-12)", () => {
     // 목록 머리글의 「코드 추가」가 그 폼을 연다.
     await page.goto("/admin/code-tables");
     await page.getByRole("link", { name: "코드 추가" }).click();
-    await page.getByLabel("값").fill(codeValue);
-    await page.locator("#code-item-form").getByLabel("이름").fill(codeLabel);
-    await page.getByRole("button", { name: "코드 추가" }).click();
+    // 04.6-15: 「코드 추가」는 옆 패널이고 성공 뒤에도 패널이 열린 채 칸이 빈다(UQ-8 B) — Esc로 닫고(칸이 비어 확인 없음) 목록에서 이어 간다.
+    const panel = page.locator('dialog[data-ui="side-panel"]');
+    await panel.getByLabel("값").fill(codeValue);
+    await panel.locator("#code-item-form").getByLabel("이름").fill(codeLabel);
+    await panel.getByRole("button", { name: "코드 추가" }).click();
+    await expect(panel.getByRole("status")).toHaveText("코드 추가됨");
+    await page.keyboard.press("Escape");
+    await expect(panel).toHaveCount(0);
     await expect(page.getByText(codeValue)).toBeVisible();
 
     // 삭제 — 두 단계 제출. 확인 문구에 보관함·복원 문구가 보인다.

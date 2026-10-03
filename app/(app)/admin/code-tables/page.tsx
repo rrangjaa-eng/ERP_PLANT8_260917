@@ -1,14 +1,16 @@
-// 04.6 스킨 A 이관 전: 화면 틀
-/* eslint-disable no-restricted-syntax -- 04.6 스킨 A 이관 전 */
 import { Fragment } from "react";
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
 import { listCodeItems, CODE_TABLES } from "@/domain/code-tables";
-import { PageHeader } from "@/ui/page-header/PageHeader";
+import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
+import { SidePanel } from "@/ui/side-panel/SidePanel";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
+import { StaticTable } from "@/ui/table/StaticTable";
+import { RowActions } from "@/ui/row-actions/RowActions";
+import { Num } from "@/ui/num/Num";
 import {
   CodeItemForm,
   CodeItemLabelInput,
@@ -29,14 +31,14 @@ const EVIDENCE_TYPE_TABLE_KEY = "evidence_type";
 // D-18과 같은 결: 캐시·별도 저장 없음 — 화면 로드마다 목록을 다시 조회한다.
 export const dynamic = "force-dynamic";
 
-// 목록 화면의 필터 상태(코드표 선택·숨김 포함 여부)를 유지한 채 등록 폼을
+// 목록 화면의 필터 상태(코드표 선택·숨김 포함 여부)를 유지한 채 등록 패널을
 // 열고 닫는 링크를 만든다 — vendors의 ?editId= 토글과 같은 결(§6-1, D-39,
 // DECISIONS.md 2026-09-21).
 function codeTablesHref(tableKey: string, includeInactive: boolean, opts?: { isNew?: boolean }): string {
   const params = new URLSearchParams({ tableKey });
   if (includeInactive) params.set("includeInactive", "1");
   if (opts?.isNew) params.set("new", "1");
-  return `?${params.toString()}#code-item-form`;
+  return `/admin/code-tables?${params.toString()}`;
 }
 
 // app/(app)/admin/system-status/page.tsx의 세 게이트 순서를 그대로 복제하고
@@ -66,129 +68,106 @@ export default async function CodeTablesPage({
     can(session.viewer, "admin.archive", "write"),
   ]);
   const currentLabel = TABLE_OPTIONS.find((option) => option.key === tableKey)?.label ?? tableKey;
+  // 「동작」 열의 유무 — 머리글과 행의 칸이 같은 조건을 쓴다(칸을 비우면서 머리글만 남기면 빈 칸이 생긴다).
+  const hasActions = canWrite || canArchive;
+  const cancelHref = codeTablesHref(tableKey, includeInactive);
+  const newHref = codeTablesHref(tableKey, includeInactive, { isNew: true });
 
   return (
-    <>
-      <PageHeader title="코드표" subtitle={currentLabel} />
-
-      <nav aria-label="코드표 선택" className={styles.filterRow}>
-        {TABLE_OPTIONS.map((option) => (
-          <a
-            key={option.key}
-            href={`?tableKey=${option.key}`}
+    <ListScreen
+      title="코드표"
+      // DR5 A — 빈 목록이면 머리 1차를 그리지 않고 빈 화면의 「코드 추가」 하나가 등록을 맡는다.
+      primaryAction={canWrite && items.length > 0 ? { label: "코드 추가", href: newHref } : undefined}
+      filters={
+        <>
+          {/* 고른 표 이름은 부제 대신 현재 링크 표시(색·굵기·밑줄)와 표 caption이 맡는다. */}
+          <nav aria-label="코드표 선택" className={styles.tableNav}>
+            {TABLE_OPTIONS.map((option) => (
+              <Link
+                key={option.key}
+                href={`?tableKey=${option.key}`}
+                scroll={false}
+                className={styles.toggle}
+                aria-current={option.key === tableKey ? "page" : undefined}
+              >
+                {option.label}
+              </Link>
+            ))}
+          </nav>
+          <Link
+            href={`?tableKey=${tableKey}&${includeInactive ? "includeInactive=0" : "includeInactive=1"}`}
+            scroll={false}
             className={styles.toggle}
-            aria-current={option.key === tableKey ? "page" : undefined}
           >
-            {option.label}
-          </a>
-        ))}
-      </nav>
-
-      {/* 쓰기 권한이 없는 계급에는 등록·편집 수단 자체를 렌더하지 않는다 —
-          "이유 있는 비활성" 대신 "버튼 자체가 없음"(03-UI-SPEC.md). 거래처·
-          법인카드·사람 화면이 이미 하는 것을 이 화면만 빠뜨리고 있었다. */}
-      {canWrite && showForm ? (
-        <CodeItemForm tableKey={tableKey} cancelHref={codeTablesHref(tableKey, includeInactive)} />
-      ) : null}
-
-      <div className={styles.filterRow}>
-        <a
-          href={`?tableKey=${tableKey}&${includeInactive ? "includeInactive=0" : "includeInactive=1"}`}
-          className={styles.toggle}
-        >
-          {includeInactive ? "숨김 제외" : "숨김 포함"}
-        </a>
-        {/* §6-1 「새 지출결의」와 같은 자리 — 목록 머리글의 등록 행동. */}
-        {canWrite && !showForm && items.length > 0 ? (
-          <Link href={codeTablesHref(tableKey, includeInactive, { isNew: true })} className={styles.toggle}>
-            코드 추가
+            {includeInactive ? "숨김 제외" : "숨김 포함"}
           </Link>
-        ) : null}
-      </div>
-
+        </>
+      }
+      panel={
+        // 쓰기 권한이 없는 계급에는 등록·편집 수단 자체를 렌더하지 않는다 —
+        // "이유 있는 비활성" 대신 "버튼 자체가 없음"(03-UI-SPEC.md).
+        canWrite && showForm ? (
+          <SidePanel title="코드 추가" closeHref={cancelHref}>
+            <CodeItemForm tableKey={tableKey} />
+          </SidePanel>
+        ) : null
+      }
+    >
       {items.length === 0 ? (
         <ListEmpty
           message="등록된 코드가 없습니다"
-          action={
-            canWrite
-              ? { label: "코드 추가", href: codeTablesHref(tableKey, includeInactive, { isNew: true }) }
-              : undefined
-          }
+          action={canWrite ? { label: "코드 추가", href: newHref } : undefined}
         />
       ) : (
-        <table className={styles.table}>
-          <caption className="sr-only">{`코드표 · ${currentLabel}`}</caption>
-          <thead>
-            <tr>
-              <th scope="col">값</th>
-              <th scope="col">이름</th>
-              <th scope="col">설명</th>
-              <th scope="col" className={styles.num}>정렬</th>
-              <th scope="col">상태</th>
-              {/* 칸을 비우면서 머리글만 남기면 빈 칸이 생긴다 — 법인카드
-                  화면과 같은 조건으로 머리글까지 감춘다. */}
-              {canWrite || canArchive ? <th scope="col">동작</th> : null}
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((item) => (
-              <Fragment key={item.id}>
-                <tr>
-                  <td>{item.value}</td>
-                  {/* MAST-04 「수정」 — 보관된 항목은 도메인이 거부하므로
-                      입력칸 대신 글자로 보인다(계급 화면과 같은 결). */}
-                  <td>
-                    {item.archivedAt || !canWrite ? (
-                      item.label
-                    ) : (
-                      <CodeItemLabelInput id={item.id} label={item.label} />
-                    )}
-                  </td>
-                  {/* 04-10(D-93) — 설명. 보관·쓰기 불가는 이름 칸과 같은
-                      결로 글자만(「—」는 값 없음, S14). */}
-                  <td>
-                    {item.archivedAt || !canWrite ? (
-                      (item.description ?? "—")
-                    ) : (
-                      <CodeItemDescriptionInput id={item.id} label={item.label} description={item.description} />
-                    )}
-                  </td>
-                  <td className={styles.num}>{item.sortOrder}</td>
-                  <td>
-                    {item.archivedAt ? (
-                      <StatusTag kind="muted" variant="text">
-                        보관됨
-                      </StatusTag>
-                    ) : item.active === false ? (
-                      <StatusTag kind="muted" variant="text">
-                        비활성
-                      </StatusTag>
-                    ) : "—"}
-                  </td>
-                  {/* 머리글과 같은 조건이어야 칸이 어긋나지 않는다. */}
-                  {canWrite || canArchive ? (
-                    <td>
-                      {item.archivedAt ? null : (
-                        <span className={styles.rowActions}>
-                          {canWrite ? <CodeItemActiveToggle id={item.id} active={item.active} /> : null}
-                          {canArchive ? <CodeItemDeleteButton id={item.id} label={item.label} /> : null}
-                        </span>
-                      )}
-                    </td>
-                  ) : null}
-                </tr>
-                {isEvidenceType && canWrite ? (
-                  <tr>
-                    <td colSpan={canWrite || canArchive ? 6 : 5}>
-                      <EvidenceTypeFields itemId={item.id} initialValue={item.taxRule} />
-                    </td>
-                  </tr>
-                ) : null}
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
+        <StaticTable
+          caption={`코드표 · ${currentLabel}`}
+          // 폰: 이름 · 상태 · 동작이 P1, 설명은 이름 아래 접힌 줄(P2), 값 · 정렬은 숨김(P3). 상세 화면이 없는 목록이라 동작을 P3로 숨기지 않는다
+          // (SYSTEM §7-3 · 사용자 답 Q4 A 「보이게」 — TODOS 183). 동작을 P2 접힌 줄에 두지 않는 이유: StaticTable 접힌 줄은 행 머리글 모드가 아니면 보조 기술이 못 쓴다.
+          columns={[
+            { key: "value", header: "값", priority: "p3" },
+            { key: "label", header: "이름", priority: "p1" },
+            { key: "description", header: "설명", priority: "p2" },
+            { key: "sortOrder", header: "정렬", priority: "p3", align: "right" },
+            { key: "status", header: "상태", priority: "p1" },
+            ...(hasActions ? [{ key: "actions", header: "동작", priority: "p1" as const }] : []),
+          ]}
+          rows={items.map((item) => ({
+            key: item.id,
+            cells: [
+              item.value,
+              // MAST-04 「수정」 — 보관된 항목은 도메인이 거부하므로 입력칸 대신 글자로 보인다(계급 화면과 같은 결).
+              item.archivedAt || !canWrite ? item.label : <CodeItemLabelInput key={item.id} id={item.id} label={item.label} />,
+              // 04-10(D-93) — 설명. 보관·쓰기 불가는 이름 칸과 같은 결로 글자만(「—」는 값 없음, S14). 입력은 StaticTable P2 칸이라
+              // PC 열과 폰 접힌 줄에 한 번씩 그려지고 보이는 쪽은 폭마다 하나다.
+              item.archivedAt || !canWrite ? (
+                <span className={styles.readOnlyText}>{item.description ?? "—"}</span>
+              ) : (
+                <CodeItemDescriptionInput id={item.id} label={item.label} description={item.description} />
+              ),
+              <Num key="sortOrder" value={item.sortOrder} unit="count" />,
+              <Fragment key="status">
+                {item.archivedAt ? (
+                  <StatusTag status="보관됨" variant="text" />
+                ) : item.active === false ? (
+                  <StatusTag status="비활성" variant="text" />
+                ) : "—"}
+              </Fragment>,
+              ...(hasActions
+                ? [
+                    item.archivedAt ? null : (
+                      <RowActions key="actions">
+                        {canWrite ? <CodeItemActiveToggle id={item.id} active={item.active} /> : null}
+                        {canArchive ? <CodeItemDeleteButton id={item.id} label={item.label} /> : null}
+                      </RowActions>
+                    ),
+                  ]
+                : []),
+            ],
+            // 증빙 종류 표의 세금 규칙 편집 줄 — 행 아래 전폭 줄(패널이 아니다).
+            detail: isEvidenceType && canWrite ? <EvidenceTypeFields itemId={item.id} initialValue={item.taxRule} /> : undefined,
+          }))}
+        />
       )}
-    </>
+    </ListScreen>
   );
 }

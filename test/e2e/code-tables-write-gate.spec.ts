@@ -51,6 +51,8 @@ test("보기 권한만 있는 계급의 코드표 화면에는 편집 수단이 
     // ?new=1을 직접 쳐도 폼이 열리지 않는다.
     await page.goto("/admin/code-tables?new=1");
     await expect(page.locator("#code-item-form")).toHaveCount(0);
+    // 04.6-15: 폼은 옆 패널이다 — 패널(dialog)도 없다.
+    await expect(page.locator('dialog[data-ui="side-panel"]')).toHaveCount(0);
 
     // 증빙 종류 표는 행마다 세율 편집 패널이 더 있다 — 그것도 쓰기 수단이다.
     await page.goto("/admin/code-tables?tableKey=evidence_type");

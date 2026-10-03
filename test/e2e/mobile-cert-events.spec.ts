@@ -66,11 +66,12 @@ test.describe("04.3-10 폰 · 좁은 PC", () => {
     await createCertEvent({ name: "폰 기존 신청", status: "requested", createdBy: pmId });
     const page = await loggedInPage(browser, pm);
     await page.goto("/certs/events");
-    const opener = page.getByRole("button", { name: "QR 생성 신청" });
+    const opener = page.getByRole("link", { name: "QR 생성 신청" });
     await expect(opener).toHaveCount(1);
     const listTable = page.locator("table").first();
     const tableTopBefore = (await listTable.boundingBox())?.y;
     await opener.click();
+    await expect(page).toHaveURL(/\/certs\/events\?new=1$/);
 
     const sheet = page.getByRole("dialog", { name: "QR 생성 신청" });
     await expect(sheet).toBeVisible();
@@ -96,10 +97,11 @@ test.describe("04.3-10 폰 · 좁은 PC", () => {
 
     await page.keyboard.press("Escape");
     await expect(sheet).toBeHidden();
-    await expect(page.getByRole("button", { name: "QR 생성 신청" })).toBeFocused();
+    await expect(page).toHaveURL(/\/certs\/events$/);
+    await expect(page.getByRole("link", { name: "QR 생성 신청" })).toBeFocused();
 
     const eventName = `폰 신청-${randomUUID().slice(0, 6)}`;
-    await page.getByRole("button", { name: "QR 생성 신청" }).click();
+    await page.getByRole("link", { name: "QR 생성 신청" }).click();
     await sheet.getByLabel("행사 이름").fill(eventName);
     await sheet.getByLabel("당첨일").fill(kstToday());
     await sheet.getByRole("button", { name: "QR 생성 신청" }).click();
@@ -139,7 +141,7 @@ test.describe("04.3-10 폰 · 좁은 PC", () => {
 
     const pmPage = await loggedInPage(browser, pm, 900);
     await pmPage.goto("/certs/events");
-    await expect(pmPage.getByRole("button", { name: "QR 생성 신청" })).toHaveCount(1);
+    await expect(pmPage.getByRole("link", { name: "QR 생성 신청" })).toHaveCount(1);
     await pmPage.context().close();
   });
 });

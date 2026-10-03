@@ -46,12 +46,12 @@ describe("화면 항목 목록 — 「삭제」 · EMPTY 조건 (04.5-04)", () =
     expect(PAGE).toMatch(/const canDelete = canWrite && canArchiveWrite;/);
     expect(PAGE).toMatch(/\{canDelete \? <FieldDefinitionDeleteButton /);
     expect(PAGE.match(/<FieldDefinitionDeleteButton /g)).toHaveLength(1);
-    // 보관 행은 동작 칸에 「보관됨」만(폰) — 「수정」 · 「삭제」 분기는 보관 아님 갈래 안에 있다.
-    expect(PAGE).toMatch(/def\.archived \? \([\s\S]*?\) : \([\s\S]*?canDelete \? <FieldDefinitionDeleteButton /);
+    // 보관 행은 동작 칸이 비고(폰은 접힌 줄의 상태 값 「보관됨」) — 「수정」 · 「삭제」 분기는 보관 아님 갈래 안에 있다(04.6-23 `StaticTable`).
+    expect(PAGE).toMatch(/def\.archived \? null : \(\s*<RowActions[\s\S]*?canDelete \? <FieldDefinitionDeleteButton /);
   });
 
-  it("전체 0건 EMPTY의 「화면 항목 추가」는 쓰기 권한 AND 폼 닫힘일 때만, 기본 필터 0건은 「필터 지우기」다", () => {
-    expect(PAGE).toMatch(/allDefs\.length === 0 \?[\s\S]*?message="등록된 화면 항목이 없습니다"\s*action=\{canWrite && !showForm \?/);
+  it("전체 0건 EMPTY의 「화면 항목 추가」는 쓰기 권한일 때만(패널이 열려도 여는 요소는 남는다 — R4), 기본 필터 0건은 「필터 지우기」다", () => {
+    expect(PAGE).toMatch(/allDefs\.length === 0 \?[\s\S]*?message="등록된 화면 항목이 없습니다"\s*action=\{canWrite \?/);
     expect(PAGE).toMatch(/message="조건에 맞는 건이 없습니다"\s*action=\{\{ label: "필터 지우기"/);
   });
 

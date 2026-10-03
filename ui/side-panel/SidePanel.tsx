@@ -42,7 +42,8 @@ export type PanelGuard = { dirtyCount: number; submitting: boolean };
 
 type PanelContextValue = {
   setGuard(guard: PanelGuard): void;
-  requestClose(reason: PanelCloseReason): void;
+  /** `returnFocus: false`면 이번 닫기만 연 요소로 포커스를 돌리지 않는다 — URL 패널은 서버가 그리므로 `returnFocus` prop을 성공 때 바꿀 수 없다. */
+  requestClose(reason: PanelCloseReason, options?: { returnFocus?: boolean }): void;
 };
 
 const PanelContext = createContext<PanelContextValue | null>(null);
@@ -91,6 +92,7 @@ export function SidePanel(props: SidePanelProps) {
   // 닫기는 한 번만 — Esc가 keydown과 cancel로 두 번 와도 router.back()이 두 번 부르지 않는다.
   const closingRef = useRef(false);
   const returnFocusRef = useRef(returnFocus);
+  const skipReturnFocusRef = useRef(false);
   const propsRef = useRef(props);
   const [discardCount, setDiscardCount] = useState<number | null>(null);
 
@@ -112,7 +114,7 @@ export function SidePanel(props: SidePanelProps) {
     return () => {
       root.style.paddingInlineEnd = "";
       if (dialog.open) dialog.close();
-      if (!returnFocusRef.current) return;
+      if (!returnFocusRef.current || skipReturnFocusRef.current) return;
       // 연 요소가 아직 문서에 있으면 거기로, 없으면 화면 제목으로(직접 URL로 들어온 패널 · 연 행이 사라진 경우).
       if (opener && document.contains(opener) && opener !== document.body) opener.focus();
       else document.querySelector<HTMLElement>('[data-ui="screen-title"]')?.focus();
@@ -140,7 +142,7 @@ export function SidePanel(props: SidePanelProps) {
   }, [leave]);
 
   const requestClose = useCallback(
-    (reason: PanelCloseReason) => {
+    (reason: PanelCloseReason, options?: { returnFocus?: boolean }) => {
       if (closingRef.current) return;
       if (reason !== "success") {
         const guard = guardRef.current;
@@ -151,6 +153,7 @@ export function SidePanel(props: SidePanelProps) {
           return;
         }
       }
+      if (options?.returnFocus === false) skipReturnFocusRef.current = true;
       closeNow();
     },
     [closeNow],

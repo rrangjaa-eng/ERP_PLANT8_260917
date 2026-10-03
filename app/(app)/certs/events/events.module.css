@@ -1,13 +1,5 @@
-/* 04.6 스킨 A 이관 전: CSS */
-/* 04.3-04 · 04.3-15 · 04.3-10 — I′1 확인증 행사 목록 · I′2 옆 패널 칸. 토큰만(docs/design/tokens.css). */
-
-/* §6-1 표 위 행동 줄 — 필터가 없어 오른쪽 1차 하나(UI-SPEC I′1). 옆 패널이 열려 1차가 없어도 높이를 지킨다(DOM 감사 A-M2). */
-.actionRow {
-  display: flex;
-  justify-content: flex-end;
-  min-height: var(--control-h);
-  margin: var(--s-3) 0;
-}
+/* 04.3-04 · 04.3-15 · 04.3-10 — I′1 확인증 행사 목록 표 칸. 역할 토큰만(docs/design/tokens.css).
+   04.6-23: 틀 · 패널 · 뼈대는 ListScreen · SidePanel · TableSkeleton이 맡아 화면별 행동 줄 · 입력 칸 · 뼈대 규칙을 지웠다. */
 
 /* 행사 이름 · 경품명은 줄바꿈(UI Considerations long-text). */
 .wrapText {
@@ -15,78 +7,18 @@
   overflow-wrap: anywhere;
 }
 
-/* 전화 · 날짜 · 수 숫자는 줄바꿈하지 않는다. */
+/* 전화 · 날짜 · 수 숫자는 줄바꿈하지 않는다(숫자 서식은 ui/num의 몫). */
 .nowrap {
   white-space: nowrap;
-  font-variant-numeric: tabular-nums;
 }
 
 .link {
-  color: var(--accent);
+  color: var(--text-link);
   text-decoration: underline;
   text-decoration-thickness: var(--line-w);
   text-underline-offset: var(--underline-offset);
 }
 
 .link:hover {
-  text-decoration-thickness: var(--line-w-strong);
-}
-
-/* I′2 칸(옛 I2 행사 만들기 칸과 같은 모양). */
-.textInput {
-  box-sizing: border-box;
-  width: 100%;
-  height: var(--control-h);
-  padding: 0 var(--s-2);
-  border: var(--line-w) solid var(--line-ui);
-  border-radius: var(--radius);
-  background: var(--bg);
-  color: var(--fg);
-  font-family: var(--font-sans);
-  font-size: var(--fs-base);
-}
-
-.textInput[aria-invalid="true"] {
-  border-color: var(--danger);
-}
-
-.textInput:focus-visible,
-.textInput::-webkit-calendar-picker-indicator:focus-visible {
-  outline: var(--focus-w) solid var(--focus);
-  outline-offset: var(--focus-offset);
-}
-
-/* I′2 막힘 이유 · 결과 불명 — 행동 줄 맨 앞 전폭 한 줄(--danger). */
-.resultLine {
-  flex: 1 0 100%;
-  margin: 0;
-  font-size: var(--fs-sm);
-  color: var(--danger);
-  overflow-wrap: anywhere;
-}
-
-/* §7-7 LOADING 뼈대 — 머리글 + --surface 3행 + 합계 자리, 반짝임 없음. */
-.skeletonTable {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.skeletonTable th {
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  color: var(--muted);
-  text-align: left;
-  padding: var(--cell-pad-y) var(--cell-pad-x);
-  border-bottom: var(--line-w-strong) solid var(--line-strong);
-}
-
-.skeletonRow td {
-  height: var(--row-min);
-  background: var(--surface);
-  border-bottom: var(--line-w) solid var(--line);
-}
-
-.skeletonFooter td {
-  height: var(--row-min);
-  border-top: var(--line-w-strong) solid var(--line-strong);
+  text-decoration-thickness: var(--underline-w-hover);
 }

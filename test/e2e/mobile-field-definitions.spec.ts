@@ -8,8 +8,8 @@ import { insertFieldDefinition } from "@/repositories/field-definitions";
 import { insertVisibilityIfAbsent } from "@/repositories/permissions";
 import { listRoles } from "@/repositories/roles";
 
-// 04.5-04(UI-SPEC 화면 1 폰 · SYSTEM.md §7-3 칸 접기): 폰(<700)에서 P1 = 이름 · 정렬 · 동작, P2 접힌 줄 = 타입 · 필수 · 선택지.
-// 상태 열은 숨고 보관 행은 동작 자리에 「보관됨」이 보인다. 가로 스크롤 없음.
+// 04.5-04(UI-SPEC 화면 1 폰 · SYSTEM.md §7-3 칸 접기): 폰(<700)에서 P1 = 이름 · 정렬 · 동작, P2 접힌 줄 = 타입 · 필수 · 선택지 · 상태.
+// 보관 행은 동작 칸이 비고 접힌 줄에 「보관됨」이 보인다(04.6-23 `StaticTable`). 가로 스크롤 없음.
 const PREFIX = "E2E폰칸";
 
 test.afterAll(async () => {
@@ -39,7 +39,7 @@ function listRow(page: Page, label: string) {
   return page.locator("tbody tr", { has: page.locator('th[scope="row"]', { hasText: label }) });
 }
 
-test("폰 375 화면 항목 목록: 이름 · 정렬 · 동작만 열이고 타입 · 필수 · 선택지는 접힌 줄, 보관 행은 동작 자리에 「보관됨」", async ({ page }) => {
+test("폰 375 화면 항목 목록: 이름 · 정렬 · 동작만 열이고 타입 · 필수 · 선택지 · 상태는 접힌 줄, 보관 행은 접힌 줄에 「보관됨」", async ({ page }) => {
   const active = `${PREFIX}${randomBytes(3).toString("hex")}`;
   const archived = `${PREFIX}${randomBytes(3).toString("hex")}`;
   await seedSelectField(active);
@@ -56,13 +56,17 @@ test("폰 375 화면 항목 목록: 이름 · 정렬 · 동작만 열이고 타�
   await expect(visibleCells.nth(0)).toHaveText("3");
   await expect(row.getByRole("link", { name: `${active} 수정`, exact: true })).toBeVisible();
   await expect(row.getByRole("button", { name: "삭제" })).toBeVisible();
-  await expect(row.locator("+ tr")).toHaveText("선택 · 필수 · 기본, 특약");
-  await expect(row.locator("+ tr")).toBeVisible();
+  // 04.6-23: 접힌 줄은 `StaticTable`이 P2 값(타입 · 필수 · 선택지 · 상태)을 머리글 라벨(sr-only)과 함께 이어 붙인다.
+  const folded = row.locator("+ tr");
+  await expect(folded).toBeVisible();
+  await expect(folded).toContainText("선택");
+  await expect(folded).toContainText("필수");
+  await expect(folded).toContainText("기본, 특약");
 
   const archivedRow = listRow(page, archived);
   const archivedCells = archivedRow.locator("td:visible");
   await expect(archivedCells).toHaveCount(2);
-  await expect(archivedCells.nth(1)).toHaveText("보관됨");
+  await expect(archivedRow.locator("+ tr")).toContainText("보관됨");
   await expect(archivedRow.getByRole("link")).toHaveCount(0);
   await expect(archivedRow.getByRole("button")).toHaveCount(0);
 

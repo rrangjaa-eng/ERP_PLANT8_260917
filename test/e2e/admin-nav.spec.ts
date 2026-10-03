@@ -1,6 +1,8 @@
 import { test, expect, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
 import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
+import { checkPrinciples } from "./principles-check";
+import { isStrict } from "./design-principles";
 
 // 「관리」 한 줄로 접기(2026-09-22, quick/260922-i3k, 사용자 결정 옵션 B) 회귀
 // 방지 — PC 사용자 메뉴·「더보기」 시트는 더 이상 관리자 화면 12개의 이름을
@@ -132,4 +134,36 @@ test.describe("PC 사용자 메뉴 → /admin 인덱스로 클릭만으로 관�
     const response = await page.goto("/admin");
     expect(response?.status()).toBe(404);
   });
+});
+
+// 04.6-21 — 관리 인덱스·권한표·노출표가 목록 틀(`ListScreen`)이고 목록 부제 설명문이 없다.
+test("관리 인덱스·권한표·노출표는 틀 제목 하나이고 부제 설명문이 없다", async ({ page }) => {
+  await loginAsSysadmin(page);
+  const screens = [
+    { path: "/admin", title: "관리", subtitle: null },
+    { path: "/admin/permissions", title: "권한표", subtitle: "계급 × 메뉴 × 동작" },
+    { path: "/admin/visibility", title: "정보 노출표", subtitle: "계급 × 정보 항목" },
+  ];
+  for (const screen of screens) {
+    await page.goto(screen.path);
+    await expect(page.locator('[data-ui="screen-title"]'), screen.path).toHaveText(screen.title);
+    if (screen.subtitle) await expect(page.getByText(screen.subtitle, { exact: true }), screen.path).toHaveCount(0);
+  }
+});
+
+// R11 · 공통 §10 — 옮긴 화면의 원칙 막는 모드(관리 세 화면 + 로그아웃 컨텍스트의 로그인). 경고는 화면을 고쳐 없앤다.
+test("화면 사용성 원칙(막는 모드) — 관리 인덱스·권한표·노출표·로그인", async ({ page, browser }) => {
+  await loginAsSysadmin(page);
+  await checkPrinciples(page, ["/admin", "/admin/permissions", "/admin/visibility"], {
+    strict: isStrict(process.env.DESIGN_PRINCIPLES_STRICT),
+  });
+
+  const loggedOut = await browser.newContext();
+  try {
+    await checkPrinciples(await loggedOut.newPage(), ["/login"], {
+      strict: isStrict(process.env.DESIGN_PRINCIPLES_STRICT),
+    });
+  } finally {
+    await loggedOut.close();
+  }
 });

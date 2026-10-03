@@ -120,3 +120,12 @@ test.describe("로그인 버튼 위치 (/design-review 발견 4)", () => {
     await expect(button).toHaveCSS("font-size", await bodySize());
   });
 });
+
+// Q18(#88) — 개인정보 화면에서 끊겨 온 로그인은 같은 자리에 상태 한 줄(문구 그대로)을 보이고, 그 밖에는 상태 줄이 없다.
+test("/login?reason=privacy-session은 「개인정보 화면 · 다시 로그인」 상태 줄을 보이고 reason이 없으면 상태 줄이 없다", async ({ page }) => {
+  await page.goto("/login?reason=privacy-session");
+  await expect(page.getByRole("status").filter({ hasText: "개인정보 화면 · 다시 로그인" })).toBeVisible();
+
+  await page.goto("/login");
+  await expect(page.getByRole("status")).toHaveCount(0);
+});

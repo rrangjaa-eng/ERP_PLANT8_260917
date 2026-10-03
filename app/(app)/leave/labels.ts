@@ -31,3 +31,23 @@ export function formatLeavePeriod(leave: LeavePeriodSource, thisYear?: number): 
   const half = leave.half ? ` ${HALF_LABELS[leave.half] ?? leave.half}` : "";
   return `${kind}${half} ${start}${end}`;
 }
+
+// 04.6-18: 연차 목록 표의 열 이름 — 표(`(list)/leave-table.tsx`)와 뼈대(`(list)/loading.tsx`)가 같은 낱말을 쓴다(뼈대 머리글 = 진짜 열 이름).
+// 서버 · 클라이언트 양쪽에서 읽을 수 있게 이 순수 모듈에 둔다(클라이언트 경계 파일의 상수는 서버가 값으로 읽지 못한다).
+export const LEAVE_LIST_COLUMN_LABELS = {
+  number: "번호",
+  period: "종류 · 기간",
+  days: "일수",
+  status: "상태",
+  requestedOn: "신청일",
+  note: "비고",
+} as const;
+
+export const LEAVE_LIST_SKELETON_COLUMNS: { key: keyof typeof LEAVE_LIST_COLUMN_LABELS; align?: "right" }[] = [
+  { key: "number" },
+  { key: "period" },
+  { key: "days", align: "right" },
+  { key: "status" },
+  { key: "requestedOn" },
+  { key: "note" },
+];

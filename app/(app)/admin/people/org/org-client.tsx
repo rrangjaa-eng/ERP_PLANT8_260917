@@ -11,6 +11,7 @@ import {
   archiveTeamAction,
 } from "../actions";
 import { TextField } from "@/ui/input/TextField";
+import { Form } from "@/ui/form/Form";
 import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
 import { DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
@@ -203,6 +204,8 @@ export function TeamForm({ orgUnits, defaultOrgUnitId }: { orgUnits: OrgUnitView
     });
   }
 
+  const orgUnitError = result.validationErrors?.orgUnitId?._errors?.[0];
+
   return (
     <PanelForm
       ref={panelRef}
@@ -211,11 +214,19 @@ export function TeamForm({ orgUnits, defaultOrgUnitId }: { orgUnits: OrgUnitView
       intent="create"
       onSubmit={handleSubmit}
       pending={isExecuting}
-      reason={result.serverError ?? null}
+      reason={orgUnitError ?? result.serverError ?? null}
     >
       <div className={styles.panelSelect}>
         <label htmlFor="team-org-unit-id">본부</label>
-        <select className={styles.select} id="team-org-unit-id" name="orgUnitId" required defaultValue={defaultOrgUnitId}>
+        <select
+          className={orgUnitError ? `${styles.select} ${styles.selectInvalid}` : styles.select}
+          id="team-org-unit-id"
+          name="orgUnitId"
+          required
+          defaultValue={defaultOrgUnitId}
+          aria-invalid={orgUnitError ? true : undefined}
+          aria-describedby={orgUnitError ? "team-org-unit-id-error" : undefined}
+        >
           <option value="" disabled>
             본부 선택
           </option>
@@ -225,6 +236,7 @@ export function TeamForm({ orgUnits, defaultOrgUnitId }: { orgUnits: OrgUnitView
             </option>
           ))}
         </select>
+        {orgUnitError ? <Form.Error id="team-org-unit-id-error">{orgUnitError}</Form.Error> : null}
       </div>
       <TextField
         id="team-name"

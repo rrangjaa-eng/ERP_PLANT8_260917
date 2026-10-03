@@ -52,6 +52,10 @@
   outline-offset: var(--focus-offset);
 }
 
+.selectInvalid {
+  border-color: var(--status-danger);
+}
+
 /* 소유자 변경 패널의 대상 표시 한 줄. */
 .hint {
   font-size: var(--text-aux);

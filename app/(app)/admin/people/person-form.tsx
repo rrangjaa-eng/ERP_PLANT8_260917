@@ -5,6 +5,7 @@ import { useAction } from "next-safe-action/hooks";
 import { registerPersonAction, archivePersonAction } from "./actions";
 import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
+import { Form } from "@/ui/form/Form";
 import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
 import { usePanel } from "@/ui/side-panel/SidePanel";
 import { DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
@@ -86,6 +87,7 @@ export function PersonForm({ roles, teams }: { roles: RoleOption[]; teams: TeamO
   const nameError = result.validationErrors?.name?._errors?.[0];
   const emailError = result.validationErrors?.email?._errors?.[0];
   const hireDateError = result.validationErrors?.hireDate?._errors?.[0];
+  const roleError = result.validationErrors?.roleId?._errors?.[0];
 
   return (
     <PanelForm
@@ -95,13 +97,21 @@ export function PersonForm({ roles, teams }: { roles: RoleOption[]; teams: TeamO
       intent="create"
       onSubmit={handleSubmit}
       pending={isExecuting}
-      reason={result.serverError ?? null}
+      reason={roleError ?? result.serverError ?? null}
     >
       <TextField id="name" name="name" label="이름" required error={nameError} />
       <TextField id="email" name="email" label="이메일" type="email" required error={emailError} />
       <div className={styles.panelSelect}>
         <label htmlFor="roleId">계급</label>
-        <select className={styles.select} id="roleId" name="roleId" required defaultValue="">
+        <select
+          className={roleError ? `${styles.select} ${styles.selectInvalid}` : styles.select}
+          id="roleId"
+          name="roleId"
+          required
+          defaultValue=""
+          aria-invalid={roleError ? true : undefined}
+          aria-describedby={roleError ? "roleId-error" : undefined}
+        >
           <option value="" disabled>
             계급 선택
           </option>
@@ -111,6 +121,7 @@ export function PersonForm({ roles, teams }: { roles: RoleOption[]; teams: TeamO
             </option>
           ))}
         </select>
+        {roleError ? <Form.Error id="roleId-error">{roleError}</Form.Error> : null}
       </div>
       <div className={styles.panelSelect}>
         <label htmlFor="teamId">팀</label>

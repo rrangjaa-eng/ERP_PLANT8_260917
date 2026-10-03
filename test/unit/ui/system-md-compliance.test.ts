@@ -83,10 +83,11 @@ describe("app/(app)/page.tsx — 「내 차례」가 빈 홈 (§7-4)", () => {
 // F-07(260922-o2b) — SYSTEM.md §2-4 「모든 숫자 칸은 우측 정렬, tabular-nums,
 // nowrap」. 정렬 칸(코드표·계급)과 숫자형 이력 값 칸에 styles.num을 건다.
 describe("관리자 표 — 숫자 칸 정렬 (F-07)", () => {
-  it("code-tables/page.tsx의 「정렬」 th·sortOrder td가 styles.num을 쓴다", () => {
+  // 04.6-15: 코드표도 `StaticTable`이다 — 「정렬」 열은 `align: "right"`이고 값은 `Num`이 그린다(tabular-nums는 ui/num 몫 · 옛 `.table .num` CSS는 없어졌다).
+  it("code-tables/page.tsx의 「정렬」 열이 오른쪽 정렬이고 sortOrder 칸이 Num이다", () => {
     const source = read("app", "(app)", "admin", "code-tables", "page.tsx");
-    expect(source).toMatch(/th\s+scope="col"\s+className=\{styles\.num\}>\s*정렬/);
-    expect(source).toMatch(/<td\s+className=\{styles\.num\}>\{item\.sortOrder\}<\/td>/);
+    expect(source).toMatch(/header: "정렬",[^}]*align: "right"/);
+    expect(source).toMatch(/<Num\b[^>]*value=\{item\.sortOrder\}/);
   });
 
   // 04.6-14: 계급 표는 `StaticTable`이다 — 「정렬」 열은 `align: "right"`(오른쪽 정렬 · nowrap은 표 CSS)이고 값은 `Num`이 그린다(tabular-nums는 ui/num 몫).
@@ -103,18 +104,6 @@ describe("관리자 표 — 숫자 칸 정렬 (F-07)", () => {
     expect(source).toMatch(
       /<td className=\{valueKind\.kind === "number" \? styles\.num : undefined\}>\{entry\.displayValue\}<\/td>/,
     );
-  });
-
-  it.each([
-    ["code-tables.module.css", ["app", "(app)", "admin", "code-tables", "code-tables.module.css"]],
-  ])("%s의 .table .num이 우측 정렬·tabular-nums·nowrap이다", (_name, parts) => {
-    const css = read(...parts);
-    const match = css.match(/\.table \.num\s*\{[^}]*\}/);
-    expect(match).not.toBeNull();
-    expect(match?.[0]).toContain("text-align: right");
-    expect(match?.[0]).toContain("tabular-nums");
-    expect(match?.[0]).toContain("white-space: nowrap");
-    expect(match?.[0]).toContain("var(--ls-num)");
   });
 
   // 04.6-09: tabular-nums는 stylelint가 `ui/num`에만 허용한다. HistoryList의 값 칸은 서식이 끝난 글자(displayValue)라 `Num`이

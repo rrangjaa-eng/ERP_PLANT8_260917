@@ -103,7 +103,9 @@ th.cell {
   text-align: left;
   /* body의 overflow-wrap: anywhere 아래서 다른 칸(nowrap 상태 · 동작)이 폭을 다 가져가면 이름 칸이 한 글자 폭까지 줄어 낱말이 쪼개진다
      (04.6 W1-4 B1, 320 이름 칸 58px). 바닥 폭 10ch를 두어 짧은 낱말은 지키고, 매우 긴 이름은 그 폭에서 줄바꿈해 가로 넘침을 만들지 않는다. */
-  min-width: 10ch;
+  /* border-box라 옛 10ch에는 좌 --s-4 · 우 --cell-pad-x 안쪽 여백이 들어가 안쪽 폭이 65.3px였고, 「Employee」(65.4px)와 서브픽셀 경계였다(CI 크로미움에서만 쪼개짐).
+     안쪽 폭을 8ch(71.5px)로 두고 여백을 더한다 — 10ch 안쪽으로 키우면 320에서 people 표가 2px 넘친다. */
+  min-width: calc(8ch + var(--s-4) + var(--cell-pad-x));
 }
 
 .nowrapHeader {

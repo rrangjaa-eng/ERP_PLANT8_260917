@@ -160,7 +160,9 @@ test.describe("폭 320 — 어느 화면도 가로로 넘치지 않는다", () =
       accountNumberEncrypted: "e2e-320-placeholder",
       accountNumberLast4: "4455",
     });
-    const archivedVendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E320보관-${stamp}`, normalizedName: `e2e320보관-${stamp}` });
+    // 정렬 키가 「거래처」 행보다 뒤여야 한다(그 행이 마지막 행이 아니어야 접힌 줄 아래 선을 잰다). 한글 순서가 DB 정렬에 따라 달라서
+    // (C: 거<보, CI의 en_US.utf8: 보<거) 한글이 아니라 영문 z로 뒤에 둔다.
+    const archivedVendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E320보관-${stamp}`, normalizedName: `e2e3z보관-${stamp}` });
     await setVendorArchived(SYSTEM_VIEWER, archivedVendor.id, true);
     const holder = await findUserByEmail(SYSTEM_VIEWER, (await createFixtureUser({ roleId: DEFAULT_ROLE_ID })).email);
     const card = await insertCorpCard(SYSTEM_VIEWER, {

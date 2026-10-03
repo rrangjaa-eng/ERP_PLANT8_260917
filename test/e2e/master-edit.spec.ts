@@ -22,6 +22,14 @@ async function loginAsSysadmin(page: Page): Promise<void> {
   await expect(page).toHaveURL(/\/account$/);
 }
 
+// 04.6-15(UQ-8 B): 법인카드 등록은 성공 뒤에도 패널이 열린 채 칸이 비고 결과 한 줄이 뜬다 — 목록을 이어 보려면 Esc로 닫는다(칸이 비어 확인 없이 닫힘).
+async function closeCardRegisterPanel(page: Page): Promise<void> {
+  const dialog = page.locator('dialog[data-ui="side-panel"]');
+  await expect(dialog.getByRole("status")).toHaveText("법인카드 등록됨");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+}
+
 test.describe("코드표 항목 이름 수정 (MAST-04 「수정」)", () => {
   test("항목을 추가하고 이름을 바꾸면 목록에 새 이름이 남고 값은 그대로다", async ({ page }) => {
     await loginAsSysadmin(page);
@@ -71,6 +79,7 @@ test.describe("법인카드 소유자 수정 (성공 기준 5 「수정」)", ()
     await page.getByLabel("별칭").fill(label);
     await page.getByLabel("소지자").selectOption({ index: 1 });
     await page.getByRole("button", { name: "법인카드 등록" }).click();
+    await closeCardRegisterPanel(page);
 
     const row = page.getByRole("row", { name: new RegExp(label) });
     await expect(row).toBeVisible();
@@ -109,6 +118,7 @@ test.describe("법인카드 소유자 수정 (성공 기준 5 「수정」)", ()
     await page.getByLabel("별칭").fill(`전환대상-${stamp}`);
     await page.getByLabel("소지자").selectOption({ index: 1 });
     await page.getByRole("button", { name: "법인카드 등록" }).click();
+    await closeCardRegisterPanel(page);
 
     const row = page.getByRole("row", { name: new RegExp(`전환대상-${stamp}`) });
     await expect(row).toBeVisible();
@@ -154,6 +164,7 @@ test.describe("법인카드 소유자 수정 (성공 기준 5 「수정」)", ()
     await page.getByLabel("별칭").fill(`퇴사대상-${stamp}`);
     await page.getByLabel("소지자").selectOption({ label: holderName });
     await page.getByRole("button", { name: "법인카드 등록" }).click();
+    await closeCardRegisterPanel(page);
     await expect(page.getByRole("row", { name: new RegExp(`퇴사대상-${stamp}`) })).toBeVisible();
 
     // 소지자를 보관(퇴사)한다 — 두 단계 삭제.
@@ -189,6 +200,7 @@ test.describe("법인카드 소유자 수정 (성공 기준 5 「수정」)", ()
     await page.getByLabel("별칭").fill(label);
     await page.getByLabel("소지자").selectOption({ index: 1 });
     await page.getByRole("button", { name: "법인카드 등록" }).click();
+    await closeCardRegisterPanel(page);
 
     const row = page.getByRole("row", { name: new RegExp(label) });
     await expect(row).toBeVisible();

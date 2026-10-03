@@ -50,15 +50,31 @@
   background: var(--surface-base);
 }
 
+/* 잔고 한 줄 같은 텍스트 요약 — 면 없이 글자만(SYSTEM §6-1 · DECISIONS 2026-09-29 A4). */
+.summaryPlain {
+  margin: var(--s-3) 0;
+}
+
+/* 1차 버튼 글자는 한 줄 — 필터가 넓은 폭(768)에서 버튼이 눌려 낱말이 갈리지 않게 한다(§7-1). */
+.primaryAction {
+  flex: none;
+  white-space: nowrap;
+}
+
 .pagination {
   display: flex;
   justify-content: center;
   margin: var(--s-4) 0 0;
 }
 
-/* 폰은 읽기만인 화면의 1차 — 폰(<700)에서 그리지 않는다(사용자 결정 2026-10-03 「폰은 읽기만」). */
+/* 폰은 읽기만인 화면의 1차 — 폰(<700)에서 그리지 않는다(사용자 결정 2026-10-03 「폰은 읽기만」).
+   필터도 없어 줄이 비면 줄 자체를 그리지 않는다(빈 줄의 아래 여백이 제목 아래 간격을 --s-4보다 벌린다). */
 @media (max-width: 699.98px) {
   .bar > .phoneHidden {
+    display: none;
+  }
+
+  .bar:has(> .phoneHidden):not(:has(> .filters > *)) {
     display: none;
   }
 }

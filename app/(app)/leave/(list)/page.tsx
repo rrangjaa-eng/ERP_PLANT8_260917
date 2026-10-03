@@ -71,6 +71,7 @@ export default async function LeaveListPage({ searchParams }: { searchParams: Pr
       title="연차"
       primaryAction={canWrite ? { label: "연차 신청", href: "/leave/new" } : undefined}
       filters={<LeaveYearFilter year={year} yearOptions={singleYear ? null : yearOptions} />}
+      summaryPlain
       summary={
         lines.length > 0 ? (
           <div className={styles.balanceLines} data-testid="leave-balance">

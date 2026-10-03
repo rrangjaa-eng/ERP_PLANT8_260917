@@ -87,6 +87,14 @@
   overflow-wrap: anywhere;
 }
 
+/* PC 표 열 폭 배분 — 상세 칸이 줄 길이만큼 폭을 독차지해 다른 머리글을 두 줄로 누르지 않게 40ch로 묶는다(폰은 접힌 줄 안 글자라 묶지 않는다). */
+@media (min-width: 700px) {
+  .detail {
+    display: block;
+    max-width: 40ch;
+  }
+}
+
 .confirmRow {
   display: inline-flex;
   align-items: center;

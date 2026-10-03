@@ -6,6 +6,7 @@ import { visible } from "@/domain/permissions/visible";
 import buttonStyles from "@/ui/button/Button.module.css";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { ListScreen } from "@/ui/list-screen/ListScreen";
+import styles from "./pnl.module.css";
 
 // SYSTEM.md §6-1 목록 화면 = 원장. 표는 Phase 4 범위(02-01 DECISIONS.md 기록).
 // WR-07: 인증 검사를 이 페이지가 직접 한다. 레이아웃의 requireSession()에
@@ -21,7 +22,7 @@ export default async function PnlPage() {
   return (
     <ListScreen title="손익">
       {canViewPnl && reserveShown ? (
-        <p>
+        <p className={styles.ledgerLine}>
           <Link href="/pnl/reserves" className={`${buttonStyles.btn} ${buttonStyles.tertiary}`}>
             리저브 대장
           </Link>

@@ -14,6 +14,8 @@ export type StaticTableColumn = {
   align?: "left" | "right";
   /** 한 열만 — 그 열의 칸이 `<th scope="row" id={row.headerId}>`가 되고 접힌 줄이 그 id를 `headers`로 가리킨다(사람 목록 DR-4). */
   rowHeader?: boolean;
+  /** 머리글을 한 줄로 — 긴 칸(상세 JSON 등)이 폭을 가져가도 머리글 낱말이 두 줄로 갈리지 않는다(행동 로그). */
+  nowrapHeader?: boolean;
 };
 
 export type StaticTableRow = {
@@ -53,7 +55,7 @@ export function StaticTable({ caption, columns, rows }: StaticTableProps) {
             <th
               key={column.key}
               scope="col"
-              className={classNames(styles.headerCell, styles[`prio-${column.priority}`], column.align === "right" && styles.alignRight)}
+              className={classNames(styles.headerCell, styles[`prio-${column.priority}`], column.align === "right" && styles.alignRight, column.nowrapHeader && styles.nowrapHeader)}
             >
               {column.header}
             </th>

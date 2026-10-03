@@ -1,0 +1,5 @@
+/* SYSTEM §3 간격 척도 — 「리저브 대장」 줄은 flex라 링크 상자가 줄 높이가 되고, 아래 빈 화면과는 --s-3만 뜬다. */
+.ledgerLine {
+  display: flex;
+  margin: 0 0 var(--s-3);
+}

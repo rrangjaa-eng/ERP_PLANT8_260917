@@ -42,6 +42,7 @@ export default async function OrgPage({
   return (
     <ListScreen
       title="조직"
+      singleColumn
       // DR5 A — 본부가 없으면 머리 1차 없이 빈 화면의 「본부 추가」 하나. 「팀 추가」는 본부 행마다 있다(DR3 B).
       primaryAction={canWrite && orgUnits.length > 0 ? { label: "본부 추가", href: NEW_ORG_HREF } : undefined}
       panel={

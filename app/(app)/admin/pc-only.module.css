@@ -1,0 +1,19 @@
+/* 폰(<700)은 읽기만(사용자 결정 2026-10-03 14:57 KST 카드 · SYSTEM §7-3 「폰에서 셀 편집 없음」) — 폭 판정은 CSS 미디어쿼리 하나다.
+   서버 렌더부터 폰에서 편집 요소는 display:none, 읽기 글자는 보인다(JS 폭 판정은 수화 뒤에야 바뀌어 레이아웃이 크게 움직였다). */
+.pcOnly {
+  display: contents;
+}
+
+.phoneOnly {
+  display: none;
+}
+
+@media (max-width: 699.98px) {
+  .pcOnly {
+    display: none;
+  }
+
+  .phoneOnly {
+    display: block;
+  }
+}

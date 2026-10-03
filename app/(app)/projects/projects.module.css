@@ -98,6 +98,7 @@
 .select {
   height: var(--control-h);
   border: var(--line-w) solid var(--border-control);
+  border-radius: var(--radius-control);
   background: var(--surface-base);
   color: var(--text-strong);
   padding: 0 var(--s-2);

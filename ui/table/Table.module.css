@@ -87,7 +87,8 @@ th.cell {
   padding-right: var(--s-4);
 }
 
-.table tbody:last-of-type > tr:last-child > td {
+/* 마지막 행 선 없음 — PC에서 숨긴 접힌 줄(.collapsedRow)이 tbody의 마지막 줄이면 그 앞 주 행이 마지막 보이는 행이다. 행 머리글 th도 같다. */
+.table tbody:last-of-type > tr:is(:last-child, :has(+ .collapsedRow:last-child)) > :is(td, th) {
   border-bottom: 0;
 }
 

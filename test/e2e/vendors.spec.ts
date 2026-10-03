@@ -412,3 +412,31 @@ test.describe("거래처 화면 사용성 원칙 (04.6-11 R11)", () => {
     }
   });
 });
+
+// 04.6-07 F1 (DOM 감사): P2 열이 있는 표의 PC 폭에서 보이는 마지막 행 칸 아래 선은 0이다(SYSTEM §2-4 「마지막 행 선 없음」).
+// 숨긴 접힌 줄(tr.collapsedRow)이 마지막 줄로 잡히면 주 행 선이 1px로 남는다.
+test.describe("거래처 표 마지막 행 선 없음 (04.6-07 F1)", () => {
+  test("1280: 보이는 마지막 행의 모든 칸 아래 선이 0이고 그 앞 행은 1px이다", async ({ page }) => {
+    const stamp = randomUUID().slice(0, 8);
+    const a = await insertVendor(SYSTEM_VIEWER, { name: `끝선A-${stamp}`, normalizedName: `끝선A-${randomUUID()}` });
+    const b = await insertVendor(SYSTEM_VIEWER, { name: `끝선B-${stamp}`, normalizedName: `끝선B-${randomUUID()}` });
+    try {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await loginAsSysadmin(page);
+      await page.goto("/admin/vendors");
+      const widths = await page.locator("table tbody tr").evaluateAll((rows) =>
+        rows
+          .filter((tr) => getComputedStyle(tr).display !== "none")
+          .map((tr) => [...tr.querySelectorAll("td, th")].map((cell) => getComputedStyle(cell).borderBottomWidth)),
+      );
+      expect(widths.length).toBeGreaterThanOrEqual(2);
+      const last = widths[widths.length - 1]!;
+      const prev = widths[widths.length - 2]!;
+      expect(last.every((w) => w === "0px"), `마지막 행 칸 아래 선 ${last.join(",")}`).toBe(true);
+      expect(prev.every((w) => w === "1px"), `앞 행 칸 아래 선 ${prev.join(",")}`).toBe(true);
+    } finally {
+      await setVendorHidden(SYSTEM_VIEWER, a.id, true);
+      await setVendorHidden(SYSTEM_VIEWER, b.id, true);
+    }
+  });
+});

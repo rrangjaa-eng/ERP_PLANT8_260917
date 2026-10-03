@@ -177,6 +177,7 @@ export function InboxList({ initialRows, initialHasMore, initialReferenceYear }:
         getRowId={(row) => row.id}
         groupBy={(row) => toKstDate(new Date(row.createdAt))}
         groupHeader={(row) => formatGroupLabel(toKstDate(new Date(row.createdAt)), referenceYear)}
+        groupHeaderScope="rowgroup"
       />
       {hasMore ? (
         showRetry ? (

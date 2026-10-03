@@ -30,8 +30,13 @@ describe("app/(app)/admin/admin-index.module.css — §6-10/§7-3 그룹 머리�
     expect(groupLabel).toMatch(/font-size:\s*var\(--text-aux\)/);
   });
 
-  it("color가 --text-muted다(§7-3 그룹 머리글 행과 같은 결)", () => {
-    expect(groupLabel).toMatch(/color:\s*var\(--text-muted\)/);
+  it("color가 --text-group이다(§7-3 그룹 머리글 행과 같은 결)", () => {
+    expect(groupLabel).toMatch(/color:\s*var\(--text-group\)/);
+  });
+
+  it("옅은 면 --surface-group이고 아래 선이 없다(§6-10 · §7-3 — 사용자 카드 답 2026-10-03 20:15 KST, 04.6-21)", () => {
+    expect(groupLabel).toMatch(/background:\s*var\(--surface-group\)/);
+    expect(groupLabel).not.toMatch(/border-bottom:\s*var\(--line-w\)/);
   });
 
   it("font-weight가 600(--fw-medium)이다", () => {
@@ -42,9 +47,10 @@ describe("app/(app)/admin/admin-index.module.css — §6-10/§7-3 그룹 머리�
 describe("app/(app)/admin/admin-index.module.css — 그룹 머리글과 항목이 같은 좌측 기준선에 있다 (§6-10 도해, WR-01)", () => {
   const css = readAdminIndexCss();
 
-  it(".link의 좌우 padding이 0이다 — .main이 이미 --pad-page를 주므로 .groupLabel(좌우 0)과 어긋나지 않는다", () => {
+  it(".link의 좌우 padding이 .groupLabel과 같다 — 면 안 글자와 항목 글자가 같은 왼쪽 선에 선다(표 첫 칸 --s-4와 같은 결)", () => {
     const link = rule(css, ".link");
-    expect(link).toMatch(/padding:\s*0;/);
+    expect(link).toMatch(/padding:\s*0 var\(--s-4\);/);
+    expect(rule(css, ".groupLabel")).toMatch(/padding:\s*var\(--s-2\) var\(--s-4\);/);
   });
 
   it(".link의 글자가 역할 토큰이다 — 색 --text-strong · 크기 --text-body(04.6-21)", () => {

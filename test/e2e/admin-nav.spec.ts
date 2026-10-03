@@ -151,6 +151,37 @@ test("관리 인덱스·권한표·노출표는 틀 제목 하나이고 부제 �
   }
 });
 
+// 사용자 카드 답 2026-10-03 20:15 KST: 옅은 면, 선 없음(04.6-21): 관리 인덱스 그룹 머리는 §7-3 그룹 줄과 같다 — 옅은 면(--surface-group), 아래 선 없음, 글자 --text-group.
+test("관리 인덱스 그룹 머리는 옅은 면 · 아래 선 없음이고 항목 링크와 같은 왼쪽 안쪽 여백이다", async ({ page }) => {
+  await loginAsSysadmin(page);
+  await page.goto("/admin");
+  const tokens = await page.evaluate(() => {
+    const resolve = (property: string, value: string) => {
+      const probe = document.createElement("span");
+      probe.style.setProperty(property, value);
+      document.body.append(probe);
+      const computed = getComputedStyle(probe).getPropertyValue(property);
+      probe.remove();
+      return computed;
+    };
+    return {
+      surface: resolve("background-color", "var(--surface-group)"),
+      text: resolve("color", "var(--text-group)"),
+      pad: resolve("padding-left", "var(--s-4)"),
+    };
+  });
+  const labels = page.locator("main h2");
+  await expect(labels).toHaveCount(3);
+  for (let i = 0; i < 3; i += 1) {
+    const label = labels.nth(i);
+    await expect(label).toHaveCSS("background-color", tokens.surface);
+    await expect(label).toHaveCSS("color", tokens.text);
+    await expect(label).toHaveCSS("border-bottom-width", "0px");
+    await expect(label).toHaveCSS("padding-left", tokens.pad);
+  }
+  await expect(page.getByRole("link", { name: "사람", exact: true })).toHaveCSS("padding-left", tokens.pad);
+});
+
 // R11 · 공통 §10 — 옮긴 화면의 원칙 막는 모드(관리 세 화면 + 로그아웃 컨텍스트의 로그인). 경고는 화면을 고쳐 없앤다.
 test("화면 사용성 원칙(막는 모드) — 관리 인덱스·권한표·노출표·로그인", async ({ page, browser }) => {
   await loginAsSysadmin(page);

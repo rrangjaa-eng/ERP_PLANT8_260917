@@ -226,7 +226,7 @@ test.describe("연차 문서 화면 행동 줄 (04.1-05)", () => {
     await expect(row.getByRole("button", { name: "반려" })).toBeFocused();
   });
 
-  test("결재함 PC 행 2행과 문서 화면 잔고 행에 `잔여 초과 N일` — --warning 600(UI-SPEC S4 · 표시 규칙)", async ({ browser, baseURL }) => {
+  test("결재함 PC 행 2행과 문서 화면 잔고 행에 `잔여 초과 N일` — --status-warning 600(UI-SPEC S4 · 표시 규칙)", async ({ browser, baseURL }) => {
     const today = seoulToday();
     const range = leaveWeekdayRange(today, { week: 9, weekdays: 16 });
     const org = await setupLeaveOrg(today);

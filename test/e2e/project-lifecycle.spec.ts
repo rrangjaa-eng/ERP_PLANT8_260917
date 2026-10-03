@@ -740,11 +740,13 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
     await expect(trigger).toBeVisible();
 
     // DetailScreen 머리 줄: 제목과 상태 태그는 한 묶음(같은 줄이거나 태그가 아래), 행동 묶음은 그 다음 · 메타는 머리 줄 전체 아래.
+    // 한 줄에 다 들어가면 줄 가운데 맞춤이라 더 큰 「상태 바꾸기」(44)의 top이 제목 top보다 위다 — top이 아니라 세로 가운데로 비교한다
+    // (프로젝트 이름의 글자 폭에 따라 한 줄 ↔ 줄바꿈이 갈려 top 비교는 흔들렸다).
     const tops: number[] = [];
     for (const locator of [title, tag, trigger, subtitle]) {
       const box = await locator.boundingBox();
       if (!box) throw new Error("머리 줄 요소가 보이지 않습니다");
-      tops.push(box.y);
+      tops.push(box.y + box.height / 2);
     }
     expect(tops[1]).toBeGreaterThanOrEqual((tops[0] ?? 0) - 1);
     expect(tops[2]).toBeGreaterThanOrEqual((tops[0] ?? 0) - 1);

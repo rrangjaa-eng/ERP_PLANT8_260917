@@ -1,6 +1,5 @@
-/* 04.6 스킨 A 이관 전: CSS */
 /* 04.1-05 S3 문서 화면 행동 줄 — PC는 KvList 아래 한 줄(1차 왼쪽 · 2차 오른쪽 끝, 폼 열 720), 폰은 하단 탭 위
-   고정 · 1차가 2차의 두 배 폭 · 높이 --touch-min(§6-3 제출 줄 · §7-8). 색·서체·radius는 토큰 참조만(D-20). */
+   고정 · 1차가 2차의 두 배 폭 · 높이 --touch-min(§6-3 제출 줄 · §7-8). 색·서체·radius는 역할 토큰 참조만(스킨 A). */
 
 .bar {
   display: flex;
@@ -36,13 +35,13 @@
   .bar {
     position: fixed;
     right: 0;
-    bottom: calc(var(--touch-min) + var(--line-w-strong));
+    bottom: calc(var(--touch-min) + var(--line-w));
     left: 0;
     max-width: none;
     margin: 0;
     padding: var(--s-2) var(--pad-page);
-    border-top: var(--line-w) solid var(--line);
-    background: var(--bg);
+    border-top: var(--line-w) solid var(--border-surface);
+    background: var(--surface-canvas);
     z-index: var(--z-bar);
   }
 
@@ -82,7 +81,7 @@
     justify-content: center;
     width: 100%;
     height: var(--touch-min);
-    font-size: var(--fs-base);
+    font-size: var(--text-body);
   }
 
   /* 폰에서는 kbd를 그리지 않는다(§7-9). */

@@ -30,7 +30,7 @@ export type ApprovalRouteProps =
 export function ApprovalRoute(props: ApprovalRouteProps) {
   if (props.mode === "line") {
     return (
-      <p className={styles.line} data-testid="approval-route-line">
+      <div className={styles.line} data-testid="approval-route-line">
         {props.drafter ? <span className={styles.drafter}>{props.drafter}</span> : null}
         {props.steps.map((step, index) => (
           <Fragment key={`${step.label}-${index}`}>
@@ -47,7 +47,7 @@ export function ApprovalRoute(props: ApprovalRouteProps) {
         ))}
         {props.skippedNote ? <span className={styles.label}>{` · ${props.skippedNote}`}</span> : null}
         <span className={styles.label}> · 결재 규칙</span>
-      </p>
+      </div>
     );
   }
 

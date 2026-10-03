@@ -63,6 +63,9 @@ export type PanelFormProps = {
   children: ReactNode;
 };
 
+// 제출 뒤 이 시간 안에 `pending`이 켜지지 않으면(칸 오류 등으로 액션이 안 돌았으면) 잠금을 푼다.
+const SUBMIT_LOCK_GRACE_MS = 500;
+
 const FIRST_FIELD = "input:not([type=hidden]), select, textarea";
 
 function readValues(form: HTMLFormElement, dirtyFields: readonly string[] | undefined): Map<string, string> {
@@ -95,6 +98,10 @@ export function PanelForm({
   const formRef = useRef<HTMLFormElement>(null);
   const snapshotRef = useRef<Map<string, string>>(new Map());
   const pendingRef = useRef(pending);
+  // 같은 틱의 두 번째 제출(Ctrl+Enter 연타 · 더블클릭)을 막는 동기 잠금 — `pending`은 다음 렌더에야 켜진다(D7 · R15-ii).
+  // 호출부마다 따로 두지 않고 이 한 곳이 가진다. `pending`이 꺼질 때(응답 뒤) 풀린다.
+  const submitLockRef = useRef(false);
+  const submitLockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dirtyFieldsRef = useRef(dirtyFields);
   const [ownStatus, setOwnStatus] = useState<string | null>(null);
   const ownReasonId = useId();
@@ -135,8 +142,16 @@ export function PanelForm({
 
   useEffect(() => {
     pendingRef.current = pending;
+    if (!pending) submitLockRef.current = false;
     reportGuard();
   }, [pending, reportGuard]);
+
+  useEffect(
+    () => () => {
+      if (submitLockTimerRef.current) clearTimeout(submitLockTimerRef.current);
+    },
+    [],
+  );
 
   useImperativeHandle(
     ref,
@@ -165,10 +180,15 @@ export function PanelForm({
   );
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    if (pending) {
+    if (pending || submitLockRef.current) {
       event.preventDefault();
       return;
     }
+    submitLockRef.current = true;
+    if (submitLockTimerRef.current) clearTimeout(submitLockTimerRef.current);
+    submitLockTimerRef.current = setTimeout(() => {
+      if (!pendingRef.current) submitLockRef.current = false;
+    }, SUBMIT_LOCK_GRACE_MS);
     setOwnStatus(null);
     onSubmit(event);
   }

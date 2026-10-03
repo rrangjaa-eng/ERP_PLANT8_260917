@@ -1,4 +1,3 @@
-// 04.6 스킨 A 이관 전: 화면 틀
 import "@/app/(app)/document-kinds";
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/viewer";
@@ -17,7 +16,7 @@ import { listApprovalRouteSettingWarnings } from "@/domain/approvals/settings-wa
 import { formatCount, formatForeignAmount, formatFxRate, formatKrw, formatQuantity } from "@/lib/format-number";
 import { seoulToday } from "@/lib/dates";
 import type { HistoryEntry } from "@/ui/history-list/HistoryList";
-import { PageHeader } from "@/ui/page-header/PageHeader";
+import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import { SettingsFormClient, type SettingsSection, type SettingsFieldViewModel } from "./settings-form-client";
 
 // D-36 계약: 화면 코드에 계급 이름 분기가 없다. 캐시 없음 — 화면 로드마다
@@ -155,11 +154,10 @@ export default async function SettingsPage() {
   const sections = await buildSections(session.viewer);
 
   return (
-    <>
-      <PageHeader title="설정" />
+    <DetailScreen title="설정">
       <div className="single-column">
         <SettingsFormClient sections={sections} viewerId={session.viewer.id} />
       </div>
-    </>
+    </DetailScreen>
   );
 }

@@ -1,4 +1,3 @@
-// 04.6 스킨 A 이관 전: 화면 틀
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/viewer";
 import type { ReactNode } from "react";
@@ -12,8 +11,9 @@ import { can } from "@/domain/permissions/can";
 import { env } from "@/lib/env";
 import { Banner } from "@/ui/banner/Banner";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
+import { Num } from "@/ui/num/Num";
 import { KvList } from "@/ui/kv-list/KvList";
-import { PageHeader } from "@/ui/page-header/PageHeader";
+import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import { formatRestoreRehearsal } from "./restore-rehearsal-view";
 import styles from "./system-status.module.css";
 
@@ -24,24 +24,34 @@ export const dynamic = "force-dynamic";
 // §6-8 「알림 발송」 값(18A).
 function notifyValue(notify: SystemStatus["notify"]) {
   if (notify.kind === "none") return "기록 없음 — 첫 알림 발송 전";
-  if (notify.kind === "unavailable") return <StatusTag kind="muted">확인 불가</StatusTag>;
+  if (notify.kind === "unavailable") return <StatusTag status="확인 불가" />;
   return (
-    <span className={styles.num}>
-      {notify.businessDay
-        ? `${notify.at} · 알림 ${notify.sent}건 · 중복 건너뜀 ${notify.skipped}건 · 남음 ${notify.remaining}건`
-        : `${notify.at} · 비영업일 · 보내지 않음`}
-    </span>
+    <>
+      <Num value={notify.at} />
+      {notify.businessDay ? (
+        <>
+          {" · 알림 "}
+          <Num value={notify.sent} unit="count" />
+          {"건 · 중복 건너뜀 "}
+          <Num value={notify.skipped} unit="count" />
+          {"건 · 남음 "}
+          <Num value={notify.remaining} unit="count" />건
+        </>
+      ) : (
+        " · 비영업일 · 보내지 않음"
+      )}
+    </>
   );
 }
 
 // §6-8 「이메일」 값 = 설정 부분 + 결과 꼬리(D-4217 · Codex #18). 꼬리는 설정과 무관하게 붙는다.
 function emailValue(email: SystemStatus["email"], outcome: SystemStatus["emailOutcome"]) {
   const setting =
-    email.kind === "configured" ? `사용 중 · ${email.from}` : <StatusTag kind="muted">미설정</StatusTag>;
+    email.kind === "configured" ? `사용 중 · ${email.from}` : <StatusTag status="미설정" />;
   if (outcome.kind === "unavailable") {
     return (
       <>
-        {setting} · <StatusTag kind="muted">확인 불가</StatusTag>
+        {setting} · <StatusTag status="확인 불가" />
       </>
     );
   }
@@ -49,15 +59,22 @@ function emailValue(email: SystemStatus["email"], outcome: SystemStatus["emailOu
     <>
       {setting}
       {outcome.failed > 0 ? (
-        <span className={styles.num}>
+        <>
           {" · "}
-          <span className={styles.failed}>실패 {outcome.failed}건</span> ({outcome.failedAt})
-        </span>
+          <span className={styles.failed}>
+            실패 <Num value={outcome.failed} unit="count" />건
+          </span>{" "}
+          (<Num value={outcome.failedAt} />)
+        </>
       ) : null}
       {outcome.unknown > 0 ? (
-        <span className={styles.num}>
-          {" · "}결과 불명 {outcome.unknown}건 ({outcome.unknownSince})
-        </span>
+        <>
+          {" · "}
+          {"결과 불명 "}
+          <Num value={outcome.unknown} unit="count" />
+          {"건 ("}
+          <Num value={outcome.unknownSince} />)
+        </>
       ) : null}
     </>
   );
@@ -87,71 +104,74 @@ export default async function SystemStatusPage() {
         <Banner kind="warning">{emailFailureBannerText(emailBanner)}</Banner>
       ) : null}
 
-      <PageHeader title="시스템 상태" />
-
-      {/* §6-8 B①: 라벨·값 목록(dl, §7-8 시트 상세와 같은 골격). */}
-      <div className="single-column">
-        <KvList
-          items={[
-            {
-              label: "배포 버전",
-              value: (
-                <>
-                  {status.version.sha.slice(0, 8)} · {status.version.deployedAt ?? "없음"} · {status.version.env}
-                </>
-              ),
-            },
-            {
-              label: "DB 커넥션",
-              // §6-8 B②: 확인 불가는 §7-5 상태 태그(muted)로 표시한다.
-              value:
-                "unavailable" in status.db ? (
-                  <StatusTag kind="muted">확인 불가</StatusTag>
-                ) : (
+      <DetailScreen title="시스템 상태">
+        {/* §6-8 B①: 라벨·값 목록(dl, §7-8 시트 상세와 같은 골격). */}
+        <div className="single-column">
+          <KvList
+            items={[
+              {
+                label: "배포 버전",
+                value: (
                   <>
-                    {status.db.connections} / {status.db.maxConnections}
+                    {status.version.sha.slice(0, 8)} · {status.version.deployedAt ?? "없음"} · {status.version.env}
                   </>
                 ),
-            },
-            {
-              label: "마지막 백업",
-              value:
-                status.backup.kind === "ok" ? (
-                  <>
-                    {status.backup.status} · {status.backup.endTime ?? "종료 시각 없음"}
-                  </>
-                ) : status.backup.kind === "none" ? (
-                  "백업 없음 — 첫 자동 백업 전"
-                ) : (
-                  <StatusTag kind="muted">확인 불가</StatusTag>
-                ),
-            },
-            {
-              // 04.4-01(D8-08): 「마지막 백업」 바로 다음 줄.
-              label: "복원 리허설",
-              value: restoreRehearsalValue(status.restoreRehearsal),
-            },
-            { label: "알림 발송", value: notifyValue(status.notify) },
-            { label: "이메일", value: emailValue(status.email, status.emailOutcome) },
-          ]}
-        />
-      </div>
+              },
+              {
+                label: "DB 커넥션",
+                // §6-8 B②: 확인 불가는 §7-5 상태 태그(muted)로 표시한다.
+                value:
+                  "unavailable" in status.db ? (
+                    <StatusTag status="확인 불가" />
+                  ) : (
+                    <>
+                      {status.db.connections} / {status.db.maxConnections}
+                    </>
+                  ),
+              },
+              {
+                label: "마지막 백업",
+                value:
+                  status.backup.kind === "ok" ? (
+                    <>
+                      {status.backup.status} · {status.backup.endTime ?? "종료 시각 없음"}
+                    </>
+                  ) : status.backup.kind === "none" ? (
+                    "백업 없음 — 첫 자동 백업 전"
+                  ) : (
+                    <StatusTag status="확인 불가" />
+                  ),
+              },
+              {
+                // 04.4-01(D8-08): 「마지막 백업」 바로 다음 줄.
+                label: "복원 리허설",
+                value: restoreRehearsalValue(status.restoreRehearsal),
+              },
+              { label: "알림 발송", value: notifyValue(status.notify) },
+              { label: "이메일", value: emailValue(status.email, status.emailOutcome) },
+            ]}
+          />
+        </div>
+      </DetailScreen>
     </>
   );
 }
 
 function restoreRehearsalValue(restoreRehearsal: SystemStatus["restoreRehearsal"]): ReactNode {
   if (restoreRehearsal.kind === "none") return "리허설 기록 없음 — 첫 리허설 전";
-  if (restoreRehearsal.kind === "unavailable") return <StatusTag kind="muted">확인 불가</StatusTag>;
+  if (restoreRehearsal.kind === "unavailable") return <StatusTag status="확인 불가" />;
   const view = formatRestoreRehearsal(restoreRehearsal.record);
+  // 앞 낱말(결과 · 원본)은 줄바꿈이 되고, 뒤 일시만 숫자 칸 모양(줄바꿈 없음)이다.
+  const headSplit = view.head.lastIndexOf(" · ") + 3;
   // 백업 id·실행 링크는 값이 없으면 앞의 구분자까지 통째로 뺀다(UI-SPEC #7).
   return (
     <>
-      <span className={styles.num}>{view.head}</span>
+      {view.head.slice(0, headSplit)}
+      <Num value={view.head.slice(headSplit)} />
       {view.backupId === null ? null : (
         <>
           {" · 백업 "}
-          <span className={styles.backupId}>{view.backupId}</span>
+          <Num value={view.backupId} />
         </>
       )}
       {" · "}

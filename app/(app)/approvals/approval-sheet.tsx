@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { Button } from "@/ui/button/Button";
@@ -8,6 +9,7 @@ import { ApprovalRoute, type ApprovalRouteEndLine, type ApprovalRouteListStep } 
 import { SidePanel, usePanel } from "@/ui/side-panel/SidePanel";
 import { approveAction } from "./actions";
 import { DayNumbers } from "@/app/(app)/leave/day-numbers";
+import leaveStyles from "@/app/(app)/leave/leave.module.css";
 import { approveToast } from "./approve-toast";
 import { ConflictLine } from "./conflict-line";
 import styles from "./approval-sheet.module.css";
@@ -29,6 +31,8 @@ export type ApprovalSheetItem = {
   steps: ApprovalRouteListStep[];
   endLines: ApprovalRouteEndLine[];
   actions: SheetAction[];
+  // 문서 화면 주소 — 결재 내용 아래 3차 링크 「문서 화면 열기」(사용자 카드 답 2026-10-03 23:12 KST: 링크 넣음). 없으면 링크를 그리지 않는다.
+  href: string | null;
 };
 
 export type ApprovalSheetProps = {
@@ -118,6 +122,13 @@ function SheetContent({ item, onApproved, onSecondary }: { item: ApprovalSheetIt
             <ApprovalRoute mode="list" steps={item.steps} endLines={item.endLines} />
           </dd>
         </dl>
+        {item.href ? (
+          <p className={styles.documentLinkLine}>
+            <Link href={item.href} className={[leaveStyles.link, styles.documentLink].join(" ")}>
+              문서 화면 열기
+            </Link>
+          </p>
+        ) : null}
       </div>
       <div className={styles.actions}>
         {conflict ? <ConflictLine message={conflict} /> : null}

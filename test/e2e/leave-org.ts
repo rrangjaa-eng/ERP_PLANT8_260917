@@ -88,3 +88,26 @@ export async function waitForHydration(target: Locator): Promise<void> {
     .poll(() => target.evaluate((element) => Object.keys(element).some((key) => key.startsWith("__reactProps$"))))
     .toBe(true);
 }
+
+// 04.6-17 사용자 카드 답 2026-10-03 23:12 KST 「링크 넣음」 — 결재 시트(PC 480 · 폰 아래 시트 공통)의 결재 내용 아래 한 줄 3차 링크 「문서 화면 열기」.
+// 이름 · href를 재고, 결재선(마지막 본문 칸) 아래 · 행동 줄 위에 있으며, 시트를 열 때 첫 포커스는 그대로 승인 버튼임을 단언한다.
+export async function expectSheetDocumentLink(panel: Locator, leaveId: string): Promise<void> {
+  const link = panel.getByRole("link", { name: "문서 화면 열기" });
+  await expect(link).toHaveCount(1);
+  await expect(link).toHaveAttribute("href", `/leave/${leaveId}`);
+  const [linkBox, routeBox, approveBox] = [
+    await link.boundingBox(),
+    await panel.locator("dl dd").last().boundingBox(),
+    await panel.getByRole("button", { name: /^승인/ }).boundingBox(),
+  ];
+  expect(linkBox && routeBox && approveBox, "링크 · 결재선 · 승인 버튼 상자").toBeTruthy();
+  expect(linkBox!.y, "결재 내용 아래").toBeGreaterThanOrEqual(routeBox!.y + routeBox!.height - 1);
+  // 본문은 스크롤 칸이라 폰에서는 링크가 접힌 아래에 있을 수 있다 — 위치 대신 칸을 잰다: 링크는 본문(결재선과 같은 칸) 안, 승인은 행동 줄(그 칸 밖), DOM 순서는 링크 -> 승인.
+  const placement = await link.evaluate((node, approveText) => {
+    const body = node.closest("dialog")?.querySelector("dl")?.parentElement ?? null;
+    const approve = [...(node.closest("dialog")?.querySelectorAll("button") ?? [])].find((button) => (button.textContent ?? "").trim().startsWith(approveText));
+    return { inBody: !!body && body.contains(node), approveOutside: !!body && !!approve && !body.contains(approve), before: !!approve && !!(node.compareDocumentPosition(approve) & Node.DOCUMENT_POSITION_FOLLOWING) };
+  }, "승인");
+  expect(placement, "링크 칸").toEqual({ inBody: true, approveOutside: true, before: true });
+  await expect(panel.getByRole("button", { name: /^승인/ })).toBeFocused();
+}

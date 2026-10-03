@@ -7,7 +7,7 @@ import { seoulToday } from "@/lib/dates";
 import "@/domain/leave";
 import { submitLeave } from "@/domain/leave";
 import { leaveWeekdayRange } from "./leave-dates";
-import { documentLabel, documentTitle, loginPage as loginAsPerson, setupLeaveOrg, waitForHydration } from "./leave-org";
+import { documentLabel, documentTitle, expectSheetDocumentLink, loginPage as loginAsPerson, setupLeaveOrg, waitForHydration } from "./leave-org";
 import { isStrict } from "./design-principles";
 import { checkPrinciples } from "./principles-check";
 
@@ -166,6 +166,23 @@ test.describe("결재함 — 결재 시트 PC 모양 · 뼈대 · 원칙 (04.6-1
     await lead.keyboard.press("Escape");
     await expect(panel).toHaveCount(0);
     await expect(trigger).toBeFocused();
+    await lead.context().close();
+  });
+
+  test("PC 결재 시트는 결재 내용 아래에 문서 화면으로 가는 3차 링크 한 줄이 있고 첫 포커스는 승인이다(사용자 카드 답 2026-10-03 23:12 KST: 링크 넣음)", async ({ browser, baseURL }) => {
+    const today = seoulToday();
+    const range = leaveWeekdayRange(today, { week: 4, weekdays: 1 });
+    const org = await setupLeaveOrg(today);
+    const { leaveId } = await submitLeave(org.drafter.viewer, { kind: "full_day", startDate: range.startDate, endDate: range.endDate, half: "" });
+
+    const lead = await loginAsPerson(browser, baseURL, org.teamLead, { width: 1280, height: 800 });
+    await lead.goto("/approvals");
+    const trigger = lead.getByRole("button", { name: documentLabel(range) });
+    await waitForHydration(trigger);
+    await trigger.click();
+    const panel = lead.locator('dialog[data-ui="side-panel"]');
+    await expect(panel).toBeVisible();
+    await expectSheetDocumentLink(panel, leaveId);
     await lead.context().close();
   });
 

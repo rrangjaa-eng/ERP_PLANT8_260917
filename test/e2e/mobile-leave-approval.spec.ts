@@ -4,7 +4,7 @@ import { getApprovalView, withdrawDocument } from "@/domain/approvals";
 import { submitLeave } from "@/domain/leave";
 import { seoulToday } from "@/lib/dates";
 import { leaveWeekdayRange } from "./leave-dates";
-import { delayServerActions, documentLabel, documentTitle, loginPage, setupLeaveOrg, waitForHydration } from "./leave-org";
+import { delayServerActions, documentLabel, documentTitle, expectSheetDocumentLink, loginPage, setupLeaveOrg, waitForHydration } from "./leave-org";
 
 // 04.1-05 트레이서(EXP-05 · ROADMAP 기준 3): 폰 375에서 결재함 `내 결재` 행 탭 → 결재 시트(근거 · 잔고 ·
 // 결재선) → 승인 → 처리함. 처리함 행은 문서 링크라 탭하면 문서 화면으로 간다(ENG-16 · T4). 두 번 탭은
@@ -156,6 +156,20 @@ test.describe("폰 결재 시트 (04.1-05)", () => {
     await lead.keyboard.press("Escape");
     await expect(panel).toHaveCount(0);
     await expect(lead.getByRole("button", { name: documentLabel(range) })).toBeFocused();
+  });
+
+  test("폰 결재 시트는 결재 내용 아래에 문서 화면으로 가는 3차 링크 한 줄이 있고 첫 포커스는 승인이다(사용자 카드 답 2026-10-03 23:12 KST: 링크 넣음)", async ({ browser, baseURL }) => {
+    const today = seoulToday();
+    const range = leaveWeekdayRange(today, { week: 2, weekdays: 1 });
+    const org = await setupLeaveOrg(today);
+    const { leaveId } = await submitLeave(org.drafter.viewer, { kind: "full_day", startDate: range.startDate, endDate: range.endDate, half: "" });
+
+    const lead = await loginPage(browser, baseURL, org.teamLead, PHONE);
+    await lead.goto("/approvals");
+    await lead.getByRole("button", { name: documentLabel(range) }).click();
+    const panel = lead.locator('dialog[data-ui="side-panel"]');
+    await expect(panel).toBeVisible();
+    await expectSheetDocumentLink(panel, leaveId);
   });
 
   test("승인을 빠르게 두 번 눌러도 처리 기록은 한 건이고, 제출 중 반려는 aria-disabled이며 disabled 속성이 없다(T7)", async ({ browser, baseURL }) => {

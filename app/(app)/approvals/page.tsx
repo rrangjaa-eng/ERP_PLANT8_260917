@@ -61,6 +61,7 @@ function toSheet(item: Partial<ApprovalInboxItemDto>): ApprovalSheetItem | null 
     steps: routeListSteps(item.steps),
     endLines: item.endLines ?? [],
     actions: item.actions,
+    href: item.href ?? null,
   };
 }
 

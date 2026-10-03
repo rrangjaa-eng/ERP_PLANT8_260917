@@ -47,6 +47,18 @@
   word-break: keep-all;
 }
 
+/* 결재 내용 아래 한 줄 3차 링크(§7-1 3차 — 링크 모양은 leave.module.css `.link`). 터치 목표만 여기서 --touch-min으로 늘린다. */
+.documentLinkLine {
+  margin: 0;
+  padding: var(--s-2) 0;
+}
+
+.documentLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch-min);
+}
+
 .tone-muted {
   color: var(--text-muted);
   font-size: var(--text-aux);

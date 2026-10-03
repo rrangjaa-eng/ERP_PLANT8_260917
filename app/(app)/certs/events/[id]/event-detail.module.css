@@ -98,6 +98,7 @@
 .cellSelect:focus-visible {
   outline: var(--focus-w) solid var(--focus);
   outline-offset: var(--focus-offset);
+  border-radius: var(--radius-control);
 }
 
 /* 제출 셀 색 글자(§7-3 ⑮ · T4) — 확인증 없음 muted · 파기 대상 warning(그 낱말만). */

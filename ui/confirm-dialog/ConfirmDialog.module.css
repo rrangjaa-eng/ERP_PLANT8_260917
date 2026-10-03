@@ -252,3 +252,23 @@
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+
+/* SYSTEM §5 열림 모션(UQ-4 후보 8) — PC(700 이상) 모달만 페이드 + 4px 이동. 폰 시트 · 옆 패널 모션은 따로 계약이라 건드리지 않는다.
+   줄이기 설정이면 --dur-sheet가 0.01ms. */
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--s-1));
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (min-width: 700px) {
+  .dialog[open] {
+    animation: dialog-in var(--dur-sheet) var(--ease-sheet);
+  }
+}

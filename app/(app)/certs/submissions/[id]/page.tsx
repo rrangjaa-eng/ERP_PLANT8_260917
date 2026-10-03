@@ -1,4 +1,3 @@
-// 04.6 스킨 A 이관 전: 화면 틀
 import { cache } from "react";
 import type { Metadata } from "next";
 import { headers } from "next/headers";
@@ -10,6 +9,7 @@ import { assertCertFeatureEnabled } from "@/lib/certs/feature-guard";
 import { touchPrivacySession } from "@/domain/certs/privacy-session";
 import { getSubmissionForReview } from "@/domain/certs/review";
 import { formatSubmittedAtKst } from "@/domain/certs/format";
+import type { DetailScreenProps } from "@/ui/detail-screen/DetailScreen";
 import { ReviewForm } from "./review-form";
 import { PrivacyIdleLogout } from "./privacy-idle-logout";
 import styles from "./review.module.css";
@@ -56,13 +56,14 @@ export default async function CertSubmissionReviewPage({ params }: { params: Pro
   const review = await loadReview(id);
   const submission = review.submission;
 
-  const subtitle = [
-    submission.certNo ?? "—",
-    submission.eventName ?? "—",
-    `${submission.submittedAt ? formatSubmittedAtKst(submission.submittedAt) : "—"} 제출`,
-    // 04.3-17 제외된 I4(DR-1) — 부제 끝 ` · 대조 제외 {MM-dd HH:mm} · {제외한 사람}`.
-    ...(review.excluded ? [`대조 제외 ${formatSubmittedAtKst(review.excluded.at).slice(5)}`, review.excluded.byName ?? "—"] : []),
-  ].join(" · ");
+  // DetailScreen 머리의 메타 한 줄(`{확인증 번호} · {제출 시각} 제출`) — 한 줄은 짧게 둔다(긴 설명문으로 읽히지 않게). 행사 이름 · 제외 정보는
+  // 라벨·값 목록 줄로 간다(폼 안 KvList). 틀은 폼이 그린다 — 상태 · 행동(2차)이 폼 상태에 달려 있다(프로젝트 상세 `QuoteLedger`와 같은 꼴).
+  const frame = {
+    title: `기타소득 확인증 — ${submission.name ?? ""}`,
+    meta: [submission.certNo ?? "—", `${submission.submittedAt ? formatSubmittedAtKst(submission.submittedAt) : "—"} 제출`].join(" · "),
+  } satisfies Pick<DetailScreenProps, "title" | "meta">;
+  // 04.3-17 제외된 I4(DR-1) — 제외 시각 · 제외한 사람(`MM-dd HH:mm · {이름}`).
+  const excludedNote = review.excluded ? `${formatSubmittedAtKst(review.excluded.at).slice(5)} · ${review.excluded.byName ?? "—"}` : null;
 
   return (
     <div className={styles.root}>
@@ -71,8 +72,9 @@ export default async function CertSubmissionReviewPage({ params }: { params: Pro
         <ReviewForm
           key={submission.version}
           submissionId={id}
-          title={`기타소득 확인증 — ${submission.name ?? ""}`}
-          subtitle={subtitle}
+          frame={frame}
+          eventName={submission.eventName ?? "—"}
+          excludedNote={excludedNote}
           version={submission.version ?? 1}
           name={submission.name ?? ""}
           rrnMasked={submission.rrnMasked ?? ""}

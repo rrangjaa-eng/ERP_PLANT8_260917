@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/ui/button/Button";
 import { Table } from "@/ui/table/Table";
 import { Toast } from "@/ui/toast/Toast";
+import { Num } from "@/ui/num/Num";
 import { parseTsv } from "@/ui/table/parse-tsv";
 import type { CellIssue, TableColumn } from "@/ui/table/types";
 import type { FooterNoticeItem } from "@/ui/table/footer-notice";
@@ -142,13 +143,14 @@ function SubmitCellView({ cell }: { cell: SubmitCell }) {
   if (cell.kind === "noCert") return <span className={styles.mutedText}>확인증 없음</span>;
   if (cell.kind === "purge" || cell.kind === "missing") {
     return (
-      <span className={styles.num}>
-        {`${cell.n} · `}
+      <>
+        <Num value={cell.n} unit="count" />
+        {" · "}
         <span className={styles.warningText}>{cell.kind === "purge" ? `파기 대상 ${cell.p}` : `미제출 ${cell.k}`}</span>
-      </span>
+      </>
     );
   }
-  return <span className={styles.num}>{cell.n}</span>;
+  return <Num value={cell.n} unit="count" />;
 }
 
 function CellInput({
@@ -229,7 +231,7 @@ function PrizeReadTable({ prizes, canManagePrizes, status }: Props) {
             header: "1개 가액",
             priority: "p1" as const,
             align: "right" as const,
-            cell: (row: Row) => <span className={styles.num}>{row.unitValue}</span>,
+            cell: (row: Row) => <Num value={row.unitValue} />,
           },
         ]
       : []),
@@ -239,7 +241,7 @@ function PrizeReadTable({ prizes, canManagePrizes, status }: Props) {
       header: "당첨 수",
       priority: "p2",
       align: "right",
-      cell: (row) => <span className={styles.num}>{row.winnerCount}</span>,
+      cell: (row) => <Num value={row.winnerCount} />,
       summary: (row) => `당첨 ${row.winnerCount}명`,
     },
     {
@@ -248,7 +250,7 @@ function PrizeReadTable({ prizes, canManagePrizes, status }: Props) {
       priority: "p1",
       align: "right",
       cell: (row) =>
-        showValue ? <SubmitCellView cell={previewOf(row, status === "closed")} /> : <span className={styles.num}>{row.submittedCount}</span>,
+        showValue ? <SubmitCellView cell={previewOf(row, status === "closed")} /> : <Num value={row.submittedCount} unit="count" />,
     },
   ];
   const emptyMessage = canManagePrizes ? "경품이 없습니다" : "경품이 없습니다 · 등록은 경영관리";
@@ -522,7 +524,7 @@ function PrizeEditor({ eventId, eventName, status, prizes, contactMissing: initi
     header,
     priority,
     align: opts.numeric ? "right" : undefined,
-    cell: (row) => <span className={opts.numeric ? styles.num : styles.wrapText}>{row[key]}</span>,
+    cell: (row) => (opts.numeric ? <Num value={row[key]} /> : <span className={styles.wrapText}>{row[key]}</span>),
     copyText: (row) => row[key],
     editability: (row) => editabilityOf(row, key),
     editCell: (row, ctx) => (
@@ -547,7 +549,7 @@ function PrizeEditor({ eventId, eventName, status, prizes, contactMissing: initi
       header: "번호",
       priority: "p3",
       align: "right",
-      cell: (row) => <span className={styles.num}>{rows.indexOf(row) + 1}</span>,
+      cell: (row) => <Num value={rows.indexOf(row) + 1} unit="count" />,
       pasteRole: "computed",
     },
     textColumn("name", "경품명", "p1", { maxLength: CERT_PRIZE_NAME_MAX }),

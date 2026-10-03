@@ -1,10 +1,10 @@
-// 04.6 스킨 A 이관 전: 화면 틀
 import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/viewer";
 import { assertCertFeatureEnabled } from "@/lib/certs/feature-guard";
 import { getCreateGate, getEventDetail, type CertEventDetailDto } from "@/domain/certs/events";
 import { formatSubmittedAtKst } from "@/domain/certs/format";
-import { PageHeader } from "@/ui/page-header/PageHeader";
+import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
+import { KvList, type KvItem } from "@/ui/kv-list/KvList";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { QrSection } from "./qr-section";
 import { PrizeSection } from "./prize-section";
@@ -12,7 +12,6 @@ import { SubmissionsSection } from "./submissions-section";
 import { HeaderActions } from "./header-actions";
 import { LandingToast } from "../landing-toast";
 import { QR_SECTION_LABEL_ID } from "./prize-table-rules";
-import styles from "./event-detail.module.css";
 
 export const dynamic = "force-dynamic";
 
@@ -55,13 +54,13 @@ export default async function CertEventDetailPage({
   const name = event.name ?? "—";
   const open = event.status === "open";
   // 신청됨은 마감이 없다(QR 생성 전) — 마감 대신 「신청 {시각}」.
-  const subtitle = [
-    `당첨일 ${event.wonOn ?? "—"}`,
-    `담당 ${event.ownerName ?? "—"}`,
+  const summaryItems: KvItem[] = [
+    { label: "당첨일", value: event.wonOn ?? "—" },
+    { label: "담당", value: event.ownerName ?? "—" },
     event.status === "requested"
-      ? `신청 ${event.requestedAt ? formatSubmittedAtKst(event.requestedAt) : "—"}`
-      : `마감 ${event.expiresAt ? formatSubmittedAtKst(event.expiresAt) : "—"}`,
-  ].join(" · ");
+      ? { label: "신청", value: event.requestedAt ? formatSubmittedAtKst(event.requestedAt) : "—" }
+      : { label: "마감", value: event.expiresAt ? formatSubmittedAtKst(event.expiresAt) : "—" },
+  ];
   // 파생 태그 `접수 전`(UD-1 b) — QR이 있고 당첨일 00:00 KST 전. 행동은 접수 중과 같다.
   const tag = open && event.beforeOpen ? "접수 전" : event.status ? STATUS_LABEL[event.status] : null;
   const gate = event.canManagePrizes && event.status === "requested" ? await getCreateGate(viewer) : null;
@@ -70,27 +69,27 @@ export default async function CertEventDetailPage({
     : undefined;
 
   return (
-    <>
-      <div className={styles.header}>
-        <div className={styles.titleBlock}>
-          <PageHeader title={name} subtitle={subtitle} />
-        </div>
-        {tag ? (
-          <StatusTag kind={open && !event.beforeOpen ? "accent" : "muted"} variant="tag">
-            {tag}
-          </StatusTag>
-        ) : null}
-        {event.id ? (
-          <HeaderActions
-            eventId={event.id}
-            eventName={name}
-            submittedCount={event.submittedCount ?? 0}
-            canClose={event.canClose === true}
-            cancelRole={event.cancelRole ?? null}
-            prizeCount={event.prizes?.length ?? 0}
-          />
-        ) : null}
-      </div>
+    <DetailScreen
+      title={name}
+      status={tag ? <StatusTag status={tag} variant="tag" /> : undefined}
+      actions={
+        event.id
+          ? {
+              secondary: (
+                <HeaderActions
+                  eventId={event.id}
+                  eventName={name}
+                  submittedCount={event.submittedCount ?? 0}
+                  canClose={event.canClose === true}
+                  cancelRole={event.cancelRole ?? null}
+                  prizeCount={event.prizes?.length ?? 0}
+                />
+              ),
+            }
+          : undefined
+      }
+    >
+      <KvList items={summaryItems} />
 
       {open && event.qrSvg && event.link ? (
         <QrSection key="qr" eventName={name} qrSvg={event.qrSvg} link={event.link} />
@@ -121,6 +120,6 @@ export default async function CertEventDetailPage({
         />
       ) : null}
       {excludedRow ? <LandingToast message={`대조 제외 · ${excludedRow.name ?? ""}`} href={`/certs/events/${id}`} /> : null}
-    </>
+    </DetailScreen>
   );
 }

@@ -42,8 +42,10 @@ export type TableProps<Row> = {
   rows: Row[];
   getRowId: (row: Row) => string;
   groupBy?: (row: Row) => string;
-  /** 그룹 머리글 글자. 없으면 groupBy 키 — 키(리저브의 clientId)와 보이는 이름이 다를 때 준다. */
-  groupHeader?: (row: Row) => string;
+  /** 그룹 머리글 글자(노드 가능 — 일부만 색 글자로 줄 때). 없으면 groupBy 키 — 키(리저브의 clientId)와 보이는 이름이 다를 때 준다. */
+  groupHeader?: (row: Row) => ReactNode;
+  /** 04.6-24 — `"rowgroup"`이면 그룹 머리글 칸이 `<th scope="rowgroup" colSpan>`이다(보조기기가 그 그룹의 행이라고 읽는다). 없으면 `<td colSpan>` 그대로. */
+  groupHeaderScope?: "rowgroup";
   /** 04-42(S9) — 그룹 머리글 행 오른쪽 칸(굵게). 그룹의 첫 줄로 부른다 — 리저브 대장의 클라이언트 최종 잔액. */
   groupAside?: (row: Row) => ReactNode;
   emptyMessage?: string;
@@ -163,9 +165,9 @@ function SortIcon({ direction }: { direction: "asc" | "desc" }) {
   );
 }
 
-function groupRows<Row>(rows: Row[], groupBy?: (row: Row) => string, groupHeader?: (row: Row) => string): { key: string | null; header: string | null; rows: Row[] }[] {
+function groupRows<Row>(rows: Row[], groupBy?: (row: Row) => string, groupHeader?: (row: Row) => ReactNode): { key: string | null; header: ReactNode; rows: Row[] }[] {
   if (!groupBy) return [{ key: null, header: null, rows }];
-  const groups: { key: string; header: string; rows: Row[] }[] = [];
+  const groups: { key: string; header: ReactNode; rows: Row[] }[] = [];
   for (const row of rows) {
     const key = groupBy(row);
     const existing = groups.find((group) => group.key === key);
@@ -182,6 +184,7 @@ export function Table<Row>({
   getRowId,
   groupBy,
   groupHeader,
+  groupHeaderScope,
   groupAside,
   emptyMessage,
   emptyAction,
@@ -304,6 +307,8 @@ export function Table<Row>({
   // phoneRowLink — 그룹 하나 = <tbody> 하나 대신, 그룹 머리글과 행(주 행 + 접힌 줄)마다 제 <tbody>다.
   const GroupBody: ElementType = phoneRowLink ? Fragment : "tbody";
   const RowBody: ElementType = phoneRowLink ? "tbody" : Fragment;
+  // 그룹 머리글 칸 — 기본 `<td>`, `groupHeaderScope="rowgroup"`이면 `<th scope="rowgroup">`.
+  const GroupHeaderCell: ElementType = groupHeaderScope === "rowgroup" ? "th" : "td";
   const [focusRequest, setFocusRequest] = useState<{ kind: "cell" | "heading" } | { kind: "issue"; issueId: string } | null>(null);
   if (issueFocusId !== null) setFocusRequest({ kind: "issue", issueId: issueFocusId });
   const captionRef = useRef<HTMLTableCaptionElement>(null);
@@ -837,10 +842,10 @@ export function Table<Row>({
             {group.header !== null ? (
               <RowBody>
                 <tr className={styles.groupRow}>
-                  <td colSpan={columns.length} className={styles.groupHeader}>
+                  <GroupHeaderCell scope={groupHeaderScope} colSpan={columns.length} className={styles.groupHeader}>
                     {group.header}
                     {groupAside && group.rows[0] !== undefined ? <span className={styles.groupAside}>{groupAside(group.rows[0])}</span> : null}
-                  </td>
+                  </GroupHeaderCell>
                 </tr>
               </RowBody>
             ) : null}

@@ -1,30 +1,29 @@
-/* 04.6 스킨 A 이관 전: CSS */
-/* 04.3-02 Task 2 ⑮ — 외부 수령자 화면. 토큰만 쓴다(새 색·크기·radius
-   리터럴 없음). main 최대 폭 480, 한 열, 이 화면 글자 크기는 --fs-sm ·
-   --fs-md · --fs-lg · --fs-xl 넷뿐이다(UI-SPEC ①-j). */
+/* 04.3-02 Task 2 ⑮ — 외부 수령자 화면(셸 없음 — SYSTEM §6-5). 역할 토큰만 쓴다(새 색·크기·radius
+   리터럴 없음). main 최대 폭 --recipient-w, 한 열, 글자 크기는 --text-title · --text-subtitle · --text-prose(문장 15 — 줄이지 않는다) ·
+   --text-aux 넷뿐이다(04.6-24 — stylelint `app/c/**` override). */
 
 .main {
-  max-width: 480px;
+  max-width: var(--recipient-w);
   margin: 0 auto;
   padding: var(--s-4);
-  font-size: var(--fs-md);
+  font-size: var(--text-prose);
 }
 
 .title {
-  font-size: var(--fs-xl);
+  font-size: var(--text-title);
   font-weight: var(--fw-bold);
   margin: 0 0 var(--s-1);
 }
 
 .subtitle {
-  font-size: var(--fs-sm);
-  color: var(--muted);
+  font-size: var(--text-aux);
+  color: var(--text-muted);
   margin: 0 0 var(--s-4);
 }
 
 .listLabel {
-  font-size: var(--fs-md);
-  color: var(--muted);
+  font-size: var(--text-prose);
+  color: var(--text-muted);
   font-weight: var(--fw-medium);
   margin: 0 0 var(--s-2);
 }
@@ -39,42 +38,42 @@
   display: flex;
   flex-direction: column;
   width: 100%;
-  min-height: 48px;
+  min-height: var(--s-12);
   padding: var(--s-2) 0;
   border: none;
-  border-bottom: var(--line-w) solid var(--line);
+  border-bottom: var(--line-w) solid var(--border-row);
   background: none;
   text-align: left;
-  font-size: var(--fs-md);
+  font-size: var(--text-prose);
   cursor: pointer;
 }
 
 .pickRowSecondLine {
-  font-size: var(--fs-sm);
-  color: var(--muted);
+  font-size: var(--text-aux);
+  color: var(--text-muted);
 }
 
-/* 04.3-16 — E′2 경품 빠짐 알림 줄: 기존 E′ 오류 줄 규칙(--fs-md --danger). 포커스를 받는다(tabindex -1). */
+/* 04.3-16 — E′2 경품 빠짐 알림 줄: 기존 E′ 오류 줄 규칙(--text-prose --status-danger). 포커스를 받는다(tabindex -1). */
 .goneNotice {
-  color: var(--danger);
-  font-size: var(--fs-md);
+  color: var(--status-danger);
+  font-size: var(--text-prose);
   margin: 0 0 var(--s-2);
 }
 
 .inquiryLine {
-  font-size: var(--fs-md);
-  color: var(--muted);
+  font-size: var(--text-prose);
+  color: var(--text-muted);
 }
 
 .blockedDanger {
-  color: var(--danger);
-  font-size: var(--fs-md);
+  color: var(--status-danger);
+  font-size: var(--text-prose);
 }
 
 .fieldLabel {
   display: block;
-  font-size: var(--fs-sm);
-  color: var(--muted);
+  font-size: var(--text-aux);
+  color: var(--text-muted);
   font-weight: var(--fw-medium);
   margin-bottom: var(--s-1);
 }
@@ -105,16 +104,16 @@
 :global(html):has(.stickySubmit) {
   scroll-padding-bottom: var(
     --cert-submit-bar-h,
-    calc(var(--touch-min) * 2 + var(--line-w-strong) + var(--s-4) * 2)
+    calc(var(--touch-min) * 2 + var(--line-w) + var(--s-4) * 2)
   );
 }
 
-/* 제출 줄(E′4) — main 안 sticky, 위 2px --line-strong, 안전 영역 더함(§6-5 실물 .submit). */
+/* 제출 줄(E′4) — main 안 sticky, 위 1px 선, 안전 영역 더함(§6-5 실물 .submit). */
 .stickySubmit {
   position: sticky;
   bottom: 0;
-  background: var(--bg);
-  border-top: var(--line-w-strong) solid var(--line-strong);
+  background: var(--surface-base);
+  border-top: var(--line-w) solid var(--border-row);
   padding: var(--s-4) 0 calc(var(--s-4) + env(safe-area-inset-bottom, 0px));
   margin-top: var(--s-4);
   z-index: var(--z-bar);
@@ -123,7 +122,7 @@
 /* 04.3-06 · 04.3-15 — E′4 경품 블록(머리 = 라벨 「경품」 + 3차 「다른 경품 고르기」, 아래 경품명 한 줄,
    §6-5 실물 .pay) · 아래 문의 줄. */
 .prizeBlock {
-  border-top: var(--line-w-strong) solid var(--line-strong);
+  border-top: var(--line-w) solid var(--border-row);
   padding-top: var(--s-3);
 }
 
@@ -135,25 +134,25 @@
 }
 
 .prizeLabel {
-  font-size: var(--fs-sm);
-  color: var(--muted);
+  font-size: var(--text-aux);
+  color: var(--text-muted);
   font-weight: var(--fw-medium);
 }
 
 .prizeName {
-  font-size: var(--fs-lg);
+  font-size: var(--text-subtitle);
   font-weight: var(--fw-bold);
   margin: 0;
 }
 
 .prizeInquiry {
-  font-size: var(--fs-md);
-  color: var(--muted);
+  font-size: var(--text-prose);
+  color: var(--text-muted);
   margin: var(--s-2) 0 0;
 }
 
 .formFields {
-  border-top: var(--line-w-strong) solid var(--line-strong);
+  border-top: var(--line-w) solid var(--border-row);
   margin-top: var(--s-4);
   padding-top: var(--s-3);
 }
@@ -163,8 +162,8 @@
 }
 
 .labelSub {
-  font-size: var(--fs-md);
-  color: var(--muted);
+  font-size: var(--text-prose);
+  color: var(--text-muted);
   font-weight: var(--fw-regular);
 }
 
@@ -186,8 +185,9 @@
 }
 
 .rrnInput {
-  composes: input external from "../../../ui/input/TextField.module.css";
-  font-variant-numeric: tabular-nums;
+  composes: input external numeric from "../../../ui/input/TextField.module.css";
+  /* 숫자 폭(`numeric`)만 받는다 — 주민번호 칸은 왼쪽에서 읽는다(`numeric`의 오른쪽 정렬을 되돌림). */
+  text-align: left;
 }
 
 .rrnInputError {
@@ -195,7 +195,7 @@
 }
 
 .rrnDash {
-  color: var(--faint);
+  color: var(--text-faint);
 }
 
 .rrnError {
@@ -203,8 +203,8 @@
 }
 
 .consentBlock {
-  border-top: var(--line-w) solid var(--line);
-  border-bottom: var(--line-w) solid var(--line);
+  border-top: var(--line-w) solid var(--border-row);
+  border-bottom: var(--line-w) solid var(--border-row);
   padding: var(--s-3) 0;
   margin: var(--s-4) 0;
 }
@@ -215,7 +215,7 @@
   align-items: center;
   gap: var(--s-3);
   min-height: var(--touch-min);
-  font-size: var(--fs-md);
+  font-size: var(--text-prose);
   cursor: pointer;
 }
 
@@ -227,26 +227,26 @@
 }
 
 .consentSummary {
-  font-size: var(--fs-md);
-  color: var(--muted);
+  font-size: var(--text-prose);
+  color: var(--text-muted);
   line-height: var(--lh-body);
   margin: 0;
 }
 
 .consentToggle {
-  font-size: var(--fs-sm);
+  font-size: var(--text-aux);
 }
 
 /* 전문 — 같은 블록 안 제자리 펼침(개정 ①-f). */
 .consentFull {
-  font-size: var(--fs-md);
-  color: var(--fg);
+  font-size: var(--text-prose);
+  color: var(--text-strong);
   line-height: var(--lh-body);
   max-width: var(--measure);
   margin-top: var(--s-2);
 }
 
-/* 전문 <dl> — 절 제목 <dt>(--fs-md 600) · 본문 <dd>(--fs-md). 제목과 본문 사이 구분 글자 없음(G0 DR-7). */
+/* 전문 <dl> — 절 제목 <dt>(--text-prose 600) · 본문 <dd>(--text-prose). 제목과 본문 사이 구분 글자 없음(G0 DR-7). */
 .consentFull dl {
   margin: 0;
 }
@@ -263,7 +263,7 @@
    비율(520 / 200)은 그대로. */
 .signatureWrap {
   position: relative;
-  border: var(--line-w) solid var(--line-ui);
+  border: var(--line-w) solid var(--border-control);
   aspect-ratio: 520 / 200;
   margin-inline: var(--s-4);
 }
@@ -290,8 +290,8 @@
   position: absolute;
   left: var(--s-3);
   top: var(--s-2);
-  color: var(--faint);
-  font-size: var(--fs-sm);
+  color: var(--text-faint);
+  font-size: var(--text-aux);
   pointer-events: none;
 }
 
@@ -301,15 +301,15 @@
   left: var(--s-4);
   right: var(--s-4);
   bottom: 22.5%;
-  border-top: var(--line-w) dashed var(--line);
+  border-top: var(--line-w) dashed var(--border-strong);
   pointer-events: none;
 }
 
 /* 키 안내 줄 — 캔버스가 키보드 포커스(:focus-visible)를 받았을 때만 보인다.
    숨어 있어도 캔버스 aria-describedby 설명으로는 읽힌다. */
 .keyGuide {
-  font-size: var(--fs-md);
-  color: var(--muted);
+  font-size: var(--text-prose);
+  color: var(--text-muted);
   margin: var(--s-1) 0 0;
 }
 
@@ -318,9 +318,9 @@
 }
 
 /* U14 — E5·E6-a 결과 블록: SYSTEM §6-5 / external-cert.html .state 그대로
-   (2px 강한 선 위 · 첫 줄 굵게 · 나머지 --muted). */
+   (1px 선 위 · 첫 줄 굵게 · 나머지 --text-muted). */
 .resultBlock {
-  border-top: var(--line-w-strong) solid var(--line-strong);
+  border-top: var(--line-w) solid var(--border-row);
   margin-top: var(--s-6);
   padding-top: var(--s-4);
 }
@@ -334,7 +334,7 @@
 }
 
 .resultMuted {
-  color: var(--muted);
+  color: var(--text-muted);
 }
 
 /* UI-SPEC E1 상단 바(layout.tsx) — 실물 external-cert.html `.bar`. 토큰만. */
@@ -343,15 +343,15 @@
   align-items: center;
   height: var(--touch-min);
   padding: 0 var(--pad-page);
-  background: var(--bar);
+  background: var(--bar-bg);
   color: var(--bar-fg);
-  font-size: var(--fs-sm);
+  font-size: var(--text-aux);
 }
 
 .mark {
-  color: var(--bg);
+  color: var(--bar-fg);
   font-weight: var(--fw-mark);
-  font-size: var(--fs-md);
+  font-size: var(--text-prose);
   letter-spacing: var(--ls-head);
 }
 
@@ -371,6 +371,6 @@
   top: var(--touch-min);
   left: 0;
   right: 0;
-  height: var(--line-w-strong);
+  height: calc(var(--line-w) * 2);
   background: var(--accent);
 }

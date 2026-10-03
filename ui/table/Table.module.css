@@ -143,6 +143,11 @@ th.cell {
   font-weight: var(--fw-medium);
 }
 
+/* `groupHeaderScope="rowgroup"`이면 칸이 `<th>`다 — UA 기본 가운데 정렬을 `<td>` 때와 같게 왼쪽으로 돌린다(04.6-24). */
+th.groupHeader {
+  text-align: left;
+}
+
 /* 04-42(S9) — 그룹 머리글 행 오른쪽 칸(리저브 최종 잔액): 값이라 본문 색 · 굵게. */
 .groupAside {
   float: inline-end;

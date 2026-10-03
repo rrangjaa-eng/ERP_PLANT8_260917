@@ -74,9 +74,12 @@
     gap: var(--s-2);
   }
 
+  /* 라벨 칸을 --s-1 넓히고 같은 만큼 오른쪽 여백을 음수로 물려 입력 칸 x는 그대로(라벨 열 + --s-2) 둔다. WebKit은 같은 글꼴을 크롬보다 조금 넓게 그려
+     96에 딱 맞던 라벨(「알림 발송 건수 상한」 등)이 사파리에서만 2줄이 됐다(#158 사파리 비교) — 글자와 입력 칸 사이는 --s-1 이상 남는다. */
   .label {
-    flex: 0 0 var(--label-w);
+    flex: 0 0 calc(var(--label-w) + var(--s-1));
     margin-bottom: 0;
+    margin-inline-end: calc(-1 * var(--s-1));
     padding-top: var(--s-1);
   }
 

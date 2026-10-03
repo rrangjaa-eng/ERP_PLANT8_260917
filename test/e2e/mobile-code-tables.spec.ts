@@ -57,17 +57,23 @@ test.describe("폰 375 /admin/code-tables 설명 접힌 줄 (S14 overflow)", () 
     const description = "무대·부스 설치와 철거 공사 · 현장 인력과 장비 반입까지 포함";
 
     await page.goto("/admin/code-tables?new=1");
-    const form = page.locator("#code-item-form");
+    // 04.6-15: 「코드 추가」는 아래 시트 패널이다 — 성공하면 시트가 열린 채 칸이 비므로 Esc로 닫고 목록을 본다.
+    const dialog = page.locator('dialog[data-ui="side-panel"]');
+    const form = dialog.locator("#code-item-form");
     await form.getByLabel("값", { exact: true }).fill(value);
     await form.getByLabel("이름", { exact: true }).fill(label);
     await form.getByLabel("설명", { exact: true }).fill(description);
-    await page.getByRole("button", { name: "코드 추가" }).click();
+    await dialog.getByRole("button", { name: "코드 추가" }).click();
+    await expect(dialog.getByRole("status")).toHaveText("코드 추가됨");
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
 
     const nameInput = page.getByLabel(`${label} 이름`);
-    const descriptionInput = page.getByLabel(`${label} 설명`);
+    // StaticTable P2 설명은 PC 열과 폰 접힌 줄에 한 번씩 그려지고 보이는 쪽은 하나다 — 보이는 입력만 집는다.
+    const descriptionInput = page.getByLabel(`${label} 설명`).locator("visible=true");
     await expect(descriptionInput).toHaveValue(description);
 
-    // 한 번만 — 같은 설명을 두 번 렌더하지 않는다.
+    // 한 번만 — 같은 설명을 폰에서 두 번 보이지 않는다.
     await expect(descriptionInput).toHaveCount(1);
     await expect(descriptionInput).toBeVisible();
 
@@ -79,18 +85,24 @@ test.describe("폰 375 /admin/code-tables 설명 접힌 줄 (S14 overflow)", () 
     expect(descriptionBox!.y).toBeGreaterThanOrEqual(nameBox!.y + nameBox!.height);
     expect(descriptionBox!.width).toBeGreaterThan(nameBox!.width);
 
-    // P3: 값·정렬·동작 열(머리글과 칸)이 숨는다. P2는 라벨 없이 값만이라
-    // 「설명」 머리글도 없다. P1 머리글(이름·상태)이 보이는 것부터 확인해
-    // 표 역할이 살아 있음을 고정한다 — 역할이 사라지면 아래 숨김 단언이
-    // 빈 목록에 대해 참이 되어 버린다.
-    for (const header of ["이름", "상태"]) {
+    // P3: 값·정렬 열(머리글과 칸)이 숨는다. P2는 라벨 없이 값만이라 「설명」 머리글도 없다. P1 머리글(이름·상태·동작)이 보이는 것부터
+    // 확인해 표 역할이 살아 있음을 고정한다 — 역할이 사라지면 아래 숨김 단언이 빈 목록에 대해 참이 되어 버린다.
+    // 04.6-15 · 사용자 답 Q4 A 「보이게」(TODOS 183): 동작 열은 P1이라 폰에서도 보이고 두 동작이 44px 이상이다.
+    for (const header of ["이름", "상태", "동작"]) {
       await expect(page.getByRole("columnheader", { name: header, exact: true })).toBeVisible();
     }
-    for (const header of ["값", "설명", "정렬", "동작"]) {
+    for (const header of ["값", "설명", "정렬"]) {
       await expect(page.getByRole("columnheader", { name: header, exact: true })).toBeHidden();
     }
     await expect(page.getByText(value, { exact: true })).toBeHidden();
-    await expect(page.getByRole("button", { name: "비활성화" }).first()).toBeHidden();
+    const row = page.locator("tr", { hasText: value });
+    for (const name of ["비활성화", "삭제"]) {
+      const action = row.getByRole("button", { name, exact: true });
+      await expect(action).toBeVisible();
+      const box = await action.boundingBox();
+      expect(box, `${name} 상자`).not.toBeNull();
+      expect(box!.height, `${name} 누르는 영역 높이`).toBeGreaterThanOrEqual(44);
+    }
 
     const { scrollWidth, clientWidth } = await page.evaluate(() => ({
       scrollWidth: document.documentElement.scrollWidth,

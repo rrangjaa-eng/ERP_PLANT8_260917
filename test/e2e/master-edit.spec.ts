@@ -42,9 +42,14 @@ test.describe("코드표 항목 이름 수정 (MAST-04 「수정」)", () => {
     const after = `수정후-${stamp}`;
 
     await page.goto("/admin/code-tables?new=1");
-    await page.getByLabel("값").fill(value);
-    await page.getByLabel("이름", { exact: true }).fill(before);
-    await page.getByRole("button", { name: "코드 추가" }).click();
+    // 04.6-15(UQ-8 B): 「코드 추가」는 옆 패널이고 성공 뒤에도 열린 채 칸이 빈다 — Esc로 닫고(칸이 비어 확인 없이 닫힘) 목록에서 이어 간다.
+    const panel = page.locator('dialog[data-ui="side-panel"]');
+    await panel.getByLabel("값").fill(value);
+    await panel.getByLabel("이름", { exact: true }).fill(before);
+    await panel.getByRole("button", { name: "코드 추가" }).click();
+    await expect(panel.getByRole("status")).toHaveText("코드 추가됨");
+    await page.keyboard.press("Escape");
+    await expect(panel).toHaveCount(0);
     await expect(page.getByRole("cell", { name: value })).toBeVisible();
 
     // 행의 이름 칸이 편집 가능해야 한다 — 계급 화면의 인라인 입력과 같은 결.

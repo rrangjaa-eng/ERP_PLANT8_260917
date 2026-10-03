@@ -6,6 +6,8 @@ import { expectGapsAtLeastToken, expectNoRowOverflow, loginAsSysadmin, textLineC
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { findUserByEmail } from "@/repositories/users";
 import { insertCorpCard, setCorpCardActive } from "@/repositories/corp-cards";
+import { checkPrinciples } from "./principles-check";
+import { isStrict } from "./design-principles";
 
 // MAST-03: 법인카드를 개인/팀 구분과 함께 등록·비활성화할 수 있고, 소지자와
 // 팀이 동시에 채워진 카드를 만들 수 없다는 것을 화면·액션·domain 세 곳에서
@@ -317,6 +319,30 @@ test.describe("법인카드 옆 패널 (04.6-15)", () => {
           expect(Math.abs(selectBox.width - bodyInner), `${url} ${name} select 폭 ${selectBox.width} ≠ 패널 본문 폭 ${bodyInner}`).toBeLessThanOrEqual(1);
         }
       }
+    } finally {
+      await card.cleanup();
+    }
+  });
+});
+
+// 04.6-15 · R11 · 공통 §10: 옮긴 화면의 원칙 막는 모드 — 법인카드·코드표의 목록과 패널 라우트 모두 경고 0(화면 하나에 테스트 하나).
+test.describe("법인카드 · 코드표 화면 사용성 원칙 (04.6-15 R11)", () => {
+  test("화면 사용성 원칙(막는 모드) — 법인카드·코드표", async ({ page }) => {
+    const card = await seedOwnedCard("원칙");
+    try {
+      await loginAsSysadmin(page);
+      await checkPrinciples(
+        page,
+        [
+          "/admin/corp-cards",
+          "/admin/corp-cards?new=1",
+          `/admin/corp-cards?editId=${card.id}`,
+          "/admin/code-tables?tableKey=project_status",
+          "/admin/code-tables?tableKey=project_status&new=1",
+          "/admin/code-tables?tableKey=evidence_type",
+        ],
+        { strict: isStrict(process.env.DESIGN_PRINCIPLES_STRICT) },
+      );
     } finally {
       await card.cleanup();
     }

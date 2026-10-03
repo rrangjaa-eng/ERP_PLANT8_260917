@@ -28,16 +28,18 @@ async function expectReachableWithoutScrolling(page: Page, linkName: string): Pr
   expect(scrollY).toBe(0);
 }
 
-const screens: { url: string; formLabel: string; actionLabel: string }[] = [
-  { url: "/admin/vendors", formLabel: "이름", actionLabel: "거래처 등록" },
-  { url: "/admin/code-tables", formLabel: "값", actionLabel: "코드 추가" },
-  { url: "/admin/people", formLabel: "이름", actionLabel: "사람 등록" },
-  { url: "/admin/corp-cards", formLabel: "발급사", actionLabel: "법인카드 등록" },
+// 04.6-16: 한 건 폼은 옆 패널(폰은 아래 시트 — `dialog:modal`)이다. 같은 웨이브 ④의 다른 플랜(15 코드표·법인카드 · 14 사람)이 옮기는 화면은
+// 합본에 들어온 뒤에만 뜻이 있어 `@wave-merge` 태그를 단다(이 플랜의 작업 트리에서는 아직 옛 폼 화면).
+const screens: { url: string; formLabel: string; actionLabel: string; waveMerge: boolean }[] = [
+  { url: "/admin/vendors", formLabel: "이름", actionLabel: "거래처 등록", waveMerge: false },
+  { url: "/admin/code-tables", formLabel: "값", actionLabel: "코드 추가", waveMerge: true },
+  { url: "/admin/people", formLabel: "이름", actionLabel: "사람 등록", waveMerge: true },
+  { url: "/admin/corp-cards", formLabel: "발급사", actionLabel: "법인카드 등록", waveMerge: true },
 ];
 
-for (const { url, formLabel, actionLabel } of screens) {
+for (const { url, formLabel, actionLabel, waveMerge } of screens) {
   test.describe(`폰 375 ${url} — 목록이 첫 화면, 등록은 한 클릭 (§6-1)`, () => {
-    test(`기본 진입에 폼이 없고, 「${actionLabel}」이 스크롤 없이 닿으며, 누르면 폼이 열린다`, async ({ page }) => {
+    test(`기본 진입에 폼이 없고, 「${actionLabel}」이 스크롤 없이 닿으며, 누르면 패널이 열린다`, waveMerge ? { tag: "@wave-merge" } : {}, async ({ page }) => {
       await loginAs(page);
       const response = await page.goto(url);
       expect(response?.status()).toBe(200);
@@ -47,7 +49,8 @@ for (const { url, formLabel, actionLabel } of screens) {
 
       await page.getByRole("link", { name: actionLabel }).click();
       await expect(page).toHaveURL(/[?&]new=1/);
-      await expect(page.getByLabel(formLabel)).toBeVisible();
+      await expect(page.locator("dialog:modal")).toBeVisible();
+      await expect(page.locator("dialog:modal").getByLabel(formLabel)).toBeVisible();
 
       const { scrollWidth, clientWidth } = await page.evaluate(() => ({
         scrollWidth: document.documentElement.scrollWidth,

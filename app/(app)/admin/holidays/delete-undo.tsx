@@ -2,13 +2,13 @@
 
 import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@/ui/button/Button";
+import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
 import { restoreHolidayAction } from "./actions";
 import styles from "./holidays.module.css";
 
 // 04.2-UI-SPEC S2-f — 확인 대신 되돌리기. 결과 줄 상태는 URL이 아니라 이 클라이언트
 // 상태가 들고 있다(T-4.2-74 — 만든 링크가 `되돌리기`를 띄우지 못한다). page.tsx가
-// `key={연도:폼}`로 감싸 연도를 바꾸거나 폼을 열면 줄이 사라진다. 지운 행은 쌓아 두고 맨 나중 것을
+// `key={연도}`로 감싸 연도를 바꾸면 줄이 사라진다(패널은 목록을 바꾸지 않아 열고 닫아도 남는다 — 04.6-16 R4). 지운 행은 쌓아 두고 맨 나중 것을
 // 보인다 — 되돌리면 그 앞 것이 다시 보인다(04.2 /review 이월 — 다음 삭제가 앞 되돌리기를 지우지 않게).
 export type RemovedHoliday = { id: string; date: string; name: string; kind: "temporary" | "election" };
 
@@ -103,15 +103,11 @@ export function DeleteUndoSection({ children }: { children: ReactNode }) {
               <span className={removedFailure ? styles.undoFailed : undefined}>
                 {removedFailure ?? `${removed.date} ${removed.name} 삭제됨`}
               </span>
-              <Button
-                key={shown}
-                variant="tertiary"
-                pending={pendingId === removed.id}
-                autoFocus
-                onClick={() => void handleUndo()}
-              >
-                되돌리기
-              </Button>
+              <RowActions>
+                <RowAction key={shown} pending={pendingId === removed.id} autoFocus onClick={() => void handleUndo()}>
+                  되돌리기
+                </RowAction>
+              </RowActions>
             </>
           ) : null}
         </p>

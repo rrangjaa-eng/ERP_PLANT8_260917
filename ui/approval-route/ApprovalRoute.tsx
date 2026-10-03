@@ -1,4 +1,5 @@
 import { Fragment } from "react";
+import { Num } from "@/ui/num/Num";
 import { StatusTag, type StatusTagKind } from "@/ui/status-tag/StatusTag";
 import styles from "./ApprovalRoute.module.css";
 
@@ -59,7 +60,7 @@ export function ApprovalRoute(props: ApprovalRouteProps) {
           <StatusTag kind={step.result.kind} variant="text" className={styles.result}>
             {step.result.text}
           </StatusTag>
-          {step.at ? <span className={styles.at}> {step.at}</span> : null}
+          {step.at ? <span className={styles.at}> <Num value={step.at} /></span> : null}
           {step.reason ? <span className={styles.reason}>사유 · {step.reason}</span> : null}
         </li>
       ))}

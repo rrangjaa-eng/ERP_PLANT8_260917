@@ -102,12 +102,20 @@ describe("관리자 표 — 숫자 칸 정렬 (F-07)", () => {
     expect(source).toContain('valueKind.kind === "number"');
     expect(source).toMatch(/th\s+scope="col"\s+className=\{valueKind\.kind === "number" \? styles\.num : undefined\}>\s*값/);
     expect(source).toMatch(
-      /<td className=\{valueKind\.kind === "number" \? styles\.num : undefined\}>\{entry\.displayValue\}<\/td>/,
+      /<td className=\{valueKind\.kind === "number" \? styles\.num : undefined\}>\s*\{valueKind\.kind === "number" \? <Num value=\{entry\.displayValue\} \/> : entry\.displayValue\}\s*<\/td>/,
     );
   });
 
-  // 04.6-09: tabular-nums는 stylelint가 `ui/num`에만 허용한다. HistoryList의 값 칸은 서식이 끝난 글자(displayValue)라 `Num`이
-  // 못 감싸므로(Num은 숫자를 받는다) 정렬·nowrap만 이 CSS가 맡는다 — 값 칸 숫자 폭 결정은 넘김(MERGE 기록).
+  // 04.6-20 Num이 글자 값을 받는다 — 숫자형 값 칸의 서식이 끝난 글자(displayValue) · 알림 배지 · 결재선 일시는 Num이 감싸 tabular-nums를 가진다.
+  it("TopBar 알림 배지가 Num으로 그린다", () => {
+    expect(read("ui", "shell", "TopBar.tsx")).toMatch(/<Num value=\{badgeLabel\} \/>/);
+  });
+
+  it("ApprovalRoute 일시(step.at)가 Num으로 그린다", () => {
+    expect(read("ui", "approval-route", "ApprovalRoute.tsx")).toMatch(/<Num value=\{step\.at\} \/>/);
+  });
+
+  // 04.6-09: tabular-nums는 stylelint가 `ui/num`에만 허용한다. HistoryList의 값 칸은 정렬·nowrap만 이 CSS가 맡고 숫자 폭은 칸 안 `Num`이 맡는다.
   it("HistoryList.module.css의 .table .num이 우측 정렬·nowrap이다(tabular-nums는 ui/num 몫)", () => {
     const css = read("ui", "history-list", "HistoryList.module.css");
     const match = css.match(/\.table \.num\s*\{[^}]*\}/);

@@ -27,7 +27,7 @@
   border-bottom: var(--line-w) solid var(--border-row);
 }
 
-/* §2-4: 숫자 칸은 우측 정렬 + nowrap. tabular-nums는 stylelint가 `ui/num`에만 허용하므로 `Num`이 맡는다(04.6-05 — 웨이브 합본에서 값 칸을 `Num`으로 감싼다). */
+/* §2-4: 숫자 칸은 우측 정렬 + nowrap. tabular-nums는 stylelint가 `ui/num`에만 허용하므로 값 칸 안 `Num`이 맡는다. */
 .table .num {
   text-align: right;
   white-space: nowrap;

@@ -11,7 +11,7 @@ import { createAccount } from "@/domain/auth/accounts";
 import { archivePerson } from "@/domain/people";
 import { findHolidayByDate } from "@/repositories/holidays";
 import { archive, restore, listArchive, ForbiddenError, ProtectedRowError } from "@/domain/archive";
-import { ARCHIVABLE_TABLES } from "@/repositories/archive";
+import { ARCHIVABLE_TABLES, listArchivedAcrossEntities as defaultListArchivedAcrossEntities } from "@/repositories/archive";
 import { addHoliday, deleteHoliday } from "@/domain/holidays/admin";
 import { queryActionLog } from "@/domain/action-log";
 import { db } from "@/db/client";
@@ -109,6 +109,28 @@ describe("보관함 (ADMN-12, 실제 Postgres)", () => {
     const hiddenViewer = { id: `archive-hidden-${randomUUID()}`, roleId };
 
     await expect(listArchive(hiddenViewer)).resolves.toEqual([]);
+  });
+
+  // DEF-1 후속(Codex P2) — 처음 판정 뒤 조회 중에 archive.value가 꺼져도 행 투영이 빈 객체({})가 되면 안 된다.
+  it("조회 중 보관함 정보(archive.value)가 꺼져도 처음 판정대로 모든 행이 채워진다(DEF-1 경쟁)", async () => {
+    const { vendor } = await createVendor(SYSTEM_VIEWER, { name: `거래처-${randomUUID()}` });
+    await archive(SYSTEM_VIEWER, "vendor", vendor.id);
+
+    const roleId = `role-${randomUUID()}`;
+    await insertRole(SYSTEM_VIEWER, { id: roleId, name: `계급 ${roleId.slice(5, 13)}` });
+    await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "admin.archive", action: "view", allowed: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "archive.value", visible: true });
+    const viewer = { id: `archive-race-${randomUUID()}`, roleId };
+
+    const rows = await listArchive(viewer, {
+      listArchivedAcrossEntities: async (v) => {
+        await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "archive.value", visible: false });
+        return defaultListArchivedAcrossEntities(v);
+      },
+    });
+
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((row) => typeof row.id === "string")).toBe(true);
   });
 
   it("보관·복원이 각각 행동 로그에 남는다", async () => {

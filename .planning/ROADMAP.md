@@ -399,7 +399,7 @@ Plans:
 12. 글자·바탕 대비 4.5:1 미만(큰 글자 3:1)을 자동 검사가 막는다
 13. 시스템 변경은 `docs/design/DECISIONS.md` 기록 → `docs/design/SYSTEM.md` 수정 순서로 한다(`.claude/rules/frontend.md`): radius 0 · 그림자 없음 · 2px 진한 선 결정 뒤집기, D-39 폼 배치 → 옆 패널, 고른 완화 후보
 
-**Plans:** 12/32 plans executed
+**Plans:** 19/32 plans executed
 
 Plans:
 **Wave 1**
@@ -426,13 +426,13 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 04.6-14-PLAN.md — ④ 사람·조직·계급 패널 · 사람 상세
-- [ ] 04.6-15-PLAN.md — ④ 법인카드·코드표 패널
-- [ ] 04.6-16-PLAN.md — ④ 공휴일 패널 · 320 패널 넘침 검사
-- [ ] 04.6-17-PLAN.md — ④ 결재함 · 결재 시트 SidePanel · 뼈대
-- [ ] 04.6-20-PLAN.md — ④ 내 계정·설정·시스템 상태
-- [ ] 04.6-23-PLAN.md — ④ (04.5·04.3 머지 뒤) 화면 항목 관리·행사 목록 패널
-- [ ] 04.6-25-PLAN.md — ④ 기준 사진 대조 · 완화 후보 보드 · UQ-4·5 요청(웨이브 ③ 세 화면)
+- [x] 04.6-14-PLAN.md — ④ 사람·조직·계급 패널 · 사람 상세
+- [x] 04.6-15-PLAN.md — ④ 법인카드·코드표 패널
+- [x] 04.6-16-PLAN.md — ④ 공휴일 패널 · 320 패널 넘침 검사
+- [x] 04.6-17-PLAN.md — ④ 결재함 · 결재 시트 SidePanel · 뼈대
+- [x] 04.6-20-PLAN.md — ④ 내 계정·설정·시스템 상태
+- [x] 04.6-23-PLAN.md — ④ (04.5·04.3 머지 뒤) 화면 항목 관리·행사 목록 패널
+- [x] 04.6-25-PLAN.md — ④ 기준 사진 대조 · 완화 후보 보드 · UQ-4·5 요청(웨이브 ③ 세 화면)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 

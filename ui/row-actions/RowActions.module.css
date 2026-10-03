@@ -47,8 +47,10 @@ button.action {
   color: var(--status-danger);
 }
 
-.dangerEnd:not(:first-child) {
-  margin-inline-start: var(--s-4);
+/* 위험 행동 앞 여백은 앞 행동의 뒤쪽 바깥 여백으로 둔다 — 폰에서 줄바꿈되면 여백이 앞 줄 끝에 남고 둘째 줄 「삭제」는 들여쓰지 않는다.
+   한 줄일 때의 간격(--s-4 + 여백 --s-4 = --s-8)은 위험 행동 자신의 여백과 같다. */
+.row > :has(+ .dangerEnd) {
+  margin-inline-end: var(--s-4);
 }
 
 /* 비활성 이유 — 행동 바로 뒤 글자. Button의 막힘 이유와 같은 역할(위험 색 · 보조 크기). */

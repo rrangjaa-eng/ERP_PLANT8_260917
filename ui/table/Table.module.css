@@ -252,7 +252,7 @@ th.groupHeader {
 }
 
 .collapsedCell {
-  padding: 0 var(--cell-pad-x) var(--cell-pad-y);
+  padding: 0 var(--s-4) var(--cell-pad-y);
   color: var(--text-muted);
   font-size: var(--text-aux);
 }

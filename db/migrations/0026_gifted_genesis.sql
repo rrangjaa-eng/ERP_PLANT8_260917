@@ -1,3 +1,8 @@
+-- Phase 5(05-04) — 증빙 파일 · 업로드 의도 표. 새 빈 표라 재작성 · 백필이 없다. 기존 표(users)를 참조하는 FK ALTER가
+-- 그 표에 잠금을 잡으므로 잠금 · 문장 시간 상한을 둔다(0022 · 0024 · 0025 선례).
+SET LOCAL lock_timeout = '1s';
+SET LOCAL statement_timeout = '5s';
+--> statement-breakpoint
 CREATE TABLE "files" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"owner_kind" text NOT NULL,

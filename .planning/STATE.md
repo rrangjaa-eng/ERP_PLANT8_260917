@@ -5,10 +5,10 @@ current_phase_name: 스킨 A 적용 (INSERTED)
 current_plan: 4
 status: executing
 stopped_at: Completed 04.6-04-PLAN.md
-last_updated: "2026-10-02T18:24:19.654Z"
+last_updated: "2026-10-04T04:07:53.767Z"
 last_activity: 2026-10-02
 last_activity_desc: Phase 04.6 execution started
-state_head: 76e46710c66e7d14bfeff8e0352accec8f0cb5e0
+state_head: dd7ea069cada18d8200f07f9d26ad0ec82d06802
 progress:
   total_phases: 17
   completed_phases: 7
@@ -399,6 +399,7 @@ Recent decisions affecting current work:
 | 261002-3mx | 서버 검증 묶음 — 견적 소분류 서버 검증 · 코드표 tableKey 허용 목록 · 설정 예정값 취소 자정 경합 | 2026-10-02 | 3d61fc5 | [261002-3mx-server-validation-bundle-quote-subcatego](./quick/261002-3mx-server-validation-bundle-quote-subcatego/) |
 | 261002-4jn | 보관함 복원: 이미 복원됨 토스트 · 날짜 점유 공휴일 복원 숨김(회고 #3·#4) | 2026-10-02 | ecd2f6e | [261002-4jn-archive-restore-already-restored-toast-a](./quick/261002-4jn-archive-restore-already-restored-toast-a/) |
 | 261003-40w | DEF-1 보관함 500 수정 + SYSTEM 폼 간격 24 | 2026-10-03 | af018d7 | [261003-40w-def-1-500-system-24](./quick/261003-40w-def-1-500-system-24/) |
+| 261004-51o | 프로젝트 목록 수익률 기준선 색 — 설정 키(기본 15%)와 목록 위험 색 | 2026-10-04 | dd7ea069 | [261004-51o-profit-rate-threshold-color-on-project-l](./quick/261004-51o-profit-rate-threshold-color-on-project-l/) |
 
 ### Roadmap Evolution
 

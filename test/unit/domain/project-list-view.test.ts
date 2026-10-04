@@ -5,6 +5,7 @@ import {
   exclusionText,
   filterSummary,
   formatListPeriod,
+  isProfitRateBelowThreshold,
   isUserFiltered,
   listColumnStep,
   listEmptyKind,
@@ -19,6 +20,7 @@ import {
 } from "@/domain/projects/list-view";
 import { loadProjectList } from "@/domain/projects";
 import { PROJECT_STATUSES } from "@/domain/projects/status-transitions";
+import { formatPercent } from "@/lib/format-number";
 import { log } from "@/lib/log";
 import { LIST_PAGE_SIZE, pageCountFrom } from "@/lib/paging";
 import type { ProjectAggregateBucket, ProjectListRow } from "@/repositories/projects";
@@ -597,5 +599,36 @@ describe("loadProjectList — 볼 수 없는 금액 열의 정렬 차단", () =>
     const expected = allowed ? { key, direction } : { key: "endDate", direction: "asc" };
     expect(result.sort).toEqual(expected);
     expect(passed).toEqual([expected]);
+  });
+});
+
+describe("isProfitRateBelowThreshold — 수익률 기준선(quick 261004-51o)", () => {
+  it.each([
+    [0.1, 15, true],
+    [0.15, 15, false],
+    [0.29, 29, false],
+    [0.14996, 15, false],
+    [0.1449, 15, true],
+    [-0.05, 15, true],
+    [-0.05, 0, true],
+    [0, 0, false],
+    [0.417, 15, false],
+  ])("수익률 %s · 기준선 %s%% → %s", (profitRate, threshold, expected) => {
+    expect(isProfitRateBelowThreshold(profitRate, threshold)).toBe(expected);
+  });
+
+  it("수익률 없음(null · undefined)은 기준선과 상관없이 false다", () => {
+    expect(isProfitRateBelowThreshold(null, 15)).toBe(false);
+    expect(isProfitRateBelowThreshold(undefined, 15)).toBe(false);
+  });
+
+  it("판정은 칸에 보이는 글자(formatPercent 소수 1자리)와 어긋나지 않는다", () => {
+    for (const rate of [0.1, 0.15, 0.29, 0.14996, 0.1449, 0.1451, -0.05, 0, 0.417, 0.2222]) {
+      for (const threshold of [0, 15, 29, 50]) {
+        expect(isProfitRateBelowThreshold(rate, threshold), `${rate} / ${threshold}`).toBe(
+          Number.parseFloat(formatPercent(rate * 100)) < threshold,
+        );
+      }
+    }
   });
 });

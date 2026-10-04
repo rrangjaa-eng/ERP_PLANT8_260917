@@ -15,6 +15,7 @@ import {
   KRW_COLUMN_MAX,
   sumKrw,
   diffKrw,
+  formatRatePercent,
   type Money,
   type MoneyInput,
 } from "@/domain/money";
@@ -320,5 +321,18 @@ describe("sumKrw · diffKrw", () => {
 
   it("diffKrw(10, 3) = 7", () => {
     expect(diffKrw(10, 3)).toBe(7);
+  });
+});
+
+// 05-06 — 세율 % 글자(계산 한 줄 · 세율 바뀜). 문자열 조작이라 부동소수 오차가 글자에 새지 않는다.
+describe("formatRatePercent", () => {
+  it.each([
+    [0.1, "10%"],
+    [0.088, "8.8%"],
+    [0.033, "3.3%"],
+    [0.22, "22%"],
+    [0.12, "12%"],
+  ])("%s → %s", (rate, text) => {
+    expect(formatRatePercent(rate)).toBe(text);
   });
 });

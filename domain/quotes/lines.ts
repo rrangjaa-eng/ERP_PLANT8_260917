@@ -265,7 +265,11 @@ export type LinkedDocumentsByLine = Map<string, LinkedDocument[]>;
 
 // 04-14(D-55) — 문서 출처(줄 id별 번호 있는 지출결의)를 계보 해석으로 현재 차수 줄에 잇는다. 조회 지점은 이 함수 하나다.
 // domain/expenses를 import하지 않고 리포지토리 한 쿼리로 읽는다(순환 금지).
-export async function linkedDocumentsByLine(viewer: Viewer, revisionId: string, tx?: DbOrTx): Promise<LinkedDocumentsByLine> {
+export function linkedDocumentsByLine(viewer: Viewer, revisionId: string, tx?: DbOrTx): Promise<LinkedDocumentsByLine> {
+  return loadLinkedDocumentsByLine(viewer, revisionId, tx);
+}
+
+async function loadLinkedDocumentsByLine(viewer: Viewer, revisionId: string, tx?: DbOrTx): Promise<LinkedDocumentsByLine> {
   const revision = await repoFindQuoteRevisionById(viewer, revisionId, tx);
   if (!revision) return new Map();
   const numbered = await repoListNumberedExpensesByProject(viewer, revision.projectId, tx);

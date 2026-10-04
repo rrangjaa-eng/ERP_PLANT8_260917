@@ -46,6 +46,7 @@ function savedLine(version: number, unitPriceKrw: number): Line {
     cells: {} as Line["cells"],
     hasLinkedDocuments: false,
     readonlyReason: null,
+    linkedStatus: null,
   };
 }
 

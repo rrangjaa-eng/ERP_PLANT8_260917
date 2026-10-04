@@ -64,6 +64,7 @@ import {
 } from "./pre-estimate-field";
 import type { ProjectStatus } from "@/domain/projects/status-transitions";
 import { PROJECT_STATUS_WORD } from "@/domain/projects/status-word";
+import { lineStatusWord } from "@/app/(app)/projects/status-display";
 import styles from "./project-detail.module.css";
 
 export type QuoteTableOption = { id: string; name: string };
@@ -115,6 +116,8 @@ type DraftLine = {
   /** 04-30(D-66 · DR-35) — 연결 문서가 있는 줄의 읽기 전용 이유(서버 DTO). */
   hasLinkedDocuments: boolean;
   readonlyReason: string | null;
+  /** 05-15 — 줄 상태 열 파생값 재료(서버 DTO): 번호 있는 지출결의 중 반려 있음 / 결재 중 · 승인 있음 / 없음. */
+  linkedStatus: "rejected" | "active" | null;
 };
 
 type LineCells = Record<QuoteLineField, QuoteCellEditability>;
@@ -300,6 +303,7 @@ function fromDto(dto: QuoteLineDto): DraftLine {
     cells: dto.cellEditability,
     hasLinkedDocuments: dto.hasLinkedDocuments,
     readonlyReason: dto.readonlyReason,
+    linkedStatus: dto.linkedStatus,
   };
 }
 
@@ -342,6 +346,7 @@ function newDraftLine(defaultSubcategory: string, cells: LineCells, id: string =
     cells,
     hasLinkedDocuments: false,
     readonlyReason: null,
+    linkedStatus: null,
   };
 }
 
@@ -1970,7 +1975,7 @@ export function QuoteLedger({
       header: "상태",
       priority: "p1",
       pasteRole: "computed",
-      cell: (row) => (row.lineKind === "adjustment" ? "—" : lineStatusLabel(row.lineStatus)),
+      cell: (row) => (row.lineKind === "adjustment" ? "—" : <StatusTag variant="text" status={lineStatusWord(row)} />),
     },
     {
       key: "note",
@@ -2668,7 +2673,7 @@ export function QuoteLedger({
                 }) ?? "—",
             },
             { label: "비고", value: openSheetRow.note ?? "—" },
-            { label: "상태", value: lineStatusLabel(openSheetRow.lineStatus) },
+            { label: "상태", value: <StatusTag variant="text" status={lineStatusWord(openSheetRow)} /> },
           ]}
           action={sheetDoorAction(openSheetRow)}
         />

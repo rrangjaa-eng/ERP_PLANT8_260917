@@ -5,7 +5,7 @@ import { actionLog, approvalInstances, approvalRoutes, approvalSteps, expenses, 
 import { approveDocument } from "@/domain/approvals";
 import { isRouteStepSettingKey } from "@/domain/approvals/route-step-settings";
 import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND, getExpense, saveExpenseDraft } from "@/domain/expenses";
-import { setupExpenseProject, submitReadyDraft } from "./fixtures/expenses";
+import { addApprovedRevision, setupExpenseProject, submitReadyDraft } from "./fixtures/expenses";
 import { listMyInbox } from "@/domain/approvals";
 import { listLineDoors } from "@/domain/expenses";
 import { getDocumentKind } from "@/domain/approvals/kinds";
@@ -241,6 +241,22 @@ describe("listLineDoors — 견적 줄 표 행 행동 열", () => {
     const submitted = await listLineDoors(fx.pm, { projectId: fx.projectId });
     expect(submitted.cells[fx.lines.withVendor]).toMatchObject({ state: "closed", latestId: expenseId });
     expect(submitted.cells[fx.lines.withVendor]?.expenseId).toBeUndefined();
+  });
+
+  it("1차에 제출한 줄은 2차(계보)에서도 문이 닫혀 지출결의 열기 → 그 문서이고 새 문서를 만들지 않는다(D-66 · UI-SPEC S1)", async () => {
+    const fx = await setupExpenseProject();
+    const created = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
+    const expenseId = created.created[0]?.expenseId ?? "";
+    const submitted = await submitReadyDraft(fx.pm, expenseId);
+    const number = submitted.kind === "submitted" ? submitted.number : "";
+
+    const second = await addApprovedRevision(fx, []);
+    const secondLineId = second.lineIds.get("무대 제작") ?? "";
+    const doors = await listLineDoors(fx.pm, { projectId: fx.projectId });
+    expect(doors.cells[secondLineId]).toMatchObject({ state: "closed", latestId: expenseId });
+
+    const again = await createExpenseFromLines(fx.pm, { lineIds: [secondLineId] });
+    expect(again).toEqual({ created: [], blocked: [{ lineId: secondLineId, reason: `이 줄에 지출결의 ${number} 있음 · 지출결의 열기` }] });
   });
 
   it("expenses 쓰기 권한이 없는 계급에는 열이 서지 않는다", async () => {

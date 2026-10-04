@@ -1,6 +1,15 @@
+import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import { createExpenseFromLines } from "@/domain/expenses";
-import { delayServerActions, expectSheetDocumentLink, loginPage, waitForHydration } from "./leave-org";
+import { createAccount } from "@/domain/auth/accounts";
+import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
+import { getCurrentQuoteRevision } from "@/domain/quotes/lines";
+import { createRevisionFromCurrent } from "@/domain/quotes/revisions";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { insertRole } from "@/repositories/roles";
+import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
+import { seoulToday } from "@/lib/dates";
+import { delayServerActions, expectSheetDocumentLink, loginPage, waitForHydration, type Person } from "./leave-org";
 import { setupExpenseE2E, submitLineExpense, uniqueReceipt, type ExpenseE2E } from "./expense-fixture";
 
 // 05-05 Task 1 화면 트레이서(ROADMAP 05 기준 3): 견적 줄 `지출결의 올리기` → 폼(자동 채움) → 사진 한 장(브라우저 축소 · 해시 · 로컬 서명 주소) →
@@ -249,5 +258,157 @@ test.describe("D-66 잠금", () => {
     // 연결 없는 줄은 그대로 미착수다.
     const free = page.getByRole("row").filter({ hasText: fx.lines.hold.itemName });
     await expect(free.getByRole("gridcell").filter({ hasText: "미착수" })).toHaveCount(1);
+  });
+});
+
+// 05-15 Task 2 — 견적 줄 표 행 행동 셀 나머지 갈래 · 표 위 한 줄 · 누름 중 · 미저장 편집 · 한 줄 Ctrl+E · 힌트 줄. 열 순서는 Phase 4 표 그대로(비고 10 · 행동 11).
+const VENDOR_COLUMN = 3;
+const ITEM_COLUMN = 2;
+const NOTE_COLUMN = 10;
+const DESKTOP = { width: 1280, height: 800 };
+
+async function currentRevisionId(fx: ExpenseE2E): Promise<string> {
+  const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, fx.projectId);
+  if (!revision) throw new Error("현재 차수가 없다");
+  return revision.id;
+}
+
+function rowOf(page: Page, itemName: string) {
+  return page.getByRole("row").filter({ hasText: itemName });
+}
+
+function doorCellOf(page: Page, itemName: string) {
+  return rowOf(page, itemName).getByRole("gridcell").last();
+}
+
+// 거래처 정보(vendor.value)만 가린 company 범위 계급 — 지출결의 · 프로젝트 쓰기 권한은 있다(거래처 열이 없다).
+async function makeVendorHiddenPerson(): Promise<Person> {
+  const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E가림본부-${randomUUID().slice(0, 8)}` });
+  const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E가림팀-${randomUUID().slice(0, 8)}` });
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E가림-${randomUUID().slice(0, 8)}`, workScope: "company" });
+  for (const menu of ["projects", "expenses"]) {
+    for (const action of ["view", "write"] as const) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu, action, allowed: true });
+  }
+  for (const infoItem of ["project.value", "quote.amount", "vendor.value", "team.value", "person.value"]) {
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: infoItem !== "vendor.value" });
+  }
+  const name = `가림${randomUUID().slice(0, 4)}`;
+  const email = `e2e-hidden-${randomUUID()}@example.test`;
+  const { userId, tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name, roleId: role.id });
+  await assignTeam(SYSTEM_VIEWER, { userId, teamId: team.id, effectiveFrom: `${seoulToday().slice(0, 4)}-01-01` });
+  return { name, email, password: tempPassword, viewer: { id: userId, roleId: role.id } };
+}
+
+test.describe("행 행동 갈래", () => {
+  test("거래처 없는 줄은 글자 `거래처 없음` + 3차 `거래처 고르기`(누르면 그 줄 거래처 셀 편집), 취소 줄 셀은 비어 있다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.pm, DESKTOP);
+    await page.goto(`/projects/${fx.projectId}`);
+
+    const none = doorCellOf(page, fx.lines.noVendor.itemName);
+    await expect(none).toContainText("거래처 없음");
+    const pick = none.getByRole("button", { name: "거래처 고르기" });
+    await waitForHydration(pick);
+    await pick.click();
+    await expect(rowOf(page, fx.lines.noVendor.itemName).getByRole("gridcell").nth(VENDOR_COLUMN).getByRole("combobox", { name: "거래처" })).toBeVisible();
+
+    const cancelled = doorCellOf(page, fx.lines.cancelled.itemName);
+    await expect(cancelled).toHaveText("");
+    await expect(cancelled.getByRole("button")).toHaveCount(0);
+    await expect(cancelled.getByRole("link")).toHaveCount(0);
+  });
+
+  test("800 폭에서는 거래처 없는 줄 셀이 글자 `거래처 없음`만이고 `거래처 고르기`가 없다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.pm, { width: 800, height: 900 });
+    await page.goto(`/projects/${fx.projectId}`);
+    const none = doorCellOf(page, fx.lines.noVendor.itemName);
+    await expect(none).toHaveText("거래처 없음");
+    await expect(none.getByRole("button")).toHaveCount(0);
+  });
+
+  test("2차가 고객 승인 전이면 표 위 한 줄 하나가 이유를 말하고 어느 줄에도 `지출결의 올리기`가 없다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    await createRevisionFromCurrent(fx.pm.viewer, { projectId: fx.projectId, fromRevisionId: await currentRevisionId(fx) });
+    const page = await loginPage(browser, baseURL, fx.pm, DESKTOP);
+    await page.goto(`/projects/${fx.projectId}`);
+
+    await expect(page.getByText("2차 고객 승인 전 · 고객 승인 표시", { exact: true })).toHaveCount(1);
+    await expect(page.getByRole("button", { name: "지출결의 올리기" })).toHaveCount(0);
+  });
+
+  test("누르는 동안 그 버튼이 `지출결의 올리기…`이고 같은 열 나머지 버튼은 aria-disabled이다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.pm, DESKTOP);
+    await page.goto(`/projects/${fx.projectId}`);
+    const mine = doorCellOf(page, fx.lines.hold.itemName).getByRole("button");
+    const other = doorCellOf(page, fx.lines.retry.itemName).getByRole("button");
+    await waitForHydration(mine);
+    await delayServerActions(page, 2000);
+    await mine.click();
+    await expect(mine).toContainText("지출결의 올리기…");
+    await expect(other).toHaveAttribute("aria-disabled", "true");
+    await expect(page).toHaveURL(/\/expenses\/[0-9a-f-]{36}$/);
+  });
+
+  test("저장 안 한 편집이 있으면 이동하지 않고 합계 행 오른쪽에 `저장 안 한 편집 1칸 · 먼저 일괄 저장`", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.pm, DESKTOP);
+    await page.goto(`/projects/${fx.projectId}`);
+    const button = doorCellOf(page, fx.lines.hold.itemName).getByRole("button");
+    await waitForHydration(button);
+
+    const note = rowOf(page, fx.lines.retry.itemName).getByRole("gridcell").nth(NOTE_COLUMN);
+    await expect(async () => {
+      await note.focus();
+      await page.keyboard.press("Enter");
+      await expect(note.locator("input")).toBeFocused({ timeout: 1000 });
+    }).toPass();
+    await page.keyboard.type("메모");
+    await page.keyboard.press("Enter");
+
+    await button.click();
+    await expect(page.getByText("저장 안 한 편집 1칸 · 먼저 일괄 저장", { exact: true })).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/projects/${fx.projectId}$`));
+  });
+
+  test("편집 중이 아닐 때 활성 셀 줄에서 Ctrl+E는 폼으로 가고, 힌트 줄 끝 항목 · 셀 3차는 탭 순서 밖이며 항목 칸을 가리킨다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.pm, DESKTOP);
+    await page.goto(`/projects/${fx.projectId}`);
+    const hint = page.locator("p", { has: page.locator("kbd", { hasText: "Ctrl+E" }) });
+    await expect(hint).toHaveCount(1);
+    await expect(hint).toContainText("범위 복사 Ctrl+C / 붙여넣기 Ctrl+V");
+    await expect(hint).toHaveText(/지출결의 올리기 Ctrl\+E$/);
+    await expect(hint.locator("kbd")).toHaveCount(7);
+
+    const button = doorCellOf(page, fx.lines.hold.itemName).getByRole("button", { name: "지출결의 올리기" });
+    await waitForHydration(button);
+    await expect(button).toHaveAttribute("tabindex", "-1");
+    const describedBy = (await button.getAttribute("aria-describedby")) ?? "";
+    await expect(page.locator(`[id="${describedBy}"]`)).toHaveText(fx.lines.hold.itemName);
+
+    const item = rowOf(page, fx.lines.hold.itemName).getByRole("gridcell").nth(ITEM_COLUMN);
+    await expect(async () => {
+      await item.focus();
+      await page.keyboard.press("Control+e");
+      await expect(page).toHaveURL(/\/expenses\/[0-9a-f-]{36}$/, { timeout: 1500 });
+    }).toPass();
+    await expect(page.getByRole("status")).toHaveCount(0);
+  });
+
+  test("거래처 정보가 가려진 계급(거래처 열 없음)에게 거래처 있는 줄은 `지출결의 올리기`, 정말 없는 줄은 글자 `거래처 없음`만이다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const hidden = await makeVendorHiddenPerson();
+    const page = await loginPage(browser, baseURL, hidden, DESKTOP);
+    await page.goto(`/projects/${fx.projectId}`);
+    await expect(page.getByRole("columnheader", { name: "거래처" })).toHaveCount(0);
+
+    const withVendor = doorCellOf(page, fx.lines.hold.itemName);
+    await expect(withVendor.getByRole("button", { name: "지출결의 올리기" })).toBeVisible();
+    await expect(withVendor).not.toContainText("거래처 없음");
+    const none = doorCellOf(page, fx.lines.noVendor.itemName);
+    await expect(none).toHaveText("거래처 없음");
+    await expect(none.getByRole("button")).toHaveCount(0);
   });
 });

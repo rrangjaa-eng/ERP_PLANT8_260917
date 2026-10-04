@@ -206,3 +206,13 @@ export async function setSimpleSettingValue(
     });
   });
 }
+
+// 05-03 — 지출결의 번호 `{프로젝트 번호}{구분자}{순번}`(예 `26001-0004`, 사용자 결정 2026-09-26 #6). 카운터
+// `expense`의 period가 연도가 아니라 프로젝트 번호다(docs/EXPENSES.md 「번호」). 순번 시작값은 documentNumberFormat과
+// 같은 표시 오프셋이고, 자릿수를 넘친 순번은 자르지 않는다.
+export type ExpenseNumberFormat = { separator: string; seqDigits: number; seqStart: number };
+
+export function expenseNumberFormat(projectNumber: string, seq: number, format: ExpenseNumberFormat): string {
+  const displaySeq = seq + format.seqStart - 1;
+  return `${projectNumber}${format.separator}${String(displaySeq).padStart(format.seqDigits, "0")}`;
+}

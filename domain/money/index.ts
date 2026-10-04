@@ -203,3 +203,12 @@ export function grossFromTotal(totalKrw: number, vatRate: number, unit: Rounding
   const raw = totalKrw / (1 + vatRate);
   return round(raw, unit, method);
 }
+
+// 05-03(06-02와 같은 이름 · 계약) — 원 정수 합과 차이. 부호를 유지하고 빈 배열의 합은 0이다.
+export function sumKrw(values: readonly number[]): number {
+  return values.reduce((total, value) => total + value, 0);
+}
+
+export function diffKrw(a: number, b: number): number {
+  return a - b;
+}

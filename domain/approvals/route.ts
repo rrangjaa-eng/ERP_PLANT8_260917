@@ -23,7 +23,12 @@ const TRANSITIONS: Record<ApprovalStatus, Partial<Record<ApprovalEvent, Approval
   withdrawn: {},
 };
 
-export function nextStep(status: ApprovalStatus, event: ApprovalEvent): ApprovalStatus {
+// 05-01 E1: 선택 셋째 인자 — 종류가 회수 뒤 다시 제출을 허용할 때만 withdrawn --resubmit--> submitted 한 칸이 열린다.
+// 없으면 04.1 표 그대로(withdrawn은 모든 사건에 끝 상태).
+export type NextStepOptions = { allowResubmitFromWithdrawn?: boolean };
+
+export function nextStep(status: ApprovalStatus, event: ApprovalEvent, opts?: NextStepOptions): ApprovalStatus {
+  if (status === "withdrawn" && event === "resubmit" && opts?.allowResubmitFromWithdrawn) return "submitted";
   const next = TRANSITIONS[status][event];
   if (!next) throw new InvalidTransitionError(`허용되지 않는 결재 전이: ${status} → ${event}`);
   return next;

@@ -4,6 +4,7 @@ import type { visible as defaultVisible } from "@/domain/permissions/visible";
 import type { SelfApproval } from "@/domain/approvals/route";
 import type { InfoItemRef } from "@/domain/permissions/project";
 import type { ApprovalRouteScopeValue } from "@/domain/settings/keys";
+import type { DbOrTx } from "@/repositories/document-counters";
 
 // 04.1(ROADMAP 기준 1): 문서 종류 등록부 — 결재 모듈은 문서 종류를 하드코딩하지
 // 않는다. 종류 모듈(domain/leave 등)이 적재될 때 registerDocumentKind로 자기를
@@ -46,6 +47,8 @@ export type DetailFields = Record<string, unknown>;
 // 종류의 등록 DTO 명세(DtoSpec과 같은 모양 — 종류마다 키 타입이 달라 구조 타입으로 받는다).
 export type DetailDtoSpec = { readonly fields: ReadonlyArray<{ key: string; from: string; infoItem: InfoItemRef }> };
 
+export type ResubmittableStatus = "rejected" | "withdrawn";
+
 export type DocumentKindDef = {
   kind: string;
   label: string;
@@ -54,8 +57,14 @@ export type DocumentKindDef = {
   // 결재함 요약 — id 목록을 한 번에 읽어 종류의 DTO로 투영한 값을 돌려준다.
   describeDocuments: (viewer: Viewer, documentIds: string[], deps?: DescribeDeps) => Promise<Map<string, object>>;
   routeSettings?: RouteSettingDefs;
-  // 04.1-02: 반려 문서의 「다시 신청」을 보일지 — 있고 참일 때만.
-  canResubmit?: (viewer: Viewer) => Promise<boolean>;
+  // 04.1-02: 반려 문서의 「다시 신청」을 보일지 — 있고 참일 때만. 05-01(Round 4 D5): 엔진이 그 문서 id를 둘째 인자로 넘긴다.
+  canResubmit?: (viewer: Viewer, documentId?: string) => Promise<boolean>;
+  // 05-01 E1: 기안자가 같은 문서를 다시 제출할 수 있는 상태 — 없으면 ["rejected"](resubmittableStatuses).
+  resubmitFrom?: readonly ResubmittableStatus[];
+  // 05-01 E2: 최종 승인 훅 짝 — prepareFinalApproval은 트랜잭션 전(풀 읽기 가능), onFinalApprovalInTx는 최종 승인과
+  // 같은 tx 안에서 단계 기록 뒤 · 행동 로그 전에 불린다(tx를 받는 리포지토리 호출만). 던지면 승인 전체가 롤백된다.
+  prepareFinalApproval?: (viewer: Viewer, documentId: string) => Promise<unknown>;
+  onFinalApprovalInTx?: (viewer: Viewer, documentId: string, tx: DbOrTx, prepared: unknown) => Promise<void>;
   // 04.1-05(ENG-17): 상세 — 순서 고정: loadDetails(구조 필드, id 목록 한 번) → 엔진이 detailDto로 정보 항목별
   // project() → buildDetailRows(투영 결과만)가 문자열 행을 만든다. loadDetails가 있으면 나머지 둘도 필수다.
   loadDetails?: (viewer: Viewer, documentIds: string[], deps: LoadDetailsDeps) => Promise<Map<string, DetailFields>>;
@@ -75,7 +84,16 @@ export function registerDocumentKind(def: DocumentKindDef): void {
   if (def.loadDetails && (!def.detailDto || !def.buildDetailRows)) {
     throw new InvalidDocumentKindError(`상세 투영 명세 없음: ${def.kind}`);
   }
+  if (Boolean(def.prepareFinalApproval) !== Boolean(def.onFinalApprovalInTx)) {
+    throw new InvalidDocumentKindError(`최종 승인 훅 짝 없음: ${def.kind}`);
+  }
   REGISTRY.set(def.kind, def);
+}
+
+const DEFAULT_RESUBMIT_FROM: readonly ResubmittableStatus[] = ["rejected"];
+
+export function resubmittableStatuses(def: Pick<DocumentKindDef, "resubmitFrom">): readonly ResubmittableStatus[] {
+  return def.resubmitFrom ?? DEFAULT_RESUBMIT_FROM;
 }
 
 export function getDocumentKind(kind: string): DocumentKindDef {

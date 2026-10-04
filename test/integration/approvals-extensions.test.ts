@@ -76,7 +76,7 @@ function hookedKind(kind: string, route: RouteConfig): DocumentKindDef {
           entity: "test_ext",
           entityId: documentId,
           documentId,
-          detail: { prepared: prepared as Record<string, unknown> },
+          detail: { prepared },
         },
         tx,
       );

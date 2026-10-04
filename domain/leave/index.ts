@@ -280,7 +280,8 @@ registerDocumentKind({
   href: (documentId) => `/leave/${documentId}`,
   describeDocuments: describeLeaveDocuments,
   routeSettings: LEAVE_ROUTE_SETTINGS,
-  canResubmit: canWriteLeave,
+  // 05-01(Round 4 D5): 엔진이 둘째 인자로 문서 id를 넘긴다 — 연차는 보지 않고, canWriteLeave의 deps 자리에 들어가지 않게 감싼다.
+  canResubmit: (viewer) => canWriteLeave(viewer),
   loadDetails: loadLeaveDetails,
   detailDto: LEAVE_DETAIL_DTO_SPEC,
   buildDetailRows: buildLeaveDetailRows,

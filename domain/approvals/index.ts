@@ -30,6 +30,7 @@ import {
   InvalidTransitionError,
   nextStep,
   type ApprovalEvent,
+  type NextStepOptions,
   walkRoute,
   type ApprovalStatus,
   type RouteStep,
@@ -38,7 +39,7 @@ import {
   type SnapshotPerson,
   type WalkRouteResult,
 } from "@/domain/approvals/route";
-import { getDocumentKind, type DetailFields, type DocumentDetailRows, type LoadDetailsDeps, type RouteConfigStep } from "@/domain/approvals/kinds";
+import { getDocumentKind, resubmittableStatuses, type DetailFields, type DocumentKindDef, type DocumentDetailRows, type LoadDetailsDeps, type RouteConfigStep } from "@/domain/approvals/kinds";
 import { buildConflictMessage, isApprovalParty } from "@/domain/approvals/conflict-message";
 import { loadActionLogGate as defaultLoadActionLogGate, recordActionInTx, type ActionLogGate, type TxLogDeps } from "@/domain/approvals/tx-log";
 import {
@@ -364,11 +365,11 @@ function warnIfBlocked(graph: ApprovalGraph, walk: WalkRouteResult | null): void
 type TransitionEvent = "approve" | "reject" | "withdraw" | "resubmit";
 
 // 상태 기계 표(nextStep)가 그 사건을 허용하는가 — 승인은 approve · approve_final 둘 중 하나라도.
-function allowsEvent(status: ApprovalStatus, event: TransitionEvent): boolean {
+function allowsEvent(status: ApprovalStatus, event: TransitionEvent, opts?: NextStepOptions): boolean {
   const events: ApprovalEvent[] = event === "approve" ? ["approve", "approve_final"] : [event];
   return events.some((candidate) => {
     try {
-      nextStep(status, candidate);
+      nextStep(status, candidate, opts);
       return true;
     } catch (error) {
       if (error instanceof InvalidTransitionError) return false;
@@ -380,9 +381,14 @@ function allowsEvent(status: ApprovalStatus, event: TransitionEvent): boolean {
 // (2) 사건별 종결 검사(CX-B1) — 「(상태, 사건, viewer가 기안자인가) → 이 사건에 닫혔는가」 한 곳.
 // nextStep 허용 표에서 읽는다: approved · withdrawn은 모든 사건에 닫혔고, rejected에서 열린 사건은
 // resubmit 하나이며 그것도 기안자에게만이다(반려에서 나가는 유일한 전이). 진행 중 상태의 resubmit도 닫힘.
-function closedFor(status: ApprovalStatus, event: TransitionEvent, isDrafter: boolean): boolean {
-  if (!allowsEvent(status, event)) return true;
-  return event === "resubmit" && !isDrafter;
+// 05-01 E1: resubmit은 종류의 resubmitFrom(없으면 rejected만)에 지금 상태가 있을 때만 열리고, withdrawn이 있으면
+// nextStep에 allowResubmitFromWithdrawn을 준다 — approve · reject · withdraw에는 withdrawn이 여전히 닫혔다.
+function closedFor(status: ApprovalStatus, event: TransitionEvent, isDrafter: boolean, kind: string): boolean {
+  if (event !== "resubmit") return !allowsEvent(status, event);
+  if (!isDrafter) return true;
+  const from: readonly string[] = resubmittableStatuses(getDocumentKind(kind));
+  if (!from.includes(status)) return true;
+  return !allowsEvent(status, event, { allowResubmitFromWithdrawn: from.includes("withdrawn") });
 }
 
 // 지금 행으로 만든 상세 문구(관련자에게만) — 마지막으로 바꾼 사람(updated_by)은 기안자이거나 처리 기록의 한 사람이다.
@@ -401,6 +407,7 @@ async function conflictMessageOf(viewer: Viewer, graph: ApprovalGraph, attempted
     actorName,
     at: instance.updatedAt,
     attempted,
+    versionReason: instance.versionReason === "evidence" ? "evidence" : null,
   });
 }
 
@@ -482,7 +489,7 @@ async function runTransition<T>(
     throw await refuseStaleOrClosed(viewer, graph, holders, input.event, "conflict", fields, pre);
   }
   // (2) 사건별 종결.
-  if (closedFor(status, input.event, isDrafter)) {
+  if (closedFor(status, input.event, isDrafter, instance.documentKind)) {
     const reason = IN_PROGRESS.includes(status) ? "invalid_state" : "final";
     throw await refuseStaleOrClosed(viewer, graph, holders, input.event, reason, fields, pre);
   }
@@ -580,12 +587,24 @@ export async function describeDeduction(viewer: Viewer, input: { kind: string; d
   return typeof daysQuarters === "number" && daysQuarters > 0 && typeof days === "string" ? days : null;
 }
 
+// 종류의 최종 승인 훅 짝(등록이 둘 다 있거나 둘 다 없음을 보장한다) — 없으면 null.
+function finalApprovalHookOf(kind: string): { prepare: NonNullable<DocumentKindDef["prepareFinalApproval"]>; inTx: NonNullable<DocumentKindDef["onFinalApprovalInTx"]> } | null {
+  const def = getDocumentKind(kind);
+  return def.prepareFinalApproval && def.onFinalApprovalInTx ? { prepare: def.prepareFinalApproval, inTx: def.onFinalApprovalInTx } : null;
+}
+
 export async function approveDocument(
   viewer: Viewer,
   input: { instanceId: string; expectedVersion: number },
   deps?: ApprovalDeps,
 ): Promise<ApproveResult> {
   const pre = await readTransitionPre(viewer, deps);
+  // 05-01 E2(Round 4 D6): 최종 승인 훅의 읽기 짝은 트랜잭션 전 — 입력에 종류 · 문서 id가 없어 풀로 그래프를 한 번 읽는다.
+  // 최종 여부는 트랜잭션 안에서야 알므로 훅이 있는 종류면 매 승인마다 읽는다(읽기 전용). 그래프가 없으면 건너뛰고
+  // 트랜잭션 안 (1)~(3)이 04.1대로 거부한다. 종류 · 문서 id는 바뀌지 않는 열이라 이 값을 트랜잭션 안에서 그대로 쓴다.
+  const target = await findApprovalGraphById(viewer, input.instanceId);
+  const finalHook = target ? finalApprovalHookOf(target.instance.documentKind) : null;
+  const prepared = target && finalHook ? await finalHook.prepare(viewer, target.instance.documentId) : undefined;
   return withTransaction(async (tx) => {
     const { updated, result } = await runTransition(viewer, { ...input, event: "approve" }, pre, tx, ({ graph, route, outcome }) => {
       if (!outcome) throw new Error("승인 자리 없음");
@@ -632,6 +651,10 @@ export async function approveDocument(
             const row = route.steps.find((step) => step.stepIndex === outcome.stepIndex);
             if (!row) throw new Error("지금 단계 행 없음");
             await recordStepAction(viewer, { stepId: row.id, actedBy: viewer.id, action: "approved", selfApproved }, tx);
+          }
+          // 05-01 E2: 최종 승인(계산된 status approved)이면 단계 기록 뒤 · 행동 로그 전에 같은 tx로 종류의 훅 — 던지면 전부 롤백.
+          if (status === "approved" && finalHook && target) {
+            await finalHook.inTx(viewer, target.instance.documentId, tx, prepared);
           }
           return {
             detail: { stepIndex, final: status === "approved" },
@@ -733,8 +756,10 @@ export async function resubmitDocument(
   const pre: TransitionPre = { snapshot: prepared.snapshot, gate: prepared.gate, appendActionLog: deps?.appendActionLog };
   const { updated } = await runTransition(viewer, { ...input, event: "resubmit" }, pre, tx, ({ graph }) => {
     const round = graph.instance.currentRound + 1;
+    const status = graph.instance.status as ApprovalStatus;
     return {
-      status: nextStep(graph.instance.status as ApprovalStatus, "resubmit"),
+      // (2)의 closedFor가 종류의 resubmitFrom으로 이미 걸렀다 — withdrawn이면 그 한 칸만 연다(05-01 E1).
+      status: nextStep(status, "resubmit", status === "withdrawn" ? { allowResubmitFromWithdrawn: true } : undefined),
       currentRound: round,
       actionType: "document_submit",
       write: async () => {
@@ -849,18 +874,19 @@ async function readApprovalState(
 // `다시 신청`(CX-W1). 기안자 = 지금 담당(W5 · W8)이면 [승인, 회수]이고 `반려`는 없다(CXF-B-F01).
 async function possibleActions(
   viewer: Viewer,
-  state: { instance: { status: string; drafterId: string; documentKind: string }; isCandidate: boolean },
+  state: { instance: { status: string; drafterId: string; documentKind: string; documentId: string }; isCandidate: boolean },
 ): Promise<ApprovalAction[]> {
   const { instance } = state;
   const status = instance.status as ApprovalStatus;
   const isDrafter = instance.drafterId === viewer.id;
   const actions: ApprovalAction[] = [];
-  if (state.isCandidate && !closedFor(status, "approve", isDrafter)) actions.push("approve");
-  if (state.isCandidate && !isDrafter && !closedFor(status, "reject", isDrafter)) actions.push("reject");
-  if (isDrafter && !closedFor(status, "withdraw", isDrafter)) actions.push("withdraw");
-  if (isDrafter && !closedFor(status, "resubmit", isDrafter)) {
-    const canResubmit = getDocumentKind(instance.documentKind).canResubmit;
-    if (canResubmit && (await canResubmit(viewer))) actions.push("resubmit");
+  const kind = instance.documentKind;
+  if (state.isCandidate && !closedFor(status, "approve", isDrafter, kind)) actions.push("approve");
+  if (state.isCandidate && !isDrafter && !closedFor(status, "reject", isDrafter, kind)) actions.push("reject");
+  if (isDrafter && !closedFor(status, "withdraw", isDrafter, kind)) actions.push("withdraw");
+  if (isDrafter && !closedFor(status, "resubmit", isDrafter, kind)) {
+    const canResubmit = getDocumentKind(kind).canResubmit;
+    if (canResubmit && (await canResubmit(viewer, instance.documentId))) actions.push("resubmit");
   }
   return actions;
 }

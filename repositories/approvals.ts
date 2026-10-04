@@ -135,8 +135,35 @@ export async function updateInstanceStatus(
       version: sql`${approvalInstances.version} + 1`,
       updatedBy: viewer.id,
       updatedAt: new Date(),
+      // 05-01 E4: 상태가 바뀌면 증빙 변경 표식은 지운다.
+      versionReason: null,
     })
     .where(and(eq(approvalInstances.id, input.id), eq(approvalInstances.version, input.expectedVersion)))
+    .returning();
+  return row ?? null;
+}
+
+// 05-01 E4: 상태 · 차수는 그대로 두고 version만 + 1(이유 · 바꾼 사람 · 시각과 함께) — 그 전에 문서를 연 결재자의
+// 승인이 version 불일치로 막힌다. expectedVersion이 있으면 조건부(0행 = null).
+export async function bumpInstanceVersion(
+  viewer: Viewer,
+  input: { instanceId: string; expectedVersion?: number; updatedBy: string; reason: "evidence" },
+  tx: DbOrTx,
+): Promise<ApprovalInstanceRow | null> {
+  void viewer;
+  const [row] = await tx
+    .update(approvalInstances)
+    .set({
+      version: sql`${approvalInstances.version} + 1`,
+      updatedBy: input.updatedBy,
+      updatedAt: new Date(),
+      versionReason: input.reason,
+    })
+    .where(
+      input.expectedVersion === undefined
+        ? eq(approvalInstances.id, input.instanceId)
+        : and(eq(approvalInstances.id, input.instanceId), eq(approvalInstances.version, input.expectedVersion)),
+    )
     .returning();
   return row ?? null;
 }

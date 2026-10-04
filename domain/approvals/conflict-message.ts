@@ -27,11 +27,15 @@ export type ConflictState = {
   actorName: string | null;
   at: Date;
   attempted: ConflictAttempt;
+  // 05-01 E4: 상태는 그대로 version만 오른 이유 — 제출 뒤 증빙 변경(추가 · 삭제 공통).
+  versionReason?: "evidence" | null;
 };
 
 export function buildConflictMessage(state: ConflictState): string {
   const who = (verb: string) =>
     state.actorName ? `${state.actorName}${subjectParticle(state.actorName)} ${SEOUL_TIME.format(state.at)}에 ${verb}${NEXT}` : NOT_HOLDER;
+  // 상태 switch보다 먼저 — 증빙 변경은 in_review · 차수 1 · 차수 2 submitted 어디서든 같은 문구다(05-01 Round 4 D1).
+  if (state.versionReason === "evidence") return who("증빙을 바꿈");
   switch (state.status) {
     case "in_review":
       return who("승인함");

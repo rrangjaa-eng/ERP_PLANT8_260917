@@ -169,6 +169,13 @@
       "when": 1790927956386,
       "tag": "0023_custom_field_admin",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1791098401129,
+      "tag": "0024_white_guardsmen",
+      "breakpoints": true
     }
   ]
 }

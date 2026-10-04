@@ -23,6 +23,8 @@ export const approvalInstances = pgTable(
     updatedBy: text("updated_by").references(() => users.id),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
+    // 05-01 E4: 상태를 바꾸지 않고 version만 올린 이유(제출 뒤 증빙 변경 = 'evidence'). 상태 전이가 null로 되돌린다.
+    versionReason: text("version_reason"),
   },
   (table) => [
     unique("approval_instances_kind_document_key").on(table.documentKind, table.documentId),
@@ -31,6 +33,7 @@ export const approvalInstances = pgTable(
       "approval_instances_status_check",
       sql`${table.status} IN ('draft','submitted','in_review','approved','rejected','withdrawn')`,
     ),
+    check("approval_instances_version_reason_check", sql`${table.versionReason} IS NULL OR ${table.versionReason} IN ('evidence')`),
   ],
 );
 

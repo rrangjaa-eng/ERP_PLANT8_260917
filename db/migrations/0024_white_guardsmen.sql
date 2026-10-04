@@ -1,0 +1,2 @@
+ALTER TABLE "approval_instances" ADD COLUMN "version_reason" text;--> statement-breakpoint
+ALTER TABLE "approval_instances" ADD CONSTRAINT "approval_instances_version_reason_check" CHECK ("approval_instances"."version_reason" IS NULL OR "approval_instances"."version_reason" IN ('evidence'));

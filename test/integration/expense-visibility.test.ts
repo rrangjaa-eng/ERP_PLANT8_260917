@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { approvalInstances, expenses } from "@/db/schema";
+import { approvalInstances, expenses, projects } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { createTeam } from "@/domain/org";
@@ -278,5 +278,49 @@ describe("문서 하나 판정 순서 (05-08 검토 #4)", () => {
     expect(steps).not.toHaveBeenCalled();
     expect(await canSeeExpense(w.lead2, doc, { today: TODAY, listCurrentSteps: steps })).toBe(false);
     expect(steps).toHaveBeenCalledTimes(1);
+  });
+});
+
+// 05-08 검토 #6(시험 공백): 팀 갈래는 「그날 내 팀」과 「지금 문서의 팀」(팀 비용 = 귀속 팀, 견적 줄 문서 = 지금 프로젝트 팀)으로 가르고,
+// 삭제된 번호 문서는 누구에게나 없는 문서다. 프로젝트 팀을 바꾸는 · 지출결의를 지우는 도메인 경로가 아직 없어 그 두 사실만 행을 직접 고친다.
+describe("팀 이동 · 프로젝트 팀 변경 · 삭제 (05-08 검토 #6)", () => {
+  it("팀장이 팀을 옮기면 그날부터 옛 팀 문서는 사라지고 새 팀 문서가 보인다(기준일 = today)", async () => {
+    const w = await setup();
+    const MOVED_ON = "2026-10-01";
+    await insertMembership(SYSTEM_VIEWER, { userId: w.lead.id, teamId: await teamIdByName("기획2팀"), effectiveFrom: MOVED_ON });
+    expect(idsOf(await listExpenses(w.lead, { status: "open" }, { today: TODAY })).sort()).toEqual([w.teamDocId, w.lineDocId].sort());
+    expect(idsOf(await listExpenses(w.lead, { status: "open" }, { today: MOVED_ON }))).toEqual([w.pm2DocId]);
+    expect(await canSeeExpense(w.lead, await docOf(w.teamDocId), { today: MOVED_ON })).toBe(false);
+    expect(await canSeeExpense(w.lead, await docOf(w.pm2DocId), { today: MOVED_ON })).toBe(true);
+  });
+
+  it("견적 줄 문서는 지금 프로젝트 팀을 따른다 — 프로젝트가 기획2팀으로 옮기면 기획2팀 팀장이 보고 기획1팀 팀장은 못 본다(팀 비용 문서는 귀속 팀 그대로)", async () => {
+    const w = await setup();
+    await db.update(projects).set({ teamId: await teamIdByName("기획2팀") }).where(eq(projects.id, w.projectId));
+    expect(idsOf(await listExpenses(w.lead, { status: "open" }, { today: TODAY }))).toEqual([w.teamDocId]);
+    expect(idsOf(await listExpenses(w.lead2, { status: "open" }, { today: TODAY })).sort()).toEqual([w.lineDocId, w.pm2DocId].sort());
+    expect(await canSeeExpense(w.lead, await docOf(w.lineDocId), { today: TODAY })).toBe(false);
+    expect(await canSeeExpense(w.lead2, await docOf(w.lineDocId), { today: TODAY })).toBe(true);
+  });
+
+  it("삭제된 번호 문서는 지금 단계 후보 결재자 · 팀장에게 없는 문서다(목록 · 문서 하나 둘 다)", async () => {
+    const w = await setup();
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `삭제 결재-${randomUUID()}`, workScope: "team" });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "view", allowed: true });
+    const approver = await makePerson("삭제결재", role.id, "경영관리팀");
+    await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_EXPENSE_STEP1_ENABLED, true);
+    await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_EXPENSE_STEP1_ROLE_ID, role.id);
+    await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_EXPENSE_STEP1_SCOPE, "company");
+    const submitted = await submitReadyDraft(w.pm, w.draftId, { now: NOW });
+    expect(submitted.kind).toBe("submitted");
+    const doc = await docOf(w.draftId);
+    for (const viewer of [approver, w.lead]) expect(await canSeeExpense(viewer, doc, { today: TODAY })).toBe(true);
+
+    await db.update(expenses).set({ deletedAt: new Date() }).where(eq(expenses.id, w.draftId));
+    for (const viewer of [approver, w.lead]) {
+      expect(await canSeeExpense(viewer, doc, { today: TODAY })).toBe(false);
+      expect(await getExpense(viewer, { expenseId: w.draftId })).toBeNull();
+      expect(idsOf(await listExpenses(viewer, { status: "open" }, { today: TODAY }))).not.toContain(w.draftId);
+    }
   });
 });

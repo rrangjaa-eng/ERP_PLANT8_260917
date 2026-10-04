@@ -13,6 +13,8 @@ import {
   quoteAmountWithinBound,
   KRW_COLUMN_MIN,
   KRW_COLUMN_MAX,
+  sumKrw,
+  diffKrw,
   type Money,
   type MoneyInput,
 } from "@/domain/money";
@@ -303,5 +305,20 @@ describe("quoteAmountWithinBound", () => {
   it("USD 수량 2 × USD 400,000,000 @1,350(원화 1.08조)은 거짓 · 수량 0은 기본 1이라 참", () => {
     expect(quoteAmountWithinBound(2, { currency: "USD", amount: 400_000_000, fxRate: 1350 })).toBe(false);
     expect(quoteAmountWithinBound(0, krw(1_000_000))).toBe(true);
+  });
+});
+
+// 05-03 — 원 정수 합 · 차이(06-02와 같은 이름 · 계약: 부호 유지, 빈 배열 합 0).
+describe("sumKrw · diffKrw", () => {
+  it("빈 배열의 합은 0이다", () => {
+    expect(sumKrw([])).toBe(0);
+  });
+
+  it("부호를 유지해 더한다 — [1, -2, 3] = 2", () => {
+    expect(sumKrw([1, -2, 3])).toBe(2);
+  });
+
+  it("diffKrw(10, 3) = 7", () => {
+    expect(diffKrw(10, 3)).toBe(7);
   });
 });

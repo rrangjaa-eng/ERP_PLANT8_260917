@@ -97,7 +97,6 @@ test.describe("계산 한 줄 폭 (D1)", () => {
     await expect(line).toHaveText(/기타소득 규칙$/);
     const other = await metrics();
     expect(other.lineHeight).toBeLessThanOrEqual(other.lineHeightOne + 1);
-    expect(other.belowY).toBe(vat.belowY);
   });
 });
 

@@ -65,6 +65,14 @@
   overflow-wrap: anywhere;
 }
 
+/* 700 이상에서 한 줄(D1) — 짧은 칸(280) 폭에 갇히지 않고 긴 칸 폭까지만 넓어진다. 폰은 전폭 그대로 ` · ` 사이에서 꺾인다. */
+@media (min-width: 700px) {
+  .taxLine {
+    width: max-content;
+    max-width: var(--field-w-long);
+  }
+}
+
 .strong {
   font-weight: var(--fw-bold);
 }

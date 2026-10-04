@@ -712,8 +712,10 @@ test.describe("차수 섹션과 이전 차수 읽기 섹션 (04-24 Task 3 — S5
     await expect(section.locator("input, select, textarea")).toHaveCount(0);
     await expect(section.getByRole("button")).toHaveCount(0);
     await expect(section.getByText("조정", { exact: true })).toHaveCount(0);
+    // UI-SPEC S1 :350 — 이전 차수 읽기 표에는 행동 열이 없다. 현재 표 맨 끝 숨긴 머리글 「행동」만 빼고 같다.
     const currentHeaders = await quoteTable(page).locator("thead th").allTextContents();
-    expect(await readTable.locator("thead th").allTextContents()).toEqual(currentHeaders);
+    expect(currentHeaders.at(-1)).toBe("행동");
+    expect(await readTable.locator("thead th").allTextContents()).toEqual(currentHeaders.slice(0, -1));
     expect(requests).toBe(1);
 
     const open2 = rowOf(2).getByRole("button");

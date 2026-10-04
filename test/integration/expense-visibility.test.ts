@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { approvalInstances, expenses } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { createTeam } from "@/domain/org";
-import { approveDocument, getApprovalView } from "@/domain/approvals";
+import { approveDocument, getApprovalView, listCurrentSteps } from "@/domain/approvals";
 import { setSettingValue } from "@/domain/settings/registry";
 import {
   APPROVAL_ROUTE_EXPENSE_STEP1_ENABLED,
@@ -266,5 +266,17 @@ describe("두 갈래가 같은 기준일 (05-08 검토 #3)", () => {
 
     expect(await canSeeExpense(mover, doc, { today: TODAY })).toBe(false);
     expect(await canSeeExpense(mover, doc, { today: "2099-01-05" })).toBe(true);
+  });
+});
+
+describe("문서 하나 판정 순서 (05-08 검토 #4)", () => {
+  it("기안자 · 전사 · 팀 갈래로 보이면 진행 중 인스턴스 walk(listCurrentSteps)를 부르지 않고, 셋 다 아닐 때만 부른다", async () => {
+    const w = await setup();
+    const doc = await docOf(w.teamDocId);
+    const steps = vi.fn(listCurrentSteps);
+    for (const viewer of [w.pm, w.ceo, w.lead]) expect(await canSeeExpense(viewer, doc, { today: TODAY, listCurrentSteps: steps })).toBe(true);
+    expect(steps).not.toHaveBeenCalled();
+    expect(await canSeeExpense(w.lead2, doc, { today: TODAY, listCurrentSteps: steps })).toBe(false);
+    expect(steps).toHaveBeenCalledTimes(1);
   });
 });

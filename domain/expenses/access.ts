@@ -14,7 +14,11 @@ import { isExpenseInScope, type ExpenseScope } from "@/repositories/expenses";
 // 결재 문서 종류 키 — domain/expenses/index.ts가 이 값을 다시 내보낸다(index → access 한 방향, 순환 없음).
 export const EXPENSE_DOCUMENT_KIND = "expense";
 
-export type ExpenseAccessDeps = { today?: string };
+export type ExpenseAccessDeps = {
+  today?: string;
+  // 진행 중 인스턴스 walk — 테스트가 호출 여부를 세려고 주입한다(05-08 검토 #4).
+  listCurrentSteps?: typeof listCurrentSteps;
+};
 
 export type VisibleExpenseScope = ExpenseScope & {
   // 진행 중 인스턴스의 지금 단계(목록의 `{단계} 결재 중` 재료) — 같은 walk 결과를 다시 계산하지 않게 함께 돌려준다.
@@ -22,28 +26,38 @@ export type VisibleExpenseScope = ExpenseScope & {
 };
 
 // 「내 지금 팀」 · 업무 범위는 권한 판정 사실이라 정보 노출 투영을 거치지 않는 loadActorTeamScope로 읽는다(Phase 4 판정과 같은 입구).
-export async function visibleExpenseScope(viewer: Viewer, deps?: ExpenseAccessDeps): Promise<VisibleExpenseScope> {
-  const today = deps?.today ?? seoulToday();
-  const [canView, canTeam, teamScope, currentSteps] = await Promise.all([
+// 지금 단계 후보 갈래(walk가 드는 것)만 빼고 나머지 갈래 — 기안자 · 전사 · 팀 · 처리 기록(EXISTS).
+async function scopeWithoutCandidates(viewer: Viewer, today: string): Promise<ExpenseScope> {
+  const [canView, canTeam, teamScope] = await Promise.all([
     can(viewer, "expenses", "view"),
     can(viewer, "expenses.team", "view"),
     loadActorTeamScope(viewer, { todayKst: today }),
-    listCurrentSteps(viewer, { kind: EXPENSE_DOCUMENT_KIND }, { today }),
   ]);
-  const company = canView && teamScope.workScope === "company";
-  const currentHolderInstanceIds = [...currentSteps].filter(([, step]) => step.viewerIsCandidate).map(([instanceId]) => instanceId);
   return {
     drafterId: viewer.id,
-    company,
+    company: canView && teamScope.workScope === "company",
     // 팀 갈래도 `expenses` 보기를 요구한다 — 목록(메뉴 보기)과 문서 · 증빙 GET이 같은 답을 내게(05-08 검토 #2).
     teamIds: canView && canTeam && teamScope.teamId ? [teamScope.teamId] : [],
     actedByUserId: viewer.id,
-    currentHolderInstanceIds,
-    currentSteps,
+    currentHolderInstanceIds: [],
   };
 }
 
-// 문서 하나 — 목록과 같은 범위 조건. 기안자 · 작성 중은 조회 없이 가른다.
+function candidateInstanceIds(currentSteps: Map<string, CurrentStep>): string[] {
+  return [...currentSteps].filter(([, step]) => step.viewerIsCandidate).map(([instanceId]) => instanceId);
+}
+
+export async function visibleExpenseScope(viewer: Viewer, deps?: ExpenseAccessDeps): Promise<VisibleExpenseScope> {
+  const today = deps?.today ?? seoulToday();
+  const [scope, currentSteps] = await Promise.all([
+    scopeWithoutCandidates(viewer, today),
+    (deps?.listCurrentSteps ?? listCurrentSteps)(viewer, { kind: EXPENSE_DOCUMENT_KIND }, { today }),
+  ]);
+  return { ...scope, currentHolderInstanceIds: candidateInstanceIds(currentSteps), currentSteps };
+}
+
+// 문서 하나 — 목록과 같은 범위 조건. 순서: 기안자 · 작성 중(조회 없음) → 전사 · 팀 · 처리 기록(한 줄 조회) → 그래도 아니면 그때만
+// 진행 중 인스턴스를 walk해 지금 단계 후보(05-08 검토 #4 — 문서 화면 한 번에 판정이 여러 번 돌아 walk 비용을 필요할 때만 낸다).
 export async function canSeeExpense(
   viewer: Viewer,
   expense: { id: string; drafterId: string; number: string | null },
@@ -51,6 +65,10 @@ export async function canSeeExpense(
 ): Promise<boolean> {
   if (expense.drafterId === viewer.id) return true;
   if (expense.number === null) return false;
-  const scope = await visibleExpenseScope(viewer, deps);
-  return isExpenseInScope(viewer, { id: expense.id, scope, documentKind: EXPENSE_DOCUMENT_KIND });
+  const today = deps?.today ?? seoulToday();
+  const scope = await scopeWithoutCandidates(viewer, today);
+  if (await isExpenseInScope(viewer, { id: expense.id, scope, documentKind: EXPENSE_DOCUMENT_KIND })) return true;
+  const holderIds = candidateInstanceIds(await (deps?.listCurrentSteps ?? listCurrentSteps)(viewer, { kind: EXPENSE_DOCUMENT_KIND }, { today }));
+  if (holderIds.length === 0) return false;
+  return isExpenseInScope(viewer, { id: expense.id, scope: { ...scope, currentHolderInstanceIds: holderIds }, documentKind: EXPENSE_DOCUMENT_KIND });
 }

@@ -35,7 +35,8 @@ export async function visibleExpenseScope(viewer: Viewer, deps?: ExpenseAccessDe
   return {
     drafterId: viewer.id,
     company,
-    teamIds: canTeam && teamScope.teamId ? [teamScope.teamId] : [],
+    // 팀 갈래도 `expenses` 보기를 요구한다 — 목록(메뉴 보기)과 문서 · 증빙 GET이 같은 답을 내게(05-08 검토 #2).
+    teamIds: canView && canTeam && teamScope.teamId ? [teamScope.teamId] : [],
     actedByUserId: viewer.id,
     currentHolderInstanceIds,
     currentSteps,

@@ -176,6 +176,19 @@ describe("문서 · 증빙 목록 · 서명 GET이 같은 판정 (404)", () => {
   });
 });
 
+describe("팀 갈래는 expenses 보기도 요구한다 (05-08 검토 #2)", () => {
+  it("팀장 계급의 expenses 보기를 끄고 expenses.team만 남기면 팀원 문서가 문서 화면 · 증빙 목록 · 서명 GET에서 없는 문서다", async () => {
+    const w = await setup();
+    const storage = createMemoryStorage();
+    const fileId = (await listEvidence(w.pm, { ownerKind: "expense", ownerId: w.teamDocId }))[0]?.id;
+    if (!fileId) throw new Error("증빙 없음");
+    await upsertPermission(SYSTEM_VIEWER, { roleId: TEAM_LEAD_ROLE_ID, menu: "expenses", action: "view", allowed: false });
+    expect(await getExpense(w.lead, { expenseId: w.teamDocId })).toBeNull();
+    expect(await listEvidence(w.lead, { ownerKind: "expense", ownerId: w.teamDocId })).toEqual([]);
+    expect(await createEvidenceViewUrl(w.lead, { fileId }, { storage })).toBeNull();
+  });
+});
+
 describe("결재 관련자 두 갈래 (지금 단계 후보 · 처리 기록 — P3-6)", () => {
   it("1단 담당이 된 다른 팀 사람은 승인 전엔 후보로, 승인 뒤엔 처리 기록으로 그 문서를 보고 처리하지 않은 다른 문서는 보지 않는다", async () => {
     const w = await setup();

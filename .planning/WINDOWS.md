@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 20
+open_count: 21
 waived_count: 1
 fixed_count: 20
-total_count: 41
-last_updated: 2026-10-02T18:23:03.602Z
+total_count: 42
+last_updated: 2026-10-04T09:06:45.235Z
 ---
 
 # Broken Windows Ledger
@@ -56,6 +56,7 @@ last_updated: 2026-10-02T18:23:03.602Z
 | 39 | 04.5 | stub | app/(app)/admin/field-definitions/field-definition-form.tsx |  | 등록 폼이 서버 오류·칸 오류·막힘 이유를 아직 보이지 않음(결과 줄·칸 오류·이유 자리·제출 중 잠금·정렬 기본값은 04.5-08 E2 행) | fixed |  | 2026-10-02T08:45:12.785Z | 2026-10-02T09:21:08.231Z |
 | 40 | 04.5 | deviation | app/(app)/admin/holidays/holiday-form.tsx | 37 | 칸 이름 구분자 「, 」(SYSTEM §7-15 · DECISIONS 2026-09-25 U2) 미이전 — 공휴일 폼과 app/(app)/certs/events/request-rules.ts:26이 아직 「 · 」로 칸 이름을 잇는다(04.5-09가 SYSTEM 예시만 고침) | fixed |  | 2026-10-02T09:44:02.256Z | 2026-10-02T13:39:45.912Z |
 | 41 | 04.6 | unrun-verify | test/e2e/side-panel.spec.ts |  | 04.6-04 @wave-merge 높이 둘(PC 입력 40 · 행동 줄 40 / 폰 입력 40 · 행동 줄 44)은 04.6-07·08이 --field-h를 읽어야 초록 — 합본 웨이브 뒤 실행 | open |  | 2026-10-02T18:23:03.602Z |  |
+| 42 | 05 | deviation | app/(app)/admin/settings/settings-form-client.tsx | 711 | 결재선 복원 줄이 단계 칸 있는 섹션마다 그려져 연차 단계 보관본이 지출결의 결재선 섹션에도 같은 글자로 보인다(종류 구분 없는 stepList) — 05-03은 화면을 고치지 않고 E2E 로케이터만 연차 섹션으로 좁힘, 화면 플랜이 섹션별 복원으로 고친다 | open |  | 2026-10-04T09:06:45.235Z |  |
 
 ````json
 [
@@ -589,6 +590,19 @@ last_updated: 2026-10-02T18:23:03.602Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-02T18:23:03.602Z",
+    "resolved_at": null,
+    "milestone": null
+  },
+  {
+    "id": 42,
+    "kind": "deviation",
+    "phase": "05",
+    "file": "app/(app)/admin/settings/settings-form-client.tsx",
+    "line": 711,
+    "description": "결재선 복원 줄이 단계 칸 있는 섹션마다 그려져 연차 단계 보관본이 지출결의 결재선 섹션에도 같은 글자로 보인다(종류 구분 없는 stepList) — 05-03은 화면을 고치지 않고 E2E 로케이터만 연차 섹션으로 좁힘, 화면 플랜이 섹션별 복원으로 고친다",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-04T09:06:45.235Z",
     "resolved_at": null,
     "milestone": null
   }

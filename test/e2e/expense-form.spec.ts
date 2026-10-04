@@ -69,6 +69,38 @@ test.describe("계산 한 줄 즉시 재계산 (S5)", () => {
   });
 });
 
+test.describe("계산 한 줄 폭 (D1)", () => {
+  test("PC에서 계산 한 줄은 증빙 종류와 상관없이 한 줄이고 아래 칸이 움직이지 않는다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await openDraft(page, fx, "tracer");
+
+    const line = page.getByTestId("expense-tax-line");
+    const below = page.getByLabel("지급 예정일");
+    const metrics = async () => ({
+      lineHeight: (await line.boundingBox())?.height ?? 0,
+      lineHeightOne: await line.evaluate((element) => Math.round(parseFloat(getComputedStyle(element).lineHeight))),
+      belowY: Math.round((await below.boundingBox())?.y ?? 0),
+    });
+    await expect(line).toHaveText(/세금계산서 규칙$/);
+    const vat = await metrics();
+    expect(vat.lineHeight).toBeLessThanOrEqual(vat.lineHeightOne + 1);
+
+    await page.getByLabel("증빙 종류").selectOption({ label: "계산서" });
+    await expect(line).toHaveText(/계산서 규칙$/);
+    await expect(line).not.toHaveText(/세금계산서 규칙$/);
+    const none = await metrics();
+    expect(none.lineHeight).toBeLessThanOrEqual(none.lineHeightOne + 1);
+    expect(none.belowY).toBe(vat.belowY);
+
+    await page.getByLabel("증빙 종류").selectOption({ label: "기타소득" });
+    await expect(line).toHaveText(/기타소득 규칙$/);
+    const other = await metrics();
+    expect(other.lineHeight).toBeLessThanOrEqual(other.lineHeightOne + 1);
+    expect(other.belowY).toBe(vat.belowY);
+  });
+});
+
 // 서버 액션 POST(`next-action` 헤더) 수.
 function countActionPosts(page: Page): { count: () => number } {
   let total = 0;

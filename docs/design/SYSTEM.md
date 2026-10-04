@@ -1233,7 +1233,7 @@ dirty 셀이 하나라도 있으면 `beforeunload`로 이탈을 경고한다. �
 
 ### 7-19. 행동 링크 `RowActions` (`ui/row-actions/RowActions`, 스킨 A)
 
-`<RowActions><RowAction href>수정</RowAction><RowAction onClick>숨기기</RowAction><RowAction danger …>삭제</RowAction></RowActions>` — 행 안 행동은 링크이든 버튼이든 같은 모양이다(「수정숨기기삭제」가 붙던 문제를 막는다). `--text-aux` 600 · `--text-link` 글자 · 밑줄 1px(`--line-w`, 호버 때 `--underline-w-hover` 2px — §4-4, `ui/button` 3차와 같은 규칙) · 오프셋 `--underline-offset` · 행동 사이 `--s-4`. **`danger`는 맨 끝에 `--s-8`만큼 떨어뜨리고 `--status-danger` 글자**다(`DECISIONS.md` 2026-10-02 「삭제 행동 링크」 — §7-1 「붉은 버튼 없음」은 버튼 면 규칙으로 유지). `white-space: nowrap`. 폰 누르는 영역 44. `DeleteToArchive`(§7-1 기록된 예외)의 여는 링크도 `RowAction danger`다.
+`<RowActions><RowAction href>수정</RowAction><RowAction onClick>숨기기</RowAction><RowAction danger …>삭제</RowAction></RowActions>` — 행 안 행동은 링크이든 버튼이든 같은 모양이다(「수정숨기기삭제」가 붙던 문제를 막는다). `--text-aux` 600 · `--text-link` 글자 · 밑줄 1px(`--line-w`, 호버 때 `--underline-w-hover` 2px — §4-4, `ui/button` 3차와 같은 규칙) · 오프셋 `--underline-offset` · 행동 사이 `--s-4`. **`danger`는 맨 끝에 `--s-8`만큼 떨어뜨리고 `--status-danger` 글자**다(`DECISIONS.md` 2026-10-02 「삭제 행동 링크」 — §7-1 「붉은 버튼 없음」은 버튼 면 규칙으로 유지). `white-space: nowrap`. 폰 누르는 영역 44. `DeleteToArchive`(§7-1 기록된 예외)의 여는 링크도 `RowAction danger`다. 폰(<700)은 44 누르는 상자 안 여백이 간격에 더해지므로 위험 행동 앞 상자 여백을 `--s-2`로 줄인다 — 글자 간격은 `--s-8` 이상 그대로, 320에서도 한 줄(DECISIONS 2026-10-04). 짧은 두 행동 마스터 표(코드표)는 `RowActions noWrap`으로 폰에서도 줄바꿈하지 않는다 — 글꼴 교체 전후로 한 줄/두 줄이 바뀌면 CLS가 난다(실측 0.127). 다른 표는 지금처럼 폰에서 줄바꿈한다.
 - 다섯 상태: LOADING · EMPTY · ERROR · SUCCESS · PARTIAL 모두 해당 없음 — 호출한 화면이 정한 행동만 그리는 정적 링크 묶음이다(행동의 진행 중 · 결과는 §7-1 버튼 규칙과 호출한 화면).
 
 ### 7-20. 화면 틀 `ListScreen` · `DetailScreen` · `SidePanel`/`PanelForm` (스킨 A)

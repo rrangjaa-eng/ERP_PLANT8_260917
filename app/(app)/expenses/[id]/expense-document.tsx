@@ -1,4 +1,5 @@
 import Link from "next/link";
+import "@/app/(app)/document-kinds";
 import { getDocumentKind, REJECT_REASON_EMPTY_MESSAGE, REJECT_REASON_MAX, REJECT_REASON_TOO_LONG_MESSAGE, type ApprovalView } from "@/domain/approvals";
 import type { ExpenseDocumentDto } from "@/domain/expenses";
 import { EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";

@@ -125,6 +125,10 @@
   cursor: pointer;
 }
 
+.more:hover {
+  text-decoration-thickness: var(--underline-w-hover);
+}
+
 @media (max-width: 699.98px) {
   .drop {
     height: calc(var(--s-6) * 3);

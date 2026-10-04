@@ -28,18 +28,6 @@
 
 ## Phase 4 이연(2026-09-23 CEO 리뷰)
 
-### 목록 상단 2px 로딩 막대
-
-**What:** 프로젝트 목록(S1)·페이지 이동(S12)의 상단 2px 진행 막대를 만든다.
-
-**Why:** UI-SPEC rev 4는 막대를 그렸지만 SYSTEM.md가 막대 색을 `--accent`로 정하면서 §1-3은 `--accent` 사용처를 다섯 곳으로 제한해 서로 충돌한다(CEO 리뷰 C-10, 사용자 D17 「만들지 않고 기록」). 지금은 표 자리 표시(스켈레톤)만으로 로딩을 보인다.
-
-**Context:** Phase 4 뒤 디자인 잔여 퀵 태스크(F-01·F-03·F-05·F-06·F-07)와 함께 처리한다. 먼저 `docs/design/DECISIONS.md`에 §1-3 사용처를 여섯 곳으로 늘릴지(또는 다른 토큰) 정하고 SYSTEM.md를 고친 뒤 앱 공통 셸에 한 번만 만든다. 리뷰 원문: `docs/designs/plant8-erp-phase4-ceo-review-260923.md`.
-
-**Effort:** S (human) / S (CC)
-**Priority:** P3
-**Depends on:** Phase 4 완료, 디자인 잔여 퀵 태스크
-
 ### 자동 정산(진행→정산)을 예약 작업으로 옮기기
 
 **What:** 종료일이 지난 진행 프로젝트를 KST 00:00에 정산으로 바꾸는 판정을 Cloud Scheduler 작업에서도 실행한다.
@@ -191,6 +179,19 @@
 **Effort:** S / S · **Priority:** P1 · **Depends on:** Phase 8 계획 · `.github/workflows/` 변경이라 사용자가 머지
 
 ## Completed
+
+### 목록 상단 2px 로딩 막대
+
+**What:** 프로젝트 목록(S1)·페이지 이동(S12)의 상단 2px 진행 막대를 만든다.
+
+**Why:** UI-SPEC rev 4는 막대를 그렸지만 SYSTEM.md가 막대 색을 `--accent`로 정하면서 §1-3은 `--accent` 사용처를 다섯 곳으로 제한해 서로 충돌한다(CEO 리뷰 C-10, 사용자 D17 「만들지 않고 기록」). 지금은 표 자리 표시(스켈레톤)만으로 로딩을 보인다.
+
+**Context:** Phase 4 뒤 디자인 잔여 퀵 태스크(F-01·F-03·F-05·F-06·F-07)와 함께 처리한다. 먼저 `docs/design/DECISIONS.md`에 §1-3 사용처를 여섯 곳으로 늘릴지(또는 다른 토큰) 정하고 SYSTEM.md를 고친 뒤 앱 공통 셸에 한 번만 만든다. 리뷰 원문: `docs/designs/plant8-erp-phase4-ceo-review-260923.md`.
+
+**Effort:** S (human) / S (CC)
+**Priority:** P3
+**Depends on:** Phase 4 완료, 디자인 잔여 퀵 태스크
+**Completed:** 2026-10-04 — 만들지 않고 닫음(사용자 브리핑 카드 답 10:34~10:36 KST, 추천안 「닫음」). 로딩은 표 자리 스켈레톤으로 보인다.
 
 ### FINDING-001 PC에서 「내 차례」(`/`)로 돌아가는 길이 없다
 

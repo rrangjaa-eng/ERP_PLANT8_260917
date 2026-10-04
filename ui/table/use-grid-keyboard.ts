@@ -24,8 +24,11 @@ export type GridKeyboardHandlers = {
   onNewRow?: (currentRowId: string | undefined) => void;
   /** Ctrl+D — 줄 복제. */
   onDuplicateRow?: (rowId: string) => void;
-  /** Ctrl+E — 편집 중이 아닐 때 활성 셀 줄의 줄 행동(견적 줄 `지출결의 올리기`, 05-15). 처리기가 있을 때만 키를 가로챈다. */
-  onOpenRow?: (rowId: string) => void;
+  /**
+   * Ctrl+E — 편집 중이 아닐 때 활성 셀 줄의 줄 행동(견적 줄 `지출결의 올리기`, 05-15). 처리기가 있을 때만 키를 가로챈다.
+   * 05-08 — 둘째 인자는 범위 선택이 덮는 줄 id(위 → 아래, 전체 선택이면 전부, 선택이 없으면 활성 셀 줄 하나).
+   */
+  onOpenRow?: (rowId: string, rangeRowIds: string[]) => void;
   /** Alt+↑/↓ — 줄 이동. */
   onMoveRow?: (rowId: string, direction: "up" | "down") => void;
   /** Ctrl+S — 일괄 저장. */
@@ -234,7 +237,14 @@ export function useGridKeyboard({
     if (!editing && handlers.onOpenRow && event.ctrlKey && event.key.toLowerCase() === "e") {
       event.preventDefault();
       const rowId = rowIds[pos.row];
-      if (isCtrlCombo(event, "e") && rowId !== undefined) handlers.onOpenRow(rowId);
+      const rangeRowIds = allSelected
+        ? [...rowIds]
+        : selectionAnchor
+          ? rowIds.slice(Math.min(selectionAnchor.row, pos.row), Math.max(selectionAnchor.row, pos.row) + 1)
+          : rowId !== undefined
+            ? [rowId]
+            : [];
+      if (isCtrlCombo(event, "e") && rowId !== undefined) handlers.onOpenRow(rowId, rangeRowIds);
       return;
     }
 

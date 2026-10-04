@@ -48,6 +48,13 @@ describe("useGridKeyboard — Ctrl+E 줄 행동", () => {
     expect(prevented()).toBe(true);
   });
 
+  it("범위 선택이 없으면 둘째 인자(범위 줄 id)는 활성 셀 줄 하나다(05-08 여러 줄 Ctrl+E)", () => {
+    const calls: [string, string[]][] = [];
+    const keyboard = renderKeyboard(false, { onOpenRow: (rowId, rangeRowIds) => calls.push([rowId, rangeRowIds]) });
+    keyboard.handleKeyDown(ctrlE().event, { row: 0, col: 0 });
+    expect(calls).toEqual([["row-1", ["row-1"]]]);
+  });
+
   it("편집 중에는 아무것도 하지 않는다", () => {
     const opened: string[] = [];
     const keyboard = renderKeyboard(true, { onOpenRow: (rowId) => opened.push(rowId) });

@@ -1086,6 +1086,8 @@ export function QuoteLedger({
   const [doorFailedLine, setDoorFailedLine] = useState<string | null>(null);
   // 05-15 — 저장 안 한 편집이 있을 때 행 행동 · Ctrl+E를 누른 흔적. 글자는 지금 센 값(unsavedEditsReason)으로 합계 행 오른쪽 한 줄에 선다.
   const [doorUnsaved, setDoorUnsaved] = useState(false);
+  // 05-08 — 여러 줄 Ctrl+E가 하나도 만들지 못했을 때 첫 막힌 줄의 이유(합계 행 오른쪽 한 줄). 다음 누름 때 지운다.
+  const [doorRangeBlocked, setDoorRangeBlocked] = useState<string | null>(null);
   const doorBusyRef = useRef(false);
   async function openLineExpense(lineId: string, cell: LineDoorCell, onLeave?: () => void): Promise<void> {
     if (doorBusyRef.current) return;
@@ -1113,8 +1115,50 @@ export function QuoteLedger({
     setDoorPendingLine(null);
     setDoorFailedLine(lineId);
   }
+  // 05-08(UI-SPEC 확정 #5) — 범위 선택이 여러 줄이면 문이 있는 줄 전부로 작성 중 문서를 만든다(이미 있으면 그 문서 — 05-03 멱등).
+  // 하나라도 만들면 목록 `진행 중` 보기로 가고 착지 화면이 토스트를 띄운다. 전부 막히면 이동 없이 첫 막힌 줄의 이유를 합계 행에.
+  // 표 전체 게이트는 표 위 한 줄이 이미 말하므로 아무것도 하지 않는다.
+  async function openLinesExpense(rows: DraftLine[]): Promise<void> {
+    if (lineDoors.tableGateReason || doorBusyRef.current) return;
+    const lineIds = rows.flatMap((row) => {
+      const door = row.id ? lineDoors.cells[row.id] : undefined;
+      return row.id && door && door.state !== "none" ? [row.id] : [];
+    });
+    if (lineIds.length === 0) return;
+    if (dirtyCount >= 1) {
+      setDoorUnsaved(true);
+      return;
+    }
+    setDoorUnsaved(false);
+    setDoorRangeBlocked(null);
+    setDoorFailedLine(null);
+    doorBusyRef.current = true;
+    let outcome: { created: unknown[]; blocked: { reason: string }[] } | undefined;
+    try {
+      outcome = (await createExpenseFromLinesAction({ lineIds }))?.data;
+    } catch {
+      outcome = undefined;
+    }
+    doorBusyRef.current = false;
+    if (!outcome) {
+      setDoorFailedLine(lineIds[0] ?? null);
+      return;
+    }
+    if (outcome.created.length === 0) {
+      setDoorRangeBlocked(outcome.blocked[0]?.reason ?? null);
+      return;
+    }
+    const params = new URLSearchParams({ status: "진행 중", created: String(outcome.created.length) });
+    if (outcome.blocked.length > 0) params.set("blocked", String(outcome.blocked.length));
+    router.push(`/expenses?${params.toString()}`);
+  }
   // 05-15 — PC 셀 · Ctrl+E의 문 열기. 미저장 편집이 있으면 이동하지 않고 한 줄(DR-6 같은 함수)만 남긴다.
-  function requestLineExpense(row: DraftLine): void {
+  function requestLineExpense(row: DraftLine, rangeRows: DraftLine[] = [row]): void {
+    if (rangeRows.length > 1) {
+      void openLinesExpense(rangeRows);
+      return;
+    }
+    setDoorRangeBlocked(null);
     const lineId = row.id;
     const door = lineId ? lineDoors.cells[lineId] : undefined;
     if (!lineDoors.showColumn || !lineId || !door) return;
@@ -2631,7 +2675,7 @@ export function QuoteLedger({
               ? (row) => (atLineCap ? showLineCapNotice(lineCapReason) : duplicateLine(row.clientKey))
               : undefined,
           onMoveRow: structural.reorder && editableWidth ? (row, direction) => moveLine(row.clientKey, direction) : undefined,
-          // 05-15 — 편집 중이 아닐 때 Ctrl+E = 활성 셀 줄의 셀 동작(여러 줄은 05-08). 행동 열이 서는 사람에게만 키를 가로챈다.
+          // 05-15 — 편집 중이 아닐 때 Ctrl+E = 활성 셀 줄의 셀 동작, 05-08 — 범위 선택이 여러 줄이면 여러 줄 만들기. 행동 열이 서는 사람에게만 키를 가로챈다.
           onOpenRow: lineDoors.showColumn ? requestLineExpense : undefined,
           onSave: () => {
             clearAttemptNotices();
@@ -2654,6 +2698,7 @@ export function QuoteLedger({
           ...pasteNotices,
           ...(doorFailedLine ? [{ tone: "danger" as const, text: "지출결의 만들기 실패 · 다시 시도" }] : []),
           ...(doorUnsavedText ? [{ tone: "danger" as const, text: doorUnsavedText }] : []),
+          ...(doorRangeBlocked ? [{ tone: "danger" as const, text: doorRangeBlocked }] : []),
         ]}
         footerSuccess={savedAt ? savedNoticeText(sentChangedLines, savedAt) : null}
         revealRowId={revealRowId}

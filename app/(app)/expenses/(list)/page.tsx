@@ -7,6 +7,7 @@ import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { Num } from "@/ui/num/Num";
 import { Pagination } from "@/ui/pagination/Pagination";
 import { pageRangeText } from "@/ui/pagination/page-window";
+import { SubmittedToast } from "@/app/(app)/leave/[id]/submitted-toast";
 import { ExpensesTable, type ExpenseTableRow } from "../expenses-table";
 import { StatusFilter } from "../status-filter";
 import { EXPENSE_STATUS_VIEWS, type ExpenseStatusView } from "../list-columns";
@@ -29,6 +30,19 @@ function viewHref(view: ExpenseStatusView, page?: number): string {
 
 type ExpensesSearchParams = Record<string, string | string[] | undefined>;
 
+// 견적 줄 표 여러 줄 `Ctrl+E` 착지(`?created=N&blocked=M`) — 토스트 `지출결의 올리기 · 작성 중 N건 · 막힘 M줄`(DR-21 꼴). 숫자가 아니면 띄우지 않는다.
+function countParam(raw: string | string[] | undefined): number | null {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return value !== undefined && /^[1-9][0-9]{0,2}$/.test(value) ? Number(value) : null;
+}
+
+function createdToast(params: ExpensesSearchParams): string | null {
+  const created = countParam(params.created);
+  if (created === null) return null;
+  const blocked = countParam(params.blocked);
+  return `지출결의 올리기 · 작성 중 ${created}건${blocked === null ? "" : ` · 막힘 ${blocked}줄`}`;
+}
+
 export default async function ExpensesPage({ searchParams }: { searchParams: Promise<ExpensesSearchParams> }) {
   const session = await getSession();
   if (!session) redirect("/login");
@@ -46,6 +60,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
     group.rows.map((row) => ({ ...row, id: row.id ?? "", group: group.label, ...(group.tone ? { groupTone: group.tone } : {}) })),
   );
   const newAction = { label: "새 지출결의", href: "/expenses/new" };
+  const toast = createdToast(params);
 
   return (
     <ListScreen
@@ -83,6 +98,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
       ) : (
         <ListEmpty message="진행 중인 지출결의가 없습니다" action={{ label: "전체 보기", href: viewHref("전체") }} />
       )}
+      {toast ? <SubmittedToast message={toast} href={viewHref(view)} /> : null}
     </ListScreen>
   );
 }

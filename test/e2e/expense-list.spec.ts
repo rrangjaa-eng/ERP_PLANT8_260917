@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import { createTeamExpenseDraft, listExpenseFormOptions, saveExpenseDraft } from "@/domain/expenses";
 import { approveDocument } from "@/domain/approvals";
+import { getCurrentQuoteRevision } from "@/domain/quotes/lines";
+import { createRevisionFromCurrent } from "@/domain/quotes/revisions";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { insertRole } from "@/repositories/roles";
@@ -9,8 +11,8 @@ import { upsertPermission } from "@/repositories/permissions";
 import { insertVendor } from "@/repositories/vendors";
 import { seoulToday } from "@/lib/dates";
 import { submitReadyDraft } from "../integration/fixtures/expenses";
-import { loginPage, makePerson, setupLeaveOrg } from "./leave-org";
-import { setupExpenseE2E } from "./expense-fixture";
+import { loginPage, makePerson, setupLeaveOrg, waitForHydration } from "./leave-org";
+import { setupExpenseE2E, type ExpenseE2E } from "./expense-fixture";
 
 // 05-08(EXP-08 · UI-SPEC S8): 지출결의 목록 `/expenses` — 팀장이 팀원의 프로젝트 미연결 팀 비용을 2행 `프로젝트 미연결 · {종류}`로 본다.
 // 판정은 DOM 실측(글자 · 링크)이다. 문서는 도메인 함수로 만든다(증빙은 메모리 가짜 저장소 — 제출 게이트 ⑧만 통과시킨다).
@@ -120,6 +122,8 @@ test.describe("보기 · 빈 상태 · 폭", () => {
     await submittedTeamCost(fx.pm.viewer, `뼈대-${randomUUID().slice(0, 4)}`);
     const page = await loginPage(browser, baseURL, fx.pm);
     await page.goto("/expenses");
+    // 스트리밍이 끝나 진짜 표(행 링크)가 보인 뒤에 머리글을 읽는다 — 그 전에는 뼈대 표가 같은 자리에 있다.
+    await expect(page.locator("main table a[data-row-link]").first()).toBeVisible();
     const headers = await page.locator("main table thead th").allInnerTexts();
     await page.goto("/account");
     // 뼈대(loading 틀)는 라우터가 미리 가져온 경우에만 응답이 늦는 동안 보인다 — 먼저 미리 가져오고, 그다음에 응답을 늦춘다.
@@ -156,6 +160,7 @@ test.describe("보기 · 빈 상태 · 폭", () => {
 
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto("/expenses");
+    await expect(page.locator("main table a[data-row-link]").first()).toBeVisible();
     expect(await visibleHeaders()).toEqual(["번호", "프로젝트 · 항목", "거래처", "금액", "지급 예정", "기안", "상태"]);
     await page.setViewportSize({ width: 1100, height: 900 });
     await expect.poll(visibleHeaders).toEqual(["프로젝트 · 항목", "거래처", "금액", "지급 예정", "상태"]);
@@ -163,6 +168,95 @@ test.describe("보기 · 빈 상태 · 폭", () => {
     await page.setViewportSize({ width: 800, height: 900 });
     await expect.poll(visibleHeaders).toEqual(["프로젝트 · 항목", "거래처", "금액", "지급 예정", "상태"]);
     expect(await noOverflow()).toBe(true);
+    await page.context().close();
+  });
+});
+
+// 05-08 Task 3(UI-SPEC 확정 #5 · S1): 견적 줄 표 범위 선택 + Ctrl+E — 열린 줄마다 작성 중 문서(이미 있으면 그 문서) → 목록 `진행 중` 보기 + 토스트.
+// 전부 막힘이면 이동 없이 합계 행 오른쪽에 첫 막힌 줄 이유, 표 전체 게이트면 표 위 한 줄만. 열 순서는 Phase 4 표 그대로(항목 2).
+const ITEM_COLUMN = 2;
+const DESKTOP = { width: 1280, height: 800 };
+
+function quoteRowOf(page: Page, itemName: string) {
+  return page.getByRole("row").filter({ hasText: itemName });
+}
+
+// 첫 줄 항목 칸에 격자 초점을 두고 Shift+↓로 범위를 넓힌 뒤 Ctrl+E(수화 전 초점은 좌표에 남지 않아 toPass로 다시 잡는다).
+async function rangeCtrlE(page: Page, fx: ExpenseE2E, first: keyof ExpenseE2E["lines"], extraRows: number, done: () => Promise<void>) {
+  await page.goto(`/projects/${fx.projectId}`);
+  const item = quoteRowOf(page, fx.lines[first].itemName).getByRole("gridcell").nth(ITEM_COLUMN);
+  await waitForHydration(item);
+  await expect(async () => {
+    await item.focus();
+    for (let i = 0; i < extraRows; i += 1) await page.keyboard.press("Shift+ArrowDown");
+    await page.keyboard.press("Control+e");
+    await done();
+  }).toPass({ timeout: 20_000 });
+}
+
+const draftLinks = (page: Page) => page.locator('main table a[data-row-link]');
+
+test.describe("여러 줄 Ctrl+E · 두 번 눌러도 하나", () => {
+  test("열림 · 열림 · 거래처 없음을 골라 Ctrl+E → 진행 중 보기 · 토스트 `작성 중 2건 · 막힘 1줄` · 작성 중 2행, 다시 눌러도 2행", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.pm, DESKTOP);
+    const toast = "지출결의 올리기 · 작성 중 2건 · 막힘 1줄";
+    const landed = async () => {
+      await expect(page).toHaveURL((url) => url.pathname === "/expenses" && url.searchParams.get("status") === "진행 중", { timeout: 3000 });
+    };
+
+    await rangeCtrlE(page, fx, "retry", 2, landed);
+    await expect(page.getByRole("status").filter({ hasText: toast })).toBeVisible();
+    await expect(draftLinks(page)).toHaveCount(2);
+    for (const key of ["retry", "phone"] as const) {
+      const row = page.locator("main table tr").filter({ hasText: fx.lines[key].itemName });
+      await expect(row).toHaveCount(1);
+      await expect(row.getByText("작성 중", { exact: true })).toBeVisible();
+    }
+
+    // 같은 범위를 다시 — 이미 있는 작성 중 문서가 created에 들어 토스트는 같고 행은 늘지 않는다.
+    await rangeCtrlE(page, fx, "retry", 2, landed);
+    await expect(page.getByRole("status").filter({ hasText: toast })).toBeVisible();
+    await expect(draftLinks(page)).toHaveCount(2);
+
+    // 줄 1 셀 `지출결의 올리기`를 두 번 눌러도(두 번째는 있던 문서로) 작성 중 줄 1 행은 하나.
+    for (let i = 0; i < 2; i += 1) {
+      await page.goto(`/projects/${fx.projectId}`);
+      const door = quoteRowOf(page, fx.lines.tracer.itemName).getByRole("gridcell").last().getByRole("button", { name: "지출결의 올리기" });
+      await waitForHydration(door);
+      await door.click();
+      await expect(page).toHaveURL(/\/expenses\/[0-9a-f-]{36}$/);
+    }
+    await page.goto(`/expenses?status=${encodeURIComponent("진행 중")}`);
+    await expect(draftLinks(page)).toHaveCount(3);
+    await expect(page.locator("main table tr").filter({ hasText: fx.lines.tracer.itemName })).toHaveCount(1);
+    await page.context().close();
+  });
+
+  test("고른 줄이 전부 막히면 이동하지 않고 합계 행 오른쪽에 첫 막힌 줄 이유, 표 전체 게이트면 합계 행에 아무것도 더 쓰지 않는다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.pm, DESKTOP);
+    const grid = page.getByRole("grid", { name: "견적 줄" });
+    const reason = "거래처 없음 · 거래처 고르기";
+    await rangeCtrlE(page, fx, "noVendor", 1, async () => {
+      await expect(grid.getByText(reason, { exact: true })).toBeVisible({ timeout: 3000 });
+    });
+    await expect(page).toHaveURL(new RegExp(`/projects/${fx.projectId}$`));
+
+    const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, fx.projectId);
+    if (!revision) throw new Error("현재 차수가 없다");
+    await createRevisionFromCurrent(fx.pm.viewer, { projectId: fx.projectId, fromRevisionId: revision.id });
+    const gate = "2차 고객 승인 전 · 고객 승인 표시";
+    await page.goto(`/projects/${fx.projectId}`);
+    const item = quoteRowOf(page, fx.lines.tracer.itemName).getByRole("gridcell").nth(ITEM_COLUMN);
+    await waitForHydration(item);
+    await item.focus();
+    await page.keyboard.press("Shift+ArrowDown");
+    await page.keyboard.press("Control+e");
+    await page.waitForTimeout(1000);
+    await expect(page).toHaveURL(new RegExp(`/projects/${fx.projectId}$`));
+    await expect(page.getByText(gate, { exact: true })).toHaveCount(1);
+    await expect(grid.getByText(gate)).toHaveCount(0);
     await page.context().close();
   });
 });

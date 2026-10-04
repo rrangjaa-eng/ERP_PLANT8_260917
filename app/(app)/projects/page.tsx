@@ -1,6 +1,8 @@
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
+import { getSettingValue } from "@/domain/settings/registry";
+import { PROJECT_PROFIT_RATE_THRESHOLD } from "@/domain/settings/keys";
 import {
   loadProjectList,
   getProjectCopySource,
@@ -81,7 +83,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   const sortDirection = firstListParam(params.dir) === "desc" ? "desc" : "asc";
   const statusLabel = statusOptions.find((option) => option.value === status)?.label;
 
-  const [references, canWrite, canWriteVendors, canViewVendors, list, copySource, usdDefaultFxRate] = await Promise.all([
+  const [references, canWrite, canWriteVendors, canViewVendors, list, copySource, usdDefaultFxRate, profitRateThreshold] = await Promise.all([
     listProjectFormReferences(session.viewer),
     can(session.viewer, "projects", "write"),
     can(session.viewer, "admin.vendors", "write"),
@@ -101,6 +103,8 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
     showCreateForm && copyFrom ? getProjectCopySource(session.viewer, copyFrom) : Promise.resolve(null),
     // 04-15(D-71) — 총 매출 예상가 USD 환율 칸 기본값(설정의 실제 값).
     showCreateForm ? recentFxRate("USD") : Promise.resolve(1),
+    // quick 261004-51o — 수익률 기준선(설정). 미만 행의 수익률 글자만 위험 색.
+    getSettingValue(PROJECT_PROFIT_RATE_THRESHOLD),
   ]);
 
   // 등록 폼의 팀 · 담당 PM 칸만 업무 범위로 좁힌다 — 필터 줄은 전체 팀(references.teams)을 계속 쓴다.
@@ -210,6 +214,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
           columnStep={list.columnStep}
           sort={list.sort}
           filterQuery={filterParams.toString()}
+          profitRateThreshold={profitRateThreshold}
         />
       ) : null}
     </ListScreen>

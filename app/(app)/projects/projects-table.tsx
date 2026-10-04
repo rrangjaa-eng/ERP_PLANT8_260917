@@ -9,7 +9,7 @@ import type { ProjectStatus } from "@/domain/projects/status-transitions";
 import { PROJECT_STATUS_WORD } from "@/domain/projects/status-word";
 import { Num } from "@/ui/num/Num";
 import { PROJECT_COLUMN_LABELS } from "./list-columns";
-import { formatListPeriod, type ListColumnStep } from "@/domain/projects/list-view";
+import { formatListPeriod, isProfitRateBelowThreshold, type ListColumnStep } from "@/domain/projects/list-view";
 import styles from "./projects.module.css";
 
 // SYSTEM.md §6-1 · 04-UI-SPEC S1 — 목록 표. `ui/table`을 **읽기 형태**로
@@ -21,6 +21,7 @@ export function ProjectsTable({
   columnStep,
   sort,
   filterQuery,
+  profitRateThreshold,
 }: {
   rows: ProjectListItemWithGroup[];
   /** 04-48(D-89) — 보기 연도(전체 연도면 null). 기간 칸이 그 해면 월-일만 적는다. */
@@ -31,6 +32,8 @@ export function ProjectsTable({
   sort: { key: ProjectSortKey; direction: "asc" | "desc" };
   /** 04-18 — 정렬 링크가 그대로 싣는 필터 쿼리(정렬 · page 제외). */
   filterQuery: string;
+  /** quick 261004-51o — 설정 「수익률 기준선(%)」. 미만 행의 수익률 글자만 위험 색. */
+  profitRateThreshold: number;
 }) {
   const nowrap = (text: string) => <span className={styles.nowrap}>{text}</span>;
   const period = (row: ProjectListItemWithGroup) => formatListPeriod(row.startDate, row.endDate, viewYear);
@@ -82,7 +85,10 @@ export function ProjectsTable({
       priority: "p3",
       collapseBelow: 1024,
       align: "right",
-      cell: (row) => <Num value={row.profitRate === null || row.profitRate === undefined ? null : row.profitRate * 100} unit="percent" />,
+      cell: (row) => {
+        const num = <Num value={row.profitRate === null || row.profitRate === undefined ? null : row.profitRate * 100} unit="percent" />;
+        return isProfitRateBelowThreshold(row.profitRate, profitRateThreshold) ? <span className={styles.profitRateBelow}>{num}</span> : num;
+      },
     },
   ];
   const moneyColumns = amountColumns.filter((column) => rows.some((row) => column.key in row));

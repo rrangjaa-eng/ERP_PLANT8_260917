@@ -305,4 +305,18 @@ describe("SETTING_DEFS", () => {
       "pnl.start_gate.weeks_after_cutover",
     );
   });
+
+  it("수익률 기준선 키(quick 261004-51o)는 단순값 · 기본 15 · 정수 0~100이다", () => {
+    const def = SETTING_DEFS.find((item) => item.key === "project.profit_rate.threshold");
+    expect(def).toBeDefined();
+    if (!def) return;
+    expect(def.kind).toBe("simple");
+    expect(def.default).toBe(15);
+    expect(def.label).toBe("수익률 기준선(%)");
+    expect(def.namespace).toBe("프로젝트");
+    expect(def.hint).toBeTruthy();
+    expect(def.hint).not.toMatch(/\n/);
+    for (const ok of [15, "15", 0, 100]) expect(def.schema.safeParse(ok).success, String(ok)).toBe(true);
+    for (const bad of [-1, 101, 15.5]) expect(def.schema.safeParse(bad).success, String(bad)).toBe(false);
+  });
 });

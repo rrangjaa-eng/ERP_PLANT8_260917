@@ -1729,3 +1729,15 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 **유지하는 것**: PC 위험 행동 앞 `--s-8` 그대로, 폰 글자 간격 `--s-8` 이상(실측 34.98), 긴 이름 행은 동작 칸이 좁아져 이름이 두 줄이 될 수 있다(줄바꿈 시 들여쓰기 0, CLS 실측 320 0.0277 · 375 0.0067). 사람 목록 등 다른 표는 지금처럼 폰에서 줄바꿈한다(`noWrap`이면 `/admin/people` 320이 356 > 320으로 넘친다). 두 행동을 줄바꿈 없이 두는 것은 `noWrap` 옵션으로만, 넘침은 `mobile-320-no-overflow`가 잰다.
 
 **범위**: SYSTEM.md §7-19, `ui/row-actions/`, `app/(app)/admin/code-tables/page.tsx`.
+
+## 2026-10-04 — 프로젝트 목록 수익률 기준선 미만은 수익률 글자만 위험 색 (사용자 결정 카드 2026-10-04: 기준선은 설정 화면 값, 기본 15%)
+
+**결정**: /projects 행의 수익률이 설정 「수익률 기준선(%)」(`project.profit_rate.threshold`, 「프로젝트」 섹션, 정수 0~100, 기본 15) 미만이면 그 칸의 수익률 글자만 `--status-danger`. 수익률 없음(—) 행은 그대로.
+
+**이유**: 목록을 훑으며 기준 아래 프로젝트를 계산 없이 알아본다(화면 사용성 원칙 「상태는 색·배지로」). 기준선은 회사가 바꿀 수 있어야 해 코드가 아니라 설정 값이다(사용자 결정).
+
+**유지하는 것**: SYSTEM §1-3 규칙 3(상태색은 글자 형태만 — 행·칸 배경은 칠하지 않음), 새 토큰 없음, 같은 값은 기본 색(미만만), 판정은 화면에 보이는 소수 1자리 값(보이는 「15.0%」가 빨갛게 되지 않게), 합계 줄 수익률·다른 금액 열·폰 접힌 줄은 그대로, 숨김 글자 없음(숫자 자체가 정보이고 색은 강조 — §10 「상태는 글자」는 숫자 글자로 충족).
+
+**구현**: 키 `domain/settings/keys.ts`, 판정 `isProfitRateBelowThreshold`(`domain/projects/list-view.ts`), 읽기 `app/(app)/projects/page.tsx` → `projects-table.tsx` 칸을 `.profitRateBelow` span으로 감쌈(`ui/num` 변경 없음), 계약 테스트 `test/e2e/projects-list.spec.ts` 「수익률 기준선」(computed color 실측). 마이그레이션 없음(기존 settings_simple 키-값).
+
+**범위**: SYSTEM.md §6-1, `app/(app)/projects/`, 설정 화면(레지스트리 자동 생성 칸).

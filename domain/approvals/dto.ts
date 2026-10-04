@@ -2,7 +2,7 @@ import { project, type DtoSpec, type ProjectDeps } from "@/domain/permissions/pr
 import type { Viewer } from "@/domain/viewer";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import type { ApprovalStatus, DisplayState } from "@/domain/approvals/route";
-import type { DocumentDetailRows } from "@/domain/approvals/kinds";
+import type { DocumentDetailRows, DocumentSummary } from "@/domain/approvals/kinds";
 
 // 04.1(ROADMAP 기준 5): 결재 DTO — domain/approvals의 유일한 출구다(project()).
 // 사용자 결정(2026-09-29 A, PR #90 5891993737): 노출 설정은 「무엇을 보여 줄지」이지 「결재를 할 수 있는지」가
@@ -40,21 +40,33 @@ export type ApprovalInboxItemDto = {
   holderNames: string | null;
   actedAt: Date | null;
   actedAction: string | null;
-  summary: object | null;
+  summary: DocumentSummary | null;
   // 04.1-05(CEO-17 · withDetails): `내 결재` 항목의 결재 시트 재료 — 종류 상세(detailDto 투영 뒤 행) ·
   // 결재선 표시 목록 · 끝 줄 · 가능 행동. withDetails가 아니거나 처리함 항목이면 null.
   detail: DocumentDetailRows | null;
   steps: ApprovalStepView[] | null;
   endLines: ApprovalRouteEndLine[] | null;
   actions: ApprovalAction[] | null;
+  // 05-01 E3(Round 4 D7): 종류가 준 `승인` 막힘 이유 — 가능 행동과 같은 구조 값(approval.value를 끈 계급에도 남는다).
+  approveBlockedReason: string | null;
 };
 
 export type ApprovalInboxItemSource = ApprovalInboxItemDto;
 
-const INBOX_ITEM_STRUCTURE_KEYS = ["instanceId", "kind", "kindLabel", "documentId", "href", "status", "version", "actions"] as const;
+const INBOX_ITEM_STRUCTURE_KEYS = [
+  "instanceId",
+  "kind",
+  "kindLabel",
+  "documentId",
+  "href",
+  "status",
+  "version",
+  "actions",
+  "approveBlockedReason",
+] as const;
 type ApprovalInboxItemStructure = Pick<ApprovalInboxItemDto, (typeof INBOX_ITEM_STRUCTURE_KEYS)[number]>;
 type ApprovalInboxItemValues = Omit<ApprovalInboxItemDto, keyof ApprovalInboxItemStructure>;
-export type ApprovalInboxItem = ApprovalInboxItemStructure & Partial<ApprovalInboxItemValues>;
+export type ApprovalInboxItem = BlockedReasonOptional<ApprovalInboxItemStructure> & Partial<ApprovalInboxItemValues>;
 
 export const APPROVAL_INBOX_ITEM_DTO_SPEC: DtoSpec<ApprovalInboxItemValues, ApprovalInboxItemValues> = {
   fields: [
@@ -86,14 +98,26 @@ export type ApprovalViewDto = {
   endLines: ApprovalRouteEndLine[];
   currentStepIndex: number | null;
   actions: ApprovalAction[];
+  // 05-01 E3(Round 4 D7): 구조 값 — 위 결재함 항목과 같다.
+  approveBlockedReason: string | null;
 };
 
 export type ApprovalViewSource = ApprovalViewDto;
 
-const VIEW_STRUCTURE_KEYS = ["instanceId", "kind", "documentId", "status", "version", "round", "currentStepIndex", "actions"] as const;
+const VIEW_STRUCTURE_KEYS = [
+  "instanceId",
+  "kind",
+  "documentId",
+  "status",
+  "version",
+  "round",
+  "currentStepIndex",
+  "actions",
+  "approveBlockedReason",
+] as const;
 type ApprovalViewStructure = Pick<ApprovalViewDto, (typeof VIEW_STRUCTURE_KEYS)[number]>;
 type ApprovalViewValues = Omit<ApprovalViewDto, keyof ApprovalViewStructure>;
-export type ApprovalView = ApprovalViewStructure & Partial<ApprovalViewValues>;
+export type ApprovalView = BlockedReasonOptional<ApprovalViewStructure> & Partial<ApprovalViewValues>;
 
 export const APPROVAL_VIEW_DTO_SPEC: DtoSpec<ApprovalViewValues, ApprovalViewValues> = {
   fields: [
@@ -115,13 +139,23 @@ function omitStructure<T extends object, K extends keyof T>(source: T, keys: rea
   return result;
 }
 
+// 05-01 E3: 막힘 이유가 없으면 키를 싣지 않는다 — 04.1 구조 키 목록(approvals-inbox-projection 단언)은 그대로다.
+type BlockedReasonOptional<T extends { approveBlockedReason: string | null }> = Omit<T, "approveBlockedReason"> & {
+  approveBlockedReason?: string;
+};
+
+function withoutNullReason<T extends { approveBlockedReason: string | null }>(structure: T): BlockedReasonOptional<T> {
+  const { approveBlockedReason, ...rest } = structure;
+  return approveBlockedReason === null ? rest : { ...rest, approveBlockedReason };
+}
+
 export async function projectInboxItem(
   viewer: Viewer,
   source: ApprovalInboxItemDto,
   deps?: Partial<ProjectDeps>,
 ): Promise<ApprovalInboxItem> {
   const values = await project(viewer, omitStructure(source, INBOX_ITEM_STRUCTURE_KEYS), APPROVAL_INBOX_ITEM_DTO_SPEC, deps);
-  return { ...pickStructure(source, INBOX_ITEM_STRUCTURE_KEYS), ...values };
+  return { ...withoutNullReason(pickStructure(source, INBOX_ITEM_STRUCTURE_KEYS)), ...values };
 }
 
 export async function projectApprovalView(
@@ -130,7 +164,7 @@ export async function projectApprovalView(
   deps?: Partial<ProjectDeps>,
 ): Promise<ApprovalView> {
   const values = await project(viewer, omitStructure(source, VIEW_STRUCTURE_KEYS), APPROVAL_VIEW_DTO_SPEC, deps);
-  return { ...pickStructure(source, VIEW_STRUCTURE_KEYS), ...values };
+  return { ...withoutNullReason(pickStructure(source, VIEW_STRUCTURE_KEYS)), ...values };
 }
 
 registerDto({
@@ -177,6 +211,8 @@ export type ApprovalActionResultDto = {
   nextHolderNames: string | null;
   drafterName: string | null;
   deductedDays: string | null;
+  // 05-01(Round 4 D8): 최종 승인 토스트 꼬리 — 종류 요약의 finalApprovalNote.
+  finalNote: string | null;
 };
 
 export const APPROVAL_ACTION_RESULT_DTO_SPEC: DtoSpec<Partial<ApprovalActionResultDto>, ApprovalActionResultDto> = {
@@ -184,6 +220,7 @@ export const APPROVAL_ACTION_RESULT_DTO_SPEC: DtoSpec<Partial<ApprovalActionResu
     { key: "nextHolderNames", from: "nextHolderNames", infoItem: "approval.value" },
     { key: "drafterName", from: "drafterName", infoItem: "approval.value" },
     { key: "deductedDays", from: "deductedDays", infoItem: "leave.value" },
+    { key: "finalNote", from: "finalNote", infoItem: "approval.value" },
   ],
 };
 

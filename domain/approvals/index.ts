@@ -39,7 +39,7 @@ import {
   type SnapshotPerson,
   type WalkRouteResult,
 } from "@/domain/approvals/route";
-import { getDocumentKind, resubmittableStatuses, type DetailFields, type DocumentKindDef, type DocumentDetailRows, type LoadDetailsDeps, type RouteConfigStep } from "@/domain/approvals/kinds";
+import { getDocumentKind, resubmittableStatuses, type DetailFields, type DocumentKindDef, type DocumentSummary, type DocumentDetailRows, type LoadDetailsDeps, type RouteConfigStep } from "@/domain/approvals/kinds";
 import { buildConflictMessage, isApprovalParty } from "@/domain/approvals/conflict-message";
 import { loadActionLogGate as defaultLoadActionLogGate, recordActionInTx, type ActionLogGate, type TxLogDeps } from "@/domain/approvals/tx-log";
 import {
@@ -59,7 +59,7 @@ import {
 } from "@/domain/approvals/dto";
 
 export { registerDocumentKind, getDocumentKind, listDocumentKinds } from "@/domain/approvals/kinds";
-export type { DocumentDetailRow, DocumentDetailRows, DocumentKindDef, RouteConfig, RouteConfigStep, RouteSettingDefs } from "@/domain/approvals/kinds";
+export type { DocumentDetailRow, DocumentDetailRows, DocumentKindDef, DocumentMeasure, DocumentSummary, RouteConfig, RouteConfigStep, RouteSettingDefs } from "@/domain/approvals/kinds";
 export { nextStep, resolveHolders, walkRoute } from "@/domain/approvals/route";
 export { loadActionLogGate, recordActionInTx } from "@/domain/approvals/tx-log";
 export type { ApprovalInboxItem, ApprovalInboxItemDto, ApprovalView, ApprovalViewDto, RoutePreviewDTO, RoutePreviewStepDTO } from "@/domain/approvals/dto";
@@ -593,6 +593,20 @@ function finalApprovalHookOf(kind: string): { prepare: NonNullable<DocumentKindD
   return def.prepareFinalApproval && def.onFinalApprovalInTx ? { prepare: def.prepareFinalApproval, inTx: def.onFinalApprovalInTx } : null;
 }
 
+// 05-01(Round 4 D8): 최종 승인 토스트 꼬리 — 종류 요약의 finalApprovalNote(없으면 null). 액션이 projectActionResult의
+// finalNote(approval.value)로 넘긴다.
+export async function describeFinalApprovalNote(viewer: Viewer, input: { kind: string; documentId: string }): Promise<string | null> {
+  const described = await getDocumentKind(input.kind).describeDocuments(viewer, [input.documentId]);
+  return described.get(input.documentId)?.finalApprovalNote ?? null;
+}
+
+// 05-01 E3: 종류의 승인 막힘 이유 — 필드가 없거나 문서가 없으면 부르지 않는다(04.1 결재함 조회 수 범위를 흔들지 않는다).
+async function approveBlockedReasonsOf(viewer: Viewer, kind: string, documentIds: string[]): Promise<Map<string, string>> {
+  const reasonsOf = getDocumentKind(kind).approveBlockedReason;
+  if (!reasonsOf || documentIds.length === 0) return new Map();
+  return reasonsOf(viewer, documentIds);
+}
+
 export async function approveDocument(
   viewer: Viewer,
   input: { instanceId: string; expectedVersion: number },
@@ -952,6 +966,9 @@ export async function getApprovalView(
   }
 
   actions.push(...(await possibleActions(viewer, { instance: graph.instance, isCandidate: state.isCandidate })));
+  const blocked = state.isCandidate
+    ? await approveBlockedReasonsOf(viewer, graph.instance.documentKind, [graph.instance.documentId])
+    : new Map<string, string>();
 
   const source: ApprovalViewDto = {
     instanceId: graph.instance.id,
@@ -970,6 +987,7 @@ export async function getApprovalView(
     ],
     currentStepIndex,
     actions,
+    approveBlockedReason: blocked.get(graph.instance.documentId) ?? null,
   };
   return projectApprovalView(viewer, source, { visible: createVisibleMemo(deps?.findVisibility) });
 }
@@ -998,7 +1016,19 @@ export async function loadKindDetails(
   return result;
 }
 
-export type InboxResult = { mine: ApprovalInboxItem[]; processed: ApprovalInboxItem[] };
+// 05-01 E5(Round 4 D7): 결재함 숫자 열 머리글 — 목록 단위 구조 값(항목 투영 밖). 지금 목록 요약의 measure 종류로 정한다.
+export type InboxMeasureHeader = "금액" | "일수" | "금액 · 일수" | null;
+
+export type InboxResult = { mine: ApprovalInboxItem[]; processed: ApprovalInboxItem[]; measureHeader: InboxMeasureHeader };
+
+function measureHeaderOf(summaries: Iterable<DocumentSummary>): InboxMeasureHeader {
+  const kinds = new Set<string>();
+  for (const summary of summaries) if (summary.measure) kinds.add(summary.measure.kind);
+  if (kinds.has("money") && kinds.has("days")) return "금액 · 일수";
+  if (kinds.has("money")) return "금액";
+  if (kinds.has("days")) return "일수";
+  return null;
+}
 
 const PROCESSED_LIMIT = 50;
 
@@ -1054,6 +1084,7 @@ export async function listMyInbox(viewer: Viewer, deps?: ApprovalDeps): Promise<
       steps,
       endLines: steps ? routeEndLines(instance.status as ApprovalStatus, steps, instance.updatedAt) : null,
       actions: deps?.withDetails ? await possibleActions(viewer, { instance, isCandidate: true }) : null,
+      approveBlockedReason: null,
     });
   }
 
@@ -1079,6 +1110,7 @@ export async function listMyInbox(viewer: Viewer, deps?: ApprovalDeps): Promise<
       steps: null,
       endLines: null,
       actions: null,
+      approveBlockedReason: null,
     };
   });
 
@@ -1086,12 +1118,22 @@ export async function listMyInbox(viewer: Viewer, deps?: ApprovalDeps): Promise<
   const all = [...mineSources, ...processedSources];
   const idsByKind = new Map<string, string[]>();
   for (const source of all) idsByKind.set(source.kind, [...(idsByKind.get(source.kind) ?? []), source.documentId]);
-  const summaries = new Map<string, object>();
+  const summaries = new Map<string, DocumentSummary>();
   for (const [kind, ids] of idsByKind) {
     const described = await getDocumentKind(kind).describeDocuments(viewer, [...new Set(ids)], { visible });
     for (const [id, summary] of described) summaries.set(`${kind}:${id}`, summary);
   }
   for (const source of all) source.summary = summaries.get(`${source.kind}:${source.documentId}`) ?? null;
+
+  // 05-01 E3: `내 결재` 문서만, 종류마다 id 목록으로 한 번(withDetails와 무관).
+  const blockedIdsByKind = new Map<string, string[]>();
+  for (const source of mineSources) blockedIdsByKind.set(source.kind, [...(blockedIdsByKind.get(source.kind) ?? []), source.documentId]);
+  for (const [kind, ids] of blockedIdsByKind) {
+    const reasons = await approveBlockedReasonsOf(viewer, kind, [...new Set(ids)]);
+    for (const source of mineSources) {
+      if (source.kind === kind) source.approveBlockedReason = reasons.get(source.documentId) ?? null;
+    }
+  }
 
   // 04.1-05(CEO-17): `내 결재` 상세 — 종류마다 id 목록으로 loadDetails 한 번, 같은 노출 메모 · 같은 시계.
   if (deps?.withDetails) {
@@ -1108,5 +1150,6 @@ export async function listMyInbox(viewer: Viewer, deps?: ApprovalDeps): Promise<
   return {
     mine: await Promise.all(mineSources.map((source) => projectInboxItem(viewer, source, { visible }))),
     processed: await Promise.all(processedSources.map((source) => projectInboxItem(viewer, source, { visible }))),
+    measureHeader: measureHeaderOf(summaries.values()),
   };
 }

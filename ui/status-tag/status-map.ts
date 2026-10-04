@@ -28,6 +28,7 @@ export const STATUS_KIND = {
   완료: "success",
   확정: "success",
   "적용 중": "success",
+  "본인 승인": "success",
   // muted — 대기 · 미착수 · 임시 · 미수주 · 취소 · 회수 · 첫 로그인 전 · 임시 비밀번호 사용 중
   //        (+ 지금 호출부: 수주중 · 보관됨 · 숨김 · 비활성 · 후보 · 예정 · 확인 불가 · 미설정)
   대기: "muted",

@@ -27,8 +27,9 @@ import { resubmitLeave } from "@/domain/leave/resubmit";
 import { appendActionLog } from "@/repositories/action-log";
 import { bumpInstanceVersion } from "@/repositories/approvals";
 import { upsertVisibility } from "@/repositories/permissions";
-import { formatLeavePeriod } from "@/app/(app)/leave/labels";
-import { makePerson, NOW_2026 } from "./approvals-fixtures";
+import { formatLeavePeriod, type LeavePeriodSource } from "@/app/(app)/leave/labels";
+import { makePerson, MEMBERSHIP_FROM, NOW_2026 } from "./approvals-fixtures";
+import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 
 // 05-01(E1 · E2 · E4): 04.1 결재 엔진의 선택 필드 덧붙임. 테스트 전용 종류(이 파일에만 있는 키)로 회수 뒤 같은 문서
 // 다시 제출 → 증빙 변경(version만 +1) → 옛 version 승인 거부 → 최종 승인 훅(같은 트랜잭션)까지 끝에서 끝까지 본다.
@@ -115,6 +116,17 @@ async function org(): Promise<Org> {
     lead: await makePerson("김팀장", TEAM_LEAD_ROLE_ID, "기획1팀"),
     ceo: await makePerson("최대표", CEO_ROLE_ID, null),
   };
+}
+
+async function orgInOwnTeam(): Promise<Pick<Org, "drafter" | "lead">> {
+  const unit = await createOrgUnit(SYSTEM_VIEWER, { name: `확장본부-${randomUUID().slice(0, 8)}` });
+  const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: unit.id, name: `확장팀-${randomUUID().slice(0, 8)}` });
+  const person = async (name: string, roleId: string): Promise<Viewer> => {
+    const viewer = await makePerson(name, roleId, null);
+    await assignTeam(SYSTEM_VIEWER, { userId: viewer.id, teamId: team.id, effectiveFrom: MEMBERSHIP_FROM });
+    return viewer;
+  };
+  return { drafter: await person("박서연", DEFAULT_ROLE_ID), lead: await person("김팀장", TEAM_LEAD_ROLE_ID) };
 }
 
 async function submitTestDocument(drafter: Viewer, kind: string): Promise<{ instanceId: string; documentId: string }> {
@@ -370,11 +382,16 @@ describe("표시 덧붙임 — E3 · E5 · E6", () => {
 
     const view = await getApprovalView(lead, { kind: BLOCK_KIND, documentId }, { now: NOW_2026 });
     expect(view?.approveBlockedReason).toBe(BLOCKED_REASON);
-    expect((await getApprovalView(drafter, { kind: BLOCK_KIND, documentId }, { now: NOW_2026 }))?.approveBlockedReason).toBeNull();
+    // 이유가 없으면 키 자체가 없다(04.1 구조 키 단언 불변).
+    const drafterView = await getApprovalView(drafter, { kind: BLOCK_KIND, documentId }, { now: NOW_2026 });
+    expect(drafterView).toBeDefined();
+    expect(drafterView).not.toHaveProperty("approveBlockedReason");
 
     const inbox = await listMyInbox(lead, { now: NOW_2026 });
     expect(inbox.mine.find((item) => item.instanceId === instanceId)?.approveBlockedReason).toBe(BLOCKED_REASON);
-    expect(inbox.mine.find((item) => item.instanceId === leave.instanceId)?.approveBlockedReason).toBeNull();
+    const leaveItem = inbox.mine.find((item) => item.instanceId === leave.instanceId);
+    expect(leaveItem).toBeDefined();
+    expect(leaveItem).not.toHaveProperty("approveBlockedReason");
 
     const approved = await approveDocument(lead, { instanceId, expectedVersion: 1 }, { now: NOW_2026 });
     expect(approved.status).toBe("approved");
@@ -411,7 +428,8 @@ describe("표시 덧붙임 — E3 · E5 · E6", () => {
     expect((await listMyInbox(lead, { now: NOW_2026 })).measureHeader).toBe("금액");
     expect((await listMyInbox(drafter, { now: NOW_2026 })).measureHeader).toBeNull();
 
-    const other = await org();
+    // 기획1팀에는 앞 사례의 금액 · 연차 문서가 남아 있다 — 전용 팀으로 measure 없는 문서만 있는 결재함을 만든다.
+    const other = await orgInOwnTeam();
     await submitTestDocument(other.drafter, BLOCK_KIND);
     expect((await listMyInbox(other.lead, { now: NOW_2026 })).measureHeader).toBeNull();
   });
@@ -440,7 +458,7 @@ describe("표시 덧붙임 — E3 · E5 · E6", () => {
     const item = (await listMyInbox(lead, { now: NOW_2026 })).mine.find((candidate) => candidate.instanceId === leave.instanceId);
     const summary = item?.summary;
     expect(summary?.documentText).toBe("종일 09-21 ~ 09-23");
-    expect(summary?.documentText).toBe(formatLeavePeriod(summary ?? {}));
+    expect(summary?.documentText).toBe(formatLeavePeriod((summary ?? {}) as LeavePeriodSource));
     expect(summary?.number).toBe(leave.number);
     expect(summary?.measure).toEqual({ kind: "days", quarters: 12, text: "3일" });
     expect(summary?.finalApprovalNote).toBeUndefined();

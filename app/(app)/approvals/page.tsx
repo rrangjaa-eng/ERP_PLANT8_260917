@@ -1,5 +1,7 @@
+import type { ReactNode } from "react";
 import { requireSession } from "@/lib/viewer";
 import { kstDateOf } from "@/lib/kst-date";
+import { formatKrw } from "@/lib/format-number";
 import "@/app/(app)/document-kinds";
 import {
   listMyInbox,
@@ -7,11 +9,13 @@ import {
   REJECT_REASON_MAX,
   REJECT_REASON_TOO_LONG_MESSAGE,
   type ApprovalInboxItemDto,
+  type DocumentMeasure,
+  type DocumentSummary,
 } from "@/domain/approvals";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { ListScreen } from "@/ui/list-screen/ListScreen";
+import { Num } from "@/ui/num/Num";
 import type { StatusWord } from "@/ui/status-tag/status-map";
-import { formatLeavePeriod, type LeavePeriodSource } from "@/app/(app)/leave/labels";
 import { routeListSteps, toLeaveStatusKey, withdrawResultLines, type LeaveStatusKey } from "@/app/(app)/leave/status-display";
 import { InboxTable, type InboxRow } from "./inbox-table";
 import type { ApprovalSheetItem, SheetDetailRow } from "./approval-sheet";
@@ -22,17 +26,33 @@ import type { DecisionTarget } from "./decision-dialogs";
 // 문서 종류 등록은 document-kinds 한 곳으로 보장한다(CEO-3). WR-07: 세션 검사를 이 페이지가 직접 한다.
 export const dynamic = "force-dynamic";
 
-type LeaveSummary = LeavePeriodSource & { days?: string; number?: string | null };
+// 05-01(Round 4 D8): 숫자 칸 — 종류 요약 measure(금액 = 원화 1행 · 외화면 2행 / 일수 = 종류가 만든 글자 / null = 숫자 없는 종류 `—` /
+// 필드째 없음 = 투영에서 빠짐 → 빈 칸).
+function measureCell(measure: DocumentMeasure | null | undefined): ReactNode {
+  if (measure === undefined) return "";
+  if (measure === null) return <Num value={null} />;
+  if (measure.kind === "days") return measure.text;
+  const { money } = measure;
+  const fx = money.currency === "KRW" ? undefined : { currency: money.currency, amount: money.amount, rate: money.fxRate };
+  return <Num value={money.amountKrw} fx={fx} />;
+}
 
-// 반려 · 회수 확인 재료(S6) — 부제는 서버 값으로만(번호 · 기안자 · 종류 기간 · 일수, 빠진 조각은 뺀다).
-function toDecision(item: Partial<ApprovalInboxItemDto>, summary: LeaveSummary): DecisionTarget | null {
-  if (!item.instanceId || item.version === undefined) return null;
-  const period = formatLeavePeriod(summary);
+// 확인 창 부제의 숫자 조각 — 숫자 칸 1행과 같은 글자.
+function measureText(measure: DocumentMeasure | null | undefined): string | null {
+  if (!measure) return null;
+  return measure.kind === "days" ? measure.text : formatKrw(measure.money.amountKrw);
+}
+
+// 반려 · 회수 확인 재료(S6) — 부제는 서버 값으로만(번호 · 기안자 · 종류 대상 · 숫자, 빠진 조각은 뺀다).
+function toDecision(item: Partial<ApprovalInboxItemDto>, summary: DocumentSummary): DecisionTarget | null {
+  if (!item.instanceId || item.version === undefined || !item.kindLabel) return null;
+  const measure = measureText(summary.measure);
   return {
     instanceId: item.instanceId,
     version: item.version,
-    subtitle: [summary.number, item.drafterName, period, summary.days].filter(Boolean).join(" · "),
-    withdrawSubtitle: [summary.number, period, summary.days].filter(Boolean).join(" · "),
+    kindLabel: item.kindLabel,
+    subtitle: [summary.number, item.drafterName, summary.documentText, measure].filter(Boolean).join(" · "),
+    withdrawSubtitle: [summary.number, summary.documentText, measure].filter(Boolean).join(" · "),
     drafterName: item.drafterName ?? null,
     withdrawLines: withdrawResultLines(item.steps),
   };
@@ -62,6 +82,7 @@ function toSheet(item: Partial<ApprovalInboxItemDto>): ApprovalSheetItem | null 
     endLines: item.endLines ?? [],
     actions: item.actions,
     href: item.href ?? null,
+    approveBlockedReason: item.approveBlockedReason ?? null,
   };
 }
 
@@ -85,7 +106,7 @@ function processedStatusWord(key: LeaveStatusKey | null, stepLabel: string | nul
 }
 
 function toRow(item: Partial<ApprovalInboxItemDto>, group: InboxRow["group"]): InboxRow {
-  const summary = (item.summary ?? {}) as LeaveSummary;
+  const summary: DocumentSummary = item.summary ?? {};
   const status = group === "processed" ? processedStatusWord(toLeaveStatusKey(item.status), item.stepLabel) : null;
   return {
     id: `${group}:${item.instanceId ?? item.documentId ?? ""}`,
@@ -93,9 +114,9 @@ function toRow(item: Partial<ApprovalInboxItemDto>, group: InboxRow["group"]): I
     instanceId: item.instanceId ?? null,
     version: item.version ?? null,
     href: item.href ?? null,
-    document: [item.kindLabel, formatLeavePeriod(summary)].filter(Boolean).join(" · "),
+    document: [item.kindLabel, summary.documentText].filter(Boolean).join(" · "),
     drafter: [item.drafterName, item.submittedAt ? kstDateOf(item.submittedAt).slice(5) : null].filter(Boolean).join(" · "),
-    days: summary.days ?? "",
+    measure: measureCell(summary.measure),
     status,
     actions: group === "mine" ? (item.actions ?? []) : [],
     // 잔여 초과 줄(종류가 준 상세 행의 경고 한 줄) — `내 결재`만 상세를 읽는다(UI-SPEC S4 · /design-review).
@@ -118,6 +139,7 @@ export default async function ApprovalsPage() {
       ) : (
         <InboxTable
           rows={rows}
+          measureHeader={inbox.measureHeader}
           rejectMessages={{ empty: REJECT_REASON_EMPTY_MESSAGE, tooLong: REJECT_REASON_TOO_LONG_MESSAGE, max: REJECT_REASON_MAX }}
         />
       )}

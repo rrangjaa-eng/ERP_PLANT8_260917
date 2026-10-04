@@ -3,14 +3,11 @@
 import { Fragment, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useAction } from "next-safe-action/hooks";
 import { Button } from "@/ui/button/Button";
 import { ApprovalRoute, type ApprovalRouteEndLine, type ApprovalRouteListStep } from "@/ui/approval-route/ApprovalRoute";
 import { SidePanel, usePanel } from "@/ui/side-panel/SidePanel";
-import { approveAction } from "./actions";
 import { DayNumbers } from "@/app/(app)/leave/day-numbers";
 import leaveStyles from "@/app/(app)/leave/leave.module.css";
-import { approveToast } from "./approve-toast";
 import { ConflictLine } from "./conflict-line";
 import styles from "./approval-sheet.module.css";
 
@@ -33,11 +30,17 @@ export type ApprovalSheetItem = {
   actions: SheetAction[];
   // 문서 화면 주소 — 결재 내용 아래 3차 링크 「문서 화면 열기」(사용자 카드 답 2026-10-03 23:12 KST: 링크 넣음). 없으면 링크를 그리지 않는다.
   href: string | null;
+  // 05-01 E3: 종류가 준 `승인` 막힘 이유(구조 값) — 있으면 `승인`은 aria-disabled + 이유 글자, `반려`는 그대로 산다.
+  approveBlockedReason: string | null;
 };
+
+// 05-01 E7(Round 4 D3 · Z3 A): 승인 서버 액션 호출 · 토스트 문구 · 서버 거부 → 충돌 문구 변환은 호출자가 한다.
+export type ApproveOutcome = { message: string } | { conflict: string };
 
 export type ApprovalSheetProps = {
   item: ApprovalSheetItem | null;
   onClose: () => void;
+  onApprove: (target: { instanceId: string; version: number }) => Promise<ApproveOutcome>;
   onApproved: (message: string) => void;
   // 2차(반려 · 회수) — 이 시트를 닫고 확인 시트를 연다(시트 중첩 없음).
   onSecondary: (action: "reject" | "withdraw", item: ApprovalSheetItem) => void;
@@ -48,16 +51,21 @@ const SECONDARY_LABEL: Record<"reject" | "withdraw", string> = { reject: "반려
 const DAY_NUMBER_ROWS = new Set(["잔고", "일수"]);
 
 // `SidePanel`은 호출부가 열린 동안만 렌더한다(제어 형태) — item이 null이면 아무것도 그리지 않는다.
-export function ApprovalSheet({ item, onClose, onApproved, onSecondary }: ApprovalSheetProps) {
+export function ApprovalSheet({ item, onClose, onApprove, onApproved, onSecondary }: ApprovalSheetProps) {
   if (!item) return null;
   return (
     <SidePanel title={item.title} onClose={onClose}>
-      <SheetContent item={item} onApproved={onApproved} onSecondary={onSecondary} />
+      <SheetContent item={item} onApprove={onApprove} onApproved={onApproved} onSecondary={onSecondary} />
     </SidePanel>
   );
 }
 
-function SheetContent({ item, onApproved, onSecondary }: { item: ApprovalSheetItem } & Pick<ApprovalSheetProps, "onApproved" | "onSecondary">) {
+function SheetContent({
+  item,
+  onApprove,
+  onApproved,
+  onSecondary,
+}: { item: ApprovalSheetItem } & Pick<ApprovalSheetProps, "onApprove" | "onApproved" | "onSecondary">) {
   const router = useRouter();
   const panel = usePanel();
   // 제출 중 — 렌더를 기다리지 않고 동기로 바뀌어 두 번째 누름을 무시한다(T7 · §7-17). 같은 값을 `SidePanel`의 닫기 가드에도 알려
@@ -66,30 +74,26 @@ function SheetContent({ item, onApproved, onSecondary }: { item: ApprovalSheetIt
   const [pending, setPending] = useState(false);
   const [conflict, setConflict] = useState<string | null>(null);
 
-  const { execute } = useAction(approveAction, {
-    onSuccess: ({ data }) => {
-      if (!data) return;
-      onApproved(approveToast(data));
-      panel?.requestClose("success");
-      router.refresh();
-    },
-    onError: ({ error }) => {
-      if (error.serverError) setConflict(error.serverError);
-    },
-    onSettled: () => {
-      submittingRef.current = false;
-      panel?.setGuard({ dirtyCount: 0, submitting: false });
-      setPending(false);
-    },
-  });
-
-  function approve() {
+  async function approve() {
     if (submittingRef.current) return;
     submittingRef.current = true;
     panel?.setGuard({ dirtyCount: 0, submitting: true });
     setPending(true);
     setConflict(null);
-    execute({ instanceId: item.instanceId, expectedVersion: item.version });
+    try {
+      const outcome = await onApprove({ instanceId: item.instanceId, version: item.version });
+      if ("message" in outcome) {
+        onApproved(outcome.message);
+        panel?.requestClose("success");
+        router.refresh();
+      } else if (outcome.conflict) {
+        setConflict(outcome.conflict);
+      }
+    } finally {
+      submittingRef.current = false;
+      panel?.setGuard({ dirtyCount: 0, submitting: false });
+      setPending(false);
+    }
   }
 
   function secondary(action: "reject" | "withdraw") {
@@ -143,7 +147,14 @@ function SheetContent({ item, onApproved, onSecondary }: { item: ApprovalSheetIt
           ) : null}
           {item.actions.includes("approve") ? (
             <span className={styles.primaryWrap}>
-              <Button variant="primary" pending={pending} onClick={approve}>
+              <Button
+                variant="primary"
+                pending={pending}
+                disabled={Boolean(item.approveBlockedReason)}
+                disabledReason={item.approveBlockedReason ?? undefined}
+                reasonTone="block"
+                onClick={() => void approve()}
+              >
                 승인
               </Button>
             </span>

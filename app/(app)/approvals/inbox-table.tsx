@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
@@ -12,7 +12,7 @@ import type { StatusWord } from "@/ui/status-tag/status-map";
 import { Toast, type ToastTone } from "@/ui/toast/Toast";
 import { approveAction } from "./actions";
 import { approveToast } from "./approve-toast";
-import { ApprovalSheet, type ApprovalSheetItem } from "./approval-sheet";
+import { ApprovalSheet, type ApprovalSheetItem, type ApproveOutcome } from "./approval-sheet";
 import { ConflictLine } from "./conflict-line";
 import { INBOX_COLUMN_LABELS } from "./list-columns";
 import { RejectDialog, WithdrawDialog, type DecisionTarget, type RejectMessages } from "./decision-dialogs";
@@ -32,7 +32,8 @@ export type InboxRow = {
   href: string | null;
   document: string;
   drafter: string;
-  days: string;
+  // 05-01(Round 4 D8): 숫자 칸 — 종류 요약 measure를 서버가 그린 노드(금액 `Num` · 일수 글자 · 숫자 없는 종류 `—` · 투영에서 빠지면 빈 칸).
+  measure: ReactNode;
   status: StatusWord | null;
   // `잔여 초과 N일`(해당할 때만) — PC는 문서 칸 2행, 폰은 접힌 줄 끝(UI-SPEC S4). 막힘이 아니라 경고다.
   overdraw: string | null;
@@ -51,7 +52,27 @@ function documentCellId(row: InboxRow): string {
   return `inbox-doc-${row.id.replace(/[^a-zA-Z0-9-]/g, "-")}`;
 }
 
-export function InboxTable({ rows, rejectMessages }: { rows: InboxRow[]; rejectMessages: RejectMessages }) {
+// 결재 시트 `승인` — 서버 액션 호출 · 토스트 문구 · 서버 거부 → 충돌 문구 변환(05-01 E7). 입력 오류 · 통신 실패는 충돌 줄 없이 끝난다(04.1 그대로).
+async function approveFromSheet(target: { instanceId: string; version: number }): Promise<ApproveOutcome> {
+  try {
+    const result = await approveAction({ instanceId: target.instanceId, expectedVersion: target.version });
+    if (result?.data) return { message: approveToast(result.data) };
+    return { conflict: result?.serverError ?? "" };
+  } catch {
+    return { conflict: "" };
+  }
+}
+
+export function InboxTable({
+  rows,
+  rejectMessages,
+  measureHeader,
+}: {
+  rows: InboxRow[];
+  rejectMessages: RejectMessages;
+  // 05-01 E5: 숫자 열 머리글(서버 listMyInbox) — null이면 숫자 열을 통째로 그리지 않는다.
+  measureHeader: string | null;
+}) {
   const router = useRouter();
   const [pendingId, setPendingId] = useState<string | null>(null);
   // 행 승인이 동시 처리로 거부되면 그 행 행동 칸에 한 줄 + 3차 `새로 고침`(토스트가 아니다 — 누른 자리 옆).
@@ -133,7 +154,9 @@ export function InboxTable({ rows, rejectMessages }: { rows: InboxRow[]; rejectM
           row.drafter
         ),
     },
-    { key: "days", header: INBOX_COLUMN_LABELS.days, priority: "p1", align: "right", cell: (row) => row.days },
+    ...(measureHeader
+      ? [{ key: "days", header: measureHeader, priority: "p1", align: "right", cell: (row) => row.measure } satisfies TableColumn<InboxRow>]
+      : []),
     {
       key: "status",
       header: INBOX_COLUMN_LABELS.status,
@@ -194,6 +217,7 @@ export function InboxTable({ rows, rejectMessages }: { rows: InboxRow[]; rejectM
       <ApprovalSheet
         item={sheetItem}
         onClose={() => setSheetItem(null)}
+        onApprove={approveFromSheet}
         onApproved={showToast}
         onSecondary={(action, item) => {
           const row = rows.find((candidate) => candidate.sheet?.instanceId === item.instanceId);

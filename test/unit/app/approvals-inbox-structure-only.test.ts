@@ -9,7 +9,7 @@ vi.mock("@/lib/viewer", () => ({ requireSession: () => Promise.resolve({ viewer:
 vi.mock("@/app/(app)/document-kinds", () => ({}));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => undefined, push: () => undefined }) }));
 vi.mock("next-safe-action/hooks", () => ({ useAction: () => ({ execute: () => undefined, isExecuting: false, result: {} }) }));
-vi.mock("@/app/(app)/approvals/actions", () => ({ approveAction: () => undefined, rejectAction: () => undefined }));
+vi.mock("@/app/(app)/approvals/actions", () => ({ approveAction: () => undefined, rejectAction: () => undefined, withdrawAction: () => undefined }));
 vi.mock("@/app/(app)/leave/actions", () => ({ withdrawLeaveAction: () => undefined }));
 vi.mock("@/domain/approvals", () => ({
   REJECT_REASON_EMPTY_MESSAGE: "사유 없음 · 사유 적기",

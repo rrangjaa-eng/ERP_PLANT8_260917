@@ -4,7 +4,15 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { authedActionClient } from "@/lib/actions/client";
 import "@/app/(app)/document-kinds";
-import { approveDocument, describeDeduction, projectActionResult, rejectDocument, type ApprovalActionResult } from "@/domain/approvals";
+import {
+  approveDocument,
+  describeDeduction,
+  describeFinalApprovalNote,
+  projectActionResult,
+  rejectDocument,
+  withdrawDocument,
+  type ApprovalActionResult,
+} from "@/domain/approvals";
 import { log } from "@/lib/log";
 import "./actions.registry";
 
@@ -31,10 +39,11 @@ export const approveAction = authedActionClient.schema(transitionSchema).action(
   revalidatePath("/approvals");
   const base = { documentId: approved.documentId, final: approved.final };
   return afterCommit(base, async () => {
-    const deductedDays = approved.final
-      ? await describeDeduction(ctx.viewer, { kind: approved.kind, documentId: approved.documentId })
-      : null;
-    return projectActionResult(ctx.viewer, { ...base, nextHolderNames: approved.nextHolderNames, deductedDays });
+    const target = { kind: approved.kind, documentId: approved.documentId };
+    const deductedDays = approved.final ? await describeDeduction(ctx.viewer, target) : null;
+    // 05-01(Round 4 D8): 종류 요약의 최종 승인 토스트 꼬리(없으면 null).
+    const finalNote = approved.final ? await describeFinalApprovalNote(ctx.viewer, target) : null;
+    return projectActionResult(ctx.viewer, { ...base, nextHolderNames: approved.nextHolderNames, deductedDays, finalNote });
   });
 });
 
@@ -47,3 +56,10 @@ export const rejectAction = authedActionClient
     const base = { documentId: rejected.documentId, final: false };
     return afterCommit(base, () => projectActionResult(ctx.viewer, { ...base, drafterName: rejected.drafterName }));
   });
+
+// 05-01(Round 4 D8): 종류 중립 회수 — 결재함 · 문서 화면의 회수 확인이 종류와 상관없이 부른다. 문서 id만 돌려준다.
+export const withdrawAction = authedActionClient.schema(transitionSchema).action(async ({ parsedInput, ctx }) => {
+  const withdrawn = await withdrawDocument(ctx.viewer, parsedInput);
+  revalidatePath("/approvals");
+  return { documentId: withdrawn.documentId };
+});

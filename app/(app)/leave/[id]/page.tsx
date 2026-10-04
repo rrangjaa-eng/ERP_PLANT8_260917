@@ -6,6 +6,7 @@ import { formatLeaveTitle, formatRequestBalanceRow, getLeave, LEAVE_DOCUMENT_KIN
 import { getLeaveBalanceForRequest } from "@/domain/leave/balance-service";
 import {
   getApprovalView,
+  getDocumentKind,
   REJECT_REASON_EMPTY_MESSAGE,
   REJECT_REASON_MAX,
   REJECT_REASON_TOO_LONG_MESSAGE,
@@ -126,6 +127,7 @@ export default async function LeaveDocumentPage({
             ? {
                 instanceId: view.instanceId,
                 version: view.version,
+                kindLabel: getDocumentKind(LEAVE_DOCUMENT_KIND).label,
                 subtitle: [leave.number, leave.drafterName, formatLeavePeriod(leave), leave.days].filter(Boolean).join(" · "),
                 withdrawSubtitle: [leave.number, formatLeavePeriod(leave), leave.days].filter(Boolean).join(" · "),
                 drafterName: view.drafterName ?? leave.drafterName ?? null,

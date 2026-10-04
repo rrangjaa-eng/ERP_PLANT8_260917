@@ -4,8 +4,7 @@ import { useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
-import { rejectAction } from "./actions";
-import { withdrawLeaveAction } from "@/app/(app)/leave/actions";
+import { rejectAction, withdrawAction } from "./actions";
 import styles from "./decision-dialogs.module.css";
 
 // 04.1-05 S6 반려 · 회수 확인 — ui/confirm-dialog(main의 공용 확인 모달 · 폰 시트) 그대로. 결재함(PC 행 ·
@@ -18,6 +17,8 @@ export type RejectMessages = { empty: string; tooLong: string; max: number };
 export type DecisionTarget = {
   instanceId: string;
   version: number;
+  // 05-01(Round 4 D8): 종류 라벨 — 확인 창 제목 `{종류} 반려` · `{종류} 회수`.
+  kindLabel: string;
   // 반려 부제 `{번호} · {기안자} · {종류 기간} · {일수}`.
   subtitle: string;
   // 회수 부제 `{번호} · {종류 기간} · {일수}`(기안자 본인이 보므로 이름 없음).
@@ -81,7 +82,7 @@ export function RejectDialog({
     <ConfirmDialog
       open={target !== null}
       onClose={close}
-      title="연차 반려"
+      title={`${target?.kindLabel ?? ""} 반려`}
       subtitle={target?.subtitle}
       resultLines={[`${target?.drafterName ?? "기안자"}에게 돌아감 · 내 결재에서 빠짐`]}
       evidenceField={
@@ -124,7 +125,7 @@ export function WithdrawDialog({
   const [serverError, setServerError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const submittingRef = useRef(false);
-  const { execute } = useAction(withdrawLeaveAction, {
+  const { execute } = useAction(withdrawAction, {
     onSuccess: () => {
       onDone("회수 · 결재 멈춤");
       close();
@@ -155,7 +156,7 @@ export function WithdrawDialog({
     <ConfirmDialog
       open={target !== null}
       onClose={close}
-      title="연차 회수"
+      title={`${target?.kindLabel ?? ""} 회수`}
       subtitle={target?.withdrawSubtitle}
       resultLines={target?.withdrawLines}
       primary={{

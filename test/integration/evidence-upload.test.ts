@@ -7,7 +7,9 @@ import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND, ExpenseConflictError, Ex
 import {
   completeEvidenceUpload,
   createEvidenceViewUrl,
+  EVIDENCE_LOCKED_IN_REVIEW,
   EvidenceCheckError,
+  EvidenceLockedError,
   EvidenceUploadRefusedError,
   listEvidence,
   removeEvidence,
@@ -327,14 +329,14 @@ describe("거부 — 의도 · 메타데이터 · 상태 · 권한 · 중복", (
     }
   });
 
-  it("반려 · 회수된 문서에는 업로드 요청이 열리고 결재 중 문서는 거부된다(05-09가 연다)", async () => {
+  it("반려 · 회수된 문서에는 업로드 요청이 열리고 결재 중 문서는 기안자에게 `결재 중 · 증빙 잠김`이다(05-09 — 결재 중 붙이기는 경영관리 권한자만)", async () => {
     const fx = await setupExpenseProject();
     const storage = createMemoryStorage();
     const pending = await draftOf(fx);
     await submitReadyDraft(fx.pm, pending);
 
-    await expect(requestEvidenceUpload(fx.pm, { ownerKind: "expense", ownerId: pending, ...declared() }, { storage, now: NOW })).rejects.toBeInstanceOf(
-      ExpenseConflictError,
+    await expect(requestEvidenceUpload(fx.pm, { ownerKind: "expense", ownerId: pending, ...declared() }, { storage, now: NOW })).rejects.toThrow(
+      new EvidenceLockedError(EVIDENCE_LOCKED_IN_REVIEW),
     );
 
     const submitted = await instanceOf(pending);

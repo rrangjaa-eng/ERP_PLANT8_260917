@@ -8,9 +8,12 @@ import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { setCustomerApproval } from "@/domain/quotes/revisions";
 import { approvalBasis } from "@/repositories/quote-revisions";
 import { insertVendor } from "@/repositories/vendors";
+import { insertRole } from "@/repositories/roles";
+import { upsertPermission } from "@/repositories/permissions";
+import { createOrgUnit, createTeam } from "@/domain/org";
 import { seoulToday } from "@/lib/dates";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
-import { loginPage, setupLeaveOrg, waitForHydration, type Person } from "./leave-org";
+import { loginPage, makePerson, setupLeaveOrg, waitForHydration, type Person } from "./leave-org";
 
 // 05-05 지출결의 E2E 공용 픽스처 — 04.1 결재 E2E 준비(`setupLeaveOrg`: 전용 본부 · 팀 · 기안 PM · 팀장 · 대표)에 진행 중 프로젝트
 // (1차 차수 고객 승인 끝) · 거래처 · 견적 줄 여럿을 도메인 함수로 얹는다(SQL 직접 삽입 없음). 줄마다 쓰는 테스트가 따로라 서로 겹치지 않는다.
@@ -112,6 +115,19 @@ export async function setupExpenseE2E(): Promise<ExpenseE2E> {
     vendorName,
     lines: Object.fromEntries((Object.keys(names) as LineKey[]).map((key) => [key, { id: idOf(names[key]), itemName: names[key] }])) as ExpenseE2E["lines"],
   };
+}
+
+// 05-09 — 테스트 계급 「경영관리」(관리자가 권한표에서 켜는 계급): 전사 업무 범위 · 지출결의 보기 + 결재 중 증빙 붙이기 · 증빙 무효 처리 쓰기.
+// 전용 본부 · 팀에 발령한다(경영관리본부 밖 — 결재선 단계 담당이 아니다).
+export async function makeEvidenceManagerE2E(): Promise<Person> {
+  const suffix = randomUUID().slice(0, 8);
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E경영관리-${suffix}`, workScope: "company" });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "view", allowed: true });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.evidence_attach", action: "write", allowed: true });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.evidence_void", action: "write", allowed: true });
+  const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E지원본부-${suffix}` });
+  const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E지원팀-${suffix}` });
+  return makePerson("경영지원", role.id, team.id, `${seoulToday().slice(0, 4)}-01-01`);
 }
 
 // 증빙 중복 검사는 파일 해시가 같으면 다른 문서의 파일도 막는다(05-04) — 한 번에 도는 스펙 안에서 같은 그림을 두 번 올리면 둘째가 `이미 첨부된 파일`이 된다.

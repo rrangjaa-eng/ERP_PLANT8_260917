@@ -6,7 +6,7 @@ import { insertVendor } from "@/repositories/vendors";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { seoulToday } from "@/lib/dates";
 import { loginPage, waitForHydration } from "./leave-org";
-import { setupExpenseE2E, uniqueReceipt, type ExpenseE2E, type LineKey } from "./expense-fixture";
+import { makeEvidenceManagerE2E, setupExpenseE2E, submitLineExpense, uniqueReceipt, type ExpenseE2E, type LineKey } from "./expense-fixture";
 
 // 05-09(UI-SPEC 확정 #2 · S3 「반려 · 회수 뒤」 · Copywriting 「SUCCESS — 토스트」): 제출 토스트 `되돌리기` = 확인 없는 즉시 회수 → 같은 주소가
 // 고칠 수 있는 폼 → 같은 번호로 다시 제출. 토스트 4초 자동 소멸에 기대지 않는다 — `page.clock.install()`을 `goto` 전에 두고 토스트가 보이면
@@ -150,5 +150,110 @@ test.describe("작성 중 삭제 · 문서 화면 회수 · 본인 승인 (Task 
     await expect(page.getByRole("button", { name: /^승인/ })).toBeVisible();
     await expect(page.getByRole("button", { name: /^회수/ })).toBeVisible();
     await expect(page.getByRole("button", { name: /^반려/ })).toHaveCount(0);
+  });
+});
+
+// 05-09 Task 3(사용자 결정 2026-10-04 — 260907 :79 복귀 · UI-SPEC S4 파일 행 3차 · 「무효 행 접근성」): 결재 중에는 아무도 떼지 못하고 붙이기는
+// 경영관리 권한자만, 기안자는 승인 뒤 더하기만. 승인 뒤 잘못 붙은 증빙은 권한자가 무효 처리(사유 · 확인 창 · 토스트 없음).
+async function approveAll(fx: ExpenseE2E, expenseId: string): Promise<void> {
+  for (const person of [fx.lead, fx.divisionHead, fx.mgmt, fx.ceo]) {
+    const view = await getApprovalView(person.viewer, { kind: EXPENSE_DOCUMENT_KIND, documentId: expenseId });
+    await approveDocument(person.viewer, { instanceId: view?.instanceId ?? "", expectedVersion: view?.version ?? 0 });
+  }
+}
+
+const ROWS = '[data-ui="attachments"] li';
+
+test.describe("제출 뒤 증빙", () => {
+  test("결재 중 — 기안자는 잠김 한 줄 · 하나 더 0 · 삭제 0, 권한자는 하나 더로 붙임 · 삭제 0, 권한 없는 결재자는 크게 보기만", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const manager = await makeEvidenceManagerE2E();
+    const expenseId = await submitLineExpense(browser, baseURL, fx, "phone");
+
+    const drafter = await loginPage(browser, baseURL, fx.pm);
+    await drafter.goto(`/expenses/${expenseId}`);
+    await expect(drafter.locator(ROWS)).toHaveCount(1);
+    await expect(drafter.getByText("결재 중 · 증빙은 경영관리")).toBeVisible();
+    await expect(drafter.getByRole("button", { name: /^하나 더/ })).toHaveCount(0);
+    await expect(drafter.getByRole("button", { name: "삭제" })).toHaveCount(0);
+    await drafter.context().close();
+
+    const lead = await loginPage(browser, baseURL, fx.lead);
+    await lead.goto(`/expenses/${expenseId}`);
+    await expect(lead.locator(ROWS)).toHaveCount(1);
+    await expect(lead.locator(ROWS).getByRole("link", { name: "크게 보기" })).toBeVisible();
+    await expect(lead.getByRole("button", { name: /^하나 더/ })).toHaveCount(0);
+    await expect(lead.getByText("결재 중 · 증빙은 경영관리")).toHaveCount(0);
+    await lead.context().close();
+
+    const page = await loginPage(browser, baseURL, manager);
+    await page.goto(`/expenses/${expenseId}`);
+    const more = page.getByRole("button", { name: /^하나 더/ });
+    await waitForHydration(more);
+    await page.getByTestId("attachments-input").setInputFiles(await uniqueReceipt(page));
+    await expect(page.locator(ROWS).getByText(META)).toHaveCount(2, { timeout: UPLOAD_WAIT });
+    await expect(page.getByRole("button", { name: "삭제" })).toHaveCount(0);
+    await page.context().close();
+  });
+
+  test("승인 뒤 — 기안자는 하나 더만, 권한자 무효 처리(사유 칸 textarea · 빈 칸 막힘) → 취소선 · 「무효」 태그 · 2행 · 토스트 없음 · 접근성", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const manager = await makeEvidenceManagerE2E();
+    const expenseId = await submitLineExpense(browser, baseURL, fx, "phone");
+    await approveAll(fx, expenseId);
+
+    const drafter = await loginPage(browser, baseURL, fx.pm);
+    await drafter.goto(`/expenses/${expenseId}`);
+    await expect(drafter.getByRole("button", { name: /^하나 더/ })).toBeVisible();
+    await expect(drafter.getByRole("button", { name: "삭제" })).toHaveCount(0);
+    await expect(drafter.getByRole("button", { name: "무효 처리" })).toHaveCount(0);
+    await drafter.context().close();
+
+    const page = await loginPage(browser, baseURL, manager);
+    await page.goto(`/expenses/${expenseId}`);
+    const voidButton = page.locator(ROWS).getByRole("button", { name: "무효 처리" });
+    await waitForHydration(voidButton);
+    await voidButton.click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("heading", { name: "증빙 무효 처리" })).toBeVisible();
+    const reason = dialog.getByLabel("사유");
+    expect(await reason.evaluate((el) => el.tagName)).toBe("TEXTAREA");
+    await expect(dialog.getByText("사유 없음 · 사유 적기")).toBeVisible();
+    await reason.fill("다른 건 영수증");
+    await dialog.getByRole("button", { name: /^무효 처리/ }).click();
+    await expect(dialog).toHaveCount(0);
+
+    const row = page.locator(ROWS).first();
+    const tag = row.getByText("무효", { exact: true });
+    await expect(tag).toBeVisible();
+    const name = row.locator("[aria-describedby]").first();
+    await expect(name).toHaveCSS("text-decoration-line", "line-through");
+    const describedBy = (await name.getAttribute("aria-describedby")) ?? "";
+    await expect(page.locator(`[id="${describedBy}"]`)).toHaveText(/^무효 · 경영지원.{4} · \d{2}-\d{2} \d{2}:\d{2} · 다른 건 영수증$/);
+    expect(await tag.evaluate((el, other) => (el.compareDocumentPosition(other as Node) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0, await name.elementHandle())).toBe(true);
+    expect(await row.evaluate((el) => el.closest('[aria-live="polite"]') !== null)).toBe(true);
+    await expect(row.getByRole("button", { name: "무효 처리" })).toHaveCount(0);
+    await expect(page.getByRole("status").filter({ hasText: /무효/ })).toHaveCount(0);
+    await page.context().close();
+  });
+
+  test("폰 375 — 권한자의 승인 문서 살아 있는 파일 행: 크게 보기 · 무효 처리 각각 높이 44 이상 · 사이 16 이상", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const manager = await makeEvidenceManagerE2E();
+    const expenseId = await submitLineExpense(browser, baseURL, fx, "phone");
+    await approveAll(fx, expenseId);
+
+    const page = await loginPage(browser, baseURL, manager, { width: 375, height: 800 });
+    await page.goto(`/expenses/${expenseId}`);
+    const row = page.locator(ROWS).first();
+    const view = await row.getByRole("link", { name: "크게 보기" }).boundingBox();
+    const voidBox = await row.getByRole("button", { name: "무효 처리" }).boundingBox();
+    if (!view || !voidBox) throw new Error("파일 행 3차가 없다");
+    expect(view.height).toBeGreaterThanOrEqual(44);
+    expect(voidBox.height).toBeGreaterThanOrEqual(44);
+    const sameLine = Math.abs(view.y - voidBox.y) < 1;
+    const gap = sameLine ? voidBox.x - (view.x + view.width) : voidBox.y - (view.y + view.height);
+    expect(gap).toBeGreaterThanOrEqual(16);
+    await page.context().close();
   });
 });

@@ -123,6 +123,13 @@ describe("RowActions — 행동 링크 묶음", () => {
     expect(order(markup)).toEqual(["수정", "숨기기", "삭제"]);
   });
 
+  it("noWrap은 .noWrap 클래스를 달고, 없으면 달지 않는다", () => {
+    const row = (noWrap?: boolean): string =>
+      html(createElement(RowActions, { noWrap } as { noWrap?: boolean; children: ReactNode }, act({ href: "/a", children: "수정" })));
+    expect(row(true)).toMatch(/data-ui="row-actions"[^>]*class="[^"]*noWrap/);
+    expect(row()).not.toContain("noWrap");
+  });
+
   it("개수와 무관하게 같은 구조 — 하나 · 둘 · 셋", () => {
     for (const count of [1, 2, 3]) {
       const items = Array.from({ length: count }, (_, index) => createElement(Fragment, { key: index }, act({ href: `/x${index}`, children: `행동${"가나다"[index]}` })));

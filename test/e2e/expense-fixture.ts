@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type { Page } from "@playwright/test";
+import { expect, type Browser, type Page } from "@playwright/test";
+import { createExpenseFromLines } from "@/domain/expenses";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { createProject } from "@/domain/projects";
 import { changeProjectStatus } from "@/domain/projects/status";
@@ -9,7 +10,7 @@ import { approvalBasis } from "@/repositories/quote-revisions";
 import { insertVendor } from "@/repositories/vendors";
 import { seoulToday } from "@/lib/dates";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
-import { setupLeaveOrg, type Person } from "./leave-org";
+import { loginPage, setupLeaveOrg, waitForHydration, type Person } from "./leave-org";
 
 // 05-05 지출결의 E2E 공용 픽스처 — 04.1 결재 E2E 준비(`setupLeaveOrg`: 전용 본부 · 팀 · 기안 PM · 팀장 · 대표)에 진행 중 프로젝트
 // (1차 차수 고객 승인 끝) · 거래처 · 견적 줄 여럿을 도메인 함수로 얹는다(SQL 직접 삽입 없음). 줄마다 쓰는 테스트가 따로라 서로 겹치지 않는다.
@@ -29,7 +30,8 @@ export type ExpenseE2E = {
   lines: Record<LineKey, { id: string; itemName: string }>;
 };
 
-export type LineKey = "tracer" | "hold" | "retry" | "phone" | "noVendor" | "cancelled";
+// worst = 폰 시트 최악 줄(두 줄로 꺾이는 긴 항목명 · 두 줄 비고) — 05-05 Task 2 DOM 감사가 쓴다.
+export type LineKey = "tracer" | "hold" | "retry" | "phone" | "noVendor" | "cancelled" | "worst" | "closed";
 
 const EXECUTION_KRW = 12_400_000;
 
@@ -63,8 +65,10 @@ export async function setupExpenseE2E(): Promise<ExpenseE2E> {
     phone: `영상 제작-${suffix}`,
     noVendor: `현장 인력-${suffix}`,
     cancelled: `취소된 줄-${suffix}`,
+    worst: `무대 철거 및 원상복구 현장 인력 추가 투입 비용 정산 항목-${suffix}`,
+    closed: `제출된 줄-${suffix}`,
   };
-  const line = (itemName: string, vendorId: string | null, extra: { lineStatus?: "cancelled" } = {}) => ({
+  const line = (itemName: string, vendorId: string | null, extra: { lineStatus?: "cancelled"; note?: string } = {}) => ({
     id: randomUUID(),
     isNew: true as const,
     subcategory,
@@ -82,6 +86,8 @@ export async function setupExpenseE2E(): Promise<ExpenseE2E> {
       line(names.phone, vendor.id),
       line(names.noVendor, null),
       line(names.cancelled, vendor.id, { lineStatus: "cancelled" }),
+      line(names.worst, vendor.id, { note: "현장 사정으로 철거 일정이 이틀 밀려 인력 추가 투입 · 원상복구 범위는 계약서 별첨 3항 기준으로 정산" }),
+      line(names.closed, vendor.id),
     ],
   });
   const idOf = (itemName: string) => {
@@ -132,4 +138,20 @@ export async function uniqueReceipt(page: Page): Promise<{ name: string; mimeTyp
     return btoa(binary);
   }, tag);
   return { name: `receipt-${tag.slice(0, 8)}.jpg`, mimeType: "image/jpeg", buffer: Buffer.from(base64, "base64") };
+}
+
+// 줄 하나의 작성 중 문서를 만들어 폼에서 사진 한 장을 붙여 제출한다(문이 닫히는 줄 · 제출된 문서가 필요한 스펙). 문서 id를 돌려준다.
+export async function submitLineExpense(browser: Browser, baseURL: string | undefined, fx: ExpenseE2E, key: LineKey): Promise<string> {
+  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines[key].id] });
+  const expenseId = created.created[0]?.expenseId;
+  if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
+  const page = await loginPage(browser, baseURL, fx.pm);
+  await page.goto(`/expenses/${expenseId}`);
+  await waitForHydration(page.getByRole("button", { name: /^임시 저장/ }));
+  await page.getByTestId("attachments-input").setInputFiles(await uniqueReceipt(page));
+  await expect(page.locator('[data-ui="attachments"] li').getByText(/^\d+KB · \d{2}-\d{2}$/)).toBeVisible({ timeout: 20_000 });
+  await page.getByRole("button", { name: /^지출결의 제출/ }).click();
+  await expect(page).toHaveURL(new RegExp(`/expenses/${expenseId}\\?submitted=1$`));
+  await page.context().close();
+  return expenseId;
 }

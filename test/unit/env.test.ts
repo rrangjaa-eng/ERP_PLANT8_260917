@@ -38,6 +38,8 @@ const ENV_KEYS = [
   "APP_DATA_KEY_KMS_KEY",
   "APP_DATA_KEY_v1_WRAPPED",
   "APP_DATA_KEY_v2_WRAPPED",
+  "STORAGE_DRIVER",
+  "GCS_EVIDENCE_BUCKET",
 ] as const;
 
 let saved: Record<string, string | undefined>;
@@ -278,5 +280,52 @@ describe("lib/env", () => {
 
     const { env } = await import("@/lib/env");
     expect(env.APP_DATA_KEY_v2).toBe(Buffer.alloc(32, 2).toString("base64"));
+  });
+
+  // 05-04(EVID-01 · Pitfall 8) — 인증 없는 로컬 저장소 창구는 로컬에서만. 값이 없으면 APP_ENV로 고른다.
+  describe("STORAGE_DRIVER(05-04)", () => {
+    function nonLocal(appEnv: "staging" | "prod") {
+      process.env.APP_ENV = appEnv;
+      process.env.BETTER_AUTH_SECRET = "a".repeat(32);
+      process.env.BETTER_AUTH_URL = "https://example.com";
+    }
+
+    it("APP_ENV=staging에 STORAGE_DRIVER=local이면 STORAGE_DRIVER 경로로 throw한다", async () => {
+      nonLocal("staging");
+      process.env.STORAGE_DRIVER = "local";
+
+      await expect(import("@/lib/env")).rejects.toThrow(/STORAGE_DRIVER/);
+    });
+
+    it("APP_ENV=local에 값이 없으면 해석된 드라이버는 local이다", async () => {
+      const { env, resolvedStorageDriver } = await import("@/lib/env");
+      expect(env.STORAGE_DRIVER).toBeUndefined();
+      expect(resolvedStorageDriver(env)).toBe("local");
+    });
+
+    it("APP_ENV=staging에 값이 없으면 해석된 드라이버는 gcs다", async () => {
+      nonLocal("staging");
+
+      const { env, resolvedStorageDriver } = await import("@/lib/env");
+      expect(resolvedStorageDriver(env)).toBe("gcs");
+    });
+
+    it("APP_ENV=prod에 STORAGE_DRIVER=gcs이고 GCS_EVIDENCE_BUCKET이 없어도 부팅은 통과한다(버킷은 드라이버 생성 때 검사)", async () => {
+      nonLocal("prod");
+      process.env.STORAGE_DRIVER = "gcs";
+
+      const { env, resolvedStorageDriver } = await import("@/lib/env");
+      expect(resolvedStorageDriver(env)).toBe("gcs");
+      expect(env.GCS_EVIDENCE_BUCKET).toBeUndefined();
+    });
+
+    it("로컬에서 STORAGE_DRIVER=gcs를 명시하면 그 값을 따른다 · 버킷 이름을 읽는다", async () => {
+      process.env.STORAGE_DRIVER = "gcs";
+      process.env.GCS_EVIDENCE_BUCKET = "plant8-evidence";
+
+      const { env, resolvedStorageDriver } = await import("@/lib/env");
+      expect(resolvedStorageDriver(env)).toBe("gcs");
+      expect(env.GCS_EVIDENCE_BUCKET).toBe("plant8-evidence");
+    });
   });
 });

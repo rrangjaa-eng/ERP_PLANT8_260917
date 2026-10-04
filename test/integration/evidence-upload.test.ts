@@ -1,13 +1,25 @@
 import { randomBytes } from "node:crypto";
-import { describe, expect, it } from "vitest";
-import { and, eq } from "drizzle-orm";
-import { db } from "@/db/client";
-import { actionLog, expenses, files, uploadIntents } from "@/db/schema";
-import { createExpenseFromLines, submitExpense } from "@/domain/expenses";
-import { completeEvidenceUpload, createEvidenceViewUrl, listEvidence, requestEvidenceUpload } from "@/domain/evidence";
+import { describe, expect, it, vi } from "vitest";
+import { and, eq, isNull } from "drizzle-orm";
+import { db, pool } from "@/db/client";
+import { actionLog, approvalInstances, expenses, files, uploadIntents } from "@/db/schema";
+import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND, ExpenseConflictError, ExpenseNotFoundError, submitExpense } from "@/domain/expenses";
+import {
+  completeEvidenceUpload,
+  createEvidenceViewUrl,
+  EvidenceCheckError,
+  EvidenceUploadRefusedError,
+  listEvidence,
+  removeEvidence,
+  requestEvidenceUpload,
+} from "@/domain/evidence";
+import { EVIDENCE_DUPLICATE_HIDDEN, EVIDENCE_UPLOAD_FAILED, evidenceDuplicateElsewhere } from "@/domain/evidence/upload-checks";
+import { rejectDocument, withdrawDocument } from "@/domain/approvals";
 import { GateBlockedError } from "@/domain/rules/gate";
-import { createMemoryStorage } from "./fakes/memory-storage";
-import { attachEvidence, setupExpenseProject, type ExpenseFixture } from "./fixtures/expenses";
+import { log } from "@/lib/log";
+import { createMemoryStorage, type MemoryStorage } from "./fakes/memory-storage";
+import { attachEvidence, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
+import { deferred, waitForLockWaiter, type Deferred } from "./lock-race";
 
 // 05-04(EVID-01 · EXP-02): 증빙 업로드 경로 — 선언 → 서명 PUT(메모리 가짜) → 완료 통보 → 메타데이터 재확인 → 파일 행.
 // 그 파일이 있어야 지출결의가 제출된다(게이트 ⑧).
@@ -138,5 +150,332 @@ describe("트레이서 — 선언에서 제출까지", () => {
 
     expect(await createEvidenceViewUrl(fx.otherPm, { fileId: file.id }, { storage })).toBeNull();
     expect(storage.signedGets).toHaveLength(1);
+  });
+});
+
+// ── Task 3 — 거부 · 다시 올리기 갈래 · 잠금 경합 ─────────────────────
+
+type Declared = { size: number; contentType: string; sha256: string; name: string };
+
+function declared(overrides: Partial<Declared> = {}): Declared {
+  return { size: 212_000, contentType: "image/jpeg", sha256: sha(), name: "세금계산서.jpg", ...overrides };
+}
+
+// 선언 → 메모리 가짜 PUT까지(완료 통보 전).
+async function uploaded(viewer: ExpenseFixture["pm"], expenseId: string, storage: MemoryStorage, file: Declared = declared()) {
+  const intent = await requestEvidenceUpload(viewer, { ownerKind: "expense", ownerId: expenseId, ...file }, { storage, now: NOW });
+  storage.put(intent.url, { size: file.size, contentType: file.contentType, sha256: file.sha256 });
+  return intent;
+}
+
+async function fileRowsOf(expenseId: string) {
+  return db.select().from(files).where(and(eq(files.ownerKind, "expense"), eq(files.ownerId, expenseId)));
+}
+
+async function activeFilesOf(expenseId: string) {
+  return db
+    .select()
+    .from(files)
+    .where(and(eq(files.ownerKind, "expense"), eq(files.ownerId, expenseId), isNull(files.removedAt)));
+}
+
+function keysWithPrefix(storage: MemoryStorage, prefix: string): string[] {
+  return [...storage.objects.keys()].filter((key) => key.startsWith(prefix));
+}
+
+async function expectRefused(promise: Promise<unknown>, retry: "complete" | "restart") {
+  const error = await promise.then(
+    () => null,
+    (reason: unknown) => reason,
+  );
+  expectRefusal(error, retry);
+}
+
+function expectRefusal(error: unknown, retry: "complete" | "restart") {
+  expect(error).toBeInstanceOf(EvidenceUploadRefusedError);
+  expect((error as EvidenceUploadRefusedError).retry).toBe(retry);
+  expect((error as Error).message).toBe(EVIDENCE_UPLOAD_FAILED);
+}
+
+async function instanceOf(expenseId: string) {
+  const [row] = await db
+    .select()
+    .from(approvalInstances)
+    .where(and(eq(approvalInstances.documentKind, EXPENSE_DOCUMENT_KIND), eq(approvalInstances.documentId, expenseId)));
+  if (!row) throw new Error("결재 인스턴스 없음");
+  return row;
+}
+
+// A가 잠금을 잡은 채 멈추면 B를 시작하고, B가 잠금을 기다리는 것을 확인한 뒤 A를 푼다(05-14 raceSubmits와 같은 모양).
+function holdAtLock(): { hold: { locked: Deferred<void>; release: Deferred<void> }; afterLock: () => Promise<void> } {
+  const hold = { locked: deferred(), release: deferred() };
+  return {
+    hold,
+    afterLock: async () => {
+      hold.locked.resolve();
+      await hold.release.promise;
+    },
+  };
+}
+
+async function race(a: () => Promise<unknown>, b: () => Promise<unknown>, hold: { locked: Deferred<void>; release: Deferred<void> }, between?: () => void) {
+  const first = a();
+  const reachedLock = await Promise.race([hold.locked.promise.then(() => true), first.then(() => false, () => false)]);
+  expect(reachedLock).toBe(true);
+  between?.();
+  const second = b();
+  try {
+    await waitForLockWaiter(pool);
+  } finally {
+    hold.release.resolve();
+  }
+  return Promise.allSettled([first, second]);
+}
+
+describe("거부 — 의도 · 메타데이터 · 상태 · 권한 · 중복", () => {
+  it("남의 의도 id로 완료하면 `올리지 못함 · 다시 올리기`(restart) · 파일 행 0", async () => {
+    const fx = await setupExpenseProject();
+    const expenseId = await draftOf(fx);
+    const storage = createMemoryStorage();
+    const intent = await uploaded(fx.pm, expenseId, storage);
+
+    await expectRefused(completeEvidenceUpload(fx.otherPm, { intentId: intent.intentId }, { storage, now: NOW }), "restart");
+    expect(await fileRowsOf(expenseId)).toHaveLength(0);
+  });
+
+  it("만료된 의도(16분 뒤)는 restart로 거부 · 파일 행 0", async () => {
+    const fx = await setupExpenseProject();
+    const expenseId = await draftOf(fx);
+    const storage = createMemoryStorage();
+    const intent = await uploaded(fx.pm, expenseId, storage);
+
+    await expectRefused(completeEvidenceUpload(fx.pm, { intentId: intent.intentId }, { storage, now: new Date(NOW.getTime() + 16 * 60 * 1000) }), "restart");
+    expect(await fileRowsOf(expenseId)).toHaveLength(0);
+  });
+
+  it("같은 의도를 두 번 완료하면 두 번째는 restart · 파일 행 1 · evidence/ 객체는 파일 행의 키 하나", async () => {
+    const fx = await setupExpenseProject();
+    const expenseId = await draftOf(fx);
+    const storage = createMemoryStorage();
+    const intent = await uploaded(fx.pm, expenseId, storage);
+
+    const file = await completeEvidenceUpload(fx.pm, { intentId: intent.intentId }, { storage, now: NOW });
+    await expectRefused(completeEvidenceUpload(fx.pm, { intentId: intent.intentId }, { storage, now: NOW }), "restart");
+
+    expect(await fileRowsOf(expenseId)).toHaveLength(1);
+    expect(keysWithPrefix(storage, "evidence/")).toEqual([`evidence/${file.id}`]);
+  });
+
+  it("같은 의도의 두 완료가 겹쳐 둘째가 옮긴 뒤 잠금에서 거부되면, 둘째의 보상 삭제는 자기 객체만 지운다", async () => {
+    const fx = await setupExpenseProject();
+    const expenseId = await draftOf(fx);
+    const storage = createMemoryStorage();
+    const file = declared();
+    const intent = await uploaded(fx.pm, expenseId, storage, file);
+    const { hold, afterLock } = holdAtLock();
+
+    // 첫째가 옮긴 뒤 잠금을 쥔 사이 같은 서명 주소로 다시 올려(만료 전 서명 PUT은 다시 쓸 수 있다) 둘째도 옮기게 한다.
+    const [a, b] = await race(
+      () => completeEvidenceUpload(fx.pm, { intentId: intent.intentId }, { storage, now: NOW, afterLock }),
+      () => completeEvidenceUpload(fx.pm, { intentId: intent.intentId }, { storage, now: NOW }),
+      hold,
+      () => storage.put(intent.url, { size: file.size, contentType: file.contentType, sha256: file.sha256 }),
+    );
+
+    expect(a.status).toBe("fulfilled");
+    expect(b.status).toBe("rejected");
+    if (b.status === "rejected") expectRefusal(b.reason, "restart");
+    const rows = await fileRowsOf(expenseId);
+    expect(rows).toHaveLength(1);
+    expect(keysWithPrefix(storage, "evidence/")).toEqual([rows[0]?.objectKey]);
+    expect(storage.moves).toHaveLength(2);
+    expect(storage.deletes).toEqual([storage.moves[1]?.to]);
+  });
+
+  it("저장소 메타데이터 크기가 선언과 다르면 restart 거부 · incoming/ 객체가 지워지고 운영 로그가 남는다", async () => {
+    const fx = await setupExpenseProject();
+    const expenseId = await draftOf(fx);
+    const storage = createMemoryStorage();
+    const intent = await uploaded(fx.pm, expenseId, storage);
+    storage.tamper(`incoming/${intent.intentId}`, { size: 999_999 });
+    const warn = vi.spyOn(log, "warn");
+
+    try {
+      await expectRefused(completeEvidenceUpload(fx.pm, { intentId: intent.intentId }, { storage, now: NOW }), "restart");
+      expect(storage.objects.has(`incoming/${intent.intentId}`)).toBe(false);
+      expect(await fileRowsOf(expenseId)).toHaveLength(0);
+      expect(warn).toHaveBeenCalledWith("evidence.upload_metadata_mismatch", { intentId: intent.intentId, ownerKind: "expense", ownerId: expenseId, reason: "size" });
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("보존 표식이 실패해도 완료는 성공 · 파일 행 1 · evidence.retain_failed 경고 1", async () => {
+    const fx = await setupExpenseProject();
+    const expenseId = await draftOf(fx);
+    const storage = createMemoryStorage();
+    const intent = await uploaded(fx.pm, expenseId, storage);
+    storage.failRetain = true;
+    const warn = vi.spyOn(log, "warn");
+
+    try {
+      const file = await completeEvidenceUpload(fx.pm, { intentId: intent.intentId }, { storage, now: NOW });
+      expect(await fileRowsOf(expenseId)).toHaveLength(1);
+      expect(warn.mock.calls.filter(([event]) => event === "evidence.retain_failed")).toEqual([["evidence.retain_failed", { fileId: file.id, reason: "Error" }]]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("반려 · 회수된 문서에는 업로드 요청이 열리고 결재 중 문서는 거부된다(05-09가 연다)", async () => {
+    const fx = await setupExpenseProject();
+    const storage = createMemoryStorage();
+    const pending = await draftOf(fx);
+    await submitReadyDraft(fx.pm, pending);
+
+    await expect(requestEvidenceUpload(fx.pm, { ownerKind: "expense", ownerId: pending, ...declared() }, { storage, now: NOW })).rejects.toBeInstanceOf(
+      ExpenseConflictError,
+    );
+
+    const submitted = await instanceOf(pending);
+    await rejectDocument(fx.lead, { instanceId: submitted.id, expectedVersion: submitted.version, reason: "금액 확인" });
+    await expect(requestEvidenceUpload(fx.pm, { ownerKind: "expense", ownerId: pending, ...declared() }, { storage, now: NOW })).resolves.toMatchObject({
+      method: "PUT",
+    });
+
+    const second = (await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.split] })).created[0]?.expenseId ?? "";
+    await submitReadyDraft(fx.pm, second);
+    const secondInstance = await instanceOf(second);
+    await withdrawDocument(fx.pm, { instanceId: secondInstance.id, expectedVersion: secondInstance.version });
+    await expect(requestEvidenceUpload(fx.pm, { ownerKind: "expense", ownerId: second, ...declared() }, { storage, now: NOW })).resolves.toMatchObject({
+      method: "PUT",
+    });
+  });
+
+  it("무관한 PM의 업로드 요청은 404(문서 없음)", async () => {
+    const fx = await setupExpenseProject();
+    const expenseId = await draftOf(fx);
+
+    await expect(
+      requestEvidenceUpload(fx.otherPm, { ownerKind: "expense", ownerId: expenseId, ...declared() }, { storage: createMemoryStorage(), now: NOW }),
+    ).rejects.toBeInstanceOf(ExpenseNotFoundError);
+  });
+
+  it("다른 PM의 작성 중 문서에 같은 sha256이 있으면 번호 없이 `이미 첨부된 파일 · 다른 파일 고르기`", async () => {
+    const fx = await setupExpenseProject();
+    const mine = await draftOf(fx);
+    const theirs = (await createExpenseFromLines(fx.otherPm, { lineIds: [fx.lines.withVendor] })).created[0]?.expenseId ?? "";
+    const shared = sha();
+    await attachEvidence(fx.otherPm, theirs, createMemoryStorage(), { sha256: shared });
+
+    const refused = requestEvidenceUpload(fx.pm, { ownerKind: "expense", ownerId: mine, ...declared({ sha256: shared }) }, { storage: createMemoryStorage(), now: NOW });
+    await expect(refused).rejects.toBeInstanceOf(EvidenceCheckError);
+    await expect(refused).rejects.toThrow(EVIDENCE_DUPLICATE_HIDDEN);
+  });
+
+  it("내가 볼 수 있는 제출 문서에 같은 sha256이 있으면 그 번호를 말한다 · 삭제된 파일의 sha256은 중복이 아니다", async () => {
+    const fx = await setupExpenseProject();
+    const submitted = await draftOf(fx);
+    const shared = sha();
+    await attachEvidence(fx.pm, submitted, createMemoryStorage(), { sha256: shared });
+    await submitExpense(fx.pm, { expenseId: submitted, expectedVersion: await versionOf(submitted) });
+    const draft = (await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.split] })).created[0]?.expenseId ?? "";
+
+    await expect(
+      requestEvidenceUpload(fx.pm, { ownerKind: "expense", ownerId: draft, ...declared({ sha256: shared }) }, { storage: createMemoryStorage(), now: NOW }),
+    ).rejects.toThrow(evidenceDuplicateElsewhere(`${fx.projectNumber}-0001`));
+
+    const removedSha = sha();
+    const removed = await attachEvidence(fx.pm, draft, createMemoryStorage(), { sha256: removedSha });
+    await removeEvidence(fx.pm, { fileId: removed.id });
+    await expect(
+      requestEvidenceUpload(fx.pm, { ownerKind: "expense", ownerId: draft, ...declared({ sha256: removedSha }) }, { storage: createMemoryStorage(), now: NOW }),
+    ).resolves.toMatchObject({ method: "PUT" });
+  });
+});
+
+describe("다시 올리기 갈래", () => {
+  it("옮기기만 실패하면 retry `complete` · 파일 행 0 · 의도 열림 · incoming/ 객체 그대로 — 같은 의도로 다시 완료하면 성공", async () => {
+    const fx = await setupExpenseProject();
+    const expenseId = await draftOf(fx);
+    const storage = createMemoryStorage();
+    const intent = await uploaded(fx.pm, expenseId, storage);
+    storage.failNextMove();
+
+    await expectRefused(completeEvidenceUpload(fx.pm, { intentId: intent.intentId }, { storage, now: NOW }), "complete");
+    expect(await fileRowsOf(expenseId)).toHaveLength(0);
+    const [open] = await db.select().from(uploadIntents).where(eq(uploadIntents.id, intent.intentId));
+    expect(open?.completedAt).toBeNull();
+    expect(storage.objects.has(`incoming/${intent.intentId}`)).toBe(true);
+
+    const file = await completeEvidenceUpload(fx.pm, { intentId: intent.intentId }, { storage, now: NOW });
+
+    expect(await fileRowsOf(expenseId)).toHaveLength(1);
+    expect(keysWithPrefix(storage, "incoming/")).toEqual([]);
+    expect(keysWithPrefix(storage, "evidence/")).toEqual([`evidence/${file.id}`]);
+  });
+});
+
+describe("잠금 — 제출과 증빙 삭제", () => {
+  it("ⓐ 제출이 잠근 사이 마지막 증빙 삭제 → 제출 성공(번호) · 삭제는 잠금 뒤 재확인에서 거부 · 살아 있는 증빙 1", async () => {
+    const fx = await setupExpenseProject();
+    const expenseId = await draftOf(fx);
+    const file = await attachEvidence(fx.pm, expenseId);
+    const { hold, afterLock } = holdAtLock();
+
+    const [submit, remove] = await race(
+      async () => submitExpense(fx.pm, { expenseId, expectedVersion: await versionOf(expenseId) }, { afterLock }),
+      () => removeEvidence(fx.pm, { fileId: file.id }),
+      hold,
+    );
+
+    expect(submit.status).toBe("fulfilled");
+    if (submit.status === "fulfilled") expect(submit.value).toMatchObject({ kind: "submitted", number: `${fx.projectNumber}-0001` });
+    expect(remove.status).toBe("rejected");
+    if (remove.status === "rejected") expect(remove.reason).toBeInstanceOf(ExpenseConflictError);
+    expect(await activeFilesOf(expenseId)).toHaveLength(1);
+  });
+
+  it("ⓑ 삭제가 잠근 사이 제출 → 삭제 성공 · 제출은 `증빙 없음 · 증빙 올리기 Ctrl+U` · 번호 없음", async () => {
+    const fx = await setupExpenseProject();
+    const expenseId = await draftOf(fx);
+    const file = await attachEvidence(fx.pm, expenseId);
+    const version = await versionOf(expenseId);
+    const { hold, afterLock } = holdAtLock();
+
+    const [remove, submit] = await race(
+      () => removeEvidence(fx.pm, { fileId: file.id }, { afterLock }),
+      () => submitExpense(fx.pm, { expenseId, expectedVersion: version }),
+      hold,
+    );
+
+    expect(remove.status).toBe("fulfilled");
+    expect(submit.status).toBe("rejected");
+    if (submit.status === "rejected") {
+      expect(submit.reason).toBeInstanceOf(GateBlockedError);
+      expect((submit.reason as Error).message).toBe("증빙 없음 · 증빙 올리기 Ctrl+U");
+    }
+    const [row] = await db.select({ number: expenses.number }).from(expenses).where(eq(expenses.id, expenseId));
+    expect(row?.number).toBeNull();
+    expect(await activeFilesOf(expenseId)).toHaveLength(0);
+  });
+
+  it("ⓒ 같은 파일을 두 탭에서 지우면 둘 다 오류 없이 끝나고 removed_at 한 번 · evidence_remove 로그 1건", async () => {
+    const fx = await setupExpenseProject();
+    const expenseId = await draftOf(fx);
+    const file = await attachEvidence(fx.pm, expenseId);
+    const { hold, afterLock } = holdAtLock();
+
+    const [first, second] = await race(
+      () => removeEvidence(fx.pm, { fileId: file.id }, { afterLock }),
+      () => removeEvidence(fx.pm, { fileId: file.id }),
+      hold,
+    );
+
+    expect([first.status, second.status]).toEqual(["fulfilled", "fulfilled"]);
+    const [row] = await db.select().from(files).where(eq(files.id, file.id));
+    expect(row?.removedAt).not.toBeNull();
+    const logs = await db.select().from(actionLog).where(and(eq(actionLog.actionType, "document_update"), eq(actionLog.documentId, expenseId)));
+    expect(logs.filter((entry) => (entry.detail as { change?: string } | null)?.change === "evidence_remove")).toHaveLength(1);
   });
 });

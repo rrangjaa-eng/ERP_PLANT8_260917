@@ -22,6 +22,11 @@ import { TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import * as approvals from "@/domain/approvals";
 import { appendActionLog } from "@/repositories/action-log";
 import { makePerson, NOW_2026 } from "./approvals-fixtures";
+import { files } from "@/db/schema";
+import { createExpenseFromLines } from "@/domain/expenses";
+import { requestEvidenceUpload } from "@/domain/evidence";
+import { createMemoryStorage } from "./fakes/memory-storage";
+import { setupExpenseProject } from "./fixtures/expenses";
 
 // Phase 4(04-32, ENG-D3 ①) — 잠금·풀 시간 제한의 통합 증명. (c)의 describe는
 // 04-22·04-12가 saveProjectLedger 안의 트랜잭션 규약 위반(잠근 트랜잭션 안에서
@@ -514,6 +519,52 @@ describe("풀 2 · 동시 훅 최종 승인 셋(05-01 E2)", () => {
         expect(row?.status).toBe("approved");
       }
       expect(await db.select().from(actionLog).where(eq(actionLog.actionType, HOOK_ACTION))).toHaveLength(3);
+    },
+    20_000,
+  );
+});
+
+describe("풀 2 · 동시 증빙 추가 셋(05-04)", () => {
+  // 05-04(M3 Round 2): 완료 통보는 의도 · 메타데이터 · 옮기기 · 로그 판정을 트랜잭션 전에, 트랜잭션 안에서는 받은 tx로만
+  // 지출결의 행 잠금 → 의도 완료 → 파일 행 → 로그를 쓴다. 트랜잭션 안에 전역 풀 읽기가 섞이면 잠금을 쥔 연결이 셋째
+  // 연결을 기다리고 나머지가 잠금을 기다려 풀 2에서 셋 다 끝나지 않는다.
+  it(
+    "(i) 풀 크기 2에서 같은 지출결의에 completeEvidenceUpload 셋을 동시에 보내면 10초 안에 셋 다 끝나고 파일 행 3",
+    async () => {
+      const fx = await setupExpenseProject();
+      const expenseId = (await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] })).created[0]?.expenseId;
+      if (!expenseId) throw new Error("작성 중 문서 없음");
+      const storage = createMemoryStorage();
+      const intentIds: string[] = [];
+      for (let i = 0; i < 3; i++) {
+        const declared = { size: 1_000 + i, contentType: "application/pdf", sha256: randomUUID().replaceAll("-", "").padEnd(64, "0"), name: `증빙${i}.pdf` };
+        const intent = await requestEvidenceUpload(fx.pm, { ownerKind: "expense", ownerId: expenseId, ...declared }, { storage });
+        storage.put(intent.url, { size: declared.size, contentType: declared.contentType, sha256: declared.sha256 });
+        intentIds.push(intent.intentId);
+      }
+
+      const previousPoolMax = process.env.DB_POOL_MAX;
+      process.env.DB_POOL_MAX = "2";
+      vi.resetModules();
+
+      try {
+        const clientModule = await import("@/db/client");
+        expect((clientModule.pool as unknown as { options: { max: number } }).options.max).toBe(2);
+        const { completeEvidenceUpload } = await import("@/domain/evidence");
+
+        const start = Date.now();
+        const results = await Promise.allSettled(intentIds.map((intentId) => completeEvidenceUpload(fx.pm, { intentId }, { storage })));
+        const elapsed = Date.now() - start;
+
+        expect(elapsed).toBeLessThan(10_000);
+        expect(results.map((result) => (result.status === "rejected" ? String(result.reason) : "added"))).toEqual(["added", "added", "added"]);
+
+        await clientModule.closeDb();
+      } finally {
+        process.env.DB_POOL_MAX = previousPoolMax;
+      }
+
+      expect(await db.select().from(files).where(eq(files.ownerId, expenseId))).toHaveLength(3);
     },
     20_000,
   );

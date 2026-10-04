@@ -55,7 +55,7 @@ function rfc3986(value: string): string {
 function expectedStringToSign(method: string, url: URL, headers: Record<string, string>): string {
   const query = [...url.searchParams.entries()]
     .filter(([k]) => k !== "X-Goog-Signature")
-    .map(([k, v]) => [rfc3986(k), rfc3986(v)])
+    .map(([k, v]): [string, string] => [rfc3986(k), rfc3986(v)])
     .sort(([a], [b]) => (a < b ? -1 : 1))
     .map(([k, v]) => `${k}=${v}`)
     .join("&");

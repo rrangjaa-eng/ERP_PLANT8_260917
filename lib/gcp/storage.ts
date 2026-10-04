@@ -1,7 +1,11 @@
 import { createHmac, hkdfSync, timingSafeEqual } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { GoogleAuth } from "google-auth-library";
 import { env, resolvedStorageDriver } from "@/lib/env";
+import { createAuthedRequest, createGcsObjectClient, GcsUnavailableError, type GcsOp, type GcsRequest, type GcsRequestInit, type GcsResponse } from "@/lib/gcp/gcs";
+import { buildV4SignedUrl } from "@/lib/gcp/gcs-v4";
+import { log } from "@/lib/log";
 
 // 05-04(EVID-01): 증빙 파일 저장소 포트. 파일 바이트는 서버를 지나지 않는다 — 브라우저가 서명된 PUT 주소로 저장소에
 // 직접 올리고, 서버는 메타데이터(크기 · 형식 · 서명에 묶인 sha256)로 다시 확인한 뒤 `incoming/` → `evidence/`로 옮긴다.
@@ -28,10 +32,17 @@ export type ObjectStorage = {
 
 export class ObjectStorageNotConfiguredError extends Error {}
 
-// 환경별 드라이버 선택 — gcs 드라이버는 05-12가 채운다(그 전에는 staging에 배포하지 않는다).
+let gcsStorage: ObjectStorage | null = null;
+
+// 환경별 드라이버 선택 — staging · prod(해석 기본값 gcs)는 gcs 드라이버, 로컬 · CI는 로컬 드라이버. 버킷 검사는 부팅이
+// 아니라 첫 사용 때다(lib/env.ts 05-04 주석).
 export function getObjectStorage(): ObjectStorage {
-  if (resolvedStorageDriver(env) === "gcs") throw new ObjectStorageNotConfiguredError("gcs 증빙 저장소 드라이버 미구현");
-  return localStorageFromEnv();
+  if (resolvedStorageDriver(env) !== "gcs") return localStorageFromEnv();
+  const bucket = env.GCS_EVIDENCE_BUCKET;
+  if (!bucket) throw new ObjectStorageNotConfiguredError("GCS_EVIDENCE_BUCKET 없음 · gcs 증빙 저장소 버킷 미설정");
+  // 서명(IAM signBlob)은 iamcredentials 호출이라 cloud-platform 범위가 필요하다 — 저장소 범위 토큰으로는 거부된다.
+  gcsStorage ??= createGcsStorage({ bucket, auth: new GoogleAuth({ scopes: ["https://www.googleapis.com/auth/cloud-platform"] }) });
+  return gcsStorage;
 }
 
 // ── 로컬 · CI 드라이버 ────────────────────────────────────────────────
@@ -221,4 +232,122 @@ export function createLocalStorage(opts: { secret: string; dataDir: string; base
 export function localStorageFromEnv(): LocalObjectStorage {
   if (!env.BETTER_AUTH_SECRET) throw new ObjectStorageNotConfiguredError("BETTER_AUTH_SECRET 없음 · 로컬 저장소 서명 키 없음");
   return createLocalStorage({ secret: env.BETTER_AUTH_SECRET, dataDir: path.join(process.cwd(), ".data", "uploads"), baseUrl: "" });
+}
+
+// ── gcs 드라이버(05-12) ────────────────────────────────────────────────
+// 서명 = auth.sign(Cloud Run 런타임 SA는 개인 키가 없어 IAM signBlob — 런타임 SA 자기 자신의 TokenCreator), REST = 04.3
+// GcsRequest(lib/gcp/gcs.ts). 로그 · 오류에는 연산 이름과 상태 코드 · 오류 종류만 — 객체 키 · 버킷 · 이메일 없음.
+
+export type GcsSigner = {
+  sign(data: string): Promise<string>;
+  getCredentials(): Promise<{ client_email?: string | null }>;
+};
+
+const GCS_API = "https://storage.googleapis.com/storage/v1";
+
+const defaultGcsRequest = createAuthedRequest(() =>
+  new GoogleAuth({ scopes: ["https://www.googleapis.com/auth/devstorage.read_write"] }).getClient(),
+);
+
+function errorReason(error: unknown): string {
+  if (!(error instanceof Error)) return "unknown";
+  const code = "code" in error ? error.code : undefined;
+  return typeof code === "string" || typeof code === "number" ? `${error.name}:${code}` : error.name;
+}
+
+export function createGcsStorage(opts: {
+  bucket: string;
+  auth: GcsSigner;
+  request?: GcsRequest;
+  now?: () => Date;
+  log?: { warn(event: string, fields?: Record<string, unknown>): void };
+}): ObjectStorage {
+  const request = opts.request ?? defaultGcsRequest;
+  const now = opts.now ?? (() => new Date());
+  const logger = opts.log ?? log;
+  const b = encodeURIComponent(opts.bucket);
+  const objectUrl = (key: string) => `${GCS_API}/b/${b}/o/${encodeURIComponent(key)}`;
+  const objects = createGcsObjectClient({ bucket: opts.bucket, request });
+
+  async function signUrl(op: "put" | "get", input: { method: "PUT" | "GET"; objectKey: string; headers: Record<string, string>; query: Record<string, string>; expiresSec: number }) {
+    try {
+      const { client_email: email } = await opts.auth.getCredentials();
+      if (!email) throw new Error("서명 계정 이메일 없음");
+      return await buildV4SignedUrl({ ...input, bucket: opts.bucket, credentialEmail: email, now: now(), sign: (data) => opts.auth.sign(data) });
+    } catch (error) {
+      logger.warn("storage.sign_failed", { op, reason: errorReason(error) });
+      throw error;
+    }
+  }
+
+  async function send(init: GcsRequestInit): Promise<GcsResponse> {
+    try {
+      return await request(init);
+    } catch (e) {
+      const cause = e instanceof GcsUnavailableError ? "auth" : "network";
+      log.warn("gcs.request_failed", { op: init.op, status: cause });
+      throw new GcsUnavailableError(init.op, cause);
+    }
+  }
+
+  function fail(op: GcsOp, status: number): never {
+    log.warn("gcs.request_failed", { op, status });
+    throw new GcsUnavailableError(op, status);
+  }
+
+  const ok = (status: number) => status >= 200 && status < 300;
+  const parse = <T>(res: GcsResponse): T => JSON.parse((res.data ?? Buffer.alloc(0)).toString("utf8") || "{}") as T;
+
+  return {
+    async createSignedPut(key, put) {
+      const headers = { "Content-Type": put.contentType, "x-goog-content-length-range": `1,${put.maxBytes}`, "x-goog-meta-sha256": put.sha256 };
+      const signed = await signUrl("put", { method: "PUT", objectKey: key, headers, query: {}, expiresSec: put.expiresSec });
+      return { url: signed.url, method: "PUT" as const, headers: signed.headers };
+    },
+
+    async createSignedGet(key, get) {
+      const disposition = `${get.disposition}; filename*=UTF-8''${encodeURIComponent(get.filename)}`;
+      const signed = await signUrl("get", { method: "GET", objectKey: key, headers: {}, query: { "response-content-disposition": disposition }, expiresSec: get.expiresSec });
+      return { url: signed.url };
+    },
+
+    async getMetadata(key) {
+      const res = await send({ op: "meta", method: "GET", url: objectUrl(key) });
+      if (res.status === 404) return null;
+      if (!ok(res.status)) fail("meta", res.status);
+      const body = parse<{ size?: string; contentType?: string; metadata?: { sha256?: string } }>(res);
+      return { size: Number(body.size), contentType: body.contentType ?? "", sha256: body.metadata?.sha256 ?? null };
+    },
+
+    // 같은 버킷 안 재작성(형식 · 사용자 메타가 따라간다) → 원본 삭제. 재작성이 실패하면 원본을 지우지 않는다 — 원본은
+    // incoming/에 남아 수명 주기가 7일 뒤 지운다(T-05-1208).
+    async move(fromKey, toKey) {
+      const rewriteUrl = `${objectUrl(fromKey)}/rewriteTo/b/${b}/o/${encodeURIComponent(toKey)}`;
+      let token: string | undefined;
+      for (;;) {
+        const res = await send({ op: "move", method: "POST", url: token ? `${rewriteUrl}?rewriteToken=${encodeURIComponent(token)}` : rewriteUrl });
+        if (!ok(res.status)) fail("move", res.status);
+        const body = parse<{ done?: boolean; rewriteToken?: string }>(res);
+        if (body.done) break;
+        if (!body.rewriteToken) fail("move", res.status);
+        token = body.rewriteToken;
+      }
+      await objects.deleteObject(fromKey);
+    },
+
+    delete(key) {
+      return objects.deleteObject(key);
+    },
+
+    async retain(key) {
+      const res = await send({
+        op: "retain",
+        method: "PATCH",
+        url: objectUrl(key),
+        headers: { "Content-Type": "application/json" },
+        body: Buffer.from(JSON.stringify({ temporaryHold: true })),
+      });
+      if (!ok(res.status)) fail("retain", res.status);
+    },
+  };
 }

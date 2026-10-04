@@ -38,3 +38,9 @@ registerAction({ name: "searchVendorsForPickAction", menu: "expenses", action: "
 
 // 새 문서 화면의 사용일 → 소속 팀 이름 · 칸 오류(도메인이 expenseNewDefaults로 투영, 쓰기 없음).
 registerAction({ name: "previewNewExpenseAction", menu: "expenses", action: "write", dtoName: "expenseNewDefaults" });
+
+// 골라내기 견적 줄 행 — 도메인이 PickLineOptionDto(· 그룹은 PickLineGroupDto)로 투영한 결과.
+registerAction({ name: "searchLinesForPickAction", menu: "expenses", action: "write", dtoName: "PickLineOptionDto" });
+
+// 새 version 또는 이동할 문서 id만 돌려준다(DTO 없음).
+registerAction({ name: "changeExpenseLineAction", menu: "expenses", action: "write", dtoName: null });

@@ -164,7 +164,8 @@ describe("견적 줄 골라내기 searchLinesForPick · change", () => {
     const result = await searchLinesForPick(fx.pm, { mode: "change", expenseId: current });
     expect(result.truncated).toBe(false);
     expect(result.groups).toHaveLength(1);
-    expect(result.groups[0]).toMatchObject({ projectId: fx.projectId, label: expect.stringContaining("가을 팝업"), note: null });
+    expect(result.groups[0]).toMatchObject({ projectId: fx.projectId, note: null });
+    expect(result.groups[0]?.label).toContain("가을 팝업");
     expect(result.rows.map((row) => [row.lineNo, row.itemName, row.selectable])).toEqual([
       [1, "무대 제작", true],
       [2, "현장 진행 인력", false],

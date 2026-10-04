@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, ilike, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { approvalInstances, expenses, projects, quoteLines, teams, users, vendors } from "@/db/schema";
@@ -8,6 +8,7 @@ import type { Viewer } from "@/domain/viewer";
 // 인스턴스를 왼쪽 조인한다(연차 리포지토리와 같은 결). 삭제된 문서(deleted_at)는 읽지 않는다.
 
 export type ExpenseRow = InferSelectModel<typeof expenses>;
+type ProjectRow = InferSelectModel<typeof projects>;
 export type ExpenseDraftInsert = Omit<InferInsertModel<typeof expenses>, "id" | "number" | "version" | "createdAt" | "updatedAt">;
 
 // 작성 중 문서 하나 — 같은 줄 · 같은 기안자의 작성 중 문서는 부분 UNIQUE(expenses_line_drafter_draft_uniq)가 하나로 막는다.
@@ -116,6 +117,8 @@ export type ExpenseDraftFields = Partial<
     | "usageDate"
     | "content"
     | "attributedTeamId"
+    | "projectId"
+    | "quoteLineId"
   >
 >;
 
@@ -321,4 +324,27 @@ export async function listExpenseSummaries(
     status: row.status,
     approvalVersion: row.approvalVersion,
   }));
+}
+
+// 05-07 견적 줄 골라내기 — 후보 프로젝트(보관 아님 · 주어진 상태). 검색어가 있으면 프로젝트 이름 · 번호 또는 현재 차수가 아닌 것까지 포함해 줄 이름이 맞는
+// 프로젝트로 넓힌다(줄은 호출자가 현재 차수만 읽는다). 쓰기 권리(담당 PM · 팀 범위)는 호출자가 거른다 — 이 조회는 상한 limit만 건다.
+export async function listPickProjects(
+  viewer: Viewer,
+  input: { pmUserId: string | null; statuses: readonly string[]; query: string | null; limit: number },
+): Promise<ProjectRow[]> {
+  void viewer;
+  const conditions = [inArray(projects.status, [...input.statuses]), isNull(projects.archivedAt)];
+  if (input.pmUserId) conditions.push(eq(projects.pmUserId, input.pmUserId));
+  if (input.query) {
+    const like = `%${input.query}%`;
+    const byLine = sql`exists (select 1 from quote_revisions qr join quote_lines ql on ql.revision_id = qr.id where qr.project_id = ${projects.id} and ql.archived_at is null and ql.item_name ilike ${like})`;
+    const match = or(ilike(projects.name, like), ilike(projects.number, like), byLine);
+    if (match) conditions.push(match);
+  }
+  return db
+    .select()
+    .from(projects)
+    .where(and(...conditions))
+    .orderBy(asc(projects.name), asc(projects.id))
+    .limit(input.limit);
 }

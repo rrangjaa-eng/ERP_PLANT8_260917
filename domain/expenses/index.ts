@@ -99,6 +99,7 @@ export const EXPENSE_DOCUMENT_KIND = "expense";
 const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const NOT_IN_CURRENT_REVISION = "견적 줄이 현재 차수에 없음 · 견적 줄 바꾸기";
 const NO_VENDOR = "거래처 없음 · 거래처 고르기";
+const NUMBERED_SAME_PROJECT_ONLY = "번호 있는 문서 · 같은 프로젝트 줄만";
 const ACTIVE_STATUSES = new Set(["submitted", "in_review", "approved"]);
 const NO_TEAM_AT_USAGE_DATE = "사용일에 소속 팀 없음 · 사용일 고치기";
 
@@ -354,7 +355,7 @@ export async function canSeeExpense(
 
 // ── 견적 줄 → 작성 중 ─────────────────────────────────────────────────
 
-function lineExecution(line: QuoteLineRow): Money {
+export function lineExecution(line: QuoteLineRow): Money {
   return moneyFromRow({
     currency: line.executionCurrency,
     foreignAmount: line.executionForeignAmount,
@@ -363,7 +364,7 @@ function lineExecution(line: QuoteLineRow): Money {
   });
 }
 
-function doorFor(line: QuoteLineRow, numbered: readonly NumberedLineExpense[], selfId?: string): ExpenseLineDoor {
+export function doorFor(line: QuoteLineRow, numbered: readonly NumberedLineExpense[], selfId?: string): ExpenseLineDoor {
   return expenseLineDoor({
     line: { lineKind: line.lineKind, cancelled: line.lineStatus === "cancelled", vendorId: line.vendorId, execution: lineExecution(line) },
     numbered: numbered.map((doc) => ({
@@ -378,7 +379,7 @@ function doorFor(line: QuoteLineRow, numbered: readonly NumberedLineExpense[], s
 
 // D-66 — 현재 차수 줄마다 계보(copied_from_line_id) 사슬 전체의 번호 있는 문서(제출 순). 줄 파생 상태
 // (domain/quotes/lines.ts linkedDocumentsByLine)와 같은 해석이라 이전 차수에 제출한 줄은 지금 차수에서도 문이 닫힌다.
-async function listNumberedByLineage(viewer: Viewer, projectId: string): Promise<Map<string, NumberedLineExpense[]>> {
+export async function listNumberedByLineage(viewer: Viewer, projectId: string): Promise<Map<string, NumberedLineExpense[]>> {
   const lineage: LineageLine[] = [];
   for (const summary of await summarizeRevisions(viewer, projectId)) {
     for (const line of await listQuoteLinesByRevision(viewer, summary.id)) {
@@ -396,10 +397,10 @@ async function listNumberedByLineage(viewer: Viewer, projectId: string): Promise
   return byCurrentLine;
 }
 
-type ProjectFacts = { project: ProjectRow; latestRevisionId: string | null; tableGateReason: string | null };
+export type ProjectFacts = { project: ProjectRow; latestRevisionId: string | null; tableGateReason: string | null };
 
 // 표 전체 게이트 — 완료면 새 문서 없음, 그 밖은 고객 승인 게이트(설정)의 문자열 그대로.
-async function loadProjectFacts(viewer: Viewer, projectId: string, gateEnabled: boolean): Promise<ProjectFacts | null> {
+export async function loadProjectFacts(viewer: Viewer, projectId: string, gateEnabled: boolean): Promise<ProjectFacts | null> {
   const projectRow = await findProjectById(viewer, projectId);
   if (!projectRow) return null;
   const latest = await findLatestQuoteRevision(viewer, projectId);
@@ -420,6 +421,33 @@ async function loadProjectFacts(viewer: Viewer, projectId: string, gateEnabled: 
 async function firstPaymentMethod(viewer: Viewer): Promise<string | null> {
   const items = await listCodeItems(viewer, { tableKey: "payment_method", scope: { rows: "all", includeArchived: false }, includeInactive: false });
   return items[0]?.value ?? null;
+}
+
+// 05-07 줄을 고를 수 없는 이유 — 표 전체 게이트(프로젝트 단위) → 현재 차수 밖 → 문 상태. 줄 바꾸기 · 골라내기가 createExpenseFromLines와 같은 문자열을 쓴다.
+export function staticLineBlock(line: QuoteLineRow, facts: ProjectFacts): string | null {
+  if (facts.tableGateReason) return facts.tableGateReason;
+  if (line.revisionId !== facts.latestRevisionId || line.archivedAt !== null) return NOT_IN_CURRENT_REVISION;
+  return null;
+}
+
+export function doorBlock(door: ExpenseLineDoor): string | null {
+  if (door.state === "none") return NOT_IN_CURRENT_REVISION;
+  if (door.state === "no_vendor") return NO_VENDOR;
+  if (door.state === "closed" || !door.remaining) return `이 줄에 지출결의 ${door.latest?.number ?? ""} 있음 · 지출결의 열기`;
+  return null;
+}
+
+// 열린 줄의 남은 실행가 글자(분할 지급 회차 표시) · 번호 있는 문서 공급가액 글자(문 닫힘 이유).
+export function lineRemainingText(line: QuoteLineRow, numbered: readonly NumberedLineExpense[]): string {
+  const { basis, remaining } = remainingForInstallments(
+    lineExecution(line),
+    numbered.flatMap((doc) => supplyMoney(doc) ?? []),
+  );
+  return remainingText(remaining, basis);
+}
+
+export function numberedSupplyText(doc: NumberedLineExpense): string {
+  return formatKrw(supplyMoney(doc)?.amountKrw ?? 0);
 }
 
 export async function createExpenseFromLines(
@@ -642,6 +670,78 @@ export async function changeExpenseVendor(
     throw new ExpenseConflictError(latest?.updatedAt ?? row.updatedAt);
   }
   return { version: saved.version, evidenceType: saved.evidenceType };
+}
+
+// 05-07 견적 줄 바꾸기 · 고르기 — 기안자의 작성 중 문서를 새 줄 문서로 다시 채운다(거래처 · 증빙 종류 = 새 줄 거래처 기본값 · 공급가액 = 새 줄 남은 실행가 ·
+// 분할 여부 = 앞 회차 유무 · 팀 비용 칸 null — 팀 비용 문서도 줄로 옮길 수 있다). 새 줄은 서버가 다시 판정한다(createExpenseFromLines와 같은 문자열).
+// 그 줄에 내 다른 작성 중 문서가 있으면 바꾸지 않고 { redirectTo }(부분 UNIQUE와 같은 판정). 번호 있는 문서(F6)는 같은 프로젝트 줄만 · 번호 있는 팀 비용 문서는
+// 줄로 옮길 수 없다 — 05-09가 반려 · 회수 문서를 편집 가능으로 넓히기 전에는 작성 중만 닿지만 판정은 여기 둔다.
+export async function changeExpenseLine(
+  viewer: Viewer,
+  input: { expenseId: string; lineId: string; expectedVersion: number },
+): Promise<{ version: number } | { redirectTo: string }> {
+  const [canWriteExpense, canWriteProject] = await Promise.all([can(viewer, "expenses", "write"), can(viewer, "projects", "write")]);
+  if (!canWriteExpense || !canWriteProject) throw new ForbiddenError("지출결의 작성 권한 없음");
+  const row = UUID_SHAPE.test(input.expenseId) ? await findExpenseById(viewer, input.expenseId) : null;
+  if (!row || row.drafterId !== viewer.id) throw new ExpenseNotFoundError();
+  const line = UUID_SHAPE.test(input.lineId) ? await findQuoteLineById(viewer, input.lineId) : null;
+  const revision = line ? await findQuoteRevisionById(viewer, line.revisionId) : null;
+  if (!line || !revision) throw new ExpenseNotFoundError();
+  if (row.number !== null) {
+    if (row.projectId === null || revision.projectId !== row.projectId) throw new GateBlockedError(NUMBERED_SAME_PROJECT_ONLY);
+    throw new ExpenseNotFoundError();
+  }
+  if (row.quoteLineId === line.id) return { version: row.version };
+
+  const [gateEnabled, teamScope] = await Promise.all([
+    getSettingValue(PROJECT_CUSTOMER_APPROVAL_GATE),
+    loadActorTeamScope(viewer, { todayKst: seoulToday() }),
+  ]);
+  const facts = await loadProjectFacts(viewer, revision.projectId, gateEnabled);
+  if (!facts) throw new ExpenseNotFoundError();
+  if (facts.project.pmUserId !== viewer.id && !coversProjectTeam(teamScope, facts.project.teamId)) throw new ForbiddenError("지출결의 작성 권한 없음");
+  const staticReason = staticLineBlock(line, facts);
+  if (staticReason) throw new GateBlockedError(staticReason);
+
+  const existing = await findDraftByLineAndDrafter(viewer, { quoteLineId: line.id, drafterId: viewer.id });
+  if (existing) return { redirectTo: existing.id };
+  const door = doorFor(line, (await listNumberedByLineage(viewer, facts.project.id)).get(line.id) ?? []);
+  const doorReason = doorBlock(door);
+  if (doorReason) throw new GateBlockedError(doorReason);
+  if (!line.vendorId || !door.remaining) throw new GateBlockedError(NO_VENDOR);
+
+  const vendor = await findVendorById(viewer, line.vendorId);
+  const supply = moneyToColumns({ currency: door.remaining.currency, amount: door.remaining.amount, fxRate: await recentFxRate(door.remaining.currency) });
+  const fields: ExpenseDraftFields = {
+    projectId: facts.project.id,
+    quoteLineId: line.id,
+    vendorId: line.vendorId,
+    evidenceType: vendor?.defaultEvidenceType ?? null,
+    supplyCurrency: supply.currency,
+    supplyForeignAmount: supply.foreignAmount,
+    supplyFxRate: supply.fxRate,
+    supplyAmountKrw: supply.amountKrw,
+    installment: door.forcedInstallment,
+    teamExpenseKind: null,
+    usageDate: null,
+    content: null,
+    attributedTeamId: null,
+  };
+  let saved: ExpenseRow | null;
+  try {
+    saved = await updateDraftIfVersion(viewer, { id: row.id, expectedVersion: input.expectedVersion, fields, updatedBy: viewer.id });
+  } catch (error) {
+    // 같은 줄에 내 작성 중 문서가 그 사이 생겼다(부분 UNIQUE) — 새 문서를 만들지 않고 그 문서로 보낸다.
+    const code = (error as { code?: string; cause?: { code?: string } }).code ?? (error as { cause?: { code?: string } }).cause?.code;
+    const raced = code === "23505" ? await findDraftByLineAndDrafter(viewer, { quoteLineId: line.id, drafterId: viewer.id }) : null;
+    if (raced) return { redirectTo: raced.id };
+    throw error;
+  }
+  if (!saved) {
+    const latest = await findExpenseById(viewer, row.id);
+    throw new ExpenseConflictError(latest?.updatedAt ?? row.updatedAt);
+  }
+  return { version: saved.version };
 }
 
 // ── 제출 ──────────────────────────────────────────────────────────────

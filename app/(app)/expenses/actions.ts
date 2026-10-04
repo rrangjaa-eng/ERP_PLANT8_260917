@@ -8,6 +8,7 @@ import { currentHolderNames, projectActionResult } from "@/domain/approvals";
 import {
   EXPENSE_DOCUMENT_KIND,
   TEAM_EXPENSE_KINDS,
+  changeExpenseLine,
   changeExpenseVendor,
   createExpenseFromLines,
   createTeamExpenseDraft,
@@ -16,7 +17,7 @@ import {
   saveExpenseDraft,
   submitExpense,
 } from "@/domain/expenses";
-import { searchVendorsForPick } from "@/domain/expenses/pick";
+import { searchLinesForPick, searchVendorsForPick } from "@/domain/expenses/pick";
 import {
   completeEvidenceUpload,
   createEvidenceViewUrl,
@@ -89,6 +90,20 @@ export const changeExpenseVendorAction = authedActionClient
 export const searchVendorsForPickAction = authedActionClient
   .schema(z.object({ query: z.string().max(100) }))
   .action(async ({ parsedInput, ctx }) => searchVendorsForPick(ctx.viewer, parsedInput));
+
+// 05-07 골라내기 견적 줄 검색 — change = 그 문서 프로젝트의 줄 전부, pick = 내 담당 프로젝트(검색어가 있으면 쓰기 범위 전체). 행 · 그룹은 투영 DTO다.
+export const searchLinesForPickAction = authedActionClient
+  .schema(z.object({ mode: z.enum(["change", "pick"]), expenseId: expenseIdSchema.optional(), query: z.string().max(100).optional() }))
+  .action(async ({ parsedInput, ctx }) => searchLinesForPick(ctx.viewer, parsedInput));
+
+// 05-07 견적 줄 바꾸기 — 새 version이거나, 그 줄에 내 다른 작성 중 문서가 있으면 그 문서 id(`redirectTo`)를 돌려준다.
+export const changeExpenseLineAction = authedActionClient
+  .schema(z.object({ expenseId: expenseIdSchema, lineId: z.string().uuid(), expectedVersion: z.number().int().min(1) }))
+  .action(async ({ parsedInput, ctx }) => {
+    const changed = await changeExpenseLine(ctx.viewer, parsedInput);
+    revalidatePath(`/expenses/${parsedInput.expenseId}`);
+    return changed;
+  });
 
 // 05-07 새 문서(아직 문서 없음)의 사용일 → 그날 내 소속 팀 이름 · 사용일 칸 오류. 미리보기와 같은 문구를 같은 판정으로 준다.
 export const previewNewExpenseAction = authedActionClient

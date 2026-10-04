@@ -5,12 +5,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import { actionLog, approvalInstances, approvalRoutes, approvalSteps } from "@/db/schema";
-import type { Viewer } from "@/domain/viewer";
+import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { CEO_ROLE_ID, DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import {
   ApprovalConflictError,
   approveDocument,
+  describeFinalApprovalNote,
   getApprovalView,
+  listMyInbox,
+  projectActionResult,
   prepareSubmission,
   registerDocumentKind,
   resubmitDocument,
@@ -23,6 +26,8 @@ import { LEAVE_DOCUMENT_KIND, submitLeave } from "@/domain/leave";
 import { resubmitLeave } from "@/domain/leave/resubmit";
 import { appendActionLog } from "@/repositories/action-log";
 import { bumpInstanceVersion } from "@/repositories/approvals";
+import { upsertVisibility } from "@/repositories/permissions";
+import { formatLeavePeriod } from "@/app/(app)/leave/labels";
 import { makePerson, NOW_2026 } from "./approvals-fixtures";
 
 // 05-01(E1 · E2 · E4): 04.1 결재 엔진의 선택 필드 덧붙임. 테스트 전용 종류(이 파일에만 있는 키)로 회수 뒤 같은 문서
@@ -310,5 +315,155 @@ describe("종류 키 리터럴 없음 — 등록된 종류 전부", () => {
       const quoted = [`"${kind}"`, `'${kind}'`, `\`${kind}\``];
       expect(codeLines.filter((line) => quoted.some((literal) => line.includes(literal))), kind).toEqual([]);
     }
+  });
+});
+
+// 05-01 Task 3(E3 · E5 · E6 · D8 엔진 쪽): 종류가 주는 승인 막힘 이유(구조 키) · 요약 타입 · 숫자 열 머리글 · 토스트 꼬리 재료.
+const BLOCKED_REASON = "진행으로 바뀜 · 반려";
+const blockedCalls: string[][] = [];
+const BLOCK_KIND = "test_ext_blocked";
+const MONEY_KIND = "test_ext_money";
+const NOTE_KIND = "test_ext_note";
+const SELF_KIND = "test_ext_self";
+const LEAD_STEP = { selfApproval: "skip" as const, steps: [{ enabled: true, roleId: TEAM_LEAD_ROLE_ID, scope: "drafter_team" as const, orgUnitId: "" }] };
+
+function plainKind(kind: string, route: RouteConfig, summaryOf: (id: string) => Record<string, unknown> | null): DocumentKindDef {
+  return {
+    kind,
+    label: "테스트 표시",
+    loadRouteConfig: () => Promise.resolve(route),
+    href: (id) => `/test-show/${id}`,
+    describeDocuments: (_viewer, ids) =>
+      Promise.resolve(new Map(ids.flatMap((id) => {
+        const summary = summaryOf(id);
+        return summary ? [[id, summary] as const] : [];
+      }))),
+  };
+}
+
+registerDocumentKind({
+  ...plainKind(BLOCK_KIND, LEAD_STEP, () => null),
+  approveBlockedReason: (_viewer, ids) => {
+    blockedCalls.push([...ids]);
+    return Promise.resolve(new Map(ids.map((id) => [id, BLOCKED_REASON])));
+  },
+});
+registerDocumentKind(
+  plainKind(MONEY_KIND, LEAD_STEP, () => ({
+    measure: { kind: "money", money: { currency: "KRW", amount: 12_400_000, fxRate: 1, amountKrw: 12_400_000 } },
+  })),
+);
+registerDocumentKind(plainKind(NOTE_KIND, LEAD_STEP, () => ({ finalApprovalNote: "T-1 완료" })));
+registerDocumentKind(plainKind(SELF_KIND, { ...LEAD_STEP, selfApproval: "self_approve" }, () => null));
+
+const FULL_DAY = { kind: "full_day", startDate: "2026-09-21", endDate: "2026-09-23", half: "" };
+
+describe("표시 덧붙임 — E3 · E5 · E6", () => {
+  beforeEach(() => {
+    blockedCalls.length = 0;
+  });
+
+  it("approveBlockedReason은 지금 담당의 보기 · 결재함 항목에만 실리고, 서버 승인은 그 값으로 거부하지 않는다", async () => {
+    const { drafter, lead } = await org();
+    const { instanceId, documentId } = await submitTestDocument(drafter, BLOCK_KIND);
+    const leave = await submitLeave(drafter, FULL_DAY, { now: NOW_2026 });
+
+    const view = await getApprovalView(lead, { kind: BLOCK_KIND, documentId }, { now: NOW_2026 });
+    expect(view?.approveBlockedReason).toBe(BLOCKED_REASON);
+    expect((await getApprovalView(drafter, { kind: BLOCK_KIND, documentId }, { now: NOW_2026 }))?.approveBlockedReason).toBeNull();
+
+    const inbox = await listMyInbox(lead, { now: NOW_2026 });
+    expect(inbox.mine.find((item) => item.instanceId === instanceId)?.approveBlockedReason).toBe(BLOCKED_REASON);
+    expect(inbox.mine.find((item) => item.instanceId === leave.instanceId)?.approveBlockedReason).toBeNull();
+
+    const approved = await approveDocument(lead, { instanceId, expectedVersion: 1 }, { now: NOW_2026 });
+    expect(approved.status).toBe("approved");
+  });
+
+  it("listMyInbox 한 번에 approveBlockedReason은 종류당 정확히 1회(mine 문서 id 셋을 한 배열로), 필드 없는 종류만 있으면 0회", async () => {
+    const { drafter, lead } = await org();
+    const ids = [];
+    for (let i = 0; i < 3; i++) ids.push((await submitTestDocument(drafter, BLOCK_KIND)).documentId);
+    await listMyInbox(lead, { now: NOW_2026 });
+    expect(blockedCalls).toHaveLength(1);
+    expect([...(blockedCalls[0] ?? [])].sort()).toEqual([...ids].sort());
+
+    // 기안자의 결재함 — mine에 그 종류가 없다 → 0회.
+    blockedCalls.length = 0;
+    await listMyInbox(drafter, { now: NOW_2026 });
+    expect(blockedCalls).toHaveLength(0);
+  });
+
+  it("필드 없는 종류(연차)만 있는 결재함은 approveBlockedReason을 부르지 않고 measureHeader는 일수, 금액 문서가 더해지면 금액 · 일수", async () => {
+    const { drafter, lead } = await org();
+    await submitLeave(drafter, FULL_DAY, { now: NOW_2026 });
+    const leaveOnly = await listMyInbox(lead, { now: NOW_2026 });
+    expect(blockedCalls).toHaveLength(0);
+    expect(leaveOnly.measureHeader).toBe("일수");
+
+    await submitTestDocument(drafter, MONEY_KIND);
+    expect((await listMyInbox(lead, { now: NOW_2026 })).measureHeader).toBe("금액 · 일수");
+  });
+
+  it("금액 문서만이면 금액, 둘 다 measure가 없으면 null", async () => {
+    const { drafter, lead } = await org();
+    await submitTestDocument(drafter, MONEY_KIND);
+    expect((await listMyInbox(lead, { now: NOW_2026 })).measureHeader).toBe("금액");
+    expect((await listMyInbox(drafter, { now: NOW_2026 })).measureHeader).toBeNull();
+
+    const other = await org();
+    await submitTestDocument(other.drafter, BLOCK_KIND);
+    expect((await listMyInbox(other.lead, { now: NOW_2026 })).measureHeader).toBeNull();
+  });
+
+  it("approval.value를 끈 계급의 담당에게도 approveBlockedReason · measureHeader가 있다(이름 · 요약 · 결재선은 없다)", async () => {
+    const { drafter, lead } = await org();
+    const { instanceId, documentId } = await submitTestDocument(drafter, BLOCK_KIND);
+    await submitLeave(drafter, FULL_DAY, { now: NOW_2026 });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: TEAM_LEAD_ROLE_ID, infoItem: "approval.value", visible: false });
+
+    const inbox = await listMyInbox(lead, { now: NOW_2026 });
+    const item = inbox.mine.find((candidate) => candidate.instanceId === instanceId);
+    expect(item?.approveBlockedReason).toBe(BLOCKED_REASON);
+    expect(item?.drafterName).toBeUndefined();
+    expect(item?.summary).toBeUndefined();
+    expect(inbox.measureHeader).toBe("일수");
+
+    const view = await getApprovalView(lead, { kind: BLOCK_KIND, documentId }, { now: NOW_2026 });
+    expect(view?.approveBlockedReason).toBe(BLOCKED_REASON);
+    expect(view?.steps).toBeUndefined();
+  });
+
+  it("연차 요약(DocumentSummary)의 documentText · number · measure가 04.1 결재함 글자와 같고 finalApprovalNote는 없다", async () => {
+    const { drafter, lead } = await org();
+    const leave = await submitLeave(drafter, FULL_DAY, { now: NOW_2026 });
+    const item = (await listMyInbox(lead, { now: NOW_2026 })).mine.find((candidate) => candidate.instanceId === leave.instanceId);
+    const summary = item?.summary;
+    expect(summary?.documentText).toBe("종일 09-21 ~ 09-23");
+    expect(summary?.documentText).toBe(formatLeavePeriod(summary ?? {}));
+    expect(summary?.number).toBe(leave.number);
+    expect(summary?.measure).toEqual({ kind: "days", quarters: 12, text: "3일" });
+    expect(summary?.finalApprovalNote).toBeUndefined();
+  });
+
+  it("describeFinalApprovalNote는 요약의 finalApprovalNote, 연차는 null · projectActionResult의 finalNote는 approval.value를 끈 계급에서 빠진다", async () => {
+    const { drafter, lead } = await org();
+    const { documentId } = await submitTestDocument(drafter, NOTE_KIND);
+    const leave = await submitLeave(drafter, FULL_DAY, { now: NOW_2026 });
+    expect(await describeFinalApprovalNote(lead, { kind: NOTE_KIND, documentId })).toBe("T-1 완료");
+    expect(await describeFinalApprovalNote(lead, { kind: LEAVE_DOCUMENT_KIND, documentId: leave.leaveId })).toBeNull();
+
+    expect(await projectActionResult(lead, { documentId, final: true, finalNote: "T-1 완료" })).toMatchObject({ finalNote: "T-1 완료" });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: TEAM_LEAD_ROLE_ID, infoItem: "approval.value", visible: false });
+    expect(await projectActionResult(lead, { documentId, final: true, finalNote: "T-1 완료" })).not.toHaveProperty("finalNote");
+  });
+
+  it("self_approve 종류에서 기안자가 1단을 본인 승인하면 결재선 보기 단계의 selfApproved가 참이다", async () => {
+    const lead = await makePerson("정팀장", TEAM_LEAD_ROLE_ID, "기획1팀");
+    const { instanceId, documentId } = await submitTestDocument(lead, SELF_KIND);
+    const approved = await approveDocument(lead, { instanceId, expectedVersion: 1 }, { now: NOW_2026 });
+    expect(approved.status).toBe("approved");
+    const view = await getApprovalView(lead, { kind: SELF_KIND, documentId }, { now: NOW_2026 });
+    expect(view?.steps?.[0]).toMatchObject({ state: "approved", selfApproved: true });
   });
 });

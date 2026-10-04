@@ -60,6 +60,8 @@ export type ExpenseDocumentDto = ExpenseDraftDto & {
   payableKrw: number | null;
   // 계산 한 줄 — 제출 뒤 문서는 저장된 스냅숏, 작성 중은 지금 기준 계산. 조각의 emphasis가 숫자 700 표식(금액 정보 항목).
   taxLine: { text: string; parts: TaxLinePart[] } | null;
+  // 05-06 세율 바뀜 — 번호 있는 문서만, 저장 스냅숏 값 대 지금 기준 재계산 값이 다를 때 한 줄(같으면 null). 조각 모양은 taxLine과 같다.
+  taxDrift: { text: string; parts: TaxLinePart[] } | null;
   // 05-05 폼 자동 채움 재료(작성 중에만 채운다) — 거래처 기본 증빙 종류 이름 · 견적 줄 실행가 줄(외화면 둘째 줄) · 분할 지급 갈래와 힌트 한 줄.
   defaultEvidenceName: string | null;
   executionLines: string[];
@@ -91,6 +93,7 @@ export const EXPENSE_DOCUMENT_DTO_SPEC: DtoSpec<ExpenseDocumentDto, ExpenseDocum
     { key: "companyBorneKrw", from: "companyBorneKrw", infoItem: "expense.amount" },
     { key: "payableKrw", from: "payableKrw", infoItem: "expense.amount" },
     { key: "taxLine", from: "taxLine", infoItem: "expense.amount" },
+    { key: "taxDrift", from: "taxDrift", infoItem: "expense.amount" },
     { key: "defaultEvidenceName", from: "defaultEvidenceName", infoItem: "expense.value" },
     { key: "executionLines", from: "executionLines", infoItem: "expense.amount" },
     { key: "installmentMode", from: "installmentMode", infoItem: "expense.value" },
@@ -141,6 +144,23 @@ export const EXPENSE_DETAIL_DTO_SPEC: DtoSpec<ExpenseDetailDto, ExpenseDetailDto
   ],
 };
 
+// 05-06 미리보기 응답 — 계산 한 줄 · 회차 상한 칸 오류는 금액(expense.amount), 막힘 이유 · 대상은 문서 칸(expense.value). 문서 DTO의
+// taxLine과 같은 항목이라 금액을 볼 수 없는 계급에는 미리보기에서도 한 줄이 없다.
+export type ExpensePreviewDto = {
+  taxLine: { text: string; parts: TaxLinePart[] } | null;
+  block: { reason: string; target: string | null } | null;
+  fieldErrors: { supplyAmount?: string };
+};
+
+export const EXPENSE_PREVIEW_DTO_SPEC: DtoSpec<ExpensePreviewDto, ExpensePreviewDto> = {
+  fields: [
+    { key: "taxLine", from: "taxLine", infoItem: "expense.amount" },
+    { key: "block", from: "block", infoItem: "expense.value" },
+    { key: "fieldErrors", from: "fieldErrors", infoItem: "expense.amount" },
+  ],
+};
+
 registerDto({ name: "expenseDraft", fields: EXPENSE_DRAFT_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 registerDto({ name: "expenseDocument", fields: EXPENSE_DOCUMENT_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 registerDto({ name: "expenseDetail", fields: EXPENSE_DETAIL_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
+registerDto({ name: "expensePreview", fields: EXPENSE_PREVIEW_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });

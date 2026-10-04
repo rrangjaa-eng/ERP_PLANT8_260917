@@ -5,7 +5,7 @@ import { z } from "zod";
 import { authedActionClient } from "@/lib/actions/client";
 import "@/app/(app)/document-kinds";
 import { currentHolderNames, projectActionResult } from "@/domain/approvals";
-import { EXPENSE_DOCUMENT_KIND, createExpenseFromLines, saveExpenseDraft, submitExpense } from "@/domain/expenses";
+import { EXPENSE_DOCUMENT_KIND, createExpenseFromLines, previewExpense, saveExpenseDraft, submitExpense } from "@/domain/expenses";
 import {
   completeEvidenceUpload,
   createEvidenceViewUrl,
@@ -50,6 +50,14 @@ export const saveExpenseDraftAction = authedActionClient
     const saved = await saveExpenseDraft(ctx.viewer, parsedInput);
     revalidatePath(`/expenses/${parsedInput.expenseId}`);
     return { version: saved.version, savedAt: formatKstTime(new Date()) };
+  });
+
+// 05-06 미리보기 — 저장 전 칸 값으로 계산 한 줄 · 제출 막힘 첫 이유 · 칸 오류를 받는다(쓰기 없음). 입력은 임시 저장과 같은 칸 값이다.
+export const previewExpenseAction = authedActionClient
+  .schema(z.object({ expenseId: expenseIdSchema, fields: draftFieldsInput }))
+  .action(async ({ parsedInput, ctx }) => {
+    const preview = await previewExpense(ctx.viewer, parsedInput);
+    return { taxLine: preview.taxLine ?? null, block: preview.block ?? null, fieldErrors: preview.fieldErrors ?? {} };
   });
 
 // 제출 — 같은 문서 두 번 제출(폰 두 번 탭 · 응답 유실 뒤 재시도)은 오류가 아니라 결과(`already_submitted`)다. 화면이 문서 화면으로

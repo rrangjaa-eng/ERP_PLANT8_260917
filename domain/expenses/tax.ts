@@ -1,6 +1,6 @@
 import type { Viewer } from "@/domain/viewer";
 import { applyTaxRule, type TaxIncomeType } from "@/domain/money/tax";
-import { taxRuleSchema, type TaxRule, type TaxRuleKind } from "@/domain/code-tables/tax-rule";
+import { taxRuleSchema, type TaxRule, type TaxRuleBasisDate, type TaxRuleKind } from "@/domain/code-tables/tax-rule";
 import {
   getSettingEntry as defaultGetSettingEntry,
   getSettingValue as defaultGetSettingValue,
@@ -8,24 +8,30 @@ import {
   type SettingDef,
 } from "@/domain/settings/registry";
 import {
+  TAX_BASIS_DATE_VAT,
+  TAX_BASIS_DATE_WITHHOLDING,
   TAX_COMPANY_BORNE_METHOD,
   TAX_COMPANY_BORNE_RATE,
   TAX_VAT_RATE,
   TAX_WITHHOLDING_BUSINESS_INCOME_RATE,
   TAX_WITHHOLDING_OTHER_INCOME_RATE,
+  type TaxBasisDate,
   type TaxCompanyBorneMethod,
 } from "@/domain/settings/keys";
 import { listCodeItems } from "@/repositories/code-tables";
 import { seoulDateToUtcDate, seoulToday } from "@/lib/dates";
 import { kstDateOf } from "@/lib/kst-date";
 import { formatKrw } from "@/lib/format-number";
-import type { Money } from "@/domain/money";
+import { formatRatePercent, type Money } from "@/domain/money";
 
 // 05-03(Pattern 2) — 지출결의의 세금 호출자. 계산은 domain/money/tax.ts의 applyTaxRule 하나이고, 이 파일은 그 함수에
 // 넘길 날짜 · 소득 종류 · 세율 행을 고른다. 06-03이 같은 파일 · 같은 이름을 확장한다.
 
-// D-101 대체 사슬: 지급 쪽(원천징수 · 회사 대납) = 지급일(Phase 6 전에는 없음) → 지급 예정일 → 서울 오늘,
-// 증빙 쪽(부가세) = 증빙일(이 페이즈에 칸 없음) → 작성일(문서 created_at의 서울 날짜).
+// D-101 대체 사슬(05-06 전 사슬): 기준일 종류 = 증빙 종류 코드 항목의 taxRule.basisDate가 있으면 그것, 없으면 규칙 종류의 설정
+// (원천징수 · 회사 대납 → tax.basis_date.withholding, 부가세 → tax.basis_date.vat). 날짜 사슬은 D-101 기본값 —
+// 지급일(Phase 6 전에는 없음) → 지급 예정일 → 서울 오늘 / 증빙일 · 발행일(이 페이즈에 칸 없음) → 작성일(created_at의 서울 날짜).
+// 고른 날짜는 applyTaxRule이 그 규칙에서 읽는 슬롯(원천징수 · 회사 대납 = paymentDate, 부가세 = evidenceDate — domain/money/tax.ts
+// 규약)에 들어간다 — 두 슬롯에 같은 날짜를 넣으므로 규칙이 어느 슬롯을 읽어도 같은 기준일이다.
 export type TaxDateSource = {
   paidDate?: string | null;
   scheduledPaymentDate: string | null;
@@ -33,11 +39,26 @@ export type TaxDateSource = {
   createdAt: Date;
 };
 
-export function pickTaxDates(doc: TaxDateSource, opts: { todayKst: string }): { paymentDate: string; evidenceDate: string } {
-  return {
-    paymentDate: doc.paidDate ?? doc.scheduledPaymentDate ?? opts.todayKst,
-    evidenceDate: doc.evidenceDate ?? kstDateOf(doc.createdAt),
+export type TaxBasisKind = TaxRuleBasisDate | TaxBasisDate;
+
+export type PickedTaxDates = { basisKind: TaxBasisKind; basisDate: string; applyOpts: { paymentDate: string; evidenceDate: string } };
+
+export function pickTaxDates(
+  doc: TaxDateSource,
+  opts: { ruleKind: TaxRuleKind; codeBasis: TaxRuleBasisDate | undefined; basisWithholding: TaxBasisDate; basisVat: TaxBasisDate; todayKst: string },
+): PickedTaxDates {
+  const basisKind: TaxBasisKind = opts.codeBasis ?? (opts.ruleKind === "vat_surcharge" ? opts.basisVat : opts.basisWithholding);
+  const documentDate = kstDateOf(doc.createdAt);
+  const scheduled = doc.scheduledPaymentDate ?? opts.todayKst;
+  const byKind: Record<TaxBasisKind, string> = {
+    payment_date: doc.paidDate ?? scheduled,
+    scheduled_payment_date: scheduled,
+    evidence_date: doc.evidenceDate ?? documentDate,
+    issue_date: documentDate,
+    document_date: documentDate,
   };
+  const basisDate = byKind[basisKind];
+  return { basisKind, basisDate, applyOpts: { paymentDate: basisDate, evidenceDate: basisDate } };
 }
 
 // 사업소득 증빙만 사업소득 세율(3.3%) — 그 밖은 기타소득(applyTaxRule 기본).
@@ -74,12 +95,12 @@ function rateDefFor(ruleKind: RatedRuleKind, incomeType: TaxIncomeType): Setting
 // 규칙 없음(none)이면 null.
 export async function resolveAppliedRate(
   rule: TaxRule,
-  dates: { paymentDate: string; evidenceDate: string; incomeType: TaxIncomeType },
+  dates: { basisDate: string; incomeType: TaxIncomeType },
   deps?: Partial<ExpenseTaxDeps>,
 ): Promise<AppliedRate | null> {
   if (rule.ruleKind === "none") return null;
   const getEntry = deps?.getSettingEntry ?? defaultGetSettingEntry;
-  const basisDate = rule.ruleKind === "vat_surcharge" ? dates.evidenceDate : dates.paymentDate;
+  const { basisDate } = dates;
   const asOf = seoulDateToUtcDate(basisDate);
   const def = rateDefFor(rule.ruleKind, dates.incomeType);
   const entry = await getEntry(def, { asOf });
@@ -125,14 +146,16 @@ export async function computeExpenseTax(
   if (!parsed.success) return { unavailable: true };
   const rule = parsed.data;
 
-  const dates = pickTaxDates(doc, { todayKst: seoulToday(deps?.now) });
+  const getValue = deps?.getSettingValue ?? defaultGetSettingValue;
+  const [basisWithholding, basisVat] = await Promise.all([getValue(TAX_BASIS_DATE_WITHHOLDING), getValue(TAX_BASIS_DATE_VAT)]);
+  const dates = pickTaxDates(doc, { ruleKind: rule.ruleKind, codeBasis: rule.basisDate, basisWithholding, basisVat, todayKst: seoulToday(deps?.now) });
   const incomeType = incomeTypeFor(doc.evidenceType);
   try {
-    const applied = await resolveAppliedRate(rule, { ...dates, incomeType }, deps);
+    const applied = await resolveAppliedRate(rule, { basisDate: dates.basisDate, incomeType }, deps);
     const amounts = await applyTaxRule(
       doc.supplyAmountKrw,
       rule,
-      { paymentDate: seoulDateToUtcDate(dates.paymentDate), evidenceDate: seoulDateToUtcDate(dates.evidenceDate), incomeType },
+      { paymentDate: seoulDateToUtcDate(dates.applyOpts.paymentDate), evidenceDate: seoulDateToUtcDate(dates.applyOpts.evidenceDate), incomeType },
       deps?.getSettingValue ? { getSettingValue: deps.getSettingValue } : undefined,
     );
     return {
@@ -156,11 +179,6 @@ export async function computeExpenseTax(
 
 export type TaxLinePart = { text: string; emphasis: boolean };
 
-// 0.088 → `8.8%` (소수 둘째 자리까지, 끝의 0은 뗀다).
-function ratePercentText(rate: number): string {
-  return `${parseFloat((rate * 100).toFixed(2))}%`;
-}
-
 const SEP: TaxLinePart = { text: " · ", emphasis: false };
 
 export function taxLineText(result: ExpenseTaxResult, supply: Money, ruleLabel: string): { text: string; parts: TaxLinePart[] } {
@@ -173,7 +191,7 @@ export function taxLineText(result: ExpenseTaxResult, supply: Money, ruleLabel: 
     segments.push([{ text: "계산 불가 · 세율 없음", emphasis: false }]);
   } else {
     if (supply.currency !== "KRW") segments.push(label("원화", formatKrw(supply.amountKrw)));
-    const rate = result.rate === null ? null : ratePercentText(result.rate);
+    const rate = result.rate === null ? null : formatRatePercent(result.rate);
     if (result.ruleKind === "vat_surcharge") {
       segments.push(label("부가세", ...(rate ? [rate] : []), formatKrw(result.vatKrw)), label("지급 총액", formatKrw(result.payableKrw)));
     } else if (result.ruleKind === "withholding") {
@@ -190,6 +208,52 @@ export function taxLineText(result: ExpenseTaxResult, supply: Money, ruleLabel: 
     }
     segments.push([{ text: ruleLabel, emphasis: false }]);
   }
+  const parts = segments.flatMap((segment, index) => (index === 0 ? segment : [SEP, ...segment]));
+  return { text: parts.map((part) => part.text).join(""), parts };
+}
+
+// ── 세율 바뀜 ────────────────────────────────────────────────────────────
+// 05-06(기준 7 · UI-SPEC Copywriting 「표시 — 세율 바뀜」 · B1 Round 2): 저장 스냅숏으로 만든 결과 대 지금 설정 · 기준일로 다시 계산한
+// 결과 — 세율 · 세액 · 지급 총액이 모두 같으면 null. 스냅숏의 이력 행 id로 설정 이력을 다시 읽지 않는다(값 비교만 — 예정 세율이
+// 취소돼 행이 없어도 한 줄이 그대로 나온다). 지금 계산이 불가면 비교할 값이 없어 null. 조각 모양은 taxLineText와 같다.
+const DRIFT_LABELS: Record<Exclude<TaxRuleKind, "none">, { tax: string; payable: string }> = {
+  vat_surcharge: { tax: "부가세", payable: "지급 총액" },
+  withholding: { tax: "원천징수", payable: "실지급액" },
+  company_borne: { tax: "회사 대납 세금", payable: "지급 총액" },
+};
+
+type ComputedTax = Exclude<ExpenseTaxResult, { unavailable: true }>;
+
+function taxAmountOf(result: ComputedTax): number {
+  if (result.ruleKind === "vat_surcharge") return result.vatKrw;
+  if (result.ruleKind === "withholding") return result.withholdingKrw;
+  if (result.ruleKind === "company_borne") return result.companyBorneKrw;
+  return 0;
+}
+
+export function taxDriftText(stored: ExpenseTaxResult, recomputed: ExpenseTaxResult): { text: string; parts: TaxLinePart[] } | null {
+  if (stored.unavailable || recomputed.unavailable) return null;
+  const sameRate = stored.rate === recomputed.rate;
+  const sameTax = taxAmountOf(stored) === taxAmountOf(recomputed);
+  const samePayable = stored.payableKrw === recomputed.payableKrw;
+  if (sameRate && sameTax && samePayable) return null;
+
+  const change = (from: string, to: string): TaxLinePart[] =>
+    from === to ? [{ text: from, emphasis: true }] : [{ text: from, emphasis: true }, { text: " → ", emphasis: false }, { text: to, emphasis: true }];
+  const rateText = (result: ComputedTax) => (result.rate === null ? null : formatRatePercent(result.rate));
+  const segments: TaxLinePart[][] = [[{ text: "세율 바뀜", emphasis: false }]];
+  const labels = stored.ruleKind === "none" ? { tax: null, payable: "지급 총액" } : DRIFT_LABELS[stored.ruleKind];
+  if (labels.tax) {
+    const taxSegment: TaxLinePart[] = [{ text: `${labels.tax} `, emphasis: false }];
+    const [fromRate, toRate] = [rateText(stored), rateText(recomputed)];
+    if (fromRate !== null && toRate !== null) taxSegment.push(...change(fromRate, toRate));
+    if (sameRate && !sameTax) {
+      if (fromRate !== null) taxSegment.push({ text: " ", emphasis: false });
+      taxSegment.push(...change(formatKrw(taxAmountOf(stored)), formatKrw(taxAmountOf(recomputed))));
+    }
+    segments.push(taxSegment);
+  }
+  segments.push([{ text: `${labels.payable} `, emphasis: false }, ...change(formatKrw(stored.payableKrw), formatKrw(recomputed.payableKrw))]);
   const parts = segments.flatMap((segment, index) => (index === 0 ? segment : [SEP, ...segment]));
   return { text: parts.map((part) => part.text).join(""), parts };
 }

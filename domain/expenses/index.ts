@@ -43,12 +43,19 @@ import { moneyFromRow, moneyToColumns, remainingForInstallments, type Money } fr
 import { CURRENCIES, recentFxRate } from "@/domain/money/currency";
 import { allocateExpenseNumber, loadExpenseNumberFormat } from "@/domain/document-numbering";
 import { formatKstTime } from "@/domain/holidays/business-day";
-import { computeExpenseTax, storedTaxResult, taxLineText } from "@/domain/expenses/tax";
+import { computeExpenseTax, storedTaxResult, taxDriftText, taxLineText } from "@/domain/expenses/tax";
 import { buildExpenseDetailRows } from "@/domain/expenses/detail";
 import { expenseLineDoor, type ExpenseLineDoor } from "@/domain/expenses/line-door";
 import { resolveLinkedDocumentsByLineage, type LineageLine } from "@/domain/quotes/lineage";
 import { evaluateExpenseSubmit } from "@/domain/expenses/gate";
-import { EXPENSE_DETAIL_DTO_SPEC, EXPENSE_DOCUMENT_DTO_SPEC, type ExpenseDetailDto, type ExpenseDocumentDto } from "@/domain/expenses/dto";
+import {
+  EXPENSE_DETAIL_DTO_SPEC,
+  EXPENSE_DOCUMENT_DTO_SPEC,
+  EXPENSE_PREVIEW_DTO_SPEC,
+  type ExpenseDetailDto,
+  type ExpenseDocumentDto,
+  type ExpensePreviewDto,
+} from "@/domain/expenses/dto";
 import { listCodeItems } from "@/repositories/code-tables";
 import { countActiveByOwner } from "@/repositories/files";
 import { findProjectById, lockProjectForWrite, type ProjectRow } from "@/repositories/projects";
@@ -75,7 +82,7 @@ import {
   type NumberedLineExpense,
 } from "@/repositories/expenses";
 
-export type { ExpenseDocumentDto, ExpenseDraftDto } from "@/domain/expenses/dto";
+export type { ExpenseDocumentDto, ExpenseDraftDto, ExpensePreviewDto } from "@/domain/expenses/dto";
 
 // 05-03(EXP-01 · EXP-14): 지출결의 — 결재 모듈에 문서 종류로 등록되고 제출은 같은 결재 엔진(domain/approvals)을 지난다.
 // 결재 모듈은 이 파일을 import하지 않는다(app/(app)/document-kinds.ts가 적재를 일으킨다).
@@ -189,7 +196,7 @@ function supplyMoney(row: Pick<ExpenseRow, "supplyCurrency" | "supplyForeignAmou
 }
 
 type SourceExtras = Partial<
-  Pick<ExpenseDocumentDto, "evidenceTypeName" | "paymentMethodName" | "taxLine" | "defaultEvidenceName" | "executionLines" | "installmentMode" | "installmentText">
+  Pick<ExpenseDocumentDto, "evidenceTypeName" | "paymentMethodName" | "taxLine" | "taxDrift" | "defaultEvidenceName" | "executionLines" | "installmentMode" | "installmentText">
 >;
 
 function toSource(row: ExpenseSummaryRow, extras: SourceExtras = {}): ExpenseDocumentDto {
@@ -226,6 +233,7 @@ function toSource(row: ExpenseSummaryRow, extras: SourceExtras = {}): ExpenseDoc
     companyBorneKrw: row.companyBorneKrw,
     payableKrw: row.payableKrw,
     taxLine: extras.taxLine ?? null,
+    taxDrift: extras.taxDrift ?? null,
     defaultEvidenceName: extras.defaultEvidenceName ?? null,
     executionLines: extras.executionLines ?? [],
     installmentMode: extras.installmentMode ?? "none",
@@ -630,6 +638,49 @@ export async function submitExpense(
   });
 }
 
+// ── 미리보기(05-06 — 쓰기 없음) ─────────────────────────────────────────
+
+export type ExpenseSubmitBlock = NonNullable<ExpensePreviewDto["block"]>;
+
+// 저장 전 칸 값을 초안에 겹쳐 세금 한 줄 · 제출 막힘 첫 이유 · 회차 상한 칸 오류를 돌려준다. 기안자 · 작성 중만(아니면 없는 문서 —
+// 남의 초안을 계산하지 않는다, T-05-603). 트랜잭션 · 쓰기 없음 — 미리보기 통과가 제출 통과를 보장하지 않는다(제출이 tx 안에서 다시 판정).
+export async function previewExpense(viewer: Viewer, input: { expenseId: string; fields: ExpenseDraftInput }): Promise<Partial<ExpensePreviewDto>> {
+  const saved = UUID_SHAPE.test(input.expenseId) ? await findExpenseById(viewer, input.expenseId) : null;
+  if (!saved || saved.drafterId !== viewer.id || saved.number !== null) throw new ExpenseNotFoundError();
+  const row: ExpenseRow = { ...saved, ...toDraftColumns(draftFieldsSchema.parse(input.fields)) };
+  const supply = supplyMoney(row);
+
+  const evidenceNames = await codeLabelsOf(viewer, "evidence_type");
+  const tax = await computeExpenseTax(viewer, row);
+  const evidenceTypeName = row.evidenceType ? (evidenceNames.get(row.evidenceType) ?? row.evidenceType) : null;
+  const taxLine = supply ? taxLineText(tax, supply, `${evidenceTypeName ?? ""} 규칙`) : null;
+
+  const fieldErrors: ExpensePreviewDto["fieldErrors"] = {};
+  let block: ExpenseSubmitBlock | null = null;
+  if (row.quoteLineId && row.projectId) {
+    const line = await findQuoteLineById(viewer, row.quoteLineId);
+    const latest = await findLatestQuoteRevision(viewer, row.projectId);
+    const numbered = line ? await listNumberedByLine(viewer, line.id) : [];
+    const door = line ? doorFor(line, numbered, row.id) : null;
+    const decision = evaluateExpenseSubmit({
+      lineInCurrentRevision: Boolean(line && latest && line.revisionId === latest.id && line.archivedAt === null && door && door.state !== "none"),
+      closedBy: door?.state === "closed" && door.latest ? door.latest : null,
+      supplyAmountKrw: row.supplyAmountKrw,
+      evidenceType: row.evidenceType,
+      paymentMethod: row.paymentMethod,
+      evidenceCount: await countActiveByOwner(viewer, EXPENSE_DOCUMENT_KIND, row.id),
+    });
+    if (!decision.allowed) block = { reason: decision.reason, target: decision.target };
+    if (line && supply) {
+      const others = numbered.filter((doc) => doc.id !== row.id).flatMap((doc) => supplyMoney(doc) ?? []);
+      const cap = remainingForInstallments(lineExecution(line), others, supply);
+      if (cap.exceeds) fieldErrors.supplyAmount = `남은 실행가 ${remainingText(cap.remaining, cap.basis)} 넘음 · 공급가액 고치기`;
+    }
+  }
+  if (!block && tax.unavailable) block = { reason: TAX_UNAVAILABLE, target: null };
+  return project(viewer, { taxLine, block, fieldErrors }, EXPENSE_PREVIEW_DTO_SPEC);
+}
+
 // ── 읽기 ──────────────────────────────────────────────────────────────
 
 // 05-05 폼 자동 채움 재료(작성 중 문서만) — 견적 줄 실행가 줄 · 분할 지급 갈래와 힌트 한 줄(체크박스를 켰을 때 보일 글자 — 켜고 끄는 것은 화면). 앞 회차가 있는 줄의 문서는 체크박스 대신 값
@@ -661,6 +712,22 @@ async function lineFactsFor(viewer: Viewer, row: ExpenseSummaryRow, supply: Mone
   return { executionLines, installmentMode, installmentText: parts.join(" · ") };
 }
 
+// 05-06 폼 선택지(증빙 종류 · 지급 방식) — 코드표 메뉴(`admin.code-tables`) 보기 권한과 무관하게 지출결의 쓰기 권한이 있으면 활성 코드를
+// 받는다(PM 계급은 코드표 메뉴가 없어 domain/code-tables의 목록이 비었다 — 증빙 종류를 바꿀 수 없었다). 라벨 · 설명만 싣는다.
+export type ExpenseCodeOption = { value: string; label: string; description: string | null };
+
+export async function listExpenseFormOptions(viewer: Viewer): Promise<{ evidence: ExpenseCodeOption[]; payment: ExpenseCodeOption[] }> {
+  if (!(await can(viewer, "expenses", "write"))) return { evidence: [], payment: [] };
+  const read = async (tableKey: string): Promise<ExpenseCodeOption[]> =>
+    (await listCodeItems(viewer, { tableKey, scope: { rows: "all", includeArchived: false }, includeInactive: false })).map((item) => ({
+      value: item.value,
+      label: item.label,
+      description: item.description,
+    }));
+  const [evidence, payment] = await Promise.all([read("evidence_type"), read("payment_method")]);
+  return { evidence, payment };
+}
+
 // 05-05 폼 통화 선택지 — 통화마다 설정의 최근 환율(Phase 4 D-71)이 기본 환율이다.
 export async function listExpenseCurrencies(): Promise<{ value: string; fxRate: number }[]> {
   return Promise.all(CURRENCIES.map(async (currency) => ({ value: currency, fxRate: await recentFxRate(currency) })));
@@ -675,9 +742,13 @@ export async function getExpense(viewer: Viewer, input: { expenseId: string }): 
   const [evidenceNames, paymentNames] = await Promise.all([codeLabelsOf(viewer, "evidence_type"), codeLabelsOf(viewer, "payment_method")]);
   const evidenceTypeName = row.evidenceType ? (evidenceNames.get(row.evidenceType) ?? row.evidenceType) : null;
   const supply = supplyMoney(row);
-  // 제출 뒤는 저장된 스냅숏, 작성 중은 지금 기준 계산(05-06이 즉시 재계산 · 세율 바뀜을 더한다).
-  const result = storedTaxResult(row) ?? (supply ? await computeExpenseTax(viewer, row) : null);
+  // 제출 뒤는 저장된 스냅숏, 작성 중은 지금 기준 계산. 번호 있는 문서는 지금 설정 · 기준일로 다시 계산해 저장값과 다르면
+  // 세율 바뀜(값 비교만 — 스냅숏의 이력 행 id로 설정 이력을 다시 읽지 않는다, B1 Round 2).
+  const stored = storedTaxResult(row);
+  const current = supply && (stored === null || row.number !== null) ? await computeExpenseTax(viewer, row) : null;
+  const result = stored ?? current;
   const taxLine = result && supply ? taxLineText(result, supply, `${evidenceTypeName ?? ""} 규칙`) : null;
+  const taxDrift = stored && current && row.number !== null ? taxDriftText(stored, current) : null;
   const vendor = row.number === null && row.vendorId ? await findVendorById(viewer, row.vendorId) : null;
   return project(
     viewer,
@@ -685,6 +756,7 @@ export async function getExpense(viewer: Viewer, input: { expenseId: string }): 
       evidenceTypeName,
       paymentMethodName: row.paymentMethod ? (paymentNames.get(row.paymentMethod) ?? row.paymentMethod) : null,
       taxLine,
+      taxDrift,
       defaultEvidenceName: vendor?.defaultEvidenceType ? (evidenceNames.get(vendor.defaultEvidenceType) ?? vendor.defaultEvidenceType) : null,
       ...(await lineFactsFor(viewer, row, supply)),
     }),

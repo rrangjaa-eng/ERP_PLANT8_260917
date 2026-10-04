@@ -18,6 +18,7 @@ import { SubmittedToast } from "@/app/(app)/leave/[id]/submitted-toast";
 import { routeListSteps, withdrawResultLines } from "@/app/(app)/leave/status-display";
 import { expenseStatusWord } from "../status-display";
 import { EvidenceAttachments } from "./evidence-attachments";
+import { TaxParts } from "./tax-parts";
 import styles from "./expense.module.css";
 
 // 05-05(S7): 지출결의 문서 화면 — 제출 뒤. 읽기 칸(KvList) → `DetailScreen.Section 증빙` → 04.1 행동 줄. 행동 줄은 `getApprovalView`의 가능 행동 목록을
@@ -88,12 +89,13 @@ export function ExpenseDocument({
         <>
           <Num value={supply.amountKrw} fx={supply.currency === "KRW" ? undefined : { currency: supply.currency, amount: supply.amount, rate: supply.fxRate }} />
           {expense.taxLine ? (
-            <span className={styles.taxLine}>
-              {expense.taxLine.parts.map((part, index) => (
-                <span key={`${index}-${part.text}`} className={part.emphasis ? styles.strong : undefined}>
-                  {part.text}
-                </span>
-              ))}
+            <span className={styles.taxLine} data-testid="expense-tax-line">
+              <TaxParts parts={expense.taxLine.parts} />
+            </span>
+          ) : null}
+          {expense.taxDrift ? (
+            <span className={styles.drift} data-testid="expense-tax-drift">
+              <TaxParts parts={expense.taxDrift.parts} />
             </span>
           ) : null}
         </>

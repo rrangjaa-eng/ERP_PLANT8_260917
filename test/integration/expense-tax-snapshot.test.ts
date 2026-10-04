@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { expenses, settingsHistorized } from "@/db/schema";
-import { createExpenseFromLines, getExpense, saveExpenseDraft } from "@/domain/expenses";
+import { createExpenseFromLines, ExpenseNotFoundError, getExpense, listExpenseFormOptions, previewExpense, saveExpenseDraft } from "@/domain/expenses";
 import { computeExpenseTax } from "@/domain/expenses/tax";
 import { addHistorizedValue, cancelHistorizedValue } from "@/domain/settings/registry";
 import { TAX_VAT_RATE } from "@/domain/settings/keys";
@@ -115,5 +115,29 @@ describe("세율 스냅숏 · 세율 바뀜", () => {
     expect(doc?.taxDrift?.text).toBe(
       `세율 바뀜 · 부가세 12% → ${rateText} · 지급 총액 13,888,000 → ${before.payableKrw.toLocaleString("en-US")}`,
     );
+  });
+});
+
+describe("미리보기(쓰기 없음) · 폼 선택지", () => {
+  it("저장 전 증빙 종류 · 공급가액을 겹쳐 계산 한 줄을 돌려주고 행은 그대로다", async () => {
+    const fx = await setupExpenseProject();
+    const expenseId = await draftOnStageLine(fx);
+
+    const preview = await previewExpense(fx.pm, { expenseId, fields: { evidenceType: "other_income", supply: { currency: "KRW", amount: 3_000_000, fxRate: 1 } } });
+    expect(preview.taxLine?.text).toBe("원천징수 8.8% 264,000 · 실지급액 2,736,000 · 기타소득 규칙");
+    expect(await expenseRow(expenseId)).toMatchObject({ evidenceType: "tax_invoice", supplyAmountKrw: 12_400_000, version: 1 });
+  });
+
+  it("기안자가 아니면 없는 문서다(남의 초안을 계산하지 않는다)", async () => {
+    const fx = await setupExpenseProject();
+    const expenseId = await draftOnStageLine(fx);
+    await expect(previewExpense(fx.otherPm, { expenseId, fields: {} })).rejects.toBeInstanceOf(ExpenseNotFoundError);
+  });
+
+  it("코드표 메뉴 권한이 없는 PM도 증빙 종류 · 지급 방식 선택지를 받는다", async () => {
+    const fx = await setupExpenseProject();
+    const options = await listExpenseFormOptions(fx.pm);
+    expect(options.evidence.map((option) => option.value)).toEqual(expect.arrayContaining(["tax_invoice", "other_income", "business_income"]));
+    expect(options.payment.map((option) => option.value)).toContain("bank_transfer");
   });
 });

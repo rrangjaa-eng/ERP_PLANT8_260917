@@ -2,9 +2,8 @@ import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/viewer";
 import "@/app/(app)/document-kinds";
 import { getApprovalView, previewRoute, RouteBlockedError } from "@/domain/approvals";
-import { EXPENSE_DOCUMENT_KIND, getExpense, listExpenseCurrencies } from "@/domain/expenses";
+import { EXPENSE_DOCUMENT_KIND, getExpense, listExpenseCurrencies, listExpenseFormOptions } from "@/domain/expenses";
 import { listEvidence } from "@/domain/evidence";
-import { listCodeItems } from "@/domain/code-tables";
 import { getSettingValue } from "@/domain/settings/registry";
 import { EVIDENCE_MAX_SIZE_MB } from "@/domain/settings/keys";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
@@ -49,11 +48,8 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
     if (!(error instanceof RouteBlockedError)) throw error;
     routeBlocked = error.message;
   }
-  const [evidenceItems, paymentItems, currencies] = await Promise.all([
-    listCodeItems(viewer, "evidence_type"),
-    listCodeItems(viewer, "payment_method"),
-    listExpenseCurrencies(),
-  ]);
+  // 선택지는 지출결의 쓰기 권한으로 받는다(코드표 메뉴가 없는 PM도 증빙 종류를 바꿀 수 있다 — 05-06).
+  const [{ evidence: evidenceItems, payment: paymentItems }, currencies] = await Promise.all([listExpenseFormOptions(viewer), listExpenseCurrencies()]);
   const optionsOf = (items: { value: string; label: string; description: string | null }[], current: string | null | undefined, currentLabel: string | null | undefined): SelectOption[] => {
     const options = items.map((item) => ({ value: item.value, label: item.label, description: item.description }));
     // 이미 저장된 값이 비활성 · 보관된 코드면 목록에 없다 — 그 값을 이름으로 남겨 둔다.

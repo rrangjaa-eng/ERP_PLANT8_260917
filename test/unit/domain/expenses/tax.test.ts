@@ -91,9 +91,9 @@ const CODE_ITEMS = [
 function deps(overrides: Record<string, unknown> = {}, entry?: ExpenseTaxDeps["getSettingEntry"]): Partial<ExpenseTaxDeps> {
   const value = <T>(def: SettingDef<T>): T => (def.key in overrides ? (overrides[def.key] as T) : (def.default as T));
   return {
-    listCodeItems: async () => CODE_ITEMS,
-    getSettingValue: async (def) => value(def),
-    getSettingEntry: entry ?? (async (def) => ({ value: value(def), historizedId: null, effectiveFrom: null })),
+    listCodeItems: () => Promise.resolve(CODE_ITEMS),
+    getSettingValue: (def) => Promise.resolve(value(def)),
+    getSettingEntry: entry ?? ((def) => Promise.resolve({ value: value(def), historizedId: null, effectiveFrom: null })),
     now: new Date("2026-10-04T03:00:00Z"),
   };
 }
@@ -125,9 +125,7 @@ describe("computeExpenseTax", () => {
     const result = await computeExpenseTax(
       SYSTEM_VIEWER,
       doc("tax_invoice", 1_000_000),
-      deps({}, async (def) => {
-        throw new SettingNotFoundError(`설정 키 '${def.key}'에 유효한 값이 없습니다.`);
-      }),
+      deps({}, (def) => Promise.reject(new SettingNotFoundError(`설정 키 '${def.key}'에 유효한 값이 없습니다.`))),
     );
     expect(result).toEqual({ unavailable: true });
   });
@@ -137,9 +135,9 @@ describe("computeExpenseTax", () => {
     await computeExpenseTax(
       SYSTEM_VIEWER,
       doc("tax_invoice", 1_000_000),
-      deps({}, async (def, opts) => {
+      deps({}, (def, opts) => {
         if (def.key === TAX_VAT_RATE.key) asOfs.push(opts?.asOf?.toISOString().slice(0, 10) ?? "");
-        return { value: def.default as never, historizedId: null, effectiveFrom: null };
+        return Promise.resolve({ value: def.default as never, historizedId: null, effectiveFrom: null });
       }),
     );
     expect(asOfs).toEqual(["2026-10-01"]);

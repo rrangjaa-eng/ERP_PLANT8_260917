@@ -11,9 +11,10 @@ import { useCommaInput } from "@/ui/input/use-comma-input";
 import { parseNumberInput } from "@/lib/format-number";
 import { isCtrlCombo } from "@/lib/shortcut";
 import { usePhoneWidth } from "@/app/(app)/leave/use-phone-width";
-import { saveExpenseDraftAction, submitExpenseAction } from "../actions";
+import { previewExpenseAction, saveExpenseDraftAction, submitExpenseAction } from "../actions";
 import { EvidenceAttachments } from "./evidence-attachments";
 import { submitBlockReason } from "./submit-block";
+import { TaxParts } from "./tax-parts";
 import styles from "./expense.module.css";
 
 // 05-05(S3 · UI-SPEC): 지출결의 폼 — `Form layout="page"` 한 열. 알 수 있는 값은 서버가 채워 보낸다(견적 줄 · 거래처 · 증빙 종류 · 공급가액 · 통화 ·
@@ -105,6 +106,12 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
   const [networkFailed, setNetworkFailed] = useState<"submit" | "save" | null>(null);
   const [errors, setErrors] = useState<{ supplyAmount?: string; fxRate?: string; scheduledPaymentDate?: string; note?: string }>({});
 
+  // 05-06 계산 한 줄 — 서버 미리보기 응답으로 바뀐다. 오는 동안 이전 줄은 흐린 색으로 남는다(빈칸 · 뼈대 없음 — UI-SPEC S5).
+  const [taxLine, setTaxLine] = useState(data.taxLine);
+  const [previewing, setPreviewing] = useState(false);
+  const [previewFieldError, setPreviewFieldError] = useState<string | null>(null);
+  const previewSeq = useRef(0);
+
   const snapshot = JSON.stringify([evidenceType, paymentMethod, currency, amountInput.rawValue, currency === "KRW" ? "" : fxRaw, date, note, installment]);
   const [savedSnapshot, setSavedSnapshot] = useState(snapshot);
   const dirty = snapshot !== savedSnapshot;
@@ -119,6 +126,35 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty, uploading]);
+
+  // 계산에 드는 칸(증빙 종류 · 공급가액 · 통화 · 환율 · 지급 예정일 · 분할 지급)이 바뀌면 짧은 지연 뒤 미리보기를 부른다. 늦게 온 응답이
+  // 새 응답을 덮지 않게 요청 순번으로 거른다. 첫 그림은 서버가 보낸 값이라 부르지 않는다.
+  const previewKey = JSON.stringify([evidenceType, currency, amountInput.rawValue, currency === "KRW" ? "" : fxRaw, date, installment]);
+  const firstPreviewKey = useRef(previewKey);
+  useEffect(() => {
+    if (previewKey === firstPreviewKey.current) return;
+    firstPreviewKey.current = "";
+    const seq = ++previewSeq.current;
+    setPreviewing(true);
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        let result: Awaited<ReturnType<typeof previewExpenseAction>> | undefined;
+        try {
+          result = await previewExpenseAction({ expenseId: data.id, fields: previewFields() });
+        } catch {
+          result = undefined;
+        }
+        if (seq !== previewSeq.current) return;
+        setPreviewing(false);
+        if (!result?.data) return;
+        setTaxLine(result.data.taxLine);
+        setPreviewFieldError(result.data.fieldErrors.supplyAmount ?? null);
+      })();
+    }, 250);
+    return () => window.clearTimeout(timer);
+    // previewFields는 같은 렌더의 칸 값을 읽는다 — 칸 값의 변화는 previewKey 하나로 본다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewKey, data.id]);
 
   // 서버 막힘 이유 ①~⑨는 05-06이 미리보기 응답의 첫 이유를 넘긴다 — 지금은 올리는 중 판정만.
   const block = submitBlockReason({ server: null, uploadingCount: uploading });
@@ -152,6 +188,19 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
       supply,
       scheduledPaymentDate: date || null,
       note: note || null,
+      installment: data.installmentMode === "none" ? false : installment,
+    };
+  }
+
+  // 미리보기에 보낼 칸 값 — 칸 오류를 세우지 않는다(형식이 틀린 칸은 값 없음으로 보낸다).
+  function previewFields(): Record<string, unknown> {
+    const amount = parseNumberInput(amountInput.rawValue);
+    const fxRate = currency === "KRW" ? 1 : parseNumberInput(fxRaw);
+    const supplyValid = amountInput.rawValue !== "" && amount !== null && Number.isFinite(amount) && fxRate !== null && Number.isFinite(fxRate) && fxRate > 0;
+    return {
+      evidenceType: evidenceType || null,
+      supply: supplyValid ? { currency, amount, fxRate } : null,
+      scheduledPaymentDate: dateRef.current?.validity.badInput ? null : date || null,
       installment: data.installmentMode === "none" ? false : installment,
     };
   }
@@ -267,7 +316,13 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
     if (event.key === "Enter" && event.target instanceof HTMLInputElement) event.preventDefault();
   }
 
-  const amountError = errors.supplyAmount ?? amountInput.error ?? undefined;
+  const amountError = errors.supplyAmount ?? amountInput.error ?? previewFieldError ?? undefined;
+  // 계산 한 줄은 값 줄이라 설명 문단(`Form.Hint`의 <p>)이 아니라 같은 모양(힌트 글자)의 span이다 — 화면 사용성 원칙 검사의 「긴 설명」과 구분.
+  const taxHint = taxLine ? (
+    <span className={`${styles.taxLine} ${previewing ? styles.stale : ""}`} data-testid="expense-tax-line">
+      <TaxParts parts={taxLine.parts} />
+    </span>
+  ) : null;
   const executionNode =
     data.executionLines.length > 0 ? (
       <span className={styles.fill}>
@@ -342,7 +397,7 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
           aria-describedby={amountError ? "supplyAmount-error" : undefined}
         />
         {amountError ? <Form.Error id="supplyAmount-error">{amountError}</Form.Error> : null}
-        {currency === "KRW" && data.taxLine ? <TaxLine line={data.taxLine} /> : null}
+        {currency === "KRW" ? taxHint : null}
       </Form.Field>
 
       {currency === "KRW" ? null : (
@@ -351,7 +406,7 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
           initial={Number(fxRaw) || 1}
           error={errors.fxRate}
           onRaw={setFxRaw}
-          below={data.taxLine ? <TaxLine line={data.taxLine} /> : null}
+          below={taxHint}
         />
       )}
 
@@ -453,18 +508,5 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
       </div>
       <div className={styles.formBarSpacer} aria-hidden="true" />
     </Form>
-  );
-}
-
-// 계산 한 줄 — 서버 문자열 조각 그대로, 숫자 조각만 700.
-function TaxLine({ line }: { line: { text: string; parts: { text: string; emphasis: boolean }[] } }) {
-  return (
-    <span className={styles.taxLine} data-testid="expense-tax-line">
-      {line.parts.map((part, index) => (
-        <span key={`${index}-${part.text}`} className={part.emphasis ? styles.strong : undefined}>
-          {part.text}
-        </span>
-      ))}
-    </span>
   );
 }

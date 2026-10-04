@@ -69,6 +69,24 @@
   font-weight: var(--fw-bold);
 }
 
+/* 05-06 조각 묶음 — ` · ` 사이에서만 꺾인다(마지막 `… 규칙` 묶음은 이 클래스가 없어 그 안에서 꺾인다). */
+.taxSegment {
+  white-space: nowrap;
+}
+
+/* 05-06 미리보기가 오는 동안 이전 한 줄(빈칸 · 뼈대 없음 — UI-SPEC S5). */
+.stale {
+  color: var(--text-faint);
+}
+
+/* 05-06 세율 바뀜 — 계산 한 줄 바로 아래 경고 글자 한 줄(배경 없음, 숫자 조각만 700). */
+.drift {
+  display: block;
+  color: var(--status-warning);
+  font-size: var(--text-aux);
+  overflow-wrap: anywhere;
+}
+
 .blockedReason {
   color: var(--status-danger);
   font-size: var(--text-aux);

@@ -8,6 +8,9 @@ registerAction({ name: "createExpenseFromLinesAction", menu: "expenses", action:
 // 저장된 버전 · 저장 시각만 돌려준다(DTO 없음).
 registerAction({ name: "saveExpenseDraftAction", menu: "expenses", action: "write", dtoName: null });
 
+// 미리보기 — 도메인이 expensePreview로 투영한 계산 한 줄 · 막힘 이유 · 칸 오류(쓰기 없음).
+registerAction({ name: "previewExpenseAction", menu: "expenses", action: "write", dtoName: "expensePreview" });
+
 // 토스트 재료(다음 담당 이름)를 ApprovalActionResultDto로 투영해 돌려준다.
 registerAction({ name: "submitExpenseAction", menu: "expenses", action: "write", dtoName: "ApprovalActionResultDto" });
 

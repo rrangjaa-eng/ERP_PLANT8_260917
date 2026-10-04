@@ -103,7 +103,8 @@ export const TAX_COMPANY_BORNE_RATE: SettingDef<number> = {
   label: "회사 대납 세율",
   hint: "회사가 대신 부담하는 세금의 비율입니다.",
   namespace: "세율",
-  default: 0.088,
+  // 05-06 사용자 결정 2026-09-26 #7 — 회사 대납 22% · gross-up이 기본값.
+  default: 0.22,
 };
 
 export const TAX_COMPANY_BORNE_METHOD_VALUES = ["flat", "gross_up"] as const;
@@ -116,7 +117,7 @@ export const TAX_COMPANY_BORNE_METHOD: SettingDef<TaxCompanyBorneMethod> = {
   label: "회사 대납 계산 방식",
   hint: "단순 비율(flat) 또는 gross-up 중 하나를 고릅니다.",
   namespace: "세율",
-  default: "flat",
+  default: "gross_up",
 };
 
 // 규칙 종류별 적용 기준일(Eng OV-5) — 이 설정은 "어느 날짜 필드를 기준으로

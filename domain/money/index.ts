@@ -238,3 +238,12 @@ export function remainingForInstallments(
   const exceeds = current !== undefined && toKrw(current) > remainingKrw;
   return { basis: "krw", remaining, exceeds };
 }
+
+// 05-06(UI-SPEC S5 · Copywriting 「계산 한 줄」 · 「세율 바뀜」) — 세율 → `%` 글자, 소수 첫째 자리까지(끝의 0은 뗀다). 곱셈 대신
+// 소수점 자리를 글자로 옮겨 부동소수 오차(0.07 × 100 = 7.000000000000001)가 글자에 새지 않는다. 0.088 → `8.8%` · 0.1 → `10%`.
+export function formatRatePercent(rate: number): string {
+  const [whole = "0", fraction = ""] = rate.toFixed(3).split(".");
+  const percent = String(Number(`${whole}${fraction.slice(0, 2)}`));
+  const decimal = fraction.slice(2).replace(/0+$/, "");
+  return `${percent}${decimal ? `.${decimal}` : ""}%`;
+}

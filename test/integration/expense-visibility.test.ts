@@ -13,13 +13,14 @@ import {
   APPROVAL_ROUTE_EXPENSE_STEP1_ROLE_ID,
   APPROVAL_ROUTE_EXPENSE_STEP1_SCOPE,
 } from "@/domain/settings/keys";
-import { createExpenseFromLines, createTeamExpenseDraft, EXPENSE_DOCUMENT_KIND, getExpense, listExpenseFormOptions, saveExpenseDraft } from "@/domain/expenses";
+import { canSeeExpense, createExpenseFromLines, createTeamExpenseDraft, EXPENSE_DOCUMENT_KIND, getExpense, listExpenseFormOptions, saveExpenseDraft } from "@/domain/expenses";
 import { listExpenses } from "@/domain/expenses/list";
 import { createEvidenceViewUrl, listEvidence } from "@/domain/evidence";
 import { insertRole } from "@/repositories/roles";
 import { insertVendor } from "@/repositories/vendors";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
-import { makePerson, orgUnitIdByName } from "./approvals-fixtures";
+import { makePerson, orgUnitIdByName, teamIdByName } from "./approvals-fixtures";
+import { insertMembership } from "@/repositories/team-memberships";
 import { setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
 import { createMemoryStorage } from "./fakes/memory-storage";
 
@@ -79,6 +80,12 @@ async function instanceOf(expenseId: string) {
     .from(approvalInstances)
     .where(and(eq(approvalInstances.documentKind, EXPENSE_DOCUMENT_KIND), eq(approvalInstances.documentId, expenseId)));
   if (!row) throw new Error("결재 인스턴스 없음");
+  return row;
+}
+
+async function docOf(expenseId: string): Promise<{ id: string; drafterId: string; number: string | null }> {
+  const [row] = await db.select({ id: expenses.id, drafterId: expenses.drafterId, number: expenses.number }).from(expenses).where(eq(expenses.id, expenseId));
+  if (!row) throw new Error("지출결의 없음");
   return row;
 }
 
@@ -238,5 +245,26 @@ describe("결재 당사자가 아닌 보는 사람 — 상태 · 결재선 읽�
     const w = await setup();
     const view = await getApprovalView(w.pm, { kind: EXPENSE_DOCUMENT_KIND, documentId: w.teamDocId, readOnlyVisible: true });
     expect(view?.actions).toContain("withdraw");
+  });
+});
+
+describe("두 갈래가 같은 기준일 (05-08 검토 #3)", () => {
+  it("canSeeExpense의 today가 지금 단계 후보 판정(조직 스냅숏)에도 쓰인다 — 그날 기안자 팀으로 옮긴 1단 계급은 그날 기준 후보로 문서를 본다", async () => {
+    const w = await setup();
+    // 1단 = 기안자 팀의 이 계급. expenses 보기만(expenses.team 없음 · 업무 범위 team) — 팀 갈래가 아니라 후보 갈래로만 보이게 한다.
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `팀 1단-${randomUUID()}`, workScope: "team" });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "view", allowed: true });
+    const mover = await makePerson("옮길사람", role.id, "경영관리팀");
+    const MOVE_ON = "2099-01-01";
+    await insertMembership(SYSTEM_VIEWER, { userId: mover.id, teamId: await teamIdByName("기획1팀"), effectiveFrom: MOVE_ON });
+    await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_EXPENSE_STEP1_ENABLED, true);
+    await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_EXPENSE_STEP1_ROLE_ID, role.id);
+    await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_EXPENSE_STEP1_SCOPE, "drafter_team");
+    const submitted = await submitReadyDraft(w.pm, w.draftId, { now: NOW });
+    expect(submitted.kind).toBe("submitted");
+    const doc = await docOf(w.draftId);
+
+    expect(await canSeeExpense(mover, doc, { today: TODAY })).toBe(false);
+    expect(await canSeeExpense(mover, doc, { today: "2099-01-05" })).toBe(true);
   });
 });

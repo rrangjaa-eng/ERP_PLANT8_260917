@@ -127,8 +127,8 @@ function toRouteStep(row: ApprovalStepWithActor): RouteStep {
   };
 }
 
-async function readSnapshot(viewer: Viewer, deps?: ApprovalDeps): Promise<SnapshotPerson[]> {
-  return (deps?.listOrgSnapshot ?? defaultListOrgSnapshot)(viewer, seoulToday(deps?.now));
+async function readSnapshot(viewer: Viewer, deps?: ApprovalDeps, today?: string): Promise<SnapshotPerson[]> {
+  return (deps?.listOrgSnapshot ?? defaultListOrgSnapshot)(viewer, today ?? seoulToday(deps?.now));
 }
 
 // ── 제출 ────────────────────────────────────────────────────────────────
@@ -581,8 +581,9 @@ export async function currentHolderNames(
 // 한 번에 계산한다(문서마다 따로 읽지 않는다). 지출결의 목록의 `{단계} 결재 중` 낱말과 「지금 단계 후보」 보임 갈래의 재료다.
 export type CurrentStep = { stepLabel: string | null; viewerIsCandidate: boolean };
 
-export async function listCurrentSteps(viewer: Viewer, input: { kind: string }, deps?: ApprovalDeps): Promise<Map<string, CurrentStep>> {
-  const snapshot = await readSnapshot(viewer, deps);
+// today — 부르는 쪽 판정과 같은 기준일(지출결의 보임의 팀 갈래 · 후보 갈래가 같은 날로 판정, 05-08 검토 #3).
+export async function listCurrentSteps(viewer: Viewer, input: { kind: string }, deps?: ApprovalDeps & { today?: string }): Promise<Map<string, CurrentStep>> {
+  const snapshot = await readSnapshot(viewer, deps, deps?.today);
   const result = new Map<string, CurrentStep>();
   for (const instance of await listActiveInstances(viewer)) {
     if (instance.documentKind !== input.kind) continue;

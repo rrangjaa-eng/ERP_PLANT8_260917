@@ -28,7 +28,7 @@ export async function visibleExpenseScope(viewer: Viewer, deps?: ExpenseAccessDe
     can(viewer, "expenses", "view"),
     can(viewer, "expenses.team", "view"),
     loadActorTeamScope(viewer, { todayKst: today }),
-    listCurrentSteps(viewer, { kind: EXPENSE_DOCUMENT_KIND }),
+    listCurrentSteps(viewer, { kind: EXPENSE_DOCUMENT_KIND }, { today }),
   ]);
   const company = canView && teamScope.workScope === "company";
   const currentHolderInstanceIds = [...currentSteps].filter(([, step]) => step.viewerIsCandidate).map(([instanceId]) => instanceId);

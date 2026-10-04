@@ -579,6 +579,11 @@ describe("작성 중 삭제", () => {
     expect(restored).toEqual({ expenseId });
     expect((await expenseRow(expenseId)).deletedAt).toBeNull();
     expect((await getExpense(fx.pm, { expenseId }))?.statusWord).toBe("작성 중");
+    // 복원도 기록이 남는다(T-05-904) — document_update detail.change = "restore".
+    const after = await db.select().from(actionLog).where(eq(actionLog.documentId, expenseId));
+    const restoreLogs = after.filter((log) => log.actionType === "document_update" && (log.detail as { change?: string }).change === "restore");
+    expect(restoreLogs).toHaveLength(1);
+    expect(restoreLogs[0]).toMatchObject({ entity: "expense", entityId: expenseId, actorId: fx.pm.id });
   });
 
   it("옛 version · 남의 문서 · 번호 있는 문서는 지우지 않는다", async () => {

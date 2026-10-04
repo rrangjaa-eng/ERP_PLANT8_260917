@@ -18,6 +18,8 @@ import {
 import { listCodeItems } from "@/repositories/code-tables";
 import { seoulDateToUtcDate, seoulToday } from "@/lib/dates";
 import { kstDateOf } from "@/lib/kst-date";
+import { formatKrw } from "@/lib/format-number";
+import type { Money } from "@/domain/money";
 
 // 05-03(Pattern 2) — 지출결의의 세금 호출자. 계산은 domain/money/tax.ts의 applyTaxRule 하나이고, 이 파일은 그 함수에
 // 넘길 날짜 · 소득 종류 · 세율 행을 고른다. 06-03이 같은 파일 · 같은 이름을 확장한다.
@@ -146,4 +148,72 @@ export async function computeExpenseTax(
     if (error instanceof SettingNotFoundError) return { unavailable: true };
     throw error;
   }
+}
+
+// ── 계산 한 줄 문자열 ────────────────────────────────────────────────────────
+// 05-05(UI-SPEC Copywriting 「표시 — 계산 한 줄」 · S5): 세금 결과 → 한 줄 글자. 계산은 위 applyTaxRule 하나이고 이 함수는 글자만 만든다.
+// `emphasis` 조각(세율 · 금액)만 화면이 `Num` 700으로 그린다 — 조각을 이어 붙인 결과가 text와 같다. 05-06이 즉시 재계산 · 세율 바뀜을 더한다.
+
+export type TaxLinePart = { text: string; emphasis: boolean };
+
+// 0.088 → `8.8%` (소수 둘째 자리까지, 끝의 0은 뗀다).
+function ratePercentText(rate: number): string {
+  return `${parseFloat((rate * 100).toFixed(2))}%`;
+}
+
+const SEP: TaxLinePart = { text: " · ", emphasis: false };
+
+export function taxLineText(result: ExpenseTaxResult, supply: Money, ruleLabel: string): { text: string; parts: TaxLinePart[] } {
+  const label = (text: string, ...numbers: string[]): TaxLinePart[] => [
+    { text, emphasis: false },
+    ...numbers.flatMap((number): TaxLinePart[] => [{ text: " ", emphasis: false }, { text: number, emphasis: true }]),
+  ];
+  const segments: TaxLinePart[][] = [];
+  if (result.unavailable) {
+    segments.push([{ text: "계산 불가 · 세율 없음", emphasis: false }]);
+  } else {
+    if (supply.currency !== "KRW") segments.push(label("원화", formatKrw(supply.amountKrw)));
+    const rate = result.rate === null ? null : ratePercentText(result.rate);
+    if (result.ruleKind === "vat_surcharge") {
+      segments.push(label("부가세", ...(rate ? [rate] : []), formatKrw(result.vatKrw)), label("지급 총액", formatKrw(result.payableKrw)));
+    } else if (result.ruleKind === "withholding") {
+      if (result.withholdingKrw === 0) {
+        segments.push(label("원천징수", "0"), [{ text: "면제 기준 이하", emphasis: false }]);
+      } else {
+        segments.push(label("원천징수", ...(rate ? [rate] : []), formatKrw(result.withholdingKrw)));
+      }
+      segments.push(label("실지급액", formatKrw(result.payableKrw)));
+    } else if (result.ruleKind === "company_borne") {
+      segments.push(label("회사 대납 세금", ...(rate ? [rate] : []), formatKrw(result.companyBorneKrw)), label("지급 총액", formatKrw(result.payableKrw)));
+    } else {
+      segments.push(label("지급 총액", formatKrw(result.payableKrw)));
+    }
+    segments.push([{ text: ruleLabel, emphasis: false }]);
+  }
+  const parts = segments.flatMap((segment, index) => (index === 0 ? segment : [SEP, ...segment]));
+  return { text: parts.map((part) => part.text).join(""), parts };
+}
+
+// 제출 때 저장한 스냅숏 열 → 세금 결과(세율 바뀜 비교 · 저장값 한 줄). 규칙 종류가 없으면 아직 계산 전이라 null.
+export function storedTaxResult(row: {
+  taxRuleKind: string | null;
+  taxRate: string | null;
+  vatKrw: number | null;
+  withholdingKrw: number | null;
+  companyBorneKrw: number | null;
+  payableKrw: number | null;
+}): ExpenseTaxResult | null {
+  if (row.taxRuleKind === null || row.payableKrw === null) return null;
+  return {
+    ruleKind: row.taxRuleKind as TaxRuleKind,
+    rate: row.taxRate === null ? null : Number(row.taxRate),
+    historizedId: null,
+    rateEffectiveFrom: null,
+    method: null,
+    basisDate: null,
+    vatKrw: row.vatKrw ?? 0,
+    withholdingKrw: row.withholdingKrw ?? 0,
+    companyBorneKrw: row.companyBorneKrw ?? 0,
+    payableKrw: row.payableKrw,
+  };
 }

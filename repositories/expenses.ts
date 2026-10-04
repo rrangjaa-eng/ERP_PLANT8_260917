@@ -182,9 +182,54 @@ export async function listNumberedByLine(viewer: Viewer, lineId: string, tx: DbO
     .orderBy(asc(expenses.submittedAt), asc(expenses.id));
 }
 
+// 견적 줄 표 행 행동 열 재료(05-05) — 줄 여럿의 번호 있는 문서 · 내 작성 중 문서를 한 번씩 읽는다(줄마다 부르지 않는다).
+export async function listNumberedByLines(
+  viewer: Viewer,
+  lineIds: string[],
+  tx: DbOrTx = db,
+): Promise<(NumberedLineExpense & { quoteLineId: string })[]> {
+  void viewer;
+  if (lineIds.length === 0) return [];
+  const rows = await tx
+    .select({
+      id: expenses.id,
+      quoteLineId: expenses.quoteLineId,
+      number: expenses.number,
+      installment: expenses.installment,
+      supplyCurrency: expenses.supplyCurrency,
+      supplyForeignAmount: expenses.supplyForeignAmount,
+      supplyFxRate: expenses.supplyFxRate,
+      supplyAmountKrw: expenses.supplyAmountKrw,
+      submittedAt: expenses.submittedAt,
+    })
+    .from(expenses)
+    .where(and(inArray(expenses.quoteLineId, lineIds), isNotNull(expenses.number), isNull(expenses.deletedAt)))
+    .orderBy(asc(expenses.submittedAt), asc(expenses.id));
+  return rows.flatMap((row) => (row.quoteLineId ? [{ ...row, quoteLineId: row.quoteLineId }] : []));
+}
+
+export async function listDraftsByLines(
+  viewer: Viewer,
+  input: { lineIds: string[]; drafterId: string },
+  tx: DbOrTx = db,
+): Promise<{ id: string; quoteLineId: string }[]> {
+  void viewer;
+  if (input.lineIds.length === 0) return [];
+  const rows = await tx
+    .select({ id: expenses.id, quoteLineId: expenses.quoteLineId })
+    .from(expenses)
+    .where(
+      and(inArray(expenses.quoteLineId, input.lineIds), eq(expenses.drafterId, input.drafterId), isNull(expenses.number), isNull(expenses.deletedAt)),
+    );
+  return rows.flatMap((row) => (row.quoteLineId ? [{ id: row.id, quoteLineId: row.quoteLineId }] : []));
+}
+
 export type ExpenseSummaryRow = ExpenseRow & {
   drafterName: string;
   projectName: string | null;
+  projectNumber: string | null;
+  // 견적 표의 줄 번호(차수 안 보관 제외 줄의 표시 순서 1부터) — 문서 화면 · 결재 시트 `견적 줄` 값 앞 조각.
+  lineNo: number | null;
   itemName: string | null;
   teamName: string | null;
   vendorName: string | null;
@@ -205,6 +250,8 @@ export async function listExpenseSummaries(
       expense: expenses,
       drafterName: users.name,
       projectName: projects.name,
+      projectNumber: projects.number,
+      lineNo: sql<number | null>`case when ${quoteLines.id} is null then null else (select count(*)::int + 1 from quote_lines ql where ql.revision_id = ${quoteLines.revisionId} and ql.archived_at is null and (ql.sort_order < ${quoteLines.sortOrder} or (ql.sort_order = ${quoteLines.sortOrder} and ql.id < ${quoteLines.id}))) end`,
       itemName: quoteLines.itemName,
       teamName: teams.name,
       vendorName: vendors.name,
@@ -227,6 +274,8 @@ export async function listExpenseSummaries(
     ...row.expense,
     drafterName: row.drafterName,
     projectName: row.projectName,
+    projectNumber: row.projectNumber,
+    lineNo: row.lineNo,
     itemName: row.itemName,
     teamName: row.teamName,
     vendorName: row.vendorName,

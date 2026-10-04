@@ -55,15 +55,22 @@ describe("buildExpenseDetailRows", () => {
   });
 
   it("금액 투영이 빠지면 공급가액 행 · 계산 한 줄이 행째 없다", () => {
-    const { supply: _supply, taxLine: _taxLine, ...hidden } = full;
+    const hidden: Partial<typeof full> = { ...full };
+    delete hidden.supply;
+    delete hidden.taxLine;
     const built = buildExpenseDetailRows(hidden);
     expect(built.rows.some((row) => row.label === "공급가액")).toBe(false);
     expect(JSON.stringify(built)).not.toContain("12,400,000");
   });
 
   it("값이 null이면 — (muted), 투영에서 빠진 필드는 행이 없다", () => {
-    const { vendorName: _vendor, ...rest } = full;
-    const built = buildExpenseDetailRows({ ...rest, evidenceTypeName: null, scheduledPaymentDate: null });
+    const rest: Partial<Omit<typeof full, "evidenceTypeName" | "scheduledPaymentDate">> & { evidenceTypeName: null; scheduledPaymentDate: null } = {
+      ...full,
+      evidenceTypeName: null,
+      scheduledPaymentDate: null,
+    };
+    delete rest.vendorName;
+    const built = buildExpenseDetailRows(rest);
     expect(built.rows.some((row) => row.label === "거래처")).toBe(false);
     expect(built.rows.find((row) => row.label === "증빙 종류")).toEqual({ label: "증빙 종류", value: "—", tone: "muted" });
     expect(built.rows.find((row) => row.label === "지급 예정일")).toEqual({ label: "지급 예정일", value: "—", tone: "muted" });

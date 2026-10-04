@@ -43,15 +43,16 @@ import { moneyFromRow, moneyToColumns, remainingForInstallments, type Money } fr
 import { CURRENCIES, recentFxRate } from "@/domain/money/currency";
 import { allocateExpenseNumber, loadExpenseNumberFormat } from "@/domain/document-numbering";
 import { formatKstTime } from "@/domain/holidays/business-day";
-import { computeExpenseTax } from "@/domain/expenses/tax";
+import { computeExpenseTax, storedTaxResult, taxLineText } from "@/domain/expenses/tax";
+import { buildExpenseDetailRows } from "@/domain/expenses/detail";
 import { expenseLineDoor, type ExpenseLineDoor } from "@/domain/expenses/line-door";
 import { evaluateExpenseSubmit } from "@/domain/expenses/gate";
-import { EXPENSE_DOCUMENT_DTO_SPEC, type ExpenseDocumentDto } from "@/domain/expenses/dto";
+import { EXPENSE_DETAIL_DTO_SPEC, EXPENSE_DOCUMENT_DTO_SPEC, type ExpenseDetailDto, type ExpenseDocumentDto } from "@/domain/expenses/dto";
 import { listCodeItems } from "@/repositories/code-tables";
 import { countActiveByOwner } from "@/repositories/files";
 import { findProjectById, lockProjectForWrite, type ProjectRow } from "@/repositories/projects";
 import { findLatestQuoteRevision, findQuoteRevisionById } from "@/repositories/quote-revisions";
-import { findQuoteLineById, type QuoteLineRow } from "@/repositories/quote-lines";
+import { findQuoteLineById, listQuoteLinesByRevision, type QuoteLineRow } from "@/repositories/quote-lines";
 import { findUserById } from "@/repositories/users";
 import { findVendorById } from "@/repositories/vendors";
 import {
@@ -59,8 +60,10 @@ import {
   findExpenseApprovalStatus,
   findExpenseById,
   insertDraftIfAbsent,
+  listDraftsByLines,
   listExpenseSummaries,
   listNumberedByLine,
+  listNumberedByLines,
   lockExpenseForUpdate,
   saveSubmissionSnapshot,
   setExpenseNumber,
@@ -184,7 +187,9 @@ function supplyMoney(row: Pick<ExpenseRow, "supplyCurrency" | "supplyForeignAmou
   return moneyFromRow({ currency: row.supplyCurrency, foreignAmount: row.supplyForeignAmount, fxRate: row.supplyFxRate, amountKrw: row.supplyAmountKrw });
 }
 
-function toSource(row: ExpenseSummaryRow): ExpenseDocumentDto {
+type SourceExtras = Partial<Pick<ExpenseDocumentDto, "evidenceTypeName" | "paymentMethodName" | "taxLine">>;
+
+function toSource(row: ExpenseSummaryRow, extras: SourceExtras = {}): ExpenseDocumentDto {
   return {
     id: row.id,
     projectId: row.projectId,
@@ -200,8 +205,12 @@ function toSource(row: ExpenseSummaryRow): ExpenseDocumentDto {
     number: row.number,
     drafterName: row.drafterName,
     projectName: row.projectName,
+    projectNumber: row.projectNumber,
+    lineNo: row.lineNo,
     itemName: row.itemName,
     vendorName: row.vendorName,
+    evidenceTypeName: extras.evidenceTypeName ?? null,
+    paymentMethodName: extras.paymentMethodName ?? null,
     installmentSeq: row.installmentSeq,
     statusWord: statusWordFor(row.status),
     instanceId: row.instanceId,
@@ -213,6 +222,7 @@ function toSource(row: ExpenseSummaryRow): ExpenseDocumentDto {
     withholdingKrw: row.withholdingKrw,
     companyBorneKrw: row.companyBorneKrw,
     payableKrw: row.payableKrw,
+    taxLine: extras.taxLine ?? null,
   };
 }
 
@@ -233,6 +243,44 @@ async function describeExpenseDocuments(viewer: Viewer, ids: string[], deps?: De
   return result;
 }
 
+// 코드표 값 → 이름(보관 · 비활성도 — 이미 저장된 값을 이름으로 보인다).
+async function codeLabelsOf(viewer: Viewer, tableKey: string): Promise<Map<string, string>> {
+  const items = await listCodeItems(viewer, { tableKey, scope: { rows: "all", includeArchived: true }, includeInactive: true });
+  return new Map(items.map((item) => [item.value, item.label]));
+}
+
+// 05-05 C1(ENG-17): 결재 시트 상세 — 구조 필드만(엔진이 detailDto로 투영한 뒤 buildDetailRows가 문자열 행을 만든다). 엔진은 `내 결재`
+// (이미 보임 판정을 지난) 문서 id만 한 번에 넘기므로 문서마다 다시 판정하지 않는다. 제출된 문서라 계산 한 줄은 저장 스냅숏이다.
+async function loadExpenseDetails(viewer: Viewer, ids: string[]): Promise<Map<string, ExpenseDetailDto>> {
+  const rows = await listExpenseSummaries(viewer, { ids, documentKind: EXPENSE_DOCUMENT_KIND });
+  const [evidenceNames, paymentNames] = await Promise.all([codeLabelsOf(viewer, "evidence_type"), codeLabelsOf(viewer, "payment_method")]);
+  const result = new Map<string, ExpenseDetailDto>();
+  for (const row of rows) {
+    const supply = supplyMoney(row);
+    const stored = storedTaxResult(row);
+    const evidenceTypeName = row.evidenceType ? (evidenceNames.get(row.evidenceType) ?? row.evidenceType) : null;
+    result.set(row.id, {
+      number: row.number,
+      projectNumber: row.projectNumber,
+      projectName: row.projectName,
+      lineNo: row.lineNo,
+      itemName: row.itemName,
+      installment: row.installment,
+      installmentSeq: row.installmentSeq,
+      vendorName: row.vendorName,
+      evidenceTypeName,
+      supply,
+      taxLine: supply && stored ? taxLineText(stored, supply, `${evidenceTypeName ?? ""} 규칙`).text : null,
+      scheduledPaymentDate: row.scheduledPaymentDate,
+      paymentMethodName: row.paymentMethod ? (paymentNames.get(row.paymentMethod) ?? row.paymentMethod) : null,
+      note: row.note,
+      drafterName: row.drafterName,
+      createdAt: row.createdAt,
+    });
+  }
+  return result;
+}
+
 registerDocumentKind({
   kind: EXPENSE_DOCUMENT_KIND,
   label: "지출결의",
@@ -242,6 +290,9 @@ registerDocumentKind({
   routeSettings: EXPENSE_ROUTE_SETTINGS,
   canResubmit: (viewer) => can(viewer, "expenses", "write"),
   resubmitFrom: ["rejected", "withdrawn"],
+  loadDetails: loadExpenseDetails,
+  detailDto: EXPENSE_DETAIL_DTO_SPEC,
+  buildDetailRows: buildExpenseDetailRows,
 });
 
 // ── 보임 ──────────────────────────────────────────────────────────────
@@ -558,5 +609,61 @@ export async function getExpense(viewer: Viewer, input: { expenseId: string }): 
   const [row] = await listExpenseSummaries(viewer, { ids: [input.expenseId], documentKind: EXPENSE_DOCUMENT_KIND });
   if (!row) return null;
   if (!(await canSeeExpense(viewer, row))) return null;
-  return project(viewer, toSource(row), EXPENSE_DOCUMENT_DTO_SPEC);
+  const [evidenceNames, paymentNames] = await Promise.all([codeLabelsOf(viewer, "evidence_type"), codeLabelsOf(viewer, "payment_method")]);
+  const evidenceTypeName = row.evidenceType ? (evidenceNames.get(row.evidenceType) ?? row.evidenceType) : null;
+  const supply = supplyMoney(row);
+  // 제출 뒤는 저장된 스냅숏, 작성 중은 지금 기준 계산(05-06이 즉시 재계산 · 세율 바뀜을 더한다).
+  const result = storedTaxResult(row) ?? (supply ? await computeExpenseTax(viewer, row) : null);
+  const taxLine = result && supply ? taxLineText(result, supply, `${evidenceTypeName ?? ""} 규칙`) : null;
+  return project(
+    viewer,
+    toSource(row, {
+      evidenceTypeName,
+      paymentMethodName: row.paymentMethod ? (paymentNames.get(row.paymentMethod) ?? row.paymentMethod) : null,
+      taxLine,
+    }),
+    EXPENSE_DOCUMENT_DTO_SPEC,
+  );
+}
+
+// ── 견적 줄 표 행 행동 열(05-05 ④) ────────────────────────────────────────
+
+export type LineDoorCell = {
+  state: ExpenseLineDoor["state"];
+  // 내가 이 줄로 만든 작성 중 문서(있으면 같은 글자 `지출결의 올리기`가 그 문서를 연다 — R6-08).
+  expenseId?: string;
+  // 이 줄의 가장 최근 제출 문서(문이 닫힘 `지출결의 열기`의 도착지).
+  latestId?: string;
+};
+export type LineDoors = { showColumn: boolean; tableGateReason: string | null; cells: Record<string, LineDoorCell> };
+
+// 화면은 이 값만 그린다 — 셀 · 표 전체 게이트 · 열 여부 판정은 서버다. 열은 `expenses` 쓰기 권한 ∧ 그 프로젝트 쓰기 권리
+// (담당 PM 또는 업무 범위가 프로젝트 팀을 덮음 — createExpenseFromLines와 같은 판정)가 있을 때만 선다. 현재(최신) 차수 줄만 셀을 갖는다.
+export async function listLineDoors(viewer: Viewer, input: { projectId: string }): Promise<LineDoors> {
+  const hidden: LineDoors = { showColumn: false, tableGateReason: null, cells: {} };
+  const [canWriteExpense, canWriteProject] = await Promise.all([can(viewer, "expenses", "write"), can(viewer, "projects", "write")]);
+  if (!canWriteExpense || !canWriteProject) return hidden;
+  const [gateEnabled, teamScope] = await Promise.all([
+    getSettingValue(PROJECT_CUSTOMER_APPROVAL_GATE),
+    loadActorTeamScope(viewer, { todayKst: seoulToday() }),
+  ]);
+  const facts = await loadProjectFacts(viewer, input.projectId, gateEnabled);
+  if (!facts) return hidden;
+  if (facts.project.pmUserId !== viewer.id && !coversProjectTeam(teamScope, facts.project.teamId)) return hidden;
+  if (!facts.latestRevisionId) return { showColumn: true, tableGateReason: facts.tableGateReason, cells: {} };
+
+  const lines = await listQuoteLinesByRevision(viewer, facts.latestRevisionId);
+  const lineIds = lines.map((line) => line.id);
+  const [numbered, drafts] = await Promise.all([listNumberedByLines(viewer, lineIds), listDraftsByLines(viewer, { lineIds, drafterId: viewer.id })]);
+  const cells: Record<string, LineDoorCell> = {};
+  for (const line of lines) {
+    const door = doorFor(line, numbered.filter((doc) => doc.quoteLineId === line.id));
+    const draft = drafts.find((doc) => doc.quoteLineId === line.id);
+    cells[line.id] = {
+      state: door.state,
+      ...(door.state === "open" && draft ? { expenseId: draft.id } : {}),
+      ...(door.latest ? { latestId: door.latest.id } : {}),
+    };
+  }
+  return { showColumn: true, tableGateReason: facts.tableGateReason, cells };
 }

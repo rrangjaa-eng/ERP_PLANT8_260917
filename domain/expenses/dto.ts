@@ -1,6 +1,7 @@
 import type { DtoSpec } from "@/domain/permissions/project";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import type { Money } from "@/domain/money";
+import type { TaxLinePart } from "@/domain/expenses/tax";
 
 // 05-03: 지출결의 DTO 둘 — 문서 칸은 expense.value, 금액 칸(공급가액 · 세율 · 세액 · 지급 총액)은 expense.amount.
 
@@ -38,8 +39,14 @@ export type ExpenseDocumentDto = ExpenseDraftDto & {
   number: string | null;
   drafterName: string;
   projectName: string | null;
+  projectNumber: string | null;
+  // 견적 표의 줄 번호 — 문서 화면 · 결재 시트 `견적 줄` 값 앞 조각.
+  lineNo: number | null;
   itemName: string | null;
   vendorName: string | null;
+  // 코드표 이름(증빙 종류 · 지급 방식) — 값(코드)은 evidenceType · paymentMethod.
+  evidenceTypeName: string | null;
+  paymentMethodName: string | null;
   installmentSeq: number | null;
   statusWord: string;
   instanceId: string | null;
@@ -51,6 +58,8 @@ export type ExpenseDocumentDto = ExpenseDraftDto & {
   withholdingKrw: number | null;
   companyBorneKrw: number | null;
   payableKrw: number | null;
+  // 계산 한 줄 — 제출 뒤 문서는 저장된 스냅숏, 작성 중은 지금 기준 계산. 조각의 emphasis가 숫자 700 표식(금액 정보 항목).
+  taxLine: { text: string; parts: TaxLinePart[] } | null;
 };
 
 export const EXPENSE_DOCUMENT_DTO_SPEC: DtoSpec<ExpenseDocumentDto, ExpenseDocumentDto> = {
@@ -59,8 +68,12 @@ export const EXPENSE_DOCUMENT_DTO_SPEC: DtoSpec<ExpenseDocumentDto, ExpenseDocum
     { key: "number", from: "number", infoItem: "expense.value" },
     { key: "drafterName", from: "drafterName", infoItem: "expense.value" },
     { key: "projectName", from: "projectName", infoItem: "expense.value" },
+    { key: "projectNumber", from: "projectNumber", infoItem: "expense.value" },
+    { key: "lineNo", from: "lineNo", infoItem: "expense.value" },
     { key: "itemName", from: "itemName", infoItem: "expense.value" },
     { key: "vendorName", from: "vendorName", infoItem: "expense.value" },
+    { key: "evidenceTypeName", from: "evidenceTypeName", infoItem: "expense.value" },
+    { key: "paymentMethodName", from: "paymentMethodName", infoItem: "expense.value" },
     { key: "installmentSeq", from: "installmentSeq", infoItem: "expense.value" },
     { key: "statusWord", from: "statusWord", infoItem: "expense.value" },
     { key: "instanceId", from: "instanceId", infoItem: "expense.value" },
@@ -72,8 +85,53 @@ export const EXPENSE_DOCUMENT_DTO_SPEC: DtoSpec<ExpenseDocumentDto, ExpenseDocum
     { key: "withholdingKrw", from: "withholdingKrw", infoItem: "expense.amount" },
     { key: "companyBorneKrw", from: "companyBorneKrw", infoItem: "expense.amount" },
     { key: "payableKrw", from: "payableKrw", infoItem: "expense.amount" },
+    { key: "taxLine", from: "taxLine", infoItem: "expense.amount" },
+  ],
+};
+
+// 05-05 C1(ENG-17): 결재 시트 상세 — loadDetails는 구조 필드만, 행 문자열은 투영 뒤 buildDetailRows가 만든다. 공급가액 네 칸과 계산 한
+// 줄 문자열은 expense.amount, 번호 · 프로젝트 · 견적 줄 · 회차 · 거래처 · 코드표 이름 · 지급 예정일 · 비고는 expense.value, 기안 이름 ·
+// 기안일은 approval.value(04.1 결재함 DTO와 같은 항목) — 새 정보 항목 없음.
+export type ExpenseDetailDto = {
+  number: string | null;
+  projectNumber: string | null;
+  projectName: string | null;
+  lineNo: number | null;
+  itemName: string | null;
+  installment: boolean;
+  installmentSeq: number | null;
+  vendorName: string | null;
+  evidenceTypeName: string | null;
+  supply: Money | null;
+  taxLine: string | null;
+  scheduledPaymentDate: string | null;
+  paymentMethodName: string | null;
+  note: string | null;
+  drafterName: string;
+  createdAt: Date;
+};
+
+export const EXPENSE_DETAIL_DTO_SPEC: DtoSpec<ExpenseDetailDto, ExpenseDetailDto> = {
+  fields: [
+    { key: "number", from: "number", infoItem: "expense.value" },
+    { key: "projectNumber", from: "projectNumber", infoItem: "expense.value" },
+    { key: "projectName", from: "projectName", infoItem: "expense.value" },
+    { key: "lineNo", from: "lineNo", infoItem: "expense.value" },
+    { key: "itemName", from: "itemName", infoItem: "expense.value" },
+    { key: "installment", from: "installment", infoItem: "expense.value" },
+    { key: "installmentSeq", from: "installmentSeq", infoItem: "expense.value" },
+    { key: "vendorName", from: "vendorName", infoItem: "expense.value" },
+    { key: "evidenceTypeName", from: "evidenceTypeName", infoItem: "expense.value" },
+    { key: "supply", from: "supply", infoItem: "expense.amount" },
+    { key: "taxLine", from: "taxLine", infoItem: "expense.amount" },
+    { key: "scheduledPaymentDate", from: "scheduledPaymentDate", infoItem: "expense.value" },
+    { key: "paymentMethodName", from: "paymentMethodName", infoItem: "expense.value" },
+    { key: "note", from: "note", infoItem: "expense.value" },
+    { key: "drafterName", from: "drafterName", infoItem: "approval.value" },
+    { key: "createdAt", from: "createdAt", infoItem: "approval.value" },
   ],
 };
 
 registerDto({ name: "expenseDraft", fields: EXPENSE_DRAFT_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 registerDto({ name: "expenseDocument", fields: EXPENSE_DOCUMENT_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
+registerDto({ name: "expenseDetail", fields: EXPENSE_DETAIL_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });

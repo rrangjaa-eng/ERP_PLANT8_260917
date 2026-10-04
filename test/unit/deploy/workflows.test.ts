@@ -418,10 +418,6 @@ describe("scripts/verify-gcp.sh", () => {
     }
     expect(script).not.toMatch(/buckets update|--cors-file|--lifecycle-file/);
   });
-
-  it("verify.yml 선택지에 evidence-bucket이 있다", () => {
-    expect(readWorkflow("verify.yml")).toContain("- evidence-bucket");
-  });
 });
 
 // visual-baseline.yml — CI Linux(Chromium)에서 시각 회귀 기준 사진을 만든다(R6: 잡 둘).

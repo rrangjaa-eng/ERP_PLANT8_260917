@@ -90,7 +90,7 @@ db-bootstrap Job → migrate Job(16A 커넥션 검사, 위반이면 exit 3으로
 Origin 검사) → 경보 3개 upsert. (`/healthz`가 아니라 `/api/health`인 이유: `/healthz`는
 Cloud Run/구글 엣지가 예약 경로로 취급해 컨테이너까지 도달하지 못하고 404를
 돌려줬다 — 2026-09-18 실제 스테이징에서 확인.)
-`ensure_cert_bucket`은 서명 버킷을 만들지 않는다 — 확인·설정 맞춤·런타임 바인딩만, 없으면 §8 부트스트랩을 먼저.
+`ensure_cert_bucket`은 서명 버킷을 만들지 않는다 — 확인·설정 맞춤·런타임 바인딩만, 없으면 §8 부트스트랩을 먼저. 증빙 버킷(`ensure_evidence_bucket`)도 같다 — [`docs/EVIDENCE-STORAGE.md`](EVIDENCE-STORAGE.md).
 
 **승격(스테이징 → **production**):** 스테이징에서 확인 → GitHub Actions "Run workflow" →
 target=production, sha 입력(비우면 스테이징이 서빙 중인 SHA) → 가드가 그 SHA 이미지가

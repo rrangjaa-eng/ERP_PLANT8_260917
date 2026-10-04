@@ -18,6 +18,7 @@ on:
         options:
           - policies
           - notify-tick
+          - evidence-bucket
 
 permissions:
   contents: read

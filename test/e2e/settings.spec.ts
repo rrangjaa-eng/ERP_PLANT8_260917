@@ -275,6 +275,47 @@ test.describe("PR #104 후속 — 설정 힌트 aria-describedby (ISSUE-001) · 
     expect((await findSimpleValue(SYSTEM_VIEWER, EVIDENCE_MAX_SIZE_MB.key))?.value).not.toBe(0);
   });
 
+  // 05-04 wave5 리뷰 D1·D2 — 폰에서 단위 MB는 오류 줄이 생겨도 입력 칸 줄에 세로 가운데로 붙고, 입력→힌트 간격은 같은 쪽의 다른 숫자 칸과 같다.
+  for (const width of [375, 320, 768, 1280]) {
+    test(`05-04 S13 — ${width}px 단위 MB는 기본·오류 상태 모두 입력 칸과 세로 가운데가 같고 입력→힌트 간격이 다른 숫자 칸과 같다`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await openSettings(page);
+      const section = page.locator("section").filter({ has: page.getByRole("heading", { name: "증빙", exact: true }) });
+      const field = section.getByLabel(EVIDENCE_MAX_SIZE_MB.label, { exact: true });
+      const unit = section.getByText(EVIDENCE_MAX_SIZE_MB.unitLabel ?? "", { exact: true });
+      const center = async (locator: typeof field) => {
+        const box = await locator.boundingBox();
+        if (!box) throw new Error("box 없음");
+        return box.y + box.height / 2;
+      };
+      expect(Math.abs((await center(unit)) - (await center(field)))).toBeLessThanOrEqual(2);
+
+      const gap = (id: string) =>
+        page.evaluate((fieldId) => {
+          const input = document.getElementById(fieldId)!.getBoundingClientRect();
+          const hint = document.getElementById(`${fieldId}-hint`)!.getBoundingClientRect();
+          return Math.round(hint.top - input.bottom);
+        }, id);
+      const refId = await page.evaluate((evId) => {
+        const ref = [...document.querySelectorAll("main input[type=number]")].find(
+          (i) => i.id !== evId && document.getElementById(`${i.id}-hint`),
+        );
+        return ref?.id ?? "";
+      }, await field.getAttribute("id"));
+      expect(refId).not.toBe("");
+      expect(await gap((await field.getAttribute("id")) as string)).toBe(await gap(refId));
+
+      await field.fill("");
+      const saved = page.waitForResponse(
+        (response) => response.request().method() === "POST" && response.request().headers()["next-action"] !== undefined,
+      );
+      await field.blur();
+      await saved;
+      await expect(section.getByText("저장 실패 · 숫자 형식 오류 · 10처럼")).toBeVisible();
+      expect(Math.abs((await center(unit)) - (await center(field)))).toBeLessThanOrEqual(2);
+    });
+  }
+
   test("DR-104-03 — 이력 목록 숫자: 면제 기준 125,000, 비율은 저장값 그대로(0.088 · 0.1)", async ({ page }) => {
     await openSettings(page);
     // 시드 이력 행의 적용 시작일 — domain/seed/index.ts SEED_HISTORIZED_EFFECTIVE_FROM(export 안 된 상수).

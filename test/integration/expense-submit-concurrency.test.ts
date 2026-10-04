@@ -4,10 +4,11 @@ import { db, pool } from "@/db/client";
 import { actionLog, approvalInstances, documentCounters, expenses } from "@/db/schema";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { GateBlockedError } from "@/domain/rules/gate";
-import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND, ExpenseConflictError, saveExpenseDraft, submitExpense } from "@/domain/expenses";
+import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND, ExpenseConflictError, previewExpense, saveExpenseDraft, submitExpense } from "@/domain/expenses";
+import { setCustomerApproval } from "@/domain/quotes/revisions";
 import { deferred, waitForLockWaiter, type Deferred } from "./lock-race";
 import { makePerson } from "./approvals-fixtures";
-import { addApprovedRevision, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
+import { addApprovedRevision, attachEvidence, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
 
 // 05-14 Task 2 — 제출 가장자리(EXP-01 · EXP-14). 제출 tx: 프로젝트 행 잠금 → 지출결의 행 잠금 → 이미 제출됨 →
 // version → 줄의 번호 있는 문서를 tx로 다시 읽어 재판정 → 스냅숏 → 결재 인스턴스 → 마지막 쓰기로 번호(카운터).
@@ -219,5 +220,23 @@ describe("두 창", () => {
     expect(error).toBeInstanceOf(ExpenseConflictError);
     expect((error as Error).message).toMatch(/^\d{2}:\d{2}에 다른 곳에서 저장됨 · 새로 고침$/);
     expect(await expenseRow(expenseId)).toMatchObject({ note: "첫 창", version: 2 });
+  });
+});
+
+// 05-06 Task 2(T-05-601) — 미리보기 통과는 제출 통과가 아니다. 제출 트랜잭션 안에서 같은 규칙 `expense.submit`이 tx로 읽은
+// 차수 승인을 다시 판정한다.
+describe("미리보기 뒤 조건 변경", () => {
+  it("미리보기가 통과한 문서에서 제출 전에 고객 승인이 취소되면 제출이 ① 문자열로 거부되고 번호가 없다", async () => {
+    const fx = await setupExpenseProject();
+    const expenseId = await draftFor(fx, fx.pm, fx.lines.withVendor);
+    await attachEvidence(fx.pm, expenseId);
+    expect((await previewExpense(fx.pm, { expenseId, fields: {} })).block).toBeNull();
+
+    await setCustomerApproval(fx.pm, fx.revisionId, null);
+    const { version } = await expenseRow(expenseId);
+    const error = await submitExpense(fx.pm, { expenseId, expectedVersion: version }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(GateBlockedError);
+    expect((error as Error).message).toBe("1차 고객 승인 전 · 고객 승인 표시");
+    expect((await expenseRow(expenseId)).number).toBeNull();
   });
 });

@@ -68,3 +68,59 @@ test.describe("계산 한 줄 즉시 재계산 (S5)", () => {
     await expect(page.getByTestId("expense-tax-drift")).toHaveCount(0);
   });
 });
+
+// 서버 액션 POST(`next-action` 헤더) 수.
+function countActionPosts(page: Page): { count: () => number } {
+  let total = 0;
+  page.on("request", (request) => {
+    if (request.method() === "POST" && request.headers()["next-action"]) total += 1;
+  });
+  return { count: () => total };
+}
+
+test.describe("막힘 이유 (S6)", () => {
+  test("증빙 없는 폼: 1차 aria-disabled + 이유 글자 · 첫 포커스 첨부 영역 · 눌러도 요청 0건 · 올리면 풀린다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await openDraft(page, fx, "hold");
+
+    const submit = page.getByRole("button", { name: /^지출결의 제출/ });
+    const picker = page.locator("#evidence-picker");
+    await expect(submit).toHaveAttribute("aria-disabled", "true");
+    expect(await submit.getAttribute("disabled")).toBeNull();
+    const describedBy = (await submit.getAttribute("aria-describedby")) ?? "";
+    expect(describedBy).not.toBe("");
+    await expect(page.locator(`[id="${describedBy}"]`)).toHaveText(/^증빙 없음 · 증빙 올리기\s*Ctrl\+U$/);
+    await expect(picker).toBeFocused();
+
+    const posts = countActionPosts(page);
+    await page.getByLabel("비고").focus();
+    await submit.click({ force: true });
+    await expect(picker).toBeFocused();
+    await page.getByLabel("비고").focus();
+    await page.keyboard.press("Control+Enter");
+    await expect(picker).toBeFocused();
+    expect(posts.count()).toBe(0);
+
+    await page.getByTestId("attachments-input").setInputFiles(await uniqueReceipt(page));
+    await expect(page.locator('[data-ui="attachments"] li').getByText(META)).toBeVisible({ timeout: UPLOAD_WAIT });
+    await expect(submit).not.toHaveAttribute("aria-disabled", "true", { timeout: 10_000 });
+    await expect(page.getByText(/^증빙 없음/)).toHaveCount(0);
+  });
+
+  test("빈 칸이면 그 칸 이유 · 다음 한 수 3차가 그 칸으로 포커스, 채우면 다음 막힘으로 바뀐다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await openDraft(page, fx, "hold");
+
+    const submit = page.getByRole("button", { name: /^지출결의 제출/ });
+    await page.getByLabel("지급 방식").selectOption("");
+    const describedBy = () => submit.getAttribute("aria-describedby").then((id) => page.locator(`[id="${id ?? ""}"]`));
+    await expect(await describedBy()).toHaveText(/^지급 방식 비어 있음 · 지급 방식 고르기$/, { timeout: 10_000 });
+    await page.getByRole("button", { name: "지급 방식 고르기" }).click();
+    await expect(page.getByLabel("지급 방식")).toBeFocused();
+
+    await page.getByLabel("지급 방식").selectOption("bank_transfer");
+    await expect(await describedBy()).toHaveText(/^증빙 없음 · 증빙 올리기\s*Ctrl\+U$/, { timeout: 10_000 });
+  });
+});

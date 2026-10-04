@@ -30,6 +30,8 @@ export type TableKeyboardHandlers<Row> = {
   /** Ctrl+Enter — 새 줄. 포커스가 있던 행을 넘긴다(그룹 대분류 상속, D-62). */
   onNewRow?: (currentRow?: Row) => void;
   onDuplicateRow?: (row: Row) => void;
+  /** Ctrl+E(편집 중이 아닐 때) — 활성 셀 줄의 줄 행동. 있을 때만 표가 이 키를 가로챈다. */
+  onOpenRow?: (row: Row) => void;
   onMoveRow?: (row: Row, direction: "up" | "down") => void;
   onSave?: () => void;
   /** 편집 중 Esc — 그 셀 값을 되돌린다(커밋 없이 편집을 닫는다). */
@@ -406,6 +408,12 @@ export function Table<Row>({
         const row = findRow(rowId);
         if (row) keyboard?.onDuplicateRow?.(row);
       },
+      onOpenRow: keyboard?.onOpenRow
+        ? (rowId) => {
+            const row = findRow(rowId);
+            if (row) keyboard.onOpenRow?.(row);
+          }
+        : undefined,
       onMoveRow: (rowId, direction) => {
         const row = findRow(rowId);
         if (!row || !keyboard?.onMoveRow) return;

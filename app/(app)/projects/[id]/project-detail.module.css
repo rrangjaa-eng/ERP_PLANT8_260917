@@ -353,3 +353,10 @@ td:has(> .rowNumber) {
   font-size: var(--text-aux);
   font-weight: var(--fw-medium);
 }
+
+/* 05-15 — 견적 줄 표 행동 셀의 이유 글자 `거래처 없음`. 거래처 고르기 3차와 사이에서만 줄이 꺾인다(글자 안은 nowrap). */
+.doorNoVendor {
+  color: var(--status-danger);
+  font-size: var(--text-aux);
+  white-space: nowrap;
+}

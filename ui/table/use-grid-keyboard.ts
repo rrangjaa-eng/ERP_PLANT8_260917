@@ -24,6 +24,8 @@ export type GridKeyboardHandlers = {
   onNewRow?: (currentRowId: string | undefined) => void;
   /** Ctrl+D — 줄 복제. */
   onDuplicateRow?: (rowId: string) => void;
+  /** Ctrl+E — 편집 중이 아닐 때 활성 셀 줄의 줄 행동(견적 줄 `지출결의 올리기`, 05-15). 처리기가 있을 때만 키를 가로챈다. */
+  onOpenRow?: (rowId: string) => void;
   /** Alt+↑/↓ — 줄 이동. */
   onMoveRow?: (rowId: string, direction: "up" | "down") => void;
   /** Ctrl+S — 일괄 저장. */
@@ -225,6 +227,14 @@ export function useGridKeyboard({
       } else if (isCtrlCombo(event, "s")) {
         if (allowed("save")) handlers.onSave?.();
       }
+      return;
+    }
+
+    // 05-15 — Ctrl+E(편집 중이 아닐 때, 처리기를 준 표만): 브라우저 기본 동작(주소창 포커스)을 막고 활성 셀 줄의 줄 행동을 연다.
+    if (!editing && handlers.onOpenRow && event.ctrlKey && event.key.toLowerCase() === "e") {
+      event.preventDefault();
+      const rowId = rowIds[pos.row];
+      if (isCtrlCombo(event, "e") && rowId !== undefined) handlers.onOpenRow(rowId);
       return;
     }
 

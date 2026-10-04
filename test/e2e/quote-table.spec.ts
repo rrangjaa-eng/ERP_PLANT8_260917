@@ -539,9 +539,9 @@ test.describe("견적 줄 표 — Ctrl 전용 단축키·힌트 줄·이중 저�
     const hintRow = page.locator("p", { hasText: "줄 복제" });
     await expect(hintRow).toHaveCount(1);
     await expect(hintRow).toHaveText(
-      "이동 Tab ↑↓←→ · 복사 Ctrl+C · 붙여넣기 Ctrl+V · 취소 Esc · 새 줄 Ctrl+Enter · 줄 이동 Alt+↑↓ · 줄 복제 Ctrl+D",
+      "이동 Tab ↑↓←→ · 범위 복사 Ctrl+C / 붙여넣기 Ctrl+V · 취소 Esc · 새 줄 Ctrl+Enter · 줄 이동 Alt+↑↓ · 줄 복제 Ctrl+D · 지출결의 올리기 Ctrl+E",
     );
-    await expect(hintRow.locator("kbd")).toHaveText(["Tab ↑↓←→", "Ctrl+C", "Ctrl+V", "Esc", "Ctrl+Enter", "Alt+↑↓", "Ctrl+D"]);
+    await expect(hintRow.locator("kbd")).toHaveText(["Tab ↑↓←→", "Ctrl+C / 붙여넣기 Ctrl+V", "Esc", "Ctrl+Enter", "Alt+↑↓", "Ctrl+D", "Ctrl+E"]);
     // 04-19(DR-31) — 페이지 줄이 없으면 합계 행(표) 바로 아래.
     expect(await quoteTable(page).evaluate((table) => table.nextElementSibling?.textContent)).toContain("줄 복제 Ctrl+D");
     await expect(hintRow).not.toContainText("저장");
@@ -981,7 +981,7 @@ test.describe("견적 줄 표 — 30줄 쪽 나눔(04-19 Task 1 · D-91)", () =>
 });
 
 // 04-19 Task 2 — 쪽 경계 키보드(줄 id) · Alt+↑↓ 따라가기 · 2쪽 Delete · Tab · 쪽 안 범위 선택 · Ctrl+A/Ctrl+C 네이티브 복사 · 힌트 줄.
-const HINT_TEXT = "이동 Tab ↑↓←→ · 복사 Ctrl+C · 붙여넣기 Ctrl+V · 취소 Esc · 새 줄 Ctrl+Enter · 줄 이동 Alt+↑↓ · 줄 복제 Ctrl+D";
+const HINT_TEXT = "이동 Tab ↑↓←→ · 범위 복사 Ctrl+C / 붙여넣기 Ctrl+V · 취소 Esc · 새 줄 Ctrl+Enter · 줄 이동 Alt+↑↓ · 줄 복제 Ctrl+D · 지출결의 올리기 Ctrl+E";
 
 function currentPage(page: Page) {
   return pageNav(page).locator('[aria-current="page"]:visible');
@@ -1194,7 +1194,7 @@ test.describe("견적 줄 표 — 쪽 경계 키보드·전체 복사·힌트 �
     const hint = page.locator("p", { has: page.locator("kbd", { hasText: "Ctrl+D" }) });
     await expect(hint).toHaveCount(1);
     await expect(hint).toHaveText(HINT_TEXT);
-    await expect(hint.locator("kbd")).toHaveText(["Tab ↑↓←→", "Ctrl+C", "Ctrl+V", "Esc", "Ctrl+Enter", "Alt+↑↓", "Ctrl+D"]);
+    await expect(hint.locator("kbd")).toHaveText(["Tab ↑↓←→", "Ctrl+C / 붙여넣기 Ctrl+V", "Esc", "Ctrl+Enter", "Alt+↑↓", "Ctrl+D", "Ctrl+E"]);
     expect(await pageNav(page).evaluate((nav) => nav.nextElementSibling?.textContent)).toBe(HINT_TEXT);
     for (const caption of ["발행 줄", "입금 줄"]) {
       const revenue = page.locator("table", { has: page.locator("caption", { hasText: new RegExp(`^${caption}$`) }) });

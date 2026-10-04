@@ -322,7 +322,8 @@ test.describe("행 행동 갈래", () => {
     const fx = await setupExpenseE2E();
     const page = await loginPage(browser, baseURL, fx.pm, { width: 800, height: 900 });
     await page.goto(`/projects/${fx.projectId}`);
-    const none = doorCellOf(page, fx.lines.noVendor.itemName);
+    // 1024 미만 표는 보기 전용이라 칸이 gridcell이 아니라 cell이다(DR-36).
+    const none = rowOf(page, fx.lines.noVendor.itemName).getByRole("cell").last();
     await expect(none).toHaveText("거래처 없음");
     await expect(none.getByRole("button")).toHaveCount(0);
   });
@@ -368,7 +369,8 @@ test.describe("행 행동 갈래", () => {
     await page.keyboard.press("Enter");
 
     await button.click();
-    await expect(page.getByText("저장 안 한 편집 1칸 · 먼저 일괄 저장", { exact: true })).toBeVisible();
+    // 같은 글자가 일괄 저장 이유 · 확인 창에도 있어 합계 행(표 안)으로 좁힌다.
+    await expect(page.getByRole("grid", { name: "견적 줄" }).getByText("저장 안 한 편집 1칸 · 먼저 일괄 저장", { exact: true })).toBeVisible();
     await expect(page).toHaveURL(new RegExp(`/projects/${fx.projectId}$`));
   });
 

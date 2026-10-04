@@ -716,6 +716,16 @@ test.describe("차수 섹션과 이전 차수 읽기 섹션 (04-24 Task 3 — S5
     const currentHeaders = await quoteTable(page).locator("thead th").allTextContents();
     expect(currentHeaders.at(-1)).toBe("행동");
     expect(await readTable.locator("thead th").allTextContents()).toEqual(currentHeaders.slice(0, -1));
+    // SYSTEM §7-5 — 같은 화면 두 표의 상태 열은 같은 StatusTag 색 글자(글자 크기 · 굵기 · 색)다.
+    const statusStyle = (table: Locator) =>
+      table
+        .getByText("미착수", { exact: true })
+        .first()
+        .evaluate((node) => {
+          const style = getComputedStyle(node);
+          return { fontSize: style.fontSize, fontWeight: style.fontWeight, color: style.color };
+        });
+    expect(await statusStyle(readTable)).toEqual(await statusStyle(quoteTable(page)));
     expect(requests).toBe(1);
 
     const open2 = rowOf(2).getByRole("button");

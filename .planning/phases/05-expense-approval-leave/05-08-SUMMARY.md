@@ -98,6 +98,19 @@ status: complete
 - 위험 경로(`domain/permissions/menus.ts`) 변경 — 사용자가 머지. Opus 독립 검토 1명 + 독립 DOM 감사.
 - 로컬 `.next/dev/types`가 옛 `expenses/page.js`를 가리켜 build 타입 검사가 깨졌다 — 생성물이라 지웠다(next dev가 다시 만든다).
 
+## 웨이브 10 검토 수정
+05-08 Opus 독립 검토(`notes/05-review/05-08-permission-review.md`)와 wave10 화면 검토 N2를 고쳤다. 테스트 먼저(RED 확인 → GREEN), Opus 실행자.
+1. **검토 #1(major) 비당사자 문서 화면** — `175d6f8c`. `getApprovalView`에 `readOnlyVisible` 옵션: `/expenses/[id]`가 `getExpense`(= `canSeeExpense`) 통과 뒤에만 넘기고, 당사자가 아니면 상태 · 결재선만 돌려주며 행동은 늘 `[]`(`possibleActions`는 당사자에게만). 팀장 · 대표가 상태 배지와 결재선을 본다. 통합(팀장 · 대표 actions [] · 기본 갈래 null 유지 · 기안자 행동 유지) + E2E(대표 문서 화면 `결재 중` · 결재선 · 행동 버튼 0).
+2. **검토 #2 팀 갈래도 `expenses` 보기 요구** — `8527a507`. `expenses` 보기 끔 + `expenses.team` 켬 → 문서 · 증빙 목록 · 서명 GET 모두 없는 문서(통합).
+3. **검토 #3 같은 기준일** — `9f741e4c`. `listCurrentSteps(…, { today })` → 조직 스냅숏도 `canSeeExpense`의 today로(통합: 2099-01-01에 기안자 팀으로 옮기는 1단 계급).
+4. **검토 #4 판정 순서** — `fd37ae6b`. 기안자 · 작성 중 → 전사 · 팀 · 처리 기록(한 줄 조회) → 그래도 아니면 그때만 후보 walk. 보임 결과 불변(기존 사례 초록), 통합 주입 계수로 walk 0회/1회 확인.
+5. **검토 #5 여러 줄 Ctrl+E 상한** — `230f2a1b`. 액션 입력 상한 100 → `QUOTE_LINE_MAX_PER_REVISION_DEFAULT`(300, 설정 기본값과 같은 상수로 뺌). 단위: 101 · 300줄 통과, 301줄 거부. 관리자가 차수 줄 상한을 300보다 올리면 그 이상은 여전히 액션에서 막힌다(남은 한계).
+6. **검토 #7 시험 공백** — `e477dc85`. 팀장 팀 이동(today 기준) · 프로젝트 팀 변경(견적 줄 문서는 지금 프로젝트 팀) · 삭제 번호 문서 404(결재자 · 팀장). 변이 검사 3종으로 각 사례가 실패함을 확인하고 되돌렸다.
+7. **wave10 N2 빈 목록 상태 필터 숨김** — `1a5efb6b`. 사용자 지시(10/5 00:55)에 따라 추천안 적용: `list.hasAny`일 때만 `filters`를 넘긴다(보기 때문에 0건이면 select 유지). E2E 확장.
+- 손대지 않음: 검토 #6(상태 날짜 `updated_at`)은 05-09로 넘김, N3 · N4 · N5는 그대로.
+- 점검표: `docs/design/checks/2026-10-04-05-08-review-fixes.md`.
+- 검증: lint · typecheck 0, 통합 expense-visibility 16 · seed-permissions · expense-money · evidence-upload 51 통과(지출결의 · 증빙 통합 10 files 100도 #4 뒤 통과), E2E `CI=true --no-deps` expense-list 8 · expense-new + expense-submit-mobile-approval 23 통과, `pnpm test:unit` 252 files · 3872 tests 통과.
+
 ## Self-Check: PASSED
 - 파일: domain/expenses/access.ts · app/(app)/expenses/(list)/{page,layout,loading,error}.tsx · expenses-table.tsx · status-filter.tsx · list-columns.ts · expenses.module.css · test/integration/expense-{visibility,money}.test.ts · test/unit/domain/expenses/list-groups.test.ts · test/e2e/expense-list.spec.ts · docs/design/checks/2026-10-04-05-08-expense-list.md 존재
 - 커밋: 2d3deb12 · 942c7fc9 · c4b9e472 · 52e22c45 존재

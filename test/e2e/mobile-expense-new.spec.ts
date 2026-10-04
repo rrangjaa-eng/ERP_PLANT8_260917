@@ -57,4 +57,21 @@ test.describe("폰 골라내기 시트 (R6-04)", () => {
     await expect(sheet).toBeHidden();
     await expect(trigger).toBeFocused();
   });
+
+  test("웨이브 9 D3 · D4 — 시트 높이는 고정이고 시트와 증빙 올리기에 kbd를 그리지 않는다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.pm, PHONE);
+    await page.goto("/expenses/new");
+    const trigger = page.getByRole("button", { name: "거래처 고르기" });
+    await waitForHydration(trigger);
+    await expect(page.getByRole("button", { name: /^증빙 올리기/ }).locator("kbd:visible")).toHaveCount(0);
+    await trigger.click();
+    const sheet = page.getByRole("dialog", { name: "거래처 고르기" });
+    await expect(sheet.getByRole("option").first()).toBeVisible();
+    await expect(sheet.locator("kbd:visible")).toHaveCount(0);
+    const full = (await sheet.boundingBox())?.height ?? 0;
+    await sheet.getByRole("textbox", { name: "거래처 이름 검색" }).fill("없는거래처-zzzz");
+    await expect(sheet.getByText("조건에 맞는 거래처가 없습니다 ·")).toBeVisible();
+    expect((await sheet.boundingBox())?.height ?? 0).toBeCloseTo(full, 0);
+  });
 });

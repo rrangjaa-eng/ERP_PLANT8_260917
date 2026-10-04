@@ -570,9 +570,12 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
       setFailure(created?.data?.blocked[0]?.reason ?? created?.serverError ?? failed);
       return;
     }
+    // 저장 안 한 칸은 먼저 저장한다 — 줄이 바뀌면 폼이 서버 값으로 다시 그려져 적은 값이 사라지기 때문.
+    const base = dirty ? await persist("save") : version;
+    if (base === null) return false;
     let changed: Awaited<ReturnType<typeof changeExpenseLineAction>>;
     try {
-      changed = await changeExpenseLineAction({ expenseId: data.id, lineId, expectedVersion: version });
+      changed = await changeExpenseLineAction({ expenseId: data.id, lineId, expectedVersion: base });
     } catch {
       setFailure(failed);
       return;
@@ -813,7 +816,7 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
         </Form.Field>
 
         <Form.Field id="evidence-picker" label="증빙" width="long">
-          <div id="evidence">
+          <div id="evidence" className={styles.evidencePick}>
             {newDoc ? (
               <Button id="evidence-picker" variant="secondary" shortcut="Ctrl+U" pending={saving} onClick={openPicker}>
                 증빙 올리기
@@ -866,7 +869,7 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
         open={pickOpen === "line"}
         mode={data.lineText ? "change" : "pick"}
         expenseId={newDoc ? null : data.id}
-        teamValues={teamKind !== "" || content.trim() !== ""}
+        droppedFields={[...(teamKind !== "" || content.trim() !== "" ? ["팀 비용 칸"] : []), ...(note.trim() !== "" ? ["비고"] : []), ...(date !== "" ? ["지급 예정일"] : [])]}
         onClose={() => setPickOpen(null)}
         onPick={pickLine}
       />

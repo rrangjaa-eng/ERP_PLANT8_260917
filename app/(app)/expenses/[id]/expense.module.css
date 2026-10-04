@@ -211,7 +211,8 @@
     flex-basis: 100%;
   }
 
-  .formBar kbd {
+  .formBar kbd,
+  .evidencePick kbd {
     display: none;
   }
 }

@@ -312,6 +312,61 @@ test.describe("골라내기 (S14) · 견적 줄", () => {
     await expect(page.getByLabel("공급가액")).toHaveValue("12,400,000");
   });
 
+  test("웨이브 9 D1 — 저장된 문서에서 줄을 바꾸면 저장 안 한 비고 · 지급 예정일이 먼저 저장돼 남는다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await openDraft(page, fx, "tracer");
+    await page.getByLabel("비고", { exact: true }).fill("웨이브9 저장 안 한 메모");
+    await page.getByLabel("지급 예정일", { exact: true }).fill("2026-10-17");
+    await page.getByRole("button", { name: "바꾸기" }).click();
+    const dialog = page.getByRole("dialog", { name: "견적 줄 바꾸기" });
+    await dialog.getByRole("option", { name: new RegExp(fx.lines.phone.itemName) }).click();
+    await dialog.getByRole("button", { name: /^이 줄로/ }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(`지출결의 — ${fx.projectName} · ${fx.lines.phone.itemName}`);
+    await expect(page.getByLabel("비고", { exact: true })).toHaveValue("웨이브9 저장 안 한 메모");
+    await expect(page.getByLabel("지급 예정일", { exact: true })).toHaveValue("2026-10-17");
+  });
+
+  test("웨이브 9 D1 — /expenses/new에서 줄을 고르면 결과 줄이 지워질 비고 · 지급 예정일을 이름으로 말한다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await openNew(page);
+    await page.getByLabel("비고", { exact: true }).fill("새 문서 메모");
+    await page.getByLabel("지급 예정일", { exact: true }).fill("2026-10-17");
+    await page.getByRole("button", { name: "견적 줄 고르기" }).click();
+    const dialog = page.getByRole("dialog", { name: "견적 줄 고르기" });
+    await dialog.getByRole("textbox", { name: "견적 줄 검색" }).fill(fx.lines.hold.itemName);
+    await expect(dialog.getByRole("option")).toHaveCount(1);
+    await dialog.getByRole("option", { name: new RegExp(fx.lines.hold.itemName) }).click();
+    await expect(dialog.getByText("· 비고 · 지급 예정일 지워짐")).toBeVisible();
+  });
+
+  test("웨이브 9 D2 · D3 · D5 — 1차 버튼 설명은 결과 줄 · 검색 칸은 거르는 동안 제자리 · 부제 `프로젝트 N · 고를 수 있는 줄 M` · `거래처 N`", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await openNew(page);
+    await page.getByRole("button", { name: "견적 줄 고르기" }).click();
+    const dialog = page.getByRole("dialog", { name: "견적 줄 고르기" });
+    const search = dialog.getByRole("textbox", { name: "견적 줄 검색" });
+    await expect(dialog.getByText(/^프로젝트 \d+ · 고를 수 있는 줄 \d+$/)).toBeVisible();
+    const before = await search.boundingBox();
+    await search.fill(fx.lines.hold.itemName);
+    await expect(dialog.getByRole("option")).toHaveCount(1);
+    expect((await search.boundingBox())?.y).toBeCloseTo(before?.y ?? -1, 0);
+    await page.keyboard.press("ArrowDown");
+    expect((await search.boundingBox())?.y).toBeCloseTo(before?.y ?? -1, 0);
+    const primary = dialog.getByRole("button", { name: /^이 줄로/ });
+    await expect(primary).toHaveAttribute("aria-describedby", /.+/);
+    const describedBy = (await primary.getAttribute("aria-describedby")) ?? "";
+    await expect(page.locator(`[id="${describedBy}"]`)).toHaveText(/그 줄 값으로 채워짐/);
+    await page.keyboard.press("Escape");
+
+    await page.getByRole("button", { name: "거래처 고르기" }).click();
+    const vendors = page.getByRole("dialog", { name: "거래처 고르기" });
+    await expect(vendors.getByText(/^거래처 \d+$/)).toBeVisible();
+  });
+
   test("막힘 ③(작성 중에 새 차수가 생긴 문서)의 다음 한 수 `견적 줄 바꾸기`가 골라내기를 연다", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const page = await loginPage(browser, baseURL, fx.pm);

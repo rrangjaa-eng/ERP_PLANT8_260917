@@ -326,7 +326,7 @@ function PickDialogInner({ onClose, title, subtitle, searchLabel, search, primar
             </Button>
           </span>
           <span className={styles.primaryWrap}>
-            <Button variant="primary" shortcut="Enter" pending={picking} disabled={!chosen} aria-describedby={listId} onClick={() => void pickChosen()}>
+            <Button variant="primary" shortcut="Enter" pending={picking} disabled={!chosen} aria-describedby={line ? resultId : undefined} onClick={() => void pickChosen()}>
               {primaryLabel}
             </Button>
           </span>

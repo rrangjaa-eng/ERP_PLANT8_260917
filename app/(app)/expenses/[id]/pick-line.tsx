@@ -14,7 +14,7 @@ export function LinePickDialog({
   open,
   mode,
   expenseId,
-  teamValues,
+  droppedFields,
   onClose,
   onPick,
 }: {
@@ -22,8 +22,8 @@ export function LinePickDialog({
   mode: LinePickMode;
   /** 바꾸기에서 그 문서의 프로젝트를 알려 주는 문서 id — 고르기에서는 없다. */
   expenseId: string | null;
-  /** 고르기에서 지워질 팀 비용 칸 값(종류 · 내용)이 적혀 있는지 — 결과 줄에 한 번 말한다. */
-  teamValues: boolean;
+  /** 고르기에서 지워질, 이미 적힌 칸 이름(팀 비용 칸 · 비고 · 지급 예정일) — 결과 줄에 한 번 말한다. */
+  droppedFields: string[];
   onClose: () => void;
   onPick: (lineId: string) => void | boolean | Promise<void | boolean>;
 }) {
@@ -68,6 +68,9 @@ export function LinePickDialog({
         }
         items.push(...pickRows);
       }
+      if (mode === "pick" && data.groups.length > 0) {
+        subtitle = `프로젝트 ${data.groups.length} · 고를 수 있는 줄 ${data.rows.filter((row) => row.selectable).length}`;
+      }
       return {
         items,
         truncated: data.truncated,
@@ -91,7 +94,7 @@ export function LinePickDialog({
       resultLine={(row) => {
         if (!row) return null;
         const filled = `거래처 · 증빙 종류 · 공급가액이 그 줄 값으로 ${expenseId ? "바뀜" : "채워짐"}`;
-        return mode === "pick" && teamValues ? `${filled} · 팀 비용 칸 지워짐` : filled;
+        return mode === "pick" && droppedFields.length > 0 ? `${filled} · ${droppedFields.join(" · ")} 지워짐` : filled;
       }}
       onPick={(row) => onPick(row.id)}
     />

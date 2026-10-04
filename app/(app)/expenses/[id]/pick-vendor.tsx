@@ -36,7 +36,7 @@ export function VendorPickDialog({
       });
       items.push({ type: "row", id: row.id, title: row.name, subtitle: row.defaultEvidenceName ? `기본 증빙 ${row.defaultEvidenceName}` : null, selectable: true });
     }
-    return { items, truncated: data.truncated };
+    return { items, truncated: data.truncated, subtitle: `거래처 ${items.length}` };
   }, []);
 
   return (

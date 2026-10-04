@@ -6,7 +6,8 @@
   width: 100%;
   max-width: var(--dialog-w);
   max-height: var(--sheet-max-h);
-  margin: auto;
+  margin: 0 auto;
+  inset-block: calc((100dvh - var(--sheet-max-h)) / 2) auto;
   padding: 0;
   border: 0;
   border-radius: var(--radius-dialog);
@@ -257,7 +258,12 @@
     width: 100%;
     max-width: none;
     margin: 0;
+    height: var(--sheet-max-h);
     border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+  }
+
+  .actions kbd {
+    display: none;
   }
 
   .hd {

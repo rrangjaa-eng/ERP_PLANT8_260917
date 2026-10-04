@@ -87,6 +87,8 @@ test.describe("보기 · 빈 상태 · 폭", () => {
     const empty = page.locator('[data-ui="empty-state"]');
     await expect(empty).toContainText("승인된 지출결의가 없습니다");
     await expect(page.locator('[data-ui="primary-button"]')).toHaveText("새 지출결의");
+    // 보기 때문에 0건이면 상태 select는 남는다(문서는 있다).
+    await expect(page.getByRole("combobox", { name: "상태" })).toBeVisible();
     await empty.getByRole("link", { name: "진행 중 보기" }).click();
     await expect(page).toHaveURL((url) => url.searchParams.get("status") === "진행 중");
     await expect(rowOf(page, doc.expenseId)).toHaveCount(1);
@@ -122,6 +124,8 @@ test.describe("보기 · 빈 상태 · 폭", () => {
     await expect(writerEmpty.getByRole("link", { name: "새 지출결의" })).toHaveAttribute("href", "/expenses/new");
     await expect(writerPage.locator('[data-ui="primary-button"]')).toHaveCount(0);
     await expect(writerPage.getByRole("region", { name: "합계" })).toHaveCount(0);
+    // 걸러 낼 문서가 없으면 상태 select도 없다(wave10 N2 — 쓸 수 없는 선택지는 숨김).
+    await expect(writerPage.getByRole("form", { name: "지출결의 보기" })).toHaveCount(0);
     await writerPage.context().close();
 
     const readerPage = await loginPage(browser, baseURL, reader);
@@ -130,6 +134,7 @@ test.describe("보기 · 빈 상태 · 폭", () => {
     await expect(readerEmpty).toContainText("등록된 지출결의가 없습니다");
     await expect(readerEmpty.getByRole("link")).toHaveCount(0);
     await expect(readerPage.locator('[data-ui="primary-button"]')).toHaveCount(0);
+    await expect(readerPage.getByRole("form", { name: "지출결의 보기" })).toHaveCount(0);
     await readerPage.context().close();
   });
 

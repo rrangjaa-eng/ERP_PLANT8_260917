@@ -67,7 +67,8 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
       title="지출결의"
       // DR5 A — 보임 범위 안 지출결의가 하나도 없을 때만 `empty`를 넘겨 틀이 머리 1차를 숨긴다. 보기 때문에 0건이면 머리 1차가 남는다.
       primaryAction={canWrite ? newAction : undefined}
-      filters={<StatusFilter value={view} />}
+      // 걸러 낼 문서가 하나도 없으면 상태 select를 넘기지 않는다(wave10 N2 — 사용자 지시(10/5 00:55)에 따라 추천안 적용).
+      filters={list.hasAny ? <StatusFilter value={view} /> : undefined}
       summary={
         list.total && list.total.count > 0 ? (
           <section aria-label="합계" className={styles.totals}>

@@ -184,7 +184,19 @@ export const EXPENSE_PREVIEW_DTO_SPEC: DtoSpec<ExpensePreviewDto, ExpensePreview
   ],
 };
 
+// 05-07 `/expenses/new` 첫 그림 — 사용일 기본(서울 오늘)과 그날 내 소속 팀 이름(소속 없으면 null).
+export type ExpenseNewDefaultsDto = { usageDate: string; teamName: string | null; usageDateError: string | null };
+
+export const EXPENSE_NEW_DEFAULTS_DTO_SPEC: DtoSpec<ExpenseNewDefaultsDto, ExpenseNewDefaultsDto> = {
+  fields: [
+    { key: "usageDate", from: "usageDate", infoItem: "expense.value" },
+    { key: "teamName", from: "teamName", infoItem: "expense.value" },
+    { key: "usageDateError", from: "usageDateError", infoItem: "expense.value" },
+  ],
+};
+
 registerDto({ name: "expenseDraft", fields: EXPENSE_DRAFT_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 registerDto({ name: "expenseDocument", fields: EXPENSE_DOCUMENT_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 registerDto({ name: "expenseDetail", fields: EXPENSE_DETAIL_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 registerDto({ name: "expensePreview", fields: EXPENSE_PREVIEW_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
+registerDto({ name: "expenseNewDefaults", fields: EXPENSE_NEW_DEFAULTS_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });

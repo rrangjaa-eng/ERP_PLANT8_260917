@@ -3,6 +3,7 @@ import { requireSession } from "@/lib/viewer";
 import "@/app/(app)/document-kinds";
 import { getApprovalView, previewRoute, RouteBlockedError } from "@/domain/approvals";
 import { EXPENSE_DOCUMENT_KIND, ExpenseNotFoundError, getExpense, listExpenseCurrencies, listExpenseFormOptions, previewExpense } from "@/domain/expenses";
+import { teamKindOptions } from "../team-kind-options";
 import { listEvidence } from "@/domain/evidence";
 import { getSettingValue } from "@/domain/settings/registry";
 import { EVIDENCE_MAX_SIZE_MB } from "@/domain/settings/keys";
@@ -65,7 +66,9 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
     return options;
   };
   const supply = expense.supply ?? null;
-  const target = [expense.projectName, expense.itemName].filter(Boolean).join(" · ");
+  // 팀 비용 문서(프로젝트 · 견적 줄 없음) — 사용일은 팀 비용 문서에만 있다(견적 줄 문서는 null).
+  const isTeam = Boolean(expense.usageDate);
+  const target = isTeam ? [expense.teamName, expense.content].filter(Boolean).join(" · ") : [expense.projectName, expense.itemName].filter(Boolean).join(" · ");
   const skipped = route?.steps.filter((step) => step.skipped).map((step) => `${step.label ?? ""} 단계 건너뜀(자기 승인 없음)`) ?? [];
 
   return (
@@ -91,7 +94,18 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
             installmentText: expense.installmentText ?? null,
             taxLine: expense.taxLine ?? null,
             block: initialBlock,
+            team: isTeam
+              ? {
+                  kind: expense.teamExpenseKind ?? null,
+                  usageDate: expense.usageDate ?? "",
+                  content: expense.content ?? null,
+                  teamName: expense.teamName ?? null,
+                  usageDateError: null,
+                }
+              : null,
           }}
+          newDoc={false}
+          teamKindOptions={teamKindOptions()}
           evidenceOptions={optionsOf(evidenceItems, expense.evidenceType, expense.evidenceTypeName)}
           paymentOptions={optionsOf(paymentItems, expense.paymentMethod, expense.paymentMethodName)}
           currencies={currencies}

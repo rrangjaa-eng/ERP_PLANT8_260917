@@ -41,7 +41,9 @@ export function ExpenseDocument({
   submitted: string | undefined;
 }) {
   const id = expense.id ?? "";
-  const target = [expense.projectName, expense.itemName].filter(Boolean).join(" · ");
+  // 팀 비용 문서(프로젝트 · 견적 줄 없음 · 사용일 있음) — 머리 줄은 `지출결의 — {팀} · {내용}`, 프로젝트 칸은 `프로젝트 미연결 · {종류}`.
+  const isTeam = Boolean(expense.usageDate);
+  const target = isTeam ? [expense.teamName, expense.content].filter(Boolean).join(" · ") : [expense.projectName, expense.itemName].filter(Boolean).join(" · ");
   const title = target ? `지출결의 — ${target}` : "지출결의";
   const supply = expense.supply ?? null;
   const actions = view?.actions ?? [];
@@ -65,17 +67,26 @@ export function ExpenseDocument({
   const items: KvItem[] = [
     {
       label: "프로젝트",
-      value:
-        expense.projectId && expense.projectName ? (
-          <Link href={`/projects/${expense.projectId}`} scroll={false} className={`${buttonStyles.btn} ${buttonStyles.tertiary}`}>
-            {[expense.projectNumber, expense.projectName].filter(Boolean).join(" ")}
-          </Link>
-        ) : (
-          dash
-        ),
+      value: isTeam ? (
+        <span className={styles.muted}>{["프로젝트 미연결", expense.teamExpenseKindLabel].filter(Boolean).join(" · ")}</span>
+      ) : expense.projectId && expense.projectName ? (
+        <Link href={`/projects/${expense.projectId}`} scroll={false} className={`${buttonStyles.btn} ${buttonStyles.tertiary}`}>
+          {[expense.projectNumber, expense.projectName].filter(Boolean).join(" ")}
+        </Link>
+      ) : (
+        dash
+      ),
     },
-    { label: "견적 줄", value: expense.itemName ? [expense.lineNo, expense.itemName].filter(Boolean).join(" ") : dash },
   ];
+  if (isTeam) {
+    items.push(
+      { label: "팀", value: expense.teamName ?? dash },
+      { label: "사용일", value: expense.usageDate ?? dash },
+      { label: "내용", value: expense.content ?? dash },
+    );
+  } else {
+    items.push({ label: "견적 줄", value: expense.itemName ? [expense.lineNo, expense.itemName].filter(Boolean).join(" ") : dash });
+  }
   if (expense.installment) items.push({ label: "분할 지급", value: expense.installmentSeq ? `${expense.installmentSeq}회차` : dash });
   items.push(
     { label: "거래처", value: expense.vendorName ?? dash },

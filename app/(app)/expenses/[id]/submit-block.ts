@@ -14,3 +14,10 @@ export function submitBlockReason(input: { server: ServerBlock | null; uploading
   }
   return server ? { reason: server.reason, tone: "block", target: server.target } : null;
 }
+
+// `/expenses/new`(문서 없음) 첫 막힘 — 증빙은 문서가 있어야 올릴 수 있어 `증빙 올리기`가 첫 저장을 겸한다.
+export const NEW_DOC_BLOCK = {
+  reason: "증빙 없음 · 증빙 올리기 Ctrl+U",
+  target: "evidence",
+  href: null,
+} as const;

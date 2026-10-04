@@ -12,7 +12,8 @@ import { useCommaInput } from "@/ui/input/use-comma-input";
 import { parseNumberInput } from "@/lib/format-number";
 import { isCtrlCombo } from "@/lib/shortcut";
 import { usePhoneWidth } from "@/app/(app)/leave/use-phone-width";
-import { previewExpenseAction, saveExpenseDraftAction, submitExpenseAction } from "../actions";
+import { changeExpenseVendorAction, createTeamExpenseDraftAction, previewExpenseAction, previewNewExpenseAction, saveExpenseDraftAction, submitExpenseAction } from "../actions";
+import { VendorPickDialog, type PickedVendor } from "./pick-vendor";
 import { EvidenceAttachments } from "./evidence-attachments";
 import { submitBlockReason, type ServerBlock } from "./submit-block";
 import { TaxParts } from "./tax-parts";
@@ -40,10 +41,22 @@ export type ExpenseFormData = {
   installment: boolean;
   installmentMode: "checkbox" | "fixed" | "none";
   installmentText: string | null;
-  taxLine: { text: string; parts: { text: string; emphasis: boolean }[] } | null;
+  taxLine: {
+    text: string;
+    parts: { text: string; emphasis: boolean }[];
+  } | null;
   // 05-06 제출 막힘 첫 이유(규칙 `expense.submit`) · 다음 한 수 대상 · 이동 주소 — 처음 그림은 서버 미리보기 값, 그 뒤는 미리보기 응답.
   block: (ServerBlock & { href: string | null }) | null;
+  // 05-07 팀 비용 문서(프로젝트 · 견적 줄 없음)면 칸 넷의 저장값 — 견적 줄 문서는 null. 새 문서(`/expenses/new`)도 팀 비용으로 열린다.
+  team: {
+    kind: string | null;
+    usageDate: string;
+    content: string | null;
+    teamName: string | null;
+    usageDateError: string | null;
+  } | null;
 };
+
 
 // 다음 한 수 대상 → 포커스할 칸 id(첨부 영역 = 파일 고르기 버튼).
 const TARGET_FIELD: Record<string, string> = {
@@ -51,6 +64,9 @@ const TARGET_FIELD: Record<string, string> = {
   evidenceType: "evidenceType",
   paymentMethod: "paymentMethod",
   evidence: "evidence-picker",
+  teamExpenseKind: "teamExpenseKind",
+  content: "content",
+  vendor: "vendor-pick",
 };
 const NEXT_STEP_ID = "expense-next-step";
 
@@ -58,6 +74,9 @@ export type ExpenseFormProps = {
   data: ExpenseFormData;
   evidenceOptions: SelectOption[];
   paymentOptions: SelectOption[];
+  teamKindOptions: SelectOption[];
+  /** true면 `/expenses/new` — 문서가 아직 없다(`data.id` 빈 값). 첫 저장(임시 저장 · 증빙 올리기)이 문서를 만든다. */
+  newDoc: boolean;
   currencies: { value: string; fxRate: number }[];
   files: AttachmentFile[];
   maxMb: number;
@@ -93,7 +112,7 @@ function FxField({ initial, error, onRaw, below }: { initial: number; error: str
   );
 }
 
-export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies, files, maxMb, route }: ExpenseFormProps) {
+export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOptions, newDoc, currencies, files, maxMb, route }: ExpenseFormProps) {
   const router = useRouter();
   const [evidenceType, setEvidenceType] = useState(data.evidenceType ?? "");
   const [paymentMethod, setPaymentMethod] = useState(data.paymentMethod ?? "");
@@ -103,6 +122,18 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
   const [installment, setInstallment] = useState(data.installment || data.installmentMode === "fixed");
   const [fxRaw, setFxRaw] = useState(String(data.fxRate));
   const dateRef = useRef<HTMLInputElement>(null);
+  const usageDateRef = useRef<HTMLInputElement>(null);
+  const team = data.team;
+  const [teamKind, setTeamKind] = useState(team?.kind ?? "");
+  const [usageDate, setUsageDate] = useState(team?.usageDate ?? "");
+  const [content, setContent] = useState(team?.content ?? "");
+  const [teamName, setTeamName] = useState(team?.teamName ?? null);
+  const [usageDateError, setUsageDateError] = useState(team?.usageDateError ?? null);
+  // 첫 저장의 idempotency key — 폼이 열릴 때 한 번 만든다(두 번 눌러도 문서 하나).
+  const [idempotencyKey] = useState(() => (newDoc ? crypto.randomUUID() : ""));
+  // 고른 거래처 — 새 문서는 첫 저장에 실어 보낼 값이고, 저장된 문서는 화면에 바로 보일 값(서버가 이미 바꿨다).
+  const [pickedVendor, setPickedVendor] = useState<PickedVendor | null>(null);
+  const [pickOpen, setPickOpen] = useState<"vendor" | null>(null);
 
   const amountInput = useCommaInput(currency === "KRW" ? "krw" : "foreign", data.amount === null ? "" : String(data.amount));
 
@@ -116,7 +147,13 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
   const [submitted, setSubmitted] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [networkFailed, setNetworkFailed] = useState<"submit" | "save" | null>(null);
-  const [errors, setErrors] = useState<{ supplyAmount?: string; fxRate?: string; scheduledPaymentDate?: string; note?: string }>({});
+  const [errors, setErrors] = useState<{
+    supplyAmount?: string;
+    fxRate?: string;
+    scheduledPaymentDate?: string;
+    note?: string;
+    usageDate?: string;
+  }>({});
 
   // 05-06 계산 한 줄 — 서버 미리보기 응답으로 바뀐다. 오는 동안 이전 줄은 흐린 색으로 남는다(빈칸 · 뼈대 없음 — UI-SPEC S5).
   const [taxLine, setTaxLine] = useState(data.taxLine);
@@ -130,7 +167,19 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
   const evidenceAdded = addedAt === files;
   const markEvidenceAdded = useCallback(() => setAddedAt(files), [files]);
 
-  const snapshot = JSON.stringify([evidenceType, paymentMethod, currency, amountInput.rawValue, currency === "KRW" ? "" : fxRaw, date, note, installment]);
+  const snapshot = JSON.stringify([
+    evidenceType,
+    paymentMethod,
+    currency,
+    amountInput.rawValue,
+    currency === "KRW" ? "" : fxRaw,
+    date,
+    note,
+    installment,
+    teamKind,
+    usageDate,
+    content,
+  ]);
   const [savedSnapshot, setSavedSnapshot] = useState(snapshot);
   const dirty = snapshot !== savedSnapshot;
 
@@ -148,7 +197,20 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
   // 계산에 드는 칸(증빙 종류 · 공급가액 · 통화 · 환율 · 지급 예정일 · 분할 지급)이 바뀌면 짧은 지연 뒤 미리보기를 부른다. 늦게 온 응답이
   // 새 응답을 덮지 않게 요청 순번으로 거른다. 첫 그림은 서버가 보낸 값이라 부르지 않는다.
   // 막힘 판정에 드는 지급 방식 · 증빙 파일 수도 본다(파일을 올리거나 떼면 서버가 다시 그린 files가 바뀐다).
-  const previewKey = JSON.stringify([evidenceType, paymentMethod, currency, amountInput.rawValue, currency === "KRW" ? "" : fxRaw, date, installment, files.length]);
+  const previewKey = JSON.stringify([
+    evidenceType,
+    paymentMethod,
+    currency,
+    amountInput.rawValue,
+    currency === "KRW" ? "" : fxRaw,
+    date,
+    installment,
+    files.length,
+    teamKind,
+    usageDate,
+    content,
+    pickedVendor?.id ?? "",
+  ]);
   const firstPreviewKey = useRef(previewKey);
   useEffect(() => {
     if (previewKey === firstPreviewKey.current) return;
@@ -160,10 +222,35 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
         setPreviewing(false);
         return;
       }
+      if (newDoc) {
+        // 문서가 없어 계산 · 막힘은 미리보지 않는다 — 사용일이 바뀌면 그날 소속 팀만 다시 받는다.
+        void (async () => {
+          const usage = usageDateRef.current;
+          if (!usage || usage.validity.badInput || usageDate === "") {
+            if (seq === previewSeq.current) setPreviewing(false);
+            return;
+          }
+          let outcome: Awaited<ReturnType<typeof previewNewExpenseAction>> | undefined;
+          try {
+            outcome = await previewNewExpenseAction({ usageDate });
+          } catch {
+            outcome = undefined;
+          }
+          if (seq !== previewSeq.current) return;
+          setPreviewing(false);
+          if (!outcome?.data) return;
+          setTeamName(outcome.data.teamName);
+          setUsageDateError(outcome.data.usageDateError);
+        })();
+        return;
+      }
       void (async () => {
         let result: Awaited<ReturnType<typeof previewExpenseAction>> | undefined;
         try {
-          result = await previewExpenseAction({ expenseId: data.id, fields: previewFields() });
+          result = await previewExpenseAction({
+            expenseId: data.id,
+            fields: previewFields(),
+          });
         } catch {
           result = undefined;
         }
@@ -178,6 +265,10 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
         setTaxLine(result.data.taxLine);
         setServerBlock(result.data.block);
         setPreviewFieldError(result.data.fieldErrors.supplyAmount ?? null);
+        if (team) {
+          setTeamName(result.data.teamName ?? null);
+          setUsageDateError(result.data.fieldErrors.usageDate ?? null);
+        }
       })();
     }, 250);
     return () => window.clearTimeout(timer);
@@ -198,8 +289,12 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
     return Boolean(element);
   }
 
-  // 첫 포커스 = 막힘 대상(없으면 1차).
+  // 첫 포커스 = 막힘 대상(없으면 1차). 문서가 아직 없는 `/expenses/new`는 맨 위 3차 `견적 줄 고르기`(수주 비용의 기본 경로 — R6-06).
   useEffect(() => {
+    if (newDoc) {
+      document.getElementById("line-pick")?.focus();
+      return;
+    }
     if (!focusBlockTarget()) document.getElementById("expense-submit")?.focus();
     // 첫 그림에서 한 번만.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -223,6 +318,7 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
       supply = { currency, amount, fxRate };
     }
     if (dateRef.current?.validity.badInput) next.scheduledPaymentDate = DATE_EMPTY_ERROR;
+    if (team && (usageDate === "" || usageDateRef.current?.validity.badInput)) next.usageDate = DATE_EMPTY_ERROR;
     setErrors(next);
     if (Object.keys(next).length > 0) {
       setFailure(failureLine(next));
@@ -235,6 +331,18 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
       scheduledPaymentDate: date || null,
       note: note || null,
       installment: data.installmentMode === "none" ? false : installment,
+      ...teamFields(),
+      ...(newDoc && pickedVendor ? { vendorId: pickedVendor.id } : {}),
+    };
+  }
+
+  // 팀 비용 칸 넷 중 보낼 셋(팀은 서버가 사용일 소속으로 정한다) — 견적 줄 문서는 보내지 않는다.
+  function teamFields(): Record<string, unknown> {
+    if (!team) return {};
+    return {
+      teamExpenseKind: teamKind || null,
+      usageDate,
+      content: content.trim() === "" ? null : content.trim(),
     };
   }
 
@@ -249,11 +357,18 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
       supply: supplyValid ? { currency, amount, fxRate } : null,
       scheduledPaymentDate: dateRef.current?.validity.badInput ? null : date || null,
       installment: data.installmentMode === "none" ? false : installment,
+      ...(team && usageDate !== "" && !usageDateRef.current?.validity.badInput ? teamFields() : {}),
     };
   }
 
   function failureLine(fieldErrors: typeof errors): string {
-    const names = { supplyAmount: "공급가액", fxRate: "환율", scheduledPaymentDate: "지급 예정일", note: "비고" } as const;
+    const names = {
+      supplyAmount: "공급가액",
+      fxRate: "환율",
+      scheduledPaymentDate: "지급 예정일",
+      note: "비고",
+      usageDate: "사용일",
+    } as const;
     const keys = (Object.keys(fieldErrors) as (keyof typeof names)[]).filter((key) => fieldErrors[key]);
     return `제출 실패 · ${keys.map((key) => names[key]).join(", ")} ${keys.length}칸`;
   }
@@ -262,9 +377,14 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
   async function persist(purpose: "submit" | "save"): Promise<number | null> {
     const fields = collect();
     if (!fields) return null;
+    if (newDoc) return createDraft(fields, purpose);
     let result: Awaited<ReturnType<typeof saveExpenseDraftAction>>;
     try {
-      result = await saveExpenseDraftAction({ expenseId: data.id, expectedVersion: version, fields });
+      result = await saveExpenseDraftAction({
+        expenseId: data.id,
+        expectedVersion: version,
+        fields,
+      });
     } catch {
       setNetworkFailed(purpose);
       return null;
@@ -278,11 +398,38 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
     const noteError = result?.validationErrors?.fields?.note?._errors?.[0];
     const dateError = result?.validationErrors?.fields?.scheduledPaymentDate?._errors?.[0];
     if (noteError || dateError) {
-      const next = { ...(noteError ? { note: noteError } : {}), ...(dateError ? { scheduledPaymentDate: dateError } : {}) };
+      const next = {
+        ...(noteError ? { note: noteError } : {}),
+        ...(dateError ? { scheduledPaymentDate: dateError } : {}),
+      };
       setErrors(next);
       setFailure(purpose === "submit" ? failureLine(next) : "임시 저장 실패 · 다시 시도");
     } else {
       setFailure(result?.serverError ?? (purpose === "submit" ? "제출 실패 · 다시 제출" : "임시 저장 실패 · 다시 시도"));
+    }
+    return null;
+  }
+
+  // 첫 저장 — 폼이 열릴 때 만든 key로 문서를 만들고 주소를 `/expenses/{id}`로 바꾼다(뒤로 가기에 `/expenses/new`를 남기지 않는다).
+  async function createDraft(fields: Record<string, unknown>, purpose: "submit" | "save"): Promise<number | null> {
+    let result: Awaited<ReturnType<typeof createTeamExpenseDraftAction>>;
+    try {
+      result = await createTeamExpenseDraftAction({ idempotencyKey, fields });
+    } catch {
+      setNetworkFailed(purpose);
+      return null;
+    }
+    if (result?.data) {
+      setSavedSnapshot(snapshot);
+      router.replace(`/expenses/${result.data.expenseId}`);
+      return result.data.version;
+    }
+    const message = result?.serverError;
+    if (message?.startsWith("사용일에")) {
+      setErrors({ usageDate: message });
+      setFailure(failureLine({ usageDate: message }));
+    } else {
+      setFailure(message ?? (purpose === "submit" ? "제출 실패 · 다시 제출" : "임시 저장 실패 · 다시 시도"));
     }
     return null;
   }
@@ -300,8 +447,8 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
     setFailure(null);
     setNetworkFailed(null);
     const saved = await persist("save");
-    if (saved !== null) router.refresh();
-    release();
+    if (saved !== null && !newDoc) router.refresh();
+    if (saved === null || !newDoc) release();
   }
 
   async function submit() {
@@ -323,7 +470,10 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
     }
     let result: Awaited<ReturnType<typeof submitExpenseAction>>;
     try {
-      result = await submitExpenseAction({ expenseId: data.id, expectedVersion });
+      result = await submitExpenseAction({
+        expenseId: data.id,
+        expectedVersion,
+      });
     } catch {
       setNetworkFailed("submit");
       release();
@@ -347,6 +497,44 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
     release();
   }
 
+  // 파일 고르기 — 새 문서는 올릴 문서가 없어 첫 저장이 먼저다(저장 뒤 `/expenses/{id}`에서 같은 자리의 파일 고르기).
+  function openPicker() {
+    if (newDoc) void save();
+    else setPickSignal((current) => current + 1);
+  }
+
+  // 거래처 고르기 · 바꾸기 — 새 문서는 첫 저장에 실을 값이고, 저장된 문서는 서버가 거래처와 증빙 종류(그 거래처 기본값)를 바로 바꾼다.
+  async function pickVendor(vendor: PickedVendor): Promise<boolean | void> {
+    if (newDoc) {
+      setPickedVendor(vendor);
+      if (vendor.defaultEvidenceType) setEvidenceType(vendor.defaultEvidenceType);
+      return;
+    }
+    let result: Awaited<ReturnType<typeof changeExpenseVendorAction>>;
+    try {
+      result = await changeExpenseVendorAction({
+        expenseId: data.id,
+        vendorId: vendor.id,
+        expectedVersion: version,
+      });
+    } catch {
+      setFailure("거래처 바꾸기 실패 · 다시 시도");
+      return;
+    }
+    if (!result?.data) {
+      setFailure(result?.serverError ?? "거래처 바꾸기 실패 · 다시 시도");
+      return;
+    }
+    setVersion(result.data.version);
+    setPickedVendor(vendor);
+    if (result.data.evidenceType) {
+      // 서버가 증빙 종류까지 저장했다 — 다른 칸이 깨끗했으면 기준선도 그 값으로 맞춰 떠날 때 경고가 뜨지 않게 한다(첫 칸이 증빙 종류).
+      if (!dirty) setSavedSnapshot(JSON.stringify([result.data.evidenceType, ...(JSON.parse(snapshot) as unknown[]).slice(1)]));
+      setEvidenceType(result.data.evidenceType);
+    }
+    setFailure(null);
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     void submit();
@@ -360,7 +548,7 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
     }
     if (isCtrlCombo(event, "u")) {
       event.preventDefault();
-      setPickSignal((current) => current + 1);
+      openPicker();
       return;
     }
     // `Enter` 기본 제출은 막는다 — 제출은 `Ctrl+Enter`와 1차 누름뿐(§7-15).
@@ -403,166 +591,234 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
     </span>
   );
 
+  const vendorName = pickedVendor ? pickedVendor.name : data.vendorName;
+  const vendorEvidenceName = pickedVendor ? pickedVendor.defaultEvidenceName : data.defaultEvidenceName;
+  const usageDateShownError = errors.usageDate ?? usageDateError ?? undefined;
+
   return (
-    <Form id="expense-form" layout="page" onSubmit={handleSubmit} onKeyDown={handleKeyDown}>
-      {data.lineText ? (
-        <Form.Field id="line" label="견적 줄" width="long">
-          {executionNode ?? <span className={styles.fill}>{data.lineText}</span>}
-        </Form.Field>
-      ) : null}
-
-      <Form.Field id="vendor" label="거래처" width="long">
-        <span className={styles.fill}>
-          <span>{data.vendorName ?? "—"}</span>
-          {data.defaultEvidenceName ? <span className={styles.sub}>{`기본 증빙 ${data.defaultEvidenceName}`}</span> : null}
-        </span>
-      </Form.Field>
-
-      <Form.Field id="evidenceType" label="증빙 종류" width="select">
-        <Select id="evidenceType" options={evidenceOptions} value={evidenceType} onChange={(event) => setEvidenceType(event.target.value)} />
-      </Form.Field>
-
-      <Form.Field id="currency" label="통화" width="select">
-        <Select
-          id="currency"
-          options={currencies.map((item) => ({ value: item.value, label: item.value }))}
-          value={currency}
-          onChange={(event) => {
-            const next = event.target.value;
-            setCurrency(next);
-            setFxRaw(String(currencies.find((item) => item.value === next)?.fxRate ?? 1));
-          }}
-        />
-      </Form.Field>
-
-      <Form.Field id="supplyAmount" label="공급가액" width="short">
-        <input
-          id="supplyAmount"
-          ref={amountInput.inputRef}
-          type="text"
-          inputMode={currency === "KRW" ? "numeric" : "decimal"}
-          autoComplete="off"
-          className={`${styles.textInput} ${styles.numeric}`}
-          value={amountInput.value}
-          onChange={amountInput.onChange}
-          aria-invalid={amountError ? true : undefined}
-          aria-describedby={amountError ? "supplyAmount-error" : undefined}
-        />
-        {amountError ? <Form.Error id="supplyAmount-error">{amountError}</Form.Error> : null}
-        {currency === "KRW" ? taxHint : null}
-      </Form.Field>
-
-      {currency === "KRW" ? null : (
-        <FxField
-          key={currency}
-          initial={Number(fxRaw) || 1}
-          error={errors.fxRate}
-          onRaw={setFxRaw}
-          below={taxHint}
-        />
-      )}
-
-      {data.installmentMode === "checkbox" ? (
-        <Form.Field id="installment" label="분할 지급" width="long">
-          <input id="installment" type="checkbox" className={styles.installmentCheck} checked={installment} onChange={(event) => setInstallment(event.target.checked)} />
-          {installment && data.installmentText ? <Form.Hint>{data.installmentText}</Form.Hint> : null}
-        </Form.Field>
-      ) : null}
-      {data.installmentMode === "fixed" ? (
-        <Form.Field id="installment" label="분할 지급" width="long">
-          <span className={styles.fill}>{data.installmentText}</span>
-        </Form.Field>
-      ) : null}
-
-      <Form.Field id="scheduledPaymentDate" label="지급 예정일" width="short">
-        <input
-          id="scheduledPaymentDate"
-          ref={dateRef}
-          type="date"
-          value={date}
-          onChange={(event) => setDate(event.target.value)}
-          className={styles.textInput}
-          aria-invalid={errors.scheduledPaymentDate ? true : undefined}
-          aria-describedby={errors.scheduledPaymentDate ? "scheduledPaymentDate-error" : undefined}
-        />
-        {errors.scheduledPaymentDate ? <Form.Error id="scheduledPaymentDate-error">{errors.scheduledPaymentDate}</Form.Error> : null}
-      </Form.Field>
-
-      <Form.Field id="paymentMethod" label="지급 방식" width="select">
-        <Select id="paymentMethod" options={paymentOptions} value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)} />
-      </Form.Field>
-
-      <Form.Field id="note" label="비고" width="long">
-        <input
-          id="note"
-          type="text"
-          maxLength={480}
-          autoComplete="off"
-          value={note}
-          onChange={(event) => setNote(event.target.value)}
-          className={styles.textInput}
-          aria-invalid={errors.note ? true : undefined}
-          aria-describedby={errors.note ? "note-error" : undefined}
-        />
-        {errors.note ? <Form.Error id="note-error">{errors.note}</Form.Error> : null}
-      </Form.Field>
-
-      <Form.Field id="evidence-picker" label="증빙" width="long">
-        <div id="evidence">
-          <EvidenceAttachments
-            expenseId={data.id}
-            files={files}
-            mode="edit"
-            maxMb={maxMb}
-            onUploadingChange={setUploading}
-            onAdded={markEvidenceAdded}
-            openSignal={pickSignal}
-            pickerId="evidence-picker"
-          />
-        </div>
-      </Form.Field>
-
-      <KvList items={[{ label: "결재선", value: route }]} />
-
-      <div className={styles.formBar} data-testid="expense-form-actions">
-        <Form.Actions>
-          {phone ? null : submitButton}
-          {block && !submitting ? <BlockLine block={block} href={blockHref} onPick={() => setPickSignal((current) => current + 1)} /> : null}
-          {networkFailed === "submit" ? (
-            <span className={styles.blockedLine}>
-              <span className={styles.blockedReason}>제출 실패 · 네트워크 · </span>
-              <Button variant="tertiary" onClick={() => void submit()}>
-                다시 제출
+    <>
+      <Form id="expense-form" layout="page" onSubmit={handleSubmit} onKeyDown={handleKeyDown}>
+        {team ? (
+          <Form.Field id="line" label="견적 줄" width="long">
+            <span className={styles.valueRow}>
+              <span className={styles.fill}>—</span>
+              <Button id="line-pick" variant="tertiary">
+                견적 줄 고르기
               </Button>
             </span>
-          ) : null}
-          {failure && networkFailed === null ? <span className={styles.blockedReason}>{failure}</span> : null}
-          {submitted ? <span className={styles.successLine}>{submitted}</span> : null}
-          {networkFailed === "save" ? <span className={styles.blockedReason}>임시 저장 실패 · 다시 시도</span> : null}
-          {savedAt && !submitting ? <span className={styles.successLine}>{`임시 저장됨 ${savedAt}`}</span> : null}
-          <span className={styles.saveWrap}>
-            {/* 제출 중 비활성 이유 = 제출 중인 1차(UX-06). */}
-            <Button
-              variant="secondary"
-              pending={saving}
-              disabled={submitting}
-              aria-describedby={submitting ? "expense-submit" : undefined}
-              onClick={() => void save()}
-            >
-              임시 저장
-            </Button>
+          </Form.Field>
+        ) : data.lineText ? (
+          <Form.Field id="line" label="견적 줄" width="long">
+            {executionNode ?? <span className={styles.fill}>{data.lineText}</span>}
+          </Form.Field>
+        ) : null}
+
+        {team ? (
+          <>
+            <Form.Field id="teamExpenseKind" label="종류" width="select">
+              <Select id="teamExpenseKind" options={teamKindOptions} value={teamKind} onChange={(event) => setTeamKind(event.target.value)} />
+            </Form.Field>
+
+            <Form.Field id="team" label="팀" width="long">
+              <span className={styles.fill} data-testid="expense-team">
+                {teamName ?? "—"}
+              </span>
+            </Form.Field>
+
+            <Form.Field id="usageDate" label="사용일" width="short">
+              <input
+                id="usageDate"
+                ref={usageDateRef}
+                type="date"
+                value={usageDate}
+                onChange={(event) => setUsageDate(event.target.value)}
+                className={styles.textInput}
+                aria-invalid={usageDateShownError ? true : undefined}
+                aria-describedby={usageDateShownError ? "usageDate-error" : undefined}
+              />
+              {usageDateShownError ? <Form.Error id="usageDate-error">{usageDateShownError}</Form.Error> : null}
+            </Form.Field>
+
+            <Form.Field id="content" label="내용" width="long">
+              <input
+                id="content"
+                type="text"
+                maxLength={480}
+                autoComplete="off"
+                value={content}
+                onChange={(event) => setContent(event.target.value)}
+                className={styles.textInput}
+              />
+            </Form.Field>
+          </>
+        ) : null}
+
+        <Form.Field id="vendor" label="거래처" width="long">
+          <span className={styles.valueRow}>
+            <span className={styles.fill}>
+              <span data-testid="expense-vendor">{vendorName ?? "—"}</span>
+              {vendorEvidenceName ? <span className={styles.sub}>{`기본 증빙 ${vendorEvidenceName}`}</span> : null}
+            </span>
+            {team ? (
+              <Button id="vendor-pick" variant="tertiary" onClick={() => setPickOpen("vendor")}>
+                {vendorName ? "바꾸기" : "거래처 고르기"}
+              </Button>
+            ) : null}
           </span>
-          {phone ? submitButton : null}
-        </Form.Actions>
-      </div>
-      <div className={styles.formBarSpacer} aria-hidden="true" />
-    </Form>
+        </Form.Field>
+
+        <Form.Field id="evidenceType" label="증빙 종류" width="select">
+          <Select id="evidenceType" options={evidenceOptions} value={evidenceType} onChange={(event) => setEvidenceType(event.target.value)} />
+        </Form.Field>
+
+        <Form.Field id="currency" label="통화" width="select">
+          <Select
+            id="currency"
+            options={currencies.map((item) => ({
+              value: item.value,
+              label: item.value,
+            }))}
+            value={currency}
+            onChange={(event) => {
+              const next = event.target.value;
+              setCurrency(next);
+              setFxRaw(String(currencies.find((item) => item.value === next)?.fxRate ?? 1));
+            }}
+          />
+        </Form.Field>
+
+        <Form.Field id="supplyAmount" label="공급가액" width="short">
+          <input
+            id="supplyAmount"
+            ref={amountInput.inputRef}
+            type="text"
+            inputMode={currency === "KRW" ? "numeric" : "decimal"}
+            autoComplete="off"
+            className={`${styles.textInput} ${styles.numeric}`}
+            value={amountInput.value}
+            onChange={amountInput.onChange}
+            aria-invalid={amountError ? true : undefined}
+            aria-describedby={amountError ? "supplyAmount-error" : undefined}
+          />
+          {amountError ? <Form.Error id="supplyAmount-error">{amountError}</Form.Error> : null}
+          {currency === "KRW" ? taxHint : null}
+        </Form.Field>
+
+        {currency === "KRW" ? null : <FxField key={currency} initial={Number(fxRaw) || 1} error={errors.fxRate} onRaw={setFxRaw} below={taxHint} />}
+
+        {data.installmentMode === "checkbox" ? (
+          <Form.Field id="installment" label="분할 지급" width="long">
+            <input id="installment" type="checkbox" className={styles.installmentCheck} checked={installment} onChange={(event) => setInstallment(event.target.checked)} />
+            {installment && data.installmentText ? <Form.Hint>{data.installmentText}</Form.Hint> : null}
+          </Form.Field>
+        ) : null}
+        {data.installmentMode === "fixed" ? (
+          <Form.Field id="installment" label="분할 지급" width="long">
+            <span className={styles.fill}>{data.installmentText}</span>
+          </Form.Field>
+        ) : null}
+
+        <Form.Field id="scheduledPaymentDate" label="지급 예정일" width="short">
+          <input
+            id="scheduledPaymentDate"
+            ref={dateRef}
+            type="date"
+            value={date}
+            onChange={(event) => setDate(event.target.value)}
+            className={styles.textInput}
+            aria-invalid={errors.scheduledPaymentDate ? true : undefined}
+            aria-describedby={errors.scheduledPaymentDate ? "scheduledPaymentDate-error" : undefined}
+          />
+          {errors.scheduledPaymentDate ? <Form.Error id="scheduledPaymentDate-error">{errors.scheduledPaymentDate}</Form.Error> : null}
+        </Form.Field>
+
+        <Form.Field id="paymentMethod" label="지급 방식" width="select">
+          <Select id="paymentMethod" options={paymentOptions} value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)} />
+        </Form.Field>
+
+        <Form.Field id="note" label="비고" width="long">
+          <input
+            id="note"
+            type="text"
+            maxLength={480}
+            autoComplete="off"
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            className={styles.textInput}
+            aria-invalid={errors.note ? true : undefined}
+            aria-describedby={errors.note ? "note-error" : undefined}
+          />
+          {errors.note ? <Form.Error id="note-error">{errors.note}</Form.Error> : null}
+        </Form.Field>
+
+        <Form.Field id="evidence-picker" label="증빙" width="long">
+          <div id="evidence">
+            {newDoc ? (
+              <Button id="evidence-picker" variant="secondary" shortcut="Ctrl+U" pending={saving} onClick={openPicker}>
+                증빙 올리기
+              </Button>
+            ) : (
+              <EvidenceAttachments
+                expenseId={data.id}
+                files={files}
+                mode="edit"
+                maxMb={maxMb}
+                onUploadingChange={setUploading}
+                onAdded={markEvidenceAdded}
+                openSignal={pickSignal}
+                pickerId="evidence-picker"
+              />
+            )}
+          </div>
+        </Form.Field>
+
+        <KvList items={[{ label: "결재선", value: route }]} />
+
+        <div className={styles.formBar} data-testid="expense-form-actions">
+          <Form.Actions>
+            {phone ? null : submitButton}
+            {block && !submitting ? <BlockLine block={block} href={blockHref} onPick={openPicker} onVendor={() => setPickOpen("vendor")} /> : null}
+            {networkFailed === "submit" ? (
+              <span className={styles.blockedLine}>
+                <span className={styles.blockedReason}>제출 실패 · 네트워크 · </span>
+                <Button variant="tertiary" onClick={() => void submit()}>
+                  다시 제출
+                </Button>
+              </span>
+            ) : null}
+            {failure && networkFailed === null ? <span className={styles.blockedReason}>{failure}</span> : null}
+            {submitted ? <span className={styles.successLine}>{submitted}</span> : null}
+            {networkFailed === "save" ? <span className={styles.blockedReason}>임시 저장 실패 · 다시 시도</span> : null}
+            {savedAt && !submitting ? <span className={styles.successLine}>{`임시 저장됨 ${savedAt}`}</span> : null}
+            <span className={styles.saveWrap}>
+              {/* 제출 중 비활성 이유 = 제출 중인 1차(UX-06). */}
+              <Button variant="secondary" pending={saving} disabled={submitting} aria-describedby={submitting ? "expense-submit" : undefined} onClick={() => void save()}>
+                임시 저장
+              </Button>
+            </span>
+            {phone ? submitButton : null}
+          </Form.Actions>
+        </div>
+        <div className={styles.formBarSpacer} aria-hidden="true" />
+      </Form>
+      <VendorPickDialog open={pickOpen === "vendor"} mode={vendorName ? "change" : "pick"} onClose={() => setPickOpen(null)} onPick={pickVendor} />
+    </>
   );
 }
 
 // 1차 옆 막힘 한 줄 — 이유의 마지막 ` · ` 뒤(다음 행동)가 할 수 있는 일이면 그 자리를 3차로 바꾼다(§7-1 이유 + 다음 한 수 한 덩어리 —
 // 폰에서는 05-05 제출 줄의 이유 자리(버튼 아래 한 줄) 그대로). 칸 대상 = 그 칸으로 포커스, 첨부 = 파일 고르기(Ctrl+U), 이동 = 3차 모양 링크.
-function BlockLine({ block, href, onPick }: { block: { reason: string; tone: "block" | "info"; target: string | null }; href: string | null; onPick: () => void }) {
+function BlockLine({
+  block,
+  href,
+  onPick,
+  onVendor,
+}: {
+  block: { reason: string; tone: "block" | "info"; target: string | null };
+  href: string | null;
+  onPick: () => void;
+  onVendor: () => void;
+}) {
   const tone = block.tone === "info" ? styles.infoReason : styles.blockedReason;
   const cut = block.reason.lastIndexOf(" · ");
   const fieldId = block.tone === "block" && block.target ? TARGET_FIELD[block.target] : undefined;
@@ -589,7 +845,11 @@ function BlockLine({ block, href, onPick }: { block: { reason: string; tone: "bl
           id={NEXT_STEP_ID}
           variant="tertiary"
           shortcut={shortcut?.[2]}
-          onClick={() => (block.target === "evidence" ? onPick() : document.getElementById(fieldId ?? "")?.focus())}
+          onClick={() => {
+            if (block.target === "evidence") onPick();
+            else if (block.target === "vendor") onVendor();
+            else document.getElementById(fieldId ?? "")?.focus();
+          }}
         >
           {label}
         </Button>

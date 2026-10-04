@@ -53,9 +53,11 @@ import type { DbOrTx } from "@/repositories/document-counters";
 import {
   EXPENSE_DETAIL_DTO_SPEC,
   EXPENSE_DOCUMENT_DTO_SPEC,
+  EXPENSE_NEW_DEFAULTS_DTO_SPEC,
   EXPENSE_PREVIEW_DTO_SPEC,
   type ExpenseDetailDto,
   type ExpenseDocumentDto,
+  type ExpenseNewDefaultsDto,
   type ExpensePreviewDto,
 } from "@/domain/expenses/dto";
 import { listCodeItems } from "@/repositories/code-tables";
@@ -86,7 +88,7 @@ import {
   type NumberedLineExpense,
 } from "@/repositories/expenses";
 
-export type { ExpenseDocumentDto, ExpenseDraftDto, ExpensePreviewDto } from "@/domain/expenses/dto";
+export type { ExpenseDocumentDto, ExpenseDraftDto, ExpenseNewDefaultsDto, ExpensePreviewDto } from "@/domain/expenses/dto";
 
 // 05-03(EXP-01 · EXP-14): 지출결의 — 결재 모듈에 문서 종류로 등록되고 제출은 같은 결재 엔진(domain/approvals)을 지난다.
 // 결재 모듈은 이 파일을 import하지 않는다(app/(app)/document-kinds.ts가 적재를 일으킨다).
@@ -893,6 +895,15 @@ export async function listExpenseFormOptions(viewer: Viewer): Promise<{ evidence
 // 05-05 폼 통화 선택지 — 통화마다 설정의 최근 환율(Phase 4 D-71)이 기본 환율이다.
 export async function listExpenseCurrencies(): Promise<{ value: string; fxRate: number }[]> {
   return Promise.all(CURRENCIES.map(async (currency) => ({ value: currency, fxRate: await recentFxRate(currency) })));
+}
+
+// 05-07 `/expenses/new` 첫 그림 — 사용일 기본(서울 오늘)과 그날 내 소속 팀 이름. 사용일을 주면 그 날짜로 다시 본다(문서가 없어 미리보기를 못 부르는
+// 새 문서 화면의 팀 텍스트 갱신 — 소속 없으면 사용일 칸 오류). 쓰기 권한이 없으면 null(→ 404).
+export async function getNewExpenseDefaults(viewer: Viewer, deps?: { now?: Date; usageDate?: string }): Promise<Partial<ExpenseNewDefaultsDto> | null> {
+  if (!(await can(viewer, "expenses", "write"))) return null;
+  const usageDate = deps?.usageDate ?? seoulToday(deps?.now);
+  const team = await teamAtDate(viewer, viewer.id, usageDate);
+  return project(viewer, { usageDate, teamName: team?.name ?? null, usageDateError: team ? null : NO_TEAM_AT_USAGE_DATE }, EXPENSE_NEW_DEFAULTS_DTO_SPEC);
 }
 
 // 문서 하나 — 보이는 사람(canSeeExpense)이 아니면 null(→ 404).

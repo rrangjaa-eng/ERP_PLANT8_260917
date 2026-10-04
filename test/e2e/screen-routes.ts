@@ -41,6 +41,7 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
   { id: "projects", path: "/projects", as: "sysadmin" },
   { id: "project-detail", path: "/projects/{projectId}", as: "sysadmin" },
   { id: "expenses", path: "/expenses", as: "sysadmin" },
+  { id: "expense-new", path: "/expenses/new", as: "sysadmin", mergeFile: "app/(app)/expenses/new/page.tsx" },
   { id: "cards", path: "/cards", as: "sysadmin" },
   { id: "pnl", path: "/pnl", as: "sysadmin" },
   { id: "settings", path: "/settings", as: "sysadmin" },

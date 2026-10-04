@@ -5,7 +5,18 @@ import { z } from "zod";
 import { authedActionClient } from "@/lib/actions/client";
 import "@/app/(app)/document-kinds";
 import { currentHolderNames, projectActionResult } from "@/domain/approvals";
-import { EXPENSE_DOCUMENT_KIND, createExpenseFromLines, previewExpense, saveExpenseDraft, submitExpense } from "@/domain/expenses";
+import {
+  EXPENSE_DOCUMENT_KIND,
+  TEAM_EXPENSE_KINDS,
+  changeExpenseVendor,
+  createExpenseFromLines,
+  createTeamExpenseDraft,
+  getNewExpenseDefaults,
+  previewExpense,
+  saveExpenseDraft,
+  submitExpense,
+} from "@/domain/expenses";
+import { searchVendorsForPick } from "@/domain/expenses/pick";
 import {
   completeEvidenceUpload,
   createEvidenceViewUrl,
@@ -40,6 +51,10 @@ const draftFieldsInput = z
     scheduledPaymentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "날짜 형식 오류 · 2026-09-19처럼").nullable(),
     note: z.string().max(480, "비고 480자 넘음 · 줄여 적기").nullable(),
     installment: z.boolean(),
+    // 05-07 팀 비용 칸 — 팀 id는 칸이 없다(귀속 팀은 서버가 사용일 소속으로만 정한다).
+    teamExpenseKind: z.enum(TEAM_EXPENSE_KINDS).nullable(),
+    usageDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "날짜 형식 오류 · 2026-09-19처럼"),
+    content: z.string().max(480, "내용 480자 넘음 · 줄여 적기").nullable(),
   })
   .strict()
   .partial();
@@ -52,12 +67,43 @@ export const saveExpenseDraftAction = authedActionClient
     return { version: saved.version, savedAt: formatKstTime(new Date()) };
   });
 
+// 05-07 `/expenses/new`의 첫 저장 — 폼이 열릴 때 만든 idempotency key로 두 번 눌러도 문서 하나. 칸 값은 임시 저장과 같다.
+export const createTeamExpenseDraftAction = authedActionClient
+  .schema(z.object({ idempotencyKey: z.string().uuid(), fields: draftFieldsInput }))
+  .action(async ({ parsedInput, ctx }) => {
+    const created = await createTeamExpenseDraft(ctx.viewer, parsedInput);
+    revalidatePath("/expenses");
+    return { expenseId: created.expenseId, version: created.version };
+  });
+
+// 05-07 거래처 바꾸기 — 증빙 종류는 그 거래처 기본값으로(없으면 그대로). 새 version · 증빙 종류 코드만 돌려준다.
+export const changeExpenseVendorAction = authedActionClient
+  .schema(z.object({ expenseId: expenseIdSchema, vendorId: z.string().uuid(), expectedVersion: z.number().int().min(1) }))
+  .action(async ({ parsedInput, ctx }) => {
+    const changed = await changeExpenseVendor(ctx.viewer, parsedInput);
+    revalidatePath(`/expenses/${parsedInput.expenseId}`);
+    return { version: changed.version, evidenceType: changed.evidenceType };
+  });
+
+// 05-07 골라내기 거래처 검색 — 서버 조회(행은 PickVendorOptionDto 투영).
+export const searchVendorsForPickAction = authedActionClient
+  .schema(z.object({ query: z.string().max(100) }))
+  .action(async ({ parsedInput, ctx }) => searchVendorsForPick(ctx.viewer, parsedInput));
+
+// 05-07 새 문서(아직 문서 없음)의 사용일 → 그날 내 소속 팀 이름 · 사용일 칸 오류. 미리보기와 같은 문구를 같은 판정으로 준다.
+export const previewNewExpenseAction = authedActionClient
+  .schema(z.object({ usageDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }))
+  .action(async ({ parsedInput, ctx }) => {
+    const defaults = await getNewExpenseDefaults(ctx.viewer, { usageDate: parsedInput.usageDate });
+    return { teamName: defaults?.teamName ?? null, usageDateError: defaults?.usageDateError ?? null };
+  });
+
 // 05-06 미리보기 — 저장 전 칸 값으로 계산 한 줄 · 제출 막힘 첫 이유 · 칸 오류를 받는다(쓰기 없음). 입력은 임시 저장과 같은 칸 값이다.
 export const previewExpenseAction = authedActionClient
   .schema(z.object({ expenseId: expenseIdSchema, fields: draftFieldsInput }))
   .action(async ({ parsedInput, ctx }) => {
     const preview = await previewExpense(ctx.viewer, parsedInput);
-    return { taxLine: preview.taxLine ?? null, block: preview.block ?? null, fieldErrors: preview.fieldErrors ?? {} };
+    return { taxLine: preview.taxLine ?? null, block: preview.block ?? null, fieldErrors: preview.fieldErrors ?? {}, teamName: preview.teamName ?? null };
   });
 
 // 제출 — 같은 문서 두 번 제출(폰 두 번 탭 · 응답 유실 뒤 재시도)은 오류가 아니라 결과(`already_submitted`)다. 화면이 문서 화면으로

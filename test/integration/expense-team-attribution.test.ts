@@ -6,15 +6,18 @@ import { expenses } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { CEO_ROLE_ID, DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { assignTeam } from "@/domain/org";
+import { createAccount } from "@/domain/auth/accounts";
 import {
   createTeamExpenseDraft,
   ExpenseFieldError,
   getExpense,
+  getNewExpenseDefaults,
   listExpenseFormOptions,
   previewExpense,
   saveExpenseDraft,
 } from "@/domain/expenses";
 import { insertVendor } from "@/repositories/vendors";
+import { insertRole } from "@/repositories/roles";
 import { makePerson, teamIdByName } from "./approvals-fixtures";
 import { attachEvidence, submitReadyDraft } from "./fixtures/expenses";
 
@@ -114,6 +117,19 @@ describe("팀 비용 첫 저장 · 귀속", () => {
       usageDate: "2026-09-26",
       content: "시안 제작",
     });
+  });
+});
+
+describe("새 팀 비용 첫 그림 getNewExpenseDefaults", () => {
+  it("사용일은 서울 오늘이고 팀은 그날 내 소속이며, 쓰기 권한이 없으면 null", async () => {
+    const { pm } = await setup();
+    expect(await getNewExpenseDefaults(pm, { now: SEPT })).toEqual({ usageDate: "2026-09-26", teamName: "기획1팀", usageDateError: null });
+    expect(await getNewExpenseDefaults(pm, { usageDate: "2026-09-10" })).toEqual({ usageDate: "2026-09-10", teamName: "기획1팀", usageDateError: null });
+    expect(await getNewExpenseDefaults(pm, { usageDate: "2025-12-31" })).toEqual({ usageDate: "2025-12-31", teamName: null, usageDateError: NO_TEAM_ERROR });
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `쓰기 없는 계급-${randomUUID()}`, workScope: "company" });
+    const { userId } = await createAccount(SYSTEM_VIEWER, { email: `nowrite-${randomUUID()}@example.test`, name: `쓰기 없는 사람-${randomUUID()}`, roleId: role.id });
+    const outsider: Viewer = { id: userId, roleId: role.id };
+    expect(await getNewExpenseDefaults(outsider, { now: SEPT })).toBeNull();
   });
 });
 

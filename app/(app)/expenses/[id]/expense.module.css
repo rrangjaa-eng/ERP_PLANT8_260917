@@ -52,6 +52,19 @@
   word-break: keep-all;
 }
 
+/* 값 + 3차(`바꾸기` · `고르기`) 한 줄 — 값 줄 오른쪽 끝에 3차, 부제는 값 아래 한 줄(폰도 같다). */
+.valueRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s-3);
+}
+
+.valueRow > .fill {
+  flex: 1;
+  min-width: 0;
+}
+
 .sub {
   color: var(--text-muted);
   font-size: var(--text-aux);

@@ -1,0 +1,325 @@
+/* UI-SPEC S14 · SYSTEM §6-3 — 골라내기 모달(PC) · 시트(폰). PC(≥700)는 폭 --dialog-w 모달, 폰(<700)은 §7-8 시트 골격
+   (머리 고정 + 닫기 x, 본문만 스크롤, 최대 높이 --sheet-max-h, 결과 줄은 버튼 윗줄 전체 폭, 행동 줄 --touch-min).
+   값은 역할 토큰만 쓴다. */
+
+.dialog {
+  width: 100%;
+  max-width: var(--dialog-w);
+  max-height: var(--sheet-max-h);
+  margin: auto;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-dialog);
+  background: var(--surface-base);
+  box-shadow: var(--shadow-float);
+  color: var(--text-strong);
+}
+
+.dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.dialog::backdrop {
+  background: var(--scrim-dialog);
+}
+
+.hd {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  padding: var(--s-4) var(--s-4) 0;
+}
+
+.titleBlock {
+  flex: 1;
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--text-subtitle);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-head);
+  word-break: keep-all;
+}
+
+.subtitle {
+  margin: var(--s-1) 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+  word-break: keep-all;
+}
+
+/* PC에는 닫기 x가 없다 — 2차 「취소 Esc」 · 가림막 · Esc로 닫는다. 폰 시트 머리에서만 보인다. */
+.close {
+  display: none;
+}
+
+.closeIcon {
+  width: var(--icon-lg);
+  height: var(--icon-lg);
+  stroke: currentColor;
+  stroke-width: var(--icon-stroke);
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.searchWrap {
+  padding: var(--s-3) var(--s-4) 0;
+}
+
+.search {
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--field-h, var(--control-h));
+  padding: 0 var(--s-2);
+  border: var(--line-w) solid var(--border-control);
+  border-radius: var(--radius-control);
+  background: var(--surface-base);
+  color: var(--text-strong);
+  font-size: var(--text-body);
+}
+
+.search::placeholder {
+  color: var(--text-faint);
+}
+
+.search:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+.notice {
+  margin: var(--s-2) var(--s-4) 0;
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+  word-break: keep-all;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--s-2) var(--s-4);
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s-1) var(--s-2);
+  padding: var(--s-3) 0 var(--s-1);
+  border-bottom: var(--line-w) solid var(--border-row);
+}
+
+.groupLabel {
+  color: var(--text-strong);
+  font-size: var(--text-aux);
+  font-weight: var(--fw-bold);
+  word-break: keep-all;
+}
+
+.groupNote {
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+  word-break: keep-all;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  column-gap: var(--s-2);
+  padding: var(--s-2) var(--s-2);
+  border-bottom: var(--line-w) solid var(--border-row);
+  cursor: pointer;
+}
+
+/* 번호가 있는 행(견적 줄)만 번호 칸이 선다 — 거래처 행은 제목이 왼쪽 끝에서 시작한다. */
+.numbered {
+  grid-template-columns: minmax(var(--row-number-w), auto) minmax(0, 1fr) auto;
+}
+
+.row:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: calc(var(--focus-w) * -1);
+}
+
+.row[aria-selected="true"] {
+  background: var(--surface-selected);
+}
+
+.current {
+  border-inline-start: var(--focus-w) solid var(--accent);
+  font-weight: var(--fw-bold);
+}
+
+.disabled {
+  cursor: not-allowed;
+  color: var(--text-muted);
+}
+
+.numbered .reason {
+  grid-column: 2 / -1;
+}
+
+.number {
+  color: var(--text-faint);
+  font-size: var(--text-tag);
+}
+
+.disabled .number {
+  color: var(--text-muted);
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.rowTitle {
+  color: inherit;
+  font-size: var(--text-body);
+  word-break: keep-all;
+}
+
+.rowSub {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.amount {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.reason {
+  grid-column: 1 / -1;
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+  word-break: keep-all;
+}
+
+.empty,
+.more {
+  margin: var(--s-3) 0;
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+  word-break: keep-all;
+}
+
+.foot {
+  padding: var(--s-3) var(--s-4) var(--s-4);
+  border-top: var(--line-w) solid var(--border-row);
+}
+
+.resultLine {
+  margin: 0 0 var(--s-3);
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+  word-break: keep-all;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--s-3);
+}
+
+.primaryWrap,
+.secondaryWrap {
+  display: contents;
+}
+
+@media (max-width: 699.98px) {
+  .dialog {
+    position: fixed;
+    inset-block-start: auto;
+    inset-block-end: 0;
+    inset-inline: 0;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+  }
+
+  .hd {
+    padding: var(--s-3) var(--pad-page) var(--s-2);
+    border-bottom: var(--line-w) solid var(--border-row);
+  }
+
+  .close {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: var(--touch-min);
+    height: var(--touch-min);
+    margin: calc(var(--s-2) * -1) calc(var(--s-3) * -1) 0 0;
+    border: 0;
+    background: none;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+
+  .searchWrap {
+    padding: var(--s-3) var(--pad-page) 0;
+  }
+
+  .search {
+    height: var(--touch-min);
+  }
+
+  .notice {
+    margin-inline: var(--pad-page);
+  }
+
+  .body {
+    padding: var(--s-2) var(--pad-page);
+  }
+
+  .row {
+    min-height: var(--touch-min);
+  }
+
+  .foot {
+    padding: var(--s-3) var(--pad-page) var(--s-4);
+  }
+
+  .primaryWrap,
+  .secondaryWrap {
+    display: block;
+  }
+
+  .primaryWrap > span,
+  .secondaryWrap > span {
+    display: flex;
+  }
+
+  .primaryWrap > span > button,
+  .secondaryWrap > span > button {
+    width: 100%;
+    height: var(--touch-min);
+  }
+
+  .primaryWrap {
+    flex: 2;
+  }
+
+  .secondaryWrap {
+    flex: 1;
+  }
+}

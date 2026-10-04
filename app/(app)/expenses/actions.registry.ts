@@ -1,6 +1,8 @@
 // 05-05: 지출결의 액션 등록 — actions.ts("use server", server-only 의존 체인)와 분리(03-03 선례). 메뉴 · 동작은 누수 스캔 분류다.
 // 판정(권한 · 보임 · 기안자)은 domain이 한다.
 import { registerAction } from "@/lib/actions/registry";
+// 골라내기 행 DTO(PickVendorOptionDto 등) 등록을 일으킨다 — 누수 스캔이 dtoName을 이 등록부에서 찾는다.
+import "@/domain/expenses/pick";
 
 // 만들어진 문서 id · 막힌 줄 이유만 돌려준다(DTO 없음).
 registerAction({ name: "createExpenseFromLinesAction", menu: "expenses", action: "write", dtoName: null });
@@ -24,3 +26,15 @@ registerAction({ name: "removeEvidenceAction", menu: "expenses", action: "write"
 
 // 서명 GET 주소만 돌려준다(DTO 없음) — 판정은 문서 보임(도메인).
 registerAction({ name: "createEvidenceViewUrlAction", menu: "expenses", action: "view", dtoName: null });
+
+// 05-07 팀 비용 첫 저장 — 만들어진 문서 id · version만 돌려준다(DTO 없음).
+registerAction({ name: "createTeamExpenseDraftAction", menu: "expenses", action: "write", dtoName: null });
+
+// 새 version · 증빙 종류 코드만 돌려준다(DTO 없음).
+registerAction({ name: "changeExpenseVendorAction", menu: "expenses", action: "write", dtoName: null });
+
+// 골라내기 거래처 행 — 도메인이 PickVendorOptionDto로 투영한 결과.
+registerAction({ name: "searchVendorsForPickAction", menu: "expenses", action: "write", dtoName: "PickVendorOptionDto" });
+
+// 새 문서 화면의 사용일 → 소속 팀 이름 · 칸 오류(도메인이 expenseNewDefaults로 투영, 쓰기 없음).
+registerAction({ name: "previewNewExpenseAction", menu: "expenses", action: "write", dtoName: "expenseNewDefaults" });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { seedMasterData } from "@/domain/seed";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
-import { CEO_ROLE_ID, DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
+import { CEO_ROLE_ID, DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { MENUS } from "@/domain/permissions/menus";
 import { INFO_ITEMS } from "@/domain/permissions/info-items";
 import {
@@ -159,5 +159,22 @@ describe("시스템 관리자의 확인증 개인정보 열람 셋(E3-13)", () =
     expect(await visible(SYSADMIN_ROLE_ID, "cert.rrn_unmasked")).toBe(false);
     expect(await visible(SYSADMIN_ROLE_ID, "cert_submission.value")).toBe(false);
     expect(await allowed(SYSADMIN_ROLE_ID, "certs.submissions", "view")).toBe(false);
+  });
+});
+
+// 05-08(사용자 결정 2026-09-26 #5): 팀 지출결의 보기 — 팀장 계급에 보기만 insert-if-absent. 관리자가 끈 값은 재시드가 되살리지 않는다.
+describe("expenses.team 시드(05-08)", () => {
+  it("MENUS에 expenses.team이 있고 첫 시드 뒤 팀장 계급 보기가 켜져 있고 기획 PM은 없다", async () => {
+    expect(MENUS.find((menu) => menu.key === "expenses.team")?.label).toBe("팀 지출결의 보기");
+    expect(await allowed(TEAM_LEAD_ROLE_ID, "expenses.team", "view")).toBe(true);
+    expect(await allowed(DEFAULT_ROLE_ID, "expenses.team", "view")).toBe(false);
+  });
+
+  it("팀장 계급의 expenses.team 보기를 끈 뒤 시드를 다시 돌려도 꺼진 채다", async () => {
+    await upsertPermission(SYSTEM_VIEWER, { roleId: TEAM_LEAD_ROLE_ID, menu: "expenses.team", action: "view", allowed: false });
+
+    await seedMasterData(SYSTEM_VIEWER);
+
+    expect(await allowed(TEAM_LEAD_ROLE_ID, "expenses.team", "view")).toBe(false);
   });
 });

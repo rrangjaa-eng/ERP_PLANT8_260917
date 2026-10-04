@@ -330,6 +330,37 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
     await expect(leaveRoute(page).getByText("저장 안 한 편집 2단")).toBeVisible();
   });
 
+  // WINDOWS #42(05-03 발견): 복원 줄은 보관본을 만든 결재선 섹션에만 뜨고, 그 섹션의 「복원」 · 「버림」은 그 섹션 단계만 다룬다.
+  test("복원 줄은 보관한 결재선 섹션에만 뜨고, 지출결의 쪽 복원은 연차 보관본을 건드리지 않는다", async ({ page }) => {
+    const expenseRoute = page.locator("section").filter({ has: page.getByRole("heading", { name: "지출결의 결재선", exact: true }) });
+    const originalLeaveRole = await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID);
+    await openSettingsInApp(page);
+    await leaveRoute(page).getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+    await waitStashed(page, ["leave-2"]);
+    page.once("dialog", (leaving) => void leaving.accept());
+    await page.reload();
+
+    await expect(leaveRoute(page).getByText("저장 안 한 편집 2단")).toBeVisible();
+    await expect(expenseRoute.getByText(/저장 안 한 편집/)).toHaveCount(0);
+
+    await expenseRoute.getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+    await waitStashed(page, ["expense-2", "leave-2"]);
+    page.once("dialog", (leaving) => void leaving.accept());
+    await page.reload();
+    await expect(leaveRoute(page).getByText("저장 안 한 편집 2단")).toBeVisible();
+    await expect(expenseRoute.getByText("저장 안 한 편집 2단")).toBeVisible();
+
+    await expenseRoute.getByRole("button", { name: "복원", exact: true }).click();
+    await expect(expenseRoute.getByText(/저장 안 한 편집/)).toHaveCount(0);
+    await expect(expenseRoute.getByLabel("2단 담당 계급")).toHaveValue(CEO_ROLE_ID);
+    await expect(leaveRoute(page).getByLabel("2단 담당 계급")).toHaveValue(originalLeaveRole);
+    await expect(leaveRoute(page).getByText("저장 안 한 편집 2단")).toBeVisible();
+
+    await leaveRoute(page).getByRole("button", { name: "버림", exact: true }).click();
+    await expect(leaveRoute(page).getByText(/저장 안 한 편집/)).toHaveCount(0);
+    await expect(expenseRoute.getByLabel("2단 담당 계급")).toHaveValue(CEO_ROLE_ID);
+  });
+
   test("고치지 않고 다시 떠나도 보관본은 남고, 다른 단계를 고치면 두 단계가 함께 남는다", async ({ page }) => {
     await openSettingsInApp(page);
     await leaveRoute(page).getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);

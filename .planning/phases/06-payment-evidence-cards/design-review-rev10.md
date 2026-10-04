@@ -3,7 +3,7 @@
 - 대상: `06-UI-SPEC.md` rev 10(`072b3bc`, PR #165) → 반영본 「rev 10 r2」(같은 rev 번호, 계획이 rev 10을 인용)
 - 기준: `docs/design/SYSTEM.md` · `tokens.css` · `ui/status-tag/status-map.ts` · `DECISIONS.md` · `.claude/skills/design-gate/CHECKLIST.md` §1 · `.claude/rules/frontend.md`. 옛 화면과 비교 안 함.
 - 고정 결정(다시 열지 않음): reconcile §8 Q1~Q7(10/5 00:55) · O-6 · O-21 · O-22 · 05 「결재 중 증빙」.
-- 밤 위임: 사용자 카드 없이 추천안으로 결정(아래 「결정」 열). 목업 생략(유료 이미지 API 안 씀 — rev 9와 같음).
+- 밤 위임: 사용자 카드 없이 추천안으로 결정(아래 「결정」 열). 그중 문구 · 배치 5건(F3 · F8 · F9 · F10 · C1)은 **사용자 확정(10/5 01:53, 「문구, 배치 5건은 추천대로 해」)**. 목업 생략(유료 이미지 API 안 씀 — rev 9와 같음).
 
 ## 실행한 검토
 | 검토 | 모델 | 결과 | 증거 |

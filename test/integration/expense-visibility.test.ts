@@ -18,7 +18,7 @@ import { listExpenses } from "@/domain/expenses/list";
 import { createEvidenceViewUrl, listEvidence } from "@/domain/evidence";
 import { insertRole } from "@/repositories/roles";
 import { insertVendor } from "@/repositories/vendors";
-import { upsertPermission } from "@/repositories/permissions";
+import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { makePerson, orgUnitIdByName } from "./approvals-fixtures";
 import { setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
 import { createMemoryStorage } from "./fakes/memory-storage";
@@ -182,6 +182,8 @@ describe("결재 관련자 두 갈래 (지금 단계 후보 · 처리 기록 —
     // 다른 팀(경영관리팀) 한결재 — 이 계급만 1단 담당(전사). expenses.team 없음 · 업무 범위 team.
     const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `외부 결재-${randomUUID()}`, workScope: "team" });
     await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "view", allowed: true });
+    // 새 계급은 정보 노출 행이 없어 문서 칸이 비어 온다 — 시드 계급처럼 지출결의 정보 항목 둘을 켠다.
+    for (const infoItem of ["expense.value", "expense.amount"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
     const approver = await makePerson("한결재", role.id, "경영관리팀");
     await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_EXPENSE_STEP1_ENABLED, true);
     await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_EXPENSE_STEP1_ROLE_ID, role.id);

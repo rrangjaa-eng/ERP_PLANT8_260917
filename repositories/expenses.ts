@@ -1,4 +1,4 @@
-import { and, asc, eq, ilike, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, ilike, inArray, isNotNull, isNull, or, sql, type SQL } from "drizzle-orm";
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { approvalInstances, expenses, projects, quoteLines, teams, users, vendors } from "@/db/schema";
@@ -347,4 +347,163 @@ export async function listPickProjects(
     .where(and(...conditions))
     .orderBy(asc(projects.name), asc(projects.id))
     .limit(input.limit);
+}
+
+// ── 05-08 목록 · 보임 범위 ─────────────────────────────────────────────
+
+// 보임 범위(domain/expenses/access.ts visibleExpenseScope가 만든다) — 이 조건 하나를 목록 · 합계 · 문서 하나 판정이 같이 쓴다.
+// 작성 중(번호 없음)은 기안자만. 번호가 있으면 기안자 ∪ 전사 ∪ 문서의 팀(팀 비용 = 귀속 팀, 견적 줄 문서 = 프로젝트 팀)이 teamIds 안 ∪
+// 지금 단계 후보(진행 중 인스턴스 한정 목록) ∪ 처리한 사람(결재 단계 표 EXISTS — 차수를 거쳐 인스턴스로, approval_steps(acted_by) 인덱스).
+export type ExpenseScope = {
+  drafterId: string;
+  company: boolean;
+  teamIds: string[];
+  actedByUserId: string;
+  currentHolderInstanceIds: string[];
+};
+
+// 목록 그룹 순위 — 작성 중 1 · 반려 · 회수 2 · 결재 중 3 · 승인 4(그 밖의 상태 5는 어느 보기에도 없다).
+export const EXPENSE_GROUP_RANKS = { draft: 1, returned: 2, inReview: 3, approved: 4 } as const;
+
+const docTeamId = sql`case when ${expenses.projectId} is not null then ${projects.teamId} else ${expenses.attributedTeamId} end`;
+const groupRankExpr = sql<number>`case when ${approvalInstances.id} is null then 1 when ${approvalInstances.status} in ('rejected', 'withdrawn') then 2 when ${approvalInstances.status} in ('submitted', 'in_review') then 3 when ${approvalInstances.status} = 'approved' then 4 else 5 end`;
+
+function scopeCondition(scope: ExpenseScope): SQL {
+  const party: SQL[] = [
+    sql`exists (select 1 from approval_routes ar join approval_steps st on st.route_id = ar.id where ar.instance_id = ${approvalInstances.id} and st.acted_by = ${scope.actedByUserId})`,
+  ];
+  if (scope.company) party.push(sql`true`);
+  if (scope.teamIds.length > 0) party.push(sql`${docTeamId} in (${sql.join(scope.teamIds.map((id) => sql`${id}::uuid`), sql`, `)})`);
+  if (scope.currentHolderInstanceIds.length > 0) party.push(inArray(approvalInstances.id, scope.currentHolderInstanceIds));
+  return sql`${expenses.deletedAt} is null and (${expenses.drafterId} = ${scope.drafterId} or (${expenses.number} is not null and (${sql.join(party, sql` or `)})))`;
+}
+
+function ranksCondition(ranks: readonly number[]): SQL {
+  return sql`(${groupRankExpr}) in (${sql.join(ranks.map((rank) => sql`${rank}`), sql`, `)})`;
+}
+
+function instanceJoin(documentKind: string): SQL {
+  return sql`${approvalInstances.documentKind} = ${documentKind} and ${approvalInstances.documentId} = ${expenses.id}`;
+}
+
+export type ExpenseListRow = ExpenseRow & {
+  groupRank: number;
+  drafterName: string;
+  projectName: string | null;
+  itemName: string | null;
+  teamName: string | null;
+  vendorName: string | null;
+  instanceId: string | null;
+  status: string | null;
+  statusChangedAt: Date | null;
+};
+
+// 목록 한 쪽 — 한 쿼리. 보임 범위 · 보기(그룹 순위) 조건의 서브쿼리 q가 group_rank와 그룹별 정렬 키를 열로 만들고, 바깥 쿼리가
+// ORDER BY group_rank, <그룹별 CASE 키>, id 한 곳에서 줄 세운 뒤에만 LIMIT · OFFSET으로 자른다(리뷰 Round 2 M2 — PostgreSQL은
+// ORDER BY 식 안에서 SELECT 별칭을 읽지 못해 서브쿼리 열로 둔다). 그룹 안: 작성 중 = 고친 시각 ↓ · 반려 · 회수 = 상태 바뀐 시각 ↓ ·
+// 결재 중 = 제출 시각 ↑ · 승인 = 지급 예정일 ↑(없음은 끝).
+export async function listExpensePage(
+  viewer: Viewer,
+  input: { scope: ExpenseScope; ranks: readonly number[]; documentKind: string; limit: number; offset: number },
+): Promise<ExpenseListRow[]> {
+  void viewer;
+  const q = db
+    .select({
+      id: expenses.id,
+      groupRank: groupRankExpr.as("group_rank"),
+      editedKey: sql<Date>`${expenses.updatedAt}`.as("edited_key"),
+      statusKey: sql<Date | null>`${approvalInstances.updatedAt}`.as("status_key"),
+      submittedKey: sql<Date | null>`${expenses.submittedAt}`.as("submitted_key"),
+      payKey: sql<string | null>`${expenses.scheduledPaymentDate}`.as("pay_key"),
+    })
+    .from(expenses)
+    .leftJoin(approvalInstances, instanceJoin(input.documentKind))
+    .leftJoin(projects, eq(projects.id, expenses.projectId))
+    .where(and(scopeCondition(input.scope), ranksCondition(input.ranks)))
+    .as("q");
+  const rows = await db
+    .select({
+      groupRank: q.groupRank,
+      expense: expenses,
+      drafterName: users.name,
+      projectName: projects.name,
+      itemName: quoteLines.itemName,
+      teamName: teams.name,
+      vendorName: vendors.name,
+      instanceId: approvalInstances.id,
+      status: approvalInstances.status,
+      statusChangedAt: approvalInstances.updatedAt,
+    })
+    .from(q)
+    .innerJoin(expenses, eq(expenses.id, q.id))
+    .innerJoin(users, eq(users.id, expenses.drafterId))
+    .leftJoin(projects, eq(projects.id, expenses.projectId))
+    .leftJoin(quoteLines, eq(quoteLines.id, expenses.quoteLineId))
+    .leftJoin(teams, eq(teams.id, expenses.attributedTeamId))
+    .leftJoin(vendors, eq(vendors.id, expenses.vendorId))
+    .leftJoin(approvalInstances, instanceJoin(input.documentKind))
+    .orderBy(
+      asc(q.groupRank),
+      sql`case when ${q.groupRank} = 1 then ${q.editedKey} end desc`,
+      sql`case when ${q.groupRank} = 2 then ${q.statusKey} end desc`,
+      sql`case when ${q.groupRank} = 3 then ${q.submittedKey} end asc`,
+      sql`case when ${q.groupRank} = 4 then ${q.payKey} end asc nulls last`,
+      asc(q.id),
+    )
+    .limit(input.limit)
+    .offset(input.offset);
+  return rows.map((row) => ({
+    ...row.expense,
+    groupRank: Number(row.groupRank),
+    drafterName: row.drafterName,
+    projectName: row.projectName,
+    itemName: row.itemName,
+    teamName: row.teamName,
+    vendorName: row.vendorName,
+    instanceId: row.instanceId,
+    status: row.status,
+    statusChangedAt: row.statusChangedAt,
+  }));
+}
+
+export type ExpenseListSummary = { visibleCount: number; viewCount: number; viewSumKrw: number; othersCount: number };
+
+// 같은 범위 조건의 집계 한 번 — 보임 범위 전체 건수(빈 화면 갈래) · 보기 건수 · 보기 공급가액 원화 합(페이지 무관 · 외화는 원화로만) ·
+// 남의 문서 건수(기안 열 여부).
+export async function summarizeExpenseList(
+  viewer: Viewer,
+  input: { scope: ExpenseScope; ranks: readonly number[]; documentKind: string },
+): Promise<ExpenseListSummary> {
+  void viewer;
+  const inView = ranksCondition(input.ranks);
+  const [row] = await db
+    .select({
+      visibleCount: sql<number>`count(*)::int`,
+      viewCount: sql<number>`(count(*) filter (where ${inView}))::int`,
+      viewSumKrw: sql<string>`coalesce(sum(${expenses.supplyAmountKrw}) filter (where ${inView}), 0)::text`,
+      othersCount: sql<number>`(count(*) filter (where ${expenses.drafterId} <> ${input.scope.drafterId}))::int`,
+    })
+    .from(expenses)
+    .leftJoin(approvalInstances, instanceJoin(input.documentKind))
+    .leftJoin(projects, eq(projects.id, expenses.projectId))
+    .where(scopeCondition(input.scope));
+  return {
+    visibleCount: Number(row?.visibleCount ?? 0),
+    viewCount: Number(row?.viewCount ?? 0),
+    viewSumKrw: Number(row?.viewSumKrw ?? 0),
+    othersCount: Number(row?.othersCount ?? 0),
+  };
+}
+
+// 문서 하나가 범위 안인지 — 목록과 같은 조건(문서 화면 · 증빙 목록 · 서명 GET의 404 판정).
+export async function isExpenseInScope(viewer: Viewer, input: { id: string; scope: ExpenseScope; documentKind: string }): Promise<boolean> {
+  void viewer;
+  const [row] = await db
+    .select({ id: expenses.id })
+    .from(expenses)
+    .leftJoin(approvalInstances, instanceJoin(input.documentKind))
+    .leftJoin(projects, eq(projects.id, expenses.projectId))
+    .where(and(eq(expenses.id, input.id), scopeCondition(input.scope)))
+    .limit(1);
+  return row !== undefined;
 }

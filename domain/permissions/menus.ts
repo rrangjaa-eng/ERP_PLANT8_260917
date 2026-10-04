@@ -29,6 +29,7 @@ export const MENUS: MenuDef[] = [
   // (projects.revenue)과 다른 일이라 따로 두고, 시드 계급에 경영관리가 없어 기본값은 아무에게도 켜지 않는다.
   { key: "projects.adjustment", label: "견적 조정 줄" },
   { key: "expenses", label: "지출결의" },
+  { key: "expenses.team", label: "팀 지출결의 보기" },
   { key: "cards", label: "법인카드" },
   { key: "approvals", label: "결재함" },
   { key: "pnl", label: "손익" },

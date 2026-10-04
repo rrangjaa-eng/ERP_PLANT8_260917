@@ -29,7 +29,6 @@ import {
   PROJECT_CUSTOMER_APPROVAL_GATE,
 } from "@/domain/settings/keys";
 import {
-  canSeeApprovalDocument,
   prepareSubmission,
   registerDocumentKind,
   submitDocument,
@@ -46,6 +45,7 @@ import { teamAtDate } from "@/domain/org";
 import { formatKstTime } from "@/domain/holidays/business-day";
 import { computeExpenseTax, storedTaxResult, taxDriftText, taxLineText, type ExpenseTaxResult } from "@/domain/expenses/tax";
 import { buildExpenseDetailRows } from "@/domain/expenses/detail";
+import { canSeeExpense, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses/access";
 import { expenseLineDoor, type ExpenseLineDoor } from "@/domain/expenses/line-door";
 import { resolveLinkedDocumentsByLineage, type LineageLine } from "@/domain/quotes/lineage";
 import { buildExpenseSubmitContext, nextActionTarget, PROJECT_COMPLETED, TAX_UNAVAILABLE, type ExpenseSubmitFacts, type ExpenseSubmitTarget } from "@/domain/expenses/gate";
@@ -93,8 +93,8 @@ export type { ExpenseDocumentDto, ExpenseDraftDto, ExpenseNewDefaultsDto, Expens
 // 05-03(EXP-01 · EXP-14): 지출결의 — 결재 모듈에 문서 종류로 등록되고 제출은 같은 결재 엔진(domain/approvals)을 지난다.
 // 결재 모듈은 이 파일을 import하지 않는다(app/(app)/document-kinds.ts가 적재를 일으킨다).
 
-// 종류 키 — 04.1 연차 "leave"와 같은 영어 소문자 단수 관례, 설정 키 approval_route.expense.*와 같은 낱말.
-export const EXPENSE_DOCUMENT_KIND = "expense";
+// 종류 키 — 04.1 연차 "leave"와 같은 영어 소문자 단수 관례, 설정 키 approval_route.expense.*와 같은 낱말. 보임 판정(access.ts)이 정본을 갖는다.
+export { EXPENSE_DOCUMENT_KIND, canSeeExpense };
 
 const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const NOT_IN_CURRENT_REVISION = "견적 줄이 현재 차수에 없음 · 견적 줄 바꾸기";
@@ -342,16 +342,7 @@ registerDocumentKind({
 
 // ── 보임 ──────────────────────────────────────────────────────────────
 
-// 작성 중(번호 없음)은 기안자만, 번호가 있으면 기안자 ∪ 결재 관련자. 목록 범위(팀장 · 전사)는 05-08이 더한다.
-export async function canSeeExpense(
-  viewer: Viewer,
-  expense: { id: string; drafterId: string; number: string | null },
-  deps?: { today?: string },
-): Promise<boolean> {
-  if (expense.drafterId === viewer.id) return true;
-  if (expense.number === null) return false;
-  return canSeeApprovalDocument(viewer, { kind: EXPENSE_DOCUMENT_KIND, documentId: expense.id }, { today: deps?.today ?? seoulToday() });
-}
+// 05-08: 보임 판정은 domain/expenses/access.ts(기안자 · 결재 관련자 · expenses.team · 전사 범위 — 목록과 같은 조건)로 옮겼다.
 
 // ── 견적 줄 → 작성 중 ─────────────────────────────────────────────────
 

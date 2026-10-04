@@ -195,8 +195,42 @@ export const EXPENSE_NEW_DEFAULTS_DTO_SPEC: DtoSpec<ExpenseNewDefaultsDto, Expen
   ],
 };
 
+// 05-08 목록 행(S8) — 문서 칸은 expense.value, 공급가액(금액 열 · 외화 2행)은 expense.amount(못 보는 계급에는 금액 열 · 합계가 없다).
+// 기안 이름은 보는 사람의 범위가 자기 문서뿐이면 listExpenses가 싣지 않는다(구조 판정 — 항목 투영 밖).
+export type ExpenseListRowDto = {
+  id: string;
+  number: string | null;
+  // 「프로젝트 · 항목」 칸 1행 — 견적 줄 문서 `{프로젝트} · {항목}`(분할이면 ` N회차`), 팀 비용 `{팀} · {내용}`.
+  title: string;
+  // 팀 비용 2행 `프로젝트 미연결 · {종류}`(견적 줄 문서 null).
+  unlinkedText: string | null;
+  vendorName: string | null;
+  supply: Money | null;
+  scheduledPaymentDate: string | null;
+  drafterName: string;
+  // `작성 중` / `{단계} 결재 중` / `반려` / `회수` / `승인`, 날짜는 MM-DD(서울 — 반려 · 회수 · 승인만).
+  statusWord: string;
+  statusDate: string | null;
+};
+
+export const EXPENSE_LIST_ROW_DTO_SPEC: DtoSpec<ExpenseListRowDto, ExpenseListRowDto> = {
+  fields: [
+    { key: "id", from: "id", infoItem: "expense.value" },
+    { key: "number", from: "number", infoItem: "expense.value" },
+    { key: "title", from: "title", infoItem: "expense.value" },
+    { key: "unlinkedText", from: "unlinkedText", infoItem: "expense.value" },
+    { key: "vendorName", from: "vendorName", infoItem: "expense.value" },
+    { key: "supply", from: "supply", infoItem: "expense.amount" },
+    { key: "scheduledPaymentDate", from: "scheduledPaymentDate", infoItem: "expense.value" },
+    { key: "drafterName", from: "drafterName", infoItem: "expense.value" },
+    { key: "statusWord", from: "statusWord", infoItem: "expense.value" },
+    { key: "statusDate", from: "statusDate", infoItem: "expense.value" },
+  ],
+};
+
 registerDto({ name: "expenseDraft", fields: EXPENSE_DRAFT_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 registerDto({ name: "expenseDocument", fields: EXPENSE_DOCUMENT_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 registerDto({ name: "expenseDetail", fields: EXPENSE_DETAIL_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 registerDto({ name: "expensePreview", fields: EXPENSE_PREVIEW_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 registerDto({ name: "expenseNewDefaults", fields: EXPENSE_NEW_DEFAULTS_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
+registerDto({ name: "expenseListRow", fields: EXPENSE_LIST_ROW_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });

@@ -17,7 +17,7 @@ test.describe("폰 375 EMPTY 첫 행동의 2차 버튼 모양 (§7 빈 화면, �
     await page.getByRole("button", { name: "로그인" }).click();
     await expect(page).toHaveURL(/\/account$/);
 
-    await page.goto("/expenses");
+    await page.goto("/cards");
     const link = page.locator("p").filter({ hasText: /없습니다/ }).getByRole("link");
     await expect(link).toBeVisible();
     // 04.6-05 · SYSTEM §7 「빈 화면」: 첫 행동은 2차 버튼 모양(1px 테두리 --line-w · 밑줄 없음)이다.

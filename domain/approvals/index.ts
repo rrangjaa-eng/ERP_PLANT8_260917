@@ -577,6 +577,31 @@ export async function currentHolderNames(
   return currentHolderNamesOf(walkGraph(graph, await readSnapshot(viewer, deps)));
 }
 
+// 05-08: 종류 하나의 진행 중 인스턴스마다 지금 단계 이름과 보는 사람이 지금 단계 후보인지 — 결재함(listMyInbox)과 같은 walk를
+// 한 번에 계산한다(문서마다 따로 읽지 않는다). 지출결의 목록의 `{단계} 결재 중` 낱말과 「지금 단계 후보」 보임 갈래의 재료다.
+export type CurrentStep = { stepLabel: string | null; viewerIsCandidate: boolean };
+
+export async function listCurrentSteps(viewer: Viewer, input: { kind: string }, deps?: ApprovalDeps): Promise<Map<string, CurrentStep>> {
+  const snapshot = await readSnapshot(viewer, deps);
+  const result = new Map<string, CurrentStep>();
+  for (const instance of await listActiveInstances(viewer)) {
+    if (instance.documentKind !== input.kind) continue;
+    const walk = walkRoute({
+      steps: instance.steps.map(toRouteStep),
+      snapshot,
+      selfApproval: instance.route.selfApproval as SelfApproval,
+      drafterId: instance.drafterId,
+      fallbackRoleId: FALLBACK_ROLE_ID,
+      at: "before_action",
+    });
+    const outcome = walk.outcome;
+    const actionable = outcome.kind === "actionable";
+    const current = actionable ? walk.display.find((step) => step.stepIndex === outcome.stepIndex && step.state === "current") : undefined;
+    result.set(instance.id, { stepLabel: current?.label ?? null, viewerIsCandidate: actionable && outcome.candidateIds.includes(viewer.id) });
+  }
+  return result;
+}
+
 // 최종 승인 토스트의 차감 일수(B-C2 — 출처는 종류가 준 요약의 daysQuarters · days).
 // 요약에 일수가 없거나 0이면(재택 · 일수 없는 종류) null.
 export async function describeDeduction(viewer: Viewer, input: { kind: string; documentId: string }): Promise<string | null> {

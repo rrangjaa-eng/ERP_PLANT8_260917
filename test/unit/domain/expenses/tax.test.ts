@@ -142,6 +142,18 @@ describe("computeExpenseTax", () => {
     );
     expect(asOfs).toEqual(["2026-10-01"]);
   });
+
+  // 05-06 돈 검토 m1 — 두 조회 사이에 세율 행이 바뀌어도 스냅숏 세율과 금액은 같은 한 번의 읽기에서 나온다.
+  it("세율 행을 읽은 뒤 값 조회가 다른 세율을 돌려줘도 금액은 읽어 둔 세율(12%)로 계산한다", async () => {
+    const result = await computeExpenseTax(
+      SYSTEM_VIEWER,
+      doc("tax_invoice", 1_000_000),
+      deps({ [TAX_VAT_RATE.key]: 0.1 }, (def) =>
+        Promise.resolve({ value: (def.key === TAX_VAT_RATE.key ? 0.12 : def.default) as never, historizedId: null, effectiveFrom: null }),
+      ),
+    );
+    expect(result).toMatchObject({ rate: 0.12, vatKrw: 120_000, payableKrw: 1_120_000 });
+  });
 });
 
 // ── 세율 바뀜 ──────────────────────────────────────────────────────────────
@@ -180,5 +192,10 @@ describe("taxDriftText", () => {
     const stored: Computed = { ...vat(0.088, 0, 2_736_000), ruleKind: "withholding", vatKrw: 0, withholdingKrw: 264_000 };
     const now: Computed = { ...vat(0.033, 0, 2_901_000), ruleKind: "withholding", vatKrw: 0, withholdingKrw: 99_000 };
     expect(taxDriftText(stored, now)?.text).toBe("세율 바뀜 · 원천징수 8.8% → 3.3% · 실지급액 2,736,000 → 2,901,000");
+  });
+
+  // 05-06 돈 검토 m2 — 저장은 소수 6자리(numeric(7,6))라 그보다 긴 설정 세율과도 같은 세율로 본다.
+  it("저장 세율 0.033333 vs 지금 0.0333333 · 금액 같음 → null", () => {
+    expect(taxDriftText(vat(0.033333, 33_333, 1_033_333), vat(0.0333333, 33_333, 1_033_333))).toBeNull();
   });
 });

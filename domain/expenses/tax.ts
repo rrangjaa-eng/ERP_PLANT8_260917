@@ -152,11 +152,14 @@ export async function computeExpenseTax(
   const incomeType = incomeTypeFor(doc.evidenceType);
   try {
     const applied = await resolveAppliedRate(rule, { basisDate: dates.basisDate, incomeType }, deps);
+    // 세율 키는 위에서 읽은 행의 값을 그대로 쓴다 — 스냅숏 세율과 금액이 한 번의 읽기에서 나온다(05-06 돈 검토 m1).
+    const getValueOnce: typeof defaultGetSettingValue = (def, opts) =>
+      applied && def.key === applied.key ? Promise.resolve(def.schema.parse(applied.rate)) : getValue(def, opts);
     const amounts = await applyTaxRule(
       doc.supplyAmountKrw,
       rule,
       { paymentDate: seoulDateToUtcDate(dates.applyOpts.paymentDate), evidenceDate: seoulDateToUtcDate(dates.applyOpts.evidenceDate), incomeType },
-      deps?.getSettingValue ? { getSettingValue: deps.getSettingValue } : undefined,
+      { getSettingValue: getValueOnce },
     );
     return {
       ruleKind: rule.ruleKind,
@@ -233,7 +236,8 @@ function taxAmountOf(result: ComputedTax): number {
 
 export function taxDriftText(stored: ExpenseTaxResult, recomputed: ExpenseTaxResult): { text: string; parts: TaxLinePart[] } | null {
   if (stored.unavailable || recomputed.unavailable) return null;
-  const sameRate = stored.rate === recomputed.rate;
+  // 저장 세율은 소수 6자리(numeric(7,6))라 같은 자리로 맞춰 비교한다(05-06 돈 검토 m2).
+  const sameRate = stored.rate?.toFixed(6) === recomputed.rate?.toFixed(6);
   const sameTax = taxAmountOf(stored) === taxAmountOf(recomputed);
   const samePayable = stored.payableKrw === recomputed.payableKrw;
   if (sameRate && sameTax && samePayable) return null;

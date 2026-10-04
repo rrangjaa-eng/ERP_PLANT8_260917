@@ -242,3 +242,11 @@
   height: var(--s-4);
   background: var(--surface-muted);
 }
+
+/* 05-09 반려 읽기 행 2행 사유(연차 문서 화면 `.subLine`과 같은 모양) — 여러 줄 사유의 줄을 지킨다. */
+.subLine {
+  display: block;
+  font-size: var(--text-aux);
+  word-break: keep-all;
+  white-space: pre-line;
+}

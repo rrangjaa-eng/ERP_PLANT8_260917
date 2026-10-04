@@ -122,7 +122,22 @@ export type ExpenseDraftFields = Partial<
   >
 >;
 
-// 낙관적 잠금 — 작성 중(번호 없음)이고 version이 같을 때만 + version + 1 + RETURNING. 0행이면 null(충돌).
+// 05-09: 다시 제출 갈래 재료 — 그 문서의 결재 인스턴스 id · 상태 · version · 지금 차수(없으면 null). 제출 tx 안에서 지출결의 행 잠금 뒤에 읽는다.
+export async function findExpenseApprovalInstance(
+  viewer: Viewer,
+  input: { documentKind: string; documentId: string },
+  tx: DbOrTx = db,
+): Promise<{ id: string; status: string; version: number; currentRound: number } | null> {
+  void viewer;
+  const [row] = await tx
+    .select({ id: approvalInstances.id, status: approvalInstances.status, version: approvalInstances.version, currentRound: approvalInstances.currentRound })
+    .from(approvalInstances)
+    .where(and(eq(approvalInstances.documentKind, input.documentKind), eq(approvalInstances.documentId, input.documentId)))
+    .limit(1);
+  return row ?? null;
+}
+
+// 낙관적 잠금 — 고칠 수 있는 문서(번호 없음 또는 05-09 결재 상태 반려 · 회수)이고 version이 같을 때만 + version + 1 + RETURNING. 0행이면 null(충돌).
 export async function updateDraftIfVersion(
   viewer: Viewer,
   input: { id: string; expectedVersion: number; fields: ExpenseDraftFields; updatedBy: string },
@@ -136,7 +151,10 @@ export async function updateDraftIfVersion(
       and(
         eq(expenses.id, input.id),
         eq(expenses.version, input.expectedVersion),
-        isNull(expenses.number),
+        or(
+          isNull(expenses.number),
+          sql`exists (select 1 from ${approvalInstances} where ${approvalInstances.documentKind} = ${EXPENSE_APPROVAL_KIND} and ${approvalInstances.documentId} = ${expenses.id} and ${approvalInstances.status} in ('rejected', 'withdrawn'))`,
+        ),
         isNull(expenses.deletedAt),
       ),
     )
@@ -160,7 +178,7 @@ export type ExpenseTaxSnapshot = Pick<
 
 export async function saveSubmissionSnapshot(
   viewer: Viewer,
-  input: { id: string; taxSnapshot: ExpenseTaxSnapshot; installment: boolean; installmentSeq: number | null; submittedAt: Date },
+  input: { id: string; taxSnapshot: ExpenseTaxSnapshot; installment: boolean; installmentSeq: number | null; submittedAt: Date; updatedAt?: Date },
   tx: DbOrTx,
 ): Promise<void> {
   await tx
@@ -172,7 +190,8 @@ export async function saveSubmissionSnapshot(
       submittedAt: input.submittedAt,
       updatedBy: viewer.id,
       version: sql`${expenses.version} + 1`,
-      updatedAt: input.submittedAt,
+      // 05-09 다시 제출은 처음 제출 시각을 지키고 갱신 시각만 지금이다.
+      updatedAt: input.updatedAt ?? input.submittedAt,
     })
     .where(eq(expenses.id, input.id));
 }

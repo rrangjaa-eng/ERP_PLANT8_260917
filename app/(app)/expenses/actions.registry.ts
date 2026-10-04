@@ -16,6 +16,9 @@ registerAction({ name: "previewExpenseAction", menu: "expenses", action: "write"
 // 토스트 재료(다음 담당 이름)를 ApprovalActionResultDto로 투영해 돌려준다.
 registerAction({ name: "submitExpenseAction", menu: "expenses", action: "write", dtoName: "ApprovalActionResultDto" });
 
+// 05-09 회수(토스트 되돌리기 · 문서 화면 회수) — 결재 상태 낱말만 돌려준다(DTO 없음).
+registerAction({ name: "withdrawExpenseAction", menu: "expenses", action: "write", dtoName: null });
+
 // 서명 PUT 주소 · 헤더 · 의도 id만 돌려준다(DTO 없음).
 registerAction({ name: "requestEvidenceUploadAction", menu: "expenses", action: "write", dtoName: null });
 

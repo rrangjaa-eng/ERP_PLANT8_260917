@@ -90,6 +90,8 @@ export type ExpenseFormProps = {
   teamKindOptions: SelectOption[];
   /** true면 `/expenses/new` — 문서가 아직 없다(`data.id` 빈 값). 첫 저장(임시 저장 · 증빙 올리기)이 문서를 만든다. */
   newDoc: boolean;
+  // 05-09: 반려 · 회수된 번호 문서 — 1차가 `지출결의 다시 제출`(같은 번호).
+  resubmit?: boolean;
   currencies: { value: string; fxRate: number }[];
   files: AttachmentFile[];
   maxMb: number;
@@ -125,7 +127,7 @@ function FxField({ initial, error, onRaw, below }: { initial: number; error: str
   );
 }
 
-export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOptions, newDoc, currencies, files, maxMb, route }: ExpenseFormProps) {
+export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOptions, newDoc, resubmit = false, currencies, files, maxMb, route }: ExpenseFormProps) {
   const router = useRouter();
   const [evidenceType, setEvidenceType] = useState(data.evidenceType ?? "");
   const [paymentMethod, setPaymentMethod] = useState(data.paymentMethod ?? "");
@@ -645,7 +647,7 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
         aria-describedby={block ? "expense-blocked" : undefined}
         onClickCapture={block ? () => focusBlockTarget() : undefined}
       >
-        지출결의 제출
+        {resubmit ? "지출결의 다시 제출" : "지출결의 제출"}
       </Button>
     </span>
   );

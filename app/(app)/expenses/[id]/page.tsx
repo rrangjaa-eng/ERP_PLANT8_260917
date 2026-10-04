@@ -8,23 +8,28 @@ import { listEvidence } from "@/domain/evidence";
 import { getSettingValue } from "@/domain/settings/registry";
 import { EVIDENCE_MAX_SIZE_MB } from "@/domain/settings/keys";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
+import { KvList, type KvItem } from "@/ui/kv-list/KvList";
+import { Num } from "@/ui/num/Num";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { ApprovalRoute } from "@/ui/approval-route/ApprovalRoute";
 import type { AttachmentFile } from "@/ui/attachments/Attachments";
 import type { SelectOption } from "@/ui/select/Select";
 import { expenseStatusWord } from "../status-display";
+import { seoulMinuteOf } from "@/app/(app)/leave/status-display";
+import { SubmittedToast } from "@/app/(app)/leave/[id]/submitted-toast";
 import { ExpenseDocument } from "./expense-document";
 import { ExpenseForm } from "./expense-form";
 import styles from "./expense.module.css";
 
-// 05-05(S3 · S7): 인스턴스(결재)가 없는 작성 중 문서는 폼, 그 밖은 문서 화면. 볼 수 없는 사람은 404(`layout.tsx`가 응답 전에 먼저 판정한다 —
+// 05-05(S3 · S7): 인스턴스(결재)가 없는 작성 중 문서는 폼, 그 밖은 문서 화면. 05-09: 반려 · 회수된 내 문서(가능 행동에 다시 신청)도 폼 —
+// 머리 줄 상태 `반려` · `회수` · 메타 번호, 맨 위 읽기 행(`KvList`), 1차 `지출결의 다시 제출`(같은 번호). 볼 수 없는 사람은 404(`layout.tsx`가 응답 전에 먼저 판정한다 —
 // 여기서는 같은 읽기를 다시 해 null이면 404). 바깥 틀은 둘 다 `DetailScreen`이다. 세션 검사는 이 페이지가 직접 한다(WR-07).
 export const dynamic = "force-dynamic";
 
-export default async function ExpensePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ submitted?: string }> }) {
+export default async function ExpensePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ submitted?: string; undone?: string }> }) {
   const { viewer } = await requireSession();
   const { id } = await params;
-  const { submitted } = await searchParams;
+  const { submitted, undone } = await searchParams;
   const expense = await getExpense(viewer, { expenseId: id });
   if (!expense) notFound();
 
@@ -37,7 +42,8 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
 
   // 문서 보임(getExpense = canSeeExpense)이 위에서 통과했다 — 결재 당사자가 아닌 팀장 · 전사 보는 사람도 상태 · 결재선을 읽기만 한다(05-08 검토 #1).
   const view = await getApprovalView(viewer, { kind: EXPENSE_DOCUMENT_KIND, documentId: id, readOnlyVisible: true });
-  if (view || expense.number) {
+  const resubmitting = Boolean(view?.actions?.includes("resubmit"));
+  if ((view || expense.number) && !resubmitting) {
     return <ExpenseDocument expense={expense} view={view} files={files} maxMb={maxMb} submitted={submitted} />;
   }
 
@@ -72,9 +78,32 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
   const target = isTeam ? [expense.teamName, expense.content].filter(Boolean).join(" · ") : [expense.projectName, expense.itemName].filter(Boolean).join(" · ");
   const skipped = route?.steps.filter((step) => step.skipped).map((step) => `${step.label ?? ""} 단계 건너뜀(자기 승인 없음)`) ?? [];
 
+  // 반려 · 회수 읽기 행 — 회수는 회수 시각(결재선 끝 줄과 같은 값), 반려는 처리자 · 시각 + 2행 사유 원문(연차 문서 화면 선례).
+  const readRows: KvItem[] = [];
+  if (resubmitting && view?.status === "withdrawn") {
+    const line = view.endLines?.find((end) => end.text.startsWith("회수 "));
+    readRows.push({ label: "회수", value: line ? line.text.slice("회수 ".length) : "" });
+  } else if (resubmitting && view?.status === "rejected") {
+    const rejected = view.steps?.find((step) => step.state === "rejected");
+    readRows.push({
+      label: "반려",
+      value: (
+        <>
+          {[rejected?.actedByName, rejected?.actedAt ? seoulMinuteOf(rejected.actedAt) : null].filter(Boolean).join(" · ")}
+          {rejected?.reason ? <span className={styles.subLine}>사유 · {rejected.reason}</span> : null}
+        </>
+      ),
+    });
+  }
+
   return (
     <div className={styles.column}>
-      <DetailScreen title={target ? `지출결의 — ${target}` : "지출결의"} status={<StatusTag status={expenseStatusWord(null)} />}>
+      <DetailScreen
+        title={target ? `지출결의 — ${target}` : "지출결의"}
+        status={<StatusTag status={expenseStatusWord(resubmitting ? view?.status : null)} />}
+        meta={resubmitting && expense.number ? <Num value={expense.number} /> : undefined}
+      >
+        {readRows.length > 0 ? <KvList items={readRows} /> : null}
         <ExpenseForm
           key={expense.quoteLineId ?? expense.itemName ?? "team"}
           data={{
@@ -107,6 +136,7 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
               : null,
           }}
           newDoc={false}
+          resubmit={resubmitting}
           teamKindOptions={teamKindOptions()}
           evidenceOptions={optionsOf(evidenceItems, expense.evidenceType, expense.evidenceTypeName)}
           paymentOptions={optionsOf(paymentItems, expense.paymentMethod, expense.paymentMethodName)}
@@ -126,6 +156,7 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
             ) : null
           }
         />
+        {undone === "1" && resubmitting ? <SubmittedToast message="되돌리기 · 결재 멈춤" href={`/expenses/${id}`} /> : null}
       </DetailScreen>
     </div>
   );

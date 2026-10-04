@@ -29,12 +29,20 @@ import {
   PROJECT_CUSTOMER_APPROVAL_GATE,
 } from "@/domain/settings/keys";
 import {
+  ApprovalConflictError,
   prepareSubmission,
   registerDocumentKind,
+  resubmitDocument,
   submitDocument,
+  withdrawDocument,
+  type ApprovalDeps,
   type RouteConfig,
   type RouteSettingDefs,
 } from "@/domain/approvals";
+import { buildConflictMessage, buildLateUndoMessage } from "@/domain/approvals/conflict-message";
+import type { ApprovalStatus } from "@/domain/approvals/route";
+import { visible } from "@/domain/permissions/visible";
+import { findApprovalGraphByDocument, type ApprovalGraph } from "@/repositories/approvals";
 import type { DescribeDeps, DocumentSummary, RouteConfigStep } from "@/domain/approvals/kinds";
 import { gate, GateBlockedError } from "@/domain/rules/gate";
 import "@/domain/rules/register";
@@ -69,6 +77,7 @@ import { findUserById } from "@/repositories/users";
 import { findVendorById } from "@/repositories/vendors";
 import {
   findDraftByLineAndDrafter,
+  findExpenseApprovalInstance,
   findExpenseApprovalStatus,
   findExpenseById,
   findExpenseByIdempotencyKey,
@@ -101,6 +110,9 @@ const NOT_IN_CURRENT_REVISION = "견적 줄이 현재 차수에 없음 · 견적
 const NO_VENDOR = "거래처 없음 · 거래처 고르기";
 const NUMBERED_SAME_PROJECT_ONLY = "번호 있는 문서 · 같은 프로젝트 줄만";
 const ACTIVE_STATUSES = new Set(["submitted", "in_review", "approved"]);
+// 05-09: 번호를 받은 뒤에도 기안자가 고쳐 같은 번호로 다시 제출하는 결재 상태(종류 등록 resubmitFrom과 같은 둘).
+const EDITABLE_STATUSES: ReadonlySet<string> = new Set(["rejected", "withdrawn"]);
+const IN_PROGRESS_STATUSES: ReadonlySet<string> = new Set(["submitted", "in_review"]);
 const NO_TEAM_AT_USAGE_DATE = "사용일에 소속 팀 없음 · 사용일 고치기";
 
 // 05-07 팀 비용 종류(DB 체크 expenses_team_expense_kind_check와 같은 값) — 화면 글자.
@@ -138,6 +150,33 @@ export class ExpenseConflictError extends UserFacingError {
   constructor(savedAt: Date) {
     super(`${formatKstTime(savedAt)}에 다른 곳에서 저장됨 · 새로 고침`);
   }
+}
+
+// 05-09 늦은 되돌리기 거부 — 문구(화면이 그대로 쓴다)와 함께 처리자 이름(approval.value를 볼 수 없으면 null) · 시각 · 상태를 구조로 싣는다.
+export type ExpenseUndoRefusal = { actorName: string | null; at: Date; status: string };
+
+export class ExpenseUndoRefusedError extends UserFacingError {
+  constructor(
+    message: string,
+    readonly detail: ExpenseUndoRefusal,
+  ) {
+    super(message);
+  }
+}
+
+// 05-09: 기안자가 고칠 수 있는 문서 = 기안자 ∧ (번호 없음(작성 중) 또는 결재 상태 ∈ {반려, 회수}). 저장 · 미리보기 · 줄 · 거래처 바꾸기가 같은 판정을 쓴다.
+export function isEditableByDrafter(viewerId: string, row: Pick<ExpenseRow, "drafterId" | "number">, approvalStatus: string | null): boolean {
+  if (row.drafterId !== viewerId) return false;
+  return row.number === null || (approvalStatus !== null && EDITABLE_STATUSES.has(approvalStatus));
+}
+
+// 고칠 수 있는 내 문서 하나(아니면 없는 문서). 결재 상태는 번호가 있을 때만 읽는다.
+async function findEditableExpense(viewer: Viewer, expenseId: string): Promise<ExpenseRow> {
+  const row = UUID_SHAPE.test(expenseId) ? await findExpenseById(viewer, expenseId) : null;
+  if (!row) throw new ExpenseNotFoundError();
+  const status = row.number === null ? null : await findExpenseApprovalStatus(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, documentId: row.id });
+  if (!isEditableByDrafter(viewer.id, row, status)) throw new ExpenseNotFoundError();
+  return row;
 }
 
 // ── 결재선 설정 17키 · 종류 등록 ─────────────────────────────────────────
@@ -575,13 +614,12 @@ function toDraftColumns(fields: z.output<typeof draftFieldsSchema>): ExpenseDraf
   };
 }
 
-// 기안자 · 작성 중만(아니면 없는 문서). 원화는 서버가 계산한다. version 조건 저장 — 0행이면 충돌.
+// 기안자 · 고칠 수 있는 문서만(작성 중 · 05-09 반려 · 회수 — 아니면 없는 문서). 원화는 서버가 계산한다. version 조건 저장 — 0행이면 충돌.
 export async function saveExpenseDraft(
   viewer: Viewer,
   input: { expenseId: string; expectedVersion: number; fields: ExpenseDraftInput },
 ): Promise<{ version: number }> {
-  const row = UUID_SHAPE.test(input.expenseId) ? await findExpenseById(viewer, input.expenseId) : null;
-  if (!row || row.drafterId !== viewer.id || row.number !== null) throw new ExpenseNotFoundError();
+  const row = await findEditableExpense(viewer, input.expenseId);
   const parsed = draftFieldsSchema.parse(input.fields);
   const fields = toDraftColumns(parsed);
   // 팀 비용 칸은 팀 비용 문서만 받는다(DB 체크 expenses_line_or_team_check도 같은 편). 귀속 팀은 사용일 소속으로 저장 때 다시 정해진다 —
@@ -650,8 +688,8 @@ export async function changeExpenseVendor(
   input: { expenseId: string; vendorId: string; expectedVersion: number },
 ): Promise<{ version: number; evidenceType: string | null }> {
   if (!(await can(viewer, "expenses", "write"))) throw new ForbiddenError("지출결의 작성 권한 없음");
-  const row = UUID_SHAPE.test(input.expenseId) ? await findExpenseById(viewer, input.expenseId) : null;
-  if (!row || row.drafterId !== viewer.id || row.number !== null || !isTeamCostRow(row)) throw new ExpenseNotFoundError();
+  const row = await findEditableExpense(viewer, input.expenseId);
+  if (!isTeamCostRow(row)) throw new ExpenseNotFoundError();
   const vendor = UUID_SHAPE.test(input.vendorId) ? await findVendorById(viewer, input.vendorId) : null;
   if (!vendor || vendor.hidden || vendor.archivedAt !== null) throw new ExpenseNotFoundError();
   const fields: ExpenseDraftFields = { vendorId: vendor.id, ...(vendor.defaultEvidenceType ? { evidenceType: vendor.defaultEvidenceType } : {}) };
@@ -666,22 +704,18 @@ export async function changeExpenseVendor(
 // 05-07 견적 줄 바꾸기 · 고르기 — 기안자의 작성 중 문서를 새 줄 문서로 다시 채운다(거래처 · 증빙 종류 = 새 줄 거래처 기본값 · 공급가액 = 새 줄 남은 실행가 ·
 // 분할 여부 = 앞 회차 유무 · 팀 비용 칸 null — 팀 비용 문서도 줄로 옮길 수 있다). 새 줄은 서버가 다시 판정한다(createExpenseFromLines와 같은 문자열).
 // 그 줄에 내 다른 작성 중 문서가 있으면 바꾸지 않고 { redirectTo }(부분 UNIQUE와 같은 판정). 번호 있는 문서(F6)는 같은 프로젝트 줄만 · 번호 있는 팀 비용 문서는
-// 줄로 옮길 수 없다 — 05-09가 반려 · 회수 문서를 편집 가능으로 넓히기 전에는 작성 중만 닿지만 판정은 여기 둔다.
+// 줄로 옮길 수 없다 — 05-09가 반려 · 회수 문서를 편집 가능으로 넓혀 여기서 실제로 닿는다.
 export async function changeExpenseLine(
   viewer: Viewer,
   input: { expenseId: string; lineId: string; expectedVersion: number },
 ): Promise<{ version: number } | { redirectTo: string }> {
   const [canWriteExpense, canWriteProject] = await Promise.all([can(viewer, "expenses", "write"), can(viewer, "projects", "write")]);
   if (!canWriteExpense || !canWriteProject) throw new ForbiddenError("지출결의 작성 권한 없음");
-  const row = UUID_SHAPE.test(input.expenseId) ? await findExpenseById(viewer, input.expenseId) : null;
-  if (!row || row.drafterId !== viewer.id) throw new ExpenseNotFoundError();
+  const row = await findEditableExpense(viewer, input.expenseId);
   const line = UUID_SHAPE.test(input.lineId) ? await findQuoteLineById(viewer, input.lineId) : null;
   const revision = line ? await findQuoteRevisionById(viewer, line.revisionId) : null;
   if (!line || !revision) throw new ExpenseNotFoundError();
-  if (row.number !== null) {
-    if (row.projectId === null || revision.projectId !== row.projectId) throw new GateBlockedError(NUMBERED_SAME_PROJECT_ONLY);
-    throw new ExpenseNotFoundError();
-  }
+  if (row.number !== null && (row.projectId === null || revision.projectId !== row.projectId)) throw new GateBlockedError(NUMBERED_SAME_PROJECT_ONLY);
   if (row.quoteLineId === line.id) return { version: row.version };
 
   const [gateEnabled, teamScope] = await Promise.all([
@@ -694,7 +728,8 @@ export async function changeExpenseLine(
   const staticReason = staticLineBlock(line, facts);
   if (staticReason) throw new GateBlockedError(staticReason);
 
-  const existing = await findDraftByLineAndDrafter(viewer, { quoteLineId: line.id, drafterId: viewer.id });
+  // 같은 줄의 내 작성 중 문서로 보내는 것은 작성 중 문서끼리만(번호 있는 문서는 부분 UNIQUE 밖 — 제 번호 문서를 떠나지 않는다).
+  const existing = row.number === null ? await findDraftByLineAndDrafter(viewer, { quoteLineId: line.id, drafterId: viewer.id }) : null;
   if (existing) return { redirectTo: existing.id };
   const door = doorFor(line, (await listNumberedByLineage(viewer, facts.project.id)).get(line.id) ?? []);
   const doorReason = doorBlock(door);
@@ -738,7 +773,7 @@ export async function changeExpenseLine(
 // ── 제출 ──────────────────────────────────────────────────────────────
 
 export type SubmitExpenseResult =
-  | { kind: "submitted"; expenseId: string; number: string; instanceId: string; version: number }
+  | { kind: "submitted"; expenseId: string; number: string; instanceId: string; version: number; round: number }
   | { kind: "already_submitted"; expenseId: string; number: string };
 
 function remainingText(remaining: Money, basis: "foreign" | "krw"): string {
@@ -749,6 +784,10 @@ function remainingText(remaining: Money, basis: "foreign" | "krw"): string {
 // 프로젝트 행 잠금 → 문서 행 잠금 → 이미 제출됨 판정 → version → 다시 판정(증빙 수는 tx로 — 증빙 추가 · 삭제도 같은
 // 지출결의 행을 잠근다) → 스냅숏 → 결재 인스턴스 · 로그 → 마지막
 // 쓰기로 번호(카운터 행 잠금을 가장 짧게).
+// 05-09 다시 제출 갈래(번호 있음 · 결재 반려/회수): 같은 잠금 순서(프로젝트 → 지출결의 → 결재 인스턴스) · 게이트 재판정(④는 자기 자신 제외) ·
+// 스냅숏 다시 저장 · resubmitDocument(차수 + 1, 트랜잭션 전 prepareSubmission의 지금 설정 결재선) · 번호 부여 없음. input.expectedVersion은
+// 문서 version이고, 인스턴스 version은 클라이언트에게 받지 않고 지출결의 행을 잠근 뒤 읽는다(P3-7 — 증빙 변경도 같은 행을 먼저 잠근다).
+// 처음 제출 시각(submitted_at)은 그대로 둔다 — 같은 줄 분할 회차 순서 · 회차 번호가 다시 제출로 바뀌지 않는다.
 // deps.afterLock — 테스트가 두 잠금(프로젝트 → 지출결의)을 잡은 직후에 멈춰 경합 순서를 고정한다(ARCHITECTURE §4-8 (5)).
 export async function submitExpense(
   viewer: Viewer,
@@ -776,10 +815,12 @@ export async function submitExpense(
     const locked = await lockExpenseForUpdate(viewer, row.id, tx);
     await deps?.afterLock?.();
     if (!locked) throw new ExpenseNotFoundError();
+    let resubmit: { instanceId: string; version: number } | null = null;
     if (locked.number !== null) {
-      const status = await findExpenseApprovalStatus(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, documentId: locked.id }, tx);
-      if (status && ACTIVE_STATUSES.has(status)) return { kind: "already_submitted", expenseId: locked.id, number: locked.number };
-      throw new ExpenseConflictError(locked.updatedAt);
+      const instance = await findExpenseApprovalInstance(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, documentId: locked.id }, tx);
+      if (instance && ACTIVE_STATUSES.has(instance.status)) return { kind: "already_submitted", expenseId: locked.id, number: locked.number };
+      if (!instance || !EDITABLE_STATUSES.has(instance.status)) throw new ExpenseConflictError(locked.updatedAt);
+      resubmit = { instanceId: instance.id, version: instance.version };
     }
     if (locked.version !== input.expectedVersion) throw new ExpenseConflictError(locked.updatedAt);
 
@@ -798,7 +839,14 @@ export async function submitExpense(
     if (tax.unavailable) throw new GateBlockedError(TAX_UNAVAILABLE);
 
     const installment = locked.installment || Boolean(door?.forcedInstallment);
-    const submittedAt = deps?.now ?? new Date();
+    const firstSubmittedAt = resubmit ? locked.submittedAt : null;
+    const submittedAt = firstSubmittedAt ?? deps?.now ?? new Date();
+    // 다시 제출 회차 = 이 문서보다 먼저 제출된 같은 줄 번호 문서 수 + 1(처음 제출 때와 같은 자리).
+    const installmentSeq = !installment
+      ? null
+      : firstSubmittedAt
+        ? numbered.filter((doc) => doc.id !== locked.id && doc.submittedAt !== null && doc.submittedAt < firstSubmittedAt).length + 1
+        : (door?.nextInstallmentSeq ?? 1);
     await saveSubmissionSnapshot(
       viewer,
       {
@@ -816,19 +864,91 @@ export async function submitExpense(
           payableKrw: tax.payableKrw,
         },
         installment,
-        installmentSeq: installment ? (door?.nextInstallmentSeq ?? 1) : null,
+        installmentSeq,
         submittedAt,
+        updatedAt: deps?.now ?? new Date(),
       },
       tx,
     );
+    if (resubmit) {
+      const again = await resubmitDocument(viewer, prepared, { instanceId: resubmit.instanceId, expectedVersion: resubmit.version }, tx);
+      return { kind: "submitted", expenseId: locked.id, number: locked.number ?? "", instanceId: resubmit.instanceId, version: again.version, round: again.round };
+    }
     const instance = await submitDocument(viewer, prepared, { documentId: locked.id }, tx);
     const { number } =
       numbering.kind === "project"
         ? await allocateExpenseNumber(viewer, { projectNumber: numbering.projectNumber, format: numbering.format }, tx)
         : await allocateDocumentNumber(viewer, { counterKey: "expense_team", year: teamNumberYear, format: numbering.format }, tx);
     await setExpenseNumber(viewer, { id: locked.id, number }, tx);
-    return { kind: "submitted", expenseId: locked.id, number, instanceId: instance.id, version: instance.version };
+    return { kind: "submitted", expenseId: locked.id, number, instanceId: instance.id, version: instance.version, round: instance.currentRound };
   });
+}
+
+// ── 회수(05-09) ───────────────────────────────────────────────────────
+
+// 되돌리기 `{ expenseId, undo: true, round }`(토스트가 가진 차수만 — 인스턴스 version을 받지 않는다) · 문서 화면 회수
+// `{ expenseId, expectedInstanceVersion }`(화면이 본 값, 04.1과 같은 뜻). 둘 다 04.1 withdrawDocument(인스턴스만 잠그는 그 tx)에 위임한다.
+export type WithdrawExpenseInput = { expenseId: string; undo: true; round: number } | { expenseId: string; expectedInstanceVersion: number };
+
+// 되돌리기가 열린 상태 = 지금 차수가 토스트의 차수 · 상태 submitted · 지금 차수 처리(승인 · 반려) 기록 없음. 아니면 늦은 되돌리기 거부 —
+// 가장 최근 처리 기록의 처리자 · 시각 · 동작(없으면 인스턴스를 마지막으로 바꾼 사람 · 시각 · 상태, 04.1 충돌 문구).
+async function undoRefusal(viewer: Viewer, graph: ApprovalGraph, round: number, deps?: ApprovalDeps): Promise<ExpenseUndoRefusedError | null> {
+  const { instance } = graph;
+  const steps = graph.routes.find((route) => route.round === instance.currentRound)?.steps ?? [];
+  const acted = steps
+    .flatMap((step) => (step.action !== null && step.actedAt !== null ? [{ ...step, actedAt: step.actedAt }] : []))
+    .sort((a, b) => b.actedAt.getTime() - a.actedAt.getTime())[0];
+  if (instance.currentRound === round && instance.status === "submitted" && !acted) return null;
+  const namesVisible = await visible(viewer, "approval.value", deps?.findVisibility ? { findVisibility: deps.findVisibility } : undefined);
+  if (acted && (acted.action === "approved" || acted.action === "rejected")) {
+    const actorName = namesVisible ? acted.actedByName : null;
+    const message = buildLateUndoMessage({ actorName, at: acted.actedAt, action: acted.action, withdrawable: IN_PROGRESS_STATUSES.has(instance.status) });
+    return new ExpenseUndoRefusedError(message, { actorName, at: acted.actedAt, status: acted.action });
+  }
+  const actorName = namesVisible && instance.updatedBy === instance.drafterId ? instance.drafterName : null;
+  const message = buildConflictMessage({
+    status: instance.status as ApprovalStatus,
+    round: instance.currentRound,
+    actorName,
+    at: instance.updatedAt,
+    attempted: "withdraw",
+    versionReason: instance.versionReason === "evidence" ? "evidence" : null,
+  });
+  return new ExpenseUndoRefusedError(message, { actorName, at: instance.updatedAt, status: instance.status });
+}
+
+export async function withdrawExpense(
+  viewer: Viewer,
+  input: WithdrawExpenseInput,
+  deps?: ApprovalDeps,
+): Promise<{ status: string; version: number; round: number }> {
+  const row = UUID_SHAPE.test(input.expenseId) ? await findExpenseById(viewer, input.expenseId) : null;
+  if (!row || row.drafterId !== viewer.id || row.number === null) throw new ExpenseNotFoundError();
+  const readGraph = async () => {
+    const graph = await findApprovalGraphByDocument(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, documentId: row.id });
+    if (!graph) throw new ExpenseNotFoundError();
+    return graph;
+  };
+  if ("expectedInstanceVersion" in input) {
+    const graph = await readGraph();
+    const done = await withdrawDocument(viewer, { instanceId: graph.instance.id, expectedVersion: input.expectedInstanceVersion }, deps);
+    return { status: done.status, version: done.version, round: graph.instance.currentRound };
+  }
+  // 읽은 version으로 회수 — 읽기와 회수 사이에 결재자가 처리하면 04.1 충돌이 나고, 다시 읽어 늦은 되돌리기 거부로 올린다(처리 기록이
+  // 없이 version만 오른 경우 — 결재 중 증빙 붙이기 — 는 새 version으로 한 번 더).
+  const attempt = async () => {
+    const graph = await readGraph();
+    const refusal = await undoRefusal(viewer, graph, input.round, deps);
+    if (refusal) throw refusal;
+    const done = await withdrawDocument(viewer, { instanceId: graph.instance.id, expectedVersion: graph.instance.version }, deps);
+    return { status: done.status, version: done.version, round: graph.instance.currentRound };
+  };
+  try {
+    return await attempt();
+  } catch (error) {
+    if (!(error instanceof ApprovalConflictError)) throw error;
+    return attempt();
+  }
 }
 
 // ── 제출 판정 사실(05-06 — 미리보기 · 제출 공용) ──────────────────────────
@@ -900,8 +1020,7 @@ export type ExpenseSubmitBlock = NonNullable<ExpensePreviewDto["block"]>;
 // 저장 전 칸 값을 초안에 겹쳐 세금 한 줄 · 제출 막힘 첫 이유와 대상 · 회차 상한 칸 오류를 돌려준다. 기안자 · 작성 중만(아니면 없는 문서 —
 // 남의 초안을 계산하지 않는다, T-05-603). 트랜잭션 · 쓰기 없음 — 미리보기 통과가 제출 통과를 보장하지 않는다(제출이 tx 안에서 같은 규칙으로 다시 판정).
 export async function previewExpense(viewer: Viewer, input: { expenseId: string; fields: ExpenseDraftInput }): Promise<Partial<ExpensePreviewDto>> {
-  const saved = UUID_SHAPE.test(input.expenseId) ? await findExpenseById(viewer, input.expenseId) : null;
-  if (!saved || saved.drafterId !== viewer.id || saved.number !== null) throw new ExpenseNotFoundError();
+  const saved = await findEditableExpense(viewer, input.expenseId);
   const projectRow = saved.projectId ? await findProjectById(viewer, saved.projectId) : null;
   if (!projectRow && !isTeamCostRow(saved)) throw new ExpenseNotFoundError();
   const row: ExpenseRow = { ...saved, ...toDraftColumns(draftFieldsSchema.parse(input.fields)) };
@@ -944,14 +1063,15 @@ export async function previewExpense(viewer: Viewer, input: { expenseId: string;
 type LineFacts = Pick<SourceExtras, "executionLines" | "installmentMode" | "installmentText">;
 
 async function lineFactsFor(viewer: Viewer, row: ExpenseSummaryRow, supply: Money | null): Promise<LineFacts> {
-  if (row.number !== null || !row.quoteLineId) return {};
+  // 05-09: 번호 있는 문서도 기안자가 고칠 수 있으면(반려 · 회수) 폼 재료를 받는다 — 회차 · 남은 실행가는 자기 자신을 뺀 번호 문서로.
+  if (!isEditableByDrafter(viewer.id, row, row.status) || !row.quoteLineId) return {};
   const line = await findQuoteLineById(viewer, row.quoteLineId);
   if (!line) return {};
   const execution = lineExecution(line);
   const executionLines = [`실행가 ${formatKrw(execution.amountKrw)}`];
   if (execution.currency !== "KRW") executionLines.push(`${execution.currency} ${formatForeignAmount(execution.amount)} @${formatFxRate(execution.fxRate)}`);
 
-  const numbered = await listNumberedByLine(viewer, line.id);
+  const numbered = (await listNumberedByLine(viewer, line.id)).filter((doc) => doc.id !== row.id);
   const forced = numbered.length > 0;
   const installmentMode = forced ? "fixed" : "checkbox";
   const { basis, remaining } = remainingForInstallments(
@@ -1008,12 +1128,14 @@ export async function getExpense(viewer: Viewer, input: { expenseId: string }): 
   const supply = supplyMoney(row);
   // 제출 뒤는 저장된 스냅숏, 작성 중은 지금 기준 계산. 번호 있는 문서는 지금 설정 · 기준일로 다시 계산해 저장값과 다르면
   // 세율 바뀜(값 비교만 — 스냅숏의 이력 행 id로 설정 이력을 다시 읽지 않는다, B1 Round 2).
-  const stored = storedTaxResult(row);
+  // 05-09: 기안자가 고치는 반려 · 회수 문서는 작성 중처럼 지금 기준 계산(다시 제출이 새로 저장한다).
+  const editable = isEditableByDrafter(viewer.id, row, row.status);
+  const stored = editable ? null : storedTaxResult(row);
   const current = supply && (stored === null || row.number !== null) ? await computeExpenseTax(viewer, row) : null;
   const result = stored ?? current;
   const taxLine = result && supply ? taxLineText(result, supply, `${evidenceTypeName ?? ""} 규칙`) : null;
   const taxDrift = stored && current && row.number !== null ? taxDriftText(stored, current) : null;
-  const vendor = row.number === null && row.vendorId ? await findVendorById(viewer, row.vendorId) : null;
+  const vendor = editable && row.vendorId ? await findVendorById(viewer, row.vendorId) : null;
   return project(
     viewer,
     toSource(row, {

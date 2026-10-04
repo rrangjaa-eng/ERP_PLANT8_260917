@@ -18,6 +18,7 @@ import { SubmittedToast } from "@/app/(app)/leave/[id]/submitted-toast";
 import { routeListSteps, withdrawResultLines } from "@/app/(app)/leave/status-display";
 import { expenseStatusWord } from "../status-display";
 import { EvidenceAttachments } from "./evidence-attachments";
+import { SubmittedUndoToast } from "./submitted-undo-toast";
 import { TaxParts } from "./tax-parts";
 import styles from "./expense.module.css";
 
@@ -50,18 +51,17 @@ export function ExpenseDocument({
   const inProgress = view?.status !== undefined && IN_PROGRESS.includes(view.status);
 
   // 제출 직후 착지(`?submitted=1`) — 결재 중이고 기안자(회수 가능)일 때만 토스트. 이름은 주소에 싣지 않고 지금 단계 담당에서 만든다.
+  // 05-09: 차수 2 이상이면 다시 제출 토스트, 둘 다 3차 `되돌리기`(확인 없는 즉시 회수 — 토스트가 지금 차수를 가진다).
   const holderNames = (view?.steps ?? [])
     .filter((step) => step.state === "current" && step.holderNames)
     .map((step) => step.holderNames)
     .join(", ");
-  const toast =
-    submitted === "1" && inProgress && actions.includes("withdraw")
-      ? holderNames
-        ? `지출결의 제출 · 결재 요청됨 → ${holderNames}`
-        : "지출결의 제출 · 결재 요청됨"
-      : submitted === "already" && expense.number
-        ? `이미 제출됨 · ${expense.number}`
-        : null;
+  const submitLabel = (view?.round ?? 1) > 1 ? "지출결의 다시 제출" : "지출결의 제출";
+  const undoToast =
+    submitted === "1" && inProgress && actions.includes("withdraw") && view?.round
+      ? { round: view.round, message: holderNames ? `${submitLabel} · 결재 요청됨 → ${holderNames}` : `${submitLabel} · 결재 요청됨` }
+      : null;
+  const toast = !undoToast && submitted === "already" && expense.number ? `이미 제출됨 · ${expense.number}` : null;
 
   const dash = <span className={styles.muted}>—</span>;
   const items: KvItem[] = [
@@ -157,6 +157,7 @@ export function ExpenseDocument({
           resubmit={null}
           resubmitRoute={null}
         />
+        {undoToast ? <SubmittedUndoToast expenseId={id} round={undoToast.round} message={undoToast.message} /> : null}
         {toast ? <SubmittedToast message={toast} href={`/expenses/${id}`} /> : null}
       </DetailScreen>
     </div>

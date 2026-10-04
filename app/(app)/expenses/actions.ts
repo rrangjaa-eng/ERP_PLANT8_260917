@@ -16,6 +16,7 @@ import {
   previewExpense,
   saveExpenseDraft,
   submitExpense,
+  withdrawExpense,
 } from "@/domain/expenses";
 import { searchLinesForPick, searchVendorsForPick } from "@/domain/expenses/pick";
 import {
@@ -132,20 +133,37 @@ export const submitExpenseAction = authedActionClient
     revalidatePath("/expenses");
     revalidatePath(`/expenses/${submitted.expenseId}`);
     if (submitted.kind === "already_submitted") return { kind: "already_submitted" as const, expenseId: submitted.expenseId, number: submitted.number };
-    // 제출은 이미 커밋됐다 — 토스트 재료(다음 담당 이름) 읽기가 실패해도 성공으로 돌려준다(연차 신청과 같은 규칙).
+    // 제출은 이미 커밋됐다 — 토스트 재료(다음 담당 이름) 읽기가 실패해도 성공으로 돌려준다(연차 신청과 같은 규칙). 차수는 토스트 `되돌리기`가 가진다(05-09).
     const at = formatKstTime(new Date());
     try {
       const nextHolderNames = await currentHolderNames(ctx.viewer, { kind: EXPENSE_DOCUMENT_KIND, documentId: submitted.expenseId });
       return {
         kind: "submitted" as const,
         number: submitted.number,
+        round: submitted.round,
         at,
         result: await projectActionResult(ctx.viewer, { documentId: submitted.expenseId, final: false, nextHolderNames }),
       };
     } catch (error) {
       log.warn("expense.submit_toast_material_failed", { expenseId: submitted.expenseId, error: error instanceof Error ? error.message : String(error) });
-      return { kind: "submitted" as const, number: submitted.number, at, result: { documentId: submitted.expenseId, final: false } };
+      return { kind: "submitted" as const, number: submitted.number, round: submitted.round, at, result: { documentId: submitted.expenseId, final: false } };
     }
+  });
+
+// 05-09 회수 — 입력은 두 모양만: 토스트 되돌리기(차수만 — 인스턴스 version 없음) · 문서 화면 회수(화면이 본 인스턴스 version).
+// 거부(늦은 되돌리기 · 04.1 충돌)는 UserFacingError 문구 그대로 serverError로 간다.
+export const withdrawExpenseAction = authedActionClient
+  .schema(
+    z.union([
+      z.object({ expenseId: expenseIdSchema, undo: z.literal(true), round: z.number().int().min(1) }).strict(),
+      z.object({ expenseId: expenseIdSchema, expectedInstanceVersion: z.number().int().min(1) }).strict(),
+    ]),
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    const withdrawn = await withdrawExpense(ctx.viewer, parsedInput);
+    revalidatePath("/expenses");
+    revalidatePath(`/expenses/${parsedInput.expenseId}`);
+    return { status: withdrawn.status };
   });
 
 export const requestEvidenceUploadAction = authedActionClient

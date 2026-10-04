@@ -58,6 +58,15 @@ export function buildConflictMessage(state: ConflictState): string {
   }
 }
 
+// 05-09 늦은 되돌리기(UI-SPEC Copywriting 「거부 — 늦은 되돌리기」) — 제출 토스트 `되돌리기`를 눌렀을 때 지금 차수 첫 처리가 이미 있다.
+// 승인됐고 결재가 아직 진행 중이면 다음 행동은 문서 화면 회수(04.1 S6 확인), 반려 · 최종 승인이면 새로 고침. 이름을 볼 수 없으면 이름 없이.
+export function buildLateUndoMessage(state: { actorName: string | null; at: Date; action: "approved" | "rejected"; withdrawable: boolean }): string {
+  const head = state.actorName ? `${state.actorName}${subjectParticle(state.actorName)} ` : "";
+  const verb = state.action === "approved" ? "승인함" : "반려함";
+  const next = state.action === "approved" && state.withdrawable ? " · 문서에서 회수" : NEXT;
+  return `${head}${SEOUL_TIME.format(state.at)}에 ${verb}${next}`;
+}
+
 // 관련자 = 기안자 · 이 인스턴스에서 단계를 처리한 사람(모든 차수) · 지금 차수 단계들의 지금 해석한 담당
 // (기안자 제외 전 — 지금 자리가 대표 폴백이면 폴백 후보 포함, X-3). 입력 집합은 호출자가 만든다.
 export function isApprovalParty(

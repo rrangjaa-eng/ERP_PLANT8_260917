@@ -1042,6 +1042,66 @@ SETTING_DEFS.push(
   DOCUMENT_NUMBER_EXPENSE_SEQ_START,
 );
 
+// 05-07 팀 비용 지출결의 번호 `T26-0001`(사용자 결정 2026-09-26 #6) — 카운터 `expense_team`, period = 제출일(서울)의 연도.
+// 프로젝트 번호와 같은 서식 다섯 키(접두어 · 연도 자릿수 · 순번 자릿수 · 구분자 · 순번 시작값).
+export const DOCUMENT_NUMBER_EXPENSE_TEAM_PREFIX: SettingDef<string> = {
+  key: "document_number.expense_team.prefix",
+  kind: "simple",
+  schema: z.string(),
+  label: "팀 비용 번호 접두어",
+  hint: "번호 맨 앞에 붙는 문자열입니다(기본 T).",
+  namespace: "문서 번호",
+  default: "T",
+};
+
+export const DOCUMENT_NUMBER_EXPENSE_TEAM_YEAR_DIGITS: SettingDef<number> = {
+  key: "document_number.expense_team.year_digits",
+  kind: "simple",
+  schema: z.coerce.number().int().min(1).max(4),
+  label: "팀 비용 번호 연도 자릿수",
+  hint: "연도를 뒤에서부터 이 자릿수만큼 씁니다(기본 2 → 26).",
+  namespace: "문서 번호",
+  default: 2,
+};
+
+export const DOCUMENT_NUMBER_EXPENSE_TEAM_SEQ_DIGITS: SettingDef<number> = {
+  key: "document_number.expense_team.seq_digits",
+  kind: "simple",
+  schema: z.coerce.number().int().min(1),
+  label: "팀 비용 번호 순번 자릿수",
+  hint: "순번을 이 자릿수만큼 0으로 채웁니다(넘치면 자릿수가 늘어나고 잘리지 않습니다).",
+  namespace: "문서 번호",
+  default: 4,
+};
+
+export const DOCUMENT_NUMBER_EXPENSE_TEAM_SEPARATOR: SettingDef<string> = {
+  key: "document_number.expense_team.separator",
+  kind: "simple",
+  schema: z.string(),
+  label: "팀 비용 번호 구분자",
+  hint: "연도와 순번 사이에 넣을 문자입니다(기본 -).",
+  namespace: "문서 번호",
+  default: "-",
+};
+
+export const DOCUMENT_NUMBER_EXPENSE_TEAM_SEQ_START: SettingDef<number> = {
+  key: "document_number.expense_team.seq_start",
+  kind: "simple",
+  schema: z.coerce.number().int().min(0),
+  label: "팀 비용 번호 순번 시작값",
+  hint: "연도가 바뀌어 순번이 다시 시작할 때의 첫 값입니다(기본 1).",
+  namespace: "문서 번호",
+  default: 1,
+};
+
+SETTING_DEFS.push(
+  DOCUMENT_NUMBER_EXPENSE_TEAM_PREFIX,
+  DOCUMENT_NUMBER_EXPENSE_TEAM_YEAR_DIGITS,
+  DOCUMENT_NUMBER_EXPENSE_TEAM_SEQ_DIGITS,
+  DOCUMENT_NUMBER_EXPENSE_TEAM_SEPARATOR,
+  DOCUMENT_NUMBER_EXPENSE_TEAM_SEQ_START,
+);
+
 // 05-04(EVID-01 · UI-SPEC S13): 증빙 크기 한도 — 06-02가 계획한 같은 이름을 이 페이즈가 등록한다. 첨부 영역 글자 · 크기 오류
 // 문구 · 서명 PUT 주소의 크기 조건에 같이 쓰인다. 오류 문구는 명사형(DECISIONS 2026-09-26 · #87).
 export const EVIDENCE_MAX_SIZE_MB: SettingDef<number> = {

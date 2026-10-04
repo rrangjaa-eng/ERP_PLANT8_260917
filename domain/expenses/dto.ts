@@ -48,6 +48,12 @@ export type ExpenseDocumentDto = ExpenseDraftDto & {
   evidenceTypeName: string | null;
   paymentMethodName: string | null;
   installmentSeq: number | null;
+  // 05-07 팀 비용 문서(프로젝트 · 견적 줄 없음) — 귀속 팀 이름(저장 때 고정) · 종류 · 사용일 · 내용. 견적 줄 문서는 null.
+  teamExpenseKind: string | null;
+  teamExpenseKindLabel: string | null;
+  usageDate: string | null;
+  content: string | null;
+  teamName: string | null;
   statusWord: string;
   instanceId: string | null;
   submittedAt: Date | null;
@@ -82,6 +88,11 @@ export const EXPENSE_DOCUMENT_DTO_SPEC: DtoSpec<ExpenseDocumentDto, ExpenseDocum
     { key: "evidenceTypeName", from: "evidenceTypeName", infoItem: "expense.value" },
     { key: "paymentMethodName", from: "paymentMethodName", infoItem: "expense.value" },
     { key: "installmentSeq", from: "installmentSeq", infoItem: "expense.value" },
+    { key: "teamExpenseKind", from: "teamExpenseKind", infoItem: "expense.value" },
+    { key: "teamExpenseKindLabel", from: "teamExpenseKindLabel", infoItem: "expense.value" },
+    { key: "usageDate", from: "usageDate", infoItem: "expense.value" },
+    { key: "content", from: "content", infoItem: "expense.value" },
+    { key: "teamName", from: "teamName", infoItem: "expense.value" },
     { key: "statusWord", from: "statusWord", infoItem: "expense.value" },
     { key: "instanceId", from: "instanceId", infoItem: "expense.value" },
     { key: "submittedAt", from: "submittedAt", infoItem: "expense.value" },
@@ -108,6 +119,11 @@ export type ExpenseDetailDto = {
   number: string | null;
   projectNumber: string | null;
   projectName: string | null;
+  // 05-07 팀 비용 문서 — 견적 줄 문서는 teamName null.
+  teamName: string | null;
+  teamExpenseKindLabel: string | null;
+  usageDate: string | null;
+  content: string | null;
   lineNo: number | null;
   itemName: string | null;
   installment: boolean;
@@ -128,6 +144,10 @@ export const EXPENSE_DETAIL_DTO_SPEC: DtoSpec<ExpenseDetailDto, ExpenseDetailDto
     { key: "number", from: "number", infoItem: "expense.value" },
     { key: "projectNumber", from: "projectNumber", infoItem: "expense.value" },
     { key: "projectName", from: "projectName", infoItem: "expense.value" },
+    { key: "teamName", from: "teamName", infoItem: "expense.value" },
+    { key: "teamExpenseKindLabel", from: "teamExpenseKindLabel", infoItem: "expense.value" },
+    { key: "usageDate", from: "usageDate", infoItem: "expense.value" },
+    { key: "content", from: "content", infoItem: "expense.value" },
     { key: "lineNo", from: "lineNo", infoItem: "expense.value" },
     { key: "itemName", from: "itemName", infoItem: "expense.value" },
     { key: "installment", from: "installment", infoItem: "expense.value" },
@@ -150,7 +170,9 @@ export type ExpensePreviewDto = {
   taxLine: { text: string; parts: TaxLinePart[] } | null;
   // 05-06 Task 2 — 첫 막힘 글자 · 다음 한 수 대상 · 대상이 페이지 이동이면 그 주소(① 담당 PM 프로젝트 상세 · ④ 가장 최근 문서).
   block: { reason: string; target: string | null; href: string | null } | null;
-  fieldErrors: { supplyAmount?: string };
+  fieldErrors: { supplyAmount?: string; usageDate?: string };
+  // 05-07 팀 비용 — 사용일 소속 팀 이름(사용일을 바꾸면 미리보기로 다시 온다). 견적 줄 문서 null.
+  teamName: string | null;
 };
 
 export const EXPENSE_PREVIEW_DTO_SPEC: DtoSpec<ExpensePreviewDto, ExpensePreviewDto> = {
@@ -158,6 +180,7 @@ export const EXPENSE_PREVIEW_DTO_SPEC: DtoSpec<ExpensePreviewDto, ExpensePreview
     { key: "taxLine", from: "taxLine", infoItem: "expense.amount" },
     { key: "block", from: "block", infoItem: "expense.value" },
     { key: "fieldErrors", from: "fieldErrors", infoItem: "expense.amount" },
+    { key: "teamName", from: "teamName", infoItem: "expense.value" },
   ],
 };
 

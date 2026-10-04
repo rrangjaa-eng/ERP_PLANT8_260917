@@ -44,6 +44,22 @@ export async function searchVendorsByNormalizedName(
     .orderBy(vendors.normalizedName, vendors.id);
 }
 
+// 05-07 골라내기 — 숨김 · 보관 아닌 거래처, 이름 부분 일치(검색어 없으면 전체), 정렬은 이름 → id, 최대 limit행.
+export async function listVendorsForPick(
+  viewer: Viewer,
+  opts: { normalizedQuery: string; limit: number },
+): Promise<VendorRow[]> {
+  void viewer;
+  const conditions = [eq(vendors.hidden, false), isNull(vendors.archivedAt)];
+  if (opts.normalizedQuery !== "") conditions.push(ilike(vendors.normalizedName, `%${opts.normalizedQuery}%`));
+  return db
+    .select()
+    .from(vendors)
+    .where(and(...conditions))
+    .orderBy(vendors.normalizedName, vendors.id)
+    .limit(opts.limit);
+}
+
 export async function findVendorById(viewer: Viewer, id: string): Promise<VendorRow | null> {
   const [row] = await db.select().from(vendors).where(eq(vendors.id, id)).limit(1);
   return row ?? null;

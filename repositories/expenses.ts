@@ -25,6 +25,23 @@ export async function insertDraftIfAbsent(viewer: Viewer, values: ExpenseDraftIn
   return row ?? null;
 }
 
+// 05-07 팀 비용 첫 저장 — idempotency_key UNIQUE가 두 번 눌러도 하나로 막는다(이미 있으면 아무것도 쓰지 않고 null).
+export async function insertTeamDraftIfAbsent(viewer: Viewer, values: ExpenseDraftInsert, tx: DbOrTx = db): Promise<ExpenseRow | null> {
+  void viewer;
+  const [row] = await tx.insert(expenses).values(values).onConflictDoNothing({ target: expenses.idempotencyKey }).returning();
+  return row ?? null;
+}
+
+export async function findExpenseByIdempotencyKey(viewer: Viewer, key: string, tx: DbOrTx = db): Promise<ExpenseRow | null> {
+  void viewer;
+  const [row] = await tx
+    .select()
+    .from(expenses)
+    .where(and(eq(expenses.idempotencyKey, key), isNull(expenses.deletedAt)))
+    .limit(1);
+  return row ?? null;
+}
+
 export async function findDraftByLineAndDrafter(
   viewer: Viewer,
   input: { quoteLineId: string; drafterId: string },
@@ -95,6 +112,10 @@ export type ExpenseDraftFields = Partial<
     | "installment"
     | "scheduledPaymentDate"
     | "note"
+    | "teamExpenseKind"
+    | "usageDate"
+    | "content"
+    | "attributedTeamId"
   >
 >;
 

@@ -75,4 +75,33 @@ describe("buildExpenseDetailRows", () => {
     expect(built.rows.find((row) => row.label === "증빙 종류")).toEqual({ label: "증빙 종류", value: "—", tone: "muted" });
     expect(built.rows.find((row) => row.label === "지급 예정일")).toEqual({ label: "지급 예정일", value: "—", tone: "muted" });
   });
+
+  it("팀 비용 문서는 제목이 `지출결의 — {팀} · {내용}`, 프로젝트 값 `프로젝트 미연결 · {종류}`(muted) 뒤에 팀 · 사용일 · 내용 행이고 견적 줄 · 분할 지급은 없다", () => {
+    const team = {
+      ...full,
+      number: "T26-0001",
+      projectNumber: null,
+      projectName: null,
+      lineNo: null,
+      itemName: null,
+      teamName: "기획1팀",
+      teamExpenseKindLabel: "팀 관리비",
+      usageDate: "2026-09-26",
+      content: "팀 회식",
+      installment: true,
+      installmentSeq: 2,
+    };
+    const built = buildExpenseDetailRows(team);
+    expect(built.title).toBe("지출결의 — 기획1팀 · 팀 회식");
+    expect(built.rows.slice(0, 6)).toEqual([
+      { label: "프로젝트", value: "프로젝트 미연결 · 팀 관리비", tone: "muted" },
+      { label: "팀", value: "기획1팀", tone: "default" },
+      { label: "사용일", value: "2026-09-26", tone: "default" },
+      { label: "내용", value: "팀 회식", tone: "default" },
+      { label: "거래처", value: "스테이지원", tone: "default" },
+      { label: "증빙 종류", value: "세금계산서", tone: "default" },
+    ]);
+    expect(built.rows.map((row) => row.label)).not.toContain("견적 줄");
+    expect(buildExpenseDetailRows({ ...team, content: null }).title).toBe("지출결의 — 기획1팀");
+  });
 });

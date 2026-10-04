@@ -18,6 +18,7 @@ function compact(rows: (DocumentDetailRow | null)[]): DocumentDetailRow[] {
 }
 
 export function expenseDetailTitle(projected: Partial<ExpenseDetailDto>): string {
+  if (projected.teamName) return `지출결의 — ${projected.teamName}${projected.content ? ` · ${projected.content}` : ""}`;
   return projected.projectName && projected.itemName ? `지출결의 — ${projected.projectName} · ${projected.itemName}` : "지출결의";
 }
 
@@ -25,10 +26,18 @@ export function buildExpenseDetailRows(projected: Partial<ExpenseDetailDto>): Do
   const projectText =
     projected.projectName === undefined ? undefined : [projected.projectNumber, projected.projectName].filter(Boolean).join(" ") || null;
   const lineText = projected.itemName === undefined ? undefined : [projected.lineNo, projected.itemName].filter(Boolean).join(" ") || null;
+  // 팀 비용 문서 — 프로젝트 값은 `프로젝트 미연결 · {종류}`(muted), 견적 줄 · 분할 지급 대신 팀 · 사용일 · 내용.
+  const teamRows = projected.teamName
+    ? compact([
+        { label: "프로젝트", value: ["프로젝트 미연결", projected.teamExpenseKindLabel].filter(Boolean).join(" · "), tone: "muted" },
+        textRow("팀", projected.teamName),
+        textRow("사용일", projected.usageDate),
+        textRow("내용", projected.content),
+      ])
+    : null;
   const rows = compact([
-    textRow("프로젝트", projectText),
-    textRow("견적 줄", lineText),
-    projected.installment ? textRow("분할 지급", projected.installmentSeq ? `${projected.installmentSeq}회차` : DASH) : null,
+    ...(teamRows ?? [textRow("프로젝트", projectText), textRow("견적 줄", lineText)]),
+    !teamRows && projected.installment ? textRow("분할 지급", projected.installmentSeq ? `${projected.installmentSeq}회차` : DASH) : null,
     textRow("거래처", projected.vendorName),
     textRow("증빙 종류", projected.evidenceTypeName),
   ]);

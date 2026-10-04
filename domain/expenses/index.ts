@@ -41,7 +41,8 @@ import { gate, GateBlockedError } from "@/domain/rules/gate";
 import "@/domain/rules/register";
 import { moneyFromRow, moneyToColumns, remainingForInstallments, type Money } from "@/domain/money";
 import { CURRENCIES, recentFxRate } from "@/domain/money/currency";
-import { allocateExpenseNumber, loadExpenseNumberFormat } from "@/domain/document-numbering";
+import { allocateDocumentNumber, allocateExpenseNumber, loadDocumentNumberFormat, loadExpenseNumberFormat } from "@/domain/document-numbering";
+import { teamAtDate } from "@/domain/org";
 import { formatKstTime } from "@/domain/holidays/business-day";
 import { computeExpenseTax, storedTaxResult, taxDriftText, taxLineText, type ExpenseTaxResult } from "@/domain/expenses/tax";
 import { buildExpenseDetailRows } from "@/domain/expenses/detail";
@@ -68,7 +69,9 @@ import {
   findDraftByLineAndDrafter,
   findExpenseApprovalStatus,
   findExpenseById,
+  findExpenseByIdempotencyKey,
   insertDraftIfAbsent,
+  insertTeamDraftIfAbsent,
   listDraftsByLines,
   listExpenseSummaries,
   listNumberedByLine,
@@ -95,6 +98,21 @@ const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 const NOT_IN_CURRENT_REVISION = "견적 줄이 현재 차수에 없음 · 견적 줄 바꾸기";
 const NO_VENDOR = "거래처 없음 · 거래처 고르기";
 const ACTIVE_STATUSES = new Set(["submitted", "in_review", "approved"]);
+const NO_TEAM_AT_USAGE_DATE = "사용일에 소속 팀 없음 · 사용일 고치기";
+
+// 05-07 팀 비용 종류(DB 체크 expenses_team_expense_kind_check와 같은 값) — 화면 글자.
+export const TEAM_EXPENSE_KINDS = ["lost_bid", "team_overhead"] as const;
+export type TeamExpenseKind = (typeof TEAM_EXPENSE_KINDS)[number];
+export const TEAM_EXPENSE_KIND_LABELS: Record<TeamExpenseKind, string> = { lost_bid: "미수주 비용", team_overhead: "팀 관리비" };
+
+function teamKindLabel(kind: string | null): string | null {
+  return kind && kind in TEAM_EXPENSE_KIND_LABELS ? TEAM_EXPENSE_KIND_LABELS[kind as TeamExpenseKind] : null;
+}
+
+// 프로젝트 · 견적 줄 없이 팀 이름으로 올리는 문서(EXP-08).
+function isTeamCostRow(row: Pick<ExpenseRow, "projectId" | "quoteLineId">): boolean {
+  return row.projectId === null && row.quoteLineId === null;
+}
 
 export class ExpenseNotFoundError extends UserFacingError {
   constructor() {
@@ -105,7 +123,7 @@ export class ExpenseNotFoundError extends UserFacingError {
 // 칸 오류 — 회차 상한 초과(게이트가 아니라 공급가액 칸 아래 한 줄).
 export class ExpenseFieldError extends UserFacingError {
   constructor(
-    readonly field: "supplyAmount",
+    readonly field: "supplyAmount" | "usageDate",
     message: string,
   ) {
     super(message);
@@ -221,6 +239,11 @@ function toSource(row: ExpenseSummaryRow, extras: SourceExtras = {}): ExpenseDoc
     evidenceTypeName: extras.evidenceTypeName ?? null,
     paymentMethodName: extras.paymentMethodName ?? null,
     installmentSeq: row.installmentSeq,
+    teamExpenseKind: row.teamExpenseKind,
+    teamExpenseKindLabel: teamKindLabel(row.teamExpenseKind),
+    usageDate: row.usageDate,
+    content: row.content,
+    teamName: isTeamCostRow(row) ? row.teamName : null,
     statusWord: statusWordFor(row.status),
     instanceId: row.instanceId,
     submittedAt: row.submittedAt,
@@ -248,6 +271,7 @@ async function describeExpenseDocuments(viewer: Viewer, ids: string[], deps?: De
     const projected = await project(viewer, toSource(row), EXPENSE_DOCUMENT_DTO_SPEC, deps?.visible ? { visible: deps.visible } : undefined);
     const summary: DocumentSummary = { ...projected };
     if (projected.projectName && projected.itemName) summary.documentText = `${projected.projectName} · ${projected.itemName}`;
+    else if (projected.teamName) summary.documentText = ["지출결의", projected.teamName, projected.content].filter(Boolean).join(" · ");
     if (projected.supply) {
       const { currency, amount, fxRate, amountKrw } = projected.supply;
       summary.measure = { kind: "money", money: { currency, amount, fxRate, amountKrw } };
@@ -258,7 +282,7 @@ async function describeExpenseDocuments(viewer: Viewer, ids: string[], deps?: De
 }
 
 // 코드표 값 → 이름(보관 · 비활성도 — 이미 저장된 값을 이름으로 보인다).
-async function codeLabelsOf(viewer: Viewer, tableKey: string): Promise<Map<string, string>> {
+export async function codeLabelsOf(viewer: Viewer, tableKey: string): Promise<Map<string, string>> {
   const items = await listCodeItems(viewer, { tableKey, scope: { rows: "all", includeArchived: true }, includeInactive: true });
   return new Map(items.map((item) => [item.value, item.label]));
 }
@@ -277,6 +301,10 @@ async function loadExpenseDetails(viewer: Viewer, ids: string[]): Promise<Map<st
       number: row.number,
       projectNumber: row.projectNumber,
       projectName: row.projectName,
+      teamName: isTeamCostRow(row) ? row.teamName : null,
+      teamExpenseKindLabel: teamKindLabel(row.teamExpenseKind),
+      usageDate: row.usageDate,
+      content: row.content,
       lineNo: row.lineNo,
       itemName: row.itemName,
       installment: row.installment,
@@ -500,6 +528,9 @@ const draftFieldsSchema = z
     scheduledPaymentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
     note: z.string().max(1000).nullable(),
     installment: z.boolean(),
+    teamExpenseKind: z.enum(TEAM_EXPENSE_KINDS).nullable(),
+    usageDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    content: z.string().max(480).nullable(),
   })
   .strict()
   .partial();
@@ -507,7 +538,9 @@ const draftFieldsSchema = z
 export type ExpenseDraftInput = z.input<typeof draftFieldsSchema>;
 
 function toDraftColumns(fields: z.output<typeof draftFieldsSchema>): ExpenseDraftFields {
-  const { supply, ...rest } = fields;
+  const { supply, content, ...others } = fields;
+  // 공백뿐인 내용은 비운 것과 같다.
+  const rest = content === undefined ? others : { ...others, content: content?.trim() ? content.trim() : null };
   if (supply === undefined) return rest;
   if (supply === null) return { ...rest, supplyCurrency: "KRW", supplyForeignAmount: null, supplyFxRate: "1.0000", supplyAmountKrw: null };
   // moneyToColumns가 normalizeMoneyInput으로 통화 · 정밀도 · 범위를 판정한다.
@@ -528,13 +561,85 @@ export async function saveExpenseDraft(
 ): Promise<{ version: number }> {
   const row = UUID_SHAPE.test(input.expenseId) ? await findExpenseById(viewer, input.expenseId) : null;
   if (!row || row.drafterId !== viewer.id || row.number !== null) throw new ExpenseNotFoundError();
-  const fields = toDraftColumns(draftFieldsSchema.parse(input.fields));
+  const parsed = draftFieldsSchema.parse(input.fields);
+  const fields = toDraftColumns(parsed);
+  // 팀 비용 칸은 팀 비용 문서만 받는다(DB 체크 expenses_line_or_team_check도 같은 편). 귀속 팀은 사용일 소속으로 저장 때 다시 정해진다 —
+  // 팀 id를 호출자가 보낼 수 없다(T-05-703). 트랜잭션 · 잠금 밖의 읽기다.
+  if (!isTeamCostRow(row)) {
+    if (parsed.teamExpenseKind !== undefined || parsed.usageDate !== undefined || parsed.content !== undefined) throw new ExpenseNotFoundError();
+  } else if (parsed.usageDate !== undefined) {
+    fields.attributedTeamId = await attributedTeamFor(viewer, parsed.usageDate);
+  }
   const saved = await updateDraftIfVersion(viewer, { id: row.id, expectedVersion: input.expectedVersion, fields, updatedBy: viewer.id });
   if (!saved) {
     const latest = await findExpenseById(viewer, row.id);
     throw new ExpenseConflictError(latest?.updatedAt ?? row.updatedAt);
   }
   return { version: saved.version };
+}
+
+// ── 팀 비용 첫 저장(05-07 · EXP-08) ───────────────────────────────────────
+
+// 사용일 소속 팀 — 기안자 본인의 그날 소속. 없으면 사용일 칸 오류(임의의 기본 팀으로 떨어지지 않는다).
+async function attributedTeamFor(viewer: Viewer, usageDate: string): Promise<string> {
+  const team = await teamAtDate(viewer, viewer.id, usageDate);
+  if (!team?.id) throw new ExpenseFieldError("usageDate", NO_TEAM_AT_USAGE_DATE);
+  return team.id;
+}
+
+// `/expenses/new`의 첫 저장 — 폼이 열릴 때 만든 idempotency key로 두 번 눌러도 문서 하나(UNIQUE + ON CONFLICT DO NOTHING 뒤 재조회).
+// 프로젝트 · 견적 줄 없이 사용일 소속 팀에 귀속된다(사용일이 없으면 서울 오늘). 팀 id는 입력에 없다.
+export async function createTeamExpenseDraft(
+  viewer: Viewer,
+  input: { idempotencyKey: string; fields: ExpenseDraftInput },
+  deps?: { now?: Date },
+): Promise<{ expenseId: string; version: number }> {
+  if (!(await can(viewer, "expenses", "write"))) throw new ForbiddenError("지출결의 작성 권한 없음");
+  const key = z.string().uuid().parse(input.idempotencyKey);
+  const reuse = (row: ExpenseRow | null): { expenseId: string; version: number } | null => {
+    if (!row) return null;
+    // 다른 사람의 key · 이미 제출된 문서는 없는 문서다.
+    if (row.drafterId !== viewer.id || row.number !== null || !isTeamCostRow(row)) throw new ExpenseNotFoundError();
+    return { expenseId: row.id, version: row.version };
+  };
+  const existing = reuse(await findExpenseByIdempotencyKey(viewer, key));
+  if (existing) return existing;
+
+  const parsed = draftFieldsSchema.parse(input.fields);
+  const usageDate = parsed.usageDate ?? seoulToday(deps?.now);
+  const attributedTeamId = await attributedTeamFor(viewer, usageDate);
+  const inserted = await insertTeamDraftIfAbsent(viewer, {
+    ...toDraftColumns(parsed),
+    drafterId: viewer.id,
+    idempotencyKey: key,
+    usageDate,
+    attributedTeamId,
+    updatedBy: viewer.id,
+  });
+  const row = inserted ?? (await findExpenseByIdempotencyKey(viewer, key));
+  const created = reuse(row);
+  if (!created) throw new ExpenseNotFoundError();
+  return created;
+}
+
+// 05-07 거래처 바꾸기 · 고르기(팀 비용 문서) — 기안자 · 작성 중만. 증빙 종류는 그 거래처 기본값(없으면 그대로). 견적 줄 문서의 거래처는
+// 줄이 정한다(제출 판정 ⑤가 줄의 거래처를 본다) — 줄을 바꾸는 것이 그 길이다.
+export async function changeExpenseVendor(
+  viewer: Viewer,
+  input: { expenseId: string; vendorId: string; expectedVersion: number },
+): Promise<{ version: number; evidenceType: string | null }> {
+  if (!(await can(viewer, "expenses", "write"))) throw new ForbiddenError("지출결의 작성 권한 없음");
+  const row = UUID_SHAPE.test(input.expenseId) ? await findExpenseById(viewer, input.expenseId) : null;
+  if (!row || row.drafterId !== viewer.id || row.number !== null || !isTeamCostRow(row)) throw new ExpenseNotFoundError();
+  const vendor = UUID_SHAPE.test(input.vendorId) ? await findVendorById(viewer, input.vendorId) : null;
+  if (!vendor || vendor.hidden || vendor.archivedAt !== null) throw new ExpenseNotFoundError();
+  const fields: ExpenseDraftFields = { vendorId: vendor.id, ...(vendor.defaultEvidenceType ? { evidenceType: vendor.defaultEvidenceType } : {}) };
+  const saved = await updateDraftIfVersion(viewer, { id: row.id, expectedVersion: input.expectedVersion, fields, updatedBy: viewer.id });
+  if (!saved) {
+    const latest = await findExpenseById(viewer, row.id);
+    throw new ExpenseConflictError(latest?.updatedAt ?? row.updatedAt);
+  }
+  return { version: saved.version, evidenceType: saved.evidenceType };
 }
 
 // ── 제출 ──────────────────────────────────────────────────────────────
@@ -555,21 +660,26 @@ function remainingText(remaining: Money, basis: "foreign" | "krw"): string {
 export async function submitExpense(
   viewer: Viewer,
   input: { expenseId: string; expectedVersion: number },
-  deps?: { afterLock?: () => Promise<void> },
+  deps?: { afterLock?: () => Promise<void>; now?: Date },
 ): Promise<SubmitExpenseResult> {
   const row = UUID_SHAPE.test(input.expenseId) ? await findExpenseById(viewer, input.expenseId) : null;
   if (!row || row.drafterId !== viewer.id) throw new ExpenseNotFoundError();
   if (!(await can(viewer, "expenses", "write"))) throw new ForbiddenError("지출결의 작성 권한 없음");
+  // 팀 비용 문서는 프로젝트가 없다 — 프로젝트 행 잠금 · 고객 승인 판정 없이 지출결의 행 잠금만.
   const projectRow = row.projectId ? await findProjectById(viewer, row.projectId) : null;
-  if (!projectRow) throw new ExpenseNotFoundError();
+  if (!projectRow && !isTeamCostRow(row)) throw new ExpenseNotFoundError();
 
   const tax = await computeExpenseTax(viewer, row);
-  const pre = await loadSubmitPre(viewer, projectRow);
+  const pre = projectRow ? await loadSubmitPre(viewer, projectRow) : null;
   const prepared = await prepareSubmission(viewer, { kind: EXPENSE_DOCUMENT_KIND, drafterId: viewer.id });
-  const format = await loadExpenseNumberFormat();
+  const numbering = projectRow
+    ? ({ kind: "project", projectNumber: projectRow.number, format: await loadExpenseNumberFormat() } as const)
+    : ({ kind: "team", format: await loadDocumentNumberFormat("expense_team") } as const);
+  // 팀 비용 번호 연도 = 제출일(서울)의 연도.
+  const teamNumberYear = Number(seoulToday(deps?.now).slice(0, 4));
 
   return withTransaction(async (tx): Promise<SubmitExpenseResult> => {
-    const lockedProject = await lockProjectForWrite(viewer, projectRow.id, tx);
+    const lockedProject = projectRow ? await lockProjectForWrite(viewer, projectRow.id, tx) : null;
     const locked = await lockExpenseForUpdate(viewer, row.id, tx);
     await deps?.afterLock?.();
     if (!locked) throw new ExpenseNotFoundError();
@@ -595,7 +705,7 @@ export async function submitExpense(
     if (tax.unavailable) throw new GateBlockedError(TAX_UNAVAILABLE);
 
     const installment = locked.installment || Boolean(door?.forcedInstallment);
-    const submittedAt = new Date();
+    const submittedAt = deps?.now ?? new Date();
     await saveSubmissionSnapshot(
       viewer,
       {
@@ -619,7 +729,10 @@ export async function submitExpense(
       tx,
     );
     const instance = await submitDocument(viewer, prepared, { documentId: locked.id }, tx);
-    const { number } = await allocateExpenseNumber(viewer, { projectNumber: projectRow.number, format }, tx);
+    const { number } =
+      numbering.kind === "project"
+        ? await allocateExpenseNumber(viewer, { projectNumber: numbering.projectNumber, format: numbering.format }, tx)
+        : await allocateDocumentNumber(viewer, { counterKey: "expense_team", year: teamNumberYear, format: numbering.format }, tx);
     await setExpenseNumber(viewer, { id: locked.id, number }, tx);
     return { kind: "submitted", expenseId: locked.id, number, instanceId: instance.id, version: instance.version };
   });
@@ -635,23 +748,23 @@ async function loadSubmitPre(viewer: Viewer, projectRow: ProjectRow): Promise<Su
   return { gateEnabled, pmName: pm?.name ?? "" };
 }
 
-// 규칙 `expense.submit`의 사실 — 미리보기는 기본 연결로, 제출은 tx로 읽는다(차수 · 줄 · 문 · 증빙 수 · 금액). 팀 비용 칸은 05-07이 채운다.
+// 규칙 `expense.submit`의 사실 — 미리보기는 기본 연결로, 제출은 tx로 읽는다(차수 · 줄 · 문 · 증빙 수 · 금액). 팀 비용 문서는 프로젝트 행이 없다(null).
 async function loadSubmitFacts(
   viewer: Viewer,
   row: ExpenseRow,
-  projectRow: ProjectRow,
-  pre: SubmitPre,
+  projectRow: ProjectRow | null,
+  pre: SubmitPre | null,
   tax: ExpenseTaxResult,
   tx?: DbOrTx,
 ): Promise<{ facts: ExpenseSubmitFacts; line: QuoteLineRow | null; numbered: NumberedLineExpense[]; door: ExpenseLineDoor | null }> {
   const line = row.quoteLineId ? await findQuoteLineById(viewer, row.quoteLineId, tx) : null;
-  const latest = await findLatestQuoteRevision(viewer, projectRow.id, tx);
+  const latest = projectRow ? await findLatestQuoteRevision(viewer, projectRow.id, tx) : null;
   const numbered = line ? await listNumberedByLine(viewer, line.id, tx) : [];
   const door = line ? doorFor(line, numbered, row.id) : null;
   const evidenceCount = await countActiveByOwner(viewer, EXPENSE_DOCUMENT_KIND, row.id, tx);
   const facts: ExpenseSubmitFacts = {
     customerApproval:
-      row.quoteLineId && latest
+      row.quoteLineId && latest && projectRow && pre
         ? {
             status: projectRow.status,
             revisionSeq: latest.seq,
@@ -661,7 +774,7 @@ async function loadSubmitFacts(
             pmName: pre.pmName,
           }
         : null,
-    projectCompleted: projectRow.status === "completed",
+    projectCompleted: projectRow?.status === "completed",
     line: row.quoteLineId
       ? {
           inCurrentRevision: Boolean(line && latest && line.revisionId === latest.id && line.archivedAt === null && door && door.state !== "none"),
@@ -669,7 +782,8 @@ async function loadSubmitFacts(
         }
       : null,
     vendorId: line ? line.vendorId : row.vendorId,
-    teamCost: null,
+    // 팀 비용 문서(프로젝트 없음) — ①~④는 건너뛰고 ⑥ 묶음에 종류 · 내용이 든다.
+    teamCost: projectRow ? null : { kind: row.teamExpenseKind, content: row.content },
     supplyAmountKrw: row.supplyAmountKrw,
     evidenceType: row.evidenceType,
     paymentMethod: row.paymentMethod,
@@ -680,8 +794,8 @@ async function loadSubmitFacts(
 }
 
 // 다음 한 수가 페이지 이동인 막힘의 주소 — ① 담당 PM이면 프로젝트 상세(고객 승인 표시), ④ 가장 최근 제출 문서.
-function blockHref(target: ExpenseSubmitTarget | null, facts: ExpenseSubmitFacts, projectId: string): string | null {
-  if (target === "customerApproval" && facts.customerApproval?.actorIsAssignedPm) return `/projects/${projectId}`;
+function blockHref(target: ExpenseSubmitTarget | null, facts: ExpenseSubmitFacts, projectId: string | null): string | null {
+  if (target === "customerApproval" && projectId && facts.customerApproval?.actorIsAssignedPm) return `/projects/${projectId}`;
   if (target === "openLatest" && facts.line?.closedBy) return `/expenses/${facts.line.closedBy.id}`;
   return null;
 }
@@ -696,7 +810,7 @@ export async function previewExpense(viewer: Viewer, input: { expenseId: string;
   const saved = UUID_SHAPE.test(input.expenseId) ? await findExpenseById(viewer, input.expenseId) : null;
   if (!saved || saved.drafterId !== viewer.id || saved.number !== null) throw new ExpenseNotFoundError();
   const projectRow = saved.projectId ? await findProjectById(viewer, saved.projectId) : null;
-  if (!projectRow) throw new ExpenseNotFoundError();
+  if (!projectRow && !isTeamCostRow(saved)) throw new ExpenseNotFoundError();
   const row: ExpenseRow = { ...saved, ...toDraftColumns(draftFieldsSchema.parse(input.fields)) };
   const supply = supplyMoney(row);
 
@@ -705,21 +819,28 @@ export async function previewExpense(viewer: Viewer, input: { expenseId: string;
   const evidenceTypeName = row.evidenceType ? (evidenceNames.get(row.evidenceType) ?? row.evidenceType) : null;
   const taxLine = supply ? taxLineText(tax, supply, `${evidenceTypeName ?? ""} 규칙`) : null;
 
-  const { facts, line, numbered } = await loadSubmitFacts(viewer, row, projectRow, await loadSubmitPre(viewer, projectRow), tax);
+  const { facts, line, numbered } = await loadSubmitFacts(viewer, row, projectRow, projectRow ? await loadSubmitPre(viewer, projectRow) : null, tax);
   const decision = await gate(row, "expense.submit", buildExpenseSubmitContext(facts));
   let block: ExpenseSubmitBlock | null = null;
   if (!decision.allowed) {
     const target = await nextActionTarget(facts);
-    block = { reason: decision.reason, target, href: blockHref(target, facts, projectRow.id) };
+    block = { reason: decision.reason, target, href: blockHref(target, facts, projectRow?.id ?? null) };
   }
 
   const fieldErrors: ExpensePreviewDto["fieldErrors"] = {};
+  // 팀 비용 — 사용일을 바꾸면 그날 소속 팀이 다시 온다(소속 없으면 사용일 칸 오류). 쓰기 없음.
+  let teamName: string | null = null;
+  if (!projectRow && row.usageDate) {
+    const team = await teamAtDate(viewer, viewer.id, row.usageDate);
+    if (team) teamName = team.name ?? null;
+    else fieldErrors.usageDate = NO_TEAM_AT_USAGE_DATE;
+  }
   if (line && supply) {
     const others = numbered.filter((doc) => doc.id !== row.id).flatMap((doc) => supplyMoney(doc) ?? []);
     const cap = remainingForInstallments(lineExecution(line), others, supply);
     if (cap.exceeds) fieldErrors.supplyAmount = `남은 실행가 ${remainingText(cap.remaining, cap.basis)} 넘음 · 공급가액 고치기`;
   }
-  return project(viewer, { taxLine, block, fieldErrors }, EXPENSE_PREVIEW_DTO_SPEC);
+  return project(viewer, { taxLine, block, fieldErrors, teamName }, EXPENSE_PREVIEW_DTO_SPEC);
 }
 
 // ── 읽기 ──────────────────────────────────────────────────────────────

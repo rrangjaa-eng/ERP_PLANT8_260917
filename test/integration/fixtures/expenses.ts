@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { expenses, quoteLines } from "@/db/schema";
@@ -11,8 +11,10 @@ import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { createRevisionFromCurrent, setCustomerApproval } from "@/domain/quotes/revisions";
 import { changeProjectStatus } from "@/domain/projects/status";
 import { submitExpense } from "@/domain/expenses";
+import { completeEvidenceUpload, requestEvidenceUpload } from "@/domain/evidence";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import { makePerson, teamIdByName } from "../approvals-fixtures";
+import { createMemoryStorage, type MemoryStorage } from "../fakes/memory-storage";
 
 // 05-03 지출결의 통합 픽스처 — 사람 · 발령 · 프로젝트 · 차수 승인 · 견적 줄은 도메인 · 리포지토리 함수로만 만든다
 // (SQL 직접 삽입 없음). 기획1팀: 기획 PM 박서연 · 팀장 김도윤 · 무관한 기획 PM, 대표 최대표(팀 없음).
@@ -86,9 +88,29 @@ export async function setupExpenseProject(): Promise<ExpenseFixture> {
   };
 }
 
-// 제출 도우미 — 지금은 version을 읽어 submitExpense만 부른다. 05-04가 증빙 첨부를 더한다(이 플랜 · 05-14 테스트는
+// 05-04 — 증빙 한 장을 도메인 경로(선언 → 메모리 가짜 PUT → 완료 통보)로 붙인다. sha256은 호출마다 새것이라 다른 문서와
+// 중복으로 막히지 않는다. 05-09가 재사용한다.
+export async function attachEvidence(
+  viewer: Viewer,
+  expenseId: string,
+  storage: MemoryStorage = createMemoryStorage(),
+  file: { size?: number; contentType?: string; sha256?: string; name?: string } = {},
+) {
+  const declared = {
+    size: file.size ?? 212_000,
+    contentType: file.contentType ?? "image/jpeg",
+    sha256: file.sha256 ?? randomBytes(32).toString("hex"),
+    name: file.name ?? "세금계산서.jpg",
+  };
+  const intent = await requestEvidenceUpload(viewer, { ownerKind: "expense", ownerId: expenseId, ...declared }, { storage });
+  storage.put(intent.url, { size: declared.size, contentType: declared.contentType, sha256: declared.sha256 });
+  return completeEvidenceUpload(viewer, { intentId: intent.intentId }, { storage });
+}
+
+// 제출 도우미 — 증빙 한 장을 붙이고(05-04 게이트 ⑧) version을 읽어 submitExpense를 부른다(05-03 · 05-14 테스트는
 // 이 도우미로만 제출한다). deps는 그대로 넘긴다(05-14 경합 사례의 afterLock).
 export async function submitReadyDraft(viewer: Viewer, expenseId: string, deps?: Parameters<typeof submitExpense>[2]) {
+  await attachEvidence(viewer, expenseId);
   const [row] = await db.select({ version: expenses.version }).from(expenses).where(eq(expenses.id, expenseId));
   if (!row) throw new Error("지출결의 없음");
   return submitExpense(viewer, { expenseId, expectedVersion: row.version }, deps);

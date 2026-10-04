@@ -26,7 +26,8 @@ type LinkAction = ActionCommon & {
   busy?: never;
   disabled?: never;
   disabledReason?: never;
-  describedBy?: never;
+  /** 이 행동이 가리키는 대상 글자의 id(예: 그 줄 항목 칸) — 줄마다 같은 이름의 링크를 줄로 구별한다. */
+  describedBy?: string;
 };
 
 type ButtonActionBase = ActionCommon & {
@@ -68,7 +69,7 @@ export function RowAction(props: RowActionProps) {
 
   if (props.href !== undefined) {
     return (
-      <Link href={props.href} scroll={false} tabIndex={props.tabIndex} className={[styles.action, dangerClass, endClass].filter(Boolean).join(" ")}>
+      <Link href={props.href} scroll={false} tabIndex={props.tabIndex} aria-describedby={props.describedBy} className={[styles.action, dangerClass, endClass].filter(Boolean).join(" ")}>
         {props.children}
         {/* D6 — 패널을 여는 링크는 누른 직후 패널이 뜨기 전까지 「진행 중」(`ListScreen.primaryAction`과 같은 표기 · 새 모양 없음) */}
         <LinkPending />
@@ -89,7 +90,8 @@ export function RowAction(props: RowActionProps) {
       className={[styles.action, dangerClass, reason ? "" : endClass].filter(Boolean).join(" ")}
     >
       <span>{props.children}</span>
-      {props.pending ? <span aria-hidden="true">…</span> : null}
+      {/* 쉬는 동안에도 「…」 폭을 비워 둔다(::after라 글자 · 접근 이름에 들지 않는다) — 누름 중 열 폭이 바뀌지 않는다(웨이브 7 D2). */}
+      {props.pending ? <span aria-hidden="true">…</span> : <span aria-hidden="true" className={styles.pendingSlot} />}
       {props.pending ? <span className="sr-only">처리 중</span> : null}
     </button>
   );

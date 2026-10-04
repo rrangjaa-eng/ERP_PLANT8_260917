@@ -2055,7 +2055,7 @@ export function QuoteLedger({
                 return (
                   <span onClickCapture={guardDocumentLink}>
                     <RowActions noWrap>
-                      <RowAction tabIndex={-1} href={`/expenses/${door.latestId}`}>
+                      <RowAction tabIndex={-1} describedBy={itemCellId} href={`/expenses/${door.latestId}`}>
                         지출결의 열기
                       </RowAction>
                     </RowActions>

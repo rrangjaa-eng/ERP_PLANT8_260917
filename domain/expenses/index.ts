@@ -46,12 +46,13 @@ import { formatKstTime } from "@/domain/holidays/business-day";
 import { computeExpenseTax, storedTaxResult, taxLineText } from "@/domain/expenses/tax";
 import { buildExpenseDetailRows } from "@/domain/expenses/detail";
 import { expenseLineDoor, type ExpenseLineDoor } from "@/domain/expenses/line-door";
+import { resolveLinkedDocumentsByLineage, type LineageLine } from "@/domain/quotes/lineage";
 import { evaluateExpenseSubmit } from "@/domain/expenses/gate";
 import { EXPENSE_DETAIL_DTO_SPEC, EXPENSE_DOCUMENT_DTO_SPEC, type ExpenseDetailDto, type ExpenseDocumentDto } from "@/domain/expenses/dto";
 import { listCodeItems } from "@/repositories/code-tables";
 import { countActiveByOwner } from "@/repositories/files";
 import { findProjectById, lockProjectForWrite, type ProjectRow } from "@/repositories/projects";
-import { findLatestQuoteRevision, findQuoteRevisionById } from "@/repositories/quote-revisions";
+import { findLatestQuoteRevision, findQuoteRevisionById, summarizeRevisions } from "@/repositories/quote-revisions";
 import { findQuoteLineById, listQuoteLinesByRevision, type QuoteLineRow } from "@/repositories/quote-lines";
 import { findUserById } from "@/repositories/users";
 import { findVendorById } from "@/repositories/vendors";
@@ -338,6 +339,26 @@ function doorFor(line: QuoteLineRow, numbered: readonly NumberedLineExpense[], s
   });
 }
 
+// D-66 — 현재 차수 줄마다 계보(copied_from_line_id) 사슬 전체의 번호 있는 문서(제출 순). 줄 파생 상태
+// (domain/quotes/lines.ts linkedDocumentsByLine)와 같은 해석이라 이전 차수에 제출한 줄은 지금 차수에서도 문이 닫힌다.
+async function listNumberedByLineage(viewer: Viewer, projectId: string): Promise<Map<string, NumberedLineExpense[]>> {
+  const lineage: LineageLine[] = [];
+  for (const summary of await summarizeRevisions(viewer, projectId)) {
+    for (const line of await listQuoteLinesByRevision(viewer, summary.id)) {
+      lineage.push({ id: line.id, revisionSeq: summary.seq, copiedFromLineId: line.copiedFromLineId });
+    }
+  }
+  const docsByLineId = new Map<string, NumberedLineExpense[]>();
+  for (const doc of await listNumberedByLines(viewer, lineage.map((line) => line.id))) {
+    docsByLineId.set(doc.quoteLineId, [...(docsByLineId.get(doc.quoteLineId) ?? []), doc]);
+  }
+  const { byCurrentLine } = resolveLinkedDocumentsByLineage(lineage, docsByLineId);
+  for (const docs of byCurrentLine.values()) {
+    docs.sort((a, b) => (a.submittedAt?.getTime() ?? 0) - (b.submittedAt?.getTime() ?? 0) || a.id.localeCompare(b.id));
+  }
+  return byCurrentLine;
+}
+
 type ProjectFacts = { project: ProjectRow; latestRevisionId: string | null; tableGateReason: string | null };
 
 // 표 전체 게이트 — 완료면 새 문서 없음, 그 밖은 고객 승인 게이트(설정)의 문자열 그대로.
@@ -402,6 +423,7 @@ export async function createExpenseFromLines(
     resolved.push({ lineId, line, facts });
   }
 
+  const lineageByProject = new Map<string, Map<string, NumberedLineExpense[]>>();
   for (const { lineId, line, facts } of resolved) {
     if (facts.tableGateReason) {
       blocked.push({ lineId, reason: facts.tableGateReason });
@@ -417,7 +439,8 @@ export async function createExpenseFromLines(
       created.push({ lineId, expenseId: existing.id });
       continue;
     }
-    const door = doorFor(line, await listNumberedByLine(viewer, line.id));
+    if (!lineageByProject.has(facts.project.id)) lineageByProject.set(facts.project.id, await listNumberedByLineage(viewer, facts.project.id));
+    const door = doorFor(line, lineageByProject.get(facts.project.id)?.get(line.id) ?? []);
     if (door.state === "none") {
       blocked.push({ lineId, reason: NOT_IN_CURRENT_REVISION });
       continue;
@@ -697,10 +720,10 @@ export async function listLineDoors(viewer: Viewer, input: { projectId: string }
 
   const lines = await listQuoteLinesByRevision(viewer, facts.latestRevisionId);
   const lineIds = lines.map((line) => line.id);
-  const [numbered, drafts] = await Promise.all([listNumberedByLines(viewer, lineIds), listDraftsByLines(viewer, { lineIds, drafterId: viewer.id })]);
+  const [numbered, drafts] = await Promise.all([listNumberedByLineage(viewer, input.projectId), listDraftsByLines(viewer, { lineIds, drafterId: viewer.id })]);
   const cells: Record<string, LineDoorCell> = {};
   for (const line of lines) {
-    const door = doorFor(line, numbered.filter((doc) => doc.quoteLineId === line.id));
+    const door = doorFor(line, numbered.get(line.id) ?? []);
     const draft = drafts.find((doc) => doc.quoteLineId === line.id);
     cells[line.id] = {
       state: door.state,

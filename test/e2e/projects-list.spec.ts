@@ -19,6 +19,8 @@ import { createAccount } from "@/domain/auth/accounts";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { listCodeItems, updateCodeItemLabel } from "@/repositories/code-tables";
+import { PROJECT_PROFIT_RATE_THRESHOLD } from "@/domain/settings/keys";
+import { getSettingValue, setSettingValue } from "@/domain/settings/registry";
 
 async function findUserIdByEmail(email: string): Promise<string> {
   const [row] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
@@ -1228,6 +1230,60 @@ test.describe("프로젝트 상태 이름 — 배지·필터·부제가 한 이�
       await expect(page.getByText(/^수주중 \d{4}-\d{2}-\d{2}$/)).toBeVisible();
     } finally {
       for (const original of originals) await updateCodeItemLabel(SYSTEM_VIEWER, original.id, original.label);
+    }
+  });
+});
+
+// quick 261004-51o(사용자 결정 2026-10-04) — 수익률이 설정 「수익률 기준선(%)」 미만인 행은 수익률 글자만 위험 색이다.
+// 판정은 computed color 실측이다(스크린샷 육안 아님). 기준선은 설정 값이라 바꾸면 다음 로드부터 따라온다.
+test.describe("프로젝트 목록 — 수익률 기준선 미만은 위험 색 (quick 261004-51o)", () => {
+  test("기준선(15) 미만만 위험 색이고 같음 · 높음 · 없음은 기본 색이다 — 기준선을 50으로 바꾸면 판정이 따라온다", async ({ page }) => {
+    const today = kstToday(new Date());
+    const marker = `E2E기준선-${randomUUID().slice(0, 8)}`;
+    const pm = await setupPm();
+    const base = { clientId: pm.clientId, teamId: pm.teamId, pmUserId: pm.pmUserId, startDate: today, endDate: addDays(today, 30) };
+    const make = async (suffix: string, quote?: number, execution?: number) => {
+      const project = await createProject(SYSTEM_VIEWER, { ...base, name: `${marker}-${suffix}` });
+      if (quote !== undefined) await addQuoteLine(project.id, quote, execution);
+      return `${marker}-${suffix}`;
+    };
+    const low = await make("낮음", 10_000_000, 9_000_000);
+    const same = await make("같음", 10_000_000, 8_500_000);
+    const high = await make("높음", 12_000_000, 7_000_000);
+    const none = await make("없음");
+
+    const original = await getSettingValue(PROJECT_PROFIT_RATE_THRESHOLD);
+    try {
+      await setSettingValue(SYSTEM_VIEWER, PROJECT_PROFIT_RATE_THRESHOLD, 15);
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await login(page, await makeManager());
+      await page.goto(`/projects?q=${encodeURIComponent(marker)}&year=all`);
+      await expect(page.locator(`${LIST_TABLE} tbody a`)).toHaveCount(4);
+
+      const danger = await page.evaluate(() => {
+        const probe = document.createElement("span");
+        probe.style.color = "var(--status-danger)";
+        document.body.appendChild(probe);
+        const color = getComputedStyle(probe).color;
+        probe.remove();
+        return color;
+      });
+      const colorOf = async (name: string, text: string) =>
+        (await cellOf(page, name, "수익률")).getByText(text, { exact: true }).evaluate((el) => getComputedStyle(el).color);
+
+      expect(await colorOf(low, "10.0%"), "기준선 미만").toBe(danger);
+      expect(await colorOf(same, "15.0%"), "기준선과 같음").not.toBe(danger);
+      expect(await colorOf(high, "41.7%"), "기준선보다 높음").not.toBe(danger);
+      expect(await colorOf(none, "—"), "수익률 없음").not.toBe(danger);
+
+      await setSettingValue(SYSTEM_VIEWER, PROJECT_PROFIT_RATE_THRESHOLD, 50);
+      await page.reload();
+      await expect(page.locator(`${LIST_TABLE} tbody a`)).toHaveCount(4);
+      expect(await colorOf(high, "41.7%"), "기준선 50 · 41.7%").toBe(danger);
+      expect(await colorOf(same, "15.0%"), "기준선 50 · 15.0%").toBe(danger);
+      expect(await colorOf(none, "—"), "기준선 50 · 수익률 없음").not.toBe(danger);
+    } finally {
+      await setSettingValue(SYSTEM_VIEWER, PROJECT_PROFIT_RATE_THRESHOLD, original);
     }
   });
 });

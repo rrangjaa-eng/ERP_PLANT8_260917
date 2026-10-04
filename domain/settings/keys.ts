@@ -787,3 +787,17 @@ export const LEAVE_ANNUAL_DAYS: SettingDef<number> = {
 };
 
 SETTING_DEFS.push(LEAVE_ANNUAL_DAYS);
+
+// quick 261004-51o(사용자 결정 2026-10-04 카드) — 프로젝트 목록 수익률 기준선(%). 이 값 미만 수익률은 목록에서
+// 위험 색 글자. 기본 15. 퍼센트 정수(15 = 15%)로 저장한다. 읽는 곳: app/(app)/projects/page.tsx.
+export const PROJECT_PROFIT_RATE_THRESHOLD: SettingDef<number> = {
+  key: "project.profit_rate.threshold",
+  kind: "simple",
+  schema: z.coerce.number().int().min(0).max(100),
+  label: "수익률 기준선(%)",
+  hint: "프로젝트 목록에서 이 값 미만 수익률은 빨간 글자",
+  namespace: "프로젝트",
+  default: 15,
+};
+
+SETTING_DEFS.push(PROJECT_PROFIT_RATE_THRESHOLD);

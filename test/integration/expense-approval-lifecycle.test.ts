@@ -6,6 +6,13 @@ import { approveDocument } from "@/domain/approvals";
 import { isRouteStepSettingKey } from "@/domain/approvals/route-step-settings";
 import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND, getExpense, saveExpenseDraft } from "@/domain/expenses";
 import { setupExpenseProject, submitReadyDraft } from "./fixtures/expenses";
+import { listMyInbox } from "@/domain/approvals";
+import { listLineDoors } from "@/domain/expenses";
+import { getDocumentKind } from "@/domain/approvals/kinds";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { TEAM_LEAD_ROLE_ID, createRole } from "@/domain/permissions/roles";
+import { upsertVisibility } from "@/repositories/permissions";
+import { makePerson } from "./approvals-fixtures";
 
 // 05-03 트레이서 — 견적 줄 하나 → 작성 중(자동 채움) → 임시 저장 → 제출(번호 · 세금 스냅숏 · 결재선 고정) → 팀장 ·
 // 대표 승인 → 최종 승인. 가장자리 사례(두 번 제출 · 동시 제출 · 회차 상한 · 거부 문자열)는 05-14가 증명한다.
@@ -127,5 +134,121 @@ describe("트레이서 — 견적 줄에서 최종 승인까지", () => {
       }
     }
     expect(isRouteStepSettingKey("approval_route.expense.self_approval")).toBe(false);
+  });
+});
+
+// 05-05 C1(plan-checker Round 4) — 지출결의 종류가 04.1 상세 계약 셋(loadDetails → detailDto 투영 → buildDetailRows)을 채워
+// 결재함 `내 결재` 항목이 결재 시트 재료(문자열 행)를 갖는다.
+describe("결재 시트 상세 — 문자열 행", () => {
+  const LABEL_ORDER = ["프로젝트", "견적 줄", "거래처", "증빙 종류", "공급가액", "지급 예정일", "지급 방식", "비고"];
+  const uniqueLabels = (rows: { label: string }[]) => [...new Set(rows.map((row) => row.label))];
+
+  it("팀장의 내 결재 항목에 제목 · 부제 · 문자열 행 · 가능 행동이 있고 loadDetails는 한 번만 불린다", async () => {
+    const fx = await setupExpenseProject();
+    const created = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
+    const expenseId = created.created[0]?.expenseId ?? "";
+    await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: 1, fields: { note: "1차 선금" } });
+    await submitReadyDraft(fx.pm, expenseId);
+
+    const def = getDocumentKind(EXPENSE_DOCUMENT_KIND);
+    const original = def.loadDetails;
+    if (!original) throw new Error("지출결의 종류에 loadDetails가 없음");
+    const calls: string[][] = [];
+    def.loadDetails = async (viewer, ids, deps) => {
+      calls.push(ids);
+      return original(viewer, ids, deps);
+    };
+    let inbox: Awaited<ReturnType<typeof listMyInbox>>;
+    try {
+      inbox = await listMyInbox(fx.lead, { withDetails: true });
+    } finally {
+      def.loadDetails = original;
+    }
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual([expenseId]);
+    expect(inbox.mine).toHaveLength(1);
+    const item = inbox.mine[0];
+    expect(item?.actions).toEqual(["approve", "reject"]);
+    const detail = item?.detail;
+    expect(detail?.title).toBe("지출결의 — 가을 팝업 · 무대 제작");
+    expect(detail?.subtitle).toBe("26001-0001 · 박서연");
+    expect(uniqueLabels(detail?.rows ?? [])).toEqual(LABEL_ORDER);
+    for (const row of detail?.rows ?? []) {
+      expect(typeof row.label).toBe("string");
+      expect(typeof row.value).toBe("string");
+      expect(["default", "muted", "warning"]).toContain(row.tone);
+    }
+    const valueOf = (label: string) => detail?.rows.filter((row) => row.label === label).map((row) => row.value);
+    expect(valueOf("프로젝트")).toEqual(["26001 가을 팝업"]);
+    expect(valueOf("견적 줄")).toEqual(["1 무대 제작"]);
+    expect(valueOf("거래처")).toEqual(["스테이지원"]);
+    expect(valueOf("증빙 종류")).toEqual(["세금계산서"]);
+    expect(valueOf("공급가액")).toEqual(["12,400,000", "부가세 10% 1,240,000 · 지급 총액 13,640,000 · 세금계산서 규칙"]);
+    expect(valueOf("지급 예정일")).toEqual(["—"]);
+    expect(detail?.rows.find((row) => row.label === "지급 예정일")?.tone).toBe("muted");
+    expect(valueOf("지급 방식")).toEqual(["계좌이체"]);
+    expect(valueOf("비고")).toEqual(["1차 선금"]);
+  });
+
+  it("분할 지급 문서는 프로젝트 · 견적 줄 다음에 분할 지급 행(회차)이 선다", async () => {
+    const fx = await setupExpenseProject();
+    const created = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.split] });
+    const expenseId = created.created[0]?.expenseId ?? "";
+    await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: 1, fields: { installment: true, supply: { currency: "KRW", amount: 4_000_000, fxRate: 1 } } });
+    await submitReadyDraft(fx.pm, expenseId);
+    const inbox = await listMyInbox(fx.lead, { withDetails: true });
+    const labels = uniqueLabels(inbox.mine[0]?.detail?.rows ?? []);
+    expect(labels.slice(0, 3)).toEqual(["프로젝트", "견적 줄", "분할 지급"]);
+    expect(inbox.mine[0]?.detail?.rows.find((row) => row.label === "분할 지급")?.value).toBe("1회차");
+  });
+
+  it("expense.amount 노출을 끈 계급의 결재 담당에게는 어떤 행에도 공급가액 · 세액 · 지급 총액이 없다", async () => {
+    const fx = await setupExpenseProject();
+    const created = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
+    const expenseId = created.created[0]?.expenseId ?? "";
+    await submitReadyDraft(fx.pm, expenseId);
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: TEAM_LEAD_ROLE_ID, infoItem: "expense.amount", visible: false });
+
+    const inbox = await listMyInbox(fx.lead, { withDetails: true });
+    const detail = inbox.mine[0]?.detail;
+    expect(detail).toBeTruthy();
+    const text = JSON.stringify(detail);
+    for (const digits of ["12,400,000", "1,240,000", "13,640,000", "12400000"]) expect(text).not.toContain(digits);
+    expect(detail?.rows.some((row) => row.label === "공급가액")).toBe(false);
+    expect(uniqueLabels(detail?.rows ?? [])).toEqual(LABEL_ORDER.filter((label) => label !== "공급가액"));
+    expect(inbox.mine[0]?.actions).toEqual(["approve", "reject"]);
+  });
+});
+
+// 05-05 ④ — 견적 줄 표 행 행동 열의 서버 판정.
+describe("listLineDoors — 견적 줄 표 행 행동 열", () => {
+  it("쓰기 권한이 있으면 열이 서고 줄마다 문 열림 · 거래처 없음, 내 작성 중 문서 id, 제출 뒤 닫힘 · 가장 최근 문서가 선다", async () => {
+    const fx = await setupExpenseProject();
+    const before = await listLineDoors(fx.pm, { projectId: fx.projectId });
+    expect(before.showColumn).toBe(true);
+    expect(before.tableGateReason).toBeNull();
+    expect(before.cells[fx.lines.withVendor]).toMatchObject({ state: "open" });
+    expect(before.cells[fx.lines.withVendor]?.expenseId).toBeUndefined();
+    expect(before.cells[fx.lines.noVendor]).toMatchObject({ state: "no_vendor" });
+
+    const created = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
+    const expenseId = created.created[0]?.expenseId ?? "";
+    const drafting = await listLineDoors(fx.pm, { projectId: fx.projectId });
+    expect(drafting.cells[fx.lines.withVendor]).toMatchObject({ state: "open", expenseId });
+
+    await submitReadyDraft(fx.pm, expenseId);
+    const submitted = await listLineDoors(fx.pm, { projectId: fx.projectId });
+    expect(submitted.cells[fx.lines.withVendor]).toMatchObject({ state: "closed", latestId: expenseId });
+    expect(submitted.cells[fx.lines.withVendor]?.expenseId).toBeUndefined();
+  });
+
+  it("expenses 쓰기 권한이 없는 계급에는 열이 서지 않는다", async () => {
+    const fx = await setupExpenseProject();
+    const role = await createRole(SYSTEM_VIEWER, { name: `읽기전용-${Date.now()}` });
+    const outsider = await makePerson("권한없음", role.id, "기획1팀");
+    const doors = await listLineDoors(outsider, { projectId: fx.projectId });
+    expect(doors.showColumn).toBe(false);
+    expect(doors.cells).toEqual({});
   });
 });

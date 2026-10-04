@@ -91,10 +91,11 @@ export async function waitForHydration(target: Locator): Promise<void> {
 
 // 04.6-17 사용자 카드 답 2026-10-03 23:12 KST 「링크 넣음」 — 결재 시트(PC 480 · 폰 아래 시트 공통)의 결재 내용 아래 한 줄 3차 링크 「문서 화면 열기」.
 // 이름 · href를 재고, 결재선(마지막 본문 칸) 아래 · 행동 줄 위에 있으며, 시트를 열 때 첫 포커스는 그대로 승인 버튼임을 단언한다.
-export async function expectSheetDocumentLink(panel: Locator, leaveId: string): Promise<void> {
+// 05-05 N10 — 셋째 인자 `href`는 다른 종류(지출결의 `/expenses/{id}`)의 시트가 쓴다(없으면 지금처럼 `/leave/{id}`).
+export async function expectSheetDocumentLink(panel: Locator, leaveId: string, href?: string): Promise<void> {
   const link = panel.getByRole("link", { name: "문서 화면 열기" });
   await expect(link).toHaveCount(1);
-  await expect(link).toHaveAttribute("href", `/leave/${leaveId}`);
+  await expect(link).toHaveAttribute("href", href ?? `/leave/${leaveId}`);
   const [linkBox, routeBox, approveBox] = [
     await link.boundingBox(),
     await panel.locator("dl dd").last().boundingBox(),

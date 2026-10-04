@@ -334,12 +334,14 @@ test.describe("고객 승인 표시와 취소 (04-24 Task 2 — ENG-D4 · D7 · 
     const project = await makeProject({ teamId: team.id, pmUserId: pm.userId, lines: [{ itemName: "승인 줄", unitPrice: 1_000_000, execution: 400_000 }] });
     await login(page, pm);
     await page.goto(`/projects/${project.id}`);
+    // 기본값은 서버가 페이지를 그리는 때의 KST 오늘 — 모듈 로드 때 고정한 TODAY는 자정을 넘기면 어긋난다.
+    const today = kstToday(new Date());
 
     const dialog = await openApprovalDialog(page);
     const date = dialog.getByLabel("승인일");
     const primary = dialog.getByRole("button", { name: /고객 승인 표시/ });
     await expect(date).toBeFocused();
-    await expect(date).toHaveValue(TODAY);
+    await expect(date).toHaveValue(today);
     await expect(dialog.getByText(`상세 견적 1차 · 1,000,000`, { exact: true })).toBeVisible();
 
     await date.fill("");
@@ -347,20 +349,20 @@ test.describe("고객 승인 표시와 취소 (04-24 Task 2 — ENG-D4 · D7 · 
     await expect(dialog.getByText(APPROVAL_EMPTY_ERROR, { exact: true }).filter({ visible: true })).toHaveCount(1);
     await expectDescribedBy(page, primary, APPROVAL_EMPTY_ERROR);
 
-    await date.fill(addDays(TODAY, 1));
+    await date.fill(addDays(today, 1));
     await expect(dialog.getByText(APPROVAL_EMPTY_ERROR, { exact: true })).toHaveCount(0);
     await submitAndWait(page, primary);
     const future = "승인일이 오늘보다 늦음 · 날짜 수정";
     await expect(dialog.getByText(future, { exact: true }).filter({ visible: true })).toHaveCount(1);
     await expect(dialog).toBeVisible();
 
-    await date.fill(TODAY);
+    await date.fill(today);
     await expect(dialog.getByText(future, { exact: true })).toHaveCount(0);
     await expect(primary).not.toHaveAttribute("aria-disabled", "true");
     await submitAndWait(page, primary);
 
     await expect(dialog).toBeHidden();
-    await expect(page.getByText(`고객 승인 ${TODAY} ${PM_NAME}`, { exact: true })).toBeVisible();
+    await expect(page.getByText(`고객 승인 ${today} ${PM_NAME}`, { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "승인 표시 취소", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { level: 1 })).toBeFocused();
     await expect(page.getByRole("status").filter({ hasText: "고객 승인" })).toHaveCount(0);

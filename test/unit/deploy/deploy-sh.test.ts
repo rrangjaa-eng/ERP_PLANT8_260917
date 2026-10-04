@@ -669,7 +669,7 @@ describe("deploy.sh — 서명 버킷(04.3-05)", () => {
     expect(update).toContain("--clear-soft-delete");
     expect(update).toContain("--no-versioning");
 
-    const bindings = lines.filter((l) => l.startsWith("storage buckets add-iam-policy-binding "));
+    const bindings = lines.filter((l) => l.startsWith(`storage buckets add-iam-policy-binding ${BUCKET} `));
     expect(bindings).toHaveLength(1);
     expect(bindings[0]).toContain("--member=serviceAccount:plant8-staging-runtime@test-proj.iam.gserviceaccount.com");
     expect(bindings[0]).toContain("--role=roles/storage.objectUser");
@@ -1011,5 +1011,95 @@ describe("deploy.sh — 데이터 키는 평문 시크릿(KMS 없음)", () => {
     const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj", "--add-data-key-v2"]);
     expect(r.status).not.toBe(0);
     expect(r.stderr).toContain("unknown argument");
+  });
+});
+
+// 05-12(EVID-01 · T-05-1201 · T-05-1203): 증빙 버킷 — 부트스트랩이 만든 버킷을 확인 · 설정 맞춤 · 런타임 objectUser(서명 버킷
+// 자리 그대로), CORS 원점은 deploy_service가 확정한 status.url, 서비스 환경 변수 둘.
+describe("deploy.sh — 증빙 버킷(05-12)", () => {
+  let repoDir: string;
+  beforeEach(() => {
+    repoDir = setupRepo();
+  });
+
+  const BUCKET = "gs://test-proj-plant8-staging-evidence";
+  const CERT = "gs://test-proj-plant8-staging-cert-signatures";
+
+  it("ensure_cert_bucket 뒤 · 이미지 빌드 전에 describe → 균일 접근 · 공개 접근 방지 update → 런타임 objectUser, 만들지 않는다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"]);
+    expect(r.status).toBe(0);
+    const lines = r.log.split("\n");
+    const certBind = lines.findIndex((l) => l.startsWith(`storage buckets add-iam-policy-binding ${CERT} `));
+    const describeIdx = lines.findIndex((l) => l.startsWith(`storage buckets describe ${BUCKET} `));
+    const updateIdx = lines.findIndex((l) => l.startsWith(`storage buckets update ${BUCKET} --project=test-proj --uniform-bucket-level-access`));
+    const bindIdx = lines.findIndex((l) => l.startsWith(`storage buckets add-iam-policy-binding ${BUCKET} `));
+    const buildIdx = lines.findIndex((l) => l.includes("build --build-arg"));
+    expect(describeIdx).toBeGreaterThan(certBind);
+    expect(updateIdx).toBeGreaterThan(describeIdx);
+    expect(bindIdx).toBeGreaterThan(updateIdx);
+    expect(buildIdx).toBeGreaterThan(bindIdx);
+
+    expect(lines[updateIdx]).toContain("--public-access-prevention");
+    expect(lines[updateIdx]).not.toMatch(/soft-delete|no-versioning/);
+    expect(lines[bindIdx]).toContain("--member=serviceAccount:plant8-staging-runtime@test-proj.iam.gserviceaccount.com");
+    expect(lines[bindIdx]).toContain("--role=roles/storage.objectUser");
+    expect(lines.filter((l) => l.startsWith(`storage buckets add-iam-policy-binding ${BUCKET} `))).toHaveLength(1);
+    expect(r.log).not.toContain("storage buckets create");
+    expect(r.log).not.toMatch(/^projects add-iam-policy-binding .*roles\/storage\./m);
+  });
+
+  it("서비스 배포에 STORAGE_DRIVER=gcs · GCS_EVIDENCE_BUCKET, 프로덕션은 자기 버킷", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"]);
+    const deployLine = r.log.split("\n").find((l) => l.startsWith("run deploy plant8-staging "));
+    expect(deployLine).toContain("STORAGE_DRIVER=gcs");
+    expect(deployLine).toContain("GCS_EVIDENCE_BUCKET=test-proj-plant8-staging-evidence");
+    expect(deployLine).toContain("CERT_FEATURE_ALLOWED=true");
+
+    const PROD_SHA = "0123456789abcdef0123456789abcdef01234567";
+    const p = deploy(repoDir, ["--env", "prod", "--project", "test-proj", "--sha", PROD_SHA], { state: { "image-exists": true } });
+    expect(p.status).toBe(0);
+    const prodLine = p.log.split("\n").find((l) => l.startsWith("run deploy plant8-prod "));
+    expect(prodLine).toContain("GCS_EVIDENCE_BUCKET=test-proj-plant8-prod-evidence");
+    expect(p.log).toContain("storage buckets describe gs://test-proj-plant8-prod-evidence ");
+  });
+
+  it("CORS는 서비스 배포 뒤 — 원점은 계산식이 아니라 확정된 status.url 한 개, PUT · GET, 서명 헤더 셋", () => {
+    const actual = "https://plant8-staging-hash-du.a.run.app";
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], { state: { "describe-url": actual } });
+    expect(r.status).toBe(0);
+    const lines = r.log.split("\n");
+    const deployIdx = lines.findIndex((l) => l.startsWith("run deploy plant8-staging "));
+    const corsIdx = lines.findIndex((l) => l.startsWith(`storage buckets update ${BUCKET} `) && l.includes("--cors-file="));
+    expect(corsIdx).toBeGreaterThan(deployIdx);
+    const cors: unknown = JSON.parse(lines[corsIdx + 1]?.replace(/^ {2}file-content /, "") ?? "null");
+    expect(cors).toEqual([
+      {
+        origin: [actual],
+        method: ["PUT", "GET"],
+        responseHeader: ["Content-Type", "x-goog-content-length-range", "x-goog-meta-sha256"],
+        maxAgeSeconds: 3600,
+      },
+    ]);
+  });
+
+  it("버킷 describe가 실패하면 부트스트랩 안내 한 줄 뒤 ensure_evidence_bucket에서 멈추고 서비스를 배포하지 않는다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: { "fail-gcloud": `storage buckets describe ${BUCKET}` },
+    });
+    expect(r.status).toBe(1);
+    const errLines = r.stderr.trim().split("\n");
+    expect(errLines.filter((l) => l.includes("docs/EVIDENCE-STORAGE.md"))).toHaveLength(1);
+    expect(errLines.at(-1)).toBe("deploy failed at ensure_evidence_bucket");
+    expect(r.log).not.toContain("run deploy ");
+  });
+
+  it("런타임 바인딩이 거부되면 같은 안내와 함께 ensure_evidence_bucket에서 멈춘다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: { "fail-gcloud": `storage buckets add-iam-policy-binding ${BUCKET}` },
+    });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("docs/EVIDENCE-STORAGE.md");
+    expect(r.stderr.trim().split("\n").at(-1)).toBe("deploy failed at ensure_evidence_bucket");
+    expect(r.log).not.toContain("run deploy ");
   });
 });

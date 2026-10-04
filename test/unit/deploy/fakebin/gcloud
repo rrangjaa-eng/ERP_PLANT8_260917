@@ -20,6 +20,14 @@ state_val() {
 
 if [ -n "$LOG" ]; then
   printf '%s\n' "$ARGS" >>"$LOG"
+  # 05-12: 수명 주기 · CORS 파일은 호출 뒤 지워지므로 내용을 다음 줄에 남긴다(단언용).
+  for arg in "$@"; do
+    case "$arg" in
+      --lifecycle-file=* | --cors-file=*)
+        printf '  file-content %s\n' "$(tr -d '\n' <"${arg#*=}")" >>"$LOG"
+        ;;
+    esac
+  done
 fi
 
 # 임의 하위 명령을 실패시키는 범용 훅(behavior 5b): 상태 파일 fail-gcloud의 내용이

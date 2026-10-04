@@ -409,6 +409,19 @@ describe("scripts/verify-gcp.sh", () => {
     expect(script).not.toMatch(/\|\|\s*true/);
     expect(script).toMatch(/exit\s+"?\$?\{?FAILED/);
   });
+  // 05-12(EVID-01 · Round 5 F7): 증빙 버킷 점검 — 읽기만(위 쓰기 금지 단언이 그대로 덮는다).
+  it("evidence-bucket은 버킷 설정 · 수명 주기 · 버킷 역할 둘 · CORS 원점(스테이징 status.url)을 읽는다", () => {
+    expect(script).toContain("evidence-bucket)");
+    expect(script).toContain("evidence_bucket");
+    for (const token of ["uniform_bucket_level_access", "public_access_prevention", "incoming/", "roles/storage.objectUser", "roles/storage.admin", "status.url", "cors"]) {
+      expect(script).toContain(token);
+    }
+    expect(script).not.toMatch(/buckets update|--cors-file|--lifecycle-file/);
+  });
+
+  it("verify.yml 선택지에 evidence-bucket이 있다", () => {
+    expect(readWorkflow("verify.yml")).toContain("- evidence-bucket");
+  });
 });
 
 // visual-baseline.yml — CI Linux(Chromium)에서 시각 회귀 기준 사진을 만든다(R6: 잡 둘).

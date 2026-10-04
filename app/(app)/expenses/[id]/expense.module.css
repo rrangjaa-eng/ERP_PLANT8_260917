@@ -1,0 +1,142 @@
+/* 05-05 지출결의 폼(S3) · 문서 화면(S7) · 로딩 뼈대 — 토큰만 쓴다(px 리터럴 · 새 색 없음). */
+
+/* 머리 줄 폭 720 = 폼 열과 같은 기둥(`DetailScreen`의 머리는 폭을 제한하지 않는다). */
+.column {
+  max-width: var(--form-max);
+}
+
+.textInput {
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--field-h);
+  padding: 0 var(--s-2);
+  border: var(--line-w) solid var(--border-control);
+  border-radius: var(--radius-control);
+  background: var(--surface-base);
+  color: var(--text-strong);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+}
+
+.textInput[aria-invalid="true"] {
+  border-color: var(--status-danger);
+}
+
+.textInput:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+.numeric {
+  text-align: right;
+}
+
+.checkLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: var(--field-h);
+  color: var(--text-strong);
+  font-size: var(--text-body);
+}
+
+/* 자동 채움 칸(견적 줄 · 거래처) — 텍스트 + 아래 부제. */
+.fill {
+  display: flex;
+  flex-direction: column;
+  min-height: var(--field-h);
+  justify-content: center;
+  color: var(--text-strong);
+  font-size: var(--text-body);
+  overflow-wrap: anywhere;
+  word-break: keep-all;
+}
+
+.sub {
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+}
+
+/* 계산 한 줄 — 숫자 조각만 700(`Form.Hint` · 읽기 칸 둘이 같이 쓴다). */
+.taxLine {
+  display: block;
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+  overflow-wrap: anywhere;
+}
+
+.strong {
+  font-weight: var(--fw-bold);
+}
+
+.blockedReason {
+  color: var(--status-danger);
+  font-size: var(--text-aux);
+}
+
+.infoReason {
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+}
+
+.successLine {
+  color: var(--status-success);
+  font-size: var(--text-aux);
+  font-weight: var(--fw-medium);
+}
+
+.link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: var(--line-w);
+  text-underline-offset: var(--underline-offset);
+}
+
+.link:hover {
+  text-decoration-thickness: var(--underline-w-hover);
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.formBar {
+  margin-top: var(--s-6);
+}
+
+.blockedLine {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s-1);
+}
+
+.saveWrap {
+  margin-left: auto;
+}
+
+/* 문서 화면 — 증빙 섹션 안 첨부 래퍼. */
+.evidence {
+  max-width: var(--field-w-long);
+}
+
+/* 문서 뼈대(`loading.tsx`) — 300ms 지연 표시: 처음 opacity 0, 300ms 뒤 한 번만 1로(길이 0 키프레임). 값 줄 = 면 색 막대 하나. */
+@keyframes appear {
+  to {
+    opacity: 1;
+  }
+}
+
+.kvSkeleton {
+  opacity: 0;
+  animation-name: appear;
+  animation-duration: 0s;
+  animation-delay: 300ms;
+  animation-fill-mode: forwards;
+}
+
+.kvBar {
+  display: block;
+  height: var(--s-4);
+  background: var(--surface-muted);
+}

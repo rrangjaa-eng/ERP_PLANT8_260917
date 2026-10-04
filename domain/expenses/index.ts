@@ -3,7 +3,7 @@ import type { Viewer } from "@/domain/viewer";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { withTransaction } from "@/lib/db-transaction";
 import { seoulToday } from "@/lib/dates";
-import { formatForeignAmount, formatKrw } from "@/lib/format-number";
+import { formatForeignAmount, formatFxRate, formatKrw } from "@/lib/format-number";
 import { can, ForbiddenError } from "@/domain/permissions/can";
 import { project } from "@/domain/permissions/project";
 import { coversProjectTeam, loadActorTeamScope } from "@/domain/projects/status";
@@ -187,7 +187,9 @@ function supplyMoney(row: Pick<ExpenseRow, "supplyCurrency" | "supplyForeignAmou
   return moneyFromRow({ currency: row.supplyCurrency, foreignAmount: row.supplyForeignAmount, fxRate: row.supplyFxRate, amountKrw: row.supplyAmountKrw });
 }
 
-type SourceExtras = Partial<Pick<ExpenseDocumentDto, "evidenceTypeName" | "paymentMethodName" | "taxLine">>;
+type SourceExtras = Partial<
+  Pick<ExpenseDocumentDto, "evidenceTypeName" | "paymentMethodName" | "taxLine" | "defaultEvidenceName" | "executionLines" | "installmentMode" | "installmentText">
+>;
 
 function toSource(row: ExpenseSummaryRow, extras: SourceExtras = {}): ExpenseDocumentDto {
   return {
@@ -223,6 +225,10 @@ function toSource(row: ExpenseSummaryRow, extras: SourceExtras = {}): ExpenseDoc
     companyBorneKrw: row.companyBorneKrw,
     payableKrw: row.payableKrw,
     taxLine: extras.taxLine ?? null,
+    defaultEvidenceName: extras.defaultEvidenceName ?? null,
+    executionLines: extras.executionLines ?? [],
+    installmentMode: extras.installmentMode ?? "none",
+    installmentText: extras.installmentText ?? null,
   };
 }
 
@@ -603,6 +609,40 @@ export async function submitExpense(
 
 // ── 읽기 ──────────────────────────────────────────────────────────────
 
+// 05-05 폼 자동 채움 재료(작성 중 문서만) — 견적 줄 실행가 줄 · 분할 지급 갈래와 힌트 한 줄(체크박스를 켰을 때 보일 글자 — 켜고 끄는 것은 화면). 앞 회차가 있는 줄의 문서는 체크박스 대신 값
+// 글자(`2회차 · 앞 회차 26001-0004 · 남은 실행가 …`)이고 남은 실행가가 이번 공급가액과 같으면 `N회차 · 마지막 회차`다. 저장된 값 기준이다
+// (입력하는 동안의 즉시 재계산은 05-06).
+type LineFacts = Pick<SourceExtras, "executionLines" | "installmentMode" | "installmentText">;
+
+async function lineFactsFor(viewer: Viewer, row: ExpenseSummaryRow, supply: Money | null): Promise<LineFacts> {
+  if (row.number !== null || !row.quoteLineId) return {};
+  const line = await findQuoteLineById(viewer, row.quoteLineId);
+  if (!line) return {};
+  const execution = lineExecution(line);
+  const executionLines = [`실행가 ${formatKrw(execution.amountKrw)}`];
+  if (execution.currency !== "KRW") executionLines.push(`${execution.currency} ${formatForeignAmount(execution.amount)} @${formatFxRate(execution.fxRate)}`);
+
+  const numbered = await listNumberedByLine(viewer, line.id);
+  const forced = numbered.length > 0;
+  const installmentMode = forced ? "fixed" : "checkbox";
+  const { basis, remaining } = remainingForInstallments(
+    execution,
+    numbered.flatMap((doc) => supplyMoney(doc) ?? []),
+  );
+  const isLast =
+    supply !== null && (basis === "foreign" ? Math.round(remaining.amount * 100) === Math.round(supply.amount * 100) : remaining.amountKrw === supply.amountKrw);
+  const previous = numbered.at(-1)?.number;
+  const parts = [`${numbered.length + 1}회차`];
+  if (forced && previous) parts.push(`앞 회차 ${previous}`);
+  parts.push(isLast ? "마지막 회차" : `남은 실행가 ${remainingText(remaining, basis)}`);
+  return { executionLines, installmentMode, installmentText: parts.join(" · ") };
+}
+
+// 05-05 폼 통화 선택지 — 통화마다 설정의 최근 환율(Phase 4 D-71)이 기본 환율이다.
+export async function listExpenseCurrencies(): Promise<{ value: string; fxRate: number }[]> {
+  return Promise.all(CURRENCIES.map(async (currency) => ({ value: currency, fxRate: await recentFxRate(currency) })));
+}
+
 // 문서 하나 — 보이는 사람(canSeeExpense)이 아니면 null(→ 404).
 export async function getExpense(viewer: Viewer, input: { expenseId: string }): Promise<Partial<ExpenseDocumentDto> | null> {
   if (!UUID_SHAPE.test(input.expenseId)) return null;
@@ -615,12 +655,15 @@ export async function getExpense(viewer: Viewer, input: { expenseId: string }): 
   // 제출 뒤는 저장된 스냅숏, 작성 중은 지금 기준 계산(05-06이 즉시 재계산 · 세율 바뀜을 더한다).
   const result = storedTaxResult(row) ?? (supply ? await computeExpenseTax(viewer, row) : null);
   const taxLine = result && supply ? taxLineText(result, supply, `${evidenceTypeName ?? ""} 규칙`) : null;
+  const vendor = row.number === null && row.vendorId ? await findVendorById(viewer, row.vendorId) : null;
   return project(
     viewer,
     toSource(row, {
       evidenceTypeName,
       paymentMethodName: row.paymentMethod ? (paymentNames.get(row.paymentMethod) ?? row.paymentMethod) : null,
       taxLine,
+      defaultEvidenceName: vendor?.defaultEvidenceType ? (evidenceNames.get(vendor.defaultEvidenceType) ?? vendor.defaultEvidenceType) : null,
+      ...(await lineFactsFor(viewer, row, supply)),
     }),
     EXPENSE_DOCUMENT_DTO_SPEC,
   );

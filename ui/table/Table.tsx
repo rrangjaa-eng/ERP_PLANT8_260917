@@ -830,6 +830,8 @@ export function Table<Row>({
                     {column.header}
                     {column.sort.direction ? <SortIcon direction={column.sort.direction} /> : null}
                   </Link>
+                ) : column.headerHidden ? (
+                  <span className="sr-only">{column.header}</span>
                 ) : (
                   column.header
                 )}

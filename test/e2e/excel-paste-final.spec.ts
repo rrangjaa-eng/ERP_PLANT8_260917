@@ -361,7 +361,7 @@ test.describe("실제 엑셀 캡처 원문 — 최종 견적 표 재생(04-31 Ta
     await expect.poll(() => footerPieces(page)).toEqual([
       { tone: "muted", text: "붙여넣기 45줄" },
       { tone: "warning", text: "외화 1줄 원화로" },
-      { tone: "muted", text: "계산 열 180칸 무시" },
+      { tone: "muted", text: "계산 열 225칸 무시" },
     ]);
 
     await saveAndWait(page);

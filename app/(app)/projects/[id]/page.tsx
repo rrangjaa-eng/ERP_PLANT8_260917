@@ -34,6 +34,7 @@ import { RevisionSection } from "./revision-section";
 import type { StatusChangeProps } from "./status-change";
 import type { CustomerApprovalProps, NewRevisionProps } from "./revision-dialogs";
 import { getPerson } from "@/domain/people";
+import { listLineDoors } from "@/domain/expenses";
 
 // SYSTEM.md §6-2 상세 화면 — 이 리포의 첫 목록/상세 분리 화면. 네 숫자 줄
 // (PNL-01)은 아직 없다(Phase 9). 매출 섹션은 04-02가 더한다. WR-07: 인증 검사를
@@ -222,6 +223,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const endDateNote = !endDatePassed ? null : teamLeadName ? `종료일 지남 · 팀장 ${teamLeadName}` : "종료일 지남";
 
   // DetailScreen 머리 — 제목은 프로젝트 이름, 메타는 지금 부제 문구(`{번호} · 상세 견적 {n}차`)를 ` · `로 이은 것(글자 불변).
+  // 05-05 — 견적 줄 행 행동 열(문 판정 · 열 여부 모두 서버).
+  const lineDoors = await listLineDoors(session.viewer, { projectId: project.id });
   const frame = { title: project.name, meta: [project.number, `상세 견적 ${revision.seq}차`].join(" · ") } satisfies Pick<DetailScreenProps, "title" | "meta">;
 
   return (
@@ -264,6 +267,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       revenue={revenue}
       canWriteEntries={canWriteEntries}
       usdDefaultFxRate={usdDefaultFxRate}
+      lineDoors={lineDoors}
     >
       {/* 04-24(S3 섹션 순서 ③ → ④) — 매출(원장 안 마지막 섹션) 뒤에 차수 섹션, 그 아래 이전 차수 읽기 섹션. */}
       <RevisionSection

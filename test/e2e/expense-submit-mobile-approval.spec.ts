@@ -1,13 +1,15 @@
 import { test, expect, type Page } from "@playwright/test";
 import { createExpenseFromLines } from "@/domain/expenses";
 import { delayServerActions, expectSheetDocumentLink, loginPage, waitForHydration } from "./leave-org";
-import { setupExpenseE2E, type ExpenseE2E } from "./expense-fixture";
+import { setupExpenseE2E, uniqueReceipt, type ExpenseE2E } from "./expense-fixture";
 
 // 05-05 Task 1 화면 트레이서(ROADMAP 05 기준 3): 견적 줄 `지출결의 올리기` → 폼(자동 채움) → 사진 한 장(브라우저 축소 · 해시 · 로컬 서명 주소) →
 // `Ctrl+Enter` 제출 → 문서 화면 → 팀장 폰 결재 시트 `승인` → 대표 문서 화면 `승인`. 줄마다 테스트가 따로라 서로 겹치지 않는다.
 
 const RECEIPT = "test/e2e/assets/receipt-3000x2000.jpg";
 const PHONE = { width: 375, height: 800 };
+// 3000×2000 사진을 브라우저가 줄이고 해시하는 시간이 기본 5초를 넘는 때가 있다(느린 러너).
+const UPLOAD_WAIT = 20_000;
 const META = /^\d+KB · \d{2}-\d{2}$/;
 
 function titleOf(fx: ExpenseE2E, itemName: string): string {
@@ -101,14 +103,19 @@ test.describe("지출결의 올리기 → 제출 → 폰 결재 시트 승인 �
     // 처리함 — 그 문서 행은 이제 문서 링크다.
     await expect(lead.getByRole("link", { name: `지출결의 · ${fx.projectName} · ${line.itemName}` })).toBeVisible();
 
-    // 6) 대표 — 문서 화면 `승인 Ctrl+Enter` → 태그 `승인`.
-    const ceo = await loginPage(browser, baseURL, fx.ceo);
-    await ceo.goto(`/expenses/${expenseId}`);
-    const approve = ceo.getByRole("button", { name: /^승인/ });
-    await waitForHydration(approve);
-    await approve.click();
-    await expect(ceo.getByRole("button", { name: /^승인/ })).toHaveCount(0);
-    const ceoHead = ceo.locator('[data-ui="screen-title"]').locator("..");
+    // 6) 본부장 · 경영 · 대표 — 각자 문서 화면 `승인 Ctrl+Enter`(결재선 넷 — 앞 사람이 승인해야 다음 사람이 문서를 본다). 대표 뒤 태그 `승인`.
+    let ceoPage: Page | null = null;
+    for (const person of [fx.divisionHead, fx.mgmt, fx.ceo]) {
+      const approver = await loginPage(browser, baseURL, person);
+      ceoPage = approver;
+      await approver.goto(`/expenses/${expenseId}`);
+      const approve = approver.getByRole("button", { name: /^승인/ });
+      await waitForHydration(approve);
+      await approve.click();
+      await expect(approver.getByRole("button", { name: /^승인/ })).toHaveCount(0);
+    }
+    if (!ceoPage) throw new Error("대표 화면이 없다");
+    const ceoHead = ceoPage.locator('[data-ui="screen-title"]').locator("..");
     await expect(ceoHead.getByText("승인", { exact: true })).toBeVisible();
   });
 });
@@ -124,13 +131,17 @@ test.describe("올리는 중 제출 · 다시 올리기", () => {
     const held = new Promise<void>((resolve) => {
       release = resolve;
     });
+    let putHeld = false;
     await page.route("**/api/storage-local/**", async (route) => {
+      putHeld = true;
       await held;
       await route.continue();
     });
-    await page.getByTestId("attachments-input").setInputFiles(RECEIPT);
+    await page.getByTestId("attachments-input").setInputFiles(await uniqueReceipt(page));
     const row = page.locator('[data-ui="attachments"] li');
-    await expect(row.getByText("올리는 중…")).toBeVisible();
+    await expect(row.getByText("올리는 중…")).toBeVisible({ timeout: UPLOAD_WAIT });
+    // 서명 주소를 받는 서버 액션이 끝나 PUT이 붙들린 뒤부터 센다(그 앞의 액션 POST는 올리기 자체다).
+    await expect.poll(() => putHeld, { timeout: UPLOAD_WAIT }).toBe(true);
 
     const submit = page.getByRole("button", { name: /^지출결의 제출/ });
     await expect(submit).toHaveAttribute("aria-disabled", "true");
@@ -139,7 +150,7 @@ test.describe("올리는 중 제출 · 다시 올리기", () => {
 
     // 1차 클릭 · Ctrl+Enter는 서버를 부르지 않는다.
     const posts = countActionPosts(page);
-    await submit.click();
+    await submit.click({ force: true });
     await submit.focus();
     await page.keyboard.press("Control+Enter");
     expect(posts.count()).toBe(0);
@@ -155,7 +166,7 @@ test.describe("올리는 중 제출 · 다시 올리기", () => {
     expect(page.isClosed()).toBe(false);
 
     release();
-    await expect(row.getByText(META)).toBeVisible();
+    await expect(row.getByText(META)).toBeVisible({ timeout: UPLOAD_WAIT });
     await expect(page.getByText("증빙 올리는 중 · 잠시 뒤 제출")).toHaveCount(0);
   });
 
@@ -173,11 +184,11 @@ test.describe("올리는 중 제출 · 다시 올리기", () => {
       }
       await route.continue();
     });
-    await page.getByTestId("attachments-input").setInputFiles(RECEIPT);
+    await page.getByTestId("attachments-input").setInputFiles(await uniqueReceipt(page));
     const row = page.locator('[data-ui="attachments"] li');
-    await expect(row.getByText("올리지 못함 · 다시 올리기")).toBeVisible();
+    await expect(row.getByText("올리지 못함 · 다시 올리기")).toBeVisible({ timeout: UPLOAD_WAIT });
     await row.getByRole("button", { name: "다시 올리기" }).click();
-    await expect(row.getByText(META)).toBeVisible();
+    await expect(row.getByText(META)).toBeVisible({ timeout: UPLOAD_WAIT });
     await expect(page.getByText("올리지 못함 · 다시 올리기")).toHaveCount(0);
   });
 });

@@ -1,0 +1,157 @@
+/* 05-05(UI-SPEC S4): 증빙 첨부 — 빈 영역(점선 상자) · 파일 행 목록 · 「하나 더」. 토큰만 쓴다(px 리터럴 · 새 색 없음). */
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  width: 100%;
+  max-width: var(--field-w-long);
+}
+
+.drop {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: calc(var(--s-12) * 2);
+  padding: 0 var(--s-4);
+  border: var(--line-w) dashed var(--border-control);
+  border-radius: var(--radius-surface);
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  text-align: center;
+  cursor: pointer;
+}
+
+/* 끌어 놓는 동안 테두리 --border-strong 1px(포인트 색 다섯 곳 밖). */
+.drop[data-dragging="true"] {
+  border-color: var(--border-strong);
+}
+
+.drop:focus-visible,
+.more:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+.phoneText {
+  display: none;
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: grid;
+  grid-template-columns: var(--s-12) minmax(0, 1fr) auto;
+  column-gap: var(--s-3);
+  align-items: center;
+  padding: var(--s-2) 0;
+}
+
+.item + .item {
+  border-top: var(--line-w) solid var(--border-row);
+}
+
+/* 실패 행 — 오류 셀 모양(면 + 좌측 선). */
+.item[data-state="failed"] {
+  padding-left: var(--s-2);
+  background: var(--status-danger-weak);
+  box-shadow: var(--inset-error);
+}
+
+.thumb {
+  width: var(--s-12);
+  height: var(--s-12);
+  border-radius: var(--radius-control);
+  object-fit: cover;
+}
+
+.clipBox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--s-12);
+  height: var(--s-12);
+  color: var(--text-muted);
+}
+
+.clip {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.name {
+  color: var(--text-strong);
+  font-size: var(--text-body);
+  overflow-wrap: anywhere;
+  word-break: keep-all;
+}
+
+.meta {
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+}
+
+.error {
+  color: var(--status-danger);
+  font-size: var(--text-aux);
+}
+
+.more {
+  align-self: flex-start;
+  min-height: var(--touch-min);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-link);
+  font-family: var(--font-sans);
+  font-size: var(--text-aux);
+  font-weight: var(--fw-medium);
+  text-decoration: underline;
+  text-decoration-thickness: var(--line-w);
+  text-underline-offset: var(--underline-offset);
+  cursor: pointer;
+}
+
+@media (max-width: 699.98px) {
+  .drop {
+    height: calc(var(--s-6) * 3);
+    font-size: var(--text-body);
+  }
+
+  .pcText {
+    display: none;
+  }
+
+  .phoneText {
+    display: inline;
+  }
+
+  .item {
+    grid-template-columns: var(--s-12) minmax(0, 1fr);
+  }
+
+  /* 폰 파일 행의 3차는 각각 높이 --touch-min 영역이다(RowActions가 사이를 벌린다). */
+  .actions {
+    grid-column: 1 / -1;
+  }
+
+  .actions button,
+  .actions a {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--touch-min);
+  }
+}

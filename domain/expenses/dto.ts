@@ -60,6 +60,11 @@ export type ExpenseDocumentDto = ExpenseDraftDto & {
   payableKrw: number | null;
   // 계산 한 줄 — 제출 뒤 문서는 저장된 스냅숏, 작성 중은 지금 기준 계산. 조각의 emphasis가 숫자 700 표식(금액 정보 항목).
   taxLine: { text: string; parts: TaxLinePart[] } | null;
+  // 05-05 폼 자동 채움 재료(작성 중에만 채운다) — 거래처 기본 증빙 종류 이름 · 견적 줄 실행가 줄(외화면 둘째 줄) · 분할 지급 갈래와 힌트 한 줄.
+  defaultEvidenceName: string | null;
+  executionLines: string[];
+  installmentMode: "checkbox" | "fixed" | "none";
+  installmentText: string | null;
 };
 
 export const EXPENSE_DOCUMENT_DTO_SPEC: DtoSpec<ExpenseDocumentDto, ExpenseDocumentDto> = {
@@ -86,6 +91,10 @@ export const EXPENSE_DOCUMENT_DTO_SPEC: DtoSpec<ExpenseDocumentDto, ExpenseDocum
     { key: "companyBorneKrw", from: "companyBorneKrw", infoItem: "expense.amount" },
     { key: "payableKrw", from: "payableKrw", infoItem: "expense.amount" },
     { key: "taxLine", from: "taxLine", infoItem: "expense.amount" },
+    { key: "defaultEvidenceName", from: "defaultEvidenceName", infoItem: "expense.value" },
+    { key: "executionLines", from: "executionLines", infoItem: "expense.amount" },
+    { key: "installmentMode", from: "installmentMode", infoItem: "expense.value" },
+    { key: "installmentText", from: "installmentText", infoItem: "expense.amount" },
   ],
 };
 

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { Page } from "@playwright/test";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { createProject } from "@/domain/projects";
 import { changeProjectStatus } from "@/domain/projects/status";
@@ -16,6 +17,9 @@ import { setupLeaveOrg, type Person } from "./leave-org";
 export type ExpenseE2E = {
   pm: Person;
   lead: Person;
+  // 결재선은 연차와 같은 넷(팀장 → 본부장 → 경영 → 대표) — 사이 둘도 문서 화면에서 승인해야 대표가 문서를 볼 수 있다.
+  divisionHead: Person;
+  mgmt: Person;
   ceo: Person;
   projectId: string;
   projectNumber: string;
@@ -93,6 +97,8 @@ export async function setupExpenseE2E(): Promise<ExpenseE2E> {
   return {
     pm: org.drafter,
     lead: org.teamLead,
+    divisionHead: org.divisionHead,
+    mgmt: org.mgmt,
     ceo: org.ceo,
     projectId: project.id,
     projectNumber: project.number,
@@ -100,4 +106,30 @@ export async function setupExpenseE2E(): Promise<ExpenseE2E> {
     vendorName,
     lines: Object.fromEntries((Object.keys(names) as LineKey[]).map((key) => [key, { id: idOf(names[key]), itemName: names[key] }])) as ExpenseE2E["lines"],
   };
+}
+
+// 증빙 중복 검사는 파일 해시가 같으면 다른 문서의 파일도 막는다(05-04) — 한 번에 도는 스펙 안에서 같은 그림을 두 번 올리면 둘째가 `이미 첨부된 파일`이 된다.
+// 트레이서만 고정 그림 `test/e2e/assets/receipt-3000x2000.jpg`(브라우저 캔버스 3000×2000 · JPEG 품질 0.8)를 쓰고, 나머지는 호출마다 글자가 다른 같은 크기 그림을 캔버스로 만들어 해시가 겹치지 않게 한다.
+export async function uniqueReceipt(page: Page): Promise<{ name: string; mimeType: string; buffer: Buffer }> {
+  const tag = randomUUID();
+  const base64 = await page.evaluate(async (label) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 3000;
+    canvas.height = 2000;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("캔버스를 만들 수 없다");
+    ctx.fillStyle = "#eef2f1";
+    ctx.fillRect(0, 0, 3000, 2000);
+    ctx.fillStyle = "#1f2d29";
+    ctx.font = "bold 90px sans-serif";
+    ctx.fillText(label, 100, 300);
+    for (let i = 0; i < 8; i += 1) ctx.fillText(`ITEM ${i + 1}      12,400,000`, 100, 520 + i * 160);
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.8));
+    if (!blob) throw new Error("JPEG를 만들 수 없다");
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary);
+  }, tag);
+  return { name: `receipt-${tag.slice(0, 8)}.jpg`, mimeType: "image/jpeg", buffer: Buffer.from(base64, "base64") };
 }

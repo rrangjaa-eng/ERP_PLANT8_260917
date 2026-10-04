@@ -23,6 +23,7 @@ type LinkAction = ActionCommon & {
   autoFocus?: never;
   disabled?: never;
   disabledReason?: never;
+  describedBy?: never;
 };
 
 type ButtonActionBase = ActionCommon & {
@@ -31,6 +32,8 @@ type ButtonActionBase = ActionCommon & {
   /** 서버 액션 대기 중 — 라벨 뒤 「…」. 네이티브 disabled가 아니라 aria-disabled다(탭 순서에 남고 포커스 유지 — DR-11). */
   pending?: boolean;
   autoFocus?: boolean;
+  /** 이 행동이 가리키는 대상 글자의 id(예: 실패 파일 행의 파일명) — `aria-describedby`에 이유 id보다 앞서 이어진다. */
+  describedBy?: string;
 };
 
 // Button의 UX-06 규약 — 비활성은 이유와 함께만 쓴다.
@@ -75,7 +78,7 @@ export function RowAction(props: RowActionProps) {
       type="button"
       autoFocus={props.autoFocus}
       aria-disabled={inactive ? "true" : undefined}
-      aria-describedby={reason ? reasonId : undefined}
+      aria-describedby={[props.describedBy, reason ? reasonId : undefined].filter(Boolean).join(" ") || undefined}
       onClick={rowActionClickHandler({ inactive, onClick: props.onClick })}
       className={[styles.action, dangerClass, reason ? "" : endClass].filter(Boolean).join(" ")}
     >

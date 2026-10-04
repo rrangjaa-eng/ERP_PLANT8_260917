@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { createExpenseFromLines } from "@/domain/expenses";
 import { delayServerActions, expectSheetDocumentLink, loginPage, waitForHydration } from "./leave-org";
-import { setupExpenseE2E, uniqueReceipt, type ExpenseE2E } from "./expense-fixture";
+import { setupExpenseE2E, submitLineExpense, uniqueReceipt, type ExpenseE2E } from "./expense-fixture";
 
 // 05-05 Task 1 화면 트레이서(ROADMAP 05 기준 3): 견적 줄 `지출결의 올리기` → 폼(자동 채움) → 사진 한 장(브라우저 축소 · 해시 · 로컬 서명 주소) →
 // `Ctrl+Enter` 제출 → 문서 화면 → 팀장 폰 결재 시트 `승인` → 대표 문서 화면 `승인`. 줄마다 테스트가 따로라 서로 겹치지 않는다.
@@ -219,5 +219,35 @@ test.describe("웨이브 6 — 견적 줄 행동 열 실패 줄 · 접근 이름
     const after = (await cell.boundingBox())!.width;
     expect(after, "D3 행동 열 폭 불변").toBe(before);
     expect(await failure.evaluate((node) => node.closest("td")?.getAttribute("colspan") !== null), "D3 실패 줄이 합계 행 칸 안").toBe(true);
+  });
+});
+
+// 05-15 D-66 — 제출된 지출결의(번호 있음)가 붙은 견적 줄은 상태 `지출결의 중` · 금액 셀 읽기 전용(이유 한 줄). 격자 열 순서는 Phase 4 표 그대로(실행가 = 7).
+const EXECUTION_COLUMN = 7;
+
+test.describe("D-66 잠금", () => {
+  test("제출한 뒤 프로젝트 상세로 돌아오면 줄 상태가 지출결의 중이고 금액 셀이 편집되지 않고 이유가 보인다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const expenseId = await submitLineExpense(browser, baseURL, fx, "closed");
+    expect(expenseId).toMatch(/^[0-9a-f-]{36}$/);
+
+    const page = await loginPage(browser, baseURL, fx.pm, { width: 1280, height: 800 });
+    await page.goto(`/projects/${fx.projectId}`);
+    const row = page.getByRole("row").filter({ hasText: fx.lines.closed.itemName });
+    await expect(row.getByRole("gridcell").filter({ hasText: "지출결의 중" })).toHaveCount(1);
+
+    const reason = `지출결의 ${fx.projectNumber}-0001 연결됨 · 고치려면 새 차수`;
+    const amount = row.getByRole("gridcell").nth(EXECUTION_COLUMN);
+    await waitForHydration(amount);
+    await expect(async () => {
+      await amount.focus();
+      await page.keyboard.press("Enter");
+      await expect(amount.getByText(reason, { exact: true })).toBeVisible({ timeout: 1000 });
+    }).toPass();
+    await expect(amount.locator("input, select")).toHaveCount(0);
+
+    // 연결 없는 줄은 그대로 미착수다.
+    const free = page.getByRole("row").filter({ hasText: fx.lines.hold.itemName });
+    await expect(free.getByRole("gridcell").filter({ hasText: "미착수" })).toHaveCount(1);
   });
 });

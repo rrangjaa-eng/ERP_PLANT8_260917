@@ -75,3 +75,10 @@ export function isApprovalParty(
 ): boolean {
   return viewerId === input.drafterId || input.actedByIds.includes(viewerId) || input.currentHolderIds.includes(viewerId);
 }
+
+// 05-09 이미 무효인 증빙(design-review D9 · UI-SPEC Copywriting 「Error — 증빙 무효 처리」) — 04.1 「거부 — 동시 처리」 꼴.
+// 처리자 = 그 행의 voided_by 이름 · 시각 = voided_at(서울 HH:MM). 이름을 모르면 이름 없이.
+export function buildEvidenceVoidedMessage(state: { actorName: string | null; at: Date }): string {
+  const head = state.actorName ? `${state.actorName}${subjectParticle(state.actorName)} ` : "";
+  return `${head}${SEOUL_TIME.format(state.at)}에 무효 처리함${NEXT}`;
+}

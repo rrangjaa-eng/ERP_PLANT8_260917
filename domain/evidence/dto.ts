@@ -14,6 +14,7 @@ export type EvidenceFileDto = {
   createdAt: Date;
   voidedAt: Date | null;
   voidReason: string | null;
+  voidedByName: string | null;
 };
 
 export const EVIDENCE_FILE_DTO_SPEC: DtoSpec<EvidenceFileDto, EvidenceFileDto> = {
@@ -27,6 +28,7 @@ export const EVIDENCE_FILE_DTO_SPEC: DtoSpec<EvidenceFileDto, EvidenceFileDto> =
     { key: "createdAt", from: "createdAt", infoItem: "expense.value" },
     { key: "voidedAt", from: "voidedAt", infoItem: "expense.value" },
     { key: "voidReason", from: "voidReason", infoItem: "expense.value" },
+    { key: "voidedByName", from: "voidedByName", infoItem: "expense.value" },
   ],
 };
 

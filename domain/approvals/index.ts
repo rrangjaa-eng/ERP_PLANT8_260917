@@ -400,7 +400,10 @@ async function conflictMessageOf(viewer: Viewer, graph: ApprovalGraph, attempted
     ? null
     : instance.updatedBy === instance.drafterId
       ? instance.drafterName
-      : (graph.routes.flatMap((route) => route.steps).find((step) => step.actedBy === instance.updatedBy)?.actedByName ?? null);
+      : (graph.routes.flatMap((route) => route.steps).find((step) => step.actedBy === instance.updatedBy)?.actedByName ??
+        // 05-09: 결재 중 증빙을 붙인 경영관리 권한자는 단계 처리자가 아니다 — 인스턴스를 바꾼 사람 이름을 그대로 쓴다.
+        instance.updatedByName ??
+        null);
   return buildConflictMessage({
     status: instance.status as ApprovalStatus,
     round: instance.currentRound,
@@ -720,6 +723,14 @@ export const REJECT_REASON_TOO_LONG_MESSAGE = "사유 500자 넘음 · 줄여 �
 
 export class RejectReasonError extends UserFacingError {}
 
+// 반려 사유 검증(trim 1~500자) — trim된 값을 돌려준다. 반려와 증빙 무효 처리(05-09 — Round 4 D11)가 같이 쓴다.
+export function validateRejectReason(reason: string): string {
+  const trimmed = reason.trim();
+  if (trimmed.length === 0) throw new RejectReasonError(REJECT_REASON_EMPTY_MESSAGE);
+  if (trimmed.length > REJECT_REASON_MAX) throw new RejectReasonError(REJECT_REASON_TOO_LONG_MESSAGE);
+  return trimmed;
+}
+
 export type RejectResult = { status: ApprovalStatus; version: number; documentId: string; kind: string; drafterName: string };
 
 // 반려 — 사유(trim 1~500자)는 트랜잭션 전에 거부한다. 지금 단계 후보(기안자 제외)만. 사유는 그 단계 행에.
@@ -728,9 +739,7 @@ export async function rejectDocument(
   input: { instanceId: string; expectedVersion: number; reason: string },
   deps?: ApprovalDeps,
 ): Promise<RejectResult> {
-  const reason = input.reason.trim();
-  if (reason.length === 0) throw new RejectReasonError(REJECT_REASON_EMPTY_MESSAGE);
-  if (reason.length > REJECT_REASON_MAX) throw new RejectReasonError(REJECT_REASON_TOO_LONG_MESSAGE);
+  const reason = validateRejectReason(input.reason);
   const pre = await readTransitionPre(viewer, deps);
   return withTransaction(async (tx) => {
     const { updated, result } = await runTransition(

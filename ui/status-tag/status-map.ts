@@ -38,6 +38,7 @@ export const STATUS_KIND = {
   미수주: "muted",
   취소: "muted",
   회수: "muted",
+  무효: "muted",
   "첫 로그인 전": "muted",
   "임시 비밀번호 사용 중": "muted",
   "작성 중": "muted",

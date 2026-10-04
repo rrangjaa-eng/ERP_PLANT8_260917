@@ -1,7 +1,7 @@
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
-import { files } from "@/db/schema";
+import { files, users } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 
 // 05-04(EVID-01): 증빙 파일 표. 「살아 있는 파일」 = 삭제되지 않았고(removed_at) 무효 처리되지 않은(voided_at) 행 —
@@ -50,14 +50,16 @@ export async function countActiveByOwner(viewer: Viewer, ownerKind: string, owne
   return row?.count ?? 0;
 }
 
-// 삭제되지 않은 행 전부 — 무효 행도 싣는다(화면이 취소선 · 배지로 그린다). 올린 순.
-export async function listActiveByOwner(viewer: Viewer, ownerKind: string, ownerId: string): Promise<FileRow[]> {
+// 삭제되지 않은 행 전부 — 무효 행도 싣는다(화면이 취소선 · 배지로 그린다). 올린 순. 05-09: 무효 처리한 사람 이름을 붙인다.
+export async function listActiveByOwner(viewer: Viewer, ownerKind: string, ownerId: string): Promise<(FileRow & { voidedByName: string | null })[]> {
   void viewer;
-  return db
-    .select()
+  const rows = await db
+    .select({ file: files, voidedByName: users.name })
     .from(files)
+    .leftJoin(users, eq(users.id, files.voidedBy))
     .where(and(eq(files.ownerKind, ownerKind), eq(files.ownerId, ownerId), isNull(files.removedAt)))
     .orderBy(asc(files.createdAt), asc(files.id));
+  return rows.map((row) => ({ ...row.file, voidedByName: row.voidedByName }));
 }
 
 // 아직 지워지지 않은 행만 — 0행이면 false(이미 지워짐).
@@ -69,4 +71,40 @@ export async function markRemoved(viewer: Viewer, input: { id: string; removedBy
     .where(and(eq(files.id, input.id), isNull(files.removedAt)))
     .returning({ id: files.id });
   return rows.length > 0;
+}
+
+// 05-09: 살아 있는 행에만 무효 세 칸을 쓴다 — 0행이면 null(이미 무효 · 지워짐). 시각은 주입이 없으면 DB now() — 올린 시각(files.created_at
+// 기본값)과 같은 시계라 무효 뒤 신호의 순서 비교가 어긋나지 않는다.
+export async function markVoided(
+  viewer: Viewer,
+  input: { id: string; voidedBy: string; reason: string; at?: Date },
+  tx: DbOrTx,
+): Promise<FileRow | null> {
+  void viewer;
+  const [row] = await tx
+    .update(files)
+    .set({ voidedAt: input.at ?? sql`now()`, voidedBy: input.voidedBy, voidReason: input.reason })
+    .where(and(eq(files.id, input.id), alive()))
+    .returning();
+  return row ?? null;
+}
+
+// 05-09(G1): 무효 뒤 아직 새 증빙이 없는 주인 — 지워지지 않은 행 가운데 가장 늦은 무효가 있고, 살아 있는 행이 없거나 가장 늦은
+// 무효가 가장 늦게 올린 살아 있는 행보다 늦다. 한 쿼리(GROUP BY · HAVING).
+export async function findUnresolvedVoidOwnerIds(
+  viewer: Viewer,
+  input: { ownerKind: string; ownerIds: readonly string[] },
+  tx: DbOrTx = db,
+): Promise<string[]> {
+  void viewer;
+  if (input.ownerIds.length === 0) return [];
+  const lastVoid = sql`max(${files.voidedAt})`;
+  const lastLive = sql`max(${files.createdAt}) filter (where ${files.voidedAt} is null)`;
+  const rows = await tx
+    .select({ ownerId: files.ownerId })
+    .from(files)
+    .where(and(eq(files.ownerKind, input.ownerKind), inArray(files.ownerId, [...input.ownerIds]), isNull(files.removedAt)))
+    .groupBy(files.ownerId)
+    .having(sql`${lastVoid} is not null and (${lastLive} is null or ${lastVoid} > ${lastLive})`);
+  return rows.map((row) => row.ownerId);
 }

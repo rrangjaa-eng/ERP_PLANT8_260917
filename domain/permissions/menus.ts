@@ -30,6 +30,11 @@ export const MENUS: MenuDef[] = [
   { key: "projects.adjustment", label: "견적 조정 줄" },
   { key: "expenses", label: "지출결의" },
   { key: "expenses.team", label: "팀 지출결의 보기" },
+  // 05-09(사용자 결정 2026-09-26 PR #89 · 2026-10-04): 승인 뒤 증빙 무효 처리 · 결재 중 증빙 붙이기 — 경영관리의 일이라 지출결의 쓰기와
+  // 따로 두고 서로도 따로 켜고 끈다. `projects.adjustment` 선례처럼 관리자가 권한표에서 실제 경영관리 계급에 켠다(역할 이름 판정 없음).
+  // 시드 계급 중에는 시스템 관리자만 seedMasterData의 MENUS 루프로 켜진다.
+  { key: "expenses.evidence_void", label: "증빙 무효 처리" },
+  { key: "expenses.evidence_attach", label: "결재 중 증빙 붙이기" },
   { key: "cards", label: "법인카드" },
   { key: "approvals", label: "결재함" },
   { key: "pnl", label: "손익" },

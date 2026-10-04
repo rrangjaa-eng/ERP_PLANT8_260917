@@ -71,7 +71,7 @@ describe("승인 뒤 증빙 무효 처리", () => {
     const voidLogs = logs.filter((log) => log.actionType === "document_update" && (log.detail as { change?: string }).change === "evidence_void");
     expect(voidLogs).toHaveLength(1);
     expect(voidLogs[0]).toMatchObject({ actorId: manager.id });
-    expect(voidLogs[0]?.detail).toEqual({ change: "evidence_void", fileId: target.id, reasonLength: 7 });
+    expect(voidLogs[0]?.detail).toEqual({ change: "evidence_void", fileId: target.id, reasonLength: 8 });
     expect(JSON.stringify(voidLogs[0]?.detail)).not.toContain("다른 건");
 
     const listed = await listEvidence(fx.pm, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: expenseId });

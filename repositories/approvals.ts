@@ -15,7 +15,8 @@ export type ApprovalStepRow = InferSelectModel<typeof approvalSteps>;
 
 export type ApprovalStepWithActor = ApprovalStepRow & { actedByName: string | null };
 export type ApprovalRouteWithSteps = ApprovalRouteRow & { steps: ApprovalStepWithActor[] };
-export type ApprovalInstanceWithDrafter = ApprovalInstanceRow & { drafterName: string };
+// updatedByName — 마지막으로 바꾼 사람(updated_by) 이름. 그래프 읽기만 싣는다(05-09: 결재 중 증빙을 붙인 사람의 충돌 문구).
+export type ApprovalInstanceWithDrafter = ApprovalInstanceRow & { drafterName: string; updatedByName?: string | null };
 export type ApprovalGraph = { instance: ApprovalInstanceWithDrafter; routes: ApprovalRouteWithSteps[] };
 
 export type NewApprovalStep = {
@@ -69,12 +70,14 @@ export async function insertApprovalSteps(
 
 const drafters = alias(users, "drafters");
 const actors = alias(users, "actors");
+const updaters = alias(users, "updaters");
 
 async function readGraph(where: SQL | undefined, tx: DbOrTx): Promise<ApprovalGraph | null> {
   const [found] = await tx
-    .select({ instance: approvalInstances, drafterName: drafters.name })
+    .select({ instance: approvalInstances, drafterName: drafters.name, updatedByName: updaters.name })
     .from(approvalInstances)
     .innerJoin(drafters, eq(drafters.id, approvalInstances.drafterId))
+    .leftJoin(updaters, eq(updaters.id, approvalInstances.updatedBy))
     .where(where)
     .limit(1);
   if (!found) return null;
@@ -96,7 +99,7 @@ async function readGraph(where: SQL | undefined, tx: DbOrTx): Promise<ApprovalGr
     }
     if (row.step) route.steps.push({ ...row.step, actedByName: row.actedByName });
   }
-  return { instance: { ...found.instance, drafterName: found.drafterName }, routes: [...routes.values()] };
+  return { instance: { ...found.instance, drafterName: found.drafterName, updatedByName: found.updatedByName }, routes: [...routes.values()] };
 }
 
 // 인스턴스 · 모든 차수 · 단계를 한 번에 — 관련자 판정(04.1-02)에 모든 차수의 acted_by가 필요하다.

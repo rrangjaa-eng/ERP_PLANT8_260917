@@ -1,7 +1,7 @@
 import { and, asc, eq, ilike, inArray, isNotNull, isNull, or, sql, type SQL } from "drizzle-orm";
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
-import { approvalInstances, expenses, projects, quoteLines, teams, users, vendors } from "@/db/schema";
+import { approvalInstances, approvalRoutes, approvalSteps, expenses, projects, quoteLines, teams, users, vendors } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 
 // 05-03(EXP-01): 지출결의 표. 결재 상태는 approval_instances에 있어 읽기는 문서 종류 키(호출자가 넘긴다)로
@@ -468,6 +468,14 @@ export type ExpenseListRow = ExpenseRow & {
 // ORDER BY group_rank, <그룹별 CASE 키>, id 한 곳에서 줄 세운 뒤에만 LIMIT · OFFSET으로 자른다(리뷰 Round 2 M2 — PostgreSQL은
 // ORDER BY 식 안에서 SELECT 별칭을 읽지 못해 서브쿼리 열로 둔다). 그룹 안: 작성 중 = 고친 시각 ↓ · 반려 · 회수 = 상태 바뀐 시각 ↓ ·
 // 결재 중 = 제출 시각 ↑ · 승인 = 지급 예정일 ↑(없음은 끝).
+// 05-09(05-08 검토 #6): 승인 뒤 증빙 추가가 인스턴스 updated_at을 올리므로 승인 날짜는 지금 차수 단계의 마지막 처리 시각에서 읽는다
+// (반려 · 회수에서는 증빙 변경이 인스턴스를 건드리지 않아 updated_at = 상태 바뀐 시각 그대로).
+const statusChangedAtExpr = sql<Date | null>`case when ${approvalInstances.status} = 'approved' then (
+  select max(${approvalSteps.actedAt}) from ${approvalSteps}
+  inner join ${approvalRoutes} on ${approvalRoutes.id} = ${approvalSteps.routeId}
+  where ${approvalRoutes.instanceId} = ${approvalInstances.id} and ${approvalRoutes.round} = ${approvalInstances.currentRound}
+) else ${approvalInstances.updatedAt} end`.mapWith(approvalInstances.updatedAt);
+
 export async function listExpensePage(
   viewer: Viewer,
   input: { scope: ExpenseScope; ranks: readonly number[]; documentKind: string; limit: number; offset: number },
@@ -498,7 +506,7 @@ export async function listExpensePage(
       vendorName: vendors.name,
       instanceId: approvalInstances.id,
       status: approvalInstances.status,
-      statusChangedAt: approvalInstances.updatedAt,
+      statusChangedAt: statusChangedAtExpr,
     })
     .from(q)
     .innerJoin(expenses, eq(expenses.id, q.id))

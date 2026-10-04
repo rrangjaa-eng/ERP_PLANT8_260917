@@ -245,9 +245,10 @@ export type GcsSigner = {
 
 const GCS_API = "https://storage.googleapis.com/storage/v1";
 
-const defaultGcsRequest = createAuthedRequest(() =>
-  new GoogleAuth({ scopes: ["https://www.googleapis.com/auth/devstorage.read_write"] }).getClient(),
-);
+// 05-12 스파이크: read_write 범위 토큰으로 retain PATCH(temporaryHold)만 403이었다. 권한 상한은 버킷 IAM(objectUser)이 그대로 정한다.
+export const GCS_OBJECT_SCOPE = "https://www.googleapis.com/auth/devstorage.full_control";
+
+const defaultGcsRequest = createAuthedRequest(() => new GoogleAuth({ scopes: [GCS_OBJECT_SCOPE] }).getClient());
 
 function errorReason(error: unknown): string {
   if (!(error instanceof Error)) return "unknown";
@@ -296,6 +297,13 @@ export function createGcsStorage(opts: {
   }
 
   const ok = (status: number) => status >= 200 && status < 300;
+  const gcsErrorMessage = (res: GcsResponse): string => {
+    try {
+      return parse<{ error?: { message?: string } }>(res).error?.message?.slice(0, 200) ?? "";
+    } catch {
+      return "";
+    }
+  };
   const parse = <T>(res: GcsResponse): T => JSON.parse((res.data ?? Buffer.alloc(0)).toString("utf8") || "{}") as T;
 
   return {
@@ -347,7 +355,10 @@ export function createGcsStorage(opts: {
         headers: { "Content-Type": "application/json" },
         body: Buffer.from(JSON.stringify({ temporaryHold: true })),
       });
-      if (!ok(res.status)) fail("retain", res.status);
+      if (!ok(res.status)) {
+        logger.warn("gcs.request_failed", { op: "retain", status: res.status, reason: gcsErrorMessage(res) });
+        throw new GcsUnavailableError("retain", res.status);
+      }
     },
   };
 }

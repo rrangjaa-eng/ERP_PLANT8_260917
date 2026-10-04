@@ -2,7 +2,7 @@ import { createHash, generateKeyPairSync, sign as rsaSign, verify as rsaVerify }
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildV4SignedUrl } from "@/lib/gcp/gcs-v4";
 import type { GcsRequest, GcsRequestInit, GcsResponse } from "@/lib/gcp/gcs";
-import { createGcsStorage, type GcsSigner } from "@/lib/gcp/storage";
+import { createGcsStorage, GCS_OBJECT_SCOPE, type GcsSigner } from "@/lib/gcp/storage";
 
 // 05-12 Task 1(EVID-01 · T-05-1204): gcs 증빙 드라이버의 배관. 네트워크 없음 — 서명기는 실행 중 만든 RSA 키,
 // REST는 04.3 GcsRequest 모양의 가짜. 실제 GCS가 이 서명을 받는지는 Task 3 스파이크(사람)가 확인한다.
@@ -214,6 +214,18 @@ describe("retain — 임시 보존 표식(F9 이중 방어)", () => {
       body: Buffer.from(JSON.stringify({ temporaryHold: true })),
     });
     await expect(storage.retain(EVIDENCE_KEY)).rejects.toThrow("GCS retain 실패: 403");
+  });
+
+  // 05-12 Task 3 스파이크(2026-10-04): 실제 GCS가 retain PATCH만 403 — 같은 토큰의 rewrite · DELETE · GET은 통과.
+  // 다음 실패가 원인(권한 이름 · 범위 부족)을 스스로 말하도록 GCS 오류 본문의 message를 남긴다.
+  it("403 본문의 GCS 오류 message를 경고에 남긴다", async () => {
+    const { storage, warn } = storageWith([json(403, { error: { code: 403, message: "Insufficient Permission" } })]);
+    await expect(storage.retain(EVIDENCE_KEY)).rejects.toThrow("GCS retain 실패: 403");
+    expect(warn).toHaveBeenCalledWith("gcs.request_failed", { op: "retain", status: 403, reason: "Insufficient Permission" });
+  });
+
+  it("REST 범위는 devstorage.full_control — read_write 범위에서 retain PATCH가 403이었다(스파이크 · 원인 가설)", () => {
+    expect(GCS_OBJECT_SCOPE).toBe("https://www.googleapis.com/auth/devstorage.full_control");
   });
 });
 

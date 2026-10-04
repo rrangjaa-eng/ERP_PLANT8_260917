@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { GoogleAuth } from "google-auth-library";
 import { createAuthedRequest, type GcsRequest } from "@/lib/gcp/gcs";
-import { createGcsStorage, type GcsSigner, type ObjectStorage } from "@/lib/gcp/storage";
+import { createGcsStorage, GCS_OBJECT_SCOPE, type GcsSigner, type ObjectStorage } from "@/lib/gcp/storage";
 
 // 05-12 Task 3 스파이크(DB · 앱 서버 없음): 실제 GCS가 gcs 드라이버의 손으로 만든 V4 서명을 받는지 staging 증빙 버킷에서 한 번
 // 확인한다 — incoming/ 서명 PUT → 메타데이터 → evidence/로 옮기기 → 옮긴 뒤 메타데이터 → 보존 표식 → 서명 GET → 크기 초과 PUT
@@ -72,9 +72,7 @@ async function attempt(run: () => Promise<Step>): Promise<Step> {
 
 async function smoke(bucket: string): Promise<boolean> {
   const auth = new GoogleAuth({ scopes: [CLOUD_PLATFORM] });
-  const request: GcsRequest = createAuthedRequest(() =>
-    new GoogleAuth({ scopes: ["https://www.googleapis.com/auth/devstorage.read_write"] }).getClient(),
-  );
+  const request: GcsRequest = createAuthedRequest(() => new GoogleAuth({ scopes: [GCS_OBJECT_SCOPE] }).getClient());
   const storage: ObjectStorage = createGcsStorage({ bucket, auth: selfSigner(auth), request });
   const objectUrl = (key: string) => `https://storage.googleapis.com/storage/v1/b/${encodeURIComponent(bucket)}/o/${encodeURIComponent(key)}`;
 

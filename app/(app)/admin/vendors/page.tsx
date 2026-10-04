@@ -7,9 +7,12 @@ import { visible } from "@/domain/permissions/visible";
 import { listVendors, listVendorFieldDefinitions } from "@/domain/vendors";
 import { listCodeItems } from "@/domain/code-tables";
 import { maskTail4 } from "@/lib/mask-tail4";
-import { PageHeader } from "@/ui/page-header/PageHeader";
+import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
+import { SidePanel } from "@/ui/side-panel/SidePanel";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
+import { StaticTable } from "@/ui/table/StaticTable";
+import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
 import { VendorForm, VendorHiddenToggle, VendorDeleteButton } from "./vendor-form";
 import { AccountNumberCell } from "./account-number";
 import styles from "./vendors.module.css";
@@ -20,7 +23,7 @@ const REVEAL_INFO_ITEM = "vendor.account_number_unmasked";
 export const dynamic = "force-dynamic";
 
 // 목록 화면의 필터 상태(숨김 포함 여부)를 유지한 채 이동하는 링크를 만든다 —
-// 「수정」·「거래처 등록」에서 폼으로 들어갈 때도, 폼의 「취소」에서 목록으로
+// 「수정」·「거래처 등록」에서 패널로 들어갈 때도, 패널을 닫고 목록으로
 // 돌아올 때도 같은 필터를 쓴다. `isNew`는 등록 모드(D-39: 추가·수정은 별도
 // 화면 — vendors가 이미 쓰던 ?editId= 토글 방식을 등록에도 그대로 확장한다,
 // DECISIONS.md 2026-09-21 참고).
@@ -30,7 +33,7 @@ function vendorsHref(includeHidden: boolean, opts?: { editId?: string; isNew?: b
   if (opts?.editId) params.set("editId", opts.editId);
   if (opts?.isNew) params.set("new", "1");
   const query = params.toString();
-  return query ? `/admin/vendors?${query}#vendor-form` : "/admin/vendors";
+  return query ? `/admin/vendors?${query}` : "/admin/vendors";
 }
 
 export default async function VendorsPage({
@@ -74,122 +77,89 @@ export default async function VendorsPage({
   const showCreateForm = newParam === "1";
   const showForm = editingVendor !== null || showCreateForm;
 
+  // DR5 A — 빈 목록(등록된 거래처가 하나도 없음)이면 머리 1차를 그리지 않고 빈 화면의 「거래처 등록」 하나가 등록을 맡는다.
+  const primaryAction =
+    canWrite && vendors.length > 0 ? { label: "거래처 등록", href: vendorsHref(includeHidden, { isNew: true }) } : undefined;
+
   return (
-    <>
-      <PageHeader title="거래처" />
-
-      {/* 쓰기 권한이 없는 계급에는 등록 폼 자체를 렌더하지 않는다 —
-          "이유 있는 비활성" 대신 "버튼 자체가 없음"(03-UI-SPEC.md). */}
-      {canWrite && showForm ? (
-        <VendorForm
-          key={editingVendor?.id ?? "create"}
-          evidenceTypes={evidenceTypes.map((item) => ({ value: item.value, label: item.label, description: item.description }))}
-          fieldDefs={fieldDefs}
-          editing={editingVendor}
-          cancelHref={cancelHref}
-        />
-      ) : null}
-
-      <div className={styles.filterRow}>
-        <a href={includeHidden ? "?includeHidden=0" : "?includeHidden=1"} className={styles.toggle}>
+    <ListScreen
+      title="거래처"
+      primaryAction={primaryAction}
+      filters={
+        <Link href={includeHidden ? "?includeHidden=0" : "?includeHidden=1"} scroll={false} className={styles.toggle}>
           {includeHidden ? "숨김 제외" : "숨김 포함"}
-        </a>
-        {/* §6-1 「새 지출결의」와 같은 자리 — 목록 머리글의 등록 행동. 폼이
-            이미 열려 있으면 그 폼의 「취소」가 같은 역할을 하므로 중복해
-            보이지 않는다. */}
-        {canWrite && !showForm && vendors.length > 0 ? (
-          <Link href={vendorsHref(includeHidden, { isNew: true })} className={styles.toggle}>
-            거래처 등록
-          </Link>
-        ) : null}
-      </div>
-
+        </Link>
+      }
+      panel={
+        // 쓰기 권한이 없는 계급에는 등록 폼 자체를 렌더하지 않는다 — "이유 있는 비활성" 대신 "버튼 자체가 없음"(03-UI-SPEC.md).
+        canWrite && showForm ? (
+          <SidePanel key={editingVendor?.id ?? "new"} title={editingVendor ? "거래처 수정" : "거래처 등록"} closeHref={cancelHref}>
+            <VendorForm
+              evidenceTypes={evidenceTypes.map((item) => ({ value: item.value, label: item.label, description: item.description }))}
+              fieldDefs={fieldDefs}
+              editing={editingVendor}
+            />
+          </SidePanel>
+        ) : null
+      }
+    >
       {vendors.length === 0 ? (
         <ListEmpty
           message="등록된 거래처가 없습니다"
           action={{ label: "거래처 등록", href: vendorsHref(includeHidden, { isNew: true }) }}
         />
       ) : (
-        <table className={styles.table}>
-          <caption className="sr-only">거래처</caption>
-          <thead>
-            <tr>
-              <th scope="col">이름</th>
-              <th scope="col" className={styles.p2}>사업자 번호</th>
-              <th scope="col" className={styles.p2}>기본 증빙 종류</th>
-              <th scope="col">계좌</th>
-              <th scope="col" className={styles.p2}>상태</th>
-              {hasActions ? <th scope="col">동작</th> : null}
-            </tr>
-          </thead>
-          <tbody>
-            {vendors.map((vendor) => {
-              const evidenceType = vendor.defaultEvidenceType
-                ? (evidenceTypeLabelByValue.get(vendor.defaultEvidenceType) ?? vendor.defaultEvidenceType)
-                : null;
-              // §7-3 폰 전략 — P1(이름·계좌·동작)만 열로 남고 나머지는 행 아래
-              // 접힌 줄 하나로 들어간다(상세 화면이 없어 P3로 숨기지 않는다).
-              const folded = [
-                vendor.businessNo,
-                evidenceType,
-                vendor.archivedAt ? "보관됨" : vendor.hidden ? "숨김" : null,
-              ].filter((value): value is string => !!value);
-              return (
-                <Fragment key={vendor.id}>
-                  <tr>
-                    <td>{vendor.name}</td>
-                    <td className={styles.p2}>{vendor.businessNo ?? "—"}</td>
-                    <td className={styles.p2}>{evidenceType ?? "—"}</td>
-                    <td>
-                      <AccountNumberCell
-                        vendorId={vendor.id}
-                        masked={maskTail4(vendor.accountNumberLast4)}
-                        canReveal={canReveal}
-                      />
-                    </td>
-                    <td className={styles.p2}>
-                      {vendor.archivedAt ? (
-                        <StatusTag kind="muted" variant="text">
-                          보관됨
-                        </StatusTag>
-                      ) : vendor.hidden ? (
-                        <StatusTag kind="muted" variant="text">
-                          숨김
-                        </StatusTag>
-                      ) : "—"}
-                    </td>
-                    {hasActions ? (
-                      <td>
-                        {vendor.archivedAt ? null : (
-                          <span className={styles.rowActions}>
-                            {canWrite ? (
-                              <Link
-                                href={vendorsHref(includeHidden, { editId: vendor.id })}
-                                className={`${styles.toggle} ${styles.rowLink}`}
-                              >
-                                수정
-                              </Link>
-                            ) : null}
-                            {canWrite ? <VendorHiddenToggle id={vendor.id} hidden={vendor.hidden} /> : null}
-                            {canArchive ? <VendorDeleteButton id={vendor.id} name={vendor.name} /> : null}
-                          </span>
-                        )}
-                      </td>
-                    ) : null}
-                  </tr>
-                  {folded.length > 0 ? (
-                    <tr className={styles.collapsedRow}>
-                      <td colSpan={hasActions ? 6 : 5} className={styles.collapsedCell}>
-                        {folded.join(" · ")}
-                      </td>
-                    </tr>
-                  ) : null}
-                </Fragment>
-              );
-            })}
-          </tbody>
-        </table>
+        <StaticTable
+          caption="거래처"
+          columns={[
+            { key: "name", header: "이름", priority: "p1" },
+            { key: "businessNo", header: "사업자 번호", priority: "p2" },
+            { key: "evidenceType", header: "기본 증빙 종류", priority: "p2" },
+            { key: "account", header: "계좌", priority: "p1" },
+            { key: "status", header: "상태", priority: "p2" },
+            ...(hasActions ? [{ key: "actions", header: "동작", priority: "p1" as const }] : []),
+          ]}
+          rows={vendors.map((vendor) => {
+            const evidenceType = vendor.defaultEvidenceType
+              ? (evidenceTypeLabelByValue.get(vendor.defaultEvidenceType) ?? vendor.defaultEvidenceType)
+              : null;
+            return {
+              key: vendor.id,
+              cells: [
+                vendor.name,
+                vendor.businessNo ?? "—",
+                evidenceType ?? "—",
+                <AccountNumberCell
+                  key="account"
+                  vendorId={vendor.id}
+                  masked={maskTail4(vendor.accountNumberLast4)}
+                  canReveal={canReveal}
+                />,
+                <Fragment key="status">
+                  {vendor.archivedAt ? (
+                    <StatusTag status="보관됨" variant="text" />
+                  ) : vendor.hidden ? (
+                    <StatusTag status="숨김" variant="text" />
+                  ) : "—"}
+                </Fragment>,
+                ...(hasActions
+                  ? [
+                      vendor.archivedAt ? null : (
+                        <RowActions key="actions">
+                          {canWrite ? (
+                            <RowAction href={vendorsHref(includeHidden, { editId: vendor.id })}>수정</RowAction>
+                          ) : null}
+                          {canWrite ? <VendorHiddenToggle id={vendor.id} hidden={vendor.hidden} /> : null}
+                          {canArchive ? <VendorDeleteButton id={vendor.id} name={vendor.name} /> : null}
+                        </RowActions>
+                      ),
+                    ]
+                  : []),
+              ],
+            };
+          })}
+        />
       )}
-    </>
+    </ListScreen>
   );
 }

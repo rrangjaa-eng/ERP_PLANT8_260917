@@ -1,0 +1,58 @@
+/* PanelForm — 칸 묶음(스크롤) + 행동 줄(아래 고정). UI-SPEC 「옆 패널 상호작용 계약」 본문 · 행동 줄. 역할 토큰만.
+   입력·행동 줄 버튼 높이는 --field-h 한 변수 — Form layout="panel"이 --control-h-panel(40)로 정하고, 폰 행동 줄은 누르는 영역 44(--touch-min)로 덮는다(D14).
+   TextField·Select·Button이 height: var(--field-h, var(--control-h))를 읽는 것은 04.6-07·08이다. */
+
+.fields {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--s-4) var(--panel-pad-x);
+}
+
+.actions {
+  --field-h: var(--control-h-panel);
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--s-2) var(--s-4);
+  padding: var(--s-3) var(--panel-pad-x);
+  border-top: var(--line-w) solid var(--border-row);
+  background: var(--surface-actions);
+}
+
+/* 행동 줄 위 전폭 한 줄 — 막힘 이유(1차 aria-describedby) · 결과(role="status"). 버튼 둘은 이 줄 유무로 움직이지 않는다. */
+.line {
+  flex: 1 0 100%;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+  line-height: var(--lh-table);
+}
+
+.reason {
+  color: var(--status-danger);
+}
+
+@media (max-width: 699.98px) {
+  .actions {
+    --field-h: var(--touch-min);
+  }
+
+  /* 시트 행동 줄은 두 버튼이 줄을 나눠 채운다 — 2차 왼쪽 · 1차 오른쪽(2배 폭), DOM · Tab 순서 = 시각 순서. */
+  .actions > :last-child {
+    flex: 2 1 0;
+  }
+
+  .actions > :nth-last-child(2):not(p) {
+    flex: 1 1 0;
+  }
+
+  .actions button {
+    flex: 1 1 auto;
+    justify-content: center;
+    min-height: var(--touch-min);
+  }
+}

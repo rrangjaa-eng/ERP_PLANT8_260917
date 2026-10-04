@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import Link from "next/link";
 import { useAction } from "next-safe-action/hooks";
 // 잎(leaf) 모듈에서만 import한다 — domain/action-log(index)는 repositories를
 // 거쳐 db/client.ts(pg)까지 이어지는 서버 전용 체인이라, 클라이언트
@@ -133,9 +134,9 @@ export function FilterBar({
       </label>
 
       {hasFilter ? (
-        <a href="/admin/action-log" className={styles.toggle}>
+        <Link href="/admin/action-log" scroll={false} className={styles.toggle}>
           필터 지우기
-        </a>
+        </Link>
       ) : null}
     </form>
   );
@@ -200,6 +201,7 @@ export function PruneControl({ filter, count }: { filter: ActionLogFilterPayload
         onClick={() => setConfirming(true)}
         disabled={count === 0}
         disabledReason={count === 0 ? "정리할 행이 없습니다" : undefined}
+        reasonTone="info"
       >
         정리
       </Button>

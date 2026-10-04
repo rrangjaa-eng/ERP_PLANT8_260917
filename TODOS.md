@@ -28,18 +28,6 @@
 
 ## Phase 4 이연(2026-09-23 CEO 리뷰)
 
-### 목록 상단 2px 로딩 막대
-
-**What:** 프로젝트 목록(S1)·페이지 이동(S12)의 상단 2px 진행 막대를 만든다.
-
-**Why:** UI-SPEC rev 4는 막대를 그렸지만 SYSTEM.md가 막대 색을 `--accent`로 정하면서 §1-3은 `--accent` 사용처를 다섯 곳으로 제한해 서로 충돌한다(CEO 리뷰 C-10, 사용자 D17 「만들지 않고 기록」). 지금은 표 자리 표시(스켈레톤)만으로 로딩을 보인다.
-
-**Context:** Phase 4 뒤 디자인 잔여 퀵 태스크(F-01·F-03·F-05·F-06·F-07)와 함께 처리한다. 먼저 `docs/design/DECISIONS.md`에 §1-3 사용처를 여섯 곳으로 늘릴지(또는 다른 토큰) 정하고 SYSTEM.md를 고친 뒤 앱 공통 셸에 한 번만 만든다. 리뷰 원문: `docs/designs/plant8-erp-phase4-ceo-review-260923.md`.
-
-**Effort:** S (human) / S (CC)
-**Priority:** P3
-**Depends on:** Phase 4 완료, 디자인 잔여 퀵 태스크
-
 ### 자동 정산(진행→정산)을 예약 작업으로 옮기기
 
 **What:** 종료일이 지난 진행 프로젝트를 KST 00:00에 정산으로 바꾸는 판정을 Cloud Scheduler 작업에서도 실행한다.
@@ -170,26 +158,6 @@
 
 **Effort:** S · **Priority:** P3 · **Depends on:** PR #111
 
-### 폰 법인카드 「삭제」 확인 문구가 66~89px 폭에 10~11줄(PR #111 /qa)
-
-**What:** 폰 375/320에서 법인카드 행 「삭제」 확인 문구(`<이름> 삭제 · 보관함으로 이동합니다 · 관리자가 복원할 수 있습니다`)가 동작 칸 폭 105/82px 안에서 89/66px로 눌려 10/11줄이 된다(거래처는 151/124px, 5/7줄). 표가 내용 폭이라 긴 다른 열이 동작 칸을 누른다. 넘침은 0.
-
-**Why:** 되돌릴 수 없는 일의 확인 문구가 세로로 길게 쪼개져 읽기 어렵다(§7 사용성).
-
-**Context:** base `3774333`에서도 차이 2px 이내·줄 수 같음 — PR #111 변경 아님(/qa가 base 빌드와 비교 실측).
-
-**Effort:** S · **Priority:** P3 · **Depends on:** None
-
-### 폰 코드표에서 비활성화 · 삭제를 할 수 없다(PR #111 /design-review FINDING-002)
-
-**What:** `code-tables.module.css:157-181`이 동작 열(6열)을 700 미만에서 `display: none`으로 숨겨 699/375/320에서 「비활성화」「삭제」가 0×0이다. 거래처 · 법인카드 · 사람은 폰에서도 행동이 보인다. P2로 접거나 P1에 두어 같은 방식으로 맞춘다.
-
-**Why:** SYSTEM §7-3 「상세 화면이 없는 목록은 P3로 숨기지 않고 P2로 접는다(숨기면 폰에서 볼 길이 없다)」 위반. 관리 마스터 화면끼리도 다르다(§6-1).
-
-**Context:** PR #111 이전부터(이 PR의 `.rowActions` 폰 줄바꿈 규칙은 코드표에서 적용될 일이 없다). DOM 실측은 PR #111 /design-review.
-
-**Effort:** S · **Priority:** P2 · **Depends on:** None
-
 ### 관리 표 행 행동 주변 작은 불일치(PR #111 /design-review 폴리시)
 
 **What:** ① 거래처 · 법인카드 · 코드표 표 칸 line-height가 본문 값 19.2px(1.6)이라 행동 상자가 19.19px, 사람 목록은 `--lh-table` 18px(§2-3 「표 셀 line-height 1.5」) — 세 모듈 `.table td`에 `line-height: var(--lh-table)`. ② 폰 375에서 거래처 · 법인카드 행이 44px 목표 3개가 세로로 쌓여 184.5/213px(§7-3 폰 P1 「행동 1개 · 두 줄」과 긴장) — 폰 P1에 행동을 하나만 둘지 결정. ③ 짧은 행 링크 한 줄 유지 방식이 세 가지(사람 `.detailLink` 복사 · 거래처/법인카드 `.toggle`+`.rowLink` · Button `.tertiary` 내장)이고, `.rowLink` 이름은 결재함 · 연차의 「행 전체 탭 링크」와 뜻이 다르다. ④ 폰에서 `.toggle` · `.tertiary`는 좌우 padding `--s-2`가 있고 사람 `.detailLink`는 없어, 가로로 놓일 때 보이는 글자 간격이 24px/32px로 다를 수 있다(미실측).
@@ -212,27 +180,52 @@
 
 ## Completed
 
+### 목록 상단 2px 로딩 막대
+
+**What:** 프로젝트 목록(S1)·페이지 이동(S12)의 상단 2px 진행 막대를 만든다.
+
+**Why:** UI-SPEC rev 4는 막대를 그렸지만 SYSTEM.md가 막대 색을 `--accent`로 정하면서 §1-3은 `--accent` 사용처를 다섯 곳으로 제한해 서로 충돌한다(CEO 리뷰 C-10, 사용자 D17 「만들지 않고 기록」). 지금은 표 자리 표시(스켈레톤)만으로 로딩을 보인다.
+
+**Context:** Phase 4 뒤 디자인 잔여 퀵 태스크(F-01·F-03·F-05·F-06·F-07)와 함께 처리한다. 먼저 `docs/design/DECISIONS.md`에 §1-3 사용처를 여섯 곳으로 늘릴지(또는 다른 토큰) 정하고 SYSTEM.md를 고친 뒤 앱 공통 셸에 한 번만 만든다. 리뷰 원문: `docs/designs/plant8-erp-phase4-ceo-review-260923.md`.
+
+**Effort:** S (human) / S (CC)
+**Priority:** P3
+**Depends on:** Phase 4 완료, 디자인 잔여 퀵 태스크
+**Completed:** 2026-10-04 — 만들지 않고 닫음(사용자 브리핑 카드 답 10:34~10:36 KST, 추천안 「닫음」). 로딩은 표 자리 스켈레톤으로 보인다.
+
 ### FINDING-001 PC에서 「내 차례」(`/`)로 돌아가는 길이 없다
 
 상단 바 워드마크를 `/` 링크(aria-label 「PLANT8 내 차례」)로 만들었다. Tab 순서는 스킵 링크 → 워드마크 → 프로젝트.
 
 **Completed:** 2026-09-24 (`257c2ab`, 회귀 테스트 `test/e2e/wordmark-home.spec.ts`·`mobile-wordmark-home.spec.ts`)
 
+### FINDING-006 `/projects` 로딩 뼈대의 300ms 지연 표시
+
+공용 `TableSkeleton`이 처음 `opacity 0`에서 300ms 뒤 한 번 나타나고(애니메이션 반복 없음), 진짜 열 이름 머리글 + 뼈대 행 3개로 실제 목록 모양과 맞는다. `/projects` 로딩(`loading.tsx`)이 이 뼈대를 쓴다.
+
+**Completed:** 2026-10-03 (`6e5d70cf` · `01a78c06`, 회귀 테스트 `test/unit/ui/presentational.test.ts:236-241` · `test/e2e/reserves.spec.ts:1136`)
+
+### 관리자 목록 동작 칸의 두 동작이 간격 없이 붙는다
+
+사람 목록 「상세」↔「삭제」 간격을 `--s-4`로(#108 `749c936d`), 코드표 「비활성화」↔「삭제」를 포함한 관리 표 행 행동 간격을 `--s-4`로(#111 `89f19f8b`) 맞췄다.
+
+**Completed:** 2026-10-03 (#108 `749c936d` · #111 `89f19f8b`, 회귀 테스트 `test/e2e/people.spec.ts:222-229` · `test/e2e/code-tables.spec.ts:437` · `test/e2e/row-actions-helpers.ts`의 `expectGapsAtLeastToken`)
+
+### 폰 법인카드 「삭제」 확인 문구가 66~89px 폭에 10~11줄(PR #111 /qa)
+
+법인카드를 목록 틀 + `StaticTable` + `RowActions`로 옮겨 폰 삭제 확인 문구가 375 4줄 · 320 4줄이 됐다(옛 10/11줄). 가로 넘침 0.
+
+**Completed:** 2026-10-03 (`76dbac58` · `dc9c4e26`, 회귀 테스트 `test/e2e/corp-cards.spec.ts:211-213` — 375 ≤ 5줄 · 320 ≤ 7줄)
+
+### 폰 코드표에서 비활성화 · 삭제를 할 수 없다(PR #111 /design-review FINDING-002)
+
+사용자 답 Q4 A 「보이게」(`04.6-ANSWERS.md`)대로 동작 열을 P1로 두어 폰 700 미만에서도 「비활성화」「삭제」가 44px 이상으로 보인다(P3로 숨기지 않음).
+
+**Completed:** 2026-10-03 (`f3d55af4` · `cdbfadde` · `44db0ef4`, 회귀 테스트 `test/e2e/mobile-code-tables.spec.ts:91-97` — 폰에서 보임 + 높이 ≥ 44)
+
 ## Design review 이연(2026-09-24 /design-review, Phase 2 화면)
 
 리포트: `~/.gstack/projects/rrangjaa-eng-ERP_PLANT8_260917/designs/design-audit-20260924/design-audit-127.0.0.1.md`
-
-### FINDING-006 `/projects` 로딩 뼈대의 300ms 지연 표시
-
-**What:** `app/(app)/projects/loading.tsx` 뼈대가 지연 없이 약 90ms 번쩍이고, 모양(표 머리글 + 3행 + 합계)이 실제 EMPTY 화면(필터 + 한 줄)과 달라 한 번 튄다. §7-7 「300ms 안에 끝나면 아무것도 보이지 않게」를 지킬 공용 수단을 §5에 정하고 모든 `loading.tsx`에 적용한다.
-
-**Why:** 계약 위반이 실측됐다(Medium).
-
-**Context:** 지연 수단(`animation-delay` 등)이 §5 모션 허용 목록에 없어 시스템 결정이 먼저다.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** SYSTEM.md §5·§7-7 결정
 
 ### FINDING-007 `/account` 서버 오류를 칸에 묶기
 
@@ -439,20 +432,6 @@
 **Effort:** S
 **Priority:** P3
 **Depends on:** 새 계급의 노출 기본값 결정(사용자)
-
-## Design review 이연(2026-09-29 /design-review, PR #91 Phase 04.4)
-
-### 관리자 목록 동작 칸의 두 동작이 간격 없이 붙는다
-
-**What:** PC 관리자 목록의 마지막 칸에서 두 동작 사이 간격이 0px이다 — 사람 목록 「상세」+「삭제」, 코드표 「비활성화」+「삭제」가 붙어 「상세삭제」처럼 한 낱말로 읽힌다(DOM 실측: 두 요소 bounding box 간격 0).
-
-**Why:** CLAUDE.md §7 「행동은 동작·컴포넌트·디자인으로」 — 되돌리기 어려운 동작(보관)이 옆 동작과 한 덩어리로 보이면 잘못 누르기 쉽다. SYSTEM.md:693은 붉은 버튼 대신 확인으로 구분하므로 색으로는 떨어뜨리지 않는다 — 간격이 유일한 분리 수단이다.
-
-**Context:** 04.4가 바꾸지 않은 마크업(main과 같음)이고 공유 삭제 컴포넌트(DeleteToArchive 계열)가 여러 관리자 화면에 쓰여 이 PR 범위 밖이다. 동작 칸을 `display: flex; gap: var(--s-3)`(기존 토큰)로 묶고 폰(<700)의 44×44 배치와 겹치지 않게 한 번에 맞춘다.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
 
 ## Phase 04.1 /review 이월(2026-09-29, PR #90)
 

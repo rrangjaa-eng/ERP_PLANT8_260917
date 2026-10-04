@@ -2,6 +2,8 @@ import { randomInt, randomUUID } from "node:crypto";
 import { and, eq, gte, inArray, isNull, lte } from "drizzle-orm";
 import { test, expect, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
+import { isStrict } from "./design-principles";
+import { checkPrinciples } from "./principles-check";
 import { db } from "@/db/client";
 import { holidays, holidayYearConfirmations, notificationLog, notifyTickRuns, users } from "@/db/schema";
 import { formatKstMinute, toKstDate } from "@/domain/holidays/business-day";
@@ -42,6 +44,20 @@ async function login(page: Page, credentials: { email: string; password: string 
 
 async function loginAsSysadmin(page: Page): Promise<void> {
   await login(page, await createFixtureUser({ roleId: SYSADMIN_ROLE_ID }));
+}
+
+const PANEL = 'dialog[data-ui="side-panel"]';
+
+// 역할 토큰의 계산된 글자 색 — 리터럴 rgb 대신 토큰 값과 비교한다(04.6 W3 합본 교훈).
+function tokenAsColor(page: Page, name: string): Promise<string> {
+  return page.evaluate((token) => {
+    const probe = document.createElement("span");
+    probe.style.color = `var(${token})`;
+    document.body.append(probe);
+    const color = getComputedStyle(probe).color;
+    probe.remove();
+    return color;
+  }, name);
 }
 
 test.describe("공휴일 관리 /admin/holidays", () => {
@@ -97,6 +113,9 @@ test.describe("공휴일 관리 /admin/holidays", () => {
       await expect(page.getByRole("button", { name: "삭제" })).toHaveCount(0);
       expect((await page.goto(`/admin/holidays?year=${NEXT_YEAR}&new=1`))?.status()).toBe(200);
       await expect(page.getByLabel("날짜")).toHaveCount(0);
+      // R15 · T-04.6-45 — 쓰기 권한 없는 계급이 직접 연 `?new=1`은 패널(dialog)이 0개다.
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await expect(page.locator(PANEL)).toHaveCount(0);
     } finally {
       await setRoleArchived(SYSTEM_VIEWER, tempRoleId, true);
     }
@@ -252,38 +271,106 @@ test.describe("공휴일 추가(04.2-12)", () => {
     await db.delete(holidays).where(eq(holidays.date, ADDED_DATE));
   });
 
-  test("필터 줄 `공휴일 추가` → ?new=1 폼 → 미래 선거일 → 표에 새 행 + 토스트, 폼이 열린 동안 확정 버튼이 없다", async ({
+  test("필터 줄 `공휴일 추가` → 전체 새로고침 없이 ?new=1 패널 → 미래 선거일 → 표에 새 행 + 토스트(R9 D 공휴일 예외), 패널이 열려도 확정 버튼은 남는다", async ({
     page,
   }) => {
     await loginAsSysadmin(page);
     await page.goto(`/admin/holidays?year=${NEXT_YEAR}`);
-    await expect(page.getByRole("button", { name: `${NEXT_YEAR}년 공휴일 확정` })).toBeVisible();
+    const confirm = page.getByRole("button", { name: `${NEXT_YEAR}년 공휴일 확정` });
+    await expect(confirm).toBeVisible();
 
-    await page.getByRole("link", { name: "공휴일 추가", exact: true }).click();
+    // 전체 새로고침이 아니다 — 문서에 얹어 둔 표식이 이동 뒤에도 남는다(SC 3 · RESEARCH Pitfall 7).
+    await page.evaluate(() => {
+      (window as unknown as { __keep: number }).__keep = 1;
+    });
+    const navigations = await page.evaluate(() => performance.getEntriesByType("navigation").length);
+    const addLink = page.getByRole("link", { name: "공휴일 추가", exact: true });
+    await addLink.click();
     await expect(page).toHaveURL(new RegExp(`/admin/holidays\\?year=${NEXT_YEAR}&new=1$`));
-    await expect(page.getByRole("link", { name: "공휴일 추가", exact: true })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /공휴일 확정/ })).toHaveCount(0);
+    await expect(page.locator(PANEL)).toBeVisible();
+    expect(await page.evaluate(() => (window as unknown as { __keep?: number }).__keep)).toBe(1);
+    expect(await page.evaluate(() => performance.getEntriesByType("navigation").length)).toBe(navigations);
+    // R4 — 패널이 열려도 여는 링크와 확정 버튼은 렌더에 남는다(뒤는 모달이 막는다).
+    await expect(page.locator(`a[href="/admin/holidays?year=${NEXT_YEAR}&new=1"]`)).toHaveCount(1);
+    await expect(page.locator("main button", { hasText: `${NEXT_YEAR}년 공휴일 확정` })).toHaveCount(1);
 
-    const date = page.getByLabel("날짜");
+    const panel = page.locator(PANEL);
+    const date = panel.getByLabel("날짜");
     await expect(date).toHaveAttribute("type", "date");
     await expect(date).toHaveAttribute("min", nextIsoDate(toKstDate(new Date())));
-    const kind = page.getByLabel("종류");
+    const kind = panel.getByLabel("종류");
     await expect(kind.locator("option")).toHaveText(["임시공휴일", "선거일"]);
     await expect(kind).toHaveValue("temporary");
 
     await date.fill(ADDED_DATE);
     await kind.selectOption({ label: "선거일" });
-    await page.getByLabel("이름").fill(ADDED_NAME);
-    await page.getByRole("button", { name: "공휴일 추가", exact: true }).click();
+    await panel.getByLabel("이름").fill(ADDED_NAME);
+    await panel.getByRole("button", { name: /^공휴일 추가/ }).click();
 
+    // R9 D 공휴일 예외 — `?added=` 이동(패널 닫힘) + 추가 토스트가 지금처럼 보인다.
     await expect(page.getByText(`공휴일 추가 · ${ADDED_DATE} 추가됨`, { exact: true })).toBeVisible();
     await expect(page).toHaveURL(new RegExp(`/admin/holidays\\?year=${NEXT_YEAR}(&added=${ADDED_DATE})?$`));
+    await expect(page.locator(PANEL)).toHaveCount(0);
     await expect(page.getByLabel("날짜")).toHaveCount(0);
     const cell = page.getByRole("cell", { name: ADDED_NAME, exact: true });
     await expect(cell).toBeVisible();
     expect(await cell.evaluate((el) => getComputedStyle(el).textOverflow)).not.toBe("ellipsis");
+    // 웨이브 6 DOM 감사 D2 · SYSTEM 1035 「성공으로 닫히면 호출부가 새 결과로 옮긴다」 — 추가 성공 뒤 포커스는 여는 링크가 아니라 화면 제목에 있고 머문다.
+    const focusedUi = () => page.evaluate(() => `${document.activeElement?.tagName}:${document.activeElement?.getAttribute("data-ui")}`);
+    await expect.poll(focusedUi, { message: "추가 성공 뒤 포커스" }).toBe("H1:screen-title");
+    await page.waitForTimeout(600);
+    expect(await focusedUi(), "600ms 뒤에도 화면 제목").toBe("H1:screen-title");
     await expect(page.getByRole("button", { name: `${NEXT_YEAR}년 공휴일 확정` })).toBeVisible();
     await expect(page).toHaveURL(new RegExp(`/admin/holidays\\?year=${NEXT_YEAR}$`), { timeout: 8000 });
+  });
+
+  // DR2 A — 그해 확정 전엔 「확정」이 1차, 확정 뒤엔 「추가」가 1차. 어느 해든 1차는 정확히 하나다.
+  test("1차 버튼은 하나다 — 확정 전 해는 「{해}년 공휴일 확정」이 1차 · 「공휴일 추가」는 필터 줄 2차 링크, 확정 뒤 해는 「공휴일 추가」가 1차(DR2 A)", async ({
+    page,
+  }) => {
+    await resetConfirmation(NEXT_YEAR);
+    await loginAsSysadmin(page);
+    const primaries = page.locator('[data-ui="primary-button"]');
+
+    await page.goto(`/admin/holidays?year=${NEXT_YEAR}`);
+    await expect(primaries).toHaveCount(1);
+    await expect(primaries).toHaveText(`${NEXT_YEAR}년 공휴일 확정`);
+    const addSecondary = page.getByRole("link", { name: "공휴일 추가", exact: true });
+    await expect(addSecondary).toHaveCount(1);
+    await expect(addSecondary).not.toHaveAttribute("data-ui", "primary-button");
+    // 2차 링크는 필터 줄(연도 목록과 같은 줄)에 있다.
+    const [yearsBox, addBox] = await Promise.all([page.getByRole("navigation", { name: "연도" }).boundingBox(), addSecondary.boundingBox()]);
+    expect(Math.abs((yearsBox?.y ?? 0) - (addBox?.y ?? 0))).toBeLessThan(80);
+
+    // 확정을 누르면 버튼이 사라지고 「공휴일 추가」가 1차가 된다.
+    await page.getByRole("button", { name: `${NEXT_YEAR}년 공휴일 확정` }).click();
+    await expect(page.getByRole("button", { name: `${NEXT_YEAR}년 공휴일 확정` })).toHaveCount(0);
+    await expect(primaries).toHaveCount(1);
+    await expect(primaries).toHaveText("공휴일 추가");
+    await expect(page.getByRole("link", { name: "공휴일 추가", exact: true })).toHaveCount(1);
+    await resetConfirmation(NEXT_YEAR);
+  });
+
+  test("바뀐 칸이 없으면 Esc로 바로 닫히고 포커스가 「공휴일 추가」로 돌아오며, 칸을 바꾼 채 Esc는 「입력 버리기」 확인 창이다(DR1 A)", async ({
+    page,
+  }) => {
+    await resetConfirmation(NEXT_YEAR);
+    await loginAsSysadmin(page);
+    await page.goto(`/admin/holidays?year=${NEXT_YEAR}`);
+    const addLink = page.getByRole("link", { name: "공휴일 추가", exact: true });
+
+    await addLink.click();
+    await expect(page.locator(PANEL)).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.locator(PANEL)).toHaveCount(0);
+    await expect(page).toHaveURL(new RegExp(`/admin/holidays\\?year=${NEXT_YEAR}$`));
+    await expect(addLink).toBeFocused();
+
+    await addLink.click();
+    await page.locator(PANEL).getByLabel("이름").fill("입력 중");
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog", { name: "입력 버리기" })).toBeVisible();
+    await expect(page.locator(PANEL)).toBeVisible();
   });
 });
 
@@ -367,14 +454,13 @@ test.describe("공휴일 삭제 · 되돌리기(04.2-12)", () => {
     await expect(undo).toBeFocused();
     await expect(page.getByRole("dialog")).toHaveCount(0);
 
-    // 화면의 1차 버튼은 확정 하나 — 삭제·되돌리기는 3차다.
-    const confirmBg = await page
-      .getByRole("button", { name: `${NEXT_YEAR}년 공휴일 확정` })
-      .evaluate((el) => getComputedStyle(el).backgroundColor);
-    const primaryCount = await page
-      .locator("main button")
-      .evaluateAll((buttons, bg) => buttons.filter((b) => getComputedStyle(b).backgroundColor === bg).length, confirmBg);
-    expect(primaryCount).toBe(1);
+    // 화면의 1차 버튼은 확정 하나 — 삭제·되돌리기는 행 행동이다(DR2 A).
+    await expect(page.locator('[data-ui="primary-button"]')).toHaveCount(1);
+    await expect(page.locator('[data-ui="primary-button"]')).toHaveText(`${NEXT_YEAR}년 공휴일 확정`);
+    // D21 — 위험 색은 「삭제」 하나다. 「되돌리기」는 위험 색이 아니다.
+    const danger = await tokenAsColor(page, "--status-danger");
+    await expect(deleteB).toHaveCSS("color", danger);
+    expect(await undo.evaluate((el) => getComputedStyle(el).color)).not.toBe(danger);
 
     await deleteB.click();
     await expect(rowOf(page, ROW_B.name)).toHaveCount(0);
@@ -406,7 +492,7 @@ test.describe("공휴일 삭제 · 되돌리기(04.2-12)", () => {
     expect(rowsB).toEqual([{ id: rowBBefore?.id, archivedAt: null }]);
   });
 
-  test("결과 줄은 연도를 바꾸거나 공휴일 추가 폼을 열면 사라진다", async ({ page }) => {
+  test("결과 줄은 연도를 바꾸면 사라지고, 공휴일 추가 패널을 열고 닫아도 남는다", async ({ page }) => {
     await loginAsSysadmin(page);
     await page.goto(`/admin/holidays?year=${NEXT_YEAR}`);
     const resultLine = page.getByRole("status").filter({ hasText: "삭제됨" });
@@ -419,11 +505,15 @@ test.describe("공휴일 삭제 · 되돌리기(04.2-12)", () => {
     await expect(page.getByRole("table", { name: `${NEXT_YEAR}년 공휴일` })).toBeVisible();
     await expect(resultLine).toHaveCount(0);
 
+    // R4 — 패널은 목록을 바꾸지 않는다: 연 뒤에도 결과 줄이 그대로 있고 닫아도 남는다.
     await rowOf(page, ROW_B.name).getByRole("button", { name: "삭제" }).click();
     await expect(resultLine).toHaveCount(1);
-    await page.getByRole("link", { name: "공휴일 추가", exact: true }).click();
-    await expect(page.getByLabel("날짜")).toBeVisible();
-    await expect(resultLine).toHaveCount(0);
+    await page.locator('a[href$="&new=1"]').click();
+    await expect(page.locator(PANEL).getByLabel("날짜")).toBeVisible();
+    await expect(resultLine).toHaveCount(1);
+    await page.keyboard.press("Escape");
+    await expect(page.locator(PANEL)).toHaveCount(0);
+    await expect(resultLine).toHaveCount(1);
   });
 
   test("삭제 요청이 끊기면 그 행에 실패 줄, 되돌리기가 끊기면 다시 시도, 그사이 다른 공휴일이 들어서면 거절 문구", async ({
@@ -586,7 +676,7 @@ test.describe("공휴일 보관함(quick 261001-hfi)", () => {
   });
 });
 
-// 04.2-12 Task 3 — 추가 폼 상태(UI-SPEC S2-d · Copywriting 막힘·칸 오류·폼 전체 오류).
+// 04.2-12 Task 3 — 추가 폼 상태(UI-SPEC S2-d · Copywriting 막힘·칸 오류·폼 전체 오류). 04.6-16: 폼은 옆 패널 안 `PanelForm`이다.
 test.describe("공휴일 추가 폼의 상태(04.2-12)", () => {
   test.beforeEach(async () => {
     await resetConfirmation(NEXT_YEAR);
@@ -598,29 +688,31 @@ test.describe("공휴일 추가 폼의 상태(04.2-12)", () => {
     await loginAsSysadmin(page);
     await page.goto(`/admin/holidays?year=${NEXT_YEAR}&new=1`);
 
-    const date = page.getByLabel("날짜");
-    const name = page.getByLabel("이름");
+    const panel = page.locator(PANEL);
+    const date = panel.getByLabel("날짜");
+    const name = panel.getByLabel("이름");
     await expect(date).toBeFocused();
-    await expect(page.getByLabel("종류")).toHaveValue("temporary");
-    await expect(page.getByLabel("종류").locator("option")).toHaveText(["임시공휴일", "선거일"]);
+    await expect(panel.getByLabel("종류")).toHaveValue("temporary");
+    await expect(panel.getByLabel("종류").locator("option")).toHaveText(["임시공휴일", "선거일"]);
 
-    const submit = page.getByRole("button", { name: "공휴일 추가", exact: true });
+    const submit = panel.getByRole("button", { name: /^공휴일 추가/ });
     await expect(submit).toHaveAttribute("aria-disabled", "true");
     const reasonId = await submit.getAttribute("aria-describedby");
     expect(reasonId).toBeTruthy();
-    await expect(page.locator(`[id="${reasonId}"]`)).toHaveText("날짜, 이름 2칸 비어 있음");
+    // 이유 줄 = 막힘 이유 + 다음 한 수(3차 버튼 — 같은 줄 안).
+    await expect(panel.locator(`[id="${reasonId}"]`)).toContainText("날짜, 이름 2칸 비어 있음");
     await name.focus();
-    await page.getByRole("button", { name: "날짜 고르기" }).click();
+    await panel.getByRole("button", { name: "날짜 고르기" }).click();
     await expect(date).toBeFocused();
 
     await date.fill(`${NEXT_YEAR}-07-14`);
-    await expect(page.locator(`[id="${reasonId}"]`)).toHaveText("이름 1칸 비어 있음");
-    await page.getByRole("button", { name: "이름 적기" }).click();
+    await expect(panel.locator(`[id="${reasonId}"]`)).toContainText("이름 1칸 비어 있음");
+    await panel.getByRole("button", { name: "이름 적기" }).click();
     await expect(name).toBeFocused();
 
     await name.fill("채운 이름");
     await expect(submit).not.toHaveAttribute("aria-disabled", "true");
-    await expect(page.getByRole("button", { name: /(적기|고르기)$/ })).toHaveCount(0);
+    await expect(panel.getByRole("button", { name: /(적기|고르기)$/ })).toHaveCount(0);
   });
 
   test("min은 KST 내일 · max는 음력 표 마지막 해 12-31 · 오늘·규칙 행 날짜·음력 표 밖 해는 날짜 칸 아래 오류이고 값이 남는다", async ({
@@ -628,12 +720,13 @@ test.describe("공휴일 추가 폼의 상태(04.2-12)", () => {
   }) => {
     await loginAsSysadmin(page);
     await page.goto(`/admin/holidays?year=${NEXT_YEAR}&new=1`);
+    const panel = page.locator(PANEL);
     const today = toKstDate(new Date());
-    const date = page.getByLabel("날짜");
+    const date = panel.getByLabel("날짜");
     await expect(date).toHaveAttribute("min", nextIsoDate(today));
     await expect(date).toHaveAttribute("max", `${LUNAR_TABLE_LAST_YEAR}-12-31`);
-    await page.getByLabel("이름").fill("오류 확인");
-    const submit = page.getByRole("button", { name: "공휴일 추가", exact: true });
+    await panel.getByLabel("이름").fill("오류 확인");
+    const submit = panel.getByRole("button", { name: /^공휴일 추가/ });
 
     const cases = [
       { value: today, error: "오늘·지난 날짜 · 내일 이후 날짜 고르기" },
@@ -646,7 +739,7 @@ test.describe("공휴일 추가 폼의 상태(04.2-12)", () => {
     for (const { value, error } of cases) {
       await date.fill(value);
       await submit.click();
-      await expect(page.getByText(error, { exact: true })).toBeVisible();
+      await expect(panel.getByText(error, { exact: true })).toBeVisible();
       await expect(date).toHaveValue(value);
       await expect(date).toHaveAttribute("aria-invalid", "true");
     }
@@ -658,23 +751,46 @@ test.describe("공휴일 추가 폼의 상태(04.2-12)", () => {
   }) => {
     await loginAsSysadmin(page);
     await page.goto(`/admin/holidays?year=${NEXT_YEAR}&new=1`);
+    const panel = page.locator(PANEL);
     expect((await page.locator("form#holiday-form").boundingBox())!.width).toBeLessThanOrEqual(720);
 
-    await page.getByLabel("날짜").fill(`${NEXT_YEAR}-07-14`);
-    await page.getByLabel("이름").fill("끊김 확인");
+    await panel.getByLabel("날짜").fill(`${NEXT_YEAR}-07-14`);
+    await panel.getByLabel("이름").fill("끊김 확인");
     const release = await holdNextAction(page, "abort");
-    const submit = page.getByRole("button", { name: /^공휴일 추가(\s*처리 중)?$/ });
+    const submit = panel.getByRole("button", { name: /^공휴일 추가/ });
     await submit.click();
-    await expect(submit).toHaveText("공휴일 추가…처리 중");
+    await expect(submit).toContainText("공휴일 추가…처리 중");
     await expect(submit).toHaveAttribute("aria-disabled", "true");
-    await expect(page.getByRole("link", { name: "취소" })).toHaveAttribute("aria-disabled", "true");
+    await expect(panel.getByRole("button", { name: "취소" })).toHaveAttribute("aria-disabled", "true");
     release();
 
-    await expect(page.getByText("추가 실패 · 다시 시도", { exact: true })).toBeVisible();
-    await expect(submit).toHaveText("공휴일 추가");
+    await expect(panel.getByText("추가 실패 · 다시 시도", { exact: true })).toBeVisible();
+    await expect(submit).toContainText("공휴일 추가");
+    await expect(submit).not.toContainText("처리 중");
     const reasonId = await submit.getAttribute("aria-describedby");
-    await expect(page.locator(`[id="${reasonId}"]`)).toHaveText("추가 실패 · 다시 시도");
+    await expect(panel.locator(`[id="${reasonId}"]`)).toHaveText("추가 실패 · 다시 시도");
     expect(await db.select().from(holidays).where(eq(holidays.date, `${NEXT_YEAR}-07-14`))).toHaveLength(0);
+  });
+});
+
+// 04.6-16 · R11 · 공통 §10 — 옮긴 화면의 원칙 막는 모드: 확정 전·뒤 해, 각 목록과 추가 패널 모두 경고 0.
+test.describe("공휴일 화면 사용성 원칙 (04.6-16 R11)", () => {
+  test("화면 사용성 원칙(막는 모드) — 공휴일", async ({ page }) => {
+    // 확정 전 해 = 올해(E2E가 확정하지 않는다 — B1 배너 테스트가 「공휴일 확정 전」을 기대한다), 확정 뒤 해 = 다음 해(이 테스트가 확정하고 끝에 지운다).
+    await resetConfirmation(NEXT_YEAR);
+    await loginAsSysadmin(page);
+    await page.goto(`/admin/holidays?year=${NEXT_YEAR}`);
+    await page.getByRole("button", { name: `${NEXT_YEAR}년 공휴일 확정` }).click();
+    await expect(page.getByRole("button", { name: `${NEXT_YEAR}년 공휴일 확정` })).toHaveCount(0);
+    try {
+      const unconfirmed = `/admin/holidays?year=${THIS_YEAR}`;
+      const confirmed = `/admin/holidays?year=${NEXT_YEAR}`;
+      await checkPrinciples(page, [unconfirmed, `${unconfirmed}&new=1`, confirmed, `${confirmed}&new=1`], {
+        strict: isStrict(process.env.DESIGN_PRINCIPLES_STRICT),
+      });
+    } finally {
+      await resetConfirmation(NEXT_YEAR);
+    }
   });
 });
 
@@ -737,7 +853,7 @@ test.describe("관리자 배너 B1·B2(04.2-13)", () => {
     await expect(b2.getByRole("button")).toHaveCount(0);
     await expect(main.getByRole("status").filter({ hasText: "공휴일 확정 전" })).toHaveCount(0);
 
-    // ③ 시스템 상태 — 같은 B2를 링크 없이, 이메일 줄은 미설정 + 결과 꼬리, 「실패 3건」만 --danger.
+    // ③ 시스템 상태 — 같은 B2를 링크 없이, 이메일 줄은 미설정 + 결과 꼬리, 「실패 3건」만 --status-danger.
     await page.goto("/admin/system-status");
     const statusBanner = main.getByRole("alert");
     await expect(statusBanner).toHaveText(`이메일 발송 실패 3건 (${failedAt})`);
@@ -746,7 +862,7 @@ test.describe("관리자 배너 B1·B2(04.2-13)", () => {
     await expect(emailValue).toHaveText(`미설정 · 실패 3건 (${failedAt})`);
     const danger = await page.evaluate(() => {
       const probe = document.createElement("span");
-      probe.style.color = "var(--danger)";
+      probe.style.color = "var(--status-danger)";
       document.body.append(probe);
       const color = getComputedStyle(probe).color;
       probe.remove();

@@ -7,15 +7,15 @@
 /* 페이지 층 — 실물 form-expense.html:16-21 이관. 실물이 요소 단위로 전역에 정한
    것만 여기 둔다(화면 골격 단위 규칙은 ui/ 컴포넌트로 — 02-08-PLAN.md objective). */
 html {
-  font-size: var(--fs-base);
+  font-size: var(--text-body);
 }
 
 body {
   margin: 0;
-  background: var(--bg);
-  color: var(--fg);
+  background: var(--surface-canvas);
+  color: var(--text-strong);
   font-family: var(--font-sans);
-  font-size: var(--fs-base);
+  font-size: var(--text-body);
   line-height: var(--lh-body);
   letter-spacing: var(--ls-body);
   word-break: keep-all;
@@ -29,8 +29,8 @@ body {
    가 요소 선택자보다 특이도가 높아 이 규칙은 UA 컨트롤 서체(Arial)만 없앤다. */
 button, input, select, textarea {
   font-family: var(--font-sans);
-  font-size: var(--fs-base);
-  line-height: inherit;
+  font-size: var(--text-body);
+  line-height: var(--lh-body);
   letter-spacing: inherit;
   color: inherit;
 }
@@ -55,7 +55,7 @@ select {
 :root {
   caret-color: var(--caret);
   accent-color: var(--native-accent);
-  scrollbar-color: var(--scrollbar) var(--bg);
+  scrollbar-color: var(--scrollbar) var(--surface-canvas);
   scrollbar-width: thin;
 }
 
@@ -70,10 +70,10 @@ select {
    axe page-has-heading-one을 만족하도록 여기에 스크린 리더 전용으로 되살렸다. */
 .sr-only {
   position: absolute;
-  width: 1px;
-  height: 1px;
+  width: var(--line-w);
+  height: var(--line-w);
   padding: 0;
-  margin: -1px;
+  margin: calc(var(--s-1) / -4);
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;

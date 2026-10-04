@@ -84,10 +84,10 @@ test("경품 빠짐 — 제출하는 사이 고른 경품이 빠지면 E′2에 
   await expect(prizeRow(page, C.name)).toBeVisible();
   await expect(prizeRow(page, B.name)).toHaveCount(0);
   await expect(page).toHaveTitle("경품 고르기 · 기타소득 지급 확인");
-  // 기존 E′ 오류 줄 규칙 — --fs-md --danger.
+  // 기존 E′ 오류 줄 규칙 — --text-prose --status-danger.
   const danger = await page.evaluate(() => {
     const probe = document.createElement("span");
-    probe.style.color = "var(--danger)";
+    probe.style.color = "var(--status-danger)";
     document.body.appendChild(probe);
     const color = getComputedStyle(probe).color;
     probe.remove();

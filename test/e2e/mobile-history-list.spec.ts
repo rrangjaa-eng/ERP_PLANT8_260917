@@ -111,3 +111,53 @@ test.describe("§7-14 이력 목록 터치 목표 — 폰 3차 44 · 편집 행 
     await expectEditRow(vat, PC_CONTROL, "설정 부가세율 @1280");
   });
 });
+
+// 04.6 최종 DOM 감사 D1: 폰 320에서 값 칸에 긴 팀 이름이 있으면 날짜 칸(「2026-01-01」)이 하이픈에서 꺾이고
+// 「동작」 머리글이 두 줄로 쪼개졌다. 날짜·짧은 낱말 머리글은 어떤 폭에서도 한 줄이어야 한다(SYSTEM §2-4). 값 칸이 줄바꿈을 맡는 건 괜찮다.
+async function lineCount(locator: Locator): Promise<number> {
+  return locator.evaluate((element) => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    return new Set(Array.from(range.getClientRects()).map((rect) => Math.round(rect.top))).size;
+  });
+}
+
+test.describe("§7-14 이력 목록 — 폰 320 긴 팀 이름에서도 날짜 칸·짧은 머리글은 한 줄 (D1)", () => {
+  let longPersonId: string;
+
+  test.beforeAll(async () => {
+    const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E본부-${randomUUID()}` });
+    const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E결재팀-${randomUUID().slice(0, 11)}` });
+    const person = await createAccount(SYSTEM_VIEWER, {
+      email: `e2e-${randomUUID()}@example.test`,
+      name: "E2E 긴팀이름",
+      roleId: DEFAULT_ROLE_ID,
+    });
+    // 지난 행만 — 동작 칸이 비어(「취소」 없음) 「동작」 머리글 칸이 가장 좁아지는 감사 조건.
+    await assignTeam(SYSTEM_VIEWER, { userId: person.userId, teamId: team.id, effectiveFrom: "2025-01-01" });
+    await assignTeam(SYSTEM_VIEWER, { userId: person.userId, teamId: team.id, effectiveFrom: "2026-01-01" });
+    longPersonId = person.userId;
+  });
+
+  for (const width of [320, 375]) {
+    test(`사람 상세 발령 이력 @${width} — 날짜 칸 1줄 · 짧은 머리글 1줄 · 문서 넘침 없음`, async ({ page }) => {
+      await loginAsAdmin(page);
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(`/admin/people/${longPersonId}`);
+      const table = personSection(page).locator("table");
+      await expect(table).toBeVisible();
+
+      const dates = table.locator("tbody td:nth-child(1)");
+      expect(await dates.count()).toBe(2);
+      for (let i = 0; i < 2; i += 1) {
+        expect.soft(await lineCount(dates.nth(i)), `날짜 칸 ${i} 줄 수`).toBe(1);
+      }
+      for (const name of ["값", "상태", "동작"]) {
+        expect.soft(await lineCount(table.locator("thead th", { hasText: new RegExp(`^${name}$`) })), `머리글 ${name} 줄 수`).toBe(1);
+      }
+
+      const overflow = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }));
+      expect(overflow.scroll, "문서 가로 넘침").toBeLessThanOrEqual(overflow.client);
+    });
+  }
+});

@@ -31,6 +31,10 @@ test.describe("폰 375 /admin/vendors 3차 버튼 터치 목표 (defect 2)", () 
     await page.getByLabel("예금주").fill("홍길동");
     await page.getByLabel("계좌번호").fill("110-222-334455");
     await page.getByRole("button", { name: "거래처 등록" }).click();
+    // 04.6-04(UQ-8 B): 등록 성공 뒤 패널은 열린 채 결과 한 줄을 보인다 — Esc로 닫고 목록을 이어 본다.
+    await expect(page.locator('dialog[data-ui="side-panel"]').getByRole("status")).toHaveText("거래처 등록됨");
+    await page.keyboard.press("Escape");
+    await expect(page.locator('dialog[data-ui="side-panel"]')).toHaveCount(0);
     await expect(page.getByText(vendorName)).toBeVisible();
 
     const row = page.locator("tr", { hasText: vendorName });
@@ -110,5 +114,33 @@ test.describe("폰 320 /admin/vendors 행 동작 넘침 없음 (260930-f3l FINDI
 
   test("일반 상태와 「삭제」 확인 상태 모두 가로로 넘치지 않는다", async ({ page }) => {
     await measureRowActionsOnPhone(page, false);
+  });
+});
+
+// 04.6-11 Task 2: 수정 패널(계좌번호 칸 포함)이 폰 390에서 가로로 넘치지 않는다.
+test.describe("폰 390 /admin/vendors 수정 패널 가로 넘침 없음 (04.6-11)", () => {
+  test.use({ viewport: { width: 390, height: 800 } });
+
+  test("계좌번호가 있는 거래처의 수정 패널이 문서·패널 모두 가로로 넘치지 않는다", async ({ page }) => {
+    const vendor = await insertVendor(SYSTEM_VIEWER, {
+      name: `폰패널-${randomUUID().slice(0, 8)}`,
+      normalizedName: `폰패널-${randomUUID()}`,
+      accountNumberLast4: "4455",
+    });
+    try {
+      await loginAsSysadmin(page);
+      await page.goto(`/admin/vendors?editId=${vendor.id}`);
+      const dialog = page.locator('dialog[data-ui="side-panel"]');
+      await expect(dialog.getByLabel("새 계좌번호")).toBeVisible();
+      const overflow = await page.evaluate(() => {
+        const scroller = document.scrollingElement ?? document.documentElement;
+        const panel = document.querySelector('dialog[data-ui="side-panel"]');
+        return { doc: scroller.scrollWidth - scroller.clientWidth, panel: panel ? panel.scrollWidth - panel.clientWidth : 0 };
+      });
+      expect(overflow.doc, "문서 가로 넘침").toBeLessThanOrEqual(0);
+      expect(overflow.panel, "패널 가로 넘침").toBeLessThanOrEqual(0);
+    } finally {
+      await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
+    }
   });
 });

@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
+import { textLineCount } from "./row-actions-helpers";
 
 // design-review H-1: 폰에서 빈 목록의 「다음 한 수」 링크가 25px 높이다.
 // ui/list-empty/ListEmpty.module.css의 .tertiary는 공유 Button의 .tertiary와
@@ -23,9 +24,11 @@ test.describe("폰 375 빈 목록의 다음 한 수 (§3, design-review H-1)", (
     // 「프로젝트 등록」이다. 이 스펙의 대상은 EMPTY 행(ui/list-empty — 「…없습니다」
     // + 다음 한 수)뿐이라 그 행으로 범위를 좁힌다.
     let measured = 0;
+    let firstMeasured: { path: string; label: string } | null = null;
     for (const path of ["/projects", "/expenses", "/cards", "/approvals"]) {
       await page.goto(path);
-      const emptyRow = page.locator("p").filter({ hasText: /없습니다/ });
+      // 04.6-05 — 빈 화면은 `[data-ui="empty-state"]` 한 줄 글 + 넘겨받은 첫 행동 하나(2차 버튼 모양 링크)다.
+      const emptyRow = page.locator('[data-ui="empty-state"]').filter({ hasText: /없습니다/ });
       const link = emptyRow.locator("a").filter({ hasText: /보기|올리기|만들기|등록/ }).first();
       const count = await link.count();
       // 목록에 행이 있어 EMPTY가 아니거나, EMPTY 문구만 있고 행동이 없는 화면은 건너뛴다.
@@ -39,9 +42,33 @@ test.describe("폰 375 빈 목록의 다음 한 수 (§3, design-review H-1)", (
       expect(box, `${path}: 링크 상자를 잴 수 없다`).not.toBeNull();
       expect(box!.height, `${path}: 세로 터치 목표`).toBeGreaterThanOrEqual(44);
       expect(box!.width, `${path}: 가로 터치 목표`).toBeGreaterThanOrEqual(44);
+
+      // 한 줄 글 + 행동 하나 — 글은 한 줄이고 행동은 버튼 모양(테두리 있는 2차)이다.
+      await expect(emptyRow.locator("a, button"), `${path}: 첫 행동 하나`).toHaveCount(1);
+      expect(await textLineCount(emptyRow.locator("span").first()), `${path}: 글 한 줄`).toBe(1);
+      const borderTop = await link.evaluate((element) => parseFloat(getComputedStyle(element).borderTopWidth));
+      expect(borderTop, `${path}: 버튼 모양(테두리)`).toBeGreaterThan(0);
+
+      firstMeasured ??= { path, label: ((await link.textContent()) ?? "").trim() };
       measured++;
     }
     // 건너뛰기만 하고 아무것도 재지 않은 채 초록이 되지 않게 한다.
     expect(measured, "EMPTY 행의 다음 한 수를 하나도 재지 못했다").toBeGreaterThan(0);
+
+    // 누르면 전체 새로고침 없이 이동한다(next/link) — 이동 전 window에 둔 표식이 이동 뒤에도 남는다.
+    const target = firstMeasured;
+    expect(target, "이동을 확인할 빈 화면 행동이 없다").not.toBeNull();
+    await page.goto(target!.path);
+    const action = page.locator('[data-ui="empty-state"]').getByRole("link", { name: target!.label });
+    await expect(action).toBeVisible();
+    await page.evaluate(() => {
+      (window as unknown as { __emptyStateNav?: boolean }).__emptyStateNav = true;
+    });
+    await action.click();
+    await expect(page).not.toHaveURL(new RegExp(`${target!.path}$`));
+    expect(
+      await page.evaluate(() => (window as unknown as { __emptyStateNav?: boolean }).__emptyStateNav),
+      "전체 새로고침이 일어났다",
+    ).toBe(true);
   });
 });

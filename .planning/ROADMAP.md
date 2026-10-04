@@ -399,61 +399,61 @@ Plans:
 12. 글자·바탕 대비 4.5:1 미만(큰 글자 3:1)을 자동 검사가 막는다
 13. 시스템 변경은 `docs/design/DECISIONS.md` 기록 → `docs/design/SYSTEM.md` 수정 순서로 한다(`.claude/rules/frontend.md`): radius 0 · 그림자 없음 · 2px 진한 선 결정 뒤집기, D-39 폼 배치 → 옆 패널, 고른 완화 후보
 
-**Plans:** 0/32 plans executed
+**Plans:** 32/32 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 04.6-01-PLAN.md — ① UQ-1·2·3·6·7 확인 → DECISIONS → SYSTEM → 역할 토큰 두 단 · Phase 7 기준 5 · /plan-design-review
-- [ ] 04.6-02-PLAN.md — ① lint 관문(stylelint·eslint·화면 틀) · 이관 전 표시 생성 스크립트·래칫
-- [ ] 04.6-03-PLAN.md — ① [위험 경로 별도 PR · 사용자 머지] 시각 회귀 기준 사진 워크플로 + CI 실패 사진 업로드
+- [x] 04.6-01-PLAN.md — ① UQ-1·2·3·6·7 확인 → DECISIONS → SYSTEM → 역할 토큰 두 단 · Phase 7 기준 5 · /plan-design-review
+- [x] 04.6-02-PLAN.md — ① lint 관문(stylelint·eslint·화면 틀) · 이관 전 표시 생성 스크립트·래칫
+- [x] 04.6-03-PLAN.md — ① [위험 경로 별도 PR · 사용자 머지] 시각 회귀 기준 사진 워크플로 + CI 실패 사진 업로드
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 04.6-04-PLAN.md — ② UQ-8·R9·DR1·DR5 확인 → 트레이서: 거래처 옆 패널(SidePanel·PanelForm·ListScreen·Form layout)
-- [ ] 04.6-05-PLAN.md — ② 공용 표현 컴포넌트(Num·RowActions·TableSkeleton·StaticTable·status-map·ListEmpty)
-- [ ] 04.6-06-PLAN.md — ② DetailScreen · /dev/components 뼈대(로그인·운영 404) · 원칙 점검 도구(isStrict·data-ui·모달 인지)
-- [ ] 04.6-07-PLAN.md — ② 스킨: 표·입력·확인 창·배지 + 역할 간격 값
-- [ ] 04.6-08-PLAN.md — ② 스킨: 셸·버튼·머리글·바탕
-- [ ] 04.6-09-PLAN.md — ② 스킨: 알림·목록 보조·권한 격자·인증 틀
+- [x] 04.6-04-PLAN.md — ② UQ-8·R9·DR1·DR5 확인 → 트레이서: 거래처 옆 패널(SidePanel·PanelForm·ListScreen·Form layout)
+- [x] 04.6-05-PLAN.md — ② 공용 표현 컴포넌트(Num·RowActions·TableSkeleton·StaticTable·status-map·ListEmpty)
+- [x] 04.6-06-PLAN.md — ② DetailScreen · /dev/components 뼈대(로그인·운영 404) · 원칙 점검 도구(isStrict·data-ui·모달 인지)
+- [x] 04.6-07-PLAN.md — ② 스킨: 표·입력·확인 창·배지 + 역할 간격 값
+- [x] 04.6-08-PLAN.md — ② 스킨: 셸·버튼·머리글·바탕
+- [x] 04.6-09-PLAN.md — ② 스킨: 알림·목록 보조·권한 격자·인증 틀
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 04.6-10-PLAN.md — ③ /projects 목록·등록·복사 패널(A1 실측)
-- [ ] 04.6-11-PLAN.md — ③ /admin/vendors 표·행동 링크·필터 마무리
-- [ ] 04.6-12-PLAN.md — ③ /projects/[id] DetailScreen(견적 줄 엑셀식 유지)
-- [ ] 04.6-13-PLAN.md — ③ 모음 페이지 완성 · 시각 회귀 스펙·visual 프로젝트
+- [x] 04.6-10-PLAN.md — ③ /projects 목록·등록·복사 패널(A1 실측)
+- [x] 04.6-11-PLAN.md — ③ /admin/vendors 표·행동 링크·필터 마무리
+- [x] 04.6-12-PLAN.md — ③ /projects/[id] DetailScreen(견적 줄 엑셀식 유지)
+- [x] 04.6-13-PLAN.md — ③ 모음 페이지 완성 · 시각 회귀 스펙·visual 프로젝트
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 04.6-14-PLAN.md — ④ 사람·조직·계급 패널 · 사람 상세
-- [ ] 04.6-15-PLAN.md — ④ 법인카드·코드표 패널
-- [ ] 04.6-16-PLAN.md — ④ 공휴일 패널 · 320 패널 넘침 검사
-- [ ] 04.6-17-PLAN.md — ④ 결재함 · 결재 시트 SidePanel · 뼈대
-- [ ] 04.6-20-PLAN.md — ④ 내 계정·설정·시스템 상태
-- [ ] 04.6-23-PLAN.md — ④ (04.5·04.3 머지 뒤) 화면 항목 관리·행사 목록 패널
-- [ ] 04.6-25-PLAN.md — ④ 기준 사진 대조 · 완화 후보 보드 · UQ-4·5 요청(웨이브 ③ 세 화면)
+- [x] 04.6-14-PLAN.md — ④ 사람·조직·계급 패널 · 사람 상세
+- [x] 04.6-15-PLAN.md — ④ 법인카드·코드표 패널
+- [x] 04.6-16-PLAN.md — ④ 공휴일 패널 · 320 패널 넘침 검사
+- [x] 04.6-17-PLAN.md — ④ 결재함 · 결재 시트 SidePanel · 뼈대
+- [x] 04.6-20-PLAN.md — ④ 내 계정·설정·시스템 상태
+- [x] 04.6-23-PLAN.md — ④ (04.5·04.3 머지 뒤) 화면 항목 관리·행사 목록 패널
+- [x] 04.6-25-PLAN.md — ④ 기준 사진 대조 · 완화 후보 보드 · UQ-4·5 요청(웨이브 ③ 세 화면)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 04.6-18-PLAN.md — ⑤ 연차 목록·신청·문서
-- [ ] 04.6-19-PLAN.md — ⑤ 내 차례·알림함·자리 화면·오류·404
-- [ ] 04.6-21-PLAN.md — ⑤ 관리 인덱스·권한표·노출표·로그인
-- [ ] 04.6-22-PLAN.md — ⑤ 행동 로그·보관함·적립금
-- [ ] 04.6-24-PLAN.md — ⑤ (04.3 머지 뒤) 확인증 상세·외부 수령자
+- [x] 04.6-18-PLAN.md — ⑤ 연차 목록·신청·문서
+- [x] 04.6-19-PLAN.md — ⑤ 내 차례·알림함·자리 화면·오류·404
+- [x] 04.6-21-PLAN.md — ⑤ 관리 인덱스·권한표·노출표·로그인
+- [x] 04.6-22-PLAN.md — ⑤ 행동 로그·보관함·적립금
+- [x] 04.6-24-PLAN.md — ⑤ (04.3 머지 뒤) 확인증 상세·외부 수령자
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 04.6-26-PLAN.md — ⑥ UQ-4·5 사람 확인 → 고른 완화 후보 결정·문서·토큰 + 아이콘 밖 컴포넌트
-- [ ] 04.6-27-PLAN.md — ⑥ E2E 옛 토큰 이름 문자열 → 역할 이름
-- [ ] 04.6-28-PLAN.md — ⑥ 래칫 표시 0 · StatusTag kind 삭제
-- [ ] 04.6-29-PLAN.md — ⑥ 원칙 점검 막는 모드 · a11y 전 화면 · 글자 위계
-- [ ] 04.6-30-PLAN.md — ⑥ [위험 경로 별도 PR · 사용자 머지] CHECKLIST §1 사용자 결정(PR #113 답 직접 인용)
+- [x] 04.6-26-PLAN.md — ⑥ UQ-4·5 사람 확인 → 고른 완화 후보 결정·문서·토큰 + 아이콘 밖 컴포넌트
+- [x] 04.6-27-PLAN.md — ⑥ E2E 옛 토큰 이름 문자열 → 역할 이름
+- [x] 04.6-28-PLAN.md — ⑥ 래칫 표시 0 · StatusTag kind 삭제
+- [x] 04.6-29-PLAN.md — ⑥ 원칙 점검 막는 모드 · a11y 전 화면 · 글자 위계
+- [x] 04.6-30-PLAN.md — ⑥ [위험 경로 별도 PR · 사용자 머지] CHECKLIST §1 사용자 결정(PR #113 답 직접 인용)
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [ ] 04.6-31-PLAN.md — ⑦ 옛 토큰 이름 삭제 · 인쇄 토큰 · SYSTEM §11 · 늦게 머지될 페이즈 알림 · R19는 #150으로 끝남 확인(TODOS 샤드 줄 수 그대로 — 새 줄 없음)
-- [ ] 04.6-33-PLAN.md — ⑦ (UQ-4에 4일 때만) 아이콘 · (UQ-5 B면) lucide-react 사람 확인·판 고정
+- [x] 04.6-31-PLAN.md — ⑦ 옛 토큰 이름 삭제 · 인쇄 토큰 · SYSTEM §11 · 늦게 머지될 페이즈 알림 · R19는 #150으로 끝남 확인(TODOS 샤드 줄 수 그대로 — 새 줄 없음)
+- [x] 04.6-33-PLAN.md — ⑦ (UQ-4에 4일 때만) 아이콘 · (UQ-5 B면) lucide-react 사람 확인·판 고정
 - ~~04.6-32-PLAN.md~~ — superseded → COMMON §9 0단계(오케스트레이터가 웨이브 ⑦ 세션에서 31·33 뒤 CI 기준 사진 — 플랜 아님)
 
 ### Phase 04.1: 결재 모듈·연차 (INSERTED)
@@ -807,7 +807,7 @@ Plans:
   2. (Phase 04.2 기준 2·3으로 옮김 — 2026-09-24) 이 페이즈의 알림은 04.2가 만든 알림함·이메일 채널로 나간다
   3. 알림 조건 종류(상태 + 기준일 N일 전/후, '프로젝트 종료 후 지출결의 없음' 같은 교차 문서 조건)는 코드에 등록되고 규칙 = 조건 종류 × 파라미터(대상 문서·N일·받는 사람·채널)의 인스턴스다. 기본 규칙 4개(종료 후 지출결의 없음·지급 예정일 임박·결재 대기 초과·증빙 미첨부)가 시드로 있고, Phase 6에서 미뤄 둔 알림 둘(선결제 14일 증빙 독촉, 경영관리 대리 등록 시 담당 PM 알림)도 여기서 규칙으로 붙으며, 관리자가 등록된 종류로 새 규칙을 만든다. 조건 종류를 등록하는 틀은 Phase 04.2가 만들고 이 페이즈는 실제 조건 종류를 더한다
   4. (Phase 04.2 기준 4로 옮김 — 2026-09-24) 이 페이즈의 규칙은 04.2의 `/internal/notify-tick`이 평가한다
-  5. 인트라넷 패리티가 끝난 이 시점에서 권한표·정보 노출표·행동 로그(ADMN-01/02/03/10)를 그때까지 생긴 전 메뉴·동작·내보내기 대상으로 검수한다(CEO OV-5): 누수 스캔 생성기가 Phase 3~7의 모든 액션·DTO 타입·Excel 내보내기 함수를 덮고 노출표에 매핑되지 않은 DTO가 0이며(Issue 11), 계급별 기본값 표와 핵심 행동 종류 목록이 전 메뉴 기준으로 확정되고, Playwright 계급별 노출 스모크(역할 4종이 같은 화면에서 보는 것/못 보는 것)가 CI에 있다(Issue 14). 같은 검수에서 관리자 화면 7개(사람·계급·조직·거래처·법인카드·코드표·설정)의 폼 **8개**(법인카드는 등록 폼과 소유자 수정 폼 둘이다 — 2026-09-21 추가)를 Phase 4가 만든 `ui/form`·`ui/select`로 이관해 §6-3 폼 템플릿(폼 max 720 = `--form-max`·칸 폭 280/480/200·라벨 왼쪽 96) 밖에 있는 관리자 화면이 0이고, 검증 오류가 브라우저 기본 영문 말풍선이 아니라 §7-2의 「틀린 칸 테두리 `--danger` + 아래 `--fs-sm` 한 줄 + `aria-invalid`·`aria-describedby`」로 뜬다 — Phase 3 design-review가 실측으로 남긴 A-H2·A-H3의 이월분이다(`.planning/phases/03-permissions-settings-masters/03-OPEN-ITEMS.md`). Phase 3에서 미룬 관리 콘솔 검수를 여기서 끝낸다는 이 페이즈의 원래 약속에 디자인 계약을 명시적으로 포함시킨 것이다. 새 배포 직후 대표 계정이 행동 로그 화면에서 404를 받는 문제(계급 기본 권한 — ADMN-10 갭, 2026-10-01 사용자 결정)도 이 검수의 확정 항목이다
+  5. 인트라넷 패리티가 끝난 이 시점에서 권한표·정보 노출표·행동 로그(ADMN-01/02/03/10)를 그때까지 생긴 전 메뉴·동작·내보내기 대상으로 검수한다(CEO OV-5): 누수 스캔 생성기가 Phase 3~7의 모든 액션·DTO 타입·Excel 내보내기 함수를 덮고 노출표에 매핑되지 않은 DTO가 0이며(Issue 11), 계급별 기본값 표와 핵심 행동 종류 목록이 전 메뉴 기준으로 확정되고, Playwright 계급별 노출 스모크(역할 4종이 같은 화면에서 보는 것/못 보는 것)가 CI에 있다(Issue 14). 같은 검수에서 관리자 화면 7개(사람·계급·조직·거래처·법인카드·코드표·설정)의 폼 **8개**(법인카드는 등록 폼과 소유자 수정 폼 둘이다 — 2026-09-21 추가)를 Phase 4가 만든 `ui/form`·`ui/select`로 이관해 관리자 한 건 폼은 `PanelForm`(§6-3 옆 패널 배치: 폭 480 · 라벨 위 · 칸 전폭), 페이지 폼(설정·내 계정)은 §6-3 페이지 배치 — 두 배치 밖의 관리자 폼 0이고, 검증 오류가 브라우저 기본 영문 말풍선이 아니라 §7-2의 「틀린 칸 테두리 `--danger` + 아래 `--fs-sm` 한 줄 + `aria-invalid`·`aria-describedby`」로 뜬다 — Phase 3 design-review가 실측으로 남긴 A-H2·A-H3의 이월분이다(`.planning/phases/03-permissions-settings-masters/03-OPEN-ITEMS.md`). Phase 3에서 미룬 관리 콘솔 검수를 여기서 끝낸다는 이 페이즈의 원래 약속에 디자인 계약을 명시적으로 포함시킨 것이다. 새 배포 직후 대표 계정이 행동 로그 화면에서 404를 받는 문제(계급 기본 권한 — ADMN-10 갭, 2026-10-01 사용자 결정)도 이 검수의 확정 항목이다
 
 **Plans**: TBD
 **UI hint**: yes

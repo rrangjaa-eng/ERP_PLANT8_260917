@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
-import { PageHeader } from "@/ui/page-header/PageHeader";
+import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 
 // SYSTEM.md §6-9 오류 페이지 — 오류 경계(예외) 변종, 셸 안에서 렌더된다(C②).
 // §7-7 ERROR 행: 한 줄(무엇이 안 됐다) + 다음 행동. 예외 메시지·스택은 화면에
@@ -20,9 +20,8 @@ export default function AppError({
   }, [error]);
 
   return (
-    <>
-      <PageHeader title="문제 발생" titleSize="2xl" />
+    <DetailScreen title="문제 발생">
       <ListEmpty message="화면 불러오기 실패" action={{ label: "다시 시도", onClick: retry }} tone="error" />
-    </>
+    </DetailScreen>
   );
 }

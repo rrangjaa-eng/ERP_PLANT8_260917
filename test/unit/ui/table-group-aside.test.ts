@@ -1,4 +1,4 @@
-import { createElement } from "react";
+import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { Table, type TableProps } from "../../../ui/table/Table";
@@ -56,5 +56,41 @@ describe("Table 그룹 키와 머리글 글자(groupHeader)", () => {
     expect(cells).toHaveLength(2);
     expect(cells[0]).toMatch(/^<td[^>]*>같은이름<span[^>]*>잔액 100<\/span><\/td>$/);
     expect(cells[1]).toMatch(/^<td[^>]*>같은이름<span[^>]*>잔액 200<\/span><\/td>$/);
+  });
+});
+
+// 04.6-24 — 그룹 머리글을 노드로 받고, opt-in `groupHeaderScope="rowgroup"`이면 `<th scope="rowgroup">`로 그린다(확인증 제출 표 ·
+// 알림함). 두 prop이 없으면 지금 `<td colSpan>` 마크업 그대로다.
+describe("Table 그룹 머리글 노드(groupHeader)와 rowgroup 범위(groupHeaderScope)", () => {
+  const withNode = (row: Row): ReactNode => createElement("span", null, `${row.group} · 제출 `, createElement("em", null, "초과 1건"));
+
+  function groupHeaderTh(markup: string): string[] {
+    return markup.match(/<th scope="rowgroup" colSpan="1" class="[^"]*groupHeader[^"]*">[\s\S]*?<\/th>/g) ?? [];
+  }
+
+  it('groupHeaderScope="rowgroup"이면 그룹 머리글 칸이 `<th scope="rowgroup" colSpan>`이다', () => {
+    const markup = render({ groupHeaderScope: "rowgroup" });
+    const cells = groupHeaderTh(markup);
+    expect(cells).toHaveLength(2);
+    expect(cells[0]).toMatch(/^<th[^>]*>A<\/th>$/);
+    expect(groupHeaderCells(markup)).toHaveLength(0);
+  });
+
+  it("groupHeader가 노드를 돌려주면 그 노드가 머리글 칸 안에 그대로 들어간다", () => {
+    const cells = groupHeaderTh(render({ groupHeader: withNode, groupHeaderScope: "rowgroup" }));
+    expect(cells).toHaveLength(2);
+    expect(cells[0]).toMatch(/^<th[^>]*><span>A · 제출 <em>초과 1건<\/em><\/span><\/th>$/);
+  });
+
+  it("노드를 줘도 scope 없이는 지금처럼 `<td colSpan>`이다", () => {
+    const cells = groupHeaderCells(render({ groupHeader: withNode }));
+    expect(cells).toHaveLength(2);
+    expect(cells[0]).toMatch(/^<td[^>]*><span>A · 제출 <em>초과 1건<\/em><\/span><\/td>$/);
+    expect(render({ groupHeader: withNode })).not.toContain('scope="rowgroup"');
+  });
+
+  it("groupAside는 th 머리글 칸 안에서도 오른쪽 칸 요소 하나로 그려진다", () => {
+    const cells = groupHeaderTh(render({ groupHeaderScope: "rowgroup", groupAside: (row) => `잔액 ${row.balance}` }));
+    expect(cells[0]).toMatch(/^<th[^>]*>A<span class="[^"]*groupAside[^"]*">잔액 950,000<\/span><\/th>$/);
   });
 });

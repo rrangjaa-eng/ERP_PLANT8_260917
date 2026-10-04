@@ -3,62 +3,59 @@ import { resolve } from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import {
-  SidePanel,
-  closeSidePanel,
-  isPanelCloseKey,
-  openSidePanel,
-  type PanelDialogLike,
-} from "../../../ui/side-panel/SidePanel";
 
-// SYSTEM.md §7-8 개정 ⑰(04.3-10 · D-d) — 옆 패널. jsdom이 없어(environment: "node") 열기 · 닫기 · 포커스는
-// <dialog>와 같은 모양의 가짜 객체로 순수 함수를 부르고, 골격은 renderToStaticMarkup 문자열로 본다
-// (confirm-dialog.test.ts 선례).
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ back: vi.fn(), replace: vi.fn(), push: vi.fn(), refresh: vi.fn() }),
+}));
 
-function fakeDialog() {
-  const focused: string[] = [];
-  const dialog: PanelDialogLike & { calls: string[] } = {
-    open: false,
-    calls: [],
-    show() {
-      this.open = true;
-      this.calls.push("show");
-    },
-    showModal() {
-      this.open = true;
-      this.calls.push("showModal");
-    },
-    close() {
-      this.open = false;
-      this.calls.push("close");
-    },
-    querySelector(selector: string) {
-      return { focus: () => focused.push(selector) };
-    },
-  };
-  return { dialog, focused };
+import * as sidePanelModule from "../../../ui/side-panel/SidePanel";
+import { SidePanel, isPanelCloseKey } from "../../../ui/side-panel/SidePanel";
+
+// UI-SPEC 「옆 패널 상호작용 계약」(04.6-04 · Q1 A) — 옆 패널은 모든 폭에서 showModal()로 뒤를 막는다. jsdom이 없어
+// (environment: "node") 열기 · 닫기 · 포커스는 E2E(side-panel.spec.ts)가 재고, 여기서는 소스 계약과 골격 문자열을 본다
+// (confirm-dialog.test.ts 선례). #88의 PC 비모달(show()) · 가림막 없음 · 옛 모달 폭 변수 단언은 Q1 A로 대체돼 지웠다.
+
+function source(path: string): string {
+  return readFileSync(resolve(process.cwd(), path), "utf8");
 }
 
-describe("openSidePanel — PC는 뒤를 막지 않고(show), 폰은 시트(showModal)", () => {
-  it("PC(700 이상): show() — 스크림 · 포커스 가두기 없음 · 첫 칸 포커스", () => {
-    const { dialog, focused } = fakeDialog();
-    openSidePanel(dialog, true);
-    expect(dialog.calls).toEqual(["show"]);
-    expect(focused).toHaveLength(1);
+describe("SidePanel 소스 계약 — 모든 폭 모달(Q1 A)", () => {
+  const tsx = source("ui/side-panel/SidePanel.tsx");
+
+  it("showModal()을 쓰고 비모달 show() 호출이 없다", () => {
+    expect(tsx).toMatch(/\.showModal\(\)/);
+    expect(tsx).not.toMatch(/\.show\(\)/);
   });
 
-  it("폰(700 미만): showModal() — 스크림 · 포커스 가두기 · 첫 칸 포커스", () => {
-    const { dialog, focused } = fakeDialog();
-    openSidePanel(dialog, false);
-    expect(dialog.calls).toEqual(["showModal"]);
-    expect(focused).toHaveLength(1);
+  it("#88의 여는 · 닫는 함수와 dialog 흉내 타입은 남지 않는다", () => {
+    for (const name of ["openSidePanel", "closeSidePanel"]) {
+      expect(Object.keys(sidePanelModule)).not.toContain(name);
+    }
+    expect(tsx).not.toContain("PanelDialogLike");
   });
 
-  it("이미 열렸으면 다시 열지 않는다", () => {
-    const { dialog } = fakeDialog();
-    dialog.open = true;
-    openSidePanel(dialog, true);
-    expect(dialog.calls).toEqual([]);
+  it("열 때 스크롤바 폭을 재어 html 안쪽 여백으로 채우고 닫을 때 지운다(스크롤바 없던 쪽은 0)", () => {
+    expect(tsx).toMatch(/paddingInlineEnd = `\$\{window\.innerWidth - root\.clientWidth\}px`/);
+    expect(tsx).toMatch(/paddingInlineEnd = ""/);
+    const css = source("ui/side-panel/SidePanel.module.css");
+    expect(css).not.toContain("scrollbar-gutter");
+  });
+
+  it("Tab이 패널 안에서 돈다 — 마지막 칸 Tab · 첫 칸 Shift+Tab이 반대쪽 끝으로 간다", () => {
+    expect(tsx).toContain("wrapTab");
+    expect(tsx).toMatch(/event\.shiftKey && active === first/);
+  });
+
+  it("닫기 경로 하나 — closedByUsRef · requestClose · 새로고침 호출 없음", () => {
+    expect(tsx).toContain("closedByUsRef");
+    expect(tsx).toContain("requestClose");
+    expect(tsx).not.toContain("router.refresh");
+  });
+
+  it("닫기 요청이 이번 닫기만 포커스 복귀를 건너뛸 수 있다 — 성공 뒤 새 결과로 포커스를 옮기는 URL 패널(04.6-23)", () => {
+    expect(tsx).toContain("options?: { returnFocus?: boolean }");
+    expect(tsx).toMatch(/options\?\.returnFocus === false\) skipReturnFocusRef\.current = true/);
+    expect(tsx).toMatch(/!returnFocusRef\.current \|\| skipReturnFocusRef\.current/);
   });
 });
 
@@ -73,56 +70,65 @@ describe("isPanelCloseKey — Esc로 닫힘(조합 중 · 안쪽 컨트롤이 �
   });
 });
 
-describe("closeSidePanel — 닫히면 여는 버튼으로 포커스(성공으로 닫을 때는 호출부가 새 결과로 옮긴다)", () => {
-  it("열린 패널을 닫은 뒤 여는 버튼에 포커스", () => {
-    const { dialog } = fakeDialog();
-    dialog.open = true;
-    const order: string[] = [];
-    closeSidePanel(dialog, { focus: () => order.push(`focus(open=${dialog.open})`) });
-    expect(dialog.calls).toEqual(["close"]);
-    expect(order).toEqual(["focus(open=false)"]);
-  });
-
-  it("여는 버튼이 없으면(성공 — returnFocus 끔) 닫기만", () => {
-    const { dialog } = fakeDialog();
-    dialog.open = true;
-    closeSidePanel(dialog, null);
-    expect(dialog.calls).toEqual(["close"]);
-  });
-});
-
 describe("SidePanel 골격(renderToStaticMarkup)", () => {
   const html = renderToStaticMarkup(
     createElement(
       SidePanel,
-      {
-        open: true,
-        onClose: vi.fn(),
-        title: "QR 생성 신청",
-        opener: { current: null },
-        actions: createElement("span", null, createElement("button", null, "취소"), createElement("button", null, "QR 생성 신청")),
-      },
-      createElement("input", { "aria-label": "행사 이름" }),
+      { title: "거래처 등록", closeHref: "/admin/vendors" },
+      createElement("input", { "aria-label": "이름" }),
     ),
   );
 
-  it("<dialog> + 제목(--fs-lg 머리) + 닫기 × + 본문 + 행동 줄(2차 → 1차 순서)", () => {
+  it('<dialog data-ui="side-panel" aria-labelledby> + 제목 + 닫기 x + 본문', () => {
     expect(html).toMatch(/^<dialog /);
-    expect(html).toContain('aria-labelledby="');
-    expect(html).toMatch(/<h2 [^>]*id="[^"]+"[^>]*>QR 생성 신청<\/h2>/);
+    expect(html).toContain('data-ui="side-panel"');
+    expect(html).toContain('aria-modal="true"');
+    expect(html).toMatch(/aria-labelledby="([^"]+)"/);
+    expect(html).toMatch(/<h2 [^>]*id="[^"]+"[^>]*>거래처 등록<\/h2>/);
     expect(html).toContain('aria-label="닫기"');
-    expect(html.indexOf("행사 이름")).toBeLessThan(html.indexOf(">취소<"));
-    expect(html.indexOf(">취소<")).toBeLessThan(html.lastIndexOf(">QR 생성 신청<"));
+    expect(html).toContain('aria-label="이름"');
   });
 
-  it("PC 모양에는 --scrim이 없고, 폰(700 미만) 시트 골격에만 있다", () => {
-    const css = readFileSync(resolve(process.cwd(), "ui/side-panel/SidePanel.module.css"), "utf8");
-    const media = css.indexOf("@media (max-width: 699px)");
+  it("제목 id를 aria-labelledby가 가리킨다", () => {
+    const labelledBy = /aria-labelledby="([^"]+)"/.exec(html)?.[1];
+    const titleId = /<h2 [^>]*id="([^"]+)"/.exec(html)?.[1];
+    expect(labelledBy).toBeTruthy();
+    expect(labelledBy).toBe(titleId);
+  });
+
+  it("제어 형태(onClose)도 같은 골격이다", () => {
+    const controlled = renderToStaticMarkup(createElement(SidePanel, { title: "결재", onClose: vi.fn() }, createElement("p", null, "본문")));
+    expect(controlled).toContain('data-ui="side-panel"');
+    expect(controlled).toContain(">결재</h2>");
+  });
+});
+
+describe("SidePanel.module.css — Q1 A 가림막 · 폭 · 폰 시트", () => {
+  const css = source("ui/side-panel/SidePanel.module.css");
+  const media = css.indexOf("@media (max-width: 699.98px)");
+
+  it("PC는 --panel-w 480 고정 위치 + ::backdrop --scrim-panel", () => {
     expect(media).toBeGreaterThan(0);
-    expect(css.slice(0, media)).not.toContain("--scrim");
-    expect(css.slice(media)).toMatch(/::backdrop\s*\{[^}]*var\(--scrim\)/);
-    // PC 폭 480 = --modal-w(§7-8 모달과 같은 폭) · 목록을 밀지 않는 고정 위치
-    expect(css.slice(0, media)).toContain("var(--modal-w)");
-    expect(css.slice(0, media)).toMatch(/position:\s*fixed/);
+    const pc = css.slice(0, media);
+    expect(pc).toContain("var(--panel-w)");
+    expect(pc).toMatch(/position:\s*fixed/);
+    expect(pc).toMatch(/\.panel::backdrop\s*\{[^}]*var\(--scrim-panel\)/);
+  });
+
+  it("폰(700 미만) 시트는 ::backdrop --scrim-dialog + 높이 상한 --sheet-max-h", () => {
+    const phone = css.slice(media);
+    expect(phone).toMatch(/::backdrop\s*\{[^}]*var\(--scrim-dialog\)/);
+    expect(phone).toContain("var(--sheet-max-h)");
+  });
+
+  it("옛 이름 --scrim · --modal-w가 없다(경계 패턴)", () => { // 옛 이름 목록(공통 §4 (d))
+    expect(css).not.toMatch(/--scrim(?![\w-])/); // 옛 이름 목록(공통 §4 (d))
+    expect(css).not.toMatch(/--modal-w(?![\w-])/); // 옛 이름 목록(공통 §4 (d))
+  });
+
+  it("뒤 스크롤 잠금 + overscroll-behavior contain · 순서 뒤집기 없음", () => {
+    expect(css).toMatch(/overflow:\s*hidden/);
+    expect(css).toContain("overscroll-behavior: contain");
+    expect(css).not.toMatch(/row-reverse|(?<![-\w])order:/);
   });
 });

@@ -1,4 +1,4 @@
-/* SYSTEM.md §7-2 입력 · 오류 표시, §10 접근성 계약. 색·서체·radius는 토큰 참조만 쓴다(D-20). */
+/* SYSTEM.md §7-2 입력 · 오류 표시, §10 접근성 계약(스킨 A). 값은 역할 토큰만 쓴다. */
 
 .row {
   margin-bottom: var(--s-4);
@@ -7,8 +7,8 @@
 .label {
   display: block;
   margin-bottom: var(--s-1);
-  color: var(--muted);
-  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-size: var(--text-aux);
   font-weight: var(--fw-medium);
 }
 
@@ -19,29 +19,29 @@
 .input {
   box-sizing: border-box;
   width: 100%;
-  height: var(--control-h);
+  height: var(--field-h, var(--control-h));
   padding: 0 var(--s-2);
-  border: var(--line-w) solid var(--line-ui);
-  border-radius: var(--radius);
-  background: var(--bg);
-  color: var(--fg);
-  font-size: var(--fs-base);
+  border: var(--line-w) solid var(--border-control);
+  border-radius: var(--radius-control);
+  background: var(--surface-base);
+  color: var(--text-strong);
+  font-size: var(--text-body);
 }
 
 .input::placeholder {
-  color: var(--faint);
+  color: var(--text-faint);
 }
 
 .input:focus-visible {
-  border-color: var(--line-ui);
+  border-color: var(--border-control);
   outline: var(--focus-w) solid var(--focus);
   outline-offset: var(--focus-offset);
 }
 
-/* 오류 칸은 포커스 중에도 --danger 테두리다(포커스 링은 그대로) — 틀림 직후 포커스가 칸에 남는다(DOM 감사 F2). */
+/* 오류 칸은 포커스 중에도 위험 테두리다(포커스 링은 그대로) — 틀림 직후 포커스가 칸에 남는다(DOM 감사 F2). */
 .inputError,
 .inputError:focus-visible {
-  border-color: var(--danger);
+  border-color: var(--status-danger);
 }
 
 .numeric {
@@ -49,21 +49,21 @@
   text-align: right;
 }
 
-/* 04.3-02 UI-SPEC 개정 ⑦(a) — 외부 수령자 화면 전용. */
+/* 04.3-02 UI-SPEC 개정 ⑦(a) — 외부 수령자 화면 전용(48 · 글자 15 고정). .input 높이 규칙 뒤에 둬 같은 특이도에서 --field-h가 덮지 않는다. */
 .external {
   height: var(--s-12);
-  font-size: var(--fs-md);
+  font-size: var(--text-prose);
 }
 
 .error {
   margin: var(--s-1) 0 0;
-  color: var(--danger);
-  font-size: var(--fs-sm);
+  color: var(--status-danger);
+  font-size: var(--text-aux);
 }
 
-/* SYSTEM.md §6-5 ①-k — 외부 수령자 화면의 칸 오류는 문장이라 --fs-md(15). */
+/* SYSTEM.md §6-5 ①-k — 외부 수령자 화면의 칸 오류는 문장이라 --text-prose(15). */
 .errorExternal {
-  font-size: var(--fs-md);
+  font-size: var(--text-prose);
 }
 
 /* PC 폼: 라벨 왼쪽 96px. 폰(<700px)은 위 규칙(row가 세로로 쌓인다)이 기본값이다 */
@@ -74,9 +74,12 @@
     gap: var(--s-2);
   }
 
+  /* 라벨 칸을 --s-1 넓히고 같은 만큼 오른쪽 여백을 음수로 물려 입력 칸 x는 그대로(라벨 열 + --s-2) 둔다. WebKit은 같은 글꼴을 크롬보다 조금 넓게 그려
+     96에 딱 맞던 라벨(「알림 발송 건수 상한」 등)이 사파리에서만 2줄이 됐다(#158 사파리 비교) — 글자와 입력 칸 사이는 --s-1 이상 남는다. */
   .label {
-    flex: 0 0 var(--label-w);
+    flex: 0 0 calc(var(--label-w) + var(--s-1));
     margin-bottom: 0;
+    margin-inline-end: calc(-1 * var(--s-1));
     padding-top: var(--s-1);
   }
 

@@ -1,5 +1,5 @@
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
-import { PageHeader } from "@/ui/page-header/PageHeader";
+import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 
 // SYSTEM.md §6-9 오류 페이지 — 404(C①) 변종. 존재하지 않는 URL은 로그인 여부를
 // 모르는 상태이므로 셸 밖에서 렌더된다(C②) — (app) 라우트 그룹에 속하지 않는
@@ -9,12 +9,13 @@ import { PageHeader } from "@/ui/page-header/PageHeader";
 export default function NotFound() {
   return (
     <main>
-      <PageHeader title="페이지 찾을 수 없음" titleSize="2xl" />
-      <ListEmpty
-        message="페이지 없음 또는 이동됨"
-        action={{ label: "첫 화면으로", href: "/" }}
-        tone="error"
-      />
+      <DetailScreen title="페이지 찾을 수 없음">
+        <ListEmpty
+          message="페이지 없음 또는 이동됨"
+          action={{ label: "첫 화면으로", href: "/" }}
+          tone="error"
+        />
+      </DetailScreen>
     </main>
   );
 }

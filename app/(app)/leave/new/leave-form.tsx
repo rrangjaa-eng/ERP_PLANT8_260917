@@ -314,7 +314,7 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
 
   return (
     <>
-      <Form id="leave-form" onSubmit={handleSubmit} onKeyDown={handleKeyDown}>
+      <Form id="leave-form" layout="page" onSubmit={handleSubmit} onKeyDown={handleKeyDown}>
         <Form.Field id="kind" label="종류" width="select">
           <Select
             id="kind"

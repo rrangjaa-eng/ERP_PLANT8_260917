@@ -1,19 +1,19 @@
-/* 04.1-02 연차 신청 폼 첫 형태 — projects.module.css의 입력 칸과 같은 토큰(새 값 없음). */
+/* 04.1-02 연차 신청 폼 첫 형태 → 04.6-18 스킨 A 역할 토큰. 사람 상세 연차 섹션(admin/people/[id]/leave-section) · 결재함이 같이 쓰는 클래스가 있다. */
 .textInput {
   box-sizing: border-box;
   width: 100%;
-  height: var(--control-h);
+  height: var(--field-h);
   padding: 0 var(--s-2);
-  border: var(--line-w) solid var(--line-ui);
-  border-radius: var(--radius);
-  background: var(--bg);
-  color: var(--fg);
+  border: var(--line-w) solid var(--border-control);
+  border-radius: var(--radius-control);
+  background: var(--surface-base);
+  color: var(--text-strong);
   font-family: var(--font-sans);
-  font-size: var(--fs-base);
+  font-size: var(--text-body);
 }
 
 .textInput[aria-invalid="true"] {
-  border-color: var(--danger);
+  border-color: var(--status-danger);
 }
 
 .textInput:focus-visible {
@@ -22,16 +22,8 @@
 }
 
 .blockedReason {
-  color: var(--danger);
-  font-size: var(--fs-sm);
-}
-
-.headerLine {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s-2);
-  align-items: baseline;
-  font-variant-numeric: tabular-nums;
+  color: var(--status-danger);
+  font-size: var(--text-aux);
 }
 
 .link {
@@ -43,13 +35,13 @@
 
 /* §4-4 · §7-1 3차 밑줄 1px → hover 2px. */
 .link:hover {
-  text-decoration-thickness: var(--line-w-strong);
+  text-decoration-thickness: var(--underline-w-hover);
 }
 
 /* 04.1-05 문서 화면 — 잔고 행 2행 · 잔여 초과(S3), 반려 행 사유 줄. */
 .subLine {
   display: block;
-  font-size: var(--fs-sm);
+  font-size: var(--text-aux);
   word-break: keep-all;
   /* 반려 사유는 여러 줄로 적힌다(사용자 결정 2026-09-29 ②) — 줄을 지킨다. */
   white-space: pre-line;
@@ -57,44 +49,59 @@
 
 .balance-default {
   display: block;
-  font-variant-numeric: tabular-nums;
 }
 
 .balance-muted {
   display: block;
-  color: var(--muted);
-  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-size: var(--text-aux);
 }
 
 .balance-warning {
   display: block;
-  color: var(--warning);
+  color: var(--status-warning);
   font-weight: var(--fw-medium);
 }
 
-/* 04.1-06 연차 목록(S1) — 머리 잔고 줄(formatBalanceLines가 준 한 줄 텍스트 그대로) · 필터 줄(연도 select 200 · 1차) · 행 링크. */
+/* 04.1-06 연차 목록(S1) — 머리 잔고 줄(formatBalanceLines가 준 한 줄 텍스트 그대로) · 필터 줄 칸(연도 select 200 · 연도 글자) · 행 링크. */
 .balanceLines {
-  margin: 0 0 var(--s-3);
-  font-variant-numeric: tabular-nums;
+  margin: 0;
 }
 
 .balanceLines p {
   margin: 0;
 }
 
-.filterRow {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s-2) var(--s-4);
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: var(--s-3);
-}
-
 .yearField {
   display: inline-block;
-  width: 200px;
+  width: var(--field-w-select);
   max-width: 100%;
+}
+
+.yearLabel {
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+}
+
+/* 연차 문서 뼈대(`[id]/loading.tsx`) — 300ms 지연 표시: 처음 opacity 0, 300ms 뒤 한 번만 1로(길이 0 키프레임). 값 줄 = 면 색 막대 하나. */
+@keyframes appear {
+  to {
+    opacity: 1;
+  }
+}
+
+.kvSkeleton {
+  opacity: 0;
+  animation-name: appear;
+  animation-duration: 0s;
+  animation-delay: 300ms;
+  animation-fill-mode: forwards;
+}
+
+.kvBar {
+  display: block;
+  height: var(--s-4);
+  background: var(--surface-muted);
 }
 
 .noteCell {
@@ -143,7 +150,7 @@ tr:has(.foldLink) {
 
 @media (max-width: 699.98px) {
   .balanceLines {
-    font-size: var(--fs-sm);
+    font-size: var(--text-aux);
   }
 
   .rowLink {
@@ -185,10 +192,10 @@ tr:has(.foldLink) {
   .formBar {
     position: fixed;
     right: 0;
-    bottom: calc(var(--touch-min) + var(--line-w-strong));
+    bottom: calc(var(--touch-min) + var(--line-w));
     left: 0;
     padding: 0 var(--pad-page) var(--s-2);
-    background: var(--bg);
+    background: var(--surface-canvas);
     z-index: var(--z-bar);
   }
 
@@ -223,7 +230,7 @@ tr:has(.foldLink) {
     justify-content: center;
     width: 100%;
     height: var(--touch-min);
-    font-size: var(--fs-base);
+    font-size: var(--text-body);
   }
 
   .blockedLine,
@@ -244,7 +251,6 @@ tr:has(.foldLink) {
   gap: var(--s-1) var(--s-3);
   align-items: baseline;
   margin-bottom: var(--s-1);
-  font-variant-numeric: tabular-nums;
 }
 
 .wrapText {
@@ -260,8 +266,8 @@ tr:has(.foldLink) {
 }
 
 .sectionLabel {
-  color: var(--muted);
-  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-size: var(--text-aux);
   font-weight: var(--fw-medium);
 }
 

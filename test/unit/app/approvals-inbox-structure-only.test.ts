@@ -42,6 +42,6 @@ describe("결재함 — 구조 값만 받은 `내 결재` 행(결재 정보 꺼�
     expect(html).toMatch(/<button[^>]*>(<span[^>]*>)*반려/);
     const link = html.match(/<a [^>]*href="\/leave\/doc-1"[^>]*>/)?.[0] ?? "";
     expect(link).toContain(styles.rowLink);
-    expect(link).not.toContain(styles.wideOnly);
+    expect(link).not.toContain(styles.rowTap);
   });
 });

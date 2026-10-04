@@ -1098,14 +1098,13 @@ async function numberColumnCells(table: Locator) {
         text: (cell?.textContent ?? "").trim(),
         textAlign: style.textAlign,
         whiteSpace: style.whiteSpace,
-        fontVariantNumeric: style.fontVariantNumeric,
       };
     });
   });
 }
 
 test.describe("견적 줄 「번호」 열 숫자 규칙 (PR #104 [지시] (나) — SYSTEM §2 숫자 칸)", () => {
-  test("1280에서 현재 차수 견적 줄 표와 이전 차수 읽기 표의 「번호」 머리글·칸이 숫자 규칙(오른쪽 정렬 · tabular-nums · nowrap)이다 (PR #104 (나))", async ({ page }) => {
+  test("1280에서 현재 차수 견적 줄 표와 이전 차수 읽기 표의 「번호」 머리글·칸이 숫자 규칙(오른쪽 정렬 · nowrap)이다 (PR #104 (나) — tabular-nums는 04.6-07 이후 ui/num 몫)", async ({ page }) => {
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
     const project = await makeProject({
@@ -1123,7 +1122,9 @@ test.describe("견적 줄 「번호」 열 숫자 규칙 (PR #104 [지시] (나)
     await expect(quoteRows(page)).toHaveCount(2);
     await expect(quoteTable(page).getByRole("columnheader", { name: "번호", exact: true })).toBeVisible();
 
-    const rule = { textAlign: "right", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" };
+    // 04.6-08 합본: 표 CSS에서 font-variant-numeric이 빠졌다(04.6-07 · stylelint가 ui/num에만 허용). 칸의 숫자 폭은 Num 요소 몫이고
+    // 번호 칸(span.rowNumber)을 Num으로 감싸는 일은 견적 표 소유 플랜(04.6-12)으로 넘겼다 — 여기서는 정렬·nowrap만 잰다.
+    const rule = { textAlign: "right", whiteSpace: "nowrap" };
     const expected = [
       { text: "번호", ...rule },
       { text: "1", ...rule },
@@ -1138,8 +1139,8 @@ test.describe("견적 줄 「번호」 열 숫자 규칙 (PR #104 [지시] (나)
   });
 });
 
-// PR #104 후속 F(2) — DR-104-02(/design-review): 비활성 1차 「일괄 저장」 안 kbd가 on-accent 값(opacity 0.8)이라 --surface 면 위 대비 3.34.
-// DR-104-04: 「번호」 본문 칸 글자가 14px 본문 색이라 행 번호 모양(§7-3 첫 칸: --fs-xs · --faint)이 아니다. 글자 요소(td 첫 자식, 없으면 td)를 잰다.
+// PR #104 후속 F(2) — DR-104-02(/design-review): 비활성 1차 「일괄 저장」 안 kbd가 on-accent 값(opacity 0.8)이라 --surface-muted 면 위 대비 3.34.
+// DR-104-04: 「번호」 본문 칸 글자가 14px 본문 색이라 행 번호 모양(§7-3 첫 칸: --text-tag · --text-faint)이 아니다. 글자 요소(td 첫 자식, 없으면 td)를 잰다.
 function parseRgb(value: string): [number, number, number] {
   const parts = value.match(/[\d.]+/g)?.slice(0, 3).map(Number);
   if (!parts || parts.length < 3) throw new Error(`색을 읽을 수 없음: ${value}`);
@@ -1191,8 +1192,51 @@ async function bodyNumberLook(table: Locator) {
   });
 }
 
+// 「번호」 본문 칸 모양의 기대 값 — 같은 표 안에 탐침 요소(display: inline-block + 역할 토큰 다섯)를 잠깐 붙여 읽은 계산 값이다(사용자 결정 (나)).
+// 리터럴이 아니라 역할 토큰이라 값이 바뀌면 토큰만 고친다: --text-tag · --fw-medium · --lh-head · --text-faint · --row-number-w.
+function numberCellRoleLook(table: Locator) {
+  return table.evaluate((node) => {
+    const probe = document.createElement("span");
+    probe.style.display = "inline-block";
+    probe.style.minWidth = "var(--row-number-w)";
+    probe.style.fontSize = "var(--text-tag)";
+    probe.style.fontWeight = "var(--fw-medium)";
+    probe.style.lineHeight = "var(--lh-head)";
+    probe.style.color = "var(--text-faint)";
+    (node.parentElement ?? node).append(probe);
+    const style = getComputedStyle(probe);
+    const look = { fontSize: style.fontSize, fontWeight: style.fontWeight, lineHeight: style.lineHeight, color: style.color, minWidth: style.minWidth };
+    probe.remove();
+    return look;
+  });
+}
+
+// 토큰 값을 브라우저 계산 글자 크기 문자열(예 13px)로 바꾼다(tokenAsColor와 같은 꼴 — 04.6-08).
+function tokenAsFontSize(page: Page, name: string): Promise<string> {
+  return page.evaluate((token) => {
+    const probe = document.createElement("span");
+    probe.style.fontSize = `var(${token})`;
+    document.body.append(probe);
+    const size = getComputedStyle(probe).fontSize;
+    probe.remove();
+    return size;
+  }, name);
+}
+
+// 토큰 값을 브라우저 계산 색 문자열(rgb(...))로 바꾼다(people.spec.ts tokenAsColor와 같은 꼴 — 04.6-08 M5).
+function tokenAsColor(page: Page, name: string): Promise<string> {
+  return page.evaluate((token) => {
+    const probe = document.createElement("span");
+    probe.style.color = `var(${token})`;
+    document.body.append(probe);
+    const color = getComputedStyle(probe).color;
+    probe.remove();
+    return color;
+  }, name);
+}
+
 test.describe("PR #104 후속 — 비활성 1차 kbd (DR-104-02) · 「번호」 본문 칸 모양 (DR-104-04)", () => {
-  test("DR-104-02 — 편집 없는 비활성 「일괄 저장」 kbd는 opacity 1 · --line 테두리 · --faint 글자, 면 위 대비 4.5 이상 · 활성 kbd는 그대로(0.8)", async ({ page }) => {
+  test("DR-104-02 — 편집 없는 비활성 「일괄 저장」 kbd는 opacity 1 · --border-strong 테두리 · --text-faint 글자, 면 위 대비 4.5 이상 · 활성 kbd는 그대로(0.8)", async ({ page }) => {
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
     const project = await makeProject({ teamId: team.id, pmUserId: pm.userId, lines: [{ itemName: "kbd 줄", unitPrice: 1_000_000, execution: 600_000 }] });
@@ -1205,8 +1249,8 @@ test.describe("PR #104 후속 — 비활성 1차 kbd (DR-104-02) · 「번호」
       await expect(save).toHaveAttribute("aria-disabled", "true");
       const look = await saveKbdLook(save);
       expect.soft(look.opacity, `비활성 kbd opacity @${width}`).toBe("1");
-      expect.soft(look.borderTopColor, `비활성 kbd 테두리 @${width}`).toBe("rgb(207, 219, 215)");
-      expect.soft(look.color, `비활성 kbd 글자 @${width}`).toBe("rgb(95, 110, 106)");
+      expect.soft(look.borderTopColor, `비활성 kbd 테두리 @${width}`).toBe(await tokenAsColor(page, "--border-strong"));
+      expect.soft(look.color, `비활성 kbd 글자 @${width}`).toBe(await tokenAsColor(page, "--text-faint"));
       const ratio = contrastOnSurface(parseRgb(look.color), Number(look.opacity), parseRgb(look.background));
       expect.soft(ratio, `비활성 kbd 대비 @${width}`).toBeGreaterThanOrEqual(4.5);
     }
@@ -1220,7 +1264,7 @@ test.describe("PR #104 후속 — 비활성 1차 kbd (DR-104-02) · 「번호」
     expect((await saveKbdLook(active)).opacity, "활성 kbd opacity").toBe("0.8");
   });
 
-  test("DR-104-04 — 1280 현재 격자와 이전 차수 읽기 표의 「번호」 본문 칸 글자가 11px · 600 · 1.4 · --faint · 최소 폭 28px, 머리글은 그대로", async ({ page }) => {
+  test("DR-104-04 — 1280 현재 격자와 이전 차수 읽기 표의 「번호」 본문 칸 글자가 --text-tag · --fw-medium · --lh-head · --text-faint · 최소 폭 --row-number-w, 머리글은 그대로", async ({ page }) => {
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
     const project = await makeProject({
@@ -1239,16 +1283,16 @@ test.describe("PR #104 후속 — 비활성 1차 kbd (DR-104-02) · 「번호」
     await revisionTable(page).getByRole("button", { name: "차수 열기" }).click();
     await expect(previousTable(page, 1).getByText("번호 모양 무대", { exact: true })).toBeVisible();
 
-    const bodyLook = { fontSize: "11px", fontWeight: "600", lineHeight: "15.4px", color: "rgb(95, 110, 106)", minWidth: "28px" };
-    const expectedCells = [
-      { text: "1", ...bodyLook },
-      { text: "2", ...bodyLook },
-    ];
     for (const [label, table] of [["현재 격자", quoteTable(page)], ["이전 차수 읽기 표", previousTable(page, 1)]] as const) {
+      const bodyLook = await numberCellRoleLook(table);
+      const expectedCells = [
+        { text: "1", ...bodyLook },
+        { text: "2", ...bodyLook },
+      ];
       const look = await bodyNumberLook(table);
       expect.soft(look.cells, `${label} 번호 칸`).toEqual(expectedCells);
-      expect.soft(look.head?.fontSize, `${label} 번호 머리글 글자 크기`).toBe("12px");
-      expect.soft(look.head?.color, `${label} 번호 머리글 색은 faint 아님`).not.toBe("rgb(95, 110, 106)");
+      expect.soft(look.head?.fontSize, `${label} 번호 머리글 글자 크기`).toBe(await tokenAsFontSize(page, "--text-aux"));
+      expect.soft(look.head?.color, `${label} 번호 머리글 색은 faint 아님`).not.toBe(await tokenAsColor(page, "--text-faint"));
     }
   });
 });

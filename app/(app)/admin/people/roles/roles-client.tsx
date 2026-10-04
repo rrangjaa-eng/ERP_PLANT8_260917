@@ -1,19 +1,23 @@
 "use client";
 
 import { useRef, useState, type FormEvent } from "react";
-import Link from "next/link";
 import { useAction } from "next-safe-action/hooks";
-import { createRoleAction, renameRoleAction, setRoleWorkScopeAction, archiveRoleAction } from "../actions";
+import {
+  createRoleAction,
+  renameRoleAction,
+  setRoleWorkScopeAction,
+  archiveRoleAction,
+} from "../actions";
 import type { RoleWorkScope } from "@/domain/permissions/roles";
 import { TextField } from "@/ui/input/TextField";
-import { Button } from "@/ui/button/Button";
-import { FormAlert } from "@/ui/form-alert/FormAlert";
+import { Num } from "@/ui/num/Num";
+import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
 import { DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
-import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
+import { StaticTable } from "@/ui/table/StaticTable";
+import { RowActions } from "@/ui/row-actions/RowActions";
+import { PcOnly, PhoneOnly } from "../../pc-only";
 import styles from "../people.module.css";
-
-const NEW_HREF = "/admin/people/roles?new=1#role-form";
 
 export type RoleRowView = {
   id: string;
@@ -29,29 +33,47 @@ function getStringField(formData: FormData, key: string): string {
   return typeof value === "string" ? value : "";
 }
 
-function RoleRow({ role, canArchive }: { role: RoleRowView; canArchive: boolean }) {
+// 폰 P1은 이름 · 업무 범위 · 동작 3열(SYSTEM §7-3), 시드 여부 · 정렬은 접힌 줄이다(04.6 W1-4 B2·B3).
+// 표는 `StaticTable`(R1 · M4)이다 — 편집 칸(이름 · 업무 범위)은 칸 노드로 들어가는 클라이언트 컴포넌트가 그대로 맡는다.
+function RoleNameCell({ role }: { role: RoleRowView }) {
   const [name, setName] = useState(role.name);
-  const { execute: executeRename, result: renameResult } = useAction(renameRoleAction);
-  const [workScope, setWorkScope] = useState<RoleWorkScope>(role.workScope);
-  const { execute: executeWorkScope, result: workScopeResult } = useAction(setRoleWorkScopeAction, {
-    onError: () => setWorkScope(role.workScope),
-  });
-
+  const { execute: executeRename, result: renameResult } =
+    useAction(renameRoleAction);
+  // 폰은 읽기만(사용자 결정 2026-10-03 14:57 KST 카드) — 입력 칸은 폰에서 CSS로 숨고 값만 보인다.
   return (
-    <tr>
-      <td>
+    <>
+      <PhoneOnly>{role.name}</PhoneOnly>
+      <PcOnly>
         <input
           className={styles.select}
           aria-label={`${role.name} 이름`}
           value={name}
           onChange={(event) => setName(event.target.value)}
           onBlur={() => {
-            if (name.trim() && name !== role.name) executeRename({ id: role.id, name });
+            if (name.trim() && name !== role.name)
+              executeRename({ id: role.id, name });
           }}
         />
-        {renameResult.serverError ? <p className={styles.registeredHint}>{renameResult.serverError}</p> : null}
-      </td>
-      <td>
+        {renameResult.serverError ? (
+          <p className={styles.registeredHint}>{renameResult.serverError}</p>
+        ) : null}
+      </PcOnly>
+    </>
+  );
+}
+
+function RoleWorkScopeCell({ role }: { role: RoleRowView }) {
+  const [workScope, setWorkScope] = useState<RoleWorkScope>(role.workScope);
+  const { execute: executeWorkScope, result: workScopeResult } = useAction(
+    setRoleWorkScopeAction,
+    {
+      onError: () => setWorkScope(role.workScope),
+    },
+  );
+  return (
+    <>
+      <PhoneOnly>{role.workScope === "company" ? "전사" : "자기 팀"}</PhoneOnly>
+      <PcOnly>
         <select
           className={styles.select}
           aria-label={`${role.name} 업무 범위`}
@@ -66,20 +88,29 @@ function RoleRow({ role, canArchive }: { role: RoleRowView; canArchive: boolean 
           <option value="team">자기 팀</option>
           <option value="company">전사</option>
         </select>
-        {workScopeResult.serverError ? <p className={styles.registeredHint}>{workScopeResult.serverError}</p> : null}
-      </td>
-      <td>{role.isSeed ? "시드" : "—"}</td>
-      <td className={styles.num}>{role.sortOrder}</td>
-      <td>
-        {role.archivedAt ? (
-          <StatusTag kind="muted" variant="text">
-            보관됨
-          </StatusTag>
+        {workScopeResult.serverError ? (
+          <p className={styles.registeredHint}>{workScopeResult.serverError}</p>
         ) : null}
-        {/* 03-07: 시드 계급·이미 보관된 계급은 버튼 자체가 없다(03-01의
-            isProtected가 서버에서도 거부한다). 쓰기 권한이 없는 계급에도
-            렌더하지 않는다. */}
-        {!role.isSeed && !role.archivedAt && canArchive ? (
+      </PcOnly>
+    </>
+  );
+}
+
+function RoleActionsCell({
+  role,
+  canArchive,
+}: {
+  role: RoleRowView;
+  canArchive: boolean;
+}) {
+  return (
+    <>
+      {role.archivedAt ? <StatusTag status="보관됨" variant="text" /> : null}
+      {/* 03-07: 시드 계급·이미 보관된 계급은 버튼 자체가 없다(03-01의
+          isProtected가 서버에서도 거부한다). 쓰기 권한이 없는 계급에도
+          렌더하지 않는다. */}
+      {!role.isSeed && !role.archivedAt && canArchive ? (
+        <RowActions>
           <DeleteToArchive
             name={role.name}
             onArchive={async () => {
@@ -87,27 +118,56 @@ function RoleRow({ role, canArchive }: { role: RoleRowView; canArchive: boolean 
               if (result?.serverError) throw new Error(result.serverError);
             }}
           />
-        ) : null}
-      </td>
-    </tr>
+        </RowActions>
+      ) : null}
+    </>
   );
 }
 
-// §6-1: 목록이 화면이고 추가는 목록 머리글의 행동이다 — 폼은 ?new=1일 때만
-// 렌더한다(design-review A-H1). 거래처·코드표·사람·법인카드 네 화면이 쓰는
-// 것과 같은 토글이다.
-export function RolesClient({
+export function RolesList({
   roles,
   canArchive,
-  showForm,
 }: {
   roles: RoleRowView[];
   canArchive: boolean;
-  showForm: boolean;
 }) {
-  const formRef = useRef<HTMLFormElement>(null);
+  return (
+    <div className={styles.rolesTable}>
+      <StaticTable
+        editable
+        caption="계급"
+        columns={[
+          { key: "name", header: "이름", priority: "p1" },
+          { key: "workScope", header: "업무 범위", priority: "p1" },
+          { key: "seed", header: "시드 여부", priority: "p2" },
+          { key: "sortOrder", header: "정렬", priority: "p2", align: "right" },
+          { key: "actions", header: "동작", priority: "p1" },
+        ]}
+        rows={roles.map((role) => ({
+          key: role.id,
+          cells: [
+            <RoleNameCell key="name" role={role} />,
+            <RoleWorkScopeCell key="workScope" role={role} />,
+            role.isSeed ? "시드" : "—",
+            <Num key="sortOrder" value={role.sortOrder} unit="count" />,
+            <RoleActionsCell
+              key="actions"
+              role={role}
+              canArchive={canArchive}
+            />,
+          ],
+        }))}
+      />
+    </div>
+  );
+}
+
+// §6-1: 목록이 화면이고 추가는 목록 머리글의 행동이다 — 폼은 page.tsx가 ?new=1일 때만 옆 패널로 렌더한다
+// (design-review A-H1). 성공 뒤(UQ-8 B)는 `PanelForm`이 칸을 비우고 첫 칸에 포커스를 준다.
+export function RoleForm() {
+  const panelRef = useRef<PanelFormHandle>(null);
   const { execute, result, isExecuting } = useAction(createRoleAction, {
-    onSuccess: () => formRef.current?.reset(),
+    onSuccess: () => panelRef.current?.succeed({ status: "계급 추가됨" }),
   });
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -116,54 +176,23 @@ export function RolesClient({
     execute({ name: getStringField(formData, "name") });
   }
 
-  const nameError = result.validationErrors?.name?._errors?.[0];
-
   return (
-    <>
-      {showForm ? (
-        <form ref={formRef} onSubmit={handleSubmit} id="role-form" className="single-column">
-          <TextField id="role-name" name="name" label="이름" required error={nameError} />
-          {result.serverError ? <FormAlert>{result.serverError}</FormAlert> : null}
-          <div className={styles.formActions}>
-            <Button type="submit" variant="primary" pending={isExecuting}>
-              계급 추가
-            </Button>
-            <Link href="/admin/people/roles" className={styles.toggle}>
-              취소
-            </Link>
-          </div>
-        </form>
-      ) : roles.length > 0 ? (
-        // 목록이 비면 §7-7 EMPTY가 같은 이름의 「다음 한 수」를 이미 보이므로
-        // 이 줄은 없다 — 같은 링크를 두 번 그리지 않는다(접근 가능한 이름 중복).
-        <div className={styles.filterRow}>
-          <Link href={NEW_HREF} className={styles.toggle}>
-            계급 추가
-          </Link>
-        </div>
-      ) : null}
-
-      {roles.length === 0 ? (
-        <ListEmpty message="등록된 계급이 없습니다" action={{ label: "계급 추가", href: NEW_HREF }} />
-      ) : (
-      <table className={styles.table}>
-        <caption className="sr-only">계급</caption>
-        <thead>
-          <tr>
-            <th scope="col">이름</th>
-            <th scope="col">업무 범위</th>
-            <th scope="col">시드 여부</th>
-            <th scope="col" className={styles.num}>정렬</th>
-            <th scope="col">동작</th>
-          </tr>
-        </thead>
-        <tbody>
-          {roles.map((role) => (
-            <RoleRow key={role.id} role={role} canArchive={canArchive} />
-          ))}
-        </tbody>
-      </table>
-      )}
-    </>
+    <PanelForm
+      ref={panelRef}
+      id="role-form"
+      label="계급 추가"
+      intent="create"
+      onSubmit={handleSubmit}
+      pending={isExecuting}
+      reason={result.serverError ?? null}
+    >
+      <TextField
+        id="role-name"
+        name="name"
+        label="이름"
+        required
+        error={result.validationErrors?.name?._errors?.[0]}
+      />
+    </PanelForm>
   );
 }

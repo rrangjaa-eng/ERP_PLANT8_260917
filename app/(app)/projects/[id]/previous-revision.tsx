@@ -7,7 +7,9 @@ import { QUOTE_LINE_KINDS, type QuoteLineKind } from "@/domain/quotes/edit-scope
 import { formatForeignLine, formatKrw, formatQuantity } from "@/lib/format-number";
 import { QUOTE_TABLE_PAGE_SIZE } from "@/lib/paging";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
+import { Num } from "@/ui/num/Num";
 import { Table } from "@/ui/table/Table";
+import { TableSkeleton } from "@/ui/table/TableSkeleton";
 import type { TableColumn } from "@/ui/table/types";
 import { toTsv } from "@/ui/table/parse-tsv";
 import { carrySharedEdits, clearDirtyEdits, findOtherRevisionDrafts, loadDirtyEdits, type EnumerableDirtyStorage } from "@/ui/table/use-dirty-storage";
@@ -71,7 +73,11 @@ export function quoteLineReadColumns<Row extends QuoteLineCopyRow>(
   const columns: QuoteLineReadColumn<Row>[] = [
     {
       ...column({ key: "sort", header: "번호", priority: "p3", collapseBelow: 1280, align: "right", text: (row) => String(rowNumber(row)) }),
-      cell: (row: Row) => <span className={styles.rowNumber}>{rowNumber(row)}</span>,
+      cell: (row: Row) => (
+        <span className={styles.rowNumber}>
+          <Num value={rowNumber(row)} unit="count" />
+        </span>
+      ),
     },
     column({ key: "subcategory", header: "소분류", priority: "p3", collapseBelow: 1024, text: (row) => quoteLineGroupLabel(row, subcategoryLabel) }),
     column({ key: "itemName", header: "항목", priority: "p1", text: (row) => row.itemName }),
@@ -183,7 +189,7 @@ export function PreviousRevisionSection({
         {`상세 견적 ${seq}차`}
       </h2>
       {entry === undefined ? (
-        <PreviousRevisionSkeleton />
+        <PreviousRevisionSkeleton references={references} />
       ) : entry.kind === "error" ? (
         <ListEmpty
           tone="error"
@@ -241,24 +247,10 @@ function PreviousRevisionTable({
   );
 }
 
-// §7-7 LOADING — 머리글 + `--surface` 행 3개, 300ms 뒤에만 보인다(CSS 지연).
-function PreviousRevisionSkeleton() {
-  return (
-    <table className={styles.previousSkeleton} aria-hidden="true">
-      <thead>
-        <tr>
-          <th scope="col">&nbsp;</th>
-        </tr>
-      </thead>
-      <tbody>
-        {[0, 1, 2].map((index) => (
-          <tr key={index}>
-            <td>&nbsp;</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
+// §7-7 LOADING — 이 표의 진짜 열 이름을 머리글로, `--surface-muted` 행 3개 · 합계 줄 뼈대, 300ms 뒤에만 보인다(ui/table/TableSkeleton).
+function PreviousRevisionSkeleton({ references }: { references: QuoteLineReadReferences }) {
+  const columns = quoteLineReadColumns<QuoteLineCopyRow>(references, () => 0).map((column) => ({ key: column.key, label: column.header, align: column.align }));
+  return <TableSkeleton columns={columns} withFooter />;
 }
 
 // ── 04-24(DR-4 · W1) — 견적 줄 복사 형식과 이전 차수 보관본 복원 줄 ─────────────────────────────────────────────

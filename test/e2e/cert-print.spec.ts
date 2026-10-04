@@ -210,7 +210,7 @@ test.describe("인쇄 라우트", () => {
     await context.close();
   });
 
-  test("404 변종은 제목이 확인증 인쇄로 남지 않고 바탕이 --surface다(L3)", async ({ browser }) => {
+  test("404 변종은 제목이 확인증 인쇄로 남지 않고 바탕이 --surface-canvas다(L3)", async ({ browser }) => {
     const seeded = await seedSubmittedCert();
     const pmSession = await loggedInContext(browser, pm);
     const admin404 = await loggedInContext(browser, admin);
@@ -224,7 +224,7 @@ test.describe("인쇄 라우트", () => {
       await expect(page).not.toHaveTitle("확인증 인쇄");
       const [surface, main] = await page.evaluate(() => {
         const probe = document.createElement("div");
-        probe.style.background = "var(--surface)";
+        probe.style.background = "var(--surface-canvas)";
         document.body.append(probe);
         const expected = getComputedStyle(probe).backgroundColor;
         probe.remove();
@@ -233,6 +233,27 @@ test.describe("인쇄 라우트", () => {
       });
       expect(main).toBe(surface);
     }
+    await pmSession.context.close();
+    await admin404.context.close();
+  });
+
+  // 웨이브 6 DOM 감사 P5 — 없는 id · 형식이 아닌 id · 권한 없음은 화면만 404 틀이 아니라 HTTP 상태도 404다(loading.tsx 스트리밍이 200을 먼저 보내면 안 된다).
+  test("(P5) 없는 id · 형식 아닌 id · 권한 없음은 응답 상태가 404다 · 같은 주소를 관리자가 열면 200(대조)", async ({ browser }) => {
+    const seeded = await seedSubmittedCert();
+    const pmSession = await loggedInContext(browser, pm);
+    const admin404 = await loggedInContext(browser, admin);
+    for (const { page, url, label } of [
+      { page: pmSession.page, url: printPath(seeded.submissionId), label: "권한 없음" },
+      { page: admin404.page, url: printPath(randomUUID()), label: "없는 id" },
+      { page: admin404.page, url: "/print/certs/not-a-uuid", label: "형식 아닌 id" },
+    ]) {
+      const response = await page.goto(url);
+      expect(response?.status(), label).toBe(404);
+      await expect(notFoundHeading(page)).toBeVisible();
+    }
+    const control = await admin404.page.goto(printPath(seeded.submissionId));
+    expect(control?.status(), "관리자 대조").toBe(200);
+    await expect(admin404.page.getByText(seeded.certNo)).toBeVisible();
     await pmSession.context.close();
     await admin404.context.close();
   });

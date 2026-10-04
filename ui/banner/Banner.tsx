@@ -6,7 +6,7 @@ import styles from "./Banner.module.css";
 // (D①, 조건이 사라질 때까지 지속). §7-11 등급 대조표:
 //   등급 "안내"(role="status") — 예: 임시 비밀번호 사용 중(§6-3/§6-7 이후 내
 //     계정 화면). 이전 app/(app)/account/page.tsx가 쓰던 role="status"와 대응.
-//   등급 "경고"(role="alert", --warning/--warning-weak) — 예: DB 커넥션 한도
+//   등급 "경고"(role="alert", --status-warning/--status-warning-weak) — 예: DB 커넥션 한도
 //     초과(§6-8). 이전 app/admin/system-status/page.tsx가 쓰던 role="alert"와
 //     대응.
 export type BannerKind = "info" | "warning";

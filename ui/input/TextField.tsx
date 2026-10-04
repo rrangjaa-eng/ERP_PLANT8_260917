@@ -24,7 +24,7 @@ export type TextFieldProps = Omit<
    * numeric은 이때 의미가 없다(항상 우측 정렬 + tabular-nums). */
   numberKind?: NumberInputKind;
   /** 04.3-02 UI-SPEC 개정 ⑦(a) — external은 외부 수령자 화면 전용(높이
-   * --s-12 · --fs-md). 기본값은 기존 모양(HTML `size` 속성을 가린다 —
+   * --s-12 · --text-prose). 기본값은 기존 모양(HTML `size` 속성을 가린다 —
    * 이 저장소의 27개 기존 호출부는 그 속성을 쓰지 않는다). */
   size?: "default" | "external";
   /** 칸 밖에 그린 힌트 요소의 id — aria-describedby에 오류 id 뒤로 더한다. */
@@ -59,7 +59,7 @@ function PlainTextField({
   const errorId = `${id}-error`;
 
   return (
-    <div className={size === "external" ? `${styles.row} ${styles.rowExternal}` : styles.row}>
+    <div data-ui="field-row" className={size === "external" ? `${styles.row} ${styles.rowExternal}` : styles.row}>
       <label htmlFor={id} className={styles.label}>
         {label}
       </label>
@@ -113,7 +113,7 @@ function CommaTextField({
   const error = commaError ?? externalError;
 
   return (
-    <div className={styles.row}>
+    <div data-ui="field-row" className={styles.row}>
       <label htmlFor={id} className={styles.label}>
         {label}
       </label>

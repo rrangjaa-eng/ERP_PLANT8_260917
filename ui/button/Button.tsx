@@ -28,14 +28,14 @@ export type ButtonProps = Omit<
   disabledReason?: string;
   /** 이유 요소의 id — 주지 않으면 내부 id. 같은 이유를 다른 비활성 버튼이 aria-describedby로 가리킬 때 준다(04-23 검토 S-3). */
   reasonId?: string;
-  /** 비활성 사유의 색 — block(기본) = --danger, info = --muted(§7-1 개정 ⑦, DR-10, U-4). */
+  /** 비활성 사유의 색 — block(기본) = --status-danger, info = --text-muted(§7-1 개정 ⑦, DR-10, U-4). */
   reasonTone?: ButtonReasonTone;
   /** 이유 옆 다음 한 수 3차(§7-1 「이유 텍스트 + 다음 한 수」) — 이유와 한 덩어리라 좁은 폭에서는 둘이 함께 버튼 아래 줄로 내려간다. 이유가 보일 때만 렌더한다. */
   nextStep?: ReactNode;
   /** 단축키 표기, 라벨 오른쪽에 kbd로 병기(§7-1). */
   shortcut?: string;
   /** 04.3-02 UI-SPEC 개정 ⑦(a) — external은 외부 수령자 화면 전용(높이
-   * --s-12 · --fs-md · 폭 100%, 이유 줄이 버튼 아래). 기본값은 기존 모양. */
+   * --s-12 · --text-prose · 폭 100%, 이유 줄이 버튼 아래). 기본값은 기존 모양. */
   size?: "default" | "external";
   children: ReactNode;
 };
@@ -119,6 +119,8 @@ export function Button({
     >
       <button
         type={type ?? "button"}
+        // 원칙 점검(04.6-29)이 한 화면의 1차 버튼 수를 세는 훅.
+        data-ui={variant === "primary" ? "primary-button" : undefined}
         {...rest}
         aria-disabled={inactive ? "true" : undefined}
         aria-describedby={describedBy}

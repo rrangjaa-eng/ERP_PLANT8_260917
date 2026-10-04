@@ -1,20 +1,27 @@
-/* SYSTEM.md §6-1 목록 템플릿 · §7-3 표 구조(읽기 전용, D-39 — 정식 편집용 표
-   컴포넌트는 Phase 4). 색·서체·radius는 tokens.css 변수만(D-20). 간격 리터럴은
-   허용된다(02-02 결정). */
+/* SYSTEM.md §6-1 목록 템플릿 · §7-3 표 구조 · §6-3 폼 템플릿(D-39). 값은 역할 토큰만 쓴다(스킨 A).
+   04.6-15: 한 건 폼(코드 추가)이 옆 패널로, 표가 StaticTable로, 행 행동이 RowActions로 옮겨 화면별 표·행 행동·폰 칸 접기 규칙을 지웠다.
+   코드표에는 패널 안 select가 없다 — 증빙 종류의 세금 규칙 편집 줄(.taxRuleSection)은 목록 안 페이지 폼 모양이라 PC 라벨 열 격자를 지킨다. */
 
-.filterRow {
+/* 코드표 선택 링크 — 링크 사이 간격이 없으면 두 이름이 「프로젝트 상태증빙 종류」처럼 한 덩어리로 읽힌다(사용자 QA 보고). */
+.tableNav {
   display: flex;
-  justify-content: flex-end;
-  /* 이 줄은 링크가 여럿일 수 있다(코드표 선택 nav) — gap이 없으면 두 이름이
-     「프로젝트 상태증빙 종류」처럼 한 덩어리로 붙어 읽힌다(사용자 QA 보고). */
+  flex-wrap: wrap;
+  align-items: center;
   gap: var(--s-4);
-  margin: var(--s-3) 0;
+}
+
+/* 폰은 1차가 없어(읽기만) 필터 줄이 전폭이다 — 「숨김 포함」이 표 링크 줄에 붙을지는 글꼴이 들어온 뒤의 글자 폭이 정해 첫 렌더 뒤 줄이 움직였다(CLS 0.18, 320).
+   표 링크 줄이 전폭을 차지해 「숨김 포함」은 처음부터 다음 줄에 선다(1차가 있던 때와 같은 배치). */
+@media (max-width: 699.98px) {
+  .tableNav {
+    flex: 1 1 100%;
+  }
 }
 
 .toggle {
-  font-size: var(--fs-sm);
+  font-size: var(--text-aux);
   font-weight: var(--fw-medium);
-  color: var(--accent);
+  color: var(--text-link);
   text-decoration: underline;
   text-decoration-thickness: var(--line-w);
   text-underline-offset: var(--underline-offset);
@@ -22,21 +29,18 @@
 
 /* §4-4 · §7-1 3차 밑줄 1px → hover 2px. */
 .toggle:hover {
-  text-decoration-thickness: var(--line-w-strong);
+  text-decoration-thickness: var(--underline-w-hover);
 }
 
-/* DR-P4-01: 현재 표 링크는 형제 링크와 구분한다 — §7-16 「현재 번호는
-   --fg 700, 밑줄 없음」·ui/shell/TopBar.module.css .navLink[aria-current]와
+/* DR-P4-01: 현재 표 링크는 형제 링크와 구분한다 — §7-16 「현재 번호는 강한 글자 700, 밑줄 없음」·ui/shell/TopBar.module.css .navLink[aria-current]와
    같은 결. */
 .toggle[aria-current="page"] {
-  color: var(--fg);
+  color: var(--text-strong);
   font-weight: var(--fw-bold);
   text-decoration: none;
 }
 
-/* §3 터치 목표: 폰에서 모든 행동 요소 최소 44×44. 밑줄 링크는 글자 줄 높이
-   (19px 안팎)로 찌그러져 있었다 — 공유 Button .tertiary와 같은 폰 전용
-   패턴으로 히트 영역만 키운다(PC는 그대로). */
+/* §3 터치 목표: 폰에서 모든 행동 요소 최소 44×44. 밑줄 링크는 글자 줄 높이로 찌그러져 있었다 — 히트 영역만 키운다(PC는 그대로). */
 @media (max-width: 699.98px) {
   .toggle {
     display: inline-flex;
@@ -47,67 +51,23 @@
   }
 }
 
-/* 행 안 동작 사이 --s-4 — SYSTEM §6-1, 사람 목록 people.module.css의 .rowActions와 같은 값이다. 위험한 동작(삭제)은 떨어뜨려 둔다. */
-.rowActions {
-  display: inline-flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: var(--s-4);
+/* 설명 읽기 전용 글자 — 낱말을 자르지 않고 줄바꿈해 전문을 보인다(§7-3 「항목명은 keep-all」). */
+.readOnlyText {
+  word-break: keep-all;
 }
 
-@media (max-width: 699.98px) {
-  .rowActions {
-    flex-wrap: wrap;
-  }
-}
-
-.table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.table th {
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  color: var(--muted);
-  text-align: left;
-  padding: var(--cell-pad-y) var(--cell-pad-x);
-  border-bottom: var(--line-w-strong) solid var(--line-strong);
-}
-
-/* 표 칸에는 min-height가 듣지 않는다 — 전역 border-box라 height가 패딩 포함 최소 높이로 동작한다(holidays.module.css 선례).
-   입력 칸이 없는 보관 행이 35.39px로 --row-min(36) 미만이었다(PR #111 독립 DOM 감사 · table-row-min E2E 재현). */
-.table td {
-  height: var(--row-min);
-  padding: var(--cell-pad-y) var(--cell-pad-x);
-  font-size: var(--fs-base);
-  border-bottom: var(--line-w) solid var(--line);
-}
-
-.table tbody tr:hover td {
-  background: var(--surface);
-}
-
-/* §2-4: 숫자 칸은 우측 정렬 + tabular-nums + nowrap(corp-cards .last4 선례). */
-.table .num {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  letter-spacing: var(--ls-num);
-}
-
-/* 03-06: 증빙 종류 항목 아래 세금 규칙 편집 섹션. */
+/* 03-06: 증빙 종류 항목 아래 세금 규칙 편집 섹션(StaticTable 행 아래 전폭 줄). */
 .taxRuleSection {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s-3);
   padding: var(--s-2) var(--cell-pad-x) var(--s-3);
-  background: var(--surface);
+  background: var(--surface-muted);
 }
 
 .taxRuleHint {
-  font-size: var(--fs-sm);
-  color: var(--muted);
+  font-size: var(--text-aux);
+  color: var(--text-muted);
   width: 100%;
 }
 
@@ -115,14 +75,14 @@
   display: flex;
   flex-direction: column;
   gap: var(--s-1);
-  font-size: var(--fs-sm);
+  font-size: var(--text-aux);
   font-weight: var(--fw-medium);
-  color: var(--muted);
+  color: var(--text-muted);
   margin: var(--s-2) 0;
 }
 
-/* §6-3 · §7-2 · §7-15 — PC 폼 라벨 열 96(--label-w) + --s-2(TextField · Form.Field와
-   같은 열), select 200. 폰(<700px)은 위 세로 쌓기가 기본값이다. */
+/* §6-3 · §7-2 · §7-15 — 페이지 폼 모양: PC 라벨 열 96(--label-w) + --s-2(TextField · Form.Field와 같은 열), select는 칸 폭 역할 토큰
+   (--field-w-select). 폰(<700px)은 위 세로 쌓기가 기본값이다. */
 @media (min-width: 700px) {
   .selectLabel {
     display: grid;
@@ -141,87 +101,39 @@
   }
 
   .selectLabel > select {
-    width: 200px;
+    width: var(--field-w-select);
     max-width: 100%;
   }
 }
 
-/* MAST-04 「수정」의 행 인라인 이름 입력 전용. 폭을 칸에 맞추지 않으면
-   <td> 안에서 브라우저 기본 입력 폭(~170px+)을 그대로 써서 폰 375에서 표가
-   뷰포트를 넘는다(실측 489 > 375) — people.module.css의 .select가 defect 3
-   때 같은 이유로 width: 100%를 받았다. 여기서는 등록 폼의 <select> 렌더를
-   건드리지 않으려고 공유 .select를 넓히는 대신 별도 클래스로 둔다. */
+/* MAST-04 「수정」의 행 인라인 이름 입력 전용. 폭을 칸에 맞추지 않으면 <td> 안에서 브라우저 기본 입력 폭을 그대로 써서 폰 375에서 표가
+   뷰포트를 넘는다(실측 489 > 375) — 공유 .select를 넓히는 대신 별도 클래스로 둔다. */
 .labelInput {
   box-sizing: border-box;
   width: 100%;
-  height: var(--control-h);
-  border: var(--line-w) solid var(--line-ui);
-  background: var(--bg);
+  height: var(--field-h);
+  border: var(--line-w) solid var(--border-control);
+  border-radius: var(--radius-control);
+  background: var(--surface-base);
+  color: var(--text-strong);
   padding: 0 var(--s-2);
-  font-size: var(--fs-base);
+  font-size: var(--text-body);
 }
 
-/* §7-2 오류: 입력 테두리 --danger 1px + 입력 아래 --fs-sm --danger 한 줄.
-   처음엔 힌트용 .taxRuleHint(--muted)를 재사용해서 실패가 회색으로 나왔다
-   — 이 코드가 따라 한 계급 화면(.registeredHint)은 --danger로 맞게 돼 있다. */
+.labelInput:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+/* §7-2 오류: 입력 테두리 위험 색 1px + 입력 아래 보조 크기 위험 색 한 줄. */
 .labelInputError {
-  border-color: var(--danger);
+  border-color: var(--status-danger);
 }
 
 .labelError {
   margin: var(--s-1) 0 0;
-  font-size: var(--fs-sm);
-  color: var(--danger);
-}
-
-/* 04-25(D-93 · S14 overflow): 설명 열(세 번째 칸)은 긴 글자 열 — 낱말을
-   자르지 않고 줄바꿈해 전문을 보인다(§7-3 「항목명은 keep-all」). */
-.table td:nth-child(3) {
-  word-break: keep-all;
-}
-
-/* 04-25(D-93 · S14 overflow, 2026-09-23 사용자 확정) — 폰 칸 접기(§7-3).
-   열 우선순위: 1 값 P3 · 2 이름 P1 · 3 설명 P2 · 4 정렬 P3 · 5 상태 P1 · 6 동작 P3.
-   설명 칸은 한 번만 렌더하고 자리만 옮긴다 — 행을 두 줄 격자로 만들어
-   이름·상태 아래 접힌 줄(라벨 없이 값만, --fs-sm --muted)로 내린다. 행 구분선은
-   두 줄을 한 행으로 묶도록 칸이 아니라 행에 긋는다. 증빙 종류의 세금 규칙
-   행(칸 하나, colSpan)은 줄 전체를 그대로 쓴다. 상태 열 폭은 행마다 흔들리지
-   않게 고정한다(머리글과 칸이 같은 x). */
-@media (max-width: 699.98px) {
-  .table tr {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 6em;
-  }
-
-  .table tbody tr {
-    border-bottom: var(--line-w) solid var(--line);
-  }
-
-  .table td {
-    border-bottom: 0;
-    /* 폰은 grid 배치 — 칸 높이를 고정하지 않는다(설명 칸 min-height: 0 유지). */
-    height: auto;
-  }
-
-  .table tr > :nth-child(1):not(:only-child),
-  .table th:nth-child(3),
-  .table tr > :nth-child(4),
-  .table tr > :nth-child(6) {
-    display: none;
-  }
-
-  .table td:nth-child(3) {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    min-height: 0;
-    padding-top: 0;
-    font-size: var(--fs-sm);
-    color: var(--muted);
-  }
-
-  .table td:only-child {
-    grid-column: 1 / -1;
-  }
+  font-size: var(--text-aux);
+  color: var(--status-danger);
 }
 
 /* 04-10(D-93 · DR-29) — 설명 칸: 입력 + 40자 초과 글자 수를 한 줄에. */
@@ -232,22 +144,24 @@
 }
 
 .descriptionCount {
-  font-size: var(--fs-sm);
-  color: var(--danger);
+  font-size: var(--text-aux);
+  color: var(--status-danger);
   white-space: nowrap;
 }
 
+/* 증빙 종류 세금 규칙 select(페이지 폼 모양) — 같은 줄 입력과 높이를 맞춘다. */
 .select {
-  height: var(--control-h);
-  border: var(--line-w) solid var(--line-ui);
-  background: var(--bg);
+  box-sizing: border-box;
+  height: var(--field-h);
+  border: var(--line-w) solid var(--border-control);
+  border-radius: var(--radius-control);
+  background: var(--surface-base);
+  color: var(--text-strong);
   padding: 0 var(--s-2);
-  font-size: var(--fs-base);
+  font-size: var(--text-body);
 }
 
-/* vendors.module.css와 같은 결 — 폼 제출 버튼 + 취소 링크를 한 줄에. */
-.formActions {
-  display: flex;
-  align-items: center;
-  gap: var(--s-3);
+.select:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
 }

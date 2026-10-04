@@ -1,22 +1,32 @@
-/* SYSTEM.md §7-3 + 보강 (가)~(아) — 표. 색·서체·radius는 토큰만(D-20). */
+/* SYSTEM.md §7-3 + 보강 (가)~(아) — 표(스킨 A). 값은 역할 토큰만. 숫자 칸 글꼴 숫자 폭은 Num 컴포넌트 몫. */
 
+/* 표 면 — 1px 테두리 · r8 · 옅은 그림자. 모서리는 overflow: clip으로 자른다(hidden이 아니라 clip — sticky 머리글의
+   스크롤 기준을 바꾸지 않는다). 칸 선은 칸에 긋는 방식이라 separate 모델이다. */
 .table {
   width: 100%;
-  border-collapse: collapse;
-  font-size: var(--fs-base);
+  border: var(--line-w) solid var(--border-surface);
+  border-collapse: separate;
+  border-spacing: 0;
+  border-radius: var(--radius-surface);
+  background: var(--surface-base);
+  box-shadow: var(--shadow-surface);
+  font-size: var(--text-body);
+  overflow: clip;
 }
 
 .headerCell {
   position: sticky;
   top: 0;
   z-index: var(--z-sticky);
-  padding: var(--cell-pad-y) var(--cell-pad-x);
-  border-bottom: var(--line-w-strong) solid var(--line-strong);
-  background: var(--bg);
-  color: var(--muted);
-  font-size: var(--fs-sm);
+  padding: var(--s-3) var(--cell-pad-x);
+  border-bottom: var(--line-w) solid var(--border-row);
+  background: var(--surface-head);
+  color: var(--text-muted);
+  font-size: var(--text-aux);
   font-weight: var(--fw-medium);
   text-align: left;
+  /* body의 overflow-wrap: anywhere는 min-content를 한 글자로 줄여 좁은 표가 머리글 낱말을 쪼갠다(04.6 W1-4 C4·C5) — 머리글은 낱말을 지킨다. */
+  overflow-wrap: normal;
 }
 
 /* 04-18(§6-1) — 정렬 머리글 링크: 머리글 글자 색 · 크기 그대로, 밑줄은 hover · focus에서만(행동 링크처럼 보이지 않게). */
@@ -46,27 +56,91 @@
   stroke-linejoin: round;
 }
 
-/* (가) — 편집 가능한 셀이 하나라도 있으면 --g-100 + --g-950 머리글(편집
-   가능 신호). 읽기 표는 흰 바탕 그대로다. */
+/* (가) — 편집 가능한 셀이 하나라도 있으면 선택 면 + --text-on-tint(g-950) 글자 머리글(편집
+   가능 신호, SYSTEM 894). 읽기 표는 머리글 면 그대로다. */
 .editable .headerCell {
-  background: var(--g-100);
-  color: var(--g-950);
+  background: var(--surface-selected);
+  color: var(--text-on-tint);
 }
 
+/* 입력 칸이 있는 정적 표(코드표 · 계급)는 폰(<700)에서 읽기 전용이라 편집 셀이 0이다 — 머리글은 읽기 표 면 그대로(SYSTEM 894 「없으면 흰 바탕」).
+   폭 판정은 CSS 미디어쿼리라 서버 렌더 첫 화면부터 맞는다(JS 폭 감지는 수화 뒤에 바뀌어 CLS). */
+@media (max-width: 699.98px) {
+  .inputCells.editable .headerCell {
+    background: var(--surface-head);
+    color: var(--text-muted);
+  }
+}
+
+/* §7-2 「표 안 입력: 테두리 없이 아래 1px --accent 밑줄 + focus 링. 셀 배경 --g-50」 — 입력 칸이 있는 정적 표(코드표 · 계급, `StaticTable editable`).
+   호출부 입력 클래스(.labelInput · .select — 패널 폼과 공유)보다 앞서도록 표 안 후손 선택자로 건다. 오류(aria-invalid)는 밑줄 색만 위험 색이다. */
+.inputCells :is(input:not([type="checkbox"], [type="radio"], [type="hidden"]), select) {
+  border: 0;
+  border-bottom: var(--line-w) solid var(--accent);
+  border-radius: 0;
+  background: var(--accent-weak);
+}
+
+.inputCells :is(input, select)[aria-invalid="true"] {
+  border-bottom-color: var(--status-danger);
+}
+
+/* 행 높이 --row-h는 칸 높이로 건다(table-cell은 min-height가 안 먹는다 — 칸이 줄어들 수 없어 최솟값으로 동작).
+   첫·끝 칸은 표 면 안쪽 여백 --s-4. 마지막 행 아래 선은 없다(아래 마지막 tbody 규칙). */
 .cell {
+  height: var(--row-h);
+  /* SYSTEM §2 `--text-body` 행간 「표 1.5 · 산문 1.6」 — 본문 1.6 상속이 아니다(웨이브 6 J3 · 사용자 채팅 지시 2026-10-03 22:35 KST). 머리글은 본문 행간 1.6 그대로. */
+  line-height: var(--lh-table);
   padding: var(--cell-pad-y) var(--cell-pad-x);
-  border-bottom: var(--line-w) solid var(--line);
+  border-bottom: var(--line-w) solid var(--border-row);
   vertical-align: top;
 }
 
-/* §7-3 「행: hover --surface」 — 읽기 표(편집 셀 0개)의 줄. 편집 표는 편집 셀 hover(.editableCell)가 대신한다. */
-.table:not(.editable) tbody tr:hover > .cell {
-  background: var(--surface);
+/* 행 머리글(`<th scope="row">` — `StaticTable`의 rowHeader 열)은 같은 행 칸과 같은 모양이다 — UA 기본 th의 굵게 · 가운데 정렬을 지운다
+   (사람 목록 DR-4, 사용자 결정 2026-09-30). */
+th.cell {
+  font-weight: var(--fw-regular);
+  text-align: left;
+  /* body의 overflow-wrap: anywhere 아래서 다른 칸(nowrap 상태 · 동작)이 폭을 다 가져가면 이름 칸이 한 글자 폭까지 줄어 낱말이 쪼개진다
+     (04.6 W1-4 B1, 320 이름 칸 58px). 바닥 폭 10ch를 두어 짧은 낱말은 지키고, 매우 긴 이름은 그 폭에서 줄바꿈해 가로 넘침을 만들지 않는다. */
+  /* border-box라 옛 10ch에는 좌 --s-4 · 우 --cell-pad-x 안쪽 여백이 들어가 안쪽 폭이 65.3px였고, 「Employee」(65.4px)와 서브픽셀 경계였다(CI 크로미움에서만 쪼개짐).
+     안쪽 폭을 8ch(71.5px)로 두고 여백을 더한다 — 10ch 안쪽으로 키우면 320에서 people 표가 2px 넘친다. */
+  min-width: calc(8ch + var(--s-4) + var(--cell-pad-x));
 }
 
+.nowrapHeader {
+  white-space: nowrap;
+}
+
+.headerCell:first-child,
+.cell:first-child {
+  padding-left: var(--s-4);
+}
+
+.headerCell:last-child,
+.cell:last-child {
+  padding-right: var(--s-4);
+}
+
+/* 마지막 행 선 없음 — PC에서 숨긴 접힌 줄(.collapsedRow)이 tbody의 마지막 줄이면 그 앞 주 행이 마지막 보이는 행이다. 행 머리글 th도 같다. */
+.table tbody:last-of-type > tr:is(:last-child, :has(+ .collapsedRow:last-child)) > :is(td, th) {
+  border-bottom: 0;
+}
+
+/* 합계 줄 — 면 + 위 1px 강한 선. 호출부의 합계 칸 모양(.footerCell)보다 이 규칙이 앞선다. */
+.table tfoot td {
+  border-top: var(--line-w) solid var(--border-strong);
+  background: var(--surface-foot);
+}
+
+/* §7-3 「행: hover」 — 읽기 표(편집 셀 0개)의 줄. 편집 표는 편집 셀 hover(.editableCell)가 대신한다. */
+.table:not(.editable) tbody tr:hover > .cell {
+  background: var(--surface-muted);
+}
+
+/* 숫자 칸 — 오른쪽 정렬 · 줄바꿈 없음. 숫자 폭은 Num 컴포넌트가 정한다. */
 .alignRight {
   text-align: right;
-  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
@@ -75,8 +149,8 @@
    행 높이가 없다. */
 .cellSecondary {
   margin-top: var(--s-1);
-  color: var(--muted);
-  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-size: var(--text-aux);
   /* white-space는 상속이다 — .alignRight(td)가 nowrap이면 그 안의 보조
      줄(외화 2행 등 숫자)도 같이 nowrap이 된다. 여기서 다시 nowrap을
      선언하면 align이 없는 셀(예: 프로젝트명 아래 거래처명)의 보조 줄까지
@@ -84,24 +158,31 @@
      이 규칙 자체를 없앤다. */
 }
 
-.groupRow td {
-  padding-top: var(--s-3);
+/* 그룹 줄 — 옅은 초록 면 + 그룹 글자 600. 선 없음(면이 구분한다). `.groupRow`는 E2E 선택자(`[class*='groupRow']`)가 쓰는 행 이름이라
+   규칙이 있어야 CSS 모듈이 이름을 내보낸다 — 행 면은 칸(.groupHeader)과 같은 값. */
+.groupRow {
+  background: var(--surface-group);
 }
 
 .groupHeader {
-  padding-inline: var(--cell-pad-x);
-  border-bottom: var(--line-w) solid var(--line-strong);
-  color: var(--muted);
-  font-size: var(--fs-sm);
+  padding: var(--s-2) var(--s-4);
+  border-bottom: 0;
+  background: var(--surface-group);
+  color: var(--text-group);
+  font-size: var(--text-aux);
   font-weight: var(--fw-medium);
 }
 
-/* 04-42(S9) — 그룹 머리글 행 오른쪽 칸(리저브 최종 잔액): 값이라 본문 색 · 굵게 · 숫자 고정 폭. */
+/* `groupHeaderScope="rowgroup"`이면 칸이 `<th>`다 — UA 기본 가운데 정렬을 `<td>` 때와 같게 왼쪽으로 돌린다(04.6-24). */
+th.groupHeader {
+  text-align: left;
+}
+
+/* 04-42(S9) — 그룹 머리글 행 오른쪽 칸(리저브 최종 잔액): 값이라 본문 색 · 굵게. */
 .groupAside {
   float: inline-end;
-  color: var(--fg);
+  color: var(--text-strong);
   font-weight: var(--fw-bold);
-  font-variant-numeric: tabular-nums;
 }
 
 /* (가) 편집 단계 — 편집 가능 셀만 상호작용 신호(커서 + 포커스 링). 읽기
@@ -111,16 +192,17 @@
 }
 
 .editableCell:hover {
-  background: var(--surface);
+  background: var(--surface-muted);
 }
 
 .editableCell:focus-visible {
   outline: var(--focus-w) solid var(--focus);
   outline-offset: calc(-1 * var(--focus-w));
+  border-radius: var(--radius-control);
 }
 
 .lockedCell {
-  color: var(--muted);
+  color: var(--text-muted);
 }
 
 /* 04-04(§7-3 보강 (나)(다)) — 오류·충돌 셀. 다른 셀을 편집해도 남는
@@ -128,14 +210,14 @@
    --inset-error). 충돌도 같은 모양을 쓴다(§7-3 (나) 원문). */
 .errorCell,
 .conflictCell {
-  background: var(--danger-weak);
+  background: var(--status-danger-weak);
   box-shadow: var(--inset-error);
 }
 
 .issueReason {
   margin: var(--s-1) 0 0;
-  color: var(--danger);
-  font-size: var(--fs-sm);
+  color: var(--status-danger);
+  font-size: var(--text-aux);
 }
 
 .issueAction {
@@ -143,8 +225,8 @@
   border: 0;
   padding: 0;
   background: none;
-  color: var(--danger);
-  font-size: var(--fs-sm);
+  color: var(--status-danger);
+  font-size: var(--text-aux);
   font-weight: var(--fw-medium);
   text-decoration: underline;
   text-decoration-thickness: var(--line-w);
@@ -154,7 +236,7 @@
 
 /* §4-4 · §7-1 3차 밑줄 1px → hover 2px. */
 .issueAction:hover {
-  text-decoration-thickness: var(--line-w-strong);
+  text-decoration-thickness: var(--underline-w-hover);
 }
 
 /* 04-04(아) — 범위 선택(앵커 셀 + 현재 셀). */
@@ -168,13 +250,15 @@
 .cell:focus-visible {
   outline: var(--focus-w) solid var(--focus);
   outline-offset: calc(-1 * var(--focus-w));
+  border-radius: var(--radius-control);
 }
 
 /* 04-04 — dirty(미저장 편집) 셀의 고정 표시(D-68 저장 전) + 저장 성공
    600ms 틴트. prefers-reduced-motion에서는 틴트 애니메이션을 끈다
    (그대로 색만 없앤다 — 값 자체 표시는 그대로 유지). */
 .dirtyCell {
-  box-shadow: inset 2px 0 0 var(--accent);
+  box-shadow: var(--inset-dirty);
+  background: var(--surface-dirty);
 }
 
 .savedTint {
@@ -201,36 +285,45 @@
 }
 
 .collapsedCell {
-  padding: 0 var(--cell-pad-x) var(--cell-pad-y);
-  color: var(--muted);
-  font-size: var(--fs-sm);
+  padding: 0 var(--s-4) var(--cell-pad-y);
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+  line-height: var(--lh-table);
 }
 
 .emptyCell {
-  padding: var(--s-6) var(--cell-pad-x);
-  color: var(--muted);
-  font-size: var(--fs-base);
+  padding: var(--s-6) var(--s-4);
+  color: var(--text-muted);
+  font-size: var(--text-body);
   text-align: left;
 }
 
+/* EMPTY 3차 — 글자 밑줄(공유 Button .tertiary와 같은 모양: 두께 1px → hover 2px, offset 2px). */
 .emptyAction {
   margin-left: var(--s-2);
   border: 0;
-  border-bottom: var(--line-w) solid var(--accent);
+  padding: 0;
   background: none;
   color: var(--accent);
-  font-size: var(--fs-base);
+  font-size: var(--text-body);
   font-weight: var(--fw-medium);
+  text-decoration: underline;
+  text-decoration-thickness: var(--line-w);
+  text-underline-offset: var(--underline-offset);
   cursor: pointer;
+}
+
+.emptyAction:hover {
+  text-decoration-thickness: var(--underline-w-hover);
 }
 
 /* 04-28 — EMPTY 3차 라벨 오른쪽 kbd(Button .kbd와 같은 토큰) */
 .emptyActionKbd {
   margin-left: var(--s-1);
-  border: var(--line-w) solid var(--line);
-  color: var(--faint);
+  border: var(--line-w) solid var(--border-row);
+  color: var(--text-faint);
   padding: 0 var(--s-1);
-  font-size: var(--fs-xs);
+  font-size: var(--text-tag);
   font-weight: var(--fw-regular);
   line-height: var(--lh-head);
 }
@@ -250,15 +343,15 @@
 /* SYSTEM.md §7-9 — 단축키 힌트 줄(04-19: 표 안으로 옮김 — 페이지 줄 다음). 1024 미만(셀 편집 없음)에서 숨는다. */
 .hintRow {
   margin-top: var(--s-3);
-  color: var(--faint);
-  font-size: var(--fs-sm);
+  color: var(--text-faint);
+  font-size: var(--text-aux);
 }
 
 .hintRow kbd {
   padding: 0 var(--s-1);
-  border: var(--line-w) solid var(--line);
-  color: var(--faint);
-  font-size: var(--fs-xs);
+  border: var(--line-w) solid var(--border-row);
+  color: var(--text-faint);
+  font-size: var(--text-tag);
   line-height: var(--lh-head);
 }
 
@@ -301,7 +394,7 @@
   }
 
   .collapsedCell {
-    border-bottom: var(--line-w) solid var(--line);
+    border-bottom: var(--line-w) solid var(--border-row);
   }
 
   /* 04-31 DOM 감사 FAIL-1 — onRowTap이 있으면 이 칸이 행 시트를 여는 유일한 자리다.
@@ -316,6 +409,16 @@
   .cell,
   .headerCell {
     padding: var(--cell-pad-y) var(--cell-pad-x);
+  }
+
+  /* 04.6-26 N-1 — 폰에서 첫·끝 열이 숨으면(우선순위 p2 · p3, 좁은 PC 열 접기) 보이는 첫·끝 칸이 :first-child · :last-child가 아니라
+     표 면 안쪽 여백이 8로 남아 접힌 줄(--s-4)과 어긋났다. 같은 줄에 보이는 앞(뒤) 칸이 없는 보이는 칸에 --s-4를 건다(CSS만 — 첫 렌더부터 맞는다). */
+  :is(.headerCell, .cell):not(.prio-p2, .prio-p3, .collapse-1280, .collapse-1024):not(:is(.headerCell, .cell):not(.prio-p2, .prio-p3, .collapse-1280, .collapse-1024) ~ *) {
+    padding-left: var(--s-4);
+  }
+
+  :is(.headerCell, .cell):not(.prio-p2, .prio-p3, .collapse-1280, .collapse-1024):not(:has(~ :is(.headerCell, .cell):not(.prio-p2, .prio-p3, .collapse-1280, .collapse-1024))) {
+    padding-right: var(--s-4);
   }
 
   /* §3 폰 터치 목표 44×44 — 정렬 머리글 링크가 머리글 셀 높이를 채운다(음수 margin이 셀 위아래 패딩을 상쇄). */
@@ -342,20 +445,20 @@
 }
 
 .tone-danger {
-  color: var(--danger);
+  color: var(--status-danger);
   font-weight: var(--fw-medium);
 }
 
 .tone-warning {
-  color: var(--warning);
+  color: var(--status-warning);
   font-weight: var(--fw-medium);
 }
 
 .tone-muted {
-  color: var(--muted);
+  color: var(--text-muted);
 }
 
 .tone-success {
-  color: var(--success);
+  color: var(--status-success);
   font-weight: var(--fw-medium);
 }

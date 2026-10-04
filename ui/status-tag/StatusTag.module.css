@@ -1,8 +1,7 @@
-/* SYSTEM.md §7-5 상태 태그. 실물: docs/design/system/preview.html .tag/.st 블록.
-   색·서체·radius는 토큰 참조만 쓴다(D-20). */
+/* SYSTEM.md §7-5 상태 태그(스킨 A). 값은 역할 토큰만 쓴다. 실물: docs/design/system/preview.html .tag/.st 블록. */
 
 .base {
-  font-size: var(--fs-xs);
+  font-size: var(--text-tag);
   font-weight: var(--fw-medium);
   line-height: var(--lh-head);
   white-space: nowrap;
@@ -10,9 +9,9 @@
 
 /* 테두리 태그(기본) — 「내 차례」와 화면 제목 옆에서만(§7-5). */
 .tag {
-  padding: 1px 6px;
+  padding: 0 var(--s-1);
   border: var(--line-w) solid currentColor;
-  border-radius: var(--radius);
+  border-radius: var(--radius-tag);
   background: none;
 }
 
@@ -24,21 +23,21 @@
 }
 
 .danger {
-  color: var(--danger);
+  color: var(--status-danger);
 }
 
 .warning {
-  color: var(--warning);
+  color: var(--status-warning);
 }
 
 .accent {
-  color: var(--accent);
+  color: var(--status-accent);
 }
 
 .success {
-  color: var(--success);
+  color: var(--status-success);
 }
 
 .muted {
-  color: var(--muted);
+  color: var(--status-muted);
 }

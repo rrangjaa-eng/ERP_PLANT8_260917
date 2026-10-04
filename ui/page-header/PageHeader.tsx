@@ -1,6 +1,6 @@
 import styles from "./PageHeader.module.css";
 
-// SYSTEM.md §6-0 화면 제목(--fs-lg)+부제(--fs-sm --muted) · §6-9 오류 제목(--fs-2xl).
+// SYSTEM.md §6-0 화면 제목(--text-title)+부제(--text-aux --text-muted) · §6-9 오류 제목(--text-title).
 // 실물: docs/design/system/preview.html:48-50 · form-expense.html:38-41 .sec 블록.
 //
 // 요소 선택자(전역 h1)가 아니라 컴포넌트인 이유(02-08-PLAN.md objective 결정 요약):

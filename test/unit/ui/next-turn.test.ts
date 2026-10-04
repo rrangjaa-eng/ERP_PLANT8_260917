@@ -117,7 +117,8 @@ describe("buildNextTurnView", () => {
 // 이 저장소에 React 렌더 테스트 러너가 없어(next-turn-action.test.ts와
 // 같은 이유) NextTurn.tsx 소스 텍스트로 kind 매핑을 확인한다.
 describe("§7-4 「대기」 태그 색 — muted다(개정 ⑩)", () => {
-  const NEXT_TURN = readFileSync(resolve(process.cwd(), "ui/next-turn/NextTurn.tsx"), "utf8");
+  // 04.6-09 합본: NextTurn은 낱말만 넘기고(`status={item.tag}`) 색은 status-map 한 표가 정한다.
+  const NEXT_TURN = readFileSync(resolve(process.cwd(), "ui/status-tag/status-map.ts"), "utf8");
 
   it("대기의 kind가 muted다", () => {
     expect(NEXT_TURN).toMatch(/대기:\s*"muted"/);

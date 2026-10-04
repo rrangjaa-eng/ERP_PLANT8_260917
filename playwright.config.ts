@@ -51,6 +51,11 @@ const MOBILE_SPEC_PATTERN = "mobile-*.spec.ts";
 // (*cert*.spec.ts). desktop · mobile-375와 격리해 전용 프로젝트에서만 돈다.
 const CERT_SPEC_PATTERN = "*cert*.spec.ts";
 
+// 04.6-13 — 시각 회귀 스펙(visual.spec.ts 1280 · visual-390.spec.ts 폰 390)은 전용 `visual` 프로젝트에서만 돈다.
+// 이름이 `mobile-`로 시작하지 않아 mobile-375가 가져가지 않고, desktop은 testIgnore로 제외한다(mobile-375 ·
+// certs · cert-setup의 testIgnore는 건드리지 않는다 — playwright-config.test.ts가 고정한다).
+const VISUAL_SPEC_PATTERNS = ["visual.spec.ts", "visual-390.spec.ts"];
+
 export default defineConfig({
   testDir: "test/e2e",
   globalSetup: "./test/e2e/global-setup.ts",
@@ -81,7 +86,20 @@ export default defineConfig({
       // (2026-10-02, ci.yml e2e 잡). 로컬·1번 샤드에서는 환경 변수가 없어 그대로다.
       testIgnore: process.env.E2E_SKIP_DESKTOP
         ? ["**"]
-        : [MOBILE_SPEC_PATTERN, CERT_SPEC_PATTERN, "settings-approval-route.spec.ts"],
+        : [MOBILE_SPEC_PATTERN, CERT_SPEC_PATTERN, "settings-approval-route.spec.ts", ...VISUAL_SPEC_PATTERNS],
+      // 04.6-13(R2) — CI에서는 기준 사진을 찍는 깨끗한 DB 상태(visual-baseline.yml이 `visual`만 돌린다)와 e2e의 촬영
+      // 상태가 같아야 사진이 재현되므로 `visual`이 desktop(과 뒤따르는 mobile-375 · cert-setup · certs · desktop-settings 사슬)
+      // 앞에서 먼저 돈다. CI 2번 샤드의 폰·설정 단계(E2E_SKIP_DESKTOP)는 desktop을 비운 채 의존 사슬만 다시 거치므로
+      // 거기서는 걸지 않는다 — 걸면 desktop 절반이 돈 DB에서 visual이 한 번 더 돌아 사진이 흔들린다.
+      // 로컬은 의존 없음 — 로컬 `CI=true` 판정 실행이 visual을 끌어와도 시각 스펙이 스스로 건너뛴다(VISUAL_LOCAL).
+      dependencies: process.env.CI && !process.env.E2E_SKIP_DESKTOP ? ["visual"] : [],
+    },
+    {
+      name: "visual",
+      testMatch: /(?:^|[\\/])visual(?:-390)?\.spec\.ts$/,
+      // 사진은 직렬로(공유 erp_test · 픽스처 멱등) — 같은 DB 상태에서 매번 같은 화면이 나와야 한다.
+      workers: 1,
+      use: { reducedMotion: "reduce" },
     },
     {
       name: "mobile-375",

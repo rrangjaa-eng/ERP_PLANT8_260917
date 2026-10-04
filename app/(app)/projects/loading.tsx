@@ -1,46 +1,13 @@
-import { PageHeader } from "@/ui/page-header/PageHeader";
-import styles from "./projects.module.css";
+import { ListScreen } from "@/ui/list-screen/ListScreen";
+import { TableSkeleton } from "@/ui/table/TableSkeleton";
+import { PROJECT_COLUMN_LABELS, PROJECT_SKELETON_COLUMNS } from "./list-columns";
 
-// §7-7 LOADING — 합계 줄 자리 라벨만(금액 막대 없음, 04-48) + 머리글 + `--surface` 행 3개, 반짝임 없음.
-// 필터·정렬·쪽 이동은 전체 문서 GET이라 이 뼈대가 스트리밍된다 — 상단 진행 막대는 만들지 않는다(사용자 D17).
-// `loading.tsx`는 Next.js가 이 라우트 세그먼트를 자동으로 Suspense로
-// 감싸는 규약이라 데이터 패치 동안 이 파일이 즉시 보인다 — 300ms 안에
-// 스트리밍이 끝나면 실제 내용으로 바로 교체돼 이 자리가 눈에 띄지
-// 않는다(지연 표시는 브라우저·Next 스트리밍이 사실상 담당).
-//
-// [Rule 1 - 버그, 실행 중 발견] 부제("진행 중인 프로젝트 원장")를 실제
-// page.tsx와 똑같이 렌더하면 Next.js가 뒤로가기 캐시용으로 이전 Suspense
-// 폴백을 DOM에 숨겨 남겨 두는 동작과 겹쳐 `getByText(subtitle)`이 두
-// 요소에 걸린다(`test/e2e/page-chrome.spec.ts` strict mode violation,
-// 실측). 제목만 남기고 부제는 렌더하지 않는다 — 뼈대의 목적(레이아웃
-// 밀림 방지)은 제목만으로도 충분하다.
+// UI-SPEC loading(D10 · SC 10) — 제목 + 목록 표 뼈대만. 머리글은 진짜 열 이름(`list-columns.ts` — 표와 같은 낱말)이고 1차 행동 prop은 넘기지 않는다
+// (동작하지 않는 1차 방지). 300ms 안에 끝나는 스트리밍에서는 뼈대가 보이지 않는다(`TableSkeleton`의 지연 표시). 상단 진행 막대는 만들지 않는다(사용자 D17).
 export default function ProjectsLoading() {
   return (
-    <>
-      <PageHeader title="프로젝트" />
-      <section className={styles.totals} aria-hidden="true">
-        <p className={styles.totalsTitle}>합계</p>
-      </section>
-      <table className={styles.table} aria-hidden="true">
-        <caption className="sr-only">프로젝트</caption>
-        <thead>
-          <tr>
-            <th scope="col">번호</th>
-            <th scope="col">프로젝트명</th>
-            <th scope="col">담당 PM</th>
-            <th scope="col">기간</th>
-            <th scope="col">견적</th>
-            <th scope="col">상태</th>
-          </tr>
-        </thead>
-        <tbody>
-          {[0, 1, 2].map((index) => (
-            <tr key={index} className={styles.skeletonRow}>
-              <td colSpan={6}>&nbsp;</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </>
+    <ListScreen title="프로젝트">
+      <TableSkeleton columns={PROJECT_SKELETON_COLUMNS.map(({ key, align }) => ({ key, label: PROJECT_COLUMN_LABELS[key], align }))} />
+    </ListScreen>
   );
 }

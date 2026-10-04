@@ -1,5 +1,5 @@
 /* SYSTEM.md §6-0 폰 하단 탭. 실물: docs/design/system/preview.html .tabs 블록.
-   색·서체·radius는 토큰 참조만 쓴다(D-20). 폰(<700)에서만 보인다 — 표시 여부는
+   색·서체·radius는 역할 토큰 참조만 쓴다. 폰(<700)에서만 보인다 — 표시 여부는
    이 미디어 쿼리가 결정하고 BottomTabs.tsx는 뷰포트 폭을 읽지 않는다. */
 
 .tabs {
@@ -13,12 +13,11 @@
     right: 0;
     bottom: 0;
     /* border-box(app/globals.css)라 border-top이 콘텐츠 높이에서 빠진다 — 위 경계선
-       두께만큼 더해 탭 항목(.tab)의 실제 터치 목표가 §10의 44px 그대로 유지된다
-       (02-07 실측: 보정 없이는 42px). */
-    height: calc(var(--touch-min) + var(--line-w-strong));
+       두께만큼 더해 탭 항목(.tab)의 실제 터치 목표가 §10의 44px 그대로 유지된다. */
+    height: calc(var(--touch-min) + var(--line-w));
     display: flex;
-    background: var(--bg);
-    border-top: var(--line-w-strong) solid var(--line-strong);
+    background: var(--surface-base);
+    border-top: var(--line-w) solid var(--border-surface);
     z-index: var(--z-bar);
   }
 }
@@ -30,8 +29,8 @@
   justify-content: center;
   border: 0;
   background: none;
-  color: var(--muted);
-  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-size: var(--text-aux);
   font-weight: var(--fw-medium);
   text-decoration: none;
   cursor: pointer;

@@ -47,6 +47,18 @@ test.describe("단일 기둥 최대 폭 — /account (F-02 트레이서)", () =>
   });
 });
 
+// 04.6-14: 한 건 폼은 옆 패널 — 폭 480 · 화면 오른쪽 끝(PC 1280). 폼 id는 그대로.
+async function expectSidePanel(page: Page, formSelector: string): Promise<void> {
+  const dialog = page.locator('dialog[data-ui="side-panel"]');
+  await expect(dialog.locator(formSelector)).toBeVisible();
+  await expect
+    .poll(async () => {
+      const box = await dialog.boundingBox();
+      return box ? [Math.round(box.width), Math.round(box.x + box.width)] : null;
+    })
+    .toEqual([480, 1280]);
+}
+
 async function expectAllSingleColumn(page: Page, selector: string): Promise<void> {
   const locators = await page.locator(selector).all();
   expect(locators.length).toBeGreaterThan(0);
@@ -122,39 +134,58 @@ test.describe("단일 기둥 최대 폭 — 관리자 화면·폼 전면 적용 
     await expect(page.getByRole("heading", { name: "소속 발령 이력", level: 2 })).toBeVisible();
   });
 
-  test("/admin/people/org의 최상위 main ul과 #org-unit-form이 720px 이하로 main h1과 같은 x에서 시작한다", async ({
+  // 04.6-14: 조직 목록은 `ListScreen`(전폭)이고 본부 · 팀 폼은 옆 패널(480 · 오른쪽 끝)이다 — 폼 id는 그대로.
+  test("/admin/people/org의 본부 목록 ul이 main 안에 있고 #org-unit-form이 옆 패널 폭 480 · 오른쪽 끝에 있다", async ({
     page,
   }) => {
     await loginAs(page, SYSADMIN_ROLE_ID);
     await page.goto("/admin/people/org");
-    // 본부 목록 <ul>의 각 <li> 안에 팀 목록 <ul>이 중첩된다(계층 목록,
-    // SYSTEM.md §3) — 그 중첩 ul은 의도적으로 들여쓰기된다(브라우저 기본
-    // list padding). 최상위 목록(.single-column의 직계 자식)만 본다.
-    await expectAllSingleColumn(page, "main .single-column > ul");
+    // 본부 목록 <ul>의 각 <li> 안에 팀 목록 <ul>이 중첩된다(계층 목록) — 최상위 목록은 main의 화면 틀 안에 있다.
+    await expect(page.locator("main ul").first()).toBeVisible();
     await page.getByRole("link", { name: "본부 추가" }).first().click();
-    await expectSingleColumn(page, page.locator("#org-unit-form"));
+    await expectSidePanel(page, "#org-unit-form");
   });
 
-  const registrationForms: Array<{ listPath: string; linkName: string; formSelector: string }> = [
-    { listPath: "/admin/vendors", linkName: "거래처 등록", formSelector: "#vendor-form" },
-    { listPath: "/admin/corp-cards", linkName: "법인카드 등록", formSelector: "#corp-card-form" },
-    { listPath: "/admin/code-tables", linkName: "코드 추가", formSelector: "#code-item-form" },
+  const registrationForms: Array<{ listPath: string; linkName: string; formSelector: string; waveMerge?: boolean }> = [
+    // 거래처 폼은 04.6-04에서 옆 패널(480)로 옮겨 단일 기둥(720)이 아니다 — test/e2e/side-panel.spec.ts가 폭을 잰다.
+    // 법인카드 · 코드표 폼의 화면은 04.6-15 소유라 이 트리에서는 옛 화면이다 — 합본(@wave-merge)에서 돈다.
+    { listPath: "/admin/corp-cards", linkName: "법인카드 등록", formSelector: "#corp-card-form", waveMerge: true },
+    { listPath: "/admin/code-tables", linkName: "코드 추가", formSelector: "#code-item-form", waveMerge: true },
     { listPath: "/admin/people", linkName: "사람 등록", formSelector: "#person-form" },
   ];
 
-  for (const { listPath, linkName, formSelector } of registrationForms) {
-    test(`${formSelector}가 720px 이하로 main h1과 같은 x에서 시작한다`, async ({ page }) => {
-      await loginAs(page, SYSADMIN_ROLE_ID);
-      await page.goto(listPath);
-      await page.getByRole("link", { name: linkName }).first().click();
-      await expectSingleColumn(page, page.locator(formSelector));
-    });
+  for (const { listPath, linkName, formSelector, waveMerge } of registrationForms) {
+    test(
+      `${formSelector}가 옆 패널 폭 480 · 오른쪽 끝에 있다`,
+      waveMerge ? { tag: "@wave-merge" } : {},
+      async ({ page }) => {
+        await loginAs(page, SYSADMIN_ROLE_ID);
+        await page.goto(listPath);
+        await page.getByRole("link", { name: linkName }).first().click();
+        await expectSidePanel(page, formSelector);
+      },
+    );
   }
 
-  test("#role-form이 720px 이하로 main h1과 같은 x에서 시작한다", async ({ page }) => {
+  // 04.6-04: 거래처 폼은 단일 기둥(720)이 아니라 옆 패널이다 — 폭 480 · 화면 오른쪽 끝(PC 1280). 폼 id는 그대로.
+  test("#vendor-form이 옆 패널 폭 480 · 오른쪽 끝에 있다", async ({ page }) => {
+    await loginAs(page, SYSADMIN_ROLE_ID);
+    await page.goto("/admin/vendors");
+    await page.getByRole("link", { name: "거래처 등록" }).first().click();
+    const dialog = page.locator('dialog[data-ui="side-panel"]');
+    await expect(dialog.locator("#vendor-form")).toBeVisible();
+    await expect
+      .poll(async () => {
+        const box = await dialog.boundingBox();
+        return box ? [Math.round(box.width), Math.round(box.x + box.width)] : null;
+      })
+      .toEqual([480, 1280]);
+  });
+
+  test("#role-form이 옆 패널 폭 480 · 오른쪽 끝에 있다", async ({ page }) => {
     await loginAs(page, SYSADMIN_ROLE_ID);
     await page.goto("/admin/people/roles?new=1");
-    await expectSingleColumn(page, page.locator("#role-form"));
+    await expectSidePanel(page, "#role-form");
   });
 
   test("반례 — /admin/code-tables 목록의 main table은 720px보다 넓다", async ({ page }) => {

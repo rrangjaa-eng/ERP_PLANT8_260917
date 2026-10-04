@@ -100,6 +100,12 @@ async function expectOtherPrimariesInactive(page: Page, self: Locator, label: st
     visible += 1;
     if (await candidate.evaluate((el, target) => el === target, await self.elementHandle())) continue;
     others += 1;
+    // 04.6-04(Q1 A · R4): 열린 모달 패널 밖의 1차(여는 1차)는 뒤가 막혀(inert) 누를 수 없다 — 비활성과 같다.
+    const behindModal = await candidate.evaluate((el) => {
+      const modal = document.querySelector("dialog:modal");
+      return modal !== null && !modal.contains(el);
+    });
+    if (behindModal) continue;
     await expect(candidate, `${label} — 다른 1차 비활성`).toHaveAttribute("aria-disabled", "true");
   }
   record(`${label} 1차 후보`, { visible, others });
@@ -172,14 +178,17 @@ test("I′2 옆 패널(오른쪽 480) — 목록 표가 밀리지 않는다 · �
   await createCertEvent({ name: "감사 패널 기존", status: "requested", createdBy: pmId });
   const page = await loggedInPage(browser, pm);
   await page.goto("/certs/events");
-  const primary = page.getByRole("button", { name: "QR 생성 신청" });
+  const primary = page.getByRole("link", { name: "QR 생성 신청" });
   await expect(primary).toBeVisible();
   const table = page.locator("table").first();
   const before = await table.boundingBox();
 
   await primary.click();
+  await expect(page).toHaveURL(/\/certs\/events\?new=1$/);
   const panel = page.getByRole("dialog", { name: "QR 생성 신청" });
   await expect(panel).toBeVisible();
+  // 04.6-04: 열림 모션(--dur-sheet 200ms)이 끝난 뒤에 잰다.
+  await expect.poll(() => panel.evaluate((el) => el.getAnimations().length)).toBe(0);
   const after = await table.boundingBox();
   record("I′2 목록 표 열기 전·후", { before, after });
   expect(after?.x, "I′2 — 목록 표 x").toBe(before?.x);
@@ -197,7 +206,7 @@ test("I′2 옆 패널(오른쪽 480) — 목록 표가 밀리지 않는다 · �
   await submit.click();
   await expectPendingButton(submit, "I′2 신청 진행 중");
   await expect(panel.getByRole("button", { name: /^취소/ }), "I′2 진행 중 — 취소 aria-disabled").toHaveAttribute("aria-disabled", "true");
-  await expectOtherPrimariesInactive(page, submit, "I′2 진행 중", 1); // 패널 제출 자신(머리 1차는 패널이 열린 동안 렌더하지 않는다 — DR-9)
+  await expectOtherPrimariesInactive(page, submit, "I′2 진행 중", 1); // 패널 제출 자신(여는 링크는 패널이 열린 동안에도 렌더에 남지만 모달 뒤라 비활성 — Q1 A · R4)
   await expect(panel).toBeHidden({ timeout: 15_000 });
   await page.context().close();
 });
@@ -347,7 +356,7 @@ test("1000px — I′3 경품은 읽기 표(편집 입력 · 「QR 생성」 · 
   await page.context().close();
   const pmPage = await loggedInPage(browser, pm, NARROW_PC.width, NARROW_PC.height);
   await pmPage.goto("/certs/events");
-  await expect(pmPage.getByRole("button", { name: "QR 생성 신청" })).toBeVisible();
+  await expect(pmPage.getByRole("link", { name: "QR 생성 신청" })).toBeVisible();
   await expectDocFits(pmPage, NARROW_PC.width, "I′1 1000");
   await pmPage.context().close();
 });

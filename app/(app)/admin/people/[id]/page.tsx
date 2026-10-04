@@ -5,7 +5,7 @@ import { getPerson } from "@/domain/people";
 import { listRoles } from "@/domain/permissions/roles";
 import { listOrgUnits, listTeams } from "@/domain/org";
 import { KvList } from "@/ui/kv-list/KvList";
-import { PageHeader } from "@/ui/page-header/PageHeader";
+import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import type { HistoryEntry } from "@/ui/history-list/HistoryList";
 import { PersonRoleChange, PersonHistorySection } from "./person-detail-client";
 import { seoulToday } from "@/lib/dates";
@@ -99,8 +99,7 @@ export default async function PersonDetailPage({
   }));
 
   return (
-    <>
-      <PageHeader title={detail.person.name} subtitle={detail.person.email} />
+    <DetailScreen title={detail.person.name} meta={detail.person.email}>
 
       <div className="single-column">
         <KvList
@@ -131,6 +130,6 @@ export default async function PersonDetailPage({
 
       {/* §3 데이터 표 예외 — 발령 이력 표는 .single-column 밖, 전체 폭(260922-o2b 후속). */}
       <PersonHistorySection userId={detail.person.id} teamOptions={teamOptions} entries={entries} />
-    </>
+    </DetailScreen>
   );
 }

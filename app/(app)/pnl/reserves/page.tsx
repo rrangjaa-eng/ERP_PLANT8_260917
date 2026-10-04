@@ -5,6 +5,7 @@ import { visible } from "@/domain/permissions/visible";
 import { listReserveReferences, listReserves } from "@/domain/reserves";
 import { recentFxRate } from "@/domain/money/currency";
 import { kstToday } from "@/lib/kst-date";
+import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { ReservesTable } from "./reserves-table";
 
 // 04-42 — 클라이언트별 리저브 대장(S9, §6-1 + §7-3). WR-07: 이 페이지가 직접 판정한다(레이아웃에 기대지 않는다).
@@ -24,5 +25,10 @@ export default async function ReservesPage({ searchParams }: { searchParams: Pro
     recentFxRate("USD"),
   ]);
 
-  return <ReservesTable viewerId={viewer.id} list={list} references={references} usdDefaultFxRate={usdDefaultFxRate} todayKst={kstToday(new Date())} />;
+  // 표 안 편집은 클라이언트 `Table` 그대로다(R1의 StaticTable 대상이 아니다) — 틀(제목)만 ListScreen이 그린다.
+  return (
+    <ListScreen title="리저브 대장">
+      <ReservesTable viewerId={viewer.id} list={list} references={references} usdDefaultFxRate={usdDefaultFxRate} todayKst={kstToday(new Date())} />
+    </ListScreen>
+  );
 }

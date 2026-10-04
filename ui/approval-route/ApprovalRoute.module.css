@@ -1,4 +1,4 @@
-/* SYSTEM.md §6-3 결재선 · A3 — 제출 전 한 줄 · 제출 뒤 단계 목록. 색·서체는 토큰 참조만(D-20). */
+/* SYSTEM.md §6-3 결재선 · A3 — 제출 전 한 줄 · 제출 뒤 단계 목록. 역할 토큰만(스킨 A). */
 
 .line {
   margin: 0;
@@ -10,12 +10,12 @@
 }
 
 .arrow {
-  color: var(--faint);
+  color: var(--text-faint);
 }
 
 .label {
-  color: var(--muted);
-  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-size: var(--text-aux);
 }
 
 .list {
@@ -32,19 +32,18 @@
 }
 
 .result {
-  font-size: var(--fs-base);
+  font-size: var(--text-body);
 }
 
 .at {
-  color: var(--muted);
-  font-size: var(--fs-sm);
-  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  font-size: var(--text-aux);
 }
 
 /* 반려 사유 — 다음 줄, 줄 수 제한 없음. */
 .reason {
   display: block;
-  font-size: var(--fs-sm);
+  font-size: var(--text-aux);
   overflow-wrap: anywhere;
   word-break: keep-all;
   /* 반려 사유는 여러 줄로 적힌다(사용자 결정 2026-09-29 ②) — 줄을 지킨다. */
@@ -52,11 +51,11 @@
 }
 
 .end {
-  color: var(--muted);
-  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-size: var(--text-aux);
 }
 
 .endDanger {
-  color: var(--danger);
-  font-size: var(--fs-sm);
+  color: var(--status-danger);
+  font-size: var(--text-aux);
 }

@@ -66,14 +66,17 @@ test.describe("04.3-10 폰 · 좁은 PC", () => {
     await createCertEvent({ name: "폰 기존 신청", status: "requested", createdBy: pmId });
     const page = await loggedInPage(browser, pm);
     await page.goto("/certs/events");
-    const opener = page.getByRole("button", { name: "QR 생성 신청" });
+    const opener = page.getByRole("link", { name: "QR 생성 신청" });
     await expect(opener).toHaveCount(1);
     const listTable = page.locator("table").first();
     const tableTopBefore = (await listTable.boundingBox())?.y;
     await opener.click();
+    await expect(page).toHaveURL(/\/certs\/events\?new=1$/);
 
     const sheet = page.getByRole("dialog", { name: "QR 생성 신청" });
     await expect(sheet).toBeVisible();
+    // 04.6-04: 열림 모션(--dur-sheet 200ms)이 끝난 뒤에 잰다.
+    await expect.poll(() => sheet.evaluate((el) => el.getAnimations().length)).toBe(0);
     // 시트 뒤 목록 표는 움직이지 않는다(DOM 감사 A-M2).
     expect((await listTable.boundingBox())?.y).toBe(tableTopBefore);
     // 막힘(빈 칸)에서도 행동 줄은 2차 왼쪽 · 1차 오른쪽 한 줄, 1차가 2차의 2배 폭(SYSTEM §7-8 — A-M1 · A-L1).
@@ -94,10 +97,11 @@ test.describe("04.3-10 폰 · 좁은 PC", () => {
 
     await page.keyboard.press("Escape");
     await expect(sheet).toBeHidden();
-    await expect(page.getByRole("button", { name: "QR 생성 신청" })).toBeFocused();
+    await expect(page).toHaveURL(/\/certs\/events$/);
+    await expect(page.getByRole("link", { name: "QR 생성 신청" })).toBeFocused();
 
     const eventName = `폰 신청-${randomUUID().slice(0, 6)}`;
-    await page.getByRole("button", { name: "QR 생성 신청" }).click();
+    await page.getByRole("link", { name: "QR 생성 신청" }).click();
     await sheet.getByLabel("행사 이름").fill(eventName);
     await sheet.getByLabel("당첨일").fill(kstToday());
     await sheet.getByRole("button", { name: "QR 생성 신청" }).click();
@@ -137,7 +141,7 @@ test.describe("04.3-10 폰 · 좁은 PC", () => {
 
     const pmPage = await loggedInPage(browser, pm, 900);
     await pmPage.goto("/certs/events");
-    await expect(pmPage.getByRole("button", { name: "QR 생성 신청" })).toHaveCount(1);
+    await expect(pmPage.getByRole("link", { name: "QR 생성 신청" })).toHaveCount(1);
     await pmPage.context().close();
   });
 });

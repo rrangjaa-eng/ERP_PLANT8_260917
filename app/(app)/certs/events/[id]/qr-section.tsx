@@ -5,7 +5,7 @@ import { Button } from "@/ui/button/Button";
 import { QR_SECTION_LABEL_ID } from "./prize-table-rules";
 import styles from "./event-detail.module.css";
 
-// 04.3-04 Task 4 ② — I3 QR 섹션. 접수 중이면 서버가 만든 SVG(currentColor — 토큰 --fg · --bg만) + 전체 링크 +
+// 04.3-04 Task 4 ② — I3 QR 섹션. 접수 중이면 서버가 만든 SVG(currentColor — 토큰 --text-strong · --surface-base만) + 전체 링크 +
 // 3차 「링크 복사」(라벨 자리 `링크 복사됨` 4초, 토스트 없음). 닫힘이면 QR · 링크를 그리지 않고 사유 한 줄.
 // 인라인 SVG는 서버가 서버 토큰 링크로만 만든 문자열이다 — 사용자 입력이 섞이지 않는다(T-04.3-31).
 // QR 내려받기 · 인쇄 버튼 없음(A8).

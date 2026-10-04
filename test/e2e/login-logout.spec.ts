@@ -104,17 +104,28 @@ test.describe("로그인 버튼 위치 (/design-review 발견 4)", () => {
     expect(Math.abs(formCenterX - buttonCenterX)).toBeLessThanOrEqual(1);
   });
 
-  // SYSTEM.md §7-1 — 내부 1차 버튼은 PC 32 · 폰 40, 글자 --fs-sm(12px).
-  test("로그인 1차 버튼은 PC 1280에서 높이 32 · 글자 12px, 폰 375에서 높이 40 · 글자 12px(04.3-03 F1 · 04.3-15 R3)", async ({
+  // SYSTEM.md §7-1 · §2-2 — 내부 1차 버튼은 PC 32 · 폰 40, 글자 --text-body(PC 14 · 폰 15 — 계산된 역할 토큰 값).
+  test("로그인 1차 버튼은 PC 1280에서 높이 32 · 폰 375에서 높이 40, 글자는 --text-body(04.3-03 F1 · 04.3-15 R3)", async ({
     page,
   }) => {
     const button = page.getByRole("button", { name: "로그인" });
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto("/login");
     await expect(button).toHaveCSS("height", "32px");
-    await expect(button).toHaveCSS("font-size", "12px");
+    const bodySize = () =>
+      page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--text-body").trim());
+    await expect(button).toHaveCSS("font-size", await bodySize());
     await page.setViewportSize({ width: 375, height: 800 });
     await expect(button).toHaveCSS("height", "40px");
-    await expect(button).toHaveCSS("font-size", "12px");
+    await expect(button).toHaveCSS("font-size", await bodySize());
   });
+});
+
+// Q18(#88) — 개인정보 화면에서 끊겨 온 로그인은 같은 자리에 상태 한 줄(문구 그대로)을 보이고, 그 밖에는 상태 줄이 없다.
+test("/login?reason=privacy-session은 「개인정보 화면 · 다시 로그인」 상태 줄을 보이고 reason이 없으면 상태 줄이 없다", async ({ page }) => {
+  await page.goto("/login?reason=privacy-session");
+  await expect(page.getByRole("status").filter({ hasText: "개인정보 화면 · 다시 로그인" })).toBeVisible();
+
+  await page.goto("/login");
+  await expect(page.getByRole("status")).toHaveCount(0);
 });

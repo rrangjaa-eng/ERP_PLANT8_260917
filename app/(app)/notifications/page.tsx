@@ -1,5 +1,5 @@
 import { requireSession } from "@/lib/viewer";
-import { PageHeader } from "@/ui/page-header/PageHeader";
+import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { listMyNotifications } from "@/domain/notify/inbox";
 import { toKstDate } from "@/domain/holidays/business-day";
@@ -22,8 +22,7 @@ export default async function NotificationsPage() {
   }
 
   return (
-    <>
-      <PageHeader title="알림함" />
+    <ListScreen title="알림함">
       {initial === null ? (
         <ListEmpty
           tone="error"
@@ -39,6 +38,6 @@ export default async function NotificationsPage() {
           initialReferenceYear={toKstDate(new Date()).slice(0, 4)}
         />
       )}
-    </>
+    </ListScreen>
   );
 }

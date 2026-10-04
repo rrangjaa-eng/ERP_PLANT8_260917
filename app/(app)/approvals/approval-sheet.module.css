@@ -1,106 +1,40 @@
-/* 04.1-05 S5 폰 결재 시트 — SYSTEM.md §7-8 시트 골격(머리 · 행동 줄 고정, 본문 스크롤 최대 85vh, 행동 줄
-   --touch-min, 1차가 2차의 두 배 폭). ui/confirm-dialog 폰 시트와 같은 토큰. 색·서체·radius는 토큰 참조만. */
-
-.sheet {
-  position: fixed;
-  inset-block-start: auto;
-  inset-block-end: 0;
-  inset-inline: 0;
-  width: 100%;
-  max-width: none;
-  max-height: 85vh;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  border-top: var(--line-w-strong) solid var(--line-strong);
-  background: var(--bg);
-  color: var(--fg);
-}
-
-.sheet[open] {
-  display: flex;
-  flex-direction: column;
-}
-
-.sheet::backdrop {
-  background: var(--scrim);
-}
-
-.hd {
-  display: flex;
-  flex: none;
-  align-items: flex-start;
-  gap: var(--s-3);
-  padding: var(--s-3) var(--pad-page) var(--s-2);
-  border-bottom: var(--line-w) solid var(--line);
-}
-
-.titleBlock {
-  flex: 1;
-  min-width: 0;
-}
-
-.title {
-  margin: 0;
-  font-size: var(--fs-lg);
-  font-weight: var(--fw-bold);
-  line-height: var(--lh-head);
-  word-break: keep-all;
-}
-
-.subtitle {
-  margin: var(--s-1) 0 0;
-  color: var(--muted);
-  font-size: var(--fs-sm);
-  font-variant-numeric: tabular-nums;
-}
-
-.close {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  width: var(--touch-min);
-  height: var(--touch-min);
-  margin: calc(var(--s-2) * -1) calc(var(--s-3) * -1) 0 0;
-  border: 0;
-  background: none;
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.closeIcon {
-  width: var(--icon-lg);
-  height: var(--icon-lg);
-  stroke: currentColor;
-  stroke-width: var(--icon-stroke);
-  fill: none;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
+/* 04.6-17 결재 시트 — 공용 옆 패널(ui/side-panel) 안의 내용. 시트 골격(PC 오른쪽 480 · 폰 아래 시트 · 머리 · 닫기 · 가림막)은 SidePanel이 그린다(DR4 A).
+   여기는 본문(부제 · 라벨 · 값 목록, 스크롤)과 행동 줄(고정 · 1차가 2차의 두 배 폭 — D17)만. 역할 토큰만. */
 
 .body {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--s-2) var(--pad-page);
+  padding: var(--s-2) var(--panel-pad-x);
+}
+
+.subtitle {
+  margin: 0 0 var(--s-2);
+  color: var(--text-muted);
+  font-size: var(--text-aux);
 }
 
 /* 시트 상세 = 라벨 · 값 목록(§7-8) — ui/kv-list와 같은 골격(폰 라벨 폭 84). */
 .kv {
   display: grid;
-  grid-template-columns: 84px 1fr;
+  grid-template-columns: calc(var(--label-w) - var(--s-3)) 1fr;
   gap: 0 var(--s-3);
   margin: 0;
 }
 
+@media (min-width: 700px) {
+  .kv {
+    grid-template-columns: var(--label-w) 1fr;
+  }
+}
+
 .kv dt {
   margin: 0;
-  padding: 7px 0;
-  font-size: var(--fs-sm);
+  padding: var(--s-2) 0;
+  font-size: var(--text-aux);
   font-weight: var(--fw-medium);
-  color: var(--muted);
-  border-bottom: var(--line-w) dotted var(--line);
+  color: var(--text-muted);
+  border-bottom: var(--line-w) dotted var(--border-row);
 }
 
 .kv dd {
@@ -108,22 +42,30 @@
   flex-direction: column;
   min-width: 0;
   margin: 0;
-  padding: 6px 0;
-  border-bottom: var(--line-w) dotted var(--line);
+  padding: var(--s-2) 0;
+  border-bottom: var(--line-w) dotted var(--border-row);
   word-break: keep-all;
 }
 
-.tone-default {
-  font-variant-numeric: tabular-nums;
+/* 결재 내용 아래 한 줄 3차 링크(§7-1 3차 — 링크 모양은 leave.module.css `.link`). 터치 목표만 여기서 --touch-min으로 늘린다. */
+.documentLinkLine {
+  margin: 0;
+  padding: var(--s-2) 0;
+}
+
+.documentLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch-min);
 }
 
 .tone-muted {
-  color: var(--muted);
-  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-size: var(--text-aux);
 }
 
 .tone-warning {
-  color: var(--warning);
+  color: var(--status-warning);
   font-weight: var(--fw-medium);
 }
 
@@ -132,8 +74,9 @@
   flex: none;
   flex-direction: column;
   gap: var(--s-2);
-  padding: var(--s-3) var(--pad-page) var(--s-4);
-  border-top: var(--line-w) solid var(--line);
+  padding: var(--s-3) var(--panel-pad-x);
+  border-top: var(--line-w) solid var(--border-row);
+  background: var(--surface-actions);
 }
 
 /* 반려(2차) 왼쪽 · 승인(1차) 오른쪽, 사이 --s-4 이상(사용자 결정 2026-09-29 — DECISIONS.md 폰 결재 행동 줄). */
@@ -163,5 +106,5 @@
   justify-content: center;
   width: 100%;
   height: var(--touch-min);
-  font-size: var(--fs-base);
+  font-size: var(--text-body);
 }

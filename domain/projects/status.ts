@@ -7,6 +7,7 @@ import { gate, GateBlockedError } from "@/domain/rules/gate";
 import "@/domain/rules/register";
 import { denyWrite } from "@/domain/rules/deny-write";
 import { ALLOWED_TRANSITIONS, PROJECT_STATUSES, type ProjectStatus } from "@/domain/projects/status-transitions";
+import { PROJECT_STATUS_WORD } from "@/domain/projects/status-word";
 import { withTransaction } from "@/lib/db-transaction";
 import { kstDateOf, kstToday } from "@/lib/kst-date";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
@@ -104,7 +105,7 @@ export type StatusChangeFacts = {
   rowScope: Scope;
   menus: { status: boolean; complete: boolean };
   teamScope: ActorTeamScope;
-  // 코드표 라벨(관리자가 바꿀 수 있다) — 「상태가 … 바뀜」 문구용. 비활성 값 포함.
+  // 고정 상태 낱말(04.6-10 — 코드표 라벨이 아니다) — 「상태가 … 바뀜」 문구용. 비활성 값 포함.
   labels: Record<string, string>;
 };
 
@@ -126,7 +127,11 @@ async function readStatusCatalog(viewer: Viewer, deps?: Partial<CatalogDeps>): P
   const known: readonly string[] = PROJECT_STATUSES;
   return rows
     .filter((row) => known.includes(row.value))
-    .map((row) => ({ value: row.value as ProjectStatus, label: row.label, description: row.description }));
+    .map((row) => ({
+      value: row.value as ProjectStatus,
+      label: PROJECT_STATUS_WORD[row.value as ProjectStatus],
+      description: row.description,
+    }));
 }
 
 export async function listProjectStatusCatalog(

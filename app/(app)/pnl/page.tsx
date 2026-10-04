@@ -5,7 +5,8 @@ import { visible } from "@/domain/permissions/visible";
 // Button.tsx는 클라이언트 모듈이라 서버 컴포넌트가 buttonLinkClassName을 부를 수 없다 — 같은 3차 클래스를 직접 쓴다.
 import buttonStyles from "@/ui/button/Button.module.css";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
-import { PageHeader } from "@/ui/page-header/PageHeader";
+import { ListScreen } from "@/ui/list-screen/ListScreen";
+import styles from "./pnl.module.css";
 
 // SYSTEM.md §6-1 목록 화면 = 원장. 표는 Phase 4 범위(02-01 DECISIONS.md 기록).
 // WR-07: 인증 검사를 이 페이지가 직접 한다. 레이아웃의 requireSession()에
@@ -19,16 +20,15 @@ export default async function PnlPage() {
   const [canViewPnl, reserveShown] = await Promise.all([can(viewer, "pnl", "view"), visible(viewer, "reserve.amount")]);
 
   return (
-    <>
-      <PageHeader title="손익" subtitle="프로젝트·팀 손익 원장" />
+    <ListScreen title="손익">
       {canViewPnl && reserveShown ? (
-        <p>
+        <p className={styles.ledgerLine}>
           <Link href="/pnl/reserves" className={`${buttonStyles.btn} ${buttonStyles.tertiary}`}>
             리저브 대장
           </Link>
         </p>
       ) : null}
       <ListEmpty message="표시할 손익 데이터가 없습니다" action={{ label: "프로젝트 보기", href: "/projects" }} />
-    </>
+    </ListScreen>
   );
 }

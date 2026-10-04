@@ -1,15 +1,28 @@
-import type { FormHTMLAttributes, ReactNode } from "react";
+import type { FormHTMLAttributes, ReactNode, Ref } from "react";
 import styles from "./Form.module.css";
 
 // SYSTEM.md §7-15 — 폼 컴포넌트 계약(Phase 4 신설). 사용처 둘: 프로젝트
 // 등록 폼 · 매출 계약 금액 칸(04-02). `<form noValidate>` + 한 열,
 // max-width `--form-max`(720), 왼쪽 정렬. 네이티브 `required`·`pattern`
 // 검증 위임을 쓰지 않는다(A-H3) — 이 파일 어디에도 그 속성이 없다.
+//
+// 04.6-04: `layout` — "page"(기본, 라벨 왼쪽 96 · 최대 720)와 "panel"(옆 패널 안 — 한 열 · 라벨 위 · 입력 전폭, 입력·행동 줄
+// 버튼 높이는 `--field-h`가 정한다 — D14 · M2). panel의 라벨 위 배치는 `TextField`의 줄(`data-ui="field-row"`)도 덮는다.
 export type FormFieldWidth = "select" | "short" | "long";
+export type FormLayout = "page" | "panel";
 
-function FormRoot({ children, className, ...rest }: FormHTMLAttributes<HTMLFormElement>) {
+function FormRoot({
+  children,
+  className,
+  layout = "page",
+  ...rest
+}: FormHTMLAttributes<HTMLFormElement> & { layout?: FormLayout; ref?: Ref<HTMLFormElement> }) {
   return (
-    <form {...rest} noValidate className={[styles.form, className].filter(Boolean).join(" ")}>
+    <form
+      {...rest}
+      noValidate
+      className={[styles.form, layout === "panel" ? styles.panel : "", className].filter(Boolean).join(" ")}
+    >
       {children}
     </form>
   );

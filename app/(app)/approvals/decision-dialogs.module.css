@@ -1,5 +1,5 @@
 /* 04.1-05 S6 반려 확인 근거 칸 — 라벨 + 남은 폭(실물 sheet-modal.html .reason, #16). 480 모달의 좌우 패딩
-   안에 들어가고 폰은 전폭. 색·서체·radius는 토큰 참조만(D-20). */
+   안에 들어가고 폰은 전폭. 역할 토큰만(04.6-17). */
 
 .reason {
   display: grid;
@@ -9,9 +9,9 @@
 }
 
 .reason label {
-  padding-top: 7px;
-  color: var(--muted);
-  font-size: var(--fs-sm);
+  padding-top: var(--s-2);
+  color: var(--text-muted);
+  font-size: var(--text-aux);
   font-weight: var(--fw-medium);
 }
 
@@ -27,12 +27,12 @@
   field-sizing: content;
   resize: none;
   line-height: var(--lh-body);
-  border: var(--line-w) solid var(--line-ui);
-  border-radius: var(--radius);
-  background: var(--bg);
-  color: var(--fg);
+  border: var(--line-w) solid var(--border-control);
+  border-radius: var(--radius-control);
+  background: var(--surface-base);
+  color: var(--text-strong);
   font-family: var(--font-sans);
-  font-size: var(--fs-base);
+  font-size: var(--text-body);
 }
 
 .reason textarea:focus-visible {
@@ -41,8 +41,8 @@
 }
 
 .reason textarea[aria-disabled="true"] {
-  background: var(--surface);
-  color: var(--faint);
+  background: var(--surface-muted);
+  color: var(--text-faint);
 }
 
 @media (max-width: 699.98px) {

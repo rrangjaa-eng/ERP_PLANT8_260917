@@ -1,20 +1,13 @@
-/* SYSTEM.md §2-2 --fs-lg(18/1.4/700) · §2-3 제목 자간 -0.02em · §3 섹션 사이
-   위 --s-6·아래 --s-3(F-10, 260922-o2b). 색·서체·radius는 tokens.css 변수만
-   (D-20). 선은 추가하지 않는다(§3 섹션 규칙은 2px 선 있는 섹션 전용). */
+/* 로그아웃은 비밀번호 변경 폼과 다른 묶음이다 — 위 1px 선 + --s-6(SYSTEM §3 「폼: 묶음 사이 24px + 1px 선」 ·
+   /design-review FINDING-004). 역할 토큰만. */
 
-.sectionTitle {
-  margin: var(--s-6) 0 var(--s-3);
-  font-size: var(--fs-lg);
-  font-weight: var(--fw-bold);
-  line-height: var(--lh-head);
-  letter-spacing: var(--ls-head);
-}
-
-/* §3 「폼: 묶음 사이 24px + 1px 선」 — 로그아웃은 비밀번호 변경 폼과 다른
-   묶음이다. 0px로 붙어 있어 폼의 두 번째 행동처럼 읽혔다(/design-review
-   FINDING-004). */
 .accountActions {
   margin-top: var(--s-6);
   padding-top: var(--s-6);
-  border-top: var(--line-w) solid var(--line);
+  border-top: var(--line-w) solid var(--border-row);
+}
+
+/* TextField 줄이 아래 여백(--s-4)을 가지므로 Form의 묶음 간격(--s-6)을 걷어 칸 사이 간격을 그대로 둔다. */
+.passwordForm {
+  gap: 0;
 }

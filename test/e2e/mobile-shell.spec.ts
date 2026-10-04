@@ -203,7 +203,7 @@ test.describe("폰 375 공통 셸 (성공 기준 3 · §6-0 폰 전략 · §10 �
   // /design-review 발견 1 — 폰 사용자 메뉴(TopBar 트리거가 여는 메뉴, F-05 트리거
   // 자체는 위에서 이미 44×44를 확인한다)의 항목이 12px/400으로 35px 높이였다.
   // §3·§10 폰 터치 목표 44×44는 트리거뿐 아니라 열리는 항목에도 적용된다.
-  test("사용자 메뉴 항목의 터치 목표가 44 이상이고 글자 크기가 --fs-base다", async ({ page }) => {
+  test("사용자 메뉴 항목의 터치 목표가 44 이상이고 글자 크기가 --text-body다", async ({ page }) => {
     await loginAsEmployee(page);
     await page.goto("/");
 
@@ -211,9 +211,11 @@ test.describe("폰 375 공통 셸 (성공 기준 3 · §6-0 폰 전략 · §10 �
     const items = page.getByRole("menuitem");
     const count = await items.count();
     expect(count).toBeGreaterThan(0);
+    // 04.6-26 후보 8 — 메뉴는 열릴 때 200ms 페이드 + 4px 이동이다. 열리는 중에 재면 소수 위치 때문에 높이가 43.999996처럼 어긋난다(부하가 있으면 재현). 모션이 끝난 뒤 잰다.
+    await page.evaluate(() => Promise.all(document.getAnimations().map((animation) => animation.finished)));
 
     const expectedFontSize = await page.evaluate(() =>
-      getComputedStyle(document.documentElement).getPropertyValue("--fs-base").trim(),
+      getComputedStyle(document.documentElement).getPropertyValue("--text-body").trim(),
     );
 
     for (let i = 0; i < count; i += 1) {
@@ -226,10 +228,10 @@ test.describe("폰 375 공통 셸 (성공 기준 3 · §6-0 폰 전략 · §10 �
     }
   });
 
-  // /design-review 발견 3 — 「더보기」 시트 그룹 머리글("계정")이 11px(--fs-xs)로
+  // /design-review 발견 3 — 「더보기」 시트 그룹 머리글("계정")이 11px(--text-tag)로
   // 렌더됐다. SYSTEM.md §6-10이 admin-index.module.css .groupLabel에 적용한
-  // §7-3 그룹 머리글 행 규칙(--fs-sm)과 같은 값이어야 한다.
-  test("더보기 시트 그룹 머리글 글자 크기가 --fs-sm이다(§7-3 그룹 머리글 행)", async ({ page }) => {
+  // §7-3 그룹 머리글 행 규칙(--text-aux — 04.6 스킨 A, 옛 12 → 13)과 같은 값이어야 한다.
+  test("더보기 시트 그룹 머리글 글자 크기가 --text-aux다(§7-3 그룹 머리글 행)", async ({ page }) => {
     await loginAsEmployee(page);
     await page.goto("/");
 
@@ -241,10 +243,34 @@ test.describe("폰 375 공통 셸 (성공 기준 3 · §6-0 폰 전략 · §10 �
     await expect(groupHeader).toHaveText("계정");
 
     const expectedFontSize = await page.evaluate(() =>
-      getComputedStyle(document.documentElement).getPropertyValue("--fs-sm").trim(),
+      getComputedStyle(document.documentElement).getPropertyValue("--text-aux").trim(),
     );
     const fontSize = await groupHeader.evaluate((el) => getComputedStyle(el).fontSize);
     expect(fontSize).toBe(expectedFontSize);
+  });
+
+  // 04.6-08 스킨 A — 시트 위 두 모서리 --radius-panel · 면 --surface-base · 위 2px 선 없음.
+  test("더보기 시트는 위 두 모서리가 --radius-panel이고 면이 --surface-base이며 위 선이 없다", async ({ page }) => {
+    await loginAsEmployee(page);
+    await page.goto("/");
+
+    await page.getByRole("button", { name: "더보기" }).click();
+    const sheet = page.getByRole("dialog", { name: "더보기" });
+    await expect(sheet).toBeVisible();
+
+    const radius = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--radius-panel").trim());
+    const surfaceBase = await page.evaluate(() => {
+      const probe = document.createElement("span");
+      probe.style.color = "var(--surface-base)";
+      document.body.append(probe);
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      return color;
+    });
+    await expect(sheet).toHaveCSS("border-top-left-radius", radius);
+    await expect(sheet).toHaveCSS("border-top-right-radius", radius);
+    await expect(sheet).toHaveCSS("border-top-width", "0px");
+    await expect(sheet).toHaveCSS("background-color", surfaceBase);
   });
 
   // /design-review 발견 4 — SYSTEM.md §6-7 로그인 화면 실물 스케치는 제출 버튼이

@@ -5,6 +5,9 @@ import { useAction } from "next-safe-action/hooks";
 import { toKstDate, formatKstTime } from "@/domain/holidays/business-day";
 import { useUnreadCount } from "@/ui/shell/unread-count";
 import { Button } from "@/ui/button/Button";
+import { Num } from "@/ui/num/Num";
+import { Table } from "@/ui/table/Table";
+import type { TableColumn } from "@/ui/table/types";
 import { openInboxAction, loadMoreInboxAction } from "./actions";
 import styles from "./inbox-list.module.css";
 
@@ -24,21 +27,6 @@ export type InboxListProps = {
   initialReferenceYear: string;
 };
 
-type Group = { date: string; rows: InboxRowView[] };
-
-// 받은 날짜(KST)로 인접한 행을 묶는다 — 서버가 이미 created_at DESC로 정렬해
-// 주므로 같은 날짜 행은 항상 붙어 있다(재정렬하지 않는다, S1-c).
-function groupByKstDate(rows: InboxRowView[]): Group[] {
-  const groups: Group[] = [];
-  for (const row of rows) {
-    const date = toKstDate(new Date(row.createdAt));
-    const last = groups[groups.length - 1];
-    if (last && last.date === date) last.rows.push(row);
-    else groups.push({ date, rows: [row] });
-  }
-  return groups;
-}
-
 // 올해 날짜는 MM-DD, 다른 해는 YYYY-MM-DD(S1-c · UI-SPEC :196). 04.2-09 Task 3
 // 사후 수정(Opus 편차 판정 (b)) — 다른 해 분기는 90일 보관 창 안에서 E2E로
 // 재현하기 어려워 export해 단위 테스트로 덮는다.
@@ -57,7 +45,7 @@ export function InboxList({ initialRows, initialHasMore, initialReferenceYear }:
   const [openedAt, setOpenedAt] = useState<string | null>(null);
   const [referenceYear, setReferenceYear] = useState(initialReferenceYear);
   const { refresh } = useUnreadCount();
-  const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({});
+  const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
   // 다음 커밋 뒤 포커스를 옮길 행 id — setState가 아니라 ref로 들고 있다가
   // rows가 그 행을 그려낸 다음 effect에서 한 번만 읽고 비운다(렌더 중
   // setState를 부르지 않는다, react-hooks/set-state-in-effect).
@@ -139,7 +127,6 @@ export function InboxList({ initialRows, initialHasMore, initialReferenceYear }:
     wasExecutingRef.current = isExecuting;
   }, [isExecuting]);
 
-  const groups = groupByKstDate(rows);
   const lastRow = rows[rows.length - 1];
 
   function loadMore(): void {
@@ -148,54 +135,50 @@ export function InboxList({ initialRows, initialHasMore, initialReferenceYear }:
     execute({ cursor: { createdAt: lastRow.createdAt, id: lastRow.id } });
   }
 
+  // 읽음 표시·포커스는 내용 칸의 `[data-inbox-row]`가 맡는다 — 표 행은 공용 `Table`이 그린다.
+  const columns: TableColumn<InboxRowView>[] = [
+    {
+      key: "message",
+      header: "내용",
+      priority: "p1",
+      cell: (row) => {
+        const unread = row.readAt === null || row.readAt === openedAt;
+        return (
+          <div
+            data-inbox-row
+            ref={(el) => {
+              rowRefs.current[row.id] = el;
+            }}
+            tabIndex={-1}
+            className={unread ? `${styles.row} ${styles.unread}` : styles.row}
+          >
+            {unread ? <span className="sr-only">안 읽음 · </span> : null}
+            {row.message}
+            {row.emailStatus === "failed" ? <div className={styles.emailFailed}>이메일 발송 실패</div> : null}
+          </div>
+        );
+      },
+    },
+    {
+      key: "time",
+      header: "시각",
+      priority: "p1",
+      align: "right",
+      cell: (row) => <Num value={formatKstTime(new Date(row.createdAt))} />,
+    },
+  ];
+
   return (
     <>
-      <table className={styles.table}>
-        <caption className="sr-only">알림함</caption>
-        <thead>
-          <tr>
-            <th scope="col">내용</th>
-            {/* L2(04.2-09 Task 3 사후 수정) — 값 칸(.time)이 오른쪽 정렬이라 머리글도 맞춘다. */}
-            <th scope="col" className={styles.time}>
-              시각
-            </th>
-          </tr>
-        </thead>
-        {groups.map((group) => (
-          <tbody key={group.date}>
-            <tr>
-              <th scope="rowgroup" colSpan={2} className={styles.groupHeader}>
-                {formatGroupLabel(group.date, referenceYear)}
-              </th>
-            </tr>
-            {group.rows.map((row) => {
-              const unread = row.readAt === null || row.readAt === openedAt;
-              return (
-                <tr
-                  key={row.id}
-                  data-row
-                  ref={(el) => {
-                    rowRefs.current[row.id] = el;
-                  }}
-                  tabIndex={-1}
-                  className={unread ? styles.unread : undefined}
-                >
-                  <td>
-                    <div className={styles.message}>
-                      {unread ? <span className="sr-only">안 읽음 · </span> : null}
-                      {row.message}
-                    </div>
-                    {row.emailStatus === "failed" ? (
-                      <div className={styles.emailFailed}>이메일 발송 실패</div>
-                    ) : null}
-                  </td>
-                  <td className={styles.time}>{formatKstTime(new Date(row.createdAt))}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        ))}
-      </table>
+      <Table
+        caption="알림함"
+        columns={columns}
+        rows={rows}
+        getRowId={(row) => row.id}
+        groupBy={(row) => toKstDate(new Date(row.createdAt))}
+        groupHeader={(row) => formatGroupLabel(toKstDate(new Date(row.createdAt)), referenceYear)}
+        groupHeaderScope="rowgroup"
+      />
       {hasMore ? (
         showRetry ? (
           <p

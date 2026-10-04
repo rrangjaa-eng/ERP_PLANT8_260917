@@ -1,0 +1,88 @@
+/* UI-SPEC 「화면 틀 계약」 ListScreen. 컨테이너 폭·좌우 안쪽 여백은 셸 main이 가진다. 토큰은 역할 이름만. */
+
+.screen {
+  width: 100%;
+}
+
+.title {
+  margin: 0 0 var(--s-4);
+  color: var(--text-strong);
+  font-size: var(--text-title);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-head);
+  line-height: var(--lh-tight);
+}
+
+.bar {
+  display: flex;
+  /* 필터가 두 줄로 접히면 1차는 마지막 줄 오른쪽 끝 — DOM 순서(필터 → 1차)가 곧 시각 순서다(SYSTEM §10). */
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--s-4);
+  margin: 0 0 var(--s-3);
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-4);
+  min-width: 0;
+}
+
+/* 04.6-10 — 필터가 여러 칸짜리 폼이면(프로젝트 목록) 폰에서 1차를 필터 아래 줄로 내린다 — 한 줄에 두면 필터 폼이 1차 옆 좁은 폭으로 눌린다.
+   링크 하나인 필터(거래처)는 그대로 한 줄. DOM 순서(필터 → 1차)가 곧 시각 순서다. */
+@media (max-width: 699.98px) {
+  .bar:has(form) {
+    flex-wrap: wrap;
+  }
+
+  .bar:has(form) > .filters {
+    flex: 1 1 100%;
+  }
+}
+
+.summary {
+  margin: var(--s-3) 0 0;
+  padding: var(--s-3) var(--s-4);
+  border: var(--line-w) solid var(--border-surface);
+  border-radius: var(--radius-surface);
+  background: var(--surface-base);
+}
+
+/* 잔고 한 줄 같은 텍스트 요약 — 면 없이 글자만(SYSTEM §6-1 · DECISIONS 2026-09-29 A4). */
+.summaryPlain {
+  margin: var(--s-3) 0;
+}
+
+/* 1차 버튼 글자는 한 줄 — 필터가 넓은 폭(768)에서 버튼이 눌려 낱말이 갈리지 않게 한다(§7-1). */
+.primaryAction {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* 폰(<700) 목록 머리 1차 높이 44 — 사용자 결정 ② 「행동 버튼 44」(2026-10-03, 카드 답 2026-10-03 20:15 KST: 44로 올림). 빈 화면 버튼(ListEmptyAction)과 같은
+   min-height 방식이고 CSS 미디어쿼리뿐이다(JS 폭 판정이면 첫 렌더 CLS). PC는 Button의 --control-h(32) 그대로. */
+@media (max-width: 699.98px) {
+  .primaryAction {
+    min-height: var(--touch-min);
+  }
+}
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  margin: var(--s-4) 0 0;
+}
+
+/* 폰은 읽기만인 화면의 1차 — 폰(<700)에서 그리지 않는다(사용자 결정 2026-10-03 「폰은 읽기만」).
+   필터도 없어 줄이 비면 줄 자체를 그리지 않는다(빈 줄의 아래 여백이 제목 아래 간격을 --s-4보다 벌린다). */
+@media (max-width: 699.98px) {
+  .bar > .phoneHidden {
+    display: none;
+  }
+
+  .bar:has(> .phoneHidden):not(:has(> .filters > *)) {
+    display: none;
+  }
+}

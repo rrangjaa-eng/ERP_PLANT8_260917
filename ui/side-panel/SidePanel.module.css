@@ -1,6 +1,7 @@
-/* SYSTEM.md §7-8 개정 ⑰(04.3-10 · D-d) — 옆 패널. 토큰만(docs/design/tokens.css). 새 색 · radius · 그림자 없음.
-   PC(700 이상): 오른쪽 고정 480(--modal-w — §7-8 모달과 같은 폭), 목록 위에 겹쳐 서고 밀지 않는다. 스크림 없음 —
-   show()로 열려 뒤를 막지 않는다. 폰(700 미만): 아래 @media — §7-8 시트 골격(ui/table/RowSheet.module.css 선례). */
+/* UI-SPEC 「옆 패널 상호작용 계약」 · SYSTEM §6-3 · §7-8(04.6-04 · Q1 A). 역할 토큰만(docs/design/tokens.css).
+   PC(700 이상): 오른쪽 고정 --panel-w(480) · 높이 100dvh · 왼쪽 두 모서리 · 뒤 --scrim-panel(목록 왼쪽이 옅게 보인다).
+   폰(700 미만): 아래 시트 — 전폭 · 높이 상한 --sheet-max-h · 위 두 모서리 · 뒤 --scrim-dialog.
+   모든 폭에서 showModal()이라 뒤는 네이티브 모달이 막는다. 머리 · 행동 줄은 고정, 본문만 스크롤한다. */
 
 .panel {
   position: fixed;
@@ -9,36 +10,54 @@
   inset-inline-end: 0;
   z-index: var(--z-modal);
   box-sizing: border-box;
-  width: var(--modal-w);
-  max-width: 100%;
-  height: auto;
+  width: var(--panel-w);
+  max-width: 100vw;
+  height: 100dvh;
   max-height: none;
   margin: 0;
   padding: 0;
-  border: 0;
-  border-inline-start: var(--line-w-strong) solid var(--line-strong);
-  background: var(--bg);
-  color: var(--fg);
+  border-width: 0;
+  border-radius: var(--radius-panel) 0 0 var(--radius-panel);
+  box-shadow: var(--shadow-float);
+  background: var(--surface-base);
+  color: var(--text-strong);
 }
 
 .panel[open] {
   display: flex;
   flex-direction: column;
+  animation: panelIn var(--dur-sheet) var(--ease-sheet);
+}
+
+.panel::backdrop {
+  background: var(--scrim-panel);
+}
+
+/* 패널 위에 확인 창(「입력 버리기」)이 떠 있는 동안 불투명한 가림막은 확인 창 것 하나뿐(D16) — 두 겹으로 어두워지지 않는다. */
+:global(body:has(dialog[open]:not([data-ui="side-panel"]))) .panel::backdrop {
+  background: transparent;
+}
+
+/* 열려 있는 동안 뒤 문서 스크롤을 잠근다(D18). 사라지는 스크롤바 폭은 SidePanel이 열 때 재어 html 안쪽 여백(인라인)으로 채우고 닫을 때 지운다 — 뒤 배치가 움직이지 않는다. */
+:global(html:has(dialog[data-ui="side-panel"][open])) {
+  overflow: hidden;
 }
 
 .hd {
   display: flex;
+  flex: none;
   align-items: flex-start;
   gap: var(--s-3);
-  padding: var(--s-3) var(--pad-page) var(--s-2);
-  border-bottom: var(--line-w) solid var(--line);
+  padding: var(--s-4) var(--panel-pad-x) var(--s-3);
+  border-bottom: var(--line-w) solid var(--border-row);
 }
 
 .title {
   flex: 1;
   min-width: 0;
   margin: 0;
-  font-size: var(--fs-lg);
+  color: var(--text-strong);
+  font-size: var(--text-subtitle);
   font-weight: var(--fw-bold);
   letter-spacing: var(--ls-head);
   line-height: var(--lh-head);
@@ -47,22 +66,22 @@
 }
 
 .close {
-  flex: none;
-  width: var(--touch-min);
-  height: var(--touch-min);
-  margin: calc(var(--s-2) * -1) calc(var(--s-3) * -1) 0 0;
-  border: 0;
-  background: none;
-  color: var(--muted);
   display: inline-flex;
+  flex: none;
   align-items: center;
   justify-content: center;
+  width: var(--touch-min);
+  height: var(--touch-min);
+  margin: calc(var(--s-3) * -1) calc(var(--s-3) * -1) calc(var(--s-3) * -1) 0;
+  border-width: 0;
+  background: none;
+  color: var(--text-muted);
   cursor: pointer;
 }
 
 .close:focus-visible {
   outline: var(--focus-w) solid var(--focus);
-  outline-offset: var(--focus-offset);
+  outline-offset: calc(var(--focus-offset) * -1);
 }
 
 .closeIcon {
@@ -75,53 +94,53 @@
   stroke-linejoin: round;
 }
 
-/* 본문만 스크롤 — 머리 · 행동 줄은 고정. */
-.body {
-  flex: 1 1 auto;
-  overflow-y: auto;
-  padding: var(--s-4) var(--pad-page);
-}
-
-/* 행동 줄 — 2차 왼쪽 · 1차 오른쪽(받은 순서 그대로), 오른쪽 끝에 붙는다. 이유 · 결과 줄은 호출부가 맨 앞 전폭으로 둔다. */
-.actions {
+/* 머리 아래 전부. PanelForm은 이 안에서 칸 묶음(스크롤)과 행동 줄(고정)로 나뉜다. PanelForm이 없는 제어 패널은 이 본문이 스크롤한다. */
+.content {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  align-items: center;
-  gap: var(--s-2) var(--s-4);
-  padding: var(--s-3) var(--pad-page);
-  border-top: var(--line-w) solid var(--line);
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
-@media (max-width: 699px) {
+@keyframes panelIn {
+  from {
+    transform: translateX(100%);
+  }
+
+  to {
+    transform: none;
+  }
+}
+
+@keyframes sheetIn {
+  from {
+    transform: translateY(100%);
+  }
+
+  to {
+    transform: none;
+  }
+}
+
+@media (max-width: 699.98px) {
   .panel {
     inset-block-start: auto;
     inset-block-end: 0;
     inset-inline: 0;
     width: 100%;
     max-width: none;
-    max-height: 85vh;
-    border-inline-start: 0;
-    border-top: var(--line-w-strong) solid var(--line-strong);
+    height: auto;
+    max-height: var(--sheet-max-h);
+    border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+  }
+
+  .panel[open] {
+    animation-name: sheetIn;
   }
 
   .panel::backdrop {
-    background: var(--scrim);
-  }
-
-  /* 시트 행동 줄 버튼은 터치 목표 44(§7-8 · §3 「터치 목표」). 2차 왼쪽 · 1차 오른쪽, 1차가 2차의 2배 폭(§7-8 시트 행동 줄 —
-     DOM 감사 A-L1). 이유 · 결과 줄은 버튼 앞 전폭 줄이라 마지막 둘이 버튼이다. */
-  .actions > :last-child {
-    flex: 2 1 0;
-  }
-
-  .actions > :nth-last-child(2):not(p) {
-    flex: 1 1 0;
-  }
-
-  .actions button {
-    flex: 1 1 auto;
-    justify-content: center;
-    min-height: var(--touch-min);
+    background: var(--scrim-dialog);
   }
 }

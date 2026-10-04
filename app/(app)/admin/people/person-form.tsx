@@ -1,12 +1,13 @@
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
-import Link from "next/link";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useAction } from "next-safe-action/hooks";
 import { registerPersonAction, archivePersonAction } from "./actions";
 import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
-import { FormAlert } from "@/ui/form-alert/FormAlert";
+import { Form } from "@/ui/form/Form";
+import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
+import { usePanel } from "@/ui/side-panel/SidePanel";
 import { DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
 import styles from "./people.module.css";
 
@@ -18,33 +19,39 @@ function getStringField(formData: FormData, key: string): string {
   return typeof value === "string" ? value : "";
 }
 
-// SYSTEM.md §6-3 폼 템플릿(D-39) — 목록 위에 펼치는 폼. 성공 시 초기 비밀번호를
-// 그 자리에 한 번 보여준다(T-03-29) — 클라이언트 상태에만 담고 URL·로컬
-// 저장소에 넣지 않는다.
-// §6-1(2026-09-21 이후): page.tsx가 ?new=1일 때만 이 폼을 렌더한다 — 기본
-// 진입에는 없다. cancelHref는 그 쿼리를 뺀 같은 화면으로 돌아간다.
-export function PersonForm({
-  roles,
-  teams,
-  cancelHref,
-}: {
-  roles: RoleOption[];
-  teams: TeamOption[];
-  cancelHref: string;
-}) {
-  const formRef = useRef<HTMLFormElement>(null);
+// SYSTEM.md §6-3 폼 템플릿(D-39) — 옆 패널 안 폼(04.6-04: `SidePanel` 안 `PanelForm`). 성공 시 초기 비밀번호를
+// 패널 안 그 자리에 한 번 보여준다(T-03-29) — 클라이언트 상태에만 담고 URL·로컬 저장소에 넣지 않는다.
+// 사용자 답 Q3 A 「패널에 남음」(R9 D의 예외): 사람 상세로 이동하지 않고 결과의 「사람 등록」으로 같은 패널에서 이어서 입력한다.
+// §6-1: page.tsx가 ?new=1일 때만 이 패널을 렌더한다 — 기본 진입에는 없다.
+export function PersonForm({ roles, teams }: { roles: RoleOption[]; teams: TeamOption[] }) {
+  const panel = usePanel();
+  const panelRef = useRef<PanelFormHandle>(null);
+  const continueRef = useRef(false);
   const [registered, setRegistered] = useState<{ email: string; tempPassword: string } | null>(null);
   const { execute, result, isExecuting } = useAction(registerPersonAction, {
     onSuccess: ({ data, input }) => {
       if (!data) return;
+      // 칸 비움 · 바뀐 칸 수 0 — 결과 화면에서 Esc가 「입력 버리기」를 묻지 않는다.
+      panelRef.current?.succeed();
       setRegistered({ email: input.email, tempPassword: data.tempPassword });
-      formRef.current?.reset();
     },
   });
 
+  // 결과 화면은 폼(PanelForm)을 내리므로 그 폼이 마지막으로 알린 닫기 가드(제출 중)를 여기서 푼다.
+  useEffect(() => {
+    if (!registered) return;
+    panel?.setGuard({ dirtyCount: 0, submitting: false });
+  }, [registered, panel]);
+
+  // 「사람 등록」으로 이어서 입력 — 빈 폼의 첫 칸으로 포커스.
+  useEffect(() => {
+    if (registered || !continueRef.current) return;
+    continueRef.current = false;
+    document.getElementById("name")?.focus();
+  }, [registered]);
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setRegistered(null);
     const formData = new FormData(event.currentTarget);
     const teamId = getStringField(formData, "teamId");
     execute({
@@ -59,11 +66,18 @@ export function PersonForm({
 
   if (registered) {
     return (
-      <div className={`${styles.registeredPanel} single-column`}>
+      <div className={styles.registeredPanel}>
         <p className={styles.registeredLabel}>초기 비밀번호 — {registered.email}</p>
         <p className={styles.tempPassword}>{registered.tempPassword}</p>
         <p className={styles.registeredHint}>이 비밀번호는 다시 볼 수 없습니다 · 지금 전달하세요</p>
-        <Button variant="tertiary" onClick={() => setRegistered(null)}>
+        <Button
+          autoFocus
+          variant="tertiary"
+          onClick={() => {
+            continueRef.current = true;
+            setRegistered(null);
+          }}
+        >
           사람 등록
         </Button>
       </div>
@@ -73,14 +87,31 @@ export function PersonForm({
   const nameError = result.validationErrors?.name?._errors?.[0];
   const emailError = result.validationErrors?.email?._errors?.[0];
   const hireDateError = result.validationErrors?.hireDate?._errors?.[0];
+  const roleError = result.validationErrors?.roleId?._errors?.[0];
 
   return (
-    <form ref={formRef} onSubmit={handleSubmit} id="person-form" className="single-column">
+    <PanelForm
+      ref={panelRef}
+      id="person-form"
+      label="사람 등록"
+      intent="create"
+      onSubmit={handleSubmit}
+      pending={isExecuting}
+      reason={roleError ?? result.serverError ?? null}
+    >
       <TextField id="name" name="name" label="이름" required error={nameError} />
       <TextField id="email" name="email" label="이메일" type="email" required error={emailError} />
-      <div className={styles.selectLabel}>
+      <div className={styles.panelSelect}>
         <label htmlFor="roleId">계급</label>
-        <select className={styles.select} id="roleId" name="roleId" required defaultValue="">
+        <select
+          className={roleError ? `${styles.select} ${styles.selectInvalid}` : styles.select}
+          id="roleId"
+          name="roleId"
+          required
+          defaultValue=""
+          aria-invalid={roleError ? true : undefined}
+          aria-describedby={roleError ? "roleId-error" : undefined}
+        >
           <option value="" disabled>
             계급 선택
           </option>
@@ -90,8 +121,9 @@ export function PersonForm({
             </option>
           ))}
         </select>
+        {roleError ? <Form.Error id="roleId-error">{roleError}</Form.Error> : null}
       </div>
-      <div className={styles.selectLabel}>
+      <div className={styles.panelSelect}>
         <label htmlFor="teamId">팀</label>
         <select className={styles.select} id="teamId" name="teamId" defaultValue="">
           <option value="">배정 없음</option>
@@ -105,16 +137,7 @@ export function PersonForm({
       <TextField id="effectiveFrom" name="effectiveFrom" label="발령일" type="date" />
       {/* 04.1-06(D-96): 입사일 필수 — 네이티브 필수 속성은 두지 않는다(브라우저 말풍선이 서버 문구를 가린다, §7-15 · C-13). */}
       <TextField id="hireDate" name="hireDate" label="입사일" type="date" error={hireDateError} />
-      {result.serverError ? <FormAlert>{result.serverError}</FormAlert> : null}
-      <div className={styles.formActions}>
-        <Button type="submit" variant="primary" pending={isExecuting}>
-          사람 등록
-        </Button>
-        <Link href={cancelHref} className={styles.toggle}>
-          취소
-        </Link>
-      </div>
-    </form>
+    </PanelForm>
   );
 }
 

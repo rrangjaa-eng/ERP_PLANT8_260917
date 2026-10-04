@@ -3,6 +3,8 @@ import { createFixtureUser } from "./fixtures";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { recordRestoreRehearsal } from "@/domain/ops/restore-rehearsal";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { isStrict } from "./design-principles";
+import { checkPrinciples } from "./principles-check";
 
 test.describe("관리자 시스템 상태 화면 (OPS-06, D-17, D-18)", () => {
   test("권한표에 시스템 상태 보기 권한이 없는 계급이 접근하면 404를 받는다", async ({ page }) => {
@@ -16,6 +18,16 @@ test.describe("관리자 시스템 상태 화면 (OPS-06, D-17, D-18)", () => {
 
     const response = await page.goto("/admin/system-status");
     expect(response?.status()).toBe(404);
+  });
+
+  // 04.6-20: 시스템 상태는 `DetailScreen` 틀 — 보이는 틀 제목(h1) 하나, 상태 항목은 dl 그대로.
+  test("시스템 상태가 상세 틀 제목을 그린다", async ({ page }) => {
+    await openStatusAsAdmin(page);
+    const title = page.locator('main h1[data-ui="screen-title"]');
+    await expect(title).toHaveCount(1);
+    await expect(title).toHaveText("시스템 상태");
+    expect(await title.evaluate((el) => getComputedStyle(el).fontSize)).toBe(await tokenValue(page, "--text-title"));
+    await expect(page.locator("main dl")).toHaveCount(1);
   });
 
   test("시스템 관리자는 배포 버전·DB 커넥션·마지막 백업을 보고 배너는 없다", async ({ page }) => {
@@ -104,8 +116,8 @@ function tokenAsColor(page: Page, name: string): Promise<string> {
 }
 
 async function expectNoStatusColors(page: Page, value: Locator): Promise<void> {
-  const danger = await tokenAsColor(page, "--danger");
-  const success = await tokenAsColor(page, "--success");
+  const danger = await tokenAsColor(page, "--status-danger");
+  const success = await tokenAsColor(page, "--status-success");
   const colors = await value.evaluate((dd) =>
     [dd, ...Array.from(dd.querySelectorAll("*"))].map((el) => getComputedStyle(el).color),
   );
@@ -172,7 +184,7 @@ test.describe.serial("상태 화면 「복원 리허설」 행 (04.4-05, D8-08)"
 
     // .detailLink와 같은 다섯 속성 — 크기 · 굵기 · 색 · 밑줄 · 밑줄 간격.
     const tokens = {
-      fontSize: await tokenValue(page, "--fs-sm"),
+      fontSize: await tokenValue(page, "--text-aux"),
       fontWeight: await tokenValue(page, "--fw-medium"),
       color: await tokenAsColor(page, "--accent"),
       offset: await tokenValue(page, "--underline-offset"),
@@ -281,4 +293,13 @@ test.describe.serial("상태 화면 「복원 리허설」 행 (04.4-05, D8-08)"
       expect.soft(misses, `${detail} 링크가 아닌 적중점`).toEqual([]);
     }
   });
+});
+
+// 04.6-20 · R11 · 공통 §10: 옮긴 세 화면의 원칙 점검 — 내 계정·시스템 상태는 경고 0.
+test("화면 사용성 원칙(막는 모드) — 내 계정·설정·시스템 상태", async ({ page }) => {
+  await openStatusAsAdmin(page);
+  const strict = isStrict(process.env.DESIGN_PRINCIPLES_STRICT);
+  await checkPrinciples(page, ["/account", "/admin/system-status"], { strict });
+  // 설정 화면은 레지스트리 힌트 11개가 「긴 설명」(40자 이상)이라 막는 모드에서 경고 0이 안 된다 — 사용자 결정 전까지 경고 모드로 잰다(SUMMARY 「사용자 질문 후보」).
+  await checkPrinciples(page, ["/admin/settings"], { strict: false });
 });

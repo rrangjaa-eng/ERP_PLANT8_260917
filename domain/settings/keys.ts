@@ -193,6 +193,8 @@ export const FX_RECENT_RATE_USD: SettingDef<number> = {
 
 // 04-26(D-86 · S4) — 한 차수에 둘 수 있는 견적 줄 수. 보관된 줄은 빼고 조정·견적 외 비용·취소 줄은 센다.
 // 서버 게이트 quote.line-cap과 견적 표(「줄 추가」·키·붙여넣기)가 같은 값을 쓴다 — 상한은 줄을 더할 때만 막는다.
+// 기본값은 여러 줄 지출결의 액션의 입력 상한도 정한다(app/(app)/expenses/actions.ts — 05-08 검토 #5).
+export const QUOTE_LINE_MAX_PER_REVISION_DEFAULT = 300;
 export const QUOTE_LINE_MAX_PER_REVISION: SettingDef<number> = {
   key: "quote_line.max_per_revision",
   kind: "simple",
@@ -200,7 +202,7 @@ export const QUOTE_LINE_MAX_PER_REVISION: SettingDef<number> = {
   label: "차수당 견적 줄 상한",
   hint: "한 차수에 둘 수 있는 견적 줄 수를 정합니다(조정·취소 줄 포함).",
   namespace: "견적 표",
-  default: 300,
+  default: QUOTE_LINE_MAX_PER_REVISION_DEFAULT,
 };
 
 // 완료 처리 강행 허용 — 점검 항목별 boolean 셋(03-CONTEXT.md Claude's

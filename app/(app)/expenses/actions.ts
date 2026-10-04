@@ -26,6 +26,7 @@ import {
   requestEvidenceUpload,
 } from "@/domain/evidence";
 import { CURRENCIES } from "@/domain/money/currency";
+import { QUOTE_LINE_MAX_PER_REVISION_DEFAULT } from "@/domain/settings/keys";
 import { formatKstTime } from "@/domain/holidays/business-day";
 import { log } from "@/lib/log";
 import "./actions.registry";
@@ -35,8 +36,9 @@ import "./actions.registry";
 
 const expenseIdSchema = z.string().uuid();
 
+// 줄 수 상한 = 차수 줄 상한 기본값 — 견적 줄 표 Ctrl+A → Ctrl+E가 한 차수의 줄 전부를 보낸다(05-08 검토 #5).
 export const createExpenseFromLinesAction = authedActionClient
-  .schema(z.object({ lineIds: z.array(z.string().uuid()).min(1).max(100) }))
+  .schema(z.object({ lineIds: z.array(z.string().uuid()).min(1).max(QUOTE_LINE_MAX_PER_REVISION_DEFAULT) }))
   .action(async ({ parsedInput, ctx }) => {
     const result = await createExpenseFromLines(ctx.viewer, parsedInput);
     revalidatePath("/expenses");

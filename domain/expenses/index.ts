@@ -43,11 +43,12 @@ import { moneyFromRow, moneyToColumns, remainingForInstallments, type Money } fr
 import { CURRENCIES, recentFxRate } from "@/domain/money/currency";
 import { allocateExpenseNumber, loadExpenseNumberFormat } from "@/domain/document-numbering";
 import { formatKstTime } from "@/domain/holidays/business-day";
-import { computeExpenseTax, storedTaxResult, taxDriftText, taxLineText } from "@/domain/expenses/tax";
+import { computeExpenseTax, storedTaxResult, taxDriftText, taxLineText, type ExpenseTaxResult } from "@/domain/expenses/tax";
 import { buildExpenseDetailRows } from "@/domain/expenses/detail";
 import { expenseLineDoor, type ExpenseLineDoor } from "@/domain/expenses/line-door";
 import { resolveLinkedDocumentsByLineage, type LineageLine } from "@/domain/quotes/lineage";
-import { evaluateExpenseSubmit } from "@/domain/expenses/gate";
+import { buildExpenseSubmitContext, nextActionTarget, PROJECT_COMPLETED, TAX_UNAVAILABLE, type ExpenseSubmitFacts, type ExpenseSubmitTarget } from "@/domain/expenses/gate";
+import type { DbOrTx } from "@/repositories/document-counters";
 import {
   EXPENSE_DETAIL_DTO_SPEC,
   EXPENSE_DOCUMENT_DTO_SPEC,
@@ -92,9 +93,7 @@ export const EXPENSE_DOCUMENT_KIND = "expense";
 
 const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const NOT_IN_CURRENT_REVISION = "견적 줄이 현재 차수에 없음 · 견적 줄 바꾸기";
-const PROJECT_COMPLETED = "완료 프로젝트 · 새 지출결의 없음";
 const NO_VENDOR = "거래처 없음 · 거래처 고르기";
-const TAX_UNAVAILABLE = "세금 계산 불가 · 세율은 경영관리";
 const ACTIVE_STATUSES = new Set(["submitted", "in_review", "approved"]);
 
 export class ExpenseNotFoundError extends UserFacingError {
@@ -565,11 +564,12 @@ export async function submitExpense(
   if (!projectRow) throw new ExpenseNotFoundError();
 
   const tax = await computeExpenseTax(viewer, row);
+  const pre = await loadSubmitPre(viewer, projectRow);
   const prepared = await prepareSubmission(viewer, { kind: EXPENSE_DOCUMENT_KIND, drafterId: viewer.id });
   const format = await loadExpenseNumberFormat();
 
   return withTransaction(async (tx): Promise<SubmitExpenseResult> => {
-    await lockProjectForWrite(viewer, projectRow.id, tx);
+    const lockedProject = await lockProjectForWrite(viewer, projectRow.id, tx);
     const locked = await lockExpenseForUpdate(viewer, row.id, tx);
     await deps?.afterLock?.();
     if (!locked) throw new ExpenseNotFoundError();
@@ -580,24 +580,11 @@ export async function submitExpense(
     }
     if (locked.version !== input.expectedVersion) throw new ExpenseConflictError(locked.updatedAt);
 
-    let door: ExpenseLineDoor | null = null;
-    let lineInCurrentRevision = true;
+    // 잠근 프로젝트 행 · tx로 읽은 차수 · 줄 · 문 · 증빙 수로 같은 규칙을 다시 판정한다(T-05-601).
+    const { facts, line, numbered, door } = await loadSubmitFacts(viewer, locked, lockedProject ?? projectRow, pre, tax, tx);
+    const decision = await gate(locked, "expense.submit", buildExpenseSubmitContext(facts));
+    if (!decision.allowed) throw new GateBlockedError(decision.reason);
     if (locked.quoteLineId) {
-      const line = await findQuoteLineById(viewer, locked.quoteLineId, tx);
-      const latest = await findLatestQuoteRevision(viewer, projectRow.id, tx);
-      const numbered = line ? await listNumberedByLine(viewer, line.id, tx) : [];
-      const evidenceCount = await countActiveByOwner(viewer, EXPENSE_DOCUMENT_KIND, locked.id, tx);
-      door = line ? doorFor(line, numbered, locked.id) : null;
-      lineInCurrentRevision = Boolean(line && latest && line.revisionId === latest.id && line.archivedAt === null && door && door.state !== "none");
-      const decision = evaluateExpenseSubmit({
-        lineInCurrentRevision,
-        closedBy: door?.state === "closed" && door.latest ? door.latest : null,
-        supplyAmountKrw: locked.supplyAmountKrw,
-        evidenceType: locked.evidenceType,
-        paymentMethod: locked.paymentMethod,
-        evidenceCount,
-      });
-      if (!decision.allowed) throw new GateBlockedError(decision.reason);
       const current = supplyMoney(locked);
       if (line && current) {
         const others = numbered.filter((doc) => doc.id !== locked.id).flatMap((doc) => supplyMoney(doc) ?? []);
@@ -638,15 +625,78 @@ export async function submitExpense(
   });
 }
 
+// ── 제출 판정 사실(05-06 — 미리보기 · 제출 공용) ──────────────────────────
+
+// 트랜잭션 전에 읽는 사실 — 고객 승인 게이트 설정과 담당 PM 이름.
+type SubmitPre = { gateEnabled: boolean; pmName: string };
+
+async function loadSubmitPre(viewer: Viewer, projectRow: ProjectRow): Promise<SubmitPre> {
+  const [gateEnabled, pm] = await Promise.all([getSettingValue(PROJECT_CUSTOMER_APPROVAL_GATE), findUserById(viewer, projectRow.pmUserId)]);
+  return { gateEnabled, pmName: pm?.name ?? "" };
+}
+
+// 규칙 `expense.submit`의 사실 — 미리보기는 기본 연결로, 제출은 tx로 읽는다(차수 · 줄 · 문 · 증빙 수 · 금액). 팀 비용 칸은 05-07이 채운다.
+async function loadSubmitFacts(
+  viewer: Viewer,
+  row: ExpenseRow,
+  projectRow: ProjectRow,
+  pre: SubmitPre,
+  tax: ExpenseTaxResult,
+  tx?: DbOrTx,
+): Promise<{ facts: ExpenseSubmitFacts; line: QuoteLineRow | null; numbered: NumberedLineExpense[]; door: ExpenseLineDoor | null }> {
+  const line = row.quoteLineId ? await findQuoteLineById(viewer, row.quoteLineId, tx) : null;
+  const latest = await findLatestQuoteRevision(viewer, projectRow.id, tx);
+  const numbered = line ? await listNumberedByLine(viewer, line.id, tx) : [];
+  const door = line ? doorFor(line, numbered, row.id) : null;
+  const evidenceCount = await countActiveByOwner(viewer, EXPENSE_DOCUMENT_KIND, row.id, tx);
+  const facts: ExpenseSubmitFacts = {
+    customerApproval:
+      row.quoteLineId && latest
+        ? {
+            status: projectRow.status,
+            revisionSeq: latest.seq,
+            revisionApproved: latest.customerApprovedAt !== null,
+            gateEnabled: pre.gateEnabled,
+            actorIsAssignedPm: projectRow.pmUserId === viewer.id,
+            pmName: pre.pmName,
+          }
+        : null,
+    projectCompleted: projectRow.status === "completed",
+    line: row.quoteLineId
+      ? {
+          inCurrentRevision: Boolean(line && latest && line.revisionId === latest.id && line.archivedAt === null && door && door.state !== "none"),
+          closedBy: door?.state === "closed" && door.latest ? door.latest : null,
+        }
+      : null,
+    vendorId: line ? line.vendorId : row.vendorId,
+    teamCost: null,
+    supplyAmountKrw: row.supplyAmountKrw,
+    evidenceType: row.evidenceType,
+    paymentMethod: row.paymentMethod,
+    evidenceCount,
+    taxUnavailable: tax.unavailable === true,
+  };
+  return { facts, line, numbered, door };
+}
+
+// 다음 한 수가 페이지 이동인 막힘의 주소 — ① 담당 PM이면 프로젝트 상세(고객 승인 표시), ④ 가장 최근 제출 문서.
+function blockHref(target: ExpenseSubmitTarget | null, facts: ExpenseSubmitFacts, projectId: string): string | null {
+  if (target === "customerApproval" && facts.customerApproval?.actorIsAssignedPm) return `/projects/${projectId}`;
+  if (target === "openLatest" && facts.line?.closedBy) return `/expenses/${facts.line.closedBy.id}`;
+  return null;
+}
+
 // ── 미리보기(05-06 — 쓰기 없음) ─────────────────────────────────────────
 
 export type ExpenseSubmitBlock = NonNullable<ExpensePreviewDto["block"]>;
 
-// 저장 전 칸 값을 초안에 겹쳐 세금 한 줄 · 제출 막힘 첫 이유 · 회차 상한 칸 오류를 돌려준다. 기안자 · 작성 중만(아니면 없는 문서 —
-// 남의 초안을 계산하지 않는다, T-05-603). 트랜잭션 · 쓰기 없음 — 미리보기 통과가 제출 통과를 보장하지 않는다(제출이 tx 안에서 다시 판정).
+// 저장 전 칸 값을 초안에 겹쳐 세금 한 줄 · 제출 막힘 첫 이유와 대상 · 회차 상한 칸 오류를 돌려준다. 기안자 · 작성 중만(아니면 없는 문서 —
+// 남의 초안을 계산하지 않는다, T-05-603). 트랜잭션 · 쓰기 없음 — 미리보기 통과가 제출 통과를 보장하지 않는다(제출이 tx 안에서 같은 규칙으로 다시 판정).
 export async function previewExpense(viewer: Viewer, input: { expenseId: string; fields: ExpenseDraftInput }): Promise<Partial<ExpensePreviewDto>> {
   const saved = UUID_SHAPE.test(input.expenseId) ? await findExpenseById(viewer, input.expenseId) : null;
   if (!saved || saved.drafterId !== viewer.id || saved.number !== null) throw new ExpenseNotFoundError();
+  const projectRow = saved.projectId ? await findProjectById(viewer, saved.projectId) : null;
+  if (!projectRow) throw new ExpenseNotFoundError();
   const row: ExpenseRow = { ...saved, ...toDraftColumns(draftFieldsSchema.parse(input.fields)) };
   const supply = supplyMoney(row);
 
@@ -655,29 +705,20 @@ export async function previewExpense(viewer: Viewer, input: { expenseId: string;
   const evidenceTypeName = row.evidenceType ? (evidenceNames.get(row.evidenceType) ?? row.evidenceType) : null;
   const taxLine = supply ? taxLineText(tax, supply, `${evidenceTypeName ?? ""} 규칙`) : null;
 
-  const fieldErrors: ExpensePreviewDto["fieldErrors"] = {};
+  const { facts, line, numbered } = await loadSubmitFacts(viewer, row, projectRow, await loadSubmitPre(viewer, projectRow), tax);
+  const decision = await gate(row, "expense.submit", buildExpenseSubmitContext(facts));
   let block: ExpenseSubmitBlock | null = null;
-  if (row.quoteLineId && row.projectId) {
-    const line = await findQuoteLineById(viewer, row.quoteLineId);
-    const latest = await findLatestQuoteRevision(viewer, row.projectId);
-    const numbered = line ? await listNumberedByLine(viewer, line.id) : [];
-    const door = line ? doorFor(line, numbered, row.id) : null;
-    const decision = evaluateExpenseSubmit({
-      lineInCurrentRevision: Boolean(line && latest && line.revisionId === latest.id && line.archivedAt === null && door && door.state !== "none"),
-      closedBy: door?.state === "closed" && door.latest ? door.latest : null,
-      supplyAmountKrw: row.supplyAmountKrw,
-      evidenceType: row.evidenceType,
-      paymentMethod: row.paymentMethod,
-      evidenceCount: await countActiveByOwner(viewer, EXPENSE_DOCUMENT_KIND, row.id),
-    });
-    if (!decision.allowed) block = { reason: decision.reason, target: decision.target };
-    if (line && supply) {
-      const others = numbered.filter((doc) => doc.id !== row.id).flatMap((doc) => supplyMoney(doc) ?? []);
-      const cap = remainingForInstallments(lineExecution(line), others, supply);
-      if (cap.exceeds) fieldErrors.supplyAmount = `남은 실행가 ${remainingText(cap.remaining, cap.basis)} 넘음 · 공급가액 고치기`;
-    }
+  if (!decision.allowed) {
+    const target = await nextActionTarget(facts);
+    block = { reason: decision.reason, target, href: blockHref(target, facts, projectRow.id) };
   }
-  if (!block && tax.unavailable) block = { reason: TAX_UNAVAILABLE, target: null };
+
+  const fieldErrors: ExpensePreviewDto["fieldErrors"] = {};
+  if (line && supply) {
+    const others = numbered.filter((doc) => doc.id !== row.id).flatMap((doc) => supplyMoney(doc) ?? []);
+    const cap = remainingForInstallments(lineExecution(line), others, supply);
+    if (cap.exceeds) fieldErrors.supplyAmount = `남은 실행가 ${remainingText(cap.remaining, cap.basis)} 넘음 · 공급가액 고치기`;
+  }
   return project(viewer, { taxLine, block, fieldErrors }, EXPENSE_PREVIEW_DTO_SPEC);
 }
 

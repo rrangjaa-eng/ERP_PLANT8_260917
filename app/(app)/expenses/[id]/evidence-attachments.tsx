@@ -17,9 +17,11 @@ export function EvidenceAttachments(props: {
   onUploadingChange?: (count: number) => void;
   openSignal?: number;
   pickerId?: string;
+  // 05-06 — 파일 하나가 완료 통보까지 끝난 순간(서버가 다시 그린 files보다 먼저) — 폼이 지난 ⑧ 막힘을 바로 푼다.
+  onAdded?: () => void;
 }) {
   const router = useRouter();
-  const { expenseId } = props;
+  const { expenseId, onAdded } = props;
   const actions = useMemo<AttachmentActions>(
     () => ({
       request: async (declaration) => {
@@ -32,6 +34,7 @@ export function EvidenceAttachments(props: {
         const data = result?.data;
         const file = data?.file;
         if (file) {
+          onAdded?.();
           return {
             ok: true,
             file: { id: file.id, name: file.originalName ?? "", sizeBytes: file.sizeBytes ?? 0, createdAt: new Date(file.createdAt ?? Date.now()).toISOString() },
@@ -43,7 +46,7 @@ export function EvidenceAttachments(props: {
       remove: async (fileId) => Boolean((await removeEvidenceAction({ fileId }))?.data),
       viewUrl: async (fileId) => (await createEvidenceViewUrlAction({ fileId }))?.data?.url ?? null,
     }),
-    [expenseId],
+    [expenseId, onAdded],
   );
 
   return (

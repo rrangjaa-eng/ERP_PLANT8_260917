@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Form } from "@/ui/form/Form";
 import { Select, type SelectOption } from "@/ui/select/Select";
-import { Button } from "@/ui/button/Button";
+import { Button, buttonLinkClassName } from "@/ui/button/Button";
 import { KvList } from "@/ui/kv-list/KvList";
 import type { AttachmentFile } from "@/ui/attachments/Attachments";
 import { useCommaInput } from "@/ui/input/use-comma-input";
@@ -13,7 +14,7 @@ import { isCtrlCombo } from "@/lib/shortcut";
 import { usePhoneWidth } from "@/app/(app)/leave/use-phone-width";
 import { previewExpenseAction, saveExpenseDraftAction, submitExpenseAction } from "../actions";
 import { EvidenceAttachments } from "./evidence-attachments";
-import { submitBlockReason } from "./submit-block";
+import { submitBlockReason, type ServerBlock } from "./submit-block";
 import { TaxParts } from "./tax-parts";
 import styles from "./expense.module.css";
 
@@ -40,7 +41,18 @@ export type ExpenseFormData = {
   installmentMode: "checkbox" | "fixed" | "none";
   installmentText: string | null;
   taxLine: { text: string; parts: { text: string; emphasis: boolean }[] } | null;
+  // 05-06 제출 막힘 첫 이유(규칙 `expense.submit`) · 다음 한 수 대상 · 이동 주소 — 처음 그림은 서버 미리보기 값, 그 뒤는 미리보기 응답.
+  block: (ServerBlock & { href: string | null }) | null;
 };
+
+// 다음 한 수 대상 → 포커스할 칸 id(첨부 영역 = 파일 고르기 버튼).
+const TARGET_FIELD: Record<string, string> = {
+  supplyAmount: "supplyAmount",
+  evidenceType: "evidenceType",
+  paymentMethod: "paymentMethod",
+  evidence: "evidence-picker",
+};
+const NEXT_STEP_ID = "expense-next-step";
 
 export type ExpenseFormProps = {
   data: ExpenseFormData;
@@ -111,6 +123,12 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
   const [previewing, setPreviewing] = useState(false);
   const [previewFieldError, setPreviewFieldError] = useState<string | null>(null);
   const previewSeq = useRef(0);
+  const [serverBlock, setServerBlock] = useState(data.block);
+  // 올린 파일이 완료됐지만 서버가 다시 그린 files가 아직 안 온 동안 — 서버 ⑧(대상 evidence)은 지난 값이다.
+  // 완료 순간의 files를 기억하고, 서버가 새 files를 보내면 저절로 풀린다.
+  const [addedAt, setAddedAt] = useState<AttachmentFile[] | null>(null);
+  const evidenceAdded = addedAt === files;
+  const markEvidenceAdded = useCallback(() => setAddedAt(files), [files]);
 
   const snapshot = JSON.stringify([evidenceType, paymentMethod, currency, amountInput.rawValue, currency === "KRW" ? "" : fxRaw, date, note, installment]);
   const [savedSnapshot, setSavedSnapshot] = useState(snapshot);
@@ -129,7 +147,8 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
 
   // 계산에 드는 칸(증빙 종류 · 공급가액 · 통화 · 환율 · 지급 예정일 · 분할 지급)이 바뀌면 짧은 지연 뒤 미리보기를 부른다. 늦게 온 응답이
   // 새 응답을 덮지 않게 요청 순번으로 거른다. 첫 그림은 서버가 보낸 값이라 부르지 않는다.
-  const previewKey = JSON.stringify([evidenceType, currency, amountInput.rawValue, currency === "KRW" ? "" : fxRaw, date, installment]);
+  // 막힘 판정에 드는 지급 방식 · 증빙 파일 수도 본다(파일을 올리거나 떼면 서버가 다시 그린 files가 바뀐다).
+  const previewKey = JSON.stringify([evidenceType, paymentMethod, currency, amountInput.rawValue, currency === "KRW" ? "" : fxRaw, date, installment, files.length]);
   const firstPreviewKey = useRef(previewKey);
   useEffect(() => {
     if (previewKey === firstPreviewKey.current) return;
@@ -137,6 +156,10 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
     const seq = ++previewSeq.current;
     setPreviewing(true);
     const timer = window.setTimeout(() => {
+      if (busyRef.current) {
+        setPreviewing(false);
+        return;
+      }
       void (async () => {
         let result: Awaited<ReturnType<typeof previewExpenseAction>> | undefined;
         try {
@@ -146,8 +169,14 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
         }
         if (seq !== previewSeq.current) return;
         setPreviewing(false);
+        if (result === undefined) {
+          setNetworkFailed("submit");
+          return;
+        }
         if (!result?.data) return;
+        setNetworkFailed((current) => (current === "submit" ? null : current));
         setTaxLine(result.data.taxLine);
+        setServerBlock(result.data.block);
         setPreviewFieldError(result.data.fieldErrors.supplyAmount ?? null);
       })();
     }, 250);
@@ -156,8 +185,25 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [previewKey, data.id]);
 
-  // 서버 막힘 이유 ①~⑨는 05-06이 미리보기 응답의 첫 이유를 넘긴다 — 지금은 올리는 중 판정만.
-  const block = submitBlockReason({ server: null, uploadingCount: uploading });
+  // 1차 옆 이유 — 서버 첫 이유(①~⑨)와 올리는 행 수를 한 함수로(D2: 올리는 중이면 ⑧ 대신 `증빙 올리는 중`).
+  const server = serverBlock?.target === "evidence" && (evidenceAdded || files.length > 0) ? null : serverBlock;
+  const block = submitBlockReason({ server, uploadingCount: uploading });
+  const blockHref = block?.tone === "block" ? (server?.href ?? null) : null;
+
+  // 비활성 1차 누름 · Ctrl+Enter · 첫 그림 — 서버를 부르지 않고 다음 한 수의 대상으로 포커스(칸이 없으면 이동 3차). 옮겼으면 true.
+  function focusBlockTarget(): boolean {
+    const fieldId = block?.target ? TARGET_FIELD[block.target] : undefined;
+    const element = (fieldId && document.getElementById(fieldId)) || (blockHref ? document.getElementById(NEXT_STEP_ID) : null);
+    element?.focus();
+    return Boolean(element);
+  }
+
+  // 첫 포커스 = 막힘 대상(없으면 1차).
+  useEffect(() => {
+    if (!focusBlockTarget()) document.getElementById("expense-submit")?.focus();
+    // 첫 그림에서 한 번만.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // 폰은 2차 `임시 저장` 왼쪽 · 1차 오른쪽 — 수화 전 보이는 순서는 CSS order, 수화 뒤 DOM · Tab 순서도 2차 → 1차(04.1 연차 신청 폼과 같은 방식).
   const phone = usePhoneWidth();
 
@@ -199,6 +245,7 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
     const supplyValid = amountInput.rawValue !== "" && amount !== null && Number.isFinite(amount) && fxRate !== null && Number.isFinite(fxRate) && fxRate > 0;
     return {
       evidenceType: evidenceType || null,
+      paymentMethod: paymentMethod || null,
       supply: supplyValid ? { currency, amount, fxRate } : null,
       scheduledPaymentDate: dateRef.current?.validity.badInput ? null : date || null,
       installment: data.installmentMode === "none" ? false : installment,
@@ -258,7 +305,11 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
   }
 
   async function submit() {
-    if (busyRef.current || block !== null) return;
+    if (busyRef.current) return;
+    if (block !== null) {
+      focusBlockTarget();
+      return;
+    }
     busyRef.current = true;
     setSubmitting(true);
     setFailure(null);
@@ -345,6 +396,7 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
         pending={submitting}
         disabled={block !== null}
         aria-describedby={block ? "expense-blocked" : undefined}
+        onClickCapture={block ? () => focusBlockTarget() : undefined}
       >
         지출결의 제출
       </Button>
@@ -463,6 +515,7 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
             mode="edit"
             maxMb={maxMb}
             onUploadingChange={setUploading}
+            onAdded={markEvidenceAdded}
             openSignal={pickSignal}
             pickerId="evidence-picker"
           />
@@ -474,11 +527,7 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
       <div className={styles.formBar} data-testid="expense-form-actions">
         <Form.Actions>
           {phone ? null : submitButton}
-          {block && !submitting ? (
-            <span id="expense-blocked" className={block.tone === "info" ? styles.infoReason : styles.blockedReason}>
-              {block.reason}
-            </span>
-          ) : null}
+          {block && !submitting ? <BlockLine block={block} href={blockHref} onPick={() => setPickSignal((current) => current + 1)} /> : null}
           {networkFailed === "submit" ? (
             <span className={styles.blockedLine}>
               <span className={styles.blockedReason}>제출 실패 · 네트워크 · </span>
@@ -508,5 +557,43 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
       </div>
       <div className={styles.formBarSpacer} aria-hidden="true" />
     </Form>
+  );
+}
+
+// 1차 옆 막힘 한 줄 — 이유의 마지막 ` · ` 뒤(다음 행동)가 할 수 있는 일이면 그 자리를 3차로 바꾼다(§7-1 이유 + 다음 한 수 한 덩어리 —
+// 폰에서는 05-05 제출 줄의 이유 자리(버튼 아래 한 줄) 그대로). 칸 대상 = 그 칸으로 포커스, 첨부 = 파일 고르기(Ctrl+U), 이동 = 3차 모양 링크.
+function BlockLine({ block, href, onPick }: { block: { reason: string; tone: "block" | "info"; target: string | null }; href: string | null; onPick: () => void }) {
+  const tone = block.tone === "info" ? styles.infoReason : styles.blockedReason;
+  const cut = block.reason.lastIndexOf(" · ");
+  const fieldId = block.tone === "block" && block.target ? TARGET_FIELD[block.target] : undefined;
+  if (cut < 0 || (!fieldId && !href)) {
+    return (
+      <span id="expense-blocked" className={tone}>
+        {block.reason}
+      </span>
+    );
+  }
+  const head = block.reason.slice(0, cut + 3);
+  const tail = block.reason.slice(cut + 3);
+  const shortcut = /^(.*) (Ctrl\+\S+)$/.exec(tail);
+  const label = shortcut?.[1] ?? tail;
+  return (
+    <span id="expense-blocked" className={styles.blockedLine}>
+      <span className={tone}>{head}</span>
+      {href ? (
+        <Link id={NEXT_STEP_ID} href={href} className={buttonLinkClassName("tertiary")}>
+          {label}
+        </Link>
+      ) : (
+        <Button
+          id={NEXT_STEP_ID}
+          variant="tertiary"
+          shortcut={shortcut?.[2]}
+          onClick={() => (block.target === "evidence" ? onPick() : document.getElementById(fieldId ?? "")?.focus())}
+        >
+          {label}
+        </Button>
+      )}
+    </span>
   );
 }

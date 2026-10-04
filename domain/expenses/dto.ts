@@ -148,7 +148,8 @@ export const EXPENSE_DETAIL_DTO_SPEC: DtoSpec<ExpenseDetailDto, ExpenseDetailDto
 // taxLine과 같은 항목이라 금액을 볼 수 없는 계급에는 미리보기에서도 한 줄이 없다.
 export type ExpensePreviewDto = {
   taxLine: { text: string; parts: TaxLinePart[] } | null;
-  block: { reason: string; target: string | null } | null;
+  // 05-06 Task 2 — 첫 막힘 글자 · 다음 한 수 대상 · 대상이 페이지 이동이면 그 주소(① 담당 PM 프로젝트 상세 · ④ 가장 최근 문서).
+  block: { reason: string; target: string | null; href: string | null } | null;
   fieldErrors: { supplyAmount?: string };
 };
 

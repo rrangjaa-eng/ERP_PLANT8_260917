@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/viewer";
 import "@/app/(app)/document-kinds";
 import { getApprovalView, previewRoute, RouteBlockedError } from "@/domain/approvals";
-import { EXPENSE_DOCUMENT_KIND, getExpense, listExpenseCurrencies, listExpenseFormOptions } from "@/domain/expenses";
+import { EXPENSE_DOCUMENT_KIND, ExpenseNotFoundError, getExpense, listExpenseCurrencies, listExpenseFormOptions, previewExpense } from "@/domain/expenses";
 import { listEvidence } from "@/domain/evidence";
 import { getSettingValue } from "@/domain/settings/registry";
 import { EVIDENCE_MAX_SIZE_MB } from "@/domain/settings/keys";
@@ -50,6 +50,14 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
   }
   // 선택지는 지출결의 쓰기 권한으로 받는다(코드표 메뉴가 없는 PM도 증빙 종류를 바꿀 수 있다 — 05-06).
   const [{ evidence: evidenceItems, payment: paymentItems }, currencies] = await Promise.all([listExpenseFormOptions(viewer), listExpenseCurrencies()]);
+  // 제출 막힘 첫 이유(05-06 규칙 `expense.submit`) — 저장값 그대로의 미리보기. 기안자가 아니면 막힘을 판정하지 않는다(그 사람은 제출할 수 없다).
+  const initialBlock = await previewExpense(viewer, { expenseId: id, fields: {} }).then(
+    (preview) => preview.block ?? null,
+    (error: unknown) => {
+      if (error instanceof ExpenseNotFoundError) return null;
+      throw error;
+    },
+  );
   const optionsOf = (items: { value: string; label: string; description: string | null }[], current: string | null | undefined, currentLabel: string | null | undefined): SelectOption[] => {
     const options = items.map((item) => ({ value: item.value, label: item.label, description: item.description }));
     // 이미 저장된 값이 비활성 · 보관된 코드면 목록에 없다 — 그 값을 이름으로 남겨 둔다.
@@ -82,6 +90,7 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
             installmentMode: expense.installmentMode ?? "none",
             installmentText: expense.installmentText ?? null,
             taxLine: expense.taxLine ?? null,
+            block: initialBlock,
           }}
           evidenceOptions={optionsOf(evidenceItems, expense.evidenceType, expense.evidenceTypeName)}
           paymentOptions={optionsOf(paymentItems, expense.paymentMethod, expense.paymentMethodName)}

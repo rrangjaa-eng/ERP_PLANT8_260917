@@ -8,6 +8,7 @@ import {
   type QuoteLineField,
   type QuoteLineKind,
 } from "@/domain/quotes/edit-scope";
+import { firstExpenseSubmitBlock, type ExpenseSubmitContext } from "@/domain/expenses/gate";
 
 // Phase 4의 프로젝트 게이트 규칙을 등록하는 한 곳 — 규칙마다 등록한 플랜을
 // 주석 한 줄로 적는다: `project.line-edit`(04-06 · 04-12 · 04-13), `quote.line-cap`(04-26),
@@ -288,4 +289,15 @@ export type QuoteVendorRequiredCtx = { vendorId: string | null };
 registerGateRule<unknown, QuoteVendorRequiredCtx>({
   name: "quote.vendor-required",
   check: (_doc, ctx) => (ctx.vendorId ? { allowed: true } : { allowed: false, reason: "거래처 없음 · 거래처 고르기" }),
+});
+
+// 05-06(UI-SPEC S6 · EXP-14 · UX-06) — 지출결의 제출. ①~⑨를 문맥의 순서 표(domain/expenses/gate.ts `buildExpenseSubmitContext`)대로
+// 보고 첫 막힘의 글자 하나만 돌려준다. ① · ⑤는 위 `quote.customer-approval` · `quote.vendor-required` 규칙을 그대로 부른 결과다.
+// 미리보기와 제출 트랜잭션 안 재판정이 같은 규칙을 부른다(T-05-601).
+registerGateRule<unknown, ExpenseSubmitContext>({
+  name: "expense.submit",
+  check: async (doc, ctx) => {
+    const first = await firstExpenseSubmitBlock(doc, ctx);
+    return first ? { allowed: false, reason: first.reason } : { allowed: true };
+  },
 });

@@ -1,14 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { expenses } from "@/db/schema";
+import { expenses, quoteLines } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { CEO_ROLE_ID, DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { insertVendor } from "@/repositories/vendors";
 import { approvalBasis } from "@/repositories/quote-revisions";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
-import { setCustomerApproval } from "@/domain/quotes/revisions";
+import { createRevisionFromCurrent, setCustomerApproval } from "@/domain/quotes/revisions";
 import { changeProjectStatus } from "@/domain/projects/status";
 import { submitExpense } from "@/domain/expenses";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
@@ -87,9 +87,37 @@ export async function setupExpenseProject(): Promise<ExpenseFixture> {
 }
 
 // 제출 도우미 — 지금은 version을 읽어 submitExpense만 부른다. 05-04가 증빙 첨부를 더한다(이 플랜 · 05-14 테스트는
-// 이 도우미로만 제출한다).
-export async function submitReadyDraft(viewer: Viewer, expenseId: string) {
+// 이 도우미로만 제출한다). deps는 그대로 넘긴다(05-14 경합 사례의 afterLock).
+export async function submitReadyDraft(viewer: Viewer, expenseId: string, deps?: Parameters<typeof submitExpense>[2]) {
   const [row] = await db.select({ version: expenses.version }).from(expenses).where(eq(expenses.id, expenseId));
   if (!row) throw new Error("지출결의 없음");
-  return submitExpense(viewer, { expenseId, expectedVersion: row.version });
+  return submitExpense(viewer, { expenseId, expectedVersion: row.version }, deps);
+}
+
+export type ExtraLine = {
+  itemName: string;
+  vendorId: string | null;
+  execution: { currency: "KRW" | "USD"; amount: number; fxRate: number };
+};
+
+// 05-14 — 승인된 1차에는 줄을 더할 수 없다. 2차를 만들어 줄을 더하고 2차를 고객 승인한다(도메인 함수로만).
+// 2차 줄 전부(1차에서 복사된 줄 포함)의 이름 → id를 돌려준다.
+export async function addApprovedRevision(fx: ExpenseFixture, rows: readonly ExtraLine[]): Promise<{ revisionId: string; lineIds: Map<string, string> }> {
+  const second = await createRevisionFromCurrent(fx.pm, { projectId: fx.projectId, fromRevisionId: fx.revisionId });
+  const subcategory = (await firstSelectableSubcategory()).value;
+  await saveQuoteLines(SYSTEM_VIEWER, second.revisionId, {
+    rows: rows.map((row) => ({
+      id: randomUUID(),
+      isNew: true as const,
+      subcategory,
+      itemName: row.itemName,
+      vendorId: row.vendorId,
+      unitPrice: { ...row.execution, amount: row.execution.amount * 2 },
+      execution: row.execution,
+    })),
+  });
+  const basis = await approvalBasis(SYSTEM_VIEWER, second.revisionId);
+  await setCustomerApproval(fx.pm, second.revisionId, { approvedOn: "2026-09-20", seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
+  const lines = await db.select({ id: quoteLines.id, itemName: quoteLines.itemName }).from(quoteLines).where(eq(quoteLines.revisionId, second.revisionId));
+  return { revisionId: second.revisionId, lineIds: new Map(lines.map((line) => [line.itemName, line.id])) };
 }

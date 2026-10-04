@@ -3,14 +3,20 @@ import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { randomUUID } from "node:crypto";
 import { actionLog, approvalInstances, approvalRoutes, approvalSteps, documentCounters, expenses, settingsHistorized } from "@/db/schema";
-import { ApprovalConflictError, approveDocument, rejectDocument } from "@/domain/approvals";
+import { ApprovalConflictError, approveDocument, getApprovalView, rejectDocument } from "@/domain/approvals";
+import { listExpenses } from "@/domain/expenses/list";
+import { APPROVAL_ROUTE_EXPENSE_STEP2_ROLE_ID } from "@/domain/settings/keys";
+import { upsertSimpleValue } from "@/repositories/settings";
 import { isRouteStepSettingKey } from "@/domain/approvals/route-step-settings";
 import {
   changeExpenseLine,
   createExpenseFromLines,
+  deleteExpenseDraft,
+  restoreExpenseDraft,
   createTeamExpenseDraft,
   EXPENSE_DOCUMENT_KIND,
   ExpenseConflictError,
+  ExpenseNotFoundError,
   ExpenseUndoRefusedError,
   getExpense,
   listExpenseFormOptions,
@@ -448,5 +454,154 @@ describe("회수 뒤 같은 번호 다시 제출", () => {
     expect(moved).toBeInstanceOf(GateBlockedError);
     expect((moved as Error).message).toBe("번호 있는 문서 · 같은 프로젝트 줄만");
     expect(await expenseRow(expenseId)).toMatchObject({ projectId: null, quoteLineId: null });
+  });
+});
+
+// 05-09 Task 2 — 04.1 엔진의 반려 · 본인 승인 · 결재선 고정을 지출결의로 다시 증명하고, 작성 중 삭제 · 되돌리기(복원)를 세운다.
+async function draftOf(fx: ExpenseFixture, viewer = fx.pm, lineId = fx.lines.withVendor) {
+  const created = await createExpenseFromLines(viewer, { lineIds: [lineId] });
+  const expenseId = created.created[0]?.expenseId;
+  if (!expenseId) throw new Error(`작성 중 문서 없음: ${JSON.stringify(created.blocked)}`);
+  return expenseId;
+}
+
+describe("반려 뒤 다시 제출", () => {
+  it("팀장 반려(사유) → 기안자 고침 → 같은 번호 · 차수 2 · 차수 1 반려 기록과 사유 보존 · 반려 로그(사유 원문 없음)", async () => {
+    const fx = await setupExpenseProject();
+    const expenseId = await draftOf(fx);
+    const submitted = await submitReadyDraft(fx.pm, expenseId);
+    const instanceId = submitted.kind === "submitted" ? submitted.instanceId : "";
+    await rejectDocument(fx.lead, { instanceId, expectedVersion: 1, reason: "금액 확인" });
+    expect((await getExpense(fx.pm, { expenseId }))?.statusWord).toBe("반려");
+
+    const saved = await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: (await expenseRow(expenseId)).version, fields: { note: "금액 고침" } });
+    const again = await submitExpense(fx.pm, { expenseId, expectedVersion: saved.version });
+    expect(again).toMatchObject({ kind: "submitted", number: "26001-0001", instanceId, round: 2 });
+
+    const rows = await db
+      .select({ round: approvalRoutes.round, stepIndex: approvalSteps.stepIndex, action: approvalSteps.action, reason: approvalSteps.reason, actedBy: approvalSteps.actedBy })
+      .from(approvalSteps)
+      .innerJoin(approvalRoutes, eq(approvalRoutes.id, approvalSteps.routeId))
+      .where(eq(approvalRoutes.instanceId, instanceId))
+      .orderBy(asc(approvalRoutes.round), asc(approvalSteps.stepIndex));
+    expect(rows.find((row) => row.round === 1 && row.stepIndex === 1)).toMatchObject({ action: "rejected", reason: "금액 확인", actedBy: fx.lead.id });
+    expect(rows.filter((row) => row.round === 2).every((row) => row.action === null)).toBe(true);
+
+    const logs = await db.select().from(actionLog).where(eq(actionLog.documentId, expenseId)).orderBy(asc(actionLog.seq));
+    const rejects = logs.filter((log) => log.actionType === "document_reject");
+    expect(rejects).toHaveLength(1);
+    expect(rejects[0]).toMatchObject({ entity: "approval_instance", entityId: instanceId });
+    expect(rejects[0]?.detail).toMatchObject({ kind: EXPENSE_DOCUMENT_KIND, round: 1, stepIndex: 1 });
+    expect(JSON.stringify(rejects[0]?.detail)).not.toContain("금액 확인");
+    const resubmits = logs.filter((log) => log.actionType === "document_submit" && (log.detail as { round?: number }).round === 2);
+    expect(resubmits).toHaveLength(1);
+    expect(resubmits[0]).toMatchObject({ entity: "approval_instance", entityId: instanceId });
+    expect(resubmits[0]?.detail).toMatchObject({ kind: EXPENSE_DOCUMENT_KIND });
+  });
+});
+
+describe("본인 승인", () => {
+  it("팀장이 기안하면 1단 후보는 기안자 한 사람 · 가능 행동 승인 + 회수(반려 없음) · 승인하면 self_approved · 다음 단계로", async () => {
+    const fx = await setupExpenseProject();
+    // 팀장은 담당 프로젝트가 없어 팀 비용 문서로 기안한다(결재선 판정은 문서 종류의 설정 하나).
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name: "회식집", normalizedName: `회식집-${randomUUID()}`, defaultEvidenceType: "tax_invoice" });
+    const { expenseId } = await createTeamExpenseDraft(fx.lead, {
+      idempotencyKey: randomUUID(),
+      fields: { teamExpenseKind: "team_overhead", usageDate: "2026-09-26", content: "팀 회식" },
+    });
+    const payment = (await listExpenseFormOptions(fx.lead)).payment[0]?.value ?? null;
+    await saveExpenseDraft(fx.lead, {
+      expenseId,
+      expectedVersion: (await expenseRow(expenseId)).version,
+      fields: { vendorId: vendor.id, evidenceType: "tax_invoice", paymentMethod: payment, supply: { currency: "KRW", amount: 440_000, fxRate: 1 } },
+    });
+    const submitted = await submitReadyDraft(fx.lead, expenseId);
+    const instanceId = submitted.kind === "submitted" ? submitted.instanceId : "";
+    const view = await getApprovalView(fx.lead, { kind: EXPENSE_DOCUMENT_KIND, documentId: expenseId });
+    expect(view?.actions).toEqual(["approve", "withdraw"]);
+    expect(view?.steps?.find((step) => step.state === "current")).toMatchObject({ stepIndex: 1, viewerHolds: true });
+
+    const approved = await approveDocument(fx.lead, { instanceId, expectedVersion: 1 });
+    expect(approved.status).toBe("in_review");
+    const [step] = await db
+      .select({ selfApproved: approvalSteps.selfApproved, action: approvalSteps.action })
+      .from(approvalSteps)
+      .innerJoin(approvalRoutes, eq(approvalRoutes.id, approvalSteps.routeId))
+      .where(and(eq(approvalRoutes.instanceId, instanceId), eq(approvalSteps.stepIndex, 1)));
+    expect(step).toEqual({ selfApproved: true, action: "approved" });
+    const after = await getApprovalView(fx.lead, { kind: EXPENSE_DOCUMENT_KIND, documentId: expenseId });
+    expect(after?.steps?.find((row) => row.stepIndex === 1)).toMatchObject({ state: "approved", selfApproved: true });
+    expect(after?.actions).toEqual(["withdraw"]);
+  });
+});
+
+describe("결재선 고정", () => {
+  it("제출 뒤 2단 계급 설정을 바꿔도 제출된 문서의 단계는 그대로, 새 문서와 반려 뒤 다시 제출은 새 설정", async () => {
+    const fx = await setupExpenseProject();
+    const first = await draftOf(fx);
+    const submitted = await submitReadyDraft(fx.pm, first);
+    const instanceId = submitted.kind === "submitted" ? submitted.instanceId : "";
+    const role = await createRole(SYSTEM_VIEWER, { name: `새2단-${Date.now()}` });
+    await upsertSimpleValue(SYSTEM_VIEWER, APPROVAL_ROUTE_EXPENSE_STEP2_ROLE_ID.key, role.id, null);
+
+    const roleOfStep2 = async (id: string, round: number) =>
+      (await stepsOf(id)).find((step) => step.round === round && step.stepIndex === 2)?.roleId;
+    expect(await roleOfStep2(instanceId, 1)).toBe("role-division-head");
+
+    const second = await draftOf(fx, fx.pm, fx.lines.split);
+    const secondSubmitted = await submitReadyDraft(fx.pm, second);
+    expect(await roleOfStep2(secondSubmitted.kind === "submitted" ? secondSubmitted.instanceId : "", 1)).toBe(role.id);
+
+    await rejectDocument(fx.lead, { instanceId, expectedVersion: 1, reason: "다시" });
+    await submitExpense(fx.pm, { expenseId: first, expectedVersion: (await expenseRow(first)).version });
+    expect(await roleOfStep2(instanceId, 1)).toBe("role-division-head");
+    expect(await roleOfStep2(instanceId, 2)).toBe(role.id);
+  });
+});
+
+describe("작성 중 삭제", () => {
+  it("deleteExpenseDraft → deleted_at · 목록 · getExpense에서 사라짐 · 로그 → restoreExpenseDraft → 되돌아옴", async () => {
+    const fx = await setupExpenseProject();
+    const expenseId = await draftOf(fx);
+    const deleted = await deleteExpenseDraft(fx.pm, { expenseId, expectedVersion: 1 });
+    expect(deleted).toEqual({ expenseId });
+    expect((await expenseRow(expenseId)).deletedAt).toBeInstanceOf(Date);
+    expect(await getExpense(fx.pm, { expenseId })).toBeNull();
+    const ids = (await listExpenses(fx.pm, { status: "all" })).groups.flatMap((group) => group.rows.map((row) => row.id));
+    expect(ids).not.toContain(expenseId);
+    const logs = await db.select().from(actionLog).where(eq(actionLog.documentId, expenseId));
+    expect(logs.filter((log) => log.actionType === "document_delete")).toHaveLength(1);
+    expect(logs.find((log) => log.actionType === "document_delete")).toMatchObject({ entity: "expense", entityId: expenseId, actorId: fx.pm.id });
+
+    // 남의 되돌리기는 없는 문서.
+    await expect(restoreExpenseDraft(fx.otherPm, { expenseId })).rejects.toBeInstanceOf(ExpenseNotFoundError);
+    const restored = await restoreExpenseDraft(fx.pm, { expenseId });
+    expect(restored).toEqual({ expenseId });
+    expect((await expenseRow(expenseId)).deletedAt).toBeNull();
+    expect((await getExpense(fx.pm, { expenseId }))?.statusWord).toBe("작성 중");
+  });
+
+  it("옛 version · 남의 문서 · 번호 있는 문서는 지우지 않는다", async () => {
+    const fx = await setupExpenseProject();
+    const expenseId = await draftOf(fx);
+    await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: 1, fields: { note: "고침" } });
+    await expect(deleteExpenseDraft(fx.pm, { expenseId, expectedVersion: 1 })).rejects.toBeInstanceOf(ExpenseConflictError);
+    await expect(deleteExpenseDraft(fx.otherPm, { expenseId, expectedVersion: 2 })).rejects.toBeInstanceOf(ExpenseNotFoundError);
+    expect((await expenseRow(expenseId)).deletedAt).toBeNull();
+
+    const submitted = await submitReadyDraft(fx.pm, expenseId);
+    expect(submitted.kind).toBe("submitted");
+    await expect(deleteExpenseDraft(fx.pm, { expenseId, expectedVersion: (await expenseRow(expenseId)).version })).rejects.toBeInstanceOf(ExpenseNotFoundError);
+    expect(await expenseRow(expenseId)).toMatchObject({ deletedAt: null, number: "26001-0001" });
+  });
+
+  it("지운 사이 같은 줄에 새 작성 중 문서가 생겼으면 복원하지 않고 그 문서 id를 돌려준다(부분 UNIQUE)", async () => {
+    const fx = await setupExpenseProject();
+    const first = await draftOf(fx);
+    await deleteExpenseDraft(fx.pm, { expenseId: first, expectedVersion: 1 });
+    const second = await draftOf(fx);
+    expect(second).not.toBe(first);
+    expect(await restoreExpenseDraft(fx.pm, { expenseId: first })).toEqual({ expenseId: second });
+    expect((await expenseRow(first)).deletedAt).toBeInstanceOf(Date);
   });
 });

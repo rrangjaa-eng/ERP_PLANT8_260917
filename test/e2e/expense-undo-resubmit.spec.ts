@@ -1,5 +1,10 @@
+import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
-import { createExpenseFromLines } from "@/domain/expenses";
+import { approveDocument, getApprovalView } from "@/domain/approvals";
+import { createExpenseFromLines, createTeamExpenseDraft, EXPENSE_DOCUMENT_KIND, listExpenseFormOptions, saveExpenseDraft } from "@/domain/expenses";
+import { insertVendor } from "@/repositories/vendors";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { seoulToday } from "@/lib/dates";
 import { loginPage, waitForHydration } from "./leave-org";
 import { setupExpenseE2E, uniqueReceipt, type ExpenseE2E, type LineKey } from "./expense-fixture";
 
@@ -75,5 +80,75 @@ test.describe("되돌리기 → 같은 번호 다시 제출 (확정 #2)", () => 
     await expect(lead.getByText(number, { exact: true })).toBeVisible();
     await expect(lead.locator('[data-ui="screen-title"]').locator("..").getByText("결재 중", { exact: true })).toBeVisible();
     await lead.context().close();
+  });
+});
+
+test.describe("작성 중 삭제 · 문서 화면 회수 · 본인 승인 (Task 2)", () => {
+  test("작성 중 폼 머리 줄 `지출결의 삭제` → 확인 창 없이 목록 · 토스트 `되돌리기` → 폼", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await page.clock.install();
+    const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.hold.id] });
+    const expenseId = created.created[0]?.expenseId ?? "";
+    await page.goto(`/expenses/${expenseId}`);
+    const remove = page.getByRole("button", { name: "지출결의 삭제" });
+    await waitForHydration(remove);
+    await remove.click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page).toHaveURL(/\/expenses(\?|$)/);
+    const toast = page.getByRole("status").filter({ hasText: "지출결의 삭제" });
+    await expect(toast).toBeVisible();
+    await pauseClock(page);
+    await toast.getByRole("button", { name: "되돌리기" }).click();
+    await expect(page).toHaveURL(new RegExp(`/expenses/${expenseId}$`));
+    await page.clock.resume();
+    await expect(page.getByRole("button", { name: /^임시 저장/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: "지출결의 삭제" })).toBeVisible();
+  });
+
+  test("팀장 승인 뒤 문서 화면 `회수` → 04.1 확인(제목 · 결과 줄) → Ctrl+Enter → 폼", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.pm);
+    const expenseId = await submitFromForm(page, fx, "retry");
+    const view = await getApprovalView(fx.lead.viewer, { kind: EXPENSE_DOCUMENT_KIND, documentId: expenseId });
+    await approveDocument(fx.lead.viewer, { instanceId: view?.instanceId ?? "", expectedVersion: view?.version ?? 0 });
+
+    await page.goto(`/expenses/${expenseId}`);
+    const withdraw = page.getByRole("button", { name: /^회수/ });
+    await waitForHydration(withdraw);
+    await withdraw.click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("heading", { name: "지출결의 회수" })).toBeVisible();
+    await expect(dialog.getByText("팀장 승인 기록은 남음 · 다시 제출 때 첫 단계부터")).toBeVisible();
+    await page.keyboard.press("Control+Enter");
+    await expect(page.getByRole("button", { name: /^지출결의 다시 제출/ })).toBeVisible();
+    await expect(page.locator("dl dt").first()).toHaveText("회수");
+  });
+
+  test("팀장이 기안한 문서 — 제출 토스트 `본인 승인 차례` · 행동 줄 승인 + 회수(반려 없음)", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const suffix = randomUUID().slice(0, 6);
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E회식집-${suffix}`, normalizedName: `e2e회식집-${suffix}`, defaultEvidenceType: "tax_invoice" });
+    const { expenseId, version } = await createTeamExpenseDraft(fx.lead.viewer, {
+      idempotencyKey: randomUUID(),
+      fields: { teamExpenseKind: "team_overhead", usageDate: seoulToday(), content: `팀 회식-${suffix}` },
+    });
+    const payment = (await listExpenseFormOptions(fx.lead.viewer)).payment[0]?.value ?? null;
+    await saveExpenseDraft(fx.lead.viewer, {
+      expenseId,
+      expectedVersion: version,
+      fields: { vendorId: vendor.id, evidenceType: "tax_invoice", paymentMethod: payment, supply: { currency: "KRW", amount: 440_000, fxRate: 1 } },
+    });
+    const page = await loginPage(browser, baseURL, fx.lead);
+    await page.goto(`/expenses/${expenseId}`);
+    await waitForHydration(page.getByRole("button", { name: /^임시 저장/ }));
+    await page.getByTestId("attachments-input").setInputFiles(await uniqueReceipt(page));
+    await expect(page.locator('[data-ui="attachments"] li').getByText(META)).toBeVisible({ timeout: UPLOAD_WAIT });
+    await page.getByRole("button", { name: /^지출결의 제출/ }).click();
+    await expect(page).toHaveURL(new RegExp(`/expenses/${expenseId}\\?submitted=1`));
+    await expect(page.getByRole("status").filter({ hasText: "지출결의 제출 · 본인 승인 차례" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^승인/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^회수/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^반려/ })).toHaveCount(0);
   });
 });

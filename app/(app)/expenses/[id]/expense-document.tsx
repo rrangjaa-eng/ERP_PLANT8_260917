@@ -5,6 +5,8 @@ import type { ExpenseDocumentDto } from "@/domain/expenses";
 import { EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { formatKrw } from "@/lib/format-number";
 import { kstDateOf } from "@/lib/kst-date";
+// Button.tsx는 클라이언트 모듈이라 서버 컴포넌트가 buttonLinkClassName을 부를 수 없다 — 같은 3차 클래스를 직접 쓴다(holidays 선례).
+import buttonStyles from "@/ui/button/Button.module.css";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import { KvList, type KvItem } from "@/ui/kv-list/KvList";
 import { Num } from "@/ui/num/Num";
@@ -64,7 +66,7 @@ export function ExpenseDocument({
       label: "프로젝트",
       value:
         expense.projectId && expense.projectName ? (
-          <Link href={`/projects/${expense.projectId}`} scroll={false} className={styles.link}>
+          <Link href={`/projects/${expense.projectId}`} scroll={false} className={`${buttonStyles.btn} ${buttonStyles.tertiary}`}>
             {[expense.projectNumber, expense.projectName].filter(Boolean).join(" ")}
           </Link>
         ) : (

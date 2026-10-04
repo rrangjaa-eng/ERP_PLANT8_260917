@@ -85,17 +85,6 @@
   font-weight: var(--fw-medium);
 }
 
-.link {
-  color: var(--accent);
-  text-decoration: underline;
-  text-decoration-thickness: var(--line-w);
-  text-underline-offset: var(--underline-offset);
-}
-
-.link:hover {
-  text-decoration-thickness: var(--underline-w-hover);
-}
-
 .muted {
   color: var(--text-muted);
 }
@@ -126,6 +115,12 @@
 /* 폰 제출 줄 — 하단 탭 위 고정 · 1차가 2차의 두 배 폭 · 높이 --touch-min · kbd 없음(§6-3 제출 줄 · 04.1 연차 신청 폼과 같은 값).
    2차 왼쪽 · 1차 오른쪽(사용자 결정 2026-09-29 A): 수화 전 보이는 순서는 order, 수화 뒤에는 DOM도 2차 → 1차(expense-form usePhoneWidth). */
 @media (max-width: 699.98px) {
+  /* §3 터치 목표: 「분할 지급」 체크 칸(field-definitions 「필수」 체크 칸과 같은 값). */
+  .installmentCheck {
+    width: var(--touch-min);
+    height: var(--touch-min);
+  }
+
   .formBar {
     position: fixed;
     right: 0;

@@ -20,7 +20,7 @@
   background: var(--surface-muted);
   color: var(--text-muted);
   font-family: var(--font-sans);
-  font-size: var(--text-body);
+  font-size: var(--text-aux);
   text-align: center;
   cursor: pointer;
 }
@@ -68,7 +68,6 @@
 .thumb {
   width: var(--s-12);
   height: var(--s-12);
-  border-radius: var(--radius-control);
   object-fit: cover;
 }
 
@@ -132,7 +131,6 @@
 @media (max-width: 699.98px) {
   .drop {
     height: calc(var(--s-6) * 3);
-    font-size: var(--text-body);
   }
 
   .pcText {

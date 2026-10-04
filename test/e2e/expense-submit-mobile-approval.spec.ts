@@ -192,3 +192,32 @@ test.describe("올리는 중 제출 · 다시 올리기", () => {
     await expect(page.getByText("올리지 못함 · 다시 올리기")).toHaveCount(0);
   });
 });
+
+// 웨이브 6 화면 검토 수정(D3 · D4) — PC 견적 줄 표의 행동 열. 만들기 실패 줄은 합계 행 오른쪽 한 줄이고(UI-SPEC S1 · DR-16) 열 폭을 키우지 않는다.
+test.describe("웨이브 6 — 견적 줄 행동 열 실패 줄 · 접근 이름", () => {
+  test("실패 줄이 합계 행에 서고 행동 열 폭이 그대로이며 버튼이 그 줄 항목 칸을 aria-describedby로 가리킨다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.pm, { width: 1280, height: 800 });
+    await page.goto(`/projects/${fx.projectId}`);
+    const line = fx.lines.retry;
+    const button = page.getByRole("row").filter({ hasText: line.itemName }).getByRole("button", { name: "지출결의 올리기" });
+    await waitForHydration(button);
+
+    const describedBy = await button.getAttribute("aria-describedby");
+    expect.soft(describedBy, "D4 aria-describedby").toBeTruthy();
+    if (describedBy) await expect.soft(page.locator(`[id="${describedBy}"]`)).toHaveText(line.itemName);
+
+    const cell = button.locator("xpath=ancestor::td");
+    const before = (await cell.boundingBox())!.width;
+    await page.route("**/*", async (route) => {
+      if (route.request().method() === "POST" && route.request().headers()["next-action"]) await route.fulfill({ status: 500, body: "" });
+      else await route.continue();
+    });
+    await button.click();
+    const failure = page.getByText("지출결의 만들기 실패 · 다시 시도");
+    await expect(failure).toBeVisible();
+    const after = (await cell.boundingBox())!.width;
+    expect(after, "D3 행동 열 폭 불변").toBe(before);
+    expect(await failure.evaluate((node) => node.closest("td")?.getAttribute("colspan") !== null), "D3 실패 줄이 합계 행 칸 안").toBe(true);
+  });
+});

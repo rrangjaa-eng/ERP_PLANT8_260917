@@ -357,7 +357,7 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
 
       {data.installmentMode === "checkbox" ? (
         <Form.Field id="installment" label="분할 지급" width="long">
-          <input id="installment" type="checkbox" checked={installment} onChange={(event) => setInstallment(event.target.checked)} />
+          <input id="installment" type="checkbox" className={styles.installmentCheck} checked={installment} onChange={(event) => setInstallment(event.target.checked)} />
           {installment && data.installmentText ? <Form.Hint>{data.installmentText}</Form.Hint> : null}
         </Form.Field>
       ) : null}

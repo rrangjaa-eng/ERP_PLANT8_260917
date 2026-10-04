@@ -242,3 +242,61 @@ test.describe("폰 시트 3차 자리 — 375×667 · 320×568", () => {
     }
   }
 });
+
+// 웨이브 6 화면 검토 수정(D1 · D2 · D5 · D6) — DOM 실측. 기대 값은 토큰을 그 화면에서 푼 값이다.
+test.describe("웨이브 6 화면 검토 수정 — 증빙 · 문서 · 폼", () => {
+  const SIZES = [
+    { width: 375, height: 667 },
+    { width: 320, height: 568 },
+    DESKTOP,
+  ];
+
+  async function openDraftForm(browser: Browser, baseURL: string | undefined, fx: ExpenseE2E, viewport: { width: number; height: number }): Promise<Page> {
+    const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.hold.id] });
+    const expenseId = created.created[0]?.expenseId;
+    if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
+    const page = await loginPage(browser, baseURL, fx.pm, viewport);
+    await page.goto(`/expenses/${expenseId}`);
+    await waitForHydration(page.getByRole("button", { name: /^임시 저장/ }));
+    return page;
+  }
+
+  for (const size of SIZES) {
+    test(`${size.width}×${size.height} D2 빈 첨부 칸 글자 = --text-aux · D1 증빙 행 썸네일 radius 0`, async ({ browser, baseURL }) => {
+      const fx = await setupExpenseE2E();
+      const page = await openDraftForm(browser, baseURL, fx, size);
+      const drop = page.locator('[data-ui="attachments"] button').first();
+      const aux = await tokenPx(page, "--text-aux");
+      const fontSize = await drop.evaluate((node) => parseFloat(getComputedStyle(node).fontSize));
+      expect.soft(fontSize, "빈 첨부 칸 글자 크기").toBe(aux);
+
+      await page.getByTestId("attachments-input").setInputFiles(await uniqueReceipt(page));
+      // 미리보기 <img>는 올리는 행에만 있고 끝나면 클립 칸으로 바뀐다 — 행이 서자마자 읽는다. 노드가 바뀌어도(떨어진 노드는 계산 값이 빈 글자) 잡을 때마다 다시 찾는다.
+      const thumb = page.locator('[data-ui="attachments"] li img').first();
+      await expect.poll(() => thumb.evaluate((node) => getComputedStyle(node).borderRadius).catch(() => ""), { message: "썸네일 radius", timeout: 10_000 }).toBe("0px");
+    });
+  }
+
+  for (const size of SIZES.slice(0, 2)) {
+    test(`${size.width}×${size.height} D6 분할 지급 체크 칸이 --touch-min`, async ({ browser, baseURL }) => {
+      const fx = await setupExpenseE2E();
+      const page = await openDraftForm(browser, baseURL, fx, size);
+      const box = await page.locator("#installment").boundingBox();
+      const touchMin = await tokenPx(page, "--touch-min");
+      expect(box!.width, "체크 칸 너비").toBeGreaterThanOrEqual(touchMin - 0.5);
+      expect(box!.height, "체크 칸 높이").toBeGreaterThanOrEqual(touchMin - 0.5);
+    });
+
+    test(`${size.width}×${size.height} D5 문서 화면 프로젝트 3차 링크가 --touch-min`, async ({ browser, baseURL }) => {
+      const fx = await setupExpenseE2E();
+      const expenseId = await submitLineExpense(browser, baseURL, fx, "hold");
+      const page = await loginPage(browser, baseURL, fx.pm, size);
+      await page.goto(`/expenses/${expenseId}`);
+      const link = page.locator(`main a[href="/projects/${fx.projectId}"]`).first();
+      await expect(link).toBeVisible();
+      const box = await link.boundingBox();
+      const touchMin = await tokenPx(page, "--touch-min");
+      expect(box!.height, "프로젝트 링크 높이").toBeGreaterThanOrEqual(touchMin - 0.5);
+    });
+  }
+});

@@ -1803,7 +1803,7 @@ export function QuoteLedger({
       header: "항목",
       priority: "p1",
       editability: (row) => atWidth(row.cells.itemName),
-      cell: (row) => row.itemName,
+      cell: (row) => <span id={`quote-item-${row.clientKey}`}>{row.itemName}</span>,
       editCell: (row, ctx) =>
         textEditCell({
           ariaLabel: "항목",
@@ -2004,18 +2004,11 @@ export function QuoteLedger({
               if (!lineId || !door) return null;
               if (door.state === "open") {
                 return (
-                  <>
-                    <RowActions noWrap>
-                      <RowAction pending={doorPendingLine === lineId} onClick={() => void openLineExpense(lineId, door)}>
-                        지출결의 올리기
-                      </RowAction>
-                    </RowActions>
-                    {doorFailedLine === lineId ? (
-                      <p role="status" className={styles.doorFailure}>
-                        지출결의 만들기 실패 · 다시 시도
-                      </p>
-                    ) : null}
-                  </>
+                  <RowActions noWrap>
+                    <RowAction describedBy={`quote-item-${row.clientKey}`} pending={doorPendingLine === lineId} onClick={() => void openLineExpense(lineId, door)}>
+                      지출결의 올리기
+                    </RowAction>
+                  </RowActions>
                 );
               }
               if (door.state === "closed" && door.latestId) {
@@ -2576,6 +2569,7 @@ export function QuoteLedger({
             ? [{ tone: "danger" as const, text: quoteFooterSummary, ...(quoteRejectedCount ? { replacesIssueCount: quoteRejectedCount } : {}) }]
             : []),
           ...pasteNotices,
+          ...(doorFailedLine ? [{ tone: "danger" as const, text: "지출결의 만들기 실패 · 다시 시도" }] : []),
         ]}
         footerSuccess={savedAt ? savedNoticeText(sentChangedLines, savedAt) : null}
         revealRowId={revealRowId}

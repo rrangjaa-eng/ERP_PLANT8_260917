@@ -35,7 +35,7 @@ Requirements for initial release. Each maps to roadmap phases.
 ### 지출결의·결재·법인카드 (EXP)
 
 - [ ] **EXP-01**: 견적 줄에서 "지출결의 올리기"를 누르면 거래처·금액·프로젝트가 자동으로 채워진다. 같은 값을 다시 적지 않는다. 지출결의는 기본 견적 줄 1개당 문서 1개다(여러 줄을 골라도 문서는 줄마다 하나). 분할 지급을 계획한 줄만 회차별 문서를 두며 회차 합계는 실행가를 넘을 수 없다. 같은 줄에서 두 번 눌러도 문서가 겹치지 않는다(idempotency key)
-- [ ] **EXP-02**: 지출결의 한 건을 화면 하나에서 작성·증빙 첨부·제출까지 끝낸다
+- [x] **EXP-02**: 지출결의 한 건을 화면 하나에서 작성·증빙 첨부·제출까지 끝낸다
 - [x] **EXP-03**: 결재는 기본 4단(기안자 팀의 팀장 → 기안자 본부의 책임자 → 경영관리본부 담당 → 대표). 단계는 계급 × 조직 범위(기안자의 팀/본부/전사/특정 부서)로 정의되고 빈 자리는 건너뛴다. 기안자가 단계 담당 본인이면 그 단계를 건너뛴다(설정). 승인·반려(기안자에게 복귀)·회수가 된다. 상태 문서는 version 컬럼 낙관적 잠금으로 승인↔회수·승인↔반려 동시 조작을 막는다
 - [x] **EXP-04**: 결재선은 제출 시점에 문서에 고정된다. 이후 설정 변경이 진행 중 문서에 영향을 주지 않는다. 고정되는 것은 단계별 계급 × 조직 범위이며, 사람은 표시 시점의 현재 담당으로 해석하고 이미 승인한 사람은 그대로 보존된다
 - [x] **EXP-05**: 결재자는 결재 대기함에서 폰으로도 승인·반려한다
@@ -208,7 +208,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PROJ-06 | Phase 6 | Pending |
 | PROJ-07 | Phase 4 | Complete |
 | EXP-01 | Phase 5 | Pending |
-| EXP-02 | Phase 5 | Pending |
+| EXP-02 | Phase 5 | Complete |
 | EXP-03 | Phase 04.1 | Complete |
 | EXP-04 | Phase 04.1 | Complete |
 | EXP-05 | Phase 04.1 | Complete |

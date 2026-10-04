@@ -134,7 +134,7 @@ export default async function CodeTablesPage({
           // 동작 열(「비활성화」 · 「삭제」)은 44px로 보인다(Q4 A · SYSTEM 876 — 2026-10-03 14:57 KST 「폰은 읽기만」은 편집 칸만 바꿨다).
           columns={[
             { key: "value", header: "값", priority: "p3" },
-            { key: "label", header: "이름", priority: "p1" },
+            { key: "label", header: "이름", priority: "p1", rowHeader: true },
             { key: "description", header: "설명", priority: "p2" },
             { key: "sortOrder", header: "정렬", priority: "p3", align: "right" },
             { key: "status", header: "상태", priority: "p1" },
@@ -142,6 +142,7 @@ export default async function CodeTablesPage({
           ]}
           rows={shownItems.map((item) => ({
             key: item.id,
+            headerId: `code-row-${item.id}`,
             cells: [
               item.value,
               // MAST-04 「수정」 — 보관된 항목은 도메인이 거부하므로 입력칸 대신 글자로 보인다(계급 화면과 같은 결).

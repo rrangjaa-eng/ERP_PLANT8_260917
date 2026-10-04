@@ -84,7 +84,7 @@ test.describe("폰 375 /admin/code-tables 설명 접힌 줄 (S14 overflow)", () 
     // 폰의 편집 요소는 DOM에 있되 CSS로 숨는다(첫 렌더부터 — 04.6 W5 D-1) — 의미는 「보이는 입력 0」이다.
     await expect(page.locator("table input, table select").filter({ visible: true })).toHaveCount(0);
     await expect(page.locator("table button").filter({ visible: true }).filter({ hasNotText: /^(비활성화|활성화|삭제)$/ })).toHaveCount(0);
-    const nameText = page.locator("tbody td").filter({ visible: true, hasText: label }).first();
+    const nameText = page.locator("tbody th").filter({ visible: true, hasText: label }).first();
     // 한 번만 — 같은 설명을 폰에서 두 번 보이지 않는다.
     const descriptionText = page.locator("tbody td").filter({ visible: true, hasText: description });
     await expect(descriptionText).toHaveCount(1);
@@ -179,6 +179,27 @@ test.describe("폰 320 /admin/code-tables 동작 칸 줄바꿈 (W7 O1)", () => {
       await assertOneLine(page, tableKey);
     });
   }
+
+  // 동작 칸이 한 줄(noWrap)로 폭을 가져가도 이름 칸은 낱말을 쪼개지 않는다 — 「세금계산서」가 「세금계산 / 서」로 갈리던 결함(Codex 후보 1 · DOM 감사 2026-10-04).
+  test("이름 칸의 짧은 낱말이 한 줄이다 (evidence_type)", async ({ page }) => {
+    await loginAsSysadmin(page);
+    await page.goto("/admin/code-tables?tableKey=evidence_type");
+    await page.evaluate(() => document.fonts.ready);
+    for (const label of ["세금계산서", "현금영수증"]) {
+      const lines = await page.locator("tbody tr > :is(td, th)").filter({ visible: true, hasText: new RegExp(`^${label}$`) }).first().evaluate((cell) => {
+        // 글자 노드의 줄 상자만 센다(감싼 div 상자는 빼고).
+        const tops = new Set<number>();
+        const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          for (const rect of Array.from(range.getClientRects())) if (rect.width > 0) tops.add(Math.round(rect.top));
+        }
+        return tops.size;
+      });
+      expect(lines, label).toBe(1);
+    }
+  });
 
   test("폰에서 위험 행동 앞 여백은 앞 행동 뒤 --s-2이고 「삭제」 자신에는 없다", async ({ page }) => {
     await loginAsSysadmin(page);

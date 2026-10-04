@@ -191,7 +191,7 @@ test.describe("코드표 관리 화면 (MAST-04, ADMN-01, D-36 계약: 화면 �
     await expect(sortTh).toHaveCSS("white-space", "nowrap");
 
     const firstRow = table.locator("tbody tr").first();
-    const sortTd = firstRow.locator("td").nth(sortColIndex);
+    const sortTd = firstRow.locator(":scope > :is(td, th)").nth(sortColIndex);
     await expect(sortTd).toHaveCSS("text-align", "right");
     await expect(sortTd).toHaveCSS("white-space", "nowrap");
     const sortNumFontVariant = await sortTd.locator("span").first().evaluate((el) => getComputedStyle(el).fontVariantNumeric);
@@ -517,7 +517,8 @@ test.describe("코드표 프로젝트 상태 — 이름 읽기 전용 (04.6-10)"
     await page.goto("/admin/code-tables?tableKey=project_status");
     for (const word of ["수주중", "진행", "정산", "완료", "미수주"]) {
       await expect(page.getByLabel(`${word} 이름`)).toHaveCount(0);
-      await expect(page.getByRole("cell", { name: word, exact: true })).toBeVisible();
+      // 이름 열은 행 머리글(rowheader)이다 — 폰 320 이름 칸 바닥 폭(2026-10-04).
+      await expect(page.getByRole("rowheader", { name: word, exact: true })).toBeVisible();
     }
     await expect(page.getByLabel("수주중 설명").locator("visible=true")).toBeVisible();
 

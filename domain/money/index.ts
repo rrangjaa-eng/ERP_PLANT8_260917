@@ -225,13 +225,15 @@ export function remainingForInstallments(
     execution.currency !== "KRW" &&
     others.every((money) => money.currency === execution.currency) &&
     (!current || current.currency === execution.currency);
-  const remainingKrw = execution.amountKrw - sumKrw(others.map((money) => money.amountKrw));
   if (sameCurrency) {
     const cents = Math.round(execution.amount * 100) - sumKrw(others.map((money) => Math.round(money.amount * 100)));
-    const remaining: Money = { __brand: "Money", currency: execution.currency, amount: cents / 100, fxRate: execution.fxRate, amountKrw: remainingKrw };
+    // 원래 통화 비교의 남은 원화는 남은 외화 × 줄 실행가 환율 — 앞 문서 원화 합(환율 변동)으로 문이 열리고 닫히지 않는다(05-14).
+    const amount = cents / 100;
+    const remaining: Money = { __brand: "Money", currency: execution.currency, amount, fxRate: execution.fxRate, amountKrw: toKrw({ currency: execution.currency, amount, fxRate: execution.fxRate }) };
     const exceeds = current !== undefined && Math.round(current.amount * 100) > cents;
     return { basis: "foreign", remaining, exceeds };
   }
+  const remainingKrw = execution.amountKrw - sumKrw(others.map((money) => money.amountKrw));
   const remaining: Money = { __brand: "Money", currency: "KRW", amount: remainingKrw, fxRate: 1, amountKrw: remainingKrw };
   const exceeds = current !== undefined && toKrw(current) > remainingKrw;
   return { basis: "krw", remaining, exceeds };

@@ -99,11 +99,12 @@ function isDangerAction(child: ReactNode): boolean {
   return isValidElement<{ danger?: boolean }>(child) && child.props.danger === true;
 }
 
-export function RowActions({ children }: { children: ReactNode }) {
+/** `noWrap` — 폰(<700)에서도 줄바꿈하지 않는다(짧은 두 행동 마스터 표용 — 넘침은 mobile-320-no-overflow가 잰다). */
+export function RowActions({ children, noWrap }: { children: ReactNode; noWrap?: boolean }) {
   const items = Children.toArray(children);
   const ordered = [...items.filter((child) => !isDangerAction(child)), ...items.filter(isDangerAction)];
   return (
-    <span data-ui="row-actions" className={styles.row}>
+    <span data-ui="row-actions" className={noWrap ? `${styles.row} ${styles.noWrap}` : styles.row}>
       {ordered}
     </span>
   );

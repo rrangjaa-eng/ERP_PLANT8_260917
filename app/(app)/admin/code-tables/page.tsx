@@ -170,7 +170,7 @@ export default async function CodeTablesPage({
               ...(hasActions
                 ? [
                     item.archivedAt ? null : (
-                      <RowActions key="actions">
+                      <RowActions key="actions" noWrap>
                         {canWrite ? <CodeItemActiveToggle id={item.id} active={item.active} /> : null}
                         {canArchive ? <CodeItemDeleteButton id={item.id} label={item.label} /> : null}
                       </RowActions>

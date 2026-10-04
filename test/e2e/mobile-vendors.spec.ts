@@ -1,6 +1,10 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
 import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
+import { randomUUID } from "node:crypto";
+import { expectGapsAtLeastToken, expectNoRowOverflow, loginAsSysadmin } from "./row-actions-helpers";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { insertVendor, setVendorHidden } from "@/repositories/vendors";
 
 // defect 2(wave 6 DOM 감사, 375px): ui/button/Button.module.css의 .tertiary가
 // height: auto + padding: 0라 §3 터치 목표(44×44)를 무시하고 텍스트 줄
@@ -27,6 +31,10 @@ test.describe("폰 375 /admin/vendors 3차 버튼 터치 목표 (defect 2)", () 
     await page.getByLabel("예금주").fill("홍길동");
     await page.getByLabel("계좌번호").fill("110-222-334455");
     await page.getByRole("button", { name: "거래처 등록" }).click();
+    // 04.6-04(UQ-8 B): 등록 성공 뒤 패널은 열린 채 결과 한 줄을 보인다 — Esc로 닫고 목록을 이어 본다.
+    await expect(page.locator('dialog[data-ui="side-panel"]').getByRole("status")).toHaveText("거래처 등록됨");
+    await page.keyboard.press("Escape");
+    await expect(page.locator('dialog[data-ui="side-panel"]')).toHaveCount(0);
     await expect(page.getByText(vendorName)).toBeVisible();
 
     const row = page.locator("tr", { hasText: vendorName });
@@ -51,5 +59,88 @@ test.describe("폰 375 /admin/vendors 3차 버튼 터치 목표 (defect 2)", () 
     // vendors.spec.ts:178이 desktop에서 쓰는 정리 방식과 같다.
     await hideButton.click();
     await expect(page.getByText(vendorName)).toHaveCount(0);
+  });
+});
+
+// 260930-f3l /design-review FINDING-001: 폰에서도 행 동작이 0px로 붙어 「삭제」가 옆 동작과 맞닿았다(탭 실수).
+// 가로로 놓이든 줄바꿈으로 세로로 놓이든 인접 동작은 --s-4 이상 떨어지고 각 상자는 44x44를 지킨다.
+async function seedPhoneRow(): Promise<{ target: string; cleanup: () => Promise<void> }> {
+  const stamp = randomUUID().slice(0, 8);
+  const long = await insertVendor(SYSTEM_VIEWER, { name: `${"가".repeat(60)}${stamp}`, normalizedName: `긴행-${randomUUID()}` });
+  const target = await insertVendor(SYSTEM_VIEWER, { name: `간격대상-${stamp}`, normalizedName: `간격대상-${randomUUID()}` });
+  return {
+    target: target.name,
+    cleanup: async () => {
+      await setVendorHidden(SYSTEM_VIEWER, long.id, true);
+      await setVendorHidden(SYSTEM_VIEWER, target.id, true);
+    },
+  };
+}
+
+async function measureRowActionsOnPhone(page: Page, withGaps: boolean): Promise<void> {
+  const { target, cleanup } = await seedPhoneRow();
+  try {
+    await loginAsSysadmin(page);
+    await page.goto("/admin/vendors");
+    const row = page.locator("tr", { hasText: target });
+    const edit = row.getByRole("link", { name: "수정" });
+    const hide = row.getByRole("button", { name: "숨기기" });
+    const remove = row.getByRole("button", { name: "삭제" });
+    await expectNoRowOverflow(page, row, "일반 상태");
+    if (withGaps) {
+      await expectGapsAtLeastToken(page, [edit, hide, remove], "폰");
+      for (const action of [edit, hide, remove]) {
+        const box = await action.boundingBox();
+        expect(box!.width).toBeGreaterThanOrEqual(44);
+        expect(box!.height).toBeGreaterThanOrEqual(44);
+      }
+    }
+    await remove.click();
+    await expect(row.getByRole("button", { name: "취소" })).toBeVisible();
+    await expectNoRowOverflow(page, row, "확인 상태");
+  } finally {
+    await cleanup();
+  }
+}
+
+test.describe("폰 375 /admin/vendors 행 동작 간격 --s-4 (260930-f3l FINDING-001)", () => {
+  test("인접 동작이 --s-4 이상 떨어지고 44x44이며 「삭제」 확인 줄도 넘치지 않는다", async ({ page }) => {
+    await measureRowActionsOnPhone(page, true);
+  });
+});
+
+test.describe("폰 320 /admin/vendors 행 동작 넘침 없음 (260930-f3l FINDING-001)", () => {
+  test.use({ viewport: { width: 320, height: 800 } });
+
+  test("일반 상태와 「삭제」 확인 상태 모두 가로로 넘치지 않는다", async ({ page }) => {
+    await measureRowActionsOnPhone(page, false);
+  });
+});
+
+// 04.6-11 Task 2: 수정 패널(계좌번호 칸 포함)이 폰 390에서 가로로 넘치지 않는다.
+test.describe("폰 390 /admin/vendors 수정 패널 가로 넘침 없음 (04.6-11)", () => {
+  test.use({ viewport: { width: 390, height: 800 } });
+
+  test("계좌번호가 있는 거래처의 수정 패널이 문서·패널 모두 가로로 넘치지 않는다", async ({ page }) => {
+    const vendor = await insertVendor(SYSTEM_VIEWER, {
+      name: `폰패널-${randomUUID().slice(0, 8)}`,
+      normalizedName: `폰패널-${randomUUID()}`,
+      accountNumberLast4: "4455",
+    });
+    try {
+      await loginAsSysadmin(page);
+      await page.goto(`/admin/vendors?editId=${vendor.id}`);
+      const dialog = page.locator('dialog[data-ui="side-panel"]');
+      await expect(dialog.getByLabel("새 계좌번호")).toBeVisible();
+      const overflow = await page.evaluate(() => {
+        const scroller = document.scrollingElement ?? document.documentElement;
+        const panel = document.querySelector('dialog[data-ui="side-panel"]');
+        return { doc: scroller.scrollWidth - scroller.clientWidth, panel: panel ? panel.scrollWidth - panel.clientWidth : 0 };
+      });
+      expect(overflow.doc, "문서 가로 넘침").toBeLessThanOrEqual(0);
+      expect(overflow.panel, "패널 가로 넘침").toBeLessThanOrEqual(0);
+    } finally {
+      await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
+    }
   });
 });

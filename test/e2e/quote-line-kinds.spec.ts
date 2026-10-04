@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Locator, type Page } from "@playwright/test";
-import { eq, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { codeItems, projects } from "@/db/schema";
 import { createProject } from "@/domain/projects";
@@ -44,7 +44,7 @@ async function makeAdjuster(teamId: string, withProjectsWrite = false): Promise<
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
   if (withProjectsWrite) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "write", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects.adjustment", action: "write", allowed: true });
-  for (const infoItem of ["project.value", "quote.amount"]) {
+  for (const infoItem of ["project.value", "quote.amount", "vendor.value"]) {
     await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
   }
   return makeAccount(role.id, teamId, "E2E 경영관리");
@@ -78,7 +78,7 @@ async function makeProject(input: { teamId: string; pmUserId: string; status: st
   });
   const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, created.id);
   if (!revision) throw new Error("1차 차수가 없습니다");
-  const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
+  const [subcategory] = await db.select().from(codeItems).where(and(eq(codeItems.tableKey, "quote_subcategory"), eq(codeItems.active, true), isNull(codeItems.archivedAt))).orderBy(asc(codeItems.sortOrder), asc(codeItems.value)).limit(1);
   if (!subcategory) throw new Error("소분류 코드가 없습니다");
   if (input.lines.length > 0) {
     await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
@@ -153,7 +153,7 @@ async function openProject(page: Page, input: { as: "pm" | "adjuster"; status: s
 async function fillLinesBySql(projectId: string, count: number) {
   const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, projectId);
   if (!revision) throw new Error("1차 차수가 없습니다");
-  const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
+  const [subcategory] = await db.select().from(codeItems).where(and(eq(codeItems.tableKey, "quote_subcategory"), eq(codeItems.active, true), isNull(codeItems.archivedAt))).orderBy(asc(codeItems.sortOrder), asc(codeItems.value)).limit(1);
   if (!subcategory) throw new Error("소분류 코드가 없습니다");
   await db.execute(sql`
     INSERT INTO quote_lines (revision_id, sort_order, subcategory, item_name, unit_price_amount_krw, execution_amount_krw, quote_amount_krw, profit_krw)

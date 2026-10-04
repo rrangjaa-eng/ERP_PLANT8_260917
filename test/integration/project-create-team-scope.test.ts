@@ -7,7 +7,7 @@ import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { createAccount } from "@/domain/auth/accounts";
 import { insertVendor } from "@/repositories/vendors";
 import { insertRole } from "@/repositories/roles";
-import { upsertPermission } from "@/repositories/permissions";
+import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { createProject, ForbiddenError } from "@/domain/projects";
 import { listProjectFormReferences, scopeCreateFormReferences } from "@/domain/projects/references";
@@ -44,6 +44,10 @@ async function makeWriterRole(workScope: "team" | "company"): Promise<string> {
   const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `등록 계급-${randomUUID()}`, workScope });
   for (const action of ["view", "write"] as const) {
     await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action, allowed: true });
+  }
+  // 등록 폼 선택지는 정보 노출표를 지난다(ADMN-03) — 이 계급은 팀 · 사람 · 거래처 이름을 보는 등록 계급을 흉내 낸다.
+  for (const infoItem of ["team.value", "person.value", "vendor.value"]) {
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
   }
   return role.id;
 }

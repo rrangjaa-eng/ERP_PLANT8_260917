@@ -45,13 +45,50 @@ permissions:
   id-token: write
 
 jobs:
+  # 배포 CI 중복 제거(2026-10-01 사용자 결정): main 커밋 tree가 PR CI 전체 통과 기록(ci.yml
+  # tested-tree 아티팩트)과 같으면 같은 내용을 이미 검사한 것이라 ci를 건너뛴다. 한 번에 하나씩,
+  # 차례 PR이 main을 반영한 뒤 CI를 돌고 머지하면 squash 커밋 tree가 그 기록과 같다. 기록이
+  # 없거나(사이에 다른 머지 · draft · .claude만) 조회가 실패하면 hit가 비어 ci 전체가 돈다.
+  # 다른 저장소(포크) PR이 올린 같은 이름 아티팩트는 세지 않는다.
+  tested:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      hit: ${{ steps.find.outputs.hit }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          tree=$(git rev-parse 'HEAD^{tree}')
+          n=$(gh api "repos/$REPO/actions/artifacts?name=tested-tree-$tree" \
+            --jq '[.artifacts[] | select(.expired == false and .workflow_run.head_repository_id == .workflow_run.repository_id)] | length' || echo 0)
+          if [ "$n" -gt 0 ]; then
+            echo "hit=true" >> "$GITHUB_OUTPUT"
+            echo "tree $tree: PR CI 전체 통과 기록 있음 — ci 건너뜀" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "tree $tree: 기록 없음 — ci 전체 실행" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   ci:
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.target == 'staging')
+    needs: tested
+    if: >-
+      !cancelled() &&
+      ((github.event_name == 'push' && needs.tested.outputs.hit != 'true') ||
+      (github.event_name == 'workflow_dispatch' && inputs.target == 'staging'))
     uses: ./.github/workflows/ci.yml
 
   staging:
-    needs: ci
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.target == 'staging')
+    needs: [tested, ci]
+    if: >-
+      !cancelled() &&
+      (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.target == 'staging')) &&
+      (needs.ci.result == 'success' || (needs.ci.result == 'skipped' && needs.tested.outputs.hit == 'true'))
     runs-on: ubuntu-latest
     env:
       ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}

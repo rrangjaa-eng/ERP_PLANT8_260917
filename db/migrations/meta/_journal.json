@@ -148,6 +148,27 @@
       "when": 1790688566184,
       "tag": "0020_hot_maestro",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1790860335664,
+      "tag": "0021_holidays_archive",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1790903130578,
+      "tag": "0022_cert_intake",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1790927956386,
+      "tag": "0023_custom_field_admin",
+      "breakpoints": true
     }
   ]
 }

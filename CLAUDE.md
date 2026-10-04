@@ -16,12 +16,12 @@
 - `.planning/` 수동 편집 · `git push --force` · 프로덕션 DB 직접 명령 · 이 파일에 진행 상황 추가
 - pnpm 외 패키지 매니저 (§1) · `docs/ARCHITECTURE.md`·`docs/DESIGN.md` import (§1)
 - 세션 중 이 파일·@import 대상 수정, 자주 바뀌는 파일 @import (§0)
-- 승인 없이 절차 건너뛰기·즉석 방법으로 대체 (§4 공통) · `/review` 통과 없이 ship (§4)
+- 승인 없이 절차 건너뛰기·즉석 방법으로 대체 (§4 공통) · 코드 PR을 `/review` 통과 없이 ship (§4)
 - 웹 브라우징에 `/browse` 외 사용, `mcp__claude-in-chrome__*` 사용 (§4 공통)
 - 실제 실행 확인 없이 "완료" · 추측 수정 · 승인 없는 새 의존성 (§5)
 - 시크릿을 코드·커밋에 · `any` · 요청받지 않은 리팩터·주석·파일 이동 (§5)
 - `docs/design/SYSTEM.md` 없이 화면 만들기 · 새 색·서체·radius 생성 · 화면 하나만 예외 · 스크린샷 육안 판정 (§6)
-- 위험 경로(마이그레이션·스키마·인증·권한·암호화·배포·`.claude/`·이 파일) PR을 세션이 머지 (§4 머지) · Codex 등 외부 검토 호출 (§4)
+- 위험 경로(마이그레이션·스키마·인증·권한·암호화·배포·`.claude/`·이 파일) PR을 세션이 머지 (§4 머지) · 디자인 검토 밖에서 Codex 등 외부 검토 호출 (§6)
 
 ## 3. 작업 원칙
 
@@ -80,26 +80,27 @@
 2. `/gsd-new-project` 또는 `/gsd-plan-phase`로 GSD 계획 초안 생성 — 플랜은 크게(`granularity: coarse`). 플랜 하나가 세션·게이트·CI 한 바퀴다
 3. 계획 게이트: `/plan-eng-review` 1회(UI 포함 시 `/plan-design-review` 1회). 지적 반영 뒤 재검토는 최대 1회. `/plan-ceo-review`는 마일스톤(로드맵) 수준에서만 — 페이즈마다 다시 묻지 않는다
 4. UI 포함 시 `docs/DESIGN.md` 읽기 — `docs/design/SYSTEM.md` 없으면 §1→§2→§3(브리프→발산→수렴)으로 먼저 만들고 `/plan-design-review`. 있으면 §4만 적용
-- 게이트를 통과한 계획만 Build로 넘긴다. 리뷰 결과는 GSD 계획 파일에 반영한다. 외부(Codex) 검토는 하지 않는다
+- 게이트를 통과한 계획만 Build로 넘긴다. 리뷰 결과는 GSD 계획 파일에 반영한다. 외부(Codex) 검토는 디자인 검토(`/plan-design-review`·`/design-review`)에서만 한다(§6)
 
 **[Build] GSD가 뼈대, Superpowers가 규율**
 - `/gsd-execute-phase`로 실행. 상태의 단일 출처는 `.planning/`
-- **세션 하나 = 웨이브 하나.** 웨이브가 끝나면 커밋·푸시 → `/gsd-pause-work` → plant8 환경의 새 세션에서 `/gsd-progress`. 훅이 강제한다(같은 웨이브의 플랜은 몇 개든 한 세션에서)
-- 실행자는 Sonnet 기본. 돈·권한·DB 잠금·마이그레이션을 건드리는 플랜(`risk:` 태그)만 Opus 실행자 + Opus 독립 검토 1명. 화면 플랜은 독립 DOM 감사(§6)
+- **세션은 웨이브가 아니라 독립 검토 경계에서만 끊는다**(사용자 결정 2026-10-01). 같은 세션에서 다음 웨이브와 지적 반영을 이어 가고, 문맥이 차면 자동 압축(`autoCompactWindow` 40만 토큰, 모델 창이 더 작으면 그 창 — 환경변수 `CLAUDE_CODE_AUTO_COMPACT_WINDOW`가 있으면 그 값)으로 이어 간다. 끊는 때: 계획 완료 뒤(실행 전 독립 게이트 리뷰)·게이트 리뷰 종료 뒤. 끊을 때는 커밋·푸시 → `/gsd-pause-work` → plant8 환경의 새 세션에서 `/gsd-progress`. 이 두 경계는 훅이 강제한다
+- 실행자는 Sonnet 기본. 돈·권한·DB 잠금·마이그레이션을 건드리는 플랜(`risk:` 태그)만 Opus 실행자 + Opus 독립 검토 1명. 화면 플랜은 독립 DOM 감사(§6). GSD 판정 에이전트(plan-checker·code-reviewer·verifier·integration-checker·ui-checker·ui-auditor)는 Opus(.planning/config.json model_overrides)
 - 실행 중 Superpowers 스킬은 **호출**한다(켜졌다고 가정만 하지 않는다): 버그·테스트 실패·CI 실패를 쫓기 전에 `systematic-debugging`, "완료"를 말하기 전에 `verification-before-completion`, 구현 전에 `test-driven-development`. 서브에이전트에 위임할 때도 프롬프트에 그 스킬을 명시한다
-- 페이즈 밖 소규모 작업: `/gsd-quick` 또는 `/superpowers:brainstorm → write-plan → execute-plan` 중 하나만
+- 페이즈 밖 소규모 작업: `/gsd-quick` 또는 `/superpowers:brainstorm → write-plan → execute-plan` 중 **한 흐름만** — GSD·Superpowers·gstack의 계획·검토·검증을 겹쳐 쌓지 않는다
 - 페이즈 종료: `/gsd-verify-work` → `/gsd-complete-milestone`
 
-**[Post-build] gstack — 검증하고 내보내기 (묶음 = PR마다 한 번)**
-1. `/review` 코드 리뷰 (통과 없이 ship 금지)
-2. `/qa` 실제 브라우저 QA (읽기 전용 `/qa-only`) · UI 변경은 `/design-review`
-3. `/cso` 보안 감사 (인증·결제·외부 입력 다룰 때 필수)
-4. `/ship` PR → 머지(아래 규칙) → `/retro` 회고
-- 회고에서 나온 규칙은 이 파일이 아니라 `.planning/` 또는 `/learn`에 남긴다
-- **Post-build 넷은 건너뛰지 않는다.** 페이즈 실행이 끝나면 즉석 검증으로 대체하지 말고 `/review` → `/qa` → (해당 시)`/cso` → `/ship`을 실제로 호출한다. 페이즈가 인증·권한·암호화·외부 입력을 건드렸으면 `/cso`는 선택이 아니다. 플랜마다 되풀이하지 않고 묶음마다 한 번이다
+**[Post-build] gstack — 변경 종류에 맞는 게이트만 (묶음 = PR마다 한 번, 사용자 결정 2026-10-01)**
+- 문서·계획만(`*.md`·`.claude/gates/` 로그, `.claude/`·이 파일 제외): 게이트 없음 — CI가 돌면 초록이어야 한다(.planning/·docs/**만 바뀐 PR은 CI가 돌지 않는다)
+- 코드: `/review`
+- 화면 영향(`app/`의 `.tsx`·`.css`, `ui/` 전부, `docs/design/tokens.css`): `/review` + 브라우저 검증 `/design-review` → `/qa`(읽기 전용 `/qa-only`)
+- 돈·결재(`domain/`의 `money`·`corp-cards`·`reserves`·`revenue`·`approvals`, `repositories/`의 `corp-cards`·`approvals`·`reserve-entries`·`revenue-entries`): `/review` + 독립 검토 `/cso`
+- 인증·권한·암호화는 위험 경로라 사용자가 머지하고, 외부 입력(`app/api/` 등)은 판단해서 `/cso`를 더한다(이 둘은 훅이 강제하지 않는다)
+- 그다음 `/ship` PR → 머지(아래 규칙) → `/retro` 회고. 회고에서 나온 규칙은 이 파일이 아니라 `.planning/` 또는 `/learn`에 남긴다
+- **해당하는 게이트는 건너뛰지 않는다.** 즉석 검증으로 대체하지 말고 실제로 호출한다. 해당하지 않는 게이트를 관성으로 덧붙이지도 않는다. 플랜마다 되풀이하지 않고 묶음마다 한 번이다. 머지 게이트(문서·코드·화면·돈·결재)는 훅이 이 표대로 강제한다
 
 **머지**
-- 조건이 전부 맞으면 **세션이 머지한다**(사용자 부재 중에도): PR ready · 최신 커밋 CI 초록 · main과 충돌 없음 · 게이트 기록(`/review`, 화면이 바뀌었으면 `/qa`·`/design-review`, 해당 시 `/cso`) · 직전 main 스테이징 배포 초록 · 사용자 「[지시] 머지 보류」 댓글이나 `hold` 라벨 없음
+- 조건이 전부 맞으면 **세션이 머지한다**(사용자 부재 중에도): PR ready · 최신 커밋 CI 초록 · main과 충돌 없음 · 게이트 기록(위 Post-build 표대로 — 문서만이면 없음) · 직전 main 스테이징 배포 초록 · 사용자 「[지시] 머지 보류」 댓글이나 `hold` 라벨 없음
 - 머지한 세션은 스테이징 배포 결과를 지켜본다. 빨간불이면 자동 되돌리기 대신 무인 머지를 멈추고 사용자에게 알린다. 한 번에 PR 하나, 배포가 초록이 된 뒤 다음
 - **위험 경로가 바뀐 PR은 사용자가 GitHub에서 직접 머지한다**(훅이 세션 머지를 막는다): `db/migrations/`·`db/schema/`·`domain/auth/`·`domain/permissions/`·`lib/crypto*`·`scripts/deploy.sh`·`rollback.sh`·`bootstrap-gcp.sh`·`promote-guard.sh`·`.github/workflows/`·`infra/`·`.claude/`·이 파일. 위험 경로 변경은 별도 PR로 떼어 나머지가 무인으로 흐르게 한다
 
@@ -110,7 +111,8 @@
 
 ## 5. 코딩 규칙
 - TDD: 실패 테스트 → 최소 구현 → 리팩터. 실제 실행 확인 없이 "완료" 금지
-- **로컬 dev 통과는 완료 신호가 아니다.** `playwright.config.ts`가 CI에서만 프로덕션 빌드를 쓴다 — 배포·완료 판정은 `CI=true`로 확인한다. 로컬은 lint·typecheck·build·단위·통합 + 건드린 화면의 E2E 스펙만, 전체 E2E는 CI가 한 번 돈다(draft PR은 quality만, ready·main은 전체)
+- **로컬 dev 통과는 완료 신호가 아니다.** `playwright.config.ts`가 CI에서만 프로덕션 빌드를 쓴다 — 배포·완료 판정은 `CI=true`로 확인한다
+- **테스트는 단계에 맞게**(사용자 결정 2026-10-01): 작업 중에는 lint·typecheck + 바뀐 파일과 관련된 단위·통합 테스트 + 건드린 화면의 E2E 스펙만(DB 초기화가 드는 전체 통합은 돌리지 않는다). PR을 ready로 바꾸면 build·전체 단위·통합·E2E는 CI가 한 번 돈다(draft PR은 quality만, ready·main은 전체 — 로컬에서 되풀이하지 않는다)
 - 버그: 재현 → 원인 → 수정 → 회귀 테스트. 추측 수정 금지
 - 한 커밋 한 의도. 커밋 메시지 언어: 제목은 영어 접두어(docs:/feat:/fix:/chore:) + 짧은 요약, 본문은 한국어
 - 새 의존성은 이유 한 줄 + 승인 후
@@ -121,6 +123,7 @@
 - 정본은 `.claude/rules/frontend.md` — `app/`·`ui/`·`docs/design/` 파일을 만지면 자동으로 붙는다. 요지: 모든 화면의 기준은 `docs/design/SYSTEM.md`(없으면 화면을 만들지 않고 `docs/DESIGN.md` §1부터), 새 색·서체·radius 생성 금지(토큰은 `tokens.css`에서만), 시스템 이탈은 `DECISIONS.md` 기록 뒤 SYSTEM.md 수정(화면 하나만 예외 금지)
 - UI 완료 판정은 `/design-review`(SYSTEM.md 일관성) → `/qa` 통과 후, 묶음마다 한 번
 - **화면 검증 순서: 싼 게이트(lint·typecheck·build) → 독립 DOM 감사 → 수정 → 전체 게이트 한 번.** 감사는 실행자가 아닌 별도 에이전트가 `CI=true`로 DOM을 실측 판정한다(스크린샷 육안 금지). 전체 게이트의 "한 번"은 CI다
+- **Codex 디자인 검토**(사용자 결정 2026-10-01): `/design-review`·`/plan-design-review`에서만 `bash scripts/codex-design-review.sh <경로…> --out <보고서>`(계획 검토는 `--plan <파일>`)를 부른다 — `CI=true` 빌드 화면을 375·320·768·1280 폭으로 찍고 DOM 실측표와 함께 Codex(ChatGPT 구독 로그인, GPT-6.1 Sol · 추론 medium 고정, CLI 0.160.0)에 넘긴다. Codex 지적은 후보이고 결함 판정은 DOM 실측으로만 한다. 자격·CLI가 없으면 보고서에 「Codex 디자인 검토 건너뜀: 사유」 한 줄을 남기고 진행한다. 그 밖의 검토에서 Codex는 gstack `codex_reviews disabled`와 규칙 훅 R3가 막는다
 
 ## 7. 화면 사용성 원칙
 - 정본은 `.claude/rules/frontend.md`의 「화면 사용성 원칙」. 요지: 사람이 읽고 고민하지 않아도 화면이 다음 행동으로 이끈다 — 안내 문구 최소(오류·되돌릴 수 없는 일·잠김에만 한 줄, 명사형), 사용자 결정 최소(기본값 채움·계산은 시스템·할 수 없는 선택지는 숨김/비활성·확인 창 대신 되돌리기), 행동은 동작·컴포넌트·디자인으로(주 버튼 하나·단계·형식 잡는 입력 칸·키보드만으로 엑셀처럼·상태는 색·배지)
@@ -128,11 +131,11 @@
 
 ## 8. 캐시·컨텍스트·모델 선택
 - 조사·탐색·긴 로그는 서브에이전트에 위임, 결론만 받는다
-- **모델 선택**: 점검·계획·기획·판단·검토는 Opus 5로 한다. Fable 5는 정말 필요한 순간에만 쓴다 — 아키텍처·보안처럼 되돌리기 어려운 결정, Opus 5가 두 번 이상 틀리거나 판단이 갈리는 문제, 사용자가 명시로 요청한 때. 나머지(조사·탐색·코드 실행·정리·이관·문서 생성 등)는 작업에 알맞은 지능을 골라, 오류가 나지 않는 조건으로 필요한 지능만큼만 쓴다(Sonnet → Haiku 순으로 낮춰 본다). 서브에이전트를 띄울 때는 `model`을 반드시 명시하고, GSD `model_profile`은 `adaptive`로 둔다(실행자 = Sonnet). 실행자를 Opus로 올리는 것은 `risk:` 태그(돈·권한·DB 잠금·마이그레이션) 플랜만. 외부(Codex) 검토는 하지 않는다
+- **모델 선택**: 점검·계획·기획·판단·검토는 Opus 5로 한다. 메인 세션(Opus)은 판단·지휘만 하고 구현·테스트 실행은 Sonnet 에이전트에 넘긴다. Fable 5는 정말 필요한 순간에만 쓴다 — 페이즈 최종 전체 검토, 아키텍처·보안처럼 되돌리기 어려운 결정, Opus 5가 두 번 이상 틀리거나 판단이 갈리는 문제, 사용자가 명시로 요청한 때. 나머지(조사·탐색·코드 실행·정리·이관·문서 생성 등)는 작업에 알맞은 지능을 골라, 오류가 나지 않는 조건으로 필요한 지능만큼만 쓴다(Sonnet → Haiku 순으로 낮춰 본다). 서브에이전트를 띄울 때는 `model`을 반드시 명시하고, GSD `model_profile`은 `adaptive`로 둔다(실행자 = Sonnet). 판정 에이전트 6종은 model_overrides로 Opus. 실행자를 Opus로 올리는 것은 `risk:` 태그(돈·권한·DB 잠금·마이그레이션) 플랜만. 외부(Codex) 검토는 디자인 검토에서만(§6)
 - 파일은 Grep으로 위치 찾고 필요한 범위만 Read. 500줄 이상은 range 필수
 - 테스트·빌드 출력은 요약만. 실패 시 실패 부분만 인용
 - **토큰을 아낀다.** 이미 읽은 파일·이미 받은 도구 결과를 다시 조회하지 않는다. 나머지 수단은 위 세 줄(위임·범위 Read·출력 요약)이다
-- 웨이브 끝나면 `/compact` 대신 새 세션(plant8 환경). 재개는 `/gsd-progress`
+- 문맥은 자동 압축으로 이어 간다(§4 Build). 독립 검토 경계에서 끊을 때만 새 세션(plant8 환경), 재개는 `/gsd-progress`
 - 반복 규칙(포맷·린트·테스트)은 문장이 아니라 hooks(`.claude/settings.json`)로
 - 응답은 짧게. 결과와 다음 행동만
 
@@ -148,6 +151,8 @@
 - 새 세션은 각 계정의 plant8 환경에서만 만든다 — 환경 변수 `PLANT8_ENV_ID`에 그 계정의 환경 id를 둔다(없으면 이 계정의 `env_01BjvDha7fqn18V6L1UywqDh`). 「기본값」 환경은 시크릿·허용 목록이 없다
 - 웨이브 시작 전과 푸시 전에 origin/main을 머지 커밋으로 반영한다(force push 금지). 마이그레이션 번호가 겹치면 내 것을 지우고 `pnpm db:generate`로 다시 만든다
 - 동시에 여는 레인은 만들기 1(페이즈 브랜치) + 계획 1(다음 페이즈 `.planning/`만) + 검증 1(앞 묶음 PR의 `/review`·`/qa`·수정만). 셋은 건드리는 파일이 겹치지 않는다
+  - quick 작업은 새 레인을 만들지 않고 만들기 또는 검증 레인 안에서 한다
+  - 계획 레인은 아직 구현 중인 기능의 확정되지 않은 부분을 의존성으로 표시하고, 확정된 부분부터 계획한다
 - STATE.md·ROADMAP.md 진행 표기는 실행 세션이 자기 페이즈 것만 갱신한다. 멈춘 세션은 다음 세션이 `/gsd-progress`로 `.continue-here.md`에서 이어받는다
 - 머지는 §4 「머지」 규칙대로. 사용자가 없어도 조건이 맞으면 세션이 머지하고, 위험 경로는 사용자가 한다
 

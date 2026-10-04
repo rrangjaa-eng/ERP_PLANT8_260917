@@ -1,4 +1,5 @@
 import type { StatusTagKind } from "@/ui/status-tag/StatusTag";
+import type { StatusWord } from "@/ui/status-tag/status-map";
 
 // 04.1 UI-SPEC Color 「상태 → 색 매핑」(SYSTEM.md §7-5 · A2) — 문서 상태 → kind · 글자의 유일한 출처.
 // 화면 코드는 상태 문자열로 색을 직접 고르지 않고 이 함수만 쓴다. 자리: 제목 옆 `tag`(테두리) ·
@@ -44,6 +45,33 @@ export function leaveStatusDisplay(status: LeaveStatusKey, options?: { stepLabel
   }
 }
 
+// 04.6-18: `StatusTag status` 낱말 — 색은 상태 배지 표(`status-map.ts`)가 정한다. 낱말은 `leaveStatusDisplay`의 글자와 같다(날짜 없이).
+export function leaveStatusWord(status: LeaveStatusKey, stepLabel?: string | null): StatusWord {
+  switch (status) {
+    case "submitted":
+    case "in_review":
+      return stepLabel ? `${stepLabel} 결재 중` : "결재 중";
+    case "mine":
+      return "내 결재";
+    case "approved":
+      return "승인";
+    case "rejected":
+      return "반려";
+    case "withdrawn":
+      return "회수";
+    case "waiting":
+      return "대기";
+    case "vacant":
+      return "담당 없음";
+    case "draft":
+      return "임시";
+    default: {
+      const unreachable: never = status;
+      return unreachable;
+    }
+  }
+}
+
 const STATUS_KEYS: readonly string[] = ["draft", "submitted", "in_review", "approved", "rejected", "withdrawn"];
 
 // 서버가 준 상태 문자열(투영에서 빠지면 undefined)을 매핑 키로 — 모르는 값은 null(그리지 않는다).
@@ -68,7 +96,7 @@ export type RouteListStep = {
   key: string;
   person: string;
   label: string;
-  result: { text: string; kind: StatusTagKind };
+  result: { text: string; status: StatusWord };
   at: string | null;
   reason: string | null;
 };
@@ -88,19 +116,19 @@ export function seoulMinuteOf(at: Date): string {
   return `${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
 }
 
-function stepResult(step: RouteStepSource): LeaveStatusDisplay | null {
+function stepStatusKey(step: RouteStepSource): LeaveStatusKey | null {
   switch (step.state) {
     case "approved":
-      return leaveStatusDisplay("approved");
+      return "approved";
     case "rejected":
-      return leaveStatusDisplay("rejected");
+      return "rejected";
     case "current":
-      return leaveStatusDisplay(step.viewerHolds ? "mine" : "submitted");
+      return step.viewerHolds ? "mine" : "submitted";
     case "pending":
-      return leaveStatusDisplay("waiting");
+      return "waiting";
     case "empty":
     case "blocked":
-      return leaveStatusDisplay("vacant");
+      return "vacant";
     default:
       return null;
   }
@@ -117,13 +145,13 @@ function stepPerson(step: RouteStepSource): string {
 export function routeListSteps(steps: RouteStepSource[] | null | undefined): RouteListStep[] {
   const result: RouteListStep[] = [];
   for (const [index, step] of (steps ?? []).entries()) {
-    const display = stepResult(step);
-    if (!display) continue;
+    const key = stepStatusKey(step);
+    if (!key) continue;
     result.push({
       key: `${step.stepIndex ?? index}-${step.label ?? ""}`,
       person: stepPerson(step),
       label: step.label ?? "",
-      result: { text: display.label, kind: display.kind },
+      result: { text: leaveStatusDisplay(key).label, status: leaveStatusWord(key) },
       at: step.actedAt ? seoulMinuteOf(step.actedAt) : null,
       reason: step.state === "rejected" ? (step.reason ?? null) : null,
     });

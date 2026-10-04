@@ -328,6 +328,22 @@ describe("listProjectStatusCatalog — 상태 코드표 목록 (D-93, A-10)", ()
     expect(asked).toEqual([{ includeInactive: true }]);
   });
 
+  it("코드표 라벨이 바뀌어 있어도 이름은 고정 낱말이다 — 배지·필터·부제·알림 문구가 한 이름이다 (04.6-10)", async () => {
+    const renamed = [
+      codeRow("bidding", "제안중", 0, { description: "제안 단계" }),
+      codeRow("in_progress", "수행", 1),
+      codeRow("settling", "마감", 2),
+      codeRow("completed", "종료", 3),
+      codeRow("lost", "탈락", 4),
+    ];
+    const catalog = await listProjectStatusCatalog(viewer, {
+      can: () => Promise.resolve(true),
+      listCodeItems: () => Promise.resolve(renamed),
+    });
+    expect(catalog.map((entry) => entry.label)).toEqual(["수주중", "진행", "정산", "완료", "미수주"]);
+    expect(catalog[0]?.description).toBe("제안 단계");
+  });
+
   it("projects 보기가 없으면 거부한다", async () => {
     await expect(
       listProjectStatusCatalog(viewer, {

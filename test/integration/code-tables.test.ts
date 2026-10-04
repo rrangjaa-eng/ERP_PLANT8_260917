@@ -2,13 +2,14 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
-import { listCodeItems as domainListCodeItems, createCodeItem, setCodeItemActive } from "@/domain/code-tables";
+import { listCodeItems as domainListCodeItems, createCodeItem, setCodeItemActive, CODE_TABLES } from "@/domain/code-tables";
 import { archive } from "@/domain/archive";
 import { insertCodeItem, listCodeItems as repoListCodeItems } from "@/repositories/code-tables";
 import { upsertPermission } from "@/repositories/permissions";
 import { queryActionLog } from "@/repositories/action-log";
 
-const TABLE_KEY = `test_table_${randomUUID()}`;
+// quick 261002-3mx — createCodeItem은 허용 코드표(CODE_TABLES)만 받는다. 매 테스트 TRUNCATE+시드라 항목은 id로 찾는다.
+const TABLE_KEY = "project_status";
 
 describe("code-tables (MAST-04, 실제 Postgres)", () => {
   it("항목 추가 후 목록에 보인다", async () => {
@@ -25,10 +26,12 @@ describe("code-tables (MAST-04, 실제 Postgres)", () => {
   });
 
   it("같은 정렬 값 항목들의 목록 순서가 두 번 조회에서 동일하다(sortOrder 다음 value)", async () => {
-    await insertCodeItem(SYSTEM_VIEWER, { tableKey: TABLE_KEY, value: "z", label: "Z", sortOrder: 0 });
-    await insertCodeItem(SYSTEM_VIEWER, { tableKey: TABLE_KEY, value: "a", label: "A", sortOrder: 0 });
-    const first = await domainListCodeItems(SYSTEM_VIEWER, TABLE_KEY);
-    const second = await domainListCodeItems(SYSTEM_VIEWER, TABLE_KEY);
+    // 목록 전체를 비교한다 — 시드가 없는 표 키(리포지토리 직접 삽입).
+    const tableKey = `test_table_${randomUUID()}`;
+    await insertCodeItem(SYSTEM_VIEWER, { tableKey, value: "z", label: "Z", sortOrder: 0 });
+    await insertCodeItem(SYSTEM_VIEWER, { tableKey, value: "a", label: "A", sortOrder: 0 });
+    const first = await domainListCodeItems(SYSTEM_VIEWER, tableKey);
+    const second = await domainListCodeItems(SYSTEM_VIEWER, tableKey);
     expect(first.map((i) => i.value)).toEqual(["a", "z"]);
     expect(second.map((i) => i.value)).toEqual(first.map((i) => i.value));
   });
@@ -119,6 +122,26 @@ describe("code-tables (MAST-04, 실제 Postgres)", () => {
     const allowedKeys = new Set(["id", "tableKey", "value", "label", "sortOrder", "active", "archivedAt", "taxRule", "description"]);
     for (const key of Object.keys(dto)) {
       expect(allowedKeys.has(key)).toBe(true);
+    }
+  });
+
+  // quick 261002-3mx — 허용 코드표 목록은 domain 한 곳(화면 전환 링크와 같은 목록)이다. 그 밖의 표 키는 서버가 거부한다.
+  it("허용 목록에 없는 코드표에는 항목을 추가할 수 없고 행·로그가 남지 않는다", async () => {
+    const tableKey = `unknown_${randomUUID()}`;
+    const logsBefore = await queryActionLog(SYSTEM_VIEWER, { actionType: "document_create" });
+
+    await expect(createCodeItem(SYSTEM_VIEWER, { tableKey, value: "x", label: "X" })).rejects.toThrow("없는 코드표 · 새로 고침");
+
+    const rows = await repoListCodeItems(SYSTEM_VIEWER, { tableKey, scope: { rows: "all", includeArchived: true }, includeInactive: true });
+    expect(rows).toEqual([]);
+    expect(await queryActionLog(SYSTEM_VIEWER, { actionType: "document_create" })).toHaveLength(logsBefore.length);
+  });
+
+  it("허용 코드표 세 개(프로젝트 상태 · 증빙 종류 · 견적 분류)에는 항목을 추가할 수 있다", async () => {
+    expect(CODE_TABLES.map((table) => table.key)).toEqual(["project_status", "evidence_type", "quote_subcategory"]);
+    for (const { key } of CODE_TABLES) {
+      const dto = await createCodeItem(SYSTEM_VIEWER, { tableKey: key, value: `v-${randomUUID()}`, label: "허용" });
+      expect(dto.tableKey).toBe(key);
     }
   });
 });

@@ -4,8 +4,10 @@ import { can as defaultCan } from "@/domain/permissions/can";
 import { project, type DtoSpec } from "@/domain/permissions/project";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import type { recordAction as RecordActionFn } from "@/domain/action-log/record";
+import type { grantCustomFieldsToRole as GrantCustomFieldsFn } from "@/domain/custom-fields/visibility";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { normalizeRoleName } from "@/domain/permissions/role-name";
+import { withTransaction } from "@/lib/db-transaction";
 import {
   findRoleById as defaultFindRoleById,
   listRoles as repoListRoles,
@@ -97,7 +99,11 @@ export async function listRoles(viewer: Viewer, opts?: { includeArchived?: boole
   return Promise.all(rows.map((row) => project(viewer, row, ROLE_DTO_SPEC))) as Promise<RoleDto[]>;
 }
 
-export type RoleWriteDeps = { can: typeof defaultCan; recordAction: typeof RecordActionFn };
+export type RoleWriteDeps = {
+  can: typeof defaultCan;
+  recordAction: typeof RecordActionFn;
+  grantCustomFieldsToRole: typeof GrantCustomFieldsFn;
+};
 
 // domain/action-log/record.ts를 정적으로 import하면 순환이 생긴다 —
 // domain/viewer.ts가 SYSADMIN_ROLE_ID를 이 파일에서 값으로 import하고,
@@ -106,6 +112,15 @@ export type RoleWriteDeps = { can: typeof defaultCan; recordAction: typeof Recor
 async function defaultRecordAction(...args: Parameters<typeof RecordActionFn>): ReturnType<typeof RecordActionFn> {
   const { recordAction } = await import("@/domain/action-log/record");
   return recordAction(...args);
+}
+
+// 같은 이유의 동적 import — domain/custom-fields/visibility.ts가 SYSTEM_VIEWER를 domain/viewer.ts에서
+// 값으로 import하고, domain/viewer.ts는 이 파일에서 SYSADMIN_ROLE_ID를 값으로 import한다.
+async function defaultGrantCustomFields(
+  ...args: Parameters<typeof GrantCustomFieldsFn>
+): ReturnType<typeof GrantCustomFieldsFn> {
+  const { grantCustomFieldsToRole } = await import("@/domain/custom-fields/visibility");
+  return grantCustomFieldsToRole(...args);
 }
 
 export async function createRole(
@@ -119,7 +134,14 @@ export async function createRole(
   }
 
   const id = `role-${randomUUID()}`;
-  const row = await repoInsertRole(viewer, { id, name: normalizeRoleName(input.name), sortOrder: input.sortOrder });
+  // 04.5-03: 기존 커스텀 항목의 기본 보임 행을 계급 행과 한 트랜잭션에서 넣는다 — 부여가 실패하면 계급도 생기지 않고
+  // 오류가 관리자에게 간다(칸이 안 보이는 계급이 조용히 남지 않는다).
+  const grant = deps?.grantCustomFieldsToRole ?? defaultGrantCustomFields;
+  const row = await withTransaction(async (tx) => {
+    const inserted = await repoInsertRole(viewer, { id, name: normalizeRoleName(input.name), sortOrder: input.sortOrder }, tx);
+    await grant(viewer, inserted.id, undefined, tx);
+    return inserted;
+  });
 
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await recordAction(viewer, { actionType: "permission_change", entity: "roles", entityId: row.id });

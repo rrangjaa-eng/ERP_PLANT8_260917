@@ -312,7 +312,7 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     // 아직 dirty·id 없는 새 줄이라 "저장된 줄에서 Delete" 전제와 다르다.
     await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
       {
-        id: randomUUID(), isNew: true, subcategory: "sub-a",
+        id: randomUUID(), isNew: true, subcategory: "stage_construction",
         itemName: "삭제 대상 줄",
         unitPrice: { currency: "KRW", amount: 1000000, fxRate: 1 },
         execution: { currency: "KRW", amount: 0, fxRate: 1 },
@@ -418,7 +418,7 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
     if (!revision) throw new Error("1차 차수가 없습니다");
     await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
-      { id: randomUUID(), isNew: true, subcategory: "sub-a", itemName: "숨김 줄", unitPrice: { currency: "KRW", amount: 1000, fxRate: 1 }, execution: { currency: "KRW", amount: 0, fxRate: 1 } },
+      { id: randomUUID(), isNew: true, subcategory: "stage_construction", itemName: "숨김 줄", unitPrice: { currency: "KRW", amount: 1000, fxRate: 1 }, execution: { currency: "KRW", amount: 0, fxRate: 1 } },
     ] });
 
     const email = `e2e-ceo-${randomUUID()}@example.test`;
@@ -509,7 +509,7 @@ async function editTextCell(page: Page, rowIndex: number, colIndex: number, text
 
 test.describe("견적 줄 표 — Ctrl 전용 단축키·힌트 줄·이중 저장 없음(04-28 Task 1)", () => {
   test("(a)(b) Meta+s는 저장하지 않고 Control+s는 저장한다", async ({ page }) => {
-    await openProjectWithSavedLines(page, [{ subcategory: "sub-a", itemName: "메타 키 확인 줄", amount: 1000000 }]);
+    await openProjectWithSavedLines(page, [{ subcategory: "stage_construction", itemName: "메타 키 확인 줄", amount: 1000000 }]);
     let actionRequests = 0;
     page.on("request", (request) => {
       if (isServerAction(request)) actionRequests++;
@@ -534,7 +534,7 @@ test.describe("견적 줄 표 — Ctrl 전용 단축키·힌트 줄·이중 저�
   });
 
   test("(c) 힌트 줄은 지금 되는 키 일곱 항목(04-19 — Tab·Ctrl+C 되돌림)의 라벨 kbd 묶음이고 저장 항목이 없다", async ({ page }) => {
-    await openProjectWithSavedLines(page, [{ subcategory: "sub-a", itemName: "힌트 줄 확인", amount: 1000 }]);
+    await openProjectWithSavedLines(page, [{ subcategory: "stage_construction", itemName: "힌트 줄 확인", amount: 1000 }]);
 
     const hintRow = page.locator("p", { hasText: "줄 복제" });
     await expect(hintRow).toHaveCount(1);
@@ -551,7 +551,7 @@ test.describe("견적 줄 표 — Ctrl 전용 단축키·힌트 줄·이중 저�
   });
 
   test("(d) 새 줄 + Control+s 두 번 빠르게 → 새로 고친 뒤 줄 수가 정확히 +1", async ({ page }) => {
-    await openProjectWithSavedLines(page, [{ subcategory: "sub-a", itemName: "기존 줄", amount: 1000 }]);
+    await openProjectWithSavedLines(page, [{ subcategory: "stage_construction", itemName: "기존 줄", amount: 1000 }]);
     await expect(quoteDataRows(page)).toHaveCount(1);
     let actionRequests = 0;
     page.on("request", (request) => {
@@ -1130,6 +1130,63 @@ test.describe("견적 줄 표 — 쪽 경계 키보드·전체 복사·힌트 �
     expect(lines[44]?.split("\t")[0]).toBe("45");
     expect(lines[44]?.split("\t")[2]).toBe("B줄25");
     expect(JSON.parse(json)).toEqual(Array.from({ length: 45 }, () => ({ currency: "KRW", kind: "quote" })));
+  });
+
+  test("수화 중에 받은 포커스를 React가 Control+a 뒤에 같은 셀로 다시 보내도 전체 선택이 남아 Control+c가 45줄을 싣는다", async ({ page }) => {
+    await openProjectWithSavedLines(page, fortyFiveLines());
+    const cell = quoteCell(page, 3, 2);
+    await expect.poll(() => cell.evaluate((element) => Object.keys(element).some((key) => key.startsWith("__reactFiber")))).toBe(true);
+    // 수화가 끝나기 전 포커스 — React는 그 focusin을 받지 못하고 큐에 넣는다(격자 포커스는 (0,0)에 남는다).
+    await cell.evaluate((element) => {
+      const block = (event: Event) => event.stopImmediatePropagation();
+      window.addEventListener("focusin", block, true);
+      (element as HTMLElement).focus();
+      window.removeEventListener("focusin", block, true);
+    });
+    await page.keyboard.press("Control+a");
+    await expect(quoteCell(page, 29, 2)).toHaveClass(/selectedCell/);
+    // React 19가 수화 뒤 큐의 focusin을 같은 셀에 다시 보낸다(CI 실측 — Control+a와 Control+c 사이에 끼었다).
+    await cell.evaluate((element) => element.dispatchEvent(new FocusEvent("focusin", { bubbles: true })));
+    await expect(quoteCell(page, 29, 2)).toHaveClass(/selectedCell/);
+
+    await page.evaluate(() => {
+      window.addEventListener("copy", (event) => {
+        (window as unknown as { __copied?: string }).__copied = event.clipboardData?.getData("application/x-plant8-quote-lines+json") ?? "";
+      });
+    });
+    await page.keyboard.press("Control+c");
+    const copied = await page.waitForFunction(() => (window as unknown as { __copied?: string }).__copied);
+    expect(JSON.parse((await copied.jsonValue()) as string)).toHaveLength(45);
+  });
+
+  test("표에 처음 들어온 셀(0,0)에서 Alt+↓로 줄을 옮기면 탭 정지가 옮긴 줄을 따라간다", async ({ page }) => {
+    await openProjectWithSavedLines(page, fortyFiveLines());
+    // 첫 탭 정지는 (0,0) — 격자 좌표가 아직 기억되지 않은 채로 같은 셀이 focus를 받는다.
+    const first = quoteCell(page, 0, 0);
+    await expect(first).toHaveAttribute("tabindex", "0");
+    await expect.poll(() => first.evaluate((element) => Object.keys(element).some((key) => key.startsWith("__reactFiber")))).toBe(true);
+    await first.focus();
+    await page.keyboard.press("Alt+ArrowDown");
+    await expect(quoteCell(page, 1, 2)).toHaveText("A줄1");
+    await expect(quoteCell(page, 1, 0)).toBeFocused();
+    await expect(quoteCell(page, 1, 0)).toHaveAttribute("tabindex", "0");
+  });
+
+  test("Shift+↓ 두 번은 세 칸 범위로 남고, Control+a 뒤 Enter로 편집에 들어가면 전체 선택이 풀린다", async ({ page }) => {
+    await openProjectWithSavedLines(page, fortyFiveLines());
+    const cell = quoteCell(page, 3, 2);
+    await expect.poll(() => cell.evaluate((element) => Object.keys(element).some((key) => key.startsWith("__reactFiber")))).toBe(true);
+    await cell.focus();
+    await page.keyboard.press("Shift+ArrowDown");
+    await page.keyboard.press("Shift+ArrowDown");
+    await expect(quoteCell(page, 5, 2)).toBeFocused();
+    await expect(quoteTable(page).locator("td[class*=selectedCell]")).toHaveCount(3);
+
+    await page.keyboard.press("Control+a");
+    await expect(quoteCell(page, 29, 2)).toHaveClass(/selectedCell/);
+    await page.keyboard.press("Enter");
+    await expect(quoteCell(page, 5, 2).locator("input")).toBeFocused();
+    await expect(quoteTable(page).locator("td[class*=selectedCell]")).toHaveCount(0);
   });
 
   test("힌트 줄은 일곱 항목이고 페이지 줄 바로 다음 형제 · 매출 표 아래에는 없고 · 1000 폭에서는 없다", async ({ page }) => {
@@ -1868,5 +1925,26 @@ test.describe("견적 줄 표 — 묶음 ④ /qa 포커스", () => {
     await page.keyboard.press("Control+s");
     await saved;
     await expect(page.getByText(/저장됨/)).toBeVisible();
+  });
+
+  test("편집 가능한 견적 표의 머리글은 --g-100 면 + --g-950 글자다 (SYSTEM 894)", async ({ page }) => {
+    await openProjectWithSavedLines(page, [{ subcategory: "stage_construction", itemName: "머리글줄", amount: 1000 }]);
+    const header = quoteTable(page).locator("thead th").first();
+    await expect(header).toBeVisible();
+    const resolved = (property: "backgroundColor" | "color", token: string) =>
+      page.evaluate(
+        ([prop, value]) => {
+          const probe = document.createElement("div");
+          probe.style.setProperty(prop === "color" ? "color" : "background-color", `var(${value})`);
+          document.body.append(probe);
+          const out = getComputedStyle(probe)[prop as "color"];
+          probe.remove();
+          return out;
+        },
+        [property, token] as const,
+      );
+    const actual = await header.evaluate((th) => ({ bg: getComputedStyle(th).backgroundColor, color: getComputedStyle(th).color }));
+    expect(actual.bg, "머리글 면").toBe(await resolved("backgroundColor", "--g-100"));
+    expect(actual.color, "머리글 글자").toBe(await resolved("color", "--g-950"));
   });
 });

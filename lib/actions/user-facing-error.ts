@@ -5,3 +5,6 @@
 // UserFacingError가 아닌 Error는 handleServerError가 message를 화면에
 // 내보내지 않는다 — 서버 로그에만 남고 화면에는 일반 문구만 간다.
 export class UserFacingError extends Error {}
+
+// authedActionClient가 세션 없을 때 던지는 문장 — 화면은 이 값으로 로그인 화면에 보낸다(04.3-07 검토 R-L2).
+export const LOGIN_REQUIRED_MESSAGE = "로그인 필요 · 다시 로그인";

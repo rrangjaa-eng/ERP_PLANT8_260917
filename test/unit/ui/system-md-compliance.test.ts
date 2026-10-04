@@ -83,16 +83,18 @@ describe("app/(app)/page.tsx — 「내 차례」가 빈 홈 (§7-4)", () => {
 // F-07(260922-o2b) — SYSTEM.md §2-4 「모든 숫자 칸은 우측 정렬, tabular-nums,
 // nowrap」. 정렬 칸(코드표·계급)과 숫자형 이력 값 칸에 styles.num을 건다.
 describe("관리자 표 — 숫자 칸 정렬 (F-07)", () => {
-  it("code-tables/page.tsx의 「정렬」 th·sortOrder td가 styles.num을 쓴다", () => {
+  // 04.6-15: 코드표도 `StaticTable`이다 — 「정렬」 열은 `align: "right"`이고 값은 `Num`이 그린다(tabular-nums는 ui/num 몫 · 옛 `.table .num` CSS는 없어졌다).
+  it("code-tables/page.tsx의 「정렬」 열이 오른쪽 정렬이고 sortOrder 칸이 Num이다", () => {
     const source = read("app", "(app)", "admin", "code-tables", "page.tsx");
-    expect(source).toMatch(/th\s+scope="col"\s+className=\{styles\.num\}>\s*정렬/);
-    expect(source).toMatch(/<td\s+className=\{styles\.num\}>\{item\.sortOrder\}<\/td>/);
+    expect(source).toMatch(/header: "정렬",[^}]*align: "right"/);
+    expect(source).toMatch(/<Num\b[^>]*value=\{item\.sortOrder\}/);
   });
 
-  it("roles-client.tsx의 「정렬」 th·sortOrder td가 styles.num을 쓴다", () => {
+  // 04.6-14: 계급 표는 `StaticTable`이다 — 「정렬」 열은 `align: "right"`(오른쪽 정렬 · nowrap은 표 CSS)이고 값은 `Num`이 그린다(tabular-nums는 ui/num 몫).
+  it("roles-client.tsx의 「정렬」 열이 오른쪽 정렬이고 sortOrder 칸이 Num이다", () => {
     const source = read("app", "(app)", "admin", "people", "roles", "roles-client.tsx");
-    expect(source).toMatch(/th\s+scope="col"\s+className=\{styles\.num\}>\s*정렬/);
-    expect(source).toMatch(/<td\s+className=\{styles\.num\}>\{role\.sortOrder\}<\/td>/);
+    expect(source).toMatch(/header: "정렬",[^}]*align: "right"/);
+    expect(source).toMatch(/<Num\b[^>]*value=\{role\.sortOrder\}/);
   });
 
   it("HistoryList.tsx가 숫자형 값에만 styles.num을 건다", () => {
@@ -100,20 +102,31 @@ describe("관리자 표 — 숫자 칸 정렬 (F-07)", () => {
     expect(source).toContain('valueKind.kind === "number"');
     expect(source).toMatch(/th\s+scope="col"\s+className=\{valueKind\.kind === "number" \? styles\.num : undefined\}>\s*값/);
     expect(source).toMatch(
-      /<td className=\{valueKind\.kind === "number" \? styles\.num : undefined\}>\{entry\.displayValue\}<\/td>/,
+      /<td className=\{valueKind\.kind === "number" \? styles\.num : undefined\}>\s*\{valueKind\.kind === "number" \? <Num value=\{entry\.displayValue\} \/> : entry\.displayValue\}\s*<\/td>/,
     );
   });
 
-  it.each([
-    ["code-tables.module.css", ["app", "(app)", "admin", "code-tables", "code-tables.module.css"]],
-    ["people.module.css", ["app", "(app)", "admin", "people", "people.module.css"]],
-    ["HistoryList.module.css", ["ui", "history-list", "HistoryList.module.css"]],
-  ])("%s의 .table .num이 우측 정렬·tabular-nums·nowrap이다", (_name, parts) => {
-    const css = read(...parts);
+  // 04.6-20 Num이 글자 값을 받는다 — 숫자형 값 칸의 서식이 끝난 글자(displayValue) · 알림 배지 · 결재선 일시는 Num이 감싸 tabular-nums를 가진다.
+  it("TopBar 알림 배지가 Num으로 그린다", () => {
+    expect(read("ui", "shell", "TopBar.tsx")).toMatch(/<Num value=\{badgeLabel\} \/>/);
+  });
+
+  it("ApprovalRoute 결재선 목록은 StatusTag status 낱말로 그린다(kind 직접 지정 없음)", () => {
+    const source = read("ui", "approval-route", "ApprovalRoute.tsx");
+    expect(source).toMatch(/<StatusTag status=\{step\.result\.status\}/);
+    expect(source).not.toMatch(/StatusTag kind=/);
+  });
+
+  it("ApprovalRoute 일시(step.at)가 Num으로 그린다", () => {
+    expect(read("ui", "approval-route", "ApprovalRoute.tsx")).toMatch(/<Num value=\{step\.at\} \/>/);
+  });
+
+  // 04.6-09: tabular-nums는 stylelint가 `ui/num`에만 허용한다. HistoryList의 값 칸은 정렬·nowrap만 이 CSS가 맡고 숫자 폭은 칸 안 `Num`이 맡는다.
+  it("HistoryList.module.css의 .table .num이 우측 정렬·nowrap이다(tabular-nums는 ui/num 몫)", () => {
+    const css = read("ui", "history-list", "HistoryList.module.css");
     const match = css.match(/\.table \.num\s*\{[^}]*\}/);
     expect(match).not.toBeNull();
     expect(match?.[0]).toContain("text-align: right");
-    expect(match?.[0]).toContain("tabular-nums");
     expect(match?.[0]).toContain("white-space: nowrap");
     expect(match?.[0]).toContain("var(--ls-num)");
   });
@@ -128,7 +141,8 @@ describe("관리자 표 — 빈 상태 칸 em dash (F-08)", () => {
     ["code-tables/page.tsx", ["app", "(app)", "admin", "code-tables", "page.tsx"]],
   ])("%s의 정상 상태 칸이 —를 렌더한다", (_name, parts) => {
     const source = read(...parts);
-    expect(source).toMatch(/<\/StatusTag>\s*\)\s*:\s*"—"\s*\}/);
+    // 04.6: `StatusTag status`는 자식이 없는 자기닫힘 꼴이라 `</StatusTag>`와 `<StatusTag … />` 둘 다 받는다.
+    expect(source).toMatch(/(?:<\/StatusTag>|<StatusTag\b[^>]*\/>)\s*\)\s*:\s*"—"\s*\}/);
   });
 
   // 04.4-05(D8-07): 사람 목록 상태 칸은 보관됨 / 로그인 배지 / — 세 갈래다 — 배지가 0개인 정상 상태가 —다.

@@ -31,6 +31,11 @@ function describeIssue(issue: core.$ZodIssue): string {
       return `${issue.divisor}의 배수만 가능 · 값 확인`;
     case "invalid_format":
       return "형식 오류 · 값 확인";
+    // Rule 2(04.3-02) — .refine()/.superRefine()가 지어 붙인 메시지는 이미
+    // §8 카피 규칙을 지키는 완성 문장이다(예: CERT_CONTACT_PHONE 스키마) —
+    // default의 일반 문구로 뭉개면 그 문장이 통째로 사라진다.
+    case "custom":
+      return issue.message;
     default:
       return "입력값 오류 · 값 확인";
   }

@@ -9,7 +9,7 @@ import {
 } from "@/domain/permissions/roles";
 import { MENUS, PERMISSION_ACTIONS } from "@/domain/permissions/menus";
 import { INFO_ITEMS } from "@/domain/permissions/info-items";
-import { SETTING_DEFS } from "@/domain/settings/keys";
+import { SEED_HISTORIZED_EFFECTIVE_FROM, SETTING_DEFS } from "@/domain/settings/keys";
 import { seedRole } from "@/repositories/roles";
 import {
   upsertPermission,
@@ -27,7 +27,7 @@ import { seedApprovalsLeave } from "@/domain/seed/approvals-leave";
 // 이력형 키의 시드 기본 행은 항상 과거인 고정 날짜를 쓴다 — 시드 직후부터
 // 유효값이 즉시 성립해(오늘 기준 effective_from <= asOf) 03-UI-SPEC.md가
 // 보장하는 "설정 화면에 EMPTY 상태가 발생하지 않는다"가 실제로 성립한다.
-const SEED_HISTORIZED_EFFECTIVE_FROM = "2000-01-01";
+// 날짜 상수는 SEED_HISTORIZED_EFFECTIVE_FROM(domain/settings/keys.ts) — 설정 가져오기도 같은 값으로 시드 행을 알아본다.
 
 // 프로젝트 상태 코드표 시드(D-41 → D-75, 04-06) — 수주중·진행·정산·완료·
 // 미수주 다섯 값. 옛 다섯 값(planning/on_hold/done/cancelled + 이 목록에 없던
@@ -158,7 +158,22 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
 
   let permissionsCount = 0;
   for (const menu of MENUS) {
+    // 04.5-09: 화면 항목 메뉴는 아래에서 insert-if-absent로 준다 — 관리자가 권한표에서 끈 값을 재시드가 되살리지 않는다.
+    if (menu.key === "admin.field-definitions") continue;
     for (const action of PERMISSION_ACTIONS) {
+      // certs.submissions는 확인증 개인정보 열람 메뉴라 다른 새 메뉴처럼 시드가 자동으로 켜지 않는다 —
+      // 소유자가 시스템 관리자 계급에서 끄면 배포가 되살리지 않는다(E3-13).
+      if (menu.key === "certs.submissions") {
+        await insertPermissionIfAbsent(viewer, {
+          roleId: SYSADMIN_ROLE_ID,
+          menu: menu.key,
+          action,
+          allowed: false,
+          updatedBy: null,
+        });
+        permissionsCount++;
+        continue;
+      }
       await upsertPermission(viewer, {
         roleId: SYSADMIN_ROLE_ID,
         menu: menu.key,
@@ -168,6 +183,18 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
       });
       permissionsCount++;
     }
+  }
+
+  // 04.5-09(UI-SPEC 화면 1): 화면 항목 관리 — 시스템 관리자 view·write만, 이미 있는 행은 덮지 않는다(approve 없음).
+  for (const action of ["view", "write"] as const) {
+    await insertPermissionIfAbsent(viewer, {
+      roleId: SYSADMIN_ROLE_ID,
+      menu: "admin.field-definitions",
+      action,
+      allowed: true,
+      updatedBy: null,
+    });
+    permissionsCount++;
   }
 
   // Phase 4(04-01): 기획 PM(DEFAULT_ROLE_ID)의 기본 업무 메뉴 — "projects"
@@ -182,6 +209,19 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
     await insertPermissionIfAbsent(viewer, {
       roleId: DEFAULT_ROLE_ID,
       menu: "projects",
+      action,
+      allowed: true,
+      updatedBy: null,
+    });
+    permissionsCount++;
+  }
+
+  // 04.3-09: 기획 PM의 확인증 행사 기본 권한(CONTEXT 재량 「기획 PM·경영관리를 기본으로」).
+  // 경영관리는 시드 계급이 아니라 권한표에서 켠다 — 없을 때만 넣어 관리자가 끈 값을 덮지 않는다.
+  for (const action of ["view", "write"] as const) {
+    await insertPermissionIfAbsent(viewer, {
+      roleId: DEFAULT_ROLE_ID,
+      menu: "certs.events",
       action,
       allowed: true,
       updatedBy: null,
@@ -213,12 +253,23 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
   const staffDefaultRoles = [DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID, DIVISION_HEAD_ROLE_ID];
   let visibilityCount = 0;
   for (const item of INFO_ITEMS) {
-    await upsertVisibility(viewer, {
-      roleId: SYSADMIN_ROLE_ID,
-      infoItem: item.key,
-      visible: true,
-      updatedBy: null,
-    });
+    // 소유자가 시스템 관리자 계급에서 확인증 개인정보 전체 보기를 끄면 배포가 되살리지 않는다 —
+    // 담당자 계급(박서연)의 접근은 cert.setup(04.3-02)이 별도로 켠다(E3-13). 04.3-10 경품 가액(E12)도 같은 규칙.
+    if (item.key === "cert.rrn_unmasked" || item.key === "cert_submission.value" || item.key === "cert_prize.value") {
+      await insertVisibilityIfAbsent(viewer, {
+        roleId: SYSADMIN_ROLE_ID,
+        infoItem: item.key,
+        visible: false,
+        updatedBy: null,
+      });
+    } else {
+      await upsertVisibility(viewer, {
+        roleId: SYSADMIN_ROLE_ID,
+        infoItem: item.key,
+        visible: true,
+        updatedBy: null,
+      });
+    }
     for (const roleId of staffDefaultRoles) {
       // 04-16(D-85 · CEO 리뷰 B-29): 발행액은 기획 PM 행만 upsert해 재시드한 기존 DB에도 공개하고,
       // 팀장·본부 책임자 행은 없을 때만 숨김으로 넣는다 — 관리자가 노출표에서 켠다.

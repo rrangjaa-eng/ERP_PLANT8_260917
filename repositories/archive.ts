@@ -22,6 +22,9 @@ import {
 import { findUserById, setUserArchived } from "@/repositories/users";
 import { findVendorById, setVendorArchived } from "@/repositories/vendors";
 import { findQuoteLineById, setQuoteLineArchived } from "@/repositories/quote-lines";
+import { findHolidayById, listArchivedHolidays } from "@/repositories/holidays";
+import { findFieldDefinitionById, listArchivedFieldDefinitions, setFieldDefinitionArchived } from "@/repositories/field-definitions";
+import { FIELD_DEFINITION_TARGETS } from "@/domain/custom-fields/targets";
 import { findEntriesByIds as findReserveEntriesByIds, setEntryArchived as setReserveEntryArchived, listArchivedEntryNames as listArchivedReserveEntryNames } from "@/repositories/reserve-entries";
 
 // archive()/restore()(domain/archive/index.ts)가 필요로 하는 최소 행 모양.
@@ -37,17 +40,23 @@ export type ArchivedItem = {
   name: string;
   archivedAt: Date;
   archivedBy: string | null;
+  // 공휴일만 — 복원 가능 판정(소급 금지)에 쓰는 날짜. 화면 DTO에는 싣지 않는다.
+  date?: string;
+  // 공휴일만 — 그 날짜에 활성 공휴일(대체일 제외)이 있으면 참(복원 불가). 화면 DTO에는 싣지 않는다.
+  dateTaken?: boolean;
 };
 
 export type ArchivableEntry = {
   entity: string;
   label: string;
-  setArchived(viewer: Viewer, id: string, value: boolean): Promise<void>;
+  setArchived(viewer: Viewer, id: string, value: boolean): Promise<boolean>;
   findById(viewer: Viewer, id: string): Promise<ArchivableRow | null>;
   isProtected?(row: ArchivableRow): boolean;
   // 03-07: 이 표의 보관된 행 전부. listArchivedAcrossEntities가 이 클로저를
   // 순회해 합친다 — 새 표 목록을 별도로 만들지 않는다.
   listArchived(viewer: Viewer): Promise<ArchivedItem[]>;
+  // 04.5-04(UI-SPEC O21): 보관함 권한에 더해 요구하는 메뉴 — 보관 · 복원은 이 메뉴의 write, 보관함 목록은 view.
+  requiredMenu?: string;
 };
 
 // 보관 대상 표의 단일 정본 — 새 마스터 표가 생기면 이 배열에 한 줄을 더하면
@@ -59,7 +68,7 @@ export const ARCHIVABLE_TABLES: ArchivableEntry[] = [
     entity: "roles",
     label: "계급",
     async setArchived(viewer, id, value) {
-      await setRoleArchived(viewer, id, value);
+      return setRoleArchived(viewer, id, value);
     },
     async findById(viewer, id) {
       return findRoleById(viewer, id);
@@ -80,7 +89,7 @@ export const ARCHIVABLE_TABLES: ArchivableEntry[] = [
     entity: "code_items",
     label: "코드표",
     async setArchived(viewer, id, value) {
-      await setCodeItemArchived(viewer, id, value);
+      return setCodeItemArchived(viewer, id, value);
     },
     async findById(viewer, id) {
       return findCodeItemById(viewer, id);
@@ -97,7 +106,7 @@ export const ARCHIVABLE_TABLES: ArchivableEntry[] = [
     entity: "org_unit",
     label: "본부",
     async setArchived(viewer, id, value) {
-      await setOrgUnitArchived(viewer, id, value);
+      return setOrgUnitArchived(viewer, id, value);
     },
     async findById(viewer, id) {
       return findOrgUnitById(viewer, id);
@@ -114,7 +123,7 @@ export const ARCHIVABLE_TABLES: ArchivableEntry[] = [
     entity: "team",
     label: "팀",
     async setArchived(viewer, id, value) {
-      await setTeamArchived(viewer, id, value);
+      return setTeamArchived(viewer, id, value);
     },
     async findById(viewer, id) {
       return findTeamById(viewer, id);
@@ -131,7 +140,7 @@ export const ARCHIVABLE_TABLES: ArchivableEntry[] = [
     entity: "corp_card",
     label: "법인카드",
     async setArchived(viewer, id, value) {
-      await setCorpCardArchived(viewer, id, value);
+      return setCorpCardArchived(viewer, id, value);
     },
     async findById(viewer, id) {
       return findCorpCardById(viewer, id);
@@ -148,7 +157,7 @@ export const ARCHIVABLE_TABLES: ArchivableEntry[] = [
     entity: "user",
     label: "사람",
     async setArchived(viewer, id, value) {
-      await setUserArchived(viewer, id, value);
+      return setUserArchived(viewer, id, value);
     },
     async findById(viewer, id) {
       return findUserById(viewer, id);
@@ -165,7 +174,7 @@ export const ARCHIVABLE_TABLES: ArchivableEntry[] = [
     entity: "vendor",
     label: "거래처",
     async setArchived(viewer, id, value) {
-      await setVendorArchived(viewer, id, value);
+      return setVendorArchived(viewer, id, value);
     },
     async findById(viewer, id) {
       return findVendorById(viewer, id);
@@ -184,7 +193,7 @@ export const ARCHIVABLE_TABLES: ArchivableEntry[] = [
     entity: "quote_line",
     label: "견적 줄",
     async setArchived(viewer, id, value) {
-      await setQuoteLineArchived(viewer, id, value);
+      return setQuoteLineArchived(viewer, id, value);
     },
     async findById(viewer, id) {
       return findQuoteLineById(viewer, id);
@@ -203,7 +212,9 @@ export const ARCHIVABLE_TABLES: ArchivableEntry[] = [
     entity: "reserve_entry",
     label: "리저브",
     async setArchived(viewer, id, value) {
+      // 보호 행이라 범용 경로가 부르지 않는다. 리저브 setter는 무조건 갱신이라 바뀐 것으로 본다.
       await setReserveEntryArchived(viewer, id, value);
+      return true;
     },
     async findById(viewer, id) {
       const [row] = await findReserveEntriesByIds(viewer, [id]);
@@ -215,6 +226,44 @@ export const ARCHIVABLE_TABLES: ArchivableEntry[] = [
     async listArchived(viewer) {
       const rows = await listArchivedReserveEntryNames(viewer);
       return rows.map((row) => ({ entity: "reserve_entry", label: "리저브", ...row }));
+    },
+  },
+  // quick 261001-hfi(ADMN-12 · D-01) — 공휴일. 보관은 대체일 재계산을 지나는 domain/holidays의 deleteHoliday로만 한다 —
+  // 범용 archive()는 재계산을 하지 않으므로 늘 보호 행이다. 복원은 DOMAIN_RESTORERS가 restoreHoliday에 맡긴다.
+  {
+    entity: "holiday",
+    label: "공휴일",
+    // 보관 · 복원 모두 재계산 · 소급 금지를 지나는 domain/holidays로만 — 범용 경로가 잘못 불리면 바로 던진다.
+    setArchived() {
+      return Promise.reject(new Error("공휴일 보관 · 복원은 domain/holidays로만"));
+    },
+    async findById(viewer, id) {
+      return findHolidayById(viewer, id);
+    },
+    isProtected() {
+      return true;
+    },
+    async listArchived(viewer) {
+      const rows = await listArchivedHolidays(viewer);
+      return rows.map((row) => ({ entity: "holiday", label: "공휴일", ...row }));
+    },
+  },
+  // 04.5-04(D10-12 · O21) — 화면 항목(칸 정의). 대상 상수 밖(프로젝트 · 견적 줄) 정의는 「없음」으로 본다(O13).
+  {
+    entity: "field_definitions",
+    label: "화면 항목",
+    requiredMenu: "admin.field-definitions",
+    async setArchived(viewer, id, value) {
+      return setFieldDefinitionArchived(viewer, id, value);
+    },
+    async findById(viewer, id) {
+      const row = await findFieldDefinitionById(viewer, id);
+      if (!row || !FIELD_DEFINITION_TARGETS.some((target) => target === row.entity)) return null;
+      return row;
+    },
+    async listArchived(viewer) {
+      const rows = await listArchivedFieldDefinitions(viewer, FIELD_DEFINITION_TARGETS);
+      return rows.map((row) => ({ entity: "field_definitions", label: "화면 항목", id: row.id, name: row.label, archivedAt: row.archivedAt, archivedBy: row.archivedBy }));
     },
   },
 ];

@@ -82,6 +82,9 @@ describe("app/(app)/admin/vendors/vendor-form.tsx — 등록 모드에도 취소
     // 예전 위반: `{isEditing ? (<Link ...>취소</Link>) : null}` — 등록 모드엔
     // 취소가 없었다. 이제는 무조건 렌더한다.
     expect(source).not.toMatch(/\{isEditing \? \(\s*<Link[^]*?취소[^]*?\)\s*:\s*null\}/);
-    expect(source).toContain("취소");
+    // 04.6-04: 취소(「취소 Esc」)는 옆 패널 폼 `PanelForm`의 행동 줄이 두 모드 모두에 그린다.
+    expect(source).toContain("<PanelForm");
+    const panelForm = read("ui", "side-panel", "PanelForm.tsx");
+    expect(panelForm).toContain("취소");
   });
 });

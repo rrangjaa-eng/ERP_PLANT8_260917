@@ -39,21 +39,21 @@ test.describe("숫자 열 nowrap — /projects 견적 (S15 backstop)", () => {
     // 없다 — 합계(SUM)는 bigint라 세 줄로 나눠 목표 합계에 닿는다.
     await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
       {
-        id: randomUUID(), isNew: true, subcategory: "sub-a",
+        id: randomUUID(), isNew: true, subcategory: "stage_construction",
         itemName: "nowrap 확인 줄1",
         quantity: 1,
         unitPrice: { currency: "KRW", amount: 2000000000, fxRate: 1 },
         execution: { currency: "KRW", amount: 0, fxRate: 1 },
       },
       {
-        id: randomUUID(), isNew: true, subcategory: "sub-a",
+        id: randomUUID(), isNew: true, subcategory: "stage_construction",
         itemName: "nowrap 확인 줄2",
         quantity: 1,
         unitPrice: { currency: "KRW", amount: 2000000000, fxRate: 1 },
         execution: { currency: "KRW", amount: 0, fxRate: 1 },
       },
       {
-        id: randomUUID(), isNew: true, subcategory: "sub-a",
+        id: randomUUID(), isNew: true, subcategory: "stage_construction",
         itemName: "nowrap 확인 줄3",
         quantity: 1,
         unitPrice: { currency: "KRW", amount: 318181799, fxRate: 1 },
@@ -73,8 +73,11 @@ test.describe("숫자 열 nowrap — /projects 견적 (S15 backstop)", () => {
     await expect(amountCell).toBeVisible();
 
     const rectCount = await amountCell.evaluate((el) => {
+      // 04.6-10 — 금액은 Num 칸 안 `span`에 있다. 칸 전체를 재면 상자(span)와 글자가 따로 잡혀 2가 되므로 글자 노드만 잰다.
+      const text = document.createTreeWalker(el, NodeFilter.SHOW_TEXT).nextNode();
+      if (!text) return 0;
       const range = document.createRange();
-      range.selectNodeContents(el);
+      range.selectNodeContents(text);
       return range.getClientRects().length;
     });
     expect(rectCount).toBe(1);

@@ -307,7 +307,7 @@ test.describe("숫자 서식(D-95, 04-09)", () => {
 
     await page.goto("/projects?new=1");
     await page.getByLabel("클라이언트").selectOption({ label: vendor.name });
-    await page.getByLabel("팀").selectOption({ index: 1 });
+    await page.locator("#project-form").getByLabel("팀").selectOption({ index: 1 });
     await page.getByLabel("담당 PM").selectOption({ index: 1 });
     const projectName = `E2Enumber발행액프로젝트-${Date.now()}`;
     await page.getByLabel("프로젝트명").fill(projectName);
@@ -372,7 +372,7 @@ test.describe("숫자 서식(D-95, 04-09)", () => {
     if (!revision) throw new Error("1차 차수가 없습니다");
     await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
       {
-        id: randomUUID(), isNew: true, subcategory: "sub-a",
+        id: randomUUID(), isNew: true, subcategory: "stage_construction",
         itemName: "원화 단가 거부 확인 줄",
         unitPrice: { currency: "KRW", amount: 1000000, fxRate: 1 },
         execution: { currency: "KRW", amount: 0, fxRate: 1 },

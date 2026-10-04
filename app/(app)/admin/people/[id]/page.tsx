@@ -5,7 +5,7 @@ import { getPerson } from "@/domain/people";
 import { listRoles } from "@/domain/permissions/roles";
 import { listOrgUnits, listTeams } from "@/domain/org";
 import { KvList } from "@/ui/kv-list/KvList";
-import { PageHeader } from "@/ui/page-header/PageHeader";
+import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import type { HistoryEntry } from "@/ui/history-list/HistoryList";
 import { PersonRoleChange, PersonHistorySection } from "./person-detail-client";
 import { seoulToday } from "@/lib/dates";
@@ -17,10 +17,6 @@ import { resolveLeaveYear } from "@/app/(app)/leave/year-param";
 import { LeaveSection, type LeaveAdjustmentRow } from "./leave-section";
 
 export const dynamic = "force-dynamic";
-
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 // settings/page.tsx의 buildSections()와 같은 이유로 별도 함수로 뺀다 —
 // 컴포넌트 본문 안에서 클로저 변수를 재할당하면 eslint-plugin-react-hooks의
@@ -71,7 +67,7 @@ export default async function PersonDetailPage({
     label: `${orgUnitNameById.get(team.orgUnitId) ?? ""} · ${team.name}`,
   }));
 
-  const entries = buildHistoryEntries(detail.assignments, todayIso());
+  const entries = buildHistoryEntries(detail.assignments, seoulToday());
 
   // 04.1-06 S9 연차 섹션(C-N01 · CXF2-C-F2-01 · S9-FY) — 읽기 순서 고정: ① 올해 잔고(입사일 · 퇴직일은 조회 연도와 무관하게
   // 실린다) → 대체 연도(퇴직자 = min(퇴직 연도, 올해), 그 밖 올해)로 섹션 연도를 한 번 정하고 → ② 섹션 연도가 올해와 다를
@@ -103,8 +99,7 @@ export default async function PersonDetailPage({
   }));
 
   return (
-    <>
-      <PageHeader title={detail.person.name} subtitle={detail.person.email} />
+    <DetailScreen title={detail.person.name} meta={detail.person.email}>
 
       <div className="single-column">
         <KvList
@@ -135,6 +130,6 @@ export default async function PersonDetailPage({
 
       {/* §3 데이터 표 예외 — 발령 이력 표는 .single-column 밖, 전체 폭(260922-o2b 후속). */}
       <PersonHistorySection userId={detail.person.id} teamOptions={teamOptions} entries={entries} />
-    </>
+    </DetailScreen>
   );
 }

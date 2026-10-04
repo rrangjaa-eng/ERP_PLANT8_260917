@@ -12,7 +12,8 @@ import { seedMasterData } from "@/domain/seed";
 // SUMMARY 참고). Task 2가 시드 채움·시드 보존·「코드 추가」 설명 칸 케이스를
 // 이 파일에 더한다.
 
-const TABLE_KEY = `description_edit_${randomUUID()}`;
+// quick 261002-3mx — createCodeItem은 허용 코드표(CODE_TABLES)만 받는다. 매 테스트 TRUNCATE+시드라 항목은 id로 찾는다.
+const TABLE_KEY = "project_status";
 
 describe("코드표 항목 설명 (D-93, UI-SPEC S14)", () => {
   it("설명을 저장하면 DTO의 description이 그 값이다", async () => {

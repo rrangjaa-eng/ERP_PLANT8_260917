@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
+import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { HistoryList, type HistoryEntry } from "@/ui/history-list/HistoryList";
 import { Toast } from "@/ui/toast/Toast";
@@ -51,6 +52,11 @@ export type SettingsSection = {
   fields: SettingsFieldViewModel[];
 };
 
+// 힌트 · 오류 <p>의 id를 칸의 aria-describedby로 잇는다 — 오류 먼저, 힌트 뒤. 없으면 속성을 달지 않는다.
+function describedBy(...ids: (string | undefined)[]): string | undefined {
+  return ids.filter(Boolean).join(" ") || undefined;
+}
+
 function errorMessageOf(result: { serverError?: unknown; validationErrors?: unknown }): string | null {
   if (typeof result.serverError === "string") return `저장 실패 · ${result.serverError}`;
   if (result.validationErrors) return "저장 실패 · 입력값 확인";
@@ -93,6 +99,9 @@ function SimpleFieldEditor({
     return "";
   });
   const error = errorMessageOf(result);
+  const hintId = `setting-${fieldKey}-hint`;
+  const errorId = `setting-${fieldKey}-error`;
+  const fieldDescribedBy = describedBy(error ? errorId : undefined, hint ? hintId : undefined);
 
   if (descriptor.kind === "boolean") {
     return (
@@ -101,6 +110,7 @@ function SimpleFieldEditor({
           <input
             type="checkbox"
             checked={checked}
+            aria-describedby={fieldDescribedBy}
             onChange={(event) => {
               setChecked(event.target.checked);
               execute({ key: fieldKey, value: event.target.checked });
@@ -108,8 +118,8 @@ function SimpleFieldEditor({
           />
           {label}
         </label>
-        {hint ? <p className={styles.hint}>{hint}</p> : null}
-        {error ? <p className={styles.error}>{error}</p> : null}
+        {hint ? <p id={hintId} className={styles.hint}>{hint}</p> : null}
+        {error ? <p id={errorId} className={styles.error}>{error}</p> : null}
       </div>
     );
   }
@@ -123,6 +133,7 @@ function SimpleFieldEditor({
             className={styles.select}
             value={selected}
             disabled={disabled}
+            aria-describedby={fieldDescribedBy}
             onChange={(event) => {
               setSelected(event.target.value);
               execute({ key: fieldKey, value: event.target.value });
@@ -135,16 +146,16 @@ function SimpleFieldEditor({
             ))}
           </select>
         </label>
-        {hint ? <p className={styles.hint}>{hint}</p> : null}
+        {hint ? <p id={hintId} className={styles.hint}>{hint}</p> : null}
         {warning ? <p className={styles.warning}>{warning}</p> : null}
-        {error ? <p className={styles.error}>{error}</p> : null}
+        {error ? <p id={errorId} className={styles.error}>{error}</p> : null}
       </div>
     );
   }
 
   if (descriptor.kind === "multi-enum") {
     return (
-      <fieldset className={styles.field}>
+      <fieldset className={styles.field} aria-describedby={fieldDescribedBy}>
         <legend>{label}</legend>
         {descriptor.options.map((option) => (
           <label key={option} className={styles.checkboxLabel}>
@@ -162,8 +173,8 @@ function SimpleFieldEditor({
             {option}
           </label>
         ))}
-        {hint ? <p className={styles.hint}>{hint}</p> : null}
-        {error ? <p className={styles.error}>{error}</p> : null}
+        {hint ? <p id={hintId} className={styles.hint}>{hint}</p> : null}
+        {error ? <p id={errorId} className={styles.error}>{error}</p> : null}
       </fieldset>
     );
   }
@@ -178,6 +189,7 @@ function SimpleFieldEditor({
           id={`setting-${fieldKey}`}
           label={label}
           numberKind={descriptor.numberKind}
+          hintId={hint ? hintId : undefined}
           defaultValue={text}
           onBlur={(event) => {
             const parsed = parseNumberInput(event.target.value);
@@ -188,7 +200,7 @@ function SimpleFieldEditor({
           }}
           error={error ?? undefined}
         />
-        {hint ? <p className={styles.hint}>{hint}</p> : null}
+        {hint ? <p id={hintId} className={styles.hint}>{hint}</p> : null}
       </div>
     );
   }
@@ -202,12 +214,13 @@ function SimpleFieldEditor({
         label={label}
         type={descriptor.kind === "number" ? "number" : "text"}
         numeric={descriptor.kind === "number"}
+        hintId={hint ? hintId : undefined}
         value={text}
         onChange={(event) => setText(event.target.value)}
         onBlur={() => execute({ key: fieldKey, value: text })}
         error={error ?? undefined}
       />
-      {hint ? <p className={styles.hint}>{hint}</p> : null}
+      {hint ? <p id={hintId} className={styles.hint}>{hint}</p> : null}
     </div>
   );
 }
@@ -303,11 +316,12 @@ function RouteStepEditor({
                   type="checkbox"
                   checked={value === true}
                   disabled={isExecuting}
+                  aria-describedby={field.hint ? `setting-${field.key}-hint` : undefined}
                   onChange={(event) => change(field.key, event.target.checked)}
                 />
                 {field.label}
               </label>
-              {field.hint ? <p className={styles.hint}>{field.hint}</p> : null}
+              {field.hint ? <p id={`setting-${field.key}-hint`} className={styles.hint}>{field.hint}</p> : null}
             </div>
           );
         }
@@ -321,6 +335,7 @@ function RouteStepEditor({
                 className={styles.select}
                 value={typeof value === "string" ? value : ""}
                 disabled={disabled || isExecuting}
+                aria-describedby={field.hint ? `setting-${field.key}-hint` : undefined}
                 onChange={(event) => change(field.key, event.target.value)}
               >
                 {(field.options ?? []).map((option) => (
@@ -330,7 +345,7 @@ function RouteStepEditor({
                 ))}
               </select>
             </label>
-            {field.hint ? <p className={styles.hint}>{field.hint}</p> : null}
+            {field.hint ? <p id={`setting-${field.key}-hint`} className={styles.hint}>{field.hint}</p> : null}
             {showWarning ? <p className={styles.warning}>{field.warning}</p> : null}
           </div>
         );
@@ -383,9 +398,14 @@ function HistorizedFieldEditor({
           : { kind: "text" as const };
 
   return (
-    <div className={styles.field}>
-      <p className={styles.historizedLabel}>{label}</p>
-      {hint ? <p className={styles.hint}>{hint}</p> : null}
+    <div
+      className={styles.field}
+      role="group"
+      aria-labelledby={`setting-${fieldKey}-label`}
+      aria-describedby={hint ? `setting-${fieldKey}-hint` : undefined}
+    >
+      <p id={`setting-${fieldKey}-label`} className={styles.historizedLabel}>{label}</p>
+      {hint ? <p id={`setting-${fieldKey}-hint`} className={styles.hint}>{hint}</p> : null}
       <HistoryList
         entries={entries}
         valueKind={valueKind}
@@ -687,8 +707,7 @@ export function SettingsFormClient({ sections, viewerId }: { sections: SettingsS
     <div>
       <ExportButton />
       {sections.map((section) => (
-        <section key={section.namespace} className={styles.section}>
-          <h2 className={styles.sectionTitle}>{section.namespace}</h2>
+        <DetailScreen.Section key={section.namespace} title={section.namespace}>
           {restorableSteps.length > 0 && section.fields.some((field) => field.step) ? (
             <p className={styles.restoreBanner}>
               <span>{`저장 안 한 편집 ${stepList(restorableSteps)}`}</span>
@@ -703,7 +722,7 @@ export function SettingsFormClient({ sections, viewerId }: { sections: SettingsS
             </p>
           ) : null}
           {renderFields(section.fields, onDraftChange, restored)}
-        </section>
+        </DetailScreen.Section>
       ))}
       <ConfirmDialog
         open={leaveHref !== null}

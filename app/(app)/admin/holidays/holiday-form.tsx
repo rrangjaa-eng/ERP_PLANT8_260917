@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
-import Link from "next/link";
+import { useRef, useState, type FormEvent } from "react";
 import { Form } from "@/ui/form/Form";
-import { Button, buttonLinkClassName } from "@/ui/button/Button";
+import { Button } from "@/ui/button/Button";
+import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
 import { addHolidayAction } from "./actions";
 import styles from "./holidays.module.css";
 
@@ -12,12 +11,13 @@ type ManualKind = "temporary" | "election";
 
 const REASON_ID = "holiday-form-reason";
 
-// 04.2-UI-SPEC S2-d — `?new=1`일 때만 page.tsx가 렌더한다(§6-1 목록 우선). 열리면 날짜
-// 칸에 포커스가 있다. 날짜는 네이티브 날짜 입력(`min` 내일 · `max` 음력 표 마지막 해
+// 04.2-UI-SPEC S2-d — `?new=1`일 때만 page.tsx가 `SidePanel` 안에 렌더한다(04.6-16: 옆 패널 · `PanelForm`). 열리면 날짜
+// 칸에 포커스가 있다(패널이 첫 입력에 준다). 날짜는 네이티브 날짜 입력(`min` 내일 · `max` 음력 표 마지막 해
 // 12-31 — page.tsx가 계산한다), 종류는 `임시공휴일`이 미리 골라져 있다(빈 옵션 없음 —
 // 막힘 이유는 날짜·이름만 센다). `noValidate`라 범위 밖 값의 마지막 관문은 서버 칸 오류다.
-export function HolidayForm({ min, max, cancelHref }: { min: string; max: string; cancelHref: string }) {
-  const router = useRouter();
+// 성공 뒤 = R9 D의 공휴일 예외 — 패널에 남지 않고 `?added=`로 이동해(패널이 닫힌다) 추가 토스트를 띄운다.
+export function HolidayForm({ min, max }: { min: string; max: string }) {
+  const panelRef = useRef<PanelFormHandle>(null);
   const [date, setDate] = useState("");
   const [kind, setKind] = useState<ManualKind>("temporary");
   const [name, setName] = useState("");
@@ -34,7 +34,7 @@ export function HolidayForm({ min, max, cancelHref }: { min: string; max: string
   ];
   const firstEmpty = empty[0];
   const blockedReason = firstEmpty
-    ? `${empty.map((field) => field.label).join(" · ")} ${empty.length}칸 비어 있음`
+    ? `${empty.map((field) => field.label).join(", ")} ${empty.length}칸 비어 있음`
     : undefined;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -47,7 +47,7 @@ export function HolidayForm({ min, max, cancelHref }: { min: string; max: string
     try {
       const result = await addHolidayAction({ date, kind, name });
       if (result?.data) {
-        router.push(`/admin/holidays?year=${result.data.year}&added=${result.data.date}`);
+        panelRef.current?.succeed({ href: `/admin/holidays?year=${result.data.year}&added=${result.data.date}` });
         return;
       }
       const fieldDateError = result?.validationErrors?.date?._errors?.[0];
@@ -62,8 +62,31 @@ export function HolidayForm({ min, max, cancelHref }: { min: string; max: string
     setPending(false);
   }
 
+  // 막힘 이유 + 다음 한 수(3차) · 연결 실패 한 줄 — 행동 줄 위 전폭 한 줄 자리(PanelForm `reason`)에 그린다. 제출 중에는 그리지 않는다.
+  const reason =
+    pending || !(blockedReason || failed) ? undefined : blockedReason && firstEmpty ? (
+      <>
+        {blockedReason}
+        <Button variant="tertiary" onClick={() => document.getElementById(firstEmpty.id)?.focus()}>
+          {firstEmpty.nextLabel}
+        </Button>
+      </>
+    ) : (
+      "추가 실패 · 다시 시도"
+    );
+
   return (
-    <Form id="holiday-form" className={styles.form} onSubmit={(event) => void handleSubmit(event)}>
+    <PanelForm
+      ref={panelRef}
+      id="holiday-form"
+      label="공휴일 추가"
+      intent="create"
+      onSubmit={(event) => void handleSubmit(event)}
+      pending={pending}
+      blockedReason={blockedReason}
+      reason={reason}
+      reasonId={REASON_ID}
+    >
       <Form.Field id="holiday-date" label="날짜" width="short">
         <input
           id="holiday-date"
@@ -71,7 +94,6 @@ export function HolidayForm({ min, max, cancelHref }: { min: string; max: string
           type="date"
           min={min}
           max={max}
-          autoFocus
           className={styles.textInput}
           value={date}
           onChange={(event) => setDate(event.target.value)}
@@ -109,40 +131,6 @@ export function HolidayForm({ min, max, cancelHref }: { min: string; max: string
         />
         {nameError ? <Form.Error id="holiday-name-error">{nameError}</Form.Error> : null}
       </Form.Field>
-
-      <Form.Actions>
-        <Button
-          type="submit"
-          variant="primary"
-          pending={pending}
-          disabled={Boolean(blockedReason)}
-          disabledReason={blockedReason}
-          reasonId={REASON_ID}
-          aria-describedby={!blockedReason && failed ? REASON_ID : undefined}
-        >
-          공휴일 추가
-        </Button>
-        {!blockedReason && failed && !pending ? (
-          <span id={REASON_ID} className={styles.rowError}>
-            추가 실패 · 다시 시도
-          </span>
-        ) : null}
-        {firstEmpty && !pending ? (
-          <Button variant="tertiary" onClick={() => document.getElementById(firstEmpty.id)?.focus()}>
-            {firstEmpty.nextLabel}
-          </Button>
-        ) : null}
-        <Link
-          href={cancelHref}
-          className={`${buttonLinkClassName("secondary")} ${styles.cancel}`}
-          aria-disabled={pending ? "true" : undefined}
-          onClick={(event) => {
-            if (pending) event.preventDefault();
-          }}
-        >
-          취소
-        </Link>
-      </Form.Actions>
-    </Form>
+    </PanelForm>
   );
 }

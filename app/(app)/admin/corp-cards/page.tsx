@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { getSession } from "@/lib/viewer";
@@ -5,9 +6,12 @@ import { can } from "@/domain/permissions/can";
 import { listCorpCards } from "@/domain/corp-cards";
 import { listPeople } from "@/domain/people";
 import { listOrgUnits, listTeams } from "@/domain/org";
-import { PageHeader } from "@/ui/page-header/PageHeader";
+import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
+import { SidePanel } from "@/ui/side-panel/SidePanel";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
+import { StaticTable } from "@/ui/table/StaticTable";
+import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
 import {
   CardForm,
   CardOwnerForm,
@@ -20,7 +24,7 @@ import styles from "./corp-cards.module.css";
 export const dynamic = "force-dynamic";
 
 // vendors의 ?editId= 토글과 같은 결(§6-1, D-39, DECISIONS.md 2026-09-21) —
-// 등록 폼을 열고 닫는 링크를 필터 상태(숨김 포함 여부)를 유지한 채 만든다.
+// 패널을 열고 닫는 링크를 필터 상태(숨김 포함 여부)를 유지한 채 만든다.
 function corpCardsHref(
   includeInactive: boolean,
   opts?: { isNew?: boolean; editId?: string },
@@ -30,9 +34,7 @@ function corpCardsHref(
   if (opts?.isNew) params.set("new", "1");
   if (opts?.editId) params.set("editId", opts.editId);
   const query = params.toString();
-  if (!query) return "/admin/corp-cards";
-  const anchor = opts?.editId ? "#corp-card-owner-form" : "#corp-card-form";
-  return `/admin/corp-cards?${query}${anchor}`;
+  return query ? `/admin/corp-cards?${query}` : "/admin/corp-cards";
 }
 
 export default async function CorpCardsPage({
@@ -87,16 +89,21 @@ export default async function CorpCardsPage({
     ? (cards.find((card) => card.id === editId && card.archivedAt === null) ?? null)
     : null;
   const showForm = editingCard !== null || showCreateForm;
+  const cancelHref = corpCardsHref(includeInactive);
+  // 「동작」 열의 유무 — 머리글과 행의 칸이 같은 조건을 쓴다.
+  const hasActions = canWrite || canArchive;
 
-  return (
-    <>
-      <PageHeader title="법인카드" />
+  // DR5 A — 빈 목록(등록된 카드가 하나도 없음)이면 머리 1차를 그리지 않고 빈 화면의 「법인카드 등록」 하나가 등록을 맡는다.
+  const primaryAction =
+    canWrite && cards.length > 0 ? { label: "법인카드 등록", href: corpCardsHref(includeInactive, { isNew: true }) } : undefined;
 
-      {/* 쓰기 권한이 없는 계급에는 등록 폼 자체를 렌더하지 않는다 —
-          "이유 있는 비활성" 대신 "버튼 자체가 없음"(03-UI-SPEC.md). */}
-      {canWrite && editingCard ? (
+  // 수정 모드가 이긴다 — ?new=1&editId=를 같이 주면 폼 둘이 함께 뜨지 않게 패널 하나에 하나만 담는다.
+  const panelBody =
+    canWrite && showForm ? (
+      editingCard === null ? (
+        <CardForm holders={holderOptions} teams={teamOptions} />
+      ) : (
         <CardOwnerForm
-          key={editingCard.id}
           card={{
             id: editingCard.id,
             label: editingCard.label,
@@ -106,101 +113,85 @@ export default async function CorpCardsPage({
           }}
           holders={holderOptions}
           teams={teamOptions}
-          cancelHref={corpCardsHref(includeInactive)}
         />
-      ) : null}
+      )
+    ) : null;
 
-      {/* 수정 모드가 이긴다 — ?new=1&editId=를 같이 주면 폼 2개와 1차 버튼
-          2개가 함께 떠서 §7-1을 어겼다(주소를 직접 칠 때만 도달). 거래처는
-          폼 하나에 editing prop을 넘겨 이 상태 자체가 불가능하다. */}
-      {canWrite && showCreateForm && !editingCard ? (
-        <CardForm
-          holders={holderOptions}
-          teams={teamOptions}
-          cancelHref={corpCardsHref(includeInactive)}
-        />
-      ) : null}
-
-      <div className={styles.filterRow}>
-        <a
-          href={includeInactive ? "?includeInactive=0" : "?includeInactive=1"}
-          className={styles.toggle}
-        >
+  return (
+    <ListScreen
+      title="법인카드"
+      primaryAction={primaryAction}
+      filters={
+        <Link href={includeInactive ? "?includeInactive=0" : "?includeInactive=1"} scroll={false} className={styles.toggle}>
           {includeInactive ? "숨김 제외" : "숨김 포함"}
-        </a>
-        {/* §6-1 「새 지출결의」와 같은 자리 — 목록 머리글의 등록 행동. */}
-        {canWrite && !showForm && cards.length > 0 ? (
-          <Link href={corpCardsHref(includeInactive, { isNew: true })} className={styles.toggle}>
-            법인카드 등록
-          </Link>
-        ) : null}
-      </div>
-
+        </Link>
+      }
+      panel={
+        // 쓰기 권한이 없는 계급에는 패널 자체를 렌더하지 않는다 — "이유 있는 비활성" 대신 "버튼 자체가 없음"(03-UI-SPEC.md).
+        panelBody ? (
+          <SidePanel
+            key={editingCard?.id ?? "new"}
+            title={editingCard ? "법인카드 수정" : "법인카드 등록"}
+            closeHref={cancelHref}
+          >
+            {panelBody}
+          </SidePanel>
+        ) : null
+      }
+    >
       {cards.length === 0 ? (
         <ListEmpty
           message="등록된 법인카드가 없습니다"
           action={{ label: "법인카드 등록", href: corpCardsHref(includeInactive, { isNew: true }) }}
         />
       ) : (
-        <table className={styles.table}>
-          <caption className="sr-only">법인카드</caption>
-          <thead>
-            <tr>
-              <th scope="col">발급사</th>
-              <th scope="col">뒤 4자리</th>
-              <th scope="col">별칭</th>
-              <th scope="col">종류</th>
-              <th scope="col">소유</th>
-              <th scope="col">상태</th>
-              {canWrite || canArchive ? <th scope="col">동작</th> : null}
-            </tr>
-          </thead>
-          <tbody>
-            {cards.map((card) => (
-              <tr key={card.id}>
-                <td>{card.issuer}</td>
-                <td className={styles.last4}>{card.numberLast4}</td>
-                <td>{card.label}</td>
-                <td>{card.kind === "personal" ? "개인" : "팀"}</td>
-                <td>
-                  {card.kind === "personal"
-                    ? (holderNameById.get(card.holderUserId ?? "") ?? "—")
-                    : (teamNameById.get(card.teamId ?? "") ?? "—")}
-                </td>
-                <td>
-                  {card.archivedAt ? (
-                    <StatusTag kind="muted" variant="text">
-                      보관됨
-                    </StatusTag>
-                  ) : card.active === false ? (
-                    <StatusTag kind="muted" variant="text">
-                      비활성
-                    </StatusTag>
-                  ) : "—"}
-                </td>
-                {canWrite || canArchive ? (
-                  <td>
-                    {card.archivedAt ? null : (
-                      <>
+        <StaticTable
+          caption="법인카드"
+          // 폰: 별칭 · 뒤 4자리 · 동작이 P1, 나머지는 접힌 줄(P2) — 동작 칸 폭을 늘려 삭제 확인 문구가 거래처 수준 줄 수다(TODOS 173).
+          // 상세 화면이 없는 목록이라 P3로 숨기지 않는다(SYSTEM §7-3).
+          columns={[
+            { key: "issuer", header: "발급사", priority: "p2" },
+            { key: "last4", header: "뒤 4자리", priority: "p1", align: "right" },
+            { key: "label", header: "별칭", priority: "p1" },
+            { key: "kind", header: "종류", priority: "p2" },
+            { key: "owner", header: "소유", priority: "p2" },
+            { key: "status", header: "상태", priority: "p2" },
+            ...(hasActions ? [{ key: "actions", header: "동작", priority: "p1" as const }] : []),
+          ]}
+          rows={cards.map((card) => ({
+            key: card.id,
+            cells: [
+              card.issuer,
+              card.numberLast4,
+              card.label,
+              card.kind === "personal" ? "개인" : "팀",
+              card.kind === "personal"
+                ? (holderNameById.get(card.holderUserId ?? "") ?? "—")
+                : (teamNameById.get(card.teamId ?? "") ?? "—"),
+              <Fragment key="status">
+                {card.archivedAt ? (
+                  <StatusTag status="보관됨" variant="text" />
+                ) : card.active === false ? (
+                  <StatusTag status="비활성" variant="text" />
+                ) : "—"}
+              </Fragment>,
+              ...(hasActions
+                ? [
+                    card.archivedAt ? null : (
+                      <RowActions key="actions">
                         {canWrite ? (
-                          <Link
-                            href={corpCardsHref(includeInactive, { editId: card.id })}
-                            className={styles.toggle}
-                          >
-                            수정
-                          </Link>
+                          <RowAction href={corpCardsHref(includeInactive, { editId: card.id })}>수정</RowAction>
                         ) : null}
                         {canWrite ? <CorpCardActiveToggle id={card.id} active={card.active} /> : null}
                         {canArchive ? <CorpCardDeleteButton id={card.id} label={card.label} /> : null}
-                      </>
-                    )}
-                  </td>
-                ) : null}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                      </RowActions>
+                    ),
+                  ]
+                : []),
+            ],
+          }))}
+        />
       )}
-    </>
+    </ListScreen>
   );
 }

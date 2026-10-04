@@ -2,6 +2,7 @@ import { z } from "zod";
 import { env } from "@/lib/env";
 import type { SettingDef } from "@/domain/settings/registry";
 import { ALWAYS_ON_ACTION_TYPES, CORE_ACTION_TYPES, type CoreActionType } from "@/domain/action-log/record";
+import { normalizeContactPhone } from "@/domain/certs/format";
 
 // ROADMAP Phase 3 성공 기준 4가 열거한 키의 정본. 각 항목이 namespace(설정
 // 화면 섹션)·label(짧은 이름)·hint(한 문장, 최대 한 줄)·schema(범위·타입만,
@@ -315,6 +316,131 @@ export const DOCUMENT_NUMBER_PROJECT_SEQ_START: SettingDef<number> = {
   default: 1,
 };
 
+// 04.3-02(규약 C1) — 확인증 기능의 두 번째 게이트(설정). 환경 게이트
+// CERT_FEATURE_ALLOWED가 "true"일 때만 SETTING_DEFS에 실린다(아래 참고) —
+// 환경 게이트가 꺼져 있으면 이 키는 설정 화면에 줄이 없고
+// setSimpleSettingAction이 등록되지 않은 키로 거부한다. 프로덕션 배포는
+// Phase 11 전까지 CERT_FEATURE_ALLOWED를 두지 않는다(D-1107).
+export const CERT_ENABLED: SettingDef<boolean> = {
+  key: "cert.enabled",
+  kind: "simple",
+  schema: z.boolean(),
+  label: "확인증 기능 사용",
+  hint: "환경 게이트가 켜져 있을 때만 이 설정으로 확인증 기능을 켤 수 있습니다.",
+  namespace: "확인증",
+  default: false,
+};
+
+// 04.3-02 Task 2 ④ — 규약 C1의 나머지 여덟 키(환경 게이트·cert.enabled는
+// Task 1이 이미 등록). 링크 만료 시간·보존 연수·행사별 문의 전화 사본
+// 기본값·확인증 번호 서식 다섯. 이 여덟 키는 전부 이 태스크의 코드
+// (수령자 제출 · allocateDocumentNumber · 04.3-10 QR 생성)가 읽는다
+// (registry-coverage).
+export const CERT_LINK_EXPIRE_HOURS: SettingDef<number> = {
+  key: "cert.link.expire_hours",
+  kind: "simple",
+  schema: z.coerce.number().int().min(1).max(720),
+  label: "확인증 링크 유효 시간(시간)",
+  hint: "링크는 당첨일 00:00에 열리고 · 당첨일 00:00과 QR 생성 가운데 늦은 때부터 이 시간이 지나면 링크가 닫힙니다.",
+  namespace: "확인증",
+  default: 72,
+};
+
+export const CERT_RETENTION_YEARS: SettingDef<number> = {
+  key: "cert.retention.years",
+  kind: "simple",
+  schema: z.coerce.number().int().min(1).max(20),
+  label: "확인증 보존 연수",
+  hint: "제출된 확인증의 개인정보를 이 연수만큼 보존한 뒤 파기합니다.",
+  namespace: "확인증",
+  default: 5,
+};
+
+// 문의 전화는 당첨자 전화(normalizePhone)와 계약이 다르다 — 지역번호·
+// 대표번호도 받는다(normalizeContactPhone). 빈 문자열은 허용하되(비우면
+// 새 행사만 못 만든다, UI-SPEC A12) 값이 있으면 형식을 검증해 숫자만
+// 저장한다.
+export const CERT_CONTACT_PHONE: SettingDef<string> = {
+  key: "cert.contact_phone",
+  kind: "simple",
+  schema: z.string().transform((value, ctx) => {
+    if (value === "") return "";
+    const normalized = normalizeContactPhone(value);
+    if (normalized === null) {
+      ctx.addIssue({ code: "custom", message: "전화번호 형식이 아닙니다 · 02-1234-5678처럼 적어 주세요" });
+      return z.NEVER;
+    }
+    return normalized;
+  }),
+  label: "수령자 문의 전화",
+  hint: "확인증 화면에 보일 문의 전화번호입니다(행사를 만들 때 이 값이 그 행사에 복사됩니다).",
+  namespace: "확인증",
+  default: "",
+};
+
+// 04.3-07 — 개인정보취급자 비활동 만료. 확인증 개인정보 경로(I4 · 전체 보기 · 정정 · 인쇄)의 마지막 활동 뒤 —
+// 그 세션에 활동이 아직 없으면 로그인 뒤 — 이 분이 지나면 세션을 끊는다.
+// 04.3-14 사용자 결정 ③ — 기본 30분 · 범위 10~30(안전성 확보조치 기준 무입력 자동 차단).
+export const CERT_PRIVACY_IDLE_MINUTES: SettingDef<number> = {
+  key: "cert.privacy.idle_minutes",
+  kind: "simple",
+  schema: z.coerce.number().int().min(10).max(30),
+  label: "개인정보취급자 비활동 만료(분)",
+  hint: "확인증 개인정보 화면에서 이 시간(분) 동안 활동이 없거나 로그인한 지 이 시간이 지난 뒤 처음 열면 로그인을 다시 요구합니다.",
+  namespace: "확인증",
+  default: 30,
+};
+
+export const DOCUMENT_NUMBER_CERT_PREFIX: SettingDef<string> = {
+  key: "document_number.cert.prefix",
+  kind: "simple",
+  schema: z.string(),
+  label: "확인증 번호 접두어",
+  hint: "번호 맨 앞에 붙는 문자열입니다(기본 CERT-).",
+  namespace: "문서 번호",
+  default: "CERT-",
+};
+
+export const DOCUMENT_NUMBER_CERT_YEAR_DIGITS: SettingDef<number> = {
+  key: "document_number.cert.year_digits",
+  kind: "simple",
+  schema: z.coerce.number().int().min(1).max(4),
+  label: "확인증 번호 연도 자릿수",
+  hint: "연도를 뒤에서부터 이 자릿수만큼 씁니다(기본 4 → 2026).",
+  namespace: "문서 번호",
+  default: 4,
+};
+
+export const DOCUMENT_NUMBER_CERT_SEQ_DIGITS: SettingDef<number> = {
+  key: "document_number.cert.seq_digits",
+  kind: "simple",
+  schema: z.coerce.number().int().min(1),
+  label: "확인증 번호 순번 자릿수",
+  hint: "순번을 이 자릿수만큼 0으로 채웁니다(넘치면 자릿수가 늘어나고 잘리지 않습니다).",
+  namespace: "문서 번호",
+  default: 4,
+};
+
+export const DOCUMENT_NUMBER_CERT_SEPARATOR: SettingDef<string> = {
+  key: "document_number.cert.separator",
+  kind: "simple",
+  schema: z.string(),
+  label: "확인증 번호 구분자",
+  hint: "연도와 순번 사이에 넣을 문자입니다(기본 -).",
+  namespace: "문서 번호",
+  default: "-",
+};
+
+export const DOCUMENT_NUMBER_CERT_SEQ_START: SettingDef<number> = {
+  key: "document_number.cert.seq_start",
+  kind: "simple",
+  schema: z.coerce.number().int().min(0),
+  label: "확인증 번호 순번 시작값",
+  hint: "연도가 바뀌어 순번이 다시 시작할 때의 첫 값입니다(기본 1).",
+  namespace: "문서 번호",
+  default: 1,
+};
+
 // Phase 04.2(D-4202): tick 한 번이 새로 만드는 알림 수의 상한. 최대 5,000 —
 // 삽입 한 문장의 바인드 인자가 행마다 7개라 35,000 < PostgreSQL 한도 65,535.
 export const NOTIFY_TICK_BATCH_MAX: SettingDef<number> = {
@@ -357,6 +483,16 @@ export const SETTING_DEFS: SettingDef<unknown>[] = [
   PROJECT_FORCE_COMPLETE_ALLOW_UNMATCHED_ESTIMATE_LINES,
   PROJECT_FORCE_COMPLETE_ALLOW_MISSING_REVENUE,
   PROJECT_CUSTOMER_APPROVAL_GATE,
+  ...(env.CERT_FEATURE_ALLOWED === "true" ? [CERT_ENABLED] : []),
+  CERT_LINK_EXPIRE_HOURS,
+  CERT_RETENTION_YEARS,
+  CERT_CONTACT_PHONE,
+  CERT_PRIVACY_IDLE_MINUTES,
+  DOCUMENT_NUMBER_CERT_PREFIX,
+  DOCUMENT_NUMBER_CERT_YEAR_DIGITS,
+  DOCUMENT_NUMBER_CERT_SEQ_DIGITS,
+  DOCUMENT_NUMBER_CERT_SEPARATOR,
+  DOCUMENT_NUMBER_CERT_SEQ_START,
   NOTIFY_TICK_BATCH_MAX,
 ];
 
@@ -632,6 +768,9 @@ SETTING_DEFS.push(
   DOCUMENT_NUMBER_LEAVE_SEPARATOR,
   DOCUMENT_NUMBER_LEAVE_SEQ_START,
 );
+
+// 이력형 키의 배포 시드 기본 행 날짜 — 시드(domain/seed)가 넣고, 가져오기(export.ts)가 「시드 행뿐인 키」를 알아본다.
+export const SEED_HISTORIZED_EFFECTIVE_FROM = "2000-01-01";
 
 // 04.1-03(LEAV-01 · 입력 §5): 회계연도(1월 시작) 연차 일수 — 이력형이라 값을 바꿔도 지난
 // 연도 잔고가 소급해 바뀌지 않는다(잔고는 각 회계연도 1월 1일 시점 값을 읽는다). 적용 시작일

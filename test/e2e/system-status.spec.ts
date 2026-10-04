@@ -3,6 +3,8 @@ import { createFixtureUser } from "./fixtures";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { recordRestoreRehearsal } from "@/domain/ops/restore-rehearsal";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { isStrict } from "./design-principles";
+import { checkPrinciples } from "./principles-check";
 
 test.describe("관리자 시스템 상태 화면 (OPS-06, D-17, D-18)", () => {
   test("권한표에 시스템 상태 보기 권한이 없는 계급이 접근하면 404를 받는다", async ({ page }) => {
@@ -16,6 +18,16 @@ test.describe("관리자 시스템 상태 화면 (OPS-06, D-17, D-18)", () => {
 
     const response = await page.goto("/admin/system-status");
     expect(response?.status()).toBe(404);
+  });
+
+  // 04.6-20: 시스템 상태는 `DetailScreen` 틀 — 보이는 틀 제목(h1) 하나, 상태 항목은 dl 그대로.
+  test("시스템 상태가 상세 틀 제목을 그린다", async ({ page }) => {
+    await openStatusAsAdmin(page);
+    const title = page.locator('main h1[data-ui="screen-title"]');
+    await expect(title).toHaveCount(1);
+    await expect(title).toHaveText("시스템 상태");
+    expect(await title.evaluate((el) => getComputedStyle(el).fontSize)).toBe(await tokenValue(page, "--text-title"));
+    await expect(page.locator("main dl")).toHaveCount(1);
   });
 
   test("시스템 관리자는 배포 버전·DB 커넥션·마지막 백업을 보고 배너는 없다", async ({ page }) => {
@@ -104,8 +116,8 @@ function tokenAsColor(page: Page, name: string): Promise<string> {
 }
 
 async function expectNoStatusColors(page: Page, value: Locator): Promise<void> {
-  const danger = await tokenAsColor(page, "--danger");
-  const success = await tokenAsColor(page, "--success");
+  const danger = await tokenAsColor(page, "--status-danger");
+  const success = await tokenAsColor(page, "--status-success");
   const colors = await value.evaluate((dd) =>
     [dd, ...Array.from(dd.querySelectorAll("*"))].map((el) => getComputedStyle(el).color),
   );
@@ -142,19 +154,37 @@ test.describe.serial("상태 화면 「복원 리허설」 행 (04.4-05, D8-08)"
     await expectNoStatusColors(page, value);
   });
 
-  test("검증 실패 행은 단계와 같은 탭 「실행 기록」 링크를 보인다", async ({ page }) => {
+  test("검증 실패 행은 「일시」가 고정폭 숫자이고 「실행 기록」 링크는 새 탭으로 열린다", async ({ page }) => {
     await insertRehearsal({ runKey: "9002-1", failedStage: "verify", minutes: 4, runUrl: RUN_URL_FAILED });
     const value = await openStatusAsAdmin(page);
     await expect(value).toHaveText(
-      "실패 · 검증 · 스테이징 · 2026-09-24 03:14 · 백업 1758684000000 · 4분 · 실행 기록",
+      "실패 · 검증 · 스테이징 · 2026-09-24 03:14 · 백업 1758684000000 · 4분 · 실행 기록 (새 탭)",
     );
     const link = value.getByRole("link", { name: "실행 기록" });
     await expect(link).toHaveAttribute("href", RUN_URL_FAILED);
-    expect(await link.getAttribute("target")).toBeNull();
+    // 일시 글자를 가진 텍스트 노드의 부모 요소 — 다른 숫자 값(.num)과 같이 tabular-nums다.
+    const dateNumeric = await value.evaluate((dd) => {
+      const walker = document.createTreeWalker(dd, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        if ((node.textContent ?? "").includes("2026-09-24 03:14")) {
+          return node.parentElement ? getComputedStyle(node.parentElement).fontVariantNumeric : "부모 없음";
+        }
+      }
+      return "일시 글자 없음";
+    });
+    expect(dateNumeric).toContain("tabular-nums");
+
+    // 앱 밖으로 가는 링크는 새 탭 — DECISIONS.md 2026-09-30(04.4-UI-SPEC 「같은 탭」을 대체).
+    await expect(link).toHaveAttribute("target", "_blank");
+    // 사용자 결정 D2(2026-09-30): 새 탭으로 열림을 스크린 리더에도 알린다 — 눈에는 안 보이고 링크 이름에만 붙는다.
+    await expect(link).toHaveAccessibleName(/새 탭/);
+    const rel = (await link.getAttribute("rel")) ?? "";
+    expect(rel).toContain("noopener");
+    expect(rel).toContain("noreferrer");
 
     // .detailLink와 같은 다섯 속성 — 크기 · 굵기 · 색 · 밑줄 · 밑줄 간격.
     const tokens = {
-      fontSize: await tokenValue(page, "--fs-sm"),
+      fontSize: await tokenValue(page, "--text-aux"),
       fontWeight: await tokenValue(page, "--fw-medium"),
       color: await tokenAsColor(page, "--accent"),
       offset: await tokenValue(page, "--underline-offset"),
@@ -181,7 +211,7 @@ test.describe.serial("상태 화면 「복원 리허설」 행 (04.4-05, D8-08)"
     await insertRehearsal({ runKey: "9003-1", failedStage: "cleanup", minutes: 9, runUrl: RUN_URL_FAILED });
     const value = await openStatusAsAdmin(page);
     await expect(value).toHaveText(
-      "실패 · 정리 · 스테이징 · 2026-09-24 03:14 · 백업 1758684000000 · 9분 · 실행 기록",
+      "실패 · 정리 · 스테이징 · 2026-09-24 03:14 · 백업 1758684000000 · 9분 · 실행 기록 (새 탭)",
     );
     await expectNoStatusColors(page, value);
   });
@@ -215,7 +245,8 @@ test.describe.serial("상태 화면 「복원 리허설」 행 (04.4-05, D8-08)"
       value.evaluate((dd) => {
         const a = dd.querySelector("a") as HTMLAnchorElement;
         const range = document.createRange();
-        range.selectNodeContents(a);
+        // 보이는 글자(첫 글자 노드)만 잰다 — 뒤의 sr-only 「 (새 탭)」은 링크 상자 안쪽에 떠 있어 그 사각형이 섞이면 글자 위치가 아니다.
+        range.selectNodeContents(a.firstChild as Node);
         const rects = Array.from(range.getClientRects());
         const cs = getComputedStyle(dd);
         return {
@@ -262,4 +293,13 @@ test.describe.serial("상태 화면 「복원 리허설」 행 (04.4-05, D8-08)"
       expect.soft(misses, `${detail} 링크가 아닌 적중점`).toEqual([]);
     }
   });
+});
+
+// 04.6-20 · R11 · 공통 §10: 옮긴 세 화면의 원칙 점검 — 내 계정·시스템 상태는 경고 0.
+test("화면 사용성 원칙(막는 모드) — 내 계정·설정·시스템 상태", async ({ page }) => {
+  await openStatusAsAdmin(page);
+  const strict = isStrict(process.env.DESIGN_PRINCIPLES_STRICT);
+  await checkPrinciples(page, ["/account", "/admin/system-status"], { strict });
+  // 설정 화면은 레지스트리 힌트 11개가 「긴 설명」(40자 이상)이라 막는 모드에서 경고 0이 안 된다 — 사용자 결정 전까지 경고 모드로 잰다(SUMMARY 「사용자 질문 후보」).
+  await checkPrinciples(page, ["/admin/settings"], { strict: false });
 });

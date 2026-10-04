@@ -17,6 +17,9 @@ export default async function globalSetup(): Promise<void> {
   // 동작) — 통합 테스트가 실제 거래처 계좌번호 암호화 경로를 돌리려면 로컬
   // 테스트 전용 키가 필요하다. base64로 인코딩된 32바이트(Task 1 결정 ②).
   process.env.APP_DATA_KEY_v1 ??= randomBytes(32).toString("base64");
+  // 규약 C4(04.3-02) — 통합 테스트도 확인증 기능 환경 게이트를 켠다(설정
+  // cert.enabled는 각 테스트가 직접 켠다).
+  process.env.CERT_FEATURE_ALLOWED ??= "true";
 
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
   try {

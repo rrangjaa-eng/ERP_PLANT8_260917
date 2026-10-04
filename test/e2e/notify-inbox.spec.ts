@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { db } from "@/db/client";
 import { notificationLog } from "@/db/schema";
 import { createAccount } from "@/domain/auth/accounts";
@@ -38,6 +38,30 @@ function kstDateLabel(instant: Date): string {
   const p: Record<string, string> = {};
   for (const part of parts) p[part.type] = part.value;
   return `${p.year}-${p.month}-${p.day}`;
+}
+
+// 토큰 값을 브라우저 계산 값으로 바꿔 비교한다(역할 토큰 이름으로 단언 — 값은 tokens.css가 정한다).
+function tokenValue(page: Page, name: string): Promise<string> {
+  return page.evaluate((token) => getComputedStyle(document.documentElement).getPropertyValue(token).trim(), name);
+}
+
+function tokenAsBackground(page: Page, name: string): Promise<string> {
+  return page.evaluate((token) => {
+    const probe = document.createElement("span");
+    probe.style.backgroundColor = `var(${token})`;
+    document.body.append(probe);
+    const color = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return color;
+  }, name);
+}
+
+async function login(page: Page, user: { email: string; password: string }): Promise<void> {
+  await page.goto("/login");
+  await page.getByLabel("이메일").fill(user.email);
+  await page.getByLabel("비밀번호").fill(user.password);
+  await page.getByRole("button", { name: "로그인" }).click();
+  await expect(page).toHaveURL(/\/account$/);
 }
 
 // <probe_fallback> 「E2E의 tick」: 워커가 병렬이라 다른 파일의 tick과 advisory
@@ -359,15 +383,91 @@ test.describe("알림함 목록 완성 (Task 3 · S1-c · S1-d)", () => {
     await expect(secondHeader).toHaveText(olderLabel);
 
     // M1(04.2-09 Task 3 사후 수정 — Opus 적대적 디자인 검토): 그룹 머리글의
-    // 실제 렌더 값이 계약(§7-3 — 위 12px · 아래 1px --line-strong)과 같은지
+    // 실제 렌더 값이 계약(§7-3 — 위 `--s-2` · 아래 선 없음)과 같은지
     // computed style로 잰다. `.table th`가 특이도로 덮어써 죽은 규칙이 되는
     // 회귀를 막는다.
     const firstHeaderStyle = await firstHeader.evaluate((el) => {
       const style = getComputedStyle(el);
       return { paddingTop: style.paddingTop, borderBottomWidth: style.borderBottomWidth };
     });
-    expect(firstHeaderStyle.paddingTop).toBe("12px");
-    expect(firstHeaderStyle.borderBottomWidth).toBe("1px");
+    // 04.6-19(스킨 A) — 그룹 줄은 `ui/table`의 그룹 행이다: 위 `--s-2` · 아래 선 없음(면 `--surface-group`이 구분한다).
+    expect(firstHeaderStyle.paddingTop).toBe(await tokenValue(page, "--s-2"));
+    expect(firstHeaderStyle.borderBottomWidth).toBe("0px");
+  });
+
+  test("날짜 그룹 머리글이 표 그룹 줄 모양이다 — 면 --surface-group · 칸 전폭(04.6-19)", async ({ page }) => {
+    const user = await createEmployee();
+    const recentId = randomUUID();
+    const olderId = randomUUID();
+    const recentAt = kstMidUtcInstant(1);
+    const olderAt = kstMidUtcInstant(2);
+    const kind = createTestConditionKind([
+      testCandidate({ recipientId: user.userId, entityId: recentId, referenceDate: "2026-01-01" }),
+      testCandidate({ recipientId: user.userId, entityId: olderId, referenceDate: "2026-01-01" }),
+    ]);
+    await tickOnce(kind);
+    await patchNotification(recentId, { createdAt: recentAt });
+    await patchNotification(olderId, { createdAt: olderAt });
+
+    await login(page, user);
+    await page.goto("/notifications");
+
+    // 머리글 칸 태그(`td` · `th scope="rowgroup"`)와 무관하게 그룹 줄의 첫 칸을 잰다 — rowgroup 의미는 위 테스트가 지킨다.
+    const groupCells = page.locator("table tbody > tr:first-child > :is(th, td)");
+    await expect(groupCells).toHaveCount(2);
+    await expect(groupCells.first()).toHaveText(kstDateLabel(recentAt).slice(5));
+    await expect(groupCells.first()).toHaveAttribute("colspan", "2");
+    await expect(groupCells.first()).toHaveCSS("background-color", await tokenAsBackground(page, "--surface-group"));
+    await expect(groupCells.first()).toHaveCSS("padding-top", await tokenValue(page, "--s-2"));
+  });
+
+  test("내 차례(/)·알림함 — 틀 제목 [data-ui=screen-title]이고 목록 부제가 없다(04.6-19)", async ({ page }) => {
+    const user = await createEmployee();
+    await login(page, user);
+
+    await page.goto("/");
+    await expect(page.locator('[data-ui="screen-title"]')).toHaveText("내 차례");
+    await expect(page.getByText("지금 처리할 항목", { exact: true })).toHaveCount(0);
+    await expect(page.locator("table")).toHaveCount(0);
+
+    await page.goto("/notifications");
+    await expect(page.locator('[data-ui="screen-title"]')).toHaveText("알림함");
+    const titleSize = await tokenValue(page, "--text-title");
+    await expect(page.locator('[data-ui="screen-title"]')).toHaveCSS("font-size", titleSize);
+  });
+
+  test("느린 응답 — 불러오는 중 뼈대의 열 이름이 실제 표 머리글과 같다(04.6-19)", async ({ page }) => {
+    const user = await createEmployee();
+    const kind = createTestConditionKind([
+      testCandidate({ recipientId: user.userId, entityId: randomUUID(), referenceDate: "2026-01-01" }),
+    ]);
+    await tickOnce(kind);
+    await login(page, user);
+
+    // 뼈대(loading 틀)는 라우터가 미리 가져온 경우에만 응답이 늦는 동안 보인다 — 먼저 미리 가져오고, 그다음에 응답을 늦춘다(사용자 메뉴 「알림함」은 일반 링크라 문서 이동이므로 앱 라우터로 직접 이동한다).
+    const prefetched = page.waitForResponse((response) => response.url().includes("/notifications") && response.request().headers()["next-router-prefetch"] === "1");
+    await page.evaluate(() => (window as unknown as { next: { router: { prefetch(url: string): void } } }).next.router.prefetch("/notifications"));
+    await prefetched;
+    await page.waitForLoadState("networkidle");
+    await page.route(
+      (url) => url.pathname === "/notifications",
+      async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+        await route.continue();
+      },
+    );
+    await page.evaluate(() => (window as unknown as { next: { router: { push(url: string): void } } }).next.router.push("/notifications"));
+
+    const skeleton = page.locator('[data-ui="table-skeleton"]');
+    await expect
+      .poll(async () => (await skeleton.count()) > 0 && parseFloat(await skeleton.first().evaluate((element) => getComputedStyle(element).opacity)) > 0)
+      .toBe(true);
+    await expect(skeleton.locator("thead th")).toHaveText(["내용", "시각"]);
+    await expect(page.locator('[data-ui="screen-title"]:visible')).toHaveText("알림함");
+    await expect(skeleton.locator("button, a")).toHaveCount(0);
+
+    await expect(skeleton).toHaveCount(0);
+    await expect(page.locator("main table thead th")).toHaveText(["내용", "시각"]);
   });
 
   test("email_status='failed' 행에만 이메일 발송 실패 보조 줄, 결과 불명(unknown)엔 없음", async ({ page }) => {
@@ -410,7 +510,7 @@ test.describe("알림함 목록 완성 (Task 3 · S1-c · S1-d)", () => {
     await expect(page).toHaveURL(/\/account$/);
 
     await page.goto("/notifications");
-    await expect(page.locator("table tbody tr[data-row]")).toHaveCount(50);
+    await expect(page.locator("table [data-inbox-row]")).toHaveCount(50);
     await expect(page.getByRole("button", { name: /더 보기/ })).toHaveCount(0);
   });
 
@@ -431,7 +531,7 @@ test.describe("알림함 목록 완성 (Task 3 · S1-c · S1-d)", () => {
     await expect(page).toHaveURL(/\/account$/);
 
     await page.goto("/notifications");
-    const rows = page.locator("table tbody tr[data-row]");
+    const rows = page.locator("table [data-inbox-row]");
     await expect(rows).toHaveCount(50);
     const loadMore = page.getByRole("button", { name: "더 보기 50건" });
     await expect(loadMore).toBeVisible();
@@ -580,7 +680,7 @@ test.describe("알림함 목록 완성 (Task 3 · S1-c · S1-d)", () => {
     await expect(page).toHaveURL(/\/account$/);
 
     await page.goto("/notifications");
-    const rows = page.locator("table tbody tr[data-row]");
+    const rows = page.locator("table [data-inbox-row]");
     await expect(rows).toHaveCount(50);
     const loadMore = page.getByRole("button", { name: "더 보기 50건" });
     await loadMore.focus();
@@ -622,7 +722,7 @@ test.describe("알림함 목록 완성 (Task 3 · S1-c · S1-d)", () => {
     });
 
     await page.goto("/notifications");
-    const row = page.locator("table tbody tr[data-row]");
+    const row = page.locator("table [data-inbox-row]");
     await expect(row).toHaveCount(1);
 
     // 화면에 오류가 보이지 않는다 — role="alert" 안에 보이는 글자가 없고

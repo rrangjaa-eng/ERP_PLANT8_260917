@@ -11,16 +11,31 @@
     {
       "number": "2",
       "name": "디자인 시스템·앱 셸",
-      "status": "in_progress"
+      "status": "complete"
     },
     {
       "number": "3",
       "name": "권한·설정·마스터 (관리자 운영 콘솔)",
-      "status": "pending"
+      "status": "complete"
     },
     {
       "number": "4",
       "name": "프로젝트·견적 원장",
+      "status": "complete"
+    },
+    {
+      "number": "04.1",
+      "name": "결재 모듈·연차",
+      "status": "complete"
+    },
+    {
+      "number": "04.2",
+      "name": "알림·공휴일 기반",
+      "status": "complete"
+    },
+    {
+      "number": "04.4",
+      "name": "복원 리허설·로그인 상태",
       "status": "complete"
     },
     {
@@ -61,8 +76,8 @@
   ],
   "next": {
     "command": "/gsd:progress --next",
-    "label": "Advance to the next step (plan phase 2)",
-    "reason": "Phase 2 of 17 — needs a plan"
+    "label": "Advance to the next step",
+    "reason": "Phase 04.6 of 17 · 41% · executing"
   },
-  "updated_at": "2026-09-30T02:32:25.423Z"
+  "updated_at": "2026-10-02T18:24:16.639Z"
 }

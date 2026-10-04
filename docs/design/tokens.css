@@ -1,12 +1,16 @@
-/* tokens.css — PLANT8 ERP 디자인 토큰
+/* tokens.css — PLANT8 ERP 디자인 토큰 (두 단: 원시 값 → 역할 이름)
  * 출처: docs/design/SYSTEM.md (이 파일과 어긋나면 SYSTEM.md가 맞다)
- * 규칙: 컴포넌트는 이 변수만 참조한다. 새 값이 필요하면 DECISIONS.md → SYSTEM.md → 여기 순서로 추가한다.
+ * 규칙: 화면·컴포넌트 CSS는 「2단 역할 이름」만 참조한다. 원시 값은 이 파일 안에서 역할을 정의할 때만 쓴다.
+ *       새 값이 필요하면 DECISIONS.md → SYSTEM.md → 여기 순서로 추가한다. 다음 스킨 변경 = 2단 역할 층 한 곳.
+ * 옛 토큰 이름은 04.6-31이 지웠다(test/unit/design/tokens.test.ts ⑥이 없음을 단언한다) — 스킨 값은 2단 역할 층 한 곳에서만 온다.
+ * 아래 「==== … ====」 구간 배너 글자는 test/unit/design/tokens.test.ts가 구간을 찾는 표식이다 — 고치지 않는다.
  * 브레이크포인트는 CSS 변수로 쓸 수 없어 주석으로 고정한다:
  *   폰  <700px  · PC ≥1024px · 컨테이너 최대 1280px
  */
 
 :root {
-  /* ---- 1. 색 — 그린 명도 단계 (브랜드 #005446 = --g-700) ---- */
+  /* ==== 1단 원시 값 ==== */
+  /* 그린 명도 단계 (브랜드 #005446 = --g-700) */
   --g-950: #00211C;
   --g-900: #00312A;
   --g-800: #00443A;
@@ -17,87 +21,127 @@
   --g-100: #DCE8E4;
   --g-50:  #EBF2F0;
 
-  /* ---- 1. 색 — 의미 토큰 (컴포넌트는 이것만) ---- */
-  --bg:            #FFFFFF;
-  --surface:       #F3F7F5;
-  --fg:            #0B1512;   /* on --bg 18.6 */
-  --muted:         #4E5D59;   /* on --bg 6.9 · on --g-100 5.5 */
-  --faint:         #5F6E6A;   /* on --bg 5.4 · on --g-50 4.7 · --g-100 위 금지 */
+  /* 무채(차가운 회색 — 웜톤 금지: R ≤ G · R ≤ B) */
+  --n-0:   #FFFFFF;
+  --n-25:  #F7F9F8;
+  --n-50:  #F6F8F7;
+  --n-60:  #F3F7F5;
+  --n-75:  #F2F5F4;
+  --n-100: #E4EAE7;
+  --n-150: #DDE5E2;
+  --n-200: #C9D4D0;
+  --n-300: #B9C5C1;
+  --n-500: #7C8A86;
+  --n-600: #5F6E6A;
+  --n-700: #52615C;
+  --n-900: #13201C;
 
-  --accent:        var(--g-700);   /* on --bg 8.9 */
-  --accent-hover:  var(--g-800);   /* white on it 11.1 */
-  --accent-weak:   var(--g-50);
-  --on-accent-weak: rgba(255, 255, 255, 0.5);  /* 1차 버튼 위 kbd 테두리 전용(§7-1) — preview.html의 rgba(255,255,255,.5) 값 그대로, 화면 픽셀 불변(2026-09-19, 체크포인트 항목 I②) */
+  /* 상태 원색 */
+  --red-800:   #9B1C1C;
+  --red-50:    #FBE9E9;
+  --amber-700: #8A5A00;
+  --amber-50:  #FBF1DE;
+  --blue-700:  #1F5FA8;   /* on #FFFFFF 6.44 */
+  --blue-100:  #DCE7F5;
 
-  --success:       var(--g-600);   /* on --bg 5.3 */
-  --warning:       #8A5A00;        /* on --bg 5.9 · on --warning-weak 5.3 */
-  --warning-weak:  #FBF1DE;
-  --danger:        #9B1C1C;        /* on --bg 8.2 · on --danger-weak 7.0 */
-  --danger-weak:   #FBE9E9;
+  /* 잉크 투명도(그림자·가림막) */
+  --ink-a05: rgba(0, 33, 28, 0.05);
+  --ink-a10: rgba(0, 33, 28, 0.10);
+  --ink-a20: rgba(0, 33, 28, 0.20);
+  --ink-a30: rgba(0, 33, 28, 0.30);
+  --ink-a40: rgba(0, 33, 28, 0.40);
 
-  --line:          #CFDBD7;        /* 장식선 1px */
-  --line-ui:       #7C8A86;        /* 인식해야 하는 UI 경계 · on --bg 3.6 */
-  --line-strong:   var(--g-900);   /* 2px 강한 선 */
+  /* ==== 2단 역할 이름 ==== */
+  /* 면 */
+  --surface-canvas:   var(--n-75);    /* 페이지 바탕 */
+  --surface-base:     var(--n-0);     /* 표·폼·패널·모달 면 */
+  --surface-head:     var(--n-50);    /* 표 머리글 */
+  --surface-foot:     var(--n-50);    /* 합계 줄 */
+  --surface-group:    var(--g-50);    /* 그룹 줄 */
+  --surface-actions:  var(--n-25);    /* 패널 행동 줄 */
+  --surface-muted:    var(--n-60);    /* 비활성·뼈대 행 */
+  --surface-selected: var(--g-100);   /* 선택 범위 — 위에 --text-faint 금지(4.26) */
+  --surface-dirty:    var(--g-100);   /* 저장 대기 편집 칸 면(UQ-4 후보 7) — 위에 --text-faint 금지(4.26) */
 
-  --bar:           var(--g-900);
-  --bar-fg:        var(--g-100);   /* on --bar 11.3 */
-  --bar-muted:     var(--g-300);   /* on --bar 7.0 */
-  --bar-leaf:      var(--g-400);   /* 로고 잎 · on --bar 6.6 */
+  /* 글자 */
+  --text-strong:    var(--n-900);   /* on canvas 15.3 · on base 16.8 */
+  --text-muted:     var(--n-700);   /* on canvas 5.94 · on head 6.11 · on actions 6.16 */
+  --text-faint:     var(--n-600);   /* on canvas 4.88 · on base 5.35 · --surface-selected 위 금지 */
+  --text-group:     var(--g-800);   /* on group 9.79 */
+  --text-on-accent: var(--n-0);     /* on accent 8.91 */
+  --text-on-tint:   var(--g-950);   /* on --surface-selected(g-100) 13.5 — 편집 표 머리글 글자(SYSTEM 894) */
+  --text-link:      var(--accent);
 
-  --focus:         var(--g-700);
-  --scrim:         rgba(0, 33, 28, 0.45);
+  /* 선 */
+  --border-surface: var(--n-150);   /* 표·패널·합계 면 테두리 */
+  --border-row:     var(--n-100);   /* 행 사이·섹션 */
+  --border-strong:  var(--n-200);   /* 합계 위 */
+  --border-button:  var(--n-300);   /* 2차 버튼(글자 라벨이 있어 3:1 대상 아님) */
+  --border-control: var(--n-500);   /* 입력 테두리 · on base 3.60 (UQ-7 A) */
+  --line-w:         1px;
+  --underline-w-hover: 2px;         /* 3차 버튼·행동 링크 호버 밑줄 — 선이 아니라 밑줄 상태 신호 */
+  --underline-offset:  2px;
+  --focus-w:        2px;
+  --focus-offset:   2px;
 
-  /* 브라우저 기본 표면 (SYSTEM.md §4-4) */
-  --sel-bg:        var(--g-100);
-  --sel-fg:        var(--fg);
-  --caret:         var(--g-700);
-  --native-accent: var(--g-700);   /* accent-color: 체크박스·라디오·progress */
-  --scrollbar:     var(--line-ui);
-  --underline-offset: 2px;
+  /* 강조·상태 */
+  --accent:         var(--g-700);   /* on base 8.91 */
+  --accent-hover:   var(--g-800);
+  --accent-weak:    var(--g-50);
+  --status-danger:       var(--red-800);
+  --status-danger-weak:  var(--red-50);
+  --status-warning:      var(--amber-700);
+  --status-warning-weak: var(--amber-50);
+  --status-success: var(--g-600);
+  --status-accent:  var(--g-700);
+  --status-muted:   var(--n-700);
+  --focus:          var(--g-700);
 
-  /* 인쇄 전용 (print 라우트에서 --fg/--line-strong를 이것으로 덮는다) */
-  --print-ink:     #000000;         /* 글자 · 서명 */
-  --print-rule:    var(--g-700);    /* 구조 선: 워드마크 · 제목 괘선 · 명세 머리/합계 · 결재 칸 (2px). 인쇄 미디어에서도 유지 (DECISIONS 2026-09-18 인쇄 색) */
-  --print-line:    #CFDBD7;         /* 구분 가로선 1px (= --line 값. @media print가 --line을 검정으로 덮으므로 따로 둔다) */
+  /* 상단 바 */
+  --bar-bg:    var(--g-900);
+  --bar-fg:    var(--g-100);   /* on bar 11.3 */
+  --bar-muted: var(--g-300);   /* on bar 7.0 */
+  --bar-leaf:  var(--g-400);   /* 로고 잎 · on bar 6.6 */
+  --bar-h:     48px;
+  --focus-on-bar: var(--g-100);   /* 포커스 링이 상단 바 위(어두운 면)에 놓일 때의 색 — 바 위 포커스 예외(SYSTEM §6-0) · on bar-bg 11.3 */
 
-  /* ---- 1-4. 데이터 색 (손익 대시보드, 2026-09-18) — 색 하나 = 뜻 하나 ---- */
-  --viz-1:         var(--g-700);    /* 팀 색 1 = 기획1팀 · 기본 계열 */
-  --viz-2:         #1F5FA8;         /* 팀 색 2 = 기획2팀 · #1F5FA8 on #FFFFFF(=--bg) 대비 6.44(양쪽 같은 색 쌍) */
-  --viz-2-weak:    #DCE7F5;         /* 팀 색 2 바탕 */
-  --seg-1:         var(--g-900);    /* 구성 비율(도넛) 5단, 진한 순 = 큰 비중 */
-  --seg-2:         var(--g-700);
-  --seg-3:         var(--g-600);
-  --seg-4:         var(--g-400);
-  --seg-5:         var(--g-100);
+  /* 형태 */
+  --radius-tag:     4px;    /* 상태 배지 */
+  --radius-control: 6px;    /* 버튼·입력 */
+  --radius-surface: 8px;    /* 표·합계 면·토스트·팝오버 */
+  --radius-dialog:  12px;   /* 모달 */
+  --radius-panel:   16px;   /* 옆 패널 왼쪽 두 모서리 · 시트 위 두 모서리 */
 
-  /* ---- 2. 타입 ---- */
-  --font-sans: 'Pretendard Variable', Pretendard, 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, sans-serif;
+  /* 깊이 */
+  --shadow-surface: 0 1px 2px var(--ink-a05);
+  --shadow-float:   0 24px 48px -12px var(--ink-a30), 0 2px 8px var(--ink-a10);   /* 모달·옆 패널·시트 */
+  --shadow-pop:     0 12px 28px -8px var(--ink-a30);   /* 토스트·사용자 메뉴(UQ-4 후보 5 — 1px --border-surface 선과 함께) */
+  --scrim-dialog:   var(--ink-a40);
+  --scrim-panel:    var(--ink-a20);
+  --inset-tab:      inset 0 -2px 0 var(--accent);            /* 현재 탭 밑줄 */
+  --inset-error:    inset 2px 0 0 var(--status-danger);      /* 오류 셀 좌측 */
+  --inset-dirty:    inset 0 0 0 1px var(--g-600);            /* 저장 대기 셀 */
 
-  --fs-xs:   11px;
-  --fs-sm:   12px;
-  --fs-base: 14px;   /* 폰에서 15px (아래 미디어 쿼리) */
-  --fs-md:   15px;
-  --fs-lg:   18px;
-  --fs-xl:   24px;
-  --fs-2xl:  32px;   /* 대시보드 KPI 타일 큰 숫자만 (2026-09-18 손익 대시보드 결정) */
+  /* 크기 */
+  --row-h:          44px;     /* 표 행(PC·폰) */
+  --control-h:      32px;     /* 버튼·입력 PC. 폰 40px, 외부 수령자 48px */
+  --control-h-panel: 40px;    /* 옆 패널 입력·행동 줄 */
+  --field-h:        var(--control-h);   /* 입력·행동 줄 버튼 높이 한 변수 — 옆 패널 틀이 --control-h-panel로 덮는다(D14) */
+  --touch-min:      44px;
+  --panel-w:        480px;    /* 옆 패널 */
+  --dialog-w:       480px;    /* 확인 창 (UQ-6 A) */
+  --recipient-w:    480px;    /* 외부 수령자 화면 본문 폭 — --panel-w · --dialog-w와 뜻이 다르다 */
+  --row-number-w:   28px;     /* 견적 줄 번호 칸 최소 폭 */
+  --sheet-max-h:    88dvh;    /* 폰 아래 시트 최대 높이 — 폰 키보드 때문에 동적 뷰포트 단위 */
+  --container-max:  1280px;
+  --form-max:       720px;    /* 단일 기둥 최대 폭: 폼·설정 필드 묶음·dl·계층/링크 목록(SYSTEM.md §3). 표·매트릭스·대시보드 제외 */
+  --label-w:        96px;     /* 페이지 폼 라벨 열 */
+  --auth-max:       360px;    /* 로그인(§6-7) 틀 최대 폭 — 셸 없는 인증 폼 */
+  --field-w-select: 200px;    /* 페이지 폼 칸 폭 — select */
+  --field-w-short:  280px;    /* 페이지 폼 칸 폭 — 짧은 칸 */
+  --field-w-long:   480px;    /* 페이지 폼 칸 폭 — 긴 칸 */
 
-  --lh-tight: 1.3;   /* --fs-xl */
-  --lh-head:  1.4;   /* --fs-lg · --fs-xs 태그 */
-  --lh-table: 1.5;   /* 표 셀 · --fs-sm */
-  --lh-body:  1.6;   /* 본문 */
-
-  --ls-body:  -0.015em;
-  --ls-head:  -0.02em;
-  --ls-num:   0;
-
-  --fw-regular: 400;
-  --fw-medium:  600;
-  --fw-bold:    700;
-  --fw-mark:    800;   /* 로고 워드마크만 */
-
-  --measure: 64ch;     /* 산문 최대 줄 길이 */
-
-  /* ---- 3. 간격 (4px 단위) ---- */
+  /* 간격 (4px 단위 — UQ-1 A) */
   --s-1:  4px;
   --s-2:  8px;
   --s-3:  12px;
@@ -106,49 +150,84 @@
   --s-6:  24px;
   --s-8:  32px;
   --s-12: 48px;
+  --pad-page:      var(--s-5);   /* 폰 --s-4 (옛 14 → 16, UQ-1 A) */
+  --cell-pad-y:    var(--s-1);   /* 폰 --s-3 (옛 6 → 4 · 10 → 12, UQ-1 A) */
+  --cell-pad-x:    var(--s-2);
+  --field-gap:     var(--s-4);   /* 패널 칸 사이 */
+  --label-gap:     var(--s-1);   /* 라벨-입력 사이 */
+  --panel-pad-x:   var(--s-6);   /* 옆 패널 좌우 안쪽(폰 --s-4) */
 
-  --container-max: 1280px;
-  --pad-page:      var(--s-5);   /* 폰 14px */
-  --cell-pad-y:    6px;          /* 폰 10px */
-  --cell-pad-x:    8px;
-  --row-min:       36px;         /* 폰 44px */
-  --label-w:       96px;         /* PC 폼 라벨 열 */
-  --form-max:      720px;  /* 단일 기둥 최대 폭: 폼·설정 필드 묶음·dl·계층/링크 목록(SYSTEM.md §3). 표·매트릭스·대시보드 제외 */
-  --modal-w:       480px;
-  --auth-max:      360px;  /* 로그인(§6-7) 틀 최대 폭 — 셸 없는 인증 폼 */
+  /* 글자 크기 (UQ-2 A) */
+  --text-title:    22px;   /* 화면 제목 */
+  --text-subtitle: 18px;   /* 패널·모달·섹션 제목 */
+  --text-body:     14px;   /* 폰 15px (아래 미디어 쿼리) */
+  --text-aux:      13px;   /* 머리글·라벨·행동 링크·메타·오류 줄 */
+  --text-tag:      11px;   /* 상태 배지·kbd·행 번호 */
+  --text-kpi:      32px;   /* 손익 대시보드 KPI 숫자만 */
+  --text-prose:    15px;   /* 외부 수령자 문장·입력·버튼 전용 — PC·폰 모두 15(줄지 않는다) */
 
-  --control-h:     32px;   /* 버튼·입력 PC. 폰 40px, 외부 수령자 48px */
-  --touch-min:     44px;
+  /* 굵기 (UQ-3 A) */
+  --fw-regular: 400;
+  --fw-medium:  600;
+  --fw-bold:    700;
+  --fw-mark:    800;   /* 로고 워드마크만 */
 
-  /* ---- 4. 형태 ---- */
-  --radius:        0;
-  --line-w:        1px;
-  --line-w-strong: 2px;
-  --focus-w:       2px;
-  --focus-offset:  2px;
-  --shadow:        none;   /* 그림자 없음. 인셋 선만 허용 */
+  /* ==== 그 밖 기존 이름 (이 페이즈가 값을 바꾸지 않는다) ==== */
+  --on-accent-weak: rgba(255, 255, 255, 0.5);  /* 1차 버튼 위 kbd 테두리 전용(§7-1) — preview.html의 rgba(255,255,255,.5) 값 그대로, 화면 픽셀 불변(2026-09-19, 체크포인트 항목 I②) */
 
-  --inset-tab:     inset 0 -2px 0 var(--accent);   /* 현재 탭 밑줄 */
-  --inset-error:   inset 2px 0 0 var(--danger);    /* 오류 셀 좌측 */
-  --inset-dirty:   inset 0 0 0 1px var(--g-600);   /* 저장 대기 셀 */
+  /* 브라우저 기본 표면 (SYSTEM.md §4-4) */
+  --sel-bg:        var(--g-100);
+  --sel-fg:        var(--text-strong);
+  --caret:         var(--g-700);
+  --native-accent: var(--g-700);   /* accent-color: 체크박스·라디오·progress */
+  --scrollbar:     var(--border-control);
 
-  /* ---- 5. 모션 (응답형만) ---- */
+  /* 인쇄 전용 (인쇄 템플릿은 이 넷과 역할 이름만 쓴다) */
+  --print-ink:     #000000;         /* 글자 · 서명 */
+  --print-rule:    var(--g-700);    /* 구조 선: 워드마크 · 제목 괘선 · 명세 머리/합계 · 결재 칸. 인쇄 미디어에서도 유지 (DECISIONS 2026-09-18 인쇄 색) */
+  --print-rule-w:  2px;             /* 인쇄 구조 선 두께 — 인쇄 템플릿은 스킨 대상이 아니라 화면의 1px 선 규칙과 무관하다 */
+  --print-line:    #CFDBD7;         /* 구분 가로선 1px (@media print가 선 역할 토큰을 검정으로 덮으므로 따로 둔다) */
+
+  /* 데이터 색 (손익 대시보드, 2026-09-18) — 색 하나 = 뜻 하나 */
+  --viz-1:         var(--g-700);    /* 팀 색 1 = 기획1팀 · 기본 계열 */
+  --viz-2:         var(--blue-700); /* 팀 색 2 = 기획2팀 · #1F5FA8 on #FFFFFF(=--surface-base) 대비 6.44(양쪽 같은 색 쌍) */
+  --viz-2-weak:    var(--blue-100); /* 팀 색 2 바탕 */
+  --seg-1:         var(--g-900);    /* 구성 비율(도넛) 5단, 진한 순 = 큰 비중 */
+  --seg-2:         var(--g-700);
+  --seg-3:         var(--g-600);
+  --seg-4:         var(--g-400);
+  --seg-5:         var(--g-100);
+
+  /* 타입 */
+  --font-sans: 'Pretendard Variable', Pretendard, 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, sans-serif;
+
+  --lh-tight: 1.3;   /* 제목 */
+  --lh-head:  1.4;   /* 부제 · 태그 */
+  --lh-table: 1.5;   /* 표 셀 · 보조 */
+  --lh-body:  1.6;   /* 본문 */
+
+  --ls-body:  -0.015em;
+  --ls-head:  -0.02em;
+  --ls-num:   0;
+
+  --measure: 64ch;     /* 산문 최대 줄 길이 */
+
+  /* 모션 (응답형만) */
   --dur-hover:     120ms;
-  --dur-toast:     160ms;
   --dur-sheet:     200ms;
   --dur-saved:     600ms;
   --dur-progress:  1200ms;
   --ease-out:      ease-out;
   --ease-sheet:    cubic-bezier(0.2, 0.8, 0.2, 1);
 
-  /* ---- z-index ---- */
+  /* z-index */
   --z-sticky: 10;   /* 표 머리글 */
   --z-bar:    20;   /* 상단 바 · 폰 하단 탭 */
   --z-toast:  30;
   --z-scrim:  40;
   --z-modal:  50;
 
-  /* ---- 아이콘 ---- */
+  /* 아이콘 */
   --icon-sm:     16px;
   --icon-lg:     20px;
   --icon-stroke: 1.75;
@@ -157,10 +236,10 @@
 /* 폰: 본문 1단계 위, 여백·행 높이·컨트롤 조정 */
 @media (max-width: 699.98px) {
   :root {
-    --fs-base:   15px;
-    --pad-page:  14px;
-    --cell-pad-y: 10px;
-    --row-min:   44px;
+    --text-body:   15px;
+    --panel-pad-x: var(--s-4);
+    --pad-page:  var(--s-4);
+    --cell-pad-y: var(--s-3);
     --control-h: 40px;
   }
 }
@@ -169,29 +248,67 @@
 @media (prefers-reduced-motion: reduce) {
   :root {
     --dur-hover:    0.01ms;
-    --dur-toast:    0.01ms;
     --dur-sheet:    0.01ms;
     --dur-saved:    0.01ms;
     --dur-progress: 0.01ms;
   }
 }
 
-/* 인쇄: 화면 토큰은 검정으로 접는다. 인쇄 템플릿 자체는 --print-ink / --print-rule / --print-line 셋만 쓴다(§6-6). 인쇄 라우트(/print/…)와 브라우저 인쇄 모두 적용 */
+/* 인쇄: 화면 토큰은 검정·흰색으로 접는다. 인쇄 템플릿 자체는 --print-ink / --print-rule / --print-line 셋만 쓴다(§6-6). 인쇄 라우트(/print/…)와 브라우저 인쇄 모두 적용.
+ * 색 역할 토큰은 전부 --print-ink 또는 #FFFFFF로, 그림자 역할은 none으로 접는다(test/unit/design/tokens.test.ts ⑦). */
 @media print {
   :root {
-    --bg:          #FFFFFF;
-    --fg:          var(--print-ink);
-    --muted:       var(--print-ink);
-    --faint:       var(--print-ink);
-    --line:        var(--print-ink);
-    --line-ui:     var(--print-ink);
-    --line-strong: var(--print-ink);
-    --accent:      var(--print-ink);
-    --success:     var(--print-ink);
-    --warning:     var(--print-ink);
-    --danger:      var(--print-ink);
-    --surface:     #FFFFFF;
+    /* 원시 층 — 면 틴트는 흰색으로 접는다(역할 이름이 이 값을 거치지 않아도 인쇄에 틴트가 새지 않게) */
     --g-50:        #FFFFFF;
     --g-100:       #FFFFFF;
+
+    /* 역할 이름 — 면 */
+    --surface-canvas:   #FFFFFF;
+    --surface-base:     #FFFFFF;
+    --surface-head:     #FFFFFF;
+    --surface-foot:     #FFFFFF;
+    --surface-group:    #FFFFFF;
+    --surface-actions:  #FFFFFF;
+    --surface-muted:    #FFFFFF;
+    --surface-selected: #FFFFFF;
+    --surface-dirty:    #FFFFFF;
+    /* 글자 */
+    --text-strong:    var(--print-ink);
+    --text-muted:     var(--print-ink);
+    --text-faint:     var(--print-ink);
+    --text-group:     var(--print-ink);
+    --text-on-accent: #FFFFFF;
+    --text-on-tint:   var(--print-ink);
+    --text-link:      var(--print-ink);
+    /* 선 */
+    --border-surface: var(--print-ink);
+    --border-row:     var(--print-ink);
+    --border-strong:  var(--print-ink);
+    --border-button:  var(--print-ink);
+    --border-control: var(--print-ink);
+    /* 강조·상태 */
+    --accent:              var(--print-ink);
+    --accent-hover:        var(--print-ink);
+    --accent-weak:         #FFFFFF;
+    --status-danger:       var(--print-ink);
+    --status-danger-weak:  #FFFFFF;
+    --status-warning:      var(--print-ink);
+    --status-warning-weak: #FFFFFF;
+    --status-success:      var(--print-ink);
+    --status-accent:       var(--print-ink);
+    --status-muted:        var(--print-ink);
+    --focus:               var(--print-ink);
+    /* 상단 바 */
+    --bar-bg:    #FFFFFF;
+    --bar-fg:    var(--print-ink);
+    --bar-muted: var(--print-ink);
+    --bar-leaf:  var(--print-ink);
+    --focus-on-bar: var(--print-ink);
+    /* 깊이 */
+    --shadow-surface: none;
+    --shadow-float:   none;
+    --shadow-pop:     none;
+    --scrim-dialog:   #FFFFFF;
+    --scrim-panel:    #FFFFFF;
   }
 }

@@ -1,71 +1,6 @@
-/* SYSTEM.md §6-1 목록 템플릿. 색·서체·radius는 tokens.css 변수만 쓴다(D-20).
-   이 파일은 보관함 화면과 delete-to-archive.tsx(여섯 마스터 화면이 공유)가
-   함께 쓴다 — CSS Module 스코프는 파일 단위라 화면마다 클래스가 새로
-   해시된다. */
-
-.table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.table th {
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  color: var(--muted);
-  text-align: left;
-  padding: var(--cell-pad-y) var(--cell-pad-x);
-  border-bottom: var(--line-w-strong) solid var(--line-strong);
-  white-space: nowrap;
-}
-
-.table td {
-  min-height: var(--row-min);
-  padding: var(--cell-pad-y) var(--cell-pad-x);
-  font-size: var(--fs-base);
-  border-bottom: var(--line-w) solid var(--line);
-}
-
-.table tbody tr:hover td {
-  background: var(--surface);
-}
-
-/* §7-3 폰 전략 — <700px에서 P1만 열로 남고 P2는 행 아래 접힌 줄 하나로
-   들어간다(ui/table/Table.module.css와 같은 모양). 가로 스크롤을 만들지 않는다. */
-.collapsedRow {
-  display: none;
-}
-
-.table .collapsedCell {
-  padding: 0 var(--cell-pad-x) var(--cell-pad-y);
-  color: var(--muted);
-  font-size: var(--fs-sm);
-  border-bottom: 0;
-}
-
-@media (max-width: 699.98px) {
-  .p2 {
-    display: none;
-  }
-
-  .collapsedRow {
-    display: table-row;
-  }
-
-  /* 접힌 줄은 자기 행에 붙는다 — 선은 주 행 아래가 아니라 접힌 줄 아래에 긋는다. */
-  .table tbody tr:has(+ .collapsedRow) td {
-    border-bottom: 0;
-  }
-
-  .table .collapsedCell {
-    border-bottom: var(--line-w) solid var(--line);
-  }
-}
-
-/* §2-4: 보관 시각은 숫자 성격 열이라 tabular-nums + nowrap. */
-.archivedAt {
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
+/* SYSTEM.md §6-1 목록 템플릿 — 04.6-22: 보관함 표는 StaticTable로 옮겨 표 규칙을 지웠다.
+   이 파일은 delete-to-archive.tsx(여섯 마스터 화면이 공유)의 확인 줄이 쓴다 — CSS Module 스코프는
+   파일 단위라 화면마다 클래스가 새로 해시된다. 값은 역할 토큰만 쓴다(스킨 A). */
 
 .confirmRow {
   display: inline-flex;
@@ -75,24 +10,11 @@
 }
 
 .confirmText {
-  font-size: var(--fs-sm);
-  color: var(--muted);
+  font-size: var(--text-aux);
+  color: var(--text-muted);
 }
 
 .confirmError {
-  font-size: var(--fs-sm);
-  color: var(--danger);
-}
-
-/* caption을 시각적으로 숨긴다(§10 접근성 계약). */
-.srOnly {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
+  font-size: var(--text-aux);
+  color: var(--status-danger);
 }

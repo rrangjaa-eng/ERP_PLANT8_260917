@@ -117,7 +117,7 @@ export function CustomerApprovalLine({
 }: CustomerApprovalProps & { className?: string; dirtyCount: number }) {
   if (!props.approvalText && !props.control) return null;
   const control = props.control;
-  // 다이얼로그는 <p> 밖에 둔다(<dialog>는 문단 안에 둘 수 없다) — 이 줄에는 글자와 트리거만.
+  // 다이얼로그는 문단 밖에 둔다(대화상자 요소는 문단 안에 둘 수 없다) — 이 줄에는 글자와 트리거만.
   const line = (trigger: ReactNode) => (
     <p className={className}>
       {props.approvalText ? <span>{props.approvalText}</span> : null}

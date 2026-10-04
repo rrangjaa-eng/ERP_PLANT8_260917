@@ -3,14 +3,15 @@ import Link from "next/link";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
 import { MENUS } from "@/domain/permissions/menus";
+import { withCertMenusGated } from "@/domain/certs/feature";
 import { adminIndexGroups } from "@/ui/shell/role-menu";
-import { PageHeader } from "@/ui/page-header/PageHeader";
+import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { Banner } from "@/ui/banner/Banner";
 import { emailFailureBanner, emailFailureBannerText } from "@/domain/system-status";
 import { holidayConfirmationBanner } from "@/domain/holidays/admin";
 import styles from "./admin-index.module.css";
 
-// SYSTEM.md §6-10 「관리」 인덱스 화면 — 관리자 화면 10개의 단일 진입점(「관리」
+// SYSTEM.md §6-10 「관리」 인덱스 화면 — 관리자 화면 12개의 단일 진입점(「관리」
 // 한 줄로 접기, 2026-09-22 quick/260922-i3k, 사용자 결정 옵션 B). PC 사용자
 // 메뉴(§6-0 (a))·「더보기」 시트(§7-8)의 「관리」 한 줄이 이 화면으로 온다.
 //
@@ -29,7 +30,9 @@ export default async function AdminIndexPage() {
   );
   const allowedMenus = visibleMenus.filter((key): key is string => key !== null);
 
-  const groups = adminIndexGroups({ roleId: session.viewer.roleId ?? "", allowedMenus });
+  const gatedMenus = await withCertMenusGated(allowedMenus);
+
+  const groups = adminIndexGroups({ roleId: session.viewer.roleId ?? "", allowedMenus: gatedMenus });
 
   // D-17: 권한 없는 리소스는 404 — 볼 항목이 0개인 계급에게는 이 화면 자체가 없다.
   if (groups.length === 0) notFound();
@@ -56,23 +59,24 @@ export default async function AdminIndexPage() {
           </Link>
         </Banner>
       ) : null}
-      <PageHeader title="관리" />
-      <div className="single-column">
-        {groups.map((group) => (
-          <section key={group.label}>
-            <h2 className={styles.groupLabel}>{group.label}</h2>
-            <ul className={styles.list}>
-              {group.items.map((item) => (
-                <li key={item.href}>
-                  <Link href={item.href} className={styles.link}>
-                    {item.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ))}
-      </div>
+      <ListScreen title="관리">
+        <div className="single-column">
+          {groups.map((group) => (
+            <section key={group.label}>
+              <h2 className={styles.groupLabel}>{group.label}</h2>
+              <ul className={styles.list}>
+                {group.items.map((item) => (
+                  <li key={item.href}>
+                    <Link href={item.href} className={styles.link}>
+                      {item.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
+      </ListScreen>
     </>
   );
 }

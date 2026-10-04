@@ -1,0 +1,191 @@
+/* 04.3-04 Task 4 ④ · 04.3-10 — I′3 행사 상세(QR · 경품 · 제출 섹션). 역할 토큰만(docs/design/tokens.css). 제목·상태·행동 줄은 DetailScreen이 맡는다(04.6-24). */
+
+/* 섹션 시작 선 · 섹션 제목 크기는 DetailScreen.Section 모양을 그대로 받는다(제목 크기는 틀만 정한다 — SYSTEM §3). QR 섹션 제목은
+   포커스 자리(id · tabindex -1)라 `DetailScreen.Section` 대신 같은 클래스를 쓴다. */
+.section {
+  composes: section from "../../../../../ui/detail-screen/DetailScreen.module.css";
+}
+
+.sectionLabel {
+  composes: sectionTitle from "../../../../../ui/detail-screen/DetailScreen.module.css";
+}
+
+/* QR 160×160 고정(폰도 160) — 모듈은 currentColor라 --text-strong on --surface-base, radius 0. */
+.qr {
+  width: calc(var(--s-8) * 5);
+  height: calc(var(--s-8) * 5);
+  color: var(--text-strong);
+  background: var(--surface-base);
+  border-radius: 0;
+}
+
+.qr svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.linkRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s-2) var(--s-4);
+  margin-top: var(--s-3);
+}
+
+.link {
+  min-width: 0;
+  font-size: var(--text-aux);
+  overflow-wrap: anywhere;
+}
+
+.copied {
+  font-size: var(--text-aux);
+  color: var(--status-success);
+}
+
+.copyFailed {
+  font-size: var(--text-aux);
+  color: var(--status-danger);
+}
+
+.closedLine {
+  margin: 0;
+  font-size: var(--text-aux);
+  color: var(--text-muted);
+}
+
+/* QR 섹션 라벨 — QR 생성 뒤 포커스가 오는 자리(tabindex -1). */
+.sectionLabel:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+/* 04.3-10 경품 표 — 경품명 줄바꿈(long-text). 숫자 칸은 Num이 서식을 정한다. */
+.wrapText {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+/* 전달(현장 · 택배)은 한 낱말 — 긴 경품명이 열을 좁혀도 두 줄로 쪼개지지 않는다(쪼개지면 모든 행이 두 줄 높이 — DOM 감사 A-L3). */
+.nowrap {
+  white-space: nowrap;
+}
+
+/* 편집 셀 입력 — 견적 표 편집 칸(project-detail.module.css)과 같은 모양. 숫자 칸은 입력 모양의 `.numeric`을 받는다(Q10). */
+.cellInput,
+.cellInputNumeric,
+.cellSelect {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: var(--control-h);
+  padding: 0 var(--s-1);
+  border: 0;
+  border-bottom: var(--line-w) solid var(--accent);
+  background: var(--accent-weak);
+  color: var(--text-strong);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+}
+
+.cellInputNumeric {
+  composes: numeric from "../../../../../ui/input/TextField.module.css";
+}
+
+.cellInput:focus-visible,
+.cellInputNumeric:focus-visible,
+.cellSelect:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+  border-radius: var(--radius-control);
+}
+
+/* 제출 셀 색 글자(§7-3 ⑮ · T4) — 확인증 없음 muted · 파기 대상 warning(그 낱말만). */
+.mutedText {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.warningText {
+  color: var(--status-warning);
+}
+
+.footerCell {
+  font-size: var(--text-aux);
+  font-weight: var(--fw-medium);
+}
+
+/* 경품 표 아래 화면 1차(QR 생성 · 일괄 저장) — 오른쪽 하나, 막힘 이유는 그 옆. */
+.primaryRow {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--s-3);
+}
+
+/* 04.3-17 제출 섹션(대조) — 표 면 · 머리글 · 그룹 줄 · 폰 칸 접기는 공용 ui/table이 정한다. 여기는 칸 안 글자만. */
+
+/* 이름 아래 색 글자(§7-3 ⑮ — 파기 대상 · 같은 연락처 · 같은 이름 warning, 대조 제외 muted, 320에서 줄바꿈). */
+.rowMarks,
+.rowMarkMuted {
+  display: block;
+  font-size: var(--text-aux);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.rowMarks {
+  color: var(--status-warning);
+}
+
+.rowMarkMuted {
+  color: var(--text-muted);
+}
+
+/* 대조 제외된 줄 — 줄 글자 전체 muted(T3). 표는 줄 클래스를 받지 않아 「대조 제외」 표시가 든 줄로 찾는다. */
+.submissions tr:has(.rowMarkMuted) > td {
+  color: var(--text-muted);
+}
+
+/* 「제출 내용」 3차 링크(§4-4 · §7-1 — 밑줄 1px → hover 2px). */
+.rowLink {
+  color: var(--text-link);
+  font-size: var(--text-aux);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+  text-decoration: underline;
+  text-decoration-thickness: var(--line-w);
+  text-underline-offset: var(--underline-offset);
+}
+
+.rowLink:hover {
+  text-decoration-thickness: var(--underline-w-hover);
+}
+
+.rowLink:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+/* 폰 행 시트 안 「제출 내용」 — 폰 3차 터치 목표 44×44(SYSTEM §3 · DOM 감사 C-M3). 시트는 폰에만 열린다. */
+.sheetLink {
+  display: inline-flex;
+  align-items: center;
+  min-width: var(--touch-min);
+  min-height: var(--touch-min);
+}
+
+.emptyLine {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+}
+
+/* 04.3-17 머리 2차(링크 닫기 · 신청 취소) — 제목 · 상태 오른쪽 끝(DetailScreen 행동 자리), 막힘 이유는 버튼 옆(§7-1). */
+.headerActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-3);
+  margin-left: auto;
+}

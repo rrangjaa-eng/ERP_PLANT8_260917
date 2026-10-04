@@ -2,21 +2,23 @@
 
 import { useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { useAction } from "next-safe-action/hooks";
 import { createVendorAction, updateVendorAction, setVendorHiddenAction, archiveVendorAction } from "./actions";
 import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
-import { FormAlert } from "@/ui/form-alert/FormAlert";
+import { RowAction } from "@/ui/row-actions/RowActions";
+import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
 import { SelectHint } from "@/ui/select/Select";
 import { DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
-import { maskTail4 } from "@/lib/crypto";
+import { maskTail4 } from "@/lib/mask-tail4";
+import { fieldErrorsReason, formReason, staleFieldsReason } from "@/lib/actions/form-reason";
 import styles from "./vendors.module.css";
 
 export type EvidenceTypeOption = { value: string; label: string; description: string | null };
 export type VendorFieldDefinition = {
   id: string;
   key: string;
+  label: string;
   type: "text" | "number" | "date" | "select";
   options: string[] | null;
   required: boolean;
@@ -52,24 +54,25 @@ function customFieldDefaultValue(def: VendorFieldDefinition, value: unknown): st
   return asString;
 }
 
-// SYSTEM.md §6-3 폼 템플릿(D-39) 재사용 — 목록 위에 펼치는 폼. 03-06-PLAN.md가
+// SYSTEM.md §6-3 폼 템플릿(D-39) — 옆 패널 안 폼(04.6-04: `SidePanel` 안 `PanelForm`). 03-06-PLAN.md가
 // 약속한 대로 등록·수정 둘 다 이 폼 하나가 맡는다(vendor-form.tsx). editing이
 // 있으면 수정 모드 — page.tsx가 목록 행의 「수정」에서 ?editId=로 진입시킨다.
-// 계좌번호 입력은 값을 클라이언트 상태에만 담고 제출 후 즉시 비운다(formRef.reset).
+// 성공 뒤(UQ-8 B): 등록은 패널을 열어 둔 채 칸을 비우고(`PanelForm`이 폼 reset · 첫 칸 포커스) 수정은 닫힌다.
+// 계좌번호 입력은 값을 클라이언트 상태에만 담고 제출 후 즉시 비운다(PanelForm의 폼 reset).
 export function VendorForm({
   evidenceTypes,
   fieldDefs,
   editing = null,
-  cancelHref = "/admin/vendors",
 }: {
   evidenceTypes: EvidenceTypeOption[];
   fieldDefs: VendorFieldDefinition[];
   editing?: EditingVendor | null;
-  cancelHref?: string;
 }) {
   const isEditing = editing !== null;
   const router = useRouter();
-  const formRef = useRef<HTMLFormElement>(null);
+  const panelRef = useRef<PanelFormHandle>(null);
+  // 제출 직후 같은 틱의 두 번째 제출(Ctrl+Enter 연타)을 막는 동기 가드 — isExecuting은 다음 렌더에야 참이 된다(D7 · R15-ii).
+  const submitLockRef = useRef(false);
   const [duplicateCount, setDuplicateCount] = useState<number | null>(null);
   const [clearAccountNumber, setClearAccountNumber] = useState(false);
   // 04-25(D-93 · S14): 고른 증빙 종류의 설명 한 줄. select는 비제어 그대로
@@ -81,29 +84,35 @@ export function VendorForm({
   // 쪽 결과를 화면에 쓸지만 고른다(조건부 훅 호출 금지).
   const createState = useAction(createVendorAction, {
     onSuccess: ({ data }) => {
-      formRef.current?.reset();
       setEvidenceType("");
       setDuplicateCount(data?.duplicateCount ?? 0);
+      panelRef.current?.succeed({ status: "거래처 등록됨" });
+    },
+    onSettled: () => {
+      submitLockRef.current = false;
     },
   });
   const updateState = useAction(updateVendorAction, {
-    onSuccess: () => {
-      // 수정 완료 — 목록으로 돌아가 수정 모드를 나간다(뒤로가기가 수정
-      // 모드로 되돌아가지 않도록 replace).
-      router.replace(cancelHref);
+    // 수정 완료 — 패널이 닫힌다(PanelForm이 SidePanel의 닫기 경로로 넘긴다).
+    onSuccess: () => panelRef.current?.succeed(),
+    onSettled: () => {
+      submitLockRef.current = false;
     },
   });
-  const { result, isExecuting } = isEditing ? updateState : createState;
+  const { result, isExecuting, reset } = isEditing ? updateState : createState;
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submitLockRef.current) return;
+    submitLockRef.current = true;
     setDuplicateCount(null);
     const formData = new FormData(event.currentTarget);
 
+    // 04.5-05: 수정은 그린 칸을 빈 값까지 모두 보낸다(서버 계약 — 키 없음 = 안 바꿈 · 빈 값 = 비움). 등록은 빈 칸을 뺀다.
     const customFields: Record<string, unknown> = {};
     for (const def of fieldDefs) {
       const raw = getStringField(formData, `cf_${def.key}`);
-      if (raw === "" && !def.required) continue;
+      if (!isEditing && raw === "" && !def.required) continue;
       customFields[def.key] = raw;
     }
     const baseFields = {
@@ -142,8 +151,60 @@ export function VendorForm({
   const nameError = result.validationErrors?.name?._errors?.[0];
   const maskedCurrent = editing ? maskTail4(editing.accountNumberLast4) : "";
 
+  // 04.5-06: 칸 오류는 칸 아래에, 요약은 1차 옆 이유 자리에 — 화면 순서(기본 칸 먼저, 그다음 커스텀 칸 정렬 순서).
+  const customFieldErrors = result.validationErrors?.customFields;
+  const errorFields: { label: string; id: string }[] = [];
+  if (nameError) errorFields.push({ label: "이름", id: "name" });
+  for (const def of fieldDefs) {
+    if (customFieldErrors?.[def.key]?._errors?.[0]) errorFields.push({ label: def.label, id: `cf_${def.key}` });
+  }
+  const verb = isEditing ? "수정" : "등록";
+  const staleReason = staleFieldsReason(
+    verb,
+    Object.keys(customFieldErrors ?? {}).filter((key) => key !== "_errors"),
+    fieldDefs.map((def) => def.key),
+  );
+  const summary = !staleReason && errorFields.length > 0 ? fieldErrorsReason(verb, errorFields.map((field) => field.label)) : null;
+  const serverReason = staleReason ?? (!summary && result.serverError ? formReason(verb, result.serverError) : null);
+  const blocked = serverReason?.blocked === true;
+  const firstErrorId = errorFields[0]?.id;
+
+  function refresh() {
+    reset();
+    router.refresh();
+  }
+
+  // 칸 오류 요약 · 서버 오류 한 줄 — 행동 줄 위 전폭 한 줄 자리(PanelForm `reason`)에 그린다. 막힘이면 1차도 막는다.
+  const reasonNode = summary ? (
+    <>
+      {summary.text}
+      <Button variant="tertiary" onClick={() => document.getElementById(firstErrorId ?? "")?.focus()}>
+        {summary.fix}
+      </Button>
+    </>
+  ) : blocked ? (
+    <>
+      {serverReason?.text}
+      <Button variant="tertiary" onClick={refresh}>
+        새로 불러오기
+      </Button>
+    </>
+  ) : (
+    (serverReason?.text ?? null)
+  );
+
   return (
-    <form ref={formRef} onSubmit={handleSubmit} id="vendor-form" className="single-column">
+    <PanelForm
+      ref={panelRef}
+      id="vendor-form"
+      label={isEditing ? "거래처 수정" : "거래처 등록"}
+      intent={isEditing ? "edit" : "create"}
+      onSubmit={handleSubmit}
+      pending={isExecuting}
+      blockedReason={blocked ? serverReason?.text : undefined}
+      reason={reasonNode}
+      reasonId="vendor-form-reason"
+    >
       <TextField id="name" name="name" label="이름" required defaultValue={editing?.name} error={nameError} />
       <TextField id="businessNo" name="businessNo" label="사업자 번호" defaultValue={editing?.businessNo ?? undefined} />
 
@@ -175,16 +236,25 @@ export function VendorForm({
       {isEditing ? (
         <div className={styles.accountEdit}>
           {!clearAccountNumber ? (
-            <TextField id="accountNumber" name="accountNumber" label="새 계좌번호" autoComplete="off" />
+            <TextField
+              id="accountNumber"
+              name="accountNumber"
+              label="새 계좌번호"
+              autoComplete="off"
+              hintId="accountNumber-current"
+            />
           ) : null}
           {/* §6-3 보조 문구는 입력 아래. §8-5 「…하면 …됩니다」류 안내문을 두지
               않고 §8-6 명사형으로 현재 값만 보인다 — 무엇을 하면 되는지는
               라벨 「새 계좌번호」가 이미 말한다. */}
-          <p className={styles.hint}>{maskedCurrent ? `현재 ${maskedCurrent}` : "등록된 계좌번호 없음"}</p>
+          <p id="accountNumber-current" className={styles.hint}>
+            {maskedCurrent ? `현재 ${maskedCurrent}` : "등록된 계좌번호 없음"}
+          </p>
           {maskedCurrent ? (
             <label className={styles.clearRow}>
               <input
                 type="checkbox"
+                name="clearAccountNumber"
                 checked={clearAccountNumber}
                 onChange={(event) => setClearAccountNumber(event.target.checked)}
               />
@@ -196,50 +266,74 @@ export function VendorForm({
         <TextField id="accountNumber" name="accountNumber" label="계좌번호" autoComplete="off" />
       )}
 
-      {fieldDefs.map((def) => (
-        <VendorCustomField key={def.id} def={def} defaultValue={editing?.customFields[def.key]} />
-      ))}
+      {fieldDefs.length > 0 ? (
+        <div className={styles.customFields} data-testid="vendor-custom-fields">
+          {fieldDefs.map((def) => (
+            <VendorCustomField
+              key={def.id}
+              def={def}
+              defaultValue={editing?.customFields[def.key]}
+              error={customFieldErrors?.[def.key]?._errors?.[0]}
+            />
+          ))}
+        </div>
+      ) : null}
 
       {duplicateCount ? (
         <p className={styles.duplicateNotice}>같은 이름의 거래처가 이미 있습니다 · 확인</p>
       ) : null}
-      {result.serverError ? <FormAlert>{result.serverError}</FormAlert> : null}
-      <div className={styles.formActions}>
-        <Button type="submit" variant="primary" pending={isExecuting}>
-          {isEditing ? "거래처 수정" : "거래처 등록"}
-        </Button>
-        {/* 등록 모드도 이제 폼이 항상 열려 있지 않다(§6-1) — 열었던 방법과
-            무관하게 닫는 방법이 있어야 하므로 등록·수정 둘 다 취소를 보인다. */}
-        <Link href={cancelHref} className={styles.toggle}>
-          취소
-        </Link>
-      </div>
-    </form>
+    </PanelForm>
   );
 }
 
-function VendorCustomField({ def, defaultValue }: { def: VendorFieldDefinition; defaultValue?: unknown }) {
+function VendorCustomField({
+  def,
+  defaultValue,
+  error,
+}: {
+  def: VendorFieldDefinition;
+  defaultValue?: unknown;
+  error?: string;
+}) {
   const id = `cf_${def.key}`;
+  const errorId = `${id}-error`;
   const stringValue = customFieldDefaultValue(def, defaultValue);
   if (def.type === "select") {
+    const options = def.options ?? [];
+    // 04.5-06: 저장값이 활성 선택지에 없으면(보관된 선택지) 그 값을 「(보관됨)」 옵션으로 활성화한 채 목록 끝에 더한다 —
+    // disabled 옵션은 FormData에서 빠져 「안 바꿈」과 「지움」을 구분할 수 없다(UI-SPEC O2). 판정은 서버(05)가 한다.
+    const archivedValue = stringValue !== "" && !options.includes(stringValue) ? stringValue : null;
     return (
       <div className={styles.selectLabel}>
-        <label htmlFor={id}>{def.key}</label>
-        <select id={id} name={id} className={styles.select} defaultValue={stringValue} required={def.required}>
+        <label htmlFor={id}>{def.label}</label>
+        <select
+          id={id}
+          name={id}
+          className={error ? `${styles.select} ${styles.selectInvalid}` : styles.select}
+          defaultValue={stringValue}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
+        >
           <option value="">선택 없음</option>
-          {(def.options ?? []).map((option) => (
+          {options.map((option) => (
             <option key={option} value={option}>
               {option}
             </option>
           ))}
+          {archivedValue !== null ? <option value={archivedValue}>{archivedValue} (보관됨)</option> : null}
         </select>
+        {error ? (
+          <p id={errorId} className={styles.fieldError}>
+            {error}
+          </p>
+        ) : null}
       </div>
     );
   }
 
   const inputType = def.type === "number" ? "number" : def.type === "date" ? "date" : "text";
   return (
-    <TextField id={id} name={id} label={def.key} type={inputType} required={def.required} defaultValue={stringValue} />
+    <TextField id={id} name={id} label={def.label} type={inputType} defaultValue={stringValue} error={error} />
   );
 }
 
@@ -248,9 +342,9 @@ export function VendorHiddenToggle({ id, hidden }: { id: string; hidden: boolean
   const { execute, isExecuting } = useAction(setVendorHiddenAction);
 
   return (
-    <Button variant="tertiary" pending={isExecuting} onClick={() => execute({ id, hidden: !hidden })}>
+    <RowAction pending={isExecuting} onClick={() => execute({ id, hidden: !hidden })}>
       {hidden ? "보이기" : "숨기기"}
-    </Button>
+    </RowAction>
   );
 }
 

@@ -20,7 +20,8 @@ import { queryActionLog } from "@/repositories/action-log";
 // 컬럼에 코드 항목의 value 문자열을 담아서, value를 바꾸면 기존 거래처가
 // 조용히 고아가 되고 목록이 라벨 대신 원시 값으로 내려앉는다.
 
-const TABLE_KEY = `label_edit_${randomUUID()}`;
+// quick 261002-3mx — createCodeItem은 허용 코드표(CODE_TABLES)만 받는다. 매 테스트 TRUNCATE+시드라 항목은 id로 찾는다.
+const TABLE_KEY = "project_status";
 
 describe("코드표 항목 이름 수정 (MAST-04 「수정」)", () => {
   it("이름을 바꾸면 목록에 새 이름이 보이고 값은 그대로다", async () => {
@@ -75,5 +76,23 @@ describe("코드표 항목 이름 수정 (MAST-04 「수정」)", () => {
       label: "이름 있음",
     });
     await expect(updateCodeItemLabel(SYSTEM_VIEWER, created.id, "   ")).rejects.toThrow();
+  });
+
+  it("프로젝트 상태 다섯 값의 이름은 서버가 거부한다 — 화면이 고정 낱말을 쓰므로 (04.6-10)", async () => {
+    const items = await listCodeItems(SYSTEM_VIEWER, TABLE_KEY);
+    const seeded = items.filter((item) => ["bidding", "in_progress", "settling", "completed", "lost"].includes(item.value));
+    expect(seeded).toHaveLength(5);
+    for (const item of seeded) {
+      await expect(updateCodeItemLabel(SYSTEM_VIEWER, item.id, "다른 이름")).rejects.toThrow("프로젝트 상태 이름은 고정");
+    }
+    const after = await listCodeItems(SYSTEM_VIEWER, TABLE_KEY);
+    expect(after.find((item) => item.value === "bidding")?.label).toBe("수주중");
+  });
+
+  it("다른 코드표의 이름은 그대로 고칠 수 있다 (04.6-10 범위 밖 회귀)", async () => {
+    const [evidence] = await listCodeItems(SYSTEM_VIEWER, "evidence_type");
+    expect(evidence).toBeDefined();
+    const updated = await updateCodeItemLabel(SYSTEM_VIEWER, evidence!.id, `${evidence!.label}-수정`);
+    expect(updated?.label).toBe(`${evidence!.label}-수정`);
   });
 });

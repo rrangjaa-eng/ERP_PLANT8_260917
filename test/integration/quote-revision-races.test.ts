@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { db, pool } from "@/db/client";
-import { codeItems, quoteLines, quoteRevisions, revenueEntries, teams } from "@/db/schema";
+import { quoteLines, quoteRevisions, revenueEntries, teams } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { createAccount } from "@/domain/auth/accounts";
 import { insertVendor } from "@/repositories/vendors";
@@ -16,6 +16,7 @@ import { kstToday } from "@/lib/kst-date";
 import { saveProjectLedger } from "@/domain/projects/ledger";
 import { log } from "@/lib/log";
 import { deferred, waitForLockWaiter } from "./lock-race";
+import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 
 // 04-40(OV-3 · B-01) — 한 프로젝트의 줄 저장·새 차수가 프로젝트 행 잠금으로 한 줄로 서고, 새 차수 뒤에 온 옛 차수
 // 저장은 잠금 뒤 다시 읽은 현재 차수로 거부된다. 순서는 afterLock의 deferred와 waitForLockWaiter로 정한다(고정 지연 없음).
@@ -39,8 +40,7 @@ async function setup() {
   const client = await insertVendor(SYSTEM_VIEWER, { name: `거래처-${randomUUID()}`, normalizedName: `거래처-${randomUUID()}` });
   const [team] = await db.select().from(teams).limit(1);
   if (!team) throw new Error("시드된 팀이 없습니다");
-  const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
-  if (!subcategory) throw new Error("시드된 quote_subcategory 코드 항목이 없습니다");
+  const subcategory = await firstSelectableSubcategory();
   const project = await createProject(SYSTEM_VIEWER, { clientId: client.id, teamId: team.id, pmUserId: pm.id, name: `경합-${randomUUID()}` });
   const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
   if (!revision) throw new Error("1차 차수가 없습니다");

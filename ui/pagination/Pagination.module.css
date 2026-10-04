@@ -1,4 +1,4 @@
-/* SYSTEM.md §7-16 페이지 줄. 색·서체·radius는 토큰 참조만 쓴다(D-20). */
+/* SYSTEM.md §7-16 페이지 줄. 역할 토큰만 쓴다(스킨 A). */
 
 .pagination {
   display: flex;
@@ -10,8 +10,8 @@
 }
 
 .range {
-  font-size: var(--fs-sm);
-  color: var(--muted);
+  font-size: var(--text-aux);
+  color: var(--text-muted);
 }
 
 .pages {
@@ -41,15 +41,15 @@
   }
 }
 
-/* 번호·이전·다음 = 3차(글자 --accent + 밑줄) — ListEmpty .tertiary 선례. */
+/* 번호·이전·다음 = 3차(글자 --text-link + 밑줄) — ListEmpty .tertiary 선례. */
 .navLink,
 .pageLink {
   border: 0;
   background: none;
   padding: 0;
-  color: var(--accent);
+  color: var(--text-link);
   font-weight: var(--fw-medium);
-  font-size: var(--fs-sm);
+  font-size: var(--text-aux);
   text-decoration: underline;
   text-decoration-thickness: var(--line-w);
   text-underline-offset: var(--underline-offset);
@@ -58,24 +58,24 @@
 
 .navLink:hover,
 .pageLink:hover {
-  text-decoration-thickness: var(--line-w-strong);
+  text-decoration-thickness: var(--underline-w-hover);
 }
 
-/* 현재 번호는 --fg 700, 밑줄 없음, 링크·버튼이 아니다(§7-16). */
+/* 현재 번호는 --text-strong 700, 밑줄 없음, 링크·버튼이 아니다(§7-16). */
 .current {
-  color: var(--fg);
+  color: var(--text-strong);
   font-weight: var(--fw-bold);
-  font-size: var(--fs-sm);
+  font-size: var(--text-aux);
 }
 
 .gap {
-  color: var(--muted);
-  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-size: var(--text-aux);
 }
 
 .errorCount {
-  font-size: var(--fs-xs);
-  color: var(--danger);
+  font-size: var(--text-tag);
+  color: var(--status-danger);
 }
 
 /* 폰: 번호·이전·다음 44×44(--touch-min), 넘치면 범위 글자가 위 줄로(§7-16 폰). */

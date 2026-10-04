@@ -59,6 +59,9 @@ import {
   findLatestQuoteRevision as repoFindLatestQuoteRevision,
 } from "@/repositories/quote-revisions";
 import { listFieldDefinitions as repoListFieldDefinitions } from "@/repositories/field-definitions";
+import { findVendorNamesByIds as repoFindVendorNamesByIds } from "@/repositories/vendors";
+import { listCodeItems as repoListCodeItems } from "@/repositories/code-tables";
+import { QUOTE_SUBCATEGORY_TABLE_KEY } from "@/domain/projects/references";
 import { getSettingValue } from "@/domain/settings/registry";
 import { QUOTE_LINE_MAX_PER_REVISION } from "@/domain/settings/keys";
 
@@ -87,6 +90,7 @@ type QuoteLineProjectable = {
   subcategory: string;
   itemName: string;
   vendorId: string | null;
+  vendorName: string | null;
   quantity: number;
   unitPrice: MoneyDto;
   execution: MoneyDto;
@@ -109,7 +113,7 @@ type LineEditFacts = {
   readonlyReason: string | null;
 };
 
-function toProjectable(row: QuoteLineRow, facts: LineEditFacts): QuoteLineProjectable {
+function toProjectable(row: QuoteLineRow, facts: LineEditFacts, vendorName: string | null): QuoteLineProjectable {
   return {
     id: row.id,
     revisionId: row.revisionId,
@@ -117,6 +121,7 @@ function toProjectable(row: QuoteLineRow, facts: LineEditFacts): QuoteLineProjec
     subcategory: row.subcategory,
     itemName: row.itemName,
     vendorId: row.vendorId,
+    vendorName,
     quantity: Number(row.quantity),
     unitPrice: moneyToDto(
       moneyFromRow({
@@ -155,6 +160,8 @@ export type QuoteLineDto = {
   subcategory: string;
   itemName: string;
   vendorId: string | null;
+  // /qa ISSUE-001 — 거래처 이름(보관 · 숨김 거래처도). 선택지에 없는 거래처를 UUID 대신 이름으로 그린다.
+  vendorName: string | null;
   quantity: number;
   unitPrice: MoneyDto;
   execution: MoneyDto;
@@ -181,7 +188,10 @@ export const QUOTE_LINE_DTO_SPEC: DtoSpec<QuoteLineProjectable, QuoteLineDto> = 
     { key: "sortOrder", from: "sortOrder", infoItem: "project.value" },
     { key: "subcategory", from: "subcategory", infoItem: "project.value" },
     { key: "itemName", from: "itemName", infoItem: "project.value" },
-    { key: "vendorId", from: "vendorId", infoItem: "project.value" },
+    // quick 261001-85g(Codex 리뷰 P1) — 거래처 정보가 가려진 계급에게는 거래처 id도 싣지 않는다(저장은 서버가 기존 값을 지킨다).
+    { key: "vendorId", from: "vendorId", infoItem: ["project.value", "vendor.value"] },
+    // /qa ISSUE-001 — 거래처 이름은 거래처 정보다. 프로젝트 정보와 함께 볼 때만(all-of, 리저브 선택지와 같은 결).
+    { key: "vendorName", from: "vendorName", infoItem: ["project.value", "vendor.value"] },
     { key: "quantity", from: "quantity", infoItem: "project.value" },
     { key: "unitPrice", from: "unitPrice", infoItem: "quote.amount" },
     { key: "execution", from: "execution", infoItem: "quote.amount" },
@@ -263,6 +273,8 @@ async function projectLines(
   ctx: QuoteLineListCtx,
   linked: LinkedDocumentsByLine,
 ): Promise<QuoteLineDto[]> {
+  const vendorIds = [...new Set(rows.flatMap((row) => (row.vendorId ? [row.vendorId] : [])))];
+  const vendorNames = await repoFindVendorNamesByIds(viewer, vendorIds);
   const projectables = rows.map((row) => {
     const firstLinked = linked.get(row.id)?.[0];
     const hasLinkedDocuments = firstLinked !== undefined;
@@ -278,7 +290,7 @@ async function projectLines(
       }),
       hasLinkedDocuments,
       readonlyReason: firstLinked ? linkedDocumentReason(firstLinked.number) : null,
-    });
+    }, row.vendorId ? (vendorNames.get(row.vendorId) ?? null) : null);
   });
   return (await projectMany(viewer, projectables, QUOTE_LINE_DTO_SPEC)) as QuoteLineDto[];
 }
@@ -313,6 +325,9 @@ export type QuoteLineWriteRow = {
   isNew?: true;
   /** 04-12(사용자 D10) — 이 새 줄이 어느 줄의 복제인지(게이트의 `duplicate` 판정). */
   duplicatedFrom?: string;
+  /** /review 적대 검토(PR #135) — 화면이 이 줄을 거래처를 가린 채 그렸다(그 사이 노출표가 바뀌어도). 서버는 거래처를
+   * 기존 값(새 복제 줄은 원본 값)으로 둔다. */
+  vendorHidden?: true;
   /** 04-13 — 새 줄의 종류(없으면 quote). 기존 줄의 종류는 DB 행이 정한다. */
   lineKind?: QuoteLineKind;
   version?: number;
@@ -375,7 +390,8 @@ function currentFieldValue(row: QuoteLineRow, field: CompareField): string | num
   }
 }
 
-function formatFieldValue(field: CompareField, value: string | number | null): string {
+function formatFieldValue(field: CompareField, value: string | number | null, vendorLabel: string): string {
+  if (field === "vendorId") return vendorLabel;
   if (field === "unitPriceAmountKrw" || field === "executionAmountKrw") {
     return formatKrw(Number(value ?? 0));
   }
@@ -467,7 +483,12 @@ export function computeQuoteLineAmounts(input: {
 // 04-04 Task 2 ② — 버전이 다른 줄 하나의 칸 단위 충돌. baseline과 서버
 // 현재 값이 실제로 다른 칸만 담는다. baseline이 없으면(방어적 폴백 — 정상
 // 클라이언트는 항상 보낸다) 줄 전체를 itemName 한 칸의 충돌로 본다.
-function cellConflictsFor(rowId: string, baseline: QuoteLineBaseline | undefined, current: QuoteLineRow): CellConflict[] {
+function cellConflictsFor(
+  rowId: string,
+  baseline: QuoteLineBaseline | undefined,
+  current: QuoteLineRow,
+  vendorLabel: string,
+): CellConflict[] {
   if (!baseline) {
     return [
       {
@@ -494,7 +515,7 @@ function cellConflictsFor(rowId: string, baseline: QuoteLineBaseline | undefined
     const baselineValue = baseline[field];
     const currentValue = currentFieldValue(current, field);
     if (baselineValue === currentValue) continue; // 값이 실제로 같으면 충돌이 아니다.
-    const theirValue = formatFieldValue(field, currentValue);
+    const theirValue = formatFieldValue(field, currentValue, vendorLabel);
     conflicts.push({
       rowId,
       field,
@@ -528,6 +549,7 @@ export const quoteLineRowInputSchema = z
     id: z.string().uuid().optional(),
     isNew: z.literal(true).optional(),
     duplicatedFrom: z.string().uuid().optional(),
+    vendorHidden: z.literal(true).optional(),
     version: z.number().optional(),
     subcategory: z.string(),
     itemName: z.string().min(1, "항목명 필요 · 항목명 입력"),
@@ -599,6 +621,8 @@ const REPLAY_MISMATCH = "이미 저장된 줄과 값이 다름 · 새로 고침"
 const ARCHIVED_LINE = "보관된 줄 · 새로 고침";
 // 04-13 rev 5에 없는 방어 문구 — 기존 줄에 저장된 것과 다른 종류를 실은 요청(T-04-64).
 const KIND_CHANGED = "줄 종류는 바뀌지 않음 · 새로 고침";
+// 거래처 칸 충돌 값 — 거래처 이름을 볼 수 없거나 이름을 찾지 못하면(「다른 사람이 HH:mm에 다른 값으로 바꿈」).
+const HIDDEN_CONFLICT_VALUE = "다른 값";
 
 type QuoteLineCustomFieldsSchema = Awaited<ReturnType<typeof quoteLineCustomFieldsSchema>>;
 
@@ -612,6 +636,12 @@ export type PreparedQuoteLineSave = {
   /** 04-13 — `projects` 쓰기와 `projects.adjustment` 쓰기(입구는 둘 중 하나, 줄마다의 판정은 게이트). */
   canWrite: boolean;
   canAdjust: boolean;
+  /** 충돌 이유에 거래처 이름을 실을지 — 거래처 정보라 project.value · vendor.value를 다 볼 때만(all-of, 리저브 선택지와 같은 결). */
+  vendorNamesVisible: boolean;
+  /** quick 261001-85g — 거래처 정보(vendor.value)를 보는가. 거짓이면 요청의 거래처 칸을 읽지 않고 기존 값을 지킨다. */
+  vendorShown: boolean;
+  /** quick 261002-3mx — 고를 수 있는 견적 소분류 값(활성 · 보관 아님). 견적 줄의 소분류는 이 값이거나 기존 줄의 저장 값이다. */
+  selectableSubcategories: ReadonlySet<string>;
 };
 
 export async function prepareQuoteLineSave(
@@ -641,6 +671,17 @@ export async function prepareQuoteLineSave(
     lineCap: await getSettingValue(QUOTE_LINE_MAX_PER_REVISION),
     canWrite,
     canAdjust,
+    vendorNamesVisible: (await Promise.all([defaultVisible(viewer, "project.value"), defaultVisible(viewer, "vendor.value")])).every(Boolean),
+    vendorShown: await defaultVisible(viewer, "vendor.value"),
+    selectableSubcategories: new Set(
+      (
+        await repoListCodeItems(viewer, {
+          tableKey: QUOTE_SUBCATEGORY_TABLE_KEY,
+          scope: { rows: "all", includeArchived: false },
+          includeInactive: false,
+        })
+      ).map((row) => row.value),
+    ),
   };
 }
 
@@ -650,6 +691,18 @@ function normalizeForKind(row: QuoteLineWriteRow, kind: QuoteLineKind): QuoteLin
   if (kind === "quote") return row;
   const zeroQuote = { ...row, subcategory: kind, quantity: 1, unitPrice: { currency: "KRW" as const, amount: 0, fxRate: 1 }, unitPriceFxRateTouched: false };
   return kind === "adjustment" ? { ...zeroQuote, lineStatus: "not_started" } : zeroQuote;
+}
+
+// quick 261001-85g(Codex 리뷰 P1) — 거래처 정보가 가려진 계급은 거래처 id를 받지 못한다(DTO에 없음). 요청의 거래처 칸은
+// 읽지 않고 기존 줄은 DB 값(baseline도 같은 값 — 충돌로 보지 않는다), 복제한 새 줄은 원본 줄 값, 그 밖의 새 줄은 비운다.
+function keepHiddenVendor(
+  row: QuoteLineWriteRow,
+  current: QuoteLineRow | undefined,
+  currentById: Map<string, QuoteLineRow>,
+): QuoteLineWriteRow {
+  const source = current ?? (row.duplicatedFrom ? currentById.get(row.duplicatedFrom) : undefined);
+  const vendorId = source?.vendorId ?? undefined;
+  return { ...row, vendorId, baseline: row.baseline && current ? { ...row.baseline, vendorId: current.vendorId } : row.baseline };
 }
 
 // 04-13(엔지 리뷰 B §2 · T-04-64) — 판정·저장이 보는 종류. 새 줄은 요청 값(없으면 quote), 기존 줄은 잠근 tx로 다시 읽은
@@ -746,6 +799,8 @@ const CELL_LABELS: Record<QuoteLineField, string> = {
 
 // UI-SPEC rev 5 `Error — 셀(금액 범위, 04-40 · DR-9)` — 계산값 상한은 수량·단가 두 칸 모두.
 const QUOTE_AMOUNT_OVER = "견적가 상한 초과 · 수량이나 단가 수정";
+// quick 261002-3mx — 고를 수 없는 소분류(코드표에 없음 · 비활성 · 보관). 화면은 불러온 뒤 꺼진 분류를 아직 보일 수 있다.
+const SUBCATEGORY_NOT_LISTED = "고를 수 없는 소분류 · 새로 고침";
 
 // 04-40(엔지니어링 리뷰 B §2 · DR-9) — 단가·실행가를 한 규칙으로 정규화하고(거부는 그 칸의 셀 오류), 수량 × 단가의 계산
 // 견적가가 저장 상한 밖이면 수량·단가 두 칸 오류. 쓰기 전에 판정해 PG 22003이 화면에 닿지 않는다.
@@ -803,7 +858,7 @@ export async function writeQuoteLinesInTx(
   deps?: Partial<Pick<QuoteLineWriteDeps, "now" | "afterLock" | "recordAction">>,
 ): Promise<WrittenQuoteLines> {
   const recordAction = deps?.recordAction ?? defaultRecordAction;
-  const { revisionId, projectId, customFieldsSchema, lineCap, canWrite, canAdjust } = prepared;
+  const { revisionId, projectId, customFieldsSchema, lineCap, canWrite, canAdjust, vendorNamesVisible } = prepared;
   const archivedIds = [...new Set(input.archivedLineIds ?? [])];
   const lineIds = input.rows.map((row) => row.id);
   const denyIds = { projectId, revisionId, lineIds: [...lineIds, ...archivedIds] };
@@ -826,10 +881,34 @@ export async function writeQuoteLinesInTx(
       : { status, ...actor, hasLinkedDocuments: false, change };
   };
 
+  // 충돌 칸의 거래처 표시 — UUID가 아니라 이름. 이름을 볼 수 없는 사람에겐 이름도 id도 아닌 「다른 값」.
+  // 거래처 칸이 실제로 충돌인 줄만 모아 한 번에 조회한다(잠금 중 조회는 많아야 1회).
+  type ConflictCandidate = { rowId: string; baseline: QuoteLineBaseline | undefined; current: QuoteLineRow };
+  const conflictsWithVendorNames = async (candidates: ConflictCandidate[]): Promise<CellConflict[]> => {
+    const vendorShown = ({ baseline, current }: ConflictCandidate) =>
+      vendorNamesVisible && baseline !== undefined && baseline.vendorId !== current.vendorId;
+    const ids = [...new Set(candidates.filter(vendorShown).flatMap(({ current }) => (current.vendorId === null ? [] : [current.vendorId])))];
+    const names = ids.length > 0 ? await repoFindVendorNamesByIds(viewer, ids, tx) : new Map<string, string>();
+    return candidates.flatMap((candidate) => {
+      const { rowId, baseline, current } = candidate;
+      const label = !vendorShown(candidate)
+        ? HIDDEN_CONFLICT_VALUE
+        : current.vendorId === null
+          ? "—"
+          : (names.get(current.vendorId) ?? HIDDEN_CONFLICT_VALUE);
+      return cellConflictsFor(rowId, baseline, current, label);
+    });
+  };
+
   // (b)
   const existingIds = [...new Set([...input.rows.filter((row) => !row.isNew).map((row) => row.id), ...archivedIds])];
-  const currentRows = await repoFindQuoteLinesByIds(viewer, existingIds, { revisionId }, tx);
-  const currentById = new Map(currentRows.map((row) => [row.id, row] as const));
+  // Codex 리뷰 P1(PR #125) — 복제 원본은 요청에 없을 수 있다(바뀌지 않은 줄). 같은 차수 조회에 함께 읽어 거래처를 넘긴다.
+  const sourceIds = [...new Set(input.rows.flatMap((row) => (row.isNew && row.duplicatedFrom ? [row.duplicatedFrom] : [])))].filter(
+    (id) => !existingIds.includes(id),
+  );
+  const foundRows = await repoFindQuoteLinesByIds(viewer, [...existingIds, ...sourceIds], { revisionId }, tx);
+  const currentById = new Map(foundRows.map((row) => [row.id, row] as const));
+  const currentRows = foundRows.filter((row) => !sourceIds.includes(row.id));
   const activeBefore = await repoListQuoteLinesByRevision(viewer, revisionId, tx);
   const order = input.order
     ? orderChange(
@@ -843,7 +922,8 @@ export async function writeQuoteLinesInTx(
   const deny = (rule: string, error: Error) => {
     denial ??= { rule, error };
   };
-  if (currentRows.length !== existingIds.length) deny(MEMBERSHIP_RULE, new UserFacingError(MEMBERSHIP_MISMATCH));
+  const missingSource = sourceIds.some((id) => !currentById.has(id));
+  if (currentRows.length !== existingIds.length || missingSource) deny(MEMBERSHIP_RULE, new UserFacingError(MEMBERSHIP_MISMATCH));
   else if (currentRows.some((row) => row.archivedAt !== null)) deny(MEMBERSHIP_RULE, new UserFacingError(ARCHIVED_LINE));
   else if (order === "mismatch") deny(MEMBERSHIP_RULE, new UserFacingError(ORDER_MISMATCH));
 
@@ -855,6 +935,7 @@ export async function writeQuoteLinesInTx(
 
   // (c)(d)
   const conflicts: CellConflict[] = [];
+  const conflictCandidates: ConflictCandidate[] = [];
   const formatErrors: CellFormatError[] = [];
   const gateErrors: CellFormatError[] = [];
   // unchanged — DB 현재 값과 바뀐 칸이 없는 기존 줄(A-21). 쓰지 않는다(version·로그 그대로 — 완료 줄도 잠김 그대로).
@@ -889,14 +970,25 @@ export async function writeQuoteLinesInTx(
       if (archived) await judgeStructure(id, lineKindOf(archived), { kind: "archive", quoteAmountZero: archived.quoteAmountKrw === 0 });
     }
 
-    for (const [rowIndex, requested] of input.rows.entries()) {
+    // 04-26 · ENG-D10 — 요청의 새 줄 id 중 그 차수에 이미 있는 줄(응답을 잃은 재전송). 상한 판정과 소분류 판정이 같이 본다.
+    const newIds = input.rows.filter((row) => row.isNew).map((row) => row.id);
+    const presentById = new Map((await repoFindQuoteLinesByIds(viewer, newIds, { revisionId }, tx)).map((row) => [row.id, row] as const));
+
+    for (const [rowIndex, received] of input.rows.entries()) {
       // 04-13 — 판정·저장이 보는 종류: 기존 줄은 잠근 tx로 다시 읽은 DB 행, 새 줄만 요청 값(없으면 quote).
-      const current = requested.isNew ? undefined : currentById.get(requested.id);
+      const current = received.isNew ? undefined : currentById.get(received.id);
+      // /review 적대 검토 — 가려진 채 그린 줄은 그 사이 거래처가 보이게 바뀌었어도 거래처를 본 적이 없다.
+      const requested = prepared.vendorShown && !received.vendorHidden ? received : keepHiddenVendor(received, current, currentById);
       const resolved = resolveLineKind(requested, current && lineKindOf(current));
       if (resolved === null) deny(LINE_EDIT_RULE, new UserFacingError(KIND_CHANGED));
       const kind = resolved ?? lineKindOf(current!);
       const kindRow = normalizeForKind(requested, kind);
       formatErrors.push(...quoteLineFormatErrors(kindRow, rowIndex, kind));
+      // quick 261002-3mx — 견적 줄의 소분류는 고를 수 있는 코드이거나 저장된 값 그대로다(기존 줄 · 재전송한 새 줄). 복제한 새 줄은 새 입력.
+      const storedSubcategory = (current ?? (received.isNew ? presentById.get(received.id) : undefined))?.subcategory;
+      if (kind === "quote" && !prepared.selectableSubcategories.has(kindRow.subcategory) && kindRow.subcategory !== storedSubcategory) {
+        formatErrors.push({ rowIndex, rowId: kindRow.id, field: "subcategory", label: CELL_LABELS.subcategory, reason: SUBCATEGORY_NOT_LISTED });
+      }
       const money = normalizeLineMoney(kindRow, rowIndex);
       if (money.errors.length > 0) {
         formatErrors.push(...money.errors);
@@ -920,7 +1012,9 @@ export async function writeQuoteLinesInTx(
         throw new UserFacingError("버전 정보 필요 · 새로 고침");
       }
       if (!current) continue; // (b)가 이미 막았다.
-      if (current.version !== row.version) conflicts.push(...cellConflictsFor(row.id, row.baseline, current));
+      if (current.version !== row.version) {
+        conflictCandidates.push({ rowId: row.id, baseline: row.baseline, current });
+      }
 
       // 바뀐 칸마다 판정해 칸 오류로 싣는다(이유 = 표 위 한 줄과 같은 문자열). 바뀐 칸이 없으면 게이트를 부르지 않는다.
       const changed = changedFields(current, payload);
@@ -932,13 +1026,12 @@ export async function writeQuoteLinesInTx(
         if (!decision.allowed) gateErrors.push({ rowIndex, rowId: row.id, field, label: CELL_LABELS[field], reason: decision.reason });
       }
     }
+    conflicts.push(...(await conflictsWithVendorNames(conflictCandidates)));
     if (gateErrors.length > 0) deny(LINE_EDIT_RULE, new SaveRejectedError(conflicts, [...formatErrors, ...gateErrors]));
 
     // 04-26(D-86 · A-36 · ENG-D10) — 잠금 뒤 센 활성 줄 − 이번에 보관할 활성 줄 + 실제로 새로 들어갈 줄(그 차수에 이미
     // 있는 id는 응답을 잃은 재전송이라 새 줄이 아니다). 뒤에 온 저장은 앞 저장이 커밋한 줄까지 센다.
-    const newIds = input.rows.filter((row) => row.isNew).map((row) => row.id);
-    const presentIds = new Set((await repoFindQuoteLinesByIds(viewer, newIds, { revisionId }, tx)).map((row) => row.id));
-    const newLines = newIds.filter((id) => !presentIds.has(id)).length;
+    const newLines = newIds.filter((id) => !presentById.has(id)).length;
     const archivingActive = archivedIds.filter((id) => currentById.get(id)?.archivedAt === null).length;
     const capCtx: QuoteLineCapCtx = { newLines, countAfter: activeBefore.length - archivingActive + newLines, cap: lineCap };
     const capDecision = await gate(projectRow, LINE_CAP_RULE, capCtx);
@@ -990,8 +1083,8 @@ export async function writeQuoteLinesInTx(
       // 04-28 — 같은 트랜잭션에서 서버 현재 행을 다시 읽어, 실제로 달라진 칸만 서버 값·버전으로 싣는다.
       const [current] = await repoFindQuoteLinesByIds(viewer, [row.id], { revisionId }, tx);
       if (!current) throw new UserFacingError(MEMBERSHIP_MISMATCH);
-      const raceConflicts = cellConflictsFor(row.id, row.baseline, current);
-      throw new SaveRejectedError(raceConflicts.length > 0 ? raceConflicts : cellConflictsFor(row.id, undefined, current), []);
+      const raceConflicts = await conflictsWithVendorNames([{ rowId: row.id, baseline: row.baseline, current }]);
+      throw new SaveRejectedError(raceConflicts.length > 0 ? raceConflicts : cellConflictsFor(row.id, undefined, current, HIDDEN_CONFLICT_VALUE), []);
     }
     wrote = true;
   }
@@ -1064,7 +1157,7 @@ export async function restoreQuoteLine(
   viewer: Viewer,
   id: string,
   deps?: Partial<Pick<QuoteLineWriteDeps, "can" | "now" | "afterLock" | "recordAction">>,
-): Promise<void> {
+): Promise<{ restored: boolean }> {
   const canFn = deps?.can ?? defaultCan;
   // 04-13(OV-2 · D-83) — 입구는 저장과 같은 두 권한 중 하나. 보관된 줄의 종류로 게이트가 가른다(조정 줄은 조정 권한만).
   const [canWrite, canAdjust] = await Promise.all([canFn(viewer, PROJECTS_MENU, "write"), canFn(viewer, ADJUSTMENT_MENU, "write")]);
@@ -1076,12 +1169,13 @@ export async function restoreQuoteLine(
   // 04-26(A-19 · ENG-D3 ①) — 상한 값은 트랜잭션 전에 읽는다. 복원도 줄 하나를 더하는 것이라 같은 상한을 지난다.
   const lineCap = await getSettingValue(QUOTE_LINE_MAX_PER_REVISION);
 
-  await withTransaction(async (tx) => {
+  return withTransaction(async (tx) => {
     const projectRow = await loadProjectForGate(viewer, revision.projectId, { now: deps?.now, tx, afterLock: deps?.afterLock }, { recordAction });
     if (!projectRow) throw new RevisionNotFoundError("연결된 프로젝트 찾을 수 없음");
     const current = await repoFindQuoteLineById(viewer, id, tx);
     if (!current || current.revisionId !== line.revisionId) throw new UserFacingError(MEMBERSHIP_MISMATCH);
-    if (current.archivedAt === null) return;
+    // quick 261002-4jn — 이미 활성(낡은 화면 · 동시 복원의 뒤 사람)은 로그 없이 「이미 복원됨」.
+    if (current.archivedAt === null) return { restored: false };
 
     const firstLinked = (await linkedDocumentsByLine(viewer, current.revisionId, tx)).get(id)?.[0];
     // 04-40(OV-2 · B-01) — 잠금 뒤 같은 tx로 읽은 현재 차수: 이전 차수 줄은 되살리지 않고, 승인 차수는 합계를 바꾸는 복원을 막는다.
@@ -1104,6 +1198,7 @@ export async function restoreQuoteLine(
 
     if (!(await repoRestoreQuoteLineRow(viewer, id, tx))) throw new UserFacingError(MEMBERSHIP_MISMATCH);
     await recordAction(viewer, { actionType: "restore", entity: QUOTE_LINE_ENTITY, entityId: id }, { tx });
+    return { restored: true };
   });
 }
 

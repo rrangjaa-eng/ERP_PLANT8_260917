@@ -5,8 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { saveReservesAction, type ReserveRejectedCell } from "./actions";
-import { PageHeader } from "@/ui/page-header/PageHeader";
 import { Button } from "@/ui/button/Button";
+import { Num } from "@/ui/num/Num";
 import { Select } from "@/ui/select/Select";
 import { Table } from "@/ui/table/Table";
 import { Pagination } from "@/ui/pagination/Pagination";
@@ -917,7 +917,6 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
   };
 
   const directionLabel = (value: ReserveDirection) => DIRECTION_OPTIONS.find((option) => option.value === value)?.label ?? "";
-  const moneyText = (row: Row) => (row.isNew && row.money.amount === 0 ? "—" : formatKrw(row.amountKrw));
   const clientProjects = (row: Row) =>
     references.projects.filter((project) => project.clientId === row.clientId).map((project) => ({ value: project.id, label: project.name }));
 
@@ -948,7 +947,7 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
       priority: "p1",
       align: "right",
       editability: (row) => editability(row, "amount"),
-      cell: (row) => moneyText(row),
+      cell: (row) => <Num value={row.isNew && row.money.amount === 0 ? null : row.amountKrw} />,
       secondaryLine: (row) => formatForeignLine(row.money),
       copyText: (row) => String(row.amountKrw),
       editCell: (row, ctx) => <MoneyEditCell rowKey={row.id} initial={row.money} usdDefaultFxRate={usdDefaultFxRate} onCommit={ctx.onCommit} />,
@@ -959,7 +958,11 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
       priority: "p2",
       align: "right",
       editability: () => "readonly",
-      cell: (row) => <span className={styles.balance}>{row.balanceKrw === null ? "—" : formatKrw(row.balanceKrw)}</span>,
+      cell: (row) => (
+        <span className={styles.balance}>
+          <Num value={row.balanceKrw} />
+        </span>
+      ),
       copyText: (row) => (row.balanceKrw === null ? "" : String(row.balanceKrw)),
       pasteRole: "computed",
     },
@@ -1008,7 +1011,7 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
       priority: "p3",
       collapseBelow: 1280,
       editability: (row) => editability(row, "taxInvoiceNumber"),
-      cell: (row) => <span className={styles.taxInvoice}>{row.taxInvoiceNumber || "—"}</span>,
+      cell: (row) => <Num value={row.taxInvoiceNumber || null} />,
       copyText: (row) => row.taxInvoiceNumber ?? "",
       editCell: (row, ctx) => <TextEditCell ariaLabel="세금계산서 번호" initialValue={row.taxInvoiceNumber ?? ""} onCommit={ctx.onCommit} />,
     },
@@ -1194,12 +1197,9 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
 
   return (
     <>
-      <div className={styles.header}>
-        <div className={styles.titleBlock}>
-          <PageHeader title="리저브 대장" subtitle="클라이언트별 리저브 입출금" />
-        </div>
-        {/* 후속 결정 R1 — 1024 미만에서는 편집이 남았을 때(N ≥ 1)만 그 폭에서 저장할 수단으로 보인다. */}
-        {canWrite && (editableWidth || dirtyCount > 0) ? (
+      {/* 후속 결정 R1 — 1024 미만에서는 편집이 남았을 때(N ≥ 1)만 그 폭에서 저장할 수단으로 보인다. */}
+      {canWrite && (editableWidth || dirtyCount > 0) ? (
+        <div className={styles.saveRow}>
           <Button
             id={saveButtonId}
             type="button"
@@ -1213,8 +1213,8 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
           >
             일괄 저장{dirtyCount > 0 ? ` ${dirtyCount}` : ""}
           </Button>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
 
       {dirtyStorage.restorableCount > 0 ? (
         <p className={styles.restoreBanner}>
@@ -1303,14 +1303,14 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
 
       {/* 개정 ⑬ — 힌트 줄은 페이지 줄 아래 한 곳, 이 화면에서 실제로 되는 키만(1024 미만에서 숨는다). */}
       {canEditHere && rows.length > 0 ? (
-        <p className={styles.hintRow}>
+        <div className={styles.hintRow}>
           {HINT_ITEMS.map((item, index) => (
             <span key={item.label}>
               {index > 0 ? " · " : ""}
               {item.label} <kbd>{item.keys}</kbd>
             </span>
           ))}
-        </p>
+        </div>
       ) : null}
 
       <ConfirmDialog

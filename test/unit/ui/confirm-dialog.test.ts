@@ -1,10 +1,11 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   ConfirmDialog,
   secondaryLabelFor,
   initialFocusTarget,
+  splitRefreshTail,
   type ConfirmDialogProps,
 } from "../../../ui/confirm-dialog/ConfirmDialog";
 import styles from "../../../ui/confirm-dialog/ConfirmDialog.module.css";
@@ -13,6 +14,9 @@ import styles from "../../../ui/confirm-dialog/ConfirmDialog.module.css";
 // (environment: "node") react-dom/server의 renderToStaticMarkup으로
 // 정적 HTML을 만들어 슬롯·파생 라벨·목록형을 문자열로 단언한다. 포커스
 // 이동·Esc·showModal은 useEffect 안이라 여기서 검증하지 않는다(E2E 몫).
+
+// 「새로 고침」 다음 한 수가 useRouter를 부른다 — 앱 라우터 없이 정적 렌더하려고 막는다.
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => {} }) }));
 
 function render(props: Partial<ConfirmDialogProps> & Pick<ConfirmDialogProps, "title">) {
   const base = { open: true, onClose: () => {} };
@@ -130,6 +134,56 @@ describe("ConfirmDialog — 정적 렌더(슬롯 · 파생 라벨 · 막힌 1차
     expect(html).not.toContain(`class="${styles.reason}"`);
   });
 
+  // 04.3-17 — 다시 누를 수 있는 실패 줄(DECISIONS 2026-09-30 §7-17 실패 줄): 1차 왼쪽 막힘 자리에 role="alert", 1차는 막지 않는다.
+  it("primary.failure만 있으면 1차 왼쪽 이유 자리에 role=alert 줄이 서고 1차는 aria-disabled가 아니다", () => {
+    const html = render({
+      title: "링크 닫기",
+      primary: { label: "링크 닫기", onConfirm: () => {}, failure: "닫지 못했습니다 · 다시 시도" },
+    });
+    expect(html).toContain(`<span class="${styles.reason}" role="alert">닫지 못했습니다 · 다시 시도</span>`);
+    expect(html).not.toContain('aria-disabled="true"');
+    const actions = html.slice(html.indexOf(`class="${styles.actions}"`));
+    expect(actions.indexOf("닫지 못했습니다")).toBeLessThan(actions.indexOf(`class="${styles.primaryWrap}"`));
+  });
+
+  // 04.3-17 독립 검토 X1 · DOM 감사 C-H1 · C-M1 — 실패 줄은 막힘 묶음(.blocker) 안이다: 폰은 버튼 윗줄 전체 폭(1차 = 2차 × 2 유지),
+  // 다음 한 수(nextStep)와 함께 와도 둘 다 선다.
+  it("failure 줄은 .blocker 묶음 안에 role=alert로 선다(폰 버튼 윗줄 전체 폭)", () => {
+    const html = render({
+      title: "링크 닫기",
+      primary: { label: "링크 닫기", onConfirm: () => {}, failure: "링크 닫기 실패 · 다시 시도" },
+    });
+    expect(html).toContain(
+      `<span class="${styles.blocker}"><span class="${styles.reason}" role="alert">링크 닫기 실패 · 다시 시도</span></span>`,
+    );
+  });
+
+  it("failure + nextStep이면 실패 줄 → 다음 한 수 순서로 둘 다 서고 1차는 막지 않는다", () => {
+    const html = render({
+      title: "대조 제외",
+      primary: {
+        label: "대조 제외",
+        onConfirm: () => {},
+        failure: "대조 제외 실패 · 다시 시도",
+        nextStep: createElement("button", { type: "button" }, "다시 불러오기"),
+      },
+    });
+    expect(html).toContain(
+      `<span class="${styles.blocker}"><span class="${styles.reason}" role="alert">대조 제외 실패 · 다시 시도</span><span class="${styles.nextStep}"><button type="button">다시 불러오기</button></span></span>`,
+    );
+    expect(html).not.toContain('aria-disabled="true"');
+  });
+
+  it("disabledReason이 있으면 그것만 그리고 failure는 그리지 않는다", () => {
+    const html = render({
+      title: "링크 닫기",
+      primary: { label: "링크 닫기", onConfirm: () => {}, disabledReason: "권한 없음", failure: "닫지 못했습니다 · 다시 시도" },
+    });
+    expect(html).toContain("권한 없음");
+    expect(html).not.toContain("닫지 못했습니다");
+    expect(html).not.toContain('role="alert"');
+  });
+
   it("목록형(options)은 1차가 없고 행마다 라벨 + 설명이 있다", () => {
     const html = render({
       title: "상태 바꾸기",
@@ -160,5 +214,50 @@ describe("ConfirmDialog — 정적 렌더(슬롯 · 파생 라벨 · 막힌 1차
       primary: { label: "견적 줄 삭제", onConfirm: () => {} },
     });
     expect(html).toContain('aria-label="닫기"');
+  });
+});
+
+// 2026-10-01(SYSTEM.md §7-17 ERROR · DECISIONS.md 같은 날) — 막힘 이유 끝의 ` · 새로 고침`은 글자가 아니라 다음 한 수 3차 버튼이다.
+// 컴포넌트가 강제한다(호출처 status-change · revision-dialogs · decision-dialogs가 같은 모양).
+describe("ConfirmDialog — 「· 새로 고침」 꼬리 → 3차 「새로 고침」", () => {
+  it.each([
+    ["상태가 미수주로 바뀜 · 새로 고침", { reason: "상태가 미수주로 바뀜", refresh: true }],
+    ["다른 사람이 먼저 새 차수를 만듦 · 새로 고침", { reason: "다른 사람이 먼저 새 차수를 만듦", refresh: true }],
+    ["사유 없음 · 사유 적기", { reason: "사유 없음 · 사유 적기", refresh: false }],
+    [undefined, { reason: undefined, refresh: false }],
+  ])("splitRefreshTail(%s)", (input, expected) => {
+    expect(splitRefreshTail(input)).toEqual(expected);
+  });
+
+  it("꼬리가 있으면 이유 글자에서 떼고 다음 한 수 자리에 「새로 고침」 버튼을 둔다", () => {
+    const html = render({
+      title: "진행으로 바꾸기",
+      primary: { label: "진행으로 바꾸기", onConfirm: () => {}, disabledReason: "상태가 미수주로 바뀜 · 새로 고침" },
+    });
+    expect(html).toContain("상태가 미수주로 바뀜");
+    expect(html).not.toContain("· 새로 고침");
+    expect(html).toMatch(new RegExp(`class="${styles.nextStep}"><span[^>]*><button[^>]*><span>새로 고침</span>`));
+    expect(html).toContain('aria-disabled="true"');
+  });
+
+  it("꼬리가 있으면 호출처가 준 다음 한 수 대신 「새로 고침」이 서고, 꼬리가 없으면 호출처 것이 그대로다", () => {
+    const withStep = (disabledReason: string) =>
+      render({
+        title: "진행으로 바꾸기",
+        primary: {
+          label: "진행으로 바꾸기",
+          onConfirm: () => {},
+          disabledReason,
+          nextStep: createElement("button", { type: "button" }, "기간 적기"),
+        },
+      });
+    const tailed = withStep("상태가 진행으로 바뀜 · 새로 고침");
+    expect(tailed).not.toContain("· 새로 고침");
+    expect(tailed).toContain("<span>새로 고침</span>");
+    expect(tailed).not.toContain("기간 적기");
+    const plain = withStep("시작일 없음 · 기간 적기");
+    expect(plain).toContain("시작일 없음 · 기간 적기");
+    expect(plain).toContain(">기간 적기</button>");
+    expect(plain).not.toContain("<span>새로 고침</span>");
   });
 });

@@ -1,5 +1,4 @@
 import { notFound, redirect } from "next/navigation";
-import Link from "next/link";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
 import {
@@ -9,20 +8,21 @@ import {
   type ProjectSortKey,
 } from "@/domain/projects";
 import { listProjectFormReferences, loadCreatorDefaults, scopeCreateFormReferences } from "@/domain/projects/references";
+import { canCreateProject, projectsEmptyState } from "./create-entry";
 import { listProjectStatusCatalog } from "@/domain/projects/status";
 import { recentFxRate } from "@/domain/money/currency";
 import { firstListParam, normalizeListYear, reconcileListYear, yearOptions } from "@/domain/projects/list-view";
 import { kstToday, kstYear } from "@/lib/kst-date";
 import { LIST_PAGE_SIZE } from "@/lib/paging";
-import { PageHeader } from "@/ui/page-header/PageHeader";
+import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
+import { SidePanel } from "@/ui/side-panel/SidePanel";
 import { Pagination } from "@/ui/pagination/Pagination";
 import { pageRangeText } from "@/ui/pagination/page-window";
 import { ProjectForm } from "./project-form";
 import { ProjectsFilterBar, type ProjectFilterOption } from "./filter-bar";
 import { ProjectsTable } from "./projects-table";
 import { ListTotals } from "./list-totals";
-import styles from "./projects.module.css";
 
 // D-18과 같은 결: 캐시·별도 저장 없음.
 export const dynamic = "force-dynamic";
@@ -31,7 +31,7 @@ export const dynamic = "force-dynamic";
 // 필터 한 줄·정렬·전체 집계 합계(S1). 04-21 — 상태 값·라벨은 코드표(D-75). 04-17 — 50건씩 번호 페이지(D-91).
 
 function projectsHref(opts?: { isNew?: boolean }): string {
-  return opts?.isNew ? "/projects?new=1#project-form" : "/projects";
+  return opts?.isNew ? "/projects?new=1" : "/projects";
 }
 
 function isValidSortKey(value: string | undefined): value is ProjectSortKey {
@@ -81,9 +81,11 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   const sortDirection = firstListParam(params.dir) === "desc" ? "desc" : "asc";
   const statusLabel = statusOptions.find((option) => option.value === status)?.label;
 
-  const [references, canWrite, list, copySource, usdDefaultFxRate] = await Promise.all([
+  const [references, canWrite, canWriteVendors, canViewVendors, list, copySource, usdDefaultFxRate] = await Promise.all([
     listProjectFormReferences(session.viewer),
     can(session.viewer, "projects", "write"),
+    can(session.viewer, "admin.vendors", "write"),
+    can(session.viewer, "admin.vendors", "view"),
     loadProjectList(session.viewer, {
       status,
       statusLabel,
@@ -109,7 +111,14 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   ]);
   // /review team-scope-create-review.md P3(2) — 팀 발령이 없는 팀 업무 범위 사람은
   // 등록해도 서버가 항상 거부한다(팀 목록 0개) — §7 "할 수 없는 선택지는 보이지 않게".
-  const canCreate = canWrite && scopedCreateReferences !== null && scopedCreateReferences.teams.length > 0;
+  // quick 261001-85g — 노출표가 클라이언트 · 담당 PM 선택지를 가려 0개여도 같다(필수 칸을 고를 수 없다). 규칙은 create-entry.ts.
+  const createChoices = {
+    canWrite,
+    teamCount: scopedCreateReferences?.teams.length ?? 0,
+    pmUserCount: scopedCreateReferences?.pmUsers.length ?? 0,
+    clientCount: references.clients.length,
+  };
+  const canCreate = canCreateProject(createChoices);
   const createReferences = canCreate && showCreateForm ? scopedCreateReferences : null;
   const creatorDefaults = createReferences ? loadedCreatorDefaults : null;
 
@@ -134,28 +143,17 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
     return `/projects?${next.toString()}`;
   }
 
+  const copyKey = copySource && copyFrom ? `copy-${copyFrom}` : "new";
+
   return (
-    <>
-      <PageHeader title="프로젝트" subtitle="프로젝트 원장" />
-
-      {/* §6-1 D-39: 폼이 열려 있으면(?new=1) 아래 필터 줄의 1차 버튼을
-          렌더하지 않는다 — 한 화면에 1차는 하나다. */}
-      {createReferences ? (
-        <ProjectForm
-          key={copySource && copyFrom ? `copy-${copyFrom}` : "new"}
-          copySource={copySource && copyFrom ? { ...copySource, projectId: copyFrom } : null}
-          clients={references.clients}
-          teams={createReferences.teams}
-          pmUsers={createReferences.pmUsers}
-          creatorDefaults={creatorDefaults}
-          cancelHref={projectsHref()}
-          usdDefaultFxRate={usdDefaultFxRate}
-        />
-      ) : null}
-
-      <div className={styles.filterRow}>
-        {/* select의 defaultValue는 마운트 뒤 바뀌어도 칸에 반영되지 않는다 —
-            「필터 지우기」·뒤로 가기로 URL이 바뀌면 key로 새로 마운트한다(/qa ISSUE-001). */}
+    <ListScreen
+      title="프로젝트"
+      // DR5 A — 프로젝트가 하나도 없으면(emptyKind none) `ListScreen`이 머리 1차를 그리지 않고 아래 `empty`의 버튼 하나가 등록을 맡는다.
+      // 필터 결과 0건(default-view · filtered)은 빈 목록이 아니라 표 자리의 빈 화면이고 머리 1차가 남는다.
+      primaryAction={canCreate ? { label: "프로젝트 등록", href: projectsHref({ isNew: true }) } : undefined}
+      filters={
+        // select의 defaultValue는 마운트 뒤 바뀌어도 칸에 반영되지 않는다 —
+        // 「필터 지우기」·뒤로 가기로 URL이 바뀌면 key로 새로 마운트한다(/qa ISSUE-001).
         <ProjectsFilterBar
           key={`${status ?? ""}|${teamId ?? ""}|${year}|${search ?? ""}|${from ?? ""}|${to ?? ""}`}
           teams={references.teams}
@@ -165,39 +163,16 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
           sort={{ key: list.sort.key !== "endDate" ? list.sort.key : undefined, dir: list.sort.direction !== "asc" ? list.sort.direction : undefined }}
           hasFilter={hasFilter}
           periodErrors={periodErrors}
-          primaryAction={
-            // 볼 수 있는 프로젝트가 하나도 없으면(none) ListEmpty가 이미 같은 「프로젝트 등록」 행동을 준다 —
-            // vendors.tsx 선례와 같은 이유로 중복 CTA를 만들지 않는다. 나머지 두 빈 갈래에서는 1차가 그대로 있다.
-            canCreate && !showCreateForm && emptyKind !== "none" ? (
-              <Link href={projectsHref({ isNew: true })} className={styles.toggle}>
-                프로젝트 등록
-              </Link>
-            ) : null
-          }
         />
-      </div>
-
-      {total > 0 ? <ListTotals totals={totals} /> : null}
-
-      {emptyKind === "none" ? (
-        <ListEmpty
-          message="등록된 프로젝트가 없습니다"
-          action={canCreate ? { label: "프로젝트 등록", href: projectsHref({ isNew: true }) } : undefined}
-        />
-      ) : emptyKind === "default-view" ? (
-        <ListEmpty message={`${year}년에 걸친 프로젝트가 없습니다`} action={{ label: "전체 연도 보기", href: "/projects?year=all" }} />
-      ) : emptyKind === "filtered" ? (
-        <ListEmpty message="조건에 맞는 프로젝트가 없습니다" action={{ label: "필터 지우기", href: "/projects" }} />
-      ) : (
-        <>
-          <ProjectsTable
-            rows={rows}
-            viewYear={year === "all" ? null : year}
-            columnStep={list.columnStep}
-            sort={list.sort}
-            filterQuery={filterParams.toString()}
-            statusLabels={Object.fromEntries(statusOptions.map((option) => [option.value, option.label]))}
-          />
+      }
+      summary={total > 0 ? <ListTotals totals={totals} /> : undefined}
+      empty={
+        emptyKind === "none" ? (
+          <ListEmpty {...projectsEmptyState({ ...createChoices, vendorShown: references.vendorShown, canWriteVendors, canViewVendors })} />
+        ) : undefined
+      }
+      pagination={
+        emptyKind === null ? (
           <Pagination
             label="프로젝트"
             page={page}
@@ -205,8 +180,38 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
             href={pageHref}
             rangeText={pageRangeText({ page, pageSize: LIST_PAGE_SIZE, total, unit: "건" })}
           />
-        </>
-      )}
-    </>
+        ) : undefined
+      }
+      panel={
+        // 쓰기 권한이 없거나 등록할 수 없는 계급(팀 · 담당 PM · 클라이언트 선택지 0개)에는 패널 자체를 렌더하지 않는다(R15).
+        createReferences ? (
+          <SidePanel key={copyKey} title="프로젝트 등록" closeHref={projectsHref()}>
+            <ProjectForm
+              key={copyKey}
+              copySource={copySource && copyFrom ? { ...copySource, projectId: copyFrom } : null}
+              clients={references.clients}
+              teams={createReferences.teams}
+              pmUsers={createReferences.pmUsers}
+              creatorDefaults={creatorDefaults}
+              usdDefaultFxRate={usdDefaultFxRate}
+            />
+          </SidePanel>
+        ) : null
+      }
+    >
+      {emptyKind === "default-view" ? (
+        <ListEmpty message={`${year}년에 걸친 프로젝트가 없습니다`} action={{ label: "전체 연도 보기", href: "/projects?year=all" }} />
+      ) : emptyKind === "filtered" ? (
+        <ListEmpty message="조건에 맞는 프로젝트가 없습니다" action={{ label: "필터 지우기", href: "/projects" }} />
+      ) : emptyKind === null ? (
+        <ProjectsTable
+          rows={rows}
+          viewYear={year === "all" ? null : year}
+          columnStep={list.columnStep}
+          sort={list.sort}
+          filterQuery={filterParams.toString()}
+        />
+      ) : null}
+    </ListScreen>
   );
 }

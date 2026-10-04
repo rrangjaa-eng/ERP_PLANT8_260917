@@ -68,13 +68,18 @@ export async function insertMembership(
 
 // 미래로 예정된 발령만 삭제한다 — "미래"의 판정은 domain(cancelFutureAssignment)이
 // 하고, 이 함수는 (userId, effectiveFrom) 좌표의 행을 지우기만 한다(append-only
-// 원칙: 과거·오늘 발령을 지우는 경로는 domain에 없다).
-export async function deleteMembership(viewer: Viewer, userId: string, effectiveFrom: string): Promise<number> {
-  const deleted = await db
+// 원칙: 과거·오늘 발령을 지우는 경로는 domain에 없다). 지운 행 id(복합 UNIQUE라 많아야 한 행), 없으면 null.
+export async function deleteMembership(
+  viewer: Viewer,
+  userId: string,
+  effectiveFrom: string,
+  tx?: DbOrTx,
+): Promise<string | null> {
+  const [deleted] = await (tx ?? db)
     .delete(teamMemberships)
     .where(and(eq(teamMemberships.userId, userId), eq(teamMemberships.effectiveFrom, effectiveFrom)))
     .returning({ id: teamMemberships.id });
-  return deleted.length;
+  return deleted?.id ?? null;
 }
 
 // 04-11(사용자 D20 · 엔지 리뷰 A §1 P2): 팀장 후보 — date에 그 팀에 발령된 사람(사람마다 가장

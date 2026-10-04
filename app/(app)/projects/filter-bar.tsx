@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from "react";
+import { Fragment, useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
 import Link from "next/link";
 import { Button } from "@/ui/button/Button";
 import { filterSummary, parseListPeriod, periodOverlapsYear } from "@/domain/projects/list-view";
@@ -34,7 +34,6 @@ export function ProjectsFilterBar({
   sort,
   hasFilter,
   periodErrors = {},
-  primaryAction,
 }: {
   teams: { id: string; name: string }[];
   statusOptions: ProjectFilterOption[];
@@ -45,8 +44,6 @@ export function ProjectsFilterBar({
   hasFilter: boolean;
   /** 04-48(UX-04) — 서버가 판정한 기간 칸 오류(칸 아래 한 줄). */
   periodErrors?: { from?: string; to?: string };
-  /** 04-48(DR-26) — 오른쪽 1차 「프로젝트 등록」 자리(없으면 비움). PC는 줄 끝, 폰은 「필터」 · 요약 줄 오른쪽. */
-  primaryAction?: ReactNode;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const fromRef = useRef<HTMLInputElement>(null);
@@ -122,10 +119,10 @@ export function ProjectsFilterBar({
     // autoComplete="off": 이 폼 제출은 전체 페이지 이동이라, 뒤로 가기 때
     // 브라우저가 떠나기 직전 고른 값을 칸에 되살려 URL과 어긋난다(/qa ISSUE-001).
     <form ref={formRef} method="get" autoComplete="off" className={styles.filterFields} aria-label="프로젝트 필터">
-      {/* DR-26 — 폰 첫 화면: 검색(전폭) → 「필터」 · 요약 · 1차 → (펼치면) 네 칸 → 필터 지우기. PC(≥700): 네 칸 → 검색 →
-          필터 지우기 → 1차. 포커스 순서 = 시각 순서(SYSTEM.md §10)라 CSS 순서 바꾸기 대신 DOM이 곧 순서다 — 검색과 1차는
-          폰 자리 · PC 자리 둘에 그리고 700 중단점에서 하나만 보인다(display: none — 탭 순서 · 접근성 트리에서도 빠진다,
-          Pagination 넓은 창 · 폰 창 선례). 「필터」 · 요약 줄은 폰에만 있다. */}
+      {/* DR-26 — 폰 첫 화면: 검색(전폭) → 「필터」 · 요약 → (펼치면) 네 칸 → 필터 지우기. PC(≥700): 네 칸 → 검색 →
+          필터 지우기. 1차 「프로젝트 등록」은 `ListScreen`이 이 폼 뒤에 둔다(04.6-10 — 틀이 정한 자리). 포커스 순서 = 시각 순서
+          (SYSTEM.md §10)라 CSS 순서 바꾸기 대신 DOM이 곧 순서다 — 검색은 폰 자리 · PC 자리 둘에 그리고 700 중단점에서 하나만
+          보인다(display: none — 탭 순서 · 접근성 트리에서도 빠진다, Pagination 넓은 창 · 폰 창 선례). 「필터」 · 요약 줄은 폰에만 있다. */}
       {searchField("q", styles.phoneSlot)}
       <div className={styles.filterBar}>
         <div>
@@ -147,7 +144,6 @@ export function ProjectsFilterBar({
             </Fragment>
           ))}
         </p>
-        {primaryAction ? <div className={styles.primarySlot}>{primaryAction}</div> : null}
       </div>
 
       <div id={FILTER_FIELDS_ID} className={styles.detailFields} data-open={expanded}>
@@ -257,8 +253,6 @@ export function ProjectsFilterBar({
           필터 지우기
         </Link>
       ) : null}
-
-      {primaryAction ? <div className={`${styles.primarySlot} ${styles.wideSlot}`}>{primaryAction}</div> : null}
     </form>
   );
 }

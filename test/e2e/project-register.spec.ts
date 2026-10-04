@@ -37,7 +37,7 @@ test.describe("프로젝트 등록 → 견적 줄 저장 (Phase 4 트레이서)"
     // UX-04 — 필수 칸(프로젝트명)을 비운 제출은 입력값을 지우지 않고
     // 제출 버튼 옆에 이유를 보인다.
     await page.getByLabel("클라이언트").selectOption({ label: vendor.name });
-    const teamSelect = page.getByLabel("팀");
+    const teamSelect = page.locator("#project-form").getByLabel("팀");
     await teamSelect.selectOption({ index: 1 });
     const pmSelect = page.getByLabel("담당 PM");
     await pmSelect.selectOption({ index: 1 });
@@ -111,7 +111,7 @@ test.describe("프로젝트 등록 → 견적 줄 저장 (Phase 4 트레이서)"
 
     await page.goto("/projects?new=1");
     await page.getByLabel("클라이언트").selectOption({ label: vendor.name });
-    await page.getByLabel("팀").selectOption({ index: 1 });
+    await page.locator("#project-form").getByLabel("팀").selectOption({ index: 1 });
     await page.getByLabel("담당 PM").selectOption({ index: 1 });
     await page.getByLabel("프로젝트명").fill(`E2E375-${Date.now()}`);
     await page.getByRole("button", { name: "프로젝트 등록" }).click();
@@ -152,13 +152,13 @@ test.describe("프로젝트 등록 폼 — Ctrl+Enter 제출 · Esc 취소 (Phas
     await page.getByLabel("클라이언트").selectOption({ label: vendorName });
     await page.getByLabel("프로젝트명").fill(projectName);
     await page.getByLabel("담당 PM").selectOption({ index: 1 });
-    const teamSelect = page.getByLabel("팀");
+    const teamSelect = page.locator("#project-form").getByLabel("팀");
     await teamSelect.selectOption({ index: 1 });
     return teamSelect;
   }
 
-  // /design-review FINDING-002 — SYSTEM.md §7-2: 오류 칸은 aria-invalid이고 테두리가 --danger다(선택 칸과 같다).
-  test("(e) 프로젝트명·종료일 오류 칸은 aria-invalid이고 테두리가 --danger다", async ({ page }) => {
+  // /design-review FINDING-002 — SYSTEM.md §7-2: 오류 칸은 aria-invalid이고 테두리가 --status-danger다(선택 칸과 같다).
+  test("(e) 프로젝트명·종료일 오류 칸은 aria-invalid이고 테두리가 --status-danger다", async ({ page }) => {
     const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E오류테두리-${Date.now()}`, normalizedName: `e2e오류테두리-${Date.now()}` });
     await loginAndOpenForm(page);
     await page.getByLabel("클라이언트").selectOption({ label: vendor.name });
@@ -170,7 +170,7 @@ test.describe("프로젝트 등록 폼 — Ctrl+Enter 제출 · Esc 취소 (Phas
     await expect(name).toHaveAttribute("aria-invalid", "true");
     const danger = await page.evaluate(() => {
       const probe = document.createElement("span");
-      probe.style.color = "var(--danger)";
+      probe.style.color = "var(--status-danger)";
       document.body.append(probe);
       const color = getComputedStyle(probe).color;
       probe.remove();
@@ -503,7 +503,7 @@ test.describe("프로젝트 등록 폼 — 담당 PM · 팀 기본값 (결정 2)
 
     const form = page.locator("#project-form");
     await expect(form.locator("#pmUserId")).toHaveValue(creator.userId);
-    await expect(form.locator("#teamId")).toHaveValue(creator.teamId);
+    await expect(form.locator("#project-team")).toHaveValue(creator.teamId);
   });
 
   // /review(testing) — 복사 등록은 출처의 담당 PM·팀이 등록자 기본값보다 먼저다.
@@ -523,7 +523,7 @@ test.describe("프로젝트 등록 폼 — 담당 PM · 팀 기본값 (결정 2)
     await page.goto(`/projects?new=1&copyFrom=${source.id}`);
     const form = page.locator("#project-form");
     await expect(form.locator("#pmUserId")).toHaveValue(sourcePm.userId);
-    await expect(form.locator("#teamId")).toHaveValue(sourceTeamId);
+    await expect(form.locator("#project-team")).toHaveValue(sourceTeamId);
     expect(sourcePm.userId).not.toBe(creator.userId);
     expect(sourceTeamId).not.toBe(creator.teamId);
   });

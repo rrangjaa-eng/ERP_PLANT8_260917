@@ -4,7 +4,7 @@ import { getApprovalView, withdrawDocument } from "@/domain/approvals";
 import { submitLeave } from "@/domain/leave";
 import { seoulToday } from "@/lib/dates";
 import { leaveWeekdayRange } from "./leave-dates";
-import { delayServerActions, documentLabel, documentTitle, loginPage, setupLeaveOrg, waitForHydration } from "./leave-org";
+import { delayServerActions, documentLabel, documentTitle, expectSheetDocumentLink, loginPage, setupLeaveOrg, waitForHydration } from "./leave-org";
 
 // 04.1-05 트레이서(EXP-05 · ROADMAP 기준 3): 폰 375에서 결재함 `내 결재` 행 탭 → 결재 시트(근거 · 잔고 ·
 // 결재선) → 승인 → 처리함. 처리함 행은 문서 링크라 탭하면 문서 화면으로 간다(ENG-16 · T4). 두 번 탭은
@@ -18,6 +18,22 @@ async function tapFoldedRow(page: Page, drafterName: string): Promise<void> {
   const box = await folded.boundingBox();
   if (!box) throw new Error("접힌 줄 없음");
   await page.mouse.click(box.x + box.width * 0.6, box.y + box.height / 2);
+}
+
+
+// 04.6-17 — 토큰 이름으로 계산 값을 잰다(리터럴 px · rgb 기대 금지). 임시 요소에 `var(--토큰)`을 걸어 브라우저가 풀어 준 값을 읽는다.
+async function resolveToken(page: Page, token: string, property: "height" | "width" | "borderTopLeftRadius" | "backgroundColor"): Promise<string> {
+  return page.evaluate(
+    ([name, prop]) => {
+      const probe = document.createElement("div");
+      probe.style.setProperty(prop === "borderTopLeftRadius" ? "border-top-left-radius" : prop === "backgroundColor" ? "background-color" : prop, `var(${name})`);
+      document.body.appendChild(probe);
+      const value = getComputedStyle(probe)[prop as "height"];
+      probe.remove();
+      return value;
+    },
+    [token, property] as const,
+  );
 }
 
 test.describe("폰 결재 시트 (04.1-05)", () => {
@@ -82,6 +98,80 @@ test.describe("폰 결재 시트 (04.1-05)", () => {
     await expect(lead.getByText(number, { exact: true })).toBeVisible();
   });
 
+  // 04.6-17 DR4 A · Q1 A · D17 — 결재 시트는 직접 `<dialog>`가 아니라 공용 옆 패널(`SidePanel` 제어 형태)의 폰 시트 모양이다.
+  // 모양 기대는 계산된 역할 토큰 값과 비교한다(`--sheet-max-h` · `--radius-panel` · `--scrim-dialog`). 행동 줄은 PanelForm의 「취소 → 1차」가 아니라 2차 「반려」 → 1차 「승인」(승인이 2배 폭).
+  test("결재 시트는 공용 옆 패널의 폰 시트 모양이고 행동 줄은 반려 → 승인(2배 폭 · 취소 없음)이다(04.6-17)", async ({ browser, baseURL }) => {
+    const today = seoulToday();
+    const range = leaveWeekdayRange(today, { week: 2, weekdays: 1 });
+    const org = await setupLeaveOrg(today);
+    await submitLeave(org.drafter.viewer, { kind: "full_day", startDate: range.startDate, endDate: range.endDate, half: "" });
+
+    const lead = await loginPage(browser, baseURL, org.teamLead, PHONE);
+    await lead.goto("/approvals");
+    await lead.getByRole("button", { name: documentLabel(range) }).click();
+    const panel = lead.locator('dialog[data-ui="side-panel"]');
+    await expect(panel).toBeVisible();
+    expect(await panel.evaluate((element) => element.matches(":modal"))).toBe(true);
+    await expect(lead.getByRole("dialog")).toHaveCount(1);
+    // 올라오는 애니메이션(`sheetIn`)이 끝난 뒤의 자리를 잰다.
+    await panel.evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
+
+    const geometry = await panel.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return {
+        x: box.x,
+        width: box.width,
+        height: box.height,
+        bottom: box.bottom,
+        viewWidth: window.innerWidth,
+        viewHeight: window.innerHeight,
+        topLeft: style.borderTopLeftRadius,
+        topRight: style.borderTopRightRadius,
+        bottomLeft: style.borderBottomLeftRadius,
+        backdrop: getComputedStyle(element, "::backdrop").backgroundColor,
+      };
+    });
+    expect(geometry.x).toBe(0);
+    expect(geometry.width).toBe(geometry.viewWidth);
+    expect(geometry.bottom).toBe(geometry.viewHeight);
+    expect(geometry.height).toBeLessThanOrEqual(parseFloat(await resolveToken(lead, "--sheet-max-h", "height")) + 0.5);
+    const panelRadius = await resolveToken(lead, "--radius-panel", "borderTopLeftRadius");
+    expect([geometry.topLeft, geometry.topRight]).toEqual([panelRadius, panelRadius]);
+    expect(geometry.bottomLeft).toBe("0px");
+    expect(geometry.backdrop).toBe(await resolveToken(lead, "--scrim-dialog", "backgroundColor"));
+
+    // 행동 줄 — DOM · Tab · 시각 순서 모두 반려 → 승인, 승인이 반려의 2배 폭, 「취소」 버튼 없음(D17).
+    expect(
+      await panel.evaluate((node) =>
+        [...node.querySelectorAll("button")].map((button) => button.textContent?.trim() ?? "").filter((text) => /^(취소|반려|승인)/.test(text)),
+      ),
+    ).toEqual(["반려", expect.stringMatching(/^승인/)]);
+    const [rejectBox, approveBox] = [await panel.getByRole("button", { name: "반려" }).boundingBox(), await panel.getByRole("button", { name: /^승인/ }).boundingBox()];
+    expect((rejectBox?.x ?? 0) + (rejectBox?.width ?? 0)).toBeLessThan(approveBox?.x ?? 0);
+    expect(Math.abs((approveBox?.width ?? 0) - 2 * (rejectBox?.width ?? 0))).toBeLessThanOrEqual(1);
+    await expect(panel.getByRole("button", { name: /^취소/ })).toHaveCount(0);
+
+    // 닫으면(Esc) 포커스가 연 행으로 돌아온다.
+    await lead.keyboard.press("Escape");
+    await expect(panel).toHaveCount(0);
+    await expect(lead.getByRole("button", { name: documentLabel(range) })).toBeFocused();
+  });
+
+  test("폰 결재 시트는 결재 내용 아래에 문서 화면으로 가는 3차 링크 한 줄이 있고 첫 포커스는 승인이다(사용자 카드 답 2026-10-03 23:12 KST: 링크 넣음)", async ({ browser, baseURL }) => {
+    const today = seoulToday();
+    const range = leaveWeekdayRange(today, { week: 2, weekdays: 1 });
+    const org = await setupLeaveOrg(today);
+    const { leaveId } = await submitLeave(org.drafter.viewer, { kind: "full_day", startDate: range.startDate, endDate: range.endDate, half: "" });
+
+    const lead = await loginPage(browser, baseURL, org.teamLead, PHONE);
+    await lead.goto("/approvals");
+    await lead.getByRole("button", { name: documentLabel(range) }).click();
+    const panel = lead.locator('dialog[data-ui="side-panel"]');
+    await expect(panel).toBeVisible();
+    await expectSheetDocumentLink(panel, leaveId);
+  });
+
   test("승인을 빠르게 두 번 눌러도 처리 기록은 한 건이고, 제출 중 반려는 aria-disabled이며 disabled 속성이 없다(T7)", async ({ browser, baseURL }) => {
     const today = seoulToday();
     const range = leaveWeekdayRange(today, { week: 3, weekdays: 1 });
@@ -130,6 +220,10 @@ test.describe("폰 결재 시트 (04.1-05)", () => {
       await dialogs.getByRole("button", { name: /^반려/ }).boundingBox(),
     ];
     expect(cancelBox?.x ?? 0).toBeLessThan(rejectBox?.x ?? 0);
+    // 사용자 결정 2026-10-01 — 폰은 막힘 이유(`사유 없음 · 사유 적기`)가 버튼 윗줄이고, 버튼 줄은 1차가 2차의 2배 폭(§7-8 · §7-17).
+    const reasonBox = await dialogs.getByText("사유 없음 · 사유 적기", { exact: true }).filter({ visible: true }).boundingBox();
+    expect((reasonBox?.y ?? 0) + (reasonBox?.height ?? 0)).toBeLessThanOrEqual(cancelBox?.y ?? 0);
+    expect(Math.abs((rejectBox?.width ?? 0) - 2 * (cancelBox?.width ?? 0))).toBeLessThanOrEqual(1);
     expect(
       await dialogs.evaluate((node) =>
         [...node.querySelectorAll("button")].map((button) => button.textContent?.trim() ?? "").filter((text) => /^(취소|반려)/.test(text)),
@@ -138,6 +232,59 @@ test.describe("폰 결재 시트 (04.1-05)", () => {
     await dialogs.getByRole("button", { name: "닫기" }).click();
     await expect(dialogs).toHaveCount(0);
     await expect(trigger).toBeFocused();
+  });
+
+  // §7-17 ERROR(2026-10-01) — 서버 거부 꼬리 ` · 새로 고침`은 3차 버튼이고, 폰은 이유 · 버튼이 행동 줄 윗줄이다.
+  // 「새로 고침」은 새 화면이 그려진 뒤 닫는다(먼저 닫으면 낡은 값으로 다시 보낼 수 있다 — /review 적대적 검토).
+  test("폰 반려 확인 시트에서 서버가 거부하면 꼬리 없는 이유 + 「새로 고침」이 버튼 윗줄이고, 누르면 새 화면이 그려진 뒤 닫힌다", async ({ browser, baseURL }) => {
+    const today = seoulToday();
+    const range = leaveWeekdayRange(today, { week: 2, weekdays: 2 });
+    const org = await setupLeaveOrg(today);
+    const doc = await submitLeave(org.drafter.viewer, { kind: "full_day", startDate: range.startDate, endDate: range.endDate, half: "" });
+
+    const lead = await loginPage(browser, baseURL, org.teamLead, PHONE);
+    await lead.goto("/approvals");
+    const trigger = lead.getByRole("button", { name: documentLabel(range) });
+    await trigger.click();
+    await lead.getByRole("dialog").getByRole("button", { name: "반려" }).click();
+    const sheet = lead.getByRole("dialog");
+    await expect(sheet.getByRole("heading", { level: 2 })).toHaveText("연차 반려");
+    await sheet.getByLabel("사유").fill("일정 겹침");
+    await withdrawDocument(org.drafter.viewer, { instanceId: doc.instanceId, expectedVersion: doc.version });
+    const primary = sheet.getByRole("button", { name: /^반려/ });
+    await primary.click();
+
+    const reason = sheet.getByText(/에 회수함$/).filter({ visible: true });
+    await expect(reason).toHaveCount(1);
+    const refresh = sheet.getByRole("button", { name: "새로 고침" });
+    await expect(refresh).toBeVisible();
+    await expect(primary).toHaveAttribute("aria-disabled", "true");
+    const [reasonBox, refreshBox, cancelBox, primaryBox] = [
+      await reason.boundingBox(),
+      await refresh.boundingBox(),
+      await sheet.getByRole("button", { name: /^취소/ }).boundingBox(),
+      await primary.boundingBox(),
+    ];
+    expect(refreshBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+    expect((reasonBox?.y ?? 0) + (reasonBox?.height ?? 0)).toBeLessThanOrEqual(cancelBox?.y ?? 0);
+    expect((refreshBox?.y ?? 0) + (refreshBox?.height ?? 0)).toBeLessThanOrEqual(cancelBox?.y ?? 0);
+    expect(Math.abs((primaryBox?.width ?? 0) - 2 * (cancelBox?.width ?? 0))).toBeLessThanOrEqual(1);
+
+    // 거부가 붙은 동안 Ctrl+Enter도 막힌다 — 서버 액션이 더 가지 않는다.
+    let actionsAfterReject = 0;
+    lead.on("request", (request) => {
+      if (request.method() === "POST" && request.headers()["next-action"]) actionsAfterReject += 1;
+    });
+    await primary.focus();
+    await lead.keyboard.press("Control+Enter");
+
+    await refresh.click();
+    await expect(sheet).toHaveCount(0);
+    // 닫힌 순간 이미 새 화면이다 — 회수된 문서의 행이 없다(기다리지 않고 한 번만 잰다). 목록이 비어 다이얼로그째
+    // 사라져도 포커스는 화면 제목이다.
+    expect(await trigger.count()).toBe(0);
+    await expect(lead.locator("h1")).toBeFocused();
+    expect(actionsAfterReject).toBe(0);
   });
 
   // 사용자 결정(2026-09-29 · PR #90 A2·A3): 폰 행동 줄은 결재 시트와 문서 화면 모두 반려(2차) 왼쪽 · 승인(1차)
@@ -195,12 +342,17 @@ test.describe("폰 결재 시트 (04.1-05)", () => {
     expect(refresh?.height ?? 0).toBeGreaterThanOrEqual(44);
 
     // 본문이 행동 줄까지 내려오도록 낮은 화면에서 끝까지 내린다(높은 화면에서는 짧은 문서가 애초에 가려지지 않는다).
+    // 아래 여백은 ResizeObserver → state로 행동 줄 높이를 늦게 따라온다(충돌 줄 전 61 → 뒤 113) — 따라올 때까지 끝까지 내려 다시 잰다.
     await lead.setViewportSize({ width: 375, height: 420 });
-    await lead.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-    const content = await lead.locator("main dl").last().boundingBox();
-    const lineBox = await line.boundingBox();
-    if (!content || !lineBox) throw new Error("본문 · 충돌 줄 없음");
-    expect(content.y + content.height).toBeLessThanOrEqual(lineBox.y);
+    await expect
+      .poll(async () => {
+        await lead.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+        const content = await lead.locator("main dl").last().boundingBox();
+        const lineBox = await line.boundingBox();
+        if (!content || !lineBox) throw new Error("본문 · 충돌 줄 없음");
+        return lineBox.y - (content.y + content.height);
+      })
+      .toBeGreaterThanOrEqual(0);
   });
 
   test("폰 결재함 접힌 줄에 `기안자 · MM-DD · 잔여 초과 N일`, 문서 칸 2행은 폰에서 숨는다(UI-SPEC S4)", async ({ browser, baseURL }) => {

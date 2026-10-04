@@ -11,6 +11,7 @@ import {
   SettingNotFoundError,
   SettingKindMismatchError,
   FutureCancelOnlyError,
+  FutureValueNotFoundError,
   type SettingDef,
 } from "@/domain/settings/registry";
 import { SETTING_DEFS } from "@/domain/settings/keys";
@@ -84,6 +85,15 @@ describe("getSettingValue (ADMN-05)", () => {
     });
     expect(result).toBe(0.2);
     expect(findEffectiveValue).toHaveBeenCalledWith(expect.anything(), HISTORIZED_DEF.key, "2026-01-01");
+  });
+
+  it("이력형: 기준일을 주지 않으면 서울 오늘이다 — KST 01:30(UTC 전날)에 오늘 적용 행을 찾는다", async () => {
+    const findEffectiveValue = vi.fn().mockResolvedValue(null);
+    await getSettingValue(HISTORIZED_DEF, undefined, {
+      findEffectiveValue,
+      now: new Date("2026-10-01T16:30:00Z"), // = 2026-10-02 01:30 KST
+    });
+    expect(findEffectiveValue).toHaveBeenCalledWith(expect.anything(), HISTORIZED_DEF.key, "2026-10-02");
   });
 
   it("이력형: 해당하는 행이 없으면(모든 행이 미래) 기본값으로 떨어진다", async () => {
@@ -228,18 +238,47 @@ describe("addHistorizedValue / cancelHistorizedValue (이력형 전용)", () => 
     expect(deleteFutureHistorizedValue).not.toHaveBeenCalled();
   });
 
-  it("미래 적용 시작일은 취소가 성공하고 행동 로그를 남긴다", async () => {
+  it("미래 적용 시작일은 취소가 성공하고, 삭제와 행동 로그가 같은 트랜잭션에서 불린다", async () => {
     const can = vi.fn().mockResolvedValue(true);
-    const deleteFutureHistorizedValue = vi.fn().mockResolvedValue(undefined);
+    const deleteFutureHistorizedValue = vi.fn().mockResolvedValue(true);
     const recordAction = vi.fn().mockResolvedValue(undefined);
+    const tx = { marker: "tx" } as never;
+    const withTransaction = vi.fn((fn: (t: never) => Promise<unknown>) => fn(tx)) as never;
     const farFuture = "2999-01-01";
     await cancelHistorizedValue(viewer, HISTORIZED_DEF, farFuture, {
       can,
       deleteFutureHistorizedValue,
       recordAction,
+      withTransaction,
     });
-    expect(deleteFutureHistorizedValue).toHaveBeenCalledWith(viewer, HISTORIZED_DEF.key, farFuture);
+    expect(deleteFutureHistorizedValue).toHaveBeenCalledWith(viewer, HISTORIZED_DEF.key, farFuture, tx);
     expect(recordAction).toHaveBeenCalledTimes(1);
+    expect(recordAction).toHaveBeenCalledWith(
+      viewer,
+      expect.objectContaining({ actionType: "settings_change", entity: "settings_historized", entityId: HISTORIZED_DEF.key }),
+      { tx },
+    );
+  });
+
+  it("지운 예정값이 없으면 FutureValueNotFoundError이고 행동 로그를 남기지 않는다", async () => {
+    const can = vi.fn().mockResolvedValue(true);
+    const deleteFutureHistorizedValue = vi.fn().mockResolvedValue(false);
+    const recordAction = vi.fn().mockResolvedValue(undefined);
+    const tx = { tx: true };
+    const withTransaction = vi.fn((fn: (t: never) => Promise<unknown>) => fn(tx as never)) as never;
+    const listHistory = vi.fn().mockResolvedValue([]);
+    const attempt = cancelHistorizedValue(viewer, HISTORIZED_DEF, "2999-01-01", {
+      can,
+      deleteFutureHistorizedValue,
+      recordAction,
+      withTransaction,
+      listHistory,
+    });
+    await expect(attempt).rejects.toBeInstanceOf(FutureValueNotFoundError);
+    await expect(attempt).rejects.toThrow("취소할 예정값 찾을 수 없음");
+    expect(recordAction).not.toHaveBeenCalled();
+    // 트랜잭션이 연결을 쥔 채 전역 db로 두 번째 연결을 기다리지 않는다(PR #148 Codex 지적).
+    expect(listHistory).toHaveBeenCalledWith(viewer, HISTORIZED_DEF.key, tx);
   });
 });
 

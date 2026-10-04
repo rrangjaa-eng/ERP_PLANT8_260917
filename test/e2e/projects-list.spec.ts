@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
+import { checkPrinciples } from "./principles-check";
+import { isStrict } from "./design-principles";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { insertVendor } from "@/repositories/vendors";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
@@ -16,6 +18,7 @@ import { saveRevenue } from "@/domain/revenue";
 import { createAccount } from "@/domain/auth/accounts";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
+import { listCodeItems, updateCodeItemLabel } from "@/repositories/code-tables";
 
 async function findUserIdByEmail(email: string): Promise<string> {
   const [row] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
@@ -53,7 +56,8 @@ test.describe("프로젝트 목록 — 팀 발령 없는 사람의 빈 목록", 
       page
         .getByText("등록된 프로젝트가 없습니다")
         .or(page.getByText(/년에 걸친 프로젝트가 없습니다$/))
-        .or(page.locator("main table:not([aria-hidden='true'])")),
+        // 로딩 뼈대 표(`TableSkeleton`)는 aria-hidden 래퍼 안에 있어 표 자신에는 aria-hidden이 없다 — 래퍼 안의 표를 뺀다(빈 DB에서 스트리밍 중 뼈대와 빈 문구가 함께 잡혀 strict 위반).
+        .or(page.locator("main table:not([aria-hidden='true'] table)")),
     ).toBeVisible();
     await expect(page.getByRole("link", { name: "프로젝트 등록" })).toHaveCount(0);
   });
@@ -86,7 +90,7 @@ async function addQuoteLine(projectId: string, quote: number, execution = 0) {
       {
         id: randomUUID(),
         isNew: true,
-        subcategory: "sub-a",
+        subcategory: "stage_construction",
         itemName: "항목",
         quantity: 1,
         unitPrice: { currency: "KRW", amount: quote, fxRate: 1 },
@@ -97,10 +101,10 @@ async function addQuoteLine(projectId: string, quote: number, execution = 0) {
 }
 
 // 04-18 — 경영관리(시드 계급에 없다): 전사 범위 새 계급에 목록 보기 + 견적 · 발행 금액 노출을 준다(시드 계급을 바꾸지 않는다).
-async function makeManager(): Promise<{ email: string; password: string }> {
+async function makeManager(extraInfoItems: string[] = []): Promise<{ email: string; password: string }> {
   const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E경영관리-${randomUUID().slice(0, 8)}`, workScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
-  for (const infoItem of ["project.value", "quote.amount", "revenue.issued_amount"]) {
+  for (const infoItem of ["project.value", "quote.amount", "revenue.issued_amount", ...extraInfoItems]) {
     await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
   }
   const email = `e2e-list-mgr-${randomUUID()}@example.test`;
@@ -852,13 +856,13 @@ test.describe("프로젝트 목록 — 필터 줄 검토·감사 반영 (04-48)"
 
     await search.focus();
     const collapsed = await tabWalk(page, 4);
-    expect(collapsed.map((stop) => stop.name)).toEqual(["검색", "필터", "프로젝트 등록", "필터 지우기"]);
+    expect(collapsed.map((stop) => stop.name)).toEqual(["검색", "필터", "필터 지우기", "프로젝트 등록"]);
     expect(visualOrderViolations(collapsed)).toEqual([]);
 
     await page.getByRole("button", { name: "필터", exact: true }).click();
     await search.focus();
     const expanded = await tabWalk(page, 9);
-    expect(expanded.map((stop) => stop.name)).toEqual(["검색", "필터", "프로젝트 등록", "상태", "팀", "연도", "기간", "기간 끝", "필터 지우기"]);
+    expect(expanded.map((stop) => stop.name)).toEqual(["검색", "필터", "상태", "팀", "연도", "기간", "기간 끝", "필터 지우기", "프로젝트 등록"]);
     expect(visualOrderViolations(expanded)).toEqual([]);
 
     await page.setViewportSize({ width: 1280, height: 800 });
@@ -903,7 +907,8 @@ test.describe("프로젝트 목록 — 필터 줄 검토·감사 반영 (04-48)"
           const summaryEl = document.querySelector("[data-testid=filter-summary]")!;
           const visible = (selector: string) =>
             [...document.querySelectorAll(selector)].find((el) => el.getClientRects().length > 0 && (el as HTMLElement).offsetParent !== null);
-          const link = (text: string) => [...document.querySelectorAll("form a")].find((a) => a.textContent === text && a.getClientRects().length > 0);
+          // 1차는 `ListScreen`이 필터 폼 밖(같은 줄 오른쪽 끝)에 둔다(04.6-10) — 폼 안 링크(필터 지우기)와 함께 찾는다.
+          const link = (text: string) => [...document.querySelectorAll("form a, [data-ui='primary-button']")].find((a) => a.textContent === text && a.getClientRects().length > 0);
           return {
             summary: box(summaryEl)!,
             parts: [...summaryEl.querySelectorAll("span")].map((span) => ({ text: span.textContent, lines: span.getClientRects().length, ...box(span)! })),
@@ -934,12 +939,36 @@ test.describe("프로젝트 목록 — 필터 줄 검토·감사 반영 (04-48)"
     });
   });
 
-  test("(F2) 폰 320에서 긴 팀 이름이 있을 때 「필터」를 펼쳐도 문서 가로 스크롤이 없고 팀 칸이 화면 안이다", async ({ page }) => {
-    const pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID, withTeam: true });
-    await login(page, pm);
-    await withLongTeam(async () => {
+  test("(F2) 폰 320에서 긴 팀 이름 · 10자리 견적 금액 · 긴 이름 행이 표에 있어도 「필터」를 펼쳐 문서 가로 스크롤이 없고 팀 칸이 화면 안이다", async ({ page }) => {
+    // 필터 줄의 팀 select 이름은 team.value 공개가 있어야 보인다.
+    const manager = await makeManager(["team.value"]);
+    const pm = await setupPm();
+    const marker = `E2E폰넘침-${randomUUID().slice(0, 8)}`;
+    await login(page, manager);
+    await withLongTeam(async (teamId) => {
+      // 웨이브 6 DOM 감사 D1 — 표가 있는 상태를 잰다. 04.6-26 N-1(보이는 첫 칸 · 끝 칸 16)이 칸 +16을 더해 8자리 금액부터 320을 넘겼다.
+      // 견적은 8 · 9 · 10자리, 이름은 한국어 긴 이름과 끊기지 않는 영문 토큰, 거래처 이름은 긴 한국어다.
+      const longClient = await insertVendor(SYSTEM_VIEWER, {
+        name: `감사클라이언트가나다라마바사-${randomUUID().slice(0, 4)}`,
+        normalizedName: `e2e폰넘침거래처-${randomUUID()}`,
+      });
+      const amounts = [12_000_000, 123_456_789, 1_234_567_890];
+      const names = [`${marker}-가나다라마바사아자차카타파하거너더러머버서어저처커터퍼허`, `${marker}-abcdefghijklmnopqrstuvwxyz0123456789`, `${marker}-행`];
+      for (const [index, amount] of amounts.entries()) {
+        const project = await createProject(SYSTEM_VIEWER, {
+          clientId: longClient.id,
+          teamId,
+          pmUserId: pm.pmUserId,
+          name: names[index]!,
+          startDate: `${kstYear(new Date())}-09-05`,
+          endDate: `${kstYear(new Date())}-09-20`,
+        });
+        await addQuoteLine(project.id, amount);
+      }
       await page.setViewportSize({ width: 320, height: 640 });
-      await page.goto("/projects");
+      await page.goto(`/projects?q=${encodeURIComponent(marker)}&year=all`);
+      await expect(page.locator(`${LIST_TABLE} tbody a[data-row-link]`)).toHaveCount(3);
+      await expect(page.locator(LIST_TABLE).getByText("1,234,567,890", { exact: true }).first()).toBeVisible();
       const toggle = page.getByRole("button", { name: "필터", exact: true });
       await expect(toggle).toBeVisible();
       await toggle.click();
@@ -950,8 +979,10 @@ test.describe("프로젝트 목록 — 필터 줄 검토·감사 반영 (04-48)"
         clientWidth: document.documentElement.clientWidth,
         teamRight: document.querySelector("#teamId")!.getBoundingClientRect().right,
         fieldsRight: document.querySelector("#project-filter-fields")!.getBoundingClientRect().right,
+        tableRight: document.querySelector("main table:not([aria-hidden='true'])")!.getBoundingClientRect().right,
       }));
-      expect(m.scrollWidth).toBeLessThanOrEqual(m.clientWidth);
+      expect(m.scrollWidth, "문서 가로 스크롤").toBeLessThanOrEqual(m.clientWidth);
+      expect(m.tableRight, "표 오른쪽").toBeLessThanOrEqual(m.clientWidth);
       expect(m.fieldsRight).toBeLessThanOrEqual(m.clientWidth);
       expect(m.teamRight).toBeLessThanOrEqual(m.clientWidth);
     });
@@ -1154,5 +1185,49 @@ test.describe("프로젝트 목록 — 폰 행 전체 링크 (FINDING-015)", () 
     }, second.id);
     await page.mouse.click(collapsed.x, collapsed.y);
     await expect(page).toHaveURL(new RegExp(`/projects/${second.id}$`));
+  });
+});
+
+// 04.6-10 R11 — 목록 · 등록 패널 · 복사 패널을 막는 모드로 점검한다(`DESIGN_PRINCIPLES_STRICT`가 켜진 실행에서만 위반이 실패다).
+test.describe("프로젝트 목록 — 화면 사용성 원칙 (04.6-10 · R11)", () => {
+  test("화면 사용성 원칙(막는 모드) — 프로젝트 목록", async ({ page }) => {
+    test.setTimeout(120_000);
+    const pm = await setupPm();
+    const source = await createProject(SYSTEM_VIEWER, { clientId: pm.clientId, teamId: pm.teamId, pmUserId: pm.pmUserId, name: `E2E원칙점검-${randomUUID().slice(0, 8)}` });
+    await login(page, pm);
+    await checkPrinciples(page, ["/projects", "/projects?new=1", `/projects?new=1&copyFrom=${source.id}`], {
+      strict: isStrict(process.env.DESIGN_PRINCIPLES_STRICT),
+    });
+  });
+});
+
+// 04.6-10 — 상태 이름은 배지 고정(사용자 결정 ⑤)이다. 코드표 라벨이 DB에서 바뀌어 있어도(예전 관리자 편집) 필터 옵션·상세 부제 글자가 배지와 같다.
+test.describe("프로젝트 상태 이름 — 배지·필터·부제가 한 이름", () => {
+  const WORDS = ["수주중", "진행", "정산", "완료", "미수주"];
+
+  test("코드표 라벨을 바꿔 둬도 필터 옵션 글자는 배지 낱말이고 상세 부제도 같다", async ({ page }) => {
+    const marker = `E2E상태이름-${randomUUID().slice(0, 8)}`;
+    const pm = await setupPm();
+    const project = await createProject(SYSTEM_VIEWER, { clientId: pm.clientId, teamId: pm.teamId, pmUserId: pm.pmUserId, name: marker });
+
+    const scope = { rows: "all", includeArchived: false } as const;
+    const rows = await listCodeItems(SYSTEM_VIEWER, { tableKey: "project_status", scope, includeInactive: true });
+    const originals = rows.map((row) => ({ id: row.id, label: row.label }));
+    try {
+      for (const row of rows) await updateCodeItemLabel(SYSTEM_VIEWER, row.id, `바뀜-${row.value}`);
+
+      await login(page, pm);
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await page.goto(`/projects?q=${encodeURIComponent(marker)}&year=all`);
+      const optionTexts = await page.locator("#status option").allTextContents();
+      expect(optionTexts.filter((text) => text !== "전체 상태")).toEqual(WORDS);
+      const row = page.locator("table tbody tr", { hasText: marker });
+      await expect(row.getByText("수주중", { exact: true })).toBeVisible();
+
+      await page.goto(`/projects/${project.id}`);
+      await expect(page.getByText(/^수주중 \d{4}-\d{2}-\d{2}$/)).toBeVisible();
+    } finally {
+      for (const original of originals) await updateCodeItemLabel(SYSTEM_VIEWER, original.id, original.label);
+    }
   });
 });

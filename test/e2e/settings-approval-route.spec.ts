@@ -62,7 +62,7 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
     await expect(step1OrgUnit).toHaveValue(await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP1_ORG_UNIT_ID));
     await expect(page.getByLabel("3단 특정 부서")).toBeEnabled();
 
-    // SYSTEM.md §1-2: 비활성 글자는 --faint on --surface, 반투명은 --scrim 하나뿐. 활성 select 글자는 --fg.
+    // SYSTEM.md §1-2: 비활성 글자는 --text-faint on --surface-muted. 활성 select 글자는 --text-strong(04.6-20 — 값이 바뀌는 교체는 소유 플랜이 이미 옮겼다).
     const tokenColor = (token: string) =>
       page.evaluate((name) => {
         const probe = document.createElement("span");
@@ -78,11 +78,11 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
         return { color: computed.color, background: computed.backgroundColor, opacity: computed.opacity };
       });
     expect(await style("1단 특정 부서")).toEqual({
-      color: await tokenColor("--faint"),
-      background: await tokenColor("--surface"),
+      color: await tokenColor("--text-faint"),
+      background: await tokenColor("--surface-muted"),
       opacity: "1",
     });
-    expect((await style("3단 특정 부서")).color).toBe(await tokenColor("--fg"));
+    expect((await style("3단 특정 부서")).color).toBe(await tokenColor("--text-strong"));
   });
 
   test("자기 승인을 본인 승인으로 바꾸면 즉시 저장되고 새로 고쳐도 남는다", async ({ page }) => {
@@ -277,6 +277,31 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
     await expect(page.getByLabel("2단 담당 계급")).toHaveValue(CEO_ROLE_ID);
     await expect(page.getByRole("button", { name: "2단 저장" })).not.toHaveAccessibleDescription("바뀐 칸 없음");
     expect(await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID)).toBe(originalRole);
+  });
+
+  // PR #112 /review(Red Team) — DR-104-01과 같은 복원 줄 규칙(SYSTEM §3 3차 44×44)을 설정 화면 복원 줄에도 적용한다.
+  test("DR-104-01 — 폰 375·320 설정 복원 줄 「복원」·「버림」이 44×44 이상", async ({ page }) => {
+    await openSettingsInApp(page);
+    await page.getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+    await waitStashed(page, ["leave-2"]);
+
+    await page.goBack();
+    await expect(page).toHaveURL(/\/admin$/);
+    await page.getByRole("link", { name: "시스템 설정" }).first().click();
+    await expect(page.getByText("저장 안 한 편집 2단")).toBeVisible();
+    const main = page.getByRole("main");
+    const restore = main.getByRole("button", { name: "복원", exact: true });
+    const discard = main.getByRole("button", { name: "버림", exact: true });
+
+    for (const width of [375, 320]) {
+      await page.setViewportSize({ width, height: 800 });
+      for (const [label, locator] of [["복원", restore], ["버림", discard]] as const) {
+        const b = await locator.boundingBox();
+        if (!b) throw new Error(`${label} @${width}: bounding box 없음`);
+        expect.soft(b.height, `${label} @${width} 높이`).toBeGreaterThanOrEqual(44);
+        expect.soft(b.width, `${label} @${width} 폭`).toBeGreaterThanOrEqual(44);
+      }
+    }
   });
 
   test("복원 줄의 버림은 확인 없이 지우고 알림의 되돌리기로 되살린다", async ({ page }) => {

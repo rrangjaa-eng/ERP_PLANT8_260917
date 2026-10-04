@@ -1,20 +1,20 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 2
-current_phase_name: 디자인 시스템·앱 셸
-current_plan: Not started
-status: planning
-stopped_at: Phase 4 complete, ready to plan Phase 2
-last_updated: "2026-09-30T02:32:25.396Z"
-last_activity: 2026-09-30
-last_activity_desc: Phase 4 complete, transitioned to Phase 2
-state_head: 4c3ca814e5d7ba7cc6d7d5cc3b78b462a8e170f0
+current_phase: "04.6"
+current_phase_name: 스킨 A 적용 (INSERTED)
+current_plan: 4
+status: executing
+stopped_at: Completed 04.6-04-PLAN.md
+last_updated: "2026-10-02T18:24:19.654Z"
+last_activity: 2026-10-02
+last_activity_desc: Phase 04.6 execution started
+state_head: 76e46710c66e7d14bfeff8e0352accec8f0cb5e0
 progress:
   total_phases: 17
-  completed_phases: 2
-  total_plans: 142
-  completed_plans: 88
-  percent: 18
+  completed_phases: 7
+  total_plans: 178
+  completed_plans: 124
+  percent: 41
 ---
 
 # Project State
@@ -24,23 +24,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-30)
 
 **Core value:** 기획본부와 경영관리본부가 프로젝트마다 같은 숫자(견적·예상 비용·확정 비용·손익)를 본다. 기획본부는 계산식·근거 없이 결과 숫자로 납득하고, 경영관리·대표는 근거 줄까지 본다.
-**Current focus:** Phase 2 — 디자인 시스템·앱 셸
+**Current focus:** Phase 04.6 — 스킨 A 적용 (INSERTED)
 
 ## Current Position
 
-Phase: 2 — 디자인 시스템·앱 셸
-Current Plan: Not started
-Total Plans in Phase: 44
-Status: Ready to plan
-Last activity: 2026-09-30 - Completed quick task 260930-ee9: PR #104 /review 3차 참고 E1~E5
+Phase: 04.6 (스킨 A 적용 (INSERTED)) — EXECUTING
+Current Plan: 4
+Total Plans in Phase: 32
+Status: Ready to execute
+Last activity: 2026-10-02 — Phase 04.6 execution started
 
-Progress: [██░░░░░░░░] 18%
+Progress: [████░░░░░░] 41%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 52
+- Total plans completed: 95
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -50,6 +50,11 @@ Progress: [██░░░░░░░░] 18%
 |-------|-------|-------|----------|
 | 1 | 8 | - | - |
 | 4 | 44 | - | - |
+| 02 | 8 | - | - |
+| 03 | 7 | - | - |
+| 04.1 | 7 | - | - |
+| 04.2 | 15 | - | - |
+| 04.4 | 6 | - | - |
 
 **Recent Trend:**
 
@@ -117,6 +122,18 @@ Progress: [██░░░░░░░░] 18%
 | Phase 4 P31 | 5h(다중세션) | 3 tasks | 15 files |
 | Phase 4 P52 | 11min | 3 tasks | 5 files |
 | Phase 04 P53 | 25min | 3 tasks | 7 files |
+| Phase 04.5 P01 | 50 min | 2 tasks | 18 files |
+| Phase 04.5 P08 | 33min | 2 tasks | 15 files |
+| Phase 04.5 P09 | 16min | 1 tasks | 15 files |
+| Phase 04.5 P02 | 43min | 3 tasks | 16 files |
+| Phase 04.5 P03 | 36min | 2 tasks | 9 files |
+| Phase 04.5 P04 | 43 min | 2 tasks | 14 files |
+| Phase 04.5 P05 | 51min | 3 tasks | 12 files |
+| Phase 04.5 P06 | 25 min | 2 tasks | 8 files |
+| Phase 04.5 P07 | 66min | 3 tasks | 16 files |
+| Phase 04.6 P01 | 24min | 3 tasks | 10 files |
+| Phase 04.6 P02 | 23 min | 2 tasks | 9 files |
+| Phase 04.6 P04 | 4h | 3 tasks | 36 files |
 
 ## Accumulated Context
 
@@ -304,6 +321,25 @@ Recent decisions affecting current work:
 - [Phase 4]: 04-53: 자동 전환 진행 → 정산 판정은 gate 규칙 project.auto-settle 하나 — 리포지토리 후보 WHERE는 잠금 범위 좁히기로만 남긴다
 - [Phase 4]: 04-53: 쓰기 입구 gate 허용 뒤 종료일 null이면 project.auto_settle_gate_no_end_date로 던진다(fail-closed 타입 좁히기)
 - [Phase 4]: DR-P4-02(375 정렬 머리글 44px)는 04.6 이월 대신 Phase 4에서 해소 — quick 260929-npq(43dd5de4) · E2E mobile-touch-targets · DOM 감사 PASS 24로 UAT test 53 증거 대조 pass 재기록, gsd-core 업데이트·판정기 이식 없음 — 사용자 결정 2026-09-30 「[지시] 전환 (C)」(PR #104)
+- [Phase 04.5]: 04.5-01: 칸 생성·계급 생성 노출 행 부여는 lockCustomFieldGrants(advisory 420_701) 뒤 같은 tx로 상대 표를 읽는다 — 풀 고갈 회귀 테스트는 DB_POOL_MAX×2 동시
+- [Phase 04.5]: 04.5-01: 액션 등록부는 09 — 그때까지 action-registry-completeness에 field-definitions 임시 예외(02가 액션을 더하면 이름 목록 갱신)
+- [Phase 04.5]: 04.5-08: 오류 문구는 UI-SPEC 표의 뜻 그대로 명사형(error-copy-noun-style, DECISIONS 2026-09-26 우선) — 02·06 문구도 같은 변환 필요 — 표의 -습니다 종결이 사용자 결정 테스트와 충돌
+- [Phase 04.5]: 04.5-09: 새 메뉴 시드는 시스템 관리자 루프에서 건너뛰고 view·write를 insertPermissionIfAbsent로 — 재시드가 회수를 되살리지 않음
+- [Phase 04.5]: 04.5-09: 정보 노출표 항목 없는 관리 DTO는 누수 스캔 메뉴 게이트 DTO 축(MENU_GATED_DTOS)으로 검사
+- [Phase 04.5]: 04.5-02: 오류 문구는 UI-SPEC 뜻 그대로 명사형(error-copy-noun-style 결정 우선) · 폼은 등록/수정 래퍼가 useAction을 쥐고 공용 본문에 key를 줌 · 보관 선택지는 서버가 (저장 ∪ 보관 − 제출)로 파생 — 사용자 결정 2026-09-26 · 재검증 뒤 결과 줄 유지 · 선택지 유실 방지
+- [Phase 04.5]: 04.5-03: 커스텀 항목은 읽는 자리 넷(노출표 열·저장 허용·거래처 DTO·누수 스캔)에서 INFO_ITEMS 옆에 더함 — vendor.value AND cf.vendor.<key> 둘 다 켜져야 보임
+- [Phase 04.5]: 04.5-03: createRole이 grantCustomFieldsToRole을 동적 import(roles↔viewer 순환), 실패 시 1회 재시도 후 role.custom_field_grant_failed 경고 · 시드 계급을 더하는 뒤 페이즈는 같은 함수를 불러야 함
+- [Phase 04.5]: 04.5-04: 보관함 등록부 항목별 추가 권한 requiredMenu — 칸 정의 보관·복원은 admin.archive write AND admin.field-definitions write, 보관함 목록은 admin.field-definitions view
+- [Phase 04.5]: 04.5-04: 칸 보관·복원은 같은 UPDATE에서 version + 1(멱등은 불변) — 그 전에 연 수정 폼은 충돌
+- [Phase 04.5]: 04.5-05: 거래처 커스텀 값 저장은 행 잠금(SELECT FOR UPDATE) 뒤 같은 tx로 입력 칸 집합(vendor.value AND 활성 ∩ 칸별 보임)을 한 문으로 읽어 판정 · 합침 — 입력 칸 밖 저장값은 되살리고, 정의에 없는 키만 거부
+- [Phase 04.5]: 04.5-05: 커스텀 칸 오류 문구는 명사형 상수(preserve.ts) — 「필수 칸 비어 있음 · 값 입력」 등. 06은 UI-SPEC 원문이 아니라 이 상수를 기대값으로
+- [Phase 04.5]: 04.5-06: FieldDefinitionDto에 archivedOptions를 더하지 않음 — 「(보관됨)」은 저장값이 활성 선택지에 없을 때, 서버(05)가 최종 판정
+- [Phase 04.5]: 04.5-07: E5 셀 이유 문구 차이는 사양 오기 — 공유 PermissionGrid 문구(「저장 실패 · 다시 시도」)·폰 셀 오류 표시는 디자인 리뷰 대기
+- [Phase 04.5]: 04.5-07: origin/main 미이동(2453653)이라 병합·마이그레이션 재생성 없음 — 0023 = main 마지막 + 1, /ship 전 main이 움직이면 머지 의식 재실행
+- [Phase 04.6]: 04.6-01: 스킨 A 값은 04.6-ANSWERS.md 인용(UQ-1·2·3·6·7 A · Q1 A)만 쓰고 재질문하지 않음; DECISIONS→SYSTEM→tokens 순 커밋
+- [Phase 04.6]: 04.6-02: 표시 파일 override는 property-disallowed-list도 오늘 값으로 되돌린다(font-variant-numeric 금지가 표시 파일을 깨지 않게)
+- [Phase 04.6]: 04.6-04: 스크롤 잠금은 scrollbar-gutter 대신 열 때 잰 스크롤바 폭만 html 인라인 padding으로 채운다(짧은 페이지 배치 불변)
+- [Phase 04.6]: 04.6-04: 폰 입력 40 · 행동 줄 버튼 44 — 오케스트레이터 기본값, 사용자 확인 대기
 
 ### Pending Todos
 
@@ -319,7 +355,6 @@ Recent decisions affecting current work:
 - [Phase 11]: CERT 활성화 조건은 `/cso` 보안 감사 통과. 개인정보보호법 적용 범위·보존 기간은 감사에서 재확인(리서치 Gap). 감사 뒤 KMS 봉투 승격(Issue 7)
 - [All]: 과잉 설계 재발 방지 — 페이즈마다 "인트라넷보다 못한가"로 검증하고, 실제 사용자 로그인·입력이 있어야 완료로 본다
 - [Phase 2]: `docs/design/`(SYSTEM.md 725줄·tokens.css·DECISIONS.md·BRIEF.md·EXPLORE.md)은 **이미 있다**(2026-09-18 확인). Phase 2는 이 시스템을 앱 셸·임시 화면에 적용하는 일이며, 새 화면은 SYSTEM.md 기준을 따르고 시스템을 벗어나면 DECISIONS.md에 이유를 남긴 뒤 SYSTEM.md를 고친다
-- [Phase 2] 02-02: ci.yml/deploy.yml paths+! 트리거 실제 동작 미검증 — tokens.css 단독 PR이 CI를 타는지, 일반 소스 PR도 여전히 타는지 GitHub에서 사람이 확인해야 한다. (2)가 실패하면 즉시 paths-ignore로 되돌린다
 
 ### Quick Tasks Completed
 
@@ -349,6 +384,21 @@ Recent decisions affecting current work:
 | 260930-4xr | PR #104 /review 2차 결정 — A(2) 허용 밖 저장 구분자는 읽을 때 기본값 대체 + log.error · B 구분자 힌트 「빈칸 또는 - _ . / 중 한 글자」 · C 접두어 수락 위험 기록 · 폰 머리 줄 「일괄 저장」·「복사해 새 차수」·「프로젝트 복사」 44(PR #104 [지시] 5903477924) | 2026-09-30 | 0149cc6 | [260930-4xr-pr104-review-2-decisions-separator-read-](./quick/260930-4xr-pr104-review-2-decisions-separator-read-/) |
 | 260930-ee9 | PR #104 /review 3차 참고 E1~E5 — registry 주석 · 일괄 읽기 엄격 단위 테스트 · export 실효값 주석 · SYSTEM.md §7-1·§7-8 §3 역참조 · PC 「일괄 저장」 32 E2E 단언(동작 변경 없음, PR #104 [지시] 5909292999) | 2026-09-30 | ab9b818 | [260930-ee9-pr104-review-3-e1-e5-comment-test-doc-fi](./quick/260930-ee9-pr104-review-3-e1-e5-comment-test-doc-fi/) |
 | 260930-aq2 | 04.4 UI-REVIEW WARNING 3건: 사람 목록 id 없는 계급 key·상세·삭제(W1) · PC 배지 넘침 미재현(W2, 수치만) · 폰 「실행 기록」 줄 높이(W3) + 감사 W-A 누름 영역 | 2026-09-30 | 5d6a4a3 | [260930-aq2-04-4-ui-review-warning-3](./quick/260930-aq2-04-4-ui-review-warning-3/) |
+| 260930-f3l | 04.4 후속 과제: 사람 목록 가림 열·잠김 한 줄(DR-4·5)·등록 권한(DR-6)·행동 간격(DR-7) · 행동 로그 사람 필터 · 상태 화면 일시 tabular-nums·실행 기록 새 탭 · 3차 밑줄 hover 13곳 · 표 행 높이 --row-min | 2026-09-30 | 318657d | [260930-f3l-04-4-follow-ups-people-action-log-hidden](./quick/260930-f3l-04-4-follow-ups-people-action-log-hidden/) |
+| 260930-kc9 | F(2) PR #104 후속 — ISSUE-001 설정 힌트 aria-describedby 전부 · DR-104-01 폰 복원 줄 폭 44 · DR-104-02 비활성 1차 kbd 대비 · DR-104-03 이력 숫자 쉼표 · DR-104-04 번호 칸 §7-3 · DR-104-05 폰 머리 줄 DOM 순서 = 보이는 순서 · G1 export 주석 · G2 PC 테스트 제목 · G3 SYSTEM.md 44 예외 역참조(ISSUE-002 제외, 독립 DOM 감사 A~G PASS) | 2026-09-30 | 4d23611 | [260930-kc9-f-2-pr104-followup-issue-001-dr-104-01-0](./quick/260930-kc9-f-2-pr104-followup-issue-001-dr-104-01-0/) |
+| 260930-nto | 04.4 후속 이연 2건: 관리 표 행 행동 간격 --s-4(거래처 · 법인카드 · 코드표, FINDING-001) · 공유 Button .tertiary 글자 밑줄(FINDING-002) | 2026-09-30 | 3655ab5 | [260930-nto-row-actions-gap-and-tertiary-underline](./quick/260930-nto-row-actions-gap-and-tertiary-underline/) |
+| 261001-440 | 머지 훅 게이트 판정 — PR이 추가한 .claude/gates 로그 줄로(사용자 결정 (가), PR #112 재현) | 2026-10-01 | e702988 | [261001-440-pr-gates](./quick/261001-440-pr-gates/) |
+| 261001-3uq | Codex(ChatGPT 구독) 디자인 검토 전용 복원: install-codex.sh(pnpm·API 키 없음)·gstack codex_reviews disabled·codex-design-review.sh(4폭 스크린샷·DOM 실측·후보/실측 대조) · settings 훅·rule-guard R3·CLAUDE.md는 승인 대기(BLOCKED-CHANGES) | 2026-10-01 | 8d52843 | [261001-3uq-codex](./quick/261001-3uq-codex/) |
+| 261001-5zp | 04.3-15 독립 검토·DOM 감사 지적 반영(R1 · R3~R7 · M1) | 2026-10-01 | 1e79494 | [261001-5zp-04-3-15-review-fix-round](./quick/261001-5zp-04-3-15-review-fix-round/) |
+| 261001-81j | Codex 디자인 검토 도구 후속 수정(PR #116 봇 지적 4건: dotenv 주석·--out 하드링크·--ephemeral·숨은 요소 실측 제외) | 2026-10-01 | 2fd934b4 | [261001-81j-codex-design-review-follow-up-fixes](./quick/261001-81j-codex-design-review-follow-up-fixes/) |
+| 261001-85g | Phase 2·3 요구사항 갭 4건 — ADMN-03 등록 폼 선택지 노출표 투영 · ADMN-06 미설정 키 지난 연도 가져오기 · 미래 발령 취소 로그 · UX-01 다섯 상태 | 2026-10-01 | 746dac6 | [261001-85g-phase-2-3-gaps](./quick/261001-85g-phase-2-3-gaps/) |
+| 261001-hfi | Phase 2·3 요구사항 갭 남은 몫 — ADMN-12 공휴일 보관 · 예정값 취소 같은 tx 로그 · MAST-04 견적 분류 코드표 · OPS-05/MAST-04 분리(v1 91) | 2026-10-01 | 0787af7 | [261001-hfi-phase-2-3](./quick/261001-hfi-phase-2-3/) |
+| 261001-x6q | 04.3 legal fixes - purge deadline 04-01 and collection notice v4 | 2026-10-02 | 5da5430 | [261001-x6q-04-3-legal-fixes-purge-deadline-04-01-an](./quick/261001-x6q-04-3-legal-fixes-purge-deadline-04-01-an/) |
+| 261002-0jy | #133 Codex P2 후속 — 견적 줄 저장 충돌 거래처 이름 조회를 루프 뒤 1회 묶음으로(충돌 없으면 0회) | 2026-10-02 | 5478f90 | [261002-0jy-133-codex-p2](./quick/261002-0jy-133-codex-p2/) |
+| 261002-3c1 | 04.3 PR #88 Codex 봇 지적 3건 — 파기 갱신 안 가액 재평가(P1) · 결과 모름 요청 키를 보낸 내용에 묶음(P2 둘) · 이미 QR 생성 문구 중립화 | 2026-10-02 | dd4f1550 | [261002-3c1-04-3-codex-bot-review-fixes-purge-thresh](./quick/261002-3c1-04-3-codex-bot-review-fixes-purge-thresh/) |
+| 261002-3mx | 서버 검증 묶음 — 견적 소분류 서버 검증 · 코드표 tableKey 허용 목록 · 설정 예정값 취소 자정 경합 | 2026-10-02 | 3d61fc5 | [261002-3mx-server-validation-bundle-quote-subcatego](./quick/261002-3mx-server-validation-bundle-quote-subcatego/) |
+| 261002-4jn | 보관함 복원: 이미 복원됨 토스트 · 날짜 점유 공휴일 복원 숨김(회고 #3·#4) | 2026-10-02 | ecd2f6e | [261002-4jn-archive-restore-already-restored-toast-a](./quick/261002-4jn-archive-restore-already-restored-toast-a/) |
+| 261003-40w | DEF-1 보관함 500 수정 + SYSTEM 폼 간격 24 | 2026-10-03 | af018d7 | [261003-40w-def-1-500-system-24](./quick/261003-40w-def-1-500-system-24/) |
 
 ### Roadmap Evolution
 
@@ -368,6 +418,9 @@ Recent decisions affecting current work:
 - Phase 10 edited: edited fields: success_criteria (/review 반영: 프로젝트·견적 줄 대상 켜기와 칸별 판정·값 보존 적용을 Phase 10 기준 4에 명시)
 - Phase 9 edited: edited fields: depends_on, success_criteria(6·7), 결정 메모 — 손익을 테스트 데이터로 검증, Phase 6 뒤 착수(2026-09-27 사용자 결정)
 - Phase 04.6 inserted after Phase 4: 스킨 A 적용 — 스킨 A 정돈 + 옆 패널, 역할 토큰·lint·공용/화면 틀 컴포넌트·컴포넌트 모음·화면 사진 비교·원칙 점검 막는 모드. Phase 4 머지 뒤 착수
+- Phase 04.3 edited: edited fields: goal, success_criteria 1-5, list line — 명단 폐지 흐름 · 파기 다음 해 4월 1일 (PR #88 5942919192)
+- Phase 5 edited: edited fields: depends_on (04.5·04.6 추가 — 실행 순서 04.5 → 04.6 → 5, 사용자 결정 2026-10-02)
+- Phase 7 edited: edited fields: success_criteria (기준 5 관리자 폼 → PanelForm 옆 패널 배치, 04.6-01)
 
 ## Deferred Items
 
@@ -379,6 +432,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-30T02:40:00Z
-Stopped at: Phase 4 complete, ready to plan Phase 2
+Last session: 2026-10-02T18:24:19.319Z
+Stopped at: Completed 04.6-04-PLAN.md
 Resume file: None

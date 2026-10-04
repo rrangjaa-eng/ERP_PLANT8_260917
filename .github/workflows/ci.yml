@@ -5,11 +5,12 @@ name: ci
 # concurrency로도 합쳐지지 않는다(ref가 다르다).
 #
 # 두 갈래(2026-09-27 작업 방식 변경):
-#   draft PR  → quality 잡만(lint·typecheck·lint:sql·단위·훅 테스트, 약 2분). 실행 중인
+#   draft PR  → quality 잡만(lint·typecheck·build:cli·lint:sql·단위·훅 테스트, 약 2분). 실행 중인
 #               웨이브의 잦은 푸시가 15분짜리 전체 검사를 매번 돌리지 않게 한다.
 #   ready PR · workflow_call(main push) → integration·e2e를 각 2샤드로 병렬. 샤드 잡마다
 #               Postgres 서비스 컨테이너가 따로 떠서 공유 DB 경합(WINDOWS #25·#31)이 없다.
-# draft → ready 전환은 pull_request.types의 ready_for_review가 깨운다.
+# draft → ready 전환은 pull_request.types의 ready_for_review가 깨운다. 이때 같은 tree면
+# quality 단계는 건너뛴다(캐시 히트).
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -43,26 +44,70 @@ jobs:
   # draft PR은 이 잡만 돈다.
   quality:
     runs-on: ubuntu-latest
+    outputs:
+      app: ${{ steps.scope.outputs.app }}
     steps:
       - uses: actions/checkout@v4
+      - id: scope
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          if git diff --name-only "$BASE_SHA" HEAD | grep -qvE '^(\.claude/|CLAUDE\.md$)'; then
+            echo "app=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "app=false" >> "$GITHUB_OUTPUT"
+          fi
+      # 이미 quality를 통과한 같은 merge tree(예: 같은 커밋의 draft → ready 전환)면 아래
+      # 단계를 건너뛴다. 키가 merge 결과 tree라 base가 움직이면 전부 다시 돈다. 조회는
+      # draft→ready 전환의 첫 시도에서만 — 재실행·다른 이벤트는 전부 돈다(키는 어느 실행이든
+      # 쓸 수 있어서 건너뛰는 창을 좁게 둔다). 조회를 건너뛰면 cache-hit이 비어 가드 스텝이 돈다.
+      - id: tree
+        run: echo "tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+      - id: passed
+        if: github.event.action == 'ready_for_review' && github.run_attempt == 1
+        uses: actions/cache/restore@v4
+        with:
+          path: .quality-passed
+          key: quality-passed-${{ steps.tree.outputs.tree }}
+          lookup-only: true
       - uses: pnpm/action-setup@v4
+        if: steps.passed.outputs.cache-hit != 'true'
       - uses: actions/setup-node@v4
+        if: steps.passed.outputs.cache-hit != 'true'
         with:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+        if: steps.passed.outputs.cache-hit != 'true'
       - run: pnpm lint
+        if: steps.passed.outputs.cache-hit != 'true'
       - run: pnpm typecheck
+        if: steps.passed.outputs.cache-hit != 'true'
+      - run: pnpm build:cli
+        if: steps.passed.outputs.cache-hit != 'true'
       - run: pnpm lint:sql
+        if: steps.passed.outputs.cache-hit != 'true'
       - run: pnpm test:unit
+        if: steps.passed.outputs.cache-hit != 'true'
       # 훅 스크립트(.claude/hooks/*.sh) 회귀 — 훅 수정 PR이 3일에 6건 나왔다. jq·GNU date·
       # sed·git만 쓰므로 ubuntu-latest에서 그대로 돈다(로컬 실측 5종 약 30초).
       - name: hook tests
+        if: steps.passed.outputs.cache-hit != 'true'
         run: |
           for t in .claude/hooks/tests/*.test.sh; do
             echo "== $t"
             bash "$t"
           done
+      # actions/cache는 비어 있지 않은 경로가 필요하다 — 내용은 쓰지 않는다.
+      - run: mkdir -p .quality-passed && touch .quality-passed/ok
+        if: steps.passed.outputs.cache-hit != 'true'
+      - uses: actions/cache/save@v4
+        if: steps.passed.outputs.cache-hit != 'true'
+        with:
+          path: .quality-passed
+          key: quality-passed-${{ steps.tree.outputs.tree }}
 
   # quality 통과 뒤 Postgres 서비스 컨테이너 + 마이그레이션 + 통합 테스트를 2샤드로
   # (Eng Issue 14 — 3계층 테스트, D-01 — CI는 services.postgres로 실제 DB를 붙인다).
@@ -71,7 +116,7 @@ jobs:
   integration:
     runs-on: ubuntu-latest
     needs: quality
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    if: github.event_name != 'pull_request' || (github.event.pull_request.draft == false && needs.quality.outputs.app == 'true')
     strategy:
       fail-fast: false
       matrix:
@@ -113,8 +158,10 @@ jobs:
   # 스텝이 없다. Playwright 웹서버는 CI에서 프로덕션 빌드(pnpm build && pnpm start)를 쓴다.
   e2e:
     runs-on: ubuntu-latest
+    # 평소 13분 안쪽(설치 2–10분). playwright 설치가 멈추면 기본 360분을 기다리므로 끊는다.
+    timeout-minutes: 40
     needs: quality
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    if: github.event_name != 'pull_request' || (github.event.pull_request.draft == false && needs.quality.outputs.app == 'true')
     strategy:
       fail-fast: false
       matrix:
@@ -147,11 +194,61 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: echo "BETTER_AUTH_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
-      - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm test:e2e --shard=${{ matrix.shard }}/2
+      # 브라우저는 Playwright 버전별로 캐시한다. install은 받아 둔 브라우저를 건너뛰고 apt만 돈다.
+      # 테스트가 실패해도 남도록 설치 직후 저장한다. PR 캐시는 그 PR만 보므로 main 캐시가 공용이다.
+      - id: pw
+        run: |
+          v=$(node -p "require('@playwright/test/package.json').version")
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      - id: pw-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ env.ImageOS }}-${{ steps.pw.outputs.version }}
+      - timeout-minutes: 15
+        run: pnpm exec playwright install --with-deps chromium
+      - if: steps.pw-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ steps.pw-cache.outputs.cache-primary-key }}
+      # 2026-10-02: Playwright는 dependencies로 걸린 프로젝트(desktop·mobile-375)를 샤딩에서 빼고
+      # 맨 끝 desktop-settings(파일 1개)만 나눈다 — 전체를 `--shard=N/2` 한 번으로 돌리면 1번에 전부, 2번은 0건이었다.
+      # 그래서 desktop만 직접 샤딩한다(가중치 6:4 — 2번 샤드가 폰·설정을 더 맡는다). 폰 → 설정 결재선은
+      # 2번 샤드가 같은 DB에서 순서대로 이어 돈다(E2E_SKIP_DESKTOP: dependencies의 desktop을 비워 중복 실행을 막는다).
+      - run: pnpm test:e2e --project=desktop --shard=${{ matrix.shard }}/2
+        env:
+          PWTEST_SHARD_WEIGHTS: "6:4"
+      - if: matrix.shard == 2
+        env:
+          E2E_SKIP_DESKTOP: "1"
+        run: pnpm test:e2e --project=desktop-settings
       - if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report-${{ matrix.shard }}
-          path: playwright-report/
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
+  # 검사한 tree 기록(2026-10-01 사용자 결정 — 배포 CI 중복 제거). PR 병합 결과(refs/pull/N/merge)의
+  # tree가 quality·integration·e2e를 모두 통과했다는 표시를 아티팩트 이름으로 남긴다. deploy.yml은
+  # main 커밋 tree와 같은 기록이 있으면 CI를 다시 돌리지 않는다. if에 상태 함수가 없어 needs가
+  # 하나라도 실패·건너뜀(draft · .claude만 바뀐 PR)이면 이 잡도 돌지 않는다.
+  tested-tree:
+    runs-on: ubuntu-latest
+    needs: [quality, integration, e2e]
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - id: tree
+        run: |
+          tree=$(git rev-parse 'HEAD^{tree}')
+          echo "tree=$tree" >> "$GITHUB_OUTPUT"
+          echo "$tree" > tested-tree.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tested-tree-${{ steps.tree.outputs.tree }}
+          path: tested-tree.txt
           retention-days: 7

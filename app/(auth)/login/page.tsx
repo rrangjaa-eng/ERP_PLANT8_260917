@@ -1,6 +1,7 @@
 import { LoginForm } from "./login-form";
 import { getAuthProvider } from "@/domain/auth/provider";
 import { AuthFrame } from "@/ui/auth-frame/AuthFrame";
+import { PRIVACY_LOGIN_REASON, safeLoginNext } from "@/lib/login-next";
 
 // AUTH-04: 로그인 방식은 AUTH_PROVIDER 환경 변수 하나로 정해진다. 기본(email)은
 // 조건 한 줄이 false라 폼만 렌더된다 — 구조는 바뀌지 않는다.
@@ -8,10 +9,13 @@ import { AuthFrame } from "@/ui/auth-frame/AuthFrame";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ reason?: string }>;
+  searchParams: Promise<{ reason?: string; next?: string | string[] }>;
 }) {
   const params = await searchParams;
   const passwordChanged = params.reason === "password-changed";
+  // 04.3-14 U5 a — 개인정보 화면에서 끊겨 온 로그인(`reason=privacy-session`). 되돌아갈 곳은 허용 목록을 지난 같은 출처 경로만(아니면 /account).
+  const privacySession = params.reason === PRIVACY_LOGIN_REASON;
+  const next = safeLoginNext(typeof params.next === "string" ? params.next : undefined);
 
   return (
     <main>
@@ -23,7 +27,9 @@ export default async function LoginPage({
         {passwordChanged ? (
           <p role="status">비밀번호가 바뀌었습니다. 다시 로그인하세요.</p>
         ) : null}
-        <LoginForm showGoogle={getAuthProvider() === "google"} />
+        {/* 같은 자리 · 같은 모양(role="status") — 개인정보 화면 첫 접근 판정 · 비활동으로 끊김 */}
+        {privacySession ? <p role="status">개인정보 화면 · 다시 로그인</p> : null}
+        <LoginForm showGoogle={getAuthProvider() === "google"} next={next} />
       </AuthFrame>
     </main>
   );

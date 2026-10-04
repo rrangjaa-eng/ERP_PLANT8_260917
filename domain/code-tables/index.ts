@@ -5,6 +5,7 @@ import { project, type DtoSpec } from "@/domain/permissions/project";
 import { recordAction } from "@/domain/action-log/record";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
+import { isFixedProjectStatusLabel } from "@/domain/projects/status-word";
 import { taxRuleSchema, type TaxRule } from "@/domain/code-tables/tax-rule";
 import { CODE_ITEM_DESCRIPTION_MAX } from "@/domain/code-tables/description-max";
 import {
@@ -28,6 +29,14 @@ export class NotEvidenceTypeError extends UserFacingError {}
 export class ArchivedCodeItemError extends UserFacingError {}
 
 const EVIDENCE_TYPE_TABLE_KEY = "evidence_type";
+
+// quick 261002-3mx — 관리자가 다루는 코드표의 정본. 코드표 화면의 전환 링크와
+// createCodeItem의 서버 판정이 이 목록 하나를 쓴다(그 밖의 표 키는 거부).
+export const CODE_TABLES = [
+  { key: "project_status", label: "프로젝트 상태" },
+  { key: "evidence_type", label: "증빙 종류" },
+  { key: "quote_subcategory", label: "견적 분류" },
+] as const;
 
 // 04-10(D-93): 코드표 설명 40자 상한 — 서버 판정, DB CHECK 아님(설정 hint와
 // 같은 결). .length(UTF-16 단위)로 센다 — 한글은 글자당 1. 값 자체는
@@ -104,6 +113,7 @@ export async function createCodeItem(
 ): Promise<CodeItemDto> {
   const allowed = await can(viewer, "admin.code-tables", "write");
   if (!allowed) throw new ForbiddenError("코드표 항목 추가 권한 없음");
+  if (!CODE_TABLES.some((table) => table.key === input.tableKey)) throw new UserFacingError("없는 코드표 · 새로 고침");
 
   const description = normalizeDescription(input.description ?? "");
 
@@ -155,6 +165,10 @@ export async function updateCodeItemLabel(
   if (!current) return null;
   if (current.archivedAt !== null) {
     throw new ArchivedCodeItemError("보관된 코드표 항목은 수정할 수 없음 · 먼저 복원");
+  }
+  // 04.6-10 — 프로젝트 상태 다섯 값의 이름은 화면 전체가 고정 낱말을 쓴다(사용자 결정 ⑤). 화면에서 막는 것만으로는 부족해 서버도 거부한다.
+  if (isFixedProjectStatusLabel(current.tableKey, current.value)) {
+    throw new UserFacingError("프로젝트 상태 이름은 고정 · 변경 불가");
   }
 
   await repoUpdateCodeItemLabel(viewer, id, trimmed);

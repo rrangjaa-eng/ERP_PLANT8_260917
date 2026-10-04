@@ -9,7 +9,10 @@ import {
   confirmHolidayYear,
   deleteHoliday,
   DuplicateHolidayError,
+  HolidayNotDeletableError,
+  HolidayNotRestorableError,
   PastHolidayDateError,
+  restoreHoliday,
 } from "@/domain/holidays/admin";
 import { LUNAR_TABLE_LAST_YEAR } from "@/domain/holidays/lunar-table";
 import { LunarTableRangeError } from "@/domain/holidays/rules";
@@ -40,7 +43,6 @@ const addHolidaySchema = z.object({
 
 // 04.2-12: 수동 추가. 소급·중복·음력 표 밖 해는 도메인이 거부하고 여기서 날짜 칸
 // 오류(`원인 · 다음 행동`)로 바꾼다 — 폼은 칸 아래에 그대로 쓴다(UI-SPEC 카피 계약).
-// 삭제의 `되돌리기`도 이 액션을 같은 값으로 다시 부른다(D-4209 개정).
 export const addHolidayAction = authedActionClient
   .schema(addHolidaySchema)
   .action(async ({ parsedInput, ctx }) => {
@@ -64,12 +66,43 @@ export const addHolidayAction = authedActionClient
   });
 
 // 04.2-12: 수동 미래 행 삭제 — 확인 단계 없음(D-4209 개정). 규칙 행·오늘 이전 행 거부와
-// 대체일 재계산·로그는 도메인이 한다. 지운 행의 원래 값을 돌려줘 결과 줄 `되돌리기`가
-// addHolidayAction을 같은 값으로 부른다(되돌리기 전용 액션 없음).
+// 대체일 재계산·로그는 도메인이 한다. 삭제는 보관이라(ADMN-12) 보관함도 다시 그린다. 지운
+// 행의 id · 원래 값을 돌려줘 결과 줄 `되돌리기`가 restoreHolidayAction으로 같은 행을 복원한다.
+// 거부(규칙 행·오늘 이전 — 화면을 연 뒤 바뀐 경우)는 루트 오류(`원인 · …`)로 돌려준다(04.2 /review 이월).
+const deleteHolidaySchema = z.object({ id: z.string().uuid() });
+
 export const deleteHolidayAction = authedActionClient
-  .schema(z.object({ id: z.string().uuid() }))
+  .schema(deleteHolidaySchema)
   .action(async ({ parsedInput, ctx }) => {
-    const result = await deleteHoliday(ctx.viewer, parsedInput.id);
-    revalidatePath("/admin/holidays");
-    return result;
+    try {
+      const result = await deleteHoliday(ctx.viewer, parsedInput.id);
+      revalidatePath("/admin/holidays");
+      revalidatePath("/admin/archive");
+      return result;
+    } catch (error) {
+      if (error instanceof HolidayNotDeletableError) {
+        returnValidationErrors(deleteHolidaySchema, { _errors: [error.message] });
+      }
+      throw error;
+    }
+  });
+
+const restoreHolidaySchema = z.object({ id: z.string().uuid() });
+
+// quick 261001-hfi(ADMN-12): 결과 줄 `되돌리기` — 보관된 같은 행을 복원한다. 거부(오늘 이전 ·
+// 그 날짜에 다른 공휴일)는 루트 오류(`원인 · 복원 불가`)로 돌려준다.
+export const restoreHolidayAction = authedActionClient
+  .schema(restoreHolidaySchema)
+  .action(async ({ parsedInput, ctx }) => {
+    try {
+      const result = await restoreHoliday(ctx.viewer, parsedInput.id);
+      revalidatePath("/admin/holidays");
+      revalidatePath("/admin/archive");
+      return result;
+    } catch (error) {
+      if (error instanceof HolidayNotRestorableError) {
+        returnValidationErrors(restoreHolidaySchema, { _errors: [error.message] });
+      }
+      throw error;
+    }
   });

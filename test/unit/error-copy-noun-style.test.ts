@@ -20,6 +20,8 @@ const DEVELOPER_ONLY = [
   "lib/crypto.ts",
   "lib/gcp/",
   "repositories/",
+  // 외부 수령자 화면은 SYSTEM §6-5 예외(설계 게이트에서 확정한 높임말 문장) — DECISIONS.md 2026-09-26 「외부 수령자 화면 문구 예외」.
+  "app/c/",
 ];
 
 function sourceFiles(dir: string): string[] {
@@ -59,7 +61,7 @@ const FAILURE_SENTENCE_LINE = /^\s*([^"`<\n{]*지 못했습니다[^"`<\n]*)$/gm;
 // 끝이든 「원인 · 다음 행동」의 원인 자리(가운뎃점·쌍점 앞)든 높임말 종결이면 걸린다.
 const HONORIFIC_OR_PERIOD = /(?:습니다|세요|입니다|니다)\.?(?:$|\s*[·:])|\.$/;
 // 빈 목록 문구는 사용자 결정으로 제외(오류가 아니라 비어 있음 상태).
-const EXEMPT = new Set(["이 프로젝트에 견적 줄이 없습니다"]);
+const EXEMPT = new Set(["이 프로젝트에 견적 줄이 없습니다", "등록된 프로젝트가 없습니다", "등록된 거래처가 없습니다"]);
 // 등록부·규칙 불변식 위반 — 코드 결함일 때만 나는 일반 Error라 화면에 나가지 않는다(handleServerError allowlist).
 const DEVELOPER_ERRORS = new Set([
   "DuplicateDtoError",

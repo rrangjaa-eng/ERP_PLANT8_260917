@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { NOTIFICATIONS_HREF, type AccountEntry, type MenuLink } from "./role-menu";
 import { isCurrentPath } from "./current-path";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
+import { Num } from "@/ui/num/Num";
 import { useLogout } from "@/ui/logout/use-logout";
 import { useUnreadCount, unreadCountLabel, notificationsMenuLabel } from "./unread-count";
 import styles from "./TopBar.module.css";
@@ -174,7 +175,7 @@ export function TopBar({ topBarMenu, adminMenu, accountGroup, userName }: TopBar
             {badgeLabel ? (
               <>
                 <span aria-hidden="true" className={styles.badge}>
-                  {badgeLabel}
+                  <Num value={badgeLabel} />
                 </span>
                 <span className="sr-only"> · 안 읽은 알림 {unreadCount}건</span>
               </>

@@ -1,6 +1,6 @@
-import { and, eq, ilike, isNull, isNotNull } from "drizzle-orm";
+import { and, eq, ilike, inArray, isNull, isNotNull } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
-import { db } from "@/db/client";
+import { db, type DbOrTx } from "@/db/client";
 import { vendors } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 import type { Scope } from "@/domain/permissions/scope-for";
@@ -47,6 +47,21 @@ export async function searchVendorsByNormalizedName(
 export async function findVendorById(viewer: Viewer, id: string): Promise<VendorRow | null> {
   const [row] = await db.select().from(vendors).where(eq(vendors.id, id)).limit(1);
   return row ?? null;
+}
+
+// 04.5-05(T-04.5-41): 커스텀 값 합치기 · 쓰기를 한 트랜잭션으로 묶는 행 잠금 조회 — 트랜잭션 안에서만 부른다(tx 필수).
+// 키를 바꾸지 않는 갱신이라 NO KEY UPDATE — 이 거래처를 가리키는 FK 검사(KEY SHARE)를 막지 않는다(선례 reserve-entries.ts).
+export async function findVendorByIdForUpdate(viewer: Viewer, id: string, tx: DbOrTx): Promise<VendorRow | null> {
+  const [row] = await tx.select().from(vendors).where(eq(vendors.id, id)).for("no key update");
+  return row ?? null;
+}
+
+// /qa ISSUE-001 — 견적 줄이 이미 가리키는 거래처의 이름(id → 이름). 보관 · 숨김도 넣는다 — 선택지가 아니라
+// 이미 고른 값의 이름이다. 노출 판정은 호출자가 한다(DTO 명세 projectMany · 충돌 이유는 vendorNamesVisible).
+export async function findVendorNamesByIds(viewer: Viewer, ids: string[], tx: DbOrTx = db): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map();
+  const rows = await tx.select({ id: vendors.id, name: vendors.name }).from(vendors).where(inArray(vendors.id, ids));
+  return new Map(rows.map((row) => [row.id, row.name]));
 }
 
 // 등록 시 중복 후보 경고에 쓴다 — 이름 unique 제약이 없으므로(같은 이름의
@@ -102,8 +117,8 @@ export type VendorUpdateInput = Partial<{
 
 // 계좌번호를 바꾸지 않는 일반 갱신 — 암호문·뒤 4자리 두 컬럼을 아예 건드리지
 // 않는다(T-03-33과 같은 결: 두 번의 쓰기로 나누지 않는다).
-export async function updateVendor(viewer: Viewer, id: string, input: VendorUpdateInput): Promise<void> {
-  await db
+export async function updateVendor(viewer: Viewer, id: string, input: VendorUpdateInput, tx: DbOrTx = db): Promise<void> {
+  await tx
     .update(vendors)
     .set({ ...input, updatedAt: new Date() })
     .where(eq(vendors.id, id));
@@ -131,16 +146,18 @@ export async function setVendorHidden(viewer: Viewer, id: string, hidden: boolea
 }
 
 // 보관·복원 둘 다 조건부 UPDATE로 멱등·경합 안전을 확보한다(repositories/roles.ts와 같은 패턴).
-export async function setVendorArchived(viewer: Viewer, id: string, value: boolean): Promise<void> {
-  if (value) {
-    await db
-      .update(vendors)
-      .set({ archivedAt: new Date(), archivedBy: viewer.id })
-      .where(and(eq(vendors.id, id), isNull(vendors.archivedAt)));
-  } else {
-    await db
-      .update(vendors)
-      .set({ archivedAt: null, archivedBy: null })
-      .where(and(eq(vendors.id, id), isNotNull(vendors.archivedAt)));
-  }
+export async function setVendorArchived(viewer: Viewer, id: string, value: boolean): Promise<boolean> {
+  // 조건부 갱신이 실제로 바꾼 행이 있으면 참 — 범용 복원이 「이미 복원됨」 · 로그를 이 결과로 정한다(PR #149).
+  const rows = value
+    ? await db
+        .update(vendors)
+        .set({ archivedAt: new Date(), archivedBy: viewer.id })
+        .where(and(eq(vendors.id, id), isNull(vendors.archivedAt)))
+        .returning({ id: vendors.id })
+    : await db
+        .update(vendors)
+        .set({ archivedAt: null, archivedBy: null })
+        .where(and(eq(vendors.id, id), isNotNull(vendors.archivedAt)))
+        .returning({ id: vendors.id });
+  return rows.length > 0;
 }

@@ -2,6 +2,7 @@
 
 import { useAction } from "next-safe-action/hooks";
 import { changePersonRoleAction, assignTeamAction, cancelAssignmentAction } from "../actions";
+import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import { HistoryList, type HistoryEntry } from "@/ui/history-list/HistoryList";
 import styles from "../people.module.css";
 
@@ -70,8 +71,7 @@ export function PersonHistorySection({
   const { executeAsync: executeCancel } = useAction(cancelAssignmentAction);
 
   return (
-    <section className={styles.historySection}>
-      <h2 className={styles.historySectionTitle}>소속 발령 이력</h2>
+    <DetailScreen.Section title="소속 발령 이력">
       <HistoryList
         entries={entries}
         valueKind={{ kind: "enum", options: teamOptions }}
@@ -88,6 +88,6 @@ export function PersonHistorySection({
           if (message) throw new Error(message);
         }}
       />
-    </section>
+    </DetailScreen.Section>
   );
 }

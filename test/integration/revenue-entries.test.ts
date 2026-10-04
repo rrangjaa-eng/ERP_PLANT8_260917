@@ -3,7 +3,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { db, pool } from "@/db/client";
-import { actionLog, codeItems, quoteLines, revenueEntries, teams } from "@/db/schema";
+import { actionLog, quoteLines, revenueEntries, teams } from "@/db/schema";
 import { and } from "drizzle-orm";
 import { eq } from "drizzle-orm";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
@@ -28,6 +28,7 @@ import { ForbiddenError } from "@/domain/revenue";
 import { withTransaction } from "@/lib/db-transaction";
 import { log } from "@/lib/log";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
+import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 
 // 04-41 — 액션(스키마 → 원장 합성 저장)을 직접 부르는 케이스용 세션 · revalidatePath · 합성 저장 호출 기록.
 // 합성 저장은 실제 구현을 그대로 감싸기만 한다(동작 불변 — 이 파일의 다른 케이스도 실제 경로를 탄다).
@@ -250,8 +251,7 @@ describe("파생 계약 금액 — 고객 승인된 현재 차수 합계 (04-16 
   type LineInsert = typeof quoteLines.$inferInsert;
 
   async function quoteSubcategory(): Promise<string> {
-    const [row] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
-    if (!row) throw new Error("시드된 quote_subcategory 코드 항목이 없습니다");
+    const row = await firstSelectableSubcategory();
     return row.value;
   }
 
@@ -835,8 +835,7 @@ describe("매출 쓰기 경로(04-41 · Codex #1 · ENG-D10)", () => {
       await setSettingValue(SYSTEM_VIEWER, FX_RECENT_RATE_USD, 1300);
       const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
       if (!revision) throw new Error("1차 차수가 없습니다");
-      const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
-      if (!subcategory) throw new Error("소분류 코드가 없습니다");
+      const subcategory = await firstSelectableSubcategory();
       const quoteRow = (quantity: number) => ({
         id: randomUUID(),
         isNew: true as const,

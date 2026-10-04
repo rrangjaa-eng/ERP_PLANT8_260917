@@ -30,7 +30,8 @@ function jobBlock(ci: string, name: string, nextName?: string): string {
 }
 
 // draft PR은 quality만 돈다. integration·e2e는 ready(또는 workflow_call/push)에서만.
-const FULL_RUN_IF = "github.event_name != 'pull_request' || github.event.pull_request.draft == false";
+const FULL_RUN_IF =
+  "github.event_name != 'pull_request' || (github.event.pull_request.draft == false && needs.quality.outputs.app == 'true')";
 
 describe("ci-guard: .github/workflows 메타 검사", () => {
   it("어떤 워크플로에도 drizzle-kit push 하위 명령이 없다", () => {
@@ -49,6 +50,7 @@ describe("ci-guard: .github/workflows 메타 검사", () => {
       "pg_isready",
       "pnpm lint",
       "pnpm typecheck",
+      "pnpm build:cli",
       "pnpm lint:sql",
       "pnpm test:unit",
       ".claude/hooks/tests",
@@ -95,18 +97,66 @@ describe("ci-guard: .github/workflows 메타 검사", () => {
     expect(indexes).toEqual([...indexes].sort((a, b) => a - b));
   });
 
-  it("quality 잡 내부 순서: lint < typecheck < lint:sql < test:unit < 훅 테스트", () => {
+  it("quality 잡 내부 순서: lint < typecheck < build:cli < lint:sql < test:unit < 훅 테스트 < 캐시 저장", () => {
     const ci = readWorkflow("ci.yml");
     const qualityBlock = jobBlock(ci, "quality", "integration");
     const order = [
       "pnpm lint",
       "pnpm typecheck",
+      "pnpm build:cli",
       "pnpm lint:sql",
       "pnpm test:unit",
       ".claude/hooks/tests",
+      "actions/cache/save@v4",
     ].map((token) => firstLine(qualityBlock, token));
     for (const line of order) expect(line).toBeGreaterThan(-1);
     expect(order).toEqual([...order].sort((a, b) => a - b));
+  });
+
+  it("quality 잡은 같은 merge tree가 이미 통과했으면 나머지 단계를 건너뛴다(캐시 키 = tree)", () => {
+    const ci = readWorkflow("ci.yml");
+    const qualityBlock = jobBlock(ci, "quality", "integration");
+    for (const token of [
+      "HEAD^{tree}",
+      "actions/cache/restore@v4",
+      "lookup-only: true",
+      "key: quality-passed-${{ steps.tree.outputs.tree }}",
+      "actions/cache/save@v4",
+    ]) {
+      expect(qualityBlock, `quality 잡에 ${token}이 있어야 한다`).toContain(token);
+    }
+    // passed가 건너뛰어지면(draft·재실행) cache-primary-key 출력이 비므로 저장 키는 tree에서 직접 만든다.
+    expect(qualityBlock).not.toContain("cache-primary-key");
+    const save = qualityBlock.slice(qualityBlock.indexOf("actions/cache/save@v4"));
+    expect(save).toContain("key: quality-passed-${{ steps.tree.outputs.tree }}");
+  });
+
+  it("quality 잡은 passed 스텝 뒤의 모든 스텝에 cache-hit 가드가 하나씩 있다", () => {
+    const ci = readWorkflow("ci.yml");
+    const block = jobBlock(ci, "quality", "integration");
+    const marker = "\n      - id: passed";
+    const passedAt = block.indexOf(marker);
+    expect(passedAt, "quality 잡에 id: passed 스텝이 있어야 한다").toBeGreaterThan(-1);
+    // 첫 조각은 passed 스텝 자신이라 버린다.
+    const steps = block.slice(passedAt + marker.length).split("\n      - ").slice(1);
+    expect(steps.length).toBeGreaterThan(0);
+    for (const step of steps) {
+      const guards = step.split("\n").filter(
+        (line) => line.trim() === "if: steps.passed.outputs.cache-hit != 'true'",
+      );
+      expect(guards, `가드가 정확히 하나여야 한다: ${step.slice(0, 60)}`).toHaveLength(1);
+    }
+  });
+
+  it("passed 스텝은 ready_for_review 첫 시도에서만 조회한다(재실행·다른 이벤트는 전부 돈다)", () => {
+    const ci = readWorkflow("ci.yml");
+    const block = jobBlock(ci, "quality", "integration");
+    const start = block.indexOf("\n      - id: passed");
+    expect(start).toBeGreaterThan(-1);
+    const end = block.indexOf("\n      - ", start + 1);
+    expect(block.slice(start, end)).toContain(
+      "if: github.event.action == 'ready_for_review' && github.run_attempt == 1",
+    );
   });
 
   it("quality 잡은 if 조건 없이 항상 돈다(draft PR의 빠른 경로)", () => {
@@ -126,7 +176,7 @@ describe("ci-guard: .github/workflows 메타 검사", () => {
     }
   });
 
-  it("integration·e2e 잡은 draft PR에서 건너뛰고 ready·workflow_call에서만 돈다", () => {
+  it("integration·e2e 잡은 draft PR·.claude만 바뀐 PR에서 건너뛰고 ready·workflow_call에서만 돈다", () => {
     const ci = readWorkflow("ci.yml");
     for (const block of [jobBlock(ci, "integration", "e2e"), jobBlock(ci, "e2e")]) {
       expect(block).toContain(FULL_RUN_IF);
@@ -138,8 +188,24 @@ describe("ci-guard: .github/workflows 메타 검사", () => {
     for (const block of [jobBlock(ci, "integration", "e2e"), jobBlock(ci, "e2e")]) {
       expect(block).toContain("shard: [1, 2]");
       expect(block).toContain("fail-fast: false");
-      expect(block).toContain("--shard=${{ matrix.shard }}/2");
     }
+    expect(jobBlock(ci, "integration", "e2e")).toContain("--shard=${{ matrix.shard }}/2");
+  });
+
+  // 2026-10-02: Playwright는 dependencies로 걸린 프로젝트(desktop·mobile-375)를 샤딩 대상에서
+  // 빼고 맨 끝 프로젝트(desktop-settings, 21건·파일 1개)만 나눈다 — `--shard=2/2`가 0건이었다.
+  // 그래서 desktop만 직접 샤딩하고, 폰·설정 결재선은 2번 샤드가 순서대로 이어 돈다.
+  it("e2e 잡은 dependencies 프로젝트를 --shard로 못 나누므로 desktop만 샤딩하고 폰·설정은 2번 샤드가 잇는다", () => {
+    const ci = readWorkflow("ci.yml");
+    const block = jobBlock(ci, "e2e");
+    expect(block).not.toContain("pnpm test:e2e --shard=");
+    expect(block).toContain("PWTEST_SHARD_WEIGHTS");
+    expect(block).toContain("--project=desktop --shard=${{ matrix.shard }}/2");
+    const desktop = firstLine(block, "--project=desktop --shard=");
+    const tail = firstLine(block, "--project=desktop-settings");
+    expect(tail).toBeGreaterThan(desktop);
+    expect(block).toContain("E2E_SKIP_DESKTOP");
+    expect(block).toMatch(/if: matrix\.shard == 2\n\s+env:\n\s+E2E_SKIP_DESKTOP/);
   });
 
   it("integration 잡 내부 순서: db:migrate < test:integration, e2e는 없다", () => {
@@ -166,6 +232,31 @@ describe("ci-guard: .github/workflows 메타 검사", () => {
     const ci = readWorkflow("ci.yml");
     const block = jobBlock(ci, "e2e");
     expect(block).toContain("name: playwright-report-${{ matrix.shard }}");
+  });
+
+  it("e2e 실패 업로드가 playwright-report/와 함께 test-results/(전후·차이 사진)를 올린다", () => {
+    const ci = readWorkflow("ci.yml");
+    const block = jobBlock(ci, "e2e", "tested-tree");
+    const upload = block.slice(block.indexOf("actions/upload-artifact@v4"));
+    expect(upload).toMatch(/path: \|\n\s+playwright-report\/\n\s+test-results\/\n/);
+  });
+
+  // 배포 CI 중복 제거(2026-10-01 사용자 결정): PR 병합 결과 tree가 세 잡을 모두 통과하면
+  // 그 tree를 아티팩트 이름에 남긴다. deploy.yml은 main 커밋 tree와 같은 기록이 있으면 CI를 건너뛴다.
+  it("tested-tree 잡은 quality·integration·e2e가 모두 성공한 pull_request에서만 돈다(draft·건너뜀이면 안 돈다)", () => {
+    const ci = readWorkflow("ci.yml");
+    const block = jobBlock(ci, "tested-tree");
+    expect(block).toContain("needs: [quality, integration, e2e]");
+    const ifLine = block.split("\n").find((line) => /^\s{4}if:/.test(line));
+    expect(ifLine?.trim()).toBe("if: github.event_name == 'pull_request'");
+    expect(block).not.toMatch(/always\(\)|cancelled\(\)|failure\(\)/);
+  });
+
+  it("tested-tree 잡은 병합 결과 tree를 이름에 넣은 아티팩트를 올린다", () => {
+    const ci = readWorkflow("ci.yml");
+    const block = jobBlock(ci, "tested-tree");
+    expect(block).toContain("git rev-parse 'HEAD^{tree}'");
+    expect(block).toContain("name: tested-tree-${{ steps.tree.outputs.tree }}");
   });
 
   // WR-09: !docs/**가 unit 테스트가 실제로 읽는 docs 파일까지 가려서, 그 파일만

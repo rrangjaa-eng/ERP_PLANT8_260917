@@ -1,6 +1,7 @@
 // 화면 사용성 원칙(.claude/rules/frontend.md)과 사용자 디자인 결정(.claude/skills/design-gate/CHECKLIST.md §1) 중
-// 잴 수 있는 것만 판정한다. 값은 design-principles.spec.ts가 실제 화면에서 재서 넘긴다(사용자 결정 2026-09-28:
-// 처음에는 경고만, Phase 4 머지 뒤 DESIGN_PRINCIPLES_STRICT=1로 막는 모드).
+// 잴 수 있는 것만 판정한다. 값은 design-principles.spec.ts가 실제 화면에서 재서 넘긴다(막는 모드가 기본 — `DESIGN_PRINCIPLES_STRICT=0`일 때만 경고 모드).
+// 04.6-06(R11): 막는 모드 판정 `isStrict` · DOM 수집 `collectPrinciplesSnapshot` · 선택자 상수가 여기 있다. Playwright를 import하지 않는다 —
+// 단위 테스트가 이 파일을 읽는다. 러너를 쓰는 도우미는 principles-check.ts(`checkPrinciples`).
 
 export type ScreenSnapshot = {
   primaryButtons: number;                  // 보이는 1차 버튼 수
@@ -28,4 +29,58 @@ export function evaluatePrinciples(s: ScreenSnapshot): Warning[] {
   const mixed = s.rowActionStyles.filter((row) => new Set(row).size > 1);
   if (mixed.length) warnings.push({ rule: "같은 행동은 같은 모양", detail: `행 ${mixed.length}개: ${[...new Set(mixed[0])].join(" / ")}` });
   return warnings;
+}
+
+// 막는 모드가 기본이고 `DESIGN_PRINCIPLES_STRICT=0`일 때만 경고 모드다(ROADMAP SC 5의 `=1`과 같은 효과).
+export function isStrict(v: string | undefined): boolean {
+  return v !== "0";
+}
+
+// 1차 버튼 = `data-ui` 훅 하나(04.6-29 — 옛 CSS 모듈 클래스 대체 선택자를 지웠다). 부제는 새 틀에 부제 prop이 없어 선택자가 없다(null) —
+// 머리 아래 설명 문단은 `prose`의 긴 설명 규칙이 잡는다.
+export const PRIMARY_BUTTON_SELECTOR = '[data-ui="primary-button"]';
+
+export type PrincipleSelectors = { primary: string; subtitle: string | null };
+export const PRINCIPLE_SELECTORS: PrincipleSelectors = {
+  primary: PRIMARY_BUTTON_SELECTOR,
+  subtitle: null,
+};
+
+// 브라우저 안에서 도는 수집 함수 — `page.evaluate(collectPrinciplesSnapshot, PRINCIPLE_SELECTORS)`로 넘긴다. 직렬화되므로 바깥 변수를 쓰지 않는다.
+export function collectPrinciplesSnapshot(selectors: PrincipleSelectors): ScreenSnapshot {
+  // offsetParent는 position: fixed 요소(옆 패널 버튼 등)에서 null이라 쓰지 않는다.
+  // [inert] 조상 안의 요소와, 모달 dialog가 열려 있을 때 그 밖의 요소는 보이지 않는 것으로 친다(뒤는 사용자가 닿을 수 없다).
+  const modals = Array.from(document.querySelectorAll("dialog:modal"));
+  const visible = (el: Element) =>
+    el.getClientRects().length > 0 &&
+    getComputedStyle(el).visibility !== "hidden" &&
+    !el.closest("[inert]") &&
+    (modals.length === 0 || modals.some((m) => m.contains(el)));
+  const main = document.querySelector("main") ?? document.body;
+  const rgb = (c: string) => (c.match(/\d+(\.\d+)?/g) ?? []).map(Number);
+  let bg = rgb(getComputedStyle(document.body).backgroundColor);
+  if (bg.length === 4 && bg[3] === 0) bg = rgb(getComputedStyle(document.documentElement).backgroundColor);
+  if (bg.length < 3 || (bg.length === 4 && bg[3] === 0)) bg = [255, 255, 255];
+  const subtitle = selectors.subtitle ? main.querySelector(selectors.subtitle) : null;
+  const prose = Array.from(main.querySelectorAll("p"))
+    // kbd 단축키 범례(표 힌트 줄)는 설명 문단이 아니다 — 사용자 답 2026-10-03 ⑦ 「kbd 범례 검사 제외」.
+    .filter((p) => visible(p) && !p.closest('[role="alert"], [role="status"]') && p.querySelector("kbd") === null)
+    .map((p) => (p.textContent ?? "").trim())
+    .filter(Boolean);
+  const rowActionStyles = Array.from(main.querySelectorAll("td"))
+    .map((td) =>
+      Array.from(td.querySelectorAll("a, button")).filter(visible).map((el) => {
+        const cs = getComputedStyle(el);
+        const deco = cs.textDecorationLine !== "none" ? "underline" : parseFloat(cs.borderBottomWidth) > 0 ? "border" : "none";
+        return `${cs.fontSize}|${deco}`;
+      }),
+    )
+    .filter((row) => row.length >= 2);
+  return {
+    primaryButtons: Array.from(main.querySelectorAll(selectors.primary)).filter(visible).length,
+    background: [bg[0], bg[1], bg[2]] as [number, number, number],
+    subtitle: subtitle && visible(subtitle) ? (subtitle.textContent ?? "").trim() : null,
+    prose,
+    rowActionStyles,
+  };
 }

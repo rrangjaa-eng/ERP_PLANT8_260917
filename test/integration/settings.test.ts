@@ -12,6 +12,7 @@ import {
   ForbiddenError,
   SettingNotFoundError,
   FutureCancelOnlyError,
+  FutureValueNotFoundError,
   type SettingDef,
 } from "@/domain/settings/registry";
 
@@ -121,6 +122,73 @@ describe("설정 레지스트리 (ADMN-05, 실제 Postgres)", () => {
     await cancelHistorizedValue(SYSTEM_VIEWER, def, "2999-01-01");
     const history = await listSettingHistory(def);
     expect(history.some((entry) => entry.effectiveFrom === "2999-01-01")).toBe(false);
+  });
+
+  // ADMN-12 예약 취소 예외의 전제(quick 261001-hfi) — 미래 예정값 취소와 그 로그는 한 트랜잭션이다(85g 발령 취소와 같은 모양).
+  it("미래 예정값을 취소하면 행이 없어지고 settings_change 로그 한 건(key · effectiveFrom · cancelled)이 남는다", async () => {
+    const { queryActionLog } = await import("@/repositories/action-log");
+    const def = historizedDef();
+    await addHistorizedValue(SYSTEM_VIEWER, def, { effectiveFrom: "2999-01-01", value: 0.3 });
+
+    await cancelHistorizedValue(SYSTEM_VIEWER, def, "2999-01-01");
+
+    expect((await listSettingHistory(def)).some((entry) => entry.effectiveFrom === "2999-01-01")).toBe(false);
+    const logs = (await queryActionLog(SYSTEM_VIEWER, { actionType: "settings_change" })).filter(
+      (log) => log.entityId === def.key && (log.detail as { cancelled?: boolean } | null)?.cancelled === true,
+    );
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toMatchObject({ entity: "settings_historized" });
+    expect(logs[0]?.detail).toEqual({ key: def.key, effectiveFrom: "2999-01-01", cancelled: true });
+  });
+
+  it("로그 쓰기가 실패하면 예정값 취소도 되돌려져 행이 남는다", async () => {
+    const def = historizedDef();
+    await addHistorizedValue(SYSTEM_VIEWER, def, { effectiveFrom: "2999-01-01", value: 0.3 });
+
+    await expect(
+      cancelHistorizedValue(SYSTEM_VIEWER, def, "2999-01-01", {
+        recordAction: () => Promise.reject(new Error("로그 쓰기 실패 흉내")),
+      }),
+    ).rejects.toThrow("로그 쓰기 실패 흉내");
+
+    expect((await listSettingHistory(def)).some((entry) => entry.effectiveFrom === "2999-01-01")).toBe(true);
+  });
+
+  // quick 261002-3mx — 미래 판정과 삭제 사이에 KST 자정이 지나면 방금 적용된 행이다. 삭제 조건이 DB 시각으로 다시 판정한다.
+  it("취소 판정 뒤 KST 자정이 지나 오늘 적용된 행은 지우지 않고 로그도 없다", async () => {
+    const { queryActionLog } = await import("@/repositories/action-log");
+    const { db } = await import("@/db/client");
+    const { sql } = await import("drizzle-orm");
+    const def = historizedDef();
+    // 삭제 조건과 같은 시계(DB)의 오늘 — 테스트 러너와 DB 시계가 어긋나도 판정이 같다.
+    const { rows } = await db.execute<{ today: string }>(sql`select ((now() at time zone 'Asia/Seoul')::date)::text as today`);
+    const today = rows[0]!.today;
+    await addHistorizedValue(SYSTEM_VIEWER, def, { effectiveFrom: today, value: 0.3 });
+    // 자정 1초 전(KST)에 판정한 것처럼 — JS 판정은 오늘 행을 아직 미래로 본다.
+    const justBeforeMidnight = new Date(new Date(`${today}T00:00:00+09:00`).getTime() - 1000);
+
+    // 행은 그대로 있다 — 「없음」이 아니라 「이미 적용됨」이다.
+    await expect(cancelHistorizedValue(SYSTEM_VIEWER, def, today, { now: justBeforeMidnight })).rejects.toBeInstanceOf(
+      FutureCancelOnlyError,
+    );
+
+    expect((await listSettingHistory(def)).some((entry) => entry.effectiveFrom === today)).toBe(true);
+    const logs = (await queryActionLog(SYSTEM_VIEWER, { actionType: "settings_change" })).filter(
+      (log) => log.entityId === def.key && (log.detail as { cancelled?: boolean } | null)?.cancelled === true,
+    );
+    expect(logs).toHaveLength(0);
+  });
+
+  it("없는 미래 예정값 취소는 FutureValueNotFoundError이고 로그가 없다", async () => {
+    const { queryActionLog } = await import("@/repositories/action-log");
+    const def = historizedDef();
+
+    await expect(cancelHistorizedValue(SYSTEM_VIEWER, def, "2999-01-01")).rejects.toBeInstanceOf(FutureValueNotFoundError);
+
+    const logs = (await queryActionLog(SYSTEM_VIEWER, { actionType: "settings_change" })).filter(
+      (log) => log.entityId === def.key,
+    );
+    expect(logs).toHaveLength(0);
   });
 
   it("설정 저장이 행동 로그에 행 하나를 남긴다", async () => {

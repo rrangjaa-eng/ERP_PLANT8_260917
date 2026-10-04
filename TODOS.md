@@ -28,18 +28,6 @@
 
 ## Phase 4 이연(2026-09-23 CEO 리뷰)
 
-### 목록 상단 2px 로딩 막대
-
-**What:** 프로젝트 목록(S1)·페이지 이동(S12)의 상단 2px 진행 막대를 만든다.
-
-**Why:** UI-SPEC rev 4는 막대를 그렸지만 SYSTEM.md가 막대 색을 `--accent`로 정하면서 §1-3은 `--accent` 사용처를 다섯 곳으로 제한해 서로 충돌한다(CEO 리뷰 C-10, 사용자 D17 「만들지 않고 기록」). 지금은 표 자리 표시(스켈레톤)만으로 로딩을 보인다.
-
-**Context:** Phase 4 뒤 디자인 잔여 퀵 태스크(F-01·F-03·F-05·F-06·F-07)와 함께 처리한다. 먼저 `docs/design/DECISIONS.md`에 §1-3 사용처를 여섯 곳으로 늘릴지(또는 다른 토큰) 정하고 SYSTEM.md를 고친 뒤 앱 공통 셸에 한 번만 만든다. 리뷰 원문: `docs/designs/plant8-erp-phase4-ceo-review-260923.md`.
-
-**Effort:** S (human) / S (CC)
-**Priority:** P3
-**Depends on:** Phase 4 완료, 디자인 잔여 퀵 태스크
-
 ### 자동 정산(진행→정산)을 예약 작업으로 옮기기
 
 **What:** 종료일이 지난 진행 프로젝트를 KST 00:00에 정산으로 바꾸는 판정을 Cloud Scheduler 작업에서도 실행한다.
@@ -104,7 +92,106 @@
 
 **Effort:** S / S · **Priority:** P1 · **Depends on:** 없음
 
+## 04.4 후속 이연(2026-09-30 quick 260930-f3l · PR #108)
+
+### 관리 표 행 행동 간격 `--s-4` — 거래처 · 법인카드 · 코드표
+
+해결: `89f19f8` (quick 260930-nto, PR #111)
+
+**What:** /admin/vendors(「수정 · 숨기기 · 삭제」) · /admin/corp-cards(「비활성화 · 삭제」) · /admin/code-tables 행 행동 사이가 1280에서 0px라 한 단어처럼 읽히고 「삭제」가 옆 행동에 붙는다. 사람 목록 `.rowActions`(inline-flex · gap `var(--s-4)` · 700 미만만 줄바꿈 · 「상세」 같은 짧은 링크는 자체 `white-space: nowrap`)와 같은 규칙으로 맞춘다. 「공유 Button `.tertiary` 밑줄을 글자 밑줄로」와 한 quick으로.
+
+**Why:** SYSTEM §6-1 행 안 두 행동 `--s-4` 이상 · 「위험한 동작은 떨어뜨려 둔다」. PR #108이 사람 목록만 맞춰 「화면 하나만 예외 금지」에 걸린다(`/design-review` FINDING-001, high).
+
+**Context:** 출처 `vendors/page.tsx:161-174` · `corp-cards/page.tsx:188-194` · `code-tables/page.tsx:173-174`. 함정: 칸 전체에 `white-space: nowrap`을 두면 삭제 확인 줄이 표를 넘친다(768에서 14.66px 실측) — 짧은 링크에만 둔다. 사용자 결정(2026-09-30): 별도 quick.
+
+**Effort:** S · **Priority:** P2 · **Depends on:** None
+
+### 디자인 다듬기 3건(/design-review polish)
+
+**What:** ① /admin/system-status 「DB 커넥션 8 / 100」 · 배포 버전 · 마지막 백업 일시에 tabular-nums(`system-status/page.tsx:95-121`, §2-4) ② 삭제 확인 문구가 행 이름을 되풀이하고 「-습니다」 두 문장(`archive/delete-to-archive.tsx:50`, §8 규칙 3·5·6) — 44자 이름에서 행이 1280 55→97px · 375 124.5→236.5px ③ /admin/action-log 「사람」 select가 가장 긴 이름만큼(1280에서 502px) 늘어 필터 줄이 두 줄(§6-1 한 줄) — `.select`에 `ch` 기준 max-width.
+
+**Why:** SYSTEM 규칙과 어긋나지만 기능 영향 없음(polish).
+
+**Effort:** S · **Priority:** P3 · **Depends on:** None
+
+### 행동 로그 · 사람 DTO 기존 결함 3건(/review 범위 밖)
+
+**What:** ① ~~「사람」 칸이 숨겨진 계급(person.value 꺼짐)도 URL `actorId`가 조회 · 엑셀 내보내기 · 정리(prune) 범위를 좁힌다~~ — 해결: 페이지가 고를 사람이 없으면 URL actorId를 버린다(D1, PR #108 — #107에서 옮김) ② action_log.detail 노출이 꺼진 계급은 /admin/action-log가 500(`domain/action-log/index.ts:265`) ③ `domain/people/index.ts:104`가 `Partial<PersonDto>`를 `PersonDto`로 단언해 「키가 없을 수 있음」이 타입에 안 보인다 — 다른 화면에서 같은 id 누락 버그가 다시 난다.
+
+**Why:** 권한이 좁은 계급의 화면이 깨지거나 보이지 않는 조건으로 동작한다. ②는 오류 화면.
+
+**Context:** `domain/` 변경이라 PR #108 범위 밖. ①은 정리(prune) 범위라 되돌릴 수 없는 동작과 이어진다 — 우선.
+
+**Effort:** M · **Priority:** P1(① · ②) / P2(③) · **Depends on:** None
+
+### NextTurn `.tertiary` · Table `.emptyAction` 밑줄도 글자 밑줄로(quick 260930-nto eng review R3)
+
+**What:** `ui/next-turn/NextTurn.module.css:124-137`(`.tertiary` border-bottom · hover `border-bottom-width`)와 `ui/table/Table.module.css:216-225`(`.emptyAction` border-bottom)의 3차 밑줄을 공유 Button `.tertiary`(`ff64212`)와 같은 글자 밑줄(`text-decoration: underline` · `--underline-offset` · hover 두께 `--line-w-strong`)로 바꾸고, `test/unit/app/tertiary-underline-css.test.ts` 점검 범위에 넣는다.
+
+**Why:** §4-4 3차 밑줄 규칙과 다르고, 같은 결함(폰 44px 상자 바닥 밑줄 · hover 때 상자 높이 변화)이 컴포넌트마다 남는다. PR #111은 사용자 범위(공유 Button)만 고쳤다.
+
+**Context:** 원천 소스만 읽었고 실측 전. 셀 입력 밑줄(`project-detail.module.css:110` · `reserves.module.css:25`)은 3차가 아니라 대상 아님.
+
+**Effort:** S · **Priority:** P2 · **Depends on:** PR #111
+
+### 코드표 보관 행 높이 35.39px < `--row-min`(quick 260930-nto 독립 DOM 감사)
+
+**해결:** PR #108(252985e)이 `height: var(--row-min)`과 보관 항목 시드 E2E로 고쳤다.
+
+**What:** `app/(app)/admin/code-tables/code-tables.module.css`의 `.table td { min-height: var(--row-min) }`는 표 칸에 적용되지 않는다. 입력 칸이 없는 보관 행(시스템 관리자에게 보임)이 1280에서 35.39px로 36px 아래다. 거래처 · 법인카드 · 보관함처럼 `height: var(--row-min)`으로 바꾸고, `test/e2e/table-row-min.spec.ts`에 보관 항목을 심어 매번 잡히게 한다.
+
+**Why:** `table-row-min.spec.ts`가 전체 E2E에서 실행 순서에 따라 실패한다 — 다른 스펙이 erp_test에 보관 항목을 남기면 걸린다(260930-nto 전체 실행 1회 실패, 감사가 소수점까지 재현). ready 전환 뒤 CI 전체 E2E를 빨갛게 할 수 있다.
+
+**Context:** base `3774333`(PR #108)에도 같은 규칙 — PR #111 변경 아님. 감사 보고서 `.planning/quick/260930-nto-row-actions-gap-and-tertiary-underline/260930-nto-DOM-AUDIT.md`.
+
+**Effort:** S · **Priority:** P2 · **Depends on:** None
+
+### 대기 중 3차 버튼 밑줄 두 토막(PR #111 /review · /qa)
+
+**해결:** PR #111(Codex 리뷰 P2) — `.tertiary`의 flex gap을 0으로 둬 「…」가 라벨에 붙고 밑줄이 한 줄로 이어진다(3차 버튼엔 kbd 병기가 없다). 단위 CSS 단언 + E2E 대기 상태 실측(간격 8 → 0px).
+
+**What:** 공유 Button `.tertiary` 밑줄이 `<button>`(flex)에 걸려 대기 중에는 라벨 `<span>`과 「…」 `<span>`에 따로 그어지고 사이 8px(`--s-2`)는 비어 보인다(/qa 실측: 라벨 29.38px + 간격 8px + 「…」 9.8px, 밑줄 색 `--line`). 밑줄을 라벨 span에만 걸지(`.tertiary > span:first-child`) 정한다.
+
+**Why:** 예전 border-bottom은 한 줄이었다. 요청 중 잠깐만 보이지만 3차 버튼 약 35곳 전부 해당.
+
+**Context:** D5(대기 「…」 그대로) 결정과 같은 쪽으로 PR #111에서 고치지 않았다. 고치면 D4 계산 스타일 일치 단언 · hover 규칙 구조가 바뀐다.
+
+**Effort:** S · **Priority:** P3 · **Depends on:** PR #111
+
+### 관리 표 행 행동 주변 작은 불일치(PR #111 /design-review 폴리시)
+
+**What:** ① 거래처 · 법인카드 · 코드표 표 칸 line-height가 본문 값 19.2px(1.6)이라 행동 상자가 19.19px, 사람 목록은 `--lh-table` 18px(§2-3 「표 셀 line-height 1.5」) — 세 모듈 `.table td`에 `line-height: var(--lh-table)`. ② 폰 375에서 거래처 · 법인카드 행이 44px 목표 3개가 세로로 쌓여 184.5/213px(§7-3 폰 P1 「행동 1개 · 두 줄」과 긴장) — 폰 P1에 행동을 하나만 둘지 결정. ③ 짧은 행 링크 한 줄 유지 방식이 세 가지(사람 `.detailLink` 복사 · 거래처/법인카드 `.toggle`+`.rowLink` · Button `.tertiary` 내장)이고, `.rowLink` 이름은 결재함 · 연차의 「행 전체 탭 링크」와 뜻이 다르다. ④ 폰에서 `.toggle` · `.tertiary`는 좌우 padding `--s-2`가 있고 사람 `.detailLink`는 없어, 가로로 놓일 때 보이는 글자 간격이 24px/32px로 다를 수 있다(미실측).
+
+**Why:** 같은 패턴이 화면마다 조금씩 갈라진다(「화면 하나만 예외 금지」).
+
+**Context:** 모두 PR #111 이전부터 있던 것. ③ ④는 소스 검토, ① ②는 DOM 실측.
+
+**Effort:** S · **Priority:** P3 · **Depends on:** PR #111
+
+## 운영 배포 준비: 보안 스캐너 CI(2026-09-30, Phase 8 전)
+
+### 보안 스캐너 5종을 CI에 넣기 (#109)
+
+**What:** GitHub Actions에 gitleaks · semgrep · zizmor · osv-scanner · trivy를 넣고, main 전체로 첫 결과를 확인한다. 결함은 별도 PR로 고친다.
+
+**Why:** 04.4 `/cso`는 클라우드 컨테이너에 Docker가 없어 스캐너를 돌리지 못하고 정적 검토로만 통과했다(`.claude/gates/phase-04.4.log`). `ci.yml`에는 비밀 유출 · 의존성 취약점 · 워크플로 보안 검사가 없다. 사용자 결정(2026-09-30): 로컬 Docker 대신 CI(선택 A), 운영 배포 준비 때.
+
+**Effort:** S / S · **Priority:** P1 · **Depends on:** Phase 8 계획 · `.github/workflows/` 변경이라 사용자가 머지
+
 ## Completed
+
+### 목록 상단 2px 로딩 막대
+
+**What:** 프로젝트 목록(S1)·페이지 이동(S12)의 상단 2px 진행 막대를 만든다.
+
+**Why:** UI-SPEC rev 4는 막대를 그렸지만 SYSTEM.md가 막대 색을 `--accent`로 정하면서 §1-3은 `--accent` 사용처를 다섯 곳으로 제한해 서로 충돌한다(CEO 리뷰 C-10, 사용자 D17 「만들지 않고 기록」). 지금은 표 자리 표시(스켈레톤)만으로 로딩을 보인다.
+
+**Context:** Phase 4 뒤 디자인 잔여 퀵 태스크(F-01·F-03·F-05·F-06·F-07)와 함께 처리한다. 먼저 `docs/design/DECISIONS.md`에 §1-3 사용처를 여섯 곳으로 늘릴지(또는 다른 토큰) 정하고 SYSTEM.md를 고친 뒤 앱 공통 셸에 한 번만 만든다. 리뷰 원문: `docs/designs/plant8-erp-phase4-ceo-review-260923.md`.
+
+**Effort:** S (human) / S (CC)
+**Priority:** P3
+**Depends on:** Phase 4 완료, 디자인 잔여 퀵 태스크
+**Completed:** 2026-10-04 — 만들지 않고 닫음(사용자 브리핑 카드 답 10:34~10:36 KST, 추천안 「닫음」). 로딩은 표 자리 스켈레톤으로 보인다.
 
 ### FINDING-001 PC에서 「내 차례」(`/`)로 돌아가는 길이 없다
 
@@ -112,21 +199,33 @@
 
 **Completed:** 2026-09-24 (`257c2ab`, 회귀 테스트 `test/e2e/wordmark-home.spec.ts`·`mobile-wordmark-home.spec.ts`)
 
+### FINDING-006 `/projects` 로딩 뼈대의 300ms 지연 표시
+
+공용 `TableSkeleton`이 처음 `opacity 0`에서 300ms 뒤 한 번 나타나고(애니메이션 반복 없음), 진짜 열 이름 머리글 + 뼈대 행 3개로 실제 목록 모양과 맞는다. `/projects` 로딩(`loading.tsx`)이 이 뼈대를 쓴다.
+
+**Completed:** 2026-10-03 (`6e5d70cf` · `01a78c06`, 회귀 테스트 `test/unit/ui/presentational.test.ts:236-241` · `test/e2e/reserves.spec.ts:1136`)
+
+### 관리자 목록 동작 칸의 두 동작이 간격 없이 붙는다
+
+사람 목록 「상세」↔「삭제」 간격을 `--s-4`로(#108 `749c936d`), 코드표 「비활성화」↔「삭제」를 포함한 관리 표 행 행동 간격을 `--s-4`로(#111 `89f19f8b`) 맞췄다.
+
+**Completed:** 2026-10-03 (#108 `749c936d` · #111 `89f19f8b`, 회귀 테스트 `test/e2e/people.spec.ts:222-229` · `test/e2e/code-tables.spec.ts:437` · `test/e2e/row-actions-helpers.ts`의 `expectGapsAtLeastToken`)
+
+### 폰 법인카드 「삭제」 확인 문구가 66~89px 폭에 10~11줄(PR #111 /qa)
+
+법인카드를 목록 틀 + `StaticTable` + `RowActions`로 옮겨 폰 삭제 확인 문구가 375 4줄 · 320 4줄이 됐다(옛 10/11줄). 가로 넘침 0.
+
+**Completed:** 2026-10-03 (`76dbac58` · `dc9c4e26`, 회귀 테스트 `test/e2e/corp-cards.spec.ts:211-213` — 375 ≤ 5줄 · 320 ≤ 7줄)
+
+### 폰 코드표에서 비활성화 · 삭제를 할 수 없다(PR #111 /design-review FINDING-002)
+
+사용자 답 Q4 A 「보이게」(`04.6-ANSWERS.md`)대로 동작 열을 P1로 두어 폰 700 미만에서도 「비활성화」「삭제」가 44px 이상으로 보인다(P3로 숨기지 않음).
+
+**Completed:** 2026-10-03 (`f3d55af4` · `cdbfadde` · `44db0ef4`, 회귀 테스트 `test/e2e/mobile-code-tables.spec.ts:91-97` — 폰에서 보임 + 높이 ≥ 44)
+
 ## Design review 이연(2026-09-24 /design-review, Phase 2 화면)
 
 리포트: `~/.gstack/projects/rrangjaa-eng-ERP_PLANT8_260917/designs/design-audit-20260924/design-audit-127.0.0.1.md`
-
-### FINDING-006 `/projects` 로딩 뼈대의 300ms 지연 표시
-
-**What:** `app/(app)/projects/loading.tsx` 뼈대가 지연 없이 약 90ms 번쩍이고, 모양(표 머리글 + 3행 + 합계)이 실제 EMPTY 화면(필터 + 한 줄)과 달라 한 번 튄다. §7-7 「300ms 안에 끝나면 아무것도 보이지 않게」를 지킬 공용 수단을 §5에 정하고 모든 `loading.tsx`에 적용한다.
-
-**Why:** 계약 위반이 실측됐다(Medium).
-
-**Context:** 지연 수단(`animation-delay` 등)이 §5 모션 허용 목록에 없어 시스템 결정이 먼저다.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** SYSTEM.md §5·§7-7 결정
 
 ### FINDING-007 `/account` 서버 오류를 칸에 묶기
 
@@ -142,14 +241,16 @@
 
 ### 공유 Button `.tertiary` 밑줄을 글자 밑줄로
 
+해결: `ff64212` (quick 260930-nto, PR #111)
+
 **What:** `ui/button/Button.module.css:52-81`의 3차 버튼이 `border-bottom` 밑줄이라 폰 44px 상자에서 글자와 떨어진다. FINDING-005(`ListEmpty`, 고침 `2342b01`)와 같은 수정(`text-decoration: underline` + `--underline-offset`)을 관리자·Phase 4 화면을 잰 뒤 적용한다.
 
 **Why:** §4-4 3차 버튼 밑줄 규칙과 다르고 화면마다 밑줄 방식이 갈린다.
 
-**Context:** Phase 2 화면에는 렌더되지 않아 이번 리뷰 범위 밖이었다.
+**Context:** Phase 2 화면에는 렌더되지 않아 이번 리뷰 범위 밖이었다. 2026-09-30 quick 260930-f3l `/design-review` FINDING-002가 다시 확인했다 — 폰 375에서 「삭제」 밑줄이 글자 아래 13.5px(보관함 「복원」 12.9px), hover 때 상자 19→20px · 글자 0.5px 이동. 같은 칸의 「상세」(글자 밑줄)와 모양이 다르다. 「관리 표 행 행동 간격」(아래 04.4 후속 이연)과 한 quick으로 묶는다(사용자 결정 2026-09-30).
 
 **Effort:** S
-**Priority:** P3
+**Priority:** P2
 **Depends on:** None
 
 ## QA 이연(2026-09-24 /qa, Phase 2 화면)
@@ -332,20 +433,6 @@
 **Priority:** P3
 **Depends on:** 새 계급의 노출 기본값 결정(사용자)
 
-## Design review 이연(2026-09-29 /design-review, PR #91 Phase 04.4)
-
-### 관리자 목록 동작 칸의 두 동작이 간격 없이 붙는다
-
-**What:** PC 관리자 목록의 마지막 칸에서 두 동작 사이 간격이 0px이다 — 사람 목록 「상세」+「삭제」, 코드표 「비활성화」+「삭제」가 붙어 「상세삭제」처럼 한 낱말로 읽힌다(DOM 실측: 두 요소 bounding box 간격 0).
-
-**Why:** CLAUDE.md §7 「행동은 동작·컴포넌트·디자인으로」 — 되돌리기 어려운 동작(보관)이 옆 동작과 한 덩어리로 보이면 잘못 누르기 쉽다. SYSTEM.md:693은 붉은 버튼 대신 확인으로 구분하므로 색으로는 떨어뜨리지 않는다 — 간격이 유일한 분리 수단이다.
-
-**Context:** 04.4가 바꾸지 않은 마크업(main과 같음)이고 공유 삭제 컴포넌트(DeleteToArchive 계열)가 여러 관리자 화면에 쓰여 이 PR 범위 밖이다. 동작 칸을 `display: flex; gap: var(--s-3)`(기존 토큰)로 묶고 폰(<700)의 44×44 배치와 겹치지 않게 한 번에 맞춘다.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
 ## Phase 04.1 /review 이월(2026-09-29, PR #90)
 
 `/review`(전문 검토 7 + 적대적 1, 전부 Claude)에서 이 PR이 고치지 않고 넘긴 것. 고친 것은 PR #90 커밋 b4ed02f~6ea5b6e.
@@ -423,3 +510,29 @@
 **Effort:** M
 **Priority:** P2
 **Depends on:** ① 없음 · ② 사용자 결정 여부 판단
+
+## Codex 디자인 검토 후속(2026-10-01 quick 261001-3uq · PR #116)
+
+### rule-guard R3 우회 경로를 토큰 검사 밖에서 막기
+
+**What:** R3는 Bash 명령을 토큰으로 나눠 `codex` 실행을 찾는다. 이 방식으로는 다음 경로를 막을 수 없다: `node -e`·변수 간접 호출(`X=codex; $X`)·`find -exec`·`bash -c`(경고만). Codex 봇이 커밋마다 새로 찾는 우회도 이 묶음으로 모은다. 막는 쪽은 실행 단계(예: 디자인 스킬 밖에서는 PATH에서 codex를 빼거나, 감싸는 실행 파일이 스킬 기록을 확인)로 옮긴다.
+
+**Why:** 사용자 결정(2026-10-01): PR #116의 R3 우회 지적은 그 PR에서 계속 고치지 않고 후속으로 넘긴다. 1차 차단은 gstack `codex_reviews disabled`라 일상 리뷰 경로는 이미 막혀 있다.
+
+**Context:** `.claude/hooks/plant8-rule-guard.sh` R3, `.claude/hooks/tests/plant8-rule-guard.test.sh` R3-1~52. 위험 경로(`.claude/`)라 사용자 승인·직접 머지.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** None
+
+### Codex 실행 격리(별도 사용자·컨테이너)
+
+**What:** 디자인 검토의 Codex를 저장소·자격 파일을 읽을 수 없는 격리 환경에서 돌린다. refresh 토큰이 갈라지지 않게 자격 파일을 공유·회수하는 방법이 함께 필요하다.
+
+**Why:** 사용자가 PR #116에서 두 위험을 받아들였다(2026-10-01). 읽기 전용 샌드박스도 절대 경로 읽기는 되므로, 프롬프트 주입 시 `.env.local`·`~/.codex/auth.json` 값이 모델로 갈 수 있다. 저장되는 출력에서는 가린다.
+
+**Context:** `scripts/codex-design-review/run.ts`(임시 cwd·허용 env·비밀 가림).
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** None

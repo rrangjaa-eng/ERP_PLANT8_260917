@@ -2,6 +2,8 @@ import { test, expect, type Page } from "@playwright/test";
 import { AxeBuilder } from "@axe-core/playwright";
 import { createFixtureUser } from "./fixtures";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
+import { PANEL_ROUTES, cleanupPanelRouteFixtures, createPanelRouteFixtures, openPanelRoute, routeAvailability } from "./panel-routes";
+import { SCREEN_ROUTES, createScreenFixtures, loginScreenAccount, resolveScreenRoute, screenAvailability } from "./screen-routes";
 
 // "axe-core" 자체는 @axe-core/playwright의 중첩(nested) 의존성이라 pnpm이 이 파일의
 // 모듈 해석 경로에 끌어올리지 않는다 — 직접 import하지 않고 AxeBuilder.analyze()의
@@ -35,8 +37,9 @@ function formatViolations(violations: AxeResults["violations"]): string {
     .join("\n");
 }
 
-// 검사 대상 여섯 화면 — 배열 하나, 원소 6개(아래 테스트가 개수를 단언한다). 화면을
-// 빼서 위반을 피하는 일을 막기 위해 이 배열이 유일한 진입점이다.
+// 검사 대상 — 기본 여섯 화면(아래 SCREENS) + UI-SPEC 「화면 목록」 전 화면(`screen-routes.ts`의 SCREEN_ROUTES — `/dev/components`와 `?panel=1` 포함) +
+// 패널이 열린 상태 전부(`panel-routes.ts`의 PANEL_ROUTES — D20, 한 표). 04.6-29가 넓혔다(SC 12). 화면을 빼서 위반을 피하는 일을 막기 위해
+// 이 셋이 유일한 진입점이고 개수를 단언한다. cert 화면(기능 스위치)은 데스크톱에서 「certs 프로젝트에서 잰다」로 빠지고 `cert-design-gates.spec.ts`가 잰다.
 const SCREENS: ReadonlyArray<{ name: string; goto: (page: Page) => Promise<void> }> = [
   { name: "로그인", goto: async (page) => { await page.goto("/login"); } },
   {
@@ -76,15 +79,58 @@ const SCREENS: ReadonlyArray<{ name: string; goto: (page: Page) => Promise<void>
   },
 ];
 
+test.afterAll(async () => {
+  await cleanupPanelRouteFixtures();
+});
+
 test.describe("§10 접근성 계약 (axe-core)", () => {
-  test("검사 대상 화면 배열이 정확히 6개다", () => {
+  test("검사 대상 화면 배열이 정확히 6개이고 화면 표 · 패널 라우트 표가 따로 전부 돈다", () => {
     expect(SCREENS).toHaveLength(6);
+    expect(SCREEN_ROUTES).toHaveLength(37);
+    expect(PANEL_ROUTES).toHaveLength(17);
   });
 
   for (const screen of SCREENS) {
     test(`${screen.name} 화면에 자동 판정 가능한 접근성 위반이 없다`, async ({ page }) => {
       await screen.goto(page);
       // 규칙 비활성(disableRules)·범위 축소(include/exclude) 없이 기본 규칙 전체로 돈다.
+      const results = await new AxeBuilder({ page }).analyze();
+      expect(results.violations, formatViolations(results.violations)).toEqual([]);
+    });
+  }
+
+  // UI-SPEC 「화면 목록」 전 화면(04.6-29 · SC 12) — 규칙 끄기·범위 축소 없이 기본 규칙 전체.
+  for (const route of SCREEN_ROUTES) {
+    test(`화면 표 ${route.id} (${route.path}) 에 자동 판정 가능한 접근성 위반이 없다`, async ({ page }) => {
+      const availability = screenAvailability(route, test.info().project.name);
+      if (!availability.measure) {
+        test.info().annotations.push({ type: "화면 건너뜀", description: `${route.id} — ${availability.note}` });
+        test.skip(true, `${route.id} — ${availability.note}`);
+        return;
+      }
+      const fixtures = await createScreenFixtures();
+      await loginScreenAccount(page, fixtures, route.as);
+      const response = await page.goto(resolveScreenRoute(route, fixtures));
+      expect(response?.status() ?? 0, `${route.id} 응답`).toBeLessThan(400);
+      const results = await new AxeBuilder({ page }).analyze();
+      expect(results.violations, formatViolations(results.violations)).toEqual([]);
+    });
+  }
+
+  // 패널 라우트 표(D20) — 패널이 열린 상태에서 뒤 화면까지 포함해 잰다(`openPanelRoute`가 건너뛸 행을 그 행만 뺀다).
+  for (const route of PANEL_ROUTES) {
+    test(`패널 ${route.id} 열린 상태에 자동 판정 가능한 접근성 위반이 없다`, async ({ page }) => {
+      const availability = routeAvailability(route, test.info().project.name);
+      if (!availability.measure) {
+        test.info().annotations.push({ type: "패널 라우트 건너뜀", description: `${route.id} — ${availability.note}` });
+        test.skip(true, `${route.id} — ${availability.note}`);
+        return;
+      }
+      // 결재 시트 행은 자기 폭으로 잰다 — 폰 390(아래 시트) · PC 1280(오른쪽 480 시트, DR4 A). 둘 다 문서 칸 button이 연다(inbox-table.tsx `rowTap`).
+      if (route.open === "approval-sheet") await page.setViewportSize({ width: route.width ?? 390, height: 844 });
+      const [panel, screens] = await Promise.all([createPanelRouteFixtures(), createScreenFixtures()]);
+      if (route.open !== "approval-sheet") await loginScreenAccount(page, screens, "sysadmin");
+      await openPanelRoute(page, route, panel);
       const results = await new AxeBuilder({ page }).analyze();
       expect(results.violations, formatViolations(results.violations)).toEqual([]);
     });

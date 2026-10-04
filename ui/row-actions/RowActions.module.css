@@ -1,0 +1,90 @@
+/* UI-SPEC 행동 링크 — 링크와 버튼이 같은 모양. 사이 --s-4, danger는 맨 끝 · 앞 간격 --s-8(= 사이 --s-4 + 여백 --s-4). */
+
+.row {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: baseline;
+  gap: var(--s-4);
+}
+
+/* PC 폭(≥700)에서는 한 줄을 지킨다(표 칸이 좁아져도 행동이 줄바꿈하지 않는다 — 거래처 행 동작 간격 단언 700·768). 폰은 줄바꿈으로 넘침을 피한다.
+   짧은 두 행동 마스터 표는 글꼴 교체 전후로 한 줄/두 줄이 바뀌지 않게 폰에서도 줄바꿈하지 않는다(noWrap) — 넘침은 mobile-320-no-overflow가 잰다(DECISIONS 2026-10-04). */
+@media (max-width: 699.98px) {
+  .row {
+    flex-wrap: wrap;
+  }
+
+  .row.noWrap {
+    flex-wrap: nowrap;
+  }
+}
+
+.action {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-link);
+  font-size: var(--text-aux);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+  text-decoration: underline;
+  text-decoration-thickness: var(--line-w);
+  text-underline-offset: var(--underline-offset);
+  cursor: pointer;
+}
+
+/* 대기 중 라벨 span과 「…」 span이 떨어지면 글자 밑줄이 두 토막이 된다 — 3차 버튼과 같이 gap 0. */
+button.action {
+  display: inline-flex;
+  gap: 0;
+}
+
+.action:hover:not([aria-disabled="true"]) {
+  text-decoration-thickness: var(--underline-w-hover);
+}
+
+.action[aria-disabled="true"] {
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
+
+.danger {
+  color: var(--status-danger);
+}
+
+/* 위험 행동 앞 여백은 앞 행동의 뒤쪽 바깥 여백으로 둔다 — 폰에서 줄바꿈되면 여백이 앞 줄 끝에 남고 둘째 줄 「삭제」는 들여쓰지 않는다.
+   한 줄일 때의 간격(--s-4 + 여백 --s-4 = --s-8)은 위험 행동 자신의 여백과 같다.
+   폰(<700)은 동작마다 44px 누르는 상자에 글자가 가운데라 상자 안 여백이 간격에 더해진다 — 여백을 --s-2로 줄여 320에서도 한 줄을 지킨다(글자 간격은 --s-8 이상, DECISIONS 2026-10-04). */
+.row > :has(+ .dangerEnd) {
+  margin-inline-end: var(--s-4);
+}
+
+@media (max-width: 699.98px) {
+  .row > :has(+ .dangerEnd) {
+    margin-inline-end: var(--s-2);
+  }
+}
+
+/* 비활성 이유 — 행동 바로 뒤 글자. Button의 막힘 이유와 같은 역할(위험 색 · 보조 크기). */
+.withReason {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--s-2);
+}
+
+.reason {
+  color: var(--status-danger);
+  font-size: var(--text-aux);
+  white-space: nowrap;
+}
+
+/* §3 터치 목표: 폰에서 모든 행동 요소 최소 44×44(공유 Button .tertiary와 같은 패턴). PC는 그대로. */
+@media (max-width: 699.98px) {
+  .action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+  }
+}

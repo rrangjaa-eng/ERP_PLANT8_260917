@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { and, eq, isNull } from "drizzle-orm";
 import { db, pool } from "@/db/client";
-import { codeItems, quoteLines, settingsSimple, teams } from "@/db/schema";
+import { quoteLines, settingsSimple, teams } from "@/db/schema";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
@@ -10,6 +10,7 @@ import { insertVendor } from "@/repositories/vendors";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, restoreQuoteLine, saveQuoteLines, type QuoteLineWriteRow } from "@/domain/quotes/lines";
 import { deferred, waitForLockWaiter } from "./lock-race";
+import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 
 // 04-26(D-86 · CEO A-19·A-20·A-36 · ENG-D10) — 차수당 견적 줄 상한. 상한은 설정 키
 // `quote_line.max_per_revision`이고, 여기서는 3·5로 바꾼 뒤 try/finally로 되돌린다(A-17 — E2E는 바꾸지 않는다).
@@ -44,8 +45,7 @@ async function setupRevision() {
   });
   const [team] = await db.select().from(teams).limit(1);
   if (!team) throw new Error("시드된 팀이 없습니다");
-  const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
-  if (!subcategory) throw new Error("시드된 quote_subcategory 코드 항목이 없습니다");
+  const subcategory = await firstSelectableSubcategory();
   const project = await createProject(SYSTEM_VIEWER, {
     clientId: client.id,
     teamId: team.id,

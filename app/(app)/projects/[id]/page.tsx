@@ -3,7 +3,7 @@ import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
 import { visible } from "@/domain/permissions/visible";
 import { findProject } from "@/domain/projects";
-import { listProjectFormReferences } from "@/domain/projects/references";
+import { listProjectFormReferences, scopeCreateFormReferences } from "@/domain/projects/references";
 import { getCurrentQuoteRevision, listQuoteLines } from "@/domain/quotes/lines";
 import { listRevisionSummaries } from "@/domain/quotes/revisions";
 import { listRevenue } from "@/domain/revenue";
@@ -27,7 +27,8 @@ import { projectResponsibles } from "@/domain/projects/responsibles";
 import { periodEditRights } from "@/domain/projects/period";
 import { PROJECT_STATUSES } from "@/domain/projects/status-transitions";
 import { addDays, kstToday } from "@/lib/kst-date";
-import { PROJECT_STATUS_TAG_KIND } from "../status-display";
+import { canCreateProject } from "../create-entry";
+import type { DetailScreenProps } from "@/ui/detail-screen/DetailScreen";
 import { QuoteLedger } from "./quote-table";
 import { RevisionSection } from "./revision-section";
 import type { StatusChangeProps } from "./status-change";
@@ -35,8 +36,9 @@ import type { CustomerApprovalProps, NewRevisionProps } from "./revision-dialogs
 import { getPerson } from "@/domain/people";
 
 // SYSTEM.md §6-2 상세 화면 — 이 리포의 첫 목록/상세 분리 화면. 네 숫자 줄
-// (PNL-01)·차수 섹션의 마크업은 이 플랜에 없다(04-06/04-09). 매출 섹션은
-// 04-02가 더한다. WR-07: 인증 검사를 이 페이지가 직접 한다.
+// (PNL-01)은 아직 없다(Phase 9). 매출 섹션은 04-02가 더한다. WR-07: 인증 검사를
+// 이 페이지가 직접 한다. `DetailScreen` 틀(제목 · 메타 · 행동)은 QuoteLedger가 그린다 —
+// 머리 행동(「일괄 저장」 · 「상태 바꾸기」)이 저장 전 편집 상태에 달려 있어서다.
 export const dynamic = "force-dynamic";
 
 export default async function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -122,6 +124,17 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     listRevisionSummaries(session.viewer, project.id),
   ]);
   const currentSummary = revisionSummaries.find((row) => row.revisionId === revision.id);
+  // /qa ISSUE-002 · /design-review — 「프로젝트 복사」는 목록 등록 진입점과 같은 규칙(업무 범위로 좁힌 팀 · 담당 PM).
+  const scopedCreateReferences =
+    canWrite && project.archivedAt === null ? await scopeCreateFormReferences(session.viewer, references, { todayKst }) : null;
+  const canCopyProject =
+    project.archivedAt === null &&
+    canCreateProject({
+      canWrite,
+      teamCount: scopedCreateReferences?.teams.length ?? 0,
+      pmUserCount: scopedCreateReferences?.pmUsers.length ?? 0,
+      clientCount: references.clients.length,
+    });
 
   // 04-24(D-53 · CEO-D10 · B-02) — 「복사해 새 차수」 렌더 조건은 새 차수 게이트의 입력과 같은 canCreateRevision 하나다.
   const newRevision: NewRevisionProps | null = structuralEditability({ status: project.status, canWrite }).newRevision
@@ -208,8 +221,10 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const teamLeadName = needsLeadName ? (responsibles?.teamLeadName ?? null) : null;
   const endDateNote = !endDatePassed ? null : teamLeadName ? `종료일 지남 · 팀장 ${teamLeadName}` : "종료일 지남";
 
+  // DetailScreen 머리 — 제목은 프로젝트 이름, 메타는 지금 부제 문구(`{번호} · 상세 견적 {n}차`)를 ` · `로 이은 것(글자 불변).
+  const frame = { title: project.name, meta: [project.number, `상세 견적 ${revision.seq}차`].join(" · ") } satisfies Pick<DetailScreenProps, "title" | "meta">;
+
   return (
-    <>
     <QuoteLedger
       viewerId={session.viewer.id}
       projectId={project.id}
@@ -217,14 +232,11 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       period={{ startDate: project.startDate, endDate: project.endDate, rights: periodRights, todayKst }}
       preEstimate={{ value: project.preEstimate ?? null, canEdit: canEditPreEstimate }}
       canSave={canSave}
-      projectName={project.name}
-      subtitle={`${project.number} · 상세 견적 ${revision.seq}차`}
+      frame={frame}
       statusSinceText={`${statusLabel} ${statusSince}`}
-      statusLabel={statusLabel}
-      statusTagKind={PROJECT_STATUS_TAG_KIND[status]}
       statusChange={statusChange}
       newRevision={newRevision}
-      copyProjectHref={canWrite && project.archivedAt === null ? `/projects?new=1&copyFrom=${project.id}#project-form` : null}
+      copyProjectHref={canCopyProject ? `/projects?new=1&copyFrom=${project.id}` : null}
       customerApproval={customerApproval}
       approvedSeq={approvedSeq}
       revisions={revisionSummaries.flatMap((row) => (row.revisionId && row.seq !== undefined ? [{ id: row.revisionId, seq: row.seq }] : []))}
@@ -232,7 +244,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       revisionId={revision.id}
       initialLines={lines}
       vendors={references.vendors}
+      vendorShown={references.vendorShown}
       subcategories={references.subcategories}
+      subcategoryLabels={references.subcategoryLabels}
       structural={structural}
       newLineCells={newLineCells}
       adjustmentStructural={adjustmentStructural}
@@ -250,13 +264,13 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       revenue={revenue}
       canWriteEntries={canWriteEntries}
       usdDefaultFxRate={usdDefaultFxRate}
-    />
-    {/* 04-24(S3 섹션 순서 ③ → ④) — 매출(원장 안 마지막 섹션) 뒤에 차수 섹션, 그 아래 이전 차수 읽기 섹션. */}
-    <RevisionSection
-      projectId={project.id}
-      summaries={revisionSummaries}
-      references={{ subcategories: references.subcategories, vendors: references.vendors }}
-    />
-    </>
+    >
+      {/* 04-24(S3 섹션 순서 ③ → ④) — 매출(원장 안 마지막 섹션) 뒤에 차수 섹션, 그 아래 이전 차수 읽기 섹션. */}
+      <RevisionSection
+        projectId={project.id}
+        summaries={revisionSummaries}
+        references={{ subcategories: references.subcategoryLabels, vendors: references.vendors, vendorShown: references.vendorShown }}
+      />
+    </QuoteLedger>
   );
 }

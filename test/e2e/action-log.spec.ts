@@ -1,8 +1,11 @@
 import { readFile } from "node:fs/promises";
-import { test, expect } from "@playwright/test";
+import { randomUUID } from "node:crypto";
+import { test, expect, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
+import { loginAsSysadmin } from "./row-actions-helpers";
 import { recordAction } from "@/domain/action-log/record";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { insertRole, setRoleArchived } from "@/repositories/roles";
 
 // ADMN-10·OPS-05: 필터 → 내보내기 → 정리 → 정리가 다시 로그에 남는 end-to-end.
 test.describe("행동 로그 화면 (ADMN-10, OPS-05)", () => {
@@ -208,5 +211,103 @@ test.describe("행동 로그 화면 (ADMN-10, OPS-05)", () => {
 
     await page.goto("/admin/action-log?actionType=login");
     await expect(page.getByRole("cell", { name: "로그인" }).first()).toBeVisible();
+  });
+});
+
+// 04.6-22 — 행동 로그 · 보관함이 목록 틀(`ListScreen`)과 서버 렌더 공용 표(`StaticTable`)로 그려진다(R1 · D21).
+// 역할 토큰의 계산 값과 비교한다(리터럴 px · rgb 금지 — 04.6 W3 합본 교훈).
+function tokenAsColor(page: Page, name: string): Promise<string> {
+  return page.evaluate((token) => {
+    const probe = document.createElement("span");
+    probe.style.color = `var(${token})`;
+    document.body.append(probe);
+    const color = getComputedStyle(probe).color;
+    probe.remove();
+    return color;
+  }, name);
+}
+
+function tokenAsRadius(page: Page, name: string): Promise<string> {
+  return page.evaluate((token) => {
+    const probe = document.createElement("div");
+    probe.style.borderTopLeftRadius = `var(${token})`;
+    document.body.append(probe);
+    const radius = getComputedStyle(probe).borderTopLeftRadius;
+    probe.remove();
+    return radius;
+  }, name);
+}
+
+async function expectTableFace(page: Page): Promise<void> {
+  const table = page.locator("main table").first();
+  await expect(table).toBeVisible();
+  // `ui/table` 표 면 — r8(--radius-surface) · 1px 테두리.
+  expect(await table.evaluate((element) => getComputedStyle(element).borderTopLeftRadius)).toBe(await tokenAsRadius(page, "--radius-surface"));
+  expect(await table.evaluate((element) => getComputedStyle(element).borderTopWidth)).toBe("1px");
+}
+
+test.describe("행동 로그 · 보관함 목록 틀 (04.6-22)", () => {
+  test("행동 로그 — 목록 틀 제목 · 표 면 · 서버 렌더 표가 런타임 오류 없이 열린다", async ({ page }) => {
+    await loginAsSysadmin(page);
+    const response = await page.goto("/admin/action-log");
+    expect(response?.status()).toBe(200);
+    await expect(page.locator('h1[data-ui="screen-title"]')).toHaveText("행동 로그");
+    await expectTableFace(page);
+    // R1 — 서버 페이지가 클라이언트 표에 함수 prop을 넘기면 오류 경계가 뜬다.
+    await expect(page.getByText("Functions cannot be passed directly to Client Components")).toHaveCount(0);
+    await expect(page.getByRole("table", { name: "행동 로그" })).toBeVisible();
+  });
+
+  test("행동 로그 — 「필터 지우기」 링크는 스크롤 위치를 지킨다", async ({ page }) => {
+    await loginAsSysadmin(page);
+    // 스크롤이 생기도록 같은 종류 행을 여럿 만들고 창을 낮춘다.
+    for (let index = 0; index < 8; index += 1) {
+      await recordAction(SYSTEM_VIEWER, { actionType: "document_create", entity: "code_items", detail: { scroll: index } });
+    }
+    await page.setViewportSize({ width: 1280, height: 400 });
+    await page.goto("/admin/action-log?actionType=document_create");
+    // 링크가 보이는 만큼만 내린다 — Playwright가 클릭 전에 링크를 보이게 스크롤하면 위치 지킴을 잴 수 없다.
+    await page.evaluate(() => window.scrollTo(0, 40));
+    expect(await page.evaluate(() => window.scrollY)).toBe(40);
+    const clear = page.getByRole("link", { name: "필터 지우기" }).first();
+    expect((await clear.boundingBox())?.y ?? -1).toBeGreaterThanOrEqual(0);
+    await clear.click();
+    await expect(page).toHaveURL(/\/admin\/action-log$/);
+    await expect(page.getByRole("link", { name: "필터 지우기" })).toHaveCount(0);
+    expect(await page.evaluate(() => window.scrollY)).toBe(40);
+  });
+
+  test("보관함 — 목록 틀 · 표 면 · 「복원」은 행 행동이고 위험 색이 아니며 폰에서 44 이상", async ({ page }) => {
+    const roleId = `role-e2e-${randomUUID().slice(0, 8)}`;
+    const roleName = `보관함 틀 ${roleId.slice(-8)}`;
+    await insertRole(SYSTEM_VIEWER, { id: roleId, name: roleName, sortOrder: 99 });
+    await setRoleArchived(SYSTEM_VIEWER, roleId, true);
+    try {
+      await loginAsSysadmin(page);
+      const response = await page.goto("/admin/archive");
+      expect(response?.status()).toBe(200);
+      await expect(page.locator('h1[data-ui="screen-title"]')).toHaveText("보관함");
+      await expectTableFace(page);
+
+      const row = page.locator("tr", { hasText: roleName });
+      const actions = row.locator('[data-ui="row-actions"]');
+      const restore = actions.getByRole("button", { name: "복원" });
+      await expect(restore).toBeVisible();
+      // D21 — 위험 색은 삭제만이다.
+      const color = await restore.evaluate((element) => getComputedStyle(element).color);
+      expect(color).not.toBe(await tokenAsColor(page, "--status-danger"));
+
+      await page.setViewportSize({ width: 375, height: 800 });
+      const touchMin = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--touch-min")));
+      const box = await restore.boundingBox();
+      expect(box?.height ?? 0).toBeGreaterThanOrEqual(touchMin);
+      await page.setViewportSize({ width: 1280, height: 800 });
+
+      await restore.click();
+      await expect(page.getByText(`복원 · ${roleName} 복원됨`)).toBeVisible({ timeout: 15000 });
+      await expect(row).toHaveCount(0);
+    } finally {
+      await setRoleArchived(SYSTEM_VIEWER, roleId, true);
+    }
   });
 });

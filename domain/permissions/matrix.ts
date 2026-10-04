@@ -4,6 +4,7 @@ import { visible } from "@/domain/permissions/visible";
 import { listRoles as defaultListRoles } from "@/repositories/roles";
 import { MENUS, PERMISSION_ACTIONS, type PermissionAction } from "@/domain/permissions/menus";
 import { INFO_ITEMS } from "@/domain/permissions/info-items";
+import { customFieldColumns } from "@/domain/custom-fields/visibility";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import {
@@ -126,9 +127,9 @@ export async function setPermissionCell(
   });
 }
 
-// 정보 노출표 열 정본: 정보 항목(단일 단 머리글, 그룹 없음).
-function visibilityColumns(): GridColumn[] {
-  return INFO_ITEMS.map((item) => ({ id: item.key, label: item.label }));
+// 정보 노출표 열 정본: 정보 항목(단일 단 머리글, 그룹 없음) 뒤에 활성 커스텀 항목(04.5-03, D10-13).
+async function visibilityColumns(viewer: Viewer): Promise<GridColumn[]> {
+  return [...INFO_ITEMS.map((item) => ({ id: item.key, label: item.label })), ...(await customFieldColumns(viewer))];
 }
 
 export async function readVisibilityGrid(viewer: Viewer, deps?: Partial<MatrixDeps>): Promise<GridDto> {
@@ -139,7 +140,11 @@ export async function readVisibilityGrid(viewer: Viewer, deps?: Partial<MatrixDe
   const allowed = await canFn(viewer, "admin.visibility", "view");
   if (!allowed) throw new ForbiddenError("정보 노출표 열람 권한 없음");
 
-  const [roleRows, visibilityRows] = await Promise.all([listRoles(viewer), listVisibility(viewer)]);
+  const [roleRows, visibilityRows, columns] = await Promise.all([
+    listRoles(viewer),
+    listVisibility(viewer),
+    visibilityColumns(viewer),
+  ]);
 
   const values: Record<string, boolean> = {};
   for (const row of visibilityRows) {
@@ -148,7 +153,7 @@ export async function readVisibilityGrid(viewer: Viewer, deps?: Partial<MatrixDe
 
   return {
     roles: roleRows.map((role) => ({ id: role.id, label: role.name })),
-    columns: visibilityColumns(),
+    columns,
     values,
   };
 }

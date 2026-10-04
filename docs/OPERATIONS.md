@@ -11,6 +11,7 @@
 | Cloud Run 서비스 | `plant8-staging` | `plant8-prod` |
 | Cloud SQL 인스턴스 | `plant8-staging-db` | `plant8-prod-db` |
 | 시크릿 접미사 | `-staging` | `-prod` |
+| 서명 버킷(서울·비공개·소프트 삭제 0·버전 관리 끔·부트스트랩이 만든다) | `<프로젝트>-plant8-staging-cert-signatures` | `<프로젝트>-plant8-prod-cert-signatures` |
 | 접속 주소 | `gcloud run services describe plant8-staging --format='value(status.url)'` | 같은 명령, `plant8-prod` |
 
 접속 주소는 **`status.url` 실측값**만 쓴다. 프로젝트 번호로 만든 "결정적" 형식
@@ -89,6 +90,7 @@ db-bootstrap Job → migrate Job(16A 커넥션 검사, 위반이면 exit 3으로
 Origin 검사) → 경보 3개 upsert. (`/healthz`가 아니라 `/api/health`인 이유: `/healthz`는
 Cloud Run/구글 엣지가 예약 경로로 취급해 컨테이너까지 도달하지 못하고 404를
 돌려줬다 — 2026-09-18 실제 스테이징에서 확인.)
+`ensure_cert_bucket`은 서명 버킷을 만들지 않는다 — 확인·설정 맞춤·런타임 바인딩만, 없으면 §8 부트스트랩을 먼저.
 
 **승격(스테이징 → **production**):** 스테이징에서 확인 → GitHub Actions "Run workflow" →
 target=production, sha 입력(비우면 스테이징이 서빙 중인 SHA) → 가드가 그 SHA 이미지가
@@ -166,7 +168,8 @@ account:reset --email …` / `pnpm account:unlock --email …`. 운영에서는 
 세션이 gcloud를 직접 쓰지 않고 `verify.yml`(workflow_dispatch, WIF)을 띄워 로그를 읽는다 —
 조직 정책 `iam.disableServiceAccountKeyCreation`이 SA 키 생성을 막기 때문이다. gha-deployer에
 읽기 전용 두 역할 `roles/orgpolicy.policyViewer`(조직 수준)·`roles/iam.securityReviewer`만
-준다(쓰기 권한 없음, 2026-09-22 결정).
+준다(쓰기 권한 없음, 2026-09-22 결정). `verify.yml`의 `notify-tick` 점검(스테이징 스케줄러 잡·실행 기록·앱 로그)은
+부트스트랩이 이미 준 `cloudscheduler.admin`·`logging.admin`으로 조회만 한다.
 
 백업 실패 경보 테스트: 이메일 채널에는 콘솔 "테스트 알림 보내기"가 없다. Owner 계정의
 Cloud Shell에서 경보 필터의 `jsonPayload.message` 분기에 맞는 합성 ERROR 로그 한 줄을
@@ -191,6 +194,7 @@ WIF 풀·프로바이더, 서비스 계정 5개(배포자 + 환경별 런타임�
 접근, 조직 정책 확인. 저장소 수준 GitHub Actions 변수 4개를 설정한다: `GCP_PROJECT_ID`,
 `GCP_PROJECT_NUMBER`, `GCP_REGION`, `ALERT_EMAIL`(Secrets 탭은 비워 둔다 — WIF라 키
 파일이 없다. GitHub Environments도 만들지 않는다).
+(d-2)가 환경별 서명 버킷(`…-cert-signatures`)을 만들고 배포자에게 그 버킷에만 `roles/storage.admin`을 준다 — 이미 부트스트랩된 프로젝트는 PR 머지 전에 PR 브랜치의 `scripts/bootstrap-gcp.sh`를 소유자가 한 번 다시 돌린다(멱등 · 머지 = 스테이징 자동 배포라 머지 뒤에는 늦다).
 
 ## 9. 시크릿 목록
 
@@ -231,7 +235,7 @@ openssl rand -base64 32 | gcloud secrets versions add app-data-key-v1-prod    --
 함께 둔 상태에서 `pnpm db:rotate-key`를 돌린다 — 옛 버전 암호문을 복호화해 새 버전으로
 다시 쓴다(중단·재실행 안전, 이미 최신 버전인 행은 건너뛴다). **회전 완료 후에만** 옛
 키(`app-data-key-v1-{env}`)를 지운다 — 먼저 지우면 아직 재암호화되지 않은 행이 영구히
-읽히지 않는다.
+읽히지 않는다. 배포(`deploy.sh`)는 아직 `APP_DATA_KEY_v2`를 붙이지 않는다 — 붙이는 변경 전에는 회전하지 않는다.
 
 ### 이메일(SMTP) 확인 경로
 
@@ -267,8 +271,30 @@ account·db-bootstrap·restore 다섯만 Job으로 존재한다) — `.env.local
 항목을 한 줄씩 나열하고 종료 코드 1로 끝난다 — 상태는 가져오기 전 그대로다. 파일이
 없거나 JSON이 아니거나 `settings` 필드가 없으면 사용법 오류(종료 코드 2)다.
 
+지난 연도 이력(연차 일수처럼 1월 1일 적용 키)은 대상 환경이 **새 환경**일 때만 그대로 받는다 —
+그 키 이력이 배포 시드 행(2000-01-01 = 기본값)뿐이고, 올해 전 업무 기록(연차 신청 · 조정, 매출,
+리저브, 고객 승인 견적)이 한 건도 없을 때다. 실제 운영된 환경에는 그날 유효값과 같은 무변화 행만
+통과한다(소급 변경 금지). 그래서 이관 순서는 **설정 가져오기 → 업무 데이터 적재**다.
+게이트가 꺼진 환경(`CERT_FEATURE_ALLOWED`가 없는 프로덕션)은 게이트가 켜진 환경(스테이징)에서 내보낸 파일의 `cert.enabled`를
+`등록되지 않은 키: cert.enabled`로 거부하고 아무것도 쓰지 않는다 — 의도한 동작이다(꺼진 기능의 스위치가 프로덕션에 들어가지 않는다) · 그 키를 파일에서 지우고 다시 가져온다.
+
+## 13. Codex 디자인 검토
+
+Codex는 `/design-review`·`/plan-design-review`에서 `scripts/codex-design-review.sh`로만 쓴다(그 밖의
+gstack 리뷰는 `codex_reviews disabled`). 설치는 `scripts/install-codex.sh`(pnpm 전역, SessionStart 훅이
+승인 전이면 손으로 실행). 인증은 ChatGPT 구독만 — API 키는 쓰지 않는다. 자격 옮기기: 1) PC에서
+`codex login`(브라우저) → `~/.codex/auth.json` 2) base64 한 줄 변환:
+```bash
+base64 -w0 ~/.codex/auth.json                                            # Linux
+base64 -i ~/.codex/auth.json | tr -d '\n'                                # macOS
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("$env:USERPROFILE\.codex\auth.json"))  # PowerShell
+```
+3) claude.ai 환경(plant8) 변수 `CODEX_AUTH_JSON_B64`에 붙여넣기 4) `api.openai.com`·`chatgpt.com`·
+`auth.openai.com`은 클라우드 세션 프록시를 통과한다 — 다른 환경에서 막히면 그 환경 허용 목록에 추가
+5) 갱신 실패(로그인 풀림) 시 2번을 다시 해 값 교체 6) 토큰은 리포·커밋·문서에 절대 넣지 않는다.
+
 ## 14. 백업·복원 (OPS-03)
 
 자동 백업은 `deploy.sh`가 켠다(`--backup-start-time=18:00` UTC · `--retained-backups-count=7`, 확인: `gcloud sql instances describe plant8-{env}-db --format='value(settings.backupConfiguration)'`). PITR은 꺼져 있다 — 복원 단위는 하루 1회 자동 백업이고 그 뒤 입력은 복원에서 사라진다.
 리허설: Actions `restore-rehearsal.yml`을 main에서 실행(production은 `confirm_production`에 `plant8-prod-db`) → 임시 `plant8-{env}-rehearsal-<실행 id>-<시도>`에 최신 백업 복원 → `plant8-{env}-restore` Job 확인 → 삭제 → 그 환경 DB에 기록.
-결과는 `/admin/system-status` 「복원 리허설」과 Actions 요약 — 기록 단계 전 이른 실패(WIF 인증 등)는 화면에 남지 않아 이전 결과가 최신처럼 보인다, Actions 실행 결과를 먼저 본다. 남은 임시 인스턴스 정리와 실제 사고 복원은 [`docs/RESTORE.md`](RESTORE.md).
+결과는 `/admin/system-status` 「복원 리허설」과 Actions 요약 — 기록 단계 전 이른 실패(WIF 인증 등)는 화면에 남지 않아 이전 결과가 최신처럼 보인다, Actions 실행 결과를 먼저 본다. 남은 임시 인스턴스 정리와 실제 사고 복원은 [`docs/RESTORE.md`](RESTORE.md). 확인증 파기(CERT-02)는 사람이 월 1회 Cloud Run Job으로 실행한다 — 절차 · 35일 감시 · 백업 복원 뒤 `--apply`는 [`docs/CERT-PURGE.md`](CERT-PURGE.md).

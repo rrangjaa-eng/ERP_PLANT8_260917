@@ -12,7 +12,8 @@
 #   2) git push --force/-f/+refspec 차단. --force-with-lease는 경고만(차단 아님).
 #   3) 커밋 접두어 docs/feat/fix/chore 외(test/style/perf/refactor…)는 경고만.
 #      접두어 자체가 없으면 차단하되 Merge/Revert 제목, -m/-F 없는 commit, -F 파일은 항상 통과.
-#   4) Codex 해제 시각은 KST로 본다.
+#   4) Codex는 디자인 검토에서만(사용자 결정 2026-10-01) — 세션 스킬 기록(plant8-skill-gate)에
+#      design-review·plan-design-review가 있을 때만 codex 실행을 허용한다(R3).
 set -uo pipefail
 # 로케일 고정: 셸·grep·sed는 바이트 단위(C)로 돌리고, 한글 판정은 모두 jq(항상 UTF-8)로 한다.
 # 사용자 로케일(C.UTF-8 등)에 따라 결과가 바뀌지 않게 한다.
@@ -60,7 +61,18 @@ finish() {
   exit 0
 }
 
-# Codex 검토는 2026-09-27 폐지 — 관련 차단 규칙(옛 R3)은 없다.
+# --- R3: Codex는 디자인 검토에서만 (사용자 결정 2026-10-01) ------------------------
+# 1차 차단은 gstack codex_reviews disabled(scripts/install-gstack.sh)다. 이 규칙은 그 설정을 따르지
+# 않는 경로(/codex·/office-hours·/spec 등, 손으로 친 codex)를 막는다. 허용 = 이 세션의 스킬 기록
+# (plant8-skill-gate.sh record-skill이 쓰는 세션 전체 파일)에 design-review나 plan-design-review가
+# 있을 때. 한계: 기록은 세션 단위라 디자인 검토 뒤 같은 세션의 codex 호출은 통과한다.
+CODEX_MSG='Codex는 디자인 검토(/design-review·/plan-design-review)에서만 쓴다(CLAUDE.md §6, 사용자 결정 2026-10-01). 그 밖의 검토는 Claude 독립 검토로.'
+codex_allowed() {
+  local session
+  session="$(printf '%s' "$payload" | jq -r '.session_id // empty' 2>/dev/null)"
+  [ -n "$session" ] || return 1
+  grep -Eqx '(design-review|plan-design-review)' "${TMPDIR:-/tmp}/plant8-skill-gate/${session}.skills" 2>/dev/null
+}
 
 # --- 사용자 승인 판정 (R7·R8) ------------------------------------------------
 # 사람 글로 인정하는 것은 두 가지뿐이다.
@@ -68,6 +80,7 @@ finish() {
 #       — 봉투가 없으면 그 항목 전체(사람이 직접 친 글)
 #   (b) 코디네이터 중계(<relay from="coordinator">/<coordinator-relay>, isMeta·projects-relay 포함)의
 #       줄 머리 <cited author="user">
+# 작업 중에 도착한 글은 attachment(queued_command)로 남는다 — 같은 규칙으로 user 항목처럼 본다(2026-10-02).
 # 서브에이전트 보고(<agent-message>, origin peer), task-notification·Monitor 출력, tool_result,
 # assistant 항목, 사이드체인은 절대 인정하지 않는다. 카드 버튼 누름도 제외.
 # 문장 단위로 보고, 질문(?, 될까, 돼?)·부정(하지 마, 안 돼, 말고, 금지, 나중에)은 승인이 아니다.
@@ -110,7 +123,15 @@ def merge_calls: select(type == "object" and .type == "assistant") | (.timestamp
   | {id: .id, ts: $ts};
 def ok_results: select(type == "object" and .type == "user") | .message.content[]?
   | select(type == "object" and .type == "tool_result" and (.is_error != true)) | .tool_use_id;
-[inputs | fromjson? ] as $e
+# origin.kind가 human인 것만 받는다 — origin이 없는 queued_command(중계 등)는 보낸 쪽을 알 수 없다(/review 2026-10-02).
+def queued: if type == "object" and .type == "attachment" then
+    (.attachment | objects) as $a
+    | if ($a.type // "") == "queued_command" and (($a.origin | objects | .kind) // "") == "human"
+      then {type: "user", isSidechain: (.isSidechain // false), timestamp: .timestamp,
+            origin: $a.origin, message: {content: ($a.prompt // "")}}
+      else empty end
+  else . end;
+[inputs | fromjson? | queued ] as $e
 | [ $e[] | frags ] as $f
 | if $mode == "hook" then
     (if any($f[]; .text | sentences | any(.[]; hook_sent)) then "1" else "0" end)
@@ -248,7 +269,7 @@ HOOK_APPROVAL_MSG='훅 스크립트·settings.json 수정은 사용자가 채팅
 CLAUDE_MD_MSG='CLAUDE.md는 사용자가 직접 관리한다. Bash로 우회하지 말고 바꿀 문장과 위치를 사용자에게 주고 직접 붙여 넣게 하라.'
 PNPM_ONLY_MSG='이 저장소는 pnpm만 쓴다(CLAUDE.md §1). pnpm install / pnpm add로 바꿔라. 새 의존성이면 이유 한 줄 + 사용자 승인 먼저(§5).'
 DRAFT_MSG='PR은 draft로 연다(지침 §9). draft: true / --draft를 붙여 다시 호출하라.'
-READY_WARN='draft 해제(ready)는 사용자 확인 뒤에(지침 §9). 게이트가 끝났는지 확인하라.'
+READY_WARN='draft 해제(ready)는 변경 종류에 맞는 게이트 기록과 최신 커밋 CI 초록을 확인한 뒤에(CLAUDE.md §4 머지).'
 
 is_claude_md() { case "$1" in CLAUDE.md|*/CLAUDE.md) return 0 ;; esac; return 1; }
 is_hook_path() { [[ "$1" =~ $HOOK_PATH_RE ]]; }
@@ -423,13 +444,46 @@ check_segment() {
     w="${W[$k]}"
     case "$w" in
       '{'|'}'|'!'|if|then|elif|else|do|while|until|nohup|time|exec|builtin) k=$((k + 1)); continue ;;
-      env|sudo|nice)
-        k=$((k + 1))
-        while [ "$k" -lt "$n" ] && { [[ "${W[$k]}" == -* ]] || [[ "${W[$k]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; }; do k=$((k + 1)); done
-        continue ;;
-      timeout)
+      corepack)
+        # corepack pnpm|npm|yarn … — 뒤의 패키지 매니저를 명령으로 본다(R3 우회 방지).
         k=$((k + 1))
         while [ "$k" -lt "$n" ] && [[ "${W[$k]}" == -* ]]; do k=$((k + 1)); done
+        continue ;;
+      command)
+        # command -v/-V는 조회다 — 뒤 단어를 실행하지 않는다.
+        case "${W[$((k + 1))]:-}" in -v|-V) break ;; esac
+        k=$((k + 1))
+        while [ "$k" -lt "$n" ] && [[ "${W[$k]}" == -* ]]; do k=$((k + 1)); done
+        continue ;;
+      env|sudo|nice|stdbuf|setsid|xargs|unbuffer)
+        # 값을 따로 받는 옵션(nice -n 5, env -u X, xargs -n 1 …)은 그 값까지 건너뛴다.
+        local valued
+        case "$w" in
+          nice) valued="n" ;; env) valued="uCS" ;; sudo) valued="ugChpUDrt" ;;
+          xargs) valued="nILPdEsa" ;; stdbuf) valued="ioe" ;; *) valued="" ;;
+        esac
+        k=$((k + 1))
+        while [ "$k" -lt "$n" ] && { [[ "${W[$k]}" == -* ]] || [[ "${W[$k]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; }; do
+          # env -S/--split-string은 값을 다시 명령으로 쪼갠다 — 그 안의 codex 실행도 R3로 본다.
+          local split=""
+          if [ "$w" = env ]; then
+            case "${W[$k]}" in
+              -S|--split-string) split="${W[$((k + 1))]:-}" ;;
+              --split-string=*) split="${W[$k]#--split-string=}" ;;
+              -S?*) split="${W[$k]#-S}" ;;
+            esac
+          fi
+          if [[ "$split" =~ (^|[[:space:]/])codex([[:space:]]|$) ]]; then codex_allowed || block "$CODEX_MSG"; fi
+          if [ -n "$valued" ] && [[ "${W[$k]}" =~ ^-[$valued]$ ]]; then k=$((k + 1)); fi
+          k=$((k + 1))
+        done
+        continue ;;
+      timeout|gtimeout|_gstack_codex_timeout_wrapper)
+        k=$((k + 1))
+        while [ "$k" -lt "$n" ] && [[ "${W[$k]}" == -* ]]; do
+          case "${W[$k]}" in -s|-k|--signal|--kill-after) k=$((k + 1)) ;; esac
+          k=$((k + 1))
+        done
         k=$((k + 1)); continue ;;
     esac
     if [[ "$w" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then k=$((k + 1)); continue; fi
@@ -452,6 +506,29 @@ check_segment() {
   case "$cmd" in
     git) check_git "${ARGS[@]}" ;;
     gh) check_gh "${ARGS[@]}" ;;
+    codex)
+      case "${ARGS[0]:-} ${ARGS[1]:-}" in
+        "--version "*|"-V "*|"--help "*|"-h "*|"login status") ;;
+        *) codex_allowed || block "$CODEX_MSG" ;;
+      esac ;;
+    npx|bunx|pnpm|npm)
+      # 실행(npx, bunx, pnpm/npm dlx·exec·x, pnpm <bin>)만 막는다 — 설치(pnpm add -g)는 Codex 호출이 아니다.
+      # 값을 따로 받는 옵션(-C·--dir·--prefix·-F·--filter·-w·--workspace)은 그 값까지 건너뛰고 하위 명령을 찾는다.
+      local first="" skipv=0
+      for a in "${ARGS[@]}"; do
+        if [ "$skipv" -eq 1 ]; then skipv=0; continue; fi
+        case "$a" in
+          -C|--dir|--prefix|-F|--filter|--workspace) skipv=1 ;;
+          -w) [ "$cmd" = npm ] && skipv=1 ;;
+          -*) ;;
+          *) first="$a"; break ;;
+        esac
+      done
+      if [ "$cmd" = npx ] || [ "$cmd" = bunx ] || [[ "$first" =~ ^(dlx|exec|x)$ ]] || { [ "$cmd" = pnpm ] && [ "$first" = codex ]; }; then
+        for a in "${ARGS[@]}"; do
+          case "$a" in codex|*@openai/codex*) codex_allowed || block "$CODEX_MSG" ;; esac
+        done
+      fi ;;&
     npm)
       local sub=""
       for a in "${ARGS[@]}"; do case "$a" in -*) ;; *) sub="$a"; break ;; esac; done
@@ -555,7 +632,7 @@ count_hangul_chars() { printf '%s' "$1" | jq -Rrs '[match("[가-힣ㄱ-ㅎㅏ-�
 count_word_tokens() { printf '%s' "$1" | grep -oE '[A-Za-z]{2,}' 2>/dev/null | wc -l | tr -d ' '; }
 count_hangul_tokens() { printf '%s' "$1" | jq -Rrs '[splits("[ \n]+") | select(test("[가-힣ㄱ-ㅎㅏ-ㅣ]"))] | length' 2>/dev/null || echo 0; }
 
-R4_KOREAN_ONLY_MSG='사용자에게 보이는 글(답글·상태·카드)은 한국어로 쓴다(지침·메모 korean-only-user-text). 한국어로 다시 써서 호출하라. 코드·경로·URL은 그대로 둬도 된다.'
+R4_KOREAN_ONLY_MSG='사용자에게 보이는 글(답글·상태·카드)은 한국어로 쓴다(지침·메모 korean-only-user-text). 한국어로 다시 써서 호출하라. 코드·경로·URL은 그대로 둬도 되고, 오류 로그는 코드 블록에 넣는다.'
 
 r4_check() {  # $1=필드들(줄마다 base64로 인코딩된 값), $2=목록 검사용 원문(reply/update_message의 .text만, 없으면 빈 문자열)
   local fields="$1" list_text="${2:-}"

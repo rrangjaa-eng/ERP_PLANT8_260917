@@ -62,3 +62,9 @@ export async function requireSession(): Promise<{ viewer: Viewer; user: SessionU
   if (!session) redirect("/login");
   return session;
 }
+
+// 04.3-07 — 지금 요청의 better-auth 세션 id(개인정보취급자 비활동 판정의 열쇠). 세션이 없으면 null.
+export async function getSessionId(): Promise<string | null> {
+  const session = await auth.api.getSession({ headers: await headers() });
+  return session?.session.id ?? null;
+}

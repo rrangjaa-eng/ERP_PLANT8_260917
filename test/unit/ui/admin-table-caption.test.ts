@@ -28,43 +28,103 @@ const cases: Case[] = [
     path: ["app", "(app)", "admin", "people", "roles", "roles-client.tsx"],
     caption: "계급",
   },
-  { name: "거래처 (vendors)", path: ["app", "(app)", "admin", "vendors", "page.tsx"], caption: "거래처" },
 ];
 
-describe.each(cases)("$name 화면 — <table>에 시각적으로 숨긴 caption이 있다(A-M3)", ({ path, caption }) => {
-  const source = read(...path);
+// 04.6-15 — 같은 불변식(<table> 바로 안 caption · 시각 숨김 · 화면 제목 포함)을 두 꼴로 잰다. 옛 raw `<table>` 꼴은 소스 안
+// `<caption className="sr-only">`를, 서버 `StaticTable` 꼴(R1)은 호출부의 `caption` 값과 `StaticTable` 컴포넌트의 caption 렌더를 본다.
+// 화면이 raw 꼴에서 StaticTable 꼴로 옮겨도(웨이브 ③ 거래처 · ④ 사람·계급·법인카드·코드표) 이 단언은 그대로 초록이어야 한다.
+const STATIC_CALL = /<StaticTable[\s>]/;
+// `caption="…"` · `caption={"…"}` · caption={`…${x}…`} — 호출부가 넘기는 값 한 덩어리.
+const STATIC_CAPTION_VALUE = /<StaticTable[\s\S]*?caption=(\{`[^`]*`\}|"[^"]*"|\{[^}]*\})/;
 
-  it("<table> 바로 안에 <caption>이 있다", () => {
-    expect(source).toMatch(/<table[^>]*>\s*<caption/);
+function staticCaptionValue(source: string): string {
+  return source.match(STATIC_CAPTION_VALUE)?.[1] ?? "";
+}
+
+describe.each(cases)("$name 화면 — 표에 시각적으로 숨긴 caption이 있다(A-M3 · raw 꼴 또는 StaticTable 꼴)", ({ path, caption }) => {
+  const source = read(...path);
+  const staticTable = read("ui", "table", "StaticTable.tsx");
+  const isStatic = STATIC_CALL.test(source);
+
+  it("raw 꼴은 <table> 바로 안에 <caption>이 있고, StaticTable 꼴은 호출에 caption 값이 있다", () => {
+    if (isStatic) {
+      expect(staticCaptionValue(source)).not.toBe("");
+    } else {
+      expect(source).toMatch(/<table[^>]*>\s*<caption/);
+    }
   });
 
-  it("caption 요소에 시각 숨김 클래스(전역 sr-only)가 붙어 있다", () => {
-    const match = source.match(/<caption[^>]*>/);
+  it("caption 요소에 시각 숨김 클래스(전역 sr-only)가 붙어 있다(StaticTable 꼴은 컴포넌트의 caption 렌더)", () => {
+    const match = (isStatic ? staticTable : source).match(/<caption[^>]*>/);
     expect(match?.[0] ?? "").toMatch(/\bsr-only\b/);
   });
 
   it(`caption 문자열 안에 화면 제목 "${caption}"이 있다`, () => {
-    const match = source.match(/<caption[^>]*>([^<]*)<\/caption>/);
-    expect(match?.[1] ?? "").toContain(caption);
+    if (isStatic) {
+      expect(staticCaptionValue(source)).toContain(caption);
+    } else {
+      const match = source.match(/<caption[^>]*>([^<]*)<\/caption>/);
+      expect(match?.[1] ?? "").toContain(caption);
+    }
+  });
+});
+
+// `ui/table/StaticTable.tsx` — 위 StaticTable 꼴 화면이 기대는 컴포넌트 쪽 불변식(모든 StaticTable 화면에 한 번).
+describe("ui/table/StaticTable.tsx — caption이 필수이고 열 머리글이 scope=\"col\"이다(A-M3 · 04.6-15)", () => {
+  const source = read("ui", "table", "StaticTable.tsx");
+
+  it("props 타입에 필수 caption: string 필드가 있다", () => {
+    expect(source).toMatch(/caption:\s*string/);
+  });
+
+  it("<table> 바로 안에 {caption}을 렌더하는 시각 숨김 <caption>이 있다", () => {
+    expect(source).toMatch(/<table[^>]*>\s*<caption className="sr-only">\{caption\}<\/caption>/);
+  });
+
+  it('열 머리글이 <th scope="col"로 그려진다', () => {
+    expect(source).toMatch(/<th\s+key=\{column\.key\}\s+scope="col"/);
+  });
+});
+
+// 거래처(04.6-11 · R1): 서버 페이지가 raw <table> 대신 `ui/table/StaticTable`을 부른다 — 같은 세 불변식(<table> 바로 안 caption ·
+// 시각 숨김 · 제목 포함)을 호출부의 caption 값 + StaticTable의 caption 렌더로 잰다.
+describe("거래처 (vendors) 화면 — StaticTable의 caption에 시각적으로 숨긴 caption이 있다(A-M3 · 04.6-11)", () => {
+  const page = read("app", "(app)", "admin", "vendors", "page.tsx");
+  const staticTable = read("ui", "table", "StaticTable.tsx");
+
+  it("<table> 바로 안에 {caption}을 그리는 <caption>이 있다(StaticTable)", () => {
+    expect(staticTable).toMatch(/<table[^>]*>\s*<caption[^>]*>\{caption\}<\/caption>/);
+  });
+
+  it("caption 요소에 시각 숨김 클래스(전역 sr-only)가 붙어 있다(StaticTable)", () => {
+    const match = staticTable.match(/<caption[^>]*>\{caption\}/);
+    expect(match?.[0] ?? "").toMatch(/\bsr-only\b/);
+  });
+
+  it('거래처 page.tsx가 <StaticTable 호출에 caption="거래처"를 넘긴다', () => {
+    expect(page).toMatch(/<StaticTable[\s\S]*?caption="거래처"/);
   });
 });
 
 describe("코드표 화면 — caption이 tableKey에 따라 서로 다른 표를 구분한다(WR-06, 260922-i3k 리뷰)", () => {
   const source = read("app", "(app)", "admin", "code-tables", "page.tsx");
 
-  it("caption이 currentLabel(화면 부제)을 참조한다 — 고정 문자열 「코드표」만이 아니다", () => {
-    const match = source.match(/<caption[^>]*>([\s\S]*?)<\/caption>/);
-    expect(match?.[1] ?? "").toContain("currentLabel");
+  it("caption이 currentLabel(고른 표 이름)을 참조한다 — 고정 문자열 「코드표」만이 아니다(raw · StaticTable 꼴 모두)", () => {
+    const rawCaption = source.match(/<caption[^>]*>([\s\S]*?)<\/caption>/)?.[1];
+    expect(rawCaption ?? staticCaptionValue(source)).toContain("currentLabel");
   });
 });
 
-describe("코드표 화면 — 머리글 <th> 전부에 scope=\"col\"이 있다(A-M3)", () => {
+describe("코드표 화면 — 머리글 <th> 전부에 scope=\"col\"이 있다(A-M3 · raw 꼴 또는 StaticTable 꼴)", () => {
   const source = read("app", "(app)", "admin", "code-tables", "page.tsx");
 
-  it("<th 로 시작하는 태그 수와 <th scope=\"col\" 태그 수가 같다(조건부 「동작」 칸 포함)", () => {
+  it("페이지에 <th 가 있으면 전부 <th scope=\"col\"이고, 없으면 <StaticTable을 쓴다(머리글은 StaticTable이 맡는다)", () => {
     const thCount = (source.match(/<th[\s>]/g) ?? []).length;
+    if (thCount === 0) {
+      expect(source).toMatch(STATIC_CALL);
+      return;
+    }
     const scopedThCount = (source.match(/<th scope="col"/g) ?? []).length;
-    expect(thCount).toBeGreaterThan(0);
     expect(scopedThCount).toBe(thCount);
   });
 });

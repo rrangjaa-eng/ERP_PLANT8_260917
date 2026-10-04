@@ -166,6 +166,7 @@ ensure_apis() {
     run.googleapis.com sqladmin.googleapis.com secretmanager.googleapis.com \
     artifactregistry.googleapis.com monitoring.googleapis.com logging.googleapis.com \
     compute.googleapis.com servicenetworking.googleapis.com cloudscheduler.googleapis.com \
+    storage.googleapis.com \
     --project="$PROJECT"
 }
 
@@ -246,17 +247,20 @@ ensure_sql_db_users() {
 
   local admin_secret
   admin_secret="$(secret_name db-admin-password "$ENV")"
+  if ! run gcloud secrets describe "$admin_secret" --project="$PROJECT" >/dev/null 2>&1; then
+    run gcloud secrets create "$admin_secret" --replication-policy=user-managed --locations="$REGION" --project="$PROJECT"
+  fi
   local has_version
-  has_version="$(run gcloud secrets versions list --secret="$admin_secret" --project="$PROJECT" --filter='state:ENABLED' --format='value(name)' 2>/dev/null || true)"
+  has_version="$(run gcloud secrets versions list "$admin_secret" --project="$PROJECT" --filter='state:ENABLED' --format='value(name)')" || {
+    echo "cannot list versions of ${admin_secret} — stopped before touching the secret" >&2
+    return 1
+  }
   if [ -z "$has_version" ]; then
-    if ! run gcloud secrets describe "$admin_secret" --project="$PROJECT" >/dev/null 2>&1; then
-      run gcloud secrets create "$admin_secret" --replication-policy=user-managed --locations="$REGION" --project="$PROJECT"
-    fi
     local admin_password
     admin_password="$(openssl rand -base64 32)"
-    printf '%s' "$admin_password" | run gcloud secrets versions add "$admin_secret" --project="$PROJECT" --data-file=-
     # 값은 로그·trace에 절대 남기지 않는다(디버그 트레이스 플래그를 켜지 않는다).
     run gcloud sql users set-password postgres --instance="$instance" --project="$PROJECT" --password="$admin_password"
+    printf '%s' "$admin_password" | run gcloud secrets versions add "$admin_secret" --project="$PROJECT" --data-file=-
   fi
 }
 
@@ -268,7 +272,10 @@ _ensure_secret() {
     run gcloud secrets create "$name" --replication-policy=user-managed --locations="$REGION" --project="$PROJECT"
   fi
   local has_version
-  has_version="$(run gcloud secrets versions list --secret="$name" --project="$PROJECT" --filter='state:ENABLED' --format='value(name)' 2>/dev/null || true)"
+  has_version="$(run gcloud secrets versions list "$name" --project="$PROJECT" --filter='state:ENABLED' --format='value(name)')" || {
+    echo "cannot list versions of ${name} — stopped before touching the secret" >&2
+    return 1
+  }
   if [ -z "$has_version" ]; then
     if [ "$seed_bytes" = "sentinel" ]; then
       printf '__unset__' | run gcloud secrets versions add "$name" --project="$PROJECT" --data-file=-
@@ -282,10 +289,49 @@ _ensure_secret() {
     --member="serviceAccount:${runtime_email}" --role=roles/secretmanager.secretAccessor
 }
 
+# 데이터 키(app-data-key-v1)는 값이 바뀌면 기존 암호문을 영구히 못 읽는다 — 그래서 일반
+# _ensure_secret(조회 실패를 삼키고 새로 만든다)을 쓰지 않는다. NOT_FOUND일 때만 「없음」이고,
+# 그 밖의 조회 오류 · 버전은 있는데 ENABLED가 없는 상태는 새 키를 만들지 않고 멈춘다.
+_ensure_data_key_secret() {
+  local base="$1" seed_bytes="$2"
+  local name err versions
+  name="$(secret_name "$base" "$ENV")"
+  if err="$(run gcloud secrets describe "$name" --project="$PROJECT" 2>&1 >/dev/null)"; then
+    versions="$(run gcloud secrets versions list "$name" --project="$PROJECT" --format='value(name)')" || {
+      echo "cannot list versions of ${name} — stopped before touching the data key" >&2
+      return 1
+    }
+    if [ -n "$versions" ]; then
+      versions="$(run gcloud secrets versions list "$name" --project="$PROJECT" --filter='state:ENABLED' --format='value(name)')" || {
+        echo "cannot list versions of ${name} — stopped before touching the data key" >&2
+        return 1
+      }
+      if [ -z "$versions" ]; then
+        echo "${name} has versions but none ENABLED — not generating a new data key (docs/OPERATIONS.md §9)" >&2
+        return 1
+      fi
+    fi
+  elif printf '%s' "$err" | grep -q 'NOT_FOUND'; then
+    run gcloud secrets create "$name" --replication-policy=user-managed --locations="$REGION" --project="$PROJECT"
+    versions=""
+  else
+    printf '%s\n' "$err" >&2
+    echo "cannot read secret ${name} — stopped before touching the data key" >&2
+    return 1
+  fi
+  if [ -z "$versions" ]; then
+    openssl rand -base64 "$seed_bytes" | run gcloud secrets versions add "$name" --project="$PROJECT" --data-file=-
+  fi
+  local runtime_email
+  runtime_email="$(runtime_sa "$ENV")@${PROJECT}.iam.gserviceaccount.com"
+  run gcloud secrets add-iam-policy-binding "$name" --project="$PROJECT" \
+    --member="serviceAccount:${runtime_email}" --role=roles/secretmanager.secretAccessor
+}
+
 ensure_secrets() {
   STAGE=ensure_secrets
   _ensure_secret better-auth-secret 48
-  _ensure_secret app-data-key-v1 32
+  _ensure_data_key_secret app-data-key-v1 32
   _ensure_secret smtp-host sentinel
   _ensure_secret smtp-user sentinel
   _ensure_secret smtp-password sentinel
@@ -295,6 +341,27 @@ ensure_secrets() {
   runtime_email="$(runtime_sa "$ENV")@${PROJECT}.iam.gserviceaccount.com"
   run gcloud secrets add-iam-policy-binding "$(secret_name db-admin-password "$ENV")" --project="$PROJECT" \
     --member="serviceAccount:${runtime_email}" --role=roles/secretmanager.secretAccessor
+}
+
+# 04.3-05: 서명 버킷은 소유자의 scripts/bootstrap-gcp.sh가 만든다 — 여기서는 만들지
+# 않고 확인 · 같은 설정 맞춤 · 런타임에 그 버킷의 객체 역할만 건다(배포자는 그 버킷에만
+# roles/storage.admin). 없거나 맞춤이 거부되면 서비스를 바꾸기 전에 멈춘다.
+ensure_cert_bucket() {
+  STAGE=ensure_cert_bucket
+  local bucket runtime_email hint
+  bucket="$(cert_bucket "$ENV" "$PROJECT")"
+  runtime_email="$(runtime_sa "$ENV")@${PROJECT}.iam.gserviceaccount.com"
+  if ! run gcloud storage buckets describe "gs://${bucket}" --project="$PROJECT" >/dev/null 2>&1; then
+    echo "cert bucket ${bucket} not found — run scripts/bootstrap-gcp.sh first (docs/OPERATIONS.md §8)" >&2
+    return 1
+  fi
+  hint="cert bucket ${bucket} not managed by the deployer — run scripts/bootstrap-gcp.sh first (docs/OPERATIONS.md §8)"
+  run gcloud storage buckets update "gs://${bucket}" --project="$PROJECT" \
+    --uniform-bucket-level-access --public-access-prevention --clear-soft-delete --no-versioning >/dev/null ||
+    { echo "$hint" >&2; return 1; }
+  run gcloud storage buckets add-iam-policy-binding "gs://${bucket}" --project="$PROJECT" \
+    --member="serviceAccount:${runtime_email}" --role=roles/storage.objectUser >/dev/null ||
+    { echo "$hint" >&2; return 1; }
 }
 
 # D-05 빌드 1회: prod는 require_prod_image가 이미 존재를 보장했으므로 이 describe는
@@ -368,6 +435,14 @@ deploy_jobs() {
     "${job_common[@]}" \
     --command=node,dist/cli/restore-rehearsal-cli.mjs \
     --set-env-vars="$common_env" \
+    --set-secrets="BETTER_AUTH_SECRET=${better_auth_secret}:latest"
+
+  # 04.3-12: 확인증 파기 Job — 배포는 Job을 만들기만 하고 실행하지 않는다(사람이 월 1회 실행).
+  # 실행 절차는 docs/OPERATIONS.md 「확인증 파기」 절. 파기는 복호화하지 않으므로 데이터 키는 주지 않고 서명 버킷 이름만 준다.
+  run gcloud run jobs deploy "$(job_name "$ENV" purge-certs)" \
+    "${job_common[@]}" \
+    --command=node,dist/cli/purge-certs.mjs \
+    --set-env-vars="${common_env},CERT_SIGNATURE_BUCKET=$(cert_bucket "$ENV" "$PROJECT")" \
     --set-secrets="BETTER_AUTH_SECRET=${better_auth_secret}:latest"
 }
 
@@ -455,7 +530,11 @@ deploy_service() {
 
   local deployed_at
   deployed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  local env_vars="APP_ENV=${ENV},APP_GIT_SHA=${SHA},APP_DEPLOYED_AT=${deployed_at},CLOUD_SQL_CONNECTION_NAME=${CONN_NAME},DB_IAM_USER=${iam_user},DB_NAME=${DB_NAME},DB_POOL_MAX=${DB_POOL_MAX},BETTER_AUTH_URL=${SERVICE_URL},AUTH_PROVIDER=email,GCP_PROJECT_ID=${PROJECT},CLOUD_SQL_INSTANCE_ID=${instance},NOTIFY_TICK_SCHEDULER_SA=$(scheduler_sa "$ENV")@${PROJECT}.iam.gserviceaccount.com"
+  local env_vars="APP_ENV=${ENV},APP_GIT_SHA=${SHA},APP_DEPLOYED_AT=${deployed_at},CLOUD_SQL_CONNECTION_NAME=${CONN_NAME},DB_IAM_USER=${iam_user},DB_NAME=${DB_NAME},DB_POOL_MAX=${DB_POOL_MAX},BETTER_AUTH_URL=${SERVICE_URL},AUTH_PROVIDER=email,GCP_PROJECT_ID=${PROJECT},CLOUD_SQL_INSTANCE_ID=${instance},NOTIFY_TICK_SCHEDULER_SA=$(scheduler_sa "$ENV")@${PROJECT}.iam.gserviceaccount.com,CERT_SIGNATURE_BUCKET=$(cert_bucket "$ENV" "$PROJECT")"
+  if [ "$ENV" = "staging" ]; then
+    # 확인증 환경 게이트 — 스테이징만. 프로덕션은 Phase 11이 켠다(04.3 D-1107).
+    env_vars="${env_vars},CERT_FEATURE_ALLOWED=true"
+  fi
   local secrets="BETTER_AUTH_SECRET=${better_auth_secret}:latest,APP_DATA_KEY_v1=${app_data_key_secret}:latest,SMTP_HOST=${smtp_host_secret}:latest,SMTP_USER=${smtp_user_secret}:latest,SMTP_PASSWORD=${smtp_password_secret}:latest,SMTP_FROM=${smtp_from_secret}:latest"
 
   # 신규·기존 서비스 모두 바로 100% 트래픽으로 배포한다(--no-traffic/--tag
@@ -714,6 +793,7 @@ main() {
   ensure_sql_instance
   ensure_sql_db_users
   ensure_secrets
+  ensure_cert_bucket
   build_and_push_image
   deploy_jobs
   run_db_bootstrap

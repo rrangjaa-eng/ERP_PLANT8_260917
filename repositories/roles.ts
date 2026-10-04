@@ -1,15 +1,19 @@
 import { and, eq, inArray, isNull, isNotNull } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
-import { db } from "@/db/client";
+import { db, type DbOrTx } from "@/db/client";
 import { roles } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 import { normalizeRoleName } from "@/domain/permissions/role-name";
 
 export type RoleRow = InferSelectModel<typeof roles>;
 
-export async function listRoles(viewer: Viewer, opts?: { includeArchived?: boolean }): Promise<RoleRow[]> {
+export async function listRoles(
+  viewer: Viewer,
+  opts?: { includeArchived?: boolean },
+  tx: DbOrTx = db,
+): Promise<RoleRow[]> {
   void viewer;
-  return db
+  return tx
     .select()
     .from(roles)
     .where(opts?.includeArchived ? undefined : isNull(roles.archivedAt))
@@ -34,9 +38,10 @@ export async function findRolesByIds(viewer: Viewer, ids: string[]): Promise<Rol
 export async function insertRole(
   viewer: Viewer,
   input: { id: string; name: string; sortOrder?: number; workScope?: string },
+  tx: DbOrTx = db,
 ): Promise<RoleRow> {
   void viewer;
-  const [row] = await db
+  const [row] = await tx
     .insert(roles)
     .values({
       id: input.id,
@@ -64,18 +69,20 @@ export async function setRoleWorkScope(viewer: Viewer, id: string, workScope: st
 
 // 보관·복원 둘 다 조건부 UPDATE로 멱등·경합 안전을 확보한다 — archived_at이 이미
 // 있으면(보관) / 없으면(복원) WHERE절이 걸러 0행이 갱신되고 원래 값이 유지된다.
-export async function setRoleArchived(viewer: Viewer, id: string, value: boolean): Promise<void> {
-  if (value) {
-    await db
-      .update(roles)
-      .set({ archivedAt: new Date(), archivedBy: viewer.id })
-      .where(and(eq(roles.id, id), isNull(roles.archivedAt)));
-  } else {
-    await db
-      .update(roles)
-      .set({ archivedAt: null, archivedBy: null })
-      .where(and(eq(roles.id, id), isNotNull(roles.archivedAt)));
-  }
+export async function setRoleArchived(viewer: Viewer, id: string, value: boolean): Promise<boolean> {
+  // 조건부 갱신이 실제로 바꾼 행이 있으면 참 — 범용 복원이 「이미 복원됨」 · 로그를 이 결과로 정한다(PR #149).
+  const rows = value
+    ? await db
+        .update(roles)
+        .set({ archivedAt: new Date(), archivedBy: viewer.id })
+        .where(and(eq(roles.id, id), isNull(roles.archivedAt)))
+        .returning({ id: roles.id })
+    : await db
+        .update(roles)
+        .set({ archivedAt: null, archivedBy: null })
+        .where(and(eq(roles.id, id), isNotNull(roles.archivedAt)))
+        .returning({ id: roles.id });
+  return rows.length > 0;
 }
 
 // 멱등 시드 전용 — 이미 있으면 건드리지 않는다(onConflictDoNothing).

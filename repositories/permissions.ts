@@ -1,8 +1,10 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, exists, isNull, sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
-import { db } from "@/db/client";
-import { permissionMatrix, visibilityMatrix } from "@/db/schema";
+import { alias } from "drizzle-orm/pg-core";
+import { db, type DbOrTx } from "@/db/client";
+import { fieldDefinitions, permissionMatrix, users, visibilityMatrix } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
+import { customFieldInfoItem, type FieldDefinitionTarget } from "@/domain/custom-fields/targets";
 
 export type PermissionMatrixRow = InferSelectModel<typeof permissionMatrix>;
 export type VisibilityMatrixRow = InferSelectModel<typeof visibilityMatrix>;
@@ -137,9 +139,10 @@ export async function upsertVisibilityIfUnedited(
 export async function insertVisibilityIfAbsent(
   viewer: Viewer,
   input: { roleId: string; infoItem: string; visible: boolean; updatedBy?: string | null },
+  tx: DbOrTx = db,
 ): Promise<void> {
   void viewer;
-  await db
+  await tx
     .insert(visibilityMatrix)
     .values({
       roleId: input.roleId,
@@ -161,4 +164,95 @@ export async function listVisibility(
     .select()
     .from(visibilityMatrix)
     .where(opts?.roleId ? eq(visibilityMatrix.roleId, opts.roleId) : undefined);
+}
+
+// 04.3-10(eng-review newflow E11) — 사건 알림의 받는 사람: 계급 권한표에서 요건(메뉴 · 동작)을 **전부** 허용받고
+// 노출표에서 정보 항목(visibleItems)이 **전부** 보이는 보관 안 된 사람의 id — 행동할 수 있는 사람만(W5 a · 5928674957).
+// 권한 판정(can · visible)이 아니라 받는 사람 조회다 — 공개 제출 경로(intake.ts)도 부른다.
+export async function listActiveUserIdsAllowed(
+  viewer: Viewer,
+  requirements: ReadonlyArray<{ menu: string; action: string }>,
+  tx: DbOrTx = db,
+  visibleItems: ReadonlyArray<string> = [],
+): Promise<string[]> {
+  void viewer;
+  if (requirements.length === 0) return [];
+  const shown = visibleItems.map((infoItem) =>
+    exists(
+      tx
+        .select({ one: visibilityMatrix.roleId })
+        .from(visibilityMatrix)
+        .where(
+          and(
+            eq(visibilityMatrix.roleId, users.roleId),
+            eq(visibilityMatrix.infoItem, infoItem),
+            eq(visibilityMatrix.visible, true),
+          ),
+        ),
+    ),
+  );
+  const allowed = requirements.map((requirement) =>
+    exists(
+      tx
+        .select({ one: permissionMatrix.roleId })
+        .from(permissionMatrix)
+        .where(
+          and(
+            eq(permissionMatrix.roleId, users.roleId),
+            eq(permissionMatrix.menu, requirement.menu),
+            eq(permissionMatrix.action, requirement.action),
+            eq(permissionMatrix.allowed, true),
+          ),
+        ),
+    ),
+  );
+  const rows = await tx
+    .select({ id: users.id })
+    .from(users)
+    .where(and(isNull(users.archivedAt), ...allowed, ...shown))
+    .orderBy(asc(users.createdAt), asc(users.id));
+  return rows.map((row) => row.id);
+}
+
+export type VendorFieldAccess = {
+  /** 거래처 정의 전체(보관 포함) — listFieldDefinitions와 같은 조건 · 정렬(sortOrder, key) */
+  definitions: InferSelectModel<typeof fieldDefinitions>[];
+  vendorValueVisible: boolean;
+  /** 그 계급에 cf.vendor.<key> 보임 행이 있는 정의 키(보관 여부와 무관 — 판정은 domain) */
+  visibleFieldKeys: Set<string>;
+};
+
+const VENDOR_TARGET: FieldDefinitionTarget = "vendor";
+
+// 04.5-05(T-04.5-44): 거래처 입력 칸 판정 재료를 SQL 한 문(READ COMMITTED에서 한 스냅숏)으로 읽는다 — 정의에 노출표를
+// 두 번 LEFT JOIN(칸별 cf.vendor.<key> · 「거래처 정보」 vendor.value). (role_id, info_item)이 유일이라 행이 늘지 않는다.
+// 행 없음 · roleId 없음은 거짓(기본 숨김). 정의가 0개면 vendorValueVisible은 거짓이다(입력 칸도 0개라 쓰이지 않는다).
+export async function readVendorFieldAccess(
+  viewer: Viewer,
+  roleId: string | null,
+  tx: DbOrTx = db,
+): Promise<VendorFieldAccess> {
+  void viewer;
+  const fieldRow = alias(visibilityMatrix, "cf_visibility");
+  const valueRow = alias(visibilityMatrix, "vendor_value_visibility");
+  const rows = await tx
+    .select({ definition: fieldDefinitions, fieldVisible: fieldRow.visible, valueVisible: valueRow.visible })
+    .from(fieldDefinitions)
+    .leftJoin(
+      fieldRow,
+      roleId === null
+        ? sql`false`
+        : and(eq(fieldRow.roleId, roleId), eq(fieldRow.infoItem, sql`${customFieldInfoItem(VENDOR_TARGET, "")}::text || ${fieldDefinitions.key}`)),
+    )
+    .leftJoin(
+      valueRow,
+      roleId === null ? sql`false` : and(eq(valueRow.roleId, roleId), eq(valueRow.infoItem, "vendor.value")),
+    )
+    .where(eq(fieldDefinitions.entity, VENDOR_TARGET))
+    .orderBy(fieldDefinitions.sortOrder, fieldDefinitions.key);
+  return {
+    definitions: rows.map((row) => row.definition),
+    vendorValueVisible: rows.some((row) => row.valueVisible === true),
+    visibleFieldKeys: new Set(rows.filter((row) => row.fieldVisible === true).map((row) => row.definition.key)),
+  };
 }

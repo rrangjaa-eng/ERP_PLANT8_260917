@@ -7,7 +7,7 @@ import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { db } from "@/db/client";
 import { codeItems, quoteLines, revenueEntries } from "@/db/schema";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { addDays, kstToday } from "@/lib/kst-date";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { insertVendor } from "@/repositories/vendors";
@@ -115,7 +115,7 @@ async function seedRevenueProject(opts: {
   if (opts.quoteAmounts && opts.quoteAmounts.length > 0) {
     const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
     if (!revision) throw new Error("1차 차수가 없습니다");
-    const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
+    const [subcategory] = await db.select().from(codeItems).where(and(eq(codeItems.tableKey, "quote_subcategory"), eq(codeItems.active, true), isNull(codeItems.archivedAt))).orderBy(asc(codeItems.sortOrder), asc(codeItems.value)).limit(1);
     if (!subcategory) throw new Error("소분류 코드가 없습니다");
     await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
       rows: opts.quoteAmounts.map((amount, index) => ({
@@ -167,7 +167,7 @@ test.describe("계약 금액 — 고객 승인된 현재 차수 합계 (04-16 Ta
     const project = await createProject(SYSTEM_VIEWER, { clientId: vendor.id, teamId: team.id, pmUserId: pm.userId, name: `E2E계약-${randomUUID().slice(0, 8)}` });
     const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
     if (!revision) throw new Error("1차 차수가 없습니다");
-    const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
+    const [subcategory] = await db.select().from(codeItems).where(and(eq(codeItems.tableKey, "quote_subcategory"), eq(codeItems.active, true), isNull(codeItems.archivedAt))).orderBy(asc(codeItems.sortOrder), asc(codeItems.value)).limit(1);
     if (!subcategory) throw new Error("소분류 코드가 없습니다");
     await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
       rows: [1_000_000, 500_000].map((amount, index) => ({
@@ -238,7 +238,7 @@ test.describe("매출 섹션 (Phase 4 Task 3)", () => {
 
     await page.goto("/projects?new=1");
     await page.getByLabel("클라이언트").selectOption({ label: vendor.name });
-    await page.getByLabel("팀").selectOption({ index: 1 });
+    await page.locator("#project-form").getByLabel("팀").selectOption({ index: 1 });
     await page.getByLabel("담당 PM").selectOption({ index: 1 });
     const projectName = `E2E수익섹션-${Date.now()}`;
     await page.getByLabel("프로젝트명").fill(projectName);
@@ -273,8 +273,8 @@ test.describe("매출 섹션 (Phase 4 Task 3)", () => {
     // 합계 행 — 발행 10,000,000 - 입금 공급가 5,000,000 = 미수 5,000,000.
     const balance = page.getByText("미수 5,000,000");
     await expect(balance).toBeVisible();
-    // 04-16 리뷰 S-1 — 미수·초과 입금 글자는 `--warning`이다(합계 행의 다른 글자는 `--fg`).
-    await expect(balance).toHaveCSS("color", await cssColor(page, "--warning"));
+    // 04-16 리뷰 S-1 — 미수·초과 입금 글자는 `--status-warning`이다(합계 행의 다른 글자는 `--text-strong`).
+    await expect(balance).toHaveCSS("color", await cssColor(page, "--status-warning"));
 
     // 다시 PM으로 로그인해 같은 화면을 연다 — 04-16(D-85): 발행 표는 읽기 표로 보이고, 입금 표·미수는 DOM에 없다(숨김이 아니라 부재).
     await page.goto("/account");
@@ -316,7 +316,7 @@ test.describe("매출 섹션 (Phase 4 Task 3)", () => {
 
     await page.goto("/projects?new=1");
     await page.getByLabel("클라이언트").selectOption({ label: vendor.name });
-    await page.getByLabel("팀").selectOption({ index: 1 });
+    await page.locator("#project-form").getByLabel("팀").selectOption({ index: 1 });
     await page.getByLabel("담당 PM").selectOption({ index: 1 });
     await page.getByLabel("프로젝트명").fill(`E2E매출폭-${Date.now()}`);
     await page.getByRole("button", { name: "프로젝트 등록" }).click();
@@ -366,7 +366,7 @@ test.describe("매출 섹션 (Phase 4 Task 3)", () => {
     expect(numberLineCount).toBe(1);
   });
 
-  test("(리뷰 S-4) 1000에서 쓰기 권한자의 발행액 칸은 읽기 전용이고 권한 잠김(--muted)으로 흐려지지 않는다", async ({ page }) => {
+  test("(리뷰 S-4) 1000에서 쓰기 권한자의 발행액 칸은 읽기 전용이고 권한 잠김(--text-muted)으로 흐려지지 않는다", async ({ page }) => {
     const projectUrl = await openWithIssuedEntry(page);
     await page.setViewportSize({ width: 1000, height: 800 });
     await page.goto(projectUrl);
@@ -376,7 +376,7 @@ test.describe("매출 섹션 (Phase 4 Task 3)", () => {
     await expect(page.getByRole("button", { name: "발행 줄 추가" })).toHaveCount(0);
     const muted = await page.evaluate(() => {
       const probe = document.createElement("span");
-      probe.style.color = "var(--muted)";
+      probe.style.color = "var(--text-muted)";
       document.body.append(probe);
       const color = getComputedStyle(probe).color;
       probe.remove();
@@ -394,13 +394,15 @@ test.describe("매출 섹션 (Phase 4 Task 3)", () => {
     await page.getByRole("button", { name: "입금 줄 추가" }).click();
     await page.getByLabel("입금일").fill("2026-09-05");
     await page.getByLabel("입금액").fill("1100000");
-    // /design-review H-1 — 표 밑 추가 버튼은 3차 Button이다(UA 기본 버튼 면 없음, 밑줄 --accent).
+    // /design-review H-1 — 표 밑 추가 버튼은 3차 Button이다(UA 기본 버튼 면 없음, 글자 밑줄 --accent).
     const accent = await cssColor(page, "--accent");
     for (const name of ["발행 줄 추가", "입금 줄 추가"]) {
-      const style = await page
-        .getByRole("button", { name })
-        .evaluate((el) => ({ bg: getComputedStyle(el).backgroundColor, underline: getComputedStyle(el).borderBottomColor }));
-      expect(style).toEqual({ bg: "rgba(0, 0, 0, 0)", underline: accent });
+      const style = await page.getByRole("button", { name }).evaluate((el) => ({
+        bg: getComputedStyle(el).backgroundColor,
+        underline: getComputedStyle(el).textDecorationLine.includes("underline"),
+        underlineColor: getComputedStyle(el).textDecorationColor,
+      }));
+      expect(style).toEqual({ bg: "rgba(0, 0, 0, 0)", underline: true, underlineColor: accent });
     }
 
     let release: () => void = () => {};
@@ -544,7 +546,7 @@ test.describe("매출 표 — 발행 읽기 표·입금 표 부재(D-85) · 폰 
     expect(scrollWidth).toBe(clientWidth);
   });
 
-  test("(R2) 견적 줄 칸 하나만 거부된 저장 → 발행·입금 표 합계 행이 각각 `전부 거부 · 다른 칸 오류 1칸`(--danger) · 고쳐 저장하면 모두 사라진다", async ({ page }) => {
+  test("(R2) 견적 줄 칸 하나만 거부된 저장 → 발행·입금 표 합계 행이 각각 `전부 거부 · 다른 칸 오류 1칸`(--status-danger) · 고쳐 저장하면 모두 사라진다", async ({ page }) => {
     // 담당 PM이 견적도 고치고 발행·입금도 보는 계급 — role-pm 권한을 복사하고 매출 쓰기·모든 정보 노출을 더한다.
     const roleId = `role-${randomUUID()}`;
     await insertRole(SYSTEM_VIEWER, { id: roleId, name: `E2E 매출 PM-${randomUUID().slice(0, 8)}` });
@@ -582,7 +584,7 @@ test.describe("매출 표 — 발행 읽기 표·입금 표 부재(D-85) · 폰 
 
     await expect(quantityCell).toHaveAttribute("aria-invalid", "true");
     await expect(quoteTable.locator("tfoot")).toContainText("오류 1칸 · 전부 거부");
-    const danger = await cssColor(page, "--danger");
+    const danger = await cssColor(page, "--status-danger");
     for (const caption of ["발행 줄", "입금 줄"] as const) {
       const note = revenueTable(page, caption).locator("tfoot").getByText("전부 거부 · 다른 칸 오류 1칸", { exact: true });
       await expect(note).toBeVisible();
@@ -809,7 +811,10 @@ test.describe("매출 입력을 연 채 1024 미만 전환 — 값 유지 (G-04-
       });
     });
     const typing = page.keyboard.type("123456789", { delay: 100 });
-    await expect.poll(async () => (await amount.inputValue()).replace(/\D/g, "").length).toBeGreaterThanOrEqual(3);
+    // 2026-10-02: 칸에는 기존 발행액(3,000,000)이 남아 있어 칸 값 길이로는 첫 키 전에 통과한다 — 기록기(친 숫자)로 기다린다.
+    await expect
+      .poll(() => page.evaluate(() => ((window as unknown as { __g0464Last?: string }).__g0464Last ?? "").length))
+      .toBeGreaterThanOrEqual(3);
     await page.setViewportSize({ width: 1000, height: 800 });
     await typing;
 

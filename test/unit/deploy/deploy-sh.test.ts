@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, cpSync, writeFileSync, readFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, cpSync, writeFileSync, readFileSync, readdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -45,11 +45,20 @@ interface DeployResult {
 function deploy(
   repoDir: string,
   args: string[],
-  opts: { env?: Record<string, string>; alertEmail?: string | null; state?: Record<string, string | true> } = {},
+  opts: {
+    env?: Record<string, string>;
+    alertEmail?: string | null;
+    state?: Record<string, string | true>;
+    // 04.3-05(B3): 서명 버킷은 부트스트랩이 만든다 — 기본은 버킷 있음.
+    bucketExists?: boolean;
+  } = {},
 ): DeployResult {
   const stateDir = mkdtempSync(join(tmpdir(), "deploy-state-"));
   for (const [name, value] of Object.entries(opts.state ?? {})) {
     writeFileSync(join(stateDir, name), value === true ? "" : value);
+  }
+  if (opts.bucketExists ?? true) {
+    writeFileSync(join(stateDir, "bucket-exists"), "");
   }
   const logDir = mkdtempSync(join(tmpdir(), "deploy-log-"));
   const logPath = join(logDir, "log");
@@ -473,12 +482,12 @@ describe("deploy.sh — Job 환경 계약(시나리오 9)", () => {
     repoDir = setupRepo();
   });
 
-  it("Job 5개 모두 APP_ENV·BETTER_AUTH_URL·BETTER_AUTH_SECRET을 갖고, DB_ADMIN_PASSWORD는 db-bootstrap에만 있다", () => {
+  it("Job 6개 모두 APP_ENV·BETTER_AUTH_URL·BETTER_AUTH_SECRET을 갖고, DB_ADMIN_PASSWORD는 db-bootstrap에만 있다", () => {
     const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"]);
     expect(r.status).toBe(0);
 
     const deployLines = r.log.split("\n").filter((l) => l.startsWith("run jobs deploy plant8-staging-"));
-    expect(deployLines).toHaveLength(5);
+    expect(deployLines).toHaveLength(6);
     for (const line of deployLines) {
       expect(line).toContain("APP_ENV=staging");
       expect(line).toContain("BETTER_AUTH_URL=https://plant8-staging-");
@@ -515,6 +524,16 @@ describe("deploy.sh — Job 환경 계약(시나리오 9)", () => {
     expect(restore).not.toContain("--args=");
     expect(restore).toContain("CLOUD_SQL_CONNECTION_NAME=");
     expect(restore).not.toContain("DB_ADMIN_PASSWORD");
+
+    // 04.3-12: 확인증 파기 Job — 데이터 키 없이 서명 버킷 이름만, 실행은 사람(배포는 만들기만).
+    const purge = jobLine(r.log, "purge-certs");
+    expect(purge).toContain("--command=node,dist/cli/purge-certs.mjs");
+    expect(purge).not.toContain("--args=");
+    expect(purge).toContain("CERT_SIGNATURE_BUCKET=test-proj-plant8-staging-cert-signatures");
+    expect(purge).toContain("BETTER_AUTH_SECRET=better-auth-secret-staging:latest");
+    expect(purge).not.toContain("APP_DATA_KEY");
+    expect(purge).not.toContain("DB_ADMIN_PASSWORD");
+    expect(r.log).not.toContain("run jobs execute plant8-staging-purge-certs");
   });
 });
 
@@ -595,6 +614,105 @@ describe("deploy.sh — 배포당 리비전 하나(선행 URL 확정)", () => {
     });
     expect(r.status).toBe(0);
     expect(r.log).toContain("run services update plant8-staging");
+  });
+});
+
+describe("deploy.sh — 확인증 환경 게이트(E3-07)", () => {
+  let repoDir: string;
+  beforeEach(() => {
+    repoDir = setupRepo();
+  });
+
+  it("스테이징 배포의 run deploy plant8-staging 줄에 CERT_FEATURE_ALLOWED=true가 있다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"]);
+    expect(r.status).toBe(0);
+    const deployLine = r.log.split("\n").find((l) => l.startsWith("run deploy plant8-staging "));
+    expect(deployLine).toBeDefined();
+    expect(deployLine).toContain("CERT_FEATURE_ALLOWED=true");
+  });
+
+  it("프로덕션 배포 로그의 어떤 줄에도 CERT_FEATURE_ALLOWED가 없다", () => {
+    const PROD_SHA = "0123456789abcdef0123456789abcdef01234567";
+    const r = deploy(repoDir, ["--env", "prod", "--project", "test-proj", "--sha", PROD_SHA], {
+      state: { "image-exists": true },
+    });
+    expect(r.status).toBe(0);
+    expect(r.log).not.toContain("CERT_FEATURE_ALLOWED");
+  });
+});
+
+describe("deploy.sh — 서명 버킷(04.3-05)", () => {
+  let repoDir: string;
+  beforeEach(() => {
+    repoDir = setupRepo();
+  });
+
+  const BUCKET = "gs://test-proj-plant8-staging-cert-signatures";
+
+  it("있는 버킷은 describe → 같은 세 설정으로 update → 런타임에 그 버킷의 objectUser만 바인딩하고, 만들지 않는다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"]);
+    expect(r.status).toBe(0);
+    const lines = r.log.split("\n");
+
+    const describeIdx = lines.findIndex((l) => l.startsWith(`storage buckets describe ${BUCKET} `));
+    const updateIdx = lines.findIndex((l) => l.startsWith(`storage buckets update ${BUCKET} `));
+    const bindIdx = lines.findIndex((l) => l.startsWith(`storage buckets add-iam-policy-binding ${BUCKET} `));
+    const deployIdx = lines.findIndex((l) => l.startsWith("run deploy plant8-staging "));
+    expect(describeIdx).toBeGreaterThan(-1);
+    expect(updateIdx).toBeGreaterThan(describeIdx);
+    expect(bindIdx).toBeGreaterThan(updateIdx);
+    expect(deployIdx).toBeGreaterThan(bindIdx);
+
+    const update = lines[updateIdx];
+    expect(update).toContain("--uniform-bucket-level-access");
+    expect(update).toContain("--public-access-prevention");
+    expect(update).toContain("--clear-soft-delete");
+    expect(update).toContain("--no-versioning");
+
+    const bindings = lines.filter((l) => l.startsWith("storage buckets add-iam-policy-binding "));
+    expect(bindings).toHaveLength(1);
+    expect(bindings[0]).toContain("--member=serviceAccount:plant8-staging-runtime@test-proj.iam.gserviceaccount.com");
+    expect(bindings[0]).toContain("--role=roles/storage.objectUser");
+
+    expect(r.log).not.toContain("storage buckets create");
+    expect(r.log).not.toMatch(/--role=roles\/storage\.(admin|objectAdmin)/);
+    expect(r.log).not.toMatch(/^projects add-iam-policy-binding .*roles\/storage\./m);
+
+    const deployLine = lines[deployIdx];
+    expect(deployLine).toContain("CERT_SIGNATURE_BUCKET=test-proj-plant8-staging-cert-signatures");
+    const enableLine = lines.find((l) => l.startsWith("services enable"));
+    expect(enableLine).toContain("storage.googleapis.com");
+  });
+
+  it("프로덕션도 자기 버킷 이름을 서비스 환경 변수로 받는다", () => {
+    const PROD_SHA = "0123456789abcdef0123456789abcdef01234567";
+    const r = deploy(repoDir, ["--env", "prod", "--project", "test-proj", "--sha", PROD_SHA], {
+      state: { "image-exists": true },
+    });
+    expect(r.status).toBe(0);
+    const deployLine = r.log.split("\n").find((l) => l.startsWith("run deploy plant8-prod "));
+    expect(deployLine).toContain("CERT_SIGNATURE_BUCKET=test-proj-plant8-prod-cert-signatures");
+    expect(r.log).toContain("storage buckets update gs://test-proj-plant8-prod-cert-signatures ");
+  });
+
+  it("버킷이 없으면(부트스트랩 전) 서비스를 바꾸기 전에 부트스트랩 단계를 알리고 ensure_cert_bucket에서 멈춘다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], { bucketExists: false });
+    expect(r.status).toBe(1);
+    const errLines = r.stderr.trim().split("\n");
+    expect(errLines.filter((l) => l.includes("scripts/bootstrap-gcp.sh"))).toHaveLength(1);
+    expect(errLines.at(-1)).toBe("deploy failed at ensure_cert_bucket");
+    expect(r.log).not.toContain("storage buckets create");
+    expect(r.log).not.toContain("run deploy ");
+  });
+
+  it("update가 실패하면(배포자 버킷 역할 없음) 같은 안내와 함께 ensure_cert_bucket에서 멈춘다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: { "fail-gcloud": "storage buckets update" },
+    });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("scripts/bootstrap-gcp.sh");
+    expect(r.stderr.trim().split("\n").at(-1)).toBe("deploy failed at ensure_cert_bucket");
+    expect(r.log).not.toContain("run deploy ");
   });
 });
 
@@ -747,4 +865,151 @@ describe("경보 템플릿 API 한도 가드 (eng R2-1)", () => {
       }
     });
   }
+});
+
+// 데이터 키는 평문 Secret Manager 시크릿(app-data-key-v1-{env}) → 환경 변수 APP_DATA_KEY_v1이다.
+// KMS 봉투(04.3-08)는 소유자 결정(비용)으로 배포에서 뺐다 — gcloud kms를 부르지 않고, 이미 있는
+// 시크릿 값은 절대 새로 만들지 않는다(기존 암호문을 읽을 수 없게 되므로).
+describe("deploy.sh — 데이터 키는 평문 시크릿(KMS 없음)", () => {
+  const PLAIN = "app-data-key-v1-staging";
+  const ORIGINAL_KEY_TEXT = `${Buffer.alloc(32, 9).toString("base64")}\n`;
+  let repoDir: string;
+
+  beforeEach(() => {
+    repoDir = setupRepo();
+  });
+
+  function stateFile(stateDir: string, name: string): string | undefined {
+    const path = join(stateDir, name);
+    return existsSync(path) ? readFileSync(path, "utf8") : undefined;
+  }
+
+  function deployLine(log: string): string {
+    return log.split("\n").find((l) => l.startsWith("run deploy plant8-staging ")) ?? "";
+  }
+
+  it("신규 — 시크릿이 없으면 32바이트 키를 만들어 넣고, 서비스에 APP_DATA_KEY_v1으로 붙인다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"]);
+    expect(r.status).toBe(0);
+    expect(r.log).toContain(`secrets create ${PLAIN} `);
+    const stored = stateFile(r.stateDir, `secret-data-${PLAIN}`) ?? "";
+    expect(Buffer.from(stored.trim(), "base64")).toHaveLength(32);
+    const line = deployLine(r.log);
+    expect(line).toContain(`APP_DATA_KEY_v1=${PLAIN}:latest`);
+    const binding = r.log.split("\n").find((l) => l.startsWith(`secrets add-iam-policy-binding ${PLAIN} `));
+    expect(binding).toContain("--role=roles/secretmanager.secretAccessor");
+  });
+
+  it("기존 시크릿 — 값이 있으면 새 키를 만들지 않고 값 그대로 둔다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: { [`secret-data-${PLAIN}`]: ORIGINAL_KEY_TEXT },
+    });
+    expect(r.status).toBe(0);
+    expect(r.log).not.toContain(`secrets versions add ${PLAIN} `);
+    expect(r.log).toContain(`secrets versions list ${PLAIN} `);
+    expect(r.log).not.toContain("--secret=");
+    expect(stateFile(r.stateDir, `secret-data-${PLAIN}`)).toBe(ORIGINAL_KEY_TEXT);
+    expect(deployLine(r.log)).toContain(`APP_DATA_KEY_v1=${PLAIN}:latest`);
+  });
+
+  it("better-auth-secret · 데이터 키에 ENABLED 버전이 이미 있으면 새 버전을 더하지 않는다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: {
+        [`secret-data-${PLAIN}`]: ORIGINAL_KEY_TEXT,
+        "secret-data-better-auth-secret-staging": "existing\n",
+      },
+    });
+    expect(r.status).toBe(0);
+    expect(r.log).not.toContain("secrets versions add better-auth-secret-staging");
+    expect(r.log).not.toContain(`secrets versions add ${PLAIN}`);
+  });
+
+  it("시크릿에 버전은 있지만 ENABLED가 없으면 새 키를 만들지 않고 멈춘다 — 서비스도 배포하지 않는다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: { [`secret-disabled-${PLAIN}`]: "" },
+    });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("none ENABLED");
+    expect(r.stderr).toContain("docs/OPERATIONS.md");
+    expect(r.log).not.toContain(`secrets versions add ${PLAIN} `);
+    expect(r.log).not.toContain("run deploy plant8-staging ");
+  });
+
+  it("describe가 NOT_FOUND가 아닌 오류로 실패하면 새 키를 만들지 않고 멈춘다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: { "fail-gcloud": `secrets describe ${PLAIN}` },
+    });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("forced failure");
+    expect(r.log).not.toContain(`secrets create ${PLAIN} `);
+    expect(r.log).not.toContain(`secrets versions add ${PLAIN} `);
+    expect(r.log).not.toContain("run deploy plant8-staging ");
+  });
+
+  it("versions list가 오류로 실패하면 새 키를 만들지 않고 멈춘다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: { [`secret-data-${PLAIN}`]: ORIGINAL_KEY_TEXT, "fail-gcloud": `secrets versions list ${PLAIN}` },
+    });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("forced failure");
+    expect(r.log).not.toContain(`secrets versions add ${PLAIN} `);
+    expect(r.log).not.toContain("run deploy plant8-staging ");
+  });
+
+  it("better-auth-secret versions list가 오류로 실패하면 새 값을 쓰지 않고 멈춘다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: { "fail-gcloud": "secrets versions list better-auth-secret-staging" },
+    });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("cannot list versions of better-auth-secret-staging");
+    expect(r.log).not.toContain("secrets versions add better-auth-secret-staging");
+    expect(r.log).not.toContain("run deploy plant8-staging ");
+  });
+
+  it("db-admin-password versions list가 오류로 실패하면 비밀번호를 새로 만들거나 바꾸지 않고 멈춘다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: { "fail-gcloud": "secrets versions list db-admin-password-staging" },
+    });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("cannot list versions of db-admin-password-staging");
+    expect(r.log).not.toContain("secrets versions add db-admin-password-staging");
+    expect(r.log).not.toContain("sql users set-password");
+  });
+
+  it("db-admin-password는 새 환경에서 postgres 비밀번호를 먼저 바꾼 뒤 Secret Manager에 저장한다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"]);
+    expect(r.status).toBe(0);
+    const setIdx = lineIndex(r.log, "sql users set-password postgres");
+    const addIdx = lineIndex(r.log, "secrets versions add db-admin-password-staging");
+    expect(setIdx).toBeGreaterThanOrEqual(0);
+    expect(addIdx).toBeGreaterThanOrEqual(0);
+    expect(setIdx).toBeLessThan(addIdx);
+  });
+
+  it("postgres 비밀번호 변경이 실패하면 db-admin-password 버전을 저장하지 않고 멈춘다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: { "fail-gcloud": "sql users set-password" },
+    });
+    expect(r.status).not.toBe(0);
+    expect(r.log).toContain("sql users set-password postgres");
+    expect(r.log).not.toContain("secrets versions add db-admin-password-staging");
+  });
+
+  it("gcloud kms를 부르지 않고 KMS · 감싼 키 환경 변수 · 감싼 시크릿을 붙이지 않는다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"]);
+    expect(r.status).toBe(0);
+    expect(r.log).not.toContain("kms ");
+    expect(r.log).not.toContain("cloudkms");
+    expect(r.log).not.toContain("wrapped");
+    const line = deployLine(r.log);
+    expect(line).not.toContain("APP_DATA_KEY_KMS_KEY");
+    expect(line).not.toContain("_WRAPPED");
+    expect(line).not.toContain("APP_DATA_KEY_v2");
+  });
+
+  it("--add-data-key-v2 플래그는 없다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj", "--add-data-key-v2"]);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("unknown argument");
+  });
 });

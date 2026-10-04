@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Locator, type Page } from "@playwright/test";
-import { eq } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import { codeItems, projects, quoteLines } from "@/db/schema";
 import { createProject } from "@/domain/projects";
@@ -44,7 +44,7 @@ async function makeOriginal(teamId: string, pmUserId: string) {
   const created = await createProject(SYSTEM_VIEWER, { clientId: client.id, teamId, pmUserId, name });
   const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, created.id);
   if (!revision) throw new Error("1차 차수가 없습니다");
-  const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
+  const [subcategory] = await db.select().from(codeItems).where(and(eq(codeItems.tableKey, "quote_subcategory"), eq(codeItems.active, true), isNull(codeItems.archivedAt))).orderBy(asc(codeItems.sortOrder), asc(codeItems.value)).limit(1);
   if (!subcategory) throw new Error("소분류 코드가 없습니다");
   await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
     rows: ["무대 설치", "음향 장비"].map((itemName) => ({
@@ -101,11 +101,11 @@ test.describe("프로젝트 복사 등록 (04-15, PROJ-05 · D-70)", () => {
     await expect(page.getByText(`${original.number} ${original.name}에서 복사 · 2줄`, { exact: true })).toBeVisible();
     await expect(page.getByLabel("클라이언트")).toHaveValue(original.clientId);
     await expect(page.getByLabel("담당 PM")).toHaveValue(account.userId);
-    await expect(page.getByLabel("팀")).toHaveValue(teamId);
+    await expect(page.locator("#project-form").getByLabel("팀")).toHaveValue(teamId);
     const nameField = page.getByLabel("프로젝트명");
     await expect(nameField).toHaveValue(original.name);
-    // S2 — 폼이 열려 있으면 목록 필터 줄의 1차 「프로젝트 등록」이 없다(복사 등록 포함).
-    await expect(page.getByRole("link", { name: "프로젝트 등록" })).toHaveCount(0);
+    // R4(04.6-10) — 여는 요소는 패널이 열려 있어도 그대로 있다(옛 S2 「폼이 열리면 머리 1차 숨김」은 이 계약이 대체한다).
+    await expect(page.getByRole("link", { name: "프로젝트 등록" })).toHaveCount(1);
 
     const copyName = `E2E복사본-${randomUUID().slice(0, 8)}`;
     await nameField.fill(copyName);

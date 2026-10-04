@@ -5,6 +5,7 @@ import { Button } from "@/ui/button/Button";
 import { TextField } from "@/ui/input/TextField";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
+import { Num } from "@/ui/num/Num";
 import styles from "./HistoryList.module.css";
 
 // SYSTEM.md §7-14 — 이력형 설정 값(03-04)과 사람 폼의 팀 소속 발령일 이력(03-05,
@@ -239,16 +240,14 @@ export function HistoryList({
           {entries.map((entry) => (
             <tr key={entry.effectiveFrom}>
               <td>{entry.effectiveFrom}</td>
-              <td className={valueKind.kind === "number" ? styles.num : undefined}>{entry.displayValue}</td>
+              <td className={valueKind.kind === "number" ? styles.num : undefined}>
+                {valueKind.kind === "number" ? <Num value={entry.displayValue} /> : entry.displayValue}
+              </td>
               <td>
                 {entry.status === "active" ? (
-                  <StatusTag kind="success" variant="text">
-                    적용 중
-                  </StatusTag>
+                  <StatusTag status="적용 중" variant="text" />
                 ) : entry.status === "scheduled" ? (
-                  <StatusTag kind="muted" variant="text">
-                    예정
-                  </StatusTag>
+                  <StatusTag status="예정" variant="text" />
                 ) : null}
               </td>
               <td>

@@ -13,8 +13,10 @@ import {
 } from "@/domain/settings/registry";
 import { isSettingActive, listApprovalRouteOptions, type ApprovalRouteOptions } from "@/domain/approvals/settings-options";
 import { listApprovalRouteSettingWarnings } from "@/domain/approvals/settings-warnings";
+import { formatCount, formatForeignAmount, formatFxRate, formatKrw, formatQuantity } from "@/lib/format-number";
+import { seoulToday } from "@/lib/dates";
 import type { HistoryEntry } from "@/ui/history-list/HistoryList";
-import { PageHeader } from "@/ui/page-header/PageHeader";
+import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import { SettingsFormClient, type SettingsSection, type SettingsFieldViewModel } from "./settings-form-client";
 
 // D-36 계약: 화면 코드에 계급 이름 분기가 없다. 캐시 없음 — 화면 로드마다
@@ -22,8 +24,22 @@ import { SettingsFormClient, type SettingsSection, type SettingsFieldViewModel }
 // 자동 생성된다").
 export const dynamic = "force-dynamic";
 
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+// numberKind가 있으면 그 종류의 포맷터, 없으면 정수만 쉼표로 그리고 소수(0~1 비율 등)는 저장값 그대로 —
+// formatQuantity(2자리) · formatFxRate(4자리)는 0.088 같은 비율을 반올림해 잘못 보여 준다.
+function formatNumberValue(descriptor: SettingFieldDescriptor, value: number): string {
+  if (descriptor.kind === "number" && descriptor.numberKind) {
+    switch (descriptor.numberKind) {
+      case "krw":
+        return formatKrw(value);
+      case "fxRate":
+        return formatFxRate(value);
+      case "foreign":
+        return formatForeignAmount(value);
+      case "quantity":
+        return formatQuantity(value);
+    }
+  }
+  return Number.isInteger(value) ? formatCount(value) : String(value);
 }
 
 function formatValue(descriptor: SettingFieldDescriptor, value: unknown): string {
@@ -32,7 +48,7 @@ function formatValue(descriptor: SettingFieldDescriptor, value: unknown): string
     return Array.isArray(value) && value.length > 0 ? value.join(", ") : "(없음)";
   }
   if (typeof value === "string") return value;
-  if (typeof value === "number") return String(value);
+  if (typeof value === "number") return formatNumberValue(descriptor, value);
   return "(값 없음)";
 }
 
@@ -74,7 +90,7 @@ async function buildSections(viewer: Viewer): Promise<SettingsSection[]> {
 
     if (def.kind === "historized") {
       const history = await listSettingHistory(def);
-      const today = todayIso();
+      const today = seoulToday();
       // 가장 최근의 effectiveFrom <= 오늘인 행이 "적용 중" — listSettingHistory는
       // 이미 내림차순이므로 그 조건을 만족하는 첫 행이 유효값이다.
       let activeMarked = false;
@@ -138,11 +154,10 @@ export default async function SettingsPage() {
   const sections = await buildSections(session.viewer);
 
   return (
-    <>
-      <PageHeader title="설정" />
+    <DetailScreen title="설정">
       <div className="single-column">
         <SettingsFormClient sections={sections} viewerId={session.viewer.id} />
       </div>
-    </>
+    </DetailScreen>
   );
 }

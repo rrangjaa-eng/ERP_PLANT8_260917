@@ -1,6 +1,8 @@
 "use client";
 
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
+import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
+import { Num } from "@/ui/num/Num";
 import { Table } from "@/ui/table/Table";
 import { Button } from "@/ui/button/Button";
 import { KvList } from "@/ui/kv-list/KvList";
@@ -81,7 +83,9 @@ function contractNoteGroups(contract: ContractInfo): string[] {
 function ContractValue({ contract }: { contract: ContractInfo }) {
   return (
     <>
-      <span className={styles.contractAmount}>{contract.amountKrw === null ? "—" : formatKrw(contract.amountKrw)}</span>
+      <span className={styles.contractAmount}>
+        <Num value={contract.amountKrw} />
+      </span>
       <NumberGroups groups={contractNoteGroups(contract)} className={styles.contractNote} />
     </>
   );
@@ -394,8 +398,7 @@ export function RevenueSection({
         : `초과 입금 ${formatKrw(balanceKrw)}`;
 
   return (
-    <section className={styles.section}>
-      <h2 className={styles.sectionTitle}>매출</h2>
+    <DetailScreen.Section title="매출">
       <p className={styles.sectionSubtitle}>{paidVisible ? "공급가액 기준 · 입금액만 통장 합계" : "공급가액 기준"}</p>
 
       {contract ? (
@@ -485,6 +488,6 @@ export function RevenueSection({
           ) : null}
         </>
       ) : null}
-    </section>
+    </DetailScreen.Section>
   );
 }

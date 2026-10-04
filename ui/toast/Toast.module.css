@@ -1,29 +1,32 @@
 /* SYSTEM.md §7-6 토스트. 실물: docs/design/system/preview.html .toast 블록
-   (위치·면·테두리·간격 값 그대로 포트). 나타남 애니메이션은 §5 허용 목록
-   (opacity + translateY 160ms ease-out)만 쓰고 tokens.css의
-   prefers-reduced-motion 미디어 쿼리가 --dur-toast를 0.01ms로 낮춘다. 색·서체·
-   radius는 토큰 참조만 쓴다(D-20). */
+   (위치·면·테두리·간격). 그림자는 떠 있는 요소 --shadow-pop + 1px 선(§4-3, UQ-4 후보 5).
+   나타남 애니메이션은 §5 허용 목록(opacity + translateY 4px→0, --dur-sheet 200ms, UQ-4 후보 8)만 쓰고
+   tokens.css의 prefers-reduced-motion 미디어 쿼리가 --dur-sheet를 0.01ms로 낮춘다.
+   면·글자·선·모서리는 역할 토큰만 쓴다. */
 
 .toast {
   position: fixed;
   left: var(--pad-page);
+  /* 04.3-17 C-L1 — 긴 문장도 오른쪽에 같은 여백(폰 375 · 320에서 끝에 붙지 않게). */
+  max-width: calc(100vw - 2 * var(--pad-page));
   bottom: var(--s-4);
-  background: var(--bg);
-  border: var(--line-w-strong) solid var(--line-strong);
-  border-radius: var(--radius);
+  background: var(--surface-base);
+  border: var(--line-w) solid var(--border-surface);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--shadow-pop);
   padding: var(--s-2) var(--s-3);
-  font-size: var(--fs-sm);
+  font-size: var(--text-aux);
   display: flex;
   align-items: center;
   gap: var(--s-3);
   z-index: var(--z-toast);
-  animation: toast-in var(--dur-toast) var(--ease-out);
+  animation: toast-in var(--dur-sheet) var(--ease-sheet);
 }
 
 @keyframes toast-in {
   from {
     opacity: 0;
-    transform: translateY(4px);
+    transform: translateY(var(--s-1));
   }
 
   to {
@@ -36,12 +39,18 @@
   border: 0;
   background: none;
   padding: 0;
-  color: var(--accent);
+  color: var(--text-link);
   font-weight: var(--fw-medium);
-  font-size: var(--fs-sm);
+  font-size: var(--text-aux);
   text-decoration: underline;
-  text-underline-offset: 2px;
+  text-decoration-thickness: var(--line-w);
+  text-underline-offset: var(--underline-offset);
   cursor: pointer;
+}
+
+/* §4-4 · §7-1 3차 밑줄 1px → hover 2px. */
+.action:hover {
+  text-decoration-thickness: var(--underline-w-hover);
 }
 
 /* 폰: 하단 탭 위(§7-6). */

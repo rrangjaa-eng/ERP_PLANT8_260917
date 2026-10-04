@@ -35,6 +35,14 @@ export const CORE_ACTION_TYPES = [
   "account_lock",
   "account_unlock",
   "holiday_change",
+  // 04.3-07 D-1106: 확인증 정정 — document_update는 설정으로 끌 수 있어 「고칠 때마다」를 보장하지 못한다.
+  "cert_correct",
+  // 04.3-15 E7 a: 경품 가액 변경 — 원천징수 과세표준 · 수집 · 파기 근거의 이력이다. 내부 관리자만 본다.
+  "cert_prize_value",
+  // 04.3-12 CERT-02: 확인증 파기 실행 — 칸 비우기와 한 트랜잭션으로 남기는 기록이라 끌 수 없다.
+  "cert_purge",
+  // 04.3-14 사용자 결정 ⑤: 확인증 조회 접속기록 — 안전성 확보조치 기준 제2조3호 요소(누가 · 언제 · 어디서 · 어느 확인증).
+  "cert_view",
 ] as const;
 
 export type CoreActionType = (typeof CORE_ACTION_TYPES)[number];
@@ -66,6 +74,10 @@ export const ACTION_TYPE_LABELS: Record<CoreActionType, string> = {
   account_lock: "계정 잠금",
   account_unlock: "잠금 해제",
   holiday_change: "공휴일 변경",
+  cert_correct: "확인증 정정",
+  cert_prize_value: "경품 가액 변경",
+  cert_purge: "확인증 파기",
+  cert_view: "확인증 조회",
 };
 
 // OPS-05: Excel 내보내기·마스킹 해제·행동 로그 정리는 설정으로 못 끄는 핵심
@@ -81,6 +93,14 @@ export const ALWAYS_ON_ACTION_TYPES: CoreActionType[] = [
   "account_lock",
   "account_unlock",
   "holiday_change",
+  // 04.3-07 D-1106: 확인증 정정은 정정 UPDATE와 한 트랜잭션으로 남기는 기록이라 끌 수 없다
+  "cert_correct",
+  // 04.3-15 E7 a: 경품 가액 변경은 과세표준 · 파기 근거의 이력이라 끌 수 없다
+  "cert_prize_value",
+  // 04.3-12 CERT-02: 확인증 파기 실행 기록은 끌 수 없다
+  "cert_purge",
+  // 04.3-14 사용자 결정 ⑤: 확인증 조회는 접속기록이라 끌 수 없다
+  "cert_view",
 ];
 
 export class UnknownActionTypeError extends UserFacingError {}

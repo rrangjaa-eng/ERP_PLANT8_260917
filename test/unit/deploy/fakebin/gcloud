@@ -108,17 +108,59 @@ case "$ARGS" in
     exit 0
     ;;
 
+  # 시크릿 데이터는 상태 파일 secret-data-<이름>에 둔다(versions add가 쓰고
+  # versions access가 읽는다). 데이터 파일이 있으면 ENABLED 버전 하나가 있는 것이고,
+  # 없으면 예전처럼 공용 secret-version-exists를 따른다.
+  # 검토 반영 B1: secret-disabled-<이름>이면 버전은 있지만 ENABLED는 없다(끈 버전).
+  # 실제 gcloud처럼 시크릿 이름은 위치 인자다(`versions list SECRET`). --secret= 플래그는 거부한다.
   "secrets versions list"*)
-    state_val secret-version-exists
+    case "$ARGS" in
+      *"--secret="*)
+        bad="$(printf '%s\n' "$ARGS" | grep -oE -- '--secret=[^ ]+' | head -n1)"
+        echo "ERROR: (gcloud.secrets.versions.list) unrecognized arguments: ${bad}" >&2
+        exit 2
+        ;;
+    esac
+    secret="$4"
+    # 실제 gcloud처럼 없는 시크릿의 버전 목록은 NOT_FOUND다(describe와 같은 존재 판정).
+    if ! { state_file secret-exists || state_file "secret-data-${secret}" ||
+      state_file "secret-created-${secret}" || state_file "secret-disabled-${secret}"; }; then
+      echo "ERROR: (gcloud.secrets.versions.list) NOT_FOUND: Secret [projects/test-proj/secrets/${secret}] not found or has no versions." >&2
+      exit 1
+    fi
+    if state_file "secret-disabled-${secret}"; then
+      case "$ARGS" in
+        *"state:ENABLED"*) ;;
+        *) echo "projects/test-proj/secrets/${secret}/versions/1" ;;
+      esac
+    elif state_file "secret-data-${secret}"; then
+      echo "projects/test-proj/secrets/${secret}/versions/1"
+    else
+      state_val secret-version-exists
+    fi
     ;;
+  "secrets versions access latest "*)
+    secret="$(printf '%s\n' "$ARGS" | grep -oE -- '--secret=[^ ]+' | cut -d= -f2)"
+    state_file "secret-data-${secret}" || { echo "fake gcloud: secret version not found" >&2; exit 1; }
+    cat "$STATE/secret-data-${secret}"
+    ;;
+  # 검토 반영 B1: 시크릿마다 존재를 본다(공용 secret-exists · 데이터 · 만든 기록 · 끈 버전).
+  # 없으면 실제 gcloud처럼 NOT_FOUND를 말한다 — 배포는 그 말만 「없음」으로 읽는다.
   "secrets describe "*)
-    state_file secret-exists || { echo "fake gcloud: secret not found" >&2; exit 1; }
+    state_file secret-exists || state_file "secret-data-$3" || state_file "secret-created-$3" ||
+      state_file "secret-disabled-$3" ||
+      { echo "ERROR: (gcloud.secrets.describe) NOT_FOUND: fake secret $3 not found" >&2; exit 1; }
     ;;
   "secrets create "*)
+    [ -n "$STATE" ] && : >"$STATE/secret-created-$3"
     exit 0
     ;;
   "secrets versions add"*)
-    cat >/dev/null
+    if [ -n "$STATE" ]; then
+      cat >"$STATE/secret-data-$4"
+    else
+      cat >/dev/null
+    fi
     exit 0
     ;;
   "secrets add-iam-policy-binding"*)
@@ -337,6 +379,19 @@ case "$ARGS" in
       esac
     fi
     echo "constraint: (unset)"
+    exit 0
+    ;;
+
+  "storage buckets describe "*)
+    state_file bucket-exists || { echo "fake gcloud: bucket not found" >&2; exit 1; }
+    ;;
+  "storage buckets create "*)
+    exit 0
+    ;;
+  "storage buckets update "*)
+    exit 0
+    ;;
+  "storage buckets add-iam-policy-binding "*)
     exit 0
     ;;
 

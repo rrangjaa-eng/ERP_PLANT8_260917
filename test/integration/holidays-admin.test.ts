@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, gte, lte, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, lte, sql } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import { db, pool } from "@/db/client";
 import { actionLog, holidays, holidayYearConfirmations, holidayYearGenerations } from "@/db/schema";
@@ -11,10 +11,12 @@ import {
   deleteHoliday,
   HolidayForbiddenError,
   HolidayNotDeletableError,
+  HolidayNotRestorableError,
   HolidayYearIncompleteError,
   HolidayYearOutOfRangeError,
   loadHolidayAdmin,
   PastHolidayDateError,
+  restoreHoliday,
 } from "@/domain/holidays/admin";
 import { ensureHolidayCandidates, recomputeFutureSubstitutes } from "@/domain/holidays/candidates";
 import { LUNAR_TABLE_LAST_YEAR } from "@/domain/holidays/lunar-table";
@@ -240,7 +242,7 @@ describe("confirmHolidayYear — 연도 확정(04.2-11 · D-4220 · D-4223)", ()
 const NOW_0924 = new Date("2026-09-24T03:00:00Z"); // KST 2026-09-24 12:00 — 추석 연휴 한가운데
 const NOW_1020 = new Date("2026-10-20T03:00:00Z"); // KST 2026-10-20 12:00 — 다음 날(10-21)이 평일
 
-async function holidayLogs(op: "add" | "delete") {
+async function holidayLogs(op: "add" | "delete" | "restore") {
   return db
     .select()
     .from(actionLog)
@@ -252,7 +254,7 @@ async function dateKindsOf(year: number): Promise<{ date: string; kind: string }
   const rows = await db
     .select({ date: holidays.date, kind: holidays.kind })
     .from(holidays)
-    .where(and(gte(holidays.date, `${year}-01-01`), lte(holidays.date, `${year}-12-31`)));
+    .where(and(isNull(holidays.archivedAt), gte(holidays.date, `${year}-01-01`), lte(holidays.date, `${year}-12-31`)));
   return rows.sort((a, b) => a.date.localeCompare(b.date));
 }
 
@@ -260,8 +262,17 @@ async function rowsBetween(from: string, to: string) {
   const rows = await db
     .select({ date: holidays.date, kind: holidays.kind, originYear: holidays.originYear, name: holidays.name })
     .from(holidays)
-    .where(and(gte(holidays.date, from), lte(holidays.date, to)));
+    .where(and(isNull(holidays.archivedAt), gte(holidays.date, from), lte(holidays.date, to)));
   return rows.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// ADMN-12(quick 261001-hfi D-01): 삭제는 보관이다 — 위 두 도우미는 활성 행만 보고, 보관 상태는 이 도우미로 본다.
+async function archiveStateOf(id: string) {
+  const [row] = await db
+    .select({ archivedAt: holidays.archivedAt, archivedBy: holidays.archivedBy })
+    .from(holidays)
+    .where(eq(holidays.id, id));
+  return row ?? null;
 }
 
 async function substitutesBetween(from: string, to: string) {
@@ -469,8 +480,8 @@ async function logsForDate(date: string) {
     .orderBy(actionLog.seq);
 }
 
-describe("deleteHoliday — 수동 미래 행 삭제(04.2-12)", () => {
-  it("규칙 행·지난 수동 행·오늘 수동 행은 HolidayNotDeletableError이고 그대로 남는다 · 미래 수동 행은 지워지고 원래 값 + op delete 로그(금지 회상)", async () => {
+describe("deleteHoliday — 수동 미래 행 삭제 = 보관(04.2-12 · ADMN-12)", () => {
+  it("규칙 행·지난 수동 행·오늘 수동 행은 HolidayNotDeletableError이고 그대로 남는다 · 미래 수동 행은 보관되고 원래 값 + op delete 로그(금지 회상)", async () => {
     const admin = await createViewer(SYSADMIN_ROLE_ID, "관리자");
     const deps = { now: NOW_0924 };
     await ensureHolidayCandidates(2027, { now: () => NOW_0924 });
@@ -489,8 +500,11 @@ describe("deleteHoliday — 수동 미래 행 삭제(04.2-12)", () => {
     const added = await addHoliday(admin, { date: "2027-06-08", kind: "election", name: "보궐선거" }, deps);
     const result = await deleteHoliday(admin, added.id, deps);
 
-    expect(result).toEqual({ deleted: true, date: "2027-06-08", name: "보궐선거", kind: "election" });
+    expect(result).toEqual({ deleted: true, id: added.id, date: "2027-06-08", name: "보궐선거", kind: "election" });
     expect(await rowsBetween("2027-06-08", "2027-06-08")).toHaveLength(0);
+    const state = await archiveStateOf(added.id);
+    expect(state?.archivedAt).toBeInstanceOf(Date);
+    expect(state?.archivedBy).toBe(admin.id);
     const logs = await holidayLogs("delete");
     expect(logs).toHaveLength(1);
     expect(logs[0]).toMatchObject({ entity: "holiday", entityId: added.id, actorId: admin.id });
@@ -506,7 +520,7 @@ describe("deleteHoliday — 수동 미래 행 삭제(04.2-12)", () => {
     expect(await rowsBetween("2027-06-08", "2027-06-08")).toHaveLength(1);
   });
 
-  it("같은 행을 동시에 두 번 지우면 둘 다 오류 없이 끝나고 행 0 · 삭제 로그 1줄(Codex #12)", async () => {
+  it("같은 행을 동시에 두 번 지우면 둘 다 오류 없이 끝나고 활성 행 0 · 보관 1 · 삭제 로그 1줄(Codex #12)", async () => {
     const admin = await createViewer(SYSADMIN_ROLE_ID, "관리자");
     const added = await addHoliday(admin, { date: "2027-06-08", kind: "temporary", name: "x" }, { now: NOW_0924 });
 
@@ -518,6 +532,7 @@ describe("deleteHoliday — 수동 미래 행 삭제(04.2-12)", () => {
     expect(results.filter((result) => result.deleted)).toHaveLength(1);
     expect(results).toContainEqual({ deleted: false });
     expect(await rowsBetween("2027-06-08", "2027-06-08")).toHaveLength(0);
+    expect((await archiveStateOf(added.id))?.archivedAt).toBeInstanceOf(Date);
     expect(await holidayLogs("delete")).toHaveLength(1);
   });
 
@@ -533,6 +548,7 @@ describe("deleteHoliday — 수동 미래 행 삭제(04.2-12)", () => {
     ).rejects.toThrow("로그 쓰기 실패 흉내");
 
     expect(await rowsBetween("2027-06-08", "2027-06-08")).toHaveLength(1);
+    expect(await archiveStateOf(added.id)).toEqual({ archivedAt: null, archivedBy: null });
   });
 
   it("2027-10-04 임시공휴일을 지우면 개천절 대체일이 10-04로 돌아오고 2027 표가 추가 전과 같다(Codex #2)", async () => {
@@ -614,8 +630,10 @@ describe("deleteHoliday — 수동 미래 행 삭제(04.2-12)", () => {
     expect(await substitutesBetween("2027-10-01", "2027-10-08")).toEqual([{ date: "2027-10-04", originYear: 2027 }]);
     expect(await holidayLogs("delete")).toHaveLength(2);
   });
+});
 
-  it("되돌리기: 삭제가 돌려준 값으로 addHoliday를 다시 부르면 행·대체일이 삭제 전으로 돌아오고 로그가 add → delete → add(#1)", async () => {
+describe("restoreHoliday — 보관된 공휴일 복원 = 되돌리기(ADMN-12 · quick 261001-hfi)", () => {
+  it("보관된 미래 행을 복원하면 그 날짜의 대체 행이 비켜나고 대체일 · 2027 표가 삭제 전으로 돌아오며 로그가 add → delete → restore", async () => {
     const admin = await createViewer(SYSADMIN_ROLE_ID, "관리자");
     const added = await addHoliday(
       admin,
@@ -623,40 +641,86 @@ describe("deleteHoliday — 수동 미래 행 삭제(04.2-12)", () => {
       { now: NOW_0924 },
     );
     const beforeDelete = await dateKindsOf(2027);
-    expect(await substitutesBetween("2027-10-01", "2027-10-08")).toEqual([{ date: "2027-10-05", originYear: 2027 }]);
-
-    const deleted = await deleteHoliday(admin, added.id, { now: NOW_0924 });
+    await deleteHoliday(admin, added.id, { now: NOW_0924 });
     expect(await substitutesBetween("2027-10-01", "2027-10-08")).toEqual([{ date: "2027-10-04", originYear: 2027 }]);
-    if (!deleted.deleted) throw new Error("삭제되지 않았다");
 
-    await addHoliday(admin, { date: deleted.date, name: deleted.name, kind: deleted.kind }, { now: NOW_0924 });
+    expect(await restoreHoliday(admin, added.id, { now: NOW_0924 })).toEqual({ restored: true });
 
+    expect(await archiveStateOf(added.id)).toEqual({ archivedAt: null, archivedBy: null });
     expect(await rowsBetween("2027-10-04", "2027-10-04")).toEqual([
       { date: "2027-10-04", kind: "temporary", originYear: null, name: "임시공휴일 테스트" },
     ]);
     expect(await substitutesBetween("2027-10-01", "2027-10-08")).toEqual([{ date: "2027-10-05", originYear: 2027 }]);
     expect(await dateKindsOf(2027)).toEqual(beforeDelete);
     const logs = await logsForDate("2027-10-04");
-    expect(logs.map((log) => (log.detail as { op: string }).op)).toEqual(["add", "delete", "add"]);
-    expect(logs[2]?.detail).toEqual({ op: "add", date: "2027-10-04", name: "임시공휴일 테스트", kind: "temporary" });
+    expect(logs.map((log) => (log.detail as { op: string }).op)).toEqual(["add", "delete", "restore"]);
+    expect(logs[2]).toMatchObject({ entity: "holiday", entityId: added.id, actorId: admin.id });
+    expect(logs[2]?.detail).toEqual({ op: "restore", date: "2027-10-04", name: "임시공휴일 테스트", kind: "temporary" });
   });
 
-  it("되돌리기 거절: 그사이 다른 공휴일이 들어섰거나 그 날이 오늘이 됐으면 오류이고 로그가 늘지 않는다(#1)", async () => {
+  it("로그 쓰기가 실패하면 복원도 되돌려진다", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID, "관리자");
+    const added = await addHoliday(admin, { date: "2027-06-08", kind: "temporary", name: "x" }, { now: NOW_0924 });
+    await deleteHoliday(admin, added.id, { now: NOW_0924 });
+
+    await expect(
+      restoreHoliday(admin, added.id, {
+        now: NOW_0924,
+        recordAction: () => Promise.reject(new Error("로그 쓰기 실패 흉내")),
+      }),
+    ).rejects.toThrow("로그 쓰기 실패 흉내");
+
+    expect((await archiveStateOf(added.id))?.archivedAt).toBeInstanceOf(Date);
+    expect(await rowsBetween("2027-06-08", "2027-06-08")).toHaveLength(0);
+  });
+
+  // /review(#138) — 없는 id는 성공처럼 보이면 안 된다(거부). 활성 행 · 동시 중복 복원의 뒤 사람은 이미 활성이라 no-op.
+  it("활성 행 · 동시 중복 복원의 뒤 사람은 { restored: false }이고 로그가 없으며, 없는 id는 거부된다", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID, "관리자");
+    const added = await addHoliday(admin, { date: "2027-06-08", kind: "temporary", name: "x" }, { now: NOW_0924 });
+
+    expect(await restoreHoliday(admin, added.id, { now: NOW_0924 })).toEqual({ restored: false });
+    await expect(restoreHoliday(admin, randomUUID(), { now: NOW_0924 })).rejects.toThrow("없는 공휴일 · 복원 불가");
+    expect(await holidayLogs("restore")).toHaveLength(0);
+
+    await deleteHoliday(admin, added.id, { now: NOW_0924 });
+    const results = await Promise.all([
+      restoreHoliday(admin, added.id, { now: NOW_0924 }),
+      restoreHoliday(admin, added.id, { now: NOW_0924 }),
+    ]);
+    expect(results).toContainEqual({ restored: true });
+    expect(results).toContainEqual({ restored: false });
+    expect(await rowsBetween("2027-06-08", "2027-06-08")).toHaveLength(1);
+    expect(await holidayLogs("restore")).toHaveLength(1);
+  });
+
+  it("그 날이 오늘이 됐거나 그사이 같은 날짜에 공휴일이 다시 추가됐으면 HolidayNotRestorableError이고 로그가 늘지 않는다", async () => {
     const admin = await createViewer(SYSADMIN_ROLE_ID, "관리자");
     const added = await addHoliday(admin, { date: "2027-06-08", kind: "temporary", name: "원래 이름" }, { now: NOW_0924 });
-    const deleted = await deleteHoliday(admin, added.id, { now: NOW_0924 });
-    if (!deleted.deleted) throw new Error("삭제되지 않았다");
-    const undo = { date: deleted.date, name: deleted.name, kind: deleted.kind };
+    await deleteHoliday(admin, added.id, { now: NOW_0924 });
 
-    const onTheDay = new Date("2027-06-08T03:00:00Z");
-    await expect(addHoliday(admin, undo, { now: onTheDay })).rejects.toBeInstanceOf(PastHolidayDateError);
+    const onTheDay = restoreHoliday(admin, added.id, { now: new Date("2027-06-08T03:00:00Z") });
+    await expect(onTheDay).rejects.toBeInstanceOf(HolidayNotRestorableError);
+    await expect(onTheDay).rejects.toThrow("오늘·지난 날짜 · 복원 불가");
     expect(await logsForDate("2027-06-08")).toHaveLength(2);
 
+    // 보관된 행은 날짜를 붙잡지 않는다 — 같은 날짜 추가가 성공한다(D-01).
     await addHoliday(admin, { date: "2027-06-08", kind: "election", name: "다른 이름" }, { now: NOW_0924 });
     const logCount = (await logsForDate("2027-06-08")).length;
-    const duplicate = addHoliday(admin, undo, { now: NOW_0924 });
-    await expect(duplicate).rejects.toBeInstanceOf(DuplicateHolidayError);
-    await expect(duplicate).rejects.toThrow("이미 공휴일(다른 이름) · 다른 날짜 고르기");
+    const duplicate = restoreHoliday(admin, added.id, { now: NOW_0924 });
+    await expect(duplicate).rejects.toBeInstanceOf(HolidayNotRestorableError);
+    await expect(duplicate).rejects.toThrow("이미 공휴일(다른 이름) · 복원 불가");
     expect(await logsForDate("2027-06-08")).toHaveLength(logCount);
+    expect((await archiveStateOf(added.id))?.archivedAt).toBeInstanceOf(Date);
+  });
+
+  it("보기 전용 viewer의 복원은 HolidayForbiddenError다", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID, "관리자");
+    const added = await addHoliday(admin, { date: "2027-06-08", kind: "temporary", name: "x" }, { now: NOW_0924 });
+    await deleteHoliday(admin, added.id, { now: NOW_0924 });
+    const viewOnly = await createViewOnlyViewer();
+
+    await expect(restoreHoliday(viewOnly, added.id, { now: NOW_0924 })).rejects.toBeInstanceOf(HolidayForbiddenError);
+    expect((await archiveStateOf(added.id))?.archivedAt).toBeInstanceOf(Date);
   });
 });

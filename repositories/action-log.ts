@@ -1,8 +1,9 @@
-import { and, desc, eq, gte, isNull, lte, ne } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lte, notInArray } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { actionLog } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
+import { UNPRUNABLE_ACTION_TYPES } from "@/domain/action-log/prune-scope";
 
 export type ActionLogRow = InferSelectModel<typeof actionLog>;
 
@@ -109,12 +110,15 @@ export async function filterActionLog(viewer: Viewer, filter: ActionLogFilterInp
 // 않는다. 이미 정리된 행(prunedAt IS NOT NULL)과 정리 종류 자체의 행
 // (action_log_prune)은 항상 제외한다 — 정리로 추가된 행이 다음 정리의
 // 대상이 되면 두 번의 정리로 정리 흔적이 사라진다(03-RESEARCH.md가
-// 태스크화하라고 지목한 재귀적 요구). 반환값은 정리된 행 수.
+// 태스크화하라고 지목한 재귀적 요구). 개인정보 접속기록 셋(cert_view · mask_reveal ·
+// cert_correct)도 항상 제외한다 — 월 1회 점검 대상(04.3-14 사용자 결정 5936870579). 가액 · 파기
+// 기록(cert_prize_value · cert_purge)도 같다(/review F5) — 목록은 UNPRUNABLE_ACTION_TYPES.
+// 반환값은 정리된 행 수.
 export async function markActionLogRowsPruned(
   viewer: Viewer,
   filter: Omit<ActionLogFilterInput, "includePruned">,
 ): Promise<number> {
-  const conditions = [isNull(actionLog.prunedAt), ne(actionLog.actionType, "action_log_prune")];
+  const conditions = [isNull(actionLog.prunedAt), notInArray(actionLog.actionType, [...UNPRUNABLE_ACTION_TYPES])];
   if (filter.actorId) conditions.push(eq(actionLog.actorId, filter.actorId));
   if (filter.actionType) conditions.push(eq(actionLog.actionType, filter.actionType));
   if (filter.documentId) conditions.push(eq(actionLog.documentId, filter.documentId));

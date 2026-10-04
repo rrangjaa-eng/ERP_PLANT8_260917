@@ -53,6 +53,8 @@ export type TableColumn<Row> = {
    * 붙여넣기일 때만 값을 넣지 않고 무시해 센다 — 앱 형식이 없으면(엑셀) 04-04처럼 오류 칸이다. 기본 `input`.
    */
   pasteRole?: "input" | "computed";
+  /** 04.3-04(최종 리뷰 B2) — 머리글 `<th>`의 `aria-describedby`(열 설명 글의 id). 없으면 속성을 그리지 않는다. */
+  headerDescribedBy?: string;
 };
 
 export type TableGroup<Row> = {

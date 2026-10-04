@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Locator, type Page } from "@playwright/test";
-import { and, eq, isNull, sql, sum } from "drizzle-orm";
+import { and, asc, eq, isNull, sql, sum } from "drizzle-orm";
 import { db } from "@/db/client";
 import { codeItems, quoteLines, teams } from "@/db/schema";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
@@ -374,7 +374,7 @@ test.describe("실제 엑셀 캡처 원문 — 최종 견적 표 재생(04-31 Ta
     const project = await makeProject(account.userId, `E2E상한최종-${Date.now()}`);
     const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
     if (!revision) throw new Error("1차 차수가 없습니다");
-    const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
+    const [subcategory] = await db.select().from(codeItems).where(and(eq(codeItems.tableKey, "quote_subcategory"), eq(codeItems.active, true), isNull(codeItems.archivedAt))).orderBy(asc(codeItems.sortOrder), asc(codeItems.value)).limit(1);
     if (!subcategory) throw new Error("소분류 코드가 없습니다");
     await db.execute(sql`
       INSERT INTO quote_lines (revision_id, sort_order, subcategory, item_name, unit_price_amount_krw, execution_amount_krw, quote_amount_krw, profit_krw)

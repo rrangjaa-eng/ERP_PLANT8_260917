@@ -1,0 +1,24 @@
+/* 04.3-04 · 04.3-15 · 04.3-10 — I′1 확인증 행사 목록 표 칸. 역할 토큰만(docs/design/tokens.css).
+   04.6-23: 틀 · 패널 · 뼈대는 ListScreen · SidePanel · TableSkeleton이 맡아 화면별 행동 줄 · 입력 칸 · 뼈대 규칙을 지웠다. */
+
+/* 행사 이름 · 경품명은 줄바꿈(UI Considerations long-text). */
+.wrapText {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+/* 전화 · 날짜 · 수 숫자는 줄바꿈하지 않는다(숫자 서식은 ui/num의 몫). */
+.nowrap {
+  white-space: nowrap;
+}
+
+.link {
+  color: var(--text-link);
+  text-decoration: underline;
+  text-decoration-thickness: var(--line-w);
+  text-underline-offset: var(--underline-offset);
+}
+
+.link:hover {
+  text-decoration-thickness: var(--underline-w-hover);
+}

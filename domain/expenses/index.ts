@@ -6,6 +6,7 @@ import { seoulToday } from "@/lib/dates";
 import { formatForeignAmount, formatKrw } from "@/lib/format-number";
 import { can, ForbiddenError } from "@/domain/permissions/can";
 import { project } from "@/domain/permissions/project";
+import { coversProjectTeam, loadActorTeamScope } from "@/domain/projects/status";
 import { getSettingValue, getSimpleSettingValues } from "@/domain/settings/registry";
 import {
   APPROVAL_ROUTE_EXPENSE_SELF_APPROVAL,
@@ -312,12 +313,18 @@ export async function createExpenseFromLines(
   const [canWriteExpense, canWriteProject] = await Promise.all([can(viewer, "expenses", "write"), can(viewer, "projects", "write")]);
   if (!canWriteExpense || !canWriteProject) throw new ForbiddenError("지출결의 작성 권한 없음");
 
-  const gateEnabled = await getSettingValue(PROJECT_CUSTOMER_APPROVAL_GATE);
+  const [gateEnabled, teamScope] = await Promise.all([
+    getSettingValue(PROJECT_CUSTOMER_APPROVAL_GATE),
+    loadActorTeamScope(viewer, { todayKst: seoulToday() }),
+  ]);
   const factsByProject = new Map<string, ProjectFacts | null>();
   let paymentMethod: string | null | undefined;
   const created: { lineId: string; expenseId: string }[] = [];
   const blocked: { lineId: string; reason: string }[] = [];
 
+  // 줄 → 프로젝트를 먼저 다 읽고 그 프로젝트의 쓰기 권리(담당 PM 또는 업무 범위가 프로젝트 팀을 덮음 — Phase 4
+  // 판정)를 판정한다. 하나라도 없으면 아무 행도 만들기 전에 거부한다(T-05-1401).
+  const resolved: { lineId: string; line: QuoteLineRow; facts: ProjectFacts }[] = [];
   for (const lineId of [...new Set(input.lineIds)]) {
     const line = UUID_SHAPE.test(lineId) ? await findQuoteLineById(viewer, lineId) : null;
     const revision = line ? await findQuoteRevisionById(viewer, line.revisionId) : null;
@@ -331,6 +338,13 @@ export async function createExpenseFromLines(
       blocked.push({ lineId, reason: NOT_IN_CURRENT_REVISION });
       continue;
     }
+    if (facts.project.pmUserId !== viewer.id && !coversProjectTeam(teamScope, facts.project.teamId)) {
+      throw new ForbiddenError("지출결의 작성 권한 없음");
+    }
+    resolved.push({ lineId, line, facts });
+  }
+
+  for (const { lineId, line, facts } of resolved) {
     if (facts.tableGateReason) {
       blocked.push({ lineId, reason: facts.tableGateReason });
       continue;

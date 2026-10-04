@@ -28,6 +28,8 @@ playwright-report/
 test-results/
 *.tsbuildinfo
 next-env.d.ts
+# 05-04 로컬 증빙 저장소 데이터 디렉터리(.data/uploads)
+.data/
 
 # GitHub Actions WIF credential files (google-github-actions/auth writes these
 # into $GITHUB_WORKSPACE — must be ignored or deploy.sh's dirty-tree check and

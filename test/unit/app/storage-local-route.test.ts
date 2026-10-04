@@ -42,7 +42,7 @@ async function loadRoute() {
   return { route, log, storage };
 }
 
-function putRequest(url: string, body: Uint8Array, headers: Record<string, string> = {}) {
+function putRequest(url: string, body: Uint8Array<ArrayBuffer>, headers: Record<string, string> = {}) {
   return new Request(`http://localhost${url}`, {
     method: "PUT",
     body,

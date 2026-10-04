@@ -99,7 +99,8 @@ export const TAX_WITHHOLDING_OTHER_INCOME_EXEMPT_THRESHOLD: SettingDef<number> =
 export const TAX_COMPANY_BORNE_RATE: SettingDef<number> = {
   key: "tax.company_borne.rate",
   kind: "historized",
-  schema: z.coerce.number().min(0).max(1),
+  // gross-up은 공급가액 / (1 − 세율)이라 1은 0 나누기다(05-06 돈 검토 m5).
+  schema: z.coerce.number().min(0).lt(1),
   label: "회사 대납 세율",
   hint: "회사가 대신 부담하는 세금의 비율입니다.",
   namespace: "세율",

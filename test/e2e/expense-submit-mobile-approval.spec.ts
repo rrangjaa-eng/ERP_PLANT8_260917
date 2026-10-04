@@ -255,6 +255,12 @@ test.describe("D-66 잠금", () => {
     }).toPass();
     await expect(amount.locator("input, select")).toHaveCount(0);
 
+    // 웨이브 7 D3 — 닫힌 줄의 3차 `지출결의 열기`도 그 줄 항목 칸을 aria-describedby로 가리킨다(줄마다 같은 이름).
+    const open = row.getByRole("link", { name: "지출결의 열기" });
+    const describedBy = await open.getAttribute("aria-describedby");
+    expect(describedBy, "D3 aria-describedby").toBeTruthy();
+    await expect(page.locator(`[id="${describedBy}"]`)).toHaveText(fx.lines.closed.itemName);
+
     // 연결 없는 줄은 그대로 미착수다.
     const free = page.getByRole("row").filter({ hasText: fx.lines.hold.itemName });
     await expect(free.getByRole("gridcell").filter({ hasText: "미착수" })).toHaveCount(1);
@@ -345,9 +351,13 @@ test.describe("행 행동 갈래", () => {
     const mine = doorCellOf(page, fx.lines.hold.itemName).getByRole("button");
     const other = doorCellOf(page, fx.lines.retry.itemName).getByRole("button");
     await waitForHydration(mine);
+    // 웨이브 7 D2 — 누름 중 「…」이 행동 열을 넓히지 않는다(열 폭 = 쉬는 라벨, UI-SPEC S1 :334).
+    const doorWidth = async () => (await doorCellOf(page, fx.lines.hold.itemName).boundingBox())!.width;
+    const idleWidth = await doorWidth();
     await delayServerActions(page, 2000);
     await mine.click();
     await expect(mine).toContainText("지출결의 올리기…");
+    expect(await doorWidth(), "D2 행동 열 폭 불변").toBe(idleWidth);
     await expect(other).toHaveAttribute("aria-disabled", "true");
     await expect(page).toHaveURL(/\/expenses\/[0-9a-f-]{36}$/);
   });

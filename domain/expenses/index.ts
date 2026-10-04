@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Viewer } from "@/domain/viewer";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
+import { isUniqueViolation } from "@/lib/pg-errors";
 import { withTransaction } from "@/lib/db-transaction";
 import { seoulToday } from "@/lib/dates";
 import { formatForeignAmount, formatFxRate, formatKrw } from "@/lib/format-number";
@@ -30,7 +31,9 @@ import {
 } from "@/domain/settings/keys";
 import {
   ApprovalConflictError,
+  loadActionLogGate,
   prepareSubmission,
+  recordActionInTx,
   registerDocumentKind,
   resubmitDocument,
   submitDocument,
@@ -76,6 +79,7 @@ import { findQuoteLineById, listQuoteLinesByRevision, type QuoteLineRow } from "
 import { findUserById } from "@/repositories/users";
 import { findVendorById } from "@/repositories/vendors";
 import {
+  findDeletedDraftById,
   findDraftByLineAndDrafter,
   findExpenseApprovalInstance,
   findExpenseApprovalStatus,
@@ -88,8 +92,10 @@ import {
   listNumberedByLine,
   listNumberedByLines,
   lockExpenseForUpdate,
+  restoreDraft,
   saveSubmissionSnapshot,
   setExpenseNumber,
+  softDeleteDraft,
   updateDraftIfVersion,
   type ExpenseDraftFields,
   type ExpenseRow,
@@ -882,6 +888,63 @@ export async function submitExpense(
     await setExpenseNumber(viewer, { id: locked.id, number }, tx);
     return { kind: "submitted", expenseId: locked.id, number, instanceId: instance.id, version: instance.version, round: instance.currentRound };
   });
+}
+
+// ── 작성 중 삭제 · 되돌리기(05-09) ─────────────────────────────────────────
+
+// 기안자의 작성 중(번호 없는) 문서만 소프트 삭제 — 같은 tx에 document_delete 로그. 확인 창 대신 화면 토스트 `되돌리기`(restoreExpenseDraft).
+export async function deleteExpenseDraft(viewer: Viewer, input: { expenseId: string; expectedVersion: number }): Promise<{ expenseId: string }> {
+  if (!(await can(viewer, "expenses", "write"))) throw new ForbiddenError("지출결의 작성 권한 없음");
+  const row = UUID_SHAPE.test(input.expenseId) ? await findExpenseById(viewer, input.expenseId) : null;
+  if (!row || row.drafterId !== viewer.id || row.number !== null) throw new ExpenseNotFoundError();
+  const gate = await loadActionLogGate();
+  return withTransaction(async (tx) => {
+    const deleted = await softDeleteDraft(viewer, { id: row.id, expectedVersion: input.expectedVersion, deletedBy: viewer.id }, tx);
+    if (!deleted) {
+      const latest = await findExpenseById(viewer, row.id, tx);
+      if (!latest || latest.number !== null) throw new ExpenseNotFoundError();
+      throw new ExpenseConflictError(latest.updatedAt);
+    }
+    await recordActionInTx(
+      viewer,
+      { actionType: "document_delete", entity: "expense", entityId: row.id, documentId: row.id, detail: { kind: EXPENSE_DOCUMENT_KIND } },
+      tx,
+      gate,
+    );
+    return { expenseId: row.id };
+  });
+}
+
+// 지운 내 작성 중 문서를 되살린다. 그 사이 같은 줄에 내 새 작성 중 문서가 생겨 부분 UNIQUE가 막으면 되살리지 않고 그 문서 id(화면이 그 문서를 연다).
+// 이미 되살린 문서면 그 id 그대로.
+export async function restoreExpenseDraft(viewer: Viewer, input: { expenseId: string }): Promise<{ expenseId: string }> {
+  if (!(await can(viewer, "expenses", "write"))) throw new ForbiddenError("지출결의 작성 권한 없음");
+  if (!UUID_SHAPE.test(input.expenseId)) throw new ExpenseNotFoundError();
+  const row = await findDeletedDraftById(viewer, input.expenseId);
+  if (!row || row.drafterId !== viewer.id) {
+    const alive = await findExpenseById(viewer, input.expenseId);
+    if (alive && alive.drafterId === viewer.id && alive.number === null) return { expenseId: alive.id };
+    throw new ExpenseNotFoundError();
+  }
+  const gate = await loadActionLogGate();
+  try {
+    return await withTransaction(async (tx) => {
+      const restored = await restoreDraft(viewer, { id: row.id, drafterId: viewer.id }, tx);
+      if (!restored) throw new ExpenseNotFoundError();
+      await recordActionInTx(
+        viewer,
+        { actionType: "document_update", entity: "expense", entityId: row.id, documentId: row.id, detail: { kind: EXPENSE_DOCUMENT_KIND, change: "restore" } },
+        tx,
+        gate,
+      );
+      return { expenseId: restored.id };
+    });
+  } catch (error) {
+    if (!isUniqueViolation(error, "expenses_line_drafter_draft_uniq") || !row.quoteLineId) throw error;
+    const existing = await findDraftByLineAndDrafter(viewer, { quoteLineId: row.quoteLineId, drafterId: viewer.id });
+    if (!existing) throw error;
+    return { expenseId: existing.id };
+  }
 }
 
 // ── 회수(05-09) ───────────────────────────────────────────────────────

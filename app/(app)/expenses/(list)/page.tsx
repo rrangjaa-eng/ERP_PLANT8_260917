@@ -8,6 +8,7 @@ import { Num } from "@/ui/num/Num";
 import { Pagination } from "@/ui/pagination/Pagination";
 import { pageRangeText } from "@/ui/pagination/page-window";
 import { SubmittedToast } from "@/app/(app)/leave/[id]/submitted-toast";
+import { DeletedToast } from "../deleted-toast";
 import { ExpensesTable, type ExpenseTableRow } from "../expenses-table";
 import { StatusFilter } from "../status-filter";
 import { EXPENSE_STATUS_VIEWS, type ExpenseStatusView } from "../list-columns";
@@ -61,6 +62,9 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
   );
   const newAction = { label: "새 지출결의", href: "/expenses/new" };
   const toast = createdToast(params);
+  // 05-09 작성 중 삭제 착지(`?deleted={id}`) — 토스트 `지출결의 삭제` + 3차 `되돌리기`. 빈 목록이면 틀이 `empty`만 그리므로 그쪽에도 싣는다.
+  const deletedRaw = Array.isArray(params.deleted) ? params.deleted[0] : params.deleted;
+  const deletedToast = deletedRaw && /^[0-9a-f-]{36}$/i.test(deletedRaw) ? <DeletedToast expenseId={deletedRaw} href={viewHref(view)} /> : null;
 
   return (
     <ListScreen
@@ -79,7 +83,14 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
           </section>
         ) : undefined
       }
-      empty={list.hasAny ? undefined : <ListEmpty message="등록된 지출결의가 없습니다" {...(canWrite ? { action: newAction } : {})} />}
+      empty={
+        list.hasAny ? undefined : (
+          <>
+            <ListEmpty message="등록된 지출결의가 없습니다" {...(canWrite ? { action: newAction } : {})} />
+            {deletedToast}
+          </>
+        )
+      }
       pagination={
         rows.length > 0 ? (
           <Pagination
@@ -100,6 +111,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
         <ListEmpty message="진행 중인 지출결의가 없습니다" action={{ label: "전체 보기", href: viewHref("전체") }} />
       )}
       {toast ? <SubmittedToast message={toast} href={viewHref(view)} /> : null}
+      {deletedToast}
     </ListScreen>
   );
 }

@@ -57,9 +57,14 @@ export function ExpenseDocument({
     .map((step) => step.holderNames)
     .join(", ");
   const submitLabel = (view?.round ?? 1) > 1 ? "지출결의 다시 제출" : "지출결의 제출";
+  // 기안자가 지금 단계 담당이면(자기 승인) 결과 글자 대신 `본인 승인 차례` — 1차는 행동 줄의 `승인`이다.
+  const selfTurn = actions.includes("approve") && Boolean(view?.steps?.some((step) => step.state === "current" && step.viewerHolds));
   const undoToast =
     submitted === "1" && inProgress && actions.includes("withdraw") && view?.round
-      ? { round: view.round, message: holderNames ? `${submitLabel} · 결재 요청됨 → ${holderNames}` : `${submitLabel} · 결재 요청됨` }
+      ? {
+          round: view.round,
+          message: selfTurn ? `${submitLabel} · 본인 승인 차례` : holderNames ? `${submitLabel} · 결재 요청됨 → ${holderNames}` : `${submitLabel} · 결재 요청됨`,
+        }
       : null;
   const toast = !undoToast && submitted === "already" && expense.number ? `이미 제출됨 · ${expense.number}` : null;
 
@@ -149,7 +154,8 @@ export function ExpenseDocument({
                   subtitle: [expense.number, expense.drafterName, target, amountText].filter(Boolean).join(" · "),
                   withdrawSubtitle: [expense.number, target].filter(Boolean).join(" · "),
                   drafterName: view.drafterName ?? expense.drafterName ?? null,
-                  withdrawLines: withdrawResultLines(view.steps),
+                  // 지출결의는 회수 뒤 같은 번호로 다시 제출한다 — 승인 기록 줄에 다시 제출이 첫 단계부터임을 붙인다(UI-SPEC Destructive — 회수).
+                  withdrawLines: withdrawResultLines(view.steps).map((line) => (line.endsWith(" 승인 기록은 남음") ? `${line} · 다시 제출 때 첫 단계부터` : line)),
                 }
               : null
           }

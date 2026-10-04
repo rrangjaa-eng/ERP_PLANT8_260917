@@ -11,9 +11,11 @@ import {
   changeExpenseLine,
   changeExpenseVendor,
   createExpenseFromLines,
+  deleteExpenseDraft,
   createTeamExpenseDraft,
   getNewExpenseDefaults,
   previewExpense,
+  restoreExpenseDraft,
   saveExpenseDraft,
   submitExpense,
   withdrawExpense,
@@ -209,4 +211,22 @@ export const createEvidenceViewUrlAction = authedActionClient
   .action(async ({ parsedInput, ctx }) => {
     const view = await createEvidenceViewUrl(ctx.viewer, parsedInput);
     return { url: view?.url ?? null };
+  });
+
+// 05-09 작성 중 삭제 · 되돌리기(복원) — 문서 id만 돌려준다(복원은 그 사이 같은 줄에 생긴 새 작성 중 문서 id일 수 있다).
+export const deleteExpenseDraftAction = authedActionClient
+  .schema(z.object({ expenseId: expenseIdSchema, expectedVersion: z.number().int().min(1) }).strict())
+  .action(async ({ parsedInput, ctx }) => {
+    const deleted = await deleteExpenseDraft(ctx.viewer, parsedInput);
+    revalidatePath("/expenses");
+    return { expenseId: deleted.expenseId };
+  });
+
+export const restoreExpenseDraftAction = authedActionClient
+  .schema(z.object({ expenseId: expenseIdSchema }).strict())
+  .action(async ({ parsedInput, ctx }) => {
+    const restored = await restoreExpenseDraft(ctx.viewer, parsedInput);
+    revalidatePath("/expenses");
+    revalidatePath(`/expenses/${restored.expenseId}`);
+    return { expenseId: restored.expenseId };
   });

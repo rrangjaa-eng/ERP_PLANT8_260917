@@ -47,3 +47,7 @@ registerAction({ name: "searchLinesForPickAction", menu: "expenses", action: "wr
 
 // 새 version 또는 이동할 문서 id만 돌려준다(DTO 없음).
 registerAction({ name: "changeExpenseLineAction", menu: "expenses", action: "write", dtoName: null });
+
+// 05-09 작성 중 삭제 · 되돌리기 — 문서 id만 돌려준다(DTO 없음).
+registerAction({ name: "deleteExpenseDraftAction", menu: "expenses", action: "write", dtoName: null });
+registerAction({ name: "restoreExpenseDraftAction", menu: "expenses", action: "write", dtoName: null });

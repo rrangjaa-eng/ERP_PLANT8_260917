@@ -18,6 +18,7 @@ import { expenseStatusWord } from "../status-display";
 import { seoulMinuteOf } from "@/app/(app)/leave/status-display";
 import { SubmittedToast } from "@/app/(app)/leave/[id]/submitted-toast";
 import { ExpenseDocument } from "./expense-document";
+import { DeleteDraftButton } from "./delete-draft-button";
 import { ExpenseForm } from "./expense-form";
 import styles from "./expense.module.css";
 
@@ -102,6 +103,8 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
         title={target ? `지출결의 — ${target}` : "지출결의"}
         status={<StatusTag status={expenseStatusWord(resubmitting ? view?.status : null)} />}
         meta={resubmitting && expense.number ? <Num value={expense.number} /> : undefined}
+        // 작성 중(번호 없음 — 기안자만 보는 문서)에만 머리 줄 2차 `지출결의 삭제`. 1차는 폼의 제출이다.
+        actions={resubmitting ? undefined : { secondary: <DeleteDraftButton expenseId={id} version={expense.version ?? 1} /> }}
       >
         {readRows.length > 0 ? <KvList items={readRows} /> : null}
         <ExpenseForm

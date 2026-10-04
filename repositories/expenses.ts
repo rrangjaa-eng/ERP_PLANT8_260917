@@ -162,6 +162,53 @@ export async function updateDraftIfVersion(
   return row ?? null;
 }
 
+// 05-09 작성 중 삭제 — 기안자 · 번호 없음 · 삭제 안 됨 · version 조건, deleted_at · deleted_by를 채우고 version + 1. 0행이면 null.
+export async function softDeleteDraft(
+  viewer: Viewer,
+  input: { id: string; expectedVersion: number; deletedBy: string },
+  tx: DbOrTx = db,
+): Promise<ExpenseRow | null> {
+  void viewer;
+  const now = new Date();
+  const [row] = await tx
+    .update(expenses)
+    .set({ deletedAt: now, deletedBy: input.deletedBy, updatedBy: input.deletedBy, updatedAt: now, version: sql`${expenses.version} + 1` })
+    .where(
+      and(
+        eq(expenses.id, input.id),
+        eq(expenses.drafterId, input.deletedBy),
+        eq(expenses.version, input.expectedVersion),
+        isNull(expenses.number),
+        isNull(expenses.deletedAt),
+      ),
+    )
+    .returning();
+  return row ?? null;
+}
+
+// 지운 작성 중 문서 하나(복원 재료) — 번호 없음 · deleted_at 있음.
+export async function findDeletedDraftById(viewer: Viewer, id: string, tx: DbOrTx = db): Promise<ExpenseRow | null> {
+  void viewer;
+  const [row] = await tx
+    .select()
+    .from(expenses)
+    .where(and(eq(expenses.id, id), isNull(expenses.number), isNotNull(expenses.deletedAt)))
+    .limit(1);
+  return row ?? null;
+}
+
+// 05-09 되돌리기(복원) — 기안자의 지운 작성 중 문서만 deleted_at을 비운다. 같은 줄에 그 사이 새 작성 중 문서가 생겼으면
+// 부분 UNIQUE(expenses_line_drafter_draft_uniq)가 막는다(호출자가 잡아 그 문서로 보낸다).
+export async function restoreDraft(viewer: Viewer, input: { id: string; drafterId: string }, tx: DbOrTx = db): Promise<ExpenseRow | null> {
+  void viewer;
+  const [row] = await tx
+    .update(expenses)
+    .set({ deletedAt: null, deletedBy: null, updatedBy: input.drafterId, updatedAt: new Date(), version: sql`${expenses.version} + 1` })
+    .where(and(eq(expenses.id, input.id), eq(expenses.drafterId, input.drafterId), isNull(expenses.number), isNotNull(expenses.deletedAt)))
+    .returning();
+  return row ?? null;
+}
+
 export type ExpenseTaxSnapshot = Pick<
   ExpenseRow,
   | "taxRuleKind"

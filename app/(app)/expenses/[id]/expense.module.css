@@ -250,3 +250,16 @@
   word-break: keep-all;
   white-space: pre-line;
 }
+
+/* 05-09 작성 중 폼 머리 줄 `지출결의 삭제` — 실패 한 줄은 버튼 왼쪽. 폰에서는 머리 줄 버튼을 숨긴다(UI-SPEC S3 「머리 줄」). */
+.headDelete {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+@media (max-width: 699.98px) {
+  .headDelete {
+    display: none;
+  }
+}

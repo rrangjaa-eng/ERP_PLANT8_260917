@@ -115,6 +115,73 @@
   margin-left: auto;
 }
 
+.submitWrap {
+  display: contents;
+}
+
+.formBarSpacer {
+  display: none;
+}
+
+/* 폰 제출 줄 — 하단 탭 위 고정 · 1차가 2차의 두 배 폭 · 높이 --touch-min · kbd 없음(§6-3 제출 줄 · 04.1 연차 신청 폼과 같은 값).
+   2차 왼쪽 · 1차 오른쪽(사용자 결정 2026-09-29 A): 수화 전 보이는 순서는 order, 수화 뒤에는 DOM도 2차 → 1차(expense-form usePhoneWidth). */
+@media (max-width: 699.98px) {
+  .formBar {
+    position: fixed;
+    right: 0;
+    bottom: calc(var(--touch-min) + var(--line-w));
+    left: 0;
+    margin-top: 0;
+    padding: 0 var(--pad-page) var(--s-2);
+    background: var(--surface-canvas);
+    z-index: var(--z-bar);
+  }
+
+  /* 본문 아래 여백 = 행동 줄 높이(탭 44는 셸이 이미 비운다). 막힘 이유 한 줄까지. */
+  .formBarSpacer {
+    display: block;
+    height: calc(var(--touch-min) * 2 + var(--s-6));
+  }
+
+  .formBar .submitWrap {
+    display: flex;
+    flex: 2;
+  }
+
+  .formBar .saveWrap {
+    display: flex;
+    flex: 1;
+    order: -1;
+    margin-left: 0;
+  }
+
+  .formBar .submitWrap > span,
+  .formBar .saveWrap > span {
+    display: flex;
+    width: 100%;
+  }
+
+  .formBar .submitWrap button,
+  .formBar .saveWrap button {
+    justify-content: center;
+    width: 100%;
+    height: var(--touch-min);
+    font-size: var(--text-body);
+  }
+
+  .blockedLine,
+  .formBar > div > .blockedReason,
+  .formBar > div > .infoReason,
+  .formBar > div > .successLine {
+    order: 3;
+    flex-basis: 100%;
+  }
+
+  .formBar kbd {
+    display: none;
+  }
+}
+
 /* 문서 화면 — 증빙 섹션 안 첨부 래퍼. */
 .evidence {
   max-width: var(--field-w-long);

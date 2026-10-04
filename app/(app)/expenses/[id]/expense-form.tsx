@@ -10,6 +10,7 @@ import type { AttachmentFile } from "@/ui/attachments/Attachments";
 import { useCommaInput } from "@/ui/input/use-comma-input";
 import { parseNumberInput } from "@/lib/format-number";
 import { isCtrlCombo } from "@/lib/shortcut";
+import { usePhoneWidth } from "@/app/(app)/leave/use-phone-width";
 import { saveExpenseDraftAction, submitExpenseAction } from "../actions";
 import { EvidenceAttachments } from "./evidence-attachments";
 import { submitBlockReason } from "./submit-block";
@@ -121,6 +122,8 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
 
   // 서버 막힘 이유 ①~⑨는 05-06이 미리보기 응답의 첫 이유를 넘긴다 — 지금은 올리는 중 판정만.
   const block = submitBlockReason({ server: null, uploadingCount: uploading });
+  // 폰은 2차 `임시 저장` 왼쪽 · 1차 오른쪽 — 수화 전 보이는 순서는 CSS order, 수화 뒤 DOM · Tab 순서도 2차 → 1차(04.1 연차 신청 폼과 같은 방식).
+  const phone = usePhoneWidth();
 
   // 입력 → 서버가 받는 칸 값. 틀린 칸이 있으면 칸 오류를 세우고 null.
   function collect(): Record<string, unknown> | null {
@@ -277,6 +280,22 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
       </span>
     ) : null;
 
+  const submitButton = (
+    <span className={styles.submitWrap}>
+      <Button
+        id="expense-submit"
+        type="submit"
+        variant="primary"
+        shortcut="Ctrl+Enter"
+        pending={submitting}
+        disabled={block !== null}
+        aria-describedby={block ? "expense-blocked" : undefined}
+      >
+        지출결의 제출
+      </Button>
+    </span>
+  );
+
   return (
     <Form id="expense-form" layout="page" onSubmit={handleSubmit} onKeyDown={handleKeyDown}>
       {data.lineText ? (
@@ -399,18 +418,12 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
 
       <div className={styles.formBar} data-testid="expense-form-actions">
         <Form.Actions>
-          <Button
-            id="expense-submit"
-            type="submit"
-            variant="primary"
-            shortcut="Ctrl+Enter"
-            pending={submitting}
-            disabled={block !== null}
-            disabledReason={block?.reason}
-            reasonTone={block?.tone}
-          >
-            지출결의 제출
-          </Button>
+          {phone ? null : submitButton}
+          {block && !submitting ? (
+            <span id="expense-blocked" className={block.tone === "info" ? styles.infoReason : styles.blockedReason}>
+              {block.reason}
+            </span>
+          ) : null}
           {networkFailed === "submit" ? (
             <span className={styles.blockedLine}>
               <span className={styles.blockedReason}>제출 실패 · 네트워크 · </span>
@@ -435,8 +448,10 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, currencies,
               임시 저장
             </Button>
           </span>
+          {phone ? submitButton : null}
         </Form.Actions>
       </div>
+      <div className={styles.formBarSpacer} aria-hidden="true" />
     </Form>
   );
 }

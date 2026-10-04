@@ -1079,9 +1079,10 @@ export function QuoteLedger({
   const [doorPendingLine, setDoorPendingLine] = useState<string | null>(null);
   const [doorFailedLine, setDoorFailedLine] = useState<string | null>(null);
   const doorBusyRef = useRef(false);
-  async function openLineExpense(lineId: string, cell: LineDoorCell): Promise<void> {
+  async function openLineExpense(lineId: string, cell: LineDoorCell, onLeave?: () => void): Promise<void> {
     if (doorBusyRef.current) return;
     if (cell.expenseId) {
+      onLeave?.();
       router.push(`/expenses/${cell.expenseId}`);
       return;
     }
@@ -1097,11 +1098,35 @@ export function QuoteLedger({
     }
     doorBusyRef.current = false;
     if (expenseId) {
+      onLeave?.();
       router.push(`/expenses/${expenseId}`);
       return;
     }
     setDoorPendingLine(null);
     setDoorFailedLine(lineId);
+  }
+  // 05-05(U2) — 폰 행 시트의 문서 행동 자리(`RowSheet`의 기존 `action`). 위 → 아래: 실패 한 줄(있을 때만) · 3차 하나. 행동이 없는 줄은 자리째 넘기지 않는다.
+  function sheetDoorAction(row: DraftLine): ReactNode {
+    const lineId = row.id;
+    const door = lineDoors.showColumn && lineId ? lineDoors.cells[lineId] : undefined;
+    if (!lineId || !door || door.state === "none") return undefined;
+    if (door.state === "closed") {
+      return door.latestId ? (
+        <Link href={`/expenses/${door.latestId}`} className={buttonLinkClassName("tertiary")}>
+          지출결의 열기
+        </Link>
+      ) : undefined;
+    }
+    if (door.state === "no_vendor") return <p className={styles.doorFailure}>거래처 없음 · PC 견적 표에서 고르기</p>;
+    if (lineDoors.tableGateReason) return <p className={styles.doorNote}>{lineDoors.tableGateReason}</p>;
+    return (
+      <div className={styles.sheetDoor}>
+        {doorFailedLine === lineId ? <p className={styles.doorFailure}>지출결의 만들기 실패 · 다시 시도</p> : null}
+        <Button variant="tertiary" pending={doorPendingLine === lineId} onClick={() => void openLineExpense(lineId, door, () => setSheetRowKey(null))}>
+          지출결의 올리기
+        </Button>
+      </div>
+    );
   }
   // 04-22(D-68) — 사용자가 칸을 바꾼 순간에만 보관본을 쓴다. 편집 핸들러가 켜고, 상태가
   // 반영된 뒤 효과가 현재 편집 전체를 쓴다. 서버 값으로 다시 그리는 경로는 켜지 않는다.
@@ -2651,6 +2676,7 @@ export function QuoteLedger({
             { label: "비고", value: openSheetRow.note ?? "—" },
             { label: "상태", value: lineStatusLabel(openSheetRow.lineStatus) },
           ]}
+          action={sheetDoorAction(openSheetRow)}
         />
       ) : null}
 

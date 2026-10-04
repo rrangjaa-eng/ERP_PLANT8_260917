@@ -6,6 +6,7 @@ import {
   DuplicateDocumentKindError,
   InvalidDocumentKindError,
   UnknownDocumentKindError,
+  resubmittableStatuses,
   type DocumentDetailRow,
   type DocumentKindDef,
 } from "@/domain/approvals/kinds";
@@ -128,6 +129,29 @@ describe("종류 상세 — detailDto 투영 뒤 buildDetailRows(Codex MEDIUM ·
     expect(() => registerDocumentKind(withoutDto)).toThrow(InvalidDocumentKindError);
     expect(() => registerDocumentKind(withoutRows)).toThrow(InvalidDocumentKindError);
     expect(() => registerDocumentKind(testKind(`test_memo_${randomUUID()}`))).not.toThrow();
+  });
+
+  it("(05-01 E2) prepareFinalApproval · onFinalApprovalInTx 중 하나만 있으면 등록에서 예외, 둘 다 있거나 둘 다 없으면 통과", () => {
+    const prepare = () => Promise.resolve(null);
+    const inTx = () => Promise.resolve();
+    expect(() => registerDocumentKind({ ...testKind(`test_hook_${randomUUID()}`), prepareFinalApproval: prepare })).toThrow(
+      InvalidDocumentKindError,
+    );
+    expect(() => registerDocumentKind({ ...testKind(`test_hook_${randomUUID()}`), onFinalApprovalInTx: inTx })).toThrow(
+      InvalidDocumentKindError,
+    );
+    expect(() =>
+      registerDocumentKind({ ...testKind(`test_hook_${randomUUID()}`), prepareFinalApproval: prepare, onFinalApprovalInTx: inTx }),
+    ).not.toThrow();
+    expect(() => registerDocumentKind(testKind(`test_hook_${randomUUID()}`))).not.toThrow();
+  });
+
+  it("(05-01 E1) resubmitFrom이 없으면 [rejected], 있으면 그 목록 — rejected · withdrawn 밖의 값은 타입 오류", () => {
+    expect(resubmittableStatuses(testKind("a"))).toEqual(["rejected"]);
+    expect(resubmittableStatuses({ ...testKind("b"), resubmitFrom: ["rejected", "withdrawn"] })).toEqual(["rejected", "withdrawn"]);
+    // @ts-expect-error — approved는 다시 제출할 수 있는 상태가 아니다.
+    const invalid: DocumentKindDef = { ...testKind("c"), resubmitFrom: ["approved"] };
+    expect(invalid.kind).toBe("c");
   });
 
   it("주입한 now가 loadDetails의 deps.now로 그대로 가고, 없으면 undefined다(CX-B2 — 엔진이 시계를 읽지 않는다)", async () => {

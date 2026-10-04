@@ -17,6 +17,11 @@ import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { createCertEvent } from "@/test/e2e/helpers/cert";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
+import { actionLog, approvalInstances, users } from "@/db/schema";
+import { TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
+import * as approvals from "@/domain/approvals";
+import { appendActionLog } from "@/repositories/action-log";
+import { makePerson, NOW_2026 } from "./approvals-fixtures";
 
 // Phase 4(04-32, ENG-D3 ①) — 잠금·풀 시간 제한의 통합 증명. (c)의 describe는
 // 04-22·04-12가 saveProjectLedger 안의 트랜잭션 규약 위반(잠근 트랜잭션 안에서
@@ -425,6 +430,90 @@ describe("풀 2 · 동시 경품 저장 셋(04.3-10 독립 검토 W1)", () => {
       } finally {
         process.env.DB_POOL_MAX = previousPoolMax;
       }
+    },
+    20_000,
+  );
+});
+
+describe("풀 2 · 동시 훅 최종 승인 셋(05-01 E2)", () => {
+  // 05-01 E2: 최종 승인 훅 — prepareFinalApproval(전역 풀 읽기)은 트랜잭션 전, onFinalApprovalInTx는 받은 tx로만 쓴다.
+  // 훅 경로가 tx 안에서 전역 풀을 부르면 두 연결이 트랜잭션에 묶인 채 셋째 연결을 기다려 풀 2에서 5초 시간 초과로 깨진다.
+  it(
+    "(h) 풀 크기 2에서 훅 달린 종류의 최종 승인 셋을 동시에 보내면 10초 안에 셋 다 성공한다",
+    async () => {
+      type KindDef = Parameters<typeof approvals.registerDocumentKind>[0];
+
+      const kind = `test_pool_hook_${randomUUID().slice(0, 8)}`;
+      const HOOK_ACTION = "test_pool_final_hook";
+      // poolRead = 그 모듈 그래프의 전역 풀로 값 하나를 읽는다(트랜잭션 전 읽기 자리).
+      const makeKind = (poolRead: () => Promise<unknown>): KindDef => ({
+        kind,
+        label: "풀 훅",
+        loadRouteConfig: () =>
+          Promise.resolve({
+            selfApproval: "skip",
+            steps: [{ enabled: true, roleId: TEAM_LEAD_ROLE_ID, scope: "drafter_team", orgUnitId: "" }],
+          }),
+        href: (id) => `/test-pool/${id}`,
+        describeDocuments: () => Promise.resolve(new Map()),
+        prepareFinalApproval: async () => ({ seen: await poolRead() }),
+        onFinalApprovalInTx: async (viewer, documentId, tx) => {
+          await appendActionLog(
+            viewer,
+            { actorId: viewer.id, actorRoleId: viewer.roleId, actionType: HOOK_ACTION, entity: "test_pool", entityId: documentId, documentId, detail: {} },
+            tx,
+          );
+        },
+      });
+
+      // 픽스처는 보통 모듈로 — 사람 · 발령 · 종류 등록 · 문서 셋 제출.
+      approvals.registerDocumentKind(makeKind(() => db.select({ id: users.id }).from(users).limit(1)));
+      const drafter = await makePerson("풀기안", DEFAULT_ROLE_ID, "기획1팀");
+      const lead = await makePerson("풀팀장", TEAM_LEAD_ROLE_ID, "기획1팀");
+      const instanceIds: string[] = [];
+      for (let i = 0; i < 3; i++) {
+        const prepared = await approvals.prepareSubmission(drafter, { kind, drafterId: drafter.id }, { now: NOW_2026 });
+        const instance = await db.transaction((tx) => approvals.submitDocument(drafter, prepared, { documentId: randomUUID() }, tx));
+        instanceIds.push(instance.id);
+      }
+
+      const previousPoolMax = process.env.DB_POOL_MAX;
+      process.env.DB_POOL_MAX = "2";
+      vi.resetModules();
+
+      try {
+        const clientModule = await import("@/db/client");
+        expect((clientModule.pool as unknown as { options: { max: number } }).options.max).toBe(2);
+        const isolated = await import("@/domain/approvals");
+        const isolatedSchema = await import("@/db/schema");
+        // 모듈을 다시 읽으면 레지스트리가 새로 생긴다 — 같은 종류 정의를 격리 레지스트리에 다시 등록한다.
+        isolated.registerDocumentKind(
+          makeKind(() => clientModule.db.select({ id: isolatedSchema.users.id }).from(isolatedSchema.users).limit(1)),
+        );
+
+        const start = Date.now();
+        const results = await Promise.allSettled(
+          instanceIds.map((instanceId) => isolated.approveDocument(lead, { instanceId, expectedVersion: 1 }, { now: NOW_2026 })),
+        );
+        const elapsed = Date.now() - start;
+
+        expect(elapsed).toBeLessThan(10_000);
+        expect(results.map((result) => (result.status === "rejected" ? String(result.reason) : result.value.status))).toEqual([
+          "approved",
+          "approved",
+          "approved",
+        ]);
+
+        await clientModule.closeDb();
+      } finally {
+        process.env.DB_POOL_MAX = previousPoolMax;
+      }
+
+      for (const instanceId of instanceIds) {
+        const [row] = await db.select().from(approvalInstances).where(eq(approvalInstances.id, instanceId));
+        expect(row?.status).toBe("approved");
+      }
+      expect(await db.select().from(actionLog).where(eq(actionLog.actionType, HOOK_ACTION))).toHaveLength(3);
     },
     20_000,
   );

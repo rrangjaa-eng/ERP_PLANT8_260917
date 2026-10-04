@@ -35,7 +35,8 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
       : [],
   );
 
-  const view = await getApprovalView(viewer, { kind: EXPENSE_DOCUMENT_KIND, documentId: id });
+  // 문서 보임(getExpense = canSeeExpense)이 위에서 통과했다 — 결재 당사자가 아닌 팀장 · 전사 보는 사람도 상태 · 결재선을 읽기만 한다(05-08 검토 #1).
+  const view = await getApprovalView(viewer, { kind: EXPENSE_DOCUMENT_KIND, documentId: id, readOnlyVisible: true });
   if (view || expense.number) {
     return <ExpenseDocument expense={expense} view={view} files={files} maxMb={maxMb} submitted={submitted} />;
   }

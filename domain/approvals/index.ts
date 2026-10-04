@@ -947,9 +947,11 @@ export async function canSeeApprovalDocument(
   return state.isParty;
 }
 
+// readOnlyVisible(05-08 검토 #1): 종류의 보임 규칙(예: canSeeExpense — 팀장 · 전사 범위)이 이미 통과한 화면만 넘긴다. 당사자가 아니어도
+// 상태 · 결재선을 돌려주되 행동은 늘 비어 있다(행동 판정은 당사자 규칙 그대로).
 export async function getApprovalView(
   viewer: Viewer,
-  input: { kind: string; documentId: string },
+  input: { kind: string; documentId: string; readOnlyVisible?: boolean },
   deps?: ApprovalDeps,
 ): Promise<ApprovalView | null> {
   const graph = await findApprovalGraphByDocument(viewer, { documentKind: input.kind, documentId: input.documentId });
@@ -959,7 +961,7 @@ export async function getApprovalView(
     logBlocked: true,
     listOrgSnapshot: deps?.listOrgSnapshot,
   });
-  if (!state.isParty) return null;
+  if (!state.isParty && !input.readOnlyVisible) return null;
 
   const route = currentRouteOf(graph);
   let steps: ApprovalStepView[];
@@ -990,7 +992,7 @@ export async function getApprovalView(
       );
   }
 
-  actions.push(...(await possibleActions(viewer, { instance: graph.instance, isCandidate: state.isCandidate })));
+  if (state.isParty) actions.push(...(await possibleActions(viewer, { instance: graph.instance, isCandidate: state.isCandidate })));
   const blocked = state.isCandidate
     ? await approveBlockedReasonsOf(viewer, graph.instance.documentKind, [graph.instance.documentId])
     : new Map<string, string>();

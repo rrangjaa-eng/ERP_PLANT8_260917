@@ -6,7 +6,7 @@ import { approvalInstances, expenses } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { createTeam } from "@/domain/org";
-import { approveDocument } from "@/domain/approvals";
+import { approveDocument, getApprovalView } from "@/domain/approvals";
 import { setSettingValue } from "@/domain/settings/registry";
 import {
   APPROVAL_ROUTE_EXPENSE_STEP1_ENABLED,
@@ -204,5 +204,26 @@ describe("결재 관련자 두 갈래 (지금 단계 후보 · 처리 기록 —
     expect(idsOf(await listExpenses(approver, { status: "open" }, { today: TODAY }))).toEqual([routed]);
     expect(await getExpense(approver, { expenseId: routed })).not.toBeNull();
     expect(await getExpense(approver, { expenseId: w.lineDocId })).toBeNull();
+  });
+});
+
+describe("결재 당사자가 아닌 보는 사람 — 상태 · 결재선 읽기만 (05-08 검토 #1)", () => {
+  it("팀장 · 대표(결재 당사자 아님)는 읽기 전용 갈래로 상태와 결재선을 보고 할 수 있는 행동이 없다", async () => {
+    const w = await setup();
+    for (const viewer of [w.lead, w.ceo]) {
+      // 기본 갈래는 그대로 당사자만 — 읽기 전용은 문서 보임(canSeeExpense)이 먼저 통과한 화면만 연다.
+      expect(await getApprovalView(viewer, { kind: EXPENSE_DOCUMENT_KIND, documentId: w.teamDocId })).toBeNull();
+      const view = await getApprovalView(viewer, { kind: EXPENSE_DOCUMENT_KIND, documentId: w.teamDocId, readOnlyVisible: true });
+      expect(view?.status).toBe("submitted");
+      expect(view?.steps?.length ?? 0).toBeGreaterThan(0);
+      expect(view?.actions).toEqual([]);
+      expect(view?.approveBlockedReason ?? null).toBeNull();
+    }
+  });
+
+  it("읽기 전용 갈래도 당사자(기안자)의 행동은 그대로다", async () => {
+    const w = await setup();
+    const view = await getApprovalView(w.pm, { kind: EXPENSE_DOCUMENT_KIND, documentId: w.teamDocId, readOnlyVisible: true });
+    expect(view?.actions).toContain("withdraw");
   });
 });

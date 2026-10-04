@@ -58,6 +58,22 @@ test.describe("팀장 목록 · 프로젝트 미연결 (EXP-08)", () => {
   });
 });
 
+test.describe("결재 당사자가 아닌 보는 사람의 문서 화면 (05-08 검토 #1)", () => {
+  test("대표(전사 범위 · 지금 단계 아님)가 목록 행을 열면 문서 화면에 상태 배지 `결재 중`과 결재선이 보이고 행동 버튼이 없다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const expenseId = await submittedTeamCost(fx.pm.viewer, `읽기 전용-${randomUUID().slice(0, 4)}`);
+
+    const page = await loginPage(browser, baseURL, fx.ceo);
+    await page.goto(`/expenses/${expenseId}`);
+    const head = page.locator('[data-ui="screen-title"]:visible').locator("..");
+    await expect(head.getByText("결재 중", { exact: true })).toBeVisible();
+    const route = page.locator("dt", { hasText: "결재선" }).locator("xpath=following-sibling::dd[1]");
+    await expect(route.getByRole("listitem").first()).toContainText(fx.lead.name);
+    await expect(page.getByRole("button", { name: /^(승인|반려|회수)/ })).toHaveCount(0);
+    await page.context().close();
+  });
+});
+
 test.describe("보기 · 빈 상태 · 폭", () => {
   test("보기 0건은 표 자리에서 보기를 넓히고 머리 1차가 남는다 — 승인 0건 · 진행 중 0건 · 합계 줄", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();

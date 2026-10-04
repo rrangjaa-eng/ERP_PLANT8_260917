@@ -190,3 +190,16 @@ describe("docs/CERT-PURGE.md", () => {
     expect(content).toContain(token);
   });
 });
+
+// 05-03(Round 5 F5 · 사용자 결정 U3 A) — 지출결의 계약 문서. ARCHITECTURE.md는 줄 예산이 없어 §4-6 끝에 가리킴만 둔다.
+describe("docs/EXPENSES.md", () => {
+  const content = readDoc("EXPENSES.md");
+
+  it("150줄 이하다", () => {
+    expect(lineCount(content)).toBeLessThanOrEqual(150);
+  });
+
+  it("ARCHITECTURE.md가 이 문서를 가리킨다", () => {
+    expect(readDoc("ARCHITECTURE.md")).toContain("EXPENSES.md");
+  });
+});

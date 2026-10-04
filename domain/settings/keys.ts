@@ -246,7 +246,6 @@ export const PROJECT_CUSTOMER_APPROVAL_GATE: SettingDef<boolean> = {
   hint: "끄면 고객 승인 전 차수에서도 지출결의를 올릴 수 있습니다.",
   namespace: "프로젝트",
   default: true,
-  readBy: { phase: "5" },
 };
 
 // 04-05(ADMN-09) — 프로젝트 문서 번호 서식. 문서 종류별 키 묶음(Claude
@@ -801,3 +800,242 @@ export const PROJECT_PROFIT_RATE_THRESHOLD: SettingDef<number> = {
 };
 
 SETTING_DEFS.push(PROJECT_PROFIT_RATE_THRESHOLD);
+
+// ── 05-03 지출결의 결재선(EXP-01 · UI-SPEC S13) · 지출결의 문서 번호 ───────────
+// 연차 결재선 17키와 같은 꼴 · 같은 라벨(namespace만 다르다). 기본값도 연차와 같은 4단이고 3단 특정 부서만
+// 기본값 없음(시드가 경영관리본부로 채운다 — domain/seed/expenses.ts). 자기 승인 기본 = 본인 승인(입력 §3).
+const EXPENSE_ROUTE_NAMESPACE = "지출결의 결재선";
+
+export const APPROVAL_ROUTE_EXPENSE_SELF_APPROVAL: SettingDef<ApprovalSelfApprovalValue> = {
+  key: "approval_route.expense.self_approval",
+  kind: "simple",
+  schema: z.enum(APPROVAL_SELF_APPROVAL_VALUES),
+  label: "자기 승인",
+  hint: "기안자가 그 단계 담당일 때",
+  namespace: EXPENSE_ROUTE_NAMESPACE,
+  optionLabels: { skip: "건너뜀", self_approve: "본인 승인" },
+  default: "self_approve",
+};
+
+export const APPROVAL_ROUTE_EXPENSE_STEP1_ENABLED: SettingDef<boolean> = {
+  key: "approval_route.expense.step1.enabled",
+  kind: "simple",
+  schema: z.boolean(),
+  label: "1단 사용",
+  hint: "새 문서부터 적용 · 진행 중 문서는 그대로",
+  namespace: EXPENSE_ROUTE_NAMESPACE,
+  default: true,
+};
+
+export const APPROVAL_ROUTE_EXPENSE_STEP1_ROLE_ID: SettingDef<string> = {
+  key: "approval_route.expense.step1.role_id",
+  kind: "simple",
+  schema: z.string(),
+  label: "1단 담당 계급",
+  hint: "계급 무관 = 그 범위의 누구나",
+  namespace: EXPENSE_ROUTE_NAMESPACE,
+  optionLabels: { "": "계급 무관" },
+  dynamicOptions: "roles",
+  default: "role-team-lead",
+};
+
+export const APPROVAL_ROUTE_EXPENSE_STEP1_SCOPE: SettingDef<ApprovalRouteScopeValue> = {
+  key: "approval_route.expense.step1.scope",
+  kind: "simple",
+  schema: z.enum(APPROVAL_ROUTE_SCOPE_VALUES),
+  label: "1단 조직 범위",
+  namespace: EXPENSE_ROUTE_NAMESPACE,
+  optionLabels: { drafter_team: "기안자 팀", drafter_org_unit: "기안자 본부", company: "전사", org_unit: "특정 부서" },
+  default: "drafter_team",
+};
+
+export const APPROVAL_ROUTE_EXPENSE_STEP1_ORG_UNIT_ID: SettingDef<string> = {
+  key: "approval_route.expense.step1.org_unit_id",
+  kind: "simple",
+  schema: ROUTE_ORG_UNIT_ID_SCHEMA,
+  label: "1단 특정 부서",
+  namespace: EXPENSE_ROUTE_NAMESPACE,
+  dynamicOptions: "org_units",
+  default: "",
+};
+
+export const APPROVAL_ROUTE_EXPENSE_STEP2_ENABLED: SettingDef<boolean> = {
+  key: "approval_route.expense.step2.enabled",
+  kind: "simple",
+  schema: z.boolean(),
+  label: "2단 사용",
+  hint: "새 문서부터 적용 · 진행 중 문서는 그대로",
+  namespace: EXPENSE_ROUTE_NAMESPACE,
+  default: true,
+};
+
+export const APPROVAL_ROUTE_EXPENSE_STEP2_ROLE_ID: SettingDef<string> = {
+  key: "approval_route.expense.step2.role_id",
+  kind: "simple",
+  schema: z.string(),
+  label: "2단 담당 계급",
+  hint: "계급 무관 = 그 범위의 누구나",
+  namespace: EXPENSE_ROUTE_NAMESPACE,
+  optionLabels: { "": "계급 무관" },
+  dynamicOptions: "roles",
+  default: "role-division-head",
+};
+
+export const APPROVAL_ROUTE_EXPENSE_STEP2_SCOPE: SettingDef<ApprovalRouteScopeValue> = {
+  key: "approval_route.expense.step2.scope",
+  kind: "simple",
+  schema: z.enum(APPROVAL_ROUTE_SCOPE_VALUES),
+  label: "2단 조직 범위",
+  namespace: EXPENSE_ROUTE_NAMESPACE,
+  optionLabels: { drafter_team: "기안자 팀", drafter_org_unit: "기안자 본부", company: "전사", org_unit: "특정 부서" },
+  default: "drafter_org_unit",
+};
+
+export const APPROVAL_ROUTE_EXPENSE_STEP2_ORG_UNIT_ID: SettingDef<string> = {
+  key: "approval_route.expense.step2.org_unit_id",
+  kind: "simple",
+  schema: ROUTE_ORG_UNIT_ID_SCHEMA,
+  label: "2단 특정 부서",
+  namespace: EXPENSE_ROUTE_NAMESPACE,
+  dynamicOptions: "org_units",
+  default: "",
+};
+
+export const APPROVAL_ROUTE_EXPENSE_STEP3_ENABLED: SettingDef<boolean> = {
+  key: "approval_route.expense.step3.enabled",
+  kind: "simple",
+  schema: z.boolean(),
+  label: "3단 사용",
+  hint: "새 문서부터 적용 · 진행 중 문서는 그대로",
+  namespace: EXPENSE_ROUTE_NAMESPACE,
+  default: true,
+};
+
+export const APPROVAL_ROUTE_EXPENSE_STEP3_ROLE_ID: SettingDef<string> = {
+  key: "approval_route.expense.step3.role_id",
+  kind: "simple",
+  schema: z.string(),
+  label: "3단 담당 계급",
+  hint: "계급 무관 = 그 범위의 누구나",
+  namespace: EXPENSE_ROUTE_NAMESPACE,
+  optionLabels: { "": "계급 무관" },
+  dynamicOptions: "roles",
+  default: "",
+};
+
+export const APPROVAL_ROUTE_EXPENSE_STEP3_SCOPE: SettingDef<ApprovalRouteScopeValue> = {
+  key: "approval_route.expense.step3.scope",
+  kind: "simple",
+  schema: z.enum(APPROVAL_ROUTE_SCOPE_VALUES),
+  label: "3단 조직 범위",
+  namespace: EXPENSE_ROUTE_NAMESPACE,
+  optionLabels: { drafter_team: "기안자 팀", drafter_org_unit: "기안자 본부", company: "전사", org_unit: "특정 부서" },
+  default: "org_unit",
+};
+
+export const APPROVAL_ROUTE_EXPENSE_STEP3_ORG_UNIT_ID: SettingDef<string> = {
+  key: "approval_route.expense.step3.org_unit_id",
+  kind: "simple",
+  schema: ROUTE_ORG_UNIT_ID_SCHEMA,
+  label: "3단 특정 부서",
+  namespace: EXPENSE_ROUTE_NAMESPACE,
+  dynamicOptions: "org_units",
+};
+
+export const APPROVAL_ROUTE_EXPENSE_STEP4_ENABLED: SettingDef<boolean> = {
+  key: "approval_route.expense.step4.enabled",
+  kind: "simple",
+  schema: z.boolean(),
+  label: "4단 사용",
+  hint: "새 문서부터 적용 · 진행 중 문서는 그대로",
+  namespace: EXPENSE_ROUTE_NAMESPACE,
+  default: true,
+};
+
+export const APPROVAL_ROUTE_EXPENSE_STEP4_ROLE_ID: SettingDef<string> = {
+  key: "approval_route.expense.step4.role_id",
+  kind: "simple",
+  schema: z.string(),
+  label: "4단 담당 계급",
+  hint: "계급 무관 = 그 범위의 누구나",
+  namespace: EXPENSE_ROUTE_NAMESPACE,
+  optionLabels: { "": "계급 무관" },
+  dynamicOptions: "roles",
+  default: "role-ceo",
+};
+
+export const APPROVAL_ROUTE_EXPENSE_STEP4_SCOPE: SettingDef<ApprovalRouteScopeValue> = {
+  key: "approval_route.expense.step4.scope",
+  kind: "simple",
+  schema: z.enum(APPROVAL_ROUTE_SCOPE_VALUES),
+  label: "4단 조직 범위",
+  namespace: EXPENSE_ROUTE_NAMESPACE,
+  optionLabels: { drafter_team: "기안자 팀", drafter_org_unit: "기안자 본부", company: "전사", org_unit: "특정 부서" },
+  default: "company",
+};
+
+export const APPROVAL_ROUTE_EXPENSE_STEP4_ORG_UNIT_ID: SettingDef<string> = {
+  key: "approval_route.expense.step4.org_unit_id",
+  kind: "simple",
+  schema: ROUTE_ORG_UNIT_ID_SCHEMA,
+  label: "4단 특정 부서",
+  namespace: EXPENSE_ROUTE_NAMESPACE,
+  dynamicOptions: "org_units",
+  default: "",
+};
+
+// 지출결의 번호 `{프로젝트 번호}{구분자}{순번}`(사용자 결정 2026-09-26 #6) — 카운터 period = 프로젝트 번호(docs/EXPENSES.md).
+// 구분자는 프로젝트 구분자와 같은 허용 값 · 같은 읽기 대체(허용 밖 저장값 → 기본값).
+export const DOCUMENT_NUMBER_EXPENSE_SEPARATOR: SettingDef<string> = {
+  key: "document_number.expense.separator",
+  kind: "simple",
+  schema: z.string().regex(/^[-_./]?$/),
+  label: "지출결의 번호 구분자",
+  hint: "빈칸 또는 - _ . / 중 한 글자",
+  namespace: "문서 번호",
+  default: "-",
+  readInvalidAsDefault: true,
+};
+
+export const DOCUMENT_NUMBER_EXPENSE_SEQ_DIGITS: SettingDef<number> = {
+  key: "document_number.expense.seq_digits",
+  kind: "simple",
+  schema: z.coerce.number().int().min(1),
+  label: "지출결의 번호 순번 자릿수",
+  hint: "순번을 이 자릿수만큼 0으로 채웁니다(넘치면 자릿수가 늘어나고 잘리지 않습니다).",
+  namespace: "문서 번호",
+  default: 4,
+};
+
+export const DOCUMENT_NUMBER_EXPENSE_SEQ_START: SettingDef<number> = {
+  key: "document_number.expense.seq_start",
+  kind: "simple",
+  schema: z.coerce.number().int().min(0),
+  label: "지출결의 번호 순번 시작값",
+  hint: "프로젝트마다 순번이 시작할 때의 첫 값입니다(기본 1).",
+  namespace: "문서 번호",
+  default: 1,
+};
+
+SETTING_DEFS.push(
+  APPROVAL_ROUTE_EXPENSE_SELF_APPROVAL,
+  APPROVAL_ROUTE_EXPENSE_STEP1_ENABLED,
+  APPROVAL_ROUTE_EXPENSE_STEP1_ROLE_ID,
+  APPROVAL_ROUTE_EXPENSE_STEP1_SCOPE,
+  APPROVAL_ROUTE_EXPENSE_STEP1_ORG_UNIT_ID,
+  APPROVAL_ROUTE_EXPENSE_STEP2_ENABLED,
+  APPROVAL_ROUTE_EXPENSE_STEP2_ROLE_ID,
+  APPROVAL_ROUTE_EXPENSE_STEP2_SCOPE,
+  APPROVAL_ROUTE_EXPENSE_STEP2_ORG_UNIT_ID,
+  APPROVAL_ROUTE_EXPENSE_STEP3_ENABLED,
+  APPROVAL_ROUTE_EXPENSE_STEP3_ROLE_ID,
+  APPROVAL_ROUTE_EXPENSE_STEP3_SCOPE,
+  APPROVAL_ROUTE_EXPENSE_STEP3_ORG_UNIT_ID,
+  APPROVAL_ROUTE_EXPENSE_STEP4_ENABLED,
+  APPROVAL_ROUTE_EXPENSE_STEP4_ROLE_ID,
+  APPROVAL_ROUTE_EXPENSE_STEP4_SCOPE,
+  APPROVAL_ROUTE_EXPENSE_STEP4_ORG_UNIT_ID,
+  DOCUMENT_NUMBER_EXPENSE_SEPARATOR,
+  DOCUMENT_NUMBER_EXPENSE_SEQ_DIGITS,
+  DOCUMENT_NUMBER_EXPENSE_SEQ_START,
+);

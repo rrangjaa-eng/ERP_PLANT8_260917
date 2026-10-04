@@ -28,6 +28,8 @@ import {
   DOCUMENT_NUMBER_LEAVE_SEPARATOR,
   DOCUMENT_NUMBER_LEAVE_SEQ_START,
 } from "@/domain/settings/keys";
+import { getSimpleSettingValues } from "@/domain/settings/registry";
+import { DOCUMENT_NUMBER_EXPENSE_SEPARATOR, DOCUMENT_NUMBER_EXPENSE_SEQ_DIGITS, DOCUMENT_NUMBER_EXPENSE_SEQ_START } from "@/domain/settings/keys";
 
 // Phase 4 Task 1 ②·Task 2 ⑦ — 문서 번호 부여: 트랜잭션 안 카운터 증가 +
 // 서식 조립. `counter_key = "project"`, `period` = 서기 연도 네 자리 문자열
@@ -215,4 +217,26 @@ export type ExpenseNumberFormat = { separator: string; seqDigits: number; seqSta
 export function expenseNumberFormat(projectNumber: string, seq: number, format: ExpenseNumberFormat): string {
   const displaySeq = seq + format.seqStart - 1;
   return `${projectNumber}${format.separator}${String(displaySeq).padStart(format.seqDigits, "0")}`;
+}
+
+const EXPENSE_NUMBER_DEFS = [DOCUMENT_NUMBER_EXPENSE_SEPARATOR, DOCUMENT_NUMBER_EXPENSE_SEQ_DIGITS, DOCUMENT_NUMBER_EXPENSE_SEQ_START] as const;
+
+// 세 키를 SELECT 한 번으로 — 트랜잭션 전에 부른다(잠근 tx 안 전역 풀 읽기 금지, 풀 소진 교착).
+export async function loadExpenseNumberFormat(deps?: Parameters<typeof getSimpleSettingValues>[1]): Promise<ExpenseNumberFormat> {
+  const [separator, seqDigits, seqStart] = await getSimpleSettingValues(EXPENSE_NUMBER_DEFS, deps);
+  return {
+    separator: separator ?? "-",
+    seqDigits: seqDigits ?? 4,
+    seqStart: seqStart ?? 1,
+  };
+}
+
+// 제출 트랜잭션의 마지막 쓰기 — 카운터 `expense` · period = 프로젝트 번호.
+export async function allocateExpenseNumber(
+  viewer: Viewer,
+  input: { projectNumber: string; format: ExpenseNumberFormat },
+  tx: DbOrTx,
+): Promise<{ number: string; seq: number }> {
+  const seq = await repoAllocateNumber(viewer, "expense", input.projectNumber, tx);
+  return { number: expenseNumberFormat(input.projectNumber, seq, input.format), seq };
 }

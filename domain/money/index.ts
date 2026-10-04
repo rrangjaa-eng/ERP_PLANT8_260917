@@ -212,3 +212,27 @@ export function sumKrw(values: readonly number[]): number {
 export function diffKrw(a: number, b: number): number {
   return a - b;
 }
+
+// 05-03(EXP-01 · Q4 계획 결정) — 분할 회차의 남은 실행가. 앞 회차 문서 통화와 (있으면) 이번 문서 통화가 모두 줄 통화와
+// 같은 외화면 원래 통화 금액으로 비교하고(환율 차이로 남은 금액이 흔들리지 않게), 하나라도 다르거나 원화 줄이면 원화로
+// 비교한다. 남은 금액은 음수일 수 있다(호출자가 0 이하를 「닫힘」으로 읽는다). exceeds = 이번 문서가 남은 금액보다 크다.
+export function remainingForInstallments(
+  execution: Money,
+  others: readonly Money[],
+  current?: MoneyInput,
+): { basis: "foreign" | "krw"; remaining: Money; exceeds: boolean } {
+  const sameCurrency =
+    execution.currency !== "KRW" &&
+    others.every((money) => money.currency === execution.currency) &&
+    (!current || current.currency === execution.currency);
+  const remainingKrw = execution.amountKrw - sumKrw(others.map((money) => money.amountKrw));
+  if (sameCurrency) {
+    const cents = Math.round(execution.amount * 100) - sumKrw(others.map((money) => Math.round(money.amount * 100)));
+    const remaining: Money = { __brand: "Money", currency: execution.currency, amount: cents / 100, fxRate: execution.fxRate, amountKrw: remainingKrw };
+    const exceeds = current !== undefined && Math.round(current.amount * 100) > cents;
+    return { basis: "foreign", remaining, exceeds };
+  }
+  const remaining: Money = { __brand: "Money", currency: "KRW", amount: remainingKrw, fxRate: 1, amountKrw: remainingKrw };
+  const exceeds = current !== undefined && toKrw(current) > remainingKrw;
+  return { basis: "krw", remaining, exceeds };
+}

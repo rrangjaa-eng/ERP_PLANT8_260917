@@ -144,7 +144,7 @@ document-counters.ts`는 읽기와 upsert만 두고 증가 함수를 두지 않�
 그 뒤 새로 매긴 번호에만 반영되고 이미 매긴 번호는 그대로다(과거 시점
 조회가 필요 없어 이력형이 아니다). 서식 조립은 `domain/document-numbering`의
 순수 함수 `documentNumberFormat`이 맡고, `formatDocumentNumber`가 설정
-조회로 그 함수를 감싼다.
+조회로 그 함수를 감싼다. 지출결의 카운터 `expense`(period = 프로젝트 번호 — 연도 규약 예외)는 `docs/EXPENSES.md`.
 
 ## 4-7. 목록·검색 인덱스(Phase 4, 04-05)
 

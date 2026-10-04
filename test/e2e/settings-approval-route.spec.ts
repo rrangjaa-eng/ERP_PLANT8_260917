@@ -273,11 +273,11 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
     await page.goBack();
     await expect(page).toHaveURL(/\/admin$/);
     await page.getByRole("link", { name: "시스템 설정" }).first().click();
-    const line = page.getByText("저장 안 한 편집 2단");
+    const line = leaveRoute(page).getByText("저장 안 한 편집 2단");
     await expect(line).toBeVisible();
     await expect(leaveRoute(page).getByLabel("2단 담당 계급")).toHaveValue(originalRole);
 
-    await page.getByRole("button", { name: "복원" }).click();
+    await leaveRoute(page).getByRole("button", { name: "복원" }).click();
     await expect(line).toBeHidden();
     await expect(leaveRoute(page).getByLabel("2단 사용")).toBeFocused();
     await expect(leaveRoute(page).getByLabel("2단 담당 계급")).toHaveValue(CEO_ROLE_ID);
@@ -294,10 +294,10 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
     await page.goBack();
     await expect(page).toHaveURL(/\/admin$/);
     await page.getByRole("link", { name: "시스템 설정" }).first().click();
-    await expect(page.getByText("저장 안 한 편집 2단")).toBeVisible();
-    const main = page.getByRole("main");
-    const restore = main.getByRole("button", { name: "복원", exact: true });
-    const discard = main.getByRole("button", { name: "버림", exact: true });
+    await expect(leaveRoute(page).getByText("저장 안 한 편집 2단")).toBeVisible();
+    const section = leaveRoute(page);
+    const restore = section.getByRole("button", { name: "복원", exact: true });
+    const discard = section.getByRole("button", { name: "버림", exact: true });
 
     for (const width of [375, 320]) {
       await page.setViewportSize({ width, height: 800 });
@@ -317,17 +317,17 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
     await waitStashed(page, ["leave-2"]);
     page.once("dialog", (leaving) => void leaving.accept());
     await page.reload();
-    await expect(page.getByText("저장 안 한 편집 2단")).toBeVisible();
+    await expect(leaveRoute(page).getByText("저장 안 한 편집 2단")).toBeVisible();
 
-    await page.getByRole("button", { name: "버림" }).click();
-    await expect(page.getByText("저장 안 한 편집 2단")).toBeHidden();
+    await leaveRoute(page).getByRole("button", { name: "버림" }).click();
+    await expect(leaveRoute(page).getByText("저장 안 한 편집 2단")).toBeHidden();
     await expect(leaveRoute(page).getByLabel("2단 담당 계급")).toHaveValue(originalRole);
     await page.getByRole("button", { name: "되돌리기" }).click();
     await expect(leaveRoute(page).getByLabel("2단 담당 계급")).toHaveValue(CEO_ROLE_ID);
     await waitStashed(page, ["leave-2"]);
     page.once("dialog", (leaving) => void leaving.accept());
     await page.reload();
-    await expect(page.getByText("저장 안 한 편집 2단")).toBeVisible();
+    await expect(leaveRoute(page).getByText("저장 안 한 편집 2단")).toBeVisible();
   });
 
   test("고치지 않고 다시 떠나도 보관본은 남고, 다른 단계를 고치면 두 단계가 함께 남는다", async ({ page }) => {
@@ -336,17 +336,17 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
     await waitStashed(page, ["leave-2"]);
     await page.goBack();
     await page.getByRole("link", { name: "시스템 설정" }).first().click();
-    await expect(page.getByText("저장 안 한 편집 2단")).toBeVisible();
+    await expect(leaveRoute(page).getByText("저장 안 한 편집 2단")).toBeVisible();
 
     await page.goBack();
     await page.getByRole("link", { name: "시스템 설정" }).first().click();
-    await expect(page.getByText("저장 안 한 편집 2단")).toBeVisible();
+    await expect(leaveRoute(page).getByText("저장 안 한 편집 2단")).toBeVisible();
 
     await leaveRoute(page).getByLabel("3단 담당 계급").selectOption(CEO_ROLE_ID);
     await waitStashed(page, ["leave-2", "leave-3"]);
     await page.goBack();
     await page.getByRole("link", { name: "시스템 설정" }).first().click();
-    await expect(page.getByText("저장 안 한 편집 2단 · 3단")).toBeVisible();
+    await expect(leaveRoute(page).getByText("저장 안 한 편집 2단 · 3단")).toBeVisible();
   });
 
   test("이번에 고친 단계는 복원 줄에서 빠진다", async ({ page }) => {
@@ -355,7 +355,7 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
     await waitStashed(page, ["leave-2"]);
     await page.goBack();
     await page.getByRole("link", { name: "시스템 설정" }).first().click();
-    await expect(page.getByText("저장 안 한 편집 2단")).toBeVisible();
+    await expect(leaveRoute(page).getByText("저장 안 한 편집 2단")).toBeVisible();
 
     const scope = leaveRoute(page).getByLabel("2단 조직 범위");
     const originalScope = await scope.inputValue();
@@ -380,8 +380,8 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
       await waitStashed(page, ["leave-3"]);
       await page.goBack();
       await page.getByRole("link", { name: "시스템 설정" }).first().click();
-      await expect(page.getByText("저장 안 한 편집 3단")).toBeVisible();
-      await page.getByRole("button", { name: "복원" }).click();
+      await expect(leaveRoute(page).getByText("저장 안 한 편집 3단")).toBeVisible();
+      await leaveRoute(page).getByRole("button", { name: "복원" }).click();
       await expect(leaveRoute(page).getByLabel("3단 특정 부서")).toHaveValue(choice);
     } finally {
       if (row) await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP3_ORG_UNIT_ID, row.value as string);
@@ -403,7 +403,7 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
     }, APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID.key);
     await page.getByRole("link", { name: "시스템 설정" }).first().click();
 
-    await page.getByRole("button", { name: "복원" }).click();
+    await leaveRoute(page).getByRole("button", { name: "복원" }).click();
     await expect(leaveRoute(page).getByLabel("2단 조직 범위")).toHaveValue("company");
     await expect(leaveRoute(page).getByLabel("2단 담당 계급")).toHaveValue(originalRole);
   });
@@ -414,8 +414,8 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
     await waitStashed(page, ["leave-2"]);
     page.once("dialog", (leaving) => void leaving.accept());
     await page.reload();
-    await page.getByRole("button", { name: "버림" }).click();
-    await expect(page.getByText("저장 안 한 편집 2단")).toBeHidden();
+    await leaveRoute(page).getByRole("button", { name: "버림" }).click();
+    await expect(leaveRoute(page).getByText("저장 안 한 편집 2단")).toBeHidden();
     await page.reload();
     await expect(page.getByRole("heading", { name: "연차 결재선" })).toBeVisible();
     await expect(page.getByText("저장 안 한 편집 2단")).toHaveCount(0);

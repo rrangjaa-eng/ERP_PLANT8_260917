@@ -462,7 +462,12 @@ function remainingText(remaining: Money, basis: "foreign" | "krw"): string {
 // 트랜잭션 전: 기안자 문서 읽기 · 세금 계산 · 결재선 스냅숏(prepareSubmission) · 번호 서식. 트랜잭션 안(tx 호출만):
 // 프로젝트 행 잠금 → 문서 행 잠금 → 이미 제출됨 판정 → version → 다시 판정 → 스냅숏 → 결재 인스턴스 · 로그 → 마지막
 // 쓰기로 번호(카운터 행 잠금을 가장 짧게).
-export async function submitExpense(viewer: Viewer, input: { expenseId: string; expectedVersion: number }): Promise<SubmitExpenseResult> {
+// deps.afterLock — 테스트가 두 잠금(프로젝트 → 지출결의)을 잡은 직후에 멈춰 경합 순서를 고정한다(ARCHITECTURE §4-8 (5)).
+export async function submitExpense(
+  viewer: Viewer,
+  input: { expenseId: string; expectedVersion: number },
+  deps?: { afterLock?: () => Promise<void> },
+): Promise<SubmitExpenseResult> {
   const row = UUID_SHAPE.test(input.expenseId) ? await findExpenseById(viewer, input.expenseId) : null;
   if (!row || row.drafterId !== viewer.id) throw new ExpenseNotFoundError();
   if (!(await can(viewer, "expenses", "write"))) throw new ForbiddenError("지출결의 작성 권한 없음");
@@ -476,6 +481,7 @@ export async function submitExpense(viewer: Viewer, input: { expenseId: string; 
   return withTransaction(async (tx): Promise<SubmitExpenseResult> => {
     await lockProjectForWrite(viewer, projectRow.id, tx);
     const locked = await lockExpenseForUpdate(viewer, row.id, tx);
+    await deps?.afterLock?.();
     if (!locked) throw new ExpenseNotFoundError();
     if (locked.number !== null) {
       const status = await findExpenseApprovalStatus(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, documentId: locked.id }, tx);

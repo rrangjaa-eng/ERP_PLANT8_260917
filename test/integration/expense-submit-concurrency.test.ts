@@ -5,7 +5,7 @@ import { actionLog, approvalInstances, documentCounters, expenses } from "@/db/s
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { GateBlockedError } from "@/domain/rules/gate";
 import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND, ExpenseConflictError, saveExpenseDraft, submitExpense } from "@/domain/expenses";
-import { deferred, waitForLockWaiter } from "./lock-race";
+import { deferred, waitForLockWaiter, type Deferred } from "./lock-race";
 import { makePerson } from "./approvals-fixtures";
 import { addApprovedRevision, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
 
@@ -35,7 +35,7 @@ async function draftFor(fx: ExpenseFixture, viewer: ExpenseFixture["pm"], lineId
 }
 
 // A가 두 잠금을 잡은 채 멈추면 B를 시작하고, B가 잠금을 기다리는 것을 확인한 뒤 A를 푼다.
-async function raceSubmits(a: () => Promise<unknown>, b: () => Promise<unknown>, hold: { locked: ReturnType<typeof deferred>; release: ReturnType<typeof deferred> }) {
+async function raceSubmits(a: () => Promise<unknown>, b: () => Promise<unknown>, hold: { locked: Deferred<void>; release: Deferred<void> }) {
   const first = a();
   // A가 afterLock에 닿지 않고 끝나면(훅 없음) 경합을 만들 수 없다 — 기다리지 않고 단언으로 실패한다.
   const reachedLock = await Promise.race([hold.locked.promise.then(() => true), first.then(() => false, () => false)]);

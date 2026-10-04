@@ -1,11 +1,26 @@
 import { describe, expect, it } from "vitest";
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { actionLog, approvalInstances, approvalRoutes, approvalSteps, expenses, settingsHistorized } from "@/db/schema";
-import { approveDocument } from "@/domain/approvals";
+import { randomUUID } from "node:crypto";
+import { actionLog, approvalInstances, approvalRoutes, approvalSteps, documentCounters, expenses, settingsHistorized } from "@/db/schema";
+import { ApprovalConflictError, approveDocument, rejectDocument } from "@/domain/approvals";
 import { isRouteStepSettingKey } from "@/domain/approvals/route-step-settings";
-import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND, getExpense, saveExpenseDraft } from "@/domain/expenses";
-import { addApprovedRevision, setupExpenseProject, submitReadyDraft } from "./fixtures/expenses";
+import {
+  changeExpenseLine,
+  createExpenseFromLines,
+  createTeamExpenseDraft,
+  EXPENSE_DOCUMENT_KIND,
+  ExpenseConflictError,
+  ExpenseUndoRefusedError,
+  getExpense,
+  listExpenseFormOptions,
+  saveExpenseDraft,
+  submitExpense,
+  withdrawExpense,
+} from "@/domain/expenses";
+import { GateBlockedError } from "@/domain/rules/gate";
+import { insertVendor } from "@/repositories/vendors";
+import { addApprovedRevision, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
 import { listMyInbox } from "@/domain/approvals";
 import { listLineDoors } from "@/domain/expenses";
 import { getDocumentKind } from "@/domain/approvals/kinds";
@@ -266,5 +281,172 @@ describe("listLineDoors — 견적 줄 표 행 행동 열", () => {
     const doors = await listLineDoors(outsider, { projectId: fx.projectId });
     expect(doors.showColumn).toBe(false);
     expect(doors.cells).toEqual({});
+  });
+});
+
+// 05-09 Task 1 트레이서 — 제출 토스트 `되돌리기`(undo · 차수만 받음) → 고칠 수 있는 문서 → 같은 번호 · 같은 인스턴스 · 차수 2 다시 제출.
+// 다시 제출의 expectedVersion은 문서 version, 인스턴스 version은 서버가 잠근 뒤 읽는다(P3-7). 문서 화면 회수만 화면이 본 인스턴스 version을 쓴다.
+describe("회수 뒤 같은 번호 다시 제출", () => {
+  const SEOUL_HHMM = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+
+  async function submittedDoc(fx: ExpenseFixture, lineId = fx.lines.withVendor) {
+    const created = await createExpenseFromLines(fx.pm, { lineIds: [lineId] });
+    const expenseId = created.created[0]?.expenseId ?? "";
+    const submitted = await submitReadyDraft(fx.pm, expenseId);
+    if (submitted.kind !== "submitted") throw new Error("제출 안 됨");
+    return { expenseId, instanceId: submitted.instanceId, number: submitted.number };
+  }
+
+  async function countersSnapshot() {
+    return (await db.select({ key: documentCounters.counterKey, period: documentCounters.period, value: documentCounters.value }).from(documentCounters)).sort(
+      (a, b) => `${a.key}/${a.period}`.localeCompare(`${b.key}/${b.period}`),
+    );
+  }
+
+  async function logsOf(expenseId: string) {
+    return db.select().from(actionLog).where(eq(actionLog.documentId, expenseId)).orderBy(asc(actionLog.seq));
+  }
+
+  it("되돌리기(차수 1) → 회수 · 공급가액 고침 → 같은 번호 · 같은 인스턴스 · 차수 2 · 새 스냅숏 · 카운터 불변, 옛 문서 version은 충돌 · 로그", async () => {
+    const fx = await setupExpenseProject();
+    const { expenseId, instanceId, number } = await submittedDoc(fx);
+    expect(number).toBe("26001-0001");
+    const counters = await countersSnapshot();
+
+    const undone = await withdrawExpense(fx.pm, { expenseId, undo: true, round: 1 });
+    expect(undone.status).toBe("withdrawn");
+    expect((await instanceOf(expenseId))?.status).toBe("withdrawn");
+    const doc = await getExpense(fx.pm, { expenseId });
+    expect(doc?.statusWord).toBe("회수");
+    // 고칠 수 있는 폼 재료 — 번호 있는 회수 문서도 견적 줄 실행가 줄을 받는다.
+    expect(doc?.executionLines?.length).toBeGreaterThan(0);
+
+    const before = (await expenseRow(expenseId)).version;
+    const saved = await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: before, fields: { supply: { currency: "KRW", amount: 10_000_000, fxRate: 1 } } });
+    expect(saved.version).toBe(before + 1);
+
+    // 옛 문서 version — 05-03 문서 충돌, 인스턴스 그대로.
+    const stale = await submitExpense(fx.pm, { expenseId, expectedVersion: before }).catch((error: unknown) => error);
+    expect(stale).toBeInstanceOf(ExpenseConflictError);
+    expect((stale as Error).message).toContain("다른 곳에서 저장됨");
+    expect(await instanceOf(expenseId)).toMatchObject({ status: "withdrawn", currentRound: 1 });
+
+    const again = await submitExpense(fx.pm, { expenseId, expectedVersion: saved.version });
+    expect(again).toMatchObject({ kind: "submitted", number: "26001-0001", instanceId, round: 2 });
+    expect(await instanceOf(expenseId)).toMatchObject({ id: instanceId, status: "submitted", currentRound: 2 });
+    expect(await expenseRow(expenseId)).toMatchObject({ number: "26001-0001", supplyAmountKrw: 10_000_000, vatKrw: 1_000_000, payableKrw: 11_000_000 });
+    expect(await countersSnapshot()).toEqual(counters);
+    const steps = await stepsOf(instanceId);
+    expect(steps.filter((step) => step.round === 2).map((step) => step.stepIndex)).toEqual([1, 2, 3, 4]);
+    expect(steps.filter((step) => step.round === 1)).toHaveLength(4);
+
+    // 다시 제출한 문서는 팀장이 첫 단계부터 승인한다.
+    const current = await instanceOf(expenseId);
+    const approved = await approveDocument(fx.lead, { instanceId, expectedVersion: current?.version ?? 0 });
+    expect(approved.status).toBe("in_review");
+
+    // OPS-08 — 되돌리기 회수 한 행 · 제출 두 행(차수 1 · 2) · 승인 한 행, 모두 결재 인스턴스 항목.
+    const logs = await logsOf(expenseId);
+    const withdraws = logs.filter((log) => log.actionType === "document_withdraw");
+    const submits = logs.filter((log) => log.actionType === "document_submit");
+    expect(withdraws).toHaveLength(1);
+    expect(withdraws[0]?.detail).toMatchObject({ round: 1 });
+    expect(submits.map((log) => (log.detail as { round?: number }).round)).toEqual([1, 2]);
+    for (const log of [...withdraws, ...submits]) {
+      expect(log).toMatchObject({ entity: "approval_instance", entityId: instanceId, documentId: expenseId });
+      expect(log.detail).toMatchObject({ kind: EXPENSE_DOCUMENT_KIND });
+    }
+  });
+
+  it("팀장 승인 뒤 되돌리기는 처리자 · 시각 · approved로 거부되고, 문서 화면 회수는 화면이 본 인스턴스 version으로만 된다 · 거부는 로그 없음", async () => {
+    const fx = await setupExpenseProject();
+    const { expenseId, instanceId } = await submittedDoc(fx);
+    const approved = await approveDocument(fx.lead, { instanceId, expectedVersion: 1 });
+
+    const late = await withdrawExpense(fx.pm, { expenseId, undo: true, round: 1 }).catch((error: unknown) => error);
+    expect(late).toBeInstanceOf(ExpenseUndoRefusedError);
+    const detail = (late as ExpenseUndoRefusedError).detail;
+    expect(detail).toMatchObject({ actorName: "김도윤", status: "approved" });
+    expect(detail.at).toBeInstanceOf(Date);
+    expect((late as Error).message).toBe(`김도윤이 ${SEOUL_HHMM.format(detail.at)}에 승인함 · 문서에서 회수`);
+    expect(await instanceOf(expenseId)).toMatchObject({ status: "in_review", version: approved.version });
+
+    // 문서 화면 회수 — 승인 전 version이면 04.1 충돌 문구.
+    const stale = await withdrawExpense(fx.pm, { expenseId, expectedInstanceVersion: 1 }).catch((error: unknown) => error);
+    expect(stale).toBeInstanceOf(ApprovalConflictError);
+    expect(await instanceOf(expenseId)).toMatchObject({ status: "in_review", version: approved.version });
+
+    const withdrawn = await withdrawExpense(fx.pm, { expenseId, expectedInstanceVersion: approved.version });
+    expect(withdrawn.status).toBe("withdrawn");
+
+    const withdraws = (await logsOf(expenseId)).filter((log) => log.actionType === "document_withdraw");
+    expect(withdraws).toHaveLength(1);
+    expect(withdraws[0]).toMatchObject({ entity: "approval_instance", entityId: instanceId, actorId: fx.pm.id });
+    expect(withdraws[0]?.detail).toMatchObject({ kind: EXPENSE_DOCUMENT_KIND, round: 1 });
+  });
+
+  it("팀장 반려 뒤 되돌리기는 `반려함 · 새로 고침`으로 거부된다(상태 rejected)", async () => {
+    const fx = await setupExpenseProject();
+    const { expenseId, instanceId } = await submittedDoc(fx);
+    await rejectDocument(fx.lead, { instanceId, expectedVersion: 1, reason: "금액 확인" });
+    const late = await withdrawExpense(fx.pm, { expenseId, undo: true, round: 1 }).catch((error: unknown) => error);
+    expect(late).toBeInstanceOf(ExpenseUndoRefusedError);
+    const detail = (late as ExpenseUndoRefusedError).detail;
+    expect(detail).toMatchObject({ actorName: "김도윤", status: "rejected" });
+    expect((late as Error).message).toBe(`김도윤이 ${SEOUL_HHMM.format(detail.at)}에 반려함 · 새로 고침`);
+    expect((await instanceOf(expenseId))?.status).toBe("rejected");
+    expect((await logsOf(expenseId)).filter((log) => log.actionType === "document_withdraw")).toHaveLength(0);
+  });
+
+  it("남의 문서 · 지난 차수의 되돌리기는 회수하지 않는다", async () => {
+    const fx = await setupExpenseProject();
+    const { expenseId } = await submittedDoc(fx);
+    await expect(withdrawExpense(fx.otherPm, { expenseId, undo: true, round: 1 })).rejects.toThrow();
+    await expect(withdrawExpense(fx.pm, { expenseId, undo: true, round: 2 })).rejects.toThrow();
+    expect((await instanceOf(expenseId))?.status).toBe("submitted");
+  });
+
+  it("(F6) 회수된 번호 문서는 다른 프로젝트 줄로 옮기지 못하고 원래 줄의 문은 닫힌 채다 · 같은 프로젝트 줄로는 바뀐다", async () => {
+    const fx = await setupExpenseProject();
+    const other = await setupExpenseProject();
+    const { expenseId } = await submittedDoc(fx);
+    await withdrawExpense(fx.pm, { expenseId, undo: true, round: 1 });
+    const version = (await expenseRow(expenseId)).version;
+
+    const moved = await changeExpenseLine(fx.pm, { expenseId, lineId: other.lines.withVendor, expectedVersion: version }).catch((error: unknown) => error);
+    expect(moved).toBeInstanceOf(GateBlockedError);
+    expect((moved as Error).message).toBe("번호 있는 문서 · 같은 프로젝트 줄만");
+    expect(await expenseRow(expenseId)).toMatchObject({ quoteLineId: fx.lines.withVendor, number: "26001-0001", version });
+    const doors = await listLineDoors(fx.pm, { projectId: fx.projectId });
+    expect(doors.cells[fx.lines.withVendor]).toMatchObject({ state: "closed", latestId: expenseId });
+
+    const same = await changeExpenseLine(fx.pm, { expenseId, lineId: fx.lines.split, expectedVersion: version });
+    expect(same).toEqual({ version: version + 1 });
+    expect(await expenseRow(expenseId)).toMatchObject({ quoteLineId: fx.lines.split, number: "26001-0001", projectId: fx.projectId });
+  });
+
+  it("(F6) 회수된 팀 비용 문서에는 견적 줄을 줄 수 없다", async () => {
+    const fx = await setupExpenseProject();
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name: "회식집", normalizedName: `회식집-${randomUUID()}`, defaultEvidenceType: "tax_invoice" });
+    const { expenseId } = await createTeamExpenseDraft(fx.pm, {
+      idempotencyKey: randomUUID(),
+      fields: { teamExpenseKind: "team_overhead", usageDate: "2026-09-26", content: "팀 회식" },
+    });
+    const payment = (await listExpenseFormOptions(fx.pm)).payment[0]?.value ?? null;
+    await saveExpenseDraft(fx.pm, {
+      expenseId,
+      expectedVersion: (await expenseRow(expenseId)).version,
+      fields: { vendorId: vendor.id, evidenceType: "tax_invoice", paymentMethod: payment, supply: { currency: "KRW", amount: 440_000, fxRate: 1 } },
+    });
+    const submitted = await submitReadyDraft(fx.pm, expenseId);
+    expect(submitted.kind === "submitted" ? submitted.number : "").toMatch(/^T\d{2}-\d{4}$/);
+    await withdrawExpense(fx.pm, { expenseId, undo: true, round: 1 });
+
+    const moved = await changeExpenseLine(fx.pm, { expenseId, lineId: fx.lines.withVendor, expectedVersion: (await expenseRow(expenseId)).version }).catch(
+      (error: unknown) => error,
+    );
+    expect(moved).toBeInstanceOf(GateBlockedError);
+    expect((moved as Error).message).toBe("번호 있는 문서 · 같은 프로젝트 줄만");
+    expect(await expenseRow(expenseId)).toMatchObject({ projectId: null, quoteLineId: null });
   });
 });

@@ -670,7 +670,12 @@ export function SettingsFormClient({ sections, viewerId }: { sections: SettingsS
   // 서버 HTML과 수화 첫 렌더는 저장소를 모르므로 수화 뒤에만 보인다(React #418). 이번에 고친 단계는 줄에서 뺀다.
   const hydrated = useSyncExternalStore(subscribeNothing, () => true, () => false);
   const restorable = hydrated ? withoutKeys(stash, drafts) : {};
-  const restorableSteps = Object.values(restorable).map((entry) => entry.stepIndex);
+
+  // 복원 줄은 보관본의 단계가 있는 섹션(결재선 종류)에만 뜨고, 그 줄의 「복원」 · 「버림」도 그 섹션 단계만 다룬다(WINDOWS #42).
+  function restorableIn(section: SettingsSection): Record<string, StepDraft> {
+    const keys = new Set(section.fields.flatMap((field) => (field.step ? [`${field.step.kind}-${field.step.stepIndex}`] : [])));
+    return Object.fromEntries(Object.entries(restorable).filter(([key]) => keys.has(key)));
+  }
 
   const [restored, setRestored] = useState<{ drafts: Record<string, StepValues>; generation: Record<string, number> }>({
     drafts: {},
@@ -685,7 +690,7 @@ export function SettingsFormClient({ sections, viewerId }: { sections: SettingsS
       drafts: { ...current.drafts, ...Object.fromEntries(keys.map((key) => [key, entries[key]!.draft])) },
       generation: { ...current.generation, ...Object.fromEntries(keys.map((key) => [key, (current.generation[key] ?? 0) + 1])) },
     }));
-    setStored({});
+    setStored((current) => withoutKeys(current, entries));
     // 누른 줄이 사라진다 — 초점을 되살린 첫 단계의 첫 칸으로 옮긴다.
     const first = keys.sort((a, b) => entries[a]!.stepIndex - entries[b]!.stepIndex)[0];
     requestAnimationFrame(() => {
@@ -694,9 +699,9 @@ export function SettingsFormClient({ sections, viewerId }: { sections: SettingsS
   }
 
   // 사용자 결정 2026-09-26(C-1)과 같은 규칙 — 「버림」은 확인 없이 지우고 알림의 「되돌리기」로 되살린다.
-  function discard() {
-    setDiscarded(restorable);
-    setStored({});
+  function discard(entries: Record<string, StepDraft>) {
+    setDiscarded(entries);
+    setStored((current) => withoutKeys(current, entries));
   }
 
   // 되돌리기는 그 사이 고친 단계 · 다른 저장이 바꾼 단계를 빼고, 지금 선택지로 다시 걸러 되살린다.
@@ -721,24 +726,28 @@ export function SettingsFormClient({ sections, viewerId }: { sections: SettingsS
   return (
     <div>
       <ExportButton />
-      {sections.map((section) => (
-        <DetailScreen.Section key={section.namespace} title={section.namespace}>
-          {restorableSteps.length > 0 && section.fields.some((field) => field.step) ? (
-            <p className={styles.restoreBanner}>
-              <span>{`저장 안 한 편집 ${stepList(restorableSteps)}`}</span>
-              <span className={styles.restoreActions}>
-                <button type="button" className={styles.restoreAction} onClick={() => restore(restorable)}>
-                  복원
-                </button>
-                <button type="button" className={styles.restoreAction} onClick={discard}>
-                  버림
-                </button>
-              </span>
-            </p>
-          ) : null}
-          {renderFields(section.fields, onDraftChange, restored)}
-        </DetailScreen.Section>
-      ))}
+      {sections.map((section) => {
+        const sectionRestorable = restorableIn(section);
+        const restorableSteps = Object.values(sectionRestorable).map((entry) => entry.stepIndex);
+        return (
+          <DetailScreen.Section key={section.namespace} title={section.namespace}>
+            {restorableSteps.length > 0 ? (
+              <p className={styles.restoreBanner}>
+                <span>{`저장 안 한 편집 ${stepList(restorableSteps)}`}</span>
+                <span className={styles.restoreActions}>
+                  <button type="button" className={styles.restoreAction} onClick={() => restore(sectionRestorable)}>
+                    복원
+                  </button>
+                  <button type="button" className={styles.restoreAction} onClick={() => discard(sectionRestorable)}>
+                    버림
+                  </button>
+                </span>
+              </p>
+            ) : null}
+            {renderFields(section.fields, onDraftChange, restored)}
+          </DetailScreen.Section>
+        );
+      })}
       <ConfirmDialog
         open={leaveHref !== null}
         onClose={() => setLeaveHref(null)}

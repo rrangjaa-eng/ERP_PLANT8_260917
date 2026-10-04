@@ -34,6 +34,8 @@ export type SettingsFieldViewModel = {
   key: string;
   label: string;
   hint?: string;
+  // 05-04(UI-SPEC S13): number 칸 값 옆 정적 단위 글자(`MB`) — 입력 밖에 둔다(SYSTEM §7-2).
+  unitLabel?: string;
   field:
     | { kind: "simple"; descriptor: SettingsFieldDescriptorView; value: unknown }
     | { kind: "historized"; descriptor: SettingsFieldDescriptorView; entries: HistoryEntry[] };
@@ -70,6 +72,7 @@ function SimpleFieldEditor({
   fieldKey,
   label,
   hint,
+  unitLabel,
   descriptor,
   initialValue,
   options,
@@ -79,6 +82,7 @@ function SimpleFieldEditor({
   fieldKey: string;
   label: string;
   hint?: string;
+  unitLabel?: string;
   descriptor: SettingsFieldDescriptorView;
   initialValue: unknown;
   options?: { value: string; label: string }[];
@@ -206,20 +210,30 @@ function SimpleFieldEditor({
   }
 
   // number(numberKind 없음) | string — 텍스트 입력, blur에서 즉시 저장
-  // (§7-2 자동 생성 설정 화면 필드 렌더 규칙).
+  // (§7-2 자동 생성 설정 화면 필드 렌더 규칙). 단위가 있으면 입력 밖 오른쪽에 정적 글자로(§7-2 `10` `MB`).
+  const input = (
+    <TextField
+      id={`setting-${fieldKey}`}
+      label={label}
+      type={descriptor.kind === "number" ? "number" : "text"}
+      numeric={descriptor.kind === "number"}
+      hintId={hint ? hintId : undefined}
+      value={text}
+      onChange={(event) => setText(event.target.value)}
+      onBlur={() => execute({ key: fieldKey, value: text })}
+      error={error ?? undefined}
+    />
+  );
   return (
     <div className={styles.field}>
-      <TextField
-        id={`setting-${fieldKey}`}
-        label={label}
-        type={descriptor.kind === "number" ? "number" : "text"}
-        numeric={descriptor.kind === "number"}
-        hintId={hint ? hintId : undefined}
-        value={text}
-        onChange={(event) => setText(event.target.value)}
-        onBlur={() => execute({ key: fieldKey, value: text })}
-        error={error ?? undefined}
-      />
+      {unitLabel ? (
+        <div className={styles.withUnit}>
+          {input}
+          <span className={styles.unit}>{unitLabel}</span>
+        </div>
+      ) : (
+        input
+      )}
       {hint ? <p id={hintId} className={styles.hint}>{hint}</p> : null}
     </div>
   );
@@ -500,6 +514,7 @@ function renderFields(
           fieldKey={field.key}
           label={field.label}
           hint={field.hint}
+          unitLabel={field.unitLabel}
           descriptor={field.field.descriptor}
           initialValue={field.field.value}
           options={field.options}

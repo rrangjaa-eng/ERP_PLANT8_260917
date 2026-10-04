@@ -103,6 +103,38 @@
   margin: var(--s-1) 0 0 0;
 }
 
+/* 05-04(UI-SPEC S13 · SYSTEM §7-2 number) — 단위는 입력 밖 오른쪽 정적 글자(`10` `MB`), 보조 글자 .hint와 같은 토큰.
+   폰은 라벨이 입력 위라 입력 칸 아래 끝에 맞추고(TextField 줄 아래 여백 --s-4만큼 올림), PC는 입력 칸 윗줄에 맞춘다. */
+.withUnit {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--s-2);
+}
+
+.withUnit > :first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.unit {
+  display: flex;
+  align-items: center;
+  height: var(--field-h, var(--control-h));
+  font-size: var(--text-aux);
+  color: var(--text-muted);
+  margin-bottom: var(--s-4);
+}
+
+@media (min-width: 700px) {
+  .withUnit {
+    align-items: flex-start;
+  }
+
+  .unit {
+    margin-bottom: 0;
+  }
+}
+
 .error {
   font-size: var(--text-aux);
   color: var(--status-danger);

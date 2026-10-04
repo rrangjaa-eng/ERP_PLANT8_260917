@@ -48,6 +48,7 @@ import { expenseLineDoor, type ExpenseLineDoor } from "@/domain/expenses/line-do
 import { evaluateExpenseSubmit } from "@/domain/expenses/gate";
 import { EXPENSE_DOCUMENT_DTO_SPEC, type ExpenseDocumentDto } from "@/domain/expenses/dto";
 import { listCodeItems } from "@/repositories/code-tables";
+import { countActiveByOwner } from "@/repositories/files";
 import { findProjectById, lockProjectForWrite, type ProjectRow } from "@/repositories/projects";
 import { findLatestQuoteRevision, findQuoteRevisionById } from "@/repositories/quote-revisions";
 import { findQuoteLineById, type QuoteLineRow } from "@/repositories/quote-lines";
@@ -460,7 +461,8 @@ function remainingText(remaining: Money, basis: "foreign" | "krw"): string {
 }
 
 // 트랜잭션 전: 기안자 문서 읽기 · 세금 계산 · 결재선 스냅숏(prepareSubmission) · 번호 서식. 트랜잭션 안(tx 호출만):
-// 프로젝트 행 잠금 → 문서 행 잠금 → 이미 제출됨 판정 → version → 다시 판정 → 스냅숏 → 결재 인스턴스 · 로그 → 마지막
+// 프로젝트 행 잠금 → 문서 행 잠금 → 이미 제출됨 판정 → version → 다시 판정(증빙 수는 tx로 — 증빙 추가 · 삭제도 같은
+// 지출결의 행을 잠근다) → 스냅숏 → 결재 인스턴스 · 로그 → 마지막
 // 쓰기로 번호(카운터 행 잠금을 가장 짧게).
 // deps.afterLock — 테스트가 두 잠금(프로젝트 → 지출결의)을 잡은 직후에 멈춰 경합 순서를 고정한다(ARCHITECTURE §4-8 (5)).
 export async function submitExpense(
@@ -496,6 +498,7 @@ export async function submitExpense(
       const line = await findQuoteLineById(viewer, locked.quoteLineId, tx);
       const latest = await findLatestQuoteRevision(viewer, projectRow.id, tx);
       const numbered = line ? await listNumberedByLine(viewer, line.id, tx) : [];
+      const evidenceCount = await countActiveByOwner(viewer, EXPENSE_DOCUMENT_KIND, locked.id, tx);
       door = line ? doorFor(line, numbered, locked.id) : null;
       lineInCurrentRevision = Boolean(line && latest && line.revisionId === latest.id && line.archivedAt === null && door && door.state !== "none");
       const decision = evaluateExpenseSubmit({
@@ -504,6 +507,7 @@ export async function submitExpense(
         supplyAmountKrw: locked.supplyAmountKrw,
         evidenceType: locked.evidenceType,
         paymentMethod: locked.paymentMethod,
+        evidenceCount,
       });
       if (!decision.allowed) throw new GateBlockedError(decision.reason);
       const current = supplyMoney(locked);

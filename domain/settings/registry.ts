@@ -53,6 +53,8 @@ export type SettingDef<T> = {
   dynamicOptions?: "roles" | "org_units";
   /** 04.1: 이력형 키의 적용 시작일 규칙(연차 일수 = 1월 1일). 동작은 04.1-03·04. */
   effectiveFromRule?: "year_start";
+  /** 05-04(UI-SPEC S13): number 칸 값 옆 정적 단위 글자(예: `MB`) — 단위를 입력 안에 넣지 않는다(SYSTEM §7-2). */
+  unitLabel?: string;
 };
 
 export class SettingNotFoundError extends UserFacingError {}

@@ -123,6 +123,7 @@ async function buildSections(viewer: Viewer): Promise<SettingsSection[]> {
       key: def.key,
       label: def.label,
       hint: def.hint,
+      ...(def.unitLabel ? { unitLabel: def.unitLabel } : {}),
       field,
       options: field.kind === "simple" ? optionsFor(def, descriptor, field.value, routeOptions) : undefined,
       warning: warnings[def.key],

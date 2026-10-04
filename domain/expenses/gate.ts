@@ -1,7 +1,7 @@
-// 05-03(UI-SPEC S6): 지출결의 제출 판정 — 순수 함수, 첫 이유 하나. 이 플랜은 ③ ④ ⑥ ⑦을 이 순서로 판정하고
-// 나머지(① 고객 승인 · ② 완료 프로젝트 · ⑤ 거래처 · ⑧ 증빙 · ⑨ 세금)는 05-04 · 05-06이 같은 함수에 끼운다.
+// 05-03(UI-SPEC S6): 지출결의 제출 판정 — 순수 함수, 첫 이유 하나. 05-03은 ③ ④ ⑥ ⑦, 05-04는 ⑧(증빙)을 이 순서로
+// 판정하고 나머지(① 고객 승인 · ② 완료 프로젝트 · ⑤ 거래처 · ⑨ 세금)는 05-06이 같은 함수에 끼운다.
 
-export type ExpenseSubmitTarget = "quoteLine" | "openLatest" | "supplyAmount" | "evidenceType" | "paymentMethod";
+export type ExpenseSubmitTarget = "quoteLine" | "openLatest" | "supplyAmount" | "evidenceType" | "paymentMethod" | "evidence";
 
 export type ExpenseSubmitDecision = { allowed: true } | { allowed: false; reason: string; target: ExpenseSubmitTarget };
 
@@ -22,6 +22,8 @@ export type ExpenseSubmitFacts = {
   supplyAmountKrw: number | null;
   evidenceType: string | null;
   paymentMethod: string | null;
+  // 살아 있는 증빙 파일 수 — 제출 트랜잭션 안에서 tx로 센 값(UI Assumptions #5).
+  evidenceCount: number;
 };
 
 export function evaluateExpenseSubmit(facts: ExpenseSubmitFacts): ExpenseSubmitDecision {
@@ -45,6 +47,9 @@ export function evaluateExpenseSubmit(facts: ExpenseSubmitFacts): ExpenseSubmitD
   }
   if (facts.supplyAmountKrw === 0) {
     return { allowed: false, reason: "공급가액이 0 · 0보다 크게", target: "supplyAmount" };
+  }
+  if (facts.evidenceCount === 0) {
+    return { allowed: false, reason: "증빙 없음 · 증빙 올리기 Ctrl+U", target: "evidence" };
   }
   return { allowed: true };
 }

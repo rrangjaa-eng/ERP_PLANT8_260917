@@ -1039,3 +1039,18 @@ SETTING_DEFS.push(
   DOCUMENT_NUMBER_EXPENSE_SEQ_DIGITS,
   DOCUMENT_NUMBER_EXPENSE_SEQ_START,
 );
+
+// 05-04(EVID-01 · UI-SPEC S13): 증빙 크기 한도 — 06-02가 계획한 같은 이름을 이 페이즈가 등록한다. 첨부 영역 글자 · 크기 오류
+// 문구 · 서명 PUT 주소의 크기 조건에 같이 쓰인다. 오류 문구는 명사형(DECISIONS 2026-09-26 · #87).
+export const EVIDENCE_MAX_SIZE_MB: SettingDef<number> = {
+  key: "evidence.max_size_mb",
+  kind: "simple",
+  schema: z.coerce.number().refine((value) => Number.isInteger(value) && value >= 1 && value <= 100, { message: "숫자 형식 오류 · 10처럼" }),
+  label: "증빙 크기 한도",
+  hint: "폰 사진은 줄여서 올림 · PDF는 원본 크기",
+  namespace: "증빙",
+  unitLabel: "MB",
+  default: 10,
+};
+
+SETTING_DEFS.push(EVIDENCE_MAX_SIZE_MB);

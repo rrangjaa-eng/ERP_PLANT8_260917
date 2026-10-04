@@ -5,7 +5,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { documentCounters, settingsSimple } from "@/db/schema";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
-import { DOCUMENT_NUMBER_PROJECT_SEQ_START, DOCUMENT_NUMBER_PROJECT_SEPARATOR, SETTING_DEFS } from "@/domain/settings/keys";
+import { DOCUMENT_NUMBER_PROJECT_SEQ_START, DOCUMENT_NUMBER_PROJECT_SEPARATOR, EVIDENCE_MAX_SIZE_MB, SETTING_DEFS } from "@/domain/settings/keys";
 import { findSimpleValue, upsertSimpleValue } from "@/repositories/settings";
 import { findDocumentCounter, upsertDocumentCounter } from "@/repositories/document-counters";
 import { kstYear } from "@/lib/kst-date";
@@ -249,6 +249,30 @@ test.describe("PR #104 후속 — 설정 힌트 aria-describedby (ISSUE-001) · 
     await expect(field).toHaveAttribute("aria-invalid", "true");
     await expect(field).toHaveAttribute("aria-describedby", `setting-${key}-error setting-${key}-hint`);
     expect((await findSimpleValue(SYSTEM_VIEWER, key))?.value).not.toBe("#");
+  });
+
+  // 05-04(UI-SPEC S13): `증빙` 섹션 — 값 옆 정적 단위 글자 · 숫자 오류는 명사형 한 줄(DECISIONS 2026-09-26).
+  test("05-04 S13 — 증빙 크기 한도는 기본 10 · 입력 오른쪽에 MB이고, 비우고 blur하면 숫자 형식 오류 · 저장되지 않는다", async ({ page }) => {
+    await openSettings(page);
+    const section = page.locator("section").filter({ has: page.getByRole("heading", { name: "증빙", exact: true }) });
+    const field = section.getByLabel(EVIDENCE_MAX_SIZE_MB.label, { exact: true });
+    await expect(field).toHaveValue("10");
+    const unit = section.getByText(EVIDENCE_MAX_SIZE_MB.unitLabel ?? "", { exact: true });
+    await expect(unit).toBeVisible();
+    const fieldBox = await field.boundingBox();
+    const unitBox = await unit.boundingBox();
+    expect(fieldBox && unitBox && unitBox.x >= fieldBox.x + fieldBox.width).toBe(true);
+    expect(fieldBox && unitBox && unitBox.y < fieldBox.y + fieldBox.height && unitBox.y + unitBox.height > fieldBox.y).toBe(true);
+
+    const isServerAction = (response: { request: () => { method: () => string; headers: () => Record<string, string> } }) =>
+      response.request().method() === "POST" && response.request().headers()["next-action"] !== undefined;
+    await field.fill("");
+    const saved = page.waitForResponse(isServerAction);
+    await field.blur();
+    await saved;
+    await expect(section.getByText("저장 실패 · 숫자 형식 오류 · 10처럼")).toBeVisible();
+    await expect(field).toHaveAttribute("aria-invalid", "true");
+    expect((await findSimpleValue(SYSTEM_VIEWER, EVIDENCE_MAX_SIZE_MB.key))?.value).not.toBe(0);
   });
 
   test("DR-104-03 — 이력 목록 숫자: 면제 기준 125,000, 비율은 저장값 그대로(0.088 · 0.1)", async ({ page }) => {

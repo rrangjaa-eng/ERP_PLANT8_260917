@@ -75,6 +75,7 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
     <div className={styles.column}>
       <DetailScreen title={target ? `지출결의 — ${target}` : "지출결의"} status={<StatusTag status={expenseStatusWord(null)} />}>
         <ExpenseForm
+          key={expense.quoteLineId ?? expense.itemName ?? "team"}
           data={{
             id,
             version: expense.version ?? 1,

@@ -1,13 +1,27 @@
 import { test, expect, type Page } from "@playwright/test";
+import { createExpenseFromLines } from "@/domain/expenses";
+import { getCurrentQuoteRevision } from "@/domain/quotes/lines";
+import { createRevisionFromCurrent, setCustomerApproval } from "@/domain/quotes/revisions";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { approvalBasis } from "@/repositories/quote-revisions";
 import { seoulToday } from "@/lib/dates";
 import { delayServerActions, loginPage, waitForHydration } from "./leave-org";
-import { setupExpenseE2E, uniqueReceipt, type ExpenseE2E } from "./expense-fixture";
+import { setupExpenseE2E, submitLineExpense, uniqueReceipt, type ExpenseE2E, type LineKey } from "./expense-fixture";
 
 // 05-07(EXP-08 · UX-06 · UI-SPEC S3 두 입구 · S14 골라내기): `/expenses/new` 팀 비용 지출결의 — 종류 · 사용일 · 팀 · 내용 → 거래처 고르기 →
 // 첫 저장(주소 교체) → 증빙 → 제출 `T26-` 번호 → 결재선 승인 → 문서 화면 `프로젝트 미연결 · 팀 관리비`. 판정은 DOM 실측(포커스 · 값 · 글자)이다.
 
 const UPLOAD_WAIT = 20_000;
 const META = /^\d+KB · \d{2}-\d{2}$/;
+
+async function openDraft(page: Page, fx: ExpenseE2E, key: LineKey): Promise<string> {
+  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines[key].id] });
+  const expenseId = created.created[0]?.expenseId;
+  if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
+  await page.goto(`/expenses/${expenseId}`);
+  await waitForHydration(page.getByRole("button", { name: /^임시 저장/ }));
+  return expenseId;
+}
 
 async function openNew(page: Page): Promise<void> {
   await page.goto("/expenses/new");
@@ -197,5 +211,123 @@ test.describe("골라내기 (S14) · 거래처", () => {
     await page.reload();
     await expect(page.getByTestId("expense-vendor")).toHaveText(fx.vendorName);
     await expect(page.getByRole("button", { name: "바꾸기" })).toBeVisible();
+  });
+});
+
+test.describe("골라내기 (S14) · 견적 줄", () => {
+  test("바꾸기 — 첫 포커스 검색 칸 · ↓ 첫 행 · 고를 수 없는 행 Enter 무반응(이유 글자) · 열린 행 Enter → 폼이 그 줄 값 · 트리거로 포커스 복귀", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    await submitLineExpense(browser, baseURL, fx, "closed");
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await openDraft(page, fx, "tracer");
+
+    const trigger = page.getByRole("button", { name: "바꾸기" });
+    await trigger.click();
+    const dialog = page.getByRole("dialog", { name: "견적 줄 바꾸기" });
+    const search = dialog.getByRole("textbox", { name: "견적 줄 검색" });
+    await expect(search).toBeFocused();
+    await expect(dialog.getByText(/ · 견적 줄 7 · 고를 수 있는 줄 \d+$/)).toBeVisible();
+    // ↓ → 첫 행(현재 줄) aria-selected.
+    await page.keyboard.press("ArrowDown");
+    const rows = dialog.getByRole("option");
+    await expect(rows.first()).toBeFocused();
+    await expect(rows.first()).toHaveAttribute("aria-selected", "true");
+
+    // 고를 수 없는 행 — 거래처 없음 · 문 닫힘(번호 · 상태 · 금액). Enter는 아무 일 없다.
+    const noVendor = dialog.getByRole("option", { name: new RegExp(fx.lines.noVendor.itemName) });
+    await expect(noVendor).toHaveAttribute("aria-disabled", "true");
+    await expect(noVendor).toContainText("거래처 없음");
+    const closed = dialog.getByRole("option", { name: new RegExp(fx.lines.closed.itemName) });
+    await expect(closed).toHaveAttribute("aria-disabled", "true");
+    await expect(closed).toContainText(/지출결의 \S+-\d{4} 결재 중 · 12,400,000/);
+    const primary = dialog.getByRole("button", { name: /^이 줄로/ });
+    await noVendor.click({ force: true });
+    await expect(noVendor).toBeFocused();
+    await expect(noVendor).toHaveAttribute("aria-selected", "false");
+    await expect(primary).toHaveAttribute("aria-disabled", "true");
+    await page.keyboard.press("Enter");
+    await expect(dialog).toBeVisible();
+
+    // 열린 행 Enter → 폼 값이 그 줄 · 트리거로 포커스 복귀.
+    const phone = dialog.getByRole("option", { name: new RegExp(fx.lines.phone.itemName) });
+    await phone.click();
+    await expect(primary).not.toHaveAttribute("aria-disabled", "true");
+    await expect(dialog.getByText("거래처 · 증빙 종류 · 공급가액이 그 줄 값으로 바뀜")).toBeVisible();
+    await page.keyboard.press("Enter");
+    await expect(dialog).toBeHidden();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(`지출결의 — ${fx.projectName} · ${fx.lines.phone.itemName}`);
+    await expect(page.getByLabel("공급가액")).toHaveValue("12,400,000");
+    await expect(page.getByTestId("expense-vendor")).toHaveText(fx.vendorName);
+    await expect(page.getByRole("button", { name: "바꾸기" })).toBeFocused();
+  });
+
+  test("/expenses/new — 담당 프로젝트가 없으면 `담당 프로젝트 줄이 없습니다 · 검색으로 찾기`, 검색 0건 · 조회 실패도 검색 칸이 살아 있다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.mgmt);
+    await openNew(page);
+    await page.getByRole("button", { name: "견적 줄 고르기" }).click();
+    const dialog = page.getByRole("dialog", { name: "견적 줄 고르기" });
+    const search = dialog.getByRole("textbox", { name: "견적 줄 검색" });
+    await expect(search).toBeFocused();
+    await expect(dialog.getByText("담당 프로젝트 줄이 없습니다 ·")).toBeVisible();
+    await search.blur();
+    await dialog.getByRole("button", { name: "검색으로 찾기" }).click();
+    await expect(search).toBeFocused();
+
+    await search.fill("존재하지않는줄-zzzz");
+    await expect(dialog.getByText("조건에 맞는 줄이 없습니다 ·")).toBeVisible();
+    await dialog.getByRole("button", { name: "검색 지우기" }).click();
+    await expect(search).toHaveValue("");
+
+    await page.route("**/*", async (route) => {
+      if (route.request().method() === "POST" && route.request().headers()["next-action"]) await route.fulfill({ status: 500, body: "" });
+      else await route.continue();
+    });
+    await search.fill("무대");
+    await expect(dialog.getByText("목록 불러오기 실패 ·")).toBeVisible();
+    await expect(search).toBeEnabled();
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+    await dialog.getByRole("button", { name: "다시 시도" }).click();
+    await expect(dialog.getByText("목록 불러오기 실패")).toHaveCount(0);
+  });
+
+  test("/expenses/new에서 줄을 고르면 그 줄의 지출결의로 열리고 팀 비용 칸은 사라진다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await openNew(page);
+    await page.getByLabel("종류", { exact: true }).selectOption("team_overhead");
+    await page.getByLabel("내용", { exact: true }).fill("버려질 값");
+    await page.getByRole("button", { name: "견적 줄 고르기" }).click();
+    const dialog = page.getByRole("dialog", { name: "견적 줄 고르기" });
+    await expect(dialog.getByText(new RegExp(fx.projectName))).toBeVisible();
+    await dialog.getByRole("textbox", { name: "견적 줄 검색" }).fill(fx.lines.hold.itemName);
+    const row = dialog.getByRole("option", { name: new RegExp(fx.lines.hold.itemName) });
+    await expect(dialog.getByRole("option")).toHaveCount(1);
+    await row.click();
+    await expect(dialog.getByText("· 팀 비용 칸 지워짐")).toBeVisible();
+    await dialog.getByRole("button", { name: /^이 줄로/ }).click();
+    await expect(page).toHaveURL(/\/expenses\/[0-9a-f-]{36}$/);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(`지출결의 — ${fx.projectName} · ${fx.lines.hold.itemName}`);
+    await expect(page.getByLabel("종류", { exact: true })).toHaveCount(0);
+    await expect(page.getByLabel("공급가액")).toHaveValue("12,400,000");
+  });
+
+  test("막힘 ③(작성 중에 새 차수가 생긴 문서)의 다음 한 수 `견적 줄 바꾸기`가 골라내기를 연다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.pm);
+    const expenseId = await openDraft(page, fx, "retry");
+    const current = await getCurrentQuoteRevision(SYSTEM_VIEWER, fx.projectId);
+    if (!current) throw new Error("현재 차수가 없다");
+    const second = await createRevisionFromCurrent(fx.pm.viewer, { projectId: fx.projectId, fromRevisionId: current.id });
+    const basis = await approvalBasis(SYSTEM_VIEWER, second.revisionId);
+    await setCustomerApproval(fx.pm.viewer, second.revisionId, { approvedOn: seoulToday(), seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
+
+    await page.goto(`/expenses/${expenseId}`);
+    await waitForHydration(page.getByRole("button", { name: /^임시 저장/ }));
+    await expect(page.getByText(/^견적 줄이 현재 차수에 없음 · /)).toBeVisible();
+    await page.locator("#expense-next-step").click();
+    const dialog = page.getByRole("dialog", { name: "견적 줄 바꾸기" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("option", { name: new RegExp(fx.lines.retry.itemName) })).toBeVisible();
   });
 });

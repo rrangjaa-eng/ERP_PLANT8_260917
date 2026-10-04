@@ -12,8 +12,18 @@ import { useCommaInput } from "@/ui/input/use-comma-input";
 import { parseNumberInput } from "@/lib/format-number";
 import { isCtrlCombo } from "@/lib/shortcut";
 import { usePhoneWidth } from "@/app/(app)/leave/use-phone-width";
-import { changeExpenseVendorAction, createTeamExpenseDraftAction, previewExpenseAction, previewNewExpenseAction, saveExpenseDraftAction, submitExpenseAction } from "../actions";
+import {
+  changeExpenseLineAction,
+  changeExpenseVendorAction,
+  createExpenseFromLinesAction,
+  createTeamExpenseDraftAction,
+  previewExpenseAction,
+  previewNewExpenseAction,
+  saveExpenseDraftAction,
+  submitExpenseAction,
+} from "../actions";
 import { VendorPickDialog, type PickedVendor } from "./pick-vendor";
+import { LinePickDialog } from "./pick-line";
 import { EvidenceAttachments } from "./evidence-attachments";
 import { submitBlockReason, type ServerBlock } from "./submit-block";
 import { TaxParts } from "./tax-parts";
@@ -67,8 +77,11 @@ const TARGET_FIELD: Record<string, string> = {
   teamExpenseKind: "teamExpenseKind",
   content: "content",
   vendor: "vendor-pick",
+  quoteLine: "line-pick",
 };
 const NEXT_STEP_ID = "expense-next-step";
+// 견적 줄 바꾸기가 끝나면 페이지가 폼을 새로 그린다(key) — 트리거 `바꾸기`가 새 요소라 포커스를 잃지 않게 새 폼이 한 번 거기로 돌려놓는다.
+let refocusLineTrigger = false;
 
 export type ExpenseFormProps = {
   data: ExpenseFormData;
@@ -133,7 +146,7 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
   const [idempotencyKey] = useState(() => (newDoc ? crypto.randomUUID() : ""));
   // 고른 거래처 — 새 문서는 첫 저장에 실어 보낼 값이고, 저장된 문서는 화면에 바로 보일 값(서버가 이미 바꿨다).
   const [pickedVendor, setPickedVendor] = useState<PickedVendor | null>(null);
-  const [pickOpen, setPickOpen] = useState<"vendor" | null>(null);
+  const [pickOpen, setPickOpen] = useState<"vendor" | "line" | null>(null);
 
   const amountInput = useCommaInput(currency === "KRW" ? "krw" : "foreign", data.amount === null ? "" : String(data.amount));
 
@@ -291,7 +304,8 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
 
   // 첫 포커스 = 막힘 대상(없으면 1차). 문서가 아직 없는 `/expenses/new`는 맨 위 3차 `견적 줄 고르기`(수주 비용의 기본 경로 — R6-06).
   useEffect(() => {
-    if (newDoc) {
+    if (newDoc || refocusLineTrigger) {
+      refocusLineTrigger = false;
       document.getElementById("line-pick")?.focus();
       return;
     }
@@ -535,6 +549,48 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
     setFailure(null);
   }
 
+  // 견적 줄 고르기 · 바꾸기 — 새 문서는 그 줄의 작성 중 문서를 만들거나 열고(팀 비용 칸은 버린다), 저장된 문서는 서버가 줄 값으로 다시 채운다.
+  // 그 줄에 내 다른 작성 중 문서가 있으면 그 문서로 이동한다. 줄이 바뀌면 칸 값이 통째로 새 값이라 페이지가 폼을 새로 그린다(router.refresh · key).
+  async function pickLine(lineId: string): Promise<boolean | void> {
+    setFailure(null);
+    const failed = "견적 줄 고르기 실패 · 다시 시도";
+    if (newDoc) {
+      let created: Awaited<ReturnType<typeof createExpenseFromLinesAction>>;
+      try {
+        created = await createExpenseFromLinesAction({ lineIds: [lineId] });
+      } catch {
+        setFailure(failed);
+        return;
+      }
+      const first = created?.data?.created[0];
+      if (first) {
+        router.replace(`/expenses/${first.expenseId}`);
+        return;
+      }
+      setFailure(created?.data?.blocked[0]?.reason ?? created?.serverError ?? failed);
+      return;
+    }
+    let changed: Awaited<ReturnType<typeof changeExpenseLineAction>>;
+    try {
+      changed = await changeExpenseLineAction({ expenseId: data.id, lineId, expectedVersion: version });
+    } catch {
+      setFailure(failed);
+      return;
+    }
+    const outcome = changed?.data;
+    if (outcome && "redirectTo" in outcome) {
+      router.replace(`/expenses/${outcome.redirectTo}`);
+      return;
+    }
+    if (outcome) {
+      setVersion(outcome.version);
+      refocusLineTrigger = true;
+      router.refresh();
+      return;
+    }
+    setFailure(changed?.serverError ?? failed);
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     void submit();
@@ -602,15 +658,20 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
           <Form.Field id="line" label="견적 줄" width="long">
             <span className={styles.valueRow}>
               <span className={styles.fill}>—</span>
-              <Button id="line-pick" variant="tertiary">
-                견적 줄 고르기
-              </Button>
+              <Button id="line-pick" variant="tertiary" onClick={() => setPickOpen("line")}>
+              견적 줄 고르기
+            </Button>
             </span>
           </Form.Field>
         ) : data.lineText ? (
           <Form.Field id="line" label="견적 줄" width="long">
+          <span className={styles.valueRow}>
             {executionNode ?? <span className={styles.fill}>{data.lineText}</span>}
-          </Form.Field>
+            <Button id="line-pick" variant="tertiary" onClick={() => setPickOpen("line")}>
+              바꾸기
+            </Button>
+          </span>
+        </Form.Field>
         ) : null}
 
         {team ? (
@@ -777,7 +838,7 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
         <div className={styles.formBar} data-testid="expense-form-actions">
           <Form.Actions>
             {phone ? null : submitButton}
-            {block && !submitting ? <BlockLine block={block} href={blockHref} onPick={openPicker} onVendor={() => setPickOpen("vendor")} /> : null}
+            {block && !submitting ? <BlockLine block={block} href={blockHref} onPick={openPicker} onVendor={() => setPickOpen("vendor")} onLine={() => setPickOpen("line")} /> : null}
             {networkFailed === "submit" ? (
               <span className={styles.blockedLine}>
                 <span className={styles.blockedReason}>제출 실패 · 네트워크 · </span>
@@ -801,6 +862,14 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
         </div>
         <div className={styles.formBarSpacer} aria-hidden="true" />
       </Form>
+      <LinePickDialog
+        open={pickOpen === "line"}
+        mode={data.lineText ? "change" : "pick"}
+        expenseId={newDoc ? null : data.id}
+        teamValues={teamKind !== "" || content.trim() !== ""}
+        onClose={() => setPickOpen(null)}
+        onPick={pickLine}
+      />
       <VendorPickDialog open={pickOpen === "vendor"} mode={vendorName ? "change" : "pick"} onClose={() => setPickOpen(null)} onPick={pickVendor} />
     </>
   );
@@ -813,11 +882,13 @@ function BlockLine({
   href,
   onPick,
   onVendor,
+  onLine,
 }: {
   block: { reason: string; tone: "block" | "info"; target: string | null };
   href: string | null;
   onPick: () => void;
   onVendor: () => void;
+  onLine: () => void;
 }) {
   const tone = block.tone === "info" ? styles.infoReason : styles.blockedReason;
   const cut = block.reason.lastIndexOf(" · ");
@@ -848,6 +919,7 @@ function BlockLine({
           onClick={() => {
             if (block.target === "evidence") onPick();
             else if (block.target === "vendor") onVendor();
+            else if (block.target === "quoteLine") onLine();
             else document.getElementById(fieldId ?? "")?.focus();
           }}
         >

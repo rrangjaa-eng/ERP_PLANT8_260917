@@ -155,12 +155,14 @@ function PickDialogInner({ onClose, title, subtitle, searchLabel, search, primar
     onClose();
   }
 
-  async function pickChosen() {
-    if (!chosen || picking) return;
+  // 행에서 누른 Enter는 그 행(고를 수 있을 때만), 검색 칸 · 주 버튼은 가리키는 행을 고른다.
+  async function pickChosen(only?: PickRow) {
+    const target = only ?? chosen;
+    if (!target?.selectable || picking) return;
     setPicking(true);
     let keep = false;
     try {
-      keep = (await onPick(chosen)) === false;
+      keep = (await onPick(target)) === false;
     } finally {
       setPicking(false);
     }
@@ -298,7 +300,7 @@ function PickDialogInner({ onClose, title, subtitle, searchLabel, search, primar
                     active={item.id === activeId}
                     onActivate={() => focusRow(item.id)}
                     onMove={(delta) => moveFrom(item.id, delta)}
-                    onEnter={() => void pickChosen()}
+                    onEnter={() => void pickChosen(item)}
                     reasonId={`${listId}-${item.id}`}
                   />
                 ),

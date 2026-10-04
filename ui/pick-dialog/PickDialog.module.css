@@ -162,6 +162,10 @@
   font-weight: var(--fw-bold);
 }
 
+.current .rowSub {
+  font-weight: var(--fw-regular);
+}
+
 .disabled {
   cursor: not-allowed;
   color: var(--text-muted);

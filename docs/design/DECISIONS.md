@@ -1741,3 +1741,12 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 **구현**: 키 `domain/settings/keys.ts`, 판정 `isProfitRateBelowThreshold`(`domain/projects/list-view.ts`), 읽기 `app/(app)/projects/page.tsx` → `projects-table.tsx` 칸을 `.profitRateBelow` span으로 감쌈(`ui/num` 변경 없음), 계약 테스트 `test/e2e/projects-list.spec.ts` 「수익률 기준선」(computed color 실측). 마이그레이션 없음(기존 settings_simple 키-값).
 
 **범위**: SYSTEM.md §6-1, `app/(app)/projects/`, 설정 화면(레지스트리 자동 생성 칸).
+
+## 2026-09-26 — B2 상태 낱말 넷: 작성 중 · 본인 승인 · 지출결의 중 · 반려(견적 줄) (Phase 5 UI-SPEC 개정 제안)
+
+**결정**: §7-5 의미 목록에 낱말 넷을 더한다 — `작성 중`→`--text-muted`(`muted`) · 결재선 단계 결과 `본인 승인`→`--status-success`(`success`) · 견적 줄 파생 `지출결의 중`→`--status-accent`(`accent`) · `반려`(견적 줄)→`--status-danger`(`danger` — `ui/status-tag/status-map.ts`에 이미 있는 낱말이라 견적 줄도 같은 낱말 · 같은 색, 추가 없음). `지출결의 중`은 `text` 변형만 쓴다 — 네 글자 규칙은 테두리 `tag`에만 걸리고 이 낱말은 표 상태 열의 색 글자다(04.1 A2와 같은 해석). `본인 승인`도 `ApprovalRoute`의 결과 글자(`variant="text"`)로만 쓴다. 견적 줄 파생값은 한 값만 보이고 순서는 `취소 > 반려 > 지출결의 중 > 미착수`다(06 SP-2가 나머지 낱말을 이 순서 안에 끼운다).
+**코드 소유**: 이 항목과 SYSTEM §7-5는 기록이고 `status-map.ts` 줄은 낱말을 처음 쓰는 플랜이 더한다 — `본인 승인` 05-01 · `작성 중` · `지출결의 중` 05-05 · `무효` 05-09(B8). 색 다섯 종(`danger` · `warning` · `accent` · `success` · `muted`)은 그대로다.
+**이유**: 지금 `작성 중`은 §6-3 예시에만 있고 §7-5 목록에 없다. 결재선 단계에 자기 승인 결과를 가를 낱말이 없다. 견적 줄 파생값이 이 페이즈에서 켜진다. 문서가 먼저 서지 않으면 화면마다 낱말과 색이 갈린다(화면 하나만 예외 금지).
+**버린 대안**: 06 SP-2가 낱말을 한꺼번에 정하게 미루기 — Phase 5 화면이 먼저 서서 같은 낱말이 화면마다 다른 색을 갖게 된다.
+**결정자**: 사용자(UI-SPEC 승인 2026-09-26) · 기록 2026-10-04 — 결정일 뒤 기록.
+**범위**: SYSTEM.md §7-5, (뒤 플랜) `ui/status-tag/status-map.ts`.

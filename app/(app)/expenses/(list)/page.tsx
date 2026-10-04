@@ -7,10 +7,10 @@ import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { Num } from "@/ui/num/Num";
 import { Pagination } from "@/ui/pagination/Pagination";
 import { pageRangeText } from "@/ui/pagination/page-window";
-import { ExpensesTable, type ExpenseTableRow } from "./expenses-table";
-import { StatusFilter } from "./status-filter";
-import { EXPENSE_STATUS_VIEWS, type ExpenseStatusView } from "./list-columns";
-import styles from "./expenses.module.css";
+import { ExpensesTable, type ExpenseTableRow } from "../expenses-table";
+import { StatusFilter } from "../status-filter";
+import { EXPENSE_STATUS_VIEWS, type ExpenseStatusView } from "../list-columns";
+import styles from "../expenses.module.css";
 
 // 05-08(UI-SPEC S8 · SYSTEM §6-1 목록 = 원장): 보임 범위(domain/expenses/access.ts) 안의 지출결의를 상태 보기 하나로 거른다.
 // WR-07: 인증 검사를 이 페이지가 직접 한다(레이아웃에 기대지 않는다). 그룹 · 순서 · 합계 · 쪽은 서버(listExpenses)가 정한다.
@@ -22,11 +22,9 @@ function toView(raw: string | string[] | undefined): ExpenseStatusView {
 }
 
 function viewHref(view: ExpenseStatusView, page?: number): string {
-  const params = new URLSearchParams();
-  if (view !== "진행 중") params.set("status", view);
+  const params = new URLSearchParams({ status: view });
   if (page && page > 1) params.set("page", String(page));
-  const query = params.toString();
-  return query ? `/expenses?${query}` : "/expenses";
+  return `/expenses?${params.toString()}`;
 }
 
 type ExpensesSearchParams = Record<string, string | string[] | undefined>;

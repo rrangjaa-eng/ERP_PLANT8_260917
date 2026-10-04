@@ -13,3 +13,6 @@ export const EXPENSE_COLUMN_LABELS = {
 // 상태 보기 select 값 — 보이는 낱말 그대로(`?status=진행 중` · `승인` · `전체`). 견적 줄 표 여러 줄 `Ctrl+E`가 `?status=진행 중`으로 온다.
 export const EXPENSE_STATUS_VIEWS = ["진행 중", "승인", "전체"] as const;
 export type ExpenseStatusView = (typeof EXPENSE_STATUS_VIEWS)[number];
+
+// 뼈대는 늘 있는 앞 세 열만 그린다 — 금액 · 기안 열은 보는 사람에 따라 서버가 빼므로 고정 낱말을 그리면 「뼈대 머리글 = 진짜 열 이름」이 깨진다.
+export const EXPENSE_SKELETON_COLUMNS: (keyof typeof EXPENSE_COLUMN_LABELS)[] = ["number", "title", "vendor"];

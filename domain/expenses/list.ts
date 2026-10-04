@@ -1,5 +1,6 @@
 import type { Viewer } from "@/domain/viewer";
 import { seoulToday } from "@/lib/dates";
+import { addDays } from "@/lib/kst-date";
 import { clampPage, LIST_PAGE_SIZE, pageCountFrom } from "@/lib/paging";
 import { can, ForbiddenError } from "@/domain/permissions/can";
 import { projectMany } from "@/domain/permissions/project";
@@ -28,18 +29,32 @@ const RANK_LABELS: Record<number, string> = { 1: "작성 중", 2: "반려 · 회
 
 export type ExpenseListGroup<Row> = { label: string; tone?: "warning"; rows: Row[] };
 
+// 승인 보기의 지급 예정일 구간(서울 날짜, 주 = 월요일 시작). SQL이 지급 예정일 오름차순 · 없음 끝으로 주므로 구간은 이미 연속한다.
+function paymentBand(date: string | null, todayKst: string): { label: string; tone?: "warning" } {
+  if (date === null) return { label: "지급 예정일 없음" };
+  if (date < todayKst) return { label: "예정일 지남", tone: "warning" };
+  const [year, month, day] = todayKst.split("-").map(Number) as [number, number, number];
+  const daysFromMonday = (new Date(Date.UTC(year, month - 1, day)).getUTCDay() + 6) % 7;
+  const thisSunday = addDays(todayKst, 6 - daysFromMonday);
+  if (date <= thisSunday) return { label: "이번 주 지급" };
+  if (date <= addDays(thisSunday, 7)) return { label: "다음 주" };
+  return { label: "그 뒤" };
+}
+
 // 받은 행 순서를 바꾸지 않고 연속한 같은 그룹에 머리글 하나를 붙인다 — 쪽의 첫 행이 앞 쪽 그룹의 이어짐이어도 첫 머리글을 그 그룹으로 그린다.
 export function groupExpenses<Row extends { groupRank: number; scheduledPaymentDate: string | null }>(
   rows: readonly Row[],
   opts: { status: ExpenseListStatus; todayKst: string },
 ): ExpenseListGroup<Row>[] {
-  void opts;
   const groups: ExpenseListGroup<Row>[] = [];
   for (const row of rows) {
-    const label = RANK_LABELS[row.groupRank] ?? "";
+    const band =
+      opts.status === "approved" && row.groupRank === EXPENSE_GROUP_RANKS.approved
+        ? paymentBand(row.scheduledPaymentDate, opts.todayKst)
+        : { label: RANK_LABELS[row.groupRank] ?? "" };
     const last = groups.at(-1);
-    if (last && last.label === label) last.rows.push(row);
-    else groups.push({ label, rows: [row] });
+    if (last && last.label === band.label) last.rows.push(row);
+    else groups.push({ ...band, rows: [row] });
   }
   return groups;
 }

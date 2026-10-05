@@ -26,6 +26,18 @@
   display: contents;
 }
 
+/* 05-11 웨이브 13 D1 — 1차 「일괄 저장」 자리. 1024 미만에서 바뀐 칸이 없으면 CSS로 숨긴다(04-49 R1) — 서버 렌더와 수화 뒤 머리 줄이
+   같은 크기라 아래 줄이 움직이지 않는다. */
+.saveSlot {
+  display: contents;
+}
+
+@media (max-width: 1023.98px) {
+  .saveSlotIdle {
+    display: none;
+  }
+}
+
 /* DR-26 폰 첫 화면(<700): 행동 묶음 끝의 2차 「더보기」는 복사 묶음을 바로 아래 한 줄로 펼친다(시트 아님).
    순서를 뒤집는 CSS는 없다 — DOM 순서 = 보이는 순서(2차들 → 1차, D4). */
 @media (max-width: 699.98px) {
@@ -42,6 +54,16 @@
 
   .copyActionsOpen {
     display: flex;
+  }
+
+  /* 05-11 웨이브 13 D1 — 수화 전(서버 렌더 = PC 순서)에도 폰의 보이는 순서(상태 행동 → 더보기 · 복사 묶음 → 1차)를 맞춘다. 수화 뒤 DOM 순서도 같다. */
+  .moreToggle,
+  .copyActions {
+    order: 1;
+  }
+
+  .saveSlot > * {
+    order: 2;
   }
 
   /* §3 폰 터치 목표 44×44 — 머리 줄 「상태 바꾸기」·「더보기」·「일괄 저장」과 펼친 「복사해 새 차수」·「프로젝트 복사」(DECISIONS.md 2026-09-30), 목록 「필터」와 같은 규칙(공유 Button의 .btn보다 한 단계 높은 선택자). */

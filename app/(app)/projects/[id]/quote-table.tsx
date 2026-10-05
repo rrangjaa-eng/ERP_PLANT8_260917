@@ -2514,10 +2514,11 @@ export function QuoteLedger({
     <SettlementButton key="settlement" {...settlement} dirtyCount={dirtyCount} />
   ) : null;
   // 04-49(후속 결정 R1) — 1024 미만에서는 dirty가 하나라도 있을 때만(복원한 표 칸 포함, 같은 dirty 셈).
-  const saveAction =
-    canSave && (editableWidth || dirtyCount > 0) ? (
+  // 05-11 웨이브 13 D1 — 폭 판정은 CSS가 한다(서버 렌더 = 수화 뒤 같은 배치). JS 폭 판정(서버 스냅숏 참)으로 넣었다 빼면 폰 · 768에서 머리 줄이 수화 뒤 줄어 아래가 움직였다.
+  const saveIdle = dirtyCount === 0 && !cellEditing;
+  const saveAction = canSave ? (
+    <span key="save" className={saveIdle ? `${styles.saveSlot} ${styles.saveSlotIdle}` : styles.saveSlot}>
       <Button
-        key="save"
         id={saveButtonId}
         type="button"
         variant="primary"
@@ -2531,7 +2532,8 @@ export function QuoteLedger({
       >
         일괄 저장{dirtyCount > 0 ? ` ${dirtyCount}` : ""}
       </Button>
-    ) : null;
+    </span>
+  ) : null;
 
   return (
     <DetailScreen

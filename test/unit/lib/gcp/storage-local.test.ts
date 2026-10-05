@@ -132,6 +132,17 @@ describe("서명된 GET 주소", () => {
   });
 });
 
+// 05 /review A15(adversarial F10): 경로의 잘못된 % 이스케이프는 던지지 않고(라우트 500) 키 거부로 끝난다.
+describe("잘못된 경로 이스케이프", () => {
+  it("/api/storage-local/%E0 · 키 중간의 깨진 %는 key 거부", () => {
+    expect(verifyLocalSignedRequest("/api/storage-local/%E0", { secret: SECRET, method: "GET", now: NOW })).toEqual({ ok: false, reason: "key" });
+    expect(verifyLocalSignedRequest(`/api/storage-local/evidence/${randomUUID()}%ZZ?op=get`, { secret: SECRET, method: "GET", now: NOW })).toEqual({
+      ok: false,
+      reason: "key",
+    });
+  });
+});
+
 describe("데이터 디렉터리의 객체", () => {
   const meta = { size: 3, contentType: "image/jpeg", sha256: SHA };
 

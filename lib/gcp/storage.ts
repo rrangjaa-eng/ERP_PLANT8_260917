@@ -4,7 +4,7 @@ import path from "node:path";
 import { GoogleAuth } from "google-auth-library";
 import { env, resolvedStorageDriver } from "@/lib/env";
 import { createAuthedRequest, createGcsObjectClient, GcsUnavailableError, type GcsOp, type GcsRequest, type GcsRequestInit, type GcsResponse } from "@/lib/gcp/gcs";
-import { buildV4SignedUrl } from "@/lib/gcp/gcs-v4";
+import { buildV4SignedUrl, rfc3986 } from "@/lib/gcp/gcs-v4";
 import { log } from "@/lib/log";
 
 // 05-04(EVID-01): 증빙 파일 저장소 포트. 파일 바이트는 서버를 지나지 않는다 — 브라우저가 서명된 PUT 주소로 저장소에
@@ -111,7 +111,13 @@ export function verifyLocalSignedRequest(
   if (!request.secret) return refused("no_secret");
   const parsed = new URL(url, "http://local");
   if (!parsed.pathname.startsWith(LOCAL_ROUTE_PREFIX)) return refused("path");
-  const key = decodeURIComponent(parsed.pathname.slice(LOCAL_ROUTE_PREFIX.length));
+  let key: string;
+  try {
+    key = decodeURIComponent(parsed.pathname.slice(LOCAL_ROUTE_PREFIX.length));
+  } catch {
+    // 잘못된 % 이스케이프(URIError) — 키 꼴 밖과 같은 거부(라우트 500이 아니라 403).
+    return refused("key");
+  }
   if (!LOCAL_KEY_SHAPE.test(key)) return refused("key");
   const query = parsed.searchParams;
   const op = query.get("op");
@@ -314,7 +320,7 @@ export function createGcsStorage(opts: {
     },
 
     async createSignedGet(key, get) {
-      const disposition = `${get.disposition}; filename*=UTF-8''${encodeURIComponent(get.filename)}`;
+      const disposition = `${get.disposition}; filename*=UTF-8''${rfc3986(get.filename)}`;
       const signed = await signUrl("get", { method: "GET", objectKey: key, headers: {}, query: { "response-content-disposition": disposition }, expiresSec: get.expiresSec });
       return { url: signed.url };
     },

@@ -22,7 +22,8 @@ export type V4SignInput = {
   sign: (stringToSign: string) => Promise<string>;
 };
 
-function rfc3986(value: string): string {
+// RFC 3986 unreserved 밖은 전부 이스케이프 — RFC 5987 ext-value(Content-Disposition filename*)에도 그대로 맞다.
+export function rfc3986(value: string): string {
   return encodeURIComponent(value).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
 }
 

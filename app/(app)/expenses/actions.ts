@@ -34,7 +34,7 @@ import { formatKstTime } from "@/domain/holidays/business-day";
 import { log } from "@/lib/log";
 import "./actions.registry";
 
-// 05-05: 지출결의 액션 일곱. 전부 `authedActionClient` + zod, 도메인 함수 하나씩만 부른다. 입력 zod에 세액 · 지급 총액 · 원화 칸은 없다 —
+// 05-05: 지출결의 액션. 전부 `authedActionClient` + zod, 도메인 함수 하나씩만 부른다. 입력 zod에 세액 · 지급 총액 · 원화 칸은 없다 —
 // 사람이 적는 금액은 공급가액(통화 · 금액 · 환율) 하나이고 원화 환산 · 세금은 서버가 계산한다. 판정(권한 · 보임 · 게이트)은 도메인이 한다.
 
 const expenseIdSchema = z.string().uuid();

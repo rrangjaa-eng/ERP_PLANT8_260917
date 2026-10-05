@@ -128,6 +128,13 @@ describe("createSignedGet — V4 서명 GET", () => {
     expect(rsaVerify("sha256", Buffer.from(stringToSign), publicKey, Buffer.from(url.searchParams.get("X-Goog-Signature") ?? "", "hex"))).toBe(true);
   });
 
+  // 05 /review A15(adversarial F9): encodeURIComponent가 남기는 ' ( ) * 까지 이스케이프해야 ext-value가 맞다(로컬 라우트와 같은 규칙).
+  it("파일명의 ' ( ) * 도 RFC 5987로 이스케이프한다", async () => {
+    const { storage } = storageWith();
+    const { url: raw } = await storage.createSignedGet(EVIDENCE_KEY, { expiresSec: 300, filename: "John's (1)*.pdf", disposition: "attachment" });
+    expect(new URL(raw).searchParams.get("response-content-disposition")).toBe("attachment; filename*=UTF-8''John%27s%20%281%29%2A.pdf");
+  });
+
   it("서명 실패는 op get으로 남는다", async () => {
     const failing = { getCredentials: () => Promise.reject(new TypeError("no creds")), sign: () => Promise.resolve("") };
     const { storage, warn } = storageWith([], failing as unknown as GcsSigner & { signed: string[] });

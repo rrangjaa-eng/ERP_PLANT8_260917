@@ -40,6 +40,13 @@
 - 완료 증빙 객체마다 거는 `temporaryHold`를 `removeEvidence`가 풀지 않는다 — Phase 6 F8 고아 정리가 객체를 지우려면 hold 해제가 먼저여야 한다(F8 정리 계약에 짝으로 넣는다). 출처: red-team(`lib/gcp/storage.ts:356`) · adversarial F8. status: open
 - 중복 증빙 검사의 sha256은 클라이언트 선언값이라 GCS가 바이트로 검증하지 않는다(F5) · 업로드 의도 발급에 사용자별 개수 · 빈도 상한이 없다 — 중복 검사는 편의 기능(우회해도 피해는 중복 첨부뿐) · 30명 내부 사용이라 이번에 고치지 않는다. 출처: security(`lib/gcp/storage.ts:311` · `domain/evidence/index.ts:226`, INFORMATIONAL) · adversarial F5. status: open
 
+## 05 /review 재검토 cycle 2 — 고치지 않음 (2026-10-05)
+
+- 업로드 완료 통보의 멱등(A10)이 의도 id가 아니라 같은 주인 · 올린 사람 · sha256 · 크기 · 의도 뒤 생성으로 파일을 찾는다(`repositories/files.ts` `findAliveFileOfIntent`) — 의도와 파일을 잇는 열이 없어서다. 지금은 같은 주인 중복 검사가 같은 파일 두 번을 막아 안전하고, 틀려도 같은 내용의 파일을 돌려준다. Phase 6 `upload_intents` 정리(마이그레이션) 때 `files.intent_id`를 더해 의도 id로 찾는다. 출처: adversarial-cycle1 F9. status: open
+- 지운 작성 중 문서 되돌리기(`restoreOwnerFilesRemovedAt`)는 기간 제한 없이 그 삭제가 뗀 파일 행을 되살린다 — Phase 6 F8 고아 정리가 `removed_at` 행의 객체를 먼저 지우면 바이트 없는 행이 되살아난다. F8 정리 계약에 「주인이 지워진(soft delete) 행은 되돌리기 창 뒤에만 정리」를 넣는다. 출처: adversarial-cycle1 F10 · rereview 4. status: open
+- 같은 모양의 달력 날짜 검사 복사본(`domain/people/index.ts` · `domain/org/index.ts`)은 C2(0000년 거부)를 받지 않았다 — 이번 PR 범위 밖(언급만). 출처: adversarial-cycle1 F2. status: open
+- 견적 줄 문서를 만들거나 줄을 바꿀 때(`createExpenseFromLines` · `changeExpenseLine`) 줄 거래처의 기본 증빙 종류가 보관 · 비활성 코드여도 그대로 채운다 — 제출은 C4의 「쓰지 않는 증빙 종류 · 증빙 종류 고르기」로 막혀 돈 결함은 아니다. C5는 거래처 바꾸기(`changeExpenseVendor`)만 고쳤다. status: open
+
 ## 05-15 (2026-10-04)
 
 - `test/e2e/quote-revisions.spec.ts:675` 「차수 열기」 … — 이전 차수 읽기 표 머리글(`quoteLineReadColumns`)에 현재 표의 맨 끝 `행동` 머리글(05-05 행 행동 열, `showColumn` 계급)이 없어 `thead th` 목록 비교가 어긋난다. 05-15 변경 밖(머리글 · 열 판정 불변). 후보 수정: 단언에서 `행동` 제외(읽기 표는 이전 차수라 행동 열이 없는 게 맞음). 05-05 이후 계속 실패였는지는 8df5e714에서 돌려 확인하지 않았다.

@@ -132,6 +132,49 @@ test.describe("지출결의 올리기 → 제출 → 폰 결재 시트 승인 �
   });
 });
 
+test.describe("결재 시트 승인 통신 실패 (05 /review B3)", () => {
+  test("승인 요청이 실패하면 결재함 시트와 홈 시트 모두 `승인 실패` 한 줄이 서고 시트는 열린 채 승인이 다시 눌린다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const line = fx.lines.hold;
+    await submitLineExpense(browser, baseURL, fx, "hold");
+    const lead = await loginPage(browser, baseURL, fx.lead, PHONE);
+    const title = `지출결의 · ${fx.projectName} · ${line.itemName}`;
+
+    // 결재함 시트.
+    await lead.goto("/approvals");
+    const trigger = lead.getByRole("button", { name: title });
+    await waitForHydration(trigger);
+    await trigger.click();
+    const sheet = lead.getByRole("dialog");
+    await expect(sheet.getByRole("heading", { level: 2 })).toHaveText(titleOf(fx, line.itemName));
+    await lead.route("**/*", async (route) => {
+      if (route.request().method() === "POST" && route.request().headers()["next-action"]) await route.abort("failed");
+      else await route.continue();
+    });
+    await sheet.getByRole("button", { name: "승인" }).click();
+    await expect(sheet.getByRole("alert")).toContainText("승인 실패");
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByRole("button", { name: "승인" })).not.toHaveAttribute("aria-disabled", "true");
+    await lead.unrouteAll({ behavior: "ignoreErrors" });
+
+    // 홈 시트(같은 문서 — 아직 승인 전).
+    await lead.goto("/");
+    const open = lead.locator("[data-home-open]").first();
+    await waitForHydration(open);
+    await open.click();
+    const homeSheet = lead.getByRole("dialog");
+    await expect(homeSheet.getByRole("heading", { level: 2 })).toHaveText(titleOf(fx, line.itemName));
+    await lead.route("**/*", async (route) => {
+      if (route.request().method() === "POST" && route.request().headers()["next-action"]) await route.abort("failed");
+      else await route.continue();
+    });
+    await homeSheet.getByRole("button", { name: "승인" }).click();
+    await expect(homeSheet.getByRole("alert")).toContainText("승인 실패");
+    await expect(homeSheet).toBeVisible();
+    await lead.context().close();
+  });
+});
+
 test.describe("올리는 중 제출 · 다시 올리기", () => {
   test("올리는 행이 있는 동안 1차가 막히고 떠나면 beforeunload가 뜨며 끝나면 풀린다", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();

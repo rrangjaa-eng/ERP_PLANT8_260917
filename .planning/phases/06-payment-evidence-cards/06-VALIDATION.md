@@ -178,6 +178,20 @@ UI-SPEC rev 9 S7 · S8 · S9 · S13의 카드 전표 표면과 DR-3(카드 전�
 | 06-14 Task 2 (X-1 · X-2) | 8 | 되돌리기 경합(사전 조회 뒤 완료 전환 → `완료 · 견적 줄 잠김`) · 계보(복사 줄 지출결의 → 거부 · 연결 없으면 통과) | `test/integration/purchase-requests.test.ts` | `pnpm db:dev && pnpm exec vitest run --project integration test/integration/purchase-requests.test.ts` | ❌ W8 |
 | 06-19 Task 2 (X-1) | 9 | 「D-612 계보」 네 케이스 — 앞 차수 카드 · 지출결의가 이어진 복사 줄은 미매칭 아님 · 연결 없는 줄은 최신 차수 행 하나 · 빠진 줄은 행 없음 | `test/integration/pre-settle-check.test.ts` | `pnpm db:dev && pnpm exec vitest run --project integration test/integration/pre-settle-check.test.ts` | ❌ W9 |
 
+### r5 재계획 신호 (iter3 — 교차 검토 2회차 N-1 ~ N-5)
+
+테스트 이름은 각 플랜 behavior 원문이다. N-2 · N-3은 밤 위임 기본값(Q-H 거부 · Q-G 보관 막기 + 내리기 표시)이다 — 아침 확인에서 바뀌면 이 행도 같이 고친다. N-1 공통 꼴 = 차수 1 줄 L1 → 새 차수(L1 → L2)에서 L2 실행가를 올리거나 내린 뒤 L1에 이은 문서의 고정 연결 경로를 부른다(올림 통과 · 내림 거부), N-2 공통 꼴 = L2를 SQL로 보관한 뒤 같은 경로 → `견적 줄 빠짐 · 새로 고침` · 행 변화 0.
+
+| Plan · Task | Wave | 신호 | 파일 | Automated Command | File Exists |
+|-------------|------|------|------|-------------------|-------------|
+| 06-30 Task 1 (N-5) | 3 | 기존 호출부 셋이 필수 `kind`를 넘긴 뒤에도 녹색(보관된 소유자 거부 · 소유자 변경 · 행 높이) | `test/integration/corp-card-owner-archived.test.ts` · `test/integration/corp-card-owner-edit.test.ts` · `test/e2e/table-row-min.spec.ts` | `pnpm db:dev && pnpm exec vitest run --project integration test/integration/corp-card-owner-archived.test.ts test/integration/corp-card-owner-edit.test.ts` · `pnpm db:reset:test && CI=true pnpm playwright test test/e2e/table-row-min.spec.ts` | ✅ 기존 |
+| 06-28 Task 2 (N-4) | 4 | 「회차 번호는 종결 문서도 센다」 ⑹ — 분할 줄 M 2회차 종결 → 새 차수 M′ → 고르기 창 M′ `3회차`(RED `2회차`) | `test/integration/expense-close.test.ts` | `pnpm db:dev && pnpm vitest run --project integration test/integration/expense-close.test.ts test/integration/expense-pick.test.ts` | ❌ W4 |
+| 06-07 Task 1 · 2 (N-1 · N-2 · N-3) | 5 | 상한 바탕 = 사슬의 현재 줄(`currentExecution`) · 빠진 줄 `DroppedQuoteLineError` · `project.line-edit` 보관 붙잡기(카드 사용 · `신청됨` 요청 → `연결 문서 있음 · 삭제 대신 취소`, 실행가 내리기는 통과) · 줄 DTO `executionOverKrw` | `test/integration/corp-card-usages.test.ts` · `test/integration/quote-revisions.test.ts` | `pnpm db:dev && pnpm exec vitest run --project integration test/integration/corp-card-usages.test.ts test/integration/quote-lines.test.ts test/integration/quote-revisions.test.ts` | ❌ W5 |
+| 06-09 Task 1 · 3 (N-1 · N-2) | 6 | 연결 그대로 수정 · 삭제 되돌리기 — 올림 통과 · 내림 거부 · 빠진 줄 거부 | `test/integration/corp-card-usages.test.ts` · `test/integration/corp-card-usages-proxy.test.ts` | `pnpm db:dev && pnpm exec vitest run --project integration test/integration/corp-card-usages.test.ts test/integration/corp-card-usages-proxy.test.ts` | ❌ W6 |
+| 06-12 Task 2 (N-1 · N-2) | 7 | 앞 차수 줄 요청의 구매 완료 — 올림 1,200,000 성공 · 내림 800,001 거부 · 빠진 줄 거부(요청 `신청됨` · 카드 사용 0) | `test/integration/purchase-requests.test.ts` | `pnpm db:dev && pnpm exec vitest run --project integration test/integration/purchase-requests.test.ts` | ❌ W7 |
+| 06-13 Task 3 (N-3) | 7 | 「카드 붙잡은 줄」 — 삭제 → `취소`(행 남음) · 실행가 내리기 → 2행 `실행가 초과 100,000` `--status-warning` | `test/e2e/quote-line-status.spec.ts` | `pnpm db:reset:test && CI=true pnpm playwright test test/e2e/quote-line-status.spec.ts` | ❌ W7 |
+| 06-14 Task 2 (N-1 · N-2) | 8 | 요청 되돌리기 — 올림 통과 · 내림 `실행가 초과 · 남은 실행가 800,000 · 다른 줄 고르기` · 빠진 줄 거부(요청 `cancelled` 그대로) | `test/integration/purchase-requests.test.ts` | `pnpm db:dev && pnpm exec vitest run --project integration test/integration/purchase-requests.test.ts` | ❌ W8 |
+
 ### 실행 착수 게이트(M-9) — `/gsd-execute-phase 6` 착수 전
 
 UI-SPEC 「Phase 4·5 의존 가정 (UI)」 「실행 착수 게이트(M-9)」 그대로: S1 · S3 · S4 · S5 · S6 · S14 · S18의 자리와 S1 「문서 화면 왕복」(`from=pay` · 번호 링크)이 아직 없는 Phase 5 UI-SPEC(UA-605~UA-610)에 기댄다. 페이즈 착수 전에 한 번, 그 표면을 만드는 플랜의 Task 1 ⓪에서 다시 본다.

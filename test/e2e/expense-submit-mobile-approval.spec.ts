@@ -89,7 +89,10 @@ test.describe("지출결의 올리기 → 제출 → 폰 결재 시트 승인 �
     expect(posts.count()).toBe(1);
 
     // 4) 제출 결과 — 토스트 · 번호 · 태그 · 증빙 섹션.
-    await expect(pm.getByRole("status").filter({ hasText: "지출결의 제출" })).toHaveText(`지출결의 제출 · 결재 요청됨 → ${fx.lead.name}`);
+    // 05-09부터 제출 토스트에 3차 `되돌리기`가 붙는다 — 결과 문장은 토스트의 첫 글자 칸이다.
+    const submittedToast = pm.getByRole("status").filter({ hasText: "지출결의 제출" });
+    await expect(submittedToast.locator("span").first()).toHaveText(`지출결의 제출 · 결재 요청됨 → ${fx.lead.name}`);
+    await expect(submittedToast.getByRole("button", { name: "되돌리기" })).toBeVisible();
     await expect(pm.locator('[data-ui="screen-meta"]')).toHaveText(`${fx.projectNumber}-0001`);
     await expect(head.getByText("결재 중", { exact: true })).toBeVisible();
     const evidenceSection = pm.getByRole("heading", { level: 2, name: "증빙" }).locator("..");

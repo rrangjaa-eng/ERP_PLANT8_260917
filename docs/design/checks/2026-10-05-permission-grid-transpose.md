@@ -36,3 +36,7 @@
 - [x] 그룹 하나 = `<tbody>` 하나, `scope="rowgroup"`은 제 그룹만 덮는다 — 근거: Table.tsx 그룹 구조와 같게 바꿨고 E2E 「그룹마다 tbody」 RED(tbody 1개) → GREEN.
 - [x] 첫 칸 왼쪽 `--s-4`(16px)가 §7-3 표 첫 칸(Table.module.css .cell:first-child)과 같다 — 근거: `.rowHeader`·`.corner` padding-left, E2E가 computed 16px 확인.
 - [x] 셀 전체 세로 클릭(label min-height `--row-h`)·긴 계급 이름 줄바꿈(`overflow-wrap: anywhere`) — 근거: 새 토큰 없음, E2E 폭 700 가로 넘침 0 추가, after 측정은 /mnt/project-files/notes/perm-grid-scroll/after/.
+
+## 면을 내용 폭에 맞춤(1280 이름–체크박스 거리)
+- [x] 1280에서 항목 이름과 첫 체크박스 사이가 200px 이하다 — 근거: 고치기 전 E2E 실측 693.8px RED → `.wrap` `width: fit-content; max-width: 100%` 뒤 GREEN(권한표·정보 노출표), 같은 스펙의 가로 넘침 0(700·768·1280)·표 면 비교·행 높이 44 함께 통과(20 passed).
+- [x] 시스템 이탈은 DECISIONS 먼저 — 근거: DECISIONS 2026-10-05 하위 결정 「면을 내용 폭에 맞춤」 기록 뒤 SYSTEM §4 제외 목록·§7-13 수정, 새 토큰 없음. after 측정 /mnt/project-files/notes/perm-grid-scroll/after/(CI=true).

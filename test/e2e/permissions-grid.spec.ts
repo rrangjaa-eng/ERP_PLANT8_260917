@@ -326,6 +326,27 @@ test.describe("권한표 격자 (ADMN-01, D-40, 성공 기준 2)", () => {
     for (const h of heights) expect(Math.abs(h - 44)).toBeLessThanOrEqual(1);
   });
 
+  // 1280 실측(PR #166): 항목 열이 남는 폭(약 760px)을 다 가져 이름과 체크박스가 멀었다 — 면이 내용 폭에 맞춘다.
+  for (const path of ["/admin/permissions", "/admin/visibility"]) {
+    test(`${path} 항목 이름과 첫 체크박스 사이가 1280에서 200px 이하다`, async ({ page }) => {
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await loginAdmin(page);
+      await page.goto(path);
+      await expect(page.getByRole("columnheader", { name: "시스템 관리자", exact: true })).toBeVisible();
+      const gaps = await page.locator("tbody tr:has(td)").evaluateAll((rows) =>
+        rows.slice(0, 20).map((tr) => {
+          const spans = tr.querySelectorAll("th[scope='row'] span span");
+          const label = spans[spans.length - 1] ?? tr.querySelector("th[scope='row']");
+          const box = tr.querySelector("td input");
+          if (!label || !box) return -1;
+          return box.getBoundingClientRect().left - label.getBoundingClientRect().right;
+        }),
+      );
+      expect(gaps.length).toBeGreaterThan(0);
+      for (const g of gaps) expect(g).toBeLessThanOrEqual(200);
+    });
+  }
+
   test("격자 바깥 면은 §7-3 표 면과 같은 테두리·radius·배경이다 (§4-1)", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await loginAdmin(page);

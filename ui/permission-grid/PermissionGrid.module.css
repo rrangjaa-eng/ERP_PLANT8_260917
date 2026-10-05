@@ -23,6 +23,10 @@
   box-shadow: var(--shadow-surface);
   overflow: auto;
   max-height: 70vh;
+  /* 면이 표 내용 폭에 맞춘다(넓으면 화면 폭까지) — 100% 면이면 남는 폭을 항목
+     열이 다 가져 1280에서 이름과 첫 체크박스가 약 700px 떨어졌다(PR #166 실측). */
+  width: fit-content;
+  max-width: 100%;
   /* 안쪽 sticky z-index(--z-sticky · 좌상단 모서리 --z-bar)가 이 격자 안에서만 겹침을 정한다 — 상단 바와 같은 층에서 다투지 않는다. */
   isolation: isolate;
 }

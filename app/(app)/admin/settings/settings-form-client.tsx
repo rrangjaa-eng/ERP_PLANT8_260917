@@ -104,6 +104,7 @@ function SimpleFieldEditor({
   });
   const error = errorMessageOf(result);
   const hintId = `setting-${fieldKey}-hint`;
+  const unitId = `setting-${fieldKey}-unit`;
   const errorId = `setting-${fieldKey}-error`;
   const fieldDescribedBy = describedBy(error ? errorId : undefined, hint ? hintId : undefined);
 
@@ -217,7 +218,8 @@ function SimpleFieldEditor({
       label={label}
       type={descriptor.kind === "number" ? "number" : "text"}
       numeric={descriptor.kind === "number"}
-      hintId={hint ? hintId : undefined}
+      // 단위 글자도 설명에 잇는다 — 힌트 id 뒤에 단위 id를 이어 스크린리더가 값만 읽지 않게(05 /review B6).
+      hintId={[hint ? hintId : null, unitLabel ? unitId : null].filter(Boolean).join(" ") || undefined}
       value={text}
       onChange={(event) => setText(event.target.value)}
       onBlur={() => execute({ key: fieldKey, value: text })}
@@ -229,7 +231,9 @@ function SimpleFieldEditor({
       {unitLabel ? (
         <div className={styles.withUnit}>
           {input}
-          <span className={styles.unit}>{unitLabel}</span>
+          <span id={unitId} className={styles.unit}>
+            {unitLabel}
+          </span>
         </div>
       ) : (
         input

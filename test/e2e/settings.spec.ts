@@ -263,6 +263,8 @@ test.describe("PR #104 후속 — 설정 힌트 aria-describedby (ISSUE-001) · 
     const unitBox = await unit.boundingBox();
     expect(fieldBox && unitBox && unitBox.x >= fieldBox.x + fieldBox.width).toBe(true);
     expect(fieldBox && unitBox && unitBox.y < fieldBox.y + fieldBox.height && unitBox.y + unitBox.height > fieldBox.y).toBe(true);
+    // 05 /review B6 — 단위 글자가 입력의 접근 설명에 들어 스크린리더가 값만 읽지 않는다(오류 상태에서도).
+    await expect(field).toHaveAccessibleDescription(new RegExp(EVIDENCE_MAX_SIZE_MB.unitLabel ?? "MB"));
 
     const isServerAction = (response: { request: () => { method: () => string; headers: () => Record<string, string> } }) =>
       response.request().method() === "POST" && response.request().headers()["next-action"] !== undefined;
@@ -272,6 +274,7 @@ test.describe("PR #104 후속 — 설정 힌트 aria-describedby (ISSUE-001) · 
     await saved;
     await expect(section.getByText("저장 실패 · 숫자 형식 오류 · 10처럼")).toBeVisible();
     await expect(field).toHaveAttribute("aria-invalid", "true");
+    await expect(field).toHaveAccessibleDescription(new RegExp(EVIDENCE_MAX_SIZE_MB.unitLabel ?? "MB"));
     expect((await findSimpleValue(SYSTEM_VIEWER, EVIDENCE_MAX_SIZE_MB.key))?.value).not.toBe(0);
   });
 

@@ -103,6 +103,36 @@ test.describe("지출결의 폭 375 · 320 (05-13)", () => {
     }
   });
 
+  // 05-13 게이트 감사(사용자 확정 10/5 19:52 「끝말도 한 덩어리」): 계산 한 줄 꼬리(`세금계산서 규칙`)는 숫자 조각처럼 한 덩어리 — 줄이 모자라면 통째로 다음 줄로 가고 낱말 중간에서 갈라지지 않는다.
+  test("폼 — 계산 한 줄 꼬리는 한 덩어리(통째로 다음 줄로 · 갈라지지 않음)", async ({ browser, baseURL }) => {
+    test.setTimeout(120_000);
+    const fx = await setupExpenseE2E();
+    const { expenseId } = await createTeamExpenseDraft(fx.pm.viewer, {
+      idempotencyKey: randomUUID(),
+      fields: { teamExpenseKind: "team_overhead", content: "행사 소품 구매", evidenceType: "tax_invoice", supply: { currency: "KRW", amount: 123_456_789, fxRate: 1 } },
+    });
+    for (const viewport of WIDTHS) {
+      const page = await phone(browser, baseURL, fx.pm, viewport);
+      await page.goto(`/expenses/${expenseId}`);
+      await waitForHydration(page.getByRole("button", { name: /^임시 저장/ }));
+      const line = page.getByTestId("expense-tax-line");
+      await expect(line).toContainText("규칙");
+      const tail = await line.evaluate((element) => {
+        const segment = element.querySelector(":scope > span:last-child > span:last-child");
+        if (!segment) return null;
+        const range = document.createRange();
+        range.selectNodeContents(segment);
+        const lineTops = new Set(Array.from(range.getClientRects()).map((rect) => Math.round(rect.top)));
+        return { text: segment.textContent ?? "", display: getComputedStyle(segment).display, lines: lineTops.size };
+      });
+      expect(tail?.text, `꼬리 글자 ${viewport.width}`).toMatch(/규칙$/);
+      expect(tail?.display, `꼬리는 한 덩어리(inline-block) ${viewport.width}`).toBe("inline-block");
+      expect(tail?.lines, `꼬리 「${tail?.text}」 한 줄 ${viewport.width}`).toBe(1);
+      await expectNoOverflow(page, `계산 줄 꼬리 ${viewport.width}`);
+      await page.context().close();
+    }
+  });
+
   test("폼 — 외화 · 회사 대납 · 13자리 계산 한 줄은 조각 사이에서만 꺾이고 넘침 0, 제출 줄은 하단 탭 위 고정 · 결재선 가림 없음", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const evidence = await companyBorneEvidenceType();

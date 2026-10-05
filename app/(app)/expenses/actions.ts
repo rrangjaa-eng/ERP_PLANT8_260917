@@ -7,7 +7,6 @@ import "@/app/(app)/document-kinds";
 import { currentHolderNames, projectActionResult } from "@/domain/approvals";
 import {
   EXPENSE_DOCUMENT_KIND,
-  TEAM_EXPENSE_KINDS,
   changeExpenseLine,
   changeExpenseVendor,
   createExpenseFromLines,
@@ -20,6 +19,7 @@ import {
   submitExpense,
   withdrawExpense,
 } from "@/domain/expenses";
+import { expenseDraftFieldsSchema } from "@/domain/expenses/draft-fields";
 import { searchLinesForPick, searchVendorsForPick } from "@/domain/expenses/pick";
 import {
   completeEvidenceUpload,
@@ -29,10 +29,8 @@ import {
   requestEvidenceUpload,
   voidEvidence,
 } from "@/domain/evidence";
-import { CURRENCIES } from "@/domain/money/currency";
 import { QUOTE_LINE_MAX_PER_REVISION_DEFAULT } from "@/domain/settings/keys";
 import { formatKstTime } from "@/domain/holidays/business-day";
-import { isCalendarDate } from "@/lib/dates";
 import { log } from "@/lib/log";
 import "./actions.registry";
 
@@ -41,22 +39,8 @@ import "./actions.registry";
 
 const expenseIdSchema = z.string().uuid();
 
-const draftFieldsInput = z
-  .object({
-    vendorId: z.string().uuid().nullable(),
-    evidenceType: z.string().min(1).max(100).nullable(),
-    paymentMethod: z.string().min(1).max(100).nullable(),
-    supply: z.object({ currency: z.enum(CURRENCIES), amount: z.number().min(0), fxRate: z.number() }).strict().nullable(),
-    scheduledPaymentDate: z.string().refine(isCalendarDate, "날짜 형식 오류 · 2026-09-19처럼").nullable(),
-    note: z.string().max(480, "비고 480자 넘음 · 줄여 적기").nullable(),
-    installment: z.boolean(),
-    // 05-07 팀 비용 칸 — 팀 id는 칸이 없다(귀속 팀은 서버가 사용일 소속으로만 정한다).
-    teamExpenseKind: z.enum(TEAM_EXPENSE_KINDS).nullable(),
-    usageDate: z.string().refine(isCalendarDate, "날짜 형식 오류 · 2026-09-19처럼"),
-    content: z.string().max(480, "내용 480자 넘음 · 줄여 적기").nullable(),
-  })
-  .strict()
-  .partial();
+// 칸 값 스키마는 도메인과 하나다(05 /review A12 — 칸 오류 문구 · 상한이 같은 곳에서 온다).
+const draftFieldsInput = expenseDraftFieldsSchema;
 
 // 줄 수 상한 = 차수 줄 상한 기본값 — 견적 줄 표 Ctrl+A → Ctrl+E가 한 차수의 줄 전부를 보낸다(05-08 검토 #5).
 // 05-16 fields — `/expenses/new`에서 줄을 고르기 전에 적어 둔 비고 · 지급 예정일 · 지급 방식(임시 저장과 같은 검증). 견적 줄 표는 보내지 않는다.

@@ -4,6 +4,7 @@ import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { isUniqueViolation } from "@/lib/pg-errors";
 import { withTransaction } from "@/lib/db-transaction";
 import { isCalendarDate, seoulToday } from "@/lib/dates";
+import { DATE_FORMAT_ERROR, expenseDraftFieldsSchema, TEAM_EXPENSE_KINDS, type TeamExpenseKind } from "@/domain/expenses/draft-fields";
 import { formatForeignAmount, formatFxRate, formatKrw } from "@/lib/format-number";
 import { can, ForbiddenError } from "@/domain/permissions/can";
 import { project } from "@/domain/permissions/project";
@@ -120,15 +121,13 @@ const ACTIVE_STATUSES = new Set(["submitted", "in_review", "approved"]);
 const EDITABLE_STATUSES: ReadonlySet<string> = new Set(["rejected", "withdrawn"]);
 const IN_PROGRESS_STATUSES: ReadonlySet<string> = new Set(["submitted", "in_review"]);
 const NO_TEAM_AT_USAGE_DATE = "사용일에 소속 팀 없음 · 사용일 고치기";
-const DATE_FORMAT_ERROR = "날짜 형식 오류 · 2026-09-19처럼";
 const SUPPLY_EMPTY = "공급가액 비어 있음 · 공급가액 적기";
 const SUPPLY_ZERO = "공급가액이 0 · 0보다 크게";
 const INACTIVE_EVIDENCE_TYPE = "쓰지 않는 증빙 종류 · 증빙 종류 고르기";
 const INACTIVE_PAYMENT_METHOD = "쓰지 않는 지급 방식 · 지급 방식 고르기";
 
-// 05-07 팀 비용 종류(DB 체크 expenses_team_expense_kind_check와 같은 값) — 화면 글자.
-export const TEAM_EXPENSE_KINDS = ["lost_bid", "team_overhead"] as const;
-export type TeamExpenseKind = (typeof TEAM_EXPENSE_KINDS)[number];
+// 05-07 팀 비용 종류 — 화면 글자(값 목록은 칸 스키마 모듈 draft-fields.ts).
+export { TEAM_EXPENSE_KINDS, type TeamExpenseKind };
 export const TEAM_EXPENSE_KIND_LABELS: Record<TeamExpenseKind, string> = { lost_bid: "미수주 비용", team_overhead: "팀 관리비" };
 
 function teamKindLabel(kind: string | null): string | null {
@@ -689,21 +688,7 @@ export async function createExpenseFromLines(
 
 // ── 임시 저장 ─────────────────────────────────────────────────────────
 
-const draftFieldsSchema = z
-  .object({
-    vendorId: z.string().uuid().nullable(),
-    evidenceType: z.string().min(1).max(100).nullable(),
-    paymentMethod: z.string().min(1).max(100).nullable(),
-    supply: z.object({ currency: z.enum(CURRENCIES), amount: z.number().min(0), fxRate: z.number() }).strict().nullable(),
-    scheduledPaymentDate: z.string().refine(isCalendarDate, DATE_FORMAT_ERROR).nullable(),
-    note: z.string().max(1000).nullable(),
-    installment: z.boolean(),
-    teamExpenseKind: z.enum(TEAM_EXPENSE_KINDS).nullable(),
-    usageDate: z.string().refine(isCalendarDate, DATE_FORMAT_ERROR),
-    content: z.string().max(480).nullable(),
-  })
-  .strict()
-  .partial();
+const draftFieldsSchema = expenseDraftFieldsSchema;
 
 export type ExpenseDraftInput = z.input<typeof draftFieldsSchema>;
 

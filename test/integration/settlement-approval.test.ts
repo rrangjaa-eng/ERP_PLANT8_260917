@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { and, asc, eq } from "drizzle-orm";
-import { db } from "@/db/client";
+import { db, pool } from "@/db/client";
 import { actionLog, approvalInstances, approvalRoutes, approvalSteps, projects, settlementApprovals } from "@/db/schema";
-import { approveDocument, getApprovalView, loadKindDetails, NotCurrentHolderError } from "@/domain/approvals";
+import { approveDocument, getApprovalView, listMyInbox, loadKindDetails, NotCurrentHolderError, rejectDocument } from "@/domain/approvals";
 import { getDocumentKind } from "@/domain/approvals/kinds";
 import { isRouteStepSettingKey } from "@/domain/approvals/route-step-settings";
 import { can, ForbiddenError } from "@/domain/permissions/can";
@@ -16,12 +16,35 @@ import {
   APPROVAL_ROUTE_SETTLEMENT_STEP4_ROLE_ID,
   APPROVAL_ROUTE_SETTLEMENT_STEP4_SCOPE,
 } from "@/domain/settings/keys";
-import { getSettlement, SETTLEMENT_DOCUMENT_KIND, submitSettlement, type SettlementApprovalAuthority } from "@/domain/settlements";
+import {
+  getSettlement,
+  SETTLEMENT_DOCUMENT_KIND,
+  SettlementUndoRefusedError,
+  submitSettlement,
+  withdrawSettlement,
+  type SettlementApprovalAuthority,
+} from "@/domain/settlements";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { upsertVisibility } from "@/repositories/permissions";
 import { upsertSimpleValue } from "@/repositories/settings";
 import { makePerson, orgUnitIdByName } from "./approvals-fixtures";
 import { extendToInProgress, makeSettlementPeople, SETTLEMENT_LINES, setupSettlementProject } from "./fixtures/settlements";
+import { deferred, waitForLockWaiter } from "./lock-race";
+
+// D-80 ② 승인 먼저 — 승인 트랜잭션이 프로젝트 행을 잡은 직후에 멈출 자리. 엔진 → 정산 훅 → changeProjectStatus 사슬에는 주입 지점이
+// 없어 이 파일만 changeProjectStatus를 감싸 afterLock을 넣는다(race.afterLock이 null이면 원래 함수 그대로 — 나머지 사례는 영향 없음).
+const race = vi.hoisted(() => ({ afterLock: null as null | (() => Promise<void>) }));
+vi.mock("@/domain/projects/status", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/domain/projects/status")>();
+  return {
+    ...actual,
+    changeProjectStatus: (...args: Parameters<typeof actual.changeProjectStatus>) => {
+      const [viewer, projectId, input, deps] = args;
+      const afterLock = race.afterLock;
+      return actual.changeProjectStatus(viewer, projectId, input, afterLock ? { ...deps, afterLock } : deps);
+    },
+  };
+});
 
 // 05-11 트레이서 — 정산 프로젝트의 담당 PM이 정산 결재를 올리고(확인 없음), 대표가 승인하는 순간 같은 트랜잭션에서 프로젝트가 완료된다.
 // 권한은 「이 인스턴스 지금 차수의 마지막 단계 기록 = 승인한 사람」 하나다(F1) — 결재선 마지막 단계를 `projects.complete`가 없는 계급으로
@@ -250,5 +273,107 @@ describe("정산 결재 — 판단 근거 두 합(G4 · D11)", () => {
     expect(labels).not.toContain("견적가 합");
     expect(labels).not.toContain("실행가 합");
     expect(labels).not.toContain("손익");
+  });
+});
+
+const BACK_TO_PROGRESS = "진행으로 바뀜 · 반려";
+
+describe("정산 결재 — D-80 진행 복귀와 승인의 두 순서", () => {
+  it("① 진행 복귀 먼저: 대표 화면 · 결재함에 `진행으로 바뀜 · 반려` · 승인은 전부 롤백(document_approve 없음) · 반려 → rejected · 진행이라 다시 올리기 없음", async () => {
+    const fx = await setupSettlementProject();
+    const { documentId, instanceId, version } = await submitted(fx.pm, fx.projectId);
+    expect((await extendToInProgress(fx)).project.status).toBe("in_progress");
+
+    const view = await getApprovalView(fx.ceo, { kind: SETTLEMENT_DOCUMENT_KIND, documentId });
+    expect(view?.approveBlockedReason).toBe(BACK_TO_PROGRESS);
+    const inbox = await listMyInbox(fx.ceo);
+    expect(inbox.mine.find((item) => item.documentId === documentId)?.approveBlockedReason).toBe(BACK_TO_PROGRESS);
+
+    await expect(approveDocument(fx.ceo, { instanceId, expectedVersion: version })).rejects.toBeInstanceOf(StatusChangedError);
+    expect((await documentLogs(documentId)).map((log) => log.actionType)).toEqual(["document_submit"]);
+
+    const rejected = await rejectDocument(fx.ceo, { instanceId, expectedVersion: version, reason: "기간 늘어남" });
+    expect(rejected.status).toBe("rejected");
+    expect(await getDocumentKind(SETTLEMENT_DOCUMENT_KIND).canResubmit?.(fx.pm, documentId)).toBe(false);
+    expect((await getApprovalView(fx.pm, { kind: SETTLEMENT_DOCUMENT_KIND, documentId }))?.actions ?? []).not.toContain("resubmit");
+    await expect(submitSettlement(fx.pm, { projectId: fx.projectId })).rejects.toBeInstanceOf(StatusChangedError);
+    expect(await projectStatus(fx.projectId)).toBe("in_progress");
+
+    const logs = await documentLogs(documentId);
+    expect(logs.map((log) => log.actionType)).toEqual(["document_submit", "document_reject"]);
+    // 반려 로그에 사유 원문이 없다(OPS-08).
+    expect(JSON.stringify(logs[1]?.detail)).not.toContain("기간 늘어남");
+  });
+
+  it("② 승인 먼저: 승인이 프로젝트 행을 잡은 동안 기간 변경은 기다리고, 승인 커밋 뒤 기간 변경은 거부 · 프로젝트 completed", async () => {
+    const fx = await setupSettlementProject();
+    const { instanceId, version } = await submitted(fx.pm, fx.projectId);
+    const locked = deferred();
+    const release = deferred();
+    race.afterLock = async () => {
+      locked.resolve();
+      await release.promise;
+    };
+    let approving: ReturnType<typeof approveDocument>;
+    try {
+      approving = approveDocument(fx.ceo, { instanceId, expectedVersion: version });
+      await locked.promise;
+    } finally {
+      race.afterLock = null;
+    }
+    const extending = extendToInProgress(fx);
+    try {
+      await waitForLockWaiter(pool);
+    } finally {
+      release.resolve();
+    }
+
+    const [approved, extended] = await Promise.allSettled([approving, extending]);
+    expect(approved.status).toBe("fulfilled");
+    expect(extended.status).toBe("rejected");
+    const [row] = await db.select({ status: projects.status, endDate: projects.endDate }).from(projects).where(eq(projects.id, fx.projectId));
+    expect(row?.status).toBe("completed");
+    expect(row?.endDate).not.toBe("2099-12-31");
+  });
+});
+
+describe("정산 결재 — 다시 올리기 · 늦은 되돌리기 · 행동 로그(E1 · OPS-08)", () => {
+  it("반려 뒤 다시 올리기 = 같은 문서 · 차수 2, 되돌리기(회수) 뒤 다시 올리기 = 차수 3 · 로그 submit · reject · submit · withdraw · submit", async () => {
+    const fx = await setupSettlementProject();
+    const first = await submitted(fx.pm, fx.projectId);
+    await rejectDocument(fx.ceo, { instanceId: first.instanceId, expectedVersion: first.version, reason: "증빙 다시" });
+    expect(await getDocumentKind(SETTLEMENT_DOCUMENT_KIND).canResubmit?.(fx.pm, first.documentId)).toBe(true);
+    expect((await getApprovalView(fx.pm, { kind: SETTLEMENT_DOCUMENT_KIND, documentId: first.documentId }))?.actions).toContain("resubmit");
+
+    expect(await submitSettlement(fx.pm, { projectId: fx.projectId })).toMatchObject({ kind: "submitted", documentId: first.documentId, instanceId: first.instanceId, round: 2 });
+    expect((await withdrawSettlement(fx.pm, { projectId: fx.projectId, undo: true, round: 2 })).status).toBe("withdrawn");
+    expect(await submitSettlement(fx.pm, { projectId: fx.projectId })).toMatchObject({ kind: "submitted", documentId: first.documentId, round: 3 });
+    expect(await db.select().from(settlementApprovals).where(eq(settlementApprovals.projectId, fx.projectId))).toHaveLength(1);
+
+    const logs = await documentLogs(first.documentId);
+    expect(logs.map((log) => log.actionType)).toEqual(["document_submit", "document_reject", "document_submit", "document_withdraw", "document_submit"]);
+    expect(logs.filter((log) => log.actionType === "document_submit").map((log) => (log.detail as { round?: number }).round)).toEqual([1, 2, 3]);
+    for (const log of logs) {
+      expect(log.entity).toBe("approval_instance");
+      expect(log.entityId).toBe(first.instanceId);
+      expect((log.detail as { kind?: string }).kind).toBe(SETTLEMENT_DOCUMENT_KIND);
+    }
+    expect(JSON.stringify(logs[1]?.detail)).not.toContain("증빙 다시");
+  });
+
+  it("대표 승인 뒤 PM의 되돌리기는 거부 — 오류에 대표 이름 · 시각 · approved, 회수 로그 없음 · 프로젝트 completed", async () => {
+    const fx = await setupSettlementProject();
+    const { documentId, instanceId, version } = await submitted(fx.pm, fx.projectId);
+    await approveDocument(fx.ceo, { instanceId, expectedVersion: version });
+
+    const error: unknown = await withdrawSettlement(fx.pm, { projectId: fx.projectId, undo: true, round: 1 }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(SettlementUndoRefusedError);
+    if (!(error instanceof SettlementUndoRefusedError)) return;
+    expect(error.detail).toMatchObject({ actorName: "최대표", status: "approved" });
+    expect(error.detail.at).toBeInstanceOf(Date);
+    expect(error.message).toMatch(/^최대표가 \d{2}:\d{2}에 승인함 · /);
+
+    expect((await documentLogs(documentId)).map((log) => log.actionType)).toEqual(["document_submit", "document_approve"]);
+    expect(await projectStatus(fx.projectId)).toBe("completed");
   });
 });

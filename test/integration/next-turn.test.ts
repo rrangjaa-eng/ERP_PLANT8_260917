@@ -15,6 +15,8 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { upsertVisibility } from "@/repositories/permissions";
 import { NOW_2026 } from "./approvals-fixtures";
 import { attachEvidence, makeEvidenceManager, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
+import { submitSettlement } from "@/domain/settlements";
+import { setupSettlementProject } from "./fixtures/settlements";
 
 // 05-10 Task 1 — 「내 차례」 공급 함수의 [결재] 갈래와 결재 시트 지출결의 상세(구조 → 투영 → 문자열 행, 증빙 갈래 · 세율 바뀜).
 // 판정 · 글자는 전부 종류 요약(nextTurnText · measure)에서 온다 — 함수는 종류 이름으로 분기하지 않는다.
@@ -244,5 +246,27 @@ describe("증빙 무효 [막힘] (G1)", () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+describe("listNextTurnItems — 정산 결재(05-11)", () => {
+  it("대표에게 [결재] `{프로젝트명} — 정산 결재, 박서연` · 숫자 `—`, 반려 뒤 박서연에게 [막힘] `… — 정산 결재 반려, 최대표` · `정산 결재 열기` → 문서 화면", async () => {
+    const fx = await setupSettlementProject();
+    await submitSettlement(fx.pm, { projectId: fx.projectId });
+    const href = `/projects/${fx.projectId}/settlement`;
+
+    const items = await listNextTurnItems(fx.ceo);
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ tag: "결재", label: "가을 팝업 — 정산 결재, 박서연", reason: "", measureText: "—", action: { label: "정산 결재 열기", href } });
+    const approval = items[0]?.approval;
+    if (!approval?.instanceId || approval.version === undefined) throw new Error("결재 참조 없음");
+
+    await rejectDocument(fx.ceo, { instanceId: approval.instanceId, expectedVersion: approval.version, reason: "실행가 확인" });
+
+    expect(await listNextTurnItems(fx.ceo)).toEqual([]);
+    const blocked = await listNextTurnItems(fx.pm);
+    expect(blocked).toHaveLength(1);
+    expect(blocked[0]).toMatchObject({ tag: "막힘", label: "가을 팝업 — 정산 결재 반려, 최대표", measureText: "—", action: { label: "정산 결재 열기", href } });
   });
 });

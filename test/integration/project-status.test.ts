@@ -17,6 +17,7 @@ import {
   lastStatusChangeOn,
   listProjectStatusCatalog,
   loadStatusChangeFacts,
+  statusDestinations,
 } from "@/domain/projects/status";
 import { recordAction } from "@/domain/action-log/record";
 import { findLatestActionFor } from "@/repositories/action-log";
@@ -263,16 +264,15 @@ describe("사람의 상태 전환 트레이서 — 시드만 있는 DB (04-20, E
 });
 
 describe("사람의 전환 넷 · 팀 범위 · 완료 주체 · 코드표 목록 (04-20 Task 2)", () => {
-  it("(a)(b) 네 전환이 실제 DB에서 상태를 바꾸고 status_change 로그가 한 줄씩, 진행 전환은 빈 종료일을 시작일로 채운다", async () => {
+  // 05-11: 정산 → 완료는 정산 결재 승인으로만 — 직접 전환 성공 사례는 settlement-approval.test.ts(승인 = 완료)로 옮겼다.
+  it("(a)(b) 사람의 세 전환이 실제 DB에서 상태를 바꾸고 status_change 로그가 한 줄씩, 진행 전환은 빈 종료일을 시작일로 채운다", async () => {
     const teamA = await makeTeam();
     const lead = await makeActor("role-team-lead", teamA);
-    const ceo = await makeActor("role-ceo");
 
     const cases = [
       { actor: lead, status: "bidding", to: "in_progress", start: "2099-10-01", end: null, expectEnd: "2099-10-01" },
       { actor: lead, status: "bidding", to: "lost", start: "2099-10-01", end: null, expectEnd: null },
       { actor: lead, status: "lost", to: "in_progress", start: "2099-11-02", end: null, expectEnd: "2099-11-02" },
-      { actor: ceo, status: "settling", to: "completed", start: "2099-10-01", end: "2099-10-05", expectEnd: "2099-10-05" },
     ] as const;
 
     for (const c of cases) {
@@ -318,7 +318,7 @@ describe("사람의 전환 넷 · 팀 범위 · 완료 주체 · 코드표 목�
       { projectId: outOfTable.projectId, from: "in_progress", to: "lost", reason: "갈 수 없는 상태 · 새로 고침" },
       { projectId: outOfTable.projectId, from: "in_progress", to: "settling", reason: "갈 수 없는 상태 · 새로 고침" },
       { projectId: noStart.projectId, from: "bidding", to: "in_progress", reason: "시작일 없음 · 기간 적기" },
-      { projectId: settling.projectId, from: "settling", to: "completed", reason: "상태 바꾸기 권한 없음" },
+      { projectId: settling.projectId, from: "settling", to: "completed", reason: "정산 결재로만 완료 · 정산 결재 올리기" },
     ] as const;
 
     for (const a of attempts) {
@@ -334,41 +334,38 @@ describe("사람의 전환 넷 · 팀 범위 · 완료 주체 · 코드표 목�
   it("(d) 담당 PM은 네 전환 어느 것도 직접 부를 수 없다", async () => {
     const teamA = await makeTeam();
     const pairs = [
-      ["bidding", "in_progress"],
-      ["bidding", "lost"],
-      ["lost", "in_progress"],
-      ["settling", "completed"],
+      ["bidding", "in_progress", "상태 바꾸기 권한 없음"],
+      ["bidding", "lost", "상태 바꾸기 권한 없음"],
+      ["lost", "in_progress", "상태 바꾸기 권한 없음"],
+      ["settling", "completed", "정산 결재로만 완료 · 정산 결재 올리기"],
     ] as const;
-    for (const [from, to] of pairs) {
+    for (const [from, to, reason] of pairs) {
       const { projectId, pm } = await makeStatusProject({ teamId: teamA, status: from, startDate: "2099-10-01" });
-      await expect(changeProjectStatus(pm, projectId, { from, to })).rejects.toThrow("상태 바꾸기 권한 없음");
+      await expect(changeProjectStatus(pm, projectId, { from, to })).rejects.toThrow(reason);
       expect((await reloadProject(projectId)).status).toBe(from);
       expect(await statusLogs(projectId)).toEqual([]);
     }
   });
 
-  it("(h) D-79 — 정산 → 완료는 대표와 시스템 관리자만, 팀장·담당 PM은 거부되고 정산 그대로다", async () => {
+  // 05-11(D-98): 정산 → 완료는 정산 결재 승인으로만 — trigger 없는 직접 호출은 대표 · 시스템 관리자도 거부, 갈 곳 목록에도 없다.
+  it("(h) 정산 → 완료 직접 호출은 대표 · 시스템 관리자 · 팀장 · 담당 PM 모두 거부되고 정산 그대로 · 갈 곳 목록 빈 목록", async () => {
     const teamA = await makeTeam();
     const ceo = await makeActor("role-ceo");
     const sysadmin = await makeActor("role-sysadmin");
     const lead = await makeActor("role-team-lead", teamA);
 
-    const forCeo = await makeStatusProject({ teamId: teamA, status: "settling", startDate: "2099-10-01" });
-    const forSysadmin = await makeStatusProject({ teamId: teamA, status: "settling", startDate: "2099-10-01" });
-    await changeProjectStatus(ceo, forCeo.projectId, { from: "settling", to: "completed" });
-    await changeProjectStatus(sysadmin, forSysadmin.projectId, { from: "settling", to: "completed" });
-    expect((await reloadProject(forCeo.projectId)).status).toBe("completed");
-    expect((await reloadProject(forSysadmin.projectId)).status).toBe("completed");
-
-    const denied = await makeStatusProject({ teamId: teamA, status: "settling", startDate: "2099-10-01" });
-    await expect(changeProjectStatus(lead, denied.projectId, { from: "settling", to: "completed" })).rejects.toThrow(
-      "상태 바꾸기 권한 없음",
-    );
-    await expect(changeProjectStatus(denied.pm, denied.projectId, { from: "settling", to: "completed" })).rejects.toThrow(
-      "상태 바꾸기 권한 없음",
-    );
-    expect((await reloadProject(denied.projectId)).status).toBe("settling");
-    expect(await statusLogs(denied.projectId)).toEqual([]);
+    const settling = await makeStatusProject({ teamId: teamA, status: "settling", startDate: "2099-10-01" });
+    for (const actor of [ceo, sysadmin, lead, settling.pm]) {
+      const attempt = changeProjectStatus(actor, settling.projectId, { from: "settling", to: "completed" });
+      await expect(attempt).rejects.toBeInstanceOf(GateBlockedError);
+      await expect(attempt).rejects.toThrow("정산 결재로만 완료 · 정산 결재 올리기");
+    }
+    const row = await reloadProject(settling.projectId);
+    expect(row.status).toBe("settling");
+    expect(await statusLogs(settling.projectId)).toEqual([]);
+    for (const actor of [ceo, sysadmin]) {
+      expect(await statusDestinations(actor, row)).toEqual([]);
+    }
   });
 
   it("(j) D11 — 다른 팀 팀장은 거부, 본부 책임자(전사)는 통과, 어제 팀을 옮긴 팀장은 오늘 옛 팀 프로젝트를 못 바꾼다", async () => {

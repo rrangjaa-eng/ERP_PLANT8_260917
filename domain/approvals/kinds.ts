@@ -90,6 +90,9 @@ export type DocumentKindDef = {
   // 05-01 E3: 지금 담당에게 `승인`을 막아 보일 이유(문서 id → 글자) — 표시 전용, 서버 승인 판정은 보지 않는다(최종 판정은 훅).
   // 엔진은 viewer가 지금 담당인 문서 id를 종류마다 한 배열로 한 번 넘긴다(트랜잭션 없음 · 읽기 전용).
   approveBlockedReason?: (viewer: Viewer, documentIds: string[]) => Promise<Map<string, string>>;
+  // 05-10 G1: 승인된 기안 문서가 승인 뒤에 막혔음을 기안자의 「내 차례」 [막힘] 줄로 알릴 때(증빙 무효 등) — 문서 id → 상황 글자 · 행동 글자 · 주소.
+  // 엔진은 기안자의 승인 문서 id를 종류마다 한 배열로 한 번 넘긴다(읽기 전용). 없으면 이 종류는 승인 뒤 막힘이 없다.
+  blockedAfterApproval?: (viewer: Viewer, documentIds: string[]) => Promise<Map<string, { situation: string; actionLabel: string; href: string }>>;
   // 04.1-05(ENG-17): 상세 — 순서 고정: loadDetails(구조 필드, id 목록 한 번) → 엔진이 detailDto로 정보 항목별
   // project() → buildDetailRows(투영 결과만)가 문자열 행을 만든다. loadDetails가 있으면 나머지 둘도 필수다.
   loadDetails?: (viewer: Viewer, documentIds: string[], deps: LoadDetailsDeps) => Promise<Map<string, DetailFields>>;

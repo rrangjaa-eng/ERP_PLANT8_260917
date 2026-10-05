@@ -1,6 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { listMyInbox, loadKindDetails } from "@/domain/approvals";
+import { describe, expect, it, vi } from "vitest";
+import { and, asc, eq } from "drizzle-orm";
+import { db } from "@/db/client";
+import { files } from "@/db/schema";
+import { approveDocument, getDocumentKind, listMyInbox, loadKindDetails, rejectDocument, withdrawDocument } from "@/domain/approvals";
 import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND, saveExpenseDraft } from "@/domain/expenses";
+import { voidEvidence } from "@/domain/evidence";
 import { submitLeave } from "@/domain/leave";
 import { listNextTurnItems } from "@/domain/next-turn";
 import { createVisibleMemo } from "@/domain/approvals";
@@ -10,7 +14,7 @@ import { TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { upsertVisibility } from "@/repositories/permissions";
 import { NOW_2026 } from "./approvals-fixtures";
-import { setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
+import { attachEvidence, makeEvidenceManager, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
 
 // 05-10 Task 1 — 「내 차례」 공급 함수의 [결재] 갈래와 결재 시트 지출결의 상세(구조 → 투영 → 문자열 행, 증빙 갈래 · 세율 바뀜).
 // 판정 · 글자는 전부 종류 요약(nextTurnText · measure)에서 온다 — 함수는 종류 이름으로 분기하지 않는다.
@@ -127,5 +131,117 @@ describe("결재 시트 상세 — 증빙 갈래 · 세율 바뀜 (05-05 문자�
     for (const digits of ["12,400,000", "1,240,000", "13,640,000", "13,888,000", "12400000", "세율 바뀜"]) expect(text).not.toContain(digits);
     expect(uniqueLabels(rows)).toEqual(LABEL_ORDER.filter((label) => label !== "공급가액"));
     expect(rows.some((row) => row.files)).toBe(true);
+  });
+});
+
+// 05-10 Task 3 — [막힘]: 내가 기안한 문서 중 반려된 것 · 승인 뒤 종류가 막힘으로 알린 것(증빙 무효, G1). 회수 · 작성 중은 줄이 아니다.
+describe("listNextTurnItems — [막힘] 반려", () => {
+  it("반려된 지출결의 한 줄 — 대상 · `지출결의 반려, {반려자}` · 숫자 · 행동 `지출결의 열기`", async () => {
+    const fx = await setupExpenseProject();
+    const { expenseId, instanceId } = await submittedExpense(fx);
+    await rejectDocument(fx.lead, { instanceId, expectedVersion: 1, reason: "증빙 다시" });
+
+    const items = await listNextTurnItems(fx.pm);
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      tag: "막힘",
+      label: "가을 팝업 · 무대 제작 — 지출결의 반려, 김도윤",
+      reason: "",
+      measureText: "12,400,000",
+      action: { label: "지출결의 열기", href: `/expenses/${expenseId}` },
+    });
+    expect(items[0]?.approval).toBeUndefined();
+    expect(await listNextTurnItems(fx.otherPm)).toEqual([]);
+  });
+
+  it("회수한 문서 · 작성 중 문서는 줄이 없다", async () => {
+    const fx = await setupExpenseProject();
+    const { instanceId } = await submittedExpense(fx);
+    await withdrawDocument(fx.pm, { instanceId, expectedVersion: 1 });
+    await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.noVendor] });
+
+    expect(await listNextTurnItems(fx.pm)).toEqual([]);
+  });
+
+  it("반려된 연차도 [막힘] — 행동 `연차 열기`", async () => {
+    const fx = await setupExpenseProject();
+    const leave = await submitLeave(fx.pm, { kind: "full_day", startDate: "2026-10-05", endDate: "2026-10-05", half: "" }, { now: NOW_2026 });
+    await rejectDocument(fx.lead, { instanceId: leave.instanceId, expectedVersion: leave.version, reason: "일정 겹침" });
+
+    const items = await listNextTurnItems(fx.pm);
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ tag: "막힘", measureText: "1일", action: { label: "연차 열기", href: expect.stringContaining(leave.leaveId) as string } });
+    expect(items[0]?.label).toMatch(/연차 반려, 김도윤$/);
+  });
+});
+
+async function approvedExpense(fx: ExpenseFixture) {
+  const doc = await submittedExpense(fx);
+  const first = await approveDocument(fx.lead, { instanceId: doc.instanceId, expectedVersion: 1 });
+  await approveDocument(fx.ceo, { instanceId: doc.instanceId, expectedVersion: first.version });
+  return doc;
+}
+
+async function fileIds(expenseId: string): Promise<string[]> {
+  const rows = await db.select().from(files).where(and(eq(files.ownerKind, "expense"), eq(files.ownerId, expenseId))).orderBy(asc(files.createdAt), asc(files.id));
+  return rows.map((row) => row.id);
+}
+
+describe("증빙 무효 [막힘] (G1)", () => {
+  it("승인 문서의 증빙이 무효 처리되면 기안자에게 한 줄 — `증빙 무효` · 숫자 = 공급가액 · 행동 `증빙 올리기` → #evidence, 새 증빙 뒤 사라지고 전부 무효면 다시", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await makeEvidenceManager();
+    const { expenseId } = await approvedExpense(fx);
+    expect(await listNextTurnItems(fx.pm)).toEqual([]);
+
+    const [first] = await fileIds(expenseId);
+    await voidEvidence(manager, { fileId: first ?? "", reason: "다른 건 영수증" });
+
+    const items = await listNextTurnItems(fx.pm);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      tag: "막힘",
+      label: "가을 팝업 · 무대 제작 — 증빙 무효",
+      reason: "",
+      measureText: "12,400,000",
+      action: { label: "증빙 올리기", href: `/expenses/${expenseId}#evidence` },
+    });
+    // 사유 · 처리자는 줄에 싣지 않는다(문서 화면에서 본다).
+    expect(JSON.stringify(items)).not.toMatch(/다른 건 영수증|경영지원/);
+
+    // 권한자 · 결재자 · 무관한 사람은 0줄.
+    for (const viewer of [manager, fx.lead, fx.ceo, fx.otherPm]) expect(await listNextTurnItems(viewer)).toEqual([]);
+
+    // 기안자가 새 증빙을 올리면 줄이 없다. 살아 있는 파일을 전부 무효로 하면 다시 선다.
+    const added = await attachEvidence(fx.pm, expenseId);
+    expect(await listNextTurnItems(fx.pm)).toEqual([]);
+    await voidEvidence(manager, { fileId: added.id, reason: "다른 건" });
+    expect(await listNextTurnItems(fx.pm)).toHaveLength(1);
+  });
+
+  it("같은 기안자의 반려 문서가 함께 있으면 반려 줄이 먼저, 종류 함수 blockedAfterApproval은 종류당 한 번만 불린다", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await makeEvidenceManager();
+    const approved = await approvedExpense(fx);
+    await voidEvidence(manager, { fileId: (await fileIds(approved.expenseId))[0] ?? "", reason: "다른 건" });
+    const rejectedCreated = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.noVendor] });
+    const rejectedId = rejectedCreated.created[0]?.expenseId ?? "";
+    const rejectedSubmit = await submitReadyDraft(fx.pm, rejectedId);
+    if (rejectedSubmit.kind !== "submitted") throw new Error("제출 안 됨");
+    await rejectDocument(fx.lead, { instanceId: rejectedSubmit.instanceId, expectedVersion: 1, reason: "다시" });
+
+    const spy = vi.spyOn(getDocumentKind(EXPENSE_DOCUMENT_KIND), "blockedAfterApproval");
+    try {
+      const items = await listNextTurnItems(fx.pm);
+      expect(items.map((item) => item.label)).toEqual([
+        expect.stringMatching(/지출결의 반려, 김도윤$/) as string,
+        "가을 팝업 · 무대 제작 — 증빙 무효",
+      ]);
+      expect(spy).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

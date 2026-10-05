@@ -128,3 +128,20 @@ describe("§7-4 「대기」 태그 색 — muted다(개정 ⑩)", () => {
     expect(NEXT_TURN).not.toMatch(/대기:\s*"accent"/);
   });
 });
+
+// 05-10: [막힘](반려 · 증빙 무효)은 [결재]보다 앞에 보이고, 6줄을 넘으면 결재가 먼저 `더 보기`로 밀린다.
+describe("buildNextTurnView — 막힘 · 결재 혼합 (05-10)", () => {
+  it("[결재] 5 + [막힘] 3이면 보이는 6줄 = 막힘 3 → 결재 3, 넘침 2", () => {
+    const items = [
+      ...Array.from({ length: 5 }, (_, i) => item({ tag: "결재", label: `결재 ${i}` })),
+      ...Array.from({ length: 3 }, (_, i) => item({ tag: "막힘", label: `막힘 ${i}` })),
+    ];
+    const result = buildNextTurnView(items);
+    expect(result.visible).toBe(true);
+    if (result.visible) {
+      expect(result.items.map((row) => row.label)).toEqual(["막힘 0", "막힘 1", "막힘 2", "결재 0", "결재 1", "결재 2"]);
+      expect(result.overflowCount).toBe(2);
+    }
+  });
+});
+

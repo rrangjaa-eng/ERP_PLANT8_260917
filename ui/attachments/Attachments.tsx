@@ -113,8 +113,13 @@ export function Attachments({
   const [rows, setRows] = useState<LocalRow[]>([]);
   const [done, setDone] = useState<DoneRow[]>([]);
   const [removed, setRemoved] = useState<string[]>([]);
+  // 서버 파일 `삭제`가 실패한 행 — 그 행 안에 한 줄(05 /review B5).
+  const [removeFailedId, setRemoveFailedId] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const pickerRef = useRef<HTMLButtonElement>(null);
+  const focusAfterRemoveRef = useRef(false);
   const intents = useRef(new Map<string, string>());
   const counter = useRef(0);
   const nameId = useId();
@@ -137,6 +142,13 @@ export function Attachments({
     inputRef.current?.click();
   }, [openSignal]);
 
+  // 지운 행이 사라져 포커스가 body로 빠지지 않게 — 지운 뒤 `하나 더`(비면 올리기 영역), 없으면 남은 행의 첫 행동으로(§7-8).
+  useEffect(() => {
+    if (!focusAfterRemoveRef.current) return;
+    focusAfterRemoveRef.current = false;
+    (pickerRef.current ?? rootRef.current?.querySelector<HTMLElement>("li a, li button"))?.focus();
+  }, [removed]);
+
   // 올린 줄 로컬 미리보기 주소는 화면을 떠날 때 한 번에 치운다.
   const previews = useRef<string[]>([]);
   useEffect(() => {
@@ -152,7 +164,7 @@ export function Attachments({
     patch(key, { state: "failed", message, retry });
   }
 
-  async function transfer(row: LocalRow, from: "complete" | "restart") {
+  async function transfer(row: LocalRow, from: "complete" | "restart"): Promise<boolean> {
     const { key, prepared } = row;
     patch(key, { state: "uploading", message: null, retry: null });
     let intentId = intents.current.get(key) ?? null;
@@ -163,11 +175,11 @@ export function Attachments({
         requested = await actions.request({ size: prepared.size, contentType: prepared.contentType, sha256: prepared.sha256, name: prepared.name });
       } catch {
         fail(key, uploadFailedText, "restart");
-        return;
+        return false;
       }
       if (!requested.ok) {
         fail(key, requested.message, null);
-        return;
+        return false;
       }
       intentId = requested.intent.intentId;
       intents.current.set(key, intentId);
@@ -175,11 +187,11 @@ export function Attachments({
         const put = await fetch(requested.intent.url, { method: requested.intent.method, headers: requested.intent.headers, body: prepared.blob });
         if (!put.ok) {
           fail(key, uploadFailedText, "restart");
-          return;
+          return false;
         }
       } catch {
         fail(key, uploadFailedText, "restart");
-        return;
+        return false;
       }
     }
     let completed: Awaited<ReturnType<AttachmentActions["complete"]>>;
@@ -188,20 +200,22 @@ export function Attachments({
     } catch {
       // 응답이 오지 않았다 — 서버가 이미 끝냈을 수도 있다. 완료 통보만 한 번 더 부르고 서버 답의 갈래를 따른다.
       fail(key, uploadFailedText, "complete");
-      return;
+      return false;
     }
     if (!completed.ok) {
       fail(key, completed.message, completed.retry);
-      return;
+      return false;
     }
     intents.current.delete(key);
     if (prepared.previewUrl) previews.current.push(prepared.previewUrl);
     setDone((current) => [...current, { ...completed.file, previewUrl: prepared.previewUrl }]);
     setRows((current) => current.filter((candidate) => candidate.key !== key));
-    onChanged?.();
+    return true;
   }
 
+  // 부모가 서버 값을 다시 읽는 새로 고침은 한 번에 올린 파일들이 다 끝난 뒤 한 번만 부른다(05 /review B7).
   async function addFiles(list: FileList | File[]) {
+    let changed = false;
     for (const file of Array.from(list)) {
       const key = `row-${(counter.current += 1)}`;
       const placeholder: PreparedEvidence = { blob: file, name: file.name, size: file.size, contentType: file.type, sha256: "", previewUrl: null };
@@ -210,11 +224,12 @@ export function Attachments({
         const prepared = await prepareEvidenceFile(file);
         const row: LocalRow = { key, prepared, state: "uploading", message: null, retry: null };
         setRows((current) => current.map((candidate) => (candidate.key === key ? row : candidate)));
-        await transfer(row, "restart");
+        if (await transfer(row, "restart")) changed = true;
       } catch {
         fail(key, uploadFailedText, "restart");
       }
     }
+    if (changed) onChanged?.();
   }
 
   function discard(row: LocalRow) {
@@ -224,7 +239,18 @@ export function Attachments({
   }
 
   async function removeFile(id: string) {
-    if (!(await actions.remove(id))) return;
+    setRemoveFailedId(null);
+    let removedOnServer = false;
+    try {
+      removedOnServer = await actions.remove(id);
+    } catch {
+      removedOnServer = false;
+    }
+    if (!removedOnServer) {
+      setRemoveFailedId(id);
+      return;
+    }
+    focusAfterRemoveRef.current = true;
     setRemoved((current) => [...current, id]);
     onChanged?.();
   }
@@ -267,7 +293,7 @@ export function Attachments({
       : {};
 
   return (
-    <div className={styles.root} data-ui="attachments" {...dropProps}>
+    <div ref={rootRef} className={styles.root} data-ui="attachments" {...dropProps}>
       {canAdd ? (
         <input
           ref={inputRef}
@@ -285,6 +311,7 @@ export function Attachments({
 
       {canAdd && empty ? (
         <button
+          ref={pickerRef}
           id={pickerId}
           type="button"
           className={styles.drop}
@@ -316,7 +343,7 @@ export function Attachments({
                   <span className={styles.text}>
                     <span className={styles.voidedHead}>
                       <StatusTag status="무효" />
-                      <span className={`${styles.name} ${styles.voidedName}`} aria-describedby={`${nameId}-${file.id}-void`}>
+                      <span id={`${nameId}-${file.id}`} className={`${styles.name} ${styles.voidedName}`} aria-describedby={`${nameId}-${file.id}-void`}>
                         {file.name}
                       </span>
                     </span>
@@ -328,22 +355,25 @@ export function Attachments({
                   </span>
                 ) : (
                   <span className={styles.text}>
-                    <span className={styles.name}>{file.name}</span>
+                    <span id={`${nameId}-${file.id}`} className={styles.name}>
+                      {file.name}
+                    </span>
                     <span className={styles.meta}>{`${sizeOf(file.sizeBytes)} · ${dayOf(file.createdAt)}`}</span>
+                    {removeFailedId === file.id ? <span className={styles.error}>삭제 실패 · 다시 시도</span> : null}
                   </span>
                 )}
                 <span className={styles.actions}>
                   <RowActions>
-                    <a href="#evidence" target="_blank" rel="noopener noreferrer" className={actionStyles.action} onClick={(event) => void view(event, file.id)}>
+                    <a href="#evidence" target="_blank" rel="noopener noreferrer" className={actionStyles.action} aria-describedby={`${nameId}-${file.id}`} onClick={(event) => void view(event, file.id)}>
                       크게 보기
                     </a>
                     {!file.voided && deletable(file.id) ? (
-                      <RowAction danger onClick={() => void removeFile(file.id)}>
+                      <RowAction danger describedBy={`${nameId}-${file.id}`} onClick={() => void removeFile(file.id)}>
                         삭제
                       </RowAction>
                     ) : null}
                     {!file.voided && voidable?.ids.includes(file.id) ? (
-                      <RowAction danger onClick={() => voidable.onVoid(file)}>
+                      <RowAction danger describedBy={`${nameId}-${file.id}`} onClick={() => voidable.onVoid(file)}>
                         무효 처리
                       </RowAction>
                     ) : null}
@@ -371,7 +401,7 @@ export function Attachments({
                   <span className={styles.actions}>
                     <RowActions>
                       {row.retry ? (
-                        <RowAction describedBy={`${nameId}-${row.key}`} onClick={() => void transfer(row, row.retry ?? "restart")}>
+                        <RowAction describedBy={`${nameId}-${row.key}`} onClick={() => void transfer(row, row.retry ?? "restart").then((ok) => ok && onChanged?.())}>
                           다시 올리기
                         </RowAction>
                       ) : null}
@@ -388,7 +418,7 @@ export function Attachments({
       </div>
 
       {canAdd && !empty ? (
-        <button id={pickerId} type="button" className={styles.more} aria-labelledby={pickerTextId} onClick={() => inputRef.current?.click()}>
+        <button ref={pickerRef} id={pickerId} type="button" className={styles.more} aria-labelledby={pickerTextId} onClick={() => inputRef.current?.click()}>
           <span id={pickerTextId}>
             <span className={styles.pcText}>하나 더 · Ctrl+U</span>
             <span className={styles.phoneText}>하나 더</span>

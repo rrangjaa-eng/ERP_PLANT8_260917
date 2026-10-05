@@ -147,6 +147,8 @@ test.describe("결재 시트 승인 통신 실패 (05 /review B3)", () => {
     await trigger.click();
     const sheet = lead.getByRole("dialog");
     await expect(sheet.getByRole("heading", { level: 2 })).toHaveText(titleOf(fx, line.itemName));
+    // 05 /review B5 — 시트 증빙의 `크게 보기`는 파일명을 가리킨다.
+    await expect(sheet.getByRole("button", { name: "크게 보기" })).toHaveAccessibleDescription(/^receipt-\w+\.jpg$/);
     await lead.route("**/*", async (route) => {
       if (route.request().method() === "POST" && route.request().headers()["next-action"]) await route.abort("failed");
       else await route.continue();

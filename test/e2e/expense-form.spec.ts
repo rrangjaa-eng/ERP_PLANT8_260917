@@ -175,3 +175,52 @@ test.describe("결과 줄 aria-live (05 /review B4)", () => {
     await page.context().close();
   });
 });
+
+test.describe("증빙 첨부 영역 (05 /review B5 · B7)", () => {
+  test("여러 파일을 한 번에 올려도 문서 화면 새로 고침은 마지막에 한 번이다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await openDraft(page, fx, "tracer");
+
+    let refreshes = 0;
+    page.on("request", (request) => {
+      const headers = request.headers();
+      if (request.method() === "GET" && headers["rsc"] === "1" && !headers["next-router-prefetch"]) refreshes += 1;
+    });
+    await page.getByTestId("attachments-input").setInputFiles([await uniqueReceipt(page), await uniqueReceipt(page)]);
+    const rows = page.locator('[data-ui="attachments"] li');
+    await expect(rows).toHaveCount(2, { timeout: UPLOAD_WAIT });
+    await expect(rows.getByText(META)).toHaveCount(2, { timeout: UPLOAD_WAIT });
+    await page.waitForLoadState("networkidle");
+    expect(refreshes).toBe(1);
+    await page.context().close();
+  });
+
+  test("완료 파일 행의 크게 보기 · 삭제는 파일명을 가리키고, 삭제 실패는 행 안에 한 줄이 서며, 지운 뒤 포커스는 첨부 영역에 남는다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await openDraft(page, fx, "tracer");
+
+    const receipt = await uniqueReceipt(page);
+    await page.getByTestId("attachments-input").setInputFiles(receipt);
+    const row = page.locator('[data-ui="attachments"] li');
+    await expect(row.getByText(META)).toBeVisible({ timeout: UPLOAD_WAIT });
+    await expect(row.getByRole("link", { name: "크게 보기" })).toHaveAccessibleDescription(receipt.name);
+    const remove = row.getByRole("button", { name: "삭제" });
+    await expect(remove).toHaveAccessibleDescription(receipt.name);
+
+    await page.route("**/*", async (route) => {
+      if (route.request().method() === "POST" && route.request().headers()["next-action"]) await route.abort("failed");
+      else await route.continue();
+    });
+    await remove.click();
+    await expect(row.getByText("삭제 실패 · 다시 시도", { exact: true })).toBeVisible();
+    await expect(row).toHaveCount(1);
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+
+    await remove.click();
+    await expect(row).toHaveCount(0);
+    await expect(page.locator('[data-ui="attachments"]').locator(":focus")).toHaveCount(1);
+    await page.context().close();
+  });
+});

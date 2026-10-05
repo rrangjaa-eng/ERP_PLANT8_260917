@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState, type MouseEvent } from "react";
+import { Fragment, useEffect, useId, useRef, useState, type MouseEvent } from "react";
 import Link from "next/link";
 import { Button } from "@/ui/button/Button";
 import { ApprovalRoute, type ApprovalRouteEndLine, type ApprovalRouteListStep } from "@/ui/approval-route/ApprovalRoute";
@@ -188,6 +188,7 @@ function sizeOf(bytes: number): string {
 
 // 05-10: 증빙 한 줄 — 썸네일 72×96(이미지일 때만, 주소는 시트가 열린 뒤 받는다) + 파일명 · 용량 + 3차 `크게 보기`(누른 때 새 주소 — 5분 만료).
 function SheetEvidence({ files, evidenceUrl }: { files: SheetEvidenceFile[]; evidenceUrl: ApprovalSheetProps["evidenceUrl"] }) {
+  const nameId = useId();
   const [urls, setUrls] = useState<Record<string, string>>({});
   useEffect(() => {
     if (!evidenceUrl) return;
@@ -232,10 +233,12 @@ function SheetEvidence({ files, evidenceUrl }: { files: SheetEvidenceFile[]; evi
             </span>
           )}
           <span className={styles.evidenceText}>
-            <span className={styles.evidenceName}>{file.name}</span>
+            <span id={`${nameId}-${file.id}`} className={styles.evidenceName}>
+              {file.name}
+            </span>
             <span className={styles.evidenceMeta}>{sizeOf(file.sizeBytes)}</span>
             {evidenceUrl ? (
-              <Button variant="tertiary" onClick={(event) => void view(event, file.id)}>
+              <Button variant="tertiary" aria-describedby={`${nameId}-${file.id}`} onClick={(event) => void view(event, file.id)}>
                 크게 보기
               </Button>
             ) : null}

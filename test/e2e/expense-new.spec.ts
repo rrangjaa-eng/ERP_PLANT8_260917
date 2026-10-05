@@ -328,7 +328,7 @@ test.describe("골라내기 (S14) · 견적 줄", () => {
     await expect(page.getByLabel("지급 예정일", { exact: true })).toHaveValue("2026-10-17");
   });
 
-  test("웨이브 9 D1 — /expenses/new에서 줄을 고르면 결과 줄이 지워질 비고 · 지급 예정일을 이름으로 말한다", async ({ browser, baseURL }) => {
+  test("05-16 — /expenses/new에서 비고 · 지급 예정일을 적고 줄을 고르면 지워짐 글자 없이 만들어진 문서에 그대로 남는다", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const page = await loginPage(browser, baseURL, fx.pm);
     await openNew(page);
@@ -339,7 +339,12 @@ test.describe("골라내기 (S14) · 견적 줄", () => {
     await dialog.getByRole("textbox", { name: "견적 줄 검색" }).fill(fx.lines.hold.itemName);
     await expect(dialog.getByRole("option")).toHaveCount(1);
     await dialog.getByRole("option", { name: new RegExp(fx.lines.hold.itemName) }).click();
-    await expect(dialog.getByText("· 비고 · 지급 예정일 지워짐")).toBeVisible();
+    await expect(dialog.getByText(/지워짐/)).toHaveCount(0);
+    await dialog.getByRole("button", { name: /^이 줄로/ }).click();
+    await expect(page).toHaveURL(/\/expenses\/[0-9a-f-]{36}$/);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(`지출결의 — ${fx.projectName} · ${fx.lines.hold.itemName}`);
+    await expect(page.getByLabel("비고", { exact: true })).toHaveValue("새 문서 메모");
+    await expect(page.getByLabel("지급 예정일", { exact: true })).toHaveValue("2026-10-17");
   });
 
   test("웨이브 9 D2 · D3 · D5 — 1차 버튼 설명은 결과 줄 · 검색 칸은 거르는 동안 제자리 · 부제 `프로젝트 N · 고를 수 있는 줄 M` · `거래처 N`", async ({ browser, baseURL }) => {

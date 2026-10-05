@@ -82,6 +82,7 @@
 /* 반려(2차) 왼쪽 · 승인(1차) 오른쪽, 사이 --s-4 이상(사용자 결정 2026-09-29 — DECISIONS.md 폰 결재 행동 줄). */
 .buttons {
   display: flex;
+  align-items: flex-start; /* 05-11 웨이브 13 D2 — 1차 아래 막힘 이유 줄이 생겨도 두 버튼 윗줄이 같다(문서 화면 행동 줄과 같다). */
   gap: var(--s-4);
 }
 
@@ -99,6 +100,11 @@
 .primaryWrap > span,
 .secondaryWrap > span {
   display: flex;
+}
+
+/* 05-11 웨이브 13 D2 — 승인 막힘 이유(approveBlockedReason)는 꽉 찬 1차 옆에 끼지 않고 그 아래 한 줄로 내려간다(document-actions.module.css와 같다). */
+.primaryWrap > span {
+  flex-wrap: wrap;
 }
 
 .primaryWrap > span > button,

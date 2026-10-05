@@ -551,7 +551,8 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
     setFailure(null);
   }
 
-  // 견적 줄 고르기 · 바꾸기 — 새 문서는 그 줄의 작성 중 문서를 만들거나 열고(팀 비용 칸은 버린다), 저장된 문서는 서버가 줄 값으로 다시 채운다.
+  // 견적 줄 고르기 · 바꾸기 — 새 문서는 그 줄의 작성 중 문서를 만들거나 열고(적어 둔 비고 · 지급 예정일 · 지급 방식은 같이 저장하고 팀 비용 칸은 버린다),
+  // 저장된 문서는 서버가 줄 값으로 다시 채운다.
   // 그 줄에 내 다른 작성 중 문서가 있으면 그 문서로 이동한다. 줄이 바뀌면 칸 값이 통째로 새 값이라 페이지가 폼을 새로 그린다(router.refresh · key).
   async function pickLine(lineId: string): Promise<boolean | void> {
     setFailure(null);
@@ -559,7 +560,10 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
     if (newDoc) {
       let created: Awaited<ReturnType<typeof createExpenseFromLinesAction>>;
       try {
-        created = await createExpenseFromLinesAction({ lineIds: [lineId] });
+        created = await createExpenseFromLinesAction({
+          lineIds: [lineId],
+          fields: { note: note || null, scheduledPaymentDate: date || null, paymentMethod: paymentMethod || null },
+        });
       } catch {
         setFailure(failed);
         return;
@@ -871,7 +875,7 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
         open={pickOpen === "line"}
         mode={data.lineText ? "change" : "pick"}
         expenseId={newDoc ? null : data.id}
-        droppedFields={[...(teamKind !== "" || content.trim() !== "" ? ["팀 비용 칸"] : []), ...(note.trim() !== "" ? ["비고"] : []), ...(date !== "" ? ["지급 예정일"] : [])]}
+        droppedFields={teamKind !== "" || content.trim() !== "" ? ["팀 비용 칸"] : []}
         onClose={() => setPickOpen(null)}
         onPick={pickLine}
       />

@@ -22,7 +22,7 @@ export function LinePickDialog({
   mode: LinePickMode;
   /** 바꾸기에서 그 문서의 프로젝트를 알려 주는 문서 id — 고르기에서는 없다. */
   expenseId: string | null;
-  /** 고르기에서 지워질, 이미 적힌 칸 이름(팀 비용 칸 · 비고 · 지급 예정일) — 결과 줄에 한 번 말한다. */
+  /** 고르기에서 지워질, 이미 적힌 칸 이름(팀 비용 칸 — 비고 · 지급 예정일 · 지급 방식은 만들어진 문서에 같이 저장된다) — 결과 줄에 한 번 말한다. */
   droppedFields: string[];
   onClose: () => void;
   onPick: (lineId: string) => void | boolean | Promise<void | boolean>;

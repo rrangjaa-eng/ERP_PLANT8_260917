@@ -62,6 +62,12 @@ export type PickDialogProps = {
   onPick: (row: PickRow) => void | boolean | Promise<void | boolean>;
 };
 
+// 빈 목록 한 줄 — 받침에 맞춰 이/가를 고른다(`줄이` · `거래처가`).
+export function pickEmptyText(noun: PickDialogProps["noun"], kind: "no-match" | "none-selectable"): string {
+  const josa = noun === "줄" ? "이" : "가";
+  return kind === "no-match" ? `조건에 맞는 ${noun}${josa} 없습니다` : `고를 수 있는 ${noun}${josa} 없습니다`;
+}
+
 function rowsOf(items: PickItem[]): PickRow[] {
   return items.filter((item): item is PickRow => item.type === "row");
 }
@@ -137,6 +143,9 @@ function PickDialogInner({ onClose, title, subtitle, searchLabel, search, primar
   const activeRow = rows.find((row) => row.id === activeId) ?? null;
   const chosen = activeRow?.selectable ? activeRow : null;
   const line = failed ? null : resultLine?.(chosen ?? null) ?? null;
+  // UX-06 — 고른 행이 없어 1차가 꺼져 있으면 결과 줄 자리에 이유 한 줄(info 톤 — 막힘이 아니라 아직 안 고른 상태).
+  const idleReason = chosen ? null : `고른 ${noun} 없음`;
+  const footLine = line ?? idleReason;
 
   function closeNow() {
     const dialog = dialogRef.current;
@@ -201,11 +210,11 @@ function PickDialogInner({ onClose, title, subtitle, searchLabel, search, primar
         </p>
       );
     } else if (query.trim() === "") {
-      empty = <p className={styles.empty}>{`조건에 맞는 ${noun}이 없습니다`}</p>;
+      empty = <p className={styles.empty}>{pickEmptyText(noun, "no-match")}</p>;
     } else {
       empty = (
         <p className={styles.empty}>
-          {`조건에 맞는 ${noun}${noun === "줄" ? "이" : "가"} 없습니다 · `}
+          {`${pickEmptyText(noun, "no-match")} · `}
           <Button
             variant="tertiary"
             onClick={() => {
@@ -307,16 +316,16 @@ function PickDialogInner({ onClose, title, subtitle, searchLabel, search, primar
               )}
             </ul>
             {empty}
-            {noneSelectable && !empty ? <p className={styles.empty}>고를 수 있는 줄이 없습니다</p> : null}
+            {noneSelectable && !empty ? <p className={styles.empty}>{pickEmptyText(noun, "none-selectable")}</p> : null}
             {result?.truncated ? <p className={styles.more}>50건 넘음 · 검색으로 좁히기</p> : null}
           </>
         )}
       </div>
 
       <div className={styles.foot}>
-        {line ? (
+        {footLine ? (
           <p id={resultId} className={styles.resultLine}>
-            {line}
+            {footLine}
           </p>
         ) : null}
         <div className={styles.actions}>
@@ -326,7 +335,7 @@ function PickDialogInner({ onClose, title, subtitle, searchLabel, search, primar
             </Button>
           </span>
           <span className={styles.primaryWrap}>
-            <Button variant="primary" shortcut="Enter" pending={picking} disabled={!chosen} aria-describedby={line ? resultId : undefined} onClick={() => void pickChosen()}>
+            <Button variant="primary" shortcut="Enter" pending={picking} disabled={!chosen} aria-describedby={footLine ? resultId : undefined} onClick={() => void pickChosen()}>
               {primaryLabel}
             </Button>
           </span>

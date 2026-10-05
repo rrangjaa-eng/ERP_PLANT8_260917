@@ -157,6 +157,8 @@ test.describe("골라내기 (S14) · 거래처", () => {
     // 주 버튼은 고른 행이 있어야 켜진다(꺼진 동안 aria-disabled, 이유는 목록).
     const primary = dialog.getByRole("button", { name: /^이 거래처로/ });
     await expect(primary).toHaveAttribute("aria-disabled", "true");
+    // UX-06 — 꺼진 1차는 이유 한 줄을 aria-describedby로 가리킨다(05 /review B1).
+    await expect(primary).toHaveAccessibleDescription("고른 거래처 없음");
 
     await search.fill("없는거래처-zzzz");
     await expect(dialog.getByText("조건에 맞는 거래처가 없습니다 ·")).toBeVisible();
@@ -245,6 +247,7 @@ test.describe("골라내기 (S14) · 견적 줄", () => {
     await expect(noVendor).toBeFocused();
     await expect(noVendor).toHaveAttribute("aria-selected", "false");
     await expect(primary).toHaveAttribute("aria-disabled", "true");
+    await expect(primary).toHaveAccessibleDescription("고른 줄 없음");
     await page.keyboard.press("Enter");
     await expect(dialog).toBeVisible();
 

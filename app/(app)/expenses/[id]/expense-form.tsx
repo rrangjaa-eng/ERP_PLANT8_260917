@@ -862,7 +862,8 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
           <Form.Actions>
             {phone ? null : submitButton}
             {block && !submitting ? <BlockLine block={block} href={blockHref} onPick={openPicker} onVendor={() => setPickOpen("vendor")} onLine={() => setPickOpen("line")} /> : null}
-            {/* 제출 · 임시 저장 결과 줄 — 스크린리더가 결과를 듣도록 polite 라이브 영역(§10 저장 결과, 05 /review B4). 레이아웃에는 끼지 않는다. */}
+            {/* 제출 · 임시 저장 결과 줄 — 스크린리더가 결과를 듣도록 polite 라이브 영역(§10 저장 결과, 05 /review B4). 영역은 display: contents가 아닌 상자이고
+                비었을 때는 흐름 밖이라 배치에 끼지 않는다(C8). */}
             <span className={styles.resultLines} aria-live="polite">
               {networkFailed === "submit" ? (
                 <span className={styles.blockedLine}>

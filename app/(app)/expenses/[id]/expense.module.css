@@ -154,8 +154,17 @@
   display: contents;
 }
 
+/* 결과 줄 라이브 영역(05 /review C8) — display: contents 요소는 WebKit 접근성 트리에서 빠질 수 있어 일반 상자로 둔다. 결과 줄끼리 간격은 행동 줄과 같고,
+   비었을 때는 흐름 밖(0 크기)이라 행동 줄의 간격 · 배치가 그대로다(상자는 남아 있어 라이브 영역이 먼저 있다). */
 .resultLines {
-  display: contents;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.resultLines:empty {
+  position: absolute;
 }
 
 .formBarSpacer {
@@ -217,7 +226,9 @@
   .blockedLine,
   .formBar > div > .blockedReason,
   .formBar > div > .infoReason,
-  .formBar > div > .successLine {
+  .formBar > div > .successLine,
+  .formBar .resultLines:not(:empty),
+  .resultLines > * {
     order: 3;
     flex-basis: 100%;
   }

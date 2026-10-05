@@ -232,6 +232,47 @@ test.describe("증빙 첨부 영역 (05 /review B5 · B7)", () => {
   });
 });
 
+// 05 /review C8(adversarial F7): 결과 줄 라이브 영역은 display: contents가 아닌 상자다(WebKit은 contents 요소를 접근성 트리에서 뺄 수 있다).
+// 비었을 때는 배치에 끼지 않고(떼어 내도 행동 줄 실측이 같다), 결과가 서면 PC는 1차와 같은 줄이다(B4 전 배치).
+test.describe("결과 줄 라이브 영역 상자 (05 /review C8)", () => {
+  test("라이브 영역은 상자이고 비었을 때 떼어도 행동 줄 실측이 같으며, 임시 저장 결과는 1차와 같은 줄에 선다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await openDraft(page, fx, "tracer");
+    const bar = page.getByTestId("expense-form-actions");
+    const region = bar.locator('[aria-live="polite"]');
+    await expect(region).toHaveCount(1);
+    expect(await region.evaluate((el) => getComputedStyle(el).display)).not.toBe("contents");
+
+    const measured = await region.evaluate((el) => {
+      const actions = el.parentElement;
+      if (!actions) throw new Error("행동 줄 없음");
+      const measure = () => ({
+        height: Math.round(actions.getBoundingClientRect().height),
+        buttons: [...actions.querySelectorAll("button")].map((button) => {
+          const rect = button.getBoundingClientRect();
+          return [Math.round(rect.x), Math.round(rect.y), Math.round(rect.width)];
+        }),
+      });
+      const withRegion = measure();
+      const next = el.nextSibling;
+      el.remove();
+      const without = measure();
+      actions.insertBefore(el, next);
+      return { withRegion, without };
+    });
+    expect(measured.withRegion).toEqual(measured.without);
+
+    await page.getByRole("button", { name: /^임시 저장/ }).click();
+    const saved = region.getByText(/^임시 저장됨 /);
+    await expect(saved).toBeVisible();
+    const [line, submit] = [await saved.boundingBox(), await page.getByRole("button", { name: /^지출결의 제출/ }).boundingBox()];
+    expect(line!.y, "결과 줄이 1차와 같은 줄").toBeLessThan(submit!.y + submit!.height);
+    expect(line!.y + line!.height, "결과 줄이 1차와 같은 줄").toBeGreaterThan(submit!.y);
+    await page.context().close();
+  });
+});
+
 test.describe("견적 줄 바꾸기 포커스 플래그 (05 /review B9)", () => {
   test("같은 줄을 다시 골라 폼이 새로 그려지지 않아도 다음에 여는 다른 지출결의 폼의 첫 포커스를 가로채지 않는다", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();

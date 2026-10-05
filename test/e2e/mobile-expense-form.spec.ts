@@ -167,6 +167,46 @@ test.describe("폰 폼 — 고정 제출 줄 · 사진 축소", () => {
     await expect(submit).toBeFocused();
   });
 
+  // 05 /review C8: 결과 줄 라이브 영역은 상자이고, 비었을 때 떼어도 제출 줄 실측이 같으며, 결과는 두 버튼 아래 제 줄 전체 폭이다(B4 전 배치).
+  test("결과 줄 라이브 영역은 상자이고 비면 제출 줄 실측에 끼지 않으며 임시 저장 결과는 두 버튼 아래 한 줄이다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await openDraft(browser, baseURL, fx, "retry", PHONE);
+    const bar = page.getByTestId("expense-form-actions");
+    const region = bar.locator('[aria-live="polite"]');
+    await expect(region).toHaveCount(1);
+    expect(await region.evaluate((el) => getComputedStyle(el).display)).not.toBe("contents");
+
+    const measured = await region.evaluate((el) => {
+      const actions = el.parentElement;
+      if (!actions) throw new Error("행동 줄 없음");
+      const measure = () => ({
+        height: Math.round(actions.getBoundingClientRect().height),
+        buttons: [...actions.querySelectorAll("button")].map((button) => {
+          const rect = button.getBoundingClientRect();
+          return [Math.round(rect.x), Math.round(rect.y), Math.round(rect.width)];
+        }),
+      });
+      const withRegion = measure();
+      const next = el.nextSibling;
+      el.remove();
+      const without = measure();
+      actions.insertBefore(el, next);
+      return { withRegion, without };
+    });
+    expect(measured.withRegion).toEqual(measured.without);
+
+    const save = page.getByRole("button", { name: /^임시 저장/ });
+    const submit = page.getByRole("button", { name: /^지출결의 제출/ });
+    await save.click();
+    const saved = region.getByText(/^임시 저장됨 /);
+    await expect(saved).toBeVisible();
+    const [line, saveBox, submitBox] = [await saved.boundingBox(), await save.boundingBox(), await submit.boundingBox()];
+    expect(Math.round(saveBox!.y), "두 버튼이 한 줄").toBe(Math.round(submitBox!.y));
+    expect(line!.y, "결과 줄이 두 버튼 아래").toBeGreaterThanOrEqual(submitBox!.y + submitBox!.height - 1);
+    expect(line!.width, "결과 줄이 제 줄 전체 폭").toBeGreaterThanOrEqual(submitBox!.x + submitBox!.width - saveBox!.x - 1);
+    await page.context().close();
+  });
+
   test("같은 폼을 1280에서 열면 1차가 `임시 저장`보다 DOM 앞이다(PC 1차 왼쪽 그대로)", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const page = await openDraft(browser, baseURL, fx, "hold", DESKTOP);

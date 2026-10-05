@@ -1,0 +1,56 @@
+/* 05-10 첫 화면 「내 차례」 [결재] 행 행동 — PC는 3차 승인 · 반려(결재함 `.rowActions`와 같은 간격), 폰은 행 전체가 결재 시트를 여는 버튼. 역할 토큰만. */
+
+/* PC(≥700) 행 행동 — 승인↔반려 사이 --s-4(되돌릴 수 없는 두 행동을 떼어 둔다). */
+.pcActions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-4);
+}
+
+/* 터치 PC · 태블릿 — 행 행동 버튼 상자를 --touch-min으로(보이는 글자 크기는 그대로). */
+@media (pointer: coarse) {
+  .pcActions button {
+    justify-content: center;
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+  }
+}
+
+/* 폰 행 탭 대상 — PC에서는 없다. 모양은 NextTurn의 3차 링크(`.tertiary`)를 같이 쓰고 이 모듈은 위치만 정한다. */
+.phoneTap {
+  display: none;
+}
+
+li:has(.phoneTap) {
+  position: relative;
+}
+
+@media (max-width: 699.98px) {
+  .pcActions {
+    display: none;
+  }
+
+  .phoneTap {
+    display: inline-block;
+    font-family: var(--font-sans);
+    cursor: pointer;
+  }
+
+  /* 행 전체가 탭 대상 — ::after가 그 행을 덮는다(ui/next-turn은 고치지 않는다). */
+  .phoneTap::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+  }
+
+  /* 전체 폭 행의 포커스 링은 행 안쪽(inset — UI-SPEC Color 4, §4-4 예외). */
+  .phoneTap:focus-visible {
+    outline: none;
+  }
+
+  .phoneTap:focus-visible::after {
+    outline: var(--focus-w) solid var(--focus);
+    outline-offset: calc(var(--focus-w) * -1);
+  }
+}

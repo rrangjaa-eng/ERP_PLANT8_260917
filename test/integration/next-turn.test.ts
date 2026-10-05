@@ -82,7 +82,7 @@ describe("결재 시트 상세 — 증빙 갈래 · 세율 바뀜 (05-05 문자�
       label: "증빙",
       value: "세금계산서.jpg",
       tone: "default",
-      files: [{ id: expect.any(String), name: "세금계산서.jpg", sizeBytes: 212_000, contentType: "image/jpeg" }],
+      files: [{ id: expect.any(String) as string, name: "세금계산서.jpg", sizeBytes: 212_000, contentType: "image/jpeg" }],
     });
     expect(JSON.stringify(evidence)).not.toMatch(/https?:|objectKey|sha256|url/i);
 

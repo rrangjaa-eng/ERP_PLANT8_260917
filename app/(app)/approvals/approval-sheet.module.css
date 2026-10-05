@@ -108,3 +108,53 @@
   height: var(--touch-min);
   font-size: var(--text-body);
 }
+
+/* 05-10 증빙 — 썸네일 72×96(UI-SPEC Spacing 「결재 시트 첨부 썸네일」 토큰 식, radius 0) + 파일명 · 용량 + 3차 크게 보기. */
+.evidenceList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.evidenceItem {
+  display: flex;
+  gap: var(--s-3);
+  min-width: 0;
+}
+
+.evidenceThumb {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: calc(var(--s-6) * 3);
+  height: calc(var(--s-12) * 2);
+  object-fit: cover;
+  color: var(--text-muted);
+  background: var(--surface-muted);
+}
+
+.evidenceClip {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+
+.evidenceText {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.evidenceName {
+  color: var(--text-strong);
+  overflow-wrap: anywhere;
+}
+
+.evidenceMeta {
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+}

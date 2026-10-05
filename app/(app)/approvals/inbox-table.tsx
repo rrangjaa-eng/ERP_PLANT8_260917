@@ -14,6 +14,7 @@ import { approveAction } from "./actions";
 import { approveToast } from "./approve-toast";
 import { ApprovalSheet, type ApprovalSheetItem, type ApproveOutcome } from "./approval-sheet";
 import { ConflictLine } from "./conflict-line";
+import { evidenceViewUrl } from "./evidence-url";
 import { INBOX_COLUMN_LABELS } from "./list-columns";
 import { RejectDialog, WithdrawDialog, type DecisionTarget, type RejectMessages } from "./decision-dialogs";
 import leaveStyles from "@/app/(app)/leave/leave.module.css";
@@ -219,6 +220,7 @@ export function InboxTable({
         onClose={() => setSheetItem(null)}
         onApprove={approveFromSheet}
         onApproved={showToast}
+        evidenceUrl={evidenceViewUrl}
         onSecondary={(action, item) => {
           const row = rows.find((candidate) => candidate.sheet?.instanceId === item.instanceId);
           if (!row?.decision) return;

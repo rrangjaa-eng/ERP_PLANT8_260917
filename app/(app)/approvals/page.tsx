@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { requireSession } from "@/lib/viewer";
 import { kstDateOf } from "@/lib/kst-date";
-import { formatKrw } from "@/lib/format-number";
 import "@/app/(app)/document-kinds";
 import {
   listMyInbox,
@@ -16,10 +15,9 @@ import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { Num } from "@/ui/num/Num";
 import type { StatusWord } from "@/ui/status-tag/status-map";
-import { routeListSteps, toLeaveStatusKey, withdrawResultLines, type LeaveStatusKey } from "@/app/(app)/leave/status-display";
+import { toLeaveStatusKey, type LeaveStatusKey } from "@/app/(app)/leave/status-display";
 import { InboxTable, type InboxRow } from "./inbox-table";
-import type { ApprovalSheetItem, SheetDetailRow } from "./approval-sheet";
-import type { DecisionTarget } from "./decision-dialogs";
+import { toDecision, toSheet } from "./sheet-material";
 
 // 04.1-02 S4 첫 형태 — 개인 결재함. 메뉴 게이트가 없다(세션만) — 내용은 결재선 후보 · 처리 기록으로만
 // 정해진다(listMyInbox). 그룹 `내 결재`(지금 내가 담당) · `처리함`(내가 처리한 최근 50건).
@@ -35,55 +33,6 @@ function measureCell(measure: DocumentMeasure | null | undefined): ReactNode {
   const { money } = measure;
   const fx = money.currency === "KRW" ? undefined : { currency: money.currency, amount: money.amount, rate: money.fxRate };
   return <Num value={money.amountKrw} fx={fx} />;
-}
-
-// 확인 창 부제의 숫자 조각 — 숫자 칸 1행과 같은 글자.
-function measureText(measure: DocumentMeasure | null | undefined): string | null {
-  if (!measure) return null;
-  return measure.kind === "days" ? measure.text : formatKrw(measure.money.amountKrw);
-}
-
-// 반려 · 회수 확인 재료(S6) — 부제는 서버 값으로만(번호 · 기안자 · 종류 대상 · 숫자, 빠진 조각은 뺀다).
-function toDecision(item: Partial<ApprovalInboxItemDto>, summary: DocumentSummary): DecisionTarget | null {
-  if (!item.instanceId || item.version === undefined || !item.kindLabel) return null;
-  const measure = measureText(summary.measure);
-  return {
-    instanceId: item.instanceId,
-    version: item.version,
-    kindLabel: item.kindLabel,
-    subtitle: [summary.number, item.drafterName, summary.documentText, measure].filter(Boolean).join(" · "),
-    withdrawSubtitle: [summary.number, summary.documentText, measure].filter(Boolean).join(" · "),
-    drafterName: item.drafterName ?? null,
-    withdrawLines: withdrawResultLines(item.steps),
-  };
-}
-
-// 종류가 준 상세 행(같은 라벨이 이어지면 한 칸의 여러 줄 — 잔고 1행 · 2행 · 잔여 초과)을 라벨 · 값 목록으로.
-function sheetRows(rows: NonNullable<ApprovalInboxItemDto["detail"]>["rows"]): SheetDetailRow[] {
-  const grouped: SheetDetailRow[] = [];
-  for (const row of rows) {
-    const last = grouped[grouped.length - 1];
-    if (last && last.label === row.label) last.lines.push({ text: row.value, tone: row.tone });
-    else grouped.push({ label: row.label, lines: [{ text: row.value, tone: row.tone }] });
-  }
-  return grouped;
-}
-
-// 04.1-05(S5): `내 결재` 항목의 결재 시트 재료 — 서버가 준 상세 · 결재선 · 가능 행동을 그대로 옮긴다.
-function toSheet(item: Partial<ApprovalInboxItemDto>): ApprovalSheetItem | null {
-  if (!item.instanceId || item.version === undefined || !item.detail || !item.actions) return null;
-  return {
-    instanceId: item.instanceId,
-    version: item.version,
-    title: item.detail.title,
-    subtitle: item.detail.subtitle,
-    rows: sheetRows(item.detail.rows),
-    steps: routeListSteps(item.steps),
-    endLines: item.endLines ?? [],
-    actions: item.actions,
-    href: item.href ?? null,
-    approveBlockedReason: item.approveBlockedReason ?? null,
-  };
 }
 
 // 처리함 상태 낱말 — 문서 상태 → 상태 배지 낱말(색은 `StatusTag`의 표 한 곳이 정한다). 결재선 목록 전용 키는 처리함에 오지 않는다.
@@ -120,7 +69,9 @@ function toRow(item: Partial<ApprovalInboxItemDto>, group: InboxRow["group"]): I
     status,
     actions: group === "mine" ? (item.actions ?? []) : [],
     // 잔여 초과 줄(종류가 준 상세 행의 경고 한 줄) — `내 결재`만 상세를 읽는다(UI-SPEC S4 · /design-review).
-    overdraw: group === "mine" ? (item.detail?.rows.find((row) => row.tone === "warning")?.value ?? null) : null,
+    // 05-10: 잔여 초과는 잔고 행의 경고 줄이다 — 지출결의의 세율 바뀜 경고 줄은 표 문서 칸에 올리지 않는다(시트에서 본다).
+    overdraw: group === "mine" ? (item.detail?.rows.find((row) => row.tone === "warning" && row.label === "잔고")?.value ?? null) : null,
+    // 시트 행(증빙 evidence 갈래 포함)은 sheet-material이 만든다 — 첫 화면 「내 차례」와 같은 재료.
     sheet: group === "mine" ? toSheet(item) : null,
     decision: group === "mine" ? toDecision(item, summary) : null,
   };

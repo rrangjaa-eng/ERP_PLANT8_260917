@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { Num } from "@/ui/num/Num";
 import type { NextTurnView } from "./build-next-turn-view";
@@ -14,9 +15,16 @@ export type NextTurnProps = {
    * Phase 4부터 호출부가 넘긴다.
    */
   moreHref?: string;
+  /** 05-10: 항목 key에 있으면 기본 링크 대신 이 노드를 그린다(서버가 만든 행 행동 — `ui/`는 `app/` 액션을 import하지 않는다). */
+  actionSlots?: Record<string, ReactNode>;
 };
 
-export function NextTurn({ view, moreHref }: NextTurnProps) {
+/** 행 대상 글자 요소 id — 행 행동의 `aria-describedby`가 가리킨다. */
+export function nextTurnLabelId(key: string): string {
+  return `next-turn-label-${key}`;
+}
+
+export function NextTurn({ view, moreHref, actionSlots }: NextTurnProps) {
   if (!view.visible) {
     // §7-4: 항목이 0이면 블록 자체가 사라진다. 빈 상태 문구를 대신 넣지 않는다.
     return null;
@@ -36,15 +44,23 @@ export function NextTurn({ view, moreHref }: NextTurnProps) {
             <span className={styles.grow}>
               {/* 대상은 자기 span을 가진다 — 폰(§7-4 두 줄)에서 .grow가 display:contents로
                   풀리면 대상과 이유가 각자 그리드 칸에 놓여야 하기 때문이다. */}
-              <span className={styles.label}>{item.label}</span>
-              <span className={styles.why}> · {item.reason}</span>
+              <span className={styles.label} id={item.key ? nextTurnLabelId(item.key) : undefined}>
+                {item.label}
+              </span>
+              {item.reason ? <span className={styles.why}> · {item.reason}</span> : null}
             </span>
-            <span className={styles.amt}><Num value={item.amount} /></span>
+            <span className={styles.amt}>
+              <Num value={item.measureText ?? item.amount} />
+            </span>
             <span className={styles.action}>
-              {/* WR-04: §10 — 페이지 이동은 <a>다. ListEmpty의 3차 링크와 같은 모양. */}
-              <a href={item.action.href} className={styles.tertiary}>
-                {item.action.label}
-              </a>
+              {item.key && actionSlots?.[item.key] ? (
+                actionSlots[item.key]
+              ) : (
+                // WR-04: §10 — 페이지 이동은 <a>다. ListEmpty의 3차 링크와 같은 모양.
+                <a href={item.action.href} className={styles.tertiary}>
+                  {item.action.label}
+                </a>
+              )}
             </span>
           </li>
         ))}

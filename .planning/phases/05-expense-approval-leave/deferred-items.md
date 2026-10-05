@@ -34,6 +34,12 @@
 - `test/e2e/mobile-expense-form.spec.ts:265` 「1280×800 D2 … D1 증빙 행 썸네일 radius 0」이 05-13 회귀 실행에서 한 번 `썸네일 radius` 폴링 시간 초과(받은 값 "")로 실패했다 — 같은 때 `pnpm test:unit`이 함께 돌아 기계가 붐볐고(`deploy-sh.test.ts`도 5초 시간 초과 · 단독 59 통과), 단독 `--repeat-each=3`은 9/9 통과. 스펙이 올리는 동안에만 있는 미리보기 `<img>`를 잡는 경합 구조다(05-13 변경 — 첨부 버튼 글자 묶음 — 과 무관). CI에서 다시 나오면 미리보기 행을 붙잡는 방법(업로드 지연 route)으로 고친다.
   status: resolved (a6374d5d — 게이트 감사 #4). 원인: 미리보기 `<img>`는 올리는 행에 약 0.4초(실측 380~776ms)만 있고 서버 목록이 새로 그려지면 클립 칸으로 바뀐다(UI-SPEC S4, 제품은 맞다). 스펙이 그 창을 폴링으로 쫓아 기계가 붐비면(CPU 부하 12 프로세스: 15번 중 4번 실패) 창이 지난 뒤에 읽었다. 서버 액션을 풀 때까지 붙잡아 행이 올리는 중으로 머물게 한 뒤 읽는다 — 같은 부하 15/15.
 
+## 05 /review 배치 A — 고치지 않음 (2026-10-05)
+
+- `upload_intents`에 files와 같은 CHECK(owner_kind · sha256 형식 · 크기 > 0)가 없고 완료되지 않은 · 만료된 의도 행을 지우는 코드가 없다 — 마이그레이션이 필요해 Phase 6 F8 고아 정리와 함께 한다. 출처: data-migration(`db/schema/files.ts:46` · `:48`, INFORMATIONAL). status: open
+- 완료 증빙 객체마다 거는 `temporaryHold`를 `removeEvidence`가 풀지 않는다 — Phase 6 F8 고아 정리가 객체를 지우려면 hold 해제가 먼저여야 한다(F8 정리 계약에 짝으로 넣는다). 출처: red-team(`lib/gcp/storage.ts:356`) · adversarial F8. status: open
+- 중복 증빙 검사의 sha256은 클라이언트 선언값이라 GCS가 바이트로 검증하지 않는다(F5) · 업로드 의도 발급에 사용자별 개수 · 빈도 상한이 없다 — 중복 검사는 편의 기능(우회해도 피해는 중복 첨부뿐) · 30명 내부 사용이라 이번에 고치지 않는다. 출처: security(`lib/gcp/storage.ts:311` · `domain/evidence/index.ts:226`, INFORMATIONAL) · adversarial F5. status: open
+
 ## 05-15 (2026-10-04)
 
 - `test/e2e/quote-revisions.spec.ts:675` 「차수 열기」 … — 이전 차수 읽기 표 머리글(`quoteLineReadColumns`)에 현재 표의 맨 끝 `행동` 머리글(05-05 행 행동 열, `showColumn` 계급)이 없어 `thead th` 목록 비교가 어긋난다. 05-15 변경 밖(머리글 · 열 판정 불변). 후보 수정: 단언에서 `행동` 제외(읽기 표는 이전 차수라 행동 열이 없는 게 맞음). 05-05 이후 계속 실패였는지는 8df5e714에서 돌려 확인하지 않았다.

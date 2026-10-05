@@ -796,7 +796,7 @@ export async function createTeamExpenseDraft(
   return created;
 }
 
-// 05-07 거래처 바꾸기 · 고르기(팀 비용 문서) — 기안자 · 작성 중만. 증빙 종류는 그 거래처 기본값(없으면 그대로). 견적 줄 문서의 거래처는
+// 05-07 거래처 바꾸기 · 고르기(팀 비용 문서) — 기안자 · 작성 중만. 증빙 종류는 그 거래처 기본값(없거나 쓰지 않는 코드면 그대로 — C5). 견적 줄 문서의 거래처는
 // 줄이 정한다(제출 판정 ⑤가 줄의 거래처를 본다) — 줄을 바꾸는 것이 그 길이다.
 export async function changeExpenseVendor(
   viewer: Viewer,
@@ -806,7 +806,8 @@ export async function changeExpenseVendor(
   const row = await findEditableExpense(viewer, input.expenseId);
   if (!isTeamCostRow(row)) throw new ExpenseNotFoundError();
   const vendor = await usableVendor(viewer, input.vendorId);
-  const fields: ExpenseDraftFields = { vendorId: vendor.id, ...(vendor.defaultEvidenceType ? { evidenceType: vendor.defaultEvidenceType } : {}) };
+  const defaultEvidence = vendor.defaultEvidenceType && (await loadActiveCodes(viewer)).evidence.has(vendor.defaultEvidenceType) ? vendor.defaultEvidenceType : null;
+  const fields: ExpenseDraftFields = { vendorId: vendor.id, ...(defaultEvidence ? { evidenceType: defaultEvidence } : {}) };
   const saved = await updateDraftIfVersion(viewer, { id: row.id, expectedVersion: input.expectedVersion, fields, updatedBy: viewer.id });
   if (!saved) {
     const latest = await findExpenseById(viewer, row.id);

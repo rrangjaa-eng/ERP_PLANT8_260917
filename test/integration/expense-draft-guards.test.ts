@@ -9,6 +9,7 @@ import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { ForbiddenError } from "@/domain/permissions/can";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import {
+  changeExpenseVendor,
   createExpenseFromLines,
   createTeamExpenseDraft,
   ExpenseFieldError,
@@ -162,6 +163,20 @@ describe("증빙 종류 · 지급 방식은 쓰는 코드만 (A4 · adversarial 
     expect(error).toBeInstanceOf(GateBlockedError);
     expect(error).toMatchObject({ message: "증빙 종류 비어 있음 · 증빙 종류 고르기" });
     expect((await expenseRow(expenseId)).number).toBeNull();
+  });
+});
+
+describe("거래처 바꾸기의 기본 증빙 종류도 쓰는 코드만 (C5 · rereview 3)", () => {
+  it("거래처 기본 증빙 종류가 비활성 코드면 거래처만 바뀌고 증빙 종류는 그대로다", async () => {
+    const fx = await setupExpenseProject();
+    const expenseId = await teamDraft(fx.pm);
+    await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: (await expenseRow(expenseId)).version, fields: { evidenceType: "other_income" } });
+    const vendor = await vendorNamed("비활성기본집");
+    await db.update(codeItems).set({ active: false }).where(and(eq(codeItems.tableKey, "evidence_type"), eq(codeItems.value, "tax_invoice")));
+
+    const changed = await changeExpenseVendor(fx.pm, { expenseId, vendorId: vendor.id, expectedVersion: (await expenseRow(expenseId)).version });
+    expect(changed).toMatchObject({ evidenceType: "other_income" });
+    expect(await expenseRow(expenseId)).toMatchObject({ vendorId: vendor.id, evidenceType: "other_income" });
   });
 });
 

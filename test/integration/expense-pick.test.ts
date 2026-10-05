@@ -5,6 +5,7 @@ import { db, pool } from "@/db/client";
 import { expenses } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
+import { ForbiddenError } from "@/domain/permissions/can";
 import { createAccount } from "@/domain/auth/accounts";
 import { createTeamExpenseDraft, ExpenseConflictError, ExpenseNotFoundError, changeExpenseLine, changeExpenseVendor, createExpenseFromLines, saveExpenseDraft, withdrawExpense } from "@/domain/expenses";
 import { searchLinesForPick, searchVendorsForPick } from "@/domain/expenses/pick";
@@ -239,7 +240,7 @@ describe("견적 줄 골라내기 searchLinesForPick · pick", () => {
   it("expenses 쓰기 권한이 없으면 거부 · 줄 이름 · 금액 정보를 가린 계급에는 행이 비어 새지 않는다", async () => {
     const fx = await setupExpenseProject();
     const hidden = await viewerWithoutVendorValue();
-    await expect(searchLinesForPick(hidden, { mode: "pick", query: "무대" })).rejects.toThrow();
+    await expect(searchLinesForPick(hidden, { mode: "pick", query: "무대" })).rejects.toBeInstanceOf(ForbiddenError);
     expect(JSON.stringify(await searchLinesForPick(fx.pm, { mode: "pick" }))).not.toContain("tax_invoice");
   });
 });
@@ -331,6 +332,17 @@ describe("견적 줄 바꾸기 changeExpenseLine", () => {
 
     await expect(changeExpenseLine(fx.pm, { expenseId, lineId: fx.lines.noVendor, expectedVersion: 99 })).rejects.toBeInstanceOf(GateBlockedError);
     await expect(changeExpenseLine(fx.otherPm, { expenseId, lineId: fx.lines.withVendor, expectedVersion: 1 })).rejects.toBeInstanceOf(ExpenseNotFoundError);
+  });
+
+  // 05 /review A14(testing): 담당 PM도 아니고 팀 범위 밖인 프로젝트의 줄로는 옮기지 못한다.
+  it("담당 PM도 아니고 팀 범위 밖 프로젝트의 줄로 바꾸면 ForbiddenError이고 문서 행은 그대로", async () => {
+    const fx = await setupExpenseProject();
+    const outsider = await makePerson("범위밖", DEFAULT_ROLE_ID, "경영관리팀");
+    const team = (await createTeamExpenseDraft(outsider, { idempotencyKey: randomUUID(), fields: { usageDate: "2026-09-26" } }, { now: new Date("2026-09-26T03:00:00Z") })).expenseId;
+
+    await expect(changeExpenseLine(outsider, { expenseId: team, lineId: fx.lines.withVendor, expectedVersion: 1 })).rejects.toBeInstanceOf(ForbiddenError);
+    const [row] = await db.select().from(expenses).where(eq(expenses.id, team));
+    expect(row).toMatchObject({ projectId: null, quoteLineId: null, version: 1 });
   });
 
   it("버전이 낡으면 충돌", async () => {

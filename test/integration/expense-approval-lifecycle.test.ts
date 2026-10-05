@@ -408,8 +408,8 @@ describe("회수 뒤 같은 번호 다시 제출", () => {
   it("남의 문서 · 지난 차수의 되돌리기는 회수하지 않는다", async () => {
     const fx = await setupExpenseProject();
     const { expenseId } = await submittedDoc(fx);
-    await expect(withdrawExpense(fx.otherPm, { expenseId, undo: true, round: 1 })).rejects.toThrow();
-    await expect(withdrawExpense(fx.pm, { expenseId, undo: true, round: 2 })).rejects.toThrow();
+    await expect(withdrawExpense(fx.otherPm, { expenseId, undo: true, round: 1 })).rejects.toBeInstanceOf(ExpenseNotFoundError);
+    await expect(withdrawExpense(fx.pm, { expenseId, undo: true, round: 2 })).rejects.toBeInstanceOf(ExpenseUndoRefusedError);
     expect((await instanceOf(expenseId))?.status).toBe("submitted");
   });
 

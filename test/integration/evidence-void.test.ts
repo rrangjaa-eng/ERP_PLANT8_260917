@@ -3,7 +3,7 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import { actionLog, files, permissionMatrix } from "@/db/schema";
 import { approveDocument, REJECT_REASON_EMPTY_MESSAGE, RejectReasonError } from "@/domain/approvals";
-import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
+import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND, ExpenseNotFoundError } from "@/domain/expenses";
 import { EVIDENCE_VOID_ONLY_APPROVED, getEvidenceActions, listEvidence, removeEvidence, voidEvidence } from "@/domain/evidence";
 import { listEvidenceVoidSignals } from "@/domain/evidence/signals";
 import { ForbiddenError } from "@/domain/permissions/can";
@@ -129,7 +129,7 @@ describe("승인 뒤 증빙 무효 처리", () => {
 
     const approved = await approvedDoc(await setupExpenseProject());
     const approvedFile = await firstFile(approved.expenseId);
-    await expect(removeEvidence(manager, { fileId: approvedFile.id })).rejects.toThrow();
+    await expect(removeEvidence(manager, { fileId: approvedFile.id })).rejects.toBeInstanceOf(ExpenseNotFoundError);
     expect((await firstFile(approved.expenseId)).removedAt).toBeNull();
   });
 

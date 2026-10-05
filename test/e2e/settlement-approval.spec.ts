@@ -130,6 +130,37 @@ test.describe("정산 결재 — PM 올리기(확인 없음) → 대표 승인 �
     await pm.context().close();
   });
 
+  // 사용자 확정(10/5 16:14): 다시 올리기도 첫 올리기와 같은 `되돌리기` 토스트(늦은 되돌리기 오류 토스트 포함)다.
+  test("다시 올리기 토스트 `되돌리기` — 누르면 `되돌리기 · 결재 멈춤`, 대표가 먼저 승인하면 오류 토스트 + `새로 고침`", async ({ browser, baseURL }) => {
+    const fx = await setupSettlementE2E();
+    await submitSettlementE2E(fx);
+    await rejectSettlementE2E(fx, "실행가 확인");
+
+    const pm = await loginPage(browser, baseURL, fx.pm);
+    await pm.goto(`/projects/${fx.projectId}/settlement`);
+    const again = pm.getByRole("button", { name: /^정산 결재 다시 올리기/ });
+    await waitForHydration(again);
+    await again.click();
+    const toast = pm.getByRole("status").filter({ hasText: /^정산 결재 다시 올리기 · 결재 요청됨/ });
+    await expect(toast).toBeVisible();
+    await toast.getByRole("button", { name: "되돌리기" }).click();
+    await expect(pm.getByRole("status").filter({ hasText: "되돌리기 · 결재 멈춤" })).toBeVisible();
+    await expect(pm.getByRole("button", { name: /^정산 결재 다시 올리기/ })).toBeVisible();
+
+    // 늦은 되돌리기 — 다시 올린 뒤 대표가 승인하면 오류 토스트.
+    const late = pm.getByRole("button", { name: /^정산 결재 다시 올리기/ });
+    await waitForHydration(late);
+    await late.click();
+    const lateToast = pm.getByRole("status").filter({ hasText: /^정산 결재 다시 올리기 · 결재 요청됨/ });
+    await expect(lateToast).toBeVisible();
+    await approveSettlementE2E(fx);
+    await lateToast.getByRole("button", { name: "되돌리기" }).click();
+    const refused = pm.getByRole("alert").filter({ hasText: new RegExp(`^${fx.ceo.name}(이|가) \\d{2}:\\d{2}에 승인함`) });
+    await expect(refused).toBeVisible();
+    await expect(refused.getByRole("button", { name: "새로 고침" })).toBeVisible();
+    await pm.context().close();
+  });
+
   test("올린 직후 대표가 승인하면 PM 토스트 `되돌리기`는 오류 토스트 `{대표}가(이) HH:MM에 승인함` + `새로 고침`", async ({ browser, baseURL }) => {
     const fx = await setupSettlementE2E();
     const pm = await loginPage(browser, baseURL, fx.pm);

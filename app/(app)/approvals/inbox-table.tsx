@@ -89,14 +89,18 @@ export function InboxTable({
   const [withdrawTarget, setWithdrawTarget] = useState<DecisionTarget | null>(null);
   const showToast = (message: string) => setToast({ message, tone: "default" });
   const refreshThenFocus = useRefreshThenFocus();
+  // 승인한 줄이 사라진 뒤 포커스는 다음 줄의 열기(문서 칸 버튼 · 링크)로 — `승인`으로 가면 Enter 한 번 더로 다음 문서가 승인된다.
+  // PC 행 `승인`과 결재 시트 `승인`(폰 — 05-11 웨이브 13 D3)이 같은 길을 쓴다.
+  function refreshThenFocusNext(approvedIndex: number) {
+    const next = approvedIndex < 0 ? undefined : rows[approvedIndex + 1];
+    const nextId = next ? documentCellId(next) : null;
+    refreshThenFocus(() => (nextId ? (document.getElementById(nextId)?.querySelector<HTMLElement>("button, a") ?? null) : null));
+  }
   const { execute } = useAction(approveAction, {
     onSuccess: ({ data }) => {
       if (!data) return;
       setToast({ message: approveToast(data), tone: "default" });
-      // 승인한 줄이 사라진 뒤 포커스는 다음 줄의 열기(문서 칸 버튼 · 링크)로 — `승인`으로 가면 Enter 한 번 더로 다음 문서가 승인된다.
-      const next = rows[rows.findIndex((row) => row.id === pendingIdRef.current) + 1];
-      const nextId = next ? documentCellId(next) : null;
-      refreshThenFocus(() => (nextId ? (document.getElementById(nextId)?.querySelector<HTMLElement>("button, a") ?? null) : null));
+      refreshThenFocusNext(rows.findIndex((row) => row.id === pendingIdRef.current));
     },
     onError: ({ error }) => {
       if (error.serverError && pendingIdRef.current) setRowConflict({ rowId: pendingIdRef.current, message: error.serverError });
@@ -227,7 +231,10 @@ export function InboxTable({
         item={sheetItem}
         onClose={() => setSheetItem(null)}
         onApprove={approveFromSheet}
-        onApproved={showToast}
+        onApproved={(message) => {
+          showToast(message);
+          refreshThenFocusNext(rows.findIndex((row) => row.sheet !== null && row.sheet.instanceId === sheetItem?.instanceId));
+        }}
         evidenceUrl={evidenceViewUrl}
         onSecondary={(action, item) => {
           const row = rows.find((candidate) => candidate.sheet?.instanceId === item.instanceId);

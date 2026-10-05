@@ -135,7 +135,12 @@ export function HomeApprovalRow({ labelId, instanceId, version, actions, sheet, 
         item={sheetOpen ? sheet : null}
         onClose={() => setSheetOpen(false)}
         onApprove={approveFromSheet}
-        onApproved={showToast}
+        onApproved={(message) => {
+          // 시트는 새로 고침을 하지 않는다(05-11 웨이브 13 D3) — 행 `승인`과 같이 새로 고침 뒤 다음 줄로 포커스를 옮긴다.
+          showToast(message);
+          const nextLabelId = actionsRef.current?.closest("li")?.nextElementSibling?.querySelector('[id^="next-turn-label-"]')?.id ?? null;
+          refreshThenFocus(() => nextRowTarget(nextLabelId));
+        }}
         evidenceUrl={evidenceViewUrl}
         onSecondary={(action) => {
           if (!decision) return;

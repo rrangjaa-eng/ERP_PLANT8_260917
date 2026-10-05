@@ -2,7 +2,6 @@
 
 import { Fragment, useEffect, useRef, useState, type MouseEvent } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Button } from "@/ui/button/Button";
 import { ApprovalRoute, type ApprovalRouteEndLine, type ApprovalRouteListStep } from "@/ui/approval-route/ApprovalRoute";
 import { SidePanel, usePanel } from "@/ui/side-panel/SidePanel";
@@ -43,6 +42,7 @@ export type ApprovalSheetProps = {
   item: ApprovalSheetItem | null;
   onClose: () => void;
   onApprove: (target: { instanceId: string; version: number }) => Promise<ApproveOutcome>;
+  // 승인 성공 — 토스트와 새로 고침(다음 줄로 포커스 옮기기 포함)은 호출자가 한다(05-11 웨이브 13 D3 — 결재함 `useRefreshThenFocus`).
   onApproved: (message: string) => void;
   // 05-10: 증빙 썸네일 · 크게 보기 주소 — 시트가 열릴 때 호출부가 서버 액션으로 만든다(권한 판정 뒤 · 저장하지 않는다). 없으면 썸네일 없이 이름만.
   evidenceUrl?: (fileId: string) => Promise<string | null>;
@@ -71,7 +71,6 @@ function SheetContent({
   evidenceUrl,
   onSecondary,
 }: { item: ApprovalSheetItem } & Pick<ApprovalSheetProps, "onApprove" | "onApproved" | "evidenceUrl" | "onSecondary">) {
-  const router = useRouter();
   const panel = usePanel();
   // 제출 중 — 렌더를 기다리지 않고 동기로 바뀌어 두 번째 누름을 무시한다(T7 · §7-17). 같은 값을 `SidePanel`의 닫기 가드에도 알려
   // 제출 중에는 Esc · x · 가림막 닫기가 무시된다(D7).
@@ -90,7 +89,6 @@ function SheetContent({
       if ("message" in outcome) {
         onApproved(outcome.message);
         panel?.requestClose("success");
-        router.refresh();
       } else if (outcome.conflict) {
         setConflict(outcome.conflict);
       }

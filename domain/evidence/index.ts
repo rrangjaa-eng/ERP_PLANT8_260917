@@ -49,6 +49,8 @@ export class EvidenceLockedError extends UserFacingError {}
 export const EVIDENCE_LOCKED_IN_REVIEW = "결재 중 · 증빙 잠김";
 export const EVIDENCE_REMOVE_LOCKED_APPROVED = "승인 뒤 · 증빙 삭제 잠김";
 export const EVIDENCE_VOID_ONLY_APPROVED = "승인 뒤에만 무효 처리";
+// 웨이브 11 검토 m1: 결재 중이 아닌 문서(승인 · 반려 · 회수)에 기안자가 아닌 붙이기 권한자가 붙이려 할 때.
+export const EVIDENCE_ADD_DRAFTER_ONLY = "결재 중 아님 · 증빙은 작성자";
 
 // 완료 통보 거부는 전부 같은 문구 하나 + 서버가 정한 다시 하기 갈래(design-review D3):
 // complete = 의도가 열려 있고 메타데이터가 맞았는데 옮기기만 실패(원본이 incoming/에 남음 — 완료 통보만 다시),
@@ -129,12 +131,14 @@ const OWNER_RULES: Record<string, OwnerRule> = {
 };
 
 // 더하는 사람 — 기안자(지출결의 쓰기) · 결재 중 붙이기 권한자. 권한 판정(can)은 풀 읽기라 트랜잭션 밖에서만 부른다.
+// 기안자 자신은 붙이기 권한이 있어도 권한자 갈래가 아니다 — 작성자는 결재 끝난 뒤(웨이브 11 검토 m3, 사용자 지시 10/5 00:55 추천안).
 type Adder = { drafter: boolean; attacher: boolean };
 
 async function adderOf(viewer: Viewer, rule: OwnerRule, owner: OwnerState): Promise<Adder> {
+  const isDrafter = owner.drafterId === viewer.id;
   return {
-    drafter: owner.drafterId === viewer.id && (await can(viewer, "expenses", "write")),
-    attacher: await can(viewer, rule.attachMenu, "write"),
+    drafter: isDrafter && (await can(viewer, "expenses", "write")),
+    attacher: !isDrafter && (await can(viewer, rule.attachMenu, "write")),
   };
 }
 
@@ -200,7 +204,7 @@ export async function requestEvidenceUpload(viewer: Viewer, raw: EvidenceUploadR
   if (owner.drafterId !== viewer.id && !adder.attacher) throw rule.notFound();
   if (!adder.drafter && !adder.attacher) throw new ForbiddenError("지출결의 작성 권한 없음");
   if (!addOpen(rule, owner, adder)) {
-    throw adder.drafter && rule.inReview(owner) ? new EvidenceLockedError(EVIDENCE_LOCKED_IN_REVIEW) : new ExpenseConflictError(owner.updatedAt);
+    throw new EvidenceLockedError(rule.inReview(owner) ? EVIDENCE_LOCKED_IN_REVIEW : EVIDENCE_ADD_DRAFTER_ONLY);
   }
 
   const maxBytes = (await getSettingValue(EVIDENCE_MAX_SIZE_MB)) * MB;
@@ -286,8 +290,10 @@ export async function completeEvidenceUpload(
     throw new EvidenceUploadRefusedError("complete");
   }
   const gate = await loadActionLogGate();
+  // 의도를 만든 뒤 문서를 볼 수 없게 됐으면(팀 · 범위 · 메뉴 보기) 붙이지 않는다(웨이브 11 검토 m2). 보임 판정도 풀 읽기라 tx 전에 —
+  // 잠근 tx 안 전역 풀 읽기는 풀 소진 교착이다. 상태 · version은 tx 안에서 잠근 뒤 다시 본다.
   const before = await rule.load(viewer, intent.ownerId);
-  const adder = before ? await adderOf(viewer, rule, before) : null;
+  const adder = before && (await rule.canSee(viewer, before)) ? await adderOf(viewer, rule, before) : null;
 
   let row: FileRow;
   try {

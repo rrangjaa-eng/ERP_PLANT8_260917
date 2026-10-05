@@ -26,3 +26,9 @@
 - [x] 셀 전체 클릭(D2, §7-13): label이 td를 채운다(`width: 100%; min-height: var(--s-8)`). 근거: E2E에서 td 오른쪽 끝 −3px 클릭이 체크박스를 토글.
 - [x] 그룹 줄 선 0(D3, §7-3): `.table .groupHeader { border-bottom: 0 }`. 근거: Table.module.css 그룹 줄과 같은 값, after 측정에서 border-bottom 0px 확인.
 - [x] 전체 선택 체크박스 32×32(D4, §3): 체크박스만 label로 감쌌다(항목 이름은 제외 — 이름 클릭으로 전 계급이 바뀌는 사고 방지). 근거: E2E 감싼 요소 ≥32×32.
+
+## 행 높이 · 표 면 맞춤(Codex 디자인 검토 지적 1~8, 스레드 선택 카드 추천안)
+- [x] 항목 행 44px(§3 `--row-h`)·머리 행·그룹 줄 안쪽 여백이 §7-3 표와 같다 — 근거: Table.module.css `.cell`(height `--row-h`)·`.headerCell`(`--s-3`)·`.groupHeader`(`--s-2` `--s-4`)와 같은 토큰으로 맞춤. 고치기 전 DOM 실측 tr 41/29px, E2E 「항목 행 높이 44」 RED → GREEN, after 실측은 /mnt/project-files/notes/perm-grid-scroll/after/.
+- [x] 표 면이 §7-3 표와 같다(흰 면 + 1px 선 + r8) — 근거: `.wrap`에 `--surface-base`·`--border-surface`·`--radius-surface`·`--shadow-surface`, E2E가 /admin/people 표 면의 computed 값(테두리·radius·배경·그림자)과 같음을 비교. 고치기 전 border 0.
+- [x] 새 색·토큰·radius 없음, 13px 미만 없음, sticky·모서리 충돌 없음 — 근거: tokens.css 변수만, `.wrap`이 스크롤 컨테이너라 overflow: auto가 둥근 모서리를 자르고 sticky 기준 불변, 기존 sticky 회귀 E2E·가로 넘침 0 E2E 통과.
+

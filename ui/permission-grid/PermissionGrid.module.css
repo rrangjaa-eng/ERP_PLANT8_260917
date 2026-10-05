@@ -15,6 +15,12 @@
    70vh는 상단 바 + 화면 제목이 항상 보이게 하면서 격자에 충분한 세로 공간을
    남긴다. */
 .wrap {
+  /* 표 면 — §7-3 표(Table.module.css .table)와 같은 흰 면 + 1px 선 + r8 + 옅은 그림자. .wrap이 스크롤 컨테이너라 overflow: auto가
+     둥근 모서리를 함께 자른다(sticky 머리글의 스크롤 기준은 그대로 .wrap). */
+  border: var(--line-w) solid var(--border-surface);
+  border-radius: var(--radius-surface);
+  background: var(--surface-base);
+  box-shadow: var(--shadow-surface);
   overflow: auto;
   max-height: 70vh;
   /* 안쪽 sticky z-index(--z-sticky · 좌상단 모서리 --z-bar)가 이 격자 안에서만 겹침을 정한다 — 상단 바와 같은 층에서 다투지 않는다. */
@@ -54,7 +60,7 @@
   color: var(--text-strong);
   font-size: var(--text-aux);
   font-weight: var(--fw-medium);
-  padding: var(--cell-pad-y) var(--cell-pad-x);
+  padding: var(--s-3) var(--cell-pad-x);
   text-align: center;
   /* 계급 열은 모두 같은 폭(auto 레이아웃에서 폭이 있는 열은 선호 폭이 같고,
      남는 폭은 폭 없는 행 머리글 열이 가진다) — 좁아지면 이름이 줄바꿈하며
@@ -108,6 +114,7 @@
   color: var(--text-strong);
   border-right: var(--line-w) solid var(--border-strong);
   text-align: left;
+  height: var(--row-h);
   padding: var(--cell-pad-y) var(--cell-pad-x);
   white-space: nowrap;
   font-size: var(--text-aux);
@@ -129,13 +136,15 @@
   z-index: var(--z-bar);
   background: var(--surface-selected);
   color: var(--text-strong);
-  padding: var(--cell-pad-y) var(--cell-pad-x);
+  padding: var(--s-3) var(--cell-pad-x);
   font-size: var(--text-aux);
   font-weight: var(--fw-medium);
   text-align: left;
 }
 
+/* 행 높이 --row-h(44, §3) — Table.module.css .cell과 같이 칸 높이로 건다. */
 .table td {
+  height: var(--row-h);
   text-align: center;
   padding: 0;
 }

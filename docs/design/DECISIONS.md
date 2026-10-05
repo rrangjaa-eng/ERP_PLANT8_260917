@@ -1753,3 +1753,13 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 **유지하는 것**: 새 색·토큰 없음, 체크박스 모양·32px 칸, 즉시 저장·낙관적 되돌림·토스트, Tab 순서는 행 우선(의도).
 
 **범위**: SYSTEM.md §7-13, `ui/permission-grid/`, `app/(app)/admin/permissions/`, `app/(app)/admin/visibility/`.
+
+### 2026-10-05 (하위 결정) — 체크박스 매트릭스 PC 행 높이 44 · 표 면을 §7-3 표와 맞춤 (결정자: 스레드 선택 카드 추천안)
+
+**결정**: 권한 격자(PC)의 항목 행을 `--row-h` 44로, 머리 행·그룹 줄 안쪽 여백을 §7-3 표(`Table.module.css` `.headerCell`·`.groupHeader`)와 같은 값으로 하고, 바깥 `.wrap`에 §7-3 표 면(`--surface-base` 면 + 1px `--border-surface` + `--radius-surface` 8 + `--shadow-surface`)을 건다.
+
+**이유**: Codex 디자인 검토 지적 1~8과 DOM 실측 — 항목 행 `tr` 41px, 그룹 줄·머리 행 29px로 §3 「표 행 높이 --row-h 44」에 못 미치고, `.wrap`에 테두리·radius가 없어(border 0) 같은 화면군의 표와 면이 달랐다.
+
+**유지하는 것**: 새 색·토큰·radius 없음, 가로 넘침 0(1280·768), sticky 머리글·모서리(스크롤 기준은 그대로 `.wrap`, `overflow: auto`가 둥근 모서리를 함께 자른다), 폰 구조 그대로.
+
+**범위**: SYSTEM.md §7-13, `ui/permission-grid/PermissionGrid.module.css`.

@@ -286,4 +286,40 @@ test.describe("권한표 격자 (ADMN-01, D-40, 성공 기준 2)", () => {
     expect(box.width).toBeGreaterThanOrEqual(32);
     expect(box.height).toBeGreaterThanOrEqual(32);
   });
+  // 2026-10-05 DECISIONS 하위 결정: 항목 행 --row-h 44 · 표 면(흰 면 + 1px 선 + r8)은 §7-3 표와 같다.
+  test("항목 행 높이는 §7-3 표 행과 같은 44px이다 (§3 --row-h)", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await loginAdmin(page);
+    await page.goto("/admin/permissions");
+    await expect(page.getByRole("columnheader", { name: "시스템 관리자", exact: true })).toBeVisible();
+    const heights = await page
+      .locator("tbody tr:has(td)")
+      .evaluateAll((els) => els.map((el) => el.getBoundingClientRect().height));
+    expect(heights.length).toBeGreaterThan(10);
+    for (const h of heights) expect(Math.abs(h - 44)).toBeLessThanOrEqual(1);
+  });
+
+  test("격자 바깥 면은 §7-3 표 면과 같은 테두리·radius·배경이다 (§4-1)", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await loginAdmin(page);
+    await page.goto("/admin/people");
+    const surface = (el: Element) => {
+      const c = getComputedStyle(el);
+      return {
+        width: c.borderTopWidth,
+        style: c.borderTopStyle,
+        color: c.borderTopColor,
+        radius: c.borderTopLeftRadius,
+        bg: c.backgroundColor,
+        shadow: c.boxShadow,
+      };
+    };
+    const tableSurface = await page.locator("table").first().evaluate(surface);
+    await page.goto("/admin/permissions");
+    await expect(page.getByRole("columnheader", { name: "시스템 관리자", exact: true })).toBeVisible();
+    const gridSurface = await page.locator("table").first().locator("xpath=..").evaluate(surface);
+    expect(tableSurface.width).toBe("1px");
+    expect(tableSurface.radius).toBe("8px");
+    expect(gridSurface).toEqual(tableSurface);
+  });
 });

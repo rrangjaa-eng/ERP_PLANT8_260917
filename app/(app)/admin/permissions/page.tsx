@@ -34,6 +34,7 @@ export default async function PermissionsPage() {
         kind="permission"
         caption="계급별 메뉴 접근 권한표"
         rowSelectLabel="계급"
+        itemHeaderLabel="메뉴"
         rows={rows}
         columns={columns}
         values={values}

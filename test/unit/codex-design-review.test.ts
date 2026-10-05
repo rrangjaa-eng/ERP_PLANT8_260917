@@ -431,6 +431,44 @@ describe("parseCodexFindings", () => {
   });
 });
 
+describe("안쪽 가로 스크롤 칸(scrollersX)", () => {
+  const scroller = { selector: "main > div.wrap", scrollWidth: 3462, clientWidth: 1240 };
+
+  it("폭 700 이상이면 결함 후보로 굵게 적고, 없으면 「없음」, 폰 폭은 결함 후보로 표시하지 않는다", () => {
+    const md = measurementsToMarkdown(
+      [
+        screen({ width: 1280, scrollersX: [scroller] }),
+        screen({ width: 768 }),
+        screen({ width: 375, scrollersX: [scroller] }),
+      ],
+      20_000,
+    );
+    expect(md).toContain("- 안쪽 가로 스크롤: **결함 후보** main > div.wrap (scrollWidth 3462 / clientWidth 1240)");
+    expect(md).toContain("- 안쪽 가로 스크롤: 없음");
+    const phone = md.split("\n").filter((l) => l.startsWith("- 안쪽 가로 스크롤") && l.includes("main > div.wrap"));
+    expect(phone.some((l) => !l.includes("결함 후보"))).toBe(true);
+  });
+
+  it("scrollersX가 없는 기존 측정 json도 빈 배열로 읽는다", () => {
+    const old = screen({ width: 1280 });
+    delete (old as { scrollersX?: unknown }).scrollersX;
+    expect(measurementsToMarkdown([old], 10_000)).toContain("- 안쪽 가로 스크롤: 없음");
+  });
+
+  it("overflowX 지적의 실측에 안쪽 스크롤 칸을 함께 보여 준다", () => {
+    const [row] = crossCheck(
+      [{ route: "/admin/people", width: 1280, claim: "c", expected: "e", selector: "main > div.wrap", metric: "overflowX" }],
+      [screen({ width: 1280, scrollersX: [scroller] })],
+    );
+    expect(row?.measured).toContain("main > div.wrap 3462/1240");
+  });
+
+  it("프롬프트 규칙에 PC·태블릿 폭의 안쪽 가로 스크롤 칸이 overflowX 후보라고 적는다", () => {
+    const prompt = buildPrompt({ mode: "diff", changeText: "c", systemSections: "S", measurementsMd: "M", images: [] });
+    expect(prompt).toContain("PC·태블릿 폭(700 이상)의 안쪽 가로 스크롤 칸은 overflowX 지적 후보");
+  });
+});
+
 describe("crossCheck", () => {
   const screens = [
     screen({

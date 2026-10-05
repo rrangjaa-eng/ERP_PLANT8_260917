@@ -2,8 +2,8 @@
    분리된 별개 컴포넌트다(D-40). 다행 편집·범위 복사·오류 셀 inset 선 같은
    §7-3의 기계장치는 없다. 역할 토큰만 쓴다(스킨 A). */
 
-/* §7-13: 「열이 많아지면 가로 스크롤 · 항목 수가 늘면 세로 스크롤도 함께
-   필요」 — 두 sticky(top·left)가 .wrap을 컨테이닝 블록으로 쓰므로, .wrap
+/* §7-13: 계급이 열이라 가로 스크롤은 없고 항목 수가 늘면 세로 스크롤이
+   생긴다 — 두 sticky(top·left)가 .wrap을 컨테이닝 블록으로 쓰므로, .wrap
    자신이 실제로 스크롤하는 컨테이너여야 한다. overflow-x: auto만 있고 높이
    제약이 없으면 .wrap은 절대 세로로 넘치지 않아(scrollHeight ===
    clientHeight) sticky가 계산상으로만 존재하고 아무 효과가 없다 — 대신
@@ -15,8 +15,18 @@
    70vh는 상단 바 + 화면 제목이 항상 보이게 하면서 격자에 충분한 세로 공간을
    남긴다. */
 .wrap {
+  /* 표 면 — §7-3 표(Table.module.css .table)와 같은 흰 면 + 1px 선 + r8 + 옅은 그림자. .wrap이 스크롤 컨테이너라 overflow: auto가
+     둥근 모서리를 함께 자른다(sticky 머리글의 스크롤 기준은 그대로 .wrap). */
+  border: var(--line-w) solid var(--border-surface);
+  border-radius: var(--radius-surface);
+  background: var(--surface-base);
+  box-shadow: var(--shadow-surface);
   overflow: auto;
   max-height: 70vh;
+  /* 면이 표 내용 폭(항목 열 240 + 계급 열 96 × 계급 수 + 좌우 선)에 맞춘다(넓으면 화면
+     폭까지) — 100% 면이면 남는 폭을 항목 열이 다 가져 1280에서 이름과 첫 체크박스가
+     약 700px 떨어졌다(PR #166 실측). 계급 수(--role-count)는 컴포넌트가 넣는다. */
+  width: min(100%, calc(var(--s-12) * 5 + var(--s-12) * 2 * var(--role-count) + var(--line-w) * 2));
   /* 안쪽 sticky z-index(--z-sticky · 좌상단 모서리 --z-bar)가 이 격자 안에서만 겹침을 정한다 — 상단 바와 같은 층에서 다투지 않는다. */
   isolation: isolate;
 }
@@ -34,9 +44,12 @@
   border: 0;
 }
 
+/* 고정 레이아웃 — 항목 열은 모서리 칸 폭(240), 계급 열은 남는 폭을 똑같이 나눈다.
+   auto 레이아웃은 칸 폭을 최소 폭으로 써서 계급이 12개쯤이면 줄지 않고 넘쳤다(PR #166 CI). */
 .table {
   border-collapse: collapse;
   width: 100%;
+  table-layout: fixed;
 }
 
 .table th,
@@ -44,10 +57,9 @@
   border-bottom: var(--line-w) solid var(--border-row);
 }
 
-/* 열 머리글 — 위 sticky. §7-3의 "편집 가능한 표" 신호(--surface-selected
+/* 열 머리글(계급) — 위 sticky. §7-3의 "편집 가능한 표" 신호(--surface-selected
    바탕 + --text-strong 글자)를 물려받는다 — 체크박스 격자도 값을 바꾸는 컨트롤이다. */
-.colHeader,
-.groupHeader {
+.colHeader {
   position: sticky;
   top: 0;
   z-index: var(--z-sticky);
@@ -55,24 +67,50 @@
   color: var(--text-strong);
   font-size: var(--text-aux);
   font-weight: var(--fw-medium);
-  padding: var(--cell-pad-y) var(--cell-pad-x);
+  padding: var(--s-3) var(--cell-pad-x);
   text-align: center;
-  white-space: nowrap;
+  /* 계급 열 폭은 고정 레이아웃이 똑같이 나눈다(.table) — 좁아지면 이름이 줄바꿈한다. */
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+/* 계급 이름은 길이 제한이 없다 — 두 줄까지 보이고 셋째 줄부터 말줄임(projects.module.css
+   .clientCell 선례). 전체 이름은 접근성 이름(글자 그대로)과 title로 남는다. */
+.colHeaderText {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+/* 메뉴 그룹 줄 — §7-3 표의 그룹 줄(Table.module.css .groupRow/.groupHeader)과 같은 역할 토큰. */
+.groupRow {
+  background: var(--surface-group);
 }
 
 .groupHeader {
-  border-left: var(--line-w) solid var(--border-surface);
-  /* 고정 높이 — 2단 머리글이 실제로 스크롤 컨테이너 안에서 고정되면(위
-   * .wrap 수정) 그룹 행과 열 머리글 행이 둘 다 top: 0으로 각자 sticky를
-   * 걸어 서로 겹친다(회귀 테스트로 실측: 31.6875px 어긋남). 이 행의 높이를
-   * 고정해 아래 열 머리글 행의 top 오프셋 값을 결정론적으로 만든다.
-   * --s-8(32px)은 이 파일의 .cellLabel 32×32와 같은 값을 재사용한 것이다. */
-  height: var(--s-8);
+  padding: var(--s-2) var(--s-4);
+  background: var(--surface-group);
+  color: var(--text-group);
+  font-size: var(--text-aux);
+  font-weight: var(--fw-medium);
+  text-align: left;
 }
 
-.colHeaderLabel {
-  display: block;
-  margin-top: var(--s-1);
+/* §7-3 그룹 줄은 아래 선 없음(공통 th 규칙보다 우선하도록 .table 아래에 둔다). */
+.table .groupHeader {
+  border-bottom: 0;
+}
+
+/* 전체 선택 체크박스만 감싸는 PC 32×32 클릭 영역(항목 이름은 감싸지 않는다). */
+.headerCheckboxHit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--s-8);
+  height: var(--s-8);
+  cursor: pointer;
 }
 
 .headerCheckbox {
@@ -81,7 +119,7 @@
   height: var(--icon-lg);
 }
 
-/* 행 머리글(계급) — 왼쪽 sticky + 오른쪽 1px 구분선. */
+/* 행 머리글(항목 + 전체 선택 체크박스) — 왼쪽 sticky + 오른쪽 1px 구분선. */
 .rowHeader {
   position: sticky;
   left: 0;
@@ -90,10 +128,19 @@
   color: var(--text-strong);
   border-right: var(--line-w) solid var(--border-strong);
   text-align: left;
-  padding: var(--cell-pad-y) var(--cell-pad-x);
-  white-space: nowrap;
+  height: var(--row-h);
+  /* 첫 칸 왼쪽 --s-4 — §7-3 표 첫 칸(Table.module.css .cell:first-child)과 같다. */
+  padding: var(--cell-pad-y) var(--cell-pad-x) var(--cell-pad-y) var(--s-4);
+  /* 항목 열은 240 고정 — 긴 항목 이름(사용자 정의 필드)은 줄바꿈한다. */
+  overflow-wrap: anywhere;
   font-size: var(--text-aux);
   font-weight: var(--fw-medium);
+}
+
+.rowHeaderInner {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
 }
 
 /* 좌상단 모서리 — 두 sticky가 겹치는 자리. --surface-selected로 채워 스크롤 시
@@ -103,26 +150,18 @@
   left: 0;
   top: 0;
   z-index: var(--z-bar);
+  width: calc(var(--s-12) * 5);
   background: var(--surface-selected);
   color: var(--text-strong);
-  padding: var(--cell-pad-y) var(--cell-pad-x);
+  padding: var(--s-3) var(--cell-pad-x) var(--s-3) var(--s-4);
   font-size: var(--text-aux);
   font-weight: var(--fw-medium);
   text-align: left;
 }
 
-/* 그룹 머리글 행이 있으면(2단, 권한표) 열 머리글 행은 그 아래로 내려앉아야
- * 스크롤로 둘 다 고정됐을 때 겹치지 않는다. thead 행이 두 개일 때만 이
- * 규칙이 걸린다(:last-child이면서 :first-child가 아님) — 그룹 없는 단일 행
- * 머리글(정보 노출표)은 이 선택자에 걸리지 않고 위 top: 0을 그대로 쓴다.
- * .colHeader/.corner는 이 컴포넌트 전용 해시 클래스라 다른 표(§7-3 등)의
- * thead/tr 요소에는 영향을 주지 않는다. */
-.table thead tr:last-child:not(:first-child) .colHeader,
-.table thead tr:last-child:not(:first-child) .corner {
-  top: var(--s-8);
-}
-
+/* 행 높이 --row-h(44, §3) — Table.module.css .cell과 같이 칸 높이로 건다. */
 .table td {
+  height: var(--row-h);
   text-align: center;
   padding: 0;
 }
@@ -133,9 +172,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: var(--s-8);
-  height: var(--s-8);
-  margin: 0 auto;
+  width: 100%;
+  min-height: var(--row-h);
   cursor: pointer;
 }
 

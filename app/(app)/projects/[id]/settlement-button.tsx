@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, buttonLinkClassName } from "@/ui/button/Button";
@@ -25,52 +25,34 @@ const SUBMIT_LABEL = "정산 결재 올리기";
 
 type Shown = { message: string; tone: "default" | "error"; actionLabel?: string; does?: "undo" | "reload" };
 
-export function SettlementButton({ projectId, statusWord, canSubmit, dirtyCount }: SettlementHeaderProps & { dirtyCount: number }) {
+type SubmittedData = { round: number; nextHolderNames: string | null };
+
+// 올리기 · 다시 올리기 성공 토스트 + 3차 `되돌리기`(= 확인 없는 회수, 올린 차수만) — 늦으면 서버 거부 원문을 오류 토스트 + `새로 고침`으로 나눈다.
+// 사용자 확정(10/5 16:14): 문서 화면 `정산 결재 다시 올리기`도 머리 줄 첫 올리기와 같은 토스트다.
+export function useSettlementSubmitToast(projectId: string): { showSubmitted: (label: string, data: SubmittedData) => void; toastNode: ReactNode } {
   const router = useRouter();
-  const busyRef = useRef(false);
-  const [pending, setPending] = useState(false);
-  const [failure, setFailure] = useState<string | null>(null);
+  const undoingRef = useRef(false);
   const [toast, setToast] = useState<Shown | null>(null);
   // 올린 차수 — 토스트 `되돌리기`가 이 차수만 회수한다(늦으면 서버가 거부).
   const roundRef = useRef<number | null>(null);
 
-  async function submit() {
-    if (busyRef.current) return;
-    busyRef.current = true;
-    setPending(true);
-    setFailure(null);
-    let result: Awaited<ReturnType<typeof submitSettlementAction>> | undefined;
-    try {
-      result = await submitSettlementAction({ projectId });
-    } catch {
-      result = undefined;
-    }
-    busyRef.current = false;
-    setPending(false);
-    const data = result?.data;
-    if (!data) {
-      setFailure(result?.serverError ?? `${SUBMIT_LABEL} 실패 · 다시 시도`);
-      return;
-    }
-    if (data.kind === "submitted") {
-      roundRef.current = data.round;
-      const names = data.nextHolderNames;
-      setToast({ message: names ? `${SUBMIT_LABEL} · 결재 요청됨 → ${names}` : `${SUBMIT_LABEL} · 결재 요청됨`, tone: "default", actionLabel: "되돌리기", does: "undo" });
-    }
-    router.refresh();
+  function showSubmitted(label: string, data: SubmittedData) {
+    roundRef.current = data.round;
+    const names = data.nextHolderNames;
+    setToast({ message: names ? `${label} · 결재 요청됨 → ${names}` : `${label} · 결재 요청됨`, tone: "default", actionLabel: "되돌리기", does: "undo" });
   }
 
   async function undo() {
     const round = roundRef.current;
-    if (busyRef.current || round === null) return;
-    busyRef.current = true;
+    if (undoingRef.current || round === null) return;
+    undoingRef.current = true;
     let result: Awaited<ReturnType<typeof withdrawSettlementAction>> | undefined;
     try {
       result = await withdrawSettlementAction({ projectId, undo: true, round });
     } catch {
       result = undefined;
     }
-    busyRef.current = false;
+    undoingRef.current = false;
     if (result?.data) {
       setToast({ message: "되돌리기 · 결재 멈춤", tone: "default" });
       router.refresh();
@@ -90,7 +72,6 @@ export function SettlementButton({ projectId, statusWord, canSubmit, dirtyCount 
     router.refresh();
   }
 
-  const blocked = unsavedEditsReason(dirtyCount);
   const toastNode = toast ? (
     <Toast
       message={toast.message}
@@ -100,6 +81,39 @@ export function SettlementButton({ projectId, statusWord, canSubmit, dirtyCount 
       onDismiss={() => setToast(null)}
     />
   ) : null;
+  return { showSubmitted, toastNode };
+}
+
+export function SettlementButton({ projectId, statusWord, canSubmit, dirtyCount }: SettlementHeaderProps & { dirtyCount: number }) {
+  const router = useRouter();
+  const busyRef = useRef(false);
+  const [pending, setPending] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  const { showSubmitted, toastNode } = useSettlementSubmitToast(projectId);
+
+  async function submit() {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setPending(true);
+    setFailure(null);
+    let result: Awaited<ReturnType<typeof submitSettlementAction>> | undefined;
+    try {
+      result = await submitSettlementAction({ projectId });
+    } catch {
+      result = undefined;
+    }
+    busyRef.current = false;
+    setPending(false);
+    const data = result?.data;
+    if (!data) {
+      setFailure(result?.serverError ?? `${SUBMIT_LABEL} 실패 · 다시 시도`);
+      return;
+    }
+    if (data.kind === "submitted") showSubmitted(SUBMIT_LABEL, data);
+    router.refresh();
+  }
+
+  const blocked = unsavedEditsReason(dirtyCount);
 
   if (statusWord !== null) {
     return (

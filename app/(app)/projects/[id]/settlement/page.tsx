@@ -71,7 +71,8 @@ export default async function SettlementPage({ params }: { params: Promise<{ id:
           version={view?.version ?? null}
           actions={actions}
           approveBlockedReason={view?.approveBlockedReason ?? null}
-          resubmitProjectId={canResubmit ? id : null}
+          projectId={id}
+          canResubmit={canResubmit}
           resubmitWaiting={resubmitWaiting}
           decision={
             view?.instanceId && view.version !== undefined

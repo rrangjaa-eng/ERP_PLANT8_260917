@@ -3,41 +3,44 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/ui/button/Button";
-import { Toast } from "@/ui/toast/Toast";
 import { isCtrlCombo } from "@/lib/shortcut";
 import { ConflictLine } from "@/app/(app)/approvals/conflict-line";
 import { DocumentActions, type DocumentActionsProps } from "@/app/(app)/leave/[id]/document-actions";
 import barStyles from "@/app/(app)/leave/[id]/document-actions.module.css";
 import { submitSettlementAction } from "../../actions";
+import { useSettlementSubmitToast } from "../settlement-button";
 import styles from "./settlement.module.css";
 
 // 05-11(UI-SPEC S10 (나)): 정산 결재 문서 화면 행동 줄 — 04.1 행동 줄(`DocumentActions`)을 그대로 쓴다(승인 1차 Ctrl+Enter · 반려 / 회수 2차 →
 // 04.1 S6 확인, 제목은 종류 라벨 `정산 결재`). 승인 막힘(진행 복귀)은 서버 이유를 `승인`에 싣는다. 다시 올리기는 폼이 아니라 이 화면의 1차
 // `정산 결재 다시 올리기`(Ctrl+Enter · 확인 없음)이고, 프로젝트가 진행으로 돌아가 올릴 수 없으면 그 자리에 한 줄만 둔다.
+// 다시 올린 뒤 토스트는 머리 줄 첫 올리기와 같은 `되돌리기` 토스트다(사용자 확정 10/5 16:14).
 
 const RESUBMIT_LABEL = "정산 결재 다시 올리기";
 
 type SettlementActionsProps = Omit<DocumentActionsProps, "resubmit" | "resubmitRoute"> & {
-  /** 다시 올릴 수 있으면(가능 행동 resubmit — 서버 판정) 그 프로젝트 id. */
-  resubmitProjectId: string | null;
+  /** 문서 id = 프로젝트 id. */
+  projectId: string;
+  /** 다시 올릴 수 있는가(가능 행동 resubmit — 서버 판정). */
+  canResubmit: boolean;
   /** 반려 · 회수된 내 문서인데 프로젝트가 진행 — `진행 중 · 정산 뒤 다시 올리기`. */
   resubmitWaiting: boolean;
 };
 
-export function SettlementActions({ resubmitProjectId, resubmitWaiting, ...props }: SettlementActionsProps) {
+export function SettlementActions({ projectId, canResubmit, resubmitWaiting, ...props }: SettlementActionsProps) {
   // 토스트는 다시 올린 뒤 행동 줄이 사라져도(새로 고침) 남아야 해서 여기서 든다.
-  const [toast, setToast] = useState<string | null>(null);
+  const { showSubmitted, toastNode } = useSettlementSubmitToast(projectId);
   return (
     <>
       <DocumentActions {...props} resubmit={null} resubmitRoute={null} />
-      {resubmitProjectId ? <ResubmitBar projectId={resubmitProjectId} onDone={setToast} /> : null}
-      {!resubmitProjectId && resubmitWaiting ? <p className={styles.waiting}>진행 중 · 정산 뒤 다시 올리기</p> : null}
-      {toast ? <Toast message={toast} onDismiss={() => setToast(null)} /> : null}
+      {canResubmit ? <ResubmitBar projectId={projectId} onSubmitted={(data) => showSubmitted(RESUBMIT_LABEL, data)} /> : null}
+      {!canResubmit && resubmitWaiting ? <p className={styles.waiting}>진행 중 · 정산 뒤 다시 올리기</p> : null}
+      {toastNode}
     </>
   );
 }
 
-function ResubmitBar({ projectId, onDone }: { projectId: string; onDone: (message: string) => void }) {
+function ResubmitBar({ projectId, onSubmitted }: { projectId: string; onSubmitted: (data: { round: number; nextHolderNames: string | null }) => void }) {
   const router = useRouter();
   const busyRef = useRef(false);
   const [pending, setPending] = useState(false);
@@ -61,9 +64,7 @@ function ResubmitBar({ projectId, onDone }: { projectId: string; onDone: (messag
       setConflict(result?.serverError ?? `${RESUBMIT_LABEL} 실패 · 다시 시도`);
       return;
     }
-    if (data.kind === "submitted") {
-      onDone(data.nextHolderNames ? `${RESUBMIT_LABEL} · 결재 요청됨 → ${data.nextHolderNames}` : `${RESUBMIT_LABEL} · 결재 요청됨`);
-    }
+    if (data.kind === "submitted") onSubmitted(data);
     router.refresh();
   }
 

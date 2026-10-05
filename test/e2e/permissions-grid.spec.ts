@@ -347,6 +347,25 @@ test.describe("권한표 격자 (ADMN-01, D-40, 성공 기준 2)", () => {
     });
   }
 
+  // PR #166 Codex 봇 P2: 계급 이름 길이 제한이 없어 긴 이름이 96px 열 머리를 수십 줄로 늘렸다 — 두 줄까지(접근성 이름은 전체).
+  test("긴 계급 이름도 열 머리는 두 줄까지이고 접근성 이름은 전체다", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const id = `role-e2e-longname-${randomUUID()}`;
+    const name = `E2E 긴이름 ${id.slice(-12)} ${"아주긴계급이름".repeat(15)}`;
+    await insertRole(SYSTEM_VIEWER, { id, name, sortOrder: 97 });
+    try {
+      await loginAdmin(page);
+      await page.goto("/admin/permissions");
+      const header = page.getByRole("columnheader", { name, exact: true });
+      await expect(header).toBeVisible();
+      const headHeight = await page.locator("thead").evaluate((el) => el.getBoundingClientRect().height);
+      // 두 줄(aux 13px × 줄높이) + 위아래 --s-3 — 넉넉히 72px 이하.
+      expect(headHeight).toBeLessThanOrEqual(72);
+    } finally {
+      await setRoleArchived(SYSTEM_VIEWER, id, true);
+    }
+  });
+
   test("격자 바깥 면은 §7-3 표 면과 같은 테두리·radius·배경이다 (§4-1)", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await loginAdmin(page);

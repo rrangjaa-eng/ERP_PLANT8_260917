@@ -237,8 +237,8 @@ export function PermissionGrid({
                   {itemHeaderLabel}
                 </th>
                 {rows.map((row) => (
-                  <th key={row.id} scope="col" className={styles.colHeader}>
-                    {row.label}
+                  <th key={row.id} scope="col" className={styles.colHeader} title={row.label}>
+                    <span className={styles.colHeaderText}>{row.label}</span>
                   </th>
                 ))}
               </tr>

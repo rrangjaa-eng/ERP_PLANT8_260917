@@ -40,3 +40,6 @@
 ## 면을 내용 폭에 맞춤(1280 이름–체크박스 거리)
 - [x] 1280에서 항목 이름과 첫 체크박스 사이가 200px 이하다 — 근거: 고치기 전 E2E 실측 693.8px RED → `.wrap` `width: fit-content; max-width: 100%` 뒤 GREEN(권한표·정보 노출표), 같은 스펙의 가로 넘침 0(700·768·1280)·표 면 비교·행 높이 44 함께 통과(20 passed).
 - [x] 시스템 이탈은 DECISIONS 먼저 — 근거: DECISIONS 2026-10-05 하위 결정 「면을 내용 폭에 맞춤」 기록 뒤 SYSTEM §4 제외 목록·§7-13 수정, 새 토큰 없음. after 측정 /mnt/project-files/notes/perm-grid-scroll/after/(CI=true).
+
+## 긴 계급 이름 열 머리 두 줄 제한(PR #166 Codex 봇 P2)
+- [x] 계급 이름이 길어도 열 머리는 두 줄까지, 셋째 줄부터 말줄임이고 전체 이름은 접근성 이름·title로 남는다 — 근거: 고치기 전 E2E thead 높이 398.8px RED → `.colHeaderText` line-clamp 2(projects.module.css .clientCell 선례, 새 토큰 없음) 뒤 72px 이하 GREEN, 같은 스펙 21 passed.

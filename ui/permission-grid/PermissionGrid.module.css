@@ -75,6 +75,16 @@
   overflow-wrap: anywhere;
 }
 
+/* 계급 이름은 길이 제한이 없다 — 두 줄까지 보이고 셋째 줄부터 말줄임(projects.module.css
+   .clientCell 선례). 전체 이름은 접근성 이름(글자 그대로)과 title로 남는다. */
+.colHeaderText {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
 /* 메뉴 그룹 줄 — §7-3 표의 그룹 줄(Table.module.css .groupRow/.groupHeader)과 같은 역할 토큰. */
 .groupRow {
   background: var(--surface-group);

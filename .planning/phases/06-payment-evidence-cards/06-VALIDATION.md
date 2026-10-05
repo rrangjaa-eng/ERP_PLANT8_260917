@@ -14,6 +14,8 @@ created: "2026-09-24"
 > Per-phase validation contract for feedback sampling during execution.
 > Seeded by `/gsd-plan-phase 6` from `06-RESEARCH.md` § Validation Architecture.
 > The Per-Task Verification Map is filled by `/gsd-validate-phase` once PLAN.md files exist.
+>
+> **r3 재계획(2026-10-05 — `06-REVIEWS.md` §2 VALIDATION 행):** 새 플랜 넷(06-26 공용 카드 스키마 · 06-27 06 스키마 · 권한 키 묶음 · 06-28 반려 · 회수 지출결의 종결 · 06-29 Phase 6 공용 조각 컴포넌트)과 Phase 05 실제 경로(`replan/replan-A-05-names.md` §1)를 아래 표에 반영했다. 아래 표의 웨이브(W) 표기는 재조정 뒤 최종 웨이브다(C18 — W1 06-01 · 06-26 / W2 06-02 · 06-27 · 06-29 / W3 06-03 / W4 06-04 · 06-05 · 06-28 / W5 06-06 · 06-07 / W6 06-08 · 06-09 · 06-10 / W7 06-11 · 06-12 · 06-13 / W8 06-14 · 06-15 · 06-18 / W9 06-17 · 06-19 / W10 06-16 · 06-20 · 06-21 / W11 06-22 · 06-23 · 06-25 / W12 06-24). Task 번호 · 테스트 이름은 플랜 확정본이 정본이다(06-25 행은 재조정에서 확정본 이름으로 맞췄다). **Per-Task 지도는 실행 전에 `/gsd-validate-phase 6`으로 새로 채운다** — PR #162(05) main 머지 뒤, 06 플랜 체커 재실행과 같은 때(C15).
 
 ---
 
@@ -57,12 +59,14 @@ created: "2026-09-24"
 | EXP-13 | 선결제 표시·사유 필수, 14일 초과는 독촉만(처리 안 막음) | unit + integration | `pnpm vitest run test/unit/domain/payments` | ❌ Wave 0 |
 | EXP-16 | 경영관리 대리 등록, PM 화면 "경영관리 등록" 표시 | integration | `pnpm vitest run test/integration/corp-card-usages` | ❌ Wave 0 |
 | EVID-02 | 증빙 필수 규칙 on/off, 선결제·면제는 예외 | unit | `pnpm vitest run test/unit/domain/rules` | ❌ Wave 0 |
-| EVID-03 | 증빙 금액 = 확정 비용(PM 입력 시점), 확인은 검수 표시 | integration(Phase 5 증빙 모듈 확장) | `pnpm vitest run test/integration/evidence` | ❌ Wave 0(Phase 5 파일 자체가 아직 없음) |
-| EVID-04 | 증빙 떼면 비용이 예상으로 복귀 | integration | `pnpm vitest run test/integration/evidence` | ❌ Wave 0 |
+| EVID-03 | 증빙 금액 = 확정 비용(PM 입력 시점), 확인은 검수 표시 | integration(05 `domain/evidence` 확장 — r3 C4 · 증빙 금액 · 증빙일 칸은 06-27 · domain은 06-06, C6) | `pnpm vitest run test/integration/evidence` | ❌ Wave 0(05 `domain/evidence`는 PR #162에 있음 — 05 머지 뒤) |
+| EVID-04 | 증빙 떼면 비용이 예상으로 복귀(r3: 승인 뒤에는 떼기가 없어 「무효 처리하면」 — 05 `voidEvidence`, 06-11) | integration | `pnpm vitest run test/integration/evidence` | ❌ Wave 0 |
 | PROJ-06 | 완료 전 미결 점검 3종, 강행 허용 설정별 | integration + E2E | `pnpm vitest run test/integration/pre-settle-check` / `pnpm test:e2e` | ❌ Wave 0 |
-| EVID-01(카드 몫 — 06-25) | 카드 사용 건에 카드 전표(이미지 · PDF, 폰 사진 축소)를 붙이면 목록 증빙 열 `있음`, 중복은 지출결의 증빙과 한 종류로 막힘, 저장 전 전표는 저장 트랜잭션에서만 묶임 | integration + E2E | `pnpm db:dev && pnpm vitest run --project integration test/integration/card-usage-evidence.test.ts` / `pnpm db:reset:test && CI=true pnpm exec playwright test test/e2e/card-usage-evidence.spec.ts` | ❌ W10 |
+| EVID-01(카드 몫 — 06-25) | 카드 사용 건에 카드 전표(이미지 · PDF, 폰 사진 축소)를 붙이면 목록 증빙 열 `있음`, 중복은 지출결의 증빙과 한 종류로 막힘, 저장 전 전표는 저장 트랜잭션에서만 묶임 | integration + E2E | `pnpm db:dev && pnpm vitest run --project integration test/integration/card-usage-evidence.test.ts` / `pnpm db:reset:test && CI=true pnpm exec playwright test test/e2e/card-usage-evidence.spec.ts` | ❌ W11 |
+| PROJ-06 · EXP-06(종결 — 06-28, r3) | 반려 · 회수 지출결의를 기안자 · 경영관리가 사유와 함께 종결 — 되돌림 · 번호 재사용 없음, 종결 문서는 줄 문(`expenseLineDoor`) · `listNumberedByLines` · 회차 상한(`remainingForInstallments`) · 견적 줄 파생 · 완료 전 점검(D-611) · 「내 차례」 · 홈 막힌 문서에서 빠짐, 로그는 끌 수 없는 종류 | unit + integration + E2E | `pnpm vitest run --project unit test/unit/domain/expense-close.test.ts` · `pnpm db:dev && pnpm vitest run --project integration test/integration/expense-close.test.ts` · `pnpm db:reset:test && CI=true pnpm exec playwright test test/e2e/expense-close.spec.ts`(파일 이름은 06-28 확정본) | ❌ W4(06-28) |
+| EXP-16 · EXP-07(공용 카드 — 06-26 · 06-05, r3) | 소지자 · 팀 없는 카드 저장 가능(`corp_cards_owner_xor_check` 완화), 공용 카드 사용 등록은 `cards.proxy` 권한자만(U-2) | unit + integration | `pnpm vitest run --project unit test/unit/corp-cards/owner-rule.test.ts` · `pnpm db:dev && pnpm vitest run --project integration test/integration/corp-card-usages.test.ts` | ❌ W1(06-26) · W4(06-05) |
 
-*(앞 10개 행은 06-RESEARCH.md § Validation Architecture § Phase Requirements → Test Map을 그대로 옮김 — 새 테스트를 임의로 추가하지 않음. 마지막 EVID-01 행은 디자인 검토 반영 r2의 교차 B-2로 더한 06-25 몫이다 — EVID-01은 추적표상 Phase 5 매핑이고 이 페이즈는 「법인카드 건에 첨부」만 진다)*
+*(앞 10개 행은 06-RESEARCH.md § Validation Architecture § Phase Requirements → Test Map을 그대로 옮김 — 새 테스트를 임의로 추가하지 않음. EVID-01 행은 디자인 검토 반영 r2의 교차 B-2로 더한 06-25 몫이다 — EVID-01은 추적표상 Phase 5 매핑이고 이 페이즈는 「법인카드 건에 첨부」만 진다(r3: 06-24 requirements에도 더함, C16). 마지막 두 행은 r3 새 플랜 몫이다(C8 · C10))*
 
 ### 「동시 6건」 — 커넥션 풀 교착 회귀 신호 (plan-eng-review 반영 · ENG E-1 · E-2 · CROSS E-1 · E-2 · E-3)
 
@@ -70,29 +74,31 @@ created: "2026-09-24"
 
 | Plan · Task | Wave | 테스트 이름 | 파일 | Automated Command | 결과 정합 | File Exists |
 |-------------|------|-------------|------|-------------------|-----------|-------------|
-| 06-03 Task 2 | 2 | 「지급 완료 동시 6건」 | `test/integration/expense-payments-concurrency.test.ts`(신규) | `pnpm db:dev && pnpm vitest run --project integration test/integration/expense-payments-concurrency.test.ts` | 서로 다른 결재 통과 문서 6건 모두 지급 · 살아 있는 지급 기록 6건 · version 각 +1. PR #75 결정적 재현 꼴(풀 밖 `pg` Client가 행을 먼저 잠그고 `pg_blocking_pids`로 풀 전체가 막힌 것을 확인한 뒤 풂). 06-04 T2 · T3, 06-06 T3, 06-10 T2, 06-13(지급 경로에 견적 줄 잠금을 넣는 플랜 — CROSS-R1 B-1), 06-15 T1이 다시 돌린다 | ❌ W2 |
-| 06-08 Task 2 | 5 | 「동시 6건 번호 경합」 | `test/integration/purchase-requests.test.ts` | `pnpm db:dev && pnpm vitest run --project integration test/integration/purchase-requests.test.ts -t "동시 6건 번호 경합"` | 같은 줄 구매 요청 6건 · 서로 다른 번호 6개 | ❌ W5 |
+| 06-03 Task 2 | 3 | 「지급 완료 동시 6건」 | `test/integration/expense-payments-concurrency.test.ts`(신규) | `pnpm db:dev && pnpm vitest run --project integration test/integration/expense-payments-concurrency.test.ts` | 서로 다른 결재 통과 문서 6건 모두 지급 · 살아 있는 지급 기록 6건 · version 각 +1. PR #75 결정적 재현 꼴(풀 밖 `pg` Client가 행을 먼저 잠그고 `pg_blocking_pids`로 풀 전체가 막힌 것을 확인한 뒤 풂). 06-04 T2 · T3, 06-06 T3, 06-10 T2, 06-13(지급 경로에 견적 줄 잠금을 넣는 플랜 — CROSS-R1 B-1), 06-15 T1이 다시 돌린다 | ❌ W3 |
+| 06-08 Task 2 | 6 | 「동시 6건 번호 경합」 | `test/integration/purchase-requests.test.ts` | `pnpm db:dev && pnpm vitest run --project integration test/integration/purchase-requests.test.ts -t "동시 6건 번호 경합"` | 같은 줄 구매 요청 6건 · 서로 다른 번호 6개 | ❌ W6 |
 | 06-12 Task 2 | 7 | 「구매 완료 동시 6건」 | `test/integration/purchase-requests.test.ts` | `pnpm db:dev && pnpm vitest run --project integration test/integration/purchase-requests.test.ts -t "구매 완료 동시 6건"` | 하나만 성공 · 다섯 `이미 구매 완료 · 새로 고침` · 카드 사용 1건. 06-25 T2(구매 완료 트랜잭션에 대기 전표 결합을 더하는 플랜)가 다시 돌린다 | ❌ W7 |
-| 06-19 Task 1 | 10 | 「기안 동시 6건」 | `test/integration/pre-settle-check.test.ts` | `pnpm db:dev && pnpm vitest run --project integration test/integration/pre-settle-check.test.ts -t "기안 동시 6건"` | 막힘 0 프로젝트 6개 기안 모두 끝남 | ❌ W10 |
+| 06-19 Task 1 | 9 | 「기안 동시 6건」 | `test/integration/pre-settle-check.test.ts` | `pnpm db:dev && pnpm vitest run --project integration test/integration/pre-settle-check.test.ts -t "기안 동시 6건"` | 막힘 0 프로젝트 6개 기안 모두 끝남 | ❌ W9 |
 | 06-22 Task 1 | 11 | 「승인 동시 6건」 | `test/integration/pre-settle-check.test.ts` | `pnpm db:dev && pnpm vitest run --project integration test/integration/pre-settle-check.test.ts -t "승인 동시 6건"` | 막힘 0 정산 결재 6건 승인 모두 끝남 | ❌ W11 |
 
 같은 검토에서 나온 동시성 · 멱등 · 사전 조회 신호(동시 6건 아님):
 
 | Plan · Task | 테스트 이름 | 파일 | Automated Command | File Exists |
 |-------------|-------------|------|-------------------|-------------|
-| 06-04 Task 3 (CROSS R-3) | 「잠금 뒤 게이트 재판정」 | `test/integration/expense-payments.test.ts` | `pnpm db:dev && pnpm vitest run --project integration test/integration/expense-payments.test.ts -t "잠금 뒤 게이트 재판정"` | ❌ W3 |
+| 06-04 Task 3 (CROSS R-3) | 「잠금 뒤 게이트 재판정」 | `test/integration/expense-payments.test.ts` | `pnpm db:dev && pnpm vitest run --project integration test/integration/expense-payments.test.ts -t "잠금 뒤 게이트 재판정"` | ❌ W4 |
 | 06-15 Task 2 (ENG E-5) | 「같은 요청 재전송 → 0건 추가 지급」 | `test/integration/payment-batch.test.ts` | `pnpm db:dev && pnpm vitest run --project integration test/integration/payment-batch.test.ts -t "같은 요청 재전송"` | ❌ W8 |
-| 06-15 Task 2 (CROSS-R1 F-4 · CHK-R1 W1) | 「목록 지급 총액 = 단건 재계산」 · 「세율 읽기 횟수」 | `test/integration/payment-batch.test.ts` | `pnpm db:dev && pnpm vitest run --project integration test/integration/payment-batch.test.ts -t "목록 지급 총액"` | ❌ W8 |
-| 06-03 Task 1 (ENG E-2 · CROSS E-1) | `loadTaxRates` · `taxRatesReader` 단위(사전 조회 값만 읽고, 없는 기준일은 던진다) | `test/unit/domain/money-tax.test.ts`(기존 파일 확장) | `pnpm vitest run --project unit test/unit/domain/money-tax.test.ts` | ✅ 파일 있음 · 케이스 W2 |
-| 06-07 Task 1 (CROSS E-5) | `lockQuoteLinesQuery(...).toSQL()`에 `order by "quote_lines"."id"` + `for update` | `test/unit/repositories/quote-line-links-sql.test.ts`(신규) | `pnpm vitest run --project unit test/unit/repositories/quote-line-links-sql.test.ts` | ❌ W4 |
+| 06-15 Task 2 (CROSS-R1 F-4 · CHK-R1 W1) | 「목록 지급 총액 = 단건 재계산」 · 「세율 읽기 횟수」 | `test/integration/payment-batch.test.ts` | `pnpm db:dev && pnpm vitest run --project integration test/integration/payment-batch.test.ts -t "목록 지급 총액"` · `pnpm db:dev && pnpm vitest run --project integration test/integration/payment-batch.test.ts -t "세율 읽기 횟수"`(RS-03 ⒞ — 두 이름을 따로 건다) | ❌ W8 |
+| 06-03 Task 1 (ENG E-2 · CROSS E-1) | `loadTaxRates` · `taxRatesReader` 단위(사전 조회 값만 읽고, 없는 기준일은 던진다) | `test/unit/domain/money-tax.test.ts`(기존 파일 확장) | `pnpm vitest run --project unit test/unit/domain/money-tax.test.ts` | ✅ 파일 있음 · 케이스 W3 |
+| 06-07 Task 1 (CROSS E-5) | `lockQuoteLinesQuery(...).toSQL()`에 `order by "quote_lines"."id"` + `for update` | `test/unit/repositories/quote-line-links-sql.test.ts`(신규) | `pnpm vitest run --project unit test/unit/repositories/quote-line-links-sql.test.ts` | ❌ W5 |
+| 06-13 Task 2 (CROSS-R1 B-1 · RS-10 ⒝ — RS-03 ⒟) | 「카드 사용 등록 ∥ 지출결의 제출」 · 「구매 요청 ∥ 지출결의 제출」 · 「지급 완료 ∥ 같은 줄 새 지출결의 제출」 · 「역순」(2건 경합 · 잠금 순서 — 동시 6건 아님) | `test/integration/dual-link-concurrency.test.ts`(신규) | `pnpm db:dev && pnpm vitest run --project integration test/integration/dual-link-concurrency.test.ts` | ❌ W7 |
 
 ### 디자인 검토 반영 신호 (rev 9 — `/plan-design-review` · `design-review.md`@f2720a8)
 
-UI-SPEC rev 9(DR-4 · DR-6 · DR-7 · DR-8 · C-1 · H-2 · H-3 · H-5 · M-1 · M-2 · M-3 · M-7)가 플랜에 내린 신호. 테스트 이름은 플랜 acceptance의 `grep -c` 대상과 같다. `-t`(Vitest) · `-g`(Playwright)는 정규식이라 `+`는 `\\+`로 쓴다. 디자인 교차 검토는 Codex 대신 Opus(한도 2026-09-29까지) — 한도 풀리면 Codex 재확인 필요.
+UI-SPEC rev 9(DR-4 · DR-6 · DR-7 · DR-8 · C-1 · H-2 · H-3 · H-5 · M-1 · M-2 · M-3 · M-7)가 플랜에 내린 신호. 테스트 이름은 플랜 acceptance의 `grep -c` 대상과 같다. `-t`(Vitest) · `-g`(Playwright)는 정규식이라 `+`는 `\\+`로 쓴다. 디자인 교차 검토는 Codex 대신 Opus(한도 2026-09-29까지) (「Codex 재확인」 꼬리표는 U-1로 닫음 — 계획 교차 검토는 Opus, Codex는 디자인 검토에서만).
 
 | Plan · Task | 테스트 이름 | 파일 | Automated Command | File Exists |
 |-------------|-------------|------|-------------------|-------------|
-| 06-06 Task 3 (DR-4) | 「확인 응답에 새 version」 | `test/integration/evidence-reviews.test.ts` | `pnpm db:dev && pnpm vitest run --project integration test/integration/evidence-reviews.test.ts -t "확인 응답에 새 version"` | ❌ W4 |
+| 06-06 Task 3 (DR-4) | 「확인 응답에 새 version」 | `test/integration/evidence-reviews.test.ts` | `pnpm db:dev && pnpm vitest run --project integration test/integration/evidence-reviews.test.ts -t "확인 응답에 새 version"` | ❌ W5 |
+| 06-06 Task 3 (C4 · r2 B-1 — 증빙 지문, 재조정으로 06-17에서 옮김) | 「증빙 지문 다름 → 확인 거부」 | `test/integration/evidence-reviews.test.ts` | `pnpm db:dev && pnpm vitest run --project integration test/integration/evidence-reviews.test.ts -t "증빙 지문 다름 → 확인 거부"` | ❌ W5 |
 | 06-11 Task 1 (B-1 r2) | 「PM 증빙 변경은 문서 version을 올린다」 | `test/integration/evidence-invalidation.test.ts` | `pnpm db:dev && pnpm vitest run --project integration test/integration/evidence-invalidation.test.ts -t "PM 증빙 변경은 문서 version을 올린다"` | ❌ W7 |
 | 06-11 Task 1 (B-1 r2) | 「PM 증빙 변경 뒤 옛 version 확인 거부」 | `test/integration/evidence-invalidation.test.ts` | `pnpm db:dev && pnpm vitest run --project integration test/integration/evidence-invalidation.test.ts -t "PM 증빙 변경 뒤 옛 version 확인 거부"` | ❌ W7 |
 | 06-11 Task 1 (X-1 r3) | 「결재 중 문서의 PM 증빙 변경은 version을 올리지 않는다」 | `test/integration/evidence-invalidation.test.ts` | `pnpm db:dev && pnpm vitest run --project integration test/integration/evidence-invalidation.test.ts -t "결재 중 문서의 PM 증빙 변경은 version을 올리지 않는다"` | ❌ W7 |
@@ -122,22 +128,34 @@ UI-SPEC rev 9(DR-4 · DR-6 · DR-7 · DR-8 · C-1 · H-2 · H-3 · H-5 · M-1 ·
 
 ### 카드 전표 첨부 신호 (06-25 — 디자인 검토 반영 r2 · 교차 B-2 · EVID-01 카드 몫)
 
-UI-SPEC rev 9 S7 · S8 · S9 · S13의 카드 전표 표면과 DR-3(카드 전표 = 지출결의 한 종류, O-6)이 06-25에 내린 신호. 테스트 이름은 06-25 behavior · acceptance의 `describe` · `test` 이름과 같다. 디자인 교차 검토는 Codex 대신 Opus(한도 2026-09-29까지) — 한도 풀리면 Codex 재확인 필요.
+UI-SPEC rev 9 S7 · S8 · S9 · S13의 카드 전표 표면과 DR-3(카드 전표 = 지출결의 한 종류, O-6)이 06-25에 내린 신호. 테스트 이름은 06-25 behavior · acceptance의 `describe` · `test` 이름과 같다. 디자인 교차 검토는 Codex 대신 Opus(한도 2026-09-29까지) (「Codex 재확인」 꼬리표는 U-1로 닫음 — 계획 교차 검토는 Opus, Codex는 디자인 검토에서만).
 
 | Plan · Task | 테스트 이름 | 파일 | Automated Command | File Exists |
 |-------------|-------------|------|-------------------|-------------|
-| 06-25 Task 1 (B-2 · S7 · S9) | 「카드 전표 주인 권리」 | `test/integration/card-usage-evidence.test.ts`(신규) | `pnpm db:dev && pnpm vitest run --project integration test/integration/card-usage-evidence.test.ts -t "카드 전표 주인 권리"` | ❌ W10 |
-| 06-25 Task 1 (B-2 · S8 — 트레이서) | 「수정 모드 전표 첨부 → 목록 있음」 | `test/e2e/card-usage-evidence.spec.ts`(신규) | `pnpm db:reset:test && CI=true pnpm exec playwright test test/e2e/card-usage-evidence.spec.ts -g "수정 모드 전표 첨부 → 목록 있음"` | ❌ W10 |
-| 06-25 Task 2 (S9 · S13 · 06-03 tx 규약) | 「대기 전표 저장 결합」(저장 트랜잭션 결합 · 거부 시 미결합 · 남의 대기 전표 거부) | `test/integration/card-usage-evidence.test.ts` | `pnpm db:dev && pnpm vitest run --project integration test/integration/card-usage-evidence.test.ts -t "대기 전표 저장 결합"` | ❌ W10 |
-| 06-25 Task 2 (S9 · S13) | 「새 건 · 구매 완료 전표 첨부」 | `test/e2e/card-usage-evidence.spec.ts` | `pnpm db:reset:test && CI=true pnpm exec playwright test test/e2e/card-usage-evidence.spec.ts -g "새 건 · 구매 완료 전표 첨부"` | ❌ W10 |
-| 06-25 Task 2 (S7 loading · EVID-01 폰 사진) | 「폰 전표 사진 축소」(폭 390 · `naturalWidth` · `naturalHeight` ≤ 2000) | `test/e2e/card-usage-evidence.spec.ts` | `pnpm db:reset:test && CI=true pnpm exec playwright test test/e2e/card-usage-evidence.spec.ts -g "폰 전표 사진 축소"` | ❌ W10 |
-| 06-25 Task 3 (DR-3 · O-6) | 「카드 전표 중복 — 지출결의와 한 종류」(묶음 전 RED) | `test/integration/card-usage-evidence.test.ts` | `pnpm db:dev && pnpm vitest run --project integration test/integration/card-usage-evidence.test.ts -t "카드 전표 중복 — 지출결의와 한 종류"` | ❌ W10 |
-| 06-25 Task 3 (S9 「삭제 뒤 새로 등록」) | 「보관된 카드 사용 전표」 | `test/integration/card-usage-evidence.test.ts` | `pnpm db:dev && pnpm vitest run --project integration test/integration/card-usage-evidence.test.ts -t "보관된 카드 사용 전표"` | ❌ W10 |
-| 06-25 Task 3 (S7 · D-607) | 「카드 전표는 값을 바꾸지 않는다」 | `test/integration/card-usage-evidence.test.ts` | `pnpm db:dev && pnpm vitest run --project integration test/integration/card-usage-evidence.test.ts -t "카드 전표는 값을 바꾸지 않는다"` | ❌ W10 |
-| 06-25 Task 3 (X-2 r3) | 「카드 전표 첨부 · 삭제 · 대기 결합 전후 모든 지출결의 version 불변」 | `test/integration/card-usage-evidence.test.ts` | `pnpm db:dev && pnpm vitest run --project integration test/integration/card-usage-evidence.test.ts -t "모든 지출결의 version 불변"` | ❌ W10 |
-| 06-25 Task 3 (S7 zero-one-many) | 「마지막 전표 삭제 모달 없음」 | `test/e2e/card-usage-evidence.spec.ts` | `pnpm db:reset:test && CI=true pnpm exec playwright test test/e2e/card-usage-evidence.spec.ts -g "마지막 전표 삭제 모달 없음"` | ❌ W10 |
-| 06-25 Task 3 (S7 중복 번호 · O-6) | 「카드 폼 중복 번호」 | `test/e2e/card-usage-evidence.spec.ts` | `pnpm db:reset:test && CI=true pnpm exec playwright test test/e2e/card-usage-evidence.spec.ts -g "카드 폼 중복 번호"` | ❌ W10 |
-| 06-25 Task 3 (회귀) | 06-11 단위 「조회 가짜의 인자 단언」 · 06-16 `[DR-3]` 통합 · 06-16 Task 2 E2E | `test/unit/domain/evidence-upload-checks.test.ts` · `test/integration/approval-reserve-evidence.test.ts` · `test/e2e/quote-revisions.spec.ts` | `pnpm vitest run --project unit test/unit/domain/evidence-upload-checks.test.ts` · `pnpm db:dev && pnpm vitest run --project integration test/integration/approval-reserve-evidence.test.ts` · `pnpm db:reset:test && CI=true pnpm exec playwright test test/e2e/approval-reserve-evidence.spec.ts test/e2e/quote-revisions.spec.ts` | ❌ W7 · W8 |
+| 06-25 Task 1 (B-2 · S7 · S9) | 「카드 전표 주인 권리」 | `test/integration/card-usage-evidence.test.ts`(신규) | `pnpm db:dev && pnpm vitest run --project integration test/integration/card-usage-evidence.test.ts -t "카드 전표 주인 권리"` | ❌ W11 |
+| 06-25 Task 1 (B-2 · S8 — 트레이서) | 「수정 패널 전표 첨부 → 목록 있음」 | `test/e2e/card-usage-evidence.spec.ts`(신규) | `pnpm db:reset:test && CI=true pnpm exec playwright test test/e2e/card-usage-evidence.spec.ts -g "수정 패널 전표 첨부 → 목록 있음"` | ❌ W11 |
+| 06-25 Task 2 (S9 첫 저장 · 06-03 tx 규약) | 「첫 저장 — 주인 없는 업로드 없음」 | `test/integration/card-usage-evidence.test.ts` | `pnpm db:dev && pnpm vitest run --project integration test/integration/card-usage-evidence.test.ts -t "첫 저장 — 주인 없는 업로드 없음"` | ❌ W11 |
+| 06-25 Task 2 (S9 · S13 — r3 사용자 카드 2026-10-05: S13 첨부 영역 없음, 저장 뒤 S9에서 첨부) | 「새 건 첫 저장 첨부」 · 「막힌 새 건은 파일을 받지 않는다」 · 「구매 완료 패널에 첨부 영역 없음」 | `test/e2e/card-usage-evidence.spec.ts` | `pnpm db:reset:test && CI=true pnpm exec playwright test test/e2e/card-usage-evidence.spec.ts`(파일 전체) | ❌ W11 |
+| 06-25 Task 2 (S7 loading · EVID-01 폰 사진) | 「폰 전표 사진 축소」(폭 390 · `naturalWidth` · `naturalHeight` ≤ 2000) | `test/e2e/card-usage-evidence.spec.ts` | `pnpm db:reset:test && CI=true pnpm exec playwright test test/e2e/card-usage-evidence.spec.ts -g "폰 전표 사진 축소"` | ❌ W11 |
+| 06-25 Task 3 (DR-3 · O-6) | 「카드 전표 중복 — 지출결의와 한 종류」(06-11 `duplicateScopeKinds` 확장 — 06-11 표가 이미 묶으면 RED 없음) | `test/integration/card-usage-evidence.test.ts` | `pnpm db:dev && pnpm vitest run --project integration test/integration/card-usage-evidence.test.ts -t "카드 전표 중복 — 지출결의와 한 종류"` | ❌ W11 |
+| 06-25 Task 3 (S9 「삭제 뒤 새로 등록」 · T-06-201) | 「보관 · 되돌리기」(보관 제외 · 겹친 채 되돌리기 거부 — RED 둘) | `test/integration/card-usage-evidence.test.ts` | `pnpm db:dev && pnpm vitest run --project integration test/integration/card-usage-evidence.test.ts -t "보관 · 되돌리기"` | ❌ W11 |
+| 06-25 Task 3 (S7 · D-607 · X-2 r3) | 「카드 전표는 값을 바꾸지 않는다」(X-2 — 모든 지출결의 version 불변 포함) | `test/integration/card-usage-evidence.test.ts` | `pnpm db:dev && pnpm vitest run --project integration test/integration/card-usage-evidence.test.ts -t "카드 전표는 값을 바꾸지 않는다"` | ❌ W11 |
+| 06-25 Task 3 (S7 zero-one-many) | 「마지막 전표 삭제 확인 창 없음」 | `test/e2e/card-usage-evidence.spec.ts` | `pnpm db:reset:test && CI=true pnpm exec playwright test test/e2e/card-usage-evidence.spec.ts -g "마지막 전표 삭제 확인 창 없음"` | ❌ W11 |
+| 06-25 Task 3 (S7 중복 번호 · O-6) | 「카드 패널 중복 번호」 | `test/e2e/card-usage-evidence.spec.ts` | `pnpm db:reset:test && CI=true pnpm exec playwright test test/e2e/card-usage-evidence.spec.ts -g "카드 패널 중복 번호"` | ❌ W11 |
+| 06-25 Task 3 (회귀) | 06-11 단위 「조회 가짜의 인자 단언」 · 06-16 `[DR-3]` 통합 · 06-16 Task 2 E2E | `test/unit/domain/evidence-upload-checks.test.ts` · `test/integration/approval-reserve-evidence.test.ts` · `test/e2e/quote-revisions.spec.ts` | `pnpm vitest run --project unit test/unit/domain/evidence-upload-checks.test.ts` · `pnpm db:dev && pnpm vitest run --project integration test/integration/approval-reserve-evidence.test.ts` · `pnpm db:reset:test && CI=true pnpm exec playwright test test/e2e/approval-reserve-evidence.spec.ts test/e2e/quote-revisions.spec.ts` | ❌ W7(06-11) · W10(06-16) — 06-25 W11에서 다시 돌림 |
+
+### r3 새 플랜 신호 (06-26 ~ 06-29 — `06-REVIEWS.md` C8 · C9 · C10 · C11)
+
+위험 경로 두 플랜(06-26 PR-0 · 06-27 PR-A)은 사용자 머지 PR이고 마이그레이션은 `pnpm db:generate`(번호 예약 없음, 기존 표 CHECK 확장은 NOT VALID + `--custom` VALIDATE 두 파일 — C7). 테스트 이름 · Task 번호는 각 플랜 확정본이 정하고 `/gsd-validate-phase 6`이 이 표를 Per-Task 지도로 옮긴다. 「가칭」 파일은 플랜이 이름을 정한다.
+
+| Plan · Task | 신호 | 파일 | Automated Command | File Exists |
+|-------------|------|------|-------------------|-------------|
+| 06-26 (risk: db-schema, migration) | 마이그레이션 적용 뒤 소지자 · 팀 둘 다 없는 카드 행 저장 성공 · 둘 다 있는 행은 여전히 거부 · squawk 통과 · 스키마 ↔ 마이그레이션 drift 0 | `db/schema/corp-cards.ts` · `db/migrations/NNNN_*.sql` · `test/integration/corp-cards-shared.test.ts`(가칭) | `pnpm lint:sql` · `pnpm db:dev && pnpm vitest run --project integration test/integration/corp-cards-shared.test.ts` | ❌ W1(06-26) |
+| 06-27 (risk: db-schema, migration, permissions) | 새 표 다섯(`expense_payments` · `expense_evidence_reviews` · `corp_card_usages` · `purchase_requests` · `revenue_issue_requests`) · `expenses` 새 칸(선결제 · 증빙 금액 · 증빙일 · 종결 셋) · `files_owner_kind_check` 확장(`quote_revision` · `reserve_entry` · `corp_card_usage`)의 CHECK · unique · FK가 서고 위반 행을 거부 · 메뉴 키 `expenses.payments` · `cards.purchases` · `cards.proxy`가 `MENUS`에 있음 | `db/schema/*` · `db/migrations/NNNN_*.sql` · `domain/permissions/menus.ts` · `test/integration/phase6-schema.test.ts`(가칭) | `pnpm lint:sql` · `pnpm db:dev && pnpm vitest run --project integration test/integration/phase6-schema.test.ts` · `pnpm vitest run --project unit test/unit/permissions` | ❌ W2(06-27) |
+| 06-28 (risk: money, approvals) | 「종결 — 반려 · 회수에서만 · 기안자 · 경영관리만 · 사유 필수」 · 「종결 문서는 줄 문 · 회차 상한 · 번호 목록에서 빠짐」(`expenseLineDoor` · `listNumberedByLines` · `remainingForInstallments` 호출부 넷) · 「종결 문서는 미결 점검 · 내 차례 · 홈 막힌 문서에서 빠짐」 · 「종결 로그는 끌 수 없음」(`ALWAYS_ON_ACTION_TYPES`) · 「동시 종결 · 재제출 경합 → 하나만」 · S23 화면(2차 `종결` → 사유 모달 → 상태 `종결`) | `domain/expenses/close.ts`(가칭) · `domain/expenses/line-door.ts` · `domain/money/index.ts` · `ui/status-tag/status-map.ts` · `app/(app)/expenses/actions.ts` · `test/integration/expense-close.test.ts`(가칭) · `test/e2e/expense-close.spec.ts`(가칭) | `pnpm db:dev && pnpm vitest run --project integration test/integration/expense-close.test.ts` · `pnpm vitest run --project unit test/unit/ui/status-map.test.ts` · `pnpm db:reset:test && CI=true pnpm exec playwright test test/e2e/expense-close.spec.ts` | ❌ W4(06-28) |
+| 06-29 (컴포넌트 — 새 색 · 서체 · radius 없음) | ① `ListScreen.primaryAction` 버튼 갈래 ② SP-8 = 05 `ui/pick-dialog/PickDialog` 위 검색 고르기(행 막힘 2행 · 현재 줄 · 1차 `이 줄로` Enter · LOADING · EMPTY · ERROR — `ui/confirm-dialog` 새 갈래 없음) ③ 짝 격자 입력(SP-9) ④ `ui/table` selectable 폭 식(`calc(var(--row-number-w) + 2 * var(--cell-pad-x))`) ⑤ SP-7 `attachments` 상태 계약 — 각각 단위 테스트 + `/dev/components` | `ui/list-screen/ListScreen.tsx` · `ui/pick-dialog/PickDialog.tsx`(05) · `ui/table/*` · `test/unit/ui/list-screen.test.ts` · `test/unit/ui/pick-dialog.test.ts`(가칭) · `test/unit/ui/table-selectable.test.ts` | `pnpm vitest run --project unit test/unit/ui/list-screen.test.ts test/unit/ui/pick-dialog.test.ts test/unit/ui/table-selectable.test.ts` · `pnpm lint`(stylelint 토큰) | ❌ W2(06-29 — `list-screen.test.ts`는 있음, 케이스만) |
+
+**05 실제 경로로 바꾼 것(r3 — `replan-A` §1):** 지출결의 목록 `app/(app)/expenses/page.tsx` → `app/(app)/expenses/(list)/page.tsx`(06-15 · 06-17 · 06-20) · 폼 `app/(app)/expenses/expense-form.tsx` → `app/(app)/expenses/[id]/expense-form.tsx`(06-10 · 06-11) · 액션 `app/(app)/expenses/[id]/actions.ts` → `app/(app)/expenses/actions.ts` · `actions.registry.ts` · 증빙 모듈 `domain/expenses/evidence.ts` · `domain/evidence-attachments` · `domain/evidence-reviews/upload-checks.ts` → 05 `domain/evidence/index.ts`(`OWNER_RULES`) · `domain/evidence/upload-checks.ts`(`checkEvidenceUpload`) · 정산 `domain/approvals/settlement.ts` → `domain/settlements/index.ts`(`prepareFinalApproval` · `onFinalApprovalInTx`) · 상태 낱말 `app/(app)/status-display.ts` · `test/unit/status-display.test.ts` → `ui/status-tag/status-map.ts` · `test/unit/ui/status-map.test.ts` · 연결 고르기 `app/(app)/cards/link-picker.tsx` → 05 `ui/pick-dialog/PickDialog` 얇은 래퍼 · 문서 잠금 `lockExpenseRow` → `lockExpenseForUpdate`(`repositories/expenses.ts`) · `sumKrw` · `diffKrw` 신설 → 이미 있음(`test/unit/domain/money.test.ts` — 06-02의 `money-sum-diff.test.ts` 신설 없음). 위 「디자인 검토 반영 신호」의 06-11 다섯 줄(「PM 증빙 변경 …」)은 C4 재설계로 훅이 05 두 경로(`completeEvidenceUpload` · `voidEvidence`) · 확인 기록이 있는 결재 통과 문서만으로 좁아져 이름이 바뀐다 — `/gsd-validate-phase`가 플랜 확정본 이름으로 옮긴다.
 
 ### 실행 착수 게이트(M-9) — `/gsd-execute-phase 6` 착수 전
 
@@ -147,6 +165,7 @@ UI-SPEC 「Phase 4·5 의존 가정 (UI)」 「실행 착수 게이트(M-9)」 �
 |--------|------------------|-----------|-------------------------------|
 | Phase 5 UI-SPEC 있음 | `git ls-files .planning/phases/05-expense-approval-leave/05-UI-SPEC.md` | 출력이 비었다 | 06-15 「M-9 · UA-605~UA-610」 · 06-17 「M-9 · UA-605 · UA-606」 · 06-19 「M-9 · UA-610」 · 06-20 「M-9 · UA-605」 |
 | UA-605~UA-610 대조 완료 | 대조 표(UA 줄마다 Phase 5 UI-SPEC과 같음/다름 · 다르면 어디)를 그 플랜 SUMMARY에 | 어긋난 줄 1 이상 → `선행 의존 M-9 미해소 — 06-UI-SPEC {UA-id} 먼저 고침, {플랜} 착수하지 않음` 출력 · 코드 변경 0 | 위 네 플랜의 Task 1 acceptance ⓪ |
+| 05 머지(r3 — C15) | `git ls-files .planning/phases/05-expense-approval-leave/05-13-SUMMARY.md` + 05 심볼 `git grep -n "expenseLineDoor\|lockExpenseForUpdate\|prepareFinalApproval" -- domain repositories` | 출력이 비었다 → 06 실행 착수하지 않음 | 06-01 execution_gate |
 
 ---
 
@@ -156,10 +175,11 @@ UI-SPEC 「Phase 4·5 의존 가정 (UI)」 「실행 착수 게이트(M-9)」 �
 - [ ] `test/unit/domain/rules/` 확장 — 증빙 필수·이중 연결·미결 점검 게이트 규칙 단위 테스트(EXP-06, EVID-02)
 - [ ] `test/integration/corp-card-usages.test.ts` — 카드 사용 등록·대리 등록·이중 연결 차단(EXP-07, EXP-16)
 - [ ] `test/integration/purchase-requests.test.ts` — 문 가르기·신청/구매완료/취소(EXP-10)
-- [ ] `test/integration/evidence.test.ts` — 확인/면제/취소(EVID-03, EVID-04, Phase 5 파일 확장 전제 — Phase 5 완료 후 착수)
+- [ ] `test/integration/evidence.test.ts` — 확인/면제/취소(EVID-03, EVID-04, 05 `domain/evidence` 확장 전제 — PR #162 머지 후 착수, r3 C4)
 - [ ] `test/integration/pre-settle-check.test.ts` — 미결 점검 3종 + 강행 허용 키(PROJ-06)
 - [ ] `test/integration/leak-scan.test.ts` 확장 — 신규 DTO·액션 등록(기존 파일에 항목 추가, `[VERIFIED: 04.1-01-PLAN.md files_modified에 이미 이 파일이 등장 — 같은 파일을 여러 페이즈가 누적 확장하는 패턴 확인]`)
 - [ ] `test/integration/card-usage-evidence.test.ts` · `test/e2e/card-usage-evidence.spec.ts` — 카드 전표 첨부(EVID-01 카드 몫, 06-25 — 디자인 검토 반영 r2 교차 B-2로 더함. 06-25 Task 1이 만든다)
+- [ ] r3 새 플랜 테스트 — 06-26 · 06-27 스키마 통합(`lint:sql` 포함) · 06-28 종결 단위 · 통합 · E2E · 06-29 컴포넌트 단위(위 「r3 새 플랜 신호」 — 이름은 플랜 확정본)
 - [ ] Framework install: 없음 — 기존 Vitest/Playwright 설정 재사용, 새 devDependency 불필요
 
 ---

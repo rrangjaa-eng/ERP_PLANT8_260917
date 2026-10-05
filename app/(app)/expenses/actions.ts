@@ -32,6 +32,7 @@ import {
 import { CURRENCIES } from "@/domain/money/currency";
 import { QUOTE_LINE_MAX_PER_REVISION_DEFAULT } from "@/domain/settings/keys";
 import { formatKstTime } from "@/domain/holidays/business-day";
+import { isCalendarDate } from "@/lib/dates";
 import { log } from "@/lib/log";
 import "./actions.registry";
 
@@ -46,12 +47,12 @@ const draftFieldsInput = z
     evidenceType: z.string().min(1).max(100).nullable(),
     paymentMethod: z.string().min(1).max(100).nullable(),
     supply: z.object({ currency: z.enum(CURRENCIES), amount: z.number().min(0), fxRate: z.number() }).strict().nullable(),
-    scheduledPaymentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "날짜 형식 오류 · 2026-09-19처럼").nullable(),
+    scheduledPaymentDate: z.string().refine(isCalendarDate, "날짜 형식 오류 · 2026-09-19처럼").nullable(),
     note: z.string().max(480, "비고 480자 넘음 · 줄여 적기").nullable(),
     installment: z.boolean(),
     // 05-07 팀 비용 칸 — 팀 id는 칸이 없다(귀속 팀은 서버가 사용일 소속으로만 정한다).
     teamExpenseKind: z.enum(TEAM_EXPENSE_KINDS).nullable(),
-    usageDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "날짜 형식 오류 · 2026-09-19처럼"),
+    usageDate: z.string().refine(isCalendarDate, "날짜 형식 오류 · 2026-09-19처럼"),
     content: z.string().max(480, "내용 480자 넘음 · 줄여 적기").nullable(),
   })
   .strict()

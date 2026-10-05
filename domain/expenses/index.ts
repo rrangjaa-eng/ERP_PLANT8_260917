@@ -3,7 +3,7 @@ import type { Viewer } from "@/domain/viewer";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { isUniqueViolation } from "@/lib/pg-errors";
 import { withTransaction } from "@/lib/db-transaction";
-import { seoulToday } from "@/lib/dates";
+import { isCalendarDate, seoulToday } from "@/lib/dates";
 import { formatForeignAmount, formatFxRate, formatKrw } from "@/lib/format-number";
 import { can, ForbiddenError } from "@/domain/permissions/can";
 import { project } from "@/domain/permissions/project";
@@ -120,6 +120,7 @@ const ACTIVE_STATUSES = new Set(["submitted", "in_review", "approved"]);
 const EDITABLE_STATUSES: ReadonlySet<string> = new Set(["rejected", "withdrawn"]);
 const IN_PROGRESS_STATUSES: ReadonlySet<string> = new Set(["submitted", "in_review"]);
 const NO_TEAM_AT_USAGE_DATE = "사용일에 소속 팀 없음 · 사용일 고치기";
+const DATE_FORMAT_ERROR = "날짜 형식 오류 · 2026-09-19처럼";
 const SUPPLY_EMPTY = "공급가액 비어 있음 · 공급가액 적기";
 const SUPPLY_ZERO = "공급가액이 0 · 0보다 크게";
 const INACTIVE_EVIDENCE_TYPE = "쓰지 않는 증빙 종류 · 증빙 종류 고르기";
@@ -663,11 +664,11 @@ const draftFieldsSchema = z
     evidenceType: z.string().min(1).max(100).nullable(),
     paymentMethod: z.string().min(1).max(100).nullable(),
     supply: z.object({ currency: z.enum(CURRENCIES), amount: z.number().min(0), fxRate: z.number() }).strict().nullable(),
-    scheduledPaymentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+    scheduledPaymentDate: z.string().refine(isCalendarDate, DATE_FORMAT_ERROR).nullable(),
     note: z.string().max(1000).nullable(),
     installment: z.boolean(),
     teamExpenseKind: z.enum(TEAM_EXPENSE_KINDS).nullable(),
-    usageDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    usageDate: z.string().refine(isCalendarDate, DATE_FORMAT_ERROR),
     content: z.string().max(480).nullable(),
   })
   .strict()
@@ -1280,6 +1281,7 @@ export async function listExpenseCurrencies(): Promise<{ value: string; fxRate: 
 export async function getNewExpenseDefaults(viewer: Viewer, deps?: { now?: Date; usageDate?: string }): Promise<Partial<ExpenseNewDefaultsDto> | null> {
   if (!(await can(viewer, "expenses", "write"))) return null;
   const usageDate = deps?.usageDate ?? seoulToday(deps?.now);
+  if (!isCalendarDate(usageDate)) return project(viewer, { usageDate, teamName: null, usageDateError: DATE_FORMAT_ERROR }, EXPENSE_NEW_DEFAULTS_DTO_SPEC);
   const team = await teamAtDate(viewer, viewer.id, usageDate);
   return project(viewer, { usageDate, teamName: team?.name ?? null, usageDateError: team ? null : NO_TEAM_AT_USAGE_DATE }, EXPENSE_NEW_DEFAULTS_DTO_SPEC);
 }

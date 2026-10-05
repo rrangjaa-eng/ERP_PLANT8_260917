@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
+import { ZodError } from "zod";
 import { db } from "@/db/client";
 import { and } from "drizzle-orm";
 import { codeItems, expenses } from "@/db/schema";
@@ -11,6 +12,7 @@ import {
   createExpenseFromLines,
   createTeamExpenseDraft,
   ExpenseFieldError,
+  getNewExpenseDefaults,
   ExpenseNotFoundError,
   listExpenseFormOptions,
   previewExpense,
@@ -181,5 +183,16 @@ describe("번호 있는 문서의 공급가액 (A5 · adversarial F4)", () => {
     expect(zero).toBeInstanceOf(ExpenseFieldError);
     expect(zero).toMatchObject({ field: "supplyAmount", message: "공급가액이 0 · 0보다 크게" });
     expect(await expenseRow(expenseId)).toMatchObject({ version: before.version, supplyAmountKrw: before.supplyAmountKrw });
+  });
+});
+
+describe("달력에 없는 날짜 (A6 · red-team)", () => {
+  it("팀 비용 사용일 2026-02-30은 DB 오류가 아니라 입력 검증 오류이고, 새 문서 화면 사용일은 칸 오류 한 줄이다", async () => {
+    const fx = await setupExpenseProject();
+    const expenseId = await teamDraft(fx.pm);
+    const { version } = await expenseRow(expenseId);
+    await expect(saveExpenseDraft(fx.pm, { expenseId, expectedVersion: version, fields: { usageDate: "2026-02-30" } })).rejects.toBeInstanceOf(ZodError);
+    await expect(saveExpenseDraft(fx.pm, { expenseId, expectedVersion: version, fields: { scheduledPaymentDate: "2026-13-01" } })).rejects.toBeInstanceOf(ZodError);
+    expect(await getNewExpenseDefaults(fx.pm, { usageDate: "2026-02-30" })).toMatchObject({ usageDateError: "날짜 형식 오류 · 2026-09-19처럼" });
   });
 });

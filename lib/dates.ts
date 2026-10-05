@@ -8,6 +8,13 @@ export function seoulToday(now: Date = new Date()): string {
   return kstDateOf(now);
 }
 
+// 05 /review A6: `YYYY-MM-DD` 모양이고 달력에 있는 날짜(2월 30일 · 13월은 거짓) — 입력 검증이 DB date 범위 오류 전에 거른다.
+export function isCalendarDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
 // 04.1-03(A-03): 서울 날짜 `YYYY-MM-DD` → 그 날짜의 UTC 자정 `Date`. 이력형 설정
 // asOf의 유일한 변환이다 — getSettingValue가 asOf를 `toISOString().slice(0, 10)`으로
 // 날짜로 되돌리므로 같은 날짜가 돌아온다. 로컬 자정(`new Date(y, m, d)`)은

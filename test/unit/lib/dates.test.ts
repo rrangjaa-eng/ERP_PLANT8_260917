@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { seoulDateToUtcDate, seoulToday } from "@/lib/dates";
+import { isCalendarDate, seoulDateToUtcDate, seoulToday } from "@/lib/dates";
 
 // CEO-11: Cloud Run은 UTC라 「오늘」을 UTC 날짜로 만들면 한국 시간 0~9시에
 // 하루(연말이면 한 해)가 틀린다. 04.1의 「오늘」은 전부 seoulToday에서 나온다.
@@ -30,5 +30,16 @@ describe("seoulDateToUtcDate — 서울 날짜 → 그 날짜 UTC 자정", () =>
   it("형식이 아니거나 없는 날짜는 던진다", () => {
     expect(() => seoulDateToUtcDate("2027-1-1")).toThrow();
     expect(() => seoulDateToUtcDate("2027-13-01")).toThrow();
+  });
+});
+
+// 05 /review A6: `YYYY-MM-DD` 모양이어도 달력에 없는 날짜(2월 30일 · 13월)는 DB date 범위 오류가 되기 전에 칸 오류로 거른다.
+describe("isCalendarDate — 달력에 있는 날짜", () => {
+  it("모양과 달력이 다 맞아야 참이다", () => {
+    expect(isCalendarDate("2024-02-29")).toBe(true);
+    expect(isCalendarDate("2026-09-19")).toBe(true);
+    expect(isCalendarDate("2026-02-30")).toBe(false);
+    expect(isCalendarDate("2026-13-01")).toBe(false);
+    expect(isCalendarDate("2026-9-19")).toBe(false);
   });
 });

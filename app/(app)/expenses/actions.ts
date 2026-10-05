@@ -40,15 +40,6 @@ import "./actions.registry";
 
 const expenseIdSchema = z.string().uuid();
 
-// 줄 수 상한 = 차수 줄 상한 기본값 — 견적 줄 표 Ctrl+A → Ctrl+E가 한 차수의 줄 전부를 보낸다(05-08 검토 #5).
-export const createExpenseFromLinesAction = authedActionClient
-  .schema(z.object({ lineIds: z.array(z.string().uuid()).min(1).max(QUOTE_LINE_MAX_PER_REVISION_DEFAULT) }))
-  .action(async ({ parsedInput, ctx }) => {
-    const result = await createExpenseFromLines(ctx.viewer, parsedInput);
-    revalidatePath("/expenses");
-    return { created: result.created, blocked: result.blocked };
-  });
-
 const draftFieldsInput = z
   .object({
     vendorId: z.string().uuid().nullable(),
@@ -65,6 +56,21 @@ const draftFieldsInput = z
   })
   .strict()
   .partial();
+
+// 줄 수 상한 = 차수 줄 상한 기본값 — 견적 줄 표 Ctrl+A → Ctrl+E가 한 차수의 줄 전부를 보낸다(05-08 검토 #5).
+// 05-16 fields — `/expenses/new`에서 줄을 고르기 전에 적어 둔 비고 · 지급 예정일 · 지급 방식(임시 저장과 같은 검증). 견적 줄 표는 보내지 않는다.
+export const createExpenseFromLinesAction = authedActionClient
+  .schema(
+    z.object({
+      lineIds: z.array(z.string().uuid()).min(1).max(QUOTE_LINE_MAX_PER_REVISION_DEFAULT),
+      fields: draftFieldsInput.pick({ note: true, scheduledPaymentDate: true, paymentMethod: true }).optional(),
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    const result = await createExpenseFromLines(ctx.viewer, parsedInput);
+    revalidatePath("/expenses");
+    return { created: result.created, blocked: result.blocked };
+  });
 
 export const saveExpenseDraftAction = authedActionClient
   .schema(z.object({ expenseId: expenseIdSchema, expectedVersion: z.number().int().min(1), fields: draftFieldsInput }))

@@ -513,10 +513,11 @@ export function numberedSupplyText(doc: NumberedLineExpense): string {
 
 export async function createExpenseFromLines(
   viewer: Viewer,
-  input: { lineIds: string[] },
+  input: { lineIds: string[]; fields?: LineDraftFieldsInput },
 ): Promise<{ created: { lineId: string; expenseId: string }[]; blocked: { lineId: string; reason: string }[] }> {
   const [canWriteExpense, canWriteProject] = await Promise.all([can(viewer, "expenses", "write"), can(viewer, "projects", "write")]);
   if (!canWriteExpense || !canWriteProject) throw new ForbiddenError("지출결의 작성 권한 없음");
+  const typed = lineDraftFieldsSchema.parse(input.fields ?? {});
 
   const [gateEnabled, teamScope] = await Promise.all([
     getSettingValue(PROJECT_CUSTOMER_APPROVAL_GATE),
@@ -593,7 +594,9 @@ export async function createExpenseFromLines(
       quoteLineId: line.id,
       vendorId: line.vendorId,
       evidenceType: vendor?.defaultEvidenceType ?? null,
-      paymentMethod,
+      paymentMethod: typed.paymentMethod ?? paymentMethod,
+      scheduledPaymentDate: typed.scheduledPaymentDate ?? null,
+      note: typed.note ?? null,
       supplyCurrency: supply.currency,
       supplyForeignAmount: supply.foreignAmount,
       supplyFxRate: supply.fxRate,
@@ -627,6 +630,12 @@ const draftFieldsSchema = z
   .partial();
 
 export type ExpenseDraftInput = z.input<typeof draftFieldsSchema>;
+
+// 05-16 `/expenses/new`에서 줄을 고르기 전에 적어 둔 칸 — 줄이 정하지 않는 비고 · 지급 예정일 · 지급 방식만 새 작성 중 문서의 insert에 같이 싣는다
+// (검증은 임시 저장과 같은 draftFieldsSchema). 이미 그 줄의 작성 중 문서가 있으면 그 문서를 그대로 열고 덮어쓰지 않는다.
+const lineDraftFieldsSchema = draftFieldsSchema.pick({ note: true, scheduledPaymentDate: true, paymentMethod: true });
+
+export type LineDraftFieldsInput = z.input<typeof lineDraftFieldsSchema>;
 
 function toDraftColumns(fields: z.output<typeof draftFieldsSchema>): ExpenseDraftFields {
   const { supply, content, ...others } = fields;

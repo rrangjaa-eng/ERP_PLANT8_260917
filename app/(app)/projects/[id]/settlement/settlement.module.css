@@ -1,0 +1,28 @@
+/* 05-11(UI-SPEC S10 (나)) — 정산 결재 문서 화면: 한 열(§6-3) · 읽기 칸 뼈대(연차 · 지출결의 문서 화면과 같은 모양). 토큰만 쓴다. */
+.column {
+  max-width: var(--form-max);
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+@keyframes appear {
+  to {
+    opacity: 1;
+  }
+}
+
+.kvSkeleton {
+  opacity: 0;
+  animation-name: appear;
+  animation-duration: 0s;
+  animation-delay: 300ms;
+  animation-fill-mode: forwards;
+}
+
+.kvBar {
+  display: block;
+  height: var(--s-4);
+  background: var(--surface-muted);
+}

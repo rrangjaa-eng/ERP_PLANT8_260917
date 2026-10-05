@@ -263,6 +263,14 @@ async function canSeeSettlement(viewer: Viewer, row: Pick<SettlementSummaryRow, 
   return (await findProject(viewer, row.projectId)) !== null;
 }
 
+// 문서 화면 레이아웃의 404 판정 — 두 합을 만들지 않는 가벼운 읽기(getSettlement와 같은 보임 규칙).
+export async function canSeeSettlementDocument(viewer: Viewer, input: { projectId: string }): Promise<boolean> {
+  if (!UUID_SHAPE.test(input.projectId)) return false;
+  const [row] = await listSettlementSummaries(viewer, { projectIds: [input.projectId], documentKind: SETTLEMENT_DOCUMENT_KIND });
+  if (!row) return false;
+  return canSeeSettlement(viewer, row);
+}
+
 export async function getSettlement(viewer: Viewer, input: { projectId: string }): Promise<Partial<SettlementDocumentDto> | null> {
   if (!UUID_SHAPE.test(input.projectId)) return null;
   const [row] = await listSettlementSummaries(viewer, { projectIds: [input.projectId], documentKind: SETTLEMENT_DOCUMENT_KIND });
@@ -270,12 +278,20 @@ export async function getSettlement(viewer: Viewer, input: { projectId: string }
   return project(viewer, toSource(row, await totalsOf(viewer, row)), SETTLEMENT_DOCUMENT_DTO_SPEC);
 }
 
-// 프로젝트 상세 머리 줄 재료(S10 (가)) — 문서가 없으면 null, 있으면 결재 상태(투영 없는 구조 값 — 버튼 · 링크 낱말만 정한다).
-export async function getSettlementState(viewer: Viewer, input: { projectId: string }): Promise<{ status: string | null } | null> {
-  const row = await findSettlementByProjectId(viewer, input.projectId);
-  if (!row) return null;
-  const graph = await findApprovalGraphByDocument(viewer, { documentKind: SETTLEMENT_DOCUMENT_KIND, documentId: row.id });
-  return { status: graph?.instance.status ?? null };
+// 프로젝트 상세 머리 줄 재료(S10 (가)) — 문서가 있고 볼 수 있으면 상태 낱말(`정산 결재 {낱말}` 링크), 없고 정산 · 담당 PM 쓰기 권리면 올리기,
+// 둘 다 아니면 null(아무것도 그리지 않는다). 낱말은 04.1 결재 낱말에서 `결재`를 뺀 꼴(`결재 중` → `중`).
+const HEADER_WORDS: Record<string, string> = { submitted: "중", in_review: "중", approved: "승인", rejected: "반려", withdrawn: "회수" };
+
+export async function getSettlementHeader(viewer: Viewer, input: { projectId: string }): Promise<{ statusWord: string | null; canSubmit: boolean } | null> {
+  if (!UUID_SHAPE.test(input.projectId)) return null;
+  const [row] = await listSettlementSummaries(viewer, { projectIds: [input.projectId], documentKind: SETTLEMENT_DOCUMENT_KIND });
+  if (row) {
+    if (!row.status || !(await canSeeSettlement(viewer, row))) return null;
+    return { statusWord: HEADER_WORDS[row.status] ?? row.status, canSubmit: false };
+  }
+  const projectRow = await findProjectById(viewer, input.projectId);
+  if (!projectRow || projectRow.status !== SETTLING || !(await isAssignedPmWriter(viewer, projectRow.pmUserId))) return null;
+  return { statusWord: null, canSubmit: true };
 }
 
 // 올릴 수 있는 사람 = 그 프로젝트의 담당 PM ∧ `projects` 쓰기(프로젝트 쓰기 권리). 상태는 호출자가 본다.

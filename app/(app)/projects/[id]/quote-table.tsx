@@ -49,6 +49,7 @@ import { RevenueSection, type EntryDraft } from "./revenue-section";
 import { otherCellsRejectedText, quoteTableRejectionText, routeRejectedRevenueCells } from "./revenue-cells";
 import { PreviousRevisionDraftRow, quoteLineClipboardMeta, quoteLineReadColumns, quoteLineVendorLabel, savedVendorFrom } from "./previous-revision";
 import { StatusChange, type StatusChangeProps } from "./status-change";
+import { SettlementButton, type SettlementHeaderProps } from "./settlement-button";
 import { unsavedEditsReason } from "./unsaved-edits";
 import { CustomerApprovalLine, NewRevisionDialog, type CustomerApprovalProps, type NewRevisionProps } from "./revision-dialogs";
 import { PeriodField, periodText, type PeriodDraft, type PeriodFieldError } from "./period-field";
@@ -930,6 +931,7 @@ export function QuoteLedger({
   frame,
   statusSinceText,
   statusChange,
+  settlement,
   newRevision,
   copyProjectHref,
   customerApproval,
@@ -972,6 +974,8 @@ export function QuoteLedger({
   /** `{상태} {마지막 변경일}`(D-50) — 부제 마지막 항목. 총 매출 예상가 뒤에 온다(UI-SPEC S3). */
   statusSinceText: string;
   statusChange: StatusChangeProps | null;
+  /** 05-11(S10 (가)) — 정산 프로젝트의 정산 결재 머리 줄 재료(서버 판정). 정산이 아니거나 문서도 올릴 권리도 없으면 null. */
+  settlement?: SettlementHeaderProps | null;
   /** 04-24(D-53 · CEO-D10) — 「복사해 새 차수」. 서버 canCreateRevision이 거짓이면 null(버튼 없음). */
   newRevision: NewRevisionProps | null;
   /** 04-15(D-70) — 「프로젝트 복사」가 여는 복사 등록 폼 주소. projects 쓰기가 없으면 null(링크 없음). */
@@ -2505,6 +2509,9 @@ export function QuoteLedger({
       onChanged={setStatusToast}
       onOpenPeriodField={openPeriodField}
     />
+  ) : settlement ? (
+    // 05-11(S10 (가) · N3): 정산에는 「상태 바꾸기」가 없다 — 그 자리에 정산 결재 올리기 · 링크(같은 순서 규칙).
+    <SettlementButton key="settlement" {...settlement} dirtyCount={dirtyCount} />
   ) : null;
   // 04-49(후속 결정 R1) — 1024 미만에서는 dirty가 하나라도 있을 때만(복원한 표 칸 포함, 같은 dirty 셈).
   const saveAction =

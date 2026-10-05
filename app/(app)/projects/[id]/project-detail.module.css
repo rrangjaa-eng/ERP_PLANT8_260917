@@ -163,6 +163,14 @@
   font-size: var(--text-aux);
 }
 
+/* 05-11 — 머리 줄 `정산 결재 올리기`와 그 실패 한 줄(버튼 옆, 버튼은 살아 있다 — UI-SPEC 「Error — 행동 실패」). */
+.settlementAction {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3);
+}
+
 /* 05-05 — 견적 줄 행 행동 열 · 폰 행 시트의 `지출결의 만들기 실패 · 다시 시도` 한 줄(글자만 — 살아 있는 3차 버튼이 다시 시도다). */
 .doorFailure {
   margin: 0;

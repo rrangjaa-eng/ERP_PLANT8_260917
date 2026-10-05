@@ -274,9 +274,8 @@ test.describe("여러 줄 Ctrl+E · 두 번 눌러도 하나", () => {
     await item.focus();
     await page.keyboard.press("Shift+ArrowDown");
     await page.keyboard.press("Control+e");
-    await page.waitForTimeout(1000);
-    await expect(page).toHaveURL(new RegExp(`/projects/${fx.projectId}$`));
     await expect(page.getByText(gate, { exact: true })).toHaveCount(1);
+    await expect(page).toHaveURL(new RegExp(`/projects/${fx.projectId}$`));
     await expect(grid.getByText(gate)).toHaveCount(0);
     await page.context().close();
   });

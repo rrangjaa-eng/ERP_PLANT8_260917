@@ -129,10 +129,8 @@ test.describe("권한표 격자 (ADMN-01, D-40, 성공 기준 2)", () => {
       await page.goto("/admin/permissions");
 
       // 좌상단 모서리 셀 — 두 sticky(top·left)가 겹치는 자리이자 §7-13이
-      // 「배경이 끊기지 않게」 계약한 지점. 접근성 이름이 "계급"인 것은
-      // aria-hidden이 아닌 실제 열 머리글 행의 corner뿐이다(그룹 머리글 행의
-      // corner는 aria-hidden="true"라 접근성 트리에서 제외된다).
-      const cornerHeader = page.getByRole("columnheader", { name: "계급", exact: true });
+      // 「배경이 끊기지 않게」 계약한 지점.
+      const cornerHeader = page.getByRole("columnheader", { name: "메뉴", exact: true });
       await expect(cornerHeader).toBeVisible();
 
       // 표의 바로 위 부모 div가 §7-13의 스크롤 컨테이너(.wrap)다 — 해시된
@@ -185,18 +183,13 @@ test.describe("권한표 격자 (ADMN-01, D-40, 성공 기준 2)", () => {
       expect(afterBox.y).toBeGreaterThanOrEqual(-1);
       expect(Math.abs(afterBox.y - beforeBox.y)).toBeLessThanOrEqual(2);
 
-      // 가로 스크롤(이미 정상 동작하던 축)이 이 수정으로 회귀하지 않았는지
-      // 같은 자리에서 이어서 확인한다. 세로와 같은 이유로 .wrap이 흡수할 수
-      // 있는 범위 안에서만 굴려 문서 체이닝을 만들지 않는다.
-      const beforeScrollLeft = await wrap.evaluate((el) => el.scrollLeft);
-      const wrapMaxScrollLeft = await wrap.evaluate((el) => el.scrollWidth - el.clientWidth);
-      const deltaX = wrapMaxScrollLeft > 150 ? Math.min(wrapMaxScrollLeft - 50, 900) : 900;
-      await page.mouse.wheel(deltaX, 0);
-      await expect.poll(async () => wrap.evaluate((el) => el.scrollLeft)).toBeGreaterThan(beforeScrollLeft + 50);
-
-      const afterXBox = await cornerHeader.boundingBox();
-      if (!afterXBox) throw new Error("가로 스크롤 후 열 머리글이 화면에서 사라졌다(DOM 이탈)");
-      expect(Math.abs(afterXBox.x - afterBox.x)).toBeLessThanOrEqual(2);
+      // 2026-10-05 DECISIONS(PR #166): 계급이 30개여도 PC 격자는 가로로 넘치지 않는다 —
+      // 고정 레이아웃이 계급 열을 같은 폭으로 줄인다(옛 가로 스크롤 회귀 확인을 대신한다).
+      const { scrollWidth, clientWidth } = await wrap.evaluate((el) => ({
+        scrollWidth: el.scrollWidth,
+        clientWidth: el.clientWidth,
+      }));
+      expect(scrollWidth).toBeLessThanOrEqual(clientWidth + 1);
     } finally {
       // 하드 DELETE 금지 — 임시 계급은 전부 보관 처리한다. listRoles()는
       // 기본적으로 보관된 계급을 제외하므로 다른 스펙에 영향을 주지 않는다.
@@ -204,5 +197,219 @@ test.describe("권한표 격자 (ADMN-01, D-40, 성공 기준 2)", () => {
         await setRoleArchived(SYSTEM_VIEWER, id, true);
       }
     }
+  });
+
+  // §7-13(2026-10-05 DECISIONS): PC는 계급이 열 — 항목이 늘어도 가로 스크롤이 없다.
+  for (const path of ["/admin/permissions", "/admin/visibility"]) {
+    for (const width of [1280, 768, 700]) {
+      test(`${path} 격자는 폭 ${width}에서 가로 스크롤이 없고 계급이 열 머리글이다`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 900 });
+        const admin = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
+        await page.goto("/login");
+        await page.getByLabel("이메일").fill(admin.email);
+        await page.getByLabel("비밀번호").fill(admin.password);
+        await page.getByRole("button", { name: "로그인" }).click();
+        await expect(page).toHaveURL(/\/account$/);
+
+        await page.goto(path);
+
+        await expect(page.getByRole("columnheader", { name: "시스템 관리자", exact: true })).toBeVisible();
+        // 표의 바로 위 부모 div가 격자 스크롤 칸(.wrap)이다.
+        const wrap = page.locator("table").first().locator("xpath=..");
+        const { scrollWidth, clientWidth } = await wrap.evaluate((el) => ({
+          scrollWidth: el.scrollWidth,
+          clientWidth: el.clientWidth,
+        }));
+        expect(scrollWidth).toBeLessThanOrEqual(clientWidth + 1);
+      });
+    }
+  }
+  // DOM 감사 D1·D2·D4(PR #166): 계급 열 같은 폭 · 셀 전체 클릭 · 전체 선택 체크박스 32×32 영역.
+  async function loginAdmin(page: import("@playwright/test").Page) {
+    const admin = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(admin.email);
+    await page.getByLabel("비밀번호").fill(admin.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+  }
+
+  for (const width of [1280, 768]) {
+    test(`권한표 계급 열 머리글은 폭 ${width}에서 모두 같은 폭이다 (D1)`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await loginAdmin(page);
+      await page.goto("/admin/permissions");
+      const headers = page.locator("thead th[scope='col']");
+      await expect(headers.first()).toBeVisible();
+      // 첫 th는 모서리(항목 이름 열) — 나머지가 계급 열이다.
+      const widths = await headers.evaluateAll((els) => els.slice(1).map((el) => el.getBoundingClientRect().width));
+      expect(widths.length).toBeGreaterThanOrEqual(5);
+      expect(Math.max(...widths) - Math.min(...widths)).toBeLessThanOrEqual(1);
+    });
+  }
+
+  test("셀 td의 안쪽 가장자리를 눌러도 체크박스가 토글된다 (D2, §7-13 셀 전체 클릭)", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const tempRoleId = `role-e2e-cellclick-${randomUUID()}`;
+    const tempRoleName = `E2E 셀클릭 ${tempRoleId.slice(-12)}`;
+    await insertRole(SYSTEM_VIEWER, { id: tempRoleId, name: tempRoleName, sortOrder: 98 });
+    try {
+      await loginAdmin(page);
+      await page.goto("/admin/permissions");
+      const cell = page.getByRole("checkbox", { name: `${tempRoleName} · 코드표 · 보기` });
+      await expect(cell).not.toBeChecked();
+      await cell.scrollIntoViewIfNeeded();
+      const td = cell.locator("xpath=ancestor::td");
+      const box = await td.boundingBox();
+      if (!box) throw new Error("td bounding box를 가져오지 못했다");
+      await page.mouse.click(box.x + box.width - 3, box.y + box.height / 2);
+      await expect(cell).toBeChecked();
+    } finally {
+      await setRoleArchived(SYSTEM_VIEWER, tempRoleId, true);
+    }
+  });
+
+  test("행 머리글 전체 선택 체크박스의 클릭 영역(감싼 요소)이 32×32 이상이다 (D4)", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await loginAdmin(page);
+    await page.goto("/admin/permissions");
+    const hit = page.getByRole("checkbox", { name: /전체 선택$/ }).first().locator("xpath=..");
+    const box = await hit.boundingBox();
+    if (!box) throw new Error("감싼 요소 bounding box를 가져오지 못했다");
+    expect(box.width).toBeGreaterThanOrEqual(32);
+    expect(box.height).toBeGreaterThanOrEqual(32);
+  });
+  // /review: 그룹 하나 = <tbody> 하나(Table.tsx와 같다) — scope="rowgroup" 머리글이 제 그룹만 덮는다.
+  test("그룹마다 <tbody>가 따로이고 rowgroup 머리글은 tbody마다 하나다", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await loginAdmin(page);
+    await page.goto("/admin/permissions");
+    await expect(page.getByRole("columnheader", { name: "시스템 관리자", exact: true })).toBeVisible();
+    const perBody = await page
+      .locator("table")
+      .first()
+      .locator("tbody")
+      .evaluateAll((els) => els.map((el) => el.querySelectorAll("th[scope='rowgroup']").length));
+    expect(perBody.length).toBeGreaterThan(1);
+    for (const n of perBody) expect(n).toBe(1);
+  });
+  // /review·Codex: 첫 칸 왼쪽 --s-4(16px) — §7-3 표 첫 칸과 같다.
+  test("항목 머리글·모서리 칸의 왼쪽 안쪽 여백은 16px이다 (§7-3 첫 칸)", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await loginAdmin(page);
+    await page.goto("/admin/permissions");
+    await expect(page.getByRole("columnheader", { name: "시스템 관리자", exact: true })).toBeVisible();
+    const pads = await page
+      .locator("thead th[scope='col']")
+      .first()
+      .evaluate((corner) => {
+        const row = document.querySelector("tbody th[scope='row']");
+        return [getComputedStyle(corner).paddingLeft, row ? getComputedStyle(row).paddingLeft : ""];
+      });
+    expect(pads).toEqual(["16px", "16px"]);
+  });
+  // 2026-10-05 DECISIONS 하위 결정: 항목 행 --row-h 44 · 표 면(흰 면 + 1px 선 + r8)은 §7-3 표와 같다.
+  test("항목 행 높이는 §7-3 표 행과 같은 44px이다 (§3 --row-h)", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await loginAdmin(page);
+    await page.goto("/admin/permissions");
+    await expect(page.getByRole("columnheader", { name: "시스템 관리자", exact: true })).toBeVisible();
+    const heights = await page
+      .locator("tbody tr:has(td)")
+      .evaluateAll((els) => els.map((el) => el.getBoundingClientRect().height));
+    expect(heights.length).toBeGreaterThan(10);
+    for (const h of heights) expect(Math.abs(h - 44)).toBeLessThanOrEqual(1);
+  });
+
+  // 1280 실측(PR #166): 항목 열이 남는 폭(약 760px)을 다 가져 이름과 체크박스가 멀었다 — 면이 내용 폭에 맞춘다.
+  for (const path of ["/admin/permissions", "/admin/visibility"]) {
+    test(`${path} 항목 이름과 첫 체크박스 사이가 1280에서 240px 이하다`, async ({ page }) => {
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await loginAdmin(page);
+      await page.goto(path);
+      await expect(page.getByRole("columnheader", { name: "시스템 관리자", exact: true })).toBeVisible();
+      const gaps = await page.locator("tbody tr:has(td)").evaluateAll((rows) =>
+        rows.slice(0, 20).map((tr) => {
+          const spans = tr.querySelectorAll("th[scope='row'] span span");
+          const label = spans[spans.length - 1] ?? tr.querySelector("th[scope='row']");
+          const box = tr.querySelector("td input");
+          if (!label || !box) return -1;
+          return box.getBoundingClientRect().left - label.getBoundingClientRect().right;
+        }),
+      );
+      expect(gaps.length).toBeGreaterThan(0);
+      // 항목 열은 240(--s-12 × 5) 고정 — 이름과 첫 체크박스 사이는 그 폭을 넘지 않는다(고치기 전 693.8px).
+      for (const g of gaps) expect(g).toBeLessThanOrEqual(240);
+    });
+  }
+
+  // PR #166 Codex 봇 P2: 계급 이름 길이 제한이 없어 긴 이름이 96px 열 머리를 수십 줄로 늘렸다 — 두 줄까지(접근성 이름은 전체).
+  test("긴 계급 이름도 열 머리는 두 줄까지이고 접근성 이름은 전체다", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const id = `role-e2e-longname-${randomUUID()}`;
+    const name = `E2E 긴이름 ${id.slice(-12)} ${"아주긴계급이름".repeat(15)}`;
+    await insertRole(SYSTEM_VIEWER, { id, name, sortOrder: 97 });
+    try {
+      await loginAdmin(page);
+      await page.goto("/admin/permissions");
+      const header = page.getByRole("columnheader", { name, exact: true });
+      await expect(header).toBeVisible();
+      const headHeight = await page.locator("thead").evaluate((el) => el.getBoundingClientRect().height);
+      // 두 줄(aux 13px × 줄높이) + 위아래 --s-3 — 넉넉히 72px 이하.
+      expect(headHeight).toBeLessThanOrEqual(72);
+    } finally {
+      await setRoleArchived(SYSTEM_VIEWER, id, true);
+    }
+  });
+
+  // PR #166 전체 CI: 다른 스펙이 만든 계급이 쌓여 계급 12개쯤이면 96px 열이 줄지 않아 768·700(정보 노출표는 1280도)에서 넘쳤다.
+  test("계급이 12개 더 있어도 두 격자는 1280·768·700에서 가로 스크롤이 없다", async ({ page }) => {
+    const prefix = `role-e2e-many-${randomUUID()}`;
+    const ids = Array.from({ length: 12 }, (_, i) => `${prefix}-${i}`);
+    for (const [i, id] of ids.entries()) {
+      await insertRole(SYSTEM_VIEWER, { id, name: `E2E 많은계급 ${prefix.slice(-6)}-${i}`, sortOrder: 300 + i });
+    }
+    try {
+      await loginAdmin(page);
+      for (const path of ["/admin/permissions", "/admin/visibility"]) {
+        for (const width of [1280, 768, 700]) {
+          await page.setViewportSize({ width, height: 900 });
+          await page.goto(path);
+          await expect(page.getByRole("columnheader", { name: "시스템 관리자", exact: true })).toBeVisible();
+          const wrap = page.locator("table").first().locator("xpath=..");
+          const { scrollWidth, clientWidth } = await wrap.evaluate((el) => ({
+            scrollWidth: el.scrollWidth,
+            clientWidth: el.clientWidth,
+          }));
+          expect(scrollWidth, `${path} @${width}`).toBeLessThanOrEqual(clientWidth + 1);
+        }
+      }
+    } finally {
+      for (const id of ids) await setRoleArchived(SYSTEM_VIEWER, id, true);
+    }
+  });
+
+  test("격자 바깥 면은 §7-3 표 면과 같은 테두리·radius·배경이다 (§4-1)", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await loginAdmin(page);
+    await page.goto("/admin/people");
+    const surface = (el: Element) => {
+      const c = getComputedStyle(el);
+      return {
+        width: c.borderTopWidth,
+        style: c.borderTopStyle,
+        color: c.borderTopColor,
+        radius: c.borderTopLeftRadius,
+        bg: c.backgroundColor,
+        shadow: c.boxShadow,
+      };
+    };
+    const tableSurface = await page.locator("table").first().evaluate(surface);
+    await page.goto("/admin/permissions");
+    await expect(page.getByRole("columnheader", { name: "시스템 관리자", exact: true })).toBeVisible();
+    const gridSurface = await page.locator("table").first().locator("xpath=..").evaluate(surface);
+    expect(tableSurface.width).toBe("1px");
+    expect(tableSurface.radius).toBe("8px");
+    expect(gridSurface).toEqual(tableSurface);
   });
 });

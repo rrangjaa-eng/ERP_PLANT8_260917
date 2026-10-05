@@ -59,7 +59,7 @@ test("추가한 칸이 노출표 열로 올라오고, 기획 PM 셀을 끄면 �
   try {
     const response = await page.goto("/admin/visibility");
     expect(response?.status()).toBe(200);
-    await expect(page.getByRole("columnheader", { name: label })).toBeVisible();
+    await expect(page.getByRole("rowheader", { name: label })).toBeVisible();
     for (const role of SEED_ROLES) {
       await expect(page.getByRole("checkbox", { name: `${role.name} · ${label}`, exact: true })).toBeChecked();
     }

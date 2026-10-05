@@ -34,6 +34,7 @@ export type ElementMeasure = {
   scrollContainer: boolean;
 };
 export type GapMeasure = { parent: string; before: string; after: string; gap: number };
+export type ScrollerXMeasure = { selector: string; scrollWidth: number; clientWidth: number };
 export type ScreenMeasure = {
   route: string;
   width: number;
@@ -41,6 +42,8 @@ export type ScreenMeasure = {
   scrollWidth: number;
   clientWidth: number;
   overflowX: boolean;
+  // 화면에 보이는 overflow-x auto/scroll 요소 중 안쪽이 넘치는 칸. 옛 측정 json에는 없다(빈 배열로 읽는다).
+  scrollersX?: ScrollerXMeasure[];
   elements: ElementMeasure[];
   gaps: GapMeasure[];
   omitted: number; // 측정 상한(400개)을 넘어 빠진 요소 수
@@ -261,6 +264,8 @@ export function measurementsToMarkdown(screens: ScreenMeasure[], maxBytes: numbe
       `### ${s.route} · ${s.width}px (${s.screenshot})`,
       `- 페이지 가로: scrollWidth ${s.scrollWidth} / clientWidth ${s.clientWidth} → ${s.overflowX ? "**가로 넘침**" : "넘침 없음"}`,
     ];
+    const scrollers = (s.scrollersX ?? []).map((x) => `${x.selector} (scrollWidth ${x.scrollWidth} / clientWidth ${x.clientWidth})`);
+    out.push(`- 안쪽 가로 스크롤: ${scrollers.length === 0 ? "없음" : scrollers.map((x) => (s.width >= 700 ? `**결함 후보** ${x}` : x)).join(", ")}`);
     if (s.omitted > 0) out.push(`- 측정 생략 ${s.omitted}개(요소 상한 400)`);
     const marked = s.elements.filter(flagged);
     if (marked.length > 0) out.push("", "넘침·줄바꿈 표시 요소", "", ...header, ...marked.map(row));
@@ -292,6 +297,7 @@ export function buildPrompt(input: {
     "규칙:",
     "- 모든 지적은 경로·폭·선택자(실측표에 있는 것을 그대로 복사)·지표·측정 가능한 주장·기대 SYSTEM.md 값을 갖는다.",
     "- 지표는 overflowX|overflow|height|lines|gap|visual 중 하나. 스크린샷으로만 본 것은 visual로 적는다.",
+    "- PC·태블릿 폭(700 이상)의 안쪽 가로 스크롤 칸은 overflowX 지적 후보다(실측표 「안쪽 가로 스크롤」 줄).",
     "- 출력: ```json 배열 하나(Finding 객체: route, width, selector, metric, claim, expected) 뒤에 요약 5줄 이하.",
     "",
     "## 첨부 이미지(-i 순서)",
@@ -363,6 +369,8 @@ export function crossCheck(findings: Finding[], screens: ScreenMeasure[]): Array
     if (f.metric === "visual") measured = "시각 지적 — 실측 필요";
     else if (s && f.metric === "overflowX") {
       measured = `scrollWidth ${s.scrollWidth} / clientWidth ${s.clientWidth} (${s.overflowX ? "넘침" : "넘침 없음"})`;
+      const inner = (s.scrollersX ?? []).map((x) => `${x.selector} ${x.scrollWidth}/${x.clientWidth}`);
+      if (inner.length > 0) measured += ` · 안쪽 가로 스크롤 ${inner.join(", ")}`;
     } else if (s && f.metric === "gap") {
       const gaps = s.gaps.filter((g) => g.before === f.selector || g.after === f.selector);
       if (gaps.length > 0) measured = gaps.map((g) => `${g.before}→${g.after} ${g.gap}px`).join(", ");

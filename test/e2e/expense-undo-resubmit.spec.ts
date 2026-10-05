@@ -184,12 +184,15 @@ test.describe("제출 뒤 증빙", () => {
     await expect(lead.locator(ROWS).getByRole("link", { name: "크게 보기" })).toBeVisible();
     await expect(lead.getByRole("button", { name: /^하나 더/ })).toHaveCount(0);
     await expect(lead.getByText("결재 중 · 증빙은 경영관리")).toHaveCount(0);
+    await expect(lead.locator("dt", { hasText: /^결재선$/ })).toHaveCount(1);
     await lead.context().close();
 
     const page = await loginPage(browser, baseURL, manager);
     await page.goto(`/expenses/${expenseId}`);
     const more = page.getByRole("button", { name: /^하나 더/ });
     await waitForHydration(more);
+    // 웨이브 11 D5 — 결재선 노출 항목이 없는 계급(경영관리)에는 빈 결재선 행이 없다.
+    await expect(page.locator("dt", { hasText: /^결재선$/ })).toHaveCount(0);
     await page.getByTestId("attachments-input").setInputFiles(await uniqueReceipt(page));
     await expect(page.locator(ROWS).getByText(META)).toHaveCount(2, { timeout: UPLOAD_WAIT });
     await expect(page.getByRole("button", { name: "삭제" })).toHaveCount(0);
@@ -234,6 +237,8 @@ test.describe("제출 뒤 증빙", () => {
     expect(await row.evaluate((el) => el.closest('[aria-live="polite"]') !== null)).toBe(true);
     await expect(row.getByRole("button", { name: "무효 처리" })).toHaveCount(0);
     await expect(page.getByRole("status").filter({ hasText: /무효/ })).toHaveCount(0);
+    // 웨이브 11 D4 — 확인 뒤 누른 버튼이 사라져도 포커스는 BODY가 아니라 증빙 영역에 있다.
+    await expect.poll(() => page.evaluate(() => document.activeElement?.closest("#evidence") !== null)).toBe(true);
     await page.context().close();
   });
 

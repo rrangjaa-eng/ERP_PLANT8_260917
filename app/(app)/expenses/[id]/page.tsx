@@ -109,18 +109,21 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
   const readRows: KvItem[] = [];
   if (resubmitting && view?.status === "withdrawn") {
     const line = view.endLines?.find((end) => end.text.startsWith("회수 "));
-    readRows.push({ label: "회수", value: line ? line.text.slice("회수 ".length) : "" });
+    if (line) readRows.push({ label: "회수", value: line.text.slice("회수 ".length) });
   } else if (resubmitting && view?.status === "rejected") {
     const rejected = view.steps?.find((step) => step.state === "rejected");
-    readRows.push({
-      label: "반려",
-      value: (
-        <>
-          {[rejected?.actedByName, rejected?.actedAt ? seoulMinuteOf(rejected.actedAt) : null].filter(Boolean).join(" · ")}
-          {rejected?.reason ? <span className={styles.subLine}>사유 · {rejected.reason}</span> : null}
-        </>
-      ),
-    });
+    const actedLine = [rejected?.actedByName, rejected?.actedAt ? seoulMinuteOf(rejected.actedAt) : null].filter(Boolean).join(" · ");
+    if (actedLine || rejected?.reason) {
+      readRows.push({
+        label: "반려",
+        value: (
+          <>
+            {actedLine}
+            {rejected?.reason ? <span className={styles.subLine}>사유 · {rejected.reason}</span> : null}
+          </>
+        ),
+      });
+    }
   }
 
   return (

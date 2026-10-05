@@ -379,3 +379,27 @@ test.describe("없는 날짜로 임시 저장 (05 /qa I1)", () => {
     await page.context().close();
   });
 });
+
+// 05 /qa I3: 결재 정보(approval.value)를 끈 계급의 기안자가 반려 문서를 봐도 값 없는 읽기 행(`반려`)이 남지 않는다.
+test.describe("결재 정보를 끈 기안자의 반려 문서 (05 /qa I3)", () => {
+  test("이름 · 사유와 함께 빈 `반려` 행도 없다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const id = await submitLineExpense(browser, baseURL, fx, "retry");
+    const view = await getApprovalView(fx.lead.viewer, { kind: EXPENSE_DOCUMENT_KIND, documentId: id });
+    await rejectDocument(fx.lead.viewer, { instanceId: view!.instanceId, expectedVersion: view!.version, reason: "QA 숨김 사유" });
+    const roleId = String(fx.pm.viewer.roleId);
+    try {
+      await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "approval.value", visible: false });
+      const page = await loginPage(browser, baseURL, fx.pm);
+      await page.goto(`/expenses/${id}`);
+      await waitForHydration(page.getByRole("button", { name: /^지출결의 다시 제출/ }));
+      const main = page.locator("main");
+      await expect(main).not.toContainText(fx.lead.name);
+      await expect(main).not.toContainText("QA 숨김 사유");
+      await expect(main.locator("dt", { hasText: /^반려$/ })).toHaveCount(0);
+      await page.context().close();
+    } finally {
+      await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "approval.value", visible: true });
+    }
+  });
+});

@@ -2,6 +2,7 @@ import type { Viewer } from "@/domain/viewer";
 import {
   allocateNumber as repoAllocateNumber,
   lockDocumentCounter,
+  lockDocumentCountersByKey,
   type DbOrTx,
 } from "@/repositories/document-counters";
 import { findSimpleValue, upsertSimpleValue } from "@/repositories/settings";
@@ -169,8 +170,18 @@ export async function allocateDocumentNumber(
 
 export class SeqStartOverlapError extends UserFacingError {}
 
-function seqStartEntryFor(key: string) {
-  return Object.entries(DOCUMENT_NUMBER_FORMAT_DEFS).find(([, defs]) => defs.seqStart.key === key);
+type SeqStartGuard = { seqStart: SettingDef<number>; lockIssued: (viewer: Viewer, now: Date, tx: DbOrTx) => Promise<number> };
+
+// 시작값 키 → 그 키의 정의와 채번이 잡는 카운터 행 잠금(잠근 카운터의 발급 수). 연도 period 서식(DOCUMENT_NUMBER_FORMAT_DEFS)은
+// 올해 행 하나, 지출결의 번호(PR #162 리뷰 P1 — period = 프로젝트 번호)는 `expense` 행 전부.
+function seqStartGuardFor(key: string): SeqStartGuard | undefined {
+  if (key === DOCUMENT_NUMBER_EXPENSE_SEQ_START.key) {
+    return { seqStart: DOCUMENT_NUMBER_EXPENSE_SEQ_START, lockIssued: (viewer, _now, tx) => lockDocumentCountersByKey(viewer, "expense", tx) };
+  }
+  const entry = Object.entries(DOCUMENT_NUMBER_FORMAT_DEFS).find(([, defs]) => defs.seqStart.key === key);
+  if (!entry) return undefined;
+  const [counterKey, defs] = entry;
+  return { seqStart: defs.seqStart, lockIssued: (viewer, now, tx) => lockDocumentCounter(viewer, counterKey, String(kstYear(now)), tx) };
 }
 
 // 묶음 ④ /review R7 — 순번 시작값 낮추기 가드 한 곳. 설정 화면 저장(setSimpleSettingValue)과 설정 가져오기
@@ -178,12 +189,11 @@ function seqStartEntryFor(key: string) {
 // 하지 않는다. 시작값 키면 채번과 같은 올해 카운터 행을 잠그고(직렬화) 같은 tx로 현재 시작값을 읽어, 올해 발급이
 // 1건 이상이고 새 값이 현재 값보다 작을 때만 SeqStartOverlapError를 던진다. `value`는 그 키의 스키마로 읽는다.
 export async function assertSeqStartNotLowered(viewer: Viewer, key: string, value: unknown, now: Date, tx: DbOrTx): Promise<void> {
-  const entry = seqStartEntryFor(key);
-  if (!entry) return;
-  const [counterKey, defs] = entry;
-  const next = defs.seqStart.schema.parse(value);
-  const counterValue = await lockDocumentCounter(viewer, counterKey, String(kstYear(now)), tx);
-  const currentStart = await getSettingValue(defs.seqStart, undefined, {
+  const guard = seqStartGuardFor(key);
+  if (!guard) return;
+  const next = guard.seqStart.schema.parse(value);
+  const counterValue = await guard.lockIssued(viewer, now, tx);
+  const currentStart = await getSettingValue(guard.seqStart, undefined, {
     findSimpleValue: (v, k) => findSimpleValue(v, k, tx),
   });
   // 04-51 리뷰 B1 — 바꾸지 않은 값의 재저장(설정 화면 blur)은 낮추기가 아니므로 통과한다.
@@ -207,9 +217,9 @@ export async function setSimpleSettingValue(
   value: unknown,
   now: Date,
 ): Promise<void> {
-  const defs = seqStartEntryFor(def.key)?.[1];
-  if (!defs || !(await can(viewer, "admin.settings", "write"))) return setSettingValue(viewer, def, value);
-  const parsed = defs.seqStart.schema.safeParse(value);
+  const guard = seqStartGuardFor(def.key);
+  if (!guard || !(await can(viewer, "admin.settings", "write"))) return setSettingValue(viewer, def, value);
+  const parsed = guard.seqStart.schema.safeParse(value);
   if (!parsed.success) return setSettingValue(viewer, def, value);
 
   await withTransaction(async (tx) => {
@@ -244,12 +254,16 @@ export async function loadExpenseNumberFormat(deps?: Parameters<typeof getSimple
   };
 }
 
-// 제출 트랜잭션의 마지막 쓰기 — 카운터 `expense` · period = 프로젝트 번호.
+// 제출 트랜잭션의 마지막 쓰기 — 카운터 `expense` · period = 프로젝트 번호. 순번 시작값은 allocateDocumentNumber처럼 카운터 행
+// 잠금 뒤 같은 tx로 다시 읽는다(PR #162 리뷰 P1 — 시작값 저장이 같은 행 잠금 안에서 검증하므로 이 값과 카운터가 맞물린다).
 export async function allocateExpenseNumber(
   viewer: Viewer,
-  input: { projectNumber: string; format: ExpenseNumberFormat },
+  input: { projectNumber: string; format: Omit<ExpenseNumberFormat, "seqStart"> },
   tx: DbOrTx,
 ): Promise<{ number: string; seq: number }> {
   const seq = await repoAllocateNumber(viewer, "expense", input.projectNumber, tx);
-  return { number: expenseNumberFormat(input.projectNumber, seq, input.format), seq };
+  const seqStart = await getSettingValue(DOCUMENT_NUMBER_EXPENSE_SEQ_START, undefined, {
+    findSimpleValue: (v, k) => findSimpleValue(v, k, tx),
+  });
+  return { number: expenseNumberFormat(input.projectNumber, seq, { ...input.format, seqStart }), seq };
 }

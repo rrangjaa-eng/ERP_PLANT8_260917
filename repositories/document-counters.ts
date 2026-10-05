@@ -90,3 +90,17 @@ export async function lockDocumentCounter(
   if (!row) throw new Error("document_counters 잠금이 행을 반환하지 않았습니다.");
   return row.value;
 }
+
+// PR #162 리뷰 P1 — period가 연도가 아닌 카운터(지출결의 `expense`, period = 프로젝트 번호)의 시작값 저장용. 그 counterKey의
+// 모든 행을 period 순으로 `FOR UPDATE` 잠그고 가장 큰 값을 돌려준다(행이 없으면 0). 낮춘 시작값은 발급이 1건이라도 있는
+// 어느 period에서든 다음 번호를 이미 매긴 번호와 겹치게 하므로 모든 period를 본다.
+export async function lockDocumentCountersByKey(viewer: Viewer, counterKey: string, tx: DbOrTx): Promise<number> {
+  void viewer;
+  const rows = await tx
+    .select({ value: documentCounters.value })
+    .from(documentCounters)
+    .where(eq(documentCounters.counterKey, counterKey))
+    .orderBy(documentCounters.period)
+    .for("update");
+  return rows.reduce((max, row) => Math.max(max, row.value), 0);
+}

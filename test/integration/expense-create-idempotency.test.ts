@@ -10,7 +10,7 @@ import { setPermissionCell } from "@/domain/permissions/matrix";
 import { setSettingValue } from "@/domain/settings/registry";
 import { PROJECT_CUSTOMER_APPROVAL_GATE } from "@/domain/settings/keys";
 import { createProject } from "@/domain/projects";
-import { changeProjectStatus } from "@/domain/projects/status";
+import { completeViaApproval } from "@/test/support/settlement-authority";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { createRevisionFromCurrent, setCustomerApproval } from "@/domain/quotes/revisions";
 import { approvalBasis } from "@/repositories/quote-revisions";
@@ -182,7 +182,7 @@ describe("표 전체 게이트", () => {
   it("완료 프로젝트는 `완료 프로젝트 · 새 지출결의 없음`으로 막히고 작성 중 행은 0이다", async () => {
     const fx = await setupExpenseProject();
     // 진행 → 정산은 종료일(2026-12-31) 다음 날 자동 — 그 뒤 시계로 정산 → 완료(잠금 안 선판정).
-    await changeProjectStatus(fx.ceo, fx.projectId, { from: "settling", to: "completed" }, { now: () => new Date("2027-01-02T03:00:00Z") });
+    await completeViaApproval(fx.ceo, fx.projectId, { now: () => new Date("2027-01-02T03:00:00Z") });
 
     const result = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
     expect(result.blocked).toEqual([{ lineId: fx.lines.withVendor, reason: "완료 프로젝트 · 새 지출결의 없음" }]);

@@ -213,7 +213,8 @@ export async function statusDestinations(
   const facts = deps?.facts ?? (await loadActorFacts(viewer, deps));
   const destinations: StatusDestination[] = [];
   for (const transition of ALLOWED_TRANSITIONS) {
-    if (transition.from !== project.status) continue;
+    // 05-11: 결재로만 가는 전환(정산 → 완료)은 사람이 고르는 갈 곳이 아니다.
+    if (transition.from !== project.status || transition.via === "approval") continue;
     const decision = await evaluateTransition(project, transition.to, facts);
     if (decision.allowed) destinations.push({ to: transition.to, blockedReason: null });
     else if (decision.rule === START_DATE_RULE) destinations.push({ to: transition.to, blockedReason: decision.reason });
@@ -288,6 +289,11 @@ export async function changeProjectStatus(
 ): Promise<void> {
   const ids = { projectId, from: input.from, to: input.to };
   const trigger = input.trigger ?? "manual";
+  // 05-11(D-98): 정산 → 완료는 정산 결재 승인으로만 — 권한 판정 전에 막는다(화면에는 이 경로가 없다 · 직접 호출 방어).
+  const transition = ALLOWED_TRANSITIONS.find((entry) => entry.from === input.from && entry.to === input.to);
+  if (transition?.via === "approval" && trigger !== "approval") {
+    denyWrite(viewer, "project.approval-only", ids, new GateBlockedError("정산 결재로만 완료 · 정산 결재 올리기"));
+  }
   if (trigger === "approval" && deps?.approvalAuthority?.projectId !== projectId) {
     denyWrite(viewer, "project.approval-authority", ids, new GateBlockedError("지금 담당이 아님 · 새로 고침"));
   }

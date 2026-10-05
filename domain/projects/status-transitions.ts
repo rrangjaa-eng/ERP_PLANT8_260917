@@ -10,6 +10,7 @@ export type ProjectStatusTransition = {
   from: ProjectStatus;
   to: ProjectStatus;
   menu: "projects.status" | "projects.complete";
+  via?: "approval";
 };
 
 // 진행에서 사람이 가는 곳은 없다(사용자 D13). 진행 → 정산은 자동(04-11).
@@ -17,7 +18,7 @@ export const ALLOWED_TRANSITIONS: readonly ProjectStatusTransition[] = [
   { from: "bidding", to: "in_progress", menu: "projects.status" },
   { from: "bidding", to: "lost", menu: "projects.status" },
   { from: "lost", to: "in_progress", menu: "projects.status" },
-  { from: "settling", to: "completed", menu: "projects.complete" },
+  { from: "settling", to: "completed", menu: "projects.complete", via: "approval" },
 ];
 
 // 04-11(D-76) — 날짜로 일어나는 자동 전환. 종료일 다음 날(KST)부터 진행은 정산이다.

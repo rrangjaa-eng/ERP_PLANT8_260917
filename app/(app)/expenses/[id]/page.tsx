@@ -34,15 +34,18 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
   const expense = await getExpense(viewer, { expenseId: id });
   if (!expense) notFound();
 
-  const [evidence, maxMb] = await Promise.all([listEvidence(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: id }), getSettingValue(EVIDENCE_MAX_SIZE_MB)]);
+  // 문서 보임(getExpense = canSeeExpense)이 위에서 통과했다 — 결재 당사자가 아닌 팀장 · 전사 보는 사람도 상태 · 결재선을 읽기만 한다(05-08 검토 #1).
+  const [evidence, maxMb, view] = await Promise.all([
+    listEvidence(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: id }),
+    getSettingValue(EVIDENCE_MAX_SIZE_MB),
+    getApprovalView(viewer, { kind: EXPENSE_DOCUMENT_KIND, documentId: id, readOnlyVisible: true }),
+  ]);
   const files: AttachmentFile[] = evidence.flatMap((file) =>
     file.id && file.originalName && !file.voidedAt && file.createdAt
       ? [{ id: file.id, name: file.originalName, sizeBytes: file.sizeBytes ?? 0, createdAt: new Date(file.createdAt).toISOString() }]
       : [],
   );
 
-  // 문서 보임(getExpense = canSeeExpense)이 위에서 통과했다 — 결재 당사자가 아닌 팀장 · 전사 보는 사람도 상태 · 결재선을 읽기만 한다(05-08 검토 #1).
-  const view = await getApprovalView(viewer, { kind: EXPENSE_DOCUMENT_KIND, documentId: id, readOnlyVisible: true });
   const resubmitting = Boolean(view?.actions?.includes("resubmit"));
   if ((view || expense.number) && !resubmitting) {
     // 05-09: 문서 화면은 무효 행도 그린다(처리자 · 시각 · 사유) — 파일 행 3차는 서버가 정한 evidenceActions대로.
@@ -66,24 +69,27 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
   }
 
   // 작성 중 — 폼. 결재선은 제출 전 한 줄(기안자 · 문서 종류의 결재선 설정으로 해석 — 막히면 이유 한 줄).
-  let route = null;
-  let routeBlocked: string | null = null;
-  try {
-    route = await previewRoute(viewer, { kind: EXPENSE_DOCUMENT_KIND });
-  } catch (error) {
-    if (!(error instanceof RouteBlockedError)) throw error;
-    routeBlocked = error.message;
-  }
-  // 선택지는 지출결의 쓰기 권한으로 받는다(코드표 메뉴가 없는 PM도 증빙 종류를 바꿀 수 있다 — 05-06).
-  const [{ evidence: evidenceItems, payment: paymentItems }, currencies] = await Promise.all([listExpenseFormOptions(viewer), listExpenseCurrencies()]);
-  // 제출 막힘 첫 이유(05-06 규칙 `expense.submit`) — 저장값 그대로의 미리보기. 기안자가 아니면 막힘을 판정하지 않는다(그 사람은 제출할 수 없다).
-  const initialBlock = await previewExpense(viewer, { expenseId: id, fields: {} }).then(
-    (preview) => preview.block ?? null,
-    (error: unknown) => {
-      if (error instanceof ExpenseNotFoundError) return null;
-      throw error;
-    },
-  );
+  // 서로 기대지 않는 읽기 넷을 동시에(05 /review A13).
+  const [{ route, routeBlocked }, { evidence: evidenceItems, payment: paymentItems }, currencies, initialBlock] = await Promise.all([
+    previewRoute(viewer, { kind: EXPENSE_DOCUMENT_KIND }).then(
+      (preview) => ({ route: preview, routeBlocked: null }),
+      (error: unknown) => {
+        if (!(error instanceof RouteBlockedError)) throw error;
+        return { route: null, routeBlocked: error.message };
+      },
+    ),
+    // 선택지는 지출결의 쓰기 권한으로 받는다(코드표 메뉴가 없는 PM도 증빙 종류를 바꿀 수 있다 — 05-06).
+    listExpenseFormOptions(viewer),
+    listExpenseCurrencies(),
+    // 제출 막힘 첫 이유(05-06 규칙 `expense.submit`) — 저장값 그대로의 미리보기. 기안자가 아니면 막힘을 판정하지 않는다(그 사람은 제출할 수 없다).
+    previewExpense(viewer, { expenseId: id, fields: {} }).then(
+      (preview) => preview.block ?? null,
+      (error: unknown) => {
+        if (error instanceof ExpenseNotFoundError) return null;
+        throw error;
+      },
+    ),
+  ]);
   const optionsOf = (items: { value: string; label: string; description: string | null }[], current: string | null | undefined, currentLabel: string | null | undefined): SelectOption[] => {
     const options = items.map((item) => ({ value: item.value, label: item.label, description: item.description }));
     // 이미 저장된 값이 비활성 · 보관된 코드면 목록에 없다 — 그 값을 이름으로 남겨 둔다.

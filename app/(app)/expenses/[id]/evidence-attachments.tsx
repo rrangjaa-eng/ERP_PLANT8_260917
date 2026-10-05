@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Attachments, type AttachmentActions, type AttachmentFile } from "@/ui/attachments/Attachments";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
@@ -66,8 +66,18 @@ export function EvidenceAttachments(props: {
   const [voidTarget, setVoidTarget] = useState<AttachmentFile | null>(null);
   const granted = props.evidenceActions;
 
+  // 웨이브 11 D4 — 무효 처리가 끝나면 누른 버튼이 새 화면에서 사라진다. 다시 받은 화면이 그려진 뒤 포커스를 증빙 영역에 둔다(BODY로 빠지지 않게).
+  const regionRef = useRef<HTMLDivElement>(null);
+  const [refreshing, startRefresh] = useTransition();
+  const focusAfterRefreshRef = useRef(false);
+  useEffect(() => {
+    if (refreshing || !focusAfterRefreshRef.current) return;
+    focusAfterRefreshRef.current = false;
+    regionRef.current?.focus();
+  }, [refreshing]);
+
   return (
-    <>
+    <div ref={regionRef} tabIndex={-1}>
       <Attachments
         mode={props.mode}
         files={props.files}
@@ -83,13 +93,32 @@ export function EvidenceAttachments(props: {
         voidable={granted && granted.voidableFileIds.length > 0 ? { ids: granted.voidableFileIds, onVoid: setVoidTarget } : undefined}
         lockedText={granted?.drafterLocked ? EVIDENCE_DRAFTER_LOCKED_LINE : undefined}
       />
-      {props.reasonMessages ? <VoidEvidenceDialog target={voidTarget} messages={props.reasonMessages} onClose={() => setVoidTarget(null)} /> : null}
-    </>
+      {props.reasonMessages ? (
+        <VoidEvidenceDialog
+          target={voidTarget}
+          messages={props.reasonMessages}
+          onClose={() => setVoidTarget(null)}
+          onVoided={() => {
+            focusAfterRefreshRef.current = true;
+            startRefresh(() => router.refresh());
+          }}
+        />
+      ) : null}
+    </div>
   );
 }
 
-function VoidEvidenceDialog({ target, messages, onClose }: { target: AttachmentFile | null; messages: RejectMessages; onClose: () => void }) {
-  const router = useRouter();
+function VoidEvidenceDialog({
+  target,
+  messages,
+  onClose,
+  onVoided,
+}: {
+  target: AttachmentFile | null;
+  messages: RejectMessages;
+  onClose: () => void;
+  onVoided: () => void;
+}) {
   const fieldId = useId();
   const [reason, setReason] = useState("");
   const [serverError, setServerError] = useState<string | null>(null);
@@ -123,7 +152,7 @@ function VoidEvidenceDialog({ target, messages, onClose }: { target: AttachmentF
     setPending(false);
     if (response?.data) {
       close();
-      router.refresh();
+      onVoided();
       return;
     }
     if (response?.serverError) setServerError(response.serverError);

@@ -3,7 +3,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { randomUUID } from "node:crypto";
 import { approvalInstances, files } from "@/db/schema";
-import { approveDocument, getDocumentKind, listMyInbox, loadKindDetails, rejectDocument, withdrawDocument } from "@/domain/approvals";
+import { approveDocument, getDocumentKind, listMyBlockedDocuments, listMyInbox, loadKindDetails, registerDocumentKind, rejectDocument, withdrawDocument } from "@/domain/approvals";
 import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND, saveExpenseDraft } from "@/domain/expenses";
 import { voidEvidence } from "@/domain/evidence";
 import { submitLeave } from "@/domain/leave";
@@ -287,6 +287,28 @@ describe("증빙 무효 [막힘] — 오래된 승인 문서 (A9 · adversarial 
 
     const items = await listNextTurnItems(fx.pm);
     expect(items.map((item) => item.label)).toEqual(["가을 팝업 · 무대 제작 — 증빙 무효"]);
+  });
+});
+
+// 05 /review C6(adversarial F5): 승인 뒤 막힘 후보 거르기는 종류가 준다 — 증빙 무효와 다른 원인으로 막히는 종류가 SQL에서 조용히 빠지지 않는다.
+const OTHER_BLOCKED_KIND = "test_next_turn_blocked_other";
+registerDocumentKind({
+  kind: OTHER_BLOCKED_KIND,
+  label: "테스트 막힘",
+  loadRouteConfig: () => Promise.resolve({ selfApproval: "skip", steps: [{ enabled: true, roleId: TEAM_LEAD_ROLE_ID, scope: "drafter_team", orgUnitId: "" }] }),
+  href: (id) => `/test-blocked/${id}`,
+  describeDocuments: () => Promise.resolve(new Map()),
+  blockedAfterApproval: (_viewer, ids) => Promise.resolve(new Map(ids.map((id) => [id, { situation: "다른 막힘", actionLabel: "열기", href: `/test-blocked/${id}` }]))),
+});
+
+describe("승인 뒤 막힘 — 증빙 말고 다른 원인 (C6 · adversarial F5)", () => {
+  it("증빙이 없는 다른 종류의 승인 문서도 종류 함수까지 가서 [막힘]이 된다", async () => {
+    const fx = await setupExpenseProject();
+    const documentId = randomUUID();
+    await db.insert(approvalInstances).values({ documentKind: OTHER_BLOCKED_KIND, documentId, drafterId: fx.pm.id, status: "approved", currentRound: 1 });
+
+    const blocked = await listMyBlockedDocuments(fx.pm);
+    expect(blocked.map((item) => [item.kind, item.documentId])).toEqual([[OTHER_BLOCKED_KIND, documentId]]);
   });
 });
 

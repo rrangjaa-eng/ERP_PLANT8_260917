@@ -5,6 +5,7 @@ import type { SelfApproval } from "@/domain/approvals/route";
 import type { InfoItemRef } from "@/domain/permissions/project";
 import type { ApprovalRouteScopeValue } from "@/domain/settings/keys";
 import type { DbOrTx } from "@/repositories/document-counters";
+import type { BlockedCandidateFilter } from "@/repositories/approvals";
 import type { Currency } from "@/domain/money/currency";
 
 // 04.1(ROADMAP 기준 1): 문서 종류 등록부 — 결재 모듈은 문서 종류를 하드코딩하지
@@ -94,6 +95,8 @@ export type DocumentKindDef = {
   // 05-10 G1: 승인된 기안 문서가 승인 뒤에 막혔음을 기안자의 「내 차례」 [막힘] 줄로 알릴 때(증빙 무효 등) — 문서 id → 상황 글자 · 행동 글자 · 주소.
   // 엔진은 기안자의 승인 문서 id를 종류마다 한 배열로 한 번 넘긴다(읽기 전용). 없으면 이 종류는 승인 뒤 막힘이 없다.
   blockedAfterApproval?: (viewer: Viewer, documentIds: string[]) => Promise<Map<string, { situation: string; actionLabel: string; href: string }>>;
+  // 05 /review C6: 승인 뒤 막힘 후보를 LIMIT 전에 SQL로 거르는 조건(repositories/approvals) — 없으면 그 종류의 승인 문서 전부가 후보다(조용히 빠지지 않는다).
+  blockedAfterApprovalCandidates?: BlockedCandidateFilter;
   // 04.1-05(ENG-17): 상세 — 순서 고정: loadDetails(구조 필드, id 목록 한 번) → 엔진이 detailDto로 정보 항목별
   // project() → buildDetailRows(투영 결과만)가 문자열 행을 만든다. loadDetails가 있으면 나머지 둘도 필수다.
   loadDetails?: (viewer: Viewer, documentIds: string[], deps: LoadDetailsDeps) => Promise<Map<string, DetailFields>>;

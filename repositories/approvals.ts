@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNotNull, isNull, max, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, max, or, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
@@ -303,15 +303,34 @@ export async function listProcessedInstances(viewer: Viewer, userId: string, lim
 
 export type DrafterInstance = ApprovalInstanceRow & { rejecterName: string | null };
 
+// 05 /review C6: 승인 뒤 막힘 후보를 LIMIT 전에 거르는 조건 — 종류 등록(blockedAfterApprovalCandidates)이 고른다. 「증빙 무효 뒤 아직 새 증빙 없음」 하나.
+export type BlockedCandidateFilter = "unresolved_evidence_void";
+
+function blockedCandidateSql(viewer: Viewer, filter: BlockedCandidateFilter): SQL {
+  switch (filter) {
+    case "unresolved_evidence_void":
+      return sql`exists (select 1 from ${files} where ${files.ownerKind} = ${approvalInstances.documentKind} and ${files.ownerId} = ${approvalInstances.documentId} and ${files.removedAt} is null group by ${files.ownerId} having ${unresolvedVoidHaving(viewer)})`;
+  }
+}
+
 // 05-10: 내가 기안한 인스턴스 중 한 상태(반려 · 승인)인 것 — 최근 처리 순. 반려는 지금 차수의 반려 단계 처리자 이름을 함께 읽는다.
 export async function listDrafterInstances(
   viewer: Viewer,
-  input: { drafterId: string; status: "rejected" | "approved"; limit: number; unresolvedVoidOnly?: boolean },
+  input: {
+    drafterId: string;
+    status: "rejected" | "approved";
+    limit: number;
+    candidateKinds?: readonly { documentKind: string; filter: BlockedCandidateFilter | null }[];
+  },
 ): Promise<DrafterInstance[]> {
-  void viewer;
-  // 05 /review A9: 승인 뒤 막힘 후보는 LIMIT 전에 SQL로 거른다 — 그 문서의 증빙이 무효 뒤 아직 새 증빙이 없는 것만(최근 N건만 보면 오래된 문서가 빠진다).
-  const voidFilter = input.unresolvedVoidOnly
-    ? sql`exists (select 1 from ${files} where ${files.ownerKind} = ${approvalInstances.documentKind} and ${files.ownerId} = ${approvalInstances.documentId} and ${files.removedAt} is null group by ${files.ownerId} having ${unresolvedVoidHaving(viewer)})`
+  // 05 /review A9 · C6: 승인 뒤 막힘 후보는 LIMIT 전에 SQL로 거른다 — 종류마다 그 종류가 준 조건(없으면 그 종류 전부)으로(최근 N건만 보면 오래된 문서가 빠진다).
+  if (input.candidateKinds?.length === 0) return [];
+  const candidateFilter = input.candidateKinds
+    ? or(
+        ...input.candidateKinds.map((candidate) =>
+          and(eq(approvalInstances.documentKind, candidate.documentKind), candidate.filter ? blockedCandidateSql(viewer, candidate.filter) : undefined),
+        ),
+      )
     : undefined;
   const rows = await db
     .select({ instance: approvalInstances, rejecterName: actors.name })
@@ -319,7 +338,7 @@ export async function listDrafterInstances(
     .leftJoin(approvalRoutes, and(eq(approvalRoutes.instanceId, approvalInstances.id), eq(approvalRoutes.round, approvalInstances.currentRound)))
     .leftJoin(approvalSteps, and(eq(approvalSteps.routeId, approvalRoutes.id), eq(approvalSteps.action, "rejected")))
     .leftJoin(actors, eq(actors.id, approvalSteps.actedBy))
-    .where(and(eq(approvalInstances.drafterId, input.drafterId), eq(approvalInstances.status, input.status), voidFilter))
+    .where(and(eq(approvalInstances.drafterId, input.drafterId), eq(approvalInstances.status, input.status), candidateFilter))
     .orderBy(desc(approvalInstances.updatedAt), asc(approvalInstances.id))
     .limit(input.limit);
   return rows.map((row) => ({ ...row.instance, rejecterName: row.rejecterName }));

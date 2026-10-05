@@ -428,6 +428,7 @@ registerDocumentKind({
   detailDto: EXPENSE_DETAIL_DTO_SPEC,
   buildDetailRows: buildExpenseDetailRows,
   blockedAfterApproval: expenseBlockedAfterApproval,
+  blockedAfterApprovalCandidates: "unresolved_evidence_void",
 });
 
 // ── 보임 ──────────────────────────────────────────────────────────────

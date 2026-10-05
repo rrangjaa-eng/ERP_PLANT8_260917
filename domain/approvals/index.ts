@@ -40,7 +40,7 @@ import {
   type SnapshotPerson,
   type WalkRouteResult,
 } from "@/domain/approvals/route";
-import { getDocumentKind, resubmittableStatuses, type DetailFields, type DocumentKindDef, type DocumentSummary, type DocumentDetailRows, type LoadDetailsDeps, type RouteConfigStep } from "@/domain/approvals/kinds";
+import { getDocumentKind, listDocumentKinds, resubmittableStatuses, type DetailFields, type DocumentKindDef, type DocumentSummary, type DocumentDetailRows, type LoadDetailsDeps, type RouteConfigStep } from "@/domain/approvals/kinds";
 import { buildConflictMessage, isApprovalParty } from "@/domain/approvals/conflict-message";
 import { loadActionLogGate as defaultLoadActionLogGate, recordActionInTx, type ActionLogGate, type TxLogDeps } from "@/domain/approvals/tx-log";
 import {
@@ -1211,13 +1211,16 @@ export type BlockedDocument = {
 };
 
 const BLOCKED_REJECTED_LIMIT = 50;
-// 승인 문서는 시간이 갈수록 쌓이므로 승인 뒤 막힘의 원천(지금은 증빙 무효뿐)이 있는 문서만 SQL로 먼저 거른 뒤 종류에 넘긴다(05 /review A9).
+// 승인 문서는 시간이 갈수록 쌓이므로 승인 뒤 막힘이 있는 종류의 문서만, 종류가 준 후보 조건(지출결의는 증빙 무효)으로 SQL에서 먼저 거른 뒤 종류에 넘긴다(05 /review A9 · C6).
 const BLOCKED_APPROVED_LIMIT = 200;
 
 export async function listMyBlockedDocuments(viewer: Viewer, deps?: ApprovalDeps): Promise<BlockedDocument[]> {
   const visible = createVisibleMemo(deps?.findVisibility);
   const rejected = await listDrafterInstances(viewer, { drafterId: viewer.id, status: "rejected", limit: BLOCKED_REJECTED_LIMIT });
-  const approved = await listDrafterInstances(viewer, { drafterId: viewer.id, status: "approved", limit: BLOCKED_APPROVED_LIMIT, unresolvedVoidOnly: true });
+  const candidateKinds = listDocumentKinds().flatMap((def) =>
+    def.blockedAfterApproval ? [{ documentKind: def.kind, filter: def.blockedAfterApprovalCandidates ?? null }] : [],
+  );
+  const approved = await listDrafterInstances(viewer, { drafterId: viewer.id, status: "approved", limit: BLOCKED_APPROVED_LIMIT, candidateKinds });
 
   const found: Omit<BlockedDocument, "summary">[] = rejected.map((row) => {
     const def = getDocumentKind(row.documentKind);

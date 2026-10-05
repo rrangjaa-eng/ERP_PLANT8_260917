@@ -4,7 +4,7 @@ import { db } from "@/db/client";
 import { expenses, quoteLines } from "@/db/schema";
 import { saveQuoteLines } from "@/domain/quotes/lines";
 import { createRevisionFromCurrent } from "@/domain/quotes/revisions";
-import { createExpenseFromLines, ExpenseFieldError, getExpense, saveExpenseDraft } from "@/domain/expenses";
+import { changeExpenseLine, createExpenseFromLines, ExpenseFieldError, getExpense, saveExpenseDraft, withdrawExpense } from "@/domain/expenses";
 import { addApprovedRevision, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
 
 // 05-14 Task 2 — 분할 회차 · 회차 상한 · 닫힘(UI-SPEC 확정 #1 · RESEARCH Open Q4 RESOLVED). 상한 = 줄의 번호 있는
@@ -144,5 +144,27 @@ describe("차수 계보(D-66) — 이전 차수 줄의 앞 회차", () => {
     for (const lineId of [fx.lines.split, copied]) {
       expect(await db.select({ id: quoteLines.id }).from(quoteLines).where(eq(quoteLines.copiedFromLineId, lineId))).toHaveLength(1);
     }
+  });
+});
+
+// PR #162 리뷰 P2 — 회수(또는 반려)된 번호 문서를 다른 견적 줄로 옮겨 저장하면 처음 제출 시각은 옛 줄의 것이다. 대상 줄에 그보다
+// 늦게 제출된 회차가 이미 있으면 그 회차 자리는 남의 것이다 — 옮긴 문서는 대상 줄 기존 회차 뒤(다음 회차)로 선다.
+describe("옮겨 저장한 번호 문서의 다시 제출 회차(PR #162 P2)", () => {
+  it("먼저 제출한 문서를 회수해 1회차가 있는 줄로 옮겨 다시 내면 2회차다", async () => {
+    const fx = await setupExpenseProject();
+    const moved = await newDraft(fx, fx.lines.withVendor);
+    expect(await submitReadyDraft(fx.pm, moved)).toMatchObject({ kind: "submitted", number: "26001-0001" });
+    await withdrawExpense(fx.pm, { expenseId: moved, undo: true, round: 1 });
+
+    const first = await newDraft(fx, fx.lines.split);
+    await save(fx, first, { installment: true, supply: { currency: "KRW", amount: 6_000_000, fxRate: 1 } });
+    expect(await submitReadyDraft(fx.pm, first)).toMatchObject({ kind: "submitted", number: "26001-0002" });
+    expect(await expenseRow(first)).toMatchObject({ installmentSeq: 1 });
+
+    await changeExpenseLine(fx.pm, { expenseId: moved, lineId: fx.lines.split, expectedVersion: (await expenseRow(moved)).version });
+    expect(await expenseRow(moved)).toMatchObject({ quoteLineId: fx.lines.split, installment: true, supplyAmountKrw: 4_000_000 });
+    expect(await submitReadyDraft(fx.pm, moved)).toMatchObject({ kind: "submitted", number: "26001-0001" });
+    expect(await expenseRow(moved)).toMatchObject({ installment: true, installmentSeq: 2 });
+    expect(await expenseRow(first)).toMatchObject({ installmentSeq: 1 });
   });
 });

@@ -270,7 +270,7 @@ export async function setExpenseNumber(viewer: Viewer, input: { id: string; numb
 
 export type NumberedLineExpense = Pick<
   ExpenseRow,
-  "id" | "number" | "installment" | "supplyCurrency" | "supplyForeignAmount" | "supplyFxRate" | "supplyAmountKrw" | "submittedAt"
+  "id" | "number" | "installment" | "installmentSeq" | "supplyCurrency" | "supplyForeignAmount" | "supplyFxRate" | "supplyAmountKrw" | "submittedAt"
 >;
 
 // 견적 줄 표 행 행동 열 재료(05-05) — 줄 여럿의 번호 있는 문서 · 내 작성 중 문서를 한 번씩 읽는다(줄마다 부르지 않는다).
@@ -287,6 +287,7 @@ export async function listNumberedByLines(
       quoteLineId: expenses.quoteLineId,
       number: expenses.number,
       installment: expenses.installment,
+      installmentSeq: expenses.installmentSeq,
       supplyCurrency: expenses.supplyCurrency,
       supplyForeignAmount: expenses.supplyForeignAmount,
       supplyFxRate: expenses.supplyFxRate,

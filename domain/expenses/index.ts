@@ -965,11 +965,15 @@ export async function submitExpense(
     const installment = locked.installment || Boolean(door?.forcedInstallment);
     const firstSubmittedAt = resubmit ? locked.submittedAt : null;
     const submittedAt = firstSubmittedAt ?? deps?.now ?? new Date();
-    // 다시 제출 회차 = 이 문서보다 먼저 제출된 같은 줄 번호 문서 수 + 1(처음 제출 때와 같은 자리).
+    // 다시 제출 회차 = 이 문서보다 먼저 제출된 같은 줄 번호 문서 수 + 1(처음 제출 때와 같은 자리). 그 자리를 줄의 다른 문서가 이미
+    // 쓰고 있으면(PR #162 리뷰 P2 — 다른 줄에서 옮겨 저장한 문서라 처음 제출 시각이 옛 줄 기준) 처음 제출처럼 줄의 다음 회차다.
+    const keptSeq = firstSubmittedAt
+      ? numbered.filter((doc) => doc.id !== locked.id && doc.submittedAt !== null && doc.submittedAt < firstSubmittedAt).length + 1
+      : null;
     const installmentSeq = !installment
       ? null
-      : firstSubmittedAt
-        ? numbered.filter((doc) => doc.id !== locked.id && doc.submittedAt !== null && doc.submittedAt < firstSubmittedAt).length + 1
+      : keptSeq !== null && !numbered.some((doc) => doc.id !== locked.id && doc.installmentSeq === keptSeq)
+        ? keptSeq
         : (door?.nextInstallmentSeq ?? 1);
     await saveSubmissionSnapshot(
       viewer,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Toast } from "@/ui/toast/Toast";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { KvList } from "@/ui/kv-list/KvList";
@@ -10,9 +10,9 @@ import styles from "./PermissionGrid.module.css";
 // (D-40). `ui/`는 domain·repositories를 import할 수 없으므로(D-26) 이
 // 컴포넌트는 계산된 props와 콜백만 받는다 — 판정을 직접 수행하지 않는다.
 //
-// 열 정의 순서가 그룹 순서를 결정한다 — 호출자가 그룹(메뉴)별로 열을 모아
-// 보낸다는 전제다(같은 그룹 이름이 연속되지 않으면 2단 머리글이 그룹을
-// 둘로 쪼갠다).
+// PC 격자는 계급이 열, 항목이 행이다(§7-13). 항목 정의 순서가 그룹 순서를
+// 결정한다 — 호출자가 그룹(메뉴)별로 항목을 모아 보낸다는 전제다(같은 그룹
+// 이름이 연속되지 않으면 그룹 줄이 둘로 쪼개진다).
 export type PermissionGridRow = { id: string; label: string };
 export type PermissionGridColumn = { id: string; label: string; group?: string };
 
@@ -28,6 +28,8 @@ export type PermissionGridProps = {
   caption: string;
   /** 폰 select의 라벨(예: "계급"). */
   rowSelectLabel: string;
+  /** PC 격자 모서리 칸(항목 축 이름, 예: "메뉴"). */
+  itemHeaderLabel: string;
   rows: PermissionGridRow[];
   columns: PermissionGridColumn[];
   /** key = buildCellKey(rowId, columnId) */
@@ -79,20 +81,6 @@ export function resyncCells(
   return next;
 }
 
-function groupColumns(columns: PermissionGridColumn[]): Array<{ name: string; span: number }> {
-  const groups: Array<{ name: string; span: number }> = [];
-  for (const column of columns) {
-    const name = column.group ?? "";
-    const last = groups[groups.length - 1];
-    if (last && last.name === name) {
-      last.span += 1;
-    } else {
-      groups.push({ name, span: 1 });
-    }
-  }
-  return groups;
-}
-
 function ColumnCheckbox({
   checked,
   indeterminate,
@@ -110,20 +98,23 @@ function ColumnCheckbox({
   }, [indeterminate]);
 
   return (
-    <input
-      ref={ref}
-      type="checkbox"
-      className={styles.headerCheckbox}
-      checked={checked}
-      aria-label={ariaLabel}
-      onChange={(event) => onChange(event.target.checked)}
-    />
+    <label className={styles.headerCheckboxHit}>
+      <input
+        ref={ref}
+        type="checkbox"
+        className={styles.headerCheckbox}
+        checked={checked}
+        aria-label={ariaLabel}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+    </label>
   );
 }
 
 export function PermissionGrid({
   caption,
   rowSelectLabel,
+  itemHeaderLabel,
   rows,
   columns,
   values,
@@ -163,8 +154,13 @@ export function PermissionGrid({
     );
   }
 
-  const groups = groupColumns(columns);
-  const hasGroups = groups.length > 0 && groups.some((g) => g.name !== "");
+  // 그룹 하나 = <tbody> 하나(Table.tsx와 같다) — 그룹 줄은 이름이 있는 그룹에만 그린다(이름 없는 열은 줄 없는 tbody).
+  const tableGroups: { name: string | undefined; start: number; columns: PermissionGridColumn[] }[] = [];
+  columns.forEach((column, index) => {
+    const last = tableGroups[tableGroups.length - 1];
+    if (last && last.name === column.group) last.columns.push(column);
+    else tableGroups.push({ name: column.group, start: index, columns: [column] });
+  });
 
   async function saveCell(rowId: string, columnId: string, next: boolean): Promise<boolean> {
     const key = buildCellKey(rowId, columnId);
@@ -232,81 +228,77 @@ export function PermissionGrid({
   return (
     <div>
       <div className={styles.desktopOnly}>
-        <div className={styles.wrap}>
+        <div className={styles.wrap} style={{ "--role-count": rows.length } as CSSProperties}>
           <table className={styles.table}>
             <caption className={styles.caption}>{caption}</caption>
             <thead>
-              {hasGroups ? (
-                <tr>
-                  <th className={styles.corner} aria-hidden="true" />
-                  {groups.map((group, index) => (
-                    <th
-                      key={`${group.name}-${index}`}
-                      scope="colgroup"
-                      colSpan={group.span}
-                      className={styles.groupHeader}
-                    >
-                      {group.name}
-                    </th>
-                  ))}
-                </tr>
-              ) : null}
               <tr>
                 <th scope="col" className={styles.corner}>
-                  {rowSelectLabel}
+                  {itemHeaderLabel}
                 </th>
-                {columns.map((column) => {
-                  const state = columnState(column);
-                  return (
-                    <th key={column.id} scope="col" className={styles.colHeader}>
-                      <ColumnCheckbox
-                        checked={state.checked}
-                        indeterminate={state.indeterminate}
-                        ariaLabel={columnAriaLabel(column)}
-                        onChange={(next) => {
-                          void handleColumnToggle(column, next);
-                        }}
-                      />
-                      <span className={styles.colHeaderLabel}>{column.label}</span>
-                    </th>
-                  );
-                })}
+                {rows.map((row) => (
+                  <th key={row.id} scope="col" className={styles.colHeader} title={row.label}>
+                    <span className={styles.colHeaderText}>{row.label}</span>
+                  </th>
+                ))}
               </tr>
             </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.id}>
-                  <th scope="row" className={styles.rowHeader}>
-                    {row.label}
-                  </th>
-                  {columns.map((column) => {
-                    const key = buildCellKey(row.id, column.id);
-                    const cell = cells[key] ?? { checked: false, status: "idle" as CellStatus };
-                    const cellClass = [
-                      styles.cell,
-                      cell.status === "delayed" ? styles.delayed : "",
-                      cell.status === "error" ? styles.errorCell : "",
-                    ]
-                      .filter(Boolean)
-                      .join(" ");
-                    return (
-                      <td key={column.id} className={cellClass} title={cell.reason}>
-                        <label className={styles.cellLabel}>
-                          <input
-                            type="checkbox"
-                            checked={cell.checked}
-                            aria-label={cellAriaLabel(row, column)}
-                            onChange={() => {
-                              void handleCellToggle(row, column);
+            {tableGroups.map((group) => (
+              <tbody key={`${group.name ?? ""}-${group.start}`}>
+                {group.name ? (
+                  <tr className={styles.groupRow}>
+                    <th scope="rowgroup" colSpan={rows.length + 1} className={styles.groupHeader}>
+                      {group.name}
+                    </th>
+                  </tr>
+                ) : null}
+                {group.columns.map((column) => {
+                  const state = columnState(column);
+                  return (
+                    <tr key={column.id}>
+                      <th scope="row" className={styles.rowHeader}>
+                        <span className={styles.rowHeaderInner}>
+                          <ColumnCheckbox
+                            checked={state.checked}
+                            indeterminate={state.indeterminate}
+                            ariaLabel={columnAriaLabel(column)}
+                            onChange={(next) => {
+                              void handleColumnToggle(column, next);
                             }}
                           />
-                        </label>
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
+                          <span>{column.label}</span>
+                        </span>
+                      </th>
+                      {rows.map((row) => {
+                        const key = buildCellKey(row.id, column.id);
+                        const cell = cells[key] ?? { checked: false, status: "idle" as CellStatus };
+                        const cellClass = [
+                          styles.cell,
+                          cell.status === "delayed" ? styles.delayed : "",
+                          cell.status === "error" ? styles.errorCell : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ");
+                        return (
+                          <td key={row.id} className={cellClass} title={cell.reason}>
+                            <label className={styles.cellLabel}>
+                              <input
+                                type="checkbox"
+                                checked={cell.checked}
+                                aria-label={cellAriaLabel(row, column)}
+                                onChange={() => {
+                                  void handleCellToggle(row, column);
+                                }}
+                              />
+                            </label>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            ))}
           </table>
         </div>
       </div>

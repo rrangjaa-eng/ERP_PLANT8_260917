@@ -29,7 +29,7 @@ export type PermissionGridProps = {
   /** 폰 select의 라벨(예: "계급"). */
   rowSelectLabel: string;
   /** PC 격자 모서리 칸(항목 축 이름, 예: "메뉴"). */
-  itemHeaderLabel?: string;
+  itemHeaderLabel: string;
   rows: PermissionGridRow[];
   columns: PermissionGridColumn[];
   /** key = buildCellKey(rowId, columnId) */
@@ -154,7 +154,13 @@ export function PermissionGrid({
     );
   }
 
-  const hasGroups = columns.some((column) => column.group);
+  // 그룹 하나 = <tbody> 하나(Table.tsx와 같다) — 그룹 줄은 이름이 있는 그룹에만 그린다(이름 없는 열은 줄 없는 tbody).
+  const tableGroups: { name: string | undefined; start: number; columns: PermissionGridColumn[] }[] = [];
+  columns.forEach((column, index) => {
+    const last = tableGroups[tableGroups.length - 1];
+    if (last && last.name === column.group) last.columns.push(column);
+    else tableGroups.push({ name: column.group, start: index, columns: [column] });
+  });
 
   async function saveCell(rowId: string, columnId: string, next: boolean): Promise<boolean> {
     const key = buildCellKey(rowId, columnId);
@@ -237,61 +243,62 @@ export function PermissionGrid({
                 ))}
               </tr>
             </thead>
-            <tbody>
-              {columns.map((column, index) => {
-                const state = columnState(column);
-                const startsGroup = hasGroups && (index === 0 || columns[index - 1]?.group !== column.group);
-                return [
-                  startsGroup ? (
-                    <tr key={`group-${column.group ?? ""}-${index}`} className={styles.groupRow}>
-                      <th scope="rowgroup" colSpan={rows.length + 1} className={styles.groupHeader}>
-                        {column.group}
-                      </th>
-                    </tr>
-                  ) : null,
-                  <tr key={column.id}>
-                    <th scope="row" className={styles.rowHeader}>
-                      <span className={styles.rowHeaderInner}>
-                        <ColumnCheckbox
-                          checked={state.checked}
-                          indeterminate={state.indeterminate}
-                          ariaLabel={columnAriaLabel(column)}
-                          onChange={(next) => {
-                            void handleColumnToggle(column, next);
-                          }}
-                        />
-                        <span>{column.label}</span>
-                      </span>
+            {tableGroups.map((group) => (
+              <tbody key={`${group.name ?? ""}-${group.start}`}>
+                {group.name ? (
+                  <tr className={styles.groupRow}>
+                    <th scope="rowgroup" colSpan={rows.length + 1} className={styles.groupHeader}>
+                      {group.name}
                     </th>
-                    {rows.map((row) => {
-                      const key = buildCellKey(row.id, column.id);
-                      const cell = cells[key] ?? { checked: false, status: "idle" as CellStatus };
-                      const cellClass = [
-                        styles.cell,
-                        cell.status === "delayed" ? styles.delayed : "",
-                        cell.status === "error" ? styles.errorCell : "",
-                      ]
-                        .filter(Boolean)
-                        .join(" ");
-                      return (
-                        <td key={row.id} className={cellClass} title={cell.reason}>
-                          <label className={styles.cellLabel}>
-                            <input
-                              type="checkbox"
-                              checked={cell.checked}
-                              aria-label={cellAriaLabel(row, column)}
-                              onChange={() => {
-                                void handleCellToggle(row, column);
-                              }}
-                            />
-                          </label>
-                        </td>
-                      );
-                    })}
-                  </tr>,
-                ];
-              })}
-            </tbody>
+                  </tr>
+                ) : null}
+                {group.columns.map((column) => {
+                  const state = columnState(column);
+                  return (
+                    <tr key={column.id}>
+                      <th scope="row" className={styles.rowHeader}>
+                        <span className={styles.rowHeaderInner}>
+                          <ColumnCheckbox
+                            checked={state.checked}
+                            indeterminate={state.indeterminate}
+                            ariaLabel={columnAriaLabel(column)}
+                            onChange={(next) => {
+                              void handleColumnToggle(column, next);
+                            }}
+                          />
+                          <span>{column.label}</span>
+                        </span>
+                      </th>
+                      {rows.map((row) => {
+                        const key = buildCellKey(row.id, column.id);
+                        const cell = cells[key] ?? { checked: false, status: "idle" as CellStatus };
+                        const cellClass = [
+                          styles.cell,
+                          cell.status === "delayed" ? styles.delayed : "",
+                          cell.status === "error" ? styles.errorCell : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ");
+                        return (
+                          <td key={row.id} className={cellClass} title={cell.reason}>
+                            <label className={styles.cellLabel}>
+                              <input
+                                type="checkbox"
+                                checked={cell.checked}
+                                aria-label={cellAriaLabel(row, column)}
+                                onChange={() => {
+                                  void handleCellToggle(row, column);
+                                }}
+                              />
+                            </label>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            ))}
           </table>
         </div>
       </div>

@@ -32,3 +32,7 @@
 - [x] 표 면이 §7-3 표와 같다(흰 면 + 1px 선 + r8) — 근거: `.wrap`에 `--surface-base`·`--border-surface`·`--radius-surface`·`--shadow-surface`, E2E가 /admin/people 표 면의 computed 값(테두리·radius·배경·그림자)과 같음을 비교. 고치기 전 border 0.
 - [x] 새 색·토큰·radius 없음, 13px 미만 없음, sticky·모서리 충돌 없음 — 근거: tokens.css 변수만, `.wrap`이 스크롤 컨테이너라 overflow: auto가 둥근 모서리를 자르고 sticky 기준 불변, 기존 sticky 회귀 E2E·가로 넘침 0 E2E 통과.
 
+## /review·Codex 2회차 지적 반영(그룹별 tbody · 첫 칸 여백 · 셀 세로 클릭)
+- [x] 그룹 하나 = `<tbody>` 하나, `scope="rowgroup"`은 제 그룹만 덮는다 — 근거: Table.tsx 그룹 구조와 같게 바꿨고 E2E 「그룹마다 tbody」 RED(tbody 1개) → GREEN.
+- [x] 첫 칸 왼쪽 `--s-4`(16px)가 §7-3 표 첫 칸(Table.module.css .cell:first-child)과 같다 — 근거: `.rowHeader`·`.corner` padding-left, E2E가 computed 16px 확인.
+- [x] 셀 전체 세로 클릭(label min-height `--row-h`)·긴 계급 이름 줄바꿈(`overflow-wrap: anywhere`) — 근거: 새 토큰 없음, E2E 폭 700 가로 넘침 0 추가, after 측정은 /mnt/project-files/notes/perm-grid-scroll/after/.

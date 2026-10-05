@@ -129,9 +129,7 @@ test.describe("권한표 격자 (ADMN-01, D-40, 성공 기준 2)", () => {
       await page.goto("/admin/permissions");
 
       // 좌상단 모서리 셀 — 두 sticky(top·left)가 겹치는 자리이자 §7-13이
-      // 「배경이 끊기지 않게」 계약한 지점. 접근성 이름이 "메뉴"인 것은
-      // aria-hidden이 아닌 실제 열 머리글 행의 corner뿐이다(그룹 머리글 행의
-      // corner는 aria-hidden="true"라 접근성 트리에서 제외된다).
+      // 「배경이 끊기지 않게」 계약한 지점.
       const cornerHeader = page.getByRole("columnheader", { name: "메뉴", exact: true });
       await expect(cornerHeader).toBeVisible();
 
@@ -208,7 +206,7 @@ test.describe("권한표 격자 (ADMN-01, D-40, 성공 기준 2)", () => {
 
   // §7-13(2026-10-05 DECISIONS): PC는 계급이 열 — 항목이 늘어도 가로 스크롤이 없다.
   for (const path of ["/admin/permissions", "/admin/visibility"]) {
-    for (const width of [1280, 768]) {
+    for (const width of [1280, 768, 700]) {
       test(`${path} 격자는 폭 ${width}에서 가로 스크롤이 없고 계급이 열 머리글이다`, async ({ page }) => {
         await page.setViewportSize({ width, height: 900 });
         const admin = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
@@ -285,6 +283,35 @@ test.describe("권한표 격자 (ADMN-01, D-40, 성공 기준 2)", () => {
     if (!box) throw new Error("감싼 요소 bounding box를 가져오지 못했다");
     expect(box.width).toBeGreaterThanOrEqual(32);
     expect(box.height).toBeGreaterThanOrEqual(32);
+  });
+  // /review: 그룹 하나 = <tbody> 하나(Table.tsx와 같다) — scope="rowgroup" 머리글이 제 그룹만 덮는다.
+  test("그룹마다 <tbody>가 따로이고 rowgroup 머리글은 tbody마다 하나다", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await loginAdmin(page);
+    await page.goto("/admin/permissions");
+    await expect(page.getByRole("columnheader", { name: "시스템 관리자", exact: true })).toBeVisible();
+    const perBody = await page
+      .locator("table")
+      .first()
+      .locator("tbody")
+      .evaluateAll((els) => els.map((el) => el.querySelectorAll("th[scope='rowgroup']").length));
+    expect(perBody.length).toBeGreaterThan(1);
+    for (const n of perBody) expect(n).toBe(1);
+  });
+  // /review·Codex: 첫 칸 왼쪽 --s-4(16px) — §7-3 표 첫 칸과 같다.
+  test("항목 머리글·모서리 칸의 왼쪽 안쪽 여백은 16px이다 (§7-3 첫 칸)", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await loginAdmin(page);
+    await page.goto("/admin/permissions");
+    await expect(page.getByRole("columnheader", { name: "시스템 관리자", exact: true })).toBeVisible();
+    const pads = await page
+      .locator("thead th[scope='col']")
+      .first()
+      .evaluate((corner) => {
+        const row = document.querySelector("tbody th[scope='row']");
+        return [getComputedStyle(corner).paddingLeft, row ? getComputedStyle(row).paddingLeft : ""];
+      });
+    expect(pads).toEqual(["16px", "16px"]);
   });
   // 2026-10-05 DECISIONS 하위 결정: 항목 행 --row-h 44 · 표 면(흰 면 + 1px 선 + r8)은 §7-3 표와 같다.
   test("항목 행 높이는 §7-3 표 행과 같은 44px이다 (§3 --row-h)", async ({ page }) => {

@@ -8,6 +8,12 @@
   gap: var(--s-2) var(--s-4);
 }
 
+/* 05-10 D4: 막힌 `승인` 자리의 이유 글자(서버 원문) — 결재함 `.blockedReason`과 같은 두 토큰. */
+.blockedReason {
+  color: var(--status-danger);
+  font-size: var(--text-aux);
+}
+
 /* 터치 PC · 태블릿 — 행 행동 버튼 상자를 --touch-min으로(보이는 글자 크기는 그대로). */
 @media (pointer: coarse) {
   .pcActions button {

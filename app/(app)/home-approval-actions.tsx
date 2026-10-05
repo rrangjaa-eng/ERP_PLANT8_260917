@@ -11,6 +11,7 @@ import { approveToast } from "@/app/(app)/approvals/approve-toast";
 import { ApprovalSheet, type ApprovalSheetItem, type ApproveOutcome } from "@/app/(app)/approvals/approval-sheet";
 import { ConflictLine } from "@/app/(app)/approvals/conflict-line";
 import { evidenceViewUrl } from "@/app/(app)/approvals/evidence-url";
+import { rowApprovalActions } from "@/app/(app)/approvals/row-actions";
 import { RejectDialog, WithdrawDialog, type DecisionTarget, type RejectMessages } from "@/app/(app)/approvals/decision-dialogs";
 import styles from "./home-approval-actions.module.css";
 
@@ -78,10 +79,12 @@ export function HomeApprovalRow({ labelId, instanceId, version, actions, sheet, 
     },
   });
 
+  const cell = rowApprovalActions({ approveBlockedReason: sheet.approveBlockedReason, canReject: actions.includes("reject") && decision !== null });
+
   return (
     <>
       <span className={styles.pcActions}>
-        {actions.includes("approve") ? (
+        {actions.includes("approve") && cell.showApprove ? (
           <Button
             variant="tertiary"
             pending={pending}
@@ -97,7 +100,8 @@ export function HomeApprovalRow({ labelId, instanceId, version, actions, sheet, 
             승인
           </Button>
         ) : null}
-        {actions.includes("reject") && decision ? (
+        {actions.includes("approve") && cell.reasonText ? <span className={styles.blockedReason}>{cell.reasonText}</span> : null}
+        {cell.showReject && decision ? (
           <Button variant="tertiary" disabled={pending} aria-describedby={labelId} onClick={() => setRejectTarget(decision)}>
             반려
           </Button>

@@ -58,6 +58,12 @@ tr:has(.rowTap) {
   font-size: var(--text-aux);
 }
 
+/* 05-10 D4: 막힌 `승인` 자리의 이유 글자(서버 원문) — `.conflict`와 같은 두 토큰. */
+.blockedReason {
+  color: var(--status-danger);
+  font-size: var(--text-aux);
+}
+
 /* 잔여 초과(UI-SPEC S4) — PC 문서 칸 2행, 폰에서는 접힌 줄 끝에만(같은 말을 두 번 보이지 않는다). */
 .overdraw {
   display: block;

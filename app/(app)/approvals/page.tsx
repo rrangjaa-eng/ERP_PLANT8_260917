@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { requireSession } from "@/lib/viewer";
 import { kstDateOf } from "@/lib/kst-date";
+import { can } from "@/domain/permissions/can";
 import "@/app/(app)/document-kinds";
 import {
   listMyInbox,
@@ -68,6 +69,7 @@ function toRow(item: Partial<ApprovalInboxItemDto>, group: InboxRow["group"]): I
     measure: measureCell(summary.measure),
     status,
     actions: group === "mine" ? (item.actions ?? []) : [],
+    approveBlockedReason: group === "mine" ? (item.approveBlockedReason ?? null) : null,
     // 잔여 초과 줄(종류가 준 상세 행의 경고 한 줄) — `내 결재`만 상세를 읽는다(UI-SPEC S4 · /design-review).
     // 05-10: 잔여 초과는 잔고 행의 경고 줄이다 — 지출결의의 세율 바뀜 경고 줄은 표 문서 칸에 올리지 않는다(시트에서 본다).
     overdraw: group === "mine" ? (item.detail?.rows.find((row) => row.tone === "warning" && row.label === "잔고")?.value ?? null) : null,
@@ -82,11 +84,13 @@ export default async function ApprovalsPage() {
   // 상세까지 한 번에 — 같은 노출 메모 · 종류마다 loadDetails 한 번(CEO-17).
   const inbox = await listMyInbox(viewer, { withDetails: true });
   const rows = [...inbox.mine.map((item) => toRow(item, "mine")), ...inbox.processed.map((item) => toRow(item, "processed"))];
+  // 05-10: 빈 화면의 다음 한 수는 지출결의 목록 — 목록을 볼 권한이 없으면 문장만(DECISIONS 2026-10-05).
+  const canViewExpenses = rows.length === 0 && (await can(viewer, "expenses", "view"));
 
   return (
     <ListScreen title="결재">
       {rows.length === 0 ? (
-        <ListEmpty message="결재할 건이 없습니다" action={{ label: "연차 목록 보기", href: "/leave" }} />
+        <ListEmpty message="결재할 건이 없습니다" {...(canViewExpenses ? { action: { label: "지출결의 목록 보기", href: "/expenses" } } : {})} />
       ) : (
         <InboxTable
           rows={rows}

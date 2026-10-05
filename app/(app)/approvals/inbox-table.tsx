@@ -16,6 +16,7 @@ import { ApprovalSheet, type ApprovalSheetItem, type ApproveOutcome } from "./ap
 import { ConflictLine } from "./conflict-line";
 import { evidenceViewUrl } from "./evidence-url";
 import { INBOX_COLUMN_LABELS } from "./list-columns";
+import { rowApprovalActions } from "./row-actions";
 import { RejectDialog, WithdrawDialog, type DecisionTarget, type RejectMessages } from "./decision-dialogs";
 import leaveStyles from "@/app/(app)/leave/leave.module.css";
 import styles from "./inbox-table.module.css";
@@ -40,6 +41,8 @@ export type InboxRow = {
   overdraw: string | null;
   // 서버 가능 행동(구조 값 — 결재 정보 노출과 무관, 사용자 결정 2026-09-29 A). 처리함은 빈 목록.
   actions: ApprovalSheetItem["actions"];
+  // 05-10 D4: 종류가 준 `승인` 막힘 이유(서버 원문) — 있으면 PC 행은 `승인` 대신 이유 글자 + `반려`.
+  approveBlockedReason: string | null;
   // `내 결재` 항목의 결재 시트 재료(서버 가능 행동 · 상세 · 결재선) — 처리함은 null. 결재 정보가 꺼진 계급은 상세가
   // 없어 null이다 — 그 행은 폰에서도 문서 링크로 문서 화면에 간다(거기 행동 줄이 있다).
   sheet: ApprovalSheetItem | null;
@@ -175,10 +178,11 @@ export function InboxTable({
         const expectedVersion = row.version;
         const actions = row.actions;
         const decision = row.decision;
+        const cell = rowApprovalActions({ approveBlockedReason: row.approveBlockedReason, canReject: actions.includes("reject") && decision !== null });
         // PC 행은 서버 가능 행동에서 승인 · 반려만 그린다 — 회수는 행에 두지 않는다(T6 · #3, 문서 화면 · 폰 시트에서만).
         return (
           <span className={styles.rowActions}>
-            {actions.includes("approve") ? (
+            {actions.includes("approve") && cell.showApprove ? (
               <Button
                 variant="tertiary"
                 pending={pendingId === row.id}
@@ -195,7 +199,8 @@ export function InboxTable({
                 승인
               </Button>
             ) : null}
-            {actions.includes("reject") && decision ? (
+            {actions.includes("approve") && cell.reasonText ? <span className={styles.blockedReason}>{cell.reasonText}</span> : null}
+            {cell.showReject && decision ? (
               <Button
                 variant="tertiary"
                 disabled={pendingId === row.id}

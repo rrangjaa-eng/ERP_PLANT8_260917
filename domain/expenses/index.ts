@@ -120,6 +120,8 @@ const ACTIVE_STATUSES = new Set(["submitted", "in_review", "approved"]);
 const EDITABLE_STATUSES: ReadonlySet<string> = new Set(["rejected", "withdrawn"]);
 const IN_PROGRESS_STATUSES: ReadonlySet<string> = new Set(["submitted", "in_review"]);
 const NO_TEAM_AT_USAGE_DATE = "사용일에 소속 팀 없음 · 사용일 고치기";
+const SUPPLY_EMPTY = "공급가액 비어 있음 · 공급가액 적기";
+const SUPPLY_ZERO = "공급가액이 0 · 0보다 크게";
 const INACTIVE_EVIDENCE_TYPE = "쓰지 않는 증빙 종류 · 증빙 종류 고르기";
 const INACTIVE_PAYMENT_METHOD = "쓰지 않는 지급 방식 · 지급 방식 고르기";
 
@@ -706,6 +708,10 @@ export async function saveExpenseDraft(
   const parsed = draftFieldsSchema.parse(input.fields);
   await assertActiveCodes(viewer, parsed, row);
   const fields = toDraftColumns(parsed);
+  // 번호 있는 문서(반려 · 회수)는 공급가액이 있어야 한다(DB 체크 — 번호 있으면 공급가액 > 0) — DB 오류 대신 칸 오류.
+  if (row.number !== null && fields.supplyAmountKrw !== undefined && (fields.supplyAmountKrw === null || fields.supplyAmountKrw <= 0)) {
+    throw new ExpenseFieldError("supplyAmount", fields.supplyAmountKrw === null ? SUPPLY_EMPTY : SUPPLY_ZERO);
+  }
   // 팀 비용 칸은 팀 비용 문서만 받는다(DB 체크 expenses_line_or_team_check도 같은 편). 귀속 팀은 사용일 소속으로 저장 때 다시 정해진다 —
   // 팀 id를 호출자가 보낼 수 없다(T-05-703). 트랜잭션 · 잠금 밖의 읽기다.
   // 견적 줄 문서의 거래처는 줄이 정한다(줄 바꾸기만 바꾼다) — 팀 비용 문서의 거래처는 거래처 고르기와 같은 판정을 지난다.

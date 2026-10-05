@@ -7,7 +7,16 @@ import { codeItems, expenses } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { ForbiddenError } from "@/domain/permissions/can";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
-import { createExpenseFromLines, createTeamExpenseDraft, ExpenseNotFoundError, listExpenseFormOptions, previewExpense, saveExpenseDraft } from "@/domain/expenses";
+import {
+  createExpenseFromLines,
+  createTeamExpenseDraft,
+  ExpenseFieldError,
+  ExpenseNotFoundError,
+  listExpenseFormOptions,
+  previewExpense,
+  saveExpenseDraft,
+  withdrawExpense,
+} from "@/domain/expenses";
 import { GateBlockedError } from "@/domain/rules/gate";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { insertVendor, setVendorArchived, setVendorHidden } from "@/repositories/vendors";
@@ -151,5 +160,26 @@ describe("증빙 종류 · 지급 방식은 쓰는 코드만 (A4 · adversarial 
     expect(error).toBeInstanceOf(GateBlockedError);
     expect(error).toMatchObject({ message: "증빙 종류 비어 있음 · 증빙 종류 고르기" });
     expect((await expenseRow(expenseId)).number).toBeNull();
+  });
+});
+
+describe("번호 있는 문서의 공급가액 (A5 · adversarial F4)", () => {
+  it("회수된 문서에서 공급가액을 비우거나 0으로 저장하면 DB 오류가 아니라 공급가액 칸 오류다", async () => {
+    const fx = await setupExpenseProject();
+    const expenseId = await lineDraft(fx.pm, fx.lines.withVendor);
+    expect(await submitReadyDraft(fx.pm, expenseId)).toMatchObject({ kind: "submitted" });
+    await withdrawExpense(fx.pm, { expenseId, undo: true, round: 1 });
+    const before = await expenseRow(expenseId);
+
+    const cleared = await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: before.version, fields: { supply: null } }).catch((e: unknown) => e);
+    expect(cleared).toBeInstanceOf(ExpenseFieldError);
+    expect(cleared).toMatchObject({ field: "supplyAmount", message: "공급가액 비어 있음 · 공급가액 적기" });
+
+    const zero = await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: before.version, fields: { supply: { currency: "KRW", amount: 0, fxRate: 1 } } }).catch(
+      (e: unknown) => e,
+    );
+    expect(zero).toBeInstanceOf(ExpenseFieldError);
+    expect(zero).toMatchObject({ field: "supplyAmount", message: "공급가액이 0 · 0보다 크게" });
+    expect(await expenseRow(expenseId)).toMatchObject({ version: before.version, supplyAmountKrw: before.supplyAmountKrw });
   });
 });

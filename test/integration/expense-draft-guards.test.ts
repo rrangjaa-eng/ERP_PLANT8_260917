@@ -2,11 +2,14 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { expenses } from "@/db/schema";
+import { and } from "drizzle-orm";
+import { codeItems, expenses } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { ForbiddenError } from "@/domain/permissions/can";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
-import { createExpenseFromLines, createTeamExpenseDraft, ExpenseNotFoundError, previewExpense, saveExpenseDraft } from "@/domain/expenses";
+import { createExpenseFromLines, createTeamExpenseDraft, ExpenseNotFoundError, listExpenseFormOptions, previewExpense, saveExpenseDraft } from "@/domain/expenses";
+import { GateBlockedError } from "@/domain/rules/gate";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { insertVendor, setVendorArchived, setVendorHidden } from "@/repositories/vendors";
 import { upsertPermission } from "@/repositories/permissions";
 import { setupExpenseProject, submitReadyDraft } from "./fixtures/expenses";
@@ -108,5 +111,45 @@ describe("임시 저장 · 미리보기 쓰기 권한 (A1 · adversarial F11)", 
     await expect(saveExpenseDraft(drafter, { expenseId, expectedVersion: version, fields: { content: "고침" } })).rejects.toBeInstanceOf(ForbiddenError);
     await expect(previewExpense(drafter, { expenseId, fields: {} })).rejects.toBeInstanceOf(ForbiddenError);
     expect(await expenseRow(expenseId)).toMatchObject({ content: "팀 회식", version });
+  });
+});
+
+describe("증빙 종류 · 지급 방식은 쓰는 코드만 (A4 · adversarial F2)", () => {
+  it("코드표에 없는 증빙 종류 · 지급 방식으로는 임시 저장 · 첫 저장 · 줄 문서 만들기를 하지 못한다", async () => {
+    const fx = await setupExpenseProject();
+    const expenseId = await teamDraft(fx.pm);
+    const { version } = await expenseRow(expenseId);
+    await expect(saveExpenseDraft(fx.pm, { expenseId, expectedVersion: version, fields: { evidenceType: "zz_none" } })).rejects.toThrow(
+      "쓰지 않는 증빙 종류 · 증빙 종류 고르기",
+    );
+    await expect(saveExpenseDraft(fx.pm, { expenseId, expectedVersion: version, fields: { paymentMethod: "zz_none" } })).rejects.toThrow(
+      "쓰지 않는 지급 방식 · 지급 방식 고르기",
+    );
+    await expect(
+      createTeamExpenseDraft(fx.pm, { idempotencyKey: randomUUID(), fields: { usageDate: "2026-09-26", paymentMethod: "zz_none" } }),
+    ).rejects.toBeInstanceOf(UserFacingError);
+    await expect(createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor], fields: { paymentMethod: "zz_none" } })).rejects.toBeInstanceOf(
+      UserFacingError,
+    );
+    expect(await expenseRow(expenseId)).toMatchObject({ version, evidenceType: null });
+  });
+
+  it("저장 뒤 비활성이 된 증빙 종류는 그대로 저장은 되지만 제출은 `증빙 종류 비어 있음`으로 막힌다", async () => {
+    const fx = await setupExpenseProject();
+    const expenseId = await lineDraft(fx.pm, fx.lines.withVendor);
+    const payment = (await listExpenseFormOptions(fx.pm)).payment[0]?.value ?? null;
+    await saveExpenseDraft(fx.pm, {
+      expenseId,
+      expectedVersion: (await expenseRow(expenseId)).version,
+      fields: { evidenceType: "tax_invoice", paymentMethod: payment, supply: { currency: "KRW", amount: 1_000_000, fxRate: 1 } },
+    });
+    await db.update(codeItems).set({ active: false }).where(and(eq(codeItems.tableKey, "evidence_type"), eq(codeItems.value, "tax_invoice")));
+
+    // 자동 저장은 같은 값을 다시 보낸다 — 이미 저장된 값은 막지 않는다.
+    await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: (await expenseRow(expenseId)).version, fields: { evidenceType: "tax_invoice", note: "메모" } });
+    const error = await submitReadyDraft(fx.pm, expenseId).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(GateBlockedError);
+    expect(error).toMatchObject({ message: "증빙 종류 비어 있음 · 증빙 종류 고르기" });
+    expect((await expenseRow(expenseId)).number).toBeNull();
   });
 });

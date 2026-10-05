@@ -120,6 +120,8 @@ const ACTIVE_STATUSES = new Set(["submitted", "in_review", "approved"]);
 const EDITABLE_STATUSES: ReadonlySet<string> = new Set(["rejected", "withdrawn"]);
 const IN_PROGRESS_STATUSES: ReadonlySet<string> = new Set(["submitted", "in_review"]);
 const NO_TEAM_AT_USAGE_DATE = "사용일에 소속 팀 없음 · 사용일 고치기";
+const INACTIVE_EVIDENCE_TYPE = "쓰지 않는 증빙 종류 · 증빙 종류 고르기";
+const INACTIVE_PAYMENT_METHOD = "쓰지 않는 지급 방식 · 지급 방식 고르기";
 
 // 05-07 팀 비용 종류(DB 체크 expenses_team_expense_kind_check와 같은 값) — 화면 글자.
 export const TEAM_EXPENSE_KINDS = ["lost_bid", "team_overhead"] as const;
@@ -494,6 +496,30 @@ export async function loadProjectFacts(viewer: Viewer, projectId: string, gateEn
   return { project: projectRow, latestRevisionId: latest.id, tableGateReason: decision.allowed ? null : decision.reason };
 }
 
+// 지금 쓰는(보관 · 비활성 아닌) 증빙 종류 · 지급 방식 값 — 저장 · 제출이 화면 선택지(listExpenseFormOptions)와 같은 조건으로 판정한다.
+type ActiveCodes = { evidence: ReadonlySet<string>; payment: ReadonlySet<string> };
+
+async function loadActiveCodes(viewer: Viewer): Promise<ActiveCodes> {
+  const read = async (tableKey: string) =>
+    new Set((await listCodeItems(viewer, { tableKey, scope: { rows: "all", includeArchived: false }, includeInactive: false })).map((item) => item.value));
+  const [evidence, payment] = await Promise.all([read("evidence_type"), read("payment_method")]);
+  return { evidence, payment };
+}
+
+// 새로 고른 값만 본다 — 이미 저장된 값(그 뒤 보관 · 비활성)은 자동 저장이 다시 보내도 막지 않고 제출 판정 ⑥이 빈 칸으로 막는다.
+async function assertActiveCodes(
+  viewer: Viewer,
+  fields: { evidenceType?: string | null; paymentMethod?: string | null },
+  stored?: Pick<ExpenseRow, "evidenceType" | "paymentMethod">,
+): Promise<void> {
+  const evidence = fields.evidenceType && fields.evidenceType !== stored?.evidenceType ? fields.evidenceType : null;
+  const payment = fields.paymentMethod && fields.paymentMethod !== stored?.paymentMethod ? fields.paymentMethod : null;
+  if (!evidence && !payment) return;
+  const codes = await loadActiveCodes(viewer);
+  if (evidence && !codes.evidence.has(evidence)) throw new UserFacingError(INACTIVE_EVIDENCE_TYPE);
+  if (payment && !codes.payment.has(payment)) throw new UserFacingError(INACTIVE_PAYMENT_METHOD);
+}
+
 async function firstPaymentMethod(viewer: Viewer): Promise<string | null> {
   const items = await listCodeItems(viewer, { tableKey: "payment_method", scope: { rows: "all", includeArchived: false }, includeInactive: false });
   return items[0]?.value ?? null;
@@ -533,6 +559,7 @@ export async function createExpenseFromLines(
   const [canWriteExpense, canWriteProject] = await Promise.all([can(viewer, "expenses", "write"), can(viewer, "projects", "write")]);
   if (!canWriteExpense || !canWriteProject) throw new ForbiddenError("지출결의 작성 권한 없음");
   const typed = lineDraftFieldsSchema.parse(input.fields ?? {});
+  await assertActiveCodes(viewer, typed);
 
   const [gateEnabled, teamScope] = await Promise.all([
     getSettingValue(PROJECT_CUSTOMER_APPROVAL_GATE),
@@ -677,6 +704,7 @@ export async function saveExpenseDraft(
   if (!(await can(viewer, "expenses", "write"))) throw new ForbiddenError("지출결의 작성 권한 없음");
   const row = await findEditableExpense(viewer, input.expenseId);
   const parsed = draftFieldsSchema.parse(input.fields);
+  await assertActiveCodes(viewer, parsed, row);
   const fields = toDraftColumns(parsed);
   // 팀 비용 칸은 팀 비용 문서만 받는다(DB 체크 expenses_line_or_team_check도 같은 편). 귀속 팀은 사용일 소속으로 저장 때 다시 정해진다 —
   // 팀 id를 호출자가 보낼 수 없다(T-05-703). 트랜잭션 · 잠금 밖의 읽기다.
@@ -725,6 +753,7 @@ export async function createTeamExpenseDraft(
 
   const parsed = draftFieldsSchema.parse(input.fields);
   if (parsed.vendorId) await usableVendor(viewer, parsed.vendorId);
+  await assertActiveCodes(viewer, parsed);
   const usageDate = parsed.usageDate ?? seoulToday(deps?.now);
   const attributedTeamId = await attributedTeamFor(viewer, usageDate);
   const inserted = await insertTeamDraftIfAbsent(viewer, {
@@ -862,6 +891,7 @@ export async function submitExpense(
 
   const tax = await computeExpenseTax(viewer, row);
   const pre = projectRow ? await loadSubmitPre(viewer, projectRow) : null;
+  const codes = await loadActiveCodes(viewer);
   const prepared = await prepareSubmission(viewer, { kind: EXPENSE_DOCUMENT_KIND, drafterId: viewer.id });
   const numbering = projectRow
     ? ({ kind: "project", projectNumber: projectRow.number, format: await loadExpenseNumberFormat() } as const)
@@ -884,7 +914,7 @@ export async function submitExpense(
     if (locked.version !== input.expectedVersion) throw new ExpenseConflictError(locked.updatedAt);
 
     // 잠근 프로젝트 행 · tx로 읽은 차수 · 줄 · 문 · 증빙 수로 같은 규칙을 다시 판정한다(T-05-601).
-    const { facts, line, numbered, door } = await loadSubmitFacts(viewer, locked, lockedProject ?? projectRow, pre, tax, tx);
+    const { facts, line, numbered, door } = await loadSubmitFacts(viewer, locked, lockedProject ?? projectRow, pre, tax, codes, tx);
     const decision = await gate(locked, "expense.submit", buildExpenseSubmitContext(facts));
     if (!decision.allowed) throw new GateBlockedError(decision.reason);
     if (locked.quoteLineId) {
@@ -1089,6 +1119,7 @@ async function loadSubmitFacts(
   projectRow: ProjectRow | null,
   pre: SubmitPre | null,
   tax: ExpenseTaxResult,
+  codes: ActiveCodes,
   tx?: DbOrTx,
 ): Promise<{ facts: ExpenseSubmitFacts; line: QuoteLineRow | null; numbered: NumberedLineExpense[]; door: ExpenseLineDoor | null }> {
   const line = row.quoteLineId ? await findQuoteLineById(viewer, row.quoteLineId, tx) : null;
@@ -1119,8 +1150,9 @@ async function loadSubmitFacts(
     // 팀 비용 문서(프로젝트 없음) — ①~④는 건너뛰고 ⑥ 묶음에 종류 · 내용이 든다.
     teamCost: projectRow ? null : { kind: row.teamExpenseKind, content: row.content },
     supplyAmountKrw: row.supplyAmountKrw,
-    evidenceType: row.evidenceType,
-    paymentMethod: row.paymentMethod,
+    // 보관 · 비활성 코드는 빈 칸과 같다(⑥ — 쓰는 코드를 다시 고른다). 코드 판정은 트랜잭션 전에 읽은 값이다.
+    evidenceType: row.evidenceType && codes.evidence.has(row.evidenceType) ? row.evidenceType : null,
+    paymentMethod: row.paymentMethod && codes.payment.has(row.paymentMethod) ? row.paymentMethod : null,
     evidenceCount,
     taxUnavailable: tax.unavailable === true,
   };
@@ -1153,7 +1185,14 @@ export async function previewExpense(viewer: Viewer, input: { expenseId: string;
   const evidenceTypeName = row.evidenceType ? (evidenceNames.get(row.evidenceType) ?? row.evidenceType) : null;
   const taxLine = supply ? taxLineText(tax, supply, `${evidenceTypeName ?? ""} 규칙`) : null;
 
-  const { facts, line, numbered } = await loadSubmitFacts(viewer, row, projectRow, projectRow ? await loadSubmitPre(viewer, projectRow) : null, tax);
+  const { facts, line, numbered } = await loadSubmitFacts(
+    viewer,
+    row,
+    projectRow,
+    projectRow ? await loadSubmitPre(viewer, projectRow) : null,
+    tax,
+    await loadActiveCodes(viewer),
+  );
   const decision = await gate(row, "expense.submit", buildExpenseSubmitContext(facts));
   let block: ExpenseSubmitBlock | null = null;
   if (!decision.allowed) {

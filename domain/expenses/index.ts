@@ -361,12 +361,15 @@ async function loadExpenseDetails(viewer: Viewer, ids: string[]): Promise<Map<st
   const [evidenceNames, paymentNames] = await Promise.all([codeLabelsOf(viewer, "evidence_type"), codeLabelsOf(viewer, "payment_method")]);
   // 05-10: 살아 있는 증빙 파일(주소 없음)을 한 번의 읽기로 — 문서마다 따로 읽지 않는다.
   const aliveFiles = await listAliveByOwners(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerIds: rows.map((row) => row.id) });
+  // 번호 있는 문서는 지금 설정 · 기준일로 다시 계산해 저장값과 다르면 세율 바뀜(문서 화면 getExpense와 같은 값 비교). 문서마다 동시에.
+  const currents = await Promise.all(
+    rows.map(async (row) => (supplyMoney(row) && storedTaxResult(row) !== null && row.number !== null ? computeExpenseTax(viewer, row) : null)),
+  );
   const result = new Map<string, ExpenseDetailDto>();
-  for (const row of rows) {
+  for (const [index, row] of rows.entries()) {
     const supply = supplyMoney(row);
     const stored = storedTaxResult(row);
-    // 번호 있는 문서는 지금 설정 · 기준일로 다시 계산해 저장값과 다르면 세율 바뀜(문서 화면 getExpense와 같은 값 비교).
-    const current = supply && stored !== null && row.number !== null ? await computeExpenseTax(viewer, row) : null;
+    const current = currents[index] ?? null;
     const drift = stored && current ? taxDriftText(stored, current) : null;
     const evidenceTypeName = row.evidenceType ? (evidenceNames.get(row.evidenceType) ?? row.evidenceType) : null;
     result.set(row.id, {

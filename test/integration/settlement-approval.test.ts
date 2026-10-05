@@ -260,6 +260,21 @@ describe("정산 결재 — 판단 근거 두 합(G4 · D11)", () => {
     expect(labels).not.toContain("손익");
   });
 
+  it("(A13) 정산 결재 둘을 한 번에 읽은 상세가 문서마다 따로 읽은 상세와 같다", async () => {
+    const people = await makeSettlementPeople();
+    const a = await setupSettlementProject(people, "가을 팝업");
+    const b = await setupSettlementProject(people, "겨울 팝업");
+    const first = await submitted(a.pm, a.projectId);
+    const second = await submitted(b.pm, b.projectId);
+
+    const together = await loadKindDetails(a.ceo, SETTLEMENT_DOCUMENT_KIND, [first.documentId, second.documentId], { visible });
+    for (const id of [first.documentId, second.documentId]) {
+      const alone = await loadKindDetails(a.ceo, SETTLEMENT_DOCUMENT_KIND, [id], { visible });
+      expect(together.get(id)).toEqual(alone.get(id));
+      expect(together.get(id)?.rows.map((row) => row.label)).toContain("견적가 합");
+    }
+  });
+
   it("`quote.amount`를 못 보는 계급의 결재 담당에게는 두 합 필드 · 행이 없다", async () => {
     const fx = await setupSettlementProject();
     const { documentId } = await submitted(fx.pm, fx.projectId);

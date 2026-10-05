@@ -97,6 +97,21 @@ describe("결재 시트 상세 — 증빙 갈래 · 세율 바뀜 (05-05 문자�
     expect(direct.get(expenseId)?.rows).toEqual(rows);
   });
 
+  it("(A13) 여러 문서를 한 번에 읽은 상세가 문서마다 따로 읽은 상세와 같다", async () => {
+    const fx = await setupExpenseProject();
+    const first = await submittedExpense(fx, "1차 선금");
+    const created = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.split] });
+    const secondId = created.created[0]?.expenseId ?? "";
+    await submitReadyDraft(fx.pm, secondId);
+
+    const together = await loadKindDetails(fx.lead, EXPENSE_DOCUMENT_KIND, [first.expenseId, secondId], { visible: createVisibleMemo() });
+    for (const id of [first.expenseId, secondId]) {
+      const alone = await loadKindDetails(fx.lead, EXPENSE_DOCUMENT_KIND, [id], { visible: createVisibleMemo() });
+      expect(together.get(id)).toEqual(alone.get(id));
+      expect(together.get(id)?.rows.length).toBeGreaterThan(0);
+    }
+  });
+
   it("증빙이 아직 없는 문서는 증빙 행이 없다", async () => {
     const fx = await setupExpenseProject();
     const created = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });

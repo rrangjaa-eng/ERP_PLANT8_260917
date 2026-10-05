@@ -221,9 +221,9 @@ async function describeSettlementDocuments(viewer: Viewer, ids: string[], deps?:
 // 결재 시트 상세 — 구조 필드만(엔진이 detailDto로 투영한 뒤 buildDetailRows가 문자열 행을 만든다).
 async function loadSettlementDetails(viewer: Viewer, ids: string[]): Promise<Map<string, Record<string, unknown>>> {
   const rows = await listSettlementSummaries(viewer, { ids, documentKind: SETTLEMENT_DOCUMENT_KIND });
-  const result = new Map<string, Record<string, unknown>>();
-  for (const row of rows) result.set(row.id, toSource(row, await totalsOf(viewer, row)));
-  return result;
+  // 문서마다 합계 읽기를 동시에(05 /review A13).
+  const entries = await Promise.all(rows.map(async (row) => [row.id, toSource(row, await totalsOf(viewer, row))] as const));
+  return new Map<string, Record<string, unknown>>(entries);
 }
 
 const DASH = "—";

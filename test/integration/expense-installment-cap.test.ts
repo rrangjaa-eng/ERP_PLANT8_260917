@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { expenses } from "@/db/schema";
-import { createExpenseFromLines, ExpenseFieldError, saveExpenseDraft } from "@/domain/expenses";
+import { createExpenseFromLines, ExpenseFieldError, getExpense, saveExpenseDraft } from "@/domain/expenses";
 import { addApprovedRevision, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
 
 // 05-14 Task 2 — 분할 회차 · 회차 상한 · 닫힘(UI-SPEC 확정 #1 · RESEARCH Open Q4 RESOLVED). 상한 = 줄의 번호 있는
@@ -93,5 +93,29 @@ describe("외화 줄", () => {
 
     const closed = await createExpenseFromLines(fx.pm, { lineIds: [lineId] });
     expect(closed.blocked).toEqual([{ lineId, reason: "이 줄에 지출결의 26001-0002 있음 · 지출결의 열기" }]);
+  });
+});
+
+describe("차수 계보(D-66) — 이전 차수 줄의 앞 회차", () => {
+  it("1차 줄에 1회차 6,000,000 → 2차(복사된 줄) 문서는 남은 실행가 4,000,000 상한 · 2회차로 제출된다", async () => {
+    const fx = await setupExpenseProject();
+    const first = await newDraft(fx, fx.lines.split);
+    await save(fx, first, { installment: true, supply: { currency: "KRW", amount: 6_000_000, fxRate: 1 } });
+    expect(await submitReadyDraft(fx.pm, first)).toMatchObject({ kind: "submitted", number: "26001-0001" });
+
+    const extra = await addApprovedRevision(fx, []);
+    const copied = extra.lineIds.get("영상 제작(분할)") ?? "";
+    const second = await newDraft(fx, copied);
+    expect(await expenseRow(second)).toMatchObject({ installment: true, supplyAmountKrw: 4_000_000 });
+    expect((await getExpense(fx.pm, { expenseId: second }))?.installmentText).toBe("2회차 · 앞 회차 26001-0001 · 마지막 회차");
+
+    await save(fx, second, { supply: { currency: "KRW", amount: 10_000_000, fxRate: 1 } });
+    const error = await submitReadyDraft(fx.pm, second).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ExpenseFieldError);
+    expect(error).toMatchObject({ field: "supplyAmount", message: "남은 실행가 4,000,000 넘음 · 공급가액 고치기" });
+
+    await save(fx, second, { supply: { currency: "KRW", amount: 4_000_000, fxRate: 1 } });
+    expect(await submitReadyDraft(fx.pm, second)).toMatchObject({ kind: "submitted", number: "26001-0002" });
+    expect(await expenseRow(second)).toMatchObject({ installment: true, installmentSeq: 2 });
   });
 });

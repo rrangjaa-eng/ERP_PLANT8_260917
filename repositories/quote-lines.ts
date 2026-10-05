@@ -2,7 +2,7 @@ import { and, eq, getTableColumns, inArray, isNotNull, isNull, ne } from "drizzl
 import { sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db } from "@/db/client";
-import { quoteLines } from "@/db/schema";
+import { quoteLines, quoteRevisions } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 import type { DbOrTx } from "@/repositories/document-counters";
 
@@ -55,6 +55,20 @@ export async function findQuoteLinesByIds(
     .select()
     .from(quoteLines)
     .where(and(inArray(quoteLines.id, ids), eq(quoteLines.revisionId, scope.revisionId)));
+}
+
+// D-66 계보 재료 — 한 프로젝트 모든 차수의 보관 안 된 줄(id · 차수 순번 · 복사 원본)을 한 쿼리로. 제출 tx는 tx로 부른다.
+export async function listLineageLinesByProject(
+  viewer: Viewer,
+  projectId: string,
+  tx: DbOrTx = db,
+): Promise<{ id: string; revisionSeq: number; copiedFromLineId: string | null }[]> {
+  void viewer;
+  return tx
+    .select({ id: quoteLines.id, revisionSeq: quoteRevisions.seq, copiedFromLineId: quoteLines.copiedFromLineId })
+    .from(quoteLines)
+    .innerJoin(quoteRevisions, eq(quoteRevisions.id, quoteLines.revisionId))
+    .where(and(eq(quoteRevisions.projectId, projectId), isNull(quoteLines.archivedAt)));
 }
 
 export async function findQuoteLineById(viewer: Viewer, id: string, tx: DbOrTx = db): Promise<QuoteLineRow | null> {

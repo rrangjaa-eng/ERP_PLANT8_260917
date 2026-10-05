@@ -76,7 +76,7 @@ import { listCodeItems } from "@/repositories/code-tables";
 import { countActiveByOwner, listAliveByOwners } from "@/repositories/files";
 import { findProjectById, lockProjectForWrite, type ProjectRow } from "@/repositories/projects";
 import { findLatestQuoteRevision, findQuoteRevisionById, summarizeRevisions } from "@/repositories/quote-revisions";
-import { findQuoteLineById, listQuoteLinesByRevision, type QuoteLineRow } from "@/repositories/quote-lines";
+import { findQuoteLineById, listLineageLinesByProject, listQuoteLinesByRevision, type QuoteLineRow } from "@/repositories/quote-lines";
 import { findUserById } from "@/repositories/users";
 import { findVendorById } from "@/repositories/vendors";
 import {
@@ -90,7 +90,6 @@ import {
   insertTeamDraftIfAbsent,
   listDraftsByLines,
   listExpenseSummaries,
-  listNumberedByLine,
   listNumberedByLines,
   lockExpenseForUpdate,
   restoreDraft,
@@ -463,6 +462,15 @@ export async function listNumberedByLineage(viewer: Viewer, projectId: string): 
     docs.sort((a, b) => (a.submittedAt?.getTime() ?? 0) - (b.submittedAt?.getTime() ?? 0) || a.id.localeCompare(b.id));
   }
   return byCurrentLine;
+}
+
+// D-66 — 한 줄의 계보 사슬(그 줄 → copied_from_line_id를 거슬러 이전 차수 줄)의 번호 있는 문서(제출 순). 회차 상한 · 회차 번호 ·
+// 문(④) 판정이 생성 · 줄 표(listNumberedByLineage)와 같은 사슬을 본다. 제출은 tx로 부른다.
+async function listNumberedByLineChain(viewer: Viewer, input: { projectId: string; lineId: string }, tx?: DbOrTx): Promise<NumberedLineExpense[]> {
+  const byId = new Map((await listLineageLinesByProject(viewer, input.projectId, tx)).map((line) => [line.id, line]));
+  const chain: string[] = [];
+  for (let cursor: string | null = input.lineId; cursor && !chain.includes(cursor); cursor = byId.get(cursor)?.copiedFromLineId ?? null) chain.push(cursor);
+  return listNumberedByLines(viewer, chain, tx);
 }
 
 export type ProjectFacts = { project: ProjectRow; latestRevisionId: string | null; tableGateReason: string | null };
@@ -1082,7 +1090,7 @@ async function loadSubmitFacts(
 ): Promise<{ facts: ExpenseSubmitFacts; line: QuoteLineRow | null; numbered: NumberedLineExpense[]; door: ExpenseLineDoor | null }> {
   const line = row.quoteLineId ? await findQuoteLineById(viewer, row.quoteLineId, tx) : null;
   const latest = projectRow ? await findLatestQuoteRevision(viewer, projectRow.id, tx) : null;
-  const numbered = line ? await listNumberedByLine(viewer, line.id, tx) : [];
+  const numbered = line && row.projectId ? await listNumberedByLineChain(viewer, { projectId: row.projectId, lineId: line.id }, tx) : [];
   const door = line ? doorFor(line, numbered, row.id) : null;
   const evidenceCount = await countActiveByOwner(viewer, EXPENSE_DOCUMENT_KIND, row.id, tx);
   const facts: ExpenseSubmitFacts = {
@@ -1182,7 +1190,7 @@ async function lineFactsFor(viewer: Viewer, row: ExpenseSummaryRow, supply: Mone
   const executionLines = [`실행가 ${formatKrw(execution.amountKrw)}`];
   if (execution.currency !== "KRW") executionLines.push(`${execution.currency} ${formatForeignAmount(execution.amount)} @${formatFxRate(execution.fxRate)}`);
 
-  const numbered = (await listNumberedByLine(viewer, line.id)).filter((doc) => doc.id !== row.id);
+  const numbered = row.projectId ? (await listNumberedByLineChain(viewer, { projectId: row.projectId, lineId: line.id })).filter((doc) => doc.id !== row.id) : [];
   const forced = numbered.length > 0;
   const installmentMode = forced ? "fixed" : "checkbox";
   const { basis, remaining } = remainingForInstallments(

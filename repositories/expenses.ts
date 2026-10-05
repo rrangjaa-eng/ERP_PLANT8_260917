@@ -262,25 +262,6 @@ export type NumberedLineExpense = Pick<
   "id" | "number" | "installment" | "supplyCurrency" | "supplyForeignAmount" | "supplyFxRate" | "supplyAmountKrw" | "submittedAt"
 >;
 
-// 한 견적 줄의 번호 있는 · 삭제 안 된 문서 — 문 판정 · 회차 상한 재료(제출 순).
-export async function listNumberedByLine(viewer: Viewer, lineId: string, tx: DbOrTx = db): Promise<NumberedLineExpense[]> {
-  void viewer;
-  return tx
-    .select({
-      id: expenses.id,
-      number: expenses.number,
-      installment: expenses.installment,
-      supplyCurrency: expenses.supplyCurrency,
-      supplyForeignAmount: expenses.supplyForeignAmount,
-      supplyFxRate: expenses.supplyFxRate,
-      supplyAmountKrw: expenses.supplyAmountKrw,
-      submittedAt: expenses.submittedAt,
-    })
-    .from(expenses)
-    .where(and(eq(expenses.quoteLineId, lineId), isNotNull(expenses.number), isNull(expenses.deletedAt)))
-    .orderBy(asc(expenses.submittedAt), asc(expenses.id));
-}
-
 // 견적 줄 표 행 행동 열 재료(05-05) — 줄 여럿의 번호 있는 문서 · 내 작성 중 문서를 한 번씩 읽는다(줄마다 부르지 않는다).
 export async function listNumberedByLines(
   viewer: Viewer,

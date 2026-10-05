@@ -132,6 +132,9 @@ export type ExpenseDetailDto = {
   evidenceTypeName: string | null;
   supply: Money | null;
   taxLine: string | null;
+  // 05-10: 세율 바뀜 한 줄(번호 있는 문서에서 저장 스냅숏 ≠ 지금 기준 재계산일 때) · 살아 있는 증빙 파일(주소 없음).
+  taxDriftText: string | null;
+  evidenceFiles: { id: string; name: string; sizeBytes: number; contentType: string }[];
   scheduledPaymentDate: string | null;
   paymentMethodName: string | null;
   note: string | null;
@@ -156,6 +159,8 @@ export const EXPENSE_DETAIL_DTO_SPEC: DtoSpec<ExpenseDetailDto, ExpenseDetailDto
     { key: "evidenceTypeName", from: "evidenceTypeName", infoItem: "expense.value" },
     { key: "supply", from: "supply", infoItem: "expense.amount" },
     { key: "taxLine", from: "taxLine", infoItem: "expense.amount" },
+    { key: "taxDriftText", from: "taxDriftText", infoItem: "expense.amount" },
+    { key: "evidenceFiles", from: "evidenceFiles", infoItem: "expense.value" },
     { key: "scheduledPaymentDate", from: "scheduledPaymentDate", infoItem: "expense.value" },
     { key: "paymentMethodName", from: "paymentMethodName", infoItem: "expense.value" },
     { key: "note", from: "note", infoItem: "expense.value" },

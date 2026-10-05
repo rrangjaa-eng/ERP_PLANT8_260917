@@ -3,8 +3,7 @@ import { formatForeignAmount, formatFxRate, formatKrw } from "@/lib/format-numbe
 import type { ExpenseDetailDto } from "@/domain/expenses/dto";
 
 // 05-05 C1: 결재 시트 상세 행 — 투영 결과(Partial)만 읽는 순수 함수(ENG-17). 행은 문서 화면(S7) 읽기 칸 순서이고 값이 null이면
-// `—`(muted), 투영에서 빠진 필드는 행째 만들지 않는다 — 금액이 빠지면 공급가액 행 · 계산 한 줄도 없다. 증빙 썸네일 · 세율 바뀜 ·
-// 팀 비용 행은 05-10이 같은 함수에 덧붙인다.
+// `—`(muted), 투영에서 빠진 필드는 행째 만들지 않는다 — 금액이 빠지면 공급가액 행 · 계산 한 줄도 없다. 증빙 갈래 · 세율 바뀜은 05-10이 덧붙였다(팀 비용 행은 05-07).
 
 const DASH = "—";
 
@@ -48,12 +47,20 @@ export function buildExpenseDetailRows(projected: Partial<ExpenseDetailDto>): Do
     if (currency !== "KRW") rows.push({ label: "공급가액", value: `${currency} ${formatForeignAmount(amount)} @${formatFxRate(fxRate)}`, tone: "default" });
   }
   if (projected.taxLine) rows.push({ label: "공급가액", value: projected.taxLine, tone: "default" });
+  if (projected.taxDriftText) rows.push({ label: "공급가액", value: projected.taxDriftText, tone: "warning" });
+  // 증빙 갈래(05-10) — 살아 있는 파일이 있을 때만, 지급 방식 다음 · 비고 앞(문서 화면 순서).
+  const evidenceRow: DocumentDetailRow | null = projected.evidenceFiles?.length
+    ? {
+        label: "증빙",
+        value: projected.evidenceFiles.map((file) => file.name).join(" · "),
+        tone: "default",
+        files: projected.evidenceFiles.map((file) => ({ id: file.id, name: file.name, sizeBytes: file.sizeBytes, contentType: file.contentType })),
+      }
+    : null;
   rows.push(
-    ...compact([
-      textRow("지급 예정일", projected.scheduledPaymentDate),
-      textRow("지급 방식", projected.paymentMethodName),
-      textRow("비고", projected.note),
-    ]),
+    ...compact([textRow("지급 예정일", projected.scheduledPaymentDate), textRow("지급 방식", projected.paymentMethodName)]),
+    ...(evidenceRow ? [evidenceRow] : []),
+    ...compact([textRow("비고", projected.note)]),
   );
   return {
     title: expenseDetailTitle(projected),

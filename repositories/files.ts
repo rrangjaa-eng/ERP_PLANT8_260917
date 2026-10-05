@@ -108,3 +108,14 @@ export async function findUnresolvedVoidOwnerIds(
     .having(sql`${lastVoid} is not null and (${lastLive} is null or ${lastVoid} > ${lastLive})`);
   return rows.map((row) => row.ownerId);
 }
+
+// 05-10: 결재 시트 상세용 — 여러 주인의 살아 있는 파일(삭제 · 무효 아님)을 한 번에, 올린 순.
+export async function listAliveByOwners(viewer: Viewer, input: { ownerKind: string; ownerIds: readonly string[] }): Promise<FileRow[]> {
+  void viewer;
+  if (input.ownerIds.length === 0) return [];
+  return db
+    .select()
+    .from(files)
+    .where(and(eq(files.ownerKind, input.ownerKind), inArray(files.ownerId, [...input.ownerIds]), alive()))
+    .orderBy(asc(files.createdAt), asc(files.id));
+}

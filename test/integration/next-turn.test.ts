@@ -77,10 +77,11 @@ describe("결재 시트 상세 — 증빙 갈래 · 세율 바뀜 (05-05 문자�
     const rows = inbox.mine[0]?.detail?.rows ?? [];
     expect(uniqueLabels(rows)).toEqual(LABEL_ORDER);
 
-    const evidence = rows.find((row) => "files" in row);
+    const evidence = rows.find((row) => row.files);
     expect(evidence).toEqual({
-      kind: "evidence",
       label: "증빙",
+      value: "세금계산서.jpg",
+      tone: "default",
       files: [{ id: expect.any(String), name: "세금계산서.jpg", sizeBytes: 212_000, contentType: "image/jpeg" }],
     });
     expect(JSON.stringify(evidence)).not.toMatch(/https?:|objectKey|sha256|url/i);
@@ -94,7 +95,7 @@ describe("결재 시트 상세 — 증빙 갈래 · 세율 바뀜 (05-05 문자�
     const created = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
     const expenseId = created.created[0]?.expenseId ?? "";
     const direct = await loadKindDetails(fx.pm, EXPENSE_DOCUMENT_KIND, [expenseId], { visible: createVisibleMemo() });
-    expect(direct.get(expenseId)?.rows.some((row) => "files" in row)).toBe(false);
+    expect(direct.get(expenseId)?.rows.some((row) => row.files)).toBe(false);
   });
 
   it("세율이 바뀌면 계산 한 줄 바로 아래에 세율 바뀜 한 줄(warning)", async () => {
@@ -105,12 +106,12 @@ describe("결재 시트 상세 — 증빙 갈래 · 세율 바뀜 (05-05 문자�
 
     const inbox = await listMyInbox(fx.lead, { withDetails: true });
     const supplyRows = (inbox.mine[0]?.detail?.rows ?? []).filter((row) => row.label === "공급가액");
-    expect(supplyRows.map((row) => ("value" in row ? row.value : ""))).toEqual([
+    expect(supplyRows.map((row) => row.value)).toEqual([
       "12,400,000",
       "부가세 10% 1,240,000 · 지급 총액 13,640,000 · 세금계산서 규칙",
       "세율 바뀜 · 부가세 10% → 12% · 지급 총액 13,640,000 → 13,888,000",
     ]);
-    expect(supplyRows[2] && "tone" in supplyRows[2] ? supplyRows[2].tone : null).toBe("warning");
+    expect(supplyRows[2]?.tone).toBe("warning");
   });
 
   it("expense.amount 노출을 끈 계급의 결재 담당에게는 어떤 행 문자열에도 금액이 없고 증빙 행은 남는다", async () => {
@@ -125,6 +126,6 @@ describe("결재 시트 상세 — 증빙 갈래 · 세율 바뀜 (05-05 문자�
     const text = JSON.stringify(rows);
     for (const digits of ["12,400,000", "1,240,000", "13,640,000", "13,888,000", "12400000", "세율 바뀜"]) expect(text).not.toContain(digits);
     expect(uniqueLabels(rows)).toEqual(LABEL_ORDER.filter((label) => label !== "공급가액"));
-    expect(rows.some((row) => "files" in row)).toBe(true);
+    expect(rows.some((row) => row.files)).toBe(true);
   });
 });

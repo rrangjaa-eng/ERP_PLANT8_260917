@@ -72,7 +72,7 @@ import {
   type ExpensePreviewDto,
 } from "@/domain/expenses/dto";
 import { listCodeItems } from "@/repositories/code-tables";
-import { countActiveByOwner } from "@/repositories/files";
+import { countActiveByOwner, listAliveByOwners } from "@/repositories/files";
 import { findProjectById, lockProjectForWrite, type ProjectRow } from "@/repositories/projects";
 import { findLatestQuoteRevision, findQuoteRevisionById, summarizeRevisions } from "@/repositories/quote-revisions";
 import { findQuoteLineById, listQuoteLinesByRevision, type QuoteLineRow } from "@/repositories/quote-lines";
@@ -320,6 +320,14 @@ async function describeExpenseDocuments(viewer: Viewer, ids: string[], deps?: De
     const summary: DocumentSummary = { ...projected };
     if (projected.projectName && projected.itemName) summary.documentText = `${projected.projectName} · ${projected.itemName}`;
     else if (projected.teamName) summary.documentText = ["지출결의", projected.teamName, projected.content].filter(Boolean).join(" · ");
+    // 05-10: 「내 차례」 한 줄 — 대상 `{프로젝트명} · {항목}` 또는 `{팀} · {내용}`, 상황 `지출결의, {기안자}`(보이지 않는 조각은 뺀다).
+    const target =
+      projected.projectName && projected.itemName
+        ? `${projected.projectName} · ${projected.itemName}`
+        : projected.teamName
+          ? [projected.teamName, projected.content].filter(Boolean).join(" · ")
+          : null;
+    if (target) summary.nextTurnText = { target, situation: ["지출결의", projected.drafterName].filter(Boolean).join(", ") };
     if (projected.supply) {
       const { currency, amount, fxRate, amountKrw } = projected.supply;
       summary.measure = { kind: "money", money: { currency, amount, fxRate, amountKrw } };
@@ -340,10 +348,15 @@ export async function codeLabelsOf(viewer: Viewer, tableKey: string): Promise<Ma
 async function loadExpenseDetails(viewer: Viewer, ids: string[]): Promise<Map<string, ExpenseDetailDto>> {
   const rows = await listExpenseSummaries(viewer, { ids, documentKind: EXPENSE_DOCUMENT_KIND });
   const [evidenceNames, paymentNames] = await Promise.all([codeLabelsOf(viewer, "evidence_type"), codeLabelsOf(viewer, "payment_method")]);
+  // 05-10: 살아 있는 증빙 파일(주소 없음)을 한 번의 읽기로 — 문서마다 따로 읽지 않는다.
+  const aliveFiles = await listAliveByOwners(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerIds: rows.map((row) => row.id) });
   const result = new Map<string, ExpenseDetailDto>();
   for (const row of rows) {
     const supply = supplyMoney(row);
     const stored = storedTaxResult(row);
+    // 번호 있는 문서는 지금 설정 · 기준일로 다시 계산해 저장값과 다르면 세율 바뀜(문서 화면 getExpense와 같은 값 비교).
+    const current = supply && stored !== null && row.number !== null ? await computeExpenseTax(viewer, row) : null;
+    const drift = stored && current ? taxDriftText(stored, current) : null;
     const evidenceTypeName = row.evidenceType ? (evidenceNames.get(row.evidenceType) ?? row.evidenceType) : null;
     result.set(row.id, {
       number: row.number,
@@ -361,6 +374,10 @@ async function loadExpenseDetails(viewer: Viewer, ids: string[]): Promise<Map<st
       evidenceTypeName,
       supply,
       taxLine: supply && stored ? taxLineText(stored, supply, `${evidenceTypeName ?? ""} 규칙`).text : null,
+      taxDriftText: drift?.text ?? null,
+      evidenceFiles: aliveFiles
+        .filter((file) => file.ownerId === row.id)
+        .map((file) => ({ id: file.id, name: file.originalName, sizeBytes: file.sizeBytes, contentType: file.contentType })),
       scheduledPaymentDate: row.scheduledPaymentDate,
       paymentMethodName: row.paymentMethod ? (paymentNames.get(row.paymentMethod) ?? row.paymentMethod) : null,
       note: row.note,

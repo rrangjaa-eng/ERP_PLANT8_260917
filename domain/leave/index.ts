@@ -150,6 +150,9 @@ async function describeLeaveDocuments(viewer: Viewer, ids: string[], deps?: Desc
   for (const row of rows) {
     const projected = await project(viewer, toSource(row), LEAVE_REQUEST_DTO_SPEC, deps?.visible ? { visible: deps.visible } : undefined);
     result.set(row.id, { ...projected, ...leaveSummaryFields(projected) });
+    const summary = result.get(row.id);
+    // 05-10: 「내 차례」 한 줄 — 대상 `{기안자}`, 상황 `연차 {종류} {기간}`(결재함 문서 칸 글자와 같은 조각).
+    if (summary && projected.drafterName && summary.documentText) summary.nextTurnText = { target: projected.drafterName, situation: `연차 ${summary.documentText}` };
   }
   return result;
 }

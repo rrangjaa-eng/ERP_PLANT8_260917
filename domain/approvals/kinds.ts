@@ -53,11 +53,15 @@ export type DocumentSummary = {
   number?: string | null;
   // 최종 승인 토스트 꼬리(예: 정산 결재 `{프로젝트 번호} 완료`).
   finalApprovalNote?: string;
+  // 05-10: 첫 화면 「내 차례」 한 줄의 대상 · 상황 글자 — 종류가 투영 뒤 값으로 만든다(없으면 그 문서는 대상 글자 없이 `{종류} 열기`만).
+  nextTurnText?: { target: string; situation: string };
   [key: string]: unknown;
 };
 
-// 04.1-05(Codex MEDIUM · ENG-17): 결재 시트 · 결재함 상세 행 — 문자열 칸만.
-export type DocumentDetailRow = { label: string; value: string; tone: "default" | "muted" | "warning" };
+// 04.1-05(Codex MEDIUM · ENG-17): 결재 시트 · 결재함 상세 행 — 문자열 칸만. 05-10(D9): 증빙 갈래는 같은 행에 선택 칸 `files`를 더한 것이다
+// (파일 id · 이름 · 크기 · 형식만 — 주소는 시트가 열릴 때 서버가 권한 판정 뒤 만든다). 문자열 칸 `value`는 파일 이름 글자라 칸을 모르는 소비자도 읽는다.
+export type DocumentDetailEvidenceFile = { id: string; name: string; sizeBytes: number; contentType: string };
+export type DocumentDetailRow = { label: string; value: string; tone: "default" | "muted" | "warning"; files?: DocumentDetailEvidenceFile[] };
 export type DocumentDetailRows = { title: string; subtitle: string; rows: DocumentDetailRow[] };
 // now는 엔진이 받은 값을 그대로 넘긴다(CX-B2 — 엔진 · 종류 중간 층은 시계를 읽지 않는다).
 export type LoadDetailsDeps = { visible: typeof defaultVisible; now?: Date };

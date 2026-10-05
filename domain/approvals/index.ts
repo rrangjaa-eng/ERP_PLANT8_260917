@@ -59,7 +59,7 @@ import {
 } from "@/domain/approvals/dto";
 
 export { registerDocumentKind, getDocumentKind, listDocumentKinds } from "@/domain/approvals/kinds";
-export type { DocumentDetailRow, DocumentDetailRows, DocumentKindDef, DocumentMeasure, DocumentSummary, RouteConfig, RouteConfigStep, RouteSettingDefs } from "@/domain/approvals/kinds";
+export type { DocumentDetailEvidenceFile, DocumentDetailRow, DocumentDetailRows, DocumentKindDef, DocumentMeasure, DocumentSummary, RouteConfig, RouteConfigStep, RouteSettingDefs } from "@/domain/approvals/kinds";
 export { nextStep, resolveHolders, walkRoute } from "@/domain/approvals/route";
 export { loadActionLogGate, recordActionInTx } from "@/domain/approvals/tx-log";
 export type { ApprovalInboxItem, ApprovalInboxItemDto, ApprovalView, ApprovalViewDto, RoutePreviewDTO, RoutePreviewStepDTO } from "@/domain/approvals/dto";
@@ -1047,7 +1047,13 @@ export async function loadKindDetails(
     result.set(documentId, {
       title: built.title,
       subtitle: built.subtitle,
-      rows: built.rows.map((row) => ({ label: row.label, value: row.value, tone: row.tone })),
+      // 05-10(D9): 갈래별 복사 — 문자열 행은 세 칸 그대로, 증빙 행은 파일 네 칸(id · name · sizeBytes · contentType)만 더한다(종류가 더 실어도 복사하지 않는다).
+      rows: built.rows.map((row) => ({
+        label: row.label,
+        value: row.value,
+        tone: row.tone,
+        ...(row.files ? { files: row.files.map((file) => ({ id: file.id, name: file.name, sizeBytes: file.sizeBytes, contentType: file.contentType })) } : {}),
+      })),
     });
   }
   return result;

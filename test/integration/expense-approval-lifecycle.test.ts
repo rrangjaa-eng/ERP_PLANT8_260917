@@ -161,7 +161,8 @@ describe("트레이서 — 견적 줄에서 최종 승인까지", () => {
 // 05-05 C1(plan-checker Round 4) — 지출결의 종류가 04.1 상세 계약 셋(loadDetails → detailDto 투영 → buildDetailRows)을 채워
 // 결재함 `내 결재` 항목이 결재 시트 재료(문자열 행)를 갖는다.
 describe("결재 시트 상세 — 문자열 행", () => {
-  const LABEL_ORDER = ["프로젝트", "견적 줄", "거래처", "증빙 종류", "공급가액", "지급 예정일", "지급 방식", "비고"];
+  // 05-10: 살아 있는 증빙 파일이 있으면 지급 방식 다음 · 비고 앞에 증빙 행이 선다(제출 도우미가 파일 한 장을 붙인다).
+  const LABEL_ORDER = ["프로젝트", "견적 줄", "거래처", "증빙 종류", "공급가액", "지급 예정일", "지급 방식", "증빙", "비고"];
   const uniqueLabels = (rows: { label: string }[]) => [...new Set(rows.map((row) => row.label))];
 
   it("팀장의 내 결재 항목에 제목 · 부제 · 문자열 행 · 가능 행동이 있고 loadDetails는 한 번만 불린다", async () => {

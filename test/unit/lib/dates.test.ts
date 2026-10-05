@@ -42,4 +42,11 @@ describe("isCalendarDate — 달력에 있는 날짜", () => {
     expect(isCalendarDate("2026-13-01")).toBe(false);
     expect(isCalendarDate("2026-9-19")).toBe(false);
   });
+
+  // 05 /review C2: JS는 0000년(서력 기원전 1년)을 날짜로 받지만 PostgreSQL date에는 0년이 없어 500이 난다.
+  it("0000년은 PostgreSQL date 범위 밖이라 거짓이다", () => {
+    expect(isCalendarDate("0000-01-01")).toBe(false);
+    expect(isCalendarDate("0000-02-29")).toBe(false);
+    expect(isCalendarDate("0001-01-01")).toBe(true);
+  });
 });

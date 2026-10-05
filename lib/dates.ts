@@ -9,8 +9,9 @@ export function seoulToday(now: Date = new Date()): string {
 }
 
 // 05 /review A6: `YYYY-MM-DD` 모양이고 달력에 있는 날짜(2월 30일 · 13월은 거짓) — 입력 검증이 DB date 범위 오류 전에 거른다.
+// C2: PostgreSQL date에는 0년이 없다(JS는 0000년을 받는다) — 0001년부터.
 export function isCalendarDate(value: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || value.startsWith("0000")) return false;
   const parsed = new Date(`${value}T00:00:00.000Z`);
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }

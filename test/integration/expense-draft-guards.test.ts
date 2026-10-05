@@ -195,4 +195,11 @@ describe("달력에 없는 날짜 (A6 · red-team)", () => {
     await expect(saveExpenseDraft(fx.pm, { expenseId, expectedVersion: version, fields: { scheduledPaymentDate: "2026-13-01" } })).rejects.toBeInstanceOf(ZodError);
     expect(await getNewExpenseDefaults(fx.pm, { usageDate: "2026-02-30" })).toMatchObject({ usageDateError: "날짜 형식 오류 · 2026-09-19처럼" });
   });
+
+  it("0000년 지급 예정일은 PostgreSQL date 범위 오류(500)가 아니라 입력 검증 오류다 (C2)", async () => {
+    const fx = await setupExpenseProject();
+    const expenseId = await teamDraft(fx.pm);
+    const { version } = await expenseRow(expenseId);
+    await expect(saveExpenseDraft(fx.pm, { expenseId, expectedVersion: version, fields: { scheduledPaymentDate: "0000-01-01" } })).rejects.toBeInstanceOf(ZodError);
+  });
 });

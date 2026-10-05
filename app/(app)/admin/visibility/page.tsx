@@ -34,6 +34,7 @@ export default async function VisibilityPage() {
         kind="visibility"
         caption="계급별 정보 노출표"
         rowSelectLabel="계급"
+        itemHeaderLabel="정보 항목"
         rows={rows}
         columns={columns}
         values={values}

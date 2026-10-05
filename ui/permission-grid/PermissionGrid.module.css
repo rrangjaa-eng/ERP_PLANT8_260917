@@ -23,10 +23,10 @@
   box-shadow: var(--shadow-surface);
   overflow: auto;
   max-height: 70vh;
-  /* 면이 표 내용 폭에 맞춘다(넓으면 화면 폭까지) — 100% 면이면 남는 폭을 항목
-     열이 다 가져 1280에서 이름과 첫 체크박스가 약 700px 떨어졌다(PR #166 실측). */
-  width: fit-content;
-  max-width: 100%;
+  /* 면이 표 내용 폭(항목 열 240 + 계급 열 96 × 계급 수 + 좌우 선)에 맞춘다(넓으면 화면
+     폭까지) — 100% 면이면 남는 폭을 항목 열이 다 가져 1280에서 이름과 첫 체크박스가
+     약 700px 떨어졌다(PR #166 실측). 계급 수(--role-count)는 컴포넌트가 넣는다. */
+  width: min(100%, calc(var(--s-12) * 5 + var(--s-12) * 2 * var(--role-count) + var(--line-w) * 2));
   /* 안쪽 sticky z-index(--z-sticky · 좌상단 모서리 --z-bar)가 이 격자 안에서만 겹침을 정한다 — 상단 바와 같은 층에서 다투지 않는다. */
   isolation: isolate;
 }
@@ -44,9 +44,12 @@
   border: 0;
 }
 
+/* 고정 레이아웃 — 항목 열은 모서리 칸 폭(240), 계급 열은 남는 폭을 똑같이 나눈다.
+   auto 레이아웃은 칸 폭을 최소 폭으로 써서 계급이 12개쯤이면 줄지 않고 넘쳤다(PR #166 CI). */
 .table {
   border-collapse: collapse;
   width: 100%;
+  table-layout: fixed;
 }
 
 .table th,
@@ -66,11 +69,7 @@
   font-weight: var(--fw-medium);
   padding: var(--s-3) var(--cell-pad-x);
   text-align: center;
-  /* 계급 열은 모두 같은 폭(auto 레이아웃에서 폭이 있는 열은 선호 폭이 같고,
-     남는 폭은 폭 없는 행 머리글 열이 가진다) — 좁아지면 이름이 줄바꿈하며
-     최소 폭(체크박스 32 + 좌우 패딩)까지 줄어 700~768에서도 넘치지 않는다. */
-  width: calc(var(--s-12) * 2);
-  min-width: calc(var(--s-8) + var(--cell-pad-x) * 2);
+  /* 계급 열 폭은 고정 레이아웃이 똑같이 나눈다(.table) — 좁아지면 이름이 줄바꿈한다. */
   word-break: keep-all;
   overflow-wrap: anywhere;
 }
@@ -132,7 +131,8 @@
   height: var(--row-h);
   /* 첫 칸 왼쪽 --s-4 — §7-3 표 첫 칸(Table.module.css .cell:first-child)과 같다. */
   padding: var(--cell-pad-y) var(--cell-pad-x) var(--cell-pad-y) var(--s-4);
-  white-space: nowrap;
+  /* 항목 열은 240 고정 — 긴 항목 이름(사용자 정의 필드)은 줄바꿈한다. */
+  overflow-wrap: anywhere;
   font-size: var(--text-aux);
   font-weight: var(--fw-medium);
 }
@@ -150,6 +150,7 @@
   left: 0;
   top: 0;
   z-index: var(--z-bar);
+  width: calc(var(--s-12) * 5);
   background: var(--surface-selected);
   color: var(--text-strong);
   padding: var(--s-3) var(--cell-pad-x) var(--s-3) var(--s-4);

@@ -38,8 +38,11 @@
 - [x] 셀 전체 세로 클릭(label min-height `--row-h`)·긴 계급 이름 줄바꿈(`overflow-wrap: anywhere`) — 근거: 새 토큰 없음, E2E 폭 700 가로 넘침 0 추가, after 측정은 /mnt/project-files/notes/perm-grid-scroll/after/.
 
 ## 면을 내용 폭에 맞춤(1280 이름–체크박스 거리)
-- [x] 1280에서 항목 이름과 첫 체크박스 사이가 200px 이하다 — 근거: 고치기 전 E2E 실측 693.8px RED → `.wrap` `width: fit-content; max-width: 100%` 뒤 GREEN(권한표·정보 노출표), 같은 스펙의 가로 넘침 0(700·768·1280)·표 면 비교·행 높이 44 함께 통과(20 passed).
+- [x] 1280에서 항목 이름과 첫 체크박스 사이가 240px(항목 열 폭) 이하다 — 근거: 고치기 전 E2E 실측 693.8px RED → `.wrap` `width: fit-content; max-width: 100%` 뒤 GREEN(권한표·정보 노출표), 같은 스펙의 가로 넘침 0(700·768·1280)·표 면 비교·행 높이 44 함께 통과(20 passed).
 - [x] 시스템 이탈은 DECISIONS 먼저 — 근거: DECISIONS 2026-10-05 하위 결정 「면을 내용 폭에 맞춤」 기록 뒤 SYSTEM §4 제외 목록·§7-13 수정, 새 토큰 없음. after 측정 /mnt/project-files/notes/perm-grid-scroll/after/(CI=true).
 
 ## 긴 계급 이름 열 머리 두 줄 제한(PR #166 Codex 봇 P2)
 - [x] 계급 이름이 길어도 열 머리는 두 줄까지, 셋째 줄부터 말줄임이고 전체 이름은 접근성 이름·title로 남는다 — 근거: 고치기 전 E2E thead 높이 398.8px RED → `.colHeaderText` line-clamp 2(projects.module.css .clientCell 선례, 새 토큰 없음) 뒤 72px 이하 GREEN, 같은 스펙 21 passed.
+
+## 계급이 많을 때 가로 넘침(PR #166 전체 CI e2e (1))
+- [x] 계급이 12개 더 있어도 두 격자가 1280·768·700에서 가로로 넘치지 않는다 — 근거: CI 실측 권한표 768 scrollWidth 1190 > 727, 정보 노출표 1280에서도 1306. 로컬 재현 E2E RED(768 903 > 727) → `.table` `table-layout: fixed` + 항목 열 240 + `.wrap` 폭 `min(100%, 240 + 96 × --role-count + 선)` 뒤 GREEN. 30계급 sticky 회귀 테스트도 가로 넘침 0으로 바꿈(가로 스크롤 자체가 없어졌다). 새 토큰 없음(--s-12·--line-w 계산).

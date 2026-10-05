@@ -183,18 +183,13 @@ test.describe("권한표 격자 (ADMN-01, D-40, 성공 기준 2)", () => {
       expect(afterBox.y).toBeGreaterThanOrEqual(-1);
       expect(Math.abs(afterBox.y - beforeBox.y)).toBeLessThanOrEqual(2);
 
-      // 가로 스크롤(이미 정상 동작하던 축)이 이 수정으로 회귀하지 않았는지
-      // 같은 자리에서 이어서 확인한다. 세로와 같은 이유로 .wrap이 흡수할 수
-      // 있는 범위 안에서만 굴려 문서 체이닝을 만들지 않는다.
-      const beforeScrollLeft = await wrap.evaluate((el) => el.scrollLeft);
-      const wrapMaxScrollLeft = await wrap.evaluate((el) => el.scrollWidth - el.clientWidth);
-      const deltaX = wrapMaxScrollLeft > 150 ? Math.min(wrapMaxScrollLeft - 50, 900) : 900;
-      await page.mouse.wheel(deltaX, 0);
-      await expect.poll(async () => wrap.evaluate((el) => el.scrollLeft)).toBeGreaterThan(beforeScrollLeft + 50);
-
-      const afterXBox = await cornerHeader.boundingBox();
-      if (!afterXBox) throw new Error("가로 스크롤 후 열 머리글이 화면에서 사라졌다(DOM 이탈)");
-      expect(Math.abs(afterXBox.x - afterBox.x)).toBeLessThanOrEqual(2);
+      // 2026-10-05 DECISIONS(PR #166): 계급이 30개여도 PC 격자는 가로로 넘치지 않는다 —
+      // 고정 레이아웃이 계급 열을 같은 폭으로 줄인다(옛 가로 스크롤 회귀 확인을 대신한다).
+      const { scrollWidth, clientWidth } = await wrap.evaluate((el) => ({
+        scrollWidth: el.scrollWidth,
+        clientWidth: el.clientWidth,
+      }));
+      expect(scrollWidth).toBeLessThanOrEqual(clientWidth + 1);
     } finally {
       // 하드 DELETE 금지 — 임시 계급은 전부 보관 처리한다. listRoles()는
       // 기본적으로 보관된 계급을 제외하므로 다른 스펙에 영향을 주지 않는다.
@@ -328,7 +323,7 @@ test.describe("권한표 격자 (ADMN-01, D-40, 성공 기준 2)", () => {
 
   // 1280 실측(PR #166): 항목 열이 남는 폭(약 760px)을 다 가져 이름과 체크박스가 멀었다 — 면이 내용 폭에 맞춘다.
   for (const path of ["/admin/permissions", "/admin/visibility"]) {
-    test(`${path} 항목 이름과 첫 체크박스 사이가 1280에서 200px 이하다`, async ({ page }) => {
+    test(`${path} 항목 이름과 첫 체크박스 사이가 1280에서 240px 이하다`, async ({ page }) => {
       await page.setViewportSize({ width: 1280, height: 900 });
       await loginAdmin(page);
       await page.goto(path);
@@ -343,7 +338,8 @@ test.describe("권한표 격자 (ADMN-01, D-40, 성공 기준 2)", () => {
         }),
       );
       expect(gaps.length).toBeGreaterThan(0);
-      for (const g of gaps) expect(g).toBeLessThanOrEqual(200);
+      // 항목 열은 240(--s-12 × 5) 고정 — 이름과 첫 체크박스 사이는 그 폭을 넘지 않는다(고치기 전 693.8px).
+      for (const g of gaps) expect(g).toBeLessThanOrEqual(240);
     });
   }
 
@@ -363,6 +359,33 @@ test.describe("권한표 격자 (ADMN-01, D-40, 성공 기준 2)", () => {
       expect(headHeight).toBeLessThanOrEqual(72);
     } finally {
       await setRoleArchived(SYSTEM_VIEWER, id, true);
+    }
+  });
+
+  // PR #166 전체 CI: 다른 스펙이 만든 계급이 쌓여 계급 12개쯤이면 96px 열이 줄지 않아 768·700(정보 노출표는 1280도)에서 넘쳤다.
+  test("계급이 12개 더 있어도 두 격자는 1280·768·700에서 가로 스크롤이 없다", async ({ page }) => {
+    const prefix = `role-e2e-many-${randomUUID()}`;
+    const ids = Array.from({ length: 12 }, (_, i) => `${prefix}-${i}`);
+    for (const [i, id] of ids.entries()) {
+      await insertRole(SYSTEM_VIEWER, { id, name: `E2E 많은계급 ${prefix.slice(-6)}-${i}`, sortOrder: 300 + i });
+    }
+    try {
+      await loginAdmin(page);
+      for (const path of ["/admin/permissions", "/admin/visibility"]) {
+        for (const width of [1280, 768, 700]) {
+          await page.setViewportSize({ width, height: 900 });
+          await page.goto(path);
+          await expect(page.getByRole("columnheader", { name: "시스템 관리자", exact: true })).toBeVisible();
+          const wrap = page.locator("table").first().locator("xpath=..");
+          const { scrollWidth, clientWidth } = await wrap.evaluate((el) => ({
+            scrollWidth: el.scrollWidth,
+            clientWidth: el.clientWidth,
+          }));
+          expect(scrollWidth, `${path} @${width}`).toBeLessThanOrEqual(clientWidth + 1);
+        }
+      }
+    } finally {
+      for (const id of ids) await setRoleArchived(SYSTEM_VIEWER, id, true);
     }
   });
 

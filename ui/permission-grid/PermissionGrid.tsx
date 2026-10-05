@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Toast } from "@/ui/toast/Toast";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { KvList } from "@/ui/kv-list/KvList";
@@ -228,7 +228,7 @@ export function PermissionGrid({
   return (
     <div>
       <div className={styles.desktopOnly}>
-        <div className={styles.wrap}>
+        <div className={styles.wrap} style={{ "--role-count": rows.length } as CSSProperties}>
           <table className={styles.table}>
             <caption className={styles.caption}>{caption}</caption>
             <thead>

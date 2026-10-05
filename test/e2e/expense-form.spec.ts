@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Locator, type Page } from "@playwright/test";
-import { createExpenseFromLines, createTeamExpenseDraft } from "@/domain/expenses";
+import { getApprovalView, rejectDocument } from "@/domain/approvals";
+import { createExpenseFromLines, createTeamExpenseDraft, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { createAccount } from "@/domain/auth/accounts";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
@@ -8,7 +9,7 @@ import { seoulToday } from "@/lib/dates";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { delayServerActions, loginPage, waitForHydration, type Person } from "./leave-org";
-import { setupExpenseE2E, uniqueReceipt, type ExpenseE2E, type LineKey } from "./expense-fixture";
+import { setupExpenseE2E, submitLineExpense, uniqueReceipt, type ExpenseE2E, type LineKey } from "./expense-fixture";
 
 // 05-06(EXP-15 · UX-06 · UI-SPEC S5 · S6): 지출결의 폼의 즉시 재계산 한 줄과 제출 막힘 이유. 계산 · 판정은 서버 하나 — 화면은 서버가 보낸
 // 문자열만 그린다. 색은 DOM 실측(계산된 color = 토큰 값)으로 판정한다.
@@ -297,6 +298,30 @@ test.describe("견적 줄 바꾸기 포커스 플래그 (05 /review B9)", () => 
     await waitForHydration(page.getByRole("button", { name: /^임시 저장/ }));
     await expect(page.locator("#line-pick")).not.toBeFocused();
     await expect(page.locator(":focus")).toHaveCount(1);
+    await page.context().close();
+  });
+});
+
+// 05-VERIFICATION 갭(/review #3): 반려된 번호 있는 문서도 기안자가 고칠 수 있다(05-09) — `바꾸기`로 같은 프로젝트의 다른 줄로 옮겨진다.
+test.describe("반려된 번호 있는 문서의 견적 줄 바꾸기 (05-09)", () => {
+  test("`바꾸기` 목록이 서고 다른 줄을 고르면 그 줄로 바뀐다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const expenseId = await submitLineExpense(browser, baseURL, fx, "tracer");
+    const view = await getApprovalView(fx.lead.viewer, { kind: EXPENSE_DOCUMENT_KIND, documentId: expenseId });
+    if (!view) throw new Error("결재 문서를 읽지 못했다");
+    await rejectDocument(fx.lead.viewer, { instanceId: view.instanceId, expectedVersion: view.version, reason: "줄 다시" });
+
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await page.goto(`/expenses/${expenseId}`);
+    const change = page.locator("#line-pick");
+    await waitForHydration(change);
+    await change.click();
+    const dialog = page.getByRole("dialog", { name: "견적 줄 바꾸기" });
+    await dialog.getByRole("option", { name: new RegExp(fx.lines.hold.itemName) }).click();
+    await dialog.getByRole("button", { name: /^이 줄로/ }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByText("없는 지출결의 · 새로 고침")).toHaveCount(0);
+    await expect(page.getByRole("heading", { level: 1 })).toContainText(fx.lines.hold.itemName);
     await page.context().close();
   });
 });

@@ -1,13 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db, pool } from "@/db/client";
-import { expenses } from "@/db/schema";
+import { approvalInstances, expenses } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { ForbiddenError } from "@/domain/permissions/can";
 import { createAccount } from "@/domain/auth/accounts";
-import { createTeamExpenseDraft, ExpenseConflictError, ExpenseNotFoundError, changeExpenseLine, changeExpenseVendor, createExpenseFromLines, saveExpenseDraft, withdrawExpense } from "@/domain/expenses";
+import { approveDocument, rejectDocument } from "@/domain/approvals";
+import { createTeamExpenseDraft, EXPENSE_DOCUMENT_KIND, ExpenseConflictError, ExpenseNotFoundError, changeExpenseLine, changeExpenseVendor, createExpenseFromLines, saveExpenseDraft, withdrawExpense } from "@/domain/expenses";
 import { searchLinesForPick, searchVendorsForPick } from "@/domain/expenses/pick";
 import { GateBlockedError } from "@/domain/rules/gate";
 import { createProject } from "@/domain/projects";
@@ -197,6 +198,44 @@ describe("견적 줄 골라내기 searchLinesForPick · change", () => {
     const current = await draftOn(fx.pm, fx.lines.withVendor);
     await expect(searchLinesForPick(fx.otherPm, { mode: "change", expenseId: current })).rejects.toBeInstanceOf(ExpenseNotFoundError);
     await expect(searchLinesForPick(fx.pm, { mode: "change", expenseId: randomUUID() })).rejects.toBeInstanceOf(ExpenseNotFoundError);
+  });
+
+  // 05-09: 반려 · 회수된 번호 있는 문서는 기안자가 고칠 수 있다 — 줄 바꾸기 목록도 changeExpenseLine과 같은 판정으로 연다(05-VERIFICATION 갭 · /review #3).
+  it("반려 · 회수된 번호 있는 내 문서는 줄 목록을 돌려주고, 결재 중 · 승인 문서는 없는 문서다", async () => {
+    const fx = await setupExpenseProject();
+    const instanceIdOf = async (documentId: string) => {
+      const [row] = await db
+        .select({ id: approvalInstances.id })
+        .from(approvalInstances)
+        .where(and(eq(approvalInstances.documentKind, EXPENSE_DOCUMENT_KIND), eq(approvalInstances.documentId, documentId)));
+      return row?.id ?? "";
+    };
+
+    const rejected = await draftOn(fx.pm, fx.lines.withVendor);
+    await submitReadyDraft(fx.pm, rejected);
+    await rejectDocument(fx.lead, { instanceId: await instanceIdOf(rejected), expectedVersion: 1, reason: "금액 확인" });
+    const fromRejected = await searchLinesForPick(fx.pm, { mode: "change", expenseId: rejected });
+    expect(fromRejected.groups.map((group) => group.projectId)).toEqual([fx.projectId]);
+    expect(fromRejected.rows.find((row) => row.current)?.itemName).toBe("무대 제작");
+
+    const withdrawn = await draftOn(fx.pm, fx.lines.split);
+    await submitReadyDraft(fx.pm, withdrawn);
+    await withdrawExpense(fx.pm, { expenseId: withdrawn, undo: true, round: 1 });
+    const fromWithdrawn = await searchLinesForPick(fx.pm, { mode: "change", expenseId: withdrawn });
+    expect(fromWithdrawn.rows.find((row) => row.current)?.itemName).toBe("영상 제작(분할)");
+    await expect(searchLinesForPick(fx.otherPm, { mode: "change", expenseId: rejected })).rejects.toBeInstanceOf(ExpenseNotFoundError);
+
+    const other = await projectWithLines(fx.pm, `결재 중 프로젝트-${randomUUID().slice(0, 6)}`, ["결재 줄", "승인 줄"], fx.stageOneId);
+    const inReview = await draftOn(fx.pm, other.lineIds[0] ?? "");
+    await submitReadyDraft(fx.pm, inReview);
+    await expect(searchLinesForPick(fx.pm, { mode: "change", expenseId: inReview })).rejects.toBeInstanceOf(ExpenseNotFoundError);
+
+    const approved = await draftOn(fx.pm, other.lineIds[1] ?? "");
+    await submitReadyDraft(fx.pm, approved);
+    const approvedInstance = await instanceIdOf(approved);
+    const first = await approveDocument(fx.lead, { instanceId: approvedInstance, expectedVersion: 1 });
+    await approveDocument(fx.ceo, { instanceId: approvedInstance, expectedVersion: first.version });
+    await expect(searchLinesForPick(fx.pm, { mode: "change", expenseId: approved })).rejects.toBeInstanceOf(ExpenseNotFoundError);
   });
 });
 

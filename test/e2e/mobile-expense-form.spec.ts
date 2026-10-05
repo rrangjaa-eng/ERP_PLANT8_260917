@@ -1,5 +1,6 @@
 import { test, expect, type Browser, type Page, type Route } from "@playwright/test";
-import { createExpenseFromLines } from "@/domain/expenses";
+import { getApprovalView, rejectDocument } from "@/domain/approvals";
+import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { loginPage, waitForHydration } from "./leave-org";
 import { setupExpenseE2E, submitLineExpense, uniqueReceipt, type ExpenseE2E, type LineKey } from "./expense-fixture";
 
@@ -350,4 +351,28 @@ test.describe("웨이브 6 화면 검토 수정 — 증빙 · 문서 · 폼", ()
       expect(box!.height, "프로젝트 링크 높이").toBeGreaterThanOrEqual(touchMin - 0.5);
     });
   }
+});
+
+// 05-VERIFICATION 갭(/review #3): 폰에서도 반려된 번호 있는 문서의 `바꾸기`가 같은 프로젝트의 다른 줄로 옮긴다(05-09).
+test.describe("폰 — 반려된 번호 있는 문서의 견적 줄 바꾸기 (05-09)", () => {
+  test("`바꾸기` 목록이 서고 다른 줄을 고르면 그 줄로 바뀐다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const expenseId = await submitLineExpense(browser, baseURL, fx, "tracer");
+    const view = await getApprovalView(fx.lead.viewer, { kind: EXPENSE_DOCUMENT_KIND, documentId: expenseId });
+    if (!view) throw new Error("결재 문서를 읽지 못했다");
+    await rejectDocument(fx.lead.viewer, { instanceId: view.instanceId, expectedVersion: view.version, reason: "줄 다시" });
+
+    const page = await loginPage(browser, baseURL, fx.pm, PHONE);
+    await page.goto(`/expenses/${expenseId}`);
+    const change = page.locator("#line-pick");
+    await waitForHydration(change);
+    await change.click();
+    const dialog = page.getByRole("dialog", { name: "견적 줄 바꾸기" });
+    await dialog.getByRole("option", { name: new RegExp(fx.lines.hold.itemName) }).click();
+    await dialog.getByRole("button", { name: /^이 줄로/ }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByText("없는 지출결의 · 새로 고침")).toHaveCount(0);
+    await expect(page.getByRole("heading", { level: 1 })).toContainText(fx.lines.hold.itemName);
+    await page.context().close();
+  });
 });

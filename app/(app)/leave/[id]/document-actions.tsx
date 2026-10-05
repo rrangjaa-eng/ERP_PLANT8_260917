@@ -121,7 +121,7 @@ export function DocumentActions({ instanceId, version, actions, decision, reject
       ) : null}
       {canApprove || secondary ? (
         <>
-          <div ref={barRef} className={styles.bar}>
+          <div ref={barRef} className={styles.bar} data-fixed-bar="">
             {conflict ? <ConflictLine message={conflict} /> : null}
             <div className={styles.buttons}>
               {phone ? secondaryButton : null}

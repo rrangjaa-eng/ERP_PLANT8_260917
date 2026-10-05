@@ -840,7 +840,7 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
 
         <KvList items={[{ label: "결재선", value: route }]} />
 
-        <div className={styles.formBar} data-testid="expense-form-actions">
+        <div className={styles.formBar} data-testid="expense-form-actions" data-fixed-bar="">
           <Form.Actions>
             {phone ? null : submitButton}
             {block && !submitting ? <BlockLine block={block} href={blockHref} onPick={openPicker} onVendor={() => setPickOpen("vendor")} onLine={() => setPickOpen("line")} /> : null}

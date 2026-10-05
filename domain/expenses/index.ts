@@ -319,7 +319,7 @@ async function describeExpenseDocuments(viewer: Viewer, ids: string[], deps?: De
     const projected = await project(viewer, toSource(row), EXPENSE_DOCUMENT_DTO_SPEC, deps?.visible ? { visible: deps.visible } : undefined);
     const summary: DocumentSummary = { ...projected };
     if (projected.projectName && projected.itemName) summary.documentText = `${projected.projectName} · ${projected.itemName}`;
-    else if (projected.teamName) summary.documentText = ["지출결의", projected.teamName, projected.content].filter(Boolean).join(" · ");
+    else if (projected.teamName) summary.documentText = [projected.teamName, projected.content].filter(Boolean).join(" · ");
     // 05-10: 「내 차례」 한 줄 — 대상 `{프로젝트명} · {항목}` 또는 `{팀} · {내용}`, 상황 `지출결의, {기안자}`(보이지 않는 조각은 뺀다).
     const target =
       projected.projectName && projected.itemName

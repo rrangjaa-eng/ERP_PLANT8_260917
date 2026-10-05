@@ -15,6 +15,8 @@ const PASSING: ExpenseSubmitFacts = {
   supplyAmountKrw: 12_400_000,
   evidenceType: "tax_invoice",
   paymentMethod: "bank_transfer",
+  evidenceTypeInactive: false,
+  paymentMethodInactive: false,
   evidenceCount: 1,
   taxUnavailable: false,
 };
@@ -115,6 +117,26 @@ describe("⑥ 빈 칸 묶음", () => {
     expect(await reasonOf(team)).toBe("종류, 내용, 공급가액 3칸 비어 있음 · 종류 고르기");
     expect(await nextActionTarget(team)).toBe("teamExpenseKind");
     expect(await reasonOf(facts(team, { teamCost: { kind: "team_overhead", content: null } }))).toBe("내용, 공급가액 2칸 비어 있음 · 내용 적기");
+  });
+});
+
+// 05 /review C4: 저장 뒤 보관 · 비활성된 코드는 폼에 이름으로 보인다 — 「비어 있음」이 아니라 쓰지 않는 코드라고 말한다(A4 저장 오류와 같은 글자).
+describe("⑥ 뒤 쓰지 않는 코드", () => {
+  it("증빙 종류가 쓰지 않는 코드면 그 글자와 증빙 종류 칸", async () => {
+    const input = facts({ evidenceTypeInactive: true });
+    expect(await reasonOf(input)).toBe("쓰지 않는 증빙 종류 · 증빙 종류 고르기");
+    expect(await nextActionTarget(input)).toBe("evidenceType");
+  });
+
+  it("지급 방식이 쓰지 않는 코드면 그 글자와 지급 방식 칸", async () => {
+    const input = facts({ paymentMethodInactive: true });
+    expect(await reasonOf(input)).toBe("쓰지 않는 지급 방식 · 지급 방식 고르기");
+    expect(await nextActionTarget(input)).toBe("paymentMethod");
+  });
+
+  it("빈 칸이 있으면 빈 칸 묶음이 먼저, 공급가액 0보다는 앞이다", async () => {
+    expect(await reasonOf(facts({ evidenceTypeInactive: true, supplyAmountKrw: null }))).toBe("공급가액 비어 있음 · 공급가액 적기");
+    expect(await reasonOf(facts({ evidenceTypeInactive: true, supplyAmountKrw: 0 }))).toBe("쓰지 않는 증빙 종류 · 증빙 종류 고르기");
   });
 });
 

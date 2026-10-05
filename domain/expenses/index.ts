@@ -61,7 +61,16 @@ import { buildExpenseDetailRows } from "@/domain/expenses/detail";
 import { canSeeExpense, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses/access";
 import { expenseLineDoor, type ExpenseLineDoor } from "@/domain/expenses/line-door";
 import { resolveLinkedDocumentsByLineage, type LineageLine } from "@/domain/quotes/lineage";
-import { buildExpenseSubmitContext, nextActionTarget, PROJECT_COMPLETED, TAX_UNAVAILABLE, type ExpenseSubmitFacts, type ExpenseSubmitTarget } from "@/domain/expenses/gate";
+import {
+  buildExpenseSubmitContext,
+  INACTIVE_EVIDENCE_TYPE,
+  INACTIVE_PAYMENT_METHOD,
+  nextActionTarget,
+  PROJECT_COMPLETED,
+  TAX_UNAVAILABLE,
+  type ExpenseSubmitFacts,
+  type ExpenseSubmitTarget,
+} from "@/domain/expenses/gate";
 import type { DbOrTx } from "@/repositories/document-counters";
 import {
   EXPENSE_DETAIL_DTO_SPEC,
@@ -123,8 +132,6 @@ const IN_PROGRESS_STATUSES: ReadonlySet<string> = new Set(["submitted", "in_revi
 const NO_TEAM_AT_USAGE_DATE = "사용일에 소속 팀 없음 · 사용일 고치기";
 const SUPPLY_EMPTY = "공급가액 비어 있음 · 공급가액 적기";
 const SUPPLY_ZERO = "공급가액이 0 · 0보다 크게";
-const INACTIVE_EVIDENCE_TYPE = "쓰지 않는 증빙 종류 · 증빙 종류 고르기";
-const INACTIVE_PAYMENT_METHOD = "쓰지 않는 지급 방식 · 지급 방식 고르기";
 
 // 05-07 팀 비용 종류 — 화면 글자(값 목록은 칸 스키마 모듈 draft-fields.ts).
 export { TEAM_EXPENSE_KINDS, type TeamExpenseKind };
@@ -1177,9 +1184,11 @@ async function loadSubmitFacts(
     // 팀 비용 문서(프로젝트 없음) — ①~④는 건너뛰고 ⑥ 묶음에 종류 · 내용이 든다.
     teamCost: projectRow ? null : { kind: row.teamExpenseKind, content: row.content },
     supplyAmountKrw: row.supplyAmountKrw,
-    // 보관 · 비활성 코드는 빈 칸과 같다(⑥ — 쓰는 코드를 다시 고른다). 코드 판정은 트랜잭션 전에 읽은 값이다.
-    evidenceType: row.evidenceType && codes.evidence.has(row.evidenceType) ? row.evidenceType : null,
-    paymentMethod: row.paymentMethod && codes.payment.has(row.paymentMethod) ? row.paymentMethod : null,
+    // 보관 · 비활성 코드는 빈 칸이 아니라 쓰지 않는 코드로 막는다(C4 — 폼에는 이름으로 보인다). 코드 판정은 트랜잭션 전에 읽은 값이다.
+    evidenceType: row.evidenceType,
+    paymentMethod: row.paymentMethod,
+    evidenceTypeInactive: row.evidenceType ? !codes.evidence.has(row.evidenceType) : false,
+    paymentMethodInactive: row.paymentMethod ? !codes.payment.has(row.paymentMethod) : false,
     evidenceCount,
     taxUnavailable: tax.unavailable === true,
   };

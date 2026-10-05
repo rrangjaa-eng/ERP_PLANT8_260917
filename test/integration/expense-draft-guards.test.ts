@@ -146,7 +146,7 @@ describe("증빙 종류 · 지급 방식은 쓰는 코드만 (A4 · adversarial 
     expect(await expenseRow(expenseId)).toMatchObject({ version, evidenceType: null });
   });
 
-  it("저장 뒤 비활성이 된 증빙 종류는 그대로 저장은 되지만 제출은 `증빙 종류 비어 있음`으로 막힌다", async () => {
+  it("저장 뒤 비활성이 된 증빙 종류는 그대로 저장은 되지만 제출은 `쓰지 않는 증빙 종류`로 막힌다 (C4)", async () => {
     const fx = await setupExpenseProject();
     const expenseId = await lineDraft(fx.pm, fx.lines.withVendor);
     const payment = (await listExpenseFormOptions(fx.pm)).payment[0]?.value ?? null;
@@ -161,7 +161,7 @@ describe("증빙 종류 · 지급 방식은 쓰는 코드만 (A4 · adversarial 
     await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: (await expenseRow(expenseId)).version, fields: { evidenceType: "tax_invoice", note: "메모" } });
     const error = await submitReadyDraft(fx.pm, expenseId).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(GateBlockedError);
-    expect(error).toMatchObject({ message: "증빙 종류 비어 있음 · 증빙 종류 고르기" });
+    expect(error).toMatchObject({ message: "쓰지 않는 증빙 종류 · 증빙 종류 고르기" });
     expect((await expenseRow(expenseId)).number).toBeNull();
   });
 });

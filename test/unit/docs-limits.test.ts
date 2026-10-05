@@ -202,6 +202,11 @@ describe("docs/EXPENSES.md", () => {
   it("ARCHITECTURE.md가 이 문서를 가리킨다", () => {
     expect(readDoc("ARCHITECTURE.md")).toContain("EXPENSES.md");
   });
+
+  // 05-13(Round 5 F5 · U3 A · Round 2 M5): Phase 6이 읽는 계약 절과 잠금 순서 예외 절.
+  it.each(["computeExpenseTax", "findActiveBySha", "listNextTurnItems", "잠금 순서 예외", "인스턴스 → 프로젝트"])("'%s'를 포함한다", (token) => {
+    expect(content).toContain(token);
+  });
 });
 
 // 05-12(EVID-01 · Round 5 F5 · U3 A): 증빙 버킷 런북 — OPERATIONS.md는 줄 예산이 없어 별도 문서(CERT-PURGE.md 선례).

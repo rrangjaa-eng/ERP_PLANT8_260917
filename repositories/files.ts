@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { files, users } from "@/db/schema";
@@ -39,6 +39,32 @@ export async function findActiveBySha(
     .from(files)
     .where(and(eq(files.sha256, sha256), inArray(files.ownerKind, [...ownerKinds]), alive()))
     .orderBy(asc(files.createdAt), asc(files.id));
+}
+
+// 05 /review A10: 완료된 업로드 의도가 만든 살아 있는 파일 — 같은 주인 · 올린 사람 · sha256 · 크기이고 의도 뒤에 만든 행(의도와 파일을 잇는 열이
+// 없어 선언값으로 찾는다). 완료 통보 재시도(응답 유실)를 같은 파일로 끝낸다.
+export async function findAliveFileOfIntent(
+  viewer: Viewer,
+  input: { ownerKind: string; ownerId: string; uploadedBy: string; sha256: string; sizeBytes: number; createdFrom: Date },
+): Promise<FileRow | null> {
+  void viewer;
+  const [row] = await db
+    .select()
+    .from(files)
+    .where(
+      and(
+        eq(files.ownerKind, input.ownerKind),
+        eq(files.ownerId, input.ownerId),
+        eq(files.uploadedBy, input.uploadedBy),
+        eq(files.sha256, input.sha256),
+        eq(files.sizeBytes, input.sizeBytes),
+        gte(files.createdAt, input.createdFrom),
+        alive(),
+      ),
+    )
+    .orderBy(asc(files.createdAt), asc(files.id))
+    .limit(1);
+  return row ?? null;
 }
 
 export async function countActiveByOwner(viewer: Viewer, ownerKind: string, ownerId: string, tx: DbOrTx = db): Promise<number> {

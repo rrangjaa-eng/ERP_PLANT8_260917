@@ -18,7 +18,7 @@ import { EVIDENCE_FILE_DTO_SPEC, type EvidenceFileDto } from "@/domain/evidence/
 import { checkEvidenceUpload, EVIDENCE_UPLOAD_FAILED, type EvidenceDuplicate } from "@/domain/evidence/upload-checks";
 import { bumpInstanceVersion } from "@/repositories/approvals";
 import { findExpenseApprovalInstance, findExpenseById, lockExpenseForUpdate } from "@/repositories/expenses";
-import { findActiveBySha, findFileById, insertFile, listActiveByOwner, markRemoved, markVoided, type FileRow } from "@/repositories/files";
+import { findActiveBySha, findAliveFileOfIntent, findFileById, insertFile, listActiveByOwner, markRemoved, markVoided, type FileRow } from "@/repositories/files";
 import { findUserById } from "@/repositories/users";
 import { completeIntentIfOpen, findIntentById, insertIntent } from "@/repositories/upload-intents";
 
@@ -34,8 +34,10 @@ export type { EvidenceFileDto } from "@/domain/evidence/dto";
 // 올린다(reason evidence — 그 전에 문서를 연 결재자의 승인이 막힌다). 승인 뒤 잘못 붙은 증빙은 무효 처리(voidEvidence)한다.
 
 const MB = 1024 * 1024;
-const INTENT_TTL_MS = 15 * 60 * 1000;
 const SIGNED_PUT_EXPIRES_SEC = 900;
+// 의도는 서명 PUT보다 오래 산다 — PUT 만료 직전에 시작한 느린 업로드(폰 · 큰 파일)가 끝난 뒤에도 완료 통보가 열려 있다(05 /review A10 · F7).
+const UPLOAD_GRACE_SEC = 15 * 60;
+const INTENT_TTL_MS = (SIGNED_PUT_EXPIRES_SEC + UPLOAD_GRACE_SEC) * 1000;
 const VIEW_URL_EXPIRES_SEC = 300;
 const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // PC 브라우저가 그리지 못할 수 있는 형식은 내려받기로(리뷰 Round 1 P3-6).
@@ -264,6 +266,18 @@ export async function completeEvidenceUpload(
   // 트랜잭션 전: 의도 · 메타데이터 재확인 · 옮기기 · 로그 켜짐 판정.
   const intent = UUID_SHAPE.test(input.intentId) ? await findIntentById(viewer, input.intentId) : null;
   const rule = intent ? ruleFor(intent.ownerKind) : null;
+  // 내 의도가 이미 완료됐으면(응답이 유실돼 화면이 다시 부름) 그 의도가 만든 파일이 살아 있는 한 같은 파일로 성공한다(멱등).
+  if (intent && rule && intent.createdBy === viewer.id && intent.completedAt !== null) {
+    const done = await findAliveFileOfIntent(viewer, {
+      ownerKind: intent.ownerKind,
+      ownerId: intent.ownerId,
+      uploadedBy: viewer.id,
+      sha256: intent.declaredSha256,
+      sizeBytes: intent.declaredSize,
+      createdFrom: intent.createdAt,
+    });
+    if (done) return { ...(await project(viewer, toDtoSource({ ...done, voidedByName: null }), EVIDENCE_FILE_DTO_SPEC)), id: done.id };
+  }
   if (!intent || !rule || intent.createdBy !== viewer.id || intent.completedAt !== null || intent.expiresAt.getTime() <= now.getTime()) {
     throw new EvidenceUploadRefusedError("restart");
   }

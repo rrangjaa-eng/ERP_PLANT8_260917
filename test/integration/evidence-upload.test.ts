@@ -46,7 +46,7 @@ async function versionOf(expenseId: string): Promise<number> {
 }
 
 describe("트레이서 — 선언에서 제출까지", () => {
-  it("기안자의 선언은 incoming/{의도 id} 키 · 15분 만료 의도와 서명된 PUT 주소 · 헤더를 돌려준다", async () => {
+  it("기안자의 선언은 incoming/{의도 id} 키 · 30분 만료 의도(서명 PUT 15분보다 길다)와 서명된 PUT 주소 · 헤더를 돌려준다", async () => {
     const fx = await setupExpenseProject();
     const expenseId = await draftOf(fx);
     const storage = createMemoryStorage();
@@ -77,7 +77,7 @@ describe("트레이서 — 선언에서 제출까지", () => {
       createdBy: fx.pm.id,
       completedAt: null,
     });
-    expect(row?.expiresAt.getTime()).toBe(NOW.getTime() + 15 * 60 * 1000);
+    expect(row?.expiresAt.getTime()).toBe(NOW.getTime() + 30 * 60 * 1000);
   });
 
   it("PUT 뒤 완료 통보는 evidence/{파일 id}로 옮기고 파일 행 · 보존 표식 · 의도 완료 · 행동 로그를 남긴다", async () => {
@@ -245,27 +245,41 @@ describe("거부 — 의도 · 메타데이터 · 상태 · 권한 · 중복", (
     expect(await fileRowsOf(expenseId)).toHaveLength(0);
   });
 
-  it("만료된 의도(16분 뒤)는 restart로 거부 · 파일 행 0", async () => {
+  it("만료된 의도(31분 뒤)는 restart로 거부 · 파일 행 0", async () => {
     const fx = await setupExpenseProject();
     const expenseId = await draftOf(fx);
     const storage = createMemoryStorage();
     const intent = await uploaded(fx.pm, expenseId, storage);
 
-    await expectRefused(completeEvidenceUpload(fx.pm, { intentId: intent.intentId }, { storage, now: new Date(NOW.getTime() + 16 * 60 * 1000) }), "restart");
+    await expectRefused(completeEvidenceUpload(fx.pm, { intentId: intent.intentId }, { storage, now: new Date(NOW.getTime() + 31 * 60 * 1000) }), "restart");
     expect(await fileRowsOf(expenseId)).toHaveLength(0);
   });
 
-  it("같은 의도를 두 번 완료하면 두 번째는 restart · 파일 행 1 · evidence/ 객체는 파일 행의 키 하나", async () => {
+  it("(A10 · F7) 서명 PUT 만료(15분) 무렵 시작해 20분에 끝난 업로드의 완료 통보는 의도가 살아 있어 성공한다", async () => {
+    const fx = await setupExpenseProject();
+    const expenseId = await draftOf(fx);
+    const storage = createMemoryStorage();
+    const intent = await uploaded(fx.pm, expenseId, storage);
+
+    await completeEvidenceUpload(fx.pm, { intentId: intent.intentId }, { storage, now: new Date(NOW.getTime() + 20 * 60 * 1000) });
+    expect(await fileRowsOf(expenseId)).toHaveLength(1);
+  });
+
+  it("(A10) 같은 의도를 두 번 완료하면(응답 유실 뒤 재시도) 두 번째도 같은 파일로 성공 · 파일 행 1 · evidence/ 객체는 파일 행의 키 하나", async () => {
     const fx = await setupExpenseProject();
     const expenseId = await draftOf(fx);
     const storage = createMemoryStorage();
     const intent = await uploaded(fx.pm, expenseId, storage);
 
     const file = await completeEvidenceUpload(fx.pm, { intentId: intent.intentId }, { storage, now: NOW });
-    await expectRefused(completeEvidenceUpload(fx.pm, { intentId: intent.intentId }, { storage, now: NOW }), "restart");
+    const again = await completeEvidenceUpload(fx.pm, { intentId: intent.intentId }, { storage, now: NOW });
+    expect(again).toEqual(file);
 
     expect(await fileRowsOf(expenseId)).toHaveLength(1);
     expect(keysWithPrefix(storage, "evidence/")).toEqual([`evidence/${file.id}`]);
+    // 그 파일을 뗀 뒤의 재시도는 처음부터 다시(restart).
+    await removeEvidence(fx.pm, { fileId: file.id });
+    await expectRefused(completeEvidenceUpload(fx.pm, { intentId: intent.intentId }, { storage, now: NOW }), "restart");
   });
 
   it("같은 의도의 두 완료가 겹쳐 둘째가 옮긴 뒤 잠금에서 거부되면, 둘째의 보상 삭제는 자기 객체만 지운다", async () => {

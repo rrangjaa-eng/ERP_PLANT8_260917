@@ -11,6 +11,8 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => undefined
 vi.mock("next-safe-action/hooks", () => ({ useAction: () => ({ execute: () => undefined, isExecuting: false, result: {} }) }));
 vi.mock("@/app/(app)/approvals/actions", () => ({ approveAction: () => undefined, rejectAction: () => undefined, withdrawAction: () => undefined }));
 vi.mock("@/app/(app)/leave/actions", () => ({ withdrawLeaveAction: () => undefined }));
+// 05-10: 결재 시트 증빙 주소 주입(evidence-url)이 지출결의 서버 액션을 부른다 — 이 테스트는 구조 값만 보므로 액션째 막는다.
+vi.mock("@/app/(app)/expenses/actions", () => ({ createEvidenceViewUrlAction: () => undefined }));
 vi.mock("@/domain/approvals", () => ({
   REJECT_REASON_EMPTY_MESSAGE: "사유 없음 · 사유 적기",
   REJECT_REASON_TOO_LONG_MESSAGE: "사유 500자 넘음 · 줄여 적기",

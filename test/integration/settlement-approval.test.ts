@@ -409,7 +409,7 @@ describe("정산 결재 — 결재 중 지출결의가 남은 프로젝트 (A8)"
     expect(await applyAutoSettlement({ projectIds: [fx.projectId] }, { now: () => new Date("2027-01-02T03:00:00Z") })).toEqual([fx.projectId]);
     const { documentId, instanceId, version } = await submitted(fx.pm, fx.projectId);
 
-    const blocked = "결재 중 지출결의 1건 · 지출결의 결재 먼저";
+    const blocked = "결재 중 지출결의 1건 · 먼저 결재";
     expect((await getApprovalView(fx.ceo, { kind: SETTLEMENT_DOCUMENT_KIND, documentId }))?.approveBlockedReason).toBe(blocked);
     const refused = await approveDocument(fx.ceo, { instanceId, expectedVersion: version }).catch((e: unknown) => e);
     expect(refused).toBeInstanceOf(GateBlockedError);

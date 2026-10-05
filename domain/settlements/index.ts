@@ -83,7 +83,7 @@ const SETTLING: ProjectStatus = "settling";
 // D-80: 결재 중 기간 변경으로 프로젝트가 진행으로 돌아갔을 때 대표 `승인`의 막힘 이유(UI-SPEC S10 — 2차 `반려`는 산다).
 const BACK_TO_PROGRESS = "진행으로 바뀜 · 반려";
 // 05 /review A8(사용자 확정 10/5): 결재 중 지출결의가 남은 프로젝트는 정산 최종 승인을 막는다 — 남은 건수 한 줄.
-const expensesInReview = (count: number) => `결재 중 지출결의 ${count}건 · 지출결의 결재 먼저`;
+const expensesInReview = (count: number) => `결재 중 지출결의 ${count}건 · 먼저 결재`;
 
 // ── 결재 권한 브랜드(F1 · A1) ───────────────────────────────────────────────
 // `changeProjectStatus`의 결재 경로(trigger approval)가 요구하는 권한 값 — 이 모듈 안의 비공개 생성 함수만 만든다(타입만 export).

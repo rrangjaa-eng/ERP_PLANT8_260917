@@ -93,13 +93,13 @@ function VoidEvidenceDialog({ target, messages, onClose }: { target: AttachmentF
   const fieldId = useId();
   const [reason, setReason] = useState("");
   const [serverError, setServerError] = useState<string | null>(null);
-  const [failure, setFailure] = useState<string | undefined>(undefined);
+  const [failureLine, setFailureLine] = useState<string | undefined>(undefined);
   const [pending, setPending] = useState(false);
   const submittingRef = useRef(false);
   function close() {
     setReason("");
     setServerError(null);
-    setFailure(undefined);
+    setFailureLine(undefined);
     onClose();
   }
 
@@ -112,7 +112,7 @@ function VoidEvidenceDialog({ target, messages, onClose }: { target: AttachmentF
     if (!target || submittingRef.current || blocked) return;
     submittingRef.current = true;
     setPending(true);
-    setFailure(undefined);
+    setFailureLine(undefined);
     let response: Awaited<ReturnType<typeof voidEvidenceAction>> | undefined;
     try {
       response = await voidEvidenceAction({ fileId: target.id, reason: trimmed });
@@ -127,7 +127,7 @@ function VoidEvidenceDialog({ target, messages, onClose }: { target: AttachmentF
       return;
     }
     if (response?.serverError) setServerError(response.serverError);
-    else setFailure(VOID_FAILED);
+    else setFailureLine(VOID_FAILED);
   }
 
   return (
@@ -158,7 +158,7 @@ function VoidEvidenceDialog({ target, messages, onClose }: { target: AttachmentF
         pending,
         onConfirm: () => void confirm(),
         disabledReason: blocked,
-        failure,
+        failure: failureLine,
       }}
     />
   );

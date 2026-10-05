@@ -159,6 +159,12 @@ function measurePage(): Omit<ScreenMeasure, "route" | "width" | "screenshot" | "
     };
   });
 
+  // 안쪽 가로 스크롤 칸 — 보이는 overflow-x auto/scroll 요소 중 안쪽이 넘치는 것(페이지 자체 스크롤은 위 scrollWidth가 잰다).
+  const scrollersX = [...document.querySelectorAll("body *")]
+    .filter((el) => isScroller(el) && el.scrollWidth > el.clientWidth + 1 && visible(el))
+    .slice(0, 40)
+    .map((el) => ({ selector: selectorOf(el), scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }));
+
   const gaps: ScreenMeasure["gaps"] = [];
   const walk = (parent: Element, depth: number) => {
     if (depth > 4 || gaps.length >= 120) return;
@@ -178,6 +184,7 @@ function measurePage(): Omit<ScreenMeasure, "route" | "width" | "screenshot" | "
     scrollWidth: root.scrollWidth,
     clientWidth: root.clientWidth,
     overflowX: root.scrollWidth > root.clientWidth,
+    scrollersX,
     elements,
     gaps,
     omitted: Math.max(0, all.length - LIMIT),

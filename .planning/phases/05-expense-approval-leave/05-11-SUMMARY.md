@@ -64,7 +64,7 @@ status: complete
 5. **`settlement/layout.tsx` 추가(플랜 files 밖)**: 응답 전에 404를 판정한다. 연차 · 지출결의의 소프트 404 선례를 따랐다.
 6. **테스트 픽스처 `test/integration/fixtures/settlements.ts` 추가(플랜 files 밖)**: 진행 복귀(D-80)는 리포지토리 상태 갱신이 아니라 실제 경로(`saveProjectLedger`, 종료일 2099)로 만든다. 지난 종료일이면 다음 잠금 읽기가 다시 정산으로 되돌리기 때문이다.
 7. **직접 완료에 기대던 기존 통합 테스트**(quote-lines (p)(q)(r) · project-auto-settlement (h)(j) · expense-create-idempotency 완료 사례): 테스트 전용 권한 값(`test/support/settlement-authority.ts` — 캐스트는 test/ 안)으로 결재 경로를 부른다. 이 테스트들은 잠금 · 자동 정산 선판정 · 견적 줄 잠금 규칙을 재는 것이라 단언은 그대로다. auto-settlement (h)의 로그 trigger만 `manual` → `approval`.
-8. **문서 화면 다시 올리기**는 폼이 아니라 이 화면의 1차(`정산 결재 다시 올리기 Ctrl+Enter`, 확인 없음, 성공 토스트)다. 되돌리기 토스트는 첫 올리기(머리 줄)에만 있다. 진행 복귀 한 줄은 서버 판정 `isSettlementResubmitWaiting`(내 반려 · 회수 문서 ∧ 프로젝트 in_progress)으로 그린다.
+8. **문서 화면 다시 올리기**는 폼이 아니라 이 화면의 1차(`정산 결재 다시 올리기 Ctrl+Enter`, 확인 없음, 성공 토스트)다. ~~되돌리기 토스트는 첫 올리기(머리 줄)에만 있다.~~ → **사용자 확정 (10/5 16:14)**: 다시 올리기 뒤에도 첫 올리기와 같은 `되돌리기` 토스트(늦은 되돌리기 오류 토스트 + `새로 고침` 포함)를 보인다(4ae0d1f4 — 아래 「웨이브 13 검토 수정」). 진행 복귀 한 줄은 서버 판정 `isSettlementResubmitWaiting`(내 반려 · 회수 문서 ∧ 프로젝트 in_progress)으로 그린다.
 9. **폰 행동 줄**: 막힘 이유가 꽉 찬 1차 옆에서 두 줄로 접히지 않게, 1차 아래 한 줄로 내리고 두 버튼의 윗줄을 맞췄다(`document-actions.module.css` 폰 규칙 두 줄). 이유가 없으면 높이가 같아 연차 · 지출결의 화면은 그대로다(`mobile-leave-approval` 9 통과).
 
 ## 결정 · 예외
@@ -122,7 +122,7 @@ status: complete
 3. **[Rule 1] 테스트 픽스처 기간**: 진행 복귀를 리포지토리 상태 갱신으로 만들면 자동 정산이 되돌렸다. 실제 경로(D-80 기간 저장)로 바꿨다(systematic-debugging).
 4. **E2E 문구 정정**: 늦은 되돌리기 문구는 이름 받침에 따라 `이/가`를 고른다. 시험 정규식은 `(이|가)`이다. 문서 제목은 스트리밍 중 loading 제목과 겹치지 않게 heading 이름으로 찾는다.
 5. **TDD 증거 한계**: Task 3의 D-80 · 다시 올리기 · 늦은 되돌리기 · 「내 차례」 통합 사례와 null 머리글 단위 사례는 Task 1 구현 · 05-01 규칙을 고정하는 것이라 처음부터 초록이었다. RED는 직접 완료 거부(단위 1 · 통합 3)와 E2E 3(aria-disabled · 다시 올리기 · 「상태 바꾸기」)이다.
-6. **남은 죽은 갈래(지우지 않음)**: `app/(app)/projects/[id]/status-change.tsx`의 「완료로 바꾸기」 모달 갈래는 이제 렌더되지 않는다(갈 곳 목록에 완료 없음). 정리는 다음 플랜이나 리뷰가 판단한다.
+6. **남은 죽은 갈래(지우지 않음)**: `app/(app)/projects/[id]/status-change.tsx`의 「완료로 바꾸기」 모달 갈래는 이제 렌더되지 않는다(갈 곳 목록에 완료 없음). 정리는 다음 플랜이나 리뷰가 판단한다. → 검토 F1로 지웠다(5241f3b8).
 
 ## Verification
 - 단위 `pnpm test:unit` 전체: 254 files · 3880 tests 통과.
@@ -147,5 +147,27 @@ status: complete
 - 위험 경로(마이그레이션 · 스키마)가 있어 사용자가 머지한다. 돈 · 결재 게이트 `/review` + `/cso`, Opus 독립 검토 1명, 독립 DOM 감사가 필요하다.
 - 05-13 전체 게이트가 브랜드 캐스트 grep을 다시 돈다. 테스트 전용 위조는 `test/support/settlement-authority.ts` · `settlement-approval.test.ts` 두 곳이다.
 
+## 웨이브 13 검토 수정 (2026-10-05, 기준 d4264feb)
+출처: 화면 검토 `notes/05-review/wave13/README.md`(D1–D3 · N1–N5 · U1–U2) · Opus 독립 검토 `05-11-migration-lock-review.md`(F1 · F2). RED는 7c126c7e(CI=true 빌드에서 5건 실패 확인) → 고침마다 GREEN.
+
+| 지적 | 고침 | 커밋 |
+|------|------|------|
+| F1 도달 불가 「완료로 바꾸기」 갈래 | `status-change.tsx` 세 줄 삭제(고아 없음) | 5241f3b8 |
+| D1 머리 줄 행동 묶음 수화 뒤 이동(CLS 폰 0.157–0.26 · 768 0.135–0.16) | 근본 원인: 1차 「일괄 저장」을 JS 폭 판정(`useEditableWidth`, 서버 스냅숏 참)으로 넣었다 뺌 — 서버 렌더에만 있고 1024 미만 수화 뒤 사라져 머리 줄 h 100→44. canSave면 늘 렌더하고 1024 미만 · 바뀐 칸 0 숨김은 CSS(`.saveSlotIdle`). 폰 수화 전 보이는 순서는 CSS order로 수화 뒤와 같게. 기준선의 같은 유형(nodoc-lead · ceo)도 같은 원인이라 함께 사라진다 | e4c5ba33 |
+| D2 시트 막힌 승인 이유가 버튼 옆 두 줄 | `approval-sheet.module.css` — 1차 아래 한 줄 · 두 버튼 윗줄 맞춤(문서 화면 행동 줄과 같다) | d9434b5b |
+| D3 폰 결재함 시트 승인 뒤 포커스 BODY | 시트의 `router.refresh()` 제거 → 호출자 `onApproved`가 `useRefreshThenFocus`로 다음 줄 열기에 포커스(결재함 `refreshThenFocusNext` = PC 행 승인과 같은 길, 첫 화면 `nextRowTarget`) | d8961b05 |
+| 분기 (8) — **사용자 확정 (10/5 16:14)** 다시 올리기도 되돌리기 토스트 | `useSettlementSubmitToast` 훅 하나를 머리 줄 올리기 · 문서 화면 다시 올리기가 같이 씀(늦은 되돌리기 오류 토스트 + `새로 고침` 포함). `SettlementActions`는 `projectId` · `canResubmit`을 받는다 | 4ae0d1f4 |
+| U1 `/admin/code-tables` 폰 2×2 탭 격자 — **사용자 확정 (10/5 16:37)** 「격자 유지」 | DECISIONS.md 2026-10-05 항목(탭 넷 · CLS 0.24→0.002 · 44px 두 줄) + SYSTEM.md §3 「그리드」에 일반 예외(폰 선택 링크 줄 넷 이상 → 2열 격자). 코드 변경 없음 | 09ef297a |
+| F2 기안 PM이 없어지면 다시 올릴 사람 없음 — **사용자 확정 (10/5 16:15)** 그대로 | `deferred-items.md` 「PM 바꾸기 기능 때 해결」(공휴일 연도 줄 메모 함께) | be74e579 |
+| N1 `/projects/[id]/settlement` 모르는 id HTTP 200 | **고치지 않음 — 사용자 결정 필요.** 원인: `app/(app)/projects/loading.tsx`(목록 뼈대)가 `[id]` 아래 전부를 Suspense로 감싸 스트리밍이 먼저 시작된다. `settlement/layout.tsx`의 응답 전 판정은 연차 · 지출결의 선례와 같지만 그 경로들에는 상위 loading이 없다. `/projects/{uuid}`도 같은 이유로 200(PR #38 이후 soft 404 + noindex로 받아들인 상태, project-period.spec (0) 주석). 고치려면 목록 page · loading을 라우트 그룹 `projects/(list)/`로 옮겨야 하고(파일 이동 · 상세로 이동할 때 목록 뼈대가 사라짐) — 화면 구조 결정이라 멈췄다 | — |
+| N2–N5 | 05-11 코드의 결함 아님: N2 · N4 앞 웨이브 이월, N3 UI-SPEC :303 적합(이월), N5 의도(할 수 없는 행동 숨김) | — |
+
+검증(전부 CI=true 프로덕션 빌드 · `--no-deps`):
+- E2E 새 `mobile-settlement-wave13.spec.ts` 4(D1 9상태 CLS < 0.1 · D2 375 · 320 · D3) + `settlement-approval.spec.ts` 6(다시 올리기 되돌리기 · 늦은 되돌리기 추가) = 9 통과, D1–D3 `--repeat-each=3` 12/12.
+- 회귀 E2E(desktop + mobile-375) mobile-touch-targets · mobile-leave-approval · mobile-next-turn-approval · expense-submit-mobile-approval · mobile-320-no-overflow · expense-inbox · leave-approval · project-lifecycle · project-period · quote-edit-scope · quote-line-kinds · design-principles · expense-undo-resubmit: 217 통과 · 3 건너뜀.
+- 통합 settlement-approval · project-status 2 files · 37 통과. 단위 `pnpm test:unit` 전체 254 files · 3884 통과. `pnpm lint` · `pnpm typecheck` 0.
+- 점검표 `docs/design/checks/2026-10-05-05-11-wave13-review-fixes.md`. 화면 경로: `/projects/[id]` · `/projects/[id]/settlement` · `/approvals` · `/`(시트).
+
 ## Self-Check: PASSED
+- 웨이브 13 검토 수정: 커밋 9개(5241f3b8 · 09ef297a · be74e579 · 7c126c7e · e4c5ba33 · d9434b5b · d8961b05 · 4ae0d1f4 + 이 SUMMARY 커밋) 존재, 새 파일 `test/e2e/mobile-settlement-wave13.spec.ts` · 점검표 존재.
 - 파일 5종(domain/settlements/index.ts · 0027 SQL · 문서 화면 page.tsx · test/support/settlement-authority.ts · 점검표) 존재, 커밋 8개(27b903d5 · 359c7b92 · 97ceec8b · 2601b4ac · 1d4c2b2b · 94312c01 · 2136043e · cb97cdb5) 존재. REQUIREMENTS.md는 gsd-tools `requirements.mark-complete UX-03 UX-06 OPS-08`로만 바꿈(OPS-08 체크).

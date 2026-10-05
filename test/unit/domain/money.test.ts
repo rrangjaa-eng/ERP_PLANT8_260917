@@ -16,6 +16,7 @@ import {
   sumKrw,
   diffKrw,
   formatRatePercent,
+  sameAmountOn,
   type Money,
   type MoneyInput,
 } from "@/domain/money";
@@ -340,5 +341,22 @@ describe("formatRatePercent", () => {
     [0.07, "7%"],
   ])("%s → %s", (rate, text) => {
     expect(formatRatePercent(rate)).toBe(text);
+  });
+});
+
+// 05 /review A11 — 금액 같음 비교도 money 안에서(외화는 소수 둘째 자리 최소 단위, 원화는 원). 분할 지급 「마지막 회차」 판정이 쓴다.
+describe("sameAmountOn", () => {
+  const usd = (amount: number): Money => moneyFromRow({ currency: "USD", foreignAmount: amount.toFixed(2), fxRate: "1300.0000", amountKrw: toKrw({ currency: "USD", amount, fxRate: 1300 }) });
+  const krw = (amount: number): Money => moneyFromRow({ currency: "KRW", foreignAmount: null, fxRate: "1.0000", amountKrw: amount });
+
+  it("외화 기준은 소수 둘째 자리까지 같으면 같다(부동소수 오차 무시)", () => {
+    expect(sameAmountOn("foreign", usd(0.1 + 0.2), usd(0.3))).toBe(true);
+    expect(sameAmountOn("foreign", usd(4_000.01), usd(4_000))).toBe(false);
+  });
+
+  it("원화 기준은 원화 환산액끼리 비교한다", () => {
+    expect(sameAmountOn("krw", krw(4_000_000), usd(3_076.92))).toBe(toKrw({ currency: "USD", amount: 3_076.92, fxRate: 1300 }) === 4_000_000);
+    expect(sameAmountOn("krw", krw(4_000_000), krw(4_000_000))).toBe(true);
+    expect(sameAmountOn("krw", krw(4_000_000), krw(3_999_999))).toBe(false);
   });
 });

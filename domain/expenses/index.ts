@@ -50,7 +50,7 @@ import { findApprovalGraphByDocument, type ApprovalGraph } from "@/repositories/
 import type { DescribeDeps, DocumentSummary, RouteConfigStep } from "@/domain/approvals/kinds";
 import { gate, GateBlockedError } from "@/domain/rules/gate";
 import "@/domain/rules/register";
-import { moneyFromRow, moneyToColumns, remainingForInstallments, type Money } from "@/domain/money";
+import { moneyFromRow, moneyToColumns, remainingForInstallments, sameAmountOn, type Money } from "@/domain/money";
 import { CURRENCIES, recentFxRate } from "@/domain/money/currency";
 import { allocateDocumentNumber, allocateExpenseNumber, loadDocumentNumberFormat, loadExpenseNumberFormat } from "@/domain/document-numbering";
 import { teamAtDate } from "@/domain/org";
@@ -1277,8 +1277,7 @@ async function lineFactsFor(viewer: Viewer, row: ExpenseSummaryRow, supply: Mone
     execution,
     numbered.flatMap((doc) => supplyMoney(doc) ?? []),
   );
-  const isLast =
-    supply !== null && (basis === "foreign" ? Math.round(remaining.amount * 100) === Math.round(supply.amount * 100) : remaining.amountKrw === supply.amountKrw);
+  const isLast = supply !== null && sameAmountOn(basis, remaining, supply);
   const previous = numbered.at(-1)?.number;
   const parts = [`${numbered.length + 1}회차`];
   if (forced && previous) parts.push(`앞 회차 ${previous}`);

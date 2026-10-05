@@ -213,6 +213,18 @@ export function diffKrw(a: number, b: number): number {
   return a - b;
 }
 
+// 외화 금액의 최소 단위 배율(소수 둘째 자리) — 외화 금액 비교 · 차감은 이 정수 단위로 한다(부동소수 오차 없음).
+const MINOR_UNITS = 100;
+
+function toMinor(amount: number): number {
+  return Math.round(amount * MINOR_UNITS);
+}
+
+// 05 /review A11 — 두 금액이 같은 기준(외화 = 최소 단위, 원화 = 원화 환산액)에서 같은가. 분할 지급 「마지막 회차」 판정이 쓴다.
+export function sameAmountOn(basis: "foreign" | "krw", a: Pick<Money, "amount" | "amountKrw">, b: Pick<Money, "amount" | "amountKrw">): boolean {
+  return basis === "foreign" ? toMinor(a.amount) === toMinor(b.amount) : a.amountKrw === b.amountKrw;
+}
+
 // 05-03(EXP-01 · Q4 계획 결정) — 분할 회차의 남은 실행가. 앞 회차 문서 통화와 (있으면) 이번 문서 통화가 모두 줄 통화와
 // 같은 외화면 원래 통화 금액으로 비교하고(환율 차이로 남은 금액이 흔들리지 않게), 하나라도 다르거나 원화 줄이면 원화로
 // 비교한다. 남은 금액은 음수일 수 있다(호출자가 0 이하를 「닫힘」으로 읽는다). exceeds = 이번 문서가 남은 금액보다 크다.
@@ -226,11 +238,11 @@ export function remainingForInstallments(
     others.every((money) => money.currency === execution.currency) &&
     (!current || current.currency === execution.currency);
   if (sameCurrency) {
-    const cents = Math.round(execution.amount * 100) - sumKrw(others.map((money) => Math.round(money.amount * 100)));
+    const cents = toMinor(execution.amount) - sumKrw(others.map((money) => toMinor(money.amount)));
     // 원래 통화 비교의 남은 원화는 남은 외화 × 줄 실행가 환율 — 앞 문서 원화 합(환율 변동)으로 문이 열리고 닫히지 않는다(05-14).
-    const amount = cents / 100;
+    const amount = cents / MINOR_UNITS;
     const remaining: Money = { __brand: "Money", currency: execution.currency, amount, fxRate: execution.fxRate, amountKrw: toKrw({ currency: execution.currency, amount, fxRate: execution.fxRate }) };
-    const exceeds = current !== undefined && Math.round(current.amount * 100) > cents;
+    const exceeds = current !== undefined && toMinor(current.amount) > cents;
     return { basis: "foreign", remaining, exceeds };
   }
   const remainingKrw = execution.amountKrw - sumKrw(others.map((money) => money.amountKrw));

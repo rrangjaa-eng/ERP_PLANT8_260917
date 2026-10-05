@@ -30,6 +30,9 @@ import { upsertSimpleValue } from "@/repositories/settings";
 import { makePerson, orgUnitIdByName } from "./approvals-fixtures";
 import { extendToInProgress, makeSettlementPeople, SETTLEMENT_LINES, setupSettlementProject } from "./fixtures/settlements";
 import { deferred, waitForLockWaiter } from "./lock-race";
+import { createExpenseFromLines, withdrawExpense } from "@/domain/expenses";
+import { applyAutoSettlement } from "@/domain/projects/auto-transition";
+import { setupExpenseProject, submitReadyDraft } from "./fixtures/expenses";
 
 // D-80 ② 승인 먼저 — 승인 트랜잭션이 프로젝트 행을 잡은 직후에 멈출 자리. 엔진 → 정산 훅 → changeProjectStatus 사슬에는 주입 지점이
 // 없어 이 파일만 changeProjectStatus를 감싸 afterLock을 넣는다(race.afterLock이 null이면 원래 함수 그대로 — 나머지 사례는 영향 없음).
@@ -374,6 +377,31 @@ describe("정산 결재 — 다시 올리기 · 늦은 되돌리기 · 행동 �
     expect(error.message).toMatch(/^최대표가 \d{2}:\d{2}에 승인함 · /);
 
     expect((await documentLogs(documentId)).map((log) => log.actionType)).toEqual(["document_submit", "document_approve"]);
+    expect(await projectStatus(fx.projectId)).toBe("completed");
+  });
+});
+
+// 05 /review A8 — 사용자 확정(10/5 카드 「승인 막기」): 결재 중 지출결의가 남은 프로젝트는 정산 최종 승인을 막고 남은 건수를 한 줄로 보인다.
+describe("정산 결재 — 결재 중 지출결의가 남은 프로젝트 (A8)", () => {
+  it("결재 중 지출결의 1건이면 승인 막힘 한 줄 · 승인은 롤백 · 지출결의를 회수하면 승인되어 완료된다", async () => {
+    const fx = await setupExpenseProject();
+    const expenseId = (await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] })).created[0]?.expenseId ?? "";
+    expect(await submitReadyDraft(fx.pm, expenseId)).toMatchObject({ kind: "submitted" });
+    // 종료일(2026-12-31) 다음 날 자동 정산.
+    expect(await applyAutoSettlement({ projectIds: [fx.projectId] }, { now: () => new Date("2027-01-02T03:00:00Z") })).toEqual([fx.projectId]);
+    const { documentId, instanceId, version } = await submitted(fx.pm, fx.projectId);
+
+    const blocked = "결재 중 지출결의 1건 · 지출결의 결재 먼저";
+    expect((await getApprovalView(fx.ceo, { kind: SETTLEMENT_DOCUMENT_KIND, documentId }))?.approveBlockedReason).toBe(blocked);
+    const refused = await approveDocument(fx.ceo, { instanceId, expectedVersion: version }).catch((e: unknown) => e);
+    expect(refused).toBeInstanceOf(GateBlockedError);
+    expect(refused).toMatchObject({ message: blocked });
+    expect(await projectStatus(fx.projectId)).toBe("settling");
+    expect((await instanceOf(documentId))?.status).toBe("submitted");
+
+    await withdrawExpense(fx.pm, { expenseId, undo: true, round: 1 });
+    expect((await getApprovalView(fx.ceo, { kind: SETTLEMENT_DOCUMENT_KIND, documentId }))?.approveBlockedReason ?? null).toBeNull();
+    await approveDocument(fx.ceo, { instanceId, expectedVersion: version });
     expect(await projectStatus(fx.projectId)).toBe("completed");
   });
 });

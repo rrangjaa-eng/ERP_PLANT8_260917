@@ -58,6 +58,7 @@ import type { DescribeDeps, DocumentDetailRow, DocumentDetailRows, DocumentSumma
 import { GateBlockedError } from "@/domain/rules/gate";
 import { SETTLEMENT_DOCUMENT_DTO_SPEC, type SettlementDocumentDto, type SettlementDocumentSource } from "@/domain/settlements/dto";
 import { findApprovalGraphByDocument, type ApprovalGraph } from "@/repositories/approvals";
+import { countInReviewByProjects } from "@/repositories/expenses";
 import { findProjectById } from "@/repositories/projects";
 import {
   findFinalStepActorInTx,
@@ -81,6 +82,8 @@ const RESUBMITTABLE_STATUSES: ReadonlySet<string> = new Set(["rejected", "withdr
 const SETTLING: ProjectStatus = "settling";
 // D-80: 결재 중 기간 변경으로 프로젝트가 진행으로 돌아갔을 때 대표 `승인`의 막힘 이유(UI-SPEC S10 — 2차 `반려`는 산다).
 const BACK_TO_PROGRESS = "진행으로 바뀜 · 반려";
+// 05 /review A8(사용자 확정 10/5): 결재 중 지출결의가 남은 프로젝트는 정산 최종 승인을 막는다 — 남은 건수 한 줄.
+const expensesInReview = (count: number) => `결재 중 지출결의 ${count}건 · 지출결의 결재 먼저`;
 
 // ── 결재 권한 브랜드(F1 · A1) ───────────────────────────────────────────────
 // `changeProjectStatus`의 결재 경로(trigger approval)가 요구하는 권한 값 — 이 모듈 안의 비공개 생성 함수만 만든다(타입만 export).
@@ -445,16 +448,27 @@ async function onSettlementFinalApprovalInTx(viewer: Viewer, documentId: string,
       { from: SETTLING, to: "completed", trigger: "approval" },
       { tx, facts: before.facts, approvalAuthority: grantApprovalAuthority(found.projectId, documentId) },
     );
+    // 프로젝트 행을 잡은 뒤 센다 — 그 사이 지출결의 제출은 이 잠금을 기다렸다가 완료 프로젝트(②)로 막힌다.
+    const inReview = (await countInReviewByProjects(viewer, [found.projectId], tx)).get(found.projectId) ?? 0;
+    if (inReview > 0) throw new GateBlockedError(expensesInReview(inReview));
   } catch (error) {
     log.warn("settlement.final_approval_rolled_back", { documentId, projectId: before.projectId, reason: error instanceof Error ? error.constructor.name : "unknown" });
     throw error;
   }
 }
 
-// 표시 전용(트랜잭션 없음) — 엔진은 viewer가 지금 담당인 문서만 넘긴다. 프로젝트가 정산이 아니면(D-80 진행 복귀) `승인`을 막아 보인다.
+// 표시 전용(트랜잭션 없음) — 엔진은 viewer가 지금 담당인 문서만 넘긴다. 프로젝트가 정산이 아니면(D-80 진행 복귀) · 결재 중 지출결의가
+// 남았으면(A8) `승인`을 막아 보인다.
 async function settlementApproveBlockedReason(viewer: Viewer, ids: string[]): Promise<Map<string, string>> {
   const rows = await listSettlementSummaries(viewer, { ids, documentKind: SETTLEMENT_DOCUMENT_KIND });
-  return new Map(rows.filter((row) => row.projectStatus !== SETTLING).map((row) => [row.id, BACK_TO_PROGRESS]));
+  const inReview = await countInReviewByProjects(viewer, [...new Set(rows.map((row) => row.projectId))]);
+  const reasons = new Map<string, string>();
+  for (const row of rows) {
+    const count = inReview.get(row.projectId) ?? 0;
+    if (row.projectStatus !== SETTLING) reasons.set(row.id, BACK_TO_PROGRESS);
+    else if (count > 0) reasons.set(row.id, expensesInReview(count));
+  }
+  return reasons;
 }
 
 // 다시 올리기 = 그 문서 프로젝트의 담당 PM 쓰기 권리 ∧ 프로젝트 상태 settling(문서 id가 없으면 거짓 — Round 4 D5).

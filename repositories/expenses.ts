@@ -316,6 +316,19 @@ export async function listNumberedByProject(viewer: Viewer, projectId: string, t
   return rows.flatMap((row) => (row.quoteLineId && row.number ? [{ quoteLineId: row.quoteLineId, number: row.number, approvalStatus: row.approvalStatus }] : []));
 }
 
+// 05 /review A8 — 프로젝트별 결재 중(submitted · in_review) 지출결의 수(삭제 안 된 문서) — 정산 최종 승인 막힘 재료. 승인 tx 안에서는 tx로 부른다.
+export async function countInReviewByProjects(viewer: Viewer, projectIds: string[], tx: DbOrTx = db): Promise<Map<string, number>> {
+  void viewer;
+  if (projectIds.length === 0) return new Map();
+  const rows = await tx
+    .select({ projectId: expenses.projectId, count: sql<number>`count(*)::int` })
+    .from(expenses)
+    .innerJoin(approvalInstances, and(eq(approvalInstances.documentKind, EXPENSE_APPROVAL_KIND), eq(approvalInstances.documentId, expenses.id)))
+    .where(and(inArray(expenses.projectId, projectIds), isNull(expenses.deletedAt), inArray(approvalInstances.status, ["submitted", "in_review"])))
+    .groupBy(expenses.projectId);
+  return new Map(rows.flatMap((row) => (row.projectId ? [[row.projectId, row.count] as const] : [])));
+}
+
 export async function listDraftsByLines(
   viewer: Viewer,
   input: { lineIds: string[]; drafterId: string },

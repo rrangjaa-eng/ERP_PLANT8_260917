@@ -1,4 +1,5 @@
-import { and, asc, eq, gte, inArray, isNull, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, ne, notExists, sql, type SQL } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { files, users } from "@/db/schema";
@@ -113,12 +114,18 @@ export async function markOwnerFilesRemoved(
 }
 
 // 지운 문서를 되돌릴 때 그 삭제가 뗀 파일(삭제 시각과 같은 removed_at)만 되살린다 — 그 전에 따로 뗀 파일은 그대로.
+// 05 /review C3: 그 사이 같은 sha256이 같은 종류의 다른 주인에 살아 있으면(지운 사이 다른 문서에 붙인 같은 영수증) 그 파일은 되살리지 않는다.
 export async function restoreOwnerFilesRemovedAt(viewer: Viewer, input: { ownerKind: string; ownerId: string; removedAt: Date }, tx: DbOrTx): Promise<void> {
   void viewer;
+  const other = alias(files, "other_files");
+  const takenElsewhere = tx
+    .select({ id: other.id })
+    .from(other)
+    .where(and(eq(other.sha256, files.sha256), eq(other.ownerKind, files.ownerKind), ne(other.ownerId, files.ownerId), isNull(other.removedAt), isNull(other.voidedAt)));
   await tx
     .update(files)
     .set({ removedAt: null, removedBy: null })
-    .where(and(eq(files.ownerKind, input.ownerKind), eq(files.ownerId, input.ownerId), eq(files.removedAt, input.removedAt)));
+    .where(and(eq(files.ownerKind, input.ownerKind), eq(files.ownerId, input.ownerId), eq(files.removedAt, input.removedAt), notExists(takenElsewhere)));
 }
 
 // 05-09: 살아 있는 행에만 무효 세 칸을 쓴다 — 0행이면 null(이미 무효 · 지워짐). 시각은 주입이 없으면 DB now() — 올린 시각(files.created_at

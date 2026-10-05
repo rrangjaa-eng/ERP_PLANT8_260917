@@ -427,6 +427,25 @@ describe("지운 작성 중 문서의 증빙 (A3 · red-team)", () => {
     expect(await listEvidence(fx.pm, { ownerKind: "expense", ownerId: deleted })).toHaveLength(1);
   });
 
+  // C3(adversarial F3): 지운 사이 같은 영수증을 다른 문서에 붙였으면 되돌리기가 그 파일만 되살리지 않는다 — 한 영수증이 두 문서에 붙지 않는다.
+  it("되돌리기는 그 사이 다른 문서에 붙은 같은 영수증은 되살리지 않고 나머지 증빙만 되살린다", async () => {
+    const fx = await setupExpenseProject();
+    const deleted = await draftOf(fx);
+    const shared = sha();
+    const own = sha();
+    await attachEvidence(fx.pm, deleted, createMemoryStorage(), { sha256: shared });
+    await attachEvidence(fx.pm, deleted, createMemoryStorage(), { sha256: own });
+    await deleteExpenseDraft(fx.pm, { expenseId: deleted, expectedVersion: await versionOf(deleted) });
+
+    const next = (await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.split] })).created[0]?.expenseId ?? "";
+    await attachEvidence(fx.pm, next, createMemoryStorage(), { sha256: shared });
+
+    await restoreExpenseDraft(fx.pm, { expenseId: deleted });
+    const restored = await db.select().from(files).where(and(eq(files.ownerId, deleted), isNull(files.removedAt)));
+    expect(restored.map((file) => file.sha256)).toEqual([own]);
+    expect(await listEvidence(fx.pm, { ownerKind: "expense", ownerId: next })).toHaveLength(1);
+  });
+
   it("지운 문서에 살아 있는 파일 행이 남아 있어도(고치기 전 데이터) 중복으로 세지 않는다", async () => {
     const fx = await setupExpenseProject();
     const deleted = await draftOf(fx);

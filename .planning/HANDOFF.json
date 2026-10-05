@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-10-05T19:39:52.502Z",
+  "timestamp": "2026-10-05T20:45:47.000Z",
   "phase": "06",
   "phase_name": "payment-evidence-cards",
   "phase_dir": ".planning/phases/06-payment-evidence-cards",
@@ -9,23 +9,48 @@
   "total_tasks": 0,
   "status": "paused",
   "completed_tasks": [
-    {"id": 1, "name": "06 재계획(--reviews): 플랜 30개·12웨이브, 체커 3회차 통과, Opus 교차 검토 반영", "status": "done", "commit": "36996af0"}
+    {
+      "id": 1,
+      "name": "06 재계획(--reviews): 플랜 30개·12웨이브, 체커 3회차 통과, Opus 교차 검토 반영",
+      "status": "done",
+      "commit": "36996af0"
+    }
   ],
   "remaining_tasks": [
-    {"id": 2, "name": "06 eng 검토(/plan-eng-review) — 새 세션", "status": "not_started"},
-    {"id": 3, "name": "06 실행 — #162 머지 뒤, 06-26·06-27 위험 PR 먼저", "status": "not_started"}
+    {
+      "id": 2,
+      "name": "06 eng 검토(/plan-eng-review) — 새 세션",
+      "status": "not_started"
+    },
+    {
+      "id": 3,
+      "name": "06 실행 — #162 머지 뒤, 06-26·06-27 위험 PR 먼저",
+      "status": "not_started"
+    }
   ],
   "blockers": [
-    {"description": "06 실행은 PR #162(Phase 05) main 머지 대기", "type": "external", "workaround": "eng 검토는 먼저 해도 됨"}
+    {
+      "description": "06 실행은 PR #162(Phase 05) main 머지 대기",
+      "type": "external",
+      "workaround": "eng 검토는 먼저 해도 됨"
+    }
   ],
   "async_jobs": [],
   "human_actions_pending": [
-    {"action": "밤 결정 목록 확인(/mnt/project-files/notes/night-0106/06-replan-questions.md)", "context": "밤 위임 중 추천안으로 진행한 4건", "blocking": false}
+    {
+      "action": "밤 결정 목록 확인(/mnt/project-files/notes/night-0106/06-replan-questions.md)",
+      "context": "밤 위임 중 추천안으로 진행한 4건",
+      "blocking": false
+    }
   ],
   "decisions": [
-    {"decision": "사용자 답 UC-1~UC-7은 06-REVIEWS.md §0", "rationale": "카드·채팅 답", "phase": "06"}
+    {
+      "decision": "사용자 답 UC-1~UC-7은 06-REVIEWS.md §0",
+      "rationale": "카드·채팅 답",
+      "phase": "06"
+    }
   ],
   "uncommitted_files": [],
-  "next_action": "새 세션에서 /plan-eng-review로 06 플랜 30개 검토",
-  "context_notes": "06 .continue-here.md 참조. STATE.md는 05 실행 세션 몫이라 건드리지 않음."
+  "next_action": "새 세션에서 /gsd-plan-phase 06 --reviews로 eng-review-replan.md 반영(05 pr162 최신과 재대조)",
+  "context_notes": "eng 검토 끝 b77fe3f6: P0 3 · P1 9 · P2 22 · P3 20, 결정 R-1~R-7 추천안 가정"
 }

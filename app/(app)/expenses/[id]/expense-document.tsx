@@ -126,8 +126,11 @@ export function ExpenseDocument({
     { label: "지급 방식", value: expense.paymentMethodName ?? dash },
     { label: "비고", value: expense.note || dash },
     { label: "기안", value: [expense.drafterName, expense.createdAt ? kstDateOf(expense.createdAt) : null].filter(Boolean).join(" · ") },
-    { label: "결재선", value: <ApprovalRoute mode="list" steps={routeListSteps(view?.steps)} endLines={view?.endLines ?? []} /> },
   );
+  // 결재선 노출 항목이 없는 계급에는 단계가 투영에서 빠진다 — 빈 값 행을 두지 않는다(웨이브 11 D5).
+  if (view?.steps && view.steps.length > 0) {
+    items.push({ label: "결재선", value: <ApprovalRoute mode="list" steps={routeListSteps(view.steps)} endLines={view.endLines ?? []} /> });
+  }
 
   const amountText = supply ? formatKrw(supply.amountKrw) : null;
 

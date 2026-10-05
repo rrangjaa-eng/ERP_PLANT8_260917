@@ -1741,3 +1741,15 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 **구현**: 키 `domain/settings/keys.ts`, 판정 `isProfitRateBelowThreshold`(`domain/projects/list-view.ts`), 읽기 `app/(app)/projects/page.tsx` → `projects-table.tsx` 칸을 `.profitRateBelow` span으로 감쌈(`ui/num` 변경 없음), 계약 테스트 `test/e2e/projects-list.spec.ts` 「수익률 기준선」(computed color 실측). 마이그레이션 없음(기존 settings_simple 키-값).
 
 **범위**: SYSTEM.md §6-1, `app/(app)/projects/`, 설정 화면(레지스트리 자동 생성 칸).
+
+## 2026-10-05 — 체크박스 매트릭스 PC 행·열 뒤집기: 계급이 열, 메뉴·동작(정보 항목)이 행 (사용자 지적 채팅 2026-10-05 11:21 KST 「PC에서 가로 스크롤이 생겨 보기 불편」 + 스레드 선택 카드 추천안)
+
+**결정**: PC(≥700) 권한표·정보 노출표 격자의 행과 열을 뒤집는다 — 열 = 계급, 행 = 메뉴·동작(권한표는 메뉴 그룹 줄 뒤에 동작 행) 또는 정보 항목(정보 노출표). 항목 전체 선택 체크박스는 행 머리글로 옮기고, 계급 열 머리글에는 체크박스를 두지 않는다(「계급 단위 전체 선택 없음」 유지). 폰(<700)의 계급 선택 + 목록은 그대로다. 셀·전체 선택 체크박스의 `aria-label`과 데이터 의미(rows = 계급, columns = 항목)는 그대로다.
+
+**이유**: 실측 권한표 79열(메뉴 × 동작) × 5행이라 표 폭 3462px, 격자 칸 1240px로 PC에서 가로 스크롤이 생기고, 정보 노출표도 29열 2297px다. 계급은 5~수 개로 적고 항목은 늘어나므로 계급을 열로 두면 폭이 항목 수와 무관해진다. 늘어나는 쪽은 세로로 가고 세로 스크롤은 이미 있다(`max-height: 70vh`).
+
+**버린 대안**: 메뉴별로 나누기(화면·탭이 늘고 한눈에 비교가 안 된다), 칸 좁히기(32px 터치 목표·13px 글자 미만으로 줄여야 해 §3 위반).
+
+**유지하는 것**: 새 색·토큰 없음, 체크박스 모양·32px 칸, 즉시 저장·낙관적 되돌림·토스트, Tab 순서는 행 우선(의도).
+
+**범위**: SYSTEM.md §7-13, `ui/permission-grid/`, `app/(app)/admin/permissions/`, `app/(app)/admin/visibility/`.

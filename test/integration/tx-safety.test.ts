@@ -569,3 +569,63 @@ describe("풀 2 · 동시 증빙 추가 셋(05-04)", () => {
     20_000,
   );
 });
+
+describe("풀 2 · 동시 정산 최종 승인 셋(05-11)", () => {
+  // 05-11(Round 2 M3): 정산 결재 최종 승인 훅 — 트랜잭션 전 사실 읽기(prepareFinalApproval) 뒤, tx 안에서는 받은 tx로만 마지막 단계 기록
+  // 확인(findFinalStepActorInTx)과 changeProjectStatus(deps.tx)를 돈다. 훅 경로가 tx 안에서 전역 풀을 부르면 풀 2에서 5초 시간 초과로 깨진다.
+  it(
+    "(j) 풀 크기 2에서 대표가 정산 결재 셋을 동시에 최종 승인하면 10초 안에 셋 다 성공하고 세 프로젝트가 완료된다",
+    async () => {
+      const { makeSettlementPeople, setupSettlementProject } = await import("./fixtures/settlements");
+      const { submitSettlement, SETTLEMENT_DOCUMENT_KIND } = await import("@/domain/settlements");
+      const people = await makeSettlementPeople();
+      const projectIds: string[] = [];
+      const instanceIds: string[] = [];
+      for (let i = 0; i < 3; i++) {
+        const fx = await setupSettlementProject(people, `풀 정산 ${i}`);
+        const done = await submitSettlement(fx.pm, { projectId: fx.projectId });
+        if (done.kind !== "submitted") throw new Error("정산 결재가 올라가지 않았습니다");
+        projectIds.push(fx.projectId);
+        instanceIds.push(done.instanceId);
+      }
+
+      const previousPoolMax = process.env.DB_POOL_MAX;
+      process.env.DB_POOL_MAX = "2";
+      vi.resetModules();
+
+      try {
+        const clientModule = await import("@/db/client");
+        expect((clientModule.pool as unknown as { options: { max: number } }).options.max).toBe(2);
+        // 적재가 곧 종류 등록이다 — 격리 레지스트리에 정산 결재가 들어간다.
+        await import("@/domain/settlements");
+        const isolated = await import("@/domain/approvals");
+
+        const start = Date.now();
+        const results = await Promise.allSettled(instanceIds.map((instanceId) => isolated.approveDocument(people.ceo, { instanceId, expectedVersion: 1 })));
+        const elapsed = Date.now() - start;
+
+        expect(elapsed).toBeLessThan(10_000);
+        expect(results.map((result) => (result.status === "rejected" ? String(result.reason) : result.value.status))).toEqual([
+          "approved",
+          "approved",
+          "approved",
+        ]);
+
+        await clientModule.closeDb();
+      } finally {
+        process.env.DB_POOL_MAX = previousPoolMax;
+      }
+
+      for (const instanceId of instanceIds) {
+        const [row] = await db.select().from(approvalInstances).where(eq(approvalInstances.id, instanceId));
+        expect(row?.status).toBe("approved");
+        expect(row?.documentKind).toBe(SETTLEMENT_DOCUMENT_KIND);
+      }
+      for (const projectId of projectIds) {
+        const [row] = await db.select({ status: projects.status }).from(projects).where(eq(projects.id, projectId));
+        expect(row?.status).toBe("completed");
+      }
+    },
+    30_000,
+  );
+});

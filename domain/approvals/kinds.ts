@@ -58,8 +58,9 @@ export type DocumentSummary = {
   [key: string]: unknown;
 };
 
-// 04.1-05(Codex MEDIUM · ENG-17): 결재 시트 · 결재함 상세 행 — 문자열 칸만. 05-10(D9): 증빙 갈래는 같은 행에 선택 칸 `files`를 더한 것이다
-// (파일 id · 이름 · 크기 · 형식만 — 주소는 시트가 열릴 때 서버가 권한 판정 뒤 만든다). 문자열 칸 `value`는 파일 이름 글자라 칸을 모르는 소비자도 읽는다.
+// 04.1-05(Codex MEDIUM · ENG-17): 결재 시트 · 결재함 상세 행 — 문자열 칸만.
+// 05-10(D9): 증빙 갈래는 같은 행에 선택 칸 `files`를 더한 것이다 (파일 id · 이름 · 크기 · 형식만 — 주소는 시트가 열릴 때 서버가 권한 판정 뒤 만든다).
+// 문자열 칸 `value`는 파일 이름 글자라 칸을 모르는 소비자도 읽는다.
 export type DocumentDetailEvidenceFile = { id: string; name: string; sizeBytes: number; contentType: string };
 export type DocumentDetailRow = { label: string; value: string; tone: "default" | "muted" | "warning"; files?: DocumentDetailEvidenceFile[] };
 export type DocumentDetailRows = { title: string; subtitle: string; rows: DocumentDetailRow[] };

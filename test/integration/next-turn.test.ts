@@ -159,7 +159,8 @@ describe("listNextTurnItems — [막힘] 반려", () => {
     const fx = await setupExpenseProject();
     const { instanceId } = await submittedExpense(fx);
     await withdrawDocument(fx.pm, { instanceId, expectedVersion: 1 });
-    await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.noVendor] });
+    const draft = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.split] });
+    expect(draft.created).toHaveLength(1);
 
     expect(await listNextTurnItems(fx.pm)).toEqual([]);
   });
@@ -226,7 +227,7 @@ describe("증빙 무효 [막힘] (G1)", () => {
     const manager = await makeEvidenceManager();
     const approved = await approvedExpense(fx);
     await voidEvidence(manager, { fileId: (await fileIds(approved.expenseId))[0] ?? "", reason: "다른 건" });
-    const rejectedCreated = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.noVendor] });
+    const rejectedCreated = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.split] });
     const rejectedId = rejectedCreated.created[0]?.expenseId ?? "";
     const rejectedSubmit = await submitReadyDraft(fx.pm, rejectedId);
     if (rejectedSubmit.kind !== "submitted") throw new Error("제출 안 됨");

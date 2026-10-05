@@ -299,3 +299,23 @@ export async function listProcessedInstances(viewer: Viewer, userId: string, lim
     .filter((row): row is typeof row & { actedAt: Date; action: string } => row.actedAt !== null && row.action !== null)
     .map((row) => ({ ...row.instance, drafterName: row.drafterName, actedAt: row.actedAt, action: row.action, submittedAt: row.submittedAt }));
 }
+
+export type DrafterInstance = ApprovalInstanceRow & { rejecterName: string | null };
+
+// 05-10: 내가 기안한 인스턴스 중 한 상태(반려 · 승인)인 것 — 최근 처리 순. 반려는 지금 차수의 반려 단계 처리자 이름을 함께 읽는다.
+export async function listDrafterInstances(
+  viewer: Viewer,
+  input: { drafterId: string; status: "rejected" | "approved"; limit: number },
+): Promise<DrafterInstance[]> {
+  void viewer;
+  const rows = await db
+    .select({ instance: approvalInstances, rejecterName: actors.name })
+    .from(approvalInstances)
+    .leftJoin(approvalRoutes, and(eq(approvalRoutes.instanceId, approvalInstances.id), eq(approvalRoutes.round, approvalInstances.currentRound)))
+    .leftJoin(approvalSteps, and(eq(approvalSteps.routeId, approvalRoutes.id), eq(approvalSteps.action, "rejected")))
+    .leftJoin(actors, eq(actors.id, approvalSteps.actedBy))
+    .where(and(eq(approvalInstances.drafterId, input.drafterId), eq(approvalInstances.status, input.status)))
+    .orderBy(desc(approvalInstances.updatedAt), asc(approvalInstances.id))
+    .limit(input.limit);
+  return rows.map((row) => ({ ...row.instance, rejecterName: row.rejecterName }));
+}

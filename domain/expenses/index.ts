@@ -7,6 +7,7 @@ import { seoulToday } from "@/lib/dates";
 import { formatForeignAmount, formatFxRate, formatKrw } from "@/lib/format-number";
 import { can, ForbiddenError } from "@/domain/permissions/can";
 import { project } from "@/domain/permissions/project";
+import { listEvidenceVoidSignals } from "@/domain/evidence/signals";
 import { coversProjectTeam, loadActorTeamScope } from "@/domain/projects/status";
 import { getSettingValue, getSimpleSettingValues } from "@/domain/settings/registry";
 import {
@@ -388,6 +389,12 @@ async function loadExpenseDetails(viewer: Viewer, ids: string[]): Promise<Map<st
   return result;
 }
 
+// 05-10 G1: 승인된 지출결의의 증빙이 무효 처리된 뒤 새 증빙이 없으면 기안자의 「내 차례」 [막힘] — 글자 · 주소는 여기서 정한다(사유 · 처리자는 싣지 않는다).
+async function expenseBlockedAfterApproval(viewer: Viewer, ids: string[]): Promise<Map<string, { situation: string; actionLabel: string; href: string }>> {
+  const voided = await listEvidenceVoidSignals(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerIds: ids });
+  return new Map(voided.map((id) => [id, { situation: "증빙 무효", actionLabel: "증빙 올리기", href: `/expenses/${id}#evidence` }]));
+}
+
 registerDocumentKind({
   kind: EXPENSE_DOCUMENT_KIND,
   label: "지출결의",
@@ -400,6 +407,7 @@ registerDocumentKind({
   loadDetails: loadExpenseDetails,
   detailDto: EXPENSE_DETAIL_DTO_SPEC,
   buildDetailRows: buildExpenseDetailRows,
+  blockedAfterApproval: expenseBlockedAfterApproval,
 });
 
 // ── 보임 ──────────────────────────────────────────────────────────────

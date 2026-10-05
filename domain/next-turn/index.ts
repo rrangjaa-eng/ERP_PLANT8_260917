@@ -1,5 +1,5 @@
 import type { Viewer } from "@/domain/viewer";
-import { listMyInbox, type ApprovalDeps, type ApprovalInboxItem, type DocumentMeasure } from "@/domain/approvals";
+import { listMyBlockedDocuments, listMyInbox, type ApprovalDeps, type ApprovalInboxItem, type DocumentMeasure } from "@/domain/approvals";
 import { formatKrw } from "@/lib/format-number";
 
 // 05-10 S11(06 UA-611): 첫 화면 「내 차례」 공급 함수. 06 S19가 같은 함수에 경영관리 · PM 항목을 더한다.
@@ -37,6 +37,21 @@ export async function listNextTurnItems(viewer: Viewer, deps?: ApprovalDeps): Pr
       measureText: measureTextOf(item.summary?.measure),
       action: { label: `${item.kindLabel} 열기`, href: item.href },
       approval: item,
+    });
+  }
+  // [막힘] — 내가 기안한 문서의 반려(이유 = `{종류 라벨} 반려, {반려자}`)와 승인 뒤 종류가 알린 막힘(종류 필드 blockedAfterApproval — 글자 · 주소는 종류가 준다). 반려가 먼저.
+  for (const item of await listMyBlockedDocuments(viewer, deps)) {
+    const { cause } = item;
+    const situation = cause.type === "rejected" ? [`${item.kindLabel} 반려`, cause.rejecterName].filter(Boolean).join(", ") : cause.situation;
+    const action = cause.type === "rejected" ? { label: `${item.kindLabel} 열기`, href: item.href } : { label: cause.actionLabel, href: cause.href };
+    const target = item.summary?.nextTurnText?.target;
+    entries.push({
+      key: `blocked-${item.instanceId}`,
+      tag: "막힘",
+      label: target ? `${target} — ${situation}` : situation,
+      reason: "",
+      measureText: measureTextOf(item.summary?.measure),
+      action,
     });
   }
   return entries;

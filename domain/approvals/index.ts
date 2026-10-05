@@ -15,6 +15,7 @@ import {
   insertApprovalSteps,
   insertFallbackStep,
   listActiveInstances,
+  listDrafterInstances,
   listProcessedInstances,
   recordStepAction,
   updateInstanceStatus,
@@ -1195,4 +1196,59 @@ export async function listMyInbox(viewer: Viewer, deps?: ApprovalDeps): Promise<
     processed: await Promise.all(processedSources.map((source) => projectInboxItem(viewer, source, { visible }))),
     measureHeader: measureHeaderOf(summaries.values()),
   };
+}
+
+// 05-10 「내 차례」 [막힘] — 내가 기안한 문서 중 반려된 것과, 승인 뒤 종류가 막힘으로 알린 것(종류 필드 blockedAfterApproval, 증빙 무효 등).
+// 회수 · 작성 중 문서는 막힘이 아니다. 종류마다 승인 문서 id를 한 번만 넘기고(읽기 전용), 글자 · 주소는 종류가 준다.
+export type BlockedDocument = {
+  instanceId: string;
+  kind: string;
+  kindLabel: string;
+  documentId: string;
+  href: string;
+  summary: DocumentSummary | null;
+  cause: { type: "rejected"; rejecterName: string | null } | { type: "after_approval"; situation: string; actionLabel: string; href: string };
+};
+
+const BLOCKED_REJECTED_LIMIT = 50;
+// 승인 문서는 시간이 갈수록 쌓이므로 최근 처리한 것만 종류에 넘긴다.
+const BLOCKED_APPROVED_LIMIT = 200;
+
+export async function listMyBlockedDocuments(viewer: Viewer, deps?: ApprovalDeps): Promise<BlockedDocument[]> {
+  const visible = createVisibleMemo(deps?.findVisibility);
+  const rejected = await listDrafterInstances(viewer, { drafterId: viewer.id, status: "rejected", limit: BLOCKED_REJECTED_LIMIT });
+  const approved = await listDrafterInstances(viewer, { drafterId: viewer.id, status: "approved", limit: BLOCKED_APPROVED_LIMIT });
+
+  const found: Omit<BlockedDocument, "summary">[] = rejected.map((row) => {
+    const def = getDocumentKind(row.documentKind);
+    return {
+      instanceId: row.id,
+      kind: row.documentKind,
+      kindLabel: def.label,
+      documentId: row.documentId,
+      href: def.href(row.documentId),
+      cause: { type: "rejected", rejecterName: row.rejecterName },
+    };
+  });
+
+  const approvedByKind = new Map<string, typeof approved>();
+  for (const row of approved) approvedByKind.set(row.documentKind, [...(approvedByKind.get(row.documentKind) ?? []), row]);
+  for (const [kind, rows] of approvedByKind) {
+    const def = getDocumentKind(kind);
+    if (!def.blockedAfterApproval) continue;
+    const blocked = await def.blockedAfterApproval(viewer, [...new Set(rows.map((row) => row.documentId))]);
+    for (const row of rows) {
+      const hit = blocked.get(row.documentId);
+      if (hit) found.push({ instanceId: row.id, kind, kindLabel: def.label, documentId: row.documentId, href: def.href(row.documentId), cause: { type: "after_approval", ...hit } });
+    }
+  }
+
+  const idsByKind = new Map<string, string[]>();
+  for (const item of found) idsByKind.set(item.kind, [...(idsByKind.get(item.kind) ?? []), item.documentId]);
+  const summaries = new Map<string, DocumentSummary>();
+  for (const [kind, ids] of idsByKind) {
+    const described = await getDocumentKind(kind).describeDocuments(viewer, [...new Set(ids)], { visible });
+    for (const [id, summary] of described) summaries.set(`${kind}:${id}`, summary);
+  }
+  return found.map((item) => ({ ...item, summary: summaries.get(`${item.kind}:${item.documentId}`) ?? null }));
 }

@@ -1,3 +1,4 @@
+import "@/app/(app)/document-kinds";
 import type { ReactNode } from "react";
 import { requireSession } from "@/lib/viewer";
 import { roleMenu } from "@/ui/shell/role-menu";
@@ -7,6 +8,7 @@ import { can } from "@/domain/permissions/can";
 import { MENUS } from "@/domain/permissions/menus";
 import { withCertMenusGated } from "@/domain/certs/feature";
 import { countMyUnread } from "@/domain/notify/inbox";
+import { listNextTurnItems } from "@/domain/next-turn";
 import { refreshUnreadCountAction } from "@/app/(app)/notifications/actions";
 import { log } from "@/lib/log";
 
@@ -47,6 +49,17 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     });
   }
 
+  // 05-10: 폰 하단 탭 `내 차례 N` — 공급 함수의 건수. 실패하면 건수 없이(라벨 `내 차례`) 셸은 정상 렌더된다. 0이면 넘기지 않는다.
+  let nextTurnCount: number | undefined;
+  try {
+    const count = (await listNextTurnItems(viewer)).length;
+    if (count > 0) nextTurnCount = count;
+  } catch (error) {
+    log.warn("next_turn.count_failed", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+
   return (
     <UnreadCountProvider initial={initialUnreadCount} refresh={refreshUnreadCountAction}>
       <Shell
@@ -55,6 +68,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         accountGroup={menu.accountGroup}
         bottomTabs={menu.bottomTabs}
         userName={user.name}
+        nextTurnCount={nextTurnCount}
       >
         {children}
       </Shell>

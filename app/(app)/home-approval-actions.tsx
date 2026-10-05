@@ -4,6 +4,7 @@ import { createContext, useContext, useRef, useState, type ReactNode } from "rea
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { Button } from "@/ui/button/Button";
+import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { Toast } from "@/ui/toast/Toast";
 import nextTurnStyles from "@/ui/next-turn/NextTurn.module.css";
 import { approveAction } from "@/app/(app)/approvals/actions";
@@ -127,4 +128,10 @@ export function HomeApprovalRow({ labelId, instanceId, version, actions, sheet, 
       <RejectDialog target={rejectTarget} messages={rejectMessages} onClose={() => setRejectTarget(null)} onDone={showToast} />
     </>
   );
+}
+
+// 05-10 §7-7 ERROR — 공급 함수가 실패했을 때 블록 자리 한 줄. `다시 시도`는 이동이 아니라 새로 읽기라 onClick 갈래(클라이언트 함수라 이 파일에 둔다).
+export function HomeNextTurnError() {
+  const router = useRouter();
+  return <ListEmpty tone="error" message="불러오기 실패" action={{ label: "다시 시도", onClick: () => router.refresh() }} />;
 }

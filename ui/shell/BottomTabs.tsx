@@ -22,7 +22,7 @@ export type BottomTabsProps = {
   accountGroup: AccountEntry[];
   /** roleMenu(viewer).adminMenu — 허용된 admin.* 메뉴 전부(D-17 일반화). */
   adminMenu: MenuLink[];
-  /** 「내 차례」 탭 라벨에 붙일 건수 — 데이터 출처가 없는 이 페이즈에서는 생략(undefined)한다. */
+  /** 「내 차례」 탭 라벨에 붙일 건수 — 레이아웃이 공급 함수(domain/next-turn)에서 구해 넘기고, 0이거나 조회가 실패하면 생략(undefined)한다. */
   nextTurnCount?: number;
 };
 

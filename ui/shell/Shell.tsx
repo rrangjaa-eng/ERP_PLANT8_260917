@@ -14,10 +14,12 @@ export type ShellProps = {
   accountGroup: AccountEntry[];
   bottomTabs: BottomTab[];
   userName: string;
+  /** 05-10: 「내 차례」 탭 라벨에 붙일 건수 — 0이면 레이아웃이 넘기지 않아 라벨이 그대로다. */
+  nextTurnCount?: number;
   children: ReactNode;
 };
 
-export function Shell({ topBarMenu, adminMenu, accountGroup, bottomTabs, userName, children }: ShellProps) {
+export function Shell({ topBarMenu, adminMenu, accountGroup, bottomTabs, userName, nextTurnCount, children }: ShellProps) {
   return (
     <div className={styles.shell}>
       {/* §10: 첫 포커스 요소, 포커스 시에만 보임, 1차 버튼 모양. */}
@@ -33,6 +35,7 @@ export function Shell({ topBarMenu, adminMenu, accountGroup, bottomTabs, userNam
         bottomTabs={bottomTabs}
         accountGroup={accountGroup}
         adminMenu={adminMenu}
+        nextTurnCount={nextTurnCount}
       />
     </div>
   );

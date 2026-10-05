@@ -3,13 +3,14 @@ import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/viewer";
 import { REJECT_REASON_EMPTY_MESSAGE, REJECT_REASON_MAX, REJECT_REASON_TOO_LONG_MESSAGE } from "@/domain/approvals";
-import { listNextTurnItems } from "@/domain/next-turn";
+import { listNextTurnItems, type NextTurnEntry } from "@/domain/next-turn";
+import { log } from "@/lib/log";
 import { buildNextTurnView, type NextTurnItem } from "@/ui/next-turn/build-next-turn-view";
 import { NextTurn, nextTurnLabelId } from "@/ui/next-turn/NextTurn";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { toDecision, toSheet } from "@/app/(app)/approvals/sheet-material";
-import { HomeApprovalRow, HomeApprovalsProvider } from "./home-approval-actions";
+import { HomeApprovalRow, HomeApprovalsProvider, HomeNextTurnError } from "./home-approval-actions";
 
 // D-28: 루트가 「내 차례」 홈이다. 미인증이면 로그인으로 보내는 분기는
 // 02-04에서 그대로 유지한다(app/(app)/layout.tsx의 requireSession()이 이미
@@ -22,7 +23,15 @@ export default async function HomePage() {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const entries = await listNextTurnItems(session.viewer, { withDetails: true });
+  // 공급 함수가 실패하면 블록 자리에 오류 한 줄 — 첫 화면 전체가 오류 경계로 떨어지지 않는다(§7-7 ERROR).
+  let entries: NextTurnEntry[] = [];
+  let failed = false;
+  try {
+    entries = await listNextTurnItems(session.viewer, { withDetails: true });
+  } catch (error) {
+    failed = true;
+    log.warn("next_turn.load_failed", { message: error instanceof Error ? error.message : String(error) });
+  }
   const items: NextTurnItem[] = entries.map((entry) => ({
     key: entry.key,
     tag: entry.tag,
@@ -61,7 +70,8 @@ export default async function HomePage() {
       <HomeApprovalsProvider>
         <NextTurn view={view} actionSlots={actionSlots} />
       </HomeApprovalsProvider>
-      {!view.visible ? (
+      {failed ? <HomeNextTurnError /> : null}
+      {!failed && !view.visible ? (
         <ListEmpty message="표시할 항목이 없습니다" action={{ label: "프로젝트 보기", href: "/projects" }} />
       ) : null}
     </ListScreen>

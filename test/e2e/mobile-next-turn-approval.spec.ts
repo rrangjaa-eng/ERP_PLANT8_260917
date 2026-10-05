@@ -8,7 +8,6 @@ import { voidEvidence } from "@/domain/evidence";
 import { EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { submitLeave } from "@/domain/leave";
 import { insertApprovalInstance } from "@/repositories/approvals";
-import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { seoulToday } from "@/lib/dates";
 import { leaveWeekdayRange } from "./leave-dates";
 import { expectSheetDocumentLink, loginPage, setupLeaveOrg, waitForHydration } from "./leave-org";
@@ -186,7 +185,7 @@ test.describe("첫 화면 [막힘] · 6줄 · 탭 수 (05-10 Task 3)", () => {
     const today = seoulToday();
     const org = await setupLeaveOrg(today);
     // 등록되지 않은 종류의 반려 인스턴스 — 공급 함수가 종류를 찾지 못해 던진다(리포지토리 함수로만 만든다).
-    await insertApprovalInstance(SYSTEM_VIEWER, { documentKind: `ghost-${randomUUID().slice(0, 8)}`, documentId: randomUUID(), drafterId: org.drafter.viewer.id, status: "rejected", currentRound: 1 }, db);
+    await insertApprovalInstance(org.drafter.viewer, { documentKind: `ghost-${randomUUID().slice(0, 8)}`, documentId: randomUUID(), drafterId: org.drafter.viewer.id, status: "rejected", currentRound: 1 }, db);
 
     const pm = await loginPage(browser, baseURL, org.drafter, DESKTOP);
     await pm.goto("/");

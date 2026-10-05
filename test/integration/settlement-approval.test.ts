@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { and, asc, eq } from "drizzle-orm";
 import { db, pool } from "@/db/client";
 import { actionLog, approvalInstances, approvalRoutes, approvalSteps, projects, settlementApprovals } from "@/db/schema";
-import { approveDocument, getApprovalView, listMyInbox, loadKindDetails, NotCurrentHolderError, rejectDocument } from "@/domain/approvals";
+import { ApprovalConflictError, approveDocument, getApprovalView, listMyInbox, loadKindDetails, NotCurrentHolderError, rejectDocument } from "@/domain/approvals";
+import { appendActionLog } from "@/repositories/action-log";
 import { getDocumentKind } from "@/domain/approvals/kinds";
 import { isRouteStepSettingKey } from "@/domain/approvals/route-step-settings";
 import { can, ForbiddenError } from "@/domain/permissions/can";
@@ -450,5 +451,21 @@ describe("정산 결재 — 보임 · 되돌리기 거부 갈래 (A14)", () => {
     }
     expect(await instanceOf(documentId)).toMatchObject({ status: "submitted", version: before?.version });
     expect((await documentLogs(documentId)).map((log) => log.actionType)).toEqual(["document_submit"]);
+  });
+
+  it("되돌리기 중 동시 변경 충돌(ApprovalConflictError)은 한 번 다시 읽어 회수로 끝난다 · 회수 로그 한 건", async () => {
+    const fx = await setupSettlementProject();
+    const { documentId } = await submitted(fx.pm, fx.projectId);
+    let calls = 0;
+    const conflictOnce: typeof appendActionLog = (viewer, entry, tx) => {
+      calls += 1;
+      if (calls === 1) return Promise.reject(new ApprovalConflictError("동시 변경"));
+      return appendActionLog(viewer, entry, tx);
+    };
+
+    expect((await withdrawSettlement(fx.pm, { projectId: fx.projectId, undo: true, round: 1 }, { appendActionLog: conflictOnce })).status).toBe("withdrawn");
+    expect(calls).toBe(2);
+    expect((await instanceOf(documentId))?.status).toBe("withdrawn");
+    expect((await documentLogs(documentId)).map((log) => log.actionType)).toEqual(["document_submit", "document_withdraw"]);
   });
 });

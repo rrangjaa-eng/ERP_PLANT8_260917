@@ -224,3 +224,31 @@ test.describe("증빙 첨부 영역 (05 /review B5 · B7)", () => {
     await page.context().close();
   });
 });
+
+test.describe("견적 줄 바꾸기 포커스 플래그 (05 /review B9)", () => {
+  test("같은 줄을 다시 골라 폼이 새로 그려지지 않아도 다음에 여는 다른 지출결의 폼의 첫 포커스를 가로채지 않는다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.pm);
+    const firstId = await openDraft(page, fx, "tracer");
+    const second = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.hold.id] });
+    const secondId = second.created[0]?.expenseId;
+    if (!secondId) throw new Error("두 번째 작성 중 문서를 만들지 못했다");
+
+    // 현재 줄을 그대로 고른다 — 서버가 아무것도 바꾸지 않아 폼은 같은 key로 남는다.
+    await page.getByRole("button", { name: "바꾸기" }).click();
+    const dialog = page.getByRole("dialog", { name: "견적 줄 바꾸기" });
+    await expect(dialog.getByRole("option").first()).toBeVisible();
+    await dialog.getByRole("option", { name: new RegExp(fx.lines.tracer.itemName) }).click();
+    await dialog.getByRole("button", { name: /^이 줄로/ }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page).toHaveURL(new RegExp(`/expenses/${firstId}$`));
+
+    // 앱 안 이동(새로 고침 없이)으로 다른 문서 폼을 연다 — 모듈 상태가 남아 있으면 `바꾸기` 3차가 포커스를 가져간다.
+    await page.evaluate((id) => (window as unknown as { next: { router: { push: (href: string) => void } } }).next.router.push(`/expenses/${id}`), secondId);
+    await expect(page).toHaveURL(new RegExp(`/expenses/${secondId}$`));
+    await waitForHydration(page.getByRole("button", { name: /^임시 저장/ }));
+    await expect(page.locator("#line-pick")).not.toBeFocused();
+    await expect(page.locator(":focus")).toHaveCount(1);
+    await page.context().close();
+  });
+});

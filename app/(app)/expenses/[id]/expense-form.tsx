@@ -602,7 +602,8 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
     }
     if (outcome) {
       setVersion(outcome.version);
-      refocusLineTrigger = true;
+      // 줄이 바뀐 때만(version이 오른다) — 같은 줄을 다시 고르면 폼이 새로 그려지지 않아 플래그가 남아 다음 폼의 첫 포커스를 가로챈다(05 /review B9).
+      if (outcome.version !== base) refocusLineTrigger = true;
       router.refresh();
       return;
     }

@@ -118,6 +118,9 @@ export function Attachments({
   const intents = useRef(new Map<string, string>());
   const counter = useRef(0);
   const nameId = useId();
+  // 05-13(UI-SPEC a11y S4): 영역 버튼의 접근 이름 = 보이는 글자. 칸 라벨(`증빙`)이 `for`로 이름을 덮지 않게 보이는 글자 묶음을 가리킨다 —
+  // 폭에 따라 숨는 쪽(display: none)은 이름에서 빠진다.
+  const pickerTextId = useId();
 
   const uploading = rows.filter((row) => row.state === "uploading").length;
   const reported = useRef(0);
@@ -281,9 +284,18 @@ export function Attachments({
       ) : null}
 
       {canAdd && empty ? (
-        <button id={pickerId} type="button" className={styles.drop} data-dragging={dragging ? "true" : undefined} onClick={() => inputRef.current?.click()}>
-          <span className={styles.pcText}>{`파일을 끌어 놓거나 Ctrl+U · 이미지·PDF ${maxMb}MB`}</span>
-          <span className={styles.phoneText}>{`사진·파일 올리기 · 이미지·PDF ${maxMb}MB`}</span>
+        <button
+          id={pickerId}
+          type="button"
+          className={styles.drop}
+          data-dragging={dragging ? "true" : undefined}
+          aria-labelledby={pickerTextId}
+          onClick={() => inputRef.current?.click()}
+        >
+          <span id={pickerTextId}>
+            <span className={styles.pcText}>{`파일을 끌어 놓거나 Ctrl+U · 이미지·PDF ${maxMb}MB`}</span>
+            <span className={styles.phoneText}>{`사진·파일 올리기 · 이미지·PDF ${maxMb}MB`}</span>
+          </span>
         </button>
       ) : null}
 
@@ -376,9 +388,11 @@ export function Attachments({
       </div>
 
       {canAdd && !empty ? (
-        <button id={pickerId} type="button" className={styles.more} onClick={() => inputRef.current?.click()}>
-          <span className={styles.pcText}>하나 더 · Ctrl+U</span>
-          <span className={styles.phoneText}>하나 더</span>
+        <button id={pickerId} type="button" className={styles.more} aria-labelledby={pickerTextId} onClick={() => inputRef.current?.click()}>
+          <span id={pickerTextId}>
+            <span className={styles.pcText}>하나 더 · Ctrl+U</span>
+            <span className={styles.phoneText}>하나 더</span>
+          </span>
         </button>
       ) : null}
       {!canAdd && lockedText ? <p className={styles.locked}>{lockedText}</p> : null}

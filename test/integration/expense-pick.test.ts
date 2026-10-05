@@ -6,7 +6,7 @@ import { expenses } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
-import { createTeamExpenseDraft, ExpenseConflictError, ExpenseNotFoundError, changeExpenseLine, changeExpenseVendor, createExpenseFromLines, saveExpenseDraft } from "@/domain/expenses";
+import { createTeamExpenseDraft, ExpenseConflictError, ExpenseNotFoundError, changeExpenseLine, changeExpenseVendor, createExpenseFromLines, saveExpenseDraft, withdrawExpense } from "@/domain/expenses";
 import { searchLinesForPick, searchVendorsForPick } from "@/domain/expenses/pick";
 import { GateBlockedError } from "@/domain/rules/gate";
 import { createProject } from "@/domain/projects";
@@ -314,6 +314,7 @@ describe("견적 줄 바꾸기 changeExpenseLine", () => {
     const other = await projectWithLines(fx.pm, `다른 프로젝트-${randomUUID().slice(0, 6)}`, ["다른 줄"], fx.stageOneId);
     const numberedLine = await draftOn(fx.pm, fx.lines.withVendor);
     await submitReadyDraft(fx.pm, numberedLine);
+    await withdrawExpense(fx.pm, { expenseId: numberedLine, undo: true, round: 1 });
     await expect(changeExpenseLine(fx.pm, { expenseId: numberedLine, lineId: other.lineIds[0] ?? "", expectedVersion: 2 })).rejects.toMatchObject({
       message: "번호 있는 문서 · 같은 프로젝트 줄만",
     });
@@ -323,6 +324,7 @@ describe("견적 줄 바꾸기 changeExpenseLine", () => {
       await createTeamExpenseDraft(fx.pm, { idempotencyKey: randomUUID(), fields: { teamExpenseKind: "team_overhead", content: "팀 회식", usageDate: "2026-09-26", vendorId: fx.stageOneId, evidenceType: "tax_invoice", paymentMethod: options.payment[0]?.value ?? null, supply: { currency: "KRW", amount: 440_000, fxRate: 1 } } }, { now: new Date("2026-09-26T03:00:00Z") })
     ).expenseId;
     await submitReadyDraft(fx.pm, team, { now: new Date("2026-09-26T03:00:00Z") });
+    await withdrawExpense(fx.pm, { expenseId: team, undo: true, round: 1 });
     await expect(changeExpenseLine(fx.pm, { expenseId: team, lineId: fx.lines.split, expectedVersion: 2 })).rejects.toMatchObject({
       message: "번호 있는 문서 · 같은 프로젝트 줄만",
     });

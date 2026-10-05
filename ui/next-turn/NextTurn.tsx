@@ -44,7 +44,8 @@ export function NextTurn({ view, moreHref, actionSlots }: NextTurnProps) {
             <span className={styles.grow}>
               {/* 대상은 자기 span을 가진다 — 폰(§7-4 두 줄)에서 .grow가 display:contents로
                   풀리면 대상과 이유가 각자 그리드 칸에 놓여야 하기 때문이다. */}
-              <span className={styles.label} id={item.key ? nextTurnLabelId(item.key) : undefined}>
+              {/* 행동 슬롯이 있는 줄(승인 · 반려)은 대상 글자가 프로그램 포커스를 받는다 — 앞 줄을 승인한 뒤 포커스가 이 줄의 `승인`이 아니라 여기로 온다(05-16). */}
+              <span className={styles.label} id={item.key ? nextTurnLabelId(item.key) : undefined} tabIndex={item.key && actionSlots?.[item.key] ? -1 : undefined}>
                 {item.label}
               </span>
               {item.reason ? <span className={styles.why}> · {item.reason}</span> : null}

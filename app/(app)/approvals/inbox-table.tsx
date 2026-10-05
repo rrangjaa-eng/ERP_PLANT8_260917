@@ -2,7 +2,6 @@
 
 import { useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { Table } from "@/ui/table/Table";
 import type { TableColumn } from "@/ui/table/types";
@@ -17,6 +16,7 @@ import { ConflictLine } from "./conflict-line";
 import { evidenceViewUrl } from "./evidence-url";
 import { INBOX_COLUMN_LABELS } from "./list-columns";
 import { rowApprovalActions } from "./row-actions";
+import { useRefreshThenFocus } from "./refresh-then-focus";
 import { RejectDialog, WithdrawDialog, type DecisionTarget, type RejectMessages } from "./decision-dialogs";
 import leaveStyles from "@/app/(app)/leave/leave.module.css";
 import styles from "./inbox-table.module.css";
@@ -77,7 +77,6 @@ export function InboxTable({
   // 05-01 E5: 숫자 열 머리글(서버 listMyInbox) — null이면 숫자 열을 통째로 그리지 않는다.
   measureHeader: string | null;
 }) {
-  const router = useRouter();
   const [pendingId, setPendingId] = useState<string | null>(null);
   // 행 승인이 동시 처리로 거부되면 그 행 행동 칸에 한 줄 + 3차 `새로 고침`(토스트가 아니다 — 누른 자리 옆).
   const [rowConflict, setRowConflict] = useState<{ rowId: string; message: string } | null>(null);
@@ -89,11 +88,15 @@ export function InboxTable({
   const [rejectTarget, setRejectTarget] = useState<DecisionTarget | null>(null);
   const [withdrawTarget, setWithdrawTarget] = useState<DecisionTarget | null>(null);
   const showToast = (message: string) => setToast({ message, tone: "default" });
+  const refreshThenFocus = useRefreshThenFocus();
   const { execute } = useAction(approveAction, {
     onSuccess: ({ data }) => {
       if (!data) return;
       setToast({ message: approveToast(data), tone: "default" });
-      router.refresh();
+      // 승인한 줄이 사라진 뒤 포커스는 다음 줄의 열기(문서 칸 버튼 · 링크)로 — `승인`으로 가면 Enter 한 번 더로 다음 문서가 승인된다.
+      const next = rows[rows.findIndex((row) => row.id === pendingIdRef.current) + 1];
+      const nextId = next ? documentCellId(next) : null;
+      refreshThenFocus(() => (nextId ? (document.getElementById(nextId)?.querySelector<HTMLElement>("button, a") ?? null) : null));
     },
     onError: ({ error }) => {
       if (error.serverError && pendingIdRef.current) setRowConflict({ rowId: pendingIdRef.current, message: error.serverError });

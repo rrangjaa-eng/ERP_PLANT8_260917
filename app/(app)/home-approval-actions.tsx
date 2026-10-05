@@ -13,6 +13,7 @@ import { ApprovalSheet, type ApprovalSheetItem, type ApproveOutcome } from "@/ap
 import { ConflictLine } from "@/app/(app)/approvals/conflict-line";
 import { evidenceViewUrl } from "@/app/(app)/approvals/evidence-url";
 import { rowApprovalActions } from "@/app/(app)/approvals/row-actions";
+import { useRefreshThenFocus } from "@/app/(app)/approvals/refresh-then-focus";
 import { RejectDialog, WithdrawDialog, type DecisionTarget, type RejectMessages } from "@/app/(app)/approvals/decision-dialogs";
 import styles from "./home-approval-actions.module.css";
 
@@ -20,16 +21,31 @@ import styles from "./home-approval-actions.module.css";
 // PC = 3차 `승인`(확인 없이 즉시) · `반려`(04.1 S6 반려 확인), 폰 = 행 전체가 결재함과 같은 결재 시트를 여는 버튼(Z3 A — 시트는 옮기지 않았다).
 // 처리한 행은 새로 고침으로 사라지므로 토스트는 행 바깥(공급자)에 둔다.
 
-const ToastContext = createContext<(message: string) => void>(() => undefined);
+type HomeApprovalsContextValue = {
+  showToast: (message: string) => void;
+  // 05-16 새로 고침이 끝난 뒤 포커스를 옮긴다 — 처리한 줄이 사라지면 그 DOM이 다음 줄에 재사용돼 포커스가 다음 줄의 `승인`에 남기 때문(Enter 한 번 더 = 다음 문서 승인).
+  refreshThenFocus: (resolveTarget: () => HTMLElement | null) => void;
+};
+
+const HomeApprovalsContext = createContext<HomeApprovalsContextValue>({ showToast: () => undefined, refreshThenFocus: () => undefined });
 
 export function HomeApprovalsProvider({ children }: { children: ReactNode }) {
   const [message, setMessage] = useState<string | null>(null);
+  const refreshThenFocus = useRefreshThenFocus();
   return (
-    <ToastContext.Provider value={setMessage}>
+    <HomeApprovalsContext.Provider value={{ showToast: setMessage, refreshThenFocus }}>
       {children}
       {message ? <Toast message={message} onDismiss={() => setMessage(null)} /> : null}
-    </ToastContext.Provider>
+    </HomeApprovalsContext.Provider>
   );
+}
+
+// 다음 줄(li)의 포커스 대상 — 폰은 줄 전체를 덮는 `열기`, PC는 대상 글자(NextTurn이 승인 행동이 있는 줄의 대상 글자에 tabIndex -1을 준다).
+function nextRowTarget(labelId: string | null): HTMLElement | null {
+  const label = labelId ? document.getElementById(labelId) : null;
+  if (!label) return null;
+  const open = label.closest("li")?.querySelector<HTMLElement>("[data-home-open]");
+  return open && open.getClientRects().length > 0 ? open : label;
 }
 
 // 시트 `승인` — 서버 액션 호출 · 토스트 문구 · 서버 거부 → 충돌 문구 변환(결재함 `approveFromSheet`와 같다).
@@ -57,19 +73,21 @@ export type HomeApprovalRowProps = {
 };
 
 export function HomeApprovalRow({ labelId, instanceId, version, actions, sheet, decision, rejectMessages }: HomeApprovalRowProps) {
-  const router = useRouter();
-  const showToast = useContext(ToastContext);
+  const { showToast, refreshThenFocus } = useContext(HomeApprovalsContext);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [rejectTarget, setRejectTarget] = useState<DecisionTarget | null>(null);
   const [withdrawTarget, setWithdrawTarget] = useState<DecisionTarget | null>(null);
   const [pending, setPending] = useState(false);
   const [conflict, setConflict] = useState<string | null>(null);
   const submittingRef = useRef(false);
+  const actionsRef = useRef<HTMLSpanElement>(null);
+  // 누른 시점의 다음 줄 대상 글자 id — 새로 고침 뒤에는 이 줄이 사라져 DOM으로 다시 찾을 수 없다.
+  const nextLabelIdRef = useRef<string | null>(null);
   const { execute } = useAction(approveAction, {
     onSuccess: ({ data }) => {
       if (!data) return;
       showToast(approveToast(data));
-      router.refresh();
+      refreshThenFocus(() => nextRowTarget(nextLabelIdRef.current));
     },
     onError: ({ error }) => {
       if (error.serverError) setConflict(error.serverError);
@@ -84,7 +102,7 @@ export function HomeApprovalRow({ labelId, instanceId, version, actions, sheet, 
 
   return (
     <>
-      <span className={styles.pcActions}>
+      <span ref={actionsRef} className={styles.pcActions}>
         {actions.includes("approve") && cell.showApprove ? (
           <Button
             variant="tertiary"
@@ -93,6 +111,7 @@ export function HomeApprovalRow({ labelId, instanceId, version, actions, sheet, 
             onClick={() => {
               if (submittingRef.current) return;
               submittingRef.current = true;
+              nextLabelIdRef.current = actionsRef.current?.closest("li")?.nextElementSibling?.querySelector('[id^="next-turn-label-"]')?.id ?? null;
               setPending(true);
               setConflict(null);
               execute({ instanceId, expectedVersion: version });
@@ -109,7 +128,7 @@ export function HomeApprovalRow({ labelId, instanceId, version, actions, sheet, 
         ) : null}
         {conflict ? <ConflictLine message={conflict} /> : null}
       </span>
-      <button type="button" className={[nextTurnStyles.tertiary, styles.phoneTap].join(" ")} aria-haspopup="dialog" aria-describedby={labelId} onClick={() => setSheetOpen(true)}>
+      <button type="button" data-home-open="" className={[nextTurnStyles.tertiary, styles.phoneTap].join(" ")} aria-haspopup="dialog" aria-describedby={labelId} onClick={() => setSheetOpen(true)}>
         열기
       </button>
       <ApprovalSheet

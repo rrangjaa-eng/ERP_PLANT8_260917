@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/viewer";
 import "@/app/(app)/document-kinds";
 import { getApprovalView, previewRoute, RouteBlockedError } from "@/domain/approvals";
+import { can } from "@/domain/permissions/can";
 import { EXPENSE_DOCUMENT_KIND, ExpenseNotFoundError, getExpense, listExpenseCurrencies, listExpenseFormOptions, previewExpense } from "@/domain/expenses";
 import { teamKindOptions } from "../team-kind-options";
 import { getEvidenceActions, listEvidence } from "@/domain/evidence";
@@ -35,10 +36,11 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
   if (!expense) notFound();
 
   // 문서 보임(getExpense = canSeeExpense)이 위에서 통과했다 — 결재 당사자가 아닌 팀장 · 전사 보는 사람도 상태 · 결재선을 읽기만 한다(05-08 검토 #1).
-  const [evidence, maxMb, view] = await Promise.all([
+  const [evidence, maxMb, view, canWrite] = await Promise.all([
     listEvidence(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: id }),
     getSettingValue(EVIDENCE_MAX_SIZE_MB),
     getApprovalView(viewer, { kind: EXPENSE_DOCUMENT_KIND, documentId: id, readOnlyVisible: true }),
+    can(viewer, "expenses", "write"),
   ]);
   const files: AttachmentFile[] = evidence.flatMap((file) =>
     file.id && file.originalName && !file.voidedAt && file.createdAt
@@ -47,7 +49,8 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
   );
 
   const resubmitting = Boolean(view?.actions?.includes("resubmit"));
-  if ((view || expense.number) && !resubmitting) {
+  // 05 /review C1: 지출결의 쓰기 권한이 빠진 기안자는 자기 작성 중 문서도 폼(저장 · 제출)이 아니라 문서 화면으로 읽는다(다시 제출도 쓰기 권한이 연다).
+  if ((view || expense.number || !canWrite) && !resubmitting) {
     // 05-09: 문서 화면은 무효 행도 그린다(처리자 · 시각 · 사유) — 파일 행 3차는 서버가 정한 evidenceActions대로.
     const evidenceActions = await getEvidenceActions(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: id });
     const documentFiles: AttachmentFile[] = evidence.flatMap((file) =>

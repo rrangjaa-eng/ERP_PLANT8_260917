@@ -1,6 +1,13 @@
+import { randomUUID } from "node:crypto";
 import { test, expect, type Locator, type Page } from "@playwright/test";
-import { createExpenseFromLines } from "@/domain/expenses";
-import { delayServerActions, loginPage, waitForHydration } from "./leave-org";
+import { createExpenseFromLines, createTeamExpenseDraft } from "@/domain/expenses";
+import { createAccount } from "@/domain/auth/accounts";
+import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { seoulToday } from "@/lib/dates";
+import { insertRole } from "@/repositories/roles";
+import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
+import { delayServerActions, loginPage, waitForHydration, type Person } from "./leave-org";
 import { setupExpenseE2E, uniqueReceipt, type ExpenseE2E, type LineKey } from "./expense-fixture";
 
 // 05-06(EXP-15 · UX-06 · UI-SPEC S5 · S6): 지출결의 폼의 즉시 재계산 한 줄과 제출 막힘 이유. 계산 · 판정은 서버 하나 — 화면은 서버가 보낸
@@ -249,6 +256,40 @@ test.describe("견적 줄 바꾸기 포커스 플래그 (05 /review B9)", () => 
     await waitForHydration(page.getByRole("button", { name: /^임시 저장/ }));
     await expect(page.locator("#line-pick")).not.toBeFocused();
     await expect(page.locator(":focus")).toHaveCount(1);
+    await page.context().close();
+  });
+});
+
+// 05 /review C1(adversarial F1): 기안자의 지출결의 쓰기 권한이 그 뒤 빠지면 자기 작성 중 문서는 오류 화면이 아니라 읽기 화면이다.
+test.describe("쓰기 권한이 빠진 기안자의 작성 중 문서 (05 /review C1)", () => {
+  test("오류 화면 없이 문서 읽기 화면이 서고 폼(임시 저장 · 제출)이 없다", async ({ browser, baseURL }) => {
+    const suffix = randomUUID().slice(0, 8);
+    const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E권한본부-${suffix}` });
+    const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E권한팀-${suffix}` });
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E쓰기회수-${suffix}`, workScope: "company" });
+    for (const action of ["view", "write"] as const) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action, allowed: true });
+    for (const infoItem of ["expense.value", "expense.amount", "approval.value", "project.value", "quote.amount", "vendor.value", "team.value", "person.value"]) {
+      await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+    }
+    const email = `e2e-nowrite-${randomUUID()}@example.test`;
+    const name = `회수${suffix.slice(0, 4)}`;
+    const { userId, tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name, roleId: role.id });
+    const today = seoulToday();
+    await assignTeam(SYSTEM_VIEWER, { userId, teamId: team.id, effectiveFrom: `${today.slice(0, 4)}-01-01` });
+    const drafter: Person = { name, email, password: tempPassword, viewer: { id: userId, roleId: role.id } };
+    const content = `권한회수 회식-${suffix}`;
+    const { expenseId } = await createTeamExpenseDraft(drafter.viewer, {
+      idempotencyKey: randomUUID(),
+      fields: { teamExpenseKind: "team_overhead", usageDate: today, content },
+    });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "write", allowed: false });
+
+    const page = await loginPage(browser, baseURL, drafter);
+    await page.goto(`/expenses/${expenseId}`);
+    await expect(page.getByRole("heading", { level: 1 })).toContainText(content);
+    await expect(page.getByText("지출결의 불러오기 실패")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^임시 저장/ })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /제출/ })).toHaveCount(0);
     await page.context().close();
   });
 });

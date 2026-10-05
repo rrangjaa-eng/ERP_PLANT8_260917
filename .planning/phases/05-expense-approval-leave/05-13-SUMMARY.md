@@ -158,6 +158,21 @@ status: halted
 - 미리보기가 서버 오류(금액 상한 초과)를 조용히 버린다 — deferred-items 05-13.
 - 회귀 실행 중 `mobile-expense-form.spec.ts:265` 1280 썸네일 폴링 1건 실패(동시 `pnpm test:unit` 부하 — 단독 9/9) · 전체 desktop 우발 실행의 20건 실패 — deferred-items 05-13(전체 E2E는 CI 몫).
 
+## 게이트 감사 수정
+웨이브 14 감사(D1–D3 · U1 · U2)와 deferred-items 두 건을 고쳤다. 시험이 먼저(RED 커밋) → 고침(GREEN 커밋). 점검표 `docs/design/checks/2026-10-05-05-13-gate-audit-fixes.md`.
+
+| 항목 | 고침 | 커밋(시험 → 고침) |
+|---|---|---|
+| D1 포커스 가림 (+ U2 공통 처리) | 폰 고정 행동 줄(`data-fixed-bar`) 공통 규칙 — `ui/shell/FixedBarInset`이 줄 위 끝 ~ 화면 아래 끝을 실측해 `--fixed-bar-inset`, `globals.css`가 문서 `scroll-padding-bottom`(수화 전은 토큰 기본값). 연차 폼 줄에 표식 추가. 지출결의 폼 · 문서, 연차 폼 · 문서 375 · 320 한 잣대(`mobile-fixed-bar-focus.spec.ts`: 칸 아래 끝 ≤ 줄 위 끝) | 76bed624 → c8060847 |
+| D2 미리보기 서버 오류 | `expense-form.tsx` — serverError를 공급가액 칸 오류 줄(aria-invalid · describedby)로, 계산 줄은 옅은 글자 `계산 불가`. 다음 정상 미리보기가 둘 다 걷음(1280 · 375) | 08225bd6 → 12297ba6 |
+| D3 CLS 0.225 간헐 | 원인은 머리 줄이 아니라 글꼴 교체: Pretendard 서브셋 요청이 서버 렌더 본문이 드러난 뒤에야 시작해 본문보다 늦게 오면 기간 줄(73→44)과 견적 표 행(69→47 · 52→44)의 줄바꿈이 바뀌어 아래가 움직임. `app/(app)/layout.tsx`가 자주 쓰는 서브셋 9개(83~91, 어차피 받는 파일)를 preload. 첫 로드 24번 CLS 0(고치기 전 5/24 = 0.225), 스펙 팀장 · 대표 각 10번 < 0.1 | d957f83a · ee51ef0c → f5cb63b5 |
+| 썸네일 폴링 경합 `mobile-expense-form.spec.ts:265` | 제품이 아니라 스펙 대기가 틀렸다 — 미리보기 `<img>`는 올리는 행에 약 0.4초(380~776ms)만 있다(UI-SPEC S4). 서버 액션을 풀 때까지 붙잡고 읽는다. 부하(12 프로세스)에서 4/15 실패 → 15/15, 모바일 지출결의 스펙 넷 `--repeat-each=5` 125/125 | (부하 실측) → a6374d5d |
+| 계산 줄 꼬리 한 덩어리 (U1) | 카드 답 대기 · 추천안 적용 → **사용자 확정 (10/5 19:52)** 「끝말도 한 덩어리」. 꼬리 `… 규칙`을 inline-block(`.taxTail`)으로 — 통째로 다음 줄, 한 줄 폭보다 긴 이름만 안에서 꺾임 | 29a2dff4 → a9cf5656 |
+
+검증: lint · typecheck 0 · `pnpm test:unit` 254 files 3889 · CI=true E2E desktop + mobile-375 touched 53 + `mobile-leave-list` 3 · 모바일 지출결의 넷 ×5 125. 통합: `domain/` · `repositories/` 변경 없음(`previewExpense` 불변)이라 돌리지 않았다.
+- 고치지 않은 것: 글꼴이 1.5초 넘게 늦으면(preload가 같이 늦는 경우) 견적 표 행 줄바꿈 변화 CLS 0.149가 남는다 — 대체 글꼴 지표를 Pretendard에 맞추는 일이라 서체 결정(DECISIONS 2026-09-18 `font-display: swap`)과 걸려 있어 이 수정 범위 밖.
+- 과정 위반 한 건: deferred-items 편집을 한 번 python으로 했다(내용 동일, `git checkout` 뒤 Edit로 다시 씀).
+
 ## Next
 - 오케스트레이터: 독립 DOM 감사(아래 범위) → 위반 고침 → 이 SUMMARY 표 채움. 그 뒤 Task 3 checkpoint를 사용자에게.
 

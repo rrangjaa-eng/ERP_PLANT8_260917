@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { expenses } from "@/db/schema";
+import { expenses, quoteLines } from "@/db/schema";
+import { saveQuoteLines } from "@/domain/quotes/lines";
+import { createRevisionFromCurrent } from "@/domain/quotes/revisions";
 import { createExpenseFromLines, ExpenseFieldError, getExpense, saveExpenseDraft } from "@/domain/expenses";
 import { addApprovedRevision, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
 
@@ -117,5 +119,30 @@ describe("차수 계보(D-66) — 이전 차수 줄의 앞 회차", () => {
     await save(fx, second, { supply: { currency: "KRW", amount: 4_000_000, fxRate: 1 } });
     expect(await submitReadyDraft(fx.pm, second)).toMatchObject({ kind: "submitted", number: "26001-0002" });
     expect(await expenseRow(second)).toMatchObject({ installment: true, installmentSeq: 2 });
+  });
+
+  // 05 /review C7(adversarial F6): 계보 걷기(제출 · 미리보기)와 줄 표 · 골라내기(resolveLinkedDocumentsByLineage)는 둘 다 보관 안 된 줄만 본다.
+  // 둘이 어긋나려면 ⓐ 번호 문서가 계보에 있는 줄을 보관하거나 ⓑ 한 줄이 두 줄로 복사돼야 하는데, 두 경로 모두 막혀 있음을 보인다.
+  it("번호 문서가 계보에 있는 줄은 보관되지 않고, 차수 복사는 지금 차수에서만이라 한 줄은 한 줄로만 이어진다 (C7)", async () => {
+    const fx = await setupExpenseProject();
+    const first = await newDraft(fx, fx.lines.split);
+    await save(fx, first, { installment: true, supply: { currency: "KRW", amount: 6_000_000, fxRate: 1 } });
+    expect(await submitReadyDraft(fx.pm, first)).toMatchObject({ kind: "submitted", number: "26001-0001" });
+    const extra = await addApprovedRevision(fx, []);
+    const copied = extra.lineIds.get("영상 제작(분할)") ?? "";
+
+    // ⓐ 지금 차수의 복사 줄 — 앞 차수 줄의 번호 문서가 계보로 이어져 보관(삭제)이 막힌다. 앞 차수 줄은 지금 차수가 아니라 저장 자체가 막힌다.
+    await expect(saveQuoteLines(fx.pm, extra.revisionId, { rows: [], archivedLineIds: [copied] })).rejects.toMatchObject({ message: "연결 문서 있음 · 삭제 대신 취소" });
+    await expect(saveQuoteLines(fx.pm, fx.revisionId, { rows: [], archivedLineIds: [fx.lines.split] })).rejects.toMatchObject({
+      message: "다른 사람이 새 차수를 만듦 · 새로 고침",
+    });
+    expect((await db.select().from(quoteLines).where(eq(quoteLines.id, copied)))[0]?.archivedAt).toBeNull();
+
+    // ⓑ 이전 차수에서 다시 복사할 수 없다 — 차수 복사는 지금 차수에서만이고, 차수를 거듭해도 줄마다 바로 다음 복사본은 하나다.
+    await expect(createRevisionFromCurrent(fx.pm, { projectId: fx.projectId, fromRevisionId: fx.revisionId })).rejects.toThrow();
+    await createRevisionFromCurrent(fx.pm, { projectId: fx.projectId, fromRevisionId: extra.revisionId });
+    for (const lineId of [fx.lines.split, copied]) {
+      expect(await db.select({ id: quoteLines.id }).from(quoteLines).where(eq(quoteLines.copiedFromLineId, lineId))).toHaveLength(1);
+    }
   });
 });

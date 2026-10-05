@@ -172,6 +172,33 @@ const vat = (rate: number, vatKrw: number, payableKrw: number): Computed => ({
   payableKrw,
 });
 
+// 05 /review A14(testing): 입구 unavailable 갈래 · none 규칙 · 공급가액 0원 경계.
+describe("computeExpenseTax — 입구 · none · 0원", () => {
+  const NONE_ITEMS = [
+    ...CODE_ITEMS,
+    { value: "card_receipt", taxRule: { ruleKind: "none" } },
+    { value: "broken_rule", taxRule: { ruleKind: "unknown_kind" } },
+  ] as unknown as CodeItemRow[];
+  const withNone = (): Partial<ExpenseTaxDeps> => ({ ...deps(), listCodeItems: () => Promise.resolve(NONE_ITEMS) });
+
+  it("증빙 종류 없음 · 공급가액 없음 · 코드표에 없는 증빙 종류 · 깨진 세금 규칙 → unavailable", async () => {
+    expect(await computeExpenseTax(SYSTEM_VIEWER, { ...doc("tax_invoice", 1_000_000), evidenceType: null }, withNone())).toEqual({ unavailable: true });
+    expect(await computeExpenseTax(SYSTEM_VIEWER, { ...doc("tax_invoice", 0), supplyAmountKrw: null }, withNone())).toEqual({ unavailable: true });
+    expect(await computeExpenseTax(SYSTEM_VIEWER, doc("zz_not_in_table", 1_000_000), withNone())).toEqual({ unavailable: true });
+    expect(await computeExpenseTax(SYSTEM_VIEWER, doc("broken_rule", 1_000_000), withNone())).toEqual({ unavailable: true });
+  });
+
+  it("none 규칙 → 세금 0 · 지급 총액 = 공급가액 · 세율 없음", async () => {
+    const result = await computeExpenseTax(SYSTEM_VIEWER, doc("card_receipt", 1_234_567), withNone());
+    expect(result).toMatchObject({ ruleKind: "none", rate: null, historizedId: null, vatKrw: 0, withholdingKrw: 0, companyBorneKrw: 0, payableKrw: 1_234_567 });
+  });
+
+  it("공급가액 0원 → 부가세 · 원천징수 0 · 지급 총액 0", async () => {
+    expect(await computeExpenseTax(SYSTEM_VIEWER, doc("tax_invoice", 0), withNone())).toMatchObject({ ruleKind: "vat_surcharge", vatKrw: 0, payableKrw: 0 });
+    expect(await computeExpenseTax(SYSTEM_VIEWER, doc("business_income", 0), withNone())).toMatchObject({ ruleKind: "withholding", withholdingKrw: 0, payableKrw: 0 });
+  });
+});
+
 describe("taxDriftText", () => {
   it("저장 10% · 13,640,000 vs 지금 12% · 13,888,000 → 세율 바뀜 한 줄", () => {
     const drift = taxDriftText(vat(0.1, 1_240_000, 13_640_000), vat(0.12, 1_488_000, 13_888_000));

@@ -100,6 +100,17 @@ export async function findExpenseApprovalStatus(
   return row?.status ?? null;
 }
 
+// 05 /review A7 — 여러 문서의 결재 인스턴스 상태(문서 id → 상태, 인스턴스 없는 문서는 없음)를 한 쿼리로.
+export async function findExpenseApprovalStatuses(viewer: Viewer, input: { documentKind: string; documentIds: string[] }): Promise<Map<string, string>> {
+  void viewer;
+  if (input.documentIds.length === 0) return new Map();
+  const rows = await db
+    .select({ documentId: approvalInstances.documentId, status: approvalInstances.status })
+    .from(approvalInstances)
+    .where(and(eq(approvalInstances.documentKind, input.documentKind), inArray(approvalInstances.documentId, input.documentIds)));
+  return new Map(rows.map((row) => [row.documentId, row.status]));
+}
+
 export type ExpenseDraftFields = Partial<
   Pick<
     ExpenseRow,

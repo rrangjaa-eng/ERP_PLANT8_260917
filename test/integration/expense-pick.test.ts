@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
-import { db } from "@/db/client";
+import { db, pool } from "@/db/client";
 import { expenses } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
@@ -241,6 +241,37 @@ describe("견적 줄 골라내기 searchLinesForPick · pick", () => {
     const hidden = await viewerWithoutVendorValue();
     await expect(searchLinesForPick(hidden, { mode: "pick", query: "무대" })).rejects.toThrow();
     expect(JSON.stringify(await searchLinesForPick(fx.pm, { mode: "pick" }))).not.toContain("tax_invoice");
+  });
+});
+
+describe("견적 줄 골라내기 쿼리 수 (A7 · performance)", () => {
+  // 후보 프로젝트 하나에 거래처가 다른 줄 둘 · 그중 하나는 제출 문서로 닫힌 줄.
+  async function closedLineProject(pm: Viewer, tag: string): Promise<void> {
+    const vendor = await vendorNamed(`쿼리수거래처-${tag}`, "tax_invoice");
+    const { lineIds } = await projectWithLines(pm, `쿼리수프로젝트-${tag}`, [`닫힌줄-${tag}`, `열린줄-${tag}`], vendor.id);
+    const created = await createExpenseFromLines(pm, { lineIds: [lineIds[0] ?? ""] });
+    const result = await submitReadyDraft(pm, created.created[0]?.expenseId ?? "");
+    if (result.kind !== "submitted") throw new Error("제출 실패");
+  }
+
+  async function queriesOfPick(viewer: Viewer): Promise<number> {
+    const spy = vi.spyOn(pool, "query");
+    try {
+      await searchLinesForPick(viewer, { mode: "pick" });
+      return spy.mock.calls.length;
+    } finally {
+      spy.mockRestore();
+    }
+  }
+
+  it("후보 프로젝트가 늘어도 검색 한 번의 쿼리 수가 같다(프로젝트 · 줄 · 거래처 · 결재 상태를 묶어 읽는다)", async () => {
+    const fx = await setupExpenseProject();
+    await closedLineProject(fx.pm, "a");
+    const one = await queriesOfPick(fx.pm);
+    for (const tag of ["b", "c", "d"]) await closedLineProject(fx.pm, tag);
+    const result = await searchLinesForPick(fx.pm, { mode: "pick" });
+    expect(result.rows.filter((row) => row.selectable === false && row.reason?.includes("결재 중"))).toHaveLength(4);
+    expect(await queriesOfPick(fx.pm)).toBe(one);
   });
 });
 

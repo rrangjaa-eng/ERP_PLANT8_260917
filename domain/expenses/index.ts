@@ -75,9 +75,9 @@ import {
 import { listCodeItems } from "@/repositories/code-tables";
 import { countActiveByOwner, listAliveByOwners, markOwnerFilesRemoved, restoreOwnerFilesRemovedAt } from "@/repositories/files";
 import { findProjectById, lockProjectForWrite, type ProjectRow } from "@/repositories/projects";
-import { findLatestQuoteRevision, findQuoteRevisionById, summarizeRevisions } from "@/repositories/quote-revisions";
-import { findQuoteLineById, listLineageLinesByProject, listQuoteLinesByRevision, type QuoteLineRow } from "@/repositories/quote-lines";
-import { findUserById } from "@/repositories/users";
+import { findLatestQuoteRevision, findQuoteRevisionById, listLatestQuoteRevisionsByProjects, type QuoteRevisionRow } from "@/repositories/quote-revisions";
+import { findQuoteLineById, listLineageLinesByProjects, listQuoteLinesByRevision, type QuoteLineRow } from "@/repositories/quote-lines";
+import { findUserById, findUserNamesByIds } from "@/repositories/users";
 import { findVendorById } from "@/repositories/vendors";
 import {
   findDeletedDraftById,
@@ -452,27 +452,33 @@ export function doorFor(line: QuoteLineRow, numbered: readonly NumberedLineExpen
 // D-66 — 현재 차수 줄마다 계보(copied_from_line_id) 사슬 전체의 번호 있는 문서(제출 순). 줄 파생 상태
 // (domain/quotes/lines.ts linkedDocumentsByLine)와 같은 해석이라 이전 차수에 제출한 줄은 지금 차수에서도 문이 닫힌다.
 export async function listNumberedByLineage(viewer: Viewer, projectId: string): Promise<Map<string, NumberedLineExpense[]>> {
-  const lineage: LineageLine[] = [];
-  for (const summary of await summarizeRevisions(viewer, projectId)) {
-    for (const line of await listQuoteLinesByRevision(viewer, summary.id)) {
-      lineage.push({ id: line.id, revisionSeq: summary.seq, copiedFromLineId: line.copiedFromLineId });
-    }
-  }
+  return (await listNumberedByLineageMany(viewer, [projectId])).get(projectId) ?? new Map();
+}
+
+// 여러 프로젝트를 한 번에(계보 줄 한 쿼리 + 번호 문서 한 쿼리) — 골라내기가 후보 프로젝트마다 따로 읽지 않는다(05 /review A7).
+export async function listNumberedByLineageMany(viewer: Viewer, projectIds: string[]): Promise<Map<string, Map<string, NumberedLineExpense[]>>> {
+  const lineage = await listLineageLinesByProjects(viewer, projectIds);
   const docsByLineId = new Map<string, NumberedLineExpense[]>();
   for (const doc of await listNumberedByLines(viewer, lineage.map((line) => line.id))) {
     docsByLineId.set(doc.quoteLineId, [...(docsByLineId.get(doc.quoteLineId) ?? []), doc]);
   }
-  const { byCurrentLine } = resolveLinkedDocumentsByLineage(lineage, docsByLineId);
-  for (const docs of byCurrentLine.values()) {
-    docs.sort((a, b) => (a.submittedAt?.getTime() ?? 0) - (b.submittedAt?.getTime() ?? 0) || a.id.localeCompare(b.id));
+  const linesByProject = new Map<string, LineageLine[]>();
+  for (const line of lineage) linesByProject.set(line.projectId, [...(linesByProject.get(line.projectId) ?? []), line]);
+  const result = new Map<string, Map<string, NumberedLineExpense[]>>();
+  for (const [projectId, lines] of linesByProject) {
+    const { byCurrentLine } = resolveLinkedDocumentsByLineage(lines, docsByLineId);
+    for (const docs of byCurrentLine.values()) {
+      docs.sort((a, b) => (a.submittedAt?.getTime() ?? 0) - (b.submittedAt?.getTime() ?? 0) || a.id.localeCompare(b.id));
+    }
+    result.set(projectId, byCurrentLine);
   }
-  return byCurrentLine;
+  return result;
 }
 
 // D-66 — 한 줄의 계보 사슬(그 줄 → copied_from_line_id를 거슬러 이전 차수 줄)의 번호 있는 문서(제출 순). 회차 상한 · 회차 번호 ·
 // 문(④) 판정이 생성 · 줄 표(listNumberedByLineage)와 같은 사슬을 본다. 제출은 tx로 부른다.
 async function listNumberedByLineChain(viewer: Viewer, input: { projectId: string; lineId: string }, tx?: DbOrTx): Promise<NumberedLineExpense[]> {
-  const byId = new Map((await listLineageLinesByProject(viewer, input.projectId, tx)).map((line) => [line.id, line]));
+  const byId = new Map((await listLineageLinesByProjects(viewer, [input.projectId], tx)).map((line) => [line.id, line]));
   const chain: string[] = [];
   for (let cursor: string | null = input.lineId; cursor && !chain.includes(cursor); cursor = byId.get(cursor)?.copiedFromLineId ?? null) chain.push(cursor);
   return listNumberedByLines(viewer, chain, tx);
@@ -485,16 +491,41 @@ export async function loadProjectFacts(viewer: Viewer, projectId: string, gateEn
   const projectRow = await findProjectById(viewer, projectId);
   if (!projectRow) return null;
   const latest = await findLatestQuoteRevision(viewer, projectId);
+  const pmName = async () => (await findUserById(viewer, projectRow.pmUserId))?.name ?? "";
+  return projectFactsFrom(viewer, projectRow, latest, pmName, gateEnabled);
+}
+
+// 여러 프로젝트(이미 읽은 행)를 한 번에 — 최신 차수 · 담당 PM 이름을 묶어 읽는다(골라내기 후보, 05 /review A7).
+export async function loadProjectFactsMany(viewer: Viewer, projectRows: ProjectRow[], gateEnabled: boolean): Promise<Map<string, ProjectFacts>> {
+  const ids = projectRows.map((row) => row.id);
+  const [latestByProject, pmNames] = await Promise.all([
+    listLatestQuoteRevisionsByProjects(viewer, ids),
+    findUserNamesByIds(viewer, [...new Set(projectRows.map((row) => row.pmUserId))]),
+  ]);
+  const result = new Map<string, ProjectFacts>();
+  for (const row of projectRows) {
+    const pmName = () => Promise.resolve(pmNames.get(row.pmUserId) ?? "");
+    result.set(row.id, await projectFactsFrom(viewer, row, latestByProject.get(row.id) ?? null, pmName, gateEnabled));
+  }
+  return result;
+}
+
+async function projectFactsFrom(
+  viewer: Viewer,
+  projectRow: ProjectRow,
+  latest: QuoteRevisionRow | null,
+  pmName: () => Promise<string>,
+  gateEnabled: boolean,
+): Promise<ProjectFacts> {
   if (projectRow.status === "completed") return { project: projectRow, latestRevisionId: latest?.id ?? null, tableGateReason: PROJECT_COMPLETED };
   if (!latest) return { project: projectRow, latestRevisionId: null, tableGateReason: null };
-  const pm = await findUserById(viewer, projectRow.pmUserId);
   const decision = await gate(projectRow, "quote.customer-approval", {
     status: projectRow.status,
     revisionSeq: latest.seq,
     revisionApproved: latest.customerApprovedAt !== null,
     gateEnabled,
     actorIsAssignedPm: projectRow.pmUserId === viewer.id,
-    pmName: pm?.name ?? "",
+    pmName: await pmName(),
   });
   return { project: projectRow, latestRevisionId: latest.id, tableGateReason: decision.allowed ? null : decision.reason };
 }

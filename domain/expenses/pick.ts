@@ -12,8 +12,8 @@ import {
   ExpenseNotFoundError,
   lineExecution,
   lineRemainingText,
-  listNumberedByLineage,
-  loadProjectFacts,
+  listNumberedByLineageMany,
+  loadProjectFactsMany,
   numberedSupplyText,
   staticLineBlock,
 } from "@/domain/expenses";
@@ -22,10 +22,11 @@ import { getSettingValue } from "@/domain/settings/registry";
 import { PROJECT_CUSTOMER_APPROVAL_GATE } from "@/domain/settings/keys";
 import type { Money } from "@/domain/money";
 import { seoulToday } from "@/lib/dates";
-import { findExpenseApprovalStatus, findExpenseById, listPickProjects } from "@/repositories/expenses";
+import type { NumberedLineExpense } from "@/repositories/expenses";
+import { findExpenseApprovalStatuses, findExpenseById, listPickProjects } from "@/repositories/expenses";
 import { findProjectById } from "@/repositories/projects";
-import { listQuoteLinesByRevision } from "@/repositories/quote-lines";
-import { listVendorsForPick, findVendorById } from "@/repositories/vendors";
+import { listQuoteLinesByRevisions, type QuoteLineRow } from "@/repositories/quote-lines";
+import { findVendorNamesByIds, listVendorsForPick } from "@/repositories/vendors";
 
 // 05-07 골라내기(S14) 서버 판정 — 행마다 고를 수 있음 · 이유 · 그룹을 서버가 만든다. 행은 투영 DTO다(폼 선택지도 `registerDto`된
 // DTO — 누수 스캔 DTO 축이 본다). 한 번에 50행까지, 넘으면 truncated.
@@ -144,19 +145,30 @@ export async function searchLinesForPick(
   }
 
   const lowered = query.toLowerCase();
-  const vendorNames = new Map<string, string | null>();
-  const vendorNameOf = async (vendorId: string | null): Promise<string | null> => {
-    if (!vendorId) return null;
-    if (!vendorNames.has(vendorId)) vendorNames.set(vendorId, (await findVendorById(viewer, vendorId))?.name ?? null);
-    return vendorNames.get(vendorId) ?? null;
-  };
+  // 후보 프로젝트의 사실 · 현재 차수 줄 · 계보 문서 · 거래처 이름 · 결재 상태를 묶어 읽는다(후보마다 따로 읽지 않는다 — 05 /review A7).
+  const eligible = candidates.filter((candidate) => candidate.pmUserId === viewer.id || coversProjectTeam(teamScope, candidate.teamId));
+  const factsByProject = await loadProjectFactsMany(viewer, eligible, gateEnabled);
+  const listed = eligible.filter((candidate) => {
+    const facts = factsByProject.get(candidate.id);
+    return Boolean(facts?.latestRevisionId) && !(facts?.tableGateReason && input.mode === "pick");
+  });
+  const [allLines, numberedByProject] = await Promise.all([
+    listQuoteLinesByRevisions(viewer, listed.flatMap((candidate) => factsByProject.get(candidate.id)?.latestRevisionId ?? [])),
+    listNumberedByLineageMany(viewer, listed.map((candidate) => candidate.id)),
+  ]);
+  const linesByRevision = new Map<string, QuoteLineRow[]>();
+  for (const line of allLines) linesByRevision.set(line.revisionId, [...(linesByRevision.get(line.revisionId) ?? []), line]);
+  const numberedIds = [...numberedByProject.values()].flatMap((byLine) => [...byLine.values()].flat().map((doc) => doc.id));
+  const [vendorNames, statuses] = await Promise.all([
+    findVendorNamesByIds(viewer, [...new Set(allLines.flatMap((line) => (line.vendorId ? [line.vendorId] : [])))]),
+    findExpenseApprovalStatuses(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, documentIds: [...new Set(numberedIds)] }),
+  ]);
 
   const groups: PickLineGroupDto[] = [];
   const rows: PickLineOptionDto[] = [];
-  for (const candidate of candidates) {
+  for (const candidate of eligible) {
     if (rows.length > PICK_LIMIT) break;
-    if (candidate.pmUserId !== viewer.id && !coversProjectTeam(teamScope, candidate.teamId)) continue;
-    const facts = await loadProjectFacts(viewer, candidate.id, gateEnabled);
+    const facts = factsByProject.get(candidate.id);
     if (!facts?.latestRevisionId) continue;
     const label = `${candidate.number} ${candidate.name}`;
     if (facts.tableGateReason && input.mode === "pick") {
@@ -165,14 +177,14 @@ export async function searchLinesForPick(
       continue;
     }
 
-    const lines = (await listQuoteLinesByRevision(viewer, facts.latestRevisionId)).filter((line) => line.archivedAt === null);
+    const lines = (linesByRevision.get(facts.latestRevisionId) ?? []).filter((line) => line.archivedAt === null);
     lines.sort((a, b) => a.sortOrder - b.sortOrder || a.id.localeCompare(b.id));
     const projectMatches = lowered === "" || candidate.name.toLowerCase().includes(lowered) || candidate.number.toLowerCase().includes(lowered);
-    const numbered = await listNumberedByLineage(viewer, candidate.id);
+    const numbered = numberedByProject.get(candidate.id) ?? new Map<string, NumberedLineExpense[]>();
 
     const projectRows: PickLineOptionDto[] = [];
     for (const [index, line] of lines.entries()) {
-      const vendorName = await vendorNameOf(line.vendorId);
+      const vendorName = line.vendorId ? (vendorNames.get(line.vendorId) ?? null) : null;
       if (!projectMatches && !line.itemName.toLowerCase().includes(lowered) && !(vendorName ?? "").toLowerCase().includes(lowered)) continue;
       const docs = numbered.get(line.id) ?? [];
       const door = doorFor(line, docs);
@@ -190,7 +202,7 @@ export async function searchLinesForPick(
           reason = "거래처 없음";
         } else {
           const latest = docs.find((doc) => doc.id === door.latest?.id) ?? docs.at(-1);
-          const status = latest ? await findExpenseApprovalStatus(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, documentId: latest.id }) : null;
+          const status = latest ? (statuses.get(latest.id) ?? null) : null;
           const word = status ? (APPROVAL_STATUS_WORDS[status] ?? "") : "";
           reason = `지출결의 ${door.latest?.number ?? ""}${word ? ` ${word}` : ""}${latest ? ` · ${numberedSupplyText(latest)}` : ""}`;
         }

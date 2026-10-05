@@ -133,7 +133,8 @@ test.describe("지출결의 올리기 → 제출 → 폰 결재 시트 승인 �
 });
 
 test.describe("결재 시트 승인 통신 실패 (05 /review B3)", () => {
-  test("승인 요청이 실패하면 결재함 시트와 홈 시트 모두 `승인 실패` 한 줄이 서고 시트는 열린 채 승인이 다시 눌린다", async ({ browser, baseURL }) => {
+  // 05 /review C9(adversarial F8): 응답을 잃으면 서버가 이미 승인했을 수 있다 — 「승인 실패」가 아니라 「결과 확인 안 됨 · 새로 고침」.
+  test("승인 요청이 실패하면 결재함 시트와 홈 시트 모두 `결과 확인 안 됨 · 새로 고침` 한 줄이 서고 시트는 열린 채 승인이 다시 눌린다", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const line = fx.lines.hold;
     await submitLineExpense(browser, baseURL, fx, "hold");
@@ -154,7 +155,8 @@ test.describe("결재 시트 승인 통신 실패 (05 /review B3)", () => {
       else await route.continue();
     });
     await sheet.getByRole("button", { name: "승인" }).click();
-    await expect(sheet.getByRole("alert")).toContainText("승인 실패");
+    await expect(sheet.getByRole("alert")).toHaveText(/^결과 확인 안 됨 · 새로 고침$/);
+    await expect(sheet.getByRole("alert").getByRole("button", { name: "새로 고침" })).toBeVisible();
     await expect(sheet).toBeVisible();
     await expect(sheet.getByRole("button", { name: "승인" })).not.toHaveAttribute("aria-disabled", "true");
     await lead.unrouteAll({ behavior: "ignoreErrors" });
@@ -171,7 +173,7 @@ test.describe("결재 시트 승인 통신 실패 (05 /review B3)", () => {
       else await route.continue();
     });
     await homeSheet.getByRole("button", { name: "승인" }).click();
-    await expect(homeSheet.getByRole("alert")).toContainText("승인 실패");
+    await expect(homeSheet.getByRole("alert")).toHaveText(/^결과 확인 안 됨 · 새로 고침$/);
     await expect(homeSheet).toBeVisible();
     await lead.context().close();
   });

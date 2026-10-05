@@ -9,7 +9,7 @@ import { Toast } from "@/ui/toast/Toast";
 import nextTurnStyles from "@/ui/next-turn/NextTurn.module.css";
 import { approveAction } from "@/app/(app)/approvals/actions";
 import { approveToast } from "@/app/(app)/approvals/approve-toast";
-import { APPROVE_FAILED_MESSAGE, ApprovalSheet, type ApprovalSheetItem, type ApproveOutcome } from "@/app/(app)/approvals/approval-sheet";
+import { APPROVE_FAILED_MESSAGE, APPROVE_UNKNOWN_MESSAGE, ApprovalSheet, type ApprovalSheetItem, type ApproveOutcome } from "@/app/(app)/approvals/approval-sheet";
 import { ConflictLine } from "@/app/(app)/approvals/conflict-line";
 import { evidenceViewUrl } from "@/app/(app)/approvals/evidence-url";
 import { rowApprovalActions } from "@/app/(app)/approvals/row-actions";
@@ -55,7 +55,7 @@ async function approveFromSheet(target: { instanceId: string; version: number })
     if (result?.data) return { message: approveToast(result.data) };
     return { conflict: result?.serverError ?? APPROVE_FAILED_MESSAGE };
   } catch {
-    return { conflict: APPROVE_FAILED_MESSAGE };
+    return { conflict: APPROVE_UNKNOWN_MESSAGE };
   }
 }
 

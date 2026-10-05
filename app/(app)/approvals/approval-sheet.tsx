@@ -37,8 +37,10 @@ export type ApprovalSheetItem = {
 
 // 05-01 E7(Round 4 D3 · Z3 A): 승인 서버 액션 호출 · 토스트 문구 · 서버 거부 → 충돌 문구 변환은 호출자가 한다.
 export type ApproveOutcome = { message: string } | { conflict: string };
-// 서버 거부 문구도 없는 실패(통신 끊김 · 입력 오류) — 시트가 조용히 되살아나지 않게 한 줄(05 /review B3).
+// 서버 거부 문구도 없는 실패(입력 오류) — 시트가 조용히 되살아나지 않게 한 줄(05 /review B3).
 export const APPROVE_FAILED_MESSAGE = "승인 실패";
+// 응답을 잃은 실패(통신 끊김) — 서버가 이미 승인했을 수 있어 실패라고 단정하지 않는다(05 /review C9). 끝 낱말은 ConflictLine의 `새로 고침` 버튼이다.
+export const APPROVE_UNKNOWN_MESSAGE = "결과 확인 안 됨 · 새로 고침";
 
 export type ApprovalSheetProps = {
   item: ApprovalSheetItem | null;

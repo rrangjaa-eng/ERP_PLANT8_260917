@@ -11,7 +11,7 @@ import type { StatusWord } from "@/ui/status-tag/status-map";
 import { Toast, type ToastTone } from "@/ui/toast/Toast";
 import { approveAction } from "./actions";
 import { approveToast } from "./approve-toast";
-import { APPROVE_FAILED_MESSAGE, ApprovalSheet, type ApprovalSheetItem, type ApproveOutcome } from "./approval-sheet";
+import { APPROVE_FAILED_MESSAGE, APPROVE_UNKNOWN_MESSAGE, ApprovalSheet, type ApprovalSheetItem, type ApproveOutcome } from "./approval-sheet";
 import { ConflictLine } from "./conflict-line";
 import { evidenceViewUrl } from "./evidence-url";
 import { INBOX_COLUMN_LABELS } from "./list-columns";
@@ -56,14 +56,14 @@ function documentCellId(row: InboxRow): string {
   return `inbox-doc-${row.id.replace(/[^a-zA-Z0-9-]/g, "-")}`;
 }
 
-// 결재 시트 `승인` — 서버 액션 호출 · 토스트 문구 · 서버 거부 → 충돌 문구 변환(05-01 E7). 입력 오류 · 통신 실패는 `승인 실패` 한 줄(05 /review B3).
+// 결재 시트 `승인` — 서버 액션 호출 · 토스트 문구 · 서버 거부 → 충돌 문구 변환(05-01 E7). 입력 오류는 `승인 실패`, 통신 실패는 `결과 확인 안 됨` 한 줄(05 /review B3 · C9).
 async function approveFromSheet(target: { instanceId: string; version: number }): Promise<ApproveOutcome> {
   try {
     const result = await approveAction({ instanceId: target.instanceId, expectedVersion: target.version });
     if (result?.data) return { message: approveToast(result.data) };
     return { conflict: result?.serverError ?? APPROVE_FAILED_MESSAGE };
   } catch {
-    return { conflict: APPROVE_FAILED_MESSAGE };
+    return { conflict: APPROVE_UNKNOWN_MESSAGE };
   }
 }
 

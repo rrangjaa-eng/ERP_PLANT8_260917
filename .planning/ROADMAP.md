@@ -725,24 +725,23 @@ Plans:
   4. 프로젝트 완료(정산) 처리 시 미결 지출결의·미매칭 견적 줄·매출 미입력을 `domain/rules.gate`로 점검해 이유와 함께 막고, 강행 허용 여부는 설정이다. 정산 결재 문서(Phase 5)의 기안 전에 이 점검이 돈다
   5. 경영관리 흐름(결재 통과 건 → 증빙 확인 → 지급 완료; 이미지·PDF 두 업로드 경로)이 Playwright E2E로 CI에 있고, 지급 게이트·이중 연결 차단·업로드 의도만 있고 완료 없는 경우가 통합 테스트로 덮인다(Issue 14·F8). 새 액션·DTO(지급·카드·구매 요청·증빙)는 누수 스캔 생성기에 등록되어 계급별 검사가 따라온다
 
-**Plans**: 30 plans
+**Plans**: 29 plans
 
 Plans:
 **Wave 1**
 
 - [ ] 06-01-PLAN.md — 디자인 기준 SP-1~6 · 상태 낱말 매핑 한 파일 · D-607/R-9 요구사항·ROADMAP 문구 정렬 (W1)
-- [ ] 06-26-PLAN.md — 공용 법인카드(Q5 — 소지자 · 팀 없이 회사가 쓰는 카드)를 DB가 받도록 `corp_cards` 주인 CHECK를 「정확히 하나」에서 「최대 하나」로 완화하 (W1)
+- [ ] 06-27-PLAN.md — Phase 6의 **모든 새 표 · 기존 표 칸 · 첨부 주인 제약 · 법인카드 주인 제약 · 메뉴 키 · 정보 항목**을 위험 경로 PR 하나(PR-A)로 모은다(REVIEWS C7 · 옛 06-26 공용 카드 CHECK 흡수 — R-1, 06-26-PLAN.md는 지움) (W1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [ ] 06-02-PLAN.md — 공용 조각(설정 키 넷 · 메뉴 키 셋 · 원 정수 합·차이 · 구매 요청 번호 서식 · 견적 줄 문 판정) (W2)
-- [ ] 06-27-PLAN.md — Phase 6의 **모든 새 표 · 기존 표 칸 · 첨부 주인 제약 · 메뉴 키 · 정보 항목**을 위험 경로 PR 하나(PR-A)로 모은다(REVIEWS C7  (W2)
 - [ ] 06-29-PLAN.md — Phase 6 화면들이 같이 쓰는 **공용 조각 넷**을 컴포넌트로 짓는다(REVIEWS C11 · replan-B J1) — ④ `ui/table` 선택 열(S (W2)
+- [ ] 06-30-PLAN.md — **공용 법인카드의 카드 마스터 몫**을 짓는다 — `CardOwnerKind` `shared`(종류를 사람이 고른 값으로 올림 — promote) · 관리자 카 (W2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
 - [ ] 06-03-PLAN.md — 결재 통과 건 한 건의 지급 완료 단건 경로(스키마 → 행 잠금 → 지급 게이트 → 이체액 → 공급가 역산 → 문서 화면 → 행동 로그) (W3)
-- [ ] 06-30-PLAN.md — **공용 법인카드의 카드 마스터 몫**을 짓는다 — `CardOwnerKind` `shared`(종류를 사람이 고른 값으로 올림 — promote) · 관리자 카 (W3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 

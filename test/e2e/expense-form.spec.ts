@@ -359,3 +359,23 @@ test.describe("쓰기 권한이 빠진 기안자의 작성 중 문서 (05 /revie
     await page.context().close();
   });
 });
+
+// 05 /qa I1: 없는 날짜(02/30)로 「임시 저장」을 누르면 결과 줄이 저장 문구다 — 제출 문구가 아니다.
+test.describe("없는 날짜로 임시 저장 (05 /qa I1)", () => {
+  test("결과 줄이 `임시 저장 실패 · 지급 예정일 1칸`이고 칸 오류가 선다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await openDraft(page, fx, "tracer");
+
+    const input = page.getByLabel("지급 예정일");
+    await input.click({ position: { x: 8, y: 10 } });
+    for (const part of ["02", "30", "2026"]) await page.keyboard.type(part);
+    expect(await input.evaluate((element) => (element as HTMLInputElement).validity.badInput)).toBe(true);
+    await page.getByRole("button", { name: /^임시 저장/ }).click();
+
+    await expect(page.getByText("임시 저장 실패 · 지급 예정일 1칸")).toBeVisible();
+    await expect(page.getByText(/제출 실패 · 지급 예정일/)).toHaveCount(0);
+    await expect(input).toHaveAttribute("aria-invalid", "true");
+    await page.context().close();
+  });
+});

@@ -328,7 +328,7 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
   const phone = usePhoneWidth();
 
   // 입력 → 서버가 받는 칸 값. 틀린 칸이 있으면 칸 오류를 세우고 null.
-  function collect(): Record<string, unknown> | null {
+  function collect(purpose: "submit" | "save"): Record<string, unknown> | null {
     const next: typeof errors = {};
     const amountRaw = amountInput.rawValue;
     const amount = parseNumberInput(amountRaw);
@@ -346,7 +346,7 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
     if (team && (usageDate === "" || usageDateRef.current?.validity.badInput)) next.usageDate = DATE_EMPTY_ERROR;
     setErrors(next);
     if (Object.keys(next).length > 0) {
-      setFailure(failureLine(next));
+      setFailure(failureLine(next, purpose));
       return null;
     }
     return {
@@ -386,7 +386,7 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
     };
   }
 
-  function failureLine(fieldErrors: typeof errors): string {
+  function failureLine(fieldErrors: typeof errors, purpose: "submit" | "save" = "submit"): string {
     const names = {
       supplyAmount: "공급가액",
       fxRate: "환율",
@@ -395,12 +395,12 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
       usageDate: "사용일",
     } as const;
     const keys = (Object.keys(fieldErrors) as (keyof typeof names)[]).filter((key) => fieldErrors[key]);
-    return `제출 실패 · ${keys.map((key) => names[key]).join(", ")} ${keys.length}칸`;
+    return `${purpose === "submit" ? "제출" : "임시 저장"} 실패 · ${keys.map((key) => names[key]).join(", ")} ${keys.length}칸`;
   }
 
   // 임시 저장 — 새 version을 돌려준다(실패하면 null, 칸 오류 · 실패 줄을 세운다).
   async function persist(purpose: "submit" | "save"): Promise<number | null> {
-    const fields = collect();
+    const fields = collect(purpose);
     if (!fields) return null;
     if (newDoc) return createDraft(fields, purpose);
     let result: Awaited<ReturnType<typeof saveExpenseDraftAction>>;
@@ -452,7 +452,7 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
     const message = result?.serverError;
     if (message?.startsWith("사용일에")) {
       setErrors({ usageDate: message });
-      setFailure(failureLine({ usageDate: message }));
+      setFailure(failureLine({ usageDate: message }, purpose));
     } else {
       setFailure(message ?? (purpose === "submit" ? "제출 실패 · 다시 제출" : "임시 저장 실패 · 다시 시도"));
     }

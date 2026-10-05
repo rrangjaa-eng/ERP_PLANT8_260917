@@ -8,6 +8,7 @@
 ## 05-09 웨이브 11 검토 수정 (2026-10-05)
 
 - `test/e2e/mobile-w5-review-fixes.spec.ts:47`(폰 320) — `/admin/code-tables?tableKey=project_status` CLS 0.1958(한도 0.1). 기준 498ebf82의 화면 파일(ui/confirm-dialog · ui/toast · 지출결의 · 연차 행동 줄)로 되돌려 `--repeat-each=3`으로 돌려도 같은 값으로 3/3 실패 — 이 수정 범위 밖(코드표 화면을 건드리지 않았다). 375는 통과.
+  - **해결(05-16, 0bc648bb · e963076a):** 원인은 05-03이 코드표 선택 링크를 셋에서 넷(지급 방식)으로 늘린 것 — 폰 320에서 링크 줄이 글꼴 도착 전(두 줄) · 후(한 줄)로 다시 접혀 줄 아래가 60px 움직였다(origin/main은 링크 셋이라 CLS 0.024로 통과). `.tableNav`를 폰 2칸 격자로 고정(0bc648bb). 같은 화면의 `mobile-code-tables.spec.ts` 글자 간격 단언도 05-15 `.pendingSlot` 때문에 측정 상자만 어긋나 있어 라벨 span으로 한정(e963076a). `--repeat-each=3` 통과.
 
 ## 05-15 (2026-10-04)
 

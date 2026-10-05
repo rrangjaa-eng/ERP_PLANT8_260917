@@ -7,7 +7,7 @@ import { getDocumentKind } from "@/domain/approvals/kinds";
 import { isRouteStepSettingKey } from "@/domain/approvals/route-step-settings";
 import { can, ForbiddenError } from "@/domain/permissions/can";
 import { visible } from "@/domain/permissions/visible";
-import { CEO_ROLE_ID, DIVISION_HEAD_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
+import { CEO_ROLE_ID, DEFAULT_ROLE_ID, DIVISION_HEAD_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { changeProjectStatus, StatusChangedError } from "@/domain/projects/status";
 import { GateBlockedError } from "@/domain/rules/gate";
 import {
@@ -17,8 +17,10 @@ import {
   APPROVAL_ROUTE_SETTLEMENT_STEP4_SCOPE,
 } from "@/domain/settings/keys";
 import {
+  canSeeSettlementDocument,
   getSettlement,
   SETTLEMENT_DOCUMENT_KIND,
+  SettlementNotFoundError,
   SettlementUndoRefusedError,
   submitSettlement,
   withdrawSettlement,
@@ -418,5 +420,35 @@ describe("정산 결재 — 결재 중 지출결의가 남은 프로젝트 (A8)"
     expect((await getApprovalView(fx.ceo, { kind: SETTLEMENT_DOCUMENT_KIND, documentId }))?.approveBlockedReason ?? null).toBeNull();
     await approveDocument(fx.ceo, { instanceId, expectedVersion: version });
     expect(await projectStatus(fx.projectId)).toBe("completed");
+  });
+});
+
+// 05 /review A14(testing) — 문서 화면 404 판정(settlement/layout.tsx)이 기대는 보임 거부 갈래와 기안자 아닌 사람의 되돌리기.
+describe("정산 결재 — 보임 · 되돌리기 거부 갈래 (A14)", () => {
+  it("무관한 PM · 팀 범위 팀장(결재 관련자 아님)에게는 없는 문서 · 대표는 보임 · id 모양이 아니면 없음", async () => {
+    const fx = await setupSettlementProject();
+    await submitted(fx.pm, fx.projectId);
+    const outsider = await makePerson("무관피엠", DEFAULT_ROLE_ID, "기획1팀");
+
+    for (const viewer of [outsider, fx.lead]) {
+      expect(await getSettlement(viewer, { projectId: fx.projectId })).toBeNull();
+      expect(await canSeeSettlementDocument(viewer, { projectId: fx.projectId })).toBe(false);
+    }
+    expect(await getSettlement(fx.ceo, { projectId: fx.projectId })).not.toBeNull();
+    expect(await canSeeSettlementDocument(fx.ceo, { projectId: fx.projectId })).toBe(true);
+    expect(await getSettlement(fx.ceo, { projectId: "not-a-uuid" })).toBeNull();
+    expect(await canSeeSettlementDocument(fx.ceo, { projectId: "not-a-uuid" })).toBe(false);
+  });
+
+  it("기안자가 아닌 팀장 · 대표의 되돌리기는 없는 문서(SettlementNotFoundError)이고 인스턴스 상태 · 버전 · 로그 그대로", async () => {
+    const fx = await setupSettlementProject();
+    const { documentId } = await submitted(fx.pm, fx.projectId);
+    const before = await instanceOf(documentId);
+
+    for (const viewer of [fx.lead, fx.ceo]) {
+      await expect(withdrawSettlement(viewer, { projectId: fx.projectId, undo: true, round: 1 })).rejects.toBeInstanceOf(SettlementNotFoundError);
+    }
+    expect(await instanceOf(documentId)).toMatchObject({ status: "submitted", version: before?.version });
+    expect((await documentLogs(documentId)).map((log) => log.actionType)).toEqual(["document_submit"]);
   });
 });

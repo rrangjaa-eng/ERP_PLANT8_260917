@@ -51,3 +51,8 @@
 ## 05-15 (2026-10-04)
 
 - `test/e2e/quote-revisions.spec.ts:675` 「차수 열기」 … — 이전 차수 읽기 표 머리글(`quoteLineReadColumns`)에 현재 표의 맨 끝 `행동` 머리글(05-05 행 행동 열, `showColumn` 계급)이 없어 `thead th` 목록 비교가 어긋난다. 05-15 변경 밖(머리글 · 열 판정 불변). 후보 수정: 단언에서 `행동` 제외(읽기 표는 이전 차수라 행동 열이 없는 게 맞음). 05-05 이후 계속 실패였는지는 8df5e714에서 돌려 확인하지 않았다.
+
+## 05 /qa — 고치지 않음
+
+- I2: 서버가 거절한 임시 저장 오류(공급가액 비어 있음 · 쓰지 않는 증빙 종류)가 칸 오류로 안 붙고 아래 결과 줄에만 선다 — `app/(app)/expenses/[id]/expense-form.tsx:423-433`(저장 결과에서 note · scheduledPaymentDate만 칸으로 옮김), 액션 응답이 `ExpenseFieldError`(`domain/expenses/index.ts:741`)의 칸 정보를 글자로만 보낸다. 이유: 액션 응답 모양이 바뀌는 여러 파일 변경이라 사용자 결정 대기(/qa U1) · 아침 브리핑 질문. status: open
+- I4: 날짜 칸 연도 범위가 없어 0001-01-01 · 0230-01-01이 그대로 저장된다(500은 아님) — `domain/expenses/draft-fields.ts:24`(`isCalendarDate`만). 이유: 범위(예: 2000–2100) 선택이 도메인 스키마 · 입력 `min/max`를 바꾸므로 사용자 결정 대기(/qa U2) · 아침 브리핑 질문. status: open

@@ -46,6 +46,7 @@
 - 지운 작성 중 문서 되돌리기(`restoreOwnerFilesRemovedAt`)는 기간 제한 없이 그 삭제가 뗀 파일 행을 되살린다 — Phase 6 F8 고아 정리가 `removed_at` 행의 객체를 먼저 지우면 바이트 없는 행이 되살아난다. F8 정리 계약에 「주인이 지워진(soft delete) 행은 되돌리기 창 뒤에만 정리」를 넣는다. 출처: adversarial-cycle1 F10 · rereview 4. status: open
 - 같은 모양의 달력 날짜 검사 복사본(`domain/people/index.ts` · `domain/org/index.ts`)은 C2(0000년 거부)를 받지 않았다 — 이번 PR 범위 밖(언급만). 출처: adversarial-cycle1 F2. status: open
 - 견적 줄 문서를 만들거나 줄을 바꿀 때(`createExpenseFromLines` · `changeExpenseLine`) 줄 거래처의 기본 증빙 종류가 보관 · 비활성 코드여도 그대로 채운다 — 제출은 C4의 「쓰지 않는 증빙 종류 · 증빙 종류 고르기」로 막혀 돈 결함은 아니다. C5는 거래처 바꾸기(`changeExpenseVendor`)만 고쳤다. status: open
+- C3 되돌리기 검사(`repositories/files.ts:124`)는 A3 이전에 지운 작성 중 문서에 살아 남은 옛 파일 행도 「다른 문서에 붙음」으로 세어, 그런 옛 데이터가 있으면 기안자의 정당한 영수증을 되살리지 않는다(붙이기 검사 `domain/evidence/index.ts:219-220`은 지운 문서를 건너뜀). A3 이전 데이터는 개발 · 스테이징에만 있고 돈 손실은 없다. 운영 데이터가 생기기 전 정리 또는 검사에 「주인이 지워지지 않음」 한 줄. 출처: rereview-cycle2 N1. status: open
 
 ## 05-15 (2026-10-04)
 

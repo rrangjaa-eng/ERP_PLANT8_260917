@@ -1221,6 +1221,7 @@ export async function listMyBlockedDocuments(viewer: Viewer, deps?: ApprovalDeps
     def.blockedAfterApproval ? [{ documentKind: def.kind, filter: def.blockedAfterApprovalCandidates ?? null }] : [],
   );
   const approved = await listDrafterInstances(viewer, { drafterId: viewer.id, status: "approved", limit: BLOCKED_APPROVED_LIMIT, candidateKinds });
+  const namesVisible = await visible(viewer, "approval.value");
 
   const found: Omit<BlockedDocument, "summary">[] = rejected.map((row) => {
     const def = getDocumentKind(row.documentKind);
@@ -1230,7 +1231,7 @@ export async function listMyBlockedDocuments(viewer: Viewer, deps?: ApprovalDeps
       kindLabel: def.label,
       documentId: row.documentId,
       href: def.href(row.documentId),
-      cause: { type: "rejected", rejecterName: row.rejecterName },
+      cause: { type: "rejected", rejecterName: namesVisible ? row.rejecterName : null },
     };
   });
 

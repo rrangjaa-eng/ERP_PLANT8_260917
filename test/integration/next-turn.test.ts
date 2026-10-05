@@ -11,7 +11,7 @@ import { listNextTurnItems } from "@/domain/next-turn";
 import { createVisibleMemo } from "@/domain/approvals";
 import { addHistorizedValue } from "@/domain/settings/registry";
 import { TAX_VAT_RATE } from "@/domain/settings/keys";
-import { TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
+import { DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { upsertVisibility } from "@/repositories/permissions";
 import { NOW_2026 } from "./approvals-fixtures";
@@ -171,6 +171,19 @@ describe("listNextTurnItems — [막힘] 반려", () => {
     });
     expect(items[0]?.approval).toBeUndefined();
     expect(await listNextTurnItems(fx.otherPm)).toEqual([]);
+  });
+
+  it("approval.value 노출을 끈 계급의 기안자에게는 반려 줄에 반려자 이름이 없다 (CSO-05-1)", async () => {
+    const fx = await setupExpenseProject();
+    const { instanceId } = await submittedExpense(fx);
+    await rejectDocument(fx.lead, { instanceId, expectedVersion: 1, reason: "증빙 다시" });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, infoItem: "approval.value", visible: false });
+
+    const items = await listNextTurnItems(fx.pm);
+
+    expect(items).toHaveLength(1);
+    expect(items[0]?.label).toMatch(/지출결의 반려$/);
+    expect(JSON.stringify(items)).not.toContain("김도윤");
   });
 
   it("회수한 문서 · 작성 중 문서는 줄이 없다", async () => {

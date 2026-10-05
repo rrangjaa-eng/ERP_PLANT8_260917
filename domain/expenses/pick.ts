@@ -10,6 +10,7 @@ import {
   doorFor,
   EXPENSE_DOCUMENT_KIND,
   ExpenseNotFoundError,
+  isEditableByDrafter,
   lineExecution,
   lineRemainingText,
   listNumberedByLineageMany,
@@ -23,7 +24,7 @@ import { PROJECT_CUSTOMER_APPROVAL_GATE } from "@/domain/settings/keys";
 import type { Money } from "@/domain/money";
 import { seoulToday } from "@/lib/dates";
 import type { NumberedLineExpense } from "@/repositories/expenses";
-import { findExpenseApprovalStatuses, findExpenseById, listPickProjects } from "@/repositories/expenses";
+import { findExpenseApprovalStatus, findExpenseApprovalStatuses, findExpenseById, listPickProjects } from "@/repositories/expenses";
 import { findProjectById } from "@/repositories/projects";
 import { listQuoteLinesByRevisions, type QuoteLineRow } from "@/repositories/quote-lines";
 import { findVendorNamesByIds, listVendorsForPick } from "@/repositories/vendors";
@@ -115,7 +116,7 @@ const PICK_PROJECT_LIMIT = 100;
 
 const APPROVAL_STATUS_WORDS: Record<string, string> = { submitted: "결재 중", in_review: "결재 중", approved: "승인", rejected: "반려", withdrawn: "회수" };
 
-// change = 그 문서 프로젝트의 현재 차수 줄 전부(문서가 기안자의 작성 중 줄 문서여야 한다), pick = 위 기본 · 검색 목록(팀 비용 문서 · 새 문서에서 줄을 고른다).
+// change = 그 문서 프로젝트의 현재 차수 줄 전부(문서가 기안자가 고칠 수 있는 줄 문서여야 한다 — isEditableByDrafter, 05-09), pick = 위 기본 · 검색 목록(팀 비용 문서 · 새 문서에서 줄을 고른다).
 // 줄마다 고를 수 있음 · 이유는 createExpenseFromLines · changeExpenseLine과 같은 판정(표 전체 게이트 · 문 상태)으로 서버가 만든다. 한 번에 50행 + truncated.
 export async function searchLinesForPick(
   viewer: Viewer,
@@ -130,7 +131,9 @@ export async function searchLinesForPick(
   let currentLineId: string | null = null;
   if (input.mode === "change") {
     const expense = input.expenseId && z.string().uuid().safeParse(input.expenseId).success ? await findExpenseById(viewer, input.expenseId) : null;
-    if (!expense || expense.drafterId !== viewer.id || expense.number !== null || !expense.projectId) throw new ExpenseNotFoundError();
+    if (!expense || !expense.projectId) throw new ExpenseNotFoundError();
+    const status = expense.number === null ? null : await findExpenseApprovalStatus(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, documentId: expense.id });
+    if (!isEditableByDrafter(viewer.id, expense, status)) throw new ExpenseNotFoundError();
     const projectRow = await findProjectById(viewer, expense.projectId);
     if (!projectRow) throw new ExpenseNotFoundError();
     currentLineId = expense.quoteLineId;

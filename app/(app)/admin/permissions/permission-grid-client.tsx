@@ -23,6 +23,7 @@ export type PermissionGridClientProps<TInput> = {
   kind: PermissionGridClientKind;
   caption: string;
   rowSelectLabel: string;
+  itemHeaderLabel: string;
   rows: PermissionGridRow[];
   columns: PermissionGridColumn[];
   values: Record<string, boolean>;

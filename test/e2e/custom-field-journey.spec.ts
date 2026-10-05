@@ -87,7 +87,7 @@ test("관리 화면에서 만든 칸: 추가 → 보임 → 값 저장 → 계�
   await page.goto("/admin/vendors?new=1");
   await expect(page.getByLabel(label, { exact: true })).toBeVisible();
   await page.goto("/admin/visibility");
-  await expect(page.getByRole("columnheader", { name: label })).toBeVisible();
+  await expect(page.getByRole("rowheader", { name: label })).toBeVisible();
   await expect(page.getByRole("checkbox", { name: editorCell, exact: true })).toBeChecked();
 
   // ② 값 저장.
@@ -133,7 +133,7 @@ test("관리 화면에서 만든 칸: 추가 → 보임 → 값 저장 → 계�
     await expect(page.getByLabel(label, { exact: true })).toHaveCount(0);
     expect(await page.content()).not.toContain(value);
     await page.goto("/admin/visibility");
-    await expect(page.getByRole("columnheader", { name: label })).toHaveCount(0);
+    await expect(page.getByRole("rowheader", { name: label })).toHaveCount(0);
     await expect(page.locator("#main-content")).not.toContainText(label);
 
     // ⑤ 보관함에서 복원 → 시스템 관리자에게 칸 · 값 · 노출표 열이 돌아오고, 계급별 끔은 그대로다.
@@ -146,7 +146,7 @@ test("관리 화면에서 만든 칸: 추가 → 보임 → 값 저장 → 계�
     await page.goto(editHref!);
     await expect(page.getByLabel(label, { exact: true })).toHaveValue(value);
     await page.goto("/admin/visibility");
-    await expect(page.getByRole("columnheader", { name: label })).toBeVisible();
+    await expect(page.getByRole("rowheader", { name: label })).toBeVisible();
     await expect(page.getByRole("checkbox", { name: editorCell, exact: true })).not.toBeChecked();
     await expect(page.getByRole("checkbox", { name: `시스템 관리자 · ${label}`, exact: true })).toBeChecked();
 

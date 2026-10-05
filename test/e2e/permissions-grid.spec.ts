@@ -129,10 +129,10 @@ test.describe("권한표 격자 (ADMN-01, D-40, 성공 기준 2)", () => {
       await page.goto("/admin/permissions");
 
       // 좌상단 모서리 셀 — 두 sticky(top·left)가 겹치는 자리이자 §7-13이
-      // 「배경이 끊기지 않게」 계약한 지점. 접근성 이름이 "계급"인 것은
+      // 「배경이 끊기지 않게」 계약한 지점. 접근성 이름이 "메뉴"인 것은
       // aria-hidden이 아닌 실제 열 머리글 행의 corner뿐이다(그룹 머리글 행의
       // corner는 aria-hidden="true"라 접근성 트리에서 제외된다).
-      const cornerHeader = page.getByRole("columnheader", { name: "계급", exact: true });
+      const cornerHeader = page.getByRole("columnheader", { name: "메뉴", exact: true });
       await expect(cornerHeader).toBeVisible();
 
       // 표의 바로 위 부모 div가 §7-13의 스크롤 컨테이너(.wrap)다 — 해시된
@@ -205,4 +205,30 @@ test.describe("권한표 격자 (ADMN-01, D-40, 성공 기준 2)", () => {
       }
     }
   });
+
+  // §7-13(2026-10-05 DECISIONS): PC는 계급이 열 — 항목이 늘어도 가로 스크롤이 없다.
+  for (const path of ["/admin/permissions", "/admin/visibility"]) {
+    for (const width of [1280, 768]) {
+      test(`${path} 격자는 폭 ${width}에서 가로 스크롤이 없고 계급이 열 머리글이다`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 900 });
+        const admin = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
+        await page.goto("/login");
+        await page.getByLabel("이메일").fill(admin.email);
+        await page.getByLabel("비밀번호").fill(admin.password);
+        await page.getByRole("button", { name: "로그인" }).click();
+        await expect(page).toHaveURL(/\/account$/);
+
+        await page.goto(path);
+
+        await expect(page.getByRole("columnheader", { name: "시스템 관리자", exact: true })).toBeVisible();
+        // 표의 바로 위 부모 div가 격자 스크롤 칸(.wrap)이다.
+        const wrap = page.locator("table").first().locator("xpath=..");
+        const { scrollWidth, clientWidth } = await wrap.evaluate((el) => ({
+          scrollWidth: el.scrollWidth,
+          clientWidth: el.clientWidth,
+        }));
+        expect(scrollWidth).toBeLessThanOrEqual(clientWidth + 1);
+      });
+    }
+  }
 });

@@ -83,5 +83,48 @@ test.describe("결재함 — 지출결의 (05-10)", () => {
     await expect(sheet).toContainText(new RegExp(`${manager.name}[이가] \\d{2}:\\d{2}에 증빙을 바꿈 · 새로 고침`));
     await expect(lead.getByRole("dialog")).toHaveCount(1);
   });
-});
 
+  // 05-16 — 승인 뒤 포커스가 다음 줄의 `승인`으로 가면 Enter를 한 번 더 눌러 다음 문서가 승인된다. 다음 줄의 열기(문서 칸 · 줄 대상)로 보낸다.
+  test("PC 결재함 — 승인한 뒤 포커스는 다음 줄의 열기 버튼으로 가고 `승인`이 아니다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    await submitLineExpense(browser, baseURL, fx, "tracer");
+    await submitLineExpense(browser, baseURL, fx, "phone");
+
+    const lead = await loginPage(browser, baseURL, fx.lead);
+    await lead.goto("/approvals");
+    const rows = lead.getByRole("row").filter({ has: lead.getByRole("button", { name: /^승인/ }) });
+    await expect(rows).toHaveCount(2);
+    const secondLabel = (await rows.nth(1).locator('button[aria-haspopup="dialog"]').innerText()).trim();
+    const approve = rows.nth(0).getByRole("button", { name: /^승인/ });
+    await waitForHydration(approve);
+    await approve.focus();
+    await lead.keyboard.press("Enter");
+
+    await expect(lead.getByRole("status").filter({ hasText: "승인 · " })).toBeVisible();
+    await expect(rows).toHaveCount(1);
+    await expect(lead.getByRole("button", { name: secondLabel })).toBeFocused();
+    await expect(lead.getByRole("button", { name: /^승인/ })).not.toBeFocused();
+  });
+
+  test("PC 첫 화면 내 차례 — 승인한 뒤 포커스는 다음 줄의 대상 글자로 가고 `승인`이 아니다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    await submitLineExpense(browser, baseURL, fx, "tracer");
+    await submitLineExpense(browser, baseURL, fx, "phone");
+
+    const lead = await loginPage(browser, baseURL, fx.lead);
+    await lead.goto("/");
+    const items = lead.locator("li").filter({ has: lead.getByRole("button", { name: /^승인/ }) });
+    await expect(items).toHaveCount(2);
+    const secondLabel = lead.locator("li").filter({ has: lead.getByRole("button", { name: /^승인/ }) }).nth(1).locator('[id^="next-turn-label-"]');
+    const secondText = (await secondLabel.innerText()).trim();
+    const approve = items.nth(0).getByRole("button", { name: /^승인/ });
+    await waitForHydration(approve);
+    await approve.focus();
+    await lead.keyboard.press("Enter");
+
+    await expect(lead.getByRole("status").filter({ hasText: "승인 · " })).toBeVisible();
+    await expect(items).toHaveCount(1);
+    await expect(lead.locator('[id^="next-turn-label-"]').filter({ hasText: secondText })).toBeFocused();
+    await expect(lead.getByRole("button", { name: /^승인/ })).not.toBeFocused();
+  });
+});

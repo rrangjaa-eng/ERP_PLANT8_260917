@@ -861,18 +861,21 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
           <Form.Actions>
             {phone ? null : submitButton}
             {block && !submitting ? <BlockLine block={block} href={blockHref} onPick={openPicker} onVendor={() => setPickOpen("vendor")} onLine={() => setPickOpen("line")} /> : null}
-            {networkFailed === "submit" ? (
-              <span className={styles.blockedLine}>
-                <span className={styles.blockedReason}>제출 실패 · 네트워크 · </span>
-                <Button variant="tertiary" onClick={() => void submit()}>
-                  다시 제출
-                </Button>
-              </span>
-            ) : null}
-            {failure && networkFailed === null ? <span className={styles.blockedReason}>{failure}</span> : null}
-            {submitted ? <span className={styles.successLine}>{submitted}</span> : null}
-            {networkFailed === "save" ? <span className={styles.blockedReason}>임시 저장 실패 · 다시 시도</span> : null}
-            {savedAt && !submitting ? <span className={styles.successLine}>{`임시 저장됨 ${savedAt}`}</span> : null}
+            {/* 제출 · 임시 저장 결과 줄 — 스크린리더가 결과를 듣도록 polite 라이브 영역(§10 저장 결과, 05 /review B4). 레이아웃에는 끼지 않는다. */}
+            <span className={styles.resultLines} aria-live="polite">
+              {networkFailed === "submit" ? (
+                <span className={styles.blockedLine}>
+                  <span className={styles.blockedReason}>제출 실패 · 네트워크 · </span>
+                  <Button variant="tertiary" onClick={() => void submit()}>
+                    다시 제출
+                  </Button>
+                </span>
+              ) : null}
+              {failure && networkFailed === null ? <span className={styles.blockedReason}>{failure}</span> : null}
+              {submitted ? <span className={styles.successLine}>{submitted}</span> : null}
+              {networkFailed === "save" ? <span className={styles.blockedReason}>임시 저장 실패 · 다시 시도</span> : null}
+              {savedAt && !submitting ? <span className={styles.successLine}>{`임시 저장됨 ${savedAt}`}</span> : null}
+            </span>
             <span className={styles.saveWrap}>
               {/* 제출 중 비활성 이유 = 제출 중인 1차(UX-06). */}
               <Button variant="secondary" pending={saving} disabled={submitting} aria-describedby={submitting ? "expense-submit" : undefined} onClick={() => void save()}>

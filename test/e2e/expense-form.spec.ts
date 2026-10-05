@@ -155,3 +155,23 @@ test.describe("막힘 이유 (S6)", () => {
     await expect(await describedBy()).toHaveText(/^증빙 없음 · 증빙 올리기\s*Ctrl\+U$/, { timeout: 10_000 });
   });
 });
+
+test.describe("결과 줄 aria-live (05 /review B4)", () => {
+  test("임시 저장이 통신 실패로 끝나면 실패 줄이 polite 라이브 영역 안에 선다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await openDraft(page, fx, "tracer");
+
+    const failed = "임시 저장 실패 · 다시 시도";
+    await expect(page.locator('[aria-live="polite"]').filter({ hasText: failed })).toHaveCount(0);
+    await page.route("**/*", async (route) => {
+      if (route.request().method() === "POST" && route.request().headers()["next-action"]) await route.abort("failed");
+      else await route.continue();
+    });
+    await page.getByRole("button", { name: /^임시 저장/ }).click();
+    await expect(page.getByText(failed, { exact: true })).toBeVisible();
+    await expect(page.locator('[aria-live="polite"]').filter({ hasText: failed })).toHaveCount(1);
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+    await page.context().close();
+  });
+});

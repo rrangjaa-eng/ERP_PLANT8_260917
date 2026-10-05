@@ -154,6 +154,10 @@
   display: contents;
 }
 
+.resultLines {
+  display: contents;
+}
+
 .formBarSpacer {
   display: none;
 }

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { TopBar } from "./TopBar";
 import { BottomTabs } from "./BottomTabs";
+import { FixedBarInset } from "./FixedBarInset";
 import type { AccountEntry, BottomTab, MenuLink } from "./role-menu";
 import styles from "./Shell.module.css";
 
@@ -30,6 +31,7 @@ export function Shell({ topBarMenu, adminMenu, accountGroup, bottomTabs, userNam
       <main id="main-content" tabIndex={-1} className={styles.main}>
         {children}
       </main>
+      <FixedBarInset />
       <BottomTabs
         topBarMenu={topBarMenu}
         bottomTabs={bottomTabs}

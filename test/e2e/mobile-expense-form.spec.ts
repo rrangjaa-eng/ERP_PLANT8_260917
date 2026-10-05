@@ -270,10 +270,21 @@ test.describe("웨이브 6 화면 검토 수정 — 증빙 · 문서 · 폼", ()
       const fontSize = await drop.evaluate((node) => parseFloat(getComputedStyle(node).fontSize));
       expect.soft(fontSize, "빈 첨부 칸 글자 크기").toBe(aux);
 
+      // 미리보기 <img>는 올리는 행(+ 서버 목록이 새로 그려지기 전)에만 있고 끝나면 클립 칸으로 바뀐다(UI-SPEC S4) — 실측으로 약 0.4초 창이다.
+      // 그 창을 폴링으로 쫓으면 기계가 붐빌 때 창이 지난 뒤에 읽어 실패한다(05-13 게이트 감사 #4). 서버 액션을 풀어 줄 때까지 붙잡아 행이 올리는 중으로 머물게 한다.
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await page.route("**/*", async (route) => {
+        if (route.request().method() === "POST" && route.request().headers()["next-action"]) await gate;
+        await route.continue();
+      });
       await page.getByTestId("attachments-input").setInputFiles(await uniqueReceipt(page));
-      // 미리보기 <img>는 올리는 행에만 있고 끝나면 클립 칸으로 바뀐다 — 행이 서자마자 읽는다. 노드가 바뀌어도(떨어진 노드는 계산 값이 빈 글자) 잡을 때마다 다시 찾는다.
-      const thumb = page.locator('[data-ui="attachments"] li img').first();
-      await expect.poll(() => thumb.evaluate((node) => getComputedStyle(node).borderRadius).catch(() => ""), { message: "썸네일 radius", timeout: 10_000 }).toBe("0px");
+      const thumb = page.locator('[data-ui="attachments"] li[data-state="uploading"] img');
+      await expect(thumb).toHaveCount(1);
+      expect(await thumb.evaluate((node) => getComputedStyle(node).borderRadius), "썸네일 radius").toBe("0px");
+      release();
     });
   }
 

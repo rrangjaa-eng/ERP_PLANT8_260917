@@ -174,6 +174,8 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
   const [taxLine, setTaxLine] = useState(data.taxLine);
   const [previewing, setPreviewing] = useState(false);
   const [previewFieldError, setPreviewFieldError] = useState<string | null>(null);
+  // 미리보기가 서버 오류(금액 상한 초과 등)를 받았다 — 계산 한 줄은 이전 값을 두지 않고 `계산 불가`(다음 정상 미리보기가 걷는다).
+  const [previewFailed, setPreviewFailed] = useState(false);
   const previewSeq = useRef(0);
   const [serverBlock, setServerBlock] = useState(data.block);
   // 올린 파일이 완료됐지만 서버가 다시 그린 files가 아직 안 온 동안 — 서버 ⑧(대상 evidence)은 지난 값이다.
@@ -275,8 +277,15 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
           setNetworkFailed("submit");
           return;
         }
-        if (!result?.data) return;
+        if (!result?.data) {
+          if (result?.serverError) {
+            setPreviewFieldError(result.serverError);
+            setPreviewFailed(true);
+          }
+          return;
+        }
         setNetworkFailed((current) => (current === "submit" ? null : current));
+        setPreviewFailed(false);
         setTaxLine(result.data.taxLine);
         setServerBlock(result.data.block);
         setPreviewFieldError(result.data.fieldErrors.supplyAmount ?? null);
@@ -622,7 +631,11 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
 
   const amountError = errors.supplyAmount ?? amountInput.error ?? previewFieldError ?? undefined;
   // 계산 한 줄은 값 줄이라 설명 문단(`Form.Hint`의 <p>)이 아니라 같은 모양(힌트 글자)의 span이다 — 화면 사용성 원칙 검사의 「긴 설명」과 구분.
-  const taxHint = taxLine ? (
+  const taxHint = previewFailed ? (
+    <span className={`${styles.taxLine} ${styles.stale}`} data-testid="expense-tax-line">
+      계산 불가
+    </span>
+  ) : taxLine ? (
     <span className={`${styles.taxLine} ${previewing ? styles.stale : ""}`} data-testid="expense-tax-line">
       <TaxParts parts={taxLine.parts} />
     </span>

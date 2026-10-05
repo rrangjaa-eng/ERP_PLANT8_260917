@@ -98,14 +98,16 @@ function ColumnCheckbox({
   }, [indeterminate]);
 
   return (
-    <input
-      ref={ref}
-      type="checkbox"
-      className={styles.headerCheckbox}
-      checked={checked}
-      aria-label={ariaLabel}
-      onChange={(event) => onChange(event.target.checked)}
-    />
+    <label className={styles.headerCheckboxHit}>
+      <input
+        ref={ref}
+        type="checkbox"
+        className={styles.headerCheckbox}
+        checked={checked}
+        aria-label={ariaLabel}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+    </label>
   );
 }
 

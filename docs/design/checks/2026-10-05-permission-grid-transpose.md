@@ -20,3 +20,9 @@
 - [x] 새 색·서체·radius·그림자를 만들지 않았다(tokens.css 변수만) — 근거: CSS는 `--surface-group`·`--text-group`·`--surface-selected`·`--s-*`·`--text-aux` 등 기존 변수만, 13px 미만 글자 없음(`--text-aux`).
 - [x] 폰 320에서 가로 넘침 없음 · 터치 44px — 근거: 폰 렌더(`.mobileOnly`)는 코드·CSS 변경 없음. PC 격자는 700 미만에서 `display: none` 그대로.
 - [x] 실제 앱 화면(PC 1280 · 폰 390)을 찍어 보고 확인했다 — 스크린샷 경로: /mnt/project-files/notes/perm-grid-scroll/after/ (CI=true 빌드 화면 측정, 아래 DOM 실측으로 판정)
+
+## DOM 감사 지적 반영(D1~D4, PR #166 독립 DOM 감사)
+- [x] 계급 열 같은 폭(D1): `.colHeader` 폭을 `--s-12`×2(96px)로 같게 두고 남는 폭은 폭 없는 행 머리글 열이 갖는다 — auto 레이아웃 유지(table-layout: fixed는 좁은 폭에서 줄어들지 못해 700~768 가로 넘침이 생기므로 택하지 않음), 최소 폭 `--s-8 + --cell-pad-x×2`, 이름은 줄바꿈 허용. 근거: E2E 계급 th 폭 편차 ≤1px(1280·768) + 기존 가로 넘침 0 스펙 통과, 새 토큰 없음.
+- [x] 셀 전체 클릭(D2, §7-13): label이 td를 채운다(`width: 100%; min-height: var(--s-8)`). 근거: E2E에서 td 오른쪽 끝 −3px 클릭이 체크박스를 토글.
+- [x] 그룹 줄 선 0(D3, §7-3): `.table .groupHeader { border-bottom: 0 }`. 근거: Table.module.css 그룹 줄과 같은 값, after 측정에서 border-bottom 0px 확인.
+- [x] 전체 선택 체크박스 32×32(D4, §3): 체크박스만 label로 감쌌다(항목 이름은 제외 — 이름 클릭으로 전 계급이 바뀌는 사고 방지). 근거: E2E 감싼 요소 ≥32×32.

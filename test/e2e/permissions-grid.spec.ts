@@ -231,4 +231,59 @@ test.describe("권한표 격자 (ADMN-01, D-40, 성공 기준 2)", () => {
       });
     }
   }
+  // DOM 감사 D1·D2·D4(PR #166): 계급 열 같은 폭 · 셀 전체 클릭 · 전체 선택 체크박스 32×32 영역.
+  async function loginAdmin(page: import("@playwright/test").Page) {
+    const admin = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(admin.email);
+    await page.getByLabel("비밀번호").fill(admin.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+  }
+
+  for (const width of [1280, 768]) {
+    test(`권한표 계급 열 머리글은 폭 ${width}에서 모두 같은 폭이다 (D1)`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await loginAdmin(page);
+      await page.goto("/admin/permissions");
+      const headers = page.locator("thead th[scope='col']");
+      await expect(headers.first()).toBeVisible();
+      // 첫 th는 모서리(항목 이름 열) — 나머지가 계급 열이다.
+      const widths = await headers.evaluateAll((els) => els.slice(1).map((el) => el.getBoundingClientRect().width));
+      expect(widths.length).toBeGreaterThanOrEqual(5);
+      expect(Math.max(...widths) - Math.min(...widths)).toBeLessThanOrEqual(1);
+    });
+  }
+
+  test("셀 td의 안쪽 가장자리를 눌러도 체크박스가 토글된다 (D2, §7-13 셀 전체 클릭)", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const tempRoleId = `role-e2e-cellclick-${randomUUID()}`;
+    const tempRoleName = `E2E 셀클릭 ${tempRoleId.slice(-12)}`;
+    await insertRole(SYSTEM_VIEWER, { id: tempRoleId, name: tempRoleName, sortOrder: 98 });
+    try {
+      await loginAdmin(page);
+      await page.goto("/admin/permissions");
+      const cell = page.getByRole("checkbox", { name: `${tempRoleName} · 코드표 · 보기` });
+      await expect(cell).not.toBeChecked();
+      await cell.scrollIntoViewIfNeeded();
+      const td = cell.locator("xpath=ancestor::td");
+      const box = await td.boundingBox();
+      if (!box) throw new Error("td bounding box를 가져오지 못했다");
+      await page.mouse.click(box.x + box.width - 3, box.y + box.height / 2);
+      await expect(cell).toBeChecked();
+    } finally {
+      await setRoleArchived(SYSTEM_VIEWER, tempRoleId, true);
+    }
+  });
+
+  test("행 머리글 전체 선택 체크박스의 클릭 영역(감싼 요소)이 32×32 이상이다 (D4)", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await loginAdmin(page);
+    await page.goto("/admin/permissions");
+    const hit = page.getByRole("checkbox", { name: /전체 선택$/ }).first().locator("xpath=..");
+    const box = await hit.boundingBox();
+    if (!box) throw new Error("감싼 요소 bounding box를 가져오지 못했다");
+    expect(box.width).toBeGreaterThanOrEqual(32);
+    expect(box.height).toBeGreaterThanOrEqual(32);
+  });
 });

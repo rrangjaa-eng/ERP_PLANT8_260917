@@ -56,7 +56,12 @@
   font-weight: var(--fw-medium);
   padding: var(--cell-pad-y) var(--cell-pad-x);
   text-align: center;
-  white-space: nowrap;
+  /* 계급 열은 모두 같은 폭(auto 레이아웃에서 폭이 있는 열은 선호 폭이 같고,
+     남는 폭은 폭 없는 행 머리글 열이 가진다) — 좁아지면 이름이 줄바꿈하며
+     최소 폭(체크박스 32 + 좌우 패딩)까지 줄어 700~768에서도 넘치지 않는다. */
+  width: calc(var(--s-12) * 2);
+  min-width: calc(var(--s-8) + var(--cell-pad-x) * 2);
+  word-break: keep-all;
 }
 
 /* 메뉴 그룹 줄 — §7-3 표의 그룹 줄(Table.module.css .groupRow/.groupHeader)과 같은 역할 토큰. */
@@ -71,6 +76,21 @@
   font-size: var(--text-aux);
   font-weight: var(--fw-medium);
   text-align: left;
+}
+
+/* §7-3 그룹 줄은 아래 선 없음(공통 th 규칙보다 우선하도록 .table 아래에 둔다). */
+.table .groupHeader {
+  border-bottom: 0;
+}
+
+/* 전체 선택 체크박스만 감싸는 PC 32×32 클릭 영역(항목 이름은 감싸지 않는다). */
+.headerCheckboxHit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--s-8);
+  height: var(--s-8);
+  cursor: pointer;
 }
 
 .headerCheckbox {
@@ -126,9 +146,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: var(--s-8);
-  height: var(--s-8);
-  margin: 0 auto;
+  width: 100%;
+  min-height: var(--s-8);
   cursor: pointer;
 }
 

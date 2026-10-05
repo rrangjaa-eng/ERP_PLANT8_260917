@@ -1211,13 +1211,13 @@ export type BlockedDocument = {
 };
 
 const BLOCKED_REJECTED_LIMIT = 50;
-// 승인 문서는 시간이 갈수록 쌓이므로 최근 처리한 것만 종류에 넘긴다.
+// 승인 문서는 시간이 갈수록 쌓이므로 승인 뒤 막힘의 원천(지금은 증빙 무효뿐)이 있는 문서만 SQL로 먼저 거른 뒤 종류에 넘긴다(05 /review A9).
 const BLOCKED_APPROVED_LIMIT = 200;
 
 export async function listMyBlockedDocuments(viewer: Viewer, deps?: ApprovalDeps): Promise<BlockedDocument[]> {
   const visible = createVisibleMemo(deps?.findVisibility);
   const rejected = await listDrafterInstances(viewer, { drafterId: viewer.id, status: "rejected", limit: BLOCKED_REJECTED_LIMIT });
-  const approved = await listDrafterInstances(viewer, { drafterId: viewer.id, status: "approved", limit: BLOCKED_APPROVED_LIMIT });
+  const approved = await listDrafterInstances(viewer, { drafterId: viewer.id, status: "approved", limit: BLOCKED_APPROVED_LIMIT, unresolvedVoidOnly: true });
 
   const found: Omit<BlockedDocument, "summary">[] = rejected.map((row) => {
     const def = getDocumentKind(row.documentKind);

@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { files, users } from "@/db/schema";
@@ -113,6 +113,15 @@ export async function markVoided(
 
 // 05-09(G1): 무효 뒤 아직 새 증빙이 없는 주인 — 지워지지 않은 행 가운데 가장 늦은 무효가 있고, 살아 있는 행이 없거나 가장 늦은
 // 무효가 가장 늦게 올린 살아 있는 행보다 늦다. 한 쿼리(GROUP BY · HAVING).
+// 무효 뒤 아직 새 증빙이 없음 — 한 주인의 지워지지 않은 행 묶음(GROUP BY 주인)에 거는 HAVING 조건. 아래 함수와
+// 결재 「막힘」 후보 거르기(repositories/approvals listDrafterInstances)가 같은 조건을 쓴다.
+export function unresolvedVoidHaving(viewer: Viewer): SQL {
+  void viewer;
+  const lastVoid = sql`max(${files.voidedAt})`;
+  const lastLive = sql`max(${files.createdAt}) filter (where ${files.voidedAt} is null)`;
+  return sql`${lastVoid} is not null and (${lastLive} is null or ${lastVoid} > ${lastLive})`;
+}
+
 export async function findUnresolvedVoidOwnerIds(
   viewer: Viewer,
   input: { ownerKind: string; ownerIds: readonly string[] },
@@ -120,14 +129,12 @@ export async function findUnresolvedVoidOwnerIds(
 ): Promise<string[]> {
   void viewer;
   if (input.ownerIds.length === 0) return [];
-  const lastVoid = sql`max(${files.voidedAt})`;
-  const lastLive = sql`max(${files.createdAt}) filter (where ${files.voidedAt} is null)`;
   const rows = await tx
     .select({ ownerId: files.ownerId })
     .from(files)
     .where(and(eq(files.ownerKind, input.ownerKind), inArray(files.ownerId, [...input.ownerIds]), isNull(files.removedAt)))
     .groupBy(files.ownerId)
-    .having(sql`${lastVoid} is not null and (${lastLive} is null or ${lastVoid} > ${lastLive})`);
+    .having(unresolvedVoidHaving(viewer));
   return rows.map((row) => row.ownerId);
 }
 

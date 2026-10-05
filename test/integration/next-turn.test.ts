@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { files } from "@/db/schema";
+import { randomUUID } from "node:crypto";
+import { approvalInstances, files } from "@/db/schema";
 import { approveDocument, getDocumentKind, listMyInbox, loadKindDetails, rejectDocument, withdrawDocument } from "@/domain/approvals";
 import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND, saveExpenseDraft } from "@/domain/expenses";
 import { voidEvidence } from "@/domain/evidence";
@@ -246,6 +247,31 @@ describe("증빙 무효 [막힘] (G1)", () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+describe("증빙 무효 [막힘] — 오래된 승인 문서 (A9 · adversarial F6)", () => {
+  it("그 뒤에 승인된 문서가 200건 넘게 쌓여도 오래된 승인 문서의 증빙 무효 줄이 선다", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await makeEvidenceManager();
+    const { expenseId } = await approvedExpense(fx);
+    await voidEvidence(manager, { fileId: (await fileIds(expenseId))[0] ?? "", reason: "다른 건" });
+    // 더 최근에 처리된 승인 인스턴스 201건(결재 인스턴스 행만 — 도메인 경로로 201건 승인은 느리다). 증빙이 없어 막힘이 아니다.
+    const later = new Date(Date.now() + 60_000);
+    await db.insert(approvalInstances).values(
+      Array.from({ length: 201 }, () => ({
+        documentKind: EXPENSE_DOCUMENT_KIND,
+        documentId: randomUUID(),
+        drafterId: fx.pm.id,
+        status: "approved",
+        currentRound: 1,
+        createdAt: later,
+        updatedAt: later,
+      })),
+    );
+
+    const items = await listNextTurnItems(fx.pm);
+    expect(items.map((item) => item.label)).toEqual(["가을 팝업 · 무대 제작 — 증빙 무효"]);
   });
 });
 

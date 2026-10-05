@@ -2,7 +2,8 @@ import { and, asc, desc, eq, inArray, isNotNull, isNull, max, sql, type SQL } fr
 import { alias } from "drizzle-orm/pg-core";
 import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
-import { approvalInstances, approvalRoutes, approvalSteps, users } from "@/db/schema";
+import { approvalInstances, approvalRoutes, approvalSteps, files, users } from "@/db/schema";
+import { unresolvedVoidHaving } from "@/repositories/files";
 import type { Viewer } from "@/domain/viewer";
 
 // 04.1(EXP-03·EXP-04): 결재 세 표의 리포지토리. 모든 쓰기는 호출자가 연
@@ -305,16 +306,20 @@ export type DrafterInstance = ApprovalInstanceRow & { rejecterName: string | nul
 // 05-10: 내가 기안한 인스턴스 중 한 상태(반려 · 승인)인 것 — 최근 처리 순. 반려는 지금 차수의 반려 단계 처리자 이름을 함께 읽는다.
 export async function listDrafterInstances(
   viewer: Viewer,
-  input: { drafterId: string; status: "rejected" | "approved"; limit: number },
+  input: { drafterId: string; status: "rejected" | "approved"; limit: number; unresolvedVoidOnly?: boolean },
 ): Promise<DrafterInstance[]> {
   void viewer;
+  // 05 /review A9: 승인 뒤 막힘 후보는 LIMIT 전에 SQL로 거른다 — 그 문서의 증빙이 무효 뒤 아직 새 증빙이 없는 것만(최근 N건만 보면 오래된 문서가 빠진다).
+  const voidFilter = input.unresolvedVoidOnly
+    ? sql`exists (select 1 from ${files} where ${files.ownerKind} = ${approvalInstances.documentKind} and ${files.ownerId} = ${approvalInstances.documentId} and ${files.removedAt} is null group by ${files.ownerId} having ${unresolvedVoidHaving(viewer)})`
+    : undefined;
   const rows = await db
     .select({ instance: approvalInstances, rejecterName: actors.name })
     .from(approvalInstances)
     .leftJoin(approvalRoutes, and(eq(approvalRoutes.instanceId, approvalInstances.id), eq(approvalRoutes.round, approvalInstances.currentRound)))
     .leftJoin(approvalSteps, and(eq(approvalSteps.routeId, approvalRoutes.id), eq(approvalSteps.action, "rejected")))
     .leftJoin(actors, eq(actors.id, approvalSteps.actedBy))
-    .where(and(eq(approvalInstances.drafterId, input.drafterId), eq(approvalInstances.status, input.status)))
+    .where(and(eq(approvalInstances.drafterId, input.drafterId), eq(approvalInstances.status, input.status), voidFilter))
     .orderBy(desc(approvalInstances.updatedAt), asc(approvalInstances.id))
     .limit(input.limit);
   return rows.map((row) => ({ ...row.instance, rejecterName: row.rejecterName }));

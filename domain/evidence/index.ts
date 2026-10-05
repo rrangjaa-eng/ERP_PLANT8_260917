@@ -215,7 +215,9 @@ export async function requestEvidenceUpload(viewer: Viewer, raw: EvidenceUploadR
       continue;
     }
     const other = await rule.load(viewer, file.ownerId);
-    const visible = other !== null && other.number !== null && (await rule.canSee(viewer, other));
+    // 주인이 없으면(지운 작성 중 문서) 중복이 아니다.
+    if (!other) continue;
+    const visible = other.number !== null && (await rule.canSee(viewer, other));
     duplicates.push({ sameOwner: false, visibleNumber: visible ? other.number : null });
   }
   const check = checkEvidenceUpload(input, { maxBytes, duplicates });

@@ -73,7 +73,7 @@ import {
   type ExpensePreviewDto,
 } from "@/domain/expenses/dto";
 import { listCodeItems } from "@/repositories/code-tables";
-import { countActiveByOwner, listAliveByOwners } from "@/repositories/files";
+import { countActiveByOwner, listAliveByOwners, markOwnerFilesRemoved, restoreOwnerFilesRemovedAt } from "@/repositories/files";
 import { findProjectById, lockProjectForWrite, type ProjectRow } from "@/repositories/projects";
 import { findLatestQuoteRevision, findQuoteRevisionById, summarizeRevisions } from "@/repositories/quote-revisions";
 import { findQuoteLineById, listLineageLinesByProject, listQuoteLinesByRevision, type QuoteLineRow } from "@/repositories/quote-lines";
@@ -960,6 +960,8 @@ export async function deleteExpenseDraft(viewer: Viewer, input: { expenseId: str
       if (!latest || latest.number !== null) throw new ExpenseNotFoundError();
       throw new ExpenseConflictError(latest.updatedAt);
     }
+    // 증빙 파일도 같은 시각으로 뗀다(되돌리기가 그 시각의 파일만 되살린다).
+    await markOwnerFilesRemoved(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: row.id, removedBy: viewer.id, at: deleted.deletedAt ?? new Date() }, tx);
     await recordActionInTx(
       viewer,
       { actionType: "document_delete", entity: "expense", entityId: row.id, documentId: row.id, detail: { kind: EXPENSE_DOCUMENT_KIND } },
@@ -986,6 +988,7 @@ export async function restoreExpenseDraft(viewer: Viewer, input: { expenseId: st
     return await withTransaction(async (tx) => {
       const restored = await restoreDraft(viewer, { id: row.id, drafterId: viewer.id }, tx);
       if (!restored) throw new ExpenseNotFoundError();
+      if (row.deletedAt) await restoreOwnerFilesRemovedAt(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: row.id, removedAt: row.deletedAt }, tx);
       await recordActionInTx(
         viewer,
         { actionType: "document_update", entity: "expense", entityId: row.id, documentId: row.id, detail: { kind: EXPENSE_DOCUMENT_KIND, change: "restore" } },

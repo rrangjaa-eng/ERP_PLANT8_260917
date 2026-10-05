@@ -73,6 +73,28 @@ export async function markRemoved(viewer: Viewer, input: { id: string; removedBy
   return rows.length > 0;
 }
 
+// 작성 중 문서를 지울 때 그 문서의 아직 지워지지 않은 파일을 같은 시각으로 뗀다(중복 검사 · 고아 정리가 지운 문서의 파일을 살아 있는 것으로 보지 않게).
+export async function markOwnerFilesRemoved(
+  viewer: Viewer,
+  input: { ownerKind: string; ownerId: string; removedBy: string; at: Date },
+  tx: DbOrTx,
+): Promise<void> {
+  void viewer;
+  await tx
+    .update(files)
+    .set({ removedAt: input.at, removedBy: input.removedBy })
+    .where(and(eq(files.ownerKind, input.ownerKind), eq(files.ownerId, input.ownerId), isNull(files.removedAt)));
+}
+
+// 지운 문서를 되돌릴 때 그 삭제가 뗀 파일(삭제 시각과 같은 removed_at)만 되살린다 — 그 전에 따로 뗀 파일은 그대로.
+export async function restoreOwnerFilesRemovedAt(viewer: Viewer, input: { ownerKind: string; ownerId: string; removedAt: Date }, tx: DbOrTx): Promise<void> {
+  void viewer;
+  await tx
+    .update(files)
+    .set({ removedAt: null, removedBy: null })
+    .where(and(eq(files.ownerKind, input.ownerKind), eq(files.ownerId, input.ownerId), eq(files.removedAt, input.removedAt)));
+}
+
 // 05-09: 살아 있는 행에만 무효 세 칸을 쓴다 — 0행이면 null(이미 무효 · 지워짐). 시각은 주입이 없으면 DB now() — 올린 시각(files.created_at
 // 기본값)과 같은 시계라 무효 뒤 신호의 순서 비교가 어긋나지 않는다.
 export async function markVoided(

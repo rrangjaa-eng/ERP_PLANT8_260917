@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { and, eq, isNull } from "drizzle-orm";
 import { db, pool } from "@/db/client";
 import { actionLog, approvalInstances, expenses, files, uploadIntents } from "@/db/schema";
-import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND, ExpenseConflictError, ExpenseNotFoundError, submitExpense } from "@/domain/expenses";
+import { createExpenseFromLines, deleteExpenseDraft, EXPENSE_DOCUMENT_KIND, ExpenseConflictError, ExpenseNotFoundError, restoreExpenseDraft, submitExpense } from "@/domain/expenses";
 import {
   completeEvidenceUpload,
   createEvidenceViewUrl,
@@ -392,6 +392,37 @@ describe("거부 — 의도 · 메타데이터 · 상태 · 권한 · 중복", (
     await removeEvidence(fx.pm, { fileId: removed.id });
     await expect(
       requestEvidenceUpload(fx.pm, { ownerKind: "expense", ownerId: draft, ...declared({ sha256: removedSha }) }, { storage: createMemoryStorage(), now: NOW }),
+    ).resolves.toMatchObject({ method: "PUT" });
+  });
+});
+
+describe("지운 작성 중 문서의 증빙 (A3 · red-team)", () => {
+  it("증빙 있는 작성 중 문서를 지우면 같은 영수증을 새 문서에 올릴 수 있고, 되돌리기는 그 증빙도 되살린다", async () => {
+    const fx = await setupExpenseProject();
+    const deleted = await draftOf(fx);
+    const shared = sha();
+    await attachEvidence(fx.pm, deleted, createMemoryStorage(), { sha256: shared });
+    await deleteExpenseDraft(fx.pm, { expenseId: deleted, expectedVersion: await versionOf(deleted) });
+
+    const next = (await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.split] })).created[0]?.expenseId ?? "";
+    await expect(
+      requestEvidenceUpload(fx.pm, { ownerKind: "expense", ownerId: next, ...declared({ sha256: shared }) }, { storage: createMemoryStorage(), now: NOW }),
+    ).resolves.toMatchObject({ method: "PUT" });
+
+    await restoreExpenseDraft(fx.pm, { expenseId: deleted });
+    expect(await listEvidence(fx.pm, { ownerKind: "expense", ownerId: deleted })).toHaveLength(1);
+  });
+
+  it("지운 문서에 살아 있는 파일 행이 남아 있어도(고치기 전 데이터) 중복으로 세지 않는다", async () => {
+    const fx = await setupExpenseProject();
+    const deleted = await draftOf(fx);
+    const shared = sha();
+    await attachEvidence(fx.pm, deleted, createMemoryStorage(), { sha256: shared });
+    await db.update(expenses).set({ deletedAt: new Date(), deletedBy: fx.pm.id }).where(eq(expenses.id, deleted));
+
+    const next = (await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.split] })).created[0]?.expenseId ?? "";
+    await expect(
+      requestEvidenceUpload(fx.pm, { ownerKind: "expense", ownerId: next, ...declared({ sha256: shared }) }, { storage: createMemoryStorage(), now: NOW }),
     ).resolves.toMatchObject({ method: "PUT" });
   });
 });

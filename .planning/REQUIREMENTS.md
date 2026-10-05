@@ -132,7 +132,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **OPS-05**: 직원 계정별 핵심 행동만 로그로 남긴다: 로그인, 문서 생성·삭제, 설정·권한 변경. 단순 조회·화면 이동 같은 잡음은 남기지 않는다. 관리자는 로그를 정리(조건 삭제)할 수 있고 감사 기록 자체는 고치지 않는다. Excel 내보내기와 마스킹 해제는 설정으로 끌 수 없는 핵심 로그다 (2026-10-01 분리: 문서 제출·승인·반려·회수 → OPS-08, 지급·구매 처리 → OPS-09, 손익 열람 → OPS-10, 인센티브 열람 → OPS-11, 주민등록번호 열람 기록 → CERT-02)
 - [x] **OPS-06**: 관리자 시스템 상태 화면: 마지막 알림 tick·백업·복원 리허설·계산 불가 건수·DB 커넥션·배포 버전을 보이고 한도 초과 시 배너가 뜬다. 서버 로그는 JSON 형식이다 (2026-09-23: 데이터 이전이 없어 '이전 실행' 항목을 '복원 리허설'로 바꿈)
 - [x] **OPS-07**: `docs/ARCHITECTURE.md`·`docs/OPERATIONS.md`(런북 포함)를 Phase 1 산출물로 만들고 페이즈마다 갱신한다(각 300줄 상한)
-- [ ] **OPS-08**: 문서 제출·승인·반려·회수를 핵심 행동 로그로 남긴다 (2026-10-01 OPS-05에서 분리)
+- [x] **OPS-08**: 문서 제출·승인·반려·회수를 핵심 행동 로그로 남긴다 (2026-10-01 OPS-05에서 분리)
 - [ ] **OPS-09**: 지급·구매 처리를 핵심 행동 로그로 남긴다 (2026-10-01 OPS-05에서 분리)
 - [ ] **OPS-10**: 손익 열람을 민감 정보 열람 로그로 남긴다 (2026-10-01 OPS-05에서 분리)
 - [ ] **OPS-11**: 인센티브 열람을 민감 정보 열람 로그로 남긴다 (2026-10-01 OPS-05에서 분리)
@@ -272,7 +272,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | OPS-05 | Phase 3 | Complete |
 | OPS-06 | Phase 1 (상태 화면 「복원 리허설」 항목은 Phase 04.4가 구현) | Complete |
 | OPS-07 | Phase 1 | Complete |
-| OPS-08 | Phase 5 | Pending |
+| OPS-08 | Phase 5 | Complete |
 | OPS-09 | Phase 6 | Pending |
 | OPS-10 | Phase 9 | Pending |
 | OPS-11 | Phase 10 | Pending |

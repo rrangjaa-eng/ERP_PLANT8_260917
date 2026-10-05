@@ -125,6 +125,30 @@ status: complete
 - 시각 기준 사진 `dev-components`(1280 · 390)는 갤러리에 `무효`가 더해져 바뀐다 — 갱신은 05-10 Task 3.
 - 경영관리 계급을 실제로 쓰려면 관리자가 권한표에서 `expenses` 보기 · 두 새 키 쓰기 · 노출표 `expense.value`를 켠다.
 
+## 웨이브 11 검토 수정 (2026-10-05)
+근거: `notes/05-review/wave11/README.md` D1–D5 · `notes/05-review/05-09-permission-lock-review.md` m1–m4. 실패 시험 먼저: 도메인 `a2ad793d`(통합 3건 RED) · 화면 `2d5dac36`(E2E 4건 RED, D2는 D1에 가려 D2만 되돌려 따로 RED 확인 — 시트 290.6 → 261.8 · y 376 → 405).
+
+| # | 수정 | 커밋 |
+|---|---|---|
+| m1 | 기안자 아닌 권한자의 승인 · 반려 · 회수 문서 붙이기 = 충돌 문구 대신 `EvidenceLockedError(결재 중 아님 · 증빙은 작성자)`(새 상수 `EVIDENCE_ADD_DRAFTER_ONLY`). 기안자 결재 중은 `결재 중 · 증빙 잠김` 그대로 | `b7e49851` |
+| m2 | 완료 통보에서 `canSee` 다시 판정 → 볼 수 없으면 restart(옮긴 객체 보상 삭제) | `b7e49851` |
+| m3 | 붙이기 권한을 가진 기안자도 권한자 갈래가 아니다 — 결재 중 자기 문서는 `결재 중 · 증빙 잠김` · 잠김 한 줄(사용자 지시(10/5 00:55)에 따라 추천안 적용) | `b7e49851` |
+| m4 | 손대지 않음 — 시각 기준 사진은 05-10 몫 | — |
+| D1 | 폰 확인 시트 `.actions kbd { display: none }` | `9b02984b` |
+| D2 | 열린 동안 막힘 줄이 한 번 선 시트는 빈 묶음을 남기고 폰은 그 줄 높이(`--text-aux × --lh-body`)를 비워 둠 | `9b02984b` |
+| D3 | 고정 행동 줄에 `data-fixed-bar`, 토스트가 줄 윗변까지 실측해(`--toast-lift`) 그 위에 뜸 — 문서 행동 줄(연차 · 지출결의 공용) · 지출결의 폼 제출 줄 | `b48950d8` |
+| D4 | 무효 처리 뒤 새로 고침이 끝나면 증빙 영역(tabIndex -1)에 포커스 | `c7e88ecc` |
+| D5 | 결재선 단계가 있을 때만 `결재선` 행 | `67138dc8` |
+| 덧 | 05-05 트레이서 E2E가 제출 토스트 `되돌리기`(05-09가 더함)를 반영 · 범위 밖 기존 실패 deferred-items 기록 | `9f2954cf` |
+
+이탈:
+1. **m2 위치** — 지시는 「완료 tx 안에서 다시 판정」이었으나 `canSeeExpense`는 전역 풀 읽기(can · 팀 범위 · walk)라 잠근 tx 안에서 부르면 풀 소진 교착이다(`domain/document-numbering/index.ts:237` 금지 규칙, 이 파일 `adderOf`와 같은 처리). 그래서 tx 바로 전(저장소 옮기기 뒤 · adder 계산과 같은 자리)에서 판정하고, 상태 · version은 지금처럼 tx 안에서 잠근 뒤 다시 본다. 남는 창은 그 사이 몇 ms.
+2. **[Rule 3] Toast 효과 순서** — `toast-timer.test.ts`가 소스의 첫 `useEffect( … }, [deps]);`를 정규식으로 읽어, 새 `useLayoutEffect`를 자동 소멸 효과 뒤에 둔다(동작 같음).
+3. **[Rule 1] `expense-submit-mobile-approval.spec.ts:92`** — 05-09가 제출 토스트에 `되돌리기`를 더한 뒤 전체 문장 일치가 깨져 있었다(이번 넓은 실행에서 발견). 결과 문장 칸 + `되돌리기` 버튼으로 나눠 단언.
+4. 범위 밖: `mobile-w5-review-fixes.spec.ts:47` 폰 320 `/admin/code-tables` CLS 0.1958 — 기준 화면 파일로 되돌려도 3/3 같은 값. `deferred-items.md`.
+
+검증: lint 0 · typecheck 0 · `pnpm test:unit` 252 files · 3873 통과 · 통합 evidence-upload · evidence-void · expense-approval-concurrency · expense-approval-lifecycle · expense-submit-concurrency · expense-visibility 6 files 91 통과 · E2E `CI=true --no-deps`(desktop + mobile-375) 13 specs 108개 중 106 통과 → 위 3으로 고친 뒤 expense-submit-mobile-approval 12 통과, 남은 1건은 위 4(기존). 점검표 `docs/design/checks/2026-10-05-05-09-wave11-review-fixes.md`.
+
 ## Self-Check: PASSED
 - 파일: domain/evidence/signals.ts · test/integration/evidence-void.test.ts · test/integration/expense-approval-concurrency.test.ts · docs/design/checks/2026-10-05-05-09-evidence-void.md 존재
 - 커밋: c8f485f3 · 9d1893e7 · a9cb94d7 · 46cfaaa1 · f313f1dc · d68df593 · d03d831e · 635f39ea · 0faf7f17 존재

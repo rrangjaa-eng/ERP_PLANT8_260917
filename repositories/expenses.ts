@@ -225,13 +225,22 @@ export type ExpenseTaxSnapshot = Pick<
 
 export async function saveSubmissionSnapshot(
   viewer: Viewer,
-  input: { id: string; taxSnapshot: ExpenseTaxSnapshot; installment: boolean; installmentSeq: number | null; submittedAt: Date; updatedAt?: Date },
+  input: {
+    id: string;
+    taxSnapshot: ExpenseTaxSnapshot;
+    installment: boolean;
+    installmentSeq: number | null;
+    submittedAt: Date;
+    updatedAt?: Date;
+    vendorId?: string | null;
+  },
   tx: DbOrTx,
 ): Promise<void> {
   await tx
     .update(expenses)
     .set({
       ...input.taxSnapshot,
+      ...(input.vendorId !== undefined ? { vendorId: input.vendorId } : {}),
       installment: input.installment,
       installmentSeq: input.installmentSeq,
       submittedAt: input.submittedAt,

@@ -186,6 +186,13 @@ async function findEditableExpense(viewer: Viewer, expenseId: string): Promise<E
   return row;
 }
 
+// 문서에 붙일 수 있는 거래처 — 있고 숨김 · 보관이 아닌 것(아니면 없는 문서). 팀 비용 문서의 거래처 고르기 · 저장이 같은 판정을 쓴다.
+async function usableVendor(viewer: Viewer, vendorId: string) {
+  const vendor = UUID_SHAPE.test(vendorId) ? await findVendorById(viewer, vendorId) : null;
+  if (!vendor || vendor.hidden || vendor.archivedAt !== null) throw new ExpenseNotFoundError();
+  return vendor;
+}
+
 // ── 결재선 설정 17키 · 종류 등록 ─────────────────────────────────────────
 
 export const EXPENSE_ROUTE_SETTINGS: RouteSettingDefs = {
@@ -659,15 +666,19 @@ export async function saveExpenseDraft(
   viewer: Viewer,
   input: { expenseId: string; expectedVersion: number; fields: ExpenseDraftInput },
 ): Promise<{ version: number }> {
+  if (!(await can(viewer, "expenses", "write"))) throw new ForbiddenError("지출결의 작성 권한 없음");
   const row = await findEditableExpense(viewer, input.expenseId);
   const parsed = draftFieldsSchema.parse(input.fields);
   const fields = toDraftColumns(parsed);
   // 팀 비용 칸은 팀 비용 문서만 받는다(DB 체크 expenses_line_or_team_check도 같은 편). 귀속 팀은 사용일 소속으로 저장 때 다시 정해진다 —
   // 팀 id를 호출자가 보낼 수 없다(T-05-703). 트랜잭션 · 잠금 밖의 읽기다.
+  // 견적 줄 문서의 거래처는 줄이 정한다(줄 바꾸기만 바꾼다) — 팀 비용 문서의 거래처는 거래처 고르기와 같은 판정을 지난다.
   if (!isTeamCostRow(row)) {
-    if (parsed.teamExpenseKind !== undefined || parsed.usageDate !== undefined || parsed.content !== undefined) throw new ExpenseNotFoundError();
-  } else if (parsed.usageDate !== undefined) {
-    fields.attributedTeamId = await attributedTeamFor(viewer, parsed.usageDate);
+    if (parsed.teamExpenseKind !== undefined || parsed.usageDate !== undefined || parsed.content !== undefined || parsed.vendorId !== undefined)
+      throw new ExpenseNotFoundError();
+  } else {
+    if (parsed.vendorId) await usableVendor(viewer, parsed.vendorId);
+    if (parsed.usageDate !== undefined) fields.attributedTeamId = await attributedTeamFor(viewer, parsed.usageDate);
   }
   const saved = await updateDraftIfVersion(viewer, { id: row.id, expectedVersion: input.expectedVersion, fields, updatedBy: viewer.id });
   if (!saved) {
@@ -705,6 +716,7 @@ export async function createTeamExpenseDraft(
   if (existing) return existing;
 
   const parsed = draftFieldsSchema.parse(input.fields);
+  if (parsed.vendorId) await usableVendor(viewer, parsed.vendorId);
   const usageDate = parsed.usageDate ?? seoulToday(deps?.now);
   const attributedTeamId = await attributedTeamFor(viewer, usageDate);
   const inserted = await insertTeamDraftIfAbsent(viewer, {
@@ -730,8 +742,7 @@ export async function changeExpenseVendor(
   if (!(await can(viewer, "expenses", "write"))) throw new ForbiddenError("지출결의 작성 권한 없음");
   const row = await findEditableExpense(viewer, input.expenseId);
   if (!isTeamCostRow(row)) throw new ExpenseNotFoundError();
-  const vendor = UUID_SHAPE.test(input.vendorId) ? await findVendorById(viewer, input.vendorId) : null;
-  if (!vendor || vendor.hidden || vendor.archivedAt !== null) throw new ExpenseNotFoundError();
+  const vendor = await usableVendor(viewer, input.vendorId);
   const fields: ExpenseDraftFields = { vendorId: vendor.id, ...(vendor.defaultEvidenceType ? { evidenceType: vendor.defaultEvidenceType } : {}) };
   const saved = await updateDraftIfVersion(viewer, { id: row.id, expectedVersion: input.expectedVersion, fields, updatedBy: viewer.id });
   if (!saved) {
@@ -907,6 +918,8 @@ export async function submitExpense(
         installmentSeq,
         submittedAt,
         updatedAt: deps?.now ?? new Date(),
+        // 견적 줄 문서의 거래처(결재 · 지급이 읽는 값)는 제출 판정 ⑤가 본 줄의 거래처로 맞춘다.
+        ...(line ? { vendorId: line.vendorId } : {}),
       },
       tx,
     );
@@ -1117,6 +1130,7 @@ export type ExpenseSubmitBlock = NonNullable<ExpensePreviewDto["block"]>;
 // 저장 전 칸 값을 초안에 겹쳐 세금 한 줄 · 제출 막힘 첫 이유와 대상 · 회차 상한 칸 오류를 돌려준다. 기안자 · 작성 중만(아니면 없는 문서 —
 // 남의 초안을 계산하지 않는다, T-05-603). 트랜잭션 · 쓰기 없음 — 미리보기 통과가 제출 통과를 보장하지 않는다(제출이 tx 안에서 같은 규칙으로 다시 판정).
 export async function previewExpense(viewer: Viewer, input: { expenseId: string; fields: ExpenseDraftInput }): Promise<Partial<ExpensePreviewDto>> {
+  if (!(await can(viewer, "expenses", "write"))) throw new ForbiddenError("지출결의 작성 권한 없음");
   const saved = await findEditableExpense(viewer, input.expenseId);
   const projectRow = saved.projectId ? await findProjectById(viewer, saved.projectId) : null;
   if (!projectRow && !isTeamCostRow(saved)) throw new ExpenseNotFoundError();

@@ -1,36 +1,31 @@
 {
   "version": "1.0",
-  "timestamp": "2026-10-03T09:13:11.237Z",
-  "phase": "04.6",
-  "phase_name": "a",
-  "phase_dir": ".planning/phases/04.6-a",
-  "plan": 26,
-  "task": 6,
-  "total_tasks": 7,
+  "timestamp": "2026-10-05T19:39:52.502Z",
+  "phase": "06",
+  "phase_name": "payment-evidence-cards",
+  "phase_dir": ".planning/phases/06-payment-evidence-cards",
+  "plan": 0,
+  "task": 0,
+  "total_tasks": 0,
   "status": "paused",
   "completed_tasks": [
-    {"id": 1, "name": "웨이브 1~4 실행·합본·감사 + Codex·캡처 보완", "status": "done", "commit": "1b214f1"},
-    {"id": 5, "name": "웨이브 5 실행·합본·감사·Codex·캡처·수정·재검사", "status": "done", "commit": "827f4edf"}
+    {"id": 1, "name": "06 재계획(--reviews): 플랜 30개·12웨이브, 체커 3회차 통과, Opus 교차 검토 반영", "status": "done", "commit": "36996af0"}
   ],
   "remaining_tasks": [
-    {"id": 6, "name": "웨이브 6 (26·27·28·29, 30 별도 위험 경로 PR)", "status": "not_started"},
-    {"id": 7, "name": "웨이브 7 (31; 33 해당 없음)", "status": "not_started"},
-    {"id": 8, "name": "기준 사진 → 게이트 4종 → ship → verify-work → #158 ready", "status": "not_started"}
+    {"id": 2, "name": "06 eng 검토(/plan-eng-review) — 새 세션", "status": "not_started"},
+    {"id": 3, "name": "06 실행 — #162 머지 뒤, 06-26·06-27 위험 PR 먼저", "status": "not_started"}
   ],
   "blockers": [
-    {"description": "세션 경계 훅: /plan-design-review를 돈 세션에서 gsd-executor 생성 불가", "type": "technical", "workaround": "새 세션에서 /gsd-progress로 재개"}
+    {"description": "06 실행은 PR #162(Phase 05) main 머지 대기", "type": "external", "workaround": "eng 검토는 먼저 해도 됨"}
   ],
   "async_jobs": [],
   "human_actions_pending": [
-    {"action": "04.6-30 별도 PR(.claude/ 위험 경로) 머지", "context": "웨이브 6에서 열림", "blocking": false}
+    {"action": "밤 결정 목록 확인(/mnt/project-files/notes/night-0106/06-replan-questions.md)", "context": "밤 위임 중 추천안으로 진행한 4건", "blocking": false}
   ],
   "decisions": [
-    {"decision": "GPT(Codex) 검사는 웨이브 합본 때 한 번, 결과는 플랜별 줄", "rationale": "사용자 카드 2026-10-03", "phase": "04.6"},
-    {"decision": "/browse 자기 비평을 Playwright CI=true 캡처로 대체", "rationale": "사용자 카드 2026-10-03 14:46 KST", "phase": "04.6"},
-    {"decision": "계급·코드표 폰은 읽기만", "rationale": "사용자 카드 2026-10-03 14:57 KST", "phase": "04.6"},
-    {"decision": "UQ-4 = 5·7·8 넣음", "rationale": "사용자 「추천대로 해」 2026-10-03 11:47 KST", "phase": "04.6"}
+    {"decision": "사용자 답 UC-1~UC-7은 06-REVIEWS.md §0", "rationale": "카드·채팅 답", "phase": "06"}
   ],
-  "uncommitted_files": [" M .planning/HANDOFF.json", " M .planning/phases/04.6-a/.continue-here.md"],
-  "next_action": "/gsd-progress → 웨이브 6 실행자 4명 디스패치(/mnt/project-files/notes/04.6-handoff/wave6-addenda.md)",
-  "context_notes": "웨이브마다 실행→머지→합본→DOM 감사+Codex+main 대비 캡처→수정→재검사. 남은 지적 N-1은 26으로."
+  "uncommitted_files": [],
+  "next_action": "새 세션에서 /plan-eng-review로 06 플랜 30개 검토",
+  "context_notes": "06 .continue-here.md 참조. STATE.md는 05 실행 세션 몫이라 건드리지 않음."
 }

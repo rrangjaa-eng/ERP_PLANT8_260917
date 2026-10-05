@@ -7,14 +7,19 @@ import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND, ExpenseNotFoundError, sa
 import { listExpenses } from "@/domain/expenses/list";
 import {
   completeEvidenceUpload,
+  EVIDENCE_ADD_DRAFTER_ONLY,
   EVIDENCE_LOCKED_IN_REVIEW,
   EVIDENCE_REMOVE_LOCKED_APPROVED,
   EvidenceLockedError,
+  EvidenceUploadRefusedError,
   getEvidenceActions,
   removeEvidence,
   requestEvidenceUpload,
 } from "@/domain/evidence";
 import { TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { upsertPermission } from "@/repositories/permissions";
+import { updateUserRole } from "@/repositories/users";
 import { makePerson } from "./approvals-fixtures";
 import { createMemoryStorage } from "./fakes/memory-storage";
 import { attachEvidence, makeEvidenceManager, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
@@ -277,5 +282,74 @@ describe("권한자 추가 뒤 되돌리기 · 다시 제출(P3-7) · 반려 뒤
 
     await removeEvidence(fx.pm, { fileId: added.id });
     expect((await liveFiles(doc.expenseId)).find((file) => file.id === added.id)?.removedAt).toBeInstanceOf(Date);
+  });
+});
+
+describe("웨이브 11 검토 수정 — 권한 · 잠금(m1 · m2 · m3)", () => {
+  const declaredFor = (expenseId: string, sha: string) => ({
+    ownerKind: "expense",
+    ownerId: expenseId,
+    size: 1000,
+    contentType: "image/jpeg",
+    sha256: sha.repeat(64),
+    name: "추가.jpg",
+  });
+
+  it("m1 — 권한자(기안자 아님)가 승인 · 반려된 문서에 붙이려 하면 충돌 문구가 아니라 상태 잠김 `결재 중 아님 · 증빙은 작성자`", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await makeEvidenceManager();
+    const approvedDoc = await submittedDoc(fx);
+    const first = await approveDocument(fx.lead, { instanceId: approvedDoc.instanceId, expectedVersion: 1 });
+    await approveDocument(fx.ceo, { instanceId: approvedDoc.instanceId, expectedVersion: first.version });
+    const other = await setupExpenseProject();
+    const rejectedDoc = await submittedDoc(other);
+    await rejectDocument(other.lead, { instanceId: rejectedDoc.instanceId, expectedVersion: 1, reason: "금액 확인" });
+
+    for (const doc of [approvedDoc, rejectedDoc]) {
+      const error = await caught(requestEvidenceUpload(manager, declaredFor(doc.expenseId, "c"), { storage: createMemoryStorage() }));
+      expect(error).toBeInstanceOf(EvidenceLockedError);
+      expect(error.message).toBe(EVIDENCE_ADD_DRAFTER_ONLY);
+      expect(await liveFiles(doc.expenseId)).toHaveLength(1);
+    }
+  });
+
+  it("m2 — 의도를 만든 뒤 문서를 볼 수 없게 되면 완료 통보는 restart · 파일 행 · version 불변", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await makeEvidenceManager();
+    const doc = await submittedDoc(fx);
+    const storage = createMemoryStorage();
+    const declared = declaredFor(doc.expenseId, "d");
+    const intent = await requestEvidenceUpload(manager, declared, { storage });
+    storage.put(intent.url, { size: declared.size, contentType: declared.contentType, sha256: declared.sha256 });
+    if (!manager.roleId) throw new Error("계급 없음");
+    await upsertPermission(SYSTEM_VIEWER, { roleId: manager.roleId, menu: "expenses", action: "view", allowed: false });
+
+    const error = await caught(completeEvidenceUpload(manager, { intentId: intent.intentId }, { storage }));
+    expect(error).toBeInstanceOf(EvidenceUploadRefusedError);
+    expect((error as EvidenceUploadRefusedError).retry).toBe("restart");
+    expect(await liveFiles(doc.expenseId)).toHaveLength(1);
+    expect((await instanceRow(doc.instanceId)).version).toBe(1);
+  });
+
+  it("m3 — 붙이기 권한을 가진 기안자(경영관리 직원의 자기 지출결의)도 결재 중 자기 문서에는 `결재 중 · 증빙 잠김`(작성자는 결재 끝난 뒤)", async () => {
+    const fx = await setupExpenseProject();
+    const doc = await submittedDoc(fx);
+    const managerRole = (await makeEvidenceManager("경영겸임")).roleId;
+    if (!managerRole) throw new Error("계급 없음");
+    await upsertPermission(SYSTEM_VIEWER, { roleId: managerRole, menu: "expenses", action: "write", allowed: true });
+    await updateUserRole(SYSTEM_VIEWER, fx.pm.id, managerRole);
+    const drafter = { id: fx.pm.id, roleId: managerRole };
+
+    const error = await caught(requestEvidenceUpload(drafter, declaredFor(doc.expenseId, "e"), { storage: createMemoryStorage() }));
+    expect(error).toBeInstanceOf(EvidenceLockedError);
+    expect(error.message).toBe(EVIDENCE_LOCKED_IN_REVIEW);
+    expect(await getEvidenceActions(drafter, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: doc.expenseId })).toEqual({
+      canAdd: false,
+      deletableFileIds: [],
+      voidableFileIds: [],
+      drafterLocked: true,
+    });
+    expect(await liveFiles(doc.expenseId)).toHaveLength(1);
+    expect((await instanceRow(doc.instanceId)).version).toBe(1);
   });
 });

@@ -19,11 +19,9 @@ import {
 import { getSettlement, SETTLEMENT_DOCUMENT_KIND, submitSettlement, type SettlementApprovalAuthority } from "@/domain/settlements";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { upsertVisibility } from "@/repositories/permissions";
-import { updateProjectStatusIfCurrent } from "@/repositories/projects";
 import { upsertSimpleValue } from "@/repositories/settings";
-import { withTransaction } from "@/lib/db-transaction";
 import { makePerson, orgUnitIdByName } from "./approvals-fixtures";
-import { makeSettlementPeople, SETTLEMENT_LINES, setupSettlementProject } from "./fixtures/settlements";
+import { extendToInProgress, makeSettlementPeople, SETTLEMENT_LINES, setupSettlementProject } from "./fixtures/settlements";
 
 // 05-11 트레이서 — 정산 프로젝트의 담당 PM이 정산 결재를 올리고(확인 없음), 대표가 승인하는 순간 같은 트랜잭션에서 프로젝트가 완료된다.
 // 권한은 「이 인스턴스 지금 차수의 마지막 단계 기록 = 승인한 사람」 하나다(F1) — 결재선 마지막 단계를 `projects.complete`가 없는 계급으로
@@ -97,7 +95,7 @@ describe("정산 결재 — 올리기 → 대표 승인 = 완료(같은 트랜�
     await expect(submitSettlement(fx.lead, { projectId: fx.projectId })).rejects.toBeInstanceOf(ForbiddenError);
     expect(await settlementOf(fx.projectId)).toBeNull();
 
-    await withTransaction((tx) => updateProjectStatusIfCurrent(SYSTEM_VIEWER, fx.projectId, { expectedStatus: "settling", status: "in_progress", fillEndDateFromStart: false }, tx));
+    expect((await extendToInProgress(fx)).project.status).toBe("in_progress");
     await expect(submitSettlement(fx.pm, { projectId: fx.projectId })).rejects.toBeInstanceOf(StatusChangedError);
     expect(await settlementOf(fx.projectId)).toBeNull();
   });
@@ -142,7 +140,7 @@ describe("정산 결재 — 올리기 → 대표 승인 = 완료(같은 트랜�
   it("승인 직전 프로젝트가 진행으로 바뀌어 있으면 승인 전체가 롤백된다 — 인스턴스 · 단계 · 프로젝트 · 로그 그대로", async () => {
     const fx = await setupSettlementProject();
     const { documentId, instanceId, version } = await submitted(fx.pm, fx.projectId);
-    await withTransaction((tx) => updateProjectStatusIfCurrent(SYSTEM_VIEWER, fx.projectId, { expectedStatus: "settling", status: "in_progress", fillEndDateFromStart: false }, tx));
+    expect((await extendToInProgress(fx)).project.status).toBe("in_progress");
     const before = { instance: await instanceOf(documentId), steps: await stepsOf(instanceId), logs: (await documentLogs(documentId)).length, changes: (await statusChangeLogs(fx.projectId)).length };
 
     await expect(approveDocument(fx.ceo, { instanceId, expectedVersion: version })).rejects.toBeInstanceOf(StatusChangedError);

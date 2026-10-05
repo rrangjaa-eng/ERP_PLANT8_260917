@@ -6,6 +6,7 @@ import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { changeProjectStatus } from "@/domain/projects/status";
 import { applyAutoSettlement } from "@/domain/projects/auto-transition";
+import { saveProjectLedger } from "@/domain/projects/ledger";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import { makePerson, teamIdByName } from "../approvals-fixtures";
 
@@ -26,6 +27,8 @@ export const SETTLEMENT_LINES = {
   usd: { quantity: 1, unitPrice: { currency: "USD" as const, amount: 10_000, fxRate: 1_350 }, execution: { currency: "USD" as const, amount: 8_000, fxRate: 1_350 } },
 };
 
+const PERIOD = { startDate: "2026-01-05", endDate: "2026-03-31" };
+
 export async function makeSettlementPeople(): Promise<SettlementPeople> {
   return {
     pm: await makePerson("박서연", DEFAULT_ROLE_ID, "기획1팀"),
@@ -42,8 +45,8 @@ export async function setupSettlementProject(people?: SettlementPeople, name = "
     teamId: await teamIdByName("기획1팀"),
     pmUserId: who.pm.id,
     name,
-    startDate: "2026-01-05",
-    endDate: "2026-03-31",
+    startDate: PERIOD.startDate,
+    endDate: PERIOD.endDate,
   });
   const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
   if (!revision || !project.id || !project.number) throw new Error("프로젝트 · 1차 차수가 없습니다");
@@ -61,4 +64,10 @@ export async function setupSettlementProject(people?: SettlementPeople, name = "
   if (!settled.includes(project.id)) throw new Error("자동 정산이 되지 않았습니다");
 
   return { ...who, projectId: project.id, projectNumber: project.number, projectName: name };
+}
+
+// D-80 — 정산 중 팀장이 종료일을 오늘 뒤로 바꾸면 프로젝트가 진행으로 돌아간다(정산의 기간 권리는 팀장, PM은 없음). 리포지토리로 상태만
+// 바꾸면 종료일이 지난 진행이라 다음 잠금 읽기가 다시 정산으로 되돌린다 — 실제 경로(saveProjectLedger)로 만든다.
+export async function extendToInProgress(fx: SettlementFixture, deps?: Parameters<typeof saveProjectLedger>[3]) {
+  return saveProjectLedger(fx.lead, fx.projectId, { seenStatus: "settling", period: { ...PERIOD, endDate: "2099-12-31", baseline: PERIOD } }, deps);
 }

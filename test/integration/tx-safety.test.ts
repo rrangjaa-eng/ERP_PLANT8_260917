@@ -570,14 +570,16 @@ describe("풀 2 · 동시 증빙 추가 셋(05-04)", () => {
   );
 });
 
+// 05-11 — 정적 import(모듈을 처음 적재할 때 묶인다). 앞 사례의 vi.resetModules() 뒤 동적 import는 닫힌 격리 클라이언트를 받는다.
+import { makeSettlementPeople, setupSettlementProject } from "./fixtures/settlements";
+import { submitSettlement, SETTLEMENT_DOCUMENT_KIND } from "@/domain/settlements";
+
 describe("풀 2 · 동시 정산 최종 승인 셋(05-11)", () => {
   // 05-11(Round 2 M3): 정산 결재 최종 승인 훅 — 트랜잭션 전 사실 읽기(prepareFinalApproval) 뒤, tx 안에서는 받은 tx로만 마지막 단계 기록
   // 확인(findFinalStepActorInTx)과 changeProjectStatus(deps.tx)를 돈다. 훅 경로가 tx 안에서 전역 풀을 부르면 풀 2에서 5초 시간 초과로 깨진다.
   it(
     "(j) 풀 크기 2에서 대표가 정산 결재 셋을 동시에 최종 승인하면 10초 안에 셋 다 성공하고 세 프로젝트가 완료된다",
     async () => {
-      const { makeSettlementPeople, setupSettlementProject } = await import("./fixtures/settlements");
-      const { submitSettlement, SETTLEMENT_DOCUMENT_KIND } = await import("@/domain/settlements");
       const people = await makeSettlementPeople();
       const projectIds: string[] = [];
       const instanceIds: string[] = [];

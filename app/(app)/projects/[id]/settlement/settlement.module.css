@@ -26,3 +26,11 @@
   height: var(--s-4);
   background: var(--surface-muted);
 }
+
+/* 05-11 — 다시 올릴 수 없는 동안(프로젝트 진행) 행동 줄 자리의 한 줄(UI-SPEC 「막힘 — 정산 결재」). */
+.waiting {
+  max-width: var(--form-max);
+  margin: var(--s-4) 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+}

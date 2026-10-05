@@ -294,6 +294,13 @@ export async function getSettlementHeader(viewer: Viewer, input: { projectId: st
   return { statusWord: null, canSubmit: true };
 }
 
+// 문서 화면 한 줄 `진행 중 · 정산 뒤 다시 올리기`(D-80) — 반려 · 회수된 내 정산 결재인데 프로젝트가 진행으로 돌아가 지금은 다시 올릴 수 없다.
+export async function isSettlementResubmitWaiting(viewer: Viewer, input: { projectId: string }): Promise<boolean> {
+  if (!UUID_SHAPE.test(input.projectId)) return false;
+  const [row] = await listSettlementSummaries(viewer, { projectIds: [input.projectId], documentKind: SETTLEMENT_DOCUMENT_KIND });
+  return Boolean(row && row.drafterId === viewer.id && row.status && RESUBMITTABLE_STATUSES.has(row.status) && row.projectStatus === "in_progress");
+}
+
 // 올릴 수 있는 사람 = 그 프로젝트의 담당 PM ∧ `projects` 쓰기(프로젝트 쓰기 권리). 상태는 호출자가 본다.
 async function isAssignedPmWriter(viewer: Viewer, pmUserId: string): Promise<boolean> {
   return pmUserId === viewer.id && (await can(viewer, "projects", "write"));

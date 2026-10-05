@@ -4,7 +4,7 @@ import { requireSession } from "@/lib/viewer";
 import { kstDateOf } from "@/lib/kst-date";
 import "@/app/(app)/document-kinds";
 import { getApprovalView, getDocumentKind, REJECT_REASON_EMPTY_MESSAGE, REJECT_REASON_MAX, REJECT_REASON_TOO_LONG_MESSAGE } from "@/domain/approvals";
-import { getSettlement, periodText, SETTLEMENT_DOCUMENT_KIND } from "@/domain/settlements";
+import { getSettlement, isSettlementResubmitWaiting, periodText, SETTLEMENT_DOCUMENT_KIND } from "@/domain/settlements";
 // Button.tsx는 클라이언트 모듈이라 서버 컴포넌트가 buttonLinkClassName을 부를 수 없다 — 같은 3차 클래스를 직접 쓴다(지출결의 문서 화면 선례).
 import buttonStyles from "@/ui/button/Button.module.css";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
@@ -30,6 +30,9 @@ export default async function SettlementPage({ params }: { params: Promise<{ id:
   const view = await getApprovalView(viewer, { kind: SETTLEMENT_DOCUMENT_KIND, documentId: id, readOnlyVisible: true });
   const statusKey = toLeaveStatusKey(view?.status);
   const actions = view?.actions ?? [];
+  // 다시 올리기 = 가능 행동 resubmit(서버 판정 — 반려 · 회수 ∧ 정산 ∧ 담당 PM). 못 올리는 까닭이 진행 복귀면 한 줄(D-80).
+  const canResubmit = actions.includes("resubmit");
+  const resubmitWaiting = !canResubmit && (await isSettlementResubmitWaiting(viewer, { projectId: id }));
 
   const dash = <span className={styles.muted}>—</span>;
   const projectText = [doc.projectNumber, doc.projectName].filter(Boolean).join(" ");
@@ -67,6 +70,9 @@ export default async function SettlementPage({ params }: { params: Promise<{ id:
           instanceId={view?.instanceId ?? null}
           version={view?.version ?? null}
           actions={actions}
+          approveBlockedReason={view?.approveBlockedReason ?? null}
+          resubmitProjectId={canResubmit ? id : null}
+          resubmitWaiting={resubmitWaiting}
           decision={
             view?.instanceId && view.version !== undefined
               ? {

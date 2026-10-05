@@ -9,7 +9,7 @@ import { setCustomerApproval } from "@/domain/quotes/revisions";
 import { approvalBasis } from "@/repositories/quote-revisions";
 import { insertVendor } from "@/repositories/vendors";
 import { insertRole } from "@/repositories/roles";
-import { upsertPermission } from "@/repositories/permissions";
+import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { createOrgUnit, createTeam } from "@/domain/org";
 import { seoulToday } from "@/lib/dates";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
@@ -125,6 +125,8 @@ export async function makeEvidenceManagerE2E(): Promise<Person> {
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "view", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.evidence_attach", action: "write", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.evidence_void", action: "write", allowed: true });
+  // 관리자가 새 계급을 만들면 노출표도 켠다 — 문서 화면 · 증빙 파일 DTO가 지나는 정보 항목.
+  for (const infoItem of ["expense.value", "expense.amount"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
   const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E지원본부-${suffix}` });
   const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E지원팀-${suffix}` });
   return makePerson("경영지원", role.id, team.id, `${seoulToday().slice(0, 4)}-01-01`);

@@ -27,6 +27,9 @@ registerAction({ name: "completeEvidenceUploadAction", menu: "expenses", action:
 
 registerAction({ name: "removeEvidenceAction", menu: "expenses", action: "write", dtoName: null });
 
+// 05-09 증빙 무효 처리 — 성공 표시만 돌려준다(DTO 없음). 판정은 expenses.evidence_void 쓰기 ∧ 문서 보임(도메인).
+registerAction({ name: "voidEvidenceAction", menu: "expenses.evidence_void", action: "write", dtoName: null });
+
 // 서명 GET 주소만 돌려준다(DTO 없음) — 판정은 문서 보임(도메인).
 registerAction({ name: "createEvidenceViewUrlAction", menu: "expenses", action: "view", dtoName: null });
 

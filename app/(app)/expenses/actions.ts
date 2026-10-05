@@ -27,6 +27,7 @@ import {
   EvidenceUploadRefusedError,
   removeEvidence,
   requestEvidenceUpload,
+  voidEvidence,
 } from "@/domain/evidence";
 import { CURRENCIES } from "@/domain/money/currency";
 import { QUOTE_LINE_MAX_PER_REVISION_DEFAULT } from "@/domain/settings/keys";
@@ -204,6 +205,15 @@ export const removeEvidenceAction = authedActionClient
     await removeEvidence(ctx.viewer, parsedInput);
     revalidatePath("/expenses");
     return { removed: true as const };
+  });
+
+// 05-09 승인 뒤 증빙 무효 처리 — 성공 표시만 돌려준다(화면은 router.refresh로 무효 행을 다시 그린다 · 토스트 없음).
+export const voidEvidenceAction = authedActionClient
+  .schema(z.object({ fileId: z.string().uuid(), reason: z.string().max(2000) }).strict())
+  .action(async ({ parsedInput, ctx }) => {
+    await voidEvidence(ctx.viewer, parsedInput);
+    revalidatePath("/expenses");
+    return { voided: true as const };
   });
 
 export const createEvidenceViewUrlAction = authedActionClient

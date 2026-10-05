@@ -218,7 +218,7 @@ test.describe("제출 뒤 증빙", () => {
     await expect(dialog.getByRole("heading", { name: "증빙 무효 처리" })).toBeVisible();
     const reason = dialog.getByLabel("사유");
     expect(await reason.evaluate((el) => el.tagName)).toBe("TEXTAREA");
-    await expect(dialog.getByText("사유 없음 · 사유 적기")).toBeVisible();
+    await expect(dialog.getByText("사유 없음 · 사유 적기").first()).toBeVisible();
     await reason.fill("다른 건 영수증");
     await dialog.getByRole("button", { name: /^무효 처리/ }).click();
     await expect(dialog).toHaveCount(0);

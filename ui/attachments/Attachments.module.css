@@ -103,6 +103,26 @@
   font-size: var(--text-aux);
 }
 
+/* 05-09 무효 행(SYSTEM §7-10 · B8): 「무효」 태그 → 파일명 취소선(보조 표기 — 낱말 태그가 먼저 뜻을 말한다). */
+.voidedHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+  min-width: 0;
+}
+
+.voidedName {
+  text-decoration: line-through;
+}
+
+/* 더할 수 없는 이유 한 줄(잠김) — 「하나 더」 자리. */
+.locked {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+}
+
 .error {
   color: var(--status-danger);
   font-size: var(--text-aux);

@@ -17,6 +17,7 @@ import { DocumentActions } from "@/app/(app)/leave/[id]/document-actions";
 import { SubmittedToast } from "@/app/(app)/leave/[id]/submitted-toast";
 import { routeListSteps, withdrawResultLines } from "@/app/(app)/leave/status-display";
 import { expenseStatusWord } from "../status-display";
+import type { EvidenceActions } from "@/domain/evidence";
 import { EvidenceAttachments } from "./evidence-attachments";
 import { SubmittedUndoToast } from "./submitted-undo-toast";
 import { TaxParts } from "./tax-parts";
@@ -32,12 +33,14 @@ export function ExpenseDocument({
   expense,
   view,
   files,
+  evidenceActions,
   maxMb,
   submitted,
 }: {
   expense: Partial<ExpenseDocumentDto>;
   view: ApprovalView | null;
   files: AttachmentFile[];
+  evidenceActions: EvidenceActions;
   maxMb: number;
   submitted: string | undefined;
 }) {
@@ -138,7 +141,14 @@ export function ExpenseDocument({
         <KvList items={items} />
         <DetailScreen.Section title="증빙">
           <div id="evidence" className={styles.evidence}>
-            <EvidenceAttachments expenseId={id} files={files} mode="read" maxMb={maxMb} />
+            <EvidenceAttachments
+              expenseId={id}
+              files={files}
+              mode="read"
+              maxMb={maxMb}
+              evidenceActions={evidenceActions}
+              reasonMessages={{ empty: REJECT_REASON_EMPTY_MESSAGE, tooLong: REJECT_REASON_TOO_LONG_MESSAGE, max: REJECT_REASON_MAX }}
+            />
           </div>
         </DetailScreen.Section>
         <DocumentActions

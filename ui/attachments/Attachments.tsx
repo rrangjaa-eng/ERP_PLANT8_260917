@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type DragEvent, type MouseEvent } from "react";
+import { Num } from "@/ui/num/Num";
 import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
 import actionStyles from "@/ui/row-actions/RowActions.module.css";
+import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { prepareEvidenceFile, type PreparedEvidence } from "./prepare-file";
 import styles from "./Attachments.module.css";
 
@@ -11,8 +13,16 @@ import styles from "./Attachments.module.css";
 // 실패 이유 글자는 서버가 돌려준 05-04 문자열 상수 그대로이고(요청 거부 · 완료 거부), 서명 PUT 실패 · 네트워크 실패만 부모가 넘긴
 // `uploadFailedText`(같은 상수 `올리지 못함 · 다시 올리기`)를 쓴다 — 이 파일에 새 실패 문구는 없다.
 // 올리는 행의 메타는 `올리는 중…` 글자 하나가 신호다(완료 통보 뒤 옮기는 동안도 같다).
+// 05-09(S4 파일 행 3차): 누가 무엇을 할 수 있는지는 부모가 서버 값으로 준다(canAdd · deletableIds · voidableIds — 컴포넌트는 추론하지 않는다).
+// 무효 행 = 「무효」 태그 → 취소선 파일명(aria-describedby = 2행) → 2행 `무효 · {처리자} · MM-DD HH:mm · {사유}`, 3차는 `크게 보기`만.
 
-export type AttachmentFile = { id: string; name: string; sizeBytes: number; createdAt: string };
+export type AttachmentFile = {
+  id: string;
+  name: string;
+  sizeBytes: number;
+  createdAt: string;
+  voided?: { byName: string | null; at: string; reason: string | null };
+};
 
 export type UploadIntent = { intentId: string; url: string; method: string; headers: Record<string, string> };
 
@@ -39,6 +49,14 @@ export type AttachmentsProps = {
   openSignal?: number;
   /** 빈 영역 · 「하나 더」 버튼 id(폼 라벨이 가리킨다). */
   pickerId?: string;
+  /** 파일을 더할 수 있나 — 기본은 편집 모드. */
+  canAdd?: boolean;
+  /** `삭제`를 그릴 파일 id — 기본은 편집 모드면 전부 · 읽기 모드면 없음. */
+  deletableIds?: readonly string[];
+  /** `무효 처리`를 그릴 파일 id와 누를 때 부를 함수(확인 창은 부모가 연다). */
+  voidable?: { ids: readonly string[]; onVoid: (file: AttachmentFile) => void };
+  /** 더할 수 없는 이유 한 줄(잠김) — 「하나 더」 자리에 그린다. */
+  lockedText?: string;
 };
 
 type LocalRow = {
@@ -53,10 +71,16 @@ type LocalRow = {
 type DoneRow = AttachmentFile & { previewUrl: string | null };
 
 const SEOUL_DAY = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", month: "2-digit", day: "2-digit" });
+const SEOUL_MINUTE = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 
 function dayOf(iso: string): string {
   const parts = Object.fromEntries(SEOUL_DAY.formatToParts(new Date(iso)).map((part) => [part.type, part.value]));
   return `${parts.month}-${parts.day}`;
+}
+
+function minuteOf(iso: string): string {
+  const parts = Object.fromEntries(SEOUL_MINUTE.formatToParts(new Date(iso)).map((part) => [part.type, part.value]));
+  return `${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
 }
 
 function sizeOf(bytes: number): string {
@@ -71,7 +95,21 @@ function Paperclip() {
   );
 }
 
-export function Attachments({ mode, files, actions, maxMb, uploadFailedText, onUploadingChange, onChanged, openSignal, pickerId }: AttachmentsProps) {
+export function Attachments({
+  mode,
+  files,
+  actions,
+  maxMb,
+  uploadFailedText,
+  onUploadingChange,
+  onChanged,
+  openSignal,
+  pickerId,
+  canAdd = mode === "edit",
+  deletableIds,
+  voidable,
+  lockedText,
+}: AttachmentsProps) {
   const [rows, setRows] = useState<LocalRow[]>([]);
   const [done, setDone] = useState<DoneRow[]>([]);
   const [removed, setRemoved] = useState<string[]>([]);
@@ -204,7 +242,7 @@ export function Attachments({ mode, files, actions, maxMb, uploadFailedText, onU
   function onDrop(event: DragEvent<HTMLElement>) {
     event.preventDefault();
     setDragging(false);
-    if (mode === "edit" && event.dataTransfer.files.length > 0) void addFiles(event.dataTransfer.files);
+    if (canAdd && event.dataTransfer.files.length > 0) void addFiles(event.dataTransfer.files);
   }
 
   const listed: (AttachmentFile & { previewUrl: string | null })[] = [
@@ -212,8 +250,9 @@ export function Attachments({ mode, files, actions, maxMb, uploadFailedText, onU
     ...done.filter((file) => !files.some((existing) => existing.id === file.id) && !removed.includes(file.id)),
   ];
   const empty = listed.length === 0 && rows.length === 0;
+  const deletable = (id: string) => (deletableIds ? deletableIds.includes(id) : mode === "edit");
   const dropProps =
-    mode === "edit"
+    canAdd
       ? {
           onDragOver: (event: DragEvent<HTMLElement>) => {
             event.preventDefault();
@@ -226,7 +265,7 @@ export function Attachments({ mode, files, actions, maxMb, uploadFailedText, onU
 
   return (
     <div className={styles.root} data-ui="attachments" {...dropProps}>
-      {mode === "edit" ? (
+      {canAdd ? (
         <input
           ref={inputRef}
           type="file"
@@ -241,7 +280,7 @@ export function Attachments({ mode, files, actions, maxMb, uploadFailedText, onU
         />
       ) : null}
 
-      {mode === "edit" && empty ? (
+      {canAdd && empty ? (
         <button id={pickerId} type="button" className={styles.drop} data-dragging={dragging ? "true" : undefined} onClick={() => inputRef.current?.click()}>
           <span className={styles.pcText}>{`파일을 끌어 놓거나 Ctrl+U · 이미지·PDF ${maxMb}MB`}</span>
           <span className={styles.phoneText}>{`사진·파일 올리기 · 이미지·PDF ${maxMb}MB`}</span>
@@ -261,18 +300,39 @@ export function Attachments({ mode, files, actions, maxMb, uploadFailedText, onU
                     <Paperclip />
                   </span>
                 )}
-                <span className={styles.text}>
-                  <span className={styles.name}>{file.name}</span>
-                  <span className={styles.meta}>{`${sizeOf(file.sizeBytes)} · ${dayOf(file.createdAt)}`}</span>
-                </span>
+                {file.voided ? (
+                  <span className={styles.text}>
+                    <span className={styles.voidedHead}>
+                      <StatusTag status="무효" />
+                      <span className={`${styles.name} ${styles.voidedName}`} aria-describedby={`${nameId}-${file.id}-void`}>
+                        {file.name}
+                      </span>
+                    </span>
+                    <span id={`${nameId}-${file.id}-void`} className={styles.meta}>
+                      {`무효 · ${file.voided.byName ?? "—"} · `}
+                      <Num value={minuteOf(file.voided.at)} />
+                      {file.voided.reason ? ` · ${file.voided.reason}` : ""}
+                    </span>
+                  </span>
+                ) : (
+                  <span className={styles.text}>
+                    <span className={styles.name}>{file.name}</span>
+                    <span className={styles.meta}>{`${sizeOf(file.sizeBytes)} · ${dayOf(file.createdAt)}`}</span>
+                  </span>
+                )}
                 <span className={styles.actions}>
                   <RowActions>
                     <a href="#evidence" target="_blank" rel="noopener noreferrer" className={actionStyles.action} onClick={(event) => void view(event, file.id)}>
                       크게 보기
                     </a>
-                    {mode === "edit" ? (
+                    {!file.voided && deletable(file.id) ? (
                       <RowAction danger onClick={() => void removeFile(file.id)}>
                         삭제
+                      </RowAction>
+                    ) : null}
+                    {!file.voided && voidable?.ids.includes(file.id) ? (
+                      <RowAction danger onClick={() => voidable.onVoid(file)}>
+                        무효 처리
                       </RowAction>
                     ) : null}
                   </RowActions>
@@ -315,12 +375,13 @@ export function Attachments({ mode, files, actions, maxMb, uploadFailedText, onU
         ) : null}
       </div>
 
-      {mode === "edit" && !empty ? (
+      {canAdd && !empty ? (
         <button id={pickerId} type="button" className={styles.more} onClick={() => inputRef.current?.click()}>
           <span className={styles.pcText}>하나 더 · Ctrl+U</span>
           <span className={styles.phoneText}>하나 더</span>
         </button>
       ) : null}
+      {!canAdd && lockedText ? <p className={styles.locked}>{lockedText}</p> : null}
     </div>
   );
 }

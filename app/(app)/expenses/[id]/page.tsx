@@ -4,7 +4,7 @@ import "@/app/(app)/document-kinds";
 import { getApprovalView, previewRoute, RouteBlockedError } from "@/domain/approvals";
 import { EXPENSE_DOCUMENT_KIND, ExpenseNotFoundError, getExpense, listExpenseCurrencies, listExpenseFormOptions, previewExpense } from "@/domain/expenses";
 import { teamKindOptions } from "../team-kind-options";
-import { listEvidence } from "@/domain/evidence";
+import { getEvidenceActions, listEvidence } from "@/domain/evidence";
 import { getSettingValue } from "@/domain/settings/registry";
 import { EVIDENCE_MAX_SIZE_MB } from "@/domain/settings/keys";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
@@ -45,7 +45,24 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
   const view = await getApprovalView(viewer, { kind: EXPENSE_DOCUMENT_KIND, documentId: id, readOnlyVisible: true });
   const resubmitting = Boolean(view?.actions?.includes("resubmit"));
   if ((view || expense.number) && !resubmitting) {
-    return <ExpenseDocument expense={expense} view={view} files={files} maxMb={maxMb} submitted={submitted} />;
+    // 05-09: 문서 화면은 무효 행도 그린다(처리자 · 시각 · 사유) — 파일 행 3차는 서버가 정한 evidenceActions대로.
+    const evidenceActions = await getEvidenceActions(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: id });
+    const documentFiles: AttachmentFile[] = evidence.flatMap((file) =>
+      file.id && file.originalName && file.createdAt
+        ? [
+            {
+              id: file.id,
+              name: file.originalName,
+              sizeBytes: file.sizeBytes ?? 0,
+              createdAt: new Date(file.createdAt).toISOString(),
+              ...(file.voidedAt
+                ? { voided: { byName: file.voidedByName ?? null, at: new Date(file.voidedAt).toISOString(), reason: file.voidReason ?? null } }
+                : {}),
+            },
+          ]
+        : [],
+    );
+    return <ExpenseDocument expense={expense} view={view} files={documentFiles} evidenceActions={evidenceActions} maxMb={maxMb} submitted={submitted} />;
   }
 
   // 작성 중 — 폼. 결재선은 제출 전 한 줄(기안자 · 문서 종류의 결재선 설정으로 해석 — 막히면 이유 한 줄).

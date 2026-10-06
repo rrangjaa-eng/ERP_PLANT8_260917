@@ -20,7 +20,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **MAST-02**: 직원 등록 = 사람 + 계급 + 팀 선택. 입사자 추가에 코드 수정이 없다. 팀은 본부에 속한다(팀 ⊂ 본부). 팀 소속은 발령일 이력으로 남고, 비용 귀속·팀 손익은 사용일 시점의 소속 팀을 따른다
 - [x] **MAST-03**: 법인카드 마스터: 직원별 개인 지급 카드와 팀 전용 카드를 등록하고, 카드마다 소지자(직원) 또는 소속 팀을 지정한다
 - [x] **MAST-04**: 견적 대분류·소분류, 프로젝트 상태 같은 코드표를 관리 화면에서 추가·수정·비활성화한다 (2026-10-01: 지급 방식 코드표는 MAST-05로 분리)
-- [ ] **MAST-05**: 지급 방식 코드표를 관리 화면에서 추가·수정·비활성화한다. 기본 값은 계좌이체 · 법인카드 · 현금이다(Phase 5 시드 — 06-02 확정, 관리자가 더하고 바꾼다) (2026-10-01 MAST-04에서 분리)
+- [x] **MAST-05**: 지급 방식 코드표를 관리 화면에서 추가·수정·비활성화한다. 기본 값은 계좌이체 · 법인카드 · 현금이다(Phase 5 시드 — 06-02 확정, 관리자가 더하고 바꾼다) (2026-10-01 MAST-04에서 분리)
 
 ### 프로젝트·견적 (PROJ)
 
@@ -199,7 +199,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MAST-02 | Phase 3 | Gaps Found |
 | MAST-03 | Phase 3 | Complete |
 | MAST-04 | Phase 3 | Complete |
-| MAST-05 | Phase 6 | Pending |
+| MAST-05 | Phase 6 | Complete |
 | PROJ-01 | Phase 4 | Complete |
 | PROJ-02 | Phase 4 | Complete |
 | PROJ-03 | Phase 4 | Complete |

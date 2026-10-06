@@ -13,3 +13,4 @@ review 2026-10-06T07:16Z session=157802f6-d640-5a76-88ea-648ef79f4d4c (PR #171, 
 design-review 2026-10-06T07:16Z session=157802f6-d640-5a76-88ea-648ef79f4d4c (PR #171, Codex 실행, F-1 반영 99b8aae3, 보고서 /mnt/project-files/notes/06-review/171-design-review.md)
 qa 2026-10-06T07:53Z session=157802f6-d640-5a76-88ea-648ef79f4d4c (PR #171, 결함 2건 반영 32636367·c9173b33, 보고서 /mnt/project-files/notes/06-review/171-qa.md)
 review 2026-10-06T09:26Z session=c2610b64-102a-5a86-a641-99bec1c982a0 (PR #174, 막는 결함 0, 적대 검토 지적 4건 반영 f19688d8, 보고서 /mnt/project-files/notes/vendor-kind/174-review.md)
+design-review 2026-10-06T09:47Z session=c2610b64-102a-5a86-a641-99bec1c982a0 (PR #174, Codex 실행·후보 6건 DOM 실측 결함 0, 보고서 /mnt/project-files/notes/vendor-kind/174-design-review.md)

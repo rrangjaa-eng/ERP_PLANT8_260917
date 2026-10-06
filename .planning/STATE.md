@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
 current_phase: 06
-current_phase_name: payment-evidence-cards
-current_plan: 4
+current_phase_name: 지급·증빙·법인카드·구매 요청 (경영관리)
+current_plan: 5
 status: executing
-stopped_at: Completed 04.6-04-PLAN.md
-last_updated: "2026-10-06T03:00:10.793Z"
-last_activity: 2026-10-02
-last_activity_desc: Phase 04.6 execution started
-state_head: 104050633fe2695de01427e1b53b646a90db9fb8
+stopped_at: Completed 06-29-PLAN.md
+last_updated: "2026-10-06T05:42:36.774Z"
+last_activity: 2026-10-06
+last_activity_desc: Phase 06 execution started
+state_head: 72da555318406fb18102e261c1e524a115134f3a
 progress:
   total_phases: 17
   completed_phases: 7
   total_plans: 197
-  completed_plans: 168
+  completed_plans: 172
   percent: 41
 ---
 
@@ -24,15 +24,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-30)
 
 **Core value:** 기획본부와 경영관리본부가 프로젝트마다 같은 숫자(견적·예상 비용·확정 비용·손익)를 본다. 기획본부는 계산식·근거 없이 결과 숫자로 납득하고, 경영관리·대표는 근거 줄까지 본다.
-**Current focus:** Phase 04.6 — 스킨 A 적용 (INSERTED)
+**Current focus:** Phase 06 — 지급·증빙·법인카드·구매 요청 (경영관리)
 
 ## Current Position
 
-Phase: 06 (payment-evidence-cards) — READY TO EXECUTE
-Current Plan: 4
+Phase: 06 (지급·증빙·법인카드·구매 요청 (경영관리)) — EXECUTING
+Current Plan: 5
 Total Plans in Phase: 29
 Status: Ready to execute
-Last activity: 2026-10-06 - Completed quick task 261006-2xx: 원천징수 10원 절사 부동소수 결함 수정(E-23)
+Last activity: 2026-10-06 — Phase 06 execution started
 
 Progress: [████░░░░░░] 41%
 
@@ -134,6 +134,10 @@ Progress: [████░░░░░░] 41%
 | Phase 04.6 P01 | 24min | 3 tasks | 10 files |
 | Phase 04.6 P02 | 23 min | 2 tasks | 9 files |
 | Phase 04.6 P04 | 4h | 3 tasks | 36 files |
+| Phase 06 P27 | 26min | 3 tasks | 18 files |
+| Phase 06 P01 | 20 min | 3 tasks | 8 files |
+| Phase 06 P02 | 30 min | 3 tasks | 14 files |
+| Phase 06 P29 | 65min | 3 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -342,6 +346,11 @@ Recent decisions affecting current work:
 - [Phase 04.6]: 04.6-04: 폰 입력 40 · 행동 줄 버튼 44 — 오케스트레이터 기본값, 사용자 확인 대기
 - [Phase 06]: 06 체커 재실행 — 05 머지 acf1cf2 뒤 plan-checker 통과(2회차, 1회차 경고 4 반영: 06-28 회차 installmentSeqFor·06-02/08 채번 가드·P3 8건, EA-1 부가세 포함 증빙 금액 막기는 사용자 카드 답 대기 추천안 기본값)
 - [Phase 06]: EA-1 확정: 증빙 금액이 승인 공급가+부가세와 정확히 같으면 저장 막기(06-06 증빙 확인·06-10 기안자 저장, UI-SPEC 문구 「부가세 포함 금액 · 공급가로 입력」) — 사용자 결정 2026-10-06 11:57 KST 채팅
+- [Phase 06]: 06-01: 06 SP 여덟 사용자 확인 · REQ-ROUTE = one-time-exception(요구사항 5줄 예외 승인 2026-10-06 12:31:56 KST) · 06 낱말 아홉은 B2 예외로 status-map에 일괄 추가
+- [Phase 06]: 06-02: 구매 요청 번호는 05 allocateExpenseNumber 꼴 — 서식은 인자, 시작값만 같은 tx로 재읽기, seqStartGuardFor 구매 요청 갈래
+- [Phase 06]: 06-02: 짝 격자 PairGridEditor는 자체 상태가 정본(서버 재렌더 prop 무시 — 낙관적 칸 깜빡임 방지), 칸 저장은 promise 사슬로 차례대로
+- [Phase 06]: 06-29: 선택 열 체크박스는 grid 열 인덱스 밖 네이티브 열 — use-grid-keyboard 불변, 선택 뜻은 checked 하나(aria-selected 불변)
+- [Phase 06]: 06-29: ConfirmDialog refreshKeepsOpen은 거절 문자열이 같은 동안만 이유를 숨김 — 호출자(06-17)가 새 props에서 거절 상태를 지워야 함; 서버 재판정 필수(T-06-290)
 
 ### Pending Todos
 
@@ -425,6 +434,7 @@ Recent decisions affecting current work:
 - Phase 04.3 edited: edited fields: goal, success_criteria 1-5, list line — 명단 폐지 흐름 · 파기 다음 해 4월 1일 (PR #88 5942919192)
 - Phase 5 edited: edited fields: depends_on (04.5·04.6 추가 — 실행 순서 04.5 → 04.6 → 5, 사용자 결정 2026-10-02)
 - Phase 7 edited: edited fields: success_criteria (기준 5 관리자 폼 → PanelForm 옆 패널 배치, 04.6-01)
+- Phase 6 edited: edited fields: success_criteria 1 · 3 + 06-01 plan line (06-01 Task 3, one-time user-approved wording)
 
 ## Deferred Items
 
@@ -436,6 +446,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-02T18:24:19.319Z
-Stopped at: Completed 04.6-04-PLAN.md
+Last session: 2026-10-06T05:42:36.368Z
+Stopped at: Completed 06-29-PLAN.md
 Resume file: None

@@ -244,6 +244,52 @@ th.groupHeader {
   background: var(--accent-weak);
 }
 
+/* 06-29(SP-1 · SYSTEM §7-3 (카)) — 일괄 처리 표의 선택 열. 칸 폭 = 행 번호 칸 폭 식 · 체크박스는 네이티브(accent-color) · 고른 행 면은 범위 선택과 같은 --accent-weak 하나다.
+   막힌 행에는 배경 칠이 없고 이유 글자(첫 데이터 칸 2행)만 선다. 읽기 표의 행 hover 면은 고른 행 위에서 --accent-weak를 지키지 못하므로 아래 한 줄이 되돌린다. */
+.selectHead,
+.selectCell {
+  width: calc(var(--row-number-w) + 2 * var(--cell-pad-x));
+  min-width: calc(var(--row-number-w) + 2 * var(--cell-pad-x));
+}
+
+.selectLabel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(var(--row-h) - 2 * var(--cell-pad-y) - var(--line-w));
+}
+
+.selectLabel input {
+  margin: 0;
+  accent-color: var(--native-accent);
+}
+
+.selectedRow {
+  background: var(--accent-weak);
+}
+
+.table:not(.editable) tbody tr:hover > .cell.selectedRow {
+  background: var(--accent-weak);
+}
+
+/* 검토 P3-2 — 고른 행에서도 오류 · 충돌 셀의 빨간 면은 고정 모양이다(§7-3 (나)). 위 두 규칙보다 명시도가 높다. */
+.errorCell.selectedRow,
+.conflictCell.selectedRow,
+.table:not(.editable) tbody tr:hover > .cell.selectedRow.errorCell,
+.table:not(.editable) tbody tr:hover > .cell.selectedRow.conflictCell {
+  background: var(--status-danger-weak);
+}
+
+.selectReason {
+  margin: var(--s-1) 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+}
+
+.selectBlocked {
+  color: var(--status-danger);
+}
+
 /* 04-04(아) — 로빙 tabIndex 포커스는 편집 가능 여부와 무관하게 보여야
    한다(§10 접근성) — 기존 .editableCell:focus-visible만으로는 읽기
    전용·잠김 셀에 포커스 링이 없었다. */

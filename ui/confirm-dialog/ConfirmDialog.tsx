@@ -52,6 +52,21 @@ type ConfirmDialogBaseProps = {
   evidenceField?: ReactNode;
   /** 기본값은 secondaryLabelFor(primary.label) — 목록형은 "닫기"다. */
   secondaryLabel?: string;
+  /**
+   * 06-29(SP-7 · §7-17) — 첨부 보기 칸(0~1). 부제 아래 · 결과 줄 위에 그린다. 내용은 호출자가 넘기는 05 `Attachments mode="read"`
+   * (`canAdd={false}` · `deletableIds={[]}` · `voidable` 없음 — 보기만) 하나다. 파일 셋을 넘으면 칸 안만 스크롤한다.
+   */
+  attachments?: ReactNode;
+  /**
+   * 06-29(SP-7 상태 계약 ⑴) — 열 때 값을 읽어 오는 동안. 부제 · 첨부 칸 · 결과 줄 자리에 `…` 하나, 본문 `aria-busy`, 1차 `aria-disabled`
+   * (`aria-describedby` → `…`). 누르기 · Enter · Ctrl+Enter는 아무 일도 하지 않는다.
+   */
+  loading?: boolean;
+  /**
+   * 06-29(SP-7 상태 계약 ⑵) — 참이면 동시성 거부의 `새로 고침`이 모달을 닫지 않고 거부 이유를 지운 채 열어 두고 포커스를 1차로 옮긴다.
+   * 호출자는 새 props(새 증빙)로 칸을 다시 그리고, 새 거부가 오기 전에 자기 거부 상태를 비운다. 기본(거짓)은 새 화면을 받은 뒤 닫는다.
+   */
+  refreshKeepsOpen?: boolean;
 };
 
 export type ConfirmDialogProps = ConfirmDialogBaseProps &
@@ -122,7 +137,7 @@ export function initialFocusTarget(args: {
 }
 
 export function ConfirmDialog(props: ConfirmDialogProps) {
-  const { open, onClose, title, subtitle, resultLines, evidenceField, secondaryLabel } = props;
+  const { open, onClose, title, subtitle, resultLines, evidenceField, secondaryLabel, attachments, loading = false, refreshKeepsOpen = false } = props;
   const primary = props.primary;
   const options = props.options;
 
@@ -136,13 +151,29 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
   // 바로 마무리하고, 뒤늦게 오는 그 close 이벤트 한 번은 건너뛴다.
   const closedByUsRef = useRef(false);
   const titleId = useId();
+  const loadingId = useId();
 
   const submitting = Boolean(primary?.pending);
+  // refreshKeepsOpen — 새로 고침을 마친 거부 이유는 호출자가 비울 때까지 가린다(같은 글자일 때만 — 다른 글자 · 없음이 오면 다시 세운다).
+  const [clearedReason, setClearedReason] = useState<string | undefined>(undefined);
+  const rawReason = primary?.disabledReason;
+  if (clearedReason !== undefined && rawReason !== clearedReason) setClearedReason(undefined);
   // 꼬리를 뗀 이유 하나가 1차 비활성 · Ctrl+Enter · 첫 포커스를 함께 정한다.
-  const refreshSplit = splitRefreshTail(primary?.disabledReason);
+  const refreshSplit = splitRefreshTail(refreshKeepsOpen && rawReason !== undefined && rawReason === clearedReason ? undefined : rawReason);
   const disabledReason = refreshSplit.reason;
   // 꼬리가 있으면 그 이유의 다음 한 수는 「새로 고침」이다 — 호출처가 준 다음 한 수는 다른 이유의 짝이라 내린다.
-  const nextStep = refreshSplit.refresh ? <RefreshStep onDone={closeNow} /> : (primary?.nextStep ?? null);
+  const nextStep = refreshSplit.refresh ? (
+    <RefreshStep onStart={refreshKeepsOpen ? () => (awaitingRefreshRef.current = true) : undefined} onDone={refreshKeepsOpen ? keepOpenAfterRefresh : closeNow} />
+  ) : (
+    (primary?.nextStep ?? null)
+  );
+  // refreshKeepsOpen — 새로 고침을 누른 뒤 그 거부가 사라지면(우리가 지웠든 호출자의 새 props가 지웠든 — 후자는 이 버튼째 사라져 onDone이 오지 않는다) 포커스는 1차로 간다.
+  const awaitingRefreshRef = useRef(false);
+  useEffect(() => {
+    if (!awaitingRefreshRef.current || refreshSplit.refresh) return;
+    awaitingRefreshRef.current = false;
+    primaryWrapRef.current?.querySelector<HTMLElement>("button")?.focus();
+  }, [refreshSplit.refresh]);
 
   // 웨이브 11 D2 — 이번에 열린 동안 막힘 줄이 한 번이라도 섰으면(빈 사유 칸 등) 이유가 사라져도 빈 묶음을 남긴다. 폰은 그 줄
   // 높이를 비워 두어 아래에 붙은 시트가 첫 글자에 튀지 않는다. 닫히면 처음으로.
@@ -194,6 +225,11 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
     finishClose();
   }
 
+  // refreshKeepsOpen — 닫지 않고 거부 이유를 지운다(호출자가 새 props로 칸을 다시 그린다). 포커스는 위 효과가 1차로 옮긴다.
+  function keepOpenAfterRefresh() {
+    setClearedReason(rawReason);
+  }
+
   function handleDialogClose() {
     if (closedByUsRef.current) {
       closedByUsRef.current = false;
@@ -215,7 +251,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
   }
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLDialogElement>) {
-    if (primary && !submitting && !disabledReason && !primary.blockedBy && isCtrlCombo(event, "Enter")) {
+    if (primary && !submitting && !loading && !disabledReason && !primary.blockedBy && isCtrlCombo(event, "Enter")) {
       event.preventDefault();
       primary.onConfirm();
     }
@@ -267,7 +303,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
           <h2 id={titleId} className={styles.title}>
             {title}
           </h2>
-          {subtitle ? <p className={styles.subtitle}>{subtitle}</p> : null}
+          {subtitle && !loading ? <p className={styles.subtitle}>{subtitle}</p> : null}
         </div>
         <button type="button" className={styles.close} aria-label="닫기" onClick={handleCloseButtonClick}>
           <svg viewBox="0 0 24 24" aria-hidden="true" className={styles.closeIcon}>
@@ -277,8 +313,18 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
         </button>
       </div>
 
-      <div className={styles.body}>
-        {resultLines && resultLines.length > 0 ? (
+      <div className={styles.body} aria-busy={loading ? "true" : undefined}>
+        {loading ? (
+          <p id={loadingId} className={styles.loadingMark}>
+            …
+          </p>
+        ) : null}
+
+        {attachments && !loading ? <div className={styles.attachments} data-ui="confirm-attachments">
+            {attachments}
+          </div> : null}
+
+        {resultLines && resultLines.length > 0 && !loading ? (
           <div className={styles.resultLines}>
             {resultLines.map((line, index) => (
               <p key={index} className={styles.resultLine}>
@@ -346,9 +392,9 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
                 variant="primary"
                 shortcut={primary.shortcut ?? "Ctrl+Enter"}
                 pending={primary.pending}
-                disabled={Boolean(disabledReason || primary.blockedBy)}
+                disabled={Boolean(disabledReason || primary.blockedBy || loading)}
                 disabledReason={disabledReason}
-                aria-describedby={disabledReason ? undefined : primary.blockedBy}
+                aria-describedby={disabledReason ? undefined : loading ? loadingId : primary.blockedBy}
                 reasonTone={primary.reasonTone}
                 onClick={primary.onConfirm}
               >

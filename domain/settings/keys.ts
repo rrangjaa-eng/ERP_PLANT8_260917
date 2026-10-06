@@ -1125,6 +1125,162 @@ export const EVIDENCE_MAX_SIZE_MB: SettingDef<number> = {
 
 SETTING_DEFS.push(EVIDENCE_MAX_SIZE_MB);
 
+// 06-02 구매 요청 번호(A#3) — 프로젝트 요청 `{프로젝트 번호}{구분자}{접두어}{순번}`(기본 26001-C0001, 카운터 `purchase_request` ·
+// period = 프로젝트 번호 — 지출결의 번호와 같은 꼴), 팀 비용 요청 `TC26-0001`(카운터 `purchase_request_team` · period = 연도 — 팀 비용 지출결의 번호와 같은 꼴).
+export const DOCUMENT_NUMBER_PURCHASE_REQUEST_PREFIX: SettingDef<string> = {
+  key: "document_number.purchase_request.prefix",
+  kind: "simple",
+  schema: z.string(),
+  label: "구매 요청 번호 접두어",
+  hint: "프로젝트 번호 뒤 구분자 다음에 붙는 문자열입니다(기본 C).",
+  namespace: "문서 번호",
+  default: "C",
+};
+
+export const DOCUMENT_NUMBER_PURCHASE_REQUEST_SEPARATOR: SettingDef<string> = {
+  key: "document_number.purchase_request.separator",
+  kind: "simple",
+  schema: z.string().regex(/^[-_./]?$/),
+  label: "구매 요청 번호 구분자",
+  hint: "빈칸 또는 - _ . / 중 한 글자",
+  namespace: "문서 번호",
+  default: "-",
+  readInvalidAsDefault: true,
+};
+
+export const DOCUMENT_NUMBER_PURCHASE_REQUEST_SEQ_DIGITS: SettingDef<number> = {
+  key: "document_number.purchase_request.seq_digits",
+  kind: "simple",
+  schema: z.coerce.number().int().min(1),
+  label: "구매 요청 번호 순번 자릿수",
+  hint: "순번을 이 자릿수만큼 0으로 채웁니다(넘치면 자릿수가 늘어나고 잘리지 않습니다).",
+  namespace: "문서 번호",
+  default: 4,
+};
+
+export const DOCUMENT_NUMBER_PURCHASE_REQUEST_SEQ_START: SettingDef<number> = {
+  key: "document_number.purchase_request.seq_start",
+  kind: "simple",
+  schema: z.coerce.number().int().min(0),
+  label: "구매 요청 번호 순번 시작값",
+  hint: "프로젝트마다 순번이 시작할 때의 첫 값입니다(기본 1).",
+  namespace: "문서 번호",
+  default: 1,
+};
+
+export const DOCUMENT_NUMBER_PURCHASE_REQUEST_TEAM_PREFIX: SettingDef<string> = {
+  key: "document_number.purchase_request_team.prefix",
+  kind: "simple",
+  schema: z.string(),
+  label: "팀 비용 구매 요청 번호 접두어",
+  hint: "번호 맨 앞에 붙는 문자열입니다(기본 TC).",
+  namespace: "문서 번호",
+  default: "TC",
+};
+
+export const DOCUMENT_NUMBER_PURCHASE_REQUEST_TEAM_YEAR_DIGITS: SettingDef<number> = {
+  key: "document_number.purchase_request_team.year_digits",
+  kind: "simple",
+  schema: z.coerce.number().int().min(1).max(4),
+  label: "팀 비용 구매 요청 번호 연도 자릿수",
+  hint: "연도를 뒤에서부터 이 자릿수만큼 씁니다(기본 2 → 26).",
+  namespace: "문서 번호",
+  default: 2,
+};
+
+export const DOCUMENT_NUMBER_PURCHASE_REQUEST_TEAM_SEPARATOR: SettingDef<string> = {
+  key: "document_number.purchase_request_team.separator",
+  kind: "simple",
+  schema: z.string(),
+  label: "팀 비용 구매 요청 번호 구분자",
+  hint: "연도와 순번 사이에 넣을 문자입니다(기본 -).",
+  namespace: "문서 번호",
+  default: "-",
+};
+
+export const DOCUMENT_NUMBER_PURCHASE_REQUEST_TEAM_SEQ_DIGITS: SettingDef<number> = {
+  key: "document_number.purchase_request_team.seq_digits",
+  kind: "simple",
+  schema: z.coerce.number().int().min(1),
+  label: "팀 비용 구매 요청 번호 순번 자릿수",
+  hint: "순번을 이 자릿수만큼 0으로 채웁니다(넘치면 자릿수가 늘어나고 잘리지 않습니다).",
+  namespace: "문서 번호",
+  default: 4,
+};
+
+export const DOCUMENT_NUMBER_PURCHASE_REQUEST_TEAM_SEQ_START: SettingDef<number> = {
+  key: "document_number.purchase_request_team.seq_start",
+  kind: "simple",
+  schema: z.coerce.number().int().min(0),
+  label: "팀 비용 구매 요청 번호 순번 시작값",
+  hint: "연도가 바뀌어 순번이 다시 시작할 때의 첫 값입니다(기본 1).",
+  namespace: "문서 번호",
+  default: 1,
+};
+
+SETTING_DEFS.push(
+  DOCUMENT_NUMBER_PURCHASE_REQUEST_PREFIX,
+  DOCUMENT_NUMBER_PURCHASE_REQUEST_SEPARATOR,
+  DOCUMENT_NUMBER_PURCHASE_REQUEST_SEQ_DIGITS,
+  DOCUMENT_NUMBER_PURCHASE_REQUEST_SEQ_START,
+  DOCUMENT_NUMBER_PURCHASE_REQUEST_TEAM_PREFIX,
+  DOCUMENT_NUMBER_PURCHASE_REQUEST_TEAM_YEAR_DIGITS,
+  DOCUMENT_NUMBER_PURCHASE_REQUEST_TEAM_SEPARATOR,
+  DOCUMENT_NUMBER_PURCHASE_REQUEST_TEAM_SEQ_DIGITS,
+  DOCUMENT_NUMBER_PURCHASE_REQUEST_TEAM_SEQ_START,
+);
+
+// 06-02(EVID-02 · EXP-13 · UI-SPEC S20): 증빙 필수 · 선결제 기한 · 온라인구매 협력사 · 지급 방식 × 증빙 종류 짝.
+// 처음 읽는 플랜(06-03 · 06-04 · 06-08 · 06-10)이 readBy를 지운다 — registry-coverage가 알려 준다.
+export const EVIDENCE_REQUIRED: SettingDef<boolean> = {
+  key: "evidence.required",
+  kind: "simple",
+  schema: z.boolean(),
+  label: "증빙 필수",
+  hint: "끄면 증빙 없이 지급 완료",
+  namespace: "증빙",
+  default: true,
+  readBy: { phase: "6" },
+};
+
+export const EVIDENCE_PREPAID_DUE_DAYS: SettingDef<number> = {
+  key: "evidence.prepaid_due_days",
+  kind: "simple",
+  schema: z.coerce.number().int().min(1),
+  label: "선결제 증빙 기한",
+  hint: "지급일부터 센 날수",
+  namespace: "증빙",
+  unitLabel: "일",
+  default: 14,
+  readBy: { phase: "6" },
+};
+
+export const PURCHASE_ONLINE_VENDOR_NAME: SettingDef<string> = {
+  key: "purchase.online_vendor_name",
+  kind: "simple",
+  schema: z.string(),
+  label: "온라인구매 협력사",
+  hint: "이 거래처의 견적 줄은 구매 요청으로",
+  namespace: "구매 요청",
+  default: "",
+  readBy: { phase: "6" },
+};
+
+// 값 = 짝 목록 `{ method: 지급 방식 코드 값, evidence: 증빙 종류 코드 값 }[]` — 빈 목록 = 짝 검사 없음(Q4).
+export const PAYMENT_METHOD_EVIDENCE_PAIRS: SettingDef<{ method: string; evidence: string }[]> = {
+  key: "payment.method_evidence_pairs",
+  kind: "simple",
+  schema: z.array(z.object({ method: z.string().min(1), evidence: z.string().min(1) })),
+  label: "지급 방식 · 증빙 종류 짝",
+  hint: "비면 짝 검사 없음",
+  namespace: "지급",
+  pairGrid: { rows: "payment_method", cols: "evidence_type", rowField: "method", colField: "evidence" },
+  default: [],
+  readBy: { phase: "6" },
+};
+
+SETTING_DEFS.push(EVIDENCE_REQUIRED, EVIDENCE_PREPAID_DUE_DAYS, PURCHASE_ONLINE_VENDOR_NAME, PAYMENT_METHOD_EVIDENCE_PAIRS);
+
 // ── 05-11 정산 결재 결재선(D-98 · UI-SPEC S13) ───────────────────────────
 // 지출결의 결재선 17키와 같은 꼴 · 같은 라벨(namespace만 다르다). 기본값은 1~3단 꺼짐 · 4단 대표 × 전사 · 자기 승인 = 본인 승인 —
 // 담당 PM이 올리고 대표가 승인한다. 3단 특정 부서는 기본값 없음(꺼진 단계라 읽기 대체 ""로 충분하다).

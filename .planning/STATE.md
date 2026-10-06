@@ -5,10 +5,10 @@ current_phase_name: payment-evidence-cards
 current_plan: 4
 status: executing
 stopped_at: Completed 04.6-04-PLAN.md
-last_updated: "2026-10-06T02:46:03.884Z"
+last_updated: "2026-10-06T03:00:10.793Z"
 last_activity: 2026-10-02
 last_activity_desc: Phase 04.6 execution started
-state_head: acf1cf2f5762c577ca6f2ccc87d34985cb06c5dd
+state_head: 104050633fe2695de01427e1b53b646a90db9fb8
 progress:
   total_phases: 17
   completed_phases: 7
@@ -341,6 +341,7 @@ Recent decisions affecting current work:
 - [Phase 04.6]: 04.6-04: 스크롤 잠금은 scrollbar-gutter 대신 열 때 잰 스크롤바 폭만 html 인라인 padding으로 채운다(짧은 페이지 배치 불변)
 - [Phase 04.6]: 04.6-04: 폰 입력 40 · 행동 줄 버튼 44 — 오케스트레이터 기본값, 사용자 확인 대기
 - [Phase 06]: 06 체커 재실행 — 05 머지 acf1cf2 뒤 plan-checker 통과(2회차, 1회차 경고 4 반영: 06-28 회차 installmentSeqFor·06-02/08 채번 가드·P3 8건, EA-1 부가세 포함 증빙 금액 막기는 사용자 카드 답 대기 추천안 기본값)
+- [Phase 06]: EA-1 확정: 증빙 금액이 승인 공급가+부가세와 정확히 같으면 저장 막기(06-06 증빙 확인·06-10 기안자 저장, UI-SPEC 문구 「부가세 포함 금액 · 공급가로 입력」) — 사용자 결정 2026-10-06 11:57 KST 채팅
 
 ### Pending Todos
 

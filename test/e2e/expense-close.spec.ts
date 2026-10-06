@@ -76,6 +76,8 @@ async function openCloseDialog(page: Page, expenseId: string) {
 // 1차 비활성 이유 — 버튼의 aria-describedby가 가리키는 글자(ConfirmDialog 막힘 줄과 같은 글자가 둘 선다 — 연결된 쪽으로 단언).
 async function expectPrimaryReason(primary: Locator, text: string): Promise<void> {
   await expect(primary).toHaveAttribute("aria-disabled", "true");
+  // 보내는 중에도 aria-disabled라 이유가 붙을 때까지 기다린다(그 사이에는 aria-describedby가 없다).
+  await expect(primary).toHaveAttribute("aria-describedby", /.+/);
   const describedBy = await primary.getAttribute("aria-describedby");
   expect(describedBy).toBeTruthy();
   await expect(primary.page().locator(`[id="${describedBy}"]`)).toHaveText(text);

@@ -13,6 +13,8 @@ export const STATUS_KIND = {
   "마감 임박": "warning",
   "마감 중": "warning",
   정산: "warning",
+  // 06 SP-2: 선결제(증빙 없이 먼저 지급 — 지급 게이트 예외)
+  선결제: "warning",
   // accent — 내 차례 · 결재 중 · 편집 중 · 진행 · 현재 · 내 결재 (+ 결재: 내 차례 블록의 결재 태그, `{단계} 결재 중`은 아래 StatusWord)
   "내 차례": "accent",
   결재: "accent",
@@ -22,6 +24,9 @@ export const STATUS_KIND = {
   현재: "accent",
   "내 결재": "accent",
   "지출결의 중": "accent",
+  // 06 SP-2: 구매 요청 중(카드 쪽 견적 줄 — `지출결의 중`과 같은 꼴, text 변형만) · 확인 전(증빙 있음, 경영관리 확인 전)
+  "구매 요청 중": "accent",
+  "확인 전": "accent",
   // success — 승인 · 연결 · 저장됨 · 완료 (+ 확정 · 적용 중: 공휴일·값 이력)
   승인: "success",
   연결: "success",
@@ -30,6 +35,12 @@ export const STATUS_KIND = {
   확정: "success",
   "적용 중": "success",
   "본인 승인": "success",
+  // 06 SP-2: 지급 완료 · 카드 사용(견적 줄 파생·지급 표) · 확인됨(증빙) · 구매 완료 · 발행됨
+  "지급 완료": "success",
+  "카드 사용": "success",
+  확인됨: "success",
+  "구매 완료": "success",
+  발행됨: "success",
   // muted — 대기 · 미착수 · 임시 · 미수주 · 취소 · 회수 · 첫 로그인 전 · 임시 비밀번호 사용 중
   //        (+ 지금 호출부: 수주중 · 보관됨 · 숨김 · 비활성 · 후보 · 예정 · 확인 불가 · 미설정)
   대기: "muted",
@@ -57,6 +68,8 @@ export const STATUS_KIND = {
   "접수 전": "muted",
   닫힘: "muted",
   "대조 제외": "muted",
+  // 06 SP-2: 면제(경영관리가 증빙을 면제함)
+  면제: "muted",
 } as const satisfies Record<string, StatusKind>;
 
 /** 표의 낱말 + 단계 이름이 붙은 `{단계} 결재 중`(accent). */

@@ -390,6 +390,36 @@ test.describe("공용 법인카드 (06-30 · Q5 · C8)", () => {
       await card.cleanup();
     }
   });
+
+  // 06-30 검토 P3-4 — 공용 → 개인 전환 뒤 소지자 칸은 빈 값이고, 그대로 제출하면 이유와 함께 막힌다(저장 안 됨).
+  test("공용 카드를 개인으로 바꾸고 소지자를 비운 채 제출하면 이유와 함께 막히고 종류는 공용 그대로다", async ({ page }) => {
+    const stamp = randomUUID().slice(0, 8);
+    const card = await insertCorpCard(SYSTEM_VIEWER, {
+      issuer: `전환막힘카드사-${stamp}`,
+      numberLast4: String(Math.floor(1000 + Math.random() * 9000)),
+      label: `전환막힘-${stamp}`,
+      kind: "shared",
+    });
+    try {
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await loginAsSysadmin(page);
+      await page.goto(`/admin/corp-cards?editId=${card.id}`);
+      const dialog = page.locator(PANEL);
+      await expect(dialog.getByLabel("종류")).toHaveValue("shared");
+      await dialog.getByLabel("종류").selectOption("personal");
+      await expect(dialog.getByLabel("소지자")).toHaveValue("");
+      const submit = dialog.getByRole("button", { name: "소유자 변경" });
+      await submit.click();
+      await expect(dialog).toBeVisible();
+      await expect(dialog.locator("#owner-holderUserId")).toHaveAttribute("aria-invalid", "true");
+      await expect(dialog.locator("#corp-card-owner-form-reason")).toHaveText("소지자·팀 중 하나 필요 · 하나만 선택");
+      await expect(submit).toHaveAccessibleDescription(/소지자·팀/);
+      const cells = page.locator("tr", { hasText: card.label }).locator("td");
+      await expect(cells.nth(KIND_CELL)).toHaveText("공용");
+    } finally {
+      await setCorpCardActive(SYSTEM_VIEWER, card.id, false);
+    }
+  });
 });
 
 // 04.6-15 · R11 · 공통 §10: 옮긴 화면의 원칙 막는 모드 — 법인카드·코드표의 목록과 패널 라우트 모두 경고 0(화면 하나에 테스트 하나).

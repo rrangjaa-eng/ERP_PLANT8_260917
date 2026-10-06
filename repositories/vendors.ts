@@ -4,6 +4,7 @@ import { db, type DbOrTx } from "@/db/client";
 import { vendors } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 import type { Scope } from "@/domain/permissions/scope-for";
+import type { VendorKind } from "@/domain/vendors/kind";
 
 export type VendorRow = InferSelectModel<typeof vendors>;
 
@@ -100,6 +101,7 @@ export type VendorInsertInput = {
   accountNumberEncrypted?: string | null;
   accountNumberLast4?: string | null;
   customFields?: Record<string, unknown>;
+  kind?: VendorKind;
 };
 
 export async function insertVendor(viewer: Viewer, input: VendorInsertInput): Promise<VendorRow> {
@@ -115,6 +117,7 @@ export async function insertVendor(viewer: Viewer, input: VendorInsertInput): Pr
       accountNumberEncrypted: input.accountNumberEncrypted ?? null,
       accountNumberLast4: input.accountNumberLast4 ?? null,
       customFields: input.customFields ?? {},
+      kind: input.kind,
     })
     .returning();
   if (!row) throw new Error("vendors insert가 행을 반환하지 않았습니다.");
@@ -129,6 +132,7 @@ export type VendorUpdateInput = Partial<{
   accountBank: string | null;
   accountHolder: string | null;
   customFields: Record<string, unknown>;
+  kind: VendorKind;
 }>;
 
 // 계좌번호를 바꾸지 않는 일반 갱신 — 암호문·뒤 4자리 두 컬럼을 아예 건드리지

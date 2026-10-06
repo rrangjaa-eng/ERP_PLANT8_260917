@@ -154,3 +154,19 @@ describe("Table selection — 오류 · 충돌 셀 면 우선(검토 P3-2)", () 
     expect(ruleFor(`${hover}.selectedRow.conflictCell`)).toContain("background: var(--status-danger-weak)");
   });
 });
+
+// PR #171 리뷰 P3-4 — 한 화면에 선택 표가 둘이어도 이유 줄 id가 겹치지 않는다.
+describe("Table selection — 이유 줄 id 유일성(검토 P3-4)", () => {
+  it("같은 rowId를 가진 선택 표 두 개를 한 화면에 그려도 모든 id가 유일하다", () => {
+    const selection = selectionOf({ selectedIds: [] });
+    const html = renderToStaticMarkup(
+      createElement("div", null, [
+        createElement(Table<Row>, { key: "a", caption: "표 하나", columns, rows, getRowId: (row) => row.id, selection }),
+        createElement(Table<Row>, { key: "b", caption: "표 둘", columns, rows, getRowId: (row) => row.id, selection }),
+      ]),
+    );
+    const ids = [...html.matchAll(/ id="([^"]+)"/g)].map((match) => match[1]!);
+    expect(ids.filter((id) => id.includes("select-")).length).toBe(4);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+});

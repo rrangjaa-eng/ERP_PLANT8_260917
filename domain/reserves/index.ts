@@ -34,6 +34,7 @@ import {
 import { listCodeItems as repoListCodeItems } from "@/repositories/code-tables";
 import { listVendors as repoListVendors } from "@/repositories/vendors";
 import { vendorOptionLabels } from "@/domain/vendors";
+import { servesSide } from "@/domain/vendors/kind";
 import { RESERVE_ARCHIVED_ROW_REASON } from "@/domain/reserves/save-contract";
 
 export type ReserveDirection = "deposit" | "withdrawal";
@@ -678,11 +679,12 @@ export async function listReserveReferences(viewer: Viewer): Promise<ReserveRefe
     projectShown && projectScope.rows === "all" ? repoListProjectOptions(viewer) : [],
     repoListCodeItems(viewer, { tableKey: EVIDENCE_TYPE_TABLE, scope: { rows: "all", includeArchived: false }, includeInactive: false }),
   ]);
-  const clientLabels = vendorOptionLabels(vendorRows);
+  const clientRows = vendorRows.filter((row) => servesSide(row.kind, "client"));
+  const clientLabels = vendorOptionLabels(clientRows);
   return {
     clients: (await projectMany(
       viewer,
-      vendorRows.map((row) => ({ id: row.id, name: row.name, label: clientLabels.get(row.id) ?? row.name })),
+      clientRows.map((row) => ({ id: row.id, name: row.name, label: clientLabels.get(row.id) ?? row.name })),
       CLIENT_OPTION_SPEC,
     )) as ReserveClientOption[],
     projects: (await projectMany(viewer, projectRows, PROJECT_OPTION_SPEC)) as ReserveProjectOption[],

@@ -12,7 +12,12 @@ import { insertVendor } from "@/repositories/vendors";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { createVendor, updateVendor } from "@/domain/vendors";
 import { createTeamExpenseDraft } from "@/domain/expenses";
-import { saveReserves, type ReserveWriteRow } from "@/domain/reserves";
+import { listReserveReferences, listReserves, saveReserves, type ReserveWriteRow } from "@/domain/reserves";
+import { listProjectFormReferences } from "@/domain/projects/references";
+import { searchVendorsForPick } from "@/domain/expenses/pick";
+import { listQuoteLines } from "@/domain/quotes/lines";
+import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
+import { makePerson } from "./approvals-fixtures";
 import { setupExpenseProject } from "./fixtures/expenses";
 
 // 261006-biv — 거래처 갈래(vendors.kind). 저장 · 기본값 · CHECK · 마이그레이션 채우기(쓰임 기반).
@@ -138,5 +143,73 @@ describe("마이그레이션 채우기 — 쓰임 기반 갈래 (261006-biv D-2,
     expect(await kindOf(d)).toBe("supplier");
     expect(await kindOf(e)).toBe("both");
     expect(await kindOf(f)).toBe("both");
+  });
+});
+
+// ── Task 2: 고르는 목록 거르기(D-6) ─────────────────────────────────────
+
+async function makeReferenceViewer(): Promise<Viewer> {
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `갈래 선택지-${randomUUID()}`, workScope: "company" });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
+  for (const infoItem of ["vendor.value", "team.value", "person.value", "project.value", "quote.amount"]) {
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+  }
+  const { userId } = await createAccount(SYSTEM_VIEWER, { email: `vk-ref-${randomUUID()}@example.test`, name: `갈래 선택지 사람-${randomUUID()}`, roleId: role.id });
+  return { id: userId, roleId: role.id };
+}
+
+async function kindTrio() {
+  const tag = `갈${randomUUID().slice(0, 8)}`;
+  const make = (suffix: string, kind: "client" | "supplier" | "both") =>
+    insertVendor(SYSTEM_VIEWER, { name: `${tag}-${suffix}`, normalizedName: `${tag}-${suffix}`.toLowerCase(), kind });
+  const c = await make("클라", "client");
+  const s = await make("협력", "supplier");
+  const b = await make("둘다", "both");
+  return { tag, c: c.id, s: s.id, b: b.id };
+}
+
+function idsIn(rows: readonly { id?: string }[], trio: { c: string; s: string; b: string }): string[] {
+  const mine = new Set([trio.c, trio.s, trio.b]);
+  return rows
+    .map((row) => row.id)
+    .filter((id): id is string => id !== undefined && mine.has(id))
+    .sort();
+}
+
+describe("선택 목록을 갈래로 거른다 (261006-biv D-6, 실제 Postgres)", () => {
+  it("프로젝트 등록 — 클라이언트 선택지는 client · both, 견적 줄 거래처는 supplier · both", async () => {
+    const trio = await kindTrio();
+    const references = await listProjectFormReferences(await makeReferenceViewer());
+    expect(idsIn(references.clients, trio)).toEqual([trio.c, trio.b].sort());
+    expect(idsIn(references.vendors, trio)).toEqual([trio.s, trio.b].sort());
+  });
+
+  it("지출결의 거래처 고르기는 supplier · both만", async () => {
+    const trio = await kindTrio();
+    const pm = await makePerson("박서연", DEFAULT_ROLE_ID, "기획1팀");
+    const found = await searchVendorsForPick(pm, { query: trio.tag });
+    expect(idsIn(found.rows, trio)).toEqual([trio.s, trio.b].sort());
+  });
+
+  it("리저브 클라이언트 선택지는 client · both만", async () => {
+    const trio = await kindTrio();
+    const references = await listReserveReferences(await createFinanceViewer());
+    expect(idsIn(references.clients, trio)).toEqual([trio.c, trio.b].sort());
+  });
+
+  it("고정 — 견적 줄 거래처를 client로 바꿔도 줄의 거래처 이름이 남는다", async () => {
+    const fx = await setupExpenseProject();
+    await db.update(vendors).set({ kind: "client" }).where(eq(vendors.id, fx.stageOneId));
+    const lines = await listQuoteLines(await makeReferenceViewer(), fx.revisionId, { status: "in_progress", canWrite: false });
+    expect(lines.find((line) => line.id === fx.lines.withVendor)?.vendorName).toBe("스테이지원");
+  });
+
+  it("고정 — 리저브 줄 클라이언트를 supplier로 바꿔도 줄의 클라이언트 이름이 남는다", async () => {
+    const client = await plainVendor("리저브고정");
+    const finance = await createFinanceViewer();
+    await saveReserves(finance, { rows: [reserveDeposit(client.id)] });
+    await db.update(vendors).set({ kind: "supplier" }).where(eq(vendors.id, client.id));
+    const list = await listReserves(finance, { page: 1 });
+    expect(list.rows.find((row) => row.clientId === client.id)?.clientName).toBe(client.name);
   });
 });

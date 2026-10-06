@@ -228,8 +228,8 @@ function payableOf(pre: PaymentInputs): Promise<PayableDecision> | null {
   return decidePayable({ amount: pre.amount, taxRule: pre.tax.taxRule, applyOpts: pre.tax.dates.applyOpts, incomeType: pre.tax.incomeType }, pre.tax.rates);
 }
 
-// 잠금 뒤 기준 바뀜 신호 — 트랜잭션을 되돌린 뒤 밖에서 새 지급 총액을 셈해 PayableChangedError로 바꾼다.
-class BasisChangedSignal extends Error {}
+// 잠금 뒤 기준일 바뀜 신호 — 그날 세율은 풀을 읽어야 하므로 트랜잭션을 되돌린 뒤 밖에서 새 지급 총액을 셈해 PayableChangedError로 바꾼다.
+export class BasisChangedSignal extends Error {}
 
 function sameBasis(pre: PaymentInputs, locked: { evidenceType: string | null; amount: PaymentAmount | null; tax: PaymentTax | null }): boolean {
   return (
@@ -239,6 +239,46 @@ function sameBasis(pre: PaymentInputs, locked: { evidenceType: string | null; am
     pre.tax?.dates.basisDate === locked.tax?.dates.basisDate &&
     pre.tax?.dates.basisKind === locked.tax?.dates.basisKind
   );
+}
+
+export type LockedExpense = Pick<
+  ExpenseRow,
+  "id" | "evidenceType" | "supplyAmountKrw" | "evidenceAmount" | "scheduledPaymentDate" | "evidenceDate" | "createdAt" | "paymentMethod"
+>;
+
+// 잠금 뒤 판정(DB 없음) — 트랜잭션 콜백이 tx로 읽은 값(잠근 행 · 결재 상태 · 살아 있는 증빙 유무)만 넘긴다. 순서: 결재 게이트 →
+// 기준 재판정(기준일 · 증빙 종류 · 금액 원천 — CROSS-R1 F-3: 게이트가 먼저) → 지급 총액 → 화면이 본 값 비교. 기준이 바뀌었어도 기준일이
+// 같으면 사전 조회 세율로 여기서 새 값을 셈하고, 기준일이 바뀌면 BasisChangedSignal(그날 세율은 밖에서).
+export async function judgeLockedPayment(input: {
+  pre: PaymentInputs;
+  locked: LockedExpense;
+  approvalState: string | null;
+  lockedHasEvidence: boolean;
+  payDate: string;
+  expectedPayableKrw: number;
+  shared: PaymentShared;
+}): Promise<{ payable: PayableDecision; paymentMethod: string }> {
+  const { pre, locked } = input;
+  const decision = await gate(locked, "payment.approval-required", { approvalState: input.approvalState, stepName: pre.stepName });
+  if (!decision.allowed) throw new GateBlockedError(decision.reason);
+
+  const basis = basisOf(locked, { shared: input.shared, payDate: input.payDate, today: pre.today, hasLiveEvidence: input.lockedHasEvidence });
+  if (!sameBasis(pre, { evidenceType: locked.evidenceType, ...basis })) {
+    if (!pre.tax || !basis.amount || !basis.tax || basis.tax.dates.basisDate !== pre.tax.rates.asOf) throw new BasisChangedSignal();
+    const fresh = await decidePayable(
+      { amount: basis.amount, taxRule: basis.tax.taxRule, applyOpts: basis.tax.dates.applyOpts, incomeType: basis.tax.incomeType },
+      pre.tax.rates,
+    );
+    throw new PayableChangedError(fresh.payableKrw, input.payDate);
+  }
+  if (!pre.tax || !basis.amount || !basis.tax || !locked.paymentMethod) throw new GateBlockedError(TAX_UNAVAILABLE);
+
+  const payable = await decidePayable(
+    { amount: basis.amount, taxRule: basis.tax.taxRule, applyOpts: basis.tax.dates.applyOpts, incomeType: basis.tax.incomeType },
+    pre.tax.rates,
+  );
+  if (payable.payableKrw !== input.expectedPayableKrw) throw new PayableChangedError(payable.payableKrw, input.payDate);
+  return { payable, paymentMethod: locked.paymentMethod };
 }
 
 export type CompletePaymentDeps = {
@@ -275,20 +315,16 @@ export async function completeExpensePayment(
         throw new PaymentConflictError(live ? ALREADY_PAID : `다른 사람이 ${formatKstTime(locked.updatedAt)}에 바꿈 · 새로 고침`);
       }
       const instance = await findExpenseApprovalInstance(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, documentId: locked.id }, tx);
-      const decision = await gate(locked, "payment.approval-required", { approvalState: instance?.status ?? null, stepName: pre.stepName });
-      if (!decision.allowed) throw new GateBlockedError(decision.reason);
-
       const lockedEvidence = await hasEvidence(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: locked.id }, tx);
-      const lockedBasis = basisOf(locked, { shared, payDate, today: pre.today, hasLiveEvidence: lockedEvidence });
-      if (!sameBasis(pre, { evidenceType: locked.evidenceType, ...lockedBasis })) throw new BasisChangedSignal();
-      if (!pre.tax || !lockedBasis.amount || !lockedBasis.tax) throw new GateBlockedError(TAX_UNAVAILABLE);
-      if (!locked.paymentMethod) throw new GateBlockedError(TAX_UNAVAILABLE);
-
-      const payable = await decidePayable(
-        { amount: lockedBasis.amount, taxRule: lockedBasis.tax.taxRule, applyOpts: lockedBasis.tax.dates.applyOpts, incomeType: lockedBasis.tax.incomeType },
-        pre.tax.rates,
-      );
-      if (payable.payableKrw !== input.expectedPayableKrw) throw new PayableChangedError(payable.payableKrw, payDate);
+      const { payable, paymentMethod } = await judgeLockedPayment({
+        pre,
+        locked,
+        approvalState: instance?.status ?? null,
+        lockedHasEvidence: lockedEvidence,
+        payDate,
+        expectedPayableKrw: input.expectedPayableKrw,
+        shared,
+      });
 
       const payment = await insertPayment(
         viewer,
@@ -300,7 +336,7 @@ export async function completeExpensePayment(
           diffKrw: payable.diffKrw,
           diffReason: null,
           grossSupplyKrw: payable.grossSupplyKrw,
-          paymentMethod: locked.paymentMethod,
+          paymentMethod,
           processedBy: viewer.id,
         },
         tx,

@@ -426,6 +426,38 @@ describe("커스텀 칸 축 — 계급에게서 끈 거래처 칸의 값이 그 
 import "@/domain/expenses";
 import "@/domain/evidence";
 import "@/app/(app)/expenses/actions.registry";
-import "@/domain/payments";
+import { PAYMENT_VIEW_DTO_SPEC, type PaymentViewDto } from "@/domain/payments";
+import { project } from "@/domain/permissions/project";
 import "@/app/(app)/expenses/[id]/actions.registry";
 import "@/domain/settlements";
+
+// 06-03 — 지급 섹션 DTO(getPaymentView): 금액 칸(지급 총액 · 이체액 · 차이 · 공급가 역산)은 05 정보 항목 expense.amount를 못 보는
+// 계급의 직렬화에 키째 없다(RS-19 — 새 정보 항목 없음). 계좌 노출(O-17)은 06-20이 더한다.
+describe("지급 섹션 DTO 축 — 금액 칸은 expense.amount를 보는 계급에만 (06-03)", () => {
+  it("시드 계급마다 금액 칸 키의 유무가 expense.amount 노출과 같고, 노출표 행이 없는 계급에는 금액 칸이 없다", async () => {
+    const amountKeys = ["payableKrw", "transferKrw", "diffKrw", "grossSupplyKrw"];
+    for (const key of amountKeys) expect(PAYMENT_VIEW_DTO_SPEC.fields.find((field) => field.key === key)?.infoItem, key).toBe("expense.amount");
+    const source: PaymentViewDto = {
+      expenseId: "00000000-0000-4000-8000-000000000603",
+      version: 2,
+      row: { row: "P6", primary: null, ownerNote: null },
+      payDate: "2026-09-22",
+      paidTime: "14:02",
+      payableKrw: 1_100_000,
+      transferKrw: 1_100_000,
+      diffKrw: 0,
+      grossSupplyKrw: 1_000_000,
+    };
+    // 시드는 지금 모든 계급에 expense.amount를 켠다 — 음성 쪽은 노출표 행이 없는 계급(관리자가 새로 만든 계급의 기본 숨김)으로 단언한다.
+    const hiddenProbe = "leak-scan-no-visibility-rows";
+    const hidden: string[] = [];
+    for (const roleId of [...SEED_ROLES.map((role) => role.id), hiddenProbe]) {
+      const viewer: Viewer = { id: "leak-scan-probe", roleId };
+      const amountVisible = await visible(viewer, "expense.amount");
+      const dto = await project(viewer, source, PAYMENT_VIEW_DTO_SPEC);
+      for (const key of amountKeys) expect(key in dto, `${roleId}·${key}`).toBe(amountVisible);
+      if (!amountVisible) hidden.push(roleId);
+    }
+    expect(hidden).toContain(hiddenProbe);
+  });
+});

@@ -1,6 +1,6 @@
 /* SYSTEM.md §7-17(⑮) — 공용 확인 모달·시트(스킨 A). PC(≥700)는 폭 --dialog-w
    모달(r12 · 떠 있는 그림자), 폰(<700)은 §7-8 시트 골격(머리 고정 + 닫기 x, 본문 스크롤 최대
-   85vh, 행동 줄 --touch-min). 값은 역할 토큰만 쓴다. */
+   --sheet-max-h, 행동 줄 --touch-min). 값은 역할 토큰만 쓴다. */
 
 .dialog {
   width: 100%;
@@ -176,7 +176,7 @@
     inset-inline: 0;
     width: 100%;
     max-width: none;
-    max-height: 85vh;
+    max-height: var(--sheet-max-h);
     margin: 0;
     border: 0;
     border-radius: var(--radius-panel) var(--radius-panel) 0 0;

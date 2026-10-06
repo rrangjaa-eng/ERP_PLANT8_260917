@@ -27,7 +27,7 @@ import { getSettingValue } from "@/domain/settings/registry";
 import { FX_RECENT_RATE_USD } from "@/domain/settings/keys";
 import { listArchivedAcrossEntities } from "@/repositories/archive";
 import { restore } from "@/domain/archive";
-import { changeProjectStatus } from "@/domain/projects/status";
+import { completeViaApproval } from "@/test/support/settlement-authority";
 import type { Viewer } from "@/domain/viewer";
 import { addDays, kstToday } from "@/lib/kst-date";
 import { deferred, waitForLockWaiter } from "./lock-race";
@@ -862,7 +862,7 @@ describe("잠금·경합(A-06 · OV-3)", () => {
       },
     });
     await locked.promise;
-    const complete = changeProjectStatus(ceo, project.id, { from: "settling", to: "completed" });
+    const complete = completeViaApproval(ceo, project.id);
     try {
       await waitForLockWaiter(pool);
     } finally {
@@ -885,7 +885,7 @@ describe("잠금·경합(A-06 · OV-3)", () => {
     const locked = deferred();
     const release = deferred();
 
-    const complete = changeProjectStatus(ceo, project.id, { from: "settling", to: "completed" }, {
+    const complete = completeViaApproval(ceo, project.id, {
       afterLock: async () => {
         locked.resolve();
         await release.promise;
@@ -925,7 +925,7 @@ describe("잠금·경합(A-06 · OV-3)", () => {
         },
       });
       await locked.promise;
-      const complete = changeProjectStatus(ceo, project.id, { from: "settling", to: "completed" });
+      const complete = completeViaApproval(ceo, project.id);
       try {
         await waitForLockWaiter(pool);
       } finally {
@@ -945,7 +945,7 @@ describe("잠금·경합(A-06 · OV-3)", () => {
       await setStatus(project.id, "settling");
       const locked = deferred();
       const release = deferred();
-      const complete = changeProjectStatus(ceo, project.id, { from: "settling", to: "completed" }, {
+      const complete = completeViaApproval(ceo, project.id, {
         afterLock: async () => {
           locked.resolve();
           await release.promise;

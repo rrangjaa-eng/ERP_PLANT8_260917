@@ -53,6 +53,29 @@ describe("routeListSteps", () => {
   });
 });
 
+// 05-01 E6(Round 4 D10 · Round 6 R6-01): 본인 승인한 단계는 `본인 승인 MM-DD HH:mm`(success), 아니면 04.1 `승인` 그대로.
+describe("routeListSteps — 본인 승인(05-01 E6)", () => {
+  it("selfApproved인 승인 단계는 결과 글자 · 낱말이 본인 승인이고 시각은 서울 MM-DD HH:mm", () => {
+    const [row] = routeListSteps([
+      { stepIndex: 1, label: "팀장", state: "approved", selfApproved: true, actedByName: "박서연", actedAt: new Date("2026-09-18T05:02:00Z") },
+    ]);
+    expect(row?.result).toEqual({ text: "본인 승인", status: "본인 승인" });
+    expect(row?.at).toBe("09-18 14:02");
+    expect(statusKind("본인 승인")).toBe("success");
+  });
+
+  it("selfApproved가 없거나 거짓인 승인 단계는 04.1대로 승인", () => {
+    const rows = routeListSteps([
+      { stepIndex: 1, label: "팀장", state: "approved", actedByName: "김팀장" },
+      { stepIndex: 2, label: "대표", state: "approved", selfApproved: false, actedByName: "최대표" },
+    ]);
+    expect(rows.map((row) => row.result)).toEqual([
+      { text: "승인", status: "승인" },
+      { text: "승인", status: "승인" },
+    ]);
+  });
+});
+
 describe("withdrawResultLines", () => {
   it("지금 담당이 있으면 첫 줄에 이름, 승인한 단계가 있으면 둘째 줄", () => {
     expect(

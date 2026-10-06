@@ -8,6 +8,8 @@ import { formatForeignLine, formatKrw, formatQuantity } from "@/lib/format-numbe
 import { QUOTE_TABLE_PAGE_SIZE } from "@/lib/paging";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { Num } from "@/ui/num/Num";
+import { StatusTag } from "@/ui/status-tag/StatusTag";
+import { lineStatusWord } from "@/app/(app)/projects/status-display";
 import { Table } from "@/ui/table/Table";
 import { TableSkeleton } from "@/ui/table/TableSkeleton";
 import type { TableColumn } from "@/ui/table/types";
@@ -112,7 +114,12 @@ export function quoteLineReadColumns<Row extends QuoteLineCopyRow>(
     column({ key: "quoteAmount", header: "견적가", priority: "p2", align: "right", text: (row) => formatKrw(row.quoteAmountKrw) }),
     column({ key: "execution", header: "실행가", priority: "p1", align: "right", text: (row) => formatKrw(row.executionAmount) }),
     column({ key: "profit", header: "차익", priority: "p2", collapseBelow: 1280, align: "right", text: (row) => formatKrw(row.profitKrw) }),
-    column({ key: "status", header: "상태", priority: "p1", text: (row) => (row.lineKind === "adjustment" ? "—" : lineStatusLabel(row.lineStatus)) }),
+    {
+      ...column({ key: "status", header: "상태", priority: "p1", text: (row) => (row.lineKind === "adjustment" ? "—" : lineStatusLabel(row.lineStatus)) }),
+      // SYSTEM §7-5 :944 — 표 상태 열은 색 글자(현재 표와 같은 렌더). 이전 차수 줄에는 연결 문서 파생값이 없다(계보는 현재 차수 줄에 잇는다).
+      cell: (row: Row) =>
+        row.lineKind === "adjustment" ? "—" : <StatusTag variant="text" status={lineStatusWord({ lineStatus: row.lineStatus, linkedStatus: null })} />,
+    },
     column({ key: "note", header: "비고", priority: "p3", collapseBelow: 1024, text: (row) => row.note ?? "—" }),
   ];
   return references.vendorShown ? columns : columns.filter((entry) => entry.key !== "vendor");

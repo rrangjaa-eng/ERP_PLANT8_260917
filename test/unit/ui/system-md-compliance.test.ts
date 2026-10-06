@@ -50,12 +50,12 @@ describe("app/(app)/approvals/page.tsx — 결재함 EMPTY (§7-7)", () => {
 
   it("SYSTEM.md가 이 화면의 예시로 적어 둔 문구·이동 대상을 쓴다", () => {
     // §7-7 EMPTY 행의 예시가 이 화면을 직접 지목한다:
-    //   `결재할 건이 없습니다 · 연차 목록 보기`
-    // 04.1(오케스트레이터 결정 11 · DECISIONS.md 2026-09-26): 지출결의 목록은 Phase 5 화면이라
-    // 이 페이즈의 결재 문서는 연차뿐이다 — 이동 대상은 연차 목록이다.
-    expect(SYSTEM).toContain("결재할 건이 없습니다 · 연차 목록 보기");
+    //   `결재할 건이 없습니다 · 지출결의 목록 보기`
+    // 05-10(DECISIONS.md 2026-10-05): 지출결의 목록(/expenses)이 생겨 04.1의 연차 목록 행동을 되돌렸다.
+    expect(SYSTEM).toContain("결재할 건이 없습니다 · 지출결의 목록 보기");
     expect(source).toContain("결재할 건이 없습니다");
-    expect(source).toContain('href: "/leave"');
+    expect(source).toContain('href: "/expenses"');
+    expect(source).not.toContain('"/leave"');
     expect(source).not.toContain("/pnl");
   });
 });

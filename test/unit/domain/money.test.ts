@@ -13,6 +13,10 @@ import {
   quoteAmountWithinBound,
   KRW_COLUMN_MIN,
   KRW_COLUMN_MAX,
+  sumKrw,
+  diffKrw,
+  formatRatePercent,
+  sameAmountOn,
   type Money,
   type MoneyInput,
 } from "@/domain/money";
@@ -303,5 +307,56 @@ describe("quoteAmountWithinBound", () => {
   it("USD 수량 2 × USD 400,000,000 @1,350(원화 1.08조)은 거짓 · 수량 0은 기본 1이라 참", () => {
     expect(quoteAmountWithinBound(2, { currency: "USD", amount: 400_000_000, fxRate: 1350 })).toBe(false);
     expect(quoteAmountWithinBound(0, krw(1_000_000))).toBe(true);
+  });
+});
+
+// 05-03 — 원 정수 합 · 차이(06-02와 같은 이름 · 계약: 부호 유지, 빈 배열 합 0).
+describe("sumKrw · diffKrw", () => {
+  it("빈 배열의 합은 0이다", () => {
+    expect(sumKrw([])).toBe(0);
+  });
+
+  it("부호를 유지해 더한다 — [1, -2, 3] = 2", () => {
+    expect(sumKrw([1, -2, 3])).toBe(2);
+  });
+
+  it("diffKrw(10, 3) = 7", () => {
+    expect(diffKrw(10, 3)).toBe(7);
+  });
+});
+
+// 05-06 — 세율 % 글자(계산 한 줄 · 세율 바뀜). 문자열 조작이라 부동소수 오차가 글자에 새지 않는다.
+describe("formatRatePercent", () => {
+  it.each([
+    [0.1, "10%"],
+    [0.088, "8.8%"],
+    [0.033, "3.3%"],
+    [0.22, "22%"],
+    [0.12, "12%"],
+    // 05-06 돈 검토 m3 — 필요한 자리까지(소수 둘째 자리), 끝의 0은 뗀다.
+    [0, "0%"],
+    [1, "100%"],
+    [0.0275, "2.75%"],
+    [0.0005, "0.05%"],
+    [0.07, "7%"],
+  ])("%s → %s", (rate, text) => {
+    expect(formatRatePercent(rate)).toBe(text);
+  });
+});
+
+// 05 /review A11 — 금액 같음 비교도 money 안에서(외화는 소수 둘째 자리 최소 단위, 원화는 원). 분할 지급 「마지막 회차」 판정이 쓴다.
+describe("sameAmountOn", () => {
+  const usd = (amount: number): Money => moneyFromRow({ currency: "USD", foreignAmount: amount.toFixed(2), fxRate: "1300.0000", amountKrw: toKrw({ currency: "USD", amount, fxRate: 1300 }) });
+  const krw = (amount: number): Money => moneyFromRow({ currency: "KRW", foreignAmount: null, fxRate: "1.0000", amountKrw: amount });
+
+  it("외화 기준은 소수 둘째 자리까지 같으면 같다(부동소수 오차 무시)", () => {
+    expect(sameAmountOn("foreign", usd(0.1 + 0.2), usd(0.3))).toBe(true);
+    expect(sameAmountOn("foreign", usd(4_000.01), usd(4_000))).toBe(false);
+  });
+
+  it("원화 기준은 원화 환산액끼리 비교한다", () => {
+    expect(sameAmountOn("krw", krw(4_000_000), usd(3_076.92))).toBe(toKrw({ currency: "USD", amount: 3_076.92, fxRate: 1300 }) === 4_000_000);
+    expect(sameAmountOn("krw", krw(4_000_000), krw(4_000_000))).toBe(true);
+    expect(sameAmountOn("krw", krw(4_000_000), krw(3_999_999))).toBe(false);
   });
 });

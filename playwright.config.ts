@@ -72,6 +72,8 @@ export default defineConfig({
       BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET,
       BETTER_AUTH_URL: process.env.BETTER_AUTH_URL,
       APP_ENV: process.env.APP_ENV,
+      // 05-05: 증빙 업로드 E2E는 서명 PUT 주소가 로컬 저장소 라우트(`/api/storage-local/**`)여야 한다(APP_ENV=local에서만 허용).
+      STORAGE_DRIVER: process.env.STORAGE_DRIVER ?? "local",
       PORT: "3100",
     },
   },

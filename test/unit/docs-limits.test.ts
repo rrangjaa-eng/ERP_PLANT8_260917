@@ -190,3 +190,45 @@ describe("docs/CERT-PURGE.md", () => {
     expect(content).toContain(token);
   });
 });
+
+// 05-03(Round 5 F5 · 사용자 결정 U3 A) — 지출결의 계약 문서. ARCHITECTURE.md는 줄 예산이 없어 §4-6 끝에 가리킴만 둔다.
+describe("docs/EXPENSES.md", () => {
+  const content = readDoc("EXPENSES.md");
+
+  it("150줄 이하다", () => {
+    expect(lineCount(content)).toBeLessThanOrEqual(150);
+  });
+
+  it("ARCHITECTURE.md가 이 문서를 가리킨다", () => {
+    expect(readDoc("ARCHITECTURE.md")).toContain("EXPENSES.md");
+  });
+
+  // 05-13(Round 5 F5 · U3 A · Round 2 M5): Phase 6이 읽는 계약 절과 잠금 순서 예외 절.
+  it.each(["computeExpenseTax", "findActiveBySha", "listNextTurnItems", "잠금 순서 예외", "인스턴스 → 프로젝트"])("'%s'를 포함한다", (token) => {
+    expect(content).toContain(token);
+  });
+});
+
+// 05-12(EVID-01 · Round 5 F5 · U3 A): 증빙 버킷 런북 — OPERATIONS.md는 줄 예산이 없어 별도 문서(CERT-PURGE.md 선례).
+describe("docs/EVIDENCE-STORAGE.md", () => {
+  const content = readDoc("EVIDENCE-STORAGE.md");
+
+  it("150줄 이하다", () => {
+    expect(lineCount(content)).toBeLessThanOrEqual(150);
+  });
+
+  it("12자리 숫자(프로젝트 번호 형태)가 없다(D-03)", () => {
+    expect(content).not.toMatch(/\d{12}/);
+  });
+
+  it.each(["증빙 버킷", "incoming/", "evidence/", "ensure_evidence_bucket", "ensure_evidence_cors", "INPUT_CHECK=evidence-bucket", "bootstrap-gcp.sh", "gcs-sign-smoke.ts", "Phase 6 F8"])(
+    "'%s'를 포함한다",
+    (token) => {
+      expect(content).toContain(token);
+    },
+  );
+
+  it("OPERATIONS.md가 이 문서를 가리킨다", () => {
+    expect(readDoc("OPERATIONS.md")).toContain("EVIDENCE-STORAGE.md");
+  });
+});

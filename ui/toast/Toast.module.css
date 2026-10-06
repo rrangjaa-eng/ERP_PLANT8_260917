@@ -53,10 +53,10 @@
   text-decoration-thickness: var(--underline-w-hover);
 }
 
-/* 폰: 하단 탭 위(§7-6). */
+/* 폰: 하단 탭 위(§7-6). 고정 행동 줄이 있으면 그 줄 위(--toast-lift = 줄 윗변에서 화면 아래까지 실측, Toast.tsx — 웨이브 11 D3). */
 @media (max-width: 699.98px) {
   .toast {
-    bottom: calc(var(--touch-min) + var(--s-3));
+    bottom: calc(var(--toast-lift, var(--touch-min)) + var(--s-3));
   }
 
   .action {

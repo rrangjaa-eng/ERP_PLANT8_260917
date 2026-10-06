@@ -97,6 +97,10 @@ const rawSchema = z.object({
   // deploy.sh가 넣는다)와 로컬 전용 OIDC 검증 끄기("1"만 인정 — handle.ts).
   NOTIFY_TICK_SCHEDULER_SA: optionalString(),
   NOTIFY_TICK_OIDC_DISABLED: optionalString(),
+  // 05-04 — 증빙 저장소 드라이버. 값이 없으면 APP_ENV로 고른다(resolvedStorageDriver). local은 인증 없는 서명 주소 창구
+  // (app/api/storage-local)를 열므로 로컬에서만 허용한다. 버킷 이름은 부팅 검증에 넣지 않는다 — gcs 드라이버를 만들 때 검사(05-12).
+  STORAGE_DRIVER: z.preprocess((value) => (value === "" ? undefined : unsetToUndefined(value)), z.enum(["local", "gcs"]).optional()),
+  GCS_EVIDENCE_BUCKET: optionalString(),
 });
 
 const KMS_KEY_NAME = /^projects\/[^/]+\/locations\/[^/]+\/keyRings\/[^/]+\/cryptoKeys\/[^/]+$/;
@@ -122,6 +126,13 @@ const envSchema = rawSchema.superRefine((data, ctx) => {
         code: "custom",
         path: ["NOTIFY_TICK_OIDC_DISABLED"],
         message: "NOTIFY_TICK_OIDC_DISABLED is only allowed when APP_ENV=local",
+      });
+    }
+    if (data.STORAGE_DRIVER === "local") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["STORAGE_DRIVER"],
+        message: "STORAGE_DRIVER=local is only allowed when APP_ENV=local",
       });
     }
   }
@@ -188,6 +199,11 @@ const envSchema = rawSchema.superRefine((data, ctx) => {
 
 export type Env = z.infer<typeof rawSchema>;
 
+// 05-04 — 명시 값이 있으면 그 값, 없으면 APP_ENV local → local · 그 밖 → gcs(04.3 서명 포트와 같은 기본).
+export function resolvedStorageDriver(source: Pick<Env, "APP_ENV" | "STORAGE_DRIVER">): "local" | "gcs" {
+  return source.STORAGE_DRIVER ?? (source.APP_ENV === "local" ? "local" : "gcs");
+}
+
 const ENV_KEYS = [
   "NODE_ENV",
   "APP_ENV",
@@ -225,6 +241,8 @@ const ENV_KEYS = [
   "CERT_SIGNATURE_BUCKET",
   "NOTIFY_TICK_SCHEDULER_SA",
   "NOTIFY_TICK_OIDC_DISABLED",
+  "STORAGE_DRIVER",
+  "GCS_EVIDENCE_BUCKET",
 ] as const;
 
 function loadEnv(): Env {

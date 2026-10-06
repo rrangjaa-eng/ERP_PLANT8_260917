@@ -38,6 +38,31 @@ describe("buildConflictMessage", () => {
   });
 });
 
+// 05-01 E4(Round 4 D1 · Z1 A): 제출 뒤 증빙 변경으로 version만 오른 인스턴스 — 상태 switch보다 먼저 판정한다.
+describe("buildConflictMessage — versionReason evidence(05-01 E4)", () => {
+  it.each([
+    { status: "in_review", round: 1 },
+    { status: "submitted", round: 1 },
+    { status: "submitted", round: 2 },
+  ] as const)("%o 상태에서 증빙 변경은 공통 중립 문구", ({ status, round }) => {
+    expect(buildConflictMessage({ status, round, actorName: "박서연", at, attempted: "approve", versionReason: "evidence" })).toBe(
+      "박서연이 14:01에 증빙을 바꿈 · 새로 고침",
+    );
+  });
+
+  it("이름이 없으면(결재 정보가 꺼진 계급) 지금 담당이 아님", () => {
+    expect(buildConflictMessage({ status: "in_review", round: 1, actorName: null, at, attempted: "approve", versionReason: "evidence" })).toBe(
+      "지금 담당이 아님 · 새로 고침",
+    );
+  });
+
+  it("versionReason이 null이면 04.1 문구 그대로", () => {
+    expect(buildConflictMessage({ status: "in_review", round: 1, actorName: "김팀장", at, attempted: "approve", versionReason: null })).toBe(
+      "김팀장이 14:01에 승인함 · 새로 고침",
+    );
+  });
+});
+
 describe("isApprovalParty (ENG-6 · D1)", () => {
   const sets = { drafterId: "drafter", actedByIds: ["lead-round1"], currentHolderIds: ["holder"] };
 

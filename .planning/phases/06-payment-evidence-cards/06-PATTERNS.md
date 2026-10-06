@@ -261,7 +261,7 @@ export default async function ExpensesPage() {
   );
 }
 ```
-Phase 6은 이 파일을 `admin/corp-cards/page.tsx` 골격(위 인용)으로 교체하되 `?view=pay`(S1)·`?view=paid`(S3) 쿼리로 지급 대상/지급 완료 두 보기를 가른다(§6-1 「이번 주 지급」 그룹, UI-SPEC S1 참조). `requireSession()` 대신 `getSession()` + `can()` 패턴(권한 분기 필요)으로 바꾼다 — 지급 권한자만 S1을 본다.
+Phase 6은 이 파일을 `admin/corp-cards/page.tsx` 골격(위 인용)으로 교체하되 `?status=지급 대상`(S1)·`?status=지급 완료`(S3) 쿼리로(05 `?status=` 규칙 — 재계획 V-1) 지급 대상/지급 완료 두 보기를 가른다(§6-1 「이번 주 지급」 그룹, UI-SPEC S1 참조). `requireSession()` 대신 `getSession()` + `can()` 패턴(권한 분기 필요)으로 바꾼다 — 지급 권한자만 S1을 본다.
 
 **서버 액션 골격** (`app/(app)/admin/corp-cards/actions.ts:1-30`, 전체가 작아 인용):
 ```typescript

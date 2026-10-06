@@ -86,7 +86,7 @@ test.afterAll(async () => {
 test.describe("§10 접근성 계약 (axe-core)", () => {
   test("검사 대상 화면 배열이 정확히 6개이고 화면 표 · 패널 라우트 표가 따로 전부 돈다", () => {
     expect(SCREENS).toHaveLength(6);
-    expect(SCREEN_ROUTES).toHaveLength(37);
+    expect(SCREEN_ROUTES).toHaveLength(40);
     expect(PANEL_ROUTES).toHaveLength(17);
   });
 

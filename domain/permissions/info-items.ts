@@ -71,4 +71,8 @@ export const INFO_ITEMS: InfoItemDef[] = [
   // 04.3-07: 제출된 확인증의 값 칸(I4) · 주민등록번호 전체 보기. 개인정보라 기본값 숨김.
   { key: "cert_submission.value", label: "확인증 제출 내용", staffDefault: false },
   { key: "cert.rrn_unmasked", label: "주민등록번호 전체 보기", staffDefault: false },
+  // 05-03: 지출결의 문서 칸(번호 · 프로젝트 · 항목 · 거래처 · 증빙 · 지급 · 상태)과 금액 칸(공급가액 · 세액 · 지급 총액).
+  // 기안자 · 결재자가 매일 다루는 업무 정보라 둘 다 기본값 참.
+  { key: "expense.value", label: "지출결의 정보", staffDefault: true },
+  { key: "expense.amount", label: "지출결의 금액", staffDefault: true },
 ];

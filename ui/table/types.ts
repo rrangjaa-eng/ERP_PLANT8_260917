@@ -55,6 +55,8 @@ export type TableColumn<Row> = {
   pasteRole?: "input" | "computed";
   /** 04.3-04(최종 리뷰 B2) — 머리글 `<th>`의 `aria-describedby`(열 설명 글의 id). 없으면 속성을 그리지 않는다. */
   headerDescribedBy?: string;
+  /** 05-05 — 행 행동 열처럼 머리글 글자가 눈에 필요 없는 열. 글자는 스크린리더용으로만 남는다(열 이름은 그대로 `header`). */
+  headerHidden?: boolean;
 };
 
 export type TableGroup<Row> = {

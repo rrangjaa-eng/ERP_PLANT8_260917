@@ -1,8 +1,9 @@
-import { and, asc, desc, eq, inArray, isNotNull, isNull, max, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, max, or, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
-import { approvalInstances, approvalRoutes, approvalSteps, users } from "@/db/schema";
+import { approvalInstances, approvalRoutes, approvalSteps, files, users } from "@/db/schema";
+import { unresolvedVoidHaving } from "@/repositories/files";
 import type { Viewer } from "@/domain/viewer";
 
 // 04.1(EXP-03·EXP-04): 결재 세 표의 리포지토리. 모든 쓰기는 호출자가 연
@@ -15,7 +16,8 @@ export type ApprovalStepRow = InferSelectModel<typeof approvalSteps>;
 
 export type ApprovalStepWithActor = ApprovalStepRow & { actedByName: string | null };
 export type ApprovalRouteWithSteps = ApprovalRouteRow & { steps: ApprovalStepWithActor[] };
-export type ApprovalInstanceWithDrafter = ApprovalInstanceRow & { drafterName: string };
+// updatedByName — 마지막으로 바꾼 사람(updated_by) 이름. 그래프 읽기만 싣는다(05-09: 결재 중 증빙을 붙인 사람의 충돌 문구).
+export type ApprovalInstanceWithDrafter = ApprovalInstanceRow & { drafterName: string; updatedByName?: string | null };
 export type ApprovalGraph = { instance: ApprovalInstanceWithDrafter; routes: ApprovalRouteWithSteps[] };
 
 export type NewApprovalStep = {
@@ -69,12 +71,14 @@ export async function insertApprovalSteps(
 
 const drafters = alias(users, "drafters");
 const actors = alias(users, "actors");
+const updaters = alias(users, "updaters");
 
 async function readGraph(where: SQL | undefined, tx: DbOrTx): Promise<ApprovalGraph | null> {
   const [found] = await tx
-    .select({ instance: approvalInstances, drafterName: drafters.name })
+    .select({ instance: approvalInstances, drafterName: drafters.name, updatedByName: updaters.name })
     .from(approvalInstances)
     .innerJoin(drafters, eq(drafters.id, approvalInstances.drafterId))
+    .leftJoin(updaters, eq(updaters.id, approvalInstances.updatedBy))
     .where(where)
     .limit(1);
   if (!found) return null;
@@ -96,7 +100,7 @@ async function readGraph(where: SQL | undefined, tx: DbOrTx): Promise<ApprovalGr
     }
     if (row.step) route.steps.push({ ...row.step, actedByName: row.actedByName });
   }
-  return { instance: { ...found.instance, drafterName: found.drafterName }, routes: [...routes.values()] };
+  return { instance: { ...found.instance, drafterName: found.drafterName, updatedByName: found.updatedByName }, routes: [...routes.values()] };
 }
 
 // 인스턴스 · 모든 차수 · 단계를 한 번에 — 관련자 판정(04.1-02)에 모든 차수의 acted_by가 필요하다.
@@ -135,8 +139,35 @@ export async function updateInstanceStatus(
       version: sql`${approvalInstances.version} + 1`,
       updatedBy: viewer.id,
       updatedAt: new Date(),
+      // 05-01 E4: 상태가 바뀌면 증빙 변경 표식은 지운다.
+      versionReason: null,
     })
     .where(and(eq(approvalInstances.id, input.id), eq(approvalInstances.version, input.expectedVersion)))
+    .returning();
+  return row ?? null;
+}
+
+// 05-01 E4: 상태 · 차수는 그대로 두고 version만 + 1(이유 · 바꾼 사람 · 시각과 함께) — 그 전에 문서를 연 결재자의
+// 승인이 version 불일치로 막힌다. expectedVersion이 있으면 조건부(0행 = null).
+export async function bumpInstanceVersion(
+  viewer: Viewer,
+  input: { instanceId: string; expectedVersion?: number; updatedBy: string; reason: "evidence" },
+  tx: DbOrTx,
+): Promise<ApprovalInstanceRow | null> {
+  void viewer;
+  const [row] = await tx
+    .update(approvalInstances)
+    .set({
+      version: sql`${approvalInstances.version} + 1`,
+      updatedBy: input.updatedBy,
+      updatedAt: new Date(),
+      versionReason: input.reason,
+    })
+    .where(
+      input.expectedVersion === undefined
+        ? eq(approvalInstances.id, input.instanceId)
+        : and(eq(approvalInstances.id, input.instanceId), eq(approvalInstances.version, input.expectedVersion)),
+    )
     .returning();
   return row ?? null;
 }
@@ -268,4 +299,47 @@ export async function listProcessedInstances(viewer: Viewer, userId: string, lim
   return rows
     .filter((row): row is typeof row & { actedAt: Date; action: string } => row.actedAt !== null && row.action !== null)
     .map((row) => ({ ...row.instance, drafterName: row.drafterName, actedAt: row.actedAt, action: row.action, submittedAt: row.submittedAt }));
+}
+
+export type DrafterInstance = ApprovalInstanceRow & { rejecterName: string | null };
+
+// 05 /review C6: 승인 뒤 막힘 후보를 LIMIT 전에 거르는 조건 — 종류 등록(blockedAfterApprovalCandidates)이 고른다. 「증빙 무효 뒤 아직 새 증빙 없음」 하나.
+export type BlockedCandidateFilter = "unresolved_evidence_void";
+
+function blockedCandidateSql(viewer: Viewer, filter: BlockedCandidateFilter): SQL {
+  switch (filter) {
+    case "unresolved_evidence_void":
+      return sql`exists (select 1 from ${files} where ${files.ownerKind} = ${approvalInstances.documentKind} and ${files.ownerId} = ${approvalInstances.documentId} and ${files.removedAt} is null group by ${files.ownerId} having ${unresolvedVoidHaving(viewer)})`;
+  }
+}
+
+// 05-10: 내가 기안한 인스턴스 중 한 상태(반려 · 승인)인 것 — 최근 처리 순. 반려는 지금 차수의 반려 단계 처리자 이름을 함께 읽는다.
+export async function listDrafterInstances(
+  viewer: Viewer,
+  input: {
+    drafterId: string;
+    status: "rejected" | "approved";
+    limit: number;
+    candidateKinds?: readonly { documentKind: string; filter: BlockedCandidateFilter | null }[];
+  },
+): Promise<DrafterInstance[]> {
+  // 05 /review A9 · C6: 승인 뒤 막힘 후보는 LIMIT 전에 SQL로 거른다 — 종류마다 그 종류가 준 조건(없으면 그 종류 전부)으로(최근 N건만 보면 오래된 문서가 빠진다).
+  if (input.candidateKinds?.length === 0) return [];
+  const candidateFilter = input.candidateKinds
+    ? or(
+        ...input.candidateKinds.map((candidate) =>
+          and(eq(approvalInstances.documentKind, candidate.documentKind), candidate.filter ? blockedCandidateSql(viewer, candidate.filter) : undefined),
+        ),
+      )
+    : undefined;
+  const rows = await db
+    .select({ instance: approvalInstances, rejecterName: actors.name })
+    .from(approvalInstances)
+    .leftJoin(approvalRoutes, and(eq(approvalRoutes.instanceId, approvalInstances.id), eq(approvalRoutes.round, approvalInstances.currentRound)))
+    .leftJoin(approvalSteps, and(eq(approvalSteps.routeId, approvalRoutes.id), eq(approvalSteps.action, "rejected")))
+    .leftJoin(actors, eq(actors.id, approvalSteps.actedBy))
+    .where(and(eq(approvalInstances.drafterId, input.drafterId), eq(approvalInstances.status, input.status), candidateFilter))
+    .orderBy(desc(approvalInstances.updatedAt), asc(approvalInstances.id))
+    .limit(input.limit);
+  return rows.map((row) => ({ ...row.instance, rejecterName: row.rejecterName }));
 }

@@ -5,6 +5,7 @@ import { useAction } from "next-safe-action/hooks";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { saveProjectLedgerAction } from "../actions";
+import { createExpenseFromLinesAction } from "@/app/(app)/expenses/actions";
 import { DetailScreen, type DetailScreenProps } from "@/ui/detail-screen/DetailScreen";
 import { Num } from "@/ui/num/Num";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
@@ -13,6 +14,7 @@ import { FormAlert } from "@/ui/form-alert/FormAlert";
 import { Table } from "@/ui/table/Table";
 import { Select } from "@/ui/select/Select";
 import { RowSheet } from "@/ui/table/RowSheet";
+import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { Toast } from "@/ui/toast/Toast";
 import { useDirtyStorage, viewerDirtyScope } from "@/ui/table/use-dirty-storage";
@@ -41,11 +43,14 @@ import {
   type StructuralEditability,
 } from "@/domain/quotes/edit-scope";
 import type { RevenueDto } from "@/domain/revenue";
+import type { LineDoorCell, LineDoors } from "@/domain/expenses";
 import type { Currency, Money } from "@/domain/money";
 import { RevenueSection, type EntryDraft } from "./revenue-section";
 import { otherCellsRejectedText, quoteTableRejectionText, routeRejectedRevenueCells } from "./revenue-cells";
 import { PreviousRevisionDraftRow, quoteLineClipboardMeta, quoteLineReadColumns, quoteLineVendorLabel, savedVendorFrom } from "./previous-revision";
 import { StatusChange, type StatusChangeProps } from "./status-change";
+import { SettlementButton, type SettlementHeaderProps } from "./settlement-button";
+import { unsavedEditsReason } from "./unsaved-edits";
 import { CustomerApprovalLine, NewRevisionDialog, type CustomerApprovalProps, type NewRevisionProps } from "./revision-dialogs";
 import { PeriodField, periodText, type PeriodDraft, type PeriodFieldError } from "./period-field";
 import type { PeriodRights } from "@/domain/projects/period";
@@ -61,6 +66,7 @@ import {
 } from "./pre-estimate-field";
 import type { ProjectStatus } from "@/domain/projects/status-transitions";
 import { PROJECT_STATUS_WORD } from "@/domain/projects/status-word";
+import { lineStatusWord } from "@/app/(app)/projects/status-display";
 import styles from "./project-detail.module.css";
 
 export type QuoteTableOption = { id: string; name: string };
@@ -112,6 +118,8 @@ type DraftLine = {
   /** 04-30(D-66 · DR-35) — 연결 문서가 있는 줄의 읽기 전용 이유(서버 DTO). */
   hasLinkedDocuments: boolean;
   readonlyReason: string | null;
+  /** 05-15 — 줄 상태 열 파생값 재료(서버 DTO): 번호 있는 지출결의 중 반려 있음 / 결재 중 · 승인 있음 / 없음. */
+  linkedStatus: "rejected" | "active" | null;
 };
 
 type LineCells = Record<QuoteLineField, QuoteCellEditability>;
@@ -297,6 +305,7 @@ function fromDto(dto: QuoteLineDto): DraftLine {
     cells: dto.cellEditability,
     hasLinkedDocuments: dto.hasLinkedDocuments,
     readonlyReason: dto.readonlyReason,
+    linkedStatus: dto.linkedStatus,
   };
 }
 
@@ -339,6 +348,7 @@ function newDraftLine(defaultSubcategory: string, cells: LineCells, id: string =
     cells,
     hasLinkedDocuments: false,
     readonlyReason: null,
+    linkedStatus: null,
   };
 }
 
@@ -921,6 +931,7 @@ export function QuoteLedger({
   frame,
   statusSinceText,
   statusChange,
+  settlement,
   newRevision,
   copyProjectHref,
   customerApproval,
@@ -945,6 +956,7 @@ export function QuoteLedger({
   revenue,
   canWriteEntries,
   usdDefaultFxRate,
+  lineDoors,
 }: {
   /** 리뷰 R2 — 미저장 편집 보관본 키를 보는 사람별로 나눈다. */
   viewerId: string;
@@ -962,6 +974,8 @@ export function QuoteLedger({
   /** `{상태} {마지막 변경일}`(D-50) — 부제 마지막 항목. 총 매출 예상가 뒤에 온다(UI-SPEC S3). */
   statusSinceText: string;
   statusChange: StatusChangeProps | null;
+  /** 05-11(S10 (가)) — 정산 프로젝트의 정산 결재 머리 줄 재료(서버 판정). 정산이 아니거나 문서도 올릴 권리도 없으면 null. */
+  settlement?: SettlementHeaderProps | null;
   /** 04-24(D-53 · CEO-D10) — 「복사해 새 차수」. 서버 canCreateRevision이 거짓이면 null(버튼 없음). */
   newRevision: NewRevisionProps | null;
   /** 04-15(D-70) — 「프로젝트 복사」가 여는 복사 등록 폼 주소. projects 쓰기가 없으면 null(링크 없음). */
@@ -1003,6 +1017,8 @@ export function QuoteLedger({
   revenue: RevenueDto;
   canWriteEntries: boolean;
   usdDefaultFxRate: number;
+  /** 05-05(EXP-01) — 견적 줄 행 행동 열(`지출결의 올리기` · `지출결의 열기`). 열 여부 · 셀 판정은 서버(listLineDoors)다. */
+  lineDoors: LineDoors;
 }) {
   const [lines, setLinesState] = useState<DraftLine[]>(() => displayOrder(initialLines.map(fromDto)));
   // 04-23 — 어느 경로로 줄을 바꿔도 종류 순서(조정 맨 아래)를 지킨다. 04-19(C-04) — 그룹도 표시 순서로 모은다.
@@ -1069,6 +1085,128 @@ export function QuoteLedger({
   // 리뷰 S5 — 저장이 상태를 바꾸면(정산 → 진행) router.refresh가 오기 전의 다음 저장도 새 상태를 싣는다.
   const [seenStatus, setSeenStatus] = useState(status);
   const router = useRouter();
+  // 05-05 — 견적 줄 행 행동 `지출결의 올리기`. 같은 틱의 두 번 누름은 동기 래치가 막고, 성공하면 폼으로 가며 대기 표시는 화면이 바뀔 때까지 남는다.
+  const [doorPendingLine, setDoorPendingLine] = useState<string | null>(null);
+  const [doorFailedLine, setDoorFailedLine] = useState<string | null>(null);
+  // 05-15 — 저장 안 한 편집이 있을 때 행 행동 · Ctrl+E를 누른 흔적. 글자는 지금 센 값(unsavedEditsReason)으로 합계 행 오른쪽 한 줄에 선다.
+  const [doorUnsaved, setDoorUnsaved] = useState(false);
+  // 05-08 — 여러 줄 Ctrl+E가 하나도 만들지 못했을 때 첫 막힌 줄의 이유(합계 행 오른쪽 한 줄). 다음 누름 때 지운다.
+  const [doorRangeBlocked, setDoorRangeBlocked] = useState<string | null>(null);
+  const doorBusyRef = useRef(false);
+  async function openLineExpense(lineId: string, cell: LineDoorCell, onLeave?: () => void): Promise<void> {
+    if (doorBusyRef.current) return;
+    if (cell.expenseId) {
+      onLeave?.();
+      router.push(`/expenses/${cell.expenseId}`);
+      return;
+    }
+    doorBusyRef.current = true;
+    setDoorPendingLine(lineId);
+    setDoorFailedLine(null);
+    let expenseId: string | undefined;
+    try {
+      const result = await createExpenseFromLinesAction({ lineIds: [lineId] });
+      expenseId = result?.data?.created[0]?.expenseId;
+    } catch {
+      expenseId = undefined;
+    }
+    doorBusyRef.current = false;
+    if (expenseId) {
+      onLeave?.();
+      router.push(`/expenses/${expenseId}`);
+      return;
+    }
+    setDoorPendingLine(null);
+    setDoorFailedLine(lineId);
+  }
+  // 05-08(UI-SPEC 확정 #5) — 범위 선택이 여러 줄이면 문이 있는 줄 전부로 작성 중 문서를 만든다(이미 있으면 그 문서 — 05-03 멱등).
+  // 하나라도 만들면 목록 `진행 중` 보기로 가고 착지 화면이 토스트를 띄운다. 전부 막히면 이동 없이 첫 막힌 줄의 이유를 합계 행에.
+  // 표 전체 게이트는 표 위 한 줄이 이미 말하므로 아무것도 하지 않는다.
+  async function openLinesExpense(rows: DraftLine[]): Promise<void> {
+    if (lineDoors.tableGateReason || doorBusyRef.current) return;
+    const lineIds = rows.flatMap((row) => {
+      const door = row.id ? lineDoors.cells[row.id] : undefined;
+      return row.id && door && door.state !== "none" ? [row.id] : [];
+    });
+    if (lineIds.length === 0) return;
+    if (dirtyCount >= 1) {
+      setDoorUnsaved(true);
+      return;
+    }
+    setDoorUnsaved(false);
+    setDoorRangeBlocked(null);
+    setDoorFailedLine(null);
+    doorBusyRef.current = true;
+    let outcome: { created: unknown[]; blocked: { reason: string }[] } | undefined;
+    try {
+      outcome = (await createExpenseFromLinesAction({ lineIds }))?.data;
+    } catch {
+      outcome = undefined;
+    }
+    doorBusyRef.current = false;
+    if (!outcome) {
+      setDoorFailedLine(lineIds[0] ?? null);
+      return;
+    }
+    if (outcome.created.length === 0) {
+      setDoorRangeBlocked(outcome.blocked[0]?.reason ?? null);
+      return;
+    }
+    const params = new URLSearchParams({ status: "진행 중", created: String(outcome.created.length) });
+    if (outcome.blocked.length > 0) params.set("blocked", String(outcome.blocked.length));
+    router.push(`/expenses?${params.toString()}`);
+  }
+  // 05-15 — PC 셀 · Ctrl+E의 문 열기. 미저장 편집이 있으면 이동하지 않고 한 줄(DR-6 같은 함수)만 남긴다.
+  function requestLineExpense(row: DraftLine, rangeRows: DraftLine[] = [row]): void {
+    if (rangeRows.length > 1) {
+      void openLinesExpense(rangeRows);
+      return;
+    }
+    setDoorRangeBlocked(null);
+    const lineId = row.id;
+    const door = lineId ? lineDoors.cells[lineId] : undefined;
+    if (!lineDoors.showColumn || !lineId || !door) return;
+    const opensForm = door.state === "open" && !lineDoors.tableGateReason;
+    const opensDocument = door.state === "closed" && door.latestId !== undefined;
+    if (!opensForm && !opensDocument) return;
+    if (dirtyCount >= 1) {
+      setDoorUnsaved(true);
+      return;
+    }
+    setDoorUnsaved(false);
+    if (opensForm) void openLineExpense(lineId, door);
+    else router.push(`/expenses/${door.latestId}`);
+  }
+  // 05-15 — 열기 링크는 누름 단계에서 같은 판정으로 막는다(링크라 요청 함수를 거치지 않는다).
+  function guardDocumentLink(event: { preventDefault: () => void; stopPropagation: () => void }) {
+    if (dirtyCount < 1) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setDoorUnsaved(true);
+  }
+  // 05-05(U2) — 폰 행 시트의 문서 행동 자리(`RowSheet`의 기존 `action`). 위 → 아래: 실패 한 줄(있을 때만) · 3차 하나. 행동이 없는 줄은 자리째 넘기지 않는다.
+  function sheetDoorAction(row: DraftLine): ReactNode {
+    const lineId = row.id;
+    const door = lineDoors.showColumn && lineId ? lineDoors.cells[lineId] : undefined;
+    if (!lineId || !door || door.state === "none") return undefined;
+    if (door.state === "closed") {
+      return door.latestId ? (
+        <Link href={`/expenses/${door.latestId}`} className={buttonLinkClassName("tertiary")}>
+          지출결의 열기
+        </Link>
+      ) : undefined;
+    }
+    if (door.state === "no_vendor") return <p className={styles.doorFailure}>거래처 없음 · PC 견적 표에서 고르기</p>;
+    if (lineDoors.tableGateReason) return <p className={styles.doorNote}>{lineDoors.tableGateReason}</p>;
+    return (
+      <div className={styles.sheetDoor}>
+        {doorFailedLine === lineId ? <p className={styles.doorFailure}>지출결의 만들기 실패 · 다시 시도</p> : null}
+        <Button variant="tertiary" pending={doorPendingLine === lineId} onClick={() => void openLineExpense(lineId, door, () => setSheetRowKey(null))}>
+          지출결의 올리기
+        </Button>
+      </div>
+    );
+  }
   // 04-22(D-68) — 사용자가 칸을 바꾼 순간에만 보관본을 쓴다. 편집 핸들러가 켜고, 상태가
   // 반영된 뒤 효과가 현재 편집 전체를 쓴다. 서버 값으로 다시 그리는 경로는 켜지 않는다.
   const persistPendingRef = useRef(false);
@@ -1552,6 +1690,7 @@ export function QuoteLedger({
     setLineCapNotice(null);
     setPasteNotices([]);
     setSavedAt(null);
+    setDoorUnsaved(false);
   }
 
   function handleSave() {
@@ -1744,7 +1883,7 @@ export function QuoteLedger({
       header: "항목",
       priority: "p1",
       editability: (row) => atWidth(row.cells.itemName),
-      cell: (row) => row.itemName,
+      cell: (row) => <span id={`quote-item-${row.clientKey}`}>{row.itemName}</span>,
       editCell: (row, ctx) =>
         textEditCell({
           ariaLabel: "항목",
@@ -1911,7 +2050,7 @@ export function QuoteLedger({
       header: "상태",
       priority: "p1",
       pasteRole: "computed",
-      cell: (row) => (row.lineKind === "adjustment" ? "—" : lineStatusLabel(row.lineStatus)),
+      cell: (row) => (row.lineKind === "adjustment" ? "—" : <StatusTag variant="text" status={lineStatusWord(row)} />),
     },
     {
       key: "note",
@@ -1930,6 +2069,69 @@ export function QuoteLedger({
           },
         }),
     },
+    // 05-05 — 맨 오른쪽 행 행동 열(머리글은 스크린리더용). 보는 사람에게 권리가 있을 때만 서버가 열을 보낸다. 저장 전 새 줄 · 문 닫힘 · 열림 밖 갈래는 셀이 비어 있다(나머지 갈래는 05-15).
+    ...(lineDoors.showColumn
+      ? [
+          {
+            key: "door",
+            header: "행동",
+            headerHidden: true,
+            priority: "p3" as const,
+            pasteRole: "computed" as const,
+            cell: (row: DraftLine) => {
+              const lineId = row.id;
+              const door = lineId ? lineDoors.cells[lineId] : undefined;
+              if (!lineId || !door) return null;
+              // 05-15 — 셀의 3차는 격자 로빙 밖(tabIndex -1)이고 그 줄 항목 칸을 가리킨다. 키보드 경로는 Ctrl+E다. 갈래는 서버 판정(door.state)만 따른다.
+              const itemCellId = `quote-item-${row.clientKey}`;
+              if (door.state === "open" && !lineDoors.tableGateReason) {
+                return (
+                  <RowActions noWrap>
+                    <RowAction
+                      tabIndex={-1}
+                      describedBy={itemCellId}
+                      pending={doorPendingLine === lineId}
+                      busy={doorPendingLine !== null && doorPendingLine !== lineId}
+                      onClick={() => requestLineExpense(row)}
+                    >
+                      지출결의 올리기
+                    </RowAction>
+                  </RowActions>
+                );
+              }
+              if (door.state === "closed" && door.latestId) {
+                return (
+                  <span onClickCapture={guardDocumentLink}>
+                    <RowActions noWrap>
+                      <RowAction tabIndex={-1} describedBy={itemCellId} href={`/expenses/${door.latestId}`}>
+                        지출결의 열기
+                      </RowAction>
+                    </RowActions>
+                  </span>
+                );
+              }
+              if (door.state === "no_vendor") {
+                // 700~1023은 보기 전용 표라 글자만, 거래처 열이 없는 계급은 갈 칸이 없어 글자만이다.
+                const canPickVendor = vendorShown && editableWidth && row.cells.vendorId === "edit";
+                return (
+                  <span>
+                    <span className={styles.doorNoVendor}>거래처 없음</span>
+                    {canPickVendor ? " " : null}
+                    {canPickVendor ? (
+                      <RowActions noWrap>
+                        <RowAction tabIndex={-1} describedBy={itemCellId} onClick={() => setOpenCell({ rowId: row.clientKey, columnKey: "vendor" })}>
+                          거래처 고르기
+                        </RowAction>
+                      </RowActions>
+                    ) : null}
+                  </span>
+                );
+              }
+              return null;
+            },
+          },
+        ]
+      : []),
   ];
   // quick 261001-85g — 가려진 정보의 열은 그리지 않는다(거래처 정보가 가려진 계급).
   const columns = vendorShown ? allColumns : allColumns.filter((column) => column.key !== "vendor");
@@ -1965,10 +2167,12 @@ export function QuoteLedger({
       { key: "profit", kind: "text", isEditable: () => false },
       { key: "status", kind: "text", isEditable: () => false },
       { key: "note", kind: "text", isEditable: (row) => row.cells.note === "edit" },
+      // 05-05 — 행 행동 열도 columns와 같은 자리(맨 끝)에 같은 길이로 둔다.
+      ...(lineDoors.showColumn ? [{ key: "door", kind: "text" as const, isEditable: () => false }] : []),
     ];
     // quick 261001-85g — columns와 같은 열을 뺀다(colIndex로 함께 참조).
     return vendorShown ? all : all.filter((column) => column.key !== "vendor");
-  }, [subcategories, vendors, vendorShown]);
+  }, [subcategories, vendors, vendorShown, lineDoors.showColumn]);
 
   // 04-30(DR-35) — 잠긴 셀은 표 위 한 줄과 같은 이유(quoteLockReason), 읽기 전용 셀은 연결 문서 이유(DTO).
   // 이유가 없는 잠김은 아무것도 띄우지 않는다(DR-22).
@@ -2209,6 +2413,10 @@ export function QuoteLedger({
     lineCount: lines.length,
   });
 
+  // 05-15 — 표 전체 게이트(고객 승인 전)의 이유는 표 위 한 줄 하나다. 완료는 위 잠김 줄(`완료 · 견적 줄 잠김`)이 이미 말한다.
+  const doorGateLine = lineDoors.showColumn && status !== "completed" ? lineDoors.tableGateReason : null;
+  const doorUnsavedText = doorUnsaved ? unsavedEditsReason(dirtyCount) : null;
+
   // 04-04 — 서버가 돌려준 문자열을 그대로 쓴다(화면이 이유를 새로 만들지
   // 않는다, Task 2 acceptance criterion). errorCellCount>0이면 handleSave가
   // execute()를 아예 부르지 않으므로(클라이언트 게이트) result.serverError는
@@ -2264,7 +2472,22 @@ export function QuoteLedger({
     QUOTE_HINT_ITEMS.map((item) => item.key),
     structural,
   );
-  const hintItems = QUOTE_HINT_ITEMS.filter((item) => hintKeys.includes(item.key));
+  const visibleHintItems = QUOTE_HINT_ITEMS.filter((item) => hintKeys.includes(item.key));
+  // 05-15(UI-SPEC S1 「힌트 줄」) — 행동 열이 서는 사람에게만 `지출결의 올리기 Ctrl+E`를 끝에 더하고, 7개를 넘으면 복사 · 붙여넣기 두 항목을 하나로 합친다.
+  const hintItems = lineDoors.showColumn
+    ? [
+        ...(visibleHintItems.length >= 7
+          ? visibleHintItems.flatMap((item) =>
+              item.key === "copy"
+                ? [{ key: item.key, label: "범위 복사", keys: "Ctrl+C / 붙여넣기 Ctrl+V" }]
+                : item.key === "paste"
+                  ? []
+                  : [item],
+            )
+          : visibleHintItems),
+        { key: "expense", label: "지출결의 올리기", keys: "Ctrl+E" },
+      ]
+    : visibleHintItems;
 
   const openSheetRow = sheetRowKey ? lines.find((line) => line.clientKey === sheetRowKey) : undefined;
 
@@ -2286,12 +2509,16 @@ export function QuoteLedger({
       onChanged={setStatusToast}
       onOpenPeriodField={openPeriodField}
     />
+  ) : settlement ? (
+    // 05-11(S10 (가) · N3): 정산에는 「상태 바꾸기」가 없다 — 그 자리에 정산 결재 올리기 · 링크(같은 순서 규칙).
+    <SettlementButton key="settlement" {...settlement} dirtyCount={dirtyCount} />
   ) : null;
   // 04-49(후속 결정 R1) — 1024 미만에서는 dirty가 하나라도 있을 때만(복원한 표 칸 포함, 같은 dirty 셈).
-  const saveAction =
-    canSave && (editableWidth || dirtyCount > 0) ? (
+  // 05-11 웨이브 13 D1 — 폭 판정은 CSS가 한다(서버 렌더 = 수화 뒤 같은 배치). JS 폭 판정(서버 스냅숏 참)으로 넣었다 빼면 폰 · 768에서 머리 줄이 수화 뒤 줄어 아래가 움직였다.
+  const saveIdle = dirtyCount === 0 && !cellEditing;
+  const saveAction = canSave ? (
+    <span key="save" className={saveIdle ? `${styles.saveSlot} ${styles.saveSlotIdle}` : styles.saveSlot}>
       <Button
-        key="save"
         id={saveButtonId}
         type="button"
         variant="primary"
@@ -2305,7 +2532,8 @@ export function QuoteLedger({
       >
         일괄 저장{dirtyCount > 0 ? ` ${dirtyCount}` : ""}
       </Button>
-    ) : null;
+    </span>
+  ) : null;
 
   return (
     <DetailScreen
@@ -2403,6 +2631,7 @@ export function QuoteLedger({
         onSharedEditsCarried={dirtyStorage.recount}
       />
       {lockLine ? <p className={styles.lockLine}>{lockLine}</p> : null}
+      {doorGateLine ? <p className={styles.lockLine}>{doorGateLine}</p> : null}
 
       {rejectionSummary ? <FormAlert>{rejectionSummary}</FormAlert> : null}
 
@@ -2455,6 +2684,8 @@ export function QuoteLedger({
               ? (row) => (atLineCap ? showLineCapNotice(lineCapReason) : duplicateLine(row.clientKey))
               : undefined,
           onMoveRow: structural.reorder && editableWidth ? (row, direction) => moveLine(row.clientKey, direction) : undefined,
+          // 05-15 — 편집 중이 아닐 때 Ctrl+E = 활성 셀 줄의 셀 동작, 05-08 — 범위 선택이 여러 줄이면 여러 줄 만들기. 행동 열이 서는 사람에게만 키를 가로챈다.
+          onOpenRow: lineDoors.showColumn ? requestLineExpense : undefined,
           onSave: () => {
             clearAttemptNotices();
             setSaveRequests((count) => count + 1);
@@ -2474,6 +2705,9 @@ export function QuoteLedger({
             ? [{ tone: "danger" as const, text: quoteFooterSummary, ...(quoteRejectedCount ? { replacesIssueCount: quoteRejectedCount } : {}) }]
             : []),
           ...pasteNotices,
+          ...(doorFailedLine ? [{ tone: "danger" as const, text: "지출결의 만들기 실패 · 다시 시도" }] : []),
+          ...(doorUnsavedText ? [{ tone: "danger" as const, text: doorUnsavedText }] : []),
+          ...(doorRangeBlocked ? [{ tone: "danger" as const, text: doorRangeBlocked }] : []),
         ]}
         footerSuccess={savedAt ? savedNoticeText(sentChangedLines, savedAt) : null}
         revealRowId={revealRowId}
@@ -2572,8 +2806,9 @@ export function QuoteLedger({
                 }) ?? "—",
             },
             { label: "비고", value: openSheetRow.note ?? "—" },
-            { label: "상태", value: lineStatusLabel(openSheetRow.lineStatus) },
+            { label: "상태", value: <StatusTag variant="text" status={lineStatusWord(openSheetRow)} /> },
           ]}
+          action={sheetDoorAction(openSheetRow)}
         />
       ) : null}
 

@@ -103,6 +103,46 @@
   margin: var(--s-1) 0 0 0;
 }
 
+/* 05-04(UI-SPEC S13 · SYSTEM §7-2 number) — 단위는 입력 밖 오른쪽 정적 글자(`10` `MB`), 보조 글자 .hint와 같은 토큰.
+   TextField 줄을 풀어(display: contents) 라벨·입력 칸 묶음·단위를 한 격자에 둔다 — 단위는 항상 입력 칸 묶음 첫 줄(입력 칸 높이)에 붙어
+   오류 줄이 생겨도 입력 칸과 세로 가운데다. 줄 아래 여백은 이 묶음이 물려 .hint 위 여백과 겹친다(다른 숫자 칸과 같은 간격). */
+.withUnit {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+  margin-bottom: var(--s-4);
+}
+
+.withUnit > :first-child {
+  display: contents;
+}
+
+.withUnit > :first-child > :nth-child(2) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.unit {
+  display: flex;
+  align-items: center;
+  height: var(--field-h, var(--control-h));
+  font-size: var(--text-aux);
+  color: var(--text-muted);
+}
+
+/* 폰: 라벨이 입력 위 한 줄, 그 아래 입력 칸 묶음 + 단위 */
+@media (max-width: 699.98px) {
+  .withUnit {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: var(--s-2);
+  }
+
+  .withUnit > :first-child > label {
+    grid-column: 1 / -1;
+  }
+}
+
 .error {
   font-size: var(--text-aux);
   color: var(--status-danger);

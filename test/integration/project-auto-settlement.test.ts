@@ -10,6 +10,7 @@ import { insertVendor } from "@/repositories/vendors";
 import { createProject, findProject, loadProjectList, settleForProjectList } from "@/domain/projects";
 import { aggregateProjects as repoAggregateProjects, listProjectsPage as repoListProjectsPage } from "@/repositories/projects";
 import { changeProjectStatus, lastStatusChangeOn } from "@/domain/projects/status";
+import { completeViaApproval } from "@/test/support/settlement-authority";
 import { applyAutoSettlement, loadProjectForGate } from "@/domain/projects/auto-transition";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { withTransaction } from "@/lib/db-transaction";
@@ -319,7 +320,7 @@ describe("쓰기 경로의 잠금 안 선판정 · 경합 · 번호 연도 (04-1
     const ceo = await makeViewer("role-ceo");
     const projectId = await makeProject({ status: "in_progress", endDate: "2026-09-17" });
 
-    await changeProjectStatus(ceo, projectId, { from: "settling", to: "completed" }, { now: () => AFTER_MIDNIGHT });
+    await completeViaApproval(ceo, projectId, { now: () => AFTER_MIDNIGHT });
 
     expect(await statusOf(projectId)).toBe("completed");
     const logs = await allStatusLogs(projectId);
@@ -329,7 +330,7 @@ describe("쓰기 경로의 잠금 안 선판정 · 경합 · 번호 연도 (04-1
       { from: "in_progress", to: "settling", trigger: "end_date_passed", effectiveOn: "2026-09-18" },
     ]);
     const human = logs.filter((log) => log.actorId === ceo.id);
-    expect(human.map((log) => log.detail)).toEqual([{ from: "settling", to: "completed", trigger: "manual" }]);
+    expect(human.map((log) => log.detail)).toEqual([{ from: "settling", to: "completed", trigger: "approval" }]);
   });
 
   it("(i) 쓰기가 행을 잠근 동안 상세 읽기는 기다리지 않고 저장된 상태로 돌아오고, 쓰기를 풀면 쓰기 쪽이 정산한다 · 로그 1줄", async () => {
@@ -372,10 +373,9 @@ describe("쓰기 경로의 잠금 안 선판정 · 경합 · 번호 연도 (04-1
     const projectId = await makeProject({ status: "in_progress", endDate: "2026-09-17" });
 
     await expect(
-      changeProjectStatus(
+      completeViaApproval(
         ceo,
         projectId,
-        { from: "settling", to: "completed" },
         { now: () => AFTER_MIDNIGHT, recordAction: () => Promise.reject(new Error("로그 쓰기 실패")) },
       ),
     ).rejects.toThrow("로그 쓰기 실패");

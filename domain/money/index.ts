@@ -203,3 +203,59 @@ export function grossFromTotal(totalKrw: number, vatRate: number, unit: Rounding
   const raw = totalKrw / (1 + vatRate);
   return round(raw, unit, method);
 }
+
+// 05-03(06-02와 같은 이름 · 계약) — 원 정수 합과 차이. 부호를 유지하고 빈 배열의 합은 0이다.
+export function sumKrw(values: readonly number[]): number {
+  return values.reduce((total, value) => total + value, 0);
+}
+
+export function diffKrw(a: number, b: number): number {
+  return a - b;
+}
+
+// 외화 금액의 최소 단위 배율(소수 둘째 자리) — 외화 금액 비교 · 차감은 이 정수 단위로 한다(부동소수 오차 없음).
+const MINOR_UNITS = 100;
+
+function toMinor(amount: number): number {
+  return Math.round(amount * MINOR_UNITS);
+}
+
+// 05 /review A11 — 두 금액이 같은 기준(외화 = 최소 단위, 원화 = 원화 환산액)에서 같은가. 분할 지급 「마지막 회차」 판정이 쓴다.
+export function sameAmountOn(basis: "foreign" | "krw", a: Pick<Money, "amount" | "amountKrw">, b: Pick<Money, "amount" | "amountKrw">): boolean {
+  return basis === "foreign" ? toMinor(a.amount) === toMinor(b.amount) : a.amountKrw === b.amountKrw;
+}
+
+// 05-03(EXP-01 · Q4 계획 결정) — 분할 회차의 남은 실행가. 앞 회차 문서 통화와 (있으면) 이번 문서 통화가 모두 줄 통화와
+// 같은 외화면 원래 통화 금액으로 비교하고(환율 차이로 남은 금액이 흔들리지 않게), 하나라도 다르거나 원화 줄이면 원화로
+// 비교한다. 남은 금액은 음수일 수 있다(호출자가 0 이하를 「닫힘」으로 읽는다). exceeds = 이번 문서가 남은 금액보다 크다.
+export function remainingForInstallments(
+  execution: Money,
+  others: readonly Money[],
+  current?: MoneyInput,
+): { basis: "foreign" | "krw"; remaining: Money; exceeds: boolean } {
+  const sameCurrency =
+    execution.currency !== "KRW" &&
+    others.every((money) => money.currency === execution.currency) &&
+    (!current || current.currency === execution.currency);
+  if (sameCurrency) {
+    const cents = toMinor(execution.amount) - sumKrw(others.map((money) => toMinor(money.amount)));
+    // 원래 통화 비교의 남은 원화는 남은 외화 × 줄 실행가 환율 — 앞 문서 원화 합(환율 변동)으로 문이 열리고 닫히지 않는다(05-14).
+    const amount = cents / MINOR_UNITS;
+    const remaining: Money = { __brand: "Money", currency: execution.currency, amount, fxRate: execution.fxRate, amountKrw: toKrw({ currency: execution.currency, amount, fxRate: execution.fxRate }) };
+    const exceeds = current !== undefined && toMinor(current.amount) > cents;
+    return { basis: "foreign", remaining, exceeds };
+  }
+  const remainingKrw = execution.amountKrw - sumKrw(others.map((money) => money.amountKrw));
+  const remaining: Money = { __brand: "Money", currency: "KRW", amount: remainingKrw, fxRate: 1, amountKrw: remainingKrw };
+  const exceeds = current !== undefined && toKrw(current) > remainingKrw;
+  return { basis: "krw", remaining, exceeds };
+}
+
+// 05-06(UI-SPEC S5 · Copywriting 「계산 한 줄」 · 「세율 바뀜」) — 세율 → `%` 글자, 소수 둘째 자리까지(끝의 0은 뗀다). 곱셈 대신
+// 소수점 자리를 글자로 옮겨 부동소수 오차(0.07 × 100 = 7.000000000000001)가 글자에 새지 않는다. 0.088 → `8.8%` · 0.0275 → `2.75%`.
+export function formatRatePercent(rate: number): string {
+  const [whole = "0", fraction = ""] = rate.toFixed(4).split(".");
+  const percent = String(Number(`${whole}${fraction.slice(0, 2)}`));
+  const decimal = fraction.slice(2).replace(/0+$/, "");
+  return `${percent}${decimal ? `.${decimal}` : ""}%`;
+}

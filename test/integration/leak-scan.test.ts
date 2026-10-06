@@ -423,3 +423,7 @@ describe("커스텀 칸 축 — 계급에게서 끈 거래처 칸의 값이 그 
     expect(checked).toEqual(cases.map((c) => c.name));
   });
 });
+import "@/domain/expenses";
+import "@/domain/evidence";
+import "@/app/(app)/expenses/actions.registry";
+import "@/domain/settlements";

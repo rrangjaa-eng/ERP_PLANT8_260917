@@ -17,3 +17,11 @@ registerAction({
   action: "approve",
   dtoName: "ApprovalActionResultDto",
 });
+
+// 05-01(Round 4 D8): 종류 중립 회수 — 문서 id만 돌려준다(투영할 DTO 없음).
+registerAction({
+  name: "withdrawAction",
+  menu: "approvals",
+  action: "approve",
+  dtoName: null,
+});

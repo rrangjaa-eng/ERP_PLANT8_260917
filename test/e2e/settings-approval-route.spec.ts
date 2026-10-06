@@ -38,29 +38,35 @@ async function openSettings(page: Page) {
 }
 
 function checkedText(page: Page, label: string) {
-  return page.getByLabel(label).locator("option:checked");
+  return leaveRoute(page).getByLabel(label).locator("option:checked");
+}
+
+// 05-03(Round 4 D12): `지출결의 결재선` 섹션이 같은 칸 라벨 · 단계 버튼으로 생긴 뒤 — 결재선 칸 · 단계 버튼은
+// `연차 결재선` 제목을 가진 섹션 안에서 찾는다(로그인 · 복원 줄 · 알림 · 확인 창은 페이지 그대로).
+function leaveRoute(page: Page) {
+  return page.locator("section").filter({ has: page.getByRole("heading", { name: "연차 결재선", exact: true }) });
 }
 
 test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
   test("선택지는 이름으로 보이고 날것 키가 없으며, 효과 없는 칸은 비활성이다", async ({ page }) => {
     await openSettings(page);
 
-    await expect(page.getByLabel("자기 승인").locator("option")).toHaveText(["건너뜀", "본인 승인"]);
-    const step1Role = page.getByLabel("1단 담당 계급").locator("option");
+    await expect(leaveRoute(page).getByLabel("자기 승인").locator("option")).toHaveText(["건너뜀", "본인 승인"]);
+    const step1Role = leaveRoute(page).getByLabel("1단 담당 계급").locator("option");
     await expect(step1Role.first()).toHaveText("계급 무관");
     await expect(step1Role.filter({ hasText: /^팀장$/ })).toHaveCount(1);
     await expect(checkedText(page, "3단 담당 계급")).toHaveText("계급 무관");
     await expect(checkedText(page, "3단 특정 부서")).toHaveText("경영관리본부");
-    await expect(page.getByLabel("1단 조직 범위").locator("option")).toHaveText(["기안자 팀", "기안자 본부", "전사", "특정 부서"]);
+    await expect(leaveRoute(page).getByLabel("1단 조직 범위").locator("option")).toHaveText(["기안자 팀", "기안자 본부", "전사", "특정 부서"]);
 
     const text = await page.locator("main").innerText();
     for (const raw of ["self_approve", "drafter_team", "role-team-lead"]) expect(text).not.toContain(raw);
 
     // 기본 설정 그대로 — 1단 범위 = 기안자 팀이라 1단 특정 부서는 비활성, 3단은 활성.
-    const step1OrgUnit = page.getByLabel("1단 특정 부서");
+    const step1OrgUnit = leaveRoute(page).getByLabel("1단 특정 부서");
     await expect(step1OrgUnit).toBeDisabled();
     await expect(step1OrgUnit).toHaveValue(await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP1_ORG_UNIT_ID));
-    await expect(page.getByLabel("3단 특정 부서")).toBeEnabled();
+    await expect(leaveRoute(page).getByLabel("3단 특정 부서")).toBeEnabled();
 
     // SYSTEM.md §1-2: 비활성 글자는 --text-faint on --surface-muted. 활성 select 글자는 --text-strong(04.6-20 — 값이 바뀌는 교체는 소유 플랜이 이미 옮겼다).
     const tokenColor = (token: string) =>
@@ -73,7 +79,7 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
         return color;
       }, token);
     const style = (label: string) =>
-      page.getByLabel(label).evaluate((el) => {
+      leaveRoute(page).getByLabel(label).evaluate((el) => {
         const computed = getComputedStyle(el);
         return { color: computed.color, background: computed.backgroundColor, opacity: computed.opacity };
       });
@@ -89,7 +95,7 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
     const original = await getSettingValue(APPROVAL_ROUTE_LEAVE_SELF_APPROVAL);
     try {
       await openSettings(page);
-      await page.getByLabel("자기 승인").selectOption({ label: "본인 승인" });
+      await leaveRoute(page).getByLabel("자기 승인").selectOption({ label: "본인 승인" });
       await expect(async () => {
         await page.reload();
         await expect(checkedText(page, "자기 승인")).toHaveText("본인 승인");
@@ -103,15 +109,15 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
     const original = await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP3_ORG_UNIT_ID);
     try {
       await openSettings(page);
-      const step3OrgUnit = page.getByLabel("3단 특정 부서");
+      const step3OrgUnit = leaveRoute(page).getByLabel("3단 특정 부서");
       const field = step3OrgUnit.locator("xpath=ancestor::div[1]");
       await expect(field.getByText("부서 없음 · 이 단계는 빈 자리로 건너뜀")).toHaveCount(0);
 
       await step3OrgUnit.selectOption({ label: "—" });
-      await page.getByRole("button", { name: "3단 저장" }).click();
+      await leaveRoute(page).getByRole("button", { name: "3단 저장" }).click();
       await expect(async () => {
         await page.reload();
-        await expect(page.getByLabel("3단 특정 부서")).toHaveValue("");
+        await expect(leaveRoute(page).getByLabel("3단 특정 부서")).toHaveValue("");
         await expect(field.getByText("부서 없음 · 이 단계는 빈 자리로 건너뜀")).toBeVisible();
       }).toPass();
     } finally {
@@ -124,12 +130,12 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
     const originalScope = await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_SCOPE);
     try {
       await openSettings(page);
-      const save = page.getByRole("button", { name: "2단 저장" });
+      const save = leaveRoute(page).getByRole("button", { name: "2단 저장" });
       await expect(save).toHaveAttribute("aria-disabled", "true");
       await expect(save).toHaveAccessibleDescription("바뀐 칸 없음");
 
-      await page.getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
-      await page.getByLabel("2단 조직 범위").selectOption({ label: "전사" });
+      await leaveRoute(page).getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+      await leaveRoute(page).getByLabel("2단 조직 범위").selectOption({ label: "전사" });
       await expect(save).not.toHaveAttribute("aria-disabled", "true");
       // 즉시 저장이었다면 이 사이에 요청이 나갔다 — 네트워크가 멈춘 뒤에 저장값을 읽는다.
       await page.waitForLoadState("networkidle");
@@ -155,23 +161,23 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
     expect(original).toBe(true);
     try {
       await openSettings(page);
-      await page.getByLabel("1단 사용").uncheck();
-      await expect(page.getByLabel("1단 담당 계급")).toBeDisabled();
-      await expect(page.getByLabel("1단 조직 범위")).toBeDisabled();
-      await expect(page.getByRole("button", { name: "1단 저장" })).not.toHaveAttribute("aria-disabled", "true");
+      await leaveRoute(page).getByLabel("1단 사용").uncheck();
+      await expect(leaveRoute(page).getByLabel("1단 담당 계급")).toBeDisabled();
+      await expect(leaveRoute(page).getByLabel("1단 조직 범위")).toBeDisabled();
+      await expect(leaveRoute(page).getByRole("button", { name: "1단 저장" })).not.toHaveAttribute("aria-disabled", "true");
 
-      await page.getByLabel("1단 사용").check();
-      await expect(page.getByLabel("1단 담당 계급")).toBeEnabled();
-      await expect(page.getByRole("button", { name: "1단 저장" })).toHaveAttribute("aria-disabled", "true");
+      await leaveRoute(page).getByLabel("1단 사용").check();
+      await expect(leaveRoute(page).getByLabel("1단 담당 계급")).toBeEnabled();
+      await expect(leaveRoute(page).getByRole("button", { name: "1단 저장" })).toHaveAttribute("aria-disabled", "true");
 
-      await page.getByLabel("1단 사용").uncheck();
+      await leaveRoute(page).getByLabel("1단 사용").uncheck();
       const dialog = page.waitForEvent("dialog");
       const reload = page.reload();
       const leaving = await dialog;
       expect(leaving.type()).toBe("beforeunload");
       await leaving.accept();
       await reload;
-      await expect(page.getByLabel("1단 사용")).toBeChecked();
+      await expect(leaveRoute(page).getByLabel("1단 사용")).toBeChecked();
       expect(await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP1_ENABLED)).toBe(original);
     } finally {
       await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP1_ENABLED, original);
@@ -183,10 +189,10 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
     const originalScope = await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_SCOPE);
     try {
       await openSettings(page);
-      await page.getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+      await leaveRoute(page).getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
       await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP2_SCOPE, "company");
 
-      const save = page.getByRole("button", { name: "2단 저장" });
+      const save = leaveRoute(page).getByRole("button", { name: "2단 저장" });
       await save.click();
       const reason = "저장 실패 · 다른 저장이 먼저 됨 · 새로 고침";
       await expect(page.getByRole("alert").filter({ hasText: reason })).toBeVisible();
@@ -207,9 +213,9 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
       await openSettings(page);
       await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP3_ORG_UNIT_ID, "");
       // 자기 승인은 즉시 저장이라 저장 뒤 화면이 새 저장값으로 다시 그려진다.
-      await page.getByLabel("자기 승인").selectOption({ label: "본인 승인" });
-      await expect(page.getByLabel("3단 특정 부서")).toHaveValue("");
-      await expect(page.getByRole("button", { name: "3단 저장" })).toHaveAttribute("aria-disabled", "true");
+      await leaveRoute(page).getByLabel("자기 승인").selectOption({ label: "본인 승인" });
+      await expect(leaveRoute(page).getByLabel("3단 특정 부서")).toHaveValue("");
+      await expect(leaveRoute(page).getByRole("button", { name: "3단 저장" })).toHaveAttribute("aria-disabled", "true");
     } finally {
       await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP3_ORG_UNIT_ID, originalOrg);
       await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_SELF_APPROVAL, originalSelf);
@@ -220,7 +226,7 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
   test("저장 안 한 단계가 있으면 앱 안 링크로 떠날 때 입력 버리기 확인이 뜨고, 취소하면 남고 확인하면 떠난다", async ({ page }) => {
     const originalRole = await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID);
     await openSettings(page);
-    await page.getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+    await leaveRoute(page).getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
 
     await page.getByRole("link", { name: "PLANT8 내 차례" }).click();
     const dialog = page.getByRole("dialog");
@@ -229,7 +235,7 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
     await dialog.getByRole("button", { name: "취소" }).click();
     await expect(dialog).toBeHidden();
     await expect(page).toHaveURL(/\/admin\/settings$/);
-    await expect(page.getByLabel("2단 담당 계급")).toHaveValue(CEO_ROLE_ID);
+    await expect(leaveRoute(page).getByLabel("2단 담당 계급")).toHaveValue(CEO_ROLE_ID);
 
     await page.getByRole("link", { name: "PLANT8 내 차례" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "입력 버리기" }).click();
@@ -261,37 +267,37 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
   test("저장 안 한 단계는 뒤로 갔다 돌아오면 복원 줄로 되살릴 수 있다", async ({ page }) => {
     const originalRole = await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID);
     await openSettingsInApp(page);
-    await page.getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+    await leaveRoute(page).getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
     await waitStashed(page, ["leave-2"]);
 
     await page.goBack();
     await expect(page).toHaveURL(/\/admin$/);
     await page.getByRole("link", { name: "시스템 설정" }).first().click();
-    const line = page.getByText("저장 안 한 편집 2단");
+    const line = leaveRoute(page).getByText("저장 안 한 편집 2단");
     await expect(line).toBeVisible();
-    await expect(page.getByLabel("2단 담당 계급")).toHaveValue(originalRole);
+    await expect(leaveRoute(page).getByLabel("2단 담당 계급")).toHaveValue(originalRole);
 
-    await page.getByRole("button", { name: "복원" }).click();
+    await leaveRoute(page).getByRole("button", { name: "복원" }).click();
     await expect(line).toBeHidden();
-    await expect(page.getByLabel("2단 사용")).toBeFocused();
-    await expect(page.getByLabel("2단 담당 계급")).toHaveValue(CEO_ROLE_ID);
-    await expect(page.getByRole("button", { name: "2단 저장" })).not.toHaveAccessibleDescription("바뀐 칸 없음");
+    await expect(leaveRoute(page).getByLabel("2단 사용")).toBeFocused();
+    await expect(leaveRoute(page).getByLabel("2단 담당 계급")).toHaveValue(CEO_ROLE_ID);
+    await expect(leaveRoute(page).getByRole("button", { name: "2단 저장" })).not.toHaveAccessibleDescription("바뀐 칸 없음");
     expect(await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID)).toBe(originalRole);
   });
 
   // PR #112 /review(Red Team) — DR-104-01과 같은 복원 줄 규칙(SYSTEM §3 3차 44×44)을 설정 화면 복원 줄에도 적용한다.
   test("DR-104-01 — 폰 375·320 설정 복원 줄 「복원」·「버림」이 44×44 이상", async ({ page }) => {
     await openSettingsInApp(page);
-    await page.getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+    await leaveRoute(page).getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
     await waitStashed(page, ["leave-2"]);
 
     await page.goBack();
     await expect(page).toHaveURL(/\/admin$/);
     await page.getByRole("link", { name: "시스템 설정" }).first().click();
-    await expect(page.getByText("저장 안 한 편집 2단")).toBeVisible();
-    const main = page.getByRole("main");
-    const restore = main.getByRole("button", { name: "복원", exact: true });
-    const discard = main.getByRole("button", { name: "버림", exact: true });
+    await expect(leaveRoute(page).getByText("저장 안 한 편집 2단")).toBeVisible();
+    const section = leaveRoute(page);
+    const restore = section.getByRole("button", { name: "복원", exact: true });
+    const discard = section.getByRole("button", { name: "버림", exact: true });
 
     for (const width of [375, 320]) {
       await page.setViewportSize({ width, height: 800 });
@@ -307,56 +313,87 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
   test("복원 줄의 버림은 확인 없이 지우고 알림의 되돌리기로 되살린다", async ({ page }) => {
     const originalRole = await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID);
     await openSettingsInApp(page);
-    await page.getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+    await leaveRoute(page).getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
     await waitStashed(page, ["leave-2"]);
     page.once("dialog", (leaving) => void leaving.accept());
     await page.reload();
-    await expect(page.getByText("저장 안 한 편집 2단")).toBeVisible();
+    await expect(leaveRoute(page).getByText("저장 안 한 편집 2단")).toBeVisible();
 
-    await page.getByRole("button", { name: "버림" }).click();
-    await expect(page.getByText("저장 안 한 편집 2단")).toBeHidden();
-    await expect(page.getByLabel("2단 담당 계급")).toHaveValue(originalRole);
+    await leaveRoute(page).getByRole("button", { name: "버림" }).click();
+    await expect(leaveRoute(page).getByText("저장 안 한 편집 2단")).toBeHidden();
+    await expect(leaveRoute(page).getByLabel("2단 담당 계급")).toHaveValue(originalRole);
     await page.getByRole("button", { name: "되돌리기" }).click();
-    await expect(page.getByLabel("2단 담당 계급")).toHaveValue(CEO_ROLE_ID);
+    await expect(leaveRoute(page).getByLabel("2단 담당 계급")).toHaveValue(CEO_ROLE_ID);
     await waitStashed(page, ["leave-2"]);
     page.once("dialog", (leaving) => void leaving.accept());
     await page.reload();
-    await expect(page.getByText("저장 안 한 편집 2단")).toBeVisible();
+    await expect(leaveRoute(page).getByText("저장 안 한 편집 2단")).toBeVisible();
+  });
+
+  // WINDOWS #42(05-03 발견): 복원 줄은 보관본을 만든 결재선 섹션에만 뜨고, 그 섹션의 「복원」 · 「버림」은 그 섹션 단계만 다룬다.
+  test("복원 줄은 보관한 결재선 섹션에만 뜨고, 지출결의 쪽 복원은 연차 보관본을 건드리지 않는다", async ({ page }) => {
+    const expenseRoute = page.locator("section").filter({ has: page.getByRole("heading", { name: "지출결의 결재선", exact: true }) });
+    const originalLeaveRole = await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID);
+    await openSettingsInApp(page);
+    await leaveRoute(page).getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+    await waitStashed(page, ["leave-2"]);
+    page.once("dialog", (leaving) => void leaving.accept());
+    await page.reload();
+
+    await expect(leaveRoute(page).getByText("저장 안 한 편집 2단")).toBeVisible();
+    await expect(expenseRoute.getByText(/저장 안 한 편집/)).toHaveCount(0);
+
+    await expenseRoute.getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+    await waitStashed(page, ["expense-2", "leave-2"]);
+    page.once("dialog", (leaving) => void leaving.accept());
+    await page.reload();
+    await expect(leaveRoute(page).getByText("저장 안 한 편집 2단")).toBeVisible();
+    await expect(expenseRoute.getByText("저장 안 한 편집 2단")).toBeVisible();
+
+    await expenseRoute.getByRole("button", { name: "복원", exact: true }).click();
+    await expect(expenseRoute.getByText(/저장 안 한 편집/)).toHaveCount(0);
+    await expect(expenseRoute.getByLabel("2단 담당 계급")).toHaveValue(CEO_ROLE_ID);
+    await expect(leaveRoute(page).getByLabel("2단 담당 계급")).toHaveValue(originalLeaveRole);
+    await expect(leaveRoute(page).getByText("저장 안 한 편집 2단")).toBeVisible();
+
+    await leaveRoute(page).getByRole("button", { name: "버림", exact: true }).click();
+    await expect(leaveRoute(page).getByText(/저장 안 한 편집/)).toHaveCount(0);
+    await expect(expenseRoute.getByLabel("2단 담당 계급")).toHaveValue(CEO_ROLE_ID);
   });
 
   test("고치지 않고 다시 떠나도 보관본은 남고, 다른 단계를 고치면 두 단계가 함께 남는다", async ({ page }) => {
     await openSettingsInApp(page);
-    await page.getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+    await leaveRoute(page).getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
     await waitStashed(page, ["leave-2"]);
     await page.goBack();
     await page.getByRole("link", { name: "시스템 설정" }).first().click();
-    await expect(page.getByText("저장 안 한 편집 2단")).toBeVisible();
+    await expect(leaveRoute(page).getByText("저장 안 한 편집 2단")).toBeVisible();
 
     await page.goBack();
     await page.getByRole("link", { name: "시스템 설정" }).first().click();
-    await expect(page.getByText("저장 안 한 편집 2단")).toBeVisible();
+    await expect(leaveRoute(page).getByText("저장 안 한 편집 2단")).toBeVisible();
 
-    await page.getByLabel("3단 담당 계급").selectOption(CEO_ROLE_ID);
+    await leaveRoute(page).getByLabel("3단 담당 계급").selectOption(CEO_ROLE_ID);
     await waitStashed(page, ["leave-2", "leave-3"]);
     await page.goBack();
     await page.getByRole("link", { name: "시스템 설정" }).first().click();
-    await expect(page.getByText("저장 안 한 편집 2단 · 3단")).toBeVisible();
+    await expect(leaveRoute(page).getByText("저장 안 한 편집 2단 · 3단")).toBeVisible();
   });
 
   test("이번에 고친 단계는 복원 줄에서 빠진다", async ({ page }) => {
     await openSettingsInApp(page);
-    await page.getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+    await leaveRoute(page).getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
     await waitStashed(page, ["leave-2"]);
     await page.goBack();
     await page.getByRole("link", { name: "시스템 설정" }).first().click();
-    await expect(page.getByText("저장 안 한 편집 2단")).toBeVisible();
+    await expect(leaveRoute(page).getByText("저장 안 한 편집 2단")).toBeVisible();
 
-    const scope = page.getByLabel("2단 조직 범위");
+    const scope = leaveRoute(page).getByLabel("2단 조직 범위");
     const originalScope = await scope.inputValue();
     await scope.selectOption("company");
     await expect(page.getByText("저장 안 한 편집 2단")).toHaveCount(0);
     await scope.selectOption(originalScope);
-    await expect(page.getByRole("button", { name: "2단 저장" })).toHaveAccessibleDescription("바뀐 칸 없음");
+    await expect(leaveRoute(page).getByRole("button", { name: "2단 저장" })).toHaveAccessibleDescription("바뀐 칸 없음");
     await expect(page.getByText("저장 안 한 편집 2단")).toHaveCount(0);
   });
 
@@ -365,7 +402,7 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
     await db.delete(settingsSimple).where(eq(settingsSimple.key, APPROVAL_ROUTE_LEAVE_STEP3_ORG_UNIT_ID.key));
     try {
       await openSettingsInApp(page);
-      const unit = page.getByLabel("3단 특정 부서");
+      const unit = leaveRoute(page).getByLabel("3단 특정 부서");
       const choice = await unit.locator("option").evaluateAll((options) =>
         options.map((option) => (option as HTMLOptionElement).value).find((value) => value !== ""),
       );
@@ -374,9 +411,9 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
       await waitStashed(page, ["leave-3"]);
       await page.goBack();
       await page.getByRole("link", { name: "시스템 설정" }).first().click();
-      await expect(page.getByText("저장 안 한 편집 3단")).toBeVisible();
-      await page.getByRole("button", { name: "복원" }).click();
-      await expect(page.getByLabel("3단 특정 부서")).toHaveValue(choice);
+      await expect(leaveRoute(page).getByText("저장 안 한 편집 3단")).toBeVisible();
+      await leaveRoute(page).getByRole("button", { name: "복원" }).click();
+      await expect(leaveRoute(page).getByLabel("3단 특정 부서")).toHaveValue(choice);
     } finally {
       if (row) await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP3_ORG_UNIT_ID, row.value as string);
     }
@@ -385,7 +422,7 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
   test("보관본의 칸 값이 지금 선택지에 없으면 그 칸은 저장값으로 되살린다", async ({ page }) => {
     const originalRole = await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID);
     await openSettingsInApp(page);
-    await page.getByLabel("2단 조직 범위").selectOption("company");
+    await leaveRoute(page).getByLabel("2단 조직 범위").selectOption("company");
     await waitStashed(page, ["leave-2"]);
     await page.goBack();
     await page.evaluate((roleKey) => {
@@ -397,19 +434,19 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
     }, APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID.key);
     await page.getByRole("link", { name: "시스템 설정" }).first().click();
 
-    await page.getByRole("button", { name: "복원" }).click();
-    await expect(page.getByLabel("2단 조직 범위")).toHaveValue("company");
-    await expect(page.getByLabel("2단 담당 계급")).toHaveValue(originalRole);
+    await leaveRoute(page).getByRole("button", { name: "복원" }).click();
+    await expect(leaveRoute(page).getByLabel("2단 조직 범위")).toHaveValue("company");
+    await expect(leaveRoute(page).getByLabel("2단 담당 계급")).toHaveValue(originalRole);
   });
 
   test("버림 뒤 새로 고치면 복원 줄이 없다", async ({ page }) => {
     await openSettingsInApp(page);
-    await page.getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+    await leaveRoute(page).getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
     await waitStashed(page, ["leave-2"]);
     page.once("dialog", (leaving) => void leaving.accept());
     await page.reload();
-    await page.getByRole("button", { name: "버림" }).click();
-    await expect(page.getByText("저장 안 한 편집 2단")).toBeHidden();
+    await leaveRoute(page).getByRole("button", { name: "버림" }).click();
+    await expect(leaveRoute(page).getByText("저장 안 한 편집 2단")).toBeHidden();
     await page.reload();
     await expect(page.getByRole("heading", { name: "연차 결재선" })).toBeVisible();
     await expect(page.getByText("저장 안 한 편집 2단")).toHaveCount(0);
@@ -420,7 +457,7 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
     const originalScope = await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_SCOPE);
     try {
       await openSettingsInApp(page);
-      await page.getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+      await leaveRoute(page).getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
       await waitStashed(page, ["leave-2"]);
       await page.goBack();
       await expect(page).toHaveURL(/\/admin$/);
@@ -438,7 +475,7 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
     const originalRole = await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID);
     try {
       await openSettingsInApp(page);
-      await page.getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+      await leaveRoute(page).getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
       await page.getByRole("link", { name: "PLANT8 내 차례" }).click();
       await page.getByRole("dialog").getByRole("button", { name: "입력 버리기" }).click();
       await expect(page).not.toHaveURL(/\/admin\/settings$/);
@@ -446,9 +483,9 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
       await expect(page.getByRole("heading", { name: "연차 결재선" })).toBeVisible();
       await expect(page.getByText("저장 안 한 편집 2단")).toHaveCount(0);
 
-      await page.getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
-      await page.getByRole("button", { name: "2단 저장" }).click();
-      await expect(page.getByRole("button", { name: "2단 저장" })).toHaveAccessibleDescription("바뀐 칸 없음");
+      await leaveRoute(page).getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+      await leaveRoute(page).getByRole("button", { name: "2단 저장" }).click();
+      await expect(leaveRoute(page).getByRole("button", { name: "2단 저장" })).toHaveAccessibleDescription("바뀐 칸 없음");
       await page.reload();
       await expect(page.getByRole("heading", { name: "연차 결재선" })).toBeVisible();
       await expect(page.getByText("저장 안 한 편집 2단")).toHaveCount(0);
@@ -468,14 +505,14 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
         if (route.request().method() === "POST") await held;
         await route.continue();
       });
-      await page.getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
-      await page.getByRole("button", { name: "2단 저장" }).click();
-      await expect(page.getByLabel("2단 조직 범위")).toBeDisabled();
-      await expect(page.getByLabel("2단 담당 계급")).toBeDisabled();
-      await expect(page.getByLabel("2단 사용")).toBeDisabled();
+      await leaveRoute(page).getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+      await leaveRoute(page).getByRole("button", { name: "2단 저장" }).click();
+      await expect(leaveRoute(page).getByLabel("2단 조직 범위")).toBeDisabled();
+      await expect(leaveRoute(page).getByLabel("2단 담당 계급")).toBeDisabled();
+      await expect(leaveRoute(page).getByLabel("2단 사용")).toBeDisabled();
       release();
-      await expect(page.getByRole("button", { name: "2단 저장" })).toHaveAccessibleDescription("바뀐 칸 없음");
-      await expect(page.getByLabel("2단 담당 계급")).toBeEnabled();
+      await expect(leaveRoute(page).getByRole("button", { name: "2단 저장" })).toHaveAccessibleDescription("바뀐 칸 없음");
+      await expect(leaveRoute(page).getByLabel("2단 담당 계급")).toBeEnabled();
       await page.unroute("**/admin/settings");
     } finally {
       await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID, originalRole);

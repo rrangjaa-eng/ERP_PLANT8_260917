@@ -45,6 +45,8 @@ vi.mock("@/domain/leave/resubmit", () => ({
 
 const { approveAction, rejectAction } = await import("@/app/(app)/approvals/actions");
 const { withdrawLeaveAction, resubmitLeaveAction } = await import("@/app/(app)/leave/actions");
+// 05-01(Round 4 D8): 종류 중립 회수 액션.
+const { withdrawAction } = await import("@/app/(app)/approvals/actions");
 
 const BAD_ID = "not-a-uuid";
 const INPUT = { kind: "full_day", startDate: "2026-09-21", endDate: "2026-09-21", half: "", note: "" };
@@ -59,6 +61,7 @@ describe("결재 · 연차 액션 id 형식", () => {
     ["reject", () => rejectAction({ instanceId: BAD_ID, expectedVersion: 1, reason: "사유" })],
     ["withdraw", () => withdrawLeaveAction({ instanceId: BAD_ID, expectedVersion: 1 })],
     ["resubmit", () => resubmitLeaveAction({ leaveId: BAD_ID, expectedVersion: 1, input: INPUT })],
+    ["withdraw (종류 중립)", () => withdrawAction({ instanceId: BAD_ID, expectedVersion: 1 })],
   ] as const)("%s — uuid가 아닌 id는 도메인에 닿지 않고 입력 오류로 끝난다", async (_name, run) => {
     const result = await run();
     expect(result?.validationErrors).toBeDefined();

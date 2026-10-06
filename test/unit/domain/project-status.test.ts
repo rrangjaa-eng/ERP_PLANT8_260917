@@ -233,9 +233,10 @@ describe("statusDestinations — 갈 곳 목록과 막힘 이유 (S3·S7, A-09)"
     await expect(destinations("lost", "ownLead")).resolves.toEqual([{ to: "in_progress", blockedReason: null }]);
   });
 
-  it("정산 + 대표·시스템 관리자 → 완료, 팀장·본부 책임자 → 빈 목록", async () => {
-    await expect(destinations("settling", "ceo")).resolves.toEqual([{ to: "completed", blockedReason: null }]);
-    await expect(destinations("settling", "sysadmin")).resolves.toEqual([{ to: "completed", blockedReason: null }]);
+  // 05-11: 정산 → 완료는 정산 결재 승인으로만(via approval) — 대표 · 시스템 관리자에게도 갈 곳이 아니다.
+  it("정산은 누구에게도 빈 목록이다 — 완료는 정산 결재로만", async () => {
+    await expect(destinations("settling", "ceo")).resolves.toEqual([]);
+    await expect(destinations("settling", "sysadmin")).resolves.toEqual([]);
     await expect(destinations("settling", "ownLead")).resolves.toEqual([]);
     await expect(destinations("settling", "divisionHead")).resolves.toEqual([]);
   });

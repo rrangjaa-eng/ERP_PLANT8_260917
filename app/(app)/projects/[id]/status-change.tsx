@@ -70,9 +70,6 @@ function confirmCopy(props: StatusChangeProps, to: ProjectStatus): { label: stri
   if (to === "lost") {
     return { label: "미수주로 닫기", resultLines: ["쌓인 비용이 팀 미수주 비용이 됨 · 진행으로 되돌리기 있음"] };
   }
-  if (to === "completed") {
-    return { label: "완료로 바꾸기", resultLines: ["견적 줄 잠김 · 새 지출결의 받지 않음 · 되돌리기 없음"] };
-  }
   return null;
 }
 

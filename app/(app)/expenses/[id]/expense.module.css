@@ -1,0 +1,287 @@
+/* 05-05 지출결의 폼(S3) · 문서 화면(S7) · 로딩 뼈대 — 토큰만 쓴다(px 리터럴 · 새 색 없음). */
+
+/* 머리 줄 폭 720 = 폼 열과 같은 기둥(`DetailScreen`의 머리는 폭을 제한하지 않는다). */
+.column {
+  max-width: var(--form-max);
+}
+
+.textInput {
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--field-h);
+  padding: 0 var(--s-2);
+  border: var(--line-w) solid var(--border-control);
+  border-radius: var(--radius-control);
+  background: var(--surface-base);
+  color: var(--text-strong);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+}
+
+.textInput[aria-invalid="true"] {
+  border-color: var(--status-danger);
+}
+
+.textInput:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+.numeric {
+  text-align: right;
+}
+
+.checkLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: var(--field-h);
+  color: var(--text-strong);
+  font-size: var(--text-body);
+}
+
+/* 자동 채움 칸(견적 줄 · 거래처) — 텍스트 + 아래 부제. */
+.fill {
+  display: flex;
+  flex-direction: column;
+  min-height: var(--field-h);
+  justify-content: center;
+  color: var(--text-strong);
+  font-size: var(--text-body);
+  overflow-wrap: anywhere;
+  word-break: keep-all;
+}
+
+/* 값 + 3차(`바꾸기` · `고르기`) 한 줄 — 값 줄 오른쪽 끝에 3차, 부제는 값 아래 한 줄(폰도 같다). */
+.valueRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s-3);
+}
+
+.valueRow > .fill {
+  flex: 1;
+  min-width: 0;
+}
+
+.sub {
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+}
+
+/* 계산 한 줄 — 숫자 조각만 700(`Form.Hint` · 읽기 칸 둘이 같이 쓴다). */
+.taxLine {
+  display: block;
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+  overflow-wrap: anywhere;
+}
+
+/* 700 이상에서 한 줄(D1) — 짧은 칸(280) 폭에 갇히지 않고 긴 칸 폭까지만 넓어진다. 폰은 전폭 그대로 ` · ` 사이에서 꺾인다. */
+@media (min-width: 700px) {
+  .taxLine {
+    width: max-content;
+    max-width: var(--field-w-long);
+  }
+}
+
+.strong {
+  font-weight: var(--fw-bold);
+}
+
+/* 05-06 조각 묶음 — ` · ` 사이에서만 꺾인다(마지막 `… 규칙` 묶음은 이 클래스가 없어 그 안에서 꺾인다). */
+.taxSegment {
+  white-space: nowrap;
+}
+
+/* 05-13 꼬리(`… 규칙`) — 한 덩어리: 줄이 모자라면 통째로 다음 줄로 간다. inline-block이라 안에서 꺾이는 건 한 줄 폭(100%)을 넘는 이름뿐. */
+.taxTail {
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: top;
+}
+
+/* 05-06 미리보기가 오는 동안 이전 한 줄(빈칸 · 뼈대 없음 — UI-SPEC S5). */
+.stale {
+  color: var(--text-faint);
+}
+
+/* 05-06 세율 바뀜 — 계산 한 줄 바로 아래 경고 글자 한 줄(배경 없음, 숫자 조각만 700). */
+.drift {
+  display: block;
+  color: var(--status-warning);
+  font-size: var(--text-aux);
+  overflow-wrap: anywhere;
+}
+
+.blockedReason {
+  color: var(--status-danger);
+  font-size: var(--text-aux);
+}
+
+.infoReason {
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+}
+
+.successLine {
+  color: var(--status-success);
+  font-size: var(--text-aux);
+  font-weight: var(--fw-medium);
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.formBar {
+  margin-top: var(--s-6);
+}
+
+.blockedLine {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s-1);
+}
+
+.saveWrap {
+  margin-left: auto;
+}
+
+.submitWrap {
+  display: contents;
+}
+
+/* 결과 줄 라이브 영역(05 /review C8) — display: contents 요소는 WebKit 접근성 트리에서 빠질 수 있어 일반 상자로 둔다. 결과 줄끼리 간격은 행동 줄과 같고,
+   비었을 때는 흐름 밖(0 크기)이라 행동 줄의 간격 · 배치가 그대로다(상자는 남아 있어 라이브 영역이 먼저 있다). */
+.resultLines {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.resultLines:empty {
+  position: absolute;
+}
+
+.formBarSpacer {
+  display: none;
+}
+
+/* 폰 제출 줄 — 하단 탭 위 고정 · 1차가 2차의 두 배 폭 · 높이 --touch-min · kbd 없음(§6-3 제출 줄 · 04.1 연차 신청 폼과 같은 값).
+   2차 왼쪽 · 1차 오른쪽(사용자 결정 2026-09-29 A): 수화 전 보이는 순서는 order, 수화 뒤에는 DOM도 2차 → 1차(expense-form usePhoneWidth). */
+@media (max-width: 699.98px) {
+  /* §3 터치 목표: 「분할 지급」 체크 칸(field-definitions 「필수」 체크 칸과 같은 값). */
+  .installmentCheck {
+    width: var(--touch-min);
+    height: var(--touch-min);
+  }
+
+  .formBar {
+    position: fixed;
+    right: 0;
+    bottom: calc(var(--touch-min) + var(--line-w));
+    left: 0;
+    margin-top: 0;
+    padding: 0 var(--pad-page) var(--s-2);
+    background: var(--surface-canvas);
+    z-index: var(--z-bar);
+  }
+
+  /* 본문 아래 여백 = 행동 줄 높이(탭 44는 셸이 이미 비운다). 막힘 이유 한 줄까지. */
+  .formBarSpacer {
+    display: block;
+    height: calc(var(--touch-min) * 2 + var(--s-6));
+  }
+
+  .formBar .submitWrap {
+    display: flex;
+    flex: 2;
+  }
+
+  .formBar .saveWrap {
+    display: flex;
+    flex: 1;
+    order: -1;
+    margin-left: 0;
+  }
+
+  .formBar .submitWrap > span,
+  .formBar .saveWrap > span {
+    display: flex;
+    width: 100%;
+  }
+
+  .formBar .submitWrap button,
+  .formBar .saveWrap button {
+    justify-content: center;
+    width: 100%;
+    height: var(--touch-min);
+    font-size: var(--text-body);
+  }
+
+  .blockedLine,
+  .formBar > div > .blockedReason,
+  .formBar > div > .infoReason,
+  .formBar > div > .successLine,
+  .formBar .resultLines:not(:empty),
+  .resultLines > * {
+    order: 3;
+    flex-basis: 100%;
+  }
+
+  .formBar kbd,
+  .evidencePick kbd {
+    display: none;
+  }
+}
+
+/* 문서 화면 — 증빙 섹션 안 첨부 래퍼. */
+.evidence {
+  max-width: var(--field-w-long);
+}
+
+/* 문서 뼈대(`loading.tsx`) — 300ms 지연 표시: 처음 opacity 0, 300ms 뒤 한 번만 1로(길이 0 키프레임). 값 줄 = 면 색 막대 하나. */
+@keyframes appear {
+  to {
+    opacity: 1;
+  }
+}
+
+.kvSkeleton {
+  opacity: 0;
+  animation-name: appear;
+  animation-duration: 0s;
+  animation-delay: 300ms;
+  animation-fill-mode: forwards;
+}
+
+.kvBar {
+  display: block;
+  height: var(--s-4);
+  background: var(--surface-muted);
+}
+
+/* 05-09 반려 읽기 행 2행 사유(연차 문서 화면 `.subLine`과 같은 모양) — 여러 줄 사유의 줄을 지킨다. */
+.subLine {
+  display: block;
+  font-size: var(--text-aux);
+  word-break: keep-all;
+  white-space: pre-line;
+}
+
+/* 05-09 작성 중 폼 머리 줄 `지출결의 삭제` — 실패 한 줄은 버튼 왼쪽. 폰에서는 머리 줄 버튼을 숨긴다(UI-SPEC S3 「머리 줄」). */
+.headDelete {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+@media (max-width: 699.98px) {
+  .headDelete {
+    display: none;
+  }
+}

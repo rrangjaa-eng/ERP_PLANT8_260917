@@ -1,0 +1,120 @@
+/* 05-08 지출결의 목록(UI-SPEC S8 · §6-1 원장 · §7-3 폰 열 접기). 역할 토큰만 — 숫자 서식은 `Num`이 한다. */
+
+/* 필터 줄 — 상태 select 하나(action-log 필터 선례와 같은 모양). */
+.filterForm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--s-2) var(--s-3);
+}
+
+.selectLabel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--label-gap);
+  max-width: 100%;
+  font-size: var(--text-aux);
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+}
+
+.select {
+  height: var(--control-h);
+  border: var(--line-w) solid var(--border-control);
+  border-radius: var(--radius-control);
+  background: var(--surface-base);
+  color: var(--text-strong);
+  padding: 0 var(--s-2);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+}
+
+.select:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+/* 합계 줄 — 제목 aux · muted, 금액 body 700(UI-SPEC Typography · projects 합계 줄 선례). */
+.totals {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s-2) var(--s-5);
+}
+
+.totalsTitle {
+  margin: 0;
+  font-size: var(--text-aux);
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+}
+
+.totalsAmount {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: var(--fw-bold);
+}
+
+/* 「프로젝트 · 항목」 — 긴 문자 열(§6-1 min-width · keep-all). */
+.titleCell {
+  display: block;
+  min-width: 9em;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.link {
+  color: var(--text-link);
+  text-decoration: underline;
+  text-decoration-thickness: var(--line-w);
+  text-underline-offset: var(--underline-offset);
+}
+
+.link:hover {
+  text-decoration-thickness: var(--underline-w-hover);
+}
+
+/* 팀 비용 2행 `프로젝트 미연결 · {종류}` — PC는 칸 안 2행, 폰은 접힌 줄로 내려가 여기서는 숨는다. */
+.wideSecondLine {
+  display: block;
+  margin-top: var(--s-1);
+  font-size: var(--text-aux);
+  color: var(--text-muted);
+}
+
+/* 거래처 — 한 줄 말줄임. */
+.vendorCell {
+  display: block;
+  max-width: 16em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nowrap,
+.statusCell {
+  white-space: nowrap;
+}
+
+.warningGroup {
+  color: var(--status-warning);
+}
+
+.phoneOnly {
+  display: none;
+}
+
+@media (max-width: 699.98px) {
+  .titleCell {
+    min-width: 5em;
+  }
+
+  .wideSecondLine,
+  .wideOnly {
+    display: none;
+  }
+
+  .phoneOnly {
+    display: inline;
+  }
+}

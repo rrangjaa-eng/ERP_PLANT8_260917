@@ -23,6 +23,8 @@ import { seedSimpleValue, seedHistorizedValue } from "@/repositories/settings";
 import { seedOrgUnit, findOrgUnitByName } from "@/repositories/org-units";
 import { seedTeam } from "@/repositories/teams";
 import { seedApprovalsLeave } from "@/domain/seed/approvals-leave";
+import { seedExpenses } from "@/domain/seed/expenses";
+import { seedSettlements } from "@/domain/seed/settlements";
 
 // 이력형 키의 시드 기본 행은 항상 과거인 고정 날짜를 쓴다 — 시드 직후부터
 // 유효값이 즉시 성립해(오늘 기준 effective_from <= asOf) 03-UI-SPEC.md가
@@ -334,6 +336,8 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
   }
 
   await seedApprovalsLeave(viewer);
+  await seedExpenses(viewer);
+  await seedSettlements(viewer);
   return {
     roles: rolesCount,
     permissions: permissionsCount,

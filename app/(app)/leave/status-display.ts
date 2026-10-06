@@ -11,10 +11,11 @@ export type LeaveStatusKey =
   | "approved"
   | "rejected"
   | "withdrawn"
-  // 결재선 목록 전용 — 보는 사람이 지금 담당 · 차례가 안 온 단계 · 자리가 빈 단계.
+  // 결재선 목록 전용 — 보는 사람이 지금 담당 · 차례가 안 온 단계 · 자리가 빈 단계 · 기안자가 본인 승인한 단계(05-01 E6).
   | "mine"
   | "waiting"
-  | "vacant";
+  | "vacant"
+  | "self_approved";
 
 export type LeaveStatusDisplay = { kind: StatusTagKind; label: string };
 
@@ -28,6 +29,8 @@ export function leaveStatusDisplay(status: LeaveStatusKey, options?: { stepLabel
       return { kind: "accent", label: "내 결재" };
     case "approved":
       return { kind: "success", label: dated("승인") };
+    case "self_approved":
+      return { kind: "success", label: dated("본인 승인") };
     case "rejected":
       return { kind: "danger", label: dated("반려") };
     case "withdrawn":
@@ -55,6 +58,8 @@ export function leaveStatusWord(status: LeaveStatusKey, stepLabel?: string | nul
       return "내 결재";
     case "approved":
       return "승인";
+    case "self_approved":
+      return "본인 승인";
     case "rejected":
       return "반려";
     case "withdrawn":
@@ -90,6 +95,7 @@ export type RouteStepSource = Partial<{
   actedAt: Date | null;
   reason: string | null;
   viewerHolds: boolean;
+  selfApproved: boolean;
 }>;
 
 export type RouteListStep = {
@@ -119,7 +125,7 @@ export function seoulMinuteOf(at: Date): string {
 function stepStatusKey(step: RouteStepSource): LeaveStatusKey | null {
   switch (step.state) {
     case "approved":
-      return "approved";
+      return step.selfApproved ? "self_approved" : "approved";
     case "rejected":
       return "rejected";
     case "current":

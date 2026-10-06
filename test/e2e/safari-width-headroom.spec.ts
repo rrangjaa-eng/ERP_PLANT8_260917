@@ -39,7 +39,7 @@ for (const width of [768, 1280]) {
             labelWidth: labelRect.width,
             labelHeight: labelRect.height,
             lineHeight: parseFloat(getComputedStyle(label).lineHeight),
-            inputOffset: input.getBoundingClientRect().left - row.getBoundingClientRect().left,
+            inputOffset: input.getBoundingClientRect().left - labelRect.left,
           },
         ];
       }),

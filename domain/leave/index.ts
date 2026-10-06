@@ -35,7 +35,7 @@ import {
   type RouteSettingDefs,
 } from "@/domain/approvals";
 import type { findVisibility } from "@/repositories/permissions";
-import type { DescribeDeps, DocumentDetailRow, DocumentDetailRows, LoadDetailsDeps, RouteConfigStep } from "@/domain/approvals/kinds";
+import type { DescribeDeps, DocumentDetailRow, DocumentDetailRows, DocumentSummary, LoadDetailsDeps, RouteConfigStep } from "@/domain/approvals/kinds";
 import type { TxLogDeps } from "@/domain/approvals/tx-log";
 import {
   findLeaveFiscalYearRange,
@@ -144,13 +144,31 @@ function toSource(row: LeaveRequestWithApproval): LeaveRequestDto {
   };
 }
 
-async function describeLeaveDocuments(viewer: Viewer, ids: string[], deps?: DescribeDeps): Promise<Map<string, object>> {
+async function describeLeaveDocuments(viewer: Viewer, ids: string[], deps?: DescribeDeps): Promise<Map<string, DocumentSummary>> {
   const rows = await findLeaveRequestsByIds(viewer, { ids, documentKind: LEAVE_DOCUMENT_KIND });
-  const result = new Map<string, object>();
+  const result = new Map<string, DocumentSummary>();
   for (const row of rows) {
-    result.set(row.id, await project(viewer, toSource(row), LEAVE_REQUEST_DTO_SPEC, deps?.visible ? { visible: deps.visible } : undefined));
+    const projected = await project(viewer, toSource(row), LEAVE_REQUEST_DTO_SPEC, deps?.visible ? { visible: deps.visible } : undefined);
+    result.set(row.id, { ...projected, ...leaveSummaryFields(projected) });
+    const summary = result.get(row.id);
+    // 05-10: 「내 차례」 한 줄 — 대상 `{기안자}`, 상황 `연차 {종류} {기간}`(결재함 문서 칸 글자와 같은 조각).
+    if (summary && projected.drafterName && summary.documentText) summary.nextTurnText = { target: projected.drafterName, situation: `연차 ${summary.documentText}` };
   }
   return result;
+}
+
+// 05-01 E5(Round 4 Z2 · D8): 결재함이 종류를 모른 채 읽는 요약 필드 — 투영 뒤 값으로만(보이지 않으면 싣지 않는다).
+// 일수 칸 글자 = formatLeaveDays, 문서 칸 대상 조각 = 종류 · 반차 · 기간(04.1 결재함 글자와 같다). 번호는 투영 필드 number 그대로.
+function leaveSummaryFields(leave: Partial<LeaveRequestDto>): Pick<DocumentSummary, "measure" | "documentText"> {
+  const fields: Pick<DocumentSummary, "measure" | "documentText"> = {};
+  if (leave.daysQuarters !== undefined && leave.days !== undefined) {
+    fields.measure = { kind: "days", quarters: leave.daysQuarters, text: leave.days };
+  }
+  if (leave.kind && leave.startDate) {
+    const end = leave.endDate && leave.endDate !== leave.startDate ? ` ~ ${leave.endDate.slice(5)}` : "";
+    fields.documentText = `${kindWord(leave)} ${leave.startDate.slice(5)}${end}`;
+  }
+  return fields;
 }
 
 // 04.1-05(T18 · UI-SPEC 사용자 확인 대상 #5): 제목 자리의 종류 · 기간 — 구분자 ` — `는 이 함수 한 곳이다.
@@ -280,7 +298,8 @@ registerDocumentKind({
   href: (documentId) => `/leave/${documentId}`,
   describeDocuments: describeLeaveDocuments,
   routeSettings: LEAVE_ROUTE_SETTINGS,
-  canResubmit: canWriteLeave,
+  // 05-01(Round 4 D5): 엔진이 둘째 인자로 문서 id를 넘긴다 — 연차는 보지 않고, canWriteLeave의 deps 자리에 들어가지 않게 감싼다.
+  canResubmit: (viewer) => canWriteLeave(viewer),
   loadDetails: loadLeaveDetails,
   detailDto: LEAVE_DETAIL_DTO_SPEC,
   buildDetailRows: buildLeaveDetailRows,

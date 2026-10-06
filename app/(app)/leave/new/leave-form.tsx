@@ -385,7 +385,7 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
 
         {items.length > 0 ? <KvList items={items} /> : null}
 
-        <div className={styles.formBar} data-testid="leave-form-actions">
+        <div className={styles.formBar} data-testid="leave-form-actions" data-fixed-bar="">
           <Form.Actions>
             {phone ? null : submitButton}
             {blocked && !submitting ? (

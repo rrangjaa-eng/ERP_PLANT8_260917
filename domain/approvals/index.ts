@@ -15,6 +15,7 @@ import {
   insertApprovalSteps,
   insertFallbackStep,
   listActiveInstances,
+  listDrafterInstances,
   listProcessedInstances,
   recordStepAction,
   updateInstanceStatus,
@@ -30,6 +31,7 @@ import {
   InvalidTransitionError,
   nextStep,
   type ApprovalEvent,
+  type NextStepOptions,
   walkRoute,
   type ApprovalStatus,
   type RouteStep,
@@ -38,7 +40,7 @@ import {
   type SnapshotPerson,
   type WalkRouteResult,
 } from "@/domain/approvals/route";
-import { getDocumentKind, type DetailFields, type DocumentDetailRows, type LoadDetailsDeps, type RouteConfigStep } from "@/domain/approvals/kinds";
+import { getDocumentKind, listDocumentKinds, resubmittableStatuses, type DetailFields, type DocumentKindDef, type DocumentSummary, type DocumentDetailRows, type LoadDetailsDeps, type RouteConfigStep } from "@/domain/approvals/kinds";
 import { buildConflictMessage, isApprovalParty } from "@/domain/approvals/conflict-message";
 import { loadActionLogGate as defaultLoadActionLogGate, recordActionInTx, type ActionLogGate, type TxLogDeps } from "@/domain/approvals/tx-log";
 import {
@@ -58,7 +60,7 @@ import {
 } from "@/domain/approvals/dto";
 
 export { registerDocumentKind, getDocumentKind, listDocumentKinds } from "@/domain/approvals/kinds";
-export type { DocumentDetailRow, DocumentDetailRows, DocumentKindDef, RouteConfig, RouteConfigStep, RouteSettingDefs } from "@/domain/approvals/kinds";
+export type { DocumentDetailEvidenceFile, DocumentDetailRow, DocumentDetailRows, DocumentKindDef, DocumentMeasure, DocumentSummary, RouteConfig, RouteConfigStep, RouteSettingDefs } from "@/domain/approvals/kinds";
 export { nextStep, resolveHolders, walkRoute } from "@/domain/approvals/route";
 export { loadActionLogGate, recordActionInTx } from "@/domain/approvals/tx-log";
 export type { ApprovalInboxItem, ApprovalInboxItemDto, ApprovalView, ApprovalViewDto, RoutePreviewDTO, RoutePreviewStepDTO } from "@/domain/approvals/dto";
@@ -126,8 +128,8 @@ function toRouteStep(row: ApprovalStepWithActor): RouteStep {
   };
 }
 
-async function readSnapshot(viewer: Viewer, deps?: ApprovalDeps): Promise<SnapshotPerson[]> {
-  return (deps?.listOrgSnapshot ?? defaultListOrgSnapshot)(viewer, seoulToday(deps?.now));
+async function readSnapshot(viewer: Viewer, deps?: ApprovalDeps, today?: string): Promise<SnapshotPerson[]> {
+  return (deps?.listOrgSnapshot ?? defaultListOrgSnapshot)(viewer, today ?? seoulToday(deps?.now));
 }
 
 // ── 제출 ────────────────────────────────────────────────────────────────
@@ -364,11 +366,11 @@ function warnIfBlocked(graph: ApprovalGraph, walk: WalkRouteResult | null): void
 type TransitionEvent = "approve" | "reject" | "withdraw" | "resubmit";
 
 // 상태 기계 표(nextStep)가 그 사건을 허용하는가 — 승인은 approve · approve_final 둘 중 하나라도.
-function allowsEvent(status: ApprovalStatus, event: TransitionEvent): boolean {
+function allowsEvent(status: ApprovalStatus, event: TransitionEvent, opts?: NextStepOptions): boolean {
   const events: ApprovalEvent[] = event === "approve" ? ["approve", "approve_final"] : [event];
   return events.some((candidate) => {
     try {
-      nextStep(status, candidate);
+      nextStep(status, candidate, opts);
       return true;
     } catch (error) {
       if (error instanceof InvalidTransitionError) return false;
@@ -380,9 +382,14 @@ function allowsEvent(status: ApprovalStatus, event: TransitionEvent): boolean {
 // (2) 사건별 종결 검사(CX-B1) — 「(상태, 사건, viewer가 기안자인가) → 이 사건에 닫혔는가」 한 곳.
 // nextStep 허용 표에서 읽는다: approved · withdrawn은 모든 사건에 닫혔고, rejected에서 열린 사건은
 // resubmit 하나이며 그것도 기안자에게만이다(반려에서 나가는 유일한 전이). 진행 중 상태의 resubmit도 닫힘.
-function closedFor(status: ApprovalStatus, event: TransitionEvent, isDrafter: boolean): boolean {
-  if (!allowsEvent(status, event)) return true;
-  return event === "resubmit" && !isDrafter;
+// 05-01 E1: resubmit은 종류의 resubmitFrom(없으면 rejected만)에 지금 상태가 있을 때만 열리고, withdrawn이 있으면
+// nextStep에 allowResubmitFromWithdrawn을 준다 — approve · reject · withdraw에는 withdrawn이 여전히 닫혔다.
+function closedFor(status: ApprovalStatus, event: TransitionEvent, isDrafter: boolean, kind: string): boolean {
+  if (event !== "resubmit") return !allowsEvent(status, event);
+  if (!isDrafter) return true;
+  const from: readonly string[] = resubmittableStatuses(getDocumentKind(kind));
+  if (!from.includes(status)) return true;
+  return !allowsEvent(status, event, { allowResubmitFromWithdrawn: from.includes("withdrawn") });
 }
 
 // 지금 행으로 만든 상세 문구(관련자에게만) — 마지막으로 바꾼 사람(updated_by)은 기안자이거나 처리 기록의 한 사람이다.
@@ -394,13 +401,17 @@ async function conflictMessageOf(viewer: Viewer, graph: ApprovalGraph, attempted
     ? null
     : instance.updatedBy === instance.drafterId
       ? instance.drafterName
-      : (graph.routes.flatMap((route) => route.steps).find((step) => step.actedBy === instance.updatedBy)?.actedByName ?? null);
+      : (graph.routes.flatMap((route) => route.steps).find((step) => step.actedBy === instance.updatedBy)?.actedByName ??
+        // 05-09: 결재 중 증빙을 붙인 경영관리 권한자는 단계 처리자가 아니다 — 인스턴스를 바꾼 사람 이름을 그대로 쓴다.
+        instance.updatedByName ??
+        null);
   return buildConflictMessage({
     status: instance.status as ApprovalStatus,
     round: instance.currentRound,
     actorName,
     at: instance.updatedAt,
     attempted,
+    versionReason: instance.versionReason === "evidence" ? "evidence" : null,
   });
 }
 
@@ -482,7 +493,7 @@ async function runTransition<T>(
     throw await refuseStaleOrClosed(viewer, graph, holders, input.event, "conflict", fields, pre);
   }
   // (2) 사건별 종결.
-  if (closedFor(status, input.event, isDrafter)) {
+  if (closedFor(status, input.event, isDrafter, instance.documentKind)) {
     const reason = IN_PROGRESS.includes(status) ? "invalid_state" : "final";
     throw await refuseStaleOrClosed(viewer, graph, holders, input.event, reason, fields, pre);
   }
@@ -570,6 +581,32 @@ export async function currentHolderNames(
   return currentHolderNamesOf(walkGraph(graph, await readSnapshot(viewer, deps)));
 }
 
+// 05-08: 종류 하나의 진행 중 인스턴스마다 지금 단계 이름과 보는 사람이 지금 단계 후보인지 — 결재함(listMyInbox)과 같은 walk를
+// 한 번에 계산한다(문서마다 따로 읽지 않는다). 지출결의 목록의 `{단계} 결재 중` 낱말과 「지금 단계 후보」 보임 갈래의 재료다.
+export type CurrentStep = { stepLabel: string | null; viewerIsCandidate: boolean };
+
+// today — 부르는 쪽 판정과 같은 기준일(지출결의 보임의 팀 갈래 · 후보 갈래가 같은 날로 판정, 05-08 검토 #3).
+export async function listCurrentSteps(viewer: Viewer, input: { kind: string }, deps?: ApprovalDeps & { today?: string }): Promise<Map<string, CurrentStep>> {
+  const snapshot = await readSnapshot(viewer, deps, deps?.today);
+  const result = new Map<string, CurrentStep>();
+  for (const instance of await listActiveInstances(viewer)) {
+    if (instance.documentKind !== input.kind) continue;
+    const walk = walkRoute({
+      steps: instance.steps.map(toRouteStep),
+      snapshot,
+      selfApproval: instance.route.selfApproval as SelfApproval,
+      drafterId: instance.drafterId,
+      fallbackRoleId: FALLBACK_ROLE_ID,
+      at: "before_action",
+    });
+    const outcome = walk.outcome;
+    const actionable = outcome.kind === "actionable";
+    const current = actionable ? walk.display.find((step) => step.stepIndex === outcome.stepIndex && step.state === "current") : undefined;
+    result.set(instance.id, { stepLabel: current?.label ?? null, viewerIsCandidate: actionable && outcome.candidateIds.includes(viewer.id) });
+  }
+  return result;
+}
+
 // 최종 승인 토스트의 차감 일수(B-C2 — 출처는 종류가 준 요약의 daysQuarters · days).
 // 요약에 일수가 없거나 0이면(재택 · 일수 없는 종류) null.
 export async function describeDeduction(viewer: Viewer, input: { kind: string; documentId: string }): Promise<string | null> {
@@ -580,12 +617,38 @@ export async function describeDeduction(viewer: Viewer, input: { kind: string; d
   return typeof daysQuarters === "number" && daysQuarters > 0 && typeof days === "string" ? days : null;
 }
 
+// 종류의 최종 승인 훅 짝(등록이 둘 다 있거나 둘 다 없음을 보장한다) — 없으면 null.
+function finalApprovalHookOf(kind: string): { prepare: NonNullable<DocumentKindDef["prepareFinalApproval"]>; inTx: NonNullable<DocumentKindDef["onFinalApprovalInTx"]> } | null {
+  const def = getDocumentKind(kind);
+  return def.prepareFinalApproval && def.onFinalApprovalInTx ? { prepare: def.prepareFinalApproval, inTx: def.onFinalApprovalInTx } : null;
+}
+
+// 05-01(Round 4 D8): 최종 승인 토스트 꼬리 — 종류 요약의 finalApprovalNote(없으면 null). 액션이 projectActionResult의
+// finalNote(approval.value)로 넘긴다.
+export async function describeFinalApprovalNote(viewer: Viewer, input: { kind: string; documentId: string }): Promise<string | null> {
+  const described = await getDocumentKind(input.kind).describeDocuments(viewer, [input.documentId]);
+  return described.get(input.documentId)?.finalApprovalNote ?? null;
+}
+
+// 05-01 E3: 종류의 승인 막힘 이유 — 필드가 없거나 문서가 없으면 부르지 않는다(04.1 결재함 조회 수 범위를 흔들지 않는다).
+async function approveBlockedReasonsOf(viewer: Viewer, kind: string, documentIds: string[]): Promise<Map<string, string>> {
+  const reasonsOf = getDocumentKind(kind).approveBlockedReason;
+  if (!reasonsOf || documentIds.length === 0) return new Map();
+  return reasonsOf(viewer, documentIds);
+}
+
 export async function approveDocument(
   viewer: Viewer,
   input: { instanceId: string; expectedVersion: number },
   deps?: ApprovalDeps,
 ): Promise<ApproveResult> {
   const pre = await readTransitionPre(viewer, deps);
+  // 05-01 E2(Round 4 D6): 최종 승인 훅의 읽기 짝은 트랜잭션 전 — 입력에 종류 · 문서 id가 없어 풀로 그래프를 한 번 읽는다.
+  // 최종 여부는 트랜잭션 안에서야 알므로 훅이 있는 종류면 매 승인마다 읽는다(읽기 전용). 그래프가 없으면 건너뛰고
+  // 트랜잭션 안 (1)~(3)이 04.1대로 거부한다. 종류 · 문서 id는 바뀌지 않는 열이라 이 값을 트랜잭션 안에서 그대로 쓴다.
+  const target = await findApprovalGraphById(viewer, input.instanceId);
+  const finalHook = target ? finalApprovalHookOf(target.instance.documentKind) : null;
+  const prepared = target && finalHook ? await finalHook.prepare(viewer, target.instance.documentId) : undefined;
   return withTransaction(async (tx) => {
     const { updated, result } = await runTransition(viewer, { ...input, event: "approve" }, pre, tx, ({ graph, route, outcome }) => {
       if (!outcome) throw new Error("승인 자리 없음");
@@ -633,6 +696,10 @@ export async function approveDocument(
             if (!row) throw new Error("지금 단계 행 없음");
             await recordStepAction(viewer, { stepId: row.id, actedBy: viewer.id, action: "approved", selfApproved }, tx);
           }
+          // 05-01 E2: 최종 승인(계산된 status approved)이면 단계 기록 뒤 · 행동 로그 전에 같은 tx로 종류의 훅 — 던지면 전부 롤백.
+          if (status === "approved" && finalHook && target) {
+            await finalHook.inTx(viewer, target.instance.documentId, tx, prepared);
+          }
           return {
             detail: { stepIndex, final: status === "approved" },
             result: { final: status === "approved", nextHolderNames: currentHolderNamesOf(after) },
@@ -657,6 +724,14 @@ export const REJECT_REASON_TOO_LONG_MESSAGE = "사유 500자 넘음 · 줄여 �
 
 export class RejectReasonError extends UserFacingError {}
 
+// 반려 사유 검증(trim 1~500자) — trim된 값을 돌려준다. 반려와 증빙 무효 처리(05-09 — Round 4 D11)가 같이 쓴다.
+export function validateRejectReason(reason: string): string {
+  const trimmed = reason.trim();
+  if (trimmed.length === 0) throw new RejectReasonError(REJECT_REASON_EMPTY_MESSAGE);
+  if (trimmed.length > REJECT_REASON_MAX) throw new RejectReasonError(REJECT_REASON_TOO_LONG_MESSAGE);
+  return trimmed;
+}
+
 export type RejectResult = { status: ApprovalStatus; version: number; documentId: string; kind: string; drafterName: string };
 
 // 반려 — 사유(trim 1~500자)는 트랜잭션 전에 거부한다. 지금 단계 후보(기안자 제외)만. 사유는 그 단계 행에.
@@ -665,9 +740,7 @@ export async function rejectDocument(
   input: { instanceId: string; expectedVersion: number; reason: string },
   deps?: ApprovalDeps,
 ): Promise<RejectResult> {
-  const reason = input.reason.trim();
-  if (reason.length === 0) throw new RejectReasonError(REJECT_REASON_EMPTY_MESSAGE);
-  if (reason.length > REJECT_REASON_MAX) throw new RejectReasonError(REJECT_REASON_TOO_LONG_MESSAGE);
+  const reason = validateRejectReason(input.reason);
   const pre = await readTransitionPre(viewer, deps);
   return withTransaction(async (tx) => {
     const { updated, result } = await runTransition(
@@ -733,8 +806,10 @@ export async function resubmitDocument(
   const pre: TransitionPre = { snapshot: prepared.snapshot, gate: prepared.gate, appendActionLog: deps?.appendActionLog };
   const { updated } = await runTransition(viewer, { ...input, event: "resubmit" }, pre, tx, ({ graph }) => {
     const round = graph.instance.currentRound + 1;
+    const status = graph.instance.status as ApprovalStatus;
     return {
-      status: nextStep(graph.instance.status as ApprovalStatus, "resubmit"),
+      // (2)의 closedFor가 종류의 resubmitFrom으로 이미 걸렀다 — withdrawn이면 그 한 칸만 연다(05-01 E1).
+      status: nextStep(status, "resubmit", status === "withdrawn" ? { allowResubmitFromWithdrawn: true } : undefined),
       currentRound: round,
       actionType: "document_submit",
       write: async () => {
@@ -849,18 +924,19 @@ async function readApprovalState(
 // `다시 신청`(CX-W1). 기안자 = 지금 담당(W5 · W8)이면 [승인, 회수]이고 `반려`는 없다(CXF-B-F01).
 async function possibleActions(
   viewer: Viewer,
-  state: { instance: { status: string; drafterId: string; documentKind: string }; isCandidate: boolean },
+  state: { instance: { status: string; drafterId: string; documentKind: string; documentId: string }; isCandidate: boolean },
 ): Promise<ApprovalAction[]> {
   const { instance } = state;
   const status = instance.status as ApprovalStatus;
   const isDrafter = instance.drafterId === viewer.id;
   const actions: ApprovalAction[] = [];
-  if (state.isCandidate && !closedFor(status, "approve", isDrafter)) actions.push("approve");
-  if (state.isCandidate && !isDrafter && !closedFor(status, "reject", isDrafter)) actions.push("reject");
-  if (isDrafter && !closedFor(status, "withdraw", isDrafter)) actions.push("withdraw");
-  if (isDrafter && !closedFor(status, "resubmit", isDrafter)) {
-    const canResubmit = getDocumentKind(instance.documentKind).canResubmit;
-    if (canResubmit && (await canResubmit(viewer))) actions.push("resubmit");
+  const kind = instance.documentKind;
+  if (state.isCandidate && !closedFor(status, "approve", isDrafter, kind)) actions.push("approve");
+  if (state.isCandidate && !isDrafter && !closedFor(status, "reject", isDrafter, kind)) actions.push("reject");
+  if (isDrafter && !closedFor(status, "withdraw", isDrafter, kind)) actions.push("withdraw");
+  if (isDrafter && !closedFor(status, "resubmit", isDrafter, kind)) {
+    const canResubmit = getDocumentKind(kind).canResubmit;
+    if (canResubmit && (await canResubmit(viewer, instance.documentId))) actions.push("resubmit");
   }
   return actions;
 }
@@ -882,9 +958,11 @@ export async function canSeeApprovalDocument(
   return state.isParty;
 }
 
+// readOnlyVisible(05-08 검토 #1): 종류의 보임 규칙(예: canSeeExpense — 팀장 · 전사 범위)이 이미 통과한 화면만 넘긴다. 당사자가 아니어도
+// 상태 · 결재선을 돌려주되 행동은 늘 비어 있다(행동 판정은 당사자 규칙 그대로).
 export async function getApprovalView(
   viewer: Viewer,
-  input: { kind: string; documentId: string },
+  input: { kind: string; documentId: string; readOnlyVisible?: boolean },
   deps?: ApprovalDeps,
 ): Promise<ApprovalView | null> {
   const graph = await findApprovalGraphByDocument(viewer, { documentKind: input.kind, documentId: input.documentId });
@@ -894,7 +972,7 @@ export async function getApprovalView(
     logBlocked: true,
     listOrgSnapshot: deps?.listOrgSnapshot,
   });
-  if (!state.isParty) return null;
+  if (!state.isParty && !input.readOnlyVisible) return null;
 
   const route = currentRouteOf(graph);
   let steps: ApprovalStepView[];
@@ -925,7 +1003,10 @@ export async function getApprovalView(
       );
   }
 
-  actions.push(...(await possibleActions(viewer, { instance: graph.instance, isCandidate: state.isCandidate })));
+  if (state.isParty) actions.push(...(await possibleActions(viewer, { instance: graph.instance, isCandidate: state.isCandidate })));
+  const blocked = state.isCandidate
+    ? await approveBlockedReasonsOf(viewer, graph.instance.documentKind, [graph.instance.documentId])
+    : new Map<string, string>();
 
   const source: ApprovalViewDto = {
     instanceId: graph.instance.id,
@@ -944,6 +1025,7 @@ export async function getApprovalView(
     ],
     currentStepIndex,
     actions,
+    approveBlockedReason: blocked.get(graph.instance.documentId) ?? null,
   };
   return projectApprovalView(viewer, source, { visible: createVisibleMemo(deps?.findVisibility) });
 }
@@ -966,13 +1048,31 @@ export async function loadKindDetails(
     result.set(documentId, {
       title: built.title,
       subtitle: built.subtitle,
-      rows: built.rows.map((row) => ({ label: row.label, value: row.value, tone: row.tone })),
+      // 05-10(D9): 갈래별 복사 — 문자열 행은 세 칸 그대로, 증빙 행은 파일 네 칸(id · name · sizeBytes · contentType)만 더한다(종류가 더 실어도 복사하지 않는다).
+      rows: built.rows.map((row) => ({
+        label: row.label,
+        value: row.value,
+        tone: row.tone,
+        ...(row.files ? { files: row.files.map((file) => ({ id: file.id, name: file.name, sizeBytes: file.sizeBytes, contentType: file.contentType })) } : {}),
+      })),
     });
   }
   return result;
 }
 
-export type InboxResult = { mine: ApprovalInboxItem[]; processed: ApprovalInboxItem[] };
+// 05-01 E5(Round 4 D7): 결재함 숫자 열 머리글 — 목록 단위 구조 값(항목 투영 밖). 지금 목록 요약의 measure 종류로 정한다.
+export type InboxMeasureHeader = "금액" | "일수" | "금액 · 일수" | null;
+
+export type InboxResult = { mine: ApprovalInboxItem[]; processed: ApprovalInboxItem[]; measureHeader: InboxMeasureHeader };
+
+function measureHeaderOf(summaries: Iterable<DocumentSummary>): InboxMeasureHeader {
+  const kinds = new Set<string>();
+  for (const summary of summaries) if (summary.measure) kinds.add(summary.measure.kind);
+  if (kinds.has("money") && kinds.has("days")) return "금액 · 일수";
+  if (kinds.has("money")) return "금액";
+  if (kinds.has("days")) return "일수";
+  return null;
+}
 
 const PROCESSED_LIMIT = 50;
 
@@ -1028,6 +1128,7 @@ export async function listMyInbox(viewer: Viewer, deps?: ApprovalDeps): Promise<
       steps,
       endLines: steps ? routeEndLines(instance.status as ApprovalStatus, steps, instance.updatedAt) : null,
       actions: deps?.withDetails ? await possibleActions(viewer, { instance, isCandidate: true }) : null,
+      approveBlockedReason: null,
     });
   }
 
@@ -1053,6 +1154,7 @@ export async function listMyInbox(viewer: Viewer, deps?: ApprovalDeps): Promise<
       steps: null,
       endLines: null,
       actions: null,
+      approveBlockedReason: null,
     };
   });
 
@@ -1060,12 +1162,22 @@ export async function listMyInbox(viewer: Viewer, deps?: ApprovalDeps): Promise<
   const all = [...mineSources, ...processedSources];
   const idsByKind = new Map<string, string[]>();
   for (const source of all) idsByKind.set(source.kind, [...(idsByKind.get(source.kind) ?? []), source.documentId]);
-  const summaries = new Map<string, object>();
+  const summaries = new Map<string, DocumentSummary>();
   for (const [kind, ids] of idsByKind) {
     const described = await getDocumentKind(kind).describeDocuments(viewer, [...new Set(ids)], { visible });
     for (const [id, summary] of described) summaries.set(`${kind}:${id}`, summary);
   }
   for (const source of all) source.summary = summaries.get(`${source.kind}:${source.documentId}`) ?? null;
+
+  // 05-01 E3: `내 결재` 문서만, 종류마다 id 목록으로 한 번(withDetails와 무관).
+  const blockedIdsByKind = new Map<string, string[]>();
+  for (const source of mineSources) blockedIdsByKind.set(source.kind, [...(blockedIdsByKind.get(source.kind) ?? []), source.documentId]);
+  for (const [kind, ids] of blockedIdsByKind) {
+    const reasons = await approveBlockedReasonsOf(viewer, kind, [...new Set(ids)]);
+    for (const source of mineSources) {
+      if (source.kind === kind) source.approveBlockedReason = reasons.get(source.documentId) ?? null;
+    }
+  }
 
   // 04.1-05(CEO-17): `내 결재` 상세 — 종류마다 id 목록으로 loadDetails 한 번, 같은 노출 메모 · 같은 시계.
   if (deps?.withDetails) {
@@ -1082,5 +1194,65 @@ export async function listMyInbox(viewer: Viewer, deps?: ApprovalDeps): Promise<
   return {
     mine: await Promise.all(mineSources.map((source) => projectInboxItem(viewer, source, { visible }))),
     processed: await Promise.all(processedSources.map((source) => projectInboxItem(viewer, source, { visible }))),
+    measureHeader: measureHeaderOf(summaries.values()),
   };
+}
+
+// 05-10 「내 차례」 [막힘] — 내가 기안한 문서 중 반려된 것과, 승인 뒤 종류가 막힘으로 알린 것(종류 필드 blockedAfterApproval, 증빙 무효 등).
+// 회수 · 작성 중 문서는 막힘이 아니다. 종류마다 승인 문서 id를 한 번만 넘기고(읽기 전용), 글자 · 주소는 종류가 준다.
+export type BlockedDocument = {
+  instanceId: string;
+  kind: string;
+  kindLabel: string;
+  documentId: string;
+  href: string;
+  summary: DocumentSummary | null;
+  cause: { type: "rejected"; rejecterName: string | null } | { type: "after_approval"; situation: string; actionLabel: string; href: string };
+};
+
+const BLOCKED_REJECTED_LIMIT = 50;
+// 승인 문서는 시간이 갈수록 쌓이므로 승인 뒤 막힘이 있는 종류의 문서만, 종류가 준 후보 조건(지출결의는 증빙 무효)으로 SQL에서 먼저 거른 뒤 종류에 넘긴다(05 /review A9 · C6).
+const BLOCKED_APPROVED_LIMIT = 200;
+
+export async function listMyBlockedDocuments(viewer: Viewer, deps?: ApprovalDeps): Promise<BlockedDocument[]> {
+  const visible = createVisibleMemo(deps?.findVisibility);
+  const rejected = await listDrafterInstances(viewer, { drafterId: viewer.id, status: "rejected", limit: BLOCKED_REJECTED_LIMIT });
+  const candidateKinds = listDocumentKinds().flatMap((def) =>
+    def.blockedAfterApproval ? [{ documentKind: def.kind, filter: def.blockedAfterApprovalCandidates ?? null }] : [],
+  );
+  const approved = await listDrafterInstances(viewer, { drafterId: viewer.id, status: "approved", limit: BLOCKED_APPROVED_LIMIT, candidateKinds });
+  const namesVisible = await visible(viewer, "approval.value");
+
+  const found: Omit<BlockedDocument, "summary">[] = rejected.map((row) => {
+    const def = getDocumentKind(row.documentKind);
+    return {
+      instanceId: row.id,
+      kind: row.documentKind,
+      kindLabel: def.label,
+      documentId: row.documentId,
+      href: def.href(row.documentId),
+      cause: { type: "rejected", rejecterName: namesVisible ? row.rejecterName : null },
+    };
+  });
+
+  const approvedByKind = new Map<string, typeof approved>();
+  for (const row of approved) approvedByKind.set(row.documentKind, [...(approvedByKind.get(row.documentKind) ?? []), row]);
+  for (const [kind, rows] of approvedByKind) {
+    const def = getDocumentKind(kind);
+    if (!def.blockedAfterApproval) continue;
+    const blocked = await def.blockedAfterApproval(viewer, [...new Set(rows.map((row) => row.documentId))]);
+    for (const row of rows) {
+      const hit = blocked.get(row.documentId);
+      if (hit) found.push({ instanceId: row.id, kind, kindLabel: def.label, documentId: row.documentId, href: def.href(row.documentId), cause: { type: "after_approval", ...hit } });
+    }
+  }
+
+  const idsByKind = new Map<string, string[]>();
+  for (const item of found) idsByKind.set(item.kind, [...(idsByKind.get(item.kind) ?? []), item.documentId]);
+  const summaries = new Map<string, DocumentSummary>();
+  for (const [kind, ids] of idsByKind) {
+    const described = await getDocumentKind(kind).describeDocuments(viewer, [...new Set(ids)], { visible });
+    for (const [id, summary] of described) summaries.set(`${kind}:${id}`, summary);
+  }
+  return found.map((item) => ({ ...item, summary: summaries.get(`${item.kind}:${item.documentId}`) ?? null }));
 }

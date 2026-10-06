@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useTransition, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Button, type ButtonReasonTone } from "@/ui/button/Button";
 import { isCtrlCombo } from "@/lib/shortcut";
@@ -143,6 +143,12 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
   const disabledReason = refreshSplit.reason;
   // 꼬리가 있으면 그 이유의 다음 한 수는 「새로 고침」이다 — 호출처가 준 다음 한 수는 다른 이유의 짝이라 내린다.
   const nextStep = refreshSplit.refresh ? <RefreshStep onDone={closeNow} /> : (primary?.nextStep ?? null);
+
+  // 웨이브 11 D2 — 이번에 열린 동안 막힘 줄이 한 번이라도 섰으면(빈 사유 칸 등) 이유가 사라져도 빈 묶음을 남긴다. 폰은 그 줄
+  // 높이를 비워 두어 아래에 붙은 시트가 첫 글자에 튀지 않는다. 닫히면 처음으로.
+  const [keepBlockerRow, setKeepBlockerRow] = useState(false);
+  if (open && !keepBlockerRow && (disabledReason || primary?.failure)) setKeepBlockerRow(true);
+  if (!open && keepBlockerRow) setKeepBlockerRow(false);
 
   const focusTarget = initialFocusTarget({
     hasEvidence: Boolean(evidenceField),
@@ -321,7 +327,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
       <div className={styles.actions}>
         {primary ? (
           <>
-            {disabledReason || primary.failure || nextStep ? (
+            {disabledReason || primary.failure || nextStep || keepBlockerRow ? (
               // 막힘 이유(또는 다시 보낼 실패) + 다음 한 수 한 묶음 — PC는 행동 줄 왼쪽 그대로(display: contents), 폰은 버튼 윗줄(사용자 결정 2026-10-01).
               <span className={styles.blocker}>
                 {disabledReason ? (

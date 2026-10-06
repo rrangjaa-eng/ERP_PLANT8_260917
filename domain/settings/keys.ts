@@ -99,11 +99,13 @@ export const TAX_WITHHOLDING_OTHER_INCOME_EXEMPT_THRESHOLD: SettingDef<number> =
 export const TAX_COMPANY_BORNE_RATE: SettingDef<number> = {
   key: "tax.company_borne.rate",
   kind: "historized",
-  schema: z.coerce.number().min(0).max(1),
+  // gross-up은 공급가액 / (1 − 세율)이라 1은 0 나누기다(05-06 돈 검토 m5).
+  schema: z.coerce.number().min(0).lt(1),
   label: "회사 대납 세율",
   hint: "회사가 대신 부담하는 세금의 비율입니다.",
   namespace: "세율",
-  default: 0.088,
+  // 05-06 사용자 결정 2026-09-26 #7 — 회사 대납 22% · gross-up이 기본값.
+  default: 0.22,
 };
 
 export const TAX_COMPANY_BORNE_METHOD_VALUES = ["flat", "gross_up"] as const;
@@ -116,7 +118,7 @@ export const TAX_COMPANY_BORNE_METHOD: SettingDef<TaxCompanyBorneMethod> = {
   label: "회사 대납 계산 방식",
   hint: "단순 비율(flat) 또는 gross-up 중 하나를 고릅니다.",
   namespace: "세율",
-  default: "flat",
+  default: "gross_up",
 };
 
 // 규칙 종류별 적용 기준일(Eng OV-5) — 이 설정은 "어느 날짜 필드를 기준으로
@@ -191,6 +193,8 @@ export const FX_RECENT_RATE_USD: SettingDef<number> = {
 
 // 04-26(D-86 · S4) — 한 차수에 둘 수 있는 견적 줄 수. 보관된 줄은 빼고 조정·견적 외 비용·취소 줄은 센다.
 // 서버 게이트 quote.line-cap과 견적 표(「줄 추가」·키·붙여넣기)가 같은 값을 쓴다 — 상한은 줄을 더할 때만 막는다.
+// 기본값은 여러 줄 지출결의 액션의 입력 상한도 정한다(app/(app)/expenses/actions.ts — 05-08 검토 #5).
+export const QUOTE_LINE_MAX_PER_REVISION_DEFAULT = 300;
 export const QUOTE_LINE_MAX_PER_REVISION: SettingDef<number> = {
   key: "quote_line.max_per_revision",
   kind: "simple",
@@ -198,7 +202,7 @@ export const QUOTE_LINE_MAX_PER_REVISION: SettingDef<number> = {
   label: "차수당 견적 줄 상한",
   hint: "한 차수에 둘 수 있는 견적 줄 수를 정합니다(조정·취소 줄 포함).",
   namespace: "견적 표",
-  default: 300,
+  default: QUOTE_LINE_MAX_PER_REVISION_DEFAULT,
 };
 
 // 완료 처리 강행 허용 — 점검 항목별 boolean 셋(03-CONTEXT.md Claude's
@@ -246,7 +250,6 @@ export const PROJECT_CUSTOMER_APPROVAL_GATE: SettingDef<boolean> = {
   hint: "끄면 고객 승인 전 차수에서도 지출결의를 올릴 수 있습니다.",
   namespace: "프로젝트",
   default: true,
-  readBy: { phase: "5" },
 };
 
 // 04-05(ADMN-09) — 프로젝트 문서 번호 서식. 문서 종류별 키 묶음(Claude
@@ -801,3 +804,520 @@ export const PROJECT_PROFIT_RATE_THRESHOLD: SettingDef<number> = {
 };
 
 SETTING_DEFS.push(PROJECT_PROFIT_RATE_THRESHOLD);
+
+// ── 05-03 지출결의 결재선(EXP-01 · UI-SPEC S13) · 지출결의 문서 번호 ───────────
+// 연차 결재선 17키와 같은 꼴 · 같은 라벨(namespace만 다르다). 기본값도 연차와 같은 4단이고 3단 특정 부서만
+// 기본값 없음(시드가 경영관리본부로 채운다 — domain/seed/expenses.ts). 자기 승인 기본 = 본인 승인(입력 §3).
+const EXPENSE_ROUTE_NAMESPACE = "지출결의 결재선";
+
+export const APPROVAL_ROUTE_EXPENSE_SELF_APPROVAL: SettingDef<ApprovalSelfApprovalValue> = {
+  key: "approval_route.expense.self_approval",
+  kind: "simple",
+  schema: z.enum(APPROVAL_SELF_APPROVAL_VALUES),
+  label: "자기 승인",
+  hint: "기안자가 그 단계 담당일 때",
+  namespace: EXPENSE_ROUTE_NAMESPACE,
+  optionLabels: { skip: "건너뜀", self_approve: "본인 승인" },
+  default: "self_approve",
+};
+
+export const APPROVAL_ROUTE_EXPENSE_STEP1_ENABLED: SettingDef<boolean> = {
+  key: "approval_route.expense.step1.enabled",
+  kind: "simple",
+  schema: z.boolean(),
+  label: "1단 사용",
+  hint: "새 문서부터 적용 · 진행 중 문서는 그대로",
+  namespace: EXPENSE_ROUTE_NAMESPACE,
+  default: true,
+};
+
+export const APPROVAL_ROUTE_EXPENSE_STEP1_ROLE_ID: SettingDef<string> = {
+  key: "approval_route.expense.step1.role_id",
+  kind: "simple",
+  schema: z.string(),
+  label: "1단 담당 계급",
+  hint: "계급 무관 = 그 범위의 누구나",
+  namespace: EXPENSE_ROUTE_NAMESPACE,
+  optionLabels: { "": "계급 무관" },
+  dynamicOptions: "roles",
+  default: "role-team-lead",
+};
+
+export const APPROVAL_ROUTE_EXPENSE_STEP1_SCOPE: SettingDef<ApprovalRouteScopeValue> = {
+  key: "approval_route.expense.step1.scope",
+  kind: "simple",
+  schema: z.enum(APPROVAL_ROUTE_SCOPE_VALUES),
+  label: "1단 조직 범위",
+  namespace: EXPENSE_ROUTE_NAMESPACE,
+  optionLabels: { drafter_team: "기안자 팀", drafter_org_unit: "기안자 본부", company: "전사", org_unit: "특정 부서" },
+  default: "drafter_team",
+};
+
+export const APPROVAL_ROUTE_EXPENSE_STEP1_ORG_UNIT_ID: SettingDef<string> = {
+  key: "approval_route.expense.step1.org_unit_id",
+  kind: "simple",
+  schema: ROUTE_ORG_UNIT_ID_SCHEMA,
+  label: "1단 특정 부서",
+  namespace: EXPENSE_ROUTE_NAMESPACE,
+  dynamicOptions: "org_units",
+  default: "",
+};
+
+export const APPROVAL_ROUTE_EXPENSE_STEP2_ENABLED: SettingDef<boolean> = {
+  key: "approval_route.expense.step2.enabled",
+  kind: "simple",
+  schema: z.boolean(),
+  label: "2단 사용",
+  hint: "새 문서부터 적용 · 진행 중 문서는 그대로",
+  namespace: EXPENSE_ROUTE_NAMESPACE,
+  default: true,
+};
+
+export const APPROVAL_ROUTE_EXPENSE_STEP2_ROLE_ID: SettingDef<string> = {
+  key: "approval_route.expense.step2.role_id",
+  kind: "simple",
+  schema: z.string(),
+  label: "2단 담당 계급",
+  hint: "계급 무관 = 그 범위의 누구나",
+  namespace: EXPENSE_ROUTE_NAMESPACE,
+  optionLabels: { "": "계급 무관" },
+  dynamicOptions: "roles",
+  default: "role-division-head",
+};
+
+export const APPROVAL_ROUTE_EXPENSE_STEP2_SCOPE: SettingDef<ApprovalRouteScopeValue> = {
+  key: "approval_route.expense.step2.scope",
+  kind: "simple",
+  schema: z.enum(APPROVAL_ROUTE_SCOPE_VALUES),
+  label: "2단 조직 범위",
+  namespace: EXPENSE_ROUTE_NAMESPACE,
+  optionLabels: { drafter_team: "기안자 팀", drafter_org_unit: "기안자 본부", company: "전사", org_unit: "특정 부서" },
+  default: "drafter_org_unit",
+};
+
+export const APPROVAL_ROUTE_EXPENSE_STEP2_ORG_UNIT_ID: SettingDef<string> = {
+  key: "approval_route.expense.step2.org_unit_id",
+  kind: "simple",
+  schema: ROUTE_ORG_UNIT_ID_SCHEMA,
+  label: "2단 특정 부서",
+  namespace: EXPENSE_ROUTE_NAMESPACE,
+  dynamicOptions: "org_units",
+  default: "",
+};
+
+export const APPROVAL_ROUTE_EXPENSE_STEP3_ENABLED: SettingDef<boolean> = {
+  key: "approval_route.expense.step3.enabled",
+  kind: "simple",
+  schema: z.boolean(),
+  label: "3단 사용",
+  hint: "새 문서부터 적용 · 진행 중 문서는 그대로",
+  namespace: EXPENSE_ROUTE_NAMESPACE,
+  default: true,
+};
+
+export const APPROVAL_ROUTE_EXPENSE_STEP3_ROLE_ID: SettingDef<string> = {
+  key: "approval_route.expense.step3.role_id",
+  kind: "simple",
+  schema: z.string(),
+  label: "3단 담당 계급",
+  hint: "계급 무관 = 그 범위의 누구나",
+  namespace: EXPENSE_ROUTE_NAMESPACE,
+  optionLabels: { "": "계급 무관" },
+  dynamicOptions: "roles",
+  default: "",
+};
+
+export const APPROVAL_ROUTE_EXPENSE_STEP3_SCOPE: SettingDef<ApprovalRouteScopeValue> = {
+  key: "approval_route.expense.step3.scope",
+  kind: "simple",
+  schema: z.enum(APPROVAL_ROUTE_SCOPE_VALUES),
+  label: "3단 조직 범위",
+  namespace: EXPENSE_ROUTE_NAMESPACE,
+  optionLabels: { drafter_team: "기안자 팀", drafter_org_unit: "기안자 본부", company: "전사", org_unit: "특정 부서" },
+  default: "org_unit",
+};
+
+export const APPROVAL_ROUTE_EXPENSE_STEP3_ORG_UNIT_ID: SettingDef<string> = {
+  key: "approval_route.expense.step3.org_unit_id",
+  kind: "simple",
+  schema: ROUTE_ORG_UNIT_ID_SCHEMA,
+  label: "3단 특정 부서",
+  namespace: EXPENSE_ROUTE_NAMESPACE,
+  dynamicOptions: "org_units",
+};
+
+export const APPROVAL_ROUTE_EXPENSE_STEP4_ENABLED: SettingDef<boolean> = {
+  key: "approval_route.expense.step4.enabled",
+  kind: "simple",
+  schema: z.boolean(),
+  label: "4단 사용",
+  hint: "새 문서부터 적용 · 진행 중 문서는 그대로",
+  namespace: EXPENSE_ROUTE_NAMESPACE,
+  default: true,
+};
+
+export const APPROVAL_ROUTE_EXPENSE_STEP4_ROLE_ID: SettingDef<string> = {
+  key: "approval_route.expense.step4.role_id",
+  kind: "simple",
+  schema: z.string(),
+  label: "4단 담당 계급",
+  hint: "계급 무관 = 그 범위의 누구나",
+  namespace: EXPENSE_ROUTE_NAMESPACE,
+  optionLabels: { "": "계급 무관" },
+  dynamicOptions: "roles",
+  default: "role-ceo",
+};
+
+export const APPROVAL_ROUTE_EXPENSE_STEP4_SCOPE: SettingDef<ApprovalRouteScopeValue> = {
+  key: "approval_route.expense.step4.scope",
+  kind: "simple",
+  schema: z.enum(APPROVAL_ROUTE_SCOPE_VALUES),
+  label: "4단 조직 범위",
+  namespace: EXPENSE_ROUTE_NAMESPACE,
+  optionLabels: { drafter_team: "기안자 팀", drafter_org_unit: "기안자 본부", company: "전사", org_unit: "특정 부서" },
+  default: "company",
+};
+
+export const APPROVAL_ROUTE_EXPENSE_STEP4_ORG_UNIT_ID: SettingDef<string> = {
+  key: "approval_route.expense.step4.org_unit_id",
+  kind: "simple",
+  schema: ROUTE_ORG_UNIT_ID_SCHEMA,
+  label: "4단 특정 부서",
+  namespace: EXPENSE_ROUTE_NAMESPACE,
+  dynamicOptions: "org_units",
+  default: "",
+};
+
+// 지출결의 번호 `{프로젝트 번호}{구분자}{순번}`(사용자 결정 2026-09-26 #6) — 카운터 period = 프로젝트 번호(docs/EXPENSES.md).
+// 구분자는 프로젝트 구분자와 같은 허용 값 · 같은 읽기 대체(허용 밖 저장값 → 기본값).
+export const DOCUMENT_NUMBER_EXPENSE_SEPARATOR: SettingDef<string> = {
+  key: "document_number.expense.separator",
+  kind: "simple",
+  schema: z.string().regex(/^[-_./]?$/),
+  label: "지출결의 번호 구분자",
+  hint: "빈칸 또는 - _ . / 중 한 글자",
+  namespace: "문서 번호",
+  default: "-",
+  readInvalidAsDefault: true,
+};
+
+export const DOCUMENT_NUMBER_EXPENSE_SEQ_DIGITS: SettingDef<number> = {
+  key: "document_number.expense.seq_digits",
+  kind: "simple",
+  schema: z.coerce.number().int().min(1),
+  label: "지출결의 번호 순번 자릿수",
+  hint: "순번을 이 자릿수만큼 0으로 채웁니다(넘치면 자릿수가 늘어나고 잘리지 않습니다).",
+  namespace: "문서 번호",
+  default: 4,
+};
+
+export const DOCUMENT_NUMBER_EXPENSE_SEQ_START: SettingDef<number> = {
+  key: "document_number.expense.seq_start",
+  kind: "simple",
+  schema: z.coerce.number().int().min(0),
+  label: "지출결의 번호 순번 시작값",
+  hint: "프로젝트마다 순번이 시작할 때의 첫 값입니다(기본 1).",
+  namespace: "문서 번호",
+  default: 1,
+};
+
+SETTING_DEFS.push(
+  APPROVAL_ROUTE_EXPENSE_SELF_APPROVAL,
+  APPROVAL_ROUTE_EXPENSE_STEP1_ENABLED,
+  APPROVAL_ROUTE_EXPENSE_STEP1_ROLE_ID,
+  APPROVAL_ROUTE_EXPENSE_STEP1_SCOPE,
+  APPROVAL_ROUTE_EXPENSE_STEP1_ORG_UNIT_ID,
+  APPROVAL_ROUTE_EXPENSE_STEP2_ENABLED,
+  APPROVAL_ROUTE_EXPENSE_STEP2_ROLE_ID,
+  APPROVAL_ROUTE_EXPENSE_STEP2_SCOPE,
+  APPROVAL_ROUTE_EXPENSE_STEP2_ORG_UNIT_ID,
+  APPROVAL_ROUTE_EXPENSE_STEP3_ENABLED,
+  APPROVAL_ROUTE_EXPENSE_STEP3_ROLE_ID,
+  APPROVAL_ROUTE_EXPENSE_STEP3_SCOPE,
+  APPROVAL_ROUTE_EXPENSE_STEP3_ORG_UNIT_ID,
+  APPROVAL_ROUTE_EXPENSE_STEP4_ENABLED,
+  APPROVAL_ROUTE_EXPENSE_STEP4_ROLE_ID,
+  APPROVAL_ROUTE_EXPENSE_STEP4_SCOPE,
+  APPROVAL_ROUTE_EXPENSE_STEP4_ORG_UNIT_ID,
+  DOCUMENT_NUMBER_EXPENSE_SEPARATOR,
+  DOCUMENT_NUMBER_EXPENSE_SEQ_DIGITS,
+  DOCUMENT_NUMBER_EXPENSE_SEQ_START,
+);
+
+// 05-07 팀 비용 지출결의 번호 `T26-0001`(사용자 결정 2026-09-26 #6) — 카운터 `expense_team`, period = 제출일(서울)의 연도.
+// 프로젝트 번호와 같은 서식 다섯 키(접두어 · 연도 자릿수 · 순번 자릿수 · 구분자 · 순번 시작값).
+export const DOCUMENT_NUMBER_EXPENSE_TEAM_PREFIX: SettingDef<string> = {
+  key: "document_number.expense_team.prefix",
+  kind: "simple",
+  schema: z.string(),
+  label: "팀 비용 번호 접두어",
+  hint: "번호 맨 앞에 붙는 문자열입니다(기본 T).",
+  namespace: "문서 번호",
+  default: "T",
+};
+
+export const DOCUMENT_NUMBER_EXPENSE_TEAM_YEAR_DIGITS: SettingDef<number> = {
+  key: "document_number.expense_team.year_digits",
+  kind: "simple",
+  schema: z.coerce.number().int().min(1).max(4),
+  label: "팀 비용 번호 연도 자릿수",
+  hint: "연도를 뒤에서부터 이 자릿수만큼 씁니다(기본 2 → 26).",
+  namespace: "문서 번호",
+  default: 2,
+};
+
+export const DOCUMENT_NUMBER_EXPENSE_TEAM_SEQ_DIGITS: SettingDef<number> = {
+  key: "document_number.expense_team.seq_digits",
+  kind: "simple",
+  schema: z.coerce.number().int().min(1),
+  label: "팀 비용 번호 순번 자릿수",
+  hint: "순번을 이 자릿수만큼 0으로 채웁니다(넘치면 자릿수가 늘어나고 잘리지 않습니다).",
+  namespace: "문서 번호",
+  default: 4,
+};
+
+export const DOCUMENT_NUMBER_EXPENSE_TEAM_SEPARATOR: SettingDef<string> = {
+  key: "document_number.expense_team.separator",
+  kind: "simple",
+  schema: z.string(),
+  label: "팀 비용 번호 구분자",
+  hint: "연도와 순번 사이에 넣을 문자입니다(기본 -).",
+  namespace: "문서 번호",
+  default: "-",
+};
+
+export const DOCUMENT_NUMBER_EXPENSE_TEAM_SEQ_START: SettingDef<number> = {
+  key: "document_number.expense_team.seq_start",
+  kind: "simple",
+  schema: z.coerce.number().int().min(0),
+  label: "팀 비용 번호 순번 시작값",
+  hint: "연도가 바뀌어 순번이 다시 시작할 때의 첫 값입니다(기본 1).",
+  namespace: "문서 번호",
+  default: 1,
+};
+
+SETTING_DEFS.push(
+  DOCUMENT_NUMBER_EXPENSE_TEAM_PREFIX,
+  DOCUMENT_NUMBER_EXPENSE_TEAM_YEAR_DIGITS,
+  DOCUMENT_NUMBER_EXPENSE_TEAM_SEQ_DIGITS,
+  DOCUMENT_NUMBER_EXPENSE_TEAM_SEPARATOR,
+  DOCUMENT_NUMBER_EXPENSE_TEAM_SEQ_START,
+);
+
+// 05-04(EVID-01 · UI-SPEC S13): 증빙 크기 한도 — 06-02가 계획한 같은 이름을 이 페이즈가 등록한다. 첨부 영역 글자 · 크기 오류
+// 문구 · 서명 PUT 주소의 크기 조건에 같이 쓰인다. 오류 문구는 명사형(DECISIONS 2026-09-26 · #87).
+export const EVIDENCE_MAX_SIZE_MB: SettingDef<number> = {
+  key: "evidence.max_size_mb",
+  kind: "simple",
+  schema: z.coerce.number().refine((value) => Number.isInteger(value) && value >= 1 && value <= 100, { message: "숫자 형식 오류 · 10처럼" }),
+  label: "증빙 크기 한도",
+  hint: "폰 사진은 줄여서 올림 · PDF는 원본 크기",
+  namespace: "증빙",
+  unitLabel: "MB",
+  default: 10,
+};
+
+SETTING_DEFS.push(EVIDENCE_MAX_SIZE_MB);
+
+// ── 05-11 정산 결재 결재선(D-98 · UI-SPEC S13) ───────────────────────────
+// 지출결의 결재선 17키와 같은 꼴 · 같은 라벨(namespace만 다르다). 기본값은 1~3단 꺼짐 · 4단 대표 × 전사 · 자기 승인 = 본인 승인 —
+// 담당 PM이 올리고 대표가 승인한다. 3단 특정 부서는 기본값 없음(꺼진 단계라 읽기 대체 ""로 충분하다).
+const SETTLEMENT_ROUTE_NAMESPACE = "정산 결재선";
+
+export const APPROVAL_ROUTE_SETTLEMENT_SELF_APPROVAL: SettingDef<ApprovalSelfApprovalValue> = {
+  key: "approval_route.settlement.self_approval",
+  kind: "simple",
+  schema: z.enum(APPROVAL_SELF_APPROVAL_VALUES),
+  label: "자기 승인",
+  hint: "기안자가 그 단계 담당일 때",
+  namespace: SETTLEMENT_ROUTE_NAMESPACE,
+  optionLabels: { skip: "건너뜀", self_approve: "본인 승인" },
+  default: "self_approve",
+};
+
+export const APPROVAL_ROUTE_SETTLEMENT_STEP1_ENABLED: SettingDef<boolean> = {
+  key: "approval_route.settlement.step1.enabled",
+  kind: "simple",
+  schema: z.boolean(),
+  label: "1단 사용",
+  hint: "새 문서부터 적용 · 진행 중 문서는 그대로",
+  namespace: SETTLEMENT_ROUTE_NAMESPACE,
+  default: false,
+};
+
+export const APPROVAL_ROUTE_SETTLEMENT_STEP1_ROLE_ID: SettingDef<string> = {
+  key: "approval_route.settlement.step1.role_id",
+  kind: "simple",
+  schema: z.string(),
+  label: "1단 담당 계급",
+  hint: "계급 무관 = 그 범위의 누구나",
+  namespace: SETTLEMENT_ROUTE_NAMESPACE,
+  optionLabels: { "": "계급 무관" },
+  dynamicOptions: "roles",
+  default: "role-team-lead",
+};
+
+export const APPROVAL_ROUTE_SETTLEMENT_STEP1_SCOPE: SettingDef<ApprovalRouteScopeValue> = {
+  key: "approval_route.settlement.step1.scope",
+  kind: "simple",
+  schema: z.enum(APPROVAL_ROUTE_SCOPE_VALUES),
+  label: "1단 조직 범위",
+  namespace: SETTLEMENT_ROUTE_NAMESPACE,
+  optionLabels: { drafter_team: "기안자 팀", drafter_org_unit: "기안자 본부", company: "전사", org_unit: "특정 부서" },
+  default: "drafter_team",
+};
+
+export const APPROVAL_ROUTE_SETTLEMENT_STEP1_ORG_UNIT_ID: SettingDef<string> = {
+  key: "approval_route.settlement.step1.org_unit_id",
+  kind: "simple",
+  schema: ROUTE_ORG_UNIT_ID_SCHEMA,
+  label: "1단 특정 부서",
+  namespace: SETTLEMENT_ROUTE_NAMESPACE,
+  dynamicOptions: "org_units",
+  default: "",
+};
+
+export const APPROVAL_ROUTE_SETTLEMENT_STEP2_ENABLED: SettingDef<boolean> = {
+  key: "approval_route.settlement.step2.enabled",
+  kind: "simple",
+  schema: z.boolean(),
+  label: "2단 사용",
+  hint: "새 문서부터 적용 · 진행 중 문서는 그대로",
+  namespace: SETTLEMENT_ROUTE_NAMESPACE,
+  default: false,
+};
+
+export const APPROVAL_ROUTE_SETTLEMENT_STEP2_ROLE_ID: SettingDef<string> = {
+  key: "approval_route.settlement.step2.role_id",
+  kind: "simple",
+  schema: z.string(),
+  label: "2단 담당 계급",
+  hint: "계급 무관 = 그 범위의 누구나",
+  namespace: SETTLEMENT_ROUTE_NAMESPACE,
+  optionLabels: { "": "계급 무관" },
+  dynamicOptions: "roles",
+  default: "role-division-head",
+};
+
+export const APPROVAL_ROUTE_SETTLEMENT_STEP2_SCOPE: SettingDef<ApprovalRouteScopeValue> = {
+  key: "approval_route.settlement.step2.scope",
+  kind: "simple",
+  schema: z.enum(APPROVAL_ROUTE_SCOPE_VALUES),
+  label: "2단 조직 범위",
+  namespace: SETTLEMENT_ROUTE_NAMESPACE,
+  optionLabels: { drafter_team: "기안자 팀", drafter_org_unit: "기안자 본부", company: "전사", org_unit: "특정 부서" },
+  default: "drafter_org_unit",
+};
+
+export const APPROVAL_ROUTE_SETTLEMENT_STEP2_ORG_UNIT_ID: SettingDef<string> = {
+  key: "approval_route.settlement.step2.org_unit_id",
+  kind: "simple",
+  schema: ROUTE_ORG_UNIT_ID_SCHEMA,
+  label: "2단 특정 부서",
+  namespace: SETTLEMENT_ROUTE_NAMESPACE,
+  dynamicOptions: "org_units",
+  default: "",
+};
+
+export const APPROVAL_ROUTE_SETTLEMENT_STEP3_ENABLED: SettingDef<boolean> = {
+  key: "approval_route.settlement.step3.enabled",
+  kind: "simple",
+  schema: z.boolean(),
+  label: "3단 사용",
+  hint: "새 문서부터 적용 · 진행 중 문서는 그대로",
+  namespace: SETTLEMENT_ROUTE_NAMESPACE,
+  default: false,
+};
+
+export const APPROVAL_ROUTE_SETTLEMENT_STEP3_ROLE_ID: SettingDef<string> = {
+  key: "approval_route.settlement.step3.role_id",
+  kind: "simple",
+  schema: z.string(),
+  label: "3단 담당 계급",
+  hint: "계급 무관 = 그 범위의 누구나",
+  namespace: SETTLEMENT_ROUTE_NAMESPACE,
+  optionLabels: { "": "계급 무관" },
+  dynamicOptions: "roles",
+  default: "",
+};
+
+export const APPROVAL_ROUTE_SETTLEMENT_STEP3_SCOPE: SettingDef<ApprovalRouteScopeValue> = {
+  key: "approval_route.settlement.step3.scope",
+  kind: "simple",
+  schema: z.enum(APPROVAL_ROUTE_SCOPE_VALUES),
+  label: "3단 조직 범위",
+  namespace: SETTLEMENT_ROUTE_NAMESPACE,
+  optionLabels: { drafter_team: "기안자 팀", drafter_org_unit: "기안자 본부", company: "전사", org_unit: "특정 부서" },
+  default: "org_unit",
+};
+
+export const APPROVAL_ROUTE_SETTLEMENT_STEP3_ORG_UNIT_ID: SettingDef<string> = {
+  key: "approval_route.settlement.step3.org_unit_id",
+  kind: "simple",
+  schema: ROUTE_ORG_UNIT_ID_SCHEMA,
+  label: "3단 특정 부서",
+  namespace: SETTLEMENT_ROUTE_NAMESPACE,
+  dynamicOptions: "org_units",
+};
+
+export const APPROVAL_ROUTE_SETTLEMENT_STEP4_ENABLED: SettingDef<boolean> = {
+  key: "approval_route.settlement.step4.enabled",
+  kind: "simple",
+  schema: z.boolean(),
+  label: "4단 사용",
+  hint: "새 문서부터 적용 · 진행 중 문서는 그대로",
+  namespace: SETTLEMENT_ROUTE_NAMESPACE,
+  default: true,
+};
+
+export const APPROVAL_ROUTE_SETTLEMENT_STEP4_ROLE_ID: SettingDef<string> = {
+  key: "approval_route.settlement.step4.role_id",
+  kind: "simple",
+  schema: z.string(),
+  label: "4단 담당 계급",
+  hint: "계급 무관 = 그 범위의 누구나",
+  namespace: SETTLEMENT_ROUTE_NAMESPACE,
+  optionLabels: { "": "계급 무관" },
+  dynamicOptions: "roles",
+  default: "role-ceo",
+};
+
+export const APPROVAL_ROUTE_SETTLEMENT_STEP4_SCOPE: SettingDef<ApprovalRouteScopeValue> = {
+  key: "approval_route.settlement.step4.scope",
+  kind: "simple",
+  schema: z.enum(APPROVAL_ROUTE_SCOPE_VALUES),
+  label: "4단 조직 범위",
+  namespace: SETTLEMENT_ROUTE_NAMESPACE,
+  optionLabels: { drafter_team: "기안자 팀", drafter_org_unit: "기안자 본부", company: "전사", org_unit: "특정 부서" },
+  default: "company",
+};
+
+export const APPROVAL_ROUTE_SETTLEMENT_STEP4_ORG_UNIT_ID: SettingDef<string> = {
+  key: "approval_route.settlement.step4.org_unit_id",
+  kind: "simple",
+  schema: ROUTE_ORG_UNIT_ID_SCHEMA,
+  label: "4단 특정 부서",
+  namespace: SETTLEMENT_ROUTE_NAMESPACE,
+  dynamicOptions: "org_units",
+  default: "",
+};
+
+SETTING_DEFS.push(
+  APPROVAL_ROUTE_SETTLEMENT_SELF_APPROVAL,
+  APPROVAL_ROUTE_SETTLEMENT_STEP1_ENABLED,
+  APPROVAL_ROUTE_SETTLEMENT_STEP1_ROLE_ID,
+  APPROVAL_ROUTE_SETTLEMENT_STEP1_SCOPE,
+  APPROVAL_ROUTE_SETTLEMENT_STEP1_ORG_UNIT_ID,
+  APPROVAL_ROUTE_SETTLEMENT_STEP2_ENABLED,
+  APPROVAL_ROUTE_SETTLEMENT_STEP2_ROLE_ID,
+  APPROVAL_ROUTE_SETTLEMENT_STEP2_SCOPE,
+  APPROVAL_ROUTE_SETTLEMENT_STEP2_ORG_UNIT_ID,
+  APPROVAL_ROUTE_SETTLEMENT_STEP3_ENABLED,
+  APPROVAL_ROUTE_SETTLEMENT_STEP3_ROLE_ID,
+  APPROVAL_ROUTE_SETTLEMENT_STEP3_SCOPE,
+  APPROVAL_ROUTE_SETTLEMENT_STEP3_ORG_UNIT_ID,
+  APPROVAL_ROUTE_SETTLEMENT_STEP4_ENABLED,
+  APPROVAL_ROUTE_SETTLEMENT_STEP4_ROLE_ID,
+  APPROVAL_ROUTE_SETTLEMENT_STEP4_SCOPE,
+  APPROVAL_ROUTE_SETTLEMENT_STEP4_ORG_UNIT_ID,
+);

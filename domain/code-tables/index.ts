@@ -36,6 +36,7 @@ export const CODE_TABLES = [
   { key: "project_status", label: "프로젝트 상태" },
   { key: "evidence_type", label: "증빙 종류" },
   { key: "quote_subcategory", label: "견적 분류" },
+  { key: "payment_method", label: "지급 방식" },
 ] as const;
 
 // 04-10(D-93): 코드표 설명 40자 상한 — 서버 판정, DB CHECK 아님(설정 hint와

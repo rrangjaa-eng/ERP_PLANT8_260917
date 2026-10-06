@@ -72,8 +72,8 @@ test.describe("코드표 관리 화면 (MAST-04, ADMN-01, D-36 계약: 화면 �
   // .filterRow가 display:flex인데 gap이 없다(code-tables.module.css) — 링크가
   // 하나뿐인 「숨김 포함」 줄에서는 드러나지 않았지만, 코드표 선택 nav는 링크가
   // 둘이라 두 이름이 한 덩어리로 읽힌다.
-  // quick 261001-hfi(MAST-04) — 견적 분류가 세 번째 표로 늘었다. 이웃한 링크 쌍마다 간격을 본다.
-  test("코드표 선택 링크 셋이 서로 붙어 있지 않다", async ({ page }) => {
+  // quick 261001-hfi(MAST-04) — 견적 분류가 세 번째 표로 늘었다. 이웃한 링크 쌍마다 간격을 본다(05-03 — 지급 방식이 네 번째).
+  test("코드표 선택 링크 넷이 서로 붙어 있지 않다", async ({ page }) => {
     const admin = await createFixtureUser({ roleId: "role-sysadmin" });
 
     await page.goto("/login");
@@ -86,10 +86,11 @@ test.describe("코드표 관리 화면 (MAST-04, ADMN-01, D-36 계약: 화면 �
 
     const nav = page.getByRole("navigation", { name: "코드표 선택" });
     const links = nav.getByRole("link");
-    await expect(links).toHaveCount(3);
+    await expect(links).toHaveCount(4);
     await expect(links.nth(2)).toHaveText("견적 분류");
+    await expect(links.nth(3)).toHaveText("지급 방식");
 
-    for (const index of [0, 1]) {
+    for (const index of [0, 1, 2]) {
       const left = await links.nth(index).boundingBox();
       const right = await links.nth(index + 1).boundingBox();
       expect(left).not.toBeNull();
@@ -133,7 +134,7 @@ test.describe("코드표 관리 화면 (MAST-04, ADMN-01, D-36 계약: 화면 �
     const current = nav.locator("a[aria-current='page']");
     const sibling = nav.locator("a:not([aria-current='page'])");
     await expect(current).toHaveCount(1);
-    await expect(sibling).toHaveCount(2);
+    await expect(sibling).toHaveCount(3);
 
     // 현재 표 링크 색 = 역할 토큰 --text-strong(04.6-15: 스킨 A 역할 토큰). 토큰 값은 hex라 브라우저가 계산하는 rgb() 문자열과 직접
     // 비교하려고 임시 요소에 먹여 같은 방식으로 정규화한다.

@@ -5,27 +5,73 @@ status: approved
 shadcn_initialized: false
 preset: none
 created: "2026-09-24"
-revision: 9
-reviewed_at: 2026-09-25
+revision: "10 r4"
+revised: "2026-10-05"
+reviewed_at: 2026-10-05 (rev 10, gsd-ui-checker APPROVED — D4·D5 FLAG는 UQ-1·UQ-3 상속 값) · 2026-10-05 /plan-design-review + Codex 반영(rev 10 r2) · 2026-10-05 재계획 결정 반영(rev 10 r3 — 06-REVIEWS C14)
 ---
 
 # Phase 6 — UI Design Contract (지급·증빙·법인카드·구매 요청, 경영관리)
 
-> **미리 쓴 계약이다.** 이 문서는 Phase 4(견적 원장, 브랜치 `origin/claude/gsd-progress-e1nzgu` 진행 중) ·
-> Phase 04.1(결재 모듈, 브랜치 `origin/claude/phase-04.1-plan-1iqtwe` 계획만) · Phase 5(지출결의, CONTEXT만)가 끝나기 **전에**
-> 썼다. 이 페이즈의 화면 대부분은 아직 없는 화면(지출결의 목록·문서 화면, 견적 줄 표의 행 행동, 정산 결재 버튼) 위에 얹힌다.
-> 그래서 main에 없는 것에 기대는 요소마다 본문에 **`UA-6xx`**(이 문서의 UI 가정) 또는 **`A-6xx`**(`06-RESEARCH.md`의 의존 가정)를
-> 붙였다. `/gsd-plan-phase 6` 직전에 아래 「Phase 4·5 의존 가정 (UI)」 표를 한 줄씩 다시 확인하고, 어긋난 줄이 있으면
-> 이 문서를 먼저 고친다.
+> **기준 = main.** `docs/design/SYSTEM.md` · `DECISIONS.md` · `tokens.css` · `ui/`는 **origin/main `55647a0`**(04.3 · 04.5 · 04.6 스킨 A가 들어온 판)을 따른다.
+> 이 문서의 「§」 번호와 `파일:줄`은 그 판 기준이다. rev 9의 「Phase 4 브랜치판 SYSTEM」 기준 문장은 지웠다 — 그 판의 절은 모두 main에 들어왔다.
+> 지출결의 목록·문서 화면·첨부 영역은 Phase 5(05 브랜치, 아직 main 밖)가 만든다 — 그 화면에 기대는 요소는 본문에 **`UA-6xx`** · **`A-6xx`**를 붙였다.
 >
-> **기준 문서:** `docs/design/SYSTEM.md`는 **Phase 4 브랜치판**(`git show origin/claude/gsd-progress-e1nzgu:docs/design/SYSTEM.md`,
-> main 대비 +180/-52)을 따른다 — §7-15 폼 · §7-16 페이지 줄 · §7-17 확인 모달 · §7-5 보강 · §8 규칙 3 담당 표기 · §7-3 (가)~(자)가
-> 그 판에만 있고 Phase 4 머지와 함께 main에 들어온다(UA-601). 아래에서 「§」 번호와 줄 번호는 그 브랜치판 기준이다.
-> `tokens.css`는 두 판이 같다(`diff` 0줄).
->
-> 이 문서는 **새 시각 언어를 만들지 않는다.** 새 색·서체·radius·그림자·간격·토큰 0개. 시스템 수준 규칙이 필요한 곳은 전부
-> 「시스템 변경 제안」(SP-1~SP-7)으로 올렸고, 화면 하나만의 예외는 0건이다. 이 문서는 `SYSTEM.md`·`DECISIONS.md`·`tokens.css`를
-> 고치지 않는다 — 제안은 계획의 첫 태스크가 `DECISIONS.md` → `SYSTEM.md` 순서로 옮긴다(CLAUDE.md 프론트엔드 규칙).
+> 이 문서는 **새 시각 언어를 만들지 않는다.** 새 색·서체·radius·그림자·간격·토큰 0개, **옛 토큰 이름 사용 0개**(`--bg` `--surface` `--fg` `--muted`
+> `--danger` `--warning` `--success` `--fs-*` `--modal-w` `--row-min` `--line-strong` — main `tokens.css`에 정의 0, `test/unit/design/tokens.test.ts` 「옛 이름 없음」).
+> 시스템 수준 규칙은 전부 「시스템 변경 제안」(SP-1~SP-8, SP-6은 rev 10에서 철회)으로 올렸고 화면 하나만의 예외는 0건이다. 이 문서는 `SYSTEM.md` · `DECISIONS.md` ·
+> `tokens.css` · `ui/status-tag/status-map.ts`를 고치지 않는다 — **계획의 첫 태스크**가 `DECISIONS.md` → `SYSTEM.md`(→ `status-map.ts`) 순서로 옮긴다(CLAUDE.md §6 · `.claude/rules/frontend.md`).
+
+**rev 10(2026-10-05) — 바꾼 것만(나머지 S1~S22 · SP · 문구 · 사용자 결정은 rev 9 그대로):**
+1. 토큰 → main 두 단 역할 이름(SYSTEM §1-4 :79-118 · §2-2 :161-167). 「2px 섹션 선」 → 섹션 시작 1px `--border-row`(§4-2 :251-264, `DetailScreen.Section`), 합계 글자 18 → `--text-body` 14 + `--fw-bold`(CHECKLIST ⑥).
+2. 한 건 폼 S9(카드 사용 등록·수정) · S12(구매 요청 신청) · S13(구매 완료) → **옆 패널**(`SidePanel` + `PanelForm` · `Form layout="panel"`, SYSTEM §7-8 :1010 · §7-20 :1240 · DECISIONS :1456 · CHECKLIST §1 2026-09-27). 패널 안 「바꾸기」 목록(S10) 규칙 = SP-8.
+3. 상태 낱말 → `ui/status-tag/status-map.ts` 한 표에 더한다(새 `status-display.ts` 없음). `신청`(06) 대신 04.3의 `신청됨`을 다시 쓴다. SP-2는 SYSTEM §7-5 보강 한 줄.
+4. 화면 틀: 목록 = `ListScreen`, 문서 화면 섹션 = `DetailScreen.Section`. SP-1(선택 표)은 04.6 `ui/table` 위에 다시 썼다. SP-1 · SP-4 · SP-8은 DECISIONS → SYSTEM 승격이 계획 첫 태스크.
+5. Component Inventory = main `ui/` 27개.
+6. 06-11 증빙 표면 = 05 결정 「결재 중 증빙」(아래 「증빙 판정 규칙」). SP-6 철회.
+7. 6.1 자리: 증빙 유무는 한 함수 `hasEvidence`(가칭) — 아래 「증빙 판정 규칙」.
+8. CLAUDE.md §7 점검: 칸 오류 문구를 SYSTEM §8 규칙 3(명사형 · 높임말 종결 금지)으로 고쳤다. 화면별 점검은 「사용성 점검」 절.
+9. gap-audit 06 행(38 · 67 · 79 · 80 · 129 · 159 · MF:44) → 아래 「사용자 결정(10/5 00:55)」과 각 표면.
+10. **r2(같은 날 `/plan-design-review` + Codex 반영 — rev 번호 그대로):** 지적 표 `design-review-rev10.md`. 본문의 `r2 F#` · `r2 Codex R#` 표시가 반영 자리다. 밤 위임 추천안으로 정한 문구 · 배치 5건(F3 `구매 요청 중` · F9 `예정 지급` 그룹 · F10 증빙 삭제 `되돌리기` · F8/O-23 짝 격자 · C1 합계 14 굵게)은 **사용자 확정(10/5 01:53)**.
+11. **r3(같은 날 재계획 — `06-REVIEWS.md` C14, 새 화면 디자인이 아니라 결정 반영 · rev 번호 그대로):** ① 열린 선택 16행(O-1 · 3 · 4 · 5 · 7 · 8 · 10~17 · 19 · 20)과 O-2를 **확정**으로 표기(사용자 카드 2026-10-05, 추천안 — U-6) ② **S23 반려 · 회수 지출결의 종결** 절 신설(C10 · U-3 추천안 — 기안자 + 경영관리, 사유 필수, 되돌림 없음) ③ SP-8 = 05 `ui/pick-dialog/PickDialog` 위에 얹는다(`ui/confirm-dialog` 새 갈래 없음 — C11) ④ 로드 오류 문구 명사형 `… 불러오지 못함 · 다시 시도`(`error-copy-noun-style.test.ts` — C13) ⑤ S15 · S18 섹션 부제 삭제 — 그룹 머리글 · 합계 행이 말한다(C13 · B-C1 (c)) ⑥ S19 선결제 기한 초과 받는 사람 = 기안자(B-C8 추천안) ⑦ 완료 프로젝트 사후 처리 연다(U-4) ⑧ 카드 대사 금액 실행가 초과 = 파일이 이김 · 표시만(U-8) ⑨ 공용 카드 사용 등록은 `cards.proxy` 권한자만(U-2) ⑩ 계획 재조정: 지급 보기 URL = 05 목록 관례 `?status=지급 대상` · `?status=지급 완료`(S1 · S3 · Copywriting — 옛 `?view=pay|paid` 삭제) · S22 거부 문구 = 04 상수 `리저브 기록 권한 없음` · S13 증빙 = 저장 뒤 상세(S9)에서 첨부, S13에 첨부 영역 없음(사용자 카드 2026-10-05). 손댄 자리의 SYSTEM 인용은 줄 번호 대신 절 이름(B-C12). 화면 검토는 실행 뒤 `/design-review`(+Codex). 본문의 `r3` 표시가 반영 자리다.
+12. **r4(같은 날 재계획 iter1 — 사용자 결정 넷 반영, 새 시각 언어 없음 · rev 번호 그대로):** ① **Q-B 열기(UC-6 — 사용자 결정 2026-10-05, 채팅으로 확정)** — 완료 프로젝트에도 `cards.proxy` 권한자는 견적 외 비용 카드 사용을 등록한다(S9 「완료 프로젝트」 대리 등록 갈래 그대로, 서버는 04 `project.line-edit` D-47 ③ 갈래를 지난다 — 06-07 · 06-09) ② **Q-C 풀기(UC-7)** — 종결 지출결의는 견적 줄 금액 셀 D-66 읽기 전용 계산에서도 빠진다(S14 · S23 결과 줄 그대로, 06-13) ③ **Q-E 기록 · 표시(UC-5)** — 완료 프로젝트 줄의 구매 완료는 남은 실행가를 넘어도 막지 않고 `실행가 초과 {초과액}`을 S13 · S11에 보이며 행동 로그에 남긴다, 완료 아닌 프로젝트는 Q3 막음 그대로(S13 · 06-12) ④ **Q-F 표시만(UC-4)** — 증빙 금액이 승인액 · 남은 실행가를 넘으면 증빙 확인 자리(S4 · S1 제자리 확인)에 `승인액보다 +{차액}` · `실행가 초과 {초과액}` 한 줄, 막지 않음(06-06 · 06-17) ⑤ 문구 하나 더 — 새 차수가 생긴 뒤 저장하면 `견적 새 차수 · 새로 고침`(S9 · S12 — 06-07 X-2). 본문의 `r4` 표시가 반영 자리다.
+13. **r5(같은 날 재계획 iter3 — 교차 검토 2회차 N-2 · N-3, 새 시각 언어 없음 · rev 번호 그대로):** ① 문구 하나 더 — 고정 연결(카드 사용 수정 · 삭제 되돌리기, 구매 완료, 구매 요청 되돌리기)의 견적 줄이 새 차수에서 빠졌거나 보관됐으면 `견적 줄 빠짐 · 새로 고침`(Q-H 밤 위임 — 추천안으로 진행, 아침 확인 · 06-09 · 06-12 · 06-14) ② S14 카드 붙잡은 줄 — 카드 사용 · `신청됨` 구매 요청이 붙은 줄의 `삭제`는 `취소`, 실행가를 그 아래로 내리면 상태 2행 `실행가 초과 {초과액}` 표시만(Q-G 밤 위임 — 추천안으로 진행, 아침 확인 · 06-07 · 06-13). 본문의 `r5` 표시가 반영 자리다.
+
+### 사용자 결정(10/5 00:55)
+
+사용자가 `reconcile.md` §8 아침 질문 Q2~Q7을 추천안대로 확정했다(2026-10-05 00:55 KST, 코디네이터 전달). 본문 해당 자리에 `사용자 결정(10/5 00:55) Q<n>`을 붙였다.
+
+| Q | 결정 | 영향 표면 | gap-audit |
+|---|---|---|---|
+| Q2 | 구매 완료한 요청은 취소하지 않는다 — 취소는 `신청됨`에서만. 잘못 처리한 구매 완료는 조정 줄(D-83)로 고친다 | S11 · S13 · 「Destructive — 구매 요청 취소」 | MF:44(전표 「주인 없음」 복귀 경로가 생기지 않음) |
+| Q3 | 카드 · 구매 요청 쪽도 견적 줄 실행가 초과를 막는다(지출결의 쪽과 같게). 상한 = 그 줄 실행가뿐(고정 상한 없음) | S9 · S10 · S12 · S13 · 「막힘 — 카드 사용 폼」 · 「막힘 — 구매 요청 폼」 | — |
+| Q4 | 지급 방식 ↔ 증빙 종류 짝을 서버가 막는다. 짝은 설정, 기본값 빈 값(비면 막지 않음) | S1 · S2 · S5 · S20 · 「거부 — 일괄 지급 건별 결과」 | 80 |
+| Q5 | 공용 법인카드(소지자 · 팀 없는 카드)를 06에서 받는다 — 카드 자격 판정에 갈래 하나(지금 스키마에 없음 — S9) | S8 · S9 · S13 · 권한 표 | 67 |
+| Q6 | 카드 사용일은 오늘까지, 지급일은 미래 허용(예정일) | S2 · S5 · S9 · 「Error — 지급일 · 지급 예정일 칸」 · 「Error — 카드 사용 폼 칸」 | 129 |
+| Q7 | 계산서 없는 카드 매출 — 06은 그대로(기존 「강행 허용」 설정으로 넘김), 카드 매출 입력은 Phase 9 | S18 | 159 |
+
+gap-audit 38(완료 프로젝트의 구매 완료)은 Q 목록 밖이었고 **사용자 결정(2026-10-05 U-4)으로 확정**했다(r3) — 완료 프로젝트도 지급 · 지급 취소 · 구매 완료 · 경영관리의 증빙 붙이기는 된다. PM(기안자)의 추가 붙임만 완료 프로젝트에서 막는다(「증빙 판정 규칙」 · S5 · S13). 79는 05 결정(아래)으로 정해졌다.
+
+---
+
+## 증빙 판정 규칙 (rev 10 — 05 결정 「결재 중 증빙」 · 6.1 자리)
+
+**05 결정(사용자 2026-10-04, `/mnt/project-files/05-prep/evidence-in-approval-rule.md` §1-§2 · 답):**
+- 결재 중(`submitted` · `in_review`): **아무도 떼지 않는다.** 붙이는 것은 메뉴 권한 `expenses.evidence_attach`(라벨 `결재 중 증빙 붙이기`, 관리자가 경영관리에게 켬) 쓰기 권한자만. 금액 · 부가세를 다시 계산하지 않는다.
+- 승인 뒤: 기안자만 붙인다(떼기 없음). 잘못 붙은 파일은 시스템 관리자가 `expenses.evidence_void`로 **무효 처리**한다.
+- 작성 중 · 반려 · 회수: 기안자가 붙이고 뗀다(반려 · 회수 뒤에는 경영관리가 붙인 파일도 뗄 수 있다).
+- **의존:** `expenses.evidence_attach`는 05 브랜치에 아직 0건이다 — **05-09가 실행될 때 더한다**. 06의 증빙 표면(06-11 · S4 · S7)은 05-09 머지 뒤에 착수한다(UA-606).
+- **완료 프로젝트(r3 — 사용자 결정 2026-10-05 U-4):** 프로젝트가 `completed`여도 경영관리(`expenses.evidence_attach` 권한자)의 증빙 붙이기는 된다. 기안자(PM)의 승인 뒤 추가 붙임은 완료 프로젝트에서 막는다 — 붙이기를 렌더하지 않고 잠김 한 줄 `완료 프로젝트 · 증빙은 경영관리`(05 첨부 영역의 잠김 줄 자리), 서버도 거부. 무효 처리(시스템 관리자)는 그대로.
+
+**06에 미치는 것:**
+- **「살아 있는 파일」 = `removed_at IS NULL AND voided_at IS NULL`.** 무효 파일은 증빙 개수 · `증빙 없음` · P3 · 견적 줄 파생 · 완료 전 점검(D-611) · 「내 차례」 어디에도 세지 않는다.
+- **증빙 확인(D-602)은 결재 통과 뒤에만 있다**(「상태 → 1차」 P0). 그래서 확인을 풀어 주는 서버 훅은 두 경로뿐이다 — **승인 뒤 기안자 「추가」**(파일 + 그때 적는 증빙 금액)와 **시스템 관리자 「무효」**. 무효 뒤 살아 있는 파일이 0이면 증빙 값은 `증빙 없음`(P3 · P6 갈래)이다. 결재 중 권한자 추가는 확인 기록이 없으므로 확인을 건드리지 않고 결재 인스턴스 `version`만 올린다(05-09).
+- **SP-6 「마지막 증빙 삭제 확인」은 철회한다** — 떼기가 있는 상태(작성 중 · 반려 · 회수)에는 확인 기록이 없고, 확인 기록이 있는 상태(승인 뒤)에는 떼기가 없다. 그 상태의 파일 삭제는 §7-10 보통 삭제(05 규칙)다. 무효 처리의 확인 창은 05 표면(05-09)이 정하고, 06은 결과(확인 풀림 · `증빙 없음`)만 그린다.
+- 결재 중 기안자 화면의 잠김 한 줄 `결재 중 · 증빙은 경영관리`는 05 표면(05-09 §5)의 것이다 — 06은 같은 낱말을 다시 쓰지 않는다.
+
+**증빙 유무는 한 함수(6.1 자리):** 「증빙이 있나」를 묻는 모든 화면 · 게이트 · 신호는 **한 서버 함수 `hasEvidence`(가칭)** 하나만 부른다 — S1 증빙 칸 · S1 선택 칸 · S4 · S5 · S14 견적 줄 파생 · S18 미결 · S19 · `payment.evidence-required` 게이트 · 06-23 신호(05 `listEvidenceVoidSignals`와 한 신호). 파일 수를 화면 · 액션이 직접 세지 않는다. 6.1-12가 이 함수에 증빙 기록(`evidence_import_records`)을 더해 넓힌다.
+**6.1이 덮어쓸 것은 미리 만들지 않는다:** D-602는 작성자가 직접 올리는 파일에만 남는다 · D-6117 「등록이 곧 확인」 · 카드 대사는 카드사 파일 금액이 이긴다 — 06은 이 셋의 화면(별도 확인 상태 · 대사 화면)을 만들지 않는다.
+**카드 대사 금액이 견적 줄 실행가를 넘을 때(r3 — 사용자 결정 2026-10-05 U-8):** 파일이 이긴다 — 직원 등록(S9 · S13)은 Q3대로 막지만 6.1 대사 덮기는 막지 않고 **초과 표시만** 한다. 표시 화면은 6.1 몫이고, 06은 실행가 초과 막음 규칙에 대사 경로 예외 자리만 둔다(06-07).
+**6.1이 올라탈 자리(화면 쪽):** ① 증빙 상태 판정(`resolveEvidenceStatus` 류)의 입력에 증빙 기록 수와 「등록이 곧 확인」 자리를 둔다 — 화면은 서버가 준 증빙 낱말만 그린다. ② S1 `[증빙 ▾]` 필터 값은 서버 열거에서 온다(06-20 — 값을 더해도 화면 코드 변경 없음). ③ S8 「등록」 칸은 저장된 등록 경로 한 칸(`registered_via` 가칭)과 `purchase_request_id`에서 파생한다(6.1이 값을 더한다). ④ S4 확인 풀림 · S9 카드 사용 저장 · S11 구매 요청 취소 · 카드 사용 보관에 서버 훅 자리(붙임 떼기 포함)를 둔다 — 화면 변화 없음.
 
 ---
 
@@ -35,22 +81,22 @@ reviewed_at: 2026-09-25
 
 | 일 | 자리 | 근거 |
 |---|---|---|
-| 지급 대상 고르기 · 일괄 지급 완료 | **지출결의 목록 `/expenses`의 「지급 대상」 보기**(지급 권한자의 기본 보기) — S1·S2 | `SYSTEM.md` §6-1(317~362행)의 예시 화면이 곧 「지출결의 목록 + `이번 주 지급` 그룹 머리글」이다(332행). CONTEXT가 기준으로 지목한 그룹이 이미 이 목록의 것이다 |
+| 지급 대상 고르기 · 일괄 지급 완료 | **지출결의 목록 `/expenses`의 「지급 대상」 보기**(지급 권한자의 기본 보기) — S1·S2 | `SYSTEM.md` §6-1(:363~)의 예시 화면이 곧 「지출결의 목록 + `이번 주 지급` 그룹 머리글」이다. CONTEXT가 기준으로 지목한 그룹이 이미 이 목록의 것이다 |
 | 증빙 확인 · 금액 수정 · 증빙 면제 · 한 건 지급 · 지급 예정일 바꾸기 · 지급 취소 | **지출결의 문서 화면 `/expenses/[id]`**의 「증빙」·「지급」 섹션 — S4·S5. **금액을 고치지 않는 증빙 확인은 지급 대상 목록 행에서도 한다** — 확인 모달 + 첨부 보기 칸(S1 「제자리 증빙 확인」, SP-7, rev 9 DR-4) | 증빙 파일을 보면서 확인해야 한다. 칸을 고치는 일은 모달에 넣지 않는다(§7-8 「폼은 화면이다」) — 제자리 확인 모달은 입력 칸이 없고 파일을 보기만 한다 |
 | 리저브 줄 증빙 첨부 | **리저브 대장 `/pnl/reserves`**의 `증빙` 열 → 표 아래 펼침 섹션 — S22(D-60) | 리저브 줄이 사는 원장 안에서 붙인다. 행 시트는 보기 전용이라(§7-3 (바)) 거기에 두지 않는다 |
-| 카드 사용 등록 · 경영관리 대리 등록 | **법인카드 `/cards`** 목록 + 같은 폼 — S8·S9 | 1차 메뉴 「법인카드」가 이 원장이다(§6-0 · `ui/shell/role-menu.ts` `TOP_BAR_MENU`) |
+| 카드 사용 등록 · 경영관리 대리 등록 | **법인카드 `/cards`** 목록 + 옆 패널(목록을 보며 한 건씩 — §7-8 :1010) — S8·S9 | 1차 메뉴 「법인카드」가 이 원장이다(§6-0 · `ui/shell/role-menu.ts` `TOP_BAR_MENU`) |
 | 구매 요청 처리(구매 완료 · 취소) | **`/cards/purchases`**(법인카드 안의 하위 목록) — S11~S13 | 구매 완료의 결과가 카드 사용 건이다(EXP-10) |
 | 매출 세금계산서 발행 요청 처리 | **`/projects/issue-requests`**(프로젝트 안의 하위 목록) + 프로젝트 상세 매출 섹션 — S16·S17 | 처리 = 매출 섹션 발행 줄 입력(D-610). 발행 줄 표가 거기 있다 |
-| 한눈에 보기 | **「내 차례」 `/`** — S19 | 워드마크가 늘 `/`로 간다(§6-0 295행). 「내 차례」가 역할별 첫 화면이다(§6-1 357행 · UX-02) |
+| 한눈에 보기 | **「내 차례」 `/`** — S19 | 워드마크가 늘 `/`로 간다(§6-0). 「내 차례」가 역할별 첫 화면이다(§6-1 · UX-02) |
 
-- **버린 안 ① 한 화면 탭(「경영관리」 화면에 지급·증빙·구매·발행 탭):** 시스템에 탭 컴포넌트가 없고 「탭 없음」이 규칙이다(§6-2 392행 · §7-2 724행 설정 화면).
+- **버린 안 ① 한 화면 탭(「경영관리」 화면에 지급·증빙·구매·발행 탭):** 시스템에 탭 컴포넌트가 없고 「탭 없음」이 규칙이다(§6-2 · §7-2 설정 화면).
   1차 메뉴는 다섯 고정이라(D-22 · `TOP_BAR_MENU`) 여섯째 메뉴가 필요하고, 탭마다 1차가 달라 「한 화면 1차 1개」(§7-1)가 깨진다.
-- **버린 안 ② 한 화면 섹션(지급·구매·발행을 2px 선 섹션으로 세로로):** 네 목록의 행 모양·1차·페이지가 서로 달라 한 화면에 1차가 넷이 된다.
+- **버린 안 ② 한 화면 섹션(지급·구매·발행을 `DetailScreen.Section`으로 세로로):** 네 목록의 행 모양·1차·페이지가 서로 달라 한 화면에 1차가 넷이 된다.
   진입도 1차 메뉴 밖이라 「내 차례」 말고는 들어갈 길이 없다.
 - **하위 목록(`/cards/purchases` · `/projects/issue-requests`)의 진입**은 부모 목록 필터 줄 오른쪽의 3차 링크(건수 붙임, `구매 요청 3`)와
   「내 차례」 두 곳이다. `/pnl` 안의 「리저브 대장」 링크(04-UI-SPEC B-13) 선례를 규칙으로 올린다 — SP-4.
 - **D-601 — 대행 없음:** 어느 화면에도 대표·대리 처리 UI가 없다. 경영관리 권한이 없는 사람에게 지급·증빙 확인·구매 완료 버튼은
-  비활성으로도 서지 않고(렌더하지 않음) 막힘 줄·EMPTY 줄에 담당만 적는다: `· 지급은 경영관리` · `· 구매는 경영관리`(§8 규칙 3, 1083행).
+  비활성으로도 서지 않고(렌더하지 않음) 막힘 줄·EMPTY 줄에 담당만 적는다: `· 지급은 경영관리` · `· 구매는 경영관리`(§8 규칙 3).
 - 이 선택은 「열린 선택」 O-1로 사용자 확인 후보에 올린다.
 
 ---
@@ -67,7 +113,7 @@ reviewed_at: 2026-09-25
 | UA-603 | 번호 페이지 `ui/pagination/Pagination`(§7-16, `href`/`onPageChange` 유니언)이 있다 | 04-UI-SPEC.md 149행 · `.planning/phases/04-project-quote-ledger/04-29-PLAN.md` | Phase 4 브랜치에만(2026-09-25 재확인 — 브랜치 `a8c95fa` `ui/`에 있음, main에 없음) | `ls ui/pagination` |
 | UA-604 | `ui/table/Table`이 읽기 표 · 편집 표(`role="grid"`) · 그룹 머리글 · 폰 칸 접기 · 좁은 PC 열 접기를 한다. **선택 열(체크박스)과 행 단위 부분 처리는 없다** — SP-1이 더한다 | main `ui/table/Table.tsx` · `use-grid-keyboard.ts`(범위 선택만, 행 선택 없음 — 실측) | main에 있음(선택 열은 설계 없음) | `grep -n "rowSelect\|selectable" ui/table/*.tsx` |
 | UA-605 | 지출결의 목록 `/expenses`(§6-1, 상태 필터·그룹 머리글·합계 줄)와 문서 화면 `/expenses/[id]`(§6-3 한 열, 제출 뒤 읽기 전용)를 Phase 5가 만든다. 이 페이즈는 그 목록에 보기 둘(「지급 대상」·「지급 완료」)과 문서 화면에 섹션 둘(「증빙」 확인부·「지급」)을 얹는다 | main `app/(app)/expenses/page.tsx`(빈 `ListEmpty` 자리표시자, 실측) · 05-CONTEXT.md | 설계 없음(Phase 5는 CONTEXT만, UI-SPEC·PLAN 없음) | Phase 5 UI-SPEC의 라우트·필터 이름·문서 화면 섹션 순서·1차 규칙을 읽고 S1·S3·S4·S5를 맞춘다 |
-| UA-606 | 지출결의 폼의 증빙 칸 묶음 = 첨부 영역(§7-10) + **증빙 금액(공급가) 칸**(PM이 첨부 때 적는다, D-602) + 서버 계산 한 줄(§6-3 423행). 제출 뒤에도 PM은 증빙을 더하거나 뗄 수 있다 | 05-CONTEXT.md Claude's Discretion(업로드 경로 담당) · `docs/inputs/phase-06-payment.md` §5 · A-608 | 설계 없음 | Phase 5 UI-SPEC에서 증빙 금액 칸의 자리·이름, 제출 뒤 증빙 편집 허용 여부를 확인 |
+| UA-606 | 지출결의 폼의 증빙 칸 묶음 = 첨부 영역(§7-10) + **증빙 금액(공급가) 칸**(PM이 첨부 때 적는다, D-602) + 서버 계산 한 줄(§6-3). **제출 뒤 증빙 편집은 05 결정(rev 10)**: 결재 중 = 떼기 없음 · 붙이기는 `expenses.evidence_attach` 권한자만 / 승인 뒤 = 기안자 붙이기만 · 무효는 시스템 관리자(「증빙 판정 규칙」) | 05-CONTEXT.md Claude's Discretion(업로드 경로 담당) · `docs/inputs/phase-06-payment.md` §5 · A-608 | 설계 없음 | Phase 5 UI-SPEC에서 증빙 금액 칸의 자리·이름, 제출 뒤 증빙 편집 허용 여부를 확인 |
 | UA-607 | 결재 상태의 화면 낱말은 04.1 UI-SPEC을 따른다 — 제목 옆 `결재 중`(accent) · 표 `{단계} 결재 중` · `반려`(danger) · `회수`(muted) · 승인 `승인 09-18`(success). 지출결의 자기 승인은 「본인 승인」 표시로 통과(05-CONTEXT) | `origin/claude/phase-04.1-plan-1iqtwe:.planning/phases/04.1-approvals-leave/04.1-UI-SPEC.md` 164~171행 · 05-CONTEXT.md 「이미 확정된 입력」 셋째 줄 · A-606 | 계획에만(04.1 브랜치 UI-SPEC, 미실행) | 04.1 머지 뒤 `app/(app)/approvals`·`ui/status-tag` 매핑 표에서 낱말을 다시 읽는다 |
 | UA-608 | 견적 줄 표의 행 행동 「지출결의 올리기」(`Ctrl+E`, 힌트 줄 표기 포함)와 폰 행 시트의 같은 행동을 Phase 5가 켠다. 이 페이즈는 그 **같은 자리**에서 문을 가른다(구매 요청 / 지출결의) | `SYSTEM.md` §6-2 385행 힌트 줄 `지출결의 올리기 Ctrl+E` · 05-CONTEXT.md(「폰 시트의 「지출결의 올리기」를 이 페이즈에서 켠다」) | 설계 없음(행동의 자리 — 행 끝 3차인지 표 위 버튼인지 — 미정) | Phase 5 UI-SPEC에서 행동의 자리·라벨·단축키를 읽고 S14의 「구매 요청」을 같은 자리에 둔다 |
 | UA-609 | 견적 줄 표 상태 열은 `StatusTag` `text` 변형이고 D-66 읽기 전용 셀 이유는 `지출결의 26001-0004 연결됨 · 고치려면 새 차수` 꼴이다 | 04-UI-SPEC.md 300~301 · 372행 · A-602 | Phase 4 브랜치에만(04-UI-SPEC은 main에도 있으나 구현은 브랜치) | 머지 뒤 `app/(app)/projects/[id]/quote-table.tsx` 상태 열 렌더와 읽기 전용 이유 함수 이름 |
@@ -77,7 +123,7 @@ reviewed_at: 2026-09-25
 | UA-613 | 거래처 계좌는 `accountBank` + `maskTail4()`(`****-**-1234`)로 보이고, 정보 항목 `vendor.account_number_unmasked`가 있는 사람에게만 3차 「번호 보기」/「가리기」가 서며 누르면 `mask_reveal` 행동 로그가 남는다. 지금 관리자 거래처 화면의 `AccountNumberCell`을 지급 화면이 두 번째로 쓴다 | main `db/schema/vendors.ts:20-23` · `lib/crypto.ts:91-94` · `app/(app)/admin/vendors/account-number.tsx` · `domain/vendors/index.ts:370-390`(실측) | main에 있음 | 두 번째 사용처가 생기므로 `ui/account-number/`로 옮길지(DESIGN §4 규칙 3) — 계획이 정한다 |
 | UA-614 | 설정 화면(`/admin/settings`)은 레지스트리 키를 §7-2 규칙으로 자동 렌더한다 — 새 키 넷(증빙 필수 on/off · 증빙 크기 한도 · 선결제 증빙 기한 · 온라인구매 협력사)은 화면 코드 없이 나온다 | main `domain/settings/keys.ts` · `SYSTEM.md` §7-2 702~726행 | main에 있음 | 새 키가 boolean·number·string 셋 안인지. 거래처를 고르는 타입이 필요하면 설계 없음(열린 선택 O-13) |
 | UA-615 | 견적 외 비용 줄(D-48)은 견적가 0인 견적 줄의 한 종류이고, 카드 사용의 연결 대상 「견적 외 비용」은 저장 때 그 종류의 줄을 하나 새로 만든다. 조정 줄(D-83)과 같은 종류인지는 A-603 | 04-CONTEXT D-48 · D-83(브랜치 99행) · A-603 | Phase 4 브랜치에만(결정) · 줄 종류 enum은 설계 없음 | 머지 뒤 `domain/quotes/` 줄 종류 값과 「견적 외 비용 줄 추가」 경로를 읽고 S9 연결 「견적 외 비용」을 그 경로 호출로 고정 |
-| UA-616 | 프로젝트 상세는 섹션이 2px 선으로 이어지는 한 화면이고(§6-2 392행), 「일괄 저장 Ctrl+S N」 하나가 화면의 모든 편집 표를 한 트랜잭션으로 저장한다(§7-3 (사) 802행). 매출 섹션 = 계약 금액(파생) + 발행 줄 표 + 입금 줄 표 | 04-UI-SPEC.md S6(1284~1317행) · `SYSTEM.md` 802행 | Phase 4 브랜치에만(main `revenue-section.tsx`에는 계약 금액 입력 칸이 아직 있다 — D-84 이전) | 머지 뒤 `app/(app)/projects/[id]/revenue-section.tsx`에서 발행 줄 표 컴포넌트·저장 배선을 읽고 S16의 「발행 요청」 표를 같은 배선에 얹는다 |
+| UA-616 | 프로젝트 상세는 섹션(`DetailScreen.Section` — 위 1px `--border-row`)이 이어지는 한 화면이고(§6-2 392행), 「일괄 저장 Ctrl+S N」 하나가 화면의 모든 편집 표를 한 트랜잭션으로 저장한다(§7-3 (사) 802행). 매출 섹션 = 계약 금액(파생) + 발행 줄 표 + 입금 줄 표 | 04-UI-SPEC.md S6(1284~1317행) · `SYSTEM.md` 802행 | Phase 4 브랜치에만(main `revenue-section.tsx`에는 계약 금액 입력 칸이 아직 있다 — D-84 이전) | 머지 뒤 `app/(app)/projects/[id]/revenue-section.tsx`에서 발행 줄 표 컴포넌트·저장 배선을 읽고 S16의 「발행 요청」 표를 같은 배선에 얹는다 |
 | UA-617 | 지출결의의 `지급 예정일`(날짜, 비어 있을 수 있음)은 Phase 5 문서의 칸이다. 원천징수·회사 대납 규칙의 세율 기준일 = 지급 뒤 지급일 / 지급 전 지급 예정일(D-101), 지급 예정일이 비어 있으면 오늘(금액 표시 절 「기준일 고르기」). 이 페이즈는 그 값을 고치는 제자리 편집(S5)과 지급일로 다시 계산한 지급 총액(S2·S5)을 얹는다. 자동 계산은 Phase 7 | 05-CONTEXT.md:41 D-101 · `06-RESEARCH.md` Pattern 2(호출자가 `paymentDate`를 고른다) | 설계 없음(Phase 5는 CONTEXT만) | Phase 5 UI-SPEC·PLAN에서 칸 이름·빈 값 허용·수정 권한을 읽고, `domain/payments`가 `applyTaxRule()`에 넘길 `paymentDate` 고르는 규칙을 계획에 적는다 |
 | UA-618 | 지출결의에 `지급 방식`(계좌이체 · 법인카드 · 현금, 코드표 값)이 있다. 계좌이체만 거래처 계좌를 쓴다. 법인카드 방식은 지출결의 쪽이고 카드 사용 건을 만들지 않는다(D-609) | 06-CONTEXT.md:30 · :47 · `docs/inputs/phase-03-masters.md` §5·§6(지급 방식 코드표) | 설계 없음 | Phase 5 UI-SPEC에서 지급 방식 칸 이름·코드 값, 법인카드일 때 어느 카드인지 저장하는지 |
 | UA-619 | 원천징수 규칙 지급의 「공급가 역산」 줄은 **서버가 값을 보낼 때만** 선다. 부가세 규칙은 `grossFromTotal()`로 늘 보낸다. 원천징수는 `domain/money`에 면세 기준(`tax.ts:95-103`)·최소 징수액(`tax.ts:106-107`)을 지키는 역산이 생길 때만 보낸다 — `grossFromTotal(이체액, -세율, …)`은 보통 경우만 맞고 두 분기가 원천징수를 0으로 만든 경우에는 틀린다. 06-CONTEXT:23(원천징수 차감 후 이체액도 역산)과 :31(이 페이즈는 계산을 새로 쓰지 않는다)이 서로 당기므로 **계획이 정한다**. 어느 쪽이든 차이(이체액 − 지급 총액) 표시는 모든 규칙에서 선다(D-605) | 06-CONTEXT.md:23 · :31 · `domain/money/tax.ts:95-109` · `domain/money/index.ts:124`(`grossFromTotal`) | 설계 없음 | `/plan-eng-review`에서 원천징수 역산 함수를 `domain/money`에 더할지 정한다 — 더하면 지급 DTO에 역산 필드, 아니면 필드 없음(화면 분기 없음) |
@@ -85,10 +131,12 @@ reviewed_at: 2026-09-25
 | UA-621 | 차수 섹션(04 S5)의 `ui/table` 읽기 표 동작 칸과 「차수 열기」 펼침 섹션(한 번에 하나 · `aria-expanded` · 제목 포커스), 리저브 대장(04 S9) 편집 표의 열 우선순위 · 좁은 PC 보기 전용 · `리저브 줄 삭제` 확인 모달(04 S16)이 머지 뒤 그대로다 — S21 · S22가 그 위에 선다 | `origin/claude/gsd-progress-e1nzgu:.planning/phases/04-project-quote-ledger/04-UI-SPEC.md` S5(1234행~) · S9(1353행~) · S16(1495행~) | Phase 4 브랜치에만 | 머지 뒤 `app/(app)/projects/[id]/revision-section.tsx` 류 차수 섹션 · `app/(app)/pnl/reserves/reserves-table.tsx` 류 리저브 표의 열 정의 · 펼침 규칙을 읽는다 |
 | **A-6xx 참조** | A-601(다섯 상태·정산) · A-602(견적 줄 상태 파생) · A-603(조정 줄 종류) · A-604(계약 금액 파생) · A-605(발행액 PM 공개) · A-606(결재 상태값) · A-607(지출결의 1줄 1문서·번호 `26001-0004`) · A-608(증빙 업로드 경로) · A-609(정산 결재 = PM 기안·대표 승인) · A-610(상태 태그 새 값 — 이 문서 SP-2가 해소 제안) · A-611(카드 사용 새 표) · A-612(구매 요청 번호 카운터) · A-613(발행 요청 새 표) | `06-RESEARCH.md` 「Phase 4·5 의존 가정」 표 | 그 표 그대로 | 그 표의 재확인 방법 그대로 |
 
-**재확인 2026-09-25(rev 9 — `/plan-design-review` DR-9):** main `0341e36` · Phase 4 브랜치 `a8c95fa` 기준.
-- main `SYSTEM.md`에는 §7-15 머리(972행)만 있고 **§7-16 · §7-17 머리가 없다** — 두 절은 브랜치판에만 있다(1053 · 1067행). 그래서 UA-601은 `grep -c "^### 7-17" docs/design/SYSTEM.md`로 확인한다(0이면 미해소). `7-15`는 main에 이미 있어 UA-601 확인에 쓰지 않는다(거짓 통과).
-- `ui/confirm-dialog` · `ui/pagination`은 브랜치 `ui/`(20개)에만 있고 main `ui/`(18개)에 없다. **`ui/attachments`는 두 판 어디에도 없다** — 첨부 영역(§7-10)은 Phase 5가 만드는 컴포넌트다(UA-606 · Component Inventory 「첨부 영역」). S21 · S22도 그 컴포넌트를 쓴다.
-- 이 작업 트리에 브랜치 참조가 없으면 `git fetch origin claude/gsd-progress-e1nzgu` 뒤 `git show origin/claude/gsd-progress-e1nzgu:<경로>`로 읽는다.
+**재확인 2026-10-05(rev 10):** origin/main `55647a0` 기준(위 표의 「현재 상태」 열과 「근거」 열의 `NNN행`은 rev 9 당시 브랜치 값 — 기록으로 남기고, 이 목록이 이긴다).
+- **해소:** UA-601(§7-15 :1147 · §7-16 :1186 · §7-17 :1210 · §7-20 :1240이 main에 있다) · UA-602(`ui/confirm-dialog` main에 있음 — 슬롯 `resultLines` · `evidenceField` · `options`, 첨부 보기 칸은 없음 → SP-7) · UA-603(`ui/pagination` main에 있음).
+- **그대로(main에 없음):** UA-604 — `ui/table`에 선택 열 0(`grep -n "selectable\|rowSelect\|checkbox" ui/table/*.tsx` 0건) → SP-1. `ui/attachments` 없음(첨부 영역은 Phase 5 · 6.1-03 순서, UA-606). `components/icons/` 폴더 없음(아이콘은 `ui/side-panel/SidePanel.tsx` · `ui/confirm-dialog` 류처럼 컴포넌트 안 인라인 SVG).
+- **05 브랜치(계획·실행 중):** UA-605(05-08 지출결의 목록 = `ListScreen`, 계획만) · UA-606(05 결정 반영 — `expenses.evidence_attach`는 05-09가 더한다) · UA-607 · UA-608 · UA-610(05-11 정산 결재 + 종류 훅). 견적 줄 상태 파생은 05-15 `app/(app)/projects/status-display.ts` 확장(새 파일 없음, 06-13).
+- UA-612 메뉴 키: main `domain/permissions/menus.ts`에 `projects.revenue`(:19) · `cards`(:32) · `admin.corp-cards`(:41)가 있고 `payments` · `purchases` · `cards.proxy`는 가칭 그대로(06-02).
+- UA-613: `AccountNumberCell`은 아직 `app/(app)/admin/vendors/account-number.tsx`에 있다. 거래처 화면은 04.6에서 옆 패널로 바뀌었으니 두 번째 사용처로 옮길 때 그 구조를 다시 읽는다(06-20).
 
 **실행 착수 게이트(M-9):** `/gsd-execute-phase 6` 착수 전에 「Phase 5 UI-SPEC과 UA-605~UA-610 대조 완료」를 체크한다 — S1 · S3 · S4 · S5 · S6 · S14 · S18의 자리와 S1 「문서 화면 왕복」(`from=pay` · 번호 링크)이 이 여섯 줄에 기댄다. 어긋난 줄이 있으면 이 문서를 먼저 고친다.
 
@@ -98,159 +146,150 @@ reviewed_at: 2026-09-25
 
 | Property | Value |
 |----------|-------|
-| Tool | none — shadcn 미사용. 자체 디자인 시스템(`docs/design/SYSTEM.md` §0~§11, `docs/design/tokens.css`). `components.json`·`tailwind.config.*` 없음(실측) |
+| Tool | none — shadcn 미사용. 자체 디자인 시스템(`docs/design/SYSTEM.md` 스킨 A, `docs/design/tokens.css` 두 단 토큰). `components.json`·`tailwind.config.*` 없음(실측) |
 | Preset | 해당 없음 |
-| Component library | 없음 — 네이티브 HTML(`<table>`·`<select>`·`<input type="checkbox">`·`<dialog>`) + CSS Modules(D-19). 표·폼·확인 모달은 로컬 `ui/` |
-| Icon library | Lucide 인라인 SVG(`components/icons/`, §9). 이 페이즈가 쓰는 아이콘: 첨부(paperclip, 첨부 영역) · 외부 링크(external-link, 구매 요청 「링크」) · 닫기(x, 폰 시트) · 정렬 방향(목록 머리글) — 넷 다 기존 목록 안. 상태·경영관리 등록·강행 허용은 **글자**다(§9 「상태는 글자」) |
+| Component library | 없음 — 로컬 `ui/` + CSS Modules. `app/**` JSX에서 `<table>` · `<dialog>` 직접 금지(04.6 「기계 검사 계약」 — `ui/table` · `ui/side-panel` · `ui/confirm-dialog`로). 체크박스 · 라디오 · `<select>`는 네이티브 |
+| Icon library | Lucide 인라인 SVG(§9 :1272). `components/icons/` 폴더는 main에 없다 — 선례대로 쓰는 컴포넌트 안에 인라인. 이 페이즈 아이콘: 첨부(paperclip, 첨부 영역 — Phase 5) · 외부 링크(external-link, 구매 요청 품목 링크) · 닫기(x — `SidePanel`이 이미 그림) · 정렬 방향. 넷 다 §9 목록 안. 상태 · `경영관리 등록` · `강행 허용`은 **글자**다 |
 | Font | Pretendard Variable, 자체 호스팅(§2-1) |
 
-컴포넌트는 `tokens.css` 변수만 참조한다. 이 페이즈의 토큰 추가 0개(`git diff docs/design/tokens.css` 0줄이 검수 조건).
+컴포넌트 · 화면 CSS는 **역할 토큰만** 참조한다(SYSTEM §1-4 「화면·컴포넌트가 쓰는 유일한 이름」). 검수 조건: **새 토큰 0개**(`git diff docs/design/tokens.css` 0줄) **그리고 옛 토큰 이름 사용 0개** — `grep -rnE -- "--(bg|surface|fg|muted|danger|warning|success|faint)\b|--fs-|--modal-w|--row-min|--line-strong" app ui` 0건(06 파일) + `test/unit/design/tokens.test.ts` 「옛 이름 없음」 통과. 원시 이름(`--g-*` `--n-*` `--red-*` `--amber-*`)도 `app/**` · `ui/**`에서 0건.
 
 ---
 
 ## Component Inventory
 
-Enumerated by `git ls-tree -d --name-only 257c2ab:ui` — 18 modules — 로컬 `ui/`(npm 패키지 아님, CSS Modules)@`257c2ab`(= `git log -1 --format=%h main -- ui/`, 2026-09-24) — 2026-09-24.
-Phase 4 브랜치 기준 `git ls-tree -d --name-only 5b1ac10:ui` — 19 modules(위 18 + `confirm-dialog`)@`5b1ac10`(= `git log -1 --format=%h origin/claude/gsd-progress-e1nzgu -- ui/`) — 2026-09-24. 이 페이즈는 브랜치 머지 뒤에 실행되므로 19를 전제로 한다(UA-602).
+Enumerated by `ls -d ui/*/ | wc -l` (버전 = `git log -1 --format=%h origin/main -- ui/`) — 27 components — 로컬 `ui/`(npm 패키지 아님, CSS Modules)@`fb277b0`(origin/main `55647a0`, 04.6 스킨 A) — 2026-10-05.
 
-이 표는 **닫힌 목록이 아니다.** 네이티브 HTML을 쓰는 것이 기본값이고, 표에 없는 것을 찾아보는 것이 정상 경로다.
+이 표는 **닫힌 목록이 아니다.** 표에 없는 것을 `ui/`에서 찾아보는 것이 정상 경로다. **화면 틀이 먼저다** — 화면 파일은 제목 · 표 면 · 패널 모양을 직접 그리지 않는다(SYSTEM §7-20 :1240).
 
 | Component | Import path | 이 페이즈에서 |
 |-----------|-------------|---------------|
-| Table | `ui/table/Table` | 지급 대상 표(S1, 편집 표 + **선택 열 — SP-1**) · 지급 완료 목록(S3, 읽기) · 카드 사용 목록(S8, 읽기) · 구매 요청 목록(S11, 읽기) · 발행 요청 목록(S17, 읽기) · 상세 「법인카드 사용」 섹션(S15, 읽기) · 상세 「발행 요청」 표(S16, 편집) · 「완료 전 점검」 섹션(S18, 읽기). 견적 줄 표(S14)는 Phase 4 것에 상태 값만 더한다. 차수 섹션(S21, 04 S5 읽기 표)에는 동작 칸 3차 하나, 리저브 대장(S22, 04 S9 편집 표)에는 읽기 셀 열 `증빙` 하나를 더한다 — 둘 다 Phase 4 표의 열·칸이고 새 variant가 아니다 |
-| Form · Form.Field · Form.Hint · Form.Error · Form.Actions | `ui/form/Form` | 카드 사용 등록·수정·구매 완료 폼(S9·S13) · 구매 요청 신청 폼(S12) · 문서 화면 「증빙」·「지급」 섹션의 칸(S4·S5 — `Form.Actions`는 문서 화면 행동 줄 하나) · 지출결의 폼 선결제 칸(S6) |
-| Select | `ui/select/Select` | 카드 · 통화 · 증빙 종류(코드표 → `Form.Hint` 설명, D-93) · 목록 필터 |
-| ConfirmDialog | `ui/confirm-dialog/ConfirmDialog` | 이 페이즈의 사용처 여덟(rev 9): S2 일괄 지급 완료 · S5 지급 취소 · S4 증빙 면제 · **S1 · S3 증빙 확인(제자리 증빙 확인, DR-4)** · S7 마지막 증빙 삭제(SP-6) · S11 **남의** 구매 요청 취소(사유) · S16 발행 요청 취소 · S9·S12 입력 버리기. 여기에 Phase 4 모달 한 곳(04 S16 `리저브 줄 삭제`)에 결과 줄 하나를 더한다(S22). 확인 근거 한 칸은 기존 슬롯(날짜 또는 사유, §7-8 882행). **새 슬롯 하나 — 읽기 전용 「첨부 보기 칸」(SP-7)**: §7-8 시트 상세의 첨부 행 모양 재사용, 새 시각 요소 없음, 쓰는 곳은 증빙 확인 하나(UA-602). 검토 반영 지시의 「아홉」은 H-4 전 셈이다 — H-4가 카드 사용 삭제 · 요청자 본인 구매 요청 취소를 모달 없이 즉시 + 토스트 `되돌리기`로 바꿔 여덟이다 |
-| Pagination | `ui/pagination/Pagination` | 목록 다섯(S1·S3·S8·S11·S17), 50건(§6-1). 링크 갈래(`href`) — 지급 대상 표는 편집 표지만 원장형 목록이라 50건이고 선택·이체액 편집은 쪽 이동에도 남는다(행 id 키, DR-18 선례)(UA-603) |
-| Button | `ui/button/Button` | §7-1. 비활성 이유 `reasonTone: "block" \| "info"` · `aria-disabled`(04-UI-SPEC ⑦ — Phase 4 디자인 리뷰 10·11번 항목. 이 페이즈 design-review.md 번호가 아니다) |
-| StatusTag | `ui/status-tag/StatusTag` | 새 낱말은 Color 절 매핑표 한 곳에서 `kind`를 받는다(SP-2). 표 상태 열 = `text`, 문서 화면 제목 옆 = `tag` |
-| ListEmpty | `ui/list-empty/ListEmpty` | 모든 EMPTY·ERROR 한 줄. 다음 한 수가 권한 밖이면 `action` 생략 + 담당 표기 |
-| PageHeader | `ui/page-header/PageHeader` | 목록·폼 제목 + 부제 |
-| KvList | `ui/kv-list/KvList` | 폰 행 시트(§7-3 (바)) · 문서 화면 「지급」 섹션의 읽기 줄(지급 완료 뒤) |
+| ListScreen | `ui/list-screen/ListScreen` | 목록 다섯의 틀 — S1 · S3(`/expenses` 보기 — 틀은 Phase 5 05-08) · S8 `/cards` · S11 `/cards/purchases` · S17 `/projects/issue-requests`. `primaryAction`(필터 줄 오른쪽 끝 하나, 폰은 필터 아래 — CHECKLIST ④) · `filters` · `summary`(합계 면) · `empty`(DR5) · `pagination` · `panel`. **부제 prop 없음**(ListScreen.tsx:9). **`primaryAction`은 지금 링크 갈래뿐**(`{ label, href, phoneHidden? }`, ListScreen.tsx:13) — S1 `지급 완료 N`(버튼 · `aria-disabled` + 이유 · kbd)은 버튼 갈래가 필요하다 → SP-1 |
+| DetailScreen · DetailScreen.Section | `ui/detail-screen/DetailScreen` | 지출결의 문서 화면(Phase 5)의 「증빙」 · 「지급」 섹션(S4 · S5)과 프로젝트 상세의 「법인카드 사용」(S15) · 「완료 전 점검」(S18) 섹션 — 섹션 제목 `--text-subtitle`, 위 1px `--border-row`. 문서 화면 1차는 `actions.primary` 하나(SP-3) |
+| SidePanel · PanelForm | `ui/side-panel/SidePanel` · `ui/side-panel/PanelForm` | **S9 카드 사용 등록 · 수정 · S12 구매 요청 신청 · S13 구매 완료** — PC 오른쪽 `--panel-w` 480 · 폰 아래 시트 · 뒤 `inert` + `--scrim-panel` · 바뀐 칸이 있을 때만 닫기에 「입력 버리기」(SidePanel.tsx:181-184, 안의 `ConfirmDialog` :283) · `Ctrl+Enter` 제출 · 행동 줄 아래 고정(2차 `취소 Esc` → 1차) · `intent="create"`는 열어 둔 채 칸을 비우고 첫 칸 포커스, `"edit"`는 닫힘(PanelForm.tsx:161-176) · 막힘 이유 `blockedReason` / 이유 + 다음 한 수 `reason`(PanelForm.tsx:50-53) |
+| Form(`layout="page" \| "panel"`) · Form.Field · Form.Hint · Form.Error · Form.Actions | `ui/form/Form` | `panel` — S9 · S12 · S13(한 열 · 라벨 위 · 칸 전폭 · 칸 폭 3종 없음). `page` — 문서 화면 칸 S4 · S5(`Form.Actions` 없는 칸 — 저장은 화면 1차, §7-15) · Phase 5 지출결의 폼의 선결제 칸 S6 |
+| Table · StaticTable · TableSkeleton · RowSheet | `ui/table/*` | 지급 대상(S1, 편집 표 + **선택 열 — SP-1**, 지금 없음) · 지급 완료(S3) · 카드 사용(S8) · 구매 요청(S11) · 발행 요청(S17) · 상세 섹션 표(S15 · S16 · S18). `loading.tsx`는 `TableSkeleton`. 폰 행 시트 = `RowSheet`(보기 전용). 견적 줄 표(S14) · 차수 섹션(S21) · 리저브 대장(S22)은 Phase 4 표에 값 · 칸만 더한다 |
+| Num | `ui/num/Num` | 모든 금액 · 건수 · 외화 2행(`fx`). `tabular-nums`는 `ui/num` 밖에서 금지(04.6 기계 검사) — 이 문서의 「숫자 모양」은 전부 `Num`이 낸다 |
+| RowActions · RowAction | `ui/row-actions/RowActions` | S8 행 `수정` · `삭제`(`danger`, 맨 끝 `--s-8` 떨어짐) · S11 행 `구매 완료` · `요청 취소` · S17 `발행 줄 입력` / `요청 보기` · S18 점검 행 3차 |
+| Select · TextField | `ui/select/Select` · `ui/input/TextField` | 카드 · 통화 · 증빙 종류(코드표 → `Form.Hint` 설명, D-93) · 금액(쉼표 입력 `use-comma-input`) · 날짜 · 사유 · 목록 필터 |
+| ConfirmDialog | `ui/confirm-dialog/ConfirmDialog` | 직접 쓰는 곳 일곱: S2 일괄 지급 완료(근거 칸 = 지급일) · S5 지급 취소(사유) · S4 증빙 면제(사유) · S1 · S3 증빙 확인(제자리, **첨부 보기 칸 = SP-7**) · S11 **남의** 구매 요청 취소(사유) · S16 발행 요청 취소 · S23 지출결의 종결(사유, r3). 「입력 버리기」는 `SidePanel`이 안에서 연다(S9 · S12 · S13). 04 S16 `리저브 줄 삭제` 모달에 결과 줄 하나(S22). 슬롯은 기존 `resultLines` · `evidenceField`(ConfirmDialog.tsx:50-52) — 새 슬롯은 SP-7 첨부 보기 칸 하나(SP-8 검색 고르기는 05 `ui/pick-dialog` 위 — r3). **SP-6 철회로 「마지막 증빙 삭제」 모달은 없다** |
+| Pagination | `ui/pagination/Pagination` | 목록 다섯, 50건(§7-16). 지급 대상 표의 선택 · 이체액 편집은 쪽 이동에도 남는다(행 id 키) |
+| Button | `ui/button/Button` | §7-1. 비활성 이유 `reasonTone: "block" \| "info"` · `aria-disabled` |
+| StatusTag + status-map | `ui/status-tag/StatusTag` · `ui/status-tag/status-map.ts` | 호출부는 낱말만 넘긴다(`kind` prop 없음 — 표 밖 낱말은 타입 오류, status-map.ts:1-2). 새 낱말은 Color 절 「상태 낱말」 표대로 **이 한 표에 더한다**. 표 상태 열 = `variant="text"`, 문서 화면 제목 옆 · 「내 차례」 = `tag` |
+| ListEmpty | `ui/list-empty/ListEmpty` | 빈 화면 한 줄 + 첫 행동 버튼 하나(2차 모양). 다음 한 수가 권한 밖이면 버튼 생략 + 담당 표기 |
+| KvList | `ui/kv-list/KvList` | 폰 행 시트 · 문서 화면 「지급」 섹션의 지급 뒤 읽기 줄 |
 | NextTurn | `ui/next-turn/NextTurn` | 「내 차례」 항목(S19, UA-611) |
-| Toast | `ui/toast/Toast` | 화면 이동·상태 변화가 따르는 행동만(§7-6): 일괄·한 건 지급 완료 · 지급 취소 · 카드 사용 등록 · 카드 사용 저장 · 카드 사용 삭제 · 구매 요청 · 구매 완료 · 구매 요청 취소. **3차 `되돌리기`가 붙는 토스트(§7-6 「실행 취소가 가능하면」, H-4):** 카드 사용 등록 · 카드 사용 삭제 · 구매 요청 · 요청자 본인의 구매 요청 취소 — Copywriting 「SUCCESS — 토스트」 |
-| 첨부 영역 | Phase 5가 만드는 컴포넌트(§7-10, UA-606) | 이 페이즈는 한도·형식·중복 문구와 증빙 금액 칸만 얹는다(S7). **S21(차수 승인 증빙) · S22(리저브 줄 증빙)가 같은 컴포넌트를 두 새 주인으로 쓴다** — 파일 행 · 첨부 영역 모양 그대로, 증빙 금액 칸 없음. `ui/attachments`라는 모듈은 main · Phase 4 브랜치 어디에도 없다(2026-09-25 재확인) — 경로는 Phase 5 산출물을 따른다 |
-| AccountNumberCell | 지금 `app/(app)/admin/vendors/account-number.tsx` | 두 번째 사용처(S1·S5). 옮길지는 계획(UA-613) |
-| Banner · FormAlert · HistoryList · PermissionGrid · Shell · AuthFrame · `ui/logout` | 각 경로 | **쓰지 않는다.** 셸(`role-menu.ts`)은 고치지 않는다 — 1차 메뉴 다섯 그대로 |
+| Toast | `ui/toast/Toast` | **이 페이즈는 쓰지 않는다(rev 10).** §7-6 :951 「표 저장 결과는 토스트를 띄우지 않는다 · 화면 이동이 따르는 행동만 토스트」 — 이 페이즈의 결과는 전부 제자리에 보인다: 일괄 지급 = S1 결과 글자(`aria-live`) · 한 건 지급 · 지급 취소 = S5 1차 자리 · 패널 등록 = 패널 안 `role="status"` 한 줄(UQ-8 B) · 패널 수정 · 구매 완료 = 바뀐 행 · 행 삭제 · 본인 취소 = 표 위 결과 줄 + `되돌리기`(§7-8 :1008). 같은 사실을 두 자리에 쓰지 않는다(§8 규칙 5) |
+| 첨부 영역 | Phase 5가 만드는 컴포넌트(§7-10 :1020, UA-606) — `ui/attachments`는 main에 없다 | 이 페이즈는 한도 · 형식 · 중복 문구와 증빙 금액 칸만 얹는다(S7). S9 카드 전표(S13은 첨부 영역 없음 — 저장 뒤 S9, r3), S21 · S22가 같은 컴포넌트를 새 주인으로 쓴다(금액 칸 없음). 6.1-03과 순서를 맞춘다 |
+| 고르기 목록(r3) | `ui/pick-dialog/PickDialog` — **05 신규(main 밖, 05 머지 뒤)**, DECISIONS B5 | S10 프로젝트 · 견적 줄 고르기(SP-8). 06은 그 위에 얹고 모자란 것(행 막힘 2행 · 현재 줄 · 목록 상태)만 06-29가 더한다 |
+| AccountNumberCell | 지금 `app/(app)/admin/vendors/account-number.tsx` | 두 번째 사용처(S1 · S5) — 옮길지는 계획(UA-613) |
+| PageHeader · Banner · FormAlert · HistoryList · PermissionGrid · ApprovalRoute · Shell · AuthFrame · `ui/logout` · `ui/link-pending` | 각 경로 | **직접 쓰지 않는다.** 제목은 틀이 그린다(`PageHeader`는 main `app/`에서 사용 0 — `grep -rln PageHeader app` 0건). `LinkPending`은 `ListScreen`이 안에서 쓴다. 셸(`role-menu.ts`)은 고치지 않는다 — 1차 메뉴 다섯 그대로 |
 
-**신규 컴포넌트 0개.** 선택 열(SP-1)은 `ui/table`의 variant 축 하나이고(DESIGN §4 규칙 3 「변형이 필요하면 variant로」), 사용처는 지금
-S1 하나지만 규칙을 시스템에 올려 다음 일괄 처리 화면(예: 결재함 일괄 승인)이 같은 모양을 쓴다. 첨부 보기 칸(SP-7)도 새 컴포넌트가 아니라
-`ui/confirm-dialog`의 선택 prop 하나다(첨부 행 모양은 §7-8 시트 상세 그대로 — `ui/`가 Phase 4 컴포넌트라 행 데이터를 prop으로 받는다).
+**신규 컴포넌트 0개.** 바뀌는 것은 variant · prop 네 가지뿐이다 — `ui/table` 선택 열(SP-1) · `ListScreen.primaryAction` 버튼 갈래(SP-1) · `ui/confirm-dialog` 첨부 보기 칸(SP-7) · 05 `ui/pick-dialog/PickDialog` 위 검색 고르기(SP-8 — r3, `ui/confirm-dialog` 갈래 아님). 네 곳 모두 DECISIONS → SYSTEM 기록이 먼저이고 컴포넌트 일은 06-29가 맡는다(REVIEWS C11).
 
 ---
 
 ## Spacing Scale
 
-`tokens.css` 4px 단위 그대로(§3). 이 페이즈가 새로 만드는 값은 0개다.
+`tokens.css` 4px 척도 그대로(UQ-1 A — CHECKLIST §1 2026-10-01: {4, 8, 12, 16, 20, 24, 32, 48}). 이 페이즈가 새로 만드는 값 0개. 여백 · 간격 속성은 `var(--s-*)`와 역할 간격 토큰만(stylelint).
 
 | Token | Value | 이 페이즈의 쓰임 |
 |-------|-------|------------------|
-| `--s-1` | 4px | 라벨-입력 세로, 값과 2행 사이 |
-| `--s-2` | 8px | 셀 가로 패딩(`--cell-pad-x`) · 버튼 사이 · 선택 칸과 번호 사이 |
-| `--s-3` | 12px | 그룹 머리글 위 · 섹션 2px 선 아래 · 페이지 줄 위 |
-| `--s-4` | 16px | 폼 항목 사이 · 힌트 줄 항목 사이 |
-| `--s-6` | 24px | 폼 묶음 사이 · 섹션 2px 선 위(문서 화면 「증빙」·「지급」, 상세 「법인카드 사용」·「발행 요청」·「완료 전 점검」) |
-| `--s-8` | 32px | 표와 다음 섹션 제목 사이 |
-| `--s-12` | 48px | 화면 맨 아래 여백(폰은 + 하단 탭 44 + 고정 행동 줄) |
+| `--s-1` | 4 | 라벨-입력(`--label-gap`) · 값과 2행 사이 · PC 셀 위아래(`--cell-pad-y`) |
+| `--s-2` | 8 | 셀 좌우(`--cell-pad-x`) · 버튼 사이 · 선택 칸과 번호 사이 |
+| `--s-3` | 12 | 합계 면 위아래 안쪽 · 폰 셀 위아래 |
+| `--s-4` | 16 | 패널 칸 사이(`--field-gap`) · 행동 링크 사이 · 폰 페이지 · 패널 좌우 |
+| `--s-5` | 20 | PC 페이지 좌우(`--pad-page`) |
+| `--s-6` | 24 | 패널 좌우 안쪽(`--panel-pad-x`) · 섹션 사이 · 페이지 폼 항목 사이 |
+| `--s-8` | 32 | 위험 행동 링크(`RowAction danger`) 앞 간격 |
+| `--s-12` | 48 | 화면 맨 아래 여백(폰은 + 하단 탭 + 고정 행동 줄) |
 
-치수 토큰(전부 기존값): `--cell-pad-y` 6(폰 10) · `--row-min` 36(폰 44) · `--label-w` 96 · `--form-max` 720 · `--modal-w` 480 ·
-`--control-h` 32(폰 40) · `--touch-min` 44. 칸 폭 3종만 — select 200 · 짧은 칸(금액·날짜·환율) 280 · 긴 칸(사유·메모·품목·링크) 480.
+치수 토큰(전부 기존): `--row-h` 44(PC · 폰) · `--control-h` 32(폰 40) · `--control-h-panel` 40 · `--field-h`(패널 틀이 정함) · `--panel-w` 480 · `--dialog-w` 480 · `--sheet-max-h` 88dvh · `--row-number-w` 28 · `--label-w` 96 · `--form-max` 720 · 페이지 폼 칸 폭 `--field-w-select` 200 · `--field-w-short` 280 · `--field-w-long` 480(**페이지 배치 S4 · S5 · S6에만** — 패널 S9 · S12 · S13은 칸 전폭) · `--touch-min` 44.
 
-**Exceptions (8점 척도 밖, 전부 §3 상속):** `--cell-pad-y` 6px/10px · 폰 좌우 14px · `--s-3` 12px · PC 좌우 `--s-5` 20px · 행 번호 칸 최소 28px —
-근거는 04-UI-SPEC.md Spacing 표(197~202행)와 같다. **선택 열 폭은 새 값이 아니다:** 체크박스 칸은 `--row-min`(36, 폰은 편집 없음)
-정사각 클릭 영역이고 칸 폭은 행 번호 칸과 같은 `min-width` 28 + `--cell-pad-x`×2 = 44다(§7-13 「셀 전체가 클릭 영역」과 같은 결).
+**Exceptions:** 없음 — rev 9의 6/10/14px 상속 예외는 UQ-1 A로 척도 안에 들어왔다. 척도 밖은 시스템이 정한 선 · 포커스(`--line-w` · `--focus-w` · `--underline-*`)뿐이다. **선택 열은 새 값이 아니다:** 칸 폭 = `calc(var(--row-number-w) + 2 * var(--cell-pad-x))`(= 44), 높이 = `--row-h` 44 — 셀 전체가 44×44 클릭 영역(§7-13과 같은 결).
 
 ---
 
 ## Typography
 
-`SYSTEM.md` §2-2·§2-3 그대로:
+`SYSTEM.md` §2-2(:161-174) 역할 토큰 그대로. **화면 CSS(`app/**`)는 `--text-body` · `--text-aux` · `--text-tag` 정확히 셋만** 쓴다(stylelint). 제목 · 부제 크기는 틀(`ListScreen` · `DetailScreen` · `SidePanel` · `ConfirmDialog`)이 낸다 — 이 페이즈 CSS에 없다.
 
-| Role | Size | Weight | Line Height |
-|------|------|--------|-------------|
-| Body(표 셀·목록 행·폼 입력·본문) | `--fs-base` 14px(폰 15px) | 400 | 1.5(표) / 1.6(본문) |
-| Label(라벨·표 머리글·2행·서버 계산 한 줄·힌트 줄·결과 줄) | `--fs-sm` 12px | 600(라벨·머리글) / 400(2행·힌트) | 1.5 |
-| Heading(화면 제목·목록 합계 줄 금액) | `--fs-lg` 18px | 700 | 1.4 |
-| Micro(상태 글자·태그·kbd·행 번호·`계산 불가` 배지·페이지 `오류 N`) | `--fs-xs` 11px | 600(2행 `증빙 16일 경과`만 400) | 1.4 |
-| Display | **사용 없음** — `--fs-xl` 이상은 인쇄·외부 수령자·손익 KPI 전용. 지급 목록·폼에 큰 숫자 없음 |
+| Role | Token · Size | Weight | Line Height | 이 페이즈의 쓰임 |
+|------|------|--------|-------------|---|
+| Body | `--text-body` 14(폰 15) | 400(`--fw-regular`) · 버튼 600 | 표 1.5 / 산문 1.6 | 표 셀 · 목록 행 · 패널 입력 · 본문 |
+| Aux | `--text-aux` 13 | 600(라벨 · 표 머리글 · 행동 링크) / 400(2행 · `Form.Hint` · 결과 줄 · 막힘 이유) | 1.5(표 머리글 1.6) | 라벨 · 머리글 · 2행 · 서버 계산 한 줄 · 힌트 줄 · 오류 줄 |
+| Tag | `--text-tag` 11 | 600(2행 `증빙 16일 경과`만 400) | 1.4 | 상태 배지 · 표 상태 열 글자 · kbd · 행 번호 |
+| (틀) Title · Subtitle | `--text-title` 22 · `--text-subtitle` 18 | 700 | 1.3 · 1.4 | 화면 제목(틀) · 패널 · 모달 · 섹션 제목(틀) — 화면 CSS에서 쓰지 않는다 |
+| Display | **사용 없음** — `--text-kpi`는 손익 KPI 전용 |
 
-- 모든 화면이 `xs · sm · base · lg` 정확히 넷. 크기·굵기 추가 0.
-- **굵기 셋(400 · 600 · 700)은 상속 예외다** — §2-1 102행 「세 단계만」, `tokens.css` `--fw-regular`·`--fw-medium`·`--fw-bold`. 600은 라벨·버튼·태그·
-  `경영관리 등록` 표시, 700은 제목·합계·서버 계산 한 줄의 숫자.
-- 숫자(금액·이체액·차이·건수·환율)는 `tabular-nums`, 우측 정렬, `nowrap`, 자간 0, 천 단위 쉼표(D-95). **식별자형은 쉼표 없음**:
-  지출결의 번호 `26001-0004` · 구매 요청 번호 `26001-C0001` · 카드 뒤 4자리 `4321` · 계좌 `****-**-1234` · 날짜.
-- 사유·메모·품목·링크는 `keep-all` 줄바꿈, 링크 URL만 `overflow-wrap: anywhere`(긴 쇼핑몰 주소). 표 안 사유는 두 줄까지, 셋째 줄부터 말줄임 +
-  행 시트·문서 화면에서 전문.
-- 2행 `증빙 16일 경과` · `증빙 기한 10-02`는 `--fs-xs` 400(목록 상태 열 2행 규칙, 04-UI-SPEC DR-34 선례).
+- **합계 금액 = `--text-body` 14 + `--fw-bold` 700**(CHECKLIST §1 ⑥ 2026-10-03 「합계 글자 18에서 14로, 굵게」 — rev 9의 「합계 18px」 대체). 읽기 목록의 표 위 합계 줄(§6-1)과 편집 표 아래 합계 행(§7-3) **둘 다**다. SYSTEM §6-1 :409의 「금액 `--text-subtitle` 700」은 ⑥ 이전 문장이다 — ⑥(사용자 결정)이 이기고 main 구현(`app/(app)/projects/projects.module.css` 합계 금액 `--text-body`)도 ⑥이다. 06-01이 SP-2를 옮길 때 그 한 줄도 ⑥으로 맞춘다(디자인 검토 r2 — Codex C1). 서버 계산 한 줄의 숫자만 700(§7-15 `Form.Hint`).
+- **굵기 셋(400 · 600 · 700)은 시스템 상속이다**(UQ-3 A, `--fw-regular` · `--fw-medium` · `--fw-bold`). 600 = 라벨 · 버튼 · 태그 · `경영관리 등록` 표시, 700 = 합계 · 서버 계산 숫자.
+- 숫자(금액 · 이체액 · 차이 · 건수 · 환율)는 `Num`(tabular · 우측 · `nowrap` · 쉼표, D-95). **식별자형은 쉼표 없음**: `26001-0004` · `26001-C0001` · 카드 뒤 4자리 `4321` · 계좌 `****-**-1234` · 날짜.
+- 사유 · 메모 · 품목 · 링크는 `keep-all`, 링크 URL만 `overflow-wrap: anywhere`. 표 안 사유는 두 줄까지, 셋째 줄부터 말줄임 + 행 시트 · 문서 화면에서 전문.
 
 ---
 
 ## Color
 
-`SYSTEM.md` §1 의미 토큰만(새 색 0개):
+`SYSTEM.md` §1-4 역할 토큰만(새 색 0개, 원시 이름 0개):
 
 | Role | Value | 이 페이즈의 쓰임 |
 |------|-------|------------------|
-| Dominant (60%) | `--bg` `#FFFFFF` | 바탕 · 읽기 목록 머리글 · 폼 · 확인 모달 면 |
-| Secondary (30%) | `--surface` → `--accent-weak`(`--g-50`) → `--g-100`, 중첩 금지 | 행 hover · 비활성 컨트롤 · 첨부 영역(`--surface`) / 편집 중 셀 · **선택된 행**(`--accent-weak`, §7-3 「범위 선택 `--g-50`」과 같은 면) / **편집 표 머리글**(지급 대상 표 · 발행 요청 표 — `--g-100` + `--g-950`) |
-| Accent (10%) | `--accent`(`--g-700` `#005446`) | 아래 다섯 종류만 |
-| Destructive | `--danger` `#9B1C1C` · `--danger-weak` | 막힘 이유 글자(`block`) · 일괄 지급의 막힌 행 아래 이유 한 줄 · 오류 셀(이체액·차이 사유) · 상태 `증빙 없음` · `반려` · 점검 그룹 머리글 건수. **붉은 버튼 없음** — 지급 취소·면제·**남의** 구매 요청 취소는 확인 모달로 구분(§7-1). 요청자 본인의 요청 취소 · 카드 사용 삭제는 모달 없이 즉시 + `되돌리기`(H-4 — Copywriting 「즉시 — …」 두 행, r2 F-1) |
-| Warning | `--warning` `#8A5A00` | 상태 `선결제` · 2행 `증빙 16일 경과`(기한 초과, 막지 않음 — EXP-13) · 이체액 2행 `차이 -3,300` · 그룹 머리글 `예정일 지남` · 점검의 `발행 합계와 계약 금액 차이`(막지 않음, D-613) |
-| Success | `--success`(`--g-600`) | 상태 `지급 완료` · `확인됨` · `카드 사용` · `구매 완료` · `발행됨` · 결과 글자 `14:02 지급 완료 5건` · `증빙 확인 · 이과장 09-18 14:02` · 점검 `미결 없음` |
-| Muted(정보) | `--muted` | 상태 `미착수` · `취소` · `면제` · 결과 줄 · 합계 줄 제외 건수 · `강행 허용` · `reasonTone: "info"` 이유(`고른 건 없음`) · 담당 표기 |
+| Dominant (60%) | `--surface-canvas` | 페이지 바탕 |
+| Secondary (30%) | `--surface-base`(표 · 패널 · 모달 면) · `--surface-head`(읽기 표 머리글) · `--surface-foot` / 합계 면 · `--surface-group` + `--text-group`(그룹 줄 — `예정일 지남` · `이번 주 지급` · 카드 그룹) · `--surface-actions`(패널 행동 줄) · `--surface-muted`(비활성 · 뼈대) | 편집 표 머리글(S1 · S16)은 `ui/table`이 그린다(`--surface-selected` + `--text-on-tint`, Table.module.css:61-63) — 화면이 칠하지 않는다. **선택된 행 = `--accent-weak`**(범위 선택 면과 같음, Table.module.css:243-245). 실측 대비(이 문서가 잰 값): `--accent-weak` 위 `--status-success` 4.63 · `--status-warning` 5.22 · `--status-danger` 7.18 · `--text-muted` 5.74 · `--text-faint` 4.71 — 전부 ≥ 4.5. `--surface-selected` 위에는 `확인됨`(success 4.18) · `--text-faint`(4.26)가 금지 쌍이라(SYSTEM :112) 선택 행 면으로 쓰지 않는다 |
+| Accent (10%) | `--accent` | 아래 다섯 종류만 |
+| Destructive | `--status-danger` · `--status-danger-weak`(오류 셀) | 막힘 이유 글자(`block`) · 일괄 지급의 막힌 행 아래 이유 · 오류 셀 · 상태 `증빙 없음` · `반려` · 점검 그룹 머리글 건수 · `RowAction danger`(`삭제`). **붉은 버튼 없음**(§7-1) |
+| Warning | `--status-warning` | 상태 `선결제` · 2행 `증빙 16일 경과` · 이체액 2행 `차이 -3,300` · 그룹 머리글 덧붙임 `예정일 지남` · 점검 `발행 합계와 계약 금액 차이` |
+| Success | `--status-success` | 상태 `지급 완료` · `확인됨` · `카드 사용` · `구매 완료` · `발행됨` · 결과 글자 `14:02 지급 완료 5건` · 점검 `미결 없음` |
+| Muted(정보) | `--status-muted`(상태 낱말) · `--text-muted`(글자) | 상태 `미착수` · `취소` · `면제` · `신청됨` · 결과 줄 · `강행 허용` · `reasonTone: "info"` 이유(`고른 건 없음`) · 담당 표기 |
 
-**Accent reserved for** (§1-3 다섯 **종류** — 이 밖의 종류는 없다. 각 종류 안의 자리는 아래 정본을 따른다):
+**Accent reserved for** (§1-3 다섯 **종류** — 04.6 UI-SPEC Color 「강조 예약」과 같다):
 
-1. **「내 차례」 태그·행동 링크 + `--accent` 상태 글자** — ⓐ **모든 3차 버튼**(§7-1 — 글자 3차는 `--accent`). 자리 목록의 정본은 Copywriting 「3차 버튼」 행이고, 막힘·EMPTY·오류
-   줄 끝의 `· 다음 행동` 버튼(§8 규칙 3 꼴 — `연결 고르기` · `검색 지우기` · `지출결의로` 등)도 3차라 같은 색이다. 여기서 따로 셈하지 않는다(두 목록이 어긋나지 않게). ⓑ `--accent` 상태 글자(닫힌 목록): `지출결의 중` · `구매 요청` · `확인 전` · `신청` · `요청`(발행 요청). 근거는 04-UI-SPEC Color ① ⓑ와 같다(§7-5가
-   `--accent`를 상태 색의 하나로 허용하고 ①이 「태그」를 포함). `다시 시도`는 2차라 여기 없다.
-2. **편집 중 셀·행** — 이체액·차이 사유·발행 요청 셀의 밑줄, 활성 셀 `2px --accent` 외곽선. **선택된 행 배경은 `--accent-weak`(면)이지 `--accent`가 아니다.**
-3. **1차 버튼** — 화면당 하나: 지급 대상 `지급 완료 N` / 문서 화면 `증빙 확인` 또는 `지급 완료`(상태에 따라 하나) 또는 `예정일 저장`(지급 예정일 칸이 dirty인 동안, SP-3) / 카드 목록 `카드 사용 등록` /
-   카드 폼 `카드 사용 등록` · `카드 사용 저장` · `구매 완료` / 구매 요청 목록·폼 `구매 요청` / 프로젝트 상세 `일괄 저장 Ctrl+S N`(Phase 4 그대로) /
-   확인 모달의 1차(열려 있는 동안 모달이 화면이다).
-4. **포커스 링** — `:focus-visible` 2px `--focus`.
-5. **현재 위치** — 상단 바 현재 메뉴 밑줄(셸, 무변경). 하위 목록(`/cards/purchases`)에서도 현재 메뉴는 「법인카드」다.
+1. **3차 버튼 · 행동 링크 글자(`--text-link`) + `--status-accent` 상태 글자** — 자리 목록의 정본은 Copywriting 「3차 버튼」 행. `--status-accent` 낱말(닫힌 목록): `지출결의 중` · `구매 요청 중` · `확인 전` · (기존) `결재 중` · `{단계} 결재 중`.
+2. **편집 중 셀** — 이체액 · 차이 사유 · 발행 요청 셀의 밑줄(`ui/table`). **선택된 행 면은 `--accent-weak`이지 `--accent`가 아니다.**
+3. **1차 버튼** — 화면당 하나: 지급 대상 `지급 완료 N` / 문서 화면 `증빙 확인` · `지급 완료` · `예정일 저장` 중 하나(SP-3) / 카드 목록 `카드 사용 등록` / 패널 1차 `카드 사용 등록` · `카드 사용 저장` · `구매 완료` · `구매 요청`(패널이 열리면 뒤 1차는 `inert` — 화면 1차는 패널 것 하나) / 구매 요청 목록 `구매 요청` / 프로젝트 상세 `일괄 저장 Ctrl+S N`(Phase 4) / 확인 모달의 1차.
+4. **포커스 링** — `:focus-visible` `--focus-w` `--focus`.
+5. **현재 위치** — 상단 바 현재 메뉴(셸, 무변경). 하위 목록(`/cards/purchases`)에서도 현재 메뉴는 「법인카드」다 — 하위 목록의 부모를 말하는 유일한 표시다(ListScreen 부제 없음, SP-4). 「바꾸기」 목록(S10)의 **현재 줄** 왼쪽 2px `--accent` 막대(§6-3 :482)도 이 「현재 위치」 몫이다 — 목록 안에서 지금 값이 어느 줄인지 말한다.
 
-(3의 보충: 구매 요청 목록의 1차는 `구매 요청`(`?new=1`, 팀 비용 요청의 입구)이다. 1차가 **없는** 화면은 지급 완료 보기(S3)와
-발행 요청 목록(S17) 둘이다.)
+(1차가 **없는** 화면: 지급 완료 보기(S3) · 발행 요청 목록(S17).) 체크박스(선택 열) · 라디오의 `accent-color`는 `--native-accent`이고 다섯 종류와 별개다. 진행 바는 시스템 것 그대로(§7-1 · §7-7 · §7-10) — 새로 더하지 않는다.
 
-**체크박스(선택 열)의 `accent-color`는 `--native-accent`이고 다섯 종류 규칙과 별개다**(§7-13 946행과 같은 해석). **진행 바는 시스템 판 그대로
-쓰고 새로 더하지 않는다** — §7-1(688행, 300ms 넘는 서버 액션: 상단 바 아래 2px) · §7-7 LOADING(853행) · §7-10 업로드 행(904행). 그 `--accent`는
-세 절이 정한 시스템 요소라 이 다섯 종류 목록이 새로 쓰는 자리가 아니다. Phase 4의 CEO-D17(진행 바 없음)은 그 페이즈 범위의 결정이고 §1-3과의 충돌은 04-08이
-`DECISIONS.md`에 기록한다 — 그 기록이 `SYSTEM.md`에서 진행 바를 지우면 이 문서도 따른다.
+**상태 낱말 (`ui/status-tag/status-map.ts` 한 표 — 새 `status-display.ts` 없음. SYSTEM §7-5 보강 줄은 SP-2)**
 
-**상태 → 색 매핑 (한 곳 — `app/(app)/…/status-display.ts` 류 파일 하나. §7-5 개정은 SP-2)**
+색은 status-map.ts의 기존 종류 다섯(`danger` · `warning` · `accent` · `success` · `muted`, :3) 안에서만 고른다. **기존 낱말은 그대로 다시 쓴다**(같은 낱말 · 같은 색 — status-map.ts 실측): `증빙 없음`(danger, :8) · `반려`(danger, :9) · `결재 중`(accent, :19) · `미착수`(muted, :34) · `취소`(muted, :37) · **`신청됨`(muted, :52)**.
+**더하는 낱말 열:** `지출결의 중`(accent) · `구매 요청 중`(accent) · `확인 전`(accent) · `지급 완료`(success) · `카드 사용`(success) · `확인됨`(success) · `구매 완료`(success) · `발행됨`(success) · `선결제`(warning) · `면제`(muted) · `종결`(muted, r3 — S23) — 표에 넣는 일은 계획 첫 태스크(06-01)가 SP-2 기록 뒤에 한다(r3: 그 뒤 새 낱말은 처음 쓰는 플랜이 더한다 — `종결`은 06-28, REVIEWS C2).
+**`신청`(rev 9) → `신청됨`:** 구매 요청 · 발행 요청의 「요청했고 경영관리 처리를 기다림」 상태는 04.3의 `신청됨`(「신청했고 다음 쪽을 기다림 — 대기와 같은 뜻」, SYSTEM §7-5 04.3-15 보강)과 뜻이 같다 — 새 낱말 `신청` · `요청`을 만들지 않고 `신청됨`(muted) 하나를 쓴다(같은 상태 같은 낱말, DESIGN §4 규칙 4). 경영관리가 처리할 행임은 색이 아니라 그 행의 3차(`구매 완료` · `발행 줄 입력`)와 「내 차례」가 말한다.
+**`없음`(rev 9 문서 단위 증빙 값) → `증빙 없음`:** 같은 상태에 낱말 둘을 두지 않는다. 증빙 필수가 꺼진 문서의 증빙 0은 상태 낱말이 아니라 빈 값 `—`(§2-4)다 — 막지 않는 상태라 색이 없다.
 
 | 대상 | 낱말 | `kind` | 뜻 |
 |---|---|---|---|
-| 견적 줄(파생, D-64) | `미착수` | `muted` | 연결 문서 0(Phase 4 기존) |
-| 〃 | `취소` | `muted` | 줄 상태 취소(Phase 4 기존) |
-| 〃 | `반려` | `danger` | 지출결의 쪽 문서 중 반려가 있다 |
-| 〃 | `증빙 없음` | `danger` | 제출된 지출결의 중 증빙이 없는 것이 있다(면제 제외, **선결제 포함** — D-611과 같은 판정). 선결제 기한이 지났으면 2행 `증빙 16일 경과`(`--warning`, `--fs-xs` 400) |
-| 〃 | `지출결의 중` | `accent` | 결재 중이거나 결재 통과·미지급 문서가 있다 |
-| 〃 | `구매 요청` | `accent` | 카드 쪽 — 신청 상태 구매 요청이 있다 |
+| 견적 줄(파생, D-64 — 05-15 `app/(app)/projects/status-display.ts` 파생 함수를 확장, 06-13) | `미착수` · `취소` | `muted`(기존) | 연결 문서 0 · 줄 상태 취소 |
+| 〃 | `반려` | `danger`(기존) | 지출결의 쪽 문서 중 반려가 있다(종결 문서는 세지 않는다 — S23, r3) |
+| 〃 | `증빙 없음` | `danger`(기존) | 제출된 지출결의 중 `hasEvidence` = 거짓인 것이 있다(면제 제외, **선결제 포함** — D-611과 같은 판정, 무효 파일은 세지 않는다). 선결제 기한이 지났으면 2행 `증빙 16일 경과`(`--status-warning`, `--text-tag` 400) |
+| 〃 | `지출결의 중` | `accent` | 결재 중이거나 결재 통과 · 미지급 문서가 있다 |
+| 〃 | `구매 요청 중` | `accent` | 카드 쪽 — `신청됨` 구매 요청이 있다(r2 F3 — 같은 줄의 행동 `구매 요청`과 낱말을 가른다. `지출결의 중`과 같은 꼴) |
 | 〃 | `지급 완료` | `success` | 지출결의 쪽 문서가 **전부** 지급 완료 |
 | 〃 | `카드 사용` | `success` | 카드 쪽 — 카드 사용 건만 있다(구매 완료 포함) |
-| 증빙(문서 단위) | `없음` | `danger` | 증빙 필수 on · 증빙 0 · 선결제 아님 · 면제 아님 → 지급 막힘 |
+| 증빙(문서 단위) | `증빙 없음` | `danger`(기존) | 증빙 필수 on · 살아 있는 파일 0 · 선결제 아님 · 면제 아님 → 지급 막힘 |
 | 〃 | `확인 전` | `accent` | 증빙 있음, 경영관리 확인 전 → 지급 막힘(O-2) |
 | 〃 | `확인됨` | `success` | 경영관리가 확인함 |
-| 〃 | `면제` | `muted` | 경영관리가 면제함(사유 있음). 지급 전후·선결제 여부와 관계없이 **`면제`가 `선결제`·`없음`을 이긴다**(「상태 → 1차」 표 아래 「증빙 면제의 자리」) |
+| 〃 | `면제` | `muted` | 경영관리가 면제함(사유 있음). **`면제`가 `선결제` · `증빙 없음`을 이긴다**(「증빙 면제의 자리」) |
 | 〃 | `선결제` | `warning` | 선결제 표시, 증빙 없음, 면제 아님 — 지급 게이트 예외(D-603), 2행 `증빙 기한 10-02` 또는 `증빙 16일 경과` |
+| 〃 | (낱말 없음) `—` | — | 증빙 필수 off · 증빙 0 · 선결제 아님 · 면제 아님 — 막지 않음 |
 | 지출결의(지급) | `지급 완료` | `success` | 표 `text`, 2행 `09-19` |
-| 구매 요청 | `신청` · `구매 완료` · `취소` | `accent` · `success` · `muted` | EXP-10 세 상태 |
-| 발행 요청 | `요청` · `발행됨` · `취소` | `accent` · `success` · `muted` | D-610(「계획이 정한다」의 기본값 — O-12) |
+| 지출결의(문서, r3) | `종결` | `muted` | 반려 · 회수 문서를 기안자 · 경영관리가 끝냄(S23) — 되돌림 없음, `회수` · `취소`와 같은 색 종류 |
+| 구매 요청 | `신청됨` · `구매 완료` · `취소` | `muted`(기존) · `success` · `muted`(기존) | EXP-10 세 상태(화면 낱말) |
+| 발행 요청 | `신청됨` · `발행됨` · `취소` | `muted`(기존) · `success` · `muted`(기존) | D-610(O-12) |
 
-**견적 줄 상태의 한 값 규칙:** 한 줄에 문서가 여럿이면(분할 회차·카드 여러 건) 우선순위 **취소 > 반려 > 증빙 없음 > 지출결의 중 > 구매 요청 > 지급 완료 >
-카드 사용 > 미착수** 첫 값 하나만 보인다(「상태는 하나」). 두 쪽은 서로 배타라(D-609) 섞이지 않는다. 파생은 서버가 하고 클라이언트는 낱말만 받는다(A-602).
+**견적 줄 상태의 한 값 규칙:** 한 줄에 문서가 여럿이면 우선순위 **취소 > 반려 > 증빙 없음 > 지출결의 중 > 구매 요청 중 > 지급 완료 > 카드 사용 > 미착수** 첫 값 하나만 보인다. 두 쪽은 서로 배타라(D-609) 섞이지 않는다. 파생은 서버가 하고 클라이언트는 낱말만 받는다(A-602).
 
 ---
 
 ## Copywriting Contract
 
-**P0가 먼저다**(`SYSTEM.md` §8 규칙 5, 1086행 — UA-601). 관리자 화면(`/admin/*`) 밖에서는 동작 → 행동 유도(렌더된 컨트롤) → 화면 표시(잠긴 모양 ·
+**P0가 먼저다**(`SYSTEM.md` §8 규칙 5 — UA-601). 관리자 화면(`/admin/*`) 밖에서는 동작 → 행동 유도(렌더된 컨트롤) → 화면 표시(잠긴 모양 ·
 상태 글자 · 버튼 상태) 순으로 이끌고, 글자는 그 셋으로 안 될 때 가장 짧은 `원인 · 다음 행동` 한 줄이다. 안심·사용법 문장(「…할 수 있습니다」
 「값은 남아 있습니다」) 없음. 비활성 이유에 `…할 수 없음 —` 접두 없음. 같은 사실을 두 자리에 쓰지 않는다(예: 카드가 없는 직원에게는 1차를
-렌더하지 않고 EMPTY 한 줄만). **다음 한 수가 그 사람의 권한 밖이면 버튼을 세우지 않고 담당을 적는다**(§8 규칙 3, 1083행):
+렌더하지 않고 EMPTY 한 줄만). **다음 한 수가 그 사람의 권한 밖이면 버튼을 세우지 않고 담당을 적는다**(§8 규칙 3):
 `· 담당 PM 박서연` · `· 지급은 경영관리` · `· 구매는 경영관리` · `· 발행은 경영관리`. 경영관리가 비어 있어도 대신할 사람을 적지 않는다(D-601).
 
 **용어(§8 규칙 7에 더할 것 — SP-5):** 지급 완료(송금 X · 이체 완료 X) · **지급 방식**(`계좌이체` · `법인카드` · `현금`, UA-618) · **이체액**(실제로 나간 돈 —
@@ -263,136 +302,142 @@ payable) · 지급 예정일 · 지급일 · **증빙 확인**(검수 X) · **�
 |---------|------|
 | Primary CTA — 지급 대상(S1) | 라벨 `지급 완료 5` + kbd `Ctrl+Enter`(1차, 건수 = 고른 건수 — 모든 쪽 합. 고른 행은 늘 지금 고를 수 있는(P4) 행이다 — 게이트로 막힌 행은 선택이 풀려 N에 들지 않는다, S1 「일괄 결과 알림 · 막힌 행 선택」). 누르면 확인 모달(S2). 고른 건이 0이면 **비활성** + 이유 `고른 건 없음`(`reasonTone: "info"`). 고른 행에 오류 칸(이체액 형식 · 차이 사유 없음)이 있으면 **비활성이 아니다** — 누르면 모달을 열지 않고 첫 오류 칸으로 포커스(04 DR-5와 같은 결). 모달의 이체액 합계는 **연 순간의 합계 번호**(고른 행 id + 이체액만 — 차이 사유는 들지 않는다)의 서버 합이고, 그 합이 오기 전에는 모달 1차가 `…` + `aria-disabled`다(S1 「합계 줄」 · S2). 1024 미만에서는 렌더하지 않는다(편집 표는 1024 이상, DR-36) |
 | Primary CTA — 지출결의 문서 화면(S4·S5, 지급 권한자) | **어느 1차가 서는지는 「적용 규칙」 첫 절 「지출결의 상태 → 1차」 표(P0~P6)가 정본이다** — 여기서 따로 갈래를 적지 않는다. 한 상태에 1차 **하나**. 이 행은 라벨만 정한다:
-`증빙 확인` + `Ctrl+Enter` · `지급 완료` + `Ctrl+Enter`(막힌 상태는 **비활성** + 이유 `증빙 없음 · 담당 PM 박서연`, `block`) · `예정일 저장` + `Ctrl+Enter`(SP-3) · 2차 `지급 취소`. 결재 통과 전(결재 중·반려·회수) 문서에는 이 페이즈의 1차·2차·3차가 없다(P0) |
-| Primary CTA — 카드 사용 목록(S8) | `카드 사용 등록`(필터 줄 오른쪽 = §6-1 「새 지출결의」 자리, `?new=1`). 쓸 카드가 0장이면 렌더하지 않는다(EMPTY가 말한다) |
-| Primary CTA — 카드 사용 폼(S9·S13) | 새 건 `카드 사용 등록` + `Ctrl+Enter` / 수정 `카드 사용 저장` + `Ctrl+Enter` / 구매 완료 모드 `구매 완료` + `Ctrl+Enter`. 2차 `취소 Esc`(입력이 있으면 「입력 버리기」 확인, 04 S2 DR-27 그대로) |
-| Primary CTA — 구매 요청 목록·폼(S11·S12) | 목록 `구매 요청`(`?new=1`) / 폼 `구매 요청` + `Ctrl+Enter` · 2차 `취소 Esc` |
+`증빙 확인` + `Ctrl+Enter` · `지급 완료` + `Ctrl+Enter`(막힌 상태는 **비활성** + 이유 `증빙 없음 · 기안자 박서연`, `block`) · `예정일 저장` + `Ctrl+Enter`(SP-3) · 2차 `지급 취소`. 결재 통과 전(결재 중·반려·회수) 문서에는 이 페이즈의 1차·2차·3차가 없다(P0) |
+| Primary CTA — 카드 사용 목록(S8) | `카드 사용 등록`(`ListScreen.primaryAction` — 필터 줄 오른쪽 끝, 폰은 필터 아래, `?new=1` 옆 패널). 쓸 카드가 0장이면 렌더하지 않는다(EMPTY가 말한다) |
+| Primary CTA — 카드 사용 폼(S9·S13) | 새 건 `카드 사용 등록` + `Ctrl+Enter` / 수정 `카드 사용 저장` + `Ctrl+Enter` / 구매 완료 모드 `구매 완료` + `Ctrl+Enter`. 2차 `취소 Esc`(옆 패널 — 바뀐 칸이 있을 때만 「입력 버리기」, SidePanel.tsx:181-184) |
+| Primary CTA — 구매 요청 목록·패널(S11·S12) | 목록 `구매 요청`(`ListScreen.primaryAction`, `?new=1` 옆 패널) / 패널 `구매 요청` + `Ctrl+Enter` · 2차 `취소 Esc` |
 | Primary CTA — 프로젝트 상세 | Phase 4의 `일괄 저장 Ctrl+S N` 그대로 — 발행 요청 표의 dirty도 `N`에 든다(S16, §7-3 (사)) |
-| 2차 버튼 | `지급 취소`(지급 완료 뒤 문서 화면) · `다시 시도`(로드 오류, §7-7) · `취소 Esc` / `닫기 Esc`(모달 — 1차에 「취소」가 있으면 `닫기 Esc`, §7-17) · 폰 `필터`(목록 필터 펼침, 04 DR-26 선례) |
-| 3차 버튼 | `증빙 확인`(목록 행 증빙 칸 — S1 · S3 ≥1024는 **제자리 확인 모달**(S1 「제자리 증빙 확인」) / 1024 미만은 문서 화면 증빙 섹션으로 이동, S1이면 `?from=pay`) · 지출결의 번호 `26001-0004`(S1 번호 셀의 식별자형 링크 → 문서 화면 `?from=pay`, 번호가 숨는 폭에서는 「프로젝트 · 항목」 셀 1행이 링크 — H-2) · `지급 대상으로` · `다음 확인 전 26001-0009`(`from=pay`로 연 문서 화면의 행동 줄 오른쪽, S1 「문서 화면 왕복」) · `크게 보기`(첨부 보기 칸 · 폰 행 시트 첨부 행 — §7-8 · SP-7) · `되돌리기`(토스트, H-4 — 「SUCCESS — 토스트」) · `승인 증빙 1` / `승인 증빙`(차수 섹션 동작 칸, 파일 0이면 숫자 없음 — S21) · `증빙 2` / `증빙`(리저브 대장 `증빙` 열 — S22) · `증빙 면제` · `바꾸기`(증빙 금액 · 카드 · 연결 · 거래처 · 프로젝트 · 견적 줄) · `고르기`(빈 가맹점) · `지급 예정일 바꾸기`(저장은 화면 1차 `예정일 저장`, SP-3) · `견적 외 비용으로` / `팀 비용으로`(S10 막힘·EMPTY의 다음 한 수) · `검색 지우기`(S10) · `번호 보기` / `가리기` · `구매 요청 3` / `발행 요청 2`(하위 목록 링크, 건수 = 처리 대기) · `구매 완료` · `요청 취소` · `발행 요청 추가` · `발행 줄로` · `발행 줄 입력`(S17 `요청` 행) / `요청 보기`(S17 `발행됨`·`취소` 행) · `점검 보기` · `지출결의 열기` · `지출결의 올리기` · `구매 요청` · `카드 사용 등록` · `증빙 올리기` · `발행 줄 추가` · `지급 대상 보기` · `지급 완료 보기` · `구매 요청 보기` · `발행 요청 보기` · `전체 보기` · `필터 지우기` · `새로 고침` · 페이지 `이전`/`다음`/번호 · 구매 요청 품목의 링크(external-link **아이콘만**, 글자 없음 · `aria-label="{품목} 링크 열기"` · `title` = URL) · 막힘 줄의 다음 한 수(`카드 고르기` · `연결 고르기` · `증빙 종류 고르기` · `품목 적기` · `사유 적기` · `지출결의로`). 같은 낱말 `바꾸기`가
+| 2차 버튼 | `지급 취소`(지급 완료 뒤 문서 화면) · `종결`(반려 · 회수 문서 화면 — S23, r3) · `다시 시도`(로드 오류, §7-7) · `취소 Esc` / `닫기 Esc`(모달 — 1차에 「취소」가 있으면 `닫기 Esc`, §7-17) · 폰 `필터`(목록 필터 펼침, 04 DR-26 선례) |
+| 3차 버튼 | `증빙 확인`(목록 행 증빙 칸 — S1 · S3 ≥1024는 **제자리 확인 모달**(S1 「제자리 증빙 확인」) / 1024 미만은 문서 화면 증빙 섹션으로 이동, S1이면 `?from=pay`) · 지출결의 번호 `26001-0004`(S1 번호 셀의 식별자형 링크 → 문서 화면 `?from=pay`, 번호가 숨는 폭에서는 「프로젝트 · 항목」 셀 1행이 링크 — H-2) · `지급 대상으로` · `다음 확인 전 26001-0009`(`from=pay`로 연 문서 화면의 행동 줄 오른쪽, S1 「문서 화면 왕복」) · `크게 보기`(첨부 보기 칸 · 폰 행 시트 첨부 행 — §7-8 · SP-7) · `되돌리기`(표 위 결과 줄 — S8 행 삭제 · S11 본인 취소, §7-8 :1008) · `수정` / `삭제`(S8 행 `RowActions`, `삭제`는 `danger`) · `승인 증빙 1` / `승인 증빙`(차수 섹션 동작 칸, 파일 0이면 숫자 없음 — S21) · `증빙 2` / `증빙`(리저브 대장 `증빙` 열 — S22) · `증빙 면제` · `바꾸기`(증빙 금액 · 카드 · 연결 · 거래처 · 프로젝트 · 견적 줄) · `고르기`(빈 가맹점) · `지급 예정일 바꾸기`(저장은 화면 1차 `예정일 저장`, SP-3) · `견적 외 비용으로` / `팀 비용으로`(S10 막힘·EMPTY의 다음 한 수) · `검색 지우기`(S10) · `번호 보기` / `가리기` · `구매 요청 3` / `발행 요청 2`(하위 목록 링크, 건수 = 처리 대기) · `구매 완료` · `요청 취소` · `발행 요청 추가` · `발행 줄로` · `발행 줄 입력`(S17 `신청됨` 행) / `요청 보기`(S17 `발행됨`·`취소` 행) · `점검 보기` · `지출결의 열기` · `지출결의 올리기` · `구매 요청` · `카드 사용 등록` · `증빙 올리기` · `발행 줄 추가` · `지급 대상 보기` · `지급 완료 보기` · `구매 요청 보기` · `발행 요청 보기` · `전체 보기` · `필터 지우기` · `새로 고침` · 페이지 `이전`/`다음`/번호 · 구매 요청 품목의 링크(external-link **아이콘만**, 글자 없음 · `aria-label="{품목} 링크 열기"` · `title` = URL) · 막힘 줄의 다음 한 수(`카드 고르기` · `연결 고르기` · `증빙 종류 고르기` · `품목 적기` · `사유 적기` · `지출결의로`). 같은 낱말 `바꾸기`가
 한 화면에 여럿이면 각 버튼에 `aria-label="{칸 라벨} 바꾸기"`(`가맹점 바꾸기` · `프로젝트 바꾸기` · `견적 줄 바꾸기` · `증빙 금액 바꾸기`). **표·목록 행마다 되풀이되는 3차도 같은 규칙이다** — 보이는 글자는 그대로 두고 `aria-label="{행 식별자} {버튼 글자}"`:
-지출결의 행(S1·S3·S18) `26001-0004 번호 보기` · `26001-0004 가리기` · `26001-0004 증빙 확인` · `26001-0004 지출결의 열기` / 구매 요청 행(S11) `26001-C0001 구매 완료` · `26001-C0001 요청 취소` · `{품목} 링크 열기` /
+지출결의 행(S1·S3·S18) `26001-0004 번호 보기` · `26001-0004 가리기` · `26001-0004 증빙 확인` · `26001-0004 지출결의 열기` / 카드 사용 행(S8) `09-18 쿠팡 수정` · `09-18 쿠팡 삭제`(사용일 + 가맹점, 가맹점 없으면 결제 합계) / 구매 요청 행(S11) `26001-C0001 구매 완료` · `26001-C0001 요청 취소` · `{품목} 링크 열기` /
 견적 줄 행(S18 미매칭) `6 해외 연사 항공·숙박 지출결의 올리기` · 온라인구매 줄 `7 현장 소모품 구매 요청` / 발행 요청 행 S16 `희망 09-30 발행 줄로` · S17 `26001 희망 09-30 발행 줄 입력` · `26001 희망 09-30 요청 보기`(프로젝트 번호 + 희망일) /
 차수 행(S21) `2차 승인 증빙 1`(파일 0이면 `2차 승인 증빙`) / 리저브 줄(S22) `09-18 현대자동차 증빙 2`(날짜 + 클라이언트, 파일 0이면 `09-18 현대자동차 증빙`) / S1 번호 링크 `26001-0004 지출결의 열기`(위 지출결의 행 규칙 그대로 — 보이는 번호가 접근 이름 앞에 온다) |
-| Empty — 지급 대상 | `지급할 건이 없습니다 · 지급 완료 보기`(→ `?view=paid`) |
+| Empty — 지급 대상 | `지급할 건이 없습니다 · 지급 완료 보기`(→ `?status=지급 완료`) |
 | Empty — 지급 대상 · 필터 0건 | `조건에 맞는 건이 없습니다 · 필터 지우기` |
 | Empty — 지급 완료 보기 | `지급 완료한 건이 없습니다 · 지급 대상 보기` |
 | Empty — 지출결의 목록(지급 권한 없는 사람)의 지급 열 | 해당 없음 — 값이 없으면 `—`(§2-4). 빈 목록 자체는 Phase 5 문구(UA-605) |
-| Empty — 문서 화면 증빙(지급 권한자가 봄, 「상태 → 1차」 P3 = 결재 통과 · 지급 전 · 증빙 필수 on · 증빙 0 · 선결제 아님 · **면제 아님**) | 증빙 줄 `없음 · 담당 PM 박서연`(`--danger`) + 같은 줄 3차 `증빙 면제`. 면제된 문서는 이 줄이 아니라 `면제` + 2행(「표시 — 증빙 면제 결과」)이고 1차 `지급 완료`가 살아 있다(P4) |
+| Empty — 문서 화면 증빙(지급 권한자가 봄, 「상태 → 1차」 P3 = 결재 통과 · 지급 전 · 증빙 필수 on · 증빙 0 · 선결제 아님 · **면제 아님**) | 증빙 줄 `증빙 없음 · 기안자 박서연`(`--status-danger`) + 같은 줄 3차 `증빙 면제`. 면제된 문서는 이 줄이 아니라 `면제` + 2행(「표시 — 증빙 면제 결과」)이고 1차 `지급 완료`가 살아 있다(P4) |
 | Empty — 카드 사용 목록 | 이번 달 0건: `이번 달 카드 사용이 없습니다 · 카드 사용 등록`(3차, `?new=1`). 필터 0건: `조건에 맞는 카드 사용이 없습니다 · 필터 지우기`. 쓸 카드가 0장인 직원: `쓸 수 있는 법인카드가 없습니다 · 카드 등록은 관리자`(버튼 없음 · S9에서는 새 건에만 — 수정 모드는 이 갈래로 바뀌지 않는다) |
-| Empty — 구매 요청 목록 | 기본 보기(신청) 0건 — 경영관리: `처리할 구매 요청이 없습니다 · 전체 보기` / 요청자: `신청한 구매 요청이 없습니다 · 구매 요청`. 전체 0건: `구매 요청이 없습니다 · 구매 요청` |
-| Empty — 발행 요청 목록(S17) | 기본 보기(요청) 0건: `처리할 발행 요청이 없습니다 · 전체 보기` |
+| Empty — 구매 요청 목록 | 기본 보기(신청됨) 0건 — 경영관리: `처리할 구매 요청이 없습니다 · 전체 보기` / 요청자: `신청한 구매 요청이 없습니다 · 구매 요청`. 전체 0건: `구매 요청이 없습니다 · 구매 요청` |
+| Empty — 발행 요청 목록(S17) | 기본 보기(신청됨) 0건: `처리할 발행 요청이 없습니다 · 전체 보기` |
 | Empty — 상세 「발행 요청」 표(S16) | 담당 PM(쓰기, ≥1024): `발행 요청이 없습니다 · 발행 요청 추가`(3차 `onClick`) / 그 밖의 사람: `발행 요청이 없습니다 · 요청은 담당 PM 박서연`(버튼 없음) / 1024 미만: `발행 요청이 없습니다`(사실만, 편집 표 규칙) |
 | Empty — 상세 「법인카드 사용」 섹션(S15) | `이 프로젝트에 카드 사용이 없습니다 · 카드 사용 등록`(3차 → `/cards?new=1&project={id}`, 카드가 있는 사람에게만 — 없으면 사실만) |
 | Empty — 연결 고르기 목록(S10) | 프로젝트에 견적 줄 0 — 부른 폼에 따라 둘: 카드 폼 `이 프로젝트에 견적 줄이 없습니다 · 견적 외 비용으로`(3차 — 연결 라디오를 「견적 외 비용」으로 바꾸고 목록을 닫는다) /
 구매 요청 폼(S12, 라디오에 「견적 외 비용」이 없다) `이 프로젝트에 견적 줄이 없습니다 · 팀 비용으로`(3차 — 연결 라디오를 「팀 비용」으로 바꾸고 목록을 닫는다) / 검색 0건: `조건에 맞는 줄이 없습니다 · 검색 지우기` / **줄은 있으나 고를 수 있는 줄 0**(전부 반대쪽, 또는 구매 요청 폼에서 온라인구매 줄 0):
 행은 그대로 보이고(행마다 2행 이유) 부제 끝이 `… · 카드로 이을 수 있는 줄 0` / `… · 온라인구매 줄 0`, 1차 `이 줄로` 비활성 + 이유 `이을 수 있는 줄 없음 · 견적 외 비용으로`(카드 폼) /
 `온라인구매 줄 없음 · 팀 비용으로`(구매 요청 폼) — 3차가 연결 라디오를 바꾸고 목록을 닫는다 |
-| Empty — 완료 전 점검(S18) | 세 그룹이 모두 비면 그룹 자리에 한 줄 `미결 없음`(`--success`). **매출 줄(`계약 금액 · 발행 합계 · 차이`)은 그룹이 비어도 늘 남는다**(D-613). 막힘은 0이어도 강행 허용 그룹에 항목이 있으면 그 그룹은 그대로 보인다(「미결 없음」이 아니다) |
-| Empty — 차수 승인 증빙(S21, 펼침 섹션) | 쓰기 권리(서버 값)면 첨부 영역만(설명 없음 — 영역 한 줄이 말한다) / 읽기 · 파일 0: `승인 증빙 없음 · 올리기는 담당 PM 박서연`(`--muted`, 버튼 없음 — §8 규칙 3) |
-| Empty — 리저브 줄 증빙(S22, 펼침 섹션) | 쓰기 권리면 첨부 영역만 / 읽기 · 파일 0: `증빙 없음`(`--muted`, 버튼 없음 — 리저브 쓰기는 역할 이름이 없는 권한(`pnl` 쓰기)이라 담당을 적지 않고 사실만, §8 규칙 3 끝 문장) |
-| Error — 목록 로드 | `지급 대상을 불러오지 못했습니다 · 다시 시도` · `지급 완료 목록을 불러오지 못했습니다 · 다시 시도`(S3) · `카드 사용 목록을 불러오지 못했습니다 · 다시 시도` · `구매 요청 목록을 불러오지 못했습니다 · 다시 시도` · `발행 요청 목록을 불러오지 못했습니다 · 다시 시도`(`--danger`, 「다시 시도」 = 2차, §7-7 로드 오류 꼴) |
-| Error — 연결 고르기 목록 로드(S10) | 모달·시트의 목록 자리 한 줄: 프로젝트 `프로젝트를 불러오지 못했습니다 · 다시 시도` · 견적 줄 `견적 줄을 불러오지 못했습니다 · 다시 시도`(`--danger`, 「다시 시도」 = 2차 — 같은 검색어로 다시 부른다). 1차 `이 줄로`는 비활성(`aria-describedby` → 이 오류 줄 — 이유 없는 비활성 없음), 2차 `취소 Esc`는 산다(폼 입력은 남는다) |
-| Error — 「내 차례」 로드(S19) | 블록 자리 한 줄 `내 차례를 불러오지 못했습니다 · 다시 시도`(`--danger`, 「다시 시도」 = 2차, §7-7 로드 오류 꼴). 블록만 실패하고 홈의 나머지는 선다. 0건(블록 없음)과 구분된다 — 실패를 빈 블록으로 숨기지 않는다 |
+| Empty — 완료 전 점검(S18) | 세 그룹이 모두 비면 그룹 자리에 한 줄 `미결 없음`(`--status-success`). **매출 줄(`계약 금액 · 발행 합계 · 차이`)은 그룹이 비어도 늘 남는다**(D-613). 막힘은 0이어도 강행 허용 그룹에 항목이 있으면 그 그룹은 그대로 보인다(「미결 없음」이 아니다) |
+| Empty — 차수 승인 증빙(S21, 펼침 섹션) | 쓰기 권리(서버 값)면 첨부 영역만(설명 없음 — 영역 한 줄이 말한다) / 읽기 · 파일 0: `승인 증빙 없음 · 올리기는 담당 PM 박서연`(`--text-muted`, 버튼 없음 — §8 규칙 3) |
+| Empty — 리저브 줄 증빙(S22, 펼침 섹션) | 쓰기 권리면 첨부 영역만 / 읽기 · 파일 0: `증빙 없음`(`--text-muted`, 버튼 없음 — 리저브 쓰기는 역할 이름이 없는 권한(`pnl` 쓰기)이라 담당을 적지 않고 사실만, §8 규칙 3 끝 문장) |
+| Error — 목록 로드 | `지급 대상 불러오지 못함 · 다시 시도` · `지급 완료 목록 불러오지 못함 · 다시 시도`(S3) · `카드 사용 목록 불러오지 못함 · 다시 시도` · `구매 요청 목록 불러오지 못함 · 다시 시도` · `발행 요청 목록 불러오지 못함 · 다시 시도`(`--status-danger`, 「다시 시도」 = 2차, §7-7 로드 오류 꼴) |
+| Error — 연결 고르기 목록 로드(S10) | 모달·시트의 목록 자리 한 줄: 프로젝트 `프로젝트 불러오지 못함 · 다시 시도` · 견적 줄 `견적 줄 불러오지 못함 · 다시 시도`(`--status-danger`, 「다시 시도」 = 2차 — 같은 검색어로 다시 부른다). 1차 `이 줄로`는 비활성(`aria-describedby` → 이 오류 줄 — 이유 없는 비활성 없음), 2차 `취소 Esc`는 산다(폼 입력은 남는다) |
+| Error — 「내 차례」 로드(S19) | 블록 자리 한 줄 `내 차례 불러오지 못함 · 다시 시도`(`--status-danger`, 「다시 시도」 = 2차, §7-7 로드 오류 꼴). 블록만 실패하고 홈의 나머지는 선다. 0건(블록 없음)과 구분된다 — 실패를 빈 블록으로 숨기지 않는다 |
 | Error — 섹션 로드 | 상세 「법인카드 사용」 `카드 사용 불러오지 못함 · 다시 시도` · 「완료 전 점검」 `점검 불러오지 못함 · 다시 시도` — 이때 「정산 결재 올리기」는 비활성 + `점검 결과 없음 · 다시 시도`(점검 없이 기안하지 않는다) |
-| Error — 이체액 칸(S1·S5) | `숫자가 아닙니다 · 13,640,000처럼 적어 주세요` · `이체액은 0보다 커야 합니다 · 금액을 고쳐 주세요` · 원화 소수점 `원화는 소수점 없이 적어 주세요`(04 숫자 자리 문구 그대로) |
-| Error — 차이 사유 칸 | `차이 사유 없음 · 한 줄 적어 주세요`(이체액 ≠ 지급 총액일 때만 칸이 필수) |
-| Error — 지급일 · 지급 예정일 칸 | `날짜 형식이 아닙니다 · 2026-09-19처럼 적어 주세요` · 지급일 `지급일이 오늘보다 늦음 · 날짜를 고쳐 주세요` |
-| Error — 증빙 금액 칸(S4) | `숫자가 아닙니다 · 12,400,000처럼 적어 주세요` · `증빙 금액은 0보다 커야 합니다 · 금액을 고쳐 주세요` |
-| Error — 사유 근거 칸(면제 · 지급 취소 · 경영관리의 구매 요청 취소) | 비면 1차 비활성 + 왼쪽 `사유 없음 · 한 줄 적어 주세요`(§7-8 882행 원문) |
+| Error — 이체액 칸(S1·S5) | `숫자 아님 · 13,640,000처럼` · `이체액 0 이하 · 금액 고치기` · 원화 소수점 `원화 소수점 · 소수점 없이`(rev 10 — §8 규칙 3 명사형 · 높임말 종결 금지) |
+| Error — 차이 사유 칸 | `차이 사유 없음 · 사유 적기`(이체액 ≠ 지급 총액일 때만 칸이 필수) |
+| Error — 지급일 · 지급 예정일 칸 | `날짜 형식 오류 · 2026-09-19처럼`(§8 규칙 3 원문 꼴). **미래 날짜는 오류가 아니다** — 지급일 · 지급 예정일 모두 허용(사용자 결정(10/5 00:55) Q6, rev 9의 「지급일이 오늘보다 늦음」 철회) |
+| Error — 증빙 금액 칸(S4) | `숫자 아님 · 12,400,000처럼` · `증빙 금액 0 이하 · 금액 고치기` |
+| Error — 사유 근거 칸(면제 · 지급 취소 · 경영관리의 구매 요청 취소 · 지출결의 종결) | 비면 1차 비활성 + 왼쪽 `사유 없음 · 사유 적기`(§7-8 :1001 원문) |
 | Error — 증빙 업로드(S7 · S21 · S22, §7-10 행 오류 모양) | 크기 `12.4MB · 10MB 초과 · 파일을 줄여 다시`(한도 숫자는 설정 값) · 형식 `이미지·PDF가 아님 · 사진이나 PDF로 다시` · 중복(**같은 주인 종류 안에서만** 막힌다 — S7 「중복」, O-6 · DR-3) `같은 파일이 26001-0004 증빙에 있음 · 다른 파일 고르기`(올린 사람이 그 문서를 읽을 수 있을 때만 번호 — 서버가 읽기 권한을 확인한 뒤 번호를 싣는다. 못 읽으면 `이미 첨부된 파일 · 다른 파일 고르기`, 같은 문서면 `같은 파일이 이미 첨부됨`. 주인이 지출결의가 아닌 S21 · S22는 늘 번호 없는 문구) · 완료 통보 실패 `올리지 못함 · 다시 올리기` |
-| Error — 카드 사용 폼 칸 | 결제 합계 `숫자가 아닙니다 · 1,240,000처럼 적어 주세요` · `결제 합계는 0보다 커야 합니다 · 금액을 고쳐 주세요` · 환율 `환율이 없습니다 · USD 환율을 적어 주세요` · 사용일 `사용일이 오늘보다 늦음 · 날짜를 고쳐 주세요` |
-| Error — 구매 요청 폼 칸 | 링크 `링크 형식이 아닙니다 · https://로 시작하는 주소를 붙여 주세요`(http·https만 받는다) · 예상 금액은 결제 합계와 같은 숫자 문구 · 외화 환율 `환율이 없습니다 · USD 환율을 적어 주세요`(카드 폼과 같은 문구) |
-| 막힘 — 카드 사용 폼(`Form.Actions`) | 빈 칸: `카드 · 결제 합계 2칸 비어 있음 · 카드 고르기`(§7-15 원문 꼴) · 연결 미선택: `연결 없음 · 연결 고르기` · 완료 프로젝트(경영관리 아님): `완료 · 견적 줄 잠김` · 서버 이중 연결 거부(D-609, 경합): `지출결의 26001-0004 연결됨 · 다른 줄 고르기` · 저장된 증빙 종류가 카드 옵션에 없음(수정 모드): `증빙 종류 사업소득 카드에 없음 · 증빙 종류 고르기` · 팀 비용인데 사용일 소속 없음: `김OO 09-18 소속 없음 · 소속 발령은 관리자`(버튼 없음) · 구매 완료 모드(S13) 팀 비용인데 요청자의 사용일 소속 없음: `요청자 김OO 09-20 소속 없음 · 소속 발령은 관리자`(버튼 없음) |
+| Error — 카드 사용 폼 칸 | 결제 합계 `숫자 아님 · 1,240,000처럼` · `결제 합계 0 이하 · 금액 고치기` · 환율 `환율 없음 · USD 환율 적기` · 사용일 `사용일 미래 · 오늘까지 날짜로`(사용자 결정(10/5 00:55) Q6 — 칸 `max`가 먼저 막고 서버 거부 때만 이 글자) |
+| Error — 구매 요청 폼 칸 | 링크 `링크 형식 오류 · https://로 시작하는 주소`(http·https만 받는다) · 예상 금액은 결제 합계와 같은 숫자 문구 · 외화 환율 `환율 없음 · USD 환율 적기`(카드 패널과 같은 문구) |
+| 막힘 — 카드 사용 폼(옆 패널 `PanelForm` 막힘 줄 — `blockedReason` / 서버 거부는 `reason`) | 빈 칸: `카드 · 결제 합계 2칸 비어 있음 · 카드 고르기`(§7-15 원문 꼴) · 연결 미선택: `연결 없음 · 연결 고르기` · 완료 프로젝트(경영관리 아님): `완료 · 견적 줄 잠김` · 서버 이중 연결 거부(D-609, 경합): `지출결의 26001-0004 연결됨 · 다른 줄 고르기` · 실행가 초과(사용자 결정(10/5 00:55) Q3 — S9 · S13, S13은 완료 아닌 프로젝트만 — r4 Q-E): `실행가 초과 · 남은 실행가 4,337,280 · 다른 줄 고르기`(3차 → `견적 줄 바꾸기` — S9만. S13 구매 완료 모드는 연결이 고정이라 `… · 견적 줄은 담당 PM 박서연`, S13 「실행가 초과」) · 저장된 증빙 종류가 카드 옵션에 없음(수정 모드): `증빙 종류 사업소득 카드에 없음 · 증빙 종류 고르기` · 팀 비용인데 사용일 소속 없음: `김OO 09-18 소속 없음 · 소속 발령은 관리자`(버튼 없음) · 구매 완료 모드(S13) 팀 비용인데 요청자의 사용일 소속 없음: `요청자 김OO 09-20 소속 없음 · 소속 발령은 관리자`(버튼 없음) |
 | 막힘 — 카드 사용 폼 · 증빙 종류 자동 채움 없음(S9 — 새 건 · 수정 · 구매 완료 모드 공통) | 대신 채울 `카드 전표`가 카드 옵션에 없을 때(코드표에서 `카드 전표`의 규칙이 원천징수·회사 대납으로 바뀐 경우 — 가맹점 없음 기본값 · 거래처 기본값이 카드에 없는 규칙인 경우 둘 다): `Select`는 `—`, 1차 막힘 이유(`block`) — 카드 옵션이 하나 이상이면 `카드 전표 카드에 없음 · 증빙 종류 고르기`(3차 → 증빙 종류 칸 포커스) / 카드 옵션이 0개면 `카드에 쓸 증빙 종류 없음 · 코드표 세금 규칙은 관리자`(버튼 없음, §8 규칙 3). 거래처 기본값 갈래는 가맹점 줄 `Form.Hint` `기본 증빙 사업소득 · 카드에 없음`이 함께 선다 |
-| 막힘 — 구매 요청 폼 | `품목 · 예상 금액 2칸 비어 있음 · 품목 적기` · 서버 문 가르기 거부(경합·직접 URL): `온라인구매 협력사 줄 아님 · 지출결의로`(3차 → 그 줄의 지출결의 올리기) · 팀 비용인데 요청자의 오늘 소속 없음: `김OO 09-24 소속 없음 · 소속 발령은 관리자`(버튼 없음) |
+| 막힘 — 구매 요청 폼 | `품목 · 예상 금액 2칸 비어 있음 · 품목 적기` · 실행가 초과(사용자 결정(10/5 00:55) Q3 — S12): `실행가 초과 · 남은 실행가 4,337,280 · 다른 줄 고르기` · 서버 문 가르기 거부(경합·직접 URL): `온라인구매 협력사 줄 아님 · 지출결의로`(3차 → 그 줄의 지출결의 올리기) · 팀 비용인데 요청자의 오늘 소속 없음: `김OO 09-24 소속 없음 · 소속 발령은 관리자`(버튼 없음) |
+| 거부 — 견적 새 차수(S9 · S12 저장, r4 — 서버가 잠근 프로젝트 행으로 다시 판정, 06-07 X-2) | 폼을 연 뒤 그 프로젝트에 새 견적 차수가 생겨 고른 줄이 지난 차수가 되면 `견적 새 차수 · 새로 고침`(`reason` 줄 — 「거부 — 문서 화면 동시성」과 같은 꼴, 버튼 없음). 완료로 바뀐 프로젝트는 「막힘 — 카드 사용 폼」 `완료 · 견적 줄 잠김` 그대로 |
+| 거부 — 견적 줄 빠짐(r5 · N-2 — 고정 연결: S9 수정 · S8 결과 줄 `되돌리기` · S13 구매 완료 · S11 결과 줄 `되돌리기`, 06-07 `currentLineForFixedLink`) | 이은 견적 줄이 새 차수에서 빠졌거나 그 줄이 보관됐으면 `견적 줄 빠짐 · 새로 고침`(S9 · S13은 `reason` 줄, S8 · S11은 결과 줄 글자 `--status-danger` + 그 문구 — 「거부 — 견적 새 차수」와 같은 꼴, 버튼 없음). 새로 고친 뒤 다음 걸음은 화면이 말한다: S9는 연결 칸에서 다른 줄, S13은 그 요청의 `요청 취소`. 상한은 늘 그 줄의 지금 차수 실행가로 판정한다(r5 · N-1) |
 | 막힘 — 선결제 칸(S6, Phase 5 폼) | 선결제에 체크하고 사유가 비면 `선결제 사유 없음 · 사유 적기` |
 | 막힘 — 견적 줄 표 행 행동(S14) | 카드 쪽 줄에서 지출결의: `카드 사용 2건 연결됨 · 지출결의는 다른 줄` · 지출결의 쪽 줄에서 카드·구매 요청: `지출결의 26001-0004 연결됨 · 카드 사용은 다른 줄` · 지급 완료 줄에서 새 지출결의(EXP-06): `지급 완료 26001-0004 · 새 지출결의 없음` · 읽기 전용 셀(D-66, Phase 4 꼴): `지출결의 26001-0004 지급 완료 · 고치려면 새 차수` |
 | 막힘 — 연결 고르기 목록의 반대쪽 줄(S10) | 행은 고를 수 없고(`aria-disabled`) 행 아래 2행 `지출결의 26001-0004 결재 중 · 12,400,000`(§6-3 「바꾸기」 목록 원문 꼴). 누르면 행 아래 `지출결의 연결됨 · 카드 사용은 다른 줄`(`block`) |
 | 막힘 — 정산 결재 올리기(S18, Phase 5 버튼) | `완료 전 점검 3건 · 점검 보기`(`block`, 건수 = 막히는 그룹의 항목 수 합, 강행 허용 그룹은 세지 않는다) |
 | 막힘 — 대표 승인(S18, O-16) | 정산 결재 문서의 `승인` 1차 비활성 + 이유 `완료 전 점검 1건 · 담당 PM 박서연`(`block` — 고치는 일은 대표 권한 밖이라 담당을 적는다, §8 규칙 3, M-6) + 같은 줄 3차 `점검 보기`(→ 프로젝트 상세 점검 섹션 — 보는 일은 대표도 한다). 2차 `반려`는 그대로 산다(결재 모듈 규칙 — 막히는 것은 승인뿐) |
-| 거부 — 일괄 지급 건별 결과(S2, 행 아래 한 줄 `--danger`) | `rules.gate`가 돌려준 문자열 그대로: `증빙 없음 · 담당 PM 박서연` · `증빙 확인 전 · 증빙 확인` · `결재 통과 전 · 팀장 결재 중` · 동시성: `이과장이 14:01에 지급 완료함 · 새로 고침` · `다른 사람이 14:01에 바꿈 · 새로 고침`(사람·시각은 서버 값) · 지급일 세율(D-101): `지급일 09-19 기준 지급 총액 바뀜 · 이체액 확인`(S2 — 새 지급 총액은 그 행 셀이 보인다) |
+| 거부 — 일괄 지급 건별 결과(S2, 행 아래 한 줄 `--status-danger`) | `rules.gate`가 돌려준 문자열 그대로: `증빙 없음 · 기안자 박서연` · `증빙 확인 전 · 증빙 확인` · `결재 통과 전 · 팀장 결재 중` · 짝 아님(사용자 결정(10/5 00:55) Q4): `계좌이체 · 카드 전표 짝 아님 · 짝 설정은 관리자` · 동시성: `이과장이 14:01에 지급 완료함 · 새로 고침` · `다른 사람이 14:01에 바꿈 · 새로 고침`(사람·시각은 서버 값) · 지급일 세율(D-101): `지급일 09-19 기준 지급 총액 바뀜 · 이체액 확인`(S2 — 새 지급 총액은 그 행 셀이 보인다) |
 | 거부 — 이체액 합계 응답 없음(S1·S2) | S1 합계 줄 오른쪽 `고른 5건 · 합계를 받지 못함 · 다시 시도` / S2 모달 막힘 이유 자리 `합계를 받지 못함 · 다시 시도`(`block`, 1차 `aria-disabled`). `다시 시도` = 2차(§7-7 로드 오류와 같은 버튼) — 같은 합계 번호(고른 행 id + 이체액)로 합을 다시 부른다 |
 | 거부 — 일괄 지급 응답 없음 | 1차 옆 `결과를 받지 못함 · 새로 고침`(`block`). 건마다 따로 처리하므로(RESEARCH AS1) 일부만 처리됐을 수 있다 — 추측해 보이지 않고 새로 고친 목록이 답이다 |
 | 거부 — 문서 화면 동시성 | 행동 줄 이유 자리: `이과장이 14:01에 증빙 확인함 · 새로 고침` · `박서연이 14:01에 증빙을 바꿈 · 새로 고침` · `이미 지급 완료 · 새로 고침` |
 | 거부 — 문서 화면 응답 없음(S4·S5) | 행동 줄 이유 자리 `결과를 받지 못함 · 새로 고침`(`block`) — 증빙 확인 · 지급 완료 · 지급 취소 · 예정일 저장 공통. 칸의 입력값은 남는다 |
-| 표시 — 지급 대상 합계 줄(S1) | `합계 (지급 대상 · 12건)` · `지급 총액 131,540,000`. 오른쪽(`--fs-sm --muted`) 고른 건이 있을 때만 `고른 5건 · 이체액 48,200,000` — 이체액 합은 **서버 값**(S1 「합계 줄」) |
-| 표시 — 이체액 2행 | 이체액 ≠ 지급 총액이면 셀 2행 `차이 -3,300`(`--warning`). 같으면 2행 없음 |
-| 표시 — 일괄 지급 결과(필터 줄 왼쪽 묶음 끝 — 1차와 떨어진 자리, M-2) | `14:02 지급 완료 5건 · 막힘 2건`(시각이 앞 — 1차 라벨 `지급 완료 N`과 한눈에 갈린다. `시:분 지급 완료 N건`은 `--success`, `막힘 N건`은 `--danger`, ` · `로 한 줄). 막힘 0이면 `14:02 지급 완료 5건`만. 글자는 `aria-live="polite"` 영역에 쓴다(S1 「일괄 결과 알림 · 막힌 행 선택」) |
+| 표시 — 지급 대상 합계 줄(S1) | `합계 (지급 대상 · 12건)` · `지급 총액 131,540,000`. 오른쪽 고른 건이 있을 때만 `고른 5건 · 이체액 48,200,000`(라벨 `--text-aux --text-muted`, 이체액 숫자 `--text-body` + `--fw-bold` — 통장과 맞춰 보는 숫자라 지급 총액과 같은 무게, r2 F7) — 이체액 합은 **서버 값**(S1 「합계 줄」) |
+| 표시 — 이체액 2행 | 이체액 ≠ 지급 총액이면 셀 2행 `차이 -3,300`(`--status-warning`). 같으면 2행 없음 |
+| 표시 — 일괄 지급 결과(필터 줄 왼쪽 묶음 끝 — 1차와 떨어진 자리, M-2) | `14:02 지급 완료 5건 · 막힘 2건`(시각이 앞 — 1차 라벨 `지급 완료 N`과 한눈에 갈린다. `시:분 지급 완료 N건`은 `--status-success`, `막힘 N건`은 `--status-danger`, ` · `로 한 줄). 막힘 0이면 `14:02 지급 완료 5건`만. 글자는 `aria-live="polite"` 영역에 쓴다(S1 「일괄 결과 알림 · 막힌 행 선택」) |
 | 표시 — 문서 화면 「지급」 섹션(지급 완료 뒤, 모두에게) | `지급 방식` `계좌이체` / `지급일` `2026-09-19` · 2행 `이과장` / `이체액`(법인카드면 `카드 결제액`, 현금이면 `현금 지급액`) `13,636,700` · 2행 `지급 총액 13,640,000 · 차이 -3,300 · 공급가 역산 12,397,000`(차이는 모든 규칙 · 역산 묶음은 서버가 값을 보낼 때만 — 부가세 규칙은 늘, 원천징수는 UA-619. 금액 표시 절) / (차이가 있으면) `차이 사유` `이체 수수료` |
 | 표시 — 문서 화면 「지급」 섹션(지급 전, 지급 권한 없는 사람) | `지급 예정일` `2026-09-19` · 2행 `지급은 경영관리` |
 | 표시 — 증빙 확인 결과 | 증빙 확인 줄 값 `확인됨` + 2행 `이과장 09-18 14:02`. 금액을 고쳤으면 2행 뒤에 `· 12,400,000 → 12,000,000` |
-| 표시 — 증빙 금액(S4) | 값 `12,400,000` + 2행 `박서연 09-17`(입력한 사람·날) + **지급 전에만** 서버 계산 한 줄 `부가세 1,240,000 · 지급 총액 13,640,000 · 세금계산서 규칙`(§6-3 423행 꼴, 숫자만 700. 세율 `%` 글자를 쓰지 않는다 — 세율은 기준일의 설정 값이고 금액이 서버 보간값이다). **지급 뒤(「상태 → 1차」 P5·P6)에는 서버 계산 한 줄이 없다** — 값 + 2행만. `지급 총액`·`차이`는 S5 지급 기록의 처리 때 값 하나뿐이다(같은 라벨에 두 값 없음, 금액 표시 절 「지급 뒤」) |
+| 표시 — 증빙 금액(S4) | 값 `12,400,000` + 2행 `박서연 09-17`(입력한 사람·날) + **지급 전에만** 서버 계산 한 줄 `부가세 1,240,000 · 지급 총액 13,640,000 · 세금계산서 규칙`(§6-3 꼴, 숫자만 700. 세율 `%` 글자를 쓰지 않는다 — 세율은 기준일의 설정 값이고 금액이 서버 보간값이다). **지급 뒤(「상태 → 1차」 P5·P6)에는 서버 계산 한 줄이 없다** — 값 + 2행만. `지급 총액`·`차이`는 S5 지급 기록의 처리 때 값 하나뿐이다(같은 라벨에 두 값 없음, 금액 표시 절 「지급 뒤」) |
+| 표시 — 증빙 금액 초과(S4 · S1 제자리 확인, r4 — 사용자 결정 2026-10-05 UC-4 · Q-F 「표시만」) | 증빙 금액 > 승인액(문서 공급가)이면 `승인액보다 +400,000`, 증빙 금액 > 그 견적 줄 남은 실행가면 `실행가 초과 150,000`, 둘 다면 `승인액보다 +400,000 · 실행가 초과 150,000` 한 줄. `--status-warning`(숫자만 700 — 「표시 — 증빙 금액」과 같은 꼴), 넘을 때만 서고 **막지 않는다**(1차 그대로). 숫자는 서버 `diffKrw` 값 — 화면이 빼지 않는다 |
 | 표시 — 증빙 면제 결과 | 증빙 줄 값 `면제` + 2행 `이과장 09-18 · {사유 원문}` |
 | 표시 — 선결제(목록 증빙 열 · 문서 화면) | `선결제` + 2행 `증빙 기한 10-02`(지급 전이면 2행 없음 — 기한은 지급일부터, O-5) / 기한이 지나면 2행 `증빙 16일 경과`. 문서 화면에는 한 줄 더 `선결제 사유` `{사유 원문}` |
-| 표시 — 지급 방식 · 계좌(S1 열 · S5 칸) | 계좌이체: `신한 ****-**-1234` + 2행 예금주 `(주)스테이지원`(계좌가 곧 방식 표시). 권한자만 3차 `번호 보기` → 평문 + `가리기`(UA-613). 계좌이체인데 계좌가 없으면 `계좌 없음 · 계좌 등록은 관리자`(`--muted`, 버튼 없음 — 「Empty — 카드 사용 목록」 카드 0장 갈래와 같은 꼴, §8 규칙 3). **계좌 없음은 지급을 막지 않는다** — 그 행은 P4 그대로 고를 수 있다(지급 완료는 은행에서 이미 일어난 이체의 기록이라 — SP-1 이유. `rules.gate` 규칙 없음, M-7). 법인카드: `법인카드` · 현금: `현금`(계좌 글자·`번호 보기` 없음, UA-618) |
-| 표시 — 카드(목록 · 폼) | `{카드 이름} · {발급사} {뒤 4자리}` 예 `기획1팀 공용 · 신한 4321`(뒤 4자리는 쉼표 없는 식별자형) |
+| 표시 — 지급 방식 · 계좌(S1 열 · S5 칸) | 계좌이체: `신한 ****-**-1234` + 2행 예금주 `(주)스테이지원`(계좌가 곧 방식 표시). 권한자만 3차 `번호 보기` → 평문 + `가리기`(UA-613). 계좌이체인데 계좌가 없으면 `계좌 없음 · 계좌 등록은 관리자`(`--text-muted`, 버튼 없음 — 「Empty — 카드 사용 목록」 카드 0장 갈래와 같은 꼴, §8 규칙 3). **계좌 없음은 지급을 막지 않는다** — 그 행은 P4 그대로 고를 수 있다(지급 완료는 은행에서 이미 일어난 이체의 기록이라 — SP-1 이유. `rules.gate` 규칙 없음, M-7). 법인카드: `법인카드` · 현금: `현금`(계좌 글자·`번호 보기` 없음, UA-618) |
+| 표시 — 카드(목록 · 폼) | `{카드 이름} · {발급사} {뒤 4자리}` 예 `기획1팀 카드 · 신한 4321`(뒤 4자리는 쉼표 없는 식별자형) |
 | 표시 — 카드 사용 결제 합계 2행 | `공급가 1,127,273`(부가세 규칙이면) 또는 외화면 `USD 1,000.00 @1,350 · 공급가 1,227,273`(두 묶음, 묶음 사이에서만 줄바꿈 — 04 DR-15 선례) |
-| 표시 — 카드 사용 폼 서버 계산 한 줄(결제 합계 아래) | `공급가 1,127,273 · 부가세 112,727 · 카드 전표 규칙`(D-607 — 사람은 합계, 서버가 공급가 역산). 부가세 없는 규칙이면 `공급가 1,240,000 · 규칙 없음`. 역산한 공급가 + 부가세가 결제 합계와 반올림으로 어긋나면(서버 `recomputeDeltaKrw` ≠ 0) 끝에 `· 반올림 차이 1`(`--muted`, 부호 붙임, 0이면 없음 — 결제 합계는 적은 값 그대로) |
-| 표시 — 경영관리 등록(EXP-16) | 카드 사용 행의 「등록」 칸 `경영관리 등록`(`--fg` 600) + 2행 `이과장 09-18`. 직원 본인 등록이면 `박서연`(400). 구매 완료로 생긴 건은 `구매 요청 26001-C0001` + 2행 `이과장 09-20` |
-| 표시 — 카드 고침(구매 완료 건, S9 수정 모드) | 카드 `Select`에서 저장된 카드와 다른 카드를 고르면 카드 아래 `Form.Hint` `구매 완료 때 카드 {이전 카드}`(`--muted`, 카드 글자는 「표시 — 카드(목록 · 폼)」 — 바뀌기 전 값만. 설명형 뒷말은 두지 않는다, M-5). 저장된 카드로 되돌리면 힌트가 사라진다. 저장 뒤 토스트는 `카드 사용 저장 · 1,240,000` 그대로, 행동 로그 한 줄 `카드 고침 · {이전 카드} → {새 카드}` |
+| 표시 — 카드 사용 폼 서버 계산 한 줄(결제 합계 아래) | `공급가 1,127,273 · 부가세 112,727 · 카드 전표 규칙`(D-607 — 사람은 합계, 서버가 공급가 역산). 부가세 없는 규칙이면 `공급가 1,240,000 · 규칙 없음`. 역산한 공급가 + 부가세가 결제 합계와 반올림으로 어긋나면(서버 `recomputeDeltaKrw` ≠ 0) 끝에 `· 반올림 차이 1`(`--text-muted`, 부호 붙임, 0이면 없음 — 결제 합계는 적은 값 그대로) |
+| 표시 — 경영관리 등록(EXP-16) | 카드 사용 행의 「등록」 칸 `경영관리 등록`(`--text-strong` 600) + 2행 `이과장 09-18`. 직원 본인 등록이면 `박서연`(400). 구매 완료로 생긴 건은 `구매 요청 26001-C0001` + 2행 `이과장 09-20` |
+| 표시 — 카드 고침(구매 완료 건, S9 수정 모드) | 카드 `Select`에서 저장된 카드와 다른 카드를 고르면 카드 아래 `Form.Hint` `구매 완료 때 카드 {이전 카드}`(`--text-muted`, 카드 글자는 「표시 — 카드(목록 · 폼)」 — 바뀌기 전 값만. 설명형 뒷말은 두지 않는다, M-5). 저장된 카드로 되돌리면 힌트가 사라진다. 저장 뒤에는 패널이 닫히고 그 행 값이 바뀐다(토스트 없음 — Component Inventory 「Toast」, r2 F4), 행동 로그 한 줄 `카드 고침 · {이전 카드} → {새 카드}` |
 | 표시 — 카드 폼 대리 등록 | 카드 칸 아래 `Form.Hint` `경영관리 등록 · 카드 소지자 김OO`(남의 카드·팀 카드를 고른 대리 등록 권한자에게만(S9). 결과 미리보기 규칙 — 명사형) |
 | 표시 — 카드 폼 가맹점 기본 증빙이 카드에 없음 | 가맹점 줄 아래 `Form.Hint` `기본 증빙 사업소득 · 카드에 없음`(증빙 종류는 `카드 전표`가 카드 옵션에 있을 때만 그것으로 채워지고, 없으면 `—` + 1차 막힘 — 「막힘 — 카드 사용 폼 · 증빙 종류 자동 채움 없음」, S9 「증빙 종류 옵션과 거래처 기본값」) |
 | 표시 — 카드 폼 연결 「팀 비용」 | 값 `기획1팀`(읽기 텍스트) — **힌트 없음**(rev 9, M-5 — 설명형 힌트 `사용일 소속` · `김OO 사용일 소속` · `구매 완료 날 요청자 소속으로 정함` · `요청자 김OO 사용일 소속`을 지웠다. 팀 값과 행동 로그가 말한다). 팀은 **사용한 사람의 사용일 소속 팀**(`teamAtDate()`, 06-CONTEXT:27)이고 카드 팀이 아니다 — 팀 카드도 같다. 사용한 사람 = 본인 등록이면 등록자, 대리 등록이면 `사용한 사람` 칸(S9)의 사람. 구매 요청에서 온 팀 비용은 사용한 사람 = 요청자(S12 · S13) |
 | 표시 — 카드 폼 연결 「견적 외 비용」 | `Form.Hint` `저장하면 견적 외 비용 줄 생김 · 실행가 1,127,273`(UA-615) |
-| 표시 — 구매 완료 금액 차이(S13) | 결제 합계 칸 아래 `예상 금액 1,250,000 · 차이 -12,000`(`--muted`, 막지 않음 — O-10) |
+| 표시 — 구매 완료 금액 차이(S13) | 결제 합계 칸 아래 `예상 금액 1,250,000 · 차이 -12,000`(`--text-muted`, 막지 않음 — O-10) |
+| 표시 — 완료 프로젝트 구매 완료 실행가 초과(S13 · S11, r4 — 사용자 결정 2026-10-05 UC-5 · Q-E 「기록 · 표시」) | S13: 결제 합계 칸 아래(금액 차이 줄 다음) `실행가 초과 150,000`(`--status-warning`, 1차 `구매 완료` 활성 — 완료 프로젝트 줄만). S11 처리 뒤 그 행 2행 `카드 사용 09-20 · 1,238,000 · 실행가 초과 150,000`(액션 응답 값). 행동 로그 상세 `실행가 초과 150,000`. 완료 아닌 프로젝트는 「막힘 — 카드 사용 폼」 실행가 초과(S13 갈래) 그대로 |
 | 표시 — 구매 요청 번호 | `26001-C0001`(서버 서식 그대로, 쉼표 없음, A-612) |
-| 표시 — 발행 요청 표(S16) | 열 `희망 발행일` · `금액` · `메모` · `상태`. 상태 `요청` / `발행됨` + 2행 `발행 09-30 · 22,000,000` / `취소`. 금액 2행 `부가세 2,200,000 · 합계 24,200,000`(발행 줄과 같은 공급가 기준 — O-12. 부가세는 서버가 희망 발행일 기준 설정 세율로 계산해 보내고 `%` 글자는 쓰지 않는다) |
-| 표시 — 완료 전 점검 섹션(S18) | 제목 `완료 전 점검` + 부제 `정산 결재 전 · 막힘 3건`. 그룹 머리글 `미결 지출결의 2건` · `미매칭 견적 줄 1줄` · `매출 미입력`(막힘 그룹 머리글 건수는 `--danger`). 강행 허용 그룹은 머리글 뒤 `· 강행 허용`(`--muted`)이고 막힘 건수에 들지 않는다. 매출 줄 아래 한 줄 `계약 금액 48,000,000 · 발행 합계 44,000,000 · 차이 4,000,000`(차이 ≠ 0이면 `--warning`, 막지 않음 — D-613). 계약 금액 미승인이면 `계약 금액 — · 3차 고객 승인 전` |
+| 표시 — 발행 요청 표(S16) | 열 `희망 발행일` · `금액` · `메모` · `상태`. 상태 `신청됨` / `발행됨` + 2행 `발행 09-30 · 22,000,000` / `취소`. 금액 2행 `부가세 2,200,000 · 합계 24,200,000`(발행 줄과 같은 공급가 기준 — O-12. 부가세는 서버가 희망 발행일 기준 설정 세율로 계산해 보내고 `%` 글자는 쓰지 않는다) |
+| 표시 — 완료 전 점검 섹션(S18) | 제목 `완료 전 점검`(부제 없음 — r3, C13: 건수는 그룹 머리글이 말한다). 그룹 머리글 `미결 지출결의 2건` · `미매칭 견적 줄 1줄` · `매출 미입력`(막힘 그룹 머리글 건수는 `--status-danger`). 강행 허용 그룹은 머리글 뒤 `· 강행 허용`(`--text-muted`)이고 막힘 건수에 들지 않는다. 매출 줄 아래 한 줄 `계약 금액 48,000,000 · 발행 합계 44,000,000 · 차이 4,000,000`(차이 ≠ 0이면 `--status-warning`, 막지 않음 — D-613). 계약 금액 미승인이면 `계약 금액 — · 3차 고객 승인 전` |
 | 표시 — 점검 행 | 미결 지출결의: 번호 · 항목 · 금액 · 상태 글자(`결재 중` / `반려` / `증빙 없음` / `선결제 · 증빙 없음` — 증빙 `면제` 문서는 선결제·지급 뒤여도 행이 없다, D-611) · 3차 `지출결의 열기`. 미매칭 줄: 번호 · 항목 · 실행가 · 프로젝트 쓰기 권한자(S14 :805 · S18 :810)에게 3차 하나 = 그 줄의 문(S14 문 가르기, 사람이 고르지 않음 — 온라인구매 줄이면 `구매 요청` → `/cards/purchases?new=1&line={id}`(S12), 그 밖이면 `지출결의 올리기` → S14 행 행동과 같은 곳(Phase 5, UA-608); 거래처 없는 줄은 S14와 같은 막힘(`거래처 없음 · 거래처 고르기`)), 그 밖의 사람에게 `담당 PM 박서연`. 매출 미입력: `발행 줄 없음` · **≥1024에서만** 담당 PM에게 3차 `발행 요청 추가` / 매출 기록 권한자에게 3차 `발행 줄 추가`(S16 :717 / 04 S6의 같은 3차와 같은 onClick — 새 줄로 스크롤·포커스). 1024 미만은 두 3차가 없고(비활성 아님) `발행 줄 없음`만 — 매출 섹션 표가 보기 전용인 폭이다(DR-36, 「Empty — 상세 「발행 요청」 표」 1024 미만 갈래와 같은 꼴) |
-| 표시 — 「내 차례」(S19) | 지급 권한자: `[오늘] 지급 — 예정일 지남·오늘 3건 · 확인 전 1건  22,400,000  지급 대상 보기`(오늘 예정 건은 지난 건과 같이 이 `[오늘]` 묶음에 든다. 예정일이 오늘이거나 그 전인 건이 하나도 없을 때만 `[대기] 지급 — 이번 주 12건 …`) · 구매 권한자: `[대기] 구매 요청 — 신청 3건 · 가장 오래된 09-18  1,250,000  구매 요청 보기` · 매출 기록 권한자: `[대기] 매출 발행 요청 — 2건 · 희망 09-30  22,000,000  발행 요청 보기`(희망일이 오늘이거나 그 전이면 `[오늘]`) · 담당 PM: `[막힘] 아이오닉9 · 무대설치 — 선결제 증빙 16일 경과  12,400,000  증빙 올리기`(§6-1 예시 그대로) · `[막힘] 아이오닉9 · LED 월 — 증빙 없음 · 지급 대기  6,900,000  증빙 올리기`(rev 9, H-1 — 「상태 → 1차」 P3 건마다 한 줄: 결재 통과 · 지급 전 · 증빙 필수 on · 증빙 0 · 선결제 아님 · 면제 아님. 받는 사람 = 그 건 막힘 글자 `없음 · 담당 PM 박서연`에 적힌 사람. 3차 `증빙 올리기` → 그 문서 화면 `/expenses/{id}`의 증빙 자리(Phase 5 업로드, UA-606). `확인 전`은 PM 몫이 아니라 넣지 않는다) · `[막힘] 아이오닉9 — 완료 전 점검 3건  —  점검 보기` |
+| 표시 — 「내 차례」(S19) | 지급 권한자: `[오늘] 지급 — 예정일 지남·오늘 3건 · 확인 전 1건  22,400,000  지급 대상 보기`(오늘 예정 건은 지난 건과 같이 이 `[오늘]` 묶음에 든다. 예정일이 오늘이거나 그 전인 건이 하나도 없을 때만 `[대기] 지급 — 이번 주 12건 …`) · 구매 권한자: `[대기] 구매 요청 — 신청 3건 · 가장 오래된 09-18  1,250,000  구매 요청 보기` · 매출 기록 권한자: `[대기] 매출 발행 요청 — 2건 · 희망 09-30  22,000,000  발행 요청 보기`(희망일이 오늘이거나 그 전이면 `[오늘]`) · 기안자(rev 10 — 승인 뒤 증빙을 붙이는 사람, 05 규칙): `[막힘] 아이오닉9 · 무대설치 — 선결제 증빙 16일 경과  12,400,000  증빙 올리기`(§6-1 예시 그대로) · `[막힘] 아이오닉9 · LED 월 — 증빙 없음 · 지급 대기  6,900,000  증빙 올리기`(rev 9, H-1 — 「상태 → 1차」 P3 건마다 한 줄: 결재 통과 · 지급 전 · 증빙 필수 on · 증빙 0 · 선결제 아님 · 면제 아님. 받는 사람 = 그 건 막힘 글자 `증빙 없음 · 기안자 박서연`에 적힌 사람. 3차 `증빙 올리기` → 그 문서 화면 `/expenses/{id}`의 증빙 자리(Phase 5 업로드, UA-606). `확인 전`은 기안자 몫이 아니라 넣지 않는다) · 담당 PM: `[막힘] 아이오닉9 — 완료 전 점검 3건  —  점검 보기` |
 | 표시 — 하위 목록 링크 | 카드 목록 필터 줄 오른쪽 `구매 요청 3`(처리 대기 = 신청 건수. 구매 권한자에게는 전체 신청, 그 밖의 사람에게는 자기 신청. 0이면 `구매 요청`만) · 프로젝트 목록 필터 줄 오른쪽 `발행 요청 2`(매출 기록 권한자 · 대표(읽기)에게, 0이면 `발행 요청`만 — SP-4, 링크는 남는다) |
-| SUCCESS — 토스트(누른 라벨 · 결과, DR-21) | `지급 완료 · 5건` · `지급 완료 · 26001-0004` · `지급 취소 · 26001-0004` · `카드 사용 등록 · 1,240,000` · `카드 사용 저장 · 1,240,000` · `카드 사용 삭제 · 1,240,000` · `구매 요청 · 26001-C0001` · `구매 완료 · 26001-C0001` · `구매 요청 취소 · 26001-C0001`.
-**3차 `되돌리기`(rev 9, H-4 — §7-6 「실행 취소가 가능하면」 · CLAUDE.md §7 「확인 창 대신 되돌리기」):** `카드 사용 등록`(되돌리기 = 그 건 삭제 → 보관함, 그 건의 삭제 권리가 있을 때만 — O-11) · `카드 사용 삭제`(= 보관 해제, 같은 건이 목록에 돌아온다) · `구매 요청`(= 요청자 본인 취소) · 요청자 본인의 `구매 요청 취소`(= `신청`으로 되돌림). 되돌리기도 저장과 같은 서버 판정을 지난다 — 막히면 토스트가 오류 모양(닫을 때까지)으로 바뀌고 그 판정의 막힘 문구를 그대로 보인다(예: 「막힘 — 카드 사용 폼」 서버 이중 연결 거부). **되돌리기 없음:** 지급 완료 · 지급 취소(사유·감사 기록 — 되돌리는 길은 문서 화면 `지급 취소`) · 구매 완료(구매 완료로 생긴 건은 삭제가 없다, O-11) · 카드 사용 저장(다시 고치면 된다) · 구매 권한자의 남의 요청 취소(사유 모달) |
-| SUCCESS — 제자리 결과(토스트 없음) | **모든 행동 뒤 다음 1차는 응답의 결재·증빙·지급 상태로 「상태 → 1차」 표를 다시 읽어 정한다**(행동이 다음 1차를 직접 정하지 않는다). 증빙 확인 → 증빙 확인 줄 `확인됨 · 이과장 09-18 14:02` + 지급 전 문서면 P4(1차 `지급 완료`) / 지급 뒤 문서(지급 뒤 들어온 증빙, S4)면 P6(1차 없음 + 2차 `지급 취소` — 지급 칸·지급 행동은 다시 서지 않는다) · 증빙 면제 → `면제 · …` + 지급 전 문서면 P4(1차 `지급 완료`) / 지급 뒤 문서면 P6(1차 없음 + 2차 `지급 취소` — 지급 기록 그대로) · 지급 취소 → S5 「지급 취소」(표를 다시 읽는다) · 예정일 저장 → 값이 바뀌고 날짜 칸이 읽기 값으로 닫히며 1차가 상태의 것으로 돌아옴(목록이면 그룹 이동) · 발행 요청·「발행 줄로」 → 상세 합계 행 `저장됨 N줄 14:02`(Phase 4) · 한 건 지급 완료 → 1차 자리 `지급 완료 → 2026-09-19 · 14:02`(`--success`) + 토스트 ·
+| SUCCESS — 토스트 | **없음(rev 10)** — Component Inventory 「Toast」 행. rev 9의 토스트 아홉과 H-4 토스트 `되돌리기`는 아래 자리로 옮겼다: 패널 등록 결과 한 줄 `카드 사용 등록됨 · 1,240,000` · `구매 요청됨 · 26001-C0001`(`role="status"`, 다음 입력이 시작되면 사라짐) / 행 결과 줄 `카드 사용 삭제됨 · 48,000` · `구매 요청 취소됨 · 26001-C0001` + 3차 `되돌리기`(§7-8 :1008 — 되돌리기 = 보관 해제 / `신청됨`으로). 되돌리기도 저장과 같은 서버 판정을 지난다 — 막히면 결과 줄 글자가 `--status-danger` + 그 판정의 막힘 문구. **되돌리기 없음:** 지급 완료 · 지급 취소(사유 · 감사 기록 — 되돌리는 길은 문서 화면 `지급 취소`) · 구매 완료(Q2 — 조정 줄) · 카드 사용 저장(다시 고치면 된다) · 구매 권한자의 남의 요청 취소(사유 모달) · 등록(지우는 길은 행 `삭제` · `요청 취소`) |
+| SUCCESS — 제자리 결과(토스트 없음) | **모든 행동 뒤 다음 1차는 응답의 결재·증빙·지급 상태로 「상태 → 1차」 표를 다시 읽어 정한다**(행동이 다음 1차를 직접 정하지 않는다). 증빙 확인 → 증빙 확인 줄 `확인됨 · 이과장 09-18 14:02` + 지급 전 문서면 P4(1차 `지급 완료`) / 지급 뒤 문서(지급 뒤 들어온 증빙, S4)면 P6(1차 없음 + 2차 `지급 취소` — 지급 칸·지급 행동은 다시 서지 않는다) · 증빙 면제 → `면제 · …` + 지급 전 문서면 P4(1차 `지급 완료`) / 지급 뒤 문서면 P6(1차 없음 + 2차 `지급 취소` — 지급 기록 그대로) · 지급 취소 → S5 「지급 취소」(표를 다시 읽는다) · 예정일 저장 → 값이 바뀌고 날짜 칸이 읽기 값으로 닫히며 1차가 상태의 것으로 돌아옴(목록이면 그룹 이동) · 발행 요청·「발행 줄로」 → 상세 합계 행 `저장됨 N줄 14:02`(Phase 4) · 한 건 지급 완료 → 1차 자리 `지급 완료 → 2026-09-19 · 14:02`(`--status-success`) ·
 **S1 제자리 증빙 확인 → 모달이 닫히고 그 행 증빙 칸이 `확인됨`(다른 확인됨 행과 같은 모양), 행이 P4가 되어 선택 칸이 켜지고 저절로 골라지며 포커스는 그 행 이체액 셀**(S1 「제자리 증빙 확인」) · S3 제자리 증빙 확인 → 그 행 증빙 칸 `확인됨`(선택 없음) · S21 · S22 파일 업로드 → 파일 행이 서고 3차 글자 숫자가 하나 는다. **1차가 바뀐 직후의 `Ctrl+Enter`(문서 화면 `증빙 확인` → `지급 완료`, S1 모달 닫힘 → `지급 완료 N`)는 `event.repeat`면 무시하고, 새 1차가 그려진 뒤 새로 누른 것만 받는다**(M-3 — 연타로 이체액·지급일을 보지 않고 지급되지 않게) |
-| Destructive — 일괄 지급 완료(S2) | 제목 `지급 완료` · 부제 `5건 · 이체액 합계 48,200,000` · 결과 줄(최대 셋, §7-17 슬롯 0~3) ① `견적 줄 5줄 잠김` ② 선결제가 섞이면 `선결제 1건 · 증빙 기한 지급일부터 14일` ③ `다른 쪽 7건 포함 · 차이 있음 2건`(rev 9, H-5 — 각 묶음은 해당할 때만: `다른 쪽 N건 포함` = 지금 쪽 밖에서 고른 건수, `차이 있음 N건` = 차이 2행이 선 고른 행 수. 둘 다 없으면 이 줄 없음. 둘 다 개수라 화면이 센다) · 확인 근거 한 칸 `지급일`(날짜, 기본 오늘 KST, 280) · 1차 `지급 완료 5건` + `Ctrl+Enter` · 2차 `취소 Esc` |
+| Destructive — 일괄 지급 완료(S2) | 제목 `지급 완료` · 부제 `5건 · 이체액 합계 48,200,000` · 결과 줄(최대 셋, §7-17 슬롯 0~3) ① `견적 줄 5줄 잠김` ② 선결제가 섞이면 `선결제 1건 · 증빙 기한 지급일부터 14일` ③ `다른 쪽 7건 포함 · 차이 있음 2건`(rev 9, H-5 — 각 묶음은 해당할 때만: `다른 쪽 N건 포함` = 지금 쪽 밖에서 고른 건수, `차이 있음 N건` = 차이 2행이 선 고른 행 수. 둘 다 없으면 이 줄 없음. 둘 다 개수라 화면이 센다) · 확인 근거 한 칸 `지급일`(날짜, 기본 오늘 KST · 미래 허용(Q6), `--field-w-short`) · 1차 `지급 완료 5건` + `Ctrl+Enter` · 2차 `취소 Esc` |
 | Destructive — 지급 취소(S5) | 제목 `지급 취소` · 부제 `26001-0004 · 2026-09-19 지급 · 13,636,700` · 결과 줄 `지급 전으로 돌아감 · 견적 줄 잠금 풀림` · 확인 근거 한 칸 `사유` · 1차 `지급 취소` + `Ctrl+Enter` · 2차 **`닫기 Esc`**(1차에 「취소」 — §7-17) |
+| Destructive — 지출결의 종결(S23, r3) | 제목 `지출결의 종결` · 부제 `26001-0003 · {항목} · 12,400,000` · 결과 줄 `견적 줄 6 문 열림 · 되돌림 없음`(분할 줄이면 `회차 상한에서 빠짐` 한 줄 더) · 확인 근거 한 칸 `사유`(필수 — 「Error — 사유 근거 칸」) · 1차 `종결` + `Ctrl+Enter` · 2차 `취소 Esc`(§7-17 자동 파생) |
 | Destructive — 증빙 면제(S4) | 제목 `증빙 면제` · 부제 `26001-0004 · 아이오닉9 · 무대설치 · 12,400,000` · 결과 줄 `증빙 없이 지급 · 비용은 승인액 그대로`(지급 뒤 문서면 `지급 기록 그대로 · 비용은 승인액 그대로`, 선결제 문서면 결과 줄 하나 더 `선결제 증빙 기한 없어짐`) · 확인 근거 한 칸 `사유` · 1차 `증빙 면제` + `Ctrl+Enter` · 2차 `취소 Esc` |
-| Destructive — 증빙 삭제(S7, 문서의 마지막 증빙 파일 — SP-6) | 제목 `증빙 삭제` · 부제 `{파일명}` · 결과 줄 `증빙 금액 지워짐 · 비용이 승인액 12,400,000으로` · (확인됨이었으면) `증빙 확인 풀림` · 1차 `증빙 삭제` · 2차 `취소 Esc`. 마지막이 아닌 파일 삭제는 모달 없음(§7-10) |
-| 제자리 편집 — 지급 예정일 바꾸기(S5, 모달 없음) | 3차 `지급 예정일 바꾸기` → 값 자리가 날짜 칸(280, 기본 지금 값)으로 바뀐다. **칸 옆에 저장 버튼이 없다** — `Form.Actions` 없는 단일 칸(§7-15 1030행 일반 규칙)이고 저장은 화면의 1차 하나다: 값이 지금 값과 달라지면(dirty) 행동 줄 1차가 `예정일 저장 Ctrl+Enter`로 바뀌고(SP-3), 같아지면 상태의 1차로 돌아온다. 원천징수·회사 대납 규칙일 때만 `Form.Hint` 결과 미리보기 `지급 총액 13,640,000 → 13,652,000`(D-101 — 지급 전에는 지급 예정일이 세율 기준일. 서버가 새 날짜로 계산해 보낸다, 같으면 힌트 없음).
+| ~~Destructive — 증빙 삭제~~ | **철회(rev 10 — SP-6 철회, 「증빙 판정 규칙」).** 확인 기록이 있는 상태(승인 뒤)에는 떼기가 없고, 떼기가 있는 상태에는 확인 기록이 없다. 승인 뒤 무효 처리의 확인 창은 05 표면(05-09) |
+| 제자리 편집 — 지급 예정일 바꾸기(S5, 모달 없음) | 3차 `지급 예정일 바꾸기` → 값 자리가 날짜 칸(`--field-w-short`, 기본 지금 값 · 미래 허용 — Q6)으로 바뀐다. **칸 옆에 저장 버튼이 없다** — `Form.Actions` 없는 단일 칸(§7-15 일반 규칙)이고 저장은 화면의 1차 하나다: 값이 지금 값과 달라지면(dirty) 행동 줄 1차가 `예정일 저장 Ctrl+Enter`로 바뀌고(SP-3), 같아지면 상태의 1차로 돌아온다. 원천징수·회사 대납 규칙일 때만 `Form.Hint` 결과 미리보기 `지급 총액 13,640,000 → 13,652,000`(D-101 — 지급 전에는 지급 예정일이 세율 기준일. 서버가 새 날짜로 계산해 보낸다, 같으면 힌트 없음).
 **키:** 날짜 칸의 `Enter`는 제출하지 않는다(네이티브 제출 막음) · `Ctrl+Enter` = 그때 보이는 1차(dirty면 `예정일 저장`) · `Esc` = 서버 값으로 되돌리고 칸을 닫는다(1차가 상태의 것으로). dirty인 동안 `증빙 확인`·`지급 완료`는 1차 자리에 없으므로 저장 안 한 예정일을 두고 그 행동이 일어날 수 없다. `예정일 저장`은 예정일만 저장한다 — 함께 열린 다른 칸(증빙 금액 · 이체액 · 지급일 · 차이 사유)의 입력값은 그대로 남아 다음 1차가 가져간다. 되돌릴 수 있는 날짜 편집이라 확인 모달을 쓰지 않는다(CLAUDE.md §7) |
-| Destructive — 구매 요청 취소(S11, **남의 요청 — 구매 권한자만**) | 제목 `구매 요청 취소` · 부제 `26001-C0001 · {품목} · 1,250,000` · 결과 줄 `견적 줄 연결 풀림`(팀 비용이면 결과 줄 없음) · 확인 근거 한 칸 `사유`(사유·처리한 사람이 감사 기록이라 모달을 둔다) · 1차 `구매 요청 취소` · 2차 **`닫기 Esc`**. 요청자 본인의 취소는 모달이 없다 — 「즉시 — 요청자 본인 구매 요청 취소」 |
-| 즉시 — 카드 사용 삭제(S9, rev 9 H-4 — 모달 없음) | 수정 모드 2차 `카드 사용 삭제`(행동 줄 오른쪽 끝 — 1차와 떨어진 자리) → 모달 없이 보관함으로 옮기고 `/cards`로 이동 + 토스트 `카드 사용 삭제 · 1,240,000` + 3차 `되돌리기`(보관 해제). 되돌릴 수 있어 확인 창을 쓰지 않는다(CLAUDE.md §7). 구매 완료로 생긴 건에는 이 버튼이 없다(O-11) |
-| 즉시 — 요청자 본인 구매 요청 취소(S11, rev 9 H-4 — 모달 없음) | `신청` 행 3차 `요청 취소` → 모달 없이 `취소` 상태 + 토스트 `구매 요청 취소 · 26001-C0001` + 3차 `되돌리기`(`신청`으로). 사유 칸이 없는 「정말?」 창을 두지 않는다 |
+| Destructive — 구매 요청 취소(S11, **남의 요청 — 구매 권한자만**) | 제목 `구매 요청 취소` · 부제 `26001-C0001 · {품목} · 1,250,000` · 결과 줄 `견적 줄 연결 풀림`(팀 비용이면 결과 줄 없음) · 확인 근거 한 칸 `사유`(사유·처리한 사람이 감사 기록이라 모달을 둔다) · 1차 `구매 요청 취소` · 2차 **`닫기 Esc`**. 요청자 본인의 취소는 모달이 없다 — 「즉시 — 요청자 본인 구매 요청 취소」. **`신청됨` 행에만 있다 — 구매 완료한 요청은 취소하지 않는다**(사용자 결정(10/5 00:55) Q2) |
+| 즉시 — 카드 사용 삭제(S8 행, rev 10 — 모달 없음) | 행 `RowAction danger` `삭제`(행동 칸 맨 끝 — `수정`과 떨어진 자리) → 모달 없이 보관함으로 · 표 위 결과 줄 `카드 사용 삭제됨 · 48,000` + 3차 `되돌리기`(보관 해제, 포커스 → `되돌리기`). 되돌릴 수 있어 확인 창을 쓰지 않는다(CLAUDE.md §7 · §7-8 :1008). 구매 완료로 생긴 건에는 `삭제`가 없다(O-11) |
+| 즉시 — 요청자 본인 구매 요청 취소(S11, rev 10 — 모달 없음) | `신청됨` 행 `요청 취소` → 모달 없이 `취소` 상태 · 표 위 결과 줄 `구매 요청 취소됨 · 26001-C0001` + 3차 `되돌리기`(`신청됨`으로, §7-8 :1008). 사유 칸이 없는 「정말?」 창을 두지 않는다 |
 | 확인 — 증빙 확인(S1 · S3 제자리, rev 9 DR-4 — 되돌리는 경로가 없는 행위 기록이라 모달) | 제목 `증빙 확인` · 부제 `26001-0007 · 아이오닉9 · LED 월 · 증빙 금액 6,272,727` · **첨부 보기 칸**(SP-7 — 파일마다 썸네일 72×96 + 파일명 · 장수 · 용량 + 3차 `크게 보기`) · 결과 줄 = 서버 계산 한 줄 `부가세 627,273 · 지급 총액 6,900,000 · 세금계산서 규칙`(S1 — 지급 전 문서만. S3은 지급 뒤 문서라 결과 줄 없음 — S4 「지급 뒤 들어온 증빙」) · 1차 `증빙 확인` + `Ctrl+Enter` · 2차 `취소 Esc`. 금액을 고치는 칸은 없다 — 고칠 건은 모달을 닫고 번호 링크로 문서 화면(S4 `바꾸기`)에서 한다 |
-| 거부 — 증빙 확인 모달(S1 · S3) | 막힘 이유 자리(1차 왼쪽, `block`, 모달은 닫히지 않는다 — §7-17): 확인 거부 · 열 때 받은 `version`이 행 `version`과 다름(r2 B-1)은 「거부 — 문서 화면 동시성」 · 「거부 — 문서 화면 응답 없음」 문구 그대로 — 여기서 `새로 고침`은 목록과 모달 보기를 다시 받아 **모달이 새 파일 · 새 `version`으로 다시 선다**(바뀐 증빙을 본 뒤에만 확인한다 — S1 「제자리 증빙 확인」 「실패」. S1 선택·편집은 그대로). 모달을 열 때 파일·금액을 받지 못하면 `증빙을 불러오지 못함 · 다시 시도`(1차 `aria-disabled`, `다시 시도` = 2차 — S2 합계 실패와 같은 꼴) |
+| 거부 — 증빙 확인 모달(S1 · S3) | 막힘 이유 자리(1차 왼쪽, `block`, 모달은 닫히지 않는다 — §7-17): 확인 거부 · 열 때 받은 `version`이 행 `version`과 다름(r2 B-1)은 「거부 — 문서 화면 동시성」 · 「거부 — 문서 화면 응답 없음」 문구 그대로 — 여기서 `새로 고침`은 목록과 모달 보기를 다시 받아 **모달이 새 파일 · 새 `version`으로 다시 선다**(바뀐 증빙을 본 뒤에만 확인한다 — S1 「제자리 증빙 확인」 「실패」. S1 선택·편집은 그대로). 모달을 열 때 파일·금액을 받지 못하면 `증빙 불러오지 못함 · 다시 시도`(1차 `aria-disabled`, `다시 시도` = 2차 — S2 합계 실패와 같은 꼴) |
 | Destructive — 리저브 줄 삭제(04 S16 모달에 결과 줄 하나, S22) | Phase 4 모달 그대로에 결과 줄 하나 더: `증빙 {N}개 함께 보관`(N ≥ 1일 때만 — 파일은 줄과 함께 남고 복원하면 그대로, 06-16 D-60 계획 판단) |
 | Destructive — 발행 요청 취소(S16) | 제목 `발행 요청 취소` · 부제 `희망 2026-09-30 · 22,000,000` · 결과 줄 `경영관리 목록에서 빠짐` · 1차 `발행 요청 취소` · 2차 **`닫기 Esc`**. 확인하면 그 줄이 dirty 한 칸이 되고 `일괄 저장` 때 반영(04 줄 삭제와 같은 흐름) |
-| 확인 — 입력 버리기(카드 폼 · 구매 요청 폼) | 제목 `입력 버리기` · 부제 `카드 사용 등록 · 3칸` / `구매 요청 · 2칸` · 1차 `입력 버리기` · 2차 `취소 Esc`(04 S2 DR-27과 같은 흐름) |
-| 비파괴 — 즉시 | 선택 칸 토글 · `번호 보기`/`가리기`(행동 로그만) · 이체액·차이 사유 편집(처리 전까지 서버에 저장되지 않는다 — 탭 안 보관·복원은 S1 「문서 화면 왕복」) · `발행 줄로`(발행 줄 표에 새 줄, dirty) · S21 · S22 파일 업로드와 마지막이 아닌 파일 삭제, 두 표면의 마지막 파일 삭제도(바뀌는 값이 없다 — SP-6 대상 아님) |
+| 확인 — 입력 버리기(S9 · S12 · S13 옆 패널) | `SidePanel`이 그린다(SidePanel.tsx:283-295 — 제목 `입력 버리기` · 부제 `{패널 제목} · {N}칸` 예 `카드 사용 등록 · 3칸` · 1차 `입력 버리기` · 2차 자동 파생). 바뀐 칸이 있을 때 `Esc` · x · `취소`에서만 — 이 문서가 문구를 따로 정하지 않는다 |
+| 비파괴 — 즉시 | 선택 칸 토글 · `번호 보기`/`가리기`(행동 로그만) · 이체액·차이 사유 편집(처리 전까지 서버에 저장되지 않는다 — 탭 안 보관·복원은 S1 「문서 화면 왕복」) · `발행 줄로`(발행 줄 표에 새 줄, dirty) · S21 · S22 파일 업로드와 파일 삭제(마지막 파일도 — 바뀌는 값이 없다) |
 
 **PNL-09 형식 표기:** 금액 라벨은 무엇의 금액인지 낱말로 말한다 — `지급 총액`(서버 계산 payable) · `이체액`(통장 합계) · `증빙 금액`(공급가) ·
 `결제 합계`(카드 전표 합계) · `공급가`(역산값). 열 머리글에 `(원)`을 쓰지 않는다(§2-4).
 
-**단축키(D-94):** `Ctrl+Enter`(화면 1차 — 지급 대상 표 안에서도 화면 1차다. `selectable` 표에는 새 줄이 없어 §7-3의 「`Ctrl+Enter` 새 줄」이 걸리지 않는다, SP-1 · DR-8) · `Space`(선택 칸 토글) · `Esc` · `Tab`·방향키 · 편집 표 안의 링크 셀 · 3차 셀(S1 번호 · 「프로젝트 · 항목」 1행 · 증빙 칸 `증빙 확인`, S22 `증빙` 열)은 편집 칸이 아니므로 `Enter` = 열기 · 견적 줄 표 `Ctrl+E`(현재 줄의 문 — S14). 맥 글리프 없음.
+**단축키(D-94):** `Ctrl+Enter`(화면 1차 · 옆 패널 1차 — 지급 대상 표 안에서도 화면 1차다. `selectable` 표에는 새 줄이 없어 §7-3의 「`Ctrl+Enter` 새 줄」이 걸리지 않는다, SP-1 · DR-8) · `Space`(선택 칸 토글) · `Esc` · `Tab`·방향키 · 편집 표 안의 링크 셀 · 3차 셀(S1 번호 · 「프로젝트 · 항목」 1행 · 증빙 칸 `증빙 확인`, S22 `증빙` 열)은 편집 칸이 아니므로 `Enter` = 열기 · 견적 줄 표 `Ctrl+E`(현재 줄의 문 — S14). 맥 글리프 없음.
 구현하지 않은 단축키는 적지 않는다.
 
 ---
 
 ## 적용 규칙 (표면별 계약 — 기존 템플릿에 붙는다, 새 템플릿 없음)
 
-표면 id S1~S22(S21 · S22는 rev 9 — Phase 4 이월 D-56 · D-60). 각 표면 머리의 괄호는 출발 템플릿이다. 이 절은 **배치·열·동작**을 정하고, 문구는 위 Copywriting 표 행을 가리킨다.
+표면 id S1~S23(S21 · S22는 rev 9 — Phase 4 이월 D-56 · D-60, S23은 r3 — Phase 5 이월 종결). 각 표면 머리의 괄호는 출발 템플릿이다. 이 절은 **배치·열·동작**을 정하고, 문구는 위 Copywriting 표 행을 가리킨다.
 
 ### 지출결의 상태 → 1차 (정본 — S1 선택 칸 · S4 · S5 · 지급 취소 · 제자리 결과가 전부 이 표를 읽는다)
 
 입력은 서버가 보내는 세 상태뿐이다 — **결재**(통과 = `approved`·본인 승인, UA-607 / 통과 전 = 결재 중·반려·회수) × **지급**(전 / 뒤) × **증빙**(Color 매핑표 증빙 다섯 값 + 증빙 필수 설정).
 **위에서부터 첫 일치 한 행**이 그 문서의 행동 줄이고, 한 행에 1차는 **하나**다(CLAUDE.md §7 · §7-1). 서버 게이트(`rules.gate`의 `payment.approval-required` · `payment.evidence-required`)도 같은 표로 판정한다.
 아래 1차·2차·3차는 **지급 권한자에게만** 선다 — 그 밖의 사람은 모든 행에서 이 페이즈의 버튼이 없고 담당 표기만(D-601, SP-3).
+**(rev 10)** 표의 증빙 값 `없음` = 「증빙 0」(`hasEvidence` 거짓 — 살아 있는 파일 0, 무효 파일 제외)이고, 화면 낱말은 증빙 필수 on이면 `증빙 없음`, off면 빈 값 `—`이다(Color 「상태 낱말」). 증빙 확인 · 면제가 결재 통과 뒤에만 있는 것은 05 결정(결재 중 금액 재계산 없음)과도 맞다.
 
 | 행 | 결재 | 지급 | 증빙 | 1차 | 2차 | 증빙 섹션 3차 | S1 선택 칸 |
 |---|---|---|---|---|---|---|---|
 | P0 | 통과 전 | — | 무엇이든 | **없음** — 행동 줄은 Phase 5·04.1 것 그대로(예 결재자의 `승인`). 결재 상태는 제목 옆 태그가 말한다(UA-607) | 없음 | 없음(`바꾸기`·`증빙 면제` 렌더 안 함, 확인 줄은 읽기) | 행 없음(지급 대상 밖) · S5 섹션 없음 |
 | P1 | 통과 | 전 | 무엇이든 + **지급 예정일 칸 dirty** | `예정일 저장` + `Ctrl+Enter`(SP-3) | 없음 | 아래 P2~P4 행의 것 그대로 | — (문서 화면만) |
 | P2 | 통과 | 전 | `확인 전`(증빙 필수 설정과 관계없이 — O-2) | `증빙 확인` + `Ctrl+Enter` | 없음 | `바꾸기`(증빙 금액) | `aria-disabled` · 이유 `확인 전 · 증빙 확인` |
-| P3 | 통과 | 전 | `없음`(증빙 필수 on · 증빙 0 · 선결제 아님 · **면제 아님**) | `지급 완료` **비활성** + `증빙 없음 · 담당 PM 박서연`(`block`) | 없음 | `증빙 면제` | `aria-disabled` · 이유 `없음 · 담당 PM 박서연` |
+| P3 | 통과 | 전 | `없음`(증빙 필수 on · 증빙 0 · 선결제 아님 · **면제 아님**) | `지급 완료` **비활성** + `증빙 없음 · 기안자 박서연`(`block`) | 없음 | `증빙 면제` | `aria-disabled` · 이유 `증빙 없음 · 기안자 박서연` |
 | P4 | 통과 | 전 | `확인됨` · `면제` · `선결제` · `없음`(증빙 필수 off) | `지급 완료` + `Ctrl+Enter` | 없음 | 증빙 0 · 면제 아님(`선결제` · 증빙 필수 off의 `없음`)이면 `증빙 면제`, 그 밖(`확인됨` · `면제`) 없음 | 고를 수 있음 |
 | P5 | 통과 | 뒤 | `확인 전`(지급 뒤 들어오거나 바뀐 증빙) | `증빙 확인` + `Ctrl+Enter`(확인만 기록 — 지급 칸·지급 행동은 다시 서지 않는다) | `지급 취소` | `바꾸기`(증빙 금액) | 행 없음(S3 증빙 칸 3차 `증빙 확인`) |
 | P6 | 통과 | 뒤 | 그 밖(`확인됨` · `면제` · `선결제` · `없음`) | **없음** | `지급 취소` | 증빙 0 · 면제 아님(`선결제` · `없음`)이면 `증빙 면제`(지급 기록은 그대로), 그 밖(`확인됨` · `면제`) 없음 | 행 없음 |
 
 - **행동 뒤에는 늘 응답 상태로 이 표를 다시 읽는다** — 증빙 확인 · 증빙 면제 · 지급 완료 · 지급 취소 · 예정일 저장 · 확인 풀림(S4) 어느 것도 다음 1차를 직접 정하지 않는다.
-  예: 지급 취소 → 지급 = 전이 되어 P2~P4 중 하나(지급 뒤 들어온 증빙이 아직 `확인 전`이면 P2 `증빙 확인`, 지급 뒤 증빙이 떼어져 `없음`이면 P3(증빙 필수 on — off면 P4)).
+  예: 지급 취소 → 지급 = 전이 되어 P2~P4 중 하나(지급 뒤 들어온 증빙이 아직 `확인 전`이면 P2 `증빙 확인`, 지급 뒤 파일이 무효 처리되어(05 — 승인 뒤 떼기 없음) 증빙이 0이면 P3(증빙 필수 on — off면 P4)).
 - 증빙 필수 설정은 P3/P4의 `없음` 갈래만 가른다. `확인 전`은 설정이 꺼져 있어도 확인이 먼저다(P2).
+- **지급 방식 ↔ 증빙 종류 짝(사용자 결정(10/5 00:55) Q4):** 설정의 짝 목록이 비어 있지 않고 그 문서의 (지급 방식, 증빙 종류)가 목록 밖이면 `rules.gate` 규칙 `payment.method-evidence-mismatch`(가칭)가 P4를 막는다 — 1차 `지급 완료` 비활성 + 이유 `계좌이체 · 카드 전표 짝 아님 · 짝 설정은 관리자`(`block`), S1 선택 칸 `aria-disabled` + 같은 이유. 짝 목록이 비면(기본값) 규칙이 돌지 않는다. 면제 · 선결제로 증빙 종류가 비어도 지급 방식만으로는 막지 않는다.
 - **증빙 면제의 자리(06-CONTEXT:25 · D-611 :53):** 3차 `증빙 면제`는 **결재 통과 · 증빙 0 · 면제 아님**이면 지급 전후 · 선결제 여부 · 증빙 필수 설정과 관계없이 선다 —
   P3(`없음`) · P4(`선결제` · 필수 off의 `없음`) · P6(`선결제` · `없음`). 완료 전 점검(S18)이 미결로 세는 「증빙 없는 문서(면제 제외, 선결제도 포함)」의 모든 갈래에 면제로 닫는 길이 있다.
   3차라 행의 1차는 그대로다(P4 `지급 완료` · P6 없음 — 1차가 둘이 되지 않는다). 확인 모달은 한 벌(Copywriting 「Destructive — 증빙 면제」, 결과 줄만 지급 전후·선결제로 갈린다).
@@ -401,10 +446,12 @@ payable) · 지급 예정일 · 지급일 · **증빙 확인**(검수 X) · **�
   `면제`가 `선결제`를 이기므로 면제된 선결제 문서에는 기한 2행(`증빙 기한 …` · `증빙 N일 경과`)이 어디에도 없다 — 목록 증빙 열 · Phase 5 목록 상태 열 2행 · 견적 줄 파생 `증빙 없음` · 「내 차례」 PM 항목(S19) 모두.
 - 결재 통과 전에 증빙 확인·면제를 두지 않는 것은 기본값이다(D-602 「지급 전에 확인」을 결재 통과 뒤 지급 흐름의 첫 단계로 읽었다 — O-2와 함께 확인).
 
-### S1. 지출결의 목록 「지급 대상」 보기 `/expenses?view=pay` (§6-1 + §7-3 편집 표 + SP-1 선택 열) — 지급 권한자
+### S1. 지출결의 목록 「지급 대상」 보기 `/expenses?status=지급 대상` (`ListScreen` + §7-3 편집 표 + SP-1 선택 열) — 지급 권한자
 
 `/expenses`는 Phase 5의 지출결의 목록이다(UA-605). **지급 권한자(UA-612)의 기본 보기가 「지급 대상」**이고, 그 밖의 사람의 기본 보기는 Phase 5 그대로다.
 「지급 대상」 = 결재 통과(`approved` · 본인 승인, UA-607 · A-606) ∧ 지급 전인 지출결의 전사 전부(「내 것만」 필터 없음).
+
+**틀(rev 10):** Phase 5 05-08의 `ListScreen` 그대로 — `title` `지출결의`(부제 없음 — 보기는 필터 값이 말한다) · `filters` = 보기 · 팀 · 증빙 필터 + 그 다음(왼쪽 묶음 끝) 결과 글자 · `primaryAction` = **`지급 완료 N`(버튼 갈래 — SP-1, 지금 `ListScreen`은 링크 갈래뿐)**, 필터 줄 오른쪽 끝 · `summary` = 합계 면(합계 금액 `--text-body` + `--fw-bold`) · 표 = `ui/table` 편집 표 + 선택 열(SP-1) · `pagination` = 페이지 줄 + 힌트 줄. 1차는 ≥1024에서만 렌더(편집 표 폭) — 1024 미만에는 `primaryAction`을 넘기지 않는다.
 
 **경영관리 주간 지급 여정(rev 9 스토리보드 — DR-10, DR-4 반영판).** 표면별 규칙은 아래 절들이 정본이고, 이 표는 한 사람의 한 주를 이어 본 것이다.
 
@@ -423,10 +470,10 @@ payable) · 지급 예정일 · 지급일 · **증빙 확인**(검수 X) · **�
 
 ```
 PC ≥1280
-│ 지출결의   결재 통과 · 지급 전                                                                 │ ← PageHeader 부제
+│ 지출결의                                                                                       │ ← ListScreen title(부제 없음)
 │ [지급 대상 ▾] [팀 전체 ▾] [증빙 전체 ▾]  14:02 지급 완료 5건 · 막힘 2건          [지급 완료 5 Ctrl+Enter] │ ← 필터 줄 · 결과 글자(필터 다음, 1차와 떨어짐) · 1차
-│    합계 (지급 대상 · 12건)   지급 총액 131,540,000                     고른 5건 · 이체액 48,200,000 │ ← 표 위 합계 줄(§6-1)
-╞═══════════════════════════════════════════════════════════════════════════════════════════════╡ ← 머리글 --g-100(편집 표)
+│    합계 (지급 대상 · 12건)   지급 총액 131,540,000                     고른 5건 · 이체액 48,200,000 │ ← ListScreen summary(합계 면, 14 굵게)
+╞═══════════════════════════════════════════════════════════════════════════════════════════════╡ ← 편집 표 머리글(ui/table — --surface-selected + --text-on-tint)
 │ ☐  번호        프로젝트 · 항목        거래처        지급 방식           예정일  증빙          지급 총액    이체액    차이 사유 │
 ├───────────────────────────────────────────────────────────────────────────────────────────────┤
 │ 예정일 지남                                                                                    │ ← 그룹 머리글
@@ -434,9 +481,9 @@ PC ≥1280
 │                                                    (주)스테이지원 번호 보기                         차이 -3,300           │
 │ 이번 주 지급                                                                                   │
 │ ☐  26001-0007  아이오닉9 · LED 월      한빛무대예술  국민 ****-**-5521  09-19  확인 전 · 증빙 확인  6,900,000   6,900,000  —  │ ← 선택 칸 aria-disabled · 3차 → 확인 모달
-│ ☐  26002-0002  한빛 쇼케이스 · 경품    —             현금              09-19  없음 · 담당 PM 박서연 1,000,000  1,000,000  —  │
+│ ☐  26002-0002  한빛 쇼케이스 · 경품    —             현금              09-19  증빙 없음 · 기안자 박서연 1,000,000  1,000,000  —  │
 │ ☑  26001-0009  아이오닉9 · 케이터링    푸드원        신한 ****-**-7710  09-19  선결제        3,300,000   3,300,000  —  │
-│                                                                              증빙 기한 —                                  │
+│                                                                                                                           │
 │ 지급 예정일 없음                                                                                │
 │ …                                                                                              │
 ╞═══════════════════════════════════════════════════════════════════════════════════════════════╡
@@ -447,43 +494,43 @@ PC ≥1280
 - **열(≥1280, 10열):** 선택 · 번호(**식별자형 링크 3차** → 문서 화면 `/expenses/{id}?from=pay&{지금 필터 · 쪽}`, 접근 이름 `26001-0004 지출결의 열기` — H-2. P4 행도 지급 전에 파일을 보려면 여기로 연다) · **프로젝트 · 항목**(한 열 — 와이어프레임대로 `아이오닉9 · 무대설치`, 팀 이름 지출이면 `기획1팀 · 팀 관리비`) · 거래처 · **지급 방식**(Copywriting 「표시 — 지급 방식 · 계좌」: 계좌이체면
   1행 `{은행} ****-**-{뒤4}`, 2행 예금주 + 권한자 3차 `번호 보기`(UA-613) / `법인카드` / `현금`, UA-618) · 지급 예정일(`MM-DD`) · 증빙(상태 글자 + 같은 칸 3차/담당, Color 매핑표) ·
   지급 총액(서버 계산 payable, 읽기 전용) · 이체액(P4 행만 편집, 기본값 = 지급 총액, D-604 — 방식과 관계없이 실제로 나간 돈) · 차이 사유(이체액 ≠ 지급 총액일 때만 편집 가능, 아니면 `—` 읽기 전용).
-- **열 우선순위(§7-3 · §6-1 361행 「숨기는 열은 P3에서만」):** P1 = 프로젝트 · 항목 · 지급 총액 · 증빙 / P2 = 예정일 · 지급 방식(1행만) / P3 = 번호 · 거래처 · 이체액 · 차이 사유.
+- **열 우선순위(§7-3 · §6-1 「숨기는 열은 P3에서만」):** P1 = 프로젝트 · 항목 · 지급 총액 · 증빙 / P2 = 예정일 · 지급 방식(1행만) / P3 = 번호 · 거래처 · 이체액 · 차이 사유.
   선택 열은 데이터 열이 아니라 편집 폭(≥1024)에서만 선다.
 - **좁은 PC:** 1024~1279 = P3 중 번호·거래처 숨김(8열 — 예금주는 지급 방식 2행에 남는다). 번호가 숨는 이 폭에서는 **「프로젝트 · 항목」 셀 1행이 같은 링크**다(H-2). 700~1023 = **보기 전용**(선택 열·이체액 편집·1차 없음, DR-36),
   열 = P1 + P2(프로젝트 · 항목 · 예정일 · 증빙 · 지급 총액 · 지급 방식 — 다섯 열). 이 폭도 「프로젝트 · 항목」 1행이 링크이고, 증빙 칸 3차 `증빙 확인`은 모달이 아니라 문서 화면 `?from=pay`로 간다(편집이 없는 폭이라 보관할 것이 없다). <700 = 폰.
 - **링크 셀과 편집 표 키(H-2):** 번호 셀 · 「프로젝트 · 항목」 1행 링크 · 증빙 칸 3차는 편집 칸이 아니다 — 방향키 · `Tab`으로 닿고 **`Enter` = 열기**(§7-3의 「Enter 편집」은 편집 칸에만 걸린다). 문서 화면을 새 탭으로 열 때는 브라우저 기본 동작(가운데 클릭 · `Ctrl`+클릭)을 막지 않는다.
 - **폰(<700, §7-3 칸 접기):** P1 열 · P2 접힌 줄 · P3 숨김. 폰에는 일괄 지급이 없고 행 시트도 열지 않는다 — **행을 누르면 문서 화면 `/expenses/[id]`로 간다**
   (S3과 같은 행 링크. 한 건 지급·증빙 확인은 거기 S4·S5가 폰에서 한다 — 행 시트는 §7-3 (바)대로 행동이 없어서다).
-- **그룹 머리글 = 지급 예정일:** `예정일 지남`(`--warning` 글자) → `이번 주 지급` → `다음 주` → `그 뒤` → `지급 예정일 없음`. 그룹 안은 예정일 → 번호 오름차순.
+- **그룹 머리글 = 지급 예정일:** `예정일 지남`(`--status-warning` 글자) → `이번 주 지급` → `다음 주` → `그 뒤` → `지급 예정일 없음`. 그룹 안은 예정일 → 번호 오름차순.
   주는 월요일 시작, KST. 지급 예정일 자동 계산은 Phase 7이다 — 이 페이즈에서 비어 있으면 `지급 예정일 없음` 그룹이다.
-- **선택 열(SP-1):** 고를 수 있는지는 **서버가 행마다 `rules.gate`로 판정해 보낸다**(`payment.approval-required` · `payment.evidence-required`, RESEARCH Pattern 1) — 「상태 → 1차」 표의 P4 행만 고를 수 있고 P2·P3 행은 막힌다(표의 「S1 선택 칸」 열).
+- **선택 열(SP-1):** 고를 수 있는지는 **서버가 행마다 `rules.gate`로 판정해 보낸다**(`payment.approval-required` · `payment.evidence-required` · 짝 목록이 있을 때 `payment.method-evidence-mismatch` — 사용자 결정(10/5 00:55) Q4, RESEARCH Pattern 1) — 「상태 → 1차」 표의 P4 행만 고를 수 있고 P2·P3 행과 짝이 맞지 않는 P4 행은 막힌다(표의 「S1 선택 칸」 열). 증빙 유무는 `hasEvidence` 하나로 판정한다.
   계좌이체인데 계좌가 없는 행도 P4 그대로 고를 수 있다(계좌 유무는 게이트가 아니다 — 「표시 — 지급 방식 · 계좌」, M-7).
   막힌 행의 체크박스는 `aria-disabled` + `aria-describedby` → 그 행 증빙 칸 글자(이유 = 상태 글자 + 다음 한 수, 이유 없는 비활성 없음). 머리글 체크박스 = **이 쪽의
   고를 수 있는 행 전체**(섞이면 `indeterminate`). 고른 행은 `--accent-weak` 면. **행 선택의 뜻은 체크박스 `checked` 하나다** — 행 · 셀에 `aria-selected`를 선택 뜻으로 쓰지 않는다(`aria-selected`는 §10 활성 셀 뜻 그대로, SP-1 · DR-7).
   선택은 행 id로 기억해 쪽을 넘겨도 남고(DR-18 선례), 필터를 바꾸면 비운다.
 - **이체액·차이 사유 편집:** 편집 표 키(§7-3) 그대로 — Enter 편집 · Esc 되돌림 · Tab/방향키. **편집 칸은 고를 수 있는 행(「상태 → 1차」 P4)에만 선다** — P2·P3 행의
   이체액은 지급 총액과 같은 읽기 값, 차이 사유는 `—`(§7-3 읽기 전용 셀, 이유는 선택 칸과 같은 그 행 증빙 칸 글자). **고르지 않은 P4 행의 이체액을 고치면 그 행이 저절로 골라진다**(동작 —
-  고쳐 놓고 빠뜨리는 실수를 막는다. 막힌 행은 편집 칸이 없으므로 저절로 골라지는 일도 없다). 이체액 ≠ 지급 총액이면 셀 2행 `차이 -3,300`(`--warning`)이 뜨고 차이 사유 칸이 편집 가능 + 필수가 된다(D-605). 되돌려
+  고쳐 놓고 빠뜨리는 실수를 막는다. 막힌 행은 편집 칸이 없으므로 저절로 골라지는 일도 없다). 이체액 ≠ 지급 총액이면 셀 2행 `차이 -3,300`(`--status-warning`)이 뜨고 차이 사유 칸이 편집 가능 + 필수가 된다(D-605). 되돌려
   같아지면 사유 칸은 `—`로 돌아가고 적은 사유는 버린다. 이 값들은 **처리 전까지 서버에 저장되지 않는다** — 대신 탭 안에 보관했다가 문서 화면에서 돌아오면 되살린다
   (아래 「문서 화면 왕복」 — rev 9, C-1). 탭을 닫거나 다른 사이트로 떠날 때만 `beforeunload` 경고(§7-3 (마)의 경고). 앱 안 이동(`Link`)은 보관이 받으므로 가로채지 않는다.
 - **1차 `지급 완료 N`:** N = 고른 건수(모든 쪽). 누르면 → 고른 행에 오류 칸이 있으면 첫 오류 칸으로 포커스(모달 없음) → 없으면 그 순간의 **스냅숏**(고른 행 id + 행마다 이체액·차이 사유 편집값 — 처리 요청에 보낸다)과
   그 순간의 **합계 번호**(아래 「합계 줄」 — 부제 합계를 기다리는 데만 쓴다)를 들고 S2 확인 모달. 모달이 열려 있는 동안 표는 편집되지 않으므로(§7-17) 스냅숏도 합계 번호도 바뀌지 않는다.
-- **결과(S2 뒤):** 처리된 행은 목록에서 빠진다(이제 「지급 완료」 보기 소속). 막힌 행은 **자리를 유지**하고 행 아래 한 줄 `--fs-sm --danger`로 이유
+- **결과(S2 뒤):** 처리된 행은 목록에서 빠진다(이제 「지급 완료」 보기 소속). 막힌 행은 **자리를 유지**하고 행 아래 한 줄 `--text-aux --status-danger`로 이유
   (Copywriting 「거부 — 일괄 지급 건별 결과」). 선택을 유지하는지는 서버가 다시 보낸 「지금 고를 수 있음」이 정한다 — 아래 「일괄 결과 알림 · 막힌 행 선택」(rev 9, H-3).
   행 배경은 칠하지 않는다(§1-3 규칙 3). 결과 글자는 필터 줄의 필터 다음 자리(1차와 떨어진 자리, M-2). 이 이유·결과 글자는 다음 처리 시도나 필터 변경 때
   지운다(04 DR-16 「다음 시도 때 지운다」와 같은 수명).
 - 합계 줄은 필터 전체 기준(§6-1). 오른쪽 `고른 N건 · 이체액 …`의 **이체액 합은 서버가 더한다**(06-CONTEXT:107 금액 산술 경계 — 클라이언트 합·린트 예외 없음, O-18 닫힘):
-  선택이나 고른 행의 이체액이 바뀌면 고른 행 id + 이체액 편집값을 서버 액션에 보내고 `domain/money`가 더한 값을 받는다(300ms 모아 보냄). 오는 동안 이전 값을 `--faint`로
+  선택이나 고른 행의 이체액이 바뀌면 고른 행 id + 이체액 편집값을 서버 액션에 보내고 `domain/money`가 더한 값을 받는다(300ms 모아 보냄). 오는 동안 이전 값을 `--text-faint`로
   둔다(금액 표시 절 「서버 계산 한 줄」과 같은 규칙). 건수 `N건`은 셈이 아니라 개수라 화면이 센다.
   **합계 번호(합 요청 묶기):** 합의 입력은 고른 행 id + 이체액뿐이므로 합은 스냅숏과 따로 **합계 번호**를 갖는다 — 고른 행 id 집합이나 고른 행의 이체액이 바뀔 때**만** 1 늘어나는 수다.
   차이 사유 편집은 합계 번호를 올리지 않는다(합이 바뀌지 않으므로 요청도 없다). **합계 번호가 오르면 늘 그 번호로 요청이 나간다**(300ms 모아 보냄 = 모인 동안의 마지막 번호 하나.
   그 사이에 모달을 열면 모아 둔 요청을 그 순간 바로 보낸다) — 그래서 기다리는 번호의 요청은 언제나 나가 있다. 응답에 번호를 싣고, 응답의 번호가 지금 합계 번호가 아니면 버린다(늦게 온 옛 합이
   새 선택의 합으로 보이지 않는다). S2 모달 부제의 이체액 합계는 **모달을 연 순간의 합계 번호의 합만** 쓴다 — 그 합이 이미 와 있으면 바로, 아직이면 부제 합계 자리 `…` + 모달 1차 `…` ·
-  `aria-disabled`(`Ctrl+Enter` 무반응)로 기다렸다가 그 번호의 응답이 오면 채우고 1차를 켠다. 모달이 열려 있는 동안 합계 번호가 바뀌지 않으므로 그 응답은 버려지지 않는다. `--faint` 이전 값은
+  `aria-disabled`(`Ctrl+Enter` 무반응)로 기다렸다가 그 번호의 응답이 오면 채우고 1차를 켠다. 모달이 열려 있는 동안 합계 번호가 바뀌지 않으므로 그 응답은 버려지지 않는다. `--text-faint` 이전 값은
   모달에 옮기지 않는다. 합 요청이 실패하거나 응답이 없으면 Copywriting 「거부 — 이체액 합계 응답 없음」(S1 합계 줄 · S2 막힘 이유 자리) — `다시 시도`가 같은 합계 번호로 다시 부르고,
   1차는 그 번호의 합이 올 때까지 켜지지 않는다.
 - 힌트 줄(§7-9): `이동 Tab ↑↓←→ · 고르기 Space · 취소 Esc`(1차 kbd `Ctrl+Enter`가 처리를 말하므로 힌트에 없다). `고르기 Space`는 SP-1이 더하는 힌트 낱말이다.
-- **보기 필터:** `[지급 대상 ▾]` 값 = `지급 대상` · `지급 완료`(S3) + Phase 5가 정하는 값들. `[팀 ▾]`. **`[증빙 전체 ▾]`**(rev 9, C-1 수정안 ④) 값 = `증빙 전체` · `확인 전`(P2) · `없음`(P3) · `지급 가능`(P4) — 흩어진 `확인 전` 행을 모아 제자리 확인을 이어 하고, 확인해 저절로 골라진 행을 그 보기에서 그대로 `지급 완료 N`으로 처리한다(보기를 바꾸면 선택이 비므로 바꾸지 않아도 되게). 쿼리 `evidence=unreviewed` · `missing` · `payable`. 그 밖의 필터 없음.
+- **보기 필터:** `[지급 대상 ▾]` 값 = `지급 대상` · `지급 완료`(S3) + Phase 5가 정하는 값들. `[팀 ▾]`. **`[증빙 전체 ▾]`**(rev 9, C-1 수정안 ④) 값 = `증빙 전체` · `확인 전`(P2) · `증빙 없음`(P3) · `지급 가능`(P4) — **값 목록은 서버 열거에서 온다**(6.1이 값을 더해도 화면 코드 변경 없음, 06-20) — 흩어진 `확인 전` 행을 모아 제자리 확인을 이어 하고, 확인해 저절로 골라진 행을 그 보기에서 그대로 `지급 완료 N`으로 처리한다(보기를 바꾸면 선택이 비므로 바꾸지 않아도 되게). 쿼리 `evidence=unreviewed` · `missing` · `payable`. 그 밖의 필터 없음.
 
 #### S1 제자리 증빙 확인 — 확인 모달 + 첨부 보기 칸(SP-7) (rev 9, DR-4 · O-21)
 
@@ -491,12 +538,15 @@ PC ≥1280
 
 - **자리:** S1 · S3(≥1024)의 `확인 전` 행 증빙 칸 3차 `증빙 확인`(Copywriting 「3차 버튼」 — 접근 이름 `26001-0007 증빙 확인`). 1024 미만은 지금처럼 문서 화면으로 간다(S1은 `?from=pay`).
   3차는 증빙이 있는 `확인 전` 행에만 선다(P2 · P5 정의상 증빙 ≥ 1) — 빈 모달이 열릴 길이 없다.
+  **증빙 금액이 빈 `확인 전`(r2 F2 — 05 결재 중 `evidence_attach` 권한자가 금액 없이 붙인 파일):** 제자리 모달을 열지 않고 3차가 문서 화면으로 간다(S1은 `?from=pay`) — 모달에는 금액 칸이 없다. 그 문서의 S4는 아래 「증빙 금액 빈 확인 전」대로 선다.
 - **모달:** Copywriting 「확인 — 증빙 확인(S1 · S3 제자리)」. `ui/confirm-dialog` + 첨부 보기 칸(SP-7). 입력 칸 없음 — 금액을 고칠 건은 모달을 닫고 번호 링크로 문서 화면(S4 `바꾸기`)에서 한다.
+  **증빙 금액 초과(r4 — UC-4 · Q-F 「표시만」):** S1 모달의 결과 줄(서버 계산 한 줄) 다음 슬롯에 S4와 같은 한 줄 `승인액보다 +400,000` · `실행가 초과 150,000`(`--status-warning`, 넘을 때만 — Copywriting 「표시 — 증빙 금액 초과」). 모달을 열 때 서버가 보낸다. 1차 `증빙 확인`은 막지 않는다.
 - **여는 동안(LOADING):** 파일 목록 · 증빙 금액 · 서버 계산 한 줄은 모달을 열 때 서버가 보낸다(목록 행에 싣지 않는다 — 목록을 가볍게). 오는 동안 첨부 보기 칸 · 부제 금액 · 결과 줄 자리 `…` + 1차 `aria-disabled`(`Ctrl+Enter` 무반응). 받지 못하면 Copywriting 「거부 — 증빙 확인 모달(S1 · S3)」 불러오기 갈래.
 - **서버(r2 B-1 — 모달이 보여 준 증빙 = 확인하는 증빙):** 06-06 `confirmEvidenceAction`의 **금액 없는 갈래를 그대로** 부른다(새 판정 없음). 보내는 `version`은 **모달을 열 때 보기와 함께 받은 `version`**이다 — PM의 증빙 변경(더하기 · 떼기 · 금액 고침)도 문서 `version`을 올리므로(금액 표시 절 「낙관적 잠금」) 모달을 연 뒤 증빙이 바뀌면 확인이 거부되고, 보지 않은 증빙이 `확인됨`이 되지 않는다.
   열 때 받은 `version`이 그 S1 행의 `version`과 다르면(목록을 받은 뒤 문서가 바뀜) 1차 `aria-disabled` + 막힘 이유 자리에 「거부 — 문서 화면 동시성」 문구(사람 · 시각은 서버 값) — `새로 고침`은 아래 「실패」와 같다. 응답의 새 `version`으로 S1 행 데이터를 바꾼다 — 바꾸지 않으면 뒤이은 일괄 처리가 동시성 막힘에 걸린다.
-- **성공(S1):** 모달이 닫히고 그 행을 응답 상태로 「상태 → 1차」 표에서 다시 읽는다 → P4 → 선택 칸이 켜지고 **저절로 골라진다**(확인한 건은 지급하려던 건이다 — 「이체액을 고치면 저절로 골라진다」와 같은 결). 증빙 칸은 `확인됨`(다른 확인됨 행과 같은 모양 — 2행 없음), 이체액 칸이 편집 칸으로 선다.
-  선택이 바뀌므로 합계 번호가 1 늘고 서버 합을 다시 부른다(「합계 줄」 규칙 그대로). 다른 행의 선택 · 이체액 편집은 그대로. 토스트 없음(제자리 결과, §7-6). **포커스 = 그 행 이체액 셀**(입력 → 1차 흐름, M-3과 같은 결). 닫힌 직후 `event.repeat`인 `Ctrl+Enter`는 무시한다(M-3).
+- **성공(S1):** 모달이 닫히고 그 행을 응답 상태로 「상태 → 1차」 표에서 다시 읽는다 → P4 **이고 S1 선택 칸이 `고를 수 있음`이면**(Q4 짝 막힘이 없을 때 — r2 Codex R1) 선택 칸이 켜지고 **저절로 골라진다**(확인한 건은 지급하려던 건이다 — 「이체액을 고치면 저절로 골라진다」와 같은 결). 증빙 칸은 `확인됨`(다른 확인됨 행과 같은 모양 — 2행 없음), 이체액 칸이 편집 칸으로 선다.
+  선택이 바뀌므로 합계 번호가 1 늘고 서버 합을 다시 부른다(「합계 줄」 규칙 그대로). 다른 행의 선택 · 이체액 편집은 그대로. 토스트 없음(제자리 결과, §7-6). **포커스 = 그 행 이체액 셀**(입력 → 1차 흐름, M-3과 같은 결).
+  **짝 막힘이면(r2 Codex N3):** 확인 뒤 그 행이 Q4 짝으로 `고를 수 있음`이 아니면 위 넷(편집 칸 · 자동 선택 · 합 갱신 · 이체액 포커스)을 하지 않는다 — 증빙 칸 `확인됨`, 선택 칸 `aria-disabled` + 짝 이유(「상태 → 1차」 짝 줄), 이체액은 읽기 값, 포커스 = 그 행 링크. 닫힌 직후 `event.repeat`인 `Ctrl+Enter`는 무시한다(M-3).
 - **성공(S3):** 그 행 증빙 칸이 `확인됨`. 지급 기록은 그대로(S4 「지급 뒤 들어온 증빙」). 3차가 사라지므로 포커스는 화면 제목이 아니라 그 행 링크(행 → 문서 화면)로 간다(§7-17 「트리거가 사라졌으면」의 이 표면 적용 — 같은 행에 머문다).
 - **실패:** 모달은 닫히지 않고 막힘 이유 자리에 Copywriting 「거부 — 증빙 확인 모달(S1 · S3)」. 동시성(그사이 PM이 증빙을 바꿈 · 다른 사람이 먼저 확인함)이면 `새로 고침`이 목록과 모달 보기를 다시 받는다(r2 B-1). 그 문서가 아직 `확인 전`이면 **모달이 새 파일 · 증빙 금액 · 결과 줄 · 새 `version`으로 다시 선다**(오는 동안 「여는 동안」과 같은 `…` + 1차 `aria-disabled`) — 경영관리는 바뀐 증빙을 본 뒤에만 확인한다.
   `확인 전`이 아니게 됐으면(다른 사람이 먼저 확인) 모달을 닫고 그 행은 새로 받은 상태대로 선다(저절로 골라지지 않는다 — 이 사람이 확인한 것이 아니다), 포커스는 그 행 링크. 다른 행의 선택 · 편집은 그대로다.
@@ -527,7 +577,7 @@ PC ≥1280
 ### S2. 일괄 지급 완료 — 확인 모달과 건별 처리 (`ui/confirm-dialog` + SP-1)
 
 - **모달을 두는 이유(H-5):** 한 건 지급(S5)은 칸이 화면에 있고 되돌리기 = 지급 취소가 가까이 있어 모달이 없다. 일괄 지급은 지급일 한 칸을 받아야 하고(§7-8 확인 근거 한 칸), 되돌리려면 건마다 문서 화면에서 사유 모달을 거쳐야 한다(D-606). 그래서 모달이 확정 대상 — 지금 쪽 밖에서 고른 건 · 차이 있는 건 — 을 결과 줄로 보인다.
-- 모달: Copywriting 「Destructive — 일괄 지급 완료」(결과 줄 ③ `다른 쪽 N건 포함 · 차이 있음 N건`). 확인 근거 한 칸 = **지급일**(§7-8 882행 「날짜」 예외 그대로, 기본 오늘, 280) — 고른 건 전부에 같은 지급일(O-3).
+- 모달: Copywriting 「Destructive — 일괄 지급 완료」(결과 줄 ③ `다른 쪽 N건 포함 · 차이 있음 N건`). 확인 근거 한 칸 = **지급일**(§7-8 「날짜」 예외 그대로, 기본 오늘 · 미래 허용 — 사용자 결정(10/5 00:55) Q6, `--field-w-short`) — 고른 건 전부에 같은 지급일(O-3).
   원천징수·회사 대납 규칙의 세율 기준일이 이 지급일이다(D-101, UA-617) — 서버가 지급일로 다시 계산해 지급 총액이 화면이 보낸 값과 달라진 건은 처리하지 않고
   **막힘으로 돌려보낸다**(조용히 다른 금액으로 처리하지 않는다). 그 건의 응답에는 **고른 지급일로 다시 계산한 지급 총액**이 실린다:
   - 행은 자리·선택을 유지하고 지급 총액 셀이 새 값으로 바뀐다. 이체액은 사람이 적은 값(통장에서 실제 나간 돈) 그대로이고, 새 지급 총액과 다르면 2행 `차이`와 차이 사유
@@ -537,60 +587,60 @@ PC ≥1280
 - 부제 합계와 1차가 켜지는 때: S1 「합계 줄」의 합계 번호 규칙 그대로(모달을 연 순간의 합계 번호의 서버 합이 올 때까지 1차 `aria-disabled`, 실패하면 「거부 — 이체액 합계 응답 없음」).
   처리 요청은 **모달을 연 스냅숏**(행 id · 이체액 · 차이 사유)을 보낸다 — 스냅숏의 행 id · 이체액이 그 합계 번호의 입력과 같으므로 부제에 보인 합과 처리한 값이 어긋나지 않는다.
 - 처리: **건마다 따로**(RESEARCH AS1 — 건별 트랜잭션, 건마다 `version` 낙관적 잠금). 모달은 요청 중 1차 `…` + 나머지 `aria-disabled`(§7-17).
-- 응답이 오면 모달이 닫히고 S1 「결과」 · 「일괄 결과 알림 · 막힌 행 선택」대로 그린다(선택 · 포커스 · `aria-live`). 1건 이상 처리됐으면 토스트 `지급 완료 · 5건`. 0건 처리(전부 막힘)면 토스트 없음 — 막힌 행과 결과 글자가 답이다.
+- 응답이 오면 모달이 닫히고 S1 「결과」 · 「일괄 결과 알림 · 막힌 행 선택」대로 그린다(선택 · 포커스 · `aria-live`). 토스트 없음(rev 10 — 결과 글자 `14:02 지급 완료 5건 · 막힘 2건`이 같은 사실을 말한다, §7-6 :951).
 - 네트워크 등으로 응답이 없으면 모달을 닫지 않고 막힘 자리에 `결과를 받지 못함 · 새로 고침`.
 
-### S3. 「지급 완료」 보기 `/expenses?view=paid` (§6-1 읽기 목록) + 다른 사람의 지급 표시
+### S3. 「지급 완료」 보기 `/expenses?status=지급 완료` (§6-1 읽기 목록) + 다른 사람의 지급 표시
 
-- 지급 권한자·대표: 열 = 번호 · 프로젝트 · 항목 · 거래처 · **지급 방식**(`계좌이체` · `법인카드` · `현금` 낱말만 — 계좌 글자·`번호 보기`는 S1·S5에만, 대표가 이 목록을 읽으므로 O-17) · 지급일 · 이체액(2행 `차이 -3,300`, 있을 때만) · 차이 사유 · 증빙(상태 글자 — 지급 뒤 들어온 선결제 증빙이 `확인 전`이면 같은 칸 3차 `증빙 확인` → ≥1024는 제자리 확인 모달(S1 「제자리 증빙 확인」 — 결과 줄 없음, 선택 없음), 1024 미만은 문서 화면 S4) · 처리한 사람. 그룹 = 지급일의 주(`이번 주` → `지난주` →
+- 지급 권한자·대표: 열 = 번호 · 프로젝트 · 항목 · 거래처 · **지급 방식**(`계좌이체` · `법인카드` · `현금` 낱말만 — 계좌 글자·`번호 보기`는 S1·S5에만, 대표가 이 목록을 읽으므로 O-17) · 지급일 · 이체액(2행 `차이 -3,300`, 있을 때만) · 차이 사유 · 증빙(상태 글자 — 지급 뒤 들어온 선결제 증빙이 `확인 전`이면 같은 칸 3차 `증빙 확인` → ≥1024는 제자리 확인 모달(S1 「제자리 증빙 확인」 — 결과 줄 없음, 선택 없음), 1024 미만은 문서 화면 S4) · 처리한 사람. 그룹 = 지급일의 주(미래 지급일이 있으면 맨 앞 `예정 지급` — Q6 미래 허용, r2 F9 → `이번 주` → `지난주` →
   `09-01 ~ 09-07` …). 필터 `[지급 완료 ▾] [팀 ▾] [2026-09 ▾]`. 합계 줄 `합계 (지급 완료 · 2026-09 · 41건)` · `이체액 412,300,000`. **1차 없음.** 행 → 문서 화면(지급 취소는 거기서, S5).
-  폰 P1 = 항목 · 이체액 · 지급일, P2 = 번호 · 거래처 · 증빙, P3 = 지급 방식 · 차이 사유 · 처리한 사람(좁은 PC에서 숨길 때도 P3부터, §6-1 361행).
-- **Phase 5 목록(기안자·결재자가 보는 것)에 더하는 것:** 상태 열 값 `지급 완료`(`success`) + 2행 `09-19`. 선결제 기한 초과면 상태 열 2행 `증빙 16일 경과`(`--warning`, `--fs-xs` 400).
+  폰 P1 = 항목 · 이체액 · 지급일, P2 = 번호 · 거래처 · 증빙, P3 = 지급 방식 · 차이 사유 · 처리한 사람(좁은 PC에서 숨길 때도 P3부터, §6-1).
+- **Phase 5 목록(기안자·결재자가 보는 것)에 더하는 것:** 상태 열 값 `지급 완료`(`success`) + 2행 `09-19`. 선결제 기한 초과면 상태 열 2행 `증빙 16일 경과`(`--status-warning`, `--text-tag` 400).
   열을 새로 만들지 않는다 — 상태는 하나다(UA-605).
 
-### S4. 지출결의 문서 화면 — 「증빙」 섹션의 확인부 `/expenses/[id]` (§6-3 한 열 720 + §7-10 + §7-15)
+### S4. 지출결의 문서 화면 — 「증빙」 섹션의 확인부 `/expenses/[id]` (`DetailScreen.Section` + `Form layout="page"` + §7-10)
 
-Phase 5의 문서 화면(UA-605·UA-606) 증빙 묶음 **아래**에 확인부를 붙인다. 섹션 순서: (Phase 5) 견적 줄 · 금액 · 증빙 종류 · 결재선 → **증빙** → **지급**(S5) → 행동 줄.
+Phase 5의 문서 화면(UA-605·UA-606 — `DetailScreen` + `Form layout="page"`, 05 브랜치) 증빙 묶음 **아래**에 확인부를 붙인다.
+
+**증빙 금액 빈 확인 전(r2 F2, 기본값 — 05 결재 중 붙이기에 금액 칸이 있는지는 UA-606으로 05-09에서 확인):** P2에서 증빙 금액이 비어 있으면 증빙 금액 칸이 **처음부터 열린 입력 칸**(`--field-w-short`, `바꾸기`를 누른 모양)으로 서고 첫 포커스가 그 칸이다. 1차 `증빙 확인`은 금액이 찰 때까지 비활성 + 이유 `증빙 금액 없음`(`block`, 칸 `Form.Error`와 같은 사실이면 `blockedBy`로 한 자리만). 승인액을 몰래 채우지 않는다 — 지급 총액의 기준이 증빙 금액이기 때문(금액 표시 절). 섹션 순서: (Phase 5) 견적 줄 · 금액 · 증빙 종류 · 결재선 → **증빙** → **지급**(S5). 섹션 시작은 `DetailScreen.Section`(제목 `--text-subtitle`, 위 1px `--border-row`) — 2px 선 없음. 1차 자리는 Phase 5 문서 화면의 행동 자리 그대로(PC `DetailScreen` `actions.primary` 또는 §6-3 행동 줄 · 폰 고정 행동 줄 — 05 UI-SPEC이 정한 쪽, UA-605).
 
 ```
-│ 지출결의 — 아이오닉9 · 무대설치                               26001-0004 · 승인 │ ← Phase 5 머리 줄(720)
-╞════════════════════════════════════════════════════════════════════════╡
+│ 지출결의 — 아이오닉9 · 무대설치  [승인]                         [증빙 확인 Ctrl+Enter] │ ← DetailScreen title · status · 1차(Phase 5 자리)
+│ 26001-0004 · 박서연                                                       │ ← meta
 │ (Phase 5 읽기 칸들)                                                      │
-╞═ 증빙 ══════════════════════════════════════════════════════════════════╡
-│ 증빙        ▣ 세금계산서_0918.pdf · 240KB · 09-17               크게 보기 │ ← §7-10 파일 행
+├─ 증빙 ───────────────────────────────────────────────────────────────────┤ ← Section(1px --border-row)
+│ 증빙        ▣ 세금계산서_0918.pdf · 240KB · 09-17               크게 보기 │ ← §7-10 파일 행(살아 있는 파일만)
 │ 증빙 금액   12,400,000   박서연 09-17                              바꾸기 │
-│             부가세 1,240,000 · 지급 총액 13,640,000 · 세금계산서 규칙       │ ← 서버 계산 한 줄
+│             부가세 1,240,000 · 지급 총액 13,640,000 · 세금계산서 규칙       │ ← 서버 계산 한 줄(Form.Hint)
 │ 확인        확인 전                                                      │
-╞═ 지급 ═══════════════════════════════════════════════════════════════════╡
+├─ 지급 ───────────────────────────────────────────────────────────────────┤
 │ (S5)                                                                     │
-╞══════════════════════════════════════════════════════════════════════════╡
-│ [증빙 확인 Ctrl+Enter]                                                    │ ← 행동 줄(1차 하나)
 ```
 
-- **지급 권한자:** `증빙 금액` 오른쪽 3차 `바꾸기` → 값 자리가 짧은 칸(280) 입력으로 바뀌고 `Form.Hint` `확인하면 12,400,000 → 12,000,000`(결과 미리보기, §7-15 1027행),
+- **지급 권한자:** `증빙 금액` 오른쪽 3차 `바꾸기` → 값 자리가 짧은 칸(`--field-w-short`) 입력으로 바뀌고 `Form.Hint` `확인하면 12,400,000 → 12,000,000`(결과 미리보기, §7-15),
   지급 전 문서면 서버 계산 한 줄이 새 값으로 다시 온다(지급 뒤 문서에는 서버 계산 한 줄이 없다 — 아래 「지급 뒤 들어온 증빙」). **1차 `증빙 확인`이 금액과 확인을 한 번에 저장한다**(D-602 — 전 값·새 값·사람·시각 행동 로그). `바꾸기`는 `확인 전`일 때만
   렌더한다. `Esc`는 칸을 서버 값으로 되돌린다.
 - **확인 줄 값:** `확인 전`(accent) · `확인됨` + 2행 `이과장 09-18 14:02`(+ 고쳤으면 `· 12,400,000 → 12,000,000`) · `면제` + 2행 `이과장 09-18 · {사유}` · 선결제·증빙 없음·면제 아님이면
   `선결제` + 2행 기한(Copywriting 「표시 — 선결제」). 면제된 선결제 문서는 `면제` + 2행이다(`면제`가 이긴다 — 선결제 사유 줄은 남는다).
+- **증빙 금액이 승인액 · 남은 실행가를 넘을 때(r4 — 사용자 결정 2026-10-05 UC-4 · Q-F 「표시만」):** `증빙 금액` 줄 아래(서버 계산 한 줄 다음, `Form.Hint` 자리) 한 줄 `승인액보다 +400,000` · `실행가 초과 150,000`(둘 다면 ` · `로 이은 한 줄 — Copywriting 「표시 — 증빙 금액 초과」). 넘을 때만 서고 막지 않는다 — 1차 `증빙 확인` · `지급 완료`는 그대로다. 숫자는 서버 `diffKrw` 값이고, `바꾸기` 중에는 새 금액으로 서버가 다시 보낸다(`--text-faint` 이전 값 → 새 값 규칙 그대로). 확인한 뒤에도 남는다.
 - **행동 줄·3차는 「상태 → 1차」 표가 정한다.** 결재 통과 전(P0)에는 확인부가 모두에게 읽기다 — 확인 줄 값만, `바꾸기`·`증빙 면제`·1차 없음.
 - **확인 직후 1차 바뀜(M-3):** `증빙 확인` 응답으로 1차가 `지급 완료`로 바뀌면 바뀐 직후의 `Ctrl+Enter`는 `event.repeat`면 무시하고 새 1차가 그려진 뒤 새로 누른 것만 받는다. 포커스는 이체액 칸으로 옮긴다(입력 → 1차 흐름 — 이체액 · 지급일을 보지 않고 지급되지 않게).
 - **`from=pay`로 열렸을 때:** 행동 줄 오른쪽 3차 `지급 대상으로` · (확인됨이 되면) `다음 확인 전 {번호}` — S1 「문서 화면 왕복」. 1차 규칙은 바뀌지 않는다.
-- **증빙 0 · 선결제 아님 · 면제 아님(P3 — 결재 통과 · 지급 전 · 증빙 필수 on):** 증빙 줄 `없음 · 담당 PM 박서연`(`--danger`) + 같은 줄 3차 `증빙 면제`(지급 권한자만) → 확인 모달(Copywriting 「Destructive — 증빙 면제」). 이때 1차는
-  `지급 완료` 비활성 + 이유 `증빙 없음 · 담당 PM 박서연`. **면제된 문서는 이 갈래가 아니다** — 확인 줄 `면제` + 2행, 1차 `지급 완료`가 산다(P4, D-603). 증빙 필수 off(설정)면 증빙 줄은 `없음`(`--muted`)이고 1차는 살아 있다(P4).
-- **증빙 0인 선결제 · 증빙 필수 off · 지급 뒤 문서(P4 · P6 — 「상태 → 1차」 「증빙 면제의 자리」):** 확인 줄 `선결제` + 2행 기한 / `없음` 오른쪽 같은 줄에 3차 `증빙 면제`(지급 권한자만)
+- **증빙 0 · 선결제 아님 · 면제 아님(P3 — 결재 통과 · 지급 전 · 증빙 필수 on):** 증빙 줄 `증빙 없음 · 기안자 박서연`(`--status-danger`) + 같은 줄 3차 `증빙 면제`(지급 권한자만) → 확인 모달(Copywriting 「Destructive — 증빙 면제」). 이때 1차는
+  `지급 완료` 비활성 + 이유 `증빙 없음 · 기안자 박서연`. **면제된 문서는 이 갈래가 아니다** — 확인 줄 `면제` + 2행, 1차 `지급 완료`가 산다(P4, D-603). 증빙 필수 off(설정)면 증빙 줄은 빈 값 `—`(상태 낱말 아님)이고 1차는 살아 있다(P4).
+- **증빙 0인 선결제 · 증빙 필수 off · 지급 뒤 문서(P4 · P6 — 「상태 → 1차」 「증빙 면제의 자리」):** 확인 줄 `선결제` + 2행 기한 / `—`(필수 off) · `증빙 없음`(지급 뒤) 오른쪽 같은 줄에 3차 `증빙 면제`(지급 권한자만)
   → 같은 확인 모달(결과 줄은 지급 전후·선결제로 갈린다 — Copywriting 「Destructive — 증빙 면제」). 1차는 표의 것 그대로다(P4 `지급 완료` / P6 없음 + 2차 `지급 취소`).
   지급 뒤 문서의 면제는 S5 지급 기록을 건드리지 않는다 — 확인 줄만 `면제` + 2행으로 바뀌고 행동 줄은 P6 그대로(1차 없음 + 2차 `지급 취소`).
-- **확인이 풀리는 때(서버 규칙):** PM이 증빙 파일을 더하거나 떼거나 증빙 금액을 고치면 `확인됨` → `확인 전`. 면제된 건에 PM이 증빙을 올리면 면제 표시가 사라지고 `확인 전`
-  (면제 기록은 행동 로그에 남는다). 지급 완료 뒤의 증빙 변경은 Phase 5 규칙을 따른다(UA-606).
-- **지급 뒤 들어온 증빙(선결제, D-602·D-603):** PM이 지급 뒤 증빙을 올리면 확인 줄이 `확인 전`이 되고, 지급 권한자에게 행동 줄 1차 `증빙 확인`이 선다(2차 `지급 취소`는
+- **확인이 풀리는 때(서버 규칙 — rev 10, 05 결정):** 확인 기록은 결재 통과 뒤에만 있고, 그 뒤 증빙을 바꾸는 길은 둘뿐이다 — **기안자 「추가」**(파일 + 그때 적는 증빙 금액)와 **시스템 관리자 「무효」**(`expenses.evidence_void`). 두 훅 모두 `확인됨` → `확인 전`(무효 뒤 살아 있는 파일이 0이면 `증빙 없음` — P3 · P6)으로 되돌리고 문서 `version`을 올린다. 면제된 건에 기안자가 증빙을 올리면 면제 표시가 사라지고 `확인 전`(면제 기록은 행동 로그에 남는다). 승인 뒤 떼기는 없다. 결재 중 `expenses.evidence_attach` 권한자의 추가는 확인 기록이 없을 때라 확인을 건드리지 않는다(「증빙 판정 규칙」).
+- **지급 뒤 들어온 증빙(선결제, D-602·D-603):** 기안자가 지급 뒤 증빙을 올리면 확인 줄이 `확인 전`이 되고, 지급 권한자에게 행동 줄 1차 `증빙 확인`이 선다(2차 `지급 취소`는
   그대로 — 「상태 → 1차」 P5). 금액 `바꾸기`도 `확인 전`이라 선다. 누르면 확인만 기록된다 — 지급 상태·지급 칸·이체액은 그대로이고 지급 행동이 다시 서지 않는다(확인 뒤 행동 줄 = P6: 1차 없음 + 2차 `지급 취소`). 선결제 표시는 `확인됨`으로
   바뀌고 기한 2행이 사라진다. 이 건은 S3 증빙 열의 3차 `증빙 확인`으로 찾아 들어온다.
   **지급 뒤 문서의 증빙 섹션에는 서버 계산 한 줄(부가세 · 지급 총액)이 없다** — `증빙 금액` 값 + 2행과 `바꾸기`의 `Form.Hint`(`확인하면 12,400,000 → 12,000,000`, 증빙 금액끼리)만 선다.
   지급 총액·차이는 S5 지급 기록(처리 때 값, 고정)에만 있어 같은 라벨에 두 값이 보이지 않는다(금액 표시 절 「지급 뒤」). 늦게 들어온 증빙 금액은 비용(D-602)을 바꾸지만 지급 기록은 바꾸지 않는다.
-- **기안자·PM:** 확인 줄은 읽기 `확인 전` 2행 `확인은 경영관리` / `확인됨 이과장 09-18`. 증빙 파일·증빙 금액 편집은 Phase 5 문서 화면 규칙 그대로(UA-606).
+- **기안자·PM:** 확인 줄은 읽기 `확인 전` 2행 `확인은 경영관리` / `확인됨 이과장 09-18`. 증빙 파일 편집은 05 결정 그대로(05 표면 — 결재 중 기안자는 `크게 보기`만 + 잠김 한 줄 `결재 중 · 증빙은 경영관리`, 승인 뒤 기안자는 「하나 더」만, `삭제` 없음). 이 섹션은 그 위에 확인 줄만 얹는다.
 - **대표·결재자·팀장:** 읽기만. 행동 줄 없음(D-601 — 대행 버튼 없음).
 
-### S5. 지출결의 문서 화면 — 「지급」 섹션 (§6-3 + §7-15 + `ui/confirm-dialog`)
+### S5. 지출결의 문서 화면 — 「지급」 섹션 (`DetailScreen.Section` + `Form layout="page"` + `ui/confirm-dialog`)
 
 결재 통과 뒤에만 렌더한다(결재 중·반려·회수 문서에는 섹션이 없다 — 「상태 → 1차」 P0).
 
@@ -599,22 +649,24 @@ Phase 5의 문서 화면(UA-605·UA-606) 증빙 묶음 **아래**에 확인부�
 | 지급 예정일 | 값 + 3차 `지급 예정일 바꾸기` → 제자리 날짜 칸(모달 없음 · 칸 옆 저장 버튼 없음 — 저장은 행동 줄 1차 `예정일 저장`, Copywriting 「제자리 편집 — 지급 예정일 바꾸기」, SP-3, UA-617) | 값(읽기) | 값 + 2행 `지급은 경영관리`(지급 전) |
 | 지급 방식 | `계좌이체` / `법인카드` / `현금`(읽기 — Phase 5 문서 값, UA-618) | 같음 | 같음 |
 | 계좌 | **계좌이체일 때만** 행이 선다: `신한 ****-**-1234` · 2행 예금주 · 3차 `번호 보기`(UA-613). 법인카드·현금이면 행 없음 | 같음 | **없음**(행 자체를 보내지 않는다 — 계좌는 지급 권한자만, O-17) |
-| 이체액(라벨은 방식 이름 — 계좌이체 `이체액` · 법인카드 `카드 결제액` · 현금 `현금 지급액`) | 1차가 `지급 완료`일 때만 입력 칸(280, 기본값 = 지급 총액) + `Form.Hint` 차이(`지급 총액 13,640,000 · 차이 -3,300`, 같으면 `지급 총액과 같음` 없이 줄 없음). 1차가 `증빙 확인`이면 값 `13,640,000`(읽기) | `13,636,700` · 2행 `지급 총액 13,640,000 · 차이 -3,300 · 공급가 역산 12,397,000`(차이는 모든 규칙, 역산 묶음은 서버가 보낼 때만 — UA-619) | 지급 뒤에만 지급 권한자와 같은 읽기 줄 |
-| 차이 사유 | 이체액 ≠ 지급 총액일 때만 나타나는 긴 칸(480), 필수 | 값(있을 때만) | 값(있을 때만) |
-| 지급일 | 1차가 `지급 완료`일 때만 날짜 칸(280, 기본 오늘). 원천징수·회사 대납 규칙이면 날짜를 바꾸는 순간 서버가 그 날짜로 지급 총액을 다시 계산해 이체액 `Form.Hint`(지급 총액 · 차이)가 새 값으로 온다(D-101, UA-617 — 누르기 전에 금액·차이 사유를 본다) | `2026-09-19` · 2행 처리한 사람 | 지급 뒤에만 같은 읽기 줄 |
+| 이체액(라벨은 방식 이름 — 계좌이체 `이체액` · 법인카드 `카드 결제액` · 현금 `현금 지급액`) | 1차가 `지급 완료`일 때만 입력 칸(`--field-w-short`, 기본값 = 지급 총액) + `Form.Hint` 차이(`지급 총액 13,640,000 · 차이 -3,300`, 같으면 `지급 총액과 같음` 없이 줄 없음). 1차가 `증빙 확인`이면 값 `13,640,000`(읽기) | `13,636,700` · 2행 `지급 총액 13,640,000 · 차이 -3,300 · 공급가 역산 12,397,000`(차이는 모든 규칙, 역산 묶음은 서버가 보낼 때만 — UA-619) | 지급 뒤에만 지급 권한자와 같은 읽기 줄 |
+| 차이 사유 | 이체액 ≠ 지급 총액일 때만 나타나는 긴 칸(`--field-w-long`), 필수 | 값(있을 때만) | 값(있을 때만) |
+| 지급일 | 1차가 `지급 완료`일 때만 날짜 칸(`--field-w-short`, 기본 오늘 · **미래 날짜 허용** — 사용자 결정(10/5 00:55) Q6). 원천징수·회사 대납 규칙이면 날짜를 바꾸는 순간 서버가 그 날짜로 지급 총액을 다시 계산해 이체액 `Form.Hint`(지급 총액 · 차이)가 새 값으로 온다(D-101, UA-617 — 누르기 전에 금액·차이 사유를 본다) | `2026-09-19` · 2행 처리한 사람 | 지급 뒤에만 같은 읽기 줄 |
 
 - 1차 규칙은 「상태 → 1차」 표(P1 = 지급 예정일 칸이 dirty인 동안 `예정일 저장` — 키·되돌리기는 Copywriting 「제자리 편집 — 지급 예정일 바꾸기」). 한 건 지급 완료는 **확인 모달 없이** 행동 줄 1차로 끝난다(지급일·이체액이 이미 화면 칸이고, 되돌리기 =
-  지급 취소가 있다). 성공하면 1차 자리 `지급 완료 → 2026-09-19 · 14:02` + 토스트, 칸은 읽기 줄로 바뀐다.
-- **지급 취소(D-606):** 지급 뒤 행동 줄 오른쪽 2차 `지급 취소` → 확인 모달(사유 한 칸). 확인하면 섹션이 지급 전 모양으로 돌아가고 토스트 `지급 취소 · 26001-0004`.
+  지급 취소가 있다). 성공하면 1차 자리 `지급 완료 → 2026-09-19 · 14:02`(토스트 없음 — 결과가 그 자리에 보인다, §7-6), 칸은 읽기 줄로 바뀐다.
+- **행동 뒤 포커스(r2 F5):** 지급 완료 · 예정일 저장 · 지급 취소 · 증빙 면제 · 증빙 확인 뒤에는 응답으로 표를 다시 읽고, 새 1차가 서면 **그 1차**로, 1차가 없으면(P6) 1차 자리의 결과 글자(`tabindex="-1"` · `role="status"` — 스크린 리더가 읽는다)로 보낸다. 누른 버튼이 사라져 포커스가 `body`로 빠지지 않는다. (증빙 확인 → 이체액 칸은 S4 규칙이 먼저다.)
+- 지급 방식 ↔ 증빙 종류 짝이 설정 목록 밖이면 `지급 완료`가 비활성 + 이유(「상태 → 1차」 표의 짝 줄 — 사용자 결정(10/5 00:55) Q4). 짝 목록이 비어 있으면(기본값) 이 막힘은 없다.
+- **지급 취소(D-606):** 지급 뒤 행동 줄 오른쪽 2차 `지급 취소` → 확인 모달(사유 한 칸). 확인하면 섹션이 지급 전 모양으로 돌아간다(제자리 결과 — 토스트 없음).
   **1차는 정해 두지 않는다** — 응답의 결재·증빙·지급 상태로 「상태 → 1차」 표를 다시 읽는다: 증빙이 `확인됨`·`면제`·`선결제`(또는 증빙 필수 off의 `없음`)면 P4 `지급 완료`,
-  지급 뒤 들어온 증빙이 아직 `확인 전`이면 P2 `증빙 확인`, 지급 뒤 증빙이 떼어져 `없음`이면 P3(증빙 필수 on — 비활성 `지급 완료` + 이유 · 3차 `증빙 면제`. off면 P4). 지급 뒤에 면제했으면 `면제`라 P4. 선결제 기한 2행은 지급 전이라 사라진다(「표시 — 선결제」).
-  완료(A-601) 프로젝트의 문서도 같다(D-47 범위) — 화면 분기 없음.
+  지급 뒤 들어온 증빙이 아직 `확인 전`이면 P2 `증빙 확인`, 지급 뒤 파일이 무효 처리되어(05 — 승인 뒤 떼기 없음) 증빙이 0이면 P3(증빙 필수 on — 비활성 `지급 완료` + 이유 · 3차 `증빙 면제`. off면 P4). 지급 뒤에 면제했으면 `면제`라 P4. 선결제 기한 2행은 지급 전이라 사라진다(「표시 — 선결제」).
+  완료(A-601) 프로젝트의 문서도 같다(D-47 범위 · r3 사용자 결정 U-4 — 지급 · 지급 취소는 완료 뒤에도 된다) — 화면 분기 없음.
 - 지급 방식이 법인카드인 문서의 지급 완료도 이 섹션에서 끝나고 카드 사용 건을 만들지 않는다(D-609).
-- 폰(<700): 섹션이 그대로 서고 행동 줄은 하단 탭 위 고정(§6-3 427행). 한 건 지급·취소·증빙 확인이 폰에서 된다(폼이라 UX-03 범위).
+- 폰(<700): 섹션이 그대로 서고 1차는 `DetailScreen`의 `actions.primary` 자리(하단 탭 위 고정). 한 건 지급·취소·증빙 확인이 폰에서 된다(폼이라 UX-03 범위).
 
 ### S6. 지출결의 폼 — 선결제 칸 (Phase 5 폼 위, §7-15) — PM
 
-- Phase 5 폼(UA-606)의 증빙 묶음 안, 첨부 영역 바로 아래: 체크박스 `선결제`(네이티브, 라벨이 클릭 영역, §7-2 boolean 렌더와 같은 모양). 켜면 바로 아래 긴 칸(480)
+- Phase 5 폼(UA-606)의 증빙 묶음 안, 첨부 영역 바로 아래: 체크박스 `선결제`(네이티브 · `--native-accent`, 라벨이 클릭 영역, §7-2 boolean 렌더와 같은 모양). 켜면 바로 아래 긴 칸(`--field-w-long`)
   `선결제 사유`가 나타나고 `Form.Hint` `증빙 기한 지급일부터 14일`(숫자 = 설정 값, 기준일 O-5). 끄면 칸이 사라지고 적은 사유는 버린다.
 - 사유가 비면 제출이 막힌다(Copywriting 「막힘 — 선결제 칸」). 선결제면 Phase 5의 「증빙 없음」 제출 막힘(있다면)이 풀린다 — 지급 게이트에서도 예외(D-603).
 - 제출 뒤에는 증빙 묶음에 읽기 줄 `선결제` · `{사유 원문}`. 제출 뒤 선결제를 켜고 끄는 경로는 없다(O-4).
@@ -625,61 +677,77 @@ Phase 5의 문서 화면(UA-605·UA-606) 증빙 묶음 **아래**에 확인부�
 - 행 오류(§7-3 오류 셀 모양): 크기 · 형식 · 중복 · 완료 통보 실패 — Copywriting 「Error — 증빙 업로드」. 여러 파일 중 일부만 실패하면 성공 행 + 실패 행 각각(§7-7 첨부 PARTIAL).
 - **중복(SHA-256) — 같은 주인 종류 안에서만(rev 9, DR-3 · O-6):** 같은 해시가 **같은 종류의 주인**에 이미 있으면 그 파일은 올라가지 않는다 — 지출결의 증빙끼리 · 차수 승인 증빙(S21)끼리 · 리저브 줄 증빙(S22)끼리.
   종류가 다르면 막지 않는다(한 세금계산서가 지출결의 증빙이면서 리저브 출금 증빙인 것은 정상 업무이고, 두 새 주인에는 금액 칸이 없어 비용이 두 번 들지 않는다).
-  **카드 사용의 카드 전표(S9 · S13 첨부)는 지출결의 증빙과 한 종류로 센다** — 둘 다 비용이 되는 증빙이라 같은 영수증이 지출결의와 카드 사용에 함께 붙으면 비용이 두 번 든다(O-6의 목적 그대로). 행 오류의 **문서 번호는 올린 사람이 그 문서를 읽을 수 있을 때만** 싣는다 — 서버가 번호를 싣기 전에 읽기 권한(`scopeFor`)을 확인하고, 못 읽으면 번호 없는 문구(Copywriting 「Error — 증빙 업로드」). 해시로 남의 문서 번호를 캐낼 수 없다.
-- **마지막 증빙 삭제(EVID-04):** 문서의 마지막 증빙 파일 3차 `삭제` → 확인 모달(Copywriting 「Destructive — 증빙 삭제」). 마지막이 아닌 파일 삭제는 모달 없음(§7-10 그대로).
-- 카드 사용 폼·구매 완료 폼의 첨부(카드 전표)는 한도·형식·중복 규칙만 같다(EVID-01). **마지막 카드 전표 삭제는 모달이 없다** — 카드 사용에는 결재·승인액이 없고(D-608)
-  비용은 결제 합계에서 역산한 공급가라(D-607) 전표를 떼도 바뀌는 값이 없다(§7-10 보통 삭제). 목록 증빙 열만 `있음` → `—`.
+  **카드 사용의 카드 전표(S9 첨부 — S13에는 첨부 영역 없음, r3)는 지출결의 증빙과 한 종류로 센다** — 둘 다 비용이 되는 증빙이라 같은 영수증이 지출결의와 카드 사용에 함께 붙으면 비용이 두 번 든다(O-6의 목적 그대로). 행 오류의 **문서 번호는 올린 사람이 그 문서를 읽을 수 있을 때만** 싣는다 — 서버가 번호를 싣기 전에 읽기 권한(`scopeFor`)을 확인하고, 못 읽으면 번호 없는 문구(Copywriting 「Error — 증빙 업로드」). 해시로 남의 문서 번호를 캐낼 수 없다.
+- **떼기 · 무효(rev 10 — 05 결정, 위 「증빙 판정 규칙」):** 결재 중 · 승인 뒤에는 파일 행에 `삭제`가 없다. 떼기는 작성 중 · 반려 · 회수 문서에서만이고 §7-10 보통 삭제(모달 없음)다 — 그 상태에는 증빙 확인 기록이 없어 풀릴 것이 없다. 승인 뒤 잘못 붙은 파일은 시스템 관리자의 무효(05 표면)이고, 06은 그 결과(무효 파일 행 제외 · 확인 풀림 · 살아 있는 파일 0이면 `증빙 없음`)만 그린다. EVID-04의 「증빙 금액 지워짐」 결과는 무효 훅이 같은 값을 낸다(서버). **SP-6 철회.**
+- 카드 사용 폼(S9)의 첨부(카드 전표)는 한도·형식·중복 규칙만 같다(EVID-01). 구매 완료 패널(S13)에는 첨부 영역이 없고 생긴 건의 S9 수정 패널에서 붙인다(r3). **마지막 카드 전표 삭제는 모달이 없다** — 카드 사용에는 결재·승인액이 없고(D-608)
+  비용은 결제 합계에서 역산한 공급가라(D-607) 전표를 떼도 바뀌는 값이 없다(§7-10 보통 삭제). 목록 증빙 열만 `있음` → `—`. 카드 사용 첨부는 지출결의 결재 규칙(05)과 무관하다 — 결재가 없다.
 
-### S8. 법인카드 사용 목록 `/cards` (§6-1 읽기 목록)
+### S8. 법인카드 사용 목록 `/cards` (`ListScreen` + 읽기 표 + `RowActions`)
 
 ```
-│ 법인카드   카드 사용                                                             │
-│ [2026-09 ▾] [카드 전체 ▾] [연결 전체 ▾] [등록 전체 ▾]        구매 요청 3   [카드 사용 등록] │
-│    합계 (2026-09 · 41건)   결제 합계 12,400,000   공급가 11,272,727                  │
-╞════════════════════════════════════════════════════════════════════════════════╡
-│  사용일  가맹점          연결                          결제 합계    증빙    등록           │
-├────────────────────────────────────────────────────────────────────────────────┤
-│ 기획1팀 공용 · 신한 4321                                                         │ ← 그룹 머리글 = 카드
-│  09-18   쿠팡            아이오닉9 · 6 해외 연사 항공…    1,240,000   있음    경영관리 등록  │
-│                                                       공급가 1,127,273        이과장 09-18   │
-│  09-19   스타벅스 역삼    팀 비용 · 기획1팀                  48,000    —       박서연         │
+│ 카드 사용                                                                             │ ← ListScreen title(부제 없음)
+│ [2026-09 ▾] [카드 전체 ▾] [연결 전체 ▾] [등록 전체 ▾]  구매 요청 3        [카드 사용 등록] │ ← filters 끝 = 하위 목록 링크(SP-4) · primaryAction
+│ 합계 (2026-09 · 41건)   결제 합계 12,400,000   공급가 11,272,727                         │ ← summary 면(--text-body + --fw-bold)
+│ 카드 사용 삭제됨 · 48,000   되돌리기                                                    │ ← 결과 줄(행 삭제 뒤에만, §7-8 :1008)
+╞═════════════════════════════════════════════════════════════════════════════════════╡
+│  사용일  가맹점          연결                        결제 합계    증빙   등록                    │
+├─────────────────────────────────────────────────────────────────────────────────────┤
+│ 기획1팀 카드 · 신한 4321                                                                │ ← 그룹 머리글 = 카드
+│  09-18   쿠팡            아이오닉9 · 6 해외 연사 항공…  1,240,000   있음   경영관리 등록  수정  삭제 │
+│                                                     공급가 1,127,273       이과장 09-18           │
+│  09-20   쿠팡            아이오닉9 · 7 현장 소모품         1,238,000   —      구매 요청 …   수정      │ ← 구매 완료로 생긴 건 = 삭제 없음(O-11)
 ```
 
-- 범위(`scopeFor`): 직원 = 자기 카드·자기 팀 카드의 사용 + 자기가 등록한 것 / 지급·대리 등록 권한자·대표 = 전부(UA-612). 팀장 = 직원과 같다(자기 팀 카드 포함).
+- **틀(rev 10):** `ListScreen` — `title="카드 사용"`(부제 없음, ListScreen.tsx:9) · `filters` · `primaryAction={{ label: "카드 사용 등록", href: "/cards?new=1" }}`(링크 갈래 그대로 — 폰은 필터 아래, CHECKLIST ④) · `summary` · `empty`(DR5) · `pagination` · `panel`(= S9 옆 패널, URL 토글 `?new=1` · `?editId=`). 쓸 카드가 0장이면 `primaryAction`을 넘기지 않는다(EMPTY가 말한다).
+- 범위(`scopeFor`): 직원 = 자기 카드 · 자기 팀 카드의 사용 + 자기가 등록한 것 / 지급·대리 등록 권한자·대표 = 전부(UA-612). 팀장 = 직원과 같다(자기 팀 카드 포함). **공용 카드(소지자 · 팀 없는 카드)의 사용은 직원에게 자기가 등록한 것만**(사용자 결정(10/5 00:55) Q5 — 공용 카드는 「자기 카드」도 「자기 팀 카드」도 아니다). r3(U-2): 공용 카드 사용 등록은 대리 등록 권한자만이라 직원이 등록한 공용 카드 건은 생기지 않는다.
 - 열: 사용일 · 가맹점(거래처, 없으면 `—`) · 연결(`{프로젝트} · {줄 번호} {항목}` / `{프로젝트} · 견적 외 비용 · {항목}` / `팀 비용 · {팀}`) · 결제 합계(2행 공급가 또는 외화 묶음) ·
-  증빙(`있음`/`—` 글자 — 카드 사용에는 지급 게이트가 없어 상태 색을 쓰지 않는다) · 등록(Copywriting 「표시 — 경영관리 등록」). 그룹 머리글 = 카드(카드사 명세와 나란히
+  증빙(`있음`/`—` 글자 — 카드 사용에는 지급 게이트가 없어 상태 색을 쓰지 않는다) · 등록(Copywriting 「표시 — 경영관리 등록」) · 행동 칸 `RowActions`. 그룹 머리글 = 카드(카드사 명세와 나란히
   맞춰 보는 단위), 그룹 안 사용일 오름차순. 카드 열은 그룹이 말하므로 두지 않는다.
-- 필터: 월(기본 이번 달) · 카드 · 연결(`전체`/`견적 줄`/`견적 외 비용`/`팀 비용`) · 등록(`전체`/`경영관리 등록`, 권한자에게만). 오른쪽 3차 `구매 요청 3`(SP-4) + 1차.
-- 폰: P1 = 연결 · 결제 합계 · 등록, P2 = 사용일 · 가맹점, P3 = 증빙(행 시트·수정 폼에서 본다). 좁은 PC(700~1023): P3 증빙 숨김(§6-1 361행 「P3에서만」).
-- 행 → 등록자·대리 등록 권한자는 `?editId={id}`(S9 수정 — 카드 자격을 보지 않고 그 건의 권리로 연다, S9 「카드 — 수정 모드」), 그 밖은 폰 행 시트(보기 전용).
+- **행동 칸(rev 10):** 그 건의 권리(S9 「수정·삭제 권리」, O-11)가 있는 사람에게만 `수정`(→ `?editId={id}` 옆 패널) · `삭제`(`RowAction danger`, 맨 끝 · `수정`과 떨어진 자리). 구매 완료로 생긴 건은 `수정`만. 권리가 없으면 칸이 빈다. 접근 이름 `{사용일} {가맹점} 수정` / `… 삭제`(Copywriting 「3차 버튼」 행 규칙).
+- **삭제(rev 10 — §7-8 :1008 「목록 행 삭제 — 같은 값으로 다시 넣을 수 있는 행」, rev 9 H-4의 토스트를 대체):** 확인 없이 보관함으로 옮기고 표 위 결과 줄 `카드 사용 삭제됨 · 48,000` + 3차 `되돌리기`(`--text-aux --text-muted` · `role="status"` · 포커스 → `되돌리기`). 되돌리기 = 보관 해제(같은 행이 돌아오고 줄이 사라진다). 되돌리기도 저장과 같은 서버 판정 — 막히면 결과 줄 글자가 `--status-danger` + 그 막힘 문구(예: 이중 연결 거부). 화면 이동이 없어 토스트가 아니다.
+- 필터: 월(기본 이번 달) · 카드 · 연결(`전체`/`견적 줄`/`견적 외 비용`/`팀 비용`) · 등록(`전체`/`경영관리 등록`, 권한자에게만). 필터 묶음 끝에 하위 목록 링크 `구매 요청 3`(SP-4), 오른쪽 끝 1차.
+- 폰: P1 = 연결 · 결제 합계 · 등록, P2 = 사용일 · 가맹점, P3 = 증빙(행 시트·수정 패널에서 본다). 좁은 PC(700~1023): P3 증빙 숨김(§6-1 「P3에서만」). 폰 행 탭 → 권리가 있으면 수정 패널(아래 시트), 없으면 `RowSheet`(보기 전용). 폰 행동 칸은 행 시트 안.
 
-### S9. 법인카드 사용 등록·수정 폼 `/cards?new=1` · `?editId=` (§6-1 토글 + §7-15 + §6-3 「바꾸기」)
+### S9. 법인카드 사용 등록·수정 — 옆 패널 `/cards?new=1` · `?editId=` (`SidePanel` + `PanelForm` + `Form layout="panel"`, SYSTEM §7-8 팝업 · 모달 · 옆 패널 · 시트 · §6-3 폼 화면)
 
 ```
-│ 카드 사용 등록                                                    │ ← 720
-╞══════════════════════════════════════════════════════════════════╡
-│ 카드        [기획1팀 공용 · 신한 4321 ▾]                          │
-│             경영관리 등록 · 카드 소지자 김OO                        │ ← 조건부 Form.Hint
-│ 사용일      [2026-09-18]                                         │
-│ 가맹점      쿠팡 · 기본 증빙 카드 전표                        바꾸기 │
-│ 결제 합계   [KRW ▾] [1,240,000]                                   │
-│             공급가 1,127,273 · 부가세 112,727 · 카드 전표 규칙      │ ← 서버 계산 한 줄(D-607)
-│ 증빙 종류   [카드 전표 ▾]                                          │
-│             {코드표 설명}                                          │
-├──────────────────────────────────────────────────────────────────┤
-│ 연결        ◉ 견적 줄   ○ 견적 외 비용   ○ 팀 비용                 │
-│ 프로젝트    26001 아이오닉9 미디어 론칭                        바꾸기 │
-│ 견적 줄     6 해외 연사 항공·숙박 · Skyline Travel             바꾸기 │
-│             실행가 5,537,280 · 카드 사용 1건 1,200,000             │ ← Form.Hint(같은 쪽 기존 연결)
-├──────────────────────────────────────────────────────────────────┤
-│ 메모        [                                    ]               │
-│ 증빙        ┊ 파일을 끌어 놓거나 Ctrl+U · 이미지·PDF 10MB ┊         │
-╞══════════════════════════════════════════════════════════════════╡
-│ [카드 사용 등록 Ctrl+Enter]  연결 없음 · 연결 고르기       [취소 Esc]│
+목록 S8(inert · --scrim-panel)   │ 카드 사용 등록                                 x │ ← 머리 --text-subtitle = 실제 동작(수정이면 `카드 사용 수정`)
+                                 ├────────────────────────────────────────────────┤
+                                 │ 카드                                           │ ← 라벨 위 --text-aux 600 --text-muted
+                                 │ [기획1팀 카드 · 신한 4321                    ▾] │ ← 칸 전폭 · --control-h-panel 40
+                                 │ 경영관리 등록 · 카드 소지자 김OO                 │ ← 조건부 Form.Hint
+                                 │ 사용일                                         │
+                                 │ [2026-09-18                                 ]  │ ← max = 오늘(Q6)
+                                 │ 가맹점                                  바꾸기 │
+                                 │ 쿠팡 · 기본 증빙 카드 전표                       │
+                                 │ 결제 합계                                      │
+                                 │ [KRW ▾] [1,240,000                          ]  │
+                                 │ 공급가 1,127,273 · 부가세 112,727 · 카드 전표 규칙 │ ← 서버 계산 한 줄(D-607)
+                                 │ 증빙 종류                                      │
+                                 │ [카드 전표                                  ▾] │
+                                 │ 연결   ◉ 견적 줄  ○ 견적 외 비용  ○ 팀 비용      │
+                                 │ 프로젝트                                바꾸기 │
+                                 │ 26001 아이오닉9 미디어 론칭                      │
+                                 │ 견적 줄                                 바꾸기 │
+                                 │ 6 해외 연사 항공·숙박 · Skyline Travel           │
+                                 │ 남은 실행가 4,337,280 · 카드 사용 1건 1,200,000   │ ← Form.Hint(같은 쪽 기존 연결 · Q3 — 0건인 부분은 뺀다)
+                                 │ · 구매 요청 1건 700,000                           │ ← 같은 힌트의 이어짐 — 다른 `신청됨` 구매 요청 예상 공급가(사용자 결정 2026-10-05 카드 「빼기」)
+                                 │ 메모                                           │
+                                 │ [                                           ]  │
+                                 │ 증빙  ┊ 파일을 끌어 놓거나 Ctrl+U · 이미지·PDF 10MB ┊ │
+                                 ├────────────────────────────────────────────────┤ ← 행동 줄 아래 고정 · --surface-actions · 위 1px --border-row
+                                 │ 카드 사용 등록됨 · 1,240,000                     │ ← 결과 한 줄(등록 뒤, role=status) / 막힘 이유 자리
+                                 │                 [취소 Esc] [카드 사용 등록 Ctrl+Enter] │ ← DOM · Tab · 시각 순서 = 2차 → 1차
 ```
 
-- **카드 — 새 건(`?new=1`)의 카드 자격:** `Select`(200). 직원 = 자기 카드 + 자기 팀 카드만 옵션. 한 장뿐이면 입력이 아니라 텍스트(§6-3 자동 채움). 대리 등록 권한자 = 활성 카드 전부 — 남의 카드·팀 카드를
-  고르면 `Form.Hint` `경영관리 등록 · 카드 소지자 김OO`(EXP-16). 그 표시는 저장되어 목록·상세의 「등록」 칸이 된다. 옵션이 0장이면 폼 대신 Empty(UI Considerations S9 「zero-one-many」) — **새 건에만**.
+- **틀(rev 10 — 페이지 폼 → 옆 패널):** URL 패널(`closeHref` = 지금 필터의 `/cards`, SidePanel.tsx:25) — 여는 곳: S8 1차 `카드 사용 등록`(`?new=1`) · S8 행 `수정`(`?editId=`) · S14 막힘 3차(`?new=1&line={id}`) · S15 빈 섹션 3차(`?new=1&project={id}`, 뒤 목록 = `/cards`). PC 오른쪽 `--panel-w` 480 · 높이 `100dvh` / 폰 아래 시트(최대 `--sheet-max-h`) · 뒤 `inert` + `--scrim-panel`(폰 `--scrim-dialog`). 한 열 · 라벨 위 · 칸 전폭 — 아래 칸 설명의 폭 숫자는 쓰지 않는다(칸 폭 3종은 페이지 배치에만, SYSTEM :488). 머리 · 행동 줄 고정, 본문만 스크롤.
+- **행동 줄 · 키:** 2차 `취소 Esc` → 1차(`카드 사용 등록` / `카드 사용 저장` + `Ctrl+Enter`). 칸이 덜 찼거나 막힌 동안 1차 비활성 + `PanelForm` `blockedReason` 한 줄(Copywriting 「막힘 — 카드 사용 폼」), 서버 거부 + 다음 한 수 3차는 `reason`(PanelForm.tsx:50-53). 제출 중 1차 `진행 중` · `Ctrl+Enter` · 닫기 무시(D7).
+- **닫기:** `Esc` · x · `취소` — 바뀐 칸이 있을 때만 「입력 버리기」(SidePanel.tsx:181-184, Copywriting 「확인 — 입력 버리기」), 가림막 누르기는 바뀐 칸이 있으면 무시. 서버가 채운 기본값은 바뀐 칸이 아니고 「바꾸기」로 고른 값은 바뀐 칸이다(SP-8). 닫히면 포커스 → 연 요소.
+- **등록 뒤(UQ-8 B · SYSTEM §6-3 :489):** 패널이 열린 채 칸이 기본값으로 돌아가고(`form.reset()` — 「새 건의 기본값」의 「직전 등록」 = 방금 등록, PanelForm.tsx:172) 첫 칸 포커스, 행동 줄 위 `카드 사용 등록됨 · 1,240,000`(`role="status"`, 다음 입력이 시작되면 사라짐). 뒤 목록에 새 행이 선다. **토스트 없음 · 등록 `되돌리기` 없음**(rev 9 H-4의 등록 되돌리기 철회 — 지우는 길은 S8 행 `삭제` + 결과 줄 `되돌리기`). 영수증 여러 장을 연달아 넣는 흐름이다.
+- **수정 뒤:** 패널이 닫히고 포커스 → 그 행 `수정`(PanelForm.tsx:166), 행 값이 바뀐다. 토스트 없음. 수정 패널에는 삭제 버튼이 없다(rev 10 — 삭제는 S8 행 행동).
+- **카드 — 새 건(`?new=1`)의 카드 자격:** `Select`. 직원 = 자기 카드 + 자기 팀 카드 옵션. **공용 카드**(소지자 · 팀 없는 카드 — 사용자 결정(10/5 00:55) Q5)는 **대리 등록 권한자(`cards.proxy` write)의 옵션에만** 든다(r3 — 사용자 결정 2026-10-05 U-2, 새 칸 · 권한 없음). 한 장뿐이면 입력이 아니라 텍스트(§6-3 자동 채움). 대리 등록 권한자 = 활성 카드 전부 — 남의 카드·팀 카드를
+  고르면 `Form.Hint` `경영관리 등록 · 카드 소지자 김OO`(EXP-16 — 공용 카드는 소지자가 없어 힌트 없음, 등록 칸은 등록자 이름).
+  **공용 카드는 지금 없다** — 카드는 소지자 · 팀 중 하나가 필수(`db/schema/corp-cards.ts:32-35` · `CardOwnerKind = "personal" | "team"` `domain/corp-cards/index.ts:45` · 관리자 카드 폼 소유 옵션 `개인` · `팀` `app/(app)/admin/corp-cards/card-form.tsx:98-99`). 제약 완화(`corp_cards_owner_xor_check`)는 06-26(PR-0, 위험 경로 — 사용자 머지), `CardOwnerKind` `shared` · 관리자 카드 폼 `공용` 옵션(소유자 칸 없음) · U-2 자격 판정은 06-05(r3 — REVIEWS C8). 그 표시는 저장되어 목록·상세의 「등록」 칸이 된다. 옵션이 0장이면 폼 대신 Empty(UI Considerations S9 「zero-one-many」) — **새 건에만**.
 - **새 건의 기본값(rev 9, M-4 — 알 수 있는 값은 미리 채운다, CLAUDE.md §7):** 서버가 채워 보낸다. 모두 바꿀 수 있다.
   - `사용일` = 오늘(KST).
   - `카드` = 그 사람이 마지막으로 등록한 카드 사용의 카드 — 지금 옵션에 있을 때만(없으면 옵션이 한 장이면 텍스트, 여럿이면 비움). 대리 등록 권한자가 남의 카드로 채워지면 위 힌트가 그대로 선다.
@@ -690,14 +758,15 @@ Phase 5의 문서 화면(UA-605·UA-606) 증빙 묶음 **아래**에 확인부�
   판정하고 카드 자격으로 판정하지 않는다. 수정 요청은 카드를 바꾸지 않는다(카드 값이 저장된 것과 다르게 오면 서버가 거부 — 아래 한 갈래만 예외). 그래서 대리 등록 권한 없이 S13으로 남의 카드 구매를 완료한
   구매 권한자도 자기가 등록한 그 건을 열어 고친다(증빙 · 메모 · 결제 합계 등). 카드를 잘못 고른 건은 삭제 뒤 새로 등록한다 — 구매 완료로 생긴 건은 삭제가 없으므로(O-11) 아래 갈래로 고친다.
 - **카드 — 구매 완료로 생긴 건의 카드 고치기(rev 7):** 그 건을 여는 사람(위 권리 — O-11 그대로)이 **지금 구매 권한(`purchases` write)** 을 가졌으면 카드가 읽기 텍스트가 아니라
-  `Select`(200)다. 옵션 = S13과 같은 판정(활성 카드 전부), 현재 값 = 저장된 카드(그 사이 비활성이 됐어도 현재 값으로 맨 앞에 남고, 다른 비활성 카드는 옵션에 없다). 「바꾸기」 목록이 아니다.
+  `Select`(패널 전폭)다. 옵션 = S13과 같은 판정(활성 카드 전부), 현재 값 = 저장된 카드(그 사이 비활성이 됐어도 현재 값으로 맨 앞에 남고, 다른 비활성 카드는 옵션에 없다). 「바꾸기」 목록이 아니다.
   저장된 카드와 다른 카드를 고르면 카드 아래 `Form.Hint`(Copywriting 「표시 — 카드 고침(구매 완료 건)」). 1차는 그대로 `카드 사용 저장` 하나 — 새 버튼 · 확인 모달 없음(다시 고칠 수 있는 값).
   서버는 이 건이 구매 완료로 생겼고 · 저장하는 사람이 그 건의 권리와 `purchases` write를 함께 가졌고 · 새 카드가 활성일 때만 카드 변경을 받고, 그 밖은 위처럼 거부한다. 받으면 행동 로그에
   `카드 고침 · {이전 카드} → {새 카드}`(한 사람 · 시각)가 남는다. 등록 칸(`구매 요청 26001-C0001` + 2행)과 연결 · 팀 비용의 팀(O-19 — 카드의 팀은 팀을 정하지 않음)은 바뀌지 않는다.
   구매 권한이 없는 사람(예: 구매 권한을 잃은 완료자)에게는 읽기 텍스트 그대로다.
-- **결제 합계(D-607):** 통화 `Select` + 금액(280). 외화면 금액 칸이 외화 금액이 되고 환율 칸(280, 기본값 = 설정 최근 환율, FX-01)이 붙는다(O-7). 사람은 **합계**를 적고 공급가는 서버가
+- **사용일:** 날짜 칸 `max` = 오늘(KST) — 달력이 미래를 고르지 못하고 서버도 거부한다(칸 오류 「Error — 카드 사용 폼 칸」, 사용자 결정(10/5 00:55) Q6).
+- **결제 합계(D-607):** 통화 `Select` + 금액. 외화면 금액 칸이 외화 금액이 되고 환율 칸(기본값 = 설정 최근 환율, FX-01)이 붙는다(O-7). 사람은 **합계**를 적고 공급가는 서버가
   역산해 아래 한 줄로 보인다 — 입력 칸을 따로 두지 않는다.
-- **가맹점:** 거래처 「바꾸기」 목록(§6-3 422행 골격). 비워 둘 수 있다(`—` + 3차 `고르기`). 고르면 증빙 종류가 거래처 기본 증빙 종류로 채워지고(바꿀 수 있음, OV-3 (b)), 비어
+- **가맹점:** 거래처 「바꾸기」 목록(§6-3 골격). 비워 둘 수 있다(`—` + 3차 `고르기`). 고르면 증빙 종류가 거래처 기본 증빙 종류로 채워지고(바꿀 수 있음, OV-3 (b)), 비어
   있으면 증빙 종류 기본값 = `카드 전표`(카드 옵션에 있을 때만 — 아래 줄의 멤버십 판정).
 - **증빙 종류 옵션과 거래처 기본값(금액 표시 절 「카드 공급가 · 부가세」):** 옵션은 서버가 카드에 맞는 규칙(`vat_surcharge` · `none`)의 종류만 보낸다. 거래처 기본 증빙 종류가
   그 밖의 규칙(원천징수 · 회사 대납)이면 **자동 채움은 `카드 전표`로 떨어지고**, 가맹점 줄 아래 `Form.Hint` `기본 증빙 {종류 이름} · 카드에 없음`(명사형 한 줄 — 바꿔 채운 것을 숨기지 않는다).
@@ -706,80 +775,95 @@ Phase 5의 문서 화면(UA-605·UA-606) 증빙 묶음 **아래**에 확인부�
   있으면 `증빙 종류 고르기`, 옵션이 0개면 담당 `코드표 세금 규칙은 관리자`). 이 판정은 새 건 · 수정 모드 · 구매 완료 모드(S13)와 가맹점 없음 기본값에 똑같이 걸린다.
   사람이 고를 수 있는 값은 옵션 안의 것뿐이고 서버도 같은 판정으로 저장을 거부하므로 카드에 없는 규칙으로 저장될 길이 없다.
 - **이미 저장된 건(수정 모드)의 증빙 종류가 지금 카드 옵션에 없으면**(코드표에서 규칙이 바뀐 경우): 그 값을 옵션에 되살리지 않는다 — `Select`는 첫 옵션 `—`에 서고 1차가 막힌다
-  (`Form.Actions` 이유 `증빙 종류 {종류 이름} 카드에 없음 · 증빙 종류 고르기`, `block`). 서버도 같은 판정으로 저장을 거부한다. 목록·상세의 그 건 금액(S8·S15 2행)은 저장된 값 그대로 보이고,
+  (`PanelForm` `blockedReason` `증빙 종류 {종류 이름} 카드에 없음 · 증빙 종류 고르기`, `block`). 서버도 같은 판정으로 저장을 거부한다. 목록·상세의 그 건 금액(S8·S15 2행)은 저장된 값 그대로 보이고,
   다시 고르고 저장하면 서버가 새 규칙으로 다시 역산한다.
 - **연결(EXP-07):** 네이티브 라디오 셋(`<fieldset>`, 라벨 열 = `연결`). 새 건은 위 「새 건의 기본값」대로 직전 연결 종류 · 프로젝트로 채워 열린다(처음 쓰는 사람만 비어 있다). 연결이 덜 채워져 있으면
   (종류 없음 · 견적 줄이나 프로젝트 빔) 1차가 막힌다 — 이유 `연결 없음 · 연결 고르기`(3차 → 빈 칸의 「바꾸기」). 견적 줄 행에서 들어오면(S14) `견적 줄`이
   골라져 있고 프로젝트·견적 줄이 채워진 텍스트다.
-  - `견적 줄`: 프로젝트 「바꾸기」 → 견적 줄 「바꾸기」(S10). 줄 아래 `Form.Hint` = 실행가 + 같은 쪽 기존 연결(D-609 「같은 쪽 여러 건」을 보이는 자리).
+  - `견적 줄`: 프로젝트 「바꾸기」 → 견적 줄 「바꾸기」(S10, 패널 위 목록 — SP-8). 줄 아래 `Form.Hint` = `남은 실행가 {값} · 카드 사용 {N}건 {합} · 구매 요청 {M}건 {합}`(D-609 「같은 쪽 여러 건」을 보이는 자리 — 0건인 부분은 뺀다, 구매 요청 부분은 사용자 결정 2026-10-05 카드 「빼기」).
+    **실행가 초과 막힘(사용자 결정(10/5 00:55) Q3):** 남은 실행가 = 그 줄 실행가 − 그 줄의 다른 카드 사용 공급가 합 − 그 줄의 다른 `신청됨` 구매 요청 예상 공급가 합(서버 값, 수정이면 이 건 제외 · 취소된 요청은 빠진다 — 사용자 결정 2026-10-05 카드 「빼기」). 이 건의 역산 공급가가 남은 실행가보다 크면 1차가 막힌다(Copywriting 「막힘 — 카드 사용 폼」 실행가 초과 갈래). 상한은 그 줄 실행가뿐이고 고정 상한 · 비율 여유는 없다. 서버도 같은 판정으로 거부한다(경합).
   - `견적 외 비용`: 프로젝트 「바꾸기」 + 긴 칸 `항목`(기본값 = 가맹점 이름) + `Form.Hint` `저장하면 견적 외 비용 줄 생김 · 실행가 1,127,273`(UA-615, O-8).
   - `팀 비용`: 값 텍스트 `기획1팀`(힌트 없음 — Copywriting 「표시 — 카드 폼 연결 「팀 비용」」, M-5). 팀을 고르는 칸 없음(자동, EXP-07 — 사용한 사람의 사용일 소속).
-    **대리 등록일 때만** 그 위에 `사용한 사람` 칸이 선다. 후보는 **사용일 기준**으로 서버가 보낸다:
+    **대리 등록일 때만** 그 위에 `사용한 사람` 칸이 선다. 후보는 **사용일 기준**으로 서버가 보낸다(공용 카드 = 사용일에 재직한 사람 전부 · 여럿이라 기본값 없음 — Q5):
     - 개인 카드: 후보 = 카드 소지자 한 사람 → 입력이 아니라 텍스트(§6-3 자동 채움).
     - 팀 카드: 후보 = **사용일에** 그 카드 팀 소속이던 사람 전부(`teamAtDate(사람, 사용일)` = 카드 팀, `domain/org/index.ts:188`) — 지금 소속이 아니다. 사용일 뒤에 다른 팀으로
-      옮긴 사람·퇴사한 사람도 들고(옵션 글자 `김OO · 지금 기획2팀` / `김OO · 퇴사`), 사용일 뒤에 팀에 들어온 사람은 없다. `Select`(200), 후보가 한 사람이면 텍스트, 여럿이면 기본값 없음
+      옮긴 사람·퇴사한 사람도 들고(옵션 글자 `김OO · 지금 기획2팀` / `김OO · 퇴사`), 사용일 뒤에 팀에 들어온 사람은 없다. `Select`(패널 전폭), 후보가 한 사람이면 텍스트, 여럿이면 기본값 없음
       (비면 §7-15 빈 칸 막힘에 든다). 사용일을 바꾸면 서버가 후보를 다시 보내고, 고른 사람이 새 후보에 없으면 칸이 빈다.
     본인 등록이면 칸이 없고 등록자가 사용한 사람이다. 사용한 사람의 사용일 소속이 없으면(`teamAtDate` = null — 발령 이력 없음) 임의의 팀으로 떨어뜨리지 않고 1차가 막힌다
     (Copywriting 「막힘 — 카드 사용 폼」 소속 없음 갈래).
-  - 완료(A-601) 프로젝트는 프로젝트 목록에서 고를 수 없다(행 2행 `완료 · 견적 줄 잠김`) — 단 대리 등록 권한자의 `견적 외 비용`은 고를 수 있다(D-47).
+  - 완료(A-601) 프로젝트는 프로젝트 목록에서 고를 수 없다(행 2행 `완료 · 견적 줄 잠김`) — 단 대리 등록 권한자의 `견적 외 비용`은 고를 수 있다(D-47 ③ · r4 **사용자 결정 2026-10-05 (Q-B 열기 — 채팅으로 확정, UC-6)** — 서버는 견적 외 비용 줄을 만들기 전에 04 `project.line-edit` 게이트를 지난다. 화면 모양은 그대로).
 - **메모** 긴 칸, **증빙** 첨부 영역(S7, 선택).
-- 이 폼의 `바꾸기` 셋은 접근 이름으로 가른다: `aria-label` `가맹점 바꾸기` · `프로젝트 바꾸기` · `견적 줄 바꾸기`(보이는 글자는 `바꾸기` 그대로 — 라벨 열이 말한다).
-- `Form.Actions`: 1차 + 막힘 이유 + 오른쪽 2차 `취소 Esc`. 수정 모드는 오른쪽 끝에 2차 `카드 사용 삭제`가 하나 더 — **모달 없이 즉시 보관 + 토스트 `되돌리기`**(Copywriting 「즉시 — 카드 사용 삭제」, rev 9 H-4). 저장 성공 → `/cards`로 이동 + 토스트(새 건은 `되돌리기` 포함).
-- **수정·삭제 권리(O-11):** 등록한 사람 · 대리 등록 권한자. 완료 프로젝트 줄에 연결된 건은 대리 등록 권한자만. 구매 완료로 생긴 건은 연결을 바꿀 수 없고(텍스트) 삭제 버튼이 없다.
+- 이 패널의 `바꾸기` 셋은 접근 이름으로 가른다: `aria-label` `가맹점 바꾸기` · `프로젝트 바꾸기` · `견적 줄 바꾸기`(보이는 글자는 `바꾸기` 그대로 — 라벨 열이 말한다).
+- **수정·삭제 권리(O-11):** 등록한 사람 · 대리 등록 권한자. 완료 프로젝트 줄에 연결된 건은 대리 등록 권한자만. 구매 완료로 생긴 건은 연결을 바꿀 수 없고(텍스트) S8 행에 `삭제`가 없다.
   등록한 사람 = 그 건을 저장한 사람 — 구매 완료로 생긴 건은 구매 완료한 구매 권한자(「등록」 칸 2행의 사람). 이 권리는 카드 자격과 따로다(위 「카드 — 수정 모드」, rev 7).
   구매 완료로 생긴 건의 카드는 이 권리 + `purchases` write로 고친다(위 「카드 — 구매 완료로 생긴 건의 카드 고치기」) — 삭제 대신의 복구 길이다.
-- 폰: 폼이 그대로 선다(UX-03). 1차 줄은 하단 탭 위 고정(§6-3 427행).
+- 폰: 같은 패널이 아래 시트로 선다(UX-03) — 행동 줄은 시트 아래 고정, 버튼 높이 `--touch-min`.
 
-### S10. 연결 고르기 — 프로젝트 · 견적 줄 「바꾸기」 목록 (§6-3 422행 골격, PC 모달 480 · 폰 시트)
+### S10. 연결 고르기 — 프로젝트 · 견적 줄 「바꾸기」 목록 (SYSTEM §6-3 폼 화면 「바꾸기」 골격 — 옆 패널 위에 여는 목록, SP-8)
 
+- **패널 안에서 열기(rev 10, SP-8):** S9 · S12의 `{칸} 바꾸기`를 누르면 목록이 **열린 패널 위에** 05 `ui/pick-dialog/PickDialog` **검색 고르기**(SP-8 — r3: `ui/confirm-dialog`에 새 갈래를 만들지 않는다. 고를 수 없는 행 · 현재 줄 · 목록 상태 중 모자란 것만 06-29가 더한다. `app/**`에서 `<dialog>` 직접 금지)로 선다 — PC 가운데 `--dialog-w` 480 · 뒤 `--scrim-dialog` / 폰 아래 시트(최대 `--sheet-max-h`). `SidePanel` 안 「입력 버리기」 `ConfirmDialog`가 이미 패널 위에 겹쳐 서는 선례(SidePanel.tsx:283)와 같은 겹침이다. 패널은 열린 채이고 입력은 남는다.
+  - 첫 포커스 = 검색 칸. `Esc` · `취소` = 목록만 닫힘(목록의 `Esc`는 `preventDefault`로 패널 닫기에 닿지 않는다 — `isPanelCloseKey`, SidePanel.tsx:33-36) → 포커스 = 누른 `{칸} 바꾸기`.
+  - `이 줄로 Enter` = 값이 패널 칸에 들어가고(바뀐 칸 — 「입력 버리기」 가드에 든다) 목록이 닫힌다 → 포커스 = 다음 빈 `바꾸기`(프로젝트를 고르면 `견적 줄 바꾸기`), 없으면 방금 바뀐 칸의 `바꾸기`.
+  - 목록이 열린 동안 패널의 `Ctrl+Enter`는 닿지 않는다(포커스가 목록 모달 안).
+  - 폰은 시트 위 시트다 — SYSTEM §7-8 「시트를 겹치지 않는다」(결재 시트 → 확인 시트)와 다른 갈래라 SP-8로 SYSTEM에 올린다(계획 첫 태스크).
 - **프로젝트:** 제목 `프로젝트 고르기` · 부제 `진행 중 12 · 수주중 3` · 검색 한 칸(번호·이름·클라이언트) · 행 = 번호(식별자형) · 이름 + 2행 `{상태} · 담당 {PM}`. 미수주는 목록 끝, 완료는 S9 규칙.
-- **견적 줄:** 제목 `견적 줄 고르기` · 부제 `아이오닉9 · 11줄 · 카드로 이을 수 있는 줄 7` · 행 = 번호 `--fs-xs --faint` · 항목(거래처 부제) · 실행가 `.num`. `취소` 줄은 목록에 없다.
-  **반대쪽(지출결의 쪽) 줄은 고를 수 없다(D-609)** — Copywriting 「막힘 — 연결 고르기 목록의 반대쪽 줄」. 현재 줄은 700 + 왼쪽 2px `--accent`(§6-3 원문). 같은 쪽 기존 연결은 2행
+- **견적 줄:** 제목 `견적 줄 고르기` · 부제 `아이오닉9 · 11줄 · 카드로 이을 수 있는 줄 7` · 행 = 번호 `--text-tag --text-faint` · 항목(거래처 부제) · 실행가(`Num`) + 2행 `남은 실행가 4,337,280`(카드 쪽 줄 · Q3 — 값과 글자는 S9 줄 아래 힌트와 같다: 다른 카드 사용 공급가와 다른 `신청됨` 구매 요청 예상 공급가를 뺀 값, 사용자 결정 2026-10-05 카드 「빼기」). `취소` 줄은 목록에 없다. 남은 실행가가 0 이하인 줄은 `aria-disabled` + 2행 `실행가 소진 · 다른 줄`(사용자 결정(10/5 00:55) Q3).
+  **반대쪽(지출결의 쪽) 줄은 고를 수 없다(D-609)** — Copywriting 「막힘 — 연결 고르기 목록의 반대쪽 줄」. 현재 줄은 `--fw-bold` + 왼쪽 2px `--accent`(SYSTEM §6-3 「바꾸기」 원문). 같은 쪽 기존 연결은 2행
   `카드 사용 1건 1,200,000`.
 - 구매 요청 폼(S12)에서 열면 **온라인구매 협력사 줄만** 고를 수 있고 나머지 줄은 2행 `거래처 스테이지원 · 지출결의로`(`aria-disabled`, 문 가르기 — 사람이 고르지 않는다).
-- 행동 줄: 2차 `취소 Esc` + 1차 `이 줄로 Enter`(§6-3 원문). 검색 0건 · 줄 0 · 고를 수 있는 줄 0(전부 반대쪽 / 온라인구매 줄 0)은 Copywriting 「Empty — 연결 고르기 목록」 세 갈래.
+- 행동 줄: 2차 `취소 Esc` + 1차 `이 줄로 Enter`(§6-3 원문 — PickDialog `primaryLabel`). 검색 0건 · 줄 0 · 고를 수 있는 줄 0(전부 반대쪽 / 온라인구매 줄 0)은 Copywriting 「Empty — 연결 고르기 목록」 세 갈래.
 
-### S11. 구매 요청 목록 `/cards/purchases` (§6-1 읽기 목록, SP-4 하위 목록)
+### S11. 구매 요청 목록 `/cards/purchases` (`ListScreen` + 읽기 표 + `RowActions`, SP-4 하위 목록)
 
-- PageHeader `구매 요청` · 부제 `법인카드 · 온라인구매`. 필터 `[신청 ▾ | 구매 완료 | 취소 | 전체] [2026-09 ▾]` + 1차 `구매 요청`. 기본 보기 = `신청`.
+- **틀(rev 10):** `ListScreen` `title="구매 요청"`(부제 없음 — rev 9의 PageHeader 부제 `법인카드 · 온라인구매`는 지웠다, 자리는 셸 메뉴 `법인카드`가 말한다) · `filters` `[신청됨 ▾ | 구매 완료 | 취소 | 전체] [2026-09 ▾]` · `primaryAction={{ label: "구매 요청", href: "/cards/purchases?new=1" }}` · `summary` · `empty`(DR5) · `pagination` · `panel`(S12 신청 · S13 구매 완료 옆 패널). 기본 보기 = `신청됨`.
 - 범위: 구매 권한자·대표 = 전부 / 그 밖의 사람 = 자기 요청 + 자기가 담당인 프로젝트 줄의 요청.
-- 열: 번호(`26001-C0001`, A-612) · 요청일 · 품목(+ 같은 칸 링크 아이콘 3차 — external-link 아이콘만, 글자 없음, `aria-label="{품목} 링크 열기"` · `title` = URL, 새 탭 `rel="noopener noreferrer"`, http·https만) · 연결 · 요청자 ·
-  예상 금액(원화 1행, 외화면 2행 `USD 1,000.00 @1,350` — §3 외화 병기) · 상태 + 행동 칸.
-  행동 칸: 구매 권한자에게 `신청` 행 3차 `구매 완료`(→ S13) · 요청자에게 자기 `신청` 행 3차 `요청 취소`(→ **모달 없이 즉시** + 토스트 `되돌리기` — Copywriting 「즉시 — 요청자 본인 구매 요청 취소」, rev 9 H-4) · 구매 권한자가 남의 `신청` 행을 취소하면 확인 모달(사유 칸 — 「Destructive — 구매 요청 취소」).
-  **취소는 `신청` 상태에서만**(O-9). 구매 완료 행 2행 `카드 사용 09-20 · 1,238,000`, 취소 행 2행 `취소 09-19 · 이과장 · {사유}`.
-- 그룹 = 상태(`전체` 보기일 때 `신청` → `구매 완료` → `취소`), 그 밖에는 요청일 주. 합계 줄 `합계 (신청 · 3건)` · `예상 금액 1,250,000`(원화 환산액만 더한다 — 외화 합계 없음, 서버 합).
+- 열: 번호(`26001-C0001`, A-612) · 요청일 · 품목(+ 같은 칸 링크 아이콘 3차 — external-link 아이콘만, 글자 없음, `aria-label="{품목} 링크 열기"` · `title` = URL, 새 탭 `rel="noopener noreferrer"`, http·https만, 누르는 영역 `--touch-min` 44×44 — 폰 포함, r2 F15) · 연결 · 요청자 ·
+  예상 금액(원화 1행, 외화면 2행 `USD 1,000.00 @1,350` — §3 외화 병기) · 상태(`StatusTag variant="text"` — `신청됨` · `구매 완료` · `취소`) + 행동 칸 `RowActions`.
+  행동 칸: 구매 권한자에게 `신청됨` 행 `구매 완료`(→ `?purchase={id}` 옆 패널, S13) · 요청자에게 자기 `신청됨` 행 `요청 취소`(→ **모달 없이 즉시** + 표 위 결과 줄 `구매 요청 취소됨 · 26001-C0001` + 3차 `되돌리기`(`신청됨`으로) — §7-8 :1008 패턴, rev 9 H-4의 토스트를 대체. Copywriting 「즉시 — 요청자 본인 구매 요청 취소」) · 구매 권한자가 남의 `신청됨` 행을 취소하면 확인 모달(사유 칸 — 「Destructive — 구매 요청 취소」).
+  **취소는 `신청됨`에서만**(O-9 · 사용자 결정(10/5 00:55) Q2) — `구매 완료` 행에는 취소를 렌더하지 않는다. 잘못 처리한 구매 완료는 조정 줄(D-83)로 고치고, 생긴 카드 사용 건은 S9 수정(「카드 고치기」 · 결제 합계)으로 고친다. 구매 완료 행 2행 `카드 사용 09-20 · 1,238,000`, 취소 행 2행 `취소 09-19 · 이과장 · {사유}`.
+- 그룹 = 상태(`전체` 보기일 때 `신청됨` → `구매 완료` → `취소`), 그 밖에는 요청일 주. 합계 줄 `합계 (신청됨 · 3건)` · `예상 금액 1,250,000`(원화 환산액만 더한다 — 외화 합계 없음, 서버 합).
 - 행마다 되풀이되는 3차의 접근 이름은 Copywriting 「3차 버튼」 행 규칙(`26001-C0001 구매 완료` · `26001-C0001 요청 취소` · `{품목} 링크 열기`).
-- 폰: P1 = 품목 · 예상 금액 · 상태, P2 = 번호 · 연결 · 요청자. 폰에서도 `구매 완료`(폼으로 이동)와 `요청 취소`가 된다(행 시트가 아니라 행 안 3차 — 폼·모달이 폰에서 선다).
+- 폰: P1 = 품목 · 예상 금액 · 상태, P2 = 번호 · 연결 · 요청자. 폰에서도 `구매 완료`(아래 시트 패널)와 `요청 취소`가 된다(행 시트가 아니라 행 안 `RowActions` — 패널·모달이 폰에서 선다).
 
-### S12. 구매 요청 신청 폼 `/cards/purchases?new=1[&line={id}]` (§6-1 토글 + §7-15)
+### S12. 구매 요청 신청 — 옆 패널 `/cards/purchases?new=1[&line={id}]` (`SidePanel` + `PanelForm` + `Form layout="panel"`)
+
+- **틀(rev 10):** S9와 같은 옆 패널 — 머리 `구매 요청` · 한 열 · 라벨 위 · 칸 전폭 · 행동 줄 아래 고정(2차 `취소 Esc` → 1차 `구매 요청 Ctrl+Enter`) · 바뀐 칸이 있을 때만 「입력 버리기」 · 폰 아래 시트. 뒤 목록 = S11. 견적 줄 표 · 점검 섹션에서 들어와도(`&line=`, S14 · S18) 뒤는 S11이고 닫으면 S11에 남는다(`closeHref`). 「바꾸기」(S10)는 패널 위 목록(SP-8).
 
 - 칸: 연결(라디오 `견적 줄` / `팀 비용` — 견적 줄 행에서 들어오면(`&line=`) 라디오 없이 텍스트. **목록 1차로 들어오면(`?new=1`만) `팀 비용`이 골라져 있다** — 라디오는
-  그대로라 `견적 줄`로 바꿀 수 있다) · 프로젝트·견적 줄 「바꾸기」(S10, 온라인구매 줄만) · `품목`(긴 칸) · `링크`(긴 칸, 형식 예
+  그대로라 `견적 줄`로 바꿀 수 있다) · 프로젝트·견적 줄 「바꾸기」(S10, 온라인구매 줄만) · `품목` · `링크`(형식 예
   placeholder `https://`) · `예상 금액`(통화 + 금액, 결제 합계 기준 — O-10) · `메모`(긴 칸).
 - **`팀 비용`의 팀(결정 — O-19 확인 후보):** 구매 요청에서 생기는 팀 비용의 **사용한 사람 = 요청자**, **팀 = 구매 완료 사용일(S13 `사용일` 칸)의 요청자 소속**
   (`teamAtDate(요청자, 사용일)`, `domain/org/index.ts:188` · 06-CONTEXT:27 「팀 비용은 사용일 소속 팀 자동」). 신청 때는 사용일이 없으므로 값 텍스트 = 요청자의 **오늘** 소속
   (미리보기, 힌트 없음 — rev 9 M-5). 고르는 칸 없음. 오늘 소속이 없으면(`teamAtDate` = null) 임의의 팀으로 떨어뜨리지 않고 1차가 막힌다
   (Copywriting 「막힘 — 구매 요청 폼」 소속 없음 갈래).
-- **예상 금액의 외화(Phase 4 금액 모델 그대로 — `moneyColumns()` 통화·외화·환율·원화):** 통화가 원화가 아니면 카드 폼(S9)과 같이 환율 칸(280, 기본값 = 설정 최근 환율)이
+- **예상 금액의 외화(Phase 4 금액 모델 그대로 — `moneyColumns()` 통화·외화·환율·원화):** 통화가 원화가 아니면 카드 패널(S9)과 같이 환율 칸(기본값 = 설정 최근 환율)이
   붙고 원화 환산액은 서버가 `toKrw()`로 계산해 `Form.Hint` 한 줄로 보인다. 환율이 없으면(설정에 최근 환율 없음) 칸이 비고 1차가 막힌다(Copywriting 「Error — 구매 요청 폼 칸」) —
   그래서 저장된 요청은 늘 환율·원화가 있다(`계산 불가` 상태 없음). 목록·합계·비교는 원화로만 한다.
-- 1차 `구매 요청 Ctrl+Enter`. 번호는 **저장 순간** 부여되어 토스트 `구매 요청 · 26001-C0001`과 목록 첫 줄에 보인다. 저장 뒤 `/cards/purchases`로.
+- **실행가 초과 막힘(사용자 결정(10/5 00:55) Q3):** `견적 줄` 연결이면 예상 금액의 공급가 추정(서버 — 그 줄 거래처 기본 증빙 종류의 규칙으로 원화 환산액에서 역산)이 남은 실행가(S9과 같은 값)보다 크면 1차가 막힌다(Copywriting 「막힘 — 구매 요청 폼」 실행가 초과 갈래). 줄 아래 `Form.Hint` `남은 실행가 4,337,280 · 카드 사용 1건 1,200,000 · 구매 요청 1건 700,000`(S9과 같은 꼴 — 0건인 부분은 뺀다). 다른 `신청됨` 요청의 예상 공급가도 남은 실행가에서 뺀다(사용자 결정 2026-10-05 카드 「빼기」 — 계획 06-14 확인 후보를 닫는다): 취소된 요청은 빠지고, 요청 취소 되돌리기도 같은 상한을 지난다. 구매 완료(S13)에서 실제 결제 합계로 다시 막는다(그 요청 자신의 예상 공급가는 빼지 않고 실제 공급가로).
+- **등록 뒤(rev 10 — UQ-8 B):** 패널이 열린 채 칸이 기본값으로 돌아가고(`&line=`로 들어왔으면 그 줄이 남는다) 첫 칸 포커스, 결과 한 줄 `구매 요청됨 · 26001-C0001`(번호는 **저장 순간** 부여 — 뒤 목록 첫 줄에도 보인다). 토스트 · 등록 `되돌리기` 없음(rev 9 H-4 철회 — 지우는 길은 S11 행 `요청 취소` + 결과 줄 `되돌리기`).
 - 결재 없음(EXP-10) — 결재선 칸이 없다.
 
-### S13. 구매 완료 — 카드 사용 폼의 구매 완료 모드 `/cards?new=1&purchase={id}` (S9 재사용)
+### S13. 구매 완료 — 옆 패널 `/cards/purchases?purchase={id}` (S9 칸 재사용, `PanelForm intent="edit"`)
 
-- 제목 `구매 완료 — 26001-C0001 · {품목}`. 연결은 요청의 것(텍스트, 「바꾸기」 없음). 가맹점 기본값 = 온라인구매 협력사. 결제 합계 기본값 = 예상 금액(통화·외화·환율 그대로), 다르면 아래
-  `예상 금액 1,250,000 · 차이 -12,000`(막지 않음. 두 금액 모두 **원화 환산액**으로 서버가 비교한다 — 통화가 달라도 원화로 본다). 카드는 활성 카드 전부(구매 권한자). 사용일 기본 오늘. 증빙 첨부 선택.
+- **틀(rev 10):** S11 행 `구매 완료` → 구매 요청 목록 위 옆 패널(rev 9의 `/cards?new=1&purchase=` 페이지 폼을 대체 — 뒤가 구매 요청 목록이라야 처리 뒤 다음 `신청됨` 행으로 이어진다). 머리 `구매 완료`, 본문 첫 줄 읽기 `26001-C0001 · {품목}` + 링크 아이콘(S11과 같은 3차). 칸 = S9 패널의 칸 · 행동 줄 · 닫기 · 폰 시트 규칙 그대로.
+- **성공 뒤:** 패널이 닫히고 그 행이 `구매 완료` + 2행 `카드 사용 09-20 · 1,238,000`이 된다(제자리 결과 — 토스트 없음). 연 버튼(`구매 완료`)이 행에서 사라지므로 포커스는 **다음 `신청됨` 행의 `구매 완료`**(연달아 처리 — r2 F6), 그런 행이 없으면 화면 제목(`moveFocusToResult`, SidePanel.tsx:48 · :199 — §7-8 「성공으로 닫히면 호출부가 새 결과로」).
+- 연결은 요청의 것(텍스트, 「바꾸기」 없음). 가맹점 기본값 = 온라인구매 협력사. 결제 합계 기본값 = 예상 금액(통화·외화·환율 그대로), 다르면 아래
+  `예상 금액 1,250,000 · 차이 -12,000`(막지 않음. 두 금액 모두 **원화 환산액**으로 서버가 비교한다 — 통화가 달라도 원화로 본다). 카드는 활성 카드 전부(구매 권한자, 공용 카드 포함 — Q5). 사용일 기본 오늘 · `max` 오늘(Q6). **증빙 첨부 영역 없음(r3 — 사용자 카드 2026-10-05):** 저장(구매 완료)이 먼저이고, 카드 전표는 생긴 카드 사용 건의 상세(S9 수정 패널 `?editId=`)에서 붙인다 — 05 지출결의와 같은 「저장 뒤 상세에서 첨부」 순서다(파일 놓기가 되돌릴 수 없는 구매 완료(Q2)를 부르지 않는다).
+- **실행가 초과(사용자 결정(10/5 00:55) Q3 — 완료 아닌 프로젝트, 완료 프로젝트는 아래 r4 Q-E):** `견적 줄` 연결이면 결제 합계의 역산 공급가가 남은 실행가보다 클 때 1차가 막힌다(S9과 같은 판정). **문구는 S13 갈래**다 — 연결이 고정이라 `다른 줄 고르기`가 없다: `실행가 초과 · 남은 실행가 4,337,280 · 견적 줄은 담당 PM 박서연`(버튼 없음, §8 규칙 3), 포커스 가능한 고칠 칸은 결제 합계(r2 Codex R2).
+- **쓸 카드 0장(r2 Codex R6):** 활성 카드가 하나도 없으면 카드 칸은 빈 `Select` 대신 읽기 줄 `—`, 1차 `구매 완료` 비활성 + 이유 `활성 법인카드 없음 · 카드 등록은 관리자`(`block`, `aria-describedby`). 다른 칸 입력은 남는다. 예상 금액 차이 힌트(막지 않음)와 따로다 — 차이는 막지 않고 실행가 초과만 막는다.
+- **완료(A-601) 프로젝트 줄의 요청(gap-audit 38):** 구매 완료를 막지 않는다 — **사용자 확정(2026-10-05 U-4, r3)**(reconcile §2 06-12 추천 · D-47과 같은 결 — 이미 신청된 구매는 처리한다).
+  **실행가 초과도 막지 않는다 — 기록 · 표시(r4 — 사용자 결정 2026-10-05 UC-5 · Q-E):** 완료 프로젝트 줄의 요청은 결제 합계의 역산 공급가가 남은 실행가보다 커도 1차 `구매 완료`가 살아 있고, 결제 합계 아래 `Form.Hint` 자리에 한 줄 `실행가 초과 150,000`(`--status-warning`, 서버 `diffKrw` 값 — 결제 합계를 바꾸면 서버가 다시 보낸다)이 선다. 처리 뒤 S11 그 행 2행 끝에 ` · 실행가 초과 150,000`(액션 응답 값)이 붙고, 같은 초과액이 구매 완료 행동 로그 상세에 남는다(새 칸 없음). 완료 판정은 서버가 잠근 프로젝트 행으로 한다. **완료 아닌 프로젝트는 위 「실행가 초과」 막힘 그대로**(Q3).
+- **취소 없음(사용자 결정(10/5 00:55) Q2):** 구매 완료한 요청은 취소하지 않는다. 잘못 처리했으면 조정 줄(D-83) · 생긴 카드 사용 건의 S9 수정(「카드 고치기」)으로 고친다.
 - **팀 비용 연결이면(S12 「`팀 비용`의 팀」):** 값 = `teamAtDate(요청자, 사용일)`의 팀(읽기 텍스트 `기획1팀`, 힌트 없음 — rev 9 M-5). **S9의 팀 자동 도출(등록자 /
   `사용한 사람` 칸)은 이 모드에 쓰지 않는다** — `사용한 사람` 칸이 서지 않고, 구매 완료하는 구매 권한자의 소속과 카드의 팀은 팀을 정하지 않는다. 사용일을 바꾸면 서버가 팀을
-  다시 보낸다(이전 값 `--faint` → 새 값). 사용일에 요청자 소속이 없으면(`teamAtDate` = null — 발령 이력 없음 · 사용일이 첫 발령보다 앞) 임의의 팀으로 떨어뜨리지 않고
+  다시 보낸다(이전 값 `--text-faint` → 새 값). 사용일에 요청자 소속이 없으면(`teamAtDate` = null — 발령 이력 없음 · 사용일이 첫 발령보다 앞) 임의의 팀으로 떨어뜨리지 않고
   1차 `구매 완료`가 막힌다(Copywriting 「막힘 — 카드 사용 폼」 구매 완료 모드 소속 없음 갈래). 서버도 같은 판정으로 거부한다. 요청자가 그 뒤 퇴사·전보했어도 사용일 소속으로 정한다.
-- 1차 `구매 완료 Ctrl+Enter` → 카드 사용 건 생성 + 요청 `구매 완료`(한 트랜잭션) → `/cards/purchases` + 토스트 `구매 완료 · 26001-C0001`. 등록 칸 = `구매 요청 26001-C0001`(경영관리 등록이 아니다).
-- 요청이 그사이 취소·완료됐으면 1차 비활성 + `구매 요청 취소됨 · 새로 고침` / `이미 구매 완료 · 새로 고침`.
+- 1차 `구매 완료 Ctrl+Enter` → 카드 사용 건 생성 + 요청 `구매 완료`(한 트랜잭션). 등록 칸 = `구매 요청 26001-C0001`(경영관리 등록이 아니다).
+- 요청이 그사이 취소·완료됐으면 1차 비활성 + `reason` 줄 `구매 요청 취소됨 · 새로 고침` / `이미 구매 완료 · 새로 고침`.
 
 ### S14. 견적 줄 표에 더하는 것 (Phase 4 S4 + Phase 5 행 행동 — UA-608·UA-609)
 
-- **상태 열 파생값:** Color 절 매핑표(견적 줄 행) + 한 값 규칙. 표 상태 열은 `text` 변형(`--fs-xs` 600), 2행 `증빙 16일 경과`는 `--fs-xs` 400 `--warning`. 폰 P1의 상태에도 같은 낱말.
+- **상태 열 파생값:** Color 절 매핑표(견적 줄 행) + 한 값 규칙. 표 상태 열은 `text` 변형(`--text-tag` 600), 2행 `증빙 16일 경과`는 `--text-tag` 400 `--status-warning`. 폰 P1의 상태에도 같은 낱말.
 - **문 가르기(EXP-10):** 줄의 거래처가 온라인구매 협력사면 그 줄의 행 행동(Phase 5가 「지출결의 올리기」를 둔 자리)이 **`구매 요청`**이고 「지출결의 올리기」는 렌더하지 않는다.
   그 밖의 줄은 「지출결의 올리기」만. `Ctrl+E` = 현재 줄의 열린 문. 힌트 줄 표기는 그 프로젝트에 온라인구매 줄이 하나라도 있으면 `지출결의·구매 요청 Ctrl+E`, 없으면 Phase 5 그대로.
   거래처가 빈 줄은 Phase 5의 `거래처 없음 · 거래처 고르기` 막힘 그대로(04 Copywriting).
@@ -787,36 +871,37 @@ Phase 5의 문서 화면(UA-605·UA-606) 증빙 묶음 **아래**에 확인부�
   (`카드 사용 등록` 3차)를 이유 옆에 둔다. **그 3차의 목적지 = `/cards?new=1&line={그 줄 id}`**(S9 「새 건의 기본값」 — 진입 줄이 직전 연결을 이긴다, r2 W2). 서버도 같은 게이트로 거부한다(RESEARCH Pitfall 3).
 - **지급 완료 잠금(EXP-06):** 지출결의 쪽 문서가 전부 지급 완료인 줄은 새 지출결의가 막힌다(이유 `지급 완료 26001-0004 · 새 지출결의 없음`). 금액 셀 읽기 전용 이유는 D-66 꼴로
   문서 상태만 바뀐다(`지출결의 26001-0004 지급 완료 · 고치려면 새 차수`).
+- **카드 붙잡은 줄(r5 · N-3 — Q-G 밤 위임 — 추천안으로 진행, 아침 확인):** 카드 사용 · `신청됨` 구매 요청이 붙은 줄의 `삭제`는 지출결의가 이은 줄(Phase 5)과 같이 보관 대신 `취소`가 된다(확인 창도 같은 꼴). 직접 보관 요청은 서버가 `연결 문서 있음 · 삭제 대신 취소`로 거부한다. 실행가 셀은 막지 않는다(UC-1). 실행가를 그 줄의 카드 쪽 공급가 합보다 낮추면 상태 열 2행 `실행가 초과 {초과액}`(`--text-tag` 400 `--status-warning` — `증빙 16일 경과`와 같은 2행, 둘 다면 ` · `로 한 줄) — 표시만이고 행 행동 · 저장을 막지 않는다. 초과액은 금액 열과 같은 권한(`quote.amount`)으로만 보낸다.
 - 카드 사용 등록의 입구는 견적 줄 표에 행 행동(문)으로 두지 않는다(카드 사용은 영수증을 든 사람이 `/cards`에서 한다) — 견적 줄 표에서 카드 폼으로 가는 길은 위 「한쪽 연결」 막힘 이유 옆 3차 `카드 사용 등록` 하나뿐이다. 점검 섹션(S18)의 미매칭 줄 3차도 카드 폼으로 가지 않는다 — 그 줄의 문(`지출결의 올리기` / `구매 요청`)으로 간다(「표시 — 점검 행」).
 
-### S15. 프로젝트 상세 「법인카드 사용」 섹션 (§6-2 섹션 + 읽기 표)
+### S15. 프로젝트 상세 「법인카드 사용」 섹션 (`DetailScreen.Section` + 읽기 표)
 
-- 자리: 매출 섹션 아래(§6-2 392행 「견적 차수·지출결의·카드·첨부는 섹션」). 섹션 제목 `법인카드 사용` + 부제 `{N}건 · 결제 합계 {합}`. **부제의 결제 합계는 금액 열과 같은 권한(`quote.amount`)으로 서버가 DTO에서 뺀다** — 없는 사람의 부제는 `{N}건`만(1건 섹션의 합계가 곧 숨긴 금액이다).
+- 자리: 매출 섹션 아래(§6-2 :446 「견적 차수·지출결의·카드·첨부는 섹션」). 섹션 제목 `법인카드 사용`(부제 없음 — r3, C13 · `DetailScreen.Section`은 `title`뿐). 건수 · 합계는 표 끝 합계 행 `합계 ({N}건)` · `결제 합계 {합}`이 말한다. **합계 행의 결제 합계는 금액 열과 같은 권한(`quote.amount`)으로 서버가 DTO에서 뺀다** — 없는 사람의 합계 행은 `합계 ({N}건)`만(1건 섹션의 합계가 곧 숨긴 금액이다).
 - 열: 사용일 · 견적 줄(`6 해외 연사 항공·숙박` / `견적 외 비용 · {항목}`) · 가맹점 · 결제 합계(2행 공급가) · 등록. **경영관리 등록 건은 등록 칸이 `경영관리 등록`(600)**(EXP-16) —
   PM이 모르는 비용이 여기서 보인다. 팀 비용 연결 건은 이 섹션에 없다.
 - 노출: 프로젝트를 보는 사람 중 `quote.amount`를 볼 수 있는 사람(금액 열). 없는 사람에게는 금액 열을 서버가 보내지 않는다(§7-3 칸 수 가변).
-- 폰: P1 = 견적 줄 · 결제 합계 · 등록, P2 = 사용일 · 가맹점. 행 → 권리가 있으면 S9 수정, 없으면 행 시트.
+- 폰: P1 = 견적 줄 · 결제 합계 · 등록, P2 = 사용일 · 가맹점. 행 → 권리가 있으면 S9 수정 패널(`/cards?editId={id}`), 없으면 `RowSheet`.
 
 ### S16. 매출 발행 요청 — 상세 매출 섹션 「발행 요청」 표 (§6-2 매출 섹션 + §7-3 편집 표, D-610)
 
-- 자리: 매출 섹션 안, **계약 금액 줄과 발행 줄 표 사이**(UA-616). 소제목 `발행 요청`(`--fs-sm --muted` 600, 매출 섹션의 표 소제목과 같은 모양).
-- 열: 희망 발행일(날짜) · 금액(공급가, 2행 `부가세 · 합계` — 서버 계산, `%` 글자 없음) · 메모 · 상태. 줄이 몇 개뿐인 섹션 표라 페이지를 나누지 않는다(§7-3 (자) 814행).
-- **담당 PM(프로젝트 쓰기, ≥1024):** 3차 `발행 요청 추가` → 새 줄(희망 발행일 기본 오늘). `요청` 상태이고 아직 발행 줄에 연결되지 않은 줄의 세 칸을 고칠 수 있다. 저장은 상세의
+- 자리: 매출 섹션 안, **계약 금액 줄과 발행 줄 표 사이**(UA-616). 소제목 `발행 요청`(`--text-aux --text-muted` 600, 매출 섹션의 표 소제목과 같은 모양).
+- 열: 희망 발행일(날짜) · 금액(공급가, 2행 `부가세 · 합계` — 서버 계산, `%` 글자 없음) · 메모 · 상태. 줄이 몇 개뿐인 섹션 표라 페이지를 나누지 않는다(§7-3 (자)).
+- **담당 PM(프로젝트 쓰기, ≥1024):** 3차 `발행 요청 추가` → 새 줄(희망 발행일 기본 오늘). `신청됨` 상태이고 아직 발행 줄에 연결되지 않은 줄의 세 칸을 고칠 수 있다. 저장은 상세의
   1차 `일괄 저장 Ctrl+S N` 하나(§7-3 (사)). `Delete` → 확인 모달 `발행 요청 취소`(→ `취소` 상태, 줄은 남는다). 수주중·진행·정산에서만(완료는 잠김 — D-47은 경영관리 몫).
-- **매출 기록 권한자(`projects.revenue` write, ≥1024):** `요청` 줄의 상태 칸에 3차 `발행 줄로` → 발행 줄 표에 새 줄(발행일 = 희망 발행일, 발행액 = 요청 금액, 메모 = 요청 메모)이 생기고 그 줄의
-  발행일 셀에 포커스, 요청 줄 상태 2행 `발행 줄 입력 중`(`--muted`). `일괄 저장`하면 요청이 `발행됨`(2행 `발행 09-30 · 22,000,000`). 저장 전 새 발행 줄을 지우면 연결도 풀린다.
+- **매출 기록 권한자(`projects.revenue` write, ≥1024):** `신청됨` 줄의 상태 칸에 3차 `발행 줄로` → 발행 줄 표에 새 줄(발행일 = 희망 발행일, 발행액 = 요청 금액, 메모 = 요청 메모)이 생기고 그 줄의
+  발행일 셀에 포커스, 요청 줄 상태 2행 `발행 줄 입력 중`(`--text-muted`). `일괄 저장`하면 요청이 `발행됨`(2행 `발행 09-30 · 22,000,000`). 저장 전 새 발행 줄을 지우면 연결도 풀린다.
   금액이 달라도 막지 않는다(선금·잔금 조정).
 - 그 밖의 사람: 읽기 표(흰 머리글). 발행액을 볼 수 없는 사람(A-605)에게는 상태 2행의 금액을 보내지 않는다.
-- `?issueRequest={id}`로 들어오면(S17) 그 요청 줄로 스크롤·포커스 — `발행 줄로`가 선 줄(`요청` 상태 · 매출 기록 권한자 · ≥1024)이면 그 3차에, 아니면(`발행됨` · `취소` · 보기 전용) 그 요청 줄 자체(`tabindex="-1"`)에.
+- `?issueRequest={id}`로 들어오면(S17) 그 요청 줄로 스크롤·포커스 — `발행 줄로`가 선 줄(`신청됨` 상태 · 매출 기록 권한자 · ≥1024)이면 그 3차에, 아니면(`발행됨` · `취소` · 보기 전용) 그 요청 줄 자체(`tabindex="-1"`)에.
 - 1024 미만은 보기 전용(DR-36). 힌트 줄 없음(DR-31).
 - **매출 섹션의 두 역할(rev 9, M-8 — 접지 않음):** 자리는 그대로이고(검토 권고와 같다 — 발행 요청 → 발행 줄로 잇는 동선이 짧다) 권한별로 표를 접지 않는다. 두 표는 소제목(`발행 요청` / Phase 4 발행 줄 소제목)으로 이미 갈리고, 쓰기 권한이 없는 사람에게는 둘 다 흰 머리글 읽기 표라 「할 수 있는 일」은 모양이 말한다. 접으면 ① PM이 `발행됨` 요청이 어느 발행 줄이 됐는지 볼 곳이 없어지고, ② Phase 4 S6 발행 줄 표의 계약을 이 페이즈가 바꾸게 되며, ③ SYSTEM에 「섹션 안 표 접기」 규칙이 없어 새 SP가 필요하다(화면 하나만 예외 금지 — CLAUDE.md §6).
 
-### S17. 발행 요청 목록 `/projects/issue-requests` (§6-1 읽기 목록, SP-4) — 매출 기록 권한자
+### S17. 발행 요청 목록 `/projects/issue-requests` (`ListScreen` + 읽기 표, SP-4) — 매출 기록 권한자
 
-- 진입: 프로젝트 목록 필터 줄 오른쪽 3차 `발행 요청 2`(0이면 `발행 요청` — 링크는 남는다, SP-4) · 「내 차례」. 대표(읽기)도 같은 3차 링크로 들어온다(링크는 매출 기록 권한자 · 대표에게 선다). 1차 없음.
-- 필터 `[요청 ▾ | 발행됨 | 취소 | 전체]`. 그룹 = 희망 발행일(`희망일 지남`(`--warning`) → `이번 주` → `다음 주` → `그 뒤`).
-- 열: 희망 발행일 · 프로젝트(번호 · 이름) · 요청자 · 금액(2행 합계) · 메모 · 상태 + 행동 3차(≥1024 · 매출 기록 권한자만, 둘 다 → `/projects/{id}?issueRequest={rid}`): **`요청` 행만 `발행 줄 입력`**(도착 포커스 `발행 줄로`가 `요청` 줄에만 있다, S16) ·
-  `발행됨` · `취소` 행은 `요청 보기`(도착하면 그 요청 줄을 본다 — 입력할 것이 없다). 합계 줄 `합계 (요청 · 2건)` · `금액 44,000,000`.
+- 진입: 프로젝트 목록 필터 줄 오른쪽 3차 `발행 요청 2`(0이면 `발행 요청` — 링크는 남는다, SP-4) · 「내 차례」. 대표(읽기)도 같은 3차 링크로 들어온다(링크는 매출 기록 권한자 · 대표에게 선다). `ListScreen` `title="발행 요청"`(부제 없음) · `primaryAction` 없음.
+- 필터 `[신청됨 ▾ | 발행됨 | 취소 | 전체]`. 그룹 = 희망 발행일(`희망일 지남`(`--status-warning`) → `이번 주` → `다음 주` → `그 뒤`).
+- 열: 희망 발행일 · 프로젝트(번호 · 이름) · 요청자 · 금액(2행 합계) · 메모 · 상태 + 행동 3차(≥1024 · 매출 기록 권한자만, 둘 다 → `/projects/{id}?issueRequest={rid}`): **`신청됨` 행만 `발행 줄 입력`**(도착 포커스 `발행 줄로`가 `신청됨` 줄에만 있다, S16) ·
+  `발행됨` · `취소` 행은 `요청 보기`(도착하면 그 요청 줄을 본다 — 입력할 것이 없다). 합계 줄 `합계 (신청됨 · 2건)` · `금액 44,000,000`.
 - 1024 미만(좁은 PC · 폰): 행동 칸이 없다 — 입력이 되지 않는 폭에 `발행 줄 입력`을 세우지 않는다(§8 규칙 1). **행을 누르면 같은 주소로 가서 요청 줄을 본다**(상세 표는 보기 전용, DR-36).
   폰 P1 = 프로젝트 · 금액 · 희망 발행일, P2 = 요청자 · 메모.
 
@@ -826,33 +911,35 @@ Phase 5의 문서 화면(UA-605·UA-606) 증빙 묶음 **아래**에 확인부�
 - **판정은 서버 하나**(`rules.gate` + 점검 결과 DTO — 세 그룹 각각의 목록, RESEARCH Pitfall 4). 화면은 그룹별 목록과 막힘 여부만 받는다.
 
 ```
-╞═ 완료 전 점검   정산 결재 전 · 막힘 3건 ══════════════════════════════════════╡
-│ 미결 지출결의 2건                                                          │ ← 그룹 머리글(건수 --danger)
+│ 완료 전 점검                                                               │ ← DetailScreen.Section(위 1px --border-row, 부제 없음 — r3)
+│ 미결 지출결의 2건                                                          │ ← 그룹 머리글(건수 --status-danger)
 │ 26001-0004  무대설치            12,400,000   반려                  지출결의 열기 │
 │ 26001-0007  LED 월               6,900,000   선결제 · 증빙 없음      지출결의 열기 │
 │ 미매칭 견적 줄 1줄                                                          │
 │ 6           해외 연사 항공·숙박   5,537,280                          지출결의 올리기 │ ← 그 줄의 문(온라인구매 줄이면 구매 요청)
-│ 매출 미입력 · 강행 허용                                                      │ ← 강행 허용 그룹(--muted, 막힘에 안 셈)
+│ 매출 미입력 · 강행 허용                                                      │ ← 강행 허용 그룹(--text-muted, 막힘에 안 셈)
 │ 발행 줄 없음                                                    발행 요청 추가 │ ← 3차는 ≥1024만(1024 미만은 사실만)
 │ 계약 금액 48,000,000 · 발행 합계 — · 차이 —                                  │
 ```
 
 - 행 모양·행동: Copywriting 「표시 — 점검 행」. 다음 한 수가 권한 밖이면 담당 표기. **막힘 건수와 미결 건수는 따로다** — 비어 있는 그룹만 접고, 세 그룹이 다 비었을 때만
   그룹 자리가 한 줄 `미결 없음`. 강행 허용 그룹의 항목은 막힘 0이어도 그대로 보이고, 매출 줄(계약 금액 · 발행 합계 · 차이)은 늘 보인다(D-613, Copywriting 「Empty — 완료 전 점검」).
-  막힘 0이면 부제는 `정산 결재 전 · 막힘 없음`.
+  막힘 건수는 막힘 그룹 머리글(`--status-danger` 건수)과 기안 버튼 이유 `완료 전 점검 N건`이 말한다 — 섹션 부제 없음(r3, C13).
 - **미결 지출결의의 증빙 판정(D-611):** `증빙 없음` · `선결제 · 증빙 없음` 행은 **면제 제외**다 — 증빙 `면제` 문서는 선결제든 지급 뒤든 이 그룹에 들지 않는다. 경영관리가 이 행을
   비우는 길은 3차 `지출결의 열기` → S4의 3차 `증빙 면제`(「상태 → 1차」 「증빙 면제의 자리」 — P3 · P4 · P6 어느 갈래에도 선다)이고, 면제 뒤 점검을 다시 읽으면 행이 빠진다.
 - **정산 결재 올리기(UA-610):** 막힘 ≥ 1이면 PM의 기안 버튼이 비활성 + 이유 `완료 전 점검 3건 · 점검 보기`(3차 → 섹션 제목으로 포커스). 강행 허용 그룹만 남으면 버튼이 살아 있고,
   기안 화면(또는 확인 모달)에 결과 줄 `강행 · 미결 지출결의 2건`을 보인다(대표가 문서에서 본다).
 - **대표 승인 때 다시 점검(O-16):** 정산 결재 문서의 `승인` 1차 앞에서 같은 판정을 한 번 더 돈다. 막히면 Copywriting 「막힘 — 대표 승인」 — 이유에 담당 PM을 적고(대표는 고칠 권한이 없다) 3차 `점검 보기`, 2차 `반려`는 산다(rev 9, M-6).
 - 강행 허용 여부는 설정 키 셋(`project.force_complete.allow_*`, 기본 false — main에 있음)이고 화면은 그 값을 읽기만 한다.
+- **계산서 없는 카드 매출(gap-audit 159, 사용자 결정(10/5 00:55) Q7):** 06은 이 섹션을 바꾸지 않는다 — 계산서 없이 카드로 받은 매출은 「매출 미입력」 그룹에 남고 기존 「강행 허용」 설정으로 넘긴다. 카드 매출 입력 표면은 Phase 9.
+- 미결 지출결의의 `증빙 없음` 판정은 `hasEvidence` 하나(「증빙 판정 규칙」 — 무효 파일 제외).
 - 폰: 섹션이 그대로 선다(읽기 표 — P1 = 항목 · 금액 · 상태, 행동 3차는 P1 셀 2행). 단 1024 미만(좁은 PC·폰)에는 매출 미입력 행의 `발행 요청 추가` · `발행 줄 추가`가 없다(「표시 — 점검 행」).
 
 ### S19. 「내 차례」 항목 (§7-4, UA-611)
 
-- 항목 문구·태그는 Copywriting 「표시 — 「내 차례」」. 태그 순서 고정(막힘 → 오늘 → 결재 → 대기, §7-4 832행), 최대 6줄.
+- 항목 문구·태그는 Copywriting 「표시 — 「내 차례」」. 태그 순서 고정(막힘 → 오늘 → 결재 → 대기, §7-4), 최대 6줄.
 - 경영관리 항목은 **묶음 한 줄**(지급 · 구매 요청 · 발행 요청 각각 한 줄)이다 — 건마다 한 줄이면 6줄 상한을 지급 대상이 다 먹는다. 다음 한 수 = 그 목록으로 가는 3차.
-- PM 항목(선결제 기한 초과 · **결재 통과 · 증빙 없음 · 지급 대기**(rev 9, H-1) · 완료 전 점검 막힘)은 건마다 한 줄(§6-1 예시와 같은 결). 증빙 없음 · 지급 대기 항목은 「상태 → 1차」 P3 건을 그 건의 담당 PM에게 보인다 — 경영관리가 보는 `없음 · 담당 PM 박서연`의 반대편이다(D-601 아래에서 경영관리가 PM에게 알릴 화면 수단이 이것뿐이다). `확인 전`은 넣지 않는다(PM 몫이 아니다).
+- 기안자 · PM 항목(**선결제 기한 초과**(r3, B-C8 — 사용자 확정 2026-10-05 카드) · **결재 통과 · 증빙 없음 · 지급 대기**(rev 9, H-1) — 둘 다 받는 사람 = **기안자**(rev 10 — 승인 뒤 증빙을 붙이는 사람은 기안자뿐, 05 규칙) / 완료 전 점검 막힘 — 담당 PM)은 건마다 한 줄(§6-1 예시와 같은 결). 증빙 없음 · 지급 대기 항목은 「상태 → 1차」 P3 건을 그 건의 기안자에게 보인다 — 경영관리가 보는 `증빙 없음 · 기안자 박서연`의 반대편이다(D-601 아래에서 경영관리가 PM에게 알릴 화면 수단이 이것뿐이다). `확인 전`은 넣지 않는다(PM 몫이 아니다).
 - 공급 실패면 블록 자리에 Copywriting 「Error — 「내 차례」 로드(S19)」 한 줄 — 0건(블록 없음)과 섞지 않는다.
 - 0건이면 블록이 없다(§7-4). 독촉 **알림**(이메일·알림함)은 Phase 7이다 — 이 줄은 알림이 아니라 할 일 표시다.
 
@@ -864,6 +951,7 @@ Phase 5의 문서 화면(UA-605·UA-606) 증빙 묶음 **아래**에 확인부�
 | 증빙 | `증빙 크기 한도` | number · 우측 정렬 + 단위 `MB` | 10 | — |
 | 증빙 | `선결제 증빙 기한` | number · 단위 `일` | 14 | `지급일부터 센 날수`(O-5) |
 | 구매 요청 | `온라인구매 협력사` | string · 텍스트 입력(O-13) | 빈 값 | `이 거래처의 견적 줄은 구매 요청으로` |
+| 지급 | `지급 방식 · 증빙 종류 짝` | 짝 목록(입력 모양 = O-23 짝 격자 — 계획 06-02/03이 SP로) | 빈 값(짝 검사 없음) | `비면 짝 검사 없음`(사용자 결정(10/5 00:55) Q4) |
 | (기존) 프로젝트 완료 | 강행 허용 셋 | boolean(이미 있음) | 끔 | 기존 라벨 그대로 |
 
 키 이름은 계획이 `domain/settings/keys.ts`에 정한다(가칭). 저장은 §7-2 즉시 저장.
@@ -890,10 +978,10 @@ Phase 4에서 넘어온 D-56(차수 고객 승인 증빙 첨부). **새 컴포�
 
 - **자리:** 차수 섹션 표의 동작 칸. **승인된 최신 차수** 행에 3차 `승인 증빙 {N}`(파일 0이면 `승인 증빙` — 숫자 없음, 접근 이름 `2차 승인 증빙 1`, Copywriting 「3차 버튼」). 동작 칸은 04 S5에서 P1이라 모든 폭에서 선다. 승인 직후 이 3차가 그 행에 저절로 서므로 따로 안내 문구를 두지 않고 자동으로 펼치지도 않는다(첨부는 선택 — DR-12).
   이전 차수(승인된 채 새 차수가 생긴 차수)는 「차수 열기」로 펼친 읽기 섹션의 제목 바로 아래에 같은 블록(파일 행 · 첨부 영역)이 선다 — 동작 칸에 3차를 둘 두지 않는다.
-- **펼침:** 누르면 차수 섹션 바로 아래 섹션이 펼쳐진다 — 04 S5 「차수 열기」와 **같은 자리 · 같은 규칙**: 한 번에 하나(다른 차수 열기 · 승인 증빙을 열면 바뀐다), 열리면 포커스가 섹션 제목(`tabindex="-1"`)으로, 닫히면 그 3차로 돌아온다. 3차 라벨은 그대로이고 열림은 `aria-expanded`가 말한다. 제목 `상세 견적 {n}차 승인 증빙`(`--fs-sm` 600, 2px `--line-strong`으로 시작) + 부제 `승인 {승인일}`.
+- **펼침:** 누르면 차수 섹션 바로 아래 섹션이 펼쳐진다 — 04 S5 「차수 열기」와 **같은 자리 · 같은 규칙**: 한 번에 하나(다른 차수 열기 · 승인 증빙을 열면 바뀐다), 열리면 포커스가 섹션 제목(`tabindex="-1"`)으로, 닫히면 그 3차로 돌아온다. 3차 라벨은 그대로이고 열림은 `aria-expanded`가 말한다. 제목 `상세 견적 {n}차 승인 증빙`(`--text-aux` 600, 위 1px `--border-row`로 시작 — 섹션 선과 같은 선) + 부제 `승인 {승인일}`.
 - **내용:** 쓰기 권리(서버 값 — 담당 PM + `projects` 쓰기 + 승인 표시 켜짐 + 완료 아님, 06-16)면 §7-10 파일 행(3차 `삭제`) + 첨부 영역. 아니면 파일 행만(`삭제` 없음 — 파일 열기는 S4 파일 행과 같은 3차 `크게 보기`). 읽기 · 파일 0이면 Copywriting 「Empty — 차수 승인 증빙(S21, 펼침 섹션)」.
 - **승인 표시 취소 뒤:** 행 상태 칸은 비고(04 U-2), 3차 `승인 증빙 {N}`은 **파일이 있을 때만** 남고 펼치면 읽기다(파일 행만). 다시 승인하면 그대로 쓸 수 있다(06-16 계획 판단).
-- **저장:** 업로드 · 삭제는 즉시 저장이다 — 상세의 `일괄 저장 Ctrl+S N`에 들지 않고, 저장 안 한 견적 편집이 있어도 막히지 않는다. 마지막 파일 삭제도 모달이 없다(바뀌는 값이 없다 — SP-6 대상 아님). 성공 토스트 없음(파일 행이 서는 것이 결과, §7-6).
+- **저장:** 업로드 · 삭제는 즉시 저장이다 — 상세의 `일괄 저장 Ctrl+S N`에 들지 않고, 저장 안 한 견적 편집이 있어도 막히지 않는다. 마지막 파일 삭제도 모달이 없다(바뀌는 값이 없다). 삭제 뒤 펼침 섹션 위 결과 줄 `증빙 삭제 · {파일명}` + 3차 `되돌리기`(§7-8 :1008 — 확인 창 대신 되돌리기, r2 F10). 성공 토스트 없음(파일 행이 서는 것이 결과, §7-6).
 - **오류:** Copywriting 「Error — 증빙 업로드」(주인이 지출결의가 아니라 중복은 번호 없는 문구 — 같은 주인 종류 안에서만 막힌다, S7). 권리 밖 직접 호출은 서버가 거부한다.
 - **노출:** `quote.amount`가 없는 사람에게는 3차 · 블록 · 개수가 DOM에 없다(서버가 보내지 않는다 — 승인 버튼과 같은 노출 기준, 06-16).
 - **폭:** 폰 · 좁은 PC도 동작 칸이 P1이라 그대로 서고, 첨부 영역은 §7-10 폰 동작(영역 탭 → 카메라 · 사진 · 파일). 편집 표가 아니라서 1024 미만에도 쓰기가 된다.
@@ -914,12 +1002,28 @@ Phase 4에서 넘어온 D-60(리저브 줄 증빙 첨부). **새 컴포넌트 �
 - **열:** 세금계산서 번호 다음에 읽기 셀 열 `증빙`(편집 칸이 아니다 — §7-3 (가) 읽기 전용 단계). 우선순위 **P2** — 1024~1279에서 숨는 P3에 두면 그 폭에서 쓰기 길이 사라진다. 값은 3차 `증빙 {N}` / `증빙`(0, 숫자 없음), 접근 이름 `09-18 현대자동차 증빙 2`(Copywriting 「3차 버튼」). 저장 전 새 줄(id 없음)은 `—`(3차 없음). 편집 표 키에서 이 셀은 `Enter` = 펼치기(링크 셀과 같은 규칙).
 - **펼침:** 누르면 **표 블록 아래**(페이지 줄 · 힌트 줄 다음) 섹션이 펼쳐진다 — S21과 같은 규칙(한 번에 하나 · 제목 포커스 · 닫히면 3차로 · `aria-expanded`). 제목 `{날짜} {클라이언트} {구분} {금액} 증빙`(예 `09-18 현대자동차 출금 3,300,000 증빙`). 쪽을 넘기면 닫힌다.
 - **내용:** 쓰기(`pnl` 쓰기 + `reserve.amount`, 보관 아닌 줄 — 06-16)면 파일 행 + 첨부 영역, 읽기(`pnl` 보기 + `reserve.amount`)면 파일 행만. 읽기 · 파일 0이면 Copywriting 「Empty — 리저브 줄 증빙(S22, 펼침 섹션)」.
-- **저장:** 업로드 · 삭제는 즉시 저장 — 표의 dirty `N`에 들지 않고, 잔액 · 금액을 바꾸지 않는다(06-16). 마지막 파일 삭제도 모달 없음. 성공 토스트 없음.
+- **저장:** 업로드 · 삭제는 즉시 저장 — 표의 dirty `N`에 들지 않고, 잔액 · 금액을 바꾸지 않는다(06-16). 마지막 파일 삭제도 모달 없음. 삭제 뒤 결과 줄 `증빙 삭제 · {파일명}` + 3차 `되돌리기`(S21과 같음, r2 F10). 성공 토스트 없음.
 - **줄 삭제:** 04 S16 `리저브 줄 삭제` 확인 모달에 결과 줄 하나 `증빙 {N}개 함께 보관`(N ≥ 1일 때, Copywriting 「Destructive — 리저브 줄 삭제」).
-- **오류:** Copywriting 「Error — 증빙 업로드」(번호 없는 중복 문구). 권리 밖 직접 호출은 서버 거부 — 그 행 오류 자리 `리저브 쓰기 권한 없음`(금액 없음 — 04-07 `denyWrite`).
+- **오류:** Copywriting 「Error — 증빙 업로드」(번호 없는 중복 문구). 권리 밖 직접 호출은 서버 거부 — 그 행 오류 자리 `리저브 기록 권한 없음`(금액 없음 — 04 상수 `FORBIDDEN_MESSAGE`(`domain/reserves/index.ts`) 그대로 · 04-07 `denyWrite`, r3).
 - **폭:** 1024~1279 — 열이 P2라 그대로 서고 쓰기가 된다. 700~1023(보기 전용, DR-36) — 열은 읽기이고 펼침은 파일 행만(첨부 영역 없음). **폰(<700)은 읽기만(rev 9, DR-2 · O-22 기본값)** — 열은 P2 접힌 줄에 `증빙 2`(글자, 버튼 아님), 행 시트(§7-3 (바))의 접힌 값 목록에 §7-8 첨부 행(썸네일 72×96 + 파일명 · 장수 · 용량 + 3차 `크게 보기`)으로 본다. 폰 업로드는 없다 — 리저브 표가 1024 미만 보기 전용이고 행 시트는 보기 전용 계약이다(쓰는 사람은 책상의 경영관리).
 
 ---
+
+### S23. 반려 · 회수 지출결의 종결 — 문서 화면 `/expenses/[id]` (`DetailScreen` 행동 자리 + `ui/confirm-dialog`) — 기안자 · 경영관리 (r3)
+
+Phase 5에서 넘어온 일(사용자 결정 2026-09-26 05 U2 · 05 브랜치 todo `2026-09-26-phase-6-rejected-expense-close-path` · REVIEWS C10). 번호를 받은 반려 · 회수 지출결의가 그 견적 줄의 문을 계속 닫고(D-66) · 분할 줄의 회차 상한에 계속 들고 · 줄 상태를 `반려`로 붙잡는 것을 끝내는 길이다. **새 컴포넌트 · 새 색 · 서체 · radius 없음** — 05 문서 화면의 행동 자리(`DetailScreen` `actions`)와 `ui/confirm-dialog` 확인 근거 칸(`evidenceField`)만 쓴다. 서버는 06-28(종결 칸은 06-27 스키마 — 결재 공통 모듈 상태값은 건드리지 않는다).
+
+- **누가(U-3 — 사용자 확정 2026-10-05 카드):** 그 문서의 **기안자** + **경영관리**(지급 권한자 `expenses.payments` write — 종결 전용 키가 필요하면 06-27이 더한다). 그 밖의 사람(결재자 · 팀장 · 대표)에게는 버튼을 렌더하지 않는다(비활성 없음 — 「권한·노출」 렌더 규칙, D-601).
+- **언제:** 결재 상태가 `반려` 또는 `회수`일 때만. 작성 중 · 결재 중 · 결재 통과 · 이미 `종결`에는 버튼이 없다.
+- **자리:** 05 문서 화면 머리 행동 자리의 **2차 `종결`**(`actions.secondary`, 1차 왼쪽). 1차는 05 그대로(기안자의 다시 제출 류 — 05 표면)이고 종결이 1차를 빼앗지 않는다. 붉은 버튼 없음 — 위험은 확인 모달이 가른다(SYSTEM §7 컴포넌트 규칙 「위험 행동은 확인 모달로 구분」 · §7-17 확인 모달).
+- **확인 모달(되돌릴 수 없는 일이라 확인 창 허용 — CLAUDE.md §7):** Copywriting 「Destructive — 지출결의 종결(S23, r3)」. 사유 한 칸 필수(`evidenceField`, 긴 칸) — 비면 1차 비활성 + 「Error — 사유 근거 칸」. 제출 중 1차 `종결…` + `aria-disabled`, `Ctrl+Enter` 연타 · 닫기 무시.
+- **뒤:** 모달이 닫히고 같은 문서 화면이 제자리에서 다시 선다 — 제목 옆 상태 낱말 `종결`(`muted`, `ui/status-tag/status-map.ts`에 더한다 — SP-2 보강 줄 · Color 「상태 낱말」), 메타 한 줄 `종결 · {이름} {MM-DD} · {사유}`, 행동 자리는 비고 읽기 전용(다시 제출 · 종결 · 증빙 붙이기 · 떼기 없음). 토스트 없음. 포커스 → 제목. 행동 로그 `종결 · {사유}`는 같은 트랜잭션, 끌 수 없는 종류(06-28).
+- **되돌림 없음 · 번호 재사용 없음:** 종결 문서는 다시 열지 않는다. 같은 비용은 그 견적 줄의 문(S14)에서 새 지출결의(새 번호)로 올린다 — 종결로 줄의 문이 열린다.
+- **종결 문서를 빼는 곳(서버 06-28 · 소비 플랜):** 줄 문 판정 `expenseLineDoor` 입력 · `listNumberedByLines` · 분할 회차 상한 `remainingForInstallments` 호출부 · S14 견적 줄 상태 파생(종결만 남은 줄은 `반려`가 아니라 `미착수`, 06-13) · S18 미결 지출결의(D-611 집계, 06-19 · 06-22) · S19 「내 차례」(06-23) · 홈 「막힌 문서」 · 카드 쪽 「살아 있는 지출결의」(06-07). S1 지급 대상에는 결재 통과 문서만 들어 원래 없다.
+- **목록(05 `/expenses`):** 상태 열에 낱말 `종결`(muted)만 더한다 — 새 필터 값 · 그룹은 더하지 않는다(05 목록 규칙 그대로).
+- **증빙:** 종결 문서의 첨부는 읽기만(붙이기 · 떼기 없음). 파일은 남고 `hasEvidence` 판정 대상에서 빠진다(종결 문서는 어느 집계에도 들지 않는다).
+- **동시성:** 모달을 연 사이 기안자가 다시 제출했거나 다른 사람이 종결했으면 서버 거부 — 「거부 — 문서 화면 동시성」 꼴(`박서연이 14:01에 다시 제출함 · 새로 고침` · `이미 종결 · 새로 고침`), `새로 고침` 뒤 버튼은 지금 상태대로 다시 선다(대개 사라진다).
+- **폰:** 같은 자리의 2차, 확인은 아래 시트(§7-8 폰 위험 행동 시트 · §7-17). 한 칸 입력이라 1024 미만에서도 선다.
 
 ## 권한·노출 (역할별)
 
@@ -933,23 +1037,26 @@ Phase 4에서 넘어온 D-60(리저브 줄 증빙 첨부). **새 컴포넌트 �
 | S1 지급 대상 보기 | 기본 보기 · 선택 · 이체액 편집 · 일괄 지급 완료 | 보기 없음(필터 값에 없음) | 없음 | 없음 | 없음(지급 완료 보기만) |
 | S2 일괄 지급 모달 | 연다 | — | — | — | — |
 | S3 지급 완료 보기 | 읽기 전부 | 자기 프로젝트 문서의 상태 열 `지급 완료` | 자기 문서의 상태 열 | 자기 팀 문서의 상태 열 | 읽기 전부 · 1차 없음 |
-| S4 증빙 확인부 | 금액 `바꾸기` · `증빙 확인` · `증빙 면제` | 읽기 + 2행 `확인은 경영관리` · 증빙 파일·금액 편집은 Phase 5 규칙 | PM과 같음(기안자일 때) | 읽기 | 읽기 · 행동 줄 없음 |
+| S4 증빙 확인부 | 금액 `바꾸기` · `증빙 확인` · `증빙 면제` | 읽기 + 2행 `확인은 경영관리` · 증빙 붙이기 · 떼기는 05 규칙(승인 뒤 기안자 붙이기만 — 완료 프로젝트는 붙이기 없음, U-4) | PM과 같음(기안자일 때) | 읽기 | 읽기 · 행동 줄 없음 |
 | S5 지급 섹션 | 지급 완료 · 지급 예정일 바꾸기 · 지급 취소 · 계좌 보기 | 지급 예정일 · 이체액 · 지급일 읽기 · **계좌 행 없음**(O-17) | PM과 같음 | PM과 같음 | 읽기 · 계좌 행 없음 · 행동 없음 |
+| 결재 중 증빙 붙이기(05-09 `expenses.evidence_attach`, 06의 의존) | 그 권한이 켜진 사람만 붙인다 · 떼기 없음 | 없음 | 없음(잠김 한 줄은 05 표면) | 없음 | 없음 |
+| 승인 뒤 증빙 | 무효는 시스템 관리자(`expenses.evidence_void`, 05) | 기안자일 때만 붙이기 | 붙이기(떼기 없음) | 기안자일 때만 | 없음 |
 | S6 선결제 칸 | (기안할 때만) | 켜고 사유 적기 · 제출 전까지만(O-4) | 같음 | 같음 | — |
-| S8 카드 사용 목록 | 전부 + 등록 필터 | 자기 카드·자기 팀 카드·자기가 등록한 것 | PM과 같음 | 자기 팀 카드 포함(직원과 같은 범위) | 전부 · 읽기 |
-| S9 카드 사용 폼 | 새 건: 활성 카드 전부(대리 등록 권한자) · 남의 카드면 `경영관리 등록` · 완료 프로젝트 `견적 외 비용`. 수정: 그 건의 카드 읽기 — 구매 완료로 생긴 건은 구매 완료한 구매 권한자도(대리 등록 권한 없이, 삭제 없음). 구매 완료로 생긴 건 + `purchases` write면 카드 `Select`(활성 카드 전부, 행동 로그 `카드 고침`) | 새 건: 자기 카드·팀 카드만 · 수정·삭제는 자기가 등록한 것(O-11), 카드는 그 건의 것 읽기 | PM과 같음 | PM과 같음 | 폼 없음(행 시트 보기) |
-| S11 구매 요청 목록 | 전부 · `구매 완료` · 남의 요청 취소(사유) | 자기 요청 + 담당 프로젝트 줄의 요청 · 자기 `신청` 취소 | 자기 요청 · 자기 `신청` 취소 | 직원과 같음 | 전부 · 읽기 |
-| S12 구매 요청 폼 | 신청 가능 | 신청 가능 | 신청 가능 | 신청 가능 | 1차 없음 |
-| S13 구매 완료 모드 | 연다 | 없음 | 없음 | 없음 | 없음 |
+| S8 카드 사용 목록 | 전부 + 등록 필터 | 자기 카드·자기 팀 카드·자기가 등록한 것(공용 카드는 자기가 등록한 것만 — Q5 · 공용 카드 등록은 대리 등록 권한자만, r3 U-2) | PM과 같음 | 자기 팀 카드 포함(직원과 같은 범위) | 전부 · 읽기 |
+| S9 카드 사용 패널 | 새 건: 활성 카드 전부(대리 등록 권한자) · 남의 카드면 `경영관리 등록` · 완료 프로젝트 `견적 외 비용`. 수정: 그 건의 카드 읽기 — 구매 완료로 생긴 건은 구매 완료한 구매 권한자도(대리 등록 권한 없이, 삭제 없음). 구매 완료로 생긴 건 + `purchases` write면 카드 `Select`(활성 카드 전부, 행동 로그 `카드 고침`) | 새 건: 자기 카드·팀 카드(공용 카드는 대리 등록 권한자만 — r3 U-2) · 수정·삭제는 자기가 등록한 것(O-11), 카드는 그 건의 것 읽기 | PM과 같음 | PM과 같음 | 폼 없음(행 시트 보기) |
+| S11 구매 요청 목록 | 전부 · `구매 완료` · 남의 요청 취소(사유) | 자기 요청 + 담당 프로젝트 줄의 요청 · 자기 `신청됨` 취소 | 자기 요청 · 자기 `신청됨` 취소 | 직원과 같음 | 전부 · 읽기 |
+| S12 구매 요청 패널 | 신청 가능 | 신청 가능 | 신청 가능 | 신청 가능 | 1차 없음 |
+| S13 구매 완료 패널 | 연다 | 없음 | 없음 | 없음 | 없음 |
 | S14 견적 줄 표 행 행동 | Phase 5 규칙 그대로 + 문 가르기 | `지출결의 올리기` / `구매 요청`(온라인구매 줄) | 프로젝트 쓰기 권한이 있을 때만 PM과 같음 | 읽기 | 읽기 |
 | S15 상세 카드 섹션 | 금액 열 포함 | `quote.amount`를 볼 수 있으면 금액 열(서버가 칸을 뺀다) | 같음 | 같음 | 전부 |
 | S16 발행 요청 표 | `발행 줄로`(매출 기록 권한) | 추가·수정·`발행 요청 취소`(요청 상태 · 미연결 줄) | 읽기(발행액 볼 수 있을 때만 금액 — A-605) | 읽기(A-605) | 읽기 |
-| S17 발행 요청 목록 | 전부 · `요청` 행 3차 `발행 줄 입력` · `발행됨`·`취소` 행 3차 `요청 보기` | 없음(자기 요청은 상세 표에서 본다) | 없음 | 없음 | 읽기 · 프로젝트 목록의 3차 `발행 요청` 링크로 들어온다(S17 진입) |
+| S17 발행 요청 목록 | 전부 · `신청됨` 행 3차 `발행 줄 입력` · `발행됨`·`취소` 행 3차 `요청 보기` | 없음(자기 요청은 상세 표에서 본다) | 없음 | 없음 | 읽기 · 프로젝트 목록의 3차 `발행 요청` 링크로 들어온다(S17 진입) |
 | S18 완료 전 점검 | 행 3차 중 권한 안의 것 | 섹션 보기 · 기안 버튼 막힘 이유 · 권한 안의 3차 | 프로젝트를 볼 수 있으면 읽기 | 읽기 | 승인 버튼 앞 재점검(O-16) · 읽기 |
-| S19 내 차례 | 지급·구매 요청·발행 요청 묶음 줄 | 선결제 기한 초과 · 결재 통과 · 증빙 없음 · 지급 대기(H-1) · 완료 전 점검 막힘 | 자기 선결제 기한 초과 | (결재 항목은 04.1) | (결재 항목은 04.1 · 이 페이즈 항목 없음) |
+| S19 내 차례 | 지급·구매 요청·발행 요청 묶음 줄 | 완료 전 점검 막힘 · (기안자일 때) 직원과 같음 | 자기 문서의 선결제 기한 초과 · 결재 통과 · 증빙 없음 · 지급 대기(H-1 — rev 10 받는 사람 = 기안자) | (결재 항목은 04.1) | (결재 항목은 04.1 · 이 페이즈 항목 없음) |
 | S20 설정 | 관리자만(권한자와 별개) | — | — | — | — |
 | S21 차수 승인 증빙(D-56) | 차수 섹션을 볼 수 있고 `quote.amount`가 있으면 읽기 | 담당 PM + `projects` 쓰기 + 승인 표시 켜짐 + 완료 아님이면 올리기 · 삭제(서버 값) | `quote.amount`가 있으면 읽기 | 같음 | `quote.amount`가 있으면 읽기 · 행동 없음 |
 | S22 리저브 줄 증빙(D-60) | `pnl` 쓰기 + `reserve.amount`면 ≥1024에서 올리기 · 삭제, 폰 읽기(O-22) | 리저브 읽기 권리(`pnl` 보기 + `reserve.amount`)가 있을 때만 읽기 | 같음 | 같음 | 같음(읽기) |
+| S23 지출결의 종결(r3) | 반려 · 회수 문서에 2차 `종결`(지급 권한자 — U-3 추천안) | 자기가 기안한 반려 · 회수 문서에 2차 `종결` | 같음(기안자일 때) | 기안자일 때만 | 없음(읽기 — 상태 `종결`) |
 
 - **대표 = 전부 읽기, 행동 0**(D-601). 대표 화면에 `지급 완료`·`증빙 확인`·`구매 완료` 버튼이 비활성으로도 없다. 대표가 볼 때 다음 한 수 자리는 `지급은 경영관리` 류 담당 표기다.
 - **계좌:** 계좌 행·계좌 열·`번호 보기`는 지급 권한자에게만 서버가 보낸다(UA-613 마스킹 + O-17). 다른 역할의 DOM에 계좌 문자열이 없다 — 마스킹된 꼬리 4자리도 없다.
@@ -971,7 +1078,7 @@ Phase 4에서 넘어온 D-60(리저브 줄 증빙 첨부). **새 컴포넌트 �
 | 차이 | 이체액 − 지급 총액. 0이면 줄 자체가 없다. 부호를 붙인다(`-3,300` · `+1,200`) | S1 2행 · S5 힌트 · S3 2행 |
 | 공급가 역산 | **표시 전용(사후 참고) — 비용은 증빙 금액/승인액 그대로다**(D-605, 차액을 비용에 넣으려면 조정 줄 D-83). **차이(이체액 − 지급 총액)는 규칙과 관계없이 늘 보인다**(D-605 「차이 표시」 — 위 「차이」 줄). 역산 묶음은 **서버가 값을 보낼 때만** 선다: `vat_surcharge`는 이체액에서 `grossFromTotal()`로 늘 보낸다. `none`·`company_borne`은 지급액 = 공급가라(`tax.ts:75·127`) 역산 값이 이체액과 같아 보내지 않는다. `withholding`은 보통 경우 `grossFromTotal(이체액, -세율, …)`로 풀리지만 면세 기준(`tax.ts:95-103`)·최소 징수액(`tax.ts:106-107`)이 원천징수를 0으로 만든 경우에는 그 식이 틀린다 — 두 분기를 지키는 역산을 `domain/money`에 더할지는 계획이 정하고(06-CONTEXT:23 ↔ :31, UA-619), 더하지 않으면 보내지 않는다. 화면 분기는 「값이 있으면 보인다」 하나다 | S5 지급 뒤 2행(서버가 보낼 때만) |
 | 카드 공급가 · 부가세 | 규칙별: `vat_surcharge` = 결제 합계에서 `grossFromTotal()` 역산(D-607) · `none` = 공급가 = 결제 합계(`규칙 없음`). 카드 결제에 원천징수·회사 대납은 없다 — 그 규칙의 증빙 종류는 카드 폼 옵션에서 서버가 빼서 보낸다(계획이 코드표로 확인). 거래처 기본값이 뺀 종류이거나 저장된 건의 종류가 뺀 종류가 된 경우는 S9 「증빙 종류 옵션과 거래처 기본값」. 역산 반올림 잔차(`recomputeDeltaKrw`, 매출 입금 역산 선례 RESEARCH 312행)가 0이 아니면 서버 계산 한 줄 끝 `· 반올림 차이 N`. 입력 칸 없음 | S8 2행 · S9 서버 계산 한 줄 · S15 2행 |
-| 외화 카드 | 외화 금액 × 환율 → 원화 결제 합계, 그다음 역산(O-7) | S9 · S8 2행 `USD 900.00 · 1,327.40` |
+| 외화 카드 | 외화 금액 × 환율 → 원화 결제 합계, 그다음 역산(O-7) | S9 · S8 2행 `USD 1,000.00 @1,350 · 공급가 1,227,273`(「표시 — 카드 사용 결제 합계 2행」 한 형식, r2 F12) |
 | 발행 요청 합계 | 금액(공급가) + 부가세(발행 줄과 같은 서버 규칙 — 세율은 희망 발행일 기준 설정 값, `tax.ts:82`. 화면에 `%` 글자 없음) | S16 2행 · S17 |
 | 구매 요청 예상 금액 | Phase 4 금액 모델(`moneyColumns()` 통화·외화·환율·원화) 그대로. 외화면 `toKrw()` 원화 환산, 저장 때 환율 필수. 목록 합계·구매 완료 차이는 원화로만(S11·S12·S13) | S11 · S12 · S13 |
 | 점검 합계 | 계약 금액 · 발행 합계 · 차이(PROJ-06 매출 미입력 그룹) | S18 |
@@ -984,24 +1091,27 @@ Phase 4에서 넘어온 D-60(리저브 줄 증빙 첨부). **새 컴포넌트 �
     확인만 기록하고 지급 총액·차이를 다시 계산하지 않으며, S4는 지급 뒤 서버 계산 한 줄(부가세 · 지급 총액)을 세우지 않는다 — `증빙 금액`(공급가) 값만 보인다(S4 「지급 뒤 들어온 증빙」).
     그래서 `지급 총액`이라는 라벨은 한 문서에 늘 한 값이다(기본값 — 계획이 `domain/payments` 저장 칸으로 확인).
   - **`incomeType`(원천징수 규칙만, UA-620):** 서버가 증빙 종류 코드로 정해 넘긴다(`business_income` → `"business"`, 그 밖 → `"other"`). 새 계산 없음 · 화면 분기 없음.
-- **숫자 모양:** 금액은 `.num`(tabular-nums, 우측 정렬, 세 자리 쉼표, `원` 붙이지 않음 — §3 숫자 규칙). 번호·계좌·카드 끝자리는 식별자형(쉼표 없음, 좌측 정렬): `26001-0004` ·
+- **숫자 모양:** 금액은 `Num`(`ui/num` — tabular-nums는 그 안에서만, 우측 정렬, 세 자리 쉼표, `원` 붙이지 않음 — §3 숫자 규칙). 번호·계좌·카드 끝자리는 식별자형(쉼표 없음, 좌측 정렬): `26001-0004` ·
   `26001-C0001` · `신한 4321`. 날짜는 목록 `09-19`, 문서 화면 `2026-09-19`(§3).
-- **서버 계산 한 줄**(§6-3 423행 모양)은 입력이 바뀌면 서버 액션 응답으로 다시 온다. 오는 동안 이전 값을 `--faint`로 두고 빈칸·스켈레톤으로 바꾸지 않는다.
+- **서버 계산 한 줄**(§6-3 모양)은 입력이 바뀌면 서버 액션 응답으로 다시 온다. 오는 동안 이전 값을 `--text-faint`로 두고 빈칸·스켈레톤으로 바꾸지 않는다.
 - **0과 빈 값:** 금액 0은 `0`, 값 없음은 `—`. 차이 0은 표시하지 않는다(`차이 0` 금지).
-- **낙관적 잠금:** 편집값을 보내는 모든 저장(S1 행 · S1 제자리 증빙 확인 · S4 금액 · S5 · S9 수정 · S16)은 `version`을 함께 보낸다. S1 제자리 증빙 확인은 응답의 새 `version`으로 그 행 데이터를 바꾼다(다음 일괄 처리가 옛 `version`을 보내지 않게). **PM의 증빙 변경(더하기 · 떼기 · 증빙 금액 고침)도 확인 기록이 있든 없든 문서 `version`을 올린다**(06-11 훅, r2 B-1) — 그래서 모달 · 문서 화면이 보여 준 뒤 바뀐 증빙은 옛 `version`으로 확인되지 않는다. 어긋나면 Copywriting 「거부 — 문서 화면 동시성」과 같은 문구를 행/칸 오류 자리에 쓴다.
+- **낙관적 잠금:** 편집값을 보내는 모든 저장(S1 행 · S1 제자리 증빙 확인 · S4 금액 · S5 · S9 수정 · S16 · S23 종결)은 `version`을 함께 보낸다. S1 제자리 증빙 확인은 응답의 새 `version`으로 그 행 데이터를 바꾼다(다음 일괄 처리가 옛 `version`을 보내지 않게). **증빙 변경 — 결재 중 `evidence_attach` 권한자의 추가 · 승인 뒤 기안자의 추가(+ 증빙 금액) · 시스템 관리자의 무효 · 작성 중 · 반려 · 회수의 떼기 — 도 확인 기록이 있든 없든 문서 `version`을 올린다**(06-11 훅 · 05-09, r2 B-1 — rev 10 05 규칙) — 그래서 모달 · 문서 화면이 보여 준 뒤 바뀐 증빙은 옛 `version`으로 확인되지 않는다. 어긋나면 Copywriting 「거부 — 문서 화면 동시성」과 같은 문구를 행/칸 오류 자리에 쓴다.
 
 ---
 
 ## 시스템 변경 제안 (계획의 첫 태스크가 `DECISIONS.md` → `SYSTEM.md` 순서로 옮긴다 — 이 문서는 두 파일을 고치지 않는다)
 
-**토큰 변경 0**(색·서체·radius·그림자·간격·모션 전부). 일곱 제안(SP-1~SP-7) 모두 **규칙·variant·낱말**이다(SP-7은 rev 9 — `/plan-design-review` DR-4). 제안이 거부되면 해당 표면을 이 문서에서 고친다.
+**토큰 변경 0**(색·서체·radius·그림자·간격·모션 전부). 제안 SP-1~SP-8은 모두 **규칙·variant·낱말**이다(SP-7은 rev 9 — DR-4, SP-8은 rev 10). **SP-6은 rev 10에서 철회.** 제안이 거부되면 해당 표면을 이 문서에서 고친다.
+**계획 첫 태스크(06-01)의 승격 순서(rev 10):** SP-1 · SP-4 · SP-8을 `DECISIONS.md`에 기록 → `SYSTEM.md` §7-3 · §6-1 · §7-8에 반영 → SP-2 낱말을 §7-5 보강 줄 + `ui/status-tag/status-map.ts`에 더함. SP-3 · SP-5 · SP-7도 같은 태스크에서 기록한다. 이 문서는 `docs/design/*`을 고치지 않는다.
 
 ### SP-1. §7-3에 「일괄 처리 표」 — 선택 열과 행 단위 부분 처리
-- **내용:** 편집 표의 variant `selectable`. 맨 왼쪽 선택 열(네이티브 체크박스 · `accent-color: var(--native-accent)`(Color 절과 같음) · 칸 폭 = 28 + `--cell-pad-x`×2(44, Spacing 절) ·
+- **내용(rev 10 — 04.6 `ui/table` 위에 다시 씀):** 편집 표의 variant `selectable`(지금 `ui/table`에 선택 열 0 — UA-604). 맨 왼쪽 선택 열(네이티브 체크박스 · `accent-color: var(--native-accent)` · 칸 폭 `calc(var(--row-number-w) + 2 * var(--cell-pad-x))`(Spacing 절) · 행 높이 `--row-h` ·
+  고른 행 면 `--accent-weak`(범위 선택과 같은 면 — Table.module.css:243-245. `--surface-selected` 위에서는 `--status-success` · `--text-faint` 글자가 4.5:1 미만이라 쓰지 않는다, Color 절) ·
   머리글 셀 = 이 쪽의 고를 수 있는 행 전체(섞이면 `indeterminate`) · `Space` = 현재 행 고르기). 고를 수 있는지는 서버가 행마다 보낸다(못 고르는 행의 체크박스는
   `aria-disabled` + `aria-describedby` → 그 행 안의 이유 글자 — 04-UI-SPEC ⑦(Phase 4 디자인 리뷰 11번 항목), 이유 없는 비활성 없음). 1차는 표 위 행동 줄 하나(`{동사} N Ctrl+Enter` — 예 `지급 완료 5`, 「건」 없음).
-  **저장은 행마다 따로 커밋되고**(AS1), 막힌 행은 자리를 유지하며 행 아래 `--fs-sm --danger` 이유. 결과 글자 `시:분 {동사} N건 · 막힘 N건`
-  (예 `14:02 지급 완료 5건 · 막힘 2건`, 막힘 0이면 앞 묶음만)은 필터 줄의 필터 다음 자리 — 1차(오른쪽 끝)와 떨어진 자리이고 시각이 앞이라 1차 라벨과 붙어 읽히지 않는다(rev 9, M-2). 행 배경 칠 금지(§1-3 규칙 3). 힌트 줄 낱말 `고르기 Space` 추가.
+  **저장은 행마다 따로 커밋되고**(AS1), 막힌 행은 자리를 유지하며 행 아래 `--text-aux --status-danger` 이유. 결과 글자 `시:분 {동사} N건 · 막힘 N건`
+  (예 `14:02 지급 완료 5건 · 막힘 2건`, 막힘 0이면 앞 묶음만)은 필터 줄의 필터 다음 자리 — 1차(오른쪽 끝)와 떨어진 자리이고 시각이 앞이라 1차 라벨과 붙어 읽히지 않는다(rev 9, M-2). 막힌 행 배경 칠 금지(§1-3 규칙 3 — 면은 고른 행의 `--accent-weak` 하나). 힌트 줄 낱말 `고르기 Space` 추가.
+  **`ListScreen.primaryAction` 버튼 갈래(rev 10):** 지금은 링크 갈래뿐이다(`{ label, href, phoneHidden? }`, ListScreen.tsx:13). 선택 표의 1차(`지급 완료 N`)는 버튼 · `aria-disabled` + 이유 · kbd가 필요하므로 같은 자리(필터 줄 오른쪽 끝)에 `Button` 갈래를 더한다 — 1024 미만은 렌더하지 않는다(편집 표는 1024 이상).
   **(rev 9 보강 — `/plan-design-review`)**
   - **행 선택의 뜻은 체크박스 `checked` 하나다.** 행 · 셀에 `aria-selected`를 선택 뜻으로 쓰지 않는다 — `aria-selected`는 §10 편집 표의 활성 셀 뜻 그대로다(DR-7).
   - **`selectable` 표에는 새 줄이 없다** — 표 안 `Ctrl+Enter`는 §7-3의 「새 줄」이 아니라 화면 1차(`{동사} N`)다(DR-8).
@@ -1011,72 +1121,100 @@ Phase 4에서 넘어온 D-60(리저브 줄 증빙 첨부). **새 컴포넌트 �
 - **버린 대안:** (a) 행마다 `지급 완료` 3차 — 20건이면 20번 누르고 20번 모달. (b) 체크박스 대신 행 범위 선택(`use-grid-keyboard` 범위) — 떨어진 행을 못 고르고 폰에서 안 된다.
   (c) 전부-아니면-전무 유지 — 위 이유.
 
-### SP-2. §7-5 상태 낱말·종류 추가 (A-610 해소)
-- **내용:** Color 절 매핑표의 낱말을 §7-5 표에 그대로 옮긴다 — 견적 줄 파생(`지출결의 중` · `지급 완료` · `구매 요청` · `카드 사용` · `증빙 없음`) · 증빙 확인(`확인 전` · `확인됨` · `면제` ·
-  `선결제`) · 구매 요청(`신청` · `구매 완료` · `취소`) · 발행 요청(`요청` · `발행됨` · `취소`). 종류는 기존 `accent`/`success`/`warning`/`danger`/`muted` 다섯 안. 견적 줄 한 값 우선순위
-  (취소 > 반려 > 증빙 없음 > 지출결의 중 > 구매 요청 > 지급 완료 > 카드 사용 > 미착수)를 §7-5 주석으로. §7-5의 「4자 이하」 길이 규칙은 **테두리 있는 `tag` 변형에만** 걸린다고 명시한다
-  (`지출결의 중`은 `text` 변형으로만 쓴다).
-- **이유:** 낱말이 화면마다 따로 생기면 같은 상태가 두 이름을 갖는다(DESIGN §4 규칙 4).
-- **버린 대안:** 새 색 종류(`info` 등) — 토큰 신설이라 금지. `지출결의 중`을 `결의 중`으로 줄이기 — 업무 낱말이 아니다.
+### SP-2. §7-5 보강 한 줄 + `status-map.ts` 낱말 (A-610 해소)
+- **내용(rev 10):** §7-5에 보강 한 줄 — 「Phase 6: 견적 줄 파생 · 증빙 확인 · 구매 요청 · 발행 요청 낱말은 `status-map.ts`가 정본(색 종류 다섯 안), 견적 줄 한 값 우선순위 취소 > 반려 > 증빙 없음 > 지출결의 중 > 구매 요청 중 > 지급 완료 > 카드 사용 > 미착수, `지출결의 중`은 `text` 변형만(「4자 이하」는 `tag` 변형에만)」. 낱말 열은 Color 절 「상태 낱말」 그대로 `ui/status-tag/status-map.ts` 한 표에 더한다(새 `status-display.ts` 없음). 기존 낱말 `증빙 없음` · `반려` · `미착수` · `취소` · `신청됨`은 다시 쓴다 — `신청` · `요청`을 새로 만들지 않는다.
+- **대비 단언(r2 F16):** 이 문서가 잰 대비 쌍(Color 절 `--accent-weak` 위 다섯 · `--status-warning` × `--surface-group`)은 SYSTEM :111-112 허용 쌍 목록에 없다 — 06-01이 `test/unit/design/tokens.test.ts` 단언에 더한다(새 토큰 아님).
+- **이유:** 낱말이 화면마다 따로 생기면 같은 상태가 두 이름을 갖는다(DESIGN §4 규칙 4). `status-map.ts`가 표 밖 낱말을 타입 오류로 막으므로(:1-2) 한 표에 더해야 지켜진다.
+- **버린 대안:** 새 색 종류(`info` 등) — 토큰 신설이라 금지. `지출결의 중`을 `결의 중`으로 줄이기 — 업무 낱말이 아니다. 페이즈 전용 `status-display.ts` — 같은 낱말의 두 정본.
 
 ### SP-3. §6-3에 「제출 뒤 문서 화면」 — 1차 = 보는 사람의 다음 한 수
-- **내용:** §6-3 폼 템플릿의 제출 뒤 모양. 한 열 720, 읽기 칸 → 업무 섹션(2px 선 제목) → 행동 줄. 행동 줄 1차는 **상태 × 권한**으로 하나만 정해진다(지출결의: `증빙 확인` → `지급 완료` → 없음,
+- **내용:** §6-3 폼 템플릿의 제출 뒤 모양 — 틀은 `DetailScreen`(rev 10). 한 열 `--form-max`, 읽기 칸 → 업무 섹션(`DetailScreen.Section` — 제목 `--text-subtitle` · 위 1px `--border-row`) → 행동 줄(`actions.primary` 하나). 행동 줄 1차는 **상태 × 권한**으로 하나만 정해진다(지출결의: `증빙 확인` → `지급 완료` → 없음,
   2차 `지급 취소`). 1차가 없는 사람에게는 행동 줄 자리에 담당 표기 한 줄.
-  **문서 화면 안의 제자리 편집 칸**은 §7-15 1030행 일반 규칙(`Form.Actions` 없는 단일 칸 · `Enter` 제출 막음 · 저장은 화면 1차) 그대로다. 저장 방법은 둘 중 하나로 칸마다 정한다:
+  **문서 화면 안의 제자리 편집 칸**은 §7-15 :1160 일반 규칙(`Form.Actions` 없는 단일 칸 · `Enter` 제출 막음 · 저장은 화면 1차) 그대로다. 저장 방법은 둘 중 하나로 칸마다 정한다:
   ① 칸이 지금 1차 행동의 입력이면(증빙 금액 → `증빙 확인`, 이체액·지급일 → `지급 완료`) 그 1차가 값과 행동을 한 번에 저장한다. ② 칸이 1차 행동과 따로 저장되는 값이면(지급 예정일)
   칸이 dirty인 동안 1차가 `{칸} 저장 Ctrl+Enter`(`예정일 저장`)로 바뀌고, 저장하거나 `Esc`로 되돌리면 상태의 1차로 돌아온다 — 1차는 여전히 하나이고, 저장 안 한 값을 두고 상태를 바꾸는
   행동이 일어날 수 없다(§7-3 (아) 「저장 안 한 편집이 있으면 문서 상태를 바꾸는 행동은 막힌다」와 같은 결). ②는 그 칸만 저장하고 ①의 입력값은 남긴다.
-- **이유:** Phase 5·6·04.1 문서 화면이 같은 뼈대를 쓴다. 템플릿이 없으면 DESIGN §4 규칙 1(템플릿에서 시작)을 어긴다. 제자리 편집 ②는 1030행이 상세 화면의 `일괄 저장 N`에 맡기는 것을
+- **이유:** Phase 5·6·04.1 문서 화면이 같은 뼈대를 쓴다. 템플릿이 없으면 DESIGN §4 규칙 1(템플릿에서 시작)을 어긴다. 제자리 편집 ②는 §7-15 :1160이 상세 화면의 `일괄 저장 N`에 맡기는 것을
   1차가 업무 행동인 문서 화면에 옮긴 것이다 — 칸 옆 저장 버튼(두 번째 저장 경로)을 두지 않고, 업무 1차가 막혀 있어도(증빙 없음) 예정일은 저장된다.
 - **버린 대안:** §6-2 상세 템플릿 재사용 — 상세는 여러 섹션의 편집 표가 주인공이고 1차가 `일괄 저장`이라 「다음 한 수」 모양이 아니다.
 
 ### SP-4. §6-1에 「하위 목록」 진입 규칙
-- **내용:** 1차 메뉴 안의 하위 목록은 부모 목록 필터 줄 오른쪽 3차 링크(`{목록 이름} {열린 건수}`, 0이면 건수 없이 이름만)와 「내 차례」 두 곳에서 들어간다. 하위 목록의 PageHeader 부제 =
-  부모 메뉴 이름. 04-UI-SPEC B-13 `리저브 대장`을 이 규칙의 첫 사례로 적고, 이 페이즈의 `/cards/purchases` · `/projects/issue-requests`를 §6-1 적용 목록에 더한다.
+- **내용(rev 10):** 1차 메뉴 안의 하위 목록은 부모 목록 **필터 묶음 끝**의 3차 링크(`{목록 이름} {열린 건수}`, 0이면 건수 없이 이름만 — 1차와 떨어진 자리)와 「내 차례」 두 곳에서 들어간다. 하위 목록도 `ListScreen`이고 **부제가 없다**(ListScreen.tsx:9 — 부모는 셸의 현재 메뉴가 말한다). 04-UI-SPEC B-13 `리저브 대장`을 이 규칙의 첫 사례로 적고, 이 페이즈의 `/cards/purchases` · `/projects/issue-requests`를 §6-1 적용 목록에 더한다.
 - **이유:** 1차 메뉴는 다섯 고정(D-22)이고 탭은 없다. 선례가 하나 있을 때 규칙으로 올려야 셋째부터 모양이 갈리지 않는다.
 - **버린 대안:** 1차 메뉴 드롭다운 — 메뉴 모양 개정이 크고 폰 하단 탭과 어긋난다. 부모 목록의 필터 값으로 흡수 — 행 모양이 달라 한 표가 못 된다.
 
 ### SP-5. §8 규칙 7 용어 추가
 - **내용:** `지급 완료`(송금·이체 완료 금지) · `이체액` · `지급 총액` · `차이`/`차이 사유` · `증빙 확인`/`증빙 면제` · `선결제` · `경영관리 등록` · `구매 요청`/`구매 완료` · `발행 요청`/`발행 줄` ·
   `완료 전 점검` · `강행`. 정의는 Copywriting 절 「용어」 줄 그대로.
-- **이유:** 토스트 = 누른 1차 라벨(DR-21) 규칙이 성립하려면 동사가 앱 전체에서 하나여야 한다.
+- **이유:** 결과 한 줄 · 결과 줄 = 누른 1차 라벨(DR-21) 규칙이 성립하려면 동사가 앱 전체에서 하나여야 한다.
 - **버린 대안:** 없음(용어 목록 추가는 기존 절차).
 
-### SP-6. §7-10에 「마지막 증빙 삭제」 확인
-- **내용:** 첨부 영역의 파일 삭제는 모달 없이 하되, **그 삭제가 다른 값을 바꾸면**(마지막 증빙 → 증빙 금액 지워짐 · 증빙 확인 풀림) §7-17 확인 모달을 연다. 결과 줄에 바뀌는 값을 적는다.
-- **이유:** 되돌리기 없는 파생 변화가 삭제 한 번에 숨어 있다(EVID-04). §7-17 「결과가 화면 밖 값을 바꾸면 확인」과 같은 결. 카드 전표처럼 떼도 바뀌는 값이 없는
-  첨부는 모달이 없다(S7).
-- **버린 대안:** 삭제 뒤 토스트 `되돌리기` — §7-6은 「실행 취소가 가능하면」 토스트에 3차 `되돌리기`를 허용한다(CLAUDE.md §7도 확인 창보다 되돌리기가 먼저다). 그러나
-  이 삭제는 되돌릴 수 없다: ① 풀린 `증빙 확인`은 경영관리의 행위 기록이라(D-602) PM의 되돌리기가 다시 세울 수 없고, ② 파일 행을 되살리는 경로는 업로드 담당인 Phase 5(A-608)에
-  정해져 있지 않다. 그래서 「확인은 되돌릴 수 없는 일에만」의 대상이다. Phase 5가 지운 파일 행을 되살릴 수 있게 만들면 `확인 전` 갈래(②만 걸리는 경우)는 계획이 토스트
-  `되돌리기`로 바꿀 수 있다.
+### SP-6. ~~§7-10에 「마지막 증빙 삭제」 확인~~ — 철회(rev 10)
+- **철회 이유:** 05 결정(「증빙 판정 규칙」) 뒤에는 이 확인이 걸릴 상태가 없다 — 떼기가 있는 상태(작성 중 · 반려 · 회수)에는 증빙 확인 기록이 없고, 확인 기록이 있는 상태(승인 뒤)에는 떼기가 없다(무효는 시스템 관리자 — 05 표면). §7-10 보통 삭제 그대로. `DECISIONS.md`에 올리지 않는다.
 
 ### SP-7. §7-17 확인 모달에 「첨부 보기 칸」(읽기 전용) — rev 9, DR-4
 - **내용:** `ui/confirm-dialog` 슬롯에 선택 칸 하나 — **첨부 보기 칸**(0~1). 모양은 §7-8 시트 상세의 첨부 행 그대로(파일마다 한 행: 썸네일 72×96 + 파일명 · 장수 · 용량 + 3차 `크게 보기`). 자리 = 부제 아래, 결과 줄 위.
   **보기만 한다** — 올리기 · 삭제 · 입력 없음. `크게 보기`는 새 탭에서 원본을 연다(모달과 그 뒤 화면의 상태는 그대로 — 파일 여는 경로는 Phase 5 첨부의 것, A-608). 파일이 셋을 넘으면 칸 높이는 행 셋에서 멈추고 칸 안만 스크롤한다(제목 · 부제 · 행동 줄은 고정). 폰 시트 골격(§7-17)에서도 같은 칸이 본문 안에 선다.
   쓰는 곳: 확인하는 대상이 파일일 때만 — 이 페이즈는 S1 · S3 제자리 증빙 확인 하나.
+  **상태 계약 둘(r2 Codex R3 — O-21에서 이미 정한 동작을 승격 범위에 넣는다):** ⑴ **열 때 읽기(LOADING)** — 첨부 보기 칸 · 부제 금액 · 결과 줄을 열면서 받는다. 오는 동안 그 자리 `…` + 1차 `aria-disabled`(§7-17 :1224 「열 때 LOADING 없음」의 갈래). ⑵ **새로 고침 뒤 열린 채 다시 세움** — 동시성 거부의 `새로 고침`이 모달을 닫지 않고 새 증빙으로 칸을 다시 그린다(§7-17 :1218 「새로 고침 뒤 닫힘」의 갈래 — 확인하는 파일이 바뀐 것을 그 자리에서 다시 봐야 한다). 두 갈래는 `ui/confirm-dialog` 공용 옵션으로 두고 SYSTEM §7-17에 함께 적는다.
 - **이유:** 증빙 확인은 되돌리는 경로가 없는 행위 기록이다(S4에 「확인 풀기」가 없고 확인은 PM의 증빙 변경으로만 풀린다) — §7-8 「위험 행동 확인에만」과 CLAUDE.md §7 「확인은 되돌릴 수 없는 일에만」의 대상이다. 확인하려면 파일을 봐야 하는데 모달에 볼 자리가 없으면 목록을 떠나야 하고, 그러면 건마다 문서 화면을 오가며 목록의 선택 · 편집이 위험해진다(DR-4 · C-1). 새 시각 요소 0 — 기존 첨부 행 모양의 재사용이고 토큰 변경 0.
 - **버린 대안:** (a) 문서 화면 왕복만(`from=pay` + `다음 확인 전`) — 새 칸은 없지만 건마다 왕복이 남는다(보조 경로로는 남긴다, S1 「문서 화면 왕복」). (b) 목록 행 아래 펼침 섹션에 파일 + 확인 버튼 — 편집 표 안에 행동 자리가 둘이 되어 화면 1차가 흐려진다. (c) 행 시트 — §7-3 (바) 보기 전용 계약을 깬다.
+
+### SP-8. §7-8에 「옆 패널 위의 고르기 목록」 — rev 10 · r3(05 `PickDialog` 위)
+- **내용:** 옆 패널(SYSTEM §7-8 팝업 · 모달 · 옆 패널 · 시트) 안의 「바꾸기」(§6-3 폼 화면)는 패널을 닫지 않고 **패널 위에** 05 `ui/pick-dialog/PickDialog` 검색 고르기(r3)로 연다 — PC 가운데 `--dialog-w` 480 + `--scrim-dialog`, 폰 아래 시트(시트 위 시트). 목록의 `Esc` · `취소`는 목록만 닫고(`preventDefault` — `isPanelCloseKey`, SidePanel.tsx:33-36) 포커스를 누른 `{칸} 바꾸기`로 돌린다. 고르면 값이 패널 칸에 들어가 「입력 버리기」 가드의 바뀐 칸이 되고 포커스는 다음 빈 `바꾸기`(없으면 바뀐 칸의 `바꾸기`). 목록이 열린 동안 패널 `Ctrl+Enter`는 닿지 않는다. 겹침은 둘까지 — 목록 위에 또 목록을 열지 않는다.
+- **컴포넌트(r3 — REVIEWS C11 · U-7, r2 F1 대체):** 05 `ui/pick-dialog/PickDialog`(05 신규, DECISIONS B5 — `PickDialogProps { open, onClose, title, subtitle, searchLabel, search, primaryLabel, noun, resultLine, onPick }` · `PickRow` · `PickGroup` · `PickResult`, 주석에 「06 S10 연결 고르기」)가 이미 검색 칸 · 1차를 가진 고르기다 — **그 위에 얹고 `ui/confirm-dialog`에 새 갈래를 만들지 않는다**(6.1-03 G-4도 「있으면 확장」). 06이 확인하고 모자라면 06-29가 더하는 것 — ⑴ 행 `disabled` + 2행 이유(`aria-disabled` · `aria-describedby`) ⑵ 현재 줄 표시(`--fw-bold` + 왼쪽 2px `--accent`, §6-3 「바꾸기」 원문) ⑶ 1차 `이 줄로 Enter`(`primaryLabel`) ⑷ 목록 상태 계약 — 열 때 목록을 받는 LOADING(§7-7 꼴, 1차 `aria-disabled`) · EMPTY 세 갈래(이유 줄 + 다음 한 수 3차) · ERROR(한 줄 + 2차 `다시 시도`, 1차 비활성) ⑸ 옆 패널 위 겹침(`Esc` `preventDefault`). 실물 확인은 05 머지 뒤 `git grep`(줄 번호 아님). §7-17 「열 때 LOADING 없음」 · 「행 0이면 목록형을 열지 않음」은 `ui/confirm-dialog` 규칙이라 이 고르기에 걸리지 않는다 — SP-8은 SYSTEM §7-8에 고르기 목록 갈래로 적는다.
+- **이유:** 한 건 폼이 옆 패널이 되면서(DECISIONS 2026-10-02) 패널 안의 「바꾸기」 자리가 정해져 있지 않다. 패널 안 「입력 버리기」 `ConfirmDialog`(SidePanel.tsx:283)가 이미 같은 겹침이라 새 모양이 아니다. SYSTEM §7-8 「시트를 겹치지 않는다」는 결재 시트 → 확인 시트(닫고 연다)의 규칙이고, 입력이 남아야 하는 패널은 닫을 수 없다 — 그래서 SYSTEM에 갈래로 적는다(화면 하나만 예외 금지).
+- **버린 대안:** (a) 패널 안 펼침 목록(인라인) — 480 안에 검색 · 목록 · 행동 줄이 들어가 행동 줄이 둘이 된다. (b) 패널을 닫고 목록 → 고른 뒤 패널 다시 열기 — 입력이 URL에 없어 사라진다. (c) 검색 콤보박스 — 견적 줄의 2행(반대쪽 연결 · 남은 실행가 이유)을 담지 못한다.
+
+---
+
+## 사용성 점검 (CLAUDE.md §7 · `.claude/rules/frontend.md` 「화면 사용성 원칙」 — rev 10)
+
+점검 물음 둘 — 「문구 없이 이해되는가」 · 「사용자가 하지 않아도 될 결정이 남았는가」. 사용자가 이미 정한 결정(06-CONTEXT · Q2~Q7 · O-6 · O-21 · O-22)은 바꾸지 않았다.
+
+| 화면 | 주 버튼 하나 | 시스템이 채움 · 계산 | 할 수 없는 선택 | 확인 창 / 되돌리기 | 남은 사람 결정 |
+|---|---|---|---|---|---|
+| S1 · S2 | `지급 완료 N`(모달 1차도 하나) | 이체액 = 지급 총액 · 합계 서버 · 지급일 오늘 | 게이트 행 체크박스 비활성 + 그 행 이유(짝 · 증빙 · 결재) | 모달 = 은행에서 이미 일어난 일의 기록(되돌림은 S5 `지급 취소`) | 어느 건을 고를지 · 지급일(기본 있음) |
+| S3 | 없음(읽기) | 합계 서버 | — | — | 없음 |
+| S4 · S5 | `actions.primary` 하나(「상태 → 1차」 표) | 지급 총액 · 부가세 서버 · 지급일 오늘(미래 허용 Q6) | 권한 밖 버튼은 렌더 안 함 + 담당 표기 | 확인 · 면제 · 지급 취소만 모달(행위 기록), 예정일은 모달 없이 `Esc` 되돌림 | 증빙 금액 고칠지 · 차이 사유(차이 있을 때만) |
+| S6 | (Phase 5 폼 1차) | 기한 = 설정 값 | — | — | 선결제 여부 · 사유 |
+| S8 | `카드 사용 등록` | 월 = 이번 달 | 권리 없는 행에 `수정` · `삭제` 없음 | 삭제 = 즉시 + 결과 줄 `되돌리기` | 없음 |
+| S9 | 패널 1차 하나(`Ctrl+Enter`) | 사용일 오늘(`max`) · 카드 · 연결 = 직전 · 공급가 역산 · 팀 자동 · 증빙 종류 = 거래처 기본 | 옵션 밖 카드 · 카드에 없는 증빙 종류 · 완료 프로젝트 · 반대쪽 줄 · 실행가 소진 줄은 숨김 / 비활성 + 2행 | 「입력 버리기」는 바뀐 칸이 있을 때만 · 등록은 패널 유지(지우기는 S8 행) | 결제 합계 · 가맹점 · (처음 한 번) 연결 |
+| S10 | `이 줄로 Enter` | 검색 첫 포커스 | 반대쪽 · 소진 · 온라인구매 밖 줄은 `aria-disabled` + 2행 이유 | `Esc` = 목록만 닫힘(SP-8) | 줄 고르기 |
+| S11 | `구매 요청` | 기본 보기 `신청됨` | 구매 완료 행에 취소 없음(Q2) | 본인 취소 = 즉시 + `되돌리기`, 남의 취소만 사유 모달(감사 기록) | 없음 |
+| S12 | 패널 1차 | 연결 = 진입 줄 / `팀 비용` · 팀 자동 · 원화 환산 서버 | 온라인구매 밖 줄 비활성 | 등록은 패널 유지 | 품목 · 예상 금액 · 링크 |
+| S13 | 패널 1차 | 결제 합계 = 예상 금액 · 가맹점 = 협력사 · 사용일 오늘 · 팀 자동 | 연결은 고정 텍스트 | 완료 뒤 취소 없음 — 고치기는 S9(Q2) | 카드(여러 장일 때) |
+| S14 | 줄의 문 하나(거래처가 가른다) | 문 가르기 · 상태 파생 서버 | 반대쪽 행동 비활성 + 다음 한 수 | — | 없음 |
+| S15 · S17 · S19 | 없음(읽기 · 링크) | 합계 · 묶음 건수 서버 | 1024 미만 입력 행동 없음 | — | 없음 |
+| S16 | `일괄 저장 Ctrl+S N`(04) | 희망일 오늘 · 부가세 서버 | 발행 줄에 이은 줄 잠김 | 발행 요청 취소 모달(04 줄 삭제 흐름) | 금액 · 희망일 |
+| S18 | (Phase 5 기안 버튼) | 점검 판정 서버 | 막힘이면 기안 비활성 + `점검 보기` | — | 강행(설정이 허용할 때만) |
+| S21 · S22 | 3차 `승인 증빙 N` / `증빙 N` | 개수 · 권리 서버 | 권리 밖이면 첨부 영역 없음 | 삭제 즉시(바뀌는 값 없음) | 없음 |
+| S23(r3) | 05 문서 화면 1차 그대로 · 모달 1차 `종결` 하나 | 부제 · 결과 줄(열리는 줄 문) 서버 | 반려 · 회수 아닌 문서 · 권리 없는 사람에게 버튼 없음 | 확인 모달(되돌릴 수 없음 — 사유 필수) | 종결 여부 · 사유 |
+
+**문구 없이 안 되는 자리(남긴 글자):** 막힘 · 거부 이유(원인 · 다음 한 수), `경영관리 등록 · 카드 소지자 김OO`(남의 카드 — 되돌릴 수 없는 기록의 미리보기), `남은 실행가`(Q3 막힘 전에 보이는 숫자), 서버 계산 한 줄. 설명형 힌트는 0(rev 9 M-5 그대로).
 
 ---
 
 ## UI Considerations
 
 > UI-consideration probe 결과(rev 4 — ui-phase 9.5를 `--auto`로 다시 돌려 이 절을 **통째로 바꿨다**, 덧붙이지 않음). 엔진 `.claude/gsd-core/bin/lib/ui-consideration-probe.cjs`, 2026-09-24.
-> 이 절은 **상태 커버리지**만 다룬다. 문구는 `## Copywriting Contract`에 있고 여기서는 그 행 이름(「…」)을 가리키기만 한다. 표면 id는 `## 적용 규칙`의 S1~S22다.
+> 이 절은 **상태 커버리지**만 다룬다. 문구는 `## Copywriting Contract`에 있고 여기서는 그 행 이름(「…」)을 가리키기만 한다. 표면 id는 `## 적용 규칙`의 S1~S23다(S23은 r3).
 > **rev 9(`/plan-design-review` 반영 — 엔진 재실행 없이 손으로 더함):** 표 끝에 요소 넷의 행 27개를 더했다 — `S21`(D-56) · `S22`(D-60) · `S1 제자리 증빙 확인`(DR-4) · `S1 일괄 결과 알림`(DR-6 · H-3). 종류 오버라이드: S21 `form`+`list-collection`+`media`+`interactive-control` · S22 `form`+`list-collection`+`media`+`interactive-control` · S1 제자리 증빙 확인 `interactive-control`+`media` · S1 일괄 결과 알림 `interactive-control`+`static-content`. 기존 행 중 S1 partial · S2 partial · S9 empty · S12 populated · S19 partial을 고쳤다(H-3 · H-5 · M-4 · M-5 · H-1).
 > **종류 확인(`--auto`):** 1회차 휴리스틱 분류는 영어 단서라 한국어 서술 13개 표면(S2·S3·S4·S5·S7·S10·S14·S15·S16·S17·S18·S19·S20)이 `unclassified`였다. 서술을 다시 읽고 `elements` 오버라이드(검출 종류 ∪ 빠진 종류)를 썼다 —
 > S1 `nav`+`list-collection`+`form`+`interactive-control` · S2 `interactive-control`+`form` · S3 `list-collection`+`nav` · S4 `form`+`static-content`+`interactive-control`+`media` · S5 `form`+`static-content`+`interactive-control` · S6 `form` · S7 `form`+`list-collection`+`media` · S8 `list-collection`+`nav` · S9 `form`+`list-collection`+`interactive-control` · S10 `list-collection`+`interactive-control` · S11 `list-collection`+`nav`+`interactive-control` · S12 `form`+`list-collection` · S13 `list-collection`+`form` · S14 `interactive-control`+`list-collection` · S15 `list-collection` · S16 `form`+`list-collection` · S17 `list-collection`+`nav` · S18 `static-content`+`interactive-control`+`list-collection` · S19 `static-content`+`list-collection`+`nav` · S20 `form`.
 > **해소(`--auto`):** 엔진 `autoResolve` 바닥(전부 backstop) 위에서, 본문에 방어 가능한 수용 기준이 있는 항목만 explicit로 올렸다. dismissed 0 · unclassified 0(오버라이드 뒤).
 > **loading은 시스템 판 그대로이고 이 페이즈가 새 진행 표시를 더하지 않는다**(Color 절): §7-7 LOADING · 누른 버튼의 `…`와 300ms 넘으면 상단 2px 진행 바(§7-1) · 첨부 업로드 행 아래 2px 진행 바(§7-10).
+> **rev 10(손으로 고침 — 엔진 재실행 없음, 행 수 그대로):** S4 empty · partial(05 규칙 · `—`) · S6 empty · S7 zero-one-many(SP-6 철회) · S8 populated · partial · S9 populated · partial · error · overflow · long-text(옆 패널) · S10 populated · partial(SP-8 · Q3) · S11 loading · S12 error · partial · long-text · S13 populated · error · partial · long-text · S19 partial · S20 empty.
+> **rev 10 엔진 실행(2026-10-05, ui-phase 9.5 `--auto`):** `node .claude/gsd-core/bin/lib/ui-consideration-probe.cjs <elements.json> <resolutions.json>` — 바뀐 표면 넷(`S9·S12·S13 옆 패널` form+interactive-control · `SP-8 패널 위 고르기 목록` list-collection+interactive-control · `S8 카드 사용 삭제 · 되돌리기` interactive-control+static-content · `증빙 판정 표면(05 규칙)` form+list-collection+media)의 25행을 표 끝에 더했다(같은 id 행은 바꿔 쓴다 — 다시 돌려도 같은 결과). 엔진 coverage `applicable 25 · resolved 25 · unresolved 0 · explicit 18 · backstop 7`, dismissed 0. rev 9 표면 행은 그대로.
+> **r3(2026-10-05, 손으로 더함 — 엔진 재실행 없음):** 표 끝에 `S23`(반려 · 회수 지출결의 종결, 종류 `interactive-control`+`form`) 6행(explicit 5 · backstop 1)을 더했다 — 표면 id는 S1~S23. S3 · S10 · S19 error 문구를 명사형(`… 불러오지 못함`)으로, S15 · S18 부제 문장을 합계 행 · 그룹 머리글로, SP-8 populated를 `PickDialog`로, S13 partial(U-4)을 손으로 고쳤다.
 > 계획 옮기기(plan-phase lift): `explicit` → `must_haves.truths` 문자열 · `backstop` → `{ statement, verification: backstop }` · `unresolved` → 계획 가정.
 
-Applicable state considerations resolved: 174 applicable — 129 explicit, 45 backstop, 0 unresolved
+Applicable state considerations resolved: 205 applicable — 152 explicit, 53 backstop, 0 unresolved (r3: rev 10의 199 + S23 6행)
 
 | Element | Category | Status | Verification | Resolution / Reason |
 |---------|----------|--------|--------------|---------------------|
 | S1 | empty | ✅ resolved | explicit | 0건 = 「Empty — 지급 대상」, 필터 0건 = 「Empty — 지급 대상 · 필터 0건」. 둘 다 합계 줄·선택 열·1차를 그리지 않는다 |
-| S1 | loading | ✅ resolved | explicit | 첫 로드 = §7-7 LOADING 뼈대. 필터·페이지 이동은 GET 이동이라 뼈대 없음. 합 요청 중에는 이전 합을 `--faint`로 둔다. 처리 중 1차 `지급 완료 5…` + `aria-disabled` |
+| S1 | loading | ✅ resolved | explicit | 첫 로드 = §7-7 LOADING 뼈대. 필터·페이지 이동은 GET 이동이라 뼈대 없음. 합 요청 중에는 이전 합을 `--text-faint`로 둔다. 처리 중 1차 `지급 완료 5…` + `aria-disabled` |
 | S1 | error | ✅ resolved | explicit | 로드 실패 = 「Error — 목록 로드」. 칸 오류 = 「Error — 이체액 칸」·「Error — 차이 사유 칸」(§7-3 오류 셀). 합 실패 = 「거부 — 이체액 합계 응답 없음」. 응답 번호 ≠ 지금 합계 번호면 버린다(S1 「합계 번호」) |
 | S1 | populated | ✅ resolved | explicit | 와이어프레임대로 ≥1280 10열 · 그룹 머리글 5종(예정일 지남 → 지급 예정일 없음) · 합계 줄 · 페이지 줄 · 힌트 줄 `이동 Tab ↑↓←→ · 고르기 Space · 취소 Esc` |
 | S1 | partial | ✅ resolved | explicit | 일괄 처리 뒤 처리된 행은 빠지고 막힌 행은 자리 유지 + 행 아래 이유 한 줄 + 필터 다음 자리의 결과 글자(「거부 — 일괄 지급 건별 결과」·「표시 — 일괄 지급 결과」). 선택은 서버가 다시 보낸 「지금 고를 수 있음」대로 — 게이트로 막힌 행은 풀리고 동시성·재계산으로만 막힌 행은 유지(「S1 일괄 결과 알림」 행, H-3). 이유는 다음 시도·필터 변경 때 지운다. 이체액·차이 사유 편집 칸은 P4 행에만 서고, 고르지 않은 P4 행의 이체액을 고치면 저절로 골라진다(막힌 행은 편집·자동 선택 없음) |
@@ -1087,29 +1225,29 @@ Applicable state considerations resolved: 174 applicable — 129 explicit, 45 ba
 | S2 | loading | ✅ resolved | explicit | 부제 합계 자리 `…` + 1차 `…` · `aria-disabled`(`Ctrl+Enter` 무반응) — 모달을 연 순간의 합계 번호 응답이 오면 채우고 켠다. 처리 요청 중 1차 `…` + 나머지 `aria-disabled`(§7-17) |
 | S2 | error | ✅ resolved | explicit | 지급일 칸 = 「Error — 지급일 · 지급 예정일 칸」, 모달 유지. 합 실패 = 「거부 — 이체액 합계 응답 없음」(막힘 이유 자리). 처리 응답 없음 = 「거부 — 일괄 지급 응답 없음」, 모달을 닫지 않는다 |
 | S2 | partial | ✅ resolved | explicit | 확정 전: 지금 쪽 밖에서 고른 건 · 차이 있는 건이 섞이면 결과 줄 ③ `다른 쪽 N건 포함 · 차이 있음 N건`(해당 묶음만, H-5). 일부만 처리 = 모달이 닫히고 S1 「결과」. 지급일 세율로 지급 총액이 바뀐 건은 막힘으로 돌아와 새 지급 총액 셀 + `지급일 09-19 기준 지급 총액 바뀜 · 이체액 확인`, 재시도는 새 값으로 보내 다시 막히지 않는다. 0건 처리면 토스트 없음 |
-| S2 | long-text | 🧪 resolved | backstop | 부제 `5건 · 이체액 합계 {13자리 금액}`과 결과 줄 둘(`견적 줄 N줄 잠김` + `선결제 N건 · …`)이 `--modal-w` 480 안에서 숫자 중간 줄바꿈 없이 서는지 CI=true DOM 감사 |
+| S2 | long-text | 🧪 resolved | backstop | 부제 `5건 · 이체액 합계 {13자리 금액}`과 결과 줄 둘(`견적 줄 N줄 잠김` + `선결제 N건 · …`)이 `--dialog-w` 480 안에서 숫자 중간 줄바꿈 없이 서는지 CI=true DOM 감사 |
 | S3 | empty | ✅ resolved | explicit | 「Empty — 지급 완료 보기」 |
 | S3 | loading | ✅ resolved | explicit | 첫 로드 = §7-7 LOADING 뼈대. 보기·팀·월 필터 이동은 GET 이동 |
-| S3 | error | ✅ resolved | explicit | 「Error — 목록 로드」 `지급 완료 목록을 불러오지 못했습니다 · 다시 시도`(§7-7 로드 오류 꼴, 「다시 시도」 = 2차) |
+| S3 | error | ✅ resolved | explicit | 「Error — 목록 로드」 `지급 완료 목록 불러오지 못함 · 다시 시도`(§7-7 로드 오류 꼴, 「다시 시도」 = 2차) |
 | S3 | populated | ✅ resolved | explicit | 지급일 주 그룹(`이번 주` → `지난주` → `09-01 ~ 09-07`) · 합계 줄 `합계 (지급 완료 · 2026-09 · 41건)` · 이체액 2행 차이 · 처리한 사람 · 1차 없음. Phase 5 목록에는 상태 열 값 하나 `지급 완료` + 2행 날짜(열 신설 없음, 열 자리는 Phase 5 판 — UA-605) |
 | S3 | partial | ✅ resolved | explicit | 차이가 0이면 2행 없음 · 차이 사유 없으면 `—` · 지급 뒤 들어온 선결제 증빙이 `확인 전`이면 증빙 칸 3차 `증빙 확인` |
 | S3 | overflow | ✅ resolved | explicit | 50건 페이지(§7-16). 좁은 PC·폰은 P3(지급 방식 · 차이 사유 · 처리한 사람)부터 숨긴다 |
 | S3 | zero-one-many | ✅ resolved | explicit | 0건 = Empty 한 줄. 건수는 합계 줄 `N건` 한 꼴(한국어 단·복수 같은 꼴) |
 | S3 | long-text | 🧪 resolved | backstop | 항목·거래처 한 줄 말줄임 + `title`, 표 안 차이 사유 두 줄까지. 긴 거래처·200자 사유로 CI=true DOM 감사 |
-| S4 | empty | ✅ resolved | explicit | 「상태 → 1차」 P3(결재 통과 · 지급 전 · 증빙 필수 on · 증빙 0 · 선결제 아님 · 면제 아님) = 「Empty — 문서 화면 증빙」 + 같은 줄 3차 `증빙 면제`(지급 권한자), 1차 `지급 완료` 비활성 + `증빙 없음 · 담당 PM 박서연`. 면제된 문서는 `면제` + 2행이고 1차가 산다(P4). 증빙 필수 off면 `없음`(`--muted`)이고 1차는 살아 있다(P4). 증빙 0 · 면제 아님인 선결제 · 필수 off `없음`(P4)과 지급 뒤 `선결제` · `없음`(P6)에도 3차 `증빙 면제`가 서고 1차는 표 그대로(「증빙 면제의 자리」). 결재 통과 전은 P0(확인부 읽기만) |
-| S4 | loading | ✅ resolved | explicit | 지급 전 문서에서 증빙 금액을 고치면 서버 계산 한 줄이 이전 값 `--faint`로 남았다가 새 값으로 바뀐다(빈칸·뼈대 없음). 1차 처리 중 `…`(§7-1). 파일 미리보기는 Phase 5 첨부 영역(§7-10) |
+| S4 | empty | ✅ resolved | explicit | 「상태 → 1차」 P3(결재 통과 · 지급 전 · 증빙 필수 on · 증빙 0 · 선결제 아님 · 면제 아님) = 「Empty — 문서 화면 증빙」 + 같은 줄 3차 `증빙 면제`(지급 권한자), 1차 `지급 완료` 비활성 + `증빙 없음 · 기안자 박서연`. 면제된 문서는 `면제` + 2행이고 1차가 산다(P4). 증빙 필수 off면 `—`(상태 낱말 없음, rev 10)이고 1차는 살아 있다(P4). 증빙 0 · 면제 아님인 선결제 · 필수 off `—`(P4)과 지급 뒤 `선결제` · `—`(P6)에도 3차 `증빙 면제`가 서고 1차는 표 그대로(「증빙 면제의 자리」). 결재 통과 전은 P0(확인부 읽기만) |
+| S4 | loading | ✅ resolved | explicit | 지급 전 문서에서 증빙 금액을 고치면 서버 계산 한 줄이 이전 값 `--text-faint`로 남았다가 새 값으로 바뀐다(빈칸·뼈대 없음). 1차 처리 중 `…`(§7-1). 파일 미리보기는 Phase 5 첨부 영역(§7-10) |
 | S4 | error | ✅ resolved | explicit | 「Error — 증빙 금액 칸」 · 「거부 — 문서 화면 동시성」 · 「거부 — 문서 화면 응답 없음」(칸 입력값은 남는다) |
-| S4 | populated | ✅ resolved | explicit | 와이어프레임대로 파일 행 · `증빙 금액` 값 + 2행 입력자 · 서버 계산 한 줄(지급 전만 — 「표시 — 증빙 금액」) · 확인 줄 값 넷(`확인 전` · `확인됨` · `면제` · `선결제`) · 행동 줄 1차 하나 |
-| S4 | partial | ✅ resolved | explicit | 확인 풀림: PM이 증빙을 더하거나 떼거나 금액을 고치면 `확인됨` → `확인 전`, 면제 → `확인 전`(행동 로그 보존). 지급 뒤 들어온 선결제 증빙은 1차 `증빙 확인`만 서고(P5) 지급 칸·지급 행동은 다시 서지 않으며, 서버 계산 한 줄(지급 총액)이 없다 — 지급 총액은 S5 지급 기록의 한 값뿐 |
-| S4 | overflow | 🧪 resolved | backstop | 확인 줄 2행 `확인됨 · 이과장 09-18 14:02 · 12,400,000 → 12,000,000`이 720 한 열과 폰 폭에서 숫자 중간 줄바꿈 없이(숫자 `nowrap`) 서는지 CI=true DOM 감사 |
+| S4 | populated | ✅ resolved | explicit | 와이어프레임대로 파일 행 · `증빙 금액` 값 + 2행 입력자 · 서버 계산 한 줄(지급 전만 — 「표시 — 증빙 금액」) · 확인 줄 값 넷(`확인 전` · `확인됨` · `면제` · `선결제`) · 행동 줄 1차 하나 · 증빙 금액이 승인액 · 남은 실행가를 넘으면 `승인액보다 +{차액}` · `실행가 초과 {초과액}` 한 줄(`--status-warning`, 막지 않음 — r4 UC-4 · Q-F, 「표시 — 증빙 금액 초과」) |
+| S4 | partial | ✅ resolved | explicit | 확인 풀림(rev 10 — 05 규칙): 승인 뒤 기안자의 추가(+ 증빙 금액) · 시스템 관리자의 무효면 `확인됨` → `확인 전`, 면제 → `확인 전`(행동 로그 보존), 무효 뒤 살아 있는 파일 0이면 `증빙 없음`. 지급 뒤 들어온 선결제 증빙은 1차 `증빙 확인`만 서고(P5) 지급 칸·지급 행동은 다시 서지 않으며, 서버 계산 한 줄(지급 총액)이 없다 — 지급 총액은 S5 지급 기록의 한 값뿐 |
+| S4 | overflow | 🧪 resolved | backstop | 확인 줄 2행 `확인됨 · 이과장 09-18 14:02 · 12,400,000 → 12,000,000`이 `--form-max` 한 열과 폰 폭에서 숫자 중간 줄바꿈 없이(숫자 `nowrap`) 서는지 CI=true DOM 감사 |
 | S4 | long-text | 🧪 resolved | backstop | 면제 사유 원문은 2행에서 `keep-all` 줄바꿈, 말줄임 없음(문서 화면은 전문). 긴 파일명은 §7-10 파일 행 규칙. 200자 사유 · 80자 파일명으로 CI=true DOM 감사 |
 | S5 | empty | ✅ resolved | explicit | 값 없음은 `—`(금액 표시 절 「0과 빈 값」) — 지급 예정일이 비어도 `—`. 차이 사유 행은 차이가 있을 때만. 계좌이체인데 계좌 없음 = 「표시 — 지급 방식 · 계좌」의 `계좌 없음 · 계좌 등록은 관리자`. 결재 통과 전 문서에는 섹션이 없다 |
-| S5 | loading | ✅ resolved | explicit | 지급일·지급 예정일을 바꾸면 서버가 다시 계산한 지급 총액 힌트가 이전 값 `--faint` → 새 값. 1차 처리 중 `…` |
+| S5 | loading | ✅ resolved | explicit | 지급일·지급 예정일을 바꾸면 서버가 다시 계산한 지급 총액 힌트가 이전 값 `--text-faint` → 새 값. 1차 처리 중 `…` |
 | S5 | error | ✅ resolved | explicit | 「Error — 이체액 칸」 · 「Error — 차이 사유 칸」 · 「Error — 지급일 · 지급 예정일 칸」 · 지급 취소 모달 「Error — 사유 근거 칸」 · 「거부 — 문서 화면 동시성」 · 「거부 — 문서 화면 응답 없음」 |
 | S5 | partial | ✅ resolved | explicit | 지급 예정일 칸이 dirty인 동안 1차 = `예정일 저장 Ctrl+Enter`, 칸의 `Enter`는 제출 안 함, `Esc` = 서버 값으로 되돌리고 상태의 1차로(SP-3 ②). 예정일만 저장되고 다른 칸 입력값은 남는다 |
-| S5 | overflow | 🧪 resolved | backstop | 지급 뒤 2행 `지급 총액 · 차이 · 공급가 역산` 세 묶음이 720 한 열·폰 폭에서 숫자 중간 줄바꿈 없이(숫자 `nowrap`) 서는지 CI=true DOM 감사 |
+| S5 | overflow | 🧪 resolved | backstop | 지급 뒤 2행 `지급 총액 · 차이 · 공급가 역산` 세 묶음이 `--form-max` 한 열·폰 폭에서 숫자 중간 줄바꿈 없이(숫자 `nowrap`) 서는지 CI=true DOM 감사 |
 | S5 | long-text | 🧪 resolved | backstop | 차이 사유 읽기 줄은 `keep-all` 줄바꿈, 말줄임 없음. 200자 차이 사유로 CI=true DOM 감사 |
-| S6 | empty | ✅ resolved | explicit | 기본은 선결제 꺼짐 — 사유 칸 없음. 켜면 `선결제 사유` 480 칸 + `Form.Hint` `증빙 기한 지급일부터 14일`, 끄면 칸이 사라지고 적은 사유는 버린다 |
+| S6 | empty | ✅ resolved | explicit | 기본은 선결제 꺼짐 — 사유 칸 없음. 켜면 `선결제 사유` `--field-w-long` 칸 + `Form.Hint` `증빙 기한 지급일부터 14일`, 끄면 칸이 사라지고 적은 사유는 버린다 |
 | S6 | loading | 🧪 resolved | backstop | 제출 중 표시는 Phase 5 폼 규칙 그대로(UA-606) — 이 페이즈는 더하지 않는다. Phase 5 폼 위에서 CI=true DOM 감사 |
 | S6 | error | ✅ resolved | explicit | 「막힘 — 선결제 칸」 |
 | S6 | partial | ✅ resolved | explicit | 체크 on + 사유 빔 = 제출 막힘. 선결제면 Phase 5 「증빙 없음」 제출 막힘이 풀린다. 제출 뒤 읽기 줄 `선결제` · `{사유 원문}`, 켜고 끄는 경로 없음(O-4) |
@@ -1120,83 +1258,83 @@ Applicable state considerations resolved: 174 applicable — 129 explicit, 45 ba
 | S7 | populated | ✅ resolved | explicit | 파일 행(§7-10 이름 · 크기 · 날짜 · 크게 보기). 카드 사용 목록 증빙 열은 `있음`/`—` 글자 |
 | S7 | partial | ✅ resolved | explicit | 여러 파일 중 일부만 실패 = 성공 행 + 실패 행 각각(§7-7 첨부 PARTIAL) |
 | S7 | overflow | 🧪 resolved | backstop | 파일 10개+ 문서에서 첨부 영역 행 목록이 §7-10 규칙대로 서는지(스크롤·전부 표시) CI=true DOM 감사 |
-| S7 | zero-one-many | ✅ resolved | explicit | 문서의 마지막 증빙 삭제 = 확인 모달(「Destructive — 증빙 삭제」, SP-6) · 마지막이 아닌 파일 = 모달 없음 · 카드 전표는 마지막이어도 모달 없음 |
+| S7 | zero-one-many | ✅ resolved | explicit | 파일 삭제는 마지막이어도 모달 없음(rev 10 — SP-6 철회): 떼기는 작성 중 · 반려 · 회수에서만(확인 기록 없음), 결재 중 · 승인 뒤는 `삭제` 없음 · 승인 뒤 잘못 붙은 파일은 시스템 관리자 무효(05). 카드 전표도 모달 없음 |
 | S7 | long-text | 🧪 resolved | backstop | 80자 한글 파일명이 파일 행에서 말줄임 + `title`로 서는지 CI=true DOM 감사 |
 | S8 | empty | ✅ resolved | explicit | 「Empty — 카드 사용 목록」 세 갈래(이번 달 0건 · 필터 0건 · 쓸 카드 0장 — 1차 렌더 안 함) |
 | S8 | loading | ✅ resolved | explicit | 첫 로드 = §7-7 LOADING 뼈대. 월·카드·연결·등록 필터 이동은 GET 이동 |
 | S8 | error | ✅ resolved | explicit | 「Error — 목록 로드」 카드 사용 문구 |
-| S8 | populated | ✅ resolved | explicit | 와이어프레임대로 카드 그룹 머리글 · 사용일 오름차순 · 열 여섯 · 결제 합계 2행 공급가/외화 묶음 · 등록 칸(「표시 — 경영관리 등록」) · 합계 줄 · 오른쪽 `구매 요청 3` + 1차 |
-| S8 | partial | ✅ resolved | explicit | 가맹점 없음 = `—` · 증빙 `있음`/`—` 글자(상태 색 없음) · 외화는 2행 두 묶음(「표시 — 카드 사용 결제 합계 2행」) |
+| S8 | populated | ✅ resolved | explicit | 와이어프레임대로 `ListScreen`(부제 없음) · 카드 그룹 머리글 · 사용일 오름차순 · 결제 합계 2행 공급가/외화 묶음 · 등록 칸(「표시 — 경영관리 등록」) · 행동 칸 `수정` · `삭제` · 합계 면 · 필터 묶음 끝 `구매 요청 3` + 1차 |
+| S8 | partial | ✅ resolved | explicit | 가맹점 없음 = `—` · 증빙 `있음`/`—` 글자(상태 색 없음) · 외화는 2행 두 묶음(「표시 — 카드 사용 결제 합계 2행」) · 행 삭제 뒤 표 위 결과 줄 `카드 사용 삭제됨 · 48,000` + `되돌리기`(마지막 한 건만, §7-8 :1008) · 구매 완료로 생긴 행은 `수정`만 |
 | S8 | overflow | ✅ resolved | explicit | 50건 페이지(§7-16). 카드 그룹 머리글은 쪽 첫 줄에 다시 선다(§6-1). 좁은 PC는 P3 증빙부터 숨긴다 |
 | S8 | zero-one-many | ✅ resolved | explicit | 0건 = Empty · 건수는 합계 줄 `N건` · 하위 목록 링크는 0이면 `구매 요청`만(SP-4) |
 | S8 | long-text | 🧪 resolved | backstop | 가맹점·연결은 한 줄 말줄임 + `title`. 긴 해외 가맹점 이름 · 긴 프로젝트 이름으로 CI=true DOM 감사 |
 | S9 | empty | ✅ resolved | explicit | 새 건은 빈 폼으로 열지 않는다 — 사용일 = 오늘, 카드 = 마지막으로 등록한 카드(옵션 안일 때), 연결 = 직전 연결 종류 + 프로젝트(처음 쓰는 사람만 빔, S9 「새 건의 기본값」, M-4). 연결이 덜 채워지면 `연결 없음 · 연결 고르기`, 빈 칸 = `카드 · 결제 합계 2칸 비어 있음 · 카드 고르기`(「막힘 — 카드 사용 폼」). 증빙 종류는 `카드 전표`가 카드 옵션에 있을 때만 채우고, 없으면 `—` + 「막힘 — 카드 사용 폼 · 증빙 종류 자동 채움 없음」 |
-| S9 | loading | ✅ resolved | explicit | 결제 합계·통화·환율이 바뀌면 서버 계산 한 줄이 이전 값 `--faint` → 새 값. 사용일을 바꾸면 서버가 사용한 사람 후보를 다시 보낸다. 1차 처리 중 `…` |
-| S9 | error | ✅ resolved | explicit | 「Error — 카드 사용 폼 칸」 · 「막힘 — 카드 사용 폼」(서버 이중 연결 거부 · 소속 없음 · 수정 모드 증빙 종류 포함) · 「막힘 — 카드 사용 폼 · 증빙 종류 자동 채움 없음」 |
-| S9 | populated | ✅ resolved | explicit | 와이어프레임대로 카드 · 사용일 · 가맹점 · 결제 합계 + 서버 계산 한 줄 · 증빙 종류 · 연결 셋 · 메모 · 증빙. 카드 옵션 글자 `{카드 이름} · {발급사} {뒤 4자리}`(「표시 — 카드(목록 · 폼)」) |
-| S9 | partial | ✅ resolved | explicit | 입력이 있는데 `취소 Esc` = 「확인 — 입력 버리기」. 대리 등록 팀 카드의 사용한 사람: 사용일을 바꿔 고른 사람이 새 후보에 없으면 칸이 빈다(빈 칸 막힘). 수정 모드에서 저장된 증빙 종류가 옵션에 없으면 `—` + 막힘 |
-| S9 | overflow | 🧪 resolved | backstop | 활성 카드 30장+ 대리 등록 권한자의 카드 `Select`(200)와 긴 카드 이름이 말줄임으로 서는지 CI=true DOM 감사 |
+| S9 | loading | ✅ resolved | explicit | 결제 합계·통화·환율이 바뀌면 서버 계산 한 줄이 이전 값 `--text-faint` → 새 값. 사용일을 바꾸면 서버가 사용한 사람 후보를 다시 보낸다. 1차 처리 중 `…` |
+| S9 | error | ✅ resolved | explicit | 「Error — 카드 사용 폼 칸」(사용일 미래 — Q6) · 「막힘 — 카드 사용 폼」(서버 이중 연결 거부 · 실행가 초과 Q3 · 소속 없음 · 수정 모드 증빙 종류 포함) · 「막힘 — 카드 사용 폼 · 증빙 종류 자동 채움 없음」 |
+| S9 | populated | ✅ resolved | explicit | 옆 패널(PC 480 · 폰 아래 시트) 와이어프레임대로 카드 · 사용일 · 가맹점 · 결제 합계 + 서버 계산 한 줄 · 증빙 종류 · 연결 셋 · 메모 · 증빙. 카드 옵션 글자 `{카드 이름} · {발급사} {뒤 4자리}`(「표시 — 카드(목록 · 폼)」). 등록 뒤 패널 유지 + 결과 한 줄 `카드 사용 등록됨 · 1,240,000` · 수정 뒤 닫힘 |
+| S9 | partial | ✅ resolved | explicit | 바뀐 칸이 있을 때 `Esc` · x · `취소` = 「확인 — 입력 버리기」(가림막은 무시, 서버 기본값은 바뀐 칸 아님). 대리 등록 팀 카드의 사용한 사람: 사용일을 바꿔 고른 사람이 새 후보에 없으면 칸이 빈다(빈 칸 막힘). 수정 모드에서 저장된 증빙 종류가 옵션에 없으면 `—` + 막힘 |
+| S9 | overflow | 🧪 resolved | backstop | 활성 카드 30장+ 대리 등록 권한자의 카드 `Select`(패널 전폭)와 긴 카드 이름이 말줄임으로 서고 본문만 스크롤 · 행동 줄 고정인지 CI=true DOM 감사(PC 480 · 폰 시트) |
 | S9 | zero-one-many | ✅ resolved | explicit | 새 건(`?new=1`): 카드 0장 = 폼 대신 「Empty — 카드 사용 목록」 카드 0장 갈래 · 1장 = 텍스트(§6-3 자동 채움) · 여러 장 = `Select`. 수정 모드(`?editId=`): 카드 = 저장된 그 건의 카드 읽기 텍스트 — 여는 사람의 카드 옵션 수를 보지 않고 0장 갈래로 바뀌지 않는다(S9 「카드 — 수정 모드」). 단 구매 완료로 생긴 건 + `purchases` write = `Select`(활성 카드 전부 + 저장된 카드가 현재 값, 활성 0장이어도 저장된 카드 한 옵션으로 선다 — S9 「카드 — 구매 완료로 생긴 건의 카드 고치기」). 사용한 사람 후보 1명 = 텍스트 · 여럿 = `Select` 기본값 없음. 증빙 종류 옵션 0개 = `카드에 쓸 증빙 종류 없음 · 코드표 세금 규칙은 관리자` |
-| S9 | long-text | 🧪 resolved | backstop | 메모·`견적 외 비용` 항목 480 칸, 긴 가맹점 이름이 가맹점 줄의 3차 `바꾸기`를 밀지 않는지 CI=true DOM 감사 |
+| S9 | long-text | 🧪 resolved | backstop | 메모·`견적 외 비용` 항목(패널 전폭), 긴 가맹점 이름이 가맹점 줄의 3차 `바꾸기`를 밀지 않는지 CI=true DOM 감사 |
 | S10 | empty | ✅ resolved | explicit | 「Empty — 연결 고르기 목록」 세 갈래(줄 0 · 검색 0건 · 고를 수 있는 줄 0) — 카드 폼 / 구매 요청 폼에 따라 다음 한 수가 갈린다 |
 | S10 | loading | 🧪 resolved | backstop | 모달·시트 목록 로드와 검색 중 표시는 §7-7 LOADING 꼴 — 이 표면 고유 규칙이 없다. 느린 응답을 강제해 CI=true DOM 감사 |
-| S10 | error | ✅ resolved | explicit | 「Error — 연결 고르기 목록 로드(S10)」 — 목록 자리 한 줄 `프로젝트를 불러오지 못했습니다 · 다시 시도` / `견적 줄을 불러오지 못했습니다 · 다시 시도`, 1차 `이 줄로` 비활성(이유 = 그 줄), 2차 `취소 Esc` |
-| S10 | populated | ✅ resolved | explicit | 프로젝트 행 = 번호 · 이름 + 2행 `{상태} · 담당 {PM}` / 견적 줄 행 = 번호 · 항목(거래처) · 실행가, 현재 줄 700 + 왼쪽 2px `--accent`, 같은 쪽 기존 연결 2행 `카드 사용 1건 1,200,000` |
-| S10 | partial | ✅ resolved | explicit | 반대쪽 줄은 보이되 `aria-disabled` + 2행 이유(「막힘 — 연결 고르기 목록의 반대쪽 줄」). 구매 요청 폼에서는 온라인구매 줄만 고를 수 있고 나머지는 2행 `거래처 … · 지출결의로` |
+| S10 | error | ✅ resolved | explicit | 「Error — 연결 고르기 목록 로드(S10)」 — 목록 자리 한 줄 `프로젝트 불러오지 못함 · 다시 시도` / `견적 줄 불러오지 못함 · 다시 시도`, 1차 `이 줄로` 비활성(이유 = 그 줄), 2차 `취소 Esc` |
+| S10 | populated | ✅ resolved | explicit | 프로젝트 행 = 번호 · 이름 + 2행 `{상태} · 담당 {PM}` / 견적 줄 행 = 번호 · 항목(거래처) · 실행가 + 2행 `남은 실행가`(Q3), 현재 줄 `--fw-bold` + 왼쪽 2px `--accent`, 같은 쪽 기존 연결 2행 `카드 사용 1건 1,200,000` |
+| S10 | partial | ✅ resolved | explicit | 반대쪽 줄은 보이되 `aria-disabled` + 2행 이유(「막힘 — 연결 고르기 목록의 반대쪽 줄」). 구매 요청 패널에서는 온라인구매 줄만 고를 수 있고 나머지는 2행 `거래처 … · 지출결의로`. 남은 실행가 0 이하 줄 = `aria-disabled` + `실행가 소진 · 다른 줄`(Q3). 패널 위에서 열리고 `Esc` = 목록만 닫힘 → 포커스 `{칸} 바꾸기`, 고르면 다음 빈 `바꾸기`로(SP-8) |
 | S10 | overflow | 🧪 resolved | backstop | 견적 줄 100줄+ 프로젝트에서 480 모달·폰 시트 안 목록이 스크롤로 서고 행동 줄이 가려지지 않는지 CI=true DOM 감사 |
 | S10 | zero-one-many | ✅ resolved | explicit | 부제 `… · 카드로 이을 수 있는 줄 7`, 고를 수 있는 줄 0이면 1차 `이 줄로` 비활성 + `이을 수 있는 줄 없음 · 견적 외 비용으로` / `온라인구매 줄 없음 · 팀 비용으로` |
 | S10 | long-text | 🧪 resolved | backstop | 긴 항목·거래처·프로젝트 이름이 480 폭에서 말줄임 + `title`로 서는지 CI=true DOM 감사 |
 | S11 | empty | ✅ resolved | explicit | 「Empty — 구매 요청 목록」(기본 보기 0건은 경영관리 / 요청자 두 갈래, 전체 0건 한 갈래) |
-| S11 | loading | ✅ resolved | explicit | 첫 로드 = §7-7 LOADING 뼈대. 상태·월 필터 이동은 GET 이동. 행 3차 `구매 완료`는 폼 이동. 요청자 본인 `요청 취소`는 모달 없이 즉시(요청 중 그 3차 `…` + `aria-disabled`), 구매 권한자의 남의 요청 취소는 사유 확인 모달(요청 중 1차 `…`) — H-4 · Copywriting 「즉시 — 요청자 본인 구매 요청 취소」 · 「Destructive — 구매 요청 취소」(r2 F-1) |
+| S11 | loading | ✅ resolved | explicit | 첫 로드 = §7-7 LOADING 뼈대. 상태·월 필터 이동은 GET 이동. 행 `구매 완료`는 옆 패널(`?purchase=`). 요청자 본인 `요청 취소`는 모달 없이 즉시(요청 중 그 3차 `…` + `aria-disabled`), 구매 권한자의 남의 요청 취소는 사유 확인 모달(요청 중 1차 `…`) — H-4 · Copywriting 「즉시 — 요청자 본인 구매 요청 취소」 · 「Destructive — 구매 요청 취소」(r2 F-1) |
 | S11 | error | ✅ resolved | explicit | 「Error — 목록 로드」 구매 요청 문구. 남의 요청 취소 사유 칸 = 「Error — 사유 근거 칸」 |
 | S11 | populated | ✅ resolved | explicit | 열(번호 · 요청일 · 품목 + 링크 아이콘 · 연결 · 요청자 · 예상 금액 · 상태 + 행동 칸) · 구매 완료 행 2행 `카드 사용 09-20 · 1,238,000` · 취소 행 2행 `취소 09-19 · 이과장 · {사유}` · 합계 줄 |
-| S11 | partial | ✅ resolved | explicit | 외화 예상 금액은 2행 `USD 1,000.00 @1,350`, 합계는 원화 환산액만. 팀 비용 요청의 취소 모달에는 결과 줄이 없다. 취소는 `신청` 상태에서만(O-9) |
-| S11 | overflow | ✅ resolved | explicit | 50건 페이지(§7-16). `전체` 보기에서 상태 그룹 `신청` → `구매 완료` → `취소` |
-| S11 | zero-one-many | ✅ resolved | explicit | 합계 줄 `합계 (신청 · 3건)`. 카드 목록의 링크는 0이면 `구매 요청`만(SP-4) |
+| S11 | partial | ✅ resolved | explicit | 외화 예상 금액은 2행 `USD 1,000.00 @1,350`, 합계는 원화 환산액만. 팀 비용 요청의 취소 모달에는 결과 줄이 없다. 취소는 `신청됨` 상태에서만(O-9) |
+| S11 | overflow | ✅ resolved | explicit | 50건 페이지(§7-16). `전체` 보기에서 상태 그룹 `신청됨` → `구매 완료` → `취소` |
+| S11 | zero-one-many | ✅ resolved | explicit | 합계 줄 `합계 (신청됨 · 3건)`. 카드 목록의 링크는 0이면 `구매 요청`만(SP-4) |
 | S11 | long-text | 🧪 resolved | backstop | 품목은 한 줄 말줄임 + `title`, 링크는 아이콘 3차라 URL 길이가 칸을 밀지 않는다. 긴 품목 이름으로 CI=true DOM 감사 |
 | S12 | empty | ✅ resolved | explicit | `?new=1`로 들어오면 연결 `팀 비용`이 골라져 있고(라디오는 남는다), `&line=`이면 연결 텍스트. 빈 칸 = `품목 · 예상 금액 2칸 비어 있음 · 품목 적기` |
-| S12 | loading | ✅ resolved | explicit | 외화 원화 환산 `Form.Hint`는 서버 계산 — 이전 값 `--faint` → 새 값. 1차 처리 중 `…` |
-| S12 | error | ✅ resolved | explicit | 「Error — 구매 요청 폼 칸」 · 「막힘 — 구매 요청 폼」(서버 문 가르기 거부 · 팀 비용 요청자 오늘 소속 없음 포함) |
+| S12 | loading | ✅ resolved | explicit | 외화 원화 환산 `Form.Hint`는 서버 계산 — 이전 값 `--text-faint` → 새 값. 1차 처리 중 `…` |
+| S12 | error | ✅ resolved | explicit | 「Error — 구매 요청 폼 칸」 · 「막힘 — 구매 요청 폼」(서버 문 가르기 거부 · 실행가 초과 Q3 · 팀 비용 요청자 오늘 소속 없음 포함) |
 | S12 | populated | ✅ resolved | explicit | 연결을 고른 뒤 프로젝트·견적 줄이 텍스트 + 3차 `바꾸기`(S10, 온라인구매 줄만). `팀 비용`이면 요청자의 오늘 소속 텍스트(힌트 없음 — M-5, 팀 규칙은 O-19) |
-| S12 | partial | ✅ resolved | explicit | 외화인데 설정에 최근 환율이 없으면 환율 칸이 비고 1차 막힘(저장된 요청은 늘 환율·원화가 있다). 입력이 있는데 `취소 Esc` = 「확인 — 입력 버리기」 |
+| S12 | partial | ✅ resolved | explicit | 외화인데 설정에 최근 환율이 없으면 환율 칸이 비고 1차 막힘(저장된 요청은 늘 환율·원화가 있다). 바뀐 칸이 있을 때 `Esc` · x · `취소` = 「확인 — 입력 버리기」. 등록 뒤 패널 유지 + `구매 요청됨 · 26001-C0001` |
 | S12 | overflow | 🧪 resolved | backstop | S10 목록을 구매 요청 폼에서 열 때 온라인구매 줄만 고를 수 있는 긴 목록이 스크롤로 서는지 CI=true DOM 감사 |
 | S12 | zero-one-many | ✅ resolved | explicit | 온라인구매 줄 0 = 1차 `이 줄로` 비활성 + `온라인구매 줄 없음 · 팀 비용으로`, 견적 줄 0 = `이 프로젝트에 견적 줄이 없습니다 · 팀 비용으로`(「Empty — 연결 고르기 목록」) |
-| S12 | long-text | 🧪 resolved | backstop | 긴 쇼핑몰 URL이 링크 칸 480에서 `overflow-wrap: anywhere`로 서는지(Typography) CI=true DOM 감사 |
+| S12 | long-text | 🧪 resolved | backstop | 긴 쇼핑몰 URL이 패널 전폭 링크 칸에서 `overflow-wrap: anywhere`로 서는지(Typography) CI=true DOM 감사 |
 | S13 | empty | ✅ resolved | explicit | 기본값으로 채워 연다 — 가맹점 = 온라인구매 협력사 · 결제 합계 = 예상 금액(통화·외화·환율 그대로) · 사용일 오늘 · 연결 = 요청의 것(텍스트). 팀 비용이면 팀 = 요청자의 사용일 소속(읽기, `사용한 사람` 칸 없음 — O-19) |
-| S13 | loading | ✅ resolved | explicit | 서버 계산 한 줄 이전 값 `--faint` → 새 값. 팀 비용이면 사용일을 바꿀 때 팀도 같은 꼴로 다시 온다. 1차 `구매 완료` 처리 중 `…` |
-| S13 | error | ✅ resolved | explicit | S9 칸 오류와 같은 문구 + 그사이 상태가 바뀌면 1차 비활성 + `구매 요청 취소됨 · 새로 고침` / `이미 구매 완료 · 새로 고침` · 팀 비용인데 요청자의 사용일 소속 없음 = 1차 막힘 `요청자 김OO 09-20 소속 없음 · 소속 발령은 관리자`(「막힘 — 카드 사용 폼」) |
-| S13 | populated | ✅ resolved | explicit | 제목 `구매 완료 — 26001-C0001 · {품목}` · 카드 옵션 = 활성 카드 전부(구매 권한자) · 등록 칸 = `구매 요청 26001-C0001` |
-| S13 | partial | ✅ resolved | explicit | 결제 합계 ≠ 예상 금액이면 `예상 금액 1,250,000 · 차이 -12,000`(`--muted`, 막지 않음, 원화 환산액으로 서버 비교) |
+| S13 | loading | ✅ resolved | explicit | 서버 계산 한 줄 이전 값 `--text-faint` → 새 값. 팀 비용이면 사용일을 바꿀 때 팀도 같은 꼴로 다시 온다. 1차 `구매 완료` 처리 중 `…` |
+| S13 | error | ✅ resolved | explicit | S9 칸 오류와 같은 문구(실행가 초과 Q3 — 완료 아닌 프로젝트만, 완료 프로젝트는 막지 않음(r4 Q-E · partial 행) · 사용일 미래 Q6 포함) + 그사이 상태가 바뀌면 1차 비활성 + `구매 요청 취소됨 · 새로 고침` / `이미 구매 완료 · 새로 고침` · 팀 비용인데 요청자의 사용일 소속 없음 = 1차 막힘 `요청자 김OO 09-20 소속 없음 · 소속 발령은 관리자`(「막힘 — 카드 사용 폼」) |
+| S13 | populated | ✅ resolved | explicit | 구매 요청 목록 위 옆 패널 — 머리 `구매 완료` + 본문 첫 줄 `26001-C0001 · {품목}` · 성공 = 닫힘 + 그 행 `구매 완료` + 포커스 화면 제목 · 카드 옵션 = 활성 카드 전부(구매 권한자) · 등록 칸 = `구매 요청 26001-C0001` |
+| S13 | partial | ✅ resolved | explicit | 결제 합계 ≠ 예상 금액이면 `예상 금액 1,250,000 · 차이 -12,000`(`--text-muted`, 막지 않음, 원화 환산액으로 서버 비교). 완료 프로젝트 줄의 요청도 구매 완료 가능(gap 38 — 사용자 확정 U-4, r3) — 남은 실행가를 넘어도 1차 활성 + `실행가 초과 150,000`(`--status-warning`) 한 줄 · 처리 뒤 S11 2행 끝 같은 값 · 행동 로그 기록(r4 — UC-5 · Q-E, 「표시 — 완료 프로젝트 구매 완료 실행가 초과」) |
 | S13 | overflow | 🧪 resolved | backstop | 활성 카드 30장+의 카드 `Select`가 말줄임으로 서는지 CI=true DOM 감사(S9와 같은 컴포넌트) |
 | S13 | zero-one-many | ✅ resolved | explicit | 연결은 요청의 것 하나라 텍스트(「바꾸기」 없음). 카드는 여러 장 = `Select`, 한 장 = 텍스트(§6-3 자동 채움) |
-| S13 | long-text | 🧪 resolved | backstop | 긴 품목 이름이 제목 줄에서 말줄임 + `title`로 서는지 CI=true DOM 감사 |
-| S14 | empty | ✅ resolved | explicit | 연결 문서 0인 줄의 상태 = `미착수`(`muted`) |
+| S13 | long-text | 🧪 resolved | backstop | 긴 품목 이름이 패널 본문 첫 줄에서 말줄임 + `title`로 서는지 CI=true DOM 감사 |
+| S14 | empty | ✅ resolved | explicit | 연결 문서 0인 줄의 상태 = `미착수`(`muted`). 종결 지출결의만 이어진 줄도 `미착수`이고 금액 셀이 열린다(D-66 읽기 전용에서도 빠짐 — r4 UC-7 · Q-C 풀기) |
 | S14 | loading | 🧪 resolved | backstop | 행 행동(`구매 요청` / `지출결의 올리기`)은 폼 이동이라 진행 표시는 §7-1 규칙 그대로 — Phase 5 행 행동 자리(UA-608) 확정 뒤 CI=true DOM 감사 |
 | S14 | error | ✅ resolved | explicit | 서버 게이트 거부는 화면 막힘과 같은 문구(「막힘 — 견적 줄 표 행 행동」, RESEARCH Pitfall 3) |
-| S14 | populated | ✅ resolved | explicit | 상태 열 = Color 매핑표 견적 줄 값(`text` 변형 `--fs-xs` 600) + 2행 `증빙 16일 경과`(`--warning` 400). 온라인구매 줄의 행 행동 = `구매 요청`, 그 밖 = `지출결의 올리기`, 힌트 줄 `지출결의·구매 요청 Ctrl+E` |
+| S14 | populated | ✅ resolved | explicit | 상태 열 = Color 매핑표 견적 줄 값(`text` 변형 `--text-tag` 600) + 2행 `증빙 16일 경과`(`--status-warning` 400). 온라인구매 줄의 행 행동 = `구매 요청`, 그 밖 = `지출결의 올리기`, 힌트 줄 `지출결의·구매 요청 Ctrl+E` |
 | S14 | partial | ✅ resolved | explicit | 한쪽 연결(D-609): 반대쪽 행 행동은 렌더 + 비활성 + 이유 + 다음 한 수 3차(카드 쪽 줄의 `카드 사용 등록` → `/cards?new=1&line={그 줄 id}`, r2 W2). 지급 완료 줄은 새 지출결의 막힘 + D-66 읽기 전용 이유 |
 | S14 | overflow | 🧪 resolved | backstop | `지출결의 중`(5자) 등 긴 상태 낱말이 좁은 PC·폰 P1 상태 칸에서 잘리지 않는지 CI=true DOM 감사(SP-2 — 4자 규칙은 `tag`만) |
-| S14 | zero-one-many | ✅ resolved | explicit | 한 줄에 문서가 여럿이면 우선순위 취소 > 반려 > 증빙 없음 > 지출결의 중 > 구매 요청 > 지급 완료 > 카드 사용 > 미착수 첫 값 하나만(서버 파생) |
+| S14 | zero-one-many | ✅ resolved | explicit | 한 줄에 문서가 여럿이면 우선순위 취소 > 반려 > 증빙 없음 > 지출결의 중 > 구매 요청 중 > 지급 완료 > 카드 사용 > 미착수 첫 값 하나만(서버 파생) |
 | S14 | long-text | 🧪 resolved | backstop | 막힘 이유 `지출결의 26001-0004 연결됨 · 카드 사용은 다른 줄` + 3차가 행 행동 자리에서 넘치지 않는지 CI=true DOM 감사 |
 | S15 | empty | ✅ resolved | explicit | 「Empty — 상세 「법인카드 사용」 섹션」(카드가 있는 사람에게만 3차, 없으면 사실만) |
 | S15 | loading | 🧪 resolved | backstop | 섹션 로드는 §7-7 LOADING 꼴(섹션 단위) — 이 표면 고유 규칙 없음. 느린 응답을 강제해 CI=true DOM 감사 |
 | S15 | error | ✅ resolved | explicit | 「Error — 섹션 로드」 — 섹션만 실패하고 상세의 다른 섹션은 선다(§7-7) |
 | S15 | populated | ✅ resolved | explicit | 열(사용일 · 견적 줄 · 가맹점 · 결제 합계 2행 공급가 · 등록), 경영관리 등록 건은 `경영관리 등록`(600). 팀 비용 연결 건은 없다 |
-| S15 | partial | ✅ resolved | explicit | `quote.amount`가 없는 사람은 금액 열이 없고 부제가 `{N}건`만(서버가 DTO에서 뺀다) |
+| S15 | partial | ✅ resolved | explicit | `quote.amount`가 없는 사람은 금액 열이 없고 합계 행이 `합계 ({N}건)`만(서버가 DTO에서 뺀다) |
 | S15 | overflow | 🧪 resolved | backstop | 카드 사용 50건+ 프로젝트에서 섹션 표가 §7-3 (자) 규칙대로 서는지 CI=true DOM 감사 — 이 섹션의 페이지 나눔은 본문에 적혀 있지 않다 |
-| S15 | zero-one-many | ✅ resolved | explicit | 부제 `{N}건 · 결제 합계 {합}`, 0건 = Empty 한 줄 |
+| S15 | zero-one-many | ✅ resolved | explicit | 합계 행 `합계 ({N}건)` · `결제 합계 {합}`(부제 없음 — r3), 0건 = Empty 한 줄 |
 | S16 | empty | ✅ resolved | explicit | 「Empty — 상세 「발행 요청」 표」 세 갈래(쓰기 PM ≥1024 · 그 밖의 사람 · 1024 미만) |
 | S16 | loading | ✅ resolved | explicit | 저장은 상세의 `일괄 저장 Ctrl+S N` 흐름 그대로(Phase 4) — 저장 뒤 `저장됨 N줄 14:02` |
 | S16 | error | ✅ resolved | explicit | 저장 실패·동시성은 Phase 4 일괄 저장 오류 셀 흐름 + `version` 낙관적 잠금(금액 표시 절 「낙관적 잠금」) |
-| S16 | populated | ✅ resolved | explicit | 열 희망 발행일 · 금액(2행 `부가세 · 합계`) · 메모 · 상태(`요청` / `발행됨` + 2행 `발행 09-30 · 22,000,000` / `취소`) |
-| S16 | partial | ✅ resolved | explicit | `발행 줄로` 뒤 저장 전 = 요청 줄 상태 2행 `발행 줄 입력 중`(`--muted`), 새 발행 줄을 지우면 연결도 풀린다. 발행액을 볼 수 없는 사람에게는 상태 2행 금액을 보내지 않는다 |
+| S16 | populated | ✅ resolved | explicit | 열 희망 발행일 · 금액(2행 `부가세 · 합계`) · 메모 · 상태(`신청됨` / `발행됨` + 2행 `발행 09-30 · 22,000,000` / `취소`) |
+| S16 | partial | ✅ resolved | explicit | `발행 줄로` 뒤 저장 전 = 요청 줄 상태 2행 `발행 줄 입력 중`(`--text-muted`), 새 발행 줄을 지우면 연결도 풀린다. 발행액을 볼 수 없는 사람에게는 상태 2행 금액을 보내지 않는다 |
 | S16 | overflow | ✅ resolved | explicit | 줄이 몇 개뿐인 섹션 표라 페이지를 나누지 않는다(§7-3 (자)) |
 | S16 | zero-one-many | 🧪 resolved | backstop | 요청 줄 여럿이 발행 줄 표와 함께 읽히는지 — 줄 순서는 본문에 없으므로 계획이 정하고 CI=true DOM 감사 |
 | S16 | long-text | 🧪 resolved | backstop | 메모는 표 안 두 줄까지, 셋째 줄부터 말줄임(Typography). 200자 메모로 CI=true DOM 감사 |
 | S17 | empty | ✅ resolved | explicit | 「Empty — 발행 요청 목록(S17)」 |
 | S17 | loading | ✅ resolved | explicit | 첫 로드 = §7-7 LOADING 뼈대. 상태 필터 이동은 GET 이동 |
 | S17 | error | ✅ resolved | explicit | 「Error — 목록 로드」 발행 요청 문구 |
-| S17 | populated | ✅ resolved | explicit | 그룹 희망 발행일(`희망일 지남` → `이번 주` → `다음 주` → `그 뒤`) · 열 · 합계 줄 `합계 (요청 · 2건)` · 1차 없음 · 행 3차는 `요청` 행 `발행 줄 입력` / `발행됨`·`취소` 행 `요청 보기`(≥1024 · 매출 기록 권한자) |
+| S17 | populated | ✅ resolved | explicit | 그룹 희망 발행일(`희망일 지남` → `이번 주` → `다음 주` → `그 뒤`) · 열 · 합계 줄 `합계 (신청됨 · 2건)` · 1차 없음 · 행 3차는 `신청됨` 행 `발행 줄 입력` / `발행됨`·`취소` 행 `요청 보기`(≥1024 · 매출 기록 권한자) |
 | S17 | partial | ✅ resolved | explicit | 1024 미만에는 행동 칸이 없고 행을 누르면 같은 주소의 보기 전용 상세로 간다 |
 | S17 | overflow | ✅ resolved | explicit | 50건 페이지(§7-16) |
 | S17 | zero-one-many | ✅ resolved | explicit | 프로젝트 목록 링크 `발행 요청 2`, 0이면 `발행 요청`만 — 링크는 남는다(SP-4) |
@@ -1204,20 +1342,20 @@ Applicable state considerations resolved: 174 applicable — 129 explicit, 45 ba
 | S18 | empty | ✅ resolved | explicit | 「Empty — 완료 전 점검」 — 세 그룹이 다 비었을 때만 `미결 없음`, 매출 줄은 늘 남는다 |
 | S18 | loading | 🧪 resolved | backstop | 섹션 로드는 §7-7 LOADING 꼴(섹션 단위) — 이 표면 고유 규칙 없음. 느린 응답을 강제해 CI=true DOM 감사 |
 | S18 | error | ✅ resolved | explicit | 「Error — 섹션 로드」 점검 문구 + 「정산 결재 올리기」 비활성 `점검 결과 없음 · 다시 시도`(점검 없이 기안하지 않는다) |
-| S18 | populated | ✅ resolved | explicit | 와이어프레임대로 제목 + 부제 `정산 결재 전 · 막힘 3건` · 그룹 셋 · 점검 행(「표시 — 점검 행」) · 매출 줄 |
-| S18 | partial | ✅ resolved | explicit | 막힘 0이어도 강행 허용 그룹 항목은 보이고 부제 `정산 결재 전 · 막힘 없음`. 계약 금액 미승인이면 `계약 금액 — · 3차 고객 승인 전`. 증빙 `면제` 문서(선결제·지급 뒤 포함)는 미결 지출결의 행에 없다(D-611) |
+| S18 | populated | ✅ resolved | explicit | 와이어프레임대로 제목(부제 없음 — r3) · 그룹 셋 · 점검 행(「표시 — 점검 행」) · 매출 줄 |
+| S18 | partial | ✅ resolved | explicit | 막힘 0이어도 강행 허용 그룹 항목은 보인다(막힘 그룹 머리글 없음 · 기안 버튼 살아 있음). 계약 금액 미승인이면 `계약 금액 — · 3차 고객 승인 전`. 증빙 `면제` 문서(선결제·지급 뒤 포함)는 미결 지출결의 행에 없다(D-611) |
 | S18 | overflow | 🧪 resolved | backstop | 섹션 표라 페이지 없음 — 미결 30건 프로젝트에서 그룹마다 전부 서는지 CI=true DOM 감사 |
 | S18 | zero-one-many | ✅ resolved | explicit | 그룹 머리글 건수 `미결 지출결의 2건` · `미매칭 견적 줄 1줄`, 막힘 건수 = 막히는 그룹 항목 수 합(강행 허용 그룹 제외), 비어 있는 그룹만 접는다 |
 | S18 | long-text | 🧪 resolved | backstop | 긴 항목 이름이 점검 행에서 말줄임 + `title`로 서는지 CI=true DOM 감사 |
 | S19 | empty | ✅ resolved | explicit | 0건이면 블록이 없다(§7-4) |
 | S19 | loading | 🧪 resolved | backstop | 홈 로드 규칙은 §7-4·§7-7 그대로 — 공급 함수가 main에 없다(UA-611 · O-15). 계획이 공급 경로를 정한 뒤 CI=true DOM 감사 |
-| S19 | error | ✅ resolved | explicit | 「Error — 「내 차례」 로드(S19)」 — 블록 자리 한 줄 `내 차례를 불러오지 못했습니다 · 다시 시도`, 홈의 나머지는 선다. 0건(블록 없음)과 구분 |
+| S19 | error | ✅ resolved | explicit | 「Error — 「내 차례」 로드(S19)」 — 블록 자리 한 줄 `내 차례 불러오지 못함 · 다시 시도`, 홈의 나머지는 선다. 0건(블록 없음)과 구분 |
 | S19 | populated | 🧪 resolved | backstop | 문구·태그 순서·6줄 상한은 확정(「표시 — 「내 차례」」). 공급 함수가 main에 없어(UA-611 · O-15) 계획이 「이 페이즈가 처음 만든다 / Phase 5 것에 더한다」를 정한 뒤 CI=true DOM 감사 |
-| S19 | partial | ✅ resolved | explicit | 경영관리 항목은 묶음 한 줄(지급 · 구매 요청 · 발행 요청 각각), PM 항목은 건마다 한 줄 — 선결제 기한 초과 · **결재 통과 · 증빙 없음 · 지급 대기**(P3, H-1 — `확인 전`은 넣지 않는다) · 완료 전 점검 막힘. 지급 묶음은 예정일이 오늘이거나 그 전인 건이 없을 때만 `[대기]`(오늘 예정 건은 `[오늘]` 「예정일 지남·오늘」에 든다 — §7-4 태그 순서) |
+| S19 | partial | ✅ resolved | explicit | 경영관리 항목은 묶음 한 줄(지급 · 구매 요청 · 발행 요청 각각), 기안자 항목은 건마다 한 줄 — 선결제 기한 초과(r3 받는 사람 = 기안자) · **결재 통과 · 증빙 없음 · 지급 대기**(P3, H-1 — rev 10 받는 사람 = 기안자, `확인 전`은 넣지 않는다), PM 항목 = 완료 전 점검 막힘. 지급 묶음은 예정일이 오늘이거나 그 전인 건이 없을 때만 `[대기]`(오늘 예정 건은 `[오늘]` 「예정일 지남·오늘」에 든다 — §7-4 태그 순서) |
 | S19 | overflow | ✅ resolved | explicit | 최대 6줄, 태그 순서 막힘 → 오늘 → 결재 → 대기(§7-4) — 경영관리 묶음 한 줄이 상한을 다 먹지 않게 한다 |
 | S19 | zero-one-many | ✅ resolved | explicit | 묶음 줄은 건수를 글자로(`신청 3건`), 0건인 묶음은 줄이 없다 |
 | S19 | long-text | 🧪 resolved | backstop | 긴 프로젝트·항목 이름이 NextTurn 한 줄에서 말줄임 + `title`로 서는지 CI=true DOM 감사 |
-| S20 | empty | ✅ resolved | explicit | 기본값 표 그대로 — 증빙 필수 켬 · 크기 한도 10 · 선결제 기한 14 · 온라인구매 협력사 빈 값 |
+| S20 | empty | ✅ resolved | explicit | 기본값 표 그대로 — 증빙 필수 켬 · 크기 한도 10 · 선결제 기한 14 · 온라인구매 협력사 빈 값 · 지급 방식 · 증빙 종류 짝 빈 값(짝 검사 없음 — Q4) |
 | S20 | loading | ✅ resolved | explicit | §7-2 즉시 저장 흐름 그대로(화면 코드 없음, UA-614) |
 | S20 | error | 🧪 resolved | backstop | 범위 밖 숫자(0 · 음수)와 저장 실패 표시는 §7-2 시스템 규칙 — 이 페이즈 고유 문구 없음. 잘못된 값을 넣어 CI=true DOM 감사 |
 | S20 | partial | 🧪 resolved | backstop | `온라인구매 협력사` 문자열이 거래처와 맞지 않을 때의 표시는 본문에 없다(O-13 — 서버가 거래처와 맞춘다). 계획이 정하고 CI=true DOM 감사 |
@@ -1232,7 +1370,7 @@ Applicable state considerations resolved: 174 applicable — 129 explicit, 45 ba
 | S21 | long-text | 🧪 resolved | backstop | 80자 파일명이 §7-10 파일 행에서 말줄임 + `title`로 서고 `삭제` 3차를 밀어내지 않는지 CI=true DOM 감사 |
 | S22 | empty | ✅ resolved | explicit | 「Empty — 리저브 줄 증빙(S22, 펼침 섹션)」 — 쓰기면 첨부 영역만, 읽기 · 파일 0이면 `증빙 없음`. 열 값 0 = 3차 `증빙`(숫자 없음), 저장 전 새 줄 = `—`(3차 없음) |
 | S22 | loading | ✅ resolved | explicit | 업로드 = §7-10 행 아래 2px 진행 바, 삭제 = 누른 3차 `…`. 즉시 저장이라 표의 dirty `N`에 들지 않고 잔액 · 금액을 바꾸지 않는다(06-16) |
-| S22 | error | ✅ resolved | explicit | 「Error — 증빙 업로드」(번호 없는 중복 문구). 권리 밖 직접 호출 = 그 행 오류 자리 `리저브 쓰기 권한 없음`(04-07 `denyWrite`) |
+| S22 | error | ✅ resolved | explicit | 「Error — 증빙 업로드」(번호 없는 중복 문구). 권리 밖 직접 호출 = 그 행 오류 자리 `리저브 기록 권한 없음`(04 상수 `FORBIDDEN_MESSAGE` · 04-07 `denyWrite`, r3) |
 | S22 | populated | ✅ resolved | explicit | 와이어프레임대로 — 세금계산서 번호 다음 읽기 셀 열 `증빙`(P2) 3차 `증빙 {N}` → 표 블록 아래 펼침 제목 `09-18 현대자동차 출금 3,300,000 증빙` · 파일 행 + 첨부 영역. 성공 토스트 없음 |
 | S22 | partial | ✅ resolved | explicit | 폭: 1024~1279 쓰기 · 700~1023 파일 행만(첨부 영역 없음) · 폰 읽기만 — 접힌 줄 `증빙 2` 글자 + 행 시트의 §7-8 첨부 행(O-22). 보관된 줄 = 읽기. 줄 삭제 = 04 S16 모달 결과 줄 `증빙 {N}개 함께 보관`(「Destructive — 리저브 줄 삭제」) |
 | S22 | overflow | 🧪 resolved | backstop | 파일 10개 줄에서 표 아래 펼침 섹션의 파일 행이 전부 서고, 쪽을 넘기면 펼침이 닫히는지 CI=true DOM 감사 |
@@ -1240,8 +1378,8 @@ Applicable state considerations resolved: 174 applicable — 129 explicit, 45 ba
 | S22 | long-text | 🧪 resolved | backstop | 80자 파일명 · 긴 클라이언트 이름이 펼침 제목 줄 · 파일 행에서 말줄임 + `title`로 서는지 CI=true DOM 감사 |
 | S1 제자리 증빙 확인 | empty | ✅ resolved | explicit | 빈 모달이 열릴 길이 없다 — 3차 `증빙 확인`은 증빙이 있는 `확인 전` 행에만 선다(P2 · P5 정의상 증빙 ≥ 1). 1024 미만은 3차가 문서 화면으로 간다(모달 없음) |
 | S1 제자리 증빙 확인 | loading | ✅ resolved | explicit | 여는 동안 첨부 보기 칸 · 부제 금액 · 결과 줄 자리 `…` + 1차 `aria-disabled`(`Ctrl+Enter` 무반응). 확인 처리 중 1차 `증빙 확인…`(§7-1) |
-| S1 제자리 증빙 확인 | error | ✅ resolved | explicit | 「거부 — 증빙 확인 모달(S1 · S3)」 — 불러오기 실패 `증빙을 불러오지 못함 · 다시 시도`, 확인 거부 · 열 때 받은 `version` ≠ 행 `version` = 문서 화면 동시성 · 응답 없음 문구. 모달은 닫히지 않고, `새로 고침`은 목록과 모달 보기를 다시 받아 모달이 새 파일 · 새 `version`으로 다시 선다(`확인 전`이 아니게 됐으면 모달을 닫고 포커스 그 행 링크) — 선택 · 편집은 그대로(r2 B-1) |
-| S1 제자리 증빙 확인 | populated | ✅ resolved | explicit | 「확인 — 증빙 확인(S1 · S3 제자리)」 — 제목 · 부제 · 첨부 보기 칸(SP-7) · 결과 줄 · 1차 `증빙 확인` + `Ctrl+Enter` · 2차 `취소 Esc`. 성공(S1) = 행 P4 → 저절로 골라짐 + 포커스 그 행 이체액 셀 + 서버 합 다시. 성공(S3) = `확인됨` + 포커스 그 행 링크. 토스트 없음 |
+| S1 제자리 증빙 확인 | error | ✅ resolved | explicit | 「거부 — 증빙 확인 모달(S1 · S3)」 — 불러오기 실패 `증빙 불러오지 못함 · 다시 시도`, 확인 거부 · 열 때 받은 `version` ≠ 행 `version` = 문서 화면 동시성 · 응답 없음 문구. 모달은 닫히지 않고, `새로 고침`은 목록과 모달 보기를 다시 받아 모달이 새 파일 · 새 `version`으로 다시 선다(`확인 전`이 아니게 됐으면 모달을 닫고 포커스 그 행 링크) — 선택 · 편집은 그대로(r2 B-1) |
+| S1 제자리 증빙 확인 | populated | ✅ resolved | explicit | 「확인 — 증빙 확인(S1 · S3 제자리)」 — 제목 · 부제 · 첨부 보기 칸(SP-7) · 결과 줄(+ S1 증빙 금액 초과면 `승인액보다 +{차액}` · `실행가 초과 {초과액}` 한 줄, 막지 않음 — r4 UC-4 · Q-F) · 1차 `증빙 확인` + `Ctrl+Enter` · 2차 `취소 Esc`. 성공(S1) = 행 P4 · 고를 수 있음 → 저절로 골라짐 + 포커스 그 행 이체액 셀 + 서버 합 다시 / 짝 막힘 → 선택 없음 + 짝 이유 + 포커스 그 행 링크. 성공(S3) = `확인됨` + 포커스 그 행 링크. 토스트 없음 |
 | S1 제자리 증빙 확인 | partial | ✅ resolved | explicit | S3은 지급 뒤 문서라 결과 줄 없음. 금액을 고칠 건은 모달에 칸이 없어 번호 링크로 문서 화면(S1 「문서 화면 왕복」). 응답의 새 `version`으로 행을 바꾼다(뒤이은 일괄 처리의 동시성 막힘 방지). 닫힌 직후 `event.repeat`인 `Ctrl+Enter` 무시(M-3) |
 | S1 제자리 증빙 확인 | overflow | 🧪 resolved | backstop | 파일이 셋을 넘으면 첨부 보기 칸이 행 셋 높이에서 멈추고 칸 안만 스크롤(제목 · 부제 · 행동 줄 고정, SP-7) — 파일 6개 건으로 480 모달 · 폰 시트에서 CI=true DOM 감사 |
 | S1 제자리 증빙 확인 | long-text | 🧪 resolved | backstop | 긴 프로젝트 · 항목 이름의 부제와 80자 파일명이 480 모달에서 말줄임 + `title`로 서는지 CI=true DOM 감사 |
@@ -1249,38 +1387,74 @@ Applicable state considerations resolved: 174 applicable — 129 explicit, 45 ba
 | S1 일괄 결과 알림 | populated | ✅ resolved | explicit | 「표시 — 일괄 지급 결과」 `14:02 지급 완료 5건 · 막힘 2건`을 처음부터 DOM에 있는 빈 `aria-live="polite"` 영역에 쓴다. 자리 = 필터 줄 왼쪽 묶음 끝(1차와 떨어짐, M-2) |
 | S1 일괄 결과 알림 | partial | ✅ resolved | explicit | 서버가 막힌 행마다 `고를 수 있음`을 다시 보낸다 — 게이트 막힘(P2 · P3 · 지급 뒤) = 선택 풀림 + 체크박스 `aria-disabled` + 편집값 버림, 동시성 · 지급일 세율 막힘(P4 그대로) = 선택 유지. 1차 N = 고를 수 있는 고른 행만(H-3). 처리 뒤 같은 쪽을 다시 받고, 비었으면 행이 있는 마지막 쪽(M-1) |
 | S1 일괄 결과 알림 | zero-one-many | ✅ resolved | explicit | 막힘 0 = `14:02 지급 완료 5건`만. 포커스 = 막힌 행이 있으면 첫 막힌 행 체크박스(`aria-disabled`여도 포커스 — SYSTEM §10), 없으면 1차 버튼 |
+| S9·S12·S13 옆 패널 | empty | ✅ resolved | explicit | 새 건은 빈 패널로 열지 않는다 — 서버 기본값(S9 사용일 오늘 · 직전 카드 · 직전 연결 / S12 진입 줄 또는 `팀 비용` / S13 예상 금액 · 협력사 · 사용일 오늘). 등록 뒤 패널은 열린 채 `form.reset()`으로 기본값 복귀 + 첫 칸 포커스 + 결과 한 줄 `카드 사용 등록됨 · 1,240,000` / `구매 요청됨 · 26001-C0001`(`role="status"`, PanelForm.tsx:161-176) |
+| S9·S12·S13 옆 패널 | loading | ✅ resolved | explicit | 제출 중 1차 `진행 중` + `aria-disabled`, `Ctrl+Enter` 연타 · `Esc` · x · 가림막 무시(D7 — PanelForm.tsx:101 동기 잠금, SidePanel.tsx:181). 서버 계산 한 줄은 이전 값 `--text-faint` → 새 값 |
+| S9·S12·S13 옆 패널 | error | ✅ resolved | explicit | 칸 오류 = 명사형 `Form.Error`(「Error — 카드 사용 폼 칸」 · 「Error — 구매 요청 폼 칸」), 막힘 = `blockedReason` 한 줄 + 1차 비활성(빈 칸 · 연결 없음 · 실행가 초과 Q3), 서버 거부 + 다음 한 수 = `reason` 줄. 패널은 닫히지 않고 입력이 남는다. `Ctrl+Enter`는 막힘 동안 무시(PanelForm.tsx:197-199) |
+| S9·S12·S13 옆 패널 | partial | ✅ resolved | explicit | 바뀐 칸이 있을 때만 `Esc` · x · `취소` → 「입력 버리기」(부제 `{패널 제목} · N칸`, SidePanel.tsx:181-184 · :283), 가림막 누르기는 무시, 바뀐 칸 0이면 바로 닫힘(서버 기본값은 바뀐 칸 아님 · 「바꾸기」로 고른 값은 바뀐 칸). 수정 성공 = 닫힘 + 포커스 그 행 `수정`, S13 성공 = 닫힘 + 포커스 화면 제목. 폰(<700)은 같은 패널이 아래 시트, 행동 줄 시트 아래 고정 |
+| S9·S12·S13 옆 패널 | long-text | 🧪 resolved | backstop | 긴 가맹점 · 카드 · 품목 · URL이 패널 전폭(PC 480 · 폰 시트)에서 말줄임 / `overflow-wrap: anywhere`로 서고 본문만 스크롤 · 머리 · 행동 줄 고정, 폰 행동 줄 버튼 `--touch-min` — 1280 · 375 · 320에서 CI=true DOM 감사 |
+| SP-8 패널 위 고르기 목록 | empty | ✅ resolved | explicit | 「Empty — 연결 고르기 목록」 세 갈래 — 다음 한 수(`견적 외 비용으로` / `팀 비용으로`)는 패널의 연결 라디오를 바꾸고 목록만 닫는다(패널 입력 유지) |
+| SP-8 패널 위 고르기 목록 | loading | 🧪 resolved | backstop | 목록 로드 · 검색 중은 §7-7 LOADING 꼴, 뒤의 패널은 그대로 — 느린 응답을 강제해 CI=true DOM 감사 |
+| SP-8 패널 위 고르기 목록 | error | ✅ resolved | explicit | 「Error — 연결 고르기 목록 로드(S10)」 목록 자리 한 줄 + 2차 `다시 시도`, 1차 `이 줄로` 비활성(`aria-describedby` → 오류 줄), `취소 Esc`는 목록만 닫고 패널 입력은 남는다 |
+| SP-8 패널 위 고르기 목록 | populated | ✅ resolved | explicit | 열린 패널 위 05 `ui/pick-dialog/PickDialog` 검색 고르기(r3) — PC 가운데 `--dialog-w` 480 + `--scrim-dialog` · 폰 시트 위 시트. 첫 포커스 = 검색 칸. 행 = 번호 · 항목 · 실행가 + 2행 `남은 실행가`(Q3), 현재 줄 `--fw-bold` + 왼쪽 2px `--accent`(§6-3 「바꾸기」) |
+| SP-8 패널 위 고르기 목록 | partial | ✅ resolved | explicit | `Esc`(`preventDefault` — `isPanelCloseKey`가 패널 닫기로 받지 않는다, SidePanel.tsx:33-36) · `취소` = 목록만 닫힘 → 포커스 누른 `{칸} 바꾸기`. `이 줄로 Enter` = 패널 칸 dirty + 포커스 다음 빈 `바꾸기`(없으면 바뀐 칸의 `바꾸기`). 반대쪽 · 실행가 소진 · 온라인구매 밖 줄은 `aria-disabled` + 2행 이유. 목록이 열린 동안 패널 `Ctrl+Enter`는 닿지 않는다 |
+| SP-8 패널 위 고르기 목록 | overflow | 🧪 resolved | backstop | 견적 줄 100줄+ 목록이 모달 · 시트 안에서만 스크롤하고 행동 줄이 고정되는지, 폰에서 두 시트 겹침이 `--sheet-max-h` 안에 서는지 CI=true DOM 감사 |
+| SP-8 패널 위 고르기 목록 | zero-one-many | ✅ resolved | explicit | 고를 수 있는 줄 0 = `이 줄로` 비활성 + `이을 수 있는 줄 없음 · 견적 외 비용으로` / `온라인구매 줄 없음 · 팀 비용으로`, 1+ = 부제 `… · 카드로 이을 수 있는 줄 N`. 겹침은 둘까지 — 목록 위에 목록을 열지 않는다(SP-8) |
+| SP-8 패널 위 고르기 목록 | long-text | 🧪 resolved | backstop | 긴 항목 · 거래처 · 프로젝트 이름이 480 모달 · 폰 시트 폭에서 말줄임 + `title`로 서는지 CI=true DOM 감사 |
+| S8 카드 사용 삭제 · 되돌리기 | loading | ✅ resolved | explicit | 누른 `삭제` `…` + `aria-disabled`(요청 중 같은 행 `수정`도 비활성), 응답 뒤 행이 빠지고 표 위 결과 줄 `카드 사용 삭제됨 · 48,000` + 3차 `되돌리기`, 포커스 → `되돌리기`(§7-8 :1008) |
+| S8 카드 사용 삭제 · 되돌리기 | error | ✅ resolved | explicit | 삭제 거부 = 행 유지 + 결과 줄 자리 `--status-danger` 서버 막힘 문구. `되돌리기` 실패(이중 연결 등) = 결과 줄 글자 `--status-danger` + 그 판정의 막힘 문구(「막힘 — 카드 사용 폼」), 행은 돌아오지 않는다 |
+| S8 카드 사용 삭제 · 되돌리기 | overflow | ✅ resolved | explicit | 결과 줄은 마지막으로 지운 한 건만 — 다른 행을 지우면 그 행의 줄로 바뀌고, 되돌리면 줄이 사라진다. 구매 완료로 생긴 행에는 `삭제`가 없다(O-11) |
+| S8 카드 사용 삭제 · 되돌리기 | long-text | 🧪 resolved | backstop | 결과 줄 `카드 사용 삭제됨 · {13자리 금액}` + `되돌리기`가 320 폭에서 숫자 중간 줄바꿈 없이 서고 `되돌리기` 누르는 영역이 `--touch-min`인지 CI=true DOM 감사 |
+| 증빙 판정 표면(05 규칙) | empty | ✅ resolved | explicit | 살아 있는 파일(`removed_at IS NULL AND voided_at IS NULL`) 0 = `hasEvidence` 거짓 → 증빙 필수 on이면 `증빙 없음`(danger, P3) · off면 `—`. 무효 파일은 개수 · 상태 · 점검 · 「내 차례」 어디에도 세지 않는다 |
+| 증빙 판정 표면(05 규칙) | loading | ✅ resolved | explicit | 업로드 진행 = Phase 5 첨부 영역의 §7-10 행 아래 2px 진행 바 — 06은 새 진행 표시를 더하지 않는다. 판정 값은 서버 응답으로만 바뀐다 |
+| 증빙 판정 표면(05 규칙) | error | ✅ resolved | explicit | 결재 중 `evidence_attach` 없는 사람의 직접 호출 = 서버 거부(05-09 문구). 06 업로드 오류 = 「Error — 증빙 업로드」 넷. 결재 중 · 승인 뒤 파일 행에는 `삭제`가 없어 떼기 오류가 생기지 않는다 |
+| 증빙 판정 표면(05 규칙) | populated | ✅ resolved | explicit | 무효 파일 행 모양과 무효 처리 창은 05 표면(05-09)이 그린다 — 06은 그 결과만: 무효 뒤 `확인됨` → `확인 전`, 살아 있는 파일 0이면 `증빙 없음` + P3(지급 전) / P6 갈래(지급 뒤) |
+| 증빙 판정 표면(05 규칙) | partial | ✅ resolved | explicit | 결재 중 `evidence_attach` 권한이 없는 사람에게는 첨부 영역 · 붙이기 버튼을 렌더하지 않는다(비활성 버튼 없음 — 잠김 한 줄 `결재 중 · 증빙은 경영관리`는 05 표면). 권한자의 결재 중 추가는 확인을 건드리지 않고 `version`만 올린다. 승인 뒤 기안자 추가 = 확인 풀림 → `확인 전` |
+| 증빙 판정 표면(05 규칙) | overflow | 🧪 resolved | backstop | 무효 파일이 섞인 파일 10개+ 문서에서 S1 증빙 칸 · S4 · S18 · S19가 살아 있는 파일만 세는지 — `hasEvidence` 통합 테스트 + CI=true DOM 감사 |
+| 증빙 판정 표면(05 규칙) | zero-one-many | ✅ resolved | explicit | 0 = `증빙 없음` / `—`, 1+ = `확인 전` → `확인됨`(또는 `면제` · `선결제`), S8 카드 사용 증빙 열은 `있음` / `—` 글자. 판정은 `hasEvidence` 한 함수 |
+| 증빙 판정 표면(05 규칙) | long-text | 🧪 resolved | backstop | 80자 파일명이 Phase 5 첨부 영역 파일 행에서 말줄임 + `title`로 서는지 CI=true DOM 감사(06은 행 모양을 바꾸지 않는다) |
+| S23 | empty | ✅ resolved | explicit | 사유 칸이 비면 모달 1차 `종결` 비활성 + 「Error — 사유 근거 칸」 — 빈 사유로 종결되지 않는다(서버도 거부) |
+| S23 | loading | ✅ resolved | explicit | 제출 중 1차 `종결…` + `aria-disabled`, `Ctrl+Enter` 연타 · `Esc` · 닫기 무시. 응답 뒤 문서 화면이 제자리에서 다시 선다(토스트 없음) |
+| S23 | error | ✅ resolved | explicit | 다시 제출됨 · 이미 종결 · `version` 다름 = 「거부 — 문서 화면 동시성」 꼴 + `새로 고침`, 응답 없음 = 「거부 — 문서 화면 응답 없음」. 모달은 닫히지 않고 사유는 남는다 |
+| S23 | populated | ✅ resolved | explicit | 반려 · 회수 문서 + 기안자 또는 지급 권한자에게만 2차 `종결`(1차는 05 그대로). 종결 뒤 상태 `종결`(muted) · 메타 `종결 · {이름} {MM-DD} · {사유}` · 행동 없음, 줄 문 · 회차 상한 · S14 파생 · S18 · S19 · 홈 막힌 문서에서 빠진다 |
+| S23 | partial | ✅ resolved | explicit | 작성 중 · 결재 중 · 결재 통과 · 종결 문서, 또는 기안자 · 지급 권한자가 아닌 사람에게는 버튼을 렌더하지 않는다(비활성 없음). 종결 문서의 첨부는 읽기만 |
+| S23 | long-text | 🧪 resolved | backstop | 긴 사유(200자+)가 모달 칸 · 메타 줄에서 말줄임 + `title` / `overflow-wrap: anywhere`로 서고 320 폭 시트에서 행동 줄이 고정인지 CI=true DOM 감사 |
 
 ---
 
-## 열린 선택 (사용자 확인 후보)
+## 열린 선택 (사용자 확인 후보 → r3 전부 확정)
 
-사용자가 이번 세션에 답할 수 없어 **추천안으로 이 문서를 썼다.** `/gsd-plan-phase 6` 전(또는 `/plan-design-review` 때) 한 줄씩 확인한다. 대안이 채택되면 가리킨 표면을 이 문서에서 고친다.
-**rev 9:** O-6(범위를 좁힘) · O-21 · O-22는 `/plan-design-review`의 사용자 카드 셋(DR-3 · DR-4 · DR-2)이다 — 추천안을 이 문서에 적용했고 **사용자 카드 답을 기다린다**(다른 답이 오면 「바뀌는 곳」 열의 표면과 06-11 · 06-16 · 06-17 · 06-20을 함께 고친다).
+사용자가 이번 세션에 답할 수 없어 **추천안으로 이 문서를 썼다.** **r3(2026-10-05):** 남은 16행(O-1 · 3 · 4 · 5 · 7 · 8 · 10~17 · 19 · 20)을 사용자가 카드로 **모두 추천안 확정**했고(REVIEWS U-6) O-2는 표기만 고쳤다 — 이제 열린 행은 없다. 아래 「추천」 열이 확정값이고 「대안」 열은 기록이다.
+**rev 10:** Q2~Q7은 위 「사용자 결정(10/5 00:55)」 표가 정본이다(O-9 확정). **rev 9:** O-6(범위를 좁힘) · O-21 · O-22는 `/plan-design-review`의 사용자 카드 셋(DR-3 · DR-4 · DR-2)이다 — 추천안 그대로 **사용자가 확정했다(2026-09-25, DR-3 · DR-4 · DR-2 — 아래 GSTACK 기록)** — 다시 묻지 않는다.
 
 | ID | 질문 | 추천(이 문서의 값) | 대안 | 바뀌는 곳 |
 |---|---|---|---|---|
-| O-1 | 경영관리 작업 화면 구성 | 탭 없는 화면 없이 1차 메뉴 안 + 「내 차례」가 모음(구성 절) | 「경영관리」 전용 화면(지급 대상만 한 화면, 나머지는 링크) — 여섯째 메뉴 필요 | 구성 절 · S1 · S11 · S17 · S19 · SP-4 |
-| O-2 | 증빙 확인이 지급의 게이트인가 | 게이트다 — `확인 전`이면 지급 완료 막힘(D-602 「검수」의 문자 그대로) | 확인은 기록만, 지급은 증빙 있음만 보면 된다(한 단계 빠름) | S1 선택 열 · S4 1차 순서 · Color `확인 전` |
-| O-3 | 일괄 지급의 지급일 | 확인 모달 날짜 한 칸, 고른 건 전부 같은 날 | 행마다 지급일 열(편집 표 한 열 더) | S1 열 · S2 |
-| O-4 | 선결제를 누가·언제 켜나 | 기안자(PM)가 제출 때만, 제출 뒤 끄고 켜기 없음 | 경영관리도 지급 전에 켤 수 있다(사유 필수) | S6 · S4 |
-| O-5 | 선결제 증빙 기한의 기준일 | 지급일부터 N일(설정, 기본 14) | 지출결의 승인일부터 | S6 힌트 · S20 · 「표시 — 선결제」 |
+| O-1 | 경영관리 작업 화면 구성 | **확정(2026-10-05 사용자 카드, 추천안 — U-6)** 탭 없는 화면 없이 1차 메뉴 안 + 「내 차례」가 모음(구성 절) | 「경영관리」 전용 화면(지급 대상만 한 화면, 나머지는 링크) — 여섯째 메뉴 필요 | 구성 절 · S1 · S11 · S17 · S19 · SP-4 |
+| O-2 | 증빙 확인이 지급의 게이트인가 | **확정(표기만 — CEO 라운드 잠김 · U-6)** 게이트다 — `확인 전`이면 지급 완료 막힘(D-602 「검수」의 문자 그대로) | 확인은 기록만, 지급은 증빙 있음만 보면 된다(한 단계 빠름) | S1 선택 열 · S4 1차 순서 · Color `확인 전` |
+| O-3 | 일괄 지급의 지급일 | **확정(2026-10-05 사용자 카드, 추천안 — U-6)** 확인 모달 날짜 한 칸, 고른 건 전부 같은 날 | 행마다 지급일 열(편집 표 한 열 더) | S1 열 · S2 |
+| O-4 | 선결제를 누가·언제 켜나 | **확정(2026-10-05 사용자 카드, 추천안 — U-6)** 기안자(PM)가 제출 때만, 제출 뒤 끄고 켜기 없음 | 경영관리도 지급 전에 켤 수 있다(사유 필수) | S6 · S4 |
+| O-5 | 선결제 증빙 기한의 기준일 | **확정(2026-10-05 사용자 카드, 추천안 — U-6)** 지급일부터 N일(설정, 기본 14) | 지출결의 승인일부터 | S6 힌트 · S20 · 「표시 — 선결제」 |
 | O-6 | 증빙 파일 중복(SHA-256) — 막는 범위(rev 9, DR-3) | 막는다 — **같은 주인 종류 안에서만**(지출결의↔지출결의 — 카드 사용의 카드 전표는 지출결의 쪽에 센다(S7) · 차수 승인↔차수 승인 · 리저브↔리저브). 다른 종류 주인에는 같은 파일을 붙일 수 있다. 올린 사람이 읽을 수 있는 문서면 번호를 보이고, 아니면 번호 없이 `이미 첨부된 파일`. **사용자 확정(2026-09-25, DR-3 = 허용)** | 종류와 상관없이 모두 막는다(rev 8 값) · 또는 경고만 하고 올린다(같은 영수증을 두 건에 나눠 쓰는 경우) | S7 · S21 · S22 · 「Error — 증빙 업로드」 |
-| O-7 | 외화 카드 입력 | 외화 금액 + 환율(기본 = 설정 최근 환율) → 서버가 원화 | 카드사 청구 원화 금액만 적는다(외화는 메모) | S9 결제 합계 · 금액 표시 표 |
-| O-8 | 카드 「견적 외 비용」 연결 | 저장할 때 견적 외 비용 줄을 새로 만든다(UA-615) | 기존 견적 외 비용 줄에만 잇는다(없으면 PM이 먼저 만든다) | S9 · S10 |
-| O-9 | 구매 요청 취소 가능 상태 | `신청` 상태에서만 | 구매 완료 뒤에도 취소 → 카드 사용 건 삭제 | S11 · 「Destructive — 구매 요청 취소」 |
-| O-10 | 구매 요청 예상 금액 기준 | 결제 합계(부가세 포함) · 구매 완료 때 차이만 보이고 막지 않는다 | 공급가 기준 · 차이가 크면(설정 %) 사유 필수 | S12 · S13 |
-| O-11 | 카드 사용 수정·삭제 권리 | 등록한 사람 · 대리 등록 권한자, 완료 프로젝트 줄은 대리 등록 권한자만, 구매 완료로 생긴 건은 삭제 없음 | 카드 소지자도 고칠 수 있다(남이 대리 등록한 자기 카드 건) | S9 · 권한 표 |
-| O-12 | 발행 요청 상태·금액 기준 | `요청` · `발행됨` · `취소` 셋, 금액 = 공급가(발행 줄과 같은 기준) | `요청` · `발행됨` 둘(취소 = 삭제) · 금액 = 합계 | S16 · S17 · Color 매핑 |
-| O-13 | 온라인구매 협력사 설정 | 문자열 한 칸(거래처 이름, 서버가 거래처와 맞춘다) | 거래처 고르기 타입 설정 — §7-2에 새 입력 타입 필요(설계 없음) | S20 · UA-614 |
-| O-14 | 결재 중 문서의 증빙 없음 표시 | 제출된 문서면 결재 중이어도 `증빙 없음`이 `지출결의 중`을 이긴다(D-611 판정과 같음 — PM에게 일찍 보인다) | 승인 뒤에만 `증빙 없음`, 결재 중에는 `지출결의 중`(결재 중 증빙 보완을 허용하는 흐름) | Color 한 값 우선순위 · S14 |
-| O-15 | 「내 차례」 공급 함수 | 이 페이즈 계획이 Phase 5 산출물을 보고 정한다 — 없으면 이 페이즈가 처음 만든다 | Phase 7(알림)로 미루고 이 페이즈는 목록 링크만 | S19 · UA-611 |
-| O-16 | 대표 승인 때 완료 전 점검 재실행 | 한 번 더 돈다 — 막히면 승인 비활성 | 기안 때 한 번만(승인은 결재 모듈 규칙 그대로) | S18 · 「막힘 — 대표 승인」 |
-| O-17 | 계좌 노출 범위 | 지급 권한자만, 다른 역할에는 행 자체를 보내지 않는다 | 기안자에게도 마스킹 값 보이기(자기 거래처 계좌 확인용) | S1 · S5 · 권한 표 |
+| O-7 | 외화 카드 입력 | **확정(2026-10-05 사용자 카드, 추천안 — U-6)** 외화 금액 + 환율(기본 = 설정 최근 환율) → 서버가 원화 | 카드사 청구 원화 금액만 적는다(외화는 메모) | S9 결제 합계 · 금액 표시 표 |
+| O-8 | 카드 「견적 외 비용」 연결 | **확정(2026-10-05 사용자 카드, 추천안 — U-6)** 저장할 때 견적 외 비용 줄을 새로 만든다(UA-615) | 기존 견적 외 비용 줄에만 잇는다(없으면 PM이 먼저 만든다) | S9 · S10 |
+| O-9 | 구매 요청 취소 가능 상태 | `신청됨` 상태에서만. **사용자 확정(10/5 00:55) Q2** — 잘못 처리한 구매 완료는 조정 줄(D-83) | 구매 완료 뒤에도 취소 → 카드 사용 건 삭제 | S11 · 「Destructive — 구매 요청 취소」 |
+| O-10 | 구매 요청 예상 금액 기준 | **확정(2026-10-05 사용자 카드, 추천안 — U-6)** 결제 합계(부가세 포함) · 구매 완료 때 차이만 보이고 막지 않는다 | 공급가 기준 · 차이가 크면(설정 %) 사유 필수 | S12 · S13 |
+| O-11 | 카드 사용 수정·삭제 권리 | **확정(2026-10-05 사용자 카드, 추천안 — U-6)** 등록한 사람 · 대리 등록 권한자, 완료 프로젝트 줄은 대리 등록 권한자만, 구매 완료로 생긴 건은 삭제 없음 | 카드 소지자도 고칠 수 있다(남이 대리 등록한 자기 카드 건) | S9 · 권한 표 |
+| O-12 | 발행 요청 상태·금액 기준 | **확정(2026-10-05 사용자 카드, 추천안 — U-6)** `신청됨` · `발행됨` · `취소` 셋, 금액 = 공급가(발행 줄과 같은 기준) | `신청됨` · `발행됨` 둘(취소 = 삭제) · 금액 = 합계 | S16 · S17 · Color 매핑 |
+| O-13 | 온라인구매 협력사 설정 | **확정(2026-10-05 사용자 카드, 추천안 — U-6)** 문자열 한 칸(거래처 이름, 서버가 거래처와 맞춘다) | 거래처 고르기 타입 설정 — §7-2에 새 입력 타입 필요(설계 없음) | S20 · UA-614 |
+| O-14 | 결재 중 문서의 증빙 없음 표시 | **확정(2026-10-05 사용자 카드, 추천안 — U-6)** 제출된 문서면 결재 중이어도 `증빙 없음`이 `지출결의 중`을 이긴다(D-611 판정과 같음 — PM에게 일찍 보인다). rev 10: 결재 중 보완은 05 결정대로 `evidence_attach` 권한자만(gap 79 — 정해짐) | 승인 뒤에만 `증빙 없음`, 결재 중에는 `지출결의 중`(결재 중 증빙 보완을 허용하는 흐름) | Color 한 값 우선순위 · S14 |
+| O-15 | 「내 차례」 공급 함수 | **확정(2026-10-05 사용자 카드, 추천안 — U-6)** 이 페이즈 계획이 Phase 5 산출물을 보고 정한다 — 없으면 이 페이즈가 처음 만든다 | Phase 7(알림)로 미루고 이 페이즈는 목록 링크만 | S19 · UA-611 |
+| O-16 | 대표 승인 때 완료 전 점검 재실행 | **확정(2026-10-05 사용자 카드, 추천안 — U-6)** 한 번 더 돈다 — 막히면 승인 비활성 | 기안 때 한 번만(승인은 결재 모듈 규칙 그대로) | S18 · 「막힘 — 대표 승인」 |
+| O-17 | 계좌 노출 범위 | **확정(2026-10-05 사용자 카드, 추천안 — U-6)** 지급 권한자만, 다른 역할에는 행 자체를 보내지 않는다 | 기안자에게도 마스킹 값 보이기(자기 거래처 계좌 확인용) | S1 · S5 · 권한 표 |
 | O-18 | S1 「고른 N건 · 이체액」 합을 클라이언트가 더하나 | **닫힘(rev 2)** — 더하지 않는다. 선택·이체액이 바뀌면 서버 액션이 합을 돌려준다(06-CONTEXT:107 금액 산술 경계, 린트 예외 없음) | — (클라이언트 정수 합 + 린트 예외 안은 경계 규칙과 충돌해 버렸다) | S1 · 금액 표시 절 |
-| O-19 | 구매 요청 팀 비용의 팀(rev 6) | 사용한 사람 = 요청자, 팀 = 구매 완료 사용일의 요청자 소속(`teamAtDate`) — S13은 읽기, S9 도출(등록자 / `사용한 사람`) 안 씀, 소속 없으면 막힘 | 구매 완료한 구매 권한자를 사용한 사람으로 보고 S9 대리 등록 규칙 그대로(`사용한 사람` 칸) · 또는 요청자의 신청일 소속을 신청 때 고정 | S12 · S13 · 「막힘 — 구매 요청 폼」 · 「막힘 — 카드 사용 폼」 · 「표시 — 카드 폼 연결 「팀 비용」」 |
-| O-20 | 구매 요청자와 구매 완료 처리자(결제자)가 같은 사람이어도 되는가(요청자 ≠ 결제자 통제) | 막지 않음(현재 명세 그대로) | 요청자 = 결제자면 막는다(대리 등록 O-11 견제 규칙과 통일) | S11 · S12 · S13 |
-| O-21 | 지급 대상 목록 행에서 금액을 고치지 않는 증빙 확인을 제자리(확인 모달)로 하나(rev 9, DR-4) | 한다 — ≥1024 `확인 전` 행 3차 `증빙 확인` → 확인 모달 + 첨부 보기 칸(SP-7), 서버는 06-06 `confirmEvidenceAction` 금액 없는 갈래 그대로, 확인 뒤 그 행이 저절로 골라진다. 문서 화면 왕복(`from=pay` · `sessionStorage` 보관)은 보조 경로. **사용자 확정(2026-09-25, DR-4 = 예)** | 문서 화면 왕복만(`from=pay` + `다음 확인 전` + 보관) — SP-7 없음 | S1 「제자리 증빙 확인」 · S1 「문서 화면 왕복」 · S3 · SP-7 · 「확인 — 증빙 확인(S1 · S3 제자리)」 |
+| O-19 | 구매 요청 팀 비용의 팀(rev 6) | **확정(2026-10-05 사용자 카드, 추천안 — U-6)** 사용한 사람 = 요청자, 팀 = 구매 완료 사용일의 요청자 소속(`teamAtDate`) — S13은 읽기, S9 도출(등록자 / `사용한 사람`) 안 씀, 소속 없으면 막힘 | 구매 완료한 구매 권한자를 사용한 사람으로 보고 S9 대리 등록 규칙 그대로(`사용한 사람` 칸) · 또는 요청자의 신청일 소속을 신청 때 고정 | S12 · S13 · 「막힘 — 구매 요청 폼」 · 「막힘 — 카드 사용 폼」 · 「표시 — 카드 폼 연결 「팀 비용」」 |
+| O-20 | 구매 요청자와 구매 완료 처리자(결제자)가 같은 사람이어도 되는가(요청자 ≠ 결제자 통제) | **확정(2026-10-05 사용자 카드, 추천안 — U-6)** 막지 않음(현재 명세 그대로) | 요청자 = 결제자면 막는다(대리 등록 O-11 견제 규칙과 통일) | S11 · S12 · S13 |
+| O-21 | 지급 대상 목록 행에서 금액을 고치지 않는 증빙 확인을 제자리(확인 모달)로 하나(rev 9, DR-4) | 한다 — ≥1024 `확인 전` 행 3차 `증빙 확인` → 확인 모달 + 첨부 보기 칸(SP-7), 서버는 06-06 `confirmEvidenceAction` 금액 없는 갈래 그대로, 확인 뒤 그 행이 저절로 골라진다(Q4 짝 막힘이면 고르지 않는다 — r2 N3). 문서 화면 왕복(`from=pay` · `sessionStorage` 보관)은 보조 경로. **사용자 확정(2026-09-25, DR-4 = 예)** | 문서 화면 왕복만(`from=pay` + `다음 확인 전` + 보관) — SP-7 없음 | S1 「제자리 증빙 확인」 · S1 「문서 화면 왕복」 · S3 · SP-7 · 「확인 — 증빙 확인(S1 · S3 제자리)」 |
 | O-22 | 리저브 줄 증빙을 폰에서도 올리나(rev 9, DR-2) | 올리지 않는다 — 쓰기는 ≥1024(1024~1279 포함), 700~1023은 파일 행만, 폰(<700)은 행 시트의 §7-8 첨부 행으로 읽기만. 리저브 표가 1024 미만 보기 전용이고 행 시트가 보기 전용 계약이라서. **사용자 확정(2026-09-25, DR-2 = 아니오)** | 폰 행 시트에 첨부 영역(§7-10 폰 동작) — §7-3 (바) 보기 전용 계약을 고쳐야 한다 | S22 「폭」 · UI Considerations S22 partial |
+| UC-6 (Q-B) | 완료 프로젝트에 견적 외 비용 카드 사용 등록(r4) | **확정 열기 — 사용자 결정 2026-10-05 (Q-B 열기 — 채팅으로 확정)** `cards.proxy` 권한자만, 서버는 04 `project.line-edit` 게이트(D-47 ③)를 지난 뒤 견적 외 비용 줄을 만든다(06-07 · 06-09) | 막기 — 완료 프로젝트는 모든 새 카드 연결을 막는다(카드 03:01 답, 채팅으로 바꿈) | S9 연결 고르기 · 권한 표 S9 |
+| UC-7 (Q-C) | 종결 지출결의가 있는 견적 줄 금액(r4) | **확정 풀기(사용자 결정 2026-10-05 카드)** 종결 문서는 D-66 읽기 전용 계산에서 빠진다 — 종결만 이어진 줄은 `미착수` · 금액 셀 열림, 기록은 행동 로그(06-13) | 종결 문서도 D-66을 계속 센다(금액 셀 잠김 유지) | S14 · 「막힘 — 견적 줄 표 행 행동」 읽기 전용 셀 |
+| UC-5 (Q-E) | 완료 프로젝트 구매 완료가 남은 실행가 초과(r4) | **확정 기록 · 표시(사용자 결정 2026-10-05 카드)** 완료 프로젝트 줄만 막지 않고 `실행가 초과 {초과액}` 표시 + 행동 로그, 완료 아닌 프로젝트는 Q3 막음(06-12) | 완료 프로젝트도 Q3대로 막는다 | S13 · S11 · 「표시 — 완료 프로젝트 구매 완료 실행가 초과」 |
+| UC-4 (Q-F) | 증빙 금액이 승인액 · 실행가 초과(r4) | **확정 표시만(사용자 결정 2026-10-05 카드)** 증빙 확인 자리에 `승인액보다 +{차액}` · `실행가 초과 {초과액}` 한 줄, 막지 않음(06-06 · 06-17) | 초과면 증빙 확인을 막는다 | S4 · S1 제자리 확인 · 「표시 — 증빙 금액 초과」 |
+| O-23 | 지급 방식 ↔ 증빙 종류 짝 설정의 입력 모양(Q4 — r2 F8) | §7-2 자동 렌더 셋(boolean · number · string) 밖이라 **짝 격자**(행 = 지급 방식 코드, 열 = 증빙 종류 코드, 칸 = 체크박스, 비면 짝 검사 없음)를 SYSTEM §7-2 새 입력 타입으로 올린다 — 06-02/03 계획이 SP로 기록. **사용자 확정(10/5 01:53)** — 밤 위임 추천안 그대로 | 문자열 한 칸(`계좌이체:세금계산서,…`) — 오타가 짝 막힘으로 바로 지급을 막는다 | S20 · UA-614 |
 
 ---
 
@@ -1288,27 +1462,31 @@ Applicable state considerations resolved: 174 applicable — 129 explicit, 45 ba
 
 | Registry | Blocks Used | Safety Gate |
 |----------|-------------|-------------|
-| — | 해당 없음 | shadcn 미사용(`Tool: none`). 외부 레지스트리·서드파티 블록 0. 이 페이즈의 화면은 전부 리포 안 `ui/` 모듈(Component Inventory)과 그 variant(SP-1 선택 열)로 만든다. 새 런타임 의존성 0 — 파일 해시(SHA-256)는 Web Crypto · Node `crypto`, 모달은 네이티브 `<dialog>`, 체크박스·라디오는 네이티브 입력. 안전 게이트 자체가 적용되지 않는다 |
+| — | 해당 없음 | shadcn 미사용(`Tool: none`). 외부 레지스트리·서드파티 블록 0. 이 페이즈의 화면은 전부 리포 안 `ui/` 모듈(Component Inventory)과 그 variant(SP-1 선택 열)로 만든다. 새 런타임 의존성 0 — 파일 해시(SHA-256)는 Web Crypto · Node `crypto`, 모달 · 옆 패널은 네이티브 `<dialog>`(`ui/confirm-dialog` · `ui/side-panel`), 체크박스·라디오는 네이티브 입력. 안전 게이트 자체가 적용되지 않는다 |
 
 ---
 
 ## Checker Sign-Off
 
-- [x] Dimension 1 Copywriting: PASS
-- [x] Dimension 2 Visuals: PASS
-- [x] Dimension 3 Color: PASS
-- [x] Dimension 4 Typography: PASS
-- [x] Dimension 5 Spacing: PASS
-- [x] Dimension 6 Registry Safety: PASS
-- [x] Dimension 7 Inventory Provenance: PASS — gsd-ui-checker rev 5 확인(provenance 줄은 Component Inventory 첫 두 줄)
+- [x] Dimension 1 Copywriting: rev 10 PASS
+- [x] Dimension 2 Visuals: rev 10 PASS
+- [x] Dimension 3 Color: rev 10 PASS
+- [x] Dimension 4 Typography: FLAG(상속, UQ-3) — 굵기 셋은 시스템 상속 값
+- [x] Dimension 5 Spacing: FLAG(상속, UQ-1) — 4px 척도는 시스템 상속 값
+- [x] Dimension 6 Registry Safety: rev 10 PASS
+- [x] Dimension 7 Inventory Provenance: rev 10 PASS(provenance 줄 = Component Inventory 첫 줄, main `ui/` 27개)
 
 **Approval:** approved — gsd-ui-checker round 3/4(rev 4), 2026-09-24 (D1~D6) · rev 5 D1~D7 PASS. rev 5는 Codex 최종 리뷰 blocker 4건 반영본이다. rev 6은 Codex 전체 리뷰 R5-B1·R5-B2 + 작은 지적 2건 + checker 메모 반영본이다. rev 7은 Codex 3차 리뷰 R6-B1(카드 사용 수정 모드의 카드 자격을 새 건과 가름 · 구매 완료로 생긴 건의 카드는 `purchases` write로 고침) + 작은 지적 1건(S19 오늘 예정 지급의 `[오늘]` 분류) 반영본이다. rev 8은 Codex 4차 리뷰 R7-B1(S18 매출 3차 ≥1024만) · R7-B2(미매칭 줄 3차 = 그 줄의 문, 카드 폼 경로 삭제) + 작은 지적 1건(대리 등록 힌트 권한 이름) 반영본이다. rev 8은 UI 체커 통과(변경 범위) · Codex 사용 한도 소진으로 Fable 독립 검토가 대신 확인해 막는 문제 0건 · Codex 한도가 풀리면(9월 29일) Codex 재확인 필요
+
+**rev 10 r3(2026-10-05):** 재계획 결정 반영(머리 변경 목록 11) — 새 색 · 서체 · radius · 간격 · 토큰 0. `gsd-ui-checker` 재확인 없이 실행 뒤 `/design-review`(+Codex) · 독립 DOM 감사에서 본다(REVIEWS C14).
+
+**rev 10(2026-10-05):** main 스킨 A(04.3 · 04.5 · 04.6) · Phase 5 「결재 중 증빙」 맞춤본(머리 변경 목록 1~9). **`gsd-ui-checker` APPROVED(2026-10-05, BLOCK 0 — D1 · D2 · D3 · D6 · D7 PASS, D4 · D5 FLAG = UQ-3 · UQ-1 상속 값).** 새 색 · 서체 · radius · 간격 · 토큰 0, 옛 토큰 이름 0.
 
 **rev 9(2026-09-25):** `/plan-design-review` 반영본(아래 GSTACK REVIEW REPORT). D1~D7 판정은 rev 8 그대로 두고 **`gsd-ui-checker` 변경 범위 재확인 대기**(S1 제자리 증빙 확인 · 문서 화면 왕복 · 일괄 결과 알림, S21, S22, SP-7, Copywriting 새 행, UI Considerations 새 27행, O-6 · O-21 · O-22). 새 색 · 서체 · radius · 간격 값 0 — SP-7은 §7-8 첨부 행 모양의 재사용이다. 디자인 교차 검토는 Codex 대신 Opus(한도 2026-09-29까지) — 한도 풀리면 Codex 재확인 필요.
 
 ---
 
-## GSTACK REVIEW REPORT
+## 디자인 검토 기록 — rev 9 (2026-09-25, 보관)
 
 > `/plan-design-review` 라운드(2026-09-25)를 이 문서 rev 9에 반영한 결과. 원문: `design-review.md`(통합 표 · 반영 지시 1~15) · `06-gates/design-review-opus.md`(본 검토) · `06-gates/design-cross-opus.md`(교차 검토). 계획 쪽 반영(06-01 · 06-11 · 06-16 · 06-17 · 06-20 등)은 각 PLAN의 Review Dispositions Ledger에 있다.
 
@@ -1346,5 +1524,33 @@ Applicable state considerations resolved: 174 applicable — 129 explicit, 45 ba
 - DR-4 = 예 → O-21(목록 행 제자리 증빙 확인 모달)
 - DR-3 = 허용 → O-6(중복 막힘은 같은 주인 종류 안에서만)
 - DR-2 = 아니오 → O-22(리저브 증빙 폰 업로드 없음 — ≥1024만 쓰기)
+
+NO UNRESOLVED DECISIONS
+
+## GSTACK REVIEW REPORT
+
+> rev 10 `/plan-design-review`(2026-10-05 KST, 밤 위임 — 질문 없이 추천안). 전체 지적 표 · 근거 · 결정: `design-review-rev10.md`. 위 「디자인 검토 기록 — rev 9」는 보관이다.
+
+| Review | Trigger | Why | Runs | Status | Findings |
+|--------|---------|-----|------|--------|----------|
+| CEO Review | `/plan-ceo-review` | Scope & strategy | 앞 라운드 | clear(잠김) | HOLD SCOPE — 이번에 다시 열지 않음 |
+| Outside Review | Codex `gpt-6.1-sol` medium — 1차 `scripts/codex-design-review.sh`(4폭 캡처 · DOM 실측) · 2차 `codex exec` 전문 읽기 · 3차 반영 확인 | Independent 2nd opinion | 3 | completed | 1차 후보 1(C1) · 2차 막는 문제 없음, 고침 6 · 참고 3 · 3차 막는 문제 없음, 고침 3 · 참고 2 → 반영 |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 앞 라운드(rev 8) | 이번 범위 밖 | 재계획 뒤 다시 |
+| Design Review | `/plan-design-review` | UI/UX gaps | 1(rev 10) | issues_found → 반영 | 점수 7/10 → 9/10, 결정 26건 반영 · 3건 버림(F14 · F17 · R4, 이유 있음) |
+| DX Review | `/plan-devex-review` | Developer experience gaps | 0 | — | 해당 없음 |
+
+| 패스 | 전 | 후 | 남은 것 |
+|---|---|---|---|
+| 1 정보 구조 | 8 | 9 | — |
+| 2 상호작용 상태 | 7 | 9 | F2 금액 빈 확인 전 · R6 카드 0장 · F5 포커스 반영 |
+| 3 여정 | 8 | 9 | F6 연속 구매 완료 · R1 자동 선택 |
+| 4 AI 슬롭 | 9 | 9 | 하드 리젝션 0 |
+| 5 디자인 시스템 | 7 | 9 | F1 고르기 컴포넌트 · C1 합계 · R3 SP-7 — SYSTEM 승격은 06-01 |
+| 6 반응형 · 접근성 | 8 | 9 | F15 44px · F5 |
+| 7 결정 | — | 26 반영 · 3 버림 · 0 미결 | 밤 위임 추천안 5건 사용자 확정(10/5 01:53) |
+
+- **OUTSIDE COVERAGE:** Codex 3회 완료. 1차는 프롬프트 한도로 계획 글 일부만 받았고(보고서에 「잘림」 표시), 2차가 1~1469줄 전부를 읽고 「막는 문제 없음」, 3차가 반영을 확인하고 「막는 문제 없음」(N1~N5는 이 판에 반영).
+- **CROSS-MODEL:** 두 모델이 같이 짚은 것 — 토스트 문장(F4 = R5) · 와이어프레임 기한 2행(F11 = R8) · 확정 결정의 낡은 문장(F13 = R9). Codex만 — R1 · R2 · R3 · R6 · C1 · N1~N5. Opus만 — F1 · F2 · F5~F10 · F15 · F16.
+- **VERDICT:** Design CLEAR(rev 10 r2). 다음은 재계획(`--reviews`) 뒤 `/plan-eng-review` — eng review required.
 
 NO UNRESOLVED DECISIONS

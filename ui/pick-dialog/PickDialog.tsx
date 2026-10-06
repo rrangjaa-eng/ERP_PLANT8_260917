@@ -447,7 +447,11 @@ function PickRowView({
       {row.number ? <span className={styles.number}>{row.number}</span> : null}
       <span className={styles.main}>
         <span className={styles.rowTitle}>{row.title}</span>
-        {row.subtitle ? <span className={styles.rowSub}>{row.subtitle}</span> : null}
+        {row.subtitle ? (
+          <span className={styles.rowSub} title={row.subtitle}>
+            {row.subtitle}
+          </span>
+        ) : null}
       </span>
       {row.amount ? (
         <span className={styles.amount}>

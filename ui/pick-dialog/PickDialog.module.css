@@ -242,6 +242,13 @@
   color: var(--status-danger);
 }
 
+/* 폰 시트 안의 2차 `다시 시도`도 터치 목표 44(Button 기본은 시트 밖 폰 40 유지 — §7-1). */
+@media (max-width: 699.98px) {
+  .error button {
+    min-height: var(--touch-min);
+  }
+}
+
 /* 06-29(SP-8) — 「고를 수 있는 줄 0」 바닥 줄 + 다음 한 수 3차 한 덩어리. 글자(1차 aria-describedby 대상)와 버튼은 따로다. */
 .resultRow {
   display: flex;

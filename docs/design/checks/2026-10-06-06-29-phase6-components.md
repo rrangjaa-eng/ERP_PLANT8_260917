@@ -18,5 +18,5 @@
 
 ## 시스템
 - [x] 새 색·서체·radius·그림자를 만들지 않았다(tokens.css 변수만) — 근거: Table.module.css · ListScreen.module.css 추가분이 `--accent-weak` `--native-accent` `--row-number-w` `--cell-pad-x` `--text-muted` `--status-danger` `--text-aux` `--s-1` 등 기존 토큰뿐, stylelint 통과, tokens.css diff 0. Task 2 추가분(`.attachments` `.loadingMark` `.error` `.resultRow`)도 `--s-12` `--s-2` `--line-w` `--text-muted` `--text-aux` `--status-danger` 기존 토큰뿐
-- [x] 폰 320에서 가로 넘침 없음 · 터치 44px: 선택 표 1차는 편집 표와 같이 1024 이상(DR-36)이라 버튼 갈래는 1024 미만에서 그리지 않는다. 선택 열 칸 44px 폭은 표 전체 폭에 더해지는 고정 열 — 근거: ListScreen.module.css `.bar > .wideOnly` 1023.98px 숨김, 선택 열 칸 폭 E2E 실측 44px, 폰 폭 실측은 Task 3 감사가 한다
-- [x] 실제 앱 화면(PC 1280 · 폰 390)을 찍어 보고 확인했다 — 스크린샷 경로: 스크린샷 없음 — CI=true 프로덕션 빌드 `/dev/components` 「표 선택」을 Playwright DOM 실측(칸 폭 44 · 고른 행 계산 색 = `--accent-weak` · `aria-selected` 0)으로 확인(test/e2e/dev-components.spec.ts), 4폭 독립 감사는 Task 3
+- [x] 폰 320에서 가로 넘침 없음 · 터치 44px: 1280 · 768 · 375 · 320 네 폭에서 문서 가로 넘침 0, 폰 시트 1차 · 취소 · 3차 `견적 외 비용으로` · `다시 시도` 모두 높이 44, 선택 표 · ListScreen 버튼 갈래는 1024 이상 전용(DR-36, 선택 열 칸 체크박스는 편집 표처럼 PC 입력) — 근거: 실행자 자체 DOM 실측(임시 Playwright, CI=true 빌드, 커밋 안 함 · 독립 감사 아님) 49개 판정 PASS · FAIL 0, 결함 셋(폰 첨부 칸 상한 · 긴 부제 title · 폰 `다시 시도` 40)은 고쳐 재실측 PASS
+- [x] 실제 앱 화면(PC 1280 · 폰 390)을 찍어 보고 확인했다 — 스크린샷 경로: 스크린샷 없음(스크린샷 육안 판정 금지) — CI=true 프로덕션 빌드 `/dev/components` · `?panel=pick`을 1280 · 768 · 375 · 320에서 DOM 실측(칸 폭 44 · 고른 행 계산 색 = `--accent-weak` · 막힌 행 배경 투명 · 오류 줄 = `--status-danger` · 첨부 칸 = 첫 세 행 높이 ±0 · 겹침 높이 ≤ `--sheet-max-h` 704), 독립 4폭 감사는 오케스트레이터가 별도 에이전트로 한다

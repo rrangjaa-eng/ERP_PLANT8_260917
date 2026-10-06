@@ -206,6 +206,12 @@
     padding: var(--s-3) var(--pad-page);
   }
 
+  /* 06-29(SP-7) — 폰의 Attachments 읽기 행은 3차 행동 줄(--touch-min)이 파일 줄 아래로 내려와 PC보다 높다(행 = 썸네일 --s-12 + 위아래 --s-2 + --touch-min).
+     칸 높이 상한도 그 행 셋이다 — 그래야 폰에서도 「행 셋에서 멈춘다」. */
+  .attachments {
+    max-height: calc((var(--s-12) + var(--s-2) * 2 + var(--touch-min)) * 3 + var(--line-w) * 2);
+  }
+
   .actions {
     flex-wrap: wrap;
     row-gap: var(--s-2);

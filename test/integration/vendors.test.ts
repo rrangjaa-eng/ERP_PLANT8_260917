@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { db } from "@/db/client";
 import { vendors, users } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { Pool } from "pg";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { upsertVisibility, upsertPermission } from "@/repositories/permissions";
@@ -366,11 +367,14 @@ describe("vendors 사업자번호 중복 막기 (실제 Postgres)", () => {
     expect(b.vendor.businessNo).toBe(other);
   });
 
-  it("수정 — 저장된 숫자 번호가 그대로면 같은 번호의 살아 있는 거래처가 둘 있어도 이름 · 계좌만 고쳐 저장된다", async () => {
+  it("수정 — 저장된 숫자 번호가 그대로면 같은 번호의 보관된 거래처가 있어도 이름 · 계좌만 고쳐 저장된다", async () => {
     const no = uniqueBizNo();
     const { vendor: a } = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no });
-    // 색인 전(PR A)에 이미 생긴 중복을 직접 넣는다.
-    const [twin] = await db.insert(vendors).values({ name: uniqueName(), normalizedName: uniqueName(), businessNo: no.replaceAll("-", "") }).returning();
+    // 선검사는 보관 행도 막는다 — 숫자가 그대로면 선검사를 건너뛰는지 보관된 같은 번호로 본다(살아 있는 중복은 유일 색인이 막는다).
+    const [twin] = await db
+      .insert(vendors)
+      .values({ name: uniqueName(), normalizedName: uniqueName(), businessNo: no.replaceAll("-", ""), archivedAt: new Date() })
+      .returning();
     const renamed = `${a.name}-고침`;
     await updateVendor(SYSTEM_VIEWER, a.id, { name: renamed, businessNo: no.replaceAll("-", ""), accountBank: "국민" });
     const [row] = await db.select().from(vendors).where(eq(vendors.id, a.id));
@@ -456,5 +460,37 @@ describe("vendors 사업자번호 중복 막기 (실제 Postgres)", () => {
     expect(rows.find((row) => row.id === a.id)?.restorable).toBe(false);
     expect(rows.find((row) => row.id === free.id)?.restorable).toBe(true);
     await db.delete(vendors).where(eq(vendors.id, taker?.id ?? ""));
+  });
+
+  it("동시 등록 둘(같은 숫자 번호) — 선검사를 둘 다 지나도 유일 색인이 하나만 남기고 다른 하나는 DuplicateBusinessNoError", async () => {
+    const no = uniqueBizNo();
+    // 다른 연결이 vendors에 SHARE 잠금을 쥐고 있으면 두 등록이 선검사(읽기)는 지나고 INSERT에서 멈춘다 — 경합을 매번 만든다.
+    const holder = new Pool({ connectionString: process.env.DATABASE_URL ?? "postgres://erp:erp@127.0.0.1:5432/erp_test" });
+    const client = await holder.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("LOCK TABLE vendors IN SHARE MODE");
+      const both = Promise.allSettled([
+        createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no }),
+        createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no.replaceAll("-", "") }),
+      ]);
+      for (let waited = 0; ; waited += 50) {
+        const { rows } = await client.query<{ n: number }>(
+          "SELECT count(*)::int AS n FROM pg_locks WHERE relation = 'vendors'::regclass AND NOT granted",
+        );
+        if ((rows[0]?.n ?? 0) >= 2) break;
+        if (waited > 10_000) throw new Error("두 등록이 INSERT 잠금 대기에 들어가지 않았다");
+        await new Promise((done) => setTimeout(done, 50));
+      }
+      await client.query("COMMIT");
+      const results = await both;
+      expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+      const rejected = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
+      expect(rejected).toHaveLength(1);
+      expect(rejected[0]?.reason).toBeInstanceOf(DuplicateBusinessNoError);
+    } finally {
+      client.release();
+      await holder.end();
+    }
   });
 });

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, boolean, jsonb, timestamp, uuid, index, check } from "drizzle-orm/pg-core";
+import { pgTable, text, boolean, jsonb, timestamp, uuid, index, uniqueIndex, check } from "drizzle-orm/pg-core";
 
 // MAST-01: 거래처 표. 03-06 Task 1 결정 ⑤ — 계좌번호는 암호문 컬럼
 // (accountNumberEncrypted) + 별도 평문 뒤 4자리 컬럼(accountNumberLast4)만
@@ -8,6 +8,7 @@ import { pgTable, text, boolean, jsonb, timestamp, uuid, index, check } from "dr
 // 자동완성은 둘 다 보여줘야 한다. 대신 normalizedName(NFC 정규화 + 소문자)에
 // 인덱스를 두어 등록 시 중복 후보 탐지·자동완성 양쪽에서 쓴다.
 // 갈래(kind) = 클라이언트 · 협력사 · 둘 다(261006-biv D-1).
+// 사업자번호는 숫자만 뽑은 값이 살아 있는(보관 안 된) 거래처 사이에서 유일하다(옛 260907 vendors_business_number_once).
 export const vendors = pgTable(
   "vendors",
   {
@@ -34,5 +35,9 @@ export const vendors = pgTable(
     index("vendors_normalized_name_idx").on(table.normalizedName),
     index("vendors_custom_fields_idx").using("gin", table.customFields),
     check("vendors_kind_check", sql`${table.kind} IN ('client','supplier','both')`),
+    // 숨김도 센다. 하이픈 등 표기 차이는 식으로 지운다(저장 형식은 그대로). 빈 값 · NULL은 빠진다.
+    uniqueIndex("vendors_business_no_live_key")
+      .on(sql`regexp_replace(${table.businessNo}, '[^0-9]', '', 'g')`)
+      .where(sql`${table.archivedAt} IS NULL AND regexp_replace(${table.businessNo}, '[^0-9]', '', 'g') <> ''`),
   ],
 );

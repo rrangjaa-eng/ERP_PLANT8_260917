@@ -211,6 +211,13 @@
       "when": 1791292106944,
       "tag": "0029_evidence_tax_rule_seed_sync",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1791302599309,
+      "tag": "0030_vendor_business_no_unique",
+      "breakpoints": true
     }
   ]
 }

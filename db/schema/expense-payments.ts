@@ -34,6 +34,9 @@ export const expensePayments = pgTable(
       .on(table.expenseId)
       .where(sql`${table.cancelledAt} IS NULL`),
     index("expense_payments_expense_idx").on(table.expenseId),
+    check("expense_payments_transfer_krw_check", sql`${table.transferKrw} >= 0`),
+    check("expense_payments_payable_krw_check", sql`${table.payableKrw} >= 0`),
+    check("expense_payments_diff_check", sql`${table.diffKrw} = ${table.transferKrw} - ${table.payableKrw}`),
     check(
       "expense_payments_diff_reason_check",
       sql`${table.diffKrw} = 0 OR (${table.diffReason} IS NOT NULL AND char_length(btrim(${table.diffReason})) > 0)`,

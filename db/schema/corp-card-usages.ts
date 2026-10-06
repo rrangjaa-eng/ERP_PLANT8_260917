@@ -45,12 +45,17 @@ export const corpCardUsages = pgTable(
   },
   (table) => [
     check("corp_card_usages_amount_sum_check", sql`${table.supplyKrw} + ${table.vatKrw} = ${table.totalAmountKrw}`),
+    check(
+      "corp_card_usages_sign_check",
+      sql`(${table.supplyKrw} >= 0 AND ${table.vatKrw} >= 0) OR (${table.supplyKrw} <= 0 AND ${table.vatKrw} <= 0)`,
+    ),
     check("corp_card_usages_link_kind_check", sql`${table.linkKind} IN ('quote_line','team_cost')`),
     check(
       "corp_card_usages_link_check",
       sql`(${table.linkKind} = 'quote_line' AND ${table.quoteLineId} IS NOT NULL AND ${table.teamId} IS NULL) OR (${table.linkKind} = 'team_cost' AND ${table.teamId} IS NOT NULL AND ${table.quoteLineId} IS NULL)`,
     ),
     check("corp_card_usages_registered_via_check", sql`${table.registeredVia} IN ('self','proxy','purchase')`),
+    check("corp_card_usages_self_check", sql`${table.registeredVia} <> 'self' OR ${table.usedByUserId} = ${table.registeredBy}`),
     check("corp_card_usages_purchase_link_check", sql`(${table.registeredVia} = 'purchase') = (${table.purchaseRequestId} IS NOT NULL)`),
     uniqueIndex("corp_card_usages_purchase_request_uniq").on(table.purchaseRequestId),
     index("corp_card_usages_card_used_on_idx").on(table.corpCardId, table.usedOn),

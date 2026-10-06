@@ -60,7 +60,11 @@ export const revenueIssueRequests = pgTable(
   },
   (table) => [
     check("revenue_issue_requests_status_check", sql`${table.status} IN ('requested','issued','cancelled')`),
-    check("revenue_issue_requests_issued_check", sql`${table.status} <> 'issued' OR ${table.issuedEntryId} IS NOT NULL`),
+    check("revenue_issue_requests_issued_check", sql`(${table.status} = 'issued') = (${table.issuedEntryId} IS NOT NULL)`),
+    check(
+      "revenue_issue_requests_cancelled_check",
+      sql`(${table.status} = 'cancelled') = (${table.cancelledAt} IS NOT NULL AND ${table.cancelledBy} IS NOT NULL)`,
+    ),
     uniqueIndex("revenue_issue_requests_issued_entry_uniq").on(table.issuedEntryId),
     index("revenue_issue_requests_project_status_idx").on(table.projectId, table.status),
   ],

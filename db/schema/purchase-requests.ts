@@ -40,6 +40,7 @@ export const purchaseRequests = pgTable(
       "purchase_requests_link_check",
       sql`(${table.linkKind} = 'quote_line' AND ${table.projectId} IS NOT NULL AND ${table.quoteLineId} IS NOT NULL) OR (${table.linkKind} = 'team_cost' AND ${table.projectId} IS NULL AND ${table.quoteLineId} IS NULL)`,
     ),
+    check("purchase_requests_estimate_amount_krw_check", sql`${table.estimateAmountKrw} >= 0`),
     check("purchase_requests_link_url_check", sql`${table.linkUrl} IS NULL OR ${table.linkUrl} ~* '^https?://'`),
     check("purchase_requests_status_check", sql`${table.status} IN ('requested','purchased','cancelled')`),
     check(

@@ -5,7 +5,7 @@ import { projectMany, type DtoSpec } from "@/domain/permissions/project";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { recordAction } from "@/domain/action-log/record";
 import { loadTaxRates, type TaxRates } from "@/domain/money/tax";
-import { moneyToColumns, normalizeMoneyInput, sumKrw, type MoneyInput } from "@/domain/money";
+import { moneyToColumns, normalizeMoneyInput, sumKrw, toKrw, type MoneyInput } from "@/domain/money";
 import { taxRuleSchema, type TaxRule } from "@/domain/code-tables/tax-rule";
 import { teamAtDate } from "@/domain/org";
 import { loadActorTeamScope } from "@/domain/projects/status";
@@ -42,6 +42,8 @@ export class CardUsageRejectedError extends UserFacingError {}
 const LINK_MISSING = "연결 없음 · 연결 고르기";
 const CARD_NOT_ELIGIBLE = "카드 자격 없음 · 카드 고르기";
 const SHARED_CARD_FORBIDDEN = "공용 카드 등록 권한 없음 · 공용 카드는 경영관리";
+const AMOUNT_NOT_NUMBER = "숫자 아님 · 1,240,000처럼";
+const AMOUNT_NOT_POSITIVE = "결제 합계 0 이하 · 금액 고치기";
 
 export type CardUsageLinkKind = "team_cost";
 
@@ -125,8 +127,10 @@ export async function precheckCardUsage(viewer: Viewer, input: CardUsageInput): 
   const futureError = cardUsedOnError(input.usedOn, seoulToday());
   if (futureError) throw new CardUsageRejectedError(futureError);
   if (input.linkKind !== "team_cost") throw new CardUsageRejectedError(LINK_MISSING);
-  // 통화 · 외화 금액 · 환율 형식(O-7) — 트랜잭션 전에 거부한다(순수 판정).
-  normalizeMoneyInput(input.total);
+  // 통화 · 외화 금액 · 환율 형식(O-7) — 트랜잭션 전에 거부한다(순수 판정). 원화는 정수 원 · 환산 합계는 0 초과.
+  const money = normalizeMoneyInput(input.total);
+  if (money.currency === "KRW" && !Number.isInteger(money.amount)) throw new CardUsageRejectedError(AMOUNT_NOT_NUMBER);
+  if (toKrw(money) <= 0) throw new CardUsageRejectedError(AMOUNT_NOT_POSITIVE);
 
   const team = await teamAtDate(viewer, viewer.id, input.usedOn);
   if (!team?.id) {
@@ -167,8 +171,10 @@ export async function createCardUsage(
   tx?: DbOrTx,
 ): Promise<CreatedCardUsage> {
   const runCreate = async (innerTx: DbOrTx) => {
-    const split = splitCardTotal({ money: input.total, rule: pre.evidenceRule }, pre.rates);
-    const money = moneyToColumns(input.total);
+    // precheck와 같은 정규화 — KRW에 실려 온 환율은 버린다(원화 = 결제 합계).
+    const total = normalizeMoneyInput(input.total);
+    const split = splitCardTotal({ money: total, rule: pre.evidenceRule }, pre.rates);
+    const money = moneyToColumns(total);
     const row = await insertCardUsage(
       viewer,
       {

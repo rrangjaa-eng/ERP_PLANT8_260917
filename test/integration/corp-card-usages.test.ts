@@ -5,7 +5,10 @@ import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { ForbiddenError } from "@/domain/permissions/can";
 import { createCorpCard } from "@/domain/corp-cards";
 import { createOrgUnit, createTeam } from "@/domain/org";
-import { cardOptionsForUsage, precheckCardUsage, type CardUsageInput } from "@/domain/corp-card-usages";
+import { eq } from "drizzle-orm";
+import { db } from "@/db/client";
+import { corpCardUsages } from "@/db/schema";
+import { cardOptionsForUsage, createCardUsage, precheckCardUsage, type CardUsageInput } from "@/domain/corp-card-usages";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { seoulToday } from "@/lib/dates";
@@ -102,5 +105,31 @@ describe("사용일 상한(Q6)", () => {
 
     await expect(precheckCardUsage(staff, { ...usageInput(cardId), usedOn: tomorrow })).rejects.toThrow("사용일 미래 · 오늘까지 날짜로");
     await expect(precheckCardUsage(staff, { ...usageInput(cardId), usedOn: today })).resolves.toMatchObject({ usedByUserId: staff.id });
+  });
+});
+
+describe("결제 합계 정규화(P3-1)", () => {
+  it("KRW에 환율이 실려 와도 원화 = 결제 합계로 저장한다(환율배 행 없음)", async () => {
+    const team = await makeTeam();
+    const staff = await makePerson("직원", DEFAULT_ROLE_ID, team.name);
+    const cardId = await makeCard({ kind: "personal", holderUserId: staff.id });
+    const input: CardUsageInput = { ...usageInput(cardId), total: { currency: "KRW", amount: 10_000, fxRate: 100 } };
+
+    const pre = await precheckCardUsage(staff, input);
+    const created = await createCardUsage(staff, input, pre);
+
+    const [row] = await db.select().from(corpCardUsages).where(eq(corpCardUsages.id, created.id));
+    expect(row).toMatchObject({ totalCurrency: "KRW", totalForeignAmount: null, totalFxRate: "1.0000", totalAmountKrw: 10_000 });
+    expect(created.totalKrw).toBe(10_000);
+  });
+
+  it("원화 환산이 0 이하인 결제 합계 · KRW 소수는 precheck가 거부한다", async () => {
+    const team = await makeTeam();
+    const staff = await makePerson("직원", DEFAULT_ROLE_ID, team.name);
+    const cardId = await makeCard({ kind: "personal", holderUserId: staff.id });
+
+    await expect(precheckCardUsage(staff, { ...usageInput(cardId), total: { currency: "USD", amount: 0.01, fxRate: 1 } })).rejects.toThrow("결제 합계 0 이하 · 금액 고치기");
+    await expect(precheckCardUsage(staff, { ...usageInput(cardId), total: { currency: "KRW", amount: 0.4, fxRate: 1 } })).rejects.toThrow();
+    await expect(precheckCardUsage(staff, { ...usageInput(cardId), total: { currency: "KRW", amount: 1000.5, fxRate: 1 } })).rejects.toThrow();
   });
 });

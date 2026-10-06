@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
-import { inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
-import { settingsSimple } from "@/db/schema";
+import { codeItems, settingsSimple } from "@/db/schema";
 import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import {
   EVIDENCE_PREPAID_DUE_DAYS,
@@ -182,5 +182,28 @@ test.describe("06-02 설정 키 · 짝 격자", () => {
       }).toPass();
     });
   }
+
+  // 06-02 검토 P2-2 — 보관된 증빙 종류의 짝은 판정에서 빈 행이 아니다. 격자도 그 짝을 「(보관됨)」 열로 보여 해제할 수 있다.
+  test("짝 격자 — 저장된 짝의 보관된 증빙 종류는 「(보관됨)」 열로 보이고 해제하면 사라진다", async ({ page }) => {
+    const taxInvoice = and(eq(codeItems.tableKey, "evidence_type"), eq(codeItems.value, "tax_invoice"));
+    await db.insert(settingsSimple).values({ key: PAYMENT_METHOD_EVIDENCE_PAIRS.key, value: [{ method: "bank_transfer", evidence: "tax_invoice" }] });
+    await db.update(codeItems).set({ active: false }).where(taxInvoice);
+    try {
+      await loginAndOpenSettings(page);
+      const grid = page.getByRole("table", { name: GRID_NAME });
+      await expect(grid.getByRole("columnheader", { name: "세금계산서 (보관됨)", exact: true })).toBeVisible();
+      const archived = cell(page, "계좌이체", "세금계산서 (보관됨)");
+      await expect(archived).toBeChecked();
+
+      await archived.uncheck();
+      await expect(async () => {
+        await page.reload();
+        await expect(page.getByRole("table", { name: GRID_NAME }).getByRole("columnheader", { name: /세금계산서/ })).toHaveCount(0);
+        await expect(page.getByRole("table", { name: GRID_NAME }).getByRole("checkbox", { checked: true })).toHaveCount(0);
+      }).toPass();
+    } finally {
+      await db.update(codeItems).set({ active: true }).where(taxInvoice);
+    }
+  });
 
 });

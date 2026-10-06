@@ -42,7 +42,7 @@ export type SettingsFieldViewModel = {
     | { kind: "simple"; descriptor: SettingsFieldDescriptorView; value: unknown }
     | { kind: "historized"; descriptor: SettingsFieldDescriptorView; entries: HistoryEntry[] };
   options?: { value: string; label: string }[];
-  // 06-02(SP-9): 짝 격자 칸의 행 · 열 — 두 코드표의 활성 값(서버가 미리 읽는다).
+  // 06-02(SP-9): 짝 격자 칸의 행 · 열 — 두 코드표의 활성 값 + 저장된 짝의 보관 값 「(보관됨)」(서버가 미리 읽는다).
   pairGrid?: {
     rows: { value: string; label: string }[];
     cols: { value: string; label: string }[];
@@ -261,7 +261,7 @@ function pairsOf(value: unknown): Pair[] {
 
 // 06-02(SP-9 · SYSTEM §7-2 짝 격자): 새 컴포넌트 없이 §7-13 PermissionGrid를 설정 입력으로 쓴다. PermissionGrid는 「계급 = PC 열,
 // 항목 = PC 행」이라 prop 이름이 반대다 — 열 코드표(증빙 종류)를 rows prop, 행 코드표(지급 방식)를 columns prop으로 넘긴다.
-// 칸 하나 = 그 짝 하나만 더하거나 빼고(격자에 안 보이는 비활성 값의 짝은 그대로 남는다) 짝 목록 전체를 즉시 저장한다.
+// 칸 하나 = 그 짝 하나만 더하거나 빼고(다른 짝은 그대로 남는다 — 보관 값의 짝은 「(보관됨)」 행 · 열로 보인다) 짝 목록 전체를 즉시 저장한다.
 // 저장 차례(E-45): promise 사슬 하나로 줄 세워, 앞 저장이 끝난 뒤(성공 · 실패 모두) 최신 목록에서 다음 목록을 계산해 보낸다.
 function PairGridEditor({
   fieldKey,

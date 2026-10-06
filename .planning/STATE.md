@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 06
 current_phase_name: 지급·증빙·법인카드·구매 요청 (경영관리)
-current_plan: 8
+current_plan: 9
 status: executing
-stopped_at: Completed 06-04-PLAN.md
-last_updated: "2026-10-06T09:16:45.591Z"
+stopped_at: Completed 06-05-PLAN.md
+last_updated: "2026-10-06T11:16:08.509Z"
 last_activity: 2026-10-06
 last_activity_desc: Phase 06 execution started
-state_head: 233c1817f439635b9bd7238ba639ccef7a78ffcf
+state_head: a52ee6668d90f875a71ea926cbef0829cb7f6f41
 progress:
   total_phases: 17
   completed_phases: 7
   total_plans: 197
-  completed_plans: 175
+  completed_plans: 176
   percent: 41
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-30)
 ## Current Position
 
 Phase: 06 (지급·증빙·법인카드·구매 요청 (경영관리)) — EXECUTING
-Current Plan: 8
+Current Plan: 9
 Total Plans in Phase: 29
 Status: Ready to execute
 Last activity: 2026-10-06 — Phase 06 execution started
@@ -141,6 +141,7 @@ Progress: [████░░░░░░] 41%
 | Phase 06 P30 | 1h 5m | 2 tasks | 11 files |
 | Phase 06 P03 | 44min | 2 tasks | 18 files |
 | Phase 06 P04 | 80min | 3 tasks | 15 files |
+| Phase 06 P05 | 112min | 4 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -364,6 +365,9 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-04: 지급 취소는 끌 수 없는 payment_cancel · 행 삭제 없음 · 완료 프로젝트도 취소(U-4)
 - [Phase 06]: 06-04: expense.amount를 못 보는 지급 권한자는 지급 완료 비활성 + 지급 총액 볼 권한 없음 · 노출 설정은 관리자
 - [Phase 06]: 06-04: 지급일 과거 하한 없음 유지(P3-3, 사용자 카드 대기)
+- [Phase 06]: 06-05: 카드 사용 목록 범위 — cards.proxy · expenses.payments write 권한자 · 전사 범위는 전부, 그 밖은 자기 카드 · 오늘 소속 팀 카드 + 자기 등록(리포지토리 쿼리)
+- [Phase 06]: 06-05: 목록 읽기를 withTransaction(lock_timeout 5s) 안에서 — 잠금 대기는 로드 오류 갈래로
+- [Phase 06]: 06-05: D-75 옛 잠금 리터럴 스캔에서 domain/corp-card-usages/ 제외 — Q-E source settled는 잠금 상태 값 아님(사용자 확인 2026-10-06 20:04:28 KST)
 
 ### Pending Todos
 
@@ -459,6 +463,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-06T09:16:45.162Z
-Stopped at: Completed 06-04-PLAN.md
+Last session: 2026-10-06T11:16:08.028Z
+Stopped at: Completed 06-05-PLAN.md
 Resume file: None

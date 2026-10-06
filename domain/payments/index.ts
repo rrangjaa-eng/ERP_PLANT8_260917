@@ -377,7 +377,8 @@ export async function judgeLockedPayment(input: {
       { amount: basis.amount, taxRule: basis.tax.taxRule, applyOpts: basis.tax.dates.applyOpts, incomeType: basis.tax.incomeType },
       pre.tax.rates,
     );
-    throw new PayableChangedError(fresh.payableKrw, input.payDate);
+    // 기준이 바뀌어도 지급 총액이 화면 값과 같으면 계속한다 — 나머지 검사는 아래 공통 경로가 한다(리뷰 P3-3).
+    if (fresh.payableKrw !== input.expectedPayableKrw) throw new PayableChangedError(fresh.payableKrw, input.payDate);
   }
   if (!pre.tax || !basis.amount || !basis.tax) throw new GateBlockedError(TAX_UNAVAILABLE);
   // 05 제출 게이트가 지급 방식을 강제해 결재 통과 문서에는 생기지 않는 갈래 — 그래도 이유는 지급 방식으로(06-03 검토 P3-2).

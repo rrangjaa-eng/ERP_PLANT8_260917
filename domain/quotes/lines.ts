@@ -61,7 +61,8 @@ import {
 } from "@/repositories/quote-revisions";
 import { listNumberedByProject as repoListNumberedExpensesByProject } from "@/repositories/expenses";
 import { listFieldDefinitions as repoListFieldDefinitions } from "@/repositories/field-definitions";
-import { findVendorNamesByIds as repoFindVendorNamesByIds } from "@/repositories/vendors";
+import { findVendorKindsByIds as repoFindVendorKindsByIds, findVendorNamesByIds as repoFindVendorNamesByIds } from "@/repositories/vendors";
+import { NOT_SUPPLIER_VENDOR, servesSide } from "@/domain/vendors/kind";
 import { listCodeItems as repoListCodeItems } from "@/repositories/code-tables";
 import { QUOTE_SUBCATEGORY_TABLE_KEY } from "@/domain/projects/references";
 import { getSettingValue } from "@/domain/settings/registry";
@@ -1009,6 +1010,9 @@ export async function writeQuoteLinesInTx(
     // 04-26 · ENG-D10 — 요청의 새 줄 id 중 그 차수에 이미 있는 줄(응답을 잃은 재전송). 상한 판정과 소분류 판정이 같이 본다.
     const newIds = input.rows.filter((row) => row.isNew).map((row) => row.id);
     const presentById = new Map((await repoFindQuoteLinesByIds(viewer, newIds, { revisionId }, tx)).map((row) => [row.id, row] as const));
+    // 261006 「바뀔 때만 막기」 — 거래처 갈래(협력사 · 둘 다)는 새로 고르거나 바꾼 값만 본다.
+    const requestedVendorIds = [...new Set([...input.rows, ...foundRows].flatMap((row) => (row.vendorId ? [row.vendorId] : [])))];
+    const vendorKinds = await repoFindVendorKindsByIds(viewer, requestedVendorIds, tx);
 
     for (const [rowIndex, received] of input.rows.entries()) {
       // 04-13 — 판정·저장이 보는 종류: 기존 줄은 잠근 tx로 다시 읽은 DB 행, 새 줄만 요청 값(없으면 quote).
@@ -1024,6 +1028,12 @@ export async function writeQuoteLinesInTx(
       const storedSubcategory = (current ?? (received.isNew ? presentById.get(received.id) : undefined))?.subcategory;
       if (kind === "quote" && !prepared.selectableSubcategories.has(kindRow.subcategory) && kindRow.subcategory !== storedSubcategory) {
         formatErrors.push({ rowIndex, rowId: kindRow.id, field: "subcategory", label: CELL_LABELS.subcategory, reason: SUBCATEGORY_NOT_LISTED });
+      }
+      // 같은 기준 — 저장된 거래처는 그 사이 갈래가 바뀌어도 그대로 저장(기존 연결 유지). 복제한 새 줄은 새 입력.
+      const storedVendorId = (current ?? (received.isNew ? presentById.get(received.id) : undefined))?.vendorId ?? null;
+      const vendorKind = kindRow.vendorId ? vendorKinds.get(kindRow.vendorId) : undefined;
+      if (kindRow.vendorId && kindRow.vendorId !== storedVendorId && vendorKind && !servesSide(vendorKind, "supplier")) {
+        formatErrors.push({ rowIndex, rowId: kindRow.id, field: "vendorId", label: CELL_LABELS.vendorId, reason: NOT_SUPPLIER_VENDOR });
       }
       const money = normalizeLineMoney(kindRow, rowIndex);
       if (money.errors.length > 0) {

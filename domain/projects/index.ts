@@ -63,7 +63,8 @@ import { coversProjectTeam, isEndDatePassed, loadActorTeamScope } from "@/domain
 import { findMembershipAtDate } from "@/repositories/team-memberships";
 import { listFieldDefinitions as repoListFieldDefinitions } from "@/repositories/field-definitions";
 import { listTeams as repoListTeams } from "@/repositories/teams";
-import { findVendorNamesByIds as repoFindVendorNamesByIds } from "@/repositories/vendors";
+import { findVendorKindsByIds as repoFindVendorKindsByIds, findVendorNamesByIds as repoFindVendorNamesByIds } from "@/repositories/vendors";
+import { NOT_CLIENT_VENDOR, servesSide } from "@/domain/vendors/kind";
 
 export class ForbiddenError extends UserFacingError {}
 // D-47 완료(정산) 뒤 잠김의 domain 가드 자리 — `domain/vendors`의
@@ -501,7 +502,7 @@ export type ProjectInput = {
 
 // 04-15(B-17 · PR #38) — 등록 입력의 칸 오류. 화면이 칸 아래 Form.Error와 1차 옆 한 줄로 그린다.
 export type ProjectInputFieldError = {
-  field: "startDate" | "endDate" | "preEstimateAmount" | "preEstimateFxRate";
+  field: "clientId" | "startDate" | "endDate" | "preEstimateAmount" | "preEstimateFxRate";
   reason: string;
 };
 
@@ -616,8 +617,16 @@ export async function createProject(
 
   // 04-15(04-32 규칙) — 복사 출처 판정은 번호 부여 트랜잭션 앞에서 한다(잠금 안에서 전역 db를 부르지 않는다).
   const copySourceId = input.copyFromProjectId;
-  if (copySourceId !== undefined && !(await findCopySourceRow(viewer, copySourceId))) {
+  const copySource = copySourceId !== undefined ? await findCopySourceRow(viewer, copySourceId) : null;
+  if (copySourceId !== undefined && !copySource) {
     denyWrite(viewer, COPY_SOURCE_RULE, { sourceProjectId: copySourceId }, new CopySourceMissingError(COPY_SOURCE_MISSING));
+  }
+  // 261006 「바뀔 때만 막기」 — 클라이언트는 클라이언트 · 둘 다 갈래만. 복사 출처의 클라이언트 그대로면 갈래가 바뀌었어도 둔다.
+  if (input.clientId !== copySource?.clientId && UUID_SHAPE.test(input.clientId)) {
+    const clientKind = (await repoFindVendorKindsByIds(viewer, [input.clientId])).get(input.clientId);
+    if (clientKind && !servesSide(clientKind, "client")) {
+      throw new ProjectInputRejectedError([{ field: "clientId", reason: NOT_CLIENT_VENDOR }]);
+    }
   }
 
   const { row: created, copiedLineCount } = await withTransaction(async (tx) => {

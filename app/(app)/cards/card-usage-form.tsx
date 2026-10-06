@@ -9,7 +9,7 @@ import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
 import { PickDialog, type PickResult, type PickRow } from "@/ui/pick-dialog/PickDialog";
 import { useCommaInput } from "@/ui/input/use-comma-input";
-import { cardEvidenceDefault } from "@/domain/corp-card-usages/amounts";
+import { CARD_RECEIPT_CODE, cardEvidenceDefault } from "@/domain/corp-card-usages/amounts";
 import { formatKrw } from "@/lib/format-number";
 import type { NumberInputKind } from "@/lib/format-number";
 import selectStyles from "@/ui/select/Select.module.css";
@@ -277,7 +277,9 @@ export function CardUsageForm({
     ? undefined
     : evidenceTypes.length === 0
       ? "카드에 쓸 증빙 종류 없음 · 코드표 세금 규칙은 관리자"
-      : "카드 전표 카드에 없음 · 증빙 종류 고르기";
+      : evidenceTypes.some((option) => option.value === CARD_RECEIPT_CODE)
+        ? blankBlock([{ label: "증빙 종류", verb: "고르기" }])
+        : "카드 전표 카드에 없음 · 증빙 종류 고르기";
   const fxBlock = currency !== "KRW" && (fxValue === null || fxValue === undefined) ? "환율 없음 · USD 환율 적기" : undefined;
   const teamBlock = linkKind === "team_cost" && !preview.teamAssigned ? `${userName} ${usedOn.slice(5)} 소속 없음 · 소속 발령은 관리자` : undefined;
   const blockedReason = blankBlock(blanks) ?? fxBlock ?? evidenceBlock ?? (linkKind ? teamBlock : "연결 없음 · 연결 고르기");

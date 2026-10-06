@@ -239,4 +239,19 @@ test.describe("법인카드 사용 등록 (06-05)", () => {
     await expect(panel(page)).toBeVisible();
     await page.context().close();
   });
+
+  test("[검토 P3-4] 증빙 종류를 `—`로 비우면 `카드 전표`가 옵션에 있으니 빈 칸 이유 `증빙 종류 1칸 비어 있음 · 증빙 종류 고르기`", async ({ browser, baseURL }) => {
+    const holder = await makeCardHolder();
+    const page = await loginPage(browser, baseURL, holder.person);
+    await page.goto("/cards?new=1");
+    const sheet = panel(page);
+    const amount = sheet.getByLabel("결제 합계");
+    await waitForHydration(amount);
+    await amount.fill("1000");
+    await sheet.getByRole("radio", { name: "팀 비용" }).check();
+    await sheet.getByLabel("증빙 종류").selectOption("");
+    await expect(sheet.getByText("증빙 종류 1칸 비어 있음 · 증빙 종류 고르기", { exact: true })).toBeVisible();
+    await expect(sheet.getByText("카드 전표 카드에 없음 · 증빙 종류 고르기")).toHaveCount(0);
+    await page.context().close();
+  });
 });

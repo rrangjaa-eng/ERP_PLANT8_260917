@@ -22,3 +22,17 @@ registerAction({
   action: "write",
   dtoName: "PickVendorOptionDto",
 });
+
+registerAction({
+  name: "searchProjectsForCardLinkAction",
+  menu: "cards",
+  action: "write",
+  dtoName: "CardLinkProjectDto",
+});
+
+registerAction({
+  name: "searchLinesForCardLinkAction",
+  menu: "cards",
+  action: "write",
+  dtoName: "CardLinkLineDto",
+});

@@ -31,6 +31,15 @@ import {
 } from "@/repositories/corp-card-usages";
 import { clampPage, LIST_PAGE_SIZE, pageCountFrom } from "@/lib/paging";
 import { withTransaction } from "@/lib/db-transaction";
+import { gate, GateBlockedError } from "@/domain/rules/gate";
+import "@/domain/rules/register";
+import { CompletedProjectError } from "@/domain/projects";
+import { quoteLockReason } from "@/domain/quotes/edit-scope";
+import { findProjectById } from "@/repositories/projects";
+import { findQuoteLineById } from "@/repositories/quote-lines";
+import { findLatestQuoteRevision, findQuoteRevisionById } from "@/repositories/quote-revisions";
+import { findLineLinks, lockQuoteLines } from "@/repositories/quote-line-links";
+import { lineRoom, loadLineRoomBasis, lockProjectForLinkWrite, type LineRoomBasis } from "@/domain/corp-card-usages/link-targets";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 
@@ -50,26 +59,32 @@ const SHARED_CARD_FORBIDDEN = "공용 카드 등록 권한 없음 · 공용 카�
 const AMOUNT_NOT_NUMBER = "숫자 아님 · 1,240,000처럼";
 const AMOUNT_NOT_POSITIVE = "결제 합계 0 이하 · 금액 고치기";
 
-export type CardUsageLinkKind = "team_cost";
+export type CardUsageLinkKind = "team_cost" | "quote_line";
 
+// 06-07: 연결 판별 합 — 팀 비용(팀은 서버가 사용일 소속으로) · 견적 줄(줄 id만 — 실행가 · 공급가 칸 없음).
 export type CardUsageInput = {
   corpCardId: string;
   usedOn: string;
   merchantVendorId?: string | null;
   total: MoneyInput;
   evidenceTypeCode: string;
-  linkKind: CardUsageLinkKind | null;
   memo?: string | null;
-};
+} & ({ linkKind: "team_cost" } | { linkKind: null } | { linkKind: "quote_line"; lineId: string });
 
 /** 트랜잭션 전 사실 — 평범한 객체(06-03 tx 규약). */
 export type CardUsagePre = {
   card: Pick<CorpCardRow, "id" | "kind" | "holderUserId" | "teamId">;
   registeredVia: "self";
   usedByUserId: string;
-  teamId: string;
+  /** 팀 비용의 귀속 팀(사용일 소속) — 견적 줄 연결이면 null. */
+  teamId: string | null;
   evidenceRule: TaxRule;
   rates: TaxRates;
+  /** 06-07 견적 줄 연결 — 줄의 프로젝트 · 사전 조회 때의 현재 차수(잠근 뒤 다시 본다 — X-2) · 남은 실행가 바탕 · 상한 판정 제외. */
+  projectId: string | null;
+  revisionId: string | null;
+  lineRoom: LineRoomBasis | null;
+  capExclude: { usageId?: string; requestId?: string };
 };
 
 // ── 카드 자격 ──────────────────────────────────────────────────────────────
@@ -135,14 +150,14 @@ export async function precheckCardUsage(viewer: Viewer, input: CardUsageInput): 
   // 사용일 상한(Q6) — 액션을 거치지 않는 호출(06-12 · 6.1)도 같은 판정. 오늘은 서버의 서울 날짜.
   const futureError = cardUsedOnError(input.usedOn, seoulToday());
   if (futureError) throw new CardUsageRejectedError(futureError);
-  if (input.linkKind !== "team_cost") throw new CardUsageRejectedError(LINK_MISSING);
+  if (input.linkKind === null) throw new CardUsageRejectedError(LINK_MISSING);
   // 통화 · 외화 금액 · 환율 형식(O-7) — 트랜잭션 전에 거부한다(순수 판정). 원화는 정수 원 · 환산 합계는 0 초과.
   const money = normalizeMoneyInput(input.total);
   if (money.currency === "KRW" && !Number.isInteger(money.amount)) throw new CardUsageRejectedError(AMOUNT_NOT_NUMBER);
   if (toKrw(money) <= 0) throw new CardUsageRejectedError(AMOUNT_NOT_POSITIVE);
 
   const teamId = await teamIdOn(viewer, input.usedOn);
-  if (!teamId) {
+  if (!teamId && input.linkKind === "team_cost") {
     const name = (await findUserNamesByIds(viewer, [viewer.id])).get(viewer.id) ?? "";
     throw new CardUsageRejectedError(`${name} ${mmdd(input.usedOn)} 소속 없음 · 소속 발령은 관리자`);
   }
@@ -159,13 +174,29 @@ export async function precheckCardUsage(viewer: Viewer, input: CardUsageInput): 
   }
 
   const rates = await loadTaxRates(input.usedOn);
-  return {
+  const base = {
     card: { id: card.id, kind: card.kind, holderUserId: card.holderUserId, teamId: card.teamId },
-    registeredVia: "self",
+    registeredVia: "self" as const,
     usedByUserId: viewer.id,
-    teamId,
     evidenceRule: option.rule,
     rates,
+    capExclude: {},
+  };
+  if (input.linkKind === "team_cost") return { ...base, teamId, projectId: null, revisionId: null, lineRoom: null };
+
+  // 견적 줄(D-47 · ST-1): 완료 프로젝트는 트랜잭션 전에 거부한다 — 잠근 뒤 `lockProjectForLinkWrite`가 다시 본다(X-2).
+  const line = await findQuoteLineById(viewer, input.lineId);
+  const revision = line ? await findQuoteRevisionById(viewer, line.revisionId) : null;
+  const project = revision ? await findProjectById(viewer, revision.projectId) : null;
+  if (!line || !project) throw new CardUsageRejectedError(LINK_MISSING);
+  if (project.status === "completed") throw new CompletedProjectError(quoteLockReason({ status: project.status }) ?? undefined);
+  const latest = await findLatestQuoteRevision(viewer, project.id);
+  return {
+    ...base,
+    teamId: null,
+    projectId: project.id,
+    revisionId: latest?.id ?? null,
+    lineRoom: await loadLineRoomBasis(viewer, [line.id]),
   };
 }
 
@@ -184,6 +215,32 @@ export async function createCardUsage(
     const total = normalizeMoneyInput(input.total);
     const split = splitCardTotal({ money: total, rule: pre.evidenceRule }, pre.rates);
     const money = moneyToColumns(total);
+    let link: { linkKind: CardUsageLinkKind; quoteLineId: string | null; teamId: string | null } = { linkKind: "team_cost", quoteLineId: null, teamId: pre.teamId };
+    if (input.linkKind === "quote_line") {
+      // 순서 고정(B-1 · X-2): 프로젝트 행 → 견적 줄(id 순) → 연결(계보 사슬) → 이중 연결 → 실행가 상한 → INSERT.
+      if (!pre.projectId || !pre.revisionId || !pre.lineRoom) throw new CardUsageRejectedError(LINK_MISSING);
+      await lockProjectForLinkWrite(viewer, { projectId: pre.projectId, revisionId: pre.revisionId }, innerTx);
+      const [locked] = await lockQuoteLines(viewer, [input.lineId], innerTx);
+      // 화면이 내보내지 않는 줄(조정 · 취소 · 보관 · 현재 차수 밖) — 새 문구 없음.
+      if (!locked || locked.lineKind === "adjustment" || locked.lineStatus === "cancelled" || locked.archivedAt || locked.revisionId !== pre.revisionId) {
+        throw new ForbiddenError(LINK_MISSING);
+      }
+      const links = await findLineLinks(viewer, [input.lineId], innerTx);
+      const lineLinks = links.get(input.lineId);
+      const dual = await gate(null, "card.dual-link-block", { side: "card", links: lineLinks ?? { expenses: [], cardUsages: [] } });
+      if (!dual.allowed) throw new GateBlockedError(dual.reason);
+      if (!lineLinks?.currentExecution) throw new ForbiddenError(LINK_MISSING);
+      const room = lineRoom({ links, basis: pre.lineRoom, lineId: input.lineId, exclude: pre.capExclude });
+      const cap = await gate(null, "card.execution-cap", {
+        execution: lineLinks.currentExecution,
+        otherSupplies: room.otherSupplies,
+        supply: { currency: "KRW", amount: split.supplyKrw, fxRate: 1 },
+        source: "entry",
+        link: "pickable",
+      });
+      if (!cap.allowed) throw new GateBlockedError(cap.reason);
+      link = { linkKind: "quote_line", quoteLineId: input.lineId, teamId: null };
+    }
     const row = await insertCardUsage(
       viewer,
       {
@@ -197,9 +254,7 @@ export async function createCardUsage(
         supplyKrw: split.supplyKrw,
         vatKrw: split.vatKrw,
         evidenceTypeCode: input.evidenceTypeCode,
-        linkKind: "team_cost",
-        quoteLineId: null,
-        teamId: pre.teamId,
+        ...link,
         usedByUserId: pre.usedByUserId,
         registeredBy: viewer.id,
         registeredVia: pre.registeredVia,
@@ -443,7 +498,7 @@ export async function listCardUsages(viewer: Viewer, filters: CardUsageListFilte
 
 // ── 새 건 기본값(M-4) ──────────────────────────────────────────────────────
 
-export type CardUsageFormDefaults = { usedOn: string; corpCardId: string | null; linkKind: CardUsageLinkKind | null };
+export type CardUsageFormDefaults = { usedOn: string; corpCardId: string | null; linkKind: "team_cost" | null };
 
 // 사용일 = 오늘(서울) · 카드 = 직전 등록의 카드가 지금 옵션에 있을 때만(아니면 옵션 한 장이면 그 카드) · 연결 = 직전 등록의 연결 종류.
 // 처음 쓰는 사람은 카드(여러 장일 때) · 연결이 빈다. 보관된 건은 직전 등록이 아니다.

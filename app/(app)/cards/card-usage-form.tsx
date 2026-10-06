@@ -16,6 +16,7 @@ import selectStyles from "@/ui/select/Select.module.css";
 import textFieldStyles from "@/ui/input/TextField.module.css";
 import cardStyles from "./cards.module.css";
 import { createCardUsageAction, previewCardAmountsAction, searchMerchantsAction } from "./actions";
+import { LinkPicker, type PickedLine, type PickedProject } from "./link-picker";
 
 // 06-05(UI-SPEC S9 · C12): 카드 사용 등록 옆 패널 본문 — `PanelForm intent="create"` + `Form layout="panel"`. 사람은 결제 합계만 적고
 // 공급가 · 부가세는 서버 계산 한 줄이다(D-607). 등록 뒤 패널은 열린 채 칸이 「새 건의 기본값」(직전 등록 = 방금 등록)으로 돌아가고
@@ -177,7 +178,21 @@ export function CardUsageForm({
   const [amountRaw, setAmountRaw] = useState("");
   const [fxRaw, setFxRaw] = useState(usdFxRate === null ? "" : String(usdFxRate));
   const [evidenceTypeCode, setEvidenceTypeCode] = useState(initialDefaults.evidenceTypeCode ?? "");
-  const [linkKind, setLinkKind] = useState<"team_cost" | null>(initialDefaults.linkKind);
+  const [linkKind, setLinkKind] = useState<"team_cost" | "quote_line" | null>(initialDefaults.linkKind);
+  // 06-07 견적 줄 연결 — 프로젝트 · 줄은 패널 위 고르기(S10)로만 채운다. 줄 DTO의 남은 실행가 · 힌트를 그대로 보인다(새 셈 없음).
+  const [linkProject, setLinkProject] = useState<PickedProject | null>(null);
+  const [linkLine, setLinkLine] = useState<PickedLine | null>(null);
+  const [linkStep, setLinkStep] = useState<"project" | "line" | null>(null);
+  const linkInputRef = useRef<HTMLInputElement>(null);
+  const linkPickedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const focusId = linkPickedRef.current;
+    if (focusId === null) return;
+    linkPickedRef.current = null;
+    linkInputRef.current?.dispatchEvent(new Event("change", { bubbles: true }));
+    // 고르기 목록이 닫히며 누른 버튼으로 돌린 포커스 뒤에 — 다음 빈 「바꾸기」(프로젝트 뒤 = 견적 줄), 없으면 방금 바뀐 칸.
+    window.setTimeout(() => document.getElementById(focusId)?.focus(), 0);
+  }, [linkProject, linkLine]);
   const [merchant, setMerchant] = useState<Merchant | null>(null);
   const [pickOpen, setPickOpen] = useState(false);
   // 가맹점은 이름 없는 상태 + 숨은 칸이라 입력 이벤트가 없다 — 고른 뒤 숨은 칸 값이 바뀌면 change를 쏴 PanelForm이 바뀐 칸으로 센다(DR1 · SP-8).
@@ -212,6 +227,8 @@ export function CardUsageForm({
       setUsedOn(next.usedOn);
       setEvidenceTypeCode(next.evidenceTypeCode ?? "");
       setLinkKind(next.linkKind);
+      setLinkProject(null);
+      setLinkLine(null);
       setMerchant(null);
       setCurrency("KRW");
       setFxRaw(usdFxRate === null ? "" : String(usdFxRate));
@@ -269,7 +286,7 @@ export function CardUsageForm({
   }, [previewKey, usedOn, currency, amountRaw, fxValue, evidenceTypeCode]);
 
   // 칸을 고치면 지난 서버 거부 줄은 걷는다.
-  const editKey = JSON.stringify([cardId, usedOn, currency, amountRaw, fxRaw, evidenceTypeCode, linkKind, merchant?.id ?? ""]);
+  const editKey = JSON.stringify([cardId, usedOn, currency, amountRaw, fxRaw, evidenceTypeCode, linkKind, linkLine?.id ?? "", merchant?.id ?? ""]);
   const lastEditKey = useRef(editKey);
   useEffect(() => {
     if (editKey === lastEditKey.current) return;
@@ -291,7 +308,13 @@ export function CardUsageForm({
         : "카드 전표 카드에 없음 · 증빙 종류 고르기";
   const fxBlock = currency !== "KRW" && (fxValue === null || fxValue === undefined) ? "환율 없음 · USD 환율 적기" : undefined;
   const teamBlock = linkKind === "team_cost" && !preview.teamAssigned ? `${userName} ${usedOn.slice(5)} 소속 없음 · 소속 발령은 관리자` : undefined;
-  const blockedReason = blankBlock(blanks) ?? fxBlock ?? evidenceBlock ?? (linkKind ? teamBlock : "연결 없음 · 연결 고르기");
+  const linkBlock = linkKind === null || (linkKind === "quote_line" && !linkLine) ? "연결 없음 · 연결 고르기" : undefined;
+  // 실행가 초과(Q3) — 고른 줄 DTO의 남은 실행가와 서버 계산 공급가를 견준다. 서버도 잠근 뒤 같은 판정으로 거부한다.
+  const overCap =
+    linkKind === "quote_line" && linkLine && preview.split && preview.split.supplyKrw > linkLine.remainingKrw
+      ? `실행가 초과 · 남은 실행가 ${formatKrw(linkLine.remainingKrw)} · `
+      : undefined;
+  const blockedReason = blankBlock(blanks) ?? fxBlock ?? evidenceBlock ?? linkBlock ?? teamBlock ?? (overCap ? `${overCap}다른 줄 고르기` : undefined);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -301,7 +324,7 @@ export function CardUsageForm({
     }
     const formData = new FormData(event.currentTarget);
     const memo = formData.get("memo");
-    submittedRef.current = { corpCardId: cardId, linkKind };
+    submittedRef.current = { corpCardId: cardId, linkKind: linkKind === "team_cost" ? "team_cost" : null };
     execute({
       corpCardId: cardId,
       usedOn,
@@ -310,7 +333,7 @@ export function CardUsageForm({
       amount: Number(amountRaw),
       ...(currency !== "KRW" && fxValue ? { fxRate: fxValue } : {}),
       evidenceTypeCode,
-      linkKind,
+      link: linkKind === "team_cost" ? { kind: "team" as const } : linkKind === "quote_line" && linkLine ? { kind: "line" as const, lineId: linkLine.id } : null,
       memo: typeof memo === "string" && memo.trim() !== "" ? memo.trim() : null,
     });
   }
@@ -338,7 +361,17 @@ export function CardUsageForm({
         onSubmit={handleSubmit}
         pending={isExecuting}
         blockedReason={showingResult ? undefined : blockedReason}
-        reason={result.serverError ?? null}
+        reason={
+          result.serverError ??
+          (overCap && !showingResult && blankBlock(blanks) === undefined && !fxBlock && !evidenceBlock ? (
+            <>
+              {overCap}
+              <Button variant="tertiary" onClick={() => document.getElementById("card-usage-line-change")?.focus()}>
+                다른 줄 고르기
+              </Button>
+            </>
+          ) : null)
+        }
         reasonId="card-usage-form-reason"
       >
         {/* 칸 줄 간격은 TextField 줄(`--s-4`)과 같은 클래스로 맞춘다(새 CSS 모듈 없음). 입력이 시작되면 결과 한 줄 대신 막힘 줄. */}
@@ -437,13 +470,64 @@ export function CardUsageForm({
               />{" "}
               팀 비용
             </label>
+            <label className={cardStyles.linkOption}>
+              <input
+                type="radio"
+                name="linkKind"
+                value="quote_line"
+                onChange={() => setLinkKind("quote_line")}
+              />{" "}
+              견적 줄
+            </label>
             {/* 팀 비용 = 사용한 사람의 사용일 소속(읽기 텍스트 · 힌트 없음 — M-5). */}
             {linkKind === "team_cost" && preview.teamName ? <div data-ui="card-usage-team">{preview.teamName}</div> : null}
           </div>
+          <input ref={linkInputRef} type="hidden" name="quoteLineId" value={linkKind === "quote_line" ? (linkLine?.id ?? "") : ""} readOnly />
+          {linkKind === "quote_line" ? (
+            <>
+              <div className={rowStyles.row}>
+                <span className={rowStyles.label}>프로젝트</span>
+                <span>{linkProject ? linkProject.label : "—"}</span>{" "}
+                <Button id="card-usage-project-change" variant="tertiary" aria-label="프로젝트 바꾸기" onClick={() => setLinkStep("project")}>
+                  {linkProject ? "바꾸기" : "고르기"}
+                </Button>
+              </div>
+              {linkProject ? (
+                <div className={rowStyles.row}>
+                  <span className={rowStyles.label}>견적 줄</span>
+                  <span>{linkLine ? linkLine.itemName : "—"}</span>{" "}
+                  <Button id="card-usage-line-change" variant="tertiary" aria-label="견적 줄 바꾸기" onClick={() => setLinkStep("line")}>
+                    {linkLine ? "바꾸기" : "고르기"}
+                  </Button>
+                  {linkLine ? <Form.Hint>{linkLine.hint}</Form.Hint> : null}
+                </div>
+              ) : null}
+            </>
+          ) : null}
           <TextField id="card-usage-memo" name="memo" label="메모" maxLength={500} defaultValue="" />
         </div>
       </PanelForm>
       <MerchantPickDialog open={pickOpen} onClose={() => setPickOpen(false)} onPick={pickMerchant} />
+      <LinkPicker
+        mode="card"
+        step={linkStep}
+        projectId={linkProject?.id ?? null}
+        currentLineId={linkLine?.id ?? null}
+        onClose={() => setLinkStep(null)}
+        onPickProject={(project) => {
+          setShowingResult(false);
+          setLinkStep(null);
+          if (project.id !== linkProject?.id) setLinkLine(null);
+          linkPickedRef.current = "card-usage-line-change";
+          setLinkProject(project);
+        }}
+        onPickLine={(line) => {
+          setShowingResult(false);
+          setLinkStep(null);
+          linkPickedRef.current = "card-usage-line-change";
+          setLinkLine(line);
+        }}
+      />
     </>
   );
 }

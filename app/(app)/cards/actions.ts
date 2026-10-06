@@ -5,8 +5,9 @@ import { revalidatePath } from "next/cache";
 import { authedActionClient } from "@/lib/actions/client";
 import { isCalendarDate, seoulToday } from "@/lib/dates";
 import { CURRENCIES } from "@/domain/money/currency";
-import { createCardUsage, precheckCardUsage, previewCardAmounts, searchMerchantsForCard } from "@/domain/corp-card-usages";
+import { createCardUsage, precheckCardUsage, previewCardAmounts, searchMerchantsForCard, type CardUsageInput } from "@/domain/corp-card-usages";
 import { cardUsedOnError, USED_ON_FUTURE } from "@/domain/corp-card-usages/amounts";
+import { searchLinesForCardLink, searchProjectsForCardLink } from "@/domain/corp-card-usages/link-targets";
 import "./actions.registry";
 
 // 06-05(EXP-07 · D-607): 카드 사용 등록 · 서버 계산 한 줄 · 가맹점 고르기. domain/corp-card-usages만 부른다.
@@ -30,7 +31,8 @@ const createCardUsageSchema = z
     amount: amountSchema,
     fxRate: z.number().positive().optional(),
     evidenceTypeCode: z.string().min(1),
-    linkKind: z.enum(["team_cost"]).nullable(),
+    // 06-07: 연결 판별 합 — 팀 비용 · 견적 줄(줄 id만 — 공급가 · 실행가 칸 없음).
+    link: z.discriminatedUnion("kind", [z.object({ kind: z.literal("team") }), z.object({ kind: z.literal("line"), lineId: z.uuid() })]).nullable(),
     memo: z.string().max(500).nullable(),
   })
   .superRefine((value, ctx) => {
@@ -38,15 +40,21 @@ const createCardUsageSchema = z
   });
 
 export const createCardUsageAction = authedActionClient.schema(createCardUsageSchema).action(async ({ parsedInput, ctx }) => {
-  const input = {
+  const base = {
     corpCardId: parsedInput.corpCardId,
     usedOn: parsedInput.usedOn,
     merchantVendorId: parsedInput.merchantVendorId,
     total: { currency: parsedInput.currency, amount: parsedInput.amount, fxRate: parsedInput.fxRate ?? 1 },
     evidenceTypeCode: parsedInput.evidenceTypeCode,
-    linkKind: parsedInput.linkKind,
     memo: parsedInput.memo,
   };
+  const link = parsedInput.link;
+  const input: CardUsageInput =
+    link === null
+      ? { ...base, linkKind: null }
+      : link.kind === "team"
+        ? { ...base, linkKind: "team_cost" }
+        : { ...base, linkKind: "quote_line", lineId: link.lineId };
   const pre = await precheckCardUsage(ctx.viewer, input);
   const created = await createCardUsage(ctx.viewer, input, pre);
   revalidatePath("/cards");
@@ -78,3 +86,12 @@ export const previewCardAmountsAction = authedActionClient
 export const searchMerchantsAction = authedActionClient
   .schema(z.object({ query: z.string().max(100) }))
   .action(async ({ parsedInput, ctx }) => searchMerchantsForCard(ctx.viewer, parsedInput));
+
+// 06-07(S10): 연결 고르기 목록 — 프로젝트 · 견적 줄. 줄마다 고를 수 있음 · 이유 · 남은 실행가는 서버가 정한다.
+export const searchProjectsForCardLinkAction = authedActionClient
+  .schema(z.object({ query: z.string().max(100) }))
+  .action(async ({ parsedInput, ctx }) => searchProjectsForCardLink(ctx.viewer, parsedInput));
+
+export const searchLinesForCardLinkAction = authedActionClient
+  .schema(z.object({ projectId: z.uuid(), query: z.string().max(100), currentLineId: z.uuid().nullable() }))
+  .action(async ({ parsedInput, ctx }) => searchLinesForCardLink(ctx.viewer, parsedInput));

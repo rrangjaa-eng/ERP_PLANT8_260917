@@ -17,11 +17,16 @@ import {
   type EvidenceGateInput,
   type PairGateInput,
 } from "@/domain/payments/action-row";
+import { cardExecutionCap, type CardCapSource } from "@/domain/corp-card-usages/amounts";
+import type { Money, MoneyInput } from "@/domain/money";
+import { formatKrw } from "@/lib/format-number";
+import type { LineLinks } from "@/repositories/quote-line-links";
 
 // Phase 4의 프로젝트 게이트 규칙을 등록하는 한 곳 — 규칙마다 등록한 플랜을
-// 주석 한 줄로 적는다: `project.line-edit`(04-06 · 04-12 · 04-13), `quote.line-cap`(04-26),
+// 주석 한 줄로 적는다: `project.line-edit`(04-06 · 04-12 · 04-13 · 06-07 D-47 ③ 갈래), `quote.line-cap`(04-26),
 // `project.transition`(04-20), `project.auto-settle`(04-53), `project.period-edit`(04-22), `project.pre-estimate-edit`(04-44),
-// `project.start-date-required`(04-20), `quote.revision-create`·`quote.customer-approval`·`quote.approval-toggle`·`quote.vendor-required`(04-14).
+// `project.start-date-required`(04-20), `quote.revision-create`·`quote.customer-approval`·`quote.approval-toggle`·`quote.vendor-required`(04-14),
+// `card.dual-link-block`·`card.execution-cap`(06-07).
 //
 // side-effect import 모듈 — `import "@/domain/rules/register"`로 불러
 // 등록만 일으킨다(도메인 등록 사이드이펙트 모듈 규약).
@@ -44,6 +49,10 @@ export type ProjectLineEditCtx = {
   linkedDocumentNumber?: string;
   /** 04-40(사용자 D7 · OV-1) — 현재 차수가 고객 승인됐으면 그 순번. 견적 줄의 합계를 바꾸는 조작을 막는다. */
   approvedSeq?: number | null;
+  /** 04 D-47 ③ — 완료 뒤 견적 외 비용 줄 추가 예외, 호출자가 트랜잭션 전에 권한 사실을 읽어 넘긴다. */
+  completedOutOfQuote?: boolean;
+  /** 06-07 N-3 — 줄 사슬에 보관 안 된 카드 사용 · `신청됨` 구매 요청이 있음. 보관만 막고 금액 셀은 정하지 않는다. */
+  hasCardSideLinks?: boolean;
   change:
     // 04-40(GAP 1) — quoteAmountUnchanged: 서버가 다시 계산한 견적가 = 저장된 견적가. 승인 차수에서는 참이어야 통과한다.
     | { kind: "update"; fields: QuoteLineField[]; quoteAmountUnchanged?: boolean }
@@ -95,6 +104,7 @@ registerGateRule<unknown, ProjectLineEditCtx>({
       return { allowed: true };
     }
     const kind = ctx.change.kind;
+    if (ctx.status === "completed" && ctx.lineKind === "out_of_quote" && kind === "insert" && ctx.completedOutOfQuote === true) return { allowed: true };
     if (!structuralEditability({ status: ctx.status, canWrite: true })[kind === "restore" ? "insert" : kind]) {
       return { allowed: false, reason: ctx.status === "settling" ? SETTLING_STRUCTURE_DENIED : (lockReason ?? SETTLING_STRUCTURE_DENIED) };
     }
@@ -104,7 +114,7 @@ registerGateRule<unknown, ProjectLineEditCtx>({
     if (ctx.change.kind === "restore" && ctx.status === "settling" && !ctx.change.quoteAmountZero) {
       return { allowed: false, reason: SETTLING_INSERT_DENIED };
     }
-    if (kind === "archive" && ctx.hasLinkedDocuments) return { allowed: false, reason: LINKED_ARCHIVE_DENIED };
+    if (kind === "archive" && (ctx.hasLinkedDocuments || ctx.hasCardSideLinks === true)) return { allowed: false, reason: LINKED_ARCHIVE_DENIED };
     if (approvalLocks) {
       if (ctx.change.kind === "insert" && !ctx.change.quoteCellsZero) return { allowed: false, reason: lockReason };
       if ((ctx.change.kind === "archive" || ctx.change.kind === "restore") && ctx.change.quoteAmountZero !== true) {
@@ -327,4 +337,43 @@ registerGateRule<unknown, EvidenceGateInput>({
 registerGateRule<unknown, PairGateInput>({
   name: "payment.method-evidence-mismatch",
   check: (_doc, ctx) => pairGateDecision(ctx),
+});
+
+// 06-07(D-609) — 견적 줄 하나는 지출결의 쪽 또는 카드 쪽(카드 사용 · 구매 요청) 한 쪽에만 잇는다. 같은 쪽 여러 건은 통과.
+// `links`는 잠근 뒤 같은 tx로 읽은 줄 사슬 전체의 연결(`findLineLinks` — X-1). 카드 쪽 판정은 구매 요청 칸을 읽지 않는다.
+export type CardDualLinkCtx = { side: "card" | "expense"; links: Pick<LineLinks, "expenses" | "cardUsages"> };
+
+export function cardDualLinkDecision(ctx: CardDualLinkCtx): { allowed: true } | { allowed: false; reason: string } {
+  if (ctx.side === "card") {
+    const expense = ctx.links.expenses[0];
+    return expense ? { allowed: false, reason: `지출결의 ${expense.number} 연결됨 · 다른 줄 고르기` } : { allowed: true };
+  }
+  const count = ctx.links.cardUsages.length;
+  return count > 0 ? { allowed: false, reason: `카드 사용 ${count}건 연결됨 · 지출결의는 다른 줄` } : { allowed: true };
+}
+
+registerGateRule<unknown, CardDualLinkCtx>({
+  name: "card.dual-link-block",
+  check: (_doc, ctx) => cardDualLinkDecision(ctx),
+});
+
+// 06-07(Q3 · U-8 · Q-E) — 카드 쪽 실행가 상한. 남은 실행가는 06-05 `cardExecutionCap` 한 곳이 셈한다. 사람이 적은 금액(entry)의 초과만 막고,
+// 연결을 고를 수 있으면(pickable) `다른 줄 고르기`, 연결이 고정이면(fixed — 06-12 구매 완료) 담당 PM을 가리킨다.
+export type CardExecutionCapCtx = {
+  execution: Money;
+  otherSupplies: readonly Money[];
+  supply: MoneyInput;
+  source: CardCapSource;
+  link: "pickable" | "fixed";
+  pmName?: string;
+};
+
+registerGateRule<unknown, CardExecutionCapCtx>({
+  name: "card.execution-cap",
+  check: (_doc, ctx) => {
+    const cap = cardExecutionCap({ execution: ctx.execution, otherSupplies: ctx.otherSupplies, supply: ctx.supply, source: ctx.source });
+    if (!cap.blocked) return { allowed: true };
+    const next = ctx.link === "pickable" ? "다른 줄 고르기" : `견적 줄은 담당 PM ${ctx.pmName ?? ""}`;
+    return { allowed: false, reason: `실행가 초과 · 남은 실행가 ${formatKrw(cap.remaining.amountKrw)} · ${next}` };
+  },
 });

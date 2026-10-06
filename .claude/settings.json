@@ -35,6 +35,11 @@
           },
           {
             "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/scripts/install-eli5.sh",
+            "timeout": 60
+          },
+          {
+            "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR\"/scripts/install-gstack.sh",
             "timeout": 780
           }

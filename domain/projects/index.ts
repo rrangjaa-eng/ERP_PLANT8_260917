@@ -63,6 +63,7 @@ import { coversProjectTeam, isEndDatePassed, loadActorTeamScope } from "@/domain
 import { findMembershipAtDate } from "@/repositories/team-memberships";
 import { listFieldDefinitions as repoListFieldDefinitions } from "@/repositories/field-definitions";
 import { listTeams as repoListTeams } from "@/repositories/teams";
+import { findVendorNamesByIds as repoFindVendorNamesByIds } from "@/repositories/vendors";
 
 export class ForbiddenError extends UserFacingError {}
 // D-47 완료(정산) 뒤 잠김의 domain 가드 자리 — `domain/vendors`의
@@ -553,6 +554,8 @@ export type ProjectCopySource = {
   clientId: string;
   teamId: string;
   pmUserId: string;
+  /** 261006-biv — 클라이언트 이름(거래처 정보를 못 보면 null). 갈래가 바뀌었거나 숨긴 클라이언트도 폼 select에 남기는 데 쓴다. */
+  clientName: string | null;
   /** 복사될 줄 수 — 현재 차수의 견적 줄 · 견적 외 비용(보관 · 취소 제외, 복사와 같은 기준). */
   lineCount: number;
 };
@@ -563,7 +566,10 @@ export async function getProjectCopySource(viewer: Viewer, id: string): Promise<
   if (!row) return null;
   const revision = await repoFindLatestQuoteRevision(viewer, row.id);
   const lineCount = revision ? await repoCountCopyableLines(viewer, revision.id, undefined, { excludeCancelled: true }) : 0;
-  return { number: row.number, name: row.name, clientId: row.clientId, teamId: row.teamId, pmUserId: row.pmUserId, lineCount };
+  const clientName = (await defaultVisible(viewer, "vendor.value"))
+    ? ((await repoFindVendorNamesByIds(viewer, [row.clientId])).get(row.clientId) ?? null)
+    : null;
+  return { number: row.number, name: row.name, clientId: row.clientId, teamId: row.teamId, pmUserId: row.pmUserId, clientName, lineCount };
 }
 
 export type ProjectWriteDeps = {

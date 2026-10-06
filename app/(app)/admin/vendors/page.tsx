@@ -6,6 +6,7 @@ import { can } from "@/domain/permissions/can";
 import { visible } from "@/domain/permissions/visible";
 import { listVendors, listVendorFieldDefinitions } from "@/domain/vendors";
 import { listCodeItems } from "@/domain/code-tables";
+import { VENDOR_KIND_LABELS, parseVendorSide, servesSide, type VendorSide } from "@/domain/vendors/kind";
 import { maskTail4 } from "@/lib/mask-tail4";
 import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
@@ -19,6 +20,13 @@ import styles from "./vendors.module.css";
 
 const REVEAL_INFO_ITEM = "vendor.account_number_unmasked";
 
+// 261006-biv D-5: 갈래 걸러보기 링크 — 「전체」는 kind 없음.
+const KIND_FILTERS: { label: string; kind: VendorSide | null }[] = [
+  { label: "전체", kind: null },
+  { label: VENDOR_KIND_LABELS.client, kind: "client" },
+  { label: VENDOR_KIND_LABELS.supplier, kind: "supplier" },
+];
+
 // D-18과 같은 결: 캐시·별도 저장 없음.
 export const dynamic = "force-dynamic";
 
@@ -27,9 +35,10 @@ export const dynamic = "force-dynamic";
 // 돌아올 때도 같은 필터를 쓴다. `isNew`는 등록 모드(D-39: 추가·수정은 별도
 // 화면 — vendors가 이미 쓰던 ?editId= 토글 방식을 등록에도 그대로 확장한다,
 // DECISIONS.md 2026-09-21 참고).
-function vendorsHref(includeHidden: boolean, opts?: { editId?: string; isNew?: boolean }): string {
+function vendorsHref(includeHidden: boolean, opts?: { editId?: string; isNew?: boolean; kind?: VendorSide | null }): string {
   const params = new URLSearchParams();
   if (includeHidden) params.set("includeHidden", "1");
+  if (opts?.kind) params.set("kind", opts.kind);
   if (opts?.editId) params.set("editId", opts.editId);
   if (opts?.isNew) params.set("new", "1");
   const query = params.toString();
@@ -39,14 +48,16 @@ function vendorsHref(includeHidden: boolean, opts?: { editId?: string; isNew?: b
 export default async function VendorsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ includeHidden?: string; editId?: string; new?: string }>;
+  searchParams: Promise<{ includeHidden?: string; editId?: string; new?: string; kind?: string }>;
 }) {
   const session = await getSession();
   if (!session) redirect("/login");
   if (!(await can(session.viewer, "admin.vendors", "view"))) notFound();
 
-  const { includeHidden: includeHiddenParam, editId, new: newParam } = await searchParams;
+  const { includeHidden: includeHiddenParam, editId, new: newParam, kind: kindParam } = await searchParams;
   const includeHidden = includeHiddenParam === "1";
+  // 261006-biv D-5: ?kind=client · supplier만 걸러보기(둘 다 포함), 그 밖의 값은 전체.
+  const kindFilter = parseVendorSide(kindParam);
 
   const [vendors, canWrite, canReveal, evidenceTypes, fieldDefs, canArchive] = await Promise.all([
     listVendors(session.viewer, { includeHidden }),
@@ -70,7 +81,9 @@ export default async function VendorsPage({
   const editingVendor = editId
     ? (vendors.find((vendor) => vendor.id === editId && vendor.archivedAt === null) ?? null)
     : null;
-  const cancelHref = vendorsHref(includeHidden);
+  const cancelHref = vendorsHref(includeHidden, { kind: kindFilter });
+  // 표 행만 거른다 — editingVendor는 거르지 않은 목록에서 찾는다(걸러보기 중 갈래를 바꿔 저장해도 패널이 그대로).
+  const shownVendors = kindFilter ? vendors.filter((vendor) => servesSide(vendor.kind, kindFilter)) : vendors;
   // §6-1: 목록이 화면이고 등록은 목록 머리글의 행동이다 — 기본 진입(쿼리
   // 없음)에는 폼이 없다. editId가 가리키는 행이 있으면 수정 모드로 그 자체가
   // 열림 신호다(?new=1과 무관하게).
@@ -79,16 +92,31 @@ export default async function VendorsPage({
 
   // DR5 A — 빈 목록(등록된 거래처가 하나도 없음)이면 머리 1차를 그리지 않고 빈 화면의 「거래처 등록」 하나가 등록을 맡는다.
   const primaryAction =
-    canWrite && vendors.length > 0 ? { label: "거래처 등록", href: vendorsHref(includeHidden, { isNew: true }) } : undefined;
+    canWrite && vendors.length > 0 ? { label: "거래처 등록", href: vendorsHref(includeHidden, { isNew: true, kind: kindFilter }) } : undefined;
 
   return (
     <ListScreen
       title="거래처"
       primaryAction={primaryAction}
       filters={
-        <Link href={includeHidden ? "?includeHidden=0" : "?includeHidden=1"} scroll={false} className={styles.toggle}>
-          {includeHidden ? "숨김 제외" : "숨김 포함"}
-        </Link>
+        <>
+          <nav aria-label="구분" className={styles.kindNav}>
+            {KIND_FILTERS.map(({ label, kind }) => (
+              <Link
+                key={label}
+                href={vendorsHref(includeHidden, { kind })}
+                scroll={false}
+                className={styles.toggle}
+                aria-current={kind === kindFilter ? "page" : undefined}
+              >
+                {label}
+              </Link>
+            ))}
+          </nav>
+          <Link href={vendorsHref(!includeHidden, { kind: kindFilter })} scroll={false} className={styles.toggle}>
+            {includeHidden ? "숨김 제외" : "숨김 포함"}
+          </Link>
+        </>
       }
       panel={
         // 쓰기 권한이 없는 계급에는 등록 폼 자체를 렌더하지 않는다 — "이유 있는 비활성" 대신 "버튼 자체가 없음"(03-UI-SPEC.md).
@@ -98,6 +126,7 @@ export default async function VendorsPage({
               evidenceTypes={evidenceTypes.map((item) => ({ value: item.value, label: item.label, description: item.description }))}
               fieldDefs={fieldDefs}
               editing={editingVendor}
+              newKind={kindFilter ?? undefined}
             />
           </SidePanel>
         ) : null
@@ -106,20 +135,23 @@ export default async function VendorsPage({
       {vendors.length === 0 ? (
         <ListEmpty
           message="등록된 거래처가 없습니다"
-          action={{ label: "거래처 등록", href: vendorsHref(includeHidden, { isNew: true }) }}
+          action={{ label: "거래처 등록", href: vendorsHref(includeHidden, { isNew: true, kind: kindFilter }) }}
         />
+      ) : shownVendors.length === 0 ? (
+        <ListEmpty message="조건에 맞는 건이 없습니다" action={{ label: "필터 지우기", href: vendorsHref(includeHidden) }} />
       ) : (
         <StaticTable
           caption="거래처"
           columns={[
             { key: "name", header: "이름", priority: "p1" },
+            { key: "kind", header: "구분", priority: "p2" },
             { key: "businessNo", header: "사업자 번호", priority: "p2" },
             { key: "evidenceType", header: "기본 증빙 종류", priority: "p2" },
             { key: "account", header: "계좌", priority: "p1", align: "right" },
             { key: "status", header: "상태", priority: "p2" },
             ...(hasActions ? [{ key: "actions", header: "동작", priority: "p1" as const }] : []),
           ]}
-          rows={vendors.map((vendor) => {
+          rows={shownVendors.map((vendor) => {
             const evidenceType = vendor.defaultEvidenceType
               ? (evidenceTypeLabelByValue.get(vendor.defaultEvidenceType) ?? vendor.defaultEvidenceType)
               : null;
@@ -127,6 +159,7 @@ export default async function VendorsPage({
               key: vendor.id,
               cells: [
                 vendor.name,
+                VENDOR_KIND_LABELS[vendor.kind],
                 vendor.businessNo ?? "—",
                 evidenceType ?? "—",
                 <AccountNumberCell
@@ -147,7 +180,7 @@ export default async function VendorsPage({
                       vendor.archivedAt ? null : (
                         <RowActions key="actions">
                           {canWrite ? (
-                            <RowAction href={vendorsHref(includeHidden, { editId: vendor.id })}>수정</RowAction>
+                            <RowAction href={vendorsHref(includeHidden, { editId: vendor.id, kind: kindFilter })}>수정</RowAction>
                           ) : null}
                           {canWrite ? <VendorHiddenToggle id={vendor.id} hidden={vendor.hidden} /> : null}
                           {canArchive ? <VendorDeleteButton id={vendor.id} name={vendor.name} /> : null}

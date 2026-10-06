@@ -11,6 +11,7 @@ import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
 import { SelectHint } from "@/ui/select/Select";
 import { DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
 import { maskTail4 } from "@/lib/mask-tail4";
+import { DEFAULT_NEW_VENDOR_KIND, VENDOR_KINDS, VENDOR_KIND_LABELS, isVendorKind, type VendorKind } from "@/domain/vendors/kind";
 import { fieldErrorsReason, formReason, staleFieldsReason } from "@/lib/actions/form-reason";
 import styles from "./vendors.module.css";
 
@@ -31,6 +32,7 @@ export type VendorFieldDefinition = {
 export type EditingVendor = {
   id: string;
   name: string;
+  kind: VendorKind;
   businessNo: string | null;
   defaultEvidenceType: string | null;
   accountBank: string | null;
@@ -63,12 +65,16 @@ export function VendorForm({
   evidenceTypes,
   fieldDefs,
   editing = null,
+  newKind = DEFAULT_NEW_VENDOR_KIND,
 }: {
   evidenceTypes: EvidenceTypeOption[];
   fieldDefs: VendorFieldDefinition[];
   editing?: EditingVendor | null;
+  /** 등록 「구분」 기본값 — 목록이 갈래로 걸러져 있으면 그 갈래(`?kind=`), 아니면 협력사(261006-biv D-3). */
+  newKind?: VendorKind;
 }) {
   const isEditing = editing !== null;
+  const defaultKind = editing?.kind ?? newKind;
   const router = useRouter();
   const panelRef = useRef<PanelFormHandle>(null);
   // 제출 직후 같은 틱의 두 번째 제출(Ctrl+Enter 연타)을 막는 동기 가드 — isExecuting은 다음 렌더에야 참이 된다(D7 · R15-ii).
@@ -115,8 +121,11 @@ export function VendorForm({
       if (!isEditing && raw === "" && !def.required) continue;
       customFields[def.key] = raw;
     }
+    // select가 세 값만 내므로 좁히기는 타입용이다.
+    const rawKind = getStringField(formData, "kind");
     const baseFields = {
       name: getStringField(formData, "name"),
+      kind: isVendorKind(rawKind) ? rawKind : defaultKind,
       businessNo: getStringField(formData, "businessNo") || undefined,
       defaultEvidenceType: getStringField(formData, "defaultEvidenceType") || undefined,
       accountBank: getStringField(formData, "accountBank") || undefined,
@@ -206,6 +215,16 @@ export function VendorForm({
       reasonId="vendor-form-reason"
     >
       <TextField id="name" name="name" label="이름" required defaultValue={editing?.name} error={nameError} />
+      <div className={styles.selectLabel}>
+        <label htmlFor="kind">구분</label>
+        <select id="kind" name="kind" className={styles.select} defaultValue={defaultKind}>
+          {VENDOR_KINDS.map((kind) => (
+            <option key={kind} value={kind}>
+              {VENDOR_KIND_LABELS[kind]}
+            </option>
+          ))}
+        </select>
+      </div>
       <TextField id="businessNo" name="businessNo" label="사업자 번호" defaultValue={editing?.businessNo ?? undefined} />
 
       <div className={styles.selectLabel}>

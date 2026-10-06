@@ -47,7 +47,14 @@ import type { LineDoorCell, LineDoors } from "@/domain/expenses";
 import type { Currency, Money } from "@/domain/money";
 import { RevenueSection, type EntryDraft } from "./revenue-section";
 import { otherCellsRejectedText, quoteTableRejectionText, routeRejectedRevenueCells } from "./revenue-cells";
-import { PreviousRevisionDraftRow, quoteLineClipboardMeta, quoteLineReadColumns, quoteLineVendorLabel, savedVendorFrom } from "./previous-revision";
+import {
+  PreviousRevisionDraftRow,
+  quoteLineClipboardMeta,
+  quoteLineReadColumns,
+  quoteLineVendorLabel,
+  quoteLineVendorPasteOptions,
+  savedVendorFrom,
+} from "./previous-revision";
 import { StatusChange, type StatusChangeProps } from "./status-change";
 import { SettlementButton, type SettlementHeaderProps } from "./settlement-button";
 import { unsavedEditsReason } from "./unsaved-edits";
@@ -2157,7 +2164,8 @@ export function QuoteLedger({
         key: "vendor",
         kind: "select",
         // ISSUE-001(/qa) — 거래처 없음의 복사 글자는 `—`(읽기 열 copyText)다. 붙일 때 빈 값으로 읽어 거래처를 비운다.
-        options: [{ value: "", label: "—" }, ...vendors.map((option) => ({ value: option.id, label: option.name }))],
+        // 261006-biv /review 4 — 지금 줄의 저장된 거래처(다른 갈래 · 숨김)도 받는다.
+        options: quoteLineVendorPasteOptions(vendors, lines),
         isEditable: (row) => row.cells.vendorId === "edit",
       },
       { key: "quantity", kind: "number", numberKind: "quantity", isEditable: (row) => row.cells.quantity === "edit" },
@@ -2172,7 +2180,7 @@ export function QuoteLedger({
     ];
     // quick 261001-85g — columns와 같은 열을 뺀다(colIndex로 함께 참조).
     return vendorShown ? all : all.filter((column) => column.key !== "vendor");
-  }, [subcategories, vendors, vendorShown, lineDoors.showColumn]);
+  }, [subcategories, vendors, vendorShown, lineDoors.showColumn, lines]);
 
   // 04-30(DR-35) — 잠긴 셀은 표 위 한 줄과 같은 이유(quoteLockReason), 읽기 전용 셀은 연결 문서 이유(DTO).
   // 이유가 없는 잠김은 아무것도 띄우지 않는다(DR-22).
@@ -2287,7 +2295,8 @@ export function QuoteLedger({
             patch = { itemName: value };
             break;
           case "vendor":
-            patch = { vendorId: value || null };
+            // 261006-biv /review 4 — 선택지 밖 저장 거래처를 붙이면 그 이름을 가진 줄의 savedVendor를 잇는다(읽기 글자가 「—」가 되지 않게).
+            patch = { vendorId: value || null, savedVendor: savedVendorFrom(prev, value || null) ?? target.savedVendor };
             break;
           case "quantity":
             // 04-09 — value는 applyPaste가 이미 normalizeNumericPaste로 검증한

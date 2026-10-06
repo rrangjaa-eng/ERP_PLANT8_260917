@@ -4,6 +4,7 @@ import { db, type DbOrTx } from "@/db/client";
 import { vendors } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 import type { Scope } from "@/domain/permissions/scope-for";
+import type { VendorKind } from "@/domain/vendors/kind";
 
 export type VendorRow = InferSelectModel<typeof vendors>;
 
@@ -47,10 +48,10 @@ export async function searchVendorsByNormalizedName(
 // 05-07 골라내기 — 숨김 · 보관 아닌 거래처, 이름 부분 일치(검색어 없으면 전체), 정렬은 이름 → id, 최대 limit행.
 export async function listVendorsForPick(
   viewer: Viewer,
-  opts: { normalizedQuery: string; limit: number },
+  opts: { normalizedQuery: string; limit: number; kinds: readonly VendorKind[] },
 ): Promise<VendorRow[]> {
   void viewer;
-  const conditions = [eq(vendors.hidden, false), isNull(vendors.archivedAt)];
+  const conditions = [eq(vendors.hidden, false), isNull(vendors.archivedAt), inArray(vendors.kind, [...opts.kinds])];
   if (opts.normalizedQuery !== "") conditions.push(ilike(vendors.normalizedName, `%${opts.normalizedQuery}%`));
   return db
     .select()
@@ -100,6 +101,7 @@ export type VendorInsertInput = {
   accountNumberEncrypted?: string | null;
   accountNumberLast4?: string | null;
   customFields?: Record<string, unknown>;
+  kind?: VendorKind;
 };
 
 export async function insertVendor(viewer: Viewer, input: VendorInsertInput): Promise<VendorRow> {
@@ -115,6 +117,7 @@ export async function insertVendor(viewer: Viewer, input: VendorInsertInput): Pr
       accountNumberEncrypted: input.accountNumberEncrypted ?? null,
       accountNumberLast4: input.accountNumberLast4 ?? null,
       customFields: input.customFields ?? {},
+      kind: input.kind,
     })
     .returning();
   if (!row) throw new Error("vendors insert가 행을 반환하지 않았습니다.");
@@ -129,6 +132,7 @@ export type VendorUpdateInput = Partial<{
   accountBank: string | null;
   accountHolder: string | null;
   customFields: Record<string, unknown>;
+  kind: VendorKind;
 }>;
 
 // 계좌번호를 바꾸지 않는 일반 갱신 — 암호문·뒤 4자리 두 컬럼을 아예 건드리지

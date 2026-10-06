@@ -205,7 +205,14 @@ export function ProjectForm({
         <Select
           id="clientId"
           name="clientId"
-          options={clients.map((c) => ({ value: c.id, label: c.name }))}
+          // 261006-biv /review 3 — 복사 출처 클라이언트가 선택지에 없으면(협력사로 바뀜 · 숨김) 저장된 이름으로 한 선택지로 둔다(quote-table 거래처 칸과 같은 규칙).
+          // 거래처 정보가 가려지면 이름이 없어 지금처럼 「—」로 연다.
+          options={[
+            ...(copySource?.clientName != null && !clients.some((c) => c.id === copySource.clientId)
+              ? [{ value: copySource.clientId, label: copySource.clientName }]
+              : []),
+            ...clients.map((c) => ({ value: c.id, label: c.name })),
+          ]}
           defaultValue={copySource?.clientId}
           error={clientError}
         />

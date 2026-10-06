@@ -91,16 +91,17 @@ test.describe("법인카드 관리 화면 (MAST-03)", () => {
     await expect(dialog).toHaveCount(0);
     // 발급사는 폰 접힌 줄에도 한 번 더 있어 칸 이름이 정확히 같은 셀로 잡는다.
     await expect(page.getByRole("cell", { name: issuer, exact: true })).toBeVisible();
-    await expect(page.getByText("개인카드1")).toBeVisible();
-    await expect(page.getByText("팀카드1")).toBeVisible();
+    // 별칭은 칸 글자 그대로(exact) — 다른 스펙의 카드 행이 「개인」 + 소지자 「카드1…」로 이어 읽히면 부분 일치가 그 행을 함께 잡는다.
+    await expect(page.getByText("개인카드1", { exact: true })).toBeVisible();
+    await expect(page.getByText("팀카드1", { exact: true })).toBeVisible();
 
     // 개인카드1을 비활성화하면 기본 목록에서 사라지고 "숨김 포함"으로 다시 보인다
-    const row = page.locator("tr", { hasText: "개인카드1" });
+    const row = page.locator("tr", { has: page.getByText("개인카드1", { exact: true }) });
     await row.getByRole("button", { name: "비활성화" }).click();
-    await expect(page.getByText("개인카드1")).toHaveCount(0);
+    await expect(page.getByText("개인카드1", { exact: true })).toHaveCount(0);
 
     await page.getByRole("link", { name: "숨김 포함" }).click();
-    await expect(page.getByText("개인카드1")).toBeVisible();
+    await expect(page.getByText("개인카드1", { exact: true })).toBeVisible();
   });
 
   // 소지자를 고른 뒤 종류를 팀으로 바꾸면 팀 칸이 첫 팀으로 저절로 골라지던

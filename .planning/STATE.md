@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 06
 current_phase_name: 지급·증빙·법인카드·구매 요청 (경영관리)
-current_plan: 7
+current_plan: 8
 status: executing
-stopped_at: Completed 06-03-PLAN.md
-last_updated: "2026-10-06T07:46:06.853Z"
+stopped_at: Completed 06-04-PLAN.md
+last_updated: "2026-10-06T09:16:45.591Z"
 last_activity: 2026-10-06
 last_activity_desc: Phase 06 execution started
-state_head: 5ec2e4235d1aedaedaf3b7d7b08fdab731a7f5f1
+state_head: 233c1817f439635b9bd7238ba639ccef7a78ffcf
 progress:
   total_phases: 17
   completed_phases: 7
   total_plans: 197
-  completed_plans: 174
+  completed_plans: 175
   percent: 41
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-30)
 ## Current Position
 
 Phase: 06 (지급·증빙·법인카드·구매 요청 (경영관리)) — EXECUTING
-Current Plan: 7
+Current Plan: 8
 Total Plans in Phase: 29
 Status: Ready to execute
 Last activity: 2026-10-06 — Phase 06 execution started
@@ -140,6 +140,7 @@ Progress: [████░░░░░░] 41%
 | Phase 06 P29 | 65min | 3 tasks | 16 files |
 | Phase 06 P30 | 1h 5m | 2 tasks | 11 files |
 | Phase 06 P03 | 44min | 2 tasks | 18 files |
+| Phase 06 P04 | 80min | 3 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -358,6 +359,11 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-03: 지급 전 화면의 지급 총액은 지급일 = 오늘(KST)로 셈하고 액션은 화면이 본 payDate · expectedPayableKrw(비교값)를 보낸다
 - [Phase 06]: 06-03: 지급 섹션이 서면 위 읽기 칸의 지급 예정일 · 지급 방식은 섹션 한 자리에만(같은 사실 두 자리 금지)
 - [Phase 06]: 06-03: 잠금 뒤 판정은 judgeLockedPayment — 기준일이 같으면 사전 조회 세율로 tx 안에서 새 값, 기준일이 바뀌면 BasisChangedSignal로 tx 밖에서 다시 셈
+- [Phase 06]: 06-04: 증빙 · 짝 게이트는 결재 게이트 뒤 · 기준 재판정 앞 — 잠금 뒤 무효 + 증빙일 변경도 증빙 없음으로 막는다(CROSS-R1 F-3)
+- [Phase 06]: 06-04: 이미 지급된 문서는 version 비교 앞에서 PaymentAlreadyDoneError({사람}이 {HH:mm}에 지급 완료함), 이름은 트랜잭션 밖
+- [Phase 06]: 06-04: 지급 취소는 끌 수 없는 payment_cancel · 행 삭제 없음 · 완료 프로젝트도 취소(U-4)
+- [Phase 06]: 06-04: expense.amount를 못 보는 지급 권한자는 지급 완료 비활성 + 지급 총액 볼 권한 없음 · 노출 설정은 관리자
+- [Phase 06]: 06-04: 지급일 과거 하한 없음 유지(P3-3, 사용자 카드 대기)
 
 ### Pending Todos
 
@@ -453,6 +459,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-06T07:45:54.460Z
-Stopped at: Completed 06-03-PLAN.md
+Last session: 2026-10-06T09:16:45.162Z
+Stopped at: Completed 06-04-PLAN.md
 Resume file: None

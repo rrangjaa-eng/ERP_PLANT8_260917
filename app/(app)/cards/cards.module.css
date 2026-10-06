@@ -20,3 +20,9 @@
     min-height: var(--touch-min);
   }
 }
+
+/* 06-05 DOM 감사 O2 — 카드 필터: 아주 긴 카드 이름이 필터 줄을 밀지 않게 폭 상한(페이지 칸 폭 토큰) · 말줄임. */
+.cardFilter {
+  max-width: min(100%, var(--field-w-short));
+  text-overflow: ellipsis;
+}

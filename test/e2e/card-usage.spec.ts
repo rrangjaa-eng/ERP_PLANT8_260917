@@ -278,4 +278,18 @@ test.describe("법인카드 사용 등록 (06-05)", () => {
     await expect(sheet).toBeVisible();
     await page.context().close();
   });
+
+  test("[DOM 감사 O2] 아주 긴 카드 이름 — 1280에서 카드 필터 select 폭은 `--field-w-short`(280) 이하 · 문서 가로 넘침 0", async ({ browser, baseURL }) => {
+    const holder = await makeCardHolder(0);
+    const longLabel = `긴카드${"가".repeat(90)}`;
+    await createCorpCard(SYSTEM_VIEWER, { issuer: `국민-${randomUUID().slice(0, 8)}`, numberLast4: "9876", label: longLabel, kind: "personal", holderUserId: holder.person.viewer.id });
+    const page = await loginPage(browser, baseURL, holder.person, { width: 1280, height: 800 });
+    await page.goto("/cards");
+    const cardFilter = page.getByLabel("카드", { exact: true });
+    await expect(cardFilter.locator("option", { hasText: longLabel })).toHaveCount(1);
+    const width = await cardFilter.evaluate((element) => element.getBoundingClientRect().width);
+    expect(width).toBeLessThanOrEqual(280);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
+    await page.context().close();
+  });
 });

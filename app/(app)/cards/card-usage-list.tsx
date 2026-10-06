@@ -156,7 +156,11 @@ export function CardUsageFilters({
       </div>
       <div className={styles.selectLabel}>
         <label htmlFor="card-usage-filter-card">카드</label>
-        <select key={cardId} id="card-usage-filter-card" className={styles.select} defaultValue={cardId} onChange={(event) => go("card", event.target.value)}>
+        <select
+          key={cardId}
+          id="card-usage-filter-card"
+          className={`${styles.select} ${cardStyles.cardFilter}`}
+          defaultValue={cardId} onChange={(event) => go("card", event.target.value)}>
           <option value="">전체</option>
           {cardChoices.map((card) => (
             <option key={card.id} value={card.id}>

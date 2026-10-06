@@ -61,7 +61,8 @@ import {
 } from "@/repositories/quote-revisions";
 import { listNumberedByProject as repoListNumberedExpensesByProject } from "@/repositories/expenses";
 import { listFieldDefinitions as repoListFieldDefinitions } from "@/repositories/field-definitions";
-import { findVendorNamesByIds as repoFindVendorNamesByIds } from "@/repositories/vendors";
+import { findVendorKindsByIds as repoFindVendorKindsByIds, findVendorNamesByIds as repoFindVendorNamesByIds } from "@/repositories/vendors";
+import { NOT_SUPPLIER_VENDOR, servesSide } from "@/domain/vendors/kind";
 import { listCodeItems as repoListCodeItems } from "@/repositories/code-tables";
 import { QUOTE_SUBCATEGORY_TABLE_KEY } from "@/domain/projects/references";
 import { getSettingValue } from "@/domain/settings/registry";
@@ -1009,6 +1010,10 @@ export async function writeQuoteLinesInTx(
     // 04-26 · ENG-D10 — 요청의 새 줄 id 중 그 차수에 이미 있는 줄(응답을 잃은 재전송). 상한 판정과 소분류 판정이 같이 본다.
     const newIds = input.rows.filter((row) => row.isNew).map((row) => row.id);
     const presentById = new Map((await repoFindQuoteLinesByIds(viewer, newIds, { revisionId }, tx)).map((row) => [row.id, row] as const));
+    // 261006 「바뀔 때만 막기」 — 거래처 갈래(협력사 · 둘 다)는 새로 고르거나 바꾼 값만 본다.
+    // UUID는 표기(대소문자)와 무관하게 같은 값이라 소문자로 맞춰 찾고 비교한다(DB가 돌려주는 id도 소문자 · PR #175 Codex).
+    const requestedVendorIds = [...new Set([...input.rows, ...foundRows].flatMap((row) => (row.vendorId ? [row.vendorId.toLowerCase()] : [])))];
+    const vendorKinds = await repoFindVendorKindsByIds(viewer, requestedVendorIds, tx);
 
     for (const [rowIndex, received] of input.rows.entries()) {
       // 04-13 — 판정·저장이 보는 종류: 기존 줄은 잠근 tx로 다시 읽은 DB 행, 새 줄만 요청 값(없으면 quote).
@@ -1024,6 +1029,15 @@ export async function writeQuoteLinesInTx(
       const storedSubcategory = (current ?? (received.isNew ? presentById.get(received.id) : undefined))?.subcategory;
       if (kind === "quote" && !prepared.selectableSubcategories.has(kindRow.subcategory) && kindRow.subcategory !== storedSubcategory) {
         formatErrors.push({ rowIndex, rowId: kindRow.id, field: "subcategory", label: CELL_LABELS.subcategory, reason: SUBCATEGORY_NOT_LISTED });
+      }
+      // 같은 기준 — 저장된 거래처는 그 사이 갈래가 바뀌어도 그대로 저장(기존 연결 유지). 복제한 새 줄은 원본 줄 거래처가
+      // 저장된 값이다(프로젝트 복사의 출처 클라이언트와 같은 기준 · 거래처가 가려진 계급의 복제도 막히지 않는다).
+      const duplicatedSource = received.isNew && received.duplicatedFrom ? currentById.get(received.duplicatedFrom) : undefined;
+      const storedVendorId = (current ?? (received.isNew ? (presentById.get(received.id) ?? duplicatedSource) : undefined))?.vendorId ?? null;
+      const vendorId = kindRow.vendorId?.toLowerCase();
+      const vendorKind = vendorId ? vendorKinds.get(vendorId) : undefined;
+      if (vendorId && vendorId !== storedVendorId && vendorKind && !servesSide(vendorKind, "supplier")) {
+        formatErrors.push({ rowIndex, rowId: kindRow.id, field: "vendorId", label: CELL_LABELS.vendorId, reason: NOT_SUPPLIER_VENDOR });
       }
       const money = normalizeLineMoney(kindRow, rowIndex);
       if (money.errors.length > 0) {

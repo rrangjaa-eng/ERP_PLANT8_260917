@@ -63,7 +63,8 @@ import { coversProjectTeam, isEndDatePassed, loadActorTeamScope } from "@/domain
 import { findMembershipAtDate } from "@/repositories/team-memberships";
 import { listFieldDefinitions as repoListFieldDefinitions } from "@/repositories/field-definitions";
 import { listTeams as repoListTeams } from "@/repositories/teams";
-import { findVendorNamesByIds as repoFindVendorNamesByIds } from "@/repositories/vendors";
+import { findVendorKindsByIds as repoFindVendorKindsByIds, findVendorNamesByIds as repoFindVendorNamesByIds } from "@/repositories/vendors";
+import { NOT_CLIENT_VENDOR, servesSide } from "@/domain/vendors/kind";
 
 export class ForbiddenError extends UserFacingError {}
 // D-47 완료(정산) 뒤 잠김의 domain 가드 자리 — `domain/vendors`의
@@ -501,7 +502,7 @@ export type ProjectInput = {
 
 // 04-15(B-17 · PR #38) — 등록 입력의 칸 오류. 화면이 칸 아래 Form.Error와 1차 옆 한 줄로 그린다.
 export type ProjectInputFieldError = {
-  field: "startDate" | "endDate" | "preEstimateAmount" | "preEstimateFxRate";
+  field: "clientId" | "startDate" | "endDate" | "preEstimateAmount" | "preEstimateFxRate";
   reason: string;
 };
 
@@ -616,11 +617,23 @@ export async function createProject(
 
   // 04-15(04-32 규칙) — 복사 출처 판정은 번호 부여 트랜잭션 앞에서 한다(잠금 안에서 전역 db를 부르지 않는다).
   const copySourceId = input.copyFromProjectId;
-  if (copySourceId !== undefined && !(await findCopySourceRow(viewer, copySourceId))) {
+  const copySource = copySourceId !== undefined ? await findCopySourceRow(viewer, copySourceId) : null;
+  if (copySourceId !== undefined && !copySource) {
     denyWrite(viewer, COPY_SOURCE_RULE, { sourceProjectId: copySourceId }, new CopySourceMissingError(COPY_SOURCE_MISSING));
   }
+  // 261006 「바뀔 때만 막기」 — 클라이언트는 클라이언트 · 둘 다 갈래만. 복사 출처의 클라이언트 그대로면 갈래가 바뀌었어도 둔다.
+  // UUID는 표기(대소문자)와 무관하게 같은 값이라 소문자로 맞춰 비교한다(DB가 돌려주는 id도 소문자).
+  const clientId = input.clientId.toLowerCase();
+  const checksClientKind = clientId !== copySource?.clientId && UUID_SHAPE.test(clientId);
 
   const { row: created, copiedLineCount } = await withTransaction(async (tx) => {
+    // PR #175 Codex — 갈래는 등록과 같은 트랜잭션에서 잠가 읽는다(판정 뒤 등록 전에 갈래가 바뀌는 경합).
+    if (checksClientKind) {
+      const clientKind = (await repoFindVendorKindsByIds(viewer, [clientId], tx)).get(clientId);
+      if (clientKind && !servesSide(clientKind, "client")) {
+        throw new ProjectInputRejectedError([{ field: "clientId", reason: NOT_CLIENT_VENDOR }]);
+      }
+    }
     const { number } = await allocateDocumentNumber(
       viewer,
       { counterKey: PROJECT_NUMBER_COUNTER_KEY, year, format },

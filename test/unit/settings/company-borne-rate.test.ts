@@ -4,7 +4,7 @@ import { koreanZodErrorMessage } from "@/lib/actions/zod-error-message";
 
 // 05-06 돈 검토 m5 — gross-up은 공급가액 / (1 − 세율)이라 세율 1(100%)은 0 나누기다. 1 미만만 저장한다.
 describe("회사 대납 세율 범위", () => {
-  it.each([0, 0.22, 0.999999])("허용: %s", (value) => {
+  it.each([0, 0.22, 0.9999])("허용: %s", (value) => {
     expect(TAX_COMPANY_BORNE_RATE.schema.safeParse(value).success).toBe(true);
   });
 

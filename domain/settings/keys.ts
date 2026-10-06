@@ -56,10 +56,16 @@ export const ACTION_LOG_OPTIONAL_TYPES: SettingDef<CoreActionType[]> = {
 
 // ── 뒤 페이즈가 읽는 키 (readBy 표시 있음) ──────────────────────────────
 
+// 세율은 소수 넷째 자리까지 — domain/money의 round()가 value / unit을 소수
+// 여섯째 자리로 정규화하는 전제다. multipleOf(0.0001)는 부동소수 오차로 0.088 같은
+// 값을 거부하므로 1e4배 뒤 정수와의 차이로 판정한다.
+const atMostFourDecimals = (value: number) => Math.abs(value * 1e4 - Math.round(value * 1e4)) < 1e-9;
+const RATE_PRECISION_MESSAGE = { message: "소수 넷째 자리까지만 가능 · 값 확인" };
+
 export const TAX_VAT_RATE: SettingDef<number> = {
   key: "tax.vat.rate",
   kind: "historized",
-  schema: z.coerce.number().min(0).max(1),
+  schema: z.coerce.number().min(0).max(1).refine(atMostFourDecimals, RATE_PRECISION_MESSAGE),
   label: "부가세율",
   hint: "적용 시작일부터 이 비율로 부가세를 계산합니다.",
   namespace: "세율",
@@ -69,7 +75,7 @@ export const TAX_VAT_RATE: SettingDef<number> = {
 export const TAX_WITHHOLDING_OTHER_INCOME_RATE: SettingDef<number> = {
   key: "tax.withholding.other_income.rate",
   kind: "historized",
-  schema: z.coerce.number().min(0).max(1),
+  schema: z.coerce.number().min(0).max(1).refine(atMostFourDecimals, RATE_PRECISION_MESSAGE),
   label: "기타소득 원천징수율",
   hint: "기타소득 지급액에서 이 비율만큼 원천징수합니다.",
   namespace: "세율",
@@ -79,7 +85,7 @@ export const TAX_WITHHOLDING_OTHER_INCOME_RATE: SettingDef<number> = {
 export const TAX_WITHHOLDING_BUSINESS_INCOME_RATE: SettingDef<number> = {
   key: "tax.withholding.business_income.rate",
   kind: "historized",
-  schema: z.coerce.number().min(0).max(1),
+  schema: z.coerce.number().min(0).max(1).refine(atMostFourDecimals, RATE_PRECISION_MESSAGE),
   label: "사업소득 원천징수율",
   hint: "사업소득 지급액에서 이 비율만큼 원천징수합니다.",
   namespace: "세율",
@@ -100,7 +106,7 @@ export const TAX_COMPANY_BORNE_RATE: SettingDef<number> = {
   key: "tax.company_borne.rate",
   kind: "historized",
   // gross-up은 공급가액 / (1 − 세율)이라 1은 0 나누기다(05-06 돈 검토 m5).
-  schema: z.coerce.number().min(0).lt(1),
+  schema: z.coerce.number().min(0).lt(1).refine(atMostFourDecimals, RATE_PRECISION_MESSAGE),
   label: "회사 대납 세율",
   hint: "회사가 대신 부담하는 세금의 비율입니다.",
   namespace: "세율",

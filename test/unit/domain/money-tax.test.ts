@@ -188,4 +188,44 @@ describe("applyTaxRule", () => {
       expect(["tax.basis_date.withholding", "tax.basis_date.vat"]).toContain(def.key);
     }
   });
+
+  it("E-23 원천징수 712,500 · 8.8% · 10원 절사 → 62,700", async () => {
+    const getSettingValue = fakeGetSettingValue();
+    const result = await applyTaxRule(
+      712_500,
+      { ...WITHHOLDING_RULE, roundingMethod: "truncate" },
+      { paymentDate: PAYMENT_DATE, evidenceDate: EVIDENCE_DATE },
+      { getSettingValue: getSettingValue as never },
+    );
+    // 고치기 전 62,690
+    expect(result.withholdingKrw).toBe(62_700);
+    expect(result.payableKrw).toBe(649_800);
+  });
+
+  // 10% 세율 × 정수 공급가는 이 오차가 나지 않아 세율 설정값을 바꿔 부가세 경로를 검증한다.
+  it("E-23 부가세 — 세율 설정 8.8% · 10원 절사 · 712,500 → 62,700", async () => {
+    const getSettingValue = fakeGetSettingValue({ "tax.vat.rate": 0.088, "tax.rounding.vat_unit": 10 });
+    const result = await applyTaxRule(
+      712_500,
+      { ...VAT_RULE, roundingMethod: "truncate" },
+      { paymentDate: PAYMENT_DATE, evidenceDate: EVIDENCE_DATE },
+      { getSettingValue: getSettingValue as never },
+    );
+    // 고치기 전 62,690
+    expect(result.vatKrw).toBe(62_700);
+    expect(result.payableKrw).toBe(775_200);
+  });
+
+  it("E-23 회사 대납(flat) 712,500 · 8.8% · 10원 절사 → 62,700", async () => {
+    const getSettingValue = fakeGetSettingValue();
+    const result = await applyTaxRule(
+      712_500,
+      { ...COMPANY_BORNE_RULE, roundingMethod: "truncate" },
+      { paymentDate: PAYMENT_DATE, evidenceDate: EVIDENCE_DATE },
+      { getSettingValue: getSettingValue as never },
+    );
+    // 고치기 전 62,690
+    expect(result.companyBorneKrw).toBe(62_700);
+    expect(result.payableKrw).toBe(712_500);
+  });
 });

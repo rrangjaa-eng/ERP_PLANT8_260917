@@ -33,7 +33,11 @@ export type RoundingMethod = "truncate" | "round" | "ceil";
 // 반올림·올림)은 코드표 세금 규칙(04-02)·설정이 고른다. 이 함수는 그 셋을
 // 그대로 받아 적용만 한다.
 export function round(value: number, unit: RoundingUnit, method: RoundingMethod): number {
-  const scaled = value / unit;
+  // E-23 — 부동소수 곱(712500 × 0.088 = 62699.99…)이 절사·올림에서 한 단위를 잃거나 더하지 않게
+  // 몫을 소수 6자리로 정규화한다. 금액은 정수 원·세율은 소수 4자리 이하(domain/settings/keys.ts가 강제)라 실제 값은 바뀌지 않는다.
+  // `* 1e6` 꼴은 큰 정수를 깨뜨린다 — toFixed는 큰 정수도 보존한다.
+  // 한계: |value / unit|이 약 86억을 넘으면 부동소수 간격이 1e-6보다 커서 이 정규화가 듣지 않는다.
+  const scaled = Number((value / unit).toFixed(6));
   let steps: number;
   switch (method) {
     case "truncate":

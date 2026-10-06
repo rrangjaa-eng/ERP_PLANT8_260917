@@ -37,6 +37,16 @@ describe("round", () => {
   it("단위 10 · ceil은 12341 → 12350", () => {
     expect(round(12341, 10, "ceil")).toBe(12350);
   });
+
+  it("E-23 올림은 딱 떨어지는 값을 한 단위 더 올리지 않는다 — 100,000 × 0.07 · 10원 올림 → 7,000", () => {
+    expect(round(100_000 * 0.07, 10, "ceil")).toBe(7_000);
+  });
+
+  it("큰 정수는 정규화로 바뀌지 않는다 — 899,165,132,913 절사 · 999,999,999,999 올림 · −899,165,132,913 절사", () => {
+    expect(round(899_165_132_913, 1, "truncate")).toBe(899_165_132_913);
+    expect(round(999_999_999_999, 1, "ceil")).toBe(999_999_999_999);
+    expect(round(-899_165_132_913, 1, "truncate")).toBe(-899_165_132_913);
+  });
 });
 
 describe("toKrw", () => {
@@ -154,6 +164,11 @@ describe("grossFromTotal", () => {
     const recomputedTotal = gross + recomputedVat;
     expect(recomputedTotal).not.toBe(100_005);
     expect(recomputedTotal).toBe(100_004);
+  });
+
+  it("E-23 역산 경계 — \"round\" 1,100 → 1,000 · 1,000,010 → 909,100", () => {
+    expect(grossFromTotal(1_100, 0.1, 1, "round")).toBe(1_000);
+    expect(grossFromTotal(1_000_010, 0.1, 1, "round")).toBe(909_100);
   });
 });
 

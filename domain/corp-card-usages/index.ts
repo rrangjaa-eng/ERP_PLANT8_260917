@@ -360,6 +360,8 @@ export type CardAmountsPreview = {
   teamName: string | null;
   /** 사용일 소속 발령이 있는가 — 「소속 없음」 막힘은 이것으로만(이름 노출과 무관). */
   teamAssigned: boolean;
+  /** 사용일 기준 쓸 카드 — 카드 자격은 사용일 소속으로 정해져 폼이 사용일을 바꾸면 선택지를 이것으로 바꾼다. */
+  cards: Partial<CardOptionDto>[];
 };
 
 export async function previewCardAmounts(
@@ -369,12 +371,14 @@ export async function previewCardAmounts(
   const team = await teamAtDate(viewer, viewer.id, input.usedOn);
   const teamName = team?.name ?? null;
   const teamAssigned = (await teamIdOn(viewer, input.usedOn)) !== null;
-  if (!input.total || !input.evidenceTypeCode) return { split: null, teamName, teamAssigned };
+  const usable = await cardOptionsForUsage(viewer, input.usedOn);
+  const cards = await projectMany(viewer, usable.map((card) => ({ id: card.id, label: card.label })), CARD_OPTION_SPEC);
+  if (!input.total || !input.evidenceTypeCode) return { split: null, teamName, teamAssigned, cards };
   const option = (await cardEvidenceTypes(viewer)).options.find((candidate) => candidate.value === input.evidenceTypeCode);
-  if (!option) return { split: null, teamName, teamAssigned };
+  if (!option) return { split: null, teamName, teamAssigned, cards };
   const rates = await loadTaxRates(input.usedOn);
   const split = splitCardTotal({ money: input.total, rule: option.rule }, rates);
-  return { split: { ...split, ruleKind: option.rule.ruleKind, evidenceLabel: option.label }, teamName, teamAssigned };
+  return { split: { ...split, ruleKind: option.rule.ruleKind, evidenceLabel: option.label }, teamName, teamAssigned, cards };
 }
 
 // ── 가맹점 고르기 ──────────────────────────────────────────────────────────

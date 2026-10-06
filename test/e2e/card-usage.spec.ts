@@ -348,6 +348,36 @@ test.describe("법인카드 사용 등록 (06-05)", () => {
     await page.context().close();
   });
 
+  test("[PR #180 Codex P2] 카드 선택지는 고른 사용일 기준 — 오늘 발령된 팀의 팀 카드는 어제를 고르면 빠지고 오늘로 돌리면 다시 생긴다", async ({ browser, baseURL }) => {
+    const suffix = randomUUID().slice(0, 8);
+    const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E사용일본부-${suffix}` });
+    const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E사용일팀-${suffix}` });
+    const today = seoulToday();
+    const person = await makePerson("사용일", DEFAULT_ROLE_ID, team.id, today);
+    const issuer = `신한-${suffix}`;
+    const personalLabel = `E2E개인-${suffix}`;
+    const teamLabel = `E2E팀카드-${suffix}`;
+    await createCorpCard(SYSTEM_VIEWER, { issuer, numberLast4: "4321", label: personalLabel, kind: "personal", holderUserId: person.viewer.id });
+    await createCorpCard(SYSTEM_VIEWER, { issuer, numberLast4: "4322", label: teamLabel, kind: "team", teamId: team.id });
+    const yesterday = seoulToday(new Date(Date.now() - 24 * 60 * 60 * 1000));
+
+    const page = await loginPage(browser, baseURL, person);
+    await page.goto("/cards?new=1");
+    const sheet = panel(page);
+    const card = sheet.getByRole("combobox", { name: "카드", exact: true });
+    await waitForHydration(card);
+    await expect(card.locator("option", { hasText: teamLabel })).toHaveCount(1);
+
+    await sheet.getByLabel("사용일").fill(yesterday);
+    // 어제는 팀 소속이 없어 개인 카드 한 장 — 고를 것이 없으니 읽기 텍스트(할 수 없는 선택지는 숨김).
+    await expect(card).toHaveCount(0);
+    await expect(sheet.getByText(`${personalLabel} · ${issuer} 4321`, { exact: true })).toBeVisible();
+
+    await sheet.getByLabel("사용일").fill(today);
+    await expect(card.locator("option", { hasText: teamLabel })).toHaveCount(1);
+    await page.context().close();
+  });
+
   test("[PR #180 Codex P2] `quote.amount` 없는 카드 소지자도 견적 줄을 고를 수 있다 — 남은 실행가 줄 없이 그 줄이 채워진다 · `?new=1&line=` 진입도 같다", async ({ browser, baseURL }) => {
     const holder = await makeCardHolder();
     const target = await seedProjectLine(holder);

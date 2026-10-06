@@ -44,6 +44,7 @@ import {
   type CardUsageInput,
 } from "@/domain/corp-card-usages";
 import { insertRole } from "@/repositories/roles";
+import { insertMembership } from "@/repositories/team-memberships";
 import { insertCardUsage } from "@/repositories/corp-card-usages";
 import { insertVendor } from "@/repositories/vendors";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
@@ -131,6 +132,25 @@ describe("공용 카드 사용 자격", () => {
     const proxyIds = (await cardOptionsForUsage(proxy, seoulToday())).map((option) => option.id);
     expect(proxyIds).toEqual(expect.arrayContaining([teamCardId, sharedId]));
     expect(proxyIds).not.toContain(ownId);
+  });
+});
+
+describe("사용일별 카드 선택지(PR #180 Codex P2)", () => {
+  it("previewCardAmounts는 고른 사용일 기준 쓸 카드를 돌려준다 — 오늘 발령된 팀의 팀 카드는 오늘만, 어제는 없다", async () => {
+    const team = await makeTeam();
+    const member = await makePerson("새팀원", DEFAULT_ROLE_ID, null);
+    const today = seoulToday();
+    const yesterday = seoulToday(new Date(Date.now() - 24 * 60 * 60 * 1000));
+    await insertMembership(SYSTEM_VIEWER, { userId: member.id, teamId: team.id, effectiveFrom: today });
+    const ownId = await makeCard({ kind: "personal", holderUserId: member.id });
+    const teamCardId = await makeCard({ kind: "team", teamId: team.id });
+
+    const ids = async (usedOn: string) =>
+      ((await previewCardAmounts(member, { usedOn, total: null, evidenceTypeCode: null })).cards ?? []).map((card) => card.id);
+    expect(await ids(today)).toEqual(expect.arrayContaining([ownId, teamCardId]));
+    const past = await ids(yesterday);
+    expect(past).toContain(ownId);
+    expect(past).not.toContain(teamCardId);
   });
 });
 

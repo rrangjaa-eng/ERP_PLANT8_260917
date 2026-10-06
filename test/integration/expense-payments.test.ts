@@ -14,10 +14,13 @@ import {
   PayableChangedError,
   PaymentAlreadyDoneError,
   PaymentConflictError,
+  PaymentNotFoundError,
   previewPayable,
   saveScheduledPayDate,
 } from "@/domain/payments";
 import { GateBlockedError } from "@/domain/rules/gate";
+import { TRANSFER_FRACTION, TRANSFER_NOT_NUMBER, TRANSFER_NOT_POSITIVE } from "@/domain/payments/action-row";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { ACTION_LOG_OPTIONAL_TYPES, PAYMENT_METHOD_EVIDENCE_PAIRS } from "@/domain/settings/keys";
 import { upsertSimpleValue } from "@/repositories/settings";
@@ -427,6 +430,32 @@ describe("지급 동시성 · 권한 · 조작 (06-04 Task 3)", () => {
     const server = await decidePayable({ amount: pre.amount, taxRule: pre.tax.taxRule, applyOpts: pre.tax.dates.applyOpts, incomeType: pre.tax.incomeType }, pre.tax.rates);
     expect(server.payableKrw).toBe(payable);
     expect([row?.payableKrw, row?.grossSupplyKrw]).toEqual([server.payableKrw, server.grossSupplyKrw]);
+  });
+
+  // 06-04 검토 P3-4 — 액션 zod를 거치지 않는 호출(06-15 일괄 · 06-17)도 DB 오류(500) 대신 화면 문구로 거부된다.
+  it("도메인이 이체액(안전한 양의 정수)을 스스로 검증한다 — 소수 · 0 이하 · 숫자 아님은 이체액 칸 문구로 거부 · 지급 기록 0", async () => {
+    const payer = await makePayer();
+    const doc = await approvedExpenseWithoutEvidence(await setupExpenseProject());
+    const expectedPayableKrw = await payableNow(payer, doc);
+    const cases: [number, string][] = [
+      [1.5, TRANSFER_FRACTION],
+      [0, TRANSFER_NOT_POSITIVE],
+      [-3_300, TRANSFER_NOT_POSITIVE],
+      [Number.NaN, TRANSFER_NOT_NUMBER],
+      [Number.MAX_SAFE_INTEGER + 2, TRANSFER_NOT_NUMBER],
+    ];
+    for (const [transferKrw, message] of cases) {
+      const error = await caught(completeExpensePayment(payer, { expenseId: doc.expenseId, expectedPayableKrw, version: doc.version, transferKrw, diffReason: "수수료" }));
+      expect(error, String(transferKrw)).toBeInstanceOf(UserFacingError);
+      expect((error as Error).message, String(transferKrw)).toBe(message);
+    }
+    expect(await livePayments(doc.expenseId)).toHaveLength(0);
+  });
+
+  it("지급 취소 · 예정일 저장은 UUID 모양이 아닌 문서 id를 PaymentNotFoundError로 거부한다(DB uuid 캐스트 오류 아님)", async () => {
+    const payer = await makePayer();
+    await expect(cancelExpensePayment(payer, { expenseId: "not-a-uuid", reason: "중복", version: 1 })).rejects.toBeInstanceOf(PaymentNotFoundError);
+    await expect(saveScheduledPayDate(payer, { expenseId: "not-a-uuid", scheduledPayDate: seoulToday(), version: 1 })).rejects.toBeInstanceOf(PaymentNotFoundError);
   });
 
   it("expectedPayableKrw가 서버 재계산값과 다르면 PayableChangedError · 지급 기록 0", async () => {

@@ -301,6 +301,41 @@ export async function listNumberedByLines(
   return rows.flatMap((row) => (row.quoteLineId ? [{ ...row, quoteLineId: row.quoteLineId }] : []));
 }
 
+// 06-28 — 주어진 지출결의 중 종결된 것의 id(홈 막힌 문서에서 뺀다).
+export async function listClosedExpenseIds(viewer: Viewer, ids: string[], tx: DbOrTx = db): Promise<string[]> {
+  void viewer;
+  if (ids.length === 0) return [];
+  const rows = await tx
+    .select({ id: expenses.id })
+    .from(expenses)
+    .where(and(inArray(expenses.id, ids), isNotNull(expenses.closedAt)));
+  return rows.map((row) => row.id);
+}
+
+// 06-28(X-9) — 줄 여럿의 종결된 분할 문서(번호 있음 · 삭제 안 됨). 회차 번호가 그 회차를 다시 쓰지 않도록 회차 입력에만 더한다
+// (줄 문 · 회차 상한 · 남은 실행가는 listNumberedByLines만 본다).
+export async function listClosedInstallmentsByLines(
+  viewer: Viewer,
+  lineIds: string[],
+  tx: DbOrTx = db,
+): Promise<{ id: string; quoteLineId: string; installmentSeq: number | null }[]> {
+  void viewer;
+  if (lineIds.length === 0) return [];
+  const rows = await tx
+    .select({ id: expenses.id, quoteLineId: expenses.quoteLineId, installmentSeq: expenses.installmentSeq })
+    .from(expenses)
+    .where(
+      and(
+        inArray(expenses.quoteLineId, lineIds),
+        isNotNull(expenses.number),
+        isNull(expenses.deletedAt),
+        isNotNull(expenses.closedAt),
+        eq(expenses.installment, true),
+      ),
+    );
+  return rows.flatMap((row) => (row.quoteLineId ? [{ ...row, quoteLineId: row.quoteLineId }] : []));
+}
+
 // 06-28 종결 — 번호 있음 · 삭제 · 종결 안 됨 · version 조건, 종결 칸 셋을 채우고 version + 1. 0행이면 null(경합).
 // 06-27 expenses_closed_check가 마지막 방어다.
 export async function closeExpenseRow(

@@ -95,6 +95,8 @@ export type DocumentKindDef = {
   // 05-10 G1: 승인된 기안 문서가 승인 뒤에 막혔음을 기안자의 「내 차례」 [막힘] 줄로 알릴 때(증빙 무효 등) — 문서 id → 상황 글자 · 행동 글자 · 주소.
   // 엔진은 기안자의 승인 문서 id를 종류마다 한 배열로 한 번 넘긴다(읽기 전용). 없으면 이 종류는 승인 뒤 막힘이 없다.
   blockedAfterApproval?: (viewer: Viewer, documentIds: string[]) => Promise<Map<string, { situation: string; actionLabel: string; href: string }>>;
+  // 06-28: 결재 상태와 별개로 종류가 끝낸 문서(지출결의 종결) — 문서 id 중 끝난 것. 엔진은 「내 차례」 반려 줄에서 뺀다(읽기 전용).
+  closedDocumentIds?: (viewer: Viewer, documentIds: string[]) => Promise<Set<string>>;
   // 05 /review C6: 승인 뒤 막힘 후보를 LIMIT 전에 SQL로 거르는 조건(repositories/approvals) — 없으면 그 종류의 승인 문서 전부가 후보다(조용히 빠지지 않는다).
   blockedAfterApprovalCandidates?: BlockedCandidateFilter;
   // 04.1-05(ENG-17): 상세 — 순서 고정: loadDetails(구조 필드, id 목록 한 번) → 엔진이 detailDto로 정보 항목별

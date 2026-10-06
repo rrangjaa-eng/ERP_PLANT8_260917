@@ -13,7 +13,7 @@ import { EVIDENCE_MAX_SIZE_MB } from "@/domain/settings/keys";
 import { loadActionLogGate, recordActionInTx } from "@/domain/approvals/tx-log";
 import { validateRejectReason } from "@/domain/approvals";
 import { buildEvidenceVoidedMessage } from "@/domain/approvals/conflict-message";
-import { canSeeExpense, EXPENSE_DOCUMENT_KIND, ExpenseConflictError, ExpenseNotFoundError } from "@/domain/expenses";
+import { canSeeExpense, EXPENSE_ALREADY_CLOSED, EXPENSE_DOCUMENT_KIND, ExpenseCloseRefusedError, ExpenseConflictError, ExpenseNotFoundError } from "@/domain/expenses";
 import { EVIDENCE_FILE_DTO_SPEC, type EvidenceFileDto } from "@/domain/evidence/dto";
 import { checkEvidenceUpload, EVIDENCE_UPLOAD_FAILED, type EvidenceDuplicate } from "@/domain/evidence/upload-checks";
 import { bumpInstanceVersion } from "@/repositories/approvals";
@@ -80,6 +80,8 @@ type OwnerState = {
   status: string | null;
   updatedAt: Date;
   instance: { id: string; version: number } | null;
+  // 06-28: 종결 문서 — 증빙은 읽기만(기안자도 더하거나 떼지 못한다).
+  closed: boolean;
 };
 
 type OwnerRule = {
@@ -111,11 +113,12 @@ async function expenseState(viewer: Viewer, ownerId: string, tx?: DbOrTx): Promi
     status: instance?.status ?? null,
     updatedAt: row.updatedAt,
     instance: instance ? { id: instance.id, version: instance.version } : null,
+    closed: row.closedAt !== null,
   };
 }
 
 const expenseDrafterRemoves = (owner: OwnerState) =>
-  (owner.number === null && owner.status === null) || (owner.status !== null && EXPENSE_RETURNED_STATUSES.has(owner.status));
+  !owner.closed && ((owner.number === null && owner.status === null) || (owner.status !== null && EXPENSE_RETURNED_STATUSES.has(owner.status)));
 
 const OWNER_RULES: Record<string, OwnerRule> = {
   expense: {
@@ -206,6 +209,7 @@ export async function requestEvidenceUpload(viewer: Viewer, raw: EvidenceUploadR
   if (owner.drafterId !== viewer.id && !adder.attacher) throw rule.notFound();
   if (!adder.drafter && !adder.attacher) throw new ForbiddenError("지출결의 작성 권한 없음");
   if (!addOpen(rule, owner, adder)) {
+    if (owner.closed) throw new ExpenseCloseRefusedError(EXPENSE_ALREADY_CLOSED);
     throw new EvidenceLockedError(rule.inReview(owner) ? EVIDENCE_LOCKED_IN_REVIEW : EVIDENCE_ADD_DRAFTER_ONLY);
   }
 
@@ -380,6 +384,7 @@ export async function removeEvidence(viewer: Viewer, input: { fileId: string }, 
   if (!(await can(viewer, "expenses", "write"))) throw new ForbiddenError("지출결의 작성 권한 없음");
   if (file.removedAt !== null) return;
   if (!rule.drafterRemoves(owner)) {
+    if (owner.closed) throw new ExpenseCloseRefusedError(EXPENSE_ALREADY_CLOSED);
     if (rule.inReview(owner)) throw new EvidenceLockedError(EVIDENCE_LOCKED_IN_REVIEW);
     if (rule.approved(owner)) throw new EvidenceLockedError(EVIDENCE_REMOVE_LOCKED_APPROVED);
     throw new ExpenseConflictError(owner.updatedAt);

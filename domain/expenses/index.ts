@@ -47,7 +47,7 @@ import {
   type RouteConfig,
   type RouteSettingDefs,
 } from "@/domain/approvals";
-import { buildConflictMessage, buildLateUndoMessage } from "@/domain/approvals/conflict-message";
+import { buildConflictMessage, buildLateUndoMessage, buildResubmittedMessage } from "@/domain/approvals/conflict-message";
 import type { ApprovalStatus } from "@/domain/approvals/route";
 import { visible } from "@/domain/permissions/visible";
 import { findApprovalGraphByDocument, type ApprovalGraph } from "@/repositories/approvals";
@@ -94,6 +94,8 @@ import { findUserById, findUserNamesByIds } from "@/repositories/users";
 import { findVendorById } from "@/repositories/vendors";
 import {
   closeExpenseRow,
+  listClosedExpenseIds,
+  listClosedInstallmentsByLines,
   findDeletedDraftById,
   findDraftByLineAndDrafter,
   findExpenseApprovalInstance,
@@ -186,8 +188,9 @@ export class ExpenseUndoRefusedError extends UserFacingError {
 }
 
 // 05-09: 기안자가 고칠 수 있는 문서 = 기안자 ∧ (번호 없음(작성 중) 또는 결재 상태 ∈ {반려, 회수}). 저장 · 미리보기 · 줄 · 거래처 바꾸기가 같은 판정을 쓴다.
-export function isEditableByDrafter(viewerId: string, row: Pick<ExpenseRow, "drafterId" | "number">, approvalStatus: string | null): boolean {
-  if (row.drafterId !== viewerId) return false;
+// 06-28: 종결 문서는 어떤 경로로도 다시 열리지 않는다(되돌림 없음).
+export function isEditableByDrafter(viewerId: string, row: Pick<ExpenseRow, "drafterId" | "number" | "closedAt">, approvalStatus: string | null): boolean {
+  if (row.drafterId !== viewerId || row.closedAt !== null) return false;
   return row.number === null || (approvalStatus !== null && EDITABLE_STATUSES.has(approvalStatus));
 }
 
@@ -444,6 +447,7 @@ registerDocumentKind({
   buildDetailRows: buildExpenseDetailRows,
   blockedAfterApproval: expenseBlockedAfterApproval,
   blockedAfterApprovalCandidates: "unresolved_evidence_void",
+  closedDocumentIds: async (viewer, ids) => new Set(await listClosedExpenseIds(viewer, ids)),
 });
 
 // ── 보임 ──────────────────────────────────────────────────────────────
@@ -461,8 +465,14 @@ export function lineExecution(line: QuoteLineRow): Money {
   });
 }
 
-export function doorFor(line: QuoteLineRow, numbered: readonly NumberedLineExpense[], selfId?: string): ExpenseLineDoor {
-  return expenseLineDoor({
+// 06-28(X-9): 종결 분할 문서는 문 · 남은 실행가 입력(numbered)에 섞지 않고 다음 회차 번호만 다시 센다 — 그 회차를 다시 쓰지 않는다.
+export function doorFor(
+  line: QuoteLineRow,
+  numbered: readonly NumberedLineExpense[],
+  selfId?: string,
+  closedInstallments: readonly { id: string; installmentSeq: number | null }[] = [],
+): ExpenseLineDoor {
+  const door = expenseLineDoor({
     line: { lineKind: line.lineKind, cancelled: line.lineStatus === "cancelled", vendorId: line.vendorId, execution: lineExecution(line) },
     numbered: numbered.map((doc) => ({
       id: doc.id,
@@ -473,6 +483,10 @@ export function doorFor(line: QuoteLineRow, numbered: readonly NumberedLineExpen
     })),
     ...(selfId ? { selfId } : {}),
   });
+  if (door.nextInstallmentSeq === null || closedInstallments.length === 0) return door;
+  const others = numbered.filter((doc) => doc.id !== selfId);
+  const closed = closedInstallments.filter((doc) => doc.id !== selfId && !others.some((other) => other.id === doc.id));
+  return { ...door, nextInstallmentSeq: installmentSeqFor([...others, ...closed]) };
 }
 
 // D-66 — 현재 차수 줄마다 계보(copied_from_line_id) 사슬 전체의 번호 있는 문서(제출 순). 줄 파생 상태
@@ -503,11 +517,16 @@ export async function listNumberedByLineageMany(viewer: Viewer, projectIds: stri
 
 // D-66 — 한 줄의 계보 사슬(그 줄 → copied_from_line_id를 거슬러 이전 차수 줄)의 번호 있는 문서(제출 순). 회차 상한 · 회차 번호 ·
 // 문(④) 판정이 생성 · 줄 표(listNumberedByLineage)와 같은 사슬을 본다. 제출은 tx로 부른다.
-async function listNumberedByLineChain(viewer: Viewer, input: { projectId: string; lineId: string }, tx?: DbOrTx): Promise<NumberedLineExpense[]> {
+// 06-28(E-14): 사슬 줄 id도 함께 돌려준다 — 종결 분할 문서(회차 번호 입력)를 같은 사슬로 읽는다.
+async function listNumberedByLineChain(
+  viewer: Viewer,
+  input: { projectId: string; lineId: string },
+  tx?: DbOrTx,
+): Promise<{ numbered: NumberedLineExpense[]; chainLineIds: string[] }> {
   const byId = new Map((await listLineageLinesByProjects(viewer, [input.projectId], tx)).map((line) => [line.id, line]));
   const chain: string[] = [];
   for (let cursor: string | null = input.lineId; cursor && !chain.includes(cursor); cursor = byId.get(cursor)?.copiedFromLineId ?? null) chain.push(cursor);
-  return listNumberedByLines(viewer, chain, tx);
+  return { numbered: await listNumberedByLines(viewer, chain, tx), chainLineIds: chain };
 }
 
 export type ProjectFacts = { project: ProjectRow; latestRevisionId: string | null; tableGateReason: string | null };
@@ -956,6 +975,7 @@ export async function submitExpense(
     await deps?.afterLock?.();
     if (!locked) throw new ExpenseNotFoundError();
     let resubmit: { instanceId: string; version: number } | null = null;
+    if (locked.number !== null && locked.closedAt !== null) throw new ExpenseCloseRefusedError(EXPENSE_ALREADY_CLOSED);
     if (locked.number !== null) {
       const instance = await findExpenseApprovalInstance(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, documentId: locked.id }, tx);
       if (instance && ACTIVE_STATUSES.has(instance.status)) return { kind: "already_submitted", expenseId: locked.id, number: locked.number };
@@ -965,7 +985,7 @@ export async function submitExpense(
     if (locked.version !== input.expectedVersion) throw new ExpenseConflictError(locked.updatedAt);
 
     // 잠근 프로젝트 행 · tx로 읽은 차수 · 줄 · 문 · 증빙 수로 같은 규칙을 다시 판정한다(T-05-601).
-    const { facts, line, numbered, door } = await loadSubmitFacts(viewer, locked, lockedProject ?? projectRow, pre, tax, codes, tx);
+    const { facts, line, numbered, door, closedInstallments } = await loadSubmitFacts(viewer, locked, lockedProject ?? projectRow, pre, tax, codes, tx);
     const decision = await gate(locked, "expense.submit", buildExpenseSubmitContext(facts));
     if (!decision.allowed) throw new GateBlockedError(decision.reason);
     if (locked.quoteLineId) {
@@ -986,7 +1006,8 @@ export async function submitExpense(
     const installmentSeq = !installment
       ? null
       : installmentSeqFor(
-          numbered.filter((doc) => doc.id !== locked.id),
+          // 06-28(X-9): 종결 분할 문서의 회차도 「다른 문서」다 — 그 회차를 다시 쓰지 않는다.
+          [...numbered.filter((doc) => doc.id !== locked.id), ...closedInstallments],
           resubmit ? locked.installmentSeq : null,
         );
     await saveSubmissionSnapshot(
@@ -1184,6 +1205,8 @@ export async function closeExpense(
   const reason = input.reason.trim();
   if (reason.length === 0) throw new ExpenseCloseRefusedError(REJECT_REASON_EMPTY_MESSAGE);
   if (reason.length > REJECT_REASON_MAX) throw new ExpenseCloseRefusedError(REJECT_REASON_TOO_LONG_MESSAGE);
+  // 다시 제출과 겹쳐 진 쪽의 문구 재료 — 이름은 트랜잭션 전에 읽는다.
+  const drafterName = (await findUserById(viewer, row.drafterId))?.name ?? null;
   const gate = await loadActionLogGate();
   const now = deps?.now ?? new Date();
 
@@ -1193,7 +1216,8 @@ export async function closeExpense(
     if (!locked || locked.number === null) throw new ExpenseNotFoundError();
     if (locked.closedAt !== null) throw new ExpenseCloseRefusedError(EXPENSE_ALREADY_CLOSED);
     const instance = await findExpenseApprovalInstance(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, documentId: locked.id }, tx);
-    if (!instance || !EDITABLE_STATUSES.has(instance.status)) throw new ExpenseConflictError(locked.updatedAt);
+    if (instance && ACTIVE_STATUSES.has(instance.status)) throw new ExpenseCloseRefusedError(buildResubmittedMessage({ drafterName, at: locked.updatedAt }));
+    if (!instance || !EDITABLE_STATUSES.has(instance.status)) throw new ExpenseNotFoundError();
     if (locked.version !== input.expectedVersion) throw new ExpenseConflictError(locked.updatedAt);
     const closed = await closeExpenseRow(viewer, { id: locked.id, expectedVersion: input.expectedVersion, closedBy: viewer.id, reason, now }, tx);
     if (!closed) throw new ExpenseConflictError(locked.updatedAt);
@@ -1223,6 +1247,15 @@ async function loadSubmitPre(viewer: Viewer, projectRow: ProjectRow): Promise<Su
   return { gateEnabled, pmName: pm?.name ?? "" };
 }
 
+type SubmitFacts = {
+  facts: ExpenseSubmitFacts;
+  line: QuoteLineRow | null;
+  numbered: NumberedLineExpense[];
+  door: ExpenseLineDoor | null;
+  // 06-28(X-9): 같은 사슬의 종결 분할 문서 — 회차 번호 입력에만.
+  closedInstallments: { id: string; installmentSeq: number | null }[];
+};
+
 // 규칙 `expense.submit`의 사실 — 미리보기는 기본 연결로, 제출은 tx로 읽는다(차수 · 줄 · 문 · 증빙 수 · 금액). 팀 비용 문서는 프로젝트 행이 없다(null).
 async function loadSubmitFacts(
   viewer: Viewer,
@@ -1232,10 +1265,13 @@ async function loadSubmitFacts(
   tax: ExpenseTaxResult,
   codes: ActiveCodes,
   tx?: DbOrTx,
-): Promise<{ facts: ExpenseSubmitFacts; line: QuoteLineRow | null; numbered: NumberedLineExpense[]; door: ExpenseLineDoor | null }> {
+): Promise<SubmitFacts> {
   const line = row.quoteLineId ? await findQuoteLineById(viewer, row.quoteLineId, tx) : null;
   const latest = projectRow ? await findLatestQuoteRevision(viewer, projectRow.id, tx) : null;
-  const numbered = line && row.projectId ? await listNumberedByLineChain(viewer, { projectId: row.projectId, lineId: line.id }, tx) : [];
+  const chained = line && row.projectId ? await listNumberedByLineChain(viewer, { projectId: row.projectId, lineId: line.id }, tx) : null;
+  const numbered = chained?.numbered ?? [];
+  // 번호 문서 목록 다음에 읽는다 — 그사이 종결이 커밋돼도 그 문서는 두 목록 중 하나 이상에 든다(회차가 겹치지 않는다).
+  const closedInstallments = chained ? await listClosedInstallmentsByLines(viewer, chained.chainLineIds, tx) : [];
   const door = line ? doorFor(line, numbered, row.id) : null;
   const evidenceCount = await countActiveByOwner(viewer, EXPENSE_DOCUMENT_KIND, row.id, tx);
   const facts: ExpenseSubmitFacts = {
@@ -1269,7 +1305,7 @@ async function loadSubmitFacts(
     evidenceCount,
     taxUnavailable: tax.unavailable === true,
   };
-  return { facts, line, numbered, door };
+  return { facts, line, numbered, door, closedInstallments };
 }
 
 // 다음 한 수가 페이지 이동인 막힘의 주소 — ① 담당 PM이면 프로젝트 상세(고객 승인 표시), ④ 가장 최근 제출 문서.
@@ -1345,7 +1381,10 @@ async function lineFactsFor(viewer: Viewer, row: ExpenseSummaryRow, supply: Mone
   const executionLines = [`실행가 ${formatKrw(execution.amountKrw)}`];
   if (execution.currency !== "KRW") executionLines.push(`${execution.currency} ${formatForeignAmount(execution.amount)} @${formatFxRate(execution.fxRate)}`);
 
-  const numbered = row.projectId ? (await listNumberedByLineChain(viewer, { projectId: row.projectId, lineId: line.id })).filter((doc) => doc.id !== row.id) : [];
+  const chained = row.projectId ? await listNumberedByLineChain(viewer, { projectId: row.projectId, lineId: line.id }) : null;
+  const numbered = (chained?.numbered ?? []).filter((doc) => doc.id !== row.id);
+  // 06-28(X-9 · E-14): 회차 글자만 같은 사슬의 종결 분할 문서 회차도 센다(앞 회차 · 남은 실행가는 numbered만).
+  const closedInstallments = chained ? await listClosedInstallmentsByLines(viewer, chained.chainLineIds) : [];
   const forced = numbered.length > 0;
   const installmentMode = forced ? "fixed" : "checkbox";
   const { basis, remaining } = remainingForInstallments(
@@ -1354,7 +1393,12 @@ async function lineFactsFor(viewer: Viewer, row: ExpenseSummaryRow, supply: Mone
   );
   const isLast = supply !== null && sameAmountOn(basis, remaining, supply);
   const previous = numbered.at(-1)?.number;
-  const parts = [`${installmentSeqFor(numbered, row.installmentSeq)}회차`];
+  const parts = [
+    `${installmentSeqFor(
+      [...numbered, ...closedInstallments.filter((doc) => doc.id !== row.id && !numbered.some((other) => other.id === doc.id))],
+      row.installmentSeq,
+    )}회차`,
+  ];
   if (forced && previous) parts.push(`앞 회차 ${previous}`);
   parts.push(isLast ? "마지막 회차" : `남은 실행가 ${remainingText(remaining, basis)}`);
   return { executionLines, installmentMode, installmentText: parts.join(" · ") };

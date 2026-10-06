@@ -372,7 +372,7 @@ describe("지급 취소 (06-04 Task 3 · D-606)", () => {
 });
 
 describe("지급 동시성 · 권한 · 조작 (06-04 Task 3)", () => {
-  it("동시 두 지급 완료 — 장벽: A가 문서 행 잠금을 쥔 동안 B가 기다리고, A가 끝나면 B는 `{사람}이 {HH:mm}에 지급 완료함 · 새로 고침`", async () => {
+  it("동시 두 지급 완료 — 장벽: A가 문서 행 잠금을 쥔 동안 B가 기다리고, A가 끝나면 B는 `이미 지급됨 · {사람} · {HH:mm} · 새로 고침`(조사 없는 명사형 — 사용자 결정 2026-10-06 18:30:31 KST)", async () => {
     const payer = await makePayer("이과장");
     const doc = await approvedExpenseWithoutEvidence(await setupExpenseProject());
     const expectedPayableKrw = await payableNow(payer, doc);
@@ -399,7 +399,7 @@ describe("지급 동시성 · 권한 · 조작 (06-04 Task 3)", () => {
     await a;
     const error = await b;
     expect(error).toBeInstanceOf(PaymentAlreadyDoneError);
-    expect((error as Error).message).toMatch(/^이과장이 \d{2}:\d{2}에 지급 완료함 · 새로 고침$/);
+    expect((error as Error).message).toMatch(/^이미 지급됨 · 이과장 · \d{2}:\d{2} · 새로 고침$/);
     expect(await livePayments(doc.expenseId)).toHaveLength(1);
   }, 20_000);
 

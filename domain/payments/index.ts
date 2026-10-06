@@ -63,7 +63,8 @@ const ALREADY_CANCELLED = "이미 지급 취소됨 · 새로 고침";
 // 사람 이름은 트랜잭션 밖에서 붙인다(06-03 tx 규약 — 트랜잭션 안에서는 사용자 표를 풀로 읽지 않는다).
 export class PaymentAlreadyDoneError extends UserFacingError {
   constructor(processedByName: string, processedAt: Date) {
-    super(`${processedByName}이 ${formatKstTime(processedAt)}에 지급 완료함 · 새로 고침`);
+    // 조사 없는 명사형 — 받침 없는 이름 뒤 「이」가 틀린다(06-04 검토 P3-5 · 사용자 결정 2026-10-06 18:30:31 KST 「조사 없애기」).
+    super(`이미 지급됨 · ${processedByName} · ${formatKstTime(processedAt)} · 새로 고침`);
   }
 }
 

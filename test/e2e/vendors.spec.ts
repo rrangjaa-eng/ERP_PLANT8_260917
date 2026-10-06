@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { test, expect } from "@playwright/test";
-import { createFixtureUser } from "./fixtures";
+import { createFixtureUser, uniqueBusinessNo } from "./fixtures";
 import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { setPermissionCell } from "@/domain/permissions/matrix";
 import { insertRole, setRoleArchived } from "@/repositories/roles";
@@ -45,7 +45,8 @@ test.describe("거래처 관리 화면 (MAST-01)", () => {
     const accountNumber = "110-222-334455";
 
     await page.getByLabel("이름").fill(vendorName);
-    await page.getByLabel("사업자 번호").fill("123-45-67890");
+    const businessNo = uniqueBusinessNo();
+    await page.getByLabel("사업자 번호").fill(businessNo);
     await page.getByLabel("계좌 은행").fill("국민은행");
     await page.getByLabel("예금주").fill("홍길동");
     await page.getByLabel("계좌번호").fill(accountNumber);
@@ -518,5 +519,30 @@ test.describe("거래처 구분 (261006-biv)", () => {
     await loginAsSysadmin(page);
     await page.goto("/admin/vendors?new=1&kind=client");
     await expect(page.locator('dialog[data-ui="side-panel"]').getByLabel("구분")).toHaveValue("client");
+  });
+
+  test("같은 사업자번호 등록은 칸 아래 문구와 요약으로 막히고, 다른 갈래면 「구분 더하기」로 그 거래처 수정 패널로 넘어간다", async ({ page }) => {
+    await loginAsSysadmin(page);
+    const businessNo = uniqueBusinessNo();
+    const existingName = `E2E중복원본-${randomUUID()}`;
+    const existing = await insertVendor(SYSTEM_VIEWER, { name: existingName, normalizedName: existingName.toLowerCase(), businessNo, kind: "client" });
+    try {
+      await page.goto("/admin/vendors?new=1");
+      const dialog = page.locator('dialog[data-ui="side-panel"]');
+      await dialog.getByLabel("이름").fill(`E2E중복신규-${randomUUID()}`);
+      await dialog.getByLabel("구분").selectOption("supplier");
+      await dialog.getByLabel("사업자 번호").fill(businessNo.replaceAll("-", ""));
+      await dialog.getByRole("button", { name: "거래처 등록" }).click();
+
+      await expect(dialog.locator("#businessNo-error")).toHaveText(`같은 사업자번호 거래처 있음 · ${existingName}(클라이언트)`);
+      await expect(dialog.locator("#vendor-form-reason")).toContainText("사업자 번호 1칸");
+      await expect(dialog.getByLabel("사업자 번호")).toHaveValue(businessNo.replaceAll("-", ""));
+
+      await dialog.getByRole("button", { name: "구분 더하기" }).click();
+      await expect(page).toHaveURL(new RegExp(`editId=${existing.id}`));
+      await expect(page.locator("#vendor-form").getByLabel("구분")).toHaveValue("both");
+    } finally {
+      await setVendorHidden(SYSTEM_VIEWER, existing.id, true);
+    }
   });
 });

@@ -23,6 +23,13 @@ registerAction({
   dtoName: "VendorDto",
 });
 
+registerAction({
+  name: "addVendorKindAction",
+  menu: "admin.vendors",
+  action: "write",
+  dtoName: "VendorDto",
+});
+
 // 마스킹 해제는 값을 반환하지만 DTO 행이 아니다(정보 노출표 항목이 이미
 // 게이트다) — corp-cards 등 기존 패턴과 달리 dtoName은 null이다(action
 // 축은 dtoName: null을 항상 허용한다, EXPORT_REGISTRY의 NULL_DTO_EXEMPT

@@ -157,6 +157,51 @@ describe("corp-cards (MAST-03, 실제 Postgres)", () => {
     ).rejects.toBeInstanceOf(InvalidCardOwnerError);
   });
 
+  // 06-30 검토 P3-3 — 빈 문자열 소유 칸은 「없음」이다. 판정과 저장이 같은 값을 봐야 DB CHECK(23514)가 500으로 새지 않는다.
+  it("종류 공용 + 빈 문자열 소지자 · 팀은 null로 정규화돼 등록된다(500 아님)", async () => {
+    const dto = await createCorpCard(SYSTEM_VIEWER, {
+      issuer: `카드사-${randomUUID()}`,
+      numberLast4: uniqueLast4(),
+      label: "공용빈칸",
+      kind: "shared",
+      holderUserId: "",
+      teamId: "",
+    });
+    expect(dto.kind).toBe("shared");
+    expect(dto.holderUserId).toBeNull();
+    expect(dto.teamId).toBeNull();
+  });
+
+  it("종류 개인 + 빈 문자열 팀은 소지자만 저장되고 팀은 null이다", async () => {
+    const holderUserId = await makeTestUser();
+    const dto = await createCorpCard(SYSTEM_VIEWER, {
+      issuer: `카드사-${randomUUID()}`,
+      numberLast4: uniqueLast4(),
+      label: "개인빈팀",
+      kind: "personal",
+      holderUserId,
+      teamId: "",
+    });
+    expect(dto.holderUserId).toBe(holderUserId);
+    expect(dto.teamId).toBeNull();
+  });
+
+  it("소유자 변경 → 공용 + 빈 문자열 칸도 null로 정규화돼 저장된다", async () => {
+    const holderUserId = await makeTestUser();
+    const dto = await createCorpCard(SYSTEM_VIEWER, {
+      issuer: `카드사-${randomUUID()}`,
+      numberLast4: uniqueLast4(),
+      label: "변경빈칸",
+      kind: "personal",
+      holderUserId,
+    });
+    await updateCorpCardOwner(SYSTEM_VIEWER, dto.id, { kind: "shared", holderUserId: "", teamId: "" });
+    const updated = (await listCorpCards(SYSTEM_VIEWER)).find((c) => c.id === dto.id);
+    expect(updated?.kind).toBe("shared");
+    expect(updated?.holderUserId).toBeNull();
+    expect(updated?.teamId).toBeNull();
+  });
+
   it("소유자 변경 개인 → 공용: 소지자가 비고 kind = shared, document_update 한 줄 · document_create 없음", async () => {
     const holderUserId = await makeTestUser();
     const dto = await createCorpCard(SYSTEM_VIEWER, {

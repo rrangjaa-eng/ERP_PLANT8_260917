@@ -39,7 +39,7 @@ export function CardForm({ holders, teams }: { holders: HolderOption[]; teams: T
   // 제출 직후 같은 틱의 두 번째 제출(Ctrl+Enter 연타)을 막는 동기 가드 — isExecuting은 다음 렌더에야 참이 된다(D7 · R15-ii).
   const submitLockRef = useRef(false);
   const [kind, setKind] = useState<OwnerKind>("personal");
-  const { execute, result, isExecuting } = useAction(createCorpCardAction, {
+  const { execute, result, isExecuting, reset } = useAction(createCorpCardAction, {
     onSuccess: () => {
       // 종류 select는 제어 상태라 폼 reset이 따라가지 못한다 — 같이 처음 값으로.
       setKind("personal");
@@ -49,6 +49,9 @@ export function CardForm({ holders, teams }: { holders: HolderOption[]; teams: T
       submitLockRef.current = false;
     },
   });
+
+  const ownerError = result.validationErrors?.holderUserId?._errors?.[0];
+  const ownerSelectClass = ownerError ? `${styles.select} ${styles.selectInvalid}` : styles.select;
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -73,7 +76,7 @@ export function CardForm({ holders, teams }: { holders: HolderOption[]; teams: T
       intent="create"
       onSubmit={handleSubmit}
       pending={isExecuting}
-      reason={result.serverError ?? null}
+      reason={ownerError ?? result.serverError ?? null}
       reasonId="corp-card-form-reason"
     >
       <TextField
@@ -101,7 +104,10 @@ export function CardForm({ holders, teams }: { holders: HolderOption[]; teams: T
             name="kind"
             className={styles.select}
             value={kind}
-            onChange={(event) => setKind(toOwnerKind(event.target.value))}
+            onChange={(event) => {
+              setKind(toOwnerKind(event.target.value));
+              reset();
+            }}
           >
             <option value="personal">개인</option>
             <option value="team">팀</option>
@@ -114,7 +120,15 @@ export function CardForm({ holders, teams }: { holders: HolderOption[]; teams: T
       {kind === "personal" ? (
         <div key="personal" className={styles.field}>
           <Form.Field id="holderUserId" label="소지자">
-            <select id="holderUserId" name="holderUserId" className={styles.select} required defaultValue="">
+            <select
+              id="holderUserId"
+              name="holderUserId"
+              className={ownerSelectClass}
+              required
+              aria-invalid={ownerError ? true : undefined}
+              aria-describedby={ownerError ? "card-owner-error" : undefined}
+              defaultValue=""
+            >
               <option value="" disabled>
                 소지자 선택
               </option>
@@ -124,12 +138,21 @@ export function CardForm({ holders, teams }: { holders: HolderOption[]; teams: T
                 </option>
               ))}
             </select>
+            {ownerError ? <Form.Error id="card-owner-error">{ownerError}</Form.Error> : null}
           </Form.Field>
         </div>
       ) : kind === "team" ? (
         <div key="team" className={styles.field}>
           <Form.Field id="teamId" label="팀">
-            <select id="teamId" name="teamId" className={styles.select} required defaultValue="">
+            <select
+              id="teamId"
+              name="teamId"
+              className={ownerSelectClass}
+              required
+              aria-invalid={ownerError ? true : undefined}
+              aria-describedby={ownerError ? "card-owner-error" : undefined}
+              defaultValue=""
+            >
               <option value="" disabled>
                 팀 선택
               </option>
@@ -139,6 +162,7 @@ export function CardForm({ holders, teams }: { holders: HolderOption[]; teams: T
                 </option>
               ))}
             </select>
+            {ownerError ? <Form.Error id="card-owner-error">{ownerError}</Form.Error> : null}
           </Form.Field>
         </div>
       ) : null}
@@ -162,7 +186,7 @@ export function CardOwnerForm({
   const panelRef = useRef<PanelFormHandle>(null);
   const submitLockRef = useRef(false);
   const [kind, setKind] = useState<OwnerKind>(toOwnerKind(card.kind));
-  const { execute, result, isExecuting } = useAction(updateCorpCardOwnerAction, {
+  const { execute, result, isExecuting, reset } = useAction(updateCorpCardOwnerAction, {
     onSuccess: () => panelRef.current?.succeed(),
     onSettled: () => {
       submitLockRef.current = false;
@@ -205,7 +229,10 @@ export function CardOwnerForm({
             name="kind"
             className={styles.select}
             value={kind}
-            onChange={(event) => setKind(toOwnerKind(event.target.value))}
+            onChange={(event) => {
+              setKind(toOwnerKind(event.target.value));
+              reset();
+            }}
           >
             <option value="personal">개인</option>
             <option value="team">팀</option>

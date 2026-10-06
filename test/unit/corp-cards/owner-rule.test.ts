@@ -31,4 +31,16 @@ describe("cardOwnerKind — 종류 셋 × 소유 칸 조합 (MAST-03 · 06-30, �
   it("거부 메시지는 고른 종류를 명사형으로 짚는다", () => {
     expect(() => cardOwnerKind({ kind: "shared", holderUserId: "u1" })).toThrow("소유 칸 조합 오류 · 공용에 맞는 칸만");
   });
+
+  // 06-30 검토 P3-2 — 누락 입력은 무엇을 해야 하는지(칸 선택)를 말한다. 소유자 변경 폼의 「필요 · 선택」 결과 같은 모양.
+  it.each<[string, CardOwnerInput, string]>([
+    ["personal + 소지자 없음", { kind: "personal" }, "소지자 필요 · 소지자 선택"],
+    ["personal + 팀만", { kind: "personal", teamId: "t1" }, "소지자 필요 · 소지자 선택"],
+    ["team + 팀 없음", { kind: "team" }, "팀 필요 · 팀 선택"],
+    ["team + 소지자만", { kind: "team", holderUserId: "u1" }, "팀 필요 · 팀 선택"],
+    ["personal + 둘 다", { kind: "personal", holderUserId: "u1", teamId: "t1" }, "소지자·팀 중 하나 필요 · 하나만 선택"],
+    ["team + 둘 다", { kind: "team", holderUserId: "u1", teamId: "t1" }, "소지자·팀 중 하나 필요 · 하나만 선택"],
+  ])("누락 · 중복 메시지: %s", (_name, input, message) => {
+    expect(() => cardOwnerKind(input)).toThrow(message);
+  });
 });

@@ -50,6 +50,14 @@ export type CardOwnerInput = { kind: CardOwnerKind; holderUserId?: string | null
 
 const CARD_OWNER_KIND_LABEL: Record<CardOwnerKind, string> = { personal: "개인", team: "팀", shared: "공용" };
 
+// 누락은 무엇을 고를지(소지자 · 팀)를, 둘 다 채운 입력은 하나만 고르라고 말한다(06-30 검토 P3-2 — 소유자 변경 폼과 같은 「필요 · 선택」 결).
+// 공용은 화면이 소유 칸을 그리지 않으므로 위조 입력뿐이라 종류만 짚는다.
+function ownerMismatchMessage(kind: CardOwnerKind, hasHolder: boolean, hasTeam: boolean): string {
+  if (kind === "personal") return hasHolder ? "소지자·팀 중 하나 필요 · 하나만 선택" : "소지자 필요 · 소지자 선택";
+  if (kind === "team") return hasTeam ? "소지자·팀 중 하나 필요 · 하나만 선택" : "팀 필요 · 팀 선택";
+  return `소유 칸 조합 오류 · ${CARD_OWNER_KIND_LABEL[kind]}에 맞는 칸만`;
+}
+
 export function cardOwnerKind(input: CardOwnerInput): CardOwnerKind {
   const hasHolder = Boolean(input.holderUserId);
   const hasTeam = Boolean(input.teamId);
@@ -58,7 +66,7 @@ export function cardOwnerKind(input: CardOwnerInput): CardOwnerKind {
     (input.kind === "team" && hasTeam && !hasHolder) ||
     (input.kind === "shared" && !hasHolder && !hasTeam);
   if (!valid) {
-    throw new InvalidCardOwnerError(`소유 칸 조합 오류 · ${CARD_OWNER_KIND_LABEL[input.kind]}에 맞는 칸만`);
+    throw new InvalidCardOwnerError(ownerMismatchMessage(input.kind, hasHolder, hasTeam));
   }
   return input.kind;
 }
@@ -147,18 +155,20 @@ export async function createCorpCard(
   },
   deps?: Partial<CorpCardWriteDeps>,
 ): Promise<CorpCardDto> {
-  const kind = cardOwnerKind(input);
+  // 빈 문자열 소유 칸은 「없음」이다 — 판정과 저장이 같은 값을 보게 저장 전에 null로 맞춘다(06-30 검토 P3-3).
+  const owner = { ...input, holderUserId: input.holderUserId || null, teamId: input.teamId || null };
+  const kind = cardOwnerKind(owner);
 
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, CARDS_MENU, "write"))) {
     throw new ForbiddenError("법인카드 등록 권한 없음");
   }
 
-  await assertOwnerNotArchived(viewer, input, deps);
+  await assertOwnerNotArchived(viewer, owner, deps);
 
   let row: CorpCardRow;
   try {
-    row = await repoInsertCorpCard(viewer, { ...input, kind });
+    row = await repoInsertCorpCard(viewer, { ...owner, kind });
   } catch (e) {
     if (isUniqueViolation(e, "corp_cards_issuer_last4_key")) {
       throw new DuplicateCorpCardError("이미 등록된 카드 · 발급사와 뒤 4자리 확인");
@@ -176,9 +186,10 @@ export async function createCorpCard(
 export async function updateCorpCardOwner(
   viewer: Viewer,
   id: string,
-  owner: CardOwnerInput,
+  rawOwner: CardOwnerInput,
   deps?: Partial<CorpCardWriteDeps>,
 ): Promise<void> {
+  const owner = { ...rawOwner, holderUserId: rawOwner.holderUserId || null, teamId: rawOwner.teamId || null };
   const kind = cardOwnerKind(owner);
 
   const canFn = deps?.can ?? defaultCan;
@@ -202,8 +213,8 @@ export async function updateCorpCardOwner(
   // 종류 "개인" · 소유 "—"인 행이 된다.
   await repoUpdateCorpCardOwner(viewer, id, {
     kind,
-    holderUserId: owner.holderUserId ?? null,
-    teamId: owner.teamId ?? null,
+    holderUserId: owner.holderUserId,
+    teamId: owner.teamId,
   });
 
   // 결함 3: 소유자 변경은 수정이다 — vendors의 updateVendor와 같은 이유로

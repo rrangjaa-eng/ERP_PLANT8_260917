@@ -109,4 +109,22 @@ test.describe("옆 패널 필수 select 비움 오류 (04.6 QA-1)", () => {
     await expect(dialog.locator("#corp-card-form-reason")).toHaveCount(0);
     await expect(submit).not.toHaveAttribute("aria-describedby", /.+/);
   });
+  // 06-30 검토 P3-2 — 등록 폼도 소유 칸 누락 오류를 그 칸에 붙인다(aria-invalid + 칸 아래 한 줄 + describedby). 종류별 행동형 문구.
+  for (const [kind, selector, text, fieldName] of [
+    ["personal", "#holderUserId", "소지자 필요 · 소지자 선택", "소지자"],
+    ["team", "#teamId", "팀 필요 · 팀 선택", "팀"],
+  ] as const) {
+    test(`법인카드 등록: 종류 ${kind}에서 소유 칸을 비운 채 제출하면 그 칸 오류가 보인다`, async ({ page }) => {
+      await loginAsSysadmin(page);
+      await page.goto("/admin/corp-cards?new=1");
+      const dialog = page.locator(PANEL);
+      await dialog.getByLabel("발급사").fill(`등록오류카드사-${randomUUID().slice(0, 8)}`);
+      await dialog.getByLabel("뒤 4자리").fill(String(Math.floor(1000 + Math.random() * 9000)));
+      await dialog.getByLabel("별칭").fill("등록오류");
+      await dialog.getByLabel("종류").selectOption(kind);
+      const submit = dialog.getByRole("button", { name: "법인카드 등록" });
+      await submit.click();
+      await expectSelectError(dialog, dialog.locator(selector), submit, text, fieldName);
+    });
+  }
 });

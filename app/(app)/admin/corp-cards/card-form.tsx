@@ -50,6 +50,9 @@ export function CardForm({ holders, teams }: { holders: HolderOption[]; teams: T
     },
   });
 
+  const ownerError = result.validationErrors?.holderUserId?._errors?.[0];
+  const ownerSelectClass = ownerError ? `${styles.select} ${styles.selectInvalid}` : styles.select;
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (submitLockRef.current) return;
@@ -73,7 +76,7 @@ export function CardForm({ holders, teams }: { holders: HolderOption[]; teams: T
       intent="create"
       onSubmit={handleSubmit}
       pending={isExecuting}
-      reason={result.serverError ?? null}
+      reason={ownerError ?? result.serverError ?? null}
       reasonId="corp-card-form-reason"
     >
       <TextField
@@ -117,7 +120,15 @@ export function CardForm({ holders, teams }: { holders: HolderOption[]; teams: T
       {kind === "personal" ? (
         <div key="personal" className={styles.field}>
           <Form.Field id="holderUserId" label="소지자">
-            <select id="holderUserId" name="holderUserId" className={styles.select} required defaultValue="">
+            <select
+              id="holderUserId"
+              name="holderUserId"
+              className={ownerSelectClass}
+              required
+              aria-invalid={ownerError ? true : undefined}
+              aria-describedby={ownerError ? "card-owner-error" : undefined}
+              defaultValue=""
+            >
               <option value="" disabled>
                 소지자 선택
               </option>
@@ -127,12 +138,21 @@ export function CardForm({ holders, teams }: { holders: HolderOption[]; teams: T
                 </option>
               ))}
             </select>
+            {ownerError ? <Form.Error id="card-owner-error">{ownerError}</Form.Error> : null}
           </Form.Field>
         </div>
       ) : kind === "team" ? (
         <div key="team" className={styles.field}>
           <Form.Field id="teamId" label="팀">
-            <select id="teamId" name="teamId" className={styles.select} required defaultValue="">
+            <select
+              id="teamId"
+              name="teamId"
+              className={ownerSelectClass}
+              required
+              aria-invalid={ownerError ? true : undefined}
+              aria-describedby={ownerError ? "card-owner-error" : undefined}
+              defaultValue=""
+            >
               <option value="" disabled>
                 팀 선택
               </option>
@@ -142,6 +162,7 @@ export function CardForm({ holders, teams }: { holders: HolderOption[]; teams: T
                 </option>
               ))}
             </select>
+            {ownerError ? <Form.Error id="card-owner-error">{ownerError}</Form.Error> : null}
           </Form.Field>
         </div>
       ) : null}

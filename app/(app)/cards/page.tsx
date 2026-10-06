@@ -114,6 +114,7 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
           cards={cards}
           evidenceTypes={options.evidenceTypes}
           teamName={options.teamName}
+          teamAssigned={options.teamAssigned}
           userName={user.name}
           today={today}
           usdFxRate={options.usdFxRate}

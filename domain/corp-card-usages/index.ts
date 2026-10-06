@@ -15,6 +15,7 @@ import { seoulToday } from "@/lib/dates";
 import { listCodeItems } from "@/repositories/code-tables";
 import { findCorpCardById, listCorpCards, type CorpCardRow } from "@/repositories/corp-cards";
 import { findUserNamesByIds } from "@/repositories/users";
+import { findMembershipAtDate } from "@/repositories/team-memberships";
 import {
   findLastCardUsageByRegistrant,
   insertCardUsage,
@@ -88,9 +89,13 @@ async function eligibleCards(viewer: Viewer, teamId: string | null): Promise<Cor
   );
 }
 
+// 사용일 소속 팀 id — 자격 · 귀속 판정은 표시 투영(`team.value`) 전 발령에서 읽는다(목록 범위 `loadActorTeamScope`와 같은 출처).
+async function teamIdOn(viewer: Viewer, usedOn: string): Promise<string | null> {
+  return (await findMembershipAtDate(viewer, viewer.id, usedOn))?.teamId ?? null;
+}
+
 export async function cardOptionsForUsage(viewer: Viewer, usedOn: string): Promise<UsageCardOption[]> {
-  const team = await teamAtDate(viewer, viewer.id, usedOn);
-  const cards = await eligibleCards(viewer, team?.id ?? null);
+  const cards = await eligibleCards(viewer, await teamIdOn(viewer, usedOn));
   return cards.map((card) => ({ id: card.id, label: cardLabel(card), kind: card.kind as CardOwnerKind }));
 }
 
@@ -132,8 +137,8 @@ export async function precheckCardUsage(viewer: Viewer, input: CardUsageInput): 
   if (money.currency === "KRW" && !Number.isInteger(money.amount)) throw new CardUsageRejectedError(AMOUNT_NOT_NUMBER);
   if (toKrw(money) <= 0) throw new CardUsageRejectedError(AMOUNT_NOT_POSITIVE);
 
-  const team = await teamAtDate(viewer, viewer.id, input.usedOn);
-  if (!team?.id) {
+  const teamId = await teamIdOn(viewer, input.usedOn);
+  if (!teamId) {
     const name = (await findUserNamesByIds(viewer, [viewer.id])).get(viewer.id) ?? "";
     throw new CardUsageRejectedError(`${name} ${mmdd(input.usedOn)} 소속 없음 · 소속 발령은 관리자`);
   }
@@ -154,7 +159,7 @@ export async function precheckCardUsage(viewer: Viewer, input: CardUsageInput): 
     card: { id: card.id, kind: card.kind, holderUserId: card.holderUserId, teamId: card.teamId },
     registeredVia: "self",
     usedByUserId: viewer.id,
-    teamId: team.id,
+    teamId,
     evidenceRule: option.rule,
     rates,
   };
@@ -210,8 +215,10 @@ export async function createCardUsage(
 export type CardAmountsPreview = {
   /** 결제 합계 · 증빙 종류가 계산할 수 있는 값일 때만. */
   split: (CardSplit & { ruleKind: TaxRule["ruleKind"]; evidenceLabel: string }) | null;
-  /** 사용일 소속 팀 — 「팀 비용」 읽기 텍스트 · 소속 없음 막힘. */
+  /** 사용일 소속 팀 이름 — 「팀 비용」 읽기 텍스트(노출이 꺼지면 null). */
   teamName: string | null;
+  /** 사용일 소속 발령이 있는가 — 「소속 없음」 막힘은 이것으로만(이름 노출과 무관). */
+  teamAssigned: boolean;
 };
 
 export async function previewCardAmounts(
@@ -220,12 +227,13 @@ export async function previewCardAmounts(
 ): Promise<CardAmountsPreview> {
   const team = await teamAtDate(viewer, viewer.id, input.usedOn);
   const teamName = team?.name ?? null;
-  if (!input.total || !input.evidenceTypeCode) return { split: null, teamName };
+  const teamAssigned = (await teamIdOn(viewer, input.usedOn)) !== null;
+  if (!input.total || !input.evidenceTypeCode) return { split: null, teamName, teamAssigned };
   const option = (await cardEvidenceTypes(viewer)).options.find((candidate) => candidate.value === input.evidenceTypeCode);
-  if (!option) return { split: null, teamName };
+  if (!option) return { split: null, teamName, teamAssigned };
   const rates = await loadTaxRates(input.usedOn);
   const split = splitCardTotal({ money: input.total, rule: option.rule }, rates);
-  return { split: { ...split, ruleKind: option.rule.ruleKind, evidenceLabel: option.label }, teamName };
+  return { split: { ...split, ruleKind: option.rule.ruleKind, evidenceLabel: option.label }, teamName, teamAssigned };
 }
 
 // ── 폼 선택지 ──────────────────────────────────────────────────────────────
@@ -242,6 +250,7 @@ export type CardUsageFormOptions = {
   cards: Partial<CardOptionDto>[];
   evidenceTypes: { value: string; label: string }[];
   teamName: string | null;
+  teamAssigned: boolean;
   /** USD 환율 칸 기본값(설정 최근 환율 — FX-01). 읽지 못하면 null(빈 칸 + 막힘). */
   usdFxRate: number | null;
 };
@@ -255,6 +264,7 @@ export async function cardUsageFormOptions(viewer: Viewer, usedOn: string): Prom
     cards: await projectMany(viewer, cards.map((card) => ({ id: card.id, label: card.label })), CARD_OPTION_SPEC),
     evidenceTypes: evidence.options.map(({ value, label }) => ({ value, label })),
     teamName: team?.name ?? null,
+    teamAssigned: (await teamIdOn(viewer, usedOn)) !== null,
     usdFxRate: await recentFxRate("USD").catch(() => null),
   };
 }

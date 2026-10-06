@@ -36,6 +36,7 @@ type Merchant = { id: string; name: string; defaultEvidenceType: string | null; 
 type Preview = {
   split: { supplyKrw: number; vatKrw: number; residualKrw: number; ruleKind: string; evidenceLabel: string } | null;
   teamName: string | null;
+  teamAssigned: boolean;
 };
 
 
@@ -151,6 +152,7 @@ export function CardUsageForm({
   cards,
   evidenceTypes,
   teamName: initialTeamName,
+  teamAssigned: initialTeamAssigned,
   userName,
   today,
   usdFxRate,
@@ -159,6 +161,7 @@ export function CardUsageForm({
   cards: CardOption[];
   evidenceTypes: EvidenceTypeOption[];
   teamName: string | null;
+  teamAssigned: boolean;
   userName: string;
   today: string;
   usdFxRate: number | null;
@@ -178,7 +181,7 @@ export function CardUsageForm({
   const [pickOpen, setPickOpen] = useState(false);
   // 가맹점으로 증빙 종류를 채우면 그 칸을 새 기본값으로 다시 그린다(비제어 칸).
   const [evidenceSeed, setEvidenceSeed] = useState(0);
-  const [preview, setPreview] = useState<Preview>({ split: null, teamName: initialTeamName });
+  const [preview, setPreview] = useState<Preview>({ split: null, teamName: initialTeamName, teamAssigned: initialTeamAssigned });
   const [previewing, setPreviewing] = useState(false);
   // 등록 성공의 결과 한 줄 — 새 기본값으로 다시 그린(gen) 뒤에 `succeed`로 넘긴다.
   const doneStatusRef = useRef<string | null>(null);
@@ -203,7 +206,7 @@ export function CardUsageForm({
       setMerchant(null);
       setCurrency("KRW");
       setFxRaw(usdFxRate === null ? "" : String(usdFxRate));
-      setPreview({ split: null, teamName: initialTeamName });
+      setPreview({ split: null, teamName: initialTeamName, teamAssigned: initialTeamAssigned });
       setShowingResult(true);
       doneStatusRef.current = `카드 사용 등록됨 · ${formatKrw(data?.totalKrw ?? 0)}`;
       setGen((value) => value + 1);
@@ -276,7 +279,7 @@ export function CardUsageForm({
       ? "카드에 쓸 증빙 종류 없음 · 코드표 세금 규칙은 관리자"
       : "카드 전표 카드에 없음 · 증빙 종류 고르기";
   const fxBlock = currency !== "KRW" && (fxValue === null || fxValue === undefined) ? "환율 없음 · USD 환율 적기" : undefined;
-  const teamBlock = linkKind === "team_cost" && preview.teamName === null ? `${userName} ${usedOn.slice(5)} 소속 없음 · 소속 발령은 관리자` : undefined;
+  const teamBlock = linkKind === "team_cost" && !preview.teamAssigned ? `${userName} ${usedOn.slice(5)} 소속 없음 · 소속 발령은 관리자` : undefined;
   const blockedReason = blankBlock(blanks) ?? fxBlock ?? evidenceBlock ?? (linkKind ? teamBlock : "연결 없음 · 연결 고르기");
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {

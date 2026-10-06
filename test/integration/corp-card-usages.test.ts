@@ -8,7 +8,15 @@ import { createOrgUnit, createTeam } from "@/domain/org";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { corpCardUsages } from "@/db/schema";
-import { cardOptionsForUsage, CardUsageRejectedError, createCardUsage, precheckCardUsage, type CardUsageInput } from "@/domain/corp-card-usages";
+import {
+  cardOptionsForUsage,
+  CardUsageRejectedError,
+  cardUsageFormOptions,
+  createCardUsage,
+  precheckCardUsage,
+  previewCardAmounts,
+  type CardUsageInput,
+} from "@/domain/corp-card-usages";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { seoulToday } from "@/lib/dates";
@@ -164,5 +172,23 @@ describe("등록 서버 거부(P3-2)", () => {
     const rejected = precheckCardUsage(staff, { ...usageInput(cardId), linkKind: null });
     await expect(rejected).rejects.toBeInstanceOf(CardUsageRejectedError);
     await expect(rejected).rejects.toThrow("연결 없음 · 연결 고르기");
+  });
+});
+
+describe("사용일 소속은 투영 전 발령에서(P3-7)", () => {
+  it("계급의 team.value 노출이 꺼져도 소속 팀원은 팀 카드로 등록할 수 있다", async () => {
+    const team = await makeTeam();
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `팀숨김-${randomUUID().slice(0, 8)}`, workScope: "team" });
+    for (const infoItem of ["card_usage.value", "card_usage.amount"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "team.value", visible: false });
+    const member = await makePerson("팀숨김직원", role.id, team.name);
+    const teamCardId = await makeCard({ kind: "team", teamId: team.id });
+
+    expect((await cardOptionsForUsage(member, seoulToday())).map((option) => option.id)).toContain(teamCardId);
+    const pre = await precheckCardUsage(member, usageInput(teamCardId));
+    expect(pre.teamId).toBe(team.id);
+    // 「소속 없음」 막힘은 발령 유무로 — 이름이 가려져도 소속은 있다.
+    expect(await previewCardAmounts(member, { usedOn: seoulToday(), total: null, evidenceTypeCode: null })).toMatchObject({ teamAssigned: true });
+    expect(await cardUsageFormOptions(member, seoulToday())).toMatchObject({ teamAssigned: true });
   });
 });

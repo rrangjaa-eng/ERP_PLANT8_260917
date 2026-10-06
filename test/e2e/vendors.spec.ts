@@ -14,7 +14,7 @@ import {
   textLineCount,
   tokenNumber,
 } from "./row-actions-helpers";
-import { insertVendor, setVendorHidden } from "@/repositories/vendors";
+import { findVendorsByNormalizedName, insertVendor, setVendorHidden } from "@/repositories/vendors";
 import { checkPrinciples } from "./principles-check";
 import { isStrict } from "./design-principles";
 
@@ -438,5 +438,85 @@ test.describe("거래처 표 마지막 행 선 없음 (04.6-07 F1)", () => {
       await setVendorHidden(SYSTEM_VIEWER, a.id, true);
       await setVendorHidden(SYSTEM_VIEWER, b.id, true);
     }
+  });
+});
+
+// 261006-biv — 거래처 갈래(D-3 · D-4 · D-5): 등록 기본 협력사 · 수정 저장값 · 목록 「구분」 열 · kind 걸러보기 · 링크가 kind를 지킴.
+test.describe("거래처 구분 (261006-biv)", () => {
+  test("구분 — 등록 기본 협력사 · 수정 저장값 · 목록 구분 열 · kind 걸러보기", async ({ page }) => {
+    const tag = `구분-${randomUUID().slice(0, 8)}`;
+    const make = (suffix: string, kind: "client" | "supplier" | "both") =>
+      insertVendor(SYSTEM_VIEWER, { name: `${tag}-${suffix}`, normalizedName: `${tag}-${suffix}-${randomUUID()}`, kind });
+    const client = await make("클라", "client");
+    const supplier = await make("협력", "supplier");
+    const both = await make("둘다", "both");
+    const created: string[] = [];
+    const rowOf = (name: string) => page.locator("tbody tr", { hasText: name }).first();
+    const kindNav = page.getByRole("navigation", { name: "구분" });
+    try {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await loginAsSysadmin(page);
+      await page.goto("/admin/vendors");
+
+      await expect(page.getByRole("columnheader", { name: "구분" })).toBeVisible();
+      await expect(rowOf(client.name).getByRole("cell", { name: "클라이언트", exact: true })).toBeVisible();
+      await expect(rowOf(supplier.name).getByRole("cell", { name: "협력사", exact: true })).toBeVisible();
+      await expect(rowOf(both.name).getByRole("cell", { name: "둘 다", exact: true })).toBeVisible();
+
+      await kindNav.getByRole("link", { name: "클라이언트" }).click();
+      await expect(page).toHaveURL(/kind=client/);
+      await expect(kindNav.getByRole("link", { name: "클라이언트" })).toHaveAttribute("aria-current", "page");
+      await expect(rowOf(client.name)).toBeVisible();
+      await expect(rowOf(both.name)).toBeVisible();
+      await expect(page.locator("tbody tr", { hasText: supplier.name })).toHaveCount(0);
+      // kind=client 상태에서 「숨김 포함」 · 「수정」 · 「거래처 등록」이 kind를 지킨다.
+      await expect(page.getByRole("link", { name: "숨김 포함" })).toHaveAttribute("href", /kind=client/);
+      await expect(rowOf(client.name).getByRole("link", { name: "수정" })).toHaveAttribute("href", /kind=client/);
+      await expect(page.getByRole("link", { name: "거래처 등록" })).toHaveAttribute("href", /kind=client/);
+
+      await kindNav.getByRole("link", { name: "협력사" }).click();
+      await expect(page).toHaveURL(/kind=supplier/);
+      await expect(rowOf(supplier.name)).toBeVisible();
+      await expect(rowOf(both.name)).toBeVisible();
+      await expect(page.locator("tbody tr", { hasText: client.name })).toHaveCount(0);
+
+      await kindNav.getByRole("link", { name: "전체" }).click();
+      await expect(page).not.toHaveURL(/kind=/);
+      for (const vendor of [client, supplier, both]) await expect(rowOf(vendor.name)).toBeVisible();
+
+      // 등록 — 「구분」은 협력사로 열리고, 이름만 넣고 등록하면 새 행 구분이 「협력사」다.
+      await page.getByRole("link", { name: "거래처 등록" }).click();
+      const panel = page.locator('dialog[data-ui="side-panel"]');
+      await expect(panel.getByLabel("구분")).toHaveValue("supplier");
+      const newName = `${tag}-새거래처`;
+      created.push(newName);
+      await panel.getByLabel("이름").fill(newName);
+      await panel.getByRole("button", { name: "거래처 등록" }).click();
+      await expect(panel.getByRole("status")).toHaveText("거래처 등록됨");
+      await page.keyboard.press("Escape");
+      await expect(panel).toHaveCount(0);
+      await expect(rowOf(newName).getByRole("cell", { name: "협력사", exact: true })).toBeVisible();
+
+      // 수정 — 저장값으로 열리고, 「둘 다」로 바꿔 저장하면 그 행 구분이 「둘 다」다.
+      await rowOf(client.name).getByRole("link", { name: "수정" }).click();
+      const form = page.locator("#vendor-form");
+      await expect(form.getByLabel("구분")).toHaveValue("client");
+      await form.getByLabel("구분").selectOption("both");
+      await page.getByRole("button", { name: "거래처 수정" }).click();
+      await expect(form).toHaveCount(0);
+      await page.goto("/admin/vendors");
+      await expect(rowOf(client.name).getByRole("cell", { name: "둘 다", exact: true })).toBeVisible();
+    } finally {
+      for (const vendor of [client, supplier, both]) await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
+      for (const name of created) {
+        for (const vendor of await findVendorsByNormalizedName(SYSTEM_VIEWER, name.normalize("NFC").toLowerCase())) await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
+      }
+    }
+  });
+
+  test("?new=1&kind=client로 열면 등록 「구분」이 클라이언트다(프로젝트 화면 「클라이언트 등록」)", async ({ page }) => {
+    await loginAsSysadmin(page);
+    await page.goto("/admin/vendors?new=1&kind=client");
+    await expect(page.locator('dialog[data-ui="side-panel"]').getByLabel("구분")).toHaveValue("client");
   });
 });

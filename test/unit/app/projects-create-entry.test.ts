@@ -31,10 +31,11 @@ describe("projectsEmptyState", () => {
     });
   });
 
-  it("거래처만 없고 거래처를 만들 수 있으면 무엇이 없는지와 거래처 등록", () => {
+  // 261006-biv — 클라이언트 선택지는 클라이언트 · 둘 다 갈래만이라, 비면 클라이언트가 없는 것이고 등록 패널은 구분 클라이언트로 열린다.
+  it("클라이언트만 없고 거래처를 만들 수 있으면 무엇이 없는지와 클라이언트 등록(구분 클라이언트로 열림)", () => {
     expect(projectsEmptyState(base)).toEqual({
-      message: "등록된 거래처가 없습니다",
-      action: { label: "거래처 등록", href: "/admin/vendors?new=1" },
+      message: "등록된 클라이언트가 없습니다",
+      action: { label: "클라이언트 등록", href: "/admin/vendors?new=1&kind=client" },
     });
   });
 

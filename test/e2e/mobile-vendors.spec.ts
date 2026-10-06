@@ -144,3 +144,18 @@ test.describe("폰 390 /admin/vendors 수정 패널 가로 넘침 없음 (04.6-1
     }
   });
 });
+
+// 261006-biv — 갈래 걸러보기 링크도 폰 터치 목표 44×44(§3).
+test.describe("폰 375 /admin/vendors 구분 링크 터치 목표 (261006-biv)", () => {
+  test("「전체」 · 「클라이언트」 · 「협력사」 링크가 각각 44×44 이상이다", async ({ page }) => {
+    await loginAsSysadmin(page);
+    await page.goto("/admin/vendors");
+    const nav = page.getByRole("navigation", { name: "구분" });
+    for (const name of ["전체", "클라이언트", "협력사"]) {
+      const box = await nav.getByRole("link", { name, exact: true }).boundingBox();
+      expect(box, name).not.toBeNull();
+      expect(box!.width, name).toBeGreaterThanOrEqual(44);
+      expect(box!.height, name).toBeGreaterThanOrEqual(44);
+    }
+  });
+});

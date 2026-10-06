@@ -1,4 +1,5 @@
-import { isNotNull } from "drizzle-orm";
+import { and, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import { alias, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { db } from "@/db/client";
 import { roles, codeItems, orgUnits, teams, corpCards, users, vendors, quoteLines } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
@@ -44,6 +45,8 @@ export type ArchivedItem = {
   date?: string;
   // 공휴일만 — 그 날짜에 활성 공휴일(대체일 제외)이 있으면 참(복원 불가). 화면 DTO에는 싣지 않는다.
   dateTaken?: boolean;
+  // 거래처만 — 같은 숫자 사업자번호의 살아 있는 거래처가 있으면 참(복원 불가). 화면 DTO에는 싣지 않는다.
+  businessNoTaken?: boolean;
 };
 
 export type ArchivableEntry = {
@@ -180,11 +183,22 @@ export const ARCHIVABLE_TABLES: ArchivableEntry[] = [
       return findVendorById(viewer, id);
     },
     async listArchived() {
+      const live = alias(vendors, "live_vendors");
+      const digits = (column: AnyPgColumn) => sql`regexp_replace(${column}, '[^0-9]', '', 'g')`;
       const rows = await db
-        .select({ id: vendors.id, name: vendors.name, archivedAt: vendors.archivedAt, archivedBy: vendors.archivedBy })
+        .select({
+          id: vendors.id,
+          name: vendors.name,
+          archivedAt: vendors.archivedAt,
+          archivedBy: vendors.archivedBy,
+          businessNoTaken: sql<boolean>`${digits(vendors.businessNo)} <> '' and exists (${db
+            .select({ one: sql`1` })
+            .from(live)
+            .where(and(isNull(live.archivedAt), ne(live.id, vendors.id), sql`${digits(live.businessNo)} = ${digits(vendors.businessNo)}`))})`,
+        })
         .from(vendors)
         .where(isNotNull(vendors.archivedAt));
-      return rows.map((row) => ({ entity: "vendor", label: "거래처", id: row.id, name: row.name, archivedAt: row.archivedAt as Date, archivedBy: row.archivedBy }));
+      return rows.map((row) => ({ entity: "vendor", label: "거래처", id: row.id, name: row.name, archivedAt: row.archivedAt as Date, archivedBy: row.archivedBy, businessNoTaken: row.businessNoTaken }));
     },
   },
   // 04-12(D-56 · A-04) — 견적 줄 삭제는 보관이다(저장 트랜잭션 안에서 domain/quotes/lines가 보관한다).

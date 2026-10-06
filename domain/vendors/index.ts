@@ -15,6 +15,7 @@ import {
   findVendorById as repoFindVendorById,
   findVendorByIdForUpdate as repoFindVendorByIdForUpdate,
   findVendorsByNormalizedName as repoFindVendorsByNormalizedName,
+  findVendorsByBusinessNoDigits as repoFindVendorsByBusinessNoDigits,
   insertVendor as repoInsertVendor,
   updateVendor as repoUpdateVendor,
   updateVendorAccountNumber as repoUpdateVendorAccountNumber,
@@ -24,7 +25,8 @@ import {
 import { readVendorFieldAccess } from "@/repositories/permissions";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { pickVisibleCustomFields, visibleCustomFieldKeys } from "@/domain/custom-fields/visibility";
-import type { VendorKind } from "@/domain/vendors/kind";
+import { servesSide, vendorKindToAdd, VENDOR_KIND_LABELS, type VendorKind, type VendorSide } from "@/domain/vendors/kind";
+import { isUniqueViolation } from "@/lib/pg-errors";
 
 export class ForbiddenError extends UserFacingError {}
 
@@ -32,6 +34,67 @@ export class ForbiddenError extends UserFacingError {}
 export class ArchivedVendorError extends UserFacingError {}
 // 선검사와 트랜잭션 안 잠금 조회가 같은 문구를 쓴다(경합으로 안에서 잡혀도 같은 원인 — 디자인 교차 리뷰 m-3).
 const ARCHIVED_VENDOR_MESSAGE = "보관됐거나 존재하지 않는 거래처는 수정할 수 없음";
+
+// 사업자번호 중복 막기(260907 vendors_business_number_once와 같은 뜻) — 살아 있는(보관 안 된) 거래처 사이 숫자만 같은 번호는 하나.
+// 색인 이름은 마이그레이션(PR B)이 정한다. 선검사가 1차이고 이 색인의 23505는 동시 등록 경합만 잡는다.
+export const BUSINESS_NO_UNIQUE_INDEX = "vendors_business_no_live_key";
+
+export type DuplicateBusinessNoExisting = {
+  id: string;
+  /** 「거래처 정보」(vendor.value)를 못 보는 사람에게는 null. */
+  name: string | null;
+  kind: VendorKind;
+  hidden: boolean;
+  archived: boolean;
+};
+
+// 같은 사업자번호 거래처가 있음 — 화면이 칸 아래 문구 · 링크 · 「구분 더하기」를 그리도록 기존 거래처를 싣는다.
+// addSide는 새 갈래를 더해야 덮일 때 켤 갈래(보관 · 이미 덮음이면 null).
+export class DuplicateBusinessNoError extends UserFacingError {
+  constructor(
+    readonly existing: DuplicateBusinessNoExisting,
+    readonly addSide: VendorSide | null,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+// 숫자만 뽑은 사업자번호 — SQL `regexp_replace(…, '[^0-9]', '', 'g')`와 같은 결과. 숫자가 없으면 null.
+export function businessNoDigits(raw: string | null | undefined): string | null {
+  const digits = (raw ?? "").replace(/\D/g, "");
+  return digits === "" ? null : digits;
+}
+
+function duplicateBusinessNoMessage(existing: DuplicateBusinessNoExisting, addSide: VendorSide | null): string {
+  if (existing.name === null) return "같은 사업자번호 거래처 있음";
+  if (existing.archived) return `보관함에 같은 사업자번호 거래처 있음 · ${existing.name}`;
+  if (existing.hidden) return `같은 사업자번호 거래처 있음 · ${existing.name}(숨김)`;
+  if (addSide !== null) return `같은 사업자번호 거래처 있음 · ${existing.name}(${VENDOR_KIND_LABELS[existing.kind]})`;
+  return `같은 사업자번호 거래처 있음 · ${existing.name}`;
+}
+
+// 선검사 — 같은 숫자 번호의 다른 거래처가 있으면 던진다(없으면 조용히 지난다). wantedKind가 있으면(등록) 「구분 더하기」 갈래도 계산한다.
+async function assertBusinessNoFree(
+  viewer: Viewer,
+  rawBusinessNo: string | null | undefined,
+  opts: { excludeId?: string; wantedKind?: VendorKind; tx?: DbOrTx; visible: typeof defaultVisible },
+): Promise<void> {
+  const digits = businessNoDigits(rawBusinessNo);
+  if (digits === null) return;
+  const [match] = await repoFindVendorsByBusinessNoDigits(viewer, digits, { excludeId: opts.excludeId }, opts.tx);
+  if (!match) return;
+  const archived = match.archivedAt !== null;
+  const existing: DuplicateBusinessNoExisting = {
+    id: match.id,
+    name: (await opts.visible(viewer, "vendor.value")) ? match.name : null,
+    kind: match.kind,
+    hidden: match.hidden,
+    archived,
+  };
+  const addSide = opts.wantedKind === undefined ? null : vendorKindToAdd(match.kind, opts.wantedKind, archived);
+  throw new DuplicateBusinessNoError(existing, addSide, duplicateBusinessNoMessage(existing, addSide));
+}
 
 const VENDORS_MENU = "admin.vendors";
 const VENDOR_ENTITY = "vendor";
@@ -225,6 +288,7 @@ async function vendorInputFieldKeys(
 
 export type VendorWriteDeps = {
   can: typeof defaultCan;
+  visible: typeof defaultVisible;
   findVendorById: typeof repoFindVendorById;
   recordAction: typeof defaultRecordAction;
 };
@@ -309,6 +373,8 @@ export async function createVendor(
     submitted: input.customFields ?? {},
   });
   const normalizedName = normalizeVendorName(input.name);
+  const visibleFn = deps?.visible ?? defaultVisible;
+  await assertBusinessNoFree(viewer, input.businessNo, { wantedKind: input.kind ?? "both", visible: visibleFn });
   const duplicates = await repoFindVendorsByNormalizedName(viewer, normalizedName);
 
   // create에는 "안 바꿈" 개념이 없다 — keep이든 clear든 지울 기존 값이 없으므로
@@ -317,18 +383,27 @@ export async function createVendor(
   const accountNumberEncrypted = accountNumberPlan.kind === "set" ? accountNumberPlan.accountNumberEncrypted : null;
   const accountNumberLast4 = accountNumberPlan.kind === "set" ? accountNumberPlan.accountNumberLast4 : null;
 
-  const row = await repoInsertVendor(viewer, {
-    name: input.name,
-    normalizedName,
-    businessNo: input.businessNo ?? null,
-    defaultEvidenceType: input.defaultEvidenceType ?? null,
-    accountBank: input.accountBank ?? null,
-    accountHolder: input.accountHolder ?? null,
-    accountNumberEncrypted,
-    accountNumberLast4,
-    customFields,
-    kind: input.kind,
-  });
+  let row: VendorRow;
+  try {
+    row = await repoInsertVendor(viewer, {
+      name: input.name,
+      normalizedName,
+      businessNo: input.businessNo ?? null,
+      defaultEvidenceType: input.defaultEvidenceType ?? null,
+      accountBank: input.accountBank ?? null,
+      accountHolder: input.accountHolder ?? null,
+      accountNumberEncrypted,
+      accountNumberLast4,
+      customFields,
+      kind: input.kind,
+    });
+  } catch (error) {
+    // 조회와 삽입 사이 경합으로 유일 색인이 먼저 걸리면 같은 조회로 같은 오류로 바꾼다(domain/custom-fields/admin.ts 선례).
+    if (isUniqueViolation(error, BUSINESS_NO_UNIQUE_INDEX)) {
+      await assertBusinessNoFree(viewer, input.businessNo, { wantedKind: input.kind ?? "both", visible: visibleFn });
+    }
+    throw error;
+  }
 
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await recordAction(viewer, { actionType: "document_create", entity: VENDOR_ENTITY, entityId: row.id });
@@ -362,6 +437,8 @@ export async function updateVendor(
   }
 
   const normalizedName = normalizeVendorName(input.name);
+  const visibleFn = deps?.visible ?? defaultVisible;
+  await assertBusinessNoFree(viewer, input.businessNo, { excludeId: id, visible: visibleFn });
 
   const updatePayload: Parameters<typeof repoUpdateVendor>[2] = {
     name: input.name,
@@ -377,22 +454,29 @@ export async function updateVendor(
   // 잠금 뒤 같은 tx의 한 문으로 읽는다 — 그 문의 스냅숏에 커밋된 정의 · 보임 변경을 한꺼번에 본다. 거래처 행을
   // 건드리지 않는 정의 · 보임 변경과의 순서까지 행 잠금이 정하지는 않는다(같은 tx 한 문 스냅숏).
   const submitted = input.customFields;
-  if (submitted === undefined) {
-    await repoUpdateVendor(viewer, id, updatePayload);
-  } else {
-    await withTransaction(async (tx) => {
-      const locked = await repoFindVendorByIdForUpdate(viewer, id, tx);
-      if (!locked || locked.archivedAt !== null) throw new ArchivedVendorError(ARCHIVED_VENDOR_MESSAGE);
-      const { inputDefs, knownKeys } = await vendorInputFieldKeys(viewer, tx);
-      const customFields = resolveCustomFieldsWrite({
-        mode: "update",
-        inputDefs,
-        knownKeys,
-        stored: locked.customFields as Record<string, unknown>,
-        submitted,
+  try {
+    if (submitted === undefined) {
+      await repoUpdateVendor(viewer, id, updatePayload);
+    } else {
+      await withTransaction(async (tx) => {
+        const locked = await repoFindVendorByIdForUpdate(viewer, id, tx);
+        if (!locked || locked.archivedAt !== null) throw new ArchivedVendorError(ARCHIVED_VENDOR_MESSAGE);
+        const { inputDefs, knownKeys } = await vendorInputFieldKeys(viewer, tx);
+        const customFields = resolveCustomFieldsWrite({
+          mode: "update",
+          inputDefs,
+          knownKeys,
+          stored: locked.customFields as Record<string, unknown>,
+          submitted,
+        });
+        await repoUpdateVendor(viewer, id, { ...updatePayload, customFields }, tx);
       });
-      await repoUpdateVendor(viewer, id, { ...updatePayload, customFields }, tx);
-    });
+    }
+  } catch (error) {
+    if (isUniqueViolation(error, BUSINESS_NO_UNIQUE_INDEX)) {
+      await assertBusinessNoFree(viewer, input.businessNo, { excludeId: id, visible: visibleFn });
+    }
+    throw error;
   }
 
   const accountNumberPlan = planAccountNumberUpdate(input.accountNumber);
@@ -413,6 +497,35 @@ export async function updateVendor(
 
   const updated = await repoFindVendorById(viewer, id);
   return updated ? toVendorDto(viewer, updated, await visibleCustomFieldKeys(viewer, VENDOR_ENTITY)) : null;
+}
+
+// 「구분 더하기」 — 같은 사업자번호 거래처의 갈래만 켠다(옛 260907 onAddSide와 같이 입력 중이던 다른 칸은 옮기지 않는다).
+// 이미 덮으면 그대로, 보관된 거래처는 거부.
+export async function addVendorKind(
+  viewer: Viewer,
+  id: string,
+  side: VendorSide,
+  deps?: Partial<Pick<VendorWriteDeps, "can" | "recordAction">>,
+): Promise<VendorDto | null> {
+  const canFn = deps?.can ?? defaultCan;
+  if (!(await canFn(viewer, VENDORS_MENU, "write"))) {
+    throw new ForbiddenError("거래처 수정 권한 없음");
+  }
+
+  const changed = await withTransaction(async (tx) => {
+    const locked = await repoFindVendorByIdForUpdate(viewer, id, tx);
+    if (!locked || locked.archivedAt !== null) throw new ArchivedVendorError(ARCHIVED_VENDOR_MESSAGE);
+    if (servesSide(locked.kind, side)) return false;
+    await repoUpdateVendor(viewer, id, { kind: "both" }, tx);
+    return true;
+  });
+  if (changed) {
+    const recordAction = deps?.recordAction ?? defaultRecordAction;
+    await recordAction(viewer, { actionType: "document_update", entity: VENDOR_ENTITY, entityId: id });
+  }
+
+  const row = await repoFindVendorById(viewer, id);
+  return row ? toVendorDto(viewer, row, await visibleCustomFieldKeys(viewer, VENDOR_ENTITY)) : null;
 }
 
 // 숨김 플래그 — 보관함(archived)과는 다른 메커니즘이다(03-UI-SPEC.md 비활성화

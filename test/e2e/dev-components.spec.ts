@@ -139,6 +139,8 @@ test.describe("로그인한 뒤", () => {
 
     // 탭 정지(감사 D1) — 행 체크박스는 tabindex -1, 표 앞 머리글 체크박스 + 격자 칸만 탭으로 닿는다.
     await expect(table.locator('tbody input[type="checkbox"]:not([tabindex="-1"])')).toHaveCount(0);
+    // 사용자 결정 2026-10-06(DECISIONS 「선택 표 탭 정지 2개」) — 머리글 전체 고르기 + 격자, 탭 정지는 정확히 2개이고 Tab 두 번이면 표를 벗어난다.
+    expect(await table.evaluate((el) => [...el.querySelectorAll("input, [tabindex]")].filter((node) => (node as HTMLElement).tabIndex >= 0).length)).toBe(2);
     await headBox.focus();
     await page.keyboard.press("Tab");
     expect(await page.evaluate(() => document.activeElement?.tagName)).toBe("TD");

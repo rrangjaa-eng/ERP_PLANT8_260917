@@ -280,3 +280,97 @@ describe("bootstrap-gcp.sh — KMS 없음", () => {
     expect(r.log).not.toContain("cloudkms");
   });
 });
+
+// 05-12(EVID-01 · T-05-1201 · T-05-1206): 증빙 버킷 — 소유자가 만들고, 수명 주기는 incoming/에만, 배포자는 그 버킷에만
+// storage.admin, 런타임 SA는 자기 자신에게만 TokenCreator(signBlob). 런타임 버킷 역할은 배포(ensure_evidence_bucket) 몫.
+describe("bootstrap-gcp.sh — (d-3) 증빙 버킷(05-12)", () => {
+  const ARGS = ["--project", "test-proj", "--github-repo", "rrangjaa-eng/ERP_PLANT8_260917"];
+  const DEPLOYER = "--member=serviceAccount:gha-deployer@test-proj.iam.gserviceaccount.com";
+
+  function evidenceBucket(env: string): string {
+    const out = spawnSync("bash", ["-c", `source "${NAMES_PATH}"; evidence_bucket ${env} test-proj`], { encoding: "utf8" });
+    return out.stdout.trim();
+  }
+
+  function lifecycleRules(line: string | undefined): unknown {
+    const content = line?.match(/^ {2}file-content (.*)$/)?.[1];
+    expect(content, "lifecycle file content").toBeDefined();
+    return JSON.parse(content ?? "null");
+  }
+
+  it("버킷 이름이 infra/names.sh evidence_bucket과 같다", () => {
+    expect(evidenceBucket("staging")).toBe("test-proj-plant8-staging-evidence");
+    expect(evidenceBucket("prod")).toBe("test-proj-plant8-prod-evidence");
+  });
+
+  it("새 버킷: 서울 · 균일 접근 · 공개 접근 방지 · 수명 주기(incoming/ 7일 삭제 하나)로 create — 서명 버킷의 소프트 삭제 0 · 버전 끔 없음", () => {
+    const r = bootstrap(ARGS, { "no-vpc-peering": true });
+    expect(r.status).toBe(0);
+    const lines = r.log.split("\n");
+    for (const env of ["staging", "prod"]) {
+      const bucket = `gs://${evidenceBucket(env)}`;
+      expect(lines.some((l) => l.startsWith(`storage buckets describe ${bucket} `))).toBe(true);
+      const createIdx = lines.findIndex((l) => l.startsWith(`storage buckets create ${bucket} `));
+      expect(createIdx, `create for ${env}`).toBeGreaterThan(-1);
+      const create = lines[createIdx];
+      for (const flag of ["--location=asia-northeast3", "--uniform-bucket-level-access", "--public-access-prevention", "--project=test-proj", "--lifecycle-file="]) {
+        expect(create).toContain(flag);
+      }
+      expect(create).not.toMatch(/soft-delete|no-versioning/);
+      expect(lifecycleRules(lines[createIdx + 1])).toEqual({
+        rule: [{ action: { type: "Delete" }, condition: { age: 7, matchesPrefix: ["incoming/"] } }],
+      });
+    }
+  });
+
+  it("있는 버킷(두 번째 실행): create 없이 균일 접근 · 공개 접근 방지 · 같은 수명 주기로 update", () => {
+    const r = bootstrap(ARGS, { "bucket-exists": true, "sa-exists": true, "wif-pool-exists": true, "wif-provider-exists": true });
+    expect(r.status).toBe(0);
+    const lines = r.log.split("\n");
+    for (const env of ["staging", "prod"]) {
+      const bucket = `gs://${evidenceBucket(env)}`;
+      expect(lines.some((l) => l.startsWith(`storage buckets create ${bucket} `))).toBe(false);
+      const updateIdx = lines.findIndex((l) => l.startsWith(`storage buckets update ${bucket} `));
+      expect(updateIdx, `update for ${env}`).toBeGreaterThan(-1);
+      const update = lines[updateIdx];
+      expect(update).toContain("--uniform-bucket-level-access");
+      expect(update).toContain("--public-access-prevention");
+      expect(update).not.toMatch(/soft-delete|no-versioning/);
+      expect(JSON.stringify(lifecycleRules(lines[updateIdx + 1]))).not.toContain("evidence/");
+    }
+  });
+
+  it("배포자는 그 버킷에만 storage.admin · 런타임 SA는 자기 자신에게만 TokenCreator · 런타임 버킷 역할과 프로젝트 저장소 역할은 없다", () => {
+    const r = bootstrap(ARGS, { "no-vpc-peering": true });
+    expect(r.status).toBe(0);
+    const lines = r.log.split("\n");
+    for (const env of ["staging", "prod"]) {
+      const bucket = `gs://${evidenceBucket(env)}`;
+      const bindings = lines.filter((l) => l.startsWith(`storage buckets add-iam-policy-binding ${bucket} `));
+      expect(bindings, `bucket bindings for ${env}`).toHaveLength(1);
+      expect(bindings[0]).toContain(DEPLOYER);
+      expect(bindings[0]).toContain("--role=roles/storage.admin");
+
+      const runtime = `plant8-${env}-runtime@test-proj.iam.gserviceaccount.com`;
+      const self = lines.filter((l) => l.includes("--role=roles/iam.serviceAccountTokenCreator"));
+      const mine = self.filter((l) => l.startsWith(`iam service-accounts add-iam-policy-binding ${runtime} `));
+      expect(mine, `self signBlob for ${env}`).toHaveLength(1);
+      expect(mine[0]).toContain(`--member=serviceAccount:${runtime}`);
+    }
+    expect(lines.filter((l) => l.includes("--role=roles/iam.serviceAccountTokenCreator"))).toHaveLength(2);
+    expect(r.log).not.toContain("roles/storage.objectUser");
+    for (const l of lines.filter((x) => x.startsWith("projects add-iam-policy-binding"))) {
+      expect(l).not.toMatch(/roles\/storage\.|serviceAccountTokenCreator/);
+    }
+  });
+
+  it("(d-3)은 (d-2) 서명 버킷 뒤 · WIF 바인딩(e) 앞이다", () => {
+    const r = bootstrap(ARGS, { "no-vpc-peering": true });
+    const cert = lineIndex(r.log, "storage buckets describe gs://test-proj-plant8-prod-cert-signatures");
+    const evidence = lineIndex(r.log, "storage buckets describe gs://test-proj-plant8-staging-evidence");
+    const wif = lineIndex(r.log, "--role=roles/iam.workloadIdentityUser");
+    expect(cert).toBeGreaterThan(-1);
+    expect(evidence).toBeGreaterThan(cert);
+    expect(wif).toBeGreaterThan(evidence);
+  });
+});

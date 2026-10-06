@@ -1,4 +1,4 @@
-import { and, eq, isNull, isNotNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, isNotNull } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { users } from "@/db/schema";
@@ -15,6 +15,14 @@ export async function findUserByEmail(viewer: Viewer, email: string): Promise<Us
 export async function findUserById(viewer: Viewer, id: string): Promise<UserRow | null> {
   const [row] = await db.select().from(users).where(eq(users.id, id)).limit(1);
   return row ?? null;
+}
+
+// 05 /review A7 — 여러 사람 이름(id → 이름)을 한 쿼리로.
+export async function findUserNamesByIds(viewer: Viewer, ids: string[]): Promise<Map<string, string>> {
+  void viewer;
+  if (ids.length === 0) return new Map();
+  const rows = await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, ids));
+  return new Map(rows.map((row) => [row.id, row.name]));
 }
 
 export async function setPasswordTemporary(viewer: Viewer, userId: string, value: boolean): Promise<void> {

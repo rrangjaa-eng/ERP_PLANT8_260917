@@ -13,6 +13,8 @@ import styles from "./RowActions.module.css";
 type ActionCommon = {
   /** 위험한 동작(삭제 등) — 맨 끝에 떨어져 위험 색 글자. */
   danger?: boolean;
+  /** -1 — 탭 순서에서 뺀다(격자 셀 안 3차처럼 키보드 경로가 따로 있을 때, 05-15). */
+  tabIndex?: -1;
   children: ReactNode;
 };
 
@@ -21,8 +23,11 @@ type LinkAction = ActionCommon & {
   onClick?: never;
   pending?: never;
   autoFocus?: never;
+  busy?: never;
   disabled?: never;
   disabledReason?: never;
+  /** 이 행동이 가리키는 대상 글자의 id(예: 그 줄 항목 칸) — 줄마다 같은 이름의 링크를 줄로 구별한다. */
+  describedBy?: string;
 };
 
 type ButtonActionBase = ActionCommon & {
@@ -30,7 +35,11 @@ type ButtonActionBase = ActionCommon & {
   onClick: (event: MouseEvent<HTMLButtonElement>) => void;
   /** 서버 액션 대기 중 — 라벨 뒤 「…」. 네이티브 disabled가 아니라 aria-disabled다(탭 순서에 남고 포커스 유지 — DR-11). */
   pending?: boolean;
+  /** 같은 열의 다른 행동이 대기 중 — 글자는 그대로 두고 aria-disabled만(누름 무시, 이유 글자 없음 — 05-15). */
+  busy?: boolean;
   autoFocus?: boolean;
+  /** 이 행동이 가리키는 대상 글자의 id(예: 실패 파일 행의 파일명) — `aria-describedby`에 이유 id보다 앞서 이어진다. */
+  describedBy?: string;
 };
 
 // Button의 UX-06 규약 — 비활성은 이유와 함께만 쓴다.
@@ -60,7 +69,7 @@ export function RowAction(props: RowActionProps) {
 
   if (props.href !== undefined) {
     return (
-      <Link href={props.href} scroll={false} className={[styles.action, dangerClass, endClass].filter(Boolean).join(" ")}>
+      <Link href={props.href} scroll={false} tabIndex={props.tabIndex} aria-describedby={props.describedBy} className={[styles.action, dangerClass, endClass].filter(Boolean).join(" ")}>
         {props.children}
         {/* D6 — 패널을 여는 링크는 누른 직후 패널이 뜨기 전까지 「진행 중」(`ListScreen.primaryAction`과 같은 표기 · 새 모양 없음) */}
         <LinkPending />
@@ -68,19 +77,21 @@ export function RowAction(props: RowActionProps) {
     );
   }
 
-  const inactive = props.pending === true || props.disabled === true;
+  const inactive = props.pending === true || props.disabled === true || props.busy === true;
   const reason = props.disabled === true && props.pending !== true ? props.disabledReason : undefined;
   const button = (
     <button
       type="button"
       autoFocus={props.autoFocus}
+      tabIndex={props.tabIndex}
       aria-disabled={inactive ? "true" : undefined}
-      aria-describedby={reason ? reasonId : undefined}
+      aria-describedby={[props.describedBy, reason ? reasonId : undefined].filter(Boolean).join(" ") || undefined}
       onClick={rowActionClickHandler({ inactive, onClick: props.onClick })}
       className={[styles.action, dangerClass, reason ? "" : endClass].filter(Boolean).join(" ")}
     >
       <span>{props.children}</span>
-      {props.pending ? <span aria-hidden="true">…</span> : null}
+      {/* 쉬는 동안에도 「…」 폭을 비워 둔다(::after라 글자 · 접근 이름에 들지 않는다) — 누름 중 열 폭이 바뀌지 않는다(웨이브 7 D2). */}
+      {props.pending ? <span aria-hidden="true">…</span> : <span aria-hidden="true" className={styles.pendingSlot} />}
       {props.pending ? <span className="sr-only">처리 중</span> : null}
     </button>
   );

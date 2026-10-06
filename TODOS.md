@@ -536,3 +536,29 @@
 **Effort:** M
 **Priority:** P3
 **Depends on:** None
+
+## Phase 5 남은 일(2026-10-05 05-13)
+
+### 06 착수 게이트(M-9)에서 06 문서를 Phase 5에 맞춘다
+
+**What:** 06-02 설정 키 넷 → 셋(`evidence.max_size_mb`는 Phase 5) · `sumKrw`/`diffKrw`는 Phase 5 · 06-03 `pickTaxDates` 부가세 대체 = 작성일(D-101) · 06 S4 계산 한 줄은 세율 `%` · 06 S18 강행 결과 줄은 정산 결재 문서 KvList 한 행 · 05-01 `name_map` 실제 이름. 계약은 `docs/EXPENSES.md`, 메모 전문은 05-13 SUMMARY.
+**Priority:** P1
+**Depends on:** Phase 6 계획
+
+### 회사 대납 시가 5만원 이하 면제(Phase 11 CERT-04)
+
+**What:** 지금 회사 대납은 금액과 무관하게 22% gross-up이다(사용자 결정 2026-09-26 #7). 5만원 이하 면제는 확인증 쪽 CERT-04가 붙인다.
+**Priority:** P2
+**Depends on:** Phase 11
+
+### 정산 결재 문서의 손익 행(Phase 9 PNL-01)
+
+**What:** 정산 결재 문서 읽기 칸의 `손익` 행은 Phase 9부터 같은 자리에 붙는다(§6-2 네 숫자 한 줄과 같은 함수 · 볼 수 없는 계급에는 행째 없음 — 05-UI-SPEC S10).
+**Priority:** P2
+**Depends on:** Phase 9
+
+### 지출결의서 인쇄(뒤 페이즈)
+
+**What:** §6-6 인쇄 라우트(`/print/expenses/[id]` · `system/print-expense.html`)와 문서 화면 머리 줄 2차 `인쇄`는 Phase 5에서 뺐다(사용자 결정 2026-09-26 · 05-UI-SPEC Assumptions #19).
+**Priority:** P3
+**Depends on:** 인쇄를 맡을 페이즈 결정

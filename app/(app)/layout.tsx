@@ -1,4 +1,6 @@
+import "@/app/(app)/document-kinds";
 import type { ReactNode } from "react";
+import { preload } from "react-dom";
 import { requireSession } from "@/lib/viewer";
 import { roleMenu } from "@/ui/shell/role-menu";
 import { Shell } from "@/ui/shell/Shell";
@@ -7,8 +9,14 @@ import { can } from "@/domain/permissions/can";
 import { MENUS } from "@/domain/permissions/menus";
 import { withCertMenusGated } from "@/domain/certs/feature";
 import { countMyUnread } from "@/domain/notify/inbox";
+import { listNextTurnItems } from "@/domain/next-turn";
 import { refreshUnreadCountAction } from "@/app/(app)/notifications/actions";
 import { log } from "@/lib/log";
+
+// 05-13 D3 — 모든 앱 화면 첫 로드가 받는 Pretendard 동적 서브셋(자주 쓰는 한글 음절 조각 83~91, 실측 9개 ≈ 230KB)을 문서와 함께
+// 미리 받는다. 글꼴 요청은 글자가 처음 그려질 때 시작해 서버 렌더 본문 뒤에 도착하면 대체 글꼴 → Pretendard 교체로 줄바꿈이 바뀌어
+// 아래가 움직였다(폰 320 `/projects/[id]` CLS 0.225). 같은 파일을 어차피 받으므로 전송량은 같고 시작만 앞선다.
+const PRETENDARD_COMMON_SUBSETS = [83, 84, 85, 86, 87, 88, 89, 90, 91] as const;
 
 // 인증 화면 공통 셸 삽입 지점(D-23). 로그인 화면(app/(auth)/login)은 이 라우트
 // 그룹 밖이라 셸에 감싸이지 않는다(§6-7 — 셸 없는 유일한 화면). 루트 레이아웃이
@@ -24,6 +32,13 @@ import { log } from "@/lib/log";
 // can() 호출이 생기지만 전부 같은 계급의 권한표 행을 읽는다 — 사용자 10~30명
 // 사내 시스템이라 개별 호출을 최적화하지 않는다(03-02-PLAN.md ⑤).
 export default async function AppLayout({ children }: { children: ReactNode }) {
+  for (const subset of PRETENDARD_COMMON_SUBSETS) {
+    preload(`/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.${subset}.woff2`, {
+      as: "font",
+      type: "font/woff2",
+      crossOrigin: "anonymous",
+    });
+  }
   const { viewer, user } = await requireSession();
 
   const visibleMenus = await Promise.all(
@@ -47,6 +62,17 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     });
   }
 
+  // 05-10: 폰 하단 탭 `내 차례 N` — 공급 함수의 건수. 실패하면 건수 없이(라벨 `내 차례`) 셸은 정상 렌더된다. 0이면 넘기지 않는다.
+  let nextTurnCount: number | undefined;
+  try {
+    const count = (await listNextTurnItems(viewer)).length;
+    if (count > 0) nextTurnCount = count;
+  } catch (error) {
+    log.warn("next_turn.count_failed", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+
   return (
     <UnreadCountProvider initial={initialUnreadCount} refresh={refreshUnreadCountAction}>
       <Shell
@@ -55,6 +81,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         accountGroup={menu.accountGroup}
         bottomTabs={menu.bottomTabs}
         userName={user.name}
+        nextTurnCount={nextTurnCount}
       >
         {children}
       </Shell>

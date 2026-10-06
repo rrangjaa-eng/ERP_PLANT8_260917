@@ -134,7 +134,8 @@ async function textGap(row: Locator): Promise<{ gap: number; sameLine: boolean }
   return row.evaluate((tr) => {
     const textBox = (button: Element): DOMRect => {
       const range = document.createRange();
-      range.selectNodeContents(button);
+      // 05-15 — 쉬는 버튼은 보이지 않는 「…」 자리(.pendingSlot)를 라벨 뒤에 둔다. 글자 상자는 라벨 span만 잰다.
+      range.selectNodeContents(button.firstElementChild ?? button);
       return range.getBoundingClientRect();
     };
     const buttons = Array.from(tr.querySelectorAll("button")).filter((b) => (b as HTMLElement).offsetParent !== null);

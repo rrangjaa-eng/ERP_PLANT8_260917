@@ -14,4 +14,8 @@ export const RESTORE_CHECK_TABLES: readonly { table: string; requireRows: boolea
   { table: "team_memberships", requireRows: false },
   { table: "vendors", requireRows: false },
   { table: "action_log", requireRows: false },
+  { table: "expenses", requireRows: false },
+  { table: "files", requireRows: false },
+  { table: "upload_intents", requireRows: false },
+  { table: "settlement_approvals", requireRows: false },
 ];

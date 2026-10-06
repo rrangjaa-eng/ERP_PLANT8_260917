@@ -1,12 +1,15 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, type Page } from "@playwright/test";
+import { createExpenseFromLines } from "@/domain/expenses";
 import { submitLeave } from "@/domain/leave";
 import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { seoulToday } from "@/lib/dates";
 import { createFixtureUser } from "./fixtures";
 import { leaveWeekdayRange } from "./leave-dates";
-import { setupLeaveOrg } from "./leave-org";
+import { setupExpenseE2E } from "./expense-fixture";
+import { submitSettlement } from "@/domain/settlements";
+import { setupSettlementE2E } from "./settlement-fixture";
 import { createPanelRouteFixtures } from "./panel-routes";
 
 // 04.6-29 — UI-SPEC 「화면 목록」 전 화면의 라우트 표. 원칙(design-principles.spec)·대비(a11y.spec)·글자 위계(type-hierarchy.spec)가 함께 쓴다
@@ -19,7 +22,7 @@ export type ScreenAccount = "sysadmin" | "drafter" | "anon";
 
 export type ScreenRoute = {
   id: string;
-  /** 자리표시 — `{projectId}` `{userId}` `{leaveId}`. */
+  /** 자리표시 — `{projectId}` `{userId}` `{leaveId}` `{expenseId}` `{settlementProjectId}`. */
   path: string;
   /** 로그인 계정 — `drafter`는 연차 문서의 기안자(문서 보임 규칙이 기안자 · 결재 후보 · 처리자만 허용한다). */
   as: ScreenAccount;
@@ -32,6 +35,7 @@ export type ScreenRoute = {
 };
 
 const FIELD_DEFS_FILE = "app/(app)/admin/field-definitions/page.tsx";
+const EXPENSE_DOC_FILE = "app/(app)/expenses/[id]/page.tsx";
 const CERT_EVENTS_FILE = "app/(app)/certs/events/page.tsx";
 
 export const SCREEN_ROUTES: readonly ScreenRoute[] = [
@@ -39,6 +43,7 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
   { id: "projects", path: "/projects", as: "sysadmin" },
   { id: "project-detail", path: "/projects/{projectId}", as: "sysadmin" },
   { id: "expenses", path: "/expenses", as: "sysadmin" },
+  { id: "expense-new", path: "/expenses/new", as: "sysadmin", mergeFile: "app/(app)/expenses/new/page.tsx" },
   { id: "cards", path: "/cards", as: "sysadmin" },
   { id: "pnl", path: "/pnl", as: "sysadmin" },
   { id: "settings", path: "/settings", as: "sysadmin" },
@@ -47,6 +52,8 @@ export const SCREEN_ROUTES: readonly ScreenRoute[] = [
   { id: "leave-list", path: "/leave", as: "drafter" },
   { id: "leave-new", path: "/leave/new", as: "drafter" },
   { id: "leave-doc", path: "/leave/{leaveId}", as: "drafter" },
+  { id: "expense-doc", path: "/expenses/{expenseId}", as: "drafter", mergeFile: EXPENSE_DOC_FILE },
+  { id: "settlement-doc", path: "/projects/{settlementProjectId}/settlement", as: "sysadmin", mergeFile: "app/(app)/projects/[id]/settlement/page.tsx" },
   { id: "notifications", path: "/notifications", as: "sysadmin" },
   { id: "account", path: "/account", as: "sysadmin" },
   { id: "admin-index", path: "/admin", as: "sysadmin" },
@@ -92,6 +99,9 @@ export type ScreenFixtures = {
   projectId: string;
   userId: string;
   leaveId: string;
+  expenseId: string;
+  // 05-11 — 정산 결재를 올린 정산 상태 프로젝트(시스템 관리자는 전사 업무 범위라 문서를 본다).
+  settlementProjectId: string;
   sysadmin: Credentials;
   drafter: Credentials;
 };
@@ -104,12 +114,23 @@ async function createFixtures(): Promise<ScreenFixtures> {
   // 연차 문서 하나 — 기안자가 신청한다. 패널 라우트 표 픽스처(12주)와 겹치지 않는 13주 하루.
   const today = seoulToday();
   const range = leaveWeekdayRange(today, { week: 13, weekdays: 1 });
-  const org = await setupLeaveOrg(today);
+  // 지출결의 E2E 준비(`setupExpenseE2E`)가 기안 PM · 진행 프로젝트 · 견적 줄을 도메인 함수로 만든다 — 그 기안자가 연차 · 지출결의 화면의 `drafter`다.
+  const expenseSetup = await setupExpenseE2E();
+  const org = { drafter: expenseSetup.pm };
   const submitted = await submitLeave(org.drafter.viewer, { kind: "full_day", startDate: range.startDate, endDate: range.endDate, half: "" });
+  // 작성 중 지출결의 하나 — 폼 화면(S3)을 잰다(제출 문서는 증빙 파일이 필요해 E2E 스펙이 따로 증명한다).
+  const created = await createExpenseFromLines(expenseSetup.pm.viewer, { lineIds: [expenseSetup.lines.tracer.id] });
+  const expenseId = created.created[0]?.expenseId;
+  if (!expenseId) throw new Error("화면 점검용 지출결의를 만들지 못했다");
+  // 정산 결재 문서 화면(S10 (나)) — 정산 상태 프로젝트에 담당 PM이 정산 결재를 올린다(통합 픽스처와 같은 도메인 함수).
+  const settlement = await setupSettlementE2E();
+  await submitSettlement(settlement.pm.viewer, { projectId: settlement.projectId });
   return {
     projectId: panel.projectId,
     userId: org.drafter.viewer.id,
     leaveId: submitted.leaveId,
+    expenseId,
+    settlementProjectId: settlement.projectId,
     sysadmin,
     drafter: { email: org.drafter.email, password: org.drafter.password },
   };
@@ -123,7 +144,13 @@ export function createScreenFixtures(): Promise<ScreenFixtures> {
 
 /** 자리표시 치환 — 모르는 자리표시는 throw. 건너뛰는 cert 행(`{eventId}` 등)은 치환하기 전에 `screenAvailability`로 가른다. */
 export function resolveScreenRoute(route: ScreenRoute, fixtures: ScreenFixtures): string {
-  const values: Record<string, string> = { projectId: fixtures.projectId, userId: fixtures.userId, leaveId: fixtures.leaveId };
+  const values: Record<string, string> = {
+    projectId: fixtures.projectId,
+    userId: fixtures.userId,
+    leaveId: fixtures.leaveId,
+    expenseId: fixtures.expenseId,
+    settlementProjectId: fixtures.settlementProjectId,
+  };
   return route.path.replace(/\{(\w+)\}/g, (_match, name: string) => {
     const value = Object.hasOwn(values, name) ? values[name] : undefined;
     if (value === undefined) throw new Error(`화면 ${route.id}: 모르는 자리표시 {${name}}`);

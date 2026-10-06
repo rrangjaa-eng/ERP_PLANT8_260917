@@ -90,3 +90,35 @@ export async function lockDocumentCounter(
   if (!row) throw new Error("document_counters 잠금이 행을 반환하지 않았습니다.");
   return row.value;
 }
+
+// PR #162 리뷰 P1 — period가 연도가 아닌 카운터(지출결의 `expense`, period = 프로젝트 번호)의 시작값 저장용. 그 counterKey의
+// 모든 행을 period 순으로 `FOR UPDATE` 잠그고 가장 큰 값을 돌려준다(행이 없으면 0). 낮춘 시작값은 발급이 1건이라도 있는
+// 어느 period에서든 다음 번호를 이미 매긴 번호와 겹치게 하므로 모든 period를 본다.
+export async function lockDocumentCountersByKey(viewer: Viewer, counterKey: string, tx: DbOrTx): Promise<number> {
+  void viewer;
+  const rows = await tx
+    .select({ value: documentCounters.value })
+    .from(documentCounters)
+    .where(eq(documentCounters.counterKey, counterKey))
+    .orderBy(documentCounters.period)
+    .for("update");
+  return rows.reduce((max, row) => Math.max(max, row.value), 0);
+}
+
+// PR #162 독립 검토 3 — 공유 잠금판. 카운터 행이 아직 없는 period(첫 번호를 매기는 중)는 FOR UPDATE로 잡을 행이 없어, 시작값
+// 저장 가드가 커밋 전 채번을 보지 못한다. 채번은 고정 행(counterKey, ALL_PERIODS)을 FOR SHARE로(채번끼리는 막지 않는다),
+// 가드는 같은 행을 lockDocumentCounter(FOR UPDATE)로 **다른 행보다 먼저** 잡아 둘을 직렬화한다. 이 행의 value는 늘 0이다.
+export const ALL_PERIODS = "*";
+
+export async function shareLockDocumentCounter(viewer: Viewer, counterKey: string, period: string, tx: DbOrTx): Promise<void> {
+  void viewer;
+  await tx
+    .insert(documentCounters)
+    .values({ counterKey, period, value: 0 })
+    .onConflictDoNothing({ target: [documentCounters.counterKey, documentCounters.period] });
+  await tx
+    .select({ value: documentCounters.value })
+    .from(documentCounters)
+    .where(and(eq(documentCounters.counterKey, counterKey), eq(documentCounters.period, period)))
+    .for("share");
+}

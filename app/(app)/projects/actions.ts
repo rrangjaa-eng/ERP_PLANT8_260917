@@ -26,6 +26,10 @@ import {
   statusChangedMessage,
 } from "@/domain/projects/status";
 import { PROJECT_STATUSES } from "@/domain/projects/status-transitions";
+import "@/app/(app)/document-kinds";
+import { currentHolderNames, projectActionResult } from "@/domain/approvals";
+import { SETTLEMENT_DOCUMENT_KIND, submitSettlement, withdrawSettlement } from "@/domain/settlements";
+import { log } from "@/lib/log";
 import "./actions.registry";
 
 // PROJ-01·PROJ-02: domain/projects·domain/quotes/lines만 부른다. 등록은
@@ -242,6 +246,34 @@ export const changeProjectStatusAction = authedActionClient
     await changeProjectStatus(ctx.viewer, parsedInput.projectId, { from: parsedInput.from, to: parsedInput.to });
     revalidatePath("/projects");
     return { status: parsedInput.to };
+  });
+
+// 05-11(UI-SPEC S10 (가) · 확정 #4): 정산 결재 올리기 — 확인 없이 즉시. 판정(담당 PM · 쓰기 권리 · 정산 상태)은 domain이 하고 거부 문구가
+// 그대로 serverError로 나간다. 입력은 프로젝트 id 하나다(결재 경로 권한 값 · trigger를 받지 않는다 — F1). 토스트 재료(지금 담당 이름)는
+// 커밋 뒤 읽고, 그 읽기가 실패해도 올리기는 성공이다(지출결의 제출과 같은 규칙).
+export const submitSettlementAction = authedActionClient
+  .schema(z.object({ projectId: z.string().uuid() }).strict())
+  .action(async ({ parsedInput, ctx }) => {
+    const done = await submitSettlement(ctx.viewer, { projectId: parsedInput.projectId });
+    revalidatePath(`/projects/${parsedInput.projectId}`);
+    if (done.kind === "already_submitted") return { kind: "already_submitted" as const };
+    try {
+      const nextHolderNames = await currentHolderNames(ctx.viewer, { kind: SETTLEMENT_DOCUMENT_KIND, documentId: done.documentId });
+      const result = await projectActionResult(ctx.viewer, { documentId: done.documentId, final: false, nextHolderNames });
+      return { kind: "submitted" as const, round: done.round, nextHolderNames: result.nextHolderNames ?? null };
+    } catch (error) {
+      log.warn("settlement.submit_toast_material_failed", { projectId: parsedInput.projectId, error: error instanceof Error ? error.message : String(error) });
+      return { kind: "submitted" as const, round: done.round, nextHolderNames: null };
+    }
+  });
+
+// 05-11 회수 — 토스트 되돌리기(차수만) 한 모양. 늦은 되돌리기 거부는 UserFacingError 문구 그대로 serverError로 간다.
+export const withdrawSettlementAction = authedActionClient
+  .schema(z.object({ projectId: z.string().uuid(), undo: z.literal(true), round: z.number().int().min(1) }).strict())
+  .action(async ({ parsedInput, ctx }) => {
+    const withdrawn = await withdrawSettlement(ctx.viewer, parsedInput);
+    revalidatePath(`/projects/${parsedInput.projectId}`);
+    return { status: withdrawn.status };
   });
 
 // 04-14(D-53 · CEO 리뷰 B-02): 새 차수 — 화면이 보던 차수 id를 싣는다(모달·버튼은 04-24). 판정(보던 차수 · 상태 ·

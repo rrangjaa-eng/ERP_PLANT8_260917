@@ -48,3 +48,20 @@ registerAction({
   action: "view",
   dtoName: "QuoteLineDto",
 });
+
+// 05-11: 정산 결재 올리기 — 차수 · 지금 담당 이름(ApprovalActionResultDto 투영을 지난 값)만 돌려준다. 판정(담당 PM · 정산 상태)은 domain.
+registerAction({
+  name: "submitSettlementAction",
+  menu: "projects",
+  action: "write",
+  dtoName: "ApprovalActionResultDto",
+});
+
+// 05-11: 토스트 되돌리기 — 결재 상태 낱말만 돌려준다(DTO 없음).
+
+registerAction({
+  name: "withdrawSettlementAction",
+  menu: "projects",
+  action: "write",
+  dtoName: null,
+});

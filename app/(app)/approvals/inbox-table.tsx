@@ -1,8 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { Table } from "@/ui/table/Table";
 import type { TableColumn } from "@/ui/table/types";
@@ -12,9 +11,12 @@ import type { StatusWord } from "@/ui/status-tag/status-map";
 import { Toast, type ToastTone } from "@/ui/toast/Toast";
 import { approveAction } from "./actions";
 import { approveToast } from "./approve-toast";
-import { ApprovalSheet, type ApprovalSheetItem } from "./approval-sheet";
+import { APPROVE_FAILED_MESSAGE, APPROVE_UNKNOWN_MESSAGE, ApprovalSheet, type ApprovalSheetItem, type ApproveOutcome } from "./approval-sheet";
 import { ConflictLine } from "./conflict-line";
+import { evidenceViewUrl } from "./evidence-url";
 import { INBOX_COLUMN_LABELS } from "./list-columns";
+import { rowApprovalActions } from "./row-actions";
+import { useRefreshThenFocus } from "./refresh-then-focus";
 import { RejectDialog, WithdrawDialog, type DecisionTarget, type RejectMessages } from "./decision-dialogs";
 import leaveStyles from "@/app/(app)/leave/leave.module.css";
 import styles from "./inbox-table.module.css";
@@ -32,12 +34,15 @@ export type InboxRow = {
   href: string | null;
   document: string;
   drafter: string;
-  days: string;
+  // 05-01(Round 4 D8): 숫자 칸 — 종류 요약 measure를 서버가 그린 노드(금액 `Num` · 일수 글자 · 숫자 없는 종류 `—` · 투영에서 빠지면 빈 칸).
+  measure: ReactNode;
   status: StatusWord | null;
   // `잔여 초과 N일`(해당할 때만) — PC는 문서 칸 2행, 폰은 접힌 줄 끝(UI-SPEC S4). 막힘이 아니라 경고다.
   overdraw: string | null;
   // 서버 가능 행동(구조 값 — 결재 정보 노출과 무관, 사용자 결정 2026-09-29 A). 처리함은 빈 목록.
   actions: ApprovalSheetItem["actions"];
+  // 05-10 D4: 종류가 준 `승인` 막힘 이유(서버 원문) — 있으면 PC 행은 `승인` 대신 이유 글자 + `반려`.
+  approveBlockedReason: string | null;
   // `내 결재` 항목의 결재 시트 재료(서버 가능 행동 · 상세 · 결재선) — 처리함은 null. 결재 정보가 꺼진 계급은 상세가
   // 없어 null이다 — 그 행은 폰에서도 문서 링크로 문서 화면에 간다(거기 행동 줄이 있다).
   sheet: ApprovalSheetItem | null;
@@ -51,8 +56,27 @@ function documentCellId(row: InboxRow): string {
   return `inbox-doc-${row.id.replace(/[^a-zA-Z0-9-]/g, "-")}`;
 }
 
-export function InboxTable({ rows, rejectMessages }: { rows: InboxRow[]; rejectMessages: RejectMessages }) {
-  const router = useRouter();
+// 결재 시트 `승인` — 서버 액션 호출 · 토스트 문구 · 서버 거부 → 충돌 문구 변환(05-01 E7). 입력 오류는 `승인 실패`, 통신 실패는 `결과 확인 안 됨` 한 줄(05 /review B3 · C9).
+async function approveFromSheet(target: { instanceId: string; version: number }): Promise<ApproveOutcome> {
+  try {
+    const result = await approveAction({ instanceId: target.instanceId, expectedVersion: target.version });
+    if (result?.data) return { message: approveToast(result.data) };
+    return { conflict: result?.serverError ?? APPROVE_FAILED_MESSAGE };
+  } catch {
+    return { conflict: APPROVE_UNKNOWN_MESSAGE };
+  }
+}
+
+export function InboxTable({
+  rows,
+  rejectMessages,
+  measureHeader,
+}: {
+  rows: InboxRow[];
+  rejectMessages: RejectMessages;
+  // 05-01 E5: 숫자 열 머리글(서버 listMyInbox) — null이면 숫자 열을 통째로 그리지 않는다.
+  measureHeader: string | null;
+}) {
   const [pendingId, setPendingId] = useState<string | null>(null);
   // 행 승인이 동시 처리로 거부되면 그 행 행동 칸에 한 줄 + 3차 `새로 고침`(토스트가 아니다 — 누른 자리 옆).
   const [rowConflict, setRowConflict] = useState<{ rowId: string; message: string } | null>(null);
@@ -64,11 +88,19 @@ export function InboxTable({ rows, rejectMessages }: { rows: InboxRow[]; rejectM
   const [rejectTarget, setRejectTarget] = useState<DecisionTarget | null>(null);
   const [withdrawTarget, setWithdrawTarget] = useState<DecisionTarget | null>(null);
   const showToast = (message: string) => setToast({ message, tone: "default" });
+  const refreshThenFocus = useRefreshThenFocus();
+  // 승인한 줄이 사라진 뒤 포커스는 다음 줄의 열기(문서 칸 버튼 · 링크)로 — `승인`으로 가면 Enter 한 번 더로 다음 문서가 승인된다.
+  // PC 행 `승인`과 결재 시트 `승인`(폰 — 05-11 웨이브 13 D3)이 같은 길을 쓴다.
+  function refreshThenFocusNext(approvedIndex: number) {
+    const next = approvedIndex < 0 ? undefined : rows[approvedIndex + 1];
+    const nextId = next ? documentCellId(next) : null;
+    refreshThenFocus(() => (nextId ? (document.getElementById(nextId)?.querySelector<HTMLElement>("button, a") ?? null) : null));
+  }
   const { execute } = useAction(approveAction, {
     onSuccess: ({ data }) => {
       if (!data) return;
       setToast({ message: approveToast(data), tone: "default" });
-      router.refresh();
+      refreshThenFocusNext(rows.findIndex((row) => row.id === pendingIdRef.current));
     },
     onError: ({ error }) => {
       if (error.serverError && pendingIdRef.current) setRowConflict({ rowId: pendingIdRef.current, message: error.serverError });
@@ -133,7 +165,9 @@ export function InboxTable({ rows, rejectMessages }: { rows: InboxRow[]; rejectM
           row.drafter
         ),
     },
-    { key: "days", header: INBOX_COLUMN_LABELS.days, priority: "p1", align: "right", cell: (row) => row.days },
+    ...(measureHeader
+      ? [{ key: "days", header: measureHeader, priority: "p1", align: "right", cell: (row) => row.measure } satisfies TableColumn<InboxRow>]
+      : []),
     {
       key: "status",
       header: INBOX_COLUMN_LABELS.status,
@@ -151,10 +185,11 @@ export function InboxTable({ rows, rejectMessages }: { rows: InboxRow[]; rejectM
         const expectedVersion = row.version;
         const actions = row.actions;
         const decision = row.decision;
+        const cell = rowApprovalActions({ approveBlockedReason: row.approveBlockedReason, canReject: actions.includes("reject") && decision !== null });
         // PC 행은 서버 가능 행동에서 승인 · 반려만 그린다 — 회수는 행에 두지 않는다(T6 · #3, 문서 화면 · 폰 시트에서만).
         return (
           <span className={styles.rowActions}>
-            {actions.includes("approve") ? (
+            {actions.includes("approve") && cell.showApprove ? (
               <Button
                 variant="tertiary"
                 pending={pendingId === row.id}
@@ -171,7 +206,8 @@ export function InboxTable({ rows, rejectMessages }: { rows: InboxRow[]; rejectM
                 승인
               </Button>
             ) : null}
-            {actions.includes("reject") && decision ? (
+            {actions.includes("approve") && cell.reasonText ? <span className={styles.blockedReason}>{cell.reasonText}</span> : null}
+            {cell.showReject && decision ? (
               <Button
                 variant="tertiary"
                 disabled={pendingId === row.id}
@@ -194,7 +230,12 @@ export function InboxTable({ rows, rejectMessages }: { rows: InboxRow[]; rejectM
       <ApprovalSheet
         item={sheetItem}
         onClose={() => setSheetItem(null)}
-        onApproved={showToast}
+        onApprove={approveFromSheet}
+        onApproved={(message) => {
+          showToast(message);
+          refreshThenFocusNext(rows.findIndex((row) => row.sheet !== null && row.sheet.instanceId === sheetItem?.instanceId));
+        }}
+        evidenceUrl={evidenceViewUrl}
         onSecondary={(action, item) => {
           const row = rows.find((candidate) => candidate.sheet?.instanceId === item.instanceId);
           if (!row?.decision) return;

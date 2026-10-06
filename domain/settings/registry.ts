@@ -53,6 +53,8 @@ export type SettingDef<T> = {
   dynamicOptions?: "roles" | "org_units";
   /** 04.1: 이력형 키의 적용 시작일 규칙(연차 일수 = 1월 1일). 동작은 04.1-03·04. */
   effectiveFromRule?: "year_start";
+  /** 05-04(UI-SPEC S13): number 칸 값 옆 정적 단위 글자(예: `MB`) — 단위를 입력 안에 넣지 않는다(SYSTEM §7-2). */
+  unitLabel?: string;
 };
 
 export class SettingNotFoundError extends UserFacingError {}
@@ -385,4 +387,24 @@ export async function getSimpleSettingValues<const Defs extends readonly Setting
   );
   const byKey = new Map(rows.map((row) => [row.key, row.value]));
   return defs.map((def) => (byKey.has(def.key) ? parseStoredSimpleValue(def, byKey.get(def.key)) : def.default)) as SimpleSettingValues<Defs>;
+}
+
+// 05-03(B1 Round 2): 이력형 값 + 그 값을 낸 이력 행의 id · 적용일 — 지출결의 세금 스냅숏이 세율과 함께 값으로 복사한다.
+// asOf 계약은 getSettingValue와 같다(생략 = 서울 오늘, 넘길 때는 seoulDateToUtcDate의 UTC 자정). 행이 없으면 기본값 + null.
+export async function getSettingEntry<T>(
+  def: SettingDef<T>,
+  opts?: { asOf?: Date },
+  deps?: Partial<Pick<RegistryDeps, "findEffectiveValue" | "now">>,
+): Promise<{ value: T; historizedId: string | null; effectiveFrom: string | null }> {
+  if (def.kind !== "historized") {
+    throw new SettingKindMismatchError(`'${def.key}'는 비이력형 키입니다 — 이력 행 읽기는 이력형 키만 받습니다.`);
+  }
+  const findEffectiveValue = deps?.findEffectiveValue ?? defaultFindEffectiveValue;
+  const asOf = opts?.asOf ? dateOnly(opts.asOf) : seoulToday(deps?.now);
+  const row = await findEffectiveValue(SYSTEM_VIEWER, def.key, asOf);
+  if (!row) {
+    if (def.default !== undefined) return { value: def.default, historizedId: null, effectiveFrom: null };
+    throw new SettingNotFoundError(`설정 키 '${def.key}'에 유효한 값이 없습니다.`);
+  }
+  return { value: def.schema.parse(row.value), historizedId: row.id, effectiveFrom: row.effectiveFrom };
 }

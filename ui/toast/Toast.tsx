@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import styles from "./Toast.module.css";
 
 // SYSTEM.md §7-6 토스트. 화면 이동이 따르는 행동의 결과에만 쓴다(표 저장 결과는
@@ -24,6 +24,21 @@ export type ToastProps = {
 
 const AUTO_DISMISS_MS = 4000;
 
+// 웨이브 11 D3 — 폰 화면 아래에 고정된 행동 줄은 이 속성을 단다. 토스트는 그 줄 위에 뜬다(줄의 버튼을 가리지 않는다).
+// 줄 높이는 막힘 줄 · 충돌 줄로 바뀌므로 실측한다. PC에서는 그 줄이 fixed가 아니라 올리지 않는다.
+const FIXED_BAR_ATTR = "data-fixed-bar";
+
+function fixedBarTop(): number | null {
+  let top: number | null = null;
+  for (const bar of document.querySelectorAll<HTMLElement>(`[${FIXED_BAR_ATTR}]`)) {
+    if (getComputedStyle(bar).position !== "fixed") continue;
+    const rect = bar.getBoundingClientRect();
+    if (rect.height === 0) continue;
+    top = top === null ? rect.top : Math.min(top, rect.top);
+  }
+  return top;
+}
+
 export function Toast({ message, tone = "default", actionLabel, onAction, onDismiss }: ToastProps) {
   // WR-05: onDismiss를 의존성에 두면 안 된다. 호출부는 거의 항상 인라인 클로저를
   // 넘기고(onDismiss={() => setToast(null)}) 그 정체성은 렌더마다 바뀐다 — 4초보다
@@ -40,8 +55,30 @@ export function Toast({ message, tone = "default", actionLabel, onAction, onDism
     return () => clearTimeout(timer);
   }, [tone]);
 
+  // 고정 행동 줄 위로 — 처음 그리기 전에 한 번, 화면 내용 · 창 크기가 바뀌면 다시(값이 같으면 쓰지 않는다).
+  const toastRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const toast = toastRef.current;
+    if (!toast) return;
+    const place = () => {
+      const top = fixedBarTop();
+      const lift = top === null ? "" : `${document.documentElement.clientHeight - top}px`;
+      if (toast.style.getPropertyValue("--toast-lift") === lift) return;
+      if (lift) toast.style.setProperty("--toast-lift", lift);
+      else toast.style.removeProperty("--toast-lift");
+    };
+    place();
+    const observer = new MutationObserver(place);
+    observer.observe(document.body, { childList: true, subtree: true });
+    window.addEventListener("resize", place);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", place);
+    };
+  }, []);
+
   return (
-    <div className={styles.toast} role={tone === "error" ? "alert" : "status"} aria-live={tone === "error" ? "assertive" : "polite"}>
+    <div ref={toastRef} className={styles.toast} role={tone === "error" ? "alert" : "status"} aria-live={tone === "error" ? "assertive" : "polite"}>
       <span>{message}</span>
       {actionLabel && onAction ? (
         <button type="button" onClick={onAction} className={styles.action}>

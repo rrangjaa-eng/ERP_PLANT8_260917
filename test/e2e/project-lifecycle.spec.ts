@@ -443,7 +443,8 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
     await expect(revert.getByText(/고객 승인 전/)).toHaveCount(0);
   });
 
-  test("(c) 정산 프로젝트는 대표만 「상태 바꾸기」 → 바로 「완료로 바꾸기」, 팀장·담당 PM에게는 없다 (D-79)", async ({ page }) => {
+  // 05-11(D-98): 정산 → 완료는 정산 결재 승인으로만 — 대표에게도 「상태 바꾸기」가 없다(완료 흐름은 settlement-approval.spec.ts).
+  test("(c) 정산 프로젝트는 누구에게도(팀장 · 담당 PM · 대표) 「상태 바꾸기」가 없다", async ({ page }) => {
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
     const lead = await makeAccount("role-team-lead", team.id);
@@ -457,7 +458,7 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
       approved: true,
     });
 
-    for (const account of [lead, pm]) {
+    for (const account of [lead, pm, ceo]) {
       await login(page, account);
       await page.goto(`/projects/${project.id}`);
       await expect(page.getByRole("heading", { name: project.name })).toBeVisible();
@@ -466,21 +467,17 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
       await logout(page);
     }
 
-    await login(page, ceo);
-    await page.goto(`/projects/${project.id}`);
-    await page.getByRole("button", { name: "상태 바꾸기" }).click();
-    await expect(page.getByRole("dialog", { name: "상태 바꾸기" })).toHaveCount(0);
-    const complete = page.getByRole("dialog", { name: "완료로 바꾸기" });
-    await expect(complete.getByText(`${project.number} ${project.name}`, { exact: true })).toBeVisible();
-    await expect(complete.getByText("견적 줄 잠김 · 새 지출결의 받지 않음 · 되돌리기 없음", { exact: true })).toBeVisible();
-    await complete.getByRole("button", { name: /^완료로 바꾸기/ }).click();
-    await expect(page.getByText(`완료로 바꾸기 · ${project.number}`, { exact: true })).toBeVisible();
-    await expect(headerTag(page, "완료")).toBeVisible();
-    await expect(page.getByRole("button", { name: "상태 바꾸기" })).toHaveCount(0);
-
-    // (d) 완료 뒤 담당 PM의 견적 줄 저장은 04-06 규칙으로 거부된다(셀 단위 잠금 렌더는 04-30 —
-    // 지금 화면은 편집 칸을 내주지 않으므로 서버 쪽 저장을 직접 부른다).
-    const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+    // (d) 완료 프로젝트의 담당 PM 견적 줄 저장은 04-06 규칙으로 거부된다(셀 단위 잠금 렌더는 04-30 —
+    // 지금 화면은 편집 칸을 내주지 않으므로 서버 쪽 저장을 직접 부른다). 05-11: 완료는 정산 결재로만이라 완료 상태로 바로 만든다.
+    const completed = await makeProject({
+      teamId: team.id,
+      pmUserId: pm.userId,
+      status: "completed",
+      startDate: addDays(TODAY, -10),
+      endDate: addDays(TODAY, -3),
+      approved: true,
+    });
+    const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, completed.id);
     const [subcategory] = await db.select().from(codeItems).where(and(eq(codeItems.tableKey, "quote_subcategory"), eq(codeItems.active, true), isNull(codeItems.archivedAt))).orderBy(asc(codeItems.sortOrder), asc(codeItems.value)).limit(1);
     if (!revision || !subcategory) throw new Error("차수·소분류 준비 실패");
     await expect(

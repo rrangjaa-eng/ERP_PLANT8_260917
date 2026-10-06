@@ -2,7 +2,7 @@ import { and, eq, getTableColumns, inArray, isNotNull, isNull, ne } from "drizzl
 import { sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db } from "@/db/client";
-import { quoteLines } from "@/db/schema";
+import { quoteLines, quoteRevisions } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 import type { DbOrTx } from "@/repositories/document-counters";
 
@@ -55,6 +55,32 @@ export async function findQuoteLinesByIds(
     .select()
     .from(quoteLines)
     .where(and(inArray(quoteLines.id, ids), eq(quoteLines.revisionId, scope.revisionId)));
+}
+
+// D-66 계보 재료 — 프로젝트들의 모든 차수의 보관 안 된 줄(프로젝트 · id · 차수 순번 · 복사 원본)을 한 쿼리로. 제출 tx는 tx로 부른다.
+export async function listLineageLinesByProjects(
+  viewer: Viewer,
+  projectIds: string[],
+  tx: DbOrTx = db,
+): Promise<{ projectId: string; id: string; revisionSeq: number; copiedFromLineId: string | null }[]> {
+  void viewer;
+  if (projectIds.length === 0) return [];
+  return tx
+    .select({ projectId: quoteRevisions.projectId, id: quoteLines.id, revisionSeq: quoteRevisions.seq, copiedFromLineId: quoteLines.copiedFromLineId })
+    .from(quoteLines)
+    .innerJoin(quoteRevisions, eq(quoteRevisions.id, quoteLines.revisionId))
+    .where(and(inArray(quoteRevisions.projectId, projectIds), isNull(quoteLines.archivedAt)));
+}
+
+// 05 /review A7 — 여러 차수의 보관 안 된 줄을 한 쿼리로(listQuoteLinesByRevision과 같은 순서).
+export async function listQuoteLinesByRevisions(viewer: Viewer, revisionIds: string[]): Promise<QuoteLineRow[]> {
+  void viewer;
+  if (revisionIds.length === 0) return [];
+  return db
+    .select()
+    .from(quoteLines)
+    .where(and(inArray(quoteLines.revisionId, revisionIds), isNull(quoteLines.archivedAt)))
+    .orderBy(quoteLines.sortOrder, quoteLines.id);
 }
 
 export async function findQuoteLineById(viewer: Viewer, id: string, tx: DbOrTx = db): Promise<QuoteLineRow | null> {

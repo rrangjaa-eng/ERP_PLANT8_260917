@@ -200,11 +200,19 @@
 
   /* 사용자 결정 2026-10-01 — 막힘 이유 · 다음 한 수는 버튼 윗줄 전체 폭. 같은 줄에 두면 이유 글자가 남는 폭을
      먼저 차지해 아래 1차 : 2차 = 2 : 1이 깨진다(DOM 실측 1.02~1.68). */
+  /* 웨이브 11 D2 — 막힘 줄이 한 번 선 시트는 이유가 사라져 묶음이 비어도 그 높이(보조 글자 한 줄)를 비워 둔다. 사유 첫 글자에
+     아래에 붙은 시트 · 사유 칸이 움직이지 않는다(실측 29px 튐). */
   .blocker {
     display: flex;
     flex: 1 0 100%;
     align-items: center;
     gap: var(--s-3);
+    min-height: calc(var(--text-aux) * var(--lh-body));
+  }
+
+  /* UI-SPEC :313 — 폰에서는 kbd를 그리지 않는다(웨이브 11 D1, PickDialog 웨이브 9 D4와 같은 규칙). */
+  .actions kbd {
+    display: none;
   }
 
   .nextStep {

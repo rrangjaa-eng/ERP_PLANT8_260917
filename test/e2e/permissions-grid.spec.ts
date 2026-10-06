@@ -389,6 +389,26 @@ test.describe("권한표 격자 (ADMN-01, D-40, 성공 기준 2)", () => {
     }
   });
 
+  // PR #162 전체 CI 샤드 1: 다른 스펙이 남긴 계급까지 40개쯤이면 열이 체크박스(24) 아래로 좁아져 700에서 1px 넘쳤다 — 체크박스가 열 안으로 줄어든다.
+  test("계급이 25개 더 있어도 700에서 체크박스가 열을 넘지 않아 가로 스크롤이 없다", async ({ page }) => {
+    const prefix = `role-e2e-crowd-${randomUUID()}`;
+    const ids = Array.from({ length: 25 }, (_, i) => `${prefix}-${i}`);
+    for (const [i, id] of ids.entries()) {
+      await insertRole(SYSTEM_VIEWER, { id, name: `E2E 빽빽 ${prefix.slice(-6)}-${i}`, sortOrder: 400 + i });
+    }
+    try {
+      await loginAdmin(page);
+      await page.setViewportSize({ width: 700, height: 900 });
+      await page.goto("/admin/permissions");
+      await expect(page.getByRole("columnheader", { name: "시스템 관리자", exact: true })).toBeVisible();
+      const wrap = page.locator("table").first().locator("xpath=..");
+      const { scrollWidth, clientWidth } = await wrap.evaluate((el) => ({ scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }));
+      expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
+    } finally {
+      for (const id of ids) await setRoleArchived(SYSTEM_VIEWER, id, true);
+    }
+  });
+
   test("격자 바깥 면은 §7-3 표 면과 같은 테두리·radius·배경이다 (§4-1)", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await loginAdmin(page);

@@ -21,6 +21,7 @@ export const STATUS_KIND = {
   진행: "accent",
   현재: "accent",
   "내 결재": "accent",
+  "지출결의 중": "accent",
   // success — 승인 · 연결 · 저장됨 · 완료 (+ 확정 · 적용 중: 공휴일·값 이력)
   승인: "success",
   연결: "success",
@@ -28,6 +29,7 @@ export const STATUS_KIND = {
   완료: "success",
   확정: "success",
   "적용 중": "success",
+  "본인 승인": "success",
   // muted — 대기 · 미착수 · 임시 · 미수주 · 취소 · 회수 · 첫 로그인 전 · 임시 비밀번호 사용 중
   //        (+ 지금 호출부: 수주중 · 보관됨 · 숨김 · 비활성 · 후보 · 예정 · 확인 불가 · 미설정)
   대기: "muted",
@@ -36,8 +38,10 @@ export const STATUS_KIND = {
   미수주: "muted",
   취소: "muted",
   회수: "muted",
+  무효: "muted",
   "첫 로그인 전": "muted",
   "임시 비밀번호 사용 중": "muted",
+  "작성 중": "muted",
   수주중: "muted",
   보관됨: "muted",
   숨김: "muted",

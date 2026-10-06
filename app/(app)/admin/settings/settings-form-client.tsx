@@ -34,6 +34,8 @@ export type SettingsFieldViewModel = {
   key: string;
   label: string;
   hint?: string;
+  // 05-04(UI-SPEC S13): number 칸 값 옆 정적 단위 글자(`MB`) — 입력 밖에 둔다(SYSTEM §7-2).
+  unitLabel?: string;
   field:
     | { kind: "simple"; descriptor: SettingsFieldDescriptorView; value: unknown }
     | { kind: "historized"; descriptor: SettingsFieldDescriptorView; entries: HistoryEntry[] };
@@ -70,6 +72,7 @@ function SimpleFieldEditor({
   fieldKey,
   label,
   hint,
+  unitLabel,
   descriptor,
   initialValue,
   options,
@@ -79,6 +82,7 @@ function SimpleFieldEditor({
   fieldKey: string;
   label: string;
   hint?: string;
+  unitLabel?: string;
   descriptor: SettingsFieldDescriptorView;
   initialValue: unknown;
   options?: { value: string; label: string }[];
@@ -100,6 +104,7 @@ function SimpleFieldEditor({
   });
   const error = errorMessageOf(result);
   const hintId = `setting-${fieldKey}-hint`;
+  const unitId = `setting-${fieldKey}-unit`;
   const errorId = `setting-${fieldKey}-error`;
   const fieldDescribedBy = describedBy(error ? errorId : undefined, hint ? hintId : undefined);
 
@@ -206,20 +211,33 @@ function SimpleFieldEditor({
   }
 
   // number(numberKind 없음) | string — 텍스트 입력, blur에서 즉시 저장
-  // (§7-2 자동 생성 설정 화면 필드 렌더 규칙).
+  // (§7-2 자동 생성 설정 화면 필드 렌더 규칙). 단위가 있으면 입력 밖 오른쪽에 정적 글자로(§7-2 `10` `MB`).
+  const input = (
+    <TextField
+      id={`setting-${fieldKey}`}
+      label={label}
+      type={descriptor.kind === "number" ? "number" : "text"}
+      numeric={descriptor.kind === "number"}
+      // 단위 글자도 설명에 잇는다 — 힌트 id 뒤에 단위 id를 이어 스크린리더가 값만 읽지 않게(05 /review B6).
+      hintId={[hint ? hintId : null, unitLabel ? unitId : null].filter(Boolean).join(" ") || undefined}
+      value={text}
+      onChange={(event) => setText(event.target.value)}
+      onBlur={() => execute({ key: fieldKey, value: text })}
+      error={error ?? undefined}
+    />
+  );
   return (
     <div className={styles.field}>
-      <TextField
-        id={`setting-${fieldKey}`}
-        label={label}
-        type={descriptor.kind === "number" ? "number" : "text"}
-        numeric={descriptor.kind === "number"}
-        hintId={hint ? hintId : undefined}
-        value={text}
-        onChange={(event) => setText(event.target.value)}
-        onBlur={() => execute({ key: fieldKey, value: text })}
-        error={error ?? undefined}
-      />
+      {unitLabel ? (
+        <div className={styles.withUnit}>
+          {input}
+          <span id={unitId} className={styles.unit}>
+            {unitLabel}
+          </span>
+        </div>
+      ) : (
+        input
+      )}
       {hint ? <p id={hintId} className={styles.hint}>{hint}</p> : null}
     </div>
   );
@@ -500,6 +518,7 @@ function renderFields(
           fieldKey={field.key}
           label={field.label}
           hint={field.hint}
+          unitLabel={field.unitLabel}
           descriptor={field.field.descriptor}
           initialValue={field.field.value}
           options={field.options}
@@ -655,7 +674,12 @@ export function SettingsFormClient({ sections, viewerId }: { sections: SettingsS
   // 서버 HTML과 수화 첫 렌더는 저장소를 모르므로 수화 뒤에만 보인다(React #418). 이번에 고친 단계는 줄에서 뺀다.
   const hydrated = useSyncExternalStore(subscribeNothing, () => true, () => false);
   const restorable = hydrated ? withoutKeys(stash, drafts) : {};
-  const restorableSteps = Object.values(restorable).map((entry) => entry.stepIndex);
+
+  // 복원 줄은 보관본의 단계가 있는 섹션(결재선 종류)에만 뜨고, 그 줄의 「복원」 · 「버림」도 그 섹션 단계만 다룬다(WINDOWS #42).
+  function restorableIn(section: SettingsSection): Record<string, StepDraft> {
+    const keys = new Set(section.fields.flatMap((field) => (field.step ? [`${field.step.kind}-${field.step.stepIndex}`] : [])));
+    return Object.fromEntries(Object.entries(restorable).filter(([key]) => keys.has(key)));
+  }
 
   const [restored, setRestored] = useState<{ drafts: Record<string, StepValues>; generation: Record<string, number> }>({
     drafts: {},
@@ -670,7 +694,7 @@ export function SettingsFormClient({ sections, viewerId }: { sections: SettingsS
       drafts: { ...current.drafts, ...Object.fromEntries(keys.map((key) => [key, entries[key]!.draft])) },
       generation: { ...current.generation, ...Object.fromEntries(keys.map((key) => [key, (current.generation[key] ?? 0) + 1])) },
     }));
-    setStored({});
+    setStored((current) => withoutKeys(current, entries));
     // 누른 줄이 사라진다 — 초점을 되살린 첫 단계의 첫 칸으로 옮긴다.
     const first = keys.sort((a, b) => entries[a]!.stepIndex - entries[b]!.stepIndex)[0];
     requestAnimationFrame(() => {
@@ -679,9 +703,9 @@ export function SettingsFormClient({ sections, viewerId }: { sections: SettingsS
   }
 
   // 사용자 결정 2026-09-26(C-1)과 같은 규칙 — 「버림」은 확인 없이 지우고 알림의 「되돌리기」로 되살린다.
-  function discard() {
-    setDiscarded(restorable);
-    setStored({});
+  function discard(entries: Record<string, StepDraft>) {
+    setDiscarded(entries);
+    setStored((current) => withoutKeys(current, entries));
   }
 
   // 되돌리기는 그 사이 고친 단계 · 다른 저장이 바꾼 단계를 빼고, 지금 선택지로 다시 걸러 되살린다.
@@ -706,24 +730,28 @@ export function SettingsFormClient({ sections, viewerId }: { sections: SettingsS
   return (
     <div>
       <ExportButton />
-      {sections.map((section) => (
-        <DetailScreen.Section key={section.namespace} title={section.namespace}>
-          {restorableSteps.length > 0 && section.fields.some((field) => field.step) ? (
-            <p className={styles.restoreBanner}>
-              <span>{`저장 안 한 편집 ${stepList(restorableSteps)}`}</span>
-              <span className={styles.restoreActions}>
-                <button type="button" className={styles.restoreAction} onClick={() => restore(restorable)}>
-                  복원
-                </button>
-                <button type="button" className={styles.restoreAction} onClick={discard}>
-                  버림
-                </button>
-              </span>
-            </p>
-          ) : null}
-          {renderFields(section.fields, onDraftChange, restored)}
-        </DetailScreen.Section>
-      ))}
+      {sections.map((section) => {
+        const sectionRestorable = restorableIn(section);
+        const restorableSteps = Object.values(sectionRestorable).map((entry) => entry.stepIndex);
+        return (
+          <DetailScreen.Section key={section.namespace} title={section.namespace}>
+            {restorableSteps.length > 0 ? (
+              <p className={styles.restoreBanner}>
+                <span>{`저장 안 한 편집 ${stepList(restorableSteps)}`}</span>
+                <span className={styles.restoreActions}>
+                  <button type="button" className={styles.restoreAction} onClick={() => restore(sectionRestorable)}>
+                    복원
+                  </button>
+                  <button type="button" className={styles.restoreAction} onClick={() => discard(sectionRestorable)}>
+                    버림
+                  </button>
+                </span>
+              </p>
+            ) : null}
+            {renderFields(section.fields, onDraftChange, restored)}
+          </DetailScreen.Section>
+        );
+      })}
       <ConfirmDialog
         open={leaveHref !== null}
         onClose={() => setLeaveHref(null)}

@@ -34,9 +34,11 @@ export type DocumentActionsProps = {
     initial: { kind: string; startDate: string; endDate: string; half: string | null; note: string | null };
   } | null;
   resubmitRoute: ReactNode;
+  /** 05-11(E3): 종류가 준 승인 막힘 이유(예: 정산 결재 `진행으로 바뀜 · 반려`) — 있으면 `승인`이 aria-disabled + 이유, `반려`는 산다. */
+  approveBlockedReason?: string | null;
 };
 
-export function DocumentActions({ instanceId, version, actions, decision, rejectMessages, resubmit, resubmitRoute }: DocumentActionsProps) {
+export function DocumentActions({ instanceId, version, actions, decision, rejectMessages, resubmit, resubmitRoute, approveBlockedReason = null }: DocumentActionsProps) {
   const router = useRouter();
   const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null);
   const [conflict, setConflict] = useState<string | null>(null);
@@ -64,7 +66,7 @@ export function DocumentActions({ instanceId, version, actions, decision, reject
   const canApprove = actions.includes("approve") && instanceId !== null && version !== null;
 
   function approve() {
-    if (!canApprove || submittingRef.current || instanceId === null || version === null) return;
+    if (!canApprove || approveBlockedReason || submittingRef.current || instanceId === null || version === null) return;
     submittingRef.current = true;
     setPending(true);
     setConflict(null);
@@ -121,13 +123,21 @@ export function DocumentActions({ instanceId, version, actions, decision, reject
       ) : null}
       {canApprove || secondary ? (
         <>
-          <div ref={barRef} className={styles.bar}>
+          <div ref={barRef} className={styles.bar} data-fixed-bar="">
             {conflict ? <ConflictLine message={conflict} /> : null}
             <div className={styles.buttons}>
               {phone ? secondaryButton : null}
               {canApprove ? (
                 <span className={styles.primaryWrap}>
-                  <Button variant="primary" shortcut="Ctrl+Enter" pending={pending} onClick={approve}>
+                  <Button
+                    variant="primary"
+                    shortcut="Ctrl+Enter"
+                    pending={pending}
+                    disabled={approveBlockedReason !== null}
+                    disabledReason={approveBlockedReason ?? undefined}
+                    reasonTone="block"
+                    onClick={approve}
+                  >
                     승인
                   </Button>
                 </span>

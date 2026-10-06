@@ -144,7 +144,7 @@ document-counters.ts`는 읽기와 upsert만 두고 증가 함수를 두지 않�
 그 뒤 새로 매긴 번호에만 반영되고 이미 매긴 번호는 그대로다(과거 시점
 조회가 필요 없어 이력형이 아니다). 서식 조립은 `domain/document-numbering`의
 순수 함수 `documentNumberFormat`이 맡고, `formatDocumentNumber`가 설정
-조회로 그 함수를 감싼다.
+조회로 그 함수를 감싼다. 지출결의 카운터 `expense`(period = 프로젝트 번호 — 연도 규약 예외)는 `docs/EXPENSES.md`.
 
 ## 4-7. 목록·검색 인덱스(Phase 4, 04-05)
 
@@ -191,7 +191,7 @@ UserFacing "다른 저장이 끝나지 않음 · 잠시 뒤 다시 저장"로 �
 
 (6) 규약 준수의 통합 증명은 `test/integration/tx-safety.test.ts`(풀 2 · 동시
 저장 셋 — 04-11·04-20·04-22·04-12가 같은 파일에 케이스를 더한다). (2)(4)(5)의
-함수는 같은 머지 묶음 ②(04-50 → 04-23) 안에서 만들어진다.
+함수는 같은 머지 묶음 ②(04-50 → 04-23) 안에서 만들어진다. 정산 결재 최종 승인(Phase 5)은 잠금 순서가 결재 인스턴스 → 프로젝트 행인 예외이고 교착이 없는 이유는 `docs/EXPENSES.md` 「잠금 순서 예외」.
 
 ## 4-9. 결재 모듈 계약(Phase 04.1 → Phase 5)
 
@@ -210,6 +210,7 @@ routeSettings?, canResubmit?, loadDetails?, detailDto?, buildDetailRows?})`(`dom
 (5) 결재함(`listMyInbox`)은 `scopeFor()`를 쓰지 않고 후보·처리자 기준, 노출은 요청 단위 메모(`createVisibleMemo`).
 (6) 차수는 승인 0건으로 끝나지 않는다(대표 폴백 `FALLBACK_ROLE_ID`) · 한 차수 한 사람 한 승인.
 (7) 「오늘」은 `seoulToday()`(`lib/dates.ts`).
+(8) 지출결의 · 증빙 · 정산 결재 종류의 계약(문서 모델 · 판정 함수 · 세금 호출자 · 증빙 경로 · 게이트 순서 · 「내 차례」 공급 · 엔진 선택 필드 E1~E7)은 `docs/EXPENSES.md`.
 
 ## 4-10. 확인증 수집 경계(Phase 04.3)
 

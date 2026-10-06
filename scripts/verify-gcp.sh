@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # .github/workflows/verify.yml이 실행한다. 입력은 환경 변수로만 받는다(T-1-32).
-#   INPUT_CHECK=policies|notify-tick  PROJECT  REGION
+#   INPUT_CHECK=policies|notify-tick|evidence-bucket  PROJECT  REGION
 # 각 명령의 실패를 삼키지 않는다 — 권한이 없으면 PERMISSION_DENIED가 그대로 로그에
 # 남고, 마지막에 실패 수로 종료한다.
 set -u
@@ -14,6 +14,12 @@ nonempty() {
   out="$("$@")" || return 1
   [ -n "$out" ] || { echo "(결과 없음)"; return 1; }
   printf '%s\n' "$out"
+}
+
+# JSON 문자열에 jq -e 조건을 건다(참이 아니거나 입력이 비면 실패).
+jq_true() {
+  local json="$1"; shift
+  printf '%s' "$json" | jq -e "$@" >/dev/null
 }
 
 run_check() {
@@ -65,6 +71,33 @@ case "$INPUT_CHECK" in
       "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"$(svc_name staging)\" AND jsonPayload.event=~\"^(notify|holiday)[.]\"" \
       --project="$PROJECT" --freshness=7d --limit=40 \
       --format='table(timestamp,severity,jsonPayload.event,jsonPayload.ok,jsonPayload.businessDay,jsonPayload.sent,jsonPayload.skipped,jsonPayload.remaining,jsonPayload.emailSent,jsonPayload.emailFailed,jsonPayload.emailUnknown,jsonPayload.reason,jsonPayload.message)'
+    ;;
+  evidence-bucket)
+    # (d) 증빙 버킷(05-12, docs/EVIDENCE-STORAGE.md) — 읽기만(gha-deployer는 이 버킷에 storage.admin, 서비스 조회는 run.admin).
+    # 런타임 SA 자기 signBlob 바인딩은 SA IAM 정책이라 배포 SA가 읽을 수 없다 — 스파이크(scripts/gcs-sign-smoke.ts)의 서명 PUT이 증명한다.
+    # 첫 배포 전에는 CORS · 런타임 objectUser가 아직 없어 실패가 정상이다(배포의 ensure_evidence_bucket · ensure_evidence_cors가 맞춘다).
+    staging_url="$(gcloud run services describe "$(svc_name staging)" --region="${REGION:-$REGION_DEFAULT}" --project="$PROJECT" --format='value(status.url)')"
+    for env in staging prod; do
+      bucket="gs://$(evidence_bucket "$env" "$PROJECT")"
+      runtime="serviceAccount:$(runtime_sa "$env")@${PROJECT}.iam.gserviceaccount.com"
+      desc="$(gcloud storage buckets describe "$bucket" --project="$PROJECT" --format=json)"
+      policy="$(gcloud storage buckets get-iam-policy "$bucket" --project="$PROJECT" --format=json)"
+      run_check "${bucket} (원문)" nonempty printf '%s' "$desc"
+      run_check "${bucket} 균일 접근 · 공개 접근 방지 enforced · asia-northeast3" jq_true "$desc" \
+        '.uniform_bucket_level_access == true and .public_access_prevention == "enforced" and ((.location // "") | ascii_downcase) == "asia-northeast3"'
+      run_check "${bucket} 수명 주기 incoming/ 7일 삭제 · evidence/를 지우는 규칙 없음" jq_true "$desc" \
+        '[.lifecycle_config.rule[]? | select(.action.type == "Delete")] as $d
+         | ($d | any(.condition.age == 7 and .condition.matchesPrefix == ["incoming/"]))
+           and ($d | all((.condition.matchesPrefix // []) as $p | ($p | length) > 0 and ($p | all(startswith("incoming/")))))'
+      run_check "${bucket} 런타임 roles/storage.objectUser" jq_true "$policy" --arg m "$runtime" \
+        '[.bindings[]? | select(.role == "roles/storage.objectUser") | .members[]] | index($m) != null'
+      run_check "${bucket} 배포 SA roles/storage.admin" jq_true "$policy" --arg m "serviceAccount:gha-deployer@${PROJECT}.iam.gserviceaccount.com" \
+        '[.bindings[]? | select(.role == "roles/storage.admin") | .members[]] | index($m) != null'
+      if [ "$env" = staging ]; then
+        run_check "${bucket} cors 원점 = 스테이징 status.url" jq_true "$desc" --arg u "$staging_url" \
+          '[.cors_config[]? | .origin] == [[$u]]'
+      fi
+    done
     ;;
   *)
     echo "::error::알 수 없는 INPUT_CHECK: ${INPUT_CHECK}"

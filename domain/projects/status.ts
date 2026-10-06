@@ -18,6 +18,7 @@ import { loadProjectForGate } from "@/domain/projects/auto-transition";
 import { listCodeItems as repoListCodeItems } from "@/repositories/code-tables";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { findLatestActionFor as defaultFindLatestActionFor } from "@/repositories/action-log";
+import type { SettlementApprovalAuthority } from "@/domain/settlements";
 
 // 04-20(PROJ-04 · D-44·D-46·D-75·D-79·D-82) — 사람의 상태 전환 넷의 서버 쪽.
 // 상태 이름 비교는 전이표(status-transitions.ts)와 게이트 규칙(rules/register.ts)
@@ -212,7 +213,8 @@ export async function statusDestinations(
   const facts = deps?.facts ?? (await loadActorFacts(viewer, deps));
   const destinations: StatusDestination[] = [];
   for (const transition of ALLOWED_TRANSITIONS) {
-    if (transition.from !== project.status) continue;
+    // 05-11: 결재로만 가는 전환(정산 → 완료)은 사람이 고르는 갈 곳이 아니다.
+    if (transition.from !== project.status || transition.via === "approval") continue;
     const decision = await evaluateTransition(project, transition.to, facts);
     if (decision.allowed) destinations.push({ to: transition.to, blockedReason: null });
     else if (decision.rule === START_DATE_RULE) destinations.push({ to: transition.to, blockedReason: decision.reason });
@@ -264,17 +266,40 @@ export type ChangeProjectStatusDeps = StatusChangeFactDeps & {
   // 테스트 전용 주입 지점 — 잠금 획득 직후 호출(경합 재현, sleep 없이).
   afterLock: () => Promise<void>;
   recordAction: typeof defaultRecordAction;
+  // 05-11(F1): 결재 경로(trigger approval)의 권한 — 정산 모듈만 만드는 브랜드 값(최종 승인 훅이 tx 안 마지막 단계 기록을 확인한 뒤).
+  approvalAuthority: SettlementApprovalAuthority;
 };
+
+// 05-11(F1): 결재 경로의 권한은 결재 인스턴스의 마지막 단계 담당이라는 사실 하나다 — viewer의 메뉴 · 팀 범위 · 행 범위 대신
+// 결속된 approvalAuthority가 경계다. 두 evaluateTransition에 넘길 사실 사본(메뉴 complete 참 · 전사 · 보관 포함).
+function approvalPathFacts(facts: StatusChangeFacts): StatusChangeFacts {
+  return {
+    ...facts,
+    rowScope: { ...facts.rowScope, includeArchived: true },
+    menus: { ...facts.menus, complete: true },
+    teamScope: { workScope: "company", teamId: null },
+  };
+}
 
 export async function changeProjectStatus(
   viewer: Viewer,
   projectId: string,
-  input: { from: ProjectStatus; to: ProjectStatus },
+  input: { from: ProjectStatus; to: ProjectStatus; trigger?: "manual" | "approval" },
   deps?: Partial<ChangeProjectStatusDeps>,
 ): Promise<void> {
   const ids = { projectId, from: input.from, to: input.to };
-  const facts = deps?.facts ?? (await loadStatusChangeFacts(viewer, deps));
-  if (facts.rowScope.rows === "none") {
+  const trigger = input.trigger ?? "manual";
+  // 05-11(D-98): 정산 → 완료는 정산 결재 승인으로만 — 권한 판정 전에 막는다(화면에는 이 경로가 없다 · 직접 호출 방어).
+  const transition = ALLOWED_TRANSITIONS.find((entry) => entry.from === input.from && entry.to === input.to);
+  if (transition?.via === "approval" && trigger !== "approval") {
+    denyWrite(viewer, "project.approval-only", ids, new GateBlockedError("정산 결재로만 완료 · 정산 결재 올리기"));
+  }
+  if (trigger === "approval" && deps?.approvalAuthority?.projectId !== projectId) {
+    denyWrite(viewer, "project.approval-authority", ids, new GateBlockedError("지금 담당이 아님 · 새로 고침"));
+  }
+  const loaded = deps?.facts ?? (await loadStatusChangeFacts(viewer, deps));
+  const facts = trigger === "approval" ? approvalPathFacts(loaded) : loaded;
+  if (facts.rowScope.rows === "none" && trigger !== "approval") {
     denyWrite(viewer, "projects.view", ids, new ProjectNotFoundError("존재하지 않는 프로젝트"));
   }
 
@@ -322,7 +347,7 @@ export async function changeProjectStatus(
         actionType: "status_change",
         entity: PROJECT_ENTITY,
         entityId: projectId,
-        detail: { from: input.from, to: input.to, trigger: "manual" },
+        detail: { from: input.from, to: input.to, trigger },
       },
       { tx },
     );

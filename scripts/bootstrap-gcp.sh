@@ -17,6 +17,7 @@ WIF_POOL=github
 WIF_PROVIDER=erp-repo
 DEPLOYER_SA=gha-deployer
 CERT_BUCKET_SUFFIX=cert-signatures   # infra/names.sh cert_bucket과 같은 이름: {프로젝트}-plant8-{환경}-cert-signatures
+EVIDENCE_BUCKET_SUFFIX=evidence     # infra/names.sh evidence_bucket과 같은 이름: {프로젝트}-plant8-{환경}-evidence
 
 PROJECT=""
 GITHUB_REPO=""
@@ -157,6 +158,30 @@ for env in $ENVS; do
   gcloud storage buckets add-iam-policy-binding "$bucket" --project="$PROJECT" \
     --member="serviceAccount:${DEPLOYER_EMAIL}" --role=roles/storage.admin >/dev/null
 done
+
+# (d-3) 증빙 버킷 — 서명 버킷과 같은 자리 · 같은 최소 권한(05-12). 업로드는 incoming/, 완료 통보가 evidence/로 옮긴다 —
+# 수명 주기 규칙은 incoming/ 7일 삭제 하나뿐이라 완료 증빙은 어떤 삭제 규칙에도 걸리지 않는다. 소프트 삭제는 기본값(7일)을
+# 그대로 두고 버전 관리는 켜지 않는다: 증빙은 법정 보관 대상이라 잘못 지운 객체를 되살릴 수 있어야 하고(서명 버킷은 파기
+# 대상 개인정보라 반대), 객체 키가 의도 id · 파일 id라 덮어쓰기가 없다. 런타임 SA의 버킷 objectUser는 배포
+# (ensure_evidence_bucket) 몫이고, 여기서는 런타임 SA가 자기 자신으로 서명(IAM signBlob)할 수 있게만 한다.
+lifecycle="$(mktemp)"
+printf '%s\n' '{"rule":[{"action":{"type":"Delete"},"condition":{"age":7,"matchesPrefix":["incoming/"]}}]}' >"$lifecycle"
+for env in $ENVS; do
+  bucket="gs://${PROJECT}-plant8-${env}-${EVIDENCE_BUCKET_SUFFIX}"
+  if ! gcloud storage buckets describe "$bucket" --project="$PROJECT" >/dev/null 2>&1; then
+    gcloud storage buckets create "$bucket" --project="$PROJECT" --location="$REGION" \
+      --uniform-bucket-level-access --public-access-prevention --lifecycle-file="$lifecycle"
+  else
+    gcloud storage buckets update "$bucket" --project="$PROJECT" \
+      --uniform-bucket-level-access --public-access-prevention --lifecycle-file="$lifecycle"
+  fi
+  gcloud storage buckets add-iam-policy-binding "$bucket" --project="$PROJECT" \
+    --member="serviceAccount:${DEPLOYER_EMAIL}" --role=roles/storage.admin >/dev/null
+  runtime_email="plant8-${env}-runtime@${PROJECT}.iam.gserviceaccount.com"
+  gcloud iam service-accounts add-iam-policy-binding "$runtime_email" --project="$PROJECT" \
+    --member="serviceAccount:${runtime_email}" --role=roles/iam.serviceAccountTokenCreator >/dev/null
+done
+rm -f "$lifecycle"
 
 # (e) WIF 바인딩: gha-deployer는 이 리포에서만 대신 사용할 수 있다(T-1-29)
 gcloud iam service-accounts add-iam-policy-binding "$DEPLOYER_EMAIL" --project="$PROJECT" \

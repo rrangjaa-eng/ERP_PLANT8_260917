@@ -8,7 +8,7 @@
 
 경영관리가 결재 통과 건의 증빙을 확인해 지급 완료하며(실제 이체액 입력 → 공급가 역산), 법인카드·구매 요청·팀 비용까지 모든 나가는 돈이 견적 줄에 한 번만 연결되고, 완료(정산) 전 미결 점검이 선다. 요구사항: EXP-06, EXP-07, EXP-09, EXP-10, EXP-13, EXP-16, EVID-02, EVID-03, EVID-04, PROJ-06 (`.planning/ROADMAP.md` Phase 6 성공 기준 1~5).
 
-Phase 5에서 넘어온 것: PM의 매출 세금계산서 발행 요청(Phase 5 D-99), 정산 단계 지출결의·증빙 마감 점검(Phase 5 D-100 → PROJ-06과 함께). Phase 4에서 넘어온 것: 차수 고객 승인 증빙 첨부(D-56)·리저브 증빙 첨부(D-60).
+Phase 5에서 넘어온 것: PM의 매출 세금계산서 발행 요청(Phase 5 D-99), 정산 단계 지출결의·증빙 마감 점검(Phase 5 D-100 → PROJ-06과 함께), 반려·회수 지출결의 종결(취소) 경로 — 종결 문서는 회차 상한·줄 문 판정에서 제외(Phase 5 U2 이관 — 사용자 결정 2026-09-26, 코디네이터 PR #89 · `.planning/todos/pending/2026-09-26-phase-6-rejected-expense-close-path.md`). Phase 4에서 넘어온 것: 차수 고객 승인 증빙 첨부(D-56)·리저브 증빙 첨부(D-60).
 
 범위 밖: 지급일 자동 계산·결재 마감·공휴일·알림(선결제 14일 독촉, 대리 등록 PM 알림 포함)은 Phase 7. 증빙 업로드 경로 자체(브라우저 축소 + SHA-256 + GCS 서명 URL)는 Phase 5가 만들고 이 페이즈는 한도·중복·선결제 규칙을 얹는다(Phase 5 CONTEXT Claude's Discretion). 손익 계산·effectiveCost는 Phase 9.
 

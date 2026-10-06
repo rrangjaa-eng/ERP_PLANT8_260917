@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db } from "@/db/client";
 import { quoteLines, quoteRevisions } from "@/db/schema";
@@ -49,6 +49,18 @@ export async function findLatestQuoteRevision(viewer: Viewer, projectId: string,
     .orderBy(desc(quoteRevisions.seq))
     .limit(1);
   return row ?? null;
+}
+
+// 05 /review A7 — 여러 프로젝트의 최신(순번 가장 큰) 차수를 한 쿼리로(골라내기 후보마다 따로 읽지 않는다).
+export async function listLatestQuoteRevisionsByProjects(viewer: Viewer, projectIds: string[]): Promise<Map<string, QuoteRevisionRow>> {
+  void viewer;
+  if (projectIds.length === 0) return new Map();
+  const rows = await db
+    .selectDistinctOn([quoteRevisions.projectId])
+    .from(quoteRevisions)
+    .where(inArray(quoteRevisions.projectId, projectIds))
+    .orderBy(quoteRevisions.projectId, desc(quoteRevisions.seq));
+  return new Map(rows.map((row) => [row.projectId, row]));
 }
 
 export async function findQuoteRevisionById(viewer: Viewer, id: string, tx: DbOrTx = db): Promise<QuoteRevisionRow | null> {

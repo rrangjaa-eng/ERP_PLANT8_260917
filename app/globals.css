@@ -87,3 +87,12 @@ select {
   width: 100%;
   max-width: var(--form-max);
 }
+
+/* 05-13 D1 포커스 가림 — 폰 고정 행동 줄(`data-fixed-bar`)이 있는 화면은 Tab 포커스 칸이 줄 · 하단 탭 밑으로 들어가지 않게
+   문서 스크롤 여백 = 줄 높이 + 탭. 값은 ui/shell/FixedBarInset이 줄을 실측해 `--fixed-bar-inset`으로 둔다(이유 줄이 접히면 바뀐다);
+   수화 전 기본 = 탭 44 + 선 + 1차 44 + 이유 두 줄 쪽으로 넉넉히. */
+@media (max-width: 699.98px) {
+  html:has([data-fixed-bar]) {
+    scroll-padding-bottom: var(--fixed-bar-inset, calc(var(--touch-min) * 4 + var(--line-w) + var(--s-4)));
+  }
+}

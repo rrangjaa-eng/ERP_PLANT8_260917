@@ -403,11 +403,14 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
   });
 
   test("금액을 볼 수 없는 직급은 상세 화면이 오류 없이 열리고 금액은 —, 표는 편집할 수 없다(/ship 리뷰)", async ({ page }) => {
-    // role-ceo에 프로젝트 보기·쓰기와 project.value만 주고 quote.amount는 주지 않는다 — PM 역할을 건드리지 않아 다른 테스트와 격리된다.
-    await upsertPermission(SYSTEM_VIEWER, { roleId: "role-ceo", menu: "projects", action: "view", allowed: true });
-    await upsertPermission(SYSTEM_VIEWER, { roleId: "role-ceo", menu: "projects", action: "write", allowed: true });
-    await upsertVisibility(SYSTEM_VIEWER, { roleId: "role-ceo", infoItem: "project.value", visible: true });
-    await upsertVisibility(SYSTEM_VIEWER, { roleId: "role-ceo", infoItem: "quote.amount", visible: false });
+    // 전용 전사 범위 계급에 프로젝트 보기·쓰기와 project.value만 주고 quote.amount는 주지 않는다 — 공유 시드 계급(role-ceo)의
+    // quote.amount를 끄면 같은 샤드 뒤 스펙(settlement-approval 대표의 견적가 합)이 깨진다.
+    const roleId = `role-${randomUUID()}`;
+    await insertRole(SYSTEM_VIEWER, { id: roleId, name: `E2E금액숨김-${randomUUID().slice(0, 8)}`, workScope: "company" });
+    await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "projects", action: "view", allowed: true });
+    await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "projects", action: "write", allowed: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "project.value", visible: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "quote.amount", visible: false });
 
     const client = await insertVendor(SYSTEM_VIEWER, { name: `E2E금액숨김-${Date.now()}`, normalizedName: `e2e금액숨김-${Date.now()}` });
     const { userId: pmUserId } = await createAccount(SYSTEM_VIEWER, { email: `e2e-pm-${randomUUID()}@example.test`, name: "E2E PM", roleId: DEFAULT_ROLE_ID });
@@ -422,7 +425,7 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     ] });
 
     const email = `e2e-ceo-${randomUUID()}@example.test`;
-    const { tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name: "E2E 금액숨김", roleId: "role-ceo" });
+    const { tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name: "E2E 금액숨김", roleId });
     await page.goto("/login");
     await page.getByLabel("이메일").fill(email);
     await page.getByLabel("비밀번호").fill(tempPassword);
@@ -539,9 +542,9 @@ test.describe("견적 줄 표 — Ctrl 전용 단축키·힌트 줄·이중 저�
     const hintRow = page.locator("p", { hasText: "줄 복제" });
     await expect(hintRow).toHaveCount(1);
     await expect(hintRow).toHaveText(
-      "이동 Tab ↑↓←→ · 복사 Ctrl+C · 붙여넣기 Ctrl+V · 취소 Esc · 새 줄 Ctrl+Enter · 줄 이동 Alt+↑↓ · 줄 복제 Ctrl+D",
+      "이동 Tab ↑↓←→ · 범위 복사 Ctrl+C / 붙여넣기 Ctrl+V · 취소 Esc · 새 줄 Ctrl+Enter · 줄 이동 Alt+↑↓ · 줄 복제 Ctrl+D · 지출결의 올리기 Ctrl+E",
     );
-    await expect(hintRow.locator("kbd")).toHaveText(["Tab ↑↓←→", "Ctrl+C", "Ctrl+V", "Esc", "Ctrl+Enter", "Alt+↑↓", "Ctrl+D"]);
+    await expect(hintRow.locator("kbd")).toHaveText(["Tab ↑↓←→", "Ctrl+C / 붙여넣기 Ctrl+V", "Esc", "Ctrl+Enter", "Alt+↑↓", "Ctrl+D", "Ctrl+E"]);
     // 04-19(DR-31) — 페이지 줄이 없으면 합계 행(표) 바로 아래.
     expect(await quoteTable(page).evaluate((table) => table.nextElementSibling?.textContent)).toContain("줄 복제 Ctrl+D");
     await expect(hintRow).not.toContainText("저장");
@@ -981,7 +984,7 @@ test.describe("견적 줄 표 — 30줄 쪽 나눔(04-19 Task 1 · D-91)", () =>
 });
 
 // 04-19 Task 2 — 쪽 경계 키보드(줄 id) · Alt+↑↓ 따라가기 · 2쪽 Delete · Tab · 쪽 안 범위 선택 · Ctrl+A/Ctrl+C 네이티브 복사 · 힌트 줄.
-const HINT_TEXT = "이동 Tab ↑↓←→ · 복사 Ctrl+C · 붙여넣기 Ctrl+V · 취소 Esc · 새 줄 Ctrl+Enter · 줄 이동 Alt+↑↓ · 줄 복제 Ctrl+D";
+const HINT_TEXT = "이동 Tab ↑↓←→ · 범위 복사 Ctrl+C / 붙여넣기 Ctrl+V · 취소 Esc · 새 줄 Ctrl+Enter · 줄 이동 Alt+↑↓ · 줄 복제 Ctrl+D · 지출결의 올리기 Ctrl+E";
 
 function currentPage(page: Page) {
   return pageNav(page).locator('[aria-current="page"]:visible');
@@ -1194,7 +1197,7 @@ test.describe("견적 줄 표 — 쪽 경계 키보드·전체 복사·힌트 �
     const hint = page.locator("p", { has: page.locator("kbd", { hasText: "Ctrl+D" }) });
     await expect(hint).toHaveCount(1);
     await expect(hint).toHaveText(HINT_TEXT);
-    await expect(hint.locator("kbd")).toHaveText(["Tab ↑↓←→", "Ctrl+C", "Ctrl+V", "Esc", "Ctrl+Enter", "Alt+↑↓", "Ctrl+D"]);
+    await expect(hint.locator("kbd")).toHaveText(["Tab ↑↓←→", "Ctrl+C / 붙여넣기 Ctrl+V", "Esc", "Ctrl+Enter", "Alt+↑↓", "Ctrl+D", "Ctrl+E"]);
     expect(await pageNav(page).evaluate((nav) => nav.nextElementSibling?.textContent)).toBe(HINT_TEXT);
     for (const caption of ["발행 줄", "입금 줄"]) {
       const revenue = page.locator("table", { has: page.locator("caption", { hasText: new RegExp(`^${caption}$`) }) });
@@ -1339,7 +1342,7 @@ test.describe("견적 줄 표 — 붙여넣기 · 새 줄 고정 · 합계 행 �
     await expect.poll(() => footerPieces(page)).toEqual([
       { tone: "muted", text: "붙여넣기 45줄" },
       { tone: "warning", text: "외화 1줄 원화로" },
-      { tone: "muted", text: "계산 열 180칸 무시" },
+      { tone: "muted", text: "계산 열 225칸 무시" },
     ]);
 
     await saveAndWait(page);

@@ -38,8 +38,16 @@ describe("document counters (ROADMAP 트레일링 스키마 규약, 실제 Postg
     expect(row).toBeNull();
   });
 
-  it("Phase 4(04-01)가 원자적 증가 함수를, 04-51이 시작값 저장용 행 잠금 함수를 더해 정확히 네 함수를 export한다", () => {
+  it("Phase 4(04-01)가 원자적 증가 함수를, 04-51이 시작값 저장용 행 잠금 함수를, 05가 지출결의 키 묶음 잠금·전체 기간 공유 잠금을 더해 정확히 이 목록만 export한다", () => {
     const exportedNames = Object.keys(documentCountersRepo).sort();
-    expect(exportedNames).toEqual(["allocateNumber", "findDocumentCounter", "lockDocumentCounter", "upsertDocumentCounter"]);
+    expect(exportedNames).toEqual([
+      "ALL_PERIODS",
+      "allocateNumber",
+      "findDocumentCounter",
+      "lockDocumentCounter",
+      "lockDocumentCountersByKey",
+      "shareLockDocumentCounter",
+      "upsertDocumentCounter",
+    ]);
   });
 });

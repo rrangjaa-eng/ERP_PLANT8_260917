@@ -22,6 +22,10 @@ export type NextTurnItem = {
   reason: string;
   amount: number;
   action: NextTurnAction;
+  /** 05-10: 호출부가 정한 항목 이름 — 행동 노드 슬롯(actionSlots)의 열쇠. */
+  key?: string;
+  /** 05-10: 있으면 원화 서식 대신 이 글자를 숫자 칸에 그린다(일수 · `—` · 서버가 서식한 금액). */
+  measureText?: string;
 };
 
 const MAX_VISIBLE_ITEMS = 6;

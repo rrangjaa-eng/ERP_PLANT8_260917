@@ -12,7 +12,7 @@ import "@/domain/rules/register";
 import type { ProjectLineEditCtx, QuoteLineCapCtx } from "@/domain/rules/register";
 import { denyWrite } from "@/domain/rules/deny-write";
 import { loadProjectForGate } from "@/domain/projects/auto-transition";
-import { resolveLinkedDocumentsByLineage } from "@/domain/quotes/lineage";
+import { resolveLinkedDocumentsByLineage, type LineageLine } from "@/domain/quotes/lineage";
 import {
   lineCellEditability,
   linkedDocumentReason,
@@ -57,7 +57,9 @@ import {
 import {
   findQuoteRevisionById as repoFindQuoteRevisionById,
   findLatestQuoteRevision as repoFindLatestQuoteRevision,
+  summarizeRevisions as repoSummarizeRevisions,
 } from "@/repositories/quote-revisions";
+import { listNumberedByProject as repoListNumberedExpensesByProject } from "@/repositories/expenses";
 import { listFieldDefinitions as repoListFieldDefinitions } from "@/repositories/field-definitions";
 import { findVendorNamesByIds as repoFindVendorNamesByIds } from "@/repositories/vendors";
 import { listCodeItems as repoListCodeItems } from "@/repositories/code-tables";
@@ -71,6 +73,9 @@ export class RevisionNotFoundError extends UserFacingError {}
 const PROJECTS_MENU = "projects";
 const ADJUSTMENT_MENU = "projects.adjustment";
 const QUOTE_LINE_ENTITY = "quote_line";
+
+// 05-15 — 줄 파생 상태 입력: 그 줄의 번호 있는 지출결의 중 반려가 있으면 rejected, 결재 중 · 승인이 있으면 active, 그 밖(회수 · 연결 없음)은 null.
+export type QuoteLineLinkedStatus = "rejected" | "active";
 
 export type MoneyInputDto = { currency: Currency; amount: number; fxRate: number };
 export type MoneyDto = MoneyInputDto & { amountKrw: number };
@@ -105,12 +110,14 @@ type QuoteLineProjectable = {
   cellEditability: Record<QuoteLineField, QuoteCellEditability>;
   hasLinkedDocuments: boolean;
   readonlyReason: string | null;
+  linkedStatus: QuoteLineLinkedStatus | null;
 };
 
 type LineEditFacts = {
   cellEditability: Record<QuoteLineField, QuoteCellEditability>;
   hasLinkedDocuments: boolean;
   readonlyReason: string | null;
+  linkedStatus: QuoteLineLinkedStatus | null;
 };
 
 function toProjectable(row: QuoteLineRow, facts: LineEditFacts, vendorName: string | null): QuoteLineProjectable {
@@ -179,6 +186,7 @@ export type QuoteLineDto = {
   // 04-12(D-66 · DR-35) — 연결 문서가 있는 줄의 읽기 전용 이유(04-30이 편집 시도의 이유 줄로 쓴다).
   hasLinkedDocuments: boolean;
   readonlyReason: string | null;
+  linkedStatus: QuoteLineLinkedStatus | null;
 };
 
 export const QUOTE_LINE_DTO_SPEC: DtoSpec<QuoteLineProjectable, QuoteLineDto> = {
@@ -206,6 +214,7 @@ export const QUOTE_LINE_DTO_SPEC: DtoSpec<QuoteLineProjectable, QuoteLineDto> = 
     { key: "cellEditability", from: "cellEditability", infoItem: "project.value" },
     { key: "hasLinkedDocuments", from: "hasLinkedDocuments", infoItem: "project.value" },
     { key: "readonlyReason", from: "readonlyReason", infoItem: "project.value" },
+    { key: "linkedStatus", from: "linkedStatus", infoItem: "project.value" },
   ],
 };
 
@@ -249,17 +258,42 @@ export async function getCurrentQuoteRevision(
 // 04-40 — `approvedSeq`는 그 차수가 고객 승인됐으면 순번(승인 차수 견적 칸 잠금).
 export type QuoteLineListCtx = { status: string; canWrite: boolean; canAdjust?: boolean; locked?: boolean; approvedSeq?: number | null };
 
-// D-66 — 줄마다 연결된 지출결의(번호). 이 페이즈에는 지출결의가 없어 빈 결과다 — Phase 5가 이 함수만 채운다.
+// D-66 — 줄마다 연결된 지출결의(번호 있는 문서만 — 작성 중 문서는 연결이 아니다). `approvalStatus`는 결재 인스턴스 상태(줄 파생 상태 재료).
 // 저장 트랜잭션 안에서도 불리므로 tx를 받는다.
-export type LinkedDocumentsByLine = Map<string, { number: string }[]>;
+export type LinkedDocument = { number: string; approvalStatus?: string | null };
+export type LinkedDocumentsByLine = Map<string, LinkedDocument[]>;
 
-// 04-14(D-55) — 문서 출처(Phase 5 — 줄 id별 문서)가 준 것을 계보 해석으로 현재 차수 줄에 잇는다. 조회 지점은 여전히 이
-// 함수 하나다. 이 페이즈는 출처가 빈 결과라 계보 줄을 읽지 않는다.
+// 04-14(D-55) — 문서 출처(줄 id별 번호 있는 지출결의)를 계보 해석으로 현재 차수 줄에 잇는다. 조회 지점은 이 함수 하나다.
+// domain/expenses를 import하지 않고 리포지토리 한 쿼리로 읽는다(순환 금지).
 export function linkedDocumentsByLine(viewer: Viewer, revisionId: string, tx?: DbOrTx): Promise<LinkedDocumentsByLine> {
-  void viewer;
-  void revisionId;
-  void tx;
-  return Promise.resolve(resolveLinkedDocumentsByLineage([], new Map<string, { number: string }[]>()).byCurrentLine);
+  return loadLinkedDocumentsByLine(viewer, revisionId, tx);
+}
+
+async function loadLinkedDocumentsByLine(viewer: Viewer, revisionId: string, tx?: DbOrTx): Promise<LinkedDocumentsByLine> {
+  const revision = await repoFindQuoteRevisionById(viewer, revisionId, tx);
+  if (!revision) return new Map();
+  const numbered = await repoListNumberedExpensesByProject(viewer, revision.projectId, tx);
+  if (numbered.length === 0) return new Map();
+  const docsByLineId = new Map<string, LinkedDocument[]>();
+  for (const doc of numbered) {
+    const docs = docsByLineId.get(doc.quoteLineId) ?? [];
+    docs.push({ number: doc.number, approvalStatus: doc.approvalStatus });
+    docsByLineId.set(doc.quoteLineId, docs);
+  }
+  const lineage: LineageLine[] = [];
+  for (const summary of await repoSummarizeRevisions(viewer, revision.projectId, tx)) {
+    for (const line of await repoListQuoteLinesByRevision(viewer, summary.id, tx)) {
+      lineage.push({ id: line.id, revisionSeq: summary.seq, copiedFromLineId: line.copiedFromLineId });
+    }
+  }
+  return resolveLinkedDocumentsByLineage(lineage, docsByLineId).byCurrentLine;
+}
+
+function linkedStatusOf(docs: readonly LinkedDocument[] | undefined): QuoteLineLinkedStatus | null {
+  if (!docs) return null;
+  if (docs.some((doc) => doc.approvalStatus === "rejected")) return "rejected";
+  if (docs.some((doc) => doc.approvalStatus === "submitted" || doc.approvalStatus === "in_review" || doc.approvalStatus === "approved")) return "active";
+  return null;
 }
 
 // 04-13 — DB CHECK(quote_lines_line_kind_check)가 세 값만 받는다.
@@ -276,7 +310,8 @@ async function projectLines(
   const vendorIds = [...new Set(rows.flatMap((row) => (row.vendorId ? [row.vendorId] : [])))];
   const vendorNames = await repoFindVendorNamesByIds(viewer, vendorIds);
   const projectables = rows.map((row) => {
-    const firstLinked = linked.get(row.id)?.[0];
+    const linkedDocs = linked.get(row.id);
+    const firstLinked = linkedDocs?.[0];
     const hasLinkedDocuments = firstLinked !== undefined;
     return toProjectable(row, {
       cellEditability: lineCellEditability({
@@ -290,6 +325,7 @@ async function projectLines(
       }),
       hasLinkedDocuments,
       readonlyReason: firstLinked ? linkedDocumentReason(firstLinked.number) : null,
+      linkedStatus: linkedStatusOf(linkedDocs),
     }, row.vendorId ? (vendorNames.get(row.vendorId) ?? null) : null);
   });
   return (await projectMany(viewer, projectables, QUOTE_LINE_DTO_SPEC)) as QuoteLineDto[];

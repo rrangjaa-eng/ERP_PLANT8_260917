@@ -6,7 +6,10 @@ import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import {
   allocateDocumentNumber,
+  allocateExpenseNumber,
+  assertSeqStartNotLowered,
   loadDocumentNumberFormat,
+  loadExpenseNumberFormat,
   SeqStartOverlapError,
   setSimpleSettingValue,
   UnknownDocumentNumberCounterError,
@@ -24,6 +27,7 @@ import {
   DOCUMENT_NUMBER_PROJECT_SEQ_DIGITS,
   DOCUMENT_NUMBER_PROJECT_SEPARATOR,
   DOCUMENT_NUMBER_PROJECT_SEQ_START,
+  DOCUMENT_NUMBER_EXPENSE_SEQ_START,
 } from "@/domain/settings/keys";
 
 // 04-05(ADMN-09) — `document_counters` 표는 test/integration/setup.ts의
@@ -412,5 +416,79 @@ describe("순번 시작값 낮추기(결정 ②)", () => {
     expect(a.number).not.toBe(b.number);
     expect(issued).not.toContain(a.number);
     expect(issued).not.toContain(b.number);
+  });
+});
+
+// PR #162 리뷰 P1 — 지출결의 번호(카운터 `expense`, period = 프로젝트 번호)의 순번 시작값도 같은 낮추기 가드를 지난다.
+// 발급이 1건 이상인 프로젝트가 있으면 낮춘 시작값이 그 프로젝트의 다음 번호를 이미 매긴 번호와 겹치게 한다.
+describe("지출결의 번호 순번 시작값 낮추기(PR #162 P1)", () => {
+  const NOW = new Date("2026-06-01T03:00:00Z");
+  const save = (value: unknown) => setSimpleSettingValue(SYSTEM_VIEWER, DOCUMENT_NUMBER_EXPENSE_SEQ_START, value, NOW);
+  async function allocate(projectNumber: string): Promise<string> {
+    const format = await loadExpenseNumberFormat();
+    return (await db.transaction((tx) => allocateExpenseNumber(SYSTEM_VIEWER, { projectNumber, format }, tx))).number;
+  }
+
+  it("시작값 100으로 26001-0100을 매긴 뒤 99로 낮추면 거부되고 값은 100 그대로다", async () => {
+    await save(100);
+    expect(await allocate("26001")).toBe("26001-0100");
+    const rejected = save(99);
+    await expect(rejected).rejects.toBeInstanceOf(SeqStartOverlapError);
+    await expect(rejected).rejects.toHaveProperty("message", "순번 시작값은 현재 값(100)보다 낮출 수 없음");
+    expect(await getSettingValue(DOCUMENT_NUMBER_EXPENSE_SEQ_START)).toBe(100);
+    expect(await allocate("26001")).toBe("26001-0101");
+  });
+
+  it("설정 가져오기 경로도 같은 가드를 지난다", async () => {
+    await save(100);
+    await allocate("26001");
+    await expect(db.transaction((tx) => assertSeqStartNotLowered(SYSTEM_VIEWER, DOCUMENT_NUMBER_EXPENSE_SEQ_START.key, 99, NOW, tx))).rejects.toBeInstanceOf(
+      SeqStartOverlapError,
+    );
+  });
+
+  it("발급한 지출결의 번호가 없으면 낮춰도 저장되고 · 같은 값 · 올리는 값은 통과한다", async () => {
+    await save(100);
+    await save(1);
+    expect(await getSettingValue(DOCUMENT_NUMBER_EXPENSE_SEQ_START)).toBe(1);
+    expect(await allocate("26001")).toBe("26001-0001");
+    await save(1);
+    await save(5);
+    expect(await allocate("26002")).toBe("26002-0005");
+  });
+
+  // PR #162 독립 검토 3 — 카운터 행이 아직 없는 프로젝트의 첫 번호를 매기는 중(커밋 전)이어도 시작값 저장은 그 커밋을 기다렸다가 판정한다.
+  it("커밋 전 제출이 카운터 행이 없던 프로젝트의 첫 번호를 잡고 있으면 시작값 1 저장은 그 커밋 뒤 거부된다", async () => {
+    await save(100);
+    const format = await loadExpenseNumberFormat();
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    let markAllocated!: () => void;
+    const allocated = new Promise<void>((resolve) => (markAllocated = resolve));
+    const submission = db.transaction(async (tx) => {
+      const { number } = await allocateExpenseNumber(SYSTEM_VIEWER, { projectNumber: "26009", format }, tx);
+      markAllocated();
+      await released;
+      return number;
+    });
+    await allocated;
+    const saveResult = save(1).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    release();
+
+    expect(await submission).toBe("26009-0100");
+    expect(await saveResult).toBeInstanceOf(SeqStartOverlapError);
+    expect(await getSettingValue(DOCUMENT_NUMBER_EXPENSE_SEQ_START)).toBe(100);
+  });
+
+  it("제출이 옛 서식(시작값 100)을 읽은 뒤 시작값이 1로 저장되면 번호는 1로 매긴다", async () => {
+    await save(100);
+    const staleFormat = await loadExpenseNumberFormat();
+    await save(1);
+    const { number } = await db.transaction((tx) => allocateExpenseNumber(SYSTEM_VIEWER, { projectNumber: "26001", format: staleFormat }, tx));
+    expect(number).toBe("26001-0001");
   });
 });

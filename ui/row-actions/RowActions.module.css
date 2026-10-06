@@ -39,6 +39,15 @@ button.action {
   gap: 0;
 }
 
+/* 쉬는 버튼의 「…」 자리 — 누름 중 라벨과 같은 폭을 차지하되 보이지 않는다. */
+.pendingSlot {
+  visibility: hidden;
+}
+
+.pendingSlot::after {
+  content: "…";
+}
+
 .action:hover:not([aria-disabled="true"]) {
   text-decoration-thickness: var(--underline-w-hover);
 }

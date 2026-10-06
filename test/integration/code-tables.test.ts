@@ -137,8 +137,8 @@ describe("code-tables (MAST-04, 실제 Postgres)", () => {
     expect(await queryActionLog(SYSTEM_VIEWER, { actionType: "document_create" })).toHaveLength(logsBefore.length);
   });
 
-  it("허용 코드표 세 개(프로젝트 상태 · 증빙 종류 · 견적 분류)에는 항목을 추가할 수 있다", async () => {
-    expect(CODE_TABLES.map((table) => table.key)).toEqual(["project_status", "evidence_type", "quote_subcategory"]);
+  it("허용 코드표 네 개(프로젝트 상태 · 증빙 종류 · 견적 분류 · 지급 방식)에는 항목을 추가할 수 있다", async () => {
+    expect(CODE_TABLES.map((table) => table.key)).toEqual(["project_status", "evidence_type", "quote_subcategory", "payment_method"]);
     for (const { key } of CODE_TABLES) {
       const dto = await createCodeItem(SYSTEM_VIEWER, { tableKey: key, value: `v-${randomUUID()}`, label: "허용" });
       expect(dto.tableKey).toBe(key);

@@ -364,6 +364,26 @@ ensure_cert_bucket() {
     { echo "$hint" >&2; return 1; }
 }
 
+# 05-12: 증빙 버킷도 서명 버킷과 같다 — 소유자의 bootstrap-gcp.sh (d-3)이 만들고(수명 주기 · 배포자 버킷 역할 · 런타임 자기
+# signBlob), 여기서는 확인 · 균일 접근 · 공개 접근 방지 맞춤 · 런타임 objectUser만. 소프트 삭제 · 버전 설정은 건드리지 않는다.
+ensure_evidence_bucket() {
+  STAGE=ensure_evidence_bucket
+  local bucket runtime_email hint
+  bucket="$(evidence_bucket "$ENV" "$PROJECT")"
+  runtime_email="$(runtime_sa "$ENV")@${PROJECT}.iam.gserviceaccount.com"
+  hint="evidence bucket ${bucket} not found or not managed by the deployer — run scripts/bootstrap-gcp.sh first (docs/EVIDENCE-STORAGE.md)"
+  if ! run gcloud storage buckets describe "gs://${bucket}" --project="$PROJECT" >/dev/null 2>&1; then
+    echo "$hint" >&2
+    return 1
+  fi
+  run gcloud storage buckets update "gs://${bucket}" --project="$PROJECT" \
+    --uniform-bucket-level-access --public-access-prevention >/dev/null ||
+    { echo "$hint" >&2; return 1; }
+  run gcloud storage buckets add-iam-policy-binding "gs://${bucket}" --project="$PROJECT" \
+    --member="serviceAccount:${runtime_email}" --role=roles/storage.objectUser >/dev/null ||
+    { echo "$hint" >&2; return 1; }
+}
+
 # D-05 빌드 1회: prod는 require_prod_image가 이미 존재를 보장했으므로 이 describe는
 # 항상 성공해 건너뛴다.
 build_and_push_image() {
@@ -535,6 +555,7 @@ deploy_service() {
     # 확인증 환경 게이트 — 스테이징만. 프로덕션은 Phase 11이 켠다(04.3 D-1107).
     env_vars="${env_vars},CERT_FEATURE_ALLOWED=true"
   fi
+  env_vars="${env_vars},STORAGE_DRIVER=gcs,GCS_EVIDENCE_BUCKET=$(evidence_bucket "$ENV" "$PROJECT")"
   local secrets="BETTER_AUTH_SECRET=${better_auth_secret}:latest,APP_DATA_KEY_v1=${app_data_key_secret}:latest,SMTP_HOST=${smtp_host_secret}:latest,SMTP_USER=${smtp_user_secret}:latest,SMTP_PASSWORD=${smtp_password_secret}:latest,SMTP_FROM=${smtp_from_secret}:latest"
 
   # 신규·기존 서비스 모두 바로 100% 트래픽으로 배포한다(--no-traffic/--tag
@@ -588,6 +609,20 @@ deploy_service() {
     run gcloud run services update "$svc" --region="$REGION" --project="$PROJECT" \
       --update-env-vars="BETTER_AUTH_URL=${SERVICE_URL}"
   fi
+}
+
+# 05-12: 브라우저가 서명 PUT · GET을 증빙 버킷에 직접 보낸다 — CORS 원점은 서비스 주소 하나이고, deploy_service가
+# 계산식 주소를 실제 status.url로 확정한 뒤에만 맞다(ensure_scheduler와 같은 이유). GCS는 preflight의 요청 헤더도
+# responseHeader 목록으로 허용하므로 서명에 묶인 헤더 셋을 둔다.
+ensure_evidence_cors() {
+  STAGE=ensure_evidence_cors
+  local bucket cors
+  bucket="$(evidence_bucket "$ENV" "$PROJECT")"
+  cors="$(mktemp)"
+  printf '[{"origin":["%s"],"method":["PUT","GET"],"responseHeader":["Content-Type","x-goog-content-length-range","x-goog-meta-sha256"],"maxAgeSeconds":3600}]\n' "$SERVICE_URL" >"$cors"
+  run gcloud storage buckets update "gs://${bucket}" --project="$PROJECT" --cors-file="$cors" >/dev/null ||
+    { rm -f "$cors"; return 1; }
+  rm -f "$cors"
 }
 
 # 04.2-04(NOTI-04): 매일 09:00 KST에 스케줄러가 전용 SA의 OIDC 토큰으로
@@ -794,12 +829,14 @@ main() {
   ensure_sql_db_users
   ensure_secrets
   ensure_cert_bucket
+  ensure_evidence_bucket
   build_and_push_image
   deploy_jobs
   run_db_bootstrap
   run_migrate
   run_seed
   deploy_service
+  ensure_evidence_cors
   ensure_scheduler
   ensure_alerts
   smoke

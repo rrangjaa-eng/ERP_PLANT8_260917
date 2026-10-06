@@ -13,7 +13,7 @@ import { loginPage, makePerson, waitForHydration, type Person } from "./leave-or
 // 06-05(EXP-07 · UI-SPEC S8 · S9): 법인카드 사용 — 직원 본인 등록 → 옆 패널 → 뒤 목록 카드 그룹.
 // 사람 · 팀 · 카드는 도메인 함수로 만든다(스펙마다 전용 본부 · 팀).
 
-type CardHolder = { person: Person; teamName: string; cardLabel: string };
+type CardHolder = { person: Person; teamName: string; cardLabel: string; issuer: string };
 
 async function makeCardHolder(cards = 1): Promise<CardHolder> {
   const suffix = randomUUID().slice(0, 8);
@@ -22,16 +22,18 @@ async function makeCardHolder(cards = 1): Promise<CardHolder> {
   const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: teamName });
   const person = await makePerson("카드", DEFAULT_ROLE_ID, team.id, `${seoulToday().slice(0, 4)}-01-01`);
   const cardLabel = `E2E카드-${suffix}`;
+  // 발급사 + 뒤 4자리는 전역 UNIQUE — 스펙 사이 겹치지 않게 발급사에 접미사.
+  const issuer = `신한-${suffix}`;
   for (let index = 0; index < cards; index += 1) {
     await createCorpCard(SYSTEM_VIEWER, {
-      issuer: "신한",
+      issuer,
       numberLast4: String(4321 + index),
       label: index === 0 ? cardLabel : `${cardLabel}-${index + 1}`,
       kind: "personal",
       holderUserId: person.viewer.id,
     });
   }
-  return { person, teamName, cardLabel };
+  return { person, teamName, cardLabel, issuer };
 }
 
 function panel(page: Page) {
@@ -67,7 +69,7 @@ test.describe("법인카드 사용 등록 (06-05)", () => {
 
     // 뒤 목록(패널이 열린 동안 inert) — 그 카드 그룹에 행이 서고 연결은 `팀 비용 · {팀}`.
     const table = page.getByRole("table");
-    await expect(table.getByText(`${holder.cardLabel} · 신한 4321`)).toHaveCount(1);
+    await expect(table.getByText(`${holder.cardLabel} · ${holder.issuer} 4321`)).toHaveCount(1);
     await expect(table.getByText(`팀 비용 · ${holder.teamName}`)).toHaveCount(1);
     await expect(table.getByText("1,240,000", { exact: true })).toHaveCount(1);
 
@@ -77,6 +79,37 @@ test.describe("법인카드 사용 등록 (06-05)", () => {
       .from(actionLog)
       .where(and(eq(actionLog.actorId, holder.person.viewer.id), eq(actionLog.actionType, "document_create")));
     expect(logs).toEqual([{ entity: "corp_card_usage" }]);
+    await page.context().close();
+  });
+  test("외화 카드 사용 — USD 900.00 @1,474.89 → 서버 원화 1,327,401 · 목록 2행 `USD 900.00 @1,474.89 · 공급가 …`", async ({ browser, baseURL }) => {
+    const holder = await makeCardHolder();
+    const page = await loginPage(browser, baseURL, holder.person);
+    await page.goto("/cards?new=1");
+    const sheet = panel(page);
+    const amount = sheet.getByLabel("결제 합계");
+    await waitForHydration(amount);
+
+    await sheet.getByLabel("통화").selectOption("USD");
+    await sheet.getByLabel("결제 합계").fill("900");
+    await sheet.getByLabel("환율").fill("1474.89");
+    await sheet.getByRole("radio", { name: "팀 비용" }).check();
+    await expect(sheet.locator('[data-ui="card-calc-line"]')).toHaveText("공급가 1,327,401 · 규칙 없음");
+    await sheet.getByLabel("환율").press("Control+Enter");
+
+    await expect(sheet.getByRole("status")).toHaveText("카드 사용 등록됨 · 1,327,401");
+    const table = page.getByRole("table");
+    await expect(table.getByText("1,327,401", { exact: true })).toHaveCount(1);
+    await expect(table.getByText("USD 900.00 @1,474.89 · 공급가 1,327,401", { exact: true })).toHaveCount(1);
+    await page.context().close();
+  });
+
+  test("사용일 칸 `max` = 오늘(KST — Q6)", async ({ browser, baseURL }) => {
+    const holder = await makeCardHolder();
+    const page = await loginPage(browser, baseURL, holder.person);
+    await page.goto("/cards?new=1");
+    const usedOn = panel(page).getByLabel("사용일");
+    await expect(usedOn).toHaveAttribute("max", seoulToday());
+    await expect(usedOn).toHaveValue(seoulToday());
     await page.context().close();
   });
 });

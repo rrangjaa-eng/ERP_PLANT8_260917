@@ -5,11 +5,13 @@ import { projectMany, type DtoSpec } from "@/domain/permissions/project";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { recordAction } from "@/domain/action-log/record";
 import { loadTaxRates, type TaxRates } from "@/domain/money/tax";
-import { moneyToColumns, sumKrw, type MoneyInput } from "@/domain/money";
+import { moneyToColumns, normalizeMoneyInput, sumKrw, type MoneyInput } from "@/domain/money";
 import { taxRuleSchema, type TaxRule } from "@/domain/code-tables/tax-rule";
 import { teamAtDate } from "@/domain/org";
 import { loadActorTeamScope } from "@/domain/projects/status";
-import { splitCardTotal, type CardSplit } from "@/domain/corp-card-usages/amounts";
+import { cardUsedOnError, isCardEvidenceRule, splitCardTotal, type CardSplit } from "@/domain/corp-card-usages/amounts";
+import { recentFxRate } from "@/domain/money/currency";
+import { seoulToday } from "@/lib/dates";
 import { listCodeItems } from "@/repositories/code-tables";
 import { findCorpCardById, listCorpCards, type CorpCardRow } from "@/repositories/corp-cards";
 import { findUserNamesByIds } from "@/repositories/users";
@@ -103,7 +105,7 @@ async function cardEvidenceTypes(viewer: Viewer): Promise<{ options: EvidenceTyp
   for (const item of items) {
     if (!item.active || item.archivedAt) continue;
     const parsed = taxRuleSchema.safeParse(item.taxRule);
-    if (!parsed.success || parsed.data.ruleKind !== "none") continue;
+    if (!parsed.success || !isCardEvidenceRule(parsed.data)) continue;
     options.push({ value: item.value, label: item.label, rule: parsed.data });
   }
   return { options, labels };
@@ -116,7 +118,12 @@ function mmdd(date: string): string {
 // ── 사전 조회(트랜잭션 밖) ──────────────────────────────────────────────────
 
 export async function precheckCardUsage(viewer: Viewer, input: CardUsageInput): Promise<CardUsagePre> {
+  // 사용일 상한(Q6) — 액션을 거치지 않는 호출(06-12 · 6.1)도 같은 판정. 오늘은 서버의 서울 날짜.
+  const futureError = cardUsedOnError(input.usedOn, seoulToday());
+  if (futureError) throw new CardUsageRejectedError(futureError);
   if (input.linkKind !== "team_cost") throw new CardUsageRejectedError(LINK_MISSING);
+  // 통화 · 외화 금액 · 환율 형식(O-7) — 트랜잭션 전에 거부한다(순수 판정).
+  normalizeMoneyInput(input.total);
 
   const team = await teamAtDate(viewer, viewer.id, input.usedOn);
   if (!team?.id) {
@@ -226,6 +233,8 @@ export type CardUsageFormOptions = {
   cards: Partial<CardOptionDto>[];
   evidenceTypes: { value: string; label: string }[];
   teamName: string | null;
+  /** USD 환율 칸 기본값(설정 최근 환율 — FX-01). 읽지 못하면 null(빈 칸 + 막힘). */
+  usdFxRate: number | null;
 };
 
 // 새 건 패널의 선택지 — 사용일(기본 오늘) 기준 카드 · 카드 증빙 종류 · 사용일 소속 팀 이름.
@@ -237,6 +246,7 @@ export async function cardUsageFormOptions(viewer: Viewer, usedOn: string): Prom
     cards: await projectMany(viewer, cards.map((card) => ({ id: card.id, label: card.label })), CARD_OPTION_SPEC),
     evidenceTypes: evidence.options.map(({ value, label }) => ({ value, label })),
     teamName: team?.name ?? null,
+    usdFxRate: await recentFxRate("USD").catch(() => null),
   };
 }
 

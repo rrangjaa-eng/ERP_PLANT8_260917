@@ -36,6 +36,10 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
             registeredByName: row.registeredByName ?? "—",
             totalKrw: row.totalKrw ?? null,
             supplyKrw: row.supplyKrw ?? null,
+            vatKrw: row.vatKrw ?? null,
+            currency: row.currency ?? null,
+            foreignAmount: row.foreignAmount ?? null,
+            fxRate: row.fxRate ?? null,
           },
         ]
       : [],
@@ -50,6 +54,7 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
           teamName={options.teamName}
           userName={user.name}
           today={today}
+          usdFxRate={options.usdFxRate}
           defaults={{
             usedOn: today,
             corpCardId: cards.length === 1 ? (cards[0]?.id ?? null) : null,

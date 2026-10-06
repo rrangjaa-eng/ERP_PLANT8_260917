@@ -91,3 +91,16 @@ describe("공용 카드 사용 자격", () => {
     expect(proxyIds).not.toContain(ownId);
   });
 });
+
+describe("사용일 상한(Q6)", () => {
+  it("precheckCardUsage 직접 호출도 내일(KST) 사용일을 거부하고 오늘은 통과한다", async () => {
+    const team = await makeTeam();
+    const staff = await makePerson("직원", DEFAULT_ROLE_ID, team.name);
+    const cardId = await makeCard({ kind: "personal", holderUserId: staff.id });
+    const today = seoulToday();
+    const tomorrow = seoulToday(new Date(Date.now() + 24 * 60 * 60 * 1000));
+
+    await expect(precheckCardUsage(staff, { ...usageInput(cardId), usedOn: tomorrow })).rejects.toThrow("사용일 미래 · 오늘까지 날짜로");
+    await expect(precheckCardUsage(staff, { ...usageInput(cardId), usedOn: today })).resolves.toMatchObject({ usedByUserId: staff.id });
+  });
+});

@@ -9,7 +9,10 @@ import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
 import { PickDialog, type PickResult, type PickRow } from "@/ui/pick-dialog/PickDialog";
 import { useCommaInput } from "@/ui/input/use-comma-input";
+import { cardEvidenceDefault } from "@/domain/corp-card-usages/amounts";
 import { formatKrw } from "@/lib/format-number";
+import type { NumberInputKind } from "@/lib/format-number";
+import selectStyles from "@/ui/select/Select.module.css";
 import textFieldStyles from "@/ui/input/TextField.module.css";
 import { createCardUsageAction, previewCardAmountsAction, searchMerchantsAction } from "./actions";
 
@@ -42,16 +45,24 @@ function blankBlock(blanks: { label: string; verb: string }[]): string | undefin
   return `${blanks.map((blank) => blank.label).join(" · ")} ${blanks.length}칸 비어 있음 · ${first.label} ${first.verb}`;
 }
 
+// 「표시 — 카드 사용 폼 서버 계산 한 줄」 — 잔차가 0이 아니면 끝에 `· 반올림 차이 N`(부호 포함, D-607 · CROSS R-1).
 function calcLine(split: NonNullable<Preview["split"]>): string {
   if (split.ruleKind === "none") return `공급가 ${formatKrw(split.supplyKrw)} · 규칙 없음`;
-  return `공급가 ${formatKrw(split.supplyKrw)} · 부가세 ${formatKrw(split.vatKrw)} · ${split.evidenceLabel} 규칙`;
+  const residual = split.residualKrw === 0 ? "" : ` · 반올림 차이 ${split.residualKrw > 0 ? "+" : ""}${formatKrw(split.residualKrw)}`;
+  return `공급가 ${formatKrw(split.supplyKrw)} · 부가세 ${formatKrw(split.vatKrw)} · ${split.evidenceLabel} 규칙${residual}`;
+}
+
+// 가맹점 기본 증빙 종류 → 카드 옵션 밖이면 `카드 전표`(옵션 안에 있을 때만, UI-SPEC S9) — 서버와 같은 순수 함수.
+function evidenceForMerchant(vendorDefault: string | null, options: readonly EvidenceTypeOption[]): { code: string | null; outside: boolean } {
+  const picked = cardEvidenceDefault(vendorDefault, options.map((option) => option.value));
+  return { code: picked.code, outside: picked.outsideDefault !== null };
 }
 
 // 칸 줄 · 라벨 모양은 TextField 줄과 같은 클래스(ui/input) — 패널 칸 간격이 한 규칙이다.
 const rowStyles = { row: textFieldStyles.row, label: textFieldStyles.label };
 
-function AmountField({ error, onRaw }: { error: string | undefined; onRaw: (raw: string) => void }) {
-  const { inputRef, value, onChange, error: inputError, rawValue } = useCommaInput("krw", "");
+function AmountField({ kind, error, onRaw }: { kind: NumberInputKind; error: string | undefined; onRaw: (raw: string) => void }) {
+  const { inputRef, value, onChange, error: inputError, rawValue } = useCommaInput(kind, "");
   useEffect(() => onRaw(rawValue), [rawValue, onRaw]);
   const shown = inputError ?? error;
   return (
@@ -60,7 +71,7 @@ function AmountField({ error, onRaw }: { error: string | undefined; onRaw: (raw:
         id="card-amount"
         ref={inputRef}
         type="text"
-        inputMode="numeric"
+        inputMode={kind === "krw" ? "numeric" : "decimal"}
         autoComplete="off"
         value={value}
         onChange={onChange}
@@ -71,6 +82,31 @@ function AmountField({ error, onRaw }: { error: string | undefined; onRaw: (raw:
       <input type="hidden" name="amount" value={rawValue} readOnly />
       {shown ? <Form.Error id="card-amount-error">{shown}</Form.Error> : null}
     </>
+  );
+}
+
+// 환율 칸(O-7) — 기본값 = 설정 최근 환율(FX-01), 없으면 빈 칸.
+function FxField({ initial, error, onRaw }: { initial: number | null; error: string | undefined; onRaw: (raw: string) => void }) {
+  const { inputRef, value, onChange, error: inputError, rawValue } = useCommaInput("fxRate", initial === null ? "" : String(initial));
+  useEffect(() => onRaw(rawValue), [rawValue, onRaw]);
+  const shown = inputError ?? error;
+  return (
+    <Form.Field id="card-fx-rate" label="환율">
+      <input
+        id="card-fx-rate"
+        ref={inputRef}
+        type="text"
+        inputMode="decimal"
+        autoComplete="off"
+        value={value}
+        onChange={onChange}
+        aria-invalid={shown ? true : undefined}
+        aria-describedby={shown ? "card-fx-rate-error" : undefined}
+        className={[textFieldStyles.input, textFieldStyles.numeric, shown ? textFieldStyles.inputError : ""].filter(Boolean).join(" ")}
+      />
+      <input type="hidden" name="fxRate" value={rawValue} readOnly />
+      {shown ? <Form.Error id="card-fx-rate-error">{shown}</Form.Error> : null}
+    </Form.Field>
   );
 }
 
@@ -116,6 +152,7 @@ export function CardUsageForm({
   teamName: initialTeamName,
   userName,
   today,
+  usdFxRate,
   defaults: initialDefaults,
 }: {
   cards: CardOption[];
@@ -123,6 +160,7 @@ export function CardUsageForm({
   teamName: string | null;
   userName: string;
   today: string;
+  usdFxRate: number | null;
   defaults: CardUsageDefaults;
 }) {
   const panelRef = useRef<PanelFormHandle>(null);
@@ -130,7 +168,9 @@ export function CardUsageForm({
   const [defaults, setDefaults] = useState(initialDefaults);
   const [cardId, setCardId] = useState(initialDefaults.corpCardId ?? (cards.length === 1 ? (cards[0]?.id ?? "") : ""));
   const [usedOn, setUsedOn] = useState(initialDefaults.usedOn);
+  const [currency, setCurrency] = useState<"KRW" | "USD">("KRW");
   const [amountRaw, setAmountRaw] = useState("");
+  const [fxRaw, setFxRaw] = useState(usdFxRate === null ? "" : String(usdFxRate));
   const [evidenceTypeCode, setEvidenceTypeCode] = useState(initialDefaults.evidenceTypeCode ?? "");
   const [linkKind, setLinkKind] = useState<"team_cost" | null>(initialDefaults.linkKind);
   const [merchant, setMerchant] = useState<Merchant | null>(null);
@@ -160,6 +200,8 @@ export function CardUsageForm({
       setEvidenceTypeCode(next.evidenceTypeCode ?? "");
       setLinkKind(next.linkKind);
       setMerchant(null);
+      setCurrency("KRW");
+      setFxRaw(usdFxRate === null ? "" : String(usdFxRate));
       setPreview({ split: null, teamName: initialTeamName });
       setShowingResult(true);
       doneStatusRef.current = `카드 사용 등록됨 · ${formatKrw(data?.totalKrw ?? 0)}`;
@@ -176,10 +218,12 @@ export function CardUsageForm({
   }, [gen]);
 
   const onAmountRaw = useCallback((raw: string) => setAmountRaw(raw), []);
+  const onFxRaw = useCallback((raw: string) => setFxRaw(raw), []);
+  const fxValue = currency === "KRW" ? undefined : fxRaw === "" ? null : Number(fxRaw);
 
   // 서버 계산 한 줄 · 사용일 소속 — 결제 합계 · 사용일 · 증빙 종류가 바뀌면 짧은 지연 뒤 서버에 묻는다(늦은 응답은 버린다).
   const previewSeq = useRef(0);
-  const previewKey = JSON.stringify([usedOn, amountRaw, evidenceTypeCode]);
+  const previewKey = JSON.stringify([usedOn, currency, amountRaw, currency === "KRW" ? "" : fxRaw, evidenceTypeCode]);
   const firstPreviewKey = useRef(previewKey);
   useEffect(() => {
     if (previewKey === firstPreviewKey.current) return;
@@ -194,8 +238,9 @@ export function CardUsageForm({
           outcome = usedOn
             ? await previewCardAmountsAction({
                 usedOn,
-                currency: "KRW",
+                currency,
                 amount: amount !== null && Number.isFinite(amount) && amount > 0 ? amount : null,
+                ...(fxValue !== undefined && fxValue !== null && Number.isFinite(fxValue) && fxValue > 0 ? { fxRate: fxValue } : {}),
                 evidenceTypeCode: evidenceTypeCode || null,
               })
             : undefined;
@@ -208,10 +253,10 @@ export function CardUsageForm({
       })();
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [previewKey, usedOn, amountRaw, evidenceTypeCode]);
+  }, [previewKey, usedOn, currency, amountRaw, fxValue, evidenceTypeCode]);
 
   // 칸을 고치면 지난 서버 거부 줄은 걷는다.
-  const editKey = JSON.stringify([cardId, usedOn, amountRaw, evidenceTypeCode, linkKind, merchant?.id ?? ""]);
+  const editKey = JSON.stringify([cardId, usedOn, currency, amountRaw, fxRaw, evidenceTypeCode, linkKind, merchant?.id ?? ""]);
   const lastEditKey = useRef(editKey);
   useEffect(() => {
     if (editKey === lastEditKey.current) return;
@@ -229,8 +274,9 @@ export function CardUsageForm({
     : evidenceTypes.length === 0
       ? "카드에 쓸 증빙 종류 없음 · 코드표 세금 규칙은 관리자"
       : "카드 전표 카드에 없음 · 증빙 종류 고르기";
+  const fxBlock = currency !== "KRW" && (fxValue === null || fxValue === undefined) ? "환율 없음 · USD 환율 적기" : undefined;
   const teamBlock = linkKind === "team_cost" && preview.teamName === null ? `${userName} ${usedOn.slice(5)} 소속 없음 · 소속 발령은 관리자` : undefined;
-  const blockedReason = blankBlock(blanks) ?? evidenceBlock ?? (linkKind ? teamBlock : "연결 없음 · 연결 고르기");
+  const blockedReason = blankBlock(blanks) ?? fxBlock ?? evidenceBlock ?? (linkKind ? teamBlock : "연결 없음 · 연결 고르기");
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -245,8 +291,9 @@ export function CardUsageForm({
       corpCardId: cardId,
       usedOn,
       merchantVendorId: merchant?.id ?? null,
-      currency: "KRW",
+      currency,
       amount: Number(amountRaw),
+      ...(currency !== "KRW" && fxValue ? { fxRate: fxValue } : {}),
       evidenceTypeCode,
       linkKind,
       memo: typeof memo === "string" && memo.trim() !== "" ? memo.trim() : null,
@@ -257,10 +304,9 @@ export function CardUsageForm({
     setShowingResult(false);
     setMerchant(next);
     setPickOpen(false);
-    if (next.defaultEvidenceType && evidenceTypes.some((option) => option.value === next.defaultEvidenceType)) {
-      setEvidenceTypeCode(next.defaultEvidenceType);
-      setEvidenceSeed((value) => value + 1);
-    }
+    const evidence = evidenceForMerchant(next.defaultEvidenceType, evidenceTypes);
+    setEvidenceTypeCode(evidence.code ?? "");
+    setEvidenceSeed((value) => value + 1);
   }
 
   const fieldErrors = result.validationErrors;
@@ -305,6 +351,7 @@ export function CardUsageForm({
             name="usedOn"
             label="사용일"
             type="date"
+            max={today}
             defaultValue={defaults.usedOn}
             onChange={(event) => setUsedOn(event.target.value)}
             error={fieldErrors?.usedOn?._errors?.[0]}
@@ -316,10 +363,23 @@ export function CardUsageForm({
               {merchant ? "바꾸기" : "고르기"}
             </Button>
             <input type="hidden" name="merchantVendorId" value={merchant?.id ?? ""} readOnly />
+            {merchant?.defaultEvidenceName && evidenceForMerchant(merchant.defaultEvidenceType, evidenceTypes).outside ? (
+              <Form.Hint>{`기본 증빙 ${merchant.defaultEvidenceName} · 카드에 없음`}</Form.Hint>
+            ) : null}
           </div>
           <div className={rowStyles.row}>
             <Form.Field id="card-amount" label="결제 합계">
-              <AmountField error={fieldErrors?.amount?._errors?.[0]} onRaw={onAmountRaw} />
+              <select
+                aria-label="통화"
+                name="currency"
+                className={selectStyles.select}
+                defaultValue="KRW"
+                onChange={(event) => setCurrency(event.target.value === "USD" ? "USD" : "KRW")}
+              >
+                <option value="KRW">KRW</option>
+                <option value="USD">USD</option>
+              </select>
+              <AmountField key={currency} kind={currency === "KRW" ? "krw" : "foreign"} error={fieldErrors?.amount?._errors?.[0]} onRaw={onAmountRaw} />
               {preview.split ? (
                 <Form.Hint>
                   {/* 서버가 다시 셈하는 동안 이전 값은 흐린 글자(UI-SPEC S9 loading — 토큰 하나, 새 CSS 모듈 없음). */}
@@ -330,6 +390,11 @@ export function CardUsageForm({
               ) : null}
             </Form.Field>
           </div>
+          {currency === "USD" ? (
+            <div className={rowStyles.row}>
+              <FxField initial={usdFxRate} error={fieldErrors?.fxRate?._errors?.[0]} onRaw={onFxRaw} />
+            </div>
+          ) : null}
           <div className={rowStyles.row}>
             <Form.Field id="card-usage-evidence" label="증빙 종류">
               <Select

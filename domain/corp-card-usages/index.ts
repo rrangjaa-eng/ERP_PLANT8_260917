@@ -426,6 +426,8 @@ export type CardUsageListItemDto = {
   registeredByName: string;
   /** 등록한 날(서울 날짜) — 경영관리 등록 행의 2행 `{등록자} {MM-DD}`. */
   registeredOn: string;
+  /** 연결 칸(S8) — `{프로젝트} · {줄 번호} {항목}` / `{프로젝트} · 견적 외 비용 · {항목}`. 팀 비용이면 null. */
+  linkLabel: string | null;
   memo: string | null;
   currency: string;
   foreignAmount: number | null;
@@ -451,11 +453,14 @@ const VALUE_KEYS = [
   "registeredOn",
   "memo",
 ] as const;
+// 연결 칸은 프로젝트 이름을 싣는다 — 카드 사용 값과 프로젝트 값을 둘 다 볼 때만(all-of).
+const LINK_LABEL_INFO = ["card_usage.value", "project.value"];
 const AMOUNT_KEYS = ["currency", "foreignAmount", "fxRate", "totalKrw", "supplyKrw", "vatKrw"] as const;
 
 export const CARD_USAGE_LIST_DTO_SPEC: DtoSpec<CardUsageListProjectable, CardUsageListItemDto> = {
   fields: [
     ...VALUE_KEYS.map((key) => ({ key, from: key, infoItem: "card_usage.value" })),
+    { key: "linkLabel", from: "linkLabel", infoItem: LINK_LABEL_INFO },
     ...AMOUNT_KEYS.map((key) => ({ key, from: key, infoItem: "card_usage.amount" })),
   ],
 };
@@ -465,7 +470,27 @@ registerDto({
   fields: CARD_USAGE_LIST_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })),
 });
 
-function toProjectable(row: CardUsageListRow): CardUsageListProjectable {
+// 줄 번호 = 그 줄 차수 안 순번(보관 안 된 줄, 정렬 순 — S10 줄 목록 · S15와 같은 셈).
+async function lineNumbers(viewer: Viewer, revisionIds: readonly string[]): Promise<Map<string, number>> {
+  const lines = await listQuoteLinesByRevisions(viewer, [...new Set(revisionIds)]);
+  const lineNo = new Map<string, number>();
+  const seen = new Map<string, number>();
+  for (const line of lines) {
+    const next = (seen.get(line.revisionId) ?? 0) + 1;
+    seen.set(line.revisionId, next);
+    lineNo.set(line.id, next);
+  }
+  return lineNo;
+}
+
+function cardLinkLabel(row: CardUsageListRow, lineNo: Map<string, number>): string | null {
+  if (row.linkKind !== "quote_line" || row.projectName === null || row.lineItemName === null) return null;
+  if (row.lineKind === "out_of_quote") return `${row.projectName} · 견적 외 비용 · ${row.lineItemName}`;
+  const number = row.quoteLineId ? lineNo.get(row.quoteLineId) : undefined;
+  return `${row.projectName} · ${number === undefined ? row.lineItemName : `${number} ${row.lineItemName}`}`;
+}
+
+function toProjectable(row: CardUsageListRow, lineNo: Map<string, number>): CardUsageListProjectable {
   return {
     id: row.id,
     cardId: row.corpCardId,
@@ -478,6 +503,7 @@ function toProjectable(row: CardUsageListRow): CardUsageListProjectable {
     registeredVia: row.registeredVia,
     registeredByName: row.registeredByName,
     registeredOn: seoulToday(row.createdAt),
+    linkLabel: cardLinkLabel(row, lineNo),
     memo: row.memo,
     currency: row.totalCurrency,
     foreignAmount: row.totalForeignAmount === null ? null : Number(row.totalForeignAmount),
@@ -542,7 +568,8 @@ export async function listCardUsages(viewer: Viewer, filters: CardUsageListFilte
   };
   // 판정(can · 소속)은 위에서 끝내고 트랜잭션 안에서는 목록 쿼리 하나만 — lock_timeout(5s)이 잠금 대기를 끊는다(로드 오류 갈래).
   const rows = await withTransaction((tx) => listCardUsageRows(viewer, { scope, filter }, tx));
-  const projected = await projectMany(viewer, rows.map(toProjectable), CARD_USAGE_LIST_DTO_SPEC);
+  const lineNo = await lineNumbers(viewer, rows.flatMap((row) => (row.lineRevisionId ? [row.lineRevisionId] : [])));
+  const projected = await projectMany(viewer, rows.map((row) => toProjectable(row, lineNo)), CARD_USAGE_LIST_DTO_SPEC);
   const amountsVisible = projected.every((row) => row.totalKrw !== undefined);
   const pageCount = pageCountFrom(projected.length, LIST_PAGE_SIZE);
   const page = clampPage(filters.page, pageCount);
@@ -657,14 +684,7 @@ const PROJECTS_VIEW_DENIED = "프로젝트 보기 권한 없음";
 export async function listProjectCardUsages(viewer: Viewer, projectId: string): Promise<ProjectCardUsages> {
   if (!(await can(viewer, "projects", "view"))) throw new ForbiddenError(PROJECTS_VIEW_DENIED);
   const rows = await listProjectCardUsageRows(viewer, projectId);
-  const lines = await listQuoteLinesByRevisions(viewer, [...new Set(rows.map((row) => row.revisionId))]);
-  const lineNo = new Map<string, number>();
-  const seen = new Map<string, number>();
-  for (const line of lines) {
-    const next = (seen.get(line.revisionId) ?? 0) + 1;
-    seen.set(line.revisionId, next);
-    lineNo.set(line.id, next);
-  }
+  const lineNo = await lineNumbers(viewer, rows.map((row) => row.revisionId));
   const items: ProjectCardUsageDto[] = rows.map((row) => {
     const number = row.quoteLineId ? lineNo.get(row.quoteLineId) : undefined;
     return {

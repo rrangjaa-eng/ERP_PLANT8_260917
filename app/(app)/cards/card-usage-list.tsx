@@ -12,7 +12,7 @@ import styles from "@/app/(app)/projects/projects.module.css";
 import cardStyles from "./cards.module.css";
 
 // 06-05(UI-SPEC S8): 카드 사용 읽기 표 — 그룹 머리글 = 카드, 그룹 안 사용일 오름차순(서버 정렬). 카드 열은 그룹이 말하므로 두지 않는다.
-// 행동 칸 `수정` · `삭제`는 06-09, 연결의 견적 줄 · 견적 외 비용 글자는 06-07이 더한다.
+// 행동 칸 `수정` · `삭제`는 06-09.
 
 export type CardUsageListRowView = {
   id: string;
@@ -22,6 +22,7 @@ export type CardUsageListRowView = {
   merchantName: string | null;
   linkKind: string;
   teamName: string | null;
+  linkLabel: string | null;
   registeredVia: string;
   registeredByName: string;
   registeredOn: string | null;
@@ -54,7 +55,19 @@ function totalSecondLine(row: CardUsageListRowView): ReactNode {
 
 function linkText(row: CardUsageListRowView): string {
   if (row.linkKind === "team_cost") return `팀 비용 · ${row.teamName ?? "—"}`;
-  return "—";
+  return row.linkLabel ?? "—";
+}
+
+// 연결 칸은 한 줄 말줄임 + `title` 전문(06-07 플랜 S9 long-text backstop).
+function linkCell(row: CardUsageListRowView): ReactNode {
+  const text = linkText(row);
+  return (
+    <span className={cardStyles.linkCell}>
+      <span className={cardStyles.linkText} title={text}>
+        {text}
+      </span>
+    </span>
+  );
 }
 
 // 「표시 — 경영관리 등록」: 대리 등록이면 `경영관리 등록`(--text-strong 600) + 2행 `{등록자} {MM-DD}`, 본인 등록이면 이름(400). 대리 등록 자체는 06-09.
@@ -63,7 +76,7 @@ const PROXY_STYLE = { fontWeight: "var(--fw-medium)", color: "var(--text-strong)
 const COLUMNS: TableColumn<CardUsageListRowView>[] = [
   { key: "usedOn", header: "사용일", priority: "p2", cell: (row) => <Num value={row.usedOn.slice(5)} /> },
   { key: "merchant", header: "가맹점", priority: "p2", cell: (row) => row.merchantName ?? "—" },
-  { key: "link", header: "연결", priority: "p1", cell: (row) => linkText(row) },
+  { key: "link", header: "연결", priority: "p1", cell: linkCell },
   {
     key: "total",
     header: "결제 합계",

@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, gte, isNull, lt, ne, or, type SQL } from "drizzle-orm";
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
-import { corpCardUsages, corpCards, quoteLines, quoteRevisions, teams, users, vendors } from "@/db/schema";
+import { corpCardUsages, corpCards, projects, quoteLines, quoteRevisions, teams, users, vendors } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 
 // 06-05(EXP-07): 법인카드 사용 쓰기 · 목록 · 직전 등록. 범위(UA-612)는 목록 쿼리의 조건에서 갈린다 — 보관된 건은 늘 뺀다(H-4 기반).
@@ -40,6 +40,11 @@ export type CardUsageListRow = CardUsageRow & {
   merchantName: string | null;
   teamName: string | null;
   registeredByName: string;
+  /** 06-07 D-1 — 견적 줄 연결의 줄 · 프로젝트(팀 비용이면 null). */
+  lineItemName: string | null;
+  lineKind: string | null;
+  lineRevisionId: string | null;
+  projectName: string | null;
 };
 
 function scopeCondition(scope: CardUsageScope): SQL | undefined {
@@ -83,6 +88,10 @@ export async function listCardUsageRows(
       merchantName: vendors.name,
       teamName: teams.name,
       registeredByName: users.name,
+      lineItemName: quoteLines.itemName,
+      lineKind: quoteLines.lineKind,
+      lineRevisionId: quoteLines.revisionId,
+      projectName: projects.name,
     })
     .from(corpCardUsages)
     .innerJoin(corpCards, eq(corpCards.id, corpCardUsages.corpCardId))
@@ -90,6 +99,8 @@ export async function listCardUsageRows(
     .leftJoin(vendors, eq(vendors.id, corpCardUsages.merchantVendorId))
     .leftJoin(teams, eq(teams.id, corpCardUsages.teamId))
     .leftJoin(quoteLines, eq(quoteLines.id, corpCardUsages.quoteLineId))
+    .leftJoin(quoteRevisions, eq(quoteRevisions.id, quoteLines.revisionId))
+    .leftJoin(projects, eq(projects.id, quoteRevisions.projectId))
     .where(and(...conditions))
     .orderBy(
       asc(corpCards.label),
@@ -108,6 +119,10 @@ export async function listCardUsageRows(
     merchantName: row.merchantName,
     teamName: row.teamName,
     registeredByName: row.registeredByName,
+    lineItemName: row.lineItemName,
+    lineKind: row.lineKind,
+    lineRevisionId: row.lineRevisionId,
+    projectName: row.projectName,
   }));
 }
 

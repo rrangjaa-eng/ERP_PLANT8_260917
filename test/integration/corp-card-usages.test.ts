@@ -35,6 +35,7 @@ import {
   cardUsageFormDefaults,
   cardUsageFormOptions,
   createCardUsage,
+  listCardUsages,
   listProjectCardUsages,
   precheckCardUsage,
   previewCardAmounts,
@@ -995,6 +996,21 @@ describe("보관 건 제외(H-4)", () => {
     await expect(gate(null, "card.dual-link-block", { side: "expense", links })).resolves.toEqual({ allowed: true });
     const after = await searchLinesForCardLink(fx.pm, { projectId: fx.projectId, query: "", currentLineId: null });
     expect(after.rows[0]).toMatchObject({ remainingKrw: 1_000_000, hint: "남은 실행가 1,000,000" });
+  });
+});
+
+describe("[D-1] /cards 목록 연결 칸(S8)", () => {
+  it("견적 줄 `{프로젝트} · {줄 번호} {항목}` · 견적 외 비용 `{프로젝트} · 견적 외 비용 · {항목}` · 팀 비용은 linkLabel 없음", async () => {
+    const fx = await cardProject([1_000_000, 500_000]);
+    const [project] = await db.select({ name: projects.name }).from(projects).where(eq(projects.id, fx.projectId));
+    const onLine = await cardOnLine(fx, fx.lines[1] ?? "", 100_000);
+    const outside = await outOfQuote(fx, 50_000, "현장 다과");
+    const team = (await createCardUsage(fx.pm, usageInput(fx.cardId), await precheckCardUsage(fx.pm, usageInput(fx.cardId)))).id;
+    const { rows } = await listCardUsages(fx.pm, { month: seoulToday().slice(0, 7) }, seoulToday());
+    const labelOf = (id: string) => rows.find((row) => row.id === id)?.linkLabel;
+    expect(labelOf(onLine)).toBe(`${project?.name} · 2 줄2`);
+    expect(labelOf(outside)).toBe(`${project?.name} · 견적 외 비용 · 현장 다과`);
+    expect(labelOf(team)).toBeNull();
   });
 });
 

@@ -199,6 +199,11 @@ test.describe("법인카드 사용 등록 (06-05)", () => {
     await amount.press("Control+Enter");
     await expect(sheet.getByRole("status")).toHaveText("카드 사용 등록됨 · 1,100,000");
     await expect(page.getByRole("table").getByText("1,100,000", { exact: true })).toHaveCount(1);
+    // [DOM 감사 D-1] 뒤 목록 연결 칸 `{프로젝트} · {줄 번호} {항목}` — 한 줄(nowrap) · title 전문.
+    const linkCell = page.getByRole("table").getByText(`${target.projectName} · 1 ${target.itemName}`, { exact: true });
+    await expect(linkCell).toHaveCount(1);
+    await expect(linkCell).toHaveAttribute("title", `${target.projectName} · 1 ${target.itemName}`);
+    await expect(linkCell).toHaveCSS("white-space", "nowrap");
 
     // M-4 — 방금 등록 = 직전 등록: 종류 · 프로젝트는 남고 견적 줄은 빈다 → 1차 비활성 + `연결 없음 · 연결 고르기`.
     await expect(sheet.getByRole("radio", { name: "견적 줄" })).toBeChecked();
@@ -301,6 +306,8 @@ test.describe("법인카드 사용 등록 (06-05)", () => {
     await expect(sheet.getByText("저장하면 견적 외 비용 줄 생김 · 실행가 30,000", { exact: true })).toBeVisible();
     await amount.press("Control+Enter");
     await expect(sheet.getByRole("status")).toHaveText("카드 사용 등록됨 · 30,000");
+    // [DOM 감사 D-1] 뒤 목록 연결 칸 `{프로젝트} · 견적 외 비용 · {항목}`.
+    await expect(page.getByRole("table").getByText(`${target.projectName} · 견적 외 비용 · ${item}`, { exact: true })).toHaveCount(1);
 
     await page.goto(`/projects/${target.projectId}`);
     await expect(page.getByText(item).first()).toBeVisible();

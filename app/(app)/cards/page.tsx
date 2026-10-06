@@ -79,6 +79,7 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
             merchantName: row.merchantName ?? null,
             linkKind: row.linkKind,
             teamName: row.teamName ?? null,
+            linkLabel: row.linkLabel ?? null,
             registeredVia: row.registeredVia ?? "self",
             registeredByName: row.registeredByName ?? "—",
             registeredOn: row.registeredOn ?? null,

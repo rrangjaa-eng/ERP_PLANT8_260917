@@ -1011,7 +1011,8 @@ export async function writeQuoteLinesInTx(
     const newIds = input.rows.filter((row) => row.isNew).map((row) => row.id);
     const presentById = new Map((await repoFindQuoteLinesByIds(viewer, newIds, { revisionId }, tx)).map((row) => [row.id, row] as const));
     // 261006 「바뀔 때만 막기」 — 거래처 갈래(협력사 · 둘 다)는 새로 고르거나 바꾼 값만 본다.
-    const requestedVendorIds = [...new Set([...input.rows, ...foundRows].flatMap((row) => (row.vendorId ? [row.vendorId] : [])))];
+    // UUID는 표기(대소문자)와 무관하게 같은 값이라 소문자로 맞춰 찾고 비교한다(DB가 돌려주는 id도 소문자 · PR #175 Codex).
+    const requestedVendorIds = [...new Set([...input.rows, ...foundRows].flatMap((row) => (row.vendorId ? [row.vendorId.toLowerCase()] : [])))];
     const vendorKinds = await repoFindVendorKindsByIds(viewer, requestedVendorIds, tx);
 
     for (const [rowIndex, received] of input.rows.entries()) {
@@ -1033,8 +1034,9 @@ export async function writeQuoteLinesInTx(
       // 저장된 값이다(프로젝트 복사의 출처 클라이언트와 같은 기준 · 거래처가 가려진 계급의 복제도 막히지 않는다).
       const duplicatedSource = received.isNew && received.duplicatedFrom ? currentById.get(received.duplicatedFrom) : undefined;
       const storedVendorId = (current ?? (received.isNew ? (presentById.get(received.id) ?? duplicatedSource) : undefined))?.vendorId ?? null;
-      const vendorKind = kindRow.vendorId ? vendorKinds.get(kindRow.vendorId) : undefined;
-      if (kindRow.vendorId && kindRow.vendorId !== storedVendorId && vendorKind && !servesSide(vendorKind, "supplier")) {
+      const vendorId = kindRow.vendorId?.toLowerCase();
+      const vendorKind = vendorId ? vendorKinds.get(vendorId) : undefined;
+      if (vendorId && vendorId !== storedVendorId && vendorKind && !servesSide(vendorKind, "supplier")) {
         formatErrors.push({ rowIndex, rowId: kindRow.id, field: "vendorId", label: CELL_LABELS.vendorId, reason: NOT_SUPPLIER_VENDOR });
       }
       const money = normalizeLineMoney(kindRow, rowIndex);

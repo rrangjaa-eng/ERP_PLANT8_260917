@@ -82,9 +82,10 @@ export async function findVendorNamesByIds(viewer: Viewer, ids: string[], tx: Db
 }
 
 // 261006 「바뀔 때만 막기」 — 새로 고르거나 바꾼 거래처의 갈래(id → 갈래). 보관 · 숨김도 넣는다(판정은 호출자).
+// FOR SHARE — 호출 트랜잭션이 끝날 때까지 갈래 수정(UPDATE)을 막는다(판정 뒤 저장 전 경합). 저장끼리는 막지 않는다.
 export async function findVendorKindsByIds(viewer: Viewer, ids: string[], tx: DbOrTx = db): Promise<Map<string, VendorKind>> {
   if (ids.length === 0) return new Map();
-  const rows = await tx.select({ id: vendors.id, kind: vendors.kind }).from(vendors).where(inArray(vendors.id, ids));
+  const rows = await tx.select({ id: vendors.id, kind: vendors.kind }).from(vendors).where(inArray(vendors.id, ids)).for("share");
   return new Map(rows.map((row) => [row.id, row.kind]));
 }
 

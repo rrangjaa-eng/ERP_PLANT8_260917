@@ -54,6 +54,20 @@ describe("프로젝트 클라이언트 — client · both만 (등록 · 복사, 
     expect(await db.select().from(projects).where(eq(projects.name, name))).toHaveLength(0);
   });
 
+  it("협력사 id를 대문자로 보내도 거부한다(UUID 표기와 무관)", async () => {
+    const { pmUserId, teamId } = await makePm();
+    const supplier = await vendorOf("supplier");
+    const name = `갈래거부-대문자-${randomUUID()}`;
+
+    const error = await rejectionOf(
+      createProject(SYSTEM_VIEWER, { clientId: supplier.id.toUpperCase(), teamId, pmUserId, name }),
+      ProjectInputRejectedError,
+    );
+
+    expect(error.errors).toContainEqual({ field: "clientId", reason: NOT_CLIENT });
+    expect(await db.select().from(projects).where(eq(projects.name, name))).toHaveLength(0);
+  });
+
   it.each(["client", "both"] as const)("%s 거래처는 클라이언트로 등록된다", async (kind) => {
     const { pmUserId, teamId } = await makePm();
     const vendor = await vendorOf(kind);
@@ -140,6 +154,17 @@ describe("견적 줄 거래처 — supplier · both만 (새 줄 · 수정 · 합
     const error = await rejectionOf(saveQuoteLines(SYSTEM_VIEWER, revisionId, { rows: [line] }), SaveRejectedError);
 
     expect(error.formatErrors).toContainEqual(expect.objectContaining({ rowId: line.id, field: "vendorId", label: "거래처", reason: NOT_SUPPLIER }));
+    expect(await db.select().from(quoteLines).where(eq(quoteLines.revisionId, revisionId))).toHaveLength(0);
+  });
+
+  it("클라이언트 거래처 id를 대문자로 보내도 거부한다(UUID 표기와 무관)", async () => {
+    const { revisionId, subcategory } = await setup();
+    const client = await vendorOf("client");
+    const line = newLine(subcategory, client.id.toUpperCase());
+
+    const error = await rejectionOf(saveQuoteLines(SYSTEM_VIEWER, revisionId, { rows: [line] }), SaveRejectedError);
+
+    expect(error.formatErrors).toContainEqual(expect.objectContaining({ rowId: line.id, field: "vendorId", reason: NOT_SUPPLIER }));
     expect(await db.select().from(quoteLines).where(eq(quoteLines.revisionId, revisionId))).toHaveLength(0);
   });
 

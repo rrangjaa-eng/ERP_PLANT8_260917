@@ -4,6 +4,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import { actionLog, expensePayments, expenses, files } from "@/db/schema";
 import { approveDocument, getApprovalView } from "@/domain/approvals";
+import { previewPayable } from "@/domain/payments";
 import { createTeamExpenseDraft, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { voidEvidence } from "@/domain/evidence";
 import { createAccount } from "@/domain/auth/accounts";
@@ -131,6 +132,97 @@ test.describe("한 건 지급 완료 (06-03)", () => {
       .where(and(eq(expensePayments.expenseId, expenseId), isNull(expensePayments.cancelledAt)));
     if (!record) throw new Error("지급 기록 없음");
     await expect(page.getByTestId("payment-paid-line")).toContainText(`지급 총액 ${formatKrw(record.payableKrw)}`);
+    await page.context().close();
+  });
+});
+
+function addDays(date: string, days: number): string {
+  const at = new Date(`${date}T00:00:00Z`);
+  at.setUTCDate(at.getUTCDate() + days);
+  return at.toISOString().slice(0, 10);
+}
+
+// 06-04(D-604 · D-605 · Q6): 지급 섹션 칸 — 이체액 · 차이 사유 · 미래 지급일.
+test.describe("지급 섹션 칸 (06-04)", () => {
+  test("이체액을 다르게 + 차이 사유 + 미래 지급일 → 지급 완료 → 읽기 줄 2행에 차이 부호 · 지급일 = 그 날짜", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const expenseId = await approvedWithoutEvidence(browser, baseURL, fx, "tracer");
+    const payer = await makePaymentManagerE2E();
+    const future = addDays(seoulToday(), 10);
+    const preview = await previewPayable(payer.viewer, { expenseId, payDate: future });
+    if (preview.payableKrw == null) throw new Error("지급 총액 없음");
+    const transfer = preview.payableKrw - 3_300;
+
+    const page = await loginPage(browser, baseURL, payer);
+    await page.goto(`/expenses/${expenseId}`);
+    const pay = page.getByRole("button", { name: /^지급 완료/ });
+    await waitForHydration(pay);
+    const section = paymentSection(page);
+    await expect(section.getByLabel("이체액")).toHaveValue(formatKrw(preview.payableKrw));
+    await expect(section.getByLabel("차이 사유")).toHaveCount(0);
+
+    await section.getByLabel("지급일").fill(future);
+    await section.getByLabel("이체액").fill(String(transfer));
+    const hint = section.getByTestId("payment-transfer-hint");
+    await expect(hint).toHaveText(`지급 총액 ${formatKrw(preview.payableKrw)} · 차이 -3,300`);
+    await expect(pay).toBeEnabled();
+    await pay.click();
+    await expect(section.getByText("차이 사유 없음 · 사유 적기")).toBeVisible();
+    await expect(section.getByLabel("차이 사유")).toBeFocused();
+    await section.getByLabel("차이 사유").fill("이체 수수료 차감");
+    await pay.click();
+
+    await expect(page.getByTestId("payment-result")).toHaveText(new RegExp(`^지급 완료 → ${future} · \\d{2}:\\d{2}$`));
+    await expect(page.getByTestId("payment-paid-line")).toContainText(`지급 총액 ${formatKrw(preview.payableKrw)} · 차이 -3,300`);
+    await expect(section.getByText(formatKrw(transfer), { exact: true })).toBeVisible();
+    await expect(page.getByTestId("payment-diff-reason")).toHaveText("이체 수수료 차감");
+    const [record] = await db
+      .select({ payDate: expensePayments.payDate, diffKrw: expensePayments.diffKrw })
+      .from(expensePayments)
+      .where(and(eq(expensePayments.expenseId, expenseId), isNull(expensePayments.cancelledAt)));
+    expect(record).toEqual({ payDate: future, diffKrw: -3_300 });
+    await page.context().close();
+  });
+});
+
+test.describe("지급 총액 바뀜 뒤 다시 지급 (06-03 검토 P2-1)", () => {
+  test("화면을 연 뒤 지급 총액이 바뀌면 거부 + 새 지급 총액이 이체액 칸에 서고, 다시 누르면 새 값으로 지급된다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const expenseId = await approvedWithoutEvidence(browser, baseURL, fx, "hold");
+    const payer = await makePaymentManagerE2E();
+    const today = seoulToday();
+    const before = await previewPayable(payer.viewer, { expenseId, payDate: today });
+    if (before.payableKrw == null) throw new Error("지급 총액 없음");
+
+    const page = await loginPage(browser, baseURL, payer);
+    await page.goto(`/expenses/${expenseId}`);
+    const pay = page.getByRole("button", { name: /^지급 완료/ });
+    await waitForHydration(pay);
+    const section = paymentSection(page);
+    await expect(section.getByLabel("이체액")).toHaveValue(formatKrw(before.payableKrw));
+
+    // 테스트 준비 전용 — 이 문서 행의 공급가액만 바꿔 서버가 다시 계산할 지급 총액을 바꾼다(전역 세율 · 설정은 그대로).
+    const [row] = await db.select({ supply: expenses.supplyAmountKrw }).from(expenses).where(eq(expenses.id, expenseId));
+    if (row?.supply == null) throw new Error("공급가액 없음");
+    await db
+      .update(expenses)
+      .set({ supplyAmountKrw: row.supply + 100_000 })
+      .where(eq(expenses.id, expenseId));
+    const after = await previewPayable(payer.viewer, { expenseId, payDate: today });
+    if (after.payableKrw == null || after.payableKrw === before.payableKrw) throw new Error("지급 총액이 바뀌지 않았다");
+
+    await pay.click();
+    await expect(page.getByText(/지급 총액 바뀜 · 이체액 확인/)).toBeVisible();
+    await expect(section.getByLabel("이체액")).toHaveValue(formatKrw(after.payableKrw));
+    await expect(page.getByRole("button", { name: /^지급 완료/ })).toBeEnabled();
+    await pay.click();
+
+    await expect(page.getByTestId("payment-result")).toBeVisible();
+    const [record] = await db
+      .select({ payableKrw: expensePayments.payableKrw, transferKrw: expensePayments.transferKrw })
+      .from(expensePayments)
+      .where(and(eq(expensePayments.expenseId, expenseId), isNull(expensePayments.cancelledAt)));
+    expect(record).toEqual({ payableKrw: after.payableKrw, transferKrw: after.payableKrw });
     await page.context().close();
   });
 });

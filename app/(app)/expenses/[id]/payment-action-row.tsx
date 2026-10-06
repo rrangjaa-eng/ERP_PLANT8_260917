@@ -1,108 +1,32 @@
 "use client";
 
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
-import type { PaymentViewDto } from "@/domain/payments";
+import { DIFF_REASON_REQUIRED } from "@/domain/payments/action-row";
 import { Button } from "@/ui/button/Button";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
-import { KvList, type KvItem } from "@/ui/kv-list/KvList";
-import { Num } from "@/ui/num/Num";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { isCtrlCombo } from "@/lib/shortcut";
 import { ConflictLine } from "@/app/(app)/approvals/conflict-line";
 // 05 문서 화면 행동 줄과 같은 자리 · 같은 폰 고정 규칙(UI-SPEC S4 「1차 자리는 Phase 5 문서 화면의 행동 자리 그대로」 · UA-605).
 import barStyles from "@/app/(app)/leave/[id]/document-actions.module.css";
 import { completeExpensePaymentAction } from "./actions";
+import { diffReasonNeeded, PaymentFields, PaymentPanelProvider, transferError, transferNumber, usePaymentPanel, type PaymentFieldErrors } from "./payment-section";
 import styles from "./expense.module.css";
 
 // 06-03(UI-SPEC S5 · 「지출결의 상태 → 1차」): 결재 통과 문서의 지급 섹션 뼈대 + 행동 줄. 1차는 서버가 정한 `row`(resolveExpenseActionRow)
 // 그대로 — 클라이언트는 상태로 고르지 않고 금액 셈도 하지 않는다(O-18). 지급 완료는 확인 모달 없이 1차로 끝나고(되돌리기 = 지급 취소, 06-04),
 // 성공하면 응답 뒤 다시 읽은 표로 1차 자리에 결과 글자가 선다(토스트 없음 — §7-6). 행동 뒤 포커스는 결과 글자(r2 F5).
-// 06-04가 이체액 · 지급일 · 차이 사유 칸, 06-06이 증빙 금액 칸을 같은 패널 상태(PaymentPanelProvider)에 더한다.
+// 06-04: 이체액 · 지급일 · 차이 사유 칸(payment-section.tsx PaymentFields)이 같은 패널 상태를 쓰고 1차 `지급 완료`가 함께 보낸다.
+// 06-06이 증빙 금액 칸을 같은 패널 상태(PaymentPanelProvider)에 더한다.
 
-type PaymentView = Partial<PaymentViewDto>;
+export { PaymentPanelProvider };
 
-type PanelState = {
-  view: PaymentView;
-  conflict: string | null;
-  setConflict: (message: string | null) => void;
-};
-
-const PanelContext = createContext<PanelState | null>(null);
-
-function usePanel(): PanelState {
-  const state = useContext(PanelContext);
-  if (!state) throw new Error("PaymentPanelProvider 밖");
-  return state;
-}
-
-export function PaymentPanelProvider({ view, children }: { view: PaymentView; children: ReactNode }) {
-  const [conflict, setConflict] = useState<string | null>(null);
-  return <PanelContext.Provider value={{ view, conflict, setConflict }}>{children}</PanelContext.Provider>;
-}
-
-// 이체액 라벨은 지급 방식 이름(UI-SPEC S5 · 용어 줄).
-const TRANSFER_LABELS: Record<string, string> = {
-  corp_card: "카드 결제액",
-  cash: "현금 지급액",
-};
-
-export function PaymentSection({
-  paymentMethod,
-  paymentMethodName,
-  scheduledPaymentDate,
-}: {
-  paymentMethod: string | null;
-  paymentMethodName: string | null;
-  scheduledPaymentDate: string | null;
-}) {
-  const { view } = usePanel();
-  const dash = <span className={styles.muted}>—</span>;
-  const paid = view.row?.row === "P6";
-  const items: KvItem[] = [
-    {
-      label: "지급 예정일",
-      value: (
-        <>
-          {scheduledPaymentDate ?? dash}
-          {view.row?.ownerNote ? <span className={`${styles.subLine} ${styles.muted}`}>{view.row.ownerNote}</span> : null}
-        </>
-      ),
-    },
-    { label: "지급 방식", value: paymentMethodName ?? dash },
-  ];
-  if (paid) {
-    items.push({ label: "지급일", value: view.payDate ?? dash });
-    if (view.transferKrw !== undefined) {
-      items.push({
-        label: (paymentMethod && TRANSFER_LABELS[paymentMethod]) ?? "이체액",
-        value: (
-          <>
-            <Num value={view.transferKrw} />
-            <span className={styles.taxLine} data-testid="payment-paid-line">
-              지급 총액 <Num value={view.payableKrw ?? null} />
-              {view.diffKrw ? (
-                <>
-                  {" · 차이 "}
-                  <Num value={view.diffKrw} />
-                </>
-              ) : null}
-              {view.grossSupplyKrw !== null && view.grossSupplyKrw !== undefined ? (
-                <>
-                  {" · 공급가 역산 "}
-                  <Num value={view.grossSupplyKrw} />
-                </>
-              ) : null}
-            </span>
-          </>
-        ),
-      });
-    }
-  }
+export function PaymentSection(props: { paymentMethod: string | null; paymentMethodName: string | null; scheduledPaymentDate: string | null }) {
   return (
     <DetailScreen.Section title="지급">
-      <KvList items={items} />
+      <PaymentFields {...props} />
     </DetailScreen.Section>
   );
 }
@@ -124,18 +48,41 @@ export function PaymentLoadError() {
 
 export function PaymentActionRow() {
   const router = useRouter();
-  const { view, conflict, setConflict } = usePanel();
+  const { view, conflict, setConflict, fields, preview, previewing, refreshPreview, setFieldErrors } = usePaymentPanel();
   const [pending, setPending] = useState(false);
   const submittingRef = useRef(false);
   const justPaidRef = useRef(false);
   const resultRef = useRef<HTMLSpanElement>(null);
+
+  // 칸 오류가 서면 그 칸으로(입력값은 남는다).
+  function showFieldErrors(errors: PaymentFieldErrors) {
+    setFieldErrors(errors);
+    const id = errors.payDate ? "payment-pay-date" : errors.transferKrw ? "payment-transfer" : errors.diffReason ? "payment-diff-reason" : null;
+    if (id) requestAnimationFrame(() => document.getElementById(id)?.focus());
+  }
 
   const { execute } = useAction(completeExpensePaymentAction, {
     onSuccess: () => {
       justPaidRef.current = true;
       router.refresh();
     },
-    onError: ({ error }) => setConflict(error.serverError ?? "결과를 받지 못함 · 새로 고침"),
+    onError: ({ error }) => {
+      const validation = error.validationErrors;
+      if (validation) {
+        const errors: PaymentFieldErrors = {
+          payDate: validation.payDate?._errors?.[0],
+          transferKrw: validation.transferKrw?._errors?.[0],
+          diffReason: validation.diffReason?._errors?.[0],
+        };
+        if (errors.payDate || errors.transferKrw || errors.diffReason) return showFieldErrors(errors);
+      }
+      if (error.serverError === DIFF_REASON_REQUIRED) return showFieldErrors({ diffReason: DIFF_REASON_REQUIRED });
+      setConflict(error.serverError ?? "결과를 받지 못함 · 새로 고침");
+      // 거부 뒤(지급 총액 바뀜 · 동시성) 문서를 다시 읽고 지급 총액 미리보기도 다시 받는다 — 다음 1차가 새 값 · 새 version을 보낸다.
+      // 안 고친 이체액 칸은 새 지급 총액을 따르고, 고친 칸은 그대로 두고 차이 힌트만 새 값으로 선다(06-03 검토 P2-1).
+      router.refresh();
+      refreshPreview();
+    },
     onSettled: () => {
       submittingRef.current = false;
       setPending(false);
@@ -146,15 +93,23 @@ export function PaymentActionRow() {
   const paid = view.row?.row === "P6" && view.payDate !== undefined;
 
   function pay() {
-    if (!canPay || submittingRef.current || view.expenseId === undefined || view.version === undefined) return;
+    if (!canPay || submittingRef.current || previewing || view.expenseId === undefined || view.version === undefined) return;
+    const transferProblem = transferError(fields);
+    const transferKrw = transferNumber(fields.transferRaw);
+    const needReason = diffReasonNeeded(fields, preview);
+    if (transferProblem || transferKrw === null) return showFieldErrors({ transferKrw: transferProblem ?? undefined });
+    if (needReason && fields.diffReason.trim() === "") return showFieldErrors({ diffReason: DIFF_REASON_REQUIRED });
     submittingRef.current = true;
     setPending(true);
     setConflict(null);
+    setFieldErrors({});
     execute({
       expenseId: view.expenseId,
-      payDate: view.payDate,
-      expectedPayableKrw: view.payableKrw ?? 0,
+      payDate: fields.payDate,
+      expectedPayableKrw: preview.payableKrw ?? view.payableKrw ?? 0,
       version: view.version,
+      transferKrw,
+      ...(needReason ? { diffReason: fields.diffReason } : {}),
     });
   }
 
@@ -188,7 +143,7 @@ export function PaymentActionRow() {
         <div className={barStyles.buttons}>
           {canPay ? (
             <span className={barStyles.primaryWrap}>
-              <Button variant="primary" shortcut="Ctrl+Enter" pending={pending} onClick={pay}>
+              <Button variant="primary" shortcut="Ctrl+Enter" pending={pending || previewing} onClick={pay}>
                 지급 완료
               </Button>
             </span>

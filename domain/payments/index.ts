@@ -15,8 +15,9 @@ import { EXPENSE_DOCUMENT_KIND } from "@/domain/expenses/access";
 import { incomeTypeFor, pickTaxDates, type PickedTaxDates } from "@/domain/expenses/tax";
 import { TAX_UNAVAILABLE } from "@/domain/expenses/gate";
 import { hasEvidence } from "@/domain/evidence/has-evidence";
-import { resolveExpenseActionRow, type ExpenseActionBar } from "@/domain/payments/action-row";
+import { DIFF_REASON_REQUIRED, resolveExpenseActionRow, type ExpenseActionBar } from "@/domain/payments/action-row";
 import { listCodeItems as defaultListCodeItems } from "@/repositories/code-tables";
+import { findUserNamesByIds } from "@/repositories/users";
 import { findExpenseApprovalInstance, findExpenseById, lockExpenseForUpdate, type ExpenseRow } from "@/repositories/expenses";
 import { bumpExpenseVersion, findLivePayment, insertPayment } from "@/repositories/expense-payments";
 import { withTransaction } from "@/lib/db-transaction";
@@ -44,6 +45,16 @@ export class PaymentNotFoundError extends UserFacingError {
 export class PaymentConflictError extends UserFacingError {}
 
 const ALREADY_PAID = "이미 지급 완료 · 새로 고침";
+const PAYMENT_METHOD_MISSING = "지급 방식 없음 · 지출결의 확인";
+
+// 06-04(D-605) — 이체액 ≠ 지급 총액인데 차이 사유가 없음. 화면은 이 문구로 차이 사유 칸 아래에 둔다(「Error — 차이 사유 칸」).
+export { DIFF_REASON_REQUIRED } from "@/domain/payments/action-row";
+
+export class DiffReasonRequiredError extends UserFacingError {
+  constructor() {
+    super(DIFF_REASON_REQUIRED);
+  }
+}
 
 // 서버가 다시 계산한 지급 총액이 화면이 본 값과 다르거나, 사전 조회와 잠금 사이에 기준(기준일 · 증빙 종류 · 금액 원천)이 바뀜 —
 // 처리하지 않고 새 지급 총액을 싣는다(사람이 이체액을 다시 본다 · 다시 시도하지 않는다).
@@ -223,9 +234,12 @@ async function currentStepName(viewer: Viewer, expenseId: string): Promise<strin
   return view?.steps?.find((step) => step.state === "current")?.label ?? null;
 }
 
-function payableOf(pre: PaymentInputs): Promise<PayableDecision> | null {
+function payableOf(pre: PaymentInputs, transferKrw?: number): Promise<PayableDecision> | null {
   if (!pre.amount || !pre.tax) return null;
-  return decidePayable({ amount: pre.amount, taxRule: pre.tax.taxRule, applyOpts: pre.tax.dates.applyOpts, incomeType: pre.tax.incomeType }, pre.tax.rates);
+  return decidePayable(
+    { amount: pre.amount, taxRule: pre.tax.taxRule, applyOpts: pre.tax.dates.applyOpts, incomeType: pre.tax.incomeType, transferKrw },
+    pre.tax.rates,
+  );
 }
 
 // 잠금 뒤 기준일 바뀜 신호 — 그날 세율은 풀을 읽어야 하므로 트랜잭션을 되돌린 뒤 밖에서 새 지급 총액을 셈해 PayableChangedError로 바꾼다.
@@ -257,7 +271,10 @@ export async function judgeLockedPayment(input: {
   payDate: string;
   expectedPayableKrw: number;
   shared: PaymentShared;
-}): Promise<{ payable: PayableDecision; paymentMethod: string }> {
+  /** 06-04 — 실제 이체액(없으면 지급 총액). 차이 = diffKrw(이체액, 지급 총액). */
+  transferKrw?: number;
+  diffReason?: string | null;
+}): Promise<{ payable: PayableDecision; paymentMethod: string; diffReason: string | null }> {
   const { pre, locked } = input;
   const decision = await gate(locked, "payment.approval-required", { approvalState: input.approvalState, stepName: pre.stepName });
   if (!decision.allowed) throw new GateBlockedError(decision.reason);
@@ -271,14 +288,25 @@ export async function judgeLockedPayment(input: {
     );
     throw new PayableChangedError(fresh.payableKrw, input.payDate);
   }
-  if (!pre.tax || !basis.amount || !basis.tax || !locked.paymentMethod) throw new GateBlockedError(TAX_UNAVAILABLE);
+  if (!pre.tax || !basis.amount || !basis.tax) throw new GateBlockedError(TAX_UNAVAILABLE);
+  // 05 제출 게이트가 지급 방식을 강제해 결재 통과 문서에는 생기지 않는 갈래 — 그래도 이유는 지급 방식으로(06-03 검토 P3-2).
+  if (!locked.paymentMethod) throw new GateBlockedError(PAYMENT_METHOD_MISSING);
 
   const payable = await decidePayable(
-    { amount: basis.amount, taxRule: basis.tax.taxRule, applyOpts: basis.tax.dates.applyOpts, incomeType: basis.tax.incomeType },
+    {
+      amount: basis.amount,
+      taxRule: basis.tax.taxRule,
+      applyOpts: basis.tax.dates.applyOpts,
+      incomeType: basis.tax.incomeType,
+      transferKrw: input.transferKrw,
+    },
     pre.tax.rates,
   );
   if (payable.payableKrw !== input.expectedPayableKrw) throw new PayableChangedError(payable.payableKrw, input.payDate);
-  return { payable, paymentMethod: locked.paymentMethod };
+  // 차이 사유(D-605) — 차이 0이면 사유를 저장하지 않는다. 비용 기준 칸(증빙 금액 · 공급가액)은 어느 갈래도 쓰지 않는다.
+  const reason = input.diffReason?.trim() ?? "";
+  if (payable.diffKrw !== 0 && reason === "") throw new DiffReasonRequiredError();
+  return { payable, paymentMethod: locked.paymentMethod, diffReason: payable.diffKrw === 0 ? null : reason };
 }
 
 export type CompletePaymentDeps = {
@@ -293,10 +321,18 @@ export type CompletePaymentResult = { paymentId: string; payDate: string; versio
 // 지급 완료. 권한 · 사전 조회는 트랜잭션 전. 한 트랜잭션: ⑴ 지출결의 행 FOR UPDATE(05 lockExpenseForUpdate — 전역 잠금 순서 N-3에서
 // 이 앞이 06-13 견적 줄 잠금 자리) ⑵ 문서 version ⑶ 결재 상태(같은 tx) → 결재 게이트(06-04가 그 뒤에 증빙 · 짝 게이트를 더한다)
 // ⑶′ 기준 재판정(기준일 · 증빙 종류 · 금액 원천 — 증빙 유무는 hasEvidence(…, tx)) · 재계산 — 게이트보다 뒤(CROSS-R1 F-3)
-// ⑷ INSERT ⑸ 문서 version + 1 ⑹ 행동 로그 payment_process(같은 tx). 이체액 = 서버가 계산한 지급 총액(칸 · 차이 사유는 06-04).
+// ⑷ INSERT ⑸ 문서 version + 1 ⑹ 행동 로그 payment_process(같은 tx). 이체액은 화면 칸 값(06-04) — 차이 ≠ 0이면 사유 필수(D-605).
 export async function completeExpensePayment(
   viewer: Viewer,
-  input: { expenseId: string; payDate?: string | null; expectedPayableKrw: number; version: number },
+  input: {
+    expenseId: string;
+    payDate?: string | null;
+    expectedPayableKrw: number;
+    version: number;
+    /** 06-04 — 실제 이체액(화면 칸 기본값 = 지급 총액). 없으면 지급 총액(일괄 · 테스트 경로). */
+    transferKrw?: number;
+    diffReason?: string | null;
+  },
   deps?: CompletePaymentDeps,
 ): Promise<CompletePaymentResult> {
   if (!(await can(viewer, "expenses.payments", "write"))) throw new ForbiddenError("지급 처리 권한 없음");
@@ -316,7 +352,7 @@ export async function completeExpensePayment(
       }
       const instance = await findExpenseApprovalInstance(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, documentId: locked.id }, tx);
       const lockedEvidence = await hasEvidence(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: locked.id }, tx);
-      const { payable, paymentMethod } = await judgeLockedPayment({
+      const { payable, paymentMethod, diffReason } = await judgeLockedPayment({
         pre,
         locked,
         approvalState: instance?.status ?? null,
@@ -324,6 +360,8 @@ export async function completeExpensePayment(
         payDate,
         expectedPayableKrw: input.expectedPayableKrw,
         shared,
+        transferKrw: input.transferKrw,
+        diffReason: input.diffReason,
       });
 
       const payment = await insertPayment(
@@ -334,7 +372,7 @@ export async function completeExpensePayment(
           transferKrw: payable.transferKrw,
           payableKrw: payable.payableKrw,
           diffKrw: payable.diffKrw,
-          diffReason: null,
+          diffReason,
           grossSupplyKrw: payable.grossSupplyKrw,
           paymentMethod,
           processedBy: viewer.id,
@@ -350,7 +388,7 @@ export async function completeExpensePayment(
           entity: "expense",
           entityId: locked.id,
           documentId: locked.id,
-          detail: { paymentId: payment.id, payDate, transferKrw: payable.transferKrw, payableKrw: payable.payableKrw },
+          detail: { paymentId: payment.id, payDate, transferKrw: payable.transferKrw, payableKrw: payable.payableKrw, diffKrw: payable.diffKrw, diffReason },
         },
         { tx },
       );
@@ -368,6 +406,40 @@ export async function completeExpensePayment(
   }
 }
 
+// ── 지급 총액 미리보기(06-04 · S5 loading) ─────────────────────────────
+// 지급일(또는 이체액)을 바꾸면 화면이 서버가 다시 계산한 지급 총액 · 차이를 받는다 — 읽기 전용, 트랜잭션 · 행동 로그 없음.
+// 차이도 서버 diffKrw로만(O-18 — 화면은 금액을 셈하지 않는다). 셈할 수 없는 문서(세금 규칙 · 공급가 없음)는 지급 총액 null.
+export type PayablePreview = { payDate: string; payableKrw: number | null; diffKrw: number | null };
+
+export const PAYABLE_PREVIEW_DTO_SPEC: DtoSpec<PayablePreview, PayablePreview> = {
+  fields: [
+    { key: "payDate", from: "payDate", infoItem: "expense.value" },
+    { key: "payableKrw", from: "payableKrw", infoItem: "expense.amount" },
+    { key: "diffKrw", from: "diffKrw", infoItem: "expense.amount" },
+  ],
+};
+
+registerDto({ name: "payablePreview", fields: PAYABLE_PREVIEW_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
+
+export async function previewPayable(
+  viewer: Viewer,
+  input: { expenseId: string; payDate: string; transferKrw?: number },
+  deps?: { now?: Date },
+): Promise<Partial<PayablePreview>> {
+  if (!(await can(viewer, "expenses.payments", "write"))) throw new ForbiddenError("지급 처리 권한 없음");
+  const pre = await loadPaymentInputs(viewer, { expenseId: input.expenseId, payDate: input.payDate, now: deps?.now });
+  const payable = await payableOf(pre, input.transferKrw);
+  return project(
+    viewer,
+    {
+      payDate: input.payDate,
+      payableKrw: payable?.payableKrw ?? null,
+      diffKrw: payable && input.transferKrw !== undefined ? payable.diffKrw : null,
+    },
+    PAYABLE_PREVIEW_DTO_SPEC,
+  );
+}
+
 // ── 지급 섹션 DTO ───────────────────────────────────────────────────────
 // 결재 통과 문서의 지급 섹션(S5). 금액 칸은 05 정보 항목 expense.amount, 나머지는 expense.value(RS-19 — 새 정보 항목 없음).
 // 지급 전 = 사전 조회 → decidePayable(처리 지급일 기본 = 오늘). 지급 뒤(E-22) = 살아 있는 지급 기록 값 그대로(다시 계산하지 않는다).
@@ -381,6 +453,9 @@ export type PaymentViewDto = {
   transferKrw: number | null;
   diffKrw: number | null;
   grossSupplyKrw: number | null;
+  // 06-04 — 지급 뒤 읽기 줄(차이 사유 · 지급일 2행 처리한 사람).
+  diffReason?: string | null;
+  processedByName?: string | null;
 };
 
 export const PAYMENT_VIEW_DTO_SPEC: DtoSpec<PaymentViewDto, PaymentViewDto> = {
@@ -394,6 +469,8 @@ export const PAYMENT_VIEW_DTO_SPEC: DtoSpec<PaymentViewDto, PaymentViewDto> = {
     { key: "transferKrw", from: "transferKrw", infoItem: "expense.amount" },
     { key: "diffKrw", from: "diffKrw", infoItem: "expense.amount" },
     { key: "grossSupplyKrw", from: "grossSupplyKrw", infoItem: "expense.amount" },
+    { key: "diffReason", from: "diffReason", infoItem: "expense.value" },
+    { key: "processedByName", from: "processedByName", infoItem: "expense.value" },
   ],
 };
 
@@ -408,6 +485,7 @@ export async function getPaymentView(viewer: Viewer, expenseId: string, deps?: {
   const [canPay, live] = await Promise.all([can(viewer, "expenses.payments", "write"), findLivePayment(viewer, row.id)]);
   const actionRow = resolveExpenseActionRow({ approvalState: instance.status, paid: live !== null }, { canPay });
   if (live) {
+    const names = await findUserNamesByIds(viewer, [live.processedBy]);
     return project(
       viewer,
       {
@@ -420,6 +498,8 @@ export async function getPaymentView(viewer: Viewer, expenseId: string, deps?: {
         transferKrw: live.transferKrw,
         diffKrw: live.diffKrw,
         grossSupplyKrw: live.grossSupplyKrw,
+        diffReason: live.diffReason,
+        processedByName: names.get(live.processedBy) ?? null,
       },
       PAYMENT_VIEW_DTO_SPEC,
     );
@@ -439,6 +519,8 @@ export async function getPaymentView(viewer: Viewer, expenseId: string, deps?: {
       transferKrw: null,
       diffKrw: null,
       grossSupplyKrw: null,
+      diffReason: null,
+      processedByName: null,
     },
     PAYMENT_VIEW_DTO_SPEC,
   );

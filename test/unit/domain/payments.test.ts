@@ -5,6 +5,8 @@ import { computeExpenseTax, incomeTypeFor, pickTaxDates } from "@/domain/expense
 import { GateBlockedError } from "@/domain/rules/gate";
 import {
   BasisChangedSignal,
+  DIFF_REASON_REQUIRED,
+  DiffReasonRequiredError,
   decidePayable,
   judgeLockedPayment,
   PayableChangedError,
@@ -332,5 +334,71 @@ describe("judgeLockedPayment (잠금 뒤 판정)", () => {
     const result = await judgeLockedPayment({ pre, locked: row, approvalState: "approved", lockedHasEvidence: false, payDate: future, expectedPayableKrw: 912_000, shared: SHARED });
     expect(dates.basisDate).toBe(future);
     expect(result.payable.payableKrw).toBe(912_000);
+  });
+});
+
+// 06-04 Task 1 — 이체액 · 차이 사유(D-605). 차이는 서버 diffKrw(이체액, 지급 총액)로만 셈하고, 차이 ≠ 0이면 사유가 있어야 한다.
+describe("judgeLockedPayment — 이체액 · 차이 사유 (06-04 · D-605)", () => {
+  function judgeTransfer(over: { transferKrw?: number; diffReason?: string | null; locked?: LockedExpense; expectedPayableKrw?: number }) {
+    const locked = over.locked ?? ROW;
+    return judgeLockedPayment({
+      pre: preOf(locked, false),
+      locked,
+      approvalState: "approved",
+      lockedHasEvidence: false,
+      payDate: PAY_DATE,
+      expectedPayableKrw: over.expectedPayableKrw ?? 1_100_000,
+      shared: SHARED,
+      transferKrw: over.transferKrw,
+      diffReason: over.diffReason,
+    });
+  }
+
+  it("이체액 ≠ 지급 총액 · 사유 없음 → `차이 사유 없음 · 사유 적기`로 거부", async () => {
+    const error = await judgeTransfer({ transferKrw: 1_096_700 }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(DiffReasonRequiredError);
+    expect((error as Error).message).toBe(DIFF_REASON_REQUIRED);
+    expect(DIFF_REASON_REQUIRED).toBe("차이 사유 없음 · 사유 적기");
+  });
+
+  it("이체액 ≠ 지급 총액 · 공백뿐인 사유 → 거부", async () => {
+    await expect(judgeTransfer({ transferKrw: 1_096_700, diffReason: "   " })).rejects.toBeInstanceOf(DiffReasonRequiredError);
+  });
+
+  it("이체액 ≠ 지급 총액 · 사유 있음 → 차이 = diffKrw(이체액, 지급 총액) · 사유는 앞뒤 공백을 뗀다", async () => {
+    const result = await judgeTransfer({ transferKrw: 1_096_700, diffReason: "  이체 수수료 차감  " });
+    expect([result.payable.transferKrw, result.payable.payableKrw, result.payable.diffKrw, result.diffReason]).toEqual([
+      1_096_700, 1_100_000, -3_300, "이체 수수료 차감",
+    ]);
+  });
+
+  it("차이 0 · 사유 없음 → 저장 값의 사유는 null", async () => {
+    const result = await judgeTransfer({ transferKrw: 1_100_000 });
+    expect([result.payable.diffKrw, result.diffReason]).toEqual([0, null]);
+  });
+
+  it("차이 0이면 사유를 보내도 저장하지 않는다(null)", async () => {
+    const result = await judgeTransfer({ transferKrw: 1_100_000, diffReason: "남은 사유" });
+    expect(result.diffReason).toBeNull();
+  });
+
+  it("부가세 규칙이면 공급가 역산은 이체액에서 셈한다 — 원천징수는 null(UA-619)", async () => {
+    const vat = await judgeTransfer({ transferKrw: 1_096_700, diffReason: "수수료" });
+    expect(vat.payable.grossSupplyKrw).toBe(997_000);
+    const withholding = await judgeTransfer({ locked: { ...ROW, evidenceType: "other_income" }, transferKrw: 900_000, diffReason: "수수료", expectedPayableKrw: 912_000 });
+    expect([withholding.payable.diffKrw, withholding.payable.grossSupplyKrw]).toEqual([-12_000, null]);
+  });
+
+  it("이체액이 달라도 화면이 본 지급 총액 비교가 먼저다 — 낡으면 PayableChangedError", async () => {
+    await expect(judgeTransfer({ transferKrw: 1_096_700, expectedPayableKrw: 1_000_000 })).rejects.toBeInstanceOf(PayableChangedError);
+  });
+});
+
+// 06-03 독립 검토 P3-2 — 지급 방식이 빈 문서는 세금 계산 불가 문구가 아니라 지급 방식 문구로 막힌다.
+describe("judgeLockedPayment — 지급 방식 없음 (06-03 검토 P3-2)", () => {
+  it("지급 방식이 비면 `지급 방식 없음 · 지출결의 확인`", async () => {
+    const error = await judge({ locked: { ...ROW, paymentMethod: null }, expectedPayableKrw: 1_100_000 }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(GateBlockedError);
+    expect((error as Error).message).toBe("지급 방식 없음 · 지출결의 확인");
   });
 });

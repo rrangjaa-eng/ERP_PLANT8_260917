@@ -23,6 +23,14 @@ export function approvalGateDecision(input: ApprovalGateInput): GateDecision {
 
 export const PAYMENT_OWNER_NOTE = "지급은 경영관리";
 
+// 06-04(D-605 · UI-SPEC 「Error — 차이 사유 칸」) — 서버 거부 문구와 화면 칸 오류 자리가 같은 상수를 읽는다(잎 모듈이라 화면이 값 import).
+export const DIFF_REASON_REQUIRED = "차이 사유 없음 · 사유 적기";
+
+// 「Error — 이체액 칸」(UI-SPEC S1 · S5) — 액션 입력 검증과 화면 칸 오류가 같은 문구를 읽는다.
+export const TRANSFER_NOT_NUMBER = "숫자 아님 · 13,640,000처럼";
+export const TRANSFER_NOT_POSITIVE = "이체액 0 이하 · 금액 고치기";
+export const TRANSFER_FRACTION = "원화 소수점 · 소수점 없이";
+
 export type ExpenseActionBar = {
   row: "P0" | "P4" | "P6";
   // 지급 권한자에게만 선다(D-601) — 권한 없는 사람은 비활성으로도 렌더하지 않는다.

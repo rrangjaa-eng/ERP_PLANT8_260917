@@ -6,3 +6,5 @@ import "@/domain/payments";
 
 // 새 문서 version만 돌려준다(DTO 없음) — 화면은 응답 뒤 다시 읽어 「지출결의 상태 → 1차」 표를 새로 정한다.
 registerAction({ name: "completeExpensePaymentAction", menu: "expenses.payments", action: "write", dtoName: null });
+// 06-04: 지급 총액 미리보기 — 지급 총액 · 차이(expense.amount)를 payablePreview DTO로 투영해 돌려준다(읽기 · 로그 없음).
+registerAction({ name: "previewPayableAction", menu: "expenses.payments", action: "write", dtoName: "payablePreview" });

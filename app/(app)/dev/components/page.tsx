@@ -14,10 +14,12 @@ import { STATUS_KIND } from "@/ui/status-tag/status-map";
 import { StaticTable } from "@/ui/table/StaticTable";
 import { TableSkeleton } from "@/ui/table/TableSkeleton";
 import {
+  AttachmentsConfirmSample,
   EditTableSample,
   GalleryPanel,
   ModalSample,
   PanelOpener,
+  PickSamples,
   ReadTableSample,
   RowActionsSamples,
   SelectTableSample,
@@ -47,6 +49,11 @@ const FRAMES: ReadonlyArray<{ key: "list" | "detail" | "form"; name: string; par
   { key: "detail", name: "상세 틀", parts: ["제목 · 상태", "2차 → 1차", "구역", "표"] },
   { key: "form", name: "폼 틀", parts: ["제목", "라벨 · 입력", "구역", "행동 줄"] },
 ];
+
+// 서버가 렌더마다 주는 값 — `router.refresh()`로 다시 받으면 바뀐다(첨부 확인 표본의 「서버 값이 바뀜」). 화면에는 그려지지 않는다.
+function serverStamp(): number {
+  return Date.now();
+}
 
 export default async function ComponentsPage({ searchParams }: { searchParams: Promise<{ panel?: string }> }) {
   await requireSession();
@@ -221,11 +228,18 @@ export default async function ComponentsPage({ searchParams }: { searchParams: P
       </DetailScreen.Section>
 
       <DetailScreen.Section title="모달">
-        <ModalSample />
+        <div className={styles.samples}>
+          <ModalSample />
+          <AttachmentsConfirmSample serverStamp={serverStamp()} />
+        </div>
       </DetailScreen.Section>
 
       <DetailScreen.Section title="옆 패널">
         <PanelOpener />
+      </DetailScreen.Section>
+
+      <DetailScreen.Section title="고르기 목록">
+        <PickSamples />
       </DetailScreen.Section>
 
       <DetailScreen.Section title="화면 틀">
@@ -243,7 +257,7 @@ export default async function ComponentsPage({ searchParams }: { searchParams: P
         </div>
       </DetailScreen.Section>
 
-      {panel === "1" ? <GalleryPanel /> : null}
+      {panel === "1" || panel === "pick" ? <GalleryPanel pick={panel === "pick"} /> : null}
     </DetailScreen>
   );
 }

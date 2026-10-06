@@ -38,8 +38,13 @@ export type PickResult = {
   subtitle?: string | null;
   /** 목록 위 한 줄(표 전체 게이트 — 한 번만). */
   notice?: string | null;
-  /** 검색어가 없는데 목록이 0일 때의 한 줄(예: 담당 프로젝트 줄이 없습니다) — 뒤에 ` · 검색으로 찾기` 3차가 선다. */
+  /** 검색어가 없는데 목록이 0일 때의 한 줄(예: 담당 프로젝트 줄이 없습니다) — 뒤에 ` · 검색으로 찾기` 3차가 선다(`emptyNextStep`을 주면 그 3차). */
   emptyDefault?: string | null;
+  /**
+   * 06-29(SP-8 · E-24) — 행은 있으나 고를 수 있는 줄이 0일 때 1차 비활성 이유(예 `이을 수 있는 줄 없음`). 바닥 줄 한 자리(`pickFootLine`)에만 서고,
+   * 주면 본문 고정 줄(`고를 수 있는 줄이 없습니다`)은 그리지 않는다. 안 주면 05 그대로.
+   */
+  noneSelectableReason?: string | null;
 };
 
 export type PickDialogProps = {
@@ -55,17 +60,33 @@ export type PickDialogProps = {
   /** 1차 라벨(`이 줄로` · `이 거래처로`) — kbd Enter가 붙는다. */
   primaryLabel: string;
   /** 검색 0건 문구의 이름(`줄` → `조건에 맞는 줄이 없습니다 · 검색 지우기`). */
-  noun: "줄" | "거래처";
+  noun: "줄" | "거래처" | "프로젝트";
   /** 고른 행의 결과 줄(1차가 할 일을 미리 말한다) — null이면 줄 없음. */
   resultLine?: (row: PickRow | null) => string | null;
   /** 1차를 누르거나 Enter. 거짓을 돌려주면 열린 채 남는다. */
   onPick: (row: PickRow) => void | boolean | Promise<void | boolean>;
+  /**
+   * 06-29(SP-8) — 빈 목록 줄(`emptyDefault`)과 「고를 수 있는 줄 0」의 다음 한 수 3차. 누르면 `onSelect()` 뒤 목록만 닫는다 —
+   * 연결 라디오를 바꾸는 일은 호출자 몫. 안 주면 빈 목록 줄은 05 그대로 `검색으로 찾기`.
+   */
+  emptyNextStep?: { label: string; onSelect: () => void };
+  /** 06-29(C13) — 목록 로드 오류 줄의 명사형 이름(기본 `목록 불러오기 실패`). 뒤에 ` · ` + 2차 `다시 시도`. */
+  failedLine?: string;
 };
 
 // 빈 목록 한 줄 — 받침에 맞춰 이/가를 고른다(`줄이` · `거래처가`).
 export function pickEmptyText(noun: PickDialogProps["noun"], kind: "no-match" | "none-selectable"): string {
   const josa = noun === "줄" ? "이" : "가";
   return kind === "no-match" ? `조건에 맞는 ${noun}${josa} 없습니다` : `고를 수 있는 ${noun}${josa} 없습니다`;
+}
+
+// 바닥 줄 한 자리(E-24) — 결과 줄 > 고를 수 있는 줄 0일 때의 이유 > 고른 것 없음. 이유를 같은 뜻으로 두 줄 쓰지 않는다.
+export function pickFootLine(
+  resultLine: string | null | undefined,
+  noneSelectableReason: string | null | undefined,
+  idleReason: string | null | undefined,
+): string | null {
+  return resultLine ?? noneSelectableReason ?? idleReason ?? null;
 }
 
 function rowsOf(items: PickItem[]): PickRow[] {
@@ -76,7 +97,9 @@ export function PickDialog(props: PickDialogProps) {
   return props.open ? <PickDialogInner {...props} /> : null;
 }
 
-function PickDialogInner({ onClose, title, subtitle, searchLabel, search, primaryLabel, noun, resultLine, onPick }: PickDialogProps) {
+const DEFAULT_FAILED_LINE = "목록 불러오기 실패";
+
+function PickDialogInner({ onClose, title, subtitle, searchLabel, search, primaryLabel, noun, resultLine, onPick, emptyNextStep, failedLine = DEFAULT_FAILED_LINE }: PickDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
@@ -86,6 +109,7 @@ function PickDialogInner({ onClose, title, subtitle, searchLabel, search, primar
   const titleId = useId();
   const listId = useId();
   const resultId = useId();
+  const errorId = useId();
 
   const [query, setQuery] = useState("");
   const [shown, setShown] = useState<{ query: string; result: PickResult | null; failed: boolean } | null>(null);
@@ -141,11 +165,11 @@ function PickDialogInner({ onClose, title, subtitle, searchLabel, search, primar
   const items = result?.items ?? [];
   const rows = rowsOf(items);
   const activeRow = rows.find((row) => row.id === activeId) ?? null;
-  const chosen = activeRow?.selectable ? activeRow : null;
+  // 06-29(SP-8) — 목록이 오는 중 · 오류 중에는 옛 목록의 행을 고를 수 없다(1차 aria-disabled, Enter도 아무 일 없음).
+  const chosen = !loading && !failed && activeRow?.selectable ? activeRow : null;
   const line = failed ? null : resultLine?.(chosen ?? null) ?? null;
   // UX-06 — 고른 행이 없어 1차가 꺼져 있으면 결과 줄 자리에 이유 한 줄(info 톤 — 막힘이 아니라 아직 안 고른 상태).
   const idleReason = chosen ? null : `고른 ${noun} 없음`;
-  const footLine = line ?? idleReason;
 
   function closeNow() {
     const dialog = dialogRef.current;
@@ -197,6 +221,20 @@ function PickDialogInner({ onClose, title, subtitle, searchLabel, search, primar
   const noSearchHit = !loading && !failed && result !== null && rows.length === 0;
   const noneSelectable = !failed && result !== null && rows.length > 0 && rows.every((row) => !row.selectable);
   const fixedSubtitle = result?.subtitle ?? subtitle;
+  // E-24 — 고를 수 있는 줄 0의 이유는 바닥 줄 한 자리에만(주어졌을 때 본문 고정 줄은 그리지 않는다).
+  const noneSelectableReason = noneSelectable ? (result?.noneSelectableReason ?? null) : null;
+  const footLine = pickFootLine(line, noneSelectableReason, idleReason);
+  const nextStepButton = emptyNextStep ? (
+    <Button
+      variant="tertiary"
+      onClick={() => {
+        emptyNextStep.onSelect();
+        closeNow();
+      }}
+    >
+      {emptyNextStep.label}
+    </Button>
+  ) : null;
 
   let empty: ReactNode = null;
   if (noSearchHit) {
@@ -204,9 +242,11 @@ function PickDialogInner({ onClose, title, subtitle, searchLabel, search, primar
       empty = (
         <p className={styles.empty}>
           {`${result.emptyDefault} · `}
-          <Button variant="tertiary" onClick={() => searchInputRef.current?.focus()}>
-            검색으로 찾기
-          </Button>
+          {nextStepButton ?? (
+            <Button variant="tertiary" onClick={() => searchInputRef.current?.focus()}>
+              검색으로 찾기
+            </Button>
+          )}
         </p>
       );
     } else if (query.trim() === "") {
@@ -239,6 +279,18 @@ function PickDialogInner({ onClose, title, subtitle, searchLabel, search, primar
         if (!picking) closeNow();
       }}
       onClose={handleDialogClose}
+      onKeyDown={(event) => {
+        // 옆 패널 위에 겹쳐 설 때(SP-8) 이 목록의 키가 바깥 패널로 번지지 않게 한다 — Esc는 목록만 닫고(`isPanelCloseKey`가 defaultPrevented로 거른다),
+        // Ctrl+Enter는 패널 1차(제출)에 닿지 않는다.
+        if (event.nativeEvent.isComposing) return;
+        if (event.key === "Escape") {
+          event.preventDefault();
+          if (!picking) closeNow();
+        } else if (event.key === "Enter" && event.ctrlKey) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }}
       onClick={(event) => {
         // dialog 요소 자체를 누른 것만 가림막 클릭이다.
         if (event.target === dialogRef.current && !picking) closeNow();
@@ -287,9 +339,9 @@ function PickDialogInner({ onClose, title, subtitle, searchLabel, search, primar
 
       <div className={styles.body} aria-busy={loading || undefined}>
         {failed ? (
-          <p className={styles.empty} role="alert">
-            {"목록 불러오기 실패 · "}
-            <Button variant="tertiary" onClick={() => setRetry((count) => count + 1)}>
+          <p id={errorId} className={`${styles.empty} ${styles.error}`} role="alert">
+            {`${failedLine} · `}
+            <Button variant="secondary" onClick={() => setRetry((count) => count + 1)}>
               다시 시도
             </Button>
           </p>
@@ -316,14 +368,23 @@ function PickDialogInner({ onClose, title, subtitle, searchLabel, search, primar
               )}
             </ul>
             {empty}
-            {noneSelectable && !empty ? <p className={styles.empty}>{pickEmptyText(noun, "none-selectable")}</p> : null}
+            {noneSelectable && !empty && !noneSelectableReason ? <p className={styles.empty}>{pickEmptyText(noun, "none-selectable")}</p> : null}
             {result?.truncated ? <p className={styles.more}>50건 넘음 · 검색으로 좁히기</p> : null}
           </>
         )}
       </div>
 
       <div className={styles.foot}>
-        {footLine ? (
+        {noneSelectable && nextStepButton ? (
+          <div className={styles.resultRow}>
+            {footLine ? (
+              <p id={resultId} className={styles.resultLine}>
+                {footLine}
+              </p>
+            ) : null}
+            {nextStepButton}
+          </div>
+        ) : footLine ? (
           <p id={resultId} className={styles.resultLine}>
             {footLine}
           </p>
@@ -335,7 +396,7 @@ function PickDialogInner({ onClose, title, subtitle, searchLabel, search, primar
             </Button>
           </span>
           <span className={styles.primaryWrap}>
-            <Button variant="primary" shortcut="Enter" pending={picking} disabled={!chosen} aria-describedby={footLine ? resultId : undefined} onClick={() => void pickChosen()}>
+            <Button variant="primary" shortcut="Enter" pending={picking} disabled={!chosen} aria-describedby={failed ? errorId : footLine ? resultId : undefined} onClick={() => void pickChosen()}>
               {primaryLabel}
             </Button>
           </span>

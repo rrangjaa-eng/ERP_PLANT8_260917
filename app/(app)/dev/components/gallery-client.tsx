@@ -3,9 +3,11 @@
 import { useState } from "react";
 import Link from "next/link";
 import { buttonLinkClassName } from "@/ui/button/Button";
+import { Attachments, type AttachmentActions, type AttachmentFile } from "@/ui/attachments/Attachments";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { Button } from "@/ui/button/Button";
 import { TextField } from "@/ui/input/TextField";
+import { PickDialog, type PickItem, type PickResult } from "@/ui/pick-dialog/PickDialog";
 import { Num } from "@/ui/num/Num";
 import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
 import { PanelForm } from "@/ui/side-panel/PanelForm";
@@ -252,6 +254,172 @@ export function ModalSample() {
   );
 }
 
+// 06-29(SP-7 · §7-17) — 첨부 보기 칸 확인 모달 표본. 열 때 0.8초 `loading`, 첫 확인은 동시성 거부(새로 고침 꼬리) → `refreshKeepsOpen`으로 열린 채
+// 다른 파일 목록이 된다. 「서버 값」은 서버 페이지가 매 렌더에 주는 `serverStamp`다 — `router.refresh()`가 새 값을 가져오면 칸이 다시 그려진다.
+const ATTACH_NOW = "2026-10-06T00:00:00.000Z";
+const ATTACH_FILES_BEFORE: AttachmentFile[] = [
+  { id: "f1", name: "세금계산서.pdf", sizeBytes: 182_000, createdAt: ATTACH_NOW },
+  { id: "f2", name: "견적서.pdf", sizeBytes: 241_000, createdAt: ATTACH_NOW },
+  { id: "f3", name: "현장 사진 1.jpg", sizeBytes: 1_200_000, createdAt: ATTACH_NOW },
+  { id: "f4", name: "현장 사진 2.jpg", sizeBytes: 1_400_000, createdAt: ATTACH_NOW },
+];
+const ATTACH_FILES_AFTER: AttachmentFile[] = [
+  { id: "f5", name: "세금계산서 수정본.pdf", sizeBytes: 190_000, createdAt: ATTACH_NOW },
+  { id: "f6", name: "통장 사본.pdf", sizeBytes: 90_000, createdAt: ATTACH_NOW },
+];
+// 보기만 — 올리기 · 삭제 · 입력이 없다. `크게 보기`는 주소가 없으면 새 탭을 열자마자 닫는다.
+const READ_ONLY_ACTIONS: AttachmentActions = {
+  request: () => Promise.resolve({ ok: false, message: "표본" }),
+  complete: () => Promise.resolve({ ok: false, message: "표본", retry: "restart" }),
+  remove: () => Promise.resolve(false),
+  viewUrl: () => Promise.resolve(null),
+};
+
+export function AttachmentsConfirmSample({ serverStamp }: { serverStamp: number }) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [openedAtStamp, setOpenedAtStamp] = useState<number | null>(null);
+  const [rejected, setRejected] = useState(false);
+  const refreshed = openedAtStamp !== null && serverStamp !== openedAtStamp;
+
+  function openIt() {
+    setOpenedAtStamp(serverStamp);
+    setRejected(false);
+    setLoading(true);
+    setOpen(true);
+    window.setTimeout(() => setLoading(false), 800);
+  }
+
+  return (
+    <>
+      <Button variant="secondary" onClick={openIt}>
+        첨부 확인 열기
+      </Button>
+      <ConfirmDialog
+        open={open}
+        onClose={() => setOpen(false)}
+        title="증빙 확인"
+        subtitle="표본 건"
+        loading={loading}
+        refreshKeepsOpen
+        attachments={
+          <Attachments mode="read" files={refreshed ? ATTACH_FILES_AFTER : ATTACH_FILES_BEFORE} actions={READ_ONLY_ACTIONS} maxMb={10} uploadFailedText="올리지 못함 · 다시 올리기" canAdd={false} deletableIds={[]} />
+        }
+        primary={{
+          label: "증빙 확인",
+          onConfirm: () => (refreshed ? setOpen(false) : setRejected(true)),
+          disabledReason: rejected && !refreshed ? "박서연이 14:01에 증빙을 바꿈 · 새로 고침" : undefined,
+        }}
+      />
+    </>
+  );
+}
+
+// 06-29(SP-8) — 고르기 목록 표본. 검색어로 갈래를 고른다: (없음) 현재 줄 + 고를 수 없는 행 + 그룹 줄 · `막힘` 전부 고를 수 없음 · `오류` 로드 실패 ·
+// `느림` 1.5초 뒤 · `많음` 120줄 · `긴` 긴 이름 · `zzz` 0건. 빈 목록 표본은 검색어 없음이 빈 목록 줄이다.
+const PICK_BASE: PickItem[] = [
+  { type: "group", id: "g1", label: "표본 프로젝트 · 1차" },
+  { type: "row", id: "p1", number: "1", title: "무대 설치", subtitle: "표본 거래처 가", amount: { krw: 4_200_000 }, selectable: true, current: true },
+  { type: "row", id: "p2", number: "2", title: "음향 장비", subtitle: "표본 거래처 나", amount: { krw: 1_700_000 }, selectable: true },
+  { type: "row", id: "p3", number: "3", title: "현수막", subtitle: "표본 거래처 다", amount: { krw: 540_000 }, selectable: false, reason: "카드 사용 연결됨" },
+  { type: "row", id: "p4", number: "4", title: "운송", subtitle: "표본 거래처 라", amount: { krw: 320_000 }, selectable: false, reason: "구매 요청 중" },
+];
+const PICK_BLOCKED: PickItem[] = PICK_BASE.filter((item) => item.type === "group" || !item.selectable);
+const PICK_MANY: PickItem[] = Array.from({ length: 120 }, (_, index) => ({
+  type: "row" as const,
+  id: `m${index + 1}`,
+  number: String(index + 1),
+  title: `표본 줄 ${index + 1}`,
+  subtitle: "표본 거래처",
+  amount: { krw: 100_000 + index },
+  selectable: true,
+}));
+const PICK_LONG: PickItem[] = [
+  {
+    type: "row",
+    id: "l1",
+    number: "1",
+    title: "아주 긴 항목 이름 표본 무대 설치 및 철거 · 조명 · 음향 · 영상 · 현수막 · 운송 일괄",
+    subtitle: "아주 긴 거래처 이름 표본 주식회사 플랜트에이트 크리에이티브 솔루션즈 서울 본사",
+    amount: { krw: 12_345_678 },
+    selectable: true,
+  },
+];
+
+function pickSearchFor(options: { empty: boolean }) {
+  return async (query: string): Promise<PickResult | null> => {
+    const q = query.trim();
+    if (q === "오류") return null;
+    if (q === "느림") await new Promise((resolve) => window.setTimeout(resolve, 1500));
+    if (q === "zzz") return { items: [], truncated: false };
+    if (q === "막힘") return { items: PICK_BLOCKED, truncated: false, noneSelectableReason: "이을 수 있는 줄 없음" };
+    if (q === "많음") return { items: PICK_MANY, truncated: false };
+    if (q === "긴") return { items: PICK_LONG, truncated: false };
+    if (options.empty && q === "") return { items: [], truncated: false, emptyDefault: "이 프로젝트에 견적 줄이 없습니다" };
+    return { items: PICK_BASE, truncated: false, subtitle: "표본 프로젝트 · 카드로 이을 수 있는 줄 2" };
+  };
+}
+
+function PickSampleDialog({
+  open,
+  onClose,
+  onResult,
+  noun = "줄",
+  empty = false,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onResult: (text: string) => void;
+  noun?: "줄" | "프로젝트";
+  empty?: boolean;
+}) {
+  return (
+    <PickDialog
+      open={open}
+      onClose={onClose}
+      title={noun === "줄" ? "견적 줄 고르기" : "프로젝트 고르기"}
+      searchLabel={noun === "줄" ? "견적 줄 검색" : "프로젝트 검색"}
+      search={pickSearchFor({ empty })}
+      primaryLabel={noun === "줄" ? "이 줄로" : "이 프로젝트로"}
+      noun={noun}
+      failedLine={noun === "줄" ? "견적 줄 불러오지 못함" : "프로젝트 불러오지 못함"}
+      emptyNextStep={{ label: "견적 외 비용으로", onSelect: () => onResult("견적 외 비용으로") }}
+      onPick={(row) => onResult(row.title)}
+    />
+  );
+}
+
+export function PickSamples() {
+  const [which, setWhich] = useState<"line" | "empty" | "project" | null>(null);
+  const [result, setResult] = useState("");
+  return (
+    <>
+      <div className={styles.samples}>
+        <Button variant="secondary" onClick={() => setWhich("line")}>
+          줄 고르기 열기
+        </Button>
+        <Button variant="secondary" onClick={() => setWhich("empty")}>
+          빈 목록 고르기 열기
+        </Button>
+        <Button variant="secondary" onClick={() => setWhich("project")}>
+          프로젝트 고르기 열기
+        </Button>
+        <Link href="/dev/components?panel=pick" scroll={false} className={buttonLinkClassName("secondary")}>
+          패널 위 고르기 열기
+        </Link>
+      </div>
+      <p data-gallery="pick-result">{result}</p>
+      <PickSampleDialog
+        open={which !== null}
+        onClose={() => setWhich(null)}
+        onResult={setResult}
+        noun={which === "project" ? "프로젝트" : "줄"}
+        empty={which === "empty"}
+      />
+    </>
+  );
+}
+
 export function PanelOpener() {
   return (
     <Link href="/dev/components?panel=1" scroll={false} className={buttonLinkClassName("secondary")}>
@@ -261,11 +429,33 @@ export function PanelOpener() {
 }
 
 // `?panel=1`일 때 page.tsx가 그린다 — PC 오른쪽 480 · 폰 아래 시트(SidePanel 기본 모양). 제출은 아무 일도 하지 않는다.
-export function GalleryPanel() {
+// `?panel=pick`(06-29 SP-8)은 패널 위에 고르기 목록이 겹쳐 서는 표본 — 목록의 Esc · Ctrl+Enter가 패널로 번지지 않는지 본다.
+export function GalleryPanel({ pick = false }: { pick?: boolean }) {
+  const [picking, setPicking] = useState(false);
+  const [line, setLine] = useState("");
+  const [submitted, setSubmitted] = useState(false);
   return (
     <SidePanel title="표본 등록" closeHref="/dev/components">
-      <PanelForm id="gallery-panel-form" label="표본 등록" intent="create" onSubmit={(event) => event.preventDefault()}>
+      <PanelForm
+        id="gallery-panel-form"
+        label="표본 등록"
+        intent="create"
+        status={submitted ? "표본 제출" : undefined}
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (pick) setSubmitted(true);
+        }}
+      >
         <TextField id="gallery-panel-name" name="name" label="표본 이름" />
+        {pick ? (
+          <>
+            <TextField id="gallery-panel-line" name="line" label="견적 줄" readOnly value={line} onChange={() => undefined} />
+            <Button variant="tertiary" onClick={() => setPicking(true)}>
+              견적 줄 바꾸기
+            </Button>
+            <PickSampleDialog open={picking} onClose={() => setPicking(false)} onResult={setLine} />
+          </>
+        ) : null}
       </PanelForm>
     </SidePanel>
   );

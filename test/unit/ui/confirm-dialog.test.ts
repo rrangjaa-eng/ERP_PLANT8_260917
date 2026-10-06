@@ -261,3 +261,65 @@ describe("ConfirmDialog — 「· 새로 고침」 꼬리 → 3차 「새로 고
     expect(plain).not.toContain("<span>새로 고침</span>");
   });
 });
+
+// 06-29(SP-7 · §7-17) — 첨부 보기 칸 · `loading` 상태 계약. 정적 렌더로 문자열 위치 · 속성을 단언한다(포커스 · 새로 고침 열린 채는 E2E 몫).
+describe("ConfirmDialog — 첨부 보기 칸 · loading (06-29)", () => {
+  const primary = { label: "증빙 확인", onConfirm: () => {} };
+
+  it("attachments를 넘기면 부제 다음 · 결과 줄 앞에 칸 클래스 안에 선다", () => {
+    const html = render({
+      title: "증빙 확인",
+      subtitle: "표본 건",
+      resultLines: ["지급 대상으로 넘어감"],
+      attachments: createElement("p", { "data-file": "" }, "파일 가"),
+      primary,
+    });
+    expect(html).toContain(`class="${styles.attachments}"`);
+    const order = ["표본 건", `class="${styles.attachments}"`, "파일 가", "지급 대상으로 넘어감"].map((needle) => html.indexOf(needle));
+    expect(order.every((index) => index >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+
+  it("attachments를 안 넘기면 그 칸 요소가 없다", () => {
+    const html = render({ title: "증빙 확인", primary });
+    expect(html).not.toContain(`class="${styles.attachments}"`);
+  });
+
+  it("loading이면 본문 aria-busy · `…` 한 자리 · 1차 aria-disabled + aria-describedby가 그 자리를 가리킨다", () => {
+    const html = render({
+      title: "증빙 확인",
+      subtitle: "표본 건",
+      resultLines: ["지급 대상으로 넘어감"],
+      attachments: createElement("p", {}, "파일 가"),
+      primary,
+      loading: true,
+    });
+    expect(html).toContain('aria-busy="true"');
+    const markId = new RegExp(`<p id="([^"]+)" class="${styles.loadingMark}">…</p>`).exec(html)?.[1];
+    expect(markId).toBeTruthy();
+    const primaryButton = /<button[^>]*data-ui="primary-button"[^>]*>/.exec(html)?.[0] ?? "";
+    expect(primaryButton).toContain('aria-disabled="true"');
+    expect(primaryButton).toContain(`aria-describedby="${markId}"`);
+  });
+
+  it("loading이면 부제 · 첨부 칸 · 결과 줄 내용이 렌더되지 않는다", () => {
+    const html = render({
+      title: "증빙 확인",
+      subtitle: "표본 건",
+      resultLines: ["지급 대상으로 넘어감"],
+      attachments: createElement("p", {}, "파일 가"),
+      primary,
+      loading: true,
+    });
+    expect(html).not.toContain("표본 건");
+    expect(html).not.toContain("파일 가");
+    expect(html).not.toContain("지급 대상으로 넘어감");
+    expect(html).not.toContain(`class="${styles.attachments}"`);
+  });
+
+  it("loading이 아니면 aria-busy · `…` 자리가 없다", () => {
+    const html = render({ title: "증빙 확인", primary });
+    expect(html).not.toContain("aria-busy");
+    expect(html).not.toContain(styles.loadingMark);
+  });
+});

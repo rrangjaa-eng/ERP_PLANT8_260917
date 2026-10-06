@@ -237,6 +237,24 @@
   word-break: keep-all;
 }
 
+/* 06-29(SP-8) — 목록 로드 오류 줄(SYSTEM §7-7 ERROR) — 위험 색 글자. */
+.error {
+  color: var(--status-danger);
+}
+
+/* 06-29(SP-8) — 「고를 수 있는 줄 0」 바닥 줄 + 다음 한 수 3차 한 덩어리. 글자(1차 aria-describedby 대상)와 버튼은 따로다. */
+.resultRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s-1) var(--s-2);
+  margin: 0 0 var(--s-3);
+}
+
+.resultRow .resultLine {
+  margin: 0;
+}
+
 .actions {
   display: flex;
   align-items: center;

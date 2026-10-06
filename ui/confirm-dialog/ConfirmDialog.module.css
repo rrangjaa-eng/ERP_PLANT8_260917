@@ -71,6 +71,20 @@
   font-size: var(--text-aux);
 }
 
+/* 06-29(SP-7 · §7-17) — 첨부 보기 칸. 높이 상한 = 05 Attachments 읽기 행 셋(행 = 썸네일 --s-12 + 위아래 --s-2, 행 사이 선 --line-w). 넘치면 칸 안만 스크롤한다. */
+.attachments {
+  max-height: calc(var(--s-12) * 3 + var(--s-2) * 6 + var(--line-w) * 2);
+  margin-bottom: var(--s-3);
+  overflow-y: auto;
+}
+
+/* 06-29(SP-7 상태 계약 ⑴) — 열 때 읽는 동안 `…` 한 자리(1차 aria-describedby 대상). */
+.loadingMark {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+}
+
 .evidence {
   margin-bottom: var(--s-3);
 }

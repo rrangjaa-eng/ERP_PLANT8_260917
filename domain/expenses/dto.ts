@@ -73,6 +73,11 @@ export type ExpenseDocumentDto = ExpenseDraftDto & {
   executionLines: string[];
   installmentMode: "checkbox" | "fixed" | "none";
   installmentText: string | null;
+  // 06-28(S23): 종결 문서의 메타 재료(종결한 사람 이름 · 서울 MM-DD · 사유 원문) — 종결 아니면 null.
+  closure: { byName: string; on: string; reason: string } | null;
+  // 06-28(S23): 종결 확인 모달 재료 — 반려 · 회수(번호 있음 · 종결 아님) 문서를 보는 기안자 · 지급 권한자에게만, 그 밖은 null(버튼 없음).
+  // 부제 = `{번호} · {항목} · {공급가}`(공급가는 금액을 볼 수 있을 때만), 결과 줄 = 열리는 줄 문 · 되돌림 없음.
+  closeDialog: { subtitle: string; resultLines: string[] } | null;
 };
 
 export const EXPENSE_DOCUMENT_DTO_SPEC: DtoSpec<ExpenseDocumentDto, ExpenseDocumentDto> = {
@@ -109,6 +114,8 @@ export const EXPENSE_DOCUMENT_DTO_SPEC: DtoSpec<ExpenseDocumentDto, ExpenseDocum
     { key: "executionLines", from: "executionLines", infoItem: "expense.amount" },
     { key: "installmentMode", from: "installmentMode", infoItem: "expense.value" },
     { key: "installmentText", from: "installmentText", infoItem: "expense.amount" },
+    { key: "closure", from: "closure", infoItem: "expense.value" },
+    { key: "closeDialog", from: "closeDialog", infoItem: "expense.value" },
   ],
 };
 

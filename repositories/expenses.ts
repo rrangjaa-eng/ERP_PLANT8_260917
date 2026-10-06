@@ -273,7 +273,8 @@ export type NumberedLineExpense = Pick<
   "id" | "number" | "installment" | "installmentSeq" | "supplyCurrency" | "supplyForeignAmount" | "supplyFxRate" | "supplyAmountKrw" | "submittedAt"
 >;
 
-// 견적 줄 표 행 행동 열 재료(05-05) — 줄 여럿의 번호 있는 문서 · 내 작성 중 문서를 한 번씩 읽는다(줄마다 부르지 않는다).
+// 견적 줄 표 행 행동 열 재료(05-05) — 줄 여럿의 번호 있는 · 삭제 · 종결 안 된 문서를 한 번에 읽는다(줄마다 부르지 않는다).
+// 06-28(C10 · E-1): 종결 문서는 여기서 빠진다 — 줄 문 · 회차 상한 · 사슬 · 계보 읽기의 입력 한 곳이라 호출부가 함께 따른다.
 export async function listNumberedByLines(
   viewer: Viewer,
   lineIds: string[],
@@ -295,9 +296,40 @@ export async function listNumberedByLines(
       submittedAt: expenses.submittedAt,
     })
     .from(expenses)
-    .where(and(inArray(expenses.quoteLineId, lineIds), isNotNull(expenses.number), isNull(expenses.deletedAt)))
+    .where(and(inArray(expenses.quoteLineId, lineIds), isNotNull(expenses.number), isNull(expenses.deletedAt), isNull(expenses.closedAt)))
     .orderBy(asc(expenses.submittedAt), asc(expenses.id));
   return rows.flatMap((row) => (row.quoteLineId ? [{ ...row, quoteLineId: row.quoteLineId }] : []));
+}
+
+// 06-28 종결 — 번호 있음 · 삭제 · 종결 안 됨 · version 조건, 종결 칸 셋을 채우고 version + 1. 0행이면 null(경합).
+// 06-27 expenses_closed_check가 마지막 방어다.
+export async function closeExpenseRow(
+  viewer: Viewer,
+  input: { id: string; expectedVersion: number; closedBy: string; reason: string; now: Date },
+  tx: DbOrTx,
+): Promise<{ version: number } | null> {
+  void viewer;
+  const [row] = await tx
+    .update(expenses)
+    .set({
+      closedAt: input.now,
+      closedBy: input.closedBy,
+      closedReason: input.reason,
+      updatedBy: input.closedBy,
+      updatedAt: input.now,
+      version: sql`${expenses.version} + 1`,
+    })
+    .where(
+      and(
+        eq(expenses.id, input.id),
+        eq(expenses.version, input.expectedVersion),
+        isNull(expenses.closedAt),
+        isNotNull(expenses.number),
+        isNull(expenses.deletedAt),
+      ),
+    )
+    .returning({ version: expenses.version });
+  return row ?? null;
 }
 
 export type NumberedProjectExpense = { quoteLineId: string; number: string; approvalStatus: string | null };

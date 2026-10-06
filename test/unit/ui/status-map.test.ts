@@ -52,6 +52,8 @@ const PHASE6_WORDS: [string, StatusKind][] = [
   ["발행됨", "success"],
   ["선결제", "warning"],
   ["면제", "muted"],
+  // 06-28 S23 — 반려 · 회수 지출결의 종결(처음 쓰는 플랜이 더한다 — REVIEWS C2).
+  ["종결", "muted"],
 ];
 
 describe("status-map — 낱말 → 색 한 표", () => {

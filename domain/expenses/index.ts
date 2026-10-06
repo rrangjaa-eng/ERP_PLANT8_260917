@@ -33,6 +33,9 @@ import {
 } from "@/domain/settings/keys";
 import {
   ApprovalConflictError,
+  REJECT_REASON_EMPTY_MESSAGE,
+  REJECT_REASON_MAX,
+  REJECT_REASON_TOO_LONG_MESSAGE,
   loadActionLogGate,
   prepareSubmission,
   recordActionInTx,
@@ -90,6 +93,7 @@ import { findQuoteLineById, listLineageLinesByProjects, listQuoteLinesByRevision
 import { findUserById, findUserNamesByIds } from "@/repositories/users";
 import { findVendorById } from "@/repositories/vendors";
 import {
+  closeExpenseRow,
   findDeletedDraftById,
   findDraftByLineAndDrafter,
   findExpenseApprovalInstance,
@@ -279,7 +283,10 @@ function supplyMoney(row: Pick<ExpenseRow, "supplyCurrency" | "supplyForeignAmou
 }
 
 type SourceExtras = Partial<
-  Pick<ExpenseDocumentDto, "evidenceTypeName" | "paymentMethodName" | "taxLine" | "taxDrift" | "defaultEvidenceName" | "executionLines" | "installmentMode" | "installmentText">
+  Pick<
+    ExpenseDocumentDto,
+    "evidenceTypeName" | "paymentMethodName" | "taxLine" | "taxDrift" | "defaultEvidenceName" | "executionLines" | "installmentMode" | "installmentText" | "closure" | "closeDialog"
+  >
 >;
 
 function toSource(row: ExpenseSummaryRow, extras: SourceExtras = {}): ExpenseDocumentDto {
@@ -310,7 +317,8 @@ function toSource(row: ExpenseSummaryRow, extras: SourceExtras = {}): ExpenseDoc
     usageDate: row.usageDate,
     content: row.content,
     teamName: isTeamCostRow(row) ? row.teamName : null,
-    statusWord: statusWordFor(row.status),
+    // 06-28: 종결은 결재 상태와 별개의 끝 상태 — 결재 인스턴스는 반려 · 회수 그대로라 낱말만 여기서 가른다.
+    statusWord: row.closedAt !== null ? "종결" : statusWordFor(row.status),
     instanceId: row.instanceId,
     submittedAt: row.submittedAt,
     createdAt: row.createdAt,
@@ -326,6 +334,8 @@ function toSource(row: ExpenseSummaryRow, extras: SourceExtras = {}): ExpenseDoc
     executionLines: extras.executionLines ?? [],
     installmentMode: extras.installmentMode ?? "none",
     installmentText: extras.installmentText ?? null,
+    closure: extras.closure ?? null,
+    closeDialog: extras.closeDialog ?? null,
   };
 }
 
@@ -422,7 +432,12 @@ registerDocumentKind({
   href: (documentId) => `/expenses/${documentId}`,
   describeDocuments: describeExpenseDocuments,
   routeSettings: EXPENSE_ROUTE_SETTINGS,
-  canResubmit: (viewer) => can(viewer, "expenses", "write"),
+  // 06-28: 종결 문서는 다시 열리지 않는다 — 다시 제출 행동을 싣지 않는다(트랜잭션 없음).
+  canResubmit: async (viewer, documentId) => {
+    if (!(await can(viewer, "expenses", "write"))) return false;
+    const row = documentId === undefined ? null : await findExpenseById(viewer, documentId);
+    return row === null || row.closedAt === null;
+  },
   resubmitFrom: ["rejected", "withdrawn"],
   loadDetails: loadExpenseDetails,
   detailDto: EXPENSE_DETAIL_DTO_SPEC,
@@ -1140,6 +1155,64 @@ export async function withdrawExpense(
   }
 }
 
+// ── 종결(06-28 · C10 · U-3) ──────────────────────────────────────────────
+
+// 종결 문서에 다시 손대는 요청(다시 제출 · 종결 · 증빙)의 거부 문구 — 「거부 — 문서 화면 동시성」 꼴.
+export const EXPENSE_ALREADY_CLOSED = "이미 종결 · 새로 고침";
+
+export class ExpenseCloseRefusedError extends UserFacingError {}
+
+// 종결할 수 있는 사람 = 그 문서의 기안자(지출결의 쓰기 권한) ∨ 지급 권한자(expenses.payments 쓰기 — 06-27 「C9-종결키」).
+async function canCloseExpense(viewer: Viewer, row: Pick<ExpenseRow, "drafterId">): Promise<boolean> {
+  if (row.drafterId === viewer.id && (await can(viewer, "expenses", "write"))) return true;
+  return can(viewer, "expenses.payments", "write");
+}
+
+// 반려 · 회수(번호 있음) 문서를 사유와 함께 끝낸다 — 되돌림 없음 · 번호 재사용 없음. 결재 인스턴스 상태값은 건드리지 않는다.
+// 트랜잭션 전(06-03 tx 규약): 보임 · 행위자 · 사유 · 로그 게이트. 트랜잭션 안: 지출결의 행 잠금 → 종결 여부 → 같은 tx의 결재 상태 →
+// 문서 version → 종결 칸 셋(version + 1) → 끌 수 없는 status_change 로그. 잠금은 지출결의 행 하나다(역순 잠금 없음).
+// deps.afterLock — 테스트가 잠금 직후에 멈춰 다시 제출과의 경합 순서를 고정한다(submitExpense와 같은 꼴).
+export async function closeExpense(
+  viewer: Viewer,
+  input: { expenseId: string; expectedVersion: number; reason: string },
+  deps?: { afterLock?: () => Promise<void>; now?: Date },
+): Promise<{ version: number }> {
+  const row = UUID_SHAPE.test(input.expenseId) ? await findExpenseById(viewer, input.expenseId) : null;
+  if (!row || row.number === null) throw new ExpenseNotFoundError();
+  // 존재를 드러내지 않는다 — 보이지 않거나 행위자가 아니면 없는 문서(05 회수와 같이).
+  if (!(await canSeeExpense(viewer, row)) || !(await canCloseExpense(viewer, row))) throw new ExpenseNotFoundError();
+  const reason = input.reason.trim();
+  if (reason.length === 0) throw new ExpenseCloseRefusedError(REJECT_REASON_EMPTY_MESSAGE);
+  if (reason.length > REJECT_REASON_MAX) throw new ExpenseCloseRefusedError(REJECT_REASON_TOO_LONG_MESSAGE);
+  const gate = await loadActionLogGate();
+  const now = deps?.now ?? new Date();
+
+  return withTransaction(async (tx) => {
+    const locked = await lockExpenseForUpdate(viewer, row.id, tx);
+    await deps?.afterLock?.();
+    if (!locked || locked.number === null) throw new ExpenseNotFoundError();
+    if (locked.closedAt !== null) throw new ExpenseCloseRefusedError(EXPENSE_ALREADY_CLOSED);
+    const instance = await findExpenseApprovalInstance(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, documentId: locked.id }, tx);
+    if (!instance || !EDITABLE_STATUSES.has(instance.status)) throw new ExpenseConflictError(locked.updatedAt);
+    if (locked.version !== input.expectedVersion) throw new ExpenseConflictError(locked.updatedAt);
+    const closed = await closeExpenseRow(viewer, { id: locked.id, expectedVersion: input.expectedVersion, closedBy: viewer.id, reason, now }, tx);
+    if (!closed) throw new ExpenseConflictError(locked.updatedAt);
+    await recordActionInTx(
+      viewer,
+      {
+        actionType: "status_change",
+        entity: "expense",
+        entityId: locked.id,
+        documentId: locked.id,
+        detail: { kind: EXPENSE_DOCUMENT_KIND, from: instance.status, to: "closed", reason },
+      },
+      tx,
+      gate,
+    );
+    return { version: closed.version };
+  });
+}
+
 // ── 제출 판정 사실(05-06 — 미리보기 · 제출 공용) ──────────────────────────
 
 // 트랜잭션 전에 읽는 사실 — 고객 승인 게이트 설정과 담당 PM 이름.
@@ -1346,9 +1419,31 @@ export async function getExpense(viewer: Viewer, input: { expenseId: string }): 
       taxDrift,
       defaultEvidenceName: vendor?.defaultEvidenceType ? (evidenceNames.get(vendor.defaultEvidenceType) ?? vendor.defaultEvidenceType) : null,
       ...(await lineFactsFor(viewer, row, supply)),
+      closure: row.closedAt === null ? null : await closureOf(viewer, row),
+      closeDialog: await closeDialogFor(viewer, row),
     }),
     EXPENSE_DOCUMENT_DTO_SPEC,
   );
+}
+
+// 06-28(S23) 종결 메타 재료 — 종결한 사람 이름 · 서울 MM-DD · 사유 원문.
+async function closureOf(viewer: Viewer, row: ExpenseSummaryRow): Promise<NonNullable<ExpenseDocumentDto["closure"]>> {
+  const closer = row.closedBy ? await findUserById(viewer, row.closedBy) : null;
+  return { byName: closer?.name ?? "", on: row.closedAt ? seoulToday(row.closedAt).slice(5) : "", reason: row.closedReason ?? "" };
+}
+
+// 06-28(S23) 종결 확인 모달 재료 — 번호 있음 · 종결 아님 · 결재 상태 반려 · 회수 · 행위자(closeExpense와 같은 판정)일 때만.
+// 공급가 조각은 금액을 볼 수 있는 사람에게만 싣는다(금액 칸과 같은 노출 규칙 — 모달 칸이 expense.value라 따로 가른다).
+async function closeDialogFor(viewer: Viewer, row: ExpenseSummaryRow): Promise<ExpenseDocumentDto["closeDialog"]> {
+  if (row.number === null || row.closedAt !== null || row.status === null || !EDITABLE_STATUSES.has(row.status)) return null;
+  if (!(await canCloseExpense(viewer, row))) return null;
+  const team = isTeamCostRow(row);
+  const amount = (await visible(viewer, "expense.amount")) ? numberedSupplyText(row) : null;
+  const subtitle = [row.number, team ? row.content : row.itemName, amount].filter(Boolean).join(" · ");
+  if (team || row.lineNo === null) return { subtitle, resultLines: ["되돌림 없음"] };
+  const resultLines = [`견적 줄 ${row.lineNo} 문 열림 · 되돌림 없음`];
+  if (row.installment) resultLines.push("회차 상한에서 빠짐");
+  return { subtitle, resultLines };
 }
 
 // ── 견적 줄 표 행 행동 열(05-05 ④) ────────────────────────────────────────

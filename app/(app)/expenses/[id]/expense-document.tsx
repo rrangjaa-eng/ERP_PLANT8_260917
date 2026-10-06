@@ -23,6 +23,7 @@ import { EvidenceAttachments } from "./evidence-attachments";
 import { SubmittedUndoToast } from "./submitted-undo-toast";
 import { TaxParts } from "./tax-parts";
 import { PaymentActionRow, PaymentLoadError, PaymentPanelProvider, PaymentSection } from "./payment-action-row";
+import { CloseExpenseButton } from "./close-expense-button";
 import styles from "./expense.module.css";
 
 // 05-05(S7): 지출결의 문서 화면 — 제출 뒤. 읽기 칸(KvList) → `DetailScreen.Section 증빙` → 04.1 행동 줄. 행동 줄은 `getApprovalView`의 가능 행동 목록을
@@ -141,13 +142,35 @@ export function ExpenseDocument({
   }
 
   const amountText = supply ? formatKrw(supply.amountKrw) : null;
+  // 06-28(S23): 종결 문서는 결재 상태와 무관하게 낱말 `종결` · 메타 `{번호} · 종결 · {이름} {MM-DD} · {사유}`(사유 전문 + title).
+  const closure = expense.closure ?? null;
+  const meta = closure ? (
+    <>
+      {[expense.number, "종결", `${closure.byName} ${closure.on}`.trim()].filter(Boolean).join(" · ")}
+      {closure.reason ? (
+        <>
+          {" · "}
+          <span title={closure.reason}>{closure.reason}</span>
+        </>
+      ) : null}
+    </>
+  ) : (
+    (expense.number ?? undefined)
+  );
+  const reasonMessages = { empty: REJECT_REASON_EMPTY_MESSAGE, tooLong: REJECT_REASON_TOO_LONG_MESSAGE, max: REJECT_REASON_MAX };
 
   return (
     <div className={styles.column}>
       <DetailScreen
         title={title}
-        status={expense.number !== null && !view ? undefined : <StatusTag status={expenseStatusWord(view?.status)} />}
-        meta={expense.number ?? undefined}
+        status={closure ? <StatusTag status="종결" /> : expense.number !== null && !view ? undefined : <StatusTag status={expenseStatusWord(view?.status)} />}
+        meta={meta}
+        // 06-28(S23): 반려 · 회수 문서를 보는 기안자 · 지급 권한자에게만 2차 `종결`(서버 closeDialog) — 결재 통과 문서의 지급 행과 함께 서지 않는다.
+        actions={
+          expense.closeDialog
+            ? { secondary: <CloseExpenseButton expenseId={id} version={expense.version ?? 1} dialog={expense.closeDialog} messages={reasonMessages} /> }
+            : undefined
+        }
       >
         <KvList items={items} />
         <DetailScreen.Section title="증빙">

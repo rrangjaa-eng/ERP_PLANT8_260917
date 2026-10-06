@@ -9,7 +9,8 @@ import { searchLinesForCardLinkAction, searchProjectsForCardLinkAction } from ".
 // 줄 0 · 고를 수 있는 줄 0의 다음 한 수는 `견적 외 비용으로`(UI-SPEC 「Empty — 연결 고르기 목록」) — 라디오를 바꾸는 일은 폼 몫.
 
 export type PickedProject = { id: string; label: string };
-export type PickedLine = { id: string; itemName: string; remainingKrw: number; hint: string };
+// quote.amount를 못 보는 계정은 남은 실행가 · 힌트가 투영에서 빠진다(null) — 줄은 그대로 고른다(실행가 초과는 서버가 다시 판정).
+export type PickedLine = { id: string; itemName: string; remainingKrw: number | null; hint: string | null };
 
 export function LinkPicker({
   mode,
@@ -55,9 +56,7 @@ export function LinkPicker({
       for (const row of data.rows) {
         if (!row.id || row.itemName === undefined) continue;
         const selectable = row.selectable === true;
-        if (row.remainingKrw !== undefined && row.hint !== undefined) {
-          knownLines.current.set(row.id, { id: row.id, itemName: row.itemName, remainingKrw: row.remainingKrw, hint: row.hint });
-        }
+        knownLines.current.set(row.id, { id: row.id, itemName: row.itemName, remainingKrw: row.remainingKrw ?? null, hint: row.hint ?? null });
         const fx = row.execution && row.execution.currency !== "KRW" ? { currency: row.execution.currency, amount: row.execution.amount, rate: row.execution.fxRate } : undefined;
         items.push({
           type: "row",

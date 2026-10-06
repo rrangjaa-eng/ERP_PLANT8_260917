@@ -337,7 +337,7 @@ export function CardUsageForm({
     linkKind === null || (linkKind === "quote_line" && !linkLine) || (linkKind === "out_of_quote" && !linkProject) ? "연결 없음 · 연결 고르기" : undefined;
   // 실행가 초과(Q3) — 고른 줄 DTO의 남은 실행가와 서버 계산 공급가를 견준다. 서버도 잠근 뒤 같은 판정으로 거부한다.
   const overCap =
-    linkKind === "quote_line" && linkLine && preview.split && preview.split.supplyKrw > linkLine.remainingKrw
+    linkKind === "quote_line" && linkLine && linkLine.remainingKrw !== null && preview.split && preview.split.supplyKrw > linkLine.remainingKrw
       ? `실행가 초과 · 남은 실행가 ${formatKrw(linkLine.remainingKrw)} · `
       : undefined;
   const blockedReason = blankBlock(blanks) ?? fxBlock ?? evidenceBlock ?? linkBlock ?? teamBlock ?? (overCap ? `${overCap}다른 줄 고르기` : undefined);
@@ -544,7 +544,7 @@ export function CardUsageForm({
                   <Button id="card-usage-line-change" variant="tertiary" aria-label="견적 줄 바꾸기" onClick={() => setLinkStep("line")}>
                     {linkLine ? "바꾸기" : "고르기"}
                   </Button>
-                  {linkLine ? <Form.Hint>{linkLine.hint}</Form.Hint> : null}
+                  {linkLine?.hint ? <Form.Hint>{linkLine.hint}</Form.Hint> : null}
                 </div>
               ) : null}
             </>

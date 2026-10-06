@@ -291,7 +291,7 @@ export async function searchLinesForCardLink(
 // ── 새 건 기본값(M-4)의 진입 값 — S10과 같은 판정 ────────────────────────────
 
 export type CardLinkProjectChoice = { id: string; label: string };
-export type CardLinkLineChoice = { id: string; itemName: string; remainingKrw: number; hint: string };
+export type CardLinkLineChoice = { id: string; itemName: string; remainingKrw: number | null; hint: string | null };
 
 // 고를 수 있는 프로젝트면 `{번호} {이름}`(투영 뒤) — 볼 수 없거나 · 보관 · 완료면 null.
 export async function cardLinkProjectChoice(viewer: Viewer, projectId: string): Promise<CardLinkProjectChoice | null> {
@@ -311,8 +311,9 @@ export async function cardLinkLineChoice(viewer: Viewer, lineId: string): Promis
   if (!project) return null;
   const found = await searchLinesForCardLink(viewer, { projectId: project.id, query: "", currentLineId: lineId });
   const row = found.rows.find((candidate) => candidate.id === lineId);
-  if (!row?.selectable || row.itemName === undefined || row.remainingKrw === undefined || row.hint === undefined) return null;
-  return { project, line: { id: lineId, itemName: row.itemName, remainingKrw: row.remainingKrw, hint: row.hint } };
+  // quote.amount가 가려진 계정은 남은 실행가 · 힌트가 없다 — 줄은 그대로 채운다(S10 고르기와 같은 판정 · 실행가 초과는 서버가 다시 본다).
+  if (!row?.selectable || row.itemName === undefined) return null;
+  return { project, line: { id: lineId, itemName: row.itemName, remainingKrw: row.remainingKrw ?? null, hint: row.hint ?? null } };
 }
 
 // ── 견적 표 줄 사실(N-3 — 보관 대신 취소 · 실행가 초과 표시) ─────────────────

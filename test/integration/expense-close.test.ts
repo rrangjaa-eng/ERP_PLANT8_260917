@@ -25,7 +25,7 @@ import {
 import { searchLinesForPick } from "@/domain/expenses/pick";
 import { listExpenses } from "@/domain/expenses/list";
 import { seoulToday } from "@/lib/dates";
-import { getEvidenceActions, removeEvidence } from "@/domain/evidence";
+import { EvidenceCheckError, getEvidenceActions, removeEvidence } from "@/domain/evidence";
 import { setSettingValue } from "@/domain/settings/registry";
 import { ACTION_LOG_OPTIONAL_TYPES } from "@/domain/settings/keys";
 import { createRevisionFromCurrent, setCustomerApproval } from "@/domain/quotes/revisions";
@@ -318,6 +318,27 @@ describe("06-28 종결", () => {
     const [still] = await db.select().from(files).where(eq(files.id, file.id));
     expect(still?.removedAt).toBeNull();
   });
+
+  it("종결 문서의 증빙 파일은 새 지출결의에 다시 붙는다", async () => {
+    const fx = await setupExpenseProject();
+    const sha256 = "a".repeat(64);
+    // 종결하지 않은 반려 문서의 같은 파일 → 여전히 중복으로 거부.
+    const open = await newDraft(fx, fx.lines.split);
+    await attachEvidence(fx.pm, open, undefined, { sha256 });
+    const openSubmitted = await submitExpense(fx.pm, { expenseId: open, expectedVersion: (await expenseRow(open)).version });
+    if (openSubmitted.kind !== "submitted") throw new Error("제출되지 않음");
+    await reject(fx, openSubmitted);
+    const blockedByOpen = await newDraft(fx, fx.lines.withVendor);
+    const refused = await caught(attachEvidence(fx.pm, blockedByOpen, undefined, { sha256 }));
+    expect(refused).toBeInstanceOf(EvidenceCheckError);
+    expect(refused).toMatchObject({ message: `같은 파일이 ${openSubmitted.number} 증빙에 있음 · 다른 파일 고르기` });
+
+    // 그 문서를 종결하면 같은 파일을 새 문서에 붙일 수 있다 — 종결 문서의 증빙 기록은 그대로.
+    await closeAs(fx.pm, open);
+    await attachEvidence(fx.pm, blockedByOpen, undefined, { sha256 });
+    const alive = (await db.select().from(files).where(eq(files.sha256, sha256))).filter((file) => file.removedAt === null);
+    expect(alive.map((file) => file.ownerId).sort()).toEqual([open, blockedByOpen].sort());
+  }, 30_000);
 
   it("종결 문서는 회차 상한에서 빠진다", async () => {
     const fx = await setupExpenseProject();

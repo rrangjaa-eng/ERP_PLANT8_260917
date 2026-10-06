@@ -206,4 +206,19 @@ test.describe("06-02 설정 키 · 짝 격자", () => {
     }
   });
 
+  // 06-02 DOM 감사 D-1 — 짝 격자 힌트는 격자와 같은 x에서 시작한다(multi-enum fieldset 선례). TextField 칸 힌트는 입력 x 그대로.
+  test("짝 격자 힌트는 격자와 같은 x · 텍스트 칸 힌트는 입력과 같은 x다(PC)", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await loginAndOpenSettings(page);
+    const x = async (locator: ReturnType<Page["locator"]>) => (await locator.boundingBox())?.x;
+
+    // 격자 면(.wrap = 표의 부모, 1px 선 바깥) 시작 x.
+    const gridX = await x(page.getByRole("table", { name: GRID_NAME }).locator(".."));
+    expect(gridX).toBeDefined();
+    expect(await x(page.locator(`[id="setting-${PAYMENT_METHOD_EVIDENCE_PAIRS.key}-hint"]`))).toBe(gridX);
+
+    const inputX = await x(page.getByLabel("선결제 증빙 기한"));
+    expect(inputX).toBeDefined();
+    expect(await x(page.locator(`[id="setting-${EVIDENCE_PREPAID_DUE_DAYS.key}-hint"]`))).toBe(inputX);
+  });
 });

@@ -5,6 +5,7 @@ import { visible } from "@/domain/permissions/visible";
 import { findProject } from "@/domain/projects";
 import { listProjectFormReferences, scopeCreateFormReferences } from "@/domain/projects/references";
 import { getCurrentQuoteRevision, listQuoteLines } from "@/domain/quotes/lines";
+import { lineCardSideFacts } from "@/domain/corp-card-usages/link-targets";
 import { listRevisionSummaries } from "@/domain/quotes/revisions";
 import { listRevenue } from "@/domain/revenue";
 import { recentFxRate } from "@/domain/money/currency";
@@ -112,7 +113,10 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   // 04-44(DR-37) — 총 매출 예상가는 기간과 같은 권리 + 금액 노출(볼 수 없는 값은 고칠 수 없다).
   const canEditPreEstimate = periodRights !== "none" && canSeeAmount;
   const [lines, references, revenue, usdDefaultFxRate, destinations, catalog, statusSince, lineCap, revisionSummaries] = await Promise.all([
-    listQuoteLines(session.viewer, revision.id, { status: project.status, canWrite: canEditLines, canAdjust: canAdjustLines }),
+    // 06-07 N-3 — 줄 사슬의 카드 사용 · `신청됨` 구매 요청 사실(보관 대신 취소 · 실행가 초과 표시). lines.ts는 link-targets를 import하지 않는다(순환).
+    lineCardSideFacts(session.viewer, { revisionId: revision.id }).then((cardSideFacts) =>
+      listQuoteLines(session.viewer, revision.id, { status: project.status, canWrite: canEditLines, canAdjust: canAdjustLines, cardSideFacts }),
+    ),
     // 04-23(CEO 리뷰 B-23) — 조정 권한만 있어도 조정 줄의 거래처 칸을 고른다.
     // 2026-09-28 — 보기만 하는 계급도 소분류·거래처를 이름으로 읽는다(목록은 "projects" view로만 게이트하는 id·name 축소 투영).
     listProjectFormReferences(session.viewer),

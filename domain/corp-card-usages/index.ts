@@ -39,7 +39,18 @@ import { findProjectById } from "@/repositories/projects";
 import { findQuoteLineById } from "@/repositories/quote-lines";
 import { findLatestQuoteRevision, findQuoteRevisionById } from "@/repositories/quote-revisions";
 import { findLineLinks, lockQuoteLines } from "@/repositories/quote-line-links";
-import { lineRoom, loadLineRoomBasis, lockProjectForLinkWrite, type LineRoomBasis } from "@/domain/corp-card-usages/link-targets";
+import { findVendorNamesByIds } from "@/repositories/vendors";
+import { createOutOfQuoteLine } from "@/domain/quotes/lines";
+import {
+  cardLinkLineChoice,
+  cardLinkProjectChoice,
+  lineRoom,
+  loadLineRoomBasis,
+  lockProjectForLinkWrite,
+  type CardLinkLineChoice,
+  type CardLinkProjectChoice,
+  type LineRoomBasis,
+} from "@/domain/corp-card-usages/link-targets";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 
@@ -58,10 +69,12 @@ const CARD_NOT_ELIGIBLE = "카드 자격 없음 · 카드 고르기";
 const SHARED_CARD_FORBIDDEN = "공용 카드 등록 권한 없음 · 공용 카드는 경영관리";
 const AMOUNT_NOT_NUMBER = "숫자 아님 · 1,240,000처럼";
 const AMOUNT_NOT_POSITIVE = "결제 합계 0 이하 · 금액 고치기";
+const ITEM_MISSING = "항목 없음 · 항목 적기";
 
 export type CardUsageLinkKind = "team_cost" | "quote_line";
 
-// 06-07: 연결 판별 합 — 팀 비용(팀은 서버가 사용일 소속으로) · 견적 줄(줄 id만 — 실행가 · 공급가 칸 없음).
+// 06-07: 연결 판별 합 — 팀 비용(팀은 서버가 사용일 소속으로) · 견적 줄(줄 id만 — 실행가 · 공급가 칸 없음) ·
+// 견적 외 비용(프로젝트 · 항목 — 저장 때 그 프로젝트 현재 차수에 out_of_quote 줄을 새로 만든다, 항목이 비면 가맹점 이름).
 export type CardUsageInput = {
   corpCardId: string;
   usedOn: string;
@@ -69,7 +82,12 @@ export type CardUsageInput = {
   total: MoneyInput;
   evidenceTypeCode: string;
   memo?: string | null;
-} & ({ linkKind: "team_cost" } | { linkKind: null } | { linkKind: "quote_line"; lineId: string });
+} & (
+  | { linkKind: "team_cost" }
+  | { linkKind: null }
+  | { linkKind: "quote_line"; lineId: string }
+  | { linkKind: "out_of_quote"; projectId: string; itemName: string | null }
+);
 
 /** 트랜잭션 전 사실 — 평범한 객체(06-03 tx 규약). */
 export type CardUsagePre = {
@@ -85,6 +103,8 @@ export type CardUsagePre = {
   revisionId: string | null;
   lineRoom: LineRoomBasis | null;
   capExclude: { usageId?: string; requestId?: string };
+  /** 06-07 견적 외 비용 — 사전 조회 때의 현재 차수 · 항목. `completedOutOfQuote`는 06-09 대리 등록만 참(D-47 ③ · Q-B). */
+  outOfQuote: { projectId: string; revisionId: string; itemName: string; completedOutOfQuote: boolean } | null;
 };
 
 // ── 카드 자격 ──────────────────────────────────────────────────────────────
@@ -181,8 +201,31 @@ export async function precheckCardUsage(viewer: Viewer, input: CardUsageInput): 
     evidenceRule: option.rule,
     rates,
     capExclude: {},
+    outOfQuote: null,
   };
   if (input.linkKind === "team_cost") return { ...base, teamId, projectId: null, revisionId: null, lineRoom: null };
+
+  if (input.linkKind === "out_of_quote") {
+    // 견적 외 비용(O-8 · X-6): 현재 차수 · 완료 판정 · 항목 기본값은 트랜잭션 전에 — 잠근 뒤 `project.line-edit`가 상태를 다시 본다.
+    const project = await findProjectById(viewer, input.projectId);
+    if (!project || project.archivedAt) throw new CardUsageRejectedError(LINK_MISSING);
+    if (project.status === "completed") throw new CompletedProjectError(quoteLockReason({ status: project.status }) ?? undefined);
+    const latest = await findLatestQuoteRevision(viewer, project.id);
+    if (!latest) throw new CardUsageRejectedError(LINK_MISSING);
+    const merchantName = input.merchantVendorId
+      ? ((await findVendorNamesByIds(viewer, [input.merchantVendorId])).get(input.merchantVendorId) ?? "")
+      : "";
+    const itemName = (input.itemName ?? "").trim() || merchantName.trim();
+    if (!itemName) throw new CardUsageRejectedError(ITEM_MISSING);
+    return {
+      ...base,
+      teamId: null,
+      projectId: project.id,
+      revisionId: latest.id,
+      lineRoom: null,
+      outOfQuote: { projectId: project.id, revisionId: latest.id, itemName, completedOutOfQuote: false },
+    };
+  }
 
   // 견적 줄(D-47 · ST-1): 완료 프로젝트는 트랜잭션 전에 거부한다 — 잠근 뒤 `lockProjectForLinkWrite`가 다시 본다(X-2).
   const line = await findQuoteLineById(viewer, input.lineId);
@@ -240,6 +283,24 @@ export async function createCardUsage(
       });
       if (!cap.allowed) throw new GateBlockedError(cap.reason);
       link = { linkKind: "quote_line", quoteLineId: input.lineId, teamId: null };
+    } else if (input.linkKind === "out_of_quote") {
+      // 순서 고정(X-2 · X-6): 프로젝트 행(완료 판정은 게이트 한 곳) → 04 줄 편집 게이트 → 줄 INSERT → 카드 사용 INSERT.
+      // 새 줄이라 잠글 기존 연결이 없고, 실행가 = 공급가라 card.execution-cap을 부르지 않는다(Q3 열린 선택).
+      const out = pre.outOfQuote;
+      if (!out) throw new CardUsageRejectedError(LINK_MISSING);
+      const project = await lockProjectForLinkWrite(viewer, { projectId: out.projectId, revisionId: out.revisionId, allowCompleted: true }, innerTx);
+      const edit = await gate(project, "project.line-edit", {
+        status: project.status,
+        lineKind: "out_of_quote",
+        actorCanWrite: true,
+        actorCanAdjust: false,
+        hasLinkedDocuments: false,
+        change: { kind: "insert", quoteCellsZero: true },
+        completedOutOfQuote: out.completedOutOfQuote,
+      });
+      if (!edit.allowed) throw new GateBlockedError(edit.reason);
+      const line = await createOutOfQuoteLine(viewer, { revisionId: out.revisionId, itemName: out.itemName, executionKrw: split.supplyKrw }, innerTx);
+      link = { linkKind: "quote_line", quoteLineId: line.id, teamId: null };
     }
     const row = await insertCardUsage(
       viewer,
@@ -498,18 +559,38 @@ export async function listCardUsages(viewer: Viewer, filters: CardUsageListFilte
 
 // ── 새 건 기본값(M-4) ──────────────────────────────────────────────────────
 
-export type CardUsageFormDefaults = { usedOn: string; corpCardId: string | null; linkKind: "team_cost" | null };
+export type CardUsageFormLinkKind = "team_cost" | "quote_line" | "out_of_quote";
 
-// 사용일 = 오늘(서울) · 카드 = 직전 등록의 카드가 지금 옵션에 있을 때만(아니면 옵션 한 장이면 그 카드) · 연결 = 직전 등록의 연결 종류.
-// 처음 쓰는 사람은 카드(여러 장일 때) · 연결이 빈다. 보관된 건은 직전 등록이 아니다.
-export async function cardUsageFormDefaults(viewer: Viewer, today: string): Promise<CardUsageFormDefaults> {
+export type CardUsageFormDefaults = {
+  usedOn: string;
+  corpCardId: string | null;
+  linkKind: CardUsageFormLinkKind | null;
+  project: CardLinkProjectChoice | null;
+  line: CardLinkLineChoice | null;
+};
+
+/** 진입 — S14 견적 줄 행(`?line=`) · S15 빈 섹션(`?project=`). */
+export type CardUsageEntry = { lineId?: string | undefined; projectId?: string | undefined };
+
+// 사용일 = 오늘(서울) · 카드 = 직전 등록의 카드가 지금 옵션에 있을 때만(아니면 옵션 한 장이면 그 카드).
+// 연결(M-4) 우선순위 = 진입 줄(고를 수 있을 때만 · 줄까지) > 진입 프로젝트(고를 수 있을 때만) > 직전 등록의 종류 + 프로젝트
+// (지금 고를 수 없으면 종류만). 견적 줄은 진입 줄일 때만 채운다. 처음 쓰는 사람은 연결이 빈다. 보관된 건은 직전 등록이 아니다.
+export async function cardUsageFormDefaults(viewer: Viewer, today: string, entry: CardUsageEntry = {}): Promise<CardUsageFormDefaults> {
   const options = await cardOptionsForUsage(viewer, today);
   const last = await findLastCardUsageByRegistrant(viewer, viewer.id);
   const lastCard = last && options.some((option) => option.id === last.corpCardId) ? last.corpCardId : null;
   const onlyCard = options.length === 1 ? (options[0]?.id ?? null) : null;
-  return {
-    usedOn: today,
-    corpCardId: lastCard ?? onlyCard,
-    linkKind: last?.linkKind === "team_cost" ? "team_cost" : null,
-  };
+  const base = { usedOn: today, corpCardId: lastCard ?? onlyCard };
+  if (entry.lineId) {
+    const chosen = await cardLinkLineChoice(viewer, entry.lineId);
+    if (chosen) return { ...base, linkKind: "quote_line", project: chosen.project, line: chosen.line };
+  }
+  if (entry.projectId) {
+    const project = await cardLinkProjectChoice(viewer, entry.projectId);
+    if (project) return { ...base, linkKind: "quote_line", project, line: null };
+  }
+  if (!last) return { ...base, linkKind: null, project: null, line: null };
+  if (last.linkKind === "team_cost") return { ...base, linkKind: "team_cost", project: null, line: null };
+  const project = last.projectId ? await cardLinkProjectChoice(viewer, last.projectId) : null;
+  return { ...base, linkKind: last.lineKind === "out_of_quote" ? "out_of_quote" : "quote_line", project, line: null };
 }

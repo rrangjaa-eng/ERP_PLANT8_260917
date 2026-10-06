@@ -6,6 +6,7 @@ import { searchLinesForCardLinkAction, searchProjectsForCardLinkAction } from ".
 
 // 06-07(UI-SPEC S10 · SP-8 · C11): 패널 위 연결 고르기 — 프로젝트 · 견적 줄 두 단계를 05 `PickDialog`로 한 번에 하나만 연다.
 // 줄마다 고를 수 있음 · 이유 · 남은 실행가는 서버가 정해 보낸다(이 파일은 셈하지 않는다). `mode`는 부른 폼(06-08이 `purchase`를 더한다).
+// 줄 0 · 고를 수 있는 줄 0의 다음 한 수는 `견적 외 비용으로`(UI-SPEC 「Empty — 연결 고르기 목록」) — 라디오를 바꾸는 일은 폼 몫.
 
 export type PickedProject = { id: string; label: string };
 export type PickedLine = { id: string; itemName: string; remainingKrw: number; hint: string };
@@ -18,6 +19,7 @@ export function LinkPicker({
   onClose,
   onPickProject,
   onPickLine,
+  onOutOfQuote,
 }: {
   mode: "card";
   step: "project" | "line" | null;
@@ -26,6 +28,7 @@ export function LinkPicker({
   onClose: () => void;
   onPickProject: (project: PickedProject) => void;
   onPickLine: (line: PickedLine) => void;
+  onOutOfQuote: () => void;
 }) {
   void mode;
   const knownProjects = useRef(new Map<string, PickedProject>());
@@ -68,7 +71,13 @@ export function LinkPicker({
           current: row.current === true,
         });
       }
-      return { items, truncated: data.truncated, subtitle: data.subtitle };
+      return {
+        items,
+        truncated: data.truncated,
+        subtitle: data.subtitle,
+        emptyDefault: "이 프로젝트에 견적 줄이 없습니다",
+        noneSelectableReason: "이을 수 있는 줄 없음",
+      };
     },
     [projectId, currentLineId],
   );
@@ -99,6 +108,7 @@ export function LinkPicker({
         primaryLabel="이 줄로"
         failedLine="견적 줄 불러오지 못함"
         search={searchLines}
+        emptyNextStep={{ label: "견적 외 비용으로", onSelect: onOutOfQuote }}
         onPick={(row) => {
           const line = knownLines.current.get(row.id);
           if (!line) return false;

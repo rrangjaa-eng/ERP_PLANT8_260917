@@ -45,9 +45,13 @@ export type LineChain = { currentLineId: string | null; chainLineIds: string[] }
 // 줄 id마다 계보 사슬. 현재 차수 줄의 사슬(자기 + 앞 차수 줄)은 05 `resolveLinkedDocumentsByLineage`로 푼다. 어느 현재 줄에도
 // 닿지 않는 줄(새 차수에서 빠진 줄 · 보관된 현재 줄)은 05에 없는 갈래 · 역참조 — `copiedFromLineId` 역참조로 가장 늦은 후손을 찾고
 // 거기서 뿌리까지 푼다(E-44). `lines`는 한 프로젝트의 계보 줄이어야 한다(최신 순번이 프로젝트마다 다르다).
-export function lineChains(viewer: Viewer, lines: readonly LineageLine[], lineIds: readonly string[]): Map<string, LineChain> {
+// `latestSeq`는 그 프로젝트의 최신 차수 순번 — 최신 차수의 줄이 모두 보관돼 `lines`에 없으면 현재 줄이 없다(앞 차수 줄을 현재로 보지 않는다).
+export function lineChains(viewer: Viewer, lines: readonly LineageLine[], lineIds: readonly string[], latestSeq?: number): Map<string, LineChain> {
   void viewer;
-  const { byCurrentLine } = resolveLinkedDocumentsByLineage(lines, new Map(lines.map((line) => [line.id, [line.id]])));
+  const reachesLatest = latestSeq === undefined || lines.some((line) => line.revisionSeq === latestSeq);
+  const { byCurrentLine } = reachesLatest
+    ? resolveLinkedDocumentsByLineage(lines, new Map(lines.map((line) => [line.id, [line.id]])))
+    : { byCurrentLine: new Map<string, string[]>() };
   const currentOf = new Map<string, string>();
   for (const [current, chain] of byCurrentLine) for (const id of chain) if (!currentOf.has(id)) currentOf.set(id, current);
   const byId = new Map(lines.map((line) => [line.id, line]));
@@ -106,13 +110,19 @@ export async function findLineLinks(viewer: Viewer, lineIds: readonly string[], 
     .where(inArray(quoteLines.id, ids));
   const projectIds = [...new Set(owners.map((owner) => owner.projectId))];
   const lineage = await listLineageLinesByProjects(viewer, projectIds, tx);
+  const latest = await tx
+    .select({ projectId: quoteRevisions.projectId, seq: sql<number>`max(${quoteRevisions.seq})`.mapWith(Number) })
+    .from(quoteRevisions)
+    .where(inArray(quoteRevisions.projectId, projectIds))
+    .groupBy(quoteRevisions.projectId);
+  const latestSeqOf = new Map(latest.map((row) => [row.projectId, row.seq]));
   const lineageById = new Map(lineage.map((line) => [line.id, line]));
 
   const chains = new Map<string, LineChain>();
   for (const projectId of projectIds) {
     const projectLines = lineage.filter((line) => line.projectId === projectId);
     const asked = owners.filter((owner) => owner.projectId === projectId).map((owner) => owner.id);
-    for (const [lineId, chain] of lineChains(viewer, projectLines, asked)) chains.set(lineId, chain);
+    for (const [lineId, chain] of lineChains(viewer, projectLines, asked, latestSeqOf.get(projectId))) chains.set(lineId, chain);
   }
   for (const lineId of ids) if (!chains.has(lineId)) chains.set(lineId, { currentLineId: null, chainLineIds: [lineId] });
 

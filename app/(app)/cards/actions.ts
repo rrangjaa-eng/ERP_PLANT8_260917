@@ -31,8 +31,14 @@ const createCardUsageSchema = z
     amount: amountSchema,
     fxRate: z.number().positive().optional(),
     evidenceTypeCode: z.string().min(1),
-    // 06-07: 연결 판별 합 — 팀 비용 · 견적 줄(줄 id만 — 공급가 · 실행가 칸 없음).
-    link: z.discriminatedUnion("kind", [z.object({ kind: z.literal("team") }), z.object({ kind: z.literal("line"), lineId: z.uuid() })]).nullable(),
+    // 06-07: 연결 판별 합 — 팀 비용 · 견적 줄(줄 id만 — 공급가 · 실행가 칸 없음) · 견적 외 비용(프로젝트 · 항목 — 비면 가맹점 이름).
+    link: z
+      .discriminatedUnion("kind", [
+        z.object({ kind: z.literal("team") }),
+        z.object({ kind: z.literal("line"), lineId: z.uuid() }),
+        z.object({ kind: z.literal("out_of_quote"), projectId: z.uuid(), itemName: z.string().max(200).nullable() }),
+      ])
+      .nullable(),
     memo: z.string().max(500).nullable(),
   })
   .superRefine((value, ctx) => {
@@ -54,7 +60,9 @@ export const createCardUsageAction = authedActionClient.schema(createCardUsageSc
       ? { ...base, linkKind: null }
       : link.kind === "team"
         ? { ...base, linkKind: "team_cost" }
-        : { ...base, linkKind: "quote_line", lineId: link.lineId };
+        : link.kind === "line"
+          ? { ...base, linkKind: "quote_line", lineId: link.lineId }
+          : { ...base, linkKind: "out_of_quote", projectId: link.projectId, itemName: link.itemName };
   const pre = await precheckCardUsage(ctx.viewer, input);
   const created = await createCardUsage(ctx.viewer, input, pre);
   revalidatePath("/cards");

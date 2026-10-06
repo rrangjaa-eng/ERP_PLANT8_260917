@@ -109,7 +109,13 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
 
   let panel = null;
   if (first(params.new) === "1" && cards.length > 0) {
-    const defaults = await cardUsageFormDefaults(viewer, today);
+    // 진입(M-4) — S14 견적 줄 행 `?line=` · S15 빈 섹션 `?project=`. 고를 수 없으면 서버가 버리고 직전 등록 기준.
+    const entryLine = first(params.line);
+    const entryProject = first(params.project);
+    const defaults = await cardUsageFormDefaults(viewer, today, {
+      lineId: entryLine && UUID_PATTERN.test(entryLine) ? entryLine : undefined,
+      projectId: entryProject && UUID_PATTERN.test(entryProject) ? entryProject : undefined,
+    });
     panel = (
       <SidePanel title="카드 사용 등록" closeHref={listHref}>
         <CardUsageForm

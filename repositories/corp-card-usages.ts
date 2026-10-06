@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, gte, isNull, lt, ne, or, type SQL } from "drizzle-orm";
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
-import { corpCardUsages, corpCards, quoteLines, teams, users, vendors } from "@/db/schema";
+import { corpCardUsages, corpCards, quoteLines, quoteRevisions, teams, users, vendors } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 
 // 06-05(EXP-07): 법인카드 사용 쓰기 · 목록 · 직전 등록. 범위(UA-612)는 목록 쿼리의 조건에서 갈린다 — 보관된 건은 늘 뺀다(H-4 기반).
@@ -111,15 +111,17 @@ export async function listCardUsageRows(
   }));
 }
 
-/** 새 건 기본값(M-4)의 「직전 등록」 — 그 사람이 등록한, 보관 안 된 카드 사용 중 가장 최근 것. */
+/** 새 건 기본값(M-4)의 「직전 등록」 — 그 사람이 등록한, 보관 안 된 카드 사용 중 가장 최근 것. 06-07: 견적 줄 연결이면 줄 종류 · 프로젝트도. */
 export async function findLastCardUsageByRegistrant(
   viewer: Viewer,
   userId: string,
-): Promise<Pick<CardUsageRow, "corpCardId" | "linkKind"> | null> {
+): Promise<(Pick<CardUsageRow, "corpCardId" | "linkKind"> & { lineKind: string | null; projectId: string | null }) | null> {
   void viewer;
   const [row] = await db
-    .select({ corpCardId: corpCardUsages.corpCardId, linkKind: corpCardUsages.linkKind })
+    .select({ corpCardId: corpCardUsages.corpCardId, linkKind: corpCardUsages.linkKind, lineKind: quoteLines.lineKind, projectId: quoteRevisions.projectId })
     .from(corpCardUsages)
+    .leftJoin(quoteLines, eq(quoteLines.id, corpCardUsages.quoteLineId))
+    .leftJoin(quoteRevisions, eq(quoteRevisions.id, quoteLines.revisionId))
     .where(and(eq(corpCardUsages.registeredBy, userId), isNull(corpCardUsages.archivedAt)))
     .orderBy(desc(corpCardUsages.createdAt), desc(corpCardUsages.id))
     .limit(1);

@@ -26,10 +26,15 @@ import { LinkPicker, type PickedLine, type PickedProject } from "./link-picker";
 
 export type CardOption = { id: string; label: string };
 export type EvidenceTypeOption = { value: string; label: string };
+type LinkKind = "team_cost" | "quote_line" | "out_of_quote";
+
 export type CardUsageDefaults = {
   usedOn: string;
   corpCardId: string | null;
-  linkKind: "team_cost" | null;
+  linkKind: LinkKind | null;
+  /** 06-07 M-4 — 진입 줄 · 진입 프로젝트 · 직전 등록의 프로젝트(서버가 고를 수 있을 때만 채운다). 견적 줄은 진입 줄일 때만. */
+  project: PickedProject | null;
+  line: PickedLine | null;
   evidenceTypeCode: string | null;
 };
 
@@ -178,10 +183,12 @@ export function CardUsageForm({
   const [amountRaw, setAmountRaw] = useState("");
   const [fxRaw, setFxRaw] = useState(usdFxRate === null ? "" : String(usdFxRate));
   const [evidenceTypeCode, setEvidenceTypeCode] = useState(initialDefaults.evidenceTypeCode ?? "");
-  const [linkKind, setLinkKind] = useState<"team_cost" | "quote_line" | null>(initialDefaults.linkKind);
+  const [linkKind, setLinkKind] = useState<LinkKind | null>(initialDefaults.linkKind);
   // 06-07 견적 줄 연결 — 프로젝트 · 줄은 패널 위 고르기(S10)로만 채운다. 줄 DTO의 남은 실행가 · 힌트를 그대로 보인다(새 셈 없음).
-  const [linkProject, setLinkProject] = useState<PickedProject | null>(null);
-  const [linkLine, setLinkLine] = useState<PickedLine | null>(null);
+  const [linkProject, setLinkProject] = useState<PickedProject | null>(initialDefaults.project);
+  const [linkLine, setLinkLine] = useState<PickedLine | null>(initialDefaults.line);
+  // 견적 외 비용 항목 — 사람이 고치기 전(null)에는 가맹점 이름을 따른다(UI-SPEC S9 「기본값 = 가맹점 이름」).
+  const [itemName, setItemName] = useState<string | null>(null);
   const [linkStep, setLinkStep] = useState<"project" | "line" | null>(null);
   const linkInputRef = useRef<HTMLInputElement>(null);
   const linkPickedRef = useRef<string | null>(null);
@@ -192,7 +199,7 @@ export function CardUsageForm({
     linkInputRef.current?.dispatchEvent(new Event("change", { bubbles: true }));
     // 고르기 목록이 닫히며 누른 버튼으로 돌린 포커스 뒤에 — 다음 빈 「바꾸기」(프로젝트 뒤 = 견적 줄), 없으면 방금 바뀐 칸.
     window.setTimeout(() => document.getElementById(focusId)?.focus(), 0);
-  }, [linkProject, linkLine]);
+  }, [linkProject, linkLine, linkKind]);
   const [merchant, setMerchant] = useState<Merchant | null>(null);
   const [pickOpen, setPickOpen] = useState(false);
   // 가맹점은 이름 없는 상태 + 숨은 칸이라 입력 이벤트가 없다 — 고른 뒤 숨은 칸 값이 바뀌면 change를 쏴 PanelForm이 바뀐 칸으로 센다(DR1 · SP-8).
@@ -211,7 +218,7 @@ export function CardUsageForm({
   const doneStatusRef = useRef<string | null>(null);
   // 결과 한 줄이 선 동안(다음 입력 전) — 같은 자리의 막힘 이유가 그 줄을 가리지 않게 막힘 줄을 미룬다(제출은 handleSubmit이 막는다).
   const [showingResult, setShowingResult] = useState(false);
-  const submittedRef = useRef<{ corpCardId: string; linkKind: "team_cost" | null } | null>(null);
+  const submittedRef = useRef<{ corpCardId: string; linkKind: LinkKind | null; project: PickedProject | null } | null>(null);
 
   const { execute, result, isExecuting, reset } = useAction(createCardUsageAction, {
     onSuccess: ({ data }) => {
@@ -220,6 +227,9 @@ export function CardUsageForm({
         usedOn: today,
         corpCardId: submitted?.corpCardId ?? null,
         linkKind: submitted?.linkKind ?? null,
+        // 방금 등록 = 직전 등록(M-4) — 종류 · 프로젝트는 남고 견적 줄은 빈다(줄은 건마다 다르다).
+        project: submitted?.project ?? null,
+        line: null,
         evidenceTypeCode: initialDefaults.evidenceTypeCode,
       };
       setDefaults(next);
@@ -227,8 +237,9 @@ export function CardUsageForm({
       setUsedOn(next.usedOn);
       setEvidenceTypeCode(next.evidenceTypeCode ?? "");
       setLinkKind(next.linkKind);
-      setLinkProject(null);
+      setLinkProject(next.project);
       setLinkLine(null);
+      setItemName(null);
       setMerchant(null);
       setCurrency("KRW");
       setFxRaw(usdFxRate === null ? "" : String(usdFxRate));
@@ -286,7 +297,19 @@ export function CardUsageForm({
   }, [previewKey, usedOn, currency, amountRaw, fxValue, evidenceTypeCode]);
 
   // 칸을 고치면 지난 서버 거부 줄은 걷는다.
-  const editKey = JSON.stringify([cardId, usedOn, currency, amountRaw, fxRaw, evidenceTypeCode, linkKind, linkLine?.id ?? "", merchant?.id ?? ""]);
+  const editKey = JSON.stringify([
+    cardId,
+    usedOn,
+    currency,
+    amountRaw,
+    fxRaw,
+    evidenceTypeCode,
+    linkKind,
+    linkProject?.id ?? "",
+    linkLine?.id ?? "",
+    itemName ?? "",
+    merchant?.id ?? "",
+  ]);
   const lastEditKey = useRef(editKey);
   useEffect(() => {
     if (editKey === lastEditKey.current) return;
@@ -294,10 +317,12 @@ export function CardUsageForm({
     if (result.serverError || result.validationErrors) reset();
   }, [editKey, result.serverError, result.validationErrors, reset]);
 
+  const shownItemName = itemName ?? merchant?.name ?? "";
   const blanks = [
     ...(cardId ? [] : [{ label: "카드", verb: "고르기" }]),
     ...(usedOn ? [] : [{ label: "사용일", verb: "고르기" }]),
     ...(amountRaw ? [] : [{ label: "결제 합계", verb: "적기" }]),
+    ...(linkKind === "out_of_quote" && linkProject && shownItemName.trim() === "" ? [{ label: "항목", verb: "적기" }] : []),
   ];
   const evidenceBlock = evidenceTypeCode
     ? undefined
@@ -308,7 +333,8 @@ export function CardUsageForm({
         : "카드 전표 카드에 없음 · 증빙 종류 고르기";
   const fxBlock = currency !== "KRW" && (fxValue === null || fxValue === undefined) ? "환율 없음 · USD 환율 적기" : undefined;
   const teamBlock = linkKind === "team_cost" && !preview.teamAssigned ? `${userName} ${usedOn.slice(5)} 소속 없음 · 소속 발령은 관리자` : undefined;
-  const linkBlock = linkKind === null || (linkKind === "quote_line" && !linkLine) ? "연결 없음 · 연결 고르기" : undefined;
+  const linkBlock =
+    linkKind === null || (linkKind === "quote_line" && !linkLine) || (linkKind === "out_of_quote" && !linkProject) ? "연결 없음 · 연결 고르기" : undefined;
   // 실행가 초과(Q3) — 고른 줄 DTO의 남은 실행가와 서버 계산 공급가를 견준다. 서버도 잠근 뒤 같은 판정으로 거부한다.
   const overCap =
     linkKind === "quote_line" && linkLine && preview.split && preview.split.supplyKrw > linkLine.remainingKrw
@@ -324,7 +350,7 @@ export function CardUsageForm({
     }
     const formData = new FormData(event.currentTarget);
     const memo = formData.get("memo");
-    submittedRef.current = { corpCardId: cardId, linkKind: linkKind === "team_cost" ? "team_cost" : null };
+    submittedRef.current = { corpCardId: cardId, linkKind, project: linkKind === "team_cost" ? null : linkProject };
     execute({
       corpCardId: cardId,
       usedOn,
@@ -333,7 +359,14 @@ export function CardUsageForm({
       amount: Number(amountRaw),
       ...(currency !== "KRW" && fxValue ? { fxRate: fxValue } : {}),
       evidenceTypeCode,
-      link: linkKind === "team_cost" ? { kind: "team" as const } : linkKind === "quote_line" && linkLine ? { kind: "line" as const, lineId: linkLine.id } : null,
+      link:
+        linkKind === "team_cost"
+          ? { kind: "team" as const }
+          : linkKind === "quote_line" && linkLine
+            ? { kind: "line" as const, lineId: linkLine.id }
+            : linkKind === "out_of_quote" && linkProject
+              ? { kind: "out_of_quote" as const, projectId: linkProject.id, itemName: shownItemName.trim() || null }
+              : null,
       memo: typeof memo === "string" && memo.trim() !== "" ? memo.trim() : null,
     });
   }
@@ -460,30 +493,29 @@ export function CardUsageForm({
             <span id="card-usage-link-label" className={rowStyles.label}>
               연결
             </span>
-            <label className={cardStyles.linkOption}>
-              <input
-                type="radio"
-                name="linkKind"
-                value="team_cost"
-                defaultChecked={defaults.linkKind === "team_cost"}
-                onChange={() => setLinkKind("team_cost")}
-              />{" "}
-              팀 비용
-            </label>
-            <label className={cardStyles.linkOption}>
-              <input
-                type="radio"
-                name="linkKind"
-                value="quote_line"
-                onChange={() => setLinkKind("quote_line")}
-              />{" "}
-              견적 줄
-            </label>
+            {/* 라디오는 제어 칸 — 고르기 목록의 `견적 외 비용으로`가 종류를 바꾼다(SP-8). 순서는 UI-SPEC S9 와이어. */}
+            {(
+              [
+                ["quote_line", "견적 줄"],
+                ["out_of_quote", "견적 외 비용"],
+                ["team_cost", "팀 비용"],
+              ] as const
+            ).map(([value, label]) => (
+              <label key={value} className={cardStyles.linkOption}>
+                <input type="radio" name="linkKind" value={value} checked={linkKind === value} onChange={() => setLinkKind(value)} /> {label}
+              </label>
+            ))}
             {/* 팀 비용 = 사용한 사람의 사용일 소속(읽기 텍스트 · 힌트 없음 — M-5). */}
             {linkKind === "team_cost" && preview.teamName ? <div data-ui="card-usage-team">{preview.teamName}</div> : null}
           </div>
-          <input ref={linkInputRef} type="hidden" name="quoteLineId" value={linkKind === "quote_line" ? (linkLine?.id ?? "") : ""} readOnly />
-          {linkKind === "quote_line" ? (
+          <input
+            ref={linkInputRef}
+            type="hidden"
+            name="linkTarget"
+            value={linkKind === "quote_line" || linkKind === "out_of_quote" ? `${linkProject?.id ?? ""}:${linkKind === "quote_line" ? (linkLine?.id ?? "") : ""}` : ""}
+            readOnly
+          />
+          {linkKind === "quote_line" || linkKind === "out_of_quote" ? (
             <>
               <div className={rowStyles.row}>
                 <span className={rowStyles.label}>프로젝트</span>
@@ -492,7 +524,20 @@ export function CardUsageForm({
                   {linkProject ? "바꾸기" : "고르기"}
                 </Button>
               </div>
-              {linkProject ? (
+              {linkKind === "out_of_quote" && linkProject ? (
+                <TextField
+                  id="card-usage-item"
+                  name="itemName"
+                  label="항목"
+                  maxLength={200}
+                  value={shownItemName}
+                  onChange={(event) => setItemName(event.target.value)}
+                />
+              ) : null}
+              {linkKind === "out_of_quote" && linkProject && preview.split ? (
+                <Form.Hint>{`저장하면 견적 외 비용 줄 생김 · 실행가 ${formatKrw(preview.split.supplyKrw)}`}</Form.Hint>
+              ) : null}
+              {linkKind === "quote_line" && linkProject ? (
                 <div className={rowStyles.row}>
                   <span className={rowStyles.label}>견적 줄</span>
                   <span>{linkLine ? linkLine.itemName : "—"}</span>{" "}
@@ -518,7 +563,7 @@ export function CardUsageForm({
           setShowingResult(false);
           setLinkStep(null);
           if (project.id !== linkProject?.id) setLinkLine(null);
-          linkPickedRef.current = "card-usage-line-change";
+          linkPickedRef.current = linkKind === "out_of_quote" ? "card-usage-item" : "card-usage-line-change";
           setLinkProject(project);
         }}
         onPickLine={(line) => {
@@ -526,6 +571,11 @@ export function CardUsageForm({
           setLinkStep(null);
           linkPickedRef.current = "card-usage-line-change";
           setLinkLine(line);
+        }}
+        onOutOfQuote={() => {
+          setShowingResult(false);
+          linkPickedRef.current = "card-usage-item";
+          setLinkKind("out_of_quote");
         }}
       />
     </>

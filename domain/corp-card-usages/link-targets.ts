@@ -2,7 +2,7 @@ import type { Viewer } from "@/domain/viewer";
 import { can, ForbiddenError } from "@/domain/permissions/can";
 import { projectMany, type DtoSpec } from "@/domain/permissions/project";
 import { registerDto } from "@/domain/permissions/dto-registry";
-import { moneyFromRow, sumKrw, toKrw, type Money, type MoneyInput } from "@/domain/money";
+import { diffKrw, moneyFromRow, sumKrw, toKrw, type Money, type MoneyInput } from "@/domain/money";
 import { loadTaxRates, type TaxRates } from "@/domain/money/tax";
 import { taxRuleSchema, type TaxRule } from "@/domain/code-tables/tax-rule";
 import { CARD_RECEIPT_CODE, cardExecutionCap, splitCardTotal } from "@/domain/corp-card-usages/amounts";
@@ -18,8 +18,8 @@ import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { listCodeItems } from "@/repositories/code-tables";
 import { findExpenseApprovalStatuses } from "@/repositories/expenses";
 import { findProjectById, lockProjectForWrite, type ProjectRow } from "@/repositories/projects";
-import { findLatestQuoteRevision } from "@/repositories/quote-revisions";
-import { listLineageLinesByProjects, listQuoteLinesByRevisions } from "@/repositories/quote-lines";
+import { findLatestQuoteRevision, findQuoteRevisionById } from "@/repositories/quote-revisions";
+import { findQuoteLineById, listLineageLinesByProjects, listQuoteLinesByRevision, listQuoteLinesByRevisions } from "@/repositories/quote-lines";
 import { findVendorNamesByIds } from "@/repositories/vendors";
 import type { DbOrTx } from "@/repositories/document-counters";
 import {
@@ -138,7 +138,8 @@ export async function lockProjectForLinkWrite(
 // 사슬이 현재 차수에 닿지 않으면(새 차수에서 빠진 줄 · 보관된 현재 줄) 거부한다.
 export async function currentLineForFixedLink(viewer: Viewer, input: { projectId: string; lineId: string }, tx: DbOrTx): Promise<string> {
   const lines = await listLineageLinesByProjects(viewer, [input.projectId], tx);
-  const current = lineChains(viewer, lines, [input.lineId]).get(input.lineId)?.currentLineId ?? null;
+  const latest = await findLatestQuoteRevision(viewer, input.projectId, tx);
+  const current = lineChains(viewer, lines, [input.lineId], latest?.seq).get(input.lineId)?.currentLineId ?? null;
   if (!current) throw new DroppedQuoteLineError();
   return current;
 }
@@ -162,6 +163,11 @@ registerDto({ name: "CardLinkProjectDto", fields: CARD_LINK_PROJECT_SPEC.fields.
 
 const STATUS_ORDER = ["in_progress", "bidding", "settling", "completed", "lost"] as const;
 
+// 프로젝트를 카드 연결로 고를 수 없는 이유(완료 — D-47) — S10 목록 · 새 건 기본값(M-4)이 같은 판정을 쓴다.
+export function projectLinkLock(status: string): string | null {
+  return status === "completed" ? quoteLockReason({ status }) : null;
+}
+
 export async function searchProjectsForCardLink(
   viewer: Viewer,
   input: { query: string },
@@ -172,7 +178,7 @@ export async function searchProjectsForCardLink(
   const kept = found.slice(0, LINK_PICK_LIMIT);
   const rows: CardLinkProjectDto[] = kept.map((row) => {
     const word = PROJECT_STATUS_WORD[row.status as keyof typeof PROJECT_STATUS_WORD] ?? row.status;
-    const lock = row.status === "completed" ? quoteLockReason({ status: row.status }) : null;
+    const lock = projectLinkLock(row.status);
     return { id: row.id, number: row.number, name: row.name, note: lock ?? `${word} · 담당 ${row.pmName ?? "—"}`, selectable: lock === null };
   });
   const subtitle = STATUS_ORDER.flatMap((status) => {
@@ -237,7 +243,7 @@ export async function searchLinesForCardLink(
   const expenseIds = [...new Set([...links.values()].flatMap((link) => link.expenses.map((doc) => doc.id)))];
   const statuses = await findExpenseApprovalStatuses(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, documentIds: expenseIds });
   const vendorNames = await findVendorNamesByIds(viewer, [...new Set(numbered.flatMap(({ line }) => (line.vendorId ? [line.vendorId] : [])))]);
-  const lock = project.status === "completed" ? quoteLockReason({ status: project.status }) : null;
+  const lock = projectLinkLock(project.status);
 
   const all: CardLinkLineDto[] = numbered.map(({ line, lineNo }) => {
     const link = links.get(line.id);
@@ -279,4 +285,50 @@ export async function searchLinesForCardLink(
     total: all.length,
     selectableCount,
   };
+}
+
+// ── 새 건 기본값(M-4)의 진입 값 — S10과 같은 판정 ────────────────────────────
+
+export type CardLinkProjectChoice = { id: string; label: string };
+export type CardLinkLineChoice = { id: string; itemName: string; remainingKrw: number; hint: string };
+
+// 고를 수 있는 프로젝트면 `{번호} {이름}`(투영 뒤) — 볼 수 없거나 · 보관 · 완료면 null.
+export async function cardLinkProjectChoice(viewer: Viewer, projectId: string): Promise<CardLinkProjectChoice | null> {
+  if (!(await can(viewer, "projects", "view"))) return null;
+  const project = await findProjectById(viewer, projectId);
+  if (!project || project.archivedAt || projectLinkLock(project.status)) return null;
+  const [row] = await projectMany(viewer, [{ id: project.id, number: project.number, name: project.name, note: "", selectable: true }], CARD_LINK_PROJECT_SPEC);
+  return row?.id && row.number !== undefined && row.name !== undefined ? { id: row.id, label: `${row.number} ${row.name}` } : null;
+}
+
+// 진입 줄(S14 `?line=`) — S10 줄 목록에서 고를 수 있는 줄일 때만 그 줄과 프로젝트.
+export async function cardLinkLineChoice(viewer: Viewer, lineId: string): Promise<{ project: CardLinkProjectChoice; line: CardLinkLineChoice } | null> {
+  const line = await findQuoteLineById(viewer, lineId);
+  const revision = line ? await findQuoteRevisionById(viewer, line.revisionId) : null;
+  if (!revision) return null;
+  const project = await cardLinkProjectChoice(viewer, revision.projectId);
+  if (!project) return null;
+  const found = await searchLinesForCardLink(viewer, { projectId: project.id, query: "", currentLineId: lineId });
+  const row = found.rows.find((candidate) => candidate.id === lineId);
+  if (!row?.selectable || row.itemName === undefined || row.remainingKrw === undefined || row.hint === undefined) return null;
+  return { project, line: { id: lineId, itemName: row.itemName, remainingKrw: row.remainingKrw, hint: row.hint } };
+}
+
+// ── 견적 표 줄 사실(N-3 — 보관 대신 취소 · 실행가 초과 표시) ─────────────────
+
+// 트랜잭션 밖 읽기(`searchLinesForCardLink`와 같은 방식) — 그 차수 줄들의 연결 한 번 · 바탕 한 번. 남은 실행가를 따로 셈하지 않는다.
+export async function lineCardSideFacts(viewer: Viewer, input: { revisionId: string }): Promise<Map<string, { linked: boolean; overKrw: number | null }>> {
+  const lines = await listQuoteLinesByRevision(viewer, input.revisionId);
+  const lineIds = lines.map((line) => line.id);
+  const links = await findLineLinks(viewer, lineIds);
+  const basis = await loadLineRoomBasis(viewer, lineIds);
+  const facts = new Map<string, { linked: boolean; overKrw: number | null }>();
+  for (const line of lines) {
+    const link = links.get(line.id);
+    const room = lineRoom({ links, basis, lineId: line.id, exclude: {} });
+    const used = sumKrw(room.otherSupplies.map((money) => money.amountKrw));
+    const execution = (link?.currentExecution ?? lineExecution(line)).amountKrw;
+    facts.set(line.id, { linked: room.cards.count + room.requests.count > 0, overKrw: used > execution ? diffKrw(used, execution) : null });
+  }
+  return facts;
 }

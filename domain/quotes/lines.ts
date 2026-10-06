@@ -60,6 +60,7 @@ import {
   summarizeRevisions as repoSummarizeRevisions,
 } from "@/repositories/quote-revisions";
 import { listNumberedByProject as repoListNumberedExpensesByProject } from "@/repositories/expenses";
+import { findLineLinks as repoFindLineLinks } from "@/repositories/quote-line-links";
 import { listFieldDefinitions as repoListFieldDefinitions } from "@/repositories/field-definitions";
 import { findVendorNamesByIds as repoFindVendorNamesByIds } from "@/repositories/vendors";
 import { listCodeItems as repoListCodeItems } from "@/repositories/code-tables";
@@ -111,6 +112,8 @@ type QuoteLineProjectable = {
   hasLinkedDocuments: boolean;
   readonlyReason: string | null;
   linkedStatus: QuoteLineLinkedStatus | null;
+  hasCardSideLinks: boolean;
+  executionOverKrw: number | null;
 };
 
 type LineEditFacts = {
@@ -118,6 +121,8 @@ type LineEditFacts = {
   hasLinkedDocuments: boolean;
   readonlyReason: string | null;
   linkedStatus: QuoteLineLinkedStatus | null;
+  hasCardSideLinks: boolean;
+  executionOverKrw: number | null;
 };
 
 function toProjectable(row: QuoteLineRow, facts: LineEditFacts, vendorName: string | null): QuoteLineProjectable {
@@ -187,6 +192,10 @@ export type QuoteLineDto = {
   hasLinkedDocuments: boolean;
   readonlyReason: string | null;
   linkedStatus: QuoteLineLinkedStatus | null;
+  // 06-07(N-3) — 줄 사슬에 보관 안 된 카드 사용 · `신청됨` 구매 요청이 있음(보관 대신 취소). 값은 호출자가 ctx `cardSideFacts`로 넘긴다.
+  hasCardSideLinks: boolean;
+  // 06-07(N-3) — 카드 쪽 연결 합이 실행가를 넘은 차액(넘지 않으면 null). 실행가를 못 보는 계급에는 키가 없다(quote.amount).
+  executionOverKrw: number | null;
 };
 
 export const QUOTE_LINE_DTO_SPEC: DtoSpec<QuoteLineProjectable, QuoteLineDto> = {
@@ -215,6 +224,8 @@ export const QUOTE_LINE_DTO_SPEC: DtoSpec<QuoteLineProjectable, QuoteLineDto> = 
     { key: "hasLinkedDocuments", from: "hasLinkedDocuments", infoItem: "project.value" },
     { key: "readonlyReason", from: "readonlyReason", infoItem: "project.value" },
     { key: "linkedStatus", from: "linkedStatus", infoItem: "project.value" },
+    { key: "hasCardSideLinks", from: "hasCardSideLinks", infoItem: "project.value" },
+    { key: "executionOverKrw", from: "executionOverKrw", infoItem: "quote.amount" },
   ],
 };
 
@@ -256,7 +267,16 @@ export async function getCurrentQuoteRevision(
 // 04-13(D-83) — `canAdjust`는 권한표 `projects.adjustment` 쓰기(없으면 조정 줄은 잠김).
 // 04-14(GAP 5c · DR-13) — `locked`는 이전 차수 잠김 조회: 모든 줄의 모든 셀이 `locked`(쓰기·조정 권한과 무관).
 // 04-40 — `approvedSeq`는 그 차수가 고객 승인됐으면 순번(승인 차수 견적 칸 잠금).
-export type QuoteLineListCtx = { status: string; canWrite: boolean; canAdjust?: boolean; locked?: boolean; approvedSeq?: number | null };
+export type CardSideFact = { linked: boolean; overKrw: number | null };
+// 06-07(N-3) — `cardSideFacts`는 줄마다 카드 쪽 연결 사실(app 층이 `lineCardSideFacts`로 읽어 넘긴다 — 이 모듈은 카드 모듈을 import하지 않는다).
+export type QuoteLineListCtx = {
+  status: string;
+  canWrite: boolean;
+  canAdjust?: boolean;
+  locked?: boolean;
+  approvedSeq?: number | null;
+  cardSideFacts?: ReadonlyMap<string, CardSideFact>;
+};
 
 // D-66 — 줄마다 연결된 지출결의(번호 있는 문서만 — 작성 중 문서는 연결이 아니다). `approvalStatus`는 결재 인스턴스 상태(줄 파생 상태 재료).
 // 저장 트랜잭션 안에서도 불리므로 tx를 받는다.
@@ -326,6 +346,8 @@ async function projectLines(
       hasLinkedDocuments,
       readonlyReason: firstLinked ? linkedDocumentReason(firstLinked.number) : null,
       linkedStatus: linkedStatusOf(linkedDocs),
+      hasCardSideLinks: ctx.cardSideFacts?.get(row.id)?.linked ?? false,
+      executionOverKrw: ctx.cardSideFacts?.get(row.id)?.overKrw ?? null,
     }, row.vendorId ? (vendorNames.get(row.vendorId) ?? null) : null);
   });
   return (await projectMany(viewer, projectables, QUOTE_LINE_DTO_SPEC)) as QuoteLineDto[];
@@ -964,8 +986,8 @@ export async function writeQuoteLinesInTx(
   else if (order === "mismatch") deny(MEMBERSHIP_RULE, new UserFacingError(ORDER_MISMATCH));
 
   // 구조 거부는 칸 오류가 아니라 게이트 이유 그대로 전체 거부한다.
-  const judgeStructure = async (lineId: string | null, lineKind: QuoteLineKind, change: ProjectLineEditCtx["change"]) => {
-    const decision = await gate(projectRow, LINE_EDIT_RULE, lineCtx(lineId, lineKind, change));
+  const judgeStructure = async (lineId: string | null, lineKind: QuoteLineKind, change: ProjectLineEditCtx["change"], extra?: Pick<ProjectLineEditCtx, "hasCardSideLinks">) => {
+    const decision = await gate(projectRow, LINE_EDIT_RULE, { ...lineCtx(lineId, lineKind, change), ...extra });
     if (!decision.allowed) deny(LINE_EDIT_RULE, new GateBlockedError(decision.reason));
   };
 
@@ -1001,9 +1023,13 @@ export async function writeQuoteLinesInTx(
       );
       if (movedAdjustment) await judgeStructure(movedAdjustment, "adjustment", { kind: "reorder" });
     }
+    // 06-07(N-3) — 보관하는 줄이 있을 때만 그 줄 사슬의 카드 쪽 연결(보관 안 된 카드 사용 · `신청됨` 구매 요청)을 같은 tx로 한 번 읽는다.
+    const cardSide = archivedIds.length > 0 ? await repoFindLineLinks(viewer, archivedIds, tx) : new Map<string, never>();
     for (const id of archivedIds) {
       const archived = currentById.get(id);
-      if (archived) await judgeStructure(id, lineKindOf(archived), { kind: "archive", quoteAmountZero: archived.quoteAmountKrw === 0 });
+      const links = cardSide.get(id);
+      const hasCardSideLinks = links !== undefined && links.cardUsages.length + links.purchaseRequests.length > 0;
+      if (archived) await judgeStructure(id, lineKindOf(archived), { kind: "archive", quoteAmountZero: archived.quoteAmountKrw === 0 }, { hasCardSideLinks });
     }
 
     // 04-26 · ENG-D10 — 요청의 새 줄 id 중 그 차수에 이미 있는 줄(응답을 잃은 재전송). 상한 판정과 소분류 판정이 같이 본다.
@@ -1236,6 +1262,44 @@ export async function restoreQuoteLine(
     await recordAction(viewer, { actionType: "restore", entity: QUOTE_LINE_ENTITY, entityId: id }, { tx });
     return { restored: true };
   });
+}
+
+// 06-07(O-8 · X-6) — 카드 사용 등록 트랜잭션 안에서 견적 외 비용 줄 하나를 현재 차수 끝에 만든다(견적가 0 · 실행가 = 카드 공급가).
+// tx를 받는 리포지토리만 부른다(06-03 tx 규약) — 권한 · 현재 차수 · 완료 판정은 호출자의 사전 조회와 잠근 뒤 `project.line-edit`가 끝냈다.
+export async function createOutOfQuoteLine(
+  viewer: Viewer,
+  input: { revisionId: string; itemName: string; executionKrw: number },
+  tx: DbOrTx,
+): Promise<QuoteLineRow> {
+  const active = await repoListQuoteLinesByRevision(viewer, input.revisionId, tx);
+  const sortOrder = active.reduce((max, row) => Math.max(max, row.sortOrder), -1) + 1;
+  const zero = moneyToColumns({ currency: "KRW", amount: 0, fxRate: 1 });
+  const execution = moneyToColumns({ currency: "KRW", amount: input.executionKrw, fxRate: 1 });
+  const row = await repoInsertQuoteLineIfAbsent(
+    viewer,
+    {
+      revisionId: input.revisionId,
+      sortOrder,
+      subcategory: "out_of_quote",
+      itemName: input.itemName,
+      quantity: "1",
+      unitPriceCurrency: zero.currency,
+      unitPriceForeignAmount: zero.foreignAmount,
+      unitPriceFxRate: zero.fxRate,
+      unitPriceAmountKrw: zero.amountKrw,
+      executionCurrency: execution.currency,
+      executionForeignAmount: execution.foreignAmount,
+      executionFxRate: execution.fxRate,
+      executionAmountKrw: execution.amountKrw,
+      quoteAmountKrw: 0,
+      profitKrw: profit(0, moneyFromRow({ currency: "KRW", foreignAmount: null, fxRate: execution.fxRate, amountKrw: execution.amountKrw })),
+      lineStatus: "not_started",
+      lineKind: "out_of_quote",
+    },
+    tx,
+  );
+  if (!row) throw new UserFacingError(MEMBERSHIP_MISMATCH);
+  return row;
 }
 
 // PROJ-02·D-65·D-66·UX-04 — 단독 배치 저장. 세 단계를 차례로 부른다(합성 저장은 domain/projects/ledger.ts가

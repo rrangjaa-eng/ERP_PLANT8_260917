@@ -1,16 +1,34 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
+import { Client } from "pg";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { db } from "@/db/client";
-import { actionLog, expensePayments, expenses } from "@/db/schema";
+import { db, pool } from "@/db/client";
+import { actionLog, expensePayments, expenses, files, projects } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertVisibility } from "@/repositories/permissions";
-import { completeExpensePayment, PaymentConflictError, previewPayable, saveScheduledPayDate } from "@/domain/payments";
+import {
+  cancelExpensePayment,
+  completeExpensePayment,
+  decidePayable,
+  getPaymentView,
+  loadPaymentInputs,
+  PayableChangedError,
+  PaymentAlreadyDoneError,
+  PaymentConflictError,
+  previewPayable,
+  saveScheduledPayDate,
+} from "@/domain/payments";
+import { GateBlockedError } from "@/domain/rules/gate";
+import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
+import { ACTION_LOG_OPTIONAL_TYPES, PAYMENT_METHOD_EVIDENCE_PAIRS } from "@/domain/settings/keys";
+import { upsertSimpleValue } from "@/repositories/settings";
+import { markVoided } from "@/repositories/files";
 import { ForbiddenError } from "@/domain/permissions/can";
 import { DATE_FORMAT_ERROR } from "@/domain/expenses/draft-fields";
 import { seoulToday } from "@/lib/dates";
-import { completeExpensePaymentAction, previewPayableAction, saveScheduledPayDateAction } from "@/app/(app)/expenses/[id]/actions";
-import { setupExpenseProject } from "./fixtures/expenses";
-import { approvedExpenseWithoutEvidence, makePaymentManager, setEvidenceRequired, type ApprovedExpense } from "./fixtures/payments";
+import { cancelExpensePaymentAction, completeExpensePaymentAction, previewPayableAction, saveScheduledPayDateAction } from "@/app/(app)/expenses/[id]/actions";
+import { setupExpenseProject, submitReadyDraft } from "./fixtures/expenses";
+import { approvedExpenseWithEvidence, approvedExpenseWithoutEvidence, makePaymentManager, setEvidenceRequired, type ApprovedExpense } from "./fixtures/payments";
+import { deferred, waitForLockWaiter } from "./lock-race";
 
 // 06-04(EXP-09 · EVID-02 · EXP-06 · OPS-09) — 지급 섹션 S5: 이체액 · 차이 사유 · 미래 지급일 · 지급일 달력 검증(E-20) ·
 // 증빙 · 짝 게이트 · 예정일 저장 · 지급 취소 · 동시성. 통과를 기대하는 케이스는 06-03처럼 증빙 0 · evidence.required = false 문서로 만든다
@@ -226,4 +244,316 @@ describe("지급 예정일 저장 (06-04 Task 2 · SP-3 ②)", () => {
     const paid = await completeExpensePayment(payer, { expenseId: doc.expenseId, expectedPayableKrw: payable, version: doc.version });
     await expect(saveScheduledPayDate(payer, { expenseId: doc.expenseId, scheduledPayDate: seoulToday(), version: paid.version })).rejects.toThrow("이미 지급 완료 · 새로 고침");
   });
+});
+
+// ── Task 3 — 지급 취소 · 동시성 · 권한 · 완료 프로젝트 · 게이트 · 잠금 뒤 재판정 ──────────────────────────
+
+async function payNow(payer: Viewer, doc: ApprovedExpense) {
+  return completeExpensePayment(payer, { expenseId: doc.expenseId, expectedPayableKrw: await payableNow(payer, doc), version: doc.version });
+}
+
+async function livePayments(expenseId: string) {
+  return db
+    .select()
+    .from(expensePayments)
+    .where(and(eq(expensePayments.expenseId, expenseId), isNull(expensePayments.cancelledAt)));
+}
+
+async function caught(promise: Promise<unknown>): Promise<unknown> {
+  return promise.then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+}
+
+describe("지급 취소 (06-04 Task 3 · D-606)", () => {
+  it("사유가 비거나 공백이면 `사유 없음 · 사유 적기`로 거부되고 지급 기록 · version은 그대로다", async () => {
+    const payer = await makePayer();
+    const doc = await approvedExpenseWithoutEvidence(await setupExpenseProject());
+    const paid = await payNow(payer, doc);
+    for (const reason of ["", "   "]) {
+      await expect(cancelExpensePayment(payer, { expenseId: doc.expenseId, reason, version: paid.version })).rejects.toThrow("사유 없음 · 사유 적기");
+    }
+    const after = await snapshot(doc.expenseId);
+    expect([after.version, after.payments.length, after.payments[0]?.cancelledAt ?? null]).toEqual([paid.version, 1, null]);
+  });
+
+  it("사유와 함께 취소하면 취소 표시만(행 삭제 없음) · 문서 version + 1 · payment_cancel 한 줄 · 문서가 지급 전(1차 `지급 완료`)으로 돌아간다", async () => {
+    const payer = await makePayer();
+    const doc = await approvedExpenseWithoutEvidence(await setupExpenseProject());
+    const paid = await payNow(payer, doc);
+
+    const result = await cancelExpensePayment(payer, { expenseId: doc.expenseId, reason: "  계좌 오입력  ", version: paid.version });
+    expect(result.version).toBe(paid.version + 1);
+    const after = await snapshot(doc.expenseId);
+    expect(after.version).toBe(paid.version + 1);
+    expect(after.payments).toHaveLength(1);
+    expect(after.payments[0]).toMatchObject({ id: paid.paymentId, cancelledBy: payer.id, cancelReason: "계좌 오입력" });
+    expect(after.payments[0]?.cancelledAt).toBeInstanceOf(Date);
+    const logs = await db
+      .select({ actorId: actionLog.actorId, detail: actionLog.detail })
+      .from(actionLog)
+      .where(and(eq(actionLog.entityId, doc.expenseId), eq(actionLog.actionType, "payment_cancel")));
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toMatchObject({
+      actorId: payer.id,
+      detail: { paymentId: paid.paymentId, reason: "계좌 오입력", payDate: paid.payDate, transferKrw: after.payments[0]?.transferKrw },
+    });
+    const view = await getPaymentView(payer, doc.expenseId);
+    expect(view?.row).toMatchObject({ row: "P4", primary: "pay" });
+  });
+
+  it("지급 기록이 없으면 `이미 지급 취소됨 · 새로 고침`", async () => {
+    const payer = await makePayer();
+    const doc = await approvedExpenseWithoutEvidence(await setupExpenseProject());
+    const paid = await payNow(payer, doc);
+    const cancelled = await cancelExpensePayment(payer, { expenseId: doc.expenseId, reason: "중복", version: paid.version });
+    await expect(cancelExpensePayment(payer, { expenseId: doc.expenseId, reason: "중복", version: cancelled.version })).rejects.toThrow("이미 지급 취소됨 · 새로 고침");
+  });
+
+  it("version이 어긋나면 `다른 사람이 {HH:mm}에 바꿈 · 새로 고침`으로 거부되고 지급 기록은 살아 있다", async () => {
+    const payer = await makePayer();
+    const doc = await approvedExpenseWithoutEvidence(await setupExpenseProject());
+    const paid = await payNow(payer, doc);
+    const error = await caught(cancelExpensePayment(payer, { expenseId: doc.expenseId, reason: "중복", version: paid.version - 1 }));
+    expect(error).toBeInstanceOf(PaymentConflictError);
+    expect((error as Error).message).toMatch(/^다른 사람이 \d{2}:\d{2}에 바꿈 · 새로 고침$/);
+    expect(await livePayments(doc.expenseId)).toHaveLength(1);
+  });
+
+  it("행동 로그 선택 종류를 전부 꺼도 지급 취소 로그는 남는다(끌 수 없는 종류)", async () => {
+    const payer = await makePayer();
+    const doc = await approvedExpenseWithoutEvidence(await setupExpenseProject());
+    const paid = await payNow(payer, doc);
+    await upsertSimpleValue(SYSTEM_VIEWER, ACTION_LOG_OPTIONAL_TYPES.key, [], null);
+    await cancelExpensePayment(payer, { expenseId: doc.expenseId, reason: "중복 지급", version: paid.version });
+    const logs = await db
+      .select({ seq: actionLog.seq })
+      .from(actionLog)
+      .where(and(eq(actionLog.entityId, doc.expenseId), eq(actionLog.actionType, "payment_cancel")));
+    expect(logs).toHaveLength(1);
+  });
+
+  it("취소 뒤 다시 지급 완료하면 새 살아 있는 기록 하나(부분 유니크가 취소 행을 세지 않는다)", async () => {
+    const payer = await makePayer();
+    const doc = await approvedExpenseWithoutEvidence(await setupExpenseProject());
+    const paid = await payNow(payer, doc);
+    const cancelled = await cancelExpensePayment(payer, { expenseId: doc.expenseId, reason: "금액 오류", version: paid.version });
+    const again = await completeExpensePayment(payer, { expenseId: doc.expenseId, expectedPayableKrw: await payableNow(payer, doc), version: cancelled.version });
+    const live = await livePayments(doc.expenseId);
+    expect(live.map((row) => row.id)).toEqual([again.paymentId]);
+    const all = await db.select({ id: expensePayments.id }).from(expensePayments).where(eq(expensePayments.expenseId, doc.expenseId));
+    expect(all).toHaveLength(2);
+  });
+
+  it("완료(completed) 프로젝트의 문서도 지급 완료 · 지급 취소가 된다(U-4)", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    const doc = await approvedExpenseWithoutEvidence(fx);
+    // 테스트 준비 전용 — 프로젝트를 완료 상태로(프로덕션 경로 아님).
+    await db.update(projects).set({ status: "completed" }).where(eq(projects.id, fx.projectId));
+    const paid = await payNow(payer, doc);
+    const cancelled = await cancelExpensePayment(payer, { expenseId: doc.expenseId, reason: "정산 뒤 정정", version: paid.version });
+    expect(cancelled.version).toBe(paid.version + 1);
+    expect(await livePayments(doc.expenseId)).toHaveLength(0);
+  });
+
+  it("액션 — 사유 · version만 받고 취소한다", async () => {
+    const payer = await makePayer();
+    const doc = await approvedExpenseWithoutEvidence(await setupExpenseProject());
+    const paid = await payNow(payer, doc);
+    session.viewer = payer;
+    const result = await cancelExpensePaymentAction({ expenseId: doc.expenseId, reason: "계좌 오입력", version: paid.version });
+    expect(result?.data).toEqual({ version: paid.version + 1 });
+  });
+});
+
+describe("지급 동시성 · 권한 · 조작 (06-04 Task 3)", () => {
+  it("동시 두 지급 완료 — 장벽: A가 문서 행 잠금을 쥔 동안 B가 기다리고, A가 끝나면 B는 `{사람}이 {HH:mm}에 지급 완료함 · 새로 고침`", async () => {
+    const payer = await makePayer("이과장");
+    const doc = await approvedExpenseWithoutEvidence(await setupExpenseProject());
+    const expectedPayableKrw = await payableNow(payer, doc);
+    const locked = deferred();
+    const release = deferred();
+
+    const a = completeExpensePayment(
+      payer,
+      { expenseId: doc.expenseId, expectedPayableKrw, version: doc.version },
+      {
+        afterLock: async () => {
+          locked.resolve();
+          await release.promise;
+        },
+      },
+    );
+    await locked.promise;
+    const b = caught(completeExpensePayment(payer, { expenseId: doc.expenseId, expectedPayableKrw, version: doc.version }));
+    try {
+      await waitForLockWaiter(pool);
+    } finally {
+      release.resolve();
+    }
+    await a;
+    const error = await b;
+    expect(error).toBeInstanceOf(PaymentAlreadyDoneError);
+    expect((error as Error).message).toMatch(/^이과장이 \d{2}:\d{2}에 지급 완료함 · 새로 고침$/);
+    expect(await livePayments(doc.expenseId)).toHaveLength(1);
+  }, 20_000);
+
+  it("지급 권한 없는 계정 · 대표 계정은 지급 완료 · 지급 취소 · 예정일 저장 · 미리보기가 모두 ForbiddenError(D-601 · 06-03 검토 P3-1)", async () => {
+    const fx = await setupExpenseProject();
+    const doc = await approvedExpenseWithoutEvidence(fx);
+    for (const viewer of [fx.pm, fx.ceo]) {
+      const today = seoulToday();
+      await expect(completeExpensePayment(viewer, { expenseId: doc.expenseId, expectedPayableKrw: 1, version: doc.version })).rejects.toBeInstanceOf(ForbiddenError);
+      await expect(cancelExpensePayment(viewer, { expenseId: doc.expenseId, reason: "취소", version: doc.version })).rejects.toBeInstanceOf(ForbiddenError);
+      await expect(saveScheduledPayDate(viewer, { expenseId: doc.expenseId, scheduledPayDate: today, version: doc.version })).rejects.toBeInstanceOf(ForbiddenError);
+      await expect(previewPayable(viewer, { expenseId: doc.expenseId, payDate: today })).rejects.toBeInstanceOf(ForbiddenError);
+    }
+    expect((await snapshot(doc.expenseId)).payments).toHaveLength(0);
+  });
+
+  it("조작된 페이로드 — 액션 입력에 지급 총액 · 역산 값을 실어도 저장 행은 서버 재계산값이다", async () => {
+    const payer = await makePayer();
+    const doc = await approvedExpenseWithoutEvidence(await setupExpenseProject());
+    const payable = await payableNow(payer, doc);
+    session.viewer = payer;
+    const tampered = { expenseId: doc.expenseId, expectedPayableKrw: payable, version: doc.version, transferKrw: payable, payableKrw: 1, grossSupplyKrw: 1, diffKrw: 0 };
+    const result = await completeExpensePaymentAction(tampered);
+    expect(result?.serverError).toBeUndefined();
+    const [row] = await livePayments(doc.expenseId);
+    const pre = await loadPaymentInputs(payer, { expenseId: doc.expenseId });
+    if (!pre.amount || !pre.tax) throw new Error("지급 총액을 셈할 수 없는 문서");
+    const server = await decidePayable({ amount: pre.amount, taxRule: pre.tax.taxRule, applyOpts: pre.tax.dates.applyOpts, incomeType: pre.tax.incomeType }, pre.tax.rates);
+    expect(server.payableKrw).toBe(payable);
+    expect([row?.payableKrw, row?.grossSupplyKrw]).toEqual([server.payableKrw, server.grossSupplyKrw]);
+  });
+
+  it("expectedPayableKrw가 서버 재계산값과 다르면 PayableChangedError · 지급 기록 0", async () => {
+    const payer = await makePayer();
+    const doc = await approvedExpenseWithoutEvidence(await setupExpenseProject());
+    const payable = await payableNow(payer, doc);
+    const error = await caught(completeExpensePayment(payer, { expenseId: doc.expenseId, expectedPayableKrw: payable + 1, version: doc.version }));
+    expect(error).toBeInstanceOf(PayableChangedError);
+    expect((error as PayableChangedError).payableKrw).toBe(payable);
+    expect(await livePayments(doc.expenseId)).toHaveLength(0);
+  });
+
+  it("결재 통과 전 문서는 `결재 통과 전 · …`으로 거부 · 지급 기록 0", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    const created = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
+    const expenseId = created.created[0]?.expenseId;
+    if (!expenseId) throw new Error("지출결의 없음");
+    await submitReadyDraft(fx.pm, expenseId);
+    const [row] = await db.select({ version: expenses.version }).from(expenses).where(eq(expenses.id, expenseId));
+    const error = await caught(completeExpensePayment(payer, { expenseId, expectedPayableKrw: 1, version: row?.version ?? 0 }));
+    expect(error).toBeInstanceOf(GateBlockedError);
+    expect((error as Error).message).toMatch(/^결재 통과 전 · /);
+    expect(await livePayments(expenseId)).toHaveLength(0);
+  });
+});
+
+describe("증빙 · 짝 게이트 (06-04 Task 2 · 3)", () => {
+  it("증빙 필수 on이면 증빙 0 문서는 `증빙 없음 · 기안자 박서연`으로 막히고, off면 같은 문서가 지급된다", async () => {
+    const payer = await makePayer();
+    const doc = await approvedExpenseWithoutEvidence(await setupExpenseProject());
+    const payable = await payableNow(payer, doc);
+    await setEvidenceRequired(true);
+    const error = await caught(completeExpensePayment(payer, { expenseId: doc.expenseId, expectedPayableKrw: payable, version: doc.version }));
+    expect(error).toBeInstanceOf(GateBlockedError);
+    expect((error as Error).message).toBe("증빙 없음 · 기안자 박서연");
+    expect(await livePayments(doc.expenseId)).toHaveLength(0);
+    await setEvidenceRequired(false);
+    await completeExpensePayment(payer, { expenseId: doc.expenseId, expectedPayableKrw: payable, version: doc.version });
+    expect(await livePayments(doc.expenseId)).toHaveLength(1);
+  });
+
+  it("증빙 필수 on · 무효 파일만 남은 문서 → `증빙 없음 · 기안자 박서연`(무효 파일은 세지 않는다)", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    const doc = await approvedExpenseWithEvidence(fx);
+    const alive = await db
+      .select({ id: files.id })
+      .from(files)
+      .where(and(eq(files.ownerKind, EXPENSE_DOCUMENT_KIND), eq(files.ownerId, doc.expenseId), isNull(files.voidedAt)));
+    expect(alive.length).toBeGreaterThan(0);
+    for (const file of alive) await markVoided(payer, { id: file.id, voidedBy: payer.id, reason: "다른 건 영수증" }, db);
+    await setEvidenceRequired(true);
+    const error = await caught(completeExpensePayment(payer, { expenseId: doc.expenseId, expectedPayableKrw: 1, version: doc.version }));
+    expect((error as Error).message).toBe("증빙 없음 · 기안자 박서연");
+    expect(await livePayments(doc.expenseId)).toHaveLength(0);
+  });
+
+  it("짝 목록이 있고 문서의 (지급 방식, 증빙 종류)가 목록 밖이면 짝 이유로 거부 · 지급 기록 0, 목록이 비면 통과", async () => {
+    const payer = await makePayer();
+    const doc = await approvedExpenseWithoutEvidence(await setupExpenseProject());
+    const [row] = await db.select({ method: expenses.paymentMethod, evidenceType: expenses.evidenceType }).from(expenses).where(eq(expenses.id, doc.expenseId));
+    if (!row?.method || !row.evidenceType) throw new Error("문서에 지급 방식 · 증빙 종류가 없다");
+    const payable = await payableNow(payer, doc);
+    await upsertSimpleValue(SYSTEM_VIEWER, PAYMENT_METHOD_EVIDENCE_PAIRS.key, [{ method: row.method, evidence: `not-${row.evidenceType}` }], null);
+    const error = await caught(completeExpensePayment(payer, { expenseId: doc.expenseId, expectedPayableKrw: payable, version: doc.version }));
+    expect(error).toBeInstanceOf(GateBlockedError);
+    expect((error as Error).message).toMatch(/ 짝 아님 · 짝 설정은 관리자$/);
+    expect(await livePayments(doc.expenseId)).toHaveLength(0);
+    await upsertSimpleValue(SYSTEM_VIEWER, PAYMENT_METHOD_EVIDENCE_PAIRS.key, [], null);
+    await completeExpensePayment(payer, { expenseId: doc.expenseId, expectedPayableKrw: payable, version: doc.version });
+    expect(await livePayments(doc.expenseId)).toHaveLength(1);
+  });
+
+  it(
+    "잠금 뒤 게이트 재판정 — 증빙 게이트가 기준 재판정보다 먼저: 잠금 대기 중 증빙이 무효되고 증빙일도 바뀌면 PayableChangedError가 아니라 `증빙 없음 · 기안자 박서연`",
+    async () => {
+      const payer = await makePayer();
+      const fx = await setupExpenseProject();
+      const doc = await approvedExpenseWithEvidence(fx);
+      await setEvidenceRequired(true);
+      const expectedPayableKrw = await payableNow(payer, doc);
+      const [file] = await db
+        .select({ id: files.id })
+        .from(files)
+        .where(and(eq(files.ownerKind, EXPENSE_DOCUMENT_KIND), eq(files.ownerId, doc.expenseId), isNull(files.voidedAt)));
+      if (!file) throw new Error("증빙 파일 없음");
+
+      const lockClient = new Client({ connectionString: process.env.DATABASE_URL });
+      await lockClient.connect();
+      let txOpen = false;
+      let call: Promise<unknown> | undefined;
+      try {
+        await lockClient.query("BEGIN");
+        txOpen = true;
+        const { rows: pidRows } = await lockClient.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
+        const lockPid = pidRows[0]?.pid;
+        await lockClient.query("SELECT id FROM expenses WHERE id = $1 FOR UPDATE", [doc.expenseId]);
+        call = caught(completeExpensePayment(payer, { expenseId: doc.expenseId, expectedPayableKrw, version: doc.version }));
+
+        let blocked = false;
+        for (let attempt = 0; attempt < 40 && !blocked; attempt += 1) {
+          const { rows } = await lockClient.query<{ count: number }>(
+            "SELECT count(*)::int AS count FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))",
+            [lockPid],
+          );
+          blocked = (rows[0]?.count ?? 0) > 0;
+          if (!blocked) await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        expect(blocked, "지급 완료가 문서 행 잠금에서 막히지 않았다").toBe(true);
+
+        await lockClient.query("UPDATE files SET voided_at = now(), voided_by = $2, void_reason = $3 WHERE id = $1", [file.id, payer.id, "다른 건 영수증"]);
+        await lockClient.query("UPDATE expenses SET evidence_date = DATE '2020-01-02' WHERE id = $1", [doc.expenseId]);
+        await lockClient.query("COMMIT");
+        txOpen = false;
+
+        const error = await call;
+        expect(error).not.toBeInstanceOf(PayableChangedError);
+        expect(error).toBeInstanceOf(GateBlockedError);
+        expect((error as Error).message).toBe("증빙 없음 · 기안자 박서연");
+        expect(await livePayments(doc.expenseId)).toHaveLength(0);
+      } finally {
+        if (txOpen) await lockClient.query("ROLLBACK").catch(() => {});
+        await lockClient.end();
+        if (call) await call;
+      }
+    },
+    30_000,
+  );
 });

@@ -24,6 +24,9 @@ export function approvalGateDecision(input: ApprovalGateInput): GateDecision {
 
 export const PAYMENT_OWNER_NOTE = "지급은 경영관리";
 
+// 「Error — 사유 근거 칸」(UI-SPEC) — 지급 취소 사유가 비거나 공백. 서버 거부와 모달 1차 막힘이 같은 글자.
+export const CANCEL_REASON_REQUIRED = "사유 없음 · 사유 적기";
+
 // 06-04(D-605 · UI-SPEC 「Error — 차이 사유 칸」) — 서버 거부 문구와 화면 칸 오류 자리가 같은 상수를 읽는다(잎 모듈이라 화면이 값 import).
 export const DIFF_REASON_REQUIRED = "차이 사유 없음 · 사유 적기";
 
@@ -81,6 +84,8 @@ export type ExpenseActionBar = {
   primary: "pay" | "saveSchedule" | null;
   // 1차 비활성 이유(`block`) — 증빙 없음(P3) · 짝 아님 · 지급 총액 볼 권한 없음. 있으면 1차는 비활성이다.
   blockReason: string | null;
+  // 2차 `지급 취소`(D-606) — 지급 뒤(P6) 지급 권한자에게만.
+  secondary: "cancel" | null;
   // 증빙 섹션 3차 `증빙 면제`의 자리 — 결재 통과 · 증빙 0 · 면제 아님(P3 · P4 · P6). 행동을 붙이는 06-10이 렌더한다.
   tertiary: "waive" | null;
   // 권한 밖의 다음 한 수 — 지급 전에만 담당 표기(UI-SPEC S5 「그 밖의 사람」).
@@ -105,15 +110,15 @@ export function scheduleDirtyBar(bar: ExpenseActionBar): ExpenseActionBar {
 }
 
 export function resolveExpenseActionRow(state: ExpenseActionState, perms: { canPay: boolean; amountVisible?: boolean }): ExpenseActionBar {
-  const none = { primary: null, blockReason: null, tertiary: null, ownerNote: null } as const;
+  const none = { primary: null, blockReason: null, secondary: null, tertiary: null, ownerNote: null } as const;
   if (state.approvalState !== APPROVAL_PASSED) return { row: "P0", ...none };
   const waiveSlot = perms.canPay && !state.hasEvidence && !state.waived ? "waive" : null;
-  if (state.paid) return { row: "P6", ...none, tertiary: waiveSlot };
+  if (state.paid) return { row: "P6", ...none, secondary: perms.canPay ? "cancel" : null, tertiary: waiveSlot };
   if (!perms.canPay) return { row: "P4", ...none, ownerNote: PAYMENT_OWNER_NOTE };
   let bar: ExpenseActionBar;
-  if (!state.evidence.allowed) bar = { row: "P3", primary: "pay", blockReason: state.evidence.reason, tertiary: waiveSlot, ownerNote: null };
-  else if (!state.pair.allowed) bar = { row: "P4", primary: "pay", blockReason: state.pair.reason, tertiary: waiveSlot, ownerNote: null };
-  else if (perms.amountVisible === false) bar = { row: "P4", primary: "pay", blockReason: AMOUNT_HIDDEN, tertiary: waiveSlot, ownerNote: null };
-  else bar = { row: "P4", primary: "pay", blockReason: null, tertiary: waiveSlot, ownerNote: null };
+  if (!state.evidence.allowed) bar = { row: "P3", primary: "pay", blockReason: state.evidence.reason, secondary: null, tertiary: waiveSlot, ownerNote: null };
+  else if (!state.pair.allowed) bar = { row: "P4", primary: "pay", blockReason: state.pair.reason, secondary: null, tertiary: waiveSlot, ownerNote: null };
+  else if (perms.amountVisible === false) bar = { row: "P4", primary: "pay", blockReason: AMOUNT_HIDDEN, secondary: null, tertiary: waiveSlot, ownerNote: null };
+  else bar = { row: "P4", primary: "pay", blockReason: null, secondary: null, tertiary: waiveSlot, ownerNote: null };
   return state.scheduleDirty ? scheduleDirtyBar(bar) : bar;
 }

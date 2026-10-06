@@ -17,6 +17,8 @@ import {
   type PaymentShared,
 } from "@/domain/payments";
 import { AMOUNT_HIDDEN } from "@/domain/payments/action-row";
+import { ACTION_TYPE_LABELS, ALWAYS_ON_ACTION_TYPES, CORE_ACTION_TYPES } from "@/domain/action-log/record";
+import { ACTION_LOG_OPTIONAL_TYPES } from "@/domain/settings/keys";
 import { approvalGateDecision, evidenceGateDecision, pairGateDecision, resolveExpenseActionRow, scheduleDirtyBar } from "@/domain/payments/action-row";
 
 // 06-03 — 지급 총액 · 금액 원천(R-4) · 공급가 역산(R-5) · 결재 게이트 · 「지출결의 상태 → 1차」(P0 · P4 · P6). DB 없이 돈다.
@@ -177,20 +179,20 @@ describe("resolveExpenseActionRow", () => {
   const base = { approvalState: "approved", paid: false, hasEvidence: true, waived: false, evidence: OPEN, pair: OPEN };
 
   it("결재 통과 전 → P0(버튼 0 · 섹션 없음)", () => {
-    expect(resolveExpenseActionRow({ ...base, approvalState: "in_review" }, payer)).toEqual({ row: "P0", primary: null, blockReason: null, tertiary: null, ownerNote: null });
+    expect(resolveExpenseActionRow({ ...base, approvalState: "in_review" }, payer)).toEqual({ row: "P0", primary: null, blockReason: null, secondary: null, tertiary: null, ownerNote: null });
   });
 
   it("통과 · 지급 전 → P4(1차 `지급 완료`)", () => {
-    expect(resolveExpenseActionRow(base, payer)).toEqual({ row: "P4", primary: "pay", blockReason: null, tertiary: null, ownerNote: null });
+    expect(resolveExpenseActionRow(base, payer)).toEqual({ row: "P4", primary: "pay", blockReason: null, secondary: null, tertiary: null, ownerNote: null });
   });
 
   it("지급 뒤 → P6(1차 없음)", () => {
-    expect(resolveExpenseActionRow({ ...base, paid: true }, payer)).toEqual({ row: "P6", primary: null, blockReason: null, tertiary: null, ownerNote: null });
+    expect(resolveExpenseActionRow({ ...base, paid: true }, payer)).toEqual({ row: "P6", primary: null, blockReason: null, secondary: "cancel", tertiary: null, ownerNote: null });
   });
 
   it("지급 권한 없음 → 버튼 0 + 담당 표기(지급 전)", () => {
-    expect(resolveExpenseActionRow(base, other)).toEqual({ row: "P4", primary: null, blockReason: null, tertiary: null, ownerNote: "지급은 경영관리" });
-    expect(resolveExpenseActionRow({ ...base, paid: true }, other)).toEqual({ row: "P6", primary: null, blockReason: null, tertiary: null, ownerNote: null });
+    expect(resolveExpenseActionRow(base, other)).toEqual({ row: "P4", primary: null, blockReason: null, secondary: null, tertiary: null, ownerNote: "지급은 경영관리" });
+    expect(resolveExpenseActionRow({ ...base, paid: true }, other)).toEqual({ row: "P6", primary: null, blockReason: null, secondary: null, tertiary: null, ownerNote: null });
   });
 });
 
@@ -491,13 +493,14 @@ describe("resolveExpenseActionRow — P1 · P3 · 짝 막힘 · 3차 자리 waiv
       row: "P3",
       primary: "pay",
       blockReason: "증빙 없음 · 기안자 박서연",
+      secondary: null,
       tertiary: "waive",
       ownerNote: null,
     });
   });
 
   it("P4 선결제(증빙 0 · 면제 아님) → 1차 그대로 + 3차 자리 waive", () => {
-    expect(resolveExpenseActionRow({ ...passed, hasEvidence: false }, payer)).toEqual({ row: "P4", primary: "pay", blockReason: null, tertiary: "waive", ownerNote: null });
+    expect(resolveExpenseActionRow({ ...passed, hasEvidence: false }, payer)).toEqual({ row: "P4", primary: "pay", blockReason: null, secondary: null, tertiary: "waive", ownerNote: null });
   });
 
   it("P4 증빙 필수 off(증빙 0 · 면제 아님) → 1차 그대로 + 3차 자리 waive", () => {
@@ -523,6 +526,7 @@ describe("resolveExpenseActionRow — P1 · P3 · 짝 막힘 · 3차 자리 waiv
       row: "P4",
       primary: null,
       blockReason: null,
+      secondary: null,
       tertiary: null,
       ownerNote: "지급은 경영관리",
     });
@@ -530,6 +534,17 @@ describe("resolveExpenseActionRow — P1 · P3 · 짝 막힘 · 3차 자리 waiv
 
   it("지급 권한자가 지급 총액(expense.amount)을 못 보면 `지급 완료` 비활성 + 이유(06-03 검토 P3-4)", () => {
     expect(resolveExpenseActionRow(passed, { canPay: true, amountVisible: false })).toMatchObject({ row: "P4", primary: "pay", blockReason: AMOUNT_HIDDEN });
+  });
+
+  it("P6 지급 권한자 → 2차 `지급 취소` 자리(D-606)", () => {
+    expect(resolveExpenseActionRow({ ...passed, paid: true }, payer)).toMatchObject({ row: "P6", primary: null, secondary: "cancel" });
+  });
+
+  it("지급 권한 없는 사람 · 지급 전 문서 · 결재 통과 전에는 2차 `지급 취소`가 없다", () => {
+    expect(resolveExpenseActionRow({ ...passed, paid: true }, { canPay: false }).secondary).toBeNull();
+    expect(resolveExpenseActionRow(passed, payer).secondary).toBeNull();
+    expect(resolveExpenseActionRow({ ...passed, hasEvidence: false, evidence: NO_EVIDENCE }, payer).secondary).toBeNull();
+    expect(resolveExpenseActionRow({ ...passed, approvalState: "in_review", paid: true }, payer).secondary).toBeNull();
   });
 });
 
@@ -558,5 +573,15 @@ describe("judgeLockedPayment — 증빙 · 짝 게이트 (06-04 · CROSS-R1 F-3)
     const error = await judge({ shared, expectedPayableKrw: 1_100_000 }).catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(GateBlockedError);
     expect((error as Error).message).toBe("계좌이체 · 세금계산서 짝 아님 · 짝 설정은 관리자");
+  });
+});
+
+describe("지급 취소 행동 종류 (06-04 Task 3 · C16 · CF-9)", () => {
+  it("payment_cancel은 끌 수 없다 — 핵심 · 항상 켜짐 둘 다에 있고 라벨은 `지급 취소`, 기록할 행동 종류 선택지에 없다", () => {
+    expect(CORE_ACTION_TYPES).toContain("payment_cancel");
+    expect(ALWAYS_ON_ACTION_TYPES).toContain("payment_cancel");
+    expect((ACTION_TYPE_LABELS as Record<string, string>).payment_cancel).toBe("지급 취소");
+    expect(ACTION_LOG_OPTIONAL_TYPES.default).not.toContain("payment_cancel");
+    expect(ACTION_LOG_OPTIONAL_TYPES.schema.safeParse(["payment_cancel"]).success).toBe(false);
   });
 });

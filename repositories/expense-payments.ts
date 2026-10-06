@@ -60,3 +60,18 @@ export async function updateScheduledPaymentDate(
     .returning({ version: expenses.version });
   return row?.version ?? null;
 }
+
+// 06-04 — 지급 취소 표시(D-606). 행을 지우지 않고 취소 칸 셋만 채운다. 살아 있는 행만(이미 취소면 0행 → null).
+export async function markPaymentCancelled(
+  viewer: Viewer,
+  input: { paymentId: string; reason: string; cancelledBy: string },
+  tx: DbOrTx,
+): Promise<ExpensePaymentRow | null> {
+  void viewer;
+  const [row] = await tx
+    .update(expensePayments)
+    .set({ cancelledAt: new Date(), cancelledBy: input.cancelledBy, cancelReason: input.reason })
+    .where(and(eq(expensePayments.id, input.paymentId), isNull(expensePayments.cancelledAt)))
+    .returning();
+  return row ?? null;
+}

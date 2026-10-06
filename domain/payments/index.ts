@@ -16,6 +16,7 @@ import { incomeTypeFor, pickTaxDates, type PickedTaxDates } from "@/domain/expen
 import { TAX_UNAVAILABLE } from "@/domain/expenses/gate";
 import { hasEvidence } from "@/domain/evidence/has-evidence";
 import {
+  CANCEL_REASON_REQUIRED,
   DIFF_REASON_REQUIRED,
   resolveExpenseActionRow,
   type EvidenceGateInput,
@@ -27,7 +28,7 @@ import { visible } from "@/domain/permissions/visible";
 import { listCodeItems as defaultListCodeItems } from "@/repositories/code-tables";
 import { findUserNamesByIds } from "@/repositories/users";
 import { findExpenseApprovalInstance, findExpenseById, lockExpenseForUpdate, type ExpenseRow } from "@/repositories/expenses";
-import { bumpExpenseVersion, findLivePayment, insertPayment, updateScheduledPaymentDate } from "@/repositories/expense-payments";
+import { bumpExpenseVersion, findLivePayment, insertPayment, markPaymentCancelled, updateScheduledPaymentDate } from "@/repositories/expense-payments";
 import { withTransaction } from "@/lib/db-transaction";
 import { seoulDateToUtcDate, seoulToday } from "@/lib/dates";
 import { isUniqueViolation } from "@/lib/pg-errors";
@@ -53,10 +54,34 @@ export class PaymentNotFoundError extends UserFacingError {
 export class PaymentConflictError extends UserFacingError {}
 
 const ALREADY_PAID = "이미 지급 완료 · 새로 고침";
+const ALREADY_CANCELLED = "이미 지급 취소됨 · 새로 고침";
+
+// 06-04 — 같은 문서를 이미 누가 지급했다(「동시 두 지급 완료」의 뒤 요청). version 차이보다 구체적인 이유라 version 비교 앞에서 가린다.
+// 사람 이름은 트랜잭션 밖에서 붙인다(06-03 tx 규약 — 트랜잭션 안에서는 사용자 표를 풀로 읽지 않는다).
+export class PaymentAlreadyDoneError extends UserFacingError {
+  constructor(processedByName: string, processedAt: Date) {
+    super(`${processedByName}이 ${formatKstTime(processedAt)}에 지급 완료함 · 새로 고침`);
+  }
+}
+
+// 트랜잭션 안 신호 — 바깥에서 이름을 읽어 PaymentAlreadyDoneError로 바꾼다.
+class AlreadyPaidSignal extends Error {
+  constructor(
+    readonly processedBy: string,
+    readonly processedAt: Date,
+  ) {
+    super(ALREADY_PAID);
+  }
+}
+
+async function alreadyDone(viewer: Viewer, live: { processedBy: string; processedAt: Date }): Promise<PaymentAlreadyDoneError> {
+  const name = (await findUserNamesByIds(viewer, [live.processedBy])).get(live.processedBy) ?? "다른 사람";
+  return new PaymentAlreadyDoneError(name, live.processedAt);
+}
 const PAYMENT_METHOD_MISSING = "지급 방식 없음 · 지출결의 확인";
 
 // 06-04(D-605) — 이체액 ≠ 지급 총액인데 차이 사유가 없음. 화면은 이 문구로 차이 사유 칸 아래에 둔다(「Error — 차이 사유 칸」).
-export { DIFF_REASON_REQUIRED } from "@/domain/payments/action-row";
+export { CANCEL_REASON_REQUIRED, DIFF_REASON_REQUIRED } from "@/domain/payments/action-row";
 
 export class DiffReasonRequiredError extends UserFacingError {
   constructor() {
@@ -410,10 +435,9 @@ export async function completeExpensePayment(
       const locked = await lockExpenseForUpdate(viewer, pre.expenseId, tx);
       await deps?.afterLock?.();
       if (!locked) throw new PaymentNotFoundError();
-      if (locked.version !== input.version) {
-        const live = await findLivePayment(viewer, locked.id, tx);
-        throw new PaymentConflictError(live ? ALREADY_PAID : `다른 사람이 ${formatKstTime(locked.updatedAt)}에 바꿈 · 새로 고침`);
-      }
+      const live = await findLivePayment(viewer, locked.id, tx);
+      if (live) throw new AlreadyPaidSignal(live.processedBy, live.processedAt);
+      if (locked.version !== input.version) throw new PaymentConflictError(`다른 사람이 ${formatKstTime(locked.updatedAt)}에 바꿈 · 새로 고침`);
       const instance = await findExpenseApprovalInstance(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, documentId: locked.id }, tx);
       const lockedEvidence = await hasEvidence(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: locked.id }, tx);
       const { payable, paymentMethod, diffReason } = await judgeLockedPayment({
@@ -465,9 +489,50 @@ export async function completeExpensePayment(
       if (!recomputed) throw new GateBlockedError(TAX_UNAVAILABLE);
       throw new PayableChangedError(recomputed.payableKrw, payDate);
     }
-    if (isUniqueViolation(error, "expense_payments_live_uniq")) throw new PaymentConflictError(ALREADY_PAID);
+    if (error instanceof AlreadyPaidSignal) throw await alreadyDone(viewer, error);
+    if (isUniqueViolation(error, "expense_payments_live_uniq")) {
+      const live = await findLivePayment(viewer, input.expenseId);
+      throw live ? await alreadyDone(viewer, live) : new PaymentConflictError(ALREADY_PAID);
+    }
     throw error;
   }
+}
+
+// ── 지급 취소(06-04 · D-606) ────────────────────────────────────────────
+// 권한은 트랜잭션 전. 사유 필수. 한 트랜잭션: 문서 행 FOR UPDATE → version → 살아 있는 지급(없으면 이미 취소) → 취소 표시(행 삭제 없음) →
+// 문서 version + 1 → 끌 수 없는 행동 로그 payment_cancel(같은 tx). 프로젝트 상태를 읽지 않는다 — 완료 프로젝트도 취소된다(U-4 · D-47).
+// 견적 줄 잠금은 06-13이 「살아 있는 지급 기록」에서 파생하므로 여기서 따로 풀지 않는다.
+export async function cancelExpensePayment(
+  viewer: Viewer,
+  input: { expenseId: string; reason: string; version: number },
+): Promise<{ version: number }> {
+  if (!(await can(viewer, "expenses.payments", "write"))) throw new ForbiddenError("지급 처리 권한 없음");
+  const reason = input.reason.trim();
+  if (reason === "") throw new UserFacingError(CANCEL_REASON_REQUIRED);
+  return withTransaction(async (tx) => {
+    const locked = await lockExpenseForUpdate(viewer, input.expenseId, tx);
+    if (!locked) throw new PaymentNotFoundError();
+    const conflict = `다른 사람이 ${formatKstTime(locked.updatedAt)}에 바꿈 · 새로 고침`;
+    if (locked.version !== input.version) throw new PaymentConflictError(conflict);
+    const live = await findLivePayment(viewer, locked.id, tx);
+    if (!live) throw new PaymentConflictError(ALREADY_CANCELLED);
+    const cancelled = await markPaymentCancelled(viewer, { paymentId: live.id, reason, cancelledBy: viewer.id }, tx);
+    if (!cancelled) throw new PaymentConflictError(ALREADY_CANCELLED);
+    const version = await bumpExpenseVersion(viewer, { expenseId: locked.id, expectedVersion: locked.version, updatedBy: viewer.id }, tx);
+    if (version === null) throw new PaymentConflictError(conflict);
+    await recordAction(
+      viewer,
+      {
+        actionType: "payment_cancel",
+        entity: "expense",
+        entityId: locked.id,
+        documentId: locked.id,
+        detail: { paymentId: live.id, reason, payDate: live.payDate, transferKrw: live.transferKrw, payableKrw: live.payableKrw },
+      },
+      { tx },
+    );
+    return { version };
+  });
 }
 
 // ── 지급 예정일 저장(06-04 · SP-3 ②) ───────────────────────────────────
@@ -562,6 +627,8 @@ export type PaymentViewDto = {
   // 06-04 — 지급 뒤 읽기 줄(차이 사유 · 지급일 2행 처리한 사람).
   diffReason?: string | null;
   processedByName?: string | null;
+  // 06-04 — 지급 취소 확인 모달 부제 `{번호} · {지급일} 지급 · {이체액}`.
+  number?: string | null;
 };
 
 export const PAYMENT_VIEW_DTO_SPEC: DtoSpec<PaymentViewDto, PaymentViewDto> = {
@@ -577,6 +644,7 @@ export const PAYMENT_VIEW_DTO_SPEC: DtoSpec<PaymentViewDto, PaymentViewDto> = {
     { key: "grossSupplyKrw", from: "grossSupplyKrw", infoItem: "expense.amount" },
     { key: "diffReason", from: "diffReason", infoItem: "expense.value" },
     { key: "processedByName", from: "processedByName", infoItem: "expense.value" },
+    { key: "number", from: "number", infoItem: "expense.value" },
   ],
 };
 
@@ -619,6 +687,7 @@ export async function getPaymentView(viewer: Viewer, expenseId: string, deps?: {
         grossSupplyKrw: live.grossSupplyKrw,
         diffReason: live.diffReason,
         processedByName: names.get(live.processedBy) ?? null,
+        number: row.number,
       },
       PAYMENT_VIEW_DTO_SPEC,
     );
@@ -638,6 +707,7 @@ export async function getPaymentView(viewer: Viewer, expenseId: string, deps?: {
       grossSupplyKrw: null,
       diffReason: null,
       processedByName: null,
+      number: row.number,
     },
     PAYMENT_VIEW_DTO_SPEC,
   );

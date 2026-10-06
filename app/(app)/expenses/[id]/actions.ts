@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { authedActionClient } from "@/lib/actions/client";
-import { completeExpensePayment, previewPayable, saveScheduledPayDate } from "@/domain/payments";
+import { cancelExpensePayment, completeExpensePayment, previewPayable, saveScheduledPayDate } from "@/domain/payments";
 import { TRANSFER_FRACTION, TRANSFER_NOT_NUMBER, TRANSFER_NOT_POSITIVE } from "@/domain/payments/action-row";
 import { DATE_FORMAT_ERROR, EXPENSE_TEXT_MAX } from "@/domain/expenses/draft-fields";
 import { isCalendarDate } from "@/lib/dates";
@@ -53,6 +53,19 @@ const saveScheduledPayDateSchema = z.object({
 
 export const saveScheduledPayDateAction = authedActionClient.schema(saveScheduledPayDateSchema).action(async ({ parsedInput, ctx }) => {
   const result = await saveScheduledPayDate(ctx.viewer, parsedInput);
+  revalidatePath(`/expenses/${parsedInput.expenseId}`);
+  return { version: result.version };
+});
+
+// 지급 취소(D-606) — 사유 · version만 받는다. 사유 빈 값은 도메인이 `사유 없음 · 사유 적기`로 거부한다.
+const cancelPaymentSchema = z.object({
+  expenseId: z.string().uuid(),
+  reason: z.string().max(EXPENSE_TEXT_MAX, `사유 ${EXPENSE_TEXT_MAX}자 넘음 · 줄여 적기`),
+  version: z.number().int().positive(),
+});
+
+export const cancelExpensePaymentAction = authedActionClient.schema(cancelPaymentSchema).action(async ({ parsedInput, ctx }) => {
+  const result = await cancelExpensePayment(ctx.viewer, parsedInput);
   revalidatePath(`/expenses/${parsedInput.expenseId}`);
   return { version: result.version };
 });

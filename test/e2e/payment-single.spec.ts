@@ -4,7 +4,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import { actionLog, expensePayments, expenses, files } from "@/db/schema";
 import { approveDocument, getApprovalView } from "@/domain/approvals";
-import { previewPayable } from "@/domain/payments";
+import { completeExpensePayment, previewPayable } from "@/domain/payments";
 import { createTeamExpenseDraft, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { voidEvidence } from "@/domain/evidence";
 import { createAccount } from "@/domain/auth/accounts";
@@ -239,6 +239,71 @@ test.describe("지급 예정일 제자리 저장 (06-04 · SP-3 ②)", () => {
       .from(actionLog)
       .where(and(eq(actionLog.entityId, expenseId), eq(actionLog.actionType, "document_update")));
     expect(logs.at(-1)?.detail).toMatchObject({ field: "scheduledPaymentDate", before: original, after: future });
+    await page.context().close();
+  });
+});
+
+test.describe("지급 취소 (06-04 · D-606)", () => {
+  test("지급 뒤 2차 `지급 취소` → 사유 → 지급 전 모양으로 돌아가고 1차 `지급 완료`가 다시 선다(포커스)", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const expenseId = await approvedWithoutEvidence(browser, baseURL, fx, "tracer");
+    const payer = await makePaymentManagerE2E();
+
+    const page = await loginPage(browser, baseURL, payer);
+    await page.goto(`/expenses/${expenseId}`);
+    const pay = page.getByRole("button", { name: /^지급 완료/ });
+    await waitForHydration(pay);
+    await pay.click();
+    await expect(page.getByTestId("payment-result")).toBeVisible();
+    const [record] = await db
+      .select({ id: expensePayments.id, payDate: expensePayments.payDate, transferKrw: expensePayments.transferKrw })
+      .from(expensePayments)
+      .where(and(eq(expensePayments.expenseId, expenseId), isNull(expensePayments.cancelledAt)));
+    if (!record) throw new Error("지급 기록 없음");
+    const [doc] = await db.select({ number: expenses.number }).from(expenses).where(eq(expenses.id, expenseId));
+
+    await page.getByRole("button", { name: "지급 취소", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "지급 취소" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText(`${doc?.number} · ${record.payDate} 지급 · ${formatKrw(record.transferKrw)}`);
+    await expect(dialog).toContainText("지급 전으로 돌아감 · 견적 줄 잠금 풀림");
+    const confirm = dialog.getByRole("button", { name: /^지급 취소/ });
+    await expect(confirm).toHaveAttribute("aria-disabled", "true");
+    await expect(dialog.getByText("사유 없음 · 사유 적기").first()).toBeVisible();
+    await expect(dialog.getByRole("button", { name: /^닫기/ })).toBeVisible();
+    await dialog.getByLabel("사유").fill("계좌 오입력");
+    await page.keyboard.press("Control+Enter");
+
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByTestId("payment-result")).toHaveCount(0);
+    await expect(pay).toBeVisible();
+    await expect(pay).toBeFocused();
+    const [cancelled] = await db
+      .select({ cancelReason: expensePayments.cancelReason, cancelledBy: expensePayments.cancelledBy })
+      .from(expensePayments)
+      .where(eq(expensePayments.id, record.id));
+    expect(cancelled).toEqual({ cancelReason: "계좌 오입력", cancelledBy: payer.viewer.id });
+    const logs = await db
+      .select({ actorId: actionLog.actorId })
+      .from(actionLog)
+      .where(and(eq(actionLog.entityId, expenseId), eq(actionLog.actionType, "payment_cancel")));
+    expect(logs).toEqual([{ actorId: payer.viewer.id }]);
+    await page.context().close();
+  });
+
+  test("대표 — 지급된 문서에도 `지급 완료` · `지급 취소` 버튼 요소 0", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const expenseId = await approvedWithoutEvidence(browser, baseURL, fx, "hold");
+    const payer = await makePaymentManagerE2E();
+    const preview = await previewPayable(payer.viewer, { expenseId, payDate: seoulToday() });
+    const [row] = await db.select({ version: expenses.version }).from(expenses).where(eq(expenses.id, expenseId));
+    if (preview.payableKrw == null || !row) throw new Error("지급 준비 실패");
+    await completeExpensePayment(payer.viewer, { expenseId, expectedPayableKrw: preview.payableKrw, version: row.version });
+
+    const page = await loginPage(browser, baseURL, fx.ceo);
+    await page.goto(`/expenses/${expenseId}`);
+    await expect(paymentSection(page)).toHaveCount(1);
+    await expect(page.getByRole("button", { name: /지급 완료|지급 취소/ })).toHaveCount(0);
     await page.context().close();
   });
 });

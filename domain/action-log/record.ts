@@ -43,6 +43,8 @@ export const CORE_ACTION_TYPES = [
   "cert_purge",
   // 04.3-14 사용자 결정 ⑤: 확인증 조회 접속기록 — 안전성 확보조치 기준 제2조3호 요소(누가 · 언제 · 어디서 · 어느 확인증).
   "cert_view",
+  // 06-04 D-606 · C16: 지급 취소 — 지급 기록 취소 표시와 한 트랜잭션으로 남기는 돈 기록이라 끌 수 없다.
+  "payment_cancel",
 ] as const;
 
 export type CoreActionType = (typeof CORE_ACTION_TYPES)[number];
@@ -78,6 +80,7 @@ export const ACTION_TYPE_LABELS: Record<CoreActionType, string> = {
   cert_prize_value: "경품 가액 변경",
   cert_purge: "확인증 파기",
   cert_view: "확인증 조회",
+  payment_cancel: "지급 취소",
 };
 
 // OPS-05: Excel 내보내기·마스킹 해제·행동 로그 정리는 설정으로 못 끄는 핵심
@@ -101,6 +104,8 @@ export const ALWAYS_ON_ACTION_TYPES: CoreActionType[] = [
   "cert_purge",
   // 04.3-14 사용자 결정 ⑤: 확인증 조회는 접속기록이라 끌 수 없다
   "cert_view",
+  // 06-04 D-606 · C16: 지급 취소는 지급 기록 취소 표시와 한 트랜잭션으로 남기는 돈 기록이라 끌 수 없다
+  "payment_cancel",
 ];
 
 export class UnknownActionTypeError extends UserFacingError {}

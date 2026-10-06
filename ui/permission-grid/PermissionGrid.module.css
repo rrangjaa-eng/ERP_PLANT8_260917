@@ -181,6 +181,9 @@
   accent-color: var(--native-accent);
   width: var(--icon-lg);
   height: var(--icon-lg);
+  /* 계급 열은 남는 폭을 나눠 가져 계급이 많으면 --icon-lg보다 좁아진다 — 칸을 넘지 않게 줄어든다(칸 전체가 클릭 영역). */
+  min-width: 0;
+  max-width: 100%;
   cursor: pointer;
 }
 

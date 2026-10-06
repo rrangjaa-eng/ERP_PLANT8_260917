@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { test, expect, type Browser, type Page } from "@playwright/test";
-import { archiveE2EFieldDefinitions, createE2EVendorEditor, createFixtureUser } from "./fixtures";
+import { archiveE2EFieldDefinitions, createE2EVendorEditor, createFixtureUser, uniqueBusinessNo } from "./fixtures";
 import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { customFieldInfoItem } from "@/domain/custom-fields/targets";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
@@ -111,13 +111,14 @@ test("관리 화면에서 만든 칸: 추가 → 보임 → 값 저장 → 계�
   const editorPage = await loginInNewContext(browser, editor);
   try {
     await expectHiddenFrom(editorPage, editHref!, vendorName, label, value);
-    await editorPage.locator("#businessNo").fill("123-45-67890");
+    const businessNo = uniqueBusinessNo();
+    await editorPage.locator("#businessNo").fill(businessNo);
     await editorPage.getByRole("button", { name: "거래처 수정" }).click();
     await expect(editorPage.locator("#vendor-form")).toHaveCount(0);
-    await expect(editorPage.locator("tr", { hasText: vendorName })).toContainText("123-45-67890");
+    await expect(editorPage.locator("tr", { hasText: vendorName })).toContainText(businessNo);
 
     await page.goto(editHref!);
-    await expect(page.locator("#businessNo")).toHaveValue("123-45-67890");
+    await expect(page.locator("#businessNo")).toHaveValue(businessNo);
     await expect(page.getByLabel(label, { exact: true })).toHaveValue(value);
 
     // ④ 목록 「삭제」로 보관 → 모두에게 숨는다.

@@ -1,4 +1,4 @@
-import { and, eq, ilike, inArray, isNull, isNotNull } from "drizzle-orm";
+import { and, asc, eq, ilike, inArray, isNull, isNotNull, ne, sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { vendors } from "@/db/schema";
@@ -97,6 +97,24 @@ export async function findVendorsByNormalizedName(viewer: Viewer, normalizedName
     .select()
     .from(vendors)
     .where(and(eq(vendors.normalizedName, normalizedName), isNull(vendors.archivedAt)));
+}
+
+export type VendorBusinessNoMatch = Pick<VendorRow, "id" | "name" | "kind" | "hidden" | "archivedAt">;
+
+// 사업자번호 중복 선검사 — 숫자만 뽑은 값이 같은 거래처(숨김 · 보관 포함). 살아 있는 쪽을 먼저, 그다음 먼저 만든 순(옛 260907 vendors.ts:828-831과 같은 순서).
+export async function findVendorsByBusinessNoDigits(
+  viewer: Viewer,
+  digits: string,
+  opts: { excludeId?: string } = {},
+  tx: DbOrTx = db,
+): Promise<VendorBusinessNoMatch[]> {
+  void viewer;
+  const sameDigits = sql`regexp_replace(${vendors.businessNo}, '[^0-9]', '', 'g') = ${digits}`;
+  return tx
+    .select({ id: vendors.id, name: vendors.name, kind: vendors.kind, hidden: vendors.hidden, archivedAt: vendors.archivedAt })
+    .from(vendors)
+    .where(opts.excludeId === undefined ? sameDigits : and(sameDigits, ne(vendors.id, opts.excludeId)))
+    .orderBy(sql`${vendors.archivedAt} ASC NULLS FIRST`, asc(vendors.createdAt));
 }
 
 export type VendorInsertInput = {

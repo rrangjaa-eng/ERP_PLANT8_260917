@@ -13,7 +13,7 @@ import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { createProject } from "@/domain/projects";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { kstToday } from "@/lib/kst-date";
-import { archiveE2EVendor, createFixtureUser } from "./fixtures";
+import { archiveE2EVendor, createFixtureUser, uniqueBusinessNo } from "./fixtures";
 import { loginAsSysadmin } from "./row-actions-helpers";
 
 // 04.6-04 트레이서 — 거래처 `?new=1` · `?editId=`가 목록을 밀지 않는 옆 패널로 열리고 제출 · 닫기 · 포커스 복귀까지.
@@ -397,7 +397,8 @@ test.describe("거래처 옆 패널 — PC 1280 (04.6-04)", () => {
     const dialog = panel(page);
     const name = uniqueName("등록");
     await dialog.locator("#name").fill(name);
-    await dialog.locator("#businessNo").fill("123-45-67890");
+    const businessNo = uniqueBusinessNo();
+    await dialog.locator("#businessNo").fill(businessNo);
 
     let refreshes = 0;
     page.on("request", (request) => {

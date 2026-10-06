@@ -15,7 +15,8 @@ import { ARCHIVABLE_TABLES, listArchivedAcrossEntities as defaultListArchivedAcr
 import { addHoliday, deleteHoliday } from "@/domain/holidays/admin";
 import { queryActionLog } from "@/domain/action-log";
 import { db } from "@/db/client";
-import { holidays } from "@/db/schema";
+import { holidays, vendors } from "@/db/schema";
+import { eq } from "drizzle-orm";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
@@ -268,6 +269,19 @@ describe("보관함 (ADMN-12, 실제 Postgres)", () => {
     expect((await listArchive(archiveOnly)).find((item) => item.id === future.id)).toMatchObject({ restorable: false });
     await expect(restore(archiveOnly, "holiday", future.id)).rejects.toThrow("공휴일 복원 권한 없음");
     expect(await findHolidayByDate(SYSTEM_VIEWER, "2034-07-07")).toBeNull();
+  });
+
+  it("거래처 복원 — 같은 숫자 사업자번호의 살아 있는 거래처가 있으면 복원 불가 문구로 막고 보관 그대로다", async () => {
+    const no = `${Math.floor(100 + Math.random() * 900)}-${Math.floor(10 + Math.random() * 90)}-${Math.floor(10000 + Math.random() * 90000)}`;
+    const { vendor: a } = await createVendor(SYSTEM_VIEWER, { name: `거래처-${randomUUID()}`, businessNo: no });
+    await archive(SYSTEM_VIEWER, "vendor", a.id);
+    // 색인 전(PR A)에는 같은 번호의 살아 있는 행을 선검사 없이 직접 넣는다.
+    const takerName = `거래처-${randomUUID()}`;
+    const [taker] = await db.insert(vendors).values({ name: takerName, normalizedName: takerName, businessNo: no.replaceAll("-", "") }).returning();
+    await expect(restore(SYSTEM_VIEWER, "vendor", a.id)).rejects.toThrow(`같은 사업자번호 거래처 있음 · ${takerName} · 복원 불가`);
+    const [row] = await db.select().from(vendors).where(eq(vendors.id, a.id));
+    expect(row?.archivedAt).not.toBeNull();
+    await db.delete(vendors).where(eq(vendors.id, taker?.id ?? ""));
   });
 
   // quick 261002-4jn(회고 #3) — 낡은 화면 · 동시 복원의 뒤 사람은 성공이 아니라 「이미 복원됨」을 받는다.

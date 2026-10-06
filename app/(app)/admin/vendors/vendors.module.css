@@ -165,3 +165,13 @@
     height: var(--touch-min);
   }
 }
+
+/* PR #178: 사업자 번호 칸 + 같은 번호 오류 줄(다음 한 수 3차 포함) — field-definitions .nameGroup과 같은 결.
+   오류 줄이 있을 때만: 칸과 오류 사이는 TextField 오류와 같은 --s-1, 다음 칸까지는 칸 사이와 같은 --s-4. 없으면 TextField 그대로. */
+.businessNoGroup > [data-ui="field-row"]:not(:last-child) {
+  margin-bottom: var(--s-1);
+}
+
+.businessNoGroup > p {
+  margin-bottom: var(--s-4);
+}

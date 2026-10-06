@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { createFixtureUser } from "./fixtures";
+import { createFixtureUser, uniqueBusinessNo } from "./fixtures";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { insertVendor, setVendorArchived, setVendorHidden } from "@/repositories/vendors";
 import { insertCorpCard, setCorpCardArchived } from "@/repositories/corp-cards";
@@ -151,10 +151,11 @@ test.describe("폭 320 — 어느 화면도 가로로 넘치지 않는다", () =
       name: `알렉산드라크리스티나반데르사르${stamp}`,
       roleId: DEFAULT_ROLE_ID,
     });
+    const businessNo = uniqueBusinessNo();
     const vendor = await insertVendor(SYSTEM_VIEWER, {
       name: `E2E320거래처-아주긴이름의주식회사플랜트에이트-${Date.now()}`,
       normalizedName: `e2e320거래처-${Date.now()}`,
-      businessNo: "123-45-67890",
+      businessNo,
       accountBank: "국민은행",
       accountHolder: "홍길동",
       accountNumberEncrypted: "e2e-320-placeholder",
@@ -179,7 +180,7 @@ test.describe("폭 320 — 어느 화면도 가로로 넘치지 않는다", () =
       // §7-3 — 폰에서 숨은 P2 값은 행 아래 접힌 줄에 남는다(넘침만 막고 정보를 잃지 않는다).
       await expectNoOverflow(page, "/admin/vendors");
       const vendorRow = page.locator("tr", { hasText: vendor.name });
-      await expect(vendorRow.locator("xpath=following-sibling::tr[1]")).toContainText("123-45-67890");
+      await expect(vendorRow.locator("xpath=following-sibling::tr[1]")).toContainText(businessNo);
       await expect(page.getByRole("columnheader", { name: "사업자 번호" })).toBeHidden();
       await expectFoldAttached(page, vendor.name, { last: false });
 

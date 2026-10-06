@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { createFixtureUser } from "./fixtures";
+import { createFixtureUser, uniqueBusinessNo } from "./fixtures";
 import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { randomUUID } from "node:crypto";
 import { expectGapsAtLeastToken, expectNoRowOverflow, loginAsSysadmin } from "./row-actions-helpers";
@@ -26,7 +26,8 @@ test.describe("폰 375 /admin/vendors 3차 버튼 터치 목표 (defect 2)", () 
     await page.getByRole("link", { name: "거래처 등록" }).click();
     const vendorName = `폰E2E거래처-${Date.now()}`;
     await page.getByLabel("이름").fill(vendorName);
-    await page.getByLabel("사업자 번호").fill("123-45-67890");
+    const businessNo = uniqueBusinessNo();
+    await page.getByLabel("사업자 번호").fill(businessNo);
     await page.getByLabel("계좌 은행").fill("국민은행");
     await page.getByLabel("예금주").fill("홍길동");
     await page.getByLabel("계좌번호").fill("110-222-334455");

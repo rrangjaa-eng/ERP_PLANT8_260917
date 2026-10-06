@@ -1,17 +1,19 @@
 "use client";
 
 import { useRef, useState, type FormEvent } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
-import { createVendorAction, updateVendorAction, setVendorHiddenAction, archiveVendorAction } from "./actions";
+import { createVendorAction, updateVendorAction, setVendorHiddenAction, archiveVendorAction, addVendorKindAction } from "./actions";
 import { TextField } from "@/ui/input/TextField";
-import { Button } from "@/ui/button/Button";
+import { Form } from "@/ui/form/Form";
+import { Button, buttonLinkClassName } from "@/ui/button/Button";
 import { RowAction } from "@/ui/row-actions/RowActions";
 import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
 import { SelectHint } from "@/ui/select/Select";
 import { DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
 import { maskTail4 } from "@/lib/mask-tail4";
-import { DEFAULT_NEW_VENDOR_KIND, VENDOR_KINDS, VENDOR_KIND_LABELS, isVendorKind, type VendorKind } from "@/domain/vendors/kind";
+import { DEFAULT_NEW_VENDOR_KIND, VENDOR_KINDS, VENDOR_KIND_LABELS, isVendorKind, type VendorKind, type VendorSide } from "@/domain/vendors/kind";
 import { fieldErrorsReason, formReason, staleFieldsReason } from "@/lib/actions/form-reason";
 import styles from "./vendors.module.css";
 
@@ -40,6 +42,20 @@ export type EditingVendor = {
   accountNumberLast4: string | null;
   customFields: Record<string, unknown>;
 };
+
+// 같은 사업자번호 거래처가 있음 — 서버가 데이터로 돌려준다(actions.ts businessNoConflict). name이 null이면 「거래처 정보」를 못 보는 사람이라 링크를 내지 않는다.
+type BusinessNoConflict = {
+  id: string;
+  name: string | null;
+  archived: boolean;
+  hidden: boolean;
+  addSide: VendorSide | null;
+  message: string;
+};
+
+function existingVendorHref(conflict: BusinessNoConflict): string {
+  return `/admin/vendors?${conflict.hidden ? "includeHidden=1&" : ""}editId=${conflict.id}`;
+}
 
 function getStringField(formData: FormData, key: string): string {
   const value = formData.get(key);
@@ -79,7 +95,10 @@ export function VendorForm({
   const panelRef = useRef<PanelFormHandle>(null);
   // 제출 직후 같은 틱의 두 번째 제출(Ctrl+Enter 연타)을 막는 동기 가드 — isExecuting은 다음 렌더에야 참이 된다(D7 · R15-ii).
   const submitLockRef = useRef(false);
+  // 충돌을 받은 제출의 사업자번호 — 「구분 더하기」 때 서버가 그 거래처가 아직 같은 번호인지 다시 확인한다.
+  const submittedBusinessNoRef = useRef("");
   const [duplicateCount, setDuplicateCount] = useState<number | null>(null);
+  const [businessNoConflict, setBusinessNoConflict] = useState<BusinessNoConflict | null>(null);
   const [clearAccountNumber, setClearAccountNumber] = useState(false);
   // 04-25(D-93 · S14): 고른 증빙 종류의 설명 한 줄. select는 비제어 그대로
   // 두고 고른 값만 따라간다(등록 성공 시 formRef.reset()과 같이 비운다).
@@ -90,6 +109,10 @@ export function VendorForm({
   // 쪽 결과를 화면에 쓸지만 고른다(조건부 훅 호출 금지).
   const createState = useAction(createVendorAction, {
     onSuccess: ({ data }) => {
+      if (data && "businessNoConflict" in data) {
+        setBusinessNoConflict(data.businessNoConflict);
+        return;
+      }
       setEvidenceType("");
       setDuplicateCount(data?.duplicateCount ?? 0);
       panelRef.current?.succeed({ status: "거래처 등록됨" });
@@ -100,19 +123,35 @@ export function VendorForm({
   });
   const updateState = useAction(updateVendorAction, {
     // 수정 완료 — 패널이 닫힌다(PanelForm이 SidePanel의 닫기 경로로 넘긴다).
-    onSuccess: () => panelRef.current?.succeed(),
+    onSuccess: ({ data }) => {
+      if (data && "businessNoConflict" in data) {
+        setBusinessNoConflict(data.businessNoConflict);
+        return;
+      }
+      panelRef.current?.succeed();
+    },
     onSettled: () => {
       submitLockRef.current = false;
     },
   });
   const { result, isExecuting, reset } = isEditing ? updateState : createState;
+  // 「구분 더하기」 — 기존 거래처의 갈래만 켜고 그 거래처 수정 패널로 넘어간다(입력하던 칸은 옮기지 않는다).
+  const addKindState = useAction(addVendorKindAction, {
+    onSuccess: () => {
+      if (businessNoConflict) router.push(existingVendorHref(businessNoConflict));
+    },
+  });
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (submitLockRef.current) return;
     submitLockRef.current = true;
     setDuplicateCount(null);
+    setBusinessNoConflict(null);
+    // 지난 「구분 더하기」 실패 문구는 새 제출과 무관하다 — 남기면 등록이 성공해도 칸이 오류로 보인다.
+    addKindState.reset();
     const formData = new FormData(event.currentTarget);
+    submittedBusinessNoRef.current = getStringField(formData, "businessNo");
 
     // 04.5-05: 수정은 그린 칸을 빈 값까지 모두 보낸다(서버 계약 — 키 없음 = 안 바꿈 · 빈 값 = 비움). 등록은 빈 칸을 뺀다.
     const customFields: Record<string, unknown> = {};
@@ -164,6 +203,7 @@ export function VendorForm({
   const customFieldErrors = result.validationErrors?.customFields;
   const errorFields: { label: string; id: string }[] = [];
   if (nameError) errorFields.push({ label: "이름", id: "name" });
+  if (businessNoConflict) errorFields.push({ label: "사업자 번호", id: "businessNo" });
   for (const def of fieldDefs) {
     if (customFieldErrors?.[def.key]?._errors?.[0]) errorFields.push({ label: def.label, id: `cf_${def.key}` });
   }
@@ -177,6 +217,29 @@ export function VendorForm({
   const serverReason = staleReason ?? (!summary && result.serverError ? formReason(verb, result.serverError) : null);
   const blocked = serverReason?.blocked === true;
   const firstErrorId = errorFields[0]?.id;
+
+  // 같은 사업자번호 오류 줄의 다음 한 수 — 「원인 · 다음 행동」 한 줄 안에 붙인다(field-definition-form 「보관함에서 복원」과 같은 모양).
+  // 「거래처 정보」를 못 보면(name null) 링크를 내지 않고, 「구분 더하기」가 실패하면 다시 눌러도 같은 실패라 치운다.
+  const conflictAction =
+    businessNoConflict && businessNoConflict.name !== null && !addKindState.result.serverError ? (
+      businessNoConflict.archived ? (
+        <Link href="/admin/archive" className={buttonLinkClassName("tertiary")}>
+          보관함에서 복원
+        </Link>
+      ) : businessNoConflict.addSide ? (
+        <Button
+          variant="tertiary"
+          pending={addKindState.isExecuting}
+          onClick={() => addKindState.execute({ id: businessNoConflict.id, kind: businessNoConflict.addSide as VendorSide, businessNo: submittedBusinessNoRef.current })}
+        >
+          구분 더하기
+        </Button>
+      ) : (
+        <Link href={existingVendorHref(businessNoConflict)} className={buttonLinkClassName("tertiary")}>
+          그 거래처 열기
+        </Link>
+      )
+    ) : null;
 
   function refresh() {
     reset();
@@ -225,7 +288,22 @@ export function VendorForm({
           ))}
         </select>
       </div>
-      <TextField id="businessNo" name="businessNo" label="사업자 번호" defaultValue={editing?.businessNo ?? undefined} />
+      <div className={styles.businessNoGroup}>
+        <TextField
+          id="businessNo"
+          name="businessNo"
+          label="사업자 번호"
+          defaultValue={editing?.businessNo ?? undefined}
+          error={conflictAction ? undefined : (addKindState.result.serverError ?? businessNoConflict?.message)}
+          aria-invalid={conflictAction ? true : undefined}
+          aria-describedby={conflictAction ? "businessNo-error" : undefined}
+        />
+        {conflictAction && businessNoConflict ? (
+          <Form.Error id="businessNo-error">
+            {businessNoConflict.message} · {conflictAction}
+          </Form.Error>
+        ) : null}
+      </div>
 
       <div className={styles.selectLabel}>
         <label htmlFor="defaultEvidenceType">기본 증빙 종류</label>

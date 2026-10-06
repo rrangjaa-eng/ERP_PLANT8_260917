@@ -1,5 +1,9 @@
+import { randomUUID } from "node:crypto";
 import { test, expect } from "@playwright/test";
-import { createFixtureUser } from "./fixtures";
+import { createFixtureUser, uniqueBusinessNo } from "./fixtures";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { findVendorById, insertVendor, setVendorArchived, setVendorHidden } from "@/repositories/vendors";
+import { loginAsSysadmin } from "./row-actions-helpers";
 
 // ADMN-12: 삭제 → 보관함 → 복원 end-to-end와 권한 없는 계급의 404.
 test.describe("보관함 화면 (ADMN-12)", () => {
@@ -108,5 +112,30 @@ test.describe("보관함 화면 (ADMN-12)", () => {
     const pmResponse = await pmPage.goto("/admin/archive");
     expect(pmResponse?.status()).toBe(404);
     if (pmContext) await pmContext.close();
+  });
+
+  // Regression: /qa ISSUE-002 — 보관함을 연 뒤 같은 사업자번호의 살아 있는 거래처가 생기면 「복원」이 원인 없이
+  // 「복원 · 실패 · 다시 시도」만 보이고 단추가 남았다(서버 거부 문구가 토스트에 실리지 않음).
+  // Found by /qa on 2026-10-06 · Report: /mnt/project-files/notes/vendor-kind/178-qa.md
+  test("같은 사업자번호 거래처가 그새 생기면 거래처 복원은 원인을 토스트에 싣고 「복원」을 치운다", async ({ page }) => {
+    await loginAsSysadmin(page);
+    const businessNo = uniqueBusinessNo();
+    const name = `E2E복원경합-${randomUUID()}`;
+    const archived = await insertVendor(SYSTEM_VIEWER, { name, normalizedName: name.toLowerCase(), businessNo, kind: "client" });
+    await setVendorArchived(SYSTEM_VIEWER, archived.id, true);
+    await page.goto("/admin/archive");
+    const row = page.locator("tr", { hasText: name }).first();
+    await expect(row.getByRole("button", { name: "복원" })).toBeVisible();
+
+    const takerName = `E2E복원경합차지-${randomUUID()}`;
+    const taker = await insertVendor(SYSTEM_VIEWER, { name: takerName, normalizedName: takerName.toLowerCase(), businessNo, kind: "client" });
+    try {
+      await row.getByRole("button", { name: "복원" }).click();
+      await expect(page.getByText(`복원 · 실패 · 같은 사업자번호 거래처 있음 · ${takerName}`)).toBeVisible();
+      await expect(row.getByRole("button", { name: "복원" })).toHaveCount(0);
+      expect((await findVendorById(SYSTEM_VIEWER, archived.id))?.archivedAt).not.toBeNull();
+    } finally {
+      await setVendorHidden(SYSTEM_VIEWER, taker.id, true);
+    }
   });
 });

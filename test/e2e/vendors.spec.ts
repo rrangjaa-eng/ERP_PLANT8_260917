@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { test, expect } from "@playwright/test";
-import { createFixtureUser } from "./fixtures";
+import { createFixtureUser, uniqueBusinessNo } from "./fixtures";
 import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { setPermissionCell } from "@/domain/permissions/matrix";
 import { insertRole, setRoleArchived } from "@/repositories/roles";
@@ -14,7 +14,7 @@ import {
   textLineCount,
   tokenNumber,
 } from "./row-actions-helpers";
-import { findVendorsByNormalizedName, insertVendor, setVendorHidden } from "@/repositories/vendors";
+import { findVendorsByNormalizedName, insertVendor, setVendorArchived, setVendorHidden } from "@/repositories/vendors";
 import { checkPrinciples } from "./principles-check";
 import { isStrict } from "./design-principles";
 
@@ -45,7 +45,8 @@ test.describe("거래처 관리 화면 (MAST-01)", () => {
     const accountNumber = "110-222-334455";
 
     await page.getByLabel("이름").fill(vendorName);
-    await page.getByLabel("사업자 번호").fill("123-45-67890");
+    const businessNo = uniqueBusinessNo();
+    await page.getByLabel("사업자 번호").fill(businessNo);
     await page.getByLabel("계좌 은행").fill("국민은행");
     await page.getByLabel("예금주").fill("홍길동");
     await page.getByLabel("계좌번호").fill(accountNumber);
@@ -518,5 +519,87 @@ test.describe("거래처 구분 (261006-biv)", () => {
     await loginAsSysadmin(page);
     await page.goto("/admin/vendors?new=1&kind=client");
     await expect(page.locator('dialog[data-ui="side-panel"]').getByLabel("구분")).toHaveValue("client");
+  });
+
+  test("같은 사업자번호 등록은 칸 아래 문구와 요약으로 막히고, 다른 갈래면 「구분 더하기」로 그 거래처 수정 패널로 넘어간다", async ({ page }) => {
+    await loginAsSysadmin(page);
+    const businessNo = uniqueBusinessNo();
+    const existingName = `E2E중복원본-${randomUUID()}`;
+    const existing = await insertVendor(SYSTEM_VIEWER, { name: existingName, normalizedName: existingName.toLowerCase(), businessNo, kind: "client" });
+    try {
+      await page.goto("/admin/vendors?new=1");
+      const dialog = page.locator('dialog[data-ui="side-panel"]');
+      await dialog.getByLabel("이름").fill(`E2E중복신규-${randomUUID()}`);
+      await dialog.getByLabel("구분").selectOption("supplier");
+      await dialog.getByLabel("사업자 번호").fill(businessNo.replaceAll("-", ""));
+      await dialog.getByRole("button", { name: "거래처 등록" }).click();
+
+      // 다음 한 수는 오류 줄 안에 붙는다(「원인 · 다음 행동」 — field-definition-form 「보관함에서 복원」과 같은 모양).
+      await expect(dialog.locator("#businessNo-error")).toHaveText(`같은 사업자번호 거래처 있음 · ${existingName}(클라이언트) · 구분 더하기`);
+      await expect(dialog.locator("#businessNo-error").getByRole("button", { name: "구분 더하기" })).toBeVisible();
+      await expect(dialog.getByLabel("사업자 번호")).toHaveAttribute("aria-describedby", "businessNo-error");
+      await expect(dialog.locator("#vendor-form-reason")).toContainText("사업자 번호 1칸");
+      await expect(dialog.getByLabel("사업자 번호")).toHaveValue(businessNo.replaceAll("-", ""));
+
+      await dialog.getByRole("button", { name: "구분 더하기" }).click();
+      await expect(page).toHaveURL(new RegExp(`editId=${existing.id}`));
+      await expect(page.locator("#vendor-form").getByLabel("구분")).toHaveValue("both");
+    } finally {
+      await setVendorHidden(SYSTEM_VIEWER, existing.id, true);
+    }
+  });
+  test("「구분 더하기」가 실패하면(그 사이 보관됨) 칸 아래 기존 오류 자리에 서버 오류 문구를 보인다", async ({ page }) => {
+    await loginAsSysadmin(page);
+    const businessNo = uniqueBusinessNo();
+    const existingName = `E2E구분실패-${randomUUID()}`;
+    const existing = await insertVendor(SYSTEM_VIEWER, { name: existingName, normalizedName: existingName.toLowerCase(), businessNo, kind: "client" });
+    try {
+      await page.goto("/admin/vendors?new=1");
+      const dialog = page.locator('dialog[data-ui="side-panel"]');
+      await dialog.getByLabel("이름").fill(`E2E구분실패신규-${randomUUID()}`);
+      await dialog.getByLabel("구분").selectOption("supplier");
+      await dialog.getByLabel("사업자 번호").fill(businessNo);
+      await dialog.getByRole("button", { name: "거래처 등록" }).click();
+      await expect(dialog.getByRole("button", { name: "구분 더하기" })).toBeVisible();
+
+      await setVendorArchived(SYSTEM_VIEWER, existing.id, true);
+      await dialog.getByRole("button", { name: "구분 더하기" }).click();
+      await expect(dialog.locator("#businessNo-error")).toHaveText("보관됐거나 존재하지 않는 거래처는 수정할 수 없음");
+      // 다시 눌러도 같은 실패라 「구분 더하기」를 치운다(할 수 없는 선택지는 숨김 — 보관함 복원 거부 행과 같은 처리).
+      await expect(dialog.getByRole("button", { name: "구분 더하기" })).toHaveCount(0);
+      await expect(page).not.toHaveURL(/editId=/);
+    } finally {
+      await setVendorHidden(SYSTEM_VIEWER, existing.id, true);
+    }
+  });
+  // Regression: /qa ISSUE-001 — 「구분 더하기」 실패 문구가 다음 제출 뒤에도 사업자 번호 칸에 남았다(등록이 성공해도 칸이 오류로 보임).
+  // Found by /qa on 2026-10-06 · Report: /mnt/project-files/notes/vendor-kind/178-qa.md
+  test("「구분 더하기」가 실패한 뒤 번호를 고쳐 다시 등록하면 칸 오류가 남지 않는다", async ({ page }) => {
+    await loginAsSysadmin(page);
+    const businessNo = uniqueBusinessNo();
+    const existingName = `E2E구분실패재등록-${randomUUID()}`;
+    const existing = await insertVendor(SYSTEM_VIEWER, { name: existingName, normalizedName: existingName.toLowerCase(), businessNo, kind: "client" });
+    const newName = `E2E구분실패재등록신규-${randomUUID()}`;
+    try {
+      await page.goto("/admin/vendors?new=1");
+      const dialog = page.locator('dialog[data-ui="side-panel"]');
+      await dialog.getByLabel("이름").fill(newName);
+      await dialog.getByLabel("구분").selectOption("supplier");
+      await dialog.getByLabel("사업자 번호").fill(businessNo);
+      await dialog.getByRole("button", { name: "거래처 등록" }).click();
+      await expect(dialog.getByRole("button", { name: "구분 더하기" })).toBeVisible();
+      await setVendorArchived(SYSTEM_VIEWER, existing.id, true);
+      await dialog.getByRole("button", { name: "구분 더하기" }).click();
+      await expect(dialog.locator("#businessNo-error")).toHaveText("보관됐거나 존재하지 않는 거래처는 수정할 수 없음");
+
+      await dialog.getByLabel("사업자 번호").fill(uniqueBusinessNo());
+      await dialog.getByRole("button", { name: "거래처 등록" }).click();
+      await expect(dialog.getByRole("status")).toContainText("거래처 등록됨");
+      await expect(dialog.locator("#businessNo-error")).toHaveCount(0);
+      await expect(dialog.getByLabel("사업자 번호")).not.toHaveAttribute("aria-invalid", "true");
+    } finally {
+      await setVendorHidden(SYSTEM_VIEWER, existing.id, true);
+      for (const row of await findVendorsByNormalizedName(SYSTEM_VIEWER, newName.toLowerCase())) await setVendorHidden(SYSTEM_VIEWER, row.id, true);
+    }
   });
 });

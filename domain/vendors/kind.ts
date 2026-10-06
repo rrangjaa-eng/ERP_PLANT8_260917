@@ -33,3 +33,10 @@ export function isVendorKind(value: string): value is VendorKind {
 // 261006 사용자 결정 「바뀔 때만 막기」 — 갈래가 맞지 않는 거래처를 새로 고르거나 바꾼 저장의 칸 이유. 저장된 값은 그대로 둔다.
 export const NOT_CLIENT_VENDOR = "클라이언트 아님 · 클라이언트 거래처 고르기";
 export const NOT_SUPPLIER_VENDOR = "협력사 아님 · 협력사 거래처 고르기";
+
+// 같은 사업자번호 거래처가 이미 있을 때 「구분 더하기」로 켤 갈래 — 새 갈래를 기존 갈래가 이미 덮거나 보관된 거래처면 null(구분을 더하지 못한다).
+export function vendorKindToAdd(existing: VendorKind, wanted: VendorKind, archived: boolean): VendorSide | null {
+  if (archived || existing === "both") return null;
+  if (wanted === "both") return existing === "client" ? "supplier" : "client";
+  return servesSide(existing, wanted) ? null : wanted;
+}

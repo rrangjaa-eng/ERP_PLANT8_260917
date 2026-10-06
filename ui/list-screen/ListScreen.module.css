@@ -86,3 +86,14 @@
     display: none;
   }
 }
+
+/* 버튼 갈래 1차(선택 표의 `{동사} N` — 06-29) — 같은 자리(필터 줄 오른쪽 끝). 편집 표는 1024 이상이라 그 미만에서는 이유 글자까지 그리지 않는다(DR-36). */
+.buttonAction {
+  flex: none;
+}
+
+@media (max-width: 1023.98px) {
+  .bar > .wideOnly {
+    display: none;
+  }
+}

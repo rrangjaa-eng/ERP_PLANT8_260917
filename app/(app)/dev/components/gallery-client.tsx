@@ -11,9 +11,10 @@ import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
 import { PanelForm } from "@/ui/side-panel/PanelForm";
 import { SidePanel } from "@/ui/side-panel/SidePanel";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
-import { Table } from "@/ui/table/Table";
+import { Table, reconcileSelection } from "@/ui/table/Table";
 import type { CellIssue, TableColumn } from "@/ui/table/types";
 import { Toast } from "@/ui/toast/Toast";
+import styles from "./components.module.css";
 
 // 04.6-13 — 컴포넌트 모음의 클라이언트 표본. 표(`Table`은 함수 prop을 받는다) · 토스트 · 모달 · 행 동작(button 형) ·
 // 옆 패널 여는 링크가 서버 페이지 안에서는 못 그려져 여기에 둔다. 값은 전부 코드 안 고정 표본이다(DB 없음 — 사진 결정성).
@@ -119,6 +120,84 @@ export function EditTableSample() {
         </tr>
       )}
     />
+  );
+}
+
+// 06-29(SP-1) — 선택 표 표본. 여섯 행 중 둘은 고를 수 없고(이유 글자), `Ctrl+Enter`(또는 1차)는 표본 처리다 —
+// 고른 행 중 첫 행은 막혀(`blockedReason` · 선택 해제) 남고 나머지는 처리돼 사라진다. 선택은 `reconcileSelection`으로 다시 센다.
+type SelectRow = { id: string; name: string; amount: number; gate: string | null };
+
+const SELECT_ROWS: SelectRow[] = [
+  { id: "s1", name: "표본 가", amount: 1_250_000, gate: null },
+  { id: "s2", name: "표본 나", amount: 540_000, gate: null },
+  { id: "s3", name: "표본 다", amount: 1_700_000, gate: null },
+  { id: "s4", name: "표본 라", amount: 4_200_000, gate: null },
+  { id: "s5", name: "표본 마", amount: 320_000, gate: "증빙 확인 전" },
+  { id: "s6", name: "표본 바", amount: 150_000, gate: "증빙 확인 전" },
+];
+
+const SELECT_COLUMNS: TableColumn<SelectRow>[] = [
+  { key: "name", header: "항목", priority: "p1", cell: (row) => row.name },
+  { key: "amount", header: "금액", priority: "p1", align: "right", cell: (row) => <Num value={row.amount} /> },
+];
+
+export function SelectTableSample() {
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [doneIds, setDoneIds] = useState<string[]>([]);
+  const [blocked, setBlocked] = useState<Record<string, string>>({});
+  const rows = SELECT_ROWS.filter((row) => !doneIds.includes(row.id));
+
+  const selectableOf = (nextBlocked: Record<string, string>) => (row: SelectRow): true | { reason: string } => {
+    if (nextBlocked[row.id]) return { reason: "계좌 확인 전" };
+    return row.gate === null ? true : { reason: row.gate };
+  };
+  const selectable = selectableOf(blocked);
+  const chosen = reconcileSelection(selectedIds, rows, (row) => row.id, selectable);
+
+  function process() {
+    if (chosen.length === 0) return;
+    const [first, ...rest] = chosen;
+    const nextBlocked = { ...blocked, [first!]: "계좌 오류" };
+    const nextDone = [...doneIds, ...rest];
+    setBlocked(nextBlocked);
+    setDoneIds(nextDone);
+    setSelectedIds(reconcileSelection(chosen, rows.filter((row) => !rest.includes(row.id)), (row) => row.id, selectableOf(nextBlocked)));
+  }
+
+  return (
+    <>
+      <div className={styles.samples}>
+        <Button
+          variant="primary"
+          shortcut="Ctrl+Enter"
+          disabled={chosen.length === 0}
+          disabledReason={chosen.length === 0 ? "고른 건 없음" : undefined}
+          reasonTone="info"
+          onClick={process}
+        >
+          {chosen.length === 0 ? "지급 완료" : `지급 완료 ${chosen.length}`}
+        </Button>
+      </div>
+      <Table
+        caption="선택 표 표본"
+        columns={SELECT_COLUMNS}
+        rows={rows}
+        getRowId={(row) => row.id}
+        enableGridKeyboard
+        hint={[
+          { label: "이동", keys: "Tab ↑↓←→" },
+          { label: "고르기", keys: "Space" },
+        ]}
+        selection={{
+          selectedIds: chosen,
+          selectable,
+          onChange: setSelectedIds,
+          rowLabel: (row) => row.name,
+          blockedReason: (row) => blocked[row.id] ?? null,
+          onPrimary: process,
+        }}
+      />
+    </>
   );
 }
 

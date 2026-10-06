@@ -44,6 +44,49 @@ describe("ListScreen — DR5 A 빈 목록 규칙", () => {
   });
 });
 
+describe("ListScreen — primaryAction 버튼 갈래(06-29 · SP-1)", () => {
+  it("버튼 갈래는 button(data-ui=primary-button · kbd 표기)이고 폰·태블릿(1024 미만) 숨김 클래스 안에 선다", () => {
+    const html = render({
+      title: "지급 대상",
+      primaryAction: { label: "지급 완료 2", onClick: () => {}, shortcut: "Ctrl+Enter" },
+      children: createElement("table", { "data-table": "" }),
+    });
+    expect(html.match(/data-ui="primary-button"/g) ?? []).toHaveLength(1);
+    expect(html).toMatch(/<button[^>]*data-ui="primary-button"/);
+    expect(html).toContain("<kbd");
+    expect(html).toContain("Ctrl+Enter");
+    expect(html).toMatch(/class="[^"]*wideOnly[^"]*"/);
+    expect(html).not.toContain("<a ");
+  });
+
+  it("disabledReason이면 aria-disabled=true + 이유 글자, 이유 톤 info는 이유 요소에 반영된다", () => {
+    const html = render({
+      title: "지급 대상",
+      primaryAction: { label: "지급 완료", onClick: () => {}, disabledReason: "고른 건 없음", reasonTone: "info" },
+      children: null,
+    });
+    expect(html).toContain('aria-disabled="true"');
+    expect(html).toContain("고른 건 없음");
+    expect(html).toMatch(/reasonInfo/);
+  });
+
+  it("링크 갈래는 지금 마크업 그대로(a · scroll false)이고 숨김 클래스가 없다", () => {
+    const html = render({ title: "거래처", primaryAction, children: null });
+    expect(html).toMatch(/<a [^>]*data-ui="primary-button"/);
+    expect(html).not.toContain("wideOnly");
+  });
+
+  it("empty를 넘기면 버튼 갈래 1차도 그리지 않는다", () => {
+    const html = render({
+      title: "지급 대상",
+      primaryAction: { label: "지급 완료", onClick: () => {} },
+      empty: createElement("p", { "data-empty": "" }),
+      children: null,
+    });
+    expect(html.match(/data-ui="primary-button"/g) ?? []).toHaveLength(0);
+  });
+});
+
 describe("ListScreen — 틀", () => {
   it("제목은 h1(data-ui=screen-title · tabIndex -1)이고 부제 자리가 없다", () => {
     const html = render({ title: "거래처", children: null });

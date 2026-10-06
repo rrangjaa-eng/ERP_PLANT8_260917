@@ -20,6 +20,7 @@ import {
   PanelOpener,
   ReadTableSample,
   RowActionsSamples,
+  SelectTableSample,
   ToastSample,
 } from "./gallery-client";
 import styles from "./components.module.css";
@@ -148,6 +149,12 @@ export default async function ComponentsPage({ searchParams }: { searchParams: P
       <DetailScreen.Section title="표 편집">
         <div data-gallery="table-edit">
           <EditTableSample />
+        </div>
+      </DetailScreen.Section>
+
+      <DetailScreen.Section title="표 선택">
+        <div data-gallery="table-select">
+          <SelectTableSample />
         </div>
       </DetailScreen.Section>
 

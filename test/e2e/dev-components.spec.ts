@@ -74,6 +74,7 @@ test.describe("로그인한 뒤", () => {
     "숫자",
     "표 읽기",
     "표 편집",
+    "표 선택",
     "표 서버 고정",
     "표 불러오는 중",
     "빈 목록",
@@ -116,6 +117,68 @@ test.describe("로그인한 뒤", () => {
     await expect(page.locator('[data-ui="empty-state"]')).toHaveCount(1);
     const counts = await page.locator('[data-gallery="row-actions"] [data-ui="row-actions"]').evaluateAll((els) => els.map((e) => e.children.length));
     expect(counts).toEqual([1, 2, 3]);
+  });
+
+  // 06-29 Task 1 — SP-1 선택 표(SYSTEM §7-3 (카)). 선택 열 폭 · Space · 1차 N · 머리글 · 고를 수 없는 행 · Ctrl+Enter.
+  test("표 선택 — Space로 고르기 · 1차 N · 머리글 일괄 · 고를 수 없는 행 · Ctrl+Enter 처리", async ({ page }) => {
+    const sample = page.locator('[data-gallery="table-select"]');
+    const table = sample.locator("table");
+    const primary = sample.locator('[data-ui="primary-button"]');
+    const bodyRows = table.locator("tbody tr");
+    const rowBox = (name: string) => table.getByRole("checkbox", { name: `${name} 고르기` });
+    const headBox = table.getByRole("checkbox", { name: "이 쪽 전체 고르기" });
+
+    // 0건 — 1차 aria-disabled + 이유 글자.
+    await expect(primary).toHaveAttribute("aria-disabled", "true");
+    await expect(sample).toContainText("고른 건 없음");
+
+    // 선택 열 칸 폭 44px(1280) — calc(var(--row-number-w) + 2 * var(--cell-pad-x)).
+    const selectCellWidth = await bodyRows.first().locator("td").first().evaluate((el) => Math.round(el.getBoundingClientRect().width));
+    expect(selectCellWidth).toBe(44);
+
+    // 활성 셀 행에서 Space → 그 행 체크 · 행 면 = --accent-weak · 1차 `지급 완료 1`.
+    await bodyRows.first().locator("td").nth(1).click();
+    await page.keyboard.press("Space");
+    await expect(bodyRows.first().getByRole("checkbox")).toBeChecked();
+    await expect(primary).toContainText("지급 완료 1");
+    await expect(primary).not.toHaveAttribute("aria-disabled", "true");
+    const accentWeak = await page.evaluate(() => {
+      const probe = document.createElement("div");
+      probe.style.background = "var(--accent-weak)";
+      document.body.append(probe);
+      const color = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return color;
+    });
+    await page.mouse.move(0, 0);
+    expect(await bodyRows.first().locator("td").nth(1).evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(accentWeak);
+
+    // 머리글 — 일부만 고른 상태면 indeterminate, 누르면 고를 수 있는 행 전부.
+    expect(await headBox.evaluate((el: HTMLInputElement) => el.indeterminate)).toBe(true);
+    await headBox.click();
+    await expect(table.locator('tbody input[type="checkbox"]:checked')).toHaveCount(4);
+    expect(await headBox.evaluate((el: HTMLInputElement) => el.indeterminate)).toBe(false);
+    await expect(primary).toContainText("지급 완료 4");
+
+    // 고를 수 없는 행 — aria-disabled · 클릭해도 그대로 · 이유 글자가 describedby.
+    const blockedBox = rowBox("표본 마");
+    await expect(blockedBox).toHaveAttribute("aria-disabled", "true");
+    await blockedBox.click({ force: true });
+    await expect(blockedBox).not.toBeChecked();
+    await expect(table.locator('tbody input[type="checkbox"]:checked')).toHaveCount(4);
+    const describedBy = await blockedBox.getAttribute("aria-describedby");
+    expect(await page.locator(`[id="${describedBy}"]`).textContent()).toContain("증빙 확인 전");
+    // 선택 때문에 붙은 aria-selected 0.
+    await expect(table.locator('[aria-selected="true"]')).toHaveCount(0);
+
+    // Ctrl+Enter(표 안) → 표본 처리 — 한 행은 막힘 이유와 함께 선택이 풀리고 나머지는 처리돼 사라진다.
+    await bodyRows.first().locator("td").nth(1).click();
+    await page.keyboard.press("Control+Enter");
+    await expect(sample.getByText("계좌 오류")).toBeVisible();
+    await expect(bodyRows).toHaveCount(3);
+    await expect(table.locator('tbody input[type="checkbox"]:checked')).toHaveCount(0);
+    await expect(primary).toHaveAttribute("aria-disabled", "true");
+    await expect(sample).toContainText("고른 건 없음");
   });
 
   test("토스트 · 모달 표본 버튼이 각자 열고 닫힌다", async ({ page }) => {

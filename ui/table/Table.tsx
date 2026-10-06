@@ -38,6 +38,32 @@ export type TableKeyboardHandlers<Row> = {
   onEscapeCell?: (row: Row, columnKey: string) => void;
 };
 
+// 06-29(SP-1 · SYSTEM §7-3 (카)) — 일괄 처리 표의 선택. 선택의 뜻은 체크박스 `checked` 하나다 — 행 · 셀 `aria-selected`는 활성 셀 뜻 그대로(DR-7).
+export type TableSelection<Row> = {
+  selectedIds: readonly string[];
+  /** 서버가 행마다 보낸 「고를 수 있음」. 못 고르면 이유 글자(그 행 첫 데이터 칸 2행)와 체크박스 `aria-describedby`가 된다. */
+  selectable: (row: Row) => true | { reason: string };
+  /** 고르기 · 풀기 · 머리글 일괄. 이 쪽 밖의 선택은 그대로 넘긴다. */
+  onChange: (ids: string[]) => void;
+  /** 체크박스 접근 이름 `{rowLabel} 고르기`. */
+  rowLabel: (row: Row) => string;
+  /** 처리 뒤 막힌 행의 이유(위험 색 글자). 막힌 행에도 배경 칠은 없다. */
+  blockedReason?: (row: Row) => string | null;
+  /** 표 안 `Ctrl+Enter` — 선택 표에는 새 줄이 없다(DR-8). 화면 1차(`{동사} N`)와 같은 일. */
+  onPrimary?: () => void;
+};
+
+/** 처리 뒤 선택을 다시 세운다(H-3) — 지금 고를 수 있는 행만 순서대로 남긴다. 처리 결과를 받은 뒤 부른다. */
+export function reconcileSelection<Row>(
+  selectedIds: readonly string[],
+  rows: readonly Row[],
+  getRowId: (row: Row) => string,
+  selectable: (row: Row) => true | { reason: string },
+): string[] {
+  const open = new Set(rows.filter((row) => selectable(row) === true).map(getRowId));
+  return selectedIds.filter((id) => open.has(id));
+}
+
 export type TableProps<Row> = {
   caption: string;
   columns: TableColumn<Row>[];
@@ -139,6 +165,8 @@ export type TableProps<Row> = {
   firstIssueSignal?: number;
   /** 04-18(S1 열 폭) — 참이면 1280 이상에서도 `collapseBelow: 1280` 열을 숨긴다(좁은 단계 — 서버가 페이지 금액 글자 수로 판정). */
   collapseEarly?: boolean;
+  /** 06-29(SP-1) — 있으면 맨 왼쪽에 선택 열이 선다. 없으면 마크업 · 키 동작은 지금과 같다. */
+  selection?: TableSelection<Row>;
 };
 
 type ActiveCell = { rowId: string; columnKey: string } | null;
@@ -214,6 +242,7 @@ export function Table<Row>({
   revealRowId,
   firstIssueSignal,
   collapseEarly = false,
+  selection,
 }: TableProps<Row>) {
   const [activeCell, setActiveCell] = useState<ActiveCell>(null);
   const allowed = (action: Parameters<typeof isGridActionAllowed>[0]) => isGridActionAllowed(action, { saveLocked });
@@ -321,6 +350,27 @@ export function Table<Row>({
   const rowById = new Map(displayRows.map((row) => [getRowId(row), row]));
   const findRow = (rowId: string) => flatRows.find((row) => getRowId(row) === rowId);
 
+  // 06-29(SP-1) — 선택 열. 머리글은 이 쪽(지금 그려진 쪽)의 고를 수 있는 행 전체를 켜고 끈다. 고를 수 없는 행은 선택으로 세지 않는다.
+  const selectedIdSet = new Set(selection?.selectedIds ?? []);
+  const selectableRowIds = selection ? flatRows.filter((row) => selection.selectable(row) === true).map(getRowId) : [];
+  const pageSelectedCount = selectableRowIds.filter((id) => selectedIdSet.has(id)).length;
+  const pageAllSelected = selectableRowIds.length > 0 && pageSelectedCount === selectableRowIds.length;
+  const pageSomeSelected = pageSelectedCount > 0 && !pageAllSelected;
+  function toggleRowSelection(row: Row) {
+    if (!selection || selection.selectable(row) !== true) return;
+    const id = getRowId(row);
+    selection.onChange(selectedIdSet.has(id) ? selection.selectedIds.filter((selectedId) => selectedId !== id) : [...selection.selectedIds, id]);
+  }
+  function togglePageSelection() {
+    if (!selection || selectableRowIds.length === 0) return;
+    const pageSet = new Set(selectableRowIds);
+    selection.onChange(
+      pageAllSelected
+        ? selection.selectedIds.filter((id) => !pageSet.has(id))
+        : [...selection.selectedIds, ...selectableRowIds.filter((id) => !selectedIdSet.has(id))],
+    );
+  }
+
   // 04-47(DR-16) — 붙여넣기가 닿은 마지막 쪽(시작 쪽보다 뒤일 때만). 호출부의 붙여넣기 머리가 지워지면(다음 저장 시도) 함께 지운다.
   const [pasteReach, setPasteReach] = useState<number | null>(null);
   const hasPasteHead = footerNotices?.some((item) => item.paste === "head") ?? false;
@@ -402,6 +452,11 @@ export function Table<Row>({
         if (row) keyboard?.onDeleteRow?.(row);
       },
       onNewRow: (rowId) => {
+        // 선택 표에는 새 줄이 없다 — 표 안 Ctrl+Enter는 화면 1차(DR-8).
+        if (selection) {
+          selection.onPrimary?.();
+          return;
+        }
         keyboard?.onNewRow?.(rowId === undefined ? undefined : findRow(rowId));
       },
       onDuplicateRow: (rowId) => {
@@ -821,6 +876,22 @@ export function Table<Row>({
         </caption>
         <thead>
           <tr>
+            {selection ? (
+              <th scope="col" role={hasEditableCell ? "columnheader" : undefined} className={[styles.headerCell, styles.selectHead].join(" ")}>
+                <label className={styles.selectLabel}>
+                  <input
+                    type="checkbox"
+                    aria-label="이 쪽 전체 고르기"
+                    aria-disabled={selectableRowIds.length === 0 ? "true" : undefined}
+                    checked={pageAllSelected}
+                    ref={(element) => {
+                      if (element) element.indeterminate = pageSomeSelected;
+                    }}
+                    onChange={togglePageSelection}
+                  />
+                </label>
+              </th>
+            ) : null}
             {columns.map((column) => (
               <th
                 key={column.key}
@@ -853,7 +924,7 @@ export function Table<Row>({
             {group.header !== null ? (
               <RowBody>
                 <tr className={styles.groupRow}>
-                  <GroupHeaderCell scope={groupHeaderScope} colSpan={columns.length} className={styles.groupHeader}>
+                  <GroupHeaderCell scope={groupHeaderScope} colSpan={columns.length + (selection ? 1 : 0)} className={styles.groupHeader}>
                     {group.header}
                     {groupAside && group.rows[0] !== undefined ? <span className={styles.groupAside}>{groupAside(group.rows[0])}</span> : null}
                   </GroupHeaderCell>
@@ -872,9 +943,42 @@ export function Table<Row>({
                 .map((column) => numericNode(column, column.summary ? column.summary(row) : column.cell(row)))
                 .filter((value): value is ReactNode => value !== null && value !== undefined && value !== "");
 
+              // 06-29(SP-1) — 고른 행 = selectedIds에 있고 지금 고를 수 있는 행. 막힌 행은 배경 칠 없이 이유 글자만.
+              const gate = selection?.selectable(row);
+              const rowSelectable = gate === true;
+              const rowSelected = rowSelectable && selectedIdSet.has(rowId);
+              const gateReason = gate !== undefined && gate !== true ? gate.reason : null;
+              const blockedText = selection?.blockedReason?.(row) ?? null;
+              const gateReasonId = gateReason !== null ? `${rowId}-select-reason` : undefined;
+              const blockedReasonId = blockedText ? `${rowId}-select-blocked` : undefined;
+
               return (
                 <RowBody key={rowId} {...(phoneRowLink ? { className: styles.rowLinkGroup } : {})}>
                   <tr>
+                    {selection ? (
+                      <td
+                        role={hasEditableCell ? "gridcell" : undefined}
+                        className={[styles.cell, styles.selectCell, rowSelected ? styles.selectedRow : ""].join(" ")}
+                        onKeyDown={(event) => {
+                          // 체크박스 위 Ctrl+Enter도 화면 1차다(DR-8). Space는 체크박스 기본 동작.
+                          if (isCtrlCombo(event, "Enter")) {
+                            event.preventDefault();
+                            selection.onPrimary?.();
+                          }
+                        }}
+                      >
+                        <label className={styles.selectLabel}>
+                          <input
+                            type="checkbox"
+                            aria-label={`${selection.rowLabel(row)} 고르기`}
+                            aria-disabled={rowSelectable ? undefined : "true"}
+                            aria-describedby={[gateReasonId, blockedReasonId].filter(Boolean).join(" ") || undefined}
+                            checked={rowSelected}
+                            onChange={() => toggleRowSelection(row)}
+                          />
+                        </label>
+                      </td>
+                    ) : null}
                     {columns.map((column, colIndex) => {
                       const editability = cellEditability(column, row);
                       const isEditableColumn = editability === "edit";
@@ -911,6 +1015,7 @@ export function Table<Row>({
                             editability === "locked" ? styles.lockedCell : "",
                             invalid ? (issue.kind === "conflict" ? styles.conflictCell : styles.errorCell) : "",
                             enableGridKeyboard && keyboardState.isInSelection(pos) ? styles.selectedCell : "",
+                            rowSelected ? styles.selectedRow : "",
                             !invalid && cellDirty?.(row, column.key) ? styles.dirtyCell : "",
                             cellSaved?.(row, column.key) ? styles.savedTint : "",
                           ].join(" ")}
@@ -929,6 +1034,21 @@ export function Table<Row>({
                           onKeyDown={
                             enableGridKeyboard
                               ? (event) => {
+                                  // 선택 표 — 편집 중이 아닐 때 Space는 활성 셀 행 고르기(편집 진입은 Enter · 글자 입력). 격자 키보드 훅보다 먼저 받는다.
+                                  if (
+                                    selection &&
+                                    event.key === " " &&
+                                    event.target === event.currentTarget &&
+                                    activeCell === null &&
+                                    !event.ctrlKey &&
+                                    !event.altKey &&
+                                    !event.shiftKey &&
+                                    !event.nativeEvent.isComposing
+                                  ) {
+                                    event.preventDefault();
+                                    toggleRowSelection(row);
+                                    return;
+                                  }
                                   if (handleConflictKey(event, issue)) return;
                                   keyboardState.handleKeyDown(event, pos);
                                 }
@@ -972,6 +1092,16 @@ export function Table<Row>({
                               ))}
                             </p>
                           ) : null}
+                          {selection && colIndex === 0 && gateReason !== null ? (
+                            <p id={gateReasonId} className={styles.selectReason}>
+                              {gateReason}
+                            </p>
+                          ) : null}
+                          {selection && colIndex === 0 && blockedText ? (
+                            <p id={blockedReasonId} className={`${styles.selectReason} ${styles.selectBlocked}`}>
+                              {blockedText}
+                            </p>
+                          ) : null}
                         </td>
                       );
                     })}
@@ -983,7 +1113,7 @@ export function Table<Row>({
                     >
                       {onRowTap ? (
                         <td
-                          colSpan={columns.length}
+                          colSpan={columns.length + (selection ? 1 : 0)}
                           className={[styles.collapsedCell, styles.collapsedCellTap].join(" ")}
                           role="button"
                           tabIndex={0}
@@ -1001,7 +1131,7 @@ export function Table<Row>({
                           ))}
                         </td>
                       ) : (
-                        <td colSpan={columns.length} className={styles.collapsedCell}>
+                        <td colSpan={columns.length + (selection ? 1 : 0)} className={styles.collapsedCell}>
                           {p2Values.map((value, index) => (
                             <span key={index}>{index > 0 ? " · " : ""}{value}</span>
                           ))}

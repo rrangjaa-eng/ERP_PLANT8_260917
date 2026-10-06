@@ -88,3 +88,21 @@ describe("지금 필터를 지키는 1차 · 패널 닫기(P3-3)", () => {
     expect(html).toContain('data-close-href="/cards"');
   });
 });
+
+describe("쓸 카드 0장 빈 화면(DOM 감사 O3)", () => {
+  it("할 수 없는 필터(월 · 카드 · 연결)를 그리지 않는다", async () => {
+    formOptions.mockResolvedValue(options([]));
+    list.mockResolvedValue(emptyList());
+    const html = await render({});
+    expect(html).toContain("쓸 수 있는 법인카드가 없습니다 · 카드 등록은 관리자");
+    expect(html).not.toContain('id="card-usage-filter-month"');
+    expect(html).not.toContain('id="card-usage-filter-card"');
+    expect(html).not.toContain('id="card-usage-filter-link"');
+  });
+
+  it("카드가 있는 빈 화면에는 필터가 선다(대조)", async () => {
+    formOptions.mockResolvedValue(options([CARD]));
+    list.mockResolvedValue(emptyList());
+    expect(await render({})).toContain('id="card-usage-filter-month"');
+  });
+});

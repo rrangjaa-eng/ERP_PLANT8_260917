@@ -130,7 +130,9 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
   }
 
   const newAction = { label: "카드 사용 등록", href: newHref };
-  const filters = list ? (
+  // 쓸 카드 0장 · 필터 없는 빈 목록 — 고를 것이 없는 필터 줄은 세우지 않는다(할 수 없는 선택지는 숨김).
+  const nothingToFilter = cards.length === 0 && rows.length === 0 && !filtered;
+  const filters = list && !nothingToFilter ? (
     <CardUsageFilters
       month={month}
       thisMonth={thisMonth}

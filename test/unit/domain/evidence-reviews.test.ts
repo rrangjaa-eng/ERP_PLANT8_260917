@@ -116,6 +116,11 @@ describe("resolveExpenseActionRow — P5 (06-06 Task 2)", () => {
   it("지급 권한 없는 사람 → P6 버튼 없음", () => {
     expect(resolveExpenseActionRow({ ...paid, confirmation: null }, { canPay: false })).toMatchObject({ row: "P6", primary: null, secondary: null });
   });
+
+  it("O-2 상수를 false로 주입하면 P2 · P5 둘 다 사라진다 — 같은 상수 한 곳을 읽는다(06-06 검토 S-6)", () => {
+    expect(resolveExpenseActionRow({ ...paid, confirmation: null }, payer, false)).toMatchObject({ row: "P6", primary: null });
+    expect(resolveExpenseActionRow({ ...paid, paid: false, confirmation: null }, payer, false)).toMatchObject({ row: "P4", primary: "pay" });
+  });
 });
 
 describe("evidenceGateInputs — 잠금 뒤 tx로 한 함수에서 (06-06 Task 2)", () => {

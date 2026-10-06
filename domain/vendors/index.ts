@@ -66,6 +66,8 @@ export function businessNoDigits(raw: string | null | undefined): string | null 
   return digits === "" ? null : digits;
 }
 
+const ARCHIVE_MENU = "admin.archive";
+
 function duplicateBusinessNoMessage(existing: DuplicateBusinessNoExisting | null, addSide: VendorSide | null): string {
   if (existing === null) return "같은 사업자번호 거래처 있음";
   if (existing.archived) return `보관함에 같은 사업자번호 거래처 있음 · ${existing.name}`;
@@ -78,7 +80,7 @@ function duplicateBusinessNoMessage(existing: DuplicateBusinessNoExisting | null
 async function assertBusinessNoFree(
   viewer: Viewer,
   rawBusinessNo: string | null | undefined,
-  opts: { excludeId?: string; wantedKind?: VendorKind; tx?: DbOrTx; visible: typeof defaultVisible },
+  opts: { excludeId?: string; wantedKind?: VendorKind; tx?: DbOrTx; visible: typeof defaultVisible; can?: typeof defaultCan },
 ): Promise<void> {
   const digits = businessNoDigits(rawBusinessNo);
   if (digits === null) return;
@@ -88,6 +90,10 @@ async function assertBusinessNoFree(
     throw new DuplicateBusinessNoError(null, null, duplicateBusinessNoMessage(null, null));
   }
   const archived = match.archivedAt !== null;
+  // 보관된 거래처의 이름 · 「보관함에서 복원」 링크는 보관함을 볼 수 있는 사람에게만(못 들어가는 곳을 가리키지 않는다).
+  if (archived && !(await (opts.can ?? defaultCan)(viewer, ARCHIVE_MENU, "view"))) {
+    throw new DuplicateBusinessNoError(null, null, "보관함에 같은 사업자번호 거래처 있음");
+  }
   const existing: DuplicateBusinessNoExisting = { id: match.id, name: match.name, kind: match.kind, hidden: match.hidden, archived };
   // 숨긴 거래처는 「그 거래처 열기」(계획 §8) — 구분을 더해도 숨김이라 고르기에 나오지 않는다.
   const addSide = opts.wantedKind === undefined || match.hidden ? null : vendorKindToAdd(match.kind, opts.wantedKind, archived);
@@ -372,7 +378,7 @@ export async function createVendor(
   });
   const normalizedName = normalizeVendorName(input.name);
   const visibleFn = deps?.visible ?? defaultVisible;
-  await assertBusinessNoFree(viewer, input.businessNo, { wantedKind: input.kind ?? "both", visible: visibleFn });
+  await assertBusinessNoFree(viewer, input.businessNo, { wantedKind: input.kind ?? "both", visible: visibleFn, can: canFn });
   const duplicates = await repoFindVendorsByNormalizedName(viewer, normalizedName);
 
   // create에는 "안 바꿈" 개념이 없다 — keep이든 clear든 지울 기존 값이 없으므로
@@ -398,7 +404,7 @@ export async function createVendor(
   } catch (error) {
     // 조회와 삽입 사이 경합으로 유일 색인이 먼저 걸리면 같은 조회로 같은 오류로 바꾼다(domain/custom-fields/admin.ts 선례).
     if (isUniqueViolation(error, BUSINESS_NO_UNIQUE_INDEX)) {
-      await assertBusinessNoFree(viewer, input.businessNo, { wantedKind: input.kind ?? "both", visible: visibleFn });
+      await assertBusinessNoFree(viewer, input.businessNo, { wantedKind: input.kind ?? "both", visible: visibleFn, can: canFn });
     }
     throw error;
   }
@@ -436,7 +442,9 @@ export async function updateVendor(
 
   const normalizedName = normalizeVendorName(input.name);
   const visibleFn = deps?.visible ?? defaultVisible;
-  await assertBusinessNoFree(viewer, input.businessNo, { excludeId: id, visible: visibleFn });
+  // 저장된 번호에서 숫자가 바뀔 때만 검사한다 — 이미 있는 중복을 둔 채 이름 · 계좌만 고치는 저장은 막지 않는다.
+  const numberChanged = businessNoDigits(input.businessNo) !== businessNoDigits(existing.businessNo);
+  if (numberChanged) await assertBusinessNoFree(viewer, input.businessNo, { excludeId: id, visible: visibleFn, can: canFn });
 
   const updatePayload: Parameters<typeof repoUpdateVendor>[2] = {
     name: input.name,
@@ -472,7 +480,7 @@ export async function updateVendor(
     }
   } catch (error) {
     if (isUniqueViolation(error, BUSINESS_NO_UNIQUE_INDEX)) {
-      await assertBusinessNoFree(viewer, input.businessNo, { excludeId: id, visible: visibleFn });
+      await assertBusinessNoFree(viewer, input.businessNo, { excludeId: id, visible: visibleFn, can: canFn });
     }
     throw error;
   }

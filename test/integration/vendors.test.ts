@@ -366,6 +366,33 @@ describe("vendors 사업자번호 중복 막기 (실제 Postgres)", () => {
     expect(b.vendor.businessNo).toBe(other);
   });
 
+  it("수정 — 저장된 숫자 번호가 그대로면 같은 번호의 살아 있는 거래처가 둘 있어도 이름 · 계좌만 고쳐 저장된다", async () => {
+    const no = uniqueBizNo();
+    const { vendor: a } = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no });
+    // 색인 전(PR A)에 이미 생긴 중복을 직접 넣는다.
+    const [twin] = await db.insert(vendors).values({ name: uniqueName(), normalizedName: uniqueName(), businessNo: no.replaceAll("-", "") }).returning();
+    const renamed = `${a.name}-고침`;
+    await updateVendor(SYSTEM_VIEWER, a.id, { name: renamed, businessNo: no.replaceAll("-", ""), accountBank: "국민" });
+    const [row] = await db.select().from(vendors).where(eq(vendors.id, a.id));
+    expect(row?.name).toBe(renamed);
+    // 숫자가 바뀌면 여전히 막는다.
+    const other = uniqueBizNo();
+    await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: other });
+    await expect(updateVendor(SYSTEM_VIEWER, a.id, { name: renamed, businessNo: other })).rejects.toBeInstanceOf(DuplicateBusinessNoError);
+    await db.delete(vendors).where(eq(vendors.id, twin?.id ?? ""));
+  });
+
+  it("보관함 보기 권한이 없는 사람에게는 보관된 거래처 이름 · id를 싣지 않고 문구만 준다", async () => {
+    const no = uniqueBizNo();
+    const { vendor } = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no });
+    await archive(SYSTEM_VIEWER, "vendor", vendor.id);
+    const noArchiveView = (_viewer: unknown, menu: string) => Promise.resolve(menu !== "admin.archive");
+    const error = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no }, { can: noArchiveView as never }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(DuplicateBusinessNoError);
+    expect((error as DuplicateBusinessNoError).existing).toBeNull();
+    expect((error as DuplicateBusinessNoError).message).toBe("보관함에 같은 사업자번호 거래처 있음");
+  });
+
   it("addVendorKind — 갈래만 켜고 로그 1건, 이미 덮으면 그대로, 보관이면 막는다", async () => {
     const pm = await makeTestPmViewer();
     await upsertPermission(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, menu: "admin.vendors", action: "write", allowed: true });

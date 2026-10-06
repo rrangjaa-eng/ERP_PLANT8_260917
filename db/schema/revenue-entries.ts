@@ -1,4 +1,6 @@
-import { pgTable, text, integer, jsonb, timestamp, uuid, date, index } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { pgTable, text, integer, jsonb, timestamp, uuid, date, index, uniqueIndex, check } from "drizzle-orm/pg-core";
+import { users } from "./auth";
 import { projects } from "./projects";
 import { moneyColumns } from "./money-columns";
 
@@ -30,5 +32,36 @@ export const revenueEntries = pgTable(
   (table) => [
     index("revenue_entries_project_kind_date_idx").on(table.projectId, table.kind, table.entryDate),
     index("revenue_entries_custom_fields_idx").using("gin", table.customFields),
+  ],
+);
+
+// 06-27(PROJ-06): 세금계산서 발행 요청 — PM이 희망 발행일 · 공급가를 요청하고, 발행되면 발행 줄 하나에 잇는다(한 발행 줄에 요청 하나).
+// 상태: requested(신청됨) · issued(발행됨) · cancelled(취소). 금액 음수 제약은 두지 않는다(위 revenue_entries 관례 — 조정 · 할인).
+export const revenueIssueRequests = pgTable(
+  "revenue_issue_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "restrict" }),
+    desiredIssueDate: date("desired_issue_date").notNull(),
+    ...moneyColumns("amount"),
+    memo: text("memo"),
+    status: text("status").notNull().default("requested"),
+    issuedEntryId: uuid("issued_entry_id").references(() => revenueEntries.id),
+    requestedBy: text("requested_by")
+      .notNull()
+      .references(() => users.id),
+    cancelledBy: text("cancelled_by").references(() => users.id),
+    cancelledAt: timestamp("cancelled_at"),
+    version: integer("version").notNull().default(1),
+    source: text("source").notNull().default("demo"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    check("revenue_issue_requests_status_check", sql`${table.status} IN ('requested','issued','cancelled')`),
+    check("revenue_issue_requests_issued_check", sql`${table.status} <> 'issued' OR ${table.issuedEntryId} IS NOT NULL`),
+    uniqueIndex("revenue_issue_requests_issued_entry_uniq").on(table.issuedEntryId),
+    index("revenue_issue_requests_project_status_idx").on(table.projectId, table.status),
   ],
 );

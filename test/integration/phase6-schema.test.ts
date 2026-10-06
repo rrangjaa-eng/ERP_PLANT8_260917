@@ -22,6 +22,24 @@ import { setupExpenseProject } from "./fixtures/expenses";
 
 type PgCause = { code?: unknown; constraint?: unknown };
 
+// link_kind_check는 link_check에 포함된다(모르는 종류 값이면 link_check도 거짓) — 그런 행 하나는 두 CHECK를 함께 어기고 PG는
+// 이름 순서로 먼저 걸린 link_check를 보고한다. 그래서 거부(23514 · 둘 중 하나)와 link_kind_check 정의 존재를 함께 본다.
+async function expectLinkKindRejected(run: () => Promise<unknown>, table: string): Promise<void> {
+  let caught: unknown = null;
+  try {
+    await run();
+  } catch (error) {
+    caught = error;
+  }
+  const cause = (caught instanceof Error ? caught.cause : null) as PgCause | null;
+  expect(cause?.code).toBe("23514");
+  expect([`${table}_link_check`, `${table}_link_kind_check`]).toContain(cause?.constraint);
+  const defs = await db.execute<{ def: string }>(
+    sql`SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname = ${`${table}_link_kind_check`}`,
+  );
+  expect(defs.rows.map((row) => row.def)).toEqual([`CHECK ((link_kind = ANY (ARRAY['quote_line'::text, 'team_cost'::text])))`]);
+}
+
 async function expectPgError(run: () => Promise<unknown>, code: string, constraint: string): Promise<void> {
   let caught: unknown = null;
   try {
@@ -218,9 +236,9 @@ describe("corp_card_usages", () => {
     await expectPgError(() => db.insert(corpCardUsages).values(usageRow(b, { vatKrw: 9_999 })), "23514", "corp_card_usages_amount_sum_check");
   });
 
-  it("모르는 연결 종류는 corp_card_usages_link_kind_check로 거부된다", async () => {
+  it("모르는 연결 종류는 거부되고 corp_card_usages_link_kind_check가 정의돼 있다", async () => {
     const b = await base();
-    await expectPgError(() => db.insert(corpCardUsages).values(usageRow(b, { linkKind: "none" })), "23514", "corp_card_usages_link_kind_check");
+    await expectLinkKindRejected(() => db.insert(corpCardUsages).values(usageRow(b, { linkKind: "none" })), "corp_card_usages");
   });
 
   it("연결이 없으면 corp_card_usages_link_check로 거부된다", async () => {
@@ -298,9 +316,9 @@ describe("purchase_requests", () => {
     await expectPgError(() => db.insert(purchaseRequests).values(purchaseRow(b, { number: "26001-C0001" })), "23505", "purchase_requests_number_uniq");
   });
 
-  it("모르는 연결 종류는 purchase_requests_link_kind_check로 거부된다", async () => {
+  it("모르는 연결 종류는 거부되고 purchase_requests_link_kind_check가 정의돼 있다", async () => {
     const b = await base();
-    await expectPgError(() => db.insert(purchaseRequests).values(purchaseRow(b, { linkKind: "none" })), "23514", "purchase_requests_link_kind_check");
+    await expectLinkKindRejected(() => db.insert(purchaseRequests).values(purchaseRow(b, { linkKind: "none" })), "purchase_requests");
   });
 
   it("팀 비용인데 견적 줄이 있으면 purchase_requests_link_check로 거부된다", async () => {

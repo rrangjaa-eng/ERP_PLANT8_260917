@@ -44,3 +44,33 @@ export const expensePayments = pgTable(
     ),
   ],
 );
+
+// 06-27(EVID-02 · EVID-03): 증빙 확인 · 면제 — 문서당 한 줄(확인이 풀리면 행을 지운다, 06-11). 금액을 고쳐 확인하면
+// 전후 금액 둘 다, 그냥 확인이면 둘 다 null(D-602). 면제에는 사유가 있어야 한다.
+export const expenseEvidenceReviews = pgTable(
+  "expense_evidence_reviews",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    expenseId: uuid("expense_id")
+      .notNull()
+      .references(() => expenses.id),
+    status: text("status").notNull(),
+    amountBeforeKrw: bigint("amount_before_krw", { mode: "number" }),
+    amountAfterKrw: bigint("amount_after_krw", { mode: "number" }),
+    waiveReason: text("waive_reason"),
+    reviewedBy: text("reviewed_by")
+      .notNull()
+      .references(() => users.id),
+    reviewedAt: timestamp("reviewed_at").notNull().defaultNow(),
+    version: integer("version").notNull().default(1),
+  },
+  (table) => [
+    uniqueIndex("expense_evidence_reviews_expense_uniq").on(table.expenseId),
+    check("expense_evidence_reviews_status_check", sql`${table.status} IN ('confirmed','waived')`),
+    check(
+      "expense_evidence_reviews_waive_reason_check",
+      sql`${table.status} <> 'waived' OR (${table.waiveReason} IS NOT NULL AND char_length(btrim(${table.waiveReason})) > 0)`,
+    ),
+    check("expense_evidence_reviews_amount_pair_check", sql`(${table.amountBeforeKrw} IS NULL) = (${table.amountAfterKrw} IS NULL)`),
+  ],
+);

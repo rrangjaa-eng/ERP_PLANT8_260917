@@ -28,5 +28,7 @@ export * from "./holidays";
 export * from "./reserve-entries";
 export * from "./expenses";
 export * from "./expense-payments";
+export * from "./purchase-requests";
+export * from "./corp-card-usages";
 export * from "./files";
 export * from "./settlement-approvals";

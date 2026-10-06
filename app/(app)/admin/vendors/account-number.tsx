@@ -34,26 +34,29 @@ export function AccountNumberCell({
   const display = revealed ?? masked;
 
   return (
-    <div className={styles.accountCell}>
-      <span className={styles.masked}>{display}</span>
-      {canReveal ? (
-        <Button
-          variant="tertiary"
-          pending={isExecuting}
-          onClick={() => {
-            if (revealed !== null) {
-              // 「가리기」는 클라이언트 상태만 되돌린다 — 서버를 다시 부르지
-              // 않는다(재호출하면 그때마다 새 기록이 쌓인다).
-              setRevealed(null);
-              return;
-            }
-            execute({ id: vendorId });
-          }}
-        >
-          {revealed !== null ? "가리기" : "번호 보기"}
-        </Button>
-      ) : null}
+    <>
+      <div className={styles.accountCell}>
+        <span className={styles.masked}>{display}</span>
+        {canReveal ? (
+          <Button
+            variant="tertiary"
+            pending={isExecuting}
+            onClick={() => {
+              if (revealed !== null) {
+                // 「가리기」는 클라이언트 상태만 되돌린다 — 서버를 다시 부르지
+                // 않는다(재호출하면 그때마다 새 기록이 쌓인다).
+                setRevealed(null);
+                return;
+              }
+              execute({ id: vendorId });
+            }}
+          >
+            {revealed !== null ? "가리기" : "번호 보기"}
+          </Button>
+        ) : null}
+      </div>
+      {/* 실패 줄은 번호 줄 밖 아래에 둔다 — 같은 flex 줄에 끼면 번호가 옆 열 쪽으로 밀린다. */}
       {result.serverError ? <p className={styles.revealError}>번호 불러오기 실패 · 다시 시도</p> : null}
-    </div>
+    </>
   );
 }

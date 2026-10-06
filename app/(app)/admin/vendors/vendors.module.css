@@ -49,6 +49,7 @@
 }
 
 .revealError {
+  text-align: right;
   font-size: var(--text-aux);
   color: var(--status-danger);
   margin-top: var(--s-1);

@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
 import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
-import { randomUUID } from "node:crypto";
+import { randomUUID, randomBytes, createCipheriv } from "node:crypto";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { insertVendor, setVendorHidden } from "@/repositories/vendors";
 
@@ -146,6 +146,52 @@ test.describe("거래처 수정 패널 칸 배치 (04.6-11 D14 · M2)", () => {
       expect(labelBox!.y + labelBox!.height, "라벨이 select 위").toBeLessThanOrEqual(selectBox!.y + 0.5);
       const accountBox = await form.getByLabel("새 계좌번호").boundingBox();
       expect(Math.abs(accountBox!.width - nameBox!.width), "계좌번호 칸 폭 = 입력 폭(전폭)").toBeLessThanOrEqual(0.5);
+    } finally {
+      await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
+    }
+  });
+});
+
+// 스테이징 신고(2026-10-06): 「번호 보기」가 실패하면 오류 문구가 번호 옆 같은 줄에 끼어 계좌 값이 「상태」 열 쪽으로 밀렸고,
+// 머리글 「계좌」만 왼쪽에 있어 값과 반대편에 붙었다. 다른 키로 잠근 암호문(지금 키로 못 푼다)으로 실패를 재현한다.
+test.describe("거래처 계좌 칸 정렬 · 해제 실패 줄", () => {
+  test("머리글과 값이 같은 오른쪽 끝 · 실패 문구는 번호 아래 줄", async ({ page }) => {
+    const otherKey = randomBytes(32);
+    const iv = randomBytes(12);
+    const cipher = createCipheriv("aes-256-gcm", otherKey, iv);
+    const data = Buffer.concat([cipher.update("110-222-334455", "utf8"), cipher.final()]);
+    const foreign = `v1:${iv.toString("base64")}:${cipher.getAuthTag().toString("base64")}:${data.toString("base64")}`;
+    const name = `계좌정렬-${randomUUID().slice(0, 8)}`;
+    const vendor = await insertVendor(SYSTEM_VIEWER, {
+      name,
+      normalizedName: `계좌정렬-${randomUUID()}`,
+      accountNumberEncrypted: foreign,
+      accountNumberLast4: "4455",
+    });
+    try {
+      await loginAsSysadmin(page);
+      await page.goto("/admin/vendors");
+      const row = page.locator("tr", { hasText: name });
+      await row.getByRole("button", { name: "번호 보기" }).click();
+      const error = row.getByText("번호 불러오기 실패 · 다시 시도");
+      await expect(error).toBeVisible();
+
+      // 머리글 글자 자체의 상자(칸 상자가 아니라) — 칸 오른쪽 안쪽 끝과의 거리를 잰다.
+      const headerGap = await page.getByRole("columnheader", { name: "계좌" }).evaluate((th) => {
+        const range = document.createRange();
+        range.selectNodeContents(th);
+        const text = range.getBoundingClientRect();
+        const box = th.getBoundingClientRect();
+        const padRight = parseFloat(getComputedStyle(th).paddingRight);
+        return box.right - padRight - text.right;
+      });
+      const masked = await row.getByText("****-**-4455").boundingBox();
+      const button = await row.getByRole("button", { name: "번호 보기" }).boundingBox();
+      const errorBox = await error.boundingBox();
+      // 머리글 글자가 칸 오른쪽에 붙는다(값과 같은 쪽).
+      expect(headerGap, "머리글 글자가 칸 오른쪽 끝에 붙는다").toBeLessThanOrEqual(1);
+      // 실패 문구는 번호 · 버튼 줄 아래에 있다.
+      expect(errorBox!.y, "실패 문구가 번호 아래 줄").toBeGreaterThanOrEqual(Math.max(masked!.y + masked!.height, button!.y + button!.height) - 1);
     } finally {
       await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
     }

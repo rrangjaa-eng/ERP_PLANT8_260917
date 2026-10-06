@@ -5,7 +5,14 @@ import { revalidatePath } from "next/cache";
 import { authedActionClient } from "@/lib/actions/client";
 import { isCalendarDate, seoulToday } from "@/lib/dates";
 import { CURRENCIES } from "@/domain/money/currency";
-import { createCardUsage, precheckCardUsage, previewCardAmounts, searchMerchantsForCard, type CardUsageInput } from "@/domain/corp-card-usages";
+import {
+  createCardUsage,
+  listProjectCardUsages,
+  precheckCardUsage,
+  previewCardAmounts,
+  searchMerchantsForCard,
+  type CardUsageInput,
+} from "@/domain/corp-card-usages";
 import { cardUsedOnError, USED_ON_FUTURE } from "@/domain/corp-card-usages/amounts";
 import { searchLinesForCardLink, searchProjectsForCardLink } from "@/domain/corp-card-usages/link-targets";
 import "./actions.registry";
@@ -103,3 +110,8 @@ export const searchProjectsForCardLinkAction = authedActionClient
 export const searchLinesForCardLinkAction = authedActionClient
   .schema(z.object({ projectId: z.uuid(), query: z.string().max(100), currentLineId: z.uuid().nullable() }))
   .action(async ({ parsedInput, ctx }) => searchLinesForCardLink(ctx.viewer, parsedInput));
+
+// 06-07(S15): 프로젝트 상세 「법인카드 사용」 섹션 — 섹션이 따로 불러 실패해도 상세의 다른 섹션은 선다(§7-7). 금액 칸은 서버가 가른다.
+export const listProjectCardUsagesAction = authedActionClient
+  .schema(z.object({ projectId: z.uuid() }))
+  .action(async ({ parsedInput, ctx }) => listProjectCardUsages(ctx.viewer, parsedInput.projectId));

@@ -24,6 +24,7 @@ import {
   findLastCardUsageByRegistrant,
   insertCardUsage,
   listCardUsageRows,
+  listProjectCardUsageRows,
   type CardUsageFilter,
   type CardUsageLinkFilter,
   type CardUsageListRow,
@@ -36,7 +37,7 @@ import "@/domain/rules/register";
 import { CompletedProjectError } from "@/domain/projects";
 import { quoteLockReason } from "@/domain/quotes/edit-scope";
 import { findProjectById } from "@/repositories/projects";
-import { findQuoteLineById } from "@/repositories/quote-lines";
+import { findQuoteLineById, listQuoteLinesByRevisions } from "@/repositories/quote-lines";
 import { findLatestQuoteRevision, findQuoteRevisionById } from "@/repositories/quote-revisions";
 import { findLineLinks, lockQuoteLines } from "@/repositories/quote-line-links";
 import { findVendorNamesByIds } from "@/repositories/vendors";
@@ -593,4 +594,97 @@ export async function cardUsageFormDefaults(viewer: Viewer, today: string, entry
   if (last.linkKind === "team_cost") return { ...base, linkKind: "team_cost", project: null, line: null };
   const project = last.projectId ? await cardLinkProjectChoice(viewer, last.projectId) : null;
   return { ...base, linkKind: last.lineKind === "out_of_quote" ? "out_of_quote" : "quote_line", project, line: null };
+}
+
+// ── 프로젝트 상세 「법인카드 사용」(S15) ─────────────────────────────────────
+
+export type ProjectCardUsageDto = {
+  id: string;
+  usedOn: string;
+  /** `{번호} {항목}`(그 줄 차수 안 순번 — S10 줄 목록과 같은 셈) / `견적 외 비용 · {항목}`. */
+  lineLabel: string;
+  merchantName: string | null;
+  registeredVia: string;
+  registeredByName: string;
+  /** 등록한 날(서울 날짜) — 경영관리 등록 행의 2행 `{등록자} {MM-DD}`. */
+  registeredOn: string;
+  totalKrw: number;
+  supplyKrw: number;
+};
+
+export type ProjectCardUsageTotalsDto = { count: number; totalKrw: number };
+
+// 금액 칸 · 합계 행의 결제 합계 = 견적 표 금액 열과 같은 `quote.amount`(새 정보 항목 없음), 나머지는 `project.value`.
+const PROJECT_CARD_USAGE_DTO_SPEC: DtoSpec<ProjectCardUsageDto, ProjectCardUsageDto> = {
+  fields: [
+    ...(["id", "usedOn", "lineLabel", "merchantName", "registeredVia", "registeredByName", "registeredOn"] as const).map((key) => ({
+      key,
+      from: key,
+      infoItem: "project.value",
+    })),
+    ...(["totalKrw", "supplyKrw"] as const).map((key) => ({ key, from: key, infoItem: "quote.amount" })),
+  ],
+};
+
+const PROJECT_CARD_USAGE_TOTALS_DTO_SPEC: DtoSpec<ProjectCardUsageTotalsDto, ProjectCardUsageTotalsDto> = {
+  fields: [
+    { key: "count", from: "count", infoItem: "project.value" },
+    { key: "totalKrw", from: "totalKrw", infoItem: "quote.amount" },
+  ],
+};
+
+registerDto({
+  name: "ProjectCardUsageDto",
+  fields: PROJECT_CARD_USAGE_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })),
+});
+registerDto({
+  name: "ProjectCardUsageTotalsDto",
+  fields: PROJECT_CARD_USAGE_TOTALS_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })),
+});
+
+export type ProjectCardUsages = {
+  rows: Partial<ProjectCardUsageDto>[];
+  totals: Partial<ProjectCardUsageTotalsDto>;
+  /** 빈 섹션 3차 `카드 사용 등록`을 보일지 — 오늘 쓸 카드가 한 장 이상. */
+  canRegister: boolean;
+};
+
+const PROJECTS_VIEW_DENIED = "프로젝트 보기 권한 없음";
+
+export async function listProjectCardUsages(viewer: Viewer, projectId: string): Promise<ProjectCardUsages> {
+  if (!(await can(viewer, "projects", "view"))) throw new ForbiddenError(PROJECTS_VIEW_DENIED);
+  const rows = await listProjectCardUsageRows(viewer, projectId);
+  const lines = await listQuoteLinesByRevisions(viewer, [...new Set(rows.map((row) => row.revisionId))]);
+  const lineNo = new Map<string, number>();
+  const seen = new Map<string, number>();
+  for (const line of lines) {
+    const next = (seen.get(line.revisionId) ?? 0) + 1;
+    seen.set(line.revisionId, next);
+    lineNo.set(line.id, next);
+  }
+  const items: ProjectCardUsageDto[] = rows.map((row) => {
+    const number = row.quoteLineId ? lineNo.get(row.quoteLineId) : undefined;
+    return {
+      id: row.id,
+      usedOn: row.usedOn,
+      lineLabel:
+        row.lineKind === "out_of_quote" ? `견적 외 비용 · ${row.lineItemName}` : number === undefined ? row.lineItemName : `${number} ${row.lineItemName}`,
+      merchantName: row.merchantName,
+      registeredVia: row.registeredVia,
+      registeredByName: row.registeredByName,
+      registeredOn: seoulToday(row.createdAt),
+      totalKrw: row.totalAmountKrw,
+      supplyKrw: row.supplyKrw,
+    };
+  });
+  const [totals] = await projectMany(
+    viewer,
+    [{ count: items.length, totalKrw: sumKrw(items.map((item) => item.totalKrw)) }],
+    PROJECT_CARD_USAGE_TOTALS_DTO_SPEC,
+  );
+  return {
+    rows: await projectMany(viewer, items, PROJECT_CARD_USAGE_DTO_SPEC),
+    totals: totals ?? {},
+    canRegister: (await cardOptionsForUsage(viewer, seoulToday())).length > 0,
+  };
 }

@@ -32,6 +32,7 @@ import { canCreateProject } from "../create-entry";
 import type { DetailScreenProps } from "@/ui/detail-screen/DetailScreen";
 import { QuoteLedger } from "./quote-table";
 import { RevisionSection } from "./revision-section";
+import { CardUsageSection } from "./card-usage-section";
 import type { StatusChangeProps } from "./status-change";
 import type { CustomerApprovalProps, NewRevisionProps } from "./revision-dialogs";
 import { getPerson } from "@/domain/people";
@@ -278,6 +279,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       usdDefaultFxRate={usdDefaultFxRate}
       lineDoors={lineDoors}
     >
+      {/* 06-07(S15) — 매출 섹션 아래 「법인카드 사용」(섹션이 따로 불러 실패해도 다른 섹션은 선다). */}
+      <CardUsageSection projectId={project.id} />
       {/* 04-24(S3 섹션 순서 ③ → ④) — 매출(원장 안 마지막 섹션) 뒤에 차수 섹션, 그 아래 이전 차수 읽기 섹션. */}
       <RevisionSection
         projectId={project.id}

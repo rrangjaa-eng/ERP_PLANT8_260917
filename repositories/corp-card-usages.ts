@@ -127,3 +127,43 @@ export async function findLastCardUsageByRegistrant(
     .limit(1);
   return row ?? null;
 }
+
+// 06-07(S15) — 프로젝트 상세 「법인카드 사용」 재료. 그 프로젝트 차수의 견적 줄(견적 외 비용 포함)에 이은 건만 · 보관 안 된 것만(H-4) ·
+// 사용일 오름차순. 팀 비용 건은 견적 줄이 없어 inner join에서 빠진다.
+export type ProjectCardUsageRow = Pick<
+  CardUsageRow,
+  "id" | "usedOn" | "quoteLineId" | "totalAmountKrw" | "supplyKrw" | "registeredVia" | "createdAt"
+> & {
+  merchantName: string | null;
+  registeredByName: string;
+  lineItemName: string;
+  lineKind: string;
+  revisionId: string;
+};
+
+export async function listProjectCardUsageRows(viewer: Viewer, projectId: string): Promise<ProjectCardUsageRow[]> {
+  void viewer;
+  const rows = await db
+    .select({
+      id: corpCardUsages.id,
+      usedOn: corpCardUsages.usedOn,
+      quoteLineId: corpCardUsages.quoteLineId,
+      totalAmountKrw: corpCardUsages.totalAmountKrw,
+      supplyKrw: corpCardUsages.supplyKrw,
+      registeredVia: corpCardUsages.registeredVia,
+      createdAt: corpCardUsages.createdAt,
+      merchantName: vendors.name,
+      registeredByName: users.name,
+      lineItemName: quoteLines.itemName,
+      lineKind: quoteLines.lineKind,
+      revisionId: quoteLines.revisionId,
+    })
+    .from(corpCardUsages)
+    .innerJoin(quoteLines, eq(quoteLines.id, corpCardUsages.quoteLineId))
+    .innerJoin(quoteRevisions, eq(quoteRevisions.id, quoteLines.revisionId))
+    .innerJoin(users, eq(users.id, corpCardUsages.registeredBy))
+    .leftJoin(vendors, eq(vendors.id, corpCardUsages.merchantVendorId))
+    .where(and(eq(quoteRevisions.projectId, projectId), eq(corpCardUsages.linkKind, "quote_line"), isNull(corpCardUsages.archivedAt)))
+    .orderBy(asc(corpCardUsages.usedOn), asc(corpCardUsages.createdAt), asc(corpCardUsages.id));
+  return rows;
+}

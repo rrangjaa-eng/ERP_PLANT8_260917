@@ -36,3 +36,10 @@ registerAction({
   action: "write",
   dtoName: "CardLinkLineDto",
 });
+
+registerAction({
+  name: "listProjectCardUsagesAction",
+  menu: "projects",
+  action: "view",
+  dtoName: "ProjectCardUsageDto",
+});

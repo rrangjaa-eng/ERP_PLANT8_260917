@@ -1104,6 +1104,20 @@ describe("프로젝트 상세 「법인카드 사용」(S15)", () => {
     expect(result.totals).toEqual({ count: 1, totalKrw: 100_000 });
   });
 
+  it("보관된 프로젝트 — 보관 보기(admin.archive view) 없는 계정은 「존재하지 않는 프로젝트」, 있는 계정은 행을 받는다(findProject와 같은 범위 · PR #180 Codex P2)", async () => {
+    const fx = await cardProject();
+    const kept = await cardOnLine(fx, fx.lines[0] ?? "", 100_000);
+    await db.update(projects).set({ archivedAt: new Date() }).where(eq(projects.id, fx.projectId));
+    await expect(listProjectCardUsages(fx.pm, fx.projectId)).rejects.toBeInstanceOf(ProjectNotFoundError);
+
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `보관보기-${randomUUID().slice(0, 8)}`, workScope: "company" });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "admin.archive", action: "view", allowed: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "project.value", visible: true });
+    const archivist = await makePerson("보관담당", role.id, null);
+    expect((await listProjectCardUsages(archivist, fx.projectId)).rows.map((row) => row.id)).toEqual([kept]);
+  });
+
   it("quote.amount 없는 계급 → 행 · 합계 행에 금액 키 없음(건수만)", async () => {
     const fx = await cardProject();
     await cardOnLine(fx, fx.lines[0] ?? "", 100_000);

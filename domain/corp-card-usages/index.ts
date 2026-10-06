@@ -9,7 +9,7 @@ import { loadTaxRates, type TaxRates } from "@/domain/money/tax";
 import { moneyToColumns, normalizeMoneyInput, sumKrw, toKrw, type MoneyInput } from "@/domain/money";
 import { taxRuleSchema, type TaxRule } from "@/domain/code-tables/tax-rule";
 import { teamAtDate } from "@/domain/org";
-import { loadActorTeamScope } from "@/domain/projects/status";
+import { loadActorTeamScope, ProjectNotFoundError } from "@/domain/projects/status";
 import { cardUsedOnError, isCardEvidenceRule, splitCardTotal, type CardSplit } from "@/domain/corp-card-usages/amounts";
 import { recentFxRate } from "@/domain/money/currency";
 import { seoulToday } from "@/lib/dates";
@@ -39,6 +39,7 @@ import "@/domain/rules/register";
 import { CompletedProjectError } from "@/domain/projects";
 import { quoteLockReason } from "@/domain/quotes/edit-scope";
 import { findProjectById } from "@/repositories/projects";
+import { scopeFor } from "@/domain/permissions/scope-for";
 import { findQuoteLineById, listQuoteLinesByRevisions } from "@/repositories/quote-lines";
 import { findLatestQuoteRevision, findQuoteRevisionById } from "@/repositories/quote-revisions";
 import { findLineLinks, lockQuoteLines } from "@/repositories/quote-line-links";
@@ -699,6 +700,10 @@ const PROJECTS_VIEW_DENIED = "프로젝트 보기 권한 없음";
 
 export async function listProjectCardUsages(viewer: Viewer, projectId: string): Promise<ProjectCardUsages> {
   if (!(await can(viewer, "projects", "view"))) throw new ForbiddenError(PROJECTS_VIEW_DENIED);
+  // 상세 화면의 findProject와 같은 범위 — 보관된 프로젝트는 보관 보기(admin.archive) 계정에게만(액션을 직접 불러도 같다).
+  const scope = await scopeFor(viewer, "project");
+  const projectRow = await findProjectById(viewer, projectId);
+  if (!projectRow || (projectRow.archivedAt !== null && !scope.includeArchived)) throw new ProjectNotFoundError();
   const rows = await listProjectCardUsageRows(viewer, projectId);
   const lineNo = await lineNumbers(viewer, rows.map((row) => row.revisionId));
   const items: ProjectCardUsageDto[] = rows.map((row) => {

@@ -100,6 +100,8 @@ export function PaymentActionRow() {
       justSavedScheduleRef.current = true;
       setSchedule(null);
       router.refresh();
+      // 기준일이 지급 예정일이면 저장한 날짜로 지급 총액이 바뀐다 — 미리보기를 다시 받아 다음 1차가 새 값을 보낸다(06-04 검토 P3-2).
+      refreshPreview();
     },
     onError: ({ error }) => {
       const dateError = error.validationErrors?.scheduledPayDate?._errors?.[0];
@@ -224,7 +226,7 @@ export function PaymentActionRow() {
           ) : (
             <>
               <StatusTag status="지급 완료" />
-              <span ref={resultRef} tabIndex={-1} role="status" data-testid="payment-result">
+              <span ref={resultRef} tabIndex={-1} role="status" className={styles.resultSuccess} data-testid="payment-result">
                 지급 완료 → {view.payDate} · {view.paidTime}
               </span>
               {canCancel ? (
@@ -279,6 +281,7 @@ function CancelPaymentDialog({
   subtitle: string;
   onCancelled: () => void;
 }) {
+  const router = useRouter();
   const fieldId = useId();
   const [reason, setReason] = useState("");
   const [serverError, setServerError] = useState<string | null>(null);
@@ -317,6 +320,8 @@ function CancelPaymentDialog({
     const message = response?.serverError ?? response?.validationErrors?.reason?._errors?.[0];
     if (message) setServerError(message);
     else setFailure(CANCEL_FAILED);
+    // 서버 거부(동시성 · 이미 취소됨) 뒤 문서를 다시 읽는다 — 다음 시도가 새 version을 보낸다(지급 경로 onError와 같은 꼴, 06-04 검토 P3-3).
+    if (response?.serverError) router.refresh();
   }
 
   return (

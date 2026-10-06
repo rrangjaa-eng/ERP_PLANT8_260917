@@ -4,7 +4,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import { actionLog, expensePayments, expenses, files } from "@/db/schema";
 import { approveDocument, getApprovalView } from "@/domain/approvals";
-import { completeExpensePayment, previewPayable } from "@/domain/payments";
+import { cancelExpensePayment, completeExpensePayment, previewPayable } from "@/domain/payments";
 import { createTeamExpenseDraft, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { voidEvidence } from "@/domain/evidence";
 import { createAccount } from "@/domain/auth/accounts";
@@ -15,7 +15,9 @@ import { seoulToday } from "@/lib/dates";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { upsertSimpleValue } from "@/repositories/settings";
-import { EVIDENCE_REQUIRED } from "@/domain/settings/keys";
+import { seedCodeItem } from "@/repositories/code-tables";
+import { addHistorizedValue, cancelHistorizedValue } from "@/domain/settings/registry";
+import { EVIDENCE_REQUIRED, TAX_VAT_RATE } from "@/domain/settings/keys";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
 import { makeEvidenceManagerE2E, setupExpenseE2E, submitLineExpense, type ExpenseE2E, type LineKey } from "./expense-fixture";
 
@@ -25,12 +27,12 @@ import { makeEvidenceManagerE2E, setupExpenseE2E, submitLineExpense, type Expens
 const INFO_ITEMS = ["expense.value", "expense.amount", "approval.value", "project.value", "quote.amount", "vendor.value", "team.value", "person.value"];
 
 // 테스트 계급 「경영관리」 — 전사 업무 범위 · 지출결의 보기 + 지급 처리 쓰기. 결재선 밖 전용 본부 · 팀에 발령한다.
-async function makePaymentManagerE2E(): Promise<Person> {
+async function makePaymentManagerE2E(infoItems: readonly string[] = INFO_ITEMS): Promise<Person> {
   const suffix = randomUUID().slice(0, 8);
   const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E지급-${suffix}`, workScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "view", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.payments", action: "write", allowed: true });
-  for (const infoItem of INFO_ITEMS) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+  for (const infoItem of infoItems) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
   const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E지급본부-${suffix}` });
   const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E지급팀-${suffix}` });
   return makePerson("경영관리", role.id, team.id, `${seoulToday().slice(0, 4)}-01-01`);
@@ -54,6 +56,17 @@ async function approvedWithoutEvidence(browser: Browser, baseURL: string | undef
     .where(and(eq(files.ownerKind, EXPENSE_DOCUMENT_KIND), eq(files.ownerId, expenseId), isNull(files.removedAt), isNull(files.voidedAt)));
   for (const file of alive) await voidEvidence(voider.viewer, { fileId: file.id, reason: "다른 건 영수증" });
   return expenseId;
+}
+
+function tokenAsColor(page: Page, name: string): Promise<string> {
+  return page.evaluate((token) => {
+    const probe = document.createElement("span");
+    probe.style.color = `var(${token})`;
+    document.body.append(probe);
+    const color = getComputedStyle(probe).color;
+    probe.remove();
+    return color;
+  }, name);
 }
 
 function paymentSection(page: Page) {
@@ -86,6 +99,8 @@ test.describe("한 건 지급 완료 (06-03)", () => {
     const result = page.getByTestId("payment-result");
     await expect(result).toHaveText(/^지급 완료 → \d{4}-\d{2}-\d{2} · \d{2}:\d{2}$/);
     await expect(result).toBeFocused();
+    // UI-SPEC 「SUCCESS — 제자리 결과」: 결과 글자는 `--status-success`(계산된 색을 토큰 값과 비교).
+    expect(await result.evaluate((element) => getComputedStyle(element).color)).toBe(await tokenAsColor(page, "--status-success"));
     await expect(page.getByRole("button", { name: /^지급 완료/ })).toHaveCount(0);
 
     const logs = await db
@@ -404,6 +419,162 @@ test.describe("05 C1 작성 중 문서의 지급 섹션 (06-03)", () => {
     await expect(page.getByText(/지급 정보 불러오지 못함/)).toHaveCount(0);
     await expect(paymentSection(page)).toHaveCount(0);
     await expect(page.getByRole("button", { name: /지급/ })).toHaveCount(0);
+    await page.context().close();
+  });
+});
+
+// 서버에서(도메인 함수로) 지급해 둔다 — 화면은 이미 지급된 상태로 처음 열린다.
+async function paidOnServer(payer: Person, expenseId: string, payDate: string): Promise<void> {
+  const preview = await previewPayable(payer.viewer, { expenseId, payDate });
+  const [row] = await db.select({ version: expenses.version }).from(expenses).where(eq(expenses.id, expenseId));
+  if (preview.payableKrw == null || !row) throw new Error("지급 준비 실패");
+  await completeExpensePayment(payer.viewer, { expenseId, payDate, expectedPayableKrw: preview.payableKrw, version: row.version });
+}
+
+async function versionOf(expenseId: string): Promise<number> {
+  const [row] = await db.select({ version: expenses.version }).from(expenses).where(eq(expenses.id, expenseId));
+  if (!row) throw new Error("지출결의 없음");
+  return row.version;
+}
+
+test.describe("06-04 검토 · DOM 감사 수정", () => {
+  // 검토 P2-1 — 지급된 상태로 연 문서에서 취소하면 패널 칸이 옛 지급 기록 값(지급일)으로 남았다.
+  test("지급된 상태로 연 문서 — 지급 취소 뒤 지급일 기본값은 오늘 · 이체액은 지급 총액이고, 그대로 지급하면 오늘로 저장된다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const expenseId = await approvedWithoutEvidence(browser, baseURL, fx, "tracer");
+    const payer = await makePaymentManagerE2E();
+    const today = seoulToday();
+    const earlier = addDays(today, -3);
+    await paidOnServer(payer, expenseId, earlier);
+    const current = await previewPayable(payer.viewer, { expenseId, payDate: today });
+    if (current.payableKrw == null) throw new Error("지급 총액 없음");
+
+    const page = await loginPage(browser, baseURL, payer);
+    await page.goto(`/expenses/${expenseId}`);
+    const cancel = page.getByRole("button", { name: "지급 취소", exact: true });
+    await waitForHydration(cancel);
+    await expect(page.getByTestId("payment-result")).toHaveText(new RegExp(`^지급 완료 → ${earlier} · `));
+    await cancel.click();
+    const dialog = page.getByRole("dialog", { name: "지급 취소" });
+    await dialog.getByLabel("사유").fill("지급일 오입력");
+    await page.keyboard.press("Control+Enter");
+    await expect(dialog).toHaveCount(0);
+
+    const pay = page.getByRole("button", { name: /^지급 완료/ });
+    await expect(pay).toBeFocused();
+    const section = paymentSection(page);
+    await expect(section.getByLabel("지급일")).toHaveValue(today);
+    await expect(section.getByLabel("이체액")).toHaveValue(formatKrw(current.payableKrw));
+    await pay.click();
+    await expect(page.getByTestId("payment-result")).toHaveText(new RegExp(`^지급 완료 → ${today} · `));
+    const [record] = await db
+      .select({ payDate: expensePayments.payDate })
+      .from(expensePayments)
+      .where(and(eq(expensePayments.expenseId, expenseId), isNull(expensePayments.cancelledAt)));
+    expect(record?.payDate).toBe(today);
+    await page.context().close();
+  });
+
+  // 검토 P3-3 — 취소 모달이 동시성 거부를 받으면 문서를 다시 읽어, 사유를 고쳐 다시 누르면 새 version으로 취소된다.
+  test("취소 모달 동시성 거부 뒤 문서를 다시 읽는다 — 새로 고침 없이 다시 누르면 취소된다", async ({ browser, baseURL }) => {
+    test.setTimeout(60_000);
+    const fx = await setupExpenseE2E();
+    const expenseId = await approvedWithoutEvidence(browser, baseURL, fx, "tracer");
+    const payer = await makePaymentManagerE2E();
+    const today = seoulToday();
+    await paidOnServer(payer, expenseId, today);
+
+    const page = await loginPage(browser, baseURL, payer);
+    await page.goto(`/expenses/${expenseId}`);
+    const cancel = page.getByRole("button", { name: "지급 취소", exact: true });
+    await waitForHydration(cancel);
+    // 화면을 연 뒤 다른 사람이 취소하고 다시 지급했다(문서 version이 앞선다 · 여전히 지급된 상태).
+    await cancelExpensePayment(payer.viewer, { expenseId, reason: "다른 사람 취소", version: await versionOf(expenseId) });
+    await paidOnServer(payer, expenseId, today);
+
+    await cancel.click();
+    const dialog = page.getByRole("dialog", { name: "지급 취소" });
+    await dialog.getByLabel("사유").fill("계좌 오입력");
+    await page.keyboard.press("Control+Enter");
+    await expect(dialog.getByText(/^다른 사람이 \d{2}:\d{2}에 바꿈/).first()).toBeVisible();
+    // 다시 읽기(router.refresh)가 끝나는 때는 화면에 드러나지 않는다 — 사람이 사유를 고쳐 다시 누르는 것을 몇 번 되풀이해 기다린다.
+    // 수정 전에는 version이 끝내 낡은 채라 몇 번을 눌러도 같은 거부다.
+    await expect(async () => {
+      await dialog.getByLabel("사유").fill(`계좌 오입력 ${Date.now()}`);
+      await page.keyboard.press("Control+Enter");
+      await expect(dialog).toHaveCount(0, { timeout: 2_000 });
+    }).toPass({ timeout: 15_000 });
+    await expect(page.getByRole("button", { name: /^지급 완료/ })).toBeVisible();
+    const live = await db
+      .select({ id: expensePayments.id })
+      .from(expensePayments)
+      .where(and(eq(expensePayments.expenseId, expenseId), isNull(expensePayments.cancelledAt)));
+    expect(live).toHaveLength(0);
+    await page.context().close();
+  });
+
+  // 검토 P3-2 — 기준일이 지급 예정일인 규칙: 예정일 칸 힌트가 새 지급 총액을 보이고, 저장 뒤 지급이 `지급 총액 바뀜`으로 한 번 거부되지 않는다.
+  test("기준일이 지급 예정일 — 예정일 칸 힌트 `지급 총액 {전} → {후}` · 저장 뒤 바로 지급하면 새 지급 총액으로 저장된다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const expenseId = await approvedWithoutEvidence(browser, baseURL, fx, "tracer");
+    const payer = await makePaymentManagerE2E();
+    const today = seoulToday();
+    const rateFrom = addDays(today, 30);
+    const future = addDays(today, 40);
+    await seedCodeItem(SYSTEM_VIEWER, {
+      tableKey: "evidence_type",
+      value: "e2e_vat_scheduled",
+      label: "예정 부가세",
+      sortOrder: 99,
+      taxRule: { ruleKind: "vat_surcharge", roundingUnit: 1, roundingMethod: "round", minWithholdingAmount: 0, basisDate: "scheduled_payment_date" },
+    });
+    // 테스트 준비 전용 — 이 문서 행만 그 증빙 종류 · 예정일 오늘로 바꾼다.
+    await db.update(expenses).set({ evidenceType: "e2e_vat_scheduled", scheduledPaymentDate: today }).where(eq(expenses.id, expenseId));
+    await addHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, { effectiveFrom: rateFrom, value: 0.12 });
+    try {
+      const before = await previewPayable(payer.viewer, { expenseId, payDate: today, scheduledPayDate: today });
+      const after = await previewPayable(payer.viewer, { expenseId, payDate: today, scheduledPayDate: future });
+      if (before.payableKrw == null || after.payableKrw == null || before.payableKrw === after.payableKrw) throw new Error("지급 총액이 예정일로 바뀌지 않는다");
+
+      const page = await loginPage(browser, baseURL, payer);
+      await page.goto(`/expenses/${expenseId}`);
+      const pay = page.getByRole("button", { name: /^지급 완료/ });
+      await waitForHydration(pay);
+      const section = paymentSection(page);
+      await section.getByRole("button", { name: "지급 예정일 바꾸기" }).click();
+      await section.getByLabel("지급 예정일").fill(future);
+      await expect(section.getByTestId("payment-schedule-hint")).toHaveText(`지급 총액 ${formatKrw(before.payableKrw)} → ${formatKrw(after.payableKrw)}`);
+      await page.keyboard.press("Control+Enter");
+      await expect(pay).toBeFocused();
+      await expect(section.getByLabel("이체액")).toHaveValue(formatKrw(after.payableKrw));
+      await pay.click();
+      await expect(page.getByTestId("payment-result")).toBeVisible();
+      await expect(page.getByText(/지급 총액 바뀜/)).toHaveCount(0);
+      const [record] = await db
+        .select({ payableKrw: expensePayments.payableKrw })
+        .from(expensePayments)
+        .where(and(eq(expensePayments.expenseId, expenseId), isNull(expensePayments.cancelledAt)));
+      expect(record?.payableKrw).toBe(after.payableKrw);
+      await page.context().close();
+    } finally {
+      await cancelHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, rateFrom);
+    }
+  });
+
+  // DOM 감사 O1 — 지급 총액(expense.amount)을 못 보는 지급 권한자: 1차가 막히는 것과 같이 쓸 수 없는 이체액 칸을 숨긴다.
+  test("지급 총액 볼 권한 없는 지급 권한자 — `지급 완료` 비활성 + 이유 · 이체액 칸 없음", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const expenseId = await approvedWithoutEvidence(browser, baseURL, fx, "tracer");
+    const payer = await makePaymentManagerE2E(INFO_ITEMS.filter((item) => item !== "expense.amount"));
+
+    const page = await loginPage(browser, baseURL, payer);
+    await page.goto(`/expenses/${expenseId}`);
+    const pay = page.getByRole("button", { name: /^지급 완료/ });
+    await waitForHydration(pay);
+    await expect(pay).toHaveAttribute("aria-disabled", "true");
+    await expect(page.getByText("지급 총액 볼 권한 없음 · 노출 설정은 관리자")).toBeVisible();
+    await expect(page.locator("#payment-transfer")).toHaveCount(0);
+    await expect(paymentSection(page).getByLabel("이체액")).toHaveCount(0);
     await page.context().close();
   });
 });

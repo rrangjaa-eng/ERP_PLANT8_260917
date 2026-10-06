@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import type { PaymentViewDto } from "@/domain/payments";
-import { TRANSFER_FRACTION, TRANSFER_NOT_NUMBER, TRANSFER_NOT_POSITIVE } from "@/domain/payments/action-row";
+import { AMOUNT_HIDDEN, TRANSFER_FRACTION, TRANSFER_NOT_NUMBER, TRANSFER_NOT_POSITIVE } from "@/domain/payments/action-row";
 import { Button } from "@/ui/button/Button";
 import { Form } from "@/ui/form/Form";
 import { KvList, type KvItem } from "@/ui/kv-list/KvList";
@@ -79,15 +79,20 @@ export function diffReasonNeeded(fields: Fields, preview: Preview): boolean {
   return value !== null && value > 0 && preview.payableKrw !== null && value !== preview.payableKrw;
 }
 
-export function PaymentPanelProvider({ view, children }: { view: PaymentView; children: ReactNode }) {
-  const [conflict, setConflict] = useState<string | null>(null);
-  const [fields, setFieldState] = useState<Fields>(() => ({
+// 칸의 기본값 — 서버가 준 지급일(지급 전 = 오늘) · 지급 총액.
+function fieldsFrom(view: PaymentView): Fields {
+  return {
     payDate: view.payDate ?? "",
     transferRaw: view.payableKrw === null || view.payableKrw === undefined ? "" : String(view.payableKrw),
     transferInputError: null,
     transferTouched: false,
     diffReason: "",
-  }));
+  };
+}
+
+export function PaymentPanelProvider({ view, children }: { view: PaymentView; children: ReactNode }) {
+  const [conflict, setConflict] = useState<string | null>(null);
+  const [fields, setFieldState] = useState<Fields>(() => fieldsFrom(view));
   const [preview, setPreview] = useState<Preview>({ payableKrw: view.payableKrw ?? null, diffKrw: null });
   const [nonce, setNonce] = useState(0);
   const [fieldErrors, setFieldErrors] = useState<PaymentFieldErrors>({});
@@ -105,6 +110,21 @@ export function PaymentPanelProvider({ view, children }: { view: PaymentView; ch
   const previewKey = JSON.stringify([fields.payDate, transferSent, nonce]);
   // 응답이 온(또는 처음 그린) 칸 값 — 지금 칸 값과 다르면 미리보기가 오는 중이다(렌더에서 파생 · effect 안 setState 없음).
   const [settledKey, setSettledKey] = useState(previewKey);
+  // 지급 뒤(P6) → 지급 전(지급 취소 뒤 다시 읽은 표): 칸 · 미리보기를 새 서버 값(지급일 오늘 · 지금 지급 총액)으로 다시 세운다.
+  // 지급된 상태로 연 문서는 칸 초기값이 옛 지급 기록 값이라, 그대로 두면 다시 지급할 때 옛 지급일이 기본값으로 남는다(06-04 검토 P2-1). 렌더에서 파생 · effect 없음.
+  const paidNow = view.row?.row === "P6";
+  const [wasPaid, setWasPaid] = useState(paidNow);
+  if (wasPaid !== paidNow) {
+    setWasPaid(paidNow);
+    if (!paidNow) {
+      const fresh = fieldsFrom(view);
+      setFieldState(fresh);
+      setPreview({ payableKrw: view.payableKrw ?? null, diffKrw: null });
+      setFieldErrors({});
+      // 새 값은 방금 서버가 준 것이라 미리보기를 다시 받지 않는다.
+      setSettledKey(JSON.stringify([fresh.payDate, null, nonce]));
+    }
+  }
   const previewing = canPay && fields.payDate !== "" && previewKey !== settledKey;
   useEffect(() => {
     if (previewKey === settledKey) return;
@@ -222,7 +242,11 @@ function ScheduleField({ expenseId, schedule, onChange, onClose }: { expenseId: 
     const timer = setTimeout(() => {
       void (async () => {
         try {
-          const [before, after] = await Promise.all([previewPayableAction({ expenseId, payDate: original }), previewPayableAction({ expenseId, payDate: value })]);
+          // 예정일도 함께 싣는다 — 기준일이 지급 예정일인 규칙은 행의 옛 예정일이 아니라 이 날짜로 셈한다(06-04 검토 P3-2).
+          const [before, after] = await Promise.all([
+            previewPayableAction({ expenseId, payDate: original, scheduledPayDate: original }),
+            previewPayableAction({ expenseId, payDate: value, scheduledPayDate: value }),
+          ]);
           if (!cancelled) setHint({ value, before: before?.data?.payableKrw ?? null, after: after?.data?.payableKrw ?? null });
         } catch {
           if (!cancelled) setHint(null);
@@ -366,6 +390,8 @@ export function PaymentFields({
   }
 
   const shownTransferError = fieldErrors.transferKrw ?? fields.transferInputError ?? undefined;
+  // 지급 총액을 못 보는 지급 권한자 — 1차가 막히고(AMOUNT_HIDDEN) 비교할 값도 없어 이체액 칸을 그리지 않는다(할 수 없는 선택지는 숨김 · DOM 감사 O1).
+  const amountHidden = view.row?.blockReason === AMOUNT_HIDDEN;
   const needReason = diffReasonNeeded(fields, preview);
 
   return (
@@ -404,35 +430,37 @@ export function PaymentFields({
             />
             {fieldErrors.payDate ? <Form.Error id="payment-pay-date-error">{fieldErrors.payDate}</Form.Error> : null}
           </Form.Field>
-          <Form.Field id="payment-transfer" label={label} width="short">
-            <TransferInput
-              key={fields.transferTouched ? "touched" : `default-${preview.payableKrw ?? ""}`}
-              id="payment-transfer"
-              initial={fields.transferRaw}
-              error={shownTransferError}
-              onChange={(raw, inputError) => {
-                setFields({ transferRaw: raw, transferInputError: inputError, transferTouched: true });
-                if (fieldErrors.transferKrw) setFieldErrors({ ...fieldErrors, transferKrw: undefined });
-              }}
-            />
-            {shownTransferError ? <Form.Error id="payment-transfer-error">{shownTransferError}</Form.Error> : null}
-            <div id="payment-transfer-hint">
-              {preview.diffKrw !== null && preview.diffKrw !== 0 && needReason ? (
-                <Form.Hint>
-                  <span className={`${styles.taxLine} ${previewing ? styles.stale : ""}`} data-testid="payment-transfer-hint">
-                    <span className={styles.taxSegment}>
-                      지급 총액 <Num value={preview.payableKrw} />
+          {amountHidden ? null : (
+            <Form.Field id="payment-transfer" label={label} width="short">
+              <TransferInput
+                key={fields.transferTouched ? "touched" : `default-${preview.payableKrw ?? ""}`}
+                id="payment-transfer"
+                initial={fields.transferRaw}
+                error={shownTransferError}
+                onChange={(raw, inputError) => {
+                  setFields({ transferRaw: raw, transferInputError: inputError, transferTouched: true });
+                  if (fieldErrors.transferKrw) setFieldErrors({ ...fieldErrors, transferKrw: undefined });
+                }}
+              />
+              {shownTransferError ? <Form.Error id="payment-transfer-error">{shownTransferError}</Form.Error> : null}
+              <div id="payment-transfer-hint">
+                {preview.diffKrw !== null && preview.diffKrw !== 0 && needReason ? (
+                  <Form.Hint>
+                    <span className={`${styles.taxLine} ${previewing ? styles.stale : ""}`} data-testid="payment-transfer-hint">
+                      <span className={styles.taxSegment}>
+                        지급 총액 <Num value={preview.payableKrw} />
+                      </span>
+                      {" · "}
+                      <span className={styles.taxSegment}>
+                        차이 <SignedNum value={preview.diffKrw} />
+                      </span>
                     </span>
-                    {" · "}
-                    <span className={styles.taxSegment}>
-                      차이 <SignedNum value={preview.diffKrw} />
-                    </span>
-                  </span>
-                </Form.Hint>
-              ) : null}
-            </div>
-          </Form.Field>
-          {needReason ? (
+                  </Form.Hint>
+                ) : null}
+              </div>
+            </Form.Field>
+          )}
+          {needReason && !amountHidden ? (
             <Form.Field id="payment-diff-reason" label="차이 사유" width="long">
               <input
                 id="payment-diff-reason"

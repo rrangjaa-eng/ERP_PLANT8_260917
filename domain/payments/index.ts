@@ -19,6 +19,9 @@ import {
   CANCEL_REASON_REQUIRED,
   DIFF_REASON_REQUIRED,
   resolveExpenseActionRow,
+  TRANSFER_FRACTION,
+  TRANSFER_NOT_NUMBER,
+  TRANSFER_NOT_POSITIVE,
   type EvidenceGateInput,
   type ExpenseActionBar,
   type PairGateInput,
@@ -60,7 +63,8 @@ const ALREADY_CANCELLED = "이미 지급 취소됨 · 새로 고침";
 // 사람 이름은 트랜잭션 밖에서 붙인다(06-03 tx 규약 — 트랜잭션 안에서는 사용자 표를 풀로 읽지 않는다).
 export class PaymentAlreadyDoneError extends UserFacingError {
   constructor(processedByName: string, processedAt: Date) {
-    super(`${processedByName}이 ${formatKstTime(processedAt)}에 지급 완료함 · 새로 고침`);
+    // 조사 없는 명사형 — 받침 없는 이름 뒤 「이」가 틀린다(06-04 검토 P3-5 · 사용자 결정 2026-10-06 18:30:31 KST 「조사 없애기」).
+    super(`이미 지급됨 · ${processedByName} · ${formatKstTime(processedAt)} · 새로 고침`);
   }
 }
 
@@ -257,7 +261,8 @@ const IN_PROGRESS: readonly string[] = ["submitted", "in_review"];
 // shared에서. 오늘(서울)을 여기서 한 번 정하고 05 pickTaxDates로 기준일 하나를 골라 그날 세율을 얻는다. 미래 payDate도 그대로(Q6 · RS-11).
 export async function loadPaymentInputs(
   viewer: Viewer,
-  input: { expenseId: string; payDate?: string | null; now?: Date },
+  // scheduledPayDate — 미리보기 전용(06-04 검토 P3-2): 행의 예정일 대신 이 날짜로 기준일을 고른다(예정일 칸 힌트 · 저장 전 값).
+  input: { expenseId: string; payDate?: string | null; scheduledPayDate?: string; now?: Date },
   shared?: PaymentShared,
 ): Promise<PaymentInputs> {
   const row = UUID_SHAPE.test(input.expenseId) ? await findExpenseById(viewer, input.expenseId) : null;
@@ -271,7 +276,8 @@ export async function loadPaymentInputs(
   const drafterName = (await findUserNamesByIds(viewer, [row.drafterId])).get(row.drafterId) ?? "";
   const today = seoulToday(input.now);
   const payDate = input.payDate ?? null;
-  const { amount, tax } = basisOf(row, { shared: ctxShared, payDate, today, hasLiveEvidence });
+  const basisRow = input.scheduledPayDate === undefined ? row : { ...row, scheduledPaymentDate: input.scheduledPayDate };
+  const { amount, tax } = basisOf(basisRow, { shared: ctxShared, payDate, today, hasLiveEvidence });
   return {
     expenseId: row.id,
     today,
@@ -398,6 +404,15 @@ export async function judgeLockedPayment(input: {
   return { payable, paymentMethod: locked.paymentMethod, diffReason: payable.diffKrw === 0 ? null : reason };
 }
 
+// 06-04 검토 P3-4 — 액션 zod를 거치지 않는 호출(06-15 일괄 · 06-17)도 이체액 칸 문구로 거부한다(DB 캐스트 · CHECK 오류 500 대신).
+function transferKrwProblem(value: number): string | null {
+  if (!Number.isFinite(value)) return TRANSFER_NOT_NUMBER;
+  if (!Number.isInteger(value)) return TRANSFER_FRACTION;
+  if (!Number.isSafeInteger(value)) return TRANSFER_NOT_NUMBER;
+  if (value <= 0) return TRANSFER_NOT_POSITIVE;
+  return null;
+}
+
 export type CompletePaymentDeps = {
   shared?: PaymentShared;
   // 경합 테스트 장벽 — 지출결의 행을 잠근 직후(05 submitExpense deps.afterLock 꼴). 06-04 · 06-11 · 06-13이 쓴다.
@@ -425,6 +440,8 @@ export async function completeExpensePayment(
   deps?: CompletePaymentDeps,
 ): Promise<CompletePaymentResult> {
   if (!(await can(viewer, "expenses.payments", "write"))) throw new ForbiddenError("지급 처리 권한 없음");
+  const transferProblem = input.transferKrw === undefined ? null : transferKrwProblem(input.transferKrw);
+  if (transferProblem) throw new UserFacingError(transferProblem);
   const shared = deps?.shared ?? (await loadPaymentShared(viewer));
   const today = seoulToday(deps?.now);
   const payDate = input.payDate ?? today;
@@ -507,6 +524,7 @@ export async function cancelExpensePayment(
   input: { expenseId: string; reason: string; version: number },
 ): Promise<{ version: number }> {
   if (!(await can(viewer, "expenses.payments", "write"))) throw new ForbiddenError("지급 처리 권한 없음");
+  if (!UUID_SHAPE.test(input.expenseId)) throw new PaymentNotFoundError();
   const reason = input.reason.trim();
   if (reason === "") throw new UserFacingError(CANCEL_REASON_REQUIRED);
   return withTransaction(async (tx) => {
@@ -543,6 +561,7 @@ export async function saveScheduledPayDate(
   input: { expenseId: string; scheduledPayDate: string; version: number },
 ): Promise<{ version: number }> {
   if (!(await can(viewer, "expenses.payments", "write"))) throw new ForbiddenError("지급 처리 권한 없음");
+  if (!UUID_SHAPE.test(input.expenseId)) throw new PaymentNotFoundError();
   return withTransaction(async (tx) => {
     const locked = await lockExpenseForUpdate(viewer, input.expenseId, tx);
     if (!locked) throw new PaymentNotFoundError();
@@ -590,11 +609,11 @@ registerDto({ name: "payablePreview", fields: PAYABLE_PREVIEW_DTO_SPEC.fields.ma
 
 export async function previewPayable(
   viewer: Viewer,
-  input: { expenseId: string; payDate: string; transferKrw?: number },
+  input: { expenseId: string; payDate: string; transferKrw?: number; scheduledPayDate?: string },
   deps?: { now?: Date },
 ): Promise<Partial<PayablePreview>> {
   if (!(await can(viewer, "expenses.payments", "write"))) throw new ForbiddenError("지급 처리 권한 없음");
-  const pre = await loadPaymentInputs(viewer, { expenseId: input.expenseId, payDate: input.payDate, now: deps?.now });
+  const pre = await loadPaymentInputs(viewer, { expenseId: input.expenseId, payDate: input.payDate, scheduledPayDate: input.scheduledPayDate, now: deps?.now });
   const payable = await payableOf(pre, input.transferKrw);
   return project(
     viewer,

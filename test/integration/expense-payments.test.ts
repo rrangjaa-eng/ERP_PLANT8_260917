@@ -14,12 +14,17 @@ import {
   PayableChangedError,
   PaymentAlreadyDoneError,
   PaymentConflictError,
+  PaymentNotFoundError,
   previewPayable,
   saveScheduledPayDate,
 } from "@/domain/payments";
 import { GateBlockedError } from "@/domain/rules/gate";
+import { TRANSFER_FRACTION, TRANSFER_NOT_NUMBER, TRANSFER_NOT_POSITIVE } from "@/domain/payments/action-row";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
-import { ACTION_LOG_OPTIONAL_TYPES, PAYMENT_METHOD_EVIDENCE_PAIRS } from "@/domain/settings/keys";
+import { ACTION_LOG_OPTIONAL_TYPES, PAYMENT_METHOD_EVIDENCE_PAIRS, TAX_VAT_RATE } from "@/domain/settings/keys";
+import { addHistorizedValue } from "@/domain/settings/registry";
+import { seedCodeItem } from "@/repositories/code-tables";
 import { upsertSimpleValue } from "@/repositories/settings";
 import { markVoided } from "@/repositories/files";
 import { ForbiddenError } from "@/domain/permissions/can";
@@ -174,6 +179,29 @@ describe("지급 완료 — 이체액 · 차이 사유 · 미래 지급일 (06-0
     const after = await snapshot(doc.expenseId);
     expect([after.version, after.logCount, after.payments.length]).toEqual([before.version, before.logCount, 0]);
   });
+});
+
+// 06-04 검토 P3-2 ① — 기준일이 지급 예정일이면 미리보기는 행의 옛 예정일이 아니라 화면이 보낸 예정일로 셈한다(예정일 칸 힌트 `지급 총액 {전} → {후}`).
+it("기준일이 지급 예정일인 규칙 — previewPayableAction에 예정일을 실으면 그 날짜의 세율로 지급 총액을 셈한다", async () => {
+  const payer = await makePayer();
+  const doc = await approvedExpenseWithoutEvidence(await setupExpenseProject());
+  const today = seoulToday();
+  // 부가세 가산 · 기준일 = 지급 예정일인 테스트 증빙 종류(코드표 필드가 설정보다 먼저 — expense-tax-snapshot 전례). 이 문서 행만 그 종류로 바꾼다.
+  await seedCodeItem(SYSTEM_VIEWER, {
+    tableKey: "evidence_type",
+    value: "test_vat_scheduled",
+    label: "예정 부가세",
+    sortOrder: 99,
+    taxRule: { ruleKind: "vat_surcharge", roundingUnit: 1, roundingMethod: "round", minWithholdingAmount: 0, basisDate: "scheduled_payment_date" },
+  });
+  await db.update(expenses).set({ evidenceType: "test_vat_scheduled" }).where(eq(expenses.id, doc.expenseId));
+  await addHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, { effectiveFrom: addDays(today, 30), value: 0.12 });
+  session.viewer = payer;
+  const before = await previewPayableAction({ expenseId: doc.expenseId, payDate: today, scheduledPayDate: today });
+  const after = await previewPayableAction({ expenseId: doc.expenseId, payDate: today, scheduledPayDate: addDays(today, 40) });
+  expect(before?.data?.payableKrw).toEqual(expect.any(Number));
+  expect(after?.data?.payableKrw).toEqual(expect.any(Number));
+  expect(after?.data?.payableKrw).toBeGreaterThan(before?.data?.payableKrw ?? Number.POSITIVE_INFINITY);
 });
 
 describe("지급 예정일 저장 (06-04 Task 2 · SP-3 ②)", () => {
@@ -369,7 +397,7 @@ describe("지급 취소 (06-04 Task 3 · D-606)", () => {
 });
 
 describe("지급 동시성 · 권한 · 조작 (06-04 Task 3)", () => {
-  it("동시 두 지급 완료 — 장벽: A가 문서 행 잠금을 쥔 동안 B가 기다리고, A가 끝나면 B는 `{사람}이 {HH:mm}에 지급 완료함 · 새로 고침`", async () => {
+  it("동시 두 지급 완료 — 장벽: A가 문서 행 잠금을 쥔 동안 B가 기다리고, A가 끝나면 B는 `이미 지급됨 · {사람} · {HH:mm} · 새로 고침`(조사 없는 명사형 — 사용자 결정 2026-10-06 18:30:31 KST)", async () => {
     const payer = await makePayer("이과장");
     const doc = await approvedExpenseWithoutEvidence(await setupExpenseProject());
     const expectedPayableKrw = await payableNow(payer, doc);
@@ -396,7 +424,7 @@ describe("지급 동시성 · 권한 · 조작 (06-04 Task 3)", () => {
     await a;
     const error = await b;
     expect(error).toBeInstanceOf(PaymentAlreadyDoneError);
-    expect((error as Error).message).toMatch(/^이과장이 \d{2}:\d{2}에 지급 완료함 · 새로 고침$/);
+    expect((error as Error).message).toMatch(/^이미 지급됨 · 이과장 · \d{2}:\d{2} · 새로 고침$/);
     expect(await livePayments(doc.expenseId)).toHaveLength(1);
   }, 20_000);
 
@@ -427,6 +455,32 @@ describe("지급 동시성 · 권한 · 조작 (06-04 Task 3)", () => {
     const server = await decidePayable({ amount: pre.amount, taxRule: pre.tax.taxRule, applyOpts: pre.tax.dates.applyOpts, incomeType: pre.tax.incomeType }, pre.tax.rates);
     expect(server.payableKrw).toBe(payable);
     expect([row?.payableKrw, row?.grossSupplyKrw]).toEqual([server.payableKrw, server.grossSupplyKrw]);
+  });
+
+  // 06-04 검토 P3-4 — 액션 zod를 거치지 않는 호출(06-15 일괄 · 06-17)도 DB 오류(500) 대신 화면 문구로 거부된다.
+  it("도메인이 이체액(안전한 양의 정수)을 스스로 검증한다 — 소수 · 0 이하 · 숫자 아님은 이체액 칸 문구로 거부 · 지급 기록 0", async () => {
+    const payer = await makePayer();
+    const doc = await approvedExpenseWithoutEvidence(await setupExpenseProject());
+    const expectedPayableKrw = await payableNow(payer, doc);
+    const cases: [number, string][] = [
+      [1.5, TRANSFER_FRACTION],
+      [0, TRANSFER_NOT_POSITIVE],
+      [-3_300, TRANSFER_NOT_POSITIVE],
+      [Number.NaN, TRANSFER_NOT_NUMBER],
+      [Number.MAX_SAFE_INTEGER + 2, TRANSFER_NOT_NUMBER],
+    ];
+    for (const [transferKrw, message] of cases) {
+      const error = await caught(completeExpensePayment(payer, { expenseId: doc.expenseId, expectedPayableKrw, version: doc.version, transferKrw, diffReason: "수수료" }));
+      expect(error, String(transferKrw)).toBeInstanceOf(UserFacingError);
+      expect((error as Error).message, String(transferKrw)).toBe(message);
+    }
+    expect(await livePayments(doc.expenseId)).toHaveLength(0);
+  });
+
+  it("지급 취소 · 예정일 저장은 UUID 모양이 아닌 문서 id를 PaymentNotFoundError로 거부한다(DB uuid 캐스트 오류 아님)", async () => {
+    const payer = await makePayer();
+    await expect(cancelExpensePayment(payer, { expenseId: "not-a-uuid", reason: "중복", version: 1 })).rejects.toBeInstanceOf(PaymentNotFoundError);
+    await expect(saveScheduledPayDate(payer, { expenseId: "not-a-uuid", scheduledPayDate: seoulToday(), version: 1 })).rejects.toBeInstanceOf(PaymentNotFoundError);
   });
 
   it("expectedPayableKrw가 서버 재계산값과 다르면 PayableChangedError · 지급 기록 0", async () => {
@@ -497,6 +551,18 @@ describe("증빙 · 짝 게이트 (06-04 Task 2 · 3)", () => {
     expect((error as Error).message).toMatch(/ 짝 아님 · 짝 설정은 관리자$/);
     expect(await livePayments(doc.expenseId)).toHaveLength(0);
     await upsertSimpleValue(SYSTEM_VIEWER, PAYMENT_METHOD_EVIDENCE_PAIRS.key, [], null);
+    await completeExpensePayment(payer, { expenseId: doc.expenseId, expectedPayableKrw: payable, version: doc.version });
+    expect(await livePayments(doc.expenseId)).toHaveLength(1);
+  });
+
+  // 06-04 검토 P3-1 — 증빙 게이트의 prepaid는 잠근 지출결의 행의 expenses.prepaid(index.ts judgeLockedPayment). false 고정 · 다른 값으로 바꾸면 빨갛다.
+  it("증빙 필수 on · 증빙 0이어도 선결제(expenses.prepaid) 문서는 지급된다 — 증빙 게이트가 잠근 행의 prepaid를 읽는다", async () => {
+    const payer = await makePayer();
+    const doc = await approvedExpenseWithoutEvidence(await setupExpenseProject());
+    const payable = await payableNow(payer, doc);
+    // 테스트 준비 전용 — 이 문서 행만 선결제로 바꾼다(version은 그대로라 화면이 본 문서와 같다).
+    await db.update(expenses).set({ prepaid: true, prepaidReason: "현장 선결제" }).where(eq(expenses.id, doc.expenseId));
+    await setEvidenceRequired(true);
     await completeExpensePayment(payer, { expenseId: doc.expenseId, expectedPayableKrw: payable, version: doc.version });
     expect(await livePayments(doc.expenseId)).toHaveLength(1);
   });

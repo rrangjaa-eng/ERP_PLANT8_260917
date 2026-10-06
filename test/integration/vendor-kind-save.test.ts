@@ -185,6 +185,35 @@ describe("견적 줄 거래처 — supplier · both만 (새 줄 · 수정 · 합
     expect((await reload(line.id)).vendorId).toBe(vendor.id);
   });
 
+  it("복제한 새 줄이 원본 거래처를 그대로 두면 그 사이 클라이언트가 됐어도 저장된다(기존 연결 유지)", async () => {
+    const { revisionId, subcategory } = await setup();
+    const vendor = await vendorOf("supplier");
+    const source = newLine(subcategory, vendor.id);
+    await saveQuoteLines(SYSTEM_VIEWER, revisionId, { rows: [source] });
+    await db.update(vendors).set({ kind: "client" }).where(eq(vendors.id, vendor.id));
+    const clone = { ...newLine(subcategory, vendor.id), duplicatedFrom: source.id };
+
+    await saveQuoteLines(SYSTEM_VIEWER, revisionId, { rows: [asInput(await reload(source.id), {}), clone] });
+
+    expect((await reload(clone.id)).vendorId).toBe(vendor.id);
+  });
+
+  it("복제한 새 줄의 거래처를 클라이언트로 바꾸면 거부한다", async () => {
+    const { revisionId, subcategory } = await setup();
+    const supplier = await vendorOf("supplier");
+    const client = await vendorOf("client");
+    const source = newLine(subcategory, supplier.id);
+    await saveQuoteLines(SYSTEM_VIEWER, revisionId, { rows: [source] });
+    const clone = { ...newLine(subcategory, client.id), duplicatedFrom: source.id };
+
+    const error = await rejectionOf(
+      saveQuoteLines(SYSTEM_VIEWER, revisionId, { rows: [asInput(await reload(source.id), {}), clone] }),
+      SaveRejectedError,
+    );
+
+    expect(error.formatErrors).toContainEqual(expect.objectContaining({ rowId: clone.id, field: "vendorId", reason: NOT_SUPPLIER }));
+  });
+
   it("거래처 없는 새 줄은 갈래 판정 없이 저장된다", async () => {
     const { revisionId, subcategory } = await setup();
     const line = newLine(subcategory, null);

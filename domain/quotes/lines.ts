@@ -1029,8 +1029,10 @@ export async function writeQuoteLinesInTx(
       if (kind === "quote" && !prepared.selectableSubcategories.has(kindRow.subcategory) && kindRow.subcategory !== storedSubcategory) {
         formatErrors.push({ rowIndex, rowId: kindRow.id, field: "subcategory", label: CELL_LABELS.subcategory, reason: SUBCATEGORY_NOT_LISTED });
       }
-      // 같은 기준 — 저장된 거래처는 그 사이 갈래가 바뀌어도 그대로 저장(기존 연결 유지). 복제한 새 줄은 새 입력.
-      const storedVendorId = (current ?? (received.isNew ? presentById.get(received.id) : undefined))?.vendorId ?? null;
+      // 같은 기준 — 저장된 거래처는 그 사이 갈래가 바뀌어도 그대로 저장(기존 연결 유지). 복제한 새 줄은 원본 줄 거래처가
+      // 저장된 값이다(프로젝트 복사의 출처 클라이언트와 같은 기준 · 거래처가 가려진 계급의 복제도 막히지 않는다).
+      const duplicatedSource = received.isNew && received.duplicatedFrom ? currentById.get(received.duplicatedFrom) : undefined;
+      const storedVendorId = (current ?? (received.isNew ? (presentById.get(received.id) ?? duplicatedSource) : undefined))?.vendorId ?? null;
       const vendorKind = kindRow.vendorId ? vendorKinds.get(kindRow.vendorId) : undefined;
       if (kindRow.vendorId && kindRow.vendorId !== storedVendorId && vendorKind && !servesSide(vendorKind, "supplier")) {
         formatErrors.push({ rowIndex, rowId: kindRow.id, field: "vendorId", label: CELL_LABELS.vendorId, reason: NOT_SUPPLIER_VENDOR });

@@ -131,6 +131,11 @@
   font-weight: var(--fw-medium);
 }
 
+/* 06-04 — 지급 뒤 1차 자리 결과 글자 `지급 완료 → {지급일} · {HH:mm}`(UI-SPEC 「SUCCESS — 제자리 결과」 `--status-success`). 글자 크기는 행동 줄 그대로. */
+.resultSuccess {
+  color: var(--status-success);
+}
+
 .muted {
   color: var(--text-muted);
 }

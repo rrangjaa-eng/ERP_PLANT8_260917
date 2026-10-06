@@ -58,6 +58,17 @@ async function approvedWithoutEvidence(browser: Browser, baseURL: string | undef
   return expenseId;
 }
 
+function tokenAsColor(page: Page, name: string): Promise<string> {
+  return page.evaluate((token) => {
+    const probe = document.createElement("span");
+    probe.style.color = `var(${token})`;
+    document.body.append(probe);
+    const color = getComputedStyle(probe).color;
+    probe.remove();
+    return color;
+  }, name);
+}
+
 function paymentSection(page: Page) {
   return page.locator("section", { has: page.getByRole("heading", { level: 2, name: "지급", exact: true }) });
 }
@@ -88,6 +99,8 @@ test.describe("한 건 지급 완료 (06-03)", () => {
     const result = page.getByTestId("payment-result");
     await expect(result).toHaveText(/^지급 완료 → \d{4}-\d{2}-\d{2} · \d{2}:\d{2}$/);
     await expect(result).toBeFocused();
+    // UI-SPEC 「SUCCESS — 제자리 결과」: 결과 글자는 `--status-success`(계산된 색을 토큰 값과 비교).
+    expect(await result.evaluate((element) => getComputedStyle(element).color)).toBe(await tokenAsColor(page, "--status-success"));
     await expect(page.getByRole("button", { name: /^지급 완료/ })).toHaveCount(0);
 
     const logs = await db

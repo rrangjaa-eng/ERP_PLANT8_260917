@@ -226,7 +226,7 @@ export function PaymentActionRow() {
           ) : (
             <>
               <StatusTag status="지급 완료" />
-              <span ref={resultRef} tabIndex={-1} role="status" data-testid="payment-result">
+              <span ref={resultRef} tabIndex={-1} role="status" className={styles.resultSuccess} data-testid="payment-result">
                 지급 완료 → {view.payDate} · {view.paidTime}
               </span>
               {canCancel ? (

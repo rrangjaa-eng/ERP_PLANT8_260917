@@ -23,6 +23,8 @@ import {
   withdrawExpense,
 } from "@/domain/expenses";
 import { searchLinesForPick } from "@/domain/expenses/pick";
+import { listExpenses } from "@/domain/expenses/list";
+import { seoulToday } from "@/lib/dates";
 import { getEvidenceActions, removeEvidence } from "@/domain/evidence";
 import { setSettingValue } from "@/domain/settings/registry";
 import { ACTION_LOG_OPTIONAL_TYPES } from "@/domain/settings/keys";
@@ -429,6 +431,22 @@ describe("06-28 종결", () => {
     const blocked = await listMyBlockedDocuments(fx.pm);
     expect(blocked.map((doc) => doc.documentId)).toEqual([kept.expenseId]);
     expect(blocked[0]?.cause.type).toBe("rejected");
+  });
+
+  it("종결 문서 목록 낱말", async () => {
+    const fx = await setupExpenseProject();
+    const kept = await rejectedOn(fx, fx.lines.withVendor);
+    const closed = await rejectedOn(fx, fx.lines.split);
+    await closeAs(fx.pm, closed.expenseId);
+    const closedAt = (await expenseRow(closed.expenseId)).closedAt;
+    if (!closedAt) throw new Error("종결 안 됨");
+    const groups = (await listExpenses(fx.pm, { status: "all" })).groups;
+    const groupOf = (id: string) => groups.find((group) => group.rows.some((row) => row.id === id));
+    const rowOf = (id: string) => groupOf(id)?.rows.find((row) => row.id === id);
+    expect(rowOf(closed.expenseId)).toMatchObject({ statusWord: "종결", statusDate: seoulToday(closedAt).slice(5) });
+    expect(rowOf(kept.expenseId)).toMatchObject({ statusWord: "반려" });
+    // 그룹 순위는 05 반려 · 회수 그대로.
+    expect(groupOf(closed.expenseId)?.label).toBe("반려 · 회수");
   });
 
   it("종결 로그는 끌 수 없다", async () => {

@@ -4,10 +4,14 @@ title: 반려·회수 지출결의 종결(취소) 경로 — Phase 6 TODO (U2, �
 area: planning
 severity: major
 files:
+
   - .planning/phases/05-expense-approval-leave/05-09-PLAN.md
   - .planning/phases/05-expense-approval-leave/05-REVIEWS.md:41
   - .planning/phases/05-expense-approval-leave/ceo-review.md
   - .planning/phases/05-expense-approval-leave/05-RESEARCH.md:321
+
+completed: 2026-10-06
+status: completed
 ---
 
 ## Problem

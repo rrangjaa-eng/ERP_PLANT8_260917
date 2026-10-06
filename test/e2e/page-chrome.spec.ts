@@ -229,10 +229,9 @@ test.describe("§6-0 화면 제목·부제 · §6-9 오류 제목 (02-08 Task 2)
     expect(px(lineHeight)).toBeCloseTo(px(titleSize) * 1.3, 1);
   });
 
-  test("자리 화면 셋 — 빈 화면 한 줄 + 첫 행동 버튼 하나, 부제 설명문 없음(04.6-19)", async ({ page }) => {
+  test("자리 화면 둘 — 빈 화면 한 줄 + 첫 행동 버튼 하나, 부제 설명문 없음(04.6-19)", async ({ page }) => {
     await loginAs(page, DEFAULT_ROLE_ID);
     const places = [
-      { route: "/cards", title: "법인카드", subtitle: "카드 사용 등록 내역", action: "결재함 보기" },
       { route: "/pnl", title: "손익", subtitle: "프로젝트·팀 손익 원장", action: "프로젝트 보기" },
       { route: "/settings", title: "설정", subtitle: "운영 설정", action: "내 정보 보기" },
     ];

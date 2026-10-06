@@ -102,3 +102,19 @@ describe("reconcileSelection — 처리 뒤 선택 다시 세우기(H-3)", () =>
     expect(reconcileSelection(["a", "c"], rows, getRowId, () => true)).toEqual(["a", "c"]);
   });
 });
+
+// 06-29 DOM 감사 D1 — SYSTEM §7-3 (아) 「표 전체가 탭 정지 1개」.
+describe("Table selection — 탭 정지(감사 D1)", () => {
+  it("행 체크박스는 탭 정지가 아니다(tabindex=-1) — 키보드 고르기는 활성 셀 Space가 맡는다", () => {
+    const boxes = checkboxes(render(selectionOf()));
+    for (const row of rows) {
+      const box = boxes.find((candidate) => candidate.includes(`aria-label="${row.name} 고르기"`))!;
+      expect(box).toContain('tabindex="-1"');
+    }
+  });
+
+  it("머리글 전체 고르기 체크박스는 키보드로 닿는 유일한 길이라 탭 정지로 남는다", () => {
+    const head = checkboxes(render(selectionOf())).find((box) => box.includes('aria-label="이 쪽 전체 고르기"'))!;
+    expect(head).not.toContain("tabindex");
+  });
+});

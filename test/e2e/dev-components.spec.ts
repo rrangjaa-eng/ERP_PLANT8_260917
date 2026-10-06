@@ -137,6 +137,14 @@ test.describe("로그인한 뒤", () => {
     const selectCellWidth = await bodyRows.first().locator("td").first().evaluate((el) => Math.round(el.getBoundingClientRect().width));
     expect(selectCellWidth).toBe(44);
 
+    // 탭 정지(감사 D1) — 행 체크박스는 tabindex -1, 표 앞 머리글 체크박스 + 격자 칸만 탭으로 닿는다.
+    await expect(table.locator('tbody input[type="checkbox"]:not([tabindex="-1"])')).toHaveCount(0);
+    await headBox.focus();
+    await page.keyboard.press("Tab");
+    expect(await page.evaluate(() => document.activeElement?.tagName)).toBe("TD");
+    await page.keyboard.press("Tab");
+    expect(await page.evaluate(() => document.activeElement?.closest("table"))).toBeNull();
+
     // 활성 셀 행에서 Space → 그 행 체크 · 행 면 = --accent-weak · 1차 `지급 완료 1`.
     await bodyRows.first().locator("td").nth(1).click();
     await page.keyboard.press("Space");

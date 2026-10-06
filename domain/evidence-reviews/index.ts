@@ -159,6 +159,8 @@ export async function confirmEvidence(viewer: Viewer, input: ConfirmEvidenceInpu
   const shared = await payments.loadPaymentShared(viewer);
   const amountVisible = await visible(viewer, "expense.amount");
   const corrected = input.correctedAmountKrw;
+  // 화면은 금액을 못 보는 권한자에게 금액 칸을 그리지 않는다 — 서버도 고친 금액을 받지 않는다(고침 없는 확인은 된다 · EA-1 거부가 금액을 알려 주지 않게 먼저).
+  if (corrected !== undefined && !amountVisible) throw new ForbiddenError("증빙 금액 볼 권한 없음");
   if (corrected !== undefined) {
     // EA-1 — 고친 금액만 판정한다(기안자 값은 06-10 저장 때 같은 함수가 막았다). 승인 공급가는 결재 통과 뒤 바뀌지 않아 사전 조회로 충분하다.
     const supplyTax = await payments.approvedSupplyTax(viewer, input.expenseId, shared);

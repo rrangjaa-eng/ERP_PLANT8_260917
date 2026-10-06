@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 06
 current_phase_name: 지급·증빙·법인카드·구매 요청 (경영관리)
-current_plan: 6
+current_plan: 7
 status: executing
-stopped_at: Completed 06-30-PLAN.md
-last_updated: "2026-10-06T06:54:42.381Z"
+stopped_at: Completed 06-03-PLAN.md
+last_updated: "2026-10-06T07:46:06.853Z"
 last_activity: 2026-10-06
 last_activity_desc: Phase 06 execution started
-state_head: 336c122061e2b2bd72bfcea496e27ac7c416f46f
+state_head: 5ec2e4235d1aedaedaf3b7d7b08fdab731a7f5f1
 progress:
   total_phases: 17
   completed_phases: 7
   total_plans: 197
-  completed_plans: 173
+  completed_plans: 174
   percent: 41
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-30)
 ## Current Position
 
 Phase: 06 (지급·증빙·법인카드·구매 요청 (경영관리)) — EXECUTING
-Current Plan: 6
+Current Plan: 7
 Total Plans in Phase: 29
 Status: Ready to execute
 Last activity: 2026-10-06 — Phase 06 execution started
@@ -139,6 +139,7 @@ Progress: [████░░░░░░] 41%
 | Phase 06 P02 | 30 min | 3 tasks | 14 files |
 | Phase 06 P29 | 65min | 3 tasks | 16 files |
 | Phase 06 P30 | 1h 5m | 2 tasks | 11 files |
+| Phase 06 P03 | 44min | 2 tasks | 18 files |
 
 ## Accumulated Context
 
@@ -354,6 +355,9 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-29: ConfirmDialog refreshKeepsOpen은 거절 문자열이 같은 동안만 이유를 숨김 — 호출자(06-17)가 새 props에서 거절 상태를 지워야 함; 서버 재판정 필수(T-06-290)
 - [Phase 06]: 06-30: 법인카드 종류는 사람이 고른 값(CardOwnerInput.kind 필수) — cardOwnerKind는 FK 유무로 유도하지 않고 종류별 칸 조합(personal 소지자만 · team 팀만 · shared 둘 다 없음)만 판정, 06-27 corp_cards_owner_kind_check와 같은 세 조합
 - [Phase 06]: 06-30: 소유자 변경 superRefine 개인 · 팀 문구는 기존 「소지자·팀 중 하나 필요 · 하나만 선택」 유지, 공용 + 소유 칸 위조만 「소유 칸 조합 오류 · 공용에 맞는 칸만」. 등록 액션은 superRefine 없이 도메인 serverError로(QA-1 함정)
+- [Phase 06]: 06-03: 지급 전 화면의 지급 총액은 지급일 = 오늘(KST)로 셈하고 액션은 화면이 본 payDate · expectedPayableKrw(비교값)를 보낸다
+- [Phase 06]: 06-03: 지급 섹션이 서면 위 읽기 칸의 지급 예정일 · 지급 방식은 섹션 한 자리에만(같은 사실 두 자리 금지)
+- [Phase 06]: 06-03: 잠금 뒤 판정은 judgeLockedPayment — 기준일이 같으면 사전 조회 세율로 tx 안에서 새 값, 기준일이 바뀌면 BasisChangedSignal로 tx 밖에서 다시 셈
 
 ### Pending Todos
 
@@ -449,6 +453,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-06T06:54:23.220Z
-Stopped at: Completed 06-30-PLAN.md
+Last session: 2026-10-06T07:45:54.460Z
+Stopped at: Completed 06-03-PLAN.md
 Resume file: None

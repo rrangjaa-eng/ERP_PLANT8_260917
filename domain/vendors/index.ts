@@ -41,18 +41,18 @@ export const BUSINESS_NO_UNIQUE_INDEX = "vendors_business_no_live_key";
 
 export type DuplicateBusinessNoExisting = {
   id: string;
-  /** 「거래처 정보」(vendor.value)를 못 보는 사람에게는 null. */
-  name: string | null;
+  name: string;
   kind: VendorKind;
   hidden: boolean;
   archived: boolean;
 };
 
 // 같은 사업자번호 거래처가 있음 — 화면이 칸 아래 문구 · 링크 · 「구분 더하기」를 그리도록 기존 거래처를 싣는다.
-// addSide는 새 갈래를 더해야 덮일 때 켤 갈래(보관 · 이미 덮음이면 null).
+// addSide는 새 갈래를 더해야 덮일 때 켤 갈래(보관 · 숨김 · 이미 덮음이면 null).
+// existing은 「거래처 정보」(vendor.value)를 못 보는 사람에게는 null — VendorDto처럼 id · 숨김 · 보관까지 그 판정 뒤에만 싣는다.
 export class DuplicateBusinessNoError extends UserFacingError {
   constructor(
-    readonly existing: DuplicateBusinessNoExisting,
+    readonly existing: DuplicateBusinessNoExisting | null,
     readonly addSide: VendorSide | null,
     message: string,
   ) {
@@ -66,8 +66,8 @@ export function businessNoDigits(raw: string | null | undefined): string | null 
   return digits === "" ? null : digits;
 }
 
-function duplicateBusinessNoMessage(existing: DuplicateBusinessNoExisting, addSide: VendorSide | null): string {
-  if (existing.name === null) return "같은 사업자번호 거래처 있음";
+function duplicateBusinessNoMessage(existing: DuplicateBusinessNoExisting | null, addSide: VendorSide | null): string {
+  if (existing === null) return "같은 사업자번호 거래처 있음";
   if (existing.archived) return `보관함에 같은 사업자번호 거래처 있음 · ${existing.name}`;
   if (existing.hidden) return `같은 사업자번호 거래처 있음 · ${existing.name}(숨김)`;
   if (addSide !== null) return `같은 사업자번호 거래처 있음 · ${existing.name}(${VENDOR_KIND_LABELS[existing.kind]})`;
@@ -84,15 +84,13 @@ async function assertBusinessNoFree(
   if (digits === null) return;
   const [match] = await repoFindVendorsByBusinessNoDigits(viewer, digits, { excludeId: opts.excludeId }, opts.tx);
   if (!match) return;
+  if (!(await opts.visible(viewer, "vendor.value"))) {
+    throw new DuplicateBusinessNoError(null, null, duplicateBusinessNoMessage(null, null));
+  }
   const archived = match.archivedAt !== null;
-  const existing: DuplicateBusinessNoExisting = {
-    id: match.id,
-    name: (await opts.visible(viewer, "vendor.value")) ? match.name : null,
-    kind: match.kind,
-    hidden: match.hidden,
-    archived,
-  };
-  const addSide = opts.wantedKind === undefined ? null : vendorKindToAdd(match.kind, opts.wantedKind, archived);
+  const existing: DuplicateBusinessNoExisting = { id: match.id, name: match.name, kind: match.kind, hidden: match.hidden, archived };
+  // 숨긴 거래처는 「그 거래처 열기」(계획 §8) — 구분을 더해도 숨김이라 고르기에 나오지 않는다.
+  const addSide = opts.wantedKind === undefined || match.hidden ? null : vendorKindToAdd(match.kind, opts.wantedKind, archived);
   throw new DuplicateBusinessNoError(existing, addSide, duplicateBusinessNoMessage(existing, addSide));
 }
 

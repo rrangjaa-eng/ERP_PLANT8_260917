@@ -45,13 +45,14 @@ const updateVendorSchema = z.object({
 // 04.5-05: 커스텀 칸 오류는 폼 전체 serverError가 아니라 칸별 validationErrors.customFields.{key}._errors로 돌려준다
 // (칸 정렬 순서 그대로 — 06이 칸 아래 · 이유 자리에 그린다). 다른 오류는 그대로 던져 handleServerError로 간다.
 // 사업자번호 중복은 칸 오류 문자열로는 부족하다(링크 · 「구분 더하기」에 기존 거래처 id가 필요) — 던지지 않고 데이터로 돌려준다.
+// 「거래처 정보」를 못 보는 사람(existing null)에게는 문구만 — id는 빈 값이고 화면은 name null이면 링크 · 단추를 내지 않는다.
 function businessNoConflict(error: DuplicateBusinessNoError) {
   return {
     businessNoConflict: {
-      id: error.existing.id,
-      name: error.existing.name,
-      archived: error.existing.archived,
-      hidden: error.existing.hidden,
+      id: error.existing?.id ?? "",
+      name: error.existing?.name ?? null,
+      archived: error.existing?.archived ?? false,
+      hidden: error.existing?.hidden ?? false,
       addSide: error.addSide,
       message: error.message,
     },

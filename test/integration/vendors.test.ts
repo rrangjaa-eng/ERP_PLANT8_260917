@@ -304,6 +304,16 @@ describe("vendors 사업자번호 중복 막기 (실제 Postgres)", () => {
     expect((error as DuplicateBusinessNoError).existing).toMatchObject({ id: vendor.id, hidden: true, archived: false });
   });
 
+  it("숨긴 거래처는 다른 갈래로만 있어도 「구분 더하기」 대신 그 거래처 열기다(계획 §8)", async () => {
+    const no = uniqueBizNo();
+    const { vendor } = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no, kind: "client" });
+    await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
+    const error = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no, kind: "supplier" }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(DuplicateBusinessNoError);
+    expect((error as DuplicateBusinessNoError).addSide).toBeNull();
+    expect((error as DuplicateBusinessNoError).message).toBe(`같은 사업자번호 거래처 있음 · ${vendor.name}(숨김)`);
+  });
+
   it("보관된 거래처와 같은 번호도 막히고 보관됨으로 알린다", async () => {
     const no = uniqueBizNo();
     const { vendor } = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no });
@@ -323,15 +333,16 @@ describe("vendors 사업자번호 중복 막기 (실제 Postgres)", () => {
     expect((covered as DuplicateBusinessNoError).addSide).toBeNull();
   });
 
-  it("「거래처 정보」를 못 보는 사람에게는 기존 거래처 이름을 싣지 않는다", async () => {
+  it("「거래처 정보」를 못 보는 사람에게는 기존 거래처의 이름 · id · 숨김 · 보관 · 더할 갈래를 싣지 않는다", async () => {
     const no = uniqueBizNo();
-    await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no });
+    await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no, kind: "client" });
     const blind = { id: `vendor-blind-${randomUUID()}`, roleId: DEFAULT_ROLE_ID };
     await upsertVisibility(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, infoItem: "vendor.value", visible: false });
-    const error = await createVendor(blind, { name: uniqueName(), businessNo: no }, { can: () => Promise.resolve(true) }).catch((e: unknown) => e);
+    const error = await createVendor(blind, { name: uniqueName(), businessNo: no, kind: "supplier" }, { can: () => Promise.resolve(true) }).catch((e: unknown) => e);
     await upsertVisibility(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, infoItem: "vendor.value", visible: true });
     expect(error).toBeInstanceOf(DuplicateBusinessNoError);
-    expect((error as DuplicateBusinessNoError).existing.name).toBeNull();
+    expect((error as DuplicateBusinessNoError).existing).toBeNull();
+    expect((error as DuplicateBusinessNoError).addSide).toBeNull();
     expect((error as DuplicateBusinessNoError).message).toBe("같은 사업자번호 거래처 있음");
   });
 

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, expectTypeOf, it, vi } from "vitest";
 import type { TaxRule } from "@/domain/code-tables/tax-rule";
 import { loadTaxRates, type TaxRates } from "@/domain/money/tax";
 import { computeExpenseTax, incomeTypeFor, pickTaxDates } from "@/domain/expenses/tax";
@@ -19,7 +19,7 @@ import {
 import { AMOUNT_HIDDEN } from "@/domain/payments/action-row";
 import { ACTION_TYPE_LABELS, ALWAYS_ON_ACTION_TYPES, CORE_ACTION_TYPES } from "@/domain/action-log/record";
 import { ACTION_LOG_OPTIONAL_TYPES } from "@/domain/settings/keys";
-import { approvalGateDecision, evidenceGateDecision, pairGateDecision, resolveExpenseActionRow, scheduleDirtyBar } from "@/domain/payments/action-row";
+import { approvalGateDecision, evidenceGateDecision, pairGateDecision, resolveExpenseActionRow, scheduleDirtyBar, type EvidenceGateInput } from "@/domain/payments/action-row";
 
 // 06-03 — 지급 총액 · 금액 원천(R-4) · 공급가 역산(R-5) · 결재 게이트 · 「지출결의 상태 → 1차」(P0 · P4 · P6). DB 없이 돈다.
 
@@ -280,12 +280,18 @@ function preOf(row: LockedExpense, hasLiveEvidence: boolean): PaymentInputs {
   };
 }
 
+// 06-06 검토 S-3 — evidenceGate 필수. 06-04 꼴(면제 · 확인 기록 없음) 증빙 게이트 입력.
+function gateOf(shared: PaymentShared, hasEvidence: boolean, locked: LockedExpense): EvidenceGateInput {
+  return { evidenceRequired: shared.evidenceRequired, hasEvidence, prepaid: locked.prepaid, waived: false, confirmation: null, drafterName: "박서연" };
+}
+
 function judge(over: { pre?: PaymentInputs; locked?: LockedExpense; approvalState?: string; lockedHasEvidence?: boolean; expectedPayableKrw: number; shared?: PaymentShared }) {
   return judgeLockedPayment({
     pre: over.pre ?? preOf(ROW, false),
     locked: over.locked ?? ROW,
     approvalState: over.approvalState ?? "approved",
     lockedHasEvidence: over.lockedHasEvidence ?? false,
+    evidenceGate: gateOf(over.shared ?? SHARED, over.lockedHasEvidence ?? false, over.locked ?? ROW),
     payDate: PAY_DATE,
     expectedPayableKrw: over.expectedPayableKrw,
     shared: over.shared ?? SHARED,
@@ -293,6 +299,11 @@ function judge(over: { pre?: PaymentInputs; locked?: LockedExpense; approvalStat
 }
 
 describe("judgeLockedPayment (잠금 뒤 판정)", () => {
+  // 06-06 검토 S-3 — 증빙 게이트 입력(면제 · 확인 기록 포함)을 빠뜨린 호출이 「확인 기록 없음」으로 닫혀 확인된 문서를 막지 않게, 필수 인자다.
+  it("evidenceGate는 필수 인자다(빠뜨린 호출은 컴파일 오류)", () => {
+    expectTypeOf<Parameters<typeof judgeLockedPayment>[0]["evidenceGate"]>().toEqualTypeOf<EvidenceGateInput>();
+  });
+
   it("기준이 같고 화면 값이 같으면 지급 총액 · 지급 방식을 돌려준다", async () => {
     const result = await judge({ expectedPayableKrw: 1_100_000 });
     expect([result.payable.payableKrw, result.payable.grossSupplyKrw, result.paymentMethod]).toEqual([1_100_000, 1_000_000, "bank_transfer"]);
@@ -342,7 +353,7 @@ describe("judgeLockedPayment (잠금 뒤 판정)", () => {
       payDate: future,
       tax: { taxRule: WITHHOLDING_RULE, dates, incomeType: "other", rates: { ...RATES, asOf: future } },
     };
-    const result = await judgeLockedPayment({ pre, locked: row, approvalState: "approved", lockedHasEvidence: false, payDate: future, expectedPayableKrw: 912_000, shared: SHARED });
+    const result = await judgeLockedPayment({ pre, locked: row, approvalState: "approved", lockedHasEvidence: false, evidenceGate: gateOf(SHARED, false, row), payDate: future, expectedPayableKrw: 912_000, shared: SHARED });
     expect(dates.basisDate).toBe(future);
     expect(result.payable.payableKrw).toBe(912_000);
   });
@@ -357,6 +368,7 @@ describe("judgeLockedPayment — 이체액 · 차이 사유 (06-04 · D-605)", (
       locked,
       approvalState: "approved",
       lockedHasEvidence: false,
+      evidenceGate: gateOf(SHARED, false, locked),
       payDate: PAY_DATE,
       expectedPayableKrw: over.expectedPayableKrw ?? 1_100_000,
       shared: SHARED,

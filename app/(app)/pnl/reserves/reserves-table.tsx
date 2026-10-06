@@ -491,6 +491,22 @@ function restoredSnapshot(stored: Record<string, unknown>): Snapshot {
   return snapshot;
 }
 
+// 붙여넣기 클라이언트 선택지. QA ISSUE-005 — 이름만 붙이면 동명 여럿 오류(R1) 그대로, `이름 · 끝4자리` 라벨이 정확히 같으면 그 클라이언트.
+// 261006-biv /review 4 — 고르는 목록(클라이언트 갈래)에 지금 줄의 저장된 클라이언트를 더한다(복사한 줄을 다시 붙여도 「목록에 없는 값」 아님).
+export function reserveClientPasteOptions(
+  clients: ReserveReferences["clients"],
+  rows: Pick<Row, "clientId" | "clientName">[],
+): { value: string; label: string }[] {
+  const options = clients.flatMap((client) => [
+    { value: client.id, label: client.name },
+    ...(client.label !== client.name ? [{ value: client.id, label: client.label }] : []),
+  ]);
+  for (const { clientId, clientName } of rows) {
+    if (clientId && clientName && !options.some((option) => option.value === clientId)) options.push({ value: clientId, label: clientName });
+  }
+  return options;
+}
+
 export type ReservesTableProps = {
   /** 리뷰 R2 — 미저장 편집 보관본 키를 보는 사람별로 나눈다. */
   viewerId: string;
@@ -1067,11 +1083,8 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
     {
       key: "clientId",
       kind: "select",
-      // QA ISSUE-005 — 이름만 붙이면 동명 여럿 오류(R1) 그대로, `이름 · 끝4자리` 라벨이 정확히 같으면 그 클라이언트.
-      options: references.clients.flatMap((client) => [
-        { value: client.id, label: client.name },
-        ...(client.label !== client.name ? [{ value: client.id, label: client.label }] : []),
-      ]),
+      // QA ISSUE-005 · 261006-biv /review 4 — 지금 줄의 저장된 클라이언트(다른 갈래 · 숨김)도 받는다.
+      options: reserveClientPasteOptions(references.clients, rows),
       // 리뷰 R5 — 저장된 줄의 잠긴 클라이언트 칸도 값을 읽는다. 같은 클라이언트면 그대로 두고, 다른 클라이언트면 잠김 오류 칸(handlePasteAtCell).
       isEditable: (row) => editability(row, "clientId") !== "readonly",
     },
@@ -1094,7 +1107,8 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
       case "note":
         return { [columnKey]: value === "—" || value === "" ? null : value };
       case "clientId":
-        return { clientId: value, clientName: clientName(value) };
+        // 261006-biv /review 4 — 선택지 밖 저장 클라이언트는 그 줄들이 받은 이름을 잇는다.
+        return { clientId: value, clientName: clientName(value) || (rows.find((row) => row.clientId === value)?.clientName ?? "") };
       default:
         return {};
     }

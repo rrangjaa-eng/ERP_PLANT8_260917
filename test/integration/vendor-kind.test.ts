@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { projects, vendors } from "@/db/schema";
+import { corpCardUsages, corpCards, projects, vendors } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { createAccount } from "@/domain/auth/accounts";
 import { insertRole } from "@/repositories/roles";
@@ -143,6 +143,42 @@ describe("마이그레이션 채우기 — 쓰임 기반 갈래 (261006-biv D-2,
     expect(await kindOf(d)).toBe("supplier");
     expect(await kindOf(e)).toBe("both");
     expect(await kindOf(f)).toBe("both");
+  });
+
+  it("(e) 법인카드 사용처(corp_card_usages.merchant_vendor_id)도 협력사 쪽으로 센다 — 클라이언트 + 사용처 = both, 사용처만 = supplier", async () => {
+    const fx = await setupExpenseProject();
+    const [project] = await db.select({ clientId: projects.clientId }).from(projects).where(eq(projects.id, fx.projectId)).limit(1);
+    if (!project) throw new Error("프로젝트가 없습니다");
+    const clientAndMerchant = project.clientId;
+    const merchantOnly = (await plainVendor("카드사용처만")).id;
+
+    const [card] = await db
+      .insert(corpCards)
+      .values({ issuer: `카드사-${randomUUID()}`, numberLast4: "1234", label: "카드", kind: "personal", holderUserId: fx.pm.id })
+      .returning({ id: corpCards.id });
+    if (!card) throw new Error("카드 없음");
+    for (const merchantVendorId of [clientAndMerchant, merchantOnly]) {
+      await db.insert(corpCardUsages).values({
+        corpCardId: card.id,
+        usedOn: "2026-10-01",
+        merchantVendorId,
+        totalAmountKrw: 110_000,
+        supplyKrw: 100_000,
+        vatKrw: 10_000,
+        evidenceTypeCode: "card_slip",
+        linkKind: "quote_line",
+        quoteLineId: fx.lines.noVendor,
+        usedByUserId: fx.pm.id,
+        registeredBy: fx.pm.id,
+        registeredVia: "self",
+      });
+    }
+
+    await db.update(vendors).set({ kind: "both" }).where(inArray(vendors.id, [clientAndMerchant, merchantOnly]));
+    for (const statement of backfillStatements()) await db.execute(sql.raw(statement));
+
+    expect(await kindOf(clientAndMerchant)).toBe("both");
+    expect(await kindOf(merchantOnly)).toBe("supplier");
   });
 });
 

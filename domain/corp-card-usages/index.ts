@@ -42,7 +42,7 @@ import { findProjectById } from "@/repositories/projects";
 import { findQuoteLineById, listQuoteLinesByRevisions } from "@/repositories/quote-lines";
 import { findLatestQuoteRevision, findQuoteRevisionById } from "@/repositories/quote-revisions";
 import { findLineLinks, lockQuoteLines } from "@/repositories/quote-line-links";
-import { findVendorNamesByIds } from "@/repositories/vendors";
+import { findVendorById, findVendorNamesByIds } from "@/repositories/vendors";
 import { createOutOfQuoteLine } from "@/domain/quotes/lines";
 import {
   cardLinkLineChoice,
@@ -73,6 +73,8 @@ const SHARED_CARD_FORBIDDEN = "공용 카드 등록 권한 없음 · 공용 카�
 const AMOUNT_NOT_NUMBER = "숫자 아님 · 1,240,000처럼";
 const AMOUNT_NOT_POSITIVE = "결제 합계 0 이하 · 금액 고치기";
 const ITEM_MISSING = "항목 없음 · 항목 적기";
+const MERCHANT_MISSING = "가맹점 없음 · 가맹점 고르기";
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type CardUsageLinkKind = "team_cost" | "quote_line";
 
@@ -196,6 +198,14 @@ export async function precheckCardUsage(viewer: Viewer, input: CardUsageInput): 
   if (!option) {
     const label = evidence.labels.get(input.evidenceTypeCode) ?? input.evidenceTypeCode;
     throw new CardUsageRejectedError(`증빙 종류 ${label} 카드에 없음 · 증빙 종류 고르기`);
+  }
+
+  // 가맹점(CSO-5) — 고르기 목록(searchMerchantsForCard · listVendorsForPick)과 같은 조건: 있음 · 숨김 아님 · 보관 아님 · 협력사 갈래.
+  if (input.merchantVendorId) {
+    const merchant = UUID_SHAPE.test(input.merchantVendorId) ? await findVendorById(viewer, input.merchantVendorId) : null;
+    if (!merchant || merchant.hidden || merchant.archivedAt !== null || !vendorKindsFor("supplier").includes(merchant.kind)) {
+      throw new CardUsageRejectedError(MERCHANT_MISSING);
+    }
   }
 
   const rates = await loadTaxRates(input.usedOn);

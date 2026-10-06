@@ -8,7 +8,7 @@ import { createOrgUnit, createTeam } from "@/domain/org";
 import { and, eq } from "drizzle-orm";
 import { Client } from "pg";
 import { db, pool } from "@/db/client";
-import { corpCardUsages, expenses, projects, purchaseRequests, quoteLines } from "@/db/schema";
+import { corpCardUsages, expenses, projects, purchaseRequests, quoteLines, vendors } from "@/db/schema";
 import { gate, GateBlockedError } from "@/domain/rules/gate";
 import { createProject, CompletedProjectError } from "@/domain/projects";
 import { getCurrentQuoteRevision, listQuoteLines, saveQuoteLines } from "@/domain/quotes/lines";
@@ -238,6 +238,33 @@ describe("가맹점 고르기는 카드 자격으로(P3-6)", () => {
     const found = await searchMerchantsForCard(holder, { query: vendorName });
     expect(found.rows.map((row) => row.name)).toEqual([vendorName]);
     await expect(searchMerchantsForCard(noCard, { query: vendorName })).rejects.toBeInstanceOf(ForbiddenError);
+  });
+});
+
+describe("가맹점 id 서버 확인(CSO-5 · P3-2)", () => {
+  it("없는 · 숨김 · 보관 · 클라이언트 거래처 → 「가맹점 없음 · 가맹점 고르기」, 협력사 · 둘 다는 통과", async () => {
+    const team = await makeTeam();
+    const staff = await makePerson("직원", DEFAULT_ROLE_ID, team.name);
+    const cardId = await makeCard({ kind: "personal", holderUserId: staff.id });
+    const vendorOf = async (kind: "client" | "supplier" | "both") => {
+      const name = `가맹점-${randomUUID()}`;
+      return (await insertVendor(SYSTEM_VIEWER, { name, normalizedName: name, kind })).id;
+    };
+    const hidden = await vendorOf("supplier");
+    await db.update(vendors).set({ hidden: true }).where(eq(vendors.id, hidden));
+    const archived = await vendorOf("supplier");
+    await db.update(vendors).set({ archivedAt: new Date() }).where(eq(vendors.id, archived));
+
+    for (const merchantVendorId of [randomUUID(), hidden, archived, await vendorOf("client")]) {
+      const error = await caught(precheckCardUsage(staff, { ...usageInput(cardId), merchantVendorId }));
+      expect(error).toBeInstanceOf(CardUsageRejectedError);
+      expect((error as Error).message).toBe("가맹점 없음 · 가맹점 고르기");
+    }
+    for (const kind of ["supplier", "both"] as const) {
+      const input = { ...usageInput(cardId), merchantVendorId: await vendorOf(kind) };
+      await createCardUsage(staff, input, await precheckCardUsage(staff, input));
+    }
+    expect(await usageCount()).toBe(2);
   });
 });
 

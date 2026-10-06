@@ -28,7 +28,7 @@ import {
   users,
   vendors,
 } from "@/db/schema";
-import { archive } from "@/domain/archive";
+import { archive, restore } from "@/domain/archive";
 import { createAccount } from "@/domain/auth/accounts";
 import { createCorpCard } from "@/domain/corp-cards";
 import { createExpenseFromLines, createTeamExpenseDraft, saveExpenseDraft, submitExpense } from "@/domain/expenses";
@@ -58,7 +58,8 @@ import { QUOTE_SUBCATEGORY_TABLE_KEY } from "@/domain/projects/references";
 
 export const DEMO_NAME_PREFIX = "[테스트] ";
 export const DEMO_EMAIL_LIKE = "demo-%@plant8-demo.test";
-const DEMO_EMAIL_DOMAIN_LIKE = "%@plant8-demo.test";
+// 견본 사용자 이메일은 PEOPLE 키로 만든 정확한 목록과 purge가 바꾼 archived-… 형식뿐이다(better-auth가 이메일을 소문자로 저장한다).
+const ARCHIVED_EMAIL_LIKE = "archived-%@plant8-demo.test";
 
 const named = (name: string) => `${DEMO_NAME_PREFIX}${name}`;
 
@@ -79,6 +80,7 @@ const PEOPLE: readonly { key: PersonKey; name: string; roleId: string; team: "de
   { key: "ceo", name: "강현우", roleId: CEO_ROLE_ID, team: "demo" },
 ];
 
+const DEMO_EMAILS = PEOPLE.map((person) => `demo-${person.key}@plant8-demo.test`.toLowerCase());
 const DEMO_CARD_LABELS = [named("김민준 법인카드"), named("기획1팀 공용카드")] as const;
 
 // 계좌번호는 넣지 않는다(암호화 키 없음). 사업자번호는 형식만 맞는 가짜.
@@ -209,7 +211,7 @@ async function draftExpense(viewer: Viewer, lineId: string, note: string, schedu
 
 // 지금 일하는 사람(보관 안 됨 · 퇴직일 지나지 않음)인지.
 function isActiveUser(row: { archivedAt: Date | null; resignationDate: string | null }, today: string): boolean {
-  return row.archivedAt === null && (row.resignationDate === null || row.resignationDate > today);
+  return row.archivedAt === null && (row.resignationDate === null || row.resignationDate >= today);
 }
 
 async function hasActiveCeo(today: string): Promise<boolean> {
@@ -235,17 +237,18 @@ async function hasActiveMgmt(mgmtTeamId: string, today: string): Promise<boolean
   return false;
 }
 
-// 보관 안 된 견본 본부 · 팀이 있으면 재사용한다.
+// 견본 본부 · 팀이 있으면 재사용하고, purge가 보관해 둔 것은 복원한다(본부 이름은 전역 unique라 새로 만들 수 없다).
 async function ensureDemoTeam(): Promise<string> {
-  const [existingTeam] = await db.select({ id: teams.id, orgUnitId: teams.orgUnitId }).from(teams).where(and(eq(teams.name, DEMO_TEAM_NAME), sql`${teams.archivedAt} IS NULL`));
-  if (existingTeam) return existingTeam.id;
-  const [existingUnit] = await db.select({ id: orgUnits.id }).from(orgUnits).where(and(eq(orgUnits.name, DEMO_ORG_UNIT_NAME), sql`${orgUnits.archivedAt} IS NULL`));
+  const [existingUnit] = await db.select({ id: orgUnits.id, archivedAt: orgUnits.archivedAt }).from(orgUnits).where(eq(orgUnits.name, DEMO_ORG_UNIT_NAME));
+  if (existingUnit?.archivedAt) await restore(SYSTEM_VIEWER, "org_unit", existingUnit.id);
   const unitId = existingUnit?.id ?? (await createOrgUnit(SYSTEM_VIEWER, { name: DEMO_ORG_UNIT_NAME })).id;
-  return (await createTeam(SYSTEM_VIEWER, { orgUnitId: unitId, name: DEMO_TEAM_NAME })).id;
+  const [existingTeam] = await db.select({ id: teams.id, archivedAt: teams.archivedAt }).from(teams).where(and(eq(teams.orgUnitId, unitId), eq(teams.name, DEMO_TEAM_NAME)));
+  if (existingTeam?.archivedAt) await restore(SYSTEM_VIEWER, "team", existingTeam.id);
+  return existingTeam?.id ?? (await createTeam(SYSTEM_VIEWER, { orgUnitId: unitId, name: DEMO_TEAM_NAME })).id;
 }
 
 export async function seedDemoData(): Promise<DemoSeedResult> {
-  const existing = await db.select({ id: users.id }).from(users).where(and(like(users.email, DEMO_EMAIL_LIKE), sql`${users.archivedAt} IS NULL`)).limit(1);
+  const existing = await db.select({ id: users.id }).from(users).where(and(inArray(users.email, DEMO_EMAILS), sql`${users.archivedAt} IS NULL`)).limit(1);
   if (existing.length > 0) {
     // 마지막 산출물(팀 비용 작성 중 지출결의)까지 있어야 끝난 seed다 — 없으면 중간에 멈춘 것이다.
     const [done] = await db.select({ id: expenses.id }).from(expenses).where(eq(expenses.content, TEAM_EXPENSE_CONTENT)).limit(1);
@@ -332,7 +335,13 @@ export async function seedDemoData(): Promise<DemoSeedResult> {
       await changeProjectStatus(lead, project.id, { from: "bidding", to: "in_progress" });
       await approveRevision(pm, revision.id, addDays(today, Math.min(spec.start + 5, 0)));
     }
-    if (spec.key === "settling") await applyAutoSettlement({ projectIds: [project.id] });
+    if (spec.key === "settling") {
+      // applyAutoSettlement는 오류를 삼키고 빈 배열을 돌려줄 수 있다 — 이 프로젝트가 정산이 안 됐으면 마커가 생기기 전에 멈춘다.
+      // (승인 저장 등 앞 단계가 이미 정산으로 바꿨으면 반환에 없으므로, 반환에 없을 때는 지금 상태까지 확인한다.)
+      const settled = await applyAutoSettlement({ projectIds: [project.id] });
+      const [row] = await db.select({ status: projects.status }).from(projects).where(eq(projects.id, project.id));
+      if (!settled.includes(project.id) && row?.status !== "settling") throw new Error("견본 정산 프로젝트를 정산 상태로 바꾸지 못했습니다");
+    }
   }
 
   // 매출 — 진행 프로젝트에 발행, 한 건은 수금까지.
@@ -387,7 +396,7 @@ export async function seedDemoData(): Promise<DemoSeedResult> {
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type KeptRow = { entity: "vendor" | "team" | "org_unit"; id: string };
-const DEMO_VENDOR_NAMES = [...DEMO_CLIENTS, ...DEMO_PARTNERS].map((vendor) => named(vendor.name));
+const DEMO_VENDOR_KEYS = [...DEMO_CLIENTS, ...DEMO_PARTNERS].map((vendor) => ({ name: named(vendor.name), businessNo: vendor.businessNo }));
 
 function isForeignKeyViolation(error: unknown): boolean {
   const cause = (error as { cause?: { code?: unknown } } | null)?.cause;
@@ -416,7 +425,12 @@ async function deleteOrKeep(
 
 // 견본 사업 데이터를 FK 순서대로 한 트랜잭션에서 물리 삭제한다. 견본 사용자는 행동 로그 · 결재 처리 이력 등 FK가 남아 지우지 않고 보관한다.
 export async function purgeDemoData(): Promise<DemoPurgeResult> {
-  const demoUserIds = (await db.select({ id: users.id }).from(users).where(like(users.email, DEMO_EMAIL_DOMAIN_LIKE))).map((row) => row.id);
+  const demoUserIds = (
+    await db
+      .select({ id: users.id })
+      .from(users)
+      .where(or(inArray(users.email, DEMO_EMAILS), and(like(users.email, ARCHIVED_EMAIL_LIKE), like(users.name, `${DEMO_NAME_PREFIX}%`))))
+  ).map((row) => row.id);
   const counts: Record<string, number> = {};
   const keep: KeptRow[] = [];
   const record = (key: string, result: { rowCount: number | null }) => {
@@ -431,7 +445,13 @@ export async function purgeDemoData(): Promise<DemoPurgeResult> {
         .from(projects)
         .where(and(inArray(projects.name, PROJECTS.map((spec) => named(spec.name))), inArray(projects.pmUserId, demoUserIds)))
     ).map((row) => row.id);
-    const vendorIds = (await tx.select({ id: vendors.id }).from(vendors).where(inArray(vendors.name, DEMO_VENDOR_NAMES))).map((row) => row.id);
+    // 이름은 고유가 아니라 이름 + 견본 사업자번호가 둘 다 맞는 거래처만 견본이다.
+    const vendorIds = (
+      await tx
+        .select({ id: vendors.id })
+        .from(vendors)
+        .where(or(...DEMO_VENDOR_KEYS.map((key) => and(eq(vendors.name, key.name), eq(vendors.businessNo, key.businessNo)))))
+    ).map((row) => row.id);
     const cardIds = (await tx.select({ id: corpCards.id }).from(corpCards).where(inArray(corpCards.label, DEMO_CARD_LABELS))).map((row) => row.id);
     const revisionIds = (await tx.select({ id: quoteRevisions.id }).from(quoteRevisions).where(inArray(quoteRevisions.projectId, projectIds))).map((row) => row.id);
     const lineIds = (await tx.select({ id: quoteLines.id }).from(quoteLines).where(inArray(quoteLines.revisionId, revisionIds))).map((row) => row.id);
@@ -513,7 +533,7 @@ export async function purgeDemoData(): Promise<DemoPurgeResult> {
       await archive(SYSTEM_VIEWER, "user", userId);
       archivedUsers += 1;
     }
-    if (row.email.startsWith("demo-")) await db.update(users).set({ email: `archived-${userId}@plant8-demo.test` }).where(eq(users.id, userId));
+    if (DEMO_EMAILS.includes(row.email)) await db.update(users).set({ email: `archived-${userId}@plant8-demo.test` }).where(eq(users.id, userId));
   }
   counts.archivedUsers = archivedUsers;
 

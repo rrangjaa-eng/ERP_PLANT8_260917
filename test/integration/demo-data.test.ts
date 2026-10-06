@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createAccount } from "@/domain/auth/accounts";
+import { seoulToday } from "@/lib/dates";
 import { and, eq, inArray, like, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { corpCards, expenses, files, orgUnits, projects, quoteLines, quoteRevisions, revenueEntries, teamMemberships, teams, users, vendors } from "@/db/schema";
@@ -11,6 +13,20 @@ import { assignTeam } from "@/domain/org";
 import { CEO_ROLE_ID, DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { makePerson, teamIdByName } from "./approvals-fixtures";
 import { DEMO_EMAIL_LIKE, DEMO_NAME_PREFIX, main, purgeDemoData, seedDemoData } from "@/scripts/demo-data";
+
+const autoSettle = vi.hoisted(() => ({ swallow: false }));
+vi.mock("@/domain/projects/auto-transition", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/domain/projects/auto-transition")>();
+  // swallow: 오류를 삼킨 경우를 흉내 낸다 — 아무것도 정산하지 못하고(앞 단계가 이미 바꾼 것도 되돌려) 빈 배열을 돌려준다.
+  const swallowed = async (...args: Parameters<typeof actual.applyAutoSettlement>) => {
+    const { db: database } = await import("@/db/client");
+    const { projects: projectsTable } = await import("@/db/schema");
+    const { inArray: inList } = await import("drizzle-orm");
+    await database.update(projectsTable).set({ status: "in_progress" }).where(inList(projectsTable.id, args[0].projectIds ?? []));
+    return [];
+  };
+  return { ...actual, applyAutoSettlement: (...args: Parameters<typeof actual.applyAutoSettlement>) => (autoSettle.swallow ? swallowed(...args) : actual.applyAutoSettlement(...args)) };
+});
 
 // 스테이징 화면 확인용 견본 데이터 CLI — 시드·멱등·삭제(purge)·운영 거부. 견본은 이름 접두어와 견본 사용자 이메일로만 고른다.
 
@@ -30,6 +46,7 @@ async function demoBusinessRows() {
 }
 
 afterEach(() => {
+  autoSettle.swallow = false;
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
 });
@@ -256,6 +273,65 @@ describe("scripts/demo-data purge 범위 · 안전", () => {
     await main(["seed"]);
     await main(["purge"]);
     expect(logs.join("\n")).toMatch(/demo purge complete:.*nonDemoExpenses=0/);
+  }, 240_000);
+});
+
+describe("scripts/demo-data 리뷰 지적", () => {
+  it("견본 형식(demo-… · archived-…)이 아닌 plant8-demo.test 계정은 purge가 건드리지 않고 seed도 막지 않는다", async () => {
+    const employee = await createAccount(SYSTEM_VIEWER, { email: "employee@plant8-demo.test", name: "실제 직원", roleId: DEFAULT_ROLE_ID });
+    const lookalike = await createAccount(SYSTEM_VIEWER, { email: "demo-extra@plant8-demo.test", name: "실제 직원2", roleId: DEFAULT_ROLE_ID });
+    await expect(seedDemoData()).resolves.toMatchObject({ seeded: true });
+    await purgeDemoData();
+    const rows = await db.select({ id: users.id, archivedAt: users.archivedAt, email: users.email }).from(users).where(inArray(users.id, [employee.userId, lookalike.userId]));
+    expect(rows).toHaveLength(2);
+    expect(rows.every((row) => row.archivedAt === null && !row.email.startsWith("archived-"))).toBe(true);
+  }, 180_000);
+
+  it("purge가 견본 팀 · 본부를 보관한 뒤에도 다음 seed가 복원해 재사용한다(이름 unique 위반 없음)", async () => {
+    await seedDemoData();
+    const [team] = await db.select().from(teams).where(eq(teams.name, `${DEMO_NAME_PREFIX}견본팀`));
+    const real = await makePerson("실제소속", DEFAULT_ROLE_ID, null);
+    await assignTeam(SYSTEM_VIEWER, { userId: real.id, teamId: team?.id ?? "", effectiveFrom: "2026-01-01" });
+    await purgeDemoData();
+    const [archived] = await db.select().from(teams).where(eq(teams.id, team?.id ?? ""));
+    expect(archived?.archivedAt).not.toBeNull();
+
+    await expect(seedDemoData()).resolves.toMatchObject({ seeded: true });
+    const [restored] = await db.select().from(teams).where(eq(teams.name, `${DEMO_NAME_PREFIX}견본팀`));
+    expect(restored?.id).toBe(team?.id);
+    expect(restored?.archivedAt).toBeNull();
+    const [unit] = await db.select().from(orgUnits).where(eq(orgUnits.name, `${DEMO_NAME_PREFIX}견본본부`));
+    expect(unit?.archivedAt).toBeNull();
+  }, 240_000);
+
+  it("이름만 같고 사업자번호가 다른 거래처는 purge가 지우지 않는다", async () => {
+    const lookalike = await createVendor(SYSTEM_VIEWER, { name: `${DEMO_NAME_PREFIX}한빛전자`, businessNo: "999-99-99999" });
+    await seedDemoData();
+    const result = await purgeDemoData();
+    expect(result.counts.vendors).toBe(6);
+    const left = await db.select().from(vendors).where(like(vendors.name, `${DEMO_NAME_PREFIX}%`));
+    expect(left.map((vendor) => vendor.id)).toEqual([lookalike.vendor.id]);
+  }, 180_000);
+
+  it("자동 정산이 오류를 삼키고 빈 배열을 돌려주면 팀 비용 마커가 생기기 전에 seed가 throw한다", async () => {
+    autoSettle.swallow = true;
+    await expect(seedDemoData()).rejects.toThrow(/정산/);
+    expect(await count("expenses")).toBe(0);
+  }, 120_000);
+
+  it("실제 대표의 퇴직일이 오늘이면 아직 활성이라 견본 대표를 만들지 않고, 어제면 만든다", async () => {
+    const today = seoulToday();
+    const yesterday = new Date(`${today}T00:00:00Z`);
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    const real = await makePerson("실제대표", CEO_ROLE_ID, null);
+    await db.update(users).set({ resignationDate: today }).where(eq(users.id, real.id));
+    await seedDemoData();
+    expect((await db.select().from(users).where(eq(users.email, "demo-ceo@plant8-demo.test"))).length).toBe(0);
+
+    await purgeDemoData();
+    await db.update(users).set({ resignationDate: yesterday.toISOString().slice(0, 10) }).where(eq(users.id, real.id));
+    await seedDemoData();
+    expect((await db.select().from(users).where(eq(users.email, "demo-ceo@plant8-demo.test"))).length).toBe(1);
   }, 240_000);
 });
 

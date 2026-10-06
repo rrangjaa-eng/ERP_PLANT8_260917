@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 06
 current_phase_name: 지급·증빙·법인카드·구매 요청 (경영관리)
-current_plan: 11
+current_plan: 12
 status: executing
-stopped_at: Completed 06-06-PLAN.md
-last_updated: "2026-10-06T14:40:50.388Z"
+stopped_at: Completed 06-07-PLAN.md
+last_updated: "2026-10-06T16:35:21.413Z"
 last_activity: 2026-10-06
 last_activity_desc: Phase 06 execution started
-state_head: "0baa3028db61f3f02ce8f4b26a616aa7cae737bf"
+state_head: d9a4b49916c5ddf3659f1f6de37d27685a286d7c
 progress:
   total_phases: 17
   completed_phases: 7
   total_plans: 197
-  completed_plans: 178
+  completed_plans: 179
   percent: 41
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-30)
 ## Current Position
 
 Phase: 06 (지급·증빙·법인카드·구매 요청 (경영관리)) — EXECUTING
-Current Plan: 11
+Current Plan: 12
 Total Plans in Phase: 29
 Status: Ready to execute
 Last activity: 2026-10-06 — Phase 06 execution started
@@ -144,6 +144,7 @@ Progress: [████░░░░░░] 41%
 | Phase 06 P05 | 112min | 4 tasks | 16 files |
 | Phase 06 P28 | 132 min | 3 tasks | 20 files |
 | Phase 06 P06 | 40m(커밋 구간) | 3 tasks | 21 files |
+| Phase 06 P07 | 105m | 3 tasks | 19 files |
 
 ## Accumulated Context
 
@@ -378,6 +379,10 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-06: 확인 시각은 06-27 reviewed_at 하나(confirmed_at 없음, CF-1) — 6.1-12에 알림
 - [Phase 06]: 06-06: F2로 빈 증빙 금액을 채워 확인하면 06-27 CHECK 때문에 확인 기록 전·후는 null, 전 null·후 값은 끌 수 없는 evidence_amount_change 로그에만
 - [Phase 06]: 06-06: Q-F 계보 카드 사용은 listLineageLinesByProjects로 사슬을 짓는다(summarizeRevisions+listQuoteLinesByRevision 대신)
+- [Phase 06]: 06-07: 카드 사용 견적 외 비용은 저장마다 out_of_quote 줄을 새로 만든다(프로젝트 행 잠금 → project.line-edit → 줄 → 카드 사용, 한 트랜잭션)
+- [Phase 06]: 06-07: 계보 사슬의 현재 줄은 프로젝트 최신 차수 순번의 줄만 — 보관된 현재 줄이면 빠진 줄(N-2)
+- [Phase 06]: 06-07: S15 법인카드 사용 섹션은 클라이언트에서 액션으로 따로 불러온다(로드 실패에도 다른 섹션이 선다)
+- [Phase 06]: 06-07: N-3 보관 붙잡기 · 실행가 초과 읽기를 06-13 대신 06-07에서(Q-G 추천안 — 아침 확인)
 
 ### Pending Todos
 
@@ -473,6 +478,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-06T14:40:49.876Z
-Stopped at: Completed 06-06-PLAN.md
+Last session: 2026-10-06T16:35:20.965Z
+Stopped at: Completed 06-07-PLAN.md
 Resume file: None

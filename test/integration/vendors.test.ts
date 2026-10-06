@@ -3,12 +3,13 @@ import { describe, expect, it } from "vitest";
 import { db } from "@/db/client";
 import { vendors, users } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { Pool } from "pg";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { upsertVisibility, upsertPermission } from "@/repositories/permissions";
 import { recordAction } from "@/domain/action-log/record";
 import { queryActionLog } from "@/repositories/action-log";
-import { archive, restore } from "@/domain/archive";
+import { archive, listArchive, restore } from "@/domain/archive";
 import {
   listVendors,
   searchVendors,
@@ -17,10 +18,19 @@ import {
   setVendorHidden,
   revealAccountNumber,
   normalizeVendorName,
+  addVendorKind,
+  ArchivedVendorError,
+  DuplicateBusinessNoError,
   ForbiddenError,
 } from "@/domain/vendors";
 
 const REVEAL_ITEM = "vendor.account_number_unmasked";
+
+// 실행마다 고유한 사업자번호 — 같은 DB를 다시 써도 겹치지 않는다(「xxx-xx-xxxxx」).
+function uniqueBizNo(): string {
+  const digits = String(Math.floor(Math.random() * 9_000_000_000) + 1_000_000_000);
+  return `${digits.slice(0, 3)}-${digits.slice(3, 5)}-${digits.slice(5)}`;
+}
 
 function uniqueName(): string {
   return `거래처-${randomUUID()}`;
@@ -81,8 +91,8 @@ describe("vendors (MAST-01, 실제 Postgres)", () => {
 
   it("같은 이름의 거래처 둘이 자동완성에 둘 다 나온다 — 하나로 합쳐지지 않는다", async () => {
     const name = uniqueName();
-    const a = await createVendor(SYSTEM_VIEWER, { name, businessNo: "111-11-11111" });
-    const b = await createVendor(SYSTEM_VIEWER, { name, businessNo: "222-22-22222" });
+    const a = await createVendor(SYSTEM_VIEWER, { name, businessNo: uniqueBizNo() });
+    const b = await createVendor(SYSTEM_VIEWER, { name, businessNo: uniqueBizNo() });
 
     const results = await searchVendors(SYSTEM_VIEWER, name, 10);
     const ids = results.map((r) => r.id);
@@ -259,5 +269,228 @@ describe("vendors (MAST-01, 실제 Postgres)", () => {
     expect(after.some((v) => v.id === vendor.id)).toBe(true);
 
     await upsertPermission(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, menu: "admin.vendors", action: "view", allowed: false });
+  });
+});
+
+describe("vendors 사업자번호 중복 막기 (실제 Postgres)", () => {
+  async function countByName(name: string): Promise<number> {
+    return (await db.select().from(vendors).where(eq(vendors.name, name))).length;
+  }
+
+  it("같은 숫자 번호(하이픈 다름)로 등록하면 막히고 행이 늘지 않는다", async () => {
+    const no = uniqueBizNo();
+    const { vendor } = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no });
+    const name = uniqueName();
+    const error = await createVendor(SYSTEM_VIEWER, { name, businessNo: no.replaceAll("-", "") }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(DuplicateBusinessNoError);
+    expect((error as DuplicateBusinessNoError).existing).toMatchObject({ id: vendor.id, name: vendor.name, hidden: false, archived: false });
+    expect(await countByName(name)).toBe(0);
+  });
+
+  it("다른 번호 · 번호 없음 둘은 통과한다", async () => {
+    await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: uniqueBizNo() });
+    await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: uniqueBizNo() });
+    await createVendor(SYSTEM_VIEWER, { name: uniqueName() });
+    await createVendor(SYSTEM_VIEWER, { name: uniqueName() });
+    await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: "---" });
+    await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: "" });
+  });
+
+  it("숨긴 거래처와 같은 번호도 막힌다", async () => {
+    const no = uniqueBizNo();
+    const { vendor } = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no });
+    await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
+    const error = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(DuplicateBusinessNoError);
+    expect((error as DuplicateBusinessNoError).existing).toMatchObject({ id: vendor.id, hidden: true, archived: false });
+  });
+
+  it("숨긴 거래처는 다른 갈래로만 있어도 「구분 더하기」 대신 그 거래처 열기다(계획 §8)", async () => {
+    const no = uniqueBizNo();
+    const { vendor } = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no, kind: "client" });
+    await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
+    const error = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no, kind: "supplier" }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(DuplicateBusinessNoError);
+    expect((error as DuplicateBusinessNoError).addSide).toBeNull();
+    expect((error as DuplicateBusinessNoError).message).toBe(`같은 사업자번호 거래처 있음 · ${vendor.name}(숨김)`);
+  });
+
+  it("보관된 거래처와 같은 번호도 막히고 보관됨으로 알린다", async () => {
+    const no = uniqueBizNo();
+    const { vendor } = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no });
+    await archive(SYSTEM_VIEWER, "vendor", vendor.id);
+    const error = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(DuplicateBusinessNoError);
+    expect((error as DuplicateBusinessNoError).existing).toMatchObject({ id: vendor.id, archived: true });
+    expect((error as DuplicateBusinessNoError).addSide).toBeNull();
+  });
+
+  it("다른 갈래로만 있으면 더할 갈래를 알린다", async () => {
+    const no = uniqueBizNo();
+    await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no, kind: "client" });
+    const error = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no, kind: "supplier" }).catch((e: unknown) => e);
+    expect((error as DuplicateBusinessNoError).addSide).toBe("supplier");
+    const covered = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no, kind: "client" }).catch((e: unknown) => e);
+    expect((covered as DuplicateBusinessNoError).addSide).toBeNull();
+  });
+
+  it("「거래처 정보」를 못 보는 사람에게는 기존 거래처의 이름 · id · 숨김 · 보관 · 더할 갈래를 싣지 않는다", async () => {
+    const no = uniqueBizNo();
+    await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no, kind: "client" });
+    const blind = { id: `vendor-blind-${randomUUID()}`, roleId: DEFAULT_ROLE_ID };
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, infoItem: "vendor.value", visible: false });
+    const error = await createVendor(blind, { name: uniqueName(), businessNo: no, kind: "supplier" }, { can: () => Promise.resolve(true) }).catch((e: unknown) => e);
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, infoItem: "vendor.value", visible: true });
+    expect(error).toBeInstanceOf(DuplicateBusinessNoError);
+    expect((error as DuplicateBusinessNoError).existing).toBeNull();
+    expect((error as DuplicateBusinessNoError).addSide).toBeNull();
+    expect((error as DuplicateBusinessNoError).message).toBe("같은 사업자번호 거래처 있음");
+  });
+
+  it("수정 — 자기 번호 그대로는 통과하고 남의 번호(보관 포함)로 바꾸면 막힌다", async () => {
+    const mine = uniqueBizNo();
+    const other = uniqueBizNo();
+    const archivedNo = uniqueBizNo();
+    const a = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: mine });
+    const b = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: other });
+    const c = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: archivedNo });
+    await archive(SYSTEM_VIEWER, "vendor", c.vendor.id);
+
+    await updateVendor(SYSTEM_VIEWER, a.vendor.id, { name: `${a.vendor.name}-수정`, businessNo: mine.replaceAll("-", "") });
+    await expect(updateVendor(SYSTEM_VIEWER, a.vendor.id, { name: a.vendor.name, businessNo: other })).rejects.toBeInstanceOf(DuplicateBusinessNoError);
+    await expect(updateVendor(SYSTEM_VIEWER, a.vendor.id, { name: a.vendor.name, businessNo: archivedNo })).rejects.toBeInstanceOf(DuplicateBusinessNoError);
+    await expect(
+      updateVendor(SYSTEM_VIEWER, a.vendor.id, { name: a.vendor.name, businessNo: other, customFields: {} }),
+    ).rejects.toBeInstanceOf(DuplicateBusinessNoError);
+    const [row] = await db.select().from(vendors).where(eq(vendors.id, a.vendor.id));
+    expect(row?.businessNo).toBe(mine.replaceAll("-", ""));
+    expect(b.vendor.businessNo).toBe(other);
+  });
+
+  it("수정 — 저장된 숫자 번호가 그대로면 같은 번호의 보관된 거래처가 있어도 이름 · 계좌만 고쳐 저장된다", async () => {
+    const no = uniqueBizNo();
+    const { vendor: a } = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no });
+    // 선검사는 보관 행도 막는다 — 숫자가 그대로면 선검사를 건너뛰는지 보관된 같은 번호로 본다(살아 있는 중복은 유일 색인이 막는다).
+    const [twin] = await db
+      .insert(vendors)
+      .values({ name: uniqueName(), normalizedName: uniqueName(), businessNo: no.replaceAll("-", ""), archivedAt: new Date() })
+      .returning();
+    const renamed = `${a.name}-고침`;
+    await updateVendor(SYSTEM_VIEWER, a.id, { name: renamed, businessNo: no.replaceAll("-", ""), accountBank: "국민" });
+    const [row] = await db.select().from(vendors).where(eq(vendors.id, a.id));
+    expect(row?.name).toBe(renamed);
+    // 숫자가 바뀌면 여전히 막는다.
+    const other = uniqueBizNo();
+    await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: other });
+    await expect(updateVendor(SYSTEM_VIEWER, a.id, { name: renamed, businessNo: other })).rejects.toBeInstanceOf(DuplicateBusinessNoError);
+    await db.delete(vendors).where(eq(vendors.id, twin?.id ?? ""));
+  });
+
+  it("보관함 보기 권한이 없는 사람에게는 보관된 거래처 이름 · id를 싣지 않고 문구만 준다", async () => {
+    const no = uniqueBizNo();
+    const { vendor } = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no });
+    await archive(SYSTEM_VIEWER, "vendor", vendor.id);
+    const noArchiveView = (_viewer: unknown, menu: string) => Promise.resolve(menu !== "admin.archive");
+    const error = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no }, { can: noArchiveView }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(DuplicateBusinessNoError);
+    expect((error as DuplicateBusinessNoError).existing).toBeNull();
+    expect((error as DuplicateBusinessNoError).message).toBe("보관함에 같은 사업자번호 거래처 있음");
+  });
+
+  it("addVendorKind — 갈래만 켜고 로그 1건, 이미 덮으면 그대로, 보관이면 막는다", async () => {
+    const pm = await makeTestPmViewer();
+    await upsertPermission(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, menu: "admin.vendors", action: "write", allowed: true });
+    const bizNo = uniqueBizNo();
+    const { vendor } = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: bizNo, kind: "supplier" });
+
+    const logsBefore = (await queryActionLog(SYSTEM_VIEWER, { actionType: "document_update" })).filter((row) => row.entityId === vendor.id).length;
+    const added = await addVendorKind(pm, vendor.id, "client", bizNo);
+    expect(added?.kind).toBe("both");
+    const logsAfter = (await queryActionLog(SYSTEM_VIEWER, { actionType: "document_update" })).filter((row) => row.entityId === vendor.id).length;
+    expect(logsAfter - logsBefore).toBe(1);
+
+    const again = await addVendorKind(pm, vendor.id, "supplier", bizNo);
+    expect(again?.kind).toBe("both");
+    const logsSame = (await queryActionLog(SYSTEM_VIEWER, { actionType: "document_update" })).filter((row) => row.entityId === vendor.id).length;
+    expect(logsSame).toBe(logsAfter);
+
+    await archive(SYSTEM_VIEWER, "vendor", vendor.id);
+    await expect(addVendorKind(pm, vendor.id, "client", bizNo)).rejects.toBeInstanceOf(ArchivedVendorError);
+    await upsertPermission(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, menu: "admin.vendors", action: "write", allowed: false });
+  });
+
+  it("같은 번호의 다른 거래처가 보관돼 있을 뿐이면 복원된다(살아 있는 거래처만 막는다)", async () => {
+    const no = uniqueBizNo();
+    const { vendor: a } = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no });
+    await archive(SYSTEM_VIEWER, "vendor", a.id);
+    const peerName = uniqueName();
+    await db.insert(vendors).values({ name: peerName, normalizedName: peerName, businessNo: no, archivedAt: new Date() });
+
+    await restore(SYSTEM_VIEWER, "vendor", a.id);
+
+    const [row] = await db.select().from(vendors).where(eq(vendors.id, a.id));
+    expect(row?.archivedAt).toBeNull();
+  });
+
+  it("addVendorKind — 그 사이 번호가 바뀌었거나 숨겨진 거래처는 갈래를 바꾸지 않는다", async () => {
+    const pm = await makeTestPmViewer();
+    await upsertPermission(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, menu: "admin.vendors", action: "write", allowed: true });
+    const no = uniqueBizNo();
+    const { vendor } = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no, kind: "supplier" });
+
+    await expect(addVendorKind(pm, vendor.id, "client", uniqueBizNo())).rejects.toThrow("같은 사업자번호 거래처 아님");
+    await db.update(vendors).set({ hidden: true }).where(eq(vendors.id, vendor.id));
+    await expect(addVendorKind(pm, vendor.id, "client", no)).rejects.toThrow("같은 사업자번호 거래처 아님");
+
+    const [row] = await db.select().from(vendors).where(eq(vendors.id, vendor.id));
+    expect(row?.kind).toBe("supplier");
+    await upsertPermission(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, menu: "admin.vendors", action: "write", allowed: false });
+  });
+
+  it("보관함 목록 — 같은 번호의 살아 있는 거래처가 생긴 보관 행은 복원 불가로 표시한다", async () => {
+    const no = uniqueBizNo();
+    const { vendor: a } = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no });
+    const { vendor: free } = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: uniqueBizNo() });
+    await archive(SYSTEM_VIEWER, "vendor", a.id);
+    await archive(SYSTEM_VIEWER, "vendor", free.id);
+    // 색인 전(PR A)에는 같은 번호의 살아 있는 행을 선검사 없이 직접 넣어 목록 판정만 확인한다.
+    const [taker] = await db.insert(vendors).values({ name: uniqueName(), normalizedName: uniqueName(), businessNo: no.replaceAll("-", "") }).returning();
+
+    const rows = await listArchive(SYSTEM_VIEWER);
+    expect(rows.find((row) => row.id === a.id)?.restorable).toBe(false);
+    expect(rows.find((row) => row.id === free.id)?.restorable).toBe(true);
+    await db.delete(vendors).where(eq(vendors.id, taker?.id ?? ""));
+  });
+
+  it("동시 등록 둘(같은 숫자 번호) — 선검사를 둘 다 지나도 유일 색인이 하나만 남기고 다른 하나는 DuplicateBusinessNoError", async () => {
+    const no = uniqueBizNo();
+    // 다른 연결이 vendors에 SHARE 잠금을 쥐고 있으면 두 등록이 선검사(읽기)는 지나고 INSERT에서 멈춘다 — 경합을 매번 만든다.
+    const holder = new Pool({ connectionString: process.env.DATABASE_URL ?? "postgres://erp:erp@127.0.0.1:5432/erp_test" });
+    const client = await holder.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("LOCK TABLE vendors IN SHARE MODE");
+      const both = Promise.allSettled([
+        createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no }),
+        createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no.replaceAll("-", "") }),
+      ]);
+      for (let waited = 0; ; waited += 50) {
+        const { rows } = await client.query<{ n: number }>(
+          "SELECT count(*)::int AS n FROM pg_locks WHERE database = (SELECT oid FROM pg_database WHERE datname = current_database()) AND relation = 'vendors'::regclass AND NOT granted",
+        );
+        if ((rows[0]?.n ?? 0) >= 2) break;
+        if (waited > 3_000) throw new Error("두 등록이 INSERT 잠금 대기에 들어가지 않았다");
+        await new Promise((done) => setTimeout(done, 50));
+      }
+      await client.query("COMMIT");
+      const results = await both;
+      expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+      const rejected = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
+      expect(rejected).toHaveLength(1);
+      expect(rejected[0]?.reason).toBeInstanceOf(DuplicateBusinessNoError);
+    } finally {
+      client.release();
+      await holder.end();
+    }
   });
 });

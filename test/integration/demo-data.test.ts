@@ -257,6 +257,22 @@ describe("scripts/demo-data purge 범위 · 안전", () => {
     expect((await db.select().from(projects).where(eq(projects.id, realProject.id))).length).toBe(1);
   }, 180_000);
 
+  it("견본 거래처가 보관으로 남은 뒤 다시 seed하면 보관된 견본 거래처를 복원해 재사용한다", async () => {
+    await seedDemoData();
+    const [client] = await db.select().from(vendors).where(eq(vendors.name, `${DEMO_NAME_PREFIX}한빛전자`));
+    const real = await makePerson("실제PM재seed", DEFAULT_ROLE_ID, "기획1팀");
+    await createProject(real, { clientId: client?.id ?? "", teamId: await teamIdByName("기획1팀"), pmUserId: real.id, name: "실제 프로젝트 재seed", startDate: "2026-09-01", endDate: "2026-12-31" });
+    await purgeDemoData();
+    const [archived] = await db.select().from(vendors).where(eq(vendors.id, client?.id ?? ""));
+    expect(archived?.archivedAt).not.toBeNull();
+
+    await seedDemoData();
+    const rows = await db.select().from(vendors).where(eq(vendors.name, `${DEMO_NAME_PREFIX}한빛전자`));
+    expect(rows.length).toBe(1);
+    expect(rows[0]?.id).toBe(client?.id);
+    expect(rows[0]?.archivedAt).toBeNull();
+  }, 240_000);
+
   it("프로젝트 경유로 지워지는 견본 아닌 사용자의 지출결의 수를 nonDemoExpenses로 따로 센다", async () => {
     await seedDemoData();
     const [line] = await db.select({ id: quoteLines.id }).from(quoteLines).where(eq(quoteLines.itemName, "철거·원상복구"));

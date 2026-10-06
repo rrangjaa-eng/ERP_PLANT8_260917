@@ -15,6 +15,14 @@ import { findFieldDefinitionById } from "@/repositories/field-definitions";
 import { findRoleById, insertRole } from "@/repositories/roles";
 import { insertVisibilityIfAbsent, listVisibility } from "@/repositories/permissions";
 
+// 실행마다 고유한 사업자번호(「xxx-xx-xxxxx」) — 같은 사업자번호 거래처는 둘 못 만들고 E2E DB는 스펙끼리 공유한다.
+let businessNoSeq = 0;
+export function uniqueBusinessNo(): string {
+  businessNoSeq += 1;
+  const digits = String(Date.now() * 10 + (businessNoSeq % 10)).slice(-10).padStart(10, "1");
+  return `${digits.slice(0, 3)}-${digits.slice(3, 5)}-${digits.slice(5)}`;
+}
+
 // D-36(03-02): 계급 식별자가 필수 필드다 — 선택 인자가 아니다(호출자가 계급을
 // 의식하지 않고 픽스처를 만드는 상태를 없앤다). 표시 이름은 시스템 관리자
 // 계급만 「E2E Admin」이고 나머지는 전부 「E2E Employee」다 — E2E 스펙이

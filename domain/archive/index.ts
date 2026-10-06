@@ -11,6 +11,9 @@ import {
   type ArchivedItem,
 } from "@/repositories/archive";
 import { findUserById as defaultFindUserById } from "@/repositories/users";
+import { findVendorById, findVendorsByBusinessNoDigits } from "@/repositories/vendors";
+import { BUSINESS_NO_UNIQUE_INDEX, businessNoDigits } from "@/domain/vendors";
+import { isUniqueViolation } from "@/lib/pg-errors";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { restoreQuoteLine } from "@/domain/quotes/lines";
 import { canViewReserves, restoreReserve } from "@/domain/reserves";
@@ -25,6 +28,8 @@ export class ForbiddenError extends UserFacingError {}
 export class UnknownArchivableEntityError extends UserFacingError {}
 export class ProtectedRowError extends UserFacingError {}
 export class ArchivableRowNotFoundError extends UserFacingError {}
+// 같은 숫자 사업자번호의 살아 있는 거래처가 있어 거래처를 복원할 수 없음 — 화면이 원인을 토스트에 싣도록 따로 둔다.
+export class VendorBusinessNoTakenError extends UserFacingError {}
 
 export type ArchiveDeps = {
   can: typeof defaultCan;
@@ -97,6 +102,17 @@ const DOMAIN_RESTORERS: Partial<Record<string, (viewer: Viewer, id: string, deps
 
 export type RestoreResult = { restored: boolean };
 
+// 같은 숫자 사업자번호의 살아 있는 거래처를 찾아 「복원 불가」 문구로 만든다(이름은 「거래처 정보」를 볼 때만).
+async function vendorRestoreBlock(viewer: Viewer, id: string): Promise<UserFacingError | null> {
+  const row = await findVendorById(viewer, id);
+  const digits = businessNoDigits(row?.businessNo);
+  // 보관된 같은 번호끼리는 막지 않는다(살아 있는 행만 겹치면 안 된다 · 보관함 목록 · 유일 색인과 같은 기준).
+  const taker = digits === null ? undefined : (await findVendorsByBusinessNoDigits(viewer, digits, { excludeId: id })).find((row) => row.archivedAt === null);
+  if (!taker) return null;
+  const name = (await visible(viewer, "vendor.value")) ? ` · ${taker.name}` : "";
+  return new VendorBusinessNoTakenError(`같은 사업자번호 거래처 있음${name} · 복원 불가`);
+}
+
 export async function restore(
   viewer: Viewer,
   entity: string,
@@ -116,7 +132,20 @@ export async function restore(
   if (row.archivedAt === null) return { restored: false };
 
   // 동시 복원은 둘 다 위 판정을 지날 수 있다 — 조건부 갱신이 실제로 바꾼 쪽만 「복원됨」 · 로그(PR #149 리뷰).
-  if (!(await entry.setArchived(viewer, id, false))) return { restored: false };
+  // 거래처는 같은 사업자번호의 살아 있는 거래처가 생겼으면 유일 색인이 막는다 — 사용자 문구로 바꾼다.
+  // 색인이 막기 전에도(선검사) 같은 번호의 살아 있는 거래처가 있으면 복원하지 않는다.
+  if (entity === "vendor") {
+    const blocked = await vendorRestoreBlock(viewer, id);
+    if (blocked) throw blocked;
+  }
+  let reactivated: boolean;
+  try {
+    reactivated = await entry.setArchived(viewer, id, false);
+  } catch (error) {
+    if (entity === "vendor" && isUniqueViolation(error, BUSINESS_NO_UNIQUE_INDEX)) throw (await vendorRestoreBlock(viewer, id)) ?? error;
+    throw error;
+  }
+  if (!reactivated) return { restored: false };
 
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await recordAction(viewer, { actionType: "restore", entity, entityId: id });
@@ -200,7 +229,8 @@ export async function listArchive(viewer: Viewer, deps?: Partial<ListArchiveDeps
   const unwritableEntities = await entitiesWithoutRequired(viewer, canFn, "write");
   const isRestorable = (row: ArchivedItem) =>
     !unwritableEntities.has(row.entity) &&
-    (row.entity !== "holiday" || (holidayWritable && row.date !== undefined && row.date > today && !row.dateTaken));
+    (row.entity !== "holiday" || (holidayWritable && row.date !== undefined && row.date > today && !row.dateTaken)) &&
+    (row.entity !== "vendor" || !row.businessNoTaken);
 
   const findUserById = deps?.findUserById ?? defaultFindUserById;
   const archivedByIds = [...new Set(rows.map((row) => row.archivedBy).filter((id): id is string => id !== null))];

@@ -28,6 +28,19 @@ vi.mock("@/lib/viewer", () => ({
 }));
 vi.mock("next/cache", () => ({ revalidatePath: () => undefined }));
 
+// 06-06 검토 S-1 — 확인 tx의 행동 로그 뒤 마지막 읽기(findLivePayment)를 한 번 실패시켜 「tx가 되돌려지면 로그도 없다」를 본다. 평소에는 원본 그대로.
+const failAfterLog = vi.hoisted(() => ({ on: false }));
+vi.mock("@/repositories/expense-payments", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/repositories/expense-payments")>();
+  return {
+    ...original,
+    findLivePayment: (...args: Parameters<typeof original.findLivePayment>) => {
+      if (failAfterLog.on) return Promise.reject(new Error("확인 tx 강제 실패"));
+      return original.findLivePayment(...args);
+    },
+  };
+});
+
 beforeEach(async () => {
   await setEvidenceRequired(false);
 });
@@ -191,6 +204,26 @@ describe("증빙 확인 — 금액 고쳐 확인 · F2 · 거부 (06-06 Task 3)"
     } finally {
       await upsertSimpleValue(SYSTEM_VIEWER, ACTION_LOG_OPTIONAL_TYPES.key, ACTION_LOG_OPTIONAL_TYPES.default ?? [], null);
     }
+  });
+
+  it("고쳐 확인 tx가 로그 뒤에 실패하면 evidence_amount_change 로그 · 증빙 금액 · 확인 기록 · version이 모두 되돌려진다(같은 tx)", async () => {
+    const payer = await makePayer();
+    const doc = await withEvidenceAmount(await approvedExpenseWithEvidence(await setupExpenseProject()), 12_400_000);
+
+    failAfterLog.on = true;
+    let error: unknown;
+    try {
+      error = await caught(confirmEvidence(payer, { expenseId: doc.expenseId, version: doc.version, correctedAmountKrw: 12_000_000 }));
+    } finally {
+      failAfterLog.on = false;
+    }
+
+    expect(error).toBeInstanceOf(Error);
+    expect(await logsOf(doc.expenseId, "evidence_amount_change")).toEqual([]);
+    const row = await docRow(doc.expenseId);
+    expect(row.evidenceAmount).toBe(12_400_000);
+    expect(row.version).toBe(doc.version);
+    expect(await reviewOf(doc.expenseId)).toBeNull();
   });
 
   it("빈 증빙 금액 · 고침 없음 → 거부 `증빙 금액 없음`(F2 — 공급가액으로 채우지 않는다) · 고친 값이면 확인", async () => {

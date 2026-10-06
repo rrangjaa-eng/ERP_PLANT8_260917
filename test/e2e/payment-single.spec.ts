@@ -623,4 +623,83 @@ test.describe("증빙 확인 (06-06 · S4 · O-2)", () => {
     expect(logs.map((log) => log.actionType).sort()).toEqual(["document_update", "payment_process"]);
     await page.context().close();
   });
+
+  test("금액 고쳐 확인 → 2행 전 → 새", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const expenseId = await approvedWithEvidence(browser, baseURL, fx, "tracer");
+    await db.update(expenses).set({ evidenceAmount: 12_400_000 }).where(eq(expenses.id, expenseId));
+    const payer = await makePaymentManagerE2E();
+
+    const page = await loginPage(browser, baseURL, payer);
+    await page.goto(`/expenses/${expenseId}`);
+    const confirm = page.getByRole("button", { name: /^증빙 확인/ });
+    await waitForHydration(confirm);
+    const review = evidenceSection(page).getByTestId("evidence-review");
+    await expect(review.getByTestId("evidence-tax-line")).toContainText("지급 총액");
+    await review.getByRole("button", { name: "바꾸기" }).click();
+    const field = page.locator("#evidence-amount");
+    await expect(field).toBeFocused();
+    await field.fill("12000000");
+    await expect(review.getByTestId("evidence-amount-hint")).toHaveText("확인하면 12,400,000 → 12,000,000");
+    await page.keyboard.press("Control+Enter");
+
+    await expect(review.getByText("확인됨", { exact: true })).toBeVisible();
+    await expect(review.getByTestId("evidence-review-line")).toHaveText(new RegExp(`^${payer.name} \\d{2}-\\d{2} \\d{2}:\\d{2} · 12,400,000 → 12,000,000$`));
+    await expect(review.getByTestId("evidence-amount-by")).toHaveText(new RegExp(`^${payer.name} \\d{2}-\\d{2}$`));
+    const [row] = await db.select({ evidenceAmount: expenses.evidenceAmount }).from(expenses).where(eq(expenses.id, expenseId));
+    expect(row?.evidenceAmount).toBe(12_000_000);
+    await page.context().close();
+  });
+
+  test("빈 금액 — 칸 열림 · 1차 비활성", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const expenseId = await approvedWithEvidence(browser, baseURL, fx, "tracer");
+    await db.update(expenses).set({ evidenceAmount: null }).where(eq(expenses.id, expenseId));
+    const payer = await makePaymentManagerE2E();
+
+    const page = await loginPage(browser, baseURL, payer);
+    await page.goto(`/expenses/${expenseId}`);
+    const confirm = page.getByRole("button", { name: /^증빙 확인/ });
+    await waitForHydration(confirm);
+    const field = page.locator("#evidence-amount");
+    await expect(field).toBeFocused();
+    await expect(confirm).toHaveAttribute("aria-disabled", "true");
+    await expect(page.getByText("증빙 금액 없음", { exact: true })).toBeVisible();
+    // Ctrl+Enter도 막힌 1차를 부르지 않는다.
+    await page.keyboard.press("Control+Enter");
+    await expect(evidenceSection(page).getByText("확인 전", { exact: true })).toBeVisible();
+
+    await field.fill("12400000");
+    await expect(confirm).not.toHaveAttribute("aria-disabled", "true");
+    await confirm.click();
+    await expect(evidenceSection(page).getByText("확인됨", { exact: true })).toBeVisible();
+    const [row] = await db.select({ evidenceAmount: expenses.evidenceAmount }).from(expenses).where(eq(expenses.id, expenseId));
+    expect(row?.evidenceAmount).toBe(12_400_000);
+    await page.context().close();
+  });
+
+  test("증빙 금액 초과 표시 — 막지 않음", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const expenseId = await approvedWithEvidence(browser, baseURL, fx, "tracer");
+    // 승인액 12,000,000(이 문서 행만) · 증빙 금액 12,000,000에서 시작.
+    await db.update(expenses).set({ supplyAmountKrw: 12_000_000, evidenceAmount: 12_000_000 }).where(eq(expenses.id, expenseId));
+    const payer = await makePaymentManagerE2E();
+
+    const page = await loginPage(browser, baseURL, payer);
+    await page.goto(`/expenses/${expenseId}`);
+    const confirm = page.getByRole("button", { name: /^증빙 확인/ });
+    await waitForHydration(confirm);
+    const review = evidenceSection(page).getByTestId("evidence-review");
+    await expect(review.getByTestId("evidence-overrun")).toHaveCount(0);
+    await review.getByRole("button", { name: "바꾸기" }).click();
+    await page.locator("#evidence-amount").fill("12400000");
+    await expect(review.getByTestId("evidence-overrun")).toHaveText("승인액보다 +400,000");
+    await expect(confirm).not.toHaveAttribute("aria-disabled", "true");
+    await page.keyboard.press("Control+Enter");
+
+    await expect(review.getByText("확인됨", { exact: true })).toBeVisible();
+    await expect(review.getByTestId("evidence-overrun")).toHaveText("승인액보다 +400,000");
+    await expect(page.getByRole("button", { name: /^지급 완료/ })).not.toHaveAttribute("aria-disabled", "true");
+    await page.context().close();
+  });
 });

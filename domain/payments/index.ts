@@ -6,13 +6,15 @@ import { recordAction } from "@/domain/action-log/record";
 import { gate, GateBlockedError } from "@/domain/rules/gate";
 import "@/domain/rules/register";
 import { applyTaxRule, loadTaxRates as defaultLoadTaxRates, taxRatesReader, type TaxIncomeType, type TaxRates } from "@/domain/money/tax";
-import { diffKrw, grossFromTotal, type RoundingUnit } from "@/domain/money";
+import { diffKrw, grossFromTotal, moneyFromRow, remainingForInstallments, type Money, type RoundingUnit } from "@/domain/money";
 import { taxRuleSchema, type TaxRule } from "@/domain/code-tables/tax-rule";
 import { getSettingValue as defaultGetSettingValue } from "@/domain/settings/registry";
 import { EVIDENCE_REQUIRED, PAYMENT_METHOD_EVIDENCE_PAIRS, TAX_BASIS_DATE_VAT, TAX_BASIS_DATE_WITHHOLDING, type TaxBasisDate } from "@/domain/settings/keys";
 import { getApprovalView } from "@/domain/approvals";
 import { EXPENSE_DOCUMENT_KIND } from "@/domain/expenses/access";
-import { incomeTypeFor, pickTaxDates, type PickedTaxDates } from "@/domain/expenses/tax";
+import { incomeTypeFor, pickTaxDates, type PickedTaxDates, type TaxLinePart } from "@/domain/expenses/tax";
+import { lineExecution, listNumberedByLineage } from "@/domain/expenses";
+import { resolveLinkedDocumentsByLineage } from "@/domain/quotes/lineage";
 import { TAX_UNAVAILABLE } from "@/domain/expenses/gate";
 import { hasEvidence } from "@/domain/evidence/has-evidence";
 import {
@@ -37,9 +39,12 @@ import { seoulDateToUtcDate, seoulToday } from "@/lib/dates";
 import { isUniqueViolation } from "@/lib/pg-errors";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { formatKstTime } from "@/domain/holidays/business-day";
-import { evidenceGateInputs, loadPrepaidDueDays, resolveEvidenceStatus, type EvidenceStatus } from "@/domain/evidence-reviews";
+import { evidenceGateInputs, evidenceOverrunLine, evidenceStampOf, loadPrepaidDueDays, resolveEvidenceStatus, type EvidenceStatus } from "@/domain/evidence-reviews";
 import { prepaidDueInfo, type PrepaidDue } from "@/domain/evidence-reviews/prepaid";
-import { findReviewByExpense } from "@/repositories/expense-evidence-reviews";
+import { findReviewByExpense, listAliveCardUsageSuppliesByProject } from "@/repositories/expense-evidence-reviews";
+import { listAliveByOwners } from "@/repositories/files";
+import { findQuoteLineById, listLineageLinesByProjects } from "@/repositories/quote-lines";
+import { formatKrw } from "@/lib/format-number";
 import { kstDateOf } from "@/lib/kst-date";
 
 // 06-03(EXP-06 · EXP-09 · OPS-09) — 결재 통과 지출결의 한 건의 지급 완료(트레이서). 증빙 게이트 · 짝 게이트 · 지급 칸 · 취소는 06-04,
@@ -602,13 +607,22 @@ export async function saveScheduledPayDate(
 // ── 지급 총액 미리보기(06-04 · S5 loading) ─────────────────────────────
 // 지급일(또는 이체액)을 바꾸면 화면이 서버가 다시 계산한 지급 총액 · 차이를 받는다 — 읽기 전용, 트랜잭션 · 행동 로그 없음.
 // 차이도 서버 diffKrw로만(O-18 — 화면은 금액을 셈하지 않는다). 셈할 수 없는 문서(세금 규칙 · 공급가 없음)는 지급 총액 null.
-export type PayablePreview = { payDate: string; payableKrw: number | null; diffKrw: number | null };
+export type PayablePreview = {
+  payDate: string;
+  payableKrw: number | null;
+  diffKrw: number | null;
+  // 06-06 — 증빙 금액 칸을 고치는 동안(evidenceAmountKrw 입력)만: 서버 계산 한 줄 · Q-F 초과 한 줄(입력 중 금액 기준).
+  evidenceTaxLine?: TaxLinePart[] | null;
+  evidenceOverrun?: string | null;
+};
 
 export const PAYABLE_PREVIEW_DTO_SPEC: DtoSpec<PayablePreview, PayablePreview> = {
   fields: [
     { key: "payDate", from: "payDate", infoItem: "expense.value" },
     { key: "payableKrw", from: "payableKrw", infoItem: "expense.amount" },
     { key: "diffKrw", from: "diffKrw", infoItem: "expense.amount" },
+    { key: "evidenceTaxLine", from: "evidenceTaxLine", infoItem: "expense.amount" },
+    { key: "evidenceOverrun", from: "evidenceOverrun", infoItem: "expense.amount" },
   ],
 };
 
@@ -616,21 +630,117 @@ registerDto({ name: "payablePreview", fields: PAYABLE_PREVIEW_DTO_SPEC.fields.ma
 
 export async function previewPayable(
   viewer: Viewer,
-  input: { expenseId: string; payDate: string; transferKrw?: number; scheduledPayDate?: string },
+  // 06-06 evidenceAmountKrw — S4 증빙 금액 칸 미리보기: 그 금액을 금액 원천 자리에 넣어 셈한다(트랜잭션 · 로그 없음). 살아 있는 파일이
+  // 없으면 입력 금액이 있어도 공급가로 센다(R-4 — pickPaymentAmount와 같은 조건, 확인부는 파일이 있을 때만 서므로 화면 경로에는 없는 갈래).
+  input: { expenseId: string; payDate: string; transferKrw?: number; scheduledPayDate?: string; evidenceAmountKrw?: number },
   deps?: { now?: Date },
 ): Promise<Partial<PayablePreview>> {
   if (!(await can(viewer, "expenses.payments", "write"))) throw new ForbiddenError("지급 처리 권한 없음");
-  const pre = await loadPaymentInputs(viewer, { expenseId: input.expenseId, payDate: input.payDate, scheduledPayDate: input.scheduledPayDate, now: deps?.now });
+  const shared = await loadPaymentShared(viewer);
+  const loaded = await loadPaymentInputs(viewer, { expenseId: input.expenseId, payDate: input.payDate, scheduledPayDate: input.scheduledPayDate, now: deps?.now }, shared);
+  const evidenceAmountKrw = input.evidenceAmountKrw;
+  const pre: PaymentInputs =
+    evidenceAmountKrw !== undefined && loaded.hasLiveEvidence && loaded.amount ? { ...loaded, amount: { source: "evidence", amountKrw: evidenceAmountKrw } } : loaded;
   const payable = await payableOf(pre, input.transferKrw);
+  const evidenceExtras =
+    evidenceAmountKrw === undefined
+      ? {}
+      : await (async () => {
+          const row = await findExpenseById(viewer, loaded.expenseId);
+          return {
+            evidenceTaxLine: payable && pre.tax ? evidenceTaxLineOf(payable, pre.tax.taxRule, ruleLabelOf(shared, pre.evidenceType)) : null,
+            evidenceOverrun: row ? await loadEvidenceOverrun(viewer, row, evidenceAmountKrw) : null,
+          };
+        })();
   return project(
     viewer,
     {
       payDate: input.payDate,
       payableKrw: payable?.payableKrw ?? null,
       diffKrw: payable && input.transferKrw !== undefined ? payable.diffKrw : null,
+      ...evidenceExtras,
     },
     PAYABLE_PREVIEW_DTO_SPEC,
   );
+}
+
+// ── 증빙 확인부(S4) 재료 ─────────────────────────────────────────────────
+// 서버 계산 한 줄 `부가세 {N} · 지급 총액 {N} · {종류} 규칙`(세율 `%` 글자 없음 — 「표시 — 증빙 금액」). 숫자 조각만 emphasis — 05 TaxParts가 그린다.
+function ruleLabelOf(shared: PaymentShared, evidenceType: string | null): string {
+  return `${shared.evidenceTypeName(evidenceType) ?? ""} 규칙`;
+}
+
+function evidenceTaxLineOf(payable: PayableDecision, taxRule: TaxRule, ruleLabel: string): TaxLinePart[] {
+  const segment = (label: string, value: number): TaxLinePart[] => [
+    { text: `${label} `, emphasis: false },
+    { text: formatKrw(value), emphasis: true },
+  ];
+  const segments: TaxLinePart[][] = [];
+  if (taxRule.ruleKind === "vat_surcharge") segments.push(segment("부가세", payable.vatKrw), segment("지급 총액", payable.payableKrw));
+  else if (taxRule.ruleKind === "withholding") segments.push(segment("원천징수", payable.withholdingKrw), segment("실지급액", payable.payableKrw));
+  else if (taxRule.ruleKind === "company_borne") segments.push(segment("회사 대납 세금", payable.companyBorneKrw), segment("지급 총액", payable.payableKrw));
+  else segments.push(segment("지급 총액", payable.payableKrw));
+  segments.push([{ text: ruleLabel, emphasis: false }]);
+  return segments.flatMap((part, index) => (index === 0 ? part : [{ text: " · ", emphasis: false }, ...part]));
+}
+
+// EA-1 재료(트랜잭션 전 사전 조회) — 승인 공급가와 그 공급가에 붙는 부가세(decidePayable의 vatKrw, 기준일 = 오늘 지급 기준).
+// 세금 규칙이 없으면 부가세 0(판정이 거짓이 된다).
+export async function approvedSupplyTax(viewer: Viewer, expenseId: string, shared: PaymentShared): Promise<{ supplyKrw: number; vatKrw: number } | null> {
+  const row = await findExpenseById(viewer, expenseId);
+  if (!row || row.supplyAmountKrw === null) return null;
+  const pre = await loadPaymentInputs(viewer, { expenseId: row.id, payDate: seoulToday() }, shared);
+  if (!pre.tax) return { supplyKrw: row.supplyAmountKrw, vatKrw: 0 };
+  const decided = await decidePayable(
+    { amount: { source: "supply", amountKrw: row.supplyAmountKrw }, taxRule: pre.tax.taxRule, applyOpts: pre.tax.dates.applyOpts, incomeType: pre.tax.incomeType },
+    pre.tax.rates,
+  );
+  return { supplyKrw: row.supplyAmountKrw, vatKrw: decided.vatKrw };
+}
+
+// [Q-F] 증빙 금액 초과 한 줄(표시만 — 확인 · 게이트 · 규칙은 읽지 않는다). 트랜잭션 없는 읽기. 살아 있는 파일이 없으면 계보 조회 없이 null(R-4).
+// 남은 실행가는 견적 줄 계보 사슬 전체로: 이 문서가 든 현재 차수 줄의 실행가 − 사슬 위 다른 번호 문서 공급가 − 사슬 줄에 이은 보관 안 된 카드 사용 공급가.
+// 팀 비용(견적 줄 없음) · 사슬이 최신 차수에 닿지 않으면 실행가 조각 없음(남은 실행가 null).
+export async function loadEvidenceOverrun(
+  viewer: Viewer,
+  doc: Pick<ExpenseRow, "id" | "projectId" | "quoteLineId" | "supplyAmountKrw">,
+  evidenceAmountKrw: number | null,
+): Promise<string | null> {
+  if (evidenceAmountKrw === null) return null;
+  if (!(await hasEvidence(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: doc.id }))) return null;
+  return evidenceOverrunLine({
+    hasLiveEvidence: true,
+    evidenceAmountKrw,
+    approvedSupplyKrw: doc.supplyAmountKrw ?? 0,
+    lineRemainingKrw: doc.quoteLineId && doc.projectId ? await lineRemainingFor(viewer, doc.projectId, doc.id) : null,
+  });
+}
+
+async function lineRemainingFor(viewer: Viewer, projectId: string, expenseId: string): Promise<number | null> {
+  const chain = [...(await listNumberedByLineage(viewer, projectId))].find(([, docs]) => docs.some((doc) => doc.id === expenseId));
+  if (!chain) return null;
+  const [currentLineId, chainDocs] = chain;
+  const line = await findQuoteLineById(viewer, currentLineId);
+  if (!line) return null;
+  const others = chainDocs.flatMap((doc) =>
+    doc.id === expenseId || doc.supplyAmountKrw === null
+      ? []
+      : [moneyFromRow({ currency: doc.supplyCurrency, foreignAmount: doc.supplyForeignAmount, fxRate: doc.supplyFxRate, amountKrw: doc.supplyAmountKrw })],
+  );
+  return remainingForInstallments(lineExecution(line), [...others, ...(await cardSuppliesOnChain(viewer, projectId, currentLineId))]).remaining.amountKrw;
+}
+
+// 사슬 줄에 이은 보관 안 된 카드 사용 공급가(원화) — 보통 0건(D-609)이라 그때는 계보 줄을 읽지 않는다.
+async function cardSuppliesOnChain(viewer: Viewer, projectId: string, currentLineId: string): Promise<Money[]> {
+  const usages = await listAliveCardUsageSuppliesByProject(viewer, projectId);
+  if (usages.length === 0) return [];
+  const byLine = new Map<string, Money[]>();
+  for (const usage of usages) {
+    const money = moneyFromRow({ currency: "KRW", foreignAmount: null, fxRate: "1", amountKrw: usage.supplyKrw });
+    byLine.set(usage.quoteLineId, [...(byLine.get(usage.quoteLineId) ?? []), money]);
+  }
+  const lineage = await listLineageLinesByProjects(viewer, [projectId]);
+  return resolveLinkedDocumentsByLineage(lineage, byLine).byCurrentLine.get(currentLineId) ?? [];
 }
 
 // ── 지급 섹션 DTO ───────────────────────────────────────────────────────
@@ -665,6 +775,10 @@ export type PaymentViewDto = {
   reviewAmounts?: { beforeKrw: number; afterKrw: number } | null;
   // 06-06(O-5) — 선결제 증빙 기한(prepaidDueInfo). null이면 2행 없음 — 화면은 날짜를 셈하지 않는다.
   prepaidDue?: PrepaidDue | null;
+  // 06-06 — 증빙 지문(evidenceStampOf — 1차 `증빙 확인`이 version과 함께 보낸다) · 서버 계산 한 줄(지급 전에만) · Q-F 초과 한 줄(저장된 증빙 금액 기준).
+  evidenceStamp?: string;
+  evidenceTaxLine?: TaxLinePart[] | null;
+  evidenceOverrun?: string | null;
 };
 
 // 증빙 금액 2행 입력자 — 확인 기록에 금액 고침이 있으면 그 사람 · 시각, 없으면 기안자 · 문서 updated_at(입력자 전용 칸이 06-27에 없다).
@@ -691,6 +805,9 @@ export const PAYMENT_VIEW_DTO_SPEC: DtoSpec<PaymentViewDto, PaymentViewDto> = {
     { key: "reviewLine", from: "reviewLine", infoItem: "expense.value" },
     { key: "reviewAmounts", from: "reviewAmounts", infoItem: "expense.amount" },
     { key: "prepaidDue", from: "prepaidDue", infoItem: "expense.value" },
+    { key: "evidenceStamp", from: "evidenceStamp", infoItem: "expense.value" },
+    { key: "evidenceTaxLine", from: "evidenceTaxLine", infoItem: "expense.amount" },
+    { key: "evidenceOverrun", from: "evidenceOverrun", infoItem: "expense.amount" },
   ],
 };
 
@@ -774,6 +891,9 @@ export async function getPaymentView(viewer: Viewer, expenseId: string, deps?: {
         today,
       })
     : null;
+  const alive = await listAliveByOwners(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerIds: [row.id] });
+  const evidenceStamp = evidenceStampOf({ fileIds: alive.map((file) => file.id), evidenceAmountKrw: row.evidenceAmount, evidenceDate: row.evidenceDate });
+  const evidenceOverrun = await loadEvidenceOverrun(viewer, row, row.evidenceAmount);
   if (live) {
     const names = await findUserNamesByIds(viewer, [live.processedBy]);
     return project(
@@ -793,11 +913,16 @@ export async function getPaymentView(viewer: Viewer, expenseId: string, deps?: {
         number: row.number,
         ...evidenceView,
         prepaidDue,
+        evidenceStamp,
+        evidenceTaxLine: null,
+        evidenceOverrun,
       },
       PAYMENT_VIEW_DTO_SPEC,
     );
   }
   const payable = await payableOf(pre);
+  // 서버 계산 한 줄은 지급 전 · 살아 있는 증빙 · 증빙 금액이 지급 총액의 기준일 때만(지급 뒤 문서에는 없다 — 「표시 — 증빙 금액」).
+  const evidenceTaxLine = payable && pre.tax && pre.amount?.source === "evidence" ? evidenceTaxLineOf(payable, pre.tax.taxRule, ruleLabelOf(shared, pre.evidenceType)) : null;
   return project(
     viewer,
     {
@@ -815,6 +940,9 @@ export async function getPaymentView(viewer: Viewer, expenseId: string, deps?: {
       number: row.number,
       ...evidenceView,
       prepaidDue,
+      evidenceStamp,
+      evidenceTaxLine,
+      evidenceOverrun,
     },
     PAYMENT_VIEW_DTO_SPEC,
   );

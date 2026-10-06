@@ -41,6 +41,8 @@ const previewPayableSchema = z.object({
   transferKrw: transferKrw.optional(),
   // 예정일 칸 힌트 — 저장 전 예정일로 기준일을 고른다(기준일이 지급 예정일인 규칙, 06-04 검토 P3-2).
   scheduledPayDate: paymentDate.optional(),
+  // 06-06 S4 증빙 금액 칸 — 고치는 동안의 금액으로 서버 계산 한 줄 · Q-F 초과 한 줄을 받는다.
+  evidenceAmountKrw: z.number().int().positive().optional(),
 });
 
 export const previewPayableAction = authedActionClient
@@ -82,6 +84,8 @@ const confirmEvidenceSchema = z.object({
   expenseId: z.string().uuid(),
   version: z.number().int().positive(),
   correctedAmountKrw: correctedAmountKrw.optional(),
+  // 화면이 본 증빙 지문(getPaymentView evidenceStamp) — 응답 모양 불변.
+  evidenceStamp: z.string().max(4000).optional(),
 });
 
 export const confirmEvidenceAction = authedActionClient.schema(confirmEvidenceSchema).action(async ({ parsedInput, ctx }) => {

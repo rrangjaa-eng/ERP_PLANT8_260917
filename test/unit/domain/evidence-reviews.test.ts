@@ -7,7 +7,8 @@ import {
   evidenceGateDecision,
   resolveExpenseActionRow,
 } from "@/domain/payments/action-row";
-import { evidenceGateInputs, resolveEvidenceStatus } from "@/domain/evidence-reviews";
+import { evidenceGateInputs, evidenceOverrunLine, evidenceStampOf, resolveEvidenceStatus } from "@/domain/evidence-reviews";
+import { EVIDENCE_AMOUNT_TAX_INCLUSIVE, isTaxInclusiveEvidenceAmount } from "@/domain/evidence-reviews/tax-inclusive";
 
 const mocks = vi.hoisted(() => ({ hasEvidence: vi.fn(), findReviewByExpense: vi.fn() }));
 vi.mock("@/domain/evidence/has-evidence", () => ({ hasEvidence: mocks.hasEvidence }));
@@ -149,5 +150,64 @@ describe("evidenceGateInputs — 잠금 뒤 tx로 한 함수에서 (06-06 Task 2
   it("기록 없음 → confirmation null", async () => {
     mocks.findReviewByExpense.mockResolvedValue(null);
     expect(await evidenceGateInputs(SYSTEM_VIEWER, locked, pre, tx)).toMatchObject({ waived: false, confirmation: null });
+  });
+});
+
+describe("evidenceStampOf — 증빙 지문 (06-06 Task 3)", () => {
+  const base = { fileIds: ["b", "a", "c"], evidenceAmountKrw: 12_400_000, evidenceDate: "2026-09-17" };
+  it("파일 id 순서가 달라도 같은 문자열", () => {
+    expect(evidenceStampOf(base)).toBe(evidenceStampOf({ ...base, fileIds: ["c", "b", "a"] }));
+  });
+  it("증빙 금액이나 증빙일이 다르면 다른 문자열", () => {
+    expect(evidenceStampOf({ ...base, evidenceAmountKrw: 12_000_000 })).not.toBe(evidenceStampOf(base));
+    expect(evidenceStampOf({ ...base, evidenceDate: "2026-09-18" })).not.toBe(evidenceStampOf(base));
+    expect(evidenceStampOf({ ...base, evidenceAmountKrw: null })).not.toBe(evidenceStampOf(base));
+  });
+  it("파일이 하나 늘면 다른 문자열", () => {
+    expect(evidenceStampOf({ ...base, fileIds: [...base.fileIds, "d"] })).not.toBe(evidenceStampOf(base));
+  });
+});
+
+describe("증빙 금액 초과 한 줄(Q-F)", () => {
+  const base = { hasLiveEvidence: true, evidenceAmountKrw: 12_400_000, approvedSupplyKrw: 12_000_000, lineRemainingKrw: 20_000_000 };
+  it("승인액만 넘음 → `승인액보다 +400,000`", () => {
+    expect(evidenceOverrunLine(base)).toBe("승인액보다 +400,000");
+  });
+  it("둘 다 넘음 → ` · `로 이은 한 줄", () => {
+    expect(evidenceOverrunLine({ ...base, lineRemainingKrw: 12_250_000 })).toBe("승인액보다 +400,000 · 실행가 초과 150,000");
+  });
+  it("남은 실행가만 넘음 → `실행가 초과 100,000`", () => {
+    expect(evidenceOverrunLine({ ...base, evidenceAmountKrw: 11_900_000, lineRemainingKrw: 11_800_000 })).toBe("실행가 초과 100,000");
+  });
+  it("둘 다 이하 → null", () => {
+    expect(evidenceOverrunLine({ ...base, evidenceAmountKrw: 11_000_000 })).toBeNull();
+  });
+  it("증빙 금액 null → null", () => {
+    expect(evidenceOverrunLine({ ...base, evidenceAmountKrw: null })).toBeNull();
+  });
+  it("남은 실행가 null(팀 비용) · 증빙 > 승인액 → `승인액보다 +{차액}`만", () => {
+    expect(evidenceOverrunLine({ ...base, lineRemainingKrw: null })).toBe("승인액보다 +400,000");
+  });
+  it("파일 0 · 증빙 금액만 → null(R-4 · E-7)", () => {
+    expect(evidenceOverrunLine({ hasLiveEvidence: false, evidenceAmountKrw: 12_400_000, approvedSupplyKrw: 12_000_000, lineRemainingKrw: 11_800_000 })).toBeNull();
+  });
+});
+
+describe("부가세 포함 증빙 금액(EA-1)", () => {
+  const base = { supplyKrw: 10_000_000, vatKrw: 1_000_000 };
+  it("공급가 + 부가세와 정확히 같으면 참", () => {
+    expect(isTaxInclusiveEvidenceAmount({ ...base, evidenceAmountKrw: 11_000_000 })).toBe(true);
+  });
+  it("정확 일치만 — 10,999,999 · 11,000,001 · 10,000,000은 거짓", () => {
+    for (const evidenceAmountKrw of [10_999_999, 11_000_001, 10_000_000]) expect(isTaxInclusiveEvidenceAmount({ ...base, evidenceAmountKrw })).toBe(false);
+  });
+  it("부가세 0(면세 · 원천징수 규칙) · 증빙 = 공급가 → 거짓", () => {
+    expect(isTaxInclusiveEvidenceAmount({ supplyKrw: 10_000_000, vatKrw: 0, evidenceAmountKrw: 10_000_000 })).toBe(false);
+  });
+  it("증빙 null → 거짓", () => {
+    expect(isTaxInclusiveEvidenceAmount({ ...base, evidenceAmountKrw: null })).toBe(false);
+  });
+  it("문구는 명사형 한 줄", () => {
+    expect(EVIDENCE_AMOUNT_TAX_INCLUSIVE).toBe("부가세 포함 금액 · 공급가로 입력");
   });
 });

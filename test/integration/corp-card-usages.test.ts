@@ -8,7 +8,7 @@ import { createOrgUnit, createTeam } from "@/domain/org";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { corpCardUsages } from "@/db/schema";
-import { cardOptionsForUsage, createCardUsage, precheckCardUsage, type CardUsageInput } from "@/domain/corp-card-usages";
+import { cardOptionsForUsage, CardUsageRejectedError, createCardUsage, precheckCardUsage, type CardUsageInput } from "@/domain/corp-card-usages";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { seoulToday } from "@/lib/dates";
@@ -131,5 +131,38 @@ describe("결제 합계 정규화(P3-1)", () => {
     await expect(precheckCardUsage(staff, { ...usageInput(cardId), total: { currency: "USD", amount: 0.01, fxRate: 1 } })).rejects.toThrow("결제 합계 0 이하 · 금액 고치기");
     await expect(precheckCardUsage(staff, { ...usageInput(cardId), total: { currency: "KRW", amount: 0.4, fxRate: 1 } })).rejects.toThrow();
     await expect(precheckCardUsage(staff, { ...usageInput(cardId), total: { currency: "KRW", amount: 1000.5, fxRate: 1 } })).rejects.toThrow();
+  });
+});
+
+describe("등록 서버 거부(P3-2)", () => {
+  it("다른 사람의 개인 카드로 본인 등록 → ForbiddenError(카드 자격 없음)", async () => {
+    const team = await makeTeam();
+    const staff = await makePerson("직원", DEFAULT_ROLE_ID, team.name);
+    const other = await makePerson("다른직원", DEFAULT_ROLE_ID, team.name);
+    const othersCardId = await makeCard({ kind: "personal", holderUserId: other.id });
+
+    const rejected = precheckCardUsage(staff, usageInput(othersCardId));
+    await expect(rejected).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(rejected).rejects.toThrow("카드 자격 없음 · 카드 고르기");
+  });
+
+  it("카드 규칙 밖 증빙 종류(원천징수 기타소득) → CardUsageRejectedError", async () => {
+    const team = await makeTeam();
+    const staff = await makePerson("직원", DEFAULT_ROLE_ID, team.name);
+    const cardId = await makeCard({ kind: "personal", holderUserId: staff.id });
+
+    const rejected = precheckCardUsage(staff, { ...usageInput(cardId), evidenceTypeCode: "other_income" });
+    await expect(rejected).rejects.toBeInstanceOf(CardUsageRejectedError);
+    await expect(rejected).rejects.toThrow("증빙 종류 기타소득 카드에 없음 · 증빙 종류 고르기");
+  });
+
+  it("연결 없음(linkKind null) → 서버 거부", async () => {
+    const team = await makeTeam();
+    const staff = await makePerson("직원", DEFAULT_ROLE_ID, team.name);
+    const cardId = await makeCard({ kind: "personal", holderUserId: staff.id });
+
+    const rejected = precheckCardUsage(staff, { ...usageInput(cardId), linkKind: null });
+    await expect(rejected).rejects.toBeInstanceOf(CardUsageRejectedError);
+    await expect(rejected).rejects.toThrow("연결 없음 · 연결 고르기");
   });
 });

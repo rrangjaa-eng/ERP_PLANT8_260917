@@ -67,8 +67,10 @@ function AmountField({ kind, error, onRaw }: { kind: NumberInputKind; error: str
   const shown = inputError ?? error;
   return (
     <>
+      {/* 이름은 보이는 칸에 — PanelForm이 입력 이벤트 순간의 FormData로 바뀐 칸을 센다(숨은 칸은 다음 렌더에야 바뀐다). 제출 값은 상태(rawValue). */}
       <input
         id="card-amount"
+        name="amount"
         ref={inputRef}
         type="text"
         inputMode={kind === "krw" ? "numeric" : "decimal"}
@@ -79,7 +81,6 @@ function AmountField({ kind, error, onRaw }: { kind: NumberInputKind; error: str
         aria-describedby={shown ? "card-amount-error" : undefined}
         className={[textFieldStyles.input, textFieldStyles.numeric, shown ? textFieldStyles.inputError : ""].filter(Boolean).join(" ")}
       />
-      <input type="hidden" name="amount" value={rawValue} readOnly />
       {shown ? <Form.Error id="card-amount-error">{shown}</Form.Error> : null}
     </>
   );
@@ -94,6 +95,7 @@ function FxField({ initial, error, onRaw }: { initial: number | null; error: str
     <Form.Field id="card-fx-rate" label="환율">
       <input
         id="card-fx-rate"
+        name="fxRate"
         ref={inputRef}
         type="text"
         inputMode="decimal"
@@ -104,7 +106,6 @@ function FxField({ initial, error, onRaw }: { initial: number | null; error: str
         aria-describedby={shown ? "card-fx-rate-error" : undefined}
         className={[textFieldStyles.input, textFieldStyles.numeric, shown ? textFieldStyles.inputError : ""].filter(Boolean).join(" ")}
       />
-      <input type="hidden" name="fxRate" value={rawValue} readOnly />
       {shown ? <Form.Error id="card-fx-rate-error">{shown}</Form.Error> : null}
     </Form.Field>
   );

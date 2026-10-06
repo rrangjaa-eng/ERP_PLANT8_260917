@@ -16,12 +16,15 @@ import { listCodeItems } from "@/repositories/code-tables";
 import { findCorpCardById, listCorpCards, type CorpCardRow } from "@/repositories/corp-cards";
 import { findUserNamesByIds } from "@/repositories/users";
 import {
+  findLastCardUsageByRegistrant,
   insertCardUsage,
   listCardUsageRows,
   type CardUsageFilter,
+  type CardUsageLinkFilter,
   type CardUsageListRow,
   type CardUsageScope,
 } from "@/repositories/corp-card-usages";
+import { clampPage, LIST_PAGE_SIZE, pageCountFrom } from "@/lib/paging";
 import { withTransaction } from "@/lib/db-transaction";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
@@ -263,6 +266,8 @@ export type CardUsageListItemDto = {
   evidenceTypeCode: string;
   registeredVia: string;
   registeredByName: string;
+  /** 등록한 날(서울 날짜) — 경영관리 등록 행의 2행 `{등록자} {MM-DD}`. */
+  registeredOn: string;
   memo: string | null;
   currency: string;
   foreignAmount: number | null;
@@ -285,6 +290,7 @@ const VALUE_KEYS = [
   "evidenceTypeCode",
   "registeredVia",
   "registeredByName",
+  "registeredOn",
   "memo",
 ] as const;
 const AMOUNT_KEYS = ["currency", "foreignAmount", "fxRate", "totalKrw", "supplyKrw", "vatKrw"] as const;
@@ -313,6 +319,7 @@ function toProjectable(row: CardUsageListRow): CardUsageListProjectable {
     evidenceTypeCode: row.evidenceTypeCode,
     registeredVia: row.registeredVia,
     registeredByName: row.registeredByName,
+    registeredOn: seoulToday(row.createdAt),
     memo: row.memo,
     currency: row.totalCurrency,
     foreignAmount: row.totalForeignAmount === null ? null : Number(row.totalForeignAmount),
@@ -323,11 +330,26 @@ function toProjectable(row: CardUsageListRow): CardUsageListProjectable {
   };
 }
 
-export type CardUsageListFilters = { month: string };
+export type { CardUsageLinkFilter };
+
+export type CardUsageListFilters = {
+  month: string;
+  cardId?: string;
+  link?: CardUsageLinkFilter;
+  /** `경영관리 등록`만 — 등록 필터를 받는 사람(`registrationFilter`)에게만 듣는다. */
+  proxyOnly?: boolean;
+  page?: string;
+};
 
 export type CardUsageList = {
   rows: Partial<CardUsageListItemDto>[];
+  /** 합계 면 — 필터 결과 전체(쪽이 아니라)의 서버 합. 금액을 못 보는 사람은 null. */
   totals: { count: number; totalKrw: number; supplyKrw: number } | null;
+  page: { page: number; pageCount: number; pageSize: number; total: number };
+  /** 카드 필터의 선택지 — 그 사람의 목록 범위 안 카드. */
+  cardChoices: Partial<CardOptionDto>[];
+  /** 등록 필터(`전체`/`경영관리 등록`)를 보일지 — `cards.proxy` · `expenses.payments` write 권한자만. */
+  registrationFilter: boolean;
 };
 
 function monthRange(month: string): { from: string; to: string } {
@@ -336,19 +358,38 @@ function monthRange(month: string): { from: string; to: string } {
   return { from: `${month}-01`, to: `${next}-01` };
 }
 
-async function listScope(viewer: Viewer, today: string): Promise<CardUsageScope> {
+// 범위(UA-612 · Q5): `cards.proxy` · `expenses.payments` write 권한자 · 전사 범위 → 전부 /
+// 그 밖(팀장 포함) → 자기 카드 · 오늘 소속 팀 카드의 사용 + 자기가 등록한 것(공용 카드 사용은 자기 등록일 때만 — 쿼리 조건).
+async function listAccess(viewer: Viewer, today: string): Promise<{ scope: CardUsageScope; privileged: boolean }> {
+  const privileged = (await can(viewer, "cards.proxy", "write")) || (await can(viewer, "expenses.payments", "write"));
   const actor = await loadActorTeamScope(viewer, { todayKst: today });
-  if (actor.workScope === "company") return { kind: "all" };
-  return { kind: "own", userId: viewer.id, teamId: actor.teamId };
+  if (privileged || actor.workScope === "company") return { scope: { kind: "all" }, privileged };
+  return { scope: { kind: "own", userId: viewer.id, teamId: actor.teamId }, privileged };
+}
+
+async function cardChoicesFor(viewer: Viewer, scope: CardUsageScope): Promise<Partial<CardOptionDto>[]> {
+  const cards = await listCorpCards(viewer, { scope: { rows: "all", includeArchived: false }, includeInactive: true });
+  const inScope =
+    scope.kind === "all" ? cards : cards.filter((card) => card.holderUserId === scope.userId || (scope.teamId !== null && card.teamId === scope.teamId));
+  return projectMany(viewer, inScope.map((card) => ({ id: card.id, label: cardLabel(card) })), CARD_OPTION_SPEC);
 }
 
 export async function listCardUsages(viewer: Viewer, filters: CardUsageListFilters, today: string): Promise<CardUsageList> {
-  const filter: CardUsageFilter = monthRange(filters.month);
-  const rows = await listCardUsageRows(viewer, { scope: await listScope(viewer, today), filter });
+  const { scope, privileged } = await listAccess(viewer, today);
+  const filter: CardUsageFilter = {
+    ...monthRange(filters.month),
+    ...(filters.cardId ? { cardId: filters.cardId } : {}),
+    ...(filters.link ? { link: filters.link } : {}),
+    ...(privileged && filters.proxyOnly ? { proxyOnly: true } : {}),
+  };
+  // 판정(can · 소속)은 위에서 끝내고 트랜잭션 안에서는 목록 쿼리 하나만 — lock_timeout(5s)이 잠금 대기를 끊는다(로드 오류 갈래).
+  const rows = await withTransaction((tx) => listCardUsageRows(viewer, { scope, filter }, tx));
   const projected = await projectMany(viewer, rows.map(toProjectable), CARD_USAGE_LIST_DTO_SPEC);
   const amountsVisible = projected.every((row) => row.totalKrw !== undefined);
+  const pageCount = pageCountFrom(projected.length, LIST_PAGE_SIZE);
+  const page = clampPage(filters.page, pageCount);
   return {
-    rows: projected,
+    rows: projected.slice((page - 1) * LIST_PAGE_SIZE, page * LIST_PAGE_SIZE),
     totals: amountsVisible
       ? {
           count: projected.length,
@@ -356,5 +397,26 @@ export async function listCardUsages(viewer: Viewer, filters: CardUsageListFilte
           supplyKrw: sumKrw(projected.map((row) => row.supplyKrw ?? 0)),
         }
       : null,
+    page: { page, pageCount, pageSize: LIST_PAGE_SIZE, total: projected.length },
+    cardChoices: await cardChoicesFor(viewer, scope),
+    registrationFilter: privileged,
+  };
+}
+
+// ── 새 건 기본값(M-4) ──────────────────────────────────────────────────────
+
+export type CardUsageFormDefaults = { usedOn: string; corpCardId: string | null; linkKind: CardUsageLinkKind | null };
+
+// 사용일 = 오늘(서울) · 카드 = 직전 등록의 카드가 지금 옵션에 있을 때만(아니면 옵션 한 장이면 그 카드) · 연결 = 직전 등록의 연결 종류.
+// 처음 쓰는 사람은 카드(여러 장일 때) · 연결이 빈다. 보관된 건은 직전 등록이 아니다.
+export async function cardUsageFormDefaults(viewer: Viewer, today: string): Promise<CardUsageFormDefaults> {
+  const options = await cardOptionsForUsage(viewer, today);
+  const last = await findLastCardUsageByRegistrant(viewer, viewer.id);
+  const lastCard = last && options.some((option) => option.id === last.corpCardId) ? last.corpCardId : null;
+  const onlyCard = options.length === 1 ? (options[0]?.id ?? null) : null;
+  return {
+    usedOn: today,
+    corpCardId: lastCard ?? onlyCard,
+    linkKind: last?.linkKind === "team_cost" ? "team_cost" : null,
   };
 }

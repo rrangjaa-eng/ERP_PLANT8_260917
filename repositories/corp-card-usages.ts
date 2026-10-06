@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, isNull, lt, ne, or, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNull, lt, ne, or, type SQL } from "drizzle-orm";
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { corpCardUsages, corpCards, quoteLines, teams, users, vendors } from "@/db/schema";
@@ -56,9 +56,11 @@ function linkCondition(link: CardUsageLinkFilter): SQL | undefined {
 }
 
 // 카드 그룹(별칭 · 발급사 · 뒤 4자리) → 사용일 오름차순 → 등록 순.
+// 읽기도 호출부 tx를 받는다 — domain이 lock_timeout을 건 트랜잭션 안에서 읽어 잠금 대기가 끝없이 늘지 않게 한다.
 export async function listCardUsageRows(
   viewer: Viewer,
   input: { scope: CardUsageScope; filter: CardUsageFilter },
+  tx: DbOrTx = db,
 ): Promise<CardUsageListRow[]> {
   void viewer;
   const { filter } = input;
@@ -72,7 +74,7 @@ export async function listCardUsageRows(
   if (filter.link) conditions.push(linkCondition(filter.link));
   if (filter.proxyOnly) conditions.push(eq(corpCardUsages.registeredVia, "proxy"));
 
-  const rows = await db
+  const rows = await tx
     .select({
       usage: corpCardUsages,
       cardLabel: corpCards.label,
@@ -107,4 +109,19 @@ export async function listCardUsageRows(
     teamName: row.teamName,
     registeredByName: row.registeredByName,
   }));
+}
+
+/** 새 건 기본값(M-4)의 「직전 등록」 — 그 사람이 등록한, 보관 안 된 카드 사용 중 가장 최근 것. */
+export async function findLastCardUsageByRegistrant(
+  viewer: Viewer,
+  userId: string,
+): Promise<Pick<CardUsageRow, "corpCardId" | "linkKind"> | null> {
+  void viewer;
+  const [row] = await db
+    .select({ corpCardId: corpCardUsages.corpCardId, linkKind: corpCardUsages.linkKind })
+    .from(corpCardUsages)
+    .where(and(eq(corpCardUsages.registeredBy, userId), isNull(corpCardUsages.archivedAt)))
+    .orderBy(desc(corpCardUsages.createdAt), desc(corpCardUsages.id))
+    .limit(1);
+  return row ?? null;
 }

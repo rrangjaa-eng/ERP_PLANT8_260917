@@ -6,6 +6,9 @@ import { actionLog } from "@/db/schema";
 import { createCorpCard } from "@/domain/corp-cards";
 import { createCardUsage, precheckCardUsage } from "@/domain/corp-card-usages";
 import { createOrgUnit, createTeam } from "@/domain/org";
+import { createProject } from "@/domain/projects";
+import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
+import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { insertVendor } from "@/repositories/vendors";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
@@ -15,7 +18,7 @@ import { loginPage, makePerson, waitForHydration, type Person } from "./leave-or
 // 06-05(EXP-07 · UI-SPEC S8 · S9): 법인카드 사용 — 직원 본인 등록 → 옆 패널 → 뒤 목록 카드 그룹.
 // 사람 · 팀 · 카드는 도메인 함수로 만든다(스펙마다 전용 본부 · 팀).
 
-type CardHolder = { person: Person; teamName: string; cardLabel: string; issuer: string; cardIds: string[] };
+type CardHolder = { person: Person; teamId: string; teamName: string; cardLabel: string; issuer: string; cardIds: string[] };
 
 async function makeCardHolder(cards = 1): Promise<CardHolder> {
   const suffix = randomUUID().slice(0, 8);
@@ -38,7 +41,7 @@ async function makeCardHolder(cards = 1): Promise<CardHolder> {
     if (!card.id) throw new Error("카드 id 없음");
     cardIds.push(card.id);
   }
-  return { person, teamName, cardLabel, issuer, cardIds };
+  return { person, teamId: team.id, teamName, cardLabel, issuer, cardIds };
 }
 
 // 목록 화면 상태를 만들 카드 사용 한 건 — 화면이 아니라 도메인 함수로(본인 등록 · 팀 비용).
@@ -54,6 +57,39 @@ async function seedUsage(holder: CardHolder, amount: number): Promise<void> {
   };
   const pre = await precheckCardUsage(holder.person.viewer, input);
   await createCardUsage(holder.person.viewer, input, pre);
+}
+
+// 06-07: 카드 소지자가 담당 PM인 프로젝트 하나 · 견적 줄 하나(실행가 2,000,000) — 도메인 함수로.
+async function seedProjectLine(holder: CardHolder): Promise<{ projectName: string; projectNumber: string; itemName: string }> {
+  const suffix = randomUUID().slice(0, 8);
+  const client = await insertVendor(SYSTEM_VIEWER, { name: `E2E카드클라이언트-${suffix}`, normalizedName: `e2e카드클라이언트-${suffix}` });
+  const year = seoulToday().slice(0, 4);
+  const projectName = `E2E카드연결-${suffix}`;
+  const project = await createProject(holder.person.viewer, {
+    clientId: client.id,
+    teamId: holder.teamId,
+    pmUserId: holder.person.viewer.id,
+    name: projectName,
+    startDate: `${year}-01-01`,
+    endDate: `${year}-12-31`,
+  });
+  const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+  if (!revision || !project.number) throw new Error("프로젝트 · 1차 차수가 없습니다");
+  const itemName = `현장 소모품-${suffix}`;
+  await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
+    rows: [
+      {
+        id: randomUUID(),
+        isNew: true as const,
+        subcategory: (await firstSelectableSubcategory()).value,
+        itemName,
+        vendorId: null,
+        unitPrice: { currency: "KRW" as const, amount: 2_500_000, fxRate: 1 },
+        execution: { currency: "KRW" as const, amount: 2_000_000, fxRate: 1 },
+      },
+    ],
+  });
+  return { projectName, projectNumber: project.number, itemName };
 }
 
 function previousMonth(): string {
@@ -106,6 +142,41 @@ test.describe("법인카드 사용 등록 (06-05)", () => {
     expect(logs).toEqual([{ entity: "corp_card_usage" }]);
     await page.context().close();
   });
+  test("[06-07 트레이서] 연결 `견적 줄` → 프로젝트 바꾸기 → 견적 줄 바꾸기 → `이 줄로` → 줄 아래 `남은 실행가` → Ctrl+Enter → 결과 한 줄", async ({ browser, baseURL }) => {
+    const holder = await makeCardHolder();
+    const target = await seedProjectLine(holder);
+    const page = await loginPage(browser, baseURL, holder.person);
+    await page.goto("/cards?new=1");
+    const sheet = panel(page);
+    const amount = sheet.getByLabel("결제 합계");
+    await waitForHydration(amount);
+    await amount.fill("1100000");
+    await sheet.getByRole("radio", { name: "견적 줄" }).check();
+
+    await sheet.getByRole("button", { name: "프로젝트 바꾸기" }).click();
+    const projects = page.getByRole("dialog", { name: "프로젝트 고르기" });
+    await projects.getByRole("textbox", { name: "프로젝트 번호 · 이름 · 클라이언트 검색" }).fill(target.projectName);
+    await projects.getByRole("option", { name: new RegExp(target.projectName) }).click();
+    await projects.getByRole("button", { name: /^이 프로젝트로/ }).click();
+    await expect(projects).toBeHidden();
+    await expect(sheet.getByText(`${target.projectNumber} ${target.projectName}`, { exact: true })).toBeVisible();
+
+    await expect(sheet.getByRole("button", { name: "견적 줄 바꾸기" })).toBeFocused();
+    await sheet.getByRole("button", { name: "견적 줄 바꾸기" }).click();
+    const lines = page.getByRole("dialog", { name: "견적 줄 고르기" });
+    await lines.getByRole("option", { name: new RegExp(target.itemName) }).click();
+    await lines.getByRole("button", { name: /^이 줄로/ }).click();
+    await expect(lines).toBeHidden();
+    await expect(sheet.getByText(target.itemName, { exact: true })).toBeVisible();
+    // 연결 0건 — `카드 사용` · `구매 요청` 부분 없음.
+    await expect(sheet.getByText("남은 실행가 2,000,000", { exact: true })).toBeVisible();
+
+    await amount.press("Control+Enter");
+    await expect(sheet.getByRole("status")).toHaveText("카드 사용 등록됨 · 1,100,000");
+    await expect(page.getByRole("table").getByText("1,100,000", { exact: true })).toHaveCount(1);
+    await page.context().close();
+  });
+
   test("외화 카드 사용 — USD 900.00 @1,474.89 → 서버 원화 1,327,401 · 목록 2행 `USD 900.00 @1,474.89 · 공급가 …`", async ({ browser, baseURL }) => {
     const holder = await makeCardHolder();
     const page = await loginPage(browser, baseURL, holder.person);

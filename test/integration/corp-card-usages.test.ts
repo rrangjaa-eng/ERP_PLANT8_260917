@@ -7,7 +7,7 @@ import { createCorpCard } from "@/domain/corp-cards";
 import { createOrgUnit, createTeam } from "@/domain/org";
 import { and, eq } from "drizzle-orm";
 import { Client } from "pg";
-import { db } from "@/db/client";
+import { db, pool } from "@/db/client";
 import { corpCardUsages, expenses, projects, purchaseRequests, quoteLines } from "@/db/schema";
 import { gate, GateBlockedError } from "@/domain/rules/gate";
 import { createProject, CompletedProjectError } from "@/domain/projects";
@@ -47,6 +47,7 @@ import { insertVendor } from "@/repositories/vendors";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { seoulToday } from "@/lib/dates";
 import { makePerson } from "./approvals-fixtures";
+import { waitForLockWaiter } from "./lock-race";
 
 // 06-05(EXP-07 · U-2): 카드 사용 통합 파일 — 06-07 · 06-09 · 06-12가 `describe`를 더한다.
 
@@ -740,13 +741,81 @@ describe("경합(X-2)", () => {
       await client.query("SELECT id FROM projects WHERE id = $1 FOR UPDATE", [fx.projectId]);
       await client.query("UPDATE projects SET status = 'completed' WHERE id = $1", [fx.projectId]);
       const creating = caught(createCardUsage(fx.pm, input, pre));
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      await waitForLockWaiter(pool);
       await client.query("COMMIT");
       expect(await creating).toBeInstanceOf(CompletedProjectError);
     } finally {
       await client.query("ROLLBACK").catch(() => {});
       await client.end();
     }
+    expect(await usageCount()).toBe(0);
+  });
+
+  it("[I-3] 줄 잠금 — 풀 밖 연결이 줄 행을 잡고 실행가를 500,000으로 내려 커밋 → 900,000 카드는 기다린 뒤 새 실행가로 거부 · 카드 사용 0", async () => {
+    const fx = await cardProject();
+    const line = fx.lines[0] ?? "";
+    const input = lineInput(fx, line, 900_000);
+    const pre = await precheckCardUsage(fx.pm, input);
+    const client = new Client({ connectionString: process.env.DATABASE_URL });
+    await client.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("UPDATE quote_lines SET execution_amount_krw = 500000 WHERE id = $1", [line]);
+      const creating = caught(createCardUsage(fx.pm, input, pre));
+      await waitForLockWaiter(pool);
+      await client.query("COMMIT");
+      const error = await creating;
+      expect(error).toBeInstanceOf(GateBlockedError);
+      expect((error as Error).message).toBe("실행가 초과 · 남은 실행가 500,000 · 다른 줄 고르기");
+    } finally {
+      await client.query("ROLLBACK").catch(() => {});
+      await client.end();
+    }
+    expect(await usageCount()).toBe(0);
+  });
+
+  it("[I-3] 카드 ∥ 카드 같은 줄 — 600,000 두 건 동시 → 한 건만 저장(실행가 1,000,000)", async () => {
+    const fx = await cardProject();
+    const input = lineInput(fx, fx.lines[0] ?? "", 600_000);
+    const [preA, preB] = [await precheckCardUsage(fx.pm, input), await precheckCardUsage(fx.pm, input)];
+    const results = await Promise.allSettled([createCardUsage(fx.pm, input, preA), createCardUsage(fx.pm, input, preB)]);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    const rejected = results.find((result) => result.status === "rejected");
+    expect(rejected?.status === "rejected" ? (rejected.reason as Error).message : null).toBe("실행가 초과 · 남은 실행가 400,000 · 다른 줄 고르기");
+    expect(await usageCount()).toBe(1);
+  });
+
+  it("[I-4] 견적 외 비용 — 정산 프로젝트 precheck 뒤 풀 밖에서 완료로 커밋 → `완료 · 견적 줄 잠김` · 줄 · 카드 사용 그대로", async () => {
+    const fx = await cardProject();
+    await setStatus(fx.projectId, "settling");
+    const input: CardUsageInput = { ...usageInput(fx.cardId), evidenceTypeCode: "invoice", linkKind: "out_of_quote", projectId: fx.projectId, itemName: "현장 다과" };
+    const pre = await precheckCardUsage(fx.pm, input);
+    const before = await lineCount(fx.revisionId);
+    const client = new Client({ connectionString: process.env.DATABASE_URL });
+    await client.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT id FROM projects WHERE id = $1 FOR UPDATE", [fx.projectId]);
+      await client.query("UPDATE projects SET status = 'completed' WHERE id = $1", [fx.projectId]);
+      const creating = caught(createCardUsage(fx.pm, input, pre));
+      await waitForLockWaiter(pool);
+      await client.query("COMMIT");
+      const error = await creating;
+      expect(error).toBeInstanceOf(GateBlockedError);
+      expect((error as Error).message).toBe("완료 · 견적 줄 잠김");
+    } finally {
+      await client.query("ROLLBACK").catch(() => {});
+      await client.end();
+    }
+    expect(await lineCount(fx.revisionId)).toBe(before);
+    expect(await usageCount()).toBe(0);
+  });
+
+  it("[I-4] 현재 차수 밖 줄 — 차수 2를 만든 뒤 L1 id로 직접 등록 → ForbiddenError · 카드 사용 0", async () => {
+    const fx = await cardProject();
+    const l1 = fx.lines[0] ?? "";
+    await nextRevision(fx);
+    await expect(cardOnLine(fx, l1, 100_000)).rejects.toBeInstanceOf(ForbiddenError);
     expect(await usageCount()).toBe(0);
   });
 

@@ -37,6 +37,7 @@ const PRISTINE_FIELDS = [
 
 // 04-15 — 1차 옆 `등록 실패 · {칸} {n}칸`의 칸 이름(라벨 그대로).
 const FIELD_LABELS: Record<ProjectInputFieldError["field"], string> = {
+  clientId: "클라이언트",
   startDate: "시작일",
   endDate: "종료일",
   preEstimateAmount: "총 매출 예상가",
@@ -155,13 +156,14 @@ export function ProjectForm({
     });
   }
 
-  const clientError = result.validationErrors?.clientId?._errors?.[0];
   const nameError = result.validationErrors?.name?._errors?.[0];
   const pmError = result.validationErrors?.pmUserId?._errors?.[0];
   const teamError = result.validationErrors?.teamId?._errors?.[0];
   // 04-15 — 칸 거부(서버 domain)와 스키마의 총 매출 예상가 칸 오류. 둘 다 같은 칸 아래에 그린다.
   const rejectedErrors = result.data && "rejected" in result.data ? result.data.rejected.errors : [];
   const rejectedOf = (field: ProjectInputFieldError["field"]) => rejectedErrors.find((error) => error.field === field)?.reason;
+  // 261006 「바뀔 때만 막기」 — 협력사 갈래를 클라이언트로 고르면 서버가 클라이언트 칸 거부로 돌려준다.
+  const clientError = result.validationErrors?.clientId?._errors?.[0] ?? rejectedOf("clientId");
   const preEstimateErrors = result.validationErrors?.preEstimate;
   const startDateError = rejectedOf("startDate");
   const endDateError = rejectedOf("endDate");
@@ -205,7 +207,14 @@ export function ProjectForm({
         <Select
           id="clientId"
           name="clientId"
-          options={clients.map((c) => ({ value: c.id, label: c.name }))}
+          // 261006-biv /review 3 — 복사 출처 클라이언트가 선택지에 없으면(협력사로 바뀜 · 숨김) 저장된 이름으로 한 선택지로 둔다(quote-table 거래처 칸과 같은 규칙).
+          // 거래처 정보가 가려지면 이름이 없어 지금처럼 「—」로 연다.
+          options={[
+            ...(copySource?.clientName != null && !clients.some((c) => c.id === copySource.clientId)
+              ? [{ value: copySource.clientId, label: copySource.clientName }]
+              : []),
+            ...clients.map((c) => ({ value: c.id, label: c.name })),
+          ]}
           defaultValue={copySource?.clientId}
           error={clientError}
         />

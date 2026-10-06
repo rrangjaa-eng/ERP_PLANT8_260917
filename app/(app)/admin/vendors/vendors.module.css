@@ -16,8 +16,28 @@
   text-decoration-thickness: var(--underline-w-hover);
 }
 
+/* 261006-biv: 갈래 걸러보기 링크 줄 — code-tables .tableNav와 같은 결. */
+.kindNav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-4);
+}
+
+/* 현재 갈래 링크는 형제 링크와 구분한다 — §7-16 「현재 번호는 강한 글자 700, 밑줄 없음」(code-tables .toggle[aria-current]와 같은 결). */
+.toggle[aria-current="page"] {
+  color: var(--text-strong);
+  font-weight: var(--fw-bold);
+  text-decoration: none;
+}
+
 /* §3 터치 목표: 폰에서 모든 행동 요소 최소 44×44. */
 @media (max-width: 699.98px) {
+  /* 갈래 링크 줄이 전폭을 차지해 「숨김 포함」은 처음부터 다음 줄에 선다 — 글꼴 전후 글자 폭으로 줄이 움직이지 않게(code-tables CLS 0.18 선례). */
+  .kindNav {
+    flex: 1 1 100%;
+  }
+
   .toggle {
     display: inline-flex;
     align-items: center;
@@ -49,6 +69,8 @@
 }
 
 .revealError {
+  text-align: right;
+  white-space: normal; /* 칸의 nowrap(.alignRight)을 물려받지 않는다 — 좁은 폭에서 문구가 칸 폭을 정하지 않게 */
   font-size: var(--text-aux);
   color: var(--status-danger);
   margin-top: var(--s-1);

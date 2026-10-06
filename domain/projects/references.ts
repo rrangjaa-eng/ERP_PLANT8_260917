@@ -5,6 +5,7 @@ import { projectMany, type DtoSpec } from "@/domain/permissions/project";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { listVendors as repoListVendors } from "@/repositories/vendors";
+import { servesSide, type VendorSide } from "@/domain/vendors/kind";
 import { listTeams as repoListTeams } from "@/repositories/teams";
 import { listUsers as repoListUsers } from "@/repositories/users";
 import { listCodeItems as repoListCodeItems } from "@/repositories/code-tables";
@@ -103,17 +104,18 @@ export async function listProjectFormReferences(
     ["person.value", personShown],
   ]);
   const projectDeps = { visible: (_viewer: Viewer, item: string) => Promise.resolve(shown.get(item) === true) };
-  const vendorOptions = (await projectMany(
-    viewer,
-    vendorRows.map((row) => ({ id: row.id, name: row.name })),
-    VENDOR_OPTION_SPEC,
-    projectDeps,
-  )) as ProjectReferenceOption[];
+  const vendorOptionsFor = async (side: VendorSide) =>
+    (await projectMany(
+      viewer,
+      vendorRows.filter((row) => servesSide(row.kind, side)).map((row) => ({ id: row.id, name: row.name })),
+      VENDOR_OPTION_SPEC,
+      projectDeps,
+    )) as ProjectReferenceOption[];
   return {
-    clients: vendorOptions,
+    clients: await vendorOptionsFor("client"),
     teams: (await projectMany(viewer, teamRows.map((row) => ({ id: row.id, name: row.name })), TEAM_OPTION_SPEC, projectDeps)) as ProjectReferenceOption[],
     pmUsers: (await projectMany(viewer, userRows.map((row) => ({ id: row.id, name: row.name })), PERSON_OPTION_SPEC, projectDeps)) as ProjectReferenceOption[],
-    vendors: vendorOptions,
+    vendors: await vendorOptionsFor("supplier"),
     vendorShown,
     subcategories: subcategoryRows
       .filter((row) => row.active && row.archivedAt === null)

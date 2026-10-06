@@ -24,6 +24,7 @@ import {
 import { readVendorFieldAccess } from "@/repositories/permissions";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { pickVisibleCustomFields, visibleCustomFieldKeys } from "@/domain/custom-fields/visibility";
+import type { VendorKind } from "@/domain/vendors/kind";
 
 export class ForbiddenError extends UserFacingError {}
 
@@ -44,6 +45,7 @@ export type VendorDto = {
   name: string;
   businessNo: string | null;
   hidden: boolean;
+  kind: VendorKind;
   defaultEvidenceType: string | null;
   accountBank: string | null;
   accountHolder: string | null;
@@ -58,6 +60,7 @@ export const VENDOR_DTO_SPEC: DtoSpec<VendorRow, VendorDto> = {
     { key: "name", from: "name", infoItem: "vendor.value" },
     { key: "businessNo", from: "businessNo", infoItem: "vendor.value" },
     { key: "hidden", from: "hidden", infoItem: "vendor.value" },
+    { key: "kind", from: "kind", infoItem: "vendor.value" },
     { key: "defaultEvidenceType", from: "defaultEvidenceType", infoItem: "vendor.value" },
     { key: "accountBank", from: "accountBank", infoItem: "vendor.value" },
     { key: "accountHolder", from: "accountHolder", infoItem: "vendor.value" },
@@ -247,6 +250,8 @@ export type VendorInput = {
    * 키 없음 = 빈칸으로 판정한다.
    */
   customFields?: Record<string, unknown>;
+  /** 갈래 — createVendor에서 undefined = DB 기본 'both' · updateVendor에서 undefined = 안 바꿈(M-5와 같은 결). */
+  kind?: VendorKind;
 };
 
 // MAST-01 리뷰 M-5 — 계좌번호 갱신 계획을 순수 함수로 뽑는다. undefined(안 바꿈) ·
@@ -322,6 +327,7 @@ export async function createVendor(
     accountNumberEncrypted,
     accountNumberLast4,
     customFields,
+    kind: input.kind,
   });
 
   const recordAction = deps?.recordAction ?? defaultRecordAction;
@@ -364,6 +370,7 @@ export async function updateVendor(
     defaultEvidenceType: input.defaultEvidenceType ?? null,
     accountBank: input.accountBank ?? null,
     accountHolder: input.accountHolder ?? null,
+    ...(input.kind !== undefined ? { kind: input.kind } : {}),
   };
   // customFields를 보내지 않으면(undefined) 커스텀 열을 건드리지 않는다(M-5) — 경합이 없어 트랜잭션도 없다.
   // 보내면(04.5-05 · T-04.5-41/44) 행을 잠가 읽은 저장값으로 판정 · 합치고 같은 트랜잭션에서 쓴다. 입력 칸 집합도

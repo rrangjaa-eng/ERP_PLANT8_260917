@@ -7,6 +7,7 @@ import { authedActionClient } from "@/lib/actions/client";
 import { createVendor, updateVendor, setVendorHidden, revealAccountNumber } from "@/domain/vendors";
 import { CustomFieldsInvalidError } from "@/domain/custom-fields/preserve";
 import { archive } from "@/domain/archive";
+import { VENDOR_KINDS } from "@/domain/vendors/kind";
 import "./actions.registry";
 
 // MAST-01: domain/vendors만 부른다. 등록은 ./actions.registry로 분리(03-03
@@ -16,6 +17,7 @@ const customFieldsSchema = z.record(z.string(), z.unknown()).optional();
 // 04.5-05: 스키마는 모듈 안 비공개 상수 — "use server" 파일은 async 함수 밖을 내보낼 수 없다.
 const createVendorSchema = z.object({
   name: z.string().min(1, "이름 필요 · 이름 입력"),
+  kind: z.enum(VENDOR_KINDS, { error: "구분 필요 · 구분 고르기" }),
   businessNo: z.string().optional(),
   defaultEvidenceType: z.string().optional(),
   accountBank: z.string().optional(),
@@ -27,6 +29,7 @@ const createVendorSchema = z.object({
 const updateVendorSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1, "이름 필요 · 이름 입력"),
+  kind: z.enum(VENDOR_KINDS, { error: "구분 필요 · 구분 고르기" }),
   businessNo: z.string().optional(),
   defaultEvidenceType: z.string().optional(),
   accountBank: z.string().optional(),

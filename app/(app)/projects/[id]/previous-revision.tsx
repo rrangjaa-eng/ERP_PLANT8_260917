@@ -61,6 +61,19 @@ export function savedVendorFrom(rows: Pick<QuoteLineCopyRow, "savedVendor">[], v
   return rows.find((row) => row.savedVendor?.id === vendorId)?.savedVendor ?? null;
 }
 
+// 261006-biv /review 4 — 붙여넣기 거래처 선택지. 고르는 목록(협력사 갈래)에 지금 줄의 저장된 거래처(다른 갈래 · 숨김 · 보관)를 더한다 —
+// 복사한 줄을 다시 붙여도 「목록에 없는 값」이 되지 않는다. 거래처 없음 복사 글자 `—`는 빈 값(ISSUE-001).
+export function quoteLineVendorPasteOptions(
+  vendors: QuoteTableOption[],
+  rows: Pick<QuoteLineCopyRow, "savedVendor">[],
+): { value: string; label: string }[] {
+  const options = [{ value: "", label: "—" }, ...vendors.map((option) => ({ value: option.id, label: option.name }))];
+  for (const { savedVendor } of rows) {
+    if (savedVendor && !options.some((option) => option.value === savedVendor.id)) options.push({ value: savedVendor.id, label: savedVendor.name });
+  }
+  return options;
+}
+
 // 견적 줄 표(quote-table.tsx)와 같은 열 키·순서·머리글·우선순위·좁은 PC 접기·셀 글자·외화 2행의 읽기 렌더.
 export function quoteLineReadColumns<Row extends QuoteLineCopyRow>(
   references: QuoteLineReadReferences,

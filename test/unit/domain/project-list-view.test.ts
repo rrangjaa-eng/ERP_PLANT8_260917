@@ -607,12 +607,16 @@ describe("isProfitRateBelowThreshold — 수익률 기준선(quick 261004-51o)",
     [0.1, 15, true],
     [0.15, 15, false],
     [0.29, 29, false],
-    [0.14996, 15, false],
+    [0.14996, 15, true], // 14.996 → 버림 14.9
+    [1_499_999_996 / 10_000_000_000, 15, true], // 14.99999996 → 버림 14.9
     [0.1449, 15, true],
     [-0.05, 15, true],
     [-0.05, 0, true],
     [0, 0, false],
     [0.417, 15, false],
+    [0.1499, 15, true], // 14.99 → 버림 14.9
+    [0.1501, 15, false],
+    [-0.0001, 0, false], // -0.01 → 0 쪽 버림 -0.0 → 0
   ])("수익률 %s · 기준선 %s%% → %s", (profitRate, threshold, expected) => {
     expect(isProfitRateBelowThreshold(profitRate, threshold)).toBe(expected);
   });

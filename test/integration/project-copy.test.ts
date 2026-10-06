@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { actionLog, projects, quoteLines, quoteRevisions, revenueEntries, teams } from "@/db/schema";
+import { actionLog, projects, quoteLines, quoteRevisions, revenueEntries, teams, vendors } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { createAccount } from "@/domain/auth/accounts";
 import { insertVendor } from "@/repositories/vendors";
@@ -243,6 +243,7 @@ describe("프로젝트 복사 등록(04-15 Task 1 · D-70, 실제 Postgres)", ()
       clientId: client.id,
       teamId: team.id,
       pmUserId: pm.id,
+      clientName: null,
       lineCount: 3,
     });
 
@@ -250,6 +251,16 @@ describe("프로젝트 복사 등록(04-15 Task 1 · D-70, 실제 Postgres)", ()
     const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, created.id);
     const lines = await db.select().from(quoteLines).where(eq(quoteLines.revisionId, revision!.id));
     expect(lines).toHaveLength(source!.lineCount);
+  });
+
+  it("(c3b) 출처 클라이언트 이름 — 거래처 정보(vendor.value)를 보면 이름, 가려지면 null(261006-biv · 갈래가 바뀐 클라이언트도 폼에 남긴다)", async () => {
+    const { pm, client, original } = await setupOriginal();
+    expect((await getProjectCopySource(pm, original.id))?.clientName).toBeNull();
+
+    if (!pm.roleId) throw new Error("계급 없음");
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: pm.roleId, infoItem: "vendor.value", visible: true });
+    await db.update(vendors).set({ kind: "supplier" }).where(eq(vendors.id, client.id));
+    expect((await getProjectCopySource(pm, original.id))?.clientName).toBe(client.name);
   });
 
   it("(c4) 보는 사람의 행 범위 밖 원본은 거부되고 write.denied 경고가 한 번(출처 id, 금액 없음) · 프로젝트 행이 생기지 않고 미리 채우기도 없다", async () => {

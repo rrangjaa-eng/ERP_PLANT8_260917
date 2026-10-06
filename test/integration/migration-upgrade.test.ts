@@ -407,3 +407,66 @@ describe("공휴일 보관 칸 · 부분 유일 인덱스(0021)", () => {
     expect(count).toEqual([{ n: "2" }]);
   });
 });
+
+// 증빙 종류 세금 규칙 시드 맞춤(0029 · PR #176 후속) — 시드는 기존 행을 덮지 않아(onConflictDoNothing) 이미 만든 DB는
+// 카드 전표·현금영수증이 부가세 없음, 기타소득·사업소득이 반올림으로 남는다. 옛 시드 값 그대로인 행만 새 시드 값으로
+// 바꾸고, 관리자가 이미 바꾼 값은 그대로 둔다. 두 번 돌려도 결과가 같다.
+describe("증빙 종류 세금 규칙 시드 맞춤(0029)", () => {
+  const VAT = { ruleKind: "vat_surcharge", roundingUnit: 1, roundingMethod: "round", minWithholdingAmount: 0, basisDate: "evidence_date" };
+  const oldWithholding = (min: number) => ({ ruleKind: "withholding", roundingUnit: 10, roundingMethod: "round", minWithholdingAmount: min, basisDate: "payment_date" });
+  const newWithholding = (min: number) => ({ ...oldWithholding(min), roundingMethod: "truncate" });
+  const ADMIN_CARD = { ruleKind: "withholding", roundingUnit: 1, roundingMethod: "ceil", minWithholdingAmount: 0, basisDate: "payment_date" };
+  const ADMIN_BUSINESS = { ...oldWithholding(0), roundingUnit: 100 };
+
+  async function readRules(pool: Pool): Promise<Record<string, unknown>> {
+    const { rows } = await pool.query<{ value: string; tax_rule: unknown }>(
+      `SELECT value, tax_rule FROM code_items WHERE table_key = 'evidence_type' ORDER BY value`,
+    );
+    return Object.fromEntries(rows.map((row) => [row.value, row.tax_rule]));
+  }
+
+  it("옛 시드 값인 행만 새 값으로 바뀌고, 관리자가 바꾼 값은 그대로이며, 다시 돌려도 같다", async () => {
+    const pool = await createScratchDb();
+    await migrateTo(pool, countThrough("_vendor_kind_validate"));
+
+    const insert = (value: string, rule: string) =>
+      pool.query(`INSERT INTO code_items (table_key, value, label, tax_rule) VALUES ('evidence_type', $1, $1, $2::jsonb)`, [value, rule]);
+    await insert("tax_invoice", JSON.stringify(VAT));
+    await insert("invoice", `{"ruleKind":"none"}`);
+    await insert("card_receipt", JSON.stringify(ADMIN_CARD));
+    await insert("cash_receipt", `{"ruleKind":"none"}`);
+    // 키 순서가 시드와 달라도 jsonb 비교라 같은 값으로 본다.
+    await insert("other_income", `{"basisDate":"payment_date","minWithholdingAmount":125000,"roundingMethod":"round","roundingUnit":10,"ruleKind":"withholding"}`);
+    await insert("business_income", JSON.stringify(ADMIN_BUSINESS));
+
+    await migrateTo(pool);
+
+    const expected = {
+      business_income: ADMIN_BUSINESS,
+      card_receipt: ADMIN_CARD,
+      cash_receipt: VAT,
+      invoice: { ruleKind: "none" },
+      other_income: newWithholding(125000),
+      tax_invoice: VAT,
+    };
+    expect(await readRules(pool)).toEqual(expected);
+
+    // 관리자 변경이 없던 business_income·card_receipt를 옛 값으로 되돌려 같은 SQL을 다시 돌리면 그 둘도 맞춰진다.
+    await pool.query(`UPDATE code_items SET tax_rule = $1::jsonb WHERE table_key = 'evidence_type' AND value = 'business_income'`, [JSON.stringify(oldWithholding(0))]);
+    await pool.query(`UPDATE code_items SET tax_rule = '{"ruleKind":"none"}'::jsonb WHERE table_key = 'evidence_type' AND value = 'card_receipt'`);
+    const entry = journal.entries.find((e) => e.tag.endsWith("_evidence_tax_rule_seed_sync"));
+    if (!entry) throw new Error("journal에 _evidence_tax_rule_seed_sync 마이그레이션이 없습니다");
+    const migrationSql = readFileSync(join(MIGRATIONS_DIR, `${entry.tag}.sql`), "utf8");
+    const runAgain = async () => {
+      for (const statement of migrationSql.split("--> statement-breakpoint")) {
+        if (statement.trim()) await pool.query(`BEGIN; ${statement}; COMMIT;`);
+      }
+    };
+    await runAgain();
+    const synced = { ...expected, business_income: newWithholding(0), card_receipt: VAT };
+    expect(await readRules(pool)).toEqual(synced);
+
+    await runAgain();
+    expect(await readRules(pool)).toEqual(synced);
+  });
+});

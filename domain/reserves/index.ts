@@ -34,6 +34,7 @@ import {
 import { listCodeItems as repoListCodeItems } from "@/repositories/code-tables";
 import { listVendors as repoListVendors } from "@/repositories/vendors";
 import { vendorOptionLabels } from "@/domain/vendors";
+import { NOT_CLIENT_VENDOR, servesSide } from "@/domain/vendors/kind";
 import { RESERVE_ARCHIVED_ROW_REASON } from "@/domain/reserves/save-contract";
 
 export type ReserveDirection = "deposit" | "withdrawal";
@@ -309,9 +310,10 @@ export async function saveReserves(viewer: Viewer, input: SaveReservesInput, dep
     const lockedClients = await repoLockReserveClients(viewer, lockIds, tx);
     const locked = new Set(lockedClients.map((client) => client.id));
     const selectable = new Set(lockedClients.filter((client) => client.selectable).map((client) => client.id));
+    const notClient = new Set(lockedClients.filter((client) => !servesSide(client.kind, "client")).map((client) => client.id));
     await deps?.afterLock?.();
     const storedById = new Map((await repoFindEntriesByIds(viewer, entryIds, tx)).map((row) => [row.id, row]));
-    const plan = await planBatch(viewer, prepared, archived, storedById, selectable, evidence.active, pickable, tx);
+    const plan = await planBatch(viewer, prepared, archived, storedById, selectable, notClient, evidence.active, pickable, tx);
 
     const ledger = new Map((await repoListActiveEntriesByClients(viewer, [...locked], tx)).map((row) => [row.id, toBalanceRow(row)]));
     for (const { row, stored } of plan.updates) {
@@ -337,6 +339,8 @@ async function planBatch(
   storedById: Map<string, ReserveEntryRow>,
   /** 잠근 클라이언트 중 새 줄이 고를 수 있는 것(보관·숨김 아님 — 리뷰 R10). */
   selectable: Set<string>,
+  /** 261006 「바뀔 때만 막기」 — 잠근 클라이언트 중 클라이언트 · 둘 다 갈래가 아닌 것. 새 줄만 막는다(기존 줄은 클라이언트 잠김). */
+  notClient: Set<string>,
   /** Codex B — 활성·보관 아닌 증빙 코드(트랜잭션 앞에서 읽음). */
   activeEvidence: ReadonlySet<string>,
   /** Codex ②③ — 새 줄 클라이언트는 vendor.value, 새로 고르거나 바꾼 프로젝트는 project.value + projects 보기 범위(트랜잭션 앞에서 읽음). */
@@ -373,6 +377,10 @@ async function planBatch(
       // Codex ③ — 새 줄 클라이언트는 선택지와 같은 vendor.value 게이트.
       if (!pickable.clients || !selectable.has(input.clientId)) {
         errors.push(cellError(index, input.id, "clientId", "클라이언트", CLIENT_NOT_FOUND));
+        continue;
+      }
+      if (notClient.has(input.clientId)) {
+        errors.push(cellError(index, input.id, "clientId", "클라이언트", NOT_CLIENT_VENDOR));
         continue;
       }
     } else {
@@ -678,11 +686,12 @@ export async function listReserveReferences(viewer: Viewer): Promise<ReserveRefe
     projectShown && projectScope.rows === "all" ? repoListProjectOptions(viewer) : [],
     repoListCodeItems(viewer, { tableKey: EVIDENCE_TYPE_TABLE, scope: { rows: "all", includeArchived: false }, includeInactive: false }),
   ]);
-  const clientLabels = vendorOptionLabels(vendorRows);
+  const clientRows = vendorRows.filter((row) => servesSide(row.kind, "client"));
+  const clientLabels = vendorOptionLabels(clientRows);
   return {
     clients: (await projectMany(
       viewer,
-      vendorRows.map((row) => ({ id: row.id, name: row.name, label: clientLabels.get(row.id) ?? row.name })),
+      clientRows.map((row) => ({ id: row.id, name: row.name, label: clientLabels.get(row.id) ?? row.name })),
       CLIENT_OPTION_SPEC,
     )) as ReserveClientOption[],
     projects: (await projectMany(viewer, projectRows, PROJECT_OPTION_SPEC)) as ReserveProjectOption[],

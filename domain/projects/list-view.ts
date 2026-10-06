@@ -243,10 +243,10 @@ export function filterSummary(input: { year: number | "all"; statusLabel: string
   return parts;
 }
 
-// quick 261004-51o — 수익률 칸(Num percent)이 보이는 값으로 기준선 미만을 판정한다. formatPercent와 같은 소수 1자리 반올림이라
+// quick 261004-51o — 수익률 칸(Num percent)이 보이는 값으로 기준선 미만을 판정한다. formatPercent와 같은 소수 1자리 버림이라
 // 화면의 「15.0%」가 빨갛게 되지 않고 0.29 * 100 = 28.999… 같은 부동소수 오차로 같음이 미만이 되지 않는다.
 export function isProfitRateBelowThreshold(profitRate: number | null | undefined, thresholdPercent: number): boolean {
   if (profitRate === null || profitRate === undefined) return false;
-  const shown = Math.round(profitRate * 100 * 10) / 10;
+  const shown = Math.trunc(Number((profitRate * 100 * 10).toPrecision(15))) / 10;
   return shown < thresholdPercent;
 }

@@ -149,6 +149,17 @@ describe("applyTaxRule", () => {
     expect(result.withholdingKrw).toBe(88_500);
   });
 
+  it.each([
+    // [공급가, 요율, 절사 기대값, 반올림 기대값] — 끝자리 5 이상이라 방식에 따라 갈린다
+    [712_560, 0.088, 62_700, 62_710], // 62,705.28
+    [135_700, 0.033, 4_470, 4_480], // 4,478.1
+  ])("절사(truncate)는 10원 미만을 버리고 반올림과 갈린다 — 공급가 %s × %s", async (supply, rate, truncated, rounded) => {
+    const ctx = { paymentDate: PAYMENT_DATE, evidenceDate: EVIDENCE_DATE };
+    const deps = { getSettingValue: fakeGetSettingValue({ "tax.withholding.other_income.rate": rate }) as never };
+    expect((await applyTaxRule(supply, { ...WITHHOLDING_RULE, roundingMethod: "truncate" }, ctx, deps)).withholdingKrw).toBe(truncated);
+    expect((await applyTaxRule(supply, { ...WITHHOLDING_RULE, roundingMethod: "round" }, ctx, deps)).withholdingKrw).toBe(rounded);
+  });
+
   it("규칙 '원천징수 회사 대납' 단순 비율(flat) — 회사 대납액이 나오고 지급 총액 = 공급가(수령자가 온전히 받는다)", async () => {
     const getSettingValue = fakeGetSettingValue();
     const result = await applyTaxRule(

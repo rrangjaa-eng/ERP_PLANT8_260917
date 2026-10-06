@@ -336,7 +336,7 @@ test.describe("프로젝트 목록 — 행 매출 · 기준 · 수익금 · 수�
     };
     await expectRow(`${marker}-정산`, { 매출: "9,000,000", 기준: "발행", 수익금: "2,000,000", 수익률: "22.2%" });
     await expectRow(`${marker}-진행`, { 매출: "9,000,000", 기준: "견적", 수익금: "5,000,000" });
-    await expectRow(`${marker}-무발행`, { 매출: "—", 기준: "견적", 수익률: "41.7%" });
+    await expectRow(`${marker}-무발행`, { 매출: "—", 기준: "견적", 수익률: "41.6%" });
     await expectRow(`${marker}-영발행`, { 매출: "0" });
 
     // 「차익」 열은 없고 「기준」이 「수익금」 바로 앞이다.
@@ -1273,13 +1273,13 @@ test.describe("프로젝트 목록 — 수익률 기준선 미만은 위험 색 
 
       expect(await colorOf(low, "10.0%"), "기준선 미만").toBe(danger);
       expect(await colorOf(same, "15.0%"), "기준선과 같음").not.toBe(danger);
-      expect(await colorOf(high, "41.7%"), "기준선보다 높음").not.toBe(danger);
+      expect(await colorOf(high, "41.6%"), "기준선보다 높음").not.toBe(danger);
       expect(await colorOf(none, "—"), "수익률 없음").not.toBe(danger);
 
       await setSettingValue(SYSTEM_VIEWER, PROJECT_PROFIT_RATE_THRESHOLD, 50);
       await page.reload();
       await expect(page.locator(`${LIST_TABLE} tbody a`)).toHaveCount(4);
-      expect(await colorOf(high, "41.7%"), "기준선 50 · 41.7%").toBe(danger);
+      expect(await colorOf(high, "41.6%"), "기준선 50 · 41.6%").toBe(danger);
       expect(await colorOf(same, "15.0%"), "기준선 50 · 15.0%").toBe(danger);
       expect(await colorOf(none, "—"), "기준선 50 · 수익률 없음").not.toBe(danger);
     } finally {

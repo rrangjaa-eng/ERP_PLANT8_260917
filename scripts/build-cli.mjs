@@ -11,6 +11,7 @@ const entryPoints = [
   "scripts/db-bootstrap.ts",
   "scripts/restore-rehearsal-cli.ts",
   "scripts/purge-certs.ts",
+  "scripts/demo-data.ts",
 ];
 
 const outputs = [
@@ -20,6 +21,7 @@ const outputs = [
   "dist/cli/db-bootstrap.mjs",
   "dist/cli/restore-rehearsal-cli.mjs",
   "dist/cli/purge-certs.mjs",
+  "dist/cli/demo-data.mjs",
 ];
 
 async function main() {

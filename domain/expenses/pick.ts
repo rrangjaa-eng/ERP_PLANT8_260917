@@ -4,6 +4,7 @@ import { can, ForbiddenError } from "@/domain/permissions/can";
 import { projectMany, type DtoSpec } from "@/domain/permissions/project";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { normalizeVendorName } from "@/domain/vendors";
+import { vendorKindsFor } from "@/domain/vendors/kind";
 import {
   codeLabelsOf,
   doorBlock,
@@ -49,11 +50,11 @@ export const PICK_VENDOR_OPTION_SPEC: DtoSpec<PickVendorOptionDto, PickVendorOpt
 
 registerDto({ name: "PickVendorOptionDto", fields: PICK_VENDOR_OPTION_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 
-// 거래처 고르기 · 바꾸기 — 숨김 · 보관 거래처는 목록에 없다. 검색어는 이름 부분 일치(비면 이름순 앞 50행).
+// 거래처 고르기 · 바꾸기 — 숨김 · 보관 거래처는 목록에 없다. 검색어는 이름 부분 일치(비면 이름순 앞 50행). 협력사 · 둘 다만(261006-biv D-6).
 // 정보 노출표가 vendor.value를 가리면 행이 비어 id째 없다(이름이 새지 않는다).
 export async function searchVendorsForPick(viewer: Viewer, input: { query: string }): Promise<{ rows: Partial<PickVendorOptionDto>[]; truncated: boolean }> {
   if (!(await can(viewer, "expenses", "write"))) throw new ForbiddenError("지출결의 작성 권한 없음");
-  const found = await listVendorsForPick(viewer, { normalizedQuery: normalizeVendorName(input.query), limit: PICK_LIMIT + 1 });
+  const found = await listVendorsForPick(viewer, { normalizedQuery: normalizeVendorName(input.query), limit: PICK_LIMIT + 1, kinds: vendorKindsFor("supplier") });
   const evidenceNames = await codeLabelsOf(viewer, "evidence_type");
   const options: PickVendorOptionDto[] = found.slice(0, PICK_LIMIT).map((vendor) => ({
     id: vendor.id,

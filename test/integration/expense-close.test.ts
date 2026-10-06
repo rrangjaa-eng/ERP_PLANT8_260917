@@ -25,12 +25,13 @@ import {
 import { searchLinesForPick } from "@/domain/expenses/pick";
 import { listExpenses } from "@/domain/expenses/list";
 import { seoulToday } from "@/lib/dates";
+import { formatKrw } from "@/lib/format-number";
 import { EvidenceCheckError, getEvidenceActions, removeEvidence } from "@/domain/evidence";
 import { setSettingValue } from "@/domain/settings/registry";
 import { ACTION_LOG_OPTIONAL_TYPES } from "@/domain/settings/keys";
 import { createRevisionFromCurrent, setCustomerApproval } from "@/domain/quotes/revisions";
 import { approvalBasis } from "@/repositories/quote-revisions";
-import { upsertPermission } from "@/repositories/permissions";
+import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { listNumberedByLines } from "@/repositories/expenses";
 import { deferred, waitForLockWaiter } from "./lock-race";
 import { addApprovedRevision, attachEvidence, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
@@ -188,6 +189,33 @@ describe("06-28 종결", () => {
     expect(await caught(closeAs(fx.pm, target.expenseId))).toBeInstanceOf(ExpenseNotFoundError);
     expect((await expenseRow(target.expenseId)).closedAt).toBeNull();
   }, 30_000);
+
+  it("종결 모달 부제의 공급가는 금액을 볼 수 있는 사람에게만", async () => {
+    const fx = await setupExpenseProject();
+    const a = await rejectedOn(fx, fx.lines.withVendor);
+    const amount = formatKrw((await expenseRow(a.expenseId)).supplyAmountKrw ?? 0);
+    const subtitleOf = async (viewer: ExpenseFixture["pm"]) => (await getExpense(viewer, { expenseId: a.expenseId }))?.closeDialog?.subtitle;
+    // 금액을 볼 수 있는 기안자 → 공급가 조각이 있다.
+    const drafterBefore = await subtitleOf(fx.pm);
+    expect(drafterBefore?.startsWith(`${a.number} · `)).toBe(true);
+    expect(drafterBefore?.endsWith(` · ${amount}`)).toBe(true);
+
+    // 지급 권한자: 문서 칸(expense.value)은 보이고 금액(expense.amount)은 안 보임 → 번호 · 항목만.
+    const payer = await makePaymentManager();
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: payer.roleId ?? "", infoItem: "expense.value", visible: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: payer.roleId ?? "", infoItem: "expense.amount", visible: false });
+    const payerSubtitle = await subtitleOf(payer);
+    expect(payerSubtitle).toBeDefined();
+    expect(payerSubtitle).not.toContain(amount);
+    expect(payerSubtitle?.split(" · ")).toHaveLength(2);
+
+    // 기안자도 금액을 못 보게 되면 → 번호 · 항목만.
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, infoItem: "expense.amount", visible: false });
+    const drafterSubtitle = await subtitleOf(fx.pm);
+    expect(drafterSubtitle).toBeDefined();
+    expect(drafterSubtitle).not.toContain(amount);
+    expect(drafterSubtitle?.split(" · ")).toHaveLength(2);
+  });
 
   it("종결 상태 — 반려 · 회수만", async () => {
     const fx = await setupExpenseProject();

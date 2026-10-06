@@ -13,6 +13,7 @@ import {
   expenses,
   files,
   notificationLog,
+  orgUnits,
   projects,
   purchaseRequests,
   quoteLines,
@@ -22,6 +23,7 @@ import {
   revenueIssueRequests,
   settlementApprovals,
   teamMemberships,
+  teams,
   uploadIntents,
   users,
   vendors,
@@ -30,7 +32,7 @@ import { archive } from "@/domain/archive";
 import { createAccount } from "@/domain/auth/accounts";
 import { createCorpCard } from "@/domain/corp-cards";
 import { createExpenseFromLines, createTeamExpenseDraft, saveExpenseDraft, submitExpense } from "@/domain/expenses";
-import { assignTeam, listTeams } from "@/domain/org";
+import { assignTeam, createOrgUnit, createTeam, listTeams } from "@/domain/org";
 import { CEO_ROLE_ID, DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { createProject } from "@/domain/projects";
 import { applyAutoSettlement } from "@/domain/projects/auto-transition";
@@ -45,6 +47,7 @@ import { seoulToday } from "@/lib/dates";
 import { approvalBasis } from "@/repositories/quote-revisions";
 import { insertFile } from "@/repositories/files";
 import { listCodeItems } from "@/repositories/code-tables";
+import { findMembershipAtDate } from "@/repositories/team-memberships";
 import { QUOTE_SUBCATEGORY_TABLE_KEY } from "@/domain/projects/references";
 
 // 스테이징 목록 · 상세 화면 확인용 견본 데이터 CLI(seed | purge) — 기존 CLI 번들(dist/cli)의 한 진입점이라 seed Cloud Run Job을 args만 바꿔
@@ -59,16 +62,24 @@ const DEMO_EMAIL_DOMAIN_LIKE = "%@plant8-demo.test";
 
 const named = (name: string) => `${DEMO_NAME_PREFIX}${name}`;
 
+// 견본 조직 — 견본 PM · 팀장 · 본부장은 실제 팀(기획1팀)이 아니라 이 전용 본부 · 팀에 둔다(실제 팀 화면 · 결재선에 견본이 끼지 않게).
+const DEMO_ORG_UNIT_NAME = named("견본본부");
+const DEMO_TEAM_NAME = named("견본팀");
+const TEAM_EXPENSE_CONTENT = named("기획1팀 팀 회식비");
+
 type PersonKey = "pm1" | "pm2" | "lead" | "divisionHead" | "mgmt" | "ceo";
-const PEOPLE: readonly { key: PersonKey; name: string; roleId: string; team: "기획1팀" | "경영관리팀" }[] = [
-  { key: "pm1", name: "김민준", roleId: DEFAULT_ROLE_ID, team: "기획1팀" },
-  { key: "pm2", name: "이서연", roleId: DEFAULT_ROLE_ID, team: "기획1팀" },
-  { key: "lead", name: "박도윤", roleId: TEAM_LEAD_ROLE_ID, team: "기획1팀" },
-  { key: "divisionHead", name: "최지우", roleId: "role-division-head", team: "기획1팀" },
+// team "demo" = 견본팀, "mgmt" = 경영관리팀. 대표 · 경영관리 담당은 실제 사람이 없을 때만 만든다(실제 결재 대기열에 견본이 끼지 않게).
+const PEOPLE: readonly { key: PersonKey; name: string; roleId: string; team: "demo" | "mgmt" }[] = [
+  { key: "pm1", name: "김민준", roleId: DEFAULT_ROLE_ID, team: "demo" },
+  { key: "pm2", name: "이서연", roleId: DEFAULT_ROLE_ID, team: "demo" },
+  { key: "lead", name: "박도윤", roleId: TEAM_LEAD_ROLE_ID, team: "demo" },
+  { key: "divisionHead", name: "최지우", roleId: "role-division-head", team: "demo" },
   // 경영관리 담당 — 시드 계급에 경영관리 계급이 없어 기획 PM 계급으로 경영관리팀에 둔다(결재선 3단은 소속 본부로 찾는다).
-  { key: "mgmt", name: "정하은", roleId: DEFAULT_ROLE_ID, team: "경영관리팀" },
-  { key: "ceo", name: "강현우", roleId: CEO_ROLE_ID, team: "기획1팀" },
+  { key: "mgmt", name: "정하은", roleId: DEFAULT_ROLE_ID, team: "mgmt" },
+  { key: "ceo", name: "강현우", roleId: CEO_ROLE_ID, team: "demo" },
 ];
+
+const DEMO_CARD_LABELS = [named("김민준 법인카드"), named("기획1팀 공용카드")] as const;
 
 // 계좌번호는 넣지 않는다(암호화 키 없음). 사업자번호는 형식만 맞는 가짜.
 const DEMO_CLIENTS = [
@@ -196,21 +207,74 @@ async function draftExpense(viewer: Viewer, lineId: string, note: string, schedu
   return { expenseId, version: saved.version };
 }
 
+// 지금 일하는 사람(보관 안 됨 · 퇴직일 지나지 않음)인지.
+function isActiveUser(row: { archivedAt: Date | null; resignationDate: string | null }, today: string): boolean {
+  return row.archivedAt === null && (row.resignationDate === null || row.resignationDate > today);
+}
+
+async function hasActiveCeo(today: string): Promise<boolean> {
+  const rows = await db.select({ id: users.id, archivedAt: users.archivedAt, resignationDate: users.resignationDate }).from(users).where(eq(users.roleId, CEO_ROLE_ID));
+  for (const row of rows) if (isActiveUser(row, today)) return true;
+  return false;
+}
+
+// 경영관리 담당 = 경영관리팀의 현재 소속 활성 사용자.
+async function hasActiveMgmt(mgmtTeamId: string, today: string): Promise<boolean> {
+  const members = await db
+    .select({ id: users.id, archivedAt: users.archivedAt, resignationDate: users.resignationDate })
+    .from(teamMemberships)
+    .innerJoin(users, eq(users.id, teamMemberships.userId))
+    .where(eq(teamMemberships.teamId, mgmtTeamId));
+  const seen = new Set<string>();
+  for (const row of members) {
+    if (seen.has(row.id)) continue;
+    seen.add(row.id);
+    if (!isActiveUser(row, today)) continue;
+    if ((await findMembershipAtDate(SYSTEM_VIEWER, row.id, today))?.teamId === mgmtTeamId) return true;
+  }
+  return false;
+}
+
+// 보관 안 된 견본 본부 · 팀이 있으면 재사용한다.
+async function ensureDemoTeam(): Promise<string> {
+  const [existingTeam] = await db.select({ id: teams.id, orgUnitId: teams.orgUnitId }).from(teams).where(and(eq(teams.name, DEMO_TEAM_NAME), sql`${teams.archivedAt} IS NULL`));
+  if (existingTeam) return existingTeam.id;
+  const [existingUnit] = await db.select({ id: orgUnits.id }).from(orgUnits).where(and(eq(orgUnits.name, DEMO_ORG_UNIT_NAME), sql`${orgUnits.archivedAt} IS NULL`));
+  const unitId = existingUnit?.id ?? (await createOrgUnit(SYSTEM_VIEWER, { name: DEMO_ORG_UNIT_NAME })).id;
+  return (await createTeam(SYSTEM_VIEWER, { orgUnitId: unitId, name: DEMO_TEAM_NAME })).id;
+}
+
 export async function seedDemoData(): Promise<DemoSeedResult> {
   const existing = await db.select({ id: users.id }).from(users).where(and(like(users.email, DEMO_EMAIL_LIKE), sql`${users.archivedAt} IS NULL`)).limit(1);
-  if (existing.length > 0) return { seeded: false, counts: {} };
+  if (existing.length > 0) {
+    // 마지막 산출물(팀 비용 작성 중 지출결의)까지 있어야 끝난 seed다 — 없으면 중간에 멈춘 것이다.
+    const [done] = await db.select({ id: expenses.id }).from(expenses).where(eq(expenses.content, TEAM_EXPENSE_CONTENT)).limit(1);
+    if (!done) throw new Error("partial seed — purge 뒤 다시 seed하세요");
+    return { seeded: false, counts: {} };
+  }
 
   const today = seoulToday();
-  const teamIds = { 기획1팀: await teamIdByName("기획1팀"), 경영관리팀: await teamIdByName("경영관리팀") };
+  const mgmtTeamId = await teamIdByName("경영관리팀");
+  const demoTeamId = await ensureDemoTeam();
+  const teamIds = { demo: demoTeamId, mgmt: mgmtTeamId };
 
-  // 사람 — 결재선(팀장 → 본부장 → 경영 → 대표)이 서도록 시드 조직에 발령한다. 임시 비밀번호는 받지 않고 버린다.
+  // 사람 — 결재선(팀장 → 본부장 → 경영 → 대표)이 서도록 발령한다. 임시 비밀번호는 받지 않고 버린다.
+  // 대표 · 경영관리 담당은 실제 사람이 이미 있으면 만들지 않는다.
   const yearStart = `${today.slice(0, 4)}-01-01`;
-  const people = {} as Record<PersonKey, Viewer>;
+  const skip = new Set<PersonKey>();
+  if (await hasActiveCeo(today)) skip.add("ceo");
+  if (await hasActiveMgmt(mgmtTeamId, today)) skip.add("mgmt");
+  const people: Partial<Record<PersonKey, Viewer>> = {};
   for (const person of PEOPLE) {
+    if (skip.has(person.key)) continue;
     const { userId } = await createAccount(SYSTEM_VIEWER, { email: `demo-${person.key}@plant8-demo.test`, name: named(person.name), roleId: person.roleId });
     await assignTeam(SYSTEM_VIEWER, { userId, teamId: teamIds[person.team], effectiveFrom: yearStart });
     people[person.key] = { id: userId, roleId: person.roleId };
   }
+  const pm1 = people.pm1 as Viewer;
+  const pm2 = people.pm2 as Viewer;
+  const lead = people.lead as Viewer;
+  const pmOf = { pm1, pm2 };
 
   // 거래처 — 클라이언트와 협력사를 따로 둔다(구분 칸이 생기면 여기서 채운다).
   const clientIds: string[] = [];
@@ -232,10 +296,10 @@ export async function seedDemoData(): Promise<DemoSeedResult> {
   const lineIds = {} as Record<ProjectSpec["key"], string[]>;
   let quoteLineCount = 0;
   for (const spec of PROJECTS) {
-    const pm = people[spec.pm];
+    const pm = pmOf[spec.pm];
     const project = await createProject(pm, {
       clientId: clientIds[spec.client] as string,
-      teamId: teamIds.기획1팀,
+      teamId: demoTeamId,
       pmUserId: pm.id,
       name: named(spec.name),
       startDate: addDays(today, spec.start),
@@ -265,7 +329,7 @@ export async function seedDemoData(): Promise<DemoSeedResult> {
     lineIds[spec.key] = spec.lines.map((line) => saved.lines.find((row) => row.itemName === line.itemName)?.id ?? "");
 
     if (spec.key !== "bidding") {
-      await changeProjectStatus(people.lead, project.id, { from: "bidding", to: "in_progress" });
+      await changeProjectStatus(lead, project.id, { from: "bidding", to: "in_progress" });
       await approveRevision(pm, revision.id, addDays(today, Math.min(spec.start + 5, 0)));
     }
     if (spec.key === "settling") await applyAutoSettlement({ projectIds: [project.id] });
@@ -284,18 +348,18 @@ export async function seedDemoData(): Promise<DemoSeedResult> {
   });
 
   // 법인카드 — 사람 1 · 팀 1.
-  await createCorpCard(SYSTEM_VIEWER, { issuer: "삼성카드", numberLast4: "7701", label: named("김민준 법인카드"), holderUserId: people.pm1.id });
-  await createCorpCard(SYSTEM_VIEWER, { issuer: "신한카드", numberLast4: "7702", label: named("기획1팀 공용카드"), teamId: teamIds.기획1팀 });
+  await createCorpCard(SYSTEM_VIEWER, { issuer: "삼성카드", numberLast4: "7701", label: DEMO_CARD_LABELS[0], holderUserId: pm1.id });
+  await createCorpCard(SYSTEM_VIEWER, { issuer: "신한카드", numberLast4: "7702", label: DEMO_CARD_LABELS[1], teamId: demoTeamId });
 
   // 지출결의 — 작성 중 2 · 제출 3(결재 대기) · 팀 비용 작성 중 1.
   const popLines = lineIds.pop;
   const launchLines = lineIds.launch;
-  await draftExpense(people.pm1, popLines[1] as string, "현수막 · 배너 제작비", addDays(today, 14));
-  await draftExpense(people.pm2, launchLines[1] as string, "초청장 · 도록 인쇄비", addDays(today, 10));
+  await draftExpense(pm1, popLines[1] as string, "현수막 · 배너 제작비", addDays(today, 14));
+  await draftExpense(pm2, launchLines[1] as string, "초청장 · 도록 인쇄비", addDays(today, 10));
   const submissions: { viewer: Viewer; lineId: string; note: string }[] = [
-    { viewer: people.pm1, lineId: popLines[0] as string, note: "무대 · 시공 대금" },
-    { viewer: people.pm1, lineId: popLines[2] as string, note: "현장 진행 인력 용역비" },
-    { viewer: people.pm2, lineId: launchLines[2] as string, note: "MC · 진행요원 용역비" },
+    { viewer: pm1, lineId: popLines[0] as string, note: "무대 · 시공 대금" },
+    { viewer: pm1, lineId: popLines[2] as string, note: "현장 진행 인력 용역비" },
+    { viewer: pm2, lineId: launchLines[2] as string, note: "MC · 진행요원 용역비" },
   ];
   for (const item of submissions) {
     const draft = await draftExpense(item.viewer, item.lineId, item.note, addDays(today, 7));
@@ -303,11 +367,11 @@ export async function seedDemoData(): Promise<DemoSeedResult> {
     const submitted = await submitExpense(item.viewer, { expenseId: draft.expenseId, expectedVersion: draft.version });
     if (submitted.kind !== "submitted") throw new Error("견본 지출결의 제출 결과가 예상과 다릅니다");
   }
-  await createTeamExpenseDraft(people.pm1, {
+  await createTeamExpenseDraft(pm1, {
     idempotencyKey: randomUUID(),
     fields: {
       teamExpenseKind: "team_overhead",
-      content: named("기획1팀 9월 팀 회식비"),
+      content: TEAM_EXPENSE_CONTENT,
       supply: { currency: "KRW", amount: 480_000, fxRate: 1 },
       evidenceType: "tax_invoice",
       paymentMethod: "bank_transfer",
@@ -317,32 +381,67 @@ export async function seedDemoData(): Promise<DemoSeedResult> {
 
   return {
     seeded: true,
-    counts: { users: PEOPLE.length, vendors: clientIds.length + partnerIds.length, projects: PROJECTS.length, quoteLines: quoteLineCount, revenue: 4, corpCards: 2, expenses: 6 },
+    counts: { users: PEOPLE.length - skip.size, vendors: clientIds.length + partnerIds.length, projects: PROJECTS.length, quoteLines: quoteLineCount, revenue: 4, corpCards: 2, expenses: 6 },
   };
 }
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type KeptRow = { entity: "vendor" | "team" | "org_unit"; id: string };
+const DEMO_VENDOR_NAMES = [...DEMO_CLIENTS, ...DEMO_PARTNERS].map((vendor) => named(vendor.name));
+
+function isForeignKeyViolation(error: unknown): boolean {
+  const cause = (error as { cause?: { code?: unknown } } | null)?.cause;
+  return (error as { code?: unknown } | null)?.code === "23503" || cause?.code === "23503";
+}
+
+// 세이브포인트 안에서 지워 보고, 다른 행이 가리켜 FK에 걸리면 보관 목록에 넣는다(이미 보관된 행은 세지 않는다).
+async function deleteOrKeep(
+  tx: Tx,
+  entity: KeptRow["entity"],
+  id: string,
+  table: typeof vendors | typeof teams | typeof orgUnits,
+  counts: Record<string, number>,
+  keep: KeptRow[],
+): Promise<void> {
+  try {
+    const result = await tx.transaction((inner) => inner.delete(table).where(eq(table.id, id)));
+    const key = { vendor: "vendors", team: "teams", org_unit: "orgUnits" }[entity];
+    counts[key] = (counts[key] ?? 0) + (result.rowCount ?? 0);
+  } catch (error) {
+    if (!isForeignKeyViolation(error)) throw error;
+    const [row] = await tx.select({ archivedAt: table.archivedAt }).from(table).where(eq(table.id, id));
+    if (row && row.archivedAt === null) keep.push({ entity, id });
+  }
+}
 
 // 견본 사업 데이터를 FK 순서대로 한 트랜잭션에서 물리 삭제한다. 견본 사용자는 행동 로그 · 결재 처리 이력 등 FK가 남아 지우지 않고 보관한다.
 export async function purgeDemoData(): Promise<DemoPurgeResult> {
   const demoUserIds = (await db.select({ id: users.id }).from(users).where(like(users.email, DEMO_EMAIL_DOMAIN_LIKE))).map((row) => row.id);
   const counts: Record<string, number> = {};
+  const keep: KeptRow[] = [];
   const record = (key: string, result: { rowCount: number | null }) => {
     counts[key] = (counts[key] ?? 0) + (result.rowCount ?? 0);
   };
 
   await db.transaction(async (tx: Tx) => {
-    const projectIds = (await tx.select({ id: projects.id }).from(projects).where(like(projects.name, `${DEMO_NAME_PREFIX}%`))).map((row) => row.id);
-    const vendorIds = (await tx.select({ id: vendors.id }).from(vendors).where(like(vendors.name, `${DEMO_NAME_PREFIX}%`))).map((row) => row.id);
-    const cardIds = (await tx.select({ id: corpCards.id }).from(corpCards).where(like(corpCards.label, `${DEMO_NAME_PREFIX}%`))).map((row) => row.id);
+    // 접두어가 아니라 정확한 이름 목록으로 고른다(사람이 직접 만든 「[테스트] …」는 건드리지 않는다). 프로젝트는 견본 사용자가 PM인 것만.
+    const projectIds = (
+      await tx
+        .select({ id: projects.id })
+        .from(projects)
+        .where(and(inArray(projects.name, PROJECTS.map((spec) => named(spec.name))), inArray(projects.pmUserId, demoUserIds)))
+    ).map((row) => row.id);
+    const vendorIds = (await tx.select({ id: vendors.id }).from(vendors).where(inArray(vendors.name, DEMO_VENDOR_NAMES))).map((row) => row.id);
+    const cardIds = (await tx.select({ id: corpCards.id }).from(corpCards).where(inArray(corpCards.label, DEMO_CARD_LABELS))).map((row) => row.id);
     const revisionIds = (await tx.select({ id: quoteRevisions.id }).from(quoteRevisions).where(inArray(quoteRevisions.projectId, projectIds))).map((row) => row.id);
     const lineIds = (await tx.select({ id: quoteLines.id }).from(quoteLines).where(inArray(quoteLines.revisionId, revisionIds))).map((row) => row.id);
-    const expenseIds = (
-      await tx
-        .select({ id: expenses.id })
-        .from(expenses)
-        .where(or(inArray(expenses.projectId, projectIds), inArray(expenses.drafterId, demoUserIds), inArray(expenses.quoteLineId, lineIds)))
-    ).map((row) => row.id);
+    const expenseRows = await tx
+      .select({ id: expenses.id, drafterId: expenses.drafterId })
+      .from(expenses)
+      .where(or(inArray(expenses.projectId, projectIds), inArray(expenses.drafterId, demoUserIds), inArray(expenses.quoteLineId, lineIds)));
+    const expenseIds = expenseRows.map((row) => row.id);
+    // 견본 프로젝트에 달려 함께 지워지는 견본 아닌 사용자의 지출결의 — 따로 센다.
+    counts.nonDemoExpenses = expenseRows.filter((row) => !demoUserIds.includes(row.drafterId)).length;
     const settlementIds = (await tx.select({ id: settlementApprovals.id }).from(settlementApprovals).where(inArray(settlementApprovals.projectId, projectIds))).map((row) => row.id);
     const usageIds = (
       await tx
@@ -388,11 +487,22 @@ export async function purgeDemoData(): Promise<DemoPurgeResult> {
     record("projects", await tx.delete(projects).where(inArray(projects.id, projectIds)));
 
     record("corpCards", await tx.delete(corpCards).where(inArray(corpCards.id, cardIds)));
-    record("vendors", await tx.delete(vendors).where(inArray(vendors.id, vendorIds)));
-
     record("notifications", await tx.delete(notificationLog).where(inArray(notificationLog.recipientId, demoUserIds)));
     record("teamMemberships", await tx.delete(teamMemberships).where(inArray(teamMemberships.userId, demoUserIds)));
+
+    // 거래처 · 팀 · 본부 — 견본 아닌 행이 아직 가리키면(FK) 지우지 않고 보관한다. 행마다 세이브포인트라 바깥 트랜잭션은 롤백되지 않는다
+    // (vendors를 가리키는 FK: projects.client_id · quote_lines.vendor_id · expenses.vendor_id · corp_card_usages.merchant_vendor_id · reserve_entries.client_id).
+    for (const id of vendorIds) await deleteOrKeep(tx, "vendor", id, vendors, counts, keep);
+    const teamIds = (await tx.select({ id: teams.id }).from(teams).where(eq(teams.name, DEMO_TEAM_NAME))).map((row) => row.id);
+    for (const id of teamIds) await deleteOrKeep(tx, "team", id, teams, counts, keep);
+    const unitIds = (await tx.select({ id: orgUnits.id }).from(orgUnits).where(eq(orgUnits.name, DEMO_ORG_UNIT_NAME))).map((row) => row.id);
+    for (const id of unitIds) await deleteOrKeep(tx, "org_unit", id, orgUnits, counts, keep);
   });
+  for (const item of keep) {
+    await archive(SYSTEM_VIEWER, item.entity, item.id);
+    const key = { vendor: "archivedVendors", team: "archivedTeams", org_unit: "archivedOrgUnits" }[item.entity];
+    counts[key] = (counts[key] ?? 0) + 1;
+  }
 
   // 견본 사용자 — 보관(로그인 불가)하고 이메일을 비워 다시 seed할 수 있게 한다(이메일 unique).
   let archivedUsers = 0;
@@ -407,8 +517,8 @@ export async function purgeDemoData(): Promise<DemoPurgeResult> {
   }
   counts.archivedUsers = archivedUsers;
 
-  const businessRows = Object.entries(counts).some(([key, value]) => key !== "archivedUsers" && value > 0);
-  return { purged: businessRows || archivedUsers > 0, counts };
+  const changed = Object.entries(counts).some(([key, value]) => key !== "nonDemoExpenses" && value > 0);
+  return { purged: changed, counts };
 }
 
 const USAGE = "사용법: demo-data.mjs seed|purge";
@@ -416,8 +526,9 @@ const USAGE = "사용법: demo-data.mjs seed|purge";
 export async function main(argv: string[] = process.argv.slice(2)): Promise<void> {
   const [command] = argv;
   if (command !== "seed" && command !== "purge") throw new Error(`${USAGE} (받은 값: ${command ?? "없음"})`);
-  const appEnv = process.env.APP_ENV ?? "local";
-  if (appEnv !== "local" && appEnv !== "staging") throw new Error(`운영 환경(APP_ENV=${appEnv})에서는 견본 데이터를 쓸 수 없습니다`);
+  // 명시적으로 local · staging일 때만 — 미설정 · 그 밖의 값(운영 포함)은 거부한다.
+  const appEnv = process.env.APP_ENV;
+  if (appEnv !== "local" && appEnv !== "staging") throw new Error(`APP_ENV가 local · staging일 때만 실행합니다(운영 거부 · 현재 값: ${appEnv ?? "미설정"})`);
 
   if (command === "seed") {
     try {

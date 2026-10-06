@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { and, eq, inArray, like, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { corpCards, expenses, files, projects, quoteRevisions, revenueEntries, teamMemberships, users, vendors } from "@/db/schema";
+import { corpCards, expenses, files, orgUnits, projects, quoteLines, quoteRevisions, revenueEntries, teamMemberships, teams, users, vendors } from "@/db/schema";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { createVendor } from "@/domain/vendors";
 import { createProject } from "@/domain/projects";
 import { createCorpCard } from "@/domain/corp-cards";
+import { createExpenseFromLines } from "@/domain/expenses";
+import { assignTeam } from "@/domain/org";
+import { CEO_ROLE_ID, DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { makePerson, teamIdByName } from "./approvals-fixtures";
 import { DEMO_EMAIL_LIKE, DEMO_NAME_PREFIX, main, purgeDemoData, seedDemoData } from "@/scripts/demo-data";
 
@@ -136,6 +139,135 @@ describe("scripts/demo-data purge", () => {
   }, 180_000);
 });
 
+describe("scripts/demo-data 조직 격리 · 실제 사람 재사용", () => {
+  async function demoOrg() {
+    const [unit] = await db.select().from(orgUnits).where(eq(orgUnits.name, `${DEMO_NAME_PREFIX}견본본부`));
+    const [team] = await db.select().from(teams).where(eq(teams.name, `${DEMO_NAME_PREFIX}견본팀`));
+    return { unit, team };
+  }
+
+  it("견본 PM · 팀장 · 본부장과 프로젝트 · 팀 법인카드는 견본 본부 · 팀에 둔다(기획1팀에 견본 사람이 없다)", async () => {
+    await seedDemoData();
+    const { unit, team } = await demoOrg();
+    expect(unit && team?.orgUnitId === unit.id).toBe(true);
+    const memberships = await db.select({ teamId: teamMemberships.teamId, email: users.email }).from(teamMemberships).innerJoin(users, eq(users.id, teamMemberships.userId));
+    const byEmail = Object.fromEntries(memberships.map((row) => [row.email, row.teamId]));
+    for (const key of ["pm1", "pm2", "lead", "divisionHead"]) expect(byEmail[`demo-${key}@plant8-demo.test`.toLowerCase()], key).toBe(team?.id);
+    const demoProjects = await db.select({ teamId: projects.teamId }).from(projects);
+    expect(demoProjects.every((project) => project.teamId === team?.id)).toBe(true);
+    const cards = await db.select({ kind: corpCards.kind, teamId: corpCards.teamId }).from(corpCards).where(eq(corpCards.kind, "team"));
+    expect(cards.map((card) => card.teamId)).toEqual([team?.id]);
+    const teamCost = await db.select({ attributedTeamId: expenses.attributedTeamId }).from(expenses).where(sql`${expenses.projectId} IS NULL`);
+    expect(teamCost.map((row) => row.attributedTeamId)).toEqual([team?.id]);
+  }, 120_000);
+
+  it("실제 대표 · 경영관리 담당이 이미 있으면 견본으로 만들지 않고 제출 3건이 선다", async () => {
+    await makePerson("실제대표", CEO_ROLE_ID, null);
+    await makePerson("실제경영", DEFAULT_ROLE_ID, "경영관리팀");
+    await seedDemoData();
+    const demoUsers = await db.select({ email: users.email }).from(users).where(like(users.email, DEMO_EMAIL_LIKE));
+    expect(demoUsers.map((user) => user.email).sort()).toEqual(["demo-divisionhead@plant8-demo.test", "demo-lead@plant8-demo.test", "demo-pm1@plant8-demo.test", "demo-pm2@plant8-demo.test"]);
+    expect(await count("approval_instances")).toBe(3);
+    expect((await db.select().from(expenses).where(sql`${expenses.number} IS NOT NULL`)).length).toBe(3);
+  }, 120_000);
+
+  it("실제 대표 · 경영관리 담당이 없으면 견본 둘을 만들고 제출 3건이 선다", async () => {
+    await seedDemoData();
+    const demoUsers = await db.select({ email: users.email }).from(users).where(like(users.email, DEMO_EMAIL_LIKE));
+    expect(demoUsers.map((user) => user.email)).toEqual(expect.arrayContaining(["demo-ceo@plant8-demo.test", "demo-mgmt@plant8-demo.test"]));
+    expect(await count("approval_instances")).toBe(3);
+  }, 120_000);
+
+  it("보관 안 된 견본 본부 · 팀이 이미 있으면 seed가 재사용한다", async () => {
+    await seedDemoData();
+    const before = await demoOrg();
+    await purgeDemoData();
+    // 이전 purge가 지웠으므로 직접 다시 만든 뒤 seed가 재사용하는지 본다.
+    const { createOrgUnit, createTeam } = await import("@/domain/org");
+    const unit = await createOrgUnit(SYSTEM_VIEWER, { name: `${DEMO_NAME_PREFIX}견본본부` });
+    const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: unit.id, name: `${DEMO_NAME_PREFIX}견본팀` });
+    await seedDemoData();
+    const after = await demoOrg();
+    expect(before.team?.id).not.toBe(team.id);
+    expect(after.team?.id).toBe(team.id);
+    expect((await db.select().from(teams).where(like(teams.name, `${DEMO_NAME_PREFIX}%`))).length).toBe(1);
+  }, 180_000);
+
+  it("purge는 참조가 없으면 견본 팀 · 본부를 지우고, 견본 아닌 소속이 남아 있으면 보관한다", async () => {
+    await seedDemoData();
+    await purgeDemoData();
+    expect((await demoOrg()).team).toBeUndefined();
+    expect((await demoOrg()).unit).toBeUndefined();
+
+    await seedDemoData();
+    const { team } = await demoOrg();
+    const real = await makePerson("실제소속", DEFAULT_ROLE_ID, null);
+    await assignTeam(SYSTEM_VIEWER, { userId: real.id, teamId: team?.id ?? "", effectiveFrom: "2026-01-01" });
+    const result = await purgeDemoData();
+    const after = await demoOrg();
+    expect(after.team?.archivedAt).not.toBeNull();
+    expect(after.unit?.archivedAt).not.toBeNull();
+    expect(result.counts.archivedTeams).toBe(1);
+    expect(result.counts.archivedOrgUnits).toBe(1);
+  }, 180_000);
+});
+
+describe("scripts/demo-data purge 범위 · 안전", () => {
+  it("접두어만 같은 견본 아닌 프로젝트 · 거래처 · 카드는 purge가 건드리지 않는다(정확한 이름 + 견본 사용자만)", async () => {
+    const real = await makePerson("실제PM", DEFAULT_ROLE_ID, "기획1팀");
+    const vendor = await createVendor(SYSTEM_VIEWER, { name: `${DEMO_NAME_PREFIX}직접 만든 거래처` });
+    const project = await createProject(real, { clientId: vendor.vendor.id, teamId: await teamIdByName("기획1팀"), pmUserId: real.id, name: `${DEMO_NAME_PREFIX}직접 만든 프로젝트`, startDate: "2026-09-01", endDate: "2026-12-31" });
+    const card = await createCorpCard(SYSTEM_VIEWER, { issuer: "직접카드사", numberLast4: "1234", label: `${DEMO_NAME_PREFIX}직접 만든 카드`, holderUserId: real.id });
+    await seedDemoData();
+    await purgeDemoData();
+    expect((await db.select().from(projects).where(eq(projects.id, project.id))).length).toBe(1);
+    expect((await db.select().from(vendors).where(eq(vendors.id, vendor.vendor.id))).length).toBe(1);
+    expect((await db.select().from(corpCards).where(eq(corpCards.id, card.id))).length).toBe(1);
+  }, 180_000);
+
+  it("견본 거래처를 견본 아닌 프로젝트가 가리키면 그 거래처만 보관하고 purge는 롤백되지 않는다", async () => {
+    await seedDemoData();
+    const [client] = await db.select().from(vendors).where(eq(vendors.name, `${DEMO_NAME_PREFIX}한빛전자`));
+    const real = await makePerson("실제PM", DEFAULT_ROLE_ID, "기획1팀");
+    const realProject = await createProject(real, { clientId: client?.id ?? "", teamId: await teamIdByName("기획1팀"), pmUserId: real.id, name: "실제 프로젝트", startDate: "2026-09-01", endDate: "2026-12-31" });
+
+    const result = await purgeDemoData();
+    expect(result.counts.archivedVendors).toBe(1);
+    expect(result.counts.projects).toBe(4);
+    const [kept] = await db.select().from(vendors).where(eq(vendors.id, client?.id ?? ""));
+    expect(kept?.archivedAt).not.toBeNull();
+    expect((await db.select().from(vendors).where(like(vendors.name, `${DEMO_NAME_PREFIX}%`))).length).toBe(1);
+    expect((await db.select().from(projects).where(eq(projects.id, realProject.id))).length).toBe(1);
+  }, 180_000);
+
+  it("프로젝트 경유로 지워지는 견본 아닌 사용자의 지출결의 수를 nonDemoExpenses로 따로 센다", async () => {
+    await seedDemoData();
+    const [line] = await db.select({ id: quoteLines.id }).from(quoteLines).where(eq(quoteLines.itemName, "철거·원상복구"));
+    const realAdmin = await makePerson("실제관리자", SYSADMIN_ROLE_ID, null);
+    const created = await createExpenseFromLines(realAdmin, { lineIds: [line?.id ?? ""] });
+    expect(created.created).toHaveLength(1);
+
+    const result = await purgeDemoData();
+    expect(result.counts.nonDemoExpenses).toBe(1);
+    expect(await count("expenses")).toBe(0);
+
+    const logs: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => void logs.push(args.join(" ")));
+    await main(["seed"]);
+    await main(["purge"]);
+    expect(logs.join("\n")).toMatch(/demo purge complete:.*nonDemoExpenses=0/);
+  }, 240_000);
+});
+
+describe("scripts/demo-data 부분 seed", () => {
+  it("견본 사용자는 있는데 마지막 산출물(팀 비용 작성 중 지출결의)이 없으면 partial seed 에러다", async () => {
+    await seedDemoData();
+    await db.delete(expenses).where(sql`${expenses.projectId} IS NULL`);
+    await expect(seedDemoData()).rejects.toThrow(/partial seed/);
+    await expect(main(["seed"])).rejects.toThrow(/partial seed/);
+  }, 180_000);
+});
+
 describe("scripts/demo-data main", () => {
   it("운영(APP_ENV=prod)에서는 seed · purge 모두 거부하고 아무것도 만들지 않는다", async () => {
     vi.stubEnv("APP_ENV", "prod");
@@ -143,6 +275,15 @@ describe("scripts/demo-data main", () => {
     await expect(main(["purge"])).rejects.toThrow(/운영/);
     expect(await count("projects")).toBe(0);
     expect(await count("users")).toBe(0);
+  });
+
+  it("APP_ENV가 미설정이거나 local · staging이 아니면 거부한다", async () => {
+    for (const value of ["", "production", "dev"]) {
+      vi.stubEnv("APP_ENV", value);
+      await expect(main(["seed"]), `APP_ENV=${value}`).rejects.toThrow(/APP_ENV/);
+    }
+    vi.stubEnv("APP_ENV", "staging");
+    await expect(main(["purge"])).resolves.toBeUndefined();
   });
 
   it("알 수 없는 인자는 거부한다", async () => {

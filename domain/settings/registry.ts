@@ -174,6 +174,20 @@ async function defaultListActiveCodeValues(tableKey: string): Promise<string[]> 
   return rows.map((row) => row.value);
 }
 
+// 짝 격자 칸의 두 축(코드표 값 · 이름 · 활성 · 보관 시각). 결재선 옵션(listApprovalRouteOptions)과 같은 결로 설정 보기 권한만
+// 보고 리포지토리에서 읽는다 — 코드표 메뉴 권한(scopeFor("code_items"))으로 읽으면 설정 권한만 있는 계급은 빈 격자를 본다(PR #171 Codex).
+// 보관 값은 저장된 짝에 남은 것만 화면에 「(보관됨)」으로 보인다(pairGridAxis).
+export async function listPairGridAxisItems(
+  viewer: Viewer,
+  tableKey: string,
+  deps?: Partial<RegistryDeps>,
+): Promise<{ value: string; label: string; active: boolean; archivedAt: Date | null }[]> {
+  const can = deps?.can ?? defaultCan;
+  if (!(await can(viewer, "admin.settings", "view"))) throw new ForbiddenError("설정 보기 권한 없음");
+  const rows = await repoListCodeItems(SYSTEM_VIEWER, { tableKey, scope: { rows: "all", includeArchived: true }, includeInactive: true });
+  return rows.map((row) => ({ value: row.value, label: row.label, active: row.active, archivedAt: row.archivedAt }));
+}
+
 // 짝 격자 키(`pairGrid`)는 새로 더해진 짝이 두 코드표의 활성 값만 가리켜야 한다 — 보관 값으로 새 짝을 만들 수 없다
 // (디자인 검토 F-1). 이미 저장된 짝은 그대로 두거나 지울 수 있다(「조용히 지우지 않는다」 · 해제 가능).
 export async function assertNewPairsActive<T>(def: SettingDef<T>, value: T, deps?: Partial<RegistryDeps>): Promise<void> {

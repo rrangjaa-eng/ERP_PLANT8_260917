@@ -8,10 +8,10 @@ import {
   getSettingValue,
   listSettingHistory,
   describeSettingField,
+  listPairGridAxisItems,
   type SettingDef,
   type SettingFieldDescriptor,
 } from "@/domain/settings/registry";
-import { listCodeItems } from "@/domain/code-tables";
 import { isSettingActive, listApprovalRouteOptions, type ApprovalRouteOptions } from "@/domain/approvals/settings-options";
 import { listApprovalRouteSettingWarnings } from "@/domain/approvals/settings-warnings";
 import { formatCount, formatForeignAmount, formatFxRate, formatKrw, formatQuantity } from "@/lib/format-number";
@@ -80,7 +80,7 @@ function optionsFor(
   return undefined;
 }
 
-// 06-02(SP-9): 짝 격자 칸의 행 · 열 = 두 코드표의 활성 값(sortOrder 순 — listCodeItems가 그 순서로 준다) + 저장된 짝에 남은
+// 06-02(SP-9): 짝 격자 칸의 행 · 열 = 두 코드표의 활성 값(sortOrder 순 — listPairGridAxisItems가 그 순서로 준다) + 저장된 짝에 남은
 // 보관 값(「(보관됨)」, 검토 P2-2 — pairGridAxis).
 async function pairGridFor(
   viewer: Viewer,
@@ -89,8 +89,8 @@ async function pairGridFor(
 ): Promise<SettingsFieldViewModel["pairGrid"]> {
   if (descriptor.kind !== "pair-grid") return undefined;
   const [rows, cols] = await Promise.all([
-    listCodeItems(viewer, descriptor.rows, { includeInactive: true }),
-    listCodeItems(viewer, descriptor.cols, { includeInactive: true }),
+    listPairGridAxisItems(viewer, descriptor.rows),
+    listPairGridAxisItems(viewer, descriptor.cols),
   ]);
   const pairs = Array.isArray(value) ? (value as Record<string, unknown>[]) : [];
   const stored = (field: string) => pairs.map((pair) => pair[field]).filter((v): v is string => typeof v === "string");

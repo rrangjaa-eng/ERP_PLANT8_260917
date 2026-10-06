@@ -7,9 +7,11 @@ import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import {
   allocateDocumentNumber,
   allocateExpenseNumber,
+  allocatePurchaseRequestNumber,
   assertSeqStartNotLowered,
   loadDocumentNumberFormat,
   loadExpenseNumberFormat,
+  loadPurchaseRequestNumberFormat,
   SeqStartOverlapError,
   setSimpleSettingValue,
   UnknownDocumentNumberCounterError,
@@ -28,6 +30,8 @@ import {
   DOCUMENT_NUMBER_PROJECT_SEPARATOR,
   DOCUMENT_NUMBER_PROJECT_SEQ_START,
   DOCUMENT_NUMBER_EXPENSE_SEQ_START,
+  DOCUMENT_NUMBER_PURCHASE_REQUEST_PREFIX,
+  DOCUMENT_NUMBER_PURCHASE_REQUEST_SEQ_START,
 } from "@/domain/settings/keys";
 
 // 04-05(ADMN-09) — `document_counters` 표는 test/integration/setup.ts의
@@ -490,5 +494,102 @@ describe("지출결의 번호 순번 시작값 낮추기(PR #162 P1)", () => {
     await save(1);
     const { number } = await db.transaction((tx) => allocateExpenseNumber(SYSTEM_VIEWER, { projectNumber: "26001", format: staleFormat }, tx));
     expect(number).toBe("26001-0001");
+  });
+});
+
+// 06-02 — 구매 요청 번호(카운터 `purchase_request`, period = 프로젝트 번호). 05 `allocateExpenseNumber` 꼴 그대로다.
+describe("구매 요청 번호 부여 (06-02, CROSS E-2)", () => {
+  const NOW = new Date("2026-06-01T03:00:00Z");
+  const Z_FORMAT = { prefix: "Z", separator: "-", seqDigits: 4 };
+
+  it("설정 접두어가 C여도 넘긴 서식(Z)을 따른다 · 같은 프로젝트 둘째는 0002 · 다른 프로젝트 첫째는 0001", async () => {
+    expect(await getSettingValue(DOCUMENT_NUMBER_PURCHASE_REQUEST_PREFIX)).toBe("C");
+    const allocate = (projectNumber: string) =>
+      db.transaction((tx) => allocatePurchaseRequestNumber(SYSTEM_VIEWER, { projectNumber, format: Z_FORMAT }, tx)).then((r) => r.number);
+    expect(await allocate("26001")).toBe("26001-Z0001");
+    expect(await allocate("26001")).toBe("26001-Z0002");
+    expect(await allocate("26002")).toBe("26002-Z0001");
+  });
+
+  it("서식 읽기: 프로젝트 요청 기본값과 팀 비용 요청 기본값", async () => {
+    expect(await loadPurchaseRequestNumberFormat()).toEqual({ prefix: "C", separator: "-", seqDigits: 4, seqStart: 1 });
+    expect(await loadDocumentNumberFormat("purchase_request_team")).toEqual({ prefix: "TC", yearDigits: 2, seqDigits: 4, separator: "-", seqStart: 1 });
+  });
+
+  it("팀 비용 요청은 연도 period로 TC26-0001부터 매긴다", async () => {
+    const format = await loadDocumentNumberFormat("purchase_request_team");
+    const first = await allocateDocumentNumber(SYSTEM_VIEWER, { counterKey: "purchase_request_team", year: 2026, format });
+    expect(first.number).toBe("TC26-0001");
+  });
+
+  // 05 PR #162 P1과 같은 꼴 — 구매 요청 번호(period = 프로젝트 번호)의 순번 시작값도 낮추기 가드를 지난다.
+  describe("구매 요청 번호 순번 시작값 낮추기(D2)", () => {
+    const save = (value: unknown) => setSimpleSettingValue(SYSTEM_VIEWER, DOCUMENT_NUMBER_PURCHASE_REQUEST_SEQ_START, value, NOW);
+    async function allocate(projectNumber: string): Promise<string> {
+      const format = await loadPurchaseRequestNumberFormat();
+      return (await db.transaction((tx) => allocatePurchaseRequestNumber(SYSTEM_VIEWER, { projectNumber, format }, tx))).number;
+    }
+
+    it("시작값 100으로 26001-C0100을 매긴 뒤 99로 낮추면 거부되고 값은 100 그대로다", async () => {
+      await save(100);
+      expect(await allocate("26001")).toBe("26001-C0100");
+      const rejected = save(99);
+      await expect(rejected).rejects.toBeInstanceOf(SeqStartOverlapError);
+      await expect(rejected).rejects.toHaveProperty("message", "순번 시작값은 현재 값(100)보다 낮출 수 없음");
+      expect(await getSettingValue(DOCUMENT_NUMBER_PURCHASE_REQUEST_SEQ_START)).toBe(100);
+      expect(await allocate("26001")).toBe("26001-C0101");
+    });
+
+    it("설정 가져오기 경로도 같은 가드를 지난다", async () => {
+      await save(100);
+      await allocate("26001");
+      await expect(
+        db.transaction((tx) => assertSeqStartNotLowered(SYSTEM_VIEWER, DOCUMENT_NUMBER_PURCHASE_REQUEST_SEQ_START.key, 99, NOW, tx)),
+      ).rejects.toBeInstanceOf(SeqStartOverlapError);
+    });
+
+    it("발급한 구매 요청 번호가 없으면 낮춰도 저장되고 · 같은 값 · 올리는 값은 통과한다", async () => {
+      await save(100);
+      await save(1);
+      expect(await getSettingValue(DOCUMENT_NUMBER_PURCHASE_REQUEST_SEQ_START)).toBe(1);
+      expect(await allocate("26001")).toBe("26001-C0001");
+      await save(1);
+      await save(5);
+      expect(await allocate("26002")).toBe("26002-C0005");
+    });
+
+    it("커밋 전 채번이 카운터 행이 없던 프로젝트의 첫 번호를 잡고 있으면 시작값 1 저장은 그 커밋 뒤 거부된다", async () => {
+      await save(100);
+      const format = await loadPurchaseRequestNumberFormat();
+      let release!: () => void;
+      const released = new Promise<void>((resolve) => (release = resolve));
+      let markAllocated!: () => void;
+      const allocated = new Promise<void>((resolve) => (markAllocated = resolve));
+      const submission = db.transaction(async (tx) => {
+        const { number } = await allocatePurchaseRequestNumber(SYSTEM_VIEWER, { projectNumber: "26009", format }, tx);
+        markAllocated();
+        await released;
+        return number;
+      });
+      await allocated;
+      const saveResult = save(1).then(
+        () => null,
+        (error: unknown) => error,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      release();
+
+      expect(await submission).toBe("26009-C0100");
+      expect(await saveResult).toBeInstanceOf(SeqStartOverlapError);
+      expect(await getSettingValue(DOCUMENT_NUMBER_PURCHASE_REQUEST_SEQ_START)).toBe(100);
+    });
+
+    it("채번이 옛 서식(시작값 100)을 트랜잭션 전에 읽은 뒤 시작값이 1로 저장되면 번호는 C0001이다", async () => {
+      await save(100);
+      const staleFormat = await loadPurchaseRequestNumberFormat();
+      await save(1);
+      const { number } = await db.transaction((tx) => allocatePurchaseRequestNumber(SYSTEM_VIEWER, { projectNumber: "26001", format: staleFormat }, tx));
+      expect(number).toBe("26001-C0001");
+    });
   });
 });

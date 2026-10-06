@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { ForbiddenError } from "@/domain/permissions/can";
@@ -590,6 +590,38 @@ describe("계보(X-1)", () => {
     const found = await searchLinesForCardLink(fx.pm, { projectId: fx.projectId, query: "", currentLineId: null });
     expect(found.rows.find((row) => row.id === l2)).toMatchObject({ remainingKrw: 900_000, hint: "남은 실행가 900,000 · 구매 요청 1건 100,000" });
     expect(((await caught(cardOnLine(fx, l2, 900_001))) as Error).message).toBe("실행가 초과 · 남은 실행가 900,000 · 다른 줄 고르기");
+  });
+});
+
+describe("[I-5] findLineLinks는 tx 한 클라이언트에 질의를 차례로 보낸다", () => {
+  it("같은 클라이언트에서 동시에 걸린 질의 수 최대 1(pg@9에서 제거될 겹침 없음)", async () => {
+    const fx = await cardProject();
+    const line = fx.lines[0] ?? "";
+    await cardOnLine(fx, line, 100_000);
+    await requestOn(fx, line, 50_000);
+    const inFlight = new Map<Client, number>();
+    let peak = 0;
+    const proto = Client.prototype as unknown as { query: (...args: unknown[]) => unknown };
+    const original = Reflect.get(proto, "query");
+    const spy = vi.spyOn(proto, "query").mockImplementation(function (this: Client, ...args: unknown[]) {
+      inFlight.set(this, (inFlight.get(this) ?? 0) + 1);
+      peak = Math.max(peak, inFlight.get(this) ?? 0);
+      const settle = () => {
+        inFlight.set(this, (inFlight.get(this) ?? 1) - 1);
+      };
+      const result = Reflect.apply(original, this, args);
+      if (result instanceof Promise) result.then(settle, settle);
+      else settle();
+      return result;
+    });
+    try {
+      const links = await withTransaction((tx) => findLineLinks(fx.pm, [line], tx));
+      expect(links.get(line)?.cardUsages).toHaveLength(1);
+      expect(links.get(line)?.purchaseRequests).toHaveLength(1);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(peak).toBe(1);
   });
 });
 

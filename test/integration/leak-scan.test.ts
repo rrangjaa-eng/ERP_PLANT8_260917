@@ -460,6 +460,41 @@ describe("지급 섹션 DTO 축 — 금액 칸은 expense.amount를 보는 계�
     }
     expect(hidden).toContain(hiddenProbe);
   });
+
+  // 06-06 검토 I-1 — 06-06이 더한 증빙 금액 칸(값 · 표시 묶음 · 고침 전후 · 서버 계산 줄 · Q-F 줄)과 금액을 싣는 증빙 지문도 금액 칸이다.
+  // 지문은 문자열 안에 금액을 담으므로 키 유무만이 아니라 직렬화한 JSON에서 금액 probe 값을 찾는다 — 문서 칸은 보고 금액은 못 보는 계급으로.
+  it("06-06 증빙 금액 칸 · 증빙 지문은 expense.amount를 못 보는 계급의 직렬화에 키도 금액 글자도 없다", async () => {
+    const amountKeys = ["evidenceAmountKrw", "evidenceAmountDisplay", "reviewAmounts", "evidenceTaxLine", "evidenceOverrun", "evidenceStamp"];
+    for (const key of amountKeys) expect(PAYMENT_VIEW_DTO_SPEC.fields.find((field) => field.key === key)?.infoItem, key).toBe("expense.amount");
+    const probe = 12_345_678;
+    const source: PaymentViewDto = {
+      expenseId: "00000000-0000-4000-8000-000000000606",
+      version: 3,
+      row: { row: "P2", primary: "confirm", ownerNote: null },
+      payDate: "2026-10-06",
+      paidTime: null,
+      payableKrw: probe,
+      transferKrw: probe,
+      diffKrw: 0,
+      grossSupplyKrw: probe,
+      evidenceStatus: "확인 전",
+      evidenceRequired: true,
+      evidenceAmountKrw: probe,
+      evidenceAmountDisplay: { valueKrw: probe, enteredByName: "기안자", enteredAt: "10-06 09:00" },
+      reviewAmounts: { beforeKrw: probe, afterKrw: probe },
+      evidenceStamp: `00000000-0000-4000-8000-0000000006f1|${probe}|2026-10-01`,
+      evidenceTaxLine: [{ text: String(probe), emphasis: true }],
+      evidenceOverrun: `승인액보다 +${probe}`,
+    };
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `금액숨김-${randomUUID().slice(0, 8)}`, workScope: "company" });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "expense.value", visible: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "expense.amount", visible: false });
+    const viewer: Viewer = { id: "leak-scan-probe", roleId: role.id };
+    const dto = await project(viewer, source, PAYMENT_VIEW_DTO_SPEC);
+    expect("expenseId" in dto).toBe(true);
+    for (const key of amountKeys) expect(key in dto, key).toBe(false);
+    expect(JSON.stringify(dto)).not.toContain(String(probe));
+  });
 });
 
 // 06-05 — 카드 사용 목록 · 폼 선택지 DTO와 카드 사용 액션(06-27 정보 항목 card_usage.value · card_usage.amount).

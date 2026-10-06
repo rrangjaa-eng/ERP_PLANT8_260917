@@ -805,7 +805,7 @@ export const PAYMENT_VIEW_DTO_SPEC: DtoSpec<PaymentViewDto, PaymentViewDto> = {
     { key: "reviewLine", from: "reviewLine", infoItem: "expense.value" },
     { key: "reviewAmounts", from: "reviewAmounts", infoItem: "expense.amount" },
     { key: "prepaidDue", from: "prepaidDue", infoItem: "expense.value" },
-    { key: "evidenceStamp", from: "evidenceStamp", infoItem: "expense.value" },
+    { key: "evidenceStamp", from: "evidenceStamp", infoItem: "expense.amount" },
     { key: "evidenceTaxLine", from: "evidenceTaxLine", infoItem: "expense.amount" },
     { key: "evidenceOverrun", from: "evidenceOverrun", infoItem: "expense.amount" },
   ],

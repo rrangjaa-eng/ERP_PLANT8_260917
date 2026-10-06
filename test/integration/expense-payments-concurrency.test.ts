@@ -1,6 +1,6 @@
 import { Client } from "pg";
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { db, pool } from "@/db/client";
 import { expensePayments, expenses, files } from "@/db/schema";
 import { completeExpensePayment, decidePayable, loadPaymentInputs } from "@/domain/payments";
@@ -17,7 +17,7 @@ import { approvedExpenseWithEvidence, approvedExpenseWithoutEvidence, makePaymen
 
 class Rollback extends Error {}
 
-beforeAll(async () => {
+beforeEach(async () => {
   await setEvidenceRequired(false);
 });
 

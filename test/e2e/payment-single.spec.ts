@@ -706,6 +706,26 @@ test.describe("증빙 확인 (06-06 · S4 · O-2)", () => {
     await page.locator("#evidence-amount").fill("12400000");
     await expect(review.getByTestId("evidence-overrun")).toHaveText("승인액보다 +400,000");
     await expect(confirm).not.toHaveAttribute("aria-disabled", "true");
+    // 06-06 DOM 감사 D-2 — 새 금액의 미리보기가 오는 동안 Q-F 줄 글자도 `--text-faint`(이전 값 → 새 값), 응답 뒤 `--status-warning`.
+    const overrun = review.getByTestId("evidence-overrun");
+    const [faint, warning] = [await tokenAsColor(page, "--text-faint"), await tokenAsColor(page, "--status-warning")];
+    expect(await overrun.evaluate((element) => getComputedStyle(element).color)).toBe(warning);
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route(`**/expenses/${expenseId}`, async (route) => {
+      if (route.request().method() === "POST") await held;
+      await route.continue();
+    });
+    await page.locator("#evidence-amount").fill("12500000");
+    await expect.poll(() => overrun.evaluate((element) => getComputedStyle(element).color)).toBe(faint);
+    release();
+    await expect(overrun).toContainText("승인액보다 +500,000");
+    await expect.poll(() => overrun.evaluate((element) => getComputedStyle(element).color)).toBe(warning);
+    await page.unroute(`**/expenses/${expenseId}`);
+    await page.locator("#evidence-amount").fill("12400000");
+    await expect(overrun).toHaveText("승인액보다 +400,000");
     await page.keyboard.press("Control+Enter");
 
     await expect(review.getByText("확인됨", { exact: true })).toBeVisible();

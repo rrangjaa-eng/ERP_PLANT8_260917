@@ -115,6 +115,11 @@
   overflow-wrap: anywhere;
 }
 
+/* 06-06 DOM 감사 D-2 — 경고 한 줄도 미리보기가 오는 동안은 이전 값 색(.drift보다 뒤 · 두 클래스라 이긴다). */
+.drift.stale {
+  color: var(--text-faint);
+}
+
 .blockedReason {
   color: var(--status-danger);
   font-size: var(--text-aux);

@@ -89,9 +89,10 @@ function AmountInput({ initial, error, onChange, onEscape }: { initial: string; 
 }
 
 // 경고 한 줄(Q-F) — 서버 글자의 숫자 조각만 700, 묶음(` · ` 사이) 안은 꺾지 않는다.
-function WarningLine({ text, testId }: { text: string; testId: string }) {
+// stale — 미리보기가 오는 동안 이전 값은 `--text-faint`(.drift가 자기 색을 정하므로 같은 요소에 건다 — 06-06 DOM 감사 D-2).
+function WarningLine({ text, testId, stale = false }: { text: string; testId: string; stale?: boolean }) {
   return (
-    <span className={styles.drift} data-testid={testId}>
+    <span className={stale ? `${styles.drift} ${styles.stale}` : styles.drift} data-testid={testId}>
       {text.split(" · ").map((segment, index) => (
         <span key={index}>
           {index > 0 ? " · " : null}
@@ -181,11 +182,7 @@ export function EvidenceReviewBlock() {
           <TaxParts parts={taxLine} />
         </span>
       ) : null}
-      {overrun ? (
-        <span className={stale ? styles.stale : undefined}>
-          <WarningLine text={overrun} testId="evidence-overrun" />
-        </span>
-      ) : null}
+      {overrun ? <WarningLine text={overrun} testId="evidence-overrun" stale={stale} /> : null}
     </>
   );
 

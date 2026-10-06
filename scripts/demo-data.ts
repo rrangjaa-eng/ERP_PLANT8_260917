@@ -247,6 +247,17 @@ async function ensureDemoTeam(): Promise<string> {
   return existingTeam?.id ?? (await createTeam(SYSTEM_VIEWER, { orgUnitId: unitId, name: DEMO_TEAM_NAME })).id;
 }
 
+// 견본 거래처 — purge가 FK에 걸려 보관만 해 둔 같은 이름 · 번호의 거래처가 있으면 복원해 재사용한다(사업자번호가 보관 행에서도 겹치지 못한다).
+async function ensureDemoVendor(input: Parameters<typeof createVendor>[1]): Promise<string> {
+  const [existing] = await db
+    .select({ id: vendors.id, archivedAt: vendors.archivedAt })
+    .from(vendors)
+    .where(and(eq(vendors.name, input.name), eq(vendors.businessNo, input.businessNo ?? "")));
+  if (!existing) return (await createVendor(SYSTEM_VIEWER, input)).vendor.id;
+  if (existing.archivedAt) await restore(SYSTEM_VIEWER, "vendor", existing.id);
+  return existing.id;
+}
+
 export async function seedDemoData(): Promise<DemoSeedResult> {
   const existing = await db.select({ id: users.id }).from(users).where(and(inArray(users.email, DEMO_EMAILS), sql`${users.archivedAt} IS NULL`)).limit(1);
   if (existing.length > 0) {
@@ -282,12 +293,12 @@ export async function seedDemoData(): Promise<DemoSeedResult> {
   // 거래처 — 클라이언트와 협력사를 따로 둔다(구분 칸이 생기면 여기서 채운다).
   const clientIds: string[] = [];
   for (const client of DEMO_CLIENTS) {
-    clientIds.push((await createVendor(SYSTEM_VIEWER, { name: named(client.name), businessNo: client.businessNo })).vendor.id);
+    clientIds.push(await ensureDemoVendor({ name: named(client.name), businessNo: client.businessNo }));
   }
   const partnerIds: string[] = [];
   for (const partner of DEMO_PARTNERS) {
     partnerIds.push(
-      (await createVendor(SYSTEM_VIEWER, { name: named(partner.name), businessNo: partner.businessNo, accountBank: partner.accountBank, accountHolder: partner.accountHolder, defaultEvidenceType: "tax_invoice" })).vendor.id,
+      await ensureDemoVendor({ name: named(partner.name), businessNo: partner.businessNo, accountBank: partner.accountBank, accountHolder: partner.accountHolder, defaultEvidenceType: "tax_invoice" }),
     );
   }
 

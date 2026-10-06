@@ -410,13 +410,13 @@ export function CardUsageForm({
         {/* 칸 줄 간격은 TextField 줄(`--s-4`)과 같은 클래스로 맞춘다(새 CSS 모듈 없음). 입력이 시작되면 결과 한 줄 대신 막힘 줄. */}
         <div key={gen} onInput={() => setShowingResult(false)} onChange={() => setShowingResult(false)}>
           {singleCard ? (
-            <div className={rowStyles.row}>
+            <div data-ui="field-row" className={rowStyles.row}>
               <span className={rowStyles.label}>카드</span>
               <span>{singleCard.label}</span>
               <input type="hidden" name="corpCardId" value={singleCard.id} readOnly />
             </div>
           ) : (
-            <div className={rowStyles.row}>
+            <div data-ui="field-row" className={rowStyles.row}>
               <Form.Field id="card-usage-card" label="카드">
                 <Select
                   id="card-usage-card"
@@ -438,7 +438,7 @@ export function CardUsageForm({
             onChange={(event) => setUsedOn(event.target.value)}
             error={fieldErrors?.usedOn?._errors?.[0]}
           />
-          <div className={rowStyles.row}>
+          <div data-ui="field-row" className={rowStyles.row}>
             <span className={rowStyles.label}>가맹점</span>
             <span>{merchant ? merchant.name : "—"}</span>{" "}
             <Button variant="tertiary" aria-label="가맹점 바꾸기" onClick={() => setPickOpen(true)}>
@@ -449,7 +449,7 @@ export function CardUsageForm({
               <Form.Hint>{`기본 증빙 ${merchant.defaultEvidenceName} · 카드에 없음`}</Form.Hint>
             ) : null}
           </div>
-          <div className={rowStyles.row}>
+          <div data-ui="field-row" className={rowStyles.row}>
             <Form.Field id="card-amount" label="결제 합계">
               <select
                 aria-label="통화"
@@ -473,11 +473,11 @@ export function CardUsageForm({
             </Form.Field>
           </div>
           {currency === "USD" ? (
-            <div className={rowStyles.row}>
+            <div data-ui="field-row" className={rowStyles.row}>
               <FxField initial={usdFxRate} error={fieldErrors?.fxRate?._errors?.[0]} onRaw={onFxRaw} />
             </div>
           ) : null}
-          <div className={rowStyles.row}>
+          <div data-ui="field-row" className={rowStyles.row}>
             <Form.Field id="card-usage-evidence" label="증빙 종류">
               <Select
                 key={evidenceSeed}
@@ -489,7 +489,7 @@ export function CardUsageForm({
               />
             </Form.Field>
           </div>
-          <div className={rowStyles.row} role="radiogroup" aria-labelledby="card-usage-link-label">
+          <div data-ui="field-row" className={rowStyles.row} role="radiogroup" aria-labelledby="card-usage-link-label">
             <span id="card-usage-link-label" className={rowStyles.label}>
               연결
             </span>
@@ -517,7 +517,7 @@ export function CardUsageForm({
           />
           {linkKind === "quote_line" || linkKind === "out_of_quote" ? (
             <>
-              <div className={rowStyles.row}>
+              <div data-ui="field-row" className={rowStyles.row}>
                 <span className={rowStyles.label}>프로젝트</span>
                 <span>{linkProject ? linkProject.label : "—"}</span>{" "}
                 <Button id="card-usage-project-change" variant="tertiary" aria-label="프로젝트 바꾸기" onClick={() => setLinkStep("project")}>
@@ -538,7 +538,7 @@ export function CardUsageForm({
                 <Form.Hint>{`저장하면 견적 외 비용 줄 생김 · 실행가 ${formatKrw(preview.split.supplyKrw)}`}</Form.Hint>
               ) : null}
               {linkKind === "quote_line" && linkProject ? (
-                <div className={rowStyles.row}>
+                <div data-ui="field-row" className={rowStyles.row}>
                   <span className={rowStyles.label}>견적 줄</span>
                   <span>{linkLine ? linkLine.itemName : "—"}</span>{" "}
                   <Button id="card-usage-line-change" variant="tertiary" aria-label="견적 줄 바꾸기" onClick={() => setLinkStep("line")}>

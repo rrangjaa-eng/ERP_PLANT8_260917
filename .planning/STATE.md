@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 06
 current_phase_name: 지급·증빙·법인카드·구매 요청 (경영관리)
-current_plan: 10
+current_plan: 11
 status: executing
-stopped_at: Completed 06-28-PLAN.md
-last_updated: "2026-10-06T13:24:32.906Z"
+stopped_at: Completed 06-06-PLAN.md
+last_updated: "2026-10-06T14:40:50.388Z"
 last_activity: 2026-10-06
 last_activity_desc: Phase 06 execution started
-state_head: 563475da4f8e2d0e840af66f9455c8de67b0c1a7
+state_head: "0baa3028db61f3f02ce8f4b26a616aa7cae737bf"
 progress:
   total_phases: 17
   completed_phases: 7
   total_plans: 197
-  completed_plans: 177
+  completed_plans: 178
   percent: 41
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-30)
 ## Current Position
 
 Phase: 06 (지급·증빙·법인카드·구매 요청 (경영관리)) — EXECUTING
-Current Plan: 10
+Current Plan: 11
 Total Plans in Phase: 29
 Status: Ready to execute
 Last activity: 2026-10-06 — Phase 06 execution started
@@ -143,6 +143,7 @@ Progress: [████░░░░░░] 41%
 | Phase 06 P04 | 80min | 3 tasks | 15 files |
 | Phase 06 P05 | 112min | 4 tasks | 16 files |
 | Phase 06 P28 | 132 min | 3 tasks | 20 files |
+| Phase 06 P06 | 40m(커밋 구간) | 3 tasks | 21 files |
 
 ## Accumulated Context
 
@@ -373,6 +374,10 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-28: 종결 문서는 listNumberedByLines에서 빠진다 — 줄 문 · 회차 상한 · 사슬 · 계보가 함께 따른다
 - [Phase 06]: 06-28: 종결 분할 문서 회차는 회차 번호 입력에만(doorFor 넷째 인자 · 제출 · 폼 글자 · 고르기 창, 계보 사슬) — line-door.ts 무변경
 - [Phase 06]: 06-28: DocumentKindDef.closedDocumentIds 훅이 홈 막힌 문서 반려 줄에서 종결 문서를 뺀다(엔진 리터럴 없음)
+- [Phase 06]: 06-06: O-2는 action-row.ts의 상수 EVIDENCE_CONFIRMATION_GATES_PAYMENT 한 곳 — 서버 게이트(evidenceGateDecision)와 P2 갈래가 읽는다
+- [Phase 06]: 06-06: 확인 시각은 06-27 reviewed_at 하나(confirmed_at 없음, CF-1) — 6.1-12에 알림
+- [Phase 06]: 06-06: F2로 빈 증빙 금액을 채워 확인하면 06-27 CHECK 때문에 확인 기록 전·후는 null, 전 null·후 값은 끌 수 없는 evidence_amount_change 로그에만
+- [Phase 06]: 06-06: Q-F 계보 카드 사용은 listLineageLinesByProjects로 사슬을 짓는다(summarizeRevisions+listQuoteLinesByRevision 대신)
 
 ### Pending Todos
 
@@ -468,6 +473,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-06T13:24:32.430Z
-Stopped at: Completed 06-28-PLAN.md
+Last session: 2026-10-06T14:40:49.876Z
+Stopped at: Completed 06-06-PLAN.md
 Resume file: None

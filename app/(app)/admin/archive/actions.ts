@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { returnValidationErrors } from "next-safe-action";
 import { authedActionClient } from "@/lib/actions/client";
-import { restore, type RestoreResult } from "@/domain/archive";
+import { restore, VendorBusinessNoTakenError, type RestoreResult } from "@/domain/archive";
 import { HolidayNotRestorableError } from "@/domain/holidays/admin";
 import "./actions.registry";
 
@@ -21,7 +21,8 @@ export const restoreArchivedAction = authedActionClient
       result = await restore(ctx.viewer, parsedInput.entity, parsedInput.id);
     } catch (error) {
       // quick 261001-hfi: 공휴일 복원 거부(오늘 이전 · 그 날짜에 다른 공휴일)는 원인을 루트 오류로 — 토스트가 싣는다.
-      if (error instanceof HolidayNotRestorableError) {
+      // PR #178: 거래처 복원 거부(같은 사업자번호 거래처가 살아 있음)도 같다.
+      if (error instanceof HolidayNotRestorableError || error instanceof VendorBusinessNoTakenError) {
         returnValidationErrors(restoreArchivedSchema, { _errors: [error.message] });
       }
       throw error;

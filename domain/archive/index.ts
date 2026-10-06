@@ -28,6 +28,8 @@ export class ForbiddenError extends UserFacingError {}
 export class UnknownArchivableEntityError extends UserFacingError {}
 export class ProtectedRowError extends UserFacingError {}
 export class ArchivableRowNotFoundError extends UserFacingError {}
+// 같은 숫자 사업자번호의 살아 있는 거래처가 있어 거래처를 복원할 수 없음 — 화면이 원인을 토스트에 싣도록 따로 둔다.
+export class VendorBusinessNoTakenError extends UserFacingError {}
 
 export type ArchiveDeps = {
   can: typeof defaultCan;
@@ -107,7 +109,7 @@ async function vendorRestoreBlock(viewer: Viewer, id: string): Promise<UserFacin
   const [taker] = digits === null ? [] : await findVendorsByBusinessNoDigits(viewer, digits, { excludeId: id });
   if (!taker) return null;
   const name = (await visible(viewer, "vendor.value")) ? ` · ${taker.name}` : "";
-  return new UserFacingError(`같은 사업자번호 거래처 있음${name} · 복원 불가`);
+  return new VendorBusinessNoTakenError(`같은 사업자번호 거래처 있음${name} · 복원 불가`);
 }
 
 export async function restore(

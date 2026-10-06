@@ -83,7 +83,7 @@ function AmountInput({ initial, error, onChange, onEscape }: { initial: string; 
         }
       }}
       aria-invalid={error ? true : undefined}
-      aria-describedby={error ? `${EVIDENCE_FIELD_ID}-error` : undefined}
+      aria-describedby={[error ? `${EVIDENCE_FIELD_ID}-error` : "", `${EVIDENCE_FIELD_ID}-hint`].filter(Boolean).join(" ")}
     />
   );
 }
@@ -295,14 +295,16 @@ export function EvidenceReviewBlock() {
               onEscape={closeEdit}
             />
             {input.fieldError ? <Form.Error id={`${EVIDENCE_FIELD_ID}-error`}>{input.fieldError}</Form.Error> : null}
-            {showHint ? (
-              <Form.Hint>
-                <span className={styles.taxSegment} data-testid="evidence-amount-hint">
-                  확인하면 <Num value={serverAmount} /> → <Num value={input.value} />
-                </span>
-              </Form.Hint>
-            ) : null}
-            {lines}
+            <div id={`${EVIDENCE_FIELD_ID}-hint`}>
+              {showHint ? (
+                <Form.Hint>
+                  <span className={styles.taxSegment} data-testid="evidence-amount-hint">
+                    확인하면 <Num value={serverAmount} /> → <Num value={input.value} />
+                  </span>
+                </Form.Hint>
+              ) : null}
+              {lines}
+            </div>
           </Form.Field>
         </Form>
       ) : null}

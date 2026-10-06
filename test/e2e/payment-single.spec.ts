@@ -641,6 +641,10 @@ test.describe("증빙 확인 (06-06 · S4 · O-2)", () => {
     await expect(field).toBeFocused();
     await field.fill("12000000");
     await expect(review.getByTestId("evidence-amount-hint")).toHaveText("확인하면 12,400,000 → 12,000,000");
+    // 06-06 DOM 감사 D-3 — 힌트(`확인하면 … → …`)가 칸의 aria-describedby로 이어진다(이체액 칸과 같은 꼴).
+    const describedBy = (await field.getAttribute("aria-describedby")) ?? "";
+    expect(describedBy.split(" ")).toContain("evidence-amount-hint");
+    await expect(page.locator("#evidence-amount-hint")).toContainText("확인하면 12,400,000 → 12,000,000");
     await page.keyboard.press("Control+Enter");
 
     await expect(review.getByText("확인됨", { exact: true })).toBeVisible();

@@ -48,6 +48,8 @@ import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { seoulToday } from "@/lib/dates";
 import { makePerson } from "./approvals-fixtures";
 import { waitForLockWaiter } from "./lock-race";
+import { ACTION_REGISTRY } from "@/lib/actions/registry";
+import "@/app/(app)/cards/actions.registry";
 
 // 06-05(EXP-07 · U-2): 카드 사용 통합 파일 — 06-07 · 06-09 · 06-12가 `describe`를 더한다.
 
@@ -416,6 +418,37 @@ describe("실행가 상한(Q3)", () => {
     await cancelRequest(fx, request);
     await cardOnLine(fx, fx.lines[0] ?? "", 400_000);
     expect(await usageCount()).toBe(2);
+  });
+});
+
+describe("[I-6] 연결 대상 서버 판정 — 프로젝트 보기 · 보관", () => {
+  it("카드는 있지만 projects view가 없는 계급 → 견적 줄 · 견적 외 비용 모두 ForbiddenError(`프로젝트 보기 권한 없음`) · 카드 사용 0", async () => {
+    const fx = await cardProject();
+    const team = await makeTeam();
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `보기없음-${randomUUID().slice(0, 8)}`, workScope: "company" });
+    const viewer = await makePerson("보기없음", role.id, team.name);
+    const cardId = await makeCard({ kind: "personal", holderUserId: viewer.id });
+    const line = caught(precheckCardUsage(viewer, { ...lineInput(fx, fx.lines[0] ?? "", 1_000), corpCardId: cardId }));
+    const outside = caught(precheckCardUsage(viewer, { ...usageInput(cardId), linkKind: "out_of_quote", projectId: fx.projectId, itemName: "다과" }));
+    for (const error of [await line, await outside]) {
+      expect(error).toBeInstanceOf(ForbiddenError);
+      expect((error as Error).message).toBe("프로젝트 보기 권한 없음");
+    }
+    expect(await usageCount()).toBe(0);
+  });
+
+  it("보관된 프로젝트의 견적 줄 lineId 직접 → `연결 없음 · 연결 고르기`", async () => {
+    const fx = await cardProject();
+    await db.update(projects).set({ archivedAt: new Date() }).where(eq(projects.id, fx.projectId));
+    const error = await caught(precheckCardUsage(fx.pm, lineInput(fx, fx.lines[0] ?? "", 1_000)));
+    expect(error).toBeInstanceOf(CardUsageRejectedError);
+    expect((error as Error).message).toBe("연결 없음 · 연결 고르기");
+  });
+
+  it("액션 레지스트리 — 연결 고르기 두 액션의 문 = projects view(실제 판정과 같음)", () => {
+    for (const name of ["searchProjectsForCardLinkAction", "searchLinesForCardLinkAction"]) {
+      expect(ACTION_REGISTRY.find((entry) => entry.name === name)).toMatchObject({ menu: "projects", action: "view" });
+    }
   });
 });
 

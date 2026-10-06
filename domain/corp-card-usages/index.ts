@@ -206,6 +206,8 @@ export async function precheckCardUsage(viewer: Viewer, input: CardUsageInput): 
     outOfQuote: null,
   };
   if (input.linkKind === "team_cost") return { ...base, teamId, projectId: null, revisionId: null, lineRoom: null };
+  // 견적 줄 · 견적 외 비용은 프로젝트를 고르는 일 — S10 목록과 같은 문(projects view)을 서버가 다시 본다(I-6).
+  if (!(await can(viewer, "projects", "view"))) throw new ForbiddenError(PROJECTS_VIEW_DENIED);
 
   if (input.linkKind === "out_of_quote") {
     // 견적 외 비용(O-8 · X-6): 현재 차수 · 완료 판정 · 항목 기본값은 트랜잭션 전에 — 잠근 뒤 `project.line-edit`가 상태를 다시 본다.
@@ -233,7 +235,7 @@ export async function precheckCardUsage(viewer: Viewer, input: CardUsageInput): 
   const line = await findQuoteLineById(viewer, input.lineId);
   const revision = line ? await findQuoteRevisionById(viewer, line.revisionId) : null;
   const project = revision ? await findProjectById(viewer, revision.projectId) : null;
-  if (!line || !project) throw new CardUsageRejectedError(LINK_MISSING);
+  if (!line || !project || project.archivedAt) throw new CardUsageRejectedError(LINK_MISSING);
   if (project.status === "completed") throw new CompletedProjectError(quoteLockReason({ status: project.status }) ?? undefined);
   const latest = await findLatestQuoteRevision(viewer, project.id);
   return {

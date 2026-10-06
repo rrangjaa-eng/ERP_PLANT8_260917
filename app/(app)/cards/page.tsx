@@ -1,18 +1,214 @@
 import { requireSession } from "@/lib/viewer";
+import { seoulToday } from "@/lib/dates";
+import {
+  cardUsageFormDefaults,
+  cardUsageFormOptions,
+  listCardUsages,
+  type CardUsageLinkFilter,
+  type CardUsageList as CardUsageListResult,
+} from "@/domain/corp-card-usages";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { ListScreen } from "@/ui/list-screen/ListScreen";
+import { Num } from "@/ui/num/Num";
+import { Pagination } from "@/ui/pagination/Pagination";
+import { pageRangeText } from "@/ui/pagination/page-window";
+import { SidePanel } from "@/ui/side-panel/SidePanel";
+// 합계 면 한 줄 배치는 프로젝트 목록 합계 줄과 같은 클래스(새 CSS 없음).
+import styles from "@/app/(app)/projects/projects.module.css";
+import { CardUsageFilters, CardUsageList, CardUsageLoadError, type CardUsageListRowView } from "./card-usage-list";
+import { CardUsageForm } from "./card-usage-form";
 
-// SYSTEM.md §6-1 목록 화면 = 원장. 표는 Phase 4 범위(02-01 DECISIONS.md 기록).
-// WR-07: 인증 검사를 이 페이지가 직접 한다. 레이아웃의 requireSession()에
-// 기대지 않는다 — 레이아웃은 이동할 때 재렌더되지 않고 라우트 세그먼트는
-// 그와 무관하게 RSC 페이로드에 들어간다(next/dist/docs 01-app/02-guides/
-// authentication.md). Phase 4가 이 라우트에 원장 데이터를 올린다.
-export default async function CardsPage() {
-  await requireSession();
+// 06-05(EXP-07 · UI-SPEC S8 · S9 · C12): 법인카드 사용 목록 = 원장. 한 건 등록은 `?new=1` 옆 패널(페이지 폼 없음).
+// 필터 · 쪽은 GET 쿼리(`month` · `card` · `link` · `via` · `page`) — 범위 · 합계 · 쪽은 서버(listCardUsages)가 정한다.
+// WR-07: 인증 검사를 이 페이지가 직접 한다(레이아웃에 기대지 않는다).
+export const dynamic = "force-dynamic";
+
+const LIST_HREF = "/cards";
+const CARD_RECEIPT = "card_receipt";
+const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const LINK_FILTERS: readonly CardUsageLinkFilter[] = ["quote", "out_of_quote", "team"];
+
+type CardsSearchParams = Record<string, string | string[] | undefined>;
+
+function first(raw: string | string[] | undefined): string | undefined {
+  return Array.isArray(raw) ? raw[0] : raw;
+}
+
+// 월 필터 선택지 — 이번 달부터 12달 + 쿼리로 온 다른 달.
+function monthChoices(thisMonth: string, selected: string): string[] {
+  const [year, month] = thisMonth.split("-").map(Number) as [number, number];
+  const months = Array.from({ length: 12 }, (_, back) => {
+    const index = year * 12 + (month - 1) - back;
+    return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, "0")}`;
+  });
+  return months.includes(selected) ? months : [...months, selected].sort().reverse();
+}
+
+export default async function CardsPage({ searchParams }: { searchParams: Promise<CardsSearchParams> }) {
+  const { viewer, user } = await requireSession();
+  const params = await searchParams;
+  const today = seoulToday();
+  const thisMonth = today.slice(0, 7);
+  const monthParam = first(params.month);
+  const month = monthParam && MONTH_PATTERN.test(monthParam) ? monthParam : thisMonth;
+  const cardParam = first(params.card);
+  const cardId = cardParam && UUID_PATTERN.test(cardParam) ? cardParam : undefined;
+  const linkParam = first(params.link);
+  const link = LINK_FILTERS.find((value) => value === linkParam);
+  const proxyOnly = first(params.via) === "proxy";
+  const filtered = month !== thisMonth || cardId !== undefined || link !== undefined || proxyOnly;
+
+  const options = await cardUsageFormOptions(viewer, today);
+  let list: CardUsageListResult | null = null;
+  try {
+    list = await listCardUsages(viewer, { month, cardId, link, proxyOnly, page: first(params.page) }, today);
+  } catch (error) {
+    // 목록 자리 한 줄 + `다시 시도`(UI-SPEC 「Error — 목록 로드」) — 화면의 나머지(머리 · 1차)는 선다.
+    console.error(error);
+  }
+  const cards = options.cards.flatMap((card) => (card.id && card.label ? [{ id: card.id, label: card.label }] : []));
+  const rows: CardUsageListRowView[] = (list?.rows ?? []).flatMap((row) =>
+    row.id && row.cardId && row.cardLabel && row.usedOn && row.linkKind
+      ? [
+          {
+            id: row.id,
+            cardId: row.cardId,
+            cardLabel: row.cardLabel,
+            usedOn: row.usedOn,
+            merchantName: row.merchantName ?? null,
+            linkKind: row.linkKind,
+            teamName: row.teamName ?? null,
+            linkLabel: row.linkLabel ?? null,
+            registeredVia: row.registeredVia ?? "self",
+            registeredByName: row.registeredByName ?? "—",
+            registeredOn: row.registeredOn ?? null,
+            totalKrw: row.totalKrw ?? null,
+            supplyKrw: row.supplyKrw ?? null,
+            vatKrw: row.vatKrw ?? null,
+            currency: row.currency ?? null,
+            foreignAmount: row.foreignAmount ?? null,
+            fxRate: row.fxRate ?? null,
+          },
+        ]
+      : [],
+  );
+
+  const pageHref = (target: number): string => {
+    const query = new URLSearchParams();
+    if (month !== thisMonth) query.set("month", month);
+    if (cardId) query.set("card", cardId);
+    if (link) query.set("link", link);
+    if (proxyOnly) query.set("via", "proxy");
+    if (target > 1) query.set("page", String(target));
+    const text = query.toString();
+    return text ? `${LIST_HREF}?${text}` : LIST_HREF;
+  };
+  // 패널 닫기 · 1차는 지금 필터의 /cards(쪽은 1로) — 뒤 목록이 바뀌지 않는다(플랜 Task 1 ③).
+  const listHref = pageHref(1);
+  const newHref = `${listHref}${listHref.includes("?") ? "&" : "?"}new=1`;
+
+  let panel = null;
+  if (first(params.new) === "1" && cards.length > 0) {
+    // 진입(M-4) — S14 견적 줄 행 `?line=` · S15 빈 섹션 `?project=`. 고를 수 없으면 서버가 버리고 직전 등록 기준.
+    const entryLine = first(params.line);
+    const entryProject = first(params.project);
+    const defaults = await cardUsageFormDefaults(viewer, today, {
+      lineId: entryLine && UUID_PATTERN.test(entryLine) ? entryLine : undefined,
+      projectId: entryProject && UUID_PATTERN.test(entryProject) ? entryProject : undefined,
+    });
+    panel = (
+      <SidePanel title="카드 사용 등록" closeHref={listHref}>
+        <CardUsageForm
+          cards={cards}
+          evidenceTypes={options.evidenceTypes}
+          teamName={options.teamName}
+          teamAssigned={options.teamAssigned}
+          userName={user.name}
+          today={today}
+          usdFxRate={options.usdFxRate}
+          defaults={{
+            ...defaults,
+            evidenceTypeCode: options.evidenceTypes.some((option) => option.value === CARD_RECEIPT) ? CARD_RECEIPT : null,
+          }}
+        />
+      </SidePanel>
+    );
+  }
+
+  const newAction = { label: "카드 사용 등록", href: newHref };
+  // 쓸 카드 0장 · 필터 없는 빈 목록 — 고를 것이 없는 필터 줄은 세우지 않는다(할 수 없는 선택지는 숨김).
+  const nothingToFilter = cards.length === 0 && rows.length === 0 && !filtered;
+  const filters = list && !nothingToFilter ? (
+    <CardUsageFilters
+      month={month}
+      thisMonth={thisMonth}
+      months={monthChoices(thisMonth, month)}
+      cardId={cardId ?? ""}
+      cardChoices={list.cardChoices.flatMap((card) => (card.id && card.label ? [{ id: card.id, label: card.label }] : []))}
+      link={link ?? ""}
+      proxyOnly={proxyOnly}
+      registrationFilter={list.registrationFilter}
+    />
+  ) : undefined;
+
+  let empty = undefined;
+  let body;
+  if (!list) body = <CardUsageLoadError />;
+  else if (rows.length > 0) body = <CardUsageList rows={rows} />;
+  else if (filtered) body = <ListEmpty message="조건에 맞는 카드 사용이 없습니다" action={{ label: "필터 지우기", href: LIST_HREF }} />;
+  else {
+    // DR5 — 빈 목록이면 틀이 머리 1차를 숨기고 빈 화면이 말한다. 쓸 카드가 0장이면 버튼도 없다(할 일이 관리자 몫).
+    empty =
+      cards.length === 0 ? (
+        <ListEmpty message="쓸 수 있는 법인카드가 없습니다 · 카드 등록은 관리자" />
+      ) : (
+        <ListEmpty message="이번 달 카드 사용이 없습니다" action={newAction} />
+      );
+    body = null;
+  }
 
   return (
-    <ListScreen title="법인카드">
-      <ListEmpty message="등록된 법인카드 사용 내역이 없습니다" action={{ label: "결재함 보기", href: "/approvals" }} />
+    <ListScreen
+      title="카드 사용"
+      primaryAction={cards.length > 0 ? newAction : undefined}
+      filters={filters}
+      summary={
+        list?.totals && list.totals.count > 0 ? (
+          <section aria-label="합계" className={styles.totals}>
+            <p className={styles.totalsTitle}>{`합계 (${month} · ${list.totals.count}건)`}</p>
+            <dl className={styles.totalsPairs}>
+              <div className={styles.totalsPair}>
+                <dt>결제 합계</dt>
+                <dd>
+                  <Num value={list.totals.totalKrw} />
+                </dd>
+              </div>
+              <div className={styles.totalsPair}>
+                <dt>공급가</dt>
+                <dd>
+                  <Num value={list.totals.supplyKrw} />
+                </dd>
+              </div>
+            </dl>
+          </section>
+        ) : undefined
+      }
+      empty={empty}
+      pagination={
+        list && rows.length > 0 ? (
+          <Pagination
+            label="카드 사용"
+            page={list.page.page}
+            pageCount={list.page.pageCount}
+            href={pageHref}
+            rangeText={pageRangeText({ page: list.page.page, pageSize: list.page.pageSize, total: list.page.total, unit: "건" })}
+          />
+        ) : undefined
+      }
+      panel={panel}
+    >
+      {body}
     </ListScreen>
   );
 }

@@ -78,6 +78,8 @@ function teamKindLabel(kind: string | null): string | null {
 function statusOf(row: RepoRow, currentSteps: Map<string, CurrentStep>): { statusWord: string; statusDate: string | null } {
   const date = row.statusChangedAt ? seoulToday(row.statusChangedAt).slice(5) : null;
   if (row.groupRank === EXPENSE_GROUP_RANKS.draft) return { statusWord: "작성 중", statusDate: null };
+  // 06-28: 종결 문서(반려 · 회수에서만 끝난다) — 낱말 `종결` · 종결일. 그룹은 반려 · 회수 그대로.
+  if (row.closedAt !== null) return { statusWord: "종결", statusDate: seoulToday(row.closedAt).slice(5) };
   if (row.groupRank === EXPENSE_GROUP_RANKS.returned) return { statusWord: row.status === "withdrawn" ? "회수" : "반려", statusDate: date };
   if (row.groupRank === EXPENSE_GROUP_RANKS.inReview) {
     const stepLabel = row.instanceId ? currentSteps.get(row.instanceId)?.stepLabel : null;

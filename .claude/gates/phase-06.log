@@ -9,6 +9,9 @@ review 2026-10-06T03:58Z session=157802f6-d640-5a76-88ea-648ef79f4d4c
 review 2026-10-06T04:43Z session=159e4edc-d0a2-5c2e-a391-246a8373c30f
 review 2026-10-06T03:58Z session=157802f6-d640-5a76-88ea-648ef79f4d4c (PR #169 06-27, 결과 issues_found·막는 결함 0, 지적 반영 911c0ec0)
 cso 2026-10-06T04:31Z session=157802f6-d640-5a76-88ea-648ef79f4d4c (PR #169 — gstack /cso는 저장소 64MiB 한도로 실행 불가, Opus 대체 검토 사용자 인정 카드 2026-10-06 13:27:37 KST. 판정 통과·P3 5건, N1·N3은 3199673f로 반영, 보고서 /mnt/project-files/notes/06-review/169-cso-substitute.md)
+review 2026-10-06T07:16Z session=157802f6-d640-5a76-88ea-648ef79f4d4c
+design-review 2026-10-06T07:16Z session=157802f6-d640-5a76-88ea-648ef79f4d4c
+qa 2026-10-06T07:53Z session=157802f6-d640-5a76-88ea-648ef79f4d4c
 review 2026-10-06T08:36Z session=84c28096-e98e-59d1-8044-1e9846ddff3b (스테이징 견본 데이터 CLI, 결과 clean — 적대적 검토 지적 6건 b6991e8로 반영, Codex는 디자인 검토 전용이라 미사용)
 review 2026-10-06T08:50Z session=b61abcf0-14f7-5cfe-8058-5ab3a113525f
 design-review 2026-10-06T08:55Z session=b61abcf0-14f7-5cfe-8058-5ab3a113525f (PR #172 거래처 계좌 칸 — Codex 4폭 지적 0건 test-results/codex-vendors-account.md, 독립 DOM 감사 CI=true 4폭 전부 통과 /mnt/project-files/notes/vendor-account-reveal/dom-audit.md)
@@ -29,3 +32,8 @@ review 2026-10-06T15:07Z session=c2610b64-102a-5a86-a641-99bec1c982a0 (PR #178, 
 design-review 2026-10-06T15:59Z session=c2610b64-102a-5a86-a641-99bec1c982a0 (PR #178, Codex 실행·후보 1건 결함 아님 · DOM 실측 4폭 결함 2건 수정 a47d414c·818465bf, 보고서 /mnt/project-files/notes/vendor-kind/178-design-review.md · 스킬 기록 훅이 10:40Z 뒤 이 세션에서 기록을 남기지 않아 손으로 기록)
 qa 2026-10-06T15:59Z session=c2610b64-102a-5a86-a641-99bec1c982a0 (PR #178, CI=true 관련 E2E 통과 · 결함 2건 수정 24572275·de089aca, 보고서 /mnt/project-files/notes/vendor-kind/178-qa.md · 스킬 기록 훅이 10:40Z 뒤 이 세션에서 기록을 남기지 않아 손으로 기록)
 review 2026-10-06T16:59Z session=c2610b64-102a-5a86-a641-99bec1c982a0 (PR #179, 결함 0 · P3 3건 수정, 보고서 /mnt/project-files/notes/vendor-kind/179-review.md · 스킬 기록 훅이 10:40Z 뒤 이 세션에서 기록을 남기지 않아 손으로 기록)
+review 2026-10-06T18:36Z session=157802f6-d640-5a76-88ea-648ef79f4d4c (PR #180, P1 0 · P2 1 · P3 4, P3 3건·CSO 묶음 수정 fix-prc 7787a369~41e630cf, P2는 06-11 몫, 보고서 /mnt/project-files/notes/06-review/pr-c-review.md)
+cso 2026-10-06T18:36Z session=157802f6-d640-5a76-88ea-648ef79f4d4c (PR #180, Opus 대체 검토 — cso 도우미는 600초 상한이라 손으로 같은 기준 적용, 중간 1·낮음 4, CSO-1·2·5 수정, CSO-3은 06-11·CSO-4는 마이그레이션이라 따로, 보고서 /mnt/project-files/notes/06-review/pr-c-cso.md)
+design-review 2026-10-06T18:37Z session=157802f6-d640-5a76-88ea-648ef79f4d4c (PR #180, Codex 실행·후보 0 · DOM 실측 결함 1건 수정 2b33cb93, 보고서 /mnt/project-files/notes/06-review/pr-c-design-review.md)
+qa 2026-10-06T19:30Z session=157802f6-d640-5a76-88ea-648ef79f4d4c (PR #180, CI=true 흐름 통과·제품 결함 0, 건강 88→94, 보고서 /mnt/project-files/notes/06-review/pr-c-qa.md)
+review 2026-10-06T22:50Z session=157802f6-d640-5a76-88ea-648ef79f4d4c (PR #180 추가 반영 — Codex 검토 P1 2·P2 3 실제 결함 확인·수정 516f3112~634e4170, 시각 비교에 가려진 e2e 6건 수정 c939c319·769abb9e, 시각 기준 사진 d9e01724 · 손으로 기록)

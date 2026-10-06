@@ -62,11 +62,32 @@ export async function listLineageLinesByProjects(
   viewer: Viewer,
   projectIds: string[],
   tx: DbOrTx = db,
-): Promise<{ projectId: string; id: string; revisionSeq: number; copiedFromLineId: string | null }[]> {
+): Promise<
+  {
+    projectId: string;
+    id: string;
+    revisionSeq: number;
+    copiedFromLineId: string | null;
+    executionCurrency: string;
+    executionForeignAmount: string | null;
+    executionFxRate: string;
+    executionAmountKrw: number;
+  }[]
+> {
   void viewer;
   if (projectIds.length === 0) return [];
+  // 06-07(E-13 · N-1) — 실행가 칸을 더해 넓혔다(사슬 현재 줄의 실행가 = 카드 쪽 상한 바탕). 05 호출부는 더한 칸을 읽지 않는다.
   return tx
-    .select({ projectId: quoteRevisions.projectId, id: quoteLines.id, revisionSeq: quoteRevisions.seq, copiedFromLineId: quoteLines.copiedFromLineId })
+    .select({
+      projectId: quoteRevisions.projectId,
+      id: quoteLines.id,
+      revisionSeq: quoteRevisions.seq,
+      copiedFromLineId: quoteLines.copiedFromLineId,
+      executionCurrency: quoteLines.executionCurrency,
+      executionForeignAmount: quoteLines.executionForeignAmount,
+      executionFxRate: quoteLines.executionFxRate,
+      executionAmountKrw: quoteLines.executionAmountKrw,
+    })
     .from(quoteLines)
     .innerJoin(quoteRevisions, eq(quoteRevisions.id, quoteLines.revisionId))
     .where(and(inArray(quoteRevisions.projectId, projectIds), isNull(quoteLines.archivedAt)));

@@ -1,11 +1,13 @@
 import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/viewer";
 import "@/app/(app)/document-kinds";
-import { getApprovalView, previewRoute, RouteBlockedError } from "@/domain/approvals";
+import { getApprovalView, previewRoute, REJECT_REASON_EMPTY_MESSAGE, REJECT_REASON_MAX, REJECT_REASON_TOO_LONG_MESSAGE, RouteBlockedError } from "@/domain/approvals";
 import { can } from "@/domain/permissions/can";
 import { EXPENSE_DOCUMENT_KIND, ExpenseNotFoundError, getExpense, listExpenseCurrencies, listExpenseFormOptions, previewExpense } from "@/domain/expenses";
 import { teamKindOptions } from "../team-kind-options";
 import { getEvidenceActions, listEvidence } from "@/domain/evidence";
+import { getPaymentView } from "@/domain/payments";
+import { log } from "@/lib/log";
 import { getSettingValue } from "@/domain/settings/registry";
 import { EVIDENCE_MAX_SIZE_MB } from "@/domain/settings/keys";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
@@ -20,6 +22,7 @@ import { seoulMinuteOf } from "@/app/(app)/leave/status-display";
 import { SubmittedToast } from "@/app/(app)/leave/[id]/submitted-toast";
 import { ExpenseDocument } from "./expense-document";
 import { DeleteDraftButton } from "./delete-draft-button";
+import { CloseExpenseButton } from "./close-expense-button";
 import { ExpenseForm } from "./expense-form";
 import styles from "./expense.module.css";
 
@@ -52,7 +55,18 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
   // 05 /review C1: 지출결의 쓰기 권한이 빠진 기안자는 자기 작성 중 문서도 폼(저장 · 제출)이 아니라 문서 화면으로 읽는다(다시 제출도 쓰기 권한이 연다).
   if ((view || expense.number || !canWrite) && !resubmitting) {
     // 05-09: 문서 화면은 무효 행도 그린다(처리자 · 시각 · 사유) — 파일 행 3차는 서버가 정한 evidenceActions대로.
-    const evidenceActions = await getEvidenceActions(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: id });
+    // 06-03: 지급 섹션은 결재 통과(approved — 자기 승인 포함, UA-607) 문서만. view가 null(05 C1 — 쓰기 권한 없는 기안자의 번호 없는 작성 중 문서)이거나
+    // 통과 전이면 부르지 않는다(섹션 요소 0 · 오류 화면 없음).
+    const [evidenceActions, paymentView] = await Promise.all([
+      getEvidenceActions(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: id }),
+      view?.status === "approved"
+        ? getPaymentView(viewer, id).catch((error: unknown) => {
+            // C13: 결재 통과인데 못 읽으면 섹션 자리에 로드 오류 한 줄 + 다시 시도(문서 화면 전체를 오류로 바꾸지 않는다).
+            log.error("expense.payment_view_failed", { expenseId: id, message: error instanceof Error ? error.message : String(error) });
+            return "error" as const;
+          })
+        : null,
+    ]);
     const documentFiles: AttachmentFile[] = evidence.flatMap((file) =>
       file.id && file.originalName && file.createdAt
         ? [
@@ -68,7 +82,7 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
           ]
         : [],
     );
-    return <ExpenseDocument expense={expense} view={view} files={documentFiles} evidenceActions={evidenceActions} maxMb={maxMb} submitted={submitted} />;
+    return <ExpenseDocument expense={expense} view={view} files={documentFiles} evidenceActions={evidenceActions} maxMb={maxMb} submitted={submitted} paymentView={paymentView} />;
   }
 
   // 작성 중 — 폼. 결재선은 제출 전 한 줄(기안자 · 문서 종류의 결재선 설정으로 해석 — 막히면 이유 한 줄).
@@ -133,7 +147,23 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
         status={<StatusTag status={expenseStatusWord(resubmitting ? view?.status : null)} />}
         meta={resubmitting && expense.number ? <Num value={expense.number} /> : undefined}
         // 작성 중(번호 없음 — 기안자만 보는 문서)에만 머리 줄 2차 `지출결의 삭제`. 1차는 폼의 제출이다.
-        actions={resubmitting ? undefined : { secondary: <DeleteDraftButton expenseId={id} version={expense.version ?? 1} /> }}
+        // 06-28(S23): 반려 · 회수 폼에는 서버가 종결 모달 재료(closeDialog)를 실었을 때만 2차 `종결` — 1차는 폼의 다시 제출 그대로.
+        actions={
+          resubmitting
+            ? expense.closeDialog
+              ? {
+                  secondary: (
+                    <CloseExpenseButton
+                      expenseId={id}
+                      version={expense.version ?? 1}
+                      dialog={expense.closeDialog}
+                      messages={{ empty: REJECT_REASON_EMPTY_MESSAGE, tooLong: REJECT_REASON_TOO_LONG_MESSAGE, max: REJECT_REASON_MAX }}
+                    />
+                  ),
+                }
+              : undefined
+            : { secondary: <DeleteDraftButton expenseId={id} version={expense.version ?? 1} /> }
+        }
       >
         {readRows.length > 0 ? <KvList items={readRows} /> : null}
         <ExpenseForm

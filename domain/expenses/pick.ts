@@ -25,9 +25,10 @@ import { PROJECT_CUSTOMER_APPROVAL_GATE } from "@/domain/settings/keys";
 import type { Money } from "@/domain/money";
 import { seoulToday } from "@/lib/dates";
 import type { NumberedLineExpense } from "@/repositories/expenses";
-import { findExpenseApprovalStatus, findExpenseApprovalStatuses, findExpenseById, listPickProjects } from "@/repositories/expenses";
+import { findExpenseApprovalStatus, findExpenseApprovalStatuses, findExpenseById, listClosedInstallmentsByLines, listPickProjects } from "@/repositories/expenses";
 import { findProjectById } from "@/repositories/projects";
-import { listQuoteLinesByRevisions, type QuoteLineRow } from "@/repositories/quote-lines";
+import { listLineageLinesByProjects, listQuoteLinesByRevisions, type QuoteLineRow } from "@/repositories/quote-lines";
+import { resolveLinkedDocumentsByLineage, type LineageLine } from "@/domain/quotes/lineage";
 import { findVendorNamesByIds, listVendorsForPick } from "@/repositories/vendors";
 
 // 05-07 골라내기(S14) 서버 판정 — 행마다 고를 수 있음 · 이유 · 그룹을 서버가 만든다. 행은 투영 DTO다(폼 선택지도 `registerDto`된
@@ -117,6 +118,23 @@ const PICK_PROJECT_LIMIT = 100;
 
 const APPROVAL_STATUS_WORDS: Record<string, string> = { submitted: "결재 중", in_review: "결재 중", approved: "승인", rejected: "반려", withdrawn: "회수" };
 
+type ClosedInstallment = { id: string; quoteLineId: string; installmentSeq: number | null };
+
+// 06-28(X-9 · N-4): 현재 차수 줄마다 계보 사슬 전체의 종결 분할 문서 — 05 listNumberedByLineageMany와 같은 꼴(계보 줄 한 쿼리 + 문서 한 쿼리).
+// 고르기 창의 다음 회차 번호만 이것으로 다시 센다(문 · 남은 실행가는 번호 문서 목록만).
+async function listClosedInstallmentsByLineageMany(viewer: Viewer, projectIds: string[]): Promise<Map<string, Map<string, ClosedInstallment[]>>> {
+  const lineage = await listLineageLinesByProjects(viewer, projectIds);
+  const docsByLineId = new Map<string, ClosedInstallment[]>();
+  for (const doc of await listClosedInstallmentsByLines(viewer, lineage.map((line) => line.id))) {
+    docsByLineId.set(doc.quoteLineId, [...(docsByLineId.get(doc.quoteLineId) ?? []), doc]);
+  }
+  const linesByProject = new Map<string, LineageLine[]>();
+  for (const line of lineage) linesByProject.set(line.projectId, [...(linesByProject.get(line.projectId) ?? []), line]);
+  const result = new Map<string, Map<string, ClosedInstallment[]>>();
+  for (const [projectId, lines] of linesByProject) result.set(projectId, resolveLinkedDocumentsByLineage(lines, docsByLineId).byCurrentLine);
+  return result;
+}
+
 // change = 그 문서 프로젝트의 현재 차수 줄 전부(문서가 기안자가 고칠 수 있는 줄 문서여야 한다 — isEditableByDrafter, 05-09), pick = 위 기본 · 검색 목록(팀 비용 문서 · 새 문서에서 줄을 고른다).
 // 줄마다 고를 수 있음 · 이유는 createExpenseFromLines · changeExpenseLine과 같은 판정(표 전체 게이트 · 문 상태)으로 서버가 만든다. 한 번에 50행 + truncated.
 export async function searchLinesForPick(
@@ -160,6 +178,8 @@ export async function searchLinesForPick(
     listQuoteLinesByRevisions(viewer, listed.flatMap((candidate) => factsByProject.get(candidate.id)?.latestRevisionId ?? [])),
     listNumberedByLineageMany(viewer, listed.map((candidate) => candidate.id)),
   ]);
+  // 06-28(X-9 · N-4): 번호 문서 목록 다음에 읽는다 — 그사이 종결이 커밋돼도 그 문서는 두 목록 중 하나 이상에 든다.
+  const closedByProject = await listClosedInstallmentsByLineageMany(viewer, listed.map((candidate) => candidate.id));
   const linesByRevision = new Map<string, QuoteLineRow[]>();
   for (const line of allLines) linesByRevision.set(line.revisionId, [...(linesByRevision.get(line.revisionId) ?? []), line]);
   const numberedIds = [...numberedByProject.values()].flatMap((byLine) => [...byLine.values()].flat().map((doc) => doc.id));
@@ -191,7 +211,7 @@ export async function searchLinesForPick(
       const vendorName = line.vendorId ? (vendorNames.get(line.vendorId) ?? null) : null;
       if (!projectMatches && !line.itemName.toLowerCase().includes(lowered) && !(vendorName ?? "").toLowerCase().includes(lowered)) continue;
       const docs = numbered.get(line.id) ?? [];
-      const door = doorFor(line, docs);
+      const door = doorFor(line, docs, undefined, closedByProject.get(candidate.id)?.get(line.id) ?? []);
       if (door.state === "none") continue;
 
       let selectable = true;

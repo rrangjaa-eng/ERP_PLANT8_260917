@@ -115,6 +115,16 @@
   overflow-wrap: anywhere;
 }
 
+/* 06-06 DOM 감사 D-2 — 경고 한 줄도 미리보기가 오는 동안은 이전 값 색(.drift보다 뒤 · 두 클래스라 이긴다). */
+.drift.stale {
+  color: var(--text-faint);
+}
+
+/* 06-06 DOM 감사 O-2 — 세율 바뀜 묶음(`부가세 10% {전} → {후}`)이 320 값 칸보다 넓다. 묶음은 nowrap 그대로, 화살표 앞뒤 공백에서만 꺾인다. */
+.drift .arrow {
+  white-space: normal;
+}
+
 .blockedReason {
   color: var(--status-danger);
   font-size: var(--text-aux);
@@ -129,6 +139,11 @@
   color: var(--status-success);
   font-size: var(--text-aux);
   font-weight: var(--fw-medium);
+}
+
+/* 06-04 — 지급 뒤 1차 자리 결과 글자 `지급 완료 → {지급일} · {HH:mm}`(UI-SPEC 「SUCCESS — 제자리 결과」 `--status-success`). 글자 크기는 행동 줄 그대로. */
+.resultSuccess {
+  color: var(--status-success);
 }
 
 .muted {

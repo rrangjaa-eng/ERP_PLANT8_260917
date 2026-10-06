@@ -382,6 +382,8 @@ describe("lastStatusChangeOn — 부제의 마지막 변경일 (04-21, D-50)", (
 // 마이그레이션 파일(db/)은 스캔 대상이 아니다.
 const OLD_LOCK_LITERAL = /['"`]settled['"`]/;
 const SCAN_ROOTS = ["app", "domain", "repositories"];
+// 06-05 예외: 카드 사용의 실행가 상한 source `"settled"`(Q-E — 완료 프로젝트 줄의 구매 완료)는 잠금 상태 값이 아니다(06-07 · 06-09 · 06-12가 이 이름에 기댄다).
+const SCAN_EXEMPT_DIRS = ["domain/corp-card-usages/"];
 
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -403,7 +405,8 @@ describe("옛 잠금 상태 값 리터럴 스캔 (04-21, D-75 · A-35)", () => {
   it("app·domain·repositories의 .ts·.tsx에 옛 잠금 값 리터럴이 없다", () => {
     const offenders = SCAN_ROOTS.flatMap((root) => sourceFiles(join(process.cwd(), root)))
       .filter((file) => OLD_LOCK_LITERAL.test(readFileSync(file, "utf8")))
-      .map((file) => file.slice(process.cwd().length + 1));
+      .map((file) => file.slice(process.cwd().length + 1))
+      .filter((file) => !SCAN_EXEMPT_DIRS.some((dir) => file.startsWith(dir)));
     expect(offenders).toEqual([]);
   });
 });

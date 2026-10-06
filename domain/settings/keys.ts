@@ -1240,7 +1240,6 @@ export const EVIDENCE_REQUIRED: SettingDef<boolean> = {
   hint: "끄면 증빙 없이 지급 완료",
   namespace: "증빙",
   default: true,
-  readBy: { phase: "6" },
 };
 
 export const EVIDENCE_PREPAID_DUE_DAYS: SettingDef<number> = {
@@ -1252,7 +1251,6 @@ export const EVIDENCE_PREPAID_DUE_DAYS: SettingDef<number> = {
   namespace: "증빙",
   unitLabel: "일",
   default: 14,
-  readBy: { phase: "6" },
 };
 
 export const PURCHASE_ONLINE_VENDOR_NAME: SettingDef<string> = {
@@ -1276,7 +1274,6 @@ export const PAYMENT_METHOD_EVIDENCE_PAIRS: SettingDef<{ method: string; evidenc
   namespace: "지급",
   pairGrid: { rows: "payment_method", cols: "evidence_type", rowField: "method", colField: "evidence" },
   default: [],
-  readBy: { phase: "6" },
 };
 
 SETTING_DEFS.push(EVIDENCE_REQUIRED, EVIDENCE_PREPAID_DUE_DAYS, PURCHASE_ONLINE_VENDOR_NAME, PAYMENT_METHOD_EVIDENCE_PAIRS);

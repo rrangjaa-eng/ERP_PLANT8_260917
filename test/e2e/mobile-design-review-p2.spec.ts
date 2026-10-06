@@ -4,13 +4,22 @@ import { createFixtureUser } from "./fixtures";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { insertVendor, setVendorHidden } from "@/repositories/vendors";
+import { createCorpCard } from "@/domain/corp-cards";
+import { createOrgUnit, createTeam } from "@/domain/org";
+import { seoulToday } from "@/lib/dates";
+import { makePerson } from "./leave-org";
 
 // /design-review 2026-09-24 FINDING-005: 폰에서 EMPTY 「다음 한 수」 링크의 밑줄이
 // border-bottom이라 44px 터치 상자 바닥에 붙어 글자에서 12px 떠 있었다. §4-4는
 // 3차 버튼 밑줄을 text-underline-offset 2px(--underline-offset)로 정한다.
 test.describe("폰 375 EMPTY 첫 행동의 2차 버튼 모양 (§7 빈 화면, 옛 /design-review FINDING-005)", () => {
   test("밑줄 없는 2차 버튼 모양이고 누르는 영역이 44 이상이다", async ({ page }) => {
-    const user = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
+    // 06-05: /cards는 실제 목록이 됐다 — 카드가 없는 직원의 빈 화면은 버튼이 없으므로(카드 등록은 관리자) 카드 소지 직원의 `이번 달 0건` 빈 화면을 잰다.
+    const suffix = randomUUID().slice(0, 8);
+    const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `밑줄점검본부-${suffix}` });
+    const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `밑줄점검팀-${suffix}` });
+    const user = await makePerson("밑줄점검", DEFAULT_ROLE_ID, team.id, `${seoulToday().slice(0, 4)}-01-01`);
+    await createCorpCard(SYSTEM_VIEWER, { issuer: `밑줄-${suffix}`, numberLast4: "4321", label: `밑줄점검카드-${suffix}`, kind: "personal", holderUserId: user.viewer.id });
     await page.goto("/login");
     await page.getByLabel("이메일").fill(user.email);
     await page.getByLabel("비밀번호").fill(user.password);

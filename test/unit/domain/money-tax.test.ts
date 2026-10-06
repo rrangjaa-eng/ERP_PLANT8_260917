@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { applyTaxRule } from "@/domain/money/tax";
+import { applyTaxRule, loadTaxRates, taxRatesReader } from "@/domain/money/tax";
 import type { TaxRule } from "@/domain/code-tables/tax-rule";
 
 // 04-02 Task 1 ② — 세금 규칙 네 종류 × 절사 단위·방식 조합, 최소 징수액
@@ -238,5 +238,84 @@ describe("applyTaxRule", () => {
     // 고치기 전 62,690
     expect(result.companyBorneKrw).toBe(62_700);
     expect(result.payableKrw).toBe(712_500);
+  });
+});
+
+// 06-03 ① — 세율 사전 조회. applyTaxRule이 읽는 설정 키 전부를 한 기준일로 트랜잭션 밖에서 읽어 평범한 객체로 두고,
+// 트랜잭션 안에서는 그 객체만 읽는 getSettingValue 대용(taxRatesReader)을 넣는다(06-03 tx 규약).
+describe("loadTaxRates · taxRatesReader", () => {
+  const ALL_KEYS = Object.keys(SETTING_VALUES);
+
+  it("applyTaxRule이 읽는 키마다 asOf를 넘겨 한 번씩 순서대로 읽고 평범한 객체를 돌려준다", async () => {
+    const getSettingValue = fakeGetSettingValue();
+    const rates = await loadTaxRates("2026-09-22", { getSettingValue: getSettingValue as never });
+    const keys = getSettingValue.mock.calls.map(([def]) => def.key);
+    expect([...keys].sort()).toEqual([...ALL_KEYS].sort());
+    expect(new Set(keys).size).toBe(keys.length);
+    for (const [, opts] of getSettingValue.mock.calls) expect(opts?.asOf?.toISOString().slice(0, 10)).toBe("2026-09-22");
+    expect(rates.asOf).toBe("2026-09-22");
+    expect(rates.vatRate).toBe(0.1);
+    expect(rates.withholdingUnit).toBe(10);
+    expect(Object.getPrototypeOf(rates)).toBe(Object.prototype);
+  });
+
+  it("사전 조회는 키를 하나씩 순서대로 읽는다(동시에 둘 이상 대기하지 않는다)", async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const getSettingValue = vi.fn(async (def: { key: string }) => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await Promise.resolve();
+      inFlight -= 1;
+      return SETTING_VALUES[def.key];
+    });
+    await loadTaxRates("2026-09-22", { getSettingValue: getSettingValue as never });
+    expect(maxInFlight).toBe(1);
+  });
+
+  const RULES: [string, TaxRule, Record<string, unknown>?][] = [
+    ["없음", NONE_RULE],
+    ["부가세", VAT_RULE],
+    ["원천징수 기타", WITHHOLDING_RULE],
+    ["회사 대납 flat", COMPANY_BORNE_RULE],
+    ["회사 대납 gross_up", COMPANY_BORNE_RULE, { "tax.company_borne.method": "gross_up" }],
+  ];
+  for (const [label, rule, overrides] of RULES) {
+    it(`taxRatesReader로 주입한 applyTaxRule이 실제 설정 읽기와 같은 결과다 — ${label}`, async () => {
+      const real = fakeGetSettingValue(overrides);
+      const date = new Date("2026-09-22T00:00:00.000Z");
+      const opts = { paymentDate: date, evidenceDate: date };
+      const expected = await applyTaxRule(1_234_567, rule, opts, { getSettingValue: real as never });
+      const rates = await loadTaxRates("2026-09-22", { getSettingValue: fakeGetSettingValue(overrides) as never });
+      const actual = await applyTaxRule(1_234_567, rule, opts, { getSettingValue: taxRatesReader(rates) });
+      expect(actual).toEqual(expected);
+    });
+  }
+
+  it("taxRatesReader — 사업소득 세율도 같은 결과다", async () => {
+    const date = new Date("2026-09-22T00:00:00.000Z");
+    const opts = { paymentDate: date, evidenceDate: date, incomeType: "business" as const };
+    const expected = await applyTaxRule(1_234_567, WITHHOLDING_RULE, opts, { getSettingValue: fakeGetSettingValue() as never });
+    const rates = await loadTaxRates("2026-09-22", { getSettingValue: fakeGetSettingValue() as never });
+    expect(await applyTaxRule(1_234_567, WITHHOLDING_RULE, opts, { getSettingValue: taxRatesReader(rates) })).toEqual(expected);
+  });
+
+  it("taxRatesReader는 다른 날짜의 이력 키를 물으면 던진다(조용히 전역 db로 새지 않는다)", async () => {
+    const rates = await loadTaxRates("2026-09-22", { getSettingValue: fakeGetSettingValue() as never });
+    const other = new Date("2026-09-23T00:00:00.000Z");
+    await expect(
+      applyTaxRule(1_000_000, VAT_RULE, { paymentDate: other, evidenceDate: other }, { getSettingValue: taxRatesReader(rates) }),
+    ).rejects.toThrow();
+  });
+
+  it("미래 날짜 asOf도 그날 유효한 이력 값을 읽는다(RS-11)", async () => {
+    // 2027-01-01부터 부가세율 12% — 적용일 ≤ 기준일 중 가장 늦은 값.
+    const getSettingValue = vi.fn((def: { key: string }, opts?: { asOf?: Date }) => {
+      if (def.key === "tax.vat.rate") return Promise.resolve((opts?.asOf?.toISOString().slice(0, 10) ?? "") >= "2027-01-01" ? 0.12 : 0.1);
+      return Promise.resolve(SETTING_VALUES[def.key]);
+    });
+    const rates = await loadTaxRates("2027-03-01", { getSettingValue: getSettingValue as never });
+    expect(rates.vatRate).toBe(0.12);
+    expect(rates.asOf).toBe("2027-03-01");
   });
 });

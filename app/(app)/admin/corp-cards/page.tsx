@@ -164,10 +164,12 @@ export default async function CorpCardsPage({
               card.issuer,
               card.numberLast4,
               card.label,
-              card.kind === "personal" ? "개인" : "팀",
+              card.kind === "personal" ? "개인" : card.kind === "team" ? "팀" : "공용",
               card.kind === "personal"
                 ? (holderNameById.get(card.holderUserId ?? "") ?? "—")
-                : (teamNameById.get(card.teamId ?? "") ?? "—"),
+                : card.kind === "team"
+                  ? (teamNameById.get(card.teamId ?? "") ?? "—")
+                  : "—",
               <Fragment key="status">
                 {card.archivedAt ? (
                   <StatusTag status="보관됨" variant="text" />

@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 06
 current_phase_name: 지급·증빙·법인카드·구매 요청 (경영관리)
-current_plan: 5
+current_plan: 12
 status: executing
-stopped_at: Completed 06-29-PLAN.md
-last_updated: "2026-10-06T05:42:36.774Z"
+stopped_at: Completed 06-07-PLAN.md
+last_updated: "2026-10-06T16:35:21.413Z"
 last_activity: 2026-10-06
 last_activity_desc: Phase 06 execution started
-state_head: 72da555318406fb18102e261c1e524a115134f3a
+state_head: d9a4b49916c5ddf3659f1f6de37d27685a286d7c
 progress:
   total_phases: 17
   completed_phases: 7
   total_plans: 197
-  completed_plans: 172
+  completed_plans: 179
   percent: 41
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-30)
 ## Current Position
 
 Phase: 06 (지급·증빙·법인카드·구매 요청 (경영관리)) — EXECUTING
-Current Plan: 5
+Current Plan: 12
 Total Plans in Phase: 29
 Status: Ready to execute
 Last activity: 2026-10-06 — Phase 06 execution started
@@ -138,6 +138,13 @@ Progress: [████░░░░░░] 41%
 | Phase 06 P01 | 20 min | 3 tasks | 8 files |
 | Phase 06 P02 | 30 min | 3 tasks | 14 files |
 | Phase 06 P29 | 65min | 3 tasks | 16 files |
+| Phase 06 P30 | 1h 5m | 2 tasks | 11 files |
+| Phase 06 P03 | 44min | 2 tasks | 18 files |
+| Phase 06 P04 | 80min | 3 tasks | 15 files |
+| Phase 06 P05 | 112min | 4 tasks | 16 files |
+| Phase 06 P28 | 132 min | 3 tasks | 20 files |
+| Phase 06 P06 | 40m(커밋 구간) | 3 tasks | 21 files |
+| Phase 06 P07 | 105m | 3 tasks | 19 files |
 
 ## Accumulated Context
 
@@ -351,6 +358,31 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-02: 짝 격자 PairGridEditor는 자체 상태가 정본(서버 재렌더 prop 무시 — 낙관적 칸 깜빡임 방지), 칸 저장은 promise 사슬로 차례대로
 - [Phase 06]: 06-29: 선택 열 체크박스는 grid 열 인덱스 밖 네이티브 열 — use-grid-keyboard 불변, 선택 뜻은 checked 하나(aria-selected 불변)
 - [Phase 06]: 06-29: ConfirmDialog refreshKeepsOpen은 거절 문자열이 같은 동안만 이유를 숨김 — 호출자(06-17)가 새 props에서 거절 상태를 지워야 함; 서버 재판정 필수(T-06-290)
+- [Phase 06]: 06-30: 법인카드 종류는 사람이 고른 값(CardOwnerInput.kind 필수) — cardOwnerKind는 FK 유무로 유도하지 않고 종류별 칸 조합(personal 소지자만 · team 팀만 · shared 둘 다 없음)만 판정, 06-27 corp_cards_owner_kind_check와 같은 세 조합
+- [Phase 06]: 06-30: 소유자 변경 superRefine 개인 · 팀 문구는 기존 「소지자·팀 중 하나 필요 · 하나만 선택」 유지, 공용 + 소유 칸 위조만 「소유 칸 조합 오류 · 공용에 맞는 칸만」. 등록 액션은 superRefine 없이 도메인 serverError로(QA-1 함정)
+- [Phase 06]: 06-03: 지급 전 화면의 지급 총액은 지급일 = 오늘(KST)로 셈하고 액션은 화면이 본 payDate · expectedPayableKrw(비교값)를 보낸다
+- [Phase 06]: 06-03: 지급 섹션이 서면 위 읽기 칸의 지급 예정일 · 지급 방식은 섹션 한 자리에만(같은 사실 두 자리 금지)
+- [Phase 06]: 06-03: 잠금 뒤 판정은 judgeLockedPayment — 기준일이 같으면 사전 조회 세율로 tx 안에서 새 값, 기준일이 바뀌면 BasisChangedSignal로 tx 밖에서 다시 셈
+- [Phase 06]: 06-04: 증빙 · 짝 게이트는 결재 게이트 뒤 · 기준 재판정 앞 — 잠금 뒤 무효 + 증빙일 변경도 증빙 없음으로 막는다(CROSS-R1 F-3)
+- [Phase 06]: 06-04: 이미 지급된 문서는 version 비교 앞에서 PaymentAlreadyDoneError({사람}이 {HH:mm}에 지급 완료함), 이름은 트랜잭션 밖
+- [Phase 06]: 06-04: 지급 취소는 끌 수 없는 payment_cancel · 행 삭제 없음 · 완료 프로젝트도 취소(U-4)
+- [Phase 06]: 06-04: expense.amount를 못 보는 지급 권한자는 지급 완료 비활성 + 지급 총액 볼 권한 없음 · 노출 설정은 관리자
+- [Phase 06]: 06-04: 지급일 과거 하한 없음 유지(P3-3, 사용자 카드 대기)
+- [Phase 06]: 06-05: 카드 사용 목록 범위 — cards.proxy · expenses.payments write 권한자 · 전사 범위는 전부, 그 밖은 자기 카드 · 오늘 소속 팀 카드 + 자기 등록(리포지토리 쿼리)
+- [Phase 06]: 06-05: 목록 읽기를 withTransaction(lock_timeout 5s) 안에서 — 잠금 대기는 로드 오류 갈래로
+- [Phase 06]: 06-05: D-75 옛 잠금 리터럴 스캔에서 domain/corp-card-usages/ 제외 — Q-E source settled는 잠금 상태 값 아님(사용자 확인 2026-10-06 20:04:28 KST)
+- [Phase 06]: 06-28: 종결 행위자 = 기안자(expenses write) ∨ 지급 권한자(expenses.payments write), 아니면 없는 문서
+- [Phase 06]: 06-28: 종결 문서는 listNumberedByLines에서 빠진다 — 줄 문 · 회차 상한 · 사슬 · 계보가 함께 따른다
+- [Phase 06]: 06-28: 종결 분할 문서 회차는 회차 번호 입력에만(doorFor 넷째 인자 · 제출 · 폼 글자 · 고르기 창, 계보 사슬) — line-door.ts 무변경
+- [Phase 06]: 06-28: DocumentKindDef.closedDocumentIds 훅이 홈 막힌 문서 반려 줄에서 종결 문서를 뺀다(엔진 리터럴 없음)
+- [Phase 06]: 06-06: O-2는 action-row.ts의 상수 EVIDENCE_CONFIRMATION_GATES_PAYMENT 한 곳 — 서버 게이트(evidenceGateDecision)와 P2 갈래가 읽는다
+- [Phase 06]: 06-06: 확인 시각은 06-27 reviewed_at 하나(confirmed_at 없음, CF-1) — 6.1-12에 알림
+- [Phase 06]: 06-06: F2로 빈 증빙 금액을 채워 확인하면 06-27 CHECK 때문에 확인 기록 전·후는 null, 전 null·후 값은 끌 수 없는 evidence_amount_change 로그에만
+- [Phase 06]: 06-06: Q-F 계보 카드 사용은 listLineageLinesByProjects로 사슬을 짓는다(summarizeRevisions+listQuoteLinesByRevision 대신)
+- [Phase 06]: 06-07: 카드 사용 견적 외 비용은 저장마다 out_of_quote 줄을 새로 만든다(프로젝트 행 잠금 → project.line-edit → 줄 → 카드 사용, 한 트랜잭션)
+- [Phase 06]: 06-07: 계보 사슬의 현재 줄은 프로젝트 최신 차수 순번의 줄만 — 보관된 현재 줄이면 빠진 줄(N-2)
+- [Phase 06]: 06-07: S15 법인카드 사용 섹션은 클라이언트에서 액션으로 따로 불러온다(로드 실패에도 다른 섹션이 선다)
+- [Phase 06]: 06-07: N-3 보관 붙잡기 · 실행가 초과 읽기를 06-13 대신 06-07에서(Q-G 추천안 — 아침 확인)
 
 ### Pending Todos
 
@@ -446,6 +478,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-06T05:42:36.368Z
-Stopped at: Completed 06-29-PLAN.md
+Last session: 2026-10-06T16:35:20.965Z
+Stopped at: Completed 06-07-PLAN.md
 Resume file: None

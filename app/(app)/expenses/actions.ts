@@ -9,6 +9,7 @@ import {
   EXPENSE_DOCUMENT_KIND,
   changeExpenseLine,
   changeExpenseVendor,
+  closeExpense,
   createExpenseFromLines,
   deleteExpenseDraft,
   createTeamExpenseDraft,
@@ -158,6 +159,16 @@ export const withdrawExpenseAction = authedActionClient
     revalidatePath("/expenses");
     revalidatePath(`/expenses/${parsedInput.expenseId}`);
     return { status: withdrawn.status };
+  });
+
+// 06-28(S23) 반려 · 회수 지출결의 종결 — 사유 길이 · 행위자 · 상태 판정은 도메인. 새 문서 version만 돌려준다.
+export const closeExpenseAction = authedActionClient
+  .schema(z.object({ expenseId: expenseIdSchema, expectedVersion: z.number().int().min(1), reason: z.string() }).strict())
+  .action(async ({ parsedInput, ctx }) => {
+    const closed = await closeExpense(ctx.viewer, parsedInput);
+    revalidatePath("/expenses");
+    revalidatePath(`/expenses/${parsedInput.expenseId}`);
+    return { version: closed.version };
   });
 
 export const requestEvidenceUploadAction = authedActionClient

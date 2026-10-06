@@ -2,7 +2,7 @@ import { and, asc, desc, eq, inArray, isNotNull, isNull, max, or, sql, type SQL 
 import { alias } from "drizzle-orm/pg-core";
 import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
-import { approvalInstances, approvalRoutes, approvalSteps, files, users } from "@/db/schema";
+import { approvalInstances, approvalRoutes, approvalSteps, expenses, files, users } from "@/db/schema";
 import { unresolvedVoidHaving } from "@/repositories/files";
 import type { Viewer } from "@/domain/viewer";
 
@@ -313,6 +313,16 @@ function blockedCandidateSql(viewer: Viewer, filter: BlockedCandidateFilter): SQ
   }
 }
 
+// 06-28 /review I1: 반려 줄 후보에서 종류가 끝낸 문서를 LIMIT 전에 빼는 조건 — 종류 등록(rejectedCandidates)이 고른다. 「지출결의 종결 아님」 하나.
+export type RejectedCandidateFilter = "not_closed_expense";
+
+function rejectedCandidateSql(filter: RejectedCandidateFilter): SQL {
+  switch (filter) {
+    case "not_closed_expense":
+      return sql`not exists (select 1 from ${expenses} where ${expenses.id} = ${approvalInstances.documentId} and ${expenses.closedAt} is not null)`;
+  }
+}
+
 // 05-10: 내가 기안한 인스턴스 중 한 상태(반려 · 승인)인 것 — 최근 처리 순. 반려는 지금 차수의 반려 단계 처리자 이름을 함께 읽는다.
 export async function listDrafterInstances(
   viewer: Viewer,
@@ -321,6 +331,8 @@ export async function listDrafterInstances(
     status: "rejected" | "approved";
     limit: number;
     candidateKinds?: readonly { documentKind: string; filter: BlockedCandidateFilter | null }[];
+    // 그 종류의 문서만 조건으로 거르고 다른 종류는 그대로 둔다.
+    kindFilters?: readonly { documentKind: string; filter: RejectedCandidateFilter }[];
   },
 ): Promise<DrafterInstance[]> {
   // 05 /review A9 · C6: 승인 뒤 막힘 후보는 LIMIT 전에 SQL로 거른다 — 종류마다 그 종류가 준 조건(없으면 그 종류 전부)으로(최근 N건만 보면 오래된 문서가 빠진다).
@@ -332,13 +344,16 @@ export async function listDrafterInstances(
         ),
       )
     : undefined;
+  const kindFilter = input.kindFilters?.length
+    ? and(...input.kindFilters.map((kind) => or(sql`${approvalInstances.documentKind} <> ${kind.documentKind}`, rejectedCandidateSql(kind.filter))))
+    : undefined;
   const rows = await db
     .select({ instance: approvalInstances, rejecterName: actors.name })
     .from(approvalInstances)
     .leftJoin(approvalRoutes, and(eq(approvalRoutes.instanceId, approvalInstances.id), eq(approvalRoutes.round, approvalInstances.currentRound)))
     .leftJoin(approvalSteps, and(eq(approvalSteps.routeId, approvalRoutes.id), eq(approvalSteps.action, "rejected")))
     .leftJoin(actors, eq(actors.id, approvalSteps.actedBy))
-    .where(and(eq(approvalInstances.drafterId, input.drafterId), eq(approvalInstances.status, input.status), candidateFilter))
+    .where(and(eq(approvalInstances.drafterId, input.drafterId), eq(approvalInstances.status, input.status), candidateFilter, kindFilter))
     .orderBy(desc(approvalInstances.updatedAt), asc(approvalInstances.id))
     .limit(input.limit);
   return rows.map((row) => ({ ...row.instance, rejecterName: row.rejecterName }));

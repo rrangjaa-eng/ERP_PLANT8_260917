@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 20
+open_count: 23
 waived_count: 1
 fixed_count: 21
-total_count: 42
-last_updated: 2026-10-04T10:18:45.372Z
+total_count: 45
+last_updated: 2026-10-06T16:35:02.514Z
 ---
 
 # Broken Windows Ledger
@@ -57,6 +57,9 @@ last_updated: 2026-10-04T10:18:45.372Z
 | 40 | 04.5 | deviation | app/(app)/admin/holidays/holiday-form.tsx | 37 | 칸 이름 구분자 「, 」(SYSTEM §7-15 · DECISIONS 2026-09-25 U2) 미이전 — 공휴일 폼과 app/(app)/certs/events/request-rules.ts:26이 아직 「 · 」로 칸 이름을 잇는다(04.5-09가 SYSTEM 예시만 고침) | fixed |  | 2026-10-02T09:44:02.256Z | 2026-10-02T13:39:45.912Z |
 | 41 | 04.6 | unrun-verify | test/e2e/side-panel.spec.ts |  | 04.6-04 @wave-merge 높이 둘(PC 입력 40 · 행동 줄 40 / 폰 입력 40 · 행동 줄 44)은 04.6-07·08이 --field-h를 읽어야 초록 — 합본 웨이브 뒤 실행 | open |  | 2026-10-02T18:23:03.602Z |  |
 | 42 | 05 | deviation | app/(app)/admin/settings/settings-form-client.tsx | 711 | 결재선 복원 줄이 단계 칸 있는 섹션마다 그려져 연차 단계 보관본이 지출결의 결재선 섹션에도 같은 글자로 보인다(종류 구분 없는 stepList) — 05-03은 화면을 고치지 않고 E2E 로케이터만 연차 섹션으로 좁힘, 화면 플랜이 섹션별 복원으로 고친다 | fixed |  | 2026-10-04T09:06:45.235Z | 2026-10-04T10:18:45.372Z |
+| 43 | 06 | stub | app/(app)/cards/card-usage-list.tsx | 55 | 목록 연결 열의 견적 줄 · 견적 외 비용 글자가 — (DTO에 줄 · 프로젝트 칸 없음) — 06-07 파일 밖 | open |  | 2026-10-06T16:35:02.036Z |  |
+| 44 | 06 | stub | domain/corp-card-usages/index.ts |  | S15 구매 완료 건 등록 칸 구매 요청 번호 대신 등록자 이름(06-12) | open |  | 2026-10-06T16:35:02.264Z |  |
+| 45 | 06 | deviation | app/(app)/projects/[id]/card-usage-section.tsx |  | 06-07 수용 grep subtitle=1(RowSheet 필수 prop) · S15 섹션 클라이언트 액션 로드 | open |  | 2026-10-06T16:35:02.514Z |  |
 
 ````json
 [
@@ -604,6 +607,45 @@ last_updated: 2026-10-04T10:18:45.372Z
     "reason": "",
     "recorded_at": "2026-10-04T09:06:45.235Z",
     "resolved_at": "2026-10-04T10:18:45.372Z",
+    "milestone": null
+  },
+  {
+    "id": 43,
+    "kind": "stub",
+    "phase": "06",
+    "file": "app/(app)/cards/card-usage-list.tsx",
+    "line": 55,
+    "description": "목록 연결 열의 견적 줄 · 견적 외 비용 글자가 — (DTO에 줄 · 프로젝트 칸 없음) — 06-07 파일 밖",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-06T16:35:02.036Z",
+    "resolved_at": null,
+    "milestone": null
+  },
+  {
+    "id": 44,
+    "kind": "stub",
+    "phase": "06",
+    "file": "domain/corp-card-usages/index.ts",
+    "line": null,
+    "description": "S15 구매 완료 건 등록 칸 구매 요청 번호 대신 등록자 이름(06-12)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-06T16:35:02.264Z",
+    "resolved_at": null,
+    "milestone": null
+  },
+  {
+    "id": 45,
+    "kind": "deviation",
+    "phase": "06",
+    "file": "app/(app)/projects/[id]/card-usage-section.tsx",
+    "line": null,
+    "description": "06-07 수용 grep subtitle=1(RowSheet 필수 prop) · S15 섹션 클라이언트 액션 로드",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-06T16:35:02.514Z",
+    "resolved_at": null,
     "milestone": null
   }
 ]

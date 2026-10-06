@@ -91,16 +91,17 @@ test.describe("법인카드 관리 화면 (MAST-03)", () => {
     await expect(dialog).toHaveCount(0);
     // 발급사는 폰 접힌 줄에도 한 번 더 있어 칸 이름이 정확히 같은 셀로 잡는다.
     await expect(page.getByRole("cell", { name: issuer, exact: true })).toBeVisible();
-    await expect(page.getByText("개인카드1")).toBeVisible();
-    await expect(page.getByText("팀카드1")).toBeVisible();
+    // 별칭은 칸 글자 그대로(exact) — 다른 스펙의 카드 행이 「개인」 + 소지자 「카드1…」로 이어 읽히면 부분 일치가 그 행을 함께 잡는다.
+    await expect(page.getByText("개인카드1", { exact: true })).toBeVisible();
+    await expect(page.getByText("팀카드1", { exact: true })).toBeVisible();
 
     // 개인카드1을 비활성화하면 기본 목록에서 사라지고 "숨김 포함"으로 다시 보인다
-    const row = page.locator("tr", { hasText: "개인카드1" });
+    const row = page.locator("tr", { has: page.getByText("개인카드1", { exact: true }) });
     await row.getByRole("button", { name: "비활성화" }).click();
-    await expect(page.getByText("개인카드1")).toHaveCount(0);
+    await expect(page.getByText("개인카드1", { exact: true })).toHaveCount(0);
 
     await page.getByRole("link", { name: "숨김 포함" }).click();
-    await expect(page.getByText("개인카드1")).toBeVisible();
+    await expect(page.getByText("개인카드1", { exact: true })).toBeVisible();
   });
 
   // 소지자를 고른 뒤 종류를 팀으로 바꾸면 팀 칸이 첫 팀으로 저절로 골라지던
@@ -321,6 +322,103 @@ test.describe("법인카드 옆 패널 (04.6-15)", () => {
       }
     } finally {
       await card.cleanup();
+    }
+  });
+});
+
+// 06-30(Q5 · C8): 공용 법인카드 — 종류는 사람이 고른 값이고 공용이면 소유 칸(소지자 · 팀)이 없다.
+// 목록 행의 칸 순서: 발급사 · 뒤 4자리 · 별칭 · 종류 · 소유 · 상태 · 동작(page.tsx columns).
+const KIND_CELL = 3;
+const OWNER_CELL = 4;
+
+test.describe("공용 법인카드 (06-30 · Q5 · C8)", () => {
+  test("새 카드 폼에서 종류 「공용」을 고르면 소유 칸이 사라지고, 등록하면 목록 종류 「공용」 · 소유 「—」다", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await loginAsSysadmin(page);
+    await page.goto("/admin/corp-cards?new=1");
+    const dialog = page.locator(PANEL);
+    await expect(dialog).toBeVisible();
+
+    const label = `공용카드-${randomUUID().slice(0, 8)}`;
+    await dialog.getByLabel("발급사").fill(`공용카드사-${randomUUID().slice(0, 8)}`);
+    await dialog.getByLabel("뒤 4자리").fill(String(Math.floor(1000 + Math.random() * 9000)));
+    await dialog.getByLabel("별칭").fill(label);
+    await dialog.getByLabel("종류").selectOption("shared");
+    await expect(dialog.getByLabel("소지자")).toHaveCount(0);
+    await expect(dialog.getByLabel("팀")).toHaveCount(0);
+    await dialog.getByRole("button", { name: "법인카드 등록" }).click();
+    await expect(dialog.getByRole("status")).toHaveText("법인카드 등록됨");
+    // 성공 뒤 종류는 처음 값(개인)으로 돌아간다 — 다음 등록이 공용으로 이어지지 않는다.
+    await expect(dialog.getByLabel("종류")).toHaveValue("personal");
+
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    const cells = page.locator("tr", { hasText: label }).locator("td");
+    await expect(cells.nth(KIND_CELL)).toHaveText("공용");
+    await expect(cells.nth(OWNER_CELL)).toHaveText("—");
+    await page.locator("tr", { hasText: label }).getByRole("button", { name: "비활성화" }).click();
+    await expect(page.getByText(label)).toHaveCount(0);
+  });
+
+  test("소유자 변경 폼에서 개인 → 공용 → 팀으로 오간다", async ({ page }) => {
+    const card = await seedOwnedCard("공용");
+    try {
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await loginAsSysadmin(page);
+      await page.goto(`/admin/corp-cards?editId=${card.id}`);
+      const dialog = page.locator(PANEL);
+      await expect(dialog).toBeVisible();
+      await dialog.getByLabel("종류").selectOption("shared");
+      await expect(dialog.getByLabel("소지자")).toHaveCount(0);
+      await expect(dialog.getByLabel("팀")).toHaveCount(0);
+      await dialog.getByRole("button", { name: "소유자 변경" }).click();
+      await expect(dialog).toHaveCount(0);
+      const cells = page.locator("tr", { hasText: card.label }).locator("td");
+      await expect(cells.nth(KIND_CELL)).toHaveText("공용");
+      await expect(cells.nth(OWNER_CELL)).toHaveText("—");
+
+      // 공용 카드의 소유자 변경 폼은 종류 「공용」에서 시작하고 소유 칸이 없다.
+      await page.goto(`/admin/corp-cards?editId=${card.id}`);
+      await expect(dialog.getByLabel("종류")).toHaveValue("shared");
+      await expect(dialog.getByLabel("소지자")).toHaveCount(0);
+      await dialog.getByLabel("종류").selectOption("team");
+      await dialog.getByLabel("팀").selectOption({ label: "기획본부 · 기획1팀" });
+      await dialog.getByRole("button", { name: "소유자 변경" }).click();
+      await expect(dialog).toHaveCount(0);
+      await expect(cells.nth(KIND_CELL)).toHaveText("팀");
+      await expect(cells.nth(OWNER_CELL)).toHaveText("기획1팀");
+    } finally {
+      await card.cleanup();
+    }
+  });
+
+  // 06-30 검토 P3-4 — 공용 → 개인 전환 뒤 소지자 칸은 빈 값이고, 그대로 제출하면 이유와 함께 막힌다(저장 안 됨).
+  test("공용 카드를 개인으로 바꾸고 소지자를 비운 채 제출하면 이유와 함께 막히고 종류는 공용 그대로다", async ({ page }) => {
+    const stamp = randomUUID().slice(0, 8);
+    const card = await insertCorpCard(SYSTEM_VIEWER, {
+      issuer: `전환막힘카드사-${stamp}`,
+      numberLast4: String(Math.floor(1000 + Math.random() * 9000)),
+      label: `전환막힘-${stamp}`,
+      kind: "shared",
+    });
+    try {
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await loginAsSysadmin(page);
+      await page.goto(`/admin/corp-cards?editId=${card.id}`);
+      const dialog = page.locator(PANEL);
+      await expect(dialog.getByLabel("종류")).toHaveValue("shared");
+      await dialog.getByLabel("종류").selectOption("personal");
+      await expect(dialog.getByLabel("소지자")).toHaveValue("");
+      const submit = dialog.getByRole("button", { name: "소유자 변경" });
+      await submit.click();
+      await expect(dialog).toBeVisible();
+      await expect(dialog.locator("#owner-holderUserId")).toHaveAttribute("aria-invalid", "true");
+      await expect(dialog.locator("#corp-card-owner-form-reason")).toHaveText("소지자·팀 중 하나 필요 · 하나만 선택");
+      await expect(submit).toHaveAccessibleDescription(/소지자·팀/);
+      const cells = page.locator("tr", { hasText: card.label }).locator("td");
+      await expect(cells.nth(KIND_CELL)).toHaveText("공용");
+    } finally {
+      await setCorpCardActive(SYSTEM_VIEWER, card.id, false);
     }
   });
 });

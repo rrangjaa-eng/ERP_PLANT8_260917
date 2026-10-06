@@ -1216,7 +1216,9 @@ const BLOCKED_APPROVED_LIMIT = 200;
 
 export async function listMyBlockedDocuments(viewer: Viewer, deps?: ApprovalDeps): Promise<BlockedDocument[]> {
   const visible = createVisibleMemo(deps?.findVisibility);
-  const rejected = await listDrafterInstances(viewer, { drafterId: viewer.id, status: "rejected", limit: BLOCKED_REJECTED_LIMIT });
+  // 06-28: 종류가 끝낸 문서(지출결의 종결)는 반려 줄이 아니다 — 종류가 준 조건으로 LIMIT 전에 SQL에서 뺀다(/review I1).
+  const kindFilters = listDocumentKinds().flatMap((def) => (def.rejectedCandidates ? [{ documentKind: def.kind, filter: def.rejectedCandidates }] : []));
+  const rejected = await listDrafterInstances(viewer, { drafterId: viewer.id, status: "rejected", limit: BLOCKED_REJECTED_LIMIT, kindFilters });
   const candidateKinds = listDocumentKinds().flatMap((def) =>
     def.blockedAfterApproval ? [{ documentKind: def.kind, filter: def.blockedAfterApprovalCandidates ?? null }] : [],
   );

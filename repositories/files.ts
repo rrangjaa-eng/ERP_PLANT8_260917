@@ -172,10 +172,11 @@ export async function findUnresolvedVoidOwnerIds(
 }
 
 // 05-10: 결재 시트 상세용 — 여러 주인의 살아 있는 파일(삭제 · 무효 아님)을 한 번에, 올린 순.
-export async function listAliveByOwners(viewer: Viewer, input: { ownerKind: string; ownerIds: readonly string[] }): Promise<FileRow[]> {
+// 06-06: 선택 tx(기본 db) — 증빙 확인 트랜잭션이 잠금 뒤 같은 tx로 증빙 지문을 다시 만든다. 05 호출부는 그대로.
+export async function listAliveByOwners(viewer: Viewer, input: { ownerKind: string; ownerIds: readonly string[] }, tx: DbOrTx = db): Promise<FileRow[]> {
   void viewer;
   if (input.ownerIds.length === 0) return [];
-  return db
+  return tx
     .select()
     .from(files)
     .where(and(eq(files.ownerKind, input.ownerKind), inArray(files.ownerId, [...input.ownerIds]), alive()))

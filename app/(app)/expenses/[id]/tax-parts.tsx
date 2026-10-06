@@ -9,6 +9,8 @@ import styles from "./expense.module.css";
 export type TaxPart = { text: string; emphasis: boolean };
 
 const SEPARATOR = " · ";
+// 세율 바뀜 `{전} → {후}` — 화살표 앞뒤는 세율 바뀜 줄(.drift)에서만 꺾일 수 있다(320 값 칸보다 넓은 묶음 — 06-06 DOM 감사 O-2).
+const ARROW = " → ";
 
 function segmentsOf(parts: readonly TaxPart[]): TaxPart[][] {
   const segments: TaxPart[][] = [[]];
@@ -31,7 +33,9 @@ export function TaxParts({ parts }: { parts: readonly TaxPart[] }) {
               <Num value={part.text} />
             </span>
           ) : (
-            <span key={partIndex}>{part.text}</span>
+            <span key={partIndex} className={part.text === ARROW ? styles.arrow : undefined}>
+              {part.text}
+            </span>
           ),
         )}
       </span>

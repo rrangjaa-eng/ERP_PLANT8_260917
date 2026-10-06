@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
+import { waitForCardUsageSection } from "./fixtures";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { insertVendor } from "@/repositories/vendors";
 import { listPermissions, listVisibility, upsertPermission, upsertVisibility } from "@/repositories/permissions";
@@ -478,6 +479,7 @@ async function openProjectWithSavedLines(
   await expect(page).toHaveURL(/\/account$/);
   await page.goto(`/projects/${project.id}`);
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
+  await waitForCardUsageSection(page);
   return { projectId: project.id, revisionId: revision.id, email, password: tempPassword };
 }
 

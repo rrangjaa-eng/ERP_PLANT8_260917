@@ -426,4 +426,146 @@ describe("커스텀 칸 축 — 계급에게서 끈 거래처 칸의 값이 그 
 import "@/domain/expenses";
 import "@/domain/evidence";
 import "@/app/(app)/expenses/actions.registry";
+import { PAYMENT_VIEW_DTO_SPEC, type PaymentViewDto } from "@/domain/payments";
+import { project } from "@/domain/permissions/project";
+import "@/app/(app)/expenses/[id]/actions.registry";
 import "@/domain/settlements";
+
+// 06-03 — 지급 섹션 DTO(getPaymentView): 금액 칸(지급 총액 · 이체액 · 차이 · 공급가 역산)은 05 정보 항목 expense.amount를 못 보는
+// 계급의 직렬화에 키째 없다(RS-19 — 새 정보 항목 없음). 계좌 노출(O-17)은 06-20이 더한다.
+describe("지급 섹션 DTO 축 — 금액 칸은 expense.amount를 보는 계급에만 (06-03)", () => {
+  it("시드 계급마다 금액 칸 키의 유무가 expense.amount 노출과 같고, 노출표 행이 없는 계급에는 금액 칸이 없다", async () => {
+    const amountKeys = ["payableKrw", "transferKrw", "diffKrw", "grossSupplyKrw"];
+    for (const key of amountKeys) expect(PAYMENT_VIEW_DTO_SPEC.fields.find((field) => field.key === key)?.infoItem, key).toBe("expense.amount");
+    const source: PaymentViewDto = {
+      expenseId: "00000000-0000-4000-8000-000000000603",
+      version: 2,
+      row: { row: "P6", primary: null, ownerNote: null },
+      payDate: "2026-09-22",
+      paidTime: "14:02",
+      payableKrw: 1_100_000,
+      transferKrw: 1_100_000,
+      diffKrw: 0,
+      grossSupplyKrw: 1_000_000,
+    };
+    // 시드는 지금 모든 계급에 expense.amount를 켠다 — 음성 쪽은 노출표 행이 없는 계급(관리자가 새로 만든 계급의 기본 숨김)으로 단언한다.
+    const hiddenProbe = "leak-scan-no-visibility-rows";
+    const hidden: string[] = [];
+    for (const roleId of [...SEED_ROLES.map((role) => role.id), hiddenProbe]) {
+      const viewer: Viewer = { id: "leak-scan-probe", roleId };
+      const amountVisible = await visible(viewer, "expense.amount");
+      const dto = await project(viewer, source, PAYMENT_VIEW_DTO_SPEC);
+      for (const key of amountKeys) expect(key in dto, `${roleId}·${key}`).toBe(amountVisible);
+      if (!amountVisible) hidden.push(roleId);
+    }
+    expect(hidden).toContain(hiddenProbe);
+  });
+
+  // 06-06 검토 I-1 — 06-06이 더한 증빙 금액 칸(값 · 표시 묶음 · 고침 전후 · 서버 계산 줄 · Q-F 줄)과 금액을 싣는 증빙 지문도 금액 칸이다.
+  // 지문은 문자열 안에 금액을 담으므로 키 유무만이 아니라 직렬화한 JSON에서 금액 probe 값을 찾는다 — 문서 칸은 보고 금액은 못 보는 계급으로.
+  it("06-06 증빙 금액 칸 · 증빙 지문은 expense.amount를 못 보는 계급의 직렬화에 키도 금액 글자도 없다", async () => {
+    const amountKeys = ["evidenceAmountKrw", "evidenceAmountDisplay", "reviewAmounts", "evidenceTaxLine", "evidenceOverrun", "evidenceStamp"];
+    for (const key of amountKeys) expect(PAYMENT_VIEW_DTO_SPEC.fields.find((field) => field.key === key)?.infoItem, key).toBe("expense.amount");
+    const probe = 12_345_678;
+    const source: PaymentViewDto = {
+      expenseId: "00000000-0000-4000-8000-000000000606",
+      version: 3,
+      row: { row: "P2", primary: "confirm", ownerNote: null },
+      payDate: "2026-10-06",
+      paidTime: null,
+      payableKrw: probe,
+      transferKrw: probe,
+      diffKrw: 0,
+      grossSupplyKrw: probe,
+      evidenceStatus: "확인 전",
+      evidenceRequired: true,
+      evidenceAmountKrw: probe,
+      evidenceAmountDisplay: { valueKrw: probe, enteredByName: "기안자", enteredAt: "10-06 09:00" },
+      reviewAmounts: { beforeKrw: probe, afterKrw: probe },
+      evidenceStamp: `00000000-0000-4000-8000-0000000006f1|${probe}|2026-10-01`,
+      evidenceTaxLine: [{ text: String(probe), emphasis: true }],
+      evidenceOverrun: `승인액보다 +${probe}`,
+    };
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `금액숨김-${randomUUID().slice(0, 8)}`, workScope: "company" });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "expense.value", visible: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "expense.amount", visible: false });
+    const viewer: Viewer = { id: "leak-scan-probe", roleId: role.id };
+    const dto = await project(viewer, source, PAYMENT_VIEW_DTO_SPEC);
+    expect("expenseId" in dto).toBe(true);
+    for (const key of amountKeys) expect(key in dto, key).toBe(false);
+    expect(JSON.stringify(dto)).not.toContain(String(probe));
+  });
+});
+
+// 06-05 — 카드 사용 목록 · 폼 선택지 DTO와 카드 사용 액션(06-27 정보 항목 card_usage.value · card_usage.amount).
+import "@/domain/corp-card-usages";
+import "@/app/(app)/cards/actions.registry";
+import { randomUUID } from "node:crypto";
+import { createCorpCard } from "@/domain/corp-cards";
+import { createOrgUnit, createTeam } from "@/domain/org";
+import { createCardUsage, listCardUsages, precheckCardUsage } from "@/domain/corp-card-usages";
+import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
+import { insertRole } from "@/repositories/roles";
+import { seoulToday } from "@/lib/dates";
+import { makePerson } from "./approvals-fixtures";
+
+describe("카드 사용 목록 범위 축 — 직원은 남의 카드 사용 · 남이 등록한 공용 카드 사용을 받지 않는다 (06-05 · T-06-23)", () => {
+  async function team(): Promise<string> {
+    const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `누수카드본부-${randomUUID()}` });
+    const name = `누수카드팀-${randomUUID()}`;
+    await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name });
+    return name;
+  }
+
+  async function card(input: { kind: "personal" | "shared"; holderUserId?: string }): Promise<string> {
+    const created = await createCorpCard(SYSTEM_VIEWER, {
+      issuer: `누수-${randomUUID().slice(0, 8)}`,
+      numberLast4: "1111",
+      label: `누수 ${input.kind} 카드`,
+      ...input,
+    });
+    if (!created.id) throw new Error("카드 id 없음");
+    return created.id;
+  }
+
+  async function use(viewer: Viewer, corpCardId: string): Promise<string> {
+    const input = {
+      corpCardId,
+      usedOn: seoulToday(),
+      merchantVendorId: null,
+      total: { currency: "KRW" as const, amount: 33_000, fxRate: 1 },
+      evidenceTypeCode: "card_receipt",
+      linkKind: "team_cost" as const,
+      memo: null,
+    };
+    return (await createCardUsage(viewer, input, await precheckCardUsage(viewer, input))).id;
+  }
+
+  // 대리 등록 권한자(cards.proxy write) — 업무 범위는 팀. 범위가 권한에서 넓어지는지 본다(전사 범위로 넓히지 않는다).
+  async function proxyRegistrant(teamName: string): Promise<Viewer> {
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `누수대리-${randomUUID().slice(0, 8)}`, workScope: "team" });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "cards.proxy", action: "write", allowed: true });
+    for (const infoItem of ["team.value", "card_usage.value", "card_usage.amount"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+    return makePerson("누수경영관리", role.id, teamName);
+  }
+
+  it("직원 결과에는 자기 것만, 대리 등록 권한자 · 대표 결과에는 셋 다", async () => {
+    const today = seoulToday();
+    const month = today.slice(0, 7);
+    const staff = await makePerson("누수직원", DEFAULT_ROLE_ID, await team());
+    const other = await makePerson("누수남", DEFAULT_ROLE_ID, await team());
+    const proxy = await proxyRegistrant(await team());
+    const ceo = await makePerson("누수대표", "role-ceo", await team());
+
+    const own = await use(staff, await card({ kind: "personal", holderUserId: staff.id }));
+    const others = await use(other, await card({ kind: "personal", holderUserId: other.id }));
+    const shared = await use(proxy, await card({ kind: "shared" }));
+
+    const idsOf = async (viewer: Viewer) => (await listCardUsages(viewer, { month }, today)).rows.map((row) => row.id);
+    const staffIds = await idsOf(staff);
+    expect(staffIds).toContain(own);
+    expect(staffIds).not.toContain(others);
+    expect(staffIds).not.toContain(shared);
+    for (const viewer of [proxy, ceo]) expect(await idsOf(viewer)).toEqual(expect.arrayContaining([own, others, shared]));
+  });
+});

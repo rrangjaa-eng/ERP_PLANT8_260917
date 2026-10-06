@@ -13,7 +13,7 @@ import { EVIDENCE_MAX_SIZE_MB } from "@/domain/settings/keys";
 import { loadActionLogGate, recordActionInTx } from "@/domain/approvals/tx-log";
 import { validateRejectReason } from "@/domain/approvals";
 import { buildEvidenceVoidedMessage } from "@/domain/approvals/conflict-message";
-import { canSeeExpense, EXPENSE_DOCUMENT_KIND, ExpenseConflictError, ExpenseNotFoundError } from "@/domain/expenses";
+import { canSeeExpense, EXPENSE_ALREADY_CLOSED, EXPENSE_DOCUMENT_KIND, ExpenseCloseRefusedError, ExpenseConflictError, ExpenseNotFoundError } from "@/domain/expenses";
 import { EVIDENCE_FILE_DTO_SPEC, type EvidenceFileDto } from "@/domain/evidence/dto";
 import { checkEvidenceUpload, EVIDENCE_UPLOAD_FAILED, type EvidenceDuplicate } from "@/domain/evidence/upload-checks";
 import { bumpInstanceVersion } from "@/repositories/approvals";
@@ -80,6 +80,8 @@ type OwnerState = {
   status: string | null;
   updatedAt: Date;
   instance: { id: string; version: number } | null;
+  // 06-28: 종결 문서 — 증빙은 읽기만(기안자도 더하거나 떼지 못한다).
+  closed: boolean;
 };
 
 type OwnerRule = {
@@ -111,11 +113,12 @@ async function expenseState(viewer: Viewer, ownerId: string, tx?: DbOrTx): Promi
     status: instance?.status ?? null,
     updatedAt: row.updatedAt,
     instance: instance ? { id: instance.id, version: instance.version } : null,
+    closed: row.closedAt !== null,
   };
 }
 
 const expenseDrafterRemoves = (owner: OwnerState) =>
-  (owner.number === null && owner.status === null) || (owner.status !== null && EXPENSE_RETURNED_STATUSES.has(owner.status));
+  !owner.closed && ((owner.number === null && owner.status === null) || (owner.status !== null && EXPENSE_RETURNED_STATUSES.has(owner.status)));
 
 const OWNER_RULES: Record<string, OwnerRule> = {
   expense: {
@@ -206,6 +209,7 @@ export async function requestEvidenceUpload(viewer: Viewer, raw: EvidenceUploadR
   if (owner.drafterId !== viewer.id && !adder.attacher) throw rule.notFound();
   if (!adder.drafter && !adder.attacher) throw new ForbiddenError("지출결의 작성 권한 없음");
   if (!addOpen(rule, owner, adder)) {
+    if (owner.closed) throw new ExpenseCloseRefusedError(EXPENSE_ALREADY_CLOSED);
     throw new EvidenceLockedError(rule.inReview(owner) ? EVIDENCE_LOCKED_IN_REVIEW : EVIDENCE_ADD_DRAFTER_ONLY);
   }
 
@@ -217,8 +221,8 @@ export async function requestEvidenceUpload(viewer: Viewer, raw: EvidenceUploadR
       continue;
     }
     const other = await rule.load(viewer, file.ownerId);
-    // 주인이 없으면(지운 작성 중 문서) 중복이 아니다.
-    if (!other) continue;
+    // 주인이 없으면(지운 작성 중 문서) 중복이 아니다. 종결 문서의 파일도 아니다 — 같은 비용을 새 지출결의로 다시 올린다(06-28 B1).
+    if (!other || other.closed) continue;
     const visible = other.number !== null && (await rule.canSee(viewer, other));
     duplicates.push({ sameOwner: false, visibleNumber: visible ? other.number : null });
   }
@@ -380,6 +384,7 @@ export async function removeEvidence(viewer: Viewer, input: { fileId: string }, 
   if (!(await can(viewer, "expenses", "write"))) throw new ForbiddenError("지출결의 작성 권한 없음");
   if (file.removedAt !== null) return;
   if (!rule.drafterRemoves(owner)) {
+    if (owner.closed) throw new ExpenseCloseRefusedError(EXPENSE_ALREADY_CLOSED);
     if (rule.inReview(owner)) throw new EvidenceLockedError(EVIDENCE_LOCKED_IN_REVIEW);
     if (rule.approved(owner)) throw new EvidenceLockedError(EVIDENCE_REMOVE_LOCKED_APPROVED);
     throw new ExpenseConflictError(owner.updatedAt);
@@ -457,7 +462,8 @@ export async function getEvidenceActions(viewer: Viewer, input: { ownerKind: str
 
 // 05-09(사용자 결정 2026-09-26 PR #89): 승인된 문서의 잘못 붙은 증빙 — 행 · 저장소 객체는 그대로 두고 무효 세 칸만 쓴다. 사유는 04.1 반려
 // 사유 검증 그대로, 로그에는 사유 길이만. 승인 뒤라 결재 판정이 없어 인스턴스 version은 올리지 않는다. 되돌리는 길은 없다(G3 — 같은
-// 파일을 다시 올린다). 잠금: 파일 행(조건 UPDATE) 하나.
+// 파일을 다시 올린다). 잠금: 소유 문서 행(rule.lock — 지출결의는 lockExpenseForUpdate) → 파일 행(조건 UPDATE). 06-06 증빙 확인과 같은 순서라
+// 확인 tx가 읽은 파일 묶음을 무효가 그 사이에 줄이지 못한다(06-06 검토 S-7).
 export async function voidEvidence(viewer: Viewer, input: { fileId: string; reason: string }, deps?: EvidenceDeps): Promise<void> {
   const file = UUID_SHAPE.test(input.fileId) ? await findFileById(viewer, input.fileId) : null;
   const rule = file ? ruleFor(file.ownerKind) : null;
@@ -469,6 +475,7 @@ export async function voidEvidence(viewer: Viewer, input: { fileId: string; reas
   const gate = await loadActionLogGate();
 
   const already = await withTransaction(async (tx) => {
+    if (!(await rule.lock(viewer, file.ownerId, tx))) throw rule.notFound();
     const voided = await markVoided(viewer, { id: file.id, voidedBy: viewer.id, reason, at: deps?.now }, tx);
     if (!voided) return findFileById(viewer, file.id, tx);
     await recordActionInTx(

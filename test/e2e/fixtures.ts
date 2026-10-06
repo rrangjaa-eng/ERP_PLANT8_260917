@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { expect, type Page } from "@playwright/test";
 import { and, isNull, like, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { fieldDefinitions } from "@/db/schema";
@@ -131,4 +132,12 @@ export async function archiveE2EFieldDefinitionOption(id: string, option: string
 // 거래처 보관(기존 domain archive).
 export async function archiveE2EVendor(vendorId: string): Promise<void> {
   await archive(SYSTEM_VIEWER, "vendor", vendorId);
+}
+
+// 프로젝트 상세 「법인카드 사용」 섹션(06-07 S15)은 화면이 뜬 뒤 서버 액션으로 따로 불러온다. 서버 액션 요청을 세거나 · 붙잡거나 ·
+// 끊는 스펙과 표 끝 줄(tfoot)을 읽는 스펙은 이 요청이 끝난 뒤(뼈대 aria-busy가 걷힌 뒤)에 시작한다 — 아니면 섹션 요청이 섞인다.
+export async function waitForCardUsageSection(page: Page): Promise<void> {
+  const section = page.locator("section").filter({ has: page.getByRole("heading", { name: "법인카드 사용", exact: true }) });
+  await expect(section).toBeVisible();
+  await expect(section.locator('[aria-busy="true"]')).toHaveCount(0);
 }

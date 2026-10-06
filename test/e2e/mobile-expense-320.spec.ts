@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Browser, type Locator, type Page } from "@playwright/test";
-import { createTeamExpenseDraft } from "@/domain/expenses";
+import { eq } from "drizzle-orm";
+import { db } from "@/db/client";
+import { expenses } from "@/db/schema";
+import { approveDocument, getApprovalView } from "@/domain/approvals";
+import { createTeamExpenseDraft, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { createCodeItem, setCodeItemActive, setEvidenceTypeTaxRule } from "@/domain/code-tables";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { loginPage, waitForHydration, type Person } from "./leave-org";
@@ -129,6 +133,34 @@ test.describe("지출결의 폭 375 · 320 (05-13)", () => {
       expect(tail?.display, `꼬리는 한 덩어리(inline-block) ${viewport.width}`).toBe("inline-block");
       expect(tail?.lines, `꼬리 「${tail?.text}」 한 줄 ${viewport.width}`).toBe(1);
       await expectNoOverflow(page, `계산 줄 꼬리 ${viewport.width}`);
+      await page.context().close();
+    }
+  });
+
+  // 06-06 DOM 감사 O-2 — 결재 통과 문서의 05 「세율 바뀜」 줄(`부가세 10% 1,240,000 → 1,200,000` 묶음)이 320 값 칸보다 넓어 문서가 12px 넘쳤다.
+  // 화살표 앞뒤에서는 꺾일 수 있어 넘침 0. 세율 바뀜은 이 문서 행의 승인 공급가만 바꿔 만든다(전역 세율 · 설정은 그대로).
+  test("결재 통과 문서 — 세율 바뀜 줄이 있어도 넘침 0", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const expenseId = await submitLineExpense(browser, baseURL, fx, "tracer");
+    const view = await getApprovalView(fx.lead.viewer, { kind: EXPENSE_DOCUMENT_KIND, documentId: expenseId });
+    if (!view) throw new Error("결재 인스턴스 없음");
+    let version = view.version;
+    for (const approver of [fx.lead, fx.divisionHead, fx.mgmt, fx.ceo]) version = (await approveDocument(approver.viewer, { instanceId: view.instanceId, expectedVersion: version })).version;
+    const [row] = await db.select({ supplyAmountKrw: expenses.supplyAmountKrw }).from(expenses).where(eq(expenses.id, expenseId));
+    if (row?.supplyAmountKrw == null) throw new Error("공급가액 없음");
+    await db.update(expenses).set({ supplyAmountKrw: row.supplyAmountKrw - 400_000 }).where(eq(expenses.id, expenseId));
+
+    for (const viewport of WIDTHS) {
+      const page = await phone(browser, baseURL, fx.pm, viewport);
+      await page.goto(`/expenses/${expenseId}`);
+      const drift = page.getByTestId("expense-tax-drift");
+      await expect(drift).toBeVisible();
+      await expect(drift).toContainText(" → ");
+      // 웹 글꼴이 붙기 전 대체 글꼴은 폭이 좁아 넘침이 가려진다 — 글꼴이 다 붙은 뒤 잰다.
+      await page.evaluate(async () => {
+        await document.fonts.ready;
+      });
+      await expectNoOverflow(page, `결재 통과 문서 ${viewport.width}`);
       await page.context().close();
     }
   });

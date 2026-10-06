@@ -66,6 +66,7 @@ test.describe("수작업 표 주 행 높이 ≥ --row-h (04.4 후속 항목 6)",
       issuer: `행높이카드사-${randomUUID().slice(0, 8)}`,
       numberLast4: String(1000 + Math.floor(Math.random() * 9000)),
       label: `행높이카드-${randomUUID().slice(0, 8)}`,
+      kind: "personal",
       holderUserId: personId,
     });
     await createCodeItem(SYSTEM_VIEWER, {

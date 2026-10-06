@@ -19,6 +19,9 @@ registerAction({ name: "submitExpenseAction", menu: "expenses", action: "write",
 // 05-09 회수(토스트 되돌리기 · 문서 화면 회수) — 결재 상태 낱말만 돌려준다(DTO 없음).
 registerAction({ name: "withdrawExpenseAction", menu: "expenses", action: "write", dtoName: null });
 
+// 06-28 종결 — 새 version만 돌려준다(DTO 없음). 판정(기안자 · 지급 권한자 · 보임)은 domain.
+registerAction({ name: "closeExpenseAction", menu: "expenses", action: "write", dtoName: null });
+
 // 서명 PUT 주소 · 헤더 · 의도 id만 돌려준다(DTO 없음).
 registerAction({ name: "requestEvidenceUploadAction", menu: "expenses", action: "write", dtoName: null });
 

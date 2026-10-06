@@ -4,7 +4,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import { actionLog, expensePayments, expenses, files } from "@/db/schema";
 import { approveDocument, getApprovalView } from "@/domain/approvals";
-import { completeExpensePayment, previewPayable } from "@/domain/payments";
+import { cancelExpensePayment, completeExpensePayment, previewPayable } from "@/domain/payments";
 import { createTeamExpenseDraft, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { voidEvidence } from "@/domain/evidence";
 import { createAccount } from "@/domain/auth/accounts";
@@ -418,6 +418,12 @@ async function paidOnServer(payer: Person, expenseId: string, payDate: string): 
   await completeExpensePayment(payer.viewer, { expenseId, payDate, expectedPayableKrw: preview.payableKrw, version: row.version });
 }
 
+async function versionOf(expenseId: string): Promise<number> {
+  const [row] = await db.select({ version: expenses.version }).from(expenses).where(eq(expenses.id, expenseId));
+  if (!row) throw new Error("지출결의 없음");
+  return row.version;
+}
+
 test.describe("06-04 검토 · DOM 감사 수정", () => {
   // 검토 P2-1 — 지급된 상태로 연 문서에서 취소하면 패널 칸이 옛 지급 기록 값(지급일)으로 남았다.
   test("지급된 상태로 연 문서 — 지급 취소 뒤 지급일 기본값은 오늘 · 이체액은 지급 총액이고, 그대로 지급하면 오늘로 저장된다", async ({ browser, baseURL }) => {
@@ -453,6 +459,44 @@ test.describe("06-04 검토 · DOM 감사 수정", () => {
       .from(expensePayments)
       .where(and(eq(expensePayments.expenseId, expenseId), isNull(expensePayments.cancelledAt)));
     expect(record?.payDate).toBe(today);
+    await page.context().close();
+  });
+
+  // 검토 P3-3 — 취소 모달이 동시성 거부를 받으면 문서를 다시 읽어, 사유를 고쳐 다시 누르면 새 version으로 취소된다.
+  test("취소 모달 동시성 거부 뒤 문서를 다시 읽는다 — 새로 고침 없이 다시 누르면 취소된다", async ({ browser, baseURL }) => {
+    test.setTimeout(60_000);
+    const fx = await setupExpenseE2E();
+    const expenseId = await approvedWithoutEvidence(browser, baseURL, fx, "tracer");
+    const payer = await makePaymentManagerE2E();
+    const today = seoulToday();
+    await paidOnServer(payer, expenseId, today);
+
+    const page = await loginPage(browser, baseURL, payer);
+    await page.goto(`/expenses/${expenseId}`);
+    const cancel = page.getByRole("button", { name: "지급 취소", exact: true });
+    await waitForHydration(cancel);
+    // 화면을 연 뒤 다른 사람이 취소하고 다시 지급했다(문서 version이 앞선다 · 여전히 지급된 상태).
+    await cancelExpensePayment(payer.viewer, { expenseId, reason: "다른 사람 취소", version: await versionOf(expenseId) });
+    await paidOnServer(payer, expenseId, today);
+
+    await cancel.click();
+    const dialog = page.getByRole("dialog", { name: "지급 취소" });
+    await dialog.getByLabel("사유").fill("계좌 오입력");
+    await page.keyboard.press("Control+Enter");
+    await expect(dialog.getByText(/^다른 사람이 \d{2}:\d{2}에 바꿈/).first()).toBeVisible();
+    // 다시 읽기(router.refresh)가 끝나는 때는 화면에 드러나지 않는다 — 사람이 사유를 고쳐 다시 누르는 것을 몇 번 되풀이해 기다린다.
+    // 수정 전에는 version이 끝내 낡은 채라 몇 번을 눌러도 같은 거부다.
+    await expect(async () => {
+      await dialog.getByLabel("사유").fill(`계좌 오입력 ${Date.now()}`);
+      await page.keyboard.press("Control+Enter");
+      await expect(dialog).toHaveCount(0, { timeout: 2_000 });
+    }).toPass({ timeout: 15_000 });
+    await expect(page.getByRole("button", { name: /^지급 완료/ })).toBeVisible();
+    const live = await db
+      .select({ id: expensePayments.id })
+      .from(expensePayments)
+      .where(and(eq(expensePayments.expenseId, expenseId), isNull(expensePayments.cancelledAt)));
+    expect(live).toHaveLength(0);
     await page.context().close();
   });
 

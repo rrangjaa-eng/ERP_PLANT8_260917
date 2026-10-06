@@ -281,6 +281,7 @@ function CancelPaymentDialog({
   subtitle: string;
   onCancelled: () => void;
 }) {
+  const router = useRouter();
   const fieldId = useId();
   const [reason, setReason] = useState("");
   const [serverError, setServerError] = useState<string | null>(null);
@@ -319,6 +320,8 @@ function CancelPaymentDialog({
     const message = response?.serverError ?? response?.validationErrors?.reason?._errors?.[0];
     if (message) setServerError(message);
     else setFailure(CANCEL_FAILED);
+    // 서버 거부(동시성 · 이미 취소됨) 뒤 문서를 다시 읽는다 — 다음 시도가 새 version을 보낸다(지급 경로 onError와 같은 꼴, 06-04 검토 P3-3).
+    if (response?.serverError) router.refresh();
   }
 
   return (

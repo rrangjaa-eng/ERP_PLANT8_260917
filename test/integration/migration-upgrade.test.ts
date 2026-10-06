@@ -470,3 +470,83 @@ describe("증빙 종류 세금 규칙 시드 맞춤(0029)", () => {
     expect(await readRules(pool)).toEqual(synced);
   });
 });
+
+// 거래처 사업자번호 유일 색인(0030 · 계획 bizno-unique-plan §5 · T7 · T8) — 숫자만 뽑은 번호가 살아 있는(보관 안 된) 거래처 사이에서
+// 유일하다. 숨김도 세고, 보관 · NULL · 빈 값(숫자 없음)은 빠진다. 이미 살아 있는 중복이 있으면 가드가 번호를 알리며 멈춘다.
+describe("거래처 사업자번호 유일 색인(0030)", () => {
+  type VendorBizRow = { id: string; business_no: string | null; archived: boolean; hidden: boolean };
+  async function readVendors(pool: Pool): Promise<VendorBizRow[]> {
+    const { rows } = await pool.query<VendorBizRow>(
+      `SELECT id::text AS id, business_no, archived_at IS NOT NULL AS archived, hidden FROM vendors ORDER BY id`,
+    );
+    return rows;
+  }
+  async function insertVendor(pool: Pool, id: string, businessNo: string | null, opts: { archived?: boolean; hidden?: boolean } = {}): Promise<void> {
+    await pool.query(
+      `INSERT INTO vendors (id, name, normalized_name, business_no, archived_at, hidden) VALUES ($1::uuid, $1::text, $1::text, $2, $3, $4)`,
+      [id, businessNo, opts.archived ? new Date() : null, opts.hidden ?? false],
+    );
+  }
+  async function indexDefs(pool: Pool): Promise<string[]> {
+    const { rows } = await pool.query<{ indexdef: string }>(
+      `SELECT indexdef FROM pg_indexes WHERE tablename = 'vendors' AND indexname = 'vendors_business_no_live_key'`,
+    );
+    return rows.map((row) => row.indexdef);
+  }
+
+  it("(T7) 살아 있는 두 거래처의 번호가 숫자만 같으면 가드가 번호를 알리며 멈추고 색인 · 행이 그대로다", async () => {
+    const pool = await createScratchDb();
+    const before = countThrough("_evidence_tax_rule_seed_sync");
+    await migrateTo(pool, before);
+    await insertVendor(pool, "00000000-0000-4000-8000-0000000000b1", "214-86-10231");
+    await insertVendor(pool, "00000000-0000-4000-8000-0000000000b2", "2148610231");
+    const vendorsBefore = await readVendors(pool);
+
+    let caught: unknown;
+    try {
+      await migrateTo(pool);
+    } catch (error) {
+      caught = error;
+    }
+    expect(errorText(caught)).toContain("2148610231(2곳)");
+
+    expect(await indexDefs(pool)).toEqual([]);
+    expect(await readVendors(pool)).toEqual(vendorsBefore);
+    const { rows } = await pool.query<{ count: string }>(`SELECT count(*) FROM drizzle.__drizzle_migrations`);
+    expect(Number(rows[0]?.count)).toBe(before);
+  });
+
+  it("(T8) 겹침이 보관 · NULL · 빈 값뿐이면 적용되고, 그 뒤 살아 있는(숨김 포함) 같은 숫자 번호는 23505로 막힌다", async () => {
+    const pool = await createScratchDb();
+    await migrateTo(pool, countThrough("_evidence_tax_rule_seed_sync"));
+    await insertVendor(pool, "00000000-0000-4000-8000-0000000000c1", "214-86-10231");
+    await insertVendor(pool, "00000000-0000-4000-8000-0000000000c2", "2148610231", { archived: true });
+    await insertVendor(pool, "00000000-0000-4000-8000-0000000000c3", null);
+    await insertVendor(pool, "00000000-0000-4000-8000-0000000000c4", null);
+    await insertVendor(pool, "00000000-0000-4000-8000-0000000000c5", "");
+    await insertVendor(pool, "00000000-0000-4000-8000-0000000000c6", "");
+    await insertVendor(pool, "00000000-0000-4000-8000-0000000000c7", "---");
+    const vendorsBefore = await readVendors(pool);
+
+    await migrateTo(pool);
+
+    expect(await readVendors(pool)).toEqual(vendorsBefore);
+    expect(await indexDefs(pool)).toHaveLength(1);
+
+    for (const [id, opts] of [
+      ["00000000-0000-4000-8000-0000000000d1", {}],
+      ["00000000-0000-4000-8000-0000000000d2", { hidden: true }],
+    ] as const) {
+      let caught: unknown;
+      try {
+        await insertVendor(pool, id, "214 86 10231", opts);
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toMatchObject({ code: "23505", constraint: "vendors_business_no_live_key" });
+    }
+    // 보관 · 빈 값은 여전히 여러 개 들어간다.
+    await insertVendor(pool, "00000000-0000-4000-8000-0000000000d3", "214-86-10231", { archived: true });
+    await insertVendor(pool, "00000000-0000-4000-8000-0000000000d4", "");
+  });
+});

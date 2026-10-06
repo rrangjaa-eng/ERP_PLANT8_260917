@@ -27,12 +27,12 @@ import { makeEvidenceManagerE2E, setupExpenseE2E, submitLineExpense, type Expens
 const INFO_ITEMS = ["expense.value", "expense.amount", "approval.value", "project.value", "quote.amount", "vendor.value", "team.value", "person.value"];
 
 // 테스트 계급 「경영관리」 — 전사 업무 범위 · 지출결의 보기 + 지급 처리 쓰기. 결재선 밖 전용 본부 · 팀에 발령한다.
-async function makePaymentManagerE2E(): Promise<Person> {
+async function makePaymentManagerE2E(infoItems: readonly string[] = INFO_ITEMS): Promise<Person> {
   const suffix = randomUUID().slice(0, 8);
   const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E지급-${suffix}`, workScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "view", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.payments", action: "write", allowed: true });
-  for (const infoItem of INFO_ITEMS) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+  for (const infoItem of infoItems) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
   const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E지급본부-${suffix}` });
   const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E지급팀-${suffix}` });
   return makePerson("경영관리", role.id, team.id, `${seoulToday().slice(0, 4)}-01-01`);
@@ -546,5 +546,22 @@ test.describe("06-04 검토 · DOM 감사 수정", () => {
     } finally {
       await cancelHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, rateFrom);
     }
+  });
+
+  // DOM 감사 O1 — 지급 총액(expense.amount)을 못 보는 지급 권한자: 1차가 막히는 것과 같이 쓸 수 없는 이체액 칸을 숨긴다.
+  test("지급 총액 볼 권한 없는 지급 권한자 — `지급 완료` 비활성 + 이유 · 이체액 칸 없음", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const expenseId = await approvedWithoutEvidence(browser, baseURL, fx, "tracer");
+    const payer = await makePaymentManagerE2E(INFO_ITEMS.filter((item) => item !== "expense.amount"));
+
+    const page = await loginPage(browser, baseURL, payer);
+    await page.goto(`/expenses/${expenseId}`);
+    const pay = page.getByRole("button", { name: /^지급 완료/ });
+    await waitForHydration(pay);
+    await expect(pay).toHaveAttribute("aria-disabled", "true");
+    await expect(page.getByText("지급 총액 볼 권한 없음 · 노출 설정은 관리자")).toBeVisible();
+    await expect(page.locator("#payment-transfer")).toHaveCount(0);
+    await expect(paymentSection(page).getByLabel("이체액")).toHaveCount(0);
+    await page.context().close();
   });
 });

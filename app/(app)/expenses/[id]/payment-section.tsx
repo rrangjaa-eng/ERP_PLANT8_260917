@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import type { PaymentViewDto } from "@/domain/payments";
-import { TRANSFER_FRACTION, TRANSFER_NOT_NUMBER, TRANSFER_NOT_POSITIVE } from "@/domain/payments/action-row";
+import { AMOUNT_HIDDEN, TRANSFER_FRACTION, TRANSFER_NOT_NUMBER, TRANSFER_NOT_POSITIVE } from "@/domain/payments/action-row";
 import { Button } from "@/ui/button/Button";
 import { Form } from "@/ui/form/Form";
 import { KvList, type KvItem } from "@/ui/kv-list/KvList";
@@ -390,6 +390,8 @@ export function PaymentFields({
   }
 
   const shownTransferError = fieldErrors.transferKrw ?? fields.transferInputError ?? undefined;
+  // 지급 총액을 못 보는 지급 권한자 — 1차가 막히고(AMOUNT_HIDDEN) 비교할 값도 없어 이체액 칸을 그리지 않는다(할 수 없는 선택지는 숨김 · DOM 감사 O1).
+  const amountHidden = view.row?.blockReason === AMOUNT_HIDDEN;
   const needReason = diffReasonNeeded(fields, preview);
 
   return (
@@ -428,35 +430,37 @@ export function PaymentFields({
             />
             {fieldErrors.payDate ? <Form.Error id="payment-pay-date-error">{fieldErrors.payDate}</Form.Error> : null}
           </Form.Field>
-          <Form.Field id="payment-transfer" label={label} width="short">
-            <TransferInput
-              key={fields.transferTouched ? "touched" : `default-${preview.payableKrw ?? ""}`}
-              id="payment-transfer"
-              initial={fields.transferRaw}
-              error={shownTransferError}
-              onChange={(raw, inputError) => {
-                setFields({ transferRaw: raw, transferInputError: inputError, transferTouched: true });
-                if (fieldErrors.transferKrw) setFieldErrors({ ...fieldErrors, transferKrw: undefined });
-              }}
-            />
-            {shownTransferError ? <Form.Error id="payment-transfer-error">{shownTransferError}</Form.Error> : null}
-            <div id="payment-transfer-hint">
-              {preview.diffKrw !== null && preview.diffKrw !== 0 && needReason ? (
-                <Form.Hint>
-                  <span className={`${styles.taxLine} ${previewing ? styles.stale : ""}`} data-testid="payment-transfer-hint">
-                    <span className={styles.taxSegment}>
-                      지급 총액 <Num value={preview.payableKrw} />
+          {amountHidden ? null : (
+            <Form.Field id="payment-transfer" label={label} width="short">
+              <TransferInput
+                key={fields.transferTouched ? "touched" : `default-${preview.payableKrw ?? ""}`}
+                id="payment-transfer"
+                initial={fields.transferRaw}
+                error={shownTransferError}
+                onChange={(raw, inputError) => {
+                  setFields({ transferRaw: raw, transferInputError: inputError, transferTouched: true });
+                  if (fieldErrors.transferKrw) setFieldErrors({ ...fieldErrors, transferKrw: undefined });
+                }}
+              />
+              {shownTransferError ? <Form.Error id="payment-transfer-error">{shownTransferError}</Form.Error> : null}
+              <div id="payment-transfer-hint">
+                {preview.diffKrw !== null && preview.diffKrw !== 0 && needReason ? (
+                  <Form.Hint>
+                    <span className={`${styles.taxLine} ${previewing ? styles.stale : ""}`} data-testid="payment-transfer-hint">
+                      <span className={styles.taxSegment}>
+                        지급 총액 <Num value={preview.payableKrw} />
+                      </span>
+                      {" · "}
+                      <span className={styles.taxSegment}>
+                        차이 <SignedNum value={preview.diffKrw} />
+                      </span>
                     </span>
-                    {" · "}
-                    <span className={styles.taxSegment}>
-                      차이 <SignedNum value={preview.diffKrw} />
-                    </span>
-                  </span>
-                </Form.Hint>
-              ) : null}
-            </div>
-          </Form.Field>
-          {needReason ? (
+                  </Form.Hint>
+                ) : null}
+              </div>
+            </Form.Field>
+          )}
+          {needReason && !amountHidden ? (
             <Form.Field id="payment-diff-reason" label="차이 사유" width="long">
               <input
                 id="payment-diff-reason"

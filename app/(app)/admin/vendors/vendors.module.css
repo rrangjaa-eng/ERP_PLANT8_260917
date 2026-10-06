@@ -49,6 +49,8 @@
 }
 
 .revealError {
+  text-align: right;
+  white-space: normal; /* 칸의 nowrap(.alignRight)을 물려받지 않는다 — 좁은 폭에서 문구가 칸 폭을 정하지 않게 */
   font-size: var(--text-aux);
   color: var(--status-danger);
   margin-top: var(--s-1);

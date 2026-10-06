@@ -9,6 +9,8 @@ import {
 } from "@/domain/settings/keys";
 import { describeSettingField } from "@/domain/settings/registry";
 import { CODE_TABLES } from "@/domain/code-tables";
+import { isMethodEvidencePairAllowed } from "@/domain/payments/method-evidence-pairs";
+import { resolveLineDoor } from "@/domain/quotes/line-door";
 
 // 06-02 Task 1 — 새 설정 키 넷(셋 + 짝 하나)이 정의 → 등록 → 설정 화면 서술까지 선다.
 describe("Phase 6 설정 키 넷 (06-02)", () => {
@@ -71,5 +73,51 @@ describe("describeSettingField — pair-grid 갈래 (06-02)", () => {
     expect(describeSettingField(EVIDENCE_REQUIRED)).toEqual({ kind: "boolean" });
     expect(describeSettingField(EVIDENCE_PREPAID_DUE_DAYS)).toEqual({ kind: "number", numberKind: undefined });
     expect(describeSettingField(PURCHASE_ONLINE_VENDOR_NAME)).toEqual({ kind: "string" });
+  });
+});
+
+// 06-02 Task 2 — 짝 판정(Q4 · SP-9 빈 행 = 검사 없음).
+describe("isMethodEvidencePairAllowed", () => {
+  const pairs = [{ method: "bank_transfer", evidence: "tax_invoice" }];
+
+  it("짝 목록이 비면 어떤 조합이든 참이다", () => {
+    expect(isMethodEvidencePairAllowed([], { method: "cash", evidenceType: "etc" })).toBe(true);
+  });
+
+  it("그 지급 방식의 짝에 증빙 종류가 있으면 참이다", () => {
+    expect(isMethodEvidencePairAllowed(pairs, { method: "bank_transfer", evidenceType: "tax_invoice" })).toBe(true);
+  });
+
+  it("그 지급 방식의 짝이 있는데 증빙 종류가 목록에 없으면 거짓이다", () => {
+    expect(isMethodEvidencePairAllowed(pairs, { method: "bank_transfer", evidenceType: "card_slip" })).toBe(false);
+  });
+
+  it("그 지급 방식의 짝이 하나도 없으면 참이다(빈 행 = 검사 없음)", () => {
+    expect(isMethodEvidencePairAllowed(pairs, { method: "cash", evidenceType: "card_slip" })).toBe(true);
+  });
+});
+
+// 견적 줄 문 갈래(O-13) — 공백 제거 · NFC 정규화 뒤 정확 비교.
+describe("resolveLineDoor", () => {
+  it("설정이 비었으면 지출결의다", () => {
+    expect(resolveLineDoor({ vendorName: "쿠팡" }, "")).toBe("expense");
+  });
+
+  it("앞뒤 공백을 지운 거래처 이름이 설정과 같으면 구매 요청이다", () => {
+    expect(resolveLineDoor({ vendorName: " 쿠팡 " }, "쿠팡")).toBe("purchase");
+  });
+
+  it("NFD로 적힌 같은 이름도 구매 요청이다", () => {
+    const nfd = "한글상회".normalize("NFD");
+    expect(nfd).not.toBe("한글상회");
+    expect(resolveLineDoor({ vendorName: nfd }, "한글상회")).toBe("purchase");
+  });
+
+  it("다른 이름이면 지출결의다(부분 일치 없음)", () => {
+    expect(resolveLineDoor({ vendorName: "쿠팡페이" }, "쿠팡")).toBe("expense");
+  });
+
+  it("거래처가 없으면 지출결의다", () => {
+    expect(resolveLineDoor({ vendorName: null }, "쿠팡")).toBe("expense");
   });
 });

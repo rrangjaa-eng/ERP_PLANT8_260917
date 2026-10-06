@@ -206,6 +206,32 @@ test.describe("06-02 설정 키 · 짝 격자", () => {
     }
   });
 
+  // PR #171 디자인 검토 F-1 — 「(보관됨)」 칸은 해제만 된다: 빈 칸은 비활성이고 행 머리 「전체」는 활성 열만 켠다(DB에 새 보관 짝이 없다).
+  test("짝 격자 — 보관 열의 빈 칸은 비활성이고 행 머리 「전체」는 보관 짝을 만들지 않는다", async ({ page }) => {
+    const taxInvoice = and(eq(codeItems.tableKey, "evidence_type"), eq(codeItems.value, "tax_invoice"));
+    await db.insert(settingsSimple).values({ key: PAYMENT_METHOD_EVIDENCE_PAIRS.key, value: [{ method: "bank_transfer", evidence: "tax_invoice" }] });
+    await db.update(codeItems).set({ active: false }).where(taxInvoice);
+    try {
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await loginAndOpenSettings(page);
+      const emptyArchived = cell(page, "현금", "세금계산서 (보관됨)");
+      await expect(emptyArchived).toBeDisabled();
+      await expect(cell(page, "계좌이체", "세금계산서 (보관됨)")).toBeEnabled();
+
+      await page.getByRole("checkbox", { name: "현금 전체", exact: true }).click();
+      await expect(emptyArchived).not.toBeChecked();
+      await expect(emptyArchived).toBeDisabled();
+      await expect(async () => {
+        const row = await db.query.settingsSimple.findFirst({ where: eq(settingsSimple.key, PAYMENT_METHOD_EVIDENCE_PAIRS.key) });
+        const pairs = row?.value as { method: string; evidence: string }[];
+        expect(pairs.filter((pair) => pair.method === "cash").length).toBeGreaterThan(0);
+        expect(pairs.filter((pair) => pair.evidence === "tax_invoice")).toEqual([{ method: "bank_transfer", evidence: "tax_invoice" }]);
+      }).toPass();
+    } finally {
+      await db.update(codeItems).set({ active: true }).where(taxInvoice);
+    }
+  });
+
   // 06-02 DOM 감사 D-1 — 짝 격자 힌트는 격자와 같은 x에서 시작한다(multi-enum fieldset 선례). TextField 칸 힌트는 입력 x 그대로.
   test("짝 격자 힌트는 격자와 같은 x · 텍스트 칸 힌트는 입력과 같은 x다(PC)", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });

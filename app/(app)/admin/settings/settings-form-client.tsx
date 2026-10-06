@@ -44,8 +44,8 @@ export type SettingsFieldViewModel = {
   options?: { value: string; label: string }[];
   // 06-02(SP-9): 짝 격자 칸의 행 · 열 — 두 코드표의 활성 값 + 저장된 짝의 보관 값 「(보관됨)」(서버가 미리 읽는다).
   pairGrid?: {
-    rows: { value: string; label: string }[];
-    cols: { value: string; label: string }[];
+    rows: { value: string; label: string; archived?: true }[];
+    cols: { value: string; label: string; archived?: true }[];
     rowField: string;
     colField: string;
   };
@@ -280,8 +280,8 @@ function PairGridEditor({
   const { rowField, colField } = pairGrid;
   // 저장마다 서버가 화면을 다시 그려도 격자가 다시 계산되지 않게 처음 값을 잡아 둔다(상태가 이 칸의 정본).
   const [grid] = useState(() => ({
-    rows: pairGrid.cols.map((col) => ({ id: col.value, label: col.label })),
-    columns: pairGrid.rows.map((row) => ({ id: row.value, label: row.label })),
+    rows: pairGrid.cols.map((col) => ({ id: col.value, label: col.label, locked: col.archived })),
+    columns: pairGrid.rows.map((row) => ({ id: row.value, label: row.label, locked: row.archived })),
   }));
   const [pairs, setPairs] = useState<Pair[]>(() => pairsOf(initialValue));
   const latest = useRef(pairs);

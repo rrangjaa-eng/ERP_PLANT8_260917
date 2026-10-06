@@ -21,7 +21,7 @@ describe("pairGridAxis", () => {
     expect(pairGridAxis(items, ["tax_invoice", "invoice", "tax_invoice"])).toEqual([
       { value: "invoice", label: "계산서" },
       { value: "card_slip", label: "카드 전표" },
-      { value: "tax_invoice", label: "세금계산서 (보관됨)" },
+      { value: "tax_invoice", label: "세금계산서 (보관됨)", archived: true },
     ]);
   });
 
@@ -29,7 +29,7 @@ describe("pairGridAxis", () => {
     expect(pairGridAxis(items, ["gone"])).toEqual([
       { value: "invoice", label: "계산서" },
       { value: "card_slip", label: "카드 전표" },
-      { value: "gone", label: "gone (보관됨)" },
+      { value: "gone", label: "gone (보관됨)", archived: true },
     ]);
   });
 });

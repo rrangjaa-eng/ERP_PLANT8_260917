@@ -3,12 +3,12 @@
 export function pairGridAxis(
   items: readonly { value: string; label: string; active: boolean }[],
   storedValues: readonly string[],
-): { value: string; label: string }[] {
-  const axis = items.filter((item) => item.active).map((item) => ({ value: item.value, label: item.label }));
+): { value: string; label: string; archived?: true }[] {
+  const axis: { value: string; label: string; archived?: true }[] = items.filter((item) => item.active).map((item) => ({ value: item.value, label: item.label }));
   for (const value of new Set(storedValues)) {
     if (axis.some((option) => option.value === value)) continue;
     const label = items.find((item) => item.value === value)?.label ?? value;
-    axis.push({ value, label: `${label} (보관됨)` });
+    axis.push({ value, label: `${label} (보관됨)`, archived: true });
   }
   return axis;
 }

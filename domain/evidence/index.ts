@@ -221,8 +221,8 @@ export async function requestEvidenceUpload(viewer: Viewer, raw: EvidenceUploadR
       continue;
     }
     const other = await rule.load(viewer, file.ownerId);
-    // 주인이 없으면(지운 작성 중 문서) 중복이 아니다.
-    if (!other) continue;
+    // 주인이 없으면(지운 작성 중 문서) 중복이 아니다. 종결 문서의 파일도 아니다 — 같은 비용을 새 지출결의로 다시 올린다(06-28 B1).
+    if (!other || other.closed) continue;
     const visible = other.number !== null && (await rule.canSee(viewer, other));
     duplicates.push({ sameOwner: false, visibleNumber: visible ? other.number : null });
   }

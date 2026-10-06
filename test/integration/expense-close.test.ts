@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { db, pool } from "@/db/client";
-import { actionLog, approvalInstances, expenses, files, quoteLines } from "@/db/schema";
+import { actionLog, approvalInstances, approvalRoutes, expenses, files, quoteLines } from "@/db/schema";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { approveDocument, getApprovalView, listMyBlockedDocuments, rejectDocument } from "@/domain/approvals";
@@ -25,12 +25,13 @@ import {
 import { searchLinesForPick } from "@/domain/expenses/pick";
 import { listExpenses } from "@/domain/expenses/list";
 import { seoulToday } from "@/lib/dates";
-import { getEvidenceActions, removeEvidence } from "@/domain/evidence";
+import { formatKrw } from "@/lib/format-number";
+import { EvidenceCheckError, getEvidenceActions, removeEvidence } from "@/domain/evidence";
 import { setSettingValue } from "@/domain/settings/registry";
 import { ACTION_LOG_OPTIONAL_TYPES } from "@/domain/settings/keys";
 import { createRevisionFromCurrent, setCustomerApproval } from "@/domain/quotes/revisions";
 import { approvalBasis } from "@/repositories/quote-revisions";
-import { upsertPermission } from "@/repositories/permissions";
+import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { listNumberedByLines } from "@/repositories/expenses";
 import { deferred, waitForLockWaiter } from "./lock-race";
 import { addApprovedRevision, attachEvidence, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
@@ -53,6 +54,17 @@ async function instanceOf(documentId: string) {
     .where(and(eq(approvalInstances.documentKind, EXPENSE_DOCUMENT_KIND), eq(approvalInstances.documentId, documentId)));
   if (!row) throw new Error("결재 인스턴스 없음");
   return row;
+}
+
+// 지금 차수의 제출 시각 — 다시 제출하면 새 차수가 생긴다.
+async function resubmittedAt(documentId: string): Promise<Date> {
+  const instance = await instanceOf(documentId);
+  const [route] = await db
+    .select({ submittedAt: approvalRoutes.submittedAt })
+    .from(approvalRoutes)
+    .where(and(eq(approvalRoutes.instanceId, instance.id), eq(approvalRoutes.round, instance.currentRound)));
+  if (!route) throw new Error("지금 차수 없음");
+  return route.submittedAt;
 }
 
 async function logsOf(documentId: string) {
@@ -178,6 +190,33 @@ describe("06-28 종결", () => {
     expect((await expenseRow(target.expenseId)).closedAt).toBeNull();
   }, 30_000);
 
+  it("종결 모달 부제의 공급가는 금액을 볼 수 있는 사람에게만", async () => {
+    const fx = await setupExpenseProject();
+    const a = await rejectedOn(fx, fx.lines.withVendor);
+    const amount = formatKrw((await expenseRow(a.expenseId)).supplyAmountKrw ?? 0);
+    const subtitleOf = async (viewer: ExpenseFixture["pm"]) => (await getExpense(viewer, { expenseId: a.expenseId }))?.closeDialog?.subtitle;
+    // 금액을 볼 수 있는 기안자 → 공급가 조각이 있다.
+    const drafterBefore = await subtitleOf(fx.pm);
+    expect(drafterBefore?.startsWith(`${a.number} · `)).toBe(true);
+    expect(drafterBefore?.endsWith(` · ${amount}`)).toBe(true);
+
+    // 지급 권한자: 문서 칸(expense.value)은 보이고 금액(expense.amount)은 안 보임 → 번호 · 항목만.
+    const payer = await makePaymentManager();
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: payer.roleId ?? "", infoItem: "expense.value", visible: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: payer.roleId ?? "", infoItem: "expense.amount", visible: false });
+    const payerSubtitle = await subtitleOf(payer);
+    expect(payerSubtitle).toBeDefined();
+    expect(payerSubtitle).not.toContain(amount);
+    expect(payerSubtitle?.split(" · ")).toHaveLength(2);
+
+    // 기안자도 금액을 못 보게 되면 → 번호 · 항목만.
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, infoItem: "expense.amount", visible: false });
+    const drafterSubtitle = await subtitleOf(fx.pm);
+    expect(drafterSubtitle).toBeDefined();
+    expect(drafterSubtitle).not.toContain(amount);
+    expect(drafterSubtitle?.split(" · ")).toHaveLength(2);
+  });
+
   it("종결 상태 — 반려 · 회수만", async () => {
     const fx = await setupExpenseProject();
     // 회수 문서 → 됨(로그 from: withdrawn).
@@ -191,12 +230,18 @@ describe("06-28 종결", () => {
     const draft = await newDraft(fx, fx.lines.split);
     expect(await caught(closeAs(fx.pm, draft))).toBeInstanceOf(ExpenseNotFoundError);
 
-    // 결재 중 → 거부.
+    // 결재 중(한 번도 반려되지 않은 제출 · 첫 승인 뒤) → `결재 중 · 새로 고침`.
     const inReview = await submittedOn(fx, fx.lines.withVendor);
-    expect(await caught(closeAs(fx.pm, inReview.expenseId))).toBeInstanceOf(ExpenseCloseRefusedError);
-    // 결재 통과 → 거부.
-    await approveAll(fx, inReview);
-    expect(await caught(closeAs(fx.pm, inReview.expenseId))).toBeInstanceOf(ExpenseCloseRefusedError);
+    const submittedRefusal = await caught(closeAs(fx.pm, inReview.expenseId));
+    expect(submittedRefusal).toBeInstanceOf(ExpenseCloseRefusedError);
+    expect(submittedRefusal).toMatchObject({ message: "결재 중 · 새로 고침" });
+    const first = await approveDocument(fx.lead, { instanceId: inReview.instanceId, expectedVersion: inReview.version });
+    expect(await caught(closeAs(fx.pm, inReview.expenseId))).toMatchObject({ message: "결재 중 · 새로 고침" });
+    // 결재 통과 → `최종 승인됨 · 새로 고침`.
+    await approveDocument(fx.ceo, { instanceId: inReview.instanceId, expectedVersion: first.version });
+    const approvedRefusal = await caught(closeAs(fx.pm, inReview.expenseId));
+    expect(approvedRefusal).toBeInstanceOf(ExpenseCloseRefusedError);
+    expect(approvedRefusal).toMatchObject({ message: "최종 승인됨 · 새로 고침" });
     expect((await expenseRow(inReview.expenseId)).closedAt).toBeNull();
 
     // 이미 종결 → `이미 종결 · 새로 고침`.
@@ -264,10 +309,9 @@ describe("06-28 종결", () => {
       }
       expect(await submitting).toMatchObject({ kind: "submitted" });
       const lost = await closing;
-      const after = await expenseRow(b.expenseId);
       expect(lost).toBeInstanceOf(ExpenseCloseRefusedError);
-      expect(lost).toMatchObject({ message: `박서연이 ${SEOUL_HHMM.format(after.updatedAt)}에 다시 제출함 · 새로 고침` });
-      expect(after.closedAt).toBeNull();
+      expect(lost).toMatchObject({ message: `박서연이 ${SEOUL_HHMM.format(await resubmittedAt(b.expenseId))}에 다시 제출함 · 새로 고침` });
+      expect((await expenseRow(b.expenseId)).closedAt).toBeNull();
     }
 
     // 옛 version으로 부른 종결 → 05 ExpenseConflictError.
@@ -276,6 +320,20 @@ describe("06-28 종결", () => {
     await save(fx, c.expenseId, { supply: krw(1_000_000) });
     expect(await caught(closeExpense(fx.pm, { expenseId: c.expenseId, expectedVersion: stale, reason: "업체 취소" }))).toBeInstanceOf(ExpenseConflictError);
   }, 30_000);
+
+  it("다시 제출 거부 문구의 시각은 지금 차수의 제출 시각", async () => {
+    const fx = await setupExpenseProject();
+    // 그 뒤 지출결의 행 updated_at이 바뀌어도(06 지급 · 증빙 경로) 그대로.
+    const d = await rejectedOn(fx, fx.lines.split);
+    const resubmitted = await submitExpense(fx.pm, { expenseId: d.expenseId, expectedVersion: (await expenseRow(d.expenseId)).version });
+    expect(resubmitted).toMatchObject({ kind: "submitted" });
+    const at = await resubmittedAt(d.expenseId);
+    await db
+      .update(expenses)
+      .set({ updatedAt: new Date(at.getTime() + 2 * 60 * 60 * 1000) })
+      .where(eq(expenses.id, d.expenseId));
+    expect(await caught(closeAs(fx.pm, d.expenseId))).toMatchObject({ message: `박서연이 ${SEOUL_HHMM.format(at)}에 다시 제출함 · 새로 고침` });
+  });
 
   it("종결 문서는 다시 열리지 않는다", async () => {
     const fx = await setupExpenseProject();
@@ -318,6 +376,27 @@ describe("06-28 종결", () => {
     const [still] = await db.select().from(files).where(eq(files.id, file.id));
     expect(still?.removedAt).toBeNull();
   });
+
+  it("종결 문서의 증빙 파일은 새 지출결의에 다시 붙는다", async () => {
+    const fx = await setupExpenseProject();
+    const sha256 = "a".repeat(64);
+    // 종결하지 않은 반려 문서의 같은 파일 → 여전히 중복으로 거부.
+    const open = await newDraft(fx, fx.lines.split);
+    await attachEvidence(fx.pm, open, undefined, { sha256 });
+    const openSubmitted = await submitExpense(fx.pm, { expenseId: open, expectedVersion: (await expenseRow(open)).version });
+    if (openSubmitted.kind !== "submitted") throw new Error("제출되지 않음");
+    await reject(fx, openSubmitted);
+    const blockedByOpen = await newDraft(fx, fx.lines.withVendor);
+    const refused = await caught(attachEvidence(fx.pm, blockedByOpen, undefined, { sha256 }));
+    expect(refused).toBeInstanceOf(EvidenceCheckError);
+    expect(refused).toMatchObject({ message: `같은 파일이 ${openSubmitted.number} 증빙에 있음 · 다른 파일 고르기` });
+
+    // 그 문서를 종결하면 같은 파일을 새 문서에 붙일 수 있다 — 종결 문서의 증빙 기록은 그대로.
+    await closeAs(fx.pm, open);
+    await attachEvidence(fx.pm, blockedByOpen, undefined, { sha256 });
+    const alive = (await db.select().from(files).where(eq(files.sha256, sha256))).filter((file) => file.removedAt === null);
+    expect(alive.map((file) => file.ownerId).sort()).toEqual([open, blockedByOpen].sort());
+  }, 30_000);
 
   it("종결 문서는 회차 상한에서 빠진다", async () => {
     const fx = await setupExpenseProject();
@@ -431,6 +510,39 @@ describe("06-28 종결", () => {
     const blocked = await listMyBlockedDocuments(fx.pm);
     expect(blocked.map((doc) => doc.documentId)).toEqual([kept.expenseId]);
     expect(blocked[0]?.cause.type).toBe("rejected");
+  });
+
+  it("종결 문서가 반려 줄 상한만큼 쌓여도 종결하지 않은 반려 문서가 홈 막힌 문서에 보인다", async () => {
+    const fx = await setupExpenseProject();
+    const kept = await rejectedOn(fx, fx.lines.withVendor);
+    // 더 최근에 반려된 종결 문서 50건(지출결의 · 결재 인스턴스 행만 — 도메인 경로로 50건 반려 · 종결은 느리다).
+    const later = new Date(Date.now() + 60_000);
+    const closedRows = await db
+      .insert(expenses)
+      .values(
+        Array.from({ length: 50 }, (_, index) => ({
+          drafterId: fx.pm.id,
+          number: `C-${String(index).padStart(4, "0")}`,
+          supplyAmountKrw: 100_000,
+          closedAt: later,
+          closedBy: fx.pm.id,
+          closedReason: "업체 취소",
+        })),
+      )
+      .returning({ id: expenses.id });
+    await db.insert(approvalInstances).values(
+      closedRows.map((row) => ({
+        documentKind: EXPENSE_DOCUMENT_KIND,
+        documentId: row.id,
+        drafterId: fx.pm.id,
+        status: "rejected",
+        currentRound: 1,
+        createdAt: later,
+        updatedAt: later,
+      })),
+    );
+
+    expect((await listMyBlockedDocuments(fx.pm)).map((doc) => doc.documentId)).toEqual([kept.expenseId]);
   });
 
   it("종결 문서 목록 낱말", async () => {

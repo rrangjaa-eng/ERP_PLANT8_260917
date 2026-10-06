@@ -76,6 +76,8 @@ async function openCloseDialog(page: Page, expenseId: string) {
 // 1차 비활성 이유 — 버튼의 aria-describedby가 가리키는 글자(ConfirmDialog 막힘 줄과 같은 글자가 둘 선다 — 연결된 쪽으로 단언).
 async function expectPrimaryReason(primary: Locator, text: string): Promise<void> {
   await expect(primary).toHaveAttribute("aria-disabled", "true");
+  // 보내는 중에도 aria-disabled라 이유가 붙을 때까지 기다린다(그 사이에는 aria-describedby가 없다).
+  await expect(primary).toHaveAttribute("aria-describedby", /.+/);
   const describedBy = await primary.getAttribute("aria-describedby");
   expect(describedBy).toBeTruthy();
   await expect(primary.page().locator(`[id="${describedBy}"]`)).toHaveText(text);
@@ -226,6 +228,37 @@ test.describe("반려 · 회수 지출결의 종결 (S23)", () => {
     await dialog.getByLabel("사유").press("Control+Enter");
     await expectPrimaryReason(primary, "사유 없음 · 사유 적기");
     await expect(dialog).toBeVisible();
+    await page.context().close();
+  });
+
+  test("error — 사유 501자면 사유 칸 aria-invalid + aria-describedby가 칸 아래 `사유 500자 넘음 · 줄여 적기`, 1차도 같은 글자로 막힘 · 500자면 풀림", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const expenseId = await rejectedExpense(browser, baseURL, fx, "tracer");
+    const page = await loginPage(browser, baseURL, fx.pm);
+    const dialog = await openCloseDialog(page, expenseId);
+    const primary = dialog.getByRole("button", { name: /^종결/ });
+    const field = dialog.getByLabel("사유");
+    // 빈 칸은 칸 오류가 아니다(1차 왼쪽 이유 — 「Error — 사유 근거 칸」).
+    await expect(field).not.toHaveAttribute("aria-invalid", "true");
+
+    await field.fill("가".repeat(501));
+    await expect(field).toHaveAttribute("aria-invalid", "true");
+    const describedBy = await field.getAttribute("aria-describedby");
+    expect(describedBy).toBeTruthy();
+    await expect(page.locator(`[id="${describedBy}"]`)).toHaveText("사유 500자 넘음 · 줄여 적기");
+    await expect(page.locator(`[id="${describedBy}"]`)).toBeVisible();
+    await expectPrimaryReason(primary, "사유 500자 넘음 · 줄여 적기");
+    await field.press("Control+Enter");
+    await expect(dialog).toBeVisible();
+    // 칸 아래 한 줄이 늘어도 폰 320 가로 넘침 0 · 1차 왼쪽에 같은 글자를 다시 쓰지 않는다.
+    await page.setViewportSize({ width: 320, height: 740 });
+    await expectNoOverflow(page, "320 사유 501자");
+    await expect(dialog.getByText("사유 500자 넘음 · 줄여 적기", { exact: true }).filter({ visible: true })).toHaveCount(1);
+
+    await field.fill("가".repeat(500));
+    await expect(field).not.toHaveAttribute("aria-invalid", "true");
+    await expect(field).not.toHaveAttribute("aria-describedby", /.+/);
+    await expect(primary).not.toHaveAttribute("aria-disabled", "true");
     await page.context().close();
   });
 

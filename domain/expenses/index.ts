@@ -94,7 +94,6 @@ import { findUserById, findUserNamesByIds } from "@/repositories/users";
 import { findVendorById } from "@/repositories/vendors";
 import {
   closeExpenseRow,
-  listClosedExpenseIds,
   listClosedInstallmentsByLines,
   findDeletedDraftById,
   findDraftByLineAndDrafter,
@@ -447,7 +446,7 @@ registerDocumentKind({
   buildDetailRows: buildExpenseDetailRows,
   blockedAfterApproval: expenseBlockedAfterApproval,
   blockedAfterApprovalCandidates: "unresolved_evidence_void",
-  closedDocumentIds: async (viewer, ids) => new Set(await listClosedExpenseIds(viewer, ids)),
+  rejectedCandidates: "not_closed_expense",
 });
 
 // ── 보임 ──────────────────────────────────────────────────────────────
@@ -1183,6 +1182,23 @@ export const EXPENSE_ALREADY_CLOSED = "이미 종결 · 새로 고침";
 
 export class ExpenseCloseRefusedError extends UserFacingError {}
 
+// 결재 중 · 결재 통과 문서에 온 종결의 거부 문구(/review I2 · m3) — 「상태 · 다음 행동」 꼴. 반려 · 회수 뒤 다시 제출되어 지금 차수가
+// 제출 그대로(submitted · 차수 > 1)면 S23 `{기안자}이 {HH:MM}에 다시 제출함`(시각 = 지금 차수 결재선의 제출 시각), 결재 통과면 04.1
+// 「거부 — 동시 처리」 `최종 승인됨`(회수 시도와 같은 끝난 문서), 그 밖(한 번도 반려되지 않은 제출 · 승인 진행 중)은 상태 낱말 `결재 중`.
+async function activeCloseRefusal(
+  viewer: Viewer,
+  input: { expenseId: string; status: string; currentRound: number; drafterName: string | null },
+  tx: DbOrTx,
+): Promise<string> {
+  if (input.status === "approved") return "최종 승인됨 · 새로 고침";
+  if (input.status === "submitted" && input.currentRound > 1) {
+    const graph = await findApprovalGraphByDocument(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, documentId: input.expenseId }, tx);
+    const route = graph?.routes.find((candidate) => candidate.round === input.currentRound);
+    if (route) return buildResubmittedMessage({ drafterName: input.drafterName, at: route.submittedAt });
+  }
+  return "결재 중 · 새로 고침";
+}
+
 // 종결할 수 있는 사람 = 그 문서의 기안자(지출결의 쓰기 권한) ∨ 지급 권한자(expenses.payments 쓰기 — 06-27 「C9-종결키」).
 async function canCloseExpense(viewer: Viewer, row: Pick<ExpenseRow, "drafterId">): Promise<boolean> {
   if (row.drafterId === viewer.id && (await can(viewer, "expenses", "write"))) return true;
@@ -1216,7 +1232,9 @@ export async function closeExpense(
     if (!locked || locked.number === null) throw new ExpenseNotFoundError();
     if (locked.closedAt !== null) throw new ExpenseCloseRefusedError(EXPENSE_ALREADY_CLOSED);
     const instance = await findExpenseApprovalInstance(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, documentId: locked.id }, tx);
-    if (instance && ACTIVE_STATUSES.has(instance.status)) throw new ExpenseCloseRefusedError(buildResubmittedMessage({ drafterName, at: locked.updatedAt }));
+    if (instance && ACTIVE_STATUSES.has(instance.status)) {
+      throw new ExpenseCloseRefusedError(await activeCloseRefusal(viewer, { expenseId: locked.id, status: instance.status, currentRound: instance.currentRound, drafterName }, tx));
+    }
     if (!instance || !EDITABLE_STATUSES.has(instance.status)) throw new ExpenseNotFoundError();
     if (locked.version !== input.expectedVersion) throw new ExpenseConflictError(locked.updatedAt);
     const closed = await closeExpenseRow(viewer, { id: locked.id, expectedVersion: input.expectedVersion, closedBy: viewer.id, reason, now }, tx);

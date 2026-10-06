@@ -9,7 +9,14 @@ import {
   type QuoteLineKind,
 } from "@/domain/quotes/edit-scope";
 import { firstExpenseSubmitBlock, type ExpenseSubmitContext } from "@/domain/expenses/gate";
-import { approvalGateDecision, type ApprovalGateInput } from "@/domain/payments/action-row";
+import {
+  approvalGateDecision,
+  evidenceGateDecision,
+  pairGateDecision,
+  type ApprovalGateInput,
+  type EvidenceGateInput,
+  type PairGateInput,
+} from "@/domain/payments/action-row";
 
 // Phase 4의 프로젝트 게이트 규칙을 등록하는 한 곳 — 규칙마다 등록한 플랜을
 // 주석 한 줄로 적는다: `project.line-edit`(04-06 · 04-12 · 04-13), `quote.line-cap`(04-26),
@@ -308,4 +315,16 @@ registerGateRule<unknown, ExpenseSubmitContext>({
 registerGateRule<unknown, ApprovalGateInput>({
   name: "payment.approval-required",
   check: (_doc, ctx) => approvalGateDecision(ctx),
+});
+
+// 06-04(EVID-02 · D-603) — 증빙 필수 on · 증빙 0(hasEvidence) · 선결제 아님 · 면제 아님이면 지급 완료를 막는다. 화면 P3와 같은 순수 함수.
+registerGateRule<unknown, EvidenceGateInput>({
+  name: "payment.evidence-required",
+  check: (_doc, ctx) => evidenceGateDecision(ctx),
+});
+
+// 06-04(Q4 · K-6) — 지급 방식 ↔ 증빙 종류 짝. 몸통 pairGateDecision이 06-02 isMethodEvidencePairAllowed를 부른다(06-15 일괄 · 06-17 선택 칸도 이 규칙).
+registerGateRule<unknown, PairGateInput>({
+  name: "payment.method-evidence-mismatch",
+  check: (_doc, ctx) => pairGateDecision(ctx),
 });

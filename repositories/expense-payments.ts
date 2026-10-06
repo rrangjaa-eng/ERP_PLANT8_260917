@@ -45,3 +45,18 @@ export async function bumpExpenseVersion(
     .returning({ version: expenses.version });
   return row?.version ?? null;
 }
+
+// 06-04 — 지급 예정일만 바꾸는 조건 UPDATE(SP-3 ②). version이 같을 때만 예정일 · version + 1. 0행이면 null(동시성).
+export async function updateScheduledPaymentDate(
+  viewer: Viewer,
+  input: { expenseId: string; date: string; expectedVersion: number; updatedBy: string },
+  tx: DbOrTx,
+): Promise<number | null> {
+  void viewer;
+  const [row] = await tx
+    .update(expenses)
+    .set({ scheduledPaymentDate: input.date, version: sql`${expenses.version} + 1`, updatedAt: new Date(), updatedBy: input.updatedBy })
+    .where(and(eq(expenses.id, input.expenseId), eq(expenses.version, input.expectedVersion), isNull(expenses.deletedAt)))
+    .returning({ version: expenses.version });
+  return row?.version ?? null;
+}

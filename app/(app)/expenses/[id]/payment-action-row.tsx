@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
-import { DIFF_REASON_REQUIRED } from "@/domain/payments/action-row";
+import { DIFF_REASON_REQUIRED, scheduleDirtyBar, type ExpenseActionBar } from "@/domain/payments/action-row";
 import { Button } from "@/ui/button/Button";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
@@ -11,7 +11,7 @@ import { isCtrlCombo } from "@/lib/shortcut";
 import { ConflictLine } from "@/app/(app)/approvals/conflict-line";
 // 05 문서 화면 행동 줄과 같은 자리 · 같은 폰 고정 규칙(UI-SPEC S4 「1차 자리는 Phase 5 문서 화면의 행동 자리 그대로」 · UA-605).
 import barStyles from "@/app/(app)/leave/[id]/document-actions.module.css";
-import { completeExpensePaymentAction } from "./actions";
+import { completeExpensePaymentAction, saveScheduledPayDateAction } from "./actions";
 import { diffReasonNeeded, PaymentFields, PaymentPanelProvider, transferError, transferNumber, usePaymentPanel, type PaymentFieldErrors } from "./payment-section";
 import styles from "./expense.module.css";
 
@@ -48,11 +48,13 @@ export function PaymentLoadError() {
 
 export function PaymentActionRow() {
   const router = useRouter();
-  const { view, conflict, setConflict, fields, preview, previewing, refreshPreview, setFieldErrors } = usePaymentPanel();
+  const { view, conflict, setConflict, fields, preview, previewing, refreshPreview, setFieldErrors, schedule, setSchedule, scheduleDirty } = usePaymentPanel();
   const [pending, setPending] = useState(false);
   const submittingRef = useRef(false);
   const justPaidRef = useRef(false);
+  const justSavedScheduleRef = useRef(false);
   const resultRef = useRef<HTMLSpanElement>(null);
+  const primaryRef = useRef<HTMLSpanElement>(null);
 
   // 칸 오류가 서면 그 칸으로(입력값은 남는다).
   function showFieldErrors(errors: PaymentFieldErrors) {
@@ -89,11 +91,51 @@ export function PaymentActionRow() {
     },
   });
 
-  const canPay = view.row?.primary === "pay" && view.expenseId !== undefined && view.version !== undefined;
+  // 예정일 저장(P1) — 예정일만 보낸다. 이체액 · 지급일 · 차이 사유 칸 입력값은 그대로 남아 다음 1차가 가져간다.
+  const { execute: executeSchedule } = useAction(saveScheduledPayDateAction, {
+    onSuccess: () => {
+      justSavedScheduleRef.current = true;
+      setSchedule(null);
+      router.refresh();
+    },
+    onError: ({ error }) => {
+      const dateError = error.validationErrors?.scheduledPayDate?._errors?.[0];
+      if (dateError && schedule) {
+        setSchedule({ ...schedule, error: dateError });
+        requestAnimationFrame(() => document.getElementById("payment-scheduled-date")?.focus());
+        return;
+      }
+      setConflict(error.serverError ?? "결과를 받지 못함 · 새로 고침");
+      router.refresh();
+    },
+    onSettled: () => {
+      submittingRef.current = false;
+      setPending(false);
+    },
+  });
+
+  // 1차는 서버가 정한 행(resolveExpenseActionRow) — 예정일 칸이 dirty인 동안만 같은 순수 함수로 P1(`예정일 저장`)로 바꾼다.
+  const serverBar: ExpenseActionBar | null = view.row ? { blockReason: null, tertiary: null, ...view.row } : null;
+  const bar = serverBar && scheduleDirty ? scheduleDirtyBar(serverBar) : serverBar;
+  const ready = view.expenseId !== undefined && view.version !== undefined;
+  const canPay = bar?.primary === "pay" && ready;
+  const canSaveSchedule = bar?.primary === "saveSchedule" && ready;
+  // P3 증빙 없음 · 짝 아님 · 지급 총액 볼 권한 없음 — `지급 완료` 비활성 + 이유(block).
+  const blockReason = bar?.blockReason ?? null;
   const paid = view.row?.row === "P6" && view.payDate !== undefined;
 
+  function saveSchedule() {
+    if (!canSaveSchedule || !schedule || submittingRef.current || view.expenseId === undefined || view.version === undefined) return;
+    submittingRef.current = true;
+    setPending(true);
+    setConflict(null);
+    executeSchedule({ expenseId: view.expenseId, scheduledPayDate: schedule.value, version: view.version });
+  }
+
   function pay() {
-    if (!canPay || submittingRef.current || previewing || view.expenseId === undefined || view.version === undefined) return;
+    if (!canPay || blockReason !== null || submittingRef.current || previewing || view.expenseId === undefined || view.version === undefined) return;
+    const expectedPayableKrw = preview.payableKrw ?? view.payableKrw ?? null;
+    if (expectedPayableKrw === null) return;
     const transferProblem = transferError(fields);
     const transferKrw = transferNumber(fields.transferRaw);
     const needReason = diffReasonNeeded(fields, preview);
@@ -106,20 +148,21 @@ export function PaymentActionRow() {
     execute({
       expenseId: view.expenseId,
       payDate: fields.payDate,
-      expectedPayableKrw: preview.payableKrw ?? view.payableKrw ?? 0,
+      expectedPayableKrw,
       version: view.version,
       transferKrw,
       ...(needReason ? { diffReason: fields.diffReason } : {}),
     });
   }
 
-  // 1차 `지급 완료` = Ctrl+Enter(§7-9). 렌더마다 다시 건다(지금 렌더의 pay를 쓴다).
+  // Ctrl+Enter = 그때 보이는 1차(§7-9 — dirty면 `예정일 저장`). 렌더마다 다시 건다(지금 렌더의 함수를 쓴다).
   useEffect(() => {
-    if (!canPay) return;
+    if (!canPay && !canSaveSchedule) return;
     function onKeyDown(event: KeyboardEvent) {
       if (!isCtrlCombo(event, "Enter")) return;
       event.preventDefault();
-      pay();
+      if (canSaveSchedule) saveSchedule();
+      else pay();
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
@@ -133,17 +176,38 @@ export function PaymentActionRow() {
     }
   }, [paid]);
 
+  // 예정일 저장 뒤 칸이 닫히고 1차가 상태의 것으로 돌아오면 그 1차로 포커스(r2 F5).
+  useEffect(() => {
+    if (justSavedScheduleRef.current && canPay) {
+      justSavedScheduleRef.current = false;
+      primaryRef.current?.querySelector("button")?.focus();
+    }
+  }, [canPay]);
+
   // 지급 뒤(P6)는 1차 없이 결과 글자만(버튼 아님). 지급 권한이 없는 사람에게는 이 페이즈의 버튼이 없다(D-601 — 지급 전 담당 표기는 섹션 지급 예정일 2행).
   const showResult = paid && view.paidTime !== undefined;
-  if (!canPay && !showResult) return null;
+  if (!canPay && !canSaveSchedule && !showResult) return null;
   return (
     <>
       <div className={barStyles.bar} data-fixed-bar="">
         {conflict ? <ConflictLine message={conflict} /> : null}
         <div className={barStyles.buttons}>
-          {canPay ? (
-            <span className={barStyles.primaryWrap}>
-              <Button variant="primary" shortcut="Ctrl+Enter" pending={pending || previewing} onClick={pay}>
+          {canSaveSchedule ? (
+            <span className={barStyles.primaryWrap} ref={primaryRef}>
+              <Button variant="primary" shortcut="Ctrl+Enter" pending={pending} onClick={saveSchedule}>
+                예정일 저장
+              </Button>
+            </span>
+          ) : canPay ? (
+            <span className={barStyles.primaryWrap} ref={primaryRef}>
+              <Button
+                variant="primary"
+                shortcut="Ctrl+Enter"
+                pending={blockReason === null && (pending || previewing)}
+                disabled={blockReason !== null}
+                disabledReason={blockReason ?? undefined}
+                onClick={pay}
+              >
                 지급 완료
               </Button>
             </span>

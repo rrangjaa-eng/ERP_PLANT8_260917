@@ -1,13 +1,14 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db/client";
 import { actionLog, expensePayments, expenses } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertVisibility } from "@/repositories/permissions";
-import { completeExpensePayment, previewPayable } from "@/domain/payments";
+import { completeExpensePayment, PaymentConflictError, previewPayable, saveScheduledPayDate } from "@/domain/payments";
+import { ForbiddenError } from "@/domain/permissions/can";
 import { DATE_FORMAT_ERROR } from "@/domain/expenses/draft-fields";
 import { seoulToday } from "@/lib/dates";
-import { completeExpensePaymentAction, previewPayableAction } from "@/app/(app)/expenses/[id]/actions";
+import { completeExpensePaymentAction, previewPayableAction, saveScheduledPayDateAction } from "@/app/(app)/expenses/[id]/actions";
 import { setupExpenseProject } from "./fixtures/expenses";
 import { approvedExpenseWithoutEvidence, makePaymentManager, setEvidenceRequired, type ApprovedExpense } from "./fixtures/payments";
 
@@ -21,7 +22,8 @@ vi.mock("@/lib/viewer", () => ({
 }));
 vi.mock("next/cache", () => ({ revalidatePath: () => undefined }));
 
-beforeAll(async () => {
+// setup.ts가 매 테스트 전 TRUNCATE + 시드로 설정을 기본값(evidence.required = true)으로 되돌린다 — beforeAll이면 둘째 테스트부터 증빙 게이트에 막힌다.
+beforeEach(async () => {
   await setEvidenceRequired(false);
 });
 
@@ -153,5 +155,75 @@ describe("지급 완료 — 이체액 · 차이 사유 · 미래 지급일 (06-0
     expect([preview.payableKrw, preview.diffKrw]).toEqual([payable, 1_200]);
     const after = await snapshot(doc.expenseId);
     expect([after.version, after.logCount, after.payments.length]).toEqual([before.version, before.logCount, 0]);
+  });
+});
+
+describe("지급 예정일 저장 (06-04 Task 2 · SP-3 ②)", () => {
+  it("예정일만 갱신 · 미래 날짜 허용 · 문서 version + 1 · document_update(전후 날짜)", async () => {
+    const payer = await makePayer();
+    const doc = await approvedExpenseWithoutEvidence(await setupExpenseProject());
+    const before = await snapshot(doc.expenseId);
+    const future = addDays(seoulToday(), 40);
+
+    const result = await saveScheduledPayDate(payer, { expenseId: doc.expenseId, scheduledPayDate: future, version: doc.version });
+    expect(result.version).toBe(doc.version + 1);
+    const after = await snapshot(doc.expenseId);
+    expect([after.scheduledPaymentDate, after.version, after.payments.length]).toEqual([future, doc.version + 1, 0]);
+    expect([after.evidenceAmount, after.supplyAmountKrw]).toEqual([before.evidenceAmount, before.supplyAmountKrw]);
+    const logs = await db
+      .select({ actionType: actionLog.actionType, actorId: actionLog.actorId, detail: actionLog.detail })
+      .from(actionLog)
+      .where(and(eq(actionLog.entityId, doc.expenseId), eq(actionLog.actionType, "document_update")));
+    expect(logs.at(-1)).toMatchObject({ actorId: payer.id, detail: { field: "scheduledPaymentDate", before: before.scheduledPaymentDate, after: future } });
+  });
+
+  it("version이 어긋나면 `다른 사람이 {HH:mm}에 바꿈 · 새로 고침`으로 거부되고 예정일은 그대로다", async () => {
+    const payer = await makePayer();
+    const doc = await approvedExpenseWithoutEvidence(await setupExpenseProject());
+    const before = await snapshot(doc.expenseId);
+
+    const error = await saveScheduledPayDate(payer, { expenseId: doc.expenseId, scheduledPayDate: addDays(seoulToday(), 5), version: doc.version - 1 }).catch(
+      (caught: unknown) => caught,
+    );
+    expect(error).toBeInstanceOf(PaymentConflictError);
+    expect((error as Error).message).toMatch(/^다른 사람이 \d{2}:\d{2}에 바꿈 · 새로 고침$/);
+    const after = await snapshot(doc.expenseId);
+    expect([after.scheduledPaymentDate, after.version, after.logCount]).toEqual([before.scheduledPaymentDate, before.version, before.logCount]);
+  });
+
+  it("지급 권한(expenses.payments write)이 없으면 ForbiddenError(D-601)", async () => {
+    const fx = await setupExpenseProject();
+    const doc = await approvedExpenseWithoutEvidence(fx);
+    for (const viewer of [fx.pm, fx.ceo]) {
+      await expect(saveScheduledPayDate(viewer, { expenseId: doc.expenseId, scheduledPayDate: seoulToday(), version: doc.version })).rejects.toBeInstanceOf(ForbiddenError);
+    }
+  });
+
+  it("예정일 달력 검증 — 달력에 없는 날짜는 05 DATE_FORMAT_ERROR 입력 오류로 DB까지 가지 않고, 미래 날짜는 액션으로 저장된다(E-20 · Q6)", async () => {
+    const payer = await makePayer();
+    const doc = await approvedExpenseWithoutEvidence(await setupExpenseProject());
+    session.viewer = payer;
+    const before = await snapshot(doc.expenseId);
+
+    for (const scheduledPayDate of ["2026-02-30", "0000-01-01", "2026-9-7"]) {
+      const saved = await saveScheduledPayDateAction({ expenseId: doc.expenseId, scheduledPayDate, version: doc.version });
+      expect(JSON.stringify(saved?.validationErrors), scheduledPayDate).toContain(DATE_FORMAT_ERROR);
+      expect(saved?.serverError, scheduledPayDate).toBeUndefined();
+    }
+    const unchanged = await snapshot(doc.expenseId);
+    expect([unchanged.scheduledPaymentDate, unchanged.version, unchanged.logCount]).toEqual([before.scheduledPaymentDate, before.version, before.logCount]);
+
+    const future = addDays(seoulToday(), 400);
+    const saved = await saveScheduledPayDateAction({ expenseId: doc.expenseId, scheduledPayDate: future, version: doc.version });
+    expect(saved?.data).toEqual({ version: doc.version + 1 });
+    expect((await snapshot(doc.expenseId)).scheduledPaymentDate).toBe(future);
+  });
+
+  it("지급된 문서의 예정일은 저장하지 않는다 — `이미 지급 완료 · 새로 고침`", async () => {
+    const payer = await makePayer();
+    const doc = await approvedExpenseWithoutEvidence(await setupExpenseProject());
+    const payable = await payableNow(payer, doc);
+    const paid = await completeExpensePayment(payer, { expenseId: doc.expenseId, expectedPayableKrw: payable, version: doc.version });
+    await expect(saveScheduledPayDate(payer, { expenseId: doc.expenseId, scheduledPayDate: seoulToday(), version: paid.version })).rejects.toThrow("이미 지급 완료 · 새로 고침");
   });
 });

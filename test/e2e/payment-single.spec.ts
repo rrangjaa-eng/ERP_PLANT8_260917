@@ -64,6 +64,11 @@ test.beforeAll(async () => {
   await upsertSimpleValue(SYSTEM_VIEWER, EVIDENCE_REQUIRED.key, false, null);
 });
 
+// 06-04부터 지급이 evidence.required를 읽는다 — 뒤 스펙이 시드 기본값(켜짐)을 보게 되돌린다.
+test.afterAll(async () => {
+  await upsertSimpleValue(SYSTEM_VIEWER, EVIDENCE_REQUIRED.key, EVIDENCE_REQUIRED.default ?? true, null);
+});
+
 test.describe("한 건 지급 완료 (06-03)", () => {
   test("지급 권한자 — 1차 `지급 완료` → 1차 자리 결과 글자 · 행동 로그 payment_process", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
@@ -182,6 +187,84 @@ test.describe("지급 섹션 칸 (06-04)", () => {
       .where(and(eq(expensePayments.expenseId, expenseId), isNull(expensePayments.cancelledAt)));
     expect(record).toEqual({ payDate: future, diffKrw: -3_300 });
     await page.context().close();
+  });
+});
+
+test.describe("지급 예정일 제자리 저장 (06-04 · SP-3 ②)", () => {
+  test("3차 `지급 예정일 바꾸기` → 칸 dirty면 1차 `예정일 저장` · Esc는 되돌림 · Ctrl+Enter 저장 뒤 이체액 입력값은 남는다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const expenseId = await approvedWithoutEvidence(browser, baseURL, fx, "tracer");
+    const payer = await makePaymentManagerE2E();
+    const [row] = await db.select({ scheduled: expenses.scheduledPaymentDate }).from(expenses).where(eq(expenses.id, expenseId));
+    const original = row?.scheduled ?? null;
+    const future = addDays(seoulToday(), 45);
+
+    const page = await loginPage(browser, baseURL, payer);
+    await page.goto(`/expenses/${expenseId}`);
+    const pay = page.getByRole("button", { name: /^지급 완료/ });
+    await waitForHydration(pay);
+    const section = paymentSection(page);
+    await section.getByLabel("이체액").fill("1234");
+
+    const edit = section.getByRole("button", { name: "지급 예정일 바꾸기" });
+    await edit.click();
+    const field = section.getByLabel("지급 예정일");
+    await expect(field).toBeFocused();
+    await expect(section.getByRole("button", { name: "지급 예정일 바꾸기" })).toHaveCount(0);
+    await field.fill(future);
+    const save = page.getByRole("button", { name: /^예정일 저장/ });
+    await expect(save).toBeVisible();
+    await expect(page.getByRole("button", { name: /^지급 완료/ })).toHaveCount(0);
+
+    await field.press("Escape");
+    await expect(section.getByLabel("지급 예정일")).toHaveCount(0);
+    await expect(save).toHaveCount(0);
+    await expect(pay).toBeVisible();
+    await expect(section.getByRole("button", { name: "지급 예정일 바꾸기" })).toBeFocused();
+
+    await section.getByRole("button", { name: "지급 예정일 바꾸기" }).click();
+    await section.getByLabel("지급 예정일").fill(future);
+    await section.getByLabel("지급 예정일").press("Enter");
+    await expect(save).toBeVisible();
+    await page.keyboard.press("Control+Enter");
+
+    await expect(section.getByLabel("지급 예정일")).toHaveCount(0);
+    await expect(section.getByText(future, { exact: true })).toBeVisible();
+    await expect(pay).toBeFocused();
+    await expect(section.getByLabel("이체액")).toHaveValue("1,234");
+    const [saved] = await db.select({ scheduled: expenses.scheduledPaymentDate }).from(expenses).where(eq(expenses.id, expenseId));
+    expect(saved?.scheduled).toBe(future);
+    const logs = await db
+      .select({ detail: actionLog.detail })
+      .from(actionLog)
+      .where(and(eq(actionLog.entityId, expenseId), eq(actionLog.actionType, "document_update")));
+    expect(logs.at(-1)?.detail).toMatchObject({ field: "scheduledPaymentDate", before: original, after: future });
+    await page.context().close();
+  });
+});
+
+test.describe("증빙 없음 막힘 (06-04 · P3)", () => {
+  test("증빙 필수 on · 증빙 0 → `지급 완료` 비활성 + `증빙 없음 · 기안자 {이름}`", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const expenseId = await approvedWithoutEvidence(browser, baseURL, fx, "tracer");
+    const payer = await makePaymentManagerE2E();
+    await upsertSimpleValue(SYSTEM_VIEWER, EVIDENCE_REQUIRED.key, true, null);
+    try {
+      const page = await loginPage(browser, baseURL, payer);
+      await page.goto(`/expenses/${expenseId}`);
+      const pay = page.getByRole("button", { name: /^지급 완료/ });
+      await waitForHydration(pay);
+      await expect(pay).toHaveAttribute("aria-disabled", "true");
+      await expect(page.getByText(/^증빙 없음 · 기안자 \S+$/)).toBeVisible();
+      await pay.click({ force: true });
+      await page.keyboard.press("Control+Enter");
+      await expect(page.getByTestId("payment-result")).toHaveCount(0);
+      const records = await db.select({ id: expensePayments.id }).from(expensePayments).where(eq(expensePayments.expenseId, expenseId));
+      expect(records).toHaveLength(0);
+      await page.context().close();
+    } finally {
+      await upsertSimpleValue(SYSTEM_VIEWER, EVIDENCE_REQUIRED.key, false, null);
+    }
   });
 });
 

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { authedActionClient } from "@/lib/actions/client";
-import { completeExpensePayment, previewPayable } from "@/domain/payments";
+import { completeExpensePayment, previewPayable, saveScheduledPayDate } from "@/domain/payments";
 import { TRANSFER_FRACTION, TRANSFER_NOT_NUMBER, TRANSFER_NOT_POSITIVE } from "@/domain/payments/action-row";
 import { DATE_FORMAT_ERROR, EXPENSE_TEXT_MAX } from "@/domain/expenses/draft-fields";
 import { isCalendarDate } from "@/lib/dates";
@@ -43,3 +43,16 @@ const previewPayableSchema = z.object({
 export const previewPayableAction = authedActionClient
   .schema(previewPayableSchema)
   .action(async ({ parsedInput, ctx }) => previewPayable(ctx.viewer, parsedInput));
+
+// 지급 예정일 제자리 저장(SP-3 ②) — 예정일만 바꾼다. 미래 날짜 허용(Q6).
+const saveScheduledPayDateSchema = z.object({
+  expenseId: z.string().uuid(),
+  scheduledPayDate: paymentDate,
+  version: z.number().int().positive(),
+});
+
+export const saveScheduledPayDateAction = authedActionClient.schema(saveScheduledPayDateSchema).action(async ({ parsedInput, ctx }) => {
+  const result = await saveScheduledPayDate(ctx.viewer, parsedInput);
+  revalidatePath(`/expenses/${parsedInput.expenseId}`);
+  return { version: result.version };
+});

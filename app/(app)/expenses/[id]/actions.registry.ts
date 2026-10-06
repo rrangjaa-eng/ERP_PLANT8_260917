@@ -8,3 +8,5 @@ import "@/domain/payments";
 registerAction({ name: "completeExpensePaymentAction", menu: "expenses.payments", action: "write", dtoName: null });
 // 06-04: 지급 총액 미리보기 — 지급 총액 · 차이(expense.amount)를 payablePreview DTO로 투영해 돌려준다(읽기 · 로그 없음).
 registerAction({ name: "previewPayableAction", menu: "expenses.payments", action: "write", dtoName: "payablePreview" });
+// 06-04: 지급 예정일 제자리 저장 — 새 version만 돌려준다(DTO 없음).
+registerAction({ name: "saveScheduledPayDateAction", menu: "expenses.payments", action: "write", dtoName: null });

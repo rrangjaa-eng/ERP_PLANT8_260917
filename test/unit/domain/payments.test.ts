@@ -16,7 +16,8 @@ import {
   type PaymentInputs,
   type PaymentShared,
 } from "@/domain/payments";
-import { approvalGateDecision, resolveExpenseActionRow } from "@/domain/payments/action-row";
+import { AMOUNT_HIDDEN } from "@/domain/payments/action-row";
+import { approvalGateDecision, evidenceGateDecision, pairGateDecision, resolveExpenseActionRow, scheduleDirtyBar } from "@/domain/payments/action-row";
 
 // 06-03 — 지급 총액 · 금액 원천(R-4) · 공급가 역산(R-5) · 결재 게이트 · 「지출결의 상태 → 1차」(P0 · P4 · P6). DB 없이 돈다.
 
@@ -172,22 +173,24 @@ describe("approvalGateDecision", () => {
 describe("resolveExpenseActionRow", () => {
   const payer = { canPay: true };
   const other = { canPay: false };
+  const OPEN = { allowed: true } as const;
+  const base = { approvalState: "approved", paid: false, hasEvidence: true, waived: false, evidence: OPEN, pair: OPEN };
 
   it("결재 통과 전 → P0(버튼 0 · 섹션 없음)", () => {
-    expect(resolveExpenseActionRow({ approvalState: "in_review", paid: false }, payer)).toEqual({ row: "P0", primary: null, ownerNote: null });
+    expect(resolveExpenseActionRow({ ...base, approvalState: "in_review" }, payer)).toEqual({ row: "P0", primary: null, blockReason: null, tertiary: null, ownerNote: null });
   });
 
   it("통과 · 지급 전 → P4(1차 `지급 완료`)", () => {
-    expect(resolveExpenseActionRow({ approvalState: "approved", paid: false }, payer)).toEqual({ row: "P4", primary: "pay", ownerNote: null });
+    expect(resolveExpenseActionRow(base, payer)).toEqual({ row: "P4", primary: "pay", blockReason: null, tertiary: null, ownerNote: null });
   });
 
   it("지급 뒤 → P6(1차 없음)", () => {
-    expect(resolveExpenseActionRow({ approvalState: "approved", paid: true }, payer)).toEqual({ row: "P6", primary: null, ownerNote: null });
+    expect(resolveExpenseActionRow({ ...base, paid: true }, payer)).toEqual({ row: "P6", primary: null, blockReason: null, tertiary: null, ownerNote: null });
   });
 
   it("지급 권한 없음 → 버튼 0 + 담당 표기(지급 전)", () => {
-    expect(resolveExpenseActionRow({ approvalState: "approved", paid: false }, other)).toEqual({ row: "P4", primary: null, ownerNote: "지급은 경영관리" });
-    expect(resolveExpenseActionRow({ approvalState: "approved", paid: true }, other)).toEqual({ row: "P6", primary: null, ownerNote: null });
+    expect(resolveExpenseActionRow(base, other)).toEqual({ row: "P4", primary: null, blockReason: null, tertiary: null, ownerNote: "지급은 경영관리" });
+    expect(resolveExpenseActionRow({ ...base, paid: true }, other)).toEqual({ row: "P6", primary: null, blockReason: null, tertiary: null, ownerNote: null });
   });
 });
 
@@ -236,6 +239,10 @@ const SHARED: PaymentShared = {
   basisWithholding: "payment_date",
   basisVat: "evidence_date",
   ratesFor: () => Promise.reject(new Error("트랜잭션 안에서 세율을 읽지 않는다")),
+  evidenceRequired: false,
+  pairs: [],
+  paymentMethodName: (code) => (code === "bank_transfer" ? "계좌이체" : null),
+  evidenceTypeName: (code) => (code === "tax_invoice" ? "세금계산서" : code === "card_slip" ? "카드 전표" : null),
 };
 const ROW: LockedExpense = {
   id: "00000000-0000-4000-8000-000000000001",
@@ -246,6 +253,7 @@ const ROW: LockedExpense = {
   evidenceDate: PAY_DATE,
   createdAt: new Date("2026-09-01T00:00:00Z"),
   paymentMethod: "bank_transfer",
+  prepaid: false,
 };
 
 // 사전 조회 결과(loadPaymentInputs와 같은 규칙 — 05 pickTaxDates · incomeTypeFor · pickPaymentAmount).
@@ -264,12 +272,13 @@ function preOf(row: LockedExpense, hasLiveEvidence: boolean): PaymentInputs {
     stepName: null,
     evidenceType: row.evidenceType,
     hasLiveEvidence,
+    drafterName: "박서연",
     amount: pickPaymentAmount({ hasLiveEvidence, evidenceAmountKrw: row.evidenceAmount, supplyAmountKrw: row.supplyAmountKrw }),
     tax: { taxRule, dates, incomeType: incomeTypeFor(row.evidenceType), rates: { ...RATES, asOf: dates.basisDate } },
   };
 }
 
-function judge(over: { pre?: PaymentInputs; locked?: LockedExpense; approvalState?: string; lockedHasEvidence?: boolean; expectedPayableKrw: number }) {
+function judge(over: { pre?: PaymentInputs; locked?: LockedExpense; approvalState?: string; lockedHasEvidence?: boolean; expectedPayableKrw: number; shared?: PaymentShared }) {
   return judgeLockedPayment({
     pre: over.pre ?? preOf(ROW, false),
     locked: over.locked ?? ROW,
@@ -277,7 +286,7 @@ function judge(over: { pre?: PaymentInputs; locked?: LockedExpense; approvalStat
     lockedHasEvidence: over.lockedHasEvidence ?? false,
     payDate: PAY_DATE,
     expectedPayableKrw: over.expectedPayableKrw,
-    shared: SHARED,
+    shared: over.shared ?? SHARED,
   });
 }
 
@@ -400,5 +409,154 @@ describe("judgeLockedPayment — 지급 방식 없음 (06-03 검토 P3-2)", () =
     const error = await judge({ locked: { ...ROW, paymentMethod: null }, expectedPayableKrw: 1_100_000 }).catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(GateBlockedError);
     expect((error as Error).message).toBe("지급 방식 없음 · 지출결의 확인");
+  });
+});
+
+// 06-04 Task 2 — 증빙 필수 게이트(EVID-02 · D-603) · 짝 게이트(Q4) · 「지출결의 상태 → 1차」 P1 · P3 · 3차 자리 `waive`.
+const EVIDENCE_CTX = { evidenceRequired: true, hasEvidence: false, prepaid: false, waived: false, confirmation: null, drafterName: "박서연" };
+
+describe("evidenceGateDecision (D-603)", () => {
+  it("필수 on · 증빙 없음 · 선결제 아님 · 면제 아님 → `증빙 없음 · 기안자 {이름}`", () => {
+    expect(evidenceGateDecision(EVIDENCE_CTX)).toEqual({ allowed: false, reason: "증빙 없음 · 기안자 박서연" });
+  });
+
+  it("필수 off → 통과", () => {
+    expect(evidenceGateDecision({ ...EVIDENCE_CTX, evidenceRequired: false })).toEqual({ allowed: true });
+  });
+
+  it("선결제 → 통과", () => {
+    expect(evidenceGateDecision({ ...EVIDENCE_CTX, prepaid: true })).toEqual({ allowed: true });
+  });
+
+  it("면제 → 통과", () => {
+    expect(evidenceGateDecision({ ...EVIDENCE_CTX, waived: true })).toEqual({ allowed: true });
+  });
+
+  it("증빙 있음 → 통과", () => {
+    expect(evidenceGateDecision({ ...EVIDENCE_CTX, hasEvidence: true })).toEqual({ allowed: true });
+  });
+});
+
+describe("pairGateDecision (Q4 · K-6 — 06-02 isMethodEvidencePairAllowed)", () => {
+  const names = { paymentMethodName: "계좌이체", evidenceTypeName: "카드 전표" };
+  const pairs = [{ method: "bank_transfer", evidence: "tax_invoice" }];
+
+  it("증빙 종류가 비면 지급 방식만으로 막지 않는다", () => {
+    expect(pairGateDecision({ pairs, paymentMethod: "bank_transfer", evidenceType: null, ...names, evidenceTypeName: null })).toEqual({ allowed: true });
+  });
+
+  it("짝 목록이 비면(기본값) 통과", () => {
+    expect(pairGateDecision({ pairs: [], paymentMethod: "bank_transfer", evidenceType: "card_slip", ...names })).toEqual({ allowed: true });
+  });
+
+  it("그 지급 방식의 짝이 하나도 없으면 통과", () => {
+    expect(pairGateDecision({ pairs, paymentMethod: "cash", evidenceType: "card_slip", ...names, paymentMethodName: "현금" })).toEqual({ allowed: true });
+  });
+
+  it("(방식, 종류)가 목록 안 → 통과", () => {
+    expect(pairGateDecision({ pairs, paymentMethod: "bank_transfer", evidenceType: "tax_invoice", ...names, evidenceTypeName: "세금계산서" })).toEqual({ allowed: true });
+  });
+
+  it("목록 밖 → `{방식} · {종류} 짝 아님 · 짝 설정은 관리자`", () => {
+    expect(pairGateDecision({ pairs, paymentMethod: "bank_transfer", evidenceType: "card_slip", ...names })).toEqual({
+      allowed: false,
+      reason: "계좌이체 · 카드 전표 짝 아님 · 짝 설정은 관리자",
+    });
+  });
+});
+
+describe("resolveExpenseActionRow — P1 · P3 · 짝 막힘 · 3차 자리 waive (06-04)", () => {
+  const payer = { canPay: true };
+  const OPEN = { allowed: true } as const;
+  const NO_EVIDENCE = { allowed: false, reason: "증빙 없음 · 기안자 박서연" } as const;
+  const NOT_PAIR = { allowed: false, reason: "계좌이체 · 카드 전표 짝 아님 · 짝 설정은 관리자" } as const;
+  const passed = { approvalState: "approved", paid: false, hasEvidence: true, waived: false, evidence: OPEN, pair: OPEN };
+
+  it("예정일 칸 dirty → P1(1차 `예정일 저장`)", () => {
+    expect(resolveExpenseActionRow({ ...passed, scheduleDirty: true }, payer)).toMatchObject({ row: "P1", primary: "saveSchedule", blockReason: null });
+  });
+
+  it("예정일 dirty는 막힌 P3에서도 1차를 `예정일 저장`으로 — 업무 1차가 막혀도 예정일은 저장된다(SP-3)", () => {
+    expect(resolveExpenseActionRow({ ...passed, hasEvidence: false, evidence: NO_EVIDENCE, scheduleDirty: true }, payer)).toMatchObject({
+      row: "P1",
+      primary: "saveSchedule",
+      blockReason: null,
+      tertiary: "waive",
+    });
+    expect(scheduleDirtyBar(resolveExpenseActionRow({ ...passed, hasEvidence: false, evidence: NO_EVIDENCE }, payer)).row).toBe("P1");
+  });
+
+  it("P3 — 증빙 없음 막힘: `지급 완료` 비활성 + 이유 + 3차 자리 waive", () => {
+    expect(resolveExpenseActionRow({ ...passed, hasEvidence: false, evidence: NO_EVIDENCE }, payer)).toEqual({
+      row: "P3",
+      primary: "pay",
+      blockReason: "증빙 없음 · 기안자 박서연",
+      tertiary: "waive",
+      ownerNote: null,
+    });
+  });
+
+  it("P4 선결제(증빙 0 · 면제 아님) → 1차 그대로 + 3차 자리 waive", () => {
+    expect(resolveExpenseActionRow({ ...passed, hasEvidence: false }, payer)).toEqual({ row: "P4", primary: "pay", blockReason: null, tertiary: "waive", ownerNote: null });
+  });
+
+  it("P4 증빙 필수 off(증빙 0 · 면제 아님) → 1차 그대로 + 3차 자리 waive", () => {
+    expect(resolveExpenseActionRow({ ...passed, hasEvidence: false, evidence: OPEN }, payer)).toMatchObject({ row: "P4", primary: "pay", tertiary: "waive" });
+  });
+
+  it("P6 증빙 0 · 면제 아님 → 3차 자리 waive(1차 없음)", () => {
+    expect(resolveExpenseActionRow({ ...passed, paid: true, hasEvidence: false }, payer)).toMatchObject({ row: "P6", primary: null, tertiary: "waive" });
+  });
+
+  it("증빙 있음 · 면제 → 3차 자리 없음", () => {
+    expect(resolveExpenseActionRow(passed, payer).tertiary).toBeNull();
+    expect(resolveExpenseActionRow({ ...passed, hasEvidence: false, waived: true }, payer).tertiary).toBeNull();
+    expect(resolveExpenseActionRow({ ...passed, paid: true, hasEvidence: false, waived: true }, payer).tertiary).toBeNull();
+  });
+
+  it("짝 아님 → P4 `지급 완료` 비활성 + 짝 이유", () => {
+    expect(resolveExpenseActionRow({ ...passed, pair: NOT_PAIR }, payer)).toMatchObject({ row: "P4", primary: "pay", blockReason: "계좌이체 · 카드 전표 짝 아님 · 짝 설정은 관리자" });
+  });
+
+  it("지급 권한 없는 사람에게는 3차 자리 · 막힘 이유 · P1이 없다", () => {
+    expect(resolveExpenseActionRow({ ...passed, hasEvidence: false, evidence: NO_EVIDENCE, scheduleDirty: true }, { canPay: false })).toEqual({
+      row: "P4",
+      primary: null,
+      blockReason: null,
+      tertiary: null,
+      ownerNote: "지급은 경영관리",
+    });
+  });
+
+  it("지급 권한자가 지급 총액(expense.amount)을 못 보면 `지급 완료` 비활성 + 이유(06-03 검토 P3-4)", () => {
+    expect(resolveExpenseActionRow(passed, { canPay: true, amountVisible: false })).toMatchObject({ row: "P4", primary: "pay", blockReason: AMOUNT_HIDDEN });
+  });
+});
+
+describe("judgeLockedPayment — 증빙 · 짝 게이트 (06-04 · CROSS-R1 F-3)", () => {
+  const required: PaymentShared = { ...SHARED, evidenceRequired: true };
+
+  it("증빙 필수 on · 잠금 뒤 증빙 0 → `증빙 없음 · 기안자 {이름}`", async () => {
+    const error = await judge({ shared: required, lockedHasEvidence: false, expectedPayableKrw: 1_100_000 }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(GateBlockedError);
+    expect((error as Error).message).toBe("증빙 없음 · 기안자 박서연");
+  });
+
+  it("증빙 게이트는 기준 재판정보다 먼저 — 사전 조회 땐 증빙이 있었고 잠금 뒤 0이어도 PayableChangedError가 아니라 증빙 이유", async () => {
+    const error = await judge({ shared: required, pre: preOf(ROW, true), lockedHasEvidence: false, expectedPayableKrw: 990_000 }).catch((caught: unknown) => caught);
+    expect(error).not.toBeInstanceOf(PayableChangedError);
+    expect((error as Error).message).toBe("증빙 없음 · 기안자 박서연");
+  });
+
+  it("선결제 문서(잠근 행의 prepaid)는 증빙 필수 on이어도 통과", async () => {
+    const result = await judge({ shared: required, locked: { ...ROW, prepaid: true }, lockedHasEvidence: false, expectedPayableKrw: 1_100_000 });
+    expect(result.payable.payableKrw).toBe(1_100_000);
+  });
+
+  it("짝 목록 밖 → 짝 이유로 거부(잠근 행의 방식 · 종류)", async () => {
+    const shared: PaymentShared = { ...SHARED, pairs: [{ method: "bank_transfer", evidence: "card_slip" }] };
+    const error = await judge({ shared, expectedPayableKrw: 1_100_000 }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(GateBlockedError);
+    expect((error as Error).message).toBe("계좌이체 · 세금계산서 짝 아님 · 짝 설정은 관리자");
   });
 });

@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import type { PaymentViewDto } from "@/domain/payments";
 import { TRANSFER_FRACTION, TRANSFER_NOT_NUMBER, TRANSFER_NOT_POSITIVE } from "@/domain/payments/action-row";
+import { Button } from "@/ui/button/Button";
 import { Form } from "@/ui/form/Form";
 import { KvList, type KvItem } from "@/ui/kv-list/KvList";
 import { Num } from "@/ui/num/Num";
@@ -30,6 +31,9 @@ type Fields = {
 
 type Preview = { payableKrw: number | null; diffKrw: number | null };
 
+// 지급 예정일 제자리 칸(SP-3 ②) — 열렸을 때만 값이 있다. original = 칸을 연 때의 서버 값(dirty 비교 · Esc 되돌림 기준).
+export type ScheduleEdit = { original: string; value: string; error?: string };
+
 type PanelState = {
   view: PaymentView;
   conflict: string | null;
@@ -41,6 +45,10 @@ type PanelState = {
   refreshPreview: () => void;
   fieldErrors: PaymentFieldErrors;
   setFieldErrors: (errors: PaymentFieldErrors) => void;
+  schedule: ScheduleEdit | null;
+  setSchedule: (next: ScheduleEdit | null) => void;
+  // 예정일 칸 값이 연 때의 값과 다르면 행동 줄 1차가 `예정일 저장`(P1)이다.
+  scheduleDirty: boolean;
 };
 
 const PanelContext = createContext<PanelState | null>(null);
@@ -83,6 +91,8 @@ export function PaymentPanelProvider({ view, children }: { view: PaymentView; ch
   const [preview, setPreview] = useState<Preview>({ payableKrw: view.payableKrw ?? null, diffKrw: null });
   const [nonce, setNonce] = useState(0);
   const [fieldErrors, setFieldErrors] = useState<PaymentFieldErrors>({});
+  const [schedule, setSchedule] = useState<ScheduleEdit | null>(null);
+  const scheduleDirty = schedule !== null && schedule.value !== "" && schedule.value !== schedule.original;
   const seq = useRef(0);
   const canPay = view.row?.primary === "pay";
 
@@ -146,6 +156,9 @@ export function PaymentPanelProvider({ view, children }: { view: PaymentView; ch
         refreshPreview: () => setNonce((value) => value + 1),
         fieldErrors,
         setFieldErrors,
+        schedule,
+        setSchedule,
+        scheduleDirty,
       }}
     >
       {children}
@@ -198,6 +211,69 @@ function TransferInput({ id, initial, error, onChange }: { id: string; initial: 
   );
 }
 
+// 지급 예정일 제자리 칸 — 칸 옆 저장 버튼 없음(저장은 행동 줄 1차 `예정일 저장`). Enter는 제출 막음 · Esc는 서버 값으로 되돌리고 닫는다.
+// 날짜를 바꾸면 서버가 두 날짜로 다시 계산한 지급 총액을 받아 다르면 `지급 총액 {전} → {후}`(같으면 힌트 없음 — 세율 기준일이 지급 예정일인 규칙만 달라진다).
+function ScheduleField({ expenseId, schedule, onChange, onClose }: { expenseId: string | undefined; schedule: ScheduleEdit; onChange: (value: string) => void; onClose: () => void }) {
+  const [hint, setHint] = useState<{ value: string; before: number | null; after: number | null } | null>(null);
+  const { original, value } = schedule;
+  useEffect(() => {
+    if (expenseId === undefined || original === "" || value === "" || value === original) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const [before, after] = await Promise.all([previewPayableAction({ expenseId, payDate: original }), previewPayableAction({ expenseId, payDate: value })]);
+          if (!cancelled) setHint({ value, before: before?.data?.payableKrw ?? null, after: after?.data?.payableKrw ?? null });
+        } catch {
+          if (!cancelled) setHint(null);
+        }
+      })();
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [expenseId, original, value]);
+  const showHint = hint !== null && hint.value === value && value !== original && hint.before !== null && hint.after !== null && hint.before !== hint.after;
+
+  return (
+    <Form
+      onSubmit={(event) => {
+        event.preventDefault();
+      }}
+    >
+      <Form.Field id="payment-scheduled-date" label="지급 예정일" width="short">
+        <input
+          id="payment-scheduled-date"
+          type="date"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") event.preventDefault();
+            if (event.key === "Escape") {
+              event.preventDefault();
+              onClose();
+            }
+          }}
+          className={styles.textInput}
+          aria-invalid={schedule.error ? true : undefined}
+          aria-describedby={[schedule.error ? "payment-scheduled-date-error" : "", showHint ? "payment-scheduled-date-hint" : ""].filter(Boolean).join(" ") || undefined}
+        />
+        {schedule.error ? <Form.Error id="payment-scheduled-date-error">{schedule.error}</Form.Error> : null}
+        {showHint ? (
+          <div id="payment-scheduled-date-hint">
+            <Form.Hint>
+              <span className={styles.taxSegment} data-testid="payment-schedule-hint">
+                지급 총액 <Num value={hint.before} /> → <Num value={hint.after} />
+              </span>
+            </Form.Hint>
+          </div>
+        ) : null}
+      </Form.Field>
+    </Form>
+  );
+}
+
 export function PaymentFields({
   paymentMethod,
   paymentMethodName,
@@ -207,24 +283,44 @@ export function PaymentFields({
   paymentMethodName: string | null;
   scheduledPaymentDate: string | null;
 }) {
-  const { view, fields, setFields, preview, previewing, fieldErrors, setFieldErrors } = usePaymentPanel();
+  const { view, fields, setFields, preview, previewing, fieldErrors, setFieldErrors, schedule, setSchedule } = usePaymentPanel();
   const dash = <span className={styles.muted}>—</span>;
   const paid = view.row?.row === "P6";
   const canPay = view.row?.primary === "pay";
   const label = transferLabel(paymentMethod);
 
-  const items: KvItem[] = [
-    {
+  // 3차 `지급 예정일 바꾸기`는 지급 전 지급 권한자에게만(P3 · P4 — 1차가 `지급 완료`인 행). 열면 그 행이 제자리 날짜 칸이 된다.
+  function openSchedule() {
+    setSchedule({ original: scheduledPaymentDate ?? "", value: scheduledPaymentDate ?? "" });
+    requestAnimationFrame(() => document.getElementById("payment-scheduled-date")?.focus());
+  }
+  function closeSchedule() {
+    setSchedule(null);
+    requestAnimationFrame(() => document.getElementById("payment-schedule-edit")?.focus());
+  }
+  const scheduleValue = (
+    <>
+      {scheduledPaymentDate ?? dash}
+      {view.row?.ownerNote ? <span className={`${styles.subLine} ${styles.muted}`}>{view.row.ownerNote}</span> : null}
+    </>
+  );
+  const items: KvItem[] = [];
+  if (!(canPay && schedule)) {
+    items.push({
       label: "지급 예정일",
-      value: (
-        <>
-          {scheduledPaymentDate ?? dash}
-          {view.row?.ownerNote ? <span className={`${styles.subLine} ${styles.muted}`}>{view.row.ownerNote}</span> : null}
-        </>
+      value: canPay ? (
+        <span className={styles.valueRow}>
+          <span className={styles.fill}>{scheduleValue}</span>
+          <Button id="payment-schedule-edit" variant="tertiary" onClick={openSchedule}>
+            지급 예정일 바꾸기
+          </Button>
+        </span>
+      ) : (
+        scheduleValue
       ),
-    },
-    { label: "지급 방식", value: paymentMethodName ?? dash },
-  ];
+    });
+  }
+  items.push({ label: "지급 방식", value: paymentMethodName ?? dash });
   if (paid) {
     items.push({
       label: "지급일",
@@ -274,6 +370,14 @@ export function PaymentFields({
 
   return (
     <>
+      {canPay && schedule ? (
+        <ScheduleField
+          expenseId={view.expenseId}
+          schedule={schedule}
+          onChange={(value) => setSchedule({ ...schedule, value, error: undefined })}
+          onClose={closeSchedule}
+        />
+      ) : null}
       <KvList items={items} />
       {canPay ? (
         <Form

@@ -9,17 +9,25 @@ import { applyTaxRule, loadTaxRates as defaultLoadTaxRates, taxRatesReader, type
 import { diffKrw, grossFromTotal, type RoundingUnit } from "@/domain/money";
 import { taxRuleSchema, type TaxRule } from "@/domain/code-tables/tax-rule";
 import { getSettingValue as defaultGetSettingValue } from "@/domain/settings/registry";
-import { TAX_BASIS_DATE_VAT, TAX_BASIS_DATE_WITHHOLDING, type TaxBasisDate } from "@/domain/settings/keys";
+import { EVIDENCE_REQUIRED, PAYMENT_METHOD_EVIDENCE_PAIRS, TAX_BASIS_DATE_VAT, TAX_BASIS_DATE_WITHHOLDING, type TaxBasisDate } from "@/domain/settings/keys";
 import { getApprovalView } from "@/domain/approvals";
 import { EXPENSE_DOCUMENT_KIND } from "@/domain/expenses/access";
 import { incomeTypeFor, pickTaxDates, type PickedTaxDates } from "@/domain/expenses/tax";
 import { TAX_UNAVAILABLE } from "@/domain/expenses/gate";
 import { hasEvidence } from "@/domain/evidence/has-evidence";
-import { DIFF_REASON_REQUIRED, resolveExpenseActionRow, type ExpenseActionBar } from "@/domain/payments/action-row";
+import {
+  DIFF_REASON_REQUIRED,
+  resolveExpenseActionRow,
+  type EvidenceGateInput,
+  type ExpenseActionBar,
+  type PairGateInput,
+} from "@/domain/payments/action-row";
+import type { MethodEvidencePair } from "@/domain/payments/method-evidence-pairs";
+import { visible } from "@/domain/permissions/visible";
 import { listCodeItems as defaultListCodeItems } from "@/repositories/code-tables";
 import { findUserNamesByIds } from "@/repositories/users";
 import { findExpenseApprovalInstance, findExpenseById, lockExpenseForUpdate, type ExpenseRow } from "@/repositories/expenses";
-import { bumpExpenseVersion, findLivePayment, insertPayment } from "@/repositories/expense-payments";
+import { bumpExpenseVersion, findLivePayment, insertPayment, updateScheduledPaymentDate } from "@/repositories/expense-payments";
 import { withTransaction } from "@/lib/db-transaction";
 import { seoulDateToUtcDate, seoulToday } from "@/lib/dates";
 import { isUniqueViolation } from "@/lib/pg-errors";
@@ -124,6 +132,11 @@ export type PaymentShared = {
   basisWithholding: TaxBasisDate;
   basisVat: TaxBasisDate;
   ratesFor: (asOf: string) => Promise<TaxRates>;
+  // 06-04 — 증빙 필수 설정 · 지급 방식 × 증빙 종류 짝 목록 · 두 코드표의 이름(막힘 이유 글자).
+  evidenceRequired: boolean;
+  pairs: readonly MethodEvidencePair[];
+  paymentMethodName: (code: string | null) => string | null;
+  evidenceTypeName: (code: string | null) => string | null;
 };
 
 export type PaymentSharedDeps = {
@@ -139,19 +152,34 @@ export async function loadPaymentShared(viewer: Viewer, deps?: Partial<PaymentSh
     includeInactive: true,
   });
   const rules = new Map<string, TaxRule>();
+  const evidenceNames = new Map<string, string>();
   for (const item of items) {
+    evidenceNames.set(item.value, item.label);
     const parsed = taxRuleSchema.safeParse(item.taxRule);
     if (parsed.success) rules.set(item.value, parsed.data);
   }
+  const methods = await (deps?.listCodeItems ?? defaultListCodeItems)(viewer, {
+    tableKey: "payment_method",
+    scope: { rows: "all", includeArchived: true },
+    includeInactive: true,
+  });
+  const methodNames = new Map(methods.map((item) => [item.value, item.label]));
   const getValue = deps?.getSettingValue ?? defaultGetSettingValue;
   const basisWithholding = await getValue(TAX_BASIS_DATE_WITHHOLDING);
   const basisVat = await getValue(TAX_BASIS_DATE_VAT);
+  // 06-04 — 증빙 · 짝 게이트 입력(문서와 무관 — 트랜잭션 전 한 번, E-34). 저장된 짝은 보관된 코드 값이 들어 있어도 그대로 판정한다.
+  const evidenceRequired = await getValue(EVIDENCE_REQUIRED);
+  const pairs = await getValue(PAYMENT_METHOD_EVIDENCE_PAIRS);
   const load = deps?.loadTaxRates ?? defaultLoadTaxRates;
   const cache = new Map<string, Promise<TaxRates>>();
   return {
     taxRuleOf: (evidenceType) => (evidenceType ? (rules.get(evidenceType) ?? null) : null),
     basisWithholding,
     basisVat,
+    evidenceRequired,
+    pairs,
+    paymentMethodName: (code) => (code ? (methodNames.get(code) ?? null) : null),
+    evidenceTypeName: (code) => (code ? (evidenceNames.get(code) ?? null) : null),
     ratesFor: (asOf) => {
       let rates = cache.get(asOf);
       if (!rates) {
@@ -174,6 +202,8 @@ export type PaymentInputs = {
   stepName: string | null;
   evidenceType: string | null;
   hasLiveEvidence: boolean;
+  // 06-04 — 증빙 없음 막힘 이유의 이름(지출결의 기안자 — P3). 표시 문자열.
+  drafterName: string;
   amount: PaymentAmount | null;
   tax: (PaymentTax & { rates: TaxRates }) | null;
 };
@@ -213,6 +243,7 @@ export async function loadPaymentInputs(
   const instance = await findExpenseApprovalInstance(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, documentId: row.id });
   const approvalState = instance?.status ?? null;
   const stepName = approvalState && IN_PROGRESS.includes(approvalState) ? await currentStepName(viewer, row.id) : null;
+  const drafterName = (await findUserNamesByIds(viewer, [row.drafterId])).get(row.drafterId) ?? "";
   const today = seoulToday(input.now);
   const payDate = input.payDate ?? null;
   const { amount, tax } = basisOf(row, { shared: ctxShared, payDate, today, hasLiveEvidence });
@@ -224,6 +255,7 @@ export async function loadPaymentInputs(
     stepName,
     evidenceType: row.evidenceType,
     hasLiveEvidence,
+    drafterName,
     amount,
     tax: tax ? { ...tax, rates: await ctxShared.ratesFor(tax.dates.basisDate) } : null,
   };
@@ -257,10 +289,34 @@ function sameBasis(pre: PaymentInputs, locked: { evidenceType: string | null; am
 
 export type LockedExpense = Pick<
   ExpenseRow,
-  "id" | "evidenceType" | "supplyAmountKrw" | "evidenceAmount" | "scheduledPaymentDate" | "evidenceDate" | "createdAt" | "paymentMethod"
+  "id" | "evidenceType" | "supplyAmountKrw" | "evidenceAmount" | "scheduledPaymentDate" | "evidenceDate" | "createdAt" | "paymentMethod" | "prepaid"
 >;
 
+// 06-04 — 증빙 · 짝 게이트 ctx(DB 없음). 문서 상태(증빙 유무 · 선결제)는 호출자가 넘긴 값 — 잠금 뒤에는 tx로 읽은 값(CROSS R-3).
+// waived · confirmation은 기록 표를 읽는 06-06 · 06-10의 evidenceGateInputs가 넣는다 — 06-04에는 그 기록을 쓰는 경로가 없어 「기록 없음」 하나.
+export function evidenceGateCtx(input: { shared: PaymentShared; hasEvidence: boolean; prepaid: boolean; drafterName: string }): EvidenceGateInput {
+  return {
+    evidenceRequired: input.shared.evidenceRequired,
+    hasEvidence: input.hasEvidence,
+    prepaid: input.prepaid,
+    waived: false,
+    confirmation: null,
+    drafterName: input.drafterName,
+  };
+}
+
+export function pairGateCtx(row: { paymentMethod: string | null; evidenceType: string | null }, shared: PaymentShared): PairGateInput {
+  return {
+    pairs: shared.pairs,
+    paymentMethod: row.paymentMethod,
+    evidenceType: row.evidenceType,
+    paymentMethodName: shared.paymentMethodName(row.paymentMethod),
+    evidenceTypeName: shared.evidenceTypeName(row.evidenceType),
+  };
+}
+
 // 잠금 뒤 판정(DB 없음) — 트랜잭션 콜백이 tx로 읽은 값(잠근 행 · 결재 상태 · 살아 있는 증빙 유무)만 넘긴다. 순서: 결재 게이트 →
+// 증빙 게이트(잠근 행의 prepaid · tx로 읽은 증빙 유무) → 짝 게이트(잠근 행의 방식 · 종류, 06-04) →
 // 기준 재판정(기준일 · 증빙 종류 · 금액 원천 — CROSS-R1 F-3: 게이트가 먼저) → 지급 총액 → 화면이 본 값 비교. 기준이 바뀌었어도 기준일이
 // 같으면 사전 조회 세율로 여기서 새 값을 셈하고, 기준일이 바뀌면 BasisChangedSignal(그날 세율은 밖에서).
 export async function judgeLockedPayment(input: {
@@ -278,6 +334,14 @@ export async function judgeLockedPayment(input: {
   const { pre, locked } = input;
   const decision = await gate(locked, "payment.approval-required", { approvalState: input.approvalState, stepName: pre.stepName });
   if (!decision.allowed) throw new GateBlockedError(decision.reason);
+  const evidence = await gate(
+    locked,
+    "payment.evidence-required",
+    evidenceGateCtx({ shared: input.shared, hasEvidence: input.lockedHasEvidence, prepaid: locked.prepaid, drafterName: pre.drafterName }),
+  );
+  if (!evidence.allowed) throw new GateBlockedError(evidence.reason);
+  const pair = await gate(locked, "payment.method-evidence-mismatch", pairGateCtx(locked, input.shared));
+  if (!pair.allowed) throw new GateBlockedError(pair.reason);
 
   const basis = basisOf(locked, { shared: input.shared, payDate: input.payDate, today: pre.today, hasLiveEvidence: input.lockedHasEvidence });
   if (!sameBasis(pre, { evidenceType: locked.evidenceType, ...basis })) {
@@ -406,6 +470,44 @@ export async function completeExpensePayment(
   }
 }
 
+// ── 지급 예정일 저장(06-04 · SP-3 ②) ───────────────────────────────────
+// 예정일만 바꾼다(미래 날짜 허용 — Q6). 권한은 트랜잭션 전. 한 트랜잭션: 문서 행 FOR UPDATE → version → 결재 통과(같은 tx) →
+// 살아 있는 지급 없음 → 조건 UPDATE(예정일 · version + 1) → 행동 로그 document_update(전후 날짜, 같은 tx).
+export async function saveScheduledPayDate(
+  viewer: Viewer,
+  input: { expenseId: string; scheduledPayDate: string; version: number },
+): Promise<{ version: number }> {
+  if (!(await can(viewer, "expenses.payments", "write"))) throw new ForbiddenError("지급 처리 권한 없음");
+  return withTransaction(async (tx) => {
+    const locked = await lockExpenseForUpdate(viewer, input.expenseId, tx);
+    if (!locked) throw new PaymentNotFoundError();
+    const conflict = `다른 사람이 ${formatKstTime(locked.updatedAt)}에 바꿈 · 새로 고침`;
+    if (locked.version !== input.version) throw new PaymentConflictError(conflict);
+    const instance = await findExpenseApprovalInstance(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, documentId: locked.id }, tx);
+    const decision = await gate(locked, "payment.approval-required", { approvalState: instance?.status ?? null, stepName: null });
+    if (!decision.allowed) throw new GateBlockedError(decision.reason);
+    if (await findLivePayment(viewer, locked.id, tx)) throw new PaymentConflictError(ALREADY_PAID);
+    const version = await updateScheduledPaymentDate(
+      viewer,
+      { expenseId: locked.id, date: input.scheduledPayDate, expectedVersion: locked.version, updatedBy: viewer.id },
+      tx,
+    );
+    if (version === null) throw new PaymentConflictError(conflict);
+    await recordAction(
+      viewer,
+      {
+        actionType: "document_update",
+        entity: "expense",
+        entityId: locked.id,
+        documentId: locked.id,
+        detail: { field: "scheduledPaymentDate", before: locked.scheduledPaymentDate, after: input.scheduledPayDate },
+      },
+      { tx },
+    );
+    return { version };
+  });
+}
+
 // ── 지급 총액 미리보기(06-04 · S5 loading) ─────────────────────────────
 // 지급일(또는 이체액)을 바꾸면 화면이 서버가 다시 계산한 지급 총액 · 차이를 받는다 — 읽기 전용, 트랜잭션 · 행동 로그 없음.
 // 차이도 서버 diffKrw로만(O-18 — 화면은 금액을 셈하지 않는다). 셈할 수 없는 문서(세금 규칙 · 공급가 없음)는 지급 총액 null.
@@ -443,10 +545,14 @@ export async function previewPayable(
 // ── 지급 섹션 DTO ───────────────────────────────────────────────────────
 // 결재 통과 문서의 지급 섹션(S5). 금액 칸은 05 정보 항목 expense.amount, 나머지는 expense.value(RS-19 — 새 정보 항목 없음).
 // 지급 전 = 사전 조회 → decidePayable(처리 지급일 기본 = 오늘). 지급 뒤(E-22) = 살아 있는 지급 기록 값 그대로(다시 계산하지 않는다).
+// DTO의 행동 줄 = resolveExpenseActionRow 결과 그대로. 06-04가 더한 칸(blockReason · tertiary)은 DTO 타입에서만 선택이다 —
+// 06-03 leak-scan 픽스처가 옛 모양으로 DTO를 만들고, 그 파일은 같은 웨이브 06-05가 써서 이 플랜이 열지 않는다(화면은 없으면 null로 읽는다).
+export type PaymentViewBar = Pick<ExpenseActionBar, "row" | "primary" | "ownerNote"> & Partial<ExpenseActionBar>;
+
 export type PaymentViewDto = {
   expenseId: string;
   version: number;
-  row: ExpenseActionBar;
+  row: PaymentViewBar;
   payDate: string;
   paidTime: string | null;
   payableKrw: number | null;
@@ -482,8 +588,21 @@ export async function getPaymentView(viewer: Viewer, expenseId: string, deps?: {
   if (!row) return null;
   const instance = await findExpenseApprovalInstance(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, documentId: row.id });
   if (instance?.status !== "approved") return null;
-  const [canPay, live] = await Promise.all([can(viewer, "expenses.payments", "write"), findLivePayment(viewer, row.id)]);
-  const actionRow = resolveExpenseActionRow({ approvalState: instance.status, paid: live !== null }, { canPay });
+  const [canPay, amountVisible, live] = await Promise.all([
+    can(viewer, "expenses.payments", "write"),
+    visible(viewer, "expense.amount"),
+    findLivePayment(viewer, row.id),
+  ]);
+  const today = seoulToday(deps?.now);
+  const shared = await loadPaymentShared(viewer);
+  const pre = await loadPaymentInputs(viewer, { expenseId: row.id, payDate: today, now: deps?.now }, shared);
+  // 화면 1차와 서버 게이트가 같은 규칙(gate)을 읽는다 — 사전 조회 값이라 낡을 수 있고, 지급 완료는 잠금 뒤 tx 값으로 다시 판정한다.
+  const evidence = await gate(row, "payment.evidence-required", evidenceGateCtx({ shared, hasEvidence: pre.hasLiveEvidence, prepaid: row.prepaid, drafterName: pre.drafterName }));
+  const pair = await gate(row, "payment.method-evidence-mismatch", pairGateCtx(row, shared));
+  const actionRow = resolveExpenseActionRow(
+    { approvalState: instance.status, paid: live !== null, hasEvidence: pre.hasLiveEvidence, waived: false, evidence, pair },
+    { canPay, amountVisible },
+  );
   if (live) {
     const names = await findUserNamesByIds(viewer, [live.processedBy]);
     return project(
@@ -504,8 +623,6 @@ export async function getPaymentView(viewer: Viewer, expenseId: string, deps?: {
       PAYMENT_VIEW_DTO_SPEC,
     );
   }
-  const today = seoulToday(deps?.now);
-  const pre = await loadPaymentInputs(viewer, { expenseId: row.id, payDate: today, now: deps?.now });
   const payable = await payableOf(pre);
   return project(
     viewer,

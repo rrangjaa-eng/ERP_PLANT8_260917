@@ -1,8 +1,9 @@
 import type { GateDecision } from "@/domain/rules/gate";
+import { isMethodEvidencePairAllowed, type MethodEvidencePair } from "@/domain/payments/method-evidence-pairs";
 
 // 06-03(D-604 · UI-SPEC 「지출결의 상태 → 1차」) — 순수 함수 둘. 화면 1차와 서버 게이트(`payment.approval-required`)가 같은 판정을 읽는다.
 // 잎 모듈: domain/expenses를 값으로 import하지 않는다(06-23 evidence-signals가 이 파일을 값 import한다).
-// 이 플랜은 P0 · P4 · P6만 — P1(예정일 저장) · P2(증빙 확인) · P3(증빙 없음) · P5는 06-04 · 06-06이 더한다.
+// 06-03은 P0 · P4 · P6, 06-04가 P1(예정일 저장) · P3(증빙 없음) · 짝 막힘 · 3차 자리 `waive`를 더했다. P2 · P5(증빙 확인)는 06-06.
 
 // 결재 통과 = approved(자기 승인도 approved로 끝난다 — UA-607).
 export const APPROVAL_PASSED = "approved";
@@ -31,16 +32,88 @@ export const TRANSFER_NOT_NUMBER = "숫자 아님 · 13,640,000처럼";
 export const TRANSFER_NOT_POSITIVE = "이체액 0 이하 · 금액 고치기";
 export const TRANSFER_FRACTION = "원화 소수점 · 소수점 없이";
 
+// 06-04(06-03 독립 검토 P3-4) — 지급 권한자가 지급 총액(정보 항목 expense.amount)을 못 보면 화면이 비교값을 보낼 수 없다.
+export const AMOUNT_HIDDEN = "지급 총액 볼 권한 없음 · 노출 설정은 관리자";
+
+// ── 증빙 필수 게이트(EVID-02 · D-603) ─────────────────────────────────────
+// 증빙 필수 on · 증빙 0(hasEvidence 거짓 — 무효 파일 제외) · 선결제 아님 · 면제 아님이면 막는다. 이유의 이름은 지출결의 기안자(P3).
+// confirmation(증빙 확인 기록)은 06-06이 「증빙 있음 · 확인 전」 갈래를 이 함수에 더할 때 읽는다 — 06-04 경로는 늘 null.
+export type EvidenceConfirmation = { reviewedAt: Date };
+
+export type EvidenceGateInput = {
+  evidenceRequired: boolean;
+  hasEvidence: boolean;
+  prepaid: boolean;
+  waived: boolean;
+  confirmation: EvidenceConfirmation | null;
+  drafterName: string;
+};
+
+export function evidenceGateDecision(ctx: EvidenceGateInput): GateDecision {
+  if (!ctx.evidenceRequired || ctx.hasEvidence || ctx.prepaid || ctx.waived) return { allowed: true };
+  return { allowed: false, reason: `증빙 없음 · 기안자 ${ctx.drafterName}` };
+}
+
+// ── 지급 방식 ↔ 증빙 종류 짝 게이트(Q4 · K-6) ─────────────────────────────
+// 판정 몸통은 06-02 isMethodEvidencePairAllowed 하나 — 여기서는 증빙 종류가 빈 갈래(면제 · 선결제로 종류가 비어도 지급 방식만으로 막지 않는다)와
+// 이유 문자열만 더한다. 이름은 호출자가 코드표에서 읽어 넘긴다(없으면 코드 값).
+export type PairGateInput = {
+  pairs: readonly MethodEvidencePair[];
+  paymentMethod: string | null;
+  evidenceType: string | null;
+  paymentMethodName: string | null;
+  evidenceTypeName: string | null;
+};
+
+export function pairGateDecision(input: PairGateInput): GateDecision {
+  if (!input.evidenceType || !input.paymentMethod) return { allowed: true };
+  if (isMethodEvidencePairAllowed(input.pairs, { method: input.paymentMethod, evidenceType: input.evidenceType })) return { allowed: true };
+  return {
+    allowed: false,
+    reason: `${input.paymentMethodName ?? input.paymentMethod} · ${input.evidenceTypeName ?? input.evidenceType} 짝 아님 · 짝 설정은 관리자`,
+  };
+}
+
+// ── 「지출결의 상태 → 1차」 ───────────────────────────────────────────────
 export type ExpenseActionBar = {
-  row: "P0" | "P4" | "P6";
-  // 지급 권한자에게만 선다(D-601) — 권한 없는 사람은 비활성으로도 렌더하지 않는다.
-  primary: "pay" | null;
+  row: "P0" | "P1" | "P3" | "P4" | "P6";
+  // 지급 권한자에게만 선다(D-601) — 권한 없는 사람은 비활성으로도 렌더하지 않는다. saveSchedule = P1 `예정일 저장`.
+  primary: "pay" | "saveSchedule" | null;
+  // 1차 비활성 이유(`block`) — 증빙 없음(P3) · 짝 아님 · 지급 총액 볼 권한 없음. 있으면 1차는 비활성이다.
+  blockReason: string | null;
+  // 증빙 섹션 3차 `증빙 면제`의 자리 — 결재 통과 · 증빙 0 · 면제 아님(P3 · P4 · P6). 행동을 붙이는 06-10이 렌더한다.
+  tertiary: "waive" | null;
   // 권한 밖의 다음 한 수 — 지급 전에만 담당 표기(UI-SPEC S5 「그 밖의 사람」).
   ownerNote: typeof PAYMENT_OWNER_NOTE | null;
 };
 
-export function resolveExpenseActionRow(state: { approvalState: string | null; paid: boolean }, perms: { canPay: boolean }): ExpenseActionBar {
-  if (state.approvalState !== APPROVAL_PASSED) return { row: "P0", primary: null, ownerNote: null };
-  if (state.paid) return { row: "P6", primary: null, ownerNote: null };
-  return perms.canPay ? { row: "P4", primary: "pay", ownerNote: null } : { row: "P4", primary: null, ownerNote: PAYMENT_OWNER_NOTE };
+export type ExpenseActionState = {
+  approvalState: string | null;
+  paid: boolean;
+  hasEvidence: boolean;
+  waived: boolean;
+  evidence: GateDecision;
+  pair: GateDecision;
+  // 지급 예정일 칸이 dirty(화면에서만 안다 — SP-3 ②).
+  scheduleDirty?: boolean;
+};
+
+// P1 — 지급 예정일 칸이 dirty인 동안 지급 권한자의 지급 전 1차는 `예정일 저장`(막힌 업무 1차와 관계없이 — 예정일은 따로 저장된다).
+export function scheduleDirtyBar(bar: ExpenseActionBar): ExpenseActionBar {
+  if (bar.primary === null || bar.row === "P0" || bar.row === "P6") return bar;
+  return { ...bar, row: "P1", primary: "saveSchedule", blockReason: null };
+}
+
+export function resolveExpenseActionRow(state: ExpenseActionState, perms: { canPay: boolean; amountVisible?: boolean }): ExpenseActionBar {
+  const none = { primary: null, blockReason: null, tertiary: null, ownerNote: null } as const;
+  if (state.approvalState !== APPROVAL_PASSED) return { row: "P0", ...none };
+  const waiveSlot = perms.canPay && !state.hasEvidence && !state.waived ? "waive" : null;
+  if (state.paid) return { row: "P6", ...none, tertiary: waiveSlot };
+  if (!perms.canPay) return { row: "P4", ...none, ownerNote: PAYMENT_OWNER_NOTE };
+  let bar: ExpenseActionBar;
+  if (!state.evidence.allowed) bar = { row: "P3", primary: "pay", blockReason: state.evidence.reason, tertiary: waiveSlot, ownerNote: null };
+  else if (!state.pair.allowed) bar = { row: "P4", primary: "pay", blockReason: state.pair.reason, tertiary: waiveSlot, ownerNote: null };
+  else if (perms.amountVisible === false) bar = { row: "P4", primary: "pay", blockReason: AMOUNT_HIDDEN, tertiary: waiveSlot, ownerNote: null };
+  else bar = { row: "P4", primary: "pay", blockReason: null, tertiary: waiveSlot, ownerNote: null };
+  return state.scheduleDirty ? scheduleDirtyBar(bar) : bar;
 }

@@ -501,6 +501,18 @@ describe("증빙 · 짝 게이트 (06-04 Task 2 · 3)", () => {
     expect(await livePayments(doc.expenseId)).toHaveLength(1);
   });
 
+  // 06-04 검토 P3-1 — 증빙 게이트의 prepaid는 잠근 지출결의 행의 expenses.prepaid(index.ts judgeLockedPayment). false 고정 · 다른 값으로 바꾸면 빨갛다.
+  it("증빙 필수 on · 증빙 0이어도 선결제(expenses.prepaid) 문서는 지급된다 — 증빙 게이트가 잠근 행의 prepaid를 읽는다", async () => {
+    const payer = await makePayer();
+    const doc = await approvedExpenseWithoutEvidence(await setupExpenseProject());
+    const payable = await payableNow(payer, doc);
+    // 테스트 준비 전용 — 이 문서 행만 선결제로 바꾼다(version은 그대로라 화면이 본 문서와 같다).
+    await db.update(expenses).set({ prepaid: true, prepaidReason: "현장 선결제" }).where(eq(expenses.id, doc.expenseId));
+    await setEvidenceRequired(true);
+    await completeExpensePayment(payer, { expenseId: doc.expenseId, expectedPayableKrw: payable, version: doc.version });
+    expect(await livePayments(doc.expenseId)).toHaveLength(1);
+  });
+
   it(
     "잠금 뒤 게이트 재판정 — 증빙 게이트가 기준 재판정보다 먼저: 잠금 대기 중 증빙이 무효되고 증빙일도 바뀌면 PayableChangedError가 아니라 `증빙 없음 · 기안자 박서연`",
     async () => {

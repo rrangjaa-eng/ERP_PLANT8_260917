@@ -46,8 +46,22 @@ export const AMOUNT_HIDDEN = "지급 총액 볼 권한 없음 · 노출 설정�
 
 // ── 증빙 필수 게이트(EVID-02 · D-603) ─────────────────────────────────────
 // 증빙 필수 on · 증빙 0(hasEvidence 거짓 — 무효 파일 제외) · 선결제 아님 · 면제 아님이면 막는다. 이유의 이름은 지출결의 기안자(P3).
-// confirmation(증빙 확인 기록)은 06-06이 「증빙 있음 · 확인 전」 갈래를 이 함수에 더할 때 읽는다 — 06-04 경로는 늘 null.
+// 06-06(O-2): 증빙 있음 · 면제 아님 · 확인 기록 없음(「확인 전」)이면 증빙 필수 설정과 관계없이 먼저 막는다 — 확인 기록 = confirmation.
 export type EvidenceConfirmation = { reviewedAt: Date };
+
+// O-2 답이 바뀌면 이 상수와 P2 갈래만 고친다.
+export const EVIDENCE_CONFIRMATION_GATES_PAYMENT = true;
+
+// 「거부 — 일괄 지급 건별 결과」 · P2 S1 선택 칸 이유(UI-SPEC) — 확인 전 증빙.
+export const EVIDENCE_UNCONFIRMED = "증빙 확인 전 · 증빙 확인";
+
+// 확인 전 증빙이 지급을 막는가 — 정책은 EVIDENCE_CONFIRMATION_GATES_PAYMENT 하나(gates는 테스트 주입 자리).
+export function confirmationBlocksPayment(
+  input: { hasEvidence: boolean; waived: boolean; confirmation: EvidenceConfirmation | null },
+  gates: boolean = EVIDENCE_CONFIRMATION_GATES_PAYMENT,
+): boolean {
+  return gates && input.hasEvidence && !input.waived && input.confirmation === null;
+}
 
 export type EvidenceGateInput = {
   evidenceRequired: boolean;
@@ -58,7 +72,8 @@ export type EvidenceGateInput = {
   drafterName: string;
 };
 
-export function evidenceGateDecision(ctx: EvidenceGateInput): GateDecision {
+export function evidenceGateDecision(ctx: EvidenceGateInput, gates: boolean = EVIDENCE_CONFIRMATION_GATES_PAYMENT): GateDecision {
+  if (confirmationBlocksPayment(ctx, gates)) return { allowed: false, reason: EVIDENCE_UNCONFIRMED };
   if (!ctx.evidenceRequired || ctx.hasEvidence || ctx.prepaid || ctx.waived) return { allowed: true };
   return { allowed: false, reason: `증빙 없음 · 기안자 ${ctx.drafterName}` };
 }
@@ -90,7 +105,7 @@ export type ExpenseActionBar = {
   primary: "pay" | "saveSchedule" | "confirm" | null;
   // 1차 비활성 이유(`block`) — 증빙 없음(P3) · 짝 아님 · 지급 총액 볼 권한 없음. 있으면 1차는 비활성이다.
   blockReason: string | null;
-  // 2차 `지급 취소`(D-606) — 지급 뒤(P6) 지급 권한자에게만.
+  // 2차 `지급 취소`(D-606) — 지급 뒤(P5 · P6) 지급 권한자에게만.
   secondary: "cancel" | null;
   // 증빙 섹션 3차 — `증빙 면제`의 자리(결재 통과 · 증빙 0 · 면제 아님 — P3 · P4 · P6, 행동을 붙이는 06-10이 렌더한다) ·
   // `바꾸기`(증빙 금액 — P2 · P5, 06-06 EvidenceReviewBlock).
@@ -118,7 +133,7 @@ export function scheduleDirtyBar(bar: ExpenseActionBar): ExpenseActionBar {
   return { ...bar, row: "P1", primary: "saveSchedule", blockReason: null };
 }
 
-// 증빙 있음 · 면제 아님 · 확인 기록 없음 = 「확인 전」(06-06).
+// 증빙 있음 · 면제 아님 · 확인 기록 없음 = 「확인 전」(06-06). confirmation이 undefined면(06-03 · 06-04 호출 모양) 보지 않는다.
 function unconfirmed(state: ExpenseActionState): boolean {
   return state.confirmation === null && state.hasEvidence && !state.waived;
 }
@@ -127,10 +142,14 @@ export function resolveExpenseActionRow(state: ExpenseActionState, perms: { canP
   const none = { primary: null, blockReason: null, secondary: null, tertiary: null, ownerNote: null } as const;
   if (state.approvalState !== APPROVAL_PASSED) return { row: "P0", ...none };
   const waiveSlot = perms.canPay && !state.hasEvidence && !state.waived ? "waive" : null;
-  if (state.paid) return { row: "P6", ...none, secondary: perms.canPay ? "cancel" : null, tertiary: waiveSlot };
+  if (state.paid) {
+    // P5 — 지급 뒤 들어오거나 바뀐 증빙(확인만 기록 — 지급 칸 · 지급 행동은 다시 서지 않는다).
+    if (perms.canPay && unconfirmed(state)) return { row: "P5", primary: "confirm", blockReason: null, secondary: "cancel", tertiary: "change", ownerNote: null };
+    return { row: "P6", ...none, secondary: perms.canPay ? "cancel" : null, tertiary: waiveSlot };
+  }
   if (!perms.canPay) return { row: "P4", ...none, ownerNote: PAYMENT_OWNER_NOTE };
   let bar: ExpenseActionBar;
-  if (unconfirmed(state)) bar = { row: "P2", primary: "confirm", blockReason: null, secondary: null, tertiary: "change", ownerNote: null };
+  if (unconfirmed(state) && EVIDENCE_CONFIRMATION_GATES_PAYMENT) bar = { row: "P2", primary: "confirm", blockReason: null, secondary: null, tertiary: "change", ownerNote: null };
   else if (!state.evidence.allowed) bar = { row: "P3", primary: "pay", blockReason: state.evidence.reason, secondary: null, tertiary: waiveSlot, ownerNote: null };
   else if (!state.pair.allowed) bar = { row: "P4", primary: "pay", blockReason: state.pair.reason, secondary: null, tertiary: waiveSlot, ownerNote: null };
   else if (perms.amountVisible === false) bar = { row: "P4", primary: "pay", blockReason: AMOUNT_HIDDEN, secondary: null, tertiary: waiveSlot, ownerNote: null };

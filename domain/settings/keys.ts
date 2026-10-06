@@ -1251,7 +1251,6 @@ export const EVIDENCE_PREPAID_DUE_DAYS: SettingDef<number> = {
   namespace: "증빙",
   unitLabel: "일",
   default: 14,
-  readBy: { phase: "6" },
 };
 
 export const PURCHASE_ONLINE_VENDOR_NAME: SettingDef<string> = {

@@ -37,7 +37,8 @@ import { seoulDateToUtcDate, seoulToday } from "@/lib/dates";
 import { isUniqueViolation } from "@/lib/pg-errors";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { formatKstTime } from "@/domain/holidays/business-day";
-import { resolveEvidenceStatus, type EvidenceStatus } from "@/domain/evidence-reviews";
+import { evidenceGateInputs, loadPrepaidDueDays, resolveEvidenceStatus, type EvidenceStatus } from "@/domain/evidence-reviews";
+import { prepaidDueInfo, type PrepaidDue } from "@/domain/evidence-reviews/prepaid";
 import { findReviewByExpense } from "@/repositories/expense-evidence-reviews";
 import { kstDateOf } from "@/lib/kst-date";
 
@@ -358,6 +359,8 @@ export async function judgeLockedPayment(input: {
   locked: LockedExpense;
   approvalState: string | null;
   lockedHasEvidence: boolean;
+  // 06-06 — 잠금 뒤 tx로 지은 증빙 게이트 입력(evidenceGateInputs — 면제 · 확인 기록 포함). 없으면 06-04 꼴(면제 · 확인 없음).
+  evidenceGate?: EvidenceGateInput;
   payDate: string;
   expectedPayableKrw: number;
   shared: PaymentShared;
@@ -371,7 +374,7 @@ export async function judgeLockedPayment(input: {
   const evidence = await gate(
     locked,
     "payment.evidence-required",
-    evidenceGateCtx({ shared: input.shared, hasEvidence: input.lockedHasEvidence, prepaid: locked.prepaid, drafterName: pre.drafterName }),
+    input.evidenceGate ?? evidenceGateCtx({ shared: input.shared, hasEvidence: input.lockedHasEvidence, prepaid: locked.prepaid, drafterName: pre.drafterName }),
   );
   if (!evidence.allowed) throw new GateBlockedError(evidence.reason);
   const pair = await gate(locked, "payment.method-evidence-mismatch", pairGateCtx(locked, input.shared));
@@ -459,12 +462,13 @@ export async function completeExpensePayment(
       if (live) throw new AlreadyPaidSignal(live.processedBy, live.processedAt);
       if (locked.version !== input.version) throw new PaymentConflictError(`다른 사람이 ${formatKstTime(locked.updatedAt)}에 바꿈 · 새로 고침`);
       const instance = await findExpenseApprovalInstance(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, documentId: locked.id }, tx);
-      const lockedEvidence = await hasEvidence(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: locked.id }, tx);
+      const evidenceGate = await evidenceGateInputs(viewer, locked, { evidenceRequired: shared.evidenceRequired, drafterName: pre.drafterName }, tx);
       const { payable, paymentMethod, diffReason } = await judgeLockedPayment({
         pre,
         locked,
         approvalState: instance?.status ?? null,
-        lockedHasEvidence: lockedEvidence,
+        lockedHasEvidence: evidenceGate.hasEvidence,
+        evidenceGate,
         payDate,
         expectedPayableKrw: input.expectedPayableKrw,
         shared,
@@ -659,6 +663,8 @@ export type PaymentViewDto = {
   evidenceAmountDisplay?: EvidenceAmountDisplay;
   reviewLine?: { byName: string; at: string; waiveReason: string | null } | null;
   reviewAmounts?: { beforeKrw: number; afterKrw: number } | null;
+  // 06-06(O-5) — 선결제 증빙 기한(prepaidDueInfo). null이면 2행 없음 — 화면은 날짜를 셈하지 않는다.
+  prepaidDue?: PrepaidDue | null;
 };
 
 // 증빙 금액 2행 입력자 — 확인 기록에 금액 고침이 있으면 그 사람 · 시각, 없으면 기안자 · 문서 updated_at(입력자 전용 칸이 06-27에 없다).
@@ -684,6 +690,7 @@ export const PAYMENT_VIEW_DTO_SPEC: DtoSpec<PaymentViewDto, PaymentViewDto> = {
     { key: "evidenceAmountDisplay", from: "evidenceAmountDisplay", infoItem: "expense.amount" },
     { key: "reviewLine", from: "reviewLine", infoItem: "expense.value" },
     { key: "reviewAmounts", from: "reviewAmounts", infoItem: "expense.amount" },
+    { key: "prepaidDue", from: "prepaidDue", infoItem: "expense.value" },
   ],
 };
 
@@ -738,16 +745,35 @@ export async function getPaymentView(viewer: Viewer, expenseId: string, deps?: {
   const today = seoulToday(deps?.now);
   const shared = await loadPaymentShared(viewer);
   const pre = await loadPaymentInputs(viewer, { expenseId: row.id, payDate: today, now: deps?.now }, shared);
-  const waived = review?.status === "waived";
-  const confirmation = review?.status === "confirmed" ? { reviewedAt: review.reviewedAt } : null;
-  // 화면 1차와 서버 게이트가 같은 규칙(gate)을 읽는다 — 사전 조회 값이라 낡을 수 있고, 지급 완료는 잠금 뒤 tx 값으로 다시 판정한다.
-  const evidence = await gate(row, "payment.evidence-required", evidenceGateCtx({ shared, hasEvidence: pre.hasLiveEvidence, prepaid: row.prepaid, drafterName: pre.drafterName }));
+  // 화면 1차와 서버 게이트가 같은 규칙(gate) · 같은 입력 함수(evidenceGateInputs — 트랜잭션 없는 읽기라 tx 생략)를 읽는다.
+  // 사전 조회 값이라 낡을 수 있고, 지급 완료는 잠금 뒤 tx 값으로 다시 판정한다.
+  const evidenceCtx = await evidenceGateInputs(viewer, row, { evidenceRequired: shared.evidenceRequired, drafterName: pre.drafterName });
+  const evidence = await gate(row, "payment.evidence-required", evidenceCtx);
   const pair = await gate(row, "payment.method-evidence-mismatch", pairGateCtx(row, shared));
   const actionRow = resolveExpenseActionRow(
-    { approvalState: instance.status, paid: live !== null, hasEvidence: pre.hasLiveEvidence, waived, confirmation, evidence, pair },
+    {
+      approvalState: instance.status,
+      paid: live !== null,
+      hasEvidence: evidenceCtx.hasEvidence,
+      waived: evidenceCtx.waived,
+      confirmation: evidenceCtx.confirmation,
+      evidence,
+      pair,
+    },
     { canPay, amountVisible },
   );
-  const evidenceView = await evidenceViewOf(viewer, { row, review, hasLiveEvidence: pre.hasLiveEvidence, drafterName: pre.drafterName, evidenceRequired: shared.evidenceRequired });
+  const evidenceView = await evidenceViewOf(viewer, { row, review, hasLiveEvidence: evidenceCtx.hasEvidence, drafterName: pre.drafterName, evidenceRequired: shared.evidenceRequired });
+  // O-5 — 선결제 증빙 기한(지급일부터 설정 날수). 선결제 문서만 설정을 읽는다.
+  const prepaidDue = row.prepaid
+    ? prepaidDueInfo({
+        prepaid: true,
+        hasEvidence: evidenceCtx.hasEvidence,
+        waived: evidenceCtx.waived,
+        paidOn: live?.payDate ?? null,
+        dueDays: await loadPrepaidDueDays(),
+        today,
+      })
+    : null;
   if (live) {
     const names = await findUserNamesByIds(viewer, [live.processedBy]);
     return project(
@@ -766,6 +792,7 @@ export async function getPaymentView(viewer: Viewer, expenseId: string, deps?: {
         processedByName: names.get(live.processedBy) ?? null,
         number: row.number,
         ...evidenceView,
+        prepaidDue,
       },
       PAYMENT_VIEW_DTO_SPEC,
     );
@@ -787,6 +814,7 @@ export async function getPaymentView(viewer: Viewer, expenseId: string, deps?: {
       processedByName: null,
       number: row.number,
       ...evidenceView,
+      prepaidDue,
     },
     PAYMENT_VIEW_DTO_SPEC,
   );

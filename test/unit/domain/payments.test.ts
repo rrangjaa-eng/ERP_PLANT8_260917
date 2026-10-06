@@ -434,8 +434,9 @@ describe("evidenceGateDecision (D-603)", () => {
     expect(evidenceGateDecision({ ...EVIDENCE_CTX, waived: true })).toEqual({ allowed: true });
   });
 
-  it("증빙 있음 → 통과", () => {
-    expect(evidenceGateDecision({ ...EVIDENCE_CTX, hasEvidence: true })).toEqual({ allowed: true });
+  // 06-06(O-2): 증빙 있음이 통과하려면 확인 기록이 있어야 한다 — 확인 전 막힘은 evidence-reviews.test.ts.
+  it("증빙 있음(확인됨) → 통과", () => {
+    expect(evidenceGateDecision({ ...EVIDENCE_CTX, hasEvidence: true, confirmation: { reviewedAt: new Date("2026-09-18T05:02:00Z") } })).toEqual({ allowed: true });
   });
 });
 

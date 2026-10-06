@@ -5,11 +5,21 @@ import { recordAction } from "@/domain/action-log/record";
 import { GateBlockedError } from "@/domain/rules/gate";
 import { EXPENSE_DOCUMENT_KIND } from "@/domain/expenses/access";
 import { hasEvidence } from "@/domain/evidence/has-evidence";
-import { approvalGateDecision, evidenceGateDecision, pairGateDecision, resolveExpenseActionRow, type ExpenseActionBar } from "@/domain/payments/action-row";
+import {
+  approvalGateDecision,
+  evidenceGateDecision,
+  pairGateDecision,
+  resolveExpenseActionRow,
+  type EvidenceGateInput,
+  type ExpenseActionBar,
+} from "@/domain/payments/action-row";
+import { getSettingValue } from "@/domain/settings/registry";
+import { EVIDENCE_PREPAID_DUE_DAYS } from "@/domain/settings/keys";
 import { formatKstTime } from "@/domain/holidays/business-day";
 import { findExpenseApprovalInstance, lockExpenseForUpdate } from "@/repositories/expenses";
 import { bumpExpenseVersion, findLivePayment } from "@/repositories/expense-payments";
-import { upsertReview } from "@/repositories/expense-evidence-reviews";
+import { findReviewByExpense, upsertReview } from "@/repositories/expense-evidence-reviews";
+import type { DbOrTx } from "@/repositories/document-counters";
 import { withTransaction } from "@/lib/db-transaction";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 
@@ -51,6 +61,32 @@ export function resolveEvidenceStatus(input: EvidenceStatusInput): EvidenceStatu
   if (input.hasEvidence) return input.review?.status === "confirmed" ? "확인됨" : "확인 전";
   if (input.prepaid) return "선결제";
   return "증빙 없음";
+}
+
+// ── 증빙 게이트 입력(O-2 · CROSS R-3) ─────────────────────────────────────
+// 지급 완료 · 화면 1차가 같은 한 함수로 증빙 게이트 ctx를 짓는다. 증빙 유무는 hasEvidence, 면제 · 확인은 확인 기록의 status,
+// prepaid는 잠근 행 값. tx는 선택 — 지급 완료(잠금 뒤)는 반드시 넘기고, 트랜잭션 없는 읽기는 생략해 리포지토리 기본값을 쓴다.
+export async function evidenceGateInputs(
+  viewer: Viewer,
+  lockedDoc: { id: string; prepaid: boolean },
+  pre: { evidenceRequired: boolean; drafterName: string },
+  tx?: DbOrTx,
+): Promise<EvidenceGateInput> {
+  const live = await hasEvidence(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: lockedDoc.id }, tx);
+  const review = await findReviewByExpense(viewer, lockedDoc.id, tx);
+  return {
+    evidenceRequired: pre.evidenceRequired,
+    hasEvidence: live,
+    prepaid: lockedDoc.prepaid,
+    waived: review?.status === "waived",
+    confirmation: review?.status === "confirmed" ? { reviewedAt: review.reviewedAt } : null,
+    drafterName: pre.drafterName,
+  };
+}
+
+// 선결제 증빙 기한 날수(evidence.prepaid_due_days) — 트랜잭션 밖 사전 조회 전용.
+export function loadPrepaidDueDays(): Promise<number> {
+  return getSettingValue(EVIDENCE_PREPAID_DUE_DAYS);
 }
 
 // ── 증빙 확인 ─────────────────────────────────────────────────────────

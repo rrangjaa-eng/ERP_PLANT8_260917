@@ -117,6 +117,45 @@ describe("expense_payments", () => {
       "expense_payments_cancel_check",
     );
   });
+
+  it("차이가 이체액 − 지급 총액과 다르면 expense_payments_diff_check로 거부된다", async () => {
+    const { expenseId, userId } = await makeDraftExpense();
+    await expectPgError(
+      () => db.insert(expensePayments).values(paymentRow(expenseId, userId, { transferKrw: 1_096_700, diffKrw: 3300, diffReason: "계좌 수수료" })),
+      "23514",
+      "expense_payments_diff_check",
+    );
+  });
+
+  it("이체액이 음수면 expense_payments_transfer_krw_check로 거부된다", async () => {
+    const { expenseId, userId } = await makeDraftExpense();
+    await expectPgError(
+      () => db.insert(expensePayments).values(paymentRow(expenseId, userId, { transferKrw: -1, payableKrw: 0, diffKrw: -1, diffReason: "착오" })),
+      "23514",
+      "expense_payments_transfer_krw_check",
+    );
+  });
+
+  it("지급 총액이 음수면 expense_payments_payable_krw_check로 거부된다", async () => {
+    const { expenseId, userId } = await makeDraftExpense();
+    await expectPgError(
+      () => db.insert(expensePayments).values(paymentRow(expenseId, userId, { transferKrw: 0, payableKrw: -1, diffKrw: 1, diffReason: "착오" })),
+      "23514",
+      "expense_payments_payable_krw_check",
+    );
+  });
+
+  it("그로스업 공급가가 음수면 expense_payments_gross_supply_krw_check로 거부되고 0은 들어간다", async () => {
+    const { expenseId, userId } = await makeDraftExpense();
+    await expectPgError(
+      () => db.insert(expensePayments).values(paymentRow(expenseId, userId, { grossSupplyKrw: -1 })),
+      "23514",
+      "expense_payments_gross_supply_krw_check",
+    );
+    await expect(
+      db.insert(expensePayments).values(paymentRow(expenseId, userId, { grossSupplyKrw: 0 })).returning({ id: expensePayments.id }),
+    ).resolves.toHaveLength(1);
+  });
 });
 
 // ── Task 2 ──────────────────────────────────────────────────────────────────────────────────────────
@@ -236,6 +275,47 @@ describe("corp_card_usages", () => {
     await expectPgError(() => db.insert(corpCardUsages).values(usageRow(b, { vatKrw: 9_999 })), "23514", "corp_card_usages_amount_sum_check");
   });
 
+  it("공급가와 부가세의 부호가 엇갈리면 corp_card_usages_sign_check로 거부된다", async () => {
+    const b = await base();
+    await expectPgError(
+      () => db.insert(corpCardUsages).values(usageRow(b, { supplyKrw: 120_000, vatKrw: -10_000 })),
+      "23514",
+      "corp_card_usages_sign_check",
+    );
+  });
+
+  it("카드 취소(공급가 · 부가세 모두 음수)와 면세 취소(부가세 0)는 들어간다", async () => {
+    const b = await base();
+    await expect(
+      db
+        .insert(corpCardUsages)
+        .values(usageRow(b, { totalAmountKrw: -110_000, supplyKrw: -100_000, vatKrw: -10_000 }))
+        .returning({ id: corpCardUsages.id }),
+    ).resolves.toHaveLength(1);
+    await expect(
+      db
+        .insert(corpCardUsages)
+        .values(usageRow(b, { totalAmountKrw: -50_000, supplyKrw: -50_000, vatKrw: 0 }))
+        .returning({ id: corpCardUsages.id }),
+    ).resolves.toHaveLength(1);
+  });
+
+  it("본인 등록인데 사용자와 등록자가 다르면 corp_card_usages_self_check로 거부되고 대리 등록은 들어간다", async () => {
+    const b = await base();
+    const other = await makePerson("대리 등록자", DEFAULT_ROLE_ID, null);
+    await expectPgError(
+      () => db.insert(corpCardUsages).values(usageRow(b, { registeredBy: other.id })),
+      "23514",
+      "corp_card_usages_self_check",
+    );
+    await expect(
+      db
+        .insert(corpCardUsages)
+        .values(usageRow(b, { registeredBy: other.id, registeredVia: "proxy" }))
+        .returning({ id: corpCardUsages.id }),
+    ).resolves.toHaveLength(1);
+  });
+
   it("모르는 연결 종류는 거부되고 corp_card_usages_link_kind_check가 정의돼 있다", async () => {
     const b = await base();
     await expectLinkKindRejected(() => db.insert(corpCardUsages).values(usageRow(b, { linkKind: "none" })), "corp_card_usages");
@@ -353,6 +433,48 @@ describe("purchase_requests", () => {
     const b = await base();
     await expectPgError(() => db.insert(purchaseRequests).values(purchaseRow(b, { status: "cancelled" })), "23514", "purchase_requests_cancelled_check");
   });
+
+  it("예상 금액이 음수면 purchase_requests_estimate_amount_krw_check로 거부된다", async () => {
+    const b = await base();
+    await expectPgError(
+      () => db.insert(purchaseRequests).values(purchaseRow(b, { estimateAmountKrw: -1 })),
+      "23514",
+      "purchase_requests_estimate_amount_krw_check",
+    );
+  });
+
+  it("신청 상태인데 완료 칸 반쪽(완료 시각만)이 있으면 purchase_requests_completed_check로 거부된다", async () => {
+    const b = await base();
+    await expectPgError(
+      () => db.insert(purchaseRequests).values(purchaseRow(b, { completedAt: new Date() })),
+      "23514",
+      "purchase_requests_completed_check",
+    );
+  });
+
+  it("신청 상태인데 취소 시각만 있거나 취소 사유만 있으면 purchase_requests_cancelled_check로 거부된다", async () => {
+    const b = await base();
+    await expectPgError(
+      () => db.insert(purchaseRequests).values(purchaseRow(b, { cancelledAt: new Date() })),
+      "23514",
+      "purchase_requests_cancelled_check",
+    );
+    await expectPgError(
+      () => db.insert(purchaseRequests).values(purchaseRow(b, { cancelReason: "중복 요청" })),
+      "23514",
+      "purchase_requests_cancelled_check",
+    );
+  });
+
+  it("취소 칸을 갖춘 취소는 사유가 없어도(본인 취소) 들어간다", async () => {
+    const b = await base();
+    await expect(
+      db
+        .insert(purchaseRequests)
+        .values(purchaseRow(b, { status: "cancelled", cancelledAt: new Date(), cancelledBy: b.userId }))
+        .returning({ id: purchaseRequests.id }),
+    ).resolves.toHaveLength(1);
+  });
 });
 
 describe("revenue_issue_requests", () => {
@@ -397,6 +519,41 @@ describe("revenue_issue_requests", () => {
       "23514",
       "revenue_issue_requests_issued_check",
     );
+  });
+
+  it("발행되지 않았는데 발행 줄이 있으면 revenue_issue_requests_issued_check로 거부된다", async () => {
+    const b = await base();
+    const entryId = await issueEntry(b.fx.projectId);
+    await expectPgError(
+      () => db.insert(revenueIssueRequests).values(requestRow(b.fx.projectId, b.userId, { issuedEntryId: entryId })),
+      "23514",
+      "revenue_issue_requests_issued_check",
+    );
+  });
+
+  it("취소인데 취소 칸이 없거나, 취소가 아닌데 취소 칸이 있으면 revenue_issue_requests_cancelled_check로 거부되고 취소 칸을 갖춘 취소는 들어간다", async () => {
+    const b = await base();
+    await expectPgError(
+      () => db.insert(revenueIssueRequests).values(requestRow(b.fx.projectId, b.userId, { status: "cancelled", cancelledAt: new Date() })),
+      "23514",
+      "revenue_issue_requests_cancelled_check",
+    );
+    await expectPgError(
+      () => db.insert(revenueIssueRequests).values(requestRow(b.fx.projectId, b.userId, { cancelledAt: new Date(), cancelledBy: b.userId })),
+      "23514",
+      "revenue_issue_requests_cancelled_check",
+    );
+    await expectPgError(
+      () => db.insert(revenueIssueRequests).values(requestRow(b.fx.projectId, b.userId, { cancelledAt: new Date() })),
+      "23514",
+      "revenue_issue_requests_cancelled_check",
+    );
+    await expect(
+      db
+        .insert(revenueIssueRequests)
+        .values(requestRow(b.fx.projectId, b.userId, { status: "cancelled", cancelledAt: new Date(), cancelledBy: b.userId }))
+        .returning({ id: revenueIssueRequests.id }),
+    ).resolves.toHaveLength(1);
   });
 
   it("같은 발행 줄의 둘째 요청은 revenue_issue_requests_issued_entry_uniq로 거부된다", async () => {

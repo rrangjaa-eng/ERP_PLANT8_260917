@@ -32,9 +32,11 @@ CREATE TABLE "corp_card_usages" (
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "corp_card_usages_amount_sum_check" CHECK ("corp_card_usages"."supply_krw" + "corp_card_usages"."vat_krw" = "corp_card_usages"."total_amount_krw"),
+	CONSTRAINT "corp_card_usages_sign_check" CHECK (("corp_card_usages"."supply_krw" >= 0 AND "corp_card_usages"."vat_krw" >= 0) OR ("corp_card_usages"."supply_krw" <= 0 AND "corp_card_usages"."vat_krw" <= 0)),
 	CONSTRAINT "corp_card_usages_link_kind_check" CHECK ("corp_card_usages"."link_kind" IN ('quote_line','team_cost')),
 	CONSTRAINT "corp_card_usages_link_check" CHECK (("corp_card_usages"."link_kind" = 'quote_line' AND "corp_card_usages"."quote_line_id" IS NOT NULL AND "corp_card_usages"."team_id" IS NULL) OR ("corp_card_usages"."link_kind" = 'team_cost' AND "corp_card_usages"."team_id" IS NOT NULL AND "corp_card_usages"."quote_line_id" IS NULL)),
 	CONSTRAINT "corp_card_usages_registered_via_check" CHECK ("corp_card_usages"."registered_via" IN ('self','proxy','purchase')),
+	CONSTRAINT "corp_card_usages_self_check" CHECK ("corp_card_usages"."registered_via" <> 'self' OR "corp_card_usages"."used_by_user_id" = "corp_card_usages"."registered_by"),
 	CONSTRAINT "corp_card_usages_purchase_link_check" CHECK (("corp_card_usages"."registered_via" = 'purchase') = ("corp_card_usages"."purchase_request_id" IS NOT NULL))
 );
 --> statement-breakpoint
@@ -70,6 +72,10 @@ CREATE TABLE "expense_payments" (
 	"cancel_reason" text,
 	"version" integer DEFAULT 1 NOT NULL,
 	"source" text DEFAULT 'demo' NOT NULL,
+	CONSTRAINT "expense_payments_transfer_krw_check" CHECK ("expense_payments"."transfer_krw" >= 0),
+	CONSTRAINT "expense_payments_payable_krw_check" CHECK ("expense_payments"."payable_krw" >= 0),
+	CONSTRAINT "expense_payments_gross_supply_krw_check" CHECK ("expense_payments"."gross_supply_krw" IS NULL OR "expense_payments"."gross_supply_krw" >= 0),
+	CONSTRAINT "expense_payments_diff_check" CHECK ("expense_payments"."diff_krw" = "expense_payments"."transfer_krw" - "expense_payments"."payable_krw"),
 	CONSTRAINT "expense_payments_diff_reason_check" CHECK ("expense_payments"."diff_krw" = 0 OR ("expense_payments"."diff_reason" IS NOT NULL AND char_length(btrim("expense_payments"."diff_reason")) > 0)),
 	CONSTRAINT "expense_payments_cancel_check" CHECK (("expense_payments"."cancelled_at" IS NULL AND "expense_payments"."cancelled_by" IS NULL AND "expense_payments"."cancel_reason" IS NULL) OR ("expense_payments"."cancelled_at" IS NOT NULL AND "expense_payments"."cancelled_by" IS NOT NULL AND "expense_payments"."cancel_reason" IS NOT NULL AND char_length(btrim("expense_payments"."cancel_reason")) > 0))
 );
@@ -92,7 +98,8 @@ CREATE TABLE "revenue_issue_requests" (
 	"source" text DEFAULT 'demo' NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "revenue_issue_requests_status_check" CHECK ("revenue_issue_requests"."status" IN ('requested','issued','cancelled')),
-	CONSTRAINT "revenue_issue_requests_issued_check" CHECK ("revenue_issue_requests"."status" <> 'issued' OR "revenue_issue_requests"."issued_entry_id" IS NOT NULL)
+	CONSTRAINT "revenue_issue_requests_issued_check" CHECK (("revenue_issue_requests"."status" = 'issued') = ("revenue_issue_requests"."issued_entry_id" IS NOT NULL)),
+	CONSTRAINT "revenue_issue_requests_cancelled_check" CHECK (("revenue_issue_requests"."status" = 'cancelled' AND "revenue_issue_requests"."cancelled_at" IS NOT NULL AND "revenue_issue_requests"."cancelled_by" IS NOT NULL) OR ("revenue_issue_requests"."status" <> 'cancelled' AND "revenue_issue_requests"."cancelled_at" IS NULL AND "revenue_issue_requests"."cancelled_by" IS NULL))
 );
 --> statement-breakpoint
 CREATE TABLE "purchase_requests" (
@@ -120,10 +127,11 @@ CREATE TABLE "purchase_requests" (
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "purchase_requests_link_kind_check" CHECK ("purchase_requests"."link_kind" IN ('quote_line','team_cost')),
 	CONSTRAINT "purchase_requests_link_check" CHECK (("purchase_requests"."link_kind" = 'quote_line' AND "purchase_requests"."project_id" IS NOT NULL AND "purchase_requests"."quote_line_id" IS NOT NULL) OR ("purchase_requests"."link_kind" = 'team_cost' AND "purchase_requests"."project_id" IS NULL AND "purchase_requests"."quote_line_id" IS NULL)),
+	CONSTRAINT "purchase_requests_estimate_amount_krw_check" CHECK ("purchase_requests"."estimate_amount_krw" >= 0),
 	CONSTRAINT "purchase_requests_link_url_check" CHECK ("purchase_requests"."link_url" IS NULL OR "purchase_requests"."link_url" ~* '^https?://'),
 	CONSTRAINT "purchase_requests_status_check" CHECK ("purchase_requests"."status" IN ('requested','purchased','cancelled')),
-	CONSTRAINT "purchase_requests_completed_check" CHECK (("purchase_requests"."status" = 'purchased') = ("purchase_requests"."completed_at" IS NOT NULL AND "purchase_requests"."completed_by" IS NOT NULL)),
-	CONSTRAINT "purchase_requests_cancelled_check" CHECK (("purchase_requests"."status" = 'cancelled') = ("purchase_requests"."cancelled_at" IS NOT NULL AND "purchase_requests"."cancelled_by" IS NOT NULL))
+	CONSTRAINT "purchase_requests_completed_check" CHECK (("purchase_requests"."status" = 'purchased' AND "purchase_requests"."completed_at" IS NOT NULL AND "purchase_requests"."completed_by" IS NOT NULL) OR ("purchase_requests"."status" <> 'purchased' AND "purchase_requests"."completed_at" IS NULL AND "purchase_requests"."completed_by" IS NULL)),
+	CONSTRAINT "purchase_requests_cancelled_check" CHECK (("purchase_requests"."status" = 'cancelled' AND "purchase_requests"."cancelled_at" IS NOT NULL AND "purchase_requests"."cancelled_by" IS NOT NULL) OR ("purchase_requests"."status" <> 'cancelled' AND "purchase_requests"."cancelled_at" IS NULL AND "purchase_requests"."cancelled_by" IS NULL AND "purchase_requests"."cancel_reason" IS NULL))
 );
 --> statement-breakpoint
 ALTER TABLE "corp_cards" DROP CONSTRAINT "corp_cards_owner_xor_check";--> statement-breakpoint

@@ -1,6 +1,6 @@
 {
-  "id": "73a58e9e-593f-450f-bd60-432fecacb10c",
-  "prevId": "b31089a2-71c9-4841-8164-472eda35f629",
+  "id": "c09a6ed9-fd36-4c60-8438-b0a876a955ff",
+  "prevId": "61e1c48a-3762-4ae3-8487-48095afab7a8",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2100,6 +2100,10 @@
           "name": "corp_card_usages_amount_sum_check",
           "value": "\"corp_card_usages\".\"supply_krw\" + \"corp_card_usages\".\"vat_krw\" = \"corp_card_usages\".\"total_amount_krw\""
         },
+        "corp_card_usages_sign_check": {
+          "name": "corp_card_usages_sign_check",
+          "value": "(\"corp_card_usages\".\"supply_krw\" >= 0 AND \"corp_card_usages\".\"vat_krw\" >= 0) OR (\"corp_card_usages\".\"supply_krw\" <= 0 AND \"corp_card_usages\".\"vat_krw\" <= 0)"
+        },
         "corp_card_usages_link_kind_check": {
           "name": "corp_card_usages_link_kind_check",
           "value": "\"corp_card_usages\".\"link_kind\" IN ('quote_line','team_cost')"
@@ -2111,6 +2115,10 @@
         "corp_card_usages_registered_via_check": {
           "name": "corp_card_usages_registered_via_check",
           "value": "\"corp_card_usages\".\"registered_via\" IN ('self','proxy','purchase')"
+        },
+        "corp_card_usages_self_check": {
+          "name": "corp_card_usages_self_check",
+          "value": "\"corp_card_usages\".\"registered_via\" <> 'self' OR \"corp_card_usages\".\"used_by_user_id\" = \"corp_card_usages\".\"registered_by\""
         },
         "corp_card_usages_purchase_link_check": {
           "name": "corp_card_usages_purchase_link_check",
@@ -2628,6 +2636,22 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "expense_payments_transfer_krw_check": {
+          "name": "expense_payments_transfer_krw_check",
+          "value": "\"expense_payments\".\"transfer_krw\" >= 0"
+        },
+        "expense_payments_payable_krw_check": {
+          "name": "expense_payments_payable_krw_check",
+          "value": "\"expense_payments\".\"payable_krw\" >= 0"
+        },
+        "expense_payments_gross_supply_krw_check": {
+          "name": "expense_payments_gross_supply_krw_check",
+          "value": "\"expense_payments\".\"gross_supply_krw\" IS NULL OR \"expense_payments\".\"gross_supply_krw\" >= 0"
+        },
+        "expense_payments_diff_check": {
+          "name": "expense_payments_diff_check",
+          "value": "\"expense_payments\".\"diff_krw\" = \"expense_payments\".\"transfer_krw\" - \"expense_payments\".\"payable_krw\""
+        },
         "expense_payments_diff_reason_check": {
           "name": "expense_payments_diff_reason_check",
           "value": "\"expense_payments\".\"diff_krw\" = 0 OR (\"expense_payments\".\"diff_reason\" IS NOT NULL AND char_length(btrim(\"expense_payments\".\"diff_reason\")) > 0)"
@@ -5742,7 +5766,11 @@
         },
         "revenue_issue_requests_issued_check": {
           "name": "revenue_issue_requests_issued_check",
-          "value": "\"revenue_issue_requests\".\"status\" <> 'issued' OR \"revenue_issue_requests\".\"issued_entry_id\" IS NOT NULL"
+          "value": "(\"revenue_issue_requests\".\"status\" = 'issued') = (\"revenue_issue_requests\".\"issued_entry_id\" IS NOT NULL)"
+        },
+        "revenue_issue_requests_cancelled_check": {
+          "name": "revenue_issue_requests_cancelled_check",
+          "value": "(\"revenue_issue_requests\".\"status\" = 'cancelled' AND \"revenue_issue_requests\".\"cancelled_at\" IS NOT NULL AND \"revenue_issue_requests\".\"cancelled_by\" IS NOT NULL) OR (\"revenue_issue_requests\".\"status\" <> 'cancelled' AND \"revenue_issue_requests\".\"cancelled_at\" IS NULL AND \"revenue_issue_requests\".\"cancelled_by\" IS NULL)"
         }
       },
       "isRLSEnabled": false
@@ -6911,6 +6939,10 @@
           "name": "purchase_requests_link_check",
           "value": "(\"purchase_requests\".\"link_kind\" = 'quote_line' AND \"purchase_requests\".\"project_id\" IS NOT NULL AND \"purchase_requests\".\"quote_line_id\" IS NOT NULL) OR (\"purchase_requests\".\"link_kind\" = 'team_cost' AND \"purchase_requests\".\"project_id\" IS NULL AND \"purchase_requests\".\"quote_line_id\" IS NULL)"
         },
+        "purchase_requests_estimate_amount_krw_check": {
+          "name": "purchase_requests_estimate_amount_krw_check",
+          "value": "\"purchase_requests\".\"estimate_amount_krw\" >= 0"
+        },
         "purchase_requests_link_url_check": {
           "name": "purchase_requests_link_url_check",
           "value": "\"purchase_requests\".\"link_url\" IS NULL OR \"purchase_requests\".\"link_url\" ~* '^https?://'"
@@ -6921,11 +6953,11 @@
         },
         "purchase_requests_completed_check": {
           "name": "purchase_requests_completed_check",
-          "value": "(\"purchase_requests\".\"status\" = 'purchased') = (\"purchase_requests\".\"completed_at\" IS NOT NULL AND \"purchase_requests\".\"completed_by\" IS NOT NULL)"
+          "value": "(\"purchase_requests\".\"status\" = 'purchased' AND \"purchase_requests\".\"completed_at\" IS NOT NULL AND \"purchase_requests\".\"completed_by\" IS NOT NULL) OR (\"purchase_requests\".\"status\" <> 'purchased' AND \"purchase_requests\".\"completed_at\" IS NULL AND \"purchase_requests\".\"completed_by\" IS NULL)"
         },
         "purchase_requests_cancelled_check": {
           "name": "purchase_requests_cancelled_check",
-          "value": "(\"purchase_requests\".\"status\" = 'cancelled') = (\"purchase_requests\".\"cancelled_at\" IS NOT NULL AND \"purchase_requests\".\"cancelled_by\" IS NOT NULL)"
+          "value": "(\"purchase_requests\".\"status\" = 'cancelled' AND \"purchase_requests\".\"cancelled_at\" IS NOT NULL AND \"purchase_requests\".\"cancelled_by\" IS NOT NULL) OR (\"purchase_requests\".\"status\" <> 'cancelled' AND \"purchase_requests\".\"cancelled_at\" IS NULL AND \"purchase_requests\".\"cancelled_by\" IS NULL AND \"purchase_requests\".\"cancel_reason\" IS NULL)"
         }
       },
       "isRLSEnabled": false

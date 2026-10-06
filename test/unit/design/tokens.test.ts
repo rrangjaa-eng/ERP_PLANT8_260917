@@ -153,14 +153,15 @@ describe("tokens.css — ③ 글자 × 면 대비 쌍(허용 쌍 표 · 금지 �
   ];
   const ALLOWED: Array<[string, string[]]> = [
     ["--text-strong", [...BODY_SURFACES, "--surface-group", "--surface-selected"]],
-    ["--text-muted", [...BODY_SURFACES, "--surface-group", "--surface-selected"]],
-    ["--text-faint", [...BODY_SURFACES, "--surface-group"]],
+    // `--accent-weak`는 06 SP-1 고른 행 면(범위 선택과 같은 면) — 아래 다섯 글자 토큰이 그 위에서 4.5 이상이다(r2 F16)
+    ["--text-muted", [...BODY_SURFACES, "--surface-group", "--surface-selected", "--accent-weak"]],
+    ["--text-faint", [...BODY_SURFACES, "--surface-group", "--accent-weak"]],
     ["--text-group", ["--surface-group"]],
     ["--text-on-tint", ["--surface-selected"]],
     ["--text-link", [...BODY_SURFACES, "--surface-group", "--surface-selected"]],
-    ["--status-danger", [...BODY_SURFACES, "--surface-group", "--status-danger-weak"]],
-    ["--status-warning", [...BODY_SURFACES, "--surface-group", "--status-warning-weak"]],
-    ["--status-success", BODY_SURFACES],
+    ["--status-danger", [...BODY_SURFACES, "--surface-group", "--status-danger-weak", "--accent-weak"]],
+    ["--status-warning", [...BODY_SURFACES, "--surface-group", "--status-warning-weak", "--accent-weak"]],
+    ["--status-success", [...BODY_SURFACES, "--accent-weak"]],
     ["--status-accent", BODY_SURFACES],
     ["--status-muted", [...BODY_SURFACES, "--surface-group"]],
   ];
@@ -172,6 +173,26 @@ describe("tokens.css — ③ 글자 × 면 대비 쌍(허용 쌍 표 · 금지 �
 
   it.each(allowedPairs)("%s on %s 대비 4.5 이상", (fg, bg) => {
     expect(ratio(fg, bg)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("고른 행 면(--accent-weak) 위 실측이 UI-SPEC · SYSTEM §1-4 문장 값과 같다(소수 둘째 자리)", () => {
+    const measured = Object.fromEntries(
+      ["--status-success", "--status-warning", "--status-danger", "--text-muted", "--text-faint"].map((fg) => [
+        fg,
+        Math.round(ratio(fg, "--accent-weak") * 100) / 100,
+      ]),
+    );
+    expect(measured).toEqual({
+      "--status-success": 4.63,
+      "--status-warning": 5.22,
+      "--status-danger": 7.18,
+      "--text-muted": 5.74,
+      "--text-faint": 4.71,
+    });
+  });
+
+  it("--status-warning × --surface-group이 허용 쌍 표에 있다(그룹 줄 `예정일 지남` 덧붙임)", () => {
+    expect(allowedPairs).toContainEqual(["--status-warning", "--surface-group"]);
   });
 
   it("흰 글자 on 강조 면(--text-on-accent on --accent) 4.5 이상", () => {

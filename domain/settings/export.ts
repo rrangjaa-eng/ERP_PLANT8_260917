@@ -9,6 +9,7 @@ import {
   getSettingValue as defaultGetSettingValue,
   listSettingHistory as defaultListSettingHistory,
   validateEffectiveFrom,
+  assertNewPairsActive,
   SettingNotFoundError,
 } from "@/domain/settings/registry";
 import { applySettingsImport as defaultApplySettingsImport } from "@/repositories/settings";
@@ -175,6 +176,20 @@ export async function importSettings(
     if (!parsed.success) {
       issues.push(`'${key}' 값이 스키마를 만족하지 않습니다.`);
       continue;
+    }
+    // 짝 격자 키는 설정 화면 저장(setSettingValue)과 같은 가드 — 보관된 코드 값으로 새 짝을 만들 수 없다(QA ISSUE-002).
+    if (def.pairGrid) {
+      const stale = await assertNewPairsActive(def, parsed.data).then(
+        () => null,
+        (caught: unknown) => {
+          if (caught instanceof UserFacingError) return caught.message;
+          throw caught;
+        },
+      );
+      if (stale) {
+        issues.push(`'${key}' ${stale}`);
+        continue;
+      }
     }
     simple.push({ key, value: parsed.data, by: viewer.id });
   }

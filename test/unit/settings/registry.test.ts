@@ -182,6 +182,62 @@ describe("setSettingValue (비이력형 전용)", () => {
   });
 });
 
+// PR #171 리뷰 P3-3 · 디자인 검토 F-1 — 짝 설정은 새로 더해진 짝이 활성 코드값만 가리켜야 한다(저장된 보관 값의 짝 제거는 허용).
+describe("setSettingValue — 짝 격자 키의 새 짝은 활성 코드값만", () => {
+  const PAIR_DEF: SettingDef<{ method: string; evidence: string }[]> = {
+    key: "test.pairs",
+    kind: "simple",
+    schema: z.array(z.object({ method: z.string().min(1), evidence: z.string().min(1) })),
+    label: "테스트 짝",
+    namespace: "테스트",
+    pairGrid: { rows: "payment_method", cols: "evidence_type", rowField: "method", colField: "evidence" },
+    default: [],
+  };
+  const activeValues = (tableKey: string) =>
+    Promise.resolve(tableKey === "payment_method" ? ["cash", "bank_transfer"] : ["invoice", "card_slip"]);
+  const deps = (stored: unknown) => ({
+    can: vi.fn().mockResolvedValue(true),
+    findSimpleValue: vi.fn().mockResolvedValue(stored === undefined ? null : { value: stored }),
+    listActiveCodeValues: vi.fn(activeValues),
+    upsertSimpleValue: vi.fn().mockResolvedValue(undefined),
+    recordAction: vi.fn().mockResolvedValue(undefined),
+  });
+
+  it("보관(비활성) 증빙 종류로 새 짝을 더하면 거부하고 저장하지 않는다", async () => {
+    const d = deps([]);
+    await expect(
+      setSettingValue(viewer, PAIR_DEF, [{ method: "cash", evidence: "tax_invoice" }], d as never),
+    ).rejects.toThrow("보관");
+    expect(d.upsertSimpleValue).not.toHaveBeenCalled();
+  });
+
+  it("보관 지급 방식으로 새 짝을 더해도 거부한다", async () => {
+    const d = deps([]);
+    await expect(
+      setSettingValue(viewer, PAIR_DEF, [{ method: "old_method", evidence: "invoice" }], d as never),
+    ).rejects.toThrow("보관");
+  });
+
+  it("활성 값끼리의 새 짝은 저장한다", async () => {
+    const d = deps([]);
+    await setSettingValue(viewer, PAIR_DEF, [{ method: "cash", evidence: "invoice" }], d as never);
+    expect(d.upsertSimpleValue).toHaveBeenCalledTimes(1);
+  });
+
+  it("이미 저장된 보관 값의 짝은 그대로 두고 다른 활성 짝을 더할 수 있다", async () => {
+    const stored = [{ method: "cash", evidence: "tax_invoice" }];
+    const d = deps(stored);
+    await setSettingValue(viewer, PAIR_DEF, [...stored, { method: "cash", evidence: "invoice" }], d as never);
+    expect(d.upsertSimpleValue).toHaveBeenCalledTimes(1);
+  });
+
+  it("저장된 보관 값의 짝을 지우는 저장은 허용한다", async () => {
+    const d = deps([{ method: "cash", evidence: "tax_invoice" }]);
+    await setSettingValue(viewer, PAIR_DEF, [], d as never);
+    expect(d.upsertSimpleValue).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("addHistorizedValue / cancelHistorizedValue (이력형 전용)", () => {
   it("비이력형 키에 addHistorizedValue를 부르면 거부한다", async () => {
     const can = vi.fn().mockResolvedValue(true);

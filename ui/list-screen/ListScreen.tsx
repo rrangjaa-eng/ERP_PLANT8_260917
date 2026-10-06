@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { Button } from "@/ui/button/Button";
 import { LinkPending } from "@/ui/link-pending/LinkPending";
 // Button.tsx는 클라이언트 모듈이라 서버 컴포넌트가 buttonLinkClassName을 부를 수 없다 — 같은 1차 클래스를 직접 쓴다(pnl 선례).
 import buttonStyles from "@/ui/button/Button.module.css";
@@ -7,10 +8,25 @@ import styles from "./ListScreen.module.css";
 
 // UI-SPEC 「화면 틀 계약」 ListScreen — 목록 화면 틀. 제목 크기·1차 버튼 모양·패널 자리는 틀이 정하고 화면 파일은 내용만 넣는다.
 // 부제 prop은 없다(목록 부제 설명문 삭제). 패널을 여는 링크는 `scroll={false}`로 고정한다 — 목록 스크롤·배치 불변(SC 3).
+/**
+ * 필터 줄 오른쪽 끝의 1차. 링크 갈래(패널을 여는 `?new=1`)와 버튼 갈래(선택 표의 `{동사} N` — SYSTEM §7-3 (카) · §7-20, 06-29).
+ * 버튼 갈래는 선택 상태를 가진 클라이언트 컴포넌트가 렌더한 `ListScreen`에서만(06-15 S1) — 서버 페이지는 링크 갈래.
+ */
+export type ListPrimaryAction =
+  | { label: string; href: string; /** 폰(<700)에서 숨김 — 폰은 읽기만인 화면(2026-10-03 사용자 결정). */ phoneHidden?: boolean }
+  | {
+      label: string;
+      onClick: () => void;
+      shortcut?: string;
+      disabledReason?: string;
+      reasonTone?: "info";
+      pending?: boolean;
+    };
+
 export type ListScreenProps = {
   title: string;
-  /** 필터 줄 오른쪽 끝의 1차 — 패널을 여는 링크(`?new=1`). 최대 하나. */
-  primaryAction?: { label: string; href: string; /** 폰(<700)에서 숨김 — 폰은 읽기만인 화면(2026-10-03 사용자 결정). */ phoneHidden?: boolean };
+  /** 필터 줄 오른쪽 끝의 1차 — 최대 하나. */
+  primaryAction?: ListPrimaryAction;
   /** 필터 줄 왼쪽. */
   filters?: ReactNode;
   /** 필터 줄 아래 합계 면(`--surface-base` 1px 면). */
@@ -44,7 +60,7 @@ export function ListScreen({ title, primaryAction, filters, summary, summaryPlai
       {filters || headAction ? (
         <div className={singleColumn ? `${styles.bar} single-column` : styles.bar}>
           <div className={styles.filters}>{filters}</div>
-          {headAction ? (
+          {headAction && "href" in headAction ? (
             <Link
               href={headAction.href}
               scroll={false}
@@ -54,6 +70,22 @@ export function ListScreen({ title, primaryAction, filters, summary, summaryPlai
               {headAction.label}
               <LinkPending />
             </Link>
+          ) : headAction ? (
+            // 편집 표는 1024 이상(DR-36) — 버튼 갈래는 그 미만에서 이유 글자 감싸개까지 그리지 않는다.
+            <span className={`${styles.buttonAction} ${styles.wideOnly}`}>
+              <Button
+                variant="primary"
+                className={styles.primaryAction}
+                onClick={headAction.onClick}
+                shortcut={headAction.shortcut}
+                disabled={headAction.disabledReason !== undefined}
+                disabledReason={headAction.disabledReason}
+                reasonTone={headAction.reasonTone}
+                pending={headAction.pending}
+              >
+                {headAction.label}
+              </Button>
+            </span>
           ) : null}
         </div>
       ) : null}

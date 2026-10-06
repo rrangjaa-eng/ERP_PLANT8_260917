@@ -13,11 +13,22 @@ import styles from "./PermissionGrid.module.css";
 // PC 격자는 계급이 열, 항목이 행이다(§7-13). 항목 정의 순서가 그룹 순서를
 // 결정한다 — 호출자가 그룹(메뉴)별로 항목을 모아 보낸다는 전제다(같은 그룹
 // 이름이 연속되지 않으면 그룹 줄이 둘로 쪼개진다).
-export type PermissionGridRow = { id: string; label: string };
-export type PermissionGridColumn = { id: string; label: string; group?: string };
+// locked(보관된 행 · 열) = 체크된 칸만 해제할 수 있고 빈 칸은 비활성이며, 행 머리 「전체」는 잠기지 않은 칸만 다룬다
+// (PR #171 디자인 검토 F-1 — 보관 값으로 새 짝을 만들 수 없다).
+export type PermissionGridRow = { id: string; label: string; locked?: boolean };
+export type PermissionGridColumn = { id: string; label: string; group?: string; locked?: boolean };
 
 export function buildCellKey(rowId: string, columnId: string): string {
   return `${rowId}::${columnId}`;
+}
+
+// 행 머리 「전체」가 다루는 행 — 잠긴 열이면 없고, 아니면 잠기지 않은 행.
+export function bulkTargetRows(rows: PermissionGridRow[], column: PermissionGridColumn): PermissionGridRow[] {
+  return column.locked ? [] : rows.filter((row) => !row.locked);
+}
+
+function cellDisabled(row: PermissionGridRow, column: PermissionGridColumn, checked: boolean): boolean {
+  return Boolean((row.locked || column.locked) && !checked);
 }
 
 type CellStatus = "idle" | "delayed" | "error";
@@ -40,6 +51,8 @@ export type PermissionGridProps = {
   errorMessage?: string | null;
   onRetry?: () => void;
   onToggle: (rowId: string, columnId: string, next: boolean) => Promise<void>;
+  /** 저장 실패 토스트의 이름 — 기본 `권한`. */
+  saveNoun?: string;
 };
 
 export function buildInitialCells(
@@ -84,11 +97,13 @@ export function resyncCells(
 function ColumnCheckbox({
   checked,
   indeterminate,
+  disabled,
   ariaLabel,
   onChange,
 }: {
   checked: boolean;
   indeterminate: boolean;
+  disabled: boolean;
   ariaLabel: string;
   onChange: (next: boolean) => void;
 }) {
@@ -104,6 +119,7 @@ function ColumnCheckbox({
         type="checkbox"
         className={styles.headerCheckbox}
         checked={checked}
+        disabled={disabled}
         aria-label={ariaLabel}
         onChange={(event) => onChange(event.target.checked)}
       />
@@ -123,6 +139,7 @@ export function PermissionGrid({
   errorMessage,
   onRetry,
   onToggle,
+  saveNoun = "권한",
 }: PermissionGridProps) {
   const [cells, setCells] = useState<Record<string, CellState>>(() => buildInitialCells(rows, columns, values));
   const [toast, setToast] = useState<{ message: string; tone: "default" | "error" } | null>(null);
@@ -196,7 +213,7 @@ export function PermissionGrid({
     setCells((prev) => ({ ...prev, [key]: { checked: next, status: "idle" } }));
     const ok = await saveCell(row.id, column.id, next);
     if (!ok) {
-      setToast({ message: "권한 저장 실패 · 다시 시도", tone: "error" });
+      setToast({ message: `${saveNoun} 저장 실패 · 다시 시도`, tone: "error" });
     }
   }
 
@@ -204,7 +221,7 @@ export function PermissionGrid({
     // 배치 API 없음(D-38) — 열의 각 셀에 개별 저장 호출을 순차로 보낸다.
     let failed = 0;
     let total = 0;
-    for (const row of rows) {
+    for (const row of bulkTargetRows(rows, column)) {
       const key = buildCellKey(row.id, column.id);
       setCells((prev) => ({ ...prev, [key]: { checked: next, status: "idle" } }));
       total += 1;
@@ -212,14 +229,15 @@ export function PermissionGrid({
       if (!ok) failed += 1;
     }
     if (failed > 0) {
-      setToast({ message: `권한 저장 · ${total}칸 중 ${failed}칸 실패 · 다시 시도`, tone: "error" });
+      setToast({ message: `${saveNoun} 저장 · ${total}칸 중 ${failed}칸 실패 · 다시 시도`, tone: "error" });
     }
   }
 
   function columnState(column: PermissionGridColumn): { checked: boolean; indeterminate: boolean } {
-    const checkedCount = rows.filter((row) => cells[buildCellKey(row.id, column.id)]?.checked).length;
+    const targets = bulkTargetRows(rows, column);
+    const checkedCount = targets.filter((row) => cells[buildCellKey(row.id, column.id)]?.checked).length;
     if (checkedCount === 0) return { checked: false, indeterminate: false };
-    if (checkedCount === rows.length) return { checked: true, indeterminate: false };
+    if (checkedCount === targets.length) return { checked: true, indeterminate: false };
     return { checked: false, indeterminate: true };
   }
 
@@ -261,6 +279,7 @@ export function PermissionGrid({
                           <ColumnCheckbox
                             checked={state.checked}
                             indeterminate={state.indeterminate}
+                            disabled={bulkTargetRows(rows, column).length === 0}
                             ariaLabel={columnAriaLabel(column)}
                             onChange={(next) => {
                               void handleColumnToggle(column, next);
@@ -285,6 +304,7 @@ export function PermissionGrid({
                               <input
                                 type="checkbox"
                                 checked={cell.checked}
+                                disabled={cellDisabled(row, column, cell.checked)}
                                 aria-label={cellAriaLabel(row, column)}
                                 onChange={() => {
                                   void handleCellToggle(row, column);
@@ -333,6 +353,7 @@ export function PermissionGrid({
                     type="checkbox"
                     className={styles.mobileCheckbox}
                     checked={cell.checked}
+                    disabled={cellDisabled(selectedRow, column, cell.checked)}
                     aria-label={cellAriaLabel(selectedRow, column)}
                     onChange={() => {
                       void handleCellToggle(selectedRow, column);

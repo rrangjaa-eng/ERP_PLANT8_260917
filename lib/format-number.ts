@@ -25,6 +25,15 @@ function roundToZeroSafe(value: number, decimals: number): number {
   return rounded === 0 ? 0 : rounded;
 }
 
+// 비율 표시용 버림(0 쪽) — 호출자가 rate * 100을 넘겨 0.29 * 100 = 28.999…처럼 오차가 나므로
+// 유효숫자 15자리로 먼저 정규화한 뒤 버린다 — toFixed(6)은 14.99999996 같은 경계 바로 아래 값까지 반올림해
+// 넘기므로 쓰지 않는다. 음의 0은 0으로.
+function truncateToZeroSafe(value: number, decimals: number): number {
+  const factor = 10 ** decimals;
+  const truncated = Math.trunc(Number((value * factor).toPrecision(15))) / factor;
+  return truncated === 0 ? 0 : truncated;
+}
+
 /** 원화 — 쉼표, 소수 없음. */
 export function formatKrw(value: number): string {
   if (!Number.isFinite(value)) {
@@ -61,13 +70,13 @@ export function formatQuantity(value: number): string {
   return quantityFormat.format(roundToZeroSafe(value, 2));
 }
 
-/** 비율 — 소수 1자리 + %, null이면 —. */
+/** 비율 — 소수 1자리 버림 + %, null이면 —. */
 export function formatPercent(value: number | null): string {
   if (value === null || !Number.isFinite(value)) {
     if (value !== null) warnNotFinite("formatPercent", value);
     return "—";
   }
-  return `${roundToZeroSafe(value, 1).toFixed(1)}%`;
+  return `${truncateToZeroSafe(value, 1).toFixed(1)}%`;
 }
 
 /** 건수 — 쉼표 정수. */

@@ -1216,24 +1216,16 @@ const BLOCKED_APPROVED_LIMIT = 200;
 
 export async function listMyBlockedDocuments(viewer: Viewer, deps?: ApprovalDeps): Promise<BlockedDocument[]> {
   const visible = createVisibleMemo(deps?.findVisibility);
-  const rejected = await listDrafterInstances(viewer, { drafterId: viewer.id, status: "rejected", limit: BLOCKED_REJECTED_LIMIT });
+  // 06-28: 종류가 끝낸 문서(지출결의 종결)는 반려 줄이 아니다 — 종류가 준 조건으로 LIMIT 전에 SQL에서 뺀다(/review I1).
+  const kindFilters = listDocumentKinds().flatMap((def) => (def.rejectedCandidates ? [{ documentKind: def.kind, filter: def.rejectedCandidates }] : []));
+  const rejected = await listDrafterInstances(viewer, { drafterId: viewer.id, status: "rejected", limit: BLOCKED_REJECTED_LIMIT, kindFilters });
   const candidateKinds = listDocumentKinds().flatMap((def) =>
     def.blockedAfterApproval ? [{ documentKind: def.kind, filter: def.blockedAfterApprovalCandidates ?? null }] : [],
   );
   const approved = await listDrafterInstances(viewer, { drafterId: viewer.id, status: "approved", limit: BLOCKED_APPROVED_LIMIT, candidateKinds });
   const namesVisible = await visible(viewer, "approval.value");
 
-  // 06-28: 종류가 끝낸 문서(지출결의 종결)는 반려 줄이 아니다 — 훅이 있는 종류마다 한 번 묻는다.
-  const rejectedByKind = new Map<string, string[]>();
-  for (const row of rejected) rejectedByKind.set(row.documentKind, [...(rejectedByKind.get(row.documentKind) ?? []), row.documentId]);
-  const closedKeys = new Set<string>();
-  for (const [kind, ids] of rejectedByKind) {
-    const closedDocumentIds = getDocumentKind(kind).closedDocumentIds;
-    if (!closedDocumentIds) continue;
-    for (const id of await closedDocumentIds(viewer, [...new Set(ids)])) closedKeys.add(`${kind}:${id}`);
-  }
-
-  const found: Omit<BlockedDocument, "summary">[] = rejected.filter((row) => !closedKeys.has(`${row.documentKind}:${row.documentId}`)).map((row) => {
+  const found: Omit<BlockedDocument, "summary">[] = rejected.map((row) => {
     const def = getDocumentKind(row.documentKind);
     return {
       instanceId: row.id,

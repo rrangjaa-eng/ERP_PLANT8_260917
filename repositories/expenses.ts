@@ -301,17 +301,6 @@ export async function listNumberedByLines(
   return rows.flatMap((row) => (row.quoteLineId ? [{ ...row, quoteLineId: row.quoteLineId }] : []));
 }
 
-// 06-28 — 주어진 지출결의 중 종결된 것의 id(홈 막힌 문서에서 뺀다).
-export async function listClosedExpenseIds(viewer: Viewer, ids: string[], tx: DbOrTx = db): Promise<string[]> {
-  void viewer;
-  if (ids.length === 0) return [];
-  const rows = await tx
-    .select({ id: expenses.id })
-    .from(expenses)
-    .where(and(inArray(expenses.id, ids), isNotNull(expenses.closedAt)));
-  return rows.map((row) => row.id);
-}
-
 // 06-28(X-9) — 줄 여럿의 종결된 분할 문서(번호 있음 · 삭제 안 됨). 회차 번호가 그 회차를 다시 쓰지 않도록 회차 입력에만 더한다
 // (줄 문 · 회차 상한 · 남은 실행가는 listNumberedByLines만 본다).
 export async function listClosedInstallmentsByLines(

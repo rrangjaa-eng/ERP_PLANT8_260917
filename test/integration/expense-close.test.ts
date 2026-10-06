@@ -454,6 +454,39 @@ describe("06-28 종결", () => {
     expect(blocked[0]?.cause.type).toBe("rejected");
   });
 
+  it("종결 문서가 반려 줄 상한만큼 쌓여도 종결하지 않은 반려 문서가 홈 막힌 문서에 보인다", async () => {
+    const fx = await setupExpenseProject();
+    const kept = await rejectedOn(fx, fx.lines.withVendor);
+    // 더 최근에 반려된 종결 문서 50건(지출결의 · 결재 인스턴스 행만 — 도메인 경로로 50건 반려 · 종결은 느리다).
+    const later = new Date(Date.now() + 60_000);
+    const closedRows = await db
+      .insert(expenses)
+      .values(
+        Array.from({ length: 50 }, (_, index) => ({
+          drafterId: fx.pm.id,
+          number: `C-${String(index).padStart(4, "0")}`,
+          supplyAmountKrw: 100_000,
+          closedAt: later,
+          closedBy: fx.pm.id,
+          closedReason: "업체 취소",
+        })),
+      )
+      .returning({ id: expenses.id });
+    await db.insert(approvalInstances).values(
+      closedRows.map((row) => ({
+        documentKind: EXPENSE_DOCUMENT_KIND,
+        documentId: row.id,
+        drafterId: fx.pm.id,
+        status: "rejected",
+        currentRound: 1,
+        createdAt: later,
+        updatedAt: later,
+      })),
+    );
+
+    expect((await listMyBlockedDocuments(fx.pm)).map((doc) => doc.documentId)).toEqual([kept.expenseId]);
+  });
+
   it("종결 문서 목록 낱말", async () => {
     const fx = await setupExpenseProject();
     const kept = await rejectedOn(fx, fx.lines.withVendor);

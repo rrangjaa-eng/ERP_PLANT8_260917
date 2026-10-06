@@ -94,7 +94,6 @@ import { findUserById, findUserNamesByIds } from "@/repositories/users";
 import { findVendorById } from "@/repositories/vendors";
 import {
   closeExpenseRow,
-  listClosedExpenseIds,
   listClosedInstallmentsByLines,
   findDeletedDraftById,
   findDraftByLineAndDrafter,
@@ -447,7 +446,7 @@ registerDocumentKind({
   buildDetailRows: buildExpenseDetailRows,
   blockedAfterApproval: expenseBlockedAfterApproval,
   blockedAfterApprovalCandidates: "unresolved_evidence_void",
-  closedDocumentIds: async (viewer, ids) => new Set(await listClosedExpenseIds(viewer, ids)),
+  rejectedCandidates: "not_closed_expense",
 });
 
 // ── 보임 ──────────────────────────────────────────────────────────────

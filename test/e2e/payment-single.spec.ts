@@ -652,6 +652,13 @@ test.describe("증빙 확인 (06-06 · S4 · O-2)", () => {
     await expect(review.getByTestId("evidence-amount-by")).toHaveText(new RegExp(`^${payer.name} \\d{2}-\\d{2}$`));
     const [row] = await db.select({ evidenceAmount: expenses.evidenceAmount }).from(expenses).where(eq(expenses.id, expenseId));
     expect(row?.evidenceAmount).toBe(12_000_000);
+    // 06-06 DOM 감사 D-1 — 고친 금액으로 확인하면 새 지급 총액 미리보기가 끝난 뒤(이체액 칸이 새 값으로 다시 선 뒤)에도 포커스는 이체액 칸.
+    const fresh = await previewPayable(payer.viewer, { expenseId, payDate: seoulToday() });
+    if (fresh.payableKrw === null || fresh.payableKrw === undefined) throw new Error("지급 총액 없음");
+    const transfer = page.locator("#payment-transfer");
+    await expect(transfer).toHaveValue(formatKrw(fresh.payableKrw));
+    await expect(page.getByRole("button", { name: /^지급 완료/ })).not.toHaveAttribute("aria-disabled", "true");
+    await expect(transfer).toBeFocused();
     await page.context().close();
   });
 

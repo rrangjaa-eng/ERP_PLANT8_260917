@@ -75,6 +75,8 @@ export function PaymentActionRow() {
   const justSavedScheduleRef = useRef(false);
   const justConfirmedRef = useRef(false);
   const correctedSentRef = useRef(false);
+  // 고친 금액 확인 뒤 이체액 칸 포커스 — 새 미리보기가 시작(start → waiting)하고 끝난 뒤에 준다(D-1).
+  const focusTransferAfterPreviewRef = useRef<"start" | "waiting" | null>(null);
   const resultRef = useRef<HTMLSpanElement>(null);
   const primaryRef = useRef<HTMLSpanElement>(null);
 
@@ -262,13 +264,30 @@ export function PaymentActionRow() {
     if (canPay) {
       justConfirmedRef.current = false;
       // 고친 증빙 금액이면 지급 총액이 바뀐다 — 지금(1차 `지급 완료`가 선 뒤) 미리보기를 다시 받아 안 고친 이체액 칸이 새 값을 따른다.
-      if (correctedSentRef.current) refreshPreview();
+      // 새 값이 오면 이체액 칸이 다시 서므로(key) 포커스는 미리보기가 끝난 뒤에 준다 — 지금 주면 body로 빠진다(06-06 DOM 감사 D-1).
+      if (correctedSentRef.current && fields.payDate !== "") {
+        focusTransferAfterPreviewRef.current = "start";
+        refreshPreview();
+        return;
+      }
       (document.getElementById("payment-transfer") ?? primaryRef.current?.querySelector("button"))?.focus();
     } else if (paid) {
       justConfirmedRef.current = false;
       resultRef.current?.focus();
     }
-  }, [canConfirm, canPay, paid, refreshPreview]);
+  }, [canConfirm, canPay, paid, refreshPreview, fields.payDate]);
+
+  useEffect(() => {
+    const stage = focusTransferAfterPreviewRef.current;
+    if (stage === null) return;
+    if (previewing) {
+      focusTransferAfterPreviewRef.current = "waiting";
+      return;
+    }
+    if (stage !== "waiting") return;
+    focusTransferAfterPreviewRef.current = null;
+    (document.getElementById("payment-transfer") ?? primaryRef.current?.querySelector("button"))?.focus();
+  }, [previewing]);
 
   // 예정일 저장 · 지급 취소 뒤 응답으로 다시 읽은 표에 1차가 서면 그 1차로 포커스(r2 F5).
   useEffect(() => {

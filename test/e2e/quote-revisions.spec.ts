@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Locator, type Page } from "@playwright/test";
+import { waitForCardUsageSection } from "./fixtures";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import { codeItems, projects, quoteLines, quoteRevisions } from "@/db/schema";
@@ -134,6 +135,7 @@ test.describe("복사해 새 차수 (04-24 Task 1 — B-02 · B-03 · DR-6)", ()
     await expect(dialog.getByText("1차 2줄을 복사해 2차 · 되돌리기 없음", { exact: true })).toBeVisible();
     await expect(dialog.getByRole("button", { name: /취소/ })).toContainText("취소");
 
+    await waitForCardUsageSection(page);
     let actionRequests = 0;
     page.on("request", (request) => {
       if (isServerAction(request)) actionRequests++;
@@ -693,6 +695,7 @@ test.describe("차수 섹션과 이전 차수 읽기 섹션 (04-24 Task 3 — S5
 
     const table = revisionTable(page);
     const rowOf = (seq: number) => table.locator("tbody tr").filter({ has: page.getByRole("cell", { name: `${seq}차`, exact: true }) });
+    await waitForCardUsageSection(page);
     let requests = 0;
     page.on("request", (request) => {
       if (isServerAction(request)) requests++;
@@ -781,6 +784,7 @@ test.describe("차수 섹션과 이전 차수 읽기 섹션 (04-24 Task 3 — S5
     await login(page, pm);
     await page.goto(`/projects/${project.id}`);
     await expect(quoteRows(page)).toHaveCount(1);
+    await waitForCardUsageSection(page);
     let release: () => void = () => {};
     const held = new Promise<void>((resolve) => {
       release = resolve;
@@ -806,6 +810,7 @@ test.describe("차수 섹션과 이전 차수 읽기 섹션 (04-24 Task 3 — S5
     await login(page, pm);
     await page.goto(`/projects/${project.id}`);
     await expect(quoteRows(page)).toHaveCount(1);
+    await waitForCardUsageSection(page);
 
     let aborted = false;
     await page.route(`**/projects/${project.id}`, async (route) => {

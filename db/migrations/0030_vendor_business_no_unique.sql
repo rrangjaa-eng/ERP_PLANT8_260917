@@ -6,6 +6,9 @@
 SET LOCAL lock_timeout = '1s';
 SET LOCAL statement_timeout = '5s';
 --> statement-breakpoint
+-- 가드와 색인 사이에 옛 리비전이 중복을 넣지 못하게 색인이 어차피 잡는 SHARE 잠금을 가드 전에 잡는다.
+LOCK TABLE "vendors" IN SHARE MODE;
+--> statement-breakpoint
 DO $$
 DECLARE
   dup_count integer;

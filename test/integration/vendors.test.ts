@@ -476,10 +476,10 @@ describe("vendors 사업자번호 중복 막기 (실제 Postgres)", () => {
       ]);
       for (let waited = 0; ; waited += 50) {
         const { rows } = await client.query<{ n: number }>(
-          "SELECT count(*)::int AS n FROM pg_locks WHERE relation = 'vendors'::regclass AND NOT granted",
+          "SELECT count(*)::int AS n FROM pg_locks WHERE database = (SELECT oid FROM pg_database WHERE datname = current_database()) AND relation = 'vendors'::regclass AND NOT granted",
         );
         if ((rows[0]?.n ?? 0) >= 2) break;
-        if (waited > 10_000) throw new Error("두 등록이 INSERT 잠금 대기에 들어가지 않았다");
+        if (waited > 3_000) throw new Error("두 등록이 INSERT 잠금 대기에 들어가지 않았다");
         await new Promise((done) => setTimeout(done, 50));
       }
       await client.query("COMMIT");

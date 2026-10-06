@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
-import { inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
-import { settingsSimple } from "@/db/schema";
+import { codeItems, settingsSimple } from "@/db/schema";
 import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import {
   EVIDENCE_PREPAID_DUE_DAYS,
@@ -137,5 +137,114 @@ test.describe("06-02 설정 키 · 짝 격자", () => {
       await expect(cell(page, "계좌이체", "세금계산서")).toBeChecked();
       await expect(cell(page, "법인카드", "세금계산서")).toBeChecked();
     }).toPass();
+  });
+
+  // E-45 실패 경로(06-02 검토 P2-1 · P2-3) — 첫 저장을 붙잡은 채 둘째 칸을 누르고, 첫 저장을 실패로 끝낸다.
+  // 다음 저장은 실패한 짝을 싣지 않아야 한다: 다시 열면 둘째 칸만 체크다. 끊김(reject)과 HTTP 500 둘 다.
+  for (const failure of ["abort", "500"] as const) {
+    test(`짝 격자 연속 저장 — 앞 저장이 실패(${failure})하면 다음 저장은 실패한 짝을 싣지 않는다`, async ({ page }) => {
+      await loginAndOpenSettings(page);
+
+      let posts = 0;
+      let release: () => void = () => {};
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const matcher = (url: URL) => url.pathname === "/admin/settings";
+      await page.route(matcher, async (route) => {
+        const request = route.request();
+        if (request.method() !== "POST" || !request.headers()["next-action"]) {
+          await route.continue();
+          return;
+        }
+        posts += 1;
+        if (posts !== 1) {
+          await route.continue();
+          return;
+        }
+        await held;
+        if (failure === "abort") await route.abort();
+        else await route.fulfill({ status: 500, contentType: "text/plain", body: "boom" });
+      });
+
+      await cell(page, "계좌이체", "세금계산서").check();
+      await expect.poll(() => posts).toBe(1);
+      await cell(page, "법인카드", "세금계산서").check();
+      release();
+      await expect.poll(() => posts).toBe(2);
+      await expect(cell(page, "계좌이체", "세금계산서")).not.toBeChecked();
+
+      await page.unroute(matcher);
+      await expect(async () => {
+        await page.reload();
+        await expect(cell(page, "법인카드", "세금계산서")).toBeChecked();
+        await expect(cell(page, "계좌이체", "세금계산서")).not.toBeChecked();
+      }).toPass();
+    });
+  }
+
+  // 06-02 검토 P2-2 — 보관된 증빙 종류의 짝은 판정에서 빈 행이 아니다. 격자도 그 짝을 「(보관됨)」 열로 보여 해제할 수 있다.
+  test("짝 격자 — 저장된 짝의 보관된 증빙 종류는 「(보관됨)」 열로 보이고 해제하면 사라진다", async ({ page }) => {
+    const taxInvoice = and(eq(codeItems.tableKey, "evidence_type"), eq(codeItems.value, "tax_invoice"));
+    await db.insert(settingsSimple).values({ key: PAYMENT_METHOD_EVIDENCE_PAIRS.key, value: [{ method: "bank_transfer", evidence: "tax_invoice" }] });
+    await db.update(codeItems).set({ active: false }).where(taxInvoice);
+    try {
+      await loginAndOpenSettings(page);
+      const grid = page.getByRole("table", { name: GRID_NAME });
+      await expect(grid.getByRole("columnheader", { name: "세금계산서 (보관됨)", exact: true })).toBeVisible();
+      const archived = cell(page, "계좌이체", "세금계산서 (보관됨)");
+      await expect(archived).toBeChecked();
+
+      await archived.uncheck();
+      await expect(async () => {
+        await page.reload();
+        await expect(page.getByRole("table", { name: GRID_NAME }).getByRole("columnheader", { name: /세금계산서/ })).toHaveCount(0);
+        await expect(page.getByRole("table", { name: GRID_NAME }).getByRole("checkbox", { checked: true })).toHaveCount(0);
+      }).toPass();
+    } finally {
+      await db.update(codeItems).set({ active: true }).where(taxInvoice);
+    }
+  });
+
+  // PR #171 디자인 검토 F-1 — 「(보관됨)」 칸은 해제만 된다: 빈 칸은 비활성이고 행 머리 「전체」는 활성 열만 켠다(DB에 새 보관 짝이 없다).
+  test("짝 격자 — 보관 열의 빈 칸은 비활성이고 행 머리 「전체」는 보관 짝을 만들지 않는다", async ({ page }) => {
+    const taxInvoice = and(eq(codeItems.tableKey, "evidence_type"), eq(codeItems.value, "tax_invoice"));
+    await db.insert(settingsSimple).values({ key: PAYMENT_METHOD_EVIDENCE_PAIRS.key, value: [{ method: "bank_transfer", evidence: "tax_invoice" }] });
+    await db.update(codeItems).set({ active: false }).where(taxInvoice);
+    try {
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await loginAndOpenSettings(page);
+      const emptyArchived = cell(page, "현금", "세금계산서 (보관됨)");
+      await expect(emptyArchived).toBeDisabled();
+      await expect(cell(page, "계좌이체", "세금계산서 (보관됨)")).toBeEnabled();
+
+      await page.getByRole("checkbox", { name: "현금 전체", exact: true }).click();
+      await expect(emptyArchived).not.toBeChecked();
+      await expect(emptyArchived).toBeDisabled();
+      await expect(async () => {
+        const row = await db.query.settingsSimple.findFirst({ where: eq(settingsSimple.key, PAYMENT_METHOD_EVIDENCE_PAIRS.key) });
+        const pairs = row?.value as { method: string; evidence: string }[];
+        expect(pairs.filter((pair) => pair.method === "cash").length).toBeGreaterThan(0);
+        expect(pairs.filter((pair) => pair.evidence === "tax_invoice")).toEqual([{ method: "bank_transfer", evidence: "tax_invoice" }]);
+      }).toPass();
+    } finally {
+      await db.update(codeItems).set({ active: true }).where(taxInvoice);
+    }
+  });
+
+  // 06-02 DOM 감사 D-1 — 짝 격자 힌트는 격자와 같은 x에서 시작한다(multi-enum fieldset 선례). TextField 칸 힌트는 입력 x 그대로.
+  test("짝 격자 힌트는 격자와 같은 x · 텍스트 칸 힌트는 입력과 같은 x다(PC)", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await loginAndOpenSettings(page);
+    const x = async (locator: ReturnType<Page["locator"]>) => (await locator.boundingBox())?.x;
+
+    // 격자 면(.wrap = 표의 부모, 1px 선 바깥) 시작 x.
+    const gridX = await x(page.getByRole("table", { name: GRID_NAME }).locator(".."));
+    expect(gridX).toBeDefined();
+    expect(await x(page.locator(`[id="setting-${PAYMENT_METHOD_EVIDENCE_PAIRS.key}-hint"]`))).toBe(gridX);
+
+    const inputX = await x(page.getByLabel("선결제 증빙 기한"));
+    expect(inputX).toBeDefined();
+    expect(await x(page.locator(`[id="setting-${EVIDENCE_PREPAID_DUE_DAYS.key}-hint"]`))).toBe(inputX);
   });
 });

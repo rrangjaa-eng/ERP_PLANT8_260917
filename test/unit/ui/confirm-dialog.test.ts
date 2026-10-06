@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -321,5 +323,16 @@ describe("ConfirmDialog — 첨부 보기 칸 · loading (06-29)", () => {
     const html = render({ title: "증빙 확인", primary });
     expect(html).not.toContain("aria-busy");
     expect(html).not.toContain(styles.loadingMark);
+  });
+});
+
+// 06-29 DOM 감사 D4 — SYSTEM §7-8 폰 시트 최대 높이는 --sheet-max-h(88dvh), vh 리터럴 금지.
+describe("ConfirmDialog.module.css — 폰 시트 최대 높이", () => {
+  const css = readFileSync(resolve(process.cwd(), "ui/confirm-dialog/ConfirmDialog.module.css"), "utf8");
+  const code = css.replace(/\/\*[\s\S]*?\*\//g, "");
+
+  it("max-height는 var(--sheet-max-h)이고 vh 리터럴이 없다", () => {
+    expect(code).toMatch(/max-height:\s*var\(--sheet-max-h\)/);
+    expect(code).not.toMatch(/\d\s*vh\b/);
   });
 });

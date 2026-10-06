@@ -17,6 +17,7 @@ import {
   insertHistorizedValue as defaultInsertHistorizedValue,
   deleteFutureHistorizedValue as defaultDeleteFutureHistorizedValue,
 } from "@/repositories/settings";
+import { listCodeItems as repoListCodeItems } from "@/repositories/code-tables";
 
 // ADMN-05·06: 설정 레지스트리 — Phase 4가 호출할 시점 기준 유효값 조회 계약
 // (03-04 Task 1 확정안, docs/ARCHITECTURE.md §4-2 참고). lib/env.ts와 근본적으로
@@ -114,6 +115,8 @@ export type RegistryDeps = {
   insertHistorizedValue: typeof defaultInsertHistorizedValue;
   deleteFutureHistorizedValue: typeof defaultDeleteFutureHistorizedValue;
   withTransaction: typeof defaultWithTransaction;
+  // 짝 격자 키의 새 짝 검증 — 코드표의 활성 · 보관 안 된 값(PR #171 리뷰 P3-3).
+  listActiveCodeValues: (tableKey: string) => Promise<string[]>;
   // 04.1-04: 적용 시작일 규칙 · 「이미 적용됨」 판정의 서울 오늘 기준 시각(테스트 주입).
   now: Date;
 };
@@ -162,6 +165,51 @@ function parseStoredSimpleValue<T>(def: SettingDef<T>, raw: unknown): T {
   return def.default;
 }
 
+async function defaultListActiveCodeValues(tableKey: string): Promise<string[]> {
+  const rows = await repoListCodeItems(SYSTEM_VIEWER, {
+    tableKey,
+    scope: { rows: "all", includeArchived: false },
+    includeInactive: false,
+  });
+  return rows.map((row) => row.value);
+}
+
+// 짝 격자 칸의 두 축(코드표 값 · 이름 · 활성 · 보관 시각). 결재선 옵션(listApprovalRouteOptions)과 같은 결로 설정 보기 권한만
+// 보고 리포지토리에서 읽는다 — 코드표 메뉴 권한(scopeFor("code_items"))으로 읽으면 설정 권한만 있는 계급은 빈 격자를 본다(PR #171 Codex).
+// 보관 값은 저장된 짝에 남은 것만 화면에 「(보관됨)」으로 보인다(pairGridAxis).
+export async function listPairGridAxisItems(
+  viewer: Viewer,
+  tableKey: string,
+  deps?: Partial<RegistryDeps>,
+): Promise<{ value: string; label: string; active: boolean; archivedAt: Date | null }[]> {
+  const can = deps?.can ?? defaultCan;
+  if (!(await can(viewer, "admin.settings", "view"))) throw new ForbiddenError("설정 보기 권한 없음");
+  const rows = await repoListCodeItems(SYSTEM_VIEWER, { tableKey, scope: { rows: "all", includeArchived: true }, includeInactive: true });
+  return rows.map((row) => ({ value: row.value, label: row.label, active: row.active, archivedAt: row.archivedAt }));
+}
+
+// 짝 격자 키(`pairGrid`)는 새로 더해진 짝이 두 코드표의 활성 값만 가리켜야 한다 — 보관 값으로 새 짝을 만들 수 없다
+// (디자인 검토 F-1). 이미 저장된 짝은 그대로 두거나 지울 수 있다(「조용히 지우지 않는다」 · 해제 가능).
+export async function assertNewPairsActive<T>(def: SettingDef<T>, value: T, deps?: Partial<RegistryDeps>): Promise<void> {
+  const grid = def.pairGrid;
+  if (!grid || !Array.isArray(value)) return;
+  const findSimpleValue = deps?.findSimpleValue ?? defaultFindSimpleValue;
+  const stored = (await findSimpleValue(SYSTEM_VIEWER, def.key))?.value;
+  const storedPairs = Array.isArray(stored) ? (stored as Record<string, unknown>[]) : [];
+  const isStored = (pair: Record<string, unknown>) =>
+    storedPairs.some((old) => old[grid.rowField] === pair[grid.rowField] && old[grid.colField] === pair[grid.colField]);
+  const added = (value as Record<string, unknown>[]).filter((pair) => !isStored(pair));
+  if (added.length === 0) return;
+  const listActive = deps?.listActiveCodeValues ?? defaultListActiveCodeValues;
+  const [rowValues, colValues] = await Promise.all([listActive(grid.rows), listActive(grid.cols)]);
+  const rowActive = new Set(rowValues);
+  const colActive = new Set(colValues);
+  const stale = added.some(
+    (pair) => !rowActive.has(String(pair[grid.rowField])) || !colActive.has(String(pair[grid.colField])),
+  );
+  if (stale) throw new UserFacingError("보관된 값으로 새 짝 불가 · 새로 고침");
+}
+
 // 비이력형 전용. 이력형 키에 부르면 거부한다.
 export async function setSettingValue<T>(
   viewer: Viewer,
@@ -178,6 +226,7 @@ export async function setSettingValue<T>(
   if (!allowed) throw new ForbiddenError("설정 변경 권한 없음");
 
   const parsed = def.schema.parse(value);
+  await assertNewPairsActive(def, parsed, deps);
   const upsertSimpleValue = deps?.upsertSimpleValue ?? defaultUpsertSimpleValue;
   await upsertSimpleValue(viewer, def.key, parsed, viewer.id);
 

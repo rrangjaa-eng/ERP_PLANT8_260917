@@ -75,7 +75,7 @@
   .selectLabel ~ .hint,
   .selectLabel ~ .warning,
   .selectLabel ~ .error,
-  .field > div ~ .hint {
+  .field > div:first-child ~ .hint {
     grid-column: 2;
   }
 }

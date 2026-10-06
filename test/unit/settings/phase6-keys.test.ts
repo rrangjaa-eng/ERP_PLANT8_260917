@@ -99,6 +99,12 @@ describe("isMethodEvidencePairAllowed", () => {
   it("그 지급 방식의 짝이 하나도 없으면 참이다(빈 행 = 검사 없음)", () => {
     expect(isMethodEvidencePairAllowed(pairs, { method: "cash", evidenceType: "card_slip" })).toBe(true);
   });
+
+  // 06-02 검토 P2-2 — 보관된 증빙 종류의 짝만 남은 지급 방식은 빈 행이 아니다: 활성 증빙 종류 전부가 거짓이다.
+  // 그래서 설정 화면은 그 짝을 「(보관됨)」 열로 보여 해제할 수 있게 한다(pair-grid-axes).
+  it("보관된 증빙 종류의 짝만 있는 지급 방식은 활성 증빙 종류 전부가 거짓이다", () => {
+    expect(isMethodEvidencePairAllowed(pairs, { method: "bank_transfer", evidenceType: "invoice" })).toBe(false);
+  });
 });
 
 // 견적 줄 문 갈래(O-13) — 공백 제거 · NFC 정규화 뒤 정확 비교.

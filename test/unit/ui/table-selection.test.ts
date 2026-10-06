@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -28,9 +30,9 @@ function selectionOf(overrides: Partial<TableSelection<Row>> = {}): TableSelecti
   };
 }
 
-function render(selection?: TableSelection<Row>): string {
+function render(selection?: TableSelection<Row>, enableGridKeyboard = false): string {
   return renderToStaticMarkup(
-    createElement(Table<Row>, { caption: "지급 대상", columns, rows, getRowId: (row) => row.id, selection }),
+    createElement(Table<Row>, { caption: "지급 대상", columns, rows, getRowId: (row) => row.id, selection, enableGridKeyboard }),
   );
 }
 
@@ -100,5 +102,71 @@ describe("reconcileSelection — 처리 뒤 선택 다시 세우기(H-3)", () =>
     expect(reconcileSelection(["a", "b", "c"], rows, getRowId, open)).toEqual(["a", "c"]);
     // 동시성으로만 막혔던 행(여전히 고를 수 있음)은 남는다.
     expect(reconcileSelection(["a", "c"], rows, getRowId, () => true)).toEqual(["a", "c"]);
+  });
+});
+
+// 06-29 DOM 감사 D1 · D2 — SYSTEM §7-3 (아) 「표 전체가 탭 정지 1개」 · 행 높이 --row-h.
+describe("Table selection — 탭 정지 · 행 높이(감사 D1 · D2)", () => {
+  it("행 체크박스는 격자 키보드가 있으면 탭 정지가 아니다(tabindex=-1) — 키보드 고르기는 활성 셀 Space가 맡는다", () => {
+    const boxes = checkboxes(render(selectionOf(), true));
+    for (const row of rows) {
+      const box = boxes.find((candidate) => candidate.includes(`aria-label="${row.name} 고르기"`))!;
+      expect(box).toContain('tabindex="-1"');
+    }
+  });
+
+  it("격자 키보드가 없으면 Space 경로가 없으니 행 체크박스가 탭으로 닿는다(tabindex 없음, 검토 P3-1)", () => {
+    const boxes = checkboxes(render(selectionOf(), false));
+    for (const row of rows) {
+      const box = boxes.find((candidate) => candidate.includes(`aria-label="${row.name} 고르기"`))!;
+      expect(box).not.toContain("tabindex");
+    }
+  });
+
+  it("머리글 전체 고르기 체크박스는 키보드로 닿는 유일한 길이라 탭 정지로 남는다", () => {
+    const head = checkboxes(render(selectionOf())).find((box) => box.includes('aria-label="이 쪽 전체 고르기"'))!;
+    expect(head).not.toContain("tabindex");
+  });
+
+  it(".selectLabel 최소 높이는 위아래 padding과 아래 테두리를 뺀 값이라 선택 표 행이 --row-h다", () => {
+    const css = readFileSync(resolve(process.cwd(), "ui/table/Table.module.css"), "utf8");
+    const block = /\.selectLabel\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(block).toContain("min-height: calc(var(--row-h) - 2 * var(--cell-pad-y) - var(--line-w))");
+  });
+});
+
+// PR #171 리뷰 P3-2 — 고른 행의 오류 · 충돌 셀은 §7-3 (나) 「고정 모양」(빨간 면)이 --accent-weak에 덮이지 않는다.
+describe("Table selection — 오류 · 충돌 셀 면 우선(검토 P3-2)", () => {
+  const css = readFileSync(resolve(process.cwd(), "ui/table/Table.module.css"), "utf8");
+  const ruleFor = (selector: string): string => {
+    const escaped = selector.replace(/[.>:()*\s]/g, (char) => `\\${char}`);
+    return new RegExp(`(?:^|[,}\\n])\\s*${escaped}\\s*(?:,[^{]*)?\\{([^}]*)\\}`, "m").exec(css)?.[1] ?? "";
+  };
+
+  it("고른 행 위의 오류 · 충돌 셀 면은 위험 약한 색이다(평상시)", () => {
+    expect(ruleFor(".errorCell.selectedRow")).toContain("background: var(--status-danger-weak)");
+    expect(ruleFor(".conflictCell.selectedRow")).toContain("background: var(--status-danger-weak)");
+  });
+
+  it("읽기 표의 행 hover에서도 고른 오류 · 충돌 셀 면이 --accent-weak로 돌아가지 않는다", () => {
+    const hover = ".table:not(.editable) tbody tr:hover > .cell";
+    expect(ruleFor(`${hover}.selectedRow.errorCell`)).toContain("background: var(--status-danger-weak)");
+    expect(ruleFor(`${hover}.selectedRow.conflictCell`)).toContain("background: var(--status-danger-weak)");
+  });
+});
+
+// PR #171 리뷰 P3-4 — 한 화면에 선택 표가 둘이어도 이유 줄 id가 겹치지 않는다.
+describe("Table selection — 이유 줄 id 유일성(검토 P3-4)", () => {
+  it("같은 rowId를 가진 선택 표 두 개를 한 화면에 그려도 모든 id가 유일하다", () => {
+    const selection = selectionOf({ selectedIds: [] });
+    const html = renderToStaticMarkup(
+      createElement("div", null, [
+        createElement(Table<Row>, { key: "a", caption: "표 하나", columns, rows, getRowId: (row) => row.id, selection }),
+        createElement(Table<Row>, { key: "b", caption: "표 둘", columns, rows, getRowId: (row) => row.id, selection }),
+      ]),
+    );
+    const ids = [...html.matchAll(/ id="([^"]+)"/g)].map((match) => match[1]!);
+    expect(ids.filter((id) => id.includes("select-")).length).toBe(4);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 });

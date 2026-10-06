@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState, type ElementType, type ReactNode } from "react";
+import { Fragment, useEffect, useId, useRef, useState, type ElementType, type ReactNode } from "react";
 import Link from "next/link";
 import { clampPage } from "@/lib/paging";
 import { isCtrlCombo } from "@/lib/shortcut";
@@ -244,6 +244,8 @@ export function Table<Row>({
   collapseEarly = false,
   selection,
 }: TableProps<Row>) {
+  // 검토 P3-4 — 선택 표 이유 줄 id 접두어: 한 화면에 표가 둘이어도 rowId가 같을 때 id가 겹치지 않게.
+  const selectIdPrefix = useId();
   const [activeCell, setActiveCell] = useState<ActiveCell>(null);
   const allowed = (action: Parameters<typeof isGridActionAllowed>[0]) => isGridActionAllowed(action, { saveLocked });
   // 04-49(DR-14) — collapseBelow로 숨은 열(CSS와 같은 폭 판정). 방향키가 건너뛴다.
@@ -949,8 +951,8 @@ export function Table<Row>({
               const rowSelected = rowSelectable && selectedIdSet.has(rowId);
               const gateReason = gate !== undefined && gate !== true ? gate.reason : null;
               const blockedText = selection?.blockedReason?.(row) ?? null;
-              const gateReasonId = gateReason !== null ? `${rowId}-select-reason` : undefined;
-              const blockedReasonId = blockedText ? `${rowId}-select-blocked` : undefined;
+              const gateReasonId = gateReason !== null ? `${selectIdPrefix}-${rowId}-select-reason` : undefined;
+              const blockedReasonId = blockedText ? `${selectIdPrefix}-${rowId}-select-blocked` : undefined;
 
               return (
                 <RowBody key={rowId} {...(phoneRowLink ? { className: styles.rowLinkGroup } : {})}>
@@ -970,6 +972,7 @@ export function Table<Row>({
                         <label className={styles.selectLabel}>
                           <input
                             type="checkbox"
+                            tabIndex={enableGridKeyboard ? -1 : undefined}
                             aria-label={`${selection.rowLabel(row)} 고르기`}
                             aria-disabled={rowSelectable ? undefined : "true"}
                             aria-describedby={[gateReasonId, blockedReasonId].filter(Boolean).join(" ") || undefined}

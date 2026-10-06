@@ -19,6 +19,7 @@ import {
   cancelHistorizedSettingAction,
   exportSettingsAction,
 } from "./actions";
+import { pairGridId, pairGridValue } from "./pair-grid-axes";
 import styles from "./settings.module.css";
 
 // ADMN-05: 레지스트리에서 파생된 계산된 뷰모델만 받는다 — 이 파일도
@@ -42,10 +43,10 @@ export type SettingsFieldViewModel = {
     | { kind: "simple"; descriptor: SettingsFieldDescriptorView; value: unknown }
     | { kind: "historized"; descriptor: SettingsFieldDescriptorView; entries: HistoryEntry[] };
   options?: { value: string; label: string }[];
-  // 06-02(SP-9): 짝 격자 칸의 행 · 열 — 두 코드표의 활성 값(서버가 미리 읽는다).
+  // 06-02(SP-9): 짝 격자 칸의 행 · 열 — 두 코드표의 활성 값 + 저장된 짝의 보관 값 「(보관됨)」(서버가 미리 읽는다).
   pairGrid?: {
-    rows: { value: string; label: string }[];
-    cols: { value: string; label: string }[];
+    rows: { value: string; label: string; archived?: true }[];
+    cols: { value: string; label: string; archived?: true }[];
     rowField: string;
     colField: string;
   };
@@ -261,7 +262,7 @@ function pairsOf(value: unknown): Pair[] {
 
 // 06-02(SP-9 · SYSTEM §7-2 짝 격자): 새 컴포넌트 없이 §7-13 PermissionGrid를 설정 입력으로 쓴다. PermissionGrid는 「계급 = PC 열,
 // 항목 = PC 행」이라 prop 이름이 반대다 — 열 코드표(증빙 종류)를 rows prop, 행 코드표(지급 방식)를 columns prop으로 넘긴다.
-// 칸 하나 = 그 짝 하나만 더하거나 빼고(격자에 안 보이는 비활성 값의 짝은 그대로 남는다) 짝 목록 전체를 즉시 저장한다.
+// 칸 하나 = 그 짝 하나만 더하거나 빼고(다른 짝은 그대로 남는다 — 보관 값의 짝은 「(보관됨)」 행 · 열로 보인다) 짝 목록 전체를 즉시 저장한다.
 // 저장 차례(E-45): promise 사슬 하나로 줄 세워, 앞 저장이 끝난 뒤(성공 · 실패 모두) 최신 목록에서 다음 목록을 계산해 보낸다.
 function PairGridEditor({
   fieldKey,
@@ -280,14 +281,14 @@ function PairGridEditor({
   const { rowField, colField } = pairGrid;
   // 저장마다 서버가 화면을 다시 그려도 격자가 다시 계산되지 않게 처음 값을 잡아 둔다(상태가 이 칸의 정본).
   const [grid] = useState(() => ({
-    rows: pairGrid.cols.map((col) => ({ id: col.value, label: col.label })),
-    columns: pairGrid.rows.map((row) => ({ id: row.value, label: row.label })),
+    rows: pairGrid.cols.map((col) => ({ id: pairGridId(col.value), label: col.label, locked: col.archived })),
+    columns: pairGrid.rows.map((row) => ({ id: pairGridId(row.value), label: row.label, locked: row.archived })),
   }));
   const [pairs, setPairs] = useState<Pair[]>(() => pairsOf(initialValue));
   const latest = useRef(pairs);
   const chain = useRef<Promise<void>>(Promise.resolve());
   const values = useMemo(
-    () => Object.fromEntries(pairs.map((pair) => [buildCellKey(pair[colField] ?? "", pair[rowField] ?? ""), true])),
+    () => Object.fromEntries(pairs.map((pair) => [buildCellKey(pairGridId(pair[colField] ?? ""), pairGridId(pair[rowField] ?? "")), true])),
     [pairs, rowField, colField],
   );
 
@@ -296,7 +297,9 @@ function PairGridEditor({
     setPairs(next);
   }
 
-  function onToggle(evidenceId: string, methodId: string, next: boolean): Promise<void> {
+  function onToggle(evidenceGridId: string, methodGridId: string, next: boolean): Promise<void> {
+    const evidenceId = pairGridValue(evidenceGridId);
+    const methodId = pairGridValue(methodGridId);
     const run = chain.current.then(async () => {
       const before = latest.current;
       const same = (pair: Pair) => pair[rowField] === methodId && pair[colField] === evidenceId;
@@ -306,7 +309,14 @@ function PairGridEditor({
           : [...before, { [rowField]: methodId, [colField]: evidenceId }]
         : before.filter((pair) => !same(pair));
       apply(after);
-      const result = await executeAsync({ key: fieldKey, value: after });
+      // 끊김 · 액션 ID 불일치처럼 executeAsync가 던져도 목록을 되돌린다 — 다음 저장이 실패한 짝을 싣지 않게(06-02 검토 P2-1).
+      let result: Awaited<ReturnType<typeof executeAsync>>;
+      try {
+        result = await executeAsync({ key: fieldKey, value: after });
+      } catch (error) {
+        apply(before);
+        throw error;
+      }
       const message = errorMessageOf(result ?? {});
       if (message) {
         apply(before);

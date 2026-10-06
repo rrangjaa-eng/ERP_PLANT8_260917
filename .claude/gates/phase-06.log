@@ -36,3 +36,4 @@ review 2026-10-06T18:36Z session=157802f6-d640-5a76-88ea-648ef79f4d4c (PR #180, 
 cso 2026-10-06T18:36Z session=157802f6-d640-5a76-88ea-648ef79f4d4c (PR #180, Opus 대체 검토 — cso 도우미는 600초 상한이라 손으로 같은 기준 적용, 중간 1·낮음 4, CSO-1·2·5 수정, CSO-3은 06-11·CSO-4는 마이그레이션이라 따로, 보고서 /mnt/project-files/notes/06-review/pr-c-cso.md)
 design-review 2026-10-06T18:37Z session=157802f6-d640-5a76-88ea-648ef79f4d4c (PR #180, Codex 실행·후보 0 · DOM 실측 결함 1건 수정 2b33cb93, 보고서 /mnt/project-files/notes/06-review/pr-c-design-review.md)
 qa 2026-10-06T19:30Z session=157802f6-d640-5a76-88ea-648ef79f4d4c (PR #180, CI=true 흐름 통과·제품 결함 0, 건강 88→94, 보고서 /mnt/project-files/notes/06-review/pr-c-qa.md)
+review 2026-10-06T22:50Z session=157802f6-d640-5a76-88ea-648ef79f4d4c (PR #180 추가 반영 — Codex 검토 P1 2·P2 3 실제 결함 확인·수정 516f3112~634e4170, 시각 비교에 가려진 e2e 6건 수정 c939c319·769abb9e, 시각 기준 사진 d9e01724 · 손으로 기록)

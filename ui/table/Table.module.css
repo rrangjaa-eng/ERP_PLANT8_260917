@@ -272,6 +272,14 @@ th.groupHeader {
   background: var(--accent-weak);
 }
 
+/* 검토 P3-2 — 고른 행에서도 오류 · 충돌 셀의 빨간 면은 고정 모양이다(§7-3 (나)). 위 두 규칙보다 명시도가 높다. */
+.errorCell.selectedRow,
+.conflictCell.selectedRow,
+.table:not(.editable) tbody tr:hover > .cell.selectedRow.errorCell,
+.table:not(.editable) tbody tr:hover > .cell.selectedRow.conflictCell {
+  background: var(--status-danger-weak);
+}
+
 .selectReason {
   margin: var(--s-1) 0 0;
   color: var(--text-muted);

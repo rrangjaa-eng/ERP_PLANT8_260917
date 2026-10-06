@@ -134,3 +134,23 @@ describe("Table selection — 탭 정지 · 행 높이(감사 D1 · D2)", () => 
     expect(block).toContain("min-height: calc(var(--row-h) - 2 * var(--cell-pad-y) - var(--line-w))");
   });
 });
+
+// PR #171 리뷰 P3-2 — 고른 행의 오류 · 충돌 셀은 §7-3 (나) 「고정 모양」(빨간 면)이 --accent-weak에 덮이지 않는다.
+describe("Table selection — 오류 · 충돌 셀 면 우선(검토 P3-2)", () => {
+  const css = readFileSync(resolve(process.cwd(), "ui/table/Table.module.css"), "utf8");
+  const ruleFor = (selector: string): string => {
+    const escaped = selector.replace(/[.>:()*\s]/g, (char) => `\\${char}`);
+    return new RegExp(`(?:^|[,}\\n])\\s*${escaped}\\s*(?:,[^{]*)?\\{([^}]*)\\}`, "m").exec(css)?.[1] ?? "";
+  };
+
+  it("고른 행 위의 오류 · 충돌 셀 면은 위험 약한 색이다(평상시)", () => {
+    expect(ruleFor(".errorCell.selectedRow")).toContain("background: var(--status-danger-weak)");
+    expect(ruleFor(".conflictCell.selectedRow")).toContain("background: var(--status-danger-weak)");
+  });
+
+  it("읽기 표의 행 hover에서도 고른 오류 · 충돌 셀 면이 --accent-weak로 돌아가지 않는다", () => {
+    const hover = ".table:not(.editable) tbody tr:hover > .cell";
+    expect(ruleFor(`${hover}.selectedRow.errorCell`)).toContain("background: var(--status-danger-weak)");
+    expect(ruleFor(`${hover}.selectedRow.conflictCell`)).toContain("background: var(--status-danger-weak)");
+  });
+});

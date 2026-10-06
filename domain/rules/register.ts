@@ -366,6 +366,8 @@ export type CardExecutionCapCtx = {
   source: CardCapSource;
   link: "pickable" | "fixed";
   pmName?: string;
+  /** 등록자가 견적 금액(quote.amount)을 보는가 — 못 보면 거부 문구에 남은 실행가 숫자를 싣지 않는다(CSO-2). */
+  amountVisible: boolean;
 };
 
 registerGateRule<unknown, CardExecutionCapCtx>({
@@ -374,6 +376,7 @@ registerGateRule<unknown, CardExecutionCapCtx>({
     const cap = cardExecutionCap({ execution: ctx.execution, otherSupplies: ctx.otherSupplies, supply: ctx.supply, source: ctx.source });
     if (!cap.blocked) return { allowed: true };
     const next = ctx.link === "pickable" ? "다른 줄 고르기" : `견적 줄은 담당 PM ${ctx.pmName ?? ""}`;
+    if (!ctx.amountVisible) return { allowed: false, reason: `실행가 초과 · ${next}` };
     return { allowed: false, reason: `실행가 초과 · 남은 실행가 ${formatKrw(cap.remaining.amountKrw)} · ${next}` };
   },
 });

@@ -1,5 +1,6 @@
 import type { Viewer } from "@/domain/viewer";
 import { can, ForbiddenError } from "@/domain/permissions/can";
+import { visible } from "@/domain/permissions/visible";
 import type { CardOwnerKind } from "@/domain/corp-cards";
 import { projectMany, type DtoSpec } from "@/domain/permissions/project";
 import { registerDto } from "@/domain/permissions/dto-registry";
@@ -105,6 +106,8 @@ export type CardUsagePre = {
   revisionId: string | null;
   lineRoom: LineRoomBasis | null;
   capExclude: { usageId?: string; requestId?: string };
+  /** 등록자의 견적 금액(quote.amount) 노출 — 실행가 상한 거부 문구의 남은 실행가 숫자(CSO-2). 트랜잭션 전에 읽는다. */
+  amountVisible: boolean;
   /** 06-07 견적 외 비용 — 사전 조회 때의 현재 차수 · 항목. `completedOutOfQuote`는 06-09 대리 등록만 참(D-47 ③ · Q-B). */
   outOfQuote: { projectId: string; revisionId: string; itemName: string; completedOutOfQuote: boolean } | null;
 };
@@ -203,6 +206,7 @@ export async function precheckCardUsage(viewer: Viewer, input: CardUsageInput): 
     evidenceRule: option.rule,
     rates,
     capExclude: {},
+    amountVisible: false,
     outOfQuote: null,
   };
   if (input.linkKind === "team_cost") return { ...base, teamId, projectId: null, revisionId: null, lineRoom: null };
@@ -244,6 +248,7 @@ export async function precheckCardUsage(viewer: Viewer, input: CardUsageInput): 
     projectId: project.id,
     revisionId: latest?.id ?? null,
     lineRoom: await loadLineRoomBasis(viewer, [line.id]),
+    amountVisible: await visible(viewer, "quote.amount"),
   };
 }
 
@@ -284,6 +289,7 @@ export async function createCardUsage(
         supply: { currency: "KRW", amount: split.supplyKrw, fxRate: 1 },
         source: "entry",
         link: "pickable",
+        amountVisible: pre.amountVisible,
       });
       if (!cap.allowed) throw new GateBlockedError(cap.reason);
       link = { linkKind: "quote_line", quoteLineId: input.lineId, teamId: null };

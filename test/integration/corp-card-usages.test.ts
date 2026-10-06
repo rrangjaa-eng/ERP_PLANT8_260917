@@ -388,6 +388,16 @@ describe("실행가 상한(Q3)", () => {
     expect((error as Error).message).toBe("실행가 초과 · 남은 실행가 400,000 · 다른 줄 고르기");
   });
 
+  it("견적 금액(quote.amount)을 못 보는 계급 → 거부 문구에 남은 실행가 숫자 없음(CSO-2)", async () => {
+    const fx = await cardProject();
+    await cardOnLine(fx, fx.lines[0] ?? "", 600_000);
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, infoItem: "quote.amount", visible: false });
+    const error = await caught(cardOnLine(fx, fx.lines[0] ?? "", 400_001));
+    expect(error).toBeInstanceOf(GateBlockedError);
+    expect((error as Error).message).toBe("실행가 초과 · 다른 줄 고르기");
+    expect(await usageCount()).toBe(1);
+  });
+
   it("같은 상태에서 400,000 → 저장(경계값)", async () => {
     const fx = await cardProject();
     await cardOnLine(fx, fx.lines[0] ?? "", 600_000);

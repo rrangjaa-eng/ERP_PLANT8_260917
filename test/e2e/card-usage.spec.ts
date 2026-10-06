@@ -102,14 +102,14 @@ async function seedProjectLine(
   return { projectId: project.id, projectName, projectNumber: project.number, itemName, lineId: line.id };
 }
 
-// 06-07: 견적 줄에 이은 카드 사용 한 건(본인 등록 · 카드 전표 — 공급가 = 결제 합계) — 도메인 함수로.
+// 06-07: 견적 줄에 이은 카드 사용 한 건(본인 등록 · 계산서 — 규칙 없음이라 공급가 = 결제 합계, `카드 전표`는 #177부터 부가세 10%) — 도메인 함수로.
 async function seedLineUsage(viewer: Person["viewer"], cardId: string, lineId: string, amount: number): Promise<void> {
   const input = {
     corpCardId: cardId,
     usedOn: seoulToday(),
     merchantVendorId: null,
     total: { currency: "KRW" as const, amount, fxRate: 1 },
-    evidenceTypeCode: "card_receipt",
+    evidenceTypeCode: "invoice",
     linkKind: "quote_line" as const,
     lineId,
     memo: null,
@@ -303,7 +303,8 @@ test.describe("법인카드 사용 등록 (06-05)", () => {
 
     const item = `현장 다과-${randomUUID().slice(0, 6)}`;
     await sheet.getByLabel("항목").fill(item);
-    await expect(sheet.getByText("저장하면 견적 외 비용 줄 생김 · 실행가 30,000", { exact: true })).toBeVisible();
+    // 기본 증빙 `카드 전표` — #177부터 부가세 10% 역산이라 견적 외 비용 줄 실행가 = 공급가 27,273.
+    await expect(sheet.getByText("저장하면 견적 외 비용 줄 생김 · 실행가 27,273", { exact: true })).toBeVisible();
     await amount.press("Control+Enter");
     await expect(sheet.getByRole("status")).toHaveText("카드 사용 등록됨 · 30,000");
     // [DOM 감사 D-1] 뒤 목록 연결 칸 `{프로젝트} · 견적 외 비용 · {항목}`.
@@ -326,13 +327,14 @@ test.describe("법인카드 사용 등록 (06-05)", () => {
     await sheet.getByLabel("결제 합계").fill("900");
     await sheet.getByLabel("환율").fill("1474.89");
     await sheet.getByRole("radio", { name: "팀 비용" }).check();
-    await expect(sheet.locator('[data-ui="card-calc-line"]')).toHaveText("공급가 1,327,401 · 규칙 없음");
+    // 기본 증빙 `카드 전표` — #177부터 부가세 10% 역산(1,327,401 → 공급가 1,206,728 · 부가세 120,673).
+    await expect(sheet.locator('[data-ui="card-calc-line"]')).toHaveText("공급가 1,206,728 · 부가세 120,673 · 카드 전표 규칙");
     await sheet.getByLabel("환율").press("Control+Enter");
 
     await expect(sheet.getByRole("status")).toHaveText("카드 사용 등록됨 · 1,327,401");
     const table = page.getByRole("table");
     await expect(table.getByText("1,327,401", { exact: true })).toHaveCount(1);
-    await expect(table.getByText("USD 900.00 @1,474.89 · 공급가 1,327,401", { exact: true })).toHaveCount(1);
+    await expect(table.getByText("USD 900.00 @1,474.89 · 공급가 1,206,728", { exact: true })).toHaveCount(1);
     await page.context().close();
   });
 

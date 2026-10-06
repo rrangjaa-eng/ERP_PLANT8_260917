@@ -37,7 +37,8 @@ test.describe("폰 카드 사용 (06-05 DOM 감사)", () => {
       usedOn: seoulToday(),
       merchantVendorId: null,
       total: { currency: "USD", amount: 900, fxRate: 1474.89 },
-      evidenceTypeCode: "card_receipt",
+      // 계산서(규칙 없음) — 공급가 = 결제 합계. `카드 전표`는 #177부터 부가세 10%.
+      evidenceTypeCode: "invoice",
       linkKind: "team_cost",
       memo: null,
     };

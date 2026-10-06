@@ -76,7 +76,11 @@ test.describe("폰 375 설정 체크박스 터치 목표 (F-05)", () => {
     await loginAs(page, SYSADMIN_ROLE_ID);
     await page.goto("/admin/settings");
 
-    const checkboxLabels = page.locator("main label").filter({ has: page.locator('input[type="checkbox"]') });
+    // 짝 격자(§7-2 · §7-13 PermissionGrid)는 PC 표와 폰 select · 목록을 둘 다 그리고 CSS로만 가른다 — 폰에서 숨은 PC 표의 라벨은 상자가 없다.
+    const checkboxLabels = page
+      .locator("main label")
+      .filter({ has: page.locator('input[type="checkbox"]') })
+      .filter({ visible: true });
     const count = await checkboxLabels.count();
     expect(count).toBeGreaterThan(0);
 

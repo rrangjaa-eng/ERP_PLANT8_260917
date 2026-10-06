@@ -8,6 +8,7 @@ import {
   getSettingValue,
   listSettingHistory,
   describeSettingField,
+  listPairGridAxisItems,
   type SettingDef,
   type SettingFieldDescriptor,
 } from "@/domain/settings/registry";
@@ -17,6 +18,7 @@ import { formatCount, formatForeignAmount, formatFxRate, formatKrw, formatQuanti
 import { seoulToday } from "@/lib/dates";
 import type { HistoryEntry } from "@/ui/history-list/HistoryList";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
+import { pairGridAxis } from "./pair-grid-axes";
 import { SettingsFormClient, type SettingsSection, type SettingsFieldViewModel } from "./settings-form-client";
 
 // D-36 계약: 화면 코드에 계급 이름 분기가 없다. 캐시 없음 — 화면 로드마다
@@ -78,6 +80,28 @@ function optionsFor(
   return undefined;
 }
 
+// 06-02(SP-9): 짝 격자 칸의 행 · 열 = 두 코드표의 활성 값(sortOrder 순 — listPairGridAxisItems가 그 순서로 준다) + 저장된 짝에 남은
+// 보관 값(「(보관됨)」, 검토 P2-2 — pairGridAxis).
+async function pairGridFor(
+  viewer: Viewer,
+  descriptor: SettingFieldDescriptor,
+  value: unknown,
+): Promise<SettingsFieldViewModel["pairGrid"]> {
+  if (descriptor.kind !== "pair-grid") return undefined;
+  const [rows, cols] = await Promise.all([
+    listPairGridAxisItems(viewer, descriptor.rows),
+    listPairGridAxisItems(viewer, descriptor.cols),
+  ]);
+  const pairs = Array.isArray(value) ? (value as Record<string, unknown>[]) : [];
+  const stored = (field: string) => pairs.map((pair) => pair[field]).filter((v): v is string => typeof v === "string");
+  return {
+    rows: pairGridAxis(rows, stored(descriptor.rowField)),
+    cols: pairGridAxis(cols, stored(descriptor.colField)),
+    rowField: descriptor.rowField,
+    colField: descriptor.colField,
+  };
+}
+
 async function buildSections(viewer: Viewer): Promise<SettingsSection[]> {
   const sections = new Map<string, SettingsFieldViewModel[]>();
   const values: Record<string, unknown> = {};
@@ -126,6 +150,7 @@ async function buildSections(viewer: Viewer): Promise<SettingsSection[]> {
       ...(def.unitLabel ? { unitLabel: def.unitLabel } : {}),
       field,
       options: field.kind === "simple" ? optionsFor(def, descriptor, field.value, routeOptions) : undefined,
+      ...(descriptor.kind === "pair-grid" ? { pairGrid: await pairGridFor(viewer, descriptor, field.kind === "simple" ? field.value : undefined) } : {}),
       warning: warnings[def.key],
     };
 

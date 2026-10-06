@@ -1,6 +1,6 @@
 /* SYSTEM.md §7-17(⑮) — 공용 확인 모달·시트(스킨 A). PC(≥700)는 폭 --dialog-w
    모달(r12 · 떠 있는 그림자), 폰(<700)은 §7-8 시트 골격(머리 고정 + 닫기 x, 본문 스크롤 최대
-   85vh, 행동 줄 --touch-min). 값은 역할 토큰만 쓴다. */
+   --sheet-max-h, 행동 줄 --touch-min). 값은 역할 토큰만 쓴다. */
 
 .dialog {
   width: 100%;
@@ -66,6 +66,20 @@
 }
 
 .resultLine {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+}
+
+/* 06-29(SP-7 · §7-17) — 첨부 보기 칸. 높이 상한 = 05 Attachments 읽기 행 셋(행 = 썸네일 --s-12 + 위아래 --s-2, 행 사이 선 --line-w). 넘치면 칸 안만 스크롤한다. */
+.attachments {
+  max-height: calc(var(--s-12) * 3 + var(--s-2) * 6 + var(--line-w) * 2);
+  margin-bottom: var(--s-3);
+  overflow-y: auto;
+}
+
+/* 06-29(SP-7 상태 계약 ⑴) — 열 때 읽는 동안 `…` 한 자리(1차 aria-describedby 대상). */
+.loadingMark {
   margin: 0;
   color: var(--text-muted);
   font-size: var(--text-aux);
@@ -162,7 +176,7 @@
     inset-inline: 0;
     width: 100%;
     max-width: none;
-    max-height: 85vh;
+    max-height: var(--sheet-max-h);
     margin: 0;
     border: 0;
     border-radius: var(--radius-panel) var(--radius-panel) 0 0;
@@ -190,6 +204,12 @@
   .body {
     overflow-y: auto;
     padding: var(--s-3) var(--pad-page);
+  }
+
+  /* 06-29(SP-7) — 폰의 Attachments 읽기 행은 3차 행동 줄(--touch-min)이 파일 줄 아래로 내려와 PC보다 높다(행 = 썸네일 --s-12 + 위아래 --s-2 + --touch-min).
+     칸 높이 상한도 그 행 셋이다 — 그래야 폰에서도 「행 셋에서 멈춘다」. */
+  .attachments {
+    max-height: calc((var(--s-12) + var(--s-2) * 2 + var(--touch-min)) * 3 + var(--line-w) * 2);
   }
 
   .actions {

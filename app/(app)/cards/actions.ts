@@ -5,9 +5,8 @@ import { revalidatePath } from "next/cache";
 import { authedActionClient } from "@/lib/actions/client";
 import { isCalendarDate, seoulToday } from "@/lib/dates";
 import { CURRENCIES } from "@/domain/money/currency";
-import { createCardUsage, precheckCardUsage, previewCardAmounts } from "@/domain/corp-card-usages";
+import { createCardUsage, precheckCardUsage, previewCardAmounts, searchMerchantsForCard } from "@/domain/corp-card-usages";
 import { cardUsedOnError, USED_ON_FUTURE } from "@/domain/corp-card-usages/amounts";
-import { searchVendorsForPick } from "@/domain/expenses/pick";
 import "./actions.registry";
 
 // 06-05(EXP-07 · D-607): 카드 사용 등록 · 서버 계산 한 줄 · 가맹점 고르기. domain/corp-card-usages만 부른다.
@@ -78,4 +77,4 @@ export const previewCardAmountsAction = authedActionClient
 
 export const searchMerchantsAction = authedActionClient
   .schema(z.object({ query: z.string().max(100) }))
-  .action(async ({ parsedInput, ctx }) => searchVendorsForPick(ctx.viewer, parsedInput));
+  .action(async ({ parsedInput, ctx }) => searchMerchantsForCard(ctx.viewer, parsedInput));

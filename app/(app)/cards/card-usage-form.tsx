@@ -9,11 +9,12 @@ import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
 import { PickDialog, type PickResult, type PickRow } from "@/ui/pick-dialog/PickDialog";
 import { useCommaInput } from "@/ui/input/use-comma-input";
-import { cardEvidenceDefault } from "@/domain/corp-card-usages/amounts";
+import { CARD_RECEIPT_CODE, cardEvidenceDefault } from "@/domain/corp-card-usages/amounts";
 import { formatKrw } from "@/lib/format-number";
 import type { NumberInputKind } from "@/lib/format-number";
 import selectStyles from "@/ui/select/Select.module.css";
 import textFieldStyles from "@/ui/input/TextField.module.css";
+import cardStyles from "./cards.module.css";
 import { createCardUsageAction, previewCardAmountsAction, searchMerchantsAction } from "./actions";
 
 // 06-05(UI-SPEC S9 · C12): 카드 사용 등록 옆 패널 본문 — `PanelForm intent="create"` + `Form layout="panel"`. 사람은 결제 합계만 적고
@@ -36,6 +37,7 @@ type Merchant = { id: string; name: string; defaultEvidenceType: string | null; 
 type Preview = {
   split: { supplyKrw: number; vatKrw: number; residualKrw: number; ruleKind: string; evidenceLabel: string } | null;
   teamName: string | null;
+  teamAssigned: boolean;
 };
 
 
@@ -151,6 +153,7 @@ export function CardUsageForm({
   cards,
   evidenceTypes,
   teamName: initialTeamName,
+  teamAssigned: initialTeamAssigned,
   userName,
   today,
   usdFxRate,
@@ -159,6 +162,7 @@ export function CardUsageForm({
   cards: CardOption[];
   evidenceTypes: EvidenceTypeOption[];
   teamName: string | null;
+  teamAssigned: boolean;
   userName: string;
   today: string;
   usdFxRate: number | null;
@@ -176,9 +180,17 @@ export function CardUsageForm({
   const [linkKind, setLinkKind] = useState<"team_cost" | null>(initialDefaults.linkKind);
   const [merchant, setMerchant] = useState<Merchant | null>(null);
   const [pickOpen, setPickOpen] = useState(false);
+  // 가맹점은 이름 없는 상태 + 숨은 칸이라 입력 이벤트가 없다 — 고른 뒤 숨은 칸 값이 바뀌면 change를 쏴 PanelForm이 바뀐 칸으로 센다(DR1 · SP-8).
+  const merchantInputRef = useRef<HTMLInputElement>(null);
+  const merchantPickedRef = useRef(false);
+  useEffect(() => {
+    if (!merchantPickedRef.current) return;
+    merchantPickedRef.current = false;
+    merchantInputRef.current?.dispatchEvent(new Event("change", { bubbles: true }));
+  }, [merchant]);
   // 가맹점으로 증빙 종류를 채우면 그 칸을 새 기본값으로 다시 그린다(비제어 칸).
   const [evidenceSeed, setEvidenceSeed] = useState(0);
-  const [preview, setPreview] = useState<Preview>({ split: null, teamName: initialTeamName });
+  const [preview, setPreview] = useState<Preview>({ split: null, teamName: initialTeamName, teamAssigned: initialTeamAssigned });
   const [previewing, setPreviewing] = useState(false);
   // 등록 성공의 결과 한 줄 — 새 기본값으로 다시 그린(gen) 뒤에 `succeed`로 넘긴다.
   const doneStatusRef = useRef<string | null>(null);
@@ -203,7 +215,7 @@ export function CardUsageForm({
       setMerchant(null);
       setCurrency("KRW");
       setFxRaw(usdFxRate === null ? "" : String(usdFxRate));
-      setPreview({ split: null, teamName: initialTeamName });
+      setPreview({ split: null, teamName: initialTeamName, teamAssigned: initialTeamAssigned });
       setShowingResult(true);
       doneStatusRef.current = `카드 사용 등록됨 · ${formatKrw(data?.totalKrw ?? 0)}`;
       setGen((value) => value + 1);
@@ -274,9 +286,11 @@ export function CardUsageForm({
     ? undefined
     : evidenceTypes.length === 0
       ? "카드에 쓸 증빙 종류 없음 · 코드표 세금 규칙은 관리자"
-      : "카드 전표 카드에 없음 · 증빙 종류 고르기";
+      : evidenceTypes.some((option) => option.value === CARD_RECEIPT_CODE)
+        ? blankBlock([{ label: "증빙 종류", verb: "고르기" }])
+        : "카드 전표 카드에 없음 · 증빙 종류 고르기";
   const fxBlock = currency !== "KRW" && (fxValue === null || fxValue === undefined) ? "환율 없음 · USD 환율 적기" : undefined;
-  const teamBlock = linkKind === "team_cost" && preview.teamName === null ? `${userName} ${usedOn.slice(5)} 소속 없음 · 소속 발령은 관리자` : undefined;
+  const teamBlock = linkKind === "team_cost" && !preview.teamAssigned ? `${userName} ${usedOn.slice(5)} 소속 없음 · 소속 발령은 관리자` : undefined;
   const blockedReason = blankBlock(blanks) ?? fxBlock ?? evidenceBlock ?? (linkKind ? teamBlock : "연결 없음 · 연결 고르기");
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -303,6 +317,7 @@ export function CardUsageForm({
 
   function pickMerchant(next: Merchant) {
     setShowingResult(false);
+    merchantPickedRef.current = true;
     setMerchant(next);
     setPickOpen(false);
     const evidence = evidenceForMerchant(next.defaultEvidenceType, evidenceTypes);
@@ -363,7 +378,7 @@ export function CardUsageForm({
             <Button variant="tertiary" aria-label="가맹점 바꾸기" onClick={() => setPickOpen(true)}>
               {merchant ? "바꾸기" : "고르기"}
             </Button>
-            <input type="hidden" name="merchantVendorId" value={merchant?.id ?? ""} readOnly />
+            <input ref={merchantInputRef} type="hidden" name="merchantVendorId" value={merchant?.id ?? ""} readOnly />
             {merchant?.defaultEvidenceName && evidenceForMerchant(merchant.defaultEvidenceType, evidenceTypes).outside ? (
               <Form.Hint>{`기본 증빙 ${merchant.defaultEvidenceName} · 카드에 없음`}</Form.Hint>
             ) : null}
@@ -412,7 +427,7 @@ export function CardUsageForm({
             <span id="card-usage-link-label" className={rowStyles.label}>
               연결
             </span>
-            <label>
+            <label className={cardStyles.linkOption}>
               <input
                 type="radio"
                 name="linkKind"

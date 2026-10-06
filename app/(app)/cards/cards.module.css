@@ -1,0 +1,28 @@
+/* 06-05 DOM 감사 D1 — 결제 합계 2행(`USD 900.00 @1,474.89 · 공급가 N`). 숫자 칸(td)의 nowrap을 풀고 묶음 안에서만 nowrap — 묶음 사이에서만 꺾인다(SYSTEM §7-3 외화 2행). */
+.secondaryWrap {
+  white-space: normal;
+}
+
+.segment {
+  white-space: nowrap;
+}
+
+/* 06-05 DOM 감사 O1 — 연결 라디오: 라벨 전체가 눌림 면. 폰은 행 높이 44(SYSTEM §3 터치 목표). */
+.linkOption {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+}
+
+@media (max-width: 699.98px) {
+  .linkOption {
+    display: flex;
+    min-height: var(--touch-min);
+  }
+}
+
+/* 06-05 DOM 감사 O2 — 카드 필터: 아주 긴 카드 이름이 필터 줄을 밀지 않게 폭 상한(페이지 칸 폭 토큰) · 말줄임. */
+.cardFilter {
+  max-width: min(100%, var(--field-w-short));
+  text-overflow: ellipsis;
+}

@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Table } from "@/ui/table/Table";
 import type { TableColumn } from "@/ui/table/types";
@@ -8,6 +9,7 @@ import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { formatForeignLine, formatKrw } from "@/lib/format-number";
 // 필터 칸 모양은 프로젝트 목록 필터와 같은 클래스(새 CSS 없음).
 import styles from "@/app/(app)/projects/projects.module.css";
+import cardStyles from "./cards.module.css";
 
 // 06-05(UI-SPEC S8): 카드 사용 읽기 표 — 그룹 머리글 = 카드, 그룹 안 사용일 오름차순(서버 정렬). 카드 열은 그룹이 말하므로 두지 않는다.
 // 행동 칸 `수정` · `삭제`는 06-09, 연결의 견적 줄 · 견적 외 비용 글자는 06-07이 더한다.
@@ -32,12 +34,21 @@ export type CardUsageListRowView = {
 };
 
 // 「표시 — 카드 사용 결제 합계 2행」 한 형식: 외화면 `USD 1,000.00 @1,350 · 공급가 N`, 원화 부가세 규칙이면 `공급가 N`, 규칙 없음(공급가 = 합계)은 2행 없음.
-function totalSecondLine(row: CardUsageListRowView): string | null {
+// 외화 2행은 묶음(`통화 금액` · `@환율` · `공급가 N`) 사이에서만 꺾인다 — 320에서 문서를 넘기지 않는다(DOM 감사 D1).
+function totalSecondLine(row: CardUsageListRowView): ReactNode {
   if (row.supplyKrw === null) return null;
   const supply = `공급가 ${formatKrw(row.supplyKrw)}`;
   const foreign =
     row.currency && row.foreignAmount !== null && row.fxRate !== null ? formatForeignLine({ currency: row.currency, amount: row.foreignAmount, fxRate: row.fxRate }) : null;
-  if (foreign) return `${foreign} · ${supply}`;
+  if (foreign) {
+    const [amount, rate] = foreign.split(" @");
+    return (
+      <span className={cardStyles.secondaryWrap}>
+        <span className={cardStyles.segment}>{amount}</span> <span className={cardStyles.segment}>{`@${rate ?? ""}`}</span> ·{" "}
+        <span className={cardStyles.segment}>{supply}</span>
+      </span>
+    );
+  }
   return row.vatKrw ? supply : null;
 }
 
@@ -145,7 +156,11 @@ export function CardUsageFilters({
       </div>
       <div className={styles.selectLabel}>
         <label htmlFor="card-usage-filter-card">카드</label>
-        <select key={cardId} id="card-usage-filter-card" className={styles.select} defaultValue={cardId} onChange={(event) => go("card", event.target.value)}>
+        <select
+          key={cardId}
+          id="card-usage-filter-card"
+          className={`${styles.select} ${cardStyles.cardFilter}`}
+          defaultValue={cardId} onChange={(event) => go("card", event.target.value)}>
           <option value="">전체</option>
           {cardChoices.map((card) => (
             <option key={card.id} value={card.id}>

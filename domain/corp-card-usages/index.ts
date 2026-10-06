@@ -5,7 +5,7 @@ import { projectMany, type DtoSpec } from "@/domain/permissions/project";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { recordAction } from "@/domain/action-log/record";
 import { loadTaxRates, type TaxRates } from "@/domain/money/tax";
-import { moneyToColumns, normalizeMoneyInput, sumKrw, type MoneyInput } from "@/domain/money";
+import { moneyToColumns, normalizeMoneyInput, sumKrw, toKrw, type MoneyInput } from "@/domain/money";
 import { taxRuleSchema, type TaxRule } from "@/domain/code-tables/tax-rule";
 import { teamAtDate } from "@/domain/org";
 import { loadActorTeamScope } from "@/domain/projects/status";
@@ -15,6 +15,11 @@ import { seoulToday } from "@/lib/dates";
 import { listCodeItems } from "@/repositories/code-tables";
 import { findCorpCardById, listCorpCards, type CorpCardRow } from "@/repositories/corp-cards";
 import { findUserNamesByIds } from "@/repositories/users";
+import { findMembershipAtDate } from "@/repositories/team-memberships";
+import { listVendorsForPick } from "@/repositories/vendors";
+import { normalizeVendorName } from "@/domain/vendors";
+import { codeLabelsOf } from "@/domain/expenses";
+import { PICK_LIMIT, PICK_VENDOR_OPTION_SPEC, type PickVendorOptionDto } from "@/domain/expenses/pick";
 import {
   findLastCardUsageByRegistrant,
   insertCardUsage,
@@ -42,6 +47,8 @@ export class CardUsageRejectedError extends UserFacingError {}
 const LINK_MISSING = "연결 없음 · 연결 고르기";
 const CARD_NOT_ELIGIBLE = "카드 자격 없음 · 카드 고르기";
 const SHARED_CARD_FORBIDDEN = "공용 카드 등록 권한 없음 · 공용 카드는 경영관리";
+const AMOUNT_NOT_NUMBER = "숫자 아님 · 1,240,000처럼";
+const AMOUNT_NOT_POSITIVE = "결제 합계 0 이하 · 금액 고치기";
 
 export type CardUsageLinkKind = "team_cost";
 
@@ -86,9 +93,13 @@ async function eligibleCards(viewer: Viewer, teamId: string | null): Promise<Cor
   );
 }
 
+// 사용일 소속 팀 id — 자격 · 귀속 판정은 표시 투영(`team.value`) 전 발령에서 읽는다(목록 범위 `loadActorTeamScope`와 같은 출처).
+async function teamIdOn(viewer: Viewer, usedOn: string): Promise<string | null> {
+  return (await findMembershipAtDate(viewer, viewer.id, usedOn))?.teamId ?? null;
+}
+
 export async function cardOptionsForUsage(viewer: Viewer, usedOn: string): Promise<UsageCardOption[]> {
-  const team = await teamAtDate(viewer, viewer.id, usedOn);
-  const cards = await eligibleCards(viewer, team?.id ?? null);
+  const cards = await eligibleCards(viewer, await teamIdOn(viewer, usedOn));
   return cards.map((card) => ({ id: card.id, label: cardLabel(card), kind: card.kind as CardOwnerKind }));
 }
 
@@ -125,11 +136,13 @@ export async function precheckCardUsage(viewer: Viewer, input: CardUsageInput): 
   const futureError = cardUsedOnError(input.usedOn, seoulToday());
   if (futureError) throw new CardUsageRejectedError(futureError);
   if (input.linkKind !== "team_cost") throw new CardUsageRejectedError(LINK_MISSING);
-  // 통화 · 외화 금액 · 환율 형식(O-7) — 트랜잭션 전에 거부한다(순수 판정).
-  normalizeMoneyInput(input.total);
+  // 통화 · 외화 금액 · 환율 형식(O-7) — 트랜잭션 전에 거부한다(순수 판정). 원화는 정수 원 · 환산 합계는 0 초과.
+  const money = normalizeMoneyInput(input.total);
+  if (money.currency === "KRW" && !Number.isInteger(money.amount)) throw new CardUsageRejectedError(AMOUNT_NOT_NUMBER);
+  if (toKrw(money) <= 0) throw new CardUsageRejectedError(AMOUNT_NOT_POSITIVE);
 
-  const team = await teamAtDate(viewer, viewer.id, input.usedOn);
-  if (!team?.id) {
+  const teamId = await teamIdOn(viewer, input.usedOn);
+  if (!teamId) {
     const name = (await findUserNamesByIds(viewer, [viewer.id])).get(viewer.id) ?? "";
     throw new CardUsageRejectedError(`${name} ${mmdd(input.usedOn)} 소속 없음 · 소속 발령은 관리자`);
   }
@@ -150,7 +163,7 @@ export async function precheckCardUsage(viewer: Viewer, input: CardUsageInput): 
     card: { id: card.id, kind: card.kind, holderUserId: card.holderUserId, teamId: card.teamId },
     registeredVia: "self",
     usedByUserId: viewer.id,
-    teamId: team.id,
+    teamId,
     evidenceRule: option.rule,
     rates,
   };
@@ -167,8 +180,10 @@ export async function createCardUsage(
   tx?: DbOrTx,
 ): Promise<CreatedCardUsage> {
   const runCreate = async (innerTx: DbOrTx) => {
-    const split = splitCardTotal({ money: input.total, rule: pre.evidenceRule }, pre.rates);
-    const money = moneyToColumns(input.total);
+    // precheck와 같은 정규화 — KRW에 실려 온 환율은 버린다(원화 = 결제 합계).
+    const total = normalizeMoneyInput(input.total);
+    const split = splitCardTotal({ money: total, rule: pre.evidenceRule }, pre.rates);
+    const money = moneyToColumns(total);
     const row = await insertCardUsage(
       viewer,
       {
@@ -204,8 +219,10 @@ export async function createCardUsage(
 export type CardAmountsPreview = {
   /** 결제 합계 · 증빙 종류가 계산할 수 있는 값일 때만. */
   split: (CardSplit & { ruleKind: TaxRule["ruleKind"]; evidenceLabel: string }) | null;
-  /** 사용일 소속 팀 — 「팀 비용」 읽기 텍스트 · 소속 없음 막힘. */
+  /** 사용일 소속 팀 이름 — 「팀 비용」 읽기 텍스트(노출이 꺼지면 null). */
   teamName: string | null;
+  /** 사용일 소속 발령이 있는가 — 「소속 없음」 막힘은 이것으로만(이름 노출과 무관). */
+  teamAssigned: boolean;
 };
 
 export async function previewCardAmounts(
@@ -214,12 +231,31 @@ export async function previewCardAmounts(
 ): Promise<CardAmountsPreview> {
   const team = await teamAtDate(viewer, viewer.id, input.usedOn);
   const teamName = team?.name ?? null;
-  if (!input.total || !input.evidenceTypeCode) return { split: null, teamName };
+  const teamAssigned = (await teamIdOn(viewer, input.usedOn)) !== null;
+  if (!input.total || !input.evidenceTypeCode) return { split: null, teamName, teamAssigned };
   const option = (await cardEvidenceTypes(viewer)).options.find((candidate) => candidate.value === input.evidenceTypeCode);
-  if (!option) return { split: null, teamName };
+  if (!option) return { split: null, teamName, teamAssigned };
   const rates = await loadTaxRates(input.usedOn);
   const split = splitCardTotal({ money: input.total, rule: option.rule }, rates);
-  return { split: { ...split, ruleKind: option.rule.ruleKind, evidenceLabel: option.label }, teamName };
+  return { split: { ...split, ruleKind: option.rule.ruleKind, evidenceLabel: option.label }, teamName, teamAssigned };
+}
+
+// ── 가맹점 고르기 ──────────────────────────────────────────────────────────
+
+// 카드 경로의 가맹점(거래처) 고르기 — 문은 지출결의 쓰기 권한이 아니라 카드 자격(오늘 쓸 카드가 한 장 이상)이다(06-05 검토 P3-6).
+// 행 · 투영은 지출결의 거래처 고르기와 같은 DTO(`PickVendorOptionDto`) — 숨김 · 보관 거래처 없음, vendor.value가 가리면 행이 빈다.
+export async function searchMerchantsForCard(viewer: Viewer, input: { query: string }): Promise<{ rows: Partial<PickVendorOptionDto>[]; truncated: boolean }> {
+  if ((await cardOptionsForUsage(viewer, seoulToday())).length === 0) throw new ForbiddenError(CARD_NOT_ELIGIBLE);
+  const found = await listVendorsForPick(viewer, { normalizedQuery: normalizeVendorName(input.query), limit: PICK_LIMIT + 1 });
+  const evidenceNames = await codeLabelsOf(viewer, "evidence_type");
+  const options: PickVendorOptionDto[] = found.slice(0, PICK_LIMIT).map((vendor) => ({
+    id: vendor.id,
+    name: vendor.name,
+    defaultEvidenceType: vendor.defaultEvidenceType,
+    defaultEvidenceName: vendor.defaultEvidenceType ? (evidenceNames.get(vendor.defaultEvidenceType) ?? vendor.defaultEvidenceType) : null,
+  }));
+  const rows = (await projectMany(viewer, options, PICK_VENDOR_OPTION_SPEC)).filter((row) => row.id !== undefined);
+  return { rows, truncated: found.length > PICK_LIMIT };
 }
 
 // ── 폼 선택지 ──────────────────────────────────────────────────────────────
@@ -236,6 +272,7 @@ export type CardUsageFormOptions = {
   cards: Partial<CardOptionDto>[];
   evidenceTypes: { value: string; label: string }[];
   teamName: string | null;
+  teamAssigned: boolean;
   /** USD 환율 칸 기본값(설정 최근 환율 — FX-01). 읽지 못하면 null(빈 칸 + 막힘). */
   usdFxRate: number | null;
 };
@@ -249,6 +286,7 @@ export async function cardUsageFormOptions(viewer: Viewer, usedOn: string): Prom
     cards: await projectMany(viewer, cards.map((card) => ({ id: card.id, label: card.label })), CARD_OPTION_SPEC),
     evidenceTypes: evidence.options.map(({ value, label }) => ({ value, label })),
     teamName: team?.name ?? null,
+    teamAssigned: (await teamIdOn(viewer, usedOn)) !== null,
     usdFxRate: await recentFxRate("USD").catch(() => null),
   };
 }

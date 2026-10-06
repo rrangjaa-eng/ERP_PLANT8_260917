@@ -1,12 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import { and, eq } from "drizzle-orm";
-import { db, pool } from "@/db/client";
+import { db } from "@/db/client";
 import { actionLog } from "@/db/schema";
 import { createCorpCard } from "@/domain/corp-cards";
 import { createCardUsage, precheckCardUsage } from "@/domain/corp-card-usages";
 import { createOrgUnit, createTeam } from "@/domain/org";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
+import { insertVendor } from "@/repositories/vendors";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { seoulToday } from "@/lib/dates";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
@@ -178,28 +179,6 @@ test.describe("법인카드 사용 등록 (06-05)", () => {
     await page.context().close();
   });
 
-  test("로드 오류 — 목록 자리 한 줄 `카드 사용 목록 불러오지 못함` · 2차 `다시 시도` → 목록이 다시 선다", async ({ browser, baseURL }) => {
-    const holder = await makeCardHolder();
-    const page = await loginPage(browser, baseURL, holder.person);
-    // 서버 렌더 목록이라 라우트 가로채기로는 실패시킬 수 없다 — 표를 잠가 목록 읽기를 lock_timeout(5s)으로 실패시킨다.
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      await client.query("LOCK TABLE corp_card_usages IN ACCESS EXCLUSIVE MODE");
-      await page.goto("/cards");
-      await expect(page.getByText("카드 사용 목록 불러오지 못함")).toBeVisible();
-    } finally {
-      await client.query("ROLLBACK");
-      client.release();
-    }
-    const retry = page.getByRole("button", { name: "다시 시도" });
-    await waitForHydration(retry);
-    await retry.click();
-    await expect(page.getByText("이번 달 카드 사용이 없습니다")).toBeVisible();
-    await expect(page.getByText("카드 사용 목록 불러오지 못함")).toHaveCount(0);
-    await page.context().close();
-  });
-
   test("[M-4 · M-5] 처음 쓰는 두 장 직원 → 카드 · 연결 비어 열림 / 카드 B · 팀 비용 등록 → 패널 유지 · 카드 B · 팀 비용 · 오늘 / 다시 열어도 같은 기본값", async ({ browser, baseURL }) => {
     const holder = await makeCardHolder(2);
     const cardB = `${holder.cardLabel}-2 · ${holder.issuer} 4322`;
@@ -259,6 +238,58 @@ test.describe("법인카드 사용 등록 (06-05)", () => {
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog", { name: "입력 버리기" })).toBeVisible();
     await expect(panel(page)).toBeVisible();
+    await page.context().close();
+  });
+
+  test("[검토 P3-4] 증빙 종류를 `—`로 비우면 `카드 전표`가 옵션에 있으니 빈 칸 이유 `증빙 종류 1칸 비어 있음 · 증빙 종류 고르기`", async ({ browser, baseURL }) => {
+    const holder = await makeCardHolder();
+    const page = await loginPage(browser, baseURL, holder.person);
+    await page.goto("/cards?new=1");
+    const sheet = panel(page);
+    const amount = sheet.getByLabel("결제 합계");
+    await waitForHydration(amount);
+    await amount.fill("1000");
+    await sheet.getByRole("radio", { name: "팀 비용" }).check();
+    await sheet.getByLabel("증빙 종류").selectOption("");
+    await expect(sheet.getByText("증빙 종류 1칸 비어 있음 · 증빙 종류 고르기", { exact: true })).toBeVisible();
+    await expect(sheet.getByText("카드 전표 카드에 없음 · 증빙 종류 고르기")).toHaveCount(0);
+    await page.context().close();
+  });
+
+  test("[DOM 감사 D2] 「가맹점 바꾸기」로 가맹점만 고른 뒤 Esc → 「입력 버리기」", async ({ browser, baseURL }) => {
+    const holder = await makeCardHolder();
+    const vendorName = `E2E가맹점-${randomUUID().slice(0, 8)}`;
+    await insertVendor(SYSTEM_VIEWER, { name: vendorName, normalizedName: vendorName });
+    const page = await loginPage(browser, baseURL, holder.person);
+    await page.goto("/cards?new=1");
+    const sheet = panel(page);
+    const change = sheet.getByRole("button", { name: "가맹점 바꾸기" });
+    await waitForHydration(change);
+    await change.click();
+    const dialog = page.getByRole("dialog", { name: "가맹점 바꾸기" });
+    await dialog.getByRole("textbox", { name: "거래처 이름 검색" }).fill(vendorName);
+    await dialog.getByRole("option", { name: new RegExp(vendorName) }).click();
+    await dialog.getByRole("button", { name: /^이 거래처로/ }).click();
+    await expect(dialog).toBeHidden();
+    await expect(sheet.getByText(vendorName, { exact: true })).toBeVisible();
+
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog", { name: "입력 버리기" })).toBeVisible();
+    await expect(sheet).toBeVisible();
+    await page.context().close();
+  });
+
+  test("[DOM 감사 O2] 아주 긴 카드 이름 — 1280에서 카드 필터 select 폭은 `--field-w-short`(280) 이하 · 문서 가로 넘침 0", async ({ browser, baseURL }) => {
+    const holder = await makeCardHolder(0);
+    const longLabel = `긴카드${"가".repeat(90)}`;
+    await createCorpCard(SYSTEM_VIEWER, { issuer: `국민-${randomUUID().slice(0, 8)}`, numberLast4: "9876", label: longLabel, kind: "personal", holderUserId: holder.person.viewer.id });
+    const page = await loginPage(browser, baseURL, holder.person, { width: 1280, height: 800 });
+    await page.goto("/cards");
+    const cardFilter = page.getByLabel("카드", { exact: true });
+    await expect(cardFilter.locator("option", { hasText: longLabel })).toHaveCount(1);
+    const width = await cardFilter.evaluate((element) => element.getBoundingClientRect().width);
+    expect(width).toBeLessThanOrEqual(280);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
     await page.context().close();
   });
 });

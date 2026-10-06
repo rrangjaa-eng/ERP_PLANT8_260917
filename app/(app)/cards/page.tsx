@@ -24,7 +24,6 @@ import { CardUsageForm } from "./card-usage-form";
 export const dynamic = "force-dynamic";
 
 const LIST_HREF = "/cards";
-const NEW_HREF = "/cards?new=1";
 const CARD_RECEIPT = "card_receipt";
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -104,12 +103,15 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
     const text = query.toString();
     return text ? `${LIST_HREF}?${text}` : LIST_HREF;
   };
+  // 패널 닫기 · 1차는 지금 필터의 /cards(쪽은 1로) — 뒤 목록이 바뀌지 않는다(플랜 Task 1 ③).
+  const listHref = pageHref(1);
+  const newHref = `${listHref}${listHref.includes("?") ? "&" : "?"}new=1`;
 
   let panel = null;
   if (first(params.new) === "1" && cards.length > 0) {
     const defaults = await cardUsageFormDefaults(viewer, today);
     panel = (
-      <SidePanel title="카드 사용 등록" closeHref={LIST_HREF}>
+      <SidePanel title="카드 사용 등록" closeHref={listHref}>
         <CardUsageForm
           cards={cards}
           evidenceTypes={options.evidenceTypes}
@@ -127,7 +129,7 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
     );
   }
 
-  const newAction = { label: "카드 사용 등록", href: NEW_HREF };
+  const newAction = { label: "카드 사용 등록", href: newHref };
   const filters = list ? (
     <CardUsageFilters
       month={month}

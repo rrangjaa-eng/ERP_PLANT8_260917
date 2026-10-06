@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
-current_phase: "04.6"
-current_phase_name: 스킨 A 적용 (INSERTED)
+current_phase: 06
+current_phase_name: payment-evidence-cards
 current_plan: 4
 status: executing
 stopped_at: Completed 04.6-04-PLAN.md
-last_updated: "2026-10-04T04:07:53.767Z"
+last_updated: "2026-10-06T02:46:03.884Z"
 last_activity: 2026-10-02
 last_activity_desc: Phase 04.6 execution started
-state_head: dd7ea069cada18d8200f07f9d26ad0ec82d06802
+state_head: acf1cf2f5762c577ca6f2ccc87d34985cb06c5dd
 progress:
   total_phases: 17
   completed_phases: 7
-  total_plans: 178
-  completed_plans: 124
+  total_plans: 197
+  completed_plans: 168
   percent: 41
 ---
 
@@ -28,9 +28,9 @@ See: .planning/PROJECT.md (updated 2026-09-30)
 
 ## Current Position
 
-Phase: 04.6 (스킨 A 적용 (INSERTED)) — EXECUTING
+Phase: 06 (payment-evidence-cards) — READY TO EXECUTE
 Current Plan: 4
-Total Plans in Phase: 32
+Total Plans in Phase: 29
 Status: Ready to execute
 Last activity: 2026-10-02 — Phase 04.6 execution started
 
@@ -340,6 +340,7 @@ Recent decisions affecting current work:
 - [Phase 04.6]: 04.6-02: 표시 파일 override는 property-disallowed-list도 오늘 값으로 되돌린다(font-variant-numeric 금지가 표시 파일을 깨지 않게)
 - [Phase 04.6]: 04.6-04: 스크롤 잠금은 scrollbar-gutter 대신 열 때 잰 스크롤바 폭만 html 인라인 padding으로 채운다(짧은 페이지 배치 불변)
 - [Phase 04.6]: 04.6-04: 폰 입력 40 · 행동 줄 버튼 44 — 오케스트레이터 기본값, 사용자 확인 대기
+- [Phase 06]: 06 체커 재실행 — 05 머지 acf1cf2 뒤 plan-checker 통과(2회차, 1회차 경고 4 반영: 06-28 회차 installmentSeqFor·06-02/08 채번 가드·P3 8건, EA-1 부가세 포함 증빙 금액 막기는 사용자 카드 답 대기 추천안 기본값)
 
 ### Pending Todos
 

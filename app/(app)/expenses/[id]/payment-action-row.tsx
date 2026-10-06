@@ -14,7 +14,7 @@ import { ConflictLine } from "@/app/(app)/approvals/conflict-line";
 // 05 문서 화면 행동 줄과 같은 자리 · 같은 폰 고정 규칙(UI-SPEC S4 「1차 자리는 Phase 5 문서 화면의 행동 자리 그대로」 · UA-605).
 import barStyles from "@/app/(app)/leave/[id]/document-actions.module.css";
 import dialogStyles from "@/app/(app)/approvals/decision-dialogs.module.css";
-import { cancelExpensePaymentAction, completeExpensePaymentAction, saveScheduledPayDateAction } from "./actions";
+import { cancelExpensePaymentAction, completeExpensePaymentAction, confirmEvidenceAction, saveScheduledPayDateAction } from "./actions";
 import { diffReasonNeeded, PaymentFields, PaymentPanelProvider, transferError, transferNumber, usePaymentPanel, type PaymentFieldErrors } from "./payment-section";
 import styles from "./expense.module.css";
 
@@ -22,7 +22,8 @@ import styles from "./expense.module.css";
 // 그대로 — 클라이언트는 상태로 고르지 않고 금액 셈도 하지 않는다(O-18). 지급 완료는 확인 모달 없이 1차로 끝나고(되돌리기 = 지급 취소, 06-04),
 // 성공하면 응답 뒤 다시 읽은 표로 1차 자리에 결과 글자가 선다(토스트 없음 — §7-6). 행동 뒤 포커스는 결과 글자(r2 F5).
 // 06-04: 이체액 · 지급일 · 차이 사유 칸(payment-section.tsx PaymentFields)이 같은 패널 상태를 쓰고 1차 `지급 완료`가 함께 보낸다.
-// 06-06이 증빙 금액 칸을 같은 패널 상태(PaymentPanelProvider)에 더한다.
+// 06-06이 증빙 금액 칸을 같은 패널 상태(PaymentPanelProvider)에 더한다. P2 · P5의 1차 `증빙 확인`(confirmEvidenceAction)도 이 줄이 세우고,
+// 응답 뒤 다시 읽은 행이 다음 1차를 정한다(P2 → P4 `지급 완료` · P5 → P6). 토스트 없음.
 
 export { PaymentPanelProvider };
 
@@ -56,6 +57,7 @@ export function PaymentActionRow() {
   const submittingRef = useRef(false);
   const justPaidRef = useRef(false);
   const justSavedScheduleRef = useRef(false);
+  const justConfirmedRef = useRef(false);
   const resultRef = useRef<HTMLSpanElement>(null);
   const primaryRef = useRef<HTMLSpanElement>(null);
 
@@ -119,6 +121,22 @@ export function PaymentActionRow() {
     },
   });
 
+  // 증빙 확인(P2 · P5) — 응답 뒤 문서를 다시 읽는다. 다음 1차 · 포커스는 다시 읽은 행이 정한다(아래 effect).
+  const { execute: executeConfirm } = useAction(confirmEvidenceAction, {
+    onSuccess: () => {
+      justConfirmedRef.current = true;
+      router.refresh();
+    },
+    onError: ({ error }) => {
+      setConflict(error.serverError ?? "결과를 받지 못함 · 새로 고침");
+      router.refresh();
+    },
+    onSettled: () => {
+      submittingRef.current = false;
+      setPending(false);
+    },
+  });
+
   // 1차는 서버가 정한 행(resolveExpenseActionRow) — 예정일 칸이 dirty인 동안만 같은 순수 함수로 P1(`예정일 저장`)로 바꾼다.
   const serverBar: ExpenseActionBar | null = view.row
     ? { ...view.row, blockReason: view.row.blockReason ?? null, secondary: view.row.secondary ?? null, tertiary: view.row.tertiary ?? null }
@@ -127,11 +145,12 @@ export function PaymentActionRow() {
   const ready = view.expenseId !== undefined && view.version !== undefined;
   const canPay = bar?.primary === "pay" && ready;
   const canSaveSchedule = bar?.primary === "saveSchedule" && ready;
+  const canConfirm = bar?.primary === "confirm" && ready;
   // P3 증빙 없음 · 짝 아님 · 지급 총액 볼 권한 없음 — `지급 완료` 비활성 + 이유(block).
   const blockReason = bar?.blockReason ?? null;
   const paid = view.row?.row === "P6" && view.payDate !== undefined;
-  // 2차 `지급 취소`(D-606) — 지급 뒤 지급 권한자에게만(서버 행의 secondary).
-  const canCancel = paid && bar?.secondary === "cancel" && ready;
+  // 2차 `지급 취소`(D-606) — 지급 뒤(P5 · P6) 지급 권한자에게만(서버 행의 secondary).
+  const canCancel = (paid || (view.row?.row === "P5" && view.payDate !== undefined)) && bar?.secondary === "cancel" && ready;
   const [cancelOpen, setCancelOpen] = useState(false);
   const justCancelledRef = useRef(false);
 
@@ -141,6 +160,14 @@ export function PaymentActionRow() {
     setPending(true);
     setConflict(null);
     executeSchedule({ expenseId: view.expenseId, scheduledPayDate: schedule.value, version: view.version });
+  }
+
+  function confirmEvidence() {
+    if (!canConfirm || submittingRef.current || view.expenseId === undefined || view.version === undefined) return;
+    submittingRef.current = true;
+    setPending(true);
+    setConflict(null);
+    executeConfirm({ expenseId: view.expenseId, version: view.version });
   }
 
   function pay() {
@@ -168,11 +195,14 @@ export function PaymentActionRow() {
 
   // Ctrl+Enter = 그때 보이는 1차(§7-9 — dirty면 `예정일 저장`). 렌더마다 다시 건다(지금 렌더의 함수를 쓴다).
   useEffect(() => {
-    if (!canPay && !canSaveSchedule) return;
+    if (!canPay && !canSaveSchedule && !canConfirm) return;
     function onKeyDown(event: KeyboardEvent) {
       if (!isCtrlCombo(event, "Enter")) return;
       event.preventDefault();
+      // 누른 채 자동 반복된 keydown은 받지 않는다 — `증빙 확인` 응답으로 1차가 `지급 완료`로 바뀐 직후 지급되지 않게(M-3).
+      if (event.repeat) return;
       if (canSaveSchedule) saveSchedule();
+      else if (canConfirm) confirmEvidence();
       else pay();
     }
     document.addEventListener("keydown", onKeyDown);
@@ -187,6 +217,18 @@ export function PaymentActionRow() {
     }
   }, [paid]);
 
+  // 증빙 확인 뒤 다시 읽은 행: P4면 이체액 칸으로(M-3 — 입력 → 1차 흐름, 칸이 없으면 1차), P6(P5에서 확인)이면 결과 글자로.
+  useEffect(() => {
+    if (!justConfirmedRef.current || canConfirm) return;
+    if (canPay) {
+      justConfirmedRef.current = false;
+      (document.getElementById("payment-transfer") ?? primaryRef.current?.querySelector("button"))?.focus();
+    } else if (paid) {
+      justConfirmedRef.current = false;
+      resultRef.current?.focus();
+    }
+  }, [canConfirm, canPay, paid]);
+
   // 예정일 저장 · 지급 취소 뒤 응답으로 다시 읽은 표에 1차가 서면 그 1차로 포커스(r2 F5).
   useEffect(() => {
     if ((justSavedScheduleRef.current || justCancelledRef.current) && canPay) {
@@ -198,7 +240,7 @@ export function PaymentActionRow() {
 
   // 지급 뒤(P6)는 1차 없이 결과 글자만(버튼 아님). 지급 권한이 없는 사람에게는 이 페이즈의 버튼이 없다(D-601 — 지급 전 담당 표기는 섹션 지급 예정일 2행).
   const showResult = paid && view.paidTime !== undefined;
-  if (!canPay && !canSaveSchedule && !showResult) return null;
+  if (!canPay && !canSaveSchedule && !canConfirm && !showResult) return null;
   return (
     <>
       <div className={barStyles.bar} data-fixed-bar="">
@@ -208,6 +250,12 @@ export function PaymentActionRow() {
             <span className={barStyles.primaryWrap} ref={primaryRef}>
               <Button variant="primary" shortcut="Ctrl+Enter" pending={pending} onClick={saveSchedule}>
                 예정일 저장
+              </Button>
+            </span>
+          ) : canConfirm ? (
+            <span className={barStyles.primaryWrap} ref={primaryRef}>
+              <Button variant="primary" shortcut="Ctrl+Enter" pending={pending} onClick={confirmEvidence}>
+                증빙 확인
               </Button>
             </span>
           ) : canPay ? (
@@ -229,15 +277,15 @@ export function PaymentActionRow() {
               <span ref={resultRef} tabIndex={-1} role="status" className={styles.resultSuccess} data-testid="payment-result">
                 지급 완료 → {view.payDate} · {view.paidTime}
               </span>
-              {canCancel ? (
-                <span className={barStyles.secondaryWrap}>
-                  <Button variant="secondary" onClick={() => setCancelOpen(true)}>
-                    지급 취소
-                  </Button>
-                </span>
-              ) : null}
             </>
           )}
+          {canCancel ? (
+            <span className={barStyles.secondaryWrap}>
+              <Button variant="secondary" onClick={() => setCancelOpen(true)}>
+                지급 취소
+              </Button>
+            </span>
+          ) : null}
         </div>
       </div>
       <div className={barStyles.spacer} aria-hidden="true" />

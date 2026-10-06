@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { authedActionClient } from "@/lib/actions/client";
 import { cancelExpensePayment, completeExpensePayment, previewPayable, saveScheduledPayDate } from "@/domain/payments";
-import { TRANSFER_FRACTION, TRANSFER_NOT_NUMBER, TRANSFER_NOT_POSITIVE } from "@/domain/payments/action-row";
+import { confirmEvidence } from "@/domain/evidence-reviews";
+import { EVIDENCE_AMOUNT_FRACTION, EVIDENCE_AMOUNT_NOT_NUMBER, EVIDENCE_AMOUNT_NOT_POSITIVE, TRANSFER_FRACTION, TRANSFER_NOT_NUMBER, TRANSFER_NOT_POSITIVE } from "@/domain/payments/action-row";
 import { DATE_FORMAT_ERROR, EXPENSE_TEXT_MAX } from "@/domain/expenses/draft-fields";
 import { isCalendarDate } from "@/lib/dates";
 import "./actions.registry";
@@ -70,4 +71,21 @@ export const cancelExpensePaymentAction = authedActionClient.schema(cancelPaymen
   const result = await cancelExpensePayment(ctx.viewer, parsedInput);
   revalidatePath(`/expenses/${parsedInput.expenseId}`);
   return { version: result.version };
+});
+
+// 06-06(S4 · DR-4): 증빙 확인 — 금액을 고치면(correctedAmountKrw) 금액과 확인을 한 번에 저장한다(D-602). 응답은 도메인의
+// { version, evidenceStatus, actionRow } 그대로 — 06-15 · 06-17(S1) · 06-20(S3) 제자리 확인이 이 이름 · 경로로 import한다.
+// 「Error — 증빙 금액 칸」 — 정수 원 · 1 이상.
+const correctedAmountKrw = z.number({ error: EVIDENCE_AMOUNT_NOT_NUMBER }).int(EVIDENCE_AMOUNT_FRACTION).positive(EVIDENCE_AMOUNT_NOT_POSITIVE);
+
+const confirmEvidenceSchema = z.object({
+  expenseId: z.string().uuid(),
+  version: z.number().int().positive(),
+  correctedAmountKrw: correctedAmountKrw.optional(),
+});
+
+export const confirmEvidenceAction = authedActionClient.schema(confirmEvidenceSchema).action(async ({ parsedInput, ctx }) => {
+  const result = await confirmEvidence(ctx.viewer, parsedInput);
+  revalidatePath(`/expenses/${parsedInput.expenseId}`);
+  return result;
 });

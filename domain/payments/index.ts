@@ -37,6 +37,9 @@ import { seoulDateToUtcDate, seoulToday } from "@/lib/dates";
 import { isUniqueViolation } from "@/lib/pg-errors";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { formatKstTime } from "@/domain/holidays/business-day";
+import { resolveEvidenceStatus, type EvidenceStatus } from "@/domain/evidence-reviews";
+import { findReviewByExpense } from "@/repositories/expense-evidence-reviews";
+import { kstDateOf } from "@/lib/kst-date";
 
 // 06-03(EXP-06 · EXP-09 · OPS-09) — 결재 통과 지출결의 한 건의 지급 완료(트레이서). 증빙 게이트 · 짝 게이트 · 지급 칸 · 취소는 06-04,
 // 증빙 확인은 06-06이 더한다.
@@ -648,7 +651,18 @@ export type PaymentViewDto = {
   processedByName?: string | null;
   // 06-04 — 지급 취소 확인 모달 부제 `{번호} · {지급일} 지급 · {이체액}`.
   number?: string | null;
+  // 06-06(S4 확인부) — 증빙 상태 다섯 값 · 증빙 필수 설정(off면 `증빙 없음`을 `—`로) · 증빙 금액 값과 표시 묶음(NP-3 — 6.1-06이
+  // 표시만 「등록 증빙 합 + 2행」으로 바꿀 수 있게) · 확인 줄 2행 재료(사람 · 시각 = expense.value, 금액 전후 = expense.amount).
+  evidenceStatus?: EvidenceStatus;
+  evidenceRequired?: boolean;
+  evidenceAmountKrw?: number | null;
+  evidenceAmountDisplay?: EvidenceAmountDisplay;
+  reviewLine?: { byName: string; at: string; waiveReason: string | null } | null;
+  reviewAmounts?: { beforeKrw: number; afterKrw: number } | null;
 };
+
+// 증빙 금액 2행 입력자 — 확인 기록에 금액 고침이 있으면 그 사람 · 시각, 없으면 기안자 · 문서 updated_at(입력자 전용 칸이 06-27에 없다).
+export type EvidenceAmountDisplay = { valueKrw: number | null; enteredByName: string | null; enteredAt: string | null };
 
 export const PAYMENT_VIEW_DTO_SPEC: DtoSpec<PaymentViewDto, PaymentViewDto> = {
   fields: [
@@ -664,10 +678,50 @@ export const PAYMENT_VIEW_DTO_SPEC: DtoSpec<PaymentViewDto, PaymentViewDto> = {
     { key: "diffReason", from: "diffReason", infoItem: "expense.value" },
     { key: "processedByName", from: "processedByName", infoItem: "expense.value" },
     { key: "number", from: "number", infoItem: "expense.value" },
+    { key: "evidenceStatus", from: "evidenceStatus", infoItem: "expense.value" },
+    { key: "evidenceRequired", from: "evidenceRequired", infoItem: "expense.value" },
+    { key: "evidenceAmountKrw", from: "evidenceAmountKrw", infoItem: "expense.amount" },
+    { key: "evidenceAmountDisplay", from: "evidenceAmountDisplay", infoItem: "expense.amount" },
+    { key: "reviewLine", from: "reviewLine", infoItem: "expense.value" },
+    { key: "reviewAmounts", from: "reviewAmounts", infoItem: "expense.amount" },
   ],
 };
 
 registerDto({ name: "paymentView", fields: PAYMENT_VIEW_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
+
+function shortKstStamp(at: Date): string {
+  return `${kstDateOf(at).slice(5)} ${formatKstTime(at)}`;
+}
+
+// S4 확인부 재료(트랜잭션 없는 읽기) — 상태는 resolveEvidenceStatus 하나, 증빙 유무는 사전 조회의 hasEvidence 값.
+async function evidenceViewOf(
+  viewer: Viewer,
+  input: {
+    row: ExpenseRow;
+    review: Awaited<ReturnType<typeof findReviewByExpense>>;
+    hasLiveEvidence: boolean;
+    drafterName: string;
+    evidenceRequired: boolean;
+  },
+): Promise<Pick<PaymentViewDto, "evidenceStatus" | "evidenceRequired" | "evidenceAmountKrw" | "evidenceAmountDisplay" | "reviewLine" | "reviewAmounts">> {
+  const { row, review } = input;
+  const reviewerName = review ? ((await findUserNamesByIds(viewer, [review.reviewedBy])).get(review.reviewedBy) ?? "") : null;
+  const corrected = review !== null && review.amountAfterKrw !== null && review.amountBeforeKrw !== null;
+  const display: EvidenceAmountDisplay =
+    row.evidenceAmount === null
+      ? { valueKrw: null, enteredByName: null, enteredAt: null }
+      : corrected
+        ? { valueKrw: row.evidenceAmount, enteredByName: reviewerName, enteredAt: kstDateOf(review.reviewedAt).slice(5) }
+        : { valueKrw: row.evidenceAmount, enteredByName: input.drafterName, enteredAt: kstDateOf(row.updatedAt).slice(5) };
+  return {
+    evidenceStatus: resolveEvidenceStatus({ hasEvidence: input.hasLiveEvidence, prepaid: row.prepaid, review }),
+    evidenceRequired: input.evidenceRequired,
+    evidenceAmountKrw: row.evidenceAmount,
+    evidenceAmountDisplay: display,
+    reviewLine: review ? { byName: reviewerName ?? "", at: shortKstStamp(review.reviewedAt), waiveReason: review.waiveReason } : null,
+    reviewAmounts: corrected ? { beforeKrw: review.amountBeforeKrw ?? 0, afterKrw: review.amountAfterKrw ?? 0 } : null,
+  };
+}
 
 // 결재 통과가 아닌 문서면 던지지 않고 null(05 C1 갈래 방어 — 호출자가 보임을 이미 판정한 문서만 넘긴다).
 export async function getPaymentView(viewer: Viewer, expenseId: string, deps?: { now?: Date }): Promise<Partial<PaymentViewDto> | null> {
@@ -675,21 +729,25 @@ export async function getPaymentView(viewer: Viewer, expenseId: string, deps?: {
   if (!row) return null;
   const instance = await findExpenseApprovalInstance(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, documentId: row.id });
   if (instance?.status !== "approved") return null;
-  const [canPay, amountVisible, live] = await Promise.all([
+  const [canPay, amountVisible, live, review] = await Promise.all([
     can(viewer, "expenses.payments", "write"),
     visible(viewer, "expense.amount"),
     findLivePayment(viewer, row.id),
+    findReviewByExpense(viewer, row.id),
   ]);
   const today = seoulToday(deps?.now);
   const shared = await loadPaymentShared(viewer);
   const pre = await loadPaymentInputs(viewer, { expenseId: row.id, payDate: today, now: deps?.now }, shared);
+  const waived = review?.status === "waived";
+  const confirmation = review?.status === "confirmed" ? { reviewedAt: review.reviewedAt } : null;
   // 화면 1차와 서버 게이트가 같은 규칙(gate)을 읽는다 — 사전 조회 값이라 낡을 수 있고, 지급 완료는 잠금 뒤 tx 값으로 다시 판정한다.
   const evidence = await gate(row, "payment.evidence-required", evidenceGateCtx({ shared, hasEvidence: pre.hasLiveEvidence, prepaid: row.prepaid, drafterName: pre.drafterName }));
   const pair = await gate(row, "payment.method-evidence-mismatch", pairGateCtx(row, shared));
   const actionRow = resolveExpenseActionRow(
-    { approvalState: instance.status, paid: live !== null, hasEvidence: pre.hasLiveEvidence, waived: false, evidence, pair },
+    { approvalState: instance.status, paid: live !== null, hasEvidence: pre.hasLiveEvidence, waived, confirmation, evidence, pair },
     { canPay, amountVisible },
   );
+  const evidenceView = await evidenceViewOf(viewer, { row, review, hasLiveEvidence: pre.hasLiveEvidence, drafterName: pre.drafterName, evidenceRequired: shared.evidenceRequired });
   if (live) {
     const names = await findUserNamesByIds(viewer, [live.processedBy]);
     return project(
@@ -707,6 +765,7 @@ export async function getPaymentView(viewer: Viewer, expenseId: string, deps?: {
         diffReason: live.diffReason,
         processedByName: names.get(live.processedBy) ?? null,
         number: row.number,
+        ...evidenceView,
       },
       PAYMENT_VIEW_DTO_SPEC,
     );
@@ -727,6 +786,7 @@ export async function getPaymentView(viewer: Viewer, expenseId: string, deps?: {
       diffReason: null,
       processedByName: null,
       number: row.number,
+      ...evidenceView,
     },
     PAYMENT_VIEW_DTO_SPEC,
   );

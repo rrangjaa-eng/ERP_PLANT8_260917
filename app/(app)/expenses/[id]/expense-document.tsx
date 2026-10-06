@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import "@/app/(app)/document-kinds";
 import { getDocumentKind, REJECT_REASON_EMPTY_MESSAGE, REJECT_REASON_MAX, REJECT_REASON_TOO_LONG_MESSAGE, type ApprovalView } from "@/domain/approvals";
 import type { ExpenseDocumentDto } from "@/domain/expenses";
@@ -20,6 +21,7 @@ import { expenseStatusWord } from "../status-display";
 import type { EvidenceActions } from "@/domain/evidence";
 import type { PaymentViewDto } from "@/domain/payments";
 import { EvidenceAttachments } from "./evidence-attachments";
+import { EvidenceReviewBlock } from "./evidence-review-section";
 import { SubmittedUndoToast } from "./submitted-undo-toast";
 import { TaxParts } from "./tax-parts";
 import { PaymentActionRow, PaymentLoadError, PaymentPanelProvider, PaymentSection } from "./payment-action-row";
@@ -158,6 +160,21 @@ export function ExpenseDocument({
     (expense.number ?? undefined)
   );
   const reasonMessages = { empty: REJECT_REASON_EMPTY_MESSAGE, tooLong: REJECT_REASON_TOO_LONG_MESSAGE, max: REJECT_REASON_MAX };
+  const evidenceSection = (review: ReactNode) => (
+    <DetailScreen.Section title="증빙">
+      <div id="evidence" className={styles.evidence}>
+        <EvidenceAttachments
+          expenseId={id}
+          files={files}
+          mode="read"
+          maxMb={maxMb}
+          evidenceActions={evidenceActions}
+          reasonMessages={{ empty: REJECT_REASON_EMPTY_MESSAGE, tooLong: REJECT_REASON_TOO_LONG_MESSAGE, max: REJECT_REASON_MAX }}
+        />
+      </div>
+      {review}
+    </DetailScreen.Section>
+  );
 
   return (
     <div className={styles.column}>
@@ -173,26 +190,19 @@ export function ExpenseDocument({
         }
       >
         <KvList items={items} />
-        <DetailScreen.Section title="증빙">
-          <div id="evidence" className={styles.evidence}>
-            <EvidenceAttachments
-              expenseId={id}
-              files={files}
-              mode="read"
-              maxMb={maxMb}
-              evidenceActions={evidenceActions}
-              reasonMessages={{ empty: REJECT_REASON_EMPTY_MESSAGE, tooLong: REJECT_REASON_TOO_LONG_MESSAGE, max: REJECT_REASON_MAX }}
-            />
-          </div>
-        </DetailScreen.Section>
-        {paymentView === "error" ? (
-          <PaymentLoadError />
-        ) : paymentView ? (
+        {paymentView && paymentView !== "error" ? (
+          // 06-06: 결재 통과 문서는 패널 상태가 증빙 섹션 확인부(S4)까지 감싼다 — 증빙 금액 칸 · 1차 `증빙 확인`이 같은 상태를 쓴다.
           <PaymentPanelProvider view={paymentView}>
+            {evidenceSection(<EvidenceReviewBlock />)}
             <PaymentSection paymentMethod={expense.paymentMethod ?? null} paymentMethodName={expense.paymentMethodName ?? null} scheduledPaymentDate={expense.scheduledPaymentDate ?? null} />
             <PaymentActionRow />
           </PaymentPanelProvider>
-        ) : null}
+        ) : (
+          <>
+            {evidenceSection(null)}
+            {paymentView === "error" ? <PaymentLoadError /> : null}
+          </>
+        )}
         <DocumentActions
           instanceId={view?.instanceId ?? null}
           version={view?.version ?? null}

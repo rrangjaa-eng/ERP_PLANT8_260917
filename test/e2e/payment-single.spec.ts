@@ -38,8 +38,8 @@ async function makePaymentManagerE2E(infoItems: readonly string[] = INFO_ITEMS):
   return makePerson("경영관리", role.id, team.id, `${seoulToday().slice(0, 4)}-01-01`);
 }
 
-// 줄 하나를 폼으로 제출 → 결재선 넷 승인(approved) → 살아 있는 증빙 전부 무효(증빙 0). 문서 id를 돌려준다.
-async function approvedWithoutEvidence(browser: Browser, baseURL: string | undefined, fx: ExpenseE2E, key: LineKey): Promise<string> {
+// 줄 하나를 05 도우미로 제출(증빙 1건) → 결재선 넷 승인(approved). 문서 id를 돌려준다.
+async function approvedWithEvidence(browser: Browser, baseURL: string | undefined, fx: ExpenseE2E, key: LineKey): Promise<string> {
   const expenseId = await submitLineExpense(browser, baseURL, fx, key);
   const view = await getApprovalView(fx.lead.viewer, { kind: EXPENSE_DOCUMENT_KIND, documentId: expenseId });
   if (!view) throw new Error("결재 인스턴스 없음");
@@ -49,6 +49,12 @@ async function approvedWithoutEvidence(browser: Browser, baseURL: string | undef
     version = result.version;
     if (approver === fx.ceo && result.status !== "approved") throw new Error(`결재 통과 안 됨: ${result.status}`);
   }
+  return expenseId;
+}
+
+// 결재 통과 → 살아 있는 증빙 전부 무효(증빙 0). 문서 id를 돌려준다.
+async function approvedWithoutEvidence(browser: Browser, baseURL: string | undefined, fx: ExpenseE2E, key: LineKey): Promise<string> {
+  const expenseId = await approvedWithEvidence(browser, baseURL, fx, key);
   const voider = await makeEvidenceManagerE2E();
   const alive = await db
     .select({ id: files.id })
@@ -67,6 +73,10 @@ function tokenAsColor(page: Page, name: string): Promise<string> {
     probe.remove();
     return color;
   }, name);
+}
+
+function evidenceSection(page: Page) {
+  return page.locator("section", { has: page.getByRole("heading", { level: 2, name: "증빙", exact: true }) });
 }
 
 function paymentSection(page: Page) {
@@ -575,6 +585,42 @@ test.describe("06-04 검토 · DOM 감사 수정", () => {
     await expect(page.getByText("지급 총액 볼 권한 없음 · 노출 설정은 관리자")).toBeVisible();
     await expect(page.locator("#payment-transfer")).toHaveCount(0);
     await expect(paymentSection(page).getByLabel("이체액")).toHaveCount(0);
+    await page.context().close();
+  });
+});
+
+test.describe("증빙 확인 (06-06 · S4 · O-2)", () => {
+  test("트레이서 — 확인 줄 `확인 전` → 1차 `증빙 확인` → `확인됨` → 1차 `지급 완료` → `지급 완료`", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const expenseId = await approvedWithEvidence(browser, baseURL, fx, "tracer");
+    // 기안자 증빙 금액 입력(06-10)이 아직 없어 이 문서 행에만 직접 적는다.
+    await db.update(expenses).set({ evidenceAmount: 12_400_000 }).where(eq(expenses.id, expenseId));
+    const payer = await makePaymentManagerE2E();
+
+    const page = await loginPage(browser, baseURL, payer);
+    await page.goto(`/expenses/${expenseId}`);
+    const confirm = page.getByRole("button", { name: /^증빙 확인/ });
+    await waitForHydration(confirm);
+    const review = evidenceSection(page).getByTestId("evidence-review");
+    await expect(review.getByText("12,400,000")).toBeVisible();
+    await expect(review.getByText("확인 전", { exact: true })).toBeVisible();
+    // 확인 전에는 `지급 완료`가 1차 자리에 없다(P2 — 증빙 필수 off여도, O-2).
+    await expect(page.getByRole("button", { name: /^지급 완료/ })).toHaveCount(0);
+    await confirm.click();
+
+    await expect(review.getByText("확인됨", { exact: true })).toBeVisible();
+    await expect(review.getByTestId("evidence-review-line")).toHaveText(new RegExp(`^${payer.name} \\d{2}-\\d{2} \\d{2}:\\d{2}$`));
+    await expect(page.getByRole("button", { name: /^증빙 확인/ })).toHaveCount(0);
+    // M-3: 확인 뒤 포커스는 이체액 칸 — 이체액 · 지급일을 보지 않고 지급되지 않게.
+    await expect(page.locator("#payment-transfer")).toBeFocused();
+    await page.getByRole("button", { name: /^지급 완료/ }).click();
+    await expect(page.getByTestId("payment-result")).toHaveText(/^지급 완료 → \d{4}-\d{2}-\d{2} · \d{2}:\d{2}$/);
+
+    const logs = await db
+      .select({ actionType: actionLog.actionType })
+      .from(actionLog)
+      .where(and(eq(actionLog.entityId, expenseId), eq(actionLog.actorId, payer.viewer.id)));
+    expect(logs.map((log) => log.actionType).sort()).toEqual(["document_update", "payment_process"]);
     await page.context().close();
   });
 });

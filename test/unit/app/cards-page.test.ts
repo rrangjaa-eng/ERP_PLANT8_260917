@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CardUsageFormOptions, CardUsageList } from "@/domain/corp-card-usages";
 
-// 06-05 카드 사용 목록 페이지(S8) — 서버 렌더 갈래를 도메인 스텁으로 고정한다.
+// 06-05 카드 사용 목록 페이지(S8) — 서버 렌더 갈래를 도메인 스텁으로 고정한다. 로드 오류 갈래(P3-5 · 결정 2 b)는 E2E 표 잠금 대신 여기서.
 
 vi.mock("next/link", () => ({
   default: ({ href, scroll, prefetch, children, ...rest }: AnchorHTMLAttributes<HTMLAnchorElement> & { href: string; scroll?: boolean; prefetch?: boolean; children?: ReactNode }) => {
@@ -55,6 +55,19 @@ async function render(params: Record<string, string>): Promise<string> {
 beforeEach(() => {
   formOptions.mockReset();
   list.mockReset();
+  vi.spyOn(console, "error").mockImplementation(() => undefined);
+});
+
+describe("카드 사용 목록 — 로드 오류(P3-5)", () => {
+  it("목록 읽기가 실패하면 목록 자리 한 줄 + 2차 `다시 시도`, 머리 1차는 남고 필터는 없다", async () => {
+    formOptions.mockResolvedValue(options([CARD]));
+    list.mockRejectedValue(new Error("lock timeout"));
+    const html = await render({});
+    expect(html).toContain("카드 사용 목록 불러오지 못함");
+    expect(html).toMatch(/<button[^>]*>다시 시도<\/button>/);
+    expect(html).toMatch(/<a[^>]*href="\/cards\?new=1"[^>]*>카드 사용 등록/);
+    expect(html).not.toContain('id="card-usage-filter-month"');
+  });
 });
 
 describe("지금 필터를 지키는 1차 · 패널 닫기(P3-3)", () => {

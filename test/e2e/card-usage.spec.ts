@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import { and, eq } from "drizzle-orm";
-import { db, pool } from "@/db/client";
+import { db } from "@/db/client";
 import { actionLog } from "@/db/schema";
 import { createCorpCard } from "@/domain/corp-cards";
 import { createCardUsage, precheckCardUsage } from "@/domain/corp-card-usages";
@@ -175,28 +175,6 @@ test.describe("법인카드 사용 등록 (06-05)", () => {
     await page.getByRole("link", { name: "필터 지우기" }).click();
     await expect(page).toHaveURL(/\/cards$/);
     await expect(page.getByRole("table").getByText(`팀 비용 · ${holder.teamName}`)).toHaveCount(2);
-    await page.context().close();
-  });
-
-  test("로드 오류 — 목록 자리 한 줄 `카드 사용 목록 불러오지 못함` · 2차 `다시 시도` → 목록이 다시 선다", async ({ browser, baseURL }) => {
-    const holder = await makeCardHolder();
-    const page = await loginPage(browser, baseURL, holder.person);
-    // 서버 렌더 목록이라 라우트 가로채기로는 실패시킬 수 없다 — 표를 잠가 목록 읽기를 lock_timeout(5s)으로 실패시킨다.
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      await client.query("LOCK TABLE corp_card_usages IN ACCESS EXCLUSIVE MODE");
-      await page.goto("/cards");
-      await expect(page.getByText("카드 사용 목록 불러오지 못함")).toBeVisible();
-    } finally {
-      await client.query("ROLLBACK");
-      client.release();
-    }
-    const retry = page.getByRole("button", { name: "다시 시도" });
-    await waitForHydration(retry);
-    await retry.click();
-    await expect(page.getByText("이번 달 카드 사용이 없습니다")).toBeVisible();
-    await expect(page.getByText("카드 사용 목록 불러오지 못함")).toHaveCount(0);
     await page.context().close();
   });
 

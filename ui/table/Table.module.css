@@ -256,7 +256,7 @@ th.groupHeader {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: calc(var(--row-h) - 2 * var(--cell-pad-y));
+  min-height: calc(var(--row-h) - 2 * var(--cell-pad-y) - var(--line-w));
 }
 
 .selectLabel input {

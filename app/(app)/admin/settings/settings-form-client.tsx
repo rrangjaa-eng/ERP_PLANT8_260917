@@ -306,7 +306,14 @@ function PairGridEditor({
           : [...before, { [rowField]: methodId, [colField]: evidenceId }]
         : before.filter((pair) => !same(pair));
       apply(after);
-      const result = await executeAsync({ key: fieldKey, value: after });
+      // 끊김 · 액션 ID 불일치처럼 executeAsync가 던져도 목록을 되돌린다 — 다음 저장이 실패한 짝을 싣지 않게(06-02 검토 P2-1).
+      let result: Awaited<ReturnType<typeof executeAsync>>;
+      try {
+        result = await executeAsync({ key: fieldKey, value: after });
+      } catch (error) {
+        apply(before);
+        throw error;
+      }
       const message = errorMessageOf(result ?? {});
       if (message) {
         apply(before);

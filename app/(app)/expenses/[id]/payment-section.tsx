@@ -79,15 +79,20 @@ export function diffReasonNeeded(fields: Fields, preview: Preview): boolean {
   return value !== null && value > 0 && preview.payableKrw !== null && value !== preview.payableKrw;
 }
 
-export function PaymentPanelProvider({ view, children }: { view: PaymentView; children: ReactNode }) {
-  const [conflict, setConflict] = useState<string | null>(null);
-  const [fields, setFieldState] = useState<Fields>(() => ({
+// 칸의 기본값 — 서버가 준 지급일(지급 전 = 오늘) · 지급 총액.
+function fieldsFrom(view: PaymentView): Fields {
+  return {
     payDate: view.payDate ?? "",
     transferRaw: view.payableKrw === null || view.payableKrw === undefined ? "" : String(view.payableKrw),
     transferInputError: null,
     transferTouched: false,
     diffReason: "",
-  }));
+  };
+}
+
+export function PaymentPanelProvider({ view, children }: { view: PaymentView; children: ReactNode }) {
+  const [conflict, setConflict] = useState<string | null>(null);
+  const [fields, setFieldState] = useState<Fields>(() => fieldsFrom(view));
   const [preview, setPreview] = useState<Preview>({ payableKrw: view.payableKrw ?? null, diffKrw: null });
   const [nonce, setNonce] = useState(0);
   const [fieldErrors, setFieldErrors] = useState<PaymentFieldErrors>({});
@@ -105,6 +110,21 @@ export function PaymentPanelProvider({ view, children }: { view: PaymentView; ch
   const previewKey = JSON.stringify([fields.payDate, transferSent, nonce]);
   // 응답이 온(또는 처음 그린) 칸 값 — 지금 칸 값과 다르면 미리보기가 오는 중이다(렌더에서 파생 · effect 안 setState 없음).
   const [settledKey, setSettledKey] = useState(previewKey);
+  // 지급 뒤(P6) → 지급 전(지급 취소 뒤 다시 읽은 표): 칸 · 미리보기를 새 서버 값(지급일 오늘 · 지금 지급 총액)으로 다시 세운다.
+  // 지급된 상태로 연 문서는 칸 초기값이 옛 지급 기록 값이라, 그대로 두면 다시 지급할 때 옛 지급일이 기본값으로 남는다(06-04 검토 P2-1). 렌더에서 파생 · effect 없음.
+  const paidNow = view.row?.row === "P6";
+  const [wasPaid, setWasPaid] = useState(paidNow);
+  if (wasPaid !== paidNow) {
+    setWasPaid(paidNow);
+    if (!paidNow) {
+      const fresh = fieldsFrom(view);
+      setFieldState(fresh);
+      setPreview({ payableKrw: view.payableKrw ?? null, diffKrw: null });
+      setFieldErrors({});
+      // 새 값은 방금 서버가 준 것이라 미리보기를 다시 받지 않는다.
+      setSettledKey(JSON.stringify([fresh.payDate, null, nonce]));
+    }
+  }
   const previewing = canPay && fields.payDate !== "" && previewKey !== settledKey;
   useEffect(() => {
     if (previewKey === settledKey) return;

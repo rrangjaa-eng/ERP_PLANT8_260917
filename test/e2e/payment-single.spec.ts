@@ -407,3 +407,50 @@ test.describe("05 C1 작성 중 문서의 지급 섹션 (06-03)", () => {
     await page.context().close();
   });
 });
+
+// 서버에서(도메인 함수로) 지급해 둔다 — 화면은 이미 지급된 상태로 처음 열린다.
+async function paidOnServer(payer: Person, expenseId: string, payDate: string): Promise<void> {
+  const preview = await previewPayable(payer.viewer, { expenseId, payDate });
+  const [row] = await db.select({ version: expenses.version }).from(expenses).where(eq(expenses.id, expenseId));
+  if (preview.payableKrw == null || !row) throw new Error("지급 준비 실패");
+  await completeExpensePayment(payer.viewer, { expenseId, payDate, expectedPayableKrw: preview.payableKrw, version: row.version });
+}
+
+test.describe("06-04 검토 · DOM 감사 수정", () => {
+  // 검토 P2-1 — 지급된 상태로 연 문서에서 취소하면 패널 칸이 옛 지급 기록 값(지급일)으로 남았다.
+  test("지급된 상태로 연 문서 — 지급 취소 뒤 지급일 기본값은 오늘 · 이체액은 지급 총액이고, 그대로 지급하면 오늘로 저장된다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const expenseId = await approvedWithoutEvidence(browser, baseURL, fx, "tracer");
+    const payer = await makePaymentManagerE2E();
+    const today = seoulToday();
+    const earlier = addDays(today, -3);
+    await paidOnServer(payer, expenseId, earlier);
+    const current = await previewPayable(payer.viewer, { expenseId, payDate: today });
+    if (current.payableKrw == null) throw new Error("지급 총액 없음");
+
+    const page = await loginPage(browser, baseURL, payer);
+    await page.goto(`/expenses/${expenseId}`);
+    const cancel = page.getByRole("button", { name: "지급 취소", exact: true });
+    await waitForHydration(cancel);
+    await expect(page.getByTestId("payment-result")).toHaveText(new RegExp(`^지급 완료 → ${earlier} · `));
+    await cancel.click();
+    const dialog = page.getByRole("dialog", { name: "지급 취소" });
+    await dialog.getByLabel("사유").fill("지급일 오입력");
+    await page.keyboard.press("Control+Enter");
+    await expect(dialog).toHaveCount(0);
+
+    const pay = page.getByRole("button", { name: /^지급 완료/ });
+    await expect(pay).toBeFocused();
+    const section = paymentSection(page);
+    await expect(section.getByLabel("지급일")).toHaveValue(today);
+    await expect(section.getByLabel("이체액")).toHaveValue(formatKrw(current.payableKrw));
+    await pay.click();
+    await expect(page.getByTestId("payment-result")).toHaveText(new RegExp(`^지급 완료 → ${today} · `));
+    const [record] = await db
+      .select({ payDate: expensePayments.payDate })
+      .from(expensePayments)
+      .where(and(eq(expensePayments.expenseId, expenseId), isNull(expensePayments.cancelledAt)));
+    expect(record?.payDate).toBe(today);
+    await page.context().close();
+  });
+});

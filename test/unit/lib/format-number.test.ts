@@ -56,6 +56,8 @@ describe("format-number — 표시 서식", () => {
     expect(formatPercent(-12.37)).toBe("-12.3%");
     expect(formatPercent(12.99)).toBe("12.9%");
     expect(formatPercent(0.29 * 100)).toBe("29.0%");
+    // 경계 바로 아래 값은 정규화가 경계를 넘기지 않는다(14.99999996 → 14.9).
+    expect(formatPercent((1_499_999_996 / 10_000_000_000) * 100)).toBe("14.9%");
     expect(formatPercent(0.57 * 100)).toBe("57.0%");
     expect(formatPercent(-0.29 * 100)).toBe("-29.0%");
   });

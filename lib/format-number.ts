@@ -26,10 +26,11 @@ function roundToZeroSafe(value: number, decimals: number): number {
 }
 
 // 비율 표시용 버림(0 쪽) — 호출자가 rate * 100을 넘겨 0.29 * 100 = 28.999…처럼 오차가 나므로
-// domain/money round()처럼 toFixed(6)으로 먼저 정규화한 뒤 버린다. 음의 0은 0으로.
+// 유효숫자 15자리로 먼저 정규화한 뒤 버린다 — toFixed(6)은 14.99999996 같은 경계 바로 아래 값까지 반올림해
+// 넘기므로 쓰지 않는다. 음의 0은 0으로.
 function truncateToZeroSafe(value: number, decimals: number): number {
   const factor = 10 ** decimals;
-  const truncated = Math.trunc(Number((value * factor).toFixed(6))) / factor;
+  const truncated = Math.trunc(Number((value * factor).toPrecision(15))) / factor;
   return truncated === 0 ? 0 : truncated;
 }
 

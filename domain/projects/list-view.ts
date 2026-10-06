@@ -247,6 +247,6 @@ export function filterSummary(input: { year: number | "all"; statusLabel: string
 // 화면의 「15.0%」가 빨갛게 되지 않고 0.29 * 100 = 28.999… 같은 부동소수 오차로 같음이 미만이 되지 않는다.
 export function isProfitRateBelowThreshold(profitRate: number | null | undefined, thresholdPercent: number): boolean {
   if (profitRate === null || profitRate === undefined) return false;
-  const shown = Math.trunc(Number((profitRate * 100 * 10).toFixed(6))) / 10;
+  const shown = Math.trunc(Number((profitRate * 100 * 10).toPrecision(15))) / 10;
   return shown < thresholdPercent;
 }

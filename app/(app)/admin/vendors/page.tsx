@@ -147,7 +147,7 @@ export default async function VendorsPage({
             { key: "kind", header: "구분", priority: "p2" },
             { key: "businessNo", header: "사업자 번호", priority: "p2" },
             { key: "evidenceType", header: "기본 증빙 종류", priority: "p2" },
-            { key: "account", header: "계좌", priority: "p1" },
+            { key: "account", header: "계좌", priority: "p1", align: "right" },
             { key: "status", header: "상태", priority: "p2" },
             ...(hasActions ? [{ key: "actions", header: "동작", priority: "p1" as const }] : []),
           ]}

@@ -47,13 +47,14 @@ describe("법인카드 소유자는 보관되지 않은 사람·팀이어야 한
       issuer: `카드사-${randomUUID()}`,
       numberLast4: uniqueLast4(),
       label: "소지자 교체 대상",
+      kind: "personal",
       holderUserId,
     });
 
     await archive(SYSTEM_VIEWER, "user", retiring);
 
     await expect(
-      updateCorpCardOwner(SYSTEM_VIEWER, dto.id, { holderUserId: retiring }),
+      updateCorpCardOwner(SYSTEM_VIEWER, dto.id, { kind: "personal", holderUserId: retiring }),
     ).rejects.toThrow();
   });
 
@@ -64,12 +65,13 @@ describe("법인카드 소유자는 보관되지 않은 사람·팀이어야 한
       issuer: `카드사-${randomUUID()}`,
       numberLast4: uniqueLast4(),
       label: "팀 교체 대상",
+      kind: "personal",
       holderUserId,
     });
 
     await archive(SYSTEM_VIEWER, "team", disbanding);
 
-    await expect(updateCorpCardOwner(SYSTEM_VIEWER, dto.id, { teamId: disbanding })).rejects.toThrow();
+    await expect(updateCorpCardOwner(SYSTEM_VIEWER, dto.id, { kind: "team", teamId: disbanding })).rejects.toThrow();
   });
 
   it("등록 경로에도 같은 검사가 있다 — 보관된 사람으로 새 카드를 만들 수 없다", async () => {
@@ -81,6 +83,7 @@ describe("법인카드 소유자는 보관되지 않은 사람·팀이어야 한
         issuer: `카드사-${randomUUID()}`,
         numberLast4: uniqueLast4(),
         label: "보관된 소지자",
+        kind: "personal",
         holderUserId: retiring,
       }),
     ).rejects.toThrow();
@@ -93,9 +96,10 @@ describe("법인카드 소유자는 보관되지 않은 사람·팀이어야 한
       issuer: `카드사-${randomUUID()}`,
       numberLast4: uniqueLast4(),
       label: "정상 교체",
+      kind: "personal",
       holderUserId,
     });
 
-    await expect(updateCorpCardOwner(SYSTEM_VIEWER, dto.id, { teamId })).resolves.toBeUndefined();
+    await expect(updateCorpCardOwner(SYSTEM_VIEWER, dto.id, { kind: "team", teamId })).resolves.toBeUndefined();
   });
 });

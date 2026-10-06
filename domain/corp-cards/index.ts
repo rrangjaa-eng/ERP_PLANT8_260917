@@ -39,18 +39,28 @@ export class ArchivedCardOwnerError extends UserFacingError {}
 
 const CARDS_MENU = "admin.corp-cards";
 
-// MAST-03: "소지자 또는 팀 정확히 하나" — 순수·동기 판정 함수. DB 없이 돈다
-// (domain/system-status/index.ts의 connectionBanner와 같은 결).
-export type CardOwnerInput = { holderUserId?: string | null; teamId?: string | null };
-export type CardOwnerKind = "personal" | "team";
+// MAST-03 · 06-30(Q5 · C8): 카드 종류는 사람이 고른 값이다(promote) — 공용 카드가
+// 생기면 「소지자 · 팀 둘 다 비었음」이 입력 누락인지 공용인지 구별되지 않으므로
+// FK 유무로 종류를 유도하지 않는다. 판정은 고른 종류에 맞는 소유 칸 조합인지만
+// 본다: personal = 소지자만 · team = 팀만 · shared = 둘 다 없음. 06-27 DB CHECK
+// corp_cards_owner_kind_check와 같은 세 조합이다(R-6 · E-15). 순수·동기 함수라
+// DB 없이 돈다(domain/system-status/index.ts의 connectionBanner와 같은 결).
+export type CardOwnerKind = "personal" | "team" | "shared";
+export type CardOwnerInput = { kind: CardOwnerKind; holderUserId?: string | null; teamId?: string | null };
+
+const CARD_OWNER_KIND_LABEL: Record<CardOwnerKind, string> = { personal: "개인", team: "팀", shared: "공용" };
 
 export function cardOwnerKind(input: CardOwnerInput): CardOwnerKind {
   const hasHolder = Boolean(input.holderUserId);
   const hasTeam = Boolean(input.teamId);
-  if (hasHolder === hasTeam) {
-    throw new InvalidCardOwnerError("소지자·팀 중 하나 필요 · 하나만 선택");
+  const valid =
+    (input.kind === "personal" && hasHolder && !hasTeam) ||
+    (input.kind === "team" && hasTeam && !hasHolder) ||
+    (input.kind === "shared" && !hasHolder && !hasTeam);
+  if (!valid) {
+    throw new InvalidCardOwnerError(`소유 칸 조합 오류 · ${CARD_OWNER_KIND_LABEL[input.kind]}에 맞는 칸만`);
   }
-  return hasHolder ? "personal" : "team";
+  return input.kind;
 }
 
 export type CorpCardDto = {
@@ -102,7 +112,8 @@ export type CorpCardWriteDeps = {
 };
 
 // 등록·수정 두 경로가 같은 가드를 쓴다 — 한쪽만 막으면 다른 쪽으로 같은 값이
-// 들어온다. cardOwnerKind가 XOR를 이미 보장하므로 여기서는 지정된 쪽만 본다.
+// 들어온다. cardOwnerKind가 종류별 칸 조합을 이미 보장하므로 여기서는 지정된
+// 쪽만 본다 — 공용 카드는 소유 칸이 없어 검사할 것이 없다.
 async function assertOwnerNotArchived(
   viewer: Viewer,
   owner: { holderUserId?: string | null; teamId?: string | null },
@@ -130,6 +141,7 @@ export async function createCorpCard(
     issuer: string;
     numberLast4: string;
     label: string;
+    kind: CardOwnerKind;
     holderUserId?: string | null;
     teamId?: string | null;
   },
@@ -164,7 +176,7 @@ export async function createCorpCard(
 export async function updateCorpCardOwner(
   viewer: Viewer,
   id: string,
-  owner: { holderUserId?: string | null; teamId?: string | null },
+  owner: CardOwnerInput,
   deps?: Partial<CorpCardWriteDeps>,
 ): Promise<void> {
   const kind = cardOwnerKind(owner);

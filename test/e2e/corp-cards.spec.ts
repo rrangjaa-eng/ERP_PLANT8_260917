@@ -325,6 +325,73 @@ test.describe("법인카드 옆 패널 (04.6-15)", () => {
   });
 });
 
+// 06-30(Q5 · C8): 공용 법인카드 — 종류는 사람이 고른 값이고 공용이면 소유 칸(소지자 · 팀)이 없다.
+// 목록 행의 칸 순서: 발급사 · 뒤 4자리 · 별칭 · 종류 · 소유 · 상태 · 동작(page.tsx columns).
+const KIND_CELL = 3;
+const OWNER_CELL = 4;
+
+test.describe("공용 법인카드 (06-30 · Q5 · C8)", () => {
+  test("새 카드 폼에서 종류 「공용」을 고르면 소유 칸이 사라지고, 등록하면 목록 종류 「공용」 · 소유 「—」다", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await loginAsSysadmin(page);
+    await page.goto("/admin/corp-cards?new=1");
+    const dialog = page.locator(PANEL);
+    await expect(dialog).toBeVisible();
+
+    const label = `공용카드-${randomUUID().slice(0, 8)}`;
+    await dialog.getByLabel("발급사").fill(`공용카드사-${randomUUID().slice(0, 8)}`);
+    await dialog.getByLabel("뒤 4자리").fill(String(Math.floor(1000 + Math.random() * 9000)));
+    await dialog.getByLabel("별칭").fill(label);
+    await dialog.getByLabel("종류").selectOption("shared");
+    await expect(dialog.getByLabel("소지자")).toHaveCount(0);
+    await expect(dialog.getByLabel("팀")).toHaveCount(0);
+    await dialog.getByRole("button", { name: "법인카드 등록" }).click();
+    await expect(dialog.getByRole("status")).toHaveText("법인카드 등록됨");
+    // 성공 뒤 종류는 처음 값(개인)으로 돌아간다 — 다음 등록이 공용으로 이어지지 않는다.
+    await expect(dialog.getByLabel("종류")).toHaveValue("personal");
+
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    const cells = page.locator("tr", { hasText: label }).locator("td");
+    await expect(cells.nth(KIND_CELL)).toHaveText("공용");
+    await expect(cells.nth(OWNER_CELL)).toHaveText("—");
+    await page.locator("tr", { hasText: label }).getByRole("button", { name: "비활성화" }).click();
+    await expect(page.getByText(label)).toHaveCount(0);
+  });
+
+  test("소유자 변경 폼에서 개인 → 공용 → 팀으로 오간다", async ({ page }) => {
+    const card = await seedOwnedCard("공용");
+    try {
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await loginAsSysadmin(page);
+      await page.goto(`/admin/corp-cards?editId=${card.id}`);
+      const dialog = page.locator(PANEL);
+      await expect(dialog).toBeVisible();
+      await dialog.getByLabel("종류").selectOption("shared");
+      await expect(dialog.getByLabel("소지자")).toHaveCount(0);
+      await expect(dialog.getByLabel("팀")).toHaveCount(0);
+      await dialog.getByRole("button", { name: "소유자 변경" }).click();
+      await expect(dialog).toHaveCount(0);
+      const cells = page.locator("tr", { hasText: card.label }).locator("td");
+      await expect(cells.nth(KIND_CELL)).toHaveText("공용");
+      await expect(cells.nth(OWNER_CELL)).toHaveText("—");
+
+      // 공용 카드의 소유자 변경 폼은 종류 「공용」에서 시작하고 소유 칸이 없다.
+      await page.goto(`/admin/corp-cards?editId=${card.id}`);
+      await expect(dialog.getByLabel("종류")).toHaveValue("shared");
+      await expect(dialog.getByLabel("소지자")).toHaveCount(0);
+      await dialog.getByLabel("종류").selectOption("team");
+      await dialog.getByLabel("팀").selectOption({ label: "기획본부 · 기획1팀" });
+      await dialog.getByRole("button", { name: "소유자 변경" }).click();
+      await expect(dialog).toHaveCount(0);
+      await expect(cells.nth(KIND_CELL)).toHaveText("팀");
+      await expect(cells.nth(OWNER_CELL)).toHaveText("기획1팀");
+    } finally {
+      await card.cleanup();
+    }
+  });
+});
+
 // 04.6-15 · R11 · 공통 §10: 옮긴 화면의 원칙 막는 모드 — 법인카드·코드표의 목록과 패널 라우트 모두 경고 0(화면 하나에 테스트 하나).
 test.describe("법인카드 · 코드표 화면 사용성 원칙 (04.6-15 R11)", () => {
   test("화면 사용성 원칙(막는 모드) — 법인카드·코드표", async ({ page }) => {

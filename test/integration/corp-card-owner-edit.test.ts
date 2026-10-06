@@ -43,17 +43,18 @@ describe("법인카드 소유자 수정 — 보관 차단 (성공 기준 5 「�
       issuer: `카드사-${randomUUID()}`,
       numberLast4: uniqueLast4(),
       label: "보관될 카드",
+      kind: "personal",
       holderUserId,
     });
 
     await archive(SYSTEM_VIEWER, "corp_card", dto.id);
 
-    await expect(updateCorpCardOwner(SYSTEM_VIEWER, dto.id, { teamId })).rejects.toThrow();
+    await expect(updateCorpCardOwner(SYSTEM_VIEWER, dto.id, { kind: "team", teamId })).rejects.toThrow();
   });
 
   it("없는 카드의 소유자 변경도 같은 이유로 거부된다", async () => {
     const teamId = await makeTestTeam();
-    await expect(updateCorpCardOwner(SYSTEM_VIEWER, randomUUID(), { teamId })).rejects.toThrow();
+    await expect(updateCorpCardOwner(SYSTEM_VIEWER, randomUUID(), { kind: "team", teamId })).rejects.toThrow();
   });
 
   it("보관되지 않은 카드는 그대로 바뀐다(회귀 방어)", async () => {
@@ -63,9 +64,10 @@ describe("법인카드 소유자 수정 — 보관 차단 (성공 기준 5 「�
       issuer: `카드사-${randomUUID()}`,
       numberLast4: uniqueLast4(),
       label: "정상 카드",
+      kind: "personal",
       holderUserId,
     });
 
-    await expect(updateCorpCardOwner(SYSTEM_VIEWER, dto.id, { teamId })).resolves.toBeUndefined();
+    await expect(updateCorpCardOwner(SYSTEM_VIEWER, dto.id, { kind: "team", teamId })).resolves.toBeUndefined();
   });
 });

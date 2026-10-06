@@ -12,6 +12,8 @@ import "./actions.registry";
 // 수 없다).
 
 const LAST4_PATTERN = /^\d{4}$/;
+// 06-30(Q5 · C8): 카드 종류는 사람이 고른 값이다 — 칸 조합 판정 정본은 domain의 cardOwnerKind.
+const CARD_KIND = z.enum(["personal", "team", "shared"]);
 
 export const createCorpCardAction = authedActionClient
   .schema(
@@ -19,6 +21,7 @@ export const createCorpCardAction = authedActionClient
       issuer: z.string().min(1, "발급사 필요 · 발급사 입력"),
       numberLast4: z.string().regex(LAST4_PATTERN, "숫자 4자리 필요 · 끝 4자리 입력"),
       label: z.string().min(1, "별칭 필요 · 별칭 입력"),
+      kind: CARD_KIND,
       holderUserId: z.string().min(1).optional(),
       teamId: z.string().min(1).optional(),
     }),
@@ -29,23 +32,29 @@ export const createCorpCardAction = authedActionClient
     return dto;
   });
 
-// 소지자와 팀을 동시에 받으면 서버가 domain에 도달하기 전에 거부한다
-// (zod superRefine — T-03-33 세 겹 방어 중 액션 계층).
+// 고른 종류에 맞지 않는 소유 칸 조합(소지자 · 팀 둘 다, 공용인데 소유 칸 등)은 서버가
+// domain에 도달하기 전에 거부한다(zod superRefine — T-03-33 세 겹 방어 중 액션 계층,
+// 06-30 종류별). 표는 domain의 cardOwnerKind와 같다.
 export const updateCorpCardOwnerAction = authedActionClient
   .schema(
     z
       .object({
         id: z.string().min(1),
+        kind: CARD_KIND,
         holderUserId: z.string().min(1).optional(),
         teamId: z.string().min(1).optional(),
       })
       .superRefine((value, ctx) => {
         const hasHolder = Boolean(value.holderUserId);
         const hasTeam = Boolean(value.teamId);
-        if (hasHolder === hasTeam) {
+        const valid =
+          (value.kind === "personal" && hasHolder && !hasTeam) ||
+          (value.kind === "team" && hasTeam && !hasHolder) ||
+          (value.kind === "shared" && !hasHolder && !hasTeam);
+        if (!valid) {
           ctx.addIssue({
             code: "custom",
-            message: "소지자·팀 중 하나 필요 · 하나만 선택",
+            message: value.kind === "shared" ? "소유 칸 조합 오류 · 공용에 맞는 칸만" : "소지자·팀 중 하나 필요 · 하나만 선택",
             path: ["holderUserId"],
           });
         }
@@ -53,6 +62,7 @@ export const updateCorpCardOwnerAction = authedActionClient
   )
   .action(async ({ parsedInput, ctx }) => {
     await updateCorpCardOwner(ctx.viewer, parsedInput.id, {
+      kind: parsedInput.kind,
       holderUserId: parsedInput.holderUserId,
       teamId: parsedInput.teamId,
     });

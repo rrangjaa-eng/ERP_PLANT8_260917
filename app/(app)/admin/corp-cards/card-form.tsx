@@ -23,15 +23,22 @@ function getStringField(formData: FormData, key: string): string {
   return typeof value === "string" ? value : "";
 }
 
+// 06-30(Q5 · C8): 종류는 사람이 고른 값 — 공용(shared)은 소지자 · 팀 칸이 없다.
+type OwnerKind = "personal" | "team" | "shared";
+
+function toOwnerKind(value: string): OwnerKind {
+  return value === "team" || value === "shared" ? value : "personal";
+}
+
 // SYSTEM.md §6-3 폼 템플릿(D-39) — 옆 패널 안 폼(04.6-04: `SidePanel` 안 `PanelForm`). 전체 번호(카드 앞 12자리 포함) 입력 칸을
-// 만들지 않는다(Task 1이 그 컬럼을 두지 않기로 했다 — 입력 칸만 있는 것은 저장된다는 오해를 준다). 종류에 따라 소유 선택 상자 하나만 보인다.
+// 만들지 않는다(Task 1이 그 컬럼을 두지 않기로 했다 — 입력 칸만 있는 것은 저장된다는 오해를 준다). 종류에 따라 소유 선택 상자 하나만 보인다(공용은 없음).
 // §6-1: page.tsx가 ?new=1일 때만 이 패널을 그린다 — 기본 진입에는 없다. 닫기 경로는 `SidePanel`이 가진다.
 // 성공 뒤(UQ-8 B · R9 D): 등록은 패널을 열어 둔 채 칸을 비우고 첫 칸에 포커스 + 결과 한 줄(`PanelForm.succeed` — 상세 화면이 없는 대상).
 export function CardForm({ holders, teams }: { holders: HolderOption[]; teams: TeamOption[] }) {
   const panelRef = useRef<PanelFormHandle>(null);
   // 제출 직후 같은 틱의 두 번째 제출(Ctrl+Enter 연타)을 막는 동기 가드 — isExecuting은 다음 렌더에야 참이 된다(D7 · R15-ii).
   const submitLockRef = useRef(false);
-  const [kind, setKind] = useState<"personal" | "team">("personal");
+  const [kind, setKind] = useState<OwnerKind>("personal");
   const { execute, result, isExecuting } = useAction(createCorpCardAction, {
     onSuccess: () => {
       // 종류 select는 제어 상태라 폼 reset이 따라가지 못한다 — 같이 처음 값으로.
@@ -52,6 +59,7 @@ export function CardForm({ holders, teams }: { holders: HolderOption[]; teams: T
       issuer: getStringField(formData, "issuer"),
       numberLast4: getStringField(formData, "numberLast4"),
       label: getStringField(formData, "label"),
+      kind,
       holderUserId: kind === "personal" ? getStringField(formData, "holderUserId") || undefined : undefined,
       teamId: kind === "team" ? getStringField(formData, "teamId") || undefined : undefined,
     });
@@ -93,10 +101,11 @@ export function CardForm({ holders, teams }: { holders: HolderOption[]; teams: T
             name="kind"
             className={styles.select}
             value={kind}
-            onChange={(event) => setKind(event.target.value === "team" ? "team" : "personal")}
+            onChange={(event) => setKind(toOwnerKind(event.target.value))}
           >
             <option value="personal">개인</option>
             <option value="team">팀</option>
+            <option value="shared">공용</option>
           </select>
         </Form.Field>
       </div>
@@ -117,7 +126,7 @@ export function CardForm({ holders, teams }: { holders: HolderOption[]; teams: T
             </select>
           </Form.Field>
         </div>
-      ) : (
+      ) : kind === "team" ? (
         <div key="team" className={styles.field}>
           <Form.Field id="teamId" label="팀">
             <select id="teamId" name="teamId" className={styles.select} required defaultValue="">
@@ -132,13 +141,13 @@ export function CardForm({ holders, teams }: { holders: HolderOption[]; teams: T
             </select>
           </Form.Field>
         </div>
-      )}
+      ) : null}
     </PanelForm>
   );
 }
 
 // §6-1 목록 행의 「수정」 — 거래처의 ?editId= 토글과 같은 결의 옆 패널(1차 「소유자 변경」). 바꾸는 것은
-// 소유자(개인 소지자 또는 팀)뿐이다: 발급사·뒤 4자리는 카드의 식별자라 바꾸는 것이 아니라 새로 등록하는 일이고, 별칭 수정은 요구사항 밖이다.
+// 소유자(개인 소지자 · 팀 · 공용)뿐이다: 발급사·뒤 4자리는 카드의 식별자라 바꾸는 것이 아니라 새로 등록하는 일이고, 별칭 수정은 요구사항 밖이다.
 // 보관된 카드는 domain/corp-cards가 ArchivedCorpCardError로 거부한다 — 목록이 링크를 감추는 것은 두 겹 중 바깥쪽일 뿐이다.
 // 성공 뒤(UQ-8 B · R9 D): 수정은 패널이 닫히고 그 행의 「수정」으로 포커스가 돌아간다(`PanelForm.succeed` — 상세 화면이 없는 대상).
 export function CardOwnerForm({
@@ -152,7 +161,7 @@ export function CardOwnerForm({
 }) {
   const panelRef = useRef<PanelFormHandle>(null);
   const submitLockRef = useRef(false);
-  const [kind, setKind] = useState<"personal" | "team">(card.kind === "team" ? "team" : "personal");
+  const [kind, setKind] = useState<OwnerKind>(toOwnerKind(card.kind));
   const { execute, result, isExecuting } = useAction(updateCorpCardOwnerAction, {
     onSuccess: () => panelRef.current?.succeed(),
     onSettled: () => {
@@ -167,6 +176,7 @@ export function CardOwnerForm({
     const formData = new FormData(event.currentTarget);
     execute({
       id: card.id,
+      kind,
       holderUserId: kind === "personal" ? getStringField(formData, "holderUserId") || undefined : undefined,
       teamId: kind === "team" ? getStringField(formData, "teamId") || undefined : undefined,
     });
@@ -195,10 +205,11 @@ export function CardOwnerForm({
             name="kind"
             className={styles.select}
             value={kind}
-            onChange={(event) => setKind(event.target.value === "team" ? "team" : "personal")}
+            onChange={(event) => setKind(toOwnerKind(event.target.value))}
           >
             <option value="personal">개인</option>
             <option value="team">팀</option>
+            <option value="shared">공용</option>
           </select>
         </Form.Field>
       </div>
@@ -230,7 +241,7 @@ export function CardOwnerForm({
             {ownerError ? <Form.Error id="owner-error">{ownerError}</Form.Error> : null}
           </Form.Field>
         </div>
-      ) : (
+      ) : kind === "team" ? (
         <div key="team" className={styles.field}>
           <Form.Field id="owner-teamId" label="팀">
             <select
@@ -254,7 +265,7 @@ export function CardOwnerForm({
             {ownerError ? <Form.Error id="owner-error">{ownerError}</Form.Error> : null}
           </Form.Field>
         </div>
-      )}
+      ) : null}
     </PanelForm>
   );
 }

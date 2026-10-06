@@ -39,9 +39,9 @@ describe("corp-cards (MAST-03, 실제 Postgres)", () => {
     const holderUserId = await makeTestUser();
     const issuer = `카드사-${randomUUID()}`;
     const numberLast4 = uniqueLast4();
-    await createCorpCard(SYSTEM_VIEWER, { issuer, numberLast4, label: "1호", holderUserId });
+    await createCorpCard(SYSTEM_VIEWER, { issuer, numberLast4, label: "1호", kind: "personal", holderUserId });
     await expect(
-      createCorpCard(SYSTEM_VIEWER, { issuer, numberLast4, label: "2호", holderUserId }),
+      createCorpCard(SYSTEM_VIEWER, { issuer, numberLast4, label: "2호", kind: "personal", holderUserId }),
     ).rejects.toThrow();
   });
 
@@ -53,14 +53,14 @@ describe("corp-cards (MAST-03, 실제 Postgres)", () => {
     const holderUserId = await makeTestUser();
     const issuer = `카드사-${randomUUID()}`;
     const numberLast4 = uniqueLast4();
-    await createCorpCard(SYSTEM_VIEWER, { issuer, numberLast4, label: "1호", holderUserId });
+    await createCorpCard(SYSTEM_VIEWER, { issuer, numberLast4, label: "1호", kind: "personal", holderUserId });
 
     await expect(
-      createCorpCard(SYSTEM_VIEWER, { issuer, numberLast4, label: "2호", holderUserId }),
+      createCorpCard(SYSTEM_VIEWER, { issuer, numberLast4, label: "2호", kind: "personal", holderUserId }),
     ).rejects.toThrow(DuplicateCorpCardError);
 
     try {
-      await createCorpCard(SYSTEM_VIEWER, { issuer, numberLast4, label: "3호", holderUserId });
+      await createCorpCard(SYSTEM_VIEWER, { issuer, numberLast4, label: "3호", kind: "personal", holderUserId });
       throw new Error("test setup 오류: 실패해야 할 등록이 성공했다");
     } catch (e) {
       expect(e).toBeInstanceOf(DuplicateCorpCardError);
@@ -78,6 +78,7 @@ describe("corp-cards (MAST-03, 실제 Postgres)", () => {
       issuer: `카드사-${randomUUID()}`,
       numberLast4: uniqueLast4(),
       label: "개인카드",
+      kind: "personal",
       holderUserId,
     });
     expect(dto.kind).toBe("personal");
@@ -91,6 +92,7 @@ describe("corp-cards (MAST-03, 실제 Postgres)", () => {
       issuer: `카드사-${randomUUID()}`,
       numberLast4: uniqueLast4(),
       label: "팀카드",
+      kind: "team",
       teamId,
     });
     expect(dto.kind).toBe("team");
@@ -106,6 +108,7 @@ describe("corp-cards (MAST-03, 실제 Postgres)", () => {
         issuer: `카드사-${randomUUID()}`,
         numberLast4: uniqueLast4(),
         label: "둘다",
+        kind: "personal",
         holderUserId,
         teamId,
       }),
@@ -118,6 +121,7 @@ describe("corp-cards (MAST-03, 실제 Postgres)", () => {
         issuer: `카드사-${randomUUID()}`,
         numberLast4: uniqueLast4(),
         label: "없음",
+        kind: "personal",
       }),
     ).rejects.toBeInstanceOf(InvalidCardOwnerError);
   });
@@ -129,10 +133,11 @@ describe("corp-cards (MAST-03, 실제 Postgres)", () => {
       issuer: `카드사-${randomUUID()}`,
       numberLast4: uniqueLast4(),
       label: "변경대상",
+      kind: "personal",
       holderUserId,
     });
 
-    await updateCorpCardOwner(SYSTEM_VIEWER, dto.id, { teamId });
+    await updateCorpCardOwner(SYSTEM_VIEWER, dto.id, { kind: "team", teamId });
 
     const list = await listCorpCards(SYSTEM_VIEWER);
     const updated = list.find((c) => c.id === dto.id);
@@ -152,12 +157,13 @@ describe("corp-cards (MAST-03, 실제 Postgres)", () => {
       issuer: `카드사-${randomUUID()}`,
       numberLast4: uniqueLast4(),
       label: "결함3대상",
+      kind: "personal",
       holderUserId,
     });
 
     const createRowsBefore = await queryActionLog(SYSTEM_VIEWER, { actionType: "document_create" });
 
-    await updateCorpCardOwner(SYSTEM_VIEWER, dto.id, { teamId });
+    await updateCorpCardOwner(SYSTEM_VIEWER, dto.id, { kind: "team", teamId });
 
     const createRowsAfter = await queryActionLog(SYSTEM_VIEWER, { actionType: "document_create" });
     const updateRows = await queryActionLog(SYSTEM_VIEWER, { actionType: "document_update" });
@@ -177,6 +183,7 @@ describe("corp-cards (MAST-03, 실제 Postgres)", () => {
       issuer: `카드사-${randomUUID()}`,
       numberLast4: uniqueLast4(),
       label: "비활성대상",
+      kind: "personal",
       holderUserId,
     });
     await setCorpCardActive(SYSTEM_VIEWER, dto.id, false);
@@ -194,6 +201,7 @@ describe("corp-cards (MAST-03, 실제 Postgres)", () => {
       issuer: `카드사-${randomUUID()}`,
       numberLast4: uniqueLast4(),
       label: "보관대상",
+      kind: "personal",
       holderUserId,
     });
     await archive(SYSTEM_VIEWER, "corp_card", dto.id);
@@ -222,6 +230,7 @@ describe("corp-cards (MAST-03, 실제 Postgres)", () => {
         issuer: `카드사-${randomUUID()}`,
         numberLast4: uniqueLast4(),
         label: "거부",
+        kind: "personal",
         holderUserId: await makeTestUser(),
       }),
     ).rejects.toBeInstanceOf(ForbiddenError);

@@ -534,7 +534,10 @@ test.describe("거래처 구분 (261006-biv)", () => {
       await dialog.getByLabel("사업자 번호").fill(businessNo.replaceAll("-", ""));
       await dialog.getByRole("button", { name: "거래처 등록" }).click();
 
-      await expect(dialog.locator("#businessNo-error")).toHaveText(`같은 사업자번호 거래처 있음 · ${existingName}(클라이언트)`);
+      // 다음 한 수는 오류 줄 안에 붙는다(「원인 · 다음 행동」 — field-definition-form 「보관함에서 복원」과 같은 모양).
+      await expect(dialog.locator("#businessNo-error")).toHaveText(`같은 사업자번호 거래처 있음 · ${existingName}(클라이언트) · 구분 더하기`);
+      await expect(dialog.locator("#businessNo-error").getByRole("button", { name: "구분 더하기" })).toBeVisible();
+      await expect(dialog.getByLabel("사업자 번호")).toHaveAttribute("aria-describedby", "businessNo-error");
       await expect(dialog.locator("#vendor-form-reason")).toContainText("사업자 번호 1칸");
       await expect(dialog.getByLabel("사업자 번호")).toHaveValue(businessNo.replaceAll("-", ""));
 

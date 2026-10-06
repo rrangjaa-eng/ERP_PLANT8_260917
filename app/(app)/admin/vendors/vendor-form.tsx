@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { createVendorAction, updateVendorAction, setVendorHiddenAction, archiveVendorAction, addVendorKindAction } from "./actions";
 import { TextField } from "@/ui/input/TextField";
+import { Form } from "@/ui/form/Form";
 import { Button, buttonLinkClassName } from "@/ui/button/Button";
 import { RowAction } from "@/ui/row-actions/RowActions";
 import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
@@ -212,6 +213,29 @@ export function VendorForm({
   const blocked = serverReason?.blocked === true;
   const firstErrorId = errorFields[0]?.id;
 
+  // 같은 사업자번호 오류 줄의 다음 한 수 — 「원인 · 다음 행동」 한 줄 안에 붙인다(field-definition-form 「보관함에서 복원」과 같은 모양).
+  // 「거래처 정보」를 못 보면(name null) 링크를 내지 않는다.
+  const conflictAction =
+    businessNoConflict && businessNoConflict.name !== null ? (
+      businessNoConflict.archived ? (
+        <Link href="/admin/archive" className={buttonLinkClassName("tertiary")}>
+          보관함에서 복원
+        </Link>
+      ) : businessNoConflict.addSide ? (
+        <Button
+          variant="tertiary"
+          pending={addKindState.isExecuting}
+          onClick={() => addKindState.execute({ id: businessNoConflict.id, kind: businessNoConflict.addSide as VendorSide })}
+        >
+          구분 더하기
+        </Button>
+      ) : (
+        <Link href={existingVendorHref(businessNoConflict)} className={buttonLinkClassName("tertiary")}>
+          그 거래처 열기
+        </Link>
+      )
+    ) : null;
+
   function refresh() {
     reset();
     router.refresh();
@@ -259,34 +283,22 @@ export function VendorForm({
           ))}
         </select>
       </div>
-      <TextField
-        id="businessNo"
-        name="businessNo"
-        label="사업자 번호"
-        defaultValue={editing?.businessNo ?? undefined}
-        error={addKindState.result.serverError ?? businessNoConflict?.message}
-      />
-      {businessNoConflict && businessNoConflict.name !== null ? (
-        <div>
-          {businessNoConflict.archived ? (
-            <Link href="/admin/archive" className={buttonLinkClassName("tertiary")}>
-              보관함에서 복원
-            </Link>
-          ) : businessNoConflict.addSide ? (
-            <Button
-              variant="tertiary"
-              pending={addKindState.isExecuting}
-              onClick={() => addKindState.execute({ id: businessNoConflict.id, kind: businessNoConflict.addSide as VendorSide })}
-            >
-              구분 더하기
-            </Button>
-          ) : (
-            <Link href={existingVendorHref(businessNoConflict)} className={buttonLinkClassName("tertiary")}>
-              그 거래처 열기
-            </Link>
-          )}
-        </div>
-      ) : null}
+      <div className={styles.businessNoGroup}>
+        <TextField
+          id="businessNo"
+          name="businessNo"
+          label="사업자 번호"
+          defaultValue={editing?.businessNo ?? undefined}
+          error={conflictAction ? undefined : (addKindState.result.serverError ?? businessNoConflict?.message)}
+          aria-invalid={conflictAction ? true : undefined}
+          aria-describedby={conflictAction ? "businessNo-error" : undefined}
+        />
+        {conflictAction && businessNoConflict ? (
+          <Form.Error id="businessNo-error">
+            {businessNoConflict.message} · {conflictAction}
+          </Form.Error>
+        ) : null}
+      </div>
 
       <div className={styles.selectLabel}>
         <label htmlFor="defaultEvidenceType">기본 증빙 종류</label>

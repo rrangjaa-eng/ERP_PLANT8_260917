@@ -25,3 +25,9 @@
 - [x] 새 색·서체·radius 없음, 기존 TextField 오류 표시 재사용 — 근거: CSS 변경 없음
 - [x] 같은 말을 두 번 하지 않는다 — 근거: 실패 문구가 있으면 같은 칸의 중복 문구를 대신한다(칸 오류는 항상 한 줄)
 - [x] E2E 실측 — 근거: test/e2e/vendors.spec.ts 「구분 더하기가 실패하면」 #businessNo-error 텍스트 확인
+
+## 추가 — /design-review 수정(vendor-form.tsx · vendors.module.css)
+- [x] 다음 한 수를 오류 줄 안에 붙인다(「원인 · 다음 행동」 한 줄) — 근거: 감사 실측에서 3차가 오류 줄 아래 16px(칸 사이 간격)로 떨어져 다음 칸 라벨에 붙어 있었다(오류→3차 16, 3차→다음 라벨 0). field-definition-form 「보관함에서 복원」 선례(Form.Error 안 링크, 칸→오류 --s-1)와 같은 모양으로 바꿨다. 수정 뒤 4폭 모두 칸→오류 4 · 오류→다음 라벨 16 · 넘침 0(/mnt/project-files/notes/vendor-kind/178-qa/dom-measure-178.json)
+- [x] 할 수 없는 선택지는 숨긴다 — 근거: 「구분 더하기」가 실패하면(보관됨) 다시 눌러도 같은 실패라 3차를 치우고 서버 오류 한 줄만 남긴다(보관함 복원 거부 행 #138과 같은 처리). E2E vendors.spec.ts 「구분 더하기가 실패하면」 toHaveCount(0)
+- [x] 새 색·서체·radius 없음 — 근거: CSS는 기존 간격 토큰(--s-1 · --s-4) 두 줄뿐, Form.Error · buttonLinkClassName 재사용
+- [x] 폰 44 · 320 넘침 없음 — 근거: 375 · 320에서 3차 99×44 · 109×44 · 83×44, 문서 · 패널 가로 넘침 0(같은 실측 파일)

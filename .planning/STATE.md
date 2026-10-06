@@ -32,7 +32,7 @@ Phase: 04.6 (스킨 A 적용 (INSERTED)) — EXECUTING
 Current Plan: 4
 Total Plans in Phase: 32
 Status: Ready to execute
-Last activity: 2026-10-02 — Phase 04.6 execution started
+Last activity: 2026-10-06 - Completed quick task 261006-2xx: 원천징수 10원 절사 부동소수 결함 수정(E-23)
 
 Progress: [████░░░░░░] 41%
 
@@ -361,6 +361,7 @@ Recent decisions affecting current work:
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260922-c04 | Codex CLI SessionStart 훅 설치 + CODEX_AUTH_JSON_B64 자격 주입 | 2026-09-22 | 4b5f8ea | [260922-c04-codex-cli-sessionstart-codex-auth-json-b](./quick/260922-c04-codex-cli-sessionstart-codex-auth-json-b/) |
+| 261006-2xx | 원천징수 10원 절사 부동소수 결함 수정(E-23) — round() 소수 6자리 정규화 | 2026-10-06 | 8e9c97af | [261006-2xx-apply-tax-rule-float-floor-fix-e-23](./quick/261006-2xx-apply-tax-rule-float-floor-fix-e-23/) |
 | 260922-i3k | 관리자 메뉴 정리(옵션 B: 「관리」 한 줄 + /admin 인덱스 3그룹) + A-M3 표 캡션 | 2026-09-22 | 811243e | [260922-i3k-b-admin-3-a-m3](./quick/260922-i3k-b-admin-3-a-m3/) |
 | 260922-o2b | 코덱스 통합 디자인 리뷰 반영(결정 불필요분 F-02·04·05·07·08·09·10) | 2026-09-22 | c8b42b9 | [260922-o2b-codex-design-review-fixes](./quick/260922-o2b-codex-design-review-fixes/) |
 | 260923-odg | hook 보강: 게이트 리뷰 종료·quick 완료 = 세션 경계, 문서 커밋도 검증 스킬, 세션당 executor 1회 | 2026-09-23 | 542cafd | [260923-odg-hook](./quick/260923-odg-hook/) |

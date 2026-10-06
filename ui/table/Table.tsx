@@ -970,7 +970,7 @@ export function Table<Row>({
                         <label className={styles.selectLabel}>
                           <input
                             type="checkbox"
-                            tabIndex={-1}
+                            tabIndex={enableGridKeyboard ? -1 : undefined}
                             aria-label={`${selection.rowLabel(row)} 고르기`}
                             aria-disabled={rowSelectable ? undefined : "true"}
                             aria-describedby={[gateReasonId, blockedReasonId].filter(Boolean).join(" ") || undefined}

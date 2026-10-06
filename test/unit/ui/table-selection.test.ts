@@ -30,9 +30,9 @@ function selectionOf(overrides: Partial<TableSelection<Row>> = {}): TableSelecti
   };
 }
 
-function render(selection?: TableSelection<Row>): string {
+function render(selection?: TableSelection<Row>, enableGridKeyboard = false): string {
   return renderToStaticMarkup(
-    createElement(Table<Row>, { caption: "지급 대상", columns, rows, getRowId: (row) => row.id, selection }),
+    createElement(Table<Row>, { caption: "지급 대상", columns, rows, getRowId: (row) => row.id, selection, enableGridKeyboard }),
   );
 }
 
@@ -107,11 +107,19 @@ describe("reconcileSelection — 처리 뒤 선택 다시 세우기(H-3)", () =>
 
 // 06-29 DOM 감사 D1 · D2 — SYSTEM §7-3 (아) 「표 전체가 탭 정지 1개」 · 행 높이 --row-h.
 describe("Table selection — 탭 정지 · 행 높이(감사 D1 · D2)", () => {
-  it("행 체크박스는 탭 정지가 아니다(tabindex=-1) — 키보드 고르기는 활성 셀 Space가 맡는다", () => {
-    const boxes = checkboxes(render(selectionOf()));
+  it("행 체크박스는 격자 키보드가 있으면 탭 정지가 아니다(tabindex=-1) — 키보드 고르기는 활성 셀 Space가 맡는다", () => {
+    const boxes = checkboxes(render(selectionOf(), true));
     for (const row of rows) {
       const box = boxes.find((candidate) => candidate.includes(`aria-label="${row.name} 고르기"`))!;
       expect(box).toContain('tabindex="-1"');
+    }
+  });
+
+  it("격자 키보드가 없으면 Space 경로가 없으니 행 체크박스가 탭으로 닿는다(tabindex 없음, 검토 P3-1)", () => {
+    const boxes = checkboxes(render(selectionOf(), false));
+    for (const row of rows) {
+      const box = boxes.find((candidate) => candidate.includes(`aria-label="${row.name} 고르기"`))!;
+      expect(box).not.toContain("tabindex");
     }
   });
 

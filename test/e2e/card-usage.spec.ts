@@ -348,6 +348,72 @@ test.describe("법인카드 사용 등록 (06-05)", () => {
     await page.context().close();
   });
 
+  test("[PR #180 Codex P2] 카드 선택지는 고른 사용일 기준 — 오늘 발령된 팀의 팀 카드는 어제를 고르면 빠지고 오늘로 돌리면 다시 생긴다", async ({ browser, baseURL }) => {
+    const suffix = randomUUID().slice(0, 8);
+    const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E사용일본부-${suffix}` });
+    const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E사용일팀-${suffix}` });
+    const today = seoulToday();
+    const person = await makePerson("사용일", DEFAULT_ROLE_ID, team.id, today);
+    const issuer = `신한-${suffix}`;
+    const personalLabel = `E2E개인-${suffix}`;
+    const teamLabel = `E2E팀카드-${suffix}`;
+    await createCorpCard(SYSTEM_VIEWER, { issuer, numberLast4: "4321", label: personalLabel, kind: "personal", holderUserId: person.viewer.id });
+    await createCorpCard(SYSTEM_VIEWER, { issuer, numberLast4: "4322", label: teamLabel, kind: "team", teamId: team.id });
+    const yesterday = seoulToday(new Date(Date.now() - 24 * 60 * 60 * 1000));
+
+    const page = await loginPage(browser, baseURL, person);
+    await page.goto("/cards?new=1");
+    const sheet = panel(page);
+    const card = sheet.getByRole("combobox", { name: "카드", exact: true });
+    await waitForHydration(card);
+    await expect(card.locator("option", { hasText: teamLabel })).toHaveCount(1);
+
+    await sheet.getByLabel("사용일").fill(yesterday);
+    // 어제는 팀 소속이 없어 개인 카드 한 장 — 고를 것이 없으니 읽기 텍스트(할 수 없는 선택지는 숨김).
+    await expect(card).toHaveCount(0);
+    await expect(sheet.getByText(`${personalLabel} · ${issuer} 4321`, { exact: true })).toBeVisible();
+
+    await sheet.getByLabel("사용일").fill(today);
+    await expect(card.locator("option", { hasText: teamLabel })).toHaveCount(1);
+    await page.context().close();
+  });
+
+  test("[PR #180 Codex P2] `quote.amount` 없는 카드 소지자도 견적 줄을 고를 수 있다 — 남은 실행가 줄 없이 그 줄이 채워진다 · `?new=1&line=` 진입도 같다", async ({ browser, baseURL }) => {
+    const holder = await makeCardHolder();
+    const target = await seedProjectLine(holder);
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E금액숨김카드-${randomUUID().slice(0, 8)}`, workScope: "company" });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
+    for (const infoItem of ["project.value", "card_usage.value", "card_usage.amount", "team.value"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "quote.amount", visible: false });
+    const viewer = await makePerson("금액숨김카드", role.id, holder.teamId, `${seoulToday().slice(0, 4)}-01-01`);
+    const own = await createCorpCard(SYSTEM_VIEWER, { issuer: `신한-${randomUUID().slice(0, 8)}`, numberLast4: "4321", label: `E2E숨김카드-${randomUUID().slice(0, 8)}`, kind: "personal", holderUserId: viewer.viewer.id });
+    if (!own.id) throw new Error("카드 id 없음");
+
+    const page = await loginPage(browser, baseURL, viewer);
+    await page.goto("/cards?new=1");
+    const sheet = panel(page);
+    await waitForHydration(sheet.getByLabel("결제 합계"));
+    await sheet.getByRole("radio", { name: "견적 줄" }).check();
+    await sheet.getByRole("button", { name: "프로젝트 바꾸기" }).click();
+    const projects = page.getByRole("dialog", { name: "프로젝트 고르기" });
+    await projects.getByRole("textbox", { name: "프로젝트 번호 · 이름 · 클라이언트 검색" }).fill(target.projectName);
+    await projects.getByRole("option", { name: new RegExp(target.projectName) }).click();
+    await projects.getByRole("button", { name: /^이 프로젝트로/ }).click();
+    await sheet.getByRole("button", { name: "견적 줄 바꾸기" }).click();
+    const lines = page.getByRole("dialog", { name: "견적 줄 고르기" });
+    await lines.getByRole("option", { name: new RegExp(target.itemName) }).click();
+    await lines.getByRole("button", { name: /^이 줄로/ }).click();
+    await expect(lines).toBeHidden();
+    await expect(sheet.getByText(target.itemName, { exact: true })).toBeVisible();
+    await expect(sheet.getByText(/남은 실행가/)).toHaveCount(0);
+
+    await page.goto(`/cards?new=1&line=${target.lineId}`);
+    const reopened = panel(page);
+    await waitForHydration(reopened.getByLabel("결제 합계"));
+    await expect(reopened.getByText(target.itemName, { exact: true })).toBeVisible();
+    await page.context().close();
+  });
+
   test("쓸 카드 0장 직원 → Empty `쓸 수 있는 법인카드가 없습니다 · 카드 등록은 관리자` · 1차 없음 · `?new=1`에도 패널 없음", async ({ browser, baseURL }) => {
     const holder = await makeCardHolder(0);
     const page = await loginPage(browser, baseURL, holder.person);

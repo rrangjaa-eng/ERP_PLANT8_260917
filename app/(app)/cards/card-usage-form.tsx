@@ -44,6 +44,8 @@ type Preview = {
   split: { supplyKrw: number; vatKrw: number; residualKrw: number; ruleKind: string; evidenceLabel: string } | null;
   teamName: string | null;
   teamAssigned: boolean;
+  /** 사용일 기준 쓸 카드(서버 투영) — 없으면(첫 미리보기 전 · 등록 뒤 오늘로 돌아감) 페이지가 준 오늘 기준 카드. */
+  cards?: { id?: string; label?: string }[];
 };
 
 
@@ -258,6 +260,10 @@ export function CardUsageForm({
     panelRef.current?.succeed({ status });
   }, [gen]);
 
+  // 카드 자격은 사용일 소속으로 정해진다 — 사용일을 바꾸면 그날 쓸 카드로 선택지를 바꾸고, 고른 카드가 빠지면 비운다(한 장이면 그 카드).
+  const usableCards: CardOption[] = preview.cards ? preview.cards.flatMap((card) => (card.id && card.label ? [{ id: card.id, label: card.label }] : [])) : cards;
+  const selectedCardId = usableCards.some((card) => card.id === cardId) ? cardId : usableCards.length === 1 ? (usableCards[0]?.id ?? "") : "";
+
   const onAmountRaw = useCallback((raw: string) => setAmountRaw(raw), []);
   const onFxRaw = useCallback((raw: string) => setFxRaw(raw), []);
   const fxValue = currency === "KRW" ? undefined : fxRaw === "" ? null : Number(fxRaw);
@@ -298,7 +304,7 @@ export function CardUsageForm({
 
   // 칸을 고치면 지난 서버 거부 줄은 걷는다.
   const editKey = JSON.stringify([
-    cardId,
+    selectedCardId,
     usedOn,
     currency,
     amountRaw,
@@ -319,7 +325,7 @@ export function CardUsageForm({
 
   const shownItemName = itemName ?? merchant?.name ?? "";
   const blanks = [
-    ...(cardId ? [] : [{ label: "카드", verb: "고르기" }]),
+    ...(selectedCardId ? [] : [{ label: "카드", verb: "고르기" }]),
     ...(usedOn ? [] : [{ label: "사용일", verb: "고르기" }]),
     ...(amountRaw ? [] : [{ label: "결제 합계", verb: "적기" }]),
     ...(linkKind === "out_of_quote" && linkProject && shownItemName.trim() === "" ? [{ label: "항목", verb: "적기" }] : []),
@@ -337,7 +343,7 @@ export function CardUsageForm({
     linkKind === null || (linkKind === "quote_line" && !linkLine) || (linkKind === "out_of_quote" && !linkProject) ? "연결 없음 · 연결 고르기" : undefined;
   // 실행가 초과(Q3) — 고른 줄 DTO의 남은 실행가와 서버 계산 공급가를 견준다. 서버도 잠근 뒤 같은 판정으로 거부한다.
   const overCap =
-    linkKind === "quote_line" && linkLine && preview.split && preview.split.supplyKrw > linkLine.remainingKrw
+    linkKind === "quote_line" && linkLine && linkLine.remainingKrw !== null && preview.split && preview.split.supplyKrw > linkLine.remainingKrw
       ? `실행가 초과 · 남은 실행가 ${formatKrw(linkLine.remainingKrw)} · `
       : undefined;
   const blockedReason = blankBlock(blanks) ?? fxBlock ?? evidenceBlock ?? linkBlock ?? teamBlock ?? (overCap ? `${overCap}다른 줄 고르기` : undefined);
@@ -350,9 +356,9 @@ export function CardUsageForm({
     }
     const formData = new FormData(event.currentTarget);
     const memo = formData.get("memo");
-    submittedRef.current = { corpCardId: cardId, linkKind, project: linkKind === "team_cost" ? null : linkProject };
+    submittedRef.current = { corpCardId: selectedCardId, linkKind, project: linkKind === "team_cost" ? null : linkProject };
     execute({
-      corpCardId: cardId,
+      corpCardId: selectedCardId,
       usedOn,
       merchantVendorId: merchant?.id ?? null,
       currency,
@@ -382,7 +388,7 @@ export function CardUsageForm({
   }
 
   const fieldErrors = result.validationErrors;
-  const singleCard = cards.length === 1 ? cards[0] : undefined;
+  const singleCard = usableCards.length === 1 ? usableCards[0] : undefined;
 
   return (
     <>
@@ -419,10 +425,11 @@ export function CardUsageForm({
             <div data-ui="field-row" className={rowStyles.row}>
               <Form.Field id="card-usage-card" label="카드">
                 <Select
+                  key={usableCards.map((card) => card.id).join()}
                   id="card-usage-card"
                   name="corpCardId"
-                  options={cards.map((card) => ({ value: card.id, label: card.label }))}
-                  defaultValue={defaults.corpCardId ?? ""}
+                  options={usableCards.map((card) => ({ value: card.id, label: card.label }))}
+                  defaultValue={selectedCardId}
                   onChange={(event) => setCardId(event.target.value)}
                 />
               </Form.Field>
@@ -544,7 +551,7 @@ export function CardUsageForm({
                   <Button id="card-usage-line-change" variant="tertiary" aria-label="견적 줄 바꾸기" onClick={() => setLinkStep("line")}>
                     {linkLine ? "바꾸기" : "고르기"}
                   </Button>
-                  {linkLine ? <Form.Hint>{linkLine.hint}</Form.Hint> : null}
+                  {linkLine?.hint ? <Form.Hint>{linkLine.hint}</Form.Hint> : null}
                 </div>
               ) : null}
             </>

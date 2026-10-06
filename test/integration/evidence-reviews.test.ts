@@ -245,6 +245,23 @@ describe("증빙 확인 — 금액 고쳐 확인 · F2 · 거부 (06-06 Task 3)"
     expect(await logsOf(doc.expenseId, "evidence_amount_change")).toEqual([{ actorId: payer.id, detail: { before: null, after: 12_400_000 } }]);
   });
 
+  it("증빙 금액(expense.amount)을 못 보는 지급 권한자 — 고친 금액을 실으면 거부 · 금액 · 확인 기록 · version 그대로, 고침 없이는 확인된다(PR #180 Codex P1)", async () => {
+    const blind = await makePaymentManager("가림");
+    if (!blind.roleId) throw new Error("계급 없음");
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: blind.roleId, infoItem: "expense.value", visible: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: blind.roleId, infoItem: "expense.amount", visible: false });
+    const doc = await withEvidenceAmount(await approvedExpenseWithEvidence(await setupExpenseProject()), 12_400_000);
+
+    const error = await caught(confirmEvidence(blind, { expenseId: doc.expenseId, version: doc.version, correctedAmountKrw: 12_000_000 }));
+    expect(error).toBeInstanceOf(ForbiddenError);
+    expect(await docRow(doc.expenseId)).toMatchObject({ version: doc.version, evidenceAmount: 12_400_000 });
+    expect(await reviewOf(doc.expenseId)).toBeNull();
+
+    const result = await confirmEvidence(blind, { expenseId: doc.expenseId, version: doc.version });
+    expect(result.evidenceStatus).toBe("확인됨");
+    expect((await docRow(doc.expenseId)).evidenceAmount).toBe(12_400_000);
+  });
+
   it("version 불일치 → 「거부 — 문서 화면 동시성」 · 결재 통과 전 문서 → 거부", async () => {
     const payer = await makePayer();
     const fx = await setupExpenseProject();

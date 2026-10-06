@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Locator, type Page } from "@playwright/test";
+import { waitForCardUsageSection } from "./fixtures";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { codeItems, projects } from "@/db/schema";
@@ -182,6 +183,7 @@ test.describe("견적 줄 종류 — 조정 · 견적 외 비용 화면 (04-23, 
     await login(page, adjuster);
     await page.goto(`/projects/${project.id}`);
     await expect(page.getByRole("heading", { name: project.name })).toBeVisible();
+    await waitForCardUsageSection(page);
     const footer = page.locator("tfoot");
     await expect(footer).toContainText("차익 150,000");
 

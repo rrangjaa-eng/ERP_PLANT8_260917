@@ -44,6 +44,7 @@ import {
   type CardUsageInput,
 } from "@/domain/corp-card-usages";
 import { insertRole } from "@/repositories/roles";
+import { insertMembership } from "@/repositories/team-memberships";
 import { insertCardUsage } from "@/repositories/corp-card-usages";
 import { insertVendor } from "@/repositories/vendors";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
@@ -131,6 +132,25 @@ describe("공용 카드 사용 자격", () => {
     const proxyIds = (await cardOptionsForUsage(proxy, seoulToday())).map((option) => option.id);
     expect(proxyIds).toEqual(expect.arrayContaining([teamCardId, sharedId]));
     expect(proxyIds).not.toContain(ownId);
+  });
+});
+
+describe("사용일별 카드 선택지(PR #180 Codex P2)", () => {
+  it("previewCardAmounts는 고른 사용일 기준 쓸 카드를 돌려준다 — 오늘 발령된 팀의 팀 카드는 오늘만, 어제는 없다", async () => {
+    const team = await makeTeam();
+    const member = await makePerson("새팀원", DEFAULT_ROLE_ID, null);
+    const today = seoulToday();
+    const yesterday = seoulToday(new Date(Date.now() - 24 * 60 * 60 * 1000));
+    await insertMembership(SYSTEM_VIEWER, { userId: member.id, teamId: team.id, effectiveFrom: today });
+    const ownId = await makeCard({ kind: "personal", holderUserId: member.id });
+    const teamCardId = await makeCard({ kind: "team", teamId: team.id });
+
+    const ids = async (usedOn: string) =>
+      ((await previewCardAmounts(member, { usedOn, total: null, evidenceTypeCode: null })).cards ?? []).map((card) => card.id);
+    expect(await ids(today)).toEqual(expect.arrayContaining([ownId, teamCardId]));
+    const past = await ids(yesterday);
+    expect(past).toContain(ownId);
+    expect(past).not.toContain(teamCardId);
   });
 });
 
@@ -1102,6 +1122,20 @@ describe("프로젝트 상세 「법인카드 사용」(S15)", () => {
     const result = await listProjectCardUsages(fx.pm, fx.projectId);
     expect(result.rows.map((row) => row.id)).toEqual([kept]);
     expect(result.totals).toEqual({ count: 1, totalKrw: 100_000 });
+  });
+
+  it("보관된 프로젝트 — 보관 보기(admin.archive view) 없는 계정은 「존재하지 않는 프로젝트」, 있는 계정은 행을 받는다(findProject와 같은 범위 · PR #180 Codex P2)", async () => {
+    const fx = await cardProject();
+    const kept = await cardOnLine(fx, fx.lines[0] ?? "", 100_000);
+    await db.update(projects).set({ archivedAt: new Date() }).where(eq(projects.id, fx.projectId));
+    await expect(listProjectCardUsages(fx.pm, fx.projectId)).rejects.toBeInstanceOf(ProjectNotFoundError);
+
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `보관보기-${randomUUID().slice(0, 8)}`, workScope: "company" });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "admin.archive", action: "view", allowed: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "project.value", visible: true });
+    const archivist = await makePerson("보관담당", role.id, null);
+    expect((await listProjectCardUsages(archivist, fx.projectId)).rows.map((row) => row.id)).toEqual([kept]);
   });
 
   it("quote.amount 없는 계급 → 행 · 합계 행에 금액 키 없음(건수만)", async () => {

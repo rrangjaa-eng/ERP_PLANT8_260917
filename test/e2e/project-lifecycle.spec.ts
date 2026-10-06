@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
+import { waitForCardUsageSection } from "./fixtures";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import { actionLog, codeItems, projects, quoteRevisions } from "@/db/schema";
@@ -568,6 +569,7 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
     await expect(page.getByText(/진행으로 바꾸기 · /)).toHaveCount(0);
 
     // 거부가 붙은 동안 Ctrl+Enter도 막힌다 — 서버 액션이 더 가지 않는다(§7-17 ERROR).
+    await waitForCardUsageSection(page);
     let actionsAfterReject = 0;
     page.on("request", (request) => {
       if (request.method() === "POST" && request.headers()["next-action"]) actionsAfterReject += 1;
@@ -649,6 +651,7 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
 
     await login(page, lead);
     await page.goto(`/projects/${project.id}`);
+    await waitForCardUsageSection(page);
     const actionRequests: Promise<unknown>[] = [];
     page.on("request", (request) => {
       if (request.method() === "POST" && request.headers()["next-action"]) actionRequests.push(request.response());

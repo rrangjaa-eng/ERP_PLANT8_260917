@@ -18,6 +18,7 @@ import { resolveLinkedDocumentsByLineage } from "@/domain/quotes/lineage";
 import { TAX_UNAVAILABLE } from "@/domain/expenses/gate";
 import { hasEvidence } from "@/domain/evidence/has-evidence";
 import {
+  AMOUNT_HIDDEN,
   CANCEL_REASON_REQUIRED,
   DIFF_REASON_REQUIRED,
   resolveExpenseActionRow,
@@ -437,6 +438,8 @@ export async function completeExpensePayment(
   deps?: CompletePaymentDeps,
 ): Promise<CompletePaymentResult> {
   if (!(await can(viewer, "expenses.payments", "write"))) throw new ForbiddenError("지급 처리 권한 없음");
+  // 화면 1차(AMOUNT_HIDDEN)와 같은 규칙 — 지급 총액을 못 보는 권한자는 서버에서도 지급하지 못한다(PayableChangedError가 금액을 알려 주지 않게 먼저 막는다).
+  if (!(await visible(viewer, "expense.amount"))) throw new UserFacingError(AMOUNT_HIDDEN);
   const transferProblem = input.transferKrw === undefined ? null : transferKrwProblem(input.transferKrw);
   if (transferProblem) throw new UserFacingError(transferProblem);
   const shared = deps?.shared ?? (await loadPaymentShared(viewer));

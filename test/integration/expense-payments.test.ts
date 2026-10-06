@@ -23,7 +23,7 @@ import {
   saveScheduledPayDate,
 } from "@/domain/payments";
 import { GateBlockedError } from "@/domain/rules/gate";
-import { TRANSFER_FRACTION, TRANSFER_NOT_NUMBER, TRANSFER_NOT_POSITIVE } from "@/domain/payments/action-row";
+import { AMOUNT_HIDDEN, TRANSFER_FRACTION, TRANSFER_NOT_NUMBER, TRANSFER_NOT_POSITIVE } from "@/domain/payments/action-row";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { ACTION_LOG_OPTIONAL_TYPES, PAYMENT_METHOD_EVIDENCE_PAIRS, TAX_VAT_RATE } from "@/domain/settings/keys";
@@ -494,6 +494,20 @@ describe("지급 동시성 · 권한 · 조작 (06-04 Task 3)", () => {
     const error = await caught(completeExpensePayment(payer, { expenseId: doc.expenseId, expectedPayableKrw: payable + 1, version: doc.version }));
     expect(error).toBeInstanceOf(PayableChangedError);
     expect((error as PayableChangedError).payableKrw).toBe(payable);
+    expect(await livePayments(doc.expenseId)).toHaveLength(0);
+  });
+
+  it("지급 총액(expense.amount)을 못 보는 지급 권한자는 화면 1차와 같이 서버에서도 AMOUNT_HIDDEN으로 거부 · 지급 기록 0(PR #180 Codex P1)", async () => {
+    const payer = await makePayer();
+    const blind = await makePaymentManager("가림");
+    if (!blind.roleId) throw new Error("계급 없음");
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: blind.roleId, infoItem: "expense.value", visible: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: blind.roleId, infoItem: "expense.amount", visible: false });
+    const doc = await approvedExpenseWithoutEvidence(await setupExpenseProject());
+    const payable = await payableNow(payer, doc);
+    const error = await caught(completeExpensePayment(blind, { expenseId: doc.expenseId, expectedPayableKrw: payable, version: doc.version }));
+    expect(error).toBeInstanceOf(UserFacingError);
+    expect((error as Error).message).toBe(AMOUNT_HIDDEN);
     expect(await livePayments(doc.expenseId)).toHaveLength(0);
   });
 

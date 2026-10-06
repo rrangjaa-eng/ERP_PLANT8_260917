@@ -176,7 +176,7 @@ async function defaultListActiveCodeValues(tableKey: string): Promise<string[]> 
 
 // 짝 격자 키(`pairGrid`)는 새로 더해진 짝이 두 코드표의 활성 값만 가리켜야 한다 — 보관 값으로 새 짝을 만들 수 없다
 // (디자인 검토 F-1). 이미 저장된 짝은 그대로 두거나 지울 수 있다(「조용히 지우지 않는다」 · 해제 가능).
-async function assertNewPairsActive<T>(def: SettingDef<T>, value: T, deps?: Partial<RegistryDeps>): Promise<void> {
+export async function assertNewPairsActive<T>(def: SettingDef<T>, value: T, deps?: Partial<RegistryDeps>): Promise<void> {
   const grid = def.pairGrid;
   if (!grid || !Array.isArray(value)) return;
   const findSimpleValue = deps?.findSimpleValue ?? defaultFindSimpleValue;

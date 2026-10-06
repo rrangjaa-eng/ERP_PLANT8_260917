@@ -116,6 +116,8 @@ test.describe("폰 카드 사용 (06-05 DOM 감사)", () => {
     const radio = page.getByRole("radio", { name: "팀 비용" });
     await waitForHydration(radio);
     const label = page.getByRole("dialog", { name: "카드 사용 등록" }).locator("label", { has: radio });
+    // 06-07부터 `팀 비용`은 셋째 라디오라 패널 본문 접힘 아래에 있다 — 화면 안으로 굴린 뒤 잰다(mouse.click은 굴리지 않는다).
+    await label.scrollIntoViewIfNeeded();
     const box = await label.boundingBox();
     expect(box).not.toBeNull();
     expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);

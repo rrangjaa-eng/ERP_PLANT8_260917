@@ -84,7 +84,7 @@ export function buildEvidenceVoidedMessage(state: { actorName: string | null; at
 }
 
 // 06-28 종결 · 다시 제출 경합(UI-SPEC Copywriting 「거부 — 문서 화면 동시성」) — 종결하려던 문서를 기안자가 먼저 다시 제출했다.
-// 시각 = 잠근 행의 updated_at(서울 HH:MM). 이름을 모르면 이름 없이.
+// 시각 = 지금 차수 결재선의 제출 시각(서울 HH:MM — 06-28 /review m3). 이름을 모르면 이름 없이.
 export function buildResubmittedMessage(state: { drafterName: string | null; at: Date }): string {
   const time = SEOUL_TIME.format(state.at);
   return state.drafterName ? `${state.drafterName}${subjectParticle(state.drafterName)} ${time}에 다시 제출함${NEXT}` : `${time}에 다시 제출됨${NEXT}`;

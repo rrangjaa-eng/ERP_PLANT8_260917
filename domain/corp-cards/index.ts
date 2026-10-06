@@ -147,18 +147,20 @@ export async function createCorpCard(
   },
   deps?: Partial<CorpCardWriteDeps>,
 ): Promise<CorpCardDto> {
-  const kind = cardOwnerKind(input);
+  // 빈 문자열 소유 칸은 「없음」이다 — 판정과 저장이 같은 값을 보게 저장 전에 null로 맞춘다(06-30 검토 P3-3).
+  const owner = { ...input, holderUserId: input.holderUserId || null, teamId: input.teamId || null };
+  const kind = cardOwnerKind(owner);
 
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, CARDS_MENU, "write"))) {
     throw new ForbiddenError("법인카드 등록 권한 없음");
   }
 
-  await assertOwnerNotArchived(viewer, input, deps);
+  await assertOwnerNotArchived(viewer, owner, deps);
 
   let row: CorpCardRow;
   try {
-    row = await repoInsertCorpCard(viewer, { ...input, kind });
+    row = await repoInsertCorpCard(viewer, { ...owner, kind });
   } catch (e) {
     if (isUniqueViolation(e, "corp_cards_issuer_last4_key")) {
       throw new DuplicateCorpCardError("이미 등록된 카드 · 발급사와 뒤 4자리 확인");
@@ -176,9 +178,10 @@ export async function createCorpCard(
 export async function updateCorpCardOwner(
   viewer: Viewer,
   id: string,
-  owner: CardOwnerInput,
+  rawOwner: CardOwnerInput,
   deps?: Partial<CorpCardWriteDeps>,
 ): Promise<void> {
+  const owner = { ...rawOwner, holderUserId: rawOwner.holderUserId || null, teamId: rawOwner.teamId || null };
   const kind = cardOwnerKind(owner);
 
   const canFn = deps?.can ?? defaultCan;
@@ -202,8 +205,8 @@ export async function updateCorpCardOwner(
   // 종류 "개인" · 소유 "—"인 행이 된다.
   await repoUpdateCorpCardOwner(viewer, id, {
     kind,
-    holderUserId: owner.holderUserId ?? null,
-    teamId: owner.teamId ?? null,
+    holderUserId: owner.holderUserId,
+    teamId: owner.teamId,
   });
 
   // 결함 3: 소유자 변경은 수정이다 — vendors의 updateVendor와 같은 이유로

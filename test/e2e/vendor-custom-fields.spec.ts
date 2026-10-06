@@ -7,6 +7,7 @@ import {
   createE2EFieldDefinition,
   createE2EVendorEditor,
   createFixtureUser,
+  uniqueBusinessNo,
 } from "./fixtures";
 import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { setPermissionCell } from "@/domain/permissions/matrix";
@@ -83,12 +84,13 @@ test.describe("거래처 폼 커스텀 칸 (04.5-06)", () => {
 
     await page.goto(editHref);
     for (const field of Object.values(fields)) await expect(page.locator(`#cf_${field.key}`)).toBeVisible();
-    await page.locator("#businessNo").fill("123-45-67890");
+    const businessNo = uniqueBusinessNo();
+    await page.locator("#businessNo").fill(businessNo);
     await page.getByRole("button", { name: "거래처 수정" }).click();
 
     // 성공 — 목록으로 돌아가 새 사업자 번호가 보이고 폼이 닫힌다.
     await expect(page.locator("#vendor-form")).toHaveCount(0);
-    await expect(page.locator("tr", { hasText: name })).toContainText("123-45-67890");
+    await expect(page.locator("tr", { hasText: name })).toContainText(businessNo);
   });
 
   test("등록 때 필수 칸을 비우면 칸 아래 문구와 이유 자리 요약이 보이고 첫 칸 고치기가 포커스를 보낸다", async ({ page }) => {
@@ -109,7 +111,8 @@ test.describe("거래처 폼 커스텀 칸 (04.5-06)", () => {
     const name = vendorName();
     await page.goto("/admin/vendors?new=1");
     await page.locator("#name").fill(name);
-    await page.locator("#businessNo").fill("111-22-33333");
+    const businessNo = uniqueBusinessNo();
+    await page.locator("#businessNo").fill(businessNo);
     await page.getByRole("button", { name: "거래처 등록" }).click();
 
     await expect(page.locator(`#cf_${text.key}-error`)).toHaveText(REQUIRED_VALUE_EMPTY_MESSAGE);
@@ -122,7 +125,7 @@ test.describe("거래처 폼 커스텀 칸 (04.5-06)", () => {
     await expect(page.locator(`#cf_${text.key}`)).toBeFocused();
 
     // 다른 칸에 적은 값이 남아 있고 거래처는 생기지 않았다.
-    await expect(page.locator("#businessNo")).toHaveValue("111-22-33333");
+    await expect(page.locator("#businessNo")).toHaveValue(businessNo);
     await page.goto("/admin/vendors?includeHidden=1");
     await expect(page.getByText(name)).toHaveCount(0);
   });
@@ -154,7 +157,8 @@ test.describe("거래처 폼 커스텀 칸 (04.5-06)", () => {
     await login(page, editor);
 
     await page.goto("/admin/vendors?new=1");
-    await page.locator("#businessNo").fill("999-88-77777");
+    const businessNo = uniqueBusinessNo();
+    await page.locator("#businessNo").fill(businessNo);
     await page.getByRole("button", { name: "거래처 등록" }).click();
 
     await expect(page.locator("#name-error")).toHaveText(NAME_REQUIRED_MESSAGE);
@@ -162,9 +166,9 @@ test.describe("거래처 폼 커스텀 칸 (04.5-06)", () => {
     await expect(reason).toContainText("등록할 수 없음 — 이름 1칸 · ");
     await reason.getByRole("button", { name: "이름 고치기" }).click();
     await expect(page.locator("#name")).toBeFocused();
-    await expect(page.locator("#businessNo")).toHaveValue("999-88-77777");
+    await expect(page.locator("#businessNo")).toHaveValue(businessNo);
     await page.goto("/admin/vendors?includeHidden=1");
-    await expect(page.getByText("999-88-77777")).toHaveCount(0);
+    await expect(page.getByText(businessNo)).toHaveCount(0);
   });
 
   test("이름과 필수 커스텀 칸이 함께 비면 두 단계로 나눠 보인다(D3)", async ({ page }) => {
@@ -325,7 +329,8 @@ test.describe("보관된 선택지가 현재 값 (04.5-06)", () => {
     await expect(select.locator("option").last()).not.toBeDisabled();
 
     // 다른 칸만 고쳐 저장 — 성공하고 다시 열어도 그대로다.
-    await page.locator("#businessNo").fill("555-44-33333");
+    const businessNo = uniqueBusinessNo();
+    await page.locator("#businessNo").fill(businessNo);
     await page.getByRole("button", { name: "거래처 수정" }).click();
     await expect(page.locator("#vendor-form")).toHaveCount(0);
     await page.goto(hrefA);

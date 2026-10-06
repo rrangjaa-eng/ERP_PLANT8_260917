@@ -40,6 +40,20 @@ const CERT_WORDS: [string, StatusKind][] = [
   ["대조 제외", "muted"],
 ];
 
+// 06 SP-2 — Phase 6 낱말 아홉(06-01이 한꺼번에 더한다). 표에 실제로 있어야 하므로 `in STATUS_KIND`도 함께 단언한다
+// (statusKind는 표 밖 낱말에 accent를 돌려주므로 accent 낱말은 색만으로는 표 유무를 가르지 못한다).
+const PHASE6_WORDS: [string, StatusKind][] = [
+  ["구매 요청 중", "accent"],
+  ["확인 전", "accent"],
+  ["지급 완료", "success"],
+  ["카드 사용", "success"],
+  ["확인됨", "success"],
+  ["구매 완료", "success"],
+  ["발행됨", "success"],
+  ["선결제", "warning"],
+  ["면제", "muted"],
+];
+
 describe("status-map — 낱말 → 색 한 표", () => {
   for (const [kind, words] of Object.entries(UI_SPEC_TABLE) as [StatusKind, string[]][]) {
     for (const word of words) {
@@ -63,6 +77,19 @@ describe("status-map — 낱말 → 색 한 표", () => {
     });
   }
 
+  for (const [word, kind] of PHASE6_WORDS) {
+    it(`Phase 6(SP-2): ${word} → ${kind}`, () => {
+      expect(word in STATUS_KIND, `${word}이 표에 있다`).toBe(true);
+      expect(statusKind(word as StatusWord)).toBe(kind);
+    });
+  }
+
+  it("Phase 6 기존 낱말은 같은 색으로 다시 쓴다(신청됨 · 증빙 없음 · 지출결의 중)", () => {
+    expect(statusKind("신청됨")).toBe("muted");
+    expect(statusKind("증빙 없음")).toBe("danger");
+    expect(statusKind("지출결의 중")).toBe("accent");
+  });
+
   it("`{단계} 결재 중`은 단계 이름과 무관하게 accent다", () => {
     expect(statusKind("1차 결재 중")).toBe("accent");
     expect(statusKind("팀장 결재 중")).toBe("accent");
@@ -81,6 +108,8 @@ describe("status-map — 낱말 → 색 한 표", () => {
   it("표 밖 낱말은 타입 오류다", () => {
     // @ts-expect-error — 표에 없는 낱말
     void statusKind("처음 보는 낱말");
+    // @ts-expect-error — 맨 낱말 `요청`은 표에 없다(구매 요청 중 · 신청됨을 쓴다)
+    void statusKind("요청 중");
     // @ts-expect-error — status 낱말이 표 밖이면 StatusTag도 막는다
     void createElement(StatusTag, { status: "처음 보는 낱말" });
     void createElement(StatusTag, { status: "막힘" });

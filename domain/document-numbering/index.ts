@@ -35,6 +35,15 @@ import {
   DOCUMENT_NUMBER_EXPENSE_TEAM_SEQ_DIGITS,
   DOCUMENT_NUMBER_EXPENSE_TEAM_SEPARATOR,
   DOCUMENT_NUMBER_EXPENSE_TEAM_SEQ_START,
+  DOCUMENT_NUMBER_PURCHASE_REQUEST_TEAM_PREFIX,
+  DOCUMENT_NUMBER_PURCHASE_REQUEST_TEAM_YEAR_DIGITS,
+  DOCUMENT_NUMBER_PURCHASE_REQUEST_TEAM_SEQ_DIGITS,
+  DOCUMENT_NUMBER_PURCHASE_REQUEST_TEAM_SEPARATOR,
+  DOCUMENT_NUMBER_PURCHASE_REQUEST_TEAM_SEQ_START,
+  DOCUMENT_NUMBER_PURCHASE_REQUEST_PREFIX,
+  DOCUMENT_NUMBER_PURCHASE_REQUEST_SEPARATOR,
+  DOCUMENT_NUMBER_PURCHASE_REQUEST_SEQ_DIGITS,
+  DOCUMENT_NUMBER_PURCHASE_REQUEST_SEQ_START,
 } from "@/domain/settings/keys";
 import { getSimpleSettingValues } from "@/domain/settings/registry";
 import { DOCUMENT_NUMBER_EXPENSE_SEPARATOR, DOCUMENT_NUMBER_EXPENSE_SEQ_DIGITS, DOCUMENT_NUMBER_EXPENSE_SEQ_START } from "@/domain/settings/keys";
@@ -114,6 +123,14 @@ const DOCUMENT_NUMBER_FORMAT_DEFS: Record<
     separator: DOCUMENT_NUMBER_EXPENSE_TEAM_SEPARATOR,
     seqStart: DOCUMENT_NUMBER_EXPENSE_TEAM_SEQ_START,
   },
+  // 06-02 — 팀 비용 구매 요청 번호(counterKey "purchase_request_team", period = 연도). 기본 TC26-0001.
+  purchase_request_team: {
+    prefix: DOCUMENT_NUMBER_PURCHASE_REQUEST_TEAM_PREFIX,
+    yearDigits: DOCUMENT_NUMBER_PURCHASE_REQUEST_TEAM_YEAR_DIGITS,
+    seqDigits: DOCUMENT_NUMBER_PURCHASE_REQUEST_TEAM_SEQ_DIGITS,
+    separator: DOCUMENT_NUMBER_PURCHASE_REQUEST_TEAM_SEPARATOR,
+    seqStart: DOCUMENT_NUMBER_PURCHASE_REQUEST_TEAM_SEQ_START,
+  },
 };
 
 export class UnknownDocumentNumberCounterError extends Error {}
@@ -175,7 +192,7 @@ export class SeqStartOverlapError extends UserFacingError {}
 type SeqStartGuard = { seqStart: SettingDef<number>; lockIssued: (viewer: Viewer, now: Date, tx: DbOrTx) => Promise<number> };
 
 // 시작값 키 → 그 키의 정의와 채번이 잡는 카운터 행 잠금(잠근 카운터의 발급 수). 연도 period 서식(DOCUMENT_NUMBER_FORMAT_DEFS)은
-// 올해 행 하나, 지출결의 번호(PR #162 리뷰 P1 — period = 프로젝트 번호)는 `expense` 행 전부.
+// 올해 행 하나, 지출결의 번호(PR #162 리뷰 P1 — period = 프로젝트 번호)는 `expense` 행 전부, 구매 요청 번호(06-02)는 `purchase_request` 행 전부.
 function seqStartGuardFor(key: string): SeqStartGuard | undefined {
   if (key === DOCUMENT_NUMBER_EXPENSE_SEQ_START.key) {
     return {
@@ -184,6 +201,16 @@ function seqStartGuardFor(key: string): SeqStartGuard | undefined {
       lockIssued: async (viewer, _now, tx) => {
         await lockDocumentCounter(viewer, "expense", ALL_PERIODS, tx);
         return lockDocumentCountersByKey(viewer, "expense", tx);
+      },
+    };
+  }
+  if (key === DOCUMENT_NUMBER_PURCHASE_REQUEST_SEQ_START.key) {
+    return {
+      seqStart: DOCUMENT_NUMBER_PURCHASE_REQUEST_SEQ_START,
+      // 지출결의 갈래와 같은 순서 — 잠금판을 먼저, 그다음 모든 period(프로젝트 번호) 행.
+      lockIssued: async (viewer, _now, tx) => {
+        await lockDocumentCounter(viewer, "purchase_request", ALL_PERIODS, tx);
+        return lockDocumentCountersByKey(viewer, "purchase_request", tx);
       },
     };
   }
@@ -276,4 +303,46 @@ export async function allocateExpenseNumber(
     findSimpleValue: (v, k) => findSimpleValue(v, k, tx),
   });
   return { number: expenseNumberFormat(input.projectNumber, seq, { ...input.format, seqStart }), seq };
+}
+
+// 06-02 — 구매 요청 번호(프로젝트 요청) `{프로젝트 번호}{구분자}{접두어}{순번}`(예 `26001-C0001`). 카운터 `purchase_request`의
+// period가 프로젝트 번호다(지출결의 번호와 같은 꼴). 순번 시작값은 표시 오프셋이고, 자릿수를 넘친 순번은 자르지 않는다.
+export type PurchaseRequestNumberFormat = { prefix: string; separator: string; seqDigits: number; seqStart: number };
+
+export function purchaseRequestNumberFormat(projectNumber: string, seq: number, format: PurchaseRequestNumberFormat): string {
+  const displaySeq = seq + format.seqStart - 1;
+  return `${projectNumber}${format.separator}${format.prefix}${String(displaySeq).padStart(format.seqDigits, "0")}`;
+}
+
+const PURCHASE_REQUEST_NUMBER_DEFS = [
+  DOCUMENT_NUMBER_PURCHASE_REQUEST_PREFIX,
+  DOCUMENT_NUMBER_PURCHASE_REQUEST_SEPARATOR,
+  DOCUMENT_NUMBER_PURCHASE_REQUEST_SEQ_DIGITS,
+  DOCUMENT_NUMBER_PURCHASE_REQUEST_SEQ_START,
+] as const;
+
+// 네 키를 SELECT 한 번으로 — 트랜잭션 전에 부른다(잠근 tx 안 전역 풀 읽기 금지, 풀 소진 교착).
+export async function loadPurchaseRequestNumberFormat(deps?: Parameters<typeof getSimpleSettingValues>[1]): Promise<PurchaseRequestNumberFormat> {
+  const [prefix, separator, seqDigits, seqStart] = await getSimpleSettingValues(PURCHASE_REQUEST_NUMBER_DEFS, deps);
+  return {
+    prefix: prefix ?? "C",
+    separator: separator ?? "-",
+    seqDigits: seqDigits ?? 4,
+    seqStart: seqStart ?? 1,
+  };
+}
+
+// 구매 요청 문서 INSERT와 같은 트랜잭션 안에서 부른다 — `allocateExpenseNumber`와 같은 세 단계(공유 잠금판 → 카운터 증가 → 시작값만 같은
+// tx로 다시 읽기, PR #162 리뷰 P1). 접두어 · 구분자 · 자릿수는 호출자가 트랜잭션 전에 읽어 넘긴 `format`만 쓴다(전역 풀로 읽지 않는다).
+export async function allocatePurchaseRequestNumber(
+  viewer: Viewer,
+  input: { projectNumber: string; format: Omit<PurchaseRequestNumberFormat, "seqStart"> },
+  tx: DbOrTx,
+): Promise<{ number: string; seq: number }> {
+  await shareLockDocumentCounter(viewer, "purchase_request", ALL_PERIODS, tx);
+  const seq = await repoAllocateNumber(viewer, "purchase_request", input.projectNumber, tx);
+  const seqStart = await getSettingValue(DOCUMENT_NUMBER_PURCHASE_REQUEST_SEQ_START, undefined, {
+    findSimpleValue: (v, k) => findSimpleValue(v, k, tx),
+  });
+  return { number: purchaseRequestNumberFormat(input.projectNumber, seq, { ...input.format, seqStart }), seq };
 }

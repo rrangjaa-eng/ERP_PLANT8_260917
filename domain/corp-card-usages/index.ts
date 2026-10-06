@@ -1,5 +1,6 @@
 import type { Viewer } from "@/domain/viewer";
-import { ForbiddenError } from "@/domain/permissions/can";
+import { can, ForbiddenError } from "@/domain/permissions/can";
+import type { CardOwnerKind } from "@/domain/corp-cards";
 import { projectMany, type DtoSpec } from "@/domain/permissions/project";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { recordAction } from "@/domain/action-log/record";
@@ -35,6 +36,7 @@ export class CardUsageRejectedError extends UserFacingError {}
 
 const LINK_MISSING = "연결 없음 · 연결 고르기";
 const CARD_NOT_ELIGIBLE = "카드 자격 없음 · 카드 고르기";
+const SHARED_CARD_FORBIDDEN = "공용 카드 등록 권한 없음 · 공용 카드는 경영관리";
 
 export type CardUsageLinkKind = "team_cost";
 
@@ -64,10 +66,25 @@ function cardLabel(card: Pick<CorpCardRow, "label" | "issuer" | "numberLast4">):
   return `${card.label} · ${card.issuer} ${card.numberLast4}`;
 }
 
-// 직원 = 활성 카드 중 소지자 본인 + 사용일 소속 팀의 카드.
+export type UsageCardOption = { id: string; label: string; kind: CardOwnerKind };
+
+// 카드 자격(U-2): 직원 = 활성 카드 중 소지자 본인 + 사용일 소속 팀의 카드. `cards.proxy` write면 활성 공용 카드를 더한다.
+// 공용 여부는 카드 행의 `kind`로만 가른다 — 06-27 `corp_cards_owner_kind_check`가 종류와 소지자 · 팀 칸 짝을 묶는다(R-6).
+// 남의 개인 · 팀 카드(대리 등록)는 06-09가 이 함수를 넓힌다. 트랜잭션 밖에서만 부른다(can · 전역 풀 조회).
 async function eligibleCards(viewer: Viewer, teamId: string | null): Promise<CorpCardRow[]> {
   const cards = await listCorpCards(viewer, { scope: { rows: "all", includeArchived: false }, includeInactive: false });
-  return cards.filter((card) => card.holderUserId === viewer.id || (teamId !== null && card.teamId === teamId));
+  const proxy = await can(viewer, "cards.proxy", "write");
+  return cards.filter(
+    (card) =>
+      (card.kind === "shared" && proxy) ||
+      (card.kind !== "shared" && (card.holderUserId === viewer.id || (teamId !== null && card.teamId === teamId))),
+  );
+}
+
+export async function cardOptionsForUsage(viewer: Viewer, usedOn: string): Promise<UsageCardOption[]> {
+  const team = await teamAtDate(viewer, viewer.id, usedOn);
+  const cards = await eligibleCards(viewer, team?.id ?? null);
+  return cards.map((card) => ({ id: card.id, label: cardLabel(card), kind: card.kind as CardOwnerKind }));
 }
 
 // ── 증빙 종류(코드표) ──────────────────────────────────────────────────────
@@ -108,8 +125,8 @@ export async function precheckCardUsage(viewer: Viewer, input: CardUsageInput): 
   }
 
   const card = await findCorpCardById(viewer, input.corpCardId);
-  const eligible = (await eligibleCards(viewer, team.id)).some((candidate) => candidate.id === card?.id);
-  if (!card || !eligible) throw new ForbiddenError(CARD_NOT_ELIGIBLE);
+  const eligible = (await cardOptionsForUsage(viewer, input.usedOn)).some((candidate) => candidate.id === card?.id);
+  if (!card || !eligible) throw new ForbiddenError(card?.kind === "shared" ? SHARED_CARD_FORBIDDEN : CARD_NOT_ELIGIBLE);
 
   const evidence = await cardEvidenceTypes(viewer);
   const option = evidence.options.find((candidate) => candidate.value === input.evidenceTypeCode);
@@ -214,10 +231,10 @@ export type CardUsageFormOptions = {
 // 새 건 패널의 선택지 — 사용일(기본 오늘) 기준 카드 · 카드 증빙 종류 · 사용일 소속 팀 이름.
 export async function cardUsageFormOptions(viewer: Viewer, usedOn: string): Promise<CardUsageFormOptions> {
   const team = await teamAtDate(viewer, viewer.id, usedOn);
-  const cards = await eligibleCards(viewer, team?.id ?? null);
+  const cards = await cardOptionsForUsage(viewer, usedOn);
   const evidence = await cardEvidenceTypes(viewer);
   return {
-    cards: await projectMany(viewer, cards.map((card) => ({ id: card.id, label: cardLabel(card) })), CARD_OPTION_SPEC),
+    cards: await projectMany(viewer, cards.map((card) => ({ id: card.id, label: card.label })), CARD_OPTION_SPEC),
     evidenceTypes: evidence.options.map(({ value, label }) => ({ value, label })),
     teamName: team?.name ?? null,
   };

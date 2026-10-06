@@ -242,7 +242,11 @@ function ScheduleField({ expenseId, schedule, onChange, onClose }: { expenseId: 
     const timer = setTimeout(() => {
       void (async () => {
         try {
-          const [before, after] = await Promise.all([previewPayableAction({ expenseId, payDate: original }), previewPayableAction({ expenseId, payDate: value })]);
+          // 예정일도 함께 싣는다 — 기준일이 지급 예정일인 규칙은 행의 옛 예정일이 아니라 이 날짜로 셈한다(06-04 검토 P3-2).
+          const [before, after] = await Promise.all([
+            previewPayableAction({ expenseId, payDate: original, scheduledPayDate: original }),
+            previewPayableAction({ expenseId, payDate: value, scheduledPayDate: value }),
+          ]);
           if (!cancelled) setHint({ value, before: before?.data?.payableKrw ?? null, after: after?.data?.payableKrw ?? null });
         } catch {
           if (!cancelled) setHint(null);

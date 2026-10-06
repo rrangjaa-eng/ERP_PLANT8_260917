@@ -100,6 +100,8 @@ export function PaymentActionRow() {
       justSavedScheduleRef.current = true;
       setSchedule(null);
       router.refresh();
+      // 기준일이 지급 예정일이면 저장한 날짜로 지급 총액이 바뀐다 — 미리보기를 다시 받아 다음 1차가 새 값을 보낸다(06-04 검토 P3-2).
+      refreshPreview();
     },
     onError: ({ error }) => {
       const dateError = error.validationErrors?.scheduledPayDate?._errors?.[0];

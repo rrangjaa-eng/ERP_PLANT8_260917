@@ -38,6 +38,8 @@ const previewPayableSchema = z.object({
   expenseId: z.string().uuid(),
   payDate: paymentDate,
   transferKrw: transferKrw.optional(),
+  // 예정일 칸 힌트 — 저장 전 예정일로 기준일을 고른다(기준일이 지급 예정일인 규칙, 06-04 검토 P3-2).
+  scheduledPayDate: paymentDate.optional(),
 });
 
 export const previewPayableAction = authedActionClient

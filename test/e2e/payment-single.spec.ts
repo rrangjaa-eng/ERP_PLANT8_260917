@@ -15,7 +15,9 @@ import { seoulToday } from "@/lib/dates";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { upsertSimpleValue } from "@/repositories/settings";
-import { EVIDENCE_REQUIRED } from "@/domain/settings/keys";
+import { seedCodeItem } from "@/repositories/code-tables";
+import { addHistorizedValue, cancelHistorizedValue } from "@/domain/settings/registry";
+import { EVIDENCE_REQUIRED, TAX_VAT_RATE } from "@/domain/settings/keys";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
 import { makeEvidenceManagerE2E, setupExpenseE2E, submitLineExpense, type ExpenseE2E, type LineKey } from "./expense-fixture";
 
@@ -452,5 +454,53 @@ test.describe("06-04 검토 · DOM 감사 수정", () => {
       .where(and(eq(expensePayments.expenseId, expenseId), isNull(expensePayments.cancelledAt)));
     expect(record?.payDate).toBe(today);
     await page.context().close();
+  });
+
+  // 검토 P3-2 — 기준일이 지급 예정일인 규칙: 예정일 칸 힌트가 새 지급 총액을 보이고, 저장 뒤 지급이 `지급 총액 바뀜`으로 한 번 거부되지 않는다.
+  test("기준일이 지급 예정일 — 예정일 칸 힌트 `지급 총액 {전} → {후}` · 저장 뒤 바로 지급하면 새 지급 총액으로 저장된다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const expenseId = await approvedWithoutEvidence(browser, baseURL, fx, "tracer");
+    const payer = await makePaymentManagerE2E();
+    const today = seoulToday();
+    const rateFrom = addDays(today, 30);
+    const future = addDays(today, 40);
+    await seedCodeItem(SYSTEM_VIEWER, {
+      tableKey: "evidence_type",
+      value: "e2e_vat_scheduled",
+      label: "예정 부가세",
+      sortOrder: 99,
+      taxRule: { ruleKind: "vat_surcharge", roundingUnit: 1, roundingMethod: "round", minWithholdingAmount: 0, basisDate: "scheduled_payment_date" },
+    });
+    // 테스트 준비 전용 — 이 문서 행만 그 증빙 종류 · 예정일 오늘로 바꾼다.
+    await db.update(expenses).set({ evidenceType: "e2e_vat_scheduled", scheduledPaymentDate: today }).where(eq(expenses.id, expenseId));
+    await addHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, { effectiveFrom: rateFrom, value: 0.12 });
+    try {
+      const before = await previewPayable(payer.viewer, { expenseId, payDate: today, scheduledPayDate: today });
+      const after = await previewPayable(payer.viewer, { expenseId, payDate: today, scheduledPayDate: future });
+      if (before.payableKrw == null || after.payableKrw == null || before.payableKrw === after.payableKrw) throw new Error("지급 총액이 예정일로 바뀌지 않는다");
+
+      const page = await loginPage(browser, baseURL, payer);
+      await page.goto(`/expenses/${expenseId}`);
+      const pay = page.getByRole("button", { name: /^지급 완료/ });
+      await waitForHydration(pay);
+      const section = paymentSection(page);
+      await section.getByRole("button", { name: "지급 예정일 바꾸기" }).click();
+      await section.getByLabel("지급 예정일").fill(future);
+      await expect(section.getByTestId("payment-schedule-hint")).toHaveText(`지급 총액 ${formatKrw(before.payableKrw)} → ${formatKrw(after.payableKrw)}`);
+      await page.keyboard.press("Control+Enter");
+      await expect(pay).toBeFocused();
+      await expect(section.getByLabel("이체액")).toHaveValue(formatKrw(after.payableKrw));
+      await pay.click();
+      await expect(page.getByTestId("payment-result")).toBeVisible();
+      await expect(page.getByText(/지급 총액 바뀜/)).toHaveCount(0);
+      const [record] = await db
+        .select({ payableKrw: expensePayments.payableKrw })
+        .from(expensePayments)
+        .where(and(eq(expensePayments.expenseId, expenseId), isNull(expensePayments.cancelledAt)));
+      expect(record?.payableKrw).toBe(after.payableKrw);
+      await page.context().close();
+    } finally {
+      await cancelHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, rateFrom);
+    }
   });
 });

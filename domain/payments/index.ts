@@ -261,7 +261,8 @@ const IN_PROGRESS: readonly string[] = ["submitted", "in_review"];
 // shared에서. 오늘(서울)을 여기서 한 번 정하고 05 pickTaxDates로 기준일 하나를 골라 그날 세율을 얻는다. 미래 payDate도 그대로(Q6 · RS-11).
 export async function loadPaymentInputs(
   viewer: Viewer,
-  input: { expenseId: string; payDate?: string | null; now?: Date },
+  // scheduledPayDate — 미리보기 전용(06-04 검토 P3-2): 행의 예정일 대신 이 날짜로 기준일을 고른다(예정일 칸 힌트 · 저장 전 값).
+  input: { expenseId: string; payDate?: string | null; scheduledPayDate?: string; now?: Date },
   shared?: PaymentShared,
 ): Promise<PaymentInputs> {
   const row = UUID_SHAPE.test(input.expenseId) ? await findExpenseById(viewer, input.expenseId) : null;
@@ -275,7 +276,8 @@ export async function loadPaymentInputs(
   const drafterName = (await findUserNamesByIds(viewer, [row.drafterId])).get(row.drafterId) ?? "";
   const today = seoulToday(input.now);
   const payDate = input.payDate ?? null;
-  const { amount, tax } = basisOf(row, { shared: ctxShared, payDate, today, hasLiveEvidence });
+  const basisRow = input.scheduledPayDate === undefined ? row : { ...row, scheduledPaymentDate: input.scheduledPayDate };
+  const { amount, tax } = basisOf(basisRow, { shared: ctxShared, payDate, today, hasLiveEvidence });
   return {
     expenseId: row.id,
     today,
@@ -607,11 +609,11 @@ registerDto({ name: "payablePreview", fields: PAYABLE_PREVIEW_DTO_SPEC.fields.ma
 
 export async function previewPayable(
   viewer: Viewer,
-  input: { expenseId: string; payDate: string; transferKrw?: number },
+  input: { expenseId: string; payDate: string; transferKrw?: number; scheduledPayDate?: string },
   deps?: { now?: Date },
 ): Promise<Partial<PayablePreview>> {
   if (!(await can(viewer, "expenses.payments", "write"))) throw new ForbiddenError("지급 처리 권한 없음");
-  const pre = await loadPaymentInputs(viewer, { expenseId: input.expenseId, payDate: input.payDate, now: deps?.now });
+  const pre = await loadPaymentInputs(viewer, { expenseId: input.expenseId, payDate: input.payDate, scheduledPayDate: input.scheduledPayDate, now: deps?.now });
   const payable = await payableOf(pre, input.transferKrw);
   return project(
     viewer,

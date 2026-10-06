@@ -22,7 +22,9 @@ import { GateBlockedError } from "@/domain/rules/gate";
 import { TRANSFER_FRACTION, TRANSFER_NOT_NUMBER, TRANSFER_NOT_POSITIVE } from "@/domain/payments/action-row";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
-import { ACTION_LOG_OPTIONAL_TYPES, PAYMENT_METHOD_EVIDENCE_PAIRS } from "@/domain/settings/keys";
+import { ACTION_LOG_OPTIONAL_TYPES, PAYMENT_METHOD_EVIDENCE_PAIRS, TAX_VAT_RATE } from "@/domain/settings/keys";
+import { addHistorizedValue } from "@/domain/settings/registry";
+import { seedCodeItem } from "@/repositories/code-tables";
 import { upsertSimpleValue } from "@/repositories/settings";
 import { markVoided } from "@/repositories/files";
 import { ForbiddenError } from "@/domain/permissions/can";
@@ -177,6 +179,29 @@ describe("지급 완료 — 이체액 · 차이 사유 · 미래 지급일 (06-0
     const after = await snapshot(doc.expenseId);
     expect([after.version, after.logCount, after.payments.length]).toEqual([before.version, before.logCount, 0]);
   });
+});
+
+// 06-04 검토 P3-2 ① — 기준일이 지급 예정일이면 미리보기는 행의 옛 예정일이 아니라 화면이 보낸 예정일로 셈한다(예정일 칸 힌트 `지급 총액 {전} → {후}`).
+it("기준일이 지급 예정일인 규칙 — previewPayableAction에 예정일을 실으면 그 날짜의 세율로 지급 총액을 셈한다", async () => {
+  const payer = await makePayer();
+  const doc = await approvedExpenseWithoutEvidence(await setupExpenseProject());
+  const today = seoulToday();
+  // 부가세 가산 · 기준일 = 지급 예정일인 테스트 증빙 종류(코드표 필드가 설정보다 먼저 — expense-tax-snapshot 전례). 이 문서 행만 그 종류로 바꾼다.
+  await seedCodeItem(SYSTEM_VIEWER, {
+    tableKey: "evidence_type",
+    value: "test_vat_scheduled",
+    label: "예정 부가세",
+    sortOrder: 99,
+    taxRule: { ruleKind: "vat_surcharge", roundingUnit: 1, roundingMethod: "round", minWithholdingAmount: 0, basisDate: "scheduled_payment_date" },
+  });
+  await db.update(expenses).set({ evidenceType: "test_vat_scheduled" }).where(eq(expenses.id, doc.expenseId));
+  await addHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, { effectiveFrom: addDays(today, 30), value: 0.12 });
+  session.viewer = payer;
+  const before = await previewPayableAction({ expenseId: doc.expenseId, payDate: today, scheduledPayDate: today });
+  const after = await previewPayableAction({ expenseId: doc.expenseId, payDate: today, scheduledPayDate: addDays(today, 40) });
+  expect(before?.data?.payableKrw).toEqual(expect.any(Number));
+  expect(after?.data?.payableKrw).toEqual(expect.any(Number));
+  expect(after?.data?.payableKrw).toBeGreaterThan(before?.data?.payableKrw ?? Number.POSITIVE_INFINITY);
 });
 
 describe("지급 예정일 저장 (06-04 Task 2 · SP-3 ②)", () => {

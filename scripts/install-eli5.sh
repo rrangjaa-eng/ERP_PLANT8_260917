@@ -19,11 +19,13 @@ SKILL_FILE="$SKILL_DIR/SKILL.md"
 
 hash_ok() { echo "$ELI5_SHA256  $1" | sha256sum -c --status 2>/dev/null; }
 
-# 멱등: 같은 해시의 파일이 있으면 건너뛴다. 다르거나 깨진 파일은 다시 받는다.
+# 멱등: 같은 해시의 파일이 있으면 건너뛴다. 다르거나 깨진 파일은 먼저 지우고 다시 받는다
+# (다시 받기가 실패해도 검증 안 된 스킬이 남지 않게).
 if [ -f "$SKILL_FILE" ] && hash_ok "$SKILL_FILE"; then
   echo "install-eli5: already installed — skipping"
   exit 0
 fi
+rm -f "$SKILL_FILE"
 
 mkdir -p "$SKILL_DIR" && TMP="$(mktemp "$SKILL_DIR/.SKILL.md.XXXXXX")" \
   && curl -fsS -m 30 -o "$TMP" "$URL" && hash_ok "$TMP" && mv -f "$TMP" "$SKILL_FILE"

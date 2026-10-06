@@ -68,6 +68,12 @@ describe("scripts/install-eli5.sh", () => {
     expect(readFileSync(file, "utf8")).toBe(UPSTREAM);
   });
 
+  it("깨진 기존 파일은 다시 받기가 실패해도 남기지 않는다", () => {
+    const { result, file } = run({ remote: true, existing: "injected" });
+    expect(result.status).toBe(0);
+    expect(existsSync(file)).toBe(false);
+  });
+
   it("같은 해시의 기존 파일이 있으면 받지 않고 건너뛴다", () => {
     const { result, output } = run({ remote: true, existing: UPSTREAM });
     expect(result.status).toBe(0);

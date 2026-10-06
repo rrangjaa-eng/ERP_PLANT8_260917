@@ -264,7 +264,7 @@ export function VendorForm({
         name="businessNo"
         label="사업자 번호"
         defaultValue={editing?.businessNo ?? undefined}
-        error={businessNoConflict?.message}
+        error={addKindState.result.serverError ?? businessNoConflict?.message}
       />
       {businessNoConflict && businessNoConflict.name !== null ? (
         <div>

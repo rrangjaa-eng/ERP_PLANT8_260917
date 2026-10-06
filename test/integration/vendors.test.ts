@@ -387,7 +387,7 @@ describe("vendors 사업자번호 중복 막기 (실제 Postgres)", () => {
     const { vendor } = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no });
     await archive(SYSTEM_VIEWER, "vendor", vendor.id);
     const noArchiveView = (_viewer: unknown, menu: string) => Promise.resolve(menu !== "admin.archive");
-    const error = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no }, { can: noArchiveView as never }).catch((e: unknown) => e);
+    const error = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: no }, { can: noArchiveView }).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(DuplicateBusinessNoError);
     expect((error as DuplicateBusinessNoError).existing).toBeNull();
     expect((error as DuplicateBusinessNoError).message).toBe("보관함에 같은 사업자번호 거래처 있음");

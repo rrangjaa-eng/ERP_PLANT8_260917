@@ -19,3 +19,9 @@
 - [x] 새 색·서체·radius·그림자를 만들지 않았다(tokens.css 변수만) — 근거: CSS 변경 없음. TextField 기본 error 표시와 기존 Button · 링크 클래스만 재사용
 - [x] 폰 320에서 가로 넘침 없음 · 터치 44px — 근거: 기존 Button · buttonLinkClassName 그대로(44px 규약 포함). 가로 넘침은 390 폭 촬영 시 scrollWidth 판정(넘침 0, 「구분 더하기」 높이 44)과 mobile-320-no-overflow.spec.ts 통과로 확인
 - [x] 실제 앱 화면(PC 1280 · 폰 390)을 찍어 보고 확인했다 — 스크린샷 경로: /mnt/project-files/notes/vendor-kind/bizno-pr-a-conflict-{1280,390}.png (CI=true 프로덕션 빌드 · 충돌 상태)
+
+## 추가 — 「구분 더하기」 실패 문구(리뷰 지적, vendor-form.tsx)
+- [x] 안내 문구 최소: 새 문구를 만들지 않고 서버 오류 문구(예: 「보관됐거나 존재하지 않는 거래처는 수정할 수 없음」) 한 줄을 기존 칸 오류 자리에 보인다. 성공 상태 줄은 넣지 않는다(수정 패널로 바로 넘어감) — 근거: vendor-form.tsx 사업자 번호 TextField의 error prop만 바꿈
+- [x] 새 색·서체·radius 없음, 기존 TextField 오류 표시 재사용 — 근거: CSS 변경 없음
+- [x] 같은 말을 두 번 하지 않는다 — 근거: 실패 문구가 있으면 같은 칸의 중복 문구를 대신한다(칸 오류는 항상 한 줄)
+- [x] E2E 실측 — 근거: test/e2e/vendors.spec.ts 「구분 더하기가 실패하면」 #businessNo-error 텍스트 확인

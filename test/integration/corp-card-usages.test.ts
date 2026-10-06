@@ -8,9 +8,10 @@ import { createOrgUnit, createTeam } from "@/domain/org";
 import { and, eq } from "drizzle-orm";
 import { Client } from "pg";
 import { db, pool } from "@/db/client";
-import { corpCardUsages, expenses, projects, purchaseRequests, quoteLines } from "@/db/schema";
+import { corpCardUsages, expenses, projects, purchaseRequests, quoteLines, vendors } from "@/db/schema";
 import { gate, GateBlockedError } from "@/domain/rules/gate";
 import { createProject, CompletedProjectError } from "@/domain/projects";
+import { ProjectNotFoundError } from "@/domain/projects/status";
 import { getCurrentQuoteRevision, listQuoteLines, saveQuoteLines } from "@/domain/quotes/lines";
 import { createRevisionFromCurrent } from "@/domain/quotes/revisions";
 import { closeExpense, createExpenseFromLines } from "@/domain/expenses";
@@ -241,6 +242,33 @@ describe("가맹점 고르기는 카드 자격으로(P3-6)", () => {
   });
 });
 
+describe("가맹점 id 서버 확인(CSO-5 · P3-2)", () => {
+  it("없는 · 숨김 · 보관 · 클라이언트 거래처 → 「가맹점 없음 · 가맹점 고르기」, 협력사 · 둘 다는 통과", async () => {
+    const team = await makeTeam();
+    const staff = await makePerson("직원", DEFAULT_ROLE_ID, team.name);
+    const cardId = await makeCard({ kind: "personal", holderUserId: staff.id });
+    const vendorOf = async (kind: "client" | "supplier" | "both") => {
+      const name = `가맹점-${randomUUID()}`;
+      return (await insertVendor(SYSTEM_VIEWER, { name, normalizedName: name, kind })).id;
+    };
+    const hidden = await vendorOf("supplier");
+    await db.update(vendors).set({ hidden: true }).where(eq(vendors.id, hidden));
+    const archived = await vendorOf("supplier");
+    await db.update(vendors).set({ archivedAt: new Date() }).where(eq(vendors.id, archived));
+
+    for (const merchantVendorId of [randomUUID(), hidden, archived, await vendorOf("client")]) {
+      const error = await caught(precheckCardUsage(staff, { ...usageInput(cardId), merchantVendorId }));
+      expect(error).toBeInstanceOf(CardUsageRejectedError);
+      expect((error as Error).message).toBe("가맹점 없음 · 가맹점 고르기");
+    }
+    for (const kind of ["supplier", "both"] as const) {
+      const input = { ...usageInput(cardId), merchantVendorId: await vendorOf(kind) };
+      await createCardUsage(staff, input, await precheckCardUsage(staff, input));
+    }
+    expect(await usageCount()).toBe(2);
+  });
+});
+
 // ── 06-07: 견적 줄 · 견적 외 비용 연결 ────────────────────────────────────────
 
 type CardFx = { pm: Viewer; cardId: string; projectId: string; revisionId: string; lines: string[] };
@@ -379,6 +407,22 @@ describe("견적 줄 연결 — 트레이서(06-07)", () => {
   });
 });
 
+describe("사전 조회 뒤 프로젝트 보관(P3-4)", () => {
+  it("견적 줄 · 견적 외 비용 — precheck 뒤 보관되면 잠근 뒤 다시 보고 거부, 줄 · 카드 사용이 생기지 않는다", async () => {
+    const fx = await cardProject();
+    const onLine = lineInput(fx, fx.lines[0] ?? "", 10_000);
+    const outInput: CardUsageInput = { ...usageInput(fx.cardId), total: { currency: "KRW", amount: 10_000, fxRate: 1 }, evidenceTypeCode: "invoice", linkKind: "out_of_quote", projectId: fx.projectId, itemName: "현수막" };
+    const preLine = await precheckCardUsage(fx.pm, onLine);
+    const preOut = await precheckCardUsage(fx.pm, outInput);
+    await db.update(projects).set({ archivedAt: new Date() }).where(eq(projects.id, fx.projectId));
+
+    expect(await caught(createCardUsage(fx.pm, onLine, preLine))).toBeInstanceOf(ProjectNotFoundError);
+    expect(await caught(createCardUsage(fx.pm, outInput, preOut))).toBeInstanceOf(ProjectNotFoundError);
+    expect(await usageCount()).toBe(0);
+    expect(await lineCount(fx.revisionId)).toBe(1);
+  });
+});
+
 describe("실행가 상한(Q3)", () => {
   it("실행가 1,000,000 · 다른 카드 600,000 → 400,001 거부 문구", async () => {
     const fx = await cardProject();
@@ -386,6 +430,16 @@ describe("실행가 상한(Q3)", () => {
     const error = await caught(cardOnLine(fx, fx.lines[0] ?? "", 400_001));
     expect(error).toBeInstanceOf(GateBlockedError);
     expect((error as Error).message).toBe("실행가 초과 · 남은 실행가 400,000 · 다른 줄 고르기");
+  });
+
+  it("견적 금액(quote.amount)을 못 보는 계급 → 거부 문구에 남은 실행가 숫자 없음(CSO-2)", async () => {
+    const fx = await cardProject();
+    await cardOnLine(fx, fx.lines[0] ?? "", 600_000);
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, infoItem: "quote.amount", visible: false });
+    const error = await caught(cardOnLine(fx, fx.lines[0] ?? "", 400_001));
+    expect(error).toBeInstanceOf(GateBlockedError);
+    expect((error as Error).message).toBe("실행가 초과 · 다른 줄 고르기");
+    expect(await usageCount()).toBe(1);
   });
 
   it("같은 상태에서 400,000 → 저장(경계값)", async () => {

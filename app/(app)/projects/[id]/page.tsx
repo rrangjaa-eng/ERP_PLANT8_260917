@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/viewer";
+import { log } from "@/lib/log";
 import { can } from "@/domain/permissions/can";
 import { visible } from "@/domain/permissions/visible";
 import { findProject } from "@/domain/projects";
@@ -115,9 +116,15 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const canEditPreEstimate = periodRights !== "none" && canSeeAmount;
   const [lines, references, revenue, usdDefaultFxRate, destinations, catalog, statusSince, lineCap, revisionSummaries] = await Promise.all([
     // 06-07 N-3 — 줄 사슬의 카드 사용 · `신청됨` 구매 요청 사실(보관 대신 취소 · 실행가 초과 표시). lines.ts는 link-targets를 import하지 않는다(순환).
-    lineCardSideFacts(session.viewer, { revisionId: revision.id }).then((cardSideFacts) =>
-      listQuoteLines(session.viewer, revision.id, { status: project.status, canWrite: canEditLines, canAdjust: canAdjustLines, cardSideFacts }),
-    ),
+    // 리뷰 P3-5 — 사실 읽기가 실패해도 상세는 선다(표는 사실 없이 — 카드 섹션 S15의 실패 가두기와 같은 결).
+    lineCardSideFacts(session.viewer, { revisionId: revision.id })
+      .catch((error: unknown) => {
+        log.error("project.card_side_facts_failed", { projectId: project.id, message: error instanceof Error ? error.message : String(error) });
+        return undefined;
+      })
+      .then((cardSideFacts) =>
+        listQuoteLines(session.viewer, revision.id, { status: project.status, canWrite: canEditLines, canAdjust: canAdjustLines, cardSideFacts }),
+      ),
     // 04-23(CEO 리뷰 B-23) — 조정 권한만 있어도 조정 줄의 거래처 칸을 고른다.
     // 2026-09-28 — 보기만 하는 계급도 소분류·거래처를 이름으로 읽는다(목록은 "projects" view로만 게이트하는 id·name 축소 투영).
     listProjectFormReferences(session.viewer),

@@ -125,7 +125,8 @@ export async function lockProjectForLinkWrite(
   tx: DbOrTx,
 ): Promise<ProjectRow> {
   const locked = await lockProjectForWrite(viewer, input.projectId, tx);
-  if (!locked) throw new ProjectNotFoundError();
+  // 보관 — 사전 조회 뒤 잠금 전에 보관됐을 수 있어 잠근 행으로 다시 본다(리뷰 P3-4).
+  if (!locked || locked.archivedAt) throw new ProjectNotFoundError();
   if (locked.status === "completed" && !input.allowCompleted) throw new CompletedProjectError(quoteLockReason({ status: locked.status }) ?? undefined);
   if (input.revisionId !== undefined) {
     const latest = await findLatestQuoteRevision(viewer, input.projectId, tx);

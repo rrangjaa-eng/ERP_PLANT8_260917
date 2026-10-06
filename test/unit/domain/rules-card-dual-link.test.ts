@@ -90,7 +90,7 @@ describe("card.dual-link-block", () => {
 });
 
 describe("card.execution-cap", () => {
-  const base = { execution: krw(5_000_000), otherSupplies: [krw(1_200_000)] };
+  const base = { execution: krw(5_000_000), otherSupplies: [krw(1_200_000)], amountVisible: true };
 
   it("실행가 5,000,000 · 다른 1,200,000 · 이번 3,800,000 · entry → 통과", async () => {
     const ctx = { ...base, supply: { currency: "KRW" as const, amount: 3_800_000, fxRate: 1 }, source: "entry" as const, link: "pickable" as const };
@@ -111,6 +111,11 @@ describe("card.execution-cap", () => {
       pmName: "박서연",
     };
     await expect(gate(null, "card.execution-cap", ctx)).resolves.toEqual({ allowed: false, reason: "실행가 초과 · 남은 실행가 3,800,000 · 견적 줄은 담당 PM 박서연" });
+  });
+
+  it("같은 초과 · quote.amount 못 봄(CSO-2) → 막힘 · 남은 실행가 숫자 없음 `실행가 초과 · 다른 줄 고르기`", async () => {
+    const ctx = { ...base, amountVisible: false, supply: { currency: "KRW" as const, amount: 3_800_001, fxRate: 1 }, source: "entry" as const, link: "pickable" as const };
+    await expect(gate(null, "card.execution-cap", ctx)).resolves.toEqual({ allowed: false, reason: "실행가 초과 · 다른 줄 고르기" });
   });
 
   it("같은 초과 · source reconciliation → 통과(U-8)", async () => {

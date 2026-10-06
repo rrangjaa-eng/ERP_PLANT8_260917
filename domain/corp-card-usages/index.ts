@@ -1,5 +1,6 @@
 import type { Viewer } from "@/domain/viewer";
 import { can, ForbiddenError } from "@/domain/permissions/can";
+import { visible } from "@/domain/permissions/visible";
 import type { CardOwnerKind } from "@/domain/corp-cards";
 import { projectMany, type DtoSpec } from "@/domain/permissions/project";
 import { registerDto } from "@/domain/permissions/dto-registry";
@@ -41,7 +42,7 @@ import { findProjectById } from "@/repositories/projects";
 import { findQuoteLineById, listQuoteLinesByRevisions } from "@/repositories/quote-lines";
 import { findLatestQuoteRevision, findQuoteRevisionById } from "@/repositories/quote-revisions";
 import { findLineLinks, lockQuoteLines } from "@/repositories/quote-line-links";
-import { findVendorNamesByIds } from "@/repositories/vendors";
+import { findVendorById, findVendorNamesByIds } from "@/repositories/vendors";
 import { createOutOfQuoteLine } from "@/domain/quotes/lines";
 import {
   cardLinkLineChoice,
@@ -72,6 +73,8 @@ const SHARED_CARD_FORBIDDEN = "공용 카드 등록 권한 없음 · 공용 카�
 const AMOUNT_NOT_NUMBER = "숫자 아님 · 1,240,000처럼";
 const AMOUNT_NOT_POSITIVE = "결제 합계 0 이하 · 금액 고치기";
 const ITEM_MISSING = "항목 없음 · 항목 적기";
+const MERCHANT_MISSING = "가맹점 없음 · 가맹점 고르기";
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type CardUsageLinkKind = "team_cost" | "quote_line";
 
@@ -105,6 +108,8 @@ export type CardUsagePre = {
   revisionId: string | null;
   lineRoom: LineRoomBasis | null;
   capExclude: { usageId?: string; requestId?: string };
+  /** 등록자의 견적 금액(quote.amount) 노출 — 실행가 상한 거부 문구의 남은 실행가 숫자(CSO-2). 트랜잭션 전에 읽는다. */
+  amountVisible: boolean;
   /** 06-07 견적 외 비용 — 사전 조회 때의 현재 차수 · 항목. `completedOutOfQuote`는 06-09 대리 등록만 참(D-47 ③ · Q-B). */
   outOfQuote: { projectId: string; revisionId: string; itemName: string; completedOutOfQuote: boolean } | null;
 };
@@ -195,6 +200,14 @@ export async function precheckCardUsage(viewer: Viewer, input: CardUsageInput): 
     throw new CardUsageRejectedError(`증빙 종류 ${label} 카드에 없음 · 증빙 종류 고르기`);
   }
 
+  // 가맹점(CSO-5) — 고르기 목록(searchMerchantsForCard · listVendorsForPick)과 같은 조건: 있음 · 숨김 아님 · 보관 아님 · 협력사 갈래.
+  if (input.merchantVendorId) {
+    const merchant = UUID_SHAPE.test(input.merchantVendorId) ? await findVendorById(viewer, input.merchantVendorId) : null;
+    if (!merchant || merchant.hidden || merchant.archivedAt !== null || !vendorKindsFor("supplier").includes(merchant.kind)) {
+      throw new CardUsageRejectedError(MERCHANT_MISSING);
+    }
+  }
+
   const rates = await loadTaxRates(input.usedOn);
   const base = {
     card: { id: card.id, kind: card.kind, holderUserId: card.holderUserId, teamId: card.teamId },
@@ -203,6 +216,7 @@ export async function precheckCardUsage(viewer: Viewer, input: CardUsageInput): 
     evidenceRule: option.rule,
     rates,
     capExclude: {},
+    amountVisible: false,
     outOfQuote: null,
   };
   if (input.linkKind === "team_cost") return { ...base, teamId, projectId: null, revisionId: null, lineRoom: null };
@@ -244,6 +258,7 @@ export async function precheckCardUsage(viewer: Viewer, input: CardUsageInput): 
     projectId: project.id,
     revisionId: latest?.id ?? null,
     lineRoom: await loadLineRoomBasis(viewer, [line.id]),
+    amountVisible: await visible(viewer, "quote.amount"),
   };
 }
 
@@ -284,6 +299,7 @@ export async function createCardUsage(
         supply: { currency: "KRW", amount: split.supplyKrw, fxRate: 1 },
         source: "entry",
         link: "pickable",
+        amountVisible: pre.amountVisible,
       });
       if (!cap.allowed) throw new GateBlockedError(cap.reason);
       link = { linkKind: "quote_line", quoteLineId: input.lineId, teamId: null };

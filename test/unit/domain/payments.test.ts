@@ -333,6 +333,14 @@ describe("judgeLockedPayment (잠금 뒤 판정)", () => {
     expect((error as PayableChangedError).payableKrw).toBe(1_100_000);
   });
 
+  it("금액 원천만 바뀌고(증빙 금액 = 공급가) 지급 총액이 같으면 거부하지 않는다(리뷰 P3-3)", async () => {
+    const row = { ...ROW, evidenceAmount: 1_000_000 };
+    const pre = preOf(row, true);
+    expect(pre.amount).toEqual({ source: "evidence", amountKrw: 1_000_000 });
+    const result = await judge({ pre, locked: row, lockedHasEvidence: false, expectedPayableKrw: 1_100_000 });
+    expect(result.payable.payableKrw).toBe(1_100_000);
+  });
+
   it("결재 게이트가 막는 문서는 기준이 달라도 게이트 이유가 나온다(CROSS-R1 F-3)", async () => {
     const error = await judge({ pre: preOf(ROW, true), approvalState: "rejected", lockedHasEvidence: false, expectedPayableKrw: 990_000 }).catch(
       (caught: unknown) => caught,

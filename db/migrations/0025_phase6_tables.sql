@@ -74,6 +74,7 @@ CREATE TABLE "expense_payments" (
 	"source" text DEFAULT 'demo' NOT NULL,
 	CONSTRAINT "expense_payments_transfer_krw_check" CHECK ("expense_payments"."transfer_krw" >= 0),
 	CONSTRAINT "expense_payments_payable_krw_check" CHECK ("expense_payments"."payable_krw" >= 0),
+	CONSTRAINT "expense_payments_gross_supply_krw_check" CHECK ("expense_payments"."gross_supply_krw" IS NULL OR "expense_payments"."gross_supply_krw" >= 0),
 	CONSTRAINT "expense_payments_diff_check" CHECK ("expense_payments"."diff_krw" = "expense_payments"."transfer_krw" - "expense_payments"."payable_krw"),
 	CONSTRAINT "expense_payments_diff_reason_check" CHECK ("expense_payments"."diff_krw" = 0 OR ("expense_payments"."diff_reason" IS NOT NULL AND char_length(btrim("expense_payments"."diff_reason")) > 0)),
 	CONSTRAINT "expense_payments_cancel_check" CHECK (("expense_payments"."cancelled_at" IS NULL AND "expense_payments"."cancelled_by" IS NULL AND "expense_payments"."cancel_reason" IS NULL) OR ("expense_payments"."cancelled_at" IS NOT NULL AND "expense_payments"."cancelled_by" IS NOT NULL AND "expense_payments"."cancel_reason" IS NOT NULL AND char_length(btrim("expense_payments"."cancel_reason")) > 0))
@@ -98,7 +99,7 @@ CREATE TABLE "revenue_issue_requests" (
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "revenue_issue_requests_status_check" CHECK ("revenue_issue_requests"."status" IN ('requested','issued','cancelled')),
 	CONSTRAINT "revenue_issue_requests_issued_check" CHECK (("revenue_issue_requests"."status" = 'issued') = ("revenue_issue_requests"."issued_entry_id" IS NOT NULL)),
-	CONSTRAINT "revenue_issue_requests_cancelled_check" CHECK (("revenue_issue_requests"."status" = 'cancelled') = ("revenue_issue_requests"."cancelled_at" IS NOT NULL AND "revenue_issue_requests"."cancelled_by" IS NOT NULL))
+	CONSTRAINT "revenue_issue_requests_cancelled_check" CHECK (("revenue_issue_requests"."status" = 'cancelled' AND "revenue_issue_requests"."cancelled_at" IS NOT NULL AND "revenue_issue_requests"."cancelled_by" IS NOT NULL) OR ("revenue_issue_requests"."status" <> 'cancelled' AND "revenue_issue_requests"."cancelled_at" IS NULL AND "revenue_issue_requests"."cancelled_by" IS NULL))
 );
 --> statement-breakpoint
 CREATE TABLE "purchase_requests" (
@@ -129,8 +130,8 @@ CREATE TABLE "purchase_requests" (
 	CONSTRAINT "purchase_requests_estimate_amount_krw_check" CHECK ("purchase_requests"."estimate_amount_krw" >= 0),
 	CONSTRAINT "purchase_requests_link_url_check" CHECK ("purchase_requests"."link_url" IS NULL OR "purchase_requests"."link_url" ~* '^https?://'),
 	CONSTRAINT "purchase_requests_status_check" CHECK ("purchase_requests"."status" IN ('requested','purchased','cancelled')),
-	CONSTRAINT "purchase_requests_completed_check" CHECK (("purchase_requests"."status" = 'purchased') = ("purchase_requests"."completed_at" IS NOT NULL AND "purchase_requests"."completed_by" IS NOT NULL)),
-	CONSTRAINT "purchase_requests_cancelled_check" CHECK (("purchase_requests"."status" = 'cancelled') = ("purchase_requests"."cancelled_at" IS NOT NULL AND "purchase_requests"."cancelled_by" IS NOT NULL))
+	CONSTRAINT "purchase_requests_completed_check" CHECK (("purchase_requests"."status" = 'purchased' AND "purchase_requests"."completed_at" IS NOT NULL AND "purchase_requests"."completed_by" IS NOT NULL) OR ("purchase_requests"."status" <> 'purchased' AND "purchase_requests"."completed_at" IS NULL AND "purchase_requests"."completed_by" IS NULL)),
+	CONSTRAINT "purchase_requests_cancelled_check" CHECK (("purchase_requests"."status" = 'cancelled' AND "purchase_requests"."cancelled_at" IS NOT NULL AND "purchase_requests"."cancelled_by" IS NOT NULL) OR ("purchase_requests"."status" <> 'cancelled' AND "purchase_requests"."cancelled_at" IS NULL AND "purchase_requests"."cancelled_by" IS NULL AND "purchase_requests"."cancel_reason" IS NULL))
 );
 --> statement-breakpoint
 ALTER TABLE "corp_cards" DROP CONSTRAINT "corp_cards_owner_xor_check";--> statement-breakpoint

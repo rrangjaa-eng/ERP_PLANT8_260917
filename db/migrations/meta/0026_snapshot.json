@@ -1,6 +1,6 @@
 {
-  "id": "ce206b6b-c40e-412a-b9f9-0a6d0513f606",
-  "prevId": "10a164d5-cd76-460f-84be-246c1f2ebb33",
+  "id": "c09a6ed9-fd36-4c60-8438-b0a876a955ff",
+  "prevId": "61e1c48a-3762-4ae3-8487-48095afab7a8",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2643,6 +2643,10 @@
         "expense_payments_payable_krw_check": {
           "name": "expense_payments_payable_krw_check",
           "value": "\"expense_payments\".\"payable_krw\" >= 0"
+        },
+        "expense_payments_gross_supply_krw_check": {
+          "name": "expense_payments_gross_supply_krw_check",
+          "value": "\"expense_payments\".\"gross_supply_krw\" IS NULL OR \"expense_payments\".\"gross_supply_krw\" >= 0"
         },
         "expense_payments_diff_check": {
           "name": "expense_payments_diff_check",
@@ -5766,7 +5770,7 @@
         },
         "revenue_issue_requests_cancelled_check": {
           "name": "revenue_issue_requests_cancelled_check",
-          "value": "(\"revenue_issue_requests\".\"status\" = 'cancelled') = (\"revenue_issue_requests\".\"cancelled_at\" IS NOT NULL AND \"revenue_issue_requests\".\"cancelled_by\" IS NOT NULL)"
+          "value": "(\"revenue_issue_requests\".\"status\" = 'cancelled' AND \"revenue_issue_requests\".\"cancelled_at\" IS NOT NULL AND \"revenue_issue_requests\".\"cancelled_by\" IS NOT NULL) OR (\"revenue_issue_requests\".\"status\" <> 'cancelled' AND \"revenue_issue_requests\".\"cancelled_at\" IS NULL AND \"revenue_issue_requests\".\"cancelled_by\" IS NULL)"
         }
       },
       "isRLSEnabled": false
@@ -6949,11 +6953,11 @@
         },
         "purchase_requests_completed_check": {
           "name": "purchase_requests_completed_check",
-          "value": "(\"purchase_requests\".\"status\" = 'purchased') = (\"purchase_requests\".\"completed_at\" IS NOT NULL AND \"purchase_requests\".\"completed_by\" IS NOT NULL)"
+          "value": "(\"purchase_requests\".\"status\" = 'purchased' AND \"purchase_requests\".\"completed_at\" IS NOT NULL AND \"purchase_requests\".\"completed_by\" IS NOT NULL) OR (\"purchase_requests\".\"status\" <> 'purchased' AND \"purchase_requests\".\"completed_at\" IS NULL AND \"purchase_requests\".\"completed_by\" IS NULL)"
         },
         "purchase_requests_cancelled_check": {
           "name": "purchase_requests_cancelled_check",
-          "value": "(\"purchase_requests\".\"status\" = 'cancelled') = (\"purchase_requests\".\"cancelled_at\" IS NOT NULL AND \"purchase_requests\".\"cancelled_by\" IS NOT NULL)"
+          "value": "(\"purchase_requests\".\"status\" = 'cancelled' AND \"purchase_requests\".\"cancelled_at\" IS NOT NULL AND \"purchase_requests\".\"cancelled_by\" IS NOT NULL) OR (\"purchase_requests\".\"status\" <> 'cancelled' AND \"purchase_requests\".\"cancelled_at\" IS NULL AND \"purchase_requests\".\"cancelled_by\" IS NULL AND \"purchase_requests\".\"cancel_reason\" IS NULL)"
         }
       },
       "isRLSEnabled": false

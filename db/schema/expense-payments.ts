@@ -36,6 +36,7 @@ export const expensePayments = pgTable(
     index("expense_payments_expense_idx").on(table.expenseId),
     check("expense_payments_transfer_krw_check", sql`${table.transferKrw} >= 0`),
     check("expense_payments_payable_krw_check", sql`${table.payableKrw} >= 0`),
+    check("expense_payments_gross_supply_krw_check", sql`${table.grossSupplyKrw} IS NULL OR ${table.grossSupplyKrw} >= 0`),
     check("expense_payments_diff_check", sql`${table.diffKrw} = ${table.transferKrw} - ${table.payableKrw}`),
     check(
       "expense_payments_diff_reason_check",

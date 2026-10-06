@@ -45,11 +45,11 @@ export const purchaseRequests = pgTable(
     check("purchase_requests_status_check", sql`${table.status} IN ('requested','purchased','cancelled')`),
     check(
       "purchase_requests_completed_check",
-      sql`(${table.status} = 'purchased') = (${table.completedAt} IS NOT NULL AND ${table.completedBy} IS NOT NULL)`,
+      sql`(${table.status} = 'purchased' AND ${table.completedAt} IS NOT NULL AND ${table.completedBy} IS NOT NULL) OR (${table.status} <> 'purchased' AND ${table.completedAt} IS NULL AND ${table.completedBy} IS NULL)`,
     ),
     check(
       "purchase_requests_cancelled_check",
-      sql`(${table.status} = 'cancelled') = (${table.cancelledAt} IS NOT NULL AND ${table.cancelledBy} IS NOT NULL)`,
+      sql`(${table.status} = 'cancelled' AND ${table.cancelledAt} IS NOT NULL AND ${table.cancelledBy} IS NOT NULL) OR (${table.status} <> 'cancelled' AND ${table.cancelledAt} IS NULL AND ${table.cancelledBy} IS NULL AND ${table.cancelReason} IS NULL)`,
     ),
     index("purchase_requests_status_created_idx").on(table.status, table.createdAt),
     index("purchase_requests_quote_line_idx").on(table.quoteLineId),

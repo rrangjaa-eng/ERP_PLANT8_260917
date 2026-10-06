@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { Client } from "pg";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db/client";
@@ -315,6 +316,52 @@ describe("증빙 확인 — 금액 고쳐 확인 · F2 · 거부 (06-06 Task 3)"
     expect(await reviewOf(doc.expenseId)).toBeNull();
     expect((await docRow(doc.expenseId)).version).toBe(version);
   });
+
+  it(
+    "05 증빙 무효는 확인과 같은 순서로 지출결의 행을 먼저 잠근다 — 행을 쥔 tx가 끝날 때까지 무효가 기다린다(06-06 검토 S-7)",
+    async () => {
+      const fx = await setupExpenseProject();
+      const doc = await withEvidenceAmount(await approvedExpenseWithEvidence(fx), 12_400_000);
+      const [fileId] = await liveFileIds(doc.expenseId);
+      if (!fileId) throw new Error("증빙 파일 없음");
+      const voider = await makeEvidenceManager("증빙무효", { attach: false, void: true });
+
+      const lockClient = new Client({ connectionString: process.env.DATABASE_URL });
+      await lockClient.connect();
+      let txOpen = false;
+      let call: Promise<unknown> | undefined;
+      try {
+        await lockClient.query("BEGIN");
+        txOpen = true;
+        const { rows: pidRows } = await lockClient.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
+        const lockPid = pidRows[0]?.pid;
+        // 확인 tx가 하는 첫 잠금과 같은 것 — lockExpenseForUpdate(지출결의 행 FOR UPDATE).
+        await lockClient.query("SELECT id FROM expenses WHERE id = $1 FOR UPDATE", [doc.expenseId]);
+        call = caught(voidEvidence(voider, { fileId, reason: "다른 건 영수증" }));
+
+        let blocked = false;
+        for (let attempt = 0; attempt < 40 && !blocked; attempt += 1) {
+          const { rows } = await lockClient.query<{ count: number }>("SELECT count(*)::int AS count FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))", [
+            lockPid,
+          ]);
+          blocked = (rows[0]?.count ?? 0) > 0;
+          if (!blocked) await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        expect(blocked, "증빙 무효가 지출결의 행 잠금에서 막히지 않았다").toBe(true);
+        expect(await liveFileIds(doc.expenseId)).toContain(fileId);
+
+        await lockClient.query("COMMIT");
+        txOpen = false;
+        expect(await call).toBeUndefined();
+        expect(await liveFileIds(doc.expenseId)).not.toContain(fileId);
+      } finally {
+        if (txOpen) await lockClient.query("ROLLBACK").catch(() => {});
+        await lockClient.end();
+        if (call) await call;
+      }
+    },
+    30_000,
+  );
 
   it("증빙 지문 다름 → 확인 거부 — 지금 version + 옛 지문은 동시성 거부 · 확인 기록 없음, 새 지문이면 확인됨, 지문 없으면 version만", async () => {
     const payer = await makePayer();

@@ -2,9 +2,11 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { actionLog } from "@/db/schema";
+import { actionLog, quoteLines } from "@/db/schema";
 import { createCorpCard } from "@/domain/corp-cards";
 import { createCardUsage, precheckCardUsage } from "@/domain/corp-card-usages";
+import { searchLinesForCardLink } from "@/domain/corp-card-usages/link-targets";
+import { createExpenseFromLines } from "@/domain/expenses";
 import { createOrgUnit, createTeam } from "@/domain/org";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
@@ -14,6 +16,8 @@ import { insertVendor } from "@/repositories/vendors";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { seoulToday } from "@/lib/dates";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
+import { setupExpenseE2E } from "./expense-fixture";
+import { submitReadyDraft } from "../integration/fixtures/expenses";
 
 // 06-05(EXP-07 · UI-SPEC S8 · S9): 법인카드 사용 — 직원 본인 등록 → 옆 패널 → 뒤 목록 카드 그룹.
 // 사람 · 팀 · 카드는 도메인 함수로 만든다(스펙마다 전용 본부 · 팀).
@@ -60,7 +64,9 @@ async function seedUsage(holder: CardHolder, amount: number): Promise<void> {
 }
 
 // 06-07: 카드 소지자가 담당 PM인 프로젝트 하나 · 견적 줄 하나(실행가 2,000,000) — 도메인 함수로.
-async function seedProjectLine(holder: CardHolder): Promise<{ projectName: string; projectNumber: string; itemName: string }> {
+async function seedProjectLine(
+  holder: CardHolder,
+): Promise<{ projectId: string; projectName: string; projectNumber: string; itemName: string; lineId: string }> {
   const suffix = randomUUID().slice(0, 8);
   const client = await insertVendor(SYSTEM_VIEWER, { name: `E2E카드클라이언트-${suffix}`, normalizedName: `e2e카드클라이언트-${suffix}` });
   const year = seoulToday().slice(0, 4);
@@ -89,7 +95,24 @@ async function seedProjectLine(holder: CardHolder): Promise<{ projectName: strin
       },
     ],
   });
-  return { projectName, projectNumber: project.number, itemName };
+  const [line] = await db.select({ id: quoteLines.id }).from(quoteLines).where(eq(quoteLines.revisionId, revision.id));
+  if (!line) throw new Error("견적 줄이 없습니다");
+  return { projectId: project.id, projectName, projectNumber: project.number, itemName, lineId: line.id };
+}
+
+// 06-07: 견적 줄에 이은 카드 사용 한 건(본인 등록 · 카드 전표 — 공급가 = 결제 합계) — 도메인 함수로.
+async function seedLineUsage(viewer: Person["viewer"], cardId: string, lineId: string, amount: number): Promise<void> {
+  const input = {
+    corpCardId: cardId,
+    usedOn: seoulToday(),
+    merchantVendorId: null,
+    total: { currency: "KRW" as const, amount, fxRate: 1 },
+    evidenceTypeCode: "card_receipt",
+    linkKind: "quote_line" as const,
+    lineId,
+    memo: null,
+  };
+  await createCardUsage(viewer, input, await precheckCardUsage(viewer, input));
 }
 
 function previousMonth(): string {
@@ -174,6 +197,111 @@ test.describe("법인카드 사용 등록 (06-05)", () => {
     await amount.press("Control+Enter");
     await expect(sheet.getByRole("status")).toHaveText("카드 사용 등록됨 · 1,100,000");
     await expect(page.getByRole("table").getByText("1,100,000", { exact: true })).toHaveCount(1);
+
+    // M-4 — 방금 등록 = 직전 등록: 종류 · 프로젝트는 남고 견적 줄은 빈다 → 1차 비활성 + `연결 없음 · 연결 고르기`.
+    await expect(sheet.getByRole("radio", { name: "견적 줄" })).toBeChecked();
+    await expect(sheet.getByText(`${target.projectNumber} ${target.projectName}`, { exact: true })).toBeVisible();
+    await expect(sheet.getByRole("button", { name: "견적 줄 바꾸기" })).toHaveText("고르기");
+    await amount.fill("1000");
+    await expect(sheet.getByText("연결 없음 · 연결 고르기", { exact: true })).toBeVisible();
+    await expect(sheet.getByRole("button", { name: /^카드 사용 등록/ })).toBeDisabled();
+    await page.context().close();
+  });
+
+  test("[06-07 M-4] `?new=1&line={id}` → 그 줄 채움 · `?new=1&project={id}` → 그 프로젝트 · 줄 빔", async ({ browser, baseURL }) => {
+    const holder = await makeCardHolder();
+    const target = await seedProjectLine(holder);
+    const page = await loginPage(browser, baseURL, holder.person);
+
+    await page.goto(`/cards?new=1&line=${target.lineId}`);
+    const sheet = panel(page);
+    await waitForHydration(sheet.getByLabel("결제 합계"));
+    await expect(sheet.getByRole("radio", { name: "견적 줄" })).toBeChecked();
+    await expect(sheet.getByText(`${target.projectNumber} ${target.projectName}`, { exact: true })).toBeVisible();
+    await expect(sheet.getByText(target.itemName, { exact: true })).toBeVisible();
+    await expect(sheet.getByText("남은 실행가 2,000,000", { exact: true })).toBeVisible();
+
+    await page.goto(`/cards?new=1&project=${target.projectId}`);
+    const reopened = panel(page);
+    await waitForHydration(reopened.getByLabel("결제 합계"));
+    await expect(reopened.getByRole("radio", { name: "견적 줄" })).toBeChecked();
+    await expect(reopened.getByText(`${target.projectNumber} ${target.projectName}`, { exact: true })).toBeVisible();
+    await expect(reopened.getByRole("button", { name: "견적 줄 바꾸기" })).toHaveText("고르기");
+    await expect(reopened.getByText(target.itemName, { exact: true })).toHaveCount(0);
+    await page.context().close();
+  });
+
+  test("[06-07 S10] 견적 줄 고르기 — 반대쪽 지출결의 줄 · 실행가 소진 줄은 `aria-disabled` + 2행 이유", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const card = await createCorpCard(SYSTEM_VIEWER, {
+      issuer: `신한-${randomUUID().slice(0, 8)}`,
+      numberLast4: "4321",
+      label: `E2E카드-${randomUUID().slice(0, 8)}`,
+      kind: "personal",
+      holderUserId: fx.pm.viewer.id,
+    });
+    if (!card.id) throw new Error("카드 id 없음");
+    const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.tracer.id] });
+    await submitReadyDraft(fx.pm.viewer, created.created[0]?.expenseId ?? "");
+    const before = await searchLinesForCardLink(fx.pm.viewer, { projectId: fx.projectId, query: "", currentLineId: null });
+    const hold = before.rows.find((row) => row.id === fx.lines.hold.id);
+    await seedLineUsage(fx.pm.viewer, card.id, fx.lines.hold.id, hold?.remainingKrw ?? 0);
+
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await page.goto("/cards?new=1");
+    const sheet = panel(page);
+    await waitForHydration(sheet.getByLabel("결제 합계"));
+    await sheet.getByRole("radio", { name: "견적 줄" }).check();
+    await sheet.getByRole("button", { name: "프로젝트 바꾸기" }).click();
+    const projects = page.getByRole("dialog", { name: "프로젝트 고르기" });
+    await projects.getByRole("textbox", { name: "프로젝트 번호 · 이름 · 클라이언트 검색" }).fill(fx.projectName);
+    await projects.getByRole("option", { name: new RegExp(fx.projectName) }).click();
+    await projects.getByRole("button", { name: /^이 프로젝트로/ }).click();
+    await sheet.getByRole("button", { name: "견적 줄 바꾸기" }).click();
+    const lines = page.getByRole("dialog", { name: "견적 줄 고르기" });
+    const opposite = lines.getByRole("option", { name: new RegExp(fx.lines.tracer.itemName) });
+    const exhausted = lines.getByRole("option", { name: new RegExp(fx.lines.hold.itemName) });
+    await expect(opposite).toHaveAttribute("aria-disabled", "true");
+    await expect(opposite).toContainText("지출결의 ");
+    await expect(exhausted).toHaveAttribute("aria-disabled", "true");
+    await expect(exhausted).toContainText("실행가 소진 · 다른 줄");
+    await page.context().close();
+  });
+
+  test("[06-07 견적 외 비용] 고를 수 있는 줄 0 → 3차 `견적 외 비용으로` → 라디오가 바뀌고 목록만 닫힘 → 저장 → 상세 견적 표에 새 줄", async ({ browser, baseURL }) => {
+    const holder = await makeCardHolder();
+    const target = await seedProjectLine(holder);
+    await seedLineUsage(holder.person.viewer, holder.cardIds[0] ?? "", target.lineId, 2_000_000);
+    const page = await loginPage(browser, baseURL, holder.person);
+    await page.goto("/cards?new=1");
+    const sheet = panel(page);
+    const amount = sheet.getByLabel("결제 합계");
+    await waitForHydration(amount);
+    await amount.fill("30000");
+    await sheet.getByRole("radio", { name: "견적 줄" }).check();
+    await sheet.getByRole("button", { name: "프로젝트 바꾸기" }).click();
+    const projects = page.getByRole("dialog", { name: "프로젝트 고르기" });
+    await projects.getByRole("textbox", { name: "프로젝트 번호 · 이름 · 클라이언트 검색" }).fill(target.projectName);
+    await projects.getByRole("option", { name: new RegExp(target.projectName) }).click();
+    await projects.getByRole("button", { name: /^이 프로젝트로/ }).click();
+    await sheet.getByRole("button", { name: "견적 줄 바꾸기" }).click();
+    const lines = page.getByRole("dialog", { name: "견적 줄 고르기" });
+    await expect(lines.getByText("이을 수 있는 줄 없음", { exact: true })).toBeVisible();
+    await expect(lines.getByRole("button", { name: /^이 줄로/ })).toBeDisabled();
+    await lines.getByRole("button", { name: "견적 외 비용으로" }).click();
+    await expect(lines).toBeHidden();
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByRole("radio", { name: "견적 외 비용" })).toBeChecked();
+    await expect(amount).toHaveValue("30,000");
+
+    const item = `현장 다과-${randomUUID().slice(0, 6)}`;
+    await sheet.getByLabel("항목").fill(item);
+    await expect(sheet.getByText("저장하면 견적 외 비용 줄 생김 · 실행가 30,000", { exact: true })).toBeVisible();
+    await amount.press("Control+Enter");
+    await expect(sheet.getByRole("status")).toHaveText("카드 사용 등록됨 · 30,000");
+
+    await page.goto(`/projects/${target.projectId}`);
+    await expect(page.getByText(item).first()).toBeVisible();
     await page.context().close();
   });
 

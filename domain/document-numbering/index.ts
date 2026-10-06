@@ -3,6 +3,8 @@ import {
   allocateNumber as repoAllocateNumber,
   lockDocumentCounter,
   lockDocumentCountersByKey,
+  shareLockDocumentCounter,
+  ALL_PERIODS,
   type DbOrTx,
 } from "@/repositories/document-counters";
 import { findSimpleValue, upsertSimpleValue } from "@/repositories/settings";
@@ -176,7 +178,14 @@ type SeqStartGuard = { seqStart: SettingDef<number>; lockIssued: (viewer: Viewer
 // 올해 행 하나, 지출결의 번호(PR #162 리뷰 P1 — period = 프로젝트 번호)는 `expense` 행 전부.
 function seqStartGuardFor(key: string): SeqStartGuard | undefined {
   if (key === DOCUMENT_NUMBER_EXPENSE_SEQ_START.key) {
-    return { seqStart: DOCUMENT_NUMBER_EXPENSE_SEQ_START, lockIssued: (viewer, _now, tx) => lockDocumentCountersByKey(viewer, "expense", tx) };
+    return {
+      seqStart: DOCUMENT_NUMBER_EXPENSE_SEQ_START,
+      // 잠금판(ALL_PERIODS)을 먼저 — 커밋 전 채번(행이 아직 없던 프로젝트 포함)이 끝날 때까지 기다린 뒤 모든 period 행을 잠근다.
+      lockIssued: async (viewer, _now, tx) => {
+        await lockDocumentCounter(viewer, "expense", ALL_PERIODS, tx);
+        return lockDocumentCountersByKey(viewer, "expense", tx);
+      },
+    };
   }
   const entry = Object.entries(DOCUMENT_NUMBER_FORMAT_DEFS).find(([, defs]) => defs.seqStart.key === key);
   if (!entry) return undefined;
@@ -261,6 +270,7 @@ export async function allocateExpenseNumber(
   input: { projectNumber: string; format: Omit<ExpenseNumberFormat, "seqStart"> },
   tx: DbOrTx,
 ): Promise<{ number: string; seq: number }> {
+  await shareLockDocumentCounter(viewer, "expense", ALL_PERIODS, tx);
   const seq = await repoAllocateNumber(viewer, "expense", input.projectNumber, tx);
   const seqStart = await getSettingValue(DOCUMENT_NUMBER_EXPENSE_SEQ_START, undefined, {
     findSimpleValue: (v, k) => findSimpleValue(v, k, tx),

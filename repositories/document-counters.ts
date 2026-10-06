@@ -104,3 +104,21 @@ export async function lockDocumentCountersByKey(viewer: Viewer, counterKey: stri
     .for("update");
   return rows.reduce((max, row) => Math.max(max, row.value), 0);
 }
+
+// PR #162 독립 검토 3 — 공유 잠금판. 카운터 행이 아직 없는 period(첫 번호를 매기는 중)는 FOR UPDATE로 잡을 행이 없어, 시작값
+// 저장 가드가 커밋 전 채번을 보지 못한다. 채번은 고정 행(counterKey, ALL_PERIODS)을 FOR SHARE로(채번끼리는 막지 않는다),
+// 가드는 같은 행을 lockDocumentCounter(FOR UPDATE)로 **다른 행보다 먼저** 잡아 둘을 직렬화한다. 이 행의 value는 늘 0이다.
+export const ALL_PERIODS = "*";
+
+export async function shareLockDocumentCounter(viewer: Viewer, counterKey: string, period: string, tx: DbOrTx): Promise<void> {
+  void viewer;
+  await tx
+    .insert(documentCounters)
+    .values({ counterKey, period, value: 0 })
+    .onConflictDoNothing({ target: [documentCounters.counterKey, documentCounters.period] });
+  await tx
+    .select({ value: documentCounters.value })
+    .from(documentCounters)
+    .where(and(eq(documentCounters.counterKey, counterKey), eq(documentCounters.period, period)))
+    .for("share");
+}

@@ -457,6 +457,33 @@ describe("지출결의 번호 순번 시작값 낮추기(PR #162 P1)", () => {
     expect(await allocate("26002")).toBe("26002-0005");
   });
 
+  // PR #162 독립 검토 3 — 카운터 행이 아직 없는 프로젝트의 첫 번호를 매기는 중(커밋 전)이어도 시작값 저장은 그 커밋을 기다렸다가 판정한다.
+  it("커밋 전 제출이 카운터 행이 없던 프로젝트의 첫 번호를 잡고 있으면 시작값 1 저장은 그 커밋 뒤 거부된다", async () => {
+    await save(100);
+    const format = await loadExpenseNumberFormat();
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    let markAllocated!: () => void;
+    const allocated = new Promise<void>((resolve) => (markAllocated = resolve));
+    const submission = db.transaction(async (tx) => {
+      const { number } = await allocateExpenseNumber(SYSTEM_VIEWER, { projectNumber: "26009", format }, tx);
+      markAllocated();
+      await released;
+      return number;
+    });
+    await allocated;
+    const saveResult = save(1).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    release();
+
+    expect(await submission).toBe("26009-0100");
+    expect(await saveResult).toBeInstanceOf(SeqStartOverlapError);
+    expect(await getSettingValue(DOCUMENT_NUMBER_EXPENSE_SEQ_START)).toBe(100);
+  });
+
   it("제출이 옛 서식(시작값 100)을 읽은 뒤 시작값이 1로 저장되면 번호는 1로 매긴다", async () => {
     await save(100);
     const staleFormat = await loadExpenseNumberFormat();

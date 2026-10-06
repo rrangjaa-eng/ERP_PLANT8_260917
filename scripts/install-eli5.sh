@@ -9,20 +9,29 @@ if [ "$CLAUDE_CODE_REMOTE" != "true" ]; then
   exit 0
 fi
 
-SKILL_FILE="$HOME/.claude/skills/eli5/SKILL.md"
-if [ -f "$SKILL_FILE" ]; then
+# 버전 고정: anthropics/claude-plugins-community의 eli5 1.0.0 커밋과 그 SKILL.md의 sha256.
+# 스킬은 모든 세션 프롬프트에 들어가므로 해시가 다른 내용은 설치하지 않는다.
+ELI5_PIN="f60f0454df3045f724c43c6346ec80bdcc3472b2"
+ELI5_SHA256="3bb95cd13852051c5a1862e8b94da1de7cfba7415d418ab0ca4d762527d1b9a5"
+URL="https://raw.githubusercontent.com/anthropics/claude-plugins-community/$ELI5_PIN/eli5/skills/eli5/SKILL.md"
+SKILL_DIR="$HOME/.claude/skills/eli5"
+SKILL_FILE="$SKILL_DIR/SKILL.md"
+
+hash_ok() { echo "$ELI5_SHA256  $1" | sha256sum -c --status 2>/dev/null; }
+
+# 멱등: 같은 해시의 파일이 있으면 건너뛴다. 다르거나 깨진 파일은 다시 받는다.
+if [ -f "$SKILL_FILE" ] && hash_ok "$SKILL_FILE"; then
   echo "install-eli5: already installed — skipping"
   exit 0
 fi
 
-# 버전 고정: anthropics/claude-plugins-community의 eli5 1.0.0 커밋.
-ELI5_PIN="${ELI5_PIN:-f60f0454df3045f724c43c6346ec80bdcc3472b2}"
-URL="https://raw.githubusercontent.com/anthropics/claude-plugins-community/$ELI5_PIN/eli5/skills/eli5/SKILL.md"
-mkdir -p "$(dirname "$SKILL_FILE")"
-if ! curl -fsS -m 30 -o "$SKILL_FILE.tmp" "$URL"; then
-  rm -f "$SKILL_FILE.tmp"
-  echo "install-eli5: download failed ($ELI5_PIN) — eli5 unavailable this session" >&2
+mkdir -p "$SKILL_DIR" && TMP="$(mktemp "$SKILL_DIR/.SKILL.md.XXXXXX")" \
+  && curl -fsS -m 30 -o "$TMP" "$URL" && hash_ok "$TMP" && mv -f "$TMP" "$SKILL_FILE"
+status=$?
+[ -n "${TMP:-}" ] && rm -f "$TMP"
+if [ "$status" -ne 0 ]; then
+  echo "install-eli5: download, checksum or install failed ($ELI5_PIN) — eli5 unavailable this session" >&2
   exit 0
 fi
-mv "$SKILL_FILE.tmp" "$SKILL_FILE"
 echo "install-eli5: installed ($ELI5_PIN)"
+exit 0

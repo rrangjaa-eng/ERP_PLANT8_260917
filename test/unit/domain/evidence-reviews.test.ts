@@ -188,6 +188,12 @@ describe("증빙 금액 초과 한 줄(Q-F)", () => {
   it("남은 실행가 null(팀 비용) · 증빙 > 승인액 → `승인액보다 +{차액}`만", () => {
     expect(evidenceOverrunLine({ ...base, lineRemainingKrw: null })).toBe("승인액보다 +400,000");
   });
+  it("남은 실행가가 음수(사슬 위 다른 문서가 이미 넘음) → 실행가 초과는 이 문서 증빙 금액까지만(06-06 검토 S-4)", () => {
+    expect(evidenceOverrunLine({ ...base, evidenceAmountKrw: 500_000, approvedSupplyKrw: 500_000, lineRemainingKrw: -1_000_000 })).toBe("실행가 초과 500,000");
+  });
+  it("남은 실행가 0 → 실행가 초과 = 증빙 금액", () => {
+    expect(evidenceOverrunLine({ ...base, evidenceAmountKrw: 500_000, approvedSupplyKrw: 500_000, lineRemainingKrw: 0 })).toBe("실행가 초과 500,000");
+  });
   it("파일 0 · 증빙 금액만 → null(R-4 · E-7)", () => {
     expect(evidenceOverrunLine({ hasLiveEvidence: false, evidenceAmountKrw: 12_400_000, approvedSupplyKrw: 12_000_000, lineRemainingKrw: 11_800_000 })).toBeNull();
   });

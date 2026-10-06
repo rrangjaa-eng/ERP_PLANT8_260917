@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/ui/button/Button";
+import { Form } from "@/ui/form/Form";
 import { ConfirmDialog, RefreshStep } from "@/ui/confirm-dialog/ConfirmDialog";
 import dialogStyles from "@/app/(app)/approvals/decision-dialogs.module.css";
 import { closeExpenseAction } from "../actions";
@@ -35,6 +36,7 @@ export function CloseExpenseButton({
 }) {
   const router = useRouter();
   const fieldId = useId();
+  const errorId = useId();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [serverError, setServerError] = useState<string | null>(null);
@@ -62,8 +64,11 @@ export function CloseExpenseButton({
   }, [refreshing]);
 
   const trimmed = reason.trim();
-  const inputReason = trimmed.length === 0 ? messages.empty : trimmed.length > messages.max ? messages.tooLong : undefined;
-  const blocked = serverError ?? inputReason;
+  const empty = trimmed.length === 0;
+  // 500자 넘음은 칸 오류 — 칸 아래 Form.Error 한 자리(칸 aria-invalid · aria-describedby, 1차는 blockedBy로 같은 글자를 가리킨다).
+  // 빈 사유는 1차 왼쪽 이유 자리(「Error — 사유 근거 칸」).
+  const tooLong = !empty && trimmed.length > messages.max;
+  const blocked = serverError ?? (empty ? messages.empty : tooLong ? messages.tooLong : undefined);
   const pending = submitting || refreshing;
 
   function close() {
@@ -110,18 +115,23 @@ export function CloseExpenseButton({
         evidenceField={
           <div className={dialogStyles.reason}>
             <label htmlFor={fieldId}>사유</label>
-            <textarea
-              id={fieldId}
-              rows={2}
-              autoComplete="off"
-              value={reason}
-              aria-disabled={pending ? "true" : undefined}
-              readOnly={pending}
-              onChange={(event) => {
-                setReason(event.target.value);
-                setServerError(null);
-              }}
-            />
+            <div>
+              <textarea
+                id={fieldId}
+                rows={2}
+                autoComplete="off"
+                value={reason}
+                aria-disabled={pending ? "true" : undefined}
+                aria-invalid={tooLong ? "true" : undefined}
+                aria-describedby={tooLong ? errorId : undefined}
+                readOnly={pending}
+                onChange={(event) => {
+                  setReason(event.target.value);
+                  setServerError(null);
+                }}
+              />
+              {tooLong ? <Form.Error id={errorId}>{messages.tooLong}</Form.Error> : null}
+            </div>
           </div>
         }
         primary={{
@@ -129,7 +139,8 @@ export function CloseExpenseButton({
           shortcut: "Ctrl+Enter",
           pending,
           onConfirm: () => void confirm(),
-          disabledReason: blocked,
+          disabledReason: tooLong ? undefined : blocked,
+          blockedBy: tooLong ? errorId : undefined,
           failure,
           // 응답 없음의 다음 한 수 — 화면을 다시 받은 뒤 닫는다(거부 꼬리 `새로 고침`과 같은 동작).
           nextStep: failure ? <RefreshStep onDone={close} /> : undefined,

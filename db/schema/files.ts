@@ -32,7 +32,7 @@ export const files = pgTable(
   (table) => [
     index("files_owner_idx").on(table.ownerKind, table.ownerId),
     index("files_sha256_idx").on(table.sha256),
-    check("files_owner_kind_check", sql`${table.ownerKind} IN ('expense')`),
+    check("files_owner_kind_check", sql`${table.ownerKind} IN ('expense','quote_revision','reserve_entry','corp_card_usage')`),
     check("files_sha256_check", sql`${table.sha256} ~ '^[0-9a-f]{64}$'`),
     check("files_size_bytes_check", sql`${table.sizeBytes} > 0`),
     check(

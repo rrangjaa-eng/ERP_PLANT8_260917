@@ -75,4 +75,9 @@ export const INFO_ITEMS: InfoItemDef[] = [
   // 기안자 · 결재자가 매일 다루는 업무 정보라 둘 다 기본값 참.
   { key: "expense.value", label: "지출결의 정보", staffDefault: true },
   { key: "expense.amount", label: "지출결의 금액", staffDefault: true },
+  // 06-27(RS-19): 법인카드 사용 · 구매 요청의 정보 칸과 금액 칸 — 직원이 매일 등록 · 신청하는 업무 정보라 기본값 참(위 expense.* 선례).
+  { key: "card_usage.value", label: "법인카드 사용 정보", staffDefault: true },
+  { key: "card_usage.amount", label: "법인카드 사용 금액", staffDefault: true },
+  { key: "purchase_request.value", label: "구매 요청 정보", staffDefault: true },
+  { key: "purchase_request.amount", label: "구매 요청 금액", staffDefault: true },
 ];

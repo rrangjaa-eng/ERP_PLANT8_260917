@@ -35,7 +35,12 @@ export const MENUS: MenuDef[] = [
   // 시드 계급 중에는 시스템 관리자만 seedMasterData의 MENUS 루프로 켜진다.
   { key: "expenses.evidence_void", label: "증빙 무효 처리" },
   { key: "expenses.evidence_attach", label: "결재 중 증빙 붙이기" },
+  // 06-27(D-601): 지급 처리 · 구매 처리 · 카드 대리 등록 — 경영관리의 일이라 상위 메뉴(expenses · cards) 쓰기와 따로 둔다(정확 일치 판정).
+  // 위 증빙 키들처럼 시드 계급 중에는 시스템 관리자만 MENUS 루프로 켜지고, 경영관리 계급은 관리자가 권한표에서 켠다.
+  { key: "expenses.payments", label: "지급 처리" },
   { key: "cards", label: "법인카드" },
+  { key: "cards.purchases", label: "구매 처리" },
+  { key: "cards.proxy", label: "카드 대리 등록" },
   { key: "approvals", label: "결재함" },
   { key: "pnl", label: "손익" },
   { key: "admin.system-status", label: "시스템 상태" },

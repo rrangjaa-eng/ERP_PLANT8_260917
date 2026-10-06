@@ -105,9 +105,9 @@ export const setVendorHiddenAction = authedActionClient
 
 // 「구분 더하기」 — 같은 사업자번호 거래처의 갈래만 켠다.
 export const addVendorKindAction = authedActionClient
-  .schema(z.object({ id: z.string().min(1), kind: z.enum(["client", "supplier"]) }))
+  .schema(z.object({ id: z.string().min(1), kind: z.enum(["client", "supplier"]), businessNo: z.string() }))
   .action(async ({ parsedInput, ctx }) => {
-    await addVendorKind(ctx.viewer, parsedInput.id, parsedInput.kind);
+    await addVendorKind(ctx.viewer, parsedInput.id, parsedInput.kind, parsedInput.businessNo);
     revalidatePath("/admin/vendors");
   });
 

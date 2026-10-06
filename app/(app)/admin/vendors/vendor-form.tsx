@@ -95,6 +95,8 @@ export function VendorForm({
   const panelRef = useRef<PanelFormHandle>(null);
   // 제출 직후 같은 틱의 두 번째 제출(Ctrl+Enter 연타)을 막는 동기 가드 — isExecuting은 다음 렌더에야 참이 된다(D7 · R15-ii).
   const submitLockRef = useRef(false);
+  // 충돌을 받은 제출의 사업자번호 — 「구분 더하기」 때 서버가 그 거래처가 아직 같은 번호인지 다시 확인한다.
+  const submittedBusinessNoRef = useRef("");
   const [duplicateCount, setDuplicateCount] = useState<number | null>(null);
   const [businessNoConflict, setBusinessNoConflict] = useState<BusinessNoConflict | null>(null);
   const [clearAccountNumber, setClearAccountNumber] = useState(false);
@@ -149,6 +151,7 @@ export function VendorForm({
     // 지난 「구분 더하기」 실패 문구는 새 제출과 무관하다 — 남기면 등록이 성공해도 칸이 오류로 보인다.
     addKindState.reset();
     const formData = new FormData(event.currentTarget);
+    submittedBusinessNoRef.current = getStringField(formData, "businessNo");
 
     // 04.5-05: 수정은 그린 칸을 빈 값까지 모두 보낸다(서버 계약 — 키 없음 = 안 바꿈 · 빈 값 = 비움). 등록은 빈 칸을 뺀다.
     const customFields: Record<string, unknown> = {};
@@ -227,7 +230,7 @@ export function VendorForm({
         <Button
           variant="tertiary"
           pending={addKindState.isExecuting}
-          onClick={() => addKindState.execute({ id: businessNoConflict.id, kind: businessNoConflict.addSide as VendorSide })}
+          onClick={() => addKindState.execute({ id: businessNoConflict.id, kind: businessNoConflict.addSide as VendorSide, businessNo: submittedBusinessNoRef.current })}
         >
           구분 더하기
         </Button>

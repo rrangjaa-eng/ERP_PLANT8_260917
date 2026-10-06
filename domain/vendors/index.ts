@@ -34,6 +34,7 @@ export class ForbiddenError extends UserFacingError {}
 export class ArchivedVendorError extends UserFacingError {}
 // 선검사와 트랜잭션 안 잠금 조회가 같은 문구를 쓴다(경합으로 안에서 잡혀도 같은 원인 — 디자인 교차 리뷰 m-3).
 const ARCHIVED_VENDOR_MESSAGE = "보관됐거나 존재하지 않는 거래처는 수정할 수 없음";
+const NOT_SAME_BUSINESS_NO_MESSAGE = "같은 사업자번호 거래처 아님 · 다시 저장";
 
 // 사업자번호 중복 막기(260907 vendors_business_number_once와 같은 뜻) — 살아 있는(보관 안 된) 거래처 사이 숫자만 같은 번호는 하나.
 // 색인 이름은 마이그레이션(PR B)이 정한다. 선검사가 1차이고 이 색인의 23505는 동시 등록 경합만 잡는다.
@@ -511,6 +512,7 @@ export async function addVendorKind(
   viewer: Viewer,
   id: string,
   side: VendorSide,
+  businessNo: string,
   deps?: Partial<Pick<VendorWriteDeps, "can" | "recordAction">>,
 ): Promise<VendorDto | null> {
   const canFn = deps?.can ?? defaultCan;
@@ -521,6 +523,11 @@ export async function addVendorKind(
   const changed = await withTransaction(async (tx) => {
     const locked = await repoFindVendorByIdForUpdate(viewer, id, tx);
     if (!locked || locked.archivedAt !== null) throw new ArchivedVendorError(ARCHIVED_VENDOR_MESSAGE);
+    // PR #178 Codex — 충돌을 알린 뒤 그 사이 번호가 바뀌었거나 숨겨진 거래처는 바꾸지 않는다(잠근 행으로 다시 확인).
+    const digits = businessNoDigits(businessNo);
+    if (locked.hidden || digits === null || businessNoDigits(locked.businessNo) !== digits) {
+      throw new UserFacingError(NOT_SAME_BUSINESS_NO_MESSAGE);
+    }
     if (servesSide(locked.kind, side)) return false;
     await repoUpdateVendor(viewer, id, { kind: "both" }, tx);
     return true;

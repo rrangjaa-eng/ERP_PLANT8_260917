@@ -106,7 +106,8 @@ export type RestoreResult = { restored: boolean };
 async function vendorRestoreBlock(viewer: Viewer, id: string): Promise<UserFacingError | null> {
   const row = await findVendorById(viewer, id);
   const digits = businessNoDigits(row?.businessNo);
-  const [taker] = digits === null ? [] : await findVendorsByBusinessNoDigits(viewer, digits, { excludeId: id });
+  // 보관된 같은 번호끼리는 막지 않는다(살아 있는 행만 겹치면 안 된다 · 보관함 목록 · 유일 색인과 같은 기준).
+  const taker = digits === null ? undefined : (await findVendorsByBusinessNoDigits(viewer, digits, { excludeId: id })).find((row) => row.archivedAt === null);
   if (!taker) return null;
   const name = (await visible(viewer, "vendor.value")) ? ` · ${taker.name}` : "";
   return new VendorBusinessNoTakenError(`같은 사업자번호 거래처 있음${name} · 복원 불가`);

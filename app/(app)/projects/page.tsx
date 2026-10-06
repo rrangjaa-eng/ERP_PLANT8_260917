@@ -10,7 +10,7 @@ import {
   type ProjectSortKey,
 } from "@/domain/projects";
 import { listProjectFormReferences, loadCreatorDefaults, scopeCreateFormReferences } from "@/domain/projects/references";
-import { canCreateProject, projectsEmptyState } from "./create-entry";
+import { canCreateProject, createFormClientCount, projectsEmptyState } from "./create-entry";
 import { listProjectStatusCatalog } from "@/domain/projects/status";
 import { recentFxRate } from "@/domain/money/currency";
 import { firstListParam, normalizeListYear, reconcileListYear, yearOptions } from "@/domain/projects/list-view";
@@ -123,7 +123,9 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
     clientCount: references.clients.length,
   };
   const canCreate = canCreateProject(createChoices);
-  const createReferences = canCreate && showCreateForm ? scopedCreateReferences : null;
+  // 261006-biv Codex 리뷰 P2 — 복사 폼은 복사 출처의 클라이언트도 센다(머리 「프로젝트 등록」 · 빈 화면은 그대로).
+  const canOpenCreateForm = canCreateProject({ ...createChoices, clientCount: createFormClientCount(references.clients, copySource) });
+  const createReferences = canOpenCreateForm && showCreateForm ? scopedCreateReferences : null;
   const creatorDefaults = createReferences ? loadedCreatorDefaults : null;
 
   const { rows, totals, total, page, pageCount, periodErrors, year, hasFilter, emptyKind } = list;

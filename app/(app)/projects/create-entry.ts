@@ -7,6 +7,16 @@ export function canCreateProject(input: CreateChoices): boolean {
   return input.canWrite && input.teamCount > 0 && input.pmUserCount > 0 && input.clientCount > 0;
 }
 
+// 261006-biv Codex 리뷰 P2 — 복사 출처의 클라이언트가 다른 갈래로 바뀌어 선택지에 없어도 복사 폼은 그 값 하나로 연다
+// (project-form.tsx가 저장된 클라이언트를 선택지에 더한다). 이름이 가려진 계급은 고를 수 없으니 더하지 않는다.
+export function createFormClientCount(
+  clients: ReadonlyArray<{ id: string }>,
+  copySource: { clientId: string; clientName: string | null } | null,
+): number {
+  const extra = copySource?.clientName != null && !clients.some((c) => c.id === copySource.clientId) ? 1 : 0;
+  return clients.length + extra;
+}
+
 // 빈 화면은 무엇이 없는지 · 다음 한 수(SYSTEM.md §7-7 EMPTY). 클라이언트만 없어 등록할 수 없고 거래처를 만들 수 있을 때만
 // 「클라이언트 등록」 — 거래처 정보가 가려져 목록이 빈 계급(vendorShown 거짓)은 거래처가 없는 것이 아니라 행동이 없다.
 export function projectsEmptyState(

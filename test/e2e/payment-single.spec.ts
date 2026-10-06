@@ -641,6 +641,10 @@ test.describe("증빙 확인 (06-06 · S4 · O-2)", () => {
     await expect(field).toBeFocused();
     await field.fill("12000000");
     await expect(review.getByTestId("evidence-amount-hint")).toHaveText("확인하면 12,400,000 → 12,000,000");
+    // 06-06 DOM 감사 D-3 — 힌트(`확인하면 … → …`)가 칸의 aria-describedby로 이어진다(이체액 칸과 같은 꼴).
+    const describedBy = (await field.getAttribute("aria-describedby")) ?? "";
+    expect(describedBy.split(" ")).toContain("evidence-amount-hint");
+    await expect(page.locator("#evidence-amount-hint")).toContainText("확인하면 12,400,000 → 12,000,000");
     await page.keyboard.press("Control+Enter");
 
     await expect(review.getByText("확인됨", { exact: true })).toBeVisible();
@@ -648,6 +652,13 @@ test.describe("증빙 확인 (06-06 · S4 · O-2)", () => {
     await expect(review.getByTestId("evidence-amount-by")).toHaveText(new RegExp(`^${payer.name} \\d{2}-\\d{2}$`));
     const [row] = await db.select({ evidenceAmount: expenses.evidenceAmount }).from(expenses).where(eq(expenses.id, expenseId));
     expect(row?.evidenceAmount).toBe(12_000_000);
+    // 06-06 DOM 감사 D-1 — 고친 금액으로 확인하면 새 지급 총액 미리보기가 끝난 뒤(이체액 칸이 새 값으로 다시 선 뒤)에도 포커스는 이체액 칸.
+    const fresh = await previewPayable(payer.viewer, { expenseId, payDate: seoulToday() });
+    if (fresh.payableKrw === null || fresh.payableKrw === undefined) throw new Error("지급 총액 없음");
+    const transfer = page.locator("#payment-transfer");
+    await expect(transfer).toHaveValue(formatKrw(fresh.payableKrw));
+    await expect(page.getByRole("button", { name: /^지급 완료/ })).not.toHaveAttribute("aria-disabled", "true");
+    await expect(transfer).toBeFocused();
     await page.context().close();
   });
 
@@ -695,6 +706,26 @@ test.describe("증빙 확인 (06-06 · S4 · O-2)", () => {
     await page.locator("#evidence-amount").fill("12400000");
     await expect(review.getByTestId("evidence-overrun")).toHaveText("승인액보다 +400,000");
     await expect(confirm).not.toHaveAttribute("aria-disabled", "true");
+    // 06-06 DOM 감사 D-2 — 새 금액의 미리보기가 오는 동안 Q-F 줄 글자도 `--text-faint`(이전 값 → 새 값), 응답 뒤 `--status-warning`.
+    const overrun = review.getByTestId("evidence-overrun");
+    const [faint, warning] = [await tokenAsColor(page, "--text-faint"), await tokenAsColor(page, "--status-warning")];
+    expect(await overrun.evaluate((element) => getComputedStyle(element).color)).toBe(warning);
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route(`**/expenses/${expenseId}`, async (route) => {
+      if (route.request().method() === "POST") await held;
+      await route.continue();
+    });
+    await page.locator("#evidence-amount").fill("12500000");
+    await expect.poll(() => overrun.evaluate((element) => getComputedStyle(element).color)).toBe(faint);
+    release();
+    await expect(overrun).toContainText("승인액보다 +500,000");
+    await expect.poll(() => overrun.evaluate((element) => getComputedStyle(element).color)).toBe(warning);
+    await page.unroute(`**/expenses/${expenseId}`);
+    await page.locator("#evidence-amount").fill("12400000");
+    await expect(overrun).toHaveText("승인액보다 +400,000");
     await page.keyboard.press("Control+Enter");
 
     await expect(review.getByText("확인됨", { exact: true })).toBeVisible();

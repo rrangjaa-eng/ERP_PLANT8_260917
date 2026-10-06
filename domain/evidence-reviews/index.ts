@@ -77,18 +77,20 @@ export function evidenceStampOf(input: { fileIds: readonly string[]; evidenceAmo
 
 // ── 증빙 금액 초과 한 줄(Q-F — 사용자 결정 2026-10-05 UC-4 「표시만」) ──────────────
 // 막지 않는다 — 확인 · 지급 게이트 · 규칙은 이 값을 읽지 않는다. 살아 있는 파일이 없거나 증빙 금액이 없으면 null(R-4 — pickPaymentAmount와 같은 조건).
-// 남은 실행가 null = 팀 비용 · 사슬이 최신 차수에 닿지 않음(실행가 조각 없음).
+// 남은 실행가 null = 팀 비용 · 사슬이 최신 차수에 닿지 않음(실행가 조각 없음). 음수(사슬 위 다른 문서가 이미 넘음)는 0으로 본다 — 이 문서의 초과는 증빙 금액까지만(06-06 검토 S-4).
 export function evidenceOverrunLine(input: {
   hasLiveEvidence: boolean;
   evidenceAmountKrw: number | null;
-  approvedSupplyKrw: number;
+  // null = 승인 공급가 없음 — 승인액 조각을 뺀다(06-06 검토 S-5).
+  approvedSupplyKrw: number | null;
   lineRemainingKrw: number | null;
 }): string | null {
   const amount = input.evidenceAmountKrw;
   if (!input.hasLiveEvidence || amount === null) return null;
   const parts: string[] = [];
-  if (amount > input.approvedSupplyKrw) parts.push(`승인액보다 +${formatKrw(diffKrw(amount, input.approvedSupplyKrw))}`);
-  if (input.lineRemainingKrw !== null && amount > input.lineRemainingKrw) parts.push(`실행가 초과 ${formatKrw(diffKrw(amount, input.lineRemainingKrw))}`);
+  if (input.approvedSupplyKrw !== null && amount > input.approvedSupplyKrw) parts.push(`승인액보다 +${formatKrw(diffKrw(amount, input.approvedSupplyKrw))}`);
+  const remaining = input.lineRemainingKrw === null ? null : Math.max(input.lineRemainingKrw, 0);
+  if (remaining !== null && amount > remaining) parts.push(`실행가 초과 ${formatKrw(diffKrw(amount, remaining))}`);
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 

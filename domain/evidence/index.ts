@@ -462,7 +462,8 @@ export async function getEvidenceActions(viewer: Viewer, input: { ownerKind: str
 
 // 05-09(사용자 결정 2026-09-26 PR #89): 승인된 문서의 잘못 붙은 증빙 — 행 · 저장소 객체는 그대로 두고 무효 세 칸만 쓴다. 사유는 04.1 반려
 // 사유 검증 그대로, 로그에는 사유 길이만. 승인 뒤라 결재 판정이 없어 인스턴스 version은 올리지 않는다. 되돌리는 길은 없다(G3 — 같은
-// 파일을 다시 올린다). 잠금: 파일 행(조건 UPDATE) 하나.
+// 파일을 다시 올린다). 잠금: 소유 문서 행(rule.lock — 지출결의는 lockExpenseForUpdate) → 파일 행(조건 UPDATE). 06-06 증빙 확인과 같은 순서라
+// 확인 tx가 읽은 파일 묶음을 무효가 그 사이에 줄이지 못한다(06-06 검토 S-7).
 export async function voidEvidence(viewer: Viewer, input: { fileId: string; reason: string }, deps?: EvidenceDeps): Promise<void> {
   const file = UUID_SHAPE.test(input.fileId) ? await findFileById(viewer, input.fileId) : null;
   const rule = file ? ruleFor(file.ownerKind) : null;
@@ -474,6 +475,7 @@ export async function voidEvidence(viewer: Viewer, input: { fileId: string; reas
   const gate = await loadActionLogGate();
 
   const already = await withTransaction(async (tx) => {
+    if (!(await rule.lock(viewer, file.ownerId, tx))) throw rule.notFound();
     const voided = await markVoided(viewer, { id: file.id, voidedBy: viewer.id, reason, at: deps?.now }, tx);
     if (!voided) return findFileById(viewer, file.id, tx);
     await recordActionInTx(

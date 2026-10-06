@@ -332,19 +332,7 @@ export type LockedExpense = Pick<
   "id" | "evidenceType" | "supplyAmountKrw" | "evidenceAmount" | "scheduledPaymentDate" | "evidenceDate" | "createdAt" | "paymentMethod" | "prepaid"
 >;
 
-// 06-04 — 증빙 · 짝 게이트 ctx(DB 없음). 문서 상태(증빙 유무 · 선결제)는 호출자가 넘긴 값 — 잠금 뒤에는 tx로 읽은 값(CROSS R-3).
-// waived · confirmation은 기록 표를 읽는 06-06 · 06-10의 evidenceGateInputs가 넣는다 — 06-04에는 그 기록을 쓰는 경로가 없어 「기록 없음」 하나.
-export function evidenceGateCtx(input: { shared: PaymentShared; hasEvidence: boolean; prepaid: boolean; drafterName: string }): EvidenceGateInput {
-  return {
-    evidenceRequired: input.shared.evidenceRequired,
-    hasEvidence: input.hasEvidence,
-    prepaid: input.prepaid,
-    waived: false,
-    confirmation: null,
-    drafterName: input.drafterName,
-  };
-}
-
+// 06-04 — 짝 게이트 ctx(DB 없음). 증빙 게이트 ctx는 evidenceGateInputs(06-06 — 잠금 뒤 tx로 읽은 증빙 유무 · 면제 · 확인 기록)가 짓는다.
 export function pairGateCtx(row: { paymentMethod: string | null; evidenceType: string | null }, shared: PaymentShared): PairGateInput {
   return {
     pairs: shared.pairs,
@@ -364,8 +352,8 @@ export async function judgeLockedPayment(input: {
   locked: LockedExpense;
   approvalState: string | null;
   lockedHasEvidence: boolean;
-  // 06-06 — 잠금 뒤 tx로 지은 증빙 게이트 입력(evidenceGateInputs — 면제 · 확인 기록 포함). 없으면 06-04 꼴(면제 · 확인 없음).
-  evidenceGate?: EvidenceGateInput;
+  // 06-06 — 잠금 뒤 tx로 지은 증빙 게이트 입력(evidenceGateInputs — 면제 · 확인 기록 포함). 필수(06-06 검토 S-3 — 빠뜨리면 확인된 문서도 막힌다).
+  evidenceGate: EvidenceGateInput;
   payDate: string;
   expectedPayableKrw: number;
   shared: PaymentShared;
@@ -376,11 +364,7 @@ export async function judgeLockedPayment(input: {
   const { pre, locked } = input;
   const decision = await gate(locked, "payment.approval-required", { approvalState: input.approvalState, stepName: pre.stepName });
   if (!decision.allowed) throw new GateBlockedError(decision.reason);
-  const evidence = await gate(
-    locked,
-    "payment.evidence-required",
-    input.evidenceGate ?? evidenceGateCtx({ shared: input.shared, hasEvidence: input.lockedHasEvidence, prepaid: locked.prepaid, drafterName: pre.drafterName }),
-  );
+  const evidence = await gate(locked, "payment.evidence-required", input.evidenceGate);
   if (!evidence.allowed) throw new GateBlockedError(evidence.reason);
   const pair = await gate(locked, "payment.method-evidence-mismatch", pairGateCtx(locked, input.shared));
   if (!pair.allowed) throw new GateBlockedError(pair.reason);
@@ -711,7 +695,7 @@ export async function loadEvidenceOverrun(
   return evidenceOverrunLine({
     hasLiveEvidence: true,
     evidenceAmountKrw,
-    approvedSupplyKrw: doc.supplyAmountKrw ?? 0,
+    approvedSupplyKrw: doc.supplyAmountKrw,
     lineRemainingKrw: doc.quoteLineId && doc.projectId ? await lineRemainingFor(viewer, doc.projectId, doc.id) : null,
   });
 }
@@ -805,7 +789,7 @@ export const PAYMENT_VIEW_DTO_SPEC: DtoSpec<PaymentViewDto, PaymentViewDto> = {
     { key: "reviewLine", from: "reviewLine", infoItem: "expense.value" },
     { key: "reviewAmounts", from: "reviewAmounts", infoItem: "expense.amount" },
     { key: "prepaidDue", from: "prepaidDue", infoItem: "expense.value" },
-    { key: "evidenceStamp", from: "evidenceStamp", infoItem: "expense.value" },
+    { key: "evidenceStamp", from: "evidenceStamp", infoItem: "expense.amount" },
     { key: "evidenceTaxLine", from: "evidenceTaxLine", infoItem: "expense.amount" },
     { key: "evidenceOverrun", from: "evidenceOverrun", infoItem: "expense.amount" },
   ],

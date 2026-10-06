@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { Client } from "pg";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db/client";
@@ -27,6 +28,19 @@ vi.mock("@/lib/viewer", () => ({
   getSession: () => Promise.resolve(session.viewer ? { viewer: session.viewer, user: { id: session.viewer.id } } : null),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: () => undefined }));
+
+// 06-06 검토 S-1 — 확인 tx의 행동 로그 뒤 마지막 읽기(findLivePayment)를 한 번 실패시켜 「tx가 되돌려지면 로그도 없다」를 본다. 평소에는 원본 그대로.
+const failAfterLog = vi.hoisted(() => ({ on: false }));
+vi.mock("@/repositories/expense-payments", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/repositories/expense-payments")>();
+  return {
+    ...original,
+    findLivePayment: (...args: Parameters<typeof original.findLivePayment>) => {
+      if (failAfterLog.on) return Promise.reject(new Error("확인 tx 강제 실패"));
+      return original.findLivePayment(...args);
+    },
+  };
+});
 
 beforeEach(async () => {
   await setEvidenceRequired(false);
@@ -193,6 +207,26 @@ describe("증빙 확인 — 금액 고쳐 확인 · F2 · 거부 (06-06 Task 3)"
     }
   });
 
+  it("고쳐 확인 tx가 로그 뒤에 실패하면 evidence_amount_change 로그 · 증빙 금액 · 확인 기록 · version이 모두 되돌려진다(같은 tx)", async () => {
+    const payer = await makePayer();
+    const doc = await withEvidenceAmount(await approvedExpenseWithEvidence(await setupExpenseProject()), 12_400_000);
+
+    failAfterLog.on = true;
+    let error: unknown;
+    try {
+      error = await caught(confirmEvidence(payer, { expenseId: doc.expenseId, version: doc.version, correctedAmountKrw: 12_000_000 }));
+    } finally {
+      failAfterLog.on = false;
+    }
+
+    expect(error).toBeInstanceOf(Error);
+    expect(await logsOf(doc.expenseId, "evidence_amount_change")).toEqual([]);
+    const row = await docRow(doc.expenseId);
+    expect(row.evidenceAmount).toBe(12_400_000);
+    expect(row.version).toBe(doc.version);
+    expect(await reviewOf(doc.expenseId)).toBeNull();
+  });
+
   it("빈 증빙 금액 · 고침 없음 → 거부 `증빙 금액 없음`(F2 — 공급가액으로 채우지 않는다) · 고친 값이면 확인", async () => {
     const payer = await makePayer();
     const doc = await approvedExpenseWithEvidence(await setupExpenseProject());
@@ -268,6 +302,66 @@ describe("증빙 확인 — 금액 고쳐 확인 · F2 · 거부 (06-06 Task 3)"
     await voidEvidence(voider, { fileId: ids[9] ?? "", reason: "다른 건 영수증" });
     expect((await getPaymentView(payer, doc.expenseId))?.evidenceStatus).toBe("증빙 없음");
   });
+
+  it("살아 있는 증빙 0(모두 무효) → 확인 거부 `확인할 증빙 없음 · 새로 고침` · 확인 기록 없음 · version 그대로", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    const doc = await withEvidenceAmount(await approvedExpenseWithEvidence(fx), 12_400_000);
+    const voider = await makeEvidenceManager("증빙무효", { attach: false, void: true });
+    for (const id of await liveFileIds(doc.expenseId)) await voidEvidence(voider, { fileId: id, reason: "다른 건 영수증" });
+    const version = (await docRow(doc.expenseId)).version;
+
+    const error = await errorOf(confirmEvidence(payer, { expenseId: doc.expenseId, version }));
+    expect(error.message).toBe("확인할 증빙 없음 · 새로 고침");
+    expect(await reviewOf(doc.expenseId)).toBeNull();
+    expect((await docRow(doc.expenseId)).version).toBe(version);
+  });
+
+  it(
+    "05 증빙 무효는 확인과 같은 순서로 지출결의 행을 먼저 잠근다 — 행을 쥔 tx가 끝날 때까지 무효가 기다린다(06-06 검토 S-7)",
+    async () => {
+      const fx = await setupExpenseProject();
+      const doc = await withEvidenceAmount(await approvedExpenseWithEvidence(fx), 12_400_000);
+      const [fileId] = await liveFileIds(doc.expenseId);
+      if (!fileId) throw new Error("증빙 파일 없음");
+      const voider = await makeEvidenceManager("증빙무효", { attach: false, void: true });
+
+      const lockClient = new Client({ connectionString: process.env.DATABASE_URL });
+      await lockClient.connect();
+      let txOpen = false;
+      let call: Promise<unknown> | undefined;
+      try {
+        await lockClient.query("BEGIN");
+        txOpen = true;
+        const { rows: pidRows } = await lockClient.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
+        const lockPid = pidRows[0]?.pid;
+        // 확인 tx가 하는 첫 잠금과 같은 것 — lockExpenseForUpdate(지출결의 행 FOR UPDATE).
+        await lockClient.query("SELECT id FROM expenses WHERE id = $1 FOR UPDATE", [doc.expenseId]);
+        call = caught(voidEvidence(voider, { fileId, reason: "다른 건 영수증" }));
+
+        let blocked = false;
+        for (let attempt = 0; attempt < 40 && !blocked; attempt += 1) {
+          const { rows } = await lockClient.query<{ count: number }>("SELECT count(*)::int AS count FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))", [
+            lockPid,
+          ]);
+          blocked = (rows[0]?.count ?? 0) > 0;
+          if (!blocked) await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        expect(blocked, "증빙 무효가 지출결의 행 잠금에서 막히지 않았다").toBe(true);
+        expect(await liveFileIds(doc.expenseId)).toContain(fileId);
+
+        await lockClient.query("COMMIT");
+        txOpen = false;
+        expect(await call).toBeUndefined();
+        expect(await liveFileIds(doc.expenseId)).not.toContain(fileId);
+      } finally {
+        if (txOpen) await lockClient.query("ROLLBACK").catch(() => {});
+        await lockClient.end();
+        if (call) await call;
+      }
+    },
+    30_000,
+  );
 
   it("증빙 지문 다름 → 확인 거부 — 지금 version + 옛 지문은 동시성 거부 · 확인 기록 없음, 새 지문이면 확인됨, 지문 없으면 version만", async () => {
     const payer = await makePayer();

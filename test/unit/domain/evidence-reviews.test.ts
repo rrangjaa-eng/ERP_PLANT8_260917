@@ -116,6 +116,11 @@ describe("resolveExpenseActionRow — P5 (06-06 Task 2)", () => {
   it("지급 권한 없는 사람 → P6 버튼 없음", () => {
     expect(resolveExpenseActionRow({ ...paid, confirmation: null }, { canPay: false })).toMatchObject({ row: "P6", primary: null, secondary: null });
   });
+
+  it("O-2 상수를 false로 주입하면 P2 · P5 둘 다 사라진다 — 같은 상수 한 곳을 읽는다(06-06 검토 S-6)", () => {
+    expect(resolveExpenseActionRow({ ...paid, confirmation: null }, payer, false)).toMatchObject({ row: "P6", primary: null });
+    expect(resolveExpenseActionRow({ ...paid, paid: false, confirmation: null }, payer, false)).toMatchObject({ row: "P4", primary: "pay" });
+  });
 });
 
 describe("evidenceGateInputs — 잠금 뒤 tx로 한 함수에서 (06-06 Task 2)", () => {
@@ -187,6 +192,16 @@ describe("증빙 금액 초과 한 줄(Q-F)", () => {
   });
   it("남은 실행가 null(팀 비용) · 증빙 > 승인액 → `승인액보다 +{차액}`만", () => {
     expect(evidenceOverrunLine({ ...base, lineRemainingKrw: null })).toBe("승인액보다 +400,000");
+  });
+  it("남은 실행가가 음수(사슬 위 다른 문서가 이미 넘음) → 실행가 초과는 이 문서 증빙 금액까지만(06-06 검토 S-4)", () => {
+    expect(evidenceOverrunLine({ ...base, evidenceAmountKrw: 500_000, approvedSupplyKrw: 500_000, lineRemainingKrw: -1_000_000 })).toBe("실행가 초과 500,000");
+  });
+  it("남은 실행가 0 → 실행가 초과 = 증빙 금액", () => {
+    expect(evidenceOverrunLine({ ...base, evidenceAmountKrw: 500_000, approvedSupplyKrw: 500_000, lineRemainingKrw: 0 })).toBe("실행가 초과 500,000");
+  });
+  it("승인 공급가 null → 승인액 조각 없음(증빙 금액 전체를 「승인액보다 +」로 보이지 않는다 — 06-06 검토 S-5)", () => {
+    expect(evidenceOverrunLine({ ...base, approvedSupplyKrw: null, lineRemainingKrw: null })).toBeNull();
+    expect(evidenceOverrunLine({ ...base, approvedSupplyKrw: null, lineRemainingKrw: 12_250_000 })).toBe("실행가 초과 150,000");
   });
   it("파일 0 · 증빙 금액만 → null(R-4 · E-7)", () => {
     expect(evidenceOverrunLine({ hasLiveEvidence: false, evidenceAmountKrw: 12_400_000, approvedSupplyKrw: 12_000_000, lineRemainingKrw: 11_800_000 })).toBeNull();

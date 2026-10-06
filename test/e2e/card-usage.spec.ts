@@ -7,6 +7,7 @@ import { createCorpCard } from "@/domain/corp-cards";
 import { createCardUsage, precheckCardUsage } from "@/domain/corp-card-usages";
 import { createOrgUnit, createTeam } from "@/domain/org";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
+import { insertVendor } from "@/repositories/vendors";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { seoulToday } from "@/lib/dates";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
@@ -252,6 +253,29 @@ test.describe("법인카드 사용 등록 (06-05)", () => {
     await sheet.getByLabel("증빙 종류").selectOption("");
     await expect(sheet.getByText("증빙 종류 1칸 비어 있음 · 증빙 종류 고르기", { exact: true })).toBeVisible();
     await expect(sheet.getByText("카드 전표 카드에 없음 · 증빙 종류 고르기")).toHaveCount(0);
+    await page.context().close();
+  });
+
+  test("[DOM 감사 D2] 「가맹점 바꾸기」로 가맹점만 고른 뒤 Esc → 「입력 버리기」", async ({ browser, baseURL }) => {
+    const holder = await makeCardHolder();
+    const vendorName = `E2E가맹점-${randomUUID().slice(0, 8)}`;
+    await insertVendor(SYSTEM_VIEWER, { name: vendorName, normalizedName: vendorName });
+    const page = await loginPage(browser, baseURL, holder.person);
+    await page.goto("/cards?new=1");
+    const sheet = panel(page);
+    const change = sheet.getByRole("button", { name: "가맹점 바꾸기" });
+    await waitForHydration(change);
+    await change.click();
+    const dialog = page.getByRole("dialog", { name: "가맹점 바꾸기" });
+    await dialog.getByRole("textbox", { name: "거래처 이름 검색" }).fill(vendorName);
+    await dialog.getByRole("option", { name: new RegExp(vendorName) }).click();
+    await dialog.getByRole("button", { name: /^이 거래처로/ }).click();
+    await expect(dialog).toBeHidden();
+    await expect(sheet.getByText(vendorName, { exact: true })).toBeVisible();
+
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog", { name: "입력 버리기" })).toBeVisible();
+    await expect(sheet).toBeVisible();
     await page.context().close();
   });
 });

@@ -179,6 +179,14 @@ export function CardUsageForm({
   const [linkKind, setLinkKind] = useState<"team_cost" | null>(initialDefaults.linkKind);
   const [merchant, setMerchant] = useState<Merchant | null>(null);
   const [pickOpen, setPickOpen] = useState(false);
+  // 가맹점은 이름 없는 상태 + 숨은 칸이라 입력 이벤트가 없다 — 고른 뒤 숨은 칸 값이 바뀌면 change를 쏴 PanelForm이 바뀐 칸으로 센다(DR1 · SP-8).
+  const merchantInputRef = useRef<HTMLInputElement>(null);
+  const merchantPickedRef = useRef(false);
+  useEffect(() => {
+    if (!merchantPickedRef.current) return;
+    merchantPickedRef.current = false;
+    merchantInputRef.current?.dispatchEvent(new Event("change", { bubbles: true }));
+  }, [merchant]);
   // 가맹점으로 증빙 종류를 채우면 그 칸을 새 기본값으로 다시 그린다(비제어 칸).
   const [evidenceSeed, setEvidenceSeed] = useState(0);
   const [preview, setPreview] = useState<Preview>({ split: null, teamName: initialTeamName, teamAssigned: initialTeamAssigned });
@@ -308,6 +316,7 @@ export function CardUsageForm({
 
   function pickMerchant(next: Merchant) {
     setShowingResult(false);
+    merchantPickedRef.current = true;
     setMerchant(next);
     setPickOpen(false);
     const evidence = evidenceForMerchant(next.defaultEvidenceType, evidenceTypes);
@@ -368,7 +377,7 @@ export function CardUsageForm({
             <Button variant="tertiary" aria-label="가맹점 바꾸기" onClick={() => setPickOpen(true)}>
               {merchant ? "바꾸기" : "고르기"}
             </Button>
-            <input type="hidden" name="merchantVendorId" value={merchant?.id ?? ""} readOnly />
+            <input ref={merchantInputRef} type="hidden" name="merchantVendorId" value={merchant?.id ?? ""} readOnly />
             {merchant?.defaultEvidenceName && evidenceForMerchant(merchant.defaultEvidenceType, evidenceTypes).outside ? (
               <Form.Hint>{`기본 증빙 ${merchant.defaultEvidenceName} · 카드에 없음`}</Form.Hint>
             ) : null}

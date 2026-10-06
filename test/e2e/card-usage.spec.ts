@@ -13,6 +13,8 @@ import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { insertVendor } from "@/repositories/vendors";
+import { insertRole } from "@/repositories/roles";
+import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { seoulToday } from "@/lib/dates";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
@@ -492,3 +494,75 @@ test.describe("법인카드 사용 등록 (06-05)", () => {
     await page.context().close();
   });
 });
+
+function cardSection(page: Page) {
+  return page.locator("section").filter({ has: page.getByRole("heading", { name: "법인카드 사용", exact: true }) });
+}
+
+test.describe("프로젝트 상세 「법인카드 사용」 (06-07 S15)", () => {
+  test("견적 줄 · 견적 외 비용 카드 사용 행 + 합계 행 `합계 (N건) · 결제 합계`", async ({ browser, baseURL }) => {
+    const holder = await makeCardHolder();
+    const target = await seedProjectLine(holder);
+    await seedLineUsage(holder.person.viewer, holder.cardIds[0] ?? "", target.lineId, 300_000);
+    const page = await loginPage(browser, baseURL, holder.person);
+    await page.goto(`/projects/${target.projectId}`);
+    const section = cardSection(page);
+    await expect(section.getByRole("cell", { name: `1 ${target.itemName}` })).toBeVisible();
+    await expect(section.getByRole("columnheader", { name: "결제 합계" })).toBeVisible();
+    await expect(section.locator("tfoot")).toHaveText("합계 (1건) · 결제 합계 300,000");
+    await page.context().close();
+  });
+
+  test("`quote.amount` 없는 계정 → 금액 열 · 합계 금액 없음", async ({ browser, baseURL }) => {
+    const holder = await makeCardHolder();
+    const target = await seedProjectLine(holder);
+    await seedLineUsage(holder.person.viewer, holder.cardIds[0] ?? "", target.lineId, 300_000);
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E금액숨김-${randomUUID().slice(0, 8)}`, workScope: "company" });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "project.value", visible: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "quote.amount", visible: false });
+    const viewer = await makePerson("금액숨김", role.id, holder.teamId, `${seoulToday().slice(0, 4)}-01-01`);
+    const page = await loginPage(browser, baseURL, viewer);
+    await page.goto(`/projects/${target.projectId}`);
+    const section = cardSection(page);
+    await expect(section.getByRole("cell", { name: `1 ${target.itemName}` })).toBeVisible();
+    await expect(section.getByRole("columnheader", { name: "결제 합계" })).toHaveCount(0);
+    await expect(section.locator("tfoot")).toHaveText("합계 (1건)");
+    await expect(section.getByText("300,000")).toHaveCount(0);
+    await page.context().close();
+  });
+
+  test("빈 섹션 `카드 사용 등록` → `/cards?new=1&project=` 패널이 그 프로젝트로 열림", async ({ browser, baseURL }) => {
+    const holder = await makeCardHolder();
+    const target = await seedProjectLine(holder);
+    const page = await loginPage(browser, baseURL, holder.person);
+    await page.goto(`/projects/${target.projectId}`);
+    const section = cardSection(page);
+    await expect(section.getByText("이 프로젝트에 카드 사용이 없습니다")).toBeVisible();
+    await section.getByRole("link", { name: "카드 사용 등록" }).click();
+    await expect(page).toHaveURL(new RegExp(`/cards\\?new=1&project=${target.projectId}$`));
+    const sheet = panel(page);
+    await waitForHydration(sheet.getByLabel("결제 합계"));
+    await expect(sheet.getByRole("radio", { name: "견적 줄" })).toBeChecked();
+    await expect(sheet.getByText(`${target.projectNumber} ${target.projectName}`, { exact: true })).toBeVisible();
+    await page.context().close();
+  });
+
+  test("섹션 로드 실패(서버 액션 가로채기) → `카드 사용 불러오지 못함 · 다시 시도` · 매출 섹션은 선다 → 다시 시도로 복귀", async ({ browser, baseURL }) => {
+    const holder = await makeCardHolder();
+    const target = await seedProjectLine(holder);
+    const page = await loginPage(browser, baseURL, holder.person);
+    const failActions = (route: import("@playwright/test").Route) =>
+      route.request().method() === "POST" && route.request().headers()["next-action"] ? route.abort() : route.fallback();
+    await page.route("**/*", failActions);
+    await page.goto(`/projects/${target.projectId}`);
+    const section = cardSection(page);
+    await expect(section.getByText("카드 사용 불러오지 못함")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "매출", exact: true })).toBeVisible();
+    await page.unroute("**/*", failActions);
+    await section.getByRole("button", { name: "다시 시도" }).click();
+    await expect(section.getByText("이 프로젝트에 카드 사용이 없습니다")).toBeVisible();
+    await page.context().close();
+  });
+});
+

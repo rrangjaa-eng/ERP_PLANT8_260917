@@ -35,12 +35,14 @@ import {
   cardUsageFormDefaults,
   cardUsageFormOptions,
   createCardUsage,
+  listProjectCardUsages,
   precheckCardUsage,
   previewCardAmounts,
   searchMerchantsForCard,
   type CardUsageInput,
 } from "@/domain/corp-card-usages";
 import { insertRole } from "@/repositories/roles";
+import { insertCardUsage } from "@/repositories/corp-card-usages";
 import { insertVendor } from "@/repositories/vendors";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { seoulToday } from "@/lib/dates";
@@ -841,5 +843,97 @@ describe("보관 건 제외(H-4)", () => {
     await expect(gate(null, "card.dual-link-block", { side: "expense", links })).resolves.toEqual({ allowed: true });
     const after = await searchLinesForCardLink(fx.pm, { projectId: fx.projectId, query: "", currentLineId: null });
     expect(after.rows[0]).toMatchObject({ remainingKrw: 1_000_000, hint: "남은 실행가 1,000,000" });
+  });
+});
+
+describe("프로젝트 상세 「법인카드 사용」(S15)", () => {
+  function dayBefore(date: string): string {
+    const day = new Date(`${date}T00:00:00Z`);
+    day.setUTCDate(day.getUTCDate() - 1);
+    return day.toISOString().slice(0, 10);
+  }
+
+  it("그 프로젝트의 견적 줄 · 견적 외 비용 건만 사용일 오름차순 · 팀 비용 · 다른 프로젝트 없음 · 합계 행 = 건수 · 결제 합계", async () => {
+    const fx = await cardProject();
+    const line = fx.lines[0] ?? "";
+    const today = await cardOnLine(fx, line, 300_000);
+    const earlierInput: CardUsageInput = { ...lineInput(fx, line, 200_000), usedOn: dayBefore(seoulToday()) };
+    const earlier = (await createCardUsage(fx.pm, earlierInput, await precheckCardUsage(fx.pm, earlierInput))).id;
+    const outside = await outOfQuote(fx, 50_000, "현장 다과");
+    await createCardUsage(fx.pm, usageInput(fx.cardId), await precheckCardUsage(fx.pm, usageInput(fx.cardId)));
+    const other = await cardProject();
+    await cardOnLine(other, other.lines[0] ?? "", 70_000);
+
+    const result = await listProjectCardUsages(fx.pm, fx.projectId);
+    expect(result.rows.map((row) => row.id)).toEqual([earlier, today, outside]);
+    expect(result.rows[0]).toMatchObject({ lineLabel: "1 줄1", totalKrw: 200_000, supplyKrw: 200_000, registeredVia: "self", registeredByName: "박서연" });
+    expect(result.rows[2]).toMatchObject({ lineLabel: "견적 외 비용 · 현장 다과" });
+    expect(result.totals).toEqual({ count: 3, totalKrw: 550_000 });
+    expect(result.canRegister).toBe(true);
+  });
+
+  it("[H-4] 보관된 카드 사용은 결과와 합계 행에 없다", async () => {
+    const fx = await cardProject();
+    const kept = await cardOnLine(fx, fx.lines[0] ?? "", 100_000);
+    const archived = await cardOnLine(fx, fx.lines[0] ?? "", 200_000);
+    await archiveUsage(archived, fx.pm.id);
+    const result = await listProjectCardUsages(fx.pm, fx.projectId);
+    expect(result.rows.map((row) => row.id)).toEqual([kept]);
+    expect(result.totals).toEqual({ count: 1, totalKrw: 100_000 });
+  });
+
+  it("quote.amount 없는 계급 → 행 · 합계 행에 금액 키 없음(건수만)", async () => {
+    const fx = await cardProject();
+    await cardOnLine(fx, fx.lines[0] ?? "", 100_000);
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `금액숨김-${randomUUID().slice(0, 8)}`, workScope: "company" });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "project.value", visible: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "quote.amount", visible: false });
+    const viewer = await makePerson("금액숨김", role.id, null);
+    const result = await listProjectCardUsages(viewer, fx.projectId);
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]).not.toHaveProperty("totalKrw");
+    expect(result.rows[0]).not.toHaveProperty("supplyKrw");
+    expect(result.rows[0]).toHaveProperty("lineLabel", "1 줄1");
+    expect(result.totals).toEqual({ count: 1 });
+    expect(result.canRegister).toBe(false);
+  });
+
+  it("경영관리 등록 건 → registeredVia proxy · 등록자 이름 · 등록 날짜", async () => {
+    const fx = await cardProject();
+    const registrant = await makePerson("이과장", DEFAULT_ROLE_ID, null);
+    await insertCardUsage(
+      SYSTEM_VIEWER,
+      {
+        corpCardId: fx.cardId,
+        usedOn: seoulToday(),
+        merchantVendorId: null,
+        totalCurrency: "KRW",
+        totalForeignAmount: null,
+        totalFxRate: "1",
+        totalAmountKrw: 40_000,
+        supplyKrw: 40_000,
+        vatKrw: 0,
+        evidenceTypeCode: "card_receipt",
+        linkKind: "quote_line",
+        quoteLineId: fx.lines[0] ?? "",
+        teamId: null,
+        usedByUserId: fx.pm.id,
+        registeredBy: registrant.id,
+        registeredVia: "proxy",
+        purchaseRequestId: null,
+        memo: null,
+      },
+      db,
+    );
+    const [row] = (await listProjectCardUsages(fx.pm, fx.projectId)).rows;
+    expect(row).toMatchObject({ registeredVia: "proxy", registeredByName: "이과장", registeredOn: seoulToday() });
+  });
+
+  it("프로젝트 보기 권한 없음 → ForbiddenError", async () => {
+    const fx = await cardProject();
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `보기없음-${randomUUID().slice(0, 8)}`, workScope: "company" });
+    const viewer = await makePerson("보기없음", role.id, null);
+    await expect(listProjectCardUsages(viewer, fx.projectId)).rejects.toBeInstanceOf(ForbiddenError);
   });
 });

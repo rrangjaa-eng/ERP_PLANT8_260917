@@ -146,6 +146,8 @@ export function VendorForm({
     submitLockRef.current = true;
     setDuplicateCount(null);
     setBusinessNoConflict(null);
+    // 지난 「구분 더하기」 실패 문구는 새 제출과 무관하다 — 남기면 등록이 성공해도 칸이 오류로 보인다.
+    addKindState.reset();
     const formData = new FormData(event.currentTarget);
 
     // 04.5-05: 수정은 그린 칸을 빈 값까지 모두 보낸다(서버 계약 — 키 없음 = 안 바꿈 · 빈 값 = 비움). 등록은 빈 칸을 뺀다.

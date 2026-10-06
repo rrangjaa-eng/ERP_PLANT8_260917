@@ -572,4 +572,34 @@ test.describe("거래처 구분 (261006-biv)", () => {
       await setVendorHidden(SYSTEM_VIEWER, existing.id, true);
     }
   });
+  // Regression: /qa ISSUE-001 — 「구분 더하기」 실패 문구가 다음 제출 뒤에도 사업자 번호 칸에 남았다(등록이 성공해도 칸이 오류로 보임).
+  // Found by /qa on 2026-10-06 · Report: /mnt/project-files/notes/vendor-kind/178-qa.md
+  test("「구분 더하기」가 실패한 뒤 번호를 고쳐 다시 등록하면 칸 오류가 남지 않는다", async ({ page }) => {
+    await loginAsSysadmin(page);
+    const businessNo = uniqueBusinessNo();
+    const existingName = `E2E구분실패재등록-${randomUUID()}`;
+    const existing = await insertVendor(SYSTEM_VIEWER, { name: existingName, normalizedName: existingName.toLowerCase(), businessNo, kind: "client" });
+    const newName = `E2E구분실패재등록신규-${randomUUID()}`;
+    try {
+      await page.goto("/admin/vendors?new=1");
+      const dialog = page.locator('dialog[data-ui="side-panel"]');
+      await dialog.getByLabel("이름").fill(newName);
+      await dialog.getByLabel("구분").selectOption("supplier");
+      await dialog.getByLabel("사업자 번호").fill(businessNo);
+      await dialog.getByRole("button", { name: "거래처 등록" }).click();
+      await expect(dialog.getByRole("button", { name: "구분 더하기" })).toBeVisible();
+      await setVendorArchived(SYSTEM_VIEWER, existing.id, true);
+      await dialog.getByRole("button", { name: "구분 더하기" }).click();
+      await expect(dialog.locator("#businessNo-error")).toHaveText("보관됐거나 존재하지 않는 거래처는 수정할 수 없음");
+
+      await dialog.getByLabel("사업자 번호").fill(uniqueBusinessNo());
+      await dialog.getByRole("button", { name: "거래처 등록" }).click();
+      await expect(dialog.getByRole("status")).toContainText("거래처 등록됨");
+      await expect(dialog.locator("#businessNo-error")).toHaveCount(0);
+      await expect(dialog.getByLabel("사업자 번호")).not.toHaveAttribute("aria-invalid", "true");
+    } finally {
+      await setVendorHidden(SYSTEM_VIEWER, existing.id, true);
+      for (const row of await findVendorsByNormalizedName(SYSTEM_VIEWER, newName.toLowerCase())) await setVendorHidden(SYSTEM_VIEWER, row.id, true);
+    }
+  });
 });

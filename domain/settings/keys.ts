@@ -1125,6 +1125,57 @@ export const EVIDENCE_MAX_SIZE_MB: SettingDef<number> = {
 
 SETTING_DEFS.push(EVIDENCE_MAX_SIZE_MB);
 
+// 06-02(EVID-02 · EXP-13 · UI-SPEC S20): 증빙 필수 · 선결제 기한 · 온라인구매 협력사 · 지급 방식 × 증빙 종류 짝.
+// 처음 읽는 플랜(06-03 · 06-04 · 06-08 · 06-10)이 readBy를 지운다 — registry-coverage가 알려 준다.
+export const EVIDENCE_REQUIRED: SettingDef<boolean> = {
+  key: "evidence.required",
+  kind: "simple",
+  schema: z.boolean(),
+  label: "증빙 필수",
+  hint: "끄면 증빙 없이 지급 완료",
+  namespace: "증빙",
+  default: true,
+  readBy: { phase: "6" },
+};
+
+export const EVIDENCE_PREPAID_DUE_DAYS: SettingDef<number> = {
+  key: "evidence.prepaid_due_days",
+  kind: "simple",
+  schema: z.coerce.number().int().min(1),
+  label: "선결제 증빙 기한",
+  hint: "지급일부터 센 날수",
+  namespace: "증빙",
+  unitLabel: "일",
+  default: 14,
+  readBy: { phase: "6" },
+};
+
+export const PURCHASE_ONLINE_VENDOR_NAME: SettingDef<string> = {
+  key: "purchase.online_vendor_name",
+  kind: "simple",
+  schema: z.string(),
+  label: "온라인구매 협력사",
+  hint: "이 거래처의 견적 줄은 구매 요청으로",
+  namespace: "구매 요청",
+  default: "",
+  readBy: { phase: "6" },
+};
+
+// 값 = 짝 목록 `{ method: 지급 방식 코드 값, evidence: 증빙 종류 코드 값 }[]` — 빈 목록 = 짝 검사 없음(Q4).
+export const PAYMENT_METHOD_EVIDENCE_PAIRS: SettingDef<{ method: string; evidence: string }[]> = {
+  key: "payment.method_evidence_pairs",
+  kind: "simple",
+  schema: z.array(z.object({ method: z.string().min(1), evidence: z.string().min(1) })),
+  label: "지급 방식 · 증빙 종류 짝",
+  hint: "비면 짝 검사 없음",
+  namespace: "지급",
+  pairGrid: { rows: "payment_method", cols: "evidence_type", rowField: "method", colField: "evidence" },
+  default: [],
+  readBy: { phase: "6" },
+};
+
+SETTING_DEFS.push(EVIDENCE_REQUIRED, EVIDENCE_PREPAID_DUE_DAYS, PURCHASE_ONLINE_VENDOR_NAME, PAYMENT_METHOD_EVIDENCE_PAIRS);
+
 // ── 05-11 정산 결재 결재선(D-98 · UI-SPEC S13) ───────────────────────────
 // 지출결의 결재선 17키와 같은 꼴 · 같은 라벨(namespace만 다르다). 기본값은 1~3단 꺼짐 · 4단 대표 × 전사 · 자기 승인 = 본인 승인 —
 // 담당 PM이 올리고 대표가 승인한다. 3단 특정 부서는 기본값 없음(꺼진 단계라 읽기 대체 ""로 충분하다).

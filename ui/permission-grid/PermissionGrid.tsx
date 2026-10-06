@@ -40,6 +40,8 @@ export type PermissionGridProps = {
   errorMessage?: string | null;
   onRetry?: () => void;
   onToggle: (rowId: string, columnId: string, next: boolean) => Promise<void>;
+  /** 저장 실패 토스트의 이름 — 기본 `권한`. */
+  saveNoun?: string;
 };
 
 export function buildInitialCells(
@@ -123,6 +125,7 @@ export function PermissionGrid({
   errorMessage,
   onRetry,
   onToggle,
+  saveNoun = "권한",
 }: PermissionGridProps) {
   const [cells, setCells] = useState<Record<string, CellState>>(() => buildInitialCells(rows, columns, values));
   const [toast, setToast] = useState<{ message: string; tone: "default" | "error" } | null>(null);
@@ -196,7 +199,7 @@ export function PermissionGrid({
     setCells((prev) => ({ ...prev, [key]: { checked: next, status: "idle" } }));
     const ok = await saveCell(row.id, column.id, next);
     if (!ok) {
-      setToast({ message: "권한 저장 실패 · 다시 시도", tone: "error" });
+      setToast({ message: `${saveNoun} 저장 실패 · 다시 시도`, tone: "error" });
     }
   }
 
@@ -212,7 +215,7 @@ export function PermissionGrid({
       if (!ok) failed += 1;
     }
     if (failed > 0) {
-      setToast({ message: `권한 저장 · ${total}칸 중 ${failed}칸 실패 · 다시 시도`, tone: "error" });
+      setToast({ message: `${saveNoun} 저장 · ${total}칸 중 ${failed}칸 실패 · 다시 시도`, tone: "error" });
     }
   }
 

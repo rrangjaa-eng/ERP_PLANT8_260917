@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { TextField } from "@/ui/input/TextField";
@@ -9,6 +9,7 @@ import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { HistoryList, type HistoryEntry } from "@/ui/history-list/HistoryList";
 import { Toast } from "@/ui/toast/Toast";
+import { PermissionGrid, buildCellKey } from "@/ui/permission-grid/PermissionGrid";
 import { clearDirtyEdits, loadDirtyEdits, saveDirtyEdits, viewerDirtyScope, type DirtyStorageLike } from "@/ui/table/use-dirty-storage";
 import { parseNumberInput, type NumberInputKind } from "@/lib/format-number";
 import {
@@ -28,7 +29,8 @@ export type SettingsFieldDescriptorView =
   | { kind: "number"; numberKind?: NumberInputKind }
   | { kind: "string" }
   | { kind: "enum"; options: string[] }
-  | { kind: "multi-enum"; options: string[] };
+  | { kind: "multi-enum"; options: string[] }
+  | { kind: "pair-grid"; rows: string; cols: string; rowField: string; colField: string };
 
 export type SettingsFieldViewModel = {
   key: string;
@@ -40,6 +42,13 @@ export type SettingsFieldViewModel = {
     | { kind: "simple"; descriptor: SettingsFieldDescriptorView; value: unknown }
     | { kind: "historized"; descriptor: SettingsFieldDescriptorView; entries: HistoryEntry[] };
   options?: { value: string; label: string }[];
+  // 06-02(SP-9): 짝 격자 칸의 행 · 열 — 두 코드표의 활성 값(서버가 미리 읽는다).
+  pairGrid?: {
+    rows: { value: string; label: string }[];
+    cols: { value: string; label: string }[];
+    rowField: string;
+    colField: string;
+  };
   disabled?: boolean;
   warning?: string;
   // 결재선 단계 칸(사용자 결정 2026-09-30 A): 켜짐 조건과 속한 단계 — 단계 네 칸은 화면에 모았다가 한 번에 저장한다.
@@ -240,6 +249,92 @@ function SimpleFieldEditor({
       )}
       {hint ? <p id={hintId} className={styles.hint}>{hint}</p> : null}
     </div>
+  );
+}
+
+type Pair = Record<string, string>;
+type PairGridView = NonNullable<SettingsFieldViewModel["pairGrid"]>;
+
+function pairsOf(value: unknown): Pair[] {
+  return Array.isArray(value) ? (value as Pair[]) : [];
+}
+
+// 06-02(SP-9 · SYSTEM §7-2 짝 격자): 새 컴포넌트 없이 §7-13 PermissionGrid를 설정 입력으로 쓴다. PermissionGrid는 「계급 = PC 열,
+// 항목 = PC 행」이라 prop 이름이 반대다 — 열 코드표(증빙 종류)를 rows prop, 행 코드표(지급 방식)를 columns prop으로 넘긴다.
+// 칸 하나 = 그 짝 하나만 더하거나 빼고(격자에 안 보이는 비활성 값의 짝은 그대로 남는다) 짝 목록 전체를 즉시 저장한다.
+// 저장 차례(E-45): promise 사슬 하나로 줄 세워, 앞 저장이 끝난 뒤(성공 · 실패 모두) 최신 목록에서 다음 목록을 계산해 보낸다.
+function PairGridEditor({
+  fieldKey,
+  label,
+  hint,
+  initialValue,
+  pairGrid,
+}: {
+  fieldKey: string;
+  label: string;
+  hint?: string;
+  initialValue: unknown;
+  pairGrid: PairGridView;
+}) {
+  const { executeAsync } = useAction(setSimpleSettingAction);
+  const { rowField, colField } = pairGrid;
+  // 저장마다 서버가 화면을 다시 그려도 격자가 다시 계산되지 않게 처음 값을 잡아 둔다(상태가 이 칸의 정본).
+  const [grid] = useState(() => ({
+    rows: pairGrid.cols.map((col) => ({ id: col.value, label: col.label })),
+    columns: pairGrid.rows.map((row) => ({ id: row.value, label: row.label })),
+  }));
+  const [pairs, setPairs] = useState<Pair[]>(() => pairsOf(initialValue));
+  const latest = useRef(pairs);
+  const chain = useRef<Promise<void>>(Promise.resolve());
+  const values = useMemo(
+    () => Object.fromEntries(pairs.map((pair) => [buildCellKey(pair[colField] ?? "", pair[rowField] ?? ""), true])),
+    [pairs, rowField, colField],
+  );
+
+  function apply(next: Pair[]) {
+    latest.current = next;
+    setPairs(next);
+  }
+
+  function onToggle(evidenceId: string, methodId: string, next: boolean): Promise<void> {
+    const run = chain.current.then(async () => {
+      const before = latest.current;
+      const same = (pair: Pair) => pair[rowField] === methodId && pair[colField] === evidenceId;
+      const after = next
+        ? before.some(same)
+          ? before
+          : [...before, { [rowField]: methodId, [colField]: evidenceId }]
+        : before.filter((pair) => !same(pair));
+      apply(after);
+      const result = await executeAsync({ key: fieldKey, value: after });
+      const message = errorMessageOf(result ?? {});
+      if (message) {
+        apply(before);
+        throw new Error(message);
+      }
+    });
+    chain.current = run.catch(() => {});
+    return run;
+  }
+
+  const hintId = `setting-${fieldKey}-hint`;
+  return (
+    <fieldset className={styles.field} aria-describedby={hint ? hintId : undefined}>
+      <legend>{label}</legend>
+      <PermissionGrid
+        caption={label}
+        rowSelectLabel="증빙 종류"
+        itemHeaderLabel="지급 방식"
+        rows={grid.rows}
+        columns={grid.columns}
+        values={values}
+        cellAriaLabel={(evidence, method) => `${method.label} · ${evidence.label}`}
+        columnAriaLabel={(method) => `${method.label} 전체`}
+        onToggle={onToggle}
+        saveNoun="짝"
+      />
+      {hint ? <p id={hintId} className={styles.hint}>{hint}</p> : null}
+    </fieldset>
   );
 }
 
@@ -503,7 +598,16 @@ function renderFields(
       continue;
     }
     nodes.push(
-      field.field.kind === "historized" ? (
+      field.pairGrid && field.field.kind === "simple" ? (
+        <PairGridEditor
+          key={field.key}
+          fieldKey={field.key}
+          label={field.label}
+          hint={field.hint}
+          initialValue={field.field.value}
+          pairGrid={field.pairGrid}
+        />
+      ) : field.field.kind === "historized" ? (
         <HistorizedFieldEditor
           key={field.key}
           fieldKey={field.key}

@@ -55,6 +55,8 @@ export type SettingDef<T> = {
   effectiveFromRule?: "year_start";
   /** 05-04(UI-SPEC S13): number 칸 값 옆 정적 단위 글자(예: `MB`) — 단위를 입력 안에 넣지 않는다(SYSTEM §7-2). */
   unitLabel?: string;
+  /** 짝 격자 입력 — 행 · 열 코드표 키와 값 객체의 행 · 열 칸 이름(SYSTEM §7-2 짝 격자 · §7-13). */
+  pairGrid?: { rows: string; cols: string; rowField: string; colField: string };
 };
 
 export class SettingNotFoundError extends UserFacingError {}
@@ -290,7 +292,8 @@ export type SettingFieldDescriptor =
   | { kind: "number"; numberKind?: NumberInputKind }
   | { kind: "string" }
   | { kind: "enum"; options: string[] }
-  | { kind: "multi-enum"; options: string[] };
+  | { kind: "multi-enum"; options: string[] }
+  | { kind: "pair-grid"; rows: string; cols: string; rowField: string; colField: string };
 
 function zodTypeName(schema: unknown): string | undefined {
   if (schema && typeof schema === "object" && "type" in schema) {
@@ -316,6 +319,7 @@ function zodArrayElement(schema: unknown): unknown {
 }
 
 export function describeSettingField(def: SettingDef<unknown>): SettingFieldDescriptor {
+  if (def.pairGrid) return { kind: "pair-grid", ...def.pairGrid };
   const typeName = zodTypeName(def.schema);
   if (typeName === "boolean") return { kind: "boolean" };
   if (typeName === "number") return { kind: "number", numberKind: def.numberKind };

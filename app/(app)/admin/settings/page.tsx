@@ -11,6 +11,7 @@ import {
   type SettingDef,
   type SettingFieldDescriptor,
 } from "@/domain/settings/registry";
+import { listCodeItems } from "@/domain/code-tables";
 import { isSettingActive, listApprovalRouteOptions, type ApprovalRouteOptions } from "@/domain/approvals/settings-options";
 import { listApprovalRouteSettingWarnings } from "@/domain/approvals/settings-warnings";
 import { formatCount, formatForeignAmount, formatFxRate, formatKrw, formatQuantity } from "@/lib/format-number";
@@ -78,6 +79,17 @@ function optionsFor(
   return undefined;
 }
 
+// 06-02(SP-9): 짝 격자 칸의 행 · 열 = 두 코드표의 활성 값(sortOrder 순 — listCodeItems가 그 순서로 준다).
+async function pairGridFor(
+  viewer: Viewer,
+  descriptor: SettingFieldDescriptor,
+): Promise<SettingsFieldViewModel["pairGrid"]> {
+  if (descriptor.kind !== "pair-grid") return undefined;
+  const [rows, cols] = await Promise.all([listCodeItems(viewer, descriptor.rows), listCodeItems(viewer, descriptor.cols)]);
+  const toOption = (item: { value: string; label: string }) => ({ value: item.value, label: item.label });
+  return { rows: rows.map(toOption), cols: cols.map(toOption), rowField: descriptor.rowField, colField: descriptor.colField };
+}
+
 async function buildSections(viewer: Viewer): Promise<SettingsSection[]> {
   const sections = new Map<string, SettingsFieldViewModel[]>();
   const values: Record<string, unknown> = {};
@@ -126,6 +138,7 @@ async function buildSections(viewer: Viewer): Promise<SettingsSection[]> {
       ...(def.unitLabel ? { unitLabel: def.unitLabel } : {}),
       field,
       options: field.kind === "simple" ? optionsFor(def, descriptor, field.value, routeOptions) : undefined,
+      ...(descriptor.kind === "pair-grid" ? { pairGrid: await pairGridFor(viewer, descriptor) } : {}),
       warning: warnings[def.key],
     };
 

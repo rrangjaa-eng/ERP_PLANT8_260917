@@ -81,13 +81,14 @@ export function evidenceStampOf(input: { fileIds: readonly string[]; evidenceAmo
 export function evidenceOverrunLine(input: {
   hasLiveEvidence: boolean;
   evidenceAmountKrw: number | null;
-  approvedSupplyKrw: number;
+  // null = 승인 공급가 없음 — 승인액 조각을 뺀다(06-06 검토 S-5).
+  approvedSupplyKrw: number | null;
   lineRemainingKrw: number | null;
 }): string | null {
   const amount = input.evidenceAmountKrw;
   if (!input.hasLiveEvidence || amount === null) return null;
   const parts: string[] = [];
-  if (amount > input.approvedSupplyKrw) parts.push(`승인액보다 +${formatKrw(diffKrw(amount, input.approvedSupplyKrw))}`);
+  if (input.approvedSupplyKrw !== null && amount > input.approvedSupplyKrw) parts.push(`승인액보다 +${formatKrw(diffKrw(amount, input.approvedSupplyKrw))}`);
   const remaining = input.lineRemainingKrw === null ? null : Math.max(input.lineRemainingKrw, 0);
   if (remaining !== null && amount > remaining) parts.push(`실행가 초과 ${formatKrw(diffKrw(amount, remaining))}`);
   return parts.length > 0 ? parts.join(" · ") : null;

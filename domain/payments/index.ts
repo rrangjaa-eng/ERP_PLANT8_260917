@@ -695,7 +695,7 @@ export async function loadEvidenceOverrun(
   return evidenceOverrunLine({
     hasLiveEvidence: true,
     evidenceAmountKrw,
-    approvedSupplyKrw: doc.supplyAmountKrw ?? 0,
+    approvedSupplyKrw: doc.supplyAmountKrw,
     lineRemainingKrw: doc.quoteLineId && doc.projectId ? await lineRemainingFor(viewer, doc.projectId, doc.id) : null,
   });
 }

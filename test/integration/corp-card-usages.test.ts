@@ -15,9 +15,11 @@ import {
   createCardUsage,
   precheckCardUsage,
   previewCardAmounts,
+  searchMerchantsForCard,
   type CardUsageInput,
 } from "@/domain/corp-card-usages";
 import { insertRole } from "@/repositories/roles";
+import { insertVendor } from "@/repositories/vendors";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { seoulToday } from "@/lib/dates";
 import { makePerson } from "./approvals-fixtures";
@@ -190,5 +192,23 @@ describe("사용일 소속은 투영 전 발령에서(P3-7)", () => {
     // 「소속 없음」 막힘은 발령 유무로 — 이름이 가려져도 소속은 있다.
     expect(await previewCardAmounts(member, { usedOn: seoulToday(), total: null, evidenceTypeCode: null })).toMatchObject({ teamAssigned: true });
     expect(await cardUsageFormOptions(member, seoulToday())).toMatchObject({ teamAssigned: true });
+  });
+});
+
+describe("가맹점 고르기는 카드 자격으로(P3-6)", () => {
+  it("expenses write가 없어도 쓸 카드가 있으면 가맹점을 찾고, 쓸 카드가 없으면 거부한다", async () => {
+    const team = await makeTeam();
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `카드만-${randomUUID().slice(0, 8)}`, workScope: "team" });
+    for (const infoItem of ["team.value", "card_usage.value", "card_usage.amount", "vendor.value"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "write", allowed: false });
+    const holder = await makePerson("카드만직원", role.id, team.name);
+    const noCard = await makePerson("카드없는직원", role.id, team.name);
+    await makeCard({ kind: "personal", holderUserId: holder.id });
+    const vendorName = `가맹점-${randomUUID().slice(0, 8)}`;
+    await insertVendor(SYSTEM_VIEWER, { name: vendorName, normalizedName: vendorName });
+
+    const found = await searchMerchantsForCard(holder, { query: vendorName });
+    expect(found.rows.map((row) => row.name)).toEqual([vendorName]);
+    await expect(searchMerchantsForCard(noCard, { query: vendorName })).rejects.toBeInstanceOf(ForbiddenError);
   });
 });

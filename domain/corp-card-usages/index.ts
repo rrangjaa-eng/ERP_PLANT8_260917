@@ -16,6 +16,10 @@ import { listCodeItems } from "@/repositories/code-tables";
 import { findCorpCardById, listCorpCards, type CorpCardRow } from "@/repositories/corp-cards";
 import { findUserNamesByIds } from "@/repositories/users";
 import { findMembershipAtDate } from "@/repositories/team-memberships";
+import { listVendorsForPick } from "@/repositories/vendors";
+import { normalizeVendorName } from "@/domain/vendors";
+import { codeLabelsOf } from "@/domain/expenses";
+import { PICK_LIMIT, PICK_VENDOR_OPTION_SPEC, type PickVendorOptionDto } from "@/domain/expenses/pick";
 import {
   findLastCardUsageByRegistrant,
   insertCardUsage,
@@ -234,6 +238,24 @@ export async function previewCardAmounts(
   const rates = await loadTaxRates(input.usedOn);
   const split = splitCardTotal({ money: input.total, rule: option.rule }, rates);
   return { split: { ...split, ruleKind: option.rule.ruleKind, evidenceLabel: option.label }, teamName, teamAssigned };
+}
+
+// ── 가맹점 고르기 ──────────────────────────────────────────────────────────
+
+// 카드 경로의 가맹점(거래처) 고르기 — 문은 지출결의 쓰기 권한이 아니라 카드 자격(오늘 쓸 카드가 한 장 이상)이다(06-05 검토 P3-6).
+// 행 · 투영은 지출결의 거래처 고르기와 같은 DTO(`PickVendorOptionDto`) — 숨김 · 보관 거래처 없음, vendor.value가 가리면 행이 빈다.
+export async function searchMerchantsForCard(viewer: Viewer, input: { query: string }): Promise<{ rows: Partial<PickVendorOptionDto>[]; truncated: boolean }> {
+  if ((await cardOptionsForUsage(viewer, seoulToday())).length === 0) throw new ForbiddenError(CARD_NOT_ELIGIBLE);
+  const found = await listVendorsForPick(viewer, { normalizedQuery: normalizeVendorName(input.query), limit: PICK_LIMIT + 1 });
+  const evidenceNames = await codeLabelsOf(viewer, "evidence_type");
+  const options: PickVendorOptionDto[] = found.slice(0, PICK_LIMIT).map((vendor) => ({
+    id: vendor.id,
+    name: vendor.name,
+    defaultEvidenceType: vendor.defaultEvidenceType,
+    defaultEvidenceName: vendor.defaultEvidenceType ? (evidenceNames.get(vendor.defaultEvidenceType) ?? vendor.defaultEvidenceType) : null,
+  }));
+  const rows = (await projectMany(viewer, options, PICK_VENDOR_OPTION_SPEC)).filter((row) => row.id !== undefined);
+  return { rows, truncated: found.length > PICK_LIMIT };
 }
 
 // ── 폼 선택지 ──────────────────────────────────────────────────────────────

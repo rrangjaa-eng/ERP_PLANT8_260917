@@ -32,3 +32,7 @@ review 2026-10-06T15:07Z session=c2610b64-102a-5a86-a641-99bec1c982a0 (PR #178, 
 design-review 2026-10-06T15:59Z session=c2610b64-102a-5a86-a641-99bec1c982a0 (PR #178, Codex 실행·후보 1건 결함 아님 · DOM 실측 4폭 결함 2건 수정 a47d414c·818465bf, 보고서 /mnt/project-files/notes/vendor-kind/178-design-review.md · 스킬 기록 훅이 10:40Z 뒤 이 세션에서 기록을 남기지 않아 손으로 기록)
 qa 2026-10-06T15:59Z session=c2610b64-102a-5a86-a641-99bec1c982a0 (PR #178, CI=true 관련 E2E 통과 · 결함 2건 수정 24572275·de089aca, 보고서 /mnt/project-files/notes/vendor-kind/178-qa.md · 스킬 기록 훅이 10:40Z 뒤 이 세션에서 기록을 남기지 않아 손으로 기록)
 review 2026-10-06T16:59Z session=c2610b64-102a-5a86-a641-99bec1c982a0 (PR #179, 결함 0 · P3 3건 수정, 보고서 /mnt/project-files/notes/vendor-kind/179-review.md · 스킬 기록 훅이 10:40Z 뒤 이 세션에서 기록을 남기지 않아 손으로 기록)
+review 2026-10-06T18:36Z session=157802f6-d640-5a76-88ea-648ef79f4d4c (PR #180, P1 0 · P2 1 · P3 4, P3 3건·CSO 묶음 수정 fix-prc 7787a369~41e630cf, P2는 06-11 몫, 보고서 /mnt/project-files/notes/06-review/pr-c-review.md)
+cso 2026-10-06T18:36Z session=157802f6-d640-5a76-88ea-648ef79f4d4c (PR #180, Opus 대체 검토 — cso 도우미는 600초 상한이라 손으로 같은 기준 적용, 중간 1·낮음 4, CSO-1·2·5 수정, CSO-3은 06-11·CSO-4는 마이그레이션이라 따로, 보고서 /mnt/project-files/notes/06-review/pr-c-cso.md)
+design-review 2026-10-06T18:37Z session=157802f6-d640-5a76-88ea-648ef79f4d4c (PR #180, Codex 실행·후보 0 · DOM 실측 결함 1건 수정 2b33cb93, 보고서 /mnt/project-files/notes/06-review/pr-c-design-review.md)
+qa 2026-10-06T19:30Z session=157802f6-d640-5a76-88ea-648ef79f4d4c (PR #180, CI=true 흐름 통과·제품 결함 0, 건강 88→94, 보고서 /mnt/project-files/notes/06-review/pr-c-qa.md)

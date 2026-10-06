@@ -138,4 +138,49 @@ test.describe("06-02 설정 키 · 짝 격자", () => {
       await expect(cell(page, "법인카드", "세금계산서")).toBeChecked();
     }).toPass();
   });
+
+  // E-45 실패 경로(06-02 검토 P2-1 · P2-3) — 첫 저장을 붙잡은 채 둘째 칸을 누르고, 첫 저장을 실패로 끝낸다.
+  // 다음 저장은 실패한 짝을 싣지 않아야 한다: 다시 열면 둘째 칸만 체크다. 끊김(reject)과 HTTP 500 둘 다.
+  for (const failure of ["abort", "500"] as const) {
+    test(`짝 격자 연속 저장 — 앞 저장이 실패(${failure})하면 다음 저장은 실패한 짝을 싣지 않는다`, async ({ page }) => {
+      await loginAndOpenSettings(page);
+
+      let posts = 0;
+      let release: () => void = () => {};
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const matcher = (url: URL) => url.pathname === "/admin/settings";
+      await page.route(matcher, async (route) => {
+        const request = route.request();
+        if (request.method() !== "POST" || !request.headers()["next-action"]) {
+          await route.continue();
+          return;
+        }
+        posts += 1;
+        if (posts !== 1) {
+          await route.continue();
+          return;
+        }
+        await held;
+        if (failure === "abort") await route.abort();
+        else await route.fulfill({ status: 500, contentType: "text/plain", body: "boom" });
+      });
+
+      await cell(page, "계좌이체", "세금계산서").check();
+      await expect.poll(() => posts).toBe(1);
+      await cell(page, "법인카드", "세금계산서").check();
+      release();
+      await expect.poll(() => posts).toBe(2);
+      await expect(cell(page, "계좌이체", "세금계산서")).not.toBeChecked();
+
+      await page.unroute(matcher);
+      await expect(async () => {
+        await page.reload();
+        await expect(cell(page, "법인카드", "세금계산서")).toBeChecked();
+        await expect(cell(page, "계좌이체", "세금계산서")).not.toBeChecked();
+      }).toPass();
+    });
+  }
+
 });

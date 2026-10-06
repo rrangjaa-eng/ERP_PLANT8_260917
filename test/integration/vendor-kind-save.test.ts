@@ -173,6 +173,25 @@ describe("견적 줄 거래처 — supplier · both만 (새 줄 · 수정 · 합
     expect(after.vendorId).toBe(vendor.id);
   });
 
+  it("응답을 잃은 새 줄 재전송은 그 사이 거래처가 클라이언트가 됐어도 거부하지 않는다(저장된 값 · ENG-D10)", async () => {
+    const { revisionId, subcategory } = await setup();
+    const vendor = await vendorOf("supplier");
+    const line = newLine(subcategory, vendor.id);
+    await saveQuoteLines(SYSTEM_VIEWER, revisionId, { rows: [line] });
+    await db.update(vendors).set({ kind: "client" }).where(eq(vendors.id, vendor.id));
+
+    await saveQuoteLines(SYSTEM_VIEWER, revisionId, { rows: [line] });
+
+    expect((await reload(line.id)).vendorId).toBe(vendor.id);
+  });
+
+  it("거래처 없는 새 줄은 갈래 판정 없이 저장된다", async () => {
+    const { revisionId, subcategory } = await setup();
+    const line = newLine(subcategory, null);
+    await saveQuoteLines(SYSTEM_VIEWER, revisionId, { rows: [line] });
+    expect((await reload(line.id)).vendorId).toBeNull();
+  });
+
   it.each(["supplier", "both"] as const)("%s 거래처는 새 줄 · 바꾸기 모두 저장된다", async (kind) => {
     const { revisionId, subcategory } = await setup();
     const first = await vendorOf(kind);

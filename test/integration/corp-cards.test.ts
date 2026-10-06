@@ -10,6 +10,7 @@ import {
   updateCorpCardOwner,
   setCorpCardActive,
   InvalidCardOwnerError,
+  ArchivedCardOwnerError,
   ForbiddenError,
   DuplicateCorpCardError,
 } from "@/domain/corp-cards";
@@ -17,6 +18,7 @@ import { createOrgUnit, createTeam } from "@/domain/org";
 import { archive, restore } from "@/domain/archive";
 import { listCorpCards as repoListCorpCards } from "@/repositories/corp-cards";
 import { queryActionLog } from "@/repositories/action-log";
+import { isCheckViolation } from "@/lib/pg-errors";
 
 async function makeTestUser(): Promise<string> {
   const id = `card-user-${randomUUID()}`;
@@ -115,7 +117,8 @@ describe("corp-cards (MAST-03, 실제 Postgres)", () => {
     ).rejects.toBeInstanceOf(InvalidCardOwnerError);
   });
 
-  it("소지자도 팀도 지정하지 않으면 거부된다", async () => {
+  // 06-30: 「둘 다 없음」은 이제 공용으로 정당하다 — 거부되는 것은 고른 종류(개인)에 맞는 칸이 빈 누락 입력이다.
+  it("종류 개인인데 소지자 없음이면 거부된다 — 누락 입력이 공용으로 떨어지지 않는다", async () => {
     await expect(
       createCorpCard(SYSTEM_VIEWER, {
         issuer: `카드사-${randomUUID()}`,
@@ -124,6 +127,109 @@ describe("corp-cards (MAST-03, 실제 Postgres)", () => {
         kind: "personal",
       }),
     ).rejects.toBeInstanceOf(InvalidCardOwnerError);
+  });
+
+  // 06-30(Q5 · C8): 공용 카드 — 소지자 · 팀이 없는 카드. 종류는 사람이 고른 값이다.
+  it("종류 공용이면 소지자 · 팀 없이 등록되고 kind = shared다", async () => {
+    const dto = await createCorpCard(SYSTEM_VIEWER, {
+      issuer: `카드사-${randomUUID()}`,
+      numberLast4: uniqueLast4(),
+      label: "공용카드",
+      kind: "shared",
+    });
+    expect(dto.kind).toBe("shared");
+    expect(dto.holderUserId).toBeNull();
+    expect(dto.teamId).toBeNull();
+  });
+
+  it("위조 입력(종류 공용 + 소지자 · 팀)은 도메인이 먼저 거부한다", async () => {
+    const holderUserId = await makeTestUser();
+    const teamId = await makeTestTeam();
+    await expect(
+      createCorpCard(SYSTEM_VIEWER, {
+        issuer: `카드사-${randomUUID()}`,
+        numberLast4: uniqueLast4(),
+        label: "위조공용",
+        kind: "shared",
+        holderUserId,
+        teamId,
+      }),
+    ).rejects.toBeInstanceOf(InvalidCardOwnerError);
+  });
+
+  it("소유자 변경 개인 → 공용: 소지자가 비고 kind = shared, document_update 한 줄 · document_create 없음", async () => {
+    const holderUserId = await makeTestUser();
+    const dto = await createCorpCard(SYSTEM_VIEWER, {
+      issuer: `카드사-${randomUUID()}`,
+      numberLast4: uniqueLast4(),
+      label: "개인→공용",
+      kind: "personal",
+      holderUserId,
+    });
+
+    const createRowsBefore = await queryActionLog(SYSTEM_VIEWER, { actionType: "document_create" });
+    await updateCorpCardOwner(SYSTEM_VIEWER, dto.id, { kind: "shared" });
+    const createRowsAfter = await queryActionLog(SYSTEM_VIEWER, { actionType: "document_create" });
+    const updateRows = await queryActionLog(SYSTEM_VIEWER, { actionType: "document_update" });
+
+    const updated = (await listCorpCards(SYSTEM_VIEWER)).find((c) => c.id === dto.id);
+    expect(updated?.kind).toBe("shared");
+    expect(updated?.holderUserId).toBeNull();
+    expect(updated?.teamId).toBeNull();
+    expect(createRowsAfter.length).toBe(createRowsBefore.length);
+    expect(updateRows.filter((row) => row.entityId === dto.id)).toHaveLength(1);
+  });
+
+  it("소유자 변경 공용 → 팀: 팀이 채워지고 kind = team", async () => {
+    const teamId = await makeTestTeam();
+    const dto = await createCorpCard(SYSTEM_VIEWER, {
+      issuer: `카드사-${randomUUID()}`,
+      numberLast4: uniqueLast4(),
+      label: "공용→팀",
+      kind: "shared",
+    });
+
+    await updateCorpCardOwner(SYSTEM_VIEWER, dto.id, { kind: "team", teamId });
+
+    const updated = (await listCorpCards(SYSTEM_VIEWER)).find((c) => c.id === dto.id);
+    expect(updated?.kind).toBe("team");
+    expect(updated?.teamId).toBe(teamId);
+    expect(updated?.holderUserId).toBeNull();
+  });
+
+  it("소유자 변경 공용 → 보관된 사람은 ArchivedCardOwnerError다(기존 보관 검사 그대로)", async () => {
+    const retiring = await makeTestUser();
+    const dto = await createCorpCard(SYSTEM_VIEWER, {
+      issuer: `카드사-${randomUUID()}`,
+      numberLast4: uniqueLast4(),
+      label: "공용→퇴사자",
+      kind: "shared",
+    });
+    await archive(SYSTEM_VIEWER, "user", retiring);
+
+    await expect(
+      updateCorpCardOwner(SYSTEM_VIEWER, dto.id, { kind: "personal", holderUserId: retiring }),
+    ).rejects.toBeInstanceOf(ArchivedCardOwnerError);
+    const unchanged = (await listCorpCards(SYSTEM_VIEWER)).find((c) => c.id === dto.id);
+    expect(unchanged?.kind).toBe("shared");
+  });
+
+  // E-15 · R-6: 도메인 표와 06-27 DB CHECK가 같은 세 조합이다 — 도메인을 거치지 않은 행도 DB가 한 번 더 거부한다.
+  // drizzle 0.45는 pg 오류를 .cause에 감싼다(E-42) — isCheckViolation이 오류와 .cause를 함께 본다.
+  it.each([
+    ["소지자 · 팀 둘 다 붙은 행", "personal", true, true],
+    ["kind shared + 소지자 행", "shared", true, false],
+  ] as const)("도메인을 거치지 않은 %s은 23514 corp_cards_owner_kind_check로 거부된다", async (_name, kind, withHolder, withTeam) => {
+    const holderUserId = withHolder ? await makeTestUser() : null;
+    const teamId = withTeam ? await makeTestTeam() : null;
+    const error = await db
+      .insert(corpCards)
+      .values({ issuer: `카드사-${randomUUID()}`, numberLast4: uniqueLast4(), label: "DB직접", kind, holderUserId, teamId })
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+    expect(isCheckViolation(error, "corp_cards_owner_kind_check")).toBe(true);
   });
 
   it("소유자 변경이 반대 칸을 비운다 — 소지자와 팀이 동시에 채워진 행이 생기지 않는다", async () => {

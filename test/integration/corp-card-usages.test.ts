@@ -11,6 +11,7 @@ import { db, pool } from "@/db/client";
 import { corpCardUsages, expenses, projects, purchaseRequests, quoteLines, vendors } from "@/db/schema";
 import { gate, GateBlockedError } from "@/domain/rules/gate";
 import { createProject, CompletedProjectError } from "@/domain/projects";
+import { ProjectNotFoundError } from "@/domain/projects/status";
 import { getCurrentQuoteRevision, listQuoteLines, saveQuoteLines } from "@/domain/quotes/lines";
 import { createRevisionFromCurrent } from "@/domain/quotes/revisions";
 import { closeExpense, createExpenseFromLines } from "@/domain/expenses";
@@ -403,6 +404,22 @@ describe("견적 줄 연결 — 트레이서(06-07)", () => {
     await expect(cardOnLine(fx, fx.lines[0] ?? "", 1_000)).rejects.toBeInstanceOf(ForbiddenError);
     await expect(cardOnLine(fx, fx.lines[1] ?? "", 1_000)).rejects.toBeInstanceOf(ForbiddenError);
     expect(await usageCount()).toBe(0);
+  });
+});
+
+describe("사전 조회 뒤 프로젝트 보관(P3-4)", () => {
+  it("견적 줄 · 견적 외 비용 — precheck 뒤 보관되면 잠근 뒤 다시 보고 거부, 줄 · 카드 사용이 생기지 않는다", async () => {
+    const fx = await cardProject();
+    const onLine = lineInput(fx, fx.lines[0] ?? "", 10_000);
+    const outInput: CardUsageInput = { ...usageInput(fx.cardId), total: { currency: "KRW", amount: 10_000, fxRate: 1 }, evidenceTypeCode: "invoice", linkKind: "out_of_quote", projectId: fx.projectId, itemName: "현수막" };
+    const preLine = await precheckCardUsage(fx.pm, onLine);
+    const preOut = await precheckCardUsage(fx.pm, outInput);
+    await db.update(projects).set({ archivedAt: new Date() }).where(eq(projects.id, fx.projectId));
+
+    expect(await caught(createCardUsage(fx.pm, onLine, preLine))).toBeInstanceOf(ProjectNotFoundError);
+    expect(await caught(createCardUsage(fx.pm, outInput, preOut))).toBeInstanceOf(ProjectNotFoundError);
+    expect(await usageCount()).toBe(0);
+    expect(await lineCount(fx.revisionId)).toBe(1);
   });
 });
 

@@ -127,26 +127,24 @@ export async function findLineLinks(viewer: Viewer, lineIds: readonly string[], 
   for (const lineId of ids) if (!chains.has(lineId)) chains.set(lineId, { currentLineId: null, chainLineIds: [lineId] });
 
   const allLineIds = [...new Set([...chains.values()].flatMap((chain) => chain.chainLineIds))];
-  const [expenses, usages, requests] = await Promise.all([
-    listNumberedByLines(viewer, allLineIds, tx),
-    tx
-      .select({ id: corpCardUsages.id, quoteLineId: corpCardUsages.quoteLineId, supplyKrw: corpCardUsages.supplyKrw })
-      .from(corpCardUsages)
-      .where(and(inArray(corpCardUsages.quoteLineId, allLineIds), isNull(corpCardUsages.archivedAt)))
-      .orderBy(asc(corpCardUsages.createdAt), asc(corpCardUsages.id)),
-    tx
-      .select({
-        id: purchaseRequests.id,
-        quoteLineId: purchaseRequests.quoteLineId,
-        currency: purchaseRequests.estimateCurrency,
-        foreignAmount: purchaseRequests.estimateForeignAmount,
-        fxRate: purchaseRequests.estimateFxRate,
-        amountKrw: purchaseRequests.estimateAmountKrw,
-      })
-      .from(purchaseRequests)
-      .where(and(inArray(purchaseRequests.quoteLineId, allLineIds), eq(purchaseRequests.status, "requested")))
-      .orderBy(asc(purchaseRequests.createdAt), asc(purchaseRequests.id)),
-  ]);
+  const expenses = await listNumberedByLines(viewer, allLineIds, tx);
+  const usages = await tx
+    .select({ id: corpCardUsages.id, quoteLineId: corpCardUsages.quoteLineId, supplyKrw: corpCardUsages.supplyKrw })
+    .from(corpCardUsages)
+    .where(and(inArray(corpCardUsages.quoteLineId, allLineIds), isNull(corpCardUsages.archivedAt)))
+    .orderBy(asc(corpCardUsages.createdAt), asc(corpCardUsages.id));
+  const requests = await tx
+    .select({
+      id: purchaseRequests.id,
+      quoteLineId: purchaseRequests.quoteLineId,
+      currency: purchaseRequests.estimateCurrency,
+      foreignAmount: purchaseRequests.estimateForeignAmount,
+      fxRate: purchaseRequests.estimateFxRate,
+      amountKrw: purchaseRequests.estimateAmountKrw,
+    })
+    .from(purchaseRequests)
+    .where(and(inArray(purchaseRequests.quoteLineId, allLineIds), eq(purchaseRequests.status, "requested")))
+    .orderBy(asc(purchaseRequests.createdAt), asc(purchaseRequests.id));
 
   const result = new Map<string, LineLinks>();
   for (const lineId of ids) {

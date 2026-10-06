@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { ForbiddenError } from "@/domain/permissions/can";
@@ -7,7 +7,7 @@ import { createCorpCard } from "@/domain/corp-cards";
 import { createOrgUnit, createTeam } from "@/domain/org";
 import { and, eq } from "drizzle-orm";
 import { Client } from "pg";
-import { db } from "@/db/client";
+import { db, pool } from "@/db/client";
 import { corpCardUsages, expenses, projects, purchaseRequests, quoteLines } from "@/db/schema";
 import { gate, GateBlockedError } from "@/domain/rules/gate";
 import { createProject, CompletedProjectError } from "@/domain/projects";
@@ -35,6 +35,7 @@ import {
   cardUsageFormDefaults,
   cardUsageFormOptions,
   createCardUsage,
+  listCardUsages,
   listProjectCardUsages,
   precheckCardUsage,
   previewCardAmounts,
@@ -47,6 +48,9 @@ import { insertVendor } from "@/repositories/vendors";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { seoulToday } from "@/lib/dates";
 import { makePerson } from "./approvals-fixtures";
+import { waitForLockWaiter } from "./lock-race";
+import { ACTION_REGISTRY } from "@/lib/actions/registry";
+import "@/app/(app)/cards/actions.registry";
 
 // 06-05(EXP-07 · U-2): 카드 사용 통합 파일 — 06-07 · 06-09 · 06-12가 `describe`를 더한다.
 
@@ -418,6 +422,37 @@ describe("실행가 상한(Q3)", () => {
   });
 });
 
+describe("[I-6] 연결 대상 서버 판정 — 프로젝트 보기 · 보관", () => {
+  it("카드는 있지만 projects view가 없는 계급 → 견적 줄 · 견적 외 비용 모두 ForbiddenError(`프로젝트 보기 권한 없음`) · 카드 사용 0", async () => {
+    const fx = await cardProject();
+    const team = await makeTeam();
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `보기없음-${randomUUID().slice(0, 8)}`, workScope: "company" });
+    const viewer = await makePerson("보기없음", role.id, team.name);
+    const cardId = await makeCard({ kind: "personal", holderUserId: viewer.id });
+    const line = caught(precheckCardUsage(viewer, { ...lineInput(fx, fx.lines[0] ?? "", 1_000), corpCardId: cardId }));
+    const outside = caught(precheckCardUsage(viewer, { ...usageInput(cardId), linkKind: "out_of_quote", projectId: fx.projectId, itemName: "다과" }));
+    for (const error of [await line, await outside]) {
+      expect(error).toBeInstanceOf(ForbiddenError);
+      expect((error as Error).message).toBe("프로젝트 보기 권한 없음");
+    }
+    expect(await usageCount()).toBe(0);
+  });
+
+  it("보관된 프로젝트의 견적 줄 lineId 직접 → `연결 없음 · 연결 고르기`", async () => {
+    const fx = await cardProject();
+    await db.update(projects).set({ archivedAt: new Date() }).where(eq(projects.id, fx.projectId));
+    const error = await caught(precheckCardUsage(fx.pm, lineInput(fx, fx.lines[0] ?? "", 1_000)));
+    expect(error).toBeInstanceOf(CardUsageRejectedError);
+    expect((error as Error).message).toBe("연결 없음 · 연결 고르기");
+  });
+
+  it("액션 레지스트리 — 연결 고르기 두 액션의 문 = projects view(실제 판정과 같음)", () => {
+    for (const name of ["searchProjectsForCardLinkAction", "searchLinesForCardLinkAction"]) {
+      expect(ACTION_REGISTRY.find((entry) => entry.name === name)).toMatchObject({ menu: "projects", action: "view" });
+    }
+  });
+});
+
 describe("반대쪽 지출결의(D-609 · C10)", () => {
   async function staffCard(fx: ExpenseFixture): Promise<string> {
     return makeCard({ kind: "personal", holderUserId: fx.pm.id });
@@ -462,6 +497,24 @@ describe("반대쪽 지출결의(D-609 · C10)", () => {
     const input = expenseLineInput(cardId, fx.lines.withVendor);
     await createCardUsage(fx.pm, input, await precheckCardUsage(fx.pm, input));
     expect(await usageCount()).toBe(1);
+  });
+
+  it("[I-2] 카드가 이어진 줄(계보 사슬)에 지출결의 제출 → `카드 사용 1건 연결됨 · 지출결의는 다른 줄` · 카드를 보관하면 제출 통과", async () => {
+    const fx = await setupExpenseProject();
+    const cardId = await staffCard(fx);
+    const input = expenseLineInput(cardId, fx.lines.withVendor);
+    const usageId = (await createCardUsage(fx.pm, input, await precheckCardUsage(fx.pm, input))).id;
+    const l2 = (await addApprovedRevision(fx, [])).lineIds.get("무대 제작") ?? "";
+    const created = await createExpenseFromLines(fx.pm, { lineIds: [l2] });
+    const expenseId = created.created[0]?.expenseId ?? "";
+    const error = await caught(submitReadyDraft(fx.pm, expenseId));
+    expect(error).toBeInstanceOf(GateBlockedError);
+    expect((error as Error).message).toBe("카드 사용 1건 연결됨 · 지출결의는 다른 줄");
+    const [draft] = await db.select({ number: expenses.number }).from(expenses).where(eq(expenses.id, expenseId));
+    expect(draft?.number).toBeNull();
+
+    await archiveUsage(usageId, fx.pm.id);
+    expect((await submitReadyDraft(fx.pm, expenseId)).kind).toBe("submitted");
   });
 });
 
@@ -571,6 +624,38 @@ describe("계보(X-1)", () => {
     const found = await searchLinesForCardLink(fx.pm, { projectId: fx.projectId, query: "", currentLineId: null });
     expect(found.rows.find((row) => row.id === l2)).toMatchObject({ remainingKrw: 900_000, hint: "남은 실행가 900,000 · 구매 요청 1건 100,000" });
     expect(((await caught(cardOnLine(fx, l2, 900_001))) as Error).message).toBe("실행가 초과 · 남은 실행가 900,000 · 다른 줄 고르기");
+  });
+});
+
+describe("[I-5] findLineLinks는 tx 한 클라이언트에 질의를 차례로 보낸다", () => {
+  it("같은 클라이언트에서 동시에 걸린 질의 수 최대 1(pg@9에서 제거될 겹침 없음)", async () => {
+    const fx = await cardProject();
+    const line = fx.lines[0] ?? "";
+    await cardOnLine(fx, line, 100_000);
+    await requestOn(fx, line, 50_000);
+    const inFlight = new Map<Client, number>();
+    let peak = 0;
+    const proto = Client.prototype as unknown as { query: (...args: unknown[]) => unknown };
+    const original = Reflect.get(proto, "query");
+    const spy = vi.spyOn(proto, "query").mockImplementation(function (this: Client, ...args: unknown[]) {
+      inFlight.set(this, (inFlight.get(this) ?? 0) + 1);
+      peak = Math.max(peak, inFlight.get(this) ?? 0);
+      const settle = () => {
+        inFlight.set(this, (inFlight.get(this) ?? 1) - 1);
+      };
+      const result = Reflect.apply(original, this, args);
+      if (result instanceof Promise) result.then(settle, settle);
+      else settle();
+      return result;
+    });
+    try {
+      const links = await withTransaction((tx) => findLineLinks(fx.pm, [line], tx));
+      expect(links.get(line)?.cardUsages).toHaveLength(1);
+      expect(links.get(line)?.purchaseRequests).toHaveLength(1);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(peak).toBe(1);
   });
 });
 
@@ -722,13 +807,81 @@ describe("경합(X-2)", () => {
       await client.query("SELECT id FROM projects WHERE id = $1 FOR UPDATE", [fx.projectId]);
       await client.query("UPDATE projects SET status = 'completed' WHERE id = $1", [fx.projectId]);
       const creating = caught(createCardUsage(fx.pm, input, pre));
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      await waitForLockWaiter(pool);
       await client.query("COMMIT");
       expect(await creating).toBeInstanceOf(CompletedProjectError);
     } finally {
       await client.query("ROLLBACK").catch(() => {});
       await client.end();
     }
+    expect(await usageCount()).toBe(0);
+  });
+
+  it("[I-3] 줄 잠금 — 풀 밖 연결이 줄 행을 잡고 실행가를 500,000으로 내려 커밋 → 900,000 카드는 기다린 뒤 새 실행가로 거부 · 카드 사용 0", async () => {
+    const fx = await cardProject();
+    const line = fx.lines[0] ?? "";
+    const input = lineInput(fx, line, 900_000);
+    const pre = await precheckCardUsage(fx.pm, input);
+    const client = new Client({ connectionString: process.env.DATABASE_URL });
+    await client.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("UPDATE quote_lines SET execution_amount_krw = 500000 WHERE id = $1", [line]);
+      const creating = caught(createCardUsage(fx.pm, input, pre));
+      await waitForLockWaiter(pool);
+      await client.query("COMMIT");
+      const error = await creating;
+      expect(error).toBeInstanceOf(GateBlockedError);
+      expect((error as Error).message).toBe("실행가 초과 · 남은 실행가 500,000 · 다른 줄 고르기");
+    } finally {
+      await client.query("ROLLBACK").catch(() => {});
+      await client.end();
+    }
+    expect(await usageCount()).toBe(0);
+  });
+
+  it("[I-3] 카드 ∥ 카드 같은 줄 — 600,000 두 건 동시 → 한 건만 저장(실행가 1,000,000)", async () => {
+    const fx = await cardProject();
+    const input = lineInput(fx, fx.lines[0] ?? "", 600_000);
+    const [preA, preB] = [await precheckCardUsage(fx.pm, input), await precheckCardUsage(fx.pm, input)];
+    const results = await Promise.allSettled([createCardUsage(fx.pm, input, preA), createCardUsage(fx.pm, input, preB)]);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    const rejected = results.find((result) => result.status === "rejected");
+    expect(rejected?.status === "rejected" ? (rejected.reason as Error).message : null).toBe("실행가 초과 · 남은 실행가 400,000 · 다른 줄 고르기");
+    expect(await usageCount()).toBe(1);
+  });
+
+  it("[I-4] 견적 외 비용 — 정산 프로젝트 precheck 뒤 풀 밖에서 완료로 커밋 → `완료 · 견적 줄 잠김` · 줄 · 카드 사용 그대로", async () => {
+    const fx = await cardProject();
+    await setStatus(fx.projectId, "settling");
+    const input: CardUsageInput = { ...usageInput(fx.cardId), evidenceTypeCode: "invoice", linkKind: "out_of_quote", projectId: fx.projectId, itemName: "현장 다과" };
+    const pre = await precheckCardUsage(fx.pm, input);
+    const before = await lineCount(fx.revisionId);
+    const client = new Client({ connectionString: process.env.DATABASE_URL });
+    await client.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT id FROM projects WHERE id = $1 FOR UPDATE", [fx.projectId]);
+      await client.query("UPDATE projects SET status = 'completed' WHERE id = $1", [fx.projectId]);
+      const creating = caught(createCardUsage(fx.pm, input, pre));
+      await waitForLockWaiter(pool);
+      await client.query("COMMIT");
+      const error = await creating;
+      expect(error).toBeInstanceOf(GateBlockedError);
+      expect((error as Error).message).toBe("완료 · 견적 줄 잠김");
+    } finally {
+      await client.query("ROLLBACK").catch(() => {});
+      await client.end();
+    }
+    expect(await lineCount(fx.revisionId)).toBe(before);
+    expect(await usageCount()).toBe(0);
+  });
+
+  it("[I-4] 현재 차수 밖 줄 — 차수 2를 만든 뒤 L1 id로 직접 등록 → ForbiddenError · 카드 사용 0", async () => {
+    const fx = await cardProject();
+    const l1 = fx.lines[0] ?? "";
+    await nextRevision(fx);
+    await expect(cardOnLine(fx, l1, 100_000)).rejects.toBeInstanceOf(ForbiddenError);
     expect(await usageCount()).toBe(0);
   });
 
@@ -843,6 +996,21 @@ describe("보관 건 제외(H-4)", () => {
     await expect(gate(null, "card.dual-link-block", { side: "expense", links })).resolves.toEqual({ allowed: true });
     const after = await searchLinesForCardLink(fx.pm, { projectId: fx.projectId, query: "", currentLineId: null });
     expect(after.rows[0]).toMatchObject({ remainingKrw: 1_000_000, hint: "남은 실행가 1,000,000" });
+  });
+});
+
+describe("[D-1] /cards 목록 연결 칸(S8)", () => {
+  it("견적 줄 `{프로젝트} · {줄 번호} {항목}` · 견적 외 비용 `{프로젝트} · 견적 외 비용 · {항목}` · 팀 비용은 linkLabel 없음", async () => {
+    const fx = await cardProject([1_000_000, 500_000]);
+    const [project] = await db.select({ name: projects.name }).from(projects).where(eq(projects.id, fx.projectId));
+    const onLine = await cardOnLine(fx, fx.lines[1] ?? "", 100_000);
+    const outside = await outOfQuote(fx, 50_000, "현장 다과");
+    const team = (await createCardUsage(fx.pm, usageInput(fx.cardId), await precheckCardUsage(fx.pm, usageInput(fx.cardId)))).id;
+    const { rows } = await listCardUsages(fx.pm, { month: seoulToday().slice(0, 7) }, seoulToday());
+    const labelOf = (id: string) => rows.find((row) => row.id === id)?.linkLabel;
+    expect(labelOf(onLine)).toBe(`${project?.name} · 2 줄2`);
+    expect(labelOf(outside)).toBe(`${project?.name} · 견적 외 비용 · 현장 다과`);
+    expect(labelOf(team)).toBeNull();
   });
 });
 

@@ -25,15 +25,15 @@ registerAction({
 
 registerAction({
   name: "searchProjectsForCardLinkAction",
-  menu: "cards",
-  action: "write",
+  menu: "projects",
+  action: "view",
   dtoName: "CardLinkProjectDto",
 });
 
 registerAction({
   name: "searchLinesForCardLinkAction",
-  menu: "cards",
-  action: "write",
+  menu: "projects",
+  action: "view",
   dtoName: "CardLinkLineDto",
 });
 

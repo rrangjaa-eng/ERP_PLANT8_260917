@@ -26,3 +26,17 @@
   max-width: min(100%, var(--field-w-short));
   text-overflow: ellipsis;
 }
+
+/* 06-07 DOM 감사 D-1 — 연결 칸(`{프로젝트} · {줄}`): 한 줄 말줄임 + title. 격자 칸 minmax(0, max-content)라 칸의 최소 폭 기여가 0 —
+   폰 320에서 표가 칸을 줄여 말줄임하고 문서를 넘기지 않는다. PC 상한은 지출결의 목록 거래처 칸 .vendorCell과 같은 16em. */
+.linkCell {
+  display: grid;
+  grid-template-columns: minmax(0, max-content);
+  max-width: 16em;
+}
+
+.linkText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -8,6 +8,8 @@ import { hasEvidence } from "@/domain/evidence/has-evidence";
 import { EXPENSE_DOCUMENT_KIND } from "@/domain/expenses/access";
 import { markVoided } from "@/repositories/files";
 import { withTransaction } from "@/lib/db-transaction";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { upsertVisibility } from "@/repositories/permissions";
 import { setupExpenseProject } from "./fixtures/expenses";
 import { approvedExpenseWithEvidence, approvedExpenseWithoutEvidence, makePaymentManager, setEvidenceRequired, type ApprovedExpense } from "./fixtures/payments";
 
@@ -30,6 +32,9 @@ describe("지급 완료 — 풀 소진 교착 회귀 가드", () => {
       const count = poolMax + 1;
 
       const payer = await makePaymentManager();
+      // 지급 완료는 지급 총액(expense.amount)을 보는 권한자만 한다(PR #180 Codex P1).
+      if (!payer.roleId) throw new Error("계급 없음");
+      await upsertVisibility(SYSTEM_VIEWER, { roleId: payer.roleId, infoItem: "expense.amount", visible: true });
       const docs: ApprovedExpense[] = [];
       for (let i = 0; i < count; i += 1) docs.push(await approvedExpenseWithoutEvidence(await setupExpenseProject()));
       const ids = docs.map((doc) => doc.expenseId);

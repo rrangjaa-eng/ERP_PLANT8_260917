@@ -39,7 +39,7 @@ export function CardForm({ holders, teams }: { holders: HolderOption[]; teams: T
   // 제출 직후 같은 틱의 두 번째 제출(Ctrl+Enter 연타)을 막는 동기 가드 — isExecuting은 다음 렌더에야 참이 된다(D7 · R15-ii).
   const submitLockRef = useRef(false);
   const [kind, setKind] = useState<OwnerKind>("personal");
-  const { execute, result, isExecuting } = useAction(createCorpCardAction, {
+  const { execute, result, isExecuting, reset } = useAction(createCorpCardAction, {
     onSuccess: () => {
       // 종류 select는 제어 상태라 폼 reset이 따라가지 못한다 — 같이 처음 값으로.
       setKind("personal");
@@ -101,7 +101,10 @@ export function CardForm({ holders, teams }: { holders: HolderOption[]; teams: T
             name="kind"
             className={styles.select}
             value={kind}
-            onChange={(event) => setKind(toOwnerKind(event.target.value))}
+            onChange={(event) => {
+              setKind(toOwnerKind(event.target.value));
+              reset();
+            }}
           >
             <option value="personal">개인</option>
             <option value="team">팀</option>
@@ -162,7 +165,7 @@ export function CardOwnerForm({
   const panelRef = useRef<PanelFormHandle>(null);
   const submitLockRef = useRef(false);
   const [kind, setKind] = useState<OwnerKind>(toOwnerKind(card.kind));
-  const { execute, result, isExecuting } = useAction(updateCorpCardOwnerAction, {
+  const { execute, result, isExecuting, reset } = useAction(updateCorpCardOwnerAction, {
     onSuccess: () => panelRef.current?.succeed(),
     onSettled: () => {
       submitLockRef.current = false;
@@ -205,7 +208,10 @@ export function CardOwnerForm({
             name="kind"
             className={styles.select}
             value={kind}
-            onChange={(event) => setKind(toOwnerKind(event.target.value))}
+            onChange={(event) => {
+              setKind(toOwnerKind(event.target.value));
+              reset();
+            }}
           >
             <option value="personal">개인</option>
             <option value="team">팀</option>

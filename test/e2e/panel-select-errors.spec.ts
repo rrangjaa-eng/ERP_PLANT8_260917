@@ -67,4 +67,46 @@ test.describe("옆 패널 필수 select 비움 오류 (04.6 QA-1)", () => {
       await setCorpCardActive(SYSTEM_VIEWER, card.id, false);
     }
   });
+  // 06-30 검토 P3-1 — 종류를 바꾸면 없는 칸에 대한 앞 제출의 오류 줄이 남지 않는다(행동 줄 + 1차 aria-describedby).
+  test("법인카드 소유자 변경: 오류가 뜬 뒤 종류를 공용으로 바꾸면 오류 줄과 describedby가 사라진다", async ({ page }) => {
+    const stamp = randomUUID().slice(0, 8);
+    const holder = await findUserByEmail(SYSTEM_VIEWER, (await createFixtureUser({ roleId: DEFAULT_ROLE_ID })).email);
+    const card = await insertCorpCard(SYSTEM_VIEWER, {
+      issuer: `종류전환카드사-${stamp}`,
+      numberLast4: String(Math.floor(1000 + Math.random() * 9000)),
+      label: `종류전환-${stamp}`,
+      kind: "personal",
+      holderUserId: holder!.id,
+    });
+    try {
+      await loginAsSysadmin(page);
+      await page.goto("/admin/corp-cards");
+      await page.locator("tr", { hasText: card.label }).getByRole("link", { name: "수정" }).click();
+      const dialog = page.locator(PANEL);
+      await dialog.getByLabel("종류").selectOption("team");
+      const submit = dialog.getByRole("button", { name: "소유자 변경" });
+      await submit.click();
+      await expect(dialog.locator("#corp-card-owner-form-reason")).toBeVisible();
+      await dialog.getByLabel("종류").selectOption("shared");
+      await expect(dialog.locator("#corp-card-owner-form-reason")).toHaveCount(0);
+      await expect(submit).not.toHaveAttribute("aria-describedby", /.+/);
+    } finally {
+      await setCorpCardActive(SYSTEM_VIEWER, card.id, false);
+    }
+  });
+
+  test("법인카드 등록: 오류가 뜬 뒤 종류를 공용으로 바꾸면 오류 줄과 describedby가 사라진다", async ({ page }) => {
+    await loginAsSysadmin(page);
+    await page.goto("/admin/corp-cards?new=1");
+    const dialog = page.locator(PANEL);
+    await dialog.getByLabel("발급사").fill(`종류전환카드사-${randomUUID().slice(0, 8)}`);
+    await dialog.getByLabel("뒤 4자리").fill(String(Math.floor(1000 + Math.random() * 9000)));
+    await dialog.getByLabel("별칭").fill("종류전환");
+    const submit = dialog.getByRole("button", { name: "법인카드 등록" });
+    await submit.click();
+    await expect(dialog.locator("#corp-card-form-reason")).toBeVisible();
+    await dialog.getByLabel("종류").selectOption("shared");
+    await expect(dialog.locator("#corp-card-form-reason")).toHaveCount(0);
+    await expect(submit).not.toHaveAttribute("aria-describedby", /.+/);
+  });
 });

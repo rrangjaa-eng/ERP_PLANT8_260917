@@ -11,7 +11,7 @@ import { taxRuleSchema, type TaxRule } from "@/domain/code-tables/tax-rule";
 import { getSettingValue as defaultGetSettingValue } from "@/domain/settings/registry";
 import { EVIDENCE_REQUIRED, PAYMENT_METHOD_EVIDENCE_PAIRS, TAX_BASIS_DATE_VAT, TAX_BASIS_DATE_WITHHOLDING, type TaxBasisDate } from "@/domain/settings/keys";
 import { getApprovalView } from "@/domain/approvals";
-import { EXPENSE_DOCUMENT_KIND } from "@/domain/expenses/access";
+import { canSeeExpense, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses/access";
 import { incomeTypeFor, pickTaxDates, type PickedTaxDates, type TaxLinePart } from "@/domain/expenses/tax";
 import { lineExecution, listNumberedByLineage } from "@/domain/expenses";
 import { resolveLinkedDocumentsByLineage } from "@/domain/quotes/lineage";
@@ -275,7 +275,8 @@ export async function loadPaymentInputs(
   shared?: PaymentShared,
 ): Promise<PaymentInputs> {
   const row = UUID_SHAPE.test(input.expenseId) ? await findExpenseById(viewer, input.expenseId) : null;
-  if (!row) throw new PaymentNotFoundError();
+  // 문서 보임(행 범위) — 문서 화면과 같은 「없는 지출결의」(CSO-1). 지급 완료 · 미리보기 · 증빙 확인 사전 조회가 함께 막힌다.
+  if (!row || !(await canSeeExpense(viewer, row))) throw new PaymentNotFoundError();
   const ctxShared = shared ?? (await loadPaymentShared(viewer));
   const owner = { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: row.id };
   const hasLiveEvidence = await hasEvidence(viewer, owner);
@@ -511,6 +512,12 @@ export async function completeExpensePayment(
   }
 }
 
+// 문서 보임(행 범위, CSO-1) — 트랜잭션 전 사전 조회(06-03 tx 규약). 안 보이면 문서 화면과 같은 「없는 지출결의」.
+async function assertExpenseVisible(viewer: Viewer, expenseId: string): Promise<void> {
+  const row = UUID_SHAPE.test(expenseId) ? await findExpenseById(viewer, expenseId) : null;
+  if (!row || !(await canSeeExpense(viewer, row))) throw new PaymentNotFoundError();
+}
+
 // ── 지급 취소(06-04 · D-606) ────────────────────────────────────────────
 // 권한은 트랜잭션 전. 사유 필수. 한 트랜잭션: 문서 행 FOR UPDATE → version → 살아 있는 지급(없으면 이미 취소) → 취소 표시(행 삭제 없음) →
 // 문서 version + 1 → 끌 수 없는 행동 로그 payment_cancel(같은 tx). 프로젝트 상태를 읽지 않는다 — 완료 프로젝트도 취소된다(U-4 · D-47).
@@ -520,7 +527,7 @@ export async function cancelExpensePayment(
   input: { expenseId: string; reason: string; version: number },
 ): Promise<{ version: number }> {
   if (!(await can(viewer, "expenses.payments", "write"))) throw new ForbiddenError("지급 처리 권한 없음");
-  if (!UUID_SHAPE.test(input.expenseId)) throw new PaymentNotFoundError();
+  await assertExpenseVisible(viewer, input.expenseId);
   const reason = input.reason.trim();
   if (reason === "") throw new UserFacingError(CANCEL_REASON_REQUIRED);
   return withTransaction(async (tx) => {
@@ -557,7 +564,7 @@ export async function saveScheduledPayDate(
   input: { expenseId: string; scheduledPayDate: string; version: number },
 ): Promise<{ version: number }> {
   if (!(await can(viewer, "expenses.payments", "write"))) throw new ForbiddenError("지급 처리 권한 없음");
-  if (!UUID_SHAPE.test(input.expenseId)) throw new PaymentNotFoundError();
+  await assertExpenseVisible(viewer, input.expenseId);
   return withTransaction(async (tx) => {
     const locked = await lockExpenseForUpdate(viewer, input.expenseId, tx);
     if (!locked) throw new PaymentNotFoundError();

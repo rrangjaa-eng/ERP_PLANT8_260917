@@ -3,7 +3,7 @@ import { can, ForbiddenError } from "@/domain/permissions/can";
 import { visible } from "@/domain/permissions/visible";
 import { recordAction } from "@/domain/action-log/record";
 import { GateBlockedError } from "@/domain/rules/gate";
-import { EXPENSE_DOCUMENT_KIND } from "@/domain/expenses/access";
+import { canSeeExpense, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses/access";
 import { hasEvidence } from "@/domain/evidence/has-evidence";
 import {
   EVIDENCE_AMOUNT_REQUIRED,
@@ -18,7 +18,7 @@ import { getSettingValue } from "@/domain/settings/registry";
 import { EVIDENCE_AMOUNT_TAX_INCLUSIVE, isTaxInclusiveEvidenceAmount } from "@/domain/evidence-reviews/tax-inclusive";
 import { EVIDENCE_PREPAID_DUE_DAYS } from "@/domain/settings/keys";
 import { formatKstTime } from "@/domain/holidays/business-day";
-import { findExpenseApprovalInstance, lockExpenseForUpdate } from "@/repositories/expenses";
+import { findExpenseApprovalInstance, findExpenseById, lockExpenseForUpdate } from "@/repositories/expenses";
 import { bumpExpenseVersion, findLivePayment } from "@/repositories/expense-payments";
 import { findReviewByExpense, updateEvidenceAmount, upsertReview } from "@/repositories/expense-evidence-reviews";
 import { listAliveByOwners } from "@/repositories/files";
@@ -152,6 +152,9 @@ class EvidenceStampChangedSignal extends Error {
 export async function confirmEvidence(viewer: Viewer, input: ConfirmEvidenceInput): Promise<ConfirmEvidenceResult> {
   if (!(await can(viewer, "expenses.payments", "write"))) throw new ForbiddenError("증빙 확인 권한 없음");
   if (!UUID_SHAPE.test(input.expenseId)) throw new EvidenceReviewNotFoundError();
+  // 문서 보임(행 범위, CSO-1) — 트랜잭션 전. 안 보이면 문서 화면과 같은 「없는 지출결의」.
+  const row = await findExpenseById(viewer, input.expenseId);
+  if (!row || !(await canSeeExpense(viewer, row))) throw new EvidenceReviewNotFoundError();
   const payments = await import("@/domain/payments");
   const shared = await payments.loadPaymentShared(viewer);
   const amountVisible = await visible(viewer, "expense.amount");

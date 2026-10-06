@@ -1,10 +1,14 @@
+import { randomUUID } from "node:crypto";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { Client } from "pg";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db, pool } from "@/db/client";
-import { actionLog, expensePayments, expenses, files, projects } from "@/db/schema";
+import { actionLog, expenseEvidenceReviews, expensePayments, expenses, files, projects } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
-import { upsertVisibility } from "@/repositories/permissions";
+import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
+import { insertRole } from "@/repositories/roles";
+import { confirmEvidence } from "@/domain/evidence-reviews";
+import { makePerson } from "./approvals-fixtures";
 import {
   cancelExpensePayment,
   completeExpensePayment,
@@ -622,4 +626,40 @@ describe("증빙 · 짝 게이트 (06-04 Task 2 · 3)", () => {
     },
     30_000,
   );
+});
+
+describe("문서 보임 범위(CSO-1) — 지급 · 증빙 확인 서버 경로", () => {
+  async function teamPayer(teamName: string): Promise<Viewer> {
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `팀지급-${randomUUID().slice(0, 8)}`, workScope: "team" });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "view", allowed: true });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.team", action: "view", allowed: true });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.payments", action: "write", allowed: true });
+    for (const infoItem of ["expense.value", "expense.amount"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+    return makePerson("팀지급", role.id, teamName);
+  }
+
+  it("다른 팀 지출결의 → 지급 완료 · 취소 · 예정일 · 미리보기 · 증빙 확인 모두 「없는 지출결의」이고 문서가 그대로다", async () => {
+    const fx = await setupExpenseProject();
+    const doc = await approvedExpenseWithEvidence(fx);
+    // 같은 팀(기획1팀) 팀 범위 지급 권한자는 본다 — 아래 거부가 팀 범위 판정 때문임을 보인다.
+    const sameTeam = await teamPayer("기획1팀");
+    expect((await previewPayable(sameTeam, { expenseId: doc.expenseId, payDate: seoulToday() })).payDate).toBe(seoulToday());
+
+    const outsider = await teamPayer("경영관리팀");
+    const before = await snapshot(doc.expenseId);
+    const errors = [
+      await caught(completeExpensePayment(outsider, { expenseId: doc.expenseId, expectedPayableKrw: 1, version: doc.version })),
+      await caught(cancelExpensePayment(outsider, { expenseId: doc.expenseId, reason: "잘못 지급", version: doc.version })),
+      await caught(saveScheduledPayDate(outsider, { expenseId: doc.expenseId, scheduledPayDate: addDays(seoulToday(), 3), version: doc.version })),
+      await caught(previewPayable(outsider, { expenseId: doc.expenseId, payDate: seoulToday() })),
+      await caught(confirmEvidence(outsider, { expenseId: doc.expenseId, version: doc.version, correctedAmountKrw: 1_000 })),
+    ];
+    for (const error of errors) {
+      expect(error).toBeInstanceOf(UserFacingError);
+      expect((error as Error).message).toBe("없는 지출결의 · 새로 고침");
+    }
+    const after = await snapshot(doc.expenseId);
+    expect(after).toEqual(before);
+    expect(await db.select().from(expenseEvidenceReviews).where(eq(expenseEvidenceReviews.expenseId, doc.expenseId))).toHaveLength(0);
+  }, 30_000);
 });

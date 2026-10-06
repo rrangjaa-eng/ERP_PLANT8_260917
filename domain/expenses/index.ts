@@ -90,6 +90,7 @@ import { countActiveByOwner, listAliveByOwners, markOwnerFilesRemoved, restoreOw
 import { findProjectById, lockProjectForWrite, type ProjectRow } from "@/repositories/projects";
 import { findLatestQuoteRevision, findQuoteRevisionById, listLatestQuoteRevisionsByProjects, type QuoteRevisionRow } from "@/repositories/quote-revisions";
 import { findQuoteLineById, listLineageLinesByProjects, listQuoteLinesByRevision, type QuoteLineRow } from "@/repositories/quote-lines";
+import { findLineLinks } from "@/repositories/quote-line-links";
 import { findUserById, findUserNamesByIds } from "@/repositories/users";
 import { findVendorById } from "@/repositories/vendors";
 import {
@@ -988,6 +989,10 @@ export async function submitExpense(
     const decision = await gate(locked, "expense.submit", buildExpenseSubmitContext(facts));
     if (!decision.allowed) throw new GateBlockedError(decision.reason);
     if (locked.quoteLineId) {
+      // 06-07 I-2(D-609 지출결의 쪽 입구): 줄 계보 사슬에 카드 사용이 이어져 있으면 막는다 — 잠근 프로젝트 행 아래 같은 tx로 읽는다.
+      const links = (await findLineLinks(viewer, [locked.quoteLineId], tx)).get(locked.quoteLineId);
+      const dual = await gate(locked, "card.dual-link-block", { side: "expense", links: links ?? { expenses: [], cardUsages: [] } });
+      if (!dual.allowed) throw new GateBlockedError(dual.reason);
       const current = supplyMoney(locked);
       if (line && current) {
         const others = numbered.filter((doc) => doc.id !== locked.id).flatMap((doc) => supplyMoney(doc) ?? []);

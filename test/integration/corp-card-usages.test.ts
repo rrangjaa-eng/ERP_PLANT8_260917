@@ -463,6 +463,24 @@ describe("반대쪽 지출결의(D-609 · C10)", () => {
     await createCardUsage(fx.pm, input, await precheckCardUsage(fx.pm, input));
     expect(await usageCount()).toBe(1);
   });
+
+  it("[I-2] 카드가 이어진 줄(계보 사슬)에 지출결의 제출 → `카드 사용 1건 연결됨 · 지출결의는 다른 줄` · 카드를 보관하면 제출 통과", async () => {
+    const fx = await setupExpenseProject();
+    const cardId = await staffCard(fx);
+    const input = expenseLineInput(cardId, fx.lines.withVendor);
+    const usageId = (await createCardUsage(fx.pm, input, await precheckCardUsage(fx.pm, input))).id;
+    const l2 = (await addApprovedRevision(fx, [])).lineIds.get("무대 제작") ?? "";
+    const created = await createExpenseFromLines(fx.pm, { lineIds: [l2] });
+    const expenseId = created.created[0]?.expenseId ?? "";
+    const error = await caught(submitReadyDraft(fx.pm, expenseId));
+    expect(error).toBeInstanceOf(GateBlockedError);
+    expect((error as Error).message).toBe("카드 사용 1건 연결됨 · 지출결의는 다른 줄");
+    const [draft] = await db.select({ number: expenses.number }).from(expenses).where(eq(expenses.id, expenseId));
+    expect(draft?.number).toBeNull();
+
+    await archiveUsage(usageId, fx.pm.id);
+    expect((await submitReadyDraft(fx.pm, expenseId)).kind).toBe("submitted");
+  });
 });
 
 describe("견적 외 비용(O-8 · X-6)", () => {

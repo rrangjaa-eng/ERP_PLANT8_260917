@@ -89,8 +89,32 @@ const EVIDENCE_TYPE_CODES: {
     },
   },
   { value: "invoice", label: "계산서", sortOrder: 1, description: "면세 거래 · 부가세 없는 계산서", taxRule: { ruleKind: "none" } },
-  { value: "card_receipt", label: "카드 전표", sortOrder: 2, description: "법인카드 결제 전표", taxRule: { ruleKind: "none" } },
-  { value: "cash_receipt", label: "현금영수증", sortOrder: 3, description: "지출 증빙용 현금영수증", taxRule: { ruleKind: "none" } },
+  {
+    value: "card_receipt",
+    label: "카드 전표",
+    sortOrder: 2,
+    description: "법인카드 결제 전표",
+    taxRule: {
+      ruleKind: "vat_surcharge",
+      roundingUnit: 1,
+      roundingMethod: "round",
+      minWithholdingAmount: 0,
+      basisDate: "evidence_date",
+    },
+  },
+  {
+    value: "cash_receipt",
+    label: "현금영수증",
+    sortOrder: 3,
+    description: "지출 증빙용 현금영수증",
+    taxRule: {
+      ruleKind: "vat_surcharge",
+      roundingUnit: 1,
+      roundingMethod: "round",
+      minWithholdingAmount: 0,
+      basisDate: "evidence_date",
+    },
+  },
   {
     value: "other_income",
     label: "기타소득",
@@ -99,7 +123,7 @@ const EVIDENCE_TYPE_CODES: {
     taxRule: {
       ruleKind: "withholding",
       roundingUnit: 10,
-      roundingMethod: "round",
+      roundingMethod: "truncate",
       minWithholdingAmount: 125000,
       basisDate: "payment_date",
     },
@@ -112,7 +136,7 @@ const EVIDENCE_TYPE_CODES: {
     taxRule: {
       ruleKind: "withholding",
       roundingUnit: 10,
-      roundingMethod: "round",
+      roundingMethod: "truncate",
       minWithholdingAmount: 0,
       basisDate: "payment_date",
     },

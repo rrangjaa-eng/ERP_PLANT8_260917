@@ -20,3 +20,8 @@ review 2026-10-06T09:26Z session=c2610b64-102a-5a86-a641-99bec1c982a0 (PR #174, 
 design-review 2026-10-06T09:47Z session=c2610b64-102a-5a86-a641-99bec1c982a0 (PR #174, Codex 실행·후보 6건 DOM 실측 결함 0, 보고서 /mnt/project-files/notes/vendor-kind/174-design-review.md)
 qa 2026-10-06T09:57Z session=c2610b64-102a-5a86-a641-99bec1c982a0 (PR #174, CI=true 빌드 17개 흐름 통과·결함 0, 보고서 /mnt/project-files/notes/vendor-kind/174-qa.md)
 cso 2026-10-06T10:19Z session=c2610b64-102a-5a86-a641-99bec1c982a0 (PR #174, 도구가 저장소 64MiB 한도로 거부 → Opus 대체 검토 complete·지지 결함 0, 보고서 /mnt/project-files/notes/vendor-kind/174-cso.md)
+review 2026-10-06T12:25Z session=6111256c-a82d-505c-9daf-f6ea2b6f1c1e
+review 2026-10-06T12:43Z session=c2610b64-102a-5a86-a641-99bec1c982a0 (PR #175, P2 2건 반영 17e8eb07·테스트 공백 보강 60f85af8, P3 1건 참고, 보고서 /mnt/project-files/notes/vendor-kind/175-review.md · 스킬 기록 훅이 10:40Z 뒤 이 세션에서 기록을 남기지 않아 손으로 기록)
+cso 2026-10-06T13:04Z session=c2610b64-102a-5a86-a641-99bec1c982a0 (PR #175, 도구가 저장소 64MiB 한도로 거부 → Opus 대체 검토 complete·결함 0·참고 1건, 보고서 /mnt/project-files/notes/vendor-kind/175-cso.md · 스킬 기록 훅이 10:40Z 뒤 이 세션에서 기록을 남기지 않아 손으로 기록)
+design-review 2026-10-06T13:04Z session=c2610b64-102a-5a86-a641-99bec1c982a0 (PR #175, Codex 실행·후보 2건 PR 밖 · DOM 실측 4폭 결함 0, 보고서 /mnt/project-files/notes/vendor-kind/175-design-review.md · 스킬 기록 훅이 10:40Z 뒤 이 세션에서 기록을 남기지 않아 손으로 기록)
+qa 2026-10-06T13:04Z session=c2610b64-102a-5a86-a641-99bec1c982a0 (PR #175, CI=true 관련 E2E 114 통과 · 서버 거부 3흐름 브라우저 확인 · 결함 0, 보고서 /mnt/project-files/notes/vendor-kind/175-qa.md · 스킬 기록 훅이 10:40Z 뒤 이 세션에서 기록을 남기지 않아 손으로 기록)

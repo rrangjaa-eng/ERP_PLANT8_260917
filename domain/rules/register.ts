@@ -9,6 +9,7 @@ import {
   type QuoteLineKind,
 } from "@/domain/quotes/edit-scope";
 import { firstExpenseSubmitBlock, type ExpenseSubmitContext } from "@/domain/expenses/gate";
+import { approvalGateDecision, type ApprovalGateInput } from "@/domain/payments/action-row";
 
 // Phase 4의 프로젝트 게이트 규칙을 등록하는 한 곳 — 규칙마다 등록한 플랜을
 // 주석 한 줄로 적는다: `project.line-edit`(04-06 · 04-12 · 04-13), `quote.line-cap`(04-26),
@@ -300,4 +301,11 @@ registerGateRule<unknown, ExpenseSubmitContext>({
     const first = await firstExpenseSubmitBlock(doc, ctx);
     return first ? { allowed: false, reason: first.reason } : { allowed: true };
   },
+});
+
+// 06-03(EXP-06 · 기준 1 · UI-SPEC 「지출결의 상태 → 1차」) — 지급 완료는 결재 통과(approved · 자기 승인 포함, UA-607) 문서만. 몸통은 화면 1차와
+// 같은 순수 함수(domain/payments/action-row.ts)를 부르기만 한다. 06-04가 그 뒤에 증빙 · 짝 규칙을 더한다.
+registerGateRule<unknown, ApprovalGateInput>({
+  name: "payment.approval-required",
+  check: (_doc, ctx) => approvalGateDecision(ctx),
 });

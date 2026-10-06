@@ -426,4 +426,6 @@ describe("커스텀 칸 축 — 계급에게서 끈 거래처 칸의 값이 그 
 import "@/domain/expenses";
 import "@/domain/evidence";
 import "@/app/(app)/expenses/actions.registry";
+import "@/domain/payments";
+import "@/app/(app)/expenses/[id]/actions.registry";
 import "@/domain/settlements";

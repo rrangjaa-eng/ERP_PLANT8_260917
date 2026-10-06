@@ -18,9 +18,11 @@ import { SubmittedToast } from "@/app/(app)/leave/[id]/submitted-toast";
 import { routeListSteps, withdrawResultLines } from "@/app/(app)/leave/status-display";
 import { expenseStatusWord } from "../status-display";
 import type { EvidenceActions } from "@/domain/evidence";
+import type { PaymentViewDto } from "@/domain/payments";
 import { EvidenceAttachments } from "./evidence-attachments";
 import { SubmittedUndoToast } from "./submitted-undo-toast";
 import { TaxParts } from "./tax-parts";
+import { PaymentActionRow, PaymentLoadError, PaymentPanelProvider, PaymentSection } from "./payment-action-row";
 import styles from "./expense.module.css";
 
 // 05-05(S7): 지출결의 문서 화면 — 제출 뒤. 읽기 칸(KvList) → `DetailScreen.Section 증빙` → 04.1 행동 줄. 행동 줄은 `getApprovalView`의 가능 행동 목록을
@@ -36,6 +38,7 @@ export function ExpenseDocument({
   evidenceActions,
   maxMb,
   submitted,
+  paymentView = null,
 }: {
   expense: Partial<ExpenseDocumentDto>;
   view: ApprovalView | null;
@@ -43,6 +46,8 @@ export function ExpenseDocument({
   evidenceActions: EvidenceActions;
   maxMb: number;
   submitted: string | undefined;
+  /** 06-03: 결재 통과 문서의 지급 섹션 DTO — 없거나 null이면 지급 섹션 · 행동 줄을 그리지 않는다(P0 · 05 C1 작성 중 문서). */
+  paymentView?: Partial<PaymentViewDto> | "error" | null;
 }) {
   const id = expense.id ?? "";
   // 팀 비용 문서(프로젝트 · 견적 줄 없음 · 사용일 있음) — 머리 줄은 `지출결의 — {팀} · {내용}`, 프로젝트 칸은 `프로젝트 미연결 · {종류}`.
@@ -112,7 +117,8 @@ export function ExpenseDocument({
               <TaxParts parts={expense.taxLine.parts} />
             </span>
           ) : null}
-          {expense.taxDrift ? (
+          {/* E-22: 지급 뒤 정본은 지급 기록 — 05 세율 바뀜 줄은 지급된 문서에서 그리지 않는다(05 계산 한 줄은 그대로). */}
+          {expense.taxDrift && !(paymentView && paymentView !== "error" && paymentView.row?.row === "P6") ? (
             <span className={styles.drift} data-testid="expense-tax-drift">
               <TaxParts parts={expense.taxDrift.parts} />
             </span>
@@ -121,9 +127,11 @@ export function ExpenseDocument({
       ),
     });
   }
+  // 06-03: 지급 섹션이 서면 지급 예정일 · 지급 방식은 그 섹션 한 자리에만(같은 사실 두 자리 금지 — UI-SPEC S5).
+  if (!paymentView || paymentView === "error") {
+    items.push({ label: "지급 예정일", value: expense.scheduledPaymentDate ?? dash }, { label: "지급 방식", value: expense.paymentMethodName ?? dash });
+  }
   items.push(
-    { label: "지급 예정일", value: expense.scheduledPaymentDate ?? dash },
-    { label: "지급 방식", value: expense.paymentMethodName ?? dash },
     { label: "비고", value: expense.note || dash },
     { label: "기안", value: [expense.drafterName, expense.createdAt ? kstDateOf(expense.createdAt) : null].filter(Boolean).join(" · ") },
   );
@@ -154,6 +162,14 @@ export function ExpenseDocument({
             />
           </div>
         </DetailScreen.Section>
+        {paymentView === "error" ? (
+          <PaymentLoadError />
+        ) : paymentView ? (
+          <PaymentPanelProvider view={paymentView}>
+            <PaymentSection paymentMethod={expense.paymentMethod ?? null} paymentMethodName={expense.paymentMethodName ?? null} scheduledPaymentDate={expense.scheduledPaymentDate ?? null} />
+            <PaymentActionRow />
+          </PaymentPanelProvider>
+        ) : null}
         <DocumentActions
           instanceId={view?.instanceId ?? null}
           version={view?.version ?? null}

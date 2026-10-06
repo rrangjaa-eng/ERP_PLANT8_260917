@@ -20,7 +20,10 @@ import {
   TAX_ROUNDING_VAT_UNIT,
   TAX_ROUNDING_WITHHOLDING_UNIT,
   TAX_ROUNDING_MIN_WITHHOLDING,
+  type TaxBasisDate,
+  type TaxCompanyBorneMethod,
 } from "@/domain/settings/keys";
+import { seoulDateToUtcDate } from "@/lib/dates";
 
 export type TaxIncomeType = "other" | "business";
 
@@ -125,4 +128,81 @@ export async function applyTaxRule(
   }
 
   return { vatKrw: 0, withholdingKrw: 0, companyBorneKrw, payableKrw: supplyKrw };
+}
+
+// ── 06-03 ① 세율 사전 조회 ──────────────────────────────────────────────
+// applyTaxRule이 readSetting으로 읽는 설정 키 전부를 한 기준일(서울 날짜)로 읽은 평범한 객체. 전역 풀을 읽으므로
+// 트랜잭션 **밖**에서만 부른다(06-03 tx 규약 — 트랜잭션 안에서 설정을 읽으면 풀 고갈 교착, PR #75).
+// 절사 방식은 코드표 rule.roundingMethod라 담지 않는다. 06-05 카드가 같은 TaxRates를 쓴다.
+export type TaxRates = {
+  asOf: string;
+  vatRate: number;
+  vatUnit: number;
+  withholdingOtherRate: number;
+  withholdingBusinessRate: number;
+  withholdingOtherExemptThreshold: number;
+  withholdingUnit: number;
+  minWithholding: number;
+  companyBorneRate: number;
+  companyBorneMethod: TaxCompanyBorneMethod;
+  basisWithholding: TaxBasisDate;
+  basisVat: TaxBasisDate;
+};
+
+// 키를 하나씩 순서대로 읽는다 — 사전 조회가 풀 커넥션을 하나만 잡게(CROSS-R1 R-4).
+export async function loadTaxRates(asOf: string, deps?: Partial<TaxRuleDeps>): Promise<TaxRates> {
+  const getValue = deps?.getSettingValue ?? defaultGetSettingValue;
+  const at = { asOf: seoulDateToUtcDate(asOf) };
+  const vatRate = await getValue(TAX_VAT_RATE, at);
+  const vatUnit = await getValue(TAX_ROUNDING_VAT_UNIT, at);
+  const withholdingOtherRate = await getValue(TAX_WITHHOLDING_OTHER_INCOME_RATE, at);
+  const withholdingBusinessRate = await getValue(TAX_WITHHOLDING_BUSINESS_INCOME_RATE, at);
+  const withholdingOtherExemptThreshold = await getValue(TAX_WITHHOLDING_OTHER_INCOME_EXEMPT_THRESHOLD, at);
+  const withholdingUnit = await getValue(TAX_ROUNDING_WITHHOLDING_UNIT, at);
+  const minWithholding = await getValue(TAX_ROUNDING_MIN_WITHHOLDING, at);
+  const companyBorneRate = await getValue(TAX_COMPANY_BORNE_RATE, at);
+  const companyBorneMethod = await getValue(TAX_COMPANY_BORNE_METHOD, at);
+  const basisWithholding = await getValue(TAX_BASIS_DATE_WITHHOLDING, at);
+  const basisVat = await getValue(TAX_BASIS_DATE_VAT, at);
+  return {
+    asOf,
+    vatRate,
+    vatUnit,
+    withholdingOtherRate,
+    withholdingBusinessRate,
+    withholdingOtherExemptThreshold,
+    withholdingUnit,
+    minWithholding,
+    companyBorneRate,
+    companyBorneMethod,
+    basisWithholding,
+    basisVat,
+  };
+}
+
+// applyTaxRule의 deps.getSettingValue 자리에 넣는 읽기 함수 — rates만 읽고 DB를 읽지 않는다. 이력 키는 넘어온 asOf의
+// 날짜가 rates.asOf와 같을 때만 주고(날짜는 getSettingValue와 같은 `toISOString().slice(0, 10)` — seoulDateToUtcDate의
+// 역), 다르거나 없으면 던진다. 모르는 키도 던진다(조용히 전역 db로 새지 않는다).
+export function taxRatesReader(rates: TaxRates): typeof defaultGetSettingValue {
+  const values: Record<string, unknown> = {
+    [TAX_VAT_RATE.key]: rates.vatRate,
+    [TAX_ROUNDING_VAT_UNIT.key]: rates.vatUnit,
+    [TAX_WITHHOLDING_OTHER_INCOME_RATE.key]: rates.withholdingOtherRate,
+    [TAX_WITHHOLDING_BUSINESS_INCOME_RATE.key]: rates.withholdingBusinessRate,
+    [TAX_WITHHOLDING_OTHER_INCOME_EXEMPT_THRESHOLD.key]: rates.withholdingOtherExemptThreshold,
+    [TAX_ROUNDING_WITHHOLDING_UNIT.key]: rates.withholdingUnit,
+    [TAX_ROUNDING_MIN_WITHHOLDING.key]: rates.minWithholding,
+    [TAX_COMPANY_BORNE_RATE.key]: rates.companyBorneRate,
+    [TAX_COMPANY_BORNE_METHOD.key]: rates.companyBorneMethod,
+    [TAX_BASIS_DATE_WITHHOLDING.key]: rates.basisWithholding,
+    [TAX_BASIS_DATE_VAT.key]: rates.basisVat,
+  };
+  return (def, opts) => {
+    if (!Object.hasOwn(values, def.key)) throw new Error(`세율 사전 조회에 없는 키: ${def.key}`);
+    if (def.kind === "historized") {
+      const asked = opts?.asOf ? opts.asOf.toISOString().slice(0, 10) : null;
+      if (asked !== rates.asOf) throw new Error(`세율 사전 조회 기준일(${rates.asOf})과 다른 날짜(${asked ?? "없음"})로 읽음: ${def.key}`);
+    }
+    return Promise.resolve(def.schema.parse(values[def.key]));
+  };
 }

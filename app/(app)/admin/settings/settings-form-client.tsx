@@ -19,6 +19,7 @@ import {
   cancelHistorizedSettingAction,
   exportSettingsAction,
 } from "./actions";
+import { pairGridId, pairGridValue } from "./pair-grid-axes";
 import styles from "./settings.module.css";
 
 // ADMN-05: 레지스트리에서 파생된 계산된 뷰모델만 받는다 — 이 파일도
@@ -280,14 +281,14 @@ function PairGridEditor({
   const { rowField, colField } = pairGrid;
   // 저장마다 서버가 화면을 다시 그려도 격자가 다시 계산되지 않게 처음 값을 잡아 둔다(상태가 이 칸의 정본).
   const [grid] = useState(() => ({
-    rows: pairGrid.cols.map((col) => ({ id: col.value, label: col.label, locked: col.archived })),
-    columns: pairGrid.rows.map((row) => ({ id: row.value, label: row.label, locked: row.archived })),
+    rows: pairGrid.cols.map((col) => ({ id: pairGridId(col.value), label: col.label, locked: col.archived })),
+    columns: pairGrid.rows.map((row) => ({ id: pairGridId(row.value), label: row.label, locked: row.archived })),
   }));
   const [pairs, setPairs] = useState<Pair[]>(() => pairsOf(initialValue));
   const latest = useRef(pairs);
   const chain = useRef<Promise<void>>(Promise.resolve());
   const values = useMemo(
-    () => Object.fromEntries(pairs.map((pair) => [buildCellKey(pair[colField] ?? "", pair[rowField] ?? ""), true])),
+    () => Object.fromEntries(pairs.map((pair) => [buildCellKey(pairGridId(pair[colField] ?? ""), pairGridId(pair[rowField] ?? "")), true])),
     [pairs, rowField, colField],
   );
 
@@ -296,7 +297,9 @@ function PairGridEditor({
     setPairs(next);
   }
 
-  function onToggle(evidenceId: string, methodId: string, next: boolean): Promise<void> {
+  function onToggle(evidenceGridId: string, methodGridId: string, next: boolean): Promise<void> {
+    const evidenceId = pairGridValue(evidenceGridId);
+    const methodId = pairGridValue(methodGridId);
     const run = chain.current.then(async () => {
       const before = latest.current;
       const same = (pair: Pair) => pair[rowField] === methodId && pair[colField] === evidenceId;

@@ -13,3 +13,13 @@ export function pairGridAxis(
   }
   return axis;
 }
+
+// PR #171 Codex 지적: 격자 칸 키(buildCellKey = `${행}::${열}`)는 코드값을 그대로 이으면 `::`를 담은 값끼리 겹친다
+// (코드값은 빈 문자열만 막는다). 격자 id는 `:`를 %3A로 바꾼 값을 쓰고, 저장할 때 원래 값으로 되돌린다.
+export function pairGridId(value: string): string {
+  return encodeURIComponent(value);
+}
+
+export function pairGridValue(id: string): string {
+  return decodeURIComponent(id);
+}

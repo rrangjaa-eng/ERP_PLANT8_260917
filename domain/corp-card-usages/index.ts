@@ -18,6 +18,7 @@ import { findUserNamesByIds } from "@/repositories/users";
 import { findMembershipAtDate } from "@/repositories/team-memberships";
 import { listVendorsForPick } from "@/repositories/vendors";
 import { normalizeVendorName } from "@/domain/vendors";
+import { vendorKindsFor } from "@/domain/vendors/kind";
 import { codeLabelsOf } from "@/domain/expenses";
 import { PICK_LIMIT, PICK_VENDOR_OPTION_SPEC, type PickVendorOptionDto } from "@/domain/expenses/pick";
 import {
@@ -363,7 +364,7 @@ export async function previewCardAmounts(
 // 행 · 투영은 지출결의 거래처 고르기와 같은 DTO(`PickVendorOptionDto`) — 숨김 · 보관 거래처 없음, vendor.value가 가리면 행이 빈다.
 export async function searchMerchantsForCard(viewer: Viewer, input: { query: string }): Promise<{ rows: Partial<PickVendorOptionDto>[]; truncated: boolean }> {
   if ((await cardOptionsForUsage(viewer, seoulToday())).length === 0) throw new ForbiddenError(CARD_NOT_ELIGIBLE);
-  const found = await listVendorsForPick(viewer, { normalizedQuery: normalizeVendorName(input.query), limit: PICK_LIMIT + 1 });
+  const found = await listVendorsForPick(viewer, { normalizedQuery: normalizeVendorName(input.query), limit: PICK_LIMIT + 1, kinds: vendorKindsFor("supplier") });
   const evidenceNames = await codeLabelsOf(viewer, "evidence_type");
   const options: PickVendorOptionDto[] = found.slice(0, PICK_LIMIT).map((vendor) => ({
     id: vendor.id,

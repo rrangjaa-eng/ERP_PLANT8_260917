@@ -139,7 +139,7 @@ describe("scripts/demo-data purge", () => {
       startDate: "2026-09-01",
       endDate: "2026-12-31",
     });
-    const card = await createCorpCard(SYSTEM_VIEWER, { issuer: "실제카드사", numberLast4: "9999", label: "실제 법인카드", holderUserId: real.id });
+    const card = await createCorpCard(SYSTEM_VIEWER, { issuer: "실제카드사", numberLast4: "9999", label: "실제 법인카드", kind: "personal", holderUserId: real.id });
     const membershipsBefore = (await db.select().from(teamMemberships).where(eq(teamMemberships.userId, real.id))).length;
 
     await seedDemoData();
@@ -234,7 +234,7 @@ describe("scripts/demo-data purge 범위 · 안전", () => {
     const real = await makePerson("실제PM", DEFAULT_ROLE_ID, "기획1팀");
     const vendor = await createVendor(SYSTEM_VIEWER, { name: `${DEMO_NAME_PREFIX}직접 만든 거래처` });
     const project = await createProject(real, { clientId: vendor.vendor.id, teamId: await teamIdByName("기획1팀"), pmUserId: real.id, name: `${DEMO_NAME_PREFIX}직접 만든 프로젝트`, startDate: "2026-09-01", endDate: "2026-12-31" });
-    const card = await createCorpCard(SYSTEM_VIEWER, { issuer: "직접카드사", numberLast4: "1234", label: `${DEMO_NAME_PREFIX}직접 만든 카드`, holderUserId: real.id });
+    const card = await createCorpCard(SYSTEM_VIEWER, { issuer: "직접카드사", numberLast4: "1234", label: `${DEMO_NAME_PREFIX}직접 만든 카드`, kind: "personal", holderUserId: real.id });
     await seedDemoData();
     await purgeDemoData();
     expect((await db.select().from(projects).where(eq(projects.id, project.id))).length).toBe(1);

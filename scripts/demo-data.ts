@@ -357,8 +357,8 @@ export async function seedDemoData(): Promise<DemoSeedResult> {
   });
 
   // 법인카드 — 사람 1 · 팀 1.
-  await createCorpCard(SYSTEM_VIEWER, { issuer: "삼성카드", numberLast4: "7701", label: DEMO_CARD_LABELS[0], holderUserId: pm1.id });
-  await createCorpCard(SYSTEM_VIEWER, { issuer: "신한카드", numberLast4: "7702", label: DEMO_CARD_LABELS[1], teamId: demoTeamId });
+  await createCorpCard(SYSTEM_VIEWER, { issuer: "삼성카드", numberLast4: "7701", label: DEMO_CARD_LABELS[0], kind: "personal", holderUserId: pm1.id });
+  await createCorpCard(SYSTEM_VIEWER, { issuer: "신한카드", numberLast4: "7702", label: DEMO_CARD_LABELS[1], kind: "team", teamId: demoTeamId });
 
   // 지출결의 — 작성 중 2 · 제출 3(결재 대기) · 팀 비용 작성 중 1.
   const popLines = lineIds.pop;

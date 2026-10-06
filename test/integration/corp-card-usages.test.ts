@@ -241,7 +241,7 @@ describe("가맹점 고르기는 카드 자격으로(P3-6)", () => {
 
 type CardFx = { pm: Viewer; cardId: string; projectId: string; revisionId: string; lines: string[] };
 
-// 카드 소지자가 담당 PM인 수주중 프로젝트(1차 미승인) · 줄마다 실행가. 카드 증빙 `카드 전표`(규칙 없음)라 공급가 = 결제 합계.
+// 카드 소지자가 담당 PM인 수주중 프로젝트(1차 미승인) · 줄마다 실행가. 증빙은 `계산서`(규칙 없음)라 공급가 = 결제 합계 — `카드 전표`는 #177부터 부가세 10%.
 async function cardProject(executions: readonly number[] = [1_000_000]): Promise<CardFx> {
   const team = await makeTeam();
   const pm = await makePerson("박서연", DEFAULT_ROLE_ID, team.name);
@@ -267,7 +267,7 @@ async function cardProject(executions: readonly number[] = [1_000_000]): Promise
 }
 
 function lineInput(fx: CardFx, lineId: string, supply: number): CardUsageInput {
-  return { ...usageInput(fx.cardId), total: { currency: "KRW", amount: supply, fxRate: 1 }, linkKind: "quote_line", lineId };
+  return { ...usageInput(fx.cardId), total: { currency: "KRW", amount: supply, fxRate: 1 }, evidenceTypeCode: "invoice", linkKind: "quote_line", lineId };
 }
 
 async function cardOnLine(fx: CardFx, lineId: string, supply: number): Promise<string> {
@@ -276,7 +276,7 @@ async function cardOnLine(fx: CardFx, lineId: string, supply: number): Promise<s
 }
 
 async function outOfQuote(fx: CardFx, supply: number, itemName: string | null, merchantVendorId: string | null = null): Promise<string> {
-  const input: CardUsageInput = { ...usageInput(fx.cardId), merchantVendorId, total: { currency: "KRW", amount: supply, fxRate: 1 }, linkKind: "out_of_quote", projectId: fx.projectId, itemName };
+  const input: CardUsageInput = { ...usageInput(fx.cardId), merchantVendorId, total: { currency: "KRW", amount: supply, fxRate: 1 }, evidenceTypeCode: "invoice", linkKind: "out_of_quote", projectId: fx.projectId, itemName };
   return (await createCardUsage(fx.pm, input, await precheckCardUsage(fx.pm, input))).id;
 }
 
@@ -402,7 +402,7 @@ describe("실행가 상한(Q3)", () => {
   it("카드 600,000 + `신청됨` 요청 100,000 → 300,001 거부 · 300,000 저장", async () => {
     const fx = await cardProject();
     await cardOnLine(fx, fx.lines[0] ?? "", 600_000);
-    await requestOn(fx, fx.lines[0] ?? "", 100_000);
+    await requestOn(fx, fx.lines[0] ?? "", 110_000); // 카드 전표 부가세 10% 역산 → 예상 공급가 100,000
     expect(((await caught(cardOnLine(fx, fx.lines[0] ?? "", 300_001))) as Error).message).toBe("실행가 초과 · 남은 실행가 300,000 · 다른 줄 고르기");
     await cardOnLine(fx, fx.lines[0] ?? "", 300_000);
     expect(await usageCount()).toBe(2);
@@ -566,7 +566,7 @@ describe("계보(X-1)", () => {
   it("L1 `신청됨` 요청 → 차수 2 → L2 남은 실행가에서 요청 예상 공급가가 빠진다", async () => {
     const fx = await cardProject();
     const l1 = fx.lines[0] ?? "";
-    await requestOn(fx, l1, 100_000);
+    await requestOn(fx, l1, 110_000); // 카드 전표 부가세 10% 역산 → 예상 공급가 100,000
     const l2 = await (await nextRevision(fx)).copyOf(l1);
     const found = await searchLinesForCardLink(fx.pm, { projectId: fx.projectId, query: "", currentLineId: null });
     expect(found.rows.find((row) => row.id === l2)).toMatchObject({ remainingKrw: 900_000, hint: "남은 실행가 900,000 · 구매 요청 1건 100,000" });

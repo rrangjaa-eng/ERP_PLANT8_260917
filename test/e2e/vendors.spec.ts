@@ -565,6 +565,8 @@ test.describe("거래처 구분 (261006-biv)", () => {
       await setVendorArchived(SYSTEM_VIEWER, existing.id, true);
       await dialog.getByRole("button", { name: "구분 더하기" }).click();
       await expect(dialog.locator("#businessNo-error")).toHaveText("보관됐거나 존재하지 않는 거래처는 수정할 수 없음");
+      // 다시 눌러도 같은 실패라 「구분 더하기」를 치운다(할 수 없는 선택지는 숨김 — 보관함 복원 거부 행과 같은 처리).
+      await expect(dialog.getByRole("button", { name: "구분 더하기" })).toHaveCount(0);
       await expect(page).not.toHaveURL(/editId=/);
     } finally {
       await setVendorHidden(SYSTEM_VIEWER, existing.id, true);

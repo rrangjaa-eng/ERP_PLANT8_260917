@@ -214,9 +214,9 @@ export function VendorForm({
   const firstErrorId = errorFields[0]?.id;
 
   // 같은 사업자번호 오류 줄의 다음 한 수 — 「원인 · 다음 행동」 한 줄 안에 붙인다(field-definition-form 「보관함에서 복원」과 같은 모양).
-  // 「거래처 정보」를 못 보면(name null) 링크를 내지 않는다.
+  // 「거래처 정보」를 못 보면(name null) 링크를 내지 않고, 「구분 더하기」가 실패하면 다시 눌러도 같은 실패라 치운다.
   const conflictAction =
-    businessNoConflict && businessNoConflict.name !== null ? (
+    businessNoConflict && businessNoConflict.name !== null && !addKindState.result.serverError ? (
       businessNoConflict.archived ? (
         <Link href="/admin/archive" className={buttonLinkClassName("tertiary")}>
           보관함에서 복원

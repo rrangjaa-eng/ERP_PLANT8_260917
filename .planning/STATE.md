@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 06
 current_phase_name: 지급·증빙·법인카드·구매 요청 (경영관리)
-current_plan: 5
+current_plan: 6
 status: executing
-stopped_at: Completed 06-29-PLAN.md
-last_updated: "2026-10-06T05:42:36.774Z"
+stopped_at: Completed 06-30-PLAN.md
+last_updated: "2026-10-06T06:54:42.381Z"
 last_activity: 2026-10-06
 last_activity_desc: Phase 06 execution started
-state_head: 72da555318406fb18102e261c1e524a115134f3a
+state_head: 336c122061e2b2bd72bfcea496e27ac7c416f46f
 progress:
   total_phases: 17
   completed_phases: 7
   total_plans: 197
-  completed_plans: 172
+  completed_plans: 173
   percent: 41
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-30)
 ## Current Position
 
 Phase: 06 (지급·증빙·법인카드·구매 요청 (경영관리)) — EXECUTING
-Current Plan: 5
+Current Plan: 6
 Total Plans in Phase: 29
 Status: Ready to execute
 Last activity: 2026-10-06 — Phase 06 execution started
@@ -138,6 +138,7 @@ Progress: [████░░░░░░] 41%
 | Phase 06 P01 | 20 min | 3 tasks | 8 files |
 | Phase 06 P02 | 30 min | 3 tasks | 14 files |
 | Phase 06 P29 | 65min | 3 tasks | 16 files |
+| Phase 06 P30 | 1h 5m | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -351,6 +352,8 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-02: 짝 격자 PairGridEditor는 자체 상태가 정본(서버 재렌더 prop 무시 — 낙관적 칸 깜빡임 방지), 칸 저장은 promise 사슬로 차례대로
 - [Phase 06]: 06-29: 선택 열 체크박스는 grid 열 인덱스 밖 네이티브 열 — use-grid-keyboard 불변, 선택 뜻은 checked 하나(aria-selected 불변)
 - [Phase 06]: 06-29: ConfirmDialog refreshKeepsOpen은 거절 문자열이 같은 동안만 이유를 숨김 — 호출자(06-17)가 새 props에서 거절 상태를 지워야 함; 서버 재판정 필수(T-06-290)
+- [Phase 06]: 06-30: 법인카드 종류는 사람이 고른 값(CardOwnerInput.kind 필수) — cardOwnerKind는 FK 유무로 유도하지 않고 종류별 칸 조합(personal 소지자만 · team 팀만 · shared 둘 다 없음)만 판정, 06-27 corp_cards_owner_kind_check와 같은 세 조합
+- [Phase 06]: 06-30: 소유자 변경 superRefine 개인 · 팀 문구는 기존 「소지자·팀 중 하나 필요 · 하나만 선택」 유지, 공용 + 소유 칸 위조만 「소유 칸 조합 오류 · 공용에 맞는 칸만」. 등록 액션은 superRefine 없이 도메인 serverError로(QA-1 함정)
 
 ### Pending Todos
 
@@ -446,6 +449,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-06T05:42:36.368Z
-Stopped at: Completed 06-29-PLAN.md
+Last session: 2026-10-06T06:54:23.220Z
+Stopped at: Completed 06-30-PLAN.md
 Resume file: None

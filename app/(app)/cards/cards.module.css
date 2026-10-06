@@ -1,0 +1,13 @@
+/* 06-05 DOM 감사 O1 — 연결 라디오: 라벨 전체가 눌림 면. 폰은 행 높이 44(SYSTEM §3 터치 목표). */
+.linkOption {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+}
+
+@media (max-width: 699.98px) {
+  .linkOption {
+    display: flex;
+    min-height: var(--touch-min);
+  }
+}

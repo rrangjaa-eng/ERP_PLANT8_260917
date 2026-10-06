@@ -14,6 +14,7 @@ import { formatKrw } from "@/lib/format-number";
 import type { NumberInputKind } from "@/lib/format-number";
 import selectStyles from "@/ui/select/Select.module.css";
 import textFieldStyles from "@/ui/input/TextField.module.css";
+import cardStyles from "./cards.module.css";
 import { createCardUsageAction, previewCardAmountsAction, searchMerchantsAction } from "./actions";
 
 // 06-05(UI-SPEC S9 · C12): 카드 사용 등록 옆 패널 본문 — `PanelForm intent="create"` + `Form layout="panel"`. 사람은 결제 합계만 적고
@@ -426,7 +427,7 @@ export function CardUsageForm({
             <span id="card-usage-link-label" className={rowStyles.label}>
               연결
             </span>
-            <label>
+            <label className={cardStyles.linkOption}>
               <input
                 type="radio"
                 name="linkKind"

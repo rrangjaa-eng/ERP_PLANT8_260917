@@ -6,7 +6,14 @@ import { remainingForInstallments, type Money } from "@/domain/money";
 
 export type ExpenseLineDoorState = "open" | "closed" | "no_vendor" | "none";
 
-export type LineDoorNumbered = { id: string; number: string; installment: boolean; supply: Money };
+export type LineDoorNumbered = { id: string; number: string; installment: boolean; installmentSeq: number | null; supply: Money };
+
+// 줄(계보)에 들어갈 회차 — 자기 회차(다시 제출 문서)가 있고 다른 문서가 쓰지 않으면 그대로, 아니면 남은 회차 중 가장 큰 값 + 1.
+// 문서 수 + 1이 아니다 — 회수 · 반려 문서가 다른 줄로 옮겨 가면 빈 회차 번호가 생겨 수 + 1이 남은 회차와 겹친다(PR #162 독립 검토).
+export function installmentSeqFor(others: readonly { installmentSeq: number | null }[], ownSeq: number | null = null): number {
+  if (ownSeq !== null && !others.some((doc) => doc.installmentSeq === ownSeq)) return ownSeq;
+  return others.reduce((max, doc) => Math.max(max, doc.installmentSeq ?? 0), 0) + 1;
+}
 
 export type ExpenseLineDoor = {
   state: ExpenseLineDoorState;
@@ -40,7 +47,7 @@ export function expenseLineDoor(input: {
     state: closed ? "closed" : "open",
     ...(latest ? { latest } : {}),
     remaining,
-    nextInstallmentSeq: closed ? null : others.length + 1,
+    nextInstallmentSeq: closed ? null : installmentSeqFor(others),
     forcedInstallment: others.length > 0,
   };
 }

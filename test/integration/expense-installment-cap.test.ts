@@ -166,5 +166,31 @@ describe("옮겨 저장한 번호 문서의 다시 제출 회차(PR #162 P2)", (
     expect(await submitReadyDraft(fx.pm, moved)).toMatchObject({ kind: "submitted", number: "26001-0001" });
     expect(await expenseRow(moved)).toMatchObject({ installment: true, installmentSeq: 2 });
     expect(await expenseRow(first)).toMatchObject({ installmentSeq: 1 });
+
+    // 독립 검토 — 그 뒤 1회차 문서를 회수해 같은 줄에 다시 내도 제 회차(1)를 지킨다(옮겨 온 문서가 먼저 제출됐어도).
+    await withdrawExpense(fx.pm, { expenseId: first, undo: true, round: 1 });
+    expect(await submitReadyDraft(fx.pm, first)).toMatchObject({ kind: "submitted", number: "26001-0002" });
+    expect(await expenseRow(first)).toMatchObject({ installment: true, installmentSeq: 1 });
+    expect(await expenseRow(moved)).toMatchObject({ installmentSeq: 2 });
+  });
+
+  it("1회차 문서를 회수해 다른 줄로 옮기면 그 줄의 새 문서는 남은 2회차 뒤 3회차다", async () => {
+    const fx = await setupExpenseProject();
+    const a = await newDraft(fx, fx.lines.split);
+    await save(fx, a, { installment: true, supply: { currency: "KRW", amount: 3_000_000, fxRate: 1 } });
+    await submitReadyDraft(fx.pm, a);
+    const b = await newDraft(fx, fx.lines.split);
+    await save(fx, b, { supply: { currency: "KRW", amount: 3_000_000, fxRate: 1 } });
+    await submitReadyDraft(fx.pm, b);
+    expect([(await expenseRow(a)).installmentSeq, (await expenseRow(b)).installmentSeq]).toEqual([1, 2]);
+
+    await withdrawExpense(fx.pm, { expenseId: a, undo: true, round: 1 });
+    await changeExpenseLine(fx.pm, { expenseId: a, lineId: fx.lines.withVendor, expectedVersion: (await expenseRow(a)).version });
+
+    const c = await newDraft(fx, fx.lines.split);
+    expect((await getExpense(fx.pm, { expenseId: c }))?.installmentText).toMatch(/^3회차 · /);
+    await save(fx, c, { supply: { currency: "KRW", amount: 3_000_000, fxRate: 1 } });
+    await submitReadyDraft(fx.pm, c);
+    expect(await expenseRow(c)).toMatchObject({ installment: true, installmentSeq: 3 });
   });
 });

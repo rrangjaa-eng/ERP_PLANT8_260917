@@ -58,7 +58,7 @@ describe("remainingForInstallments — 원래 통화 비교", () => {
 
     const door = expenseLineDoor({
       line: { lineKind: "quote", cancelled: false, vendorId: "vendor", execution: usd(10_000, 1_300) },
-      numbered: others.map((supply, i) => ({ id: `doc-${i}`, number: `26001-000${i + 1}`, installment: true, supply })),
+      numbered: others.map((supply, i) => ({ id: `doc-${i}`, number: `26001-000${i + 1}`, installment: true, installmentSeq: i + 1, supply })),
     });
     expect(door.state).toBe("open");
     expect(door.nextInstallmentSeq).toBe(3);
@@ -68,8 +68,20 @@ describe("remainingForInstallments — 원래 통화 비교", () => {
     const others = [usd(6_000, 1_300), usd(4_000, 1_100)];
     const door = expenseLineDoor({
       line: { lineKind: "quote", cancelled: false, vendorId: "vendor", execution: usd(10_000, 1_300) },
-      numbered: others.map((supply, i) => ({ id: `doc-${i}`, number: `26001-000${i + 1}`, installment: true, supply })),
+      numbered: others.map((supply, i) => ({ id: `doc-${i}`, number: `26001-000${i + 1}`, installment: true, installmentSeq: i + 1, supply })),
     });
     expect(door.state).toBe("closed");
+  });
+});
+
+// PR #162 독립 검토 — 다음 회차는 문서 수 + 1이 아니라 줄에 남은 회차 중 가장 큰 값 + 1이다. 1회차 문서가 다른 줄로 옮겨 가
+// 2회차만 남은 줄의 새 문서가 2회차를 받으면 남은 문서와 겹친다.
+describe("expenseLineDoor — 다음 회차(빈 회차 번호)", () => {
+  it("2회차만 남은 줄의 다음 회차는 3이다", () => {
+    const door = expenseLineDoor({
+      line: { lineKind: "quote", cancelled: false, vendorId: "vendor", execution: usd(10_000, 1_300) },
+      numbered: [{ id: "doc-b", number: "26001-0002", installment: true, installmentSeq: 2, supply: usd(3_000, 1_300) }],
+    });
+    expect(door.nextInstallmentSeq).toBe(3);
   });
 });

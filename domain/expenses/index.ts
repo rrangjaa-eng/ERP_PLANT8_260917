@@ -59,7 +59,7 @@ import { formatKstTime } from "@/domain/holidays/business-day";
 import { computeExpenseTax, storedTaxResult, taxDriftText, taxLineText, type ExpenseTaxResult } from "@/domain/expenses/tax";
 import { buildExpenseDetailRows } from "@/domain/expenses/detail";
 import { canSeeExpense, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses/access";
-import { expenseLineDoor, type ExpenseLineDoor } from "@/domain/expenses/line-door";
+import { expenseLineDoor, installmentSeqFor, type ExpenseLineDoor } from "@/domain/expenses/line-door";
 import { resolveLinkedDocumentsByLineage, type LineageLine } from "@/domain/quotes/lineage";
 import {
   buildExpenseSubmitContext,
@@ -453,6 +453,7 @@ export function doorFor(line: QuoteLineRow, numbered: readonly NumberedLineExpen
       id: doc.id,
       number: doc.number ?? "",
       installment: doc.installment,
+      installmentSeq: doc.installmentSeq,
       supply: supplyMoney(doc) ?? moneyFromRow({ currency: doc.supplyCurrency, foreignAmount: null, fxRate: doc.supplyFxRate, amountKrw: 0 }),
     })),
     ...(selfId ? { selfId } : {}),
@@ -965,16 +966,14 @@ export async function submitExpense(
     const installment = locked.installment || Boolean(door?.forcedInstallment);
     const firstSubmittedAt = resubmit ? locked.submittedAt : null;
     const submittedAt = firstSubmittedAt ?? deps?.now ?? new Date();
-    // 다시 제출 회차 = 이 문서보다 먼저 제출된 같은 줄 번호 문서 수 + 1(처음 제출 때와 같은 자리). 그 자리를 줄의 다른 문서가 이미
-    // 쓰고 있으면(PR #162 리뷰 P2 — 다른 줄에서 옮겨 저장한 문서라 처음 제출 시각이 옛 줄 기준) 처음 제출처럼 줄의 다음 회차다.
-    const keptSeq = firstSubmittedAt
-      ? numbered.filter((doc) => doc.id !== locked.id && doc.submittedAt !== null && doc.submittedAt < firstSubmittedAt).length + 1
-      : null;
+    // 다시 제출 회차 = 제 회차(처음 제출 때 받은 자리)를 계보의 다른 문서가 쓰지 않으면 그대로, 아니면(PR #162 리뷰 P2 — 다른 줄에서
+    // 옮겨 저장한 문서) 계보 회차 중 가장 큰 값 + 1. 처음 제출도 가장 큰 값 + 1이다(installmentSeqFor).
     const installmentSeq = !installment
       ? null
-      : keptSeq !== null && !numbered.some((doc) => doc.id !== locked.id && doc.installmentSeq === keptSeq)
-        ? keptSeq
-        : (door?.nextInstallmentSeq ?? 1);
+      : installmentSeqFor(
+          numbered.filter((doc) => doc.id !== locked.id),
+          resubmit ? locked.installmentSeq : null,
+        );
     await saveSubmissionSnapshot(
       viewer,
       {
@@ -1282,7 +1281,7 @@ async function lineFactsFor(viewer: Viewer, row: ExpenseSummaryRow, supply: Mone
   );
   const isLast = supply !== null && sameAmountOn(basis, remaining, supply);
   const previous = numbered.at(-1)?.number;
-  const parts = [`${numbered.length + 1}회차`];
+  const parts = [`${installmentSeqFor(numbered, row.installmentSeq)}회차`];
   if (forced && previous) parts.push(`앞 회차 ${previous}`);
   parts.push(isLast ? "마지막 회차" : `남은 실행가 ${remainingText(remaining, basis)}`);
   return { executionLines, installmentMode, installmentText: parts.join(" · ") };

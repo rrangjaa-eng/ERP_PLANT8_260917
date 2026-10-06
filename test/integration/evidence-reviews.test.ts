@@ -302,6 +302,20 @@ describe("증빙 확인 — 금액 고쳐 확인 · F2 · 거부 (06-06 Task 3)"
     expect((await getPaymentView(payer, doc.expenseId))?.evidenceStatus).toBe("증빙 없음");
   });
 
+  it("살아 있는 증빙 0(모두 무효) → 확인 거부 `확인할 증빙 없음 · 새로 고침` · 확인 기록 없음 · version 그대로", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    const doc = await withEvidenceAmount(await approvedExpenseWithEvidence(fx), 12_400_000);
+    const voider = await makeEvidenceManager("증빙무효", { attach: false, void: true });
+    for (const id of await liveFileIds(doc.expenseId)) await voidEvidence(voider, { fileId: id, reason: "다른 건 영수증" });
+    const version = (await docRow(doc.expenseId)).version;
+
+    const error = await errorOf(confirmEvidence(payer, { expenseId: doc.expenseId, version }));
+    expect(error.message).toBe("확인할 증빙 없음 · 새로 고침");
+    expect(await reviewOf(doc.expenseId)).toBeNull();
+    expect((await docRow(doc.expenseId)).version).toBe(version);
+  });
+
   it("증빙 지문 다름 → 확인 거부 — 지금 version + 옛 지문은 동시성 거부 · 확인 기록 없음, 새 지문이면 확인됨, 지문 없으면 version만", async () => {
     const payer = await makePayer();
     const fx = await setupExpenseProject();

@@ -63,6 +63,8 @@ export type CardUsageEdit = {
   currency: "KRW" | "USD";
   amount: number | null;
   fxRate: number | null;
+  /** 결제 합계를 못 보는 사람(`card_usage.amount` 숨김) — 칸 대신 읽기 `—`, 금액을 보내지 않고 서버가 저장값을 지킨다(DOM D-3). */
+  amountHidden: boolean;
   /** 연결을 바꿀 수 있나(O-11 — 구매 완료로 생긴 건은 못 바꾼다). */
   changeLink: boolean;
 };
@@ -221,6 +223,7 @@ export function CardUsageForm({
   const [currency, setCurrency] = useState<"KRW" | "USD">(edit?.currency ?? "KRW");
   const initialAmount = edit?.amount === null || edit?.amount === undefined ? "" : String(edit.amount);
   const [amountRaw, setAmountRaw] = useState(initialAmount);
+  const amountHidden = edit?.amountHidden === true;
   const initialFx = edit && edit.currency !== "KRW" && edit.fxRate !== null ? edit.fxRate : usdFxRate;
   const [fxRaw, setFxRaw] = useState(initialFx === null ? "" : String(initialFx));
   // 수정 모드: 저장된 증빙 종류가 지금 카드 옵션에 없으면 `—`에 선다(UI-SPEC S9 — 그 값을 옵션에 되살리지 않는다).
@@ -419,7 +422,7 @@ export function CardUsageForm({
   const blanks = [
     ...(selectedCardId ? [] : [{ label: "카드", verb: "고르기" }]),
     ...(usedOn ? [] : [{ label: "사용일", verb: "고르기" }]),
-    ...(amountRaw ? [] : [{ label: "결제 합계", verb: "적기" }]),
+    ...(amountRaw || amountHidden ? [] : [{ label: "결제 합계", verb: "적기" }]),
     ...(linkKind === "out_of_quote" && linkProject && shownItemName.trim() === "" ? [{ label: "항목", verb: "적기" }] : []),
     ...(showUsedBy && !chosenUser ? [{ label: "사용한 사람", verb: "고르기" }] : []),
   ];
@@ -481,7 +484,7 @@ export function CardUsageForm({
               : null,
       memo: typeof memo === "string" && memo.trim() !== "" ? memo.trim() : null,
     };
-    if (edit) update.execute({ ...payload, id: edit.id, version: edit.version, usedByUserId: showUsedBy ? usedById : edit.usedByUserId });
+    if (edit) update.execute({ ...payload, amount: amountHidden ? null : payload.amount, id: edit.id, version: edit.version, usedByUserId: showUsedBy ? usedById : edit.usedByUserId });
     else executeCreate(showUsedBy ? { ...payload, usedByUserId: usedById } : payload);
   }
 
@@ -542,6 +545,7 @@ export function CardUsageForm({
                 <Select
                   key={usableCards.map((card) => card.id).join()}
                   id="card-usage-card"
+                  className={cardStyles.cardSelect}
                   name="corpCardId"
                   options={usableCards.map((card) => ({ value: card.id, label: card.label }))}
                   defaultValue={selectedCardId}
@@ -572,6 +576,12 @@ export function CardUsageForm({
               <Form.Hint>{`기본 증빙 ${merchant.defaultEvidenceName} · 카드에 없음`}</Form.Hint>
             ) : null}
           </div>
+          {amountHidden ? (
+            <div data-ui="field-row" className={rowStyles.row}>
+              <span className={rowStyles.label}>결제 합계</span>
+              <span>—</span>
+            </div>
+          ) : (
           <div data-ui="field-row" className={rowStyles.row}>
             <Form.Field id="card-amount" label="결제 합계">
               <select
@@ -601,7 +611,8 @@ export function CardUsageForm({
               ) : null}
             </Form.Field>
           </div>
-          {currency === "USD" ? (
+          )}
+          {currency === "USD" && !amountHidden ? (
             <div data-ui="field-row" className={rowStyles.row}>
               <FxField initial={initialFx} error={fieldErrors?.fxRate?._errors?.[0]} onRaw={onFxRaw} />
             </div>

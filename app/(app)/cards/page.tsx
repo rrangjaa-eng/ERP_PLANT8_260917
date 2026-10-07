@@ -73,6 +73,8 @@ function toEditView(usage: Partial<CardUsageEditDto>, changeLink: boolean): Card
     currency: usage.currency === "USD" ? "USD" : "KRW",
     amount: usage.amount ?? null,
     fxRate: usage.fxRate ?? null,
+    // 투영이 금액 키를 뺐다 = 결제 합계를 못 보는 사람(card_usage.amount — DOM D-3).
+    amountHidden: usage.amount === undefined,
     changeLink,
   };
 }

@@ -300,8 +300,11 @@ test.describe("카드 사용 삭제 · 되돌리기 (06-09)", () => {
     const undo = page.getByRole("button", { name: "되돌리기" });
     await expect(undo).toBeFocused();
     await undo.click();
-    await expect(fixtureRows(page, fx).getByRole("button", { name: new RegExp(`${merchant} 삭제$`) })).toHaveCount(1);
+    const restored = fixtureRows(page, fx).getByRole("button", { name: new RegExp(`${merchant} 삭제$`) });
+    await expect(restored).toHaveCount(1);
     await expect(undoLine(page)).toHaveCount(0);
+    // DOM D-4 — 포커스는 되살린 행의 `삭제`로(04.2 공휴일 선례).
+    await expect(restored).toBeFocused();
     await page.context().close();
   });
 
@@ -342,9 +345,11 @@ test.describe("카드 사용 삭제 · 되돌리기 (06-09)", () => {
     const submitted = await submitReadyDraft(fx.pm.viewer, created.created[0]?.expenseId ?? "");
     if (submitted.kind !== "submitted") throw new Error("제출되지 않음");
     await page.getByRole("button", { name: "되돌리기" }).click();
-    const failed = page.getByRole("status").getByText(`지출결의 ${submitted.number} 연결됨 · 다른 줄 고르기`, { exact: true });
+    // DOM O-3 — 지운 행이 화면에 없어 할 수 없는 다음 한 수 `다른 줄 고르기`는 뺀다. D-4 — 포커스는 결과 줄 글자로.
+    const failed = page.getByRole("status").getByText(`지출결의 ${submitted.number} 연결됨`, { exact: true });
     await expect(failed).toBeVisible();
     await expect(failed).toHaveCSS("color", await tokenColor(page, "--status-danger"));
+    await expect(failed).toBeFocused();
     await expect(page.getByRole("button", { name: "되돌리기" })).toHaveCount(0);
     await expect(group).toHaveCount(0);
     await page.context().close();
@@ -427,6 +432,124 @@ test.describe("카드 사용 삭제 · 되돌리기 (06-09)", () => {
     await s15Tap.click();
     await expect(page).toHaveURL(/\/cards\?editId=/);
     await expect(page.getByRole("dialog", { name: "카드 사용 수정" })).toBeVisible();
+    await page.context().close();
+  });
+});
+
+// ── 06-09 DOM 감사 반영(D-1 · D-2 · D-3 · D-5) ──────────────────────────────────
+
+// 금액 숨김(card_usage.amount) 계정 · 본인 개인 카드 · 팀 비용 한 건.
+async function hiddenAmountFx(): Promise<{ person: Person; cardId: string; usageId: string; merchant: string }> {
+  const suffix = randomUUID().slice(0, 8);
+  const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E숨김본부-${suffix}` });
+  const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E숨김팀-${suffix}` });
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E카드금액숨김-${suffix}`, workScope: "company" });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
+  for (const infoItem of ["project.value", "card_usage.value", "team.value", "quote.amount"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+  await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "card_usage.amount", visible: false });
+  const person = await makePerson("금액숨김", role.id, team.id, `${seoulToday().slice(0, 4)}-01-01`);
+  const card = await createCorpCard(SYSTEM_VIEWER, { issuer: `신한-${suffix}`, numberLast4: "4321", label: `E2E숨김-${suffix}`, kind: "personal", holderUserId: person.viewer.id });
+  if (!card.id) throw new Error("카드 id 없음");
+  const merchant = `가맹숨김-${suffix}`;
+  const vendor = await insertVendor(SYSTEM_VIEWER, { name: merchant, normalizedName: `${merchant}-${randomUUID()}` });
+  const input: CardUsageInput = {
+    corpCardId: card.id,
+    usedOn: seoulToday(),
+    merchantVendorId: vendor.id,
+    total: { currency: "KRW", amount: 123_457, fxRate: 1 },
+    evidenceTypeCode: "invoice",
+    linkKind: "team_cost",
+    memo: null,
+  };
+  const { id } = await createCardUsage(person.viewer, input, await precheckCardUsage(person.viewer, input));
+  return { person, cardId: card.id, usageId: id, merchant };
+}
+
+test.describe("카드 사용 삭제 · 수정 — DOM 감사 반영 (06-09)", () => {
+  test("[D-1] 금액 숨김 계정 · 자기 건 삭제 → 결과 줄 · 액션 응답에 금액 없음 → 되돌리기 → 포커스 그 행 `삭제`", async ({ browser, baseURL }) => {
+    const fx = await hiddenAmountFx();
+    const page = await loginPage(browser, baseURL, fx.person);
+    // 액션 응답 본문은 가로채 직접 읽는다 — 뒤이은 refresh가 브라우저 쪽 본문을 치워 response.text()가 실패할 수 있다.
+    const bodies: string[] = [];
+    await page.route("**/cards**", async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      const response = await route.fetch();
+      bodies.push(await response.text());
+      return route.fulfill({ response });
+    });
+    const actionBody = async (act: () => Promise<void>): Promise<string> => {
+      const before = bodies.length;
+      await act();
+      await expect.poll(() => bodies.length).toBeGreaterThan(before);
+      return bodies[before] ?? "";
+    };
+    await page.goto(`/cards?card=${fx.cardId}`);
+    const remove = page.getByRole("button", { name: new RegExp(`${fx.merchant} 삭제$`) });
+    await waitForHydration(remove);
+    const deleted = await actionBody(() => remove.click());
+    await expect(undoLine(page)).toHaveText(/^카드 사용 삭제됨\s*되돌리기/);
+    await expect(page.locator("main")).not.toContainText("123,457");
+    const undo = page.getByRole("button", { name: "되돌리기" });
+    const undone = await actionBody(() => undo.click());
+    const restored = page.getByRole("button", { name: new RegExp(`${fx.merchant} 삭제$`) });
+    await expect(restored).toBeFocused();
+    for (const body of [deleted, undone]) {
+      expect(body).toContain('"totalKrw":null');
+      expect(body).not.toContain("123457");
+    }
+    await page.context().close();
+  });
+
+  test("[D-2] 되돌리기 요청이 끊김 → `되돌리기 실패 · 다시 시도` · `되돌리기` 남음(포커스 유지) → 다시 누르면 행이 돌아옴", async ({ browser, baseURL }) => {
+    const fx = await hiddenAmountFx();
+    const page = await loginPage(browser, baseURL, fx.person);
+    await page.goto(`/cards?card=${fx.cardId}`);
+    const remove = page.getByRole("button", { name: new RegExp(`${fx.merchant} 삭제$`) });
+    await waitForHydration(remove);
+    await remove.click();
+    const undo = page.getByRole("button", { name: "되돌리기" });
+    await expect(undo).toBeFocused();
+    await page.route("**/cards**", (route) => (route.request().method() === "POST" ? route.abort() : route.continue()));
+    await undo.click();
+    const failed = page.getByRole("status").getByText("되돌리기 실패 · 다시 시도", { exact: true });
+    await expect(failed).toBeVisible();
+    await expect(failed).toHaveCSS("color", await tokenColor(page, "--status-danger"));
+    await expect(undo).toHaveCount(1);
+    await expect(undo).toBeFocused();
+    await page.unroute("**/cards**");
+    await undo.click();
+    await expect(page.getByRole("button", { name: new RegExp(`${fx.merchant} 삭제$`) })).toBeFocused();
+    await expect(page.getByRole("status").filter({ hasText: "되돌리기" })).toHaveCount(0);
+    await page.context().close();
+  });
+
+  test("[D-3] 금액 숨김 계정 · 자기 건 수정 → 결제 합계는 읽기 `—`(칸 없음) · 1차 막힘 없음 → 메모만 저장 → 저장된 금액 그대로", async ({ browser, baseURL }) => {
+    const fx = await hiddenAmountFx();
+    const page = await loginPage(browser, baseURL, fx.person);
+    await page.goto(`/cards?card=${fx.cardId}&editId=${fx.usageId}`);
+    const sheet = page.getByRole("dialog", { name: "카드 사용 수정" });
+    const memo = sheet.getByLabel("메모");
+    await waitForHydration(memo);
+    await expect(sheet.getByRole("textbox", { name: "결제 합계" })).toHaveCount(0);
+    await expect(sheet.locator('[data-ui="field-row"]').filter({ hasText: "결제 합계" })).toContainText("—");
+    await expect(sheet.getByText(/결제 합계 .*비어 있음/)).toHaveCount(0);
+    await memo.fill("메모만 고침");
+    await memo.press("Control+Enter");
+    await expect(sheet).toBeHidden();
+    await expect
+      .poll(async () => (await db.select({ total: corpCardUsages.totalAmountKrw, memo: corpCardUsages.memo }).from(corpCardUsages).where(eq(corpCardUsages.id, fx.usageId)))[0])
+      .toEqual({ total: 123_457, memo: "메모만 고침" });
+    await page.context().close();
+  });
+
+  test("[D-5] 권한자 카드 `Select` — 긴 카드 이름은 말줄임", async ({ browser, baseURL }) => {
+    const fx = await setup();
+    await createCorpCard(SYSTEM_VIEWER, { issuer: `우리-${randomUUID().slice(0, 6)}`, numberLast4: "6464", label: `아주긴카드이름-${"가".repeat(56)}`, kind: "team", teamId: fx.teamId });
+    const page = await loginPage(browser, baseURL, fx.proxy);
+    await page.goto("/cards?new=1");
+    const card = page.getByRole("dialog", { name: "카드 사용 등록" }).getByLabel("카드", { exact: true });
+    await waitForHydration(card);
+    await expect(card).toHaveCSS("text-overflow", "ellipsis");
     await page.context().close();
   });
 });

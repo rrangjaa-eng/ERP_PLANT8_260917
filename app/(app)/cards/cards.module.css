@@ -60,3 +60,10 @@
 .undoAmount {
   white-space: nowrap;
 }
+
+/* 06-09 DOM D-5: 긴 카드 이름(대리 등록 권한자 옵션)은 칸 폭에서 말줄임(backstop 「S9 overflow」). */
+.cardSelect {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

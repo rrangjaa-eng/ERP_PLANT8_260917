@@ -48,6 +48,7 @@ import { CompletedProjectError } from "@/domain/projects";
 import { loadActorTeamScope, ProjectNotFoundError } from "@/domain/projects/status";
 import { resolveLineDoor } from "@/domain/quotes/line-door";
 import { quoteLockReason } from "@/domain/quotes/edit-scope";
+import { REJECT_REASON_EMPTY_MESSAGE, REJECT_REASON_MAX, REJECT_REASON_TOO_LONG_MESSAGE } from "@/domain/approvals";
 import { gate, GateBlockedError } from "@/domain/rules/gate";
 import "@/domain/rules/register";
 import { getSettingValue } from "@/domain/settings/registry";
@@ -71,7 +72,9 @@ import {
   insertPurchaseRequest,
   listPurchaseRequestRows,
   lockPurchaseRequestForUpdate,
+  markPurchaseRequestCancelled,
   markPurchaseRequestPurchased,
+  markPurchaseRequestRequested,
   readLockedLineFacts,
   type PurchaseRequestFilter,
   type PurchaseRequestListRow,
@@ -400,7 +403,13 @@ export async function precheckPurchaseCompletion(viewer: Viewer, input: Purchase
   return { requestId: row.id, lineId, cardInput, card, diffKrw: diffKrw(toKrw(normalizeMoneyInput(input.total)), row.estimateAmountKrw) };
 }
 
-export async function completePurchaseRequest(viewer: Viewer, input: PurchaseCompletionInput, pre: PurchaseCompletionPre): Promise<CompletedPurchase> {
+// `deps.afterLock` — 요청 행 잠금 바로 뒤 테스트 장벽(E-26 — 05 `submitExpense` 선례). 화면 · 액션은 넘기지 않는다.
+export async function completePurchaseRequest(
+  viewer: Viewer,
+  input: PurchaseCompletionInput,
+  pre: PurchaseCompletionPre,
+  deps?: { afterLock?: () => Promise<void> },
+): Promise<CompletedPurchase> {
   const runComplete = async (innerTx: DbOrTx) => {
     // 전역 잠금 순서(N-3 · X-2): 프로젝트 행 → 사슬의 현재 줄 → 견적 줄 둘(한 호출 · id 순) → 요청 행. 카드 사용 생성 안의 같은 잠금은 이미 쥔 행이다.
     // 팀 비용 요청은 프로젝트 · 줄 잠금 없이 요청 행부터.
@@ -410,6 +419,7 @@ export async function completePurchaseRequest(viewer: Viewer, input: PurchaseCom
       await lockQuoteLines(viewer, [pre.lineId, current], innerTx);
     }
     const locked = await lockPurchaseRequestForUpdate(viewer, pre.requestId, innerTx);
+    await deps?.afterLock?.();
     if (!locked) throw new PurchaseRequestRejectedError(REQUEST_MISSING);
     if (locked.status !== "requested") throw statusChangedError(locked.status);
     if (locked.version !== input.version) throw new PurchaseRequestRejectedError(REQUEST_STALE);
@@ -422,6 +432,139 @@ export async function completePurchaseRequest(viewer: Viewer, input: PurchaseCom
     return { requestId: pre.requestId, usageId: usage.id, totalKrw: usage.totalKrw, usedOn: pre.cardInput.usedOn, capOver: usage.capOver };
   };
   return withTransaction(runComplete);
+}
+
+// ── 요청 취소 · 되돌리기(06-14 — Q2 · O-9 · D-609 · Q3 · X-1 · X-2 · N-1 · N-2) ──────────────────────────────
+
+const CANCEL_DENIED = "구매 요청 취소 권한 없음";
+const UNDO_DENIED = "되돌리기 권한 없음";
+export const CANCEL_REASON_MAX = REJECT_REASON_MAX;
+export const CANCEL_REASON_TOO_LONG = REJECT_REASON_TOO_LONG_MESSAGE;
+
+/** 취소 갈래 — `own` 요청자 본인(사유 없이 즉시 · 되돌리기 있음) / `others` 구매 권한자의 남의 요청(사유 필수 · 되돌리기 없음). */
+export type PurchaseCancelPre = { requestId: string; branch: "own" | "others" };
+
+// 트랜잭션 밖에서만. 요청을 잠금 없이 읽고 권한 → 갈래. 상태 판정은 잠근 뒤 `runCancel`이 한다(Q2 — 사전 조회 뒤에 바뀔 수 있다).
+export async function precheckPurchaseCancel(viewer: Viewer, input: { id: string }): Promise<PurchaseCancelPre> {
+  const row = UUID_SHAPE.test(input.id) ? await findPurchaseRequestById(viewer, input.id) : null;
+  const purchaser = await can(viewer, "cards.purchases", "write");
+  // 요청이 없다는 말도 권한 있는 사람에게만 한다(존재 여부를 흘리지 않는다).
+  if (!row) throw purchaser ? new PurchaseRequestRejectedError(REQUEST_MISSING) : new ForbiddenError(CANCEL_DENIED);
+  if (row.requestedBy === viewer.id) return { requestId: row.id, branch: "own" };
+  if (!purchaser) throw new ForbiddenError(CANCEL_DENIED);
+  return { requestId: row.id, branch: "others" };
+}
+
+function normalizeCancelReason(raw: string | undefined): string {
+  const reason = (raw ?? "").trim();
+  if (reason === "") throw new PurchaseRequestRejectedError(REJECT_REASON_EMPTY_MESSAGE);
+  if (reason.length > CANCEL_REASON_MAX) throw new PurchaseRequestRejectedError(CANCEL_REASON_TOO_LONG);
+  return reason;
+}
+
+export type CancelledPurchaseRequest = { id: string; number: string; version: number };
+
+// 취소는 `신청됨`에서만(Q2) — 요청 행 하나만 잡는다(견적 줄을 잡지 않아 구매 완료(줄 → 요청 행 순서)와 교착이 없다). `deps.afterLock` = 테스트 장벽(E-26).
+export async function cancelPurchaseRequest(
+  viewer: Viewer,
+  input: { id: string; version: number; reason?: string },
+  pre: PurchaseCancelPre,
+  tx?: DbOrTx,
+  deps?: { afterLock?: () => Promise<void> },
+): Promise<CancelledPurchaseRequest> {
+  if (input.id !== pre.requestId) throw new PurchaseRequestRejectedError(REQUEST_MISSING);
+  // 본인 취소는 사유를 받지 않는다(그래야 되돌릴 수 있다) · 구매 권한자의 남의 요청 취소는 사유가 감사 기록이다.
+  const reason = pre.branch === "others" ? normalizeCancelReason(input.reason) : null;
+  const runCancel = async (innerTx: DbOrTx) => {
+    const locked = await lockPurchaseRequestForUpdate(viewer, pre.requestId, innerTx);
+    await deps?.afterLock?.();
+    if (!locked) throw new PurchaseRequestRejectedError(REQUEST_MISSING);
+    if (locked.status !== "requested") throw statusChangedError(locked.status);
+    if (locked.version !== input.version) throw new PurchaseRequestRejectedError(REQUEST_STALE);
+    const version = await markPurchaseRequestCancelled(viewer, { id: pre.requestId, version: input.version, cancelledBy: viewer.id, reason }, innerTx);
+    if (version === null) throw new PurchaseRequestRejectedError(REQUEST_STALE);
+    await recordAction(
+      viewer,
+      { actionType: "status_change", entity: PURCHASE_REQUEST_ENTITY, entityId: pre.requestId, detail: { from: "requested", to: "cancelled", ...(reason === null ? {} : { reason }) } },
+      { tx: innerTx },
+    );
+    return { id: pre.requestId, number: locked.number, version };
+  };
+  return tx ? await runCancel(tx) : await withTransaction(runCancel);
+}
+
+/** 되돌리기 사전 조회 — 견적 줄 요청이면 신청과 같은 줄 판정 바탕(문 설정 · 남은 실행가 바탕 · 완료 프로젝트). 팀 비용이면 `line` 없음. */
+export type PurchaseCancelUndoPre = {
+  requestId: string;
+  estimate: MoneyInput;
+  line: (QuoteLineBasis & { lineId: string }) | null;
+};
+
+// 트랜잭션 밖에서만. 되돌리기는 요청자 본인이 사유 없이 취소한 건에만 된다(D-609 — 그 밖의 길은 열지 않는다).
+export async function precheckPurchaseCancelUndo(viewer: Viewer, input: { id: string }): Promise<PurchaseCancelUndoPre> {
+  const row = UUID_SHAPE.test(input.id) ? await findPurchaseRequestById(viewer, input.id) : null;
+  if (!row) throw new PurchaseRequestRejectedError(REQUEST_MISSING);
+  if (row.requestedBy !== viewer.id) throw new ForbiddenError(UNDO_DENIED);
+  if (row.status !== "cancelled") throw statusChangedError(row.status);
+  if (row.cancelledBy !== row.requestedBy || row.cancelReason) throw new ForbiddenError(UNDO_DENIED);
+  const estimate: MoneyInput = {
+    currency: row.estimateCurrency === "USD" ? "USD" : "KRW",
+    amount: row.estimateForeignAmount === null ? row.estimateAmountKrw : Number(row.estimateForeignAmount),
+    fxRate: Number(row.estimateFxRate),
+  };
+  if (row.linkKind !== "quote_line") return { requestId: row.id, estimate, line: null };
+  if (!row.quoteLineId) throw new PurchaseRequestRejectedError(LINK_MISSING);
+  return { requestId: row.id, estimate, line: { lineId: row.quoteLineId, ...(await loadQuoteLineBasis(viewer, row.quoteLineId)) } };
+}
+
+// 견적 줄 요청은 신청(06-08 B-1 · X-2)과 구매 완료(06-12)와 같은 잠금 순서와 게이트를 다시 지난다: 프로젝트 행 → 사슬의 현재 줄 → 줄 둘(id 순)
+// → 연결(계보 사슬) → 문 → 이중 연결 → 실행가 상한(이 요청 제외 · 실행가 = 현재 줄) → 요청 행. 요청은 고정 연결이라 새 차수 뒤에도 그 줄로 돌아간다.
+export async function undoCancelPurchaseRequest(
+  viewer: Viewer,
+  input: { id: string; version: number },
+  pre: PurchaseCancelUndoPre,
+  tx?: DbOrTx,
+): Promise<{ id: string; version: number }> {
+  if (input.id !== pre.requestId) throw new PurchaseRequestRejectedError(REQUEST_MISSING);
+  const runUndoCancel = async (innerTx: DbOrTx) => {
+    if (pre.line) {
+      const { lineId } = pre.line;
+      await lockProjectForLinkWrite(viewer, { projectId: pre.line.projectId }, innerTx);
+      const current = await currentLineForFixedLink(viewer, { projectId: pre.line.projectId, lineId }, innerTx);
+      await lockQuoteLines(viewer, [lineId, current], innerTx);
+      const facts = await readLockedLineFacts(viewer, current, innerTx);
+      if (!facts) throw new ForbiddenError(LINK_MISSING);
+      const links = await findLineLinks(viewer, [lineId], innerTx);
+      const lineLinks = links.get(lineId);
+      const door = resolveLineDoor({ vendorName: facts.vendorName }, pre.line.onlineVendorName);
+      const doorGate = await gate(null, "purchase.line-door", { side: "purchase", door, vendorName: facts.vendorName });
+      if (!doorGate.allowed) throw new GateBlockedError(doorGate.reason);
+      const dual = await gate(null, "card.dual-link-block", { side: "card", links: lineLinks ?? { expenses: [], cardUsages: [] } });
+      if (!dual.allowed) throw new GateBlockedError(dual.reason);
+      if (!lineLinks?.currentExecution) throw new ForbiddenError(LINK_MISSING);
+      // 남은 실행가 = 06-07 `lineRoom`(다른 카드 사용 · 다른 `신청됨` 요청을 뺀 값 — 이 요청 제외). 실행가 = 사슬의 현재 줄(N-1).
+      const room = lineRoom({ links, basis: pre.line.lineRoom, lineId, exclude: { requestId: pre.requestId } });
+      const cap = await gate(null, "card.execution-cap", {
+        execution: lineLinks.currentExecution,
+        otherSupplies: room.otherSupplies,
+        supply: { currency: "KRW", amount: purchaseEstimateSupply(pre.estimate, pre.line.lineRoom, lineId), fxRate: 1 },
+        source: "entry",
+        link: "pickable",
+        amountVisible: pre.line.amountVisible,
+      });
+      if (!cap.allowed) throw new GateBlockedError(cap.reason);
+    }
+    const locked = await lockPurchaseRequestForUpdate(viewer, pre.requestId, innerTx);
+    if (!locked) throw new PurchaseRequestRejectedError(REQUEST_MISSING);
+    if (locked.status !== "cancelled") throw statusChangedError(locked.status);
+    if (locked.version !== input.version) throw new PurchaseRequestRejectedError(REQUEST_STALE);
+    if (locked.cancelledBy !== locked.requestedBy || locked.cancelReason) throw new ForbiddenError(UNDO_DENIED);
+    const version = await markPurchaseRequestRequested(viewer, { id: pre.requestId, version: input.version }, innerTx);
+    if (version === null) throw new PurchaseRequestRejectedError(REQUEST_STALE);
+    await recordAction(viewer, { actionType: "status_change", entity: PURCHASE_REQUEST_ENTITY, entityId: pre.requestId, detail: { from: "cancelled", to: "requested" } }, { tx: innerTx });
+    return { id: pre.requestId, version };
+  };
+  return tx ? await runUndoCancel(tx) : await withTransaction(runUndoCancel);
 }
 
 // ── S13 패널 로드 · 서버 계산 한 줄(06-12) ───────────────────────────────────

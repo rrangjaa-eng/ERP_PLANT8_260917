@@ -7,14 +7,20 @@ import { isCalendarDate, seoulToday } from "@/lib/dates";
 import { CURRENCIES } from "@/domain/money/currency";
 import { cardUsedOnError, USED_ON_FUTURE } from "@/domain/corp-card-usages/amounts";
 import {
+  CANCEL_REASON_MAX,
+  CANCEL_REASON_TOO_LONG,
+  cancelPurchaseRequest,
   completePurchaseRequest,
   createPurchaseRequest,
   LINK_URL_FORMAT,
+  precheckPurchaseCancel,
+  precheckPurchaseCancelUndo,
   precheckPurchaseCompletion,
   precheckPurchaseRequest,
   previewPurchaseCompletion,
   previewPurchaseSupply,
   searchLinesForPurchaseLink,
+  undoCancelPurchaseRequest,
   type PurchaseRequestInput,
 } from "@/domain/purchase-requests";
 import "./actions.registry";
@@ -76,6 +82,27 @@ export const previewPurchaseSupplyAction = authedActionClient
   .action(async ({ parsedInput, ctx }) =>
     previewPurchaseSupply(ctx.viewer, { lineId: parsedInput.lineId, estimate: { currency: parsedInput.currency, amount: parsedInput.amount, fxRate: parsedInput.fxRate ?? 1 } }),
   );
+
+// ── 06-14 요청 취소 · 되돌리기(S11) ────────────────────────────────────────────
+// 갈래(본인 / 남의 요청) · 상태는 서버가 판정한다 — 사람은 요청 id · version · 사유만 보낸다. 토스트 없음(결과 줄은 클라이언트 상태).
+
+export const cancelPurchaseRequestAction = authedActionClient
+  .schema(z.object({ id: z.uuid(), version: z.number().int().positive(), reason: z.string().max(CANCEL_REASON_MAX, CANCEL_REASON_TOO_LONG).optional() }))
+  .action(async ({ parsedInput, ctx }) => {
+    const pre = await precheckPurchaseCancel(ctx.viewer, { id: parsedInput.id });
+    const cancelled = await cancelPurchaseRequest(ctx.viewer, { id: parsedInput.id, version: parsedInput.version, ...(parsedInput.reason === undefined ? {} : { reason: parsedInput.reason }) }, pre);
+    revalidatePath("/cards/purchases");
+    revalidatePath("/cards");
+    return { number: cancelled.number, version: cancelled.version };
+  });
+
+export const undoCancelPurchaseRequestAction = authedActionClient.schema(z.object({ id: z.uuid(), version: z.number().int().positive() })).action(async ({ parsedInput, ctx }) => {
+  const pre = await precheckPurchaseCancelUndo(ctx.viewer, { id: parsedInput.id });
+  const restored = await undoCancelPurchaseRequest(ctx.viewer, parsedInput, pre);
+  revalidatePath("/cards/purchases");
+  revalidatePath("/cards");
+  return { version: restored.version };
+});
 
 // ── 06-12 구매 완료(S13) ──────────────────────────────────────────────────────
 // 사람은 카드 · 사용일 · 가맹점 · 결제 합계 · 증빙 종류 · 메모 · version만 보낸다 — 연결 · 사용한 사람 · 팀 · 공급가 칸은 없다(요청과 서버가 정한다).

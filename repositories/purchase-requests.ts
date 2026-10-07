@@ -145,3 +145,31 @@ export async function markPurchaseRequestPurchased(
     .returning({ version: purchaseRequests.version });
   return row?.version ?? null;
 }
+
+// ── 06-14 취소 · 되돌리기 ────────────────────────────────────────────────────
+
+// 취소 UPDATE — `신청됨` · version 일치일 때만(06-27 `_cancelled_check` — 취소한 사람 · 시각이 함께 선다). 바뀌면 새 version, 아니면 null.
+export async function markPurchaseRequestCancelled(
+  viewer: Viewer,
+  input: { id: string; version: number; cancelledBy: string; reason: string | null },
+  tx: DbOrTx,
+): Promise<number | null> {
+  void viewer;
+  const [row] = await tx
+    .update(purchaseRequests)
+    .set({ status: "cancelled", cancelledBy: input.cancelledBy, cancelledAt: new Date(), cancelReason: input.reason, version: sql`${purchaseRequests.version} + 1` })
+    .where(and(eq(purchaseRequests.id, input.id), eq(purchaseRequests.version, input.version), eq(purchaseRequests.status, "requested")))
+    .returning({ version: purchaseRequests.version });
+  return row?.version ?? null;
+}
+
+// 되돌리기 UPDATE — `취소` · version 일치일 때만 `신청됨`으로(취소 칸 셋을 비운다 — `_cancelled_check`). 번호는 그대로.
+export async function markPurchaseRequestRequested(viewer: Viewer, input: { id: string; version: number }, tx: DbOrTx): Promise<number | null> {
+  void viewer;
+  const [row] = await tx
+    .update(purchaseRequests)
+    .set({ status: "requested", cancelledBy: null, cancelledAt: null, cancelReason: null, version: sql`${purchaseRequests.version} + 1` })
+    .where(and(eq(purchaseRequests.id, input.id), eq(purchaseRequests.version, input.version), eq(purchaseRequests.status, "cancelled")))
+    .returning({ version: purchaseRequests.version });
+  return row?.version ?? null;
+}

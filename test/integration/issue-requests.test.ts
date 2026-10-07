@@ -315,9 +315,12 @@ describe("발행 요청 — 금액은 0원 초과만 (06-18 검토 I-2, 260907 i
 
     const attempt = saveProjectLedger(pm, project.id, { seenStatus: "bidding", issueRequests: [ok, bad] });
 
-    await expect(attempt).rejects.toBeInstanceOf(SaveRejectedError);
-    const error = await attempt.catch((caught: unknown) => caught as SaveRejectedError);
-    expect(error.formatErrors).toEqual([expect.objectContaining({ rowId: bad.id, field: "amount", reason: "0원 초과 · 금액 입력" })]);
+    const rejection: unknown = await attempt.then(
+      () => null,
+      (caught: unknown) => caught,
+    );
+    expect(rejection).toBeInstanceOf(SaveRejectedError);
+    expect((rejection as SaveRejectedError).formatErrors).toEqual([expect.objectContaining({ rowId: bad.id, field: "amount", reason: "0원 초과 · 금액 입력" })]);
     expect(await storedRequest(ok.id)).toBeUndefined();
     expect(await storedRequest(bad.id)).toBeUndefined();
   });

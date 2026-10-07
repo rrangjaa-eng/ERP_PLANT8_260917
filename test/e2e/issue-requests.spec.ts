@@ -5,6 +5,8 @@ import { createAccount } from "@/domain/auth/accounts";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { createProject } from "@/domain/projects";
 import { db } from "@/db/client";
+import { eq, sql } from "drizzle-orm";
+import { revenueIssueRequests } from "@/db/schema";
 import { insertIssueRequest } from "@/repositories/revenue-issue-requests";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { insertVendor } from "@/repositories/vendors";
@@ -239,7 +241,7 @@ test.describe("발행 요청 — S16 상태 마감 (06-18 Task 3)", () => {
     expect(order.every((index) => index >= 0)).toBe(true);
     expect(order).toEqual([...order].sort((a, b) => a - b));
 
-    const memo = requestTable(page).locator("span[title]", { hasText: "긴메모" });
+    const memo = requestTable(page).locator("span[title]", { hasText: "긴메모" }).locator("visible=true");
     await expect(memo).toHaveAttribute("title", long);
     const metrics = await memo.evaluate((node) => {
       const style = getComputedStyle(node);
@@ -248,6 +250,59 @@ test.describe("발행 요청 — S16 상태 마감 (06-18 Task 3)", () => {
     expect(metrics.clamp).toBe("2");
     expect(metrics.scrollHeight).toBeGreaterThan(metrics.clientHeight);
     expect(metrics.clientHeight).toBeLessThanOrEqual(metrics.lineHeight * 2 + 1);
+    await context.close();
+  });
+  test("폰 375 · 320에서도 200자 메모는 접힌 줄에서 두 줄 뒤 말줄임 + title이고 가로로 넘치지 않는다 (DOM 감사 D-1)", async ({ browser }) => {
+    const { projectUrl, projectId, pm, finance, today } = await setupProject();
+    const long = "긴메모".repeat(67).slice(0, 200);
+    await seedRequest(projectId, pm.userId, { desiredIssueDate: today, amount: 1_000_000, memo: long });
+
+    for (const width of [375, 320]) {
+      const { page, context } = await openAs(browser, finance, projectUrl, width);
+      const memo = requestTable(page).locator("span[title]", { hasText: "긴메모" }).locator("visible=true");
+      await expect(memo).toHaveCount(1);
+      await expect(memo).toHaveAttribute("title", long);
+      const metrics = await memo.evaluate((node) => {
+        const style = getComputedStyle(node);
+        return { clamp: style.getPropertyValue("-webkit-line-clamp"), clientHeight: node.clientHeight, scrollHeight: node.scrollHeight, lineHeight: parseFloat(style.lineHeight) };
+      });
+      expect(metrics.clamp, `${width}px`).toBe("2");
+      expect(metrics.scrollHeight, `${width}px`).toBeGreaterThan(metrics.clientHeight);
+      expect(metrics.clientHeight, `${width}px`).toBeLessThanOrEqual(metrics.lineHeight * 2 + 1);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth), `${width}px`).toBe(width);
+      await context.close();
+    }
+  });
+
+  test("요청 줄 저장이 version 충돌로 거부되면 포커스가 오류가 선 상태 칸으로 간다 (DOM 감사 D-2)", async ({ browser }) => {
+    const { projectUrl, projectId, pm, today } = await setupProject();
+    const requestId = await seedRequest(projectId, pm.userId, { desiredIssueDate: today, amount: 4_000_000, memo: "처음" });
+
+    const { page, context } = await openAs(browser, pm, projectUrl);
+    await requestTable(page).getByLabel("메모").fill("내가 고침");
+    await db.update(revenueIssueRequests).set({ version: sql`${revenueIssueRequests.version} + 1`, memo: "다른 사람이 고침" }).where(eq(revenueIssueRequests.id, requestId));
+
+    await page.getByRole("button", { name: /일괄 저장/ }).click();
+
+    await expect(requestTable(page)).toContainText("다른 사람이 먼저 이 요청을 바꿈 · 새로 고침");
+    const focused = await page.evaluate(() => {
+      const cell = document.activeElement?.closest("td");
+      const reasonId = cell?.getAttribute("aria-describedby");
+      return { inCell: cell !== null && cell !== undefined, reason: reasonId ? (document.getElementById(reasonId)?.textContent ?? null) : null };
+    });
+    expect(focused).toEqual({ inCell: true, reason: "다른 사람이 먼저 이 요청을 바꿈 · 새로 고침" });
+    await context.close();
+  });
+
+  test("금액을 비운(0원) 새 요청 줄은 저장이 거부되고 금액 칸에 한 줄 이유가 선다 (검토 I-2)", async ({ browser }) => {
+    const { projectUrl, pm } = await setupProject();
+
+    const { page, context } = await openAs(browser, pm, projectUrl);
+    await requestTable(page).getByRole("button", { name: "발행 요청 추가" }).click();
+    await requestTable(page).getByLabel("메모").fill("금액 없음");
+    await page.getByRole("button", { name: /일괄 저장/ }).click();
+
+    await expect(requestTable(page)).toContainText("0원 초과 · 금액 입력");
     await context.close();
   });
 });

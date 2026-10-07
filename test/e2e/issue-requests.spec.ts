@@ -10,6 +10,7 @@ import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { insertVendor } from "@/repositories/vendors";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { addDays, kstToday } from "@/lib/kst-date";
+import { saveProjectLedger } from "@/domain/projects/ledger";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 
 // 06-18(S16 · D-610) — 발행 요청: PM이 `발행 요청 추가` → 일괄 저장 → `신청됨`, 매출 기록 권한자가 `발행 줄로` → 일괄 저장 → `발행됨` + 2행.
@@ -139,5 +140,114 @@ test.describe("발행 요청 — PM 요청 → 매출 기록 권한자 발행 �
     const financeSession = await openAs(browser, finance, projectUrl);
     await expect(requestTable(financeSession.page).getByRole("button", { name: `희망 ${today.slice(5)} 발행 줄로` })).toBeVisible();
     await financeSession.context.close();
+  });
+});
+
+async function seedRequest(projectId: string, requestedBy: string, over: { desiredIssueDate: string; amount?: number; memo?: string | null }): Promise<string> {
+  const id = randomUUID();
+  await insertIssueRequest(
+    SYSTEM_VIEWER,
+    {
+      id,
+      projectId,
+      requestedBy,
+      desiredIssueDate: over.desiredIssueDate,
+      amountCurrency: "KRW",
+      amountForeignAmount: null,
+      amountFxRate: "1.0000",
+      amountAmountKrw: over.amount ?? 10_000_000,
+      memo: over.memo ?? null,
+    },
+    db,
+  );
+  return id;
+}
+
+test.describe("발행 요청 — S16 상태 마감 (06-18 Task 3)", () => {
+  test("빈 화면 세 갈래 — 쓰기 PM 1280은 첫 행동 버튼, 그 밖의 사람은 담당 PM 이름, 375는 사실만", async ({ browser }) => {
+    const { projectUrl, pm, finance } = await setupProject();
+
+    const pmWide = await openAs(browser, pm, projectUrl, 1280);
+    await expect(requestTable(pmWide.page).getByText("발행 요청이 없습니다", { exact: true })).toBeVisible();
+    await expect(requestTable(pmWide.page).getByRole("button", { name: "발행 요청 추가" })).toBeVisible();
+    await pmWide.context.close();
+
+    const financeWide = await openAs(browser, finance, projectUrl, 1280);
+    await expect(requestTable(financeWide.page)).toContainText("발행 요청이 없습니다 · 요청은 담당 PM E2E 요청 PM");
+    await expect(requestTable(financeWide.page).getByRole("button")).toHaveCount(0);
+    await financeWide.context.close();
+
+    const pmPhone = await openAs(browser, pm, projectUrl, 375);
+    await expect(requestTable(pmPhone.page).getByText("발행 요청이 없습니다", { exact: true })).toBeVisible();
+    await expect(requestTable(pmPhone.page).getByRole("button")).toHaveCount(0);
+    await pmPhone.context.close();
+
+    const financePhone = await openAs(browser, finance, projectUrl, 375);
+    await expect(requestTable(financePhone.page).getByText("발행 요청이 없습니다", { exact: true })).toBeVisible();
+    await financePhone.context.close();
+  });
+
+  test("`발행 줄로` 뒤 저장 전 = 2행 `발행 줄 입력 중`, 그 새 발행 줄을 빼면 연결이 풀리고 2행이 사라진다", async ({ browser }) => {
+    const { projectUrl, projectId, pm, finance, today } = await setupProject();
+    await seedRequest(projectId, pm.userId, { desiredIssueDate: today, amount: 5_000_000, memo: "빼기" });
+    const day = today.slice(5);
+
+    const { page, context } = await openAs(browser, finance, projectUrl);
+    await page.getByRole("button", { name: `희망 ${day} 발행 줄로` }).click();
+    await expect(requestTable(page).getByText("발행 줄 입력 중", { exact: true })).toBeVisible();
+    await expect(issuedTable(page).getByLabel("발행일")).toHaveCount(1);
+    await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
+
+    await page.getByRole("button", { name: `희망 ${day} 발행 줄 빼기` }).click();
+    await expect(requestTable(page).getByText("발행 줄 입력 중")).toHaveCount(0);
+    await expect(issuedTable(page).getByLabel("발행일")).toHaveCount(0);
+    await expect(requestTable(page).getByRole("button", { name: `희망 ${day} 발행 줄로` })).toBeVisible();
+    await expect(page.getByText("바뀐 칸 없음", { exact: true })).toBeVisible();
+    await context.close();
+  });
+
+  test("다른 사람이 그사이 같은 요청을 이으면 저장이 전부 거부되고 오류가 발행 줄 칸에 선다", async ({ browser }) => {
+    const { projectUrl, projectId, pm, finance, today } = await setupProject();
+    const requestId = await seedRequest(projectId, pm.userId, { desiredIssueDate: today, amount: 7_000_000 });
+
+    const { page, context } = await openAs(browser, finance, projectUrl);
+    await page.getByRole("button", { name: `희망 ${today.slice(5)} 발행 줄로` }).click();
+    await saveProjectLedger(SYSTEM_VIEWER, projectId, {
+      seenStatus: "bidding",
+      revenue: { issuedEntries: [{ id: randomUUID(), isNew: true, entryDate: today, amount: { currency: "KRW", amount: 7_000_000, fxRate: 1 }, fromIssueRequestId: requestId }] },
+    });
+
+    await page.getByRole("button", { name: /일괄 저장/ }).click();
+
+    await expect(issuedTable(page)).toContainText("다른 사람이 먼저 이 요청을 이음 · 새로 고침");
+    await expect(issuedTable(page)).toContainText("오류 1칸 · 전부 거부");
+    await expect(requestTable(page).getByText("신청됨", { exact: true })).toBeVisible();
+    await context.close();
+  });
+
+  test("줄 순서는 희망 발행일 오름차순(같은 날은 만든 순), 200자 메모는 두 줄 뒤 말줄임 + title", async ({ browser }) => {
+    const { projectUrl, projectId, pm, finance, today } = await setupProject();
+    const long = "긴메모".repeat(67).slice(0, 200);
+    await seedRequest(projectId, pm.userId, { desiredIssueDate: addDays(today, 5), amount: 3_000_000, memo: "셋째" });
+    await seedRequest(projectId, pm.userId, { desiredIssueDate: today, amount: 1_000_000, memo: long });
+    await seedRequest(projectId, pm.userId, { desiredIssueDate: today, amount: 2_000_000, memo: "같은날-둘째" });
+
+    const { page, context } = await openAs(browser, finance, projectUrl);
+    // 행마다 폰 접힌 줄이 함께 있어 행 수가 아니라 금액이 읽히는 순서로 센다.
+    const text = await requestTable(page).innerText();
+    const order = ["1,000,000", "2,000,000", "3,000,000"].map((amount) => text.indexOf(amount));
+    expect(order.every((index) => index >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+
+    const memo = requestTable(page).locator("span[title]", { hasText: "긴메모" });
+    await expect(memo).toHaveAttribute("title", long);
+    const metrics = await memo.evaluate((node) => {
+      const style = getComputedStyle(node);
+      return { clamp: style.getPropertyValue("-webkit-line-clamp"), clientHeight: node.clientHeight, scrollHeight: node.scrollHeight, lineHeight: parseFloat(style.lineHeight) };
+    });
+    expect(metrics.clamp).toBe("2");
+    expect(metrics.scrollHeight).toBeGreaterThan(metrics.clientHeight);
+    expect(metrics.clientHeight).toBeLessThanOrEqual(metrics.lineHeight * 2 + 1);
+    await context.close();
   });
 });

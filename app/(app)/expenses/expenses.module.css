@@ -6,6 +6,8 @@
   flex-wrap: wrap;
   align-items: flex-end;
   gap: var(--s-2) var(--s-3);
+  /* §6-0 최소 폭 320px — S1 팀 select(긴 팀 이름)가 필터 줄을 밀어내지 않는다(projects .filterFields 선례). */
+  max-width: 100%;
 }
 
 .selectLabel {
@@ -117,4 +119,41 @@
   .phoneOnly {
     display: inline;
   }
+}
+
+/* 06-15(S2) — 일괄 지급 모달의 지급일 칸(문서 화면 지급일 칸 .textInput과 같은 모양 — 폭은 Form.Field width="short" = --field-w-short). */
+.dateInput {
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--field-h);
+  padding: 0 var(--s-2);
+  border: var(--line-w) solid var(--border-control);
+  border-radius: var(--radius-control);
+  background: var(--surface-base);
+  color: var(--text-strong);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+}
+
+.dateInput[aria-invalid="true"] {
+  border-color: var(--status-danger);
+}
+
+.dateInput:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+/* 06-15(S1 「표시 — 일괄 지급 결과」) — 필터 줄 왼쪽 묶음 끝의 결과 글자. `시:분 지급 완료 N건`은 성공 색, `막힘 N건`은 위험 색. */
+.batchResult {
+  margin: 0;
+  font-size: var(--text-aux);
+}
+
+.batchDone {
+  color: var(--status-success);
+}
+
+.batchBlocked {
+  color: var(--status-danger);
 }

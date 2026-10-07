@@ -249,9 +249,51 @@ export const EXPENSE_LIST_ROW_DTO_SPEC: DtoSpec<ExpenseListRowDto, ExpenseListRo
   ],
 };
 
+// 06-15(S1) — 지급 대상 행. 금액(지급 총액 · 이체액)은 expense.amount, 나머지는 expense.value. 고를 수 있는지 · 이유는 서버 판정
+// (resolveExpenseActionRow)이라 문서 값과 같은 항목. 이 모듈은 누수 스캔이 이미 import한다(leak-scan.test.ts 무변경 — C18).
+export type PaymentTargetRowDto = {
+  id: string;
+  number: string | null;
+  title: string;
+  vendorName: string | null;
+  // 지급 방식 낱말(코드표 이름) — 계좌 칸은 06-20.
+  paymentMethodName: string | null;
+  scheduledPaymentDate: string | null;
+  // 증빙 상태 낱말(`확인됨` · `확인 전` · `증빙 없음` · `면제` · `선결제`).
+  evidenceStatus: string;
+  payableKrw: number | null;
+  // 이체액(읽기 — 편집은 06-17). 이 플랜에서는 지급 총액과 같다.
+  transferKrw: number | null;
+  version: number;
+  selectable: boolean;
+  reason: string | null;
+  prepaid: boolean;
+  quoteLineId: string | null;
+};
+
+export const PAYMENT_TARGET_ROW_DTO_SPEC: DtoSpec<PaymentTargetRowDto, PaymentTargetRowDto> = {
+  fields: [
+    { key: "id", from: "id", infoItem: "expense.value" },
+    { key: "number", from: "number", infoItem: "expense.value" },
+    { key: "title", from: "title", infoItem: "expense.value" },
+    { key: "vendorName", from: "vendorName", infoItem: "expense.value" },
+    { key: "paymentMethodName", from: "paymentMethodName", infoItem: "expense.value" },
+    { key: "scheduledPaymentDate", from: "scheduledPaymentDate", infoItem: "expense.value" },
+    { key: "evidenceStatus", from: "evidenceStatus", infoItem: "expense.value" },
+    { key: "payableKrw", from: "payableKrw", infoItem: "expense.amount" },
+    { key: "transferKrw", from: "transferKrw", infoItem: "expense.amount" },
+    { key: "version", from: "version", infoItem: "expense.value" },
+    { key: "selectable", from: "selectable", infoItem: "expense.value" },
+    { key: "reason", from: "reason", infoItem: "expense.value" },
+    { key: "prepaid", from: "prepaid", infoItem: "expense.value" },
+    { key: "quoteLineId", from: "quoteLineId", infoItem: "expense.value" },
+  ],
+};
+
 registerDto({ name: "expenseDraft", fields: EXPENSE_DRAFT_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 registerDto({ name: "expenseDocument", fields: EXPENSE_DOCUMENT_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 registerDto({ name: "expenseDetail", fields: EXPENSE_DETAIL_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 registerDto({ name: "expensePreview", fields: EXPENSE_PREVIEW_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 registerDto({ name: "expenseNewDefaults", fields: EXPENSE_NEW_DEFAULTS_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 registerDto({ name: "expenseListRow", fields: EXPENSE_LIST_ROW_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
+registerDto({ name: "paymentTargetRow", fields: PAYMENT_TARGET_ROW_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });

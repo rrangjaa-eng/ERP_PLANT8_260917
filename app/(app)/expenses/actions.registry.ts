@@ -57,3 +57,6 @@ registerAction({ name: "changeExpenseLineAction", menu: "expenses", action: "wri
 // 05-09 작성 중 삭제 · 되돌리기 — 문서 id만 돌려준다(DTO 없음).
 registerAction({ name: "deleteExpenseDraftAction", menu: "expenses", action: "write", dtoName: null });
 registerAction({ name: "restoreExpenseDraftAction", menu: "expenses", action: "write", dtoName: null });
+
+// 06-15 일괄 지급 — 행 결과는 id · 이유 글자 · 새 지급 총액 숫자 하나 · 고를 수 있음뿐(DTO 없음). 지급 권한자 전용.
+registerAction({ name: "completePaymentsBatchAction", menu: "expenses.payments", action: "write", dtoName: null });

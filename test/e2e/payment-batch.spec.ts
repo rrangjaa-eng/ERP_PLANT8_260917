@@ -9,6 +9,7 @@ import { confirmEvidence } from "@/domain/evidence-reviews";
 import { completePaymentsBatch } from "@/domain/payments/batch";
 import { listAllPaymentTargets } from "@/domain/payments/targets";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { AMOUNT_HIDDEN } from "@/domain/payments/action-row";
 import { seoulToday } from "@/lib/dates";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
@@ -29,12 +30,12 @@ async function teamOf(fx: ExpenseE2E): Promise<string> {
 }
 
 // 테스트 계급 「경영관리」 — 팀 업무 범위 · 지출결의 보기(+ 팀 보기) + 지급 처리 쓰기. 이 스펙 프로젝트의 팀에 발령한다.
-async function makeTeamPayer(fx: ExpenseE2E): Promise<Person> {
+async function makeTeamPayer(fx: ExpenseE2E, opts: { amountHidden?: boolean } = {}): Promise<Person> {
   const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E일괄지급-${randomUUID().slice(0, 8)}`, workScope: "team" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "view", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.team", action: "view", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.payments", action: "write", allowed: true });
-  for (const infoItem of INFO_ITEMS) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+  for (const infoItem of INFO_ITEMS) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: !(opts.amountHidden && infoItem === "expense.amount") });
   return makePerson("경영관리", role.id, await teamOf(fx), `${seoulToday().slice(0, 4)}-01-01`);
 }
 
@@ -170,8 +171,11 @@ test.describe("지급 대상 · 일괄 지급 마감 (06-15 Task 3)", () => {
 
     await page.goto("/expenses");
     await expect(page.getByText("지급할 건이 없습니다")).toBeVisible();
-    const paidView = page.getByRole("button", { name: "지급 완료 보기" });
+    // 화면 이동이라 링크(<a>, SYSTEM §10) — href는 URLSearchParams로 인코딩한다(원시 공백 · 한글 href는 프리페치가 끝나지 않는다, 06-15 검토 I-1).
+    const paidView = page.getByRole("link", { name: "지급 완료 보기" });
     await expect(paidView).toBeVisible();
+    await expect(paidView).toHaveAttribute("href", `/expenses?${new URLSearchParams({ status: "지급 완료" })}`);
+    await page.waitForLoadState("networkidle");
     await expect(page.getByRole("region", { name: "합계" })).toHaveCount(0);
     await expect(page.getByRole("checkbox")).toHaveCount(0);
     await expect(page.getByRole("button", { name: /^지급 완료( \d|$)/ })).toHaveCount(0);
@@ -182,8 +186,10 @@ test.describe("지급 대상 · 일괄 지급 마감 (06-15 Task 3)", () => {
     await approvedTarget(fx, "tracer");
     await page.goto(`/expenses?status=${encodeURIComponent("지급 대상")}&evidence=unreviewed`);
     await expect(page.getByText("조건에 맞는 건이 없습니다")).toBeVisible();
-    const clear = page.getByRole("button", { name: "필터 지우기" });
+    const clear = page.getByRole("link", { name: "필터 지우기" });
     await expect(clear).toBeVisible();
+    await expect(clear).toHaveAttribute("href", `/expenses?${new URLSearchParams({ status: "지급 대상" })}`);
+    await page.waitForLoadState("networkidle");
     await expect(page.getByRole("region", { name: "합계" })).toHaveCount(0);
     await expect(page.getByRole("checkbox")).toHaveCount(0);
     await expect(page.getByRole("button", { name: /^지급 완료/ })).toHaveCount(0);
@@ -368,6 +374,23 @@ test.describe("지급 대상 · 일괄 지급 마감 (06-15 Task 3)", () => {
     await row.getByRole("checkbox").uncheck();
     await expect(primary).toHaveAttribute("aria-disabled", "true");
     await expect(page.getByText("고른 건 없음")).toBeVisible();
+    await page.context().close();
+  });
+
+  test("금액 숨김 지급 권한자 — 모든 행이 막혀 1차 `지급 완료` 비활성 이유가 `고른 건 없음`이 아니라 `지급 총액 볼 권한 없음 · 노출 설정은 관리자`", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    await approvedTarget(fx, "tracer");
+    const payer = await makeTeamPayer(fx, { amountHidden: true });
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+
+    await page.goto("/expenses");
+    const row = rowOf(page, fx.lines.tracer.itemName);
+    await waitForHydration(row.getByRole("checkbox"));
+    await expect(row.getByRole("checkbox")).toHaveAttribute("aria-disabled", "true");
+    const primary = page.getByRole("button", { name: /^지급 완료/ });
+    await expect(primary).toHaveAttribute("aria-disabled", "true");
+    await expect(primary).toHaveAccessibleDescription(AMOUNT_HIDDEN);
+    await expect(page.getByText("고른 건 없음")).toHaveCount(0);
     await page.context().close();
   });
 });

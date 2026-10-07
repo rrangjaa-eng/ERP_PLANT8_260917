@@ -31,6 +31,7 @@ import { PURCHASE_ONLINE_VENDOR_NAME } from "@/domain/settings/keys";
 import {
   completePurchaseRequest,
   createPurchaseRequest,
+  countOpenPurchaseRequests,
   listPurchaseRequests,
   precheckPurchaseCompletion,
   precheckPurchaseRequest,
@@ -1726,5 +1727,128 @@ describe("취소 되돌리기(06-14 — D-609 · Q3 · X-1 · X-2 · N-1 · N-2 
     const error = await caught(undoAs(fx.pm, created.id));
     expect((error as Error).message).toBe("견적 줄 빠짐 · 새로 고침");
     expect((await statusOf(created.id))?.status).toBe("cancelled");
+  });
+});
+
+// ── 목록 마감(06-14 Task 3 — 합계 · 열린 건수 · 50건 페이지 · `전체` 그룹 순서) ─────────────────────────────
+
+describe("구매 요청 목록 마감(06-14)", () => {
+  async function scopedRole(): Promise<string> {
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `마감목록-${randomUUID().slice(0, 8)}`, workScope: "team" });
+    for (const infoItem of ["purchase_request.value", "purchase_request.amount", "project.value"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+    return role.id;
+  }
+
+  async function person(name: string, roleId: string): Promise<Awaited<ReturnType<typeof makePerson>>> {
+    const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `마감본부-${randomUUID()}` });
+    const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `마감팀-${randomUUID()}` });
+    return makePerson(name, roleId, team.name);
+  }
+
+  type Seed = { requester: { id: string }; status?: "requested" | "purchased" | "cancelled"; amount?: number; createdAt?: Date };
+
+  async function seed(rows: Seed[]): Promise<string[]> {
+    const inserted = await db
+      .insert(purchaseRequests)
+      .values(
+        rows.map((row) => ({
+          number: `TC${randomUUID().slice(0, 8)}`,
+          linkKind: "team_cost",
+          requestedBy: row.requester.id,
+          itemName: "마감 물건",
+          estimateAmountKrw: row.amount ?? 10_000,
+          status: row.status ?? "requested",
+          ...(row.status === "purchased" ? { completedBy: row.requester.id, completedAt: new Date() } : {}),
+          ...(row.status === "cancelled" ? { cancelledBy: row.requester.id, cancelledAt: new Date(), cancelReason: "마감 취소" } : {}),
+          ...(row.createdAt ? { createdAt: row.createdAt } : {}),
+        })),
+      )
+      .returning({ id: purchaseRequests.id });
+    return inserted.map((row) => row.id);
+  }
+
+  it("합계 줄 — 보기의 건수 · 예상 금액 합은 목록과 같은 범위 안 행만(남의 요청 없음) · `전체`는 상태 가리지 않는다", async () => {
+    const roleId = await scopedRole();
+    const mine = await person("마감요청자", roleId);
+    const other = await person("마감남", roleId);
+    await seed([
+      { requester: mine, amount: 11_000 },
+      { requester: mine, amount: 22_000 },
+      { requester: mine, status: "cancelled", amount: 5_000 },
+      { requester: other, amount: 99_000 },
+    ]);
+    const today = seoulToday();
+    expect((await listPurchaseRequests(mine, { status: "requested" }, today)).totals).toEqual({ count: 2, estimateKrw: 33_000 });
+    expect((await listPurchaseRequests(mine, { status: "all" }, today)).totals).toEqual({ count: 3, estimateKrw: 38_000 });
+    expect((await listPurchaseRequests(mine, { status: "cancelled" }, today)).totals).toEqual({ count: 1, estimateKrw: 5_000 });
+    expect((await listPurchaseRequests(other, { status: "requested" }, today)).totals).toEqual({ count: 1, estimateKrw: 99_000 });
+  });
+
+  it("합계 줄 — 예상 금액을 못 보는 계급은 금액 합이 null(건수만)", async () => {
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `금액숨김-${randomUUID().slice(0, 8)}`, workScope: "team" });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "purchase_request.value", visible: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "purchase_request.amount", visible: false });
+    const hidden = await person("금액숨김", role.id);
+    await seed([{ requester: hidden, amount: 11_000 }]);
+    expect((await listPurchaseRequests(hidden, { status: "requested" }, seoulToday())).totals).toEqual({ count: 1, estimateKrw: null });
+  });
+
+  it("50건 페이지 — 51건이면 첫 쪽 50건 · 둘째 쪽 1건 · 합계는 쪽과 무관하게 51건", async () => {
+    const roleId = await scopedRole();
+    const mine = await person("마감쪽", roleId);
+    await seed(Array.from({ length: 51 }, () => ({ requester: mine, amount: 1_000 })));
+    const today = seoulToday();
+    const first = await listPurchaseRequests(mine, { status: "requested", page: "1" }, today);
+    expect(first.rows).toHaveLength(50);
+    expect(first.page).toMatchObject({ page: 1, pageCount: 2, pageSize: 50, total: 51 });
+    const second = await listPurchaseRequests(mine, { status: "requested", page: "2" }, today);
+    expect(second.rows).toHaveLength(1);
+    expect(second.totals).toEqual({ count: 51, estimateKrw: 51_000 });
+  });
+
+  it("`전체` 보기 그룹 순서 — 신청됨 → 구매 완료 → 취소(요청일 내림차순은 그룹 안에서)", async () => {
+    const roleId = await scopedRole();
+    const mine = await person("마감그룹", roleId);
+    const base = Date.now();
+    const [requestedOld, purchased, cancelledNew, requestedNew] = await seed([
+      { requester: mine, status: "requested", createdAt: new Date(base - 4_000) },
+      { requester: mine, status: "purchased", createdAt: new Date(base - 3_000) },
+      { requester: mine, status: "cancelled", createdAt: new Date(base - 1_000) },
+      { requester: mine, status: "requested", createdAt: new Date(base - 2_000) },
+    ]);
+    const all = await listPurchaseRequests(mine, { status: "all" }, seoulToday());
+    expect(all.rows.map((row) => row.id)).toEqual([requestedNew, requestedOld, purchased, cancelledNew]);
+  });
+
+  it("열린 건수 `countOpenPurchaseRequests` — 목록과 같은 범위의 `신청됨`만(구매 완료 · 취소 · 남의 요청 제외)", async () => {
+    const roleId = await scopedRole();
+    const mine = await person("마감열림", roleId);
+    const other = await person("마감다른", roleId);
+    await seed([{ requester: mine }, { requester: mine }, { requester: mine }, { requester: mine, status: "cancelled" }, { requester: mine, status: "purchased" }, { requester: other }]);
+    expect(await countOpenPurchaseRequests(mine)).toBe(3);
+    expect(await countOpenPurchaseRequests(other)).toBe(1);
+    const nobody = await person("마감없음", roleId);
+    expect(await countOpenPurchaseRequests(nobody)).toBe(0);
+  });
+});
+
+// Q3 「빼기」(사용자 결정 2026-10-05 카드 「빼기」) — 신청 · 취소 · 되돌리기 세 입구가 같은 상한 판정을 지난다(06-07 `lineRoom` 한 곳).
+describe("실행가 빼기(Q3 — 신청됨 요청의 예상 공급가)", () => {
+  it("실행가 1,000,000 · A 예상 770,000(공급가 700,000) `신청됨` → B 770,000 거부(남은 300,000) · A 취소 → B 성공 · A 되돌리기 거부(남은 300,000) · A는 `취소` 그대로", async () => {
+    const fx = await purchaseProject();
+    const a = await request(fx, fx.onlineLine, 770_000);
+    const blocked = await caught(request(fx, fx.onlineLine, 770_000));
+    expect(blocked).toBeInstanceOf(GateBlockedError);
+    expect((blocked as Error).message).toBe("실행가 초과 · 남은 실행가 300,000 · 다른 줄 고르기");
+    expect(await requestCount()).toBe(1);
+
+    await cancelAs(fx.pm, a.id);
+    await request(fx, fx.onlineLine, 770_000);
+    expect(await requestCount()).toBe(2);
+
+    const undone = await caught(undoAs(fx.pm, a.id));
+    expect(undone).toBeInstanceOf(GateBlockedError);
+    expect((undone as Error).message).toBe("실행가 초과 · 남은 실행가 300,000 · 다른 줄 고르기");
+    expect((await statusOf(a.id))?.status).toBe("cancelled");
   });
 });

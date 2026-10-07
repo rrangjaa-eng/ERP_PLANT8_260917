@@ -7,12 +7,13 @@ import {
   EVIDENCE_PREPAID_DUE_DAYS,
   EVIDENCE_REQUIRED,
   PAYMENT_METHOD_EVIDENCE_PAIRS,
-  PURCHASE_ONLINE_VENDOR_NAME,
 } from "@/domain/settings/keys";
 import { createFixtureUser } from "./fixtures";
+import { E2E_ONLINE_VENDOR_NAME } from "./online-vendor";
 
 // 06-02 Task 1 — S20 설정 키 넷 + 짝 격자(SP-9 · §7-13 PermissionGrid 재사용). 공용 설정이라 매 테스트 전 · 후에 기본값으로 돌린다.
-const KEYS = [EVIDENCE_REQUIRED.key, EVIDENCE_PREPAID_DUE_DAYS.key, PURCHASE_ONLINE_VENDOR_NAME.key, PAYMENT_METHOD_EVIDENCE_PAIRS.key];
+// 온라인구매 협력사는 구매 요청 · 견적 줄 상태 스펙이 병렬 워커에서 고정 이름으로 켜 두는 전역 값이라(`online-vendor.ts`) 여기서 지우지 않는다.
+const KEYS = [EVIDENCE_REQUIRED.key, EVIDENCE_PREPAID_DUE_DAYS.key, PAYMENT_METHOD_EVIDENCE_PAIRS.key];
 const GRID_NAME = "지급 방식 · 증빙 종류 짝";
 
 async function resetKeys() {
@@ -39,7 +40,7 @@ test.describe("06-02 설정 키 · 짝 격자", () => {
   test.beforeEach(resetKeys);
   test.afterEach(resetKeys);
 
-  test("S20 empty — 증빙 필수 켬 · 선결제 증빙 기한 14 일 · 온라인구매 협력사 빈 값 · 증빙 크기 한도 10 · 짝 격자 모든 칸 해제", async ({ page }) => {
+  test("S20 empty — 증빙 필수 켬 · 선결제 증빙 기한 14 일 · 온라인구매 협력사 빈 값(또는 고정 이름) · 증빙 크기 한도 10 · 짝 격자 모든 칸 해제", async ({ page }) => {
     await loginAndOpenSettings(page);
 
     await expect(page.getByRole("heading", { name: "증빙", exact: true })).toBeVisible();
@@ -50,7 +51,8 @@ test.describe("06-02 설정 키 · 짝 격자", () => {
     await expect(page.getByLabel("선결제 증빙 기한")).toHaveValue("14");
     await expect(page.getByText("일", { exact: true })).toBeVisible();
 
-    await expect(page.getByLabel("온라인구매 협력사")).toHaveValue("");
+    // 기본값은 빈 값 — 다른 스펙이 고정 이름을 켜 뒀다면 그 이름(그 밖의 값은 아니다).
+    await expect(page.getByLabel("온라인구매 협력사")).toHaveValue(new RegExp(`^(${E2E_ONLINE_VENDOR_NAME})?$`));
 
     const grid = page.getByRole("table", { name: GRID_NAME });
     await expect(grid).toBeVisible();

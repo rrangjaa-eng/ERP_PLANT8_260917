@@ -11,7 +11,7 @@ import { DATE_FORMAT_ERROR } from "@/domain/expenses/draft-fields";
 import { PREPAID_REASON_REQUIRED } from "@/domain/expenses/gate";
 import { cancelExpensePayment, completeExpensePayment, previewPayable } from "@/domain/payments";
 import { GateBlockedError } from "@/domain/rules/gate";
-import { confirmEvidence, EvidenceReviewConflictError, EVIDENCE_AMOUNT_PAID_LOCKED, waiveEvidence } from "@/domain/evidence-reviews";
+import { confirmEvidence, EvidenceReviewConflictError, EVIDENCE_AMOUNT_PAID_LOCKED, EVIDENCE_AMOUNT_PAID_MISMATCH, waiveEvidence } from "@/domain/evidence-reviews";
 import { ACTION_LOG_OPTIONAL_TYPES } from "@/domain/settings/keys";
 import { upsertSimpleValue } from "@/repositories/settings";
 import { ForbiddenError } from "@/domain/permissions/can";
@@ -22,7 +22,7 @@ import { seoulToday } from "@/lib/dates";
 import { addDays } from "@/lib/kst-date";
 import { seedCodeItem } from "@/repositories/code-tables";
 import { upsertVisibility } from "@/repositories/permissions";
-import { setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
+import { attachEvidence, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
 import { approvedExpenseWithEvidence, approvedExpenseWithoutEvidence, makePaymentManager, setEvidenceRequired } from "./fixtures/payments";
 import { deferred, waitForLockWaiter } from "./lock-race";
 
@@ -359,6 +359,41 @@ describe("지급 완료 문서의 증빙 금액 고침 막힘(I-2)", () => {
     const result = await confirmEvidence(manager, { expenseId, version });
     expect(result.evidenceStatus).toBe("확인됨");
     expect((await expenseRow(expenseId)).evidenceAmount).toBe(12_400_000);
+  });
+
+  // 검토 I-1(추천안 a — 사용자 질문 후보): 선결제 지급 뒤 들어온 증빙의 빈 금액은 지급 기록의 공급가와 같은 값만 받는다.
+  async function paidPrepaidWithLateEvidence() {
+    const fx = await setupExpenseProject();
+    const { expenseId, instanceId, version } = await submitPrepaid(fx);
+    await approveBoth(fx, instanceId, version);
+    const manager = await payer();
+    const preview = await previewPayable(manager, { expenseId, payDate: seoulToday() });
+    if (preview.payableKrw === undefined || preview.payableKrw === null) throw new Error("지급 총액 없음");
+    await completeExpensePayment(manager, { expenseId, expectedPayableKrw: preview.payableKrw, version: (await expenseRow(expenseId)).version });
+    await attachEvidence(fx.pm, expenseId);
+    const [payment] = await db.select().from(expensePayments).where(eq(expensePayments.expenseId, expenseId));
+    if (!payment?.grossSupplyKrw) throw new Error("지급 공급가 없음");
+    const row = await expenseRow(expenseId);
+    expect(row.evidenceAmount).toBeNull();
+    return { manager, expenseId, version: row.version, grossSupplyKrw: payment.grossSupplyKrw };
+  }
+
+  it("지급 뒤 빈 증빙 금액을 지급 기록의 공급가와 같은 값으로 채우는 확인은 통과한다", async () => {
+    const { manager, expenseId, version, grossSupplyKrw } = await paidPrepaidWithLateEvidence();
+    const result = await confirmEvidence(manager, { expenseId, version, correctedAmountKrw: grossSupplyKrw });
+    expect(result.evidenceStatus).toBe("확인됨");
+    expect((await expenseRow(expenseId)).evidenceAmount).toBe(grossSupplyKrw);
+  });
+
+  it("지급 뒤 빈 증빙 금액을 지급 공급가와 다른 값으로 채우면 거부 · 증빙 금액 · version · 로그 그대로", async () => {
+    const { manager, expenseId, version, grossSupplyKrw } = await paidPrepaidWithLateEvidence();
+    const rowBefore = await expenseRow(expenseId);
+    const logsBefore = await logCount(expenseId, "evidence_amount_change");
+    const failure = await confirmEvidence(manager, { expenseId, version, correctedAmountKrw: grossSupplyKrw - 1 }).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(EvidenceReviewConflictError);
+    expect((failure as Error).message).toBe(EVIDENCE_AMOUNT_PAID_MISMATCH);
+    expect(await expenseRow(expenseId)).toEqual(rowBefore);
+    expect(await logCount(expenseId, "evidence_amount_change")).toBe(logsBefore);
   });
 
   it("지급을 취소하면 다시 고칠 수 있다(지급 완료 상태에서만 막는다)", async () => {

@@ -12,12 +12,11 @@ import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { insertVendor } from "@/repositories/vendors";
-import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { seoulToday } from "@/lib/dates";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
-import { setupExpenseE2E } from "./expense-fixture";
+import { setupExpenseE2E, archiveTempRoles, insertTempRole } from "./expense-fixture";
 import { submitReadyDraft } from "../integration/fixtures/expenses";
 
 // 06-09(EXP-16 · O-11 · UI-SPEC S8 · S9 · S15): 경영관리 대리 등록 · 행 `수정` 옆 패널 · 삭제 · 되돌리기.
@@ -41,7 +40,7 @@ type ProxyFx = {
 const VISIBLE = ["team.value", "card_usage.value", "card_usage.amount", "project.value", "quote.amount"];
 
 async function proxyRole(): Promise<string> {
-  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E경영관리-${randomUUID().slice(0, 8)}`, workScope: "company" });
+  const role = await insertTempRole({ id: `role-${randomUUID()}`, name: `E2E경영관리-${randomUUID().slice(0, 8)}`, workScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "cards.proxy", action: "write", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
   for (const infoItem of VISIBLE) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
@@ -466,7 +465,7 @@ async function hiddenAmountFx(): Promise<{ person: Person; cardId: string; usage
   const suffix = randomUUID().slice(0, 8);
   const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E숨김본부-${suffix}` });
   const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E숨김팀-${suffix}` });
-  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E카드금액숨김-${suffix}`, workScope: "company" });
+  const role = await insertTempRole({ id: `role-${randomUUID()}`, name: `E2E카드금액숨김-${suffix}`, workScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
   for (const infoItem of ["project.value", "card_usage.value", "team.value", "quote.amount"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
   await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "card_usage.amount", visible: false });
@@ -578,3 +577,5 @@ test.describe("카드 사용 삭제 · 수정 — DOM 감사 반영 (06-09)", ()
     await page.context().close();
   });
 });
+
+test.afterAll(archiveTempRoles);

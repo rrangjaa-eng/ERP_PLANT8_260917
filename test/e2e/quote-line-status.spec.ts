@@ -16,11 +16,10 @@ import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { insertVendor, updateVendor } from "@/repositories/vendors";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import { seoulToday } from "@/lib/dates";
-import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
 import { E2E_ONLINE_VENDOR_NAME, enableOnlineVendorSetting } from "./online-vendor";
-import { setupExpenseE2E, submitLineExpense, type ExpenseE2E } from "./expense-fixture";
+import { setupExpenseE2E, submitLineExpense, type ExpenseE2E, archiveTempRoles, insertTempRole } from "./expense-fixture";
 import { submitReadyDraft } from "../integration/fixtures/expenses";
 
 // 06-13(S14 · EXP-06 · SP-2): 견적 줄 표의 상태 열 · 금액 셀 읽기 전용 이유 · 행 행동 막힘이 서버 값 하나로 같은 사실을 말한다.
@@ -34,7 +33,7 @@ const INFO_ITEMS = ["expense.value", "expense.amount", "approval.value", "projec
 
 async function makePayerE2E(): Promise<Person> {
   const suffix = randomUUID().slice(0, 8);
-  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E지급-${suffix}`, workScope: "company" });
+  const role = await insertTempRole({ id: `role-${randomUUID()}`, name: `E2E지급-${suffix}`, workScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "view", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.payments", action: "write", allowed: true });
   for (const infoItem of INFO_ITEMS) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
@@ -399,3 +398,5 @@ test.describe("견적 줄 상태 (06-13)", () => {
     await page.context().close();
   });
 });
+
+test.afterAll(archiveTempRoles);

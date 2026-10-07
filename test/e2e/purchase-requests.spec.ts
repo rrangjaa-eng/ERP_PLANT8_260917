@@ -8,7 +8,6 @@ import { createProject } from "@/domain/projects";
 import { completePurchaseRequest, createPurchaseRequest, precheckPurchaseCompletion, precheckPurchaseRequest } from "@/domain/purchase-requests";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
-import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { createCorpCard } from "@/domain/corp-cards";
 import { insertVendor } from "@/repositories/vendors";
@@ -18,7 +17,7 @@ import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
 import { E2E_ONLINE_VENDOR_NAME, enableOnlineVendorSetting } from "./online-vendor";
 import { createExpenseFromLines } from "@/domain/expenses";
-import { setupExpenseE2E } from "./expense-fixture";
+import { setupExpenseE2E, archiveTempRoles, insertTempRole } from "./expense-fixture";
 import { submitReadyDraft } from "../integration/fixtures/expenses";
 
 // 06-08(EXP-10 · UI-SPEC S11 · S12): 구매 요청 신청 — 온라인구매 견적 줄 → 옆 패널 → 저장 → 뒤 목록 첫 줄.
@@ -306,7 +305,7 @@ const PURCHASER_VISIBLE = ["purchase_request.value", "purchase_request.amount", 
 // 구매 권한자(`cards.purchases` write) — 요청자와 다른 새 팀.
 async function makePurchaser(): Promise<Person> {
   const suffix = randomUUID().slice(0, 8);
-  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E구매처리-${suffix}`, workScope: "team" });
+  const role = await insertTempRole({ id: `role-${randomUUID()}`, name: `E2E구매처리-${suffix}`, workScope: "team" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "cards.purchases", action: "write", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
   for (const infoItem of PURCHASER_VISIBLE) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
@@ -615,3 +614,5 @@ test.describe("PR #183 검토 반영", () => {
     await page.context().close();
   });
 });
+
+test.afterAll(archiveTempRoles);

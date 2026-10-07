@@ -6,11 +6,11 @@ import { purchaseRequests } from "@/db/schema";
 import { createOrgUnit, createTeam } from "@/domain/org";
 import { createCorpCard } from "@/domain/corp-cards";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
-import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { seoulToday } from "@/lib/dates";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
+import { archiveTempRoles, insertTempRole } from "./expense-fixture";
 
 // 06-14(EXP-10 · UI-SPEC S11 · S12 · S8 하위 링크): 팀 비용 구매 요청 · 요청 취소 · 목록 마감.
 // 06-08 · 06-12 스펙(purchase-requests.spec.ts)은 건드리지 않는다 — 이 파일은 `온라인구매 협력사` 같은 전역 설정을 바꾸지 않는다
@@ -32,7 +32,7 @@ const PURCHASER_VISIBLE = ["purchase_request.value", "purchase_request.amount", 
 // 구매 권한자(`cards.purchases` write) — 요청자와 다른 새 팀.
 async function makePurchaser(): Promise<Person> {
   const suffix = randomUUID().slice(0, 8);
-  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E마감처리-${suffix}`, workScope: "team" });
+  const role = await insertTempRole({ id: `role-${randomUUID()}`, name: `E2E마감처리-${suffix}`, workScope: "team" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "cards.purchases", action: "write", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
   for (const infoItem of PURCHASER_VISIBLE) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
@@ -294,3 +294,5 @@ test.describe("구매 요청 목록 마감 (06-14)", () => {
     await page.context().close();
   });
 });
+
+test.afterAll(archiveTempRoles);

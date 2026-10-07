@@ -11,11 +11,10 @@ import { listAllPaymentTargets } from "@/domain/payments/targets";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { AMOUNT_HIDDEN } from "@/domain/payments/action-row";
 import { seoulToday } from "@/lib/dates";
-import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { submitReadyDraft } from "../integration/fixtures/expenses";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
-import { setupExpenseE2E, type ExpenseE2E, type LineKey } from "./expense-fixture";
+import { setupExpenseE2E, type ExpenseE2E, type LineKey, archiveTempRoles, insertTempRole } from "./expense-fixture";
 
 // 06-15(EXP-09 · UI-SPEC S1 · S2): 지급 권한자의 `/expenses` 기본 보기 「지급 대상」 → 여러 건 고르기 → 확인 모달(지급일) → 건별 처리.
 // E2E DB는 스펙끼리 공유한다 — 지급 권한자는 팀 업무 범위(`expenses.team` 보기)로 이 스펙의 프로젝트 팀 문서만 보게 만든다(목록 보임 범위 = 문서 보임).
@@ -31,7 +30,7 @@ async function teamOf(fx: ExpenseE2E): Promise<string> {
 
 // 테스트 계급 「경영관리」 — 팀 업무 범위 · 지출결의 보기(+ 팀 보기) + 지급 처리 쓰기. 이 스펙 프로젝트의 팀에 발령한다.
 async function makeTeamPayer(fx: ExpenseE2E, opts: { amountHidden?: boolean } = {}): Promise<Person> {
-  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E일괄지급-${randomUUID().slice(0, 8)}`, workScope: "team" });
+  const role = await insertTempRole({ id: `role-${randomUUID()}`, name: `E2E일괄지급-${randomUUID().slice(0, 8)}`, workScope: "team" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "view", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.team", action: "view", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.payments", action: "write", allowed: true });
@@ -394,3 +393,5 @@ test.describe("지급 대상 · 일괄 지급 마감 (06-15 Task 3)", () => {
     await page.context().close();
   });
 });
+
+test.afterAll(archiveTempRoles);

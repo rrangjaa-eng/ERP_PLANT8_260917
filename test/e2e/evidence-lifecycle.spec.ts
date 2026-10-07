@@ -9,10 +9,9 @@ import { EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { createOrgUnit, createTeam } from "@/domain/org";
 import { seoulToday } from "@/lib/dates";
-import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
-import { setupExpenseE2E, submitLineExpense, uniqueReceipt, type ExpenseE2E } from "./expense-fixture";
+import { setupExpenseE2E, submitLineExpense, uniqueReceipt, type ExpenseE2E, archiveTempRoles, insertTempRole } from "./expense-fixture";
 
 // 06-11(EVID-02 · EVID-04 · C4 · B-1 · U-4) — 증빙 수명 주기: 승인 뒤 기안자가 증빙을 하나 더 붙이면 확인된 문서가 `확인 전`으로 돌아오고,
 // 완료 프로젝트의 승인 문서에는 기안자에게 「하나 더」 대신 잠김 한 줄이 선다. 문서는 05 폼 · 04.1 승인 · 06-06 확인 도메인 함수로 만든다.
@@ -24,7 +23,7 @@ const EVIDENCE_COMPLETED_PROJECT_LINE = "완료 프로젝트 · 증빙은 경영
 // 테스트 계급 「경영관리」 — 전사 업무 범위 · 지출결의 보기 + 지급 처리 쓰기 (+ 선택으로 증빙 붙이기). 결재선 밖 전용 본부 · 팀에 발령한다.
 async function makeManagerE2E(options: { attach?: boolean } = {}): Promise<Person> {
   const suffix = randomUUID().slice(0, 8);
-  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E수명-${suffix}`, workScope: "company" });
+  const role = await insertTempRole({ id: `role-${randomUUID()}`, name: `E2E수명-${suffix}`, workScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "view", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.payments", action: "write", allowed: true });
   if (options.attach) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.evidence_attach", action: "write", allowed: true });
@@ -109,3 +108,5 @@ test.describe("증빙 수명 주기 (06-11)", () => {
     await managerPage.context().close();
   });
 });
+
+test.afterAll(archiveTempRoles);

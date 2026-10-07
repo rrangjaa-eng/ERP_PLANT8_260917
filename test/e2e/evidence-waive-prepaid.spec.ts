@@ -10,10 +10,9 @@ import { completeExpensePayment, previewPayable } from "@/domain/payments";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { createOrgUnit, createTeam } from "@/domain/org";
 import { seoulToday } from "@/lib/dates";
-import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
-import { makeEvidenceManagerE2E, setupExpenseE2E, submitLineExpense, type ExpenseE2E, type LineKey } from "./expense-fixture";
+import { makeEvidenceManagerE2E, setupExpenseE2E, submitLineExpense, type ExpenseE2E, type LineKey, archiveTempRoles, insertTempRole } from "./expense-fixture";
 
 // 06-10(EXP-13 · EVID-03 · D-603 · D-611 · UI-SPEC S6 · S4 empty): 기안자가 폼에서 `선결제`를 켜고 사유를 적어 증빙 없이 제출 → 결재 통과 →
 // 증빙 필수 on에서도 지급 완료가 통과하고 증빙 섹션에 `선결제` + 2행 `증빙 기한` · `선결제 사유`가 선다. 문서는 05 폼 · 04.1 승인 도메인 함수로 만든다.
@@ -24,7 +23,7 @@ const PREPAID_REASON = "행사 장소 선결제 요구로 증빙을 지급 뒤�
 // 테스트 계급 「경영관리」 — 전사 업무 범위 · 지출결의 보기 + 지급 처리 쓰기. 결재선 밖 전용 본부 · 팀에 발령한다.
 async function makePayerE2E(): Promise<Person> {
   const suffix = randomUUID().slice(0, 8);
-  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E지급-${suffix}`, workScope: "company" });
+  const role = await insertTempRole({ id: `role-${randomUUID()}`, name: `E2E지급-${suffix}`, workScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "view", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.payments", action: "write", allowed: true });
   for (const infoItem of INFO_ITEMS) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
@@ -227,3 +226,5 @@ test.describe("증빙 면제 (06-10)", () => {
     await page.context().close();
   });
 });
+
+test.afterAll(archiveTempRoles);

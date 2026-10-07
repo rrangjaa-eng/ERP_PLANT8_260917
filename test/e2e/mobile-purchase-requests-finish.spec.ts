@@ -5,11 +5,11 @@ import { purchaseRequests } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { createOrgUnit, createTeam } from "@/domain/org";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
-import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { seoulToday } from "@/lib/dates";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
+import { archiveTempRoles, insertTempRole } from "./expense-fixture";
 
 // 06-14 폰 구매 요청 목록 — 행동 칸은 폰에서 숨고(06-12 D-1) 행 탭 시트가 본인 `요청 취소`를 맡는다. 그룹 머리 · 합계 줄이 있어도 가로 넘침 0.
 
@@ -18,7 +18,7 @@ const PURCHASER_VISIBLE = ["purchase_request.value", "purchase_request.amount", 
 // 구매 권한자(`cards.purchases` write) — 새 팀.
 async function makePurchaser(): Promise<Person> {
   const suffix = randomUUID().slice(0, 8);
-  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E폰처리-${suffix}`, workScope: "team" });
+  const role = await insertTempRole({ id: `role-${randomUUID()}`, name: `E2E폰처리-${suffix}`, workScope: "team" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "cards.purchases", action: "write", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
   for (const infoItem of PURCHASER_VISIBLE) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
@@ -158,3 +158,4 @@ test.describe("폰 구매 요청 (06-14)", () => {
   });
 });
 
+test.afterAll(archiveTempRoles);

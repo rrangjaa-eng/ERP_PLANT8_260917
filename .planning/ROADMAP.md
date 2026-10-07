@@ -853,6 +853,17 @@ Plans:
 
 이 페이즈까지 나가는 돈의 원장은 전부 새 시스템에 있고, Phase 7이 마감·알림·검수를 얹어 인트라넷 패리티를 끝낸다. 관리자 시스템 상태 화면에 더하는 항목은 없다.
 
+### Phase 06.2: 보는 범위·참여자 (view-scope) (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 6
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 06.2 to break down)
+
 ### Phase 7: 공휴일·지급일·마감·알림 + 전 메뉴 권한 검수
 
 **Goal**: 경영관리가 지급 예정일·결재 마감을 공휴일 표 기준의 자동 계산으로 받고, 직원은 마감·기한 알림을 앱과 이메일로 받으며, 인트라넷 패리티가 끝난 이 시점에서 권한·정보 노출·행동 로그를 전 메뉴 기준으로 검수한다

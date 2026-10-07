@@ -5,16 +5,16 @@ current_phase_name: 지급·증빙·법인카드·구매 요청 (경영관리)
 current_plan: 12
 status: executing
 stopped_at: 06 PR-D 게이트 끝 · 시각 기준·ready 전
-last_updated: "2026-10-07T12:06:28.918Z"
+last_updated: "2026-10-07T13:29:16.083Z"
 last_activity: 2026-10-06
 last_activity_desc: Phase 06 execution started
-state_head: 939e1af4240cdc888629736e43b3e74a40945793
+state_head: 4c6c7a7dfaf7a58aa03889c5789ccda50795cf9e
 progress:
-  total_phases: 17
+  total_phases: 18
   completed_phases: 7
   total_plans: 197
   completed_plans: 188
-  percent: 41
+  percent: 39
 ---
 
 # Project State
@@ -34,7 +34,7 @@ Total Plans in Phase: 29
 Status: Ready to execute
 Last activity: 2026-10-06 — Phase 06 execution started
 
-Progress: [████░░░░░░] 41%
+Progress: [████░░░░░░] 39%
 
 ## Performance Metrics
 
@@ -467,6 +467,7 @@ Recent decisions affecting current work:
 - Phase 5 edited: edited fields: depends_on (04.5·04.6 추가 — 실행 순서 04.5 → 04.6 → 5, 사용자 결정 2026-10-02)
 - Phase 7 edited: edited fields: success_criteria (기준 5 관리자 폼 → PanelForm 옆 패널 배치, 04.6-01)
 - Phase 6 edited: edited fields: success_criteria 1 · 3 + 06-01 plan line (06-01 Task 3, one-time user-approved wording)
+- Phase 06.2 inserted after Phase 6: 보는 범위·참여자 — 계급별 보는 범위(전사·본부·팀·본인)·프로젝트 참여자·지출결의 1단계 = 행사 담당 팀장(D6·G34). 06.1(PR #164) 다음 번호
 
 ## Deferred Items
 

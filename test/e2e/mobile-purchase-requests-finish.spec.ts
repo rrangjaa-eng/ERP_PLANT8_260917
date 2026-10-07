@@ -152,6 +152,8 @@ test.describe("폰 구매 요청 (06-14)", () => {
     await panel.getByRole("button", { name: `${ownNumber} 요청 취소` }).click();
     await expect(panel.getByRole("alert")).toHaveText("다른 저장이 먼저 됨 · 새로 고침");
     await expect(panel).toBeVisible();
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow).toBe(0);
     await page.context().close();
   });
 });

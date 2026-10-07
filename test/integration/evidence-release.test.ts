@@ -8,7 +8,7 @@ import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertVisibility } from "@/repositories/permissions";
 import { cancelExpensePayment, completeExpensePayment, getPaymentView, previewPayable } from "@/domain/payments";
 import { confirmEvidence, EVIDENCE_AMOUNT_PAID_MISMATCH, EvidenceAmountError, EvidenceReviewConflictError, waiveEvidence } from "@/domain/evidence-reviews";
-import { rejectDocument } from "@/domain/approvals";
+import { approveDocument, rejectDocument } from "@/domain/approvals";
 import { createExpenseFromLines } from "@/domain/expenses";
 import {
   completeEvidenceUpload,
@@ -548,5 +548,37 @@ describe("완료 프로젝트 (06-11 Task 3 · U-4)", () => {
       if (txOpen) await lockClient.query("ROLLBACK").catch(() => {});
       await lockClient.end();
     }
+  });
+});
+
+describe("잠근 사이 결재 통과 (06-11 검토 S-1 · E-49)", () => {
+  it("작성 중에 만든 의도로 완료 통보를 하는 사이 최종 승인이 커밋되면 프로젝트 행 없이 통과시키지 않고 다시 하기로 거부한다 · 파일 · version · 확인 기록 그대로", async () => {
+    const fx = await setupExpenseProject();
+    const created = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
+    const expenseId = created.created[0]?.expenseId ?? "";
+    const storage = createMemoryStorage();
+    const sha = randomBytes(32).toString("hex");
+    const intent = await requestEvidenceUpload(fx.pm, declare(expenseId, sha), { storage });
+    storage.put(intent.url, { size: 1000, contentType: "image/jpeg", sha256: sha });
+    const submitted = await submitReadyDraft(fx.pm, expenseId);
+    if (submitted.kind !== "submitted") throw new Error("제출 안 됨");
+    const before = { files: await allFileCount(expenseId), row: await docRow(expenseId), review: await reviewOf(expenseId) };
+
+    const refused = await caught(
+      completeEvidenceUpload(fx.pm, { intentId: intent.intentId }, {
+        storage,
+        afterLock: async () => {
+          const first = await approveDocument(fx.lead, { instanceId: submitted.instanceId, expectedVersion: submitted.version });
+          const final = await approveDocument(fx.ceo, { instanceId: submitted.instanceId, expectedVersion: first.version });
+          if (final.status !== "approved") throw new Error("결재 통과 안 됨");
+        },
+      }),
+    );
+
+    expect(refused).toBeInstanceOf(EvidenceUploadRefusedError);
+    expect((refused as EvidenceUploadRefusedError).retry).toBe("restart");
+    expect(await allFileCount(expenseId)).toBe(before.files);
+    expect(await reviewOf(expenseId)).toEqual(before.review);
+    expect((await docRow(expenseId)).version).toBe(before.row.version);
   });
 });

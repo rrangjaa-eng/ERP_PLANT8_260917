@@ -1,15 +1,29 @@
+import { randomBytes, randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { and, eq, isNull } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db, pool } from "@/db/client";
-import { actionLog, approvalInstances, expenseEvidenceReviews, expenses, files } from "@/db/schema";
+import { actionLog, approvalInstances, expenseEvidenceReviews, expenses, files, projects } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertVisibility } from "@/repositories/permissions";
 import { completeExpensePayment, getPaymentView, previewPayable } from "@/domain/payments";
 import { confirmEvidence, EvidenceReviewConflictError, waiveEvidence } from "@/domain/evidence-reviews";
 import { rejectDocument } from "@/domain/approvals";
 import { createExpenseFromLines } from "@/domain/expenses";
-import { removeEvidence, requestEvidenceUpload, voidEvidence } from "@/domain/evidence";
+import {
+  completeEvidenceUpload,
+  EVIDENCE_ADD_DRAFTER_ONLY,
+  EVIDENCE_COMPLETED_PROJECT_LOCKED,
+  EvidenceCheckError,
+  EvidenceLockedError,
+  EvidenceUploadRefusedError,
+  getEvidenceActions,
+  removeEvidence,
+  requestEvidenceUpload,
+  voidEvidence,
+} from "@/domain/evidence";
+import { EVIDENCE_DUPLICATE_HIDDEN, evidenceDuplicateElsewhere } from "@/domain/evidence/upload-checks";
+import { insertFile } from "@/repositories/files";
 import { seoulToday } from "@/lib/dates";
 import { createMemoryStorage } from "./fakes/memory-storage";
 import { deferred, waitForLockWaiter } from "./lock-race";
@@ -344,6 +358,144 @@ describe("무효 ∥ 지급 완료 · 잠금 순서 (06-11 Task 2)", () => {
       await probeClient.query("ROLLBACK").catch(() => {});
       await lockClient.end();
       await probeClient.end();
+    }
+  });
+});
+
+// ── Task 3 — 중복 범위 · 완료 프로젝트 · 완료 판정 잠금 ───────────────────────────────────────────
+
+async function expenseNumber(expenseId: string): Promise<string> {
+  const [row] = await db.select({ number: expenses.number }).from(expenses).where(eq(expenses.id, expenseId));
+  if (!row?.number) throw new Error("문서 번호 없음");
+  return row.number;
+}
+
+async function insertOtherOwnerFile(ownerKind: "corp_card_usage" | "quote_revision", sha256: string, uploadedBy: string): Promise<void> {
+  const id = randomUUID();
+  await insertFile(SYSTEM_VIEWER, { id, ownerKind, ownerId: randomUUID(), objectKey: `evidence/${id}`, sha256, sizeBytes: 1000, contentType: "image/jpeg", originalName: "전표.jpg", uploadedBy }, db);
+}
+
+const declare = (ownerId: string, sha256: string) => ({ ownerKind: "expense", ownerId, size: 1000, contentType: "image/jpeg", sha256, name: "영수증.jpg" });
+
+describe("중복 범위 (06-11 Task 3)", () => {
+  it("중복 범위 — 카드 전표는 같은 종류: 카드 전표에 있는 해시는 번호 없는 문구로 거부 · 차수 승인 증빙에만 있는 해시는 통과 · 읽을 수 있는 지출결의 번호만 싣는다", async () => {
+    const fx = await setupExpenseProject();
+    const storage = createMemoryStorage();
+
+    // 카드 전표(다른 주인 종류이지만 같은 범위) — 번호 없는 문구.
+    const slipSha = randomBytes(32).toString("hex");
+    await insertOtherOwnerFile("corp_card_usage", slipSha, fx.pm.id);
+    const draftA = (await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.split] })).created[0]?.expenseId ?? "";
+    const slip = await caught(requestEvidenceUpload(fx.pm, declare(draftA, slipSha), { storage }));
+    expect(slip).toBeInstanceOf(EvidenceCheckError);
+    expect((slip as Error).message).toBe(EVIDENCE_DUPLICATE_HIDDEN);
+
+    // 차수 승인 증빙은 다른 범위 — 통과.
+    const revisionSha = randomBytes(32).toString("hex");
+    await insertOtherOwnerFile("quote_revision", revisionSha, fx.pm.id);
+    expect((await requestEvidenceUpload(fx.pm, declare(draftA, revisionSha), { storage })).intentId).toBeTruthy();
+
+    // 다른 지출결의 — 올린 사람이 읽을 수 있으면 번호, 없으면 번호 없는 문구.
+    const sharedSha = randomBytes(32).toString("hex");
+    const approved = await approvedExpenseWithEvidence(fx);
+    await attachEvidence(fx.pm, approved.expenseId, storage, { sha256: sharedSha });
+    const seen = await caught(requestEvidenceUpload(fx.pm, declare(draftA, sharedSha), { storage }));
+    expect((seen as Error).message).toBe(evidenceDuplicateElsewhere(await expenseNumber(approved.expenseId)));
+    const otherDraft = (await createExpenseFromLines(fx.otherPm, { lineIds: [fx.lines.noVendor] })).created[0]?.expenseId ?? "";
+    const hidden = await caught(requestEvidenceUpload(fx.otherPm, declare(otherDraft, sharedSha), { storage }));
+    expect((hidden as Error).message).toBe(EVIDENCE_DUPLICATE_HIDDEN);
+  });
+});
+
+describe("완료 프로젝트 (06-11 Task 3 · U-4)", () => {
+  async function completeProject(projectId: string): Promise<void> {
+    await db.update(projects).set({ status: "completed" }).where(eq(projects.id, projectId));
+  }
+
+  it("완료 프로젝트 — 기안자 닫힘 · 권한자 열림: 기안자는 거부 · 잠김 표시, 붙이기 권한자는 통과 · 확인 풀림, 무효는 그대로", async () => {
+    const fx = await setupExpenseProject();
+    const payer = await makePayer();
+    const manager = await makeEvidenceManager("경영지원", { void: true });
+    const doc = await withEvidenceAmount(await approvedExpenseWithEvidence(fx), 12_400_000);
+    await confirmEvidence(payer, { expenseId: doc.expenseId, version: doc.version });
+
+    // 완료가 아닌 프로젝트 — 기안자 열림 · 권한자는 05 그대로 「결재 중 아님 · 증빙은 작성자」.
+    expect((await getEvidenceActions(fx.pm, { ownerKind: "expense", ownerId: doc.expenseId })).canAdd).toBe(true);
+    const notDrafter = await caught(requestEvidenceUpload(manager, declare(doc.expenseId, randomBytes(32).toString("hex")), { storage: createMemoryStorage() }));
+    expect(notDrafter).toBeInstanceOf(EvidenceLockedError);
+    expect((notDrafter as Error).message).toBe(EVIDENCE_ADD_DRAFTER_ONLY);
+
+    await completeProject(fx.projectId);
+
+    const locked = await caught(requestEvidenceUpload(fx.pm, declare(doc.expenseId, randomBytes(32).toString("hex")), { storage: createMemoryStorage() }));
+    expect(locked).toBeInstanceOf(EvidenceLockedError);
+    expect((locked as Error).message).toBe(EVIDENCE_COMPLETED_PROJECT_LOCKED);
+    expect(EVIDENCE_COMPLETED_PROJECT_LOCKED).toBe("완료 프로젝트 · 증빙 잠김");
+    expect(await getEvidenceActions(fx.pm, { ownerKind: "expense", ownerId: doc.expenseId })).toMatchObject({ canAdd: false, completedProjectLocked: true });
+
+    // 붙이기 권한자는 열림 — 훅으로 확인 풀림.
+    expect((await getEvidenceActions(manager, { ownerKind: "expense", ownerId: doc.expenseId })).canAdd).toBe(true);
+    await attachEvidence(manager, doc.expenseId);
+    expect(await reviewOf(doc.expenseId)).toBeNull();
+
+    // 무효 처리(시스템 관리자)는 완료 프로젝트에서도 된다.
+    const [target] = await liveFiles(doc.expenseId);
+    await voidEvidence(manager, { fileId: target?.id ?? "", reason: "다른 건 영수증" });
+    expect(await liveFiles(doc.expenseId)).toHaveLength(1);
+  });
+
+  it("완료 판정은 프로젝트 행 잠금 뒤 — 완료 처리가 프로젝트 행을 쥔 동안 기안자의 완료 통보는 기다렸다가 거부되고 파일 · 확인 기록 · version이 그대로다", async () => {
+    const fx = await setupExpenseProject();
+    const payer = await makePayer();
+    const manager = await makeEvidenceManager("경영지원");
+    const doc = await withEvidenceAmount(await approvedExpenseWithEvidence(fx), 12_400_000);
+    await confirmEvidence(payer, { expenseId: doc.expenseId, version: doc.version });
+    const storage = createMemoryStorage();
+    const sha = randomBytes(32).toString("hex");
+    const intent = await requestEvidenceUpload(fx.pm, declare(doc.expenseId, sha), { storage });
+    storage.put(intent.url, { size: 1000, contentType: "image/jpeg", sha256: sha });
+    const before = { files: await allFileCount(doc.expenseId), row: await docRow(doc.expenseId), review: await reviewOf(doc.expenseId) };
+
+    // 결재 중 문서의 붙이기 권한자 추가는 프로젝트 행을 쥔 Client가 있어도 기다리지 않는다(05 잠금 그대로).
+    const inReview = (await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.split] })).created[0]?.expenseId ?? "";
+    const submitted = await submitReadyDraft(fx.pm, inReview);
+    if (submitted.kind !== "submitted") throw new Error("제출 안 됨");
+
+    const lockClient = new Client({ connectionString: process.env.DATABASE_URL });
+    await lockClient.connect();
+    let txOpen = false;
+    let call: Promise<unknown> | undefined;
+    try {
+      await lockClient.query("BEGIN");
+      txOpen = true;
+      const { rows: pidRows } = await lockClient.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
+      const lockPid = pidRows[0]?.pid;
+      await lockClient.query("SELECT id FROM projects WHERE id = $1 FOR UPDATE", [fx.projectId]);
+      await lockClient.query("UPDATE projects SET status = 'completed' WHERE id = $1", [fx.projectId]);
+
+      const reviewAttach = await Promise.race([attachEvidence(manager, inReview).then(() => "done"), new Promise<string>((resolve) => setTimeout(() => resolve("blocked"), 3000))]);
+      expect(reviewAttach).toBe("done");
+
+      call = caught(completeEvidenceUpload(fx.pm, { intentId: intent.intentId }, { storage }));
+      let blocked = false;
+      for (let attempt = 0; attempt < 40 && !blocked; attempt += 1) {
+        const { rows } = await lockClient.query<{ count: number }>("SELECT count(*)::int AS count FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))", [lockPid]);
+        blocked = (rows[0]?.count ?? 0) > 0;
+        if (!blocked) await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      expect(blocked, "잠금 순서 조건을 만들지 못했다 — 완료 통보가 프로젝트 행에서 막히지 않았다").toBe(true);
+
+      await lockClient.query("COMMIT");
+      txOpen = false;
+      const refused = await call;
+      expect(refused).toBeInstanceOf(EvidenceUploadRefusedError);
+      expect((refused as EvidenceUploadRefusedError).retry).toBe("restart");
+      expect(await allFileCount(doc.expenseId)).toBe(before.files);
+      expect(await docRow(doc.expenseId)).toEqual(before.row);
+      expect(await reviewOf(doc.expenseId)).toEqual(before.review);
+    } finally {
+      if (txOpen) await lockClient.query("ROLLBACK").catch(() => {});
+      await lockClient.end();
     }
   });
 });

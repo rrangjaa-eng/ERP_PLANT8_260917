@@ -1625,6 +1625,21 @@ describe("취소 되돌리기(06-14 — D-609 · Q3 · X-1 · X-2 · N-1 · N-2 
     expect((await statusOf(created.id))?.status).toBe("cancelled");
   });
 
+  it("[I-2 문] 취소된 사이 `온라인구매 협력사` 설정이 바뀌어 그 줄이 지출결의 문이 됨 → `온라인구매 협력사 줄 아님 · 지출결의로` 거부 · 요청 `취소` 그대로", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine);
+    await cancelAs(fx.pm, created.id);
+    await setSettingValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME, "다른 온라인 협력사");
+    const error = await caught(undoAs(fx.pm, created.id));
+    expect(error).toBeInstanceOf(GateBlockedError);
+    expect((error as Error).message).toBe("온라인구매 협력사 줄 아님 · 지출결의로");
+    expect((await statusOf(created.id))?.status).toBe("cancelled");
+    // 설정이 돌아오면 같은 요청이 되살아난다 — 막은 것은 문 하나다.
+    await setSettingValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME, ONLINE_VENDOR);
+    await undoAs(fx.pm, created.id);
+    expect((await statusOf(created.id))?.status).toBe("requested");
+  });
+
   it("취소된 사이 카드 사용이 남은 실행가를 먹음 → `실행가 초과 · 남은 실행가 400,000 · 다른 줄 고르기` 거부 · 경계(공급가 400,000)는 통과", async () => {
     const fx = await purchaseProject();
     const big = await request(fx, fx.onlineLine, 660_000);

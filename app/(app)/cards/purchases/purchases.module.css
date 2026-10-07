@@ -8,6 +8,13 @@
   min-width: 0;
 }
 
+/* 06-08 감사 D-1 — 폰에서 품목 · 예상 금액 · 상태가 한 줄에 서므로 품목 칸 상한을 줄인다(링크 아이콘 44 포함). 긴 글자는 말줄임 + title. */
+@media (max-width: 699.98px) {
+  .itemCell {
+    max-width: 9em;
+  }
+}
+
 .itemText {
   min-width: 0;
   overflow: hidden;

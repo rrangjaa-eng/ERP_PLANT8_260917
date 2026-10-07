@@ -151,7 +151,7 @@ export function PurchaseRequestForm({ entry }: { entry: PurchaseEntry | null }) 
   const linkBlock = !line ? "연결 없음 · 연결 고르기" : undefined;
   // 실행가 초과(Q3) — 고른 줄 DTO의 남은 실행가와 서버 계산 공급가 추정을 견준다. 서버도 잠근 뒤 같은 판정으로 거부한다.
   const overCap = line && line.remainingKrw !== null && supplyKrw !== null && supplyKrw > line.remainingKrw ? `실행가 초과 · 남은 실행가 ${formatKrw(line.remainingKrw)} · ` : undefined;
-  const blockedReason = blankBlock(blanks) ?? linkBlock ?? (overCap ? `${overCap}다른 줄 고르기` : undefined);
+  const blockedReason = blankBlock(blanks) ?? linkBlock ?? (overCap ? (entry ? overCap.replace(/ · $/, "") : `${overCap}다른 줄 고르기`) : undefined);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -197,7 +197,7 @@ export function PurchaseRequestForm({ entry }: { entry: PurchaseEntry | null }) 
         onSubmit={handleSubmit}
         pending={isExecuting}
         blockedReason={showingResult ? undefined : blockedReason}
-        reason={result.serverError ?? lineReason}
+        reason={entry ? result.serverError?.replace(/ · 다른 줄 고르기$/, "") : (result.serverError ?? lineReason)}
         reasonId="purchase-request-form-reason"
       >
         {/* 입력이 시작되면 결과 한 줄 대신 막힘 줄. */}

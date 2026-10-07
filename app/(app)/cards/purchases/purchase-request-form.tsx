@@ -246,7 +246,7 @@ export function PurchaseRequestForm({ entry, team, usdFxRate }: { entry: Purchas
         onSubmit={handleSubmit}
         pending={isExecuting}
         blockedReason={showingResult ? undefined : blockedReason}
-        reason={entry ? result.serverError?.replace(/ · 다른 줄 고르기$/, "") : (result.serverError ?? lineReason)}
+        reason={entry ? result.serverError?.replace(/ · (다른 줄 고르기|카드 사용은 다른 줄)$/, "") : (result.serverError ?? lineReason)}
         reasonId="purchase-request-form-reason"
       >
         {/* 입력이 시작되면 결과 한 줄 대신 막힘 줄. */}

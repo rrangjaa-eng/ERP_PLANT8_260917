@@ -372,7 +372,7 @@ export type CardDualLinkCtx = { side: "card" | "expense"; links: Pick<LineLinks,
 export function cardDualLinkDecision(ctx: CardDualLinkCtx): { allowed: true } | { allowed: false; reason: string } {
   if (ctx.side === "card") {
     const expense = ctx.links.expenses[0];
-    return expense ? { allowed: false, reason: `지출결의 ${expense.number} 연결됨 · 다른 줄 고르기` } : { allowed: true };
+    return expense ? { allowed: false, reason: `지출결의 ${expense.number} 연결됨 · 카드 사용은 다른 줄` } : { allowed: true };
   }
   const cards = ctx.links.cardUsages.length;
   const requests = ctx.links.purchaseRequests?.length ?? 0;

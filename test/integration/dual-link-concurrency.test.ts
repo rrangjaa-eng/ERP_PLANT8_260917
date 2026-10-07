@@ -136,7 +136,7 @@ describe("카드 · 구매 요청 ∥ 지출결의 제출 (D-609)", () => {
     };
   }
 
-  it("제출이 장벽에서 쥠 → 카드 사용 등록이 기다림 → 제출 성공 · 카드 거부(`지출결의 {번호} 연결됨 · 다른 줄 고르기`) · 카드 사용 0", async () => {
+  it("제출이 장벽에서 쥠 → 카드 사용 등록이 기다림 → 제출 성공 · 카드 거부(`지출결의 {번호} 연결됨 · 카드 사용은 다른 줄`) · 카드 사용 0", async () => {
     const fx = await setupExpenseProject();
     const draft = await readyDraft(fx.pm, fx.lines.withVendor);
     const input = await cardInput(fx, fx.lines.withVendor);
@@ -150,11 +150,11 @@ describe("카드 · 구매 요청 ∥ 지출결의 제출 (D-609)", () => {
     );
     expect(submitted?.status).toBe("fulfilled");
     const number = submitted?.status === "fulfilled" ? (submitted.value as { number: string }).number : "";
-    expect(reasonOf(card)).toBe(`지출결의 ${number} 연결됨 · 다른 줄 고르기`);
+    expect(reasonOf(card)).toBe(`지출결의 ${number} 연결됨 · 카드 사용은 다른 줄`);
     expect(await db.select({ id: corpCardUsages.id }).from(corpCardUsages)).toHaveLength(0);
   });
 
-  it("제출이 장벽에서 쥠 → 구매 요청이 기다림 → 제출 성공 · 구매 요청 거부(`지출결의 {번호} 연결됨 · 다른 줄 고르기`) · 구매 요청 0", async () => {
+  it("제출이 장벽에서 쥠 → 구매 요청이 기다림 → 제출 성공 · 구매 요청 거부(`지출결의 {번호} 연결됨 · 카드 사용은 다른 줄`) · 구매 요청 0", async () => {
     const fx = await setupExpenseProject();
     const draft = await readyDraft(fx.pm, fx.lines.withVendor);
     // 구매 요청 사전 조회는 그 줄이 온라인구매 협력사일 때 받고(문 통과), 제출은 설정이 비었을 때 읽는다 — 두 입구가 같은 줄의 잠금을 다툰다.
@@ -171,7 +171,7 @@ describe("카드 · 구매 요청 ∥ 지출결의 제출 (D-609)", () => {
     );
     expect(submitted?.status).toBe("fulfilled");
     const number = submitted?.status === "fulfilled" ? (submitted.value as { number: string }).number : "";
-    expect(reasonOf(request)).toBe(`지출결의 ${number} 연결됨 · 다른 줄 고르기`);
+    expect(reasonOf(request)).toBe(`지출결의 ${number} 연결됨 · 카드 사용은 다른 줄`);
     expect(await db.select({ id: purchaseRequests.id }).from(purchaseRequests)).toHaveLength(0);
   });
 });

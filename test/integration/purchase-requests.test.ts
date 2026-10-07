@@ -173,7 +173,7 @@ describe("반대쪽 지출결의(D-609 · 문 거부)", () => {
     const input = requestInput(fx.lines.withVendor);
     const error = await caught(createPurchaseRequest(fx.pm, input, await precheckPurchaseRequest(fx.pm, input)));
     expect(error).toBeInstanceOf(GateBlockedError);
-    expect((error as Error).message).toBe(`지출결의 ${submitted.number} 연결됨 · 다른 줄 고르기`);
+    expect((error as Error).message).toBe(`지출결의 ${submitted.number} 연결됨 · 카드 사용은 다른 줄`);
     expect(await requestCount()).toBe(0);
 
     await rejectDocument(fx.lead, { instanceId: submitted.instanceId, expectedVersion: submitted.version, reason: "금액 확인" });

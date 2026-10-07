@@ -1614,8 +1614,8 @@ export function rowActionBlock(input: {
 }): RowActionBlock | null {
   if (input.door === "none" || input.door === "no_vendor") return null;
   if (input.branch === "purchase") {
-    const expense = input.links.expenses[0];
-    return expense ? { reason: `지출결의 ${expense.number} 연결됨 · 카드 사용은 다른 줄` } : null;
+    const card = cardDualLinkDecision({ side: "card", links: input.links });
+    return card.allowed ? null : { reason: card.reason };
   }
   if (input.door === "closed") {
     const lock = linePaidLockDecision({ door: input.door, docs: input.paid });
@@ -1652,6 +1652,16 @@ export async function listLineDoors(viewer: Viewer, input: { projectId: string }
     getSettingValue(PURCHASE_ONLINE_VENDOR_NAME),
   ]);
   const docFacts = await listExpenseDocFacts(viewer, [...numbered.values()].flatMap((docs) => docs.map((doc) => doc.id)));
+  // 감사 D-2 — 다음 한 수 `카드 사용 등록`은 오늘 쓸 수 있는 카드가 있는 사람에게만(카드 페이지가 패널을 여는 조건과 같은 함수).
+  // corp-card-usages가 이 모듈을 가져다 쓰므로 런타임 순환을 피해 늦게 불러온다(evidence-reviews → payments 선례).
+  let canRegisterCard: boolean | null = null;
+  const cardRegistrable = async (): Promise<boolean> => {
+    if (canRegisterCard === null) {
+      const { cardOptionsForUsage } = await import("@/domain/corp-card-usages");
+      canRegisterCard = (await cardOptionsForUsage(viewer, seoulToday())).length > 0;
+    }
+    return canRegisterCard;
+  };
   const cells: Record<string, LineDoorCell> = {};
   for (const line of lines) {
     const docs = numbered.get(line.id) ?? [];
@@ -1665,13 +1675,14 @@ export async function listLineDoors(viewer: Viewer, input: { projectId: string }
       links: links.get(line.id) ?? { expenses: [], cardUsages: [], purchaseRequests: [] },
       paid: docs.map((doc) => ({ number: doc.number ?? "", installment: doc.installment, paid: docFacts.get(doc.id)?.paid ?? false })),
     });
+    const shown = blocked?.next && !(await cardRegistrable()) ? { reason: blocked.reason } : blocked;
     cells[line.id] = {
       state: door.state,
       branch,
       ...(branch === "purchase" ? { purchaseHref: `/cards/purchases?new=1&line=${line.id}` } : {}),
       ...(door.state === "open" && draft ? { expenseId: draft.id } : {}),
       ...(door.latest ? { latestId: door.latest.id } : {}),
-      ...(blocked ? { blocked } : {}),
+      ...(shown ? { blocked: shown } : {}),
     };
   }
   return { showColumn: true, tableGateReason: facts.tableGateReason, cells };

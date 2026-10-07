@@ -502,7 +502,19 @@ export function CardUsageForm({
   const linkBlock =
     linkKind === null || (linkKind === "quote_line" && !linkLine) || (linkKind === "out_of_quote" && !linkProject) ? "연결 없음 · 연결 고르기" : undefined;
   // 실행가 초과(Q3) — 고른 줄 DTO의 남은 실행가와 서버 계산 공급가를 견준다. 서버도 잠근 뒤 같은 판정으로 거부한다.
+  // PR #183 I-1: 연결을 바꿀 수 없는 건(구매 완료)은 갈 데 없는 `다른 줄 고르기`를 세우지 않고 서버(담당 PM 갈래)에 맡긴다.
+  // 연결 · 금액 칸이 저장값 그대로인 수정은 공급가가 늘지 않아 상한을 다시 재지 않는다(서버와 같다).
+  const keptAmounts =
+    edit !== null &&
+    linkLine?.id === edit.line?.id &&
+    usedOn === edit.usedOn &&
+    currency === edit.currency &&
+    amountRaw === initialAmount &&
+    (currency === "KRW" || fxRaw === String(initialFx)) &&
+    evidenceTypeCode === edit.evidenceTypeCode;
   const overCap =
+    !linkLocked &&
+    !keptAmounts &&
     linkKind === "quote_line" && linkLine && linkLine.remainingKrw !== null && preview.split && preview.split.supplyKrw > linkLine.remainingKrw
       ? `실행가 초과 · 남은 실행가 ${formatKrw(linkLine.remainingKrw)} · `
       : undefined;

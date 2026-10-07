@@ -83,16 +83,25 @@ const PEOPLE: readonly { key: PersonKey; name: string; roleId: string; team: "de
 const DEMO_EMAILS = PEOPLE.map((person) => `demo-${person.key}@plant8-demo.test`.toLowerCase());
 const DEMO_CARD_LABELS = [named("김민준 법인카드"), named("기획1팀 공용카드")] as const;
 
-// 계좌번호는 넣지 않는다(암호화 키 없음). 사업자번호는 형식만 맞는 가짜.
+// 계좌번호는 넣지 않는다(암호화 키 없음). 사업자번호는 검증 숫자만 맞는 가짜.
 const DEMO_CLIENTS = [
-  { name: "한빛전자", businessNo: "214-86-10231" },
-  { name: "그린웨이 푸드", businessNo: "107-81-52044" },
-  { name: "모아모빌리티", businessNo: "120-87-33518" },
+  { name: "한빛전자", businessNo: "214-86-10232" },
+  { name: "그린웨이 푸드", businessNo: "107-81-52040" },
+  { name: "모아모빌리티", businessNo: "120-87-33510" },
 ] as const;
+// 검증 숫자가 틀렸던 옛 견본 번호(신 → 구) — 스테이징에 남은 옛 행을 재사용 · purge가 알아본다.
+const LEGACY_DEMO_BUSINESS_NO: Record<string, string> = {
+  "214-86-10232": "214-86-10231",
+  "107-81-52040": "107-81-52044",
+  "120-87-33510": "120-87-33518",
+  "211-88-47729": "211-88-47720",
+  "129-86-20918": "129-86-20917",
+  "105-87-66308": "105-87-66302",
+};
 const DEMO_PARTNERS = [
-  { name: "스테이지웍스 (무대)", businessNo: "211-88-47720", accountBank: "국민은행", accountHolder: "스테이지웍스" },
-  { name: "대성프린팅 (인쇄)", businessNo: "129-86-20917", accountBank: "신한은행", accountHolder: "대성프린팅" },
-  { name: "휴먼스태프 (인력)", businessNo: "105-87-66302", accountBank: "우리은행", accountHolder: "휴먼스태프" },
+  { name: "스테이지웍스 (무대)", businessNo: "211-88-47729", accountBank: "국민은행", accountHolder: "스테이지웍스" },
+  { name: "대성프린팅 (인쇄)", businessNo: "129-86-20918", accountBank: "신한은행", accountHolder: "대성프린팅" },
+  { name: "휴먼스태프 (인력)", businessNo: "105-87-66308", accountBank: "우리은행", accountHolder: "휴먼스태프" },
 ] as const;
 
 type LineSpec = { itemName: string; partner: 0 | 1 | 2; subcategory: "stage_construction" | "print_production" | "staffing" | "etc"; quantity: number; unitPrice: number; execution: number };
@@ -252,7 +261,7 @@ async function ensureDemoVendor(input: Parameters<typeof createVendor>[1]): Prom
   const [existing] = await db
     .select({ id: vendors.id, archivedAt: vendors.archivedAt })
     .from(vendors)
-    .where(and(eq(vendors.name, input.name), eq(vendors.businessNo, input.businessNo ?? "")));
+    .where(and(eq(vendors.name, input.name), inArray(vendors.businessNo, [input.businessNo ?? "", LEGACY_DEMO_BUSINESS_NO[input.businessNo ?? ""] ?? ""])));
   if (!existing) return (await createVendor(SYSTEM_VIEWER, input)).vendor.id;
   if (existing.archivedAt) await restore(SYSTEM_VIEWER, "vendor", existing.id);
   return existing.id;
@@ -407,7 +416,9 @@ export async function seedDemoData(): Promise<DemoSeedResult> {
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type KeptRow = { entity: "vendor" | "team" | "org_unit"; id: string };
-const DEMO_VENDOR_KEYS = [...DEMO_CLIENTS, ...DEMO_PARTNERS].map((vendor) => ({ name: named(vendor.name), businessNo: vendor.businessNo }));
+const DEMO_VENDOR_KEYS = [...DEMO_CLIENTS, ...DEMO_PARTNERS].flatMap((vendor) =>
+  [vendor.businessNo, LEGACY_DEMO_BUSINESS_NO[vendor.businessNo] ?? vendor.businessNo].map((businessNo) => ({ name: named(vendor.name), businessNo })),
+);
 
 function isForeignKeyViolation(error: unknown): boolean {
   const cause = (error as { cause?: { code?: unknown } } | null)?.cause;

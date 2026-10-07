@@ -67,6 +67,23 @@ export function businessNoDigits(raw: string | null | undefined): string | null 
   return digits === "" ? null : digits;
 }
 
+// 사업자번호 모양 · 검증 숫자 — 비어 있으면 통과(번호는 필수가 아니다). 국세청 규칙(260907과 같다): 앞 아홉 자리 가중합 + 아홉째×5의 십의 자리.
+export function businessNoProblem(raw: string | null | undefined): string | null {
+  if ((raw ?? "").trim() === "") return null;
+  const digits = businessNoDigits(raw);
+  if (digits === null || digits.length !== 10) return "사업자번호 10자리 아님";
+  const weights = [1, 3, 7, 1, 3, 7, 1, 3, 5];
+  const sum = weights.reduce((acc, weight, i) => acc + Number(digits[i]) * weight, 0) + Math.floor((Number(digits[8]) * 5) / 10);
+  return (10 - (sum % 10)) % 10 === Number(digits[9]) ? null : "사업자번호 검증 숫자 틀림 · 다시 확인";
+}
+
+export class InvalidBusinessNoError extends UserFacingError {}
+
+function assertBusinessNoValid(raw: string | null | undefined): void {
+  const problem = businessNoProblem(raw);
+  if (problem !== null) throw new InvalidBusinessNoError(problem);
+}
+
 const ARCHIVE_MENU = "admin.archive";
 
 function duplicateBusinessNoMessage(existing: DuplicateBusinessNoExisting | null, addSide: VendorSide | null): string {
@@ -379,6 +396,7 @@ export async function createVendor(
   });
   const normalizedName = normalizeVendorName(input.name);
   const visibleFn = deps?.visible ?? defaultVisible;
+  assertBusinessNoValid(input.businessNo);
   await assertBusinessNoFree(viewer, input.businessNo, { wantedKind: input.kind ?? "both", visible: visibleFn, can: canFn });
   const duplicates = await repoFindVendorsByNormalizedName(viewer, normalizedName);
 
@@ -445,7 +463,10 @@ export async function updateVendor(
   const visibleFn = deps?.visible ?? defaultVisible;
   // 저장된 번호에서 숫자가 바뀔 때만 검사한다 — 이미 있는 중복을 둔 채 이름 · 계좌만 고치는 저장은 막지 않는다.
   const numberChanged = businessNoDigits(input.businessNo) !== businessNoDigits(existing.businessNo);
-  if (numberChanged) await assertBusinessNoFree(viewer, input.businessNo, { excludeId: id, visible: visibleFn, can: canFn });
+  if (numberChanged) {
+    assertBusinessNoValid(input.businessNo);
+    await assertBusinessNoFree(viewer, input.businessNo, { excludeId: id, visible: visibleFn, can: canFn });
+  }
 
   const updatePayload: Parameters<typeof repoUpdateVendor>[2] = {
     name: input.name,

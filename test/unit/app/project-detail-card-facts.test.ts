@@ -34,6 +34,7 @@ const lineCardSideFacts = vi.fn<(...args: unknown[]) => Promise<unknown>>();
 vi.mock("@/domain/corp-card-usages/link-targets", () => ({ lineCardSideFacts: (...args: unknown[]) => lineCardSideFacts(...args) }));
 vi.mock("@/domain/quotes/revisions", () => ({ listRevisionSummaries: () => Promise.resolve([]) }));
 vi.mock("@/domain/revenue", () => ({ listRevenue: () => Promise.resolve({}) }));
+vi.mock("@/domain/issue-requests", () => ({ listProjectIssueRequests: () => Promise.resolve([]) }));
 vi.mock("@/domain/money/currency", () => ({ recentFxRate: () => Promise.resolve(null) }));
 vi.mock("@/domain/settings/registry", () => ({ getSettingValue: () => Promise.resolve(100) }));
 vi.mock("@/domain/settings/keys", () => ({ QUOTE_LINE_MAX_PER_REVISION: { key: "quote.line_max_per_revision" } }));

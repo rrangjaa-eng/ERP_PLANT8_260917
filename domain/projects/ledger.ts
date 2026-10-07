@@ -10,6 +10,14 @@ import {
   type SaveQuoteLinesResult,
 } from "@/domain/quotes/lines";
 import { saveRevenueInTx, listRevenue, revenueWriteRights, type SaveRevenueInput, type RevenueDto } from "@/domain/revenue";
+import {
+  assertIssueRequestWriteRight,
+  linkIssueRequestToEntry,
+  listProjectIssueRequests,
+  saveIssueRequestRows,
+  type IssueRequestDto,
+  type IssueRequestWriteRow,
+} from "@/domain/issue-requests";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { findQuoteRevisionById } from "@/repositories/quote-revisions";
 import { lineCardSideFacts } from "@/domain/corp-card-usages/link-targets";
@@ -74,6 +82,8 @@ export type SaveProjectLedgerInput = {
   seenStatus: ProjectStatus;
   quoteLines?: { revisionId: string; rows: QuoteLineWriteRow[]; order?: string[]; archivedLineIds?: string[] };
   revenue?: SaveRevenueInput;
+  // 06-18(D-610) — 발행 요청 줄. 프로젝트 쓰기 권한자(PM)가 싣는다. 발행 줄에 잇기는 revenue.issuedEntries[].fromIssueRequestId다.
+  issueRequests?: IssueRequestWriteRow[];
   period?: PeriodInput;
   preEstimate?: PreEstimateInput;
 };
@@ -81,6 +91,8 @@ export type SaveProjectLedgerInput = {
 export type SaveProjectLedgerResult = {
   quoteLines: SaveQuoteLinesResult | null;
   revenue: RevenueDto | null;
+  // 06-18 — 이번 저장이 요청 줄을 쓰거나 잇었으면 커밋 뒤 다시 읽은 표(그 밖에는 null).
+  issueRequests: IssueRequestDto[] | null;
   // preEstimate는 이번 저장에 실어 보낸(권리·노출을 통과한) 경우에만 싣는다.
   project: { status: string; startDate: string | null; endDate: string | null; preEstimate?: Money };
 };
@@ -135,7 +147,7 @@ export async function saveProjectLedger(
   // 아니라 같은 문구로 끝나게 한다(tx-safety.test.ts (c)). 커밋 뒤 단계(환율 기억·투영·스냅샷)는
   // 씌우지 않는다 — 이미 저장됐는데 「다시 저장」을 시키면 새 줄이 두 번 들어간다
   // (tx-safety.test.ts (d)).
-  const { quoteLinesWritten, revenueFxToRemember, project } = await withTimeoutConversion(async () => {
+  const { quoteLinesWritten, revenueFxToRemember, linkedRequests, project } = await withTimeoutConversion(async () => {
     // 볼 수 없는 프로젝트(보기 권한·범위 밖, 권한 없는 보관 프로젝트)에는 쓰지 않는다 — 조회
     // 화면(findProject)과 같은 조건이다(/cso 14b1ae15). 04-22(A-13): findProject는 풀에서 자동
     // 정산을 따로 커밋하므로 부르지 않는다 — 판정은 트랜잭션 안 잠금 읽기가 한다.
@@ -163,6 +175,8 @@ export async function saveProjectLedger(
     const preparedQuoteLines = input.quoteLines ? await prepareQuoteLineSave(viewer, input.quoteLines.revisionId) : null;
     // 04-41(B §1) — 매출 줄 쓰기 권한도 잠그기 전에 읽는다(잠근 트랜잭션 안 풀 호출 금지).
     const revenueRights = input.revenue ? await revenueWriteRights(viewer) : undefined;
+    // 06-18 — 발행 요청 쓰기 권리(프로젝트 쓰기)도 잠그기 전에 읽는다. 없으면 트랜잭션을 열지 않고 거부한다.
+    if (input.issueRequests && input.issueRequests.length > 0) await assertIssueRequestWriteRight(viewer);
 
     // ENG-D3 ①: 기간 권리의 사실은 트랜잭션 전에 읽는다. 총 매출 예상가도 같은 권리(periodEditRights —
     // DR-37)라 기간 없이 총 매출 예상가만 실린 저장도 같은 사실과 quote.amount 노출을 여기서 읽는다(04-44).
@@ -345,10 +359,22 @@ export async function saveProjectLedger(
               { now, recordAction },
             )
           : null;
+      // 06-18 — 요청 줄 저장은 잠근 프로젝트 행의 상태로 판정한다(새 조회 없음).
+      if (input.issueRequests) {
+        await saveIssueRequestRows(viewer, projectId, input.issueRequests, { lockedStatus: locked.status, recordAction }, tx);
+      }
       const revenueFxToRemember = input.revenue && revenueRights
         ? await saveRevenueInTx(viewer, projectId, input.revenue, { recordAction, rights: revenueRights }, tx)
         : [];
+      // 06-18 — 새 발행 줄(화면 uuid + isNew)이 실은 fromIssueRequestId마다 같은 tx로 요청을 잇는다. 거부되면 위 발행 줄 INSERT도 되돌아간다.
+      let linkedRequests = 0;
+      for (const [rowIndex, row] of (input.revenue?.issuedEntries ?? []).entries()) {
+        if (!row.isNew || !row.id || !row.fromIssueRequestId) continue;
+        await linkIssueRequestToEntry(viewer, row.fromIssueRequestId, row.id, { projectId, rowIndex, recordAction }, tx);
+        linkedRequests += 1;
+      }
       return {
+        linkedRequests,
         quoteLinesWritten,
         revenueFxToRemember,
         project: {
@@ -374,6 +400,7 @@ export async function saveProjectLedger(
   // 트랜잭션 커밋 뒤 스냅샷을 새로 읽는다 — saveRevenue가 tx 안에서 커밋
   // 전 listRevenue를 부르면 자기 자신의 쓰기를 보지 못한다(격리).
   const revenueResult = input.revenue ? await listRevenue(viewer, projectId) : null;
+  const issueRequestsResult = input.issueRequests || linkedRequests > 0 ? await listProjectIssueRequests(viewer, projectId) : null;
 
   // 06-13(N-3) — 응답 줄도 상세 페이지 읽기와 같이 카드 쪽 사실(보관 대신 취소 · 실행가 초과)을 싣는다. 읽기가 실패해도 저장은 이미 끝났다(사실 없이 — 페이지와 같은 결).
   const cardSideFacts =
@@ -385,5 +412,5 @@ export async function saveProjectLedger(
       : undefined;
   const quoteLinesResult = quoteLinesWritten ? await finishQuoteLineSave(viewer, quoteLinesWritten, cardSideFacts) : null;
 
-  return { quoteLines: quoteLinesResult, revenue: revenueResult, project };
+  return { quoteLines: quoteLinesResult, revenue: revenueResult, issueRequests: issueRequestsResult, project };
 }

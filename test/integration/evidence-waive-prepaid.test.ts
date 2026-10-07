@@ -589,3 +589,39 @@ describe("증빙 면제 (06-10)", () => {
     expect(await waiveLogs(doc.expenseId)).toHaveLength(1);
   }, 20_000);
 });
+
+// PR #183 /review B-1 — 사용자 결정(10/7 11:04 「지급액과 같을 때만」): 지급 뒤 빈 증빙 금액은 규칙 종류마다 지급 때의 세전 금액(증빙 금액과
+// 같은 기준)과 같을 때만 받는다. 부가세 · 원천징수 · 세금 없음 세 갈래 — 선결제 지급(공급가 12,400,000 기준) → 증빙 첨부 → 확인.
+describe("[183 /review B-1] 선결제 지급 뒤 빈 증빙 금액 확인 — 규칙 종류마다", () => {
+  async function paidPrepaid(evidenceType: string) {
+    const fx = await setupExpenseProject();
+    const expenseId = await lineDraft(fx);
+    await save(fx, expenseId, { prepaid: true, prepaidReason: "행사장 선입금 요구", evidenceType });
+    const submitted = await submitExpense(fx.pm, { expenseId, expectedVersion: (await expenseRow(expenseId)).version });
+    if (submitted.kind !== "submitted") throw new Error("제출 안 됨");
+    await approveBoth(fx, submitted.instanceId, submitted.version);
+    const manager = await payer();
+    const preview = await previewPayable(manager, { expenseId, payDate: seoulToday() });
+    if (preview.payableKrw === undefined || preview.payableKrw === null) throw new Error("지급 총액 없음");
+    await completeExpensePayment(manager, { expenseId, expectedPayableKrw: preview.payableKrw, version: (await expenseRow(expenseId)).version });
+    await attachEvidence(fx.pm, expenseId);
+    const row = await expenseRow(expenseId);
+    expect(row.evidenceAmount).toBeNull();
+    return { manager, expenseId, version: row.version, supplyKrw: row.supplyAmountKrw ?? 0 };
+  }
+
+  it.each([
+    ["부가세(세금계산서)", "tax_invoice"],
+    ["원천징수(사업소득 3.3%)", "business_income"],
+    ["세금 없음(계산서)", "invoice"],
+  ])("%s — 지급 때 세전 금액과 다른 값은 거부 · 같은 값은 확인됨", async (_label, evidenceType) => {
+    const { manager, expenseId, version, supplyKrw } = await paidPrepaid(evidenceType);
+    expect(supplyKrw).toBe(12_400_000);
+    const mismatch = await confirmEvidence(manager, { expenseId, version, correctedAmountKrw: supplyKrw - 1 }).catch((error: unknown) => error);
+    expect(mismatch).toBeInstanceOf(EvidenceReviewConflictError);
+    expect((mismatch as Error).message).toBe(EVIDENCE_AMOUNT_PAID_MISMATCH);
+    const result = await confirmEvidence(manager, { expenseId, version, correctedAmountKrw: supplyKrw });
+    expect(result.evidenceStatus).toBe("확인됨");
+    expect((await expenseRow(expenseId)).evidenceAmount).toBe(supplyKrw);
+  });
+});

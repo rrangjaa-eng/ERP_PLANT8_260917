@@ -241,6 +241,28 @@ describe("증빙 무효 훅 (06-11 Task 2)", () => {
     expect((await docRow(doc.expenseId)).evidenceAmount).toBe(grossSupplyKrw);
   });
 
+  it("[183 B-1] 원천징수(사업소득) — 증빙 금액 10,000,000으로 지급 → 마지막 증빙 무효 → 새 증빙: 9,999,999 거부 · 10,000,000 확인됨", async () => {
+    const fx = await setupExpenseProject();
+    const payer = await makePayer();
+    const voider = await makeEvidenceManager("증빙무효", { attach: false, void: true });
+    const doc = await withEvidenceAmount(await approvedExpenseWithEvidence(fx), 10_000_000);
+    await db.update(expenses).set({ evidenceType: "business_income" }).where(eq(expenses.id, doc.expenseId));
+    const confirmed = await confirmEvidence(payer, { expenseId: doc.expenseId, version: doc.version });
+    const preview = await previewPayable(payer, { expenseId: doc.expenseId, payDate: seoulToday() });
+    if (preview.payableKrw === null || preview.payableKrw === undefined) throw new Error("지급 총액 없음");
+    await completeExpensePayment(payer, { expenseId: doc.expenseId, expectedPayableKrw: preview.payableKrw, version: confirmed.version });
+    const [file] = await liveFiles(doc.expenseId);
+    await voidEvidence(voider, { fileId: file?.id ?? "", reason: "다른 건 영수증" });
+    await attachEvidence(fx.pm, doc.expenseId);
+    const version = (await docRow(doc.expenseId)).version;
+
+    const mismatch = await caught(confirmEvidence(payer, { expenseId: doc.expenseId, version, correctedAmountKrw: 9_999_999 }));
+    expect((mismatch as Error).message).toBe(EVIDENCE_AMOUNT_PAID_MISMATCH);
+    const result = await confirmEvidence(payer, { expenseId: doc.expenseId, version, correctedAmountKrw: 10_000_000 });
+    expect(result.evidenceStatus).toBe("확인됨");
+    expect((await docRow(doc.expenseId)).evidenceAmount).toBe(10_000_000);
+  });
+
   it("회귀(검토 I-1 P2) — 지급 취소 뒤 새 증빙을 붙여도 옛 금액으로 금액 입력 없이 확인되지 않는다", async () => {
     const { fx, payer, doc, paidVersion } = await paidDocWithLastEvidenceVoided();
     const voidedVersion = (await docRow(doc.expenseId)).version;

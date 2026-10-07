@@ -135,6 +135,8 @@ E2E 전역 설정: 이 플랜 E2E는 `온라인구매 협력사` 설정을 바�
 | E2E `CI=true` mobile-375: mobile-purchase-requests-finish(2건) · mobile-card-usage-320 | 5 통과 · 실패 0 |
 | 돌연변이 | 되돌리기 문 게이트 줄 삭제 → [I-2 문] 1건만 빨강(복원 확인) |
 
+- PR #183 합본 게이트(wt/06-gate1 · erp_g1_test) /review m-4: 본인 취소가 거부되면 패널 · 시트를 닫지 않고 버튼 옆에 거부 한 줄(role=alert · 기존 `.undoFailed`), `.panelCancel` 줄 바꿈 — 2bcf3774(d75455a5 RED · 2bd7989d) · E2E 「[183 m-4]」 375 가로 넘침 0. 캡처 대상: 폰 `/cards/purchases` S13 패널 본인 `요청 취소` 거부 상태.
+
 ## 260907 대조 (표만 — 구현 없음)
 
 | 항목 | 260907 file:line | 우리 file:line | 분류 |

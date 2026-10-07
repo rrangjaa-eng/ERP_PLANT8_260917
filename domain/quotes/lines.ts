@@ -72,7 +72,7 @@ import { listCodeItems as repoListCodeItems } from "@/repositories/code-tables";
 import { QUOTE_SUBCATEGORY_TABLE_KEY } from "@/domain/projects/references";
 import { getSettingValue } from "@/domain/settings/registry";
 import { EVIDENCE_PREPAID_DUE_DAYS, QUOTE_LINE_MAX_PER_REVISION } from "@/domain/settings/keys";
-import { hasEvidence } from "@/domain/evidence/has-evidence";
+import { ownersWithEvidence } from "@/domain/evidence/has-evidence";
 import { prepaidDueInfo } from "@/domain/evidence-reviews/prepaid";
 import { seoulToday } from "@/lib/dates";
 
@@ -341,14 +341,16 @@ async function loadLinkedDocumentsByLine(viewer: Viewer, revisionId: string, tx?
   const ids = numbered.map((doc) => doc.id);
   const facts = tx ? await repoFindExpenseDocFacts(viewer, ids, tx) : await repoListExpenseDocFacts(viewer, ids);
   const docsByLineId = new Map<string, LinkedDocument[]>();
-  // 한 tx(한 연결)에 동시 질의를 걸지 않게 문서마다 차례로 읽는다(06-07 I-5).
+  // 증빙 유무는 결재 중 · 통과 · 면제 아닌 문서만 한 쿼리로 묶어 읽는다(PR #183 m-3 — 문서마다 읽던 N+1, 한 tx 동시 질의 없음 — 06-07 I-5).
+  const evidenceIds = numbered.filter((doc) => IN_FLIGHT_APPROVAL.has(doc.approvalStatus ?? "") && !(facts.get(doc.id)?.waived ?? false)).map((doc) => doc.id);
+  const withEvidence = await ownersWithEvidence(viewer, { ownerKind: EXPENSE_OWNER_KIND, ownerIds: evidenceIds }, tx);
   for (const doc of numbered) {
     const fact = facts.get(doc.id);
     const paid = fact?.paid ?? false;
     const waived = fact?.waived ?? false;
     const inFlight = IN_FLIGHT_APPROVAL.has(doc.approvalStatus ?? "");
-    // O-14: 결재 중 · 통과 · 지급 뒤 어느 쪽이든 증빙이 없으면(면제 제외 · 선결제 포함 · 증빙 필수 설정과 무관) 증빙 없음 — C5 hasEvidence 한 함수.
-    const evidence = inFlight && !waived ? await hasEvidence(viewer, { ownerKind: EXPENSE_OWNER_KIND, ownerId: doc.id }, tx) : true;
+    // O-14: 결재 중 · 통과 · 지급 뒤 어느 쪽이든 증빙이 없으면(면제 제외 · 선결제 포함 · 증빙 필수 설정과 무관) 증빙 없음 — C5 증빙 유무 묶음 판정(ownersWithEvidence).
+    const evidence = inFlight && !waived ? withEvidence.has(doc.id) : true;
     const status: QuoteLineLinkedStatus | null =
       doc.approvalStatus === "rejected" ? "rejected" : !inFlight ? null : !evidence ? "evidence_missing" : doc.approvalStatus === "approved" && paid ? "paid" : "active";
     const docs = docsByLineId.get(doc.quoteLineId) ?? [];

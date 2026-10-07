@@ -167,6 +167,8 @@ risk: money 플랜 — Opus 독립 검토 1명이 볼 자리: `completePurchaseR
 - E2E CI=true desktop `purchase-requests` · `card-proxy` · `card-usage` · `card-usage-panel-width` 52 통과 · 0 실패(18 skipped = visual), mobile-375 `--no-deps` `mobile-card-usage-320` · `mobile-corp-cards` 7/7, `card-proxy.spec.ts` `--workers=2` 3회 연속 14/14 · 14/14 · 14/14
 - 임시 `next.config.ts` `turbopack.root`는 매번 되돌림(커밋 없음)
 
+- PR #183 합본 게이트(wt/06-gate1 · erp_g1_test) /cso CSO-1: 구매 건 수정은 저장된 사용한 사람(요청자) 고정 · 팀 비용 팀 = 그 사람 사용일 소속 · 다른 사용한 사람을 보내면 거부 · 편집 DTO choosesUser 거짓 — 3156da81(0e530c1d RED) · 돌연변이 1. /review I-1: 연결 그대로 · 공급가가 늘지 않는 수정은 상한 재검사 없음, 늘리면 구매 건은 담당 PM 갈래 문구 — 2b61c7e8 · 돌연변이 2, 화면은 연결 고정 건에 `다른 줄 고르기` 막힘을 세우지 않음 — 783fdd11 · E2E 「[183 I-1]」. 캡처 대상: `/cards?editId=<완료 프로젝트 settled 초과 구매 건>`(막힘 줄 없음 · 1차 활성).
+
 ### 캡처 · GPT 검사 대상 경로(검토 반영분)
 - `/cards/purchases`(구매 권한자, 폰 320 · 375 — 행동 칸 없음 · 행 탭 → S13 / 구매 완료 · 취소 행 탭 → 행 시트, `전체` 보기 + 외화 요청 + 구매 완료 행이 함께 있을 때 넘침 0 · 품목 말줄임 폭)
 - `/cards/purchases?status=전체` → 구매 완료 → `?done=`(처리한 행 + 나머지 행 · 다음 `신청됨` 행 포커스, PC와 폰)

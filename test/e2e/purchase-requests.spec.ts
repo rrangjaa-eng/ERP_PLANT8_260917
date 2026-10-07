@@ -17,6 +17,9 @@ import { seoulToday } from "@/lib/dates";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
 import { E2E_ONLINE_VENDOR_NAME, enableOnlineVendorSetting } from "./online-vendor";
+import { createExpenseFromLines } from "@/domain/expenses";
+import { setupExpenseE2E } from "./expense-fixture";
+import { submitReadyDraft } from "../integration/fixtures/expenses";
 
 // 06-08(EXP-10 · UI-SPEC S11 · S12): 구매 요청 신청 — 온라인구매 견적 줄 → 옆 패널 → 저장 → 뒤 목록 첫 줄.
 // 사람 · 팀 · 프로젝트 · 줄은 도메인 함수로 만든다(스펙마다 전용 본부 · 팀). 온라인구매 협력사 설정은 전역 한 칸이라
@@ -544,6 +547,71 @@ test.describe("구매 완료 (06-12)", () => {
     await expect(groups.filter({ hasText: `처음카드-${suffix}` })).toHaveCount(0);
     const [stored] = await db.select({ corpCardId: corpCardUsages.corpCardId }).from(corpCardUsages).where(eq(corpCardUsages.id, done.usageId));
     expect(stored?.corpCardId).not.toBe(first.id);
+    await page.context().close();
+  });
+});
+
+// ── PR #183 검토 반영(/review I-1 · m-1) ─────────────────────────────────────
+
+test.describe("PR #183 검토 반영", () => {
+  test("[183 m-1] 진입 줄(`&line=`)에 지출결의가 이어져 서버가 거부 → 패널 reason은 `지출결의 {번호} 연결됨`만 · 꼬리 `카드 사용은 다른 줄` 없음", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.closed.id] });
+    const submitted = await submitReadyDraft(fx.pm.viewer, created.created[0]?.expenseId ?? "");
+    if (submitted.kind !== "submitted") throw new Error("제출되지 않음");
+    // 제출 뒤 그 줄의 거래처를 온라인구매 협력사로 바꾼다 — 구매 요청 문이 열리고 반대쪽 지출결의가 남는다(경합과 같은 상태).
+    await enableOnlineVendorSetting();
+    const online = await insertVendor(SYSTEM_VIEWER, { name: E2E_ONLINE_VENDOR_NAME, normalizedName: E2E_ONLINE_VENDOR_NAME.toLowerCase(), defaultEvidenceType: "tax_invoice" });
+    await db.update(quoteLines).set({ vendorId: online.id }).where(eq(quoteLines.id, fx.lines.closed.id));
+
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await page.goto(`/cards/purchases?new=1&line=${fx.lines.closed.id}`);
+    const sheet = panel(page);
+    const item = sheet.getByLabel("품목");
+    await waitForHydration(item);
+    await item.fill("이중 연결 물건");
+    const amount = sheet.getByLabel("예상 금액");
+    await amount.fill("55000");
+    await amount.press("Control+Enter");
+    await expect(sheet.getByText(`지출결의 ${submitted.number} 연결됨`, { exact: true })).toBeVisible();
+    await expect(sheet.getByText(/카드 사용은 다른 줄/)).toHaveCount(0);
+    await page.context().close();
+  });
+
+  test("[183 I-1] 완료 프로젝트 · 실행가 초과(settled) 구매 건 수정 → `다른 줄 고르기` 막힘 없음 · 메모만 고쳐 저장 → 닫힘", async ({ browser, baseURL }) => {
+    const requester = await makeRequester();
+    const target = await seedTarget(requester);
+    const number = await requestOn(requester, target.onlineLineId, `초과 물건-${randomUUID().slice(0, 6)}`, 110_000);
+    const buyer = await makePurchaser();
+    if (!buyer.viewer.roleId) throw new Error("계급 없음");
+    await upsertPermission(SYSTEM_VIEWER, { roleId: buyer.viewer.roleId, menu: "cards.proxy", action: "write", allowed: true });
+    const suffix = randomUUID().slice(0, 6);
+    const card = await createCorpCard(SYSTEM_VIEWER, { issuer: `공용사-${suffix}`, numberLast4: "4405", label: `초과카드-${suffix}`, kind: "shared" });
+    const [requested] = await db.select({ id: purchaseRequests.id, version: purchaseRequests.version }).from(purchaseRequests).where(eq(purchaseRequests.number, number));
+    if (!requested || !card.id) throw new Error("요청 · 카드 없음");
+    await db.update(projects).set({ status: "completed" }).where(eq(projects.id, target.projectId));
+    // 계산서(세금 없음) 1,100,000 — 공급가 1,100,000 > 실행가 1,000,000 → settled 초과 100,000.
+    const input = { requestId: requested.id, version: requested.version, corpCardId: card.id, usedOn: seoulToday(), merchantVendorId: null, total: { currency: "KRW" as const, amount: 1_100_000, fxRate: 1 }, evidenceTypeCode: "invoice", memo: null };
+    const done = await completePurchaseRequest(buyer.viewer, input, await precheckPurchaseCompletion(buyer.viewer, input));
+    expect(done.capOver).toBe(100_000);
+
+    const page = await loginPage(browser, baseURL, buyer);
+    await page.goto("/cards");
+    const edit = page.getByRole("row").filter({ hasText: `구매 요청 ${number}` }).getByRole("link", { name: /수정$/ });
+    await waitForHydration(edit);
+    await edit.click();
+    const sheet = page.getByRole("dialog", { name: "카드 사용 수정" });
+    const memo = sheet.getByLabel("메모");
+    await waitForHydration(memo);
+    // 서버 계산 한 줄(열자마자 받는다)이 온 뒤에 막힘 판정을 본다.
+    await expect(sheet.getByText("공급가 1,100,000 · 규칙 없음", { exact: true })).toBeVisible();
+    await memo.fill("증빙 메모");
+    await expect(sheet.getByText("다른 줄 고르기")).toHaveCount(0);
+    await expect(sheet.getByRole("button", { name: /^카드 사용 저장/ })).not.toHaveAttribute("aria-disabled", "true");
+    await memo.press("Control+Enter");
+    await expect(sheet).toHaveCount(0);
+    const [stored] = await db.select({ memo: corpCardUsages.memo, supplyKrw: corpCardUsages.supplyKrw }).from(corpCardUsages).where(eq(corpCardUsages.id, done.usageId));
+    expect(stored).toEqual({ memo: "증빙 메모", supplyKrw: 1_100_000 });
     await page.context().close();
   });
 });

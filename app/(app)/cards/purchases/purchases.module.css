@@ -52,5 +52,9 @@
   .panelCancel {
     display: inline-flex;
     flex: none;
+    /* PR #183 m-4 — 본인 취소 거부 한 줄이 버튼 옆에 서면 패널 폭 안에서 줄을 바꾼다(가로 넘침 0). */
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    max-width: 100%;
   }
 }

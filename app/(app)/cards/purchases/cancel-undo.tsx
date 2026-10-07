@@ -33,7 +33,8 @@ type CancelUndoValue = {
   pendingId: string | null;
   line: ResultLine | null;
   shown: number;
-  cancelOwn: (target: { id: string; version: number; number: string }) => Promise<void>;
+  /** 실패면 그 글자(결과 줄과 같다), 성공이면 null. */
+  cancelOwn: (target: { id: string; version: number; number: string }) => Promise<string | null>;
   undo: (cancelled: Cancelled) => void;
   /** 되돌려 다시 그려질 행 — 목록이 그 행 `요청 취소`(폰은 행 탭 자리)로 포커스를 옮기고 표식을 지운다(06-09 `focusId` 선례, DOM D-3a). */
   focusId: string | null;
@@ -89,9 +90,11 @@ export function PurchaseCancelUndo({ messages, children }: { messages: CancelRea
         setLine({ kind: "cancelled", cancelled: { id: target.id, number: outcome.data.number, version: outcome.data.version }, retryText: null });
         setShown((count) => count + 1);
         router.refresh();
-        return;
+        return null;
       }
-      setLine({ kind: "failed", text: outcome?.serverError ?? FAILED_REQUEST, focus: false });
+      const text = outcome?.serverError ?? FAILED_REQUEST;
+      setLine({ kind: "failed", text, focus: false });
+      return text;
     },
     [router],
   );
@@ -163,10 +166,12 @@ export type PurchaseCancelTarget = {
 };
 
 // 행 `요청 취소`(RowAction danger — 맨 끝 · 위험 색). 접근 이름 `{번호} 요청 취소`.
-// `onDone`은 요청이 끝난 뒤(성공 · 실패 모두 — 결과는 결과 줄이 말한다) 호출부가 그 자리의 모달(시트 · 패널)을 닫는 데 쓴다.
+// `onDone`은 요청이 끝난 뒤 호출부가 그 자리의 모달(시트 · 패널)을 닫는 데 쓴다. 본인 취소가 거부되면(PR #183 m-4) 닫지 않고
+// 그 모달 안 버튼 옆에 거부 한 줄 — 뒤 결과 줄은 모달에 가려 있다. 모달 밖(PC 행)은 결과 줄이 말한다.
 export function PurchaseCancelButton({ target, onDone }: { target: PurchaseCancelTarget; onDone?: () => void }) {
   const { pendingId, cancelOwn } = useCancelUndo();
   const [open, setOpen] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
   const label = (
     <>
       {/* 접근 이름 `{번호} 요청 취소` — 번호만 따로 읽히는 글자를 두지 않는다(목록 번호 칸과 같은 글자가 둘이 되지 않게). */}
@@ -176,15 +181,26 @@ export function PurchaseCancelButton({ target, onDone }: { target: PurchaseCance
   );
   if (target.branch === "own") {
     return (
-      <RowAction
-        danger
-        pending={pendingId === target.id}
-        onClick={() => {
-          void cancelOwn(target).then(onDone);
-        }}
-      >
-        {label}
-      </RowAction>
+      <>
+        <RowAction
+          danger
+          pending={pendingId === target.id}
+          onClick={() => {
+            setFailure(null);
+            void cancelOwn(target).then((failed) => {
+              if (failed === null) onDone?.();
+              else if (onDone) setFailure(failed);
+            });
+          }}
+        >
+          {label}
+        </RowAction>
+        {failure ? (
+          <span role="alert" className={styles.undoFailed}>
+            {failure}
+          </span>
+        ) : null}
+      </>
     );
   }
   return (
@@ -297,7 +313,7 @@ function PurchaseCancelDialog({ target, open, onClose, onDone }: { target: Purch
 }
 
 // S13 패널(폰) 안 `요청 취소` — 폰은 행동 칸이 숨고 구매 권한자의 `신청됨` 행 탭이 S13을 열어서(06-12) 취소 길이 여기뿐이다(DOM D-1).
-// 요청이 끝나면 패널을 닫는다: 본인 요청은 결과 줄 `되돌리기`로 포커스(패널이 사라진 뒤), 남의 요청(사유 창)은 화면 제목으로.
+// 요청이 성공하면 패널을 닫는다(거부면 열어 둔 채 버튼 옆 한 줄): 본인 요청은 결과 줄 `되돌리기`로 포커스(패널이 사라진 뒤), 남의 요청(사유 창)은 화면 제목으로.
 export function PurchaseCancelPanelAction({ target }: { target: PurchaseCancelTarget }) {
   const panel = usePanel();
   const { focusUndo } = useCancelUndo();

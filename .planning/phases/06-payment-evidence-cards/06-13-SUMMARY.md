@@ -180,6 +180,8 @@ D-1 E2E 단언 기준 변경: 처음 RED 단언 「항목 열 ≥ 행동 열」�
 
 검증(이번 반영, 전부 erp_e0613_test · 무거운 명령 flock): 통합 7 files(quote-line-links · purchase-requests · corp-card-usages · dual-link-concurrency · expense-approval-lifecycle · expense-close · expense-submit-concurrency) 191 passed / 0 failed · 단위 5 files(rules-card-dual-link · import-cycles · rules-line-paid-lock · line-status-word · restore-edits) 57 passed · lint rc=0 · typecheck rc=0 · E2E `CI=true` quote-line-status · card-usage · purchase-requests 38 passed / 0 failed / 18 skipped(visual 프로젝트). 임시 `turbopack.root`는 되돌림(커밋 안 함).
 
+PR #183 합본 게이트(wt/06-gate1 · erp_g1_test) /review m-3: 견적 줄 상태 파생의 문서별 hasEvidence(N+1)를 `ownersWithEvidence`(tx 인자 추가) 한 쿼리로 — 600d54db · quote-line-links · quote-lines 93/93 · 돌연변이 1. 일괄 지급 보임 판정(payments/targets.ts 행마다 canSeeExpense)은 범위 묶음 리포지토리가 필요해 남김.
+
 ## Deviations from Plan
 
 ### Auto-fixed Issues

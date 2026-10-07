@@ -223,6 +223,8 @@ C4(`evidenceTypeInactive` · `paymentMethodInactive`)는 있었다 — 선결제
 - 캡처 대상 추가: `/expenses/{작성 중 id}` 증빙 묶음 칸 순서(첨부 → 선결제 → 사유 → 증빙 금액 → 증빙일) · 지급된 선결제 문서 면제 뒤 포커스. O-7 정정: 면제 2행은 `{이름} {MM-DD} · {사유}`(코드 · UI-SPEC과 같음).
 - 검증: 통합 5파일(evidence-waive-prepaid · evidence-reviews · expense-payments-concurrency · expense-team-attribution · expense-create-fields) 74/74 · 단위(domain/expenses · domain/evidence-reviews · import-cycles · leak-scan-coverage) 146/146 · `pnpm lint` · `pnpm typecheck` rc 0(잠금 안) · E2E `CI=true --project=desktop --workers=2` evidence-waive-prepaid + payment-single + expense-form 35/35(두 스펙 짝은 22/22로 한 번 더).
 
+- PR #183 합본 게이트(wt/06-gate1 · erp_g1_test) /review B-1: 지급 뒤 빈 증빙 금액 판정을 「고친 금액을 그 지급일 같은 세금 규칙으로 다시 셈한 지급 총액 = 지급 기록 payable_krw」로 바꿈(사용자 결정 10/7 11:04 「지급액과 같을 때만」 — 부가세 · 원천징수 · 세금 없음 같은 기준, 스키마 없음) · 판정 재료는 트랜잭션 전 `paidPayableBasis`, 잠근 뒤 다른 지급이면 동시성 거부 — 810c8e1a(acef84b9 RED) · 통합 세 갈래 + 원천징수 무효 경로 + 경합 1 · 돌연변이 2. 남음: 원천징수 10원 절사로 지급 총액이 같은 이웃 금액(한두 값)도 통과(사용자 질문 후보) · I-2(기안자 증빙 금액 지위)는 사용자 결정 대상이라 그대로.
+
 ### 사용자 질문 후보(검토 반영분)
 
 | # | 무엇을 골랐나 | 왜 | 다른 안 |

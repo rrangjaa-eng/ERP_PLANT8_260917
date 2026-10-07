@@ -54,11 +54,12 @@ const NOTHING_TO_CONFIRM = "확인할 증빙 없음 · 새로 고침";
 export const EVIDENCE_AMOUNT_PAID_LOCKED = "지급 완료 문서 · 증빙 금액 못 바꿈 · 새로 고침";
 export const EVIDENCE_AMOUNT_PAID_MISMATCH = "지급 공급가와 다름 · 지급 취소 뒤 고치기";
 
-// I-2(사용자 결정 10/7 09:08) + 06-10 검토 I-1(추천안 a — 사용자 질문 후보): 지급 완료 문서의 증빙 금액 판정은 이 함수 한 곳이다.
-// 있는 금액은 바꾸지 않는다. 빈 금액(지급 뒤 들어온 증빙)은 지급 기록의 공급가와 같은 값만 받는다 — 장부와 통장이 갈리지 않는다.
-export function paidEvidenceAmountRejection(input: { before: number | null; corrected: number; paidGrossSupplyKrw: number | null }): string | null {
+// I-2(사용자 결정 10/7 09:08) + 06-10 검토 I-1(사용자 결정 10/7 11:04 「지급액과 같을 때만」): 지급 완료 문서의 증빙 금액 판정은 이 함수 한 곳이다.
+// 있는 금액은 바꾸지 않는다. 빈 금액(지급 뒤 들어온 증빙)은 그 금액을 지급 기준으로 다시 셈한 지급 총액이 지급 기록의 지급 총액과 같을 때만
+// 받는다(PR #183 B-1 — 부가세 · 원천징수 · 세금 없음 모두 같은 기준) — 장부와 통장이 갈리지 않는다.
+export function paidEvidenceAmountRejection(input: { before: number | null; payableAtCorrected: number | null; paidPayableKrw: number }): string | null {
   if (input.before !== null) return EVIDENCE_AMOUNT_PAID_LOCKED;
-  return input.corrected === input.paidGrossSupplyKrw ? null : EVIDENCE_AMOUNT_PAID_MISMATCH;
+  return input.payableAtCorrected === input.paidPayableKrw ? null : EVIDENCE_AMOUNT_PAID_MISMATCH;
 }
 
 // ── 증빙 상태 다섯 값 ──────────────────────────────────────────────────
@@ -178,6 +179,8 @@ export async function confirmEvidence(viewer: Viewer, input: ConfirmEvidenceInpu
     const supplyTax = await payments.approvedSupplyTax(viewer, input.expenseId, shared);
     if (supplyTax && isTaxInclusiveEvidenceAmount({ evidenceAmountKrw: corrected, ...supplyTax })) throw new EvidenceAmountError(EVIDENCE_AMOUNT_TAX_INCLUSIVE);
   }
+  // B-1 — 지급 완료 문서의 빈 금액 판정 재료(지급 기록 · 그 지급일 세율)는 트랜잭션 전에. 잠근 뒤 같은 지급인지 다시 본다.
+  const paidBasis = corrected !== undefined ? await payments.paidPayableBasis(viewer, input.expenseId, shared) : null;
 
   let committed;
   try {
@@ -204,7 +207,9 @@ export async function confirmEvidence(viewer: Viewer, input: ConfirmEvidenceInpu
       // I-2 — 지급 완료 문서의 금액 판정(잠금 뒤). 빈 금액 채우기를 모두 막으면 지급 뒤 들어온 증빙을 확인할 길이 없어(F2) 지급 공급가와 같은 값만 받는다.
       if (changed) {
         const payment = await findLivePayment(viewer, locked.id, tx);
-        const rejection = payment ? paidEvidenceAmountRejection({ before, corrected, paidGrossSupplyKrw: payment.grossSupplyKrw }) : null;
+        if (payment && payment.id !== paidBasis?.paymentId) throw new EvidenceReviewConflictError(conflict);
+        const rejection =
+          payment && paidBasis ? paidEvidenceAmountRejection({ before, payableAtCorrected: await paidBasis.payableAt(corrected), paidPayableKrw: payment.payableKrw }) : null;
         if (rejection) throw new EvidenceReviewConflictError(rejection);
       }
       if (changed && !(await updateEvidenceAmount(viewer, { expenseId: locked.id, amountKrw: corrected }, tx))) throw new EvidenceReviewNotFoundError();

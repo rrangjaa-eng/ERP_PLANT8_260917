@@ -1894,3 +1894,123 @@ describe("실행가 빼기(Q3 — 신청됨 요청의 예상 공급가)", () => 
     expect((await statusOf(a.id))?.status).toBe("cancelled");
   });
 });
+
+// ── PR #183 /cso CSO-1 — 구매 완료 건 수정은 사용한 사람 · 팀 비용 귀속을 바꾸지 않는다(O-19 · R-3) ─────────
+
+async function personalCardOf(holderId: string): Promise<string> {
+  const card = await createCorpCard(SYSTEM_VIEWER, { issuer: `개인사-${randomUUID().slice(0, 6)}`, numberLast4: uniqueLast4(), label: "개인 카드", kind: "personal", holderUserId: holderId });
+  if (!card.id) throw new Error("카드 id 없음");
+  return card.id;
+}
+
+async function teamCostUpdateInput(usageId: string, patch: Partial<CardUsageUpdateInput>): Promise<CardUsageUpdateInput> {
+  const [row] = await db.select().from(corpCardUsages).where(eq(corpCardUsages.id, usageId));
+  if (!row) throw new Error("카드 사용 없음");
+  return {
+    id: row.id,
+    version: row.version,
+    corpCardId: row.corpCardId,
+    usedOn: row.usedOn,
+    merchantVendorId: row.merchantVendorId,
+    total: { currency: "KRW", amount: row.totalAmountKrw, fxRate: 1 },
+    evidenceTypeCode: row.evidenceTypeCode,
+    linkKind: "team_cost",
+    memo: row.memo,
+    ...patch,
+  } as CardUsageUpdateInput;
+}
+
+async function usageRow(usageId: string) {
+  const [row] = await db.select().from(corpCardUsages).where(eq(corpCardUsages.id, usageId));
+  if (!row) throw new Error("카드 사용 없음");
+  return row;
+}
+
+describe("[183 /cso CSO-1] 구매 완료 건 수정 — 사용한 사람 · 팀 비용 귀속 그대로", () => {
+  it("팀 비용 · 남(다른 팀 소지자)의 개인 카드로 구매 완료 → 메모만 수정 → 사용한 사람 = 요청자 · 팀 = 요청자 사용일 소속 · purchase 그대로", async () => {
+    const requester = await teamCostRequester();
+    const holder = await teamCostRequester();
+    const requestId = await teamCostRequest(requester.viewer.id);
+    const buyer = await purchaser();
+    const done = await complete(buyer, await completionInput(requestId, await personalCardOf(holder.viewer.id)));
+    await updateUsage(buyer, await teamCostUpdateInput(done.usageId, { memo: "오타 고침" }));
+    expect(await usageRow(done.usageId)).toMatchObject({
+      memo: "오타 고침",
+      usedByUserId: requester.viewer.id,
+      teamId: requester.teamId,
+      registeredVia: "purchase",
+      registeredBy: buyer.id,
+    });
+  });
+
+  it("견적 줄 · 남의 개인 카드로 구매 완료 → 메모만 수정 → 사용한 사람 = 요청자(PM) 그대로", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine);
+    const holder = await teamCostRequester();
+    const buyer = await purchaser();
+    const done = await complete(buyer, await completionInput(created.id, await personalCardOf(holder.viewer.id)));
+    await updateUsage(buyer, await cardUpdateInput(done.usageId, { memo: "오타 고침" }));
+    expect(await usageRow(done.usageId)).toMatchObject({ memo: "오타 고침", usedByUserId: fx.pm.id, registeredVia: "purchase" });
+  });
+
+  it("대리 등록 + 구매 권한자가 팀 비용 구매 건의 사용한 사람을 다른 사람으로 보내면 → ForbiddenError · 사용한 사람 · 팀 그대로", async () => {
+    const requester = await teamCostRequester();
+    const requestId = await teamCostRequest(requester.viewer.id);
+    const buyer = await purchaser("구매대리", [], true);
+    const done = await complete(buyer, await completionInput(requestId, await sharedCard()));
+    const error = await caught(updateUsage(buyer, await teamCostUpdateInput(done.usageId, { usedByUserId: buyer.id, memo: "바꿈" })));
+    expect(error).toBeInstanceOf(ForbiddenError);
+    expect(await usageRow(done.usageId)).toMatchObject({ memo: null, usedByUserId: requester.viewer.id, teamId: requester.teamId });
+  });
+
+  it("같은 권한자가 저장된 사용한 사람을 그대로 실어 보내면 → 저장(화면은 저장값을 보낸다)", async () => {
+    const requester = await teamCostRequester();
+    const requestId = await teamCostRequest(requester.viewer.id);
+    const buyer = await purchaser("구매대리", [], true);
+    const done = await complete(buyer, await completionInput(requestId, await sharedCard()));
+    await updateUsage(buyer, await teamCostUpdateInput(done.usageId, { usedByUserId: requester.viewer.id, memo: "그대로" }));
+    expect(await usageRow(done.usageId)).toMatchObject({ memo: "그대로", usedByUserId: requester.viewer.id, teamId: requester.teamId });
+  });
+
+  it("loadCardUsageForEdit — 구매 완료 건은 대리 등록 권한자에게도 `사용한 사람` 칸이 없다(choosesUser 거짓)", async () => {
+    const requester = await teamCostRequester();
+    const requestId = await teamCostRequest(requester.viewer.id);
+    const buyer = await purchaser("구매대리", [], true);
+    const done = await complete(buyer, await completionInput(requestId, await sharedCard()));
+    expect((await loadCardUsageForEdit(buyer, done.usageId))?.usage.choosesUser).toBe(false);
+  });
+});
+
+// ── PR #183 /review I-1 — 완료 프로젝트에서 실행가를 넘긴(settled) 구매 건도 금액이 늘지 않는 수정은 저장된다 ─────────
+
+async function settledOverPurchase(): Promise<{ fx: PurchaseFx; usageId: string }> {
+  const fx = await purchaseProject();
+  await cardOnLine(fx, fx.onlineLine, 600_000);
+  const created = await request(fx, fx.onlineLine, 11_000);
+  await setStatus(fx.projectId, "completed");
+  const done = await complete(await purchaser(), await completionInput(created.id, await sharedCard(), 438_000));
+  expect(done.capOver).toBe(38_000);
+  return { fx, usageId: done.usageId };
+}
+
+describe("[183 /review I-1] 완료 프로젝트 · capOver 구매 건 수정", () => {
+  it("대리 등록 권한자가 메모만 수정 → 저장 · 금액 그대로", async () => {
+    const { usageId } = await settledOverPurchase();
+    await updateUsage(await proxyOnly(), await cardUpdateInput(usageId, { memo: "증빙 메모" }));
+    expect(await usageRow(usageId)).toMatchObject({ memo: "증빙 메모", supplyKrw: 438_000 });
+  });
+
+  it("금액을 줄이면(아직 초과) → 저장 · 초과가 줄어든다", async () => {
+    const { usageId } = await settledOverPurchase();
+    await updateUsage(await proxyOnly(), await cardUpdateInput(usageId, { total: { currency: "KRW", amount: 420_000, fxRate: 1 } }));
+    expect((await usageRow(usageId)).supplyKrw).toBe(420_000);
+  });
+
+  it("금액을 늘리면 → 거부 `실행가 초과 · 남은 실행가 400,000 · 견적 줄은 담당 PM 박서연`(다른 줄 고르기 없음) · 금액 그대로", async () => {
+    const { usageId } = await settledOverPurchase();
+    const error = await caught(updateUsage(await proxyOnly(), await cardUpdateInput(usageId, { total: { currency: "KRW", amount: 438_001, fxRate: 1 } })));
+    expect(error).toBeInstanceOf(GateBlockedError);
+    expect((error as Error).message).toBe(PM_CAP("400,000"));
+    expect((await usageRow(usageId)).supplyKrw).toBe(438_000);
+  });
+});

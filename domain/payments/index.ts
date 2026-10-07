@@ -698,6 +698,28 @@ export async function approvedSupplyTax(viewer: Viewer, expenseId: string, share
   return { supplyKrw: row.supplyAmountKrw, vatKrw: decided.vatKrw };
 }
 
+// PR #183 B-1(사용자 결정 10/7 11:04 「지급액과 같을 때만」) — 지급 뒤 빈 증빙 금액 판정 재료(트랜잭션 전 사전 조회). 살아 있는 지급과,
+// 어떤 금액을 그 지급일 기준 같은 세금 규칙으로 다시 셈한 지급 총액(DB 없음 — 트랜잭션 안에서 불러도 된다). 지급 기록에 세전 금액이
+// 남는 것은 부가세(gross)뿐이라 규칙 종류(부가세 · 원천징수 · 회사 대납 · 없음)마다 같은 기준으로 견주려면 지급 총액으로 되짚는다. 지급 없으면 null.
+export async function paidPayableBasis(
+  viewer: Viewer,
+  expenseId: string,
+  shared: PaymentShared,
+): Promise<{ paymentId: string; payableKrw: number; payableAt: (amountKrw: number) => Promise<number | null> } | null> {
+  const payment = await findLivePayment(viewer, expenseId);
+  if (!payment) return null;
+  const pre = await loadPaymentInputs(viewer, { expenseId, payDate: payment.payDate }, shared);
+  const tax = pre.tax;
+  return {
+    paymentId: payment.id,
+    payableKrw: payment.payableKrw,
+    payableAt: async (amountKrw) =>
+      tax
+        ? (await decidePayable({ amount: { source: "evidence", amountKrw }, taxRule: tax.taxRule, applyOpts: tax.dates.applyOpts, incomeType: tax.incomeType }, tax.rates)).payableKrw
+        : null,
+  };
+}
+
 // [Q-F] 증빙 금액 초과 한 줄(표시만 — 확인 · 게이트 · 규칙은 읽지 않는다). 트랜잭션 없는 읽기. 살아 있는 파일이 없으면 계보 조회 없이 null(R-4).
 // 남은 실행가는 견적 줄 계보 사슬 전체로: 이 문서가 든 현재 차수 줄의 실행가 − 사슬 위 다른 번호 문서 공급가 − 사슬 줄에 이은 보관 안 된 카드 사용 공급가.
 // 팀 비용(견적 줄 없음) · 사슬이 최신 차수에 닿지 않으면 실행가 조각 없음(남은 실행가 null).

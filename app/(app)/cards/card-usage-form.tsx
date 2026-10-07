@@ -25,7 +25,7 @@ import { LinkPicker, type PickedLine, type PickedProject } from "./link-picker";
 // 칸은 비제어(defaultValue)이고 등록 뒤 `gen` 키로 새로 그린 다음 `succeed`를 부른다 — `form.reset()`이 새 기본값으로 돌아가게.
 
 /** `proxyHint` — 대리 등록 권한자가 남의 카드를 고르면 카드 아래 서는 글자(서버가 정한다 — 화면이 판정하지 않는다). */
-/** `choosesUser` — 대리 등록 권한자 · 팀 또는 공용 카드: 팀 비용이면 `사용한 사람` 칸(서버가 정한다). */
+/** `choosesUser` — 대리 등록 권한자 · 본인 개인 카드 밖: 팀 비용이면 `사용한 사람` 칸(서버가 정한다). */
 export type CardOption = { id: string; label: string; proxyHint?: string | null; choosesUser?: boolean };
 export type EvidenceTypeOption = { value: string; label: string };
 type LinkKind = "team_cost" | "quote_line" | "out_of_quote";
@@ -320,13 +320,18 @@ export function CardUsageForm({
   const selectedCardId = edit ? edit.cardId : usableCards.some((card) => card.id === cardId) ? cardId : usableCards.length === 1 ? (usableCards[0]?.id ?? "") : "";
   const proxyHint = edit ? edit.proxyHint : (usableCards.find((card) => card.id === selectedCardId)?.proxyHint ?? null);
 
-  // 사용한 사람(EXP-07 · Q5) — 대리 등록 권한자 · 팀 또는 공용 카드 · 팀 비용일 때만. 후보는 사용일 기준으로 서버가 보낸다(1명 = 텍스트, 여럿 = 기본값 없음).
+  // 사용한 사람(EXP-07 · Q5) — 대리 등록 권한자 · 본인 개인 카드 밖 · 팀 비용일 때만. 후보는 사용일 기준으로 서버가 보낸다(남의 개인 카드 = 소지자 텍스트,
+  // 팀 · 공용 카드 여럿 = 기본값 없음). 팀 비용 값은 그 사람의 사용일 팀이다(등록자 팀이 아니다).
   const choosesUser = edit ? edit.choosesUser : (usableCards.find((card) => card.id === selectedCardId)?.choosesUser ?? false);
   const showUsedBy = linkKind === "team_cost" && choosesUser && selectedCardId !== "" && usedOn !== "";
   const [usedById, setUsedById] = useState(edit?.usedByUserId ?? "");
   const [candidates, setCandidates] = useState<UsedByCandidate[] | null>(null);
+  // 카드를 바꾸면 고른 사람을 잇지 않는다(여럿 = 기본값 없음) — 사용일만 바뀌면 새 후보에 있을 때 남긴다.
+  const usedByCardRef = useRef(selectedCardId);
   useEffect(() => {
     if (!showUsedBy) return;
+    const sameCard = usedByCardRef.current === selectedCardId;
+    usedByCardRef.current = selectedCardId;
     let live = true;
     void (async () => {
       let outcome: Awaited<ReturnType<typeof usedByCandidatesAction>> | undefined;
@@ -339,7 +344,7 @@ export function CardUsageForm({
       const next = outcome?.data ?? [];
       setCandidates(next);
       // 사용일을 바꿔 고른 사람이 새 후보에 없으면 칸이 빈다(UI-SPEC S9 partial).
-      setUsedById((current) => (next.length === 1 ? (next[0]?.id ?? "") : next.some((candidate) => candidate.id === current) ? current : ""));
+      setUsedById((current) => (next.length === 1 ? (next[0]?.id ?? "") : sameCard && next.some((candidate) => candidate.id === current) ? current : ""));
     })();
     return () => {
       live = false;

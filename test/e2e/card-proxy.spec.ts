@@ -180,8 +180,12 @@ test.describe("법인카드 대리 등록 · 수정 (06-09)", () => {
     const sheet = page.getByRole("dialog", { name: "카드 사용 등록" });
     const card = sheet.getByLabel("카드", { exact: true });
     await waitForHydration(card);
-    await card.selectOption(teamCard.id);
+    // 남의 개인 카드 → 사용한 사람 = 소지자 텍스트 · 팀 비용 값 = 소지자의 사용일 팀.
+    await card.selectOption(fx.cardId);
     await sheet.getByRole("radio", { name: "팀 비용" }).check();
+    await expect(sheet.getByText(fx.pm.name, { exact: true })).toBeVisible();
+    await expect(sheet.locator('[data-ui="card-usage-team"]')).toHaveText(fx.teamName);
+    await card.selectOption(teamCard.id);
     const usedBy = sheet.getByLabel("사용한 사람");
     await expect(usedBy.locator("option", { hasText: newcomer.name })).toHaveCount(1);
     await expect(usedBy).toHaveValue("");

@@ -138,7 +138,7 @@ function cardLabel(card: Pick<CorpCardRow, "label" | "issuer" | "numberLast4">):
 }
 
 /** `proxyHint` — 남의 개인 · 팀 카드(대리 등록)면 `경영관리 등록 · 카드 소지자 {이름 | 팀}`, 본인 자격 · 공용 카드는 null(서버가 정한다). */
-/** `choosesUser` — 대리 등록 권한자 · 팀 또는 공용 카드: 팀 비용이면 `사용한 사람` 칸이 선다(EXP-07 · Q5). */
+/** `choosesUser` — 대리 등록 권한자 · 본인 개인 카드 밖: 팀 비용이면 `사용한 사람` 칸이 선다(EXP-07 · Q5 — 개인 카드는 소지자 한 명 텍스트, 팀 = 그 사람의 사용일 소속). */
 export type UsageCardOption = { id: string; label: string; kind: CardOwnerKind; proxyHint: string | null; choosesUser: boolean };
 
 type EligibleCard = { card: CorpCardRow; own: boolean };
@@ -186,7 +186,7 @@ export async function cardOptionsForUsage(viewer: Viewer, usedOn: string): Promi
       label: cardLabel(card),
       kind: card.kind as CardOwnerKind,
       proxyHint: holder === undefined ? null : `${PROXY_HINT} ${holder}`,
-      choosesUser: proxy && card.kind !== "personal",
+      choosesUser: proxy && !(card.kind === "personal" && card.holderUserId === viewer.id),
     };
   });
 }
@@ -865,7 +865,7 @@ export async function loadCardUsageForEdit(viewer: Viewer, id: string): Promise<
     evidenceLabel: (await cardEvidenceTypes(viewer)).labels.get(stored.evidenceTypeCode) ?? stored.evidenceTypeCode,
     linkKind: stored.linkKind === "team_cost" ? "team_cost" : stored.lineKind === "out_of_quote" ? "out_of_quote" : "quote_line",
     usedByUserId: stored.usedByUserId,
-    choosesUser: proxy && stored.cardKind !== "personal",
+    choosesUser: proxy && !(stored.cardKind === "personal" && stored.cardHolderUserId === viewer.id),
     memo: stored.memo,
     currency: stored.totalCurrency,
     amount: stored.totalForeignAmount === null ? stored.totalAmountKrw : Number(stored.totalForeignAmount),

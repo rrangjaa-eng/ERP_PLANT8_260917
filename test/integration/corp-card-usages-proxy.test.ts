@@ -238,6 +238,17 @@ describe("대리 등록(EXP-16 · D-608)", () => {
     expect(staffOptions.every((option) => option.proxyHint === null)).toBe(true);
   });
 
+  it("cardOptionsForUsage choosesUser — 권한자: 남의 개인 · 팀 · 공용 카드 참(팀 비용 = 사용한 사람의 팀) · 본인 개인 카드 거짓 / 직원: 전부 거짓", async () => {
+    const fx = await setup();
+    const own = await makeCard({ kind: "personal", holderUserId: fx.proxy.id });
+    const teamCard = await makeCard({ kind: "team", teamId: fx.team.id });
+    const shared = await makeCard({ kind: "shared" });
+    const options = await cardOptionsForUsage(fx.proxy, seoulToday());
+    const choosesOf = (id: string) => options.find((option) => option.id === id)?.choosesUser;
+    expect([choosesOf(fx.cardId), choosesOf(teamCard), choosesOf(shared), choosesOf(own)]).toEqual([true, true, true, false]);
+    expect((await cardOptionsForUsage(fx.pm, seoulToday())).every((option) => option.choosesUser === false)).toBe(true);
+  });
+
   it("공용 카드 · 권한자 → registeredVia self(소지자 없음)", async () => {
     const fx = await setup();
     const shared = await makeCard({ kind: "shared" });

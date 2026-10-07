@@ -18,6 +18,8 @@ import { completeEvidenceUploadAction, createEvidenceViewUrlAction, removeEviden
 
 // 결재 중 기안자에게 「하나 더」 자리에 보이는 잠김 한 줄(사용자 결정 2026-10-04 — 결재 중 증빙은 경영관리가 붙인다).
 export const EVIDENCE_DRAFTER_LOCKED_LINE = "결재 중 · 증빙은 경영관리";
+// 06-11(U-4) — 완료 프로젝트의 승인 문서는 기안자에게 닫힌다(붙이기 권한자만). 같은 잠김 줄 자리.
+export const EVIDENCE_COMPLETED_PROJECT_LINE = "완료 프로젝트 · 증빙은 경영관리";
 const VOID_FAILED = "무효 처리 실패 · 다시 시도";
 
 export function EvidenceAttachments(props: {
@@ -91,7 +93,7 @@ export function EvidenceAttachments(props: {
         canAdd={granted ? granted.canAdd : undefined}
         deletableIds={granted?.deletableFileIds}
         voidable={granted && granted.voidableFileIds.length > 0 ? { ids: granted.voidableFileIds, onVoid: setVoidTarget } : undefined}
-        lockedText={granted?.drafterLocked ? EVIDENCE_DRAFTER_LOCKED_LINE : undefined}
+        lockedText={granted?.drafterLocked ? EVIDENCE_DRAFTER_LOCKED_LINE : granted?.completedProjectLocked ? EVIDENCE_COMPLETED_PROJECT_LINE : undefined}
       />
       {props.reasonMessages ? (
         <VoidEvidenceDialog

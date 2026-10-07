@@ -372,6 +372,7 @@ describe("06-28 종결", () => {
       deletableFileIds: [],
       voidableFileIds: [],
       drafterLocked: false,
+      completedProjectLocked: false,
     });
     const [still] = await db.select().from(files).where(eq(files.id, file.id));
     expect(still?.removedAt).toBeNull();

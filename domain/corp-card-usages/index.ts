@@ -286,6 +286,11 @@ async function resolveUsedBy(
   return { usedByUserId, teamId };
 }
 
+async function pmNameOf(viewer: Viewer, projectId: string): Promise<string> {
+  const project = await findProjectById(viewer, projectId);
+  return project?.pmUserId ? ((await findUserNamesByIds(viewer, [project.pmUserId])).get(project.pmUserId) ?? "") : "";
+}
+
 // 구매 완료 건 수정(PR #183 CSO-1) — 사용한 사람 = 저장된 요청자 고정(다른 사람을 실어 보내면 거부), 팀 비용의 팀 = 그 사람의 사용일 소속(O-19).
 async function purchaseUsedBy(
   viewer: Viewer,
@@ -624,6 +629,8 @@ export type CardUsageUpdatePre = Omit<CardUsagePre, "card" | "registeredVia"> & 
   lockProjects: CardUsageProjectLock[];
   /** 06-12 카드 고치기(구매 완료 건 · 권리 + 구매 권한 + 활성 새 카드) — 새 카드 id와 로그 요약의 카드 글자. 카드 그대로면 null. */
   cardChange: { id: string; from: string; to: string } | null;
+  /** 저장된 공급가 — 연결 그대로 수정은 이보다 늘 때만 실행가 상한을 다시 잰다(PR #183 I-1 — 완료 프로젝트 settled 초과 건도 고칠 수 있게). */
+  storedSupplyKrw: number;
 };
 
 function rightsOf(stored: CardUsageForWrite, viewer: Viewer, proxy: boolean): CardUsageRights {
@@ -692,7 +699,7 @@ export async function precheckCardUsageUpdate(viewer: Viewer, input: CardUsageUp
     : stored.registeredVia === "purchase" || stored.registeredVia === "proxy"
       ? stored.registeredVia
       : "self";
-  const base = { usageId: stored.id, registeredVia, registeredBy, total, amountShown, usedByUserId: usedBy.usedByUserId, teamId: usedBy.teamId, evidenceRule, rates, capExclude: { usageId: stored.id }, linkFixed, completedAllowed: proxy, cardChange };
+  const base = { usageId: stored.id, registeredVia, registeredBy, total, amountShown, usedByUserId: usedBy.usedByUserId, teamId: usedBy.teamId, evidenceRule, rates, capExclude: { usageId: stored.id }, linkFixed, completedAllowed: proxy, cardChange, storedSupplyKrw: stored.supplyKrw };
 
   if (linkFixed) {
     if (input.linkKind !== "quote_line" || !stored.projectId) return { ...base, ...NO_LINK, lockProjects: [] };
@@ -703,6 +710,7 @@ export async function precheckCardUsageUpdate(viewer: Viewer, input: CardUsageUp
       lineRoom: await loadLineRoomBasis(viewer, [input.lineId]),
       amountVisible: await visible(viewer, "quote.amount"),
       lockProjects: [{ projectId: stored.projectId, allowCompleted: proxy }],
+      ...(rights.changeLink ? {} : { capLink: "fixed" as const, pmName: await pmNameOf(viewer, stored.projectId) }),
     };
   }
   const oldLock: CardUsageProjectLock[] = stored.projectId ? [{ projectId: stored.projectId, allowCompleted: proxy }] : [];
@@ -746,15 +754,19 @@ export async function updateCardUsage(
       const dual = await gate(null, "card.dual-link-block", { side: "card", links: lineLinks ?? { expenses: [], cardUsages: [] } });
       if (!dual.allowed) throw new GateBlockedError(dual.reason);
       if (!lineLinks?.currentExecution) throw new ForbiddenError(LINK_MISSING);
-      const cap = await gate(null, "card.execution-cap", {
-        execution: lineLinks.currentExecution,
-        otherSupplies: lineRoom({ links, basis: pre.lineRoom, lineId, exclude: pre.capExclude }).otherSupplies,
-        supply: { currency: "KRW", amount: split.supplyKrw, fxRate: 1 },
-        source: "entry",
-        link: "pickable",
-        amountVisible: pre.amountVisible,
-      });
-      if (!cap.allowed) throw new GateBlockedError(cap.reason);
+      // 연결 그대로 · 공급가가 저장값보다 늘지 않으면 줄을 더 쓰지 않으니 상한을 다시 재지 않는다(I-1). 고정 연결(구매 완료)은 담당 PM 갈래.
+      if (!(pre.linkFixed && split.supplyKrw <= pre.storedSupplyKrw)) {
+        const cap = await gate(null, "card.execution-cap", {
+          execution: lineLinks.currentExecution,
+          otherSupplies: lineRoom({ links, basis: pre.lineRoom, lineId, exclude: pre.capExclude }).otherSupplies,
+          supply: { currency: "KRW", amount: split.supplyKrw, fxRate: 1 },
+          source: "entry",
+          link: pre.capLink ?? "pickable",
+          pmName: pre.pmName,
+          amountVisible: pre.amountVisible,
+        });
+        if (!cap.allowed) throw new GateBlockedError(cap.reason);
+      }
       link = { linkKind: "quote_line", quoteLineId: lineId, teamId: null };
     } else if (input.linkKind === "out_of_quote") {
       // 견적 외 비용으로 바꾸기(X-6): 첫 줄이 잠근 그 프로젝트 행으로 04 줄 편집 게이트 → 새 줄(실행가 = 공급가 — 상한 없음).

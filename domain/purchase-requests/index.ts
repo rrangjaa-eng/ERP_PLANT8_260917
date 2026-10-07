@@ -609,6 +609,8 @@ export type PurchaseCompletionPanel = {
   teamAssigned: boolean;
   /** 그사이 상태가 바뀐 요청의 이유(`구매 요청 취소됨 · 새로 고침` 등) — 1차 비활성. */
   statusReason: string | null;
+  /** 06-14 폰 패널의 `요청 취소` — 본인 요청 `own`(즉시 · 되돌리기) · 남의 요청 `others`(사유 창). `신청됨`이 아니면 null(Q2). */
+  cancelBranch: "own" | "others" | null;
 };
 
 async function onlineMerchant(viewer: Viewer): Promise<Partial<PickVendorOptionDto> | null> {
@@ -664,6 +666,7 @@ export async function loadPurchaseCompletion(viewer: Viewer, id: string, today: 
     teamName: team?.teamName ?? null,
     teamAssigned: team?.teamAssigned ?? true,
     statusReason: row.status === "requested" ? null : statusChangedError(row.status).message,
+    cancelBranch: row.status !== "requested" ? null : row.requestedBy === viewer.id ? "own" : "others",
   };
 }
 

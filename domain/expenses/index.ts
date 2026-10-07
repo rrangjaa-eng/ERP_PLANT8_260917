@@ -29,6 +29,7 @@ import {
   APPROVAL_ROUTE_EXPENSE_STEP4_ROLE_ID,
   APPROVAL_ROUTE_EXPENSE_STEP4_SCOPE,
   APPROVAL_ROUTE_EXPENSE_STEP4_ORG_UNIT_ID,
+  EVIDENCE_PREPAID_DUE_DAYS,
   PROJECT_CUSTOMER_APPROVAL_GATE,
 } from "@/domain/settings/keys";
 import {
@@ -69,6 +70,7 @@ import {
   INACTIVE_EVIDENCE_TYPE,
   INACTIVE_PAYMENT_METHOD,
   nextActionTarget,
+  PREPAID_REASON_REQUIRED,
   PROJECT_COMPLETED,
   TAX_UNAVAILABLE,
   type ExpenseSubmitFacts,
@@ -161,7 +163,7 @@ export class ExpenseNotFoundError extends UserFacingError {
 // 칸 오류 — 회차 상한 초과(게이트가 아니라 공급가액 칸 아래 한 줄).
 export class ExpenseFieldError extends UserFacingError {
   constructor(
-    readonly field: "supplyAmount" | "usageDate",
+    readonly field: "supplyAmount" | "usageDate" | "prepaidReason" | "evidenceAmount",
     message: string,
   ) {
     super(message);
@@ -339,6 +341,10 @@ function toSource(row: ExpenseSummaryRow, extras: SourceExtras = {}): ExpenseDoc
     installmentText: extras.installmentText ?? null,
     closure: extras.closure ?? null,
     closeDialog: extras.closeDialog ?? null,
+    prepaid: row.prepaid,
+    prepaidReason: row.prepaidReason,
+    evidenceAmountKrw: row.evidenceAmount,
+    evidenceDate: row.evidenceDate,
   };
 }
 
@@ -745,9 +751,17 @@ const lineDraftFieldsSchema = draftFieldsSchema.pick({ note: true, scheduledPaym
 export type LineDraftFieldsInput = z.input<typeof lineDraftFieldsSchema>;
 
 function toDraftColumns(fields: z.output<typeof draftFieldsSchema>): ExpenseDraftFields {
-  const { supply, content, ...others } = fields;
+  const { supply, content, evidenceAmountKrw, prepaidReason, ...others } = fields;
   // 공백뿐인 내용은 비운 것과 같다.
-  const rest = content === undefined ? others : { ...others, content: content?.trim() ? content.trim() : null };
+  const withContent = content === undefined ? others : { ...others, content: content?.trim() ? content.trim() : null };
+  // 06-10: 증빙 금액은 칸 이름이 다르다(evidence_amount). 선결제를 끄면 적은 사유는 버린다(S6) — 사유는 앞뒤 공백을 뗀다.
+  const withEvidence = evidenceAmountKrw === undefined ? withContent : { ...withContent, evidenceAmount: evidenceAmountKrw };
+  const rest =
+    fields.prepaid === false
+      ? { ...withEvidence, prepaidReason: null }
+      : prepaidReason === undefined
+        ? withEvidence
+        : { ...withEvidence, prepaidReason: prepaidReason?.trim() ? prepaidReason.trim() : null };
   if (supply === undefined) return rest;
   if (supply === null) return { ...rest, supplyCurrency: "KRW", supplyForeignAmount: null, supplyFxRate: "1.0000", supplyAmountKrw: null };
   // moneyToColumns가 normalizeMoneyInput으로 통화 · 정밀도 · 범위를 판정한다.
@@ -771,6 +785,12 @@ export async function saveExpenseDraft(
   const parsed = draftFieldsSchema.parse(input.fields);
   await assertActiveCodes(viewer, parsed, row);
   const fields = toDraftColumns(parsed);
+  // 06-10: 합친 행이 선결제 · 사유 빔이면 DB 체크(expenses_prepaid_reason_check)를 만나기 전에 칸 오류로 거부한다. 선결제가 아니면 사유는 버린다.
+  const prepaid = fields.prepaid ?? row.prepaid;
+  if (prepaid) {
+    const reason = fields.prepaidReason !== undefined ? fields.prepaidReason : row.prepaidReason;
+    if (!reason?.trim()) throw new ExpenseFieldError("prepaidReason", PREPAID_REASON_REQUIRED);
+  } else if (fields.prepaidReason !== undefined) fields.prepaidReason = null;
   // 번호 있는 문서(반려 · 회수)는 공급가액이 있어야 한다(DB 체크 — 번호 있으면 공급가액 > 0) — DB 오류 대신 칸 오류.
   if (row.number !== null && fields.supplyAmountKrw !== undefined && (fields.supplyAmountKrw === null || fields.supplyAmountKrw <= 0)) {
     throw new ExpenseFieldError("supplyAmount", fields.supplyAmountKrw === null ? SUPPLY_EMPTY : SUPPLY_ZERO);
@@ -823,10 +843,12 @@ export async function createTeamExpenseDraft(
   const parsed = draftFieldsSchema.parse(input.fields);
   if (parsed.vendorId) await usableVendor(viewer, parsed.vendorId);
   await assertActiveCodes(viewer, parsed);
+  const draftColumns = toDraftColumns(parsed);
+  if (draftColumns.prepaid && !draftColumns.prepaidReason) throw new ExpenseFieldError("prepaidReason", PREPAID_REASON_REQUIRED);
   const usageDate = parsed.usageDate ?? seoulToday(deps?.now);
   const attributedTeamId = await attributedTeamFor(viewer, usageDate);
   const inserted = await insertTeamDraftIfAbsent(viewer, {
-    ...toDraftColumns(parsed),
+    ...draftColumns,
     drafterId: viewer.id,
     idempotencyKey: key,
     usageDate,
@@ -1325,6 +1347,9 @@ async function loadSubmitFacts(
     paymentMethod: row.paymentMethod,
     evidenceTypeInactive: row.evidenceType ? !codes.evidence.has(row.evidenceType) : false,
     paymentMethodInactive: row.paymentMethod ? !codes.payment.has(row.paymentMethod) : false,
+    // 06-10: 선결제 사실은 잠근 행(제출) · 겹친 행(미리보기)의 칸이다 — 새 조회 없음.
+    prepaid: row.prepaid,
+    prepaidReason: row.prepaidReason,
     evidenceCount,
     taxUnavailable: tax.unavailable === true,
   };
@@ -1431,8 +1456,12 @@ async function lineFactsFor(viewer: Viewer, row: ExpenseSummaryRow, supply: Mone
 // 받는다(PM 계급은 코드표 메뉴가 없어 domain/code-tables의 목록이 비었다 — 증빙 종류를 바꿀 수 없었다). 라벨 · 설명만 싣는다.
 export type ExpenseCodeOption = { value: string; label: string; description: string | null };
 
-export async function listExpenseFormOptions(viewer: Viewer): Promise<{ evidence: ExpenseCodeOption[]; payment: ExpenseCodeOption[] }> {
-  if (!(await can(viewer, "expenses", "write"))) return { evidence: [], payment: [] };
+export async function listExpenseFormOptions(
+  viewer: Viewer,
+): Promise<{ evidence: ExpenseCodeOption[]; payment: ExpenseCodeOption[]; prepaidDueDays: number }> {
+  // 06-10: 선결제 칸 힌트 `증빙 기한 지급일부터 {N}일`의 N(evidence.prepaid_due_days — 06-06 loadPrepaidDueDays와 같은 설정, domain/evidence-reviews를 값 import하면 순환이라 설정을 직접 읽는다. 트랜잭션 없는 사전 조회).
+  const prepaidDueDays = await getSettingValue(EVIDENCE_PREPAID_DUE_DAYS);
+  if (!(await can(viewer, "expenses", "write"))) return { evidence: [], payment: [], prepaidDueDays };
   const read = async (tableKey: string): Promise<ExpenseCodeOption[]> =>
     (await listCodeItems(viewer, { tableKey, scope: { rows: "all", includeArchived: false }, includeInactive: false })).map((item) => ({
       value: item.value,
@@ -1440,7 +1469,7 @@ export async function listExpenseFormOptions(viewer: Viewer): Promise<{ evidence
       description: item.description,
     }));
   const [evidence, payment] = await Promise.all([read("evidence_type"), read("payment_method")]);
-  return { evidence, payment };
+  return { evidence, payment, prepaidDueDays };
 }
 
 // 05-05 폼 통화 선택지 — 통화마다 설정의 최근 환율(Phase 4 D-71)이 기본 환율이다.

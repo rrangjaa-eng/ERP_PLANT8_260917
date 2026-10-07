@@ -21,7 +21,7 @@ import { expenseStatusWord } from "../status-display";
 import type { EvidenceActions } from "@/domain/evidence";
 import type { PaymentViewDto } from "@/domain/payments";
 import { EvidenceAttachments } from "./evidence-attachments";
-import { EvidenceReviewBlock } from "./evidence-review-section";
+import { EvidenceReviewBlock, PrepaidReasonLine } from "./evidence-review-section";
 import { SubmittedUndoToast } from "./submitted-undo-toast";
 import { TaxParts } from "./tax-parts";
 import { PaymentActionRow, PaymentLoadError, PaymentPanelProvider, PaymentSection } from "./payment-action-row";
@@ -173,6 +173,7 @@ export function ExpenseDocument({
         />
       </div>
       {review}
+      <PrepaidReasonLine reason={expense.prepaidReason} />
     </DetailScreen.Section>
   );
 

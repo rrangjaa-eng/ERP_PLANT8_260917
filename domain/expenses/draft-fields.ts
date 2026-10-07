@@ -25,6 +25,11 @@ export const expenseDraftFieldsSchema = z
     teamExpenseKind: z.enum(TEAM_EXPENSE_KINDS).nullable(),
     usageDate: z.string().refine(isCalendarDate, DATE_FORMAT_ERROR),
     content: z.string().max(EXPENSE_TEXT_MAX, `내용 ${EXPENSE_TEXT_MAX}자 넘음 · 줄여 적기`).nullable(),
+    // 06-10(EXP-13 · C6 기안자 몫): 선결제 표시 · 사유, 증빙 금액(공급가 자리) · 증빙일. 칸은 이 스키마 한 곳에만 더한다(E-19).
+    prepaid: z.boolean(),
+    prepaidReason: z.string().max(EXPENSE_TEXT_MAX, `선결제 사유 ${EXPENSE_TEXT_MAX}자 넘음 · 줄여 적기`).nullable(),
+    evidenceAmountKrw: z.number().nullable(),
+    evidenceDate: z.string().nullable(),
   })
   .strict()
   .partial();

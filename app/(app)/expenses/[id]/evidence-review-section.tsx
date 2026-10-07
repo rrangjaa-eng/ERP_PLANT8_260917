@@ -309,3 +309,10 @@ export function EvidenceReviewBlock() {
     </div>
   );
 }
+
+// 06-10(EXP-13 · O-4): 선결제 문서의 읽기 줄 `선결제 사유` — 제출 뒤 문서 화면 증빙 섹션. 원문 전문(`keep-all`, 말줄임 없음).
+// 선결제 낱말 · 기한 2행은 확인부(EvidenceReviewBlock)가 그린다. 면제된 선결제 문서도 사유는 그대로 남는다.
+export function PrepaidReasonLine({ reason }: { reason: string | null | undefined }) {
+  if (!reason) return null;
+  return <KvList items={[{ label: "선결제 사유", value: <span className={styles.fill} data-testid="prepaid-reason">{reason}</span> }]} />;
+}

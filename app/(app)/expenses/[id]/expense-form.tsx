@@ -9,7 +9,9 @@ import { Button, buttonLinkClassName } from "@/ui/button/Button";
 import { KvList } from "@/ui/kv-list/KvList";
 import type { AttachmentFile } from "@/ui/attachments/Attachments";
 import { useCommaInput } from "@/ui/input/use-comma-input";
-import { parseNumberInput } from "@/lib/format-number";
+import { numberInputRejectionReason, parseNumberInput } from "@/lib/format-number";
+import { EVIDENCE_AMOUNT_FRACTION, EVIDENCE_AMOUNT_NOT_NUMBER } from "@/domain/payments/action-row";
+import { EVIDENCE_AMOUNT_TAX_INCLUSIVE } from "@/domain/evidence-reviews/tax-inclusive";
 import { isCtrlCombo } from "@/lib/shortcut";
 import { usePhoneWidth } from "@/app/(app)/leave/use-phone-width";
 import {
@@ -55,6 +57,12 @@ export type ExpenseFormData = {
     text: string;
     parts: { text: string; emphasis: boolean }[];
   } | null;
+  // 06-10 증빙 묶음 — 선결제 · 사유 · 기안자 증빙 금액(공급가 자리) · 증빙일 저장값, 선결제 힌트의 기한 일수(설정 값).
+  prepaid: boolean;
+  prepaidReason: string | null;
+  evidenceAmountKrw: number | null;
+  evidenceDate: string | null;
+  prepaidDueDays: number;
   // 05-06 제출 막힘 첫 이유(규칙 `expense.submit`) · 다음 한 수 대상 · 이동 주소 — 처음 그림은 서버 미리보기 값, 그 뒤는 미리보기 응답.
   block: (ServerBlock & { href: string | null }) | null;
   // 05-07 팀 비용 문서(프로젝트 · 견적 줄 없음)면 칸 넷의 저장값 — 견적 줄 문서는 null. 새 문서(`/expenses/new`)도 팀 비용으로 열린다.
@@ -78,6 +86,7 @@ const TARGET_FIELD: Record<string, string> = {
   content: "content",
   vendor: "vendor-pick",
   quoteLine: "line-pick",
+  prepaidReason: "prepaidReason",
 };
 const NEXT_STEP_ID = "expense-next-step";
 // 견적 줄 바꾸기가 끝나면 페이지가 폼을 새로 그린다(key) — 트리거 `바꾸기`가 새 요소라 포커스를 잃지 않게 새 폼이 한 번 거기로 돌려놓는다.
@@ -100,6 +109,7 @@ export type ExpenseFormProps = {
 };
 
 const DATE_EMPTY_ERROR = "날짜 없음 · 날짜 고르기";
+const EVIDENCE_AMOUNT_FRACTION_REASON = numberInputRejectionReason("krw", "krw-fraction");
 const FX_ERROR = "환율 형식 오류 · 1,318.4처럼";
 
 // 환율 칸 — 통화를 바꾸면 그 통화의 기본 환율로 다시 열린다(훅이 값을 밖에서 못 바꾸므로 통화를 key로 다시 마운트한다).
@@ -127,6 +137,11 @@ function FxField({ initial, error, onRaw, below }: { initial: number; error: str
   );
 }
 
+// 증빙 금액 칸의 입력 거절 이유 → 06-06 「Error — 증빙 금액 칸」 원문(소수점 · 숫자 아님).
+function evidenceAmountInputError(reason: string): string {
+  return reason === EVIDENCE_AMOUNT_FRACTION_REASON ? EVIDENCE_AMOUNT_FRACTION : EVIDENCE_AMOUNT_NOT_NUMBER;
+}
+
 export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOptions, newDoc, resubmit = false, currencies, files, maxMb, route }: ExpenseFormProps) {
   const router = useRouter();
   const [evidenceType, setEvidenceType] = useState(data.evidenceType ?? "");
@@ -137,6 +152,10 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
   const [installment, setInstallment] = useState(data.installment || data.installmentMode === "fixed");
   const [fxRaw, setFxRaw] = useState(String(data.fxRate));
   const dateRef = useRef<HTMLInputElement>(null);
+  const evidenceDateRef = useRef<HTMLInputElement>(null);
+  const [prepaid, setPrepaid] = useState(data.prepaid);
+  const [prepaidReason, setPrepaidReason] = useState(data.prepaidReason ?? "");
+  const [evidenceDate, setEvidenceDate] = useState(data.evidenceDate ?? "");
   const usageDateRef = useRef<HTMLInputElement>(null);
   const team = data.team;
   const [teamKind, setTeamKind] = useState(team?.kind ?? "");
@@ -151,6 +170,7 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
   const [pickOpen, setPickOpen] = useState<"vendor" | "line" | null>(null);
 
   const amountInput = useCommaInput(currency === "KRW" ? "krw" : "foreign", data.amount === null ? "" : String(data.amount));
+  const evidenceAmountInput = useCommaInput("krw", data.evidenceAmountKrw === null ? "" : String(data.evidenceAmountKrw));
 
   const [version, setVersion] = useState(data.version);
   const [uploading, setUploading] = useState(0);
@@ -168,6 +188,9 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
     scheduledPaymentDate?: string;
     note?: string;
     usageDate?: string;
+    prepaidReason?: string;
+    evidenceAmount?: string;
+    evidenceDate?: string;
   }>({});
 
   // 05-06 계산 한 줄 — 서버 미리보기 응답으로 바뀐다. 오는 동안 이전 줄은 흐린 색으로 남는다(빈칸 · 뼈대 없음 — UI-SPEC S5).
@@ -196,6 +219,10 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
     teamKind,
     usageDate,
     content,
+    prepaid,
+    prepaid ? prepaidReason : "",
+    evidenceAmountInput.rawValue,
+    evidenceDate,
   ]);
   const [savedSnapshot, setSavedSnapshot] = useState(snapshot);
   const dirty = snapshot !== savedSnapshot;
@@ -227,6 +254,8 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
     usageDate,
     content,
     pickedVendor?.id ?? "",
+    prepaid,
+    prepaid && prepaidReason.trim() !== "",
   ]);
   const firstPreviewKey = useRef(previewKey);
   useEffect(() => {
@@ -313,6 +342,12 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
     return Boolean(element);
   }
 
+  // 1차를 눌렀는데 막혀 있을 때 — 선결제 사유가 막힘이면 칸 오류도 같은 서버 글자로 세우고(S6: 1차 옆 이유와 칸 `Form.Error`) 그 칸으로 포커스.
+  function pressBlocked() {
+    if (block?.target === "prepaidReason") setErrors((current) => ({ ...current, prepaidReason: block.reason }));
+    focusBlockTarget();
+  }
+
   // 첫 포커스 = 막힘 대상(없으면 1차). 문서가 아직 없는 `/expenses/new`는 맨 위 3차 `견적 줄 고르기`(수주 비용의 기본 경로 — R6-06).
   useEffect(() => {
     if (newDoc || refocusLineTrigger) {
@@ -343,6 +378,8 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
       supply = { currency, amount, fxRate };
     }
     if (dateRef.current?.validity.badInput) next.scheduledPaymentDate = DATE_EMPTY_ERROR;
+    if (evidenceDateRef.current?.validity.badInput) next.evidenceDate = DATE_EMPTY_ERROR;
+    if (evidenceAmountInput.error) next.evidenceAmount = evidenceAmountInputError(evidenceAmountInput.error);
     if (team && (usageDate === "" || usageDateRef.current?.validity.badInput)) next.usageDate = DATE_EMPTY_ERROR;
     setErrors(next);
     if (Object.keys(next).length > 0) {
@@ -356,8 +393,21 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
       scheduledPaymentDate: date || null,
       note: note || null,
       installment: data.installmentMode === "none" ? false : installment,
+      ...evidenceFields(),
       ...teamFields(),
       ...(newDoc && pickedVendor ? { vendorId: pickedVendor.id } : {}),
+    };
+  }
+
+  // 06-10 증빙 묶음 칸 넷 — 선결제를 끄면 사유는 보내지 않고 서버가 버린다(S6). 증빙 금액 · 증빙일은 비면 null(제출 필수 아님).
+  function evidenceFields(): Record<string, unknown> {
+    const raw = evidenceAmountInput.rawValue;
+    const amount = raw === "" ? null : parseNumberInput(raw);
+    return {
+      prepaid,
+      prepaidReason: prepaid ? prepaidReason.trim() || null : null,
+      evidenceAmountKrw: amount !== null && Number.isFinite(amount) ? amount : null,
+      evidenceDate: evidenceDateRef.current?.validity.badInput ? null : evidenceDate || null,
     };
   }
 
@@ -382,6 +432,8 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
       supply: supplyValid ? { currency, amount, fxRate } : null,
       scheduledPaymentDate: dateRef.current?.validity.badInput ? null : date || null,
       installment: data.installmentMode === "none" ? false : installment,
+      prepaid,
+      prepaidReason: prepaid ? prepaidReason.trim() || null : null,
       ...(team && usageDate !== "" && !usageDateRef.current?.validity.badInput ? teamFields() : {}),
     };
   }
@@ -393,6 +445,9 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
       scheduledPaymentDate: "지급 예정일",
       note: "비고",
       usageDate: "사용일",
+      prepaidReason: "선결제 사유",
+      evidenceAmount: "증빙 금액",
+      evidenceDate: "증빙일",
     } as const;
     const keys = (Object.keys(fieldErrors) as (keyof typeof names)[]).filter((key) => fieldErrors[key]);
     return `${purpose === "submit" ? "제출" : "임시 저장"} 실패 · ${keys.map((key) => names[key]).join(", ")} ${keys.length}칸`;
@@ -420,17 +475,34 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
       setSavedAt(result.data.savedAt);
       return result.data.version;
     }
-    const noteError = result?.validationErrors?.fields?.note?._errors?.[0];
-    const dateError = result?.validationErrors?.fields?.scheduledPaymentDate?._errors?.[0];
-    if (noteError || dateError) {
+    const fieldErrors = result?.validationErrors?.fields;
+    const noteError = fieldErrors?.note?._errors?.[0];
+    const dateError = fieldErrors?.scheduledPaymentDate?._errors?.[0];
+    const evidenceAmountError = fieldErrors?.evidenceAmountKrw?._errors?.[0];
+    const evidenceDateError = fieldErrors?.evidenceDate?._errors?.[0];
+    const prepaidReasonError = fieldErrors?.prepaidReason?._errors?.[0];
+    if (noteError || dateError || evidenceAmountError || evidenceDateError || prepaidReasonError) {
       const next = {
         ...(noteError ? { note: noteError } : {}),
         ...(dateError ? { scheduledPaymentDate: dateError } : {}),
+        ...(evidenceAmountError ? { evidenceAmount: evidenceAmountError } : {}),
+        ...(evidenceDateError ? { evidenceDate: evidenceDateError } : {}),
+        ...(prepaidReasonError ? { prepaidReason: prepaidReasonError } : {}),
       };
       setErrors(next);
       setFailure(purpose === "submit" ? failureLine(next) : "임시 저장 실패 · 다시 시도");
     } else {
-      setFailure(result?.serverError ?? (purpose === "submit" ? "제출 실패 · 다시 제출" : "임시 저장 실패 · 다시 시도"));
+      const message = result?.serverError;
+      // 서버 칸 오류(ExpenseFieldError)는 글자만 온다 — 어느 칸인지는 화면 값으로 가른다(선결제 켬 · 사유 빔 / 부가세 포함 금액 글자).
+      if (message && prepaid && prepaidReason.trim() === "") {
+        setErrors({ prepaidReason: message });
+        setFailure(purpose === "submit" ? failureLine({ prepaidReason: message }) : "임시 저장 실패 · 다시 시도");
+      } else if (message === EVIDENCE_AMOUNT_TAX_INCLUSIVE) {
+        setErrors({ evidenceAmount: message });
+        setFailure(purpose === "submit" ? failureLine({ evidenceAmount: message }) : "임시 저장 실패 · 다시 시도");
+      } else {
+        setFailure(message ?? (purpose === "submit" ? "제출 실패 · 다시 제출" : "임시 저장 실패 · 다시 시도"));
+      }
     }
     return null;
   }
@@ -479,7 +551,7 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
   async function submit() {
     if (busyRef.current) return;
     if (block !== null) {
-      focusBlockTarget();
+      pressBlocked();
       return;
     }
     busyRef.current = true;
@@ -631,6 +703,7 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
   }
 
   const amountError = errors.supplyAmount ?? amountInput.error ?? previewFieldError ?? undefined;
+  const evidenceAmountError = errors.evidenceAmount ?? (evidenceAmountInput.error ? evidenceAmountInputError(evidenceAmountInput.error) : undefined);
   // 계산 한 줄은 값 줄이라 설명 문단(`Form.Hint`의 <p>)이 아니라 같은 모양(힌트 글자)의 span이다 — 화면 사용성 원칙 검사의 「긴 설명」과 구분.
   const taxHint = previewFailed ? (
     <span className={`${styles.taxLine} ${styles.stale}`} data-testid="expense-tax-line">
@@ -663,7 +736,7 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
         pending={submitting}
         disabled={block !== null}
         aria-describedby={block ? "expense-blocked" : undefined}
-        onClickCapture={block ? () => focusBlockTarget() : undefined}
+        onClickCapture={block ? () => pressBlocked() : undefined}
       >
         {resubmit ? "지출결의 다시 제출" : "지출결의 제출"}
       </Button>
@@ -855,6 +928,69 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
             )}
           </div>
         </Form.Field>
+
+        <Form.Field id="evidenceAmount" label="증빙 금액" width="short">
+          <input
+            id="evidenceAmount"
+            ref={evidenceAmountInput.inputRef}
+            type="text"
+            inputMode="numeric"
+            autoComplete="off"
+            className={`${styles.textInput} ${styles.numeric}`}
+            value={evidenceAmountInput.value}
+            onChange={evidenceAmountInput.onChange}
+            aria-invalid={evidenceAmountError ? true : undefined}
+            aria-describedby={evidenceAmountError ? "evidenceAmount-error" : undefined}
+          />
+          {evidenceAmountError ? <Form.Error id="evidenceAmount-error">{evidenceAmountError}</Form.Error> : null}
+        </Form.Field>
+
+        <Form.Field id="evidenceDate" label="증빙일" width="short">
+          <input
+            id="evidenceDate"
+            ref={evidenceDateRef}
+            type="date"
+            value={evidenceDate}
+            onChange={(event) => setEvidenceDate(event.target.value)}
+            className={styles.textInput}
+            aria-invalid={errors.evidenceDate ? true : undefined}
+            aria-describedby={errors.evidenceDate ? "evidenceDate-error" : undefined}
+          />
+          {errors.evidenceDate ? <Form.Error id="evidenceDate-error">{errors.evidenceDate}</Form.Error> : null}
+        </Form.Field>
+
+        <Form.Field id="prepaid" label="선결제" width="long">
+          <input
+            id="prepaid"
+            type="checkbox"
+            className={styles.installmentCheck}
+            checked={prepaid}
+            onChange={(event) => {
+              setPrepaid(event.target.checked);
+              if (!event.target.checked) setErrors((current) => ({ ...current, prepaidReason: undefined }));
+            }}
+          />
+        </Form.Field>
+        {prepaid ? (
+          <Form.Field id="prepaidReason" label="선결제 사유" width="long">
+            <input
+              id="prepaidReason"
+              type="text"
+              maxLength={480}
+              autoComplete="off"
+              value={prepaidReason}
+              onChange={(event) => {
+                setPrepaidReason(event.target.value);
+                if (errors.prepaidReason) setErrors((current) => ({ ...current, prepaidReason: undefined }));
+              }}
+              className={styles.textInput}
+              aria-invalid={errors.prepaidReason ? true : undefined}
+              aria-describedby={errors.prepaidReason ? "prepaidReason-error" : undefined}
+            />
+            {errors.prepaidReason ? <Form.Error id="prepaidReason-error">{errors.prepaidReason}</Form.Error> : null}
+            <Form.Hint>{`증빙 기한 지급일부터 ${data.prepaidDueDays}일`}</Form.Hint>
+          </Form.Field>
+        ) : null}
 
         <KvList items={[{ label: "결재선", value: route }]} />
 

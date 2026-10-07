@@ -16,6 +16,7 @@ export type ExpenseSubmitTarget =
   | "supplyAmount"
   | "evidenceType"
   | "paymentMethod"
+  | "prepaidReason"
   | "evidence";
 
 type FieldTarget = Extract<ExpenseSubmitTarget, "teamExpenseKind" | "content" | "supplyAmount" | "evidenceType" | "paymentMethod">;
@@ -39,6 +40,8 @@ export const TAX_UNAVAILABLE = "세금 계산 불가 · 세율은 경영관리";
 // 쓰지 않는(보관 · 비활성) 코드 — 저장 거부(A4)와 제출 막힘(C4)이 같은 글자다.
 export const INACTIVE_EVIDENCE_TYPE = "쓰지 않는 증빙 종류 · 증빙 종류 고르기";
 export const INACTIVE_PAYMENT_METHOD = "쓰지 않는 지급 방식 · 지급 방식 고르기";
+// 06-10(A#19 · EXP-13): 선결제 표시 · 사유 빔 — 저장 거부와 제출 막힘이 같은 글자다.
+export const PREPAID_REASON_REQUIRED = "선결제 사유 없음 · 사유 적기";
 
 export type ExpenseSubmitFacts = {
   // ① 견적 줄 문서의 현재 차수 고객 승인 사실(팀 비용 null).
@@ -57,6 +60,9 @@ export type ExpenseSubmitFacts = {
   // ⑥ 뒤 — 저장된 값이 그 뒤 보관 · 비활성된 코드(폼에는 이름으로 보이므로 빈 칸이 아니다).
   evidenceTypeInactive: boolean;
   paymentMethodInactive: boolean;
+  // ⑧ 앞 — 선결제 표시와 사유(잠근 행의 칸). 선결제면 ⑧ 증빙 없음이 풀린다.
+  prepaid: boolean;
+  prepaidReason: string | null;
   // ⑧ 살아 있는 증빙 파일 수 — 제출 트랜잭션 안에서는 tx로 센 값(UI Assumptions #5).
   evidenceCount: number;
   // ⑨ 세율 설정이 그 기준일에 없다.
@@ -79,7 +85,7 @@ function emptyFields(facts: ExpenseSubmitFacts): ExpenseRequiredField[] {
   return fields.filter((field) => values[field.target] === null || values[field.target] === "");
 }
 
-// ①~⑨ 순서 표 — 이 함수 하나에만 순서가 있다.
+// ①~⑨ 순서 표 — 이 함수 하나에만 순서가 있다. 선결제 사유 단계(06-10)는 공급가 0 단계 뒤, ⑧ 바로 앞이다.
 function stepsOf(facts: ExpenseSubmitFacts): Step[] {
   const empty = emptyFields(facts);
   const first = empty[0];
@@ -101,7 +107,8 @@ function stepsOf(facts: ExpenseSubmitFacts): Step[] {
     { target: "evidenceType", reason: facts.evidenceTypeInactive ? INACTIVE_EVIDENCE_TYPE : null },
     { target: "paymentMethod", reason: facts.paymentMethodInactive ? INACTIVE_PAYMENT_METHOD : null },
     { target: "supplyAmount", reason: facts.supplyAmountKrw === 0 ? "공급가액이 0 · 0보다 크게" : null },
-    { target: "evidence", reason: facts.evidenceCount === 0 ? "증빙 없음 · 증빙 올리기 Ctrl+U" : null },
+    { target: "prepaidReason", reason: facts.prepaid && !facts.prepaidReason?.trim() ? PREPAID_REASON_REQUIRED : null },
+    { target: "evidence", reason: facts.evidenceCount === 0 && !facts.prepaid ? "증빙 없음 · 증빙 올리기 Ctrl+U" : null },
     { target: null, reason: facts.taxUnavailable ? TAX_UNAVAILABLE : null },
   ];
 }

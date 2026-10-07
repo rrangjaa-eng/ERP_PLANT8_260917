@@ -29,7 +29,9 @@ import {
   APPROVAL_ROUTE_EXPENSE_STEP4_ROLE_ID,
   APPROVAL_ROUTE_EXPENSE_STEP4_SCOPE,
   APPROVAL_ROUTE_EXPENSE_STEP4_ORG_UNIT_ID,
+  EVIDENCE_PREPAID_DUE_DAYS,
   PROJECT_CUSTOMER_APPROVAL_GATE,
+  PURCHASE_ONLINE_VENDOR_NAME,
 } from "@/domain/settings/keys";
 import {
   ApprovalConflictError,
@@ -52,23 +54,26 @@ import type { ApprovalStatus } from "@/domain/approvals/route";
 import { visible } from "@/domain/permissions/visible";
 import { findApprovalGraphByDocument, type ApprovalGraph } from "@/repositories/approvals";
 import type { DescribeDeps, DocumentSummary, RouteConfigStep } from "@/domain/approvals/kinds";
+import { EVIDENCE_AMOUNT_TAX_INCLUSIVE, isTaxInclusiveEvidenceAmount } from "@/domain/evidence-reviews/tax-inclusive";
 import { gate, GateBlockedError } from "@/domain/rules/gate";
-import "@/domain/rules/register";
+import { cardDualLinkDecision, linePaidLockDecision, type CardDualLinkCtx, type ExpenseLinePaidLockCtx } from "@/domain/rules/register";
 import { moneyFromRow, moneyToColumns, remainingForInstallments, sameAmountOn, type Money } from "@/domain/money";
 import { CURRENCIES, recentFxRate } from "@/domain/money/currency";
 import { allocateDocumentNumber, allocateExpenseNumber, loadDocumentNumberFormat, loadExpenseNumberFormat } from "@/domain/document-numbering";
 import { teamAtDate } from "@/domain/org";
 import { formatKstTime } from "@/domain/holidays/business-day";
-import { computeExpenseTax, storedTaxResult, taxDriftText, taxLineText, type ExpenseTaxResult } from "@/domain/expenses/tax";
+import { computeExpenseTax, storedTaxResult, taxDriftText, taxLineText, type ExpenseTaxResult, type ExpenseTaxSource } from "@/domain/expenses/tax";
 import { buildExpenseDetailRows } from "@/domain/expenses/detail";
 import { canSeeExpense, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses/access";
-import { expenseLineDoor, installmentSeqFor, type ExpenseLineDoor } from "@/domain/expenses/line-door";
+import { expenseLineDoor, installmentSeqFor, type ExpenseLineDoor, type ExpenseLineDoorState } from "@/domain/expenses/line-door";
 import { resolveLinkedDocumentsByLineage, type LineageLine } from "@/domain/quotes/lineage";
+import { resolveLineDoor, type LineDoorKind } from "@/domain/quotes/line-door";
 import {
   buildExpenseSubmitContext,
   INACTIVE_EVIDENCE_TYPE,
   INACTIVE_PAYMENT_METHOD,
   nextActionTarget,
+  PREPAID_REASON_REQUIRED,
   PROJECT_COMPLETED,
   TAX_UNAVAILABLE,
   type ExpenseSubmitFacts,
@@ -90,9 +95,9 @@ import { countActiveByOwner, listAliveByOwners, markOwnerFilesRemoved, restoreOw
 import { findProjectById, lockProjectForWrite, type ProjectRow } from "@/repositories/projects";
 import { findLatestQuoteRevision, findQuoteRevisionById, listLatestQuoteRevisionsByProjects, type QuoteRevisionRow } from "@/repositories/quote-revisions";
 import { findQuoteLineById, listLineageLinesByProjects, listQuoteLinesByRevision, type QuoteLineRow } from "@/repositories/quote-lines";
-import { findLineLinks } from "@/repositories/quote-line-links";
+import { findExpenseDocFacts, findLineLinks, findLineVendorNames, listExpenseDocFacts, lockQuoteLines } from "@/repositories/quote-line-links";
 import { findUserById, findUserNamesByIds } from "@/repositories/users";
-import { findVendorById } from "@/repositories/vendors";
+import { findVendorById, findVendorNamesByIds } from "@/repositories/vendors";
 import {
   closeExpenseRow,
   listClosedInstallmentsByLines,
@@ -161,7 +166,7 @@ export class ExpenseNotFoundError extends UserFacingError {
 // 칸 오류 — 회차 상한 초과(게이트가 아니라 공급가액 칸 아래 한 줄).
 export class ExpenseFieldError extends UserFacingError {
   constructor(
-    readonly field: "supplyAmount" | "usageDate",
+    readonly field: "supplyAmount" | "usageDate" | "prepaidReason" | "evidenceAmount",
     message: string,
   ) {
     super(message);
@@ -339,6 +344,10 @@ function toSource(row: ExpenseSummaryRow, extras: SourceExtras = {}): ExpenseDoc
     installmentText: extras.installmentText ?? null,
     closure: extras.closure ?? null,
     closeDialog: extras.closeDialog ?? null,
+    prepaid: row.prepaid,
+    prepaidReason: row.prepaidReason,
+    evidenceAmountKrw: row.evidenceAmount,
+    evidenceDate: row.evidenceDate,
   };
 }
 
@@ -745,9 +754,17 @@ const lineDraftFieldsSchema = draftFieldsSchema.pick({ note: true, scheduledPaym
 export type LineDraftFieldsInput = z.input<typeof lineDraftFieldsSchema>;
 
 function toDraftColumns(fields: z.output<typeof draftFieldsSchema>): ExpenseDraftFields {
-  const { supply, content, ...others } = fields;
+  const { supply, content, evidenceAmountKrw, prepaidReason, ...others } = fields;
   // 공백뿐인 내용은 비운 것과 같다.
-  const rest = content === undefined ? others : { ...others, content: content?.trim() ? content.trim() : null };
+  const withContent = content === undefined ? others : { ...others, content: content?.trim() ? content.trim() : null };
+  // 06-10: 증빙 금액은 칸 이름이 다르다(evidence_amount). 선결제를 끄면 적은 사유는 버린다(S6) — 사유는 앞뒤 공백을 뗀다.
+  const withEvidence = evidenceAmountKrw === undefined ? withContent : { ...withContent, evidenceAmount: evidenceAmountKrw };
+  const rest =
+    fields.prepaid === false
+      ? { ...withEvidence, prepaidReason: null }
+      : prepaidReason === undefined
+        ? withEvidence
+        : { ...withEvidence, prepaidReason: prepaidReason?.trim() ? prepaidReason.trim() : null };
   if (supply === undefined) return rest;
   if (supply === null) return { ...rest, supplyCurrency: "KRW", supplyForeignAmount: null, supplyFxRate: "1.0000", supplyAmountKrw: null };
   // moneyToColumns가 normalizeMoneyInput으로 통화 · 정밀도 · 범위를 판정한다.
@@ -761,6 +778,15 @@ function toDraftColumns(fields: z.output<typeof draftFieldsSchema>): ExpenseDraf
   };
 }
 
+// 06-10 EA-1(사용자 결정 10/6 11:57 채팅 — 저장 막기): 증빙 금액이 공급가액 + 부가세와 정확히 같으면 부가세 포함 합계로 보고 거부한다.
+// 임시 저장(합친 행)과 새 팀 비용 첫 저장(칸 값)이 함께 쓴다. 부가세는 지급 총액과 같은 길(computeExpenseTax → applyTaxRule)이다 — 새 세금 계산 없음.
+async function assertEvidenceAmountNotTaxInclusive(viewer: Viewer, doc: ExpenseTaxSource & { evidenceAmount?: number | null }): Promise<void> {
+  if (doc.evidenceAmount === null || doc.evidenceAmount === undefined || doc.supplyAmountKrw === null) return;
+  const tax = await computeExpenseTax(viewer, doc);
+  if (!tax.unavailable && isTaxInclusiveEvidenceAmount({ evidenceAmountKrw: doc.evidenceAmount, supplyKrw: doc.supplyAmountKrw, vatKrw: tax.vatKrw }))
+    throw new ExpenseFieldError("evidenceAmount", EVIDENCE_AMOUNT_TAX_INCLUSIVE);
+}
+
 // 기안자 · 고칠 수 있는 문서만(작성 중 · 05-09 반려 · 회수 — 아니면 없는 문서). 원화는 서버가 계산한다. version 조건 저장 — 0행이면 충돌.
 export async function saveExpenseDraft(
   viewer: Viewer,
@@ -771,6 +797,14 @@ export async function saveExpenseDraft(
   const parsed = draftFieldsSchema.parse(input.fields);
   await assertActiveCodes(viewer, parsed, row);
   const fields = toDraftColumns(parsed);
+  // 06-10: 합친 행이 선결제 · 사유 빔이면 DB 체크(expenses_prepaid_reason_check)를 만나기 전에 칸 오류로 거부한다. 선결제가 아니면 사유는 버린다.
+  const prepaid = fields.prepaid ?? row.prepaid;
+  if (prepaid) {
+    const reason = fields.prepaidReason !== undefined ? fields.prepaidReason : row.prepaidReason;
+    if (!reason?.trim()) throw new ExpenseFieldError("prepaidReason", PREPAID_REASON_REQUIRED);
+  } else if (fields.prepaidReason !== undefined) fields.prepaidReason = null;
+  // 06-10 EA-1: 합친 값(이번 입력 + 저장된 행)으로 판정한다.
+  await assertEvidenceAmountNotTaxInclusive(viewer, { ...row, ...fields });
   // 번호 있는 문서(반려 · 회수)는 공급가액이 있어야 한다(DB 체크 — 번호 있으면 공급가액 > 0) — DB 오류 대신 칸 오류.
   if (row.number !== null && fields.supplyAmountKrw !== undefined && (fields.supplyAmountKrw === null || fields.supplyAmountKrw <= 0)) {
     throw new ExpenseFieldError("supplyAmount", fields.supplyAmountKrw === null ? SUPPLY_EMPTY : SUPPLY_ZERO);
@@ -823,10 +857,20 @@ export async function createTeamExpenseDraft(
   const parsed = draftFieldsSchema.parse(input.fields);
   if (parsed.vendorId) await usableVendor(viewer, parsed.vendorId);
   await assertActiveCodes(viewer, parsed);
+  const draftColumns = toDraftColumns(parsed);
+  if (draftColumns.prepaid && !draftColumns.prepaidReason) throw new ExpenseFieldError("prepaidReason", PREPAID_REASON_REQUIRED);
+  await assertEvidenceAmountNotTaxInclusive(viewer, {
+    evidenceType: draftColumns.evidenceType ?? null,
+    supplyAmountKrw: draftColumns.supplyAmountKrw ?? null,
+    scheduledPaymentDate: draftColumns.scheduledPaymentDate ?? null,
+    evidenceDate: draftColumns.evidenceDate ?? null,
+    evidenceAmount: draftColumns.evidenceAmount,
+    createdAt: deps?.now ?? new Date(),
+  });
   const usageDate = parsed.usageDate ?? seoulToday(deps?.now);
   const attributedTeamId = await attributedTeamFor(viewer, usageDate);
   const inserted = await insertTeamDraftIfAbsent(viewer, {
-    ...toDraftColumns(parsed),
+    ...draftColumns,
     drafterId: viewer.id,
     idempotencyKey: key,
     usageDate,
@@ -963,6 +1007,8 @@ export async function submitExpense(
   const pre = projectRow ? await loadSubmitPre(viewer, projectRow) : null;
   const codes = await loadActiveCodes(viewer);
   const prepared = await prepareSubmission(viewer, { kind: EXPENSE_DOCUMENT_KIND, drafterId: viewer.id });
+  // 06-13 「06-03 tx 규약」: 온라인구매 문 설정은 트랜잭션 전에 읽는다(잠근 줄의 거래처 이름만 tx로).
+  const onlineVendorName = row.quoteLineId ? await getSettingValue(PURCHASE_ONLINE_VENDOR_NAME) : "";
   const numbering = projectRow
     ? ({ kind: "project", projectNumber: projectRow.number, format: await loadExpenseNumberFormat() } as const)
     : ({ kind: "team", format: await loadDocumentNumberFormat("expense_team") } as const);
@@ -970,10 +1016,14 @@ export async function submitExpense(
   const teamNumberYear = Number(seoulToday(deps?.now).slice(0, 4));
 
   return withTransaction(async (tx): Promise<SubmitExpenseResult> => {
+    // 06-13(B-1 · N-3): 전역 잠금 순서 프로젝트 행 → 견적 줄(id 순, 줄 하나) → 문서 행. 줄 id는 트랜잭션 전에 읽은 값이고,
+    // 잠근 문서의 줄이 그 사이 바뀌었으면 잠그지 않은 줄로 판정하지 않고 충돌로 막는다.
     const lockedProject = projectRow ? await lockProjectForWrite(viewer, projectRow.id, tx) : null;
+    if (row.quoteLineId) await lockQuoteLines(viewer, [row.quoteLineId], tx);
     const locked = await lockExpenseForUpdate(viewer, row.id, tx);
     await deps?.afterLock?.();
     if (!locked) throw new ExpenseNotFoundError();
+    if (locked.quoteLineId !== row.quoteLineId) throw new ExpenseConflictError(locked.updatedAt);
     let resubmit: { instanceId: string; version: number } | null = null;
     if (locked.number !== null && locked.closedAt !== null) throw new ExpenseCloseRefusedError(EXPENSE_ALREADY_CLOSED);
     if (locked.number !== null) {
@@ -986,13 +1036,27 @@ export async function submitExpense(
 
     // 잠근 프로젝트 행 · tx로 읽은 차수 · 줄 · 문 · 증빙 수로 같은 규칙을 다시 판정한다(T-05-601).
     const { facts, line, numbered, door, closedInstallments } = await loadSubmitFacts(viewer, locked, lockedProject ?? projectRow, pre, tax, codes, tx);
+    // 06-13(EXP-06): 지급 완료 잠금은 05 ④보다 먼저 — 입력은 05 계보 사슬 번호 문서(`numbered`, X-3 · R-7) 그대로.
+    if (door) {
+      const others = numbered.filter((doc) => doc.id !== locked.id);
+      const paidFacts = await findExpenseDocFacts(viewer, others.map((doc) => doc.id), tx);
+      const paidLock = await gate(locked, "expense.line-paid-lock", {
+        door: door.state,
+        docs: others.map((doc) => ({ number: doc.number ?? "", installment: doc.installment, paid: paidFacts.get(doc.id)?.paid ?? false })),
+      });
+      if (!paidLock.allowed) throw new GateBlockedError(paidLock.reason);
+    }
     const decision = await gate(locked, "expense.submit", buildExpenseSubmitContext(facts));
     if (!decision.allowed) throw new GateBlockedError(decision.reason);
     if (locked.quoteLineId) {
-      // 06-07 I-2(D-609 지출결의 쪽 입구): 줄 계보 사슬에 카드 사용이 이어져 있으면 막는다 — 잠근 프로젝트 행 아래 같은 tx로 읽는다.
+      // 06-13(EXP-07 · D-609 — 06-07 I-2를 합침): 잠근 줄의 계보 사슬에 카드 사용 · `신청됨` 구매 요청이 이어져 있으면 막고(한 번만 판정),
+      // 온라인구매 협력사 줄이면 구매 요청 문으로 보낸다. 둘 다 같은 tx로 읽는다.
       const links = (await findLineLinks(viewer, [locked.quoteLineId], tx)).get(locked.quoteLineId);
-      const dual = await gate(locked, "card.dual-link-block", { side: "expense", links: links ?? { expenses: [], cardUsages: [] } });
+      const dual = await gate(locked, "card.dual-link-block", { side: "expense", links: links ?? { expenses: [], cardUsages: [], purchaseRequests: [] } });
       if (!dual.allowed) throw new GateBlockedError(dual.reason);
+      const vendorName = (await findLineVendorNames(viewer, [locked.quoteLineId], tx)).get(locked.quoteLineId) ?? null;
+      const lineDoor = await gate(locked, "purchase.line-door", { side: "expense", door: resolveLineDoor({ vendorName }, onlineVendorName), vendorName });
+      if (!lineDoor.allowed) throw new GateBlockedError(lineDoor.reason);
       const current = supplyMoney(locked);
       if (line && current) {
         const others = numbered.filter((doc) => doc.id !== locked.id).flatMap((doc) => supplyMoney(doc) ?? []);
@@ -1325,6 +1389,9 @@ async function loadSubmitFacts(
     paymentMethod: row.paymentMethod,
     evidenceTypeInactive: row.evidenceType ? !codes.evidence.has(row.evidenceType) : false,
     paymentMethodInactive: row.paymentMethod ? !codes.payment.has(row.paymentMethod) : false,
+    // 06-10: 선결제 사실은 잠근 행(제출) · 겹친 행(미리보기)의 칸이다 — 새 조회 없음.
+    prepaid: row.prepaid,
+    prepaidReason: row.prepaidReason,
     evidenceCount,
     taxUnavailable: tax.unavailable === true,
   };
@@ -1431,8 +1498,12 @@ async function lineFactsFor(viewer: Viewer, row: ExpenseSummaryRow, supply: Mone
 // 받는다(PM 계급은 코드표 메뉴가 없어 domain/code-tables의 목록이 비었다 — 증빙 종류를 바꿀 수 없었다). 라벨 · 설명만 싣는다.
 export type ExpenseCodeOption = { value: string; label: string; description: string | null };
 
-export async function listExpenseFormOptions(viewer: Viewer): Promise<{ evidence: ExpenseCodeOption[]; payment: ExpenseCodeOption[] }> {
-  if (!(await can(viewer, "expenses", "write"))) return { evidence: [], payment: [] };
+export async function listExpenseFormOptions(
+  viewer: Viewer,
+): Promise<{ evidence: ExpenseCodeOption[]; payment: ExpenseCodeOption[]; prepaidDueDays: number }> {
+  // 06-10: 선결제 칸 힌트 `증빙 기한 지급일부터 {N}일`의 N(evidence.prepaid_due_days — 06-06 loadPrepaidDueDays와 같은 설정, domain/evidence-reviews를 값 import하면 순환이라 설정을 직접 읽는다. 트랜잭션 없는 사전 조회).
+  const prepaidDueDays = await getSettingValue(EVIDENCE_PREPAID_DUE_DAYS);
+  if (!(await can(viewer, "expenses", "write"))) return { evidence: [], payment: [], prepaidDueDays };
   const read = async (tableKey: string): Promise<ExpenseCodeOption[]> =>
     (await listCodeItems(viewer, { tableKey, scope: { rows: "all", includeArchived: false }, includeInactive: false })).map((item) => ({
       value: item.value,
@@ -1440,7 +1511,7 @@ export async function listExpenseFormOptions(viewer: Viewer): Promise<{ evidence
       description: item.description,
     }));
   const [evidence, payment] = await Promise.all([read("evidence_type"), read("payment_method")]);
-  return { evidence, payment };
+  return { evidence, payment, prepaidDueDays };
 }
 
 // 05-05 폼 통화 선택지 — 통화마다 설정의 최근 환율(Phase 4 D-71)이 기본 환율이다.
@@ -1521,7 +1592,38 @@ export type LineDoorCell = {
   expenseId?: string;
   // 이 줄의 가장 최근 제출 문서(문이 닫힘 `지출결의 열기`의 도착지).
   latestId?: string;
+  // 06-13(S14 · EXP-10) — 줄의 문(거래처 설정에서만 — `resolveLineDoor`). `purchase`면 행 행동이 `구매 요청`(목적지 `purchaseHref`).
+  branch: LineDoorKind;
+  purchaseHref?: string;
+  // 06-13(S14) — 행 행동 막힘 이유(서버 게이트 거부와 같은 문자열) · 다음 한 수(`rowActionBlock`).
+  blocked?: RowActionBlock;
 };
+
+export type RowActionBlock = { reason: string; next?: { label: "카드 사용 등록"; href: string } };
+
+// 06-13(S14 조합표 — 06-18 소비 계약) — 견적 줄 행 행동의 막힘. 권한 · 설정을 읽지 않는 순수 함수다(06-18이 트랜잭션 안에서 같은 함수를 부른다).
+// 문(`branch`)은 호출자가 `resolveLineDoor`로 정해 넘기고, 이유는 서버 게이트와 같은 함수(`cardDualLinkDecision` · `linePaidLockDecision`)가 만든다.
+// 온라인구매 줄 × 지출결의 연결 → 이유 / 일반 줄 × closed × 지급 완료 → 이유(05 `지출결의 열기` 옆) / 일반 줄 × open × 카드 쪽 연결 → 이유 + 3차
+// `카드 사용 등록` / `no_vendor` · `none`은 05 그대로(막힘 없음).
+export function rowActionBlock(input: {
+  lineId: string;
+  branch: LineDoorKind;
+  door: ExpenseLineDoorState;
+  links: CardDualLinkCtx["links"];
+  paid: ExpenseLinePaidLockCtx["docs"];
+}): RowActionBlock | null {
+  if (input.door === "none" || input.door === "no_vendor") return null;
+  if (input.branch === "purchase") {
+    const card = cardDualLinkDecision({ side: "card", links: input.links });
+    return card.allowed ? null : { reason: card.reason };
+  }
+  if (input.door === "closed") {
+    const lock = linePaidLockDecision({ door: input.door, docs: input.paid });
+    return lock.allowed ? null : { reason: lock.reason };
+  }
+  const dual = cardDualLinkDecision({ side: "expense", links: input.links });
+  return dual.allowed ? null : { reason: dual.reason, next: { label: "카드 사용 등록", href: `/cards?new=1&line=${input.lineId}` } };
+}
 export type LineDoors = { showColumn: boolean; tableGateReason: string | null; cells: Record<string, LineDoorCell> };
 
 // 화면은 이 값만 그린다 — 셀 · 표 전체 게이트 · 열 여부 판정은 서버다. 열은 `expenses` 쓰기 권한 ∧ 그 프로젝트 쓰기 권리
@@ -1541,15 +1643,46 @@ export async function listLineDoors(viewer: Viewer, input: { projectId: string }
 
   const lines = await listQuoteLinesByRevision(viewer, facts.latestRevisionId);
   const lineIds = lines.map((line) => line.id);
-  const [numbered, drafts] = await Promise.all([listNumberedByLineage(viewer, input.projectId), listDraftsByLines(viewer, { lineIds, drafterId: viewer.id })]);
+  const vendorIds = [...new Set(lines.flatMap((line) => (line.vendorId ? [line.vendorId] : [])))];
+  const [numbered, drafts, links, vendorNames, onlineVendorName] = await Promise.all([
+    listNumberedByLineage(viewer, input.projectId),
+    listDraftsByLines(viewer, { lineIds, drafterId: viewer.id }),
+    findLineLinks(viewer, lineIds),
+    findVendorNamesByIds(viewer, vendorIds),
+    getSettingValue(PURCHASE_ONLINE_VENDOR_NAME),
+  ]);
+  const docFacts = await listExpenseDocFacts(viewer, [...numbered.values()].flatMap((docs) => docs.map((doc) => doc.id)));
+  // 감사 D-2 — 다음 한 수 `카드 사용 등록`은 오늘 쓸 수 있는 카드가 있는 사람에게만(카드 페이지가 패널을 여는 조건과 같은 함수).
+  // corp-card-usages가 이 모듈을 가져다 쓰므로 런타임 순환을 피해 늦게 불러온다(evidence-reviews → payments 선례).
+  let canRegisterCard: boolean | null = null;
+  const cardRegistrable = async (): Promise<boolean> => {
+    if (canRegisterCard === null) {
+      const { cardOptionsForUsage } = await import("@/domain/corp-card-usages");
+      canRegisterCard = (await cardOptionsForUsage(viewer, seoulToday())).length > 0;
+    }
+    return canRegisterCard;
+  };
   const cells: Record<string, LineDoorCell> = {};
   for (const line of lines) {
-    const door = doorFor(line, numbered.get(line.id) ?? []);
+    const docs = numbered.get(line.id) ?? [];
+    const door = doorFor(line, docs);
     const draft = drafts.find((doc) => doc.quoteLineId === line.id);
+    const branch = resolveLineDoor({ vendorName: line.vendorId ? (vendorNames.get(line.vendorId) ?? null) : null }, onlineVendorName);
+    const blocked = rowActionBlock({
+      lineId: line.id,
+      branch,
+      door: door.state,
+      links: links.get(line.id) ?? { expenses: [], cardUsages: [], purchaseRequests: [] },
+      paid: docs.map((doc) => ({ number: doc.number ?? "", installment: doc.installment, paid: docFacts.get(doc.id)?.paid ?? false })),
+    });
+    const shown = blocked?.next && !(await cardRegistrable()) ? { reason: blocked.reason } : blocked;
     cells[line.id] = {
       state: door.state,
+      branch,
+      ...(branch === "purchase" ? { purchaseHref: `/cards/purchases?new=1&line=${line.id}` } : {}),
       ...(door.state === "open" && draft ? { expenseId: draft.id } : {}),
       ...(door.latest ? { latestId: door.latest.id } : {}),
+      ...(shown ? { blocked: shown } : {}),
     };
   }
   return { showColumn: true, tableGateReason: facts.tableGateReason, cells };

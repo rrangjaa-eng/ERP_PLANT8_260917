@@ -131,7 +131,8 @@ describe("공용 카드 사용 자격", () => {
 
     const proxyIds = (await cardOptionsForUsage(proxy, seoulToday())).map((option) => option.id);
     expect(proxyIds).toEqual(expect.arrayContaining([teamCardId, sharedId]));
-    expect(proxyIds).not.toContain(ownId);
+    // 06-09(EXP-16): 대리 등록 권한자는 활성 카드 전부 — 남의 개인 · 남의 팀 카드도 든다.
+    expect(proxyIds).toEqual(expect.arrayContaining([ownId, otherTeamCardId]));
   });
 });
 
@@ -536,7 +537,7 @@ describe("반대쪽 지출결의(D-609 · C10)", () => {
     return { ...usageInput(cardId), linkKind: "quote_line", lineId };
   }
 
-  it("번호 있는 지출결의가 이어진 줄 → `지출결의 {번호} 연결됨 · 다른 줄 고르기`", async () => {
+  it("번호 있는 지출결의가 이어진 줄 → `지출결의 {번호} 연결됨 · 카드 사용은 다른 줄`", async () => {
     const fx = await setupExpenseProject();
     const cardId = await staffCard(fx);
     const created = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
@@ -544,7 +545,7 @@ describe("반대쪽 지출결의(D-609 · C10)", () => {
     if (submitted.kind !== "submitted") throw new Error("제출되지 않음");
     const input = expenseLineInput(cardId, fx.lines.withVendor);
     const error = await caught(createCardUsage(fx.pm, input, await precheckCardUsage(fx.pm, input)));
-    expect((error as Error).message).toBe(`지출결의 ${submitted.number} 연결됨 · 다른 줄 고르기`);
+    expect((error as Error).message).toBe(`지출결의 ${submitted.number} 연결됨 · 카드 사용은 다른 줄`);
   });
 
   it("반려(종결 전) 지출결의 → 카드 거부", async () => {
@@ -687,7 +688,7 @@ describe("계보(X-1)", () => {
     expect(row?.selectable).toBe(false);
     expect(row?.reason).toMatch(new RegExp(`^지출결의 ${submitted.number} `));
     const input: CardUsageInput = { ...usageInput(cardId), linkKind: "quote_line", lineId: l2 };
-    expect(((await caught(createCardUsage(fx.pm, input, await precheckCardUsage(fx.pm, input)))) as Error).message).toBe(`지출결의 ${submitted.number} 연결됨 · 다른 줄 고르기`);
+    expect(((await caught(createCardUsage(fx.pm, input, await precheckCardUsage(fx.pm, input)))) as Error).message).toBe(`지출결의 ${submitted.number} 연결됨 · 카드 사용은 다른 줄`);
   });
 
   it("L1 `신청됨` 요청 → 차수 2 → L2 남은 실행가에서 요청 예상 공급가가 빠진다", async () => {

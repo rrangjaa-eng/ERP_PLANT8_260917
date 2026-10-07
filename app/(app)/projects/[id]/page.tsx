@@ -9,6 +9,7 @@ import { getCurrentQuoteRevision, listQuoteLines } from "@/domain/quotes/lines";
 import { lineCardSideFacts } from "@/domain/corp-card-usages/link-targets";
 import { listRevisionSummaries } from "@/domain/quotes/revisions";
 import { listRevenue } from "@/domain/revenue";
+import { listProjectIssueRequests } from "@/domain/issue-requests";
 import { recentFxRate } from "@/domain/money/currency";
 import { getSettingValue } from "@/domain/settings/registry";
 import { QUOTE_LINE_MAX_PER_REVISION } from "@/domain/settings/keys";
@@ -114,7 +115,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   });
   // 04-44(DR-37) — 총 매출 예상가는 기간과 같은 권리 + 금액 노출(볼 수 없는 값은 고칠 수 없다).
   const canEditPreEstimate = periodRights !== "none" && canSeeAmount;
-  const [lines, references, revenue, usdDefaultFxRate, destinations, catalog, statusSince, lineCap, revisionSummaries] = await Promise.all([
+  const [lines, references, revenue, issueRequestDtos, usdDefaultFxRate, destinations, catalog, statusSince, lineCap, revisionSummaries] = await Promise.all([
     // 06-07 N-3 — 줄 사슬의 카드 사용 · `신청됨` 구매 요청 사실(보관 대신 취소 · 실행가 초과 표시). lines.ts는 link-targets를 import하지 않는다(순환).
     // 리뷰 P3-5 — 사실 읽기가 실패해도 상세는 선다(표는 사실 없이 — 카드 섹션 S15의 실패 가두기와 같은 결).
     lineCardSideFacts(session.viewer, { revisionId: revision.id })
@@ -129,6 +130,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     // 2026-09-28 — 보기만 하는 계급도 소분류·거래처를 이름으로 읽는다(목록은 "projects" view로만 게이트하는 id·name 축소 투영).
     listProjectFormReferences(session.viewer),
     listRevenue(session.viewer, project.id),
+    // 06-18(S16) — 매출 섹션 「발행 요청」 표. 요청 금액 · 부가세 · 합계 · 발행액 키는 서버가 가려 보낸다(A-605).
+    listProjectIssueRequests(session.viewer, project.id),
     recentFxRate("USD"),
     statusDestinations(session.viewer, project),
     listProjectStatusCatalog(session.viewer),
@@ -191,13 +194,16 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   // 04-30 — 표 항은 「편집 가능 셀이 하나라도 있거나 줄을 추가할 수 있음」(셀 단계·구조에서 온다).
   // canEditPreEstimate는 periodRights 항에 이미 포함되지만 칸 목록을 드러내려고 둔다(명시용).
   const hasEditableCell = lines.some((line) => Object.values(line.cellEditability).includes("edit"));
+  // 06-18 — 발행 요청 표도 같은 1차 「일괄 저장」으로 저장한다(수주중 · 진행 · 정산의 프로젝트 쓰기 권한자).
+  const canRequestIssue = canWrite && (status === "bidding" || status === "in_progress" || status === "settling");
   const canSave =
     hasEditableCell ||
     structural.insert ||
     adjustmentStructural.insert ||
     periodRights !== "none" ||
     canEditPreEstimate ||
-    canWriteEntries;
+    canWriteEntries ||
+    canRequestIssue;
 
   // 04-21(S3·S7) — 갈 곳이 없으면 「상태 바꾸기」를 렌더하지 않는다(비활성 버튼이 아니다).
   // 화면은 상태 문자열로 권한을 추론하지 않고 서버의 갈 곳 목록만 본다.
@@ -232,7 +238,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const endDatePassed = isEndDatePassed({ status, endDate: project.endDate, todayKst: kstToday(new Date()) });
   const needsLeadName = endDatePassed && statusChange === null;
   const responsibles =
-    needsLeadName || lines.length === 0 ? await projectResponsibles(session.viewer, project) : null;
+    needsLeadName || lines.length === 0 || (issueRequestDtos.length === 0 && !canWrite) ? await projectResponsibles(session.viewer, project) : null;
   const teamLeadName = needsLeadName ? (responsibles?.teamLeadName ?? null) : null;
   const endDateNote = !endDatePassed ? null : teamLeadName ? `종료일 지남 · 팀장 ${teamLeadName}` : "종료일 지남";
 
@@ -282,6 +288,14 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         pmName: responsibles?.pmName ?? null,
       })}
       revenue={revenue}
+      issueRequests={{
+        rows: issueRequestDtos,
+        // 쓰기 판정은 서버가 다시 한다 — 화면은 서버가 계산한 값만 받는다. 수주중 · 진행 · 정산에서만 요청을 만든다(완료 · 미수주는 잠김).
+        canRequest: canRequestIssue,
+        canLink: canWriteEntries && revenue.issuedEntries !== undefined,
+        amountVisible: canWrite || revenue.issuedEntries !== undefined,
+        pmName: !canWrite ? (responsibles?.pmName ?? null) : null,
+      }}
       canWriteEntries={canWriteEntries}
       usdDefaultFxRate={usdDefaultFxRate}
       lineDoors={lineDoors}

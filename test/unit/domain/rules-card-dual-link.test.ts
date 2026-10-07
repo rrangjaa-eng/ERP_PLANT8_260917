@@ -58,10 +58,10 @@ const EXPENSE = {
 };
 
 describe("card.dual-link-block", () => {
-  it("side card · 이어진 지출결의 있음 → 막힘 `지출결의 {번호} 연결됨 · 다른 줄 고르기`", async () => {
+  it("side card · 이어진 지출결의 있음 → 막힘 `지출결의 {번호} 연결됨 · 카드 사용은 다른 줄`", async () => {
     await expect(gate(null, "card.dual-link-block", { side: "card", links: links({ expenses: [EXPENSE] }) })).resolves.toEqual({
       allowed: false,
-      reason: "지출결의 26001-0007 연결됨 · 다른 줄 고르기",
+      reason: "지출결의 26001-0007 연결됨 · 카드 사용은 다른 줄",
     });
   });
 
@@ -86,6 +86,38 @@ describe("card.dual-link-block", () => {
       allowed: false,
       reason: "카드 사용 2건 연결됨 · 지출결의는 다른 줄",
     });
+  });
+
+  // 06-08(06-07 리뷰 I-1) — `신청됨` 구매 요청은 카드로 나갈 돈이라 지출결의 입구도 막는다(보관 안 된 사슬 전체 — findLineLinks가 신청됨만 싣는다).
+  const REQUESTS = [
+    { id: "r1", quoteLineId: "L", estimate: krw(110_000) },
+    { id: "r2", quoteLineId: "L", estimate: krw(55_000) },
+  ];
+  const USAGES = [{ id: "u1", quoteLineId: "L", supplyKrw: 100 }];
+
+  it("side expense · `신청됨` 구매 요청만 있음 → 막힘 `구매 요청 {M}건 연결됨 · 지출결의는 다른 줄`", async () => {
+    await expect(gate(null, "card.dual-link-block", { side: "expense", links: links({ purchaseRequests: REQUESTS }) })).resolves.toEqual({
+      allowed: false,
+      reason: "구매 요청 2건 연결됨 · 지출결의는 다른 줄",
+    });
+  });
+
+  it("side expense · 카드 사용 + 구매 요청 → 막힘 `카드 사용 {N}건 · 구매 요청 {M}건 연결됨 · 지출결의는 다른 줄`", async () => {
+    await expect(gate(null, "card.dual-link-block", { side: "expense", links: links({ cardUsages: USAGES, purchaseRequests: REQUESTS }) })).resolves.toEqual({
+      allowed: false,
+      reason: "카드 사용 1건 · 구매 요청 2건 연결됨 · 지출결의는 다른 줄",
+    });
+  });
+
+  it("side expense · 구매 요청 칸이 없는 입력(카드 사용만) → 기존 문구 그대로", async () => {
+    await expect(gate(null, "card.dual-link-block", { side: "expense", links: { expenses: [], cardUsages: USAGES } })).resolves.toEqual({
+      allowed: false,
+      reason: "카드 사용 1건 연결됨 · 지출결의는 다른 줄",
+    });
+  });
+
+  it("side card · 구매 요청만 있음 → 통과(같은 쪽)", async () => {
+    await expect(gate(null, "card.dual-link-block", { side: "card", links: links({ purchaseRequests: REQUESTS }) })).resolves.toEqual({ allowed: true });
   });
 });
 

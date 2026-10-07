@@ -8,7 +8,7 @@ import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { setCustomerApproval } from "@/domain/quotes/revisions";
 import { approvalBasis } from "@/repositories/quote-revisions";
 import { insertVendor } from "@/repositories/vendors";
-import { insertRole } from "@/repositories/roles";
+import { insertRole, setRoleArchived } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { createOrgUnit, createTeam } from "@/domain/org";
 import { seoulToday } from "@/lib/dates";
@@ -29,6 +29,7 @@ export type ExpenseE2E = {
   projectNumber: string;
   projectName: string;
   vendorName: string;
+  vendorId: string;
   // 줄 이름 → id. 이름은 문서 제목 · 결재함 문서 칸에 그대로 나온다.
   lines: Record<LineKey, { id: string; itemName: string }>;
 };
@@ -113,15 +114,29 @@ export async function setupExpenseE2E(): Promise<ExpenseE2E> {
     projectNumber: project.number,
     projectName,
     vendorName,
+    vendorId: vendor.id,
     lines: Object.fromEntries((Object.keys(names) as LineKey[]).map((key) => [key, { id: idOf(names[key]), itemName: names[key] }])) as ExpenseE2E["lines"],
   };
+}
+
+// 임시 계급은 보관하지 않으면 권한표 열로 쌓여 열 폭 검사를 흔든다 — 스펙 파일 끝(afterAll)에서 한꺼번에 보관한다.
+const tempRoleIds: string[] = [];
+
+export async function insertTempRole(input: Parameters<typeof insertRole>[1]): ReturnType<typeof insertRole> {
+  const role = await insertRole(SYSTEM_VIEWER, input);
+  tempRoleIds.push(role.id);
+  return role;
+}
+
+export async function archiveTempRoles(): Promise<void> {
+  for (const id of tempRoleIds.splice(0)) await setRoleArchived(SYSTEM_VIEWER, id, true);
 }
 
 // 05-09 — 테스트 계급 「경영관리」(관리자가 권한표에서 켜는 계급): 전사 업무 범위 · 지출결의 보기 + 결재 중 증빙 붙이기 · 증빙 무효 처리 쓰기.
 // 전용 본부 · 팀에 발령한다(경영관리본부 밖 — 결재선 단계 담당이 아니다).
 export async function makeEvidenceManagerE2E(): Promise<Person> {
   const suffix = randomUUID().slice(0, 8);
-  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E경영관리-${suffix}`, workScope: "company" });
+  const role = await insertTempRole({ id: `role-${randomUUID()}`, name: `E2E경영관리-${suffix}`, workScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "view", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.evidence_attach", action: "write", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.evidence_void", action: "write", allowed: true });

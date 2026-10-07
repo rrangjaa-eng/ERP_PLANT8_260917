@@ -415,10 +415,13 @@ test.describe("견적 표 편집 범위 — 서버 셀 단계 · 구조 (04-30, 
     await expect(page.locator("kbd", { hasText: "Ctrl+V" })).toHaveCount(0);
   });
 
-  test("(d) 정산 상세에 발행 요청·마감 버튼이 없다(D-77)", async ({ page }) => {
+  // 발행 요청은 06-18(D-610)이 상세 매출 섹션에 「발행 요청 추가」로 들였다. 마감 버튼은 여전히 없다(D-77).
+  test("(d) 정산 상세에 마감 버튼은 없고 발행 요청 추가만 있다(D-77 · D-610)", async ({ page }) => {
     await openAsPm(page, "settling", addDays(TODAY, -3), [{ itemName: "정산 D77 줄", unitPrice: 100_000, execution: 50_000 }]);
     await expect(dataRows(page)).toHaveCount(1);
-    await expect(page.getByRole("button", { name: /발행 요청|마감/ })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /마감/ })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /발행 요청/ })).toHaveCount(1);
+    await expect(page.getByRole("button", { name: /발행 요청/ })).toHaveText(/발행 요청 추가/);
   });
 
   test("(e) 수주중에서 저장된 줄 삭제 → 확인 모달 → 일괄 저장 1 → 새로 고쳐도 없다", async ({ page }) => {

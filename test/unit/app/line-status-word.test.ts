@@ -17,4 +17,10 @@ describe("lineStatusWord", () => {
     expect(lineStatusWord({ lineStatus: "cancelled", linkedStatus: "rejected" })).toBe("취소");
     expect(lineStatusWord({ lineStatus: "cancelled", linkedStatus: "active" })).toBe("취소");
   });
+
+  // 06-13(SP-2 · O-14) — 키 여섯 → status-map 낱말. 취소는 키보다 먼저다.
+  it("지급 완료 키 → `지급 완료`, 취소된 줄은 지급 완료여도 `취소`", () => {
+    expect(lineStatusWord({ lineStatus: "active", linkedStatus: "paid" })).toBe("지급 완료");
+    expect(lineStatusWord({ lineStatus: "cancelled", linkedStatus: "paid" })).toBe("취소");
+  });
 });

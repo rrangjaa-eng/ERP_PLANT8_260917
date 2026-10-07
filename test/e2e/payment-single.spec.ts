@@ -12,14 +12,13 @@ import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { formatKrw } from "@/lib/format-number";
 import { seoulToday } from "@/lib/dates";
-import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { upsertSimpleValue } from "@/repositories/settings";
 import { seedCodeItem } from "@/repositories/code-tables";
 import { addHistorizedValue, cancelHistorizedValue } from "@/domain/settings/registry";
 import { EVIDENCE_REQUIRED, TAX_VAT_RATE } from "@/domain/settings/keys";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
-import { makeEvidenceManagerE2E, setupExpenseE2E, submitLineExpense, type ExpenseE2E, type LineKey } from "./expense-fixture";
+import { makeEvidenceManagerE2E, setupExpenseE2E, submitLineExpense, type ExpenseE2E, type LineKey, archiveTempRoles, insertTempRole } from "./expense-fixture";
 
 // 06-03(EXP-06 · OPS-09 · UI-SPEC S5 · 「지출결의 상태 → 1차」): 결재 통과 지출결의 한 건을 지급 권한자가 문서 화면 1차 `지급 완료`로 끝낸다.
 // 문서는 05 E2E 도우미(폼 제출)와 04.1 승인 · 05 증빙 무효 처리 도메인 함수로 만든다 — 증빙 0 · 증빙 필수 off(06-04 · 06-06 게이트가 붙어도 P4 유지).
@@ -29,7 +28,7 @@ const INFO_ITEMS = ["expense.value", "expense.amount", "approval.value", "projec
 // 테스트 계급 「경영관리」 — 전사 업무 범위 · 지출결의 보기 + 지급 처리 쓰기. 결재선 밖 전용 본부 · 팀에 발령한다.
 async function makePaymentManagerE2E(infoItems: readonly string[] = INFO_ITEMS): Promise<Person> {
   const suffix = randomUUID().slice(0, 8);
-  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E지급-${suffix}`, workScope: "company" });
+  const role = await insertTempRole({ id: `role-${randomUUID()}`, name: `E2E지급-${suffix}`, workScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "view", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.payments", action: "write", allowed: true });
   for (const infoItem of infoItems) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
@@ -345,7 +344,8 @@ test.describe("증빙 없음 막힘 (06-04 · P3)", () => {
       const pay = page.getByRole("button", { name: /^지급 완료/ });
       await waitForHydration(pay);
       await expect(pay).toHaveAttribute("aria-disabled", "true");
-      await expect(page.getByText(/^증빙 없음 · 기안자 \S+$/)).toBeVisible();
+      // 06-10: 같은 서버 이유 글자가 1차 옆 막힘과 증빙 줄(S4 empty) 둘에 선다.
+      await expect(page.getByText(/^증빙 없음 · 기안자 \S+$/)).toHaveCount(2);
       await pay.click({ force: true });
       await page.keyboard.press("Control+Enter");
       await expect(page.getByTestId("payment-result")).toHaveCount(0);
@@ -406,7 +406,7 @@ test.describe("05 C1 작성 중 문서의 지급 섹션 (06-03)", () => {
     const suffix = randomUUID().slice(0, 8);
     const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E권한본부-${suffix}` });
     const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E권한팀-${suffix}` });
-    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E쓰기회수-${suffix}`, workScope: "company" });
+    const role = await insertTempRole({ id: `role-${randomUUID()}`, name: `E2E쓰기회수-${suffix}`, workScope: "company" });
     for (const action of ["view", "write"] as const) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action, allowed: true });
     for (const infoItem of INFO_ITEMS) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
     const email = `e2e-nowrite-${randomUUID()}@example.test`;
@@ -734,3 +734,5 @@ test.describe("증빙 확인 (06-06 · S4 · O-2)", () => {
     await page.context().close();
   });
 });
+
+test.afterAll(archiveTempRoles);

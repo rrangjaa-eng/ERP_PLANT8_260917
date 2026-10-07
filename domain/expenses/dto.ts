@@ -78,6 +78,11 @@ export type ExpenseDocumentDto = ExpenseDraftDto & {
   // 06-28(S23): 종결 확인 모달 재료 — 반려 · 회수(번호 있음 · 종결 아님) 문서를 보는 기안자 · 지급 권한자에게만, 그 밖은 null(버튼 없음).
   // 부제 = `{번호} · {항목} · {공급가}`(공급가는 금액을 볼 수 있을 때만), 결과 줄 = 열리는 줄 문 · 되돌림 없음.
   closeDialog: { subtitle: string; resultLines: string[] } | null;
+  // 06-10: 선결제 표시 · 사유 · 기안자 증빙 금액(공급가 자리) · 증빙일 — 폼이 저장값을 다시 그리고 문서 화면이 사유 줄을 그린다.
+  prepaid: boolean;
+  prepaidReason: string | null;
+  evidenceAmountKrw: number | null;
+  evidenceDate: string | null;
 };
 
 export const EXPENSE_DOCUMENT_DTO_SPEC: DtoSpec<ExpenseDocumentDto, ExpenseDocumentDto> = {
@@ -116,6 +121,10 @@ export const EXPENSE_DOCUMENT_DTO_SPEC: DtoSpec<ExpenseDocumentDto, ExpenseDocum
     { key: "installmentText", from: "installmentText", infoItem: "expense.amount" },
     { key: "closure", from: "closure", infoItem: "expense.value" },
     { key: "closeDialog", from: "closeDialog", infoItem: "expense.value" },
+    { key: "prepaid", from: "prepaid", infoItem: "expense.value" },
+    { key: "prepaidReason", from: "prepaidReason", infoItem: "expense.value" },
+    { key: "evidenceAmountKrw", from: "evidenceAmountKrw", infoItem: "expense.amount" },
+    { key: "evidenceDate", from: "evidenceDate", infoItem: "expense.value" },
   ],
 };
 
@@ -240,9 +249,51 @@ export const EXPENSE_LIST_ROW_DTO_SPEC: DtoSpec<ExpenseListRowDto, ExpenseListRo
   ],
 };
 
+// 06-15(S1) — 지급 대상 행. 금액(지급 총액 · 이체액)은 expense.amount, 나머지는 expense.value. 고를 수 있는지 · 이유는 서버 판정
+// (resolveExpenseActionRow)이라 문서 값과 같은 항목. 이 모듈은 누수 스캔이 이미 import한다(leak-scan.test.ts 무변경 — C18).
+export type PaymentTargetRowDto = {
+  id: string;
+  number: string | null;
+  title: string;
+  vendorName: string | null;
+  // 지급 방식 낱말(코드표 이름) — 계좌 칸은 06-20.
+  paymentMethodName: string | null;
+  scheduledPaymentDate: string | null;
+  // 증빙 상태 낱말(`확인됨` · `확인 전` · `증빙 없음` · `면제` · `선결제`).
+  evidenceStatus: string;
+  payableKrw: number | null;
+  // 이체액(읽기 — 편집은 06-17). 이 플랜에서는 지급 총액과 같다.
+  transferKrw: number | null;
+  version: number;
+  selectable: boolean;
+  reason: string | null;
+  prepaid: boolean;
+  quoteLineId: string | null;
+};
+
+export const PAYMENT_TARGET_ROW_DTO_SPEC: DtoSpec<PaymentTargetRowDto, PaymentTargetRowDto> = {
+  fields: [
+    { key: "id", from: "id", infoItem: "expense.value" },
+    { key: "number", from: "number", infoItem: "expense.value" },
+    { key: "title", from: "title", infoItem: "expense.value" },
+    { key: "vendorName", from: "vendorName", infoItem: "expense.value" },
+    { key: "paymentMethodName", from: "paymentMethodName", infoItem: "expense.value" },
+    { key: "scheduledPaymentDate", from: "scheduledPaymentDate", infoItem: "expense.value" },
+    { key: "evidenceStatus", from: "evidenceStatus", infoItem: "expense.value" },
+    { key: "payableKrw", from: "payableKrw", infoItem: "expense.amount" },
+    { key: "transferKrw", from: "transferKrw", infoItem: "expense.amount" },
+    { key: "version", from: "version", infoItem: "expense.value" },
+    { key: "selectable", from: "selectable", infoItem: "expense.value" },
+    { key: "reason", from: "reason", infoItem: "expense.value" },
+    { key: "prepaid", from: "prepaid", infoItem: "expense.value" },
+    { key: "quoteLineId", from: "quoteLineId", infoItem: "expense.value" },
+  ],
+};
+
 registerDto({ name: "expenseDraft", fields: EXPENSE_DRAFT_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 registerDto({ name: "expenseDocument", fields: EXPENSE_DOCUMENT_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 registerDto({ name: "expenseDetail", fields: EXPENSE_DETAIL_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 registerDto({ name: "expensePreview", fields: EXPENSE_PREVIEW_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 registerDto({ name: "expenseNewDefaults", fields: EXPENSE_NEW_DEFAULTS_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 registerDto({ name: "expenseListRow", fields: EXPENSE_LIST_ROW_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
+registerDto({ name: "paymentTargetRow", fields: PAYMENT_TARGET_ROW_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });

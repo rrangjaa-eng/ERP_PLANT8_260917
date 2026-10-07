@@ -9,6 +9,7 @@ import {
   type QuoteLineKind,
 } from "@/domain/quotes/edit-scope";
 import { firstExpenseSubmitBlock, type ExpenseSubmitContext } from "@/domain/expenses/gate";
+import type { ExpenseLineDoorState } from "@/domain/expenses/line-door";
 import {
   approvalGateDecision,
   evidenceGateDecision,
@@ -26,7 +27,7 @@ import type { LineLinks } from "@/repositories/quote-line-links";
 // 주석 한 줄로 적는다: `project.line-edit`(04-06 · 04-12 · 04-13 · 06-07 D-47 ③ 갈래), `quote.line-cap`(04-26),
 // `project.transition`(04-20), `project.auto-settle`(04-53), `project.period-edit`(04-22), `project.pre-estimate-edit`(04-44),
 // `project.start-date-required`(04-20), `quote.revision-create`·`quote.customer-approval`·`quote.approval-toggle`·`quote.vendor-required`(04-14),
-// `card.dual-link-block`·`card.execution-cap`(06-07).
+// `card.dual-link-block`·`card.execution-cap`(06-07), `purchase.line-door`(06-08).
 //
 // side-effect import 모듈 — `import "@/domain/rules/register"`로 불러
 // 등록만 일으킨다(도메인 등록 사이드이펙트 모듈 규약).
@@ -47,6 +48,8 @@ export type ProjectLineEditCtx = {
   actorCanAdjust: boolean;
   hasLinkedDocuments: boolean;
   linkedDocumentNumber?: string;
+  /** 06-13(S-F4) — 그 연결 문서가 지급 완료 — 읽기 전용 이유가 `지급 완료` 꼴. */
+  linkedDocumentPaid?: boolean;
   /** 04-40(사용자 D7 · OV-1) — 현재 차수가 고객 승인됐으면 그 순번. 견적 줄의 합계를 바꾸는 조작을 막는다. */
   approvedSeq?: number | null;
   /** 04 D-47 ③ — 완료 뒤 견적 외 비용 줄 추가 예외, 호출자가 트랜잭션 전에 권한 사실을 읽어 넘긴다. */
@@ -97,7 +100,7 @@ registerGateRule<unknown, ProjectLineEditCtx>({
         approvedSeq,
       });
       for (const field of ctx.change.fields) {
-        if (cells[field] === "readonly") return { allowed: false, reason: linkedDocumentReason(ctx.linkedDocumentNumber ?? "") };
+        if (cells[field] === "readonly") return { allowed: false, reason: linkedDocumentReason(ctx.linkedDocumentNumber ?? "", { paid: ctx.linkedDocumentPaid === true }) };
         if (cells[field] === "locked" && lockReason) return { allowed: false, reason: lockReason };
       }
       if (approvalLocks && ctx.change.quoteAmountUnchanged !== true) return { allowed: false, reason: lockReason };
@@ -320,6 +323,28 @@ registerGateRule<unknown, ExpenseSubmitContext>({
   },
 });
 
+// 06-13(EXP-06 · D-609 · D-606) — 지급 완료된 줄에 새 지출결의 없음. 05 문(`expenseLineDoor`)이 닫혔고 그 문을 닫은 문서(비분할 문서,
+// 없으면 — 남은 실행가 0으로 닫힌 분할 줄 — 회차 전부)에 살아 있는 지급이 있으면 거부한다. 분할로 열린 문은 막지 않고, 지급 취소된
+// 문서는 지급 전으로 센다(05 문 이유가 그대로 선다). `docs`는 제출 문서 자신을 뺀 그 줄 계보 사슬의 번호 문서(제출 순, 종결 제외 — 06-28).
+// 제출은 05 `expense.submit` 앞에서 부른다 — 뒤면 05 ④(`이 줄에 지출결의 … 있음`)가 같은 문서로 먼저 걸린다.
+export type ExpenseLinePaidLockCtx = {
+  door: ExpenseLineDoorState;
+  docs: readonly { number: string; installment: boolean; paid: boolean }[];
+};
+
+export function linePaidLockDecision(ctx: ExpenseLinePaidLockCtx): { allowed: true } | { allowed: false; reason: string } {
+  if (ctx.door !== "closed") return { allowed: true };
+  const whole = ctx.docs.filter((doc) => !doc.installment);
+  const closers = whole.length > 0 ? whole : ctx.docs;
+  const paid = closers.filter((doc) => doc.paid).at(-1);
+  return paid ? { allowed: false, reason: `지급 완료 ${paid.number} · 새 지출결의 없음` } : { allowed: true };
+}
+
+registerGateRule<unknown, ExpenseLinePaidLockCtx>({
+  name: "expense.line-paid-lock",
+  check: (_doc, ctx) => linePaidLockDecision(ctx),
+});
+
 // 06-03(EXP-06 · 기준 1 · UI-SPEC 「지출결의 상태 → 1차」) — 지급 완료는 결재 통과(approved · 자기 승인 포함, UA-607) 문서만. 몸통은 화면 1차와
 // 같은 순수 함수(domain/payments/action-row.ts)를 부르기만 한다. 06-04가 그 뒤에 증빙 · 짝 규칙을 더한다.
 registerGateRule<unknown, ApprovalGateInput>({
@@ -340,16 +365,20 @@ registerGateRule<unknown, PairGateInput>({
 });
 
 // 06-07(D-609) — 견적 줄 하나는 지출결의 쪽 또는 카드 쪽(카드 사용 · 구매 요청) 한 쪽에만 잇는다. 같은 쪽 여러 건은 통과.
-// `links`는 잠근 뒤 같은 tx로 읽은 줄 사슬 전체의 연결(`findLineLinks` — X-1). 카드 쪽 판정은 구매 요청 칸을 읽지 않는다.
-export type CardDualLinkCtx = { side: "card" | "expense"; links: Pick<LineLinks, "expenses" | "cardUsages"> };
+// `links`는 잠근 뒤 같은 tx로 읽은 줄 사슬 전체의 연결(`findLineLinks` — X-1). 카드 쪽 판정은 구매 요청 칸을 읽지 않고,
+// 지출결의 쪽 판정은 카드 사용과 `신청됨` 구매 요청을 함께 센다(06-08 — 06-07 리뷰 I-1).
+export type CardDualLinkCtx = { side: "card" | "expense"; links: Pick<LineLinks, "expenses" | "cardUsages"> & Partial<Pick<LineLinks, "purchaseRequests">> };
 
 export function cardDualLinkDecision(ctx: CardDualLinkCtx): { allowed: true } | { allowed: false; reason: string } {
   if (ctx.side === "card") {
     const expense = ctx.links.expenses[0];
-    return expense ? { allowed: false, reason: `지출결의 ${expense.number} 연결됨 · 다른 줄 고르기` } : { allowed: true };
+    return expense ? { allowed: false, reason: `지출결의 ${expense.number} 연결됨 · 카드 사용은 다른 줄` } : { allowed: true };
   }
-  const count = ctx.links.cardUsages.length;
-  return count > 0 ? { allowed: false, reason: `카드 사용 ${count}건 연결됨 · 지출결의는 다른 줄` } : { allowed: true };
+  const cards = ctx.links.cardUsages.length;
+  const requests = ctx.links.purchaseRequests?.length ?? 0;
+  if (cards === 0 && requests === 0) return { allowed: true };
+  const parts = [...(cards > 0 ? [`카드 사용 ${cards}건`] : []), ...(requests > 0 ? [`구매 요청 ${requests}건`] : [])];
+  return { allowed: false, reason: `${parts.join(" · ")} 연결됨 · 지출결의는 다른 줄` };
 }
 
 registerGateRule<unknown, CardDualLinkCtx>({
@@ -378,5 +407,19 @@ registerGateRule<unknown, CardExecutionCapCtx>({
     const next = ctx.link === "pickable" ? "다른 줄 고르기" : `견적 줄은 담당 PM ${ctx.pmName ?? ""}`;
     if (!ctx.amountVisible) return { allowed: false, reason: `실행가 초과 · ${next}` };
     return { allowed: false, reason: `실행가 초과 · 남은 실행가 ${formatKrw(cap.remaining.amountKrw)} · ${next}` };
+  },
+});
+
+// 06-08(EXP-10 · O-13) — 견적 줄의 문(구매 요청 / 지출결의)은 거래처 설정에서만 나오고 사람이 고르지 않는다. 호출자가 06-02 `resolveLineDoor`(순수)로
+// 문을 정해 넘기고 이 규칙은 입구(`side`)와 맞지 않는 문을 거부한다. 구매 요청 쪽 입구는 06-08 `createPurchaseRequest`, 지출결의 쪽 입구는 06-13이 부른다.
+export type PurchaseLineDoorCtx = { side: "purchase" | "expense"; door: "purchase" | "expense"; vendorName: string | null };
+
+registerGateRule<unknown, PurchaseLineDoorCtx>({
+  name: "purchase.line-door",
+  check: (_doc, ctx) => {
+    if (ctx.side === ctx.door) return { allowed: true };
+    return ctx.side === "purchase"
+      ? { allowed: false, reason: "온라인구매 협력사 줄 아님 · 지출결의로" }
+      : { allowed: false, reason: "온라인구매 협력사 줄 · 구매 요청으로" };
   },
 });

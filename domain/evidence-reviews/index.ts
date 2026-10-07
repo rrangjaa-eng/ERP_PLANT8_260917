@@ -6,6 +6,7 @@ import { GateBlockedError } from "@/domain/rules/gate";
 import { canSeeExpense, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses/access";
 import { hasEvidence } from "@/domain/evidence/has-evidence";
 import {
+  CANCEL_REASON_REQUIRED,
   EVIDENCE_AMOUNT_REQUIRED,
   approvalGateDecision,
   evidenceGateDecision,
@@ -48,6 +49,18 @@ export class EvidenceReviewNotFoundError extends UserFacingError {
 export class EvidenceReviewConflictError extends UserFacingError {}
 
 const NOTHING_TO_CONFIRM = "확인할 증빙 없음 · 새로 고침";
+
+// 사용자 결정 10/7 09:08(06-06 검토 I-2): 지급 완료된 문서는 누구도 증빙 금액을 고칠 수 없다 — UI-SPEC에 글자가 없어 기존 「… · 새로 고침」 꼴 추천안(SUMMARY 사용자 질문 후보).
+export const EVIDENCE_AMOUNT_PAID_LOCKED = "지급 완료 문서 · 증빙 금액 못 바꿈 · 새로 고침";
+export const EVIDENCE_AMOUNT_PAID_MISMATCH = "지급 공급가와 다름 · 지급 취소 뒤 고치기";
+
+// I-2(사용자 결정 10/7 09:08) + 06-10 검토 I-1(사용자 결정 10/7 11:04 「지급액과 같을 때만」): 지급 완료 문서의 증빙 금액 판정은 이 함수 한 곳이다.
+// 있는 금액은 바꾸지 않는다. 빈 금액(지급 뒤 들어온 증빙)은 그 금액을 지급 기준으로 다시 셈한 지급 총액이 지급 기록의 지급 총액과 같을 때만
+// 받는다(PR #183 B-1 — 부가세 · 원천징수 · 세금 없음 모두 같은 기준) — 장부와 통장이 갈리지 않는다.
+export function paidEvidenceAmountRejection(input: { before: number | null; payableAtCorrected: number | null; paidPayableKrw: number }): string | null {
+  if (input.before !== null) return EVIDENCE_AMOUNT_PAID_LOCKED;
+  return input.payableAtCorrected === input.paidPayableKrw ? null : EVIDENCE_AMOUNT_PAID_MISMATCH;
+}
 
 // ── 증빙 상태 다섯 값 ──────────────────────────────────────────────────
 // 면제 기록 있음 → 면제(선결제를 이긴다) / 증빙 있음 · 확인 기록 없음 → 확인 전 / 증빙 있음 · confirmed → 확인됨 /
@@ -166,6 +179,8 @@ export async function confirmEvidence(viewer: Viewer, input: ConfirmEvidenceInpu
     const supplyTax = await payments.approvedSupplyTax(viewer, input.expenseId, shared);
     if (supplyTax && isTaxInclusiveEvidenceAmount({ evidenceAmountKrw: corrected, ...supplyTax })) throw new EvidenceAmountError(EVIDENCE_AMOUNT_TAX_INCLUSIVE);
   }
+  // B-1 — 지급 완료 문서의 빈 금액 판정 재료(지급 기록 · 그 지급일 세율)는 트랜잭션 전에. 잠근 뒤 같은 지급인지 다시 본다.
+  const paidBasis = corrected !== undefined ? await payments.paidPayableBasis(viewer, input.expenseId, shared) : null;
 
   let committed;
   try {
@@ -189,6 +204,14 @@ export async function confirmEvidence(viewer: Viewer, input: ConfirmEvidenceInpu
       // F2 — 빈 증빙 금액을 공급가액으로 채우지 않는다.
       if (corrected === undefined && before === null) throw new EvidenceAmountError(EVIDENCE_AMOUNT_REQUIRED);
       const changed = corrected !== undefined && corrected !== before;
+      // I-2 — 지급 완료 문서의 금액 판정(잠금 뒤). 빈 금액 채우기를 모두 막으면 지급 뒤 들어온 증빙을 확인할 길이 없어(F2) 지급 공급가와 같은 값만 받는다.
+      if (changed) {
+        const payment = await findLivePayment(viewer, locked.id, tx);
+        if (payment && payment.id !== paidBasis?.paymentId) throw new EvidenceReviewConflictError(conflict);
+        const rejection =
+          payment && paidBasis ? paidEvidenceAmountRejection({ before, payableAtCorrected: await paidBasis.payableAt(corrected), paidPayableKrw: payment.payableKrw }) : null;
+        if (rejection) throw new EvidenceReviewConflictError(rejection);
+      }
       if (changed && !(await updateEvidenceAmount(viewer, { expenseId: locked.id, amountKrw: corrected }, tx))) throw new EvidenceReviewNotFoundError();
       // 06-27 CHECK — 전 · 후는 둘 다 값이거나 둘 다 null. 이전 값이 비었으면 기록에는 남기지 않고 로그(전 null · 후 값)에만 남긴다.
       const amounts = changed && before !== null ? { amountBeforeKrw: before, amountAfterKrw: corrected } : { amountBeforeKrw: null, amountAfterKrw: null };
@@ -231,4 +254,57 @@ export async function confirmEvidence(viewer: Viewer, input: ConfirmEvidenceInpu
     { canPay: true, amountVisible },
   );
   return { version: committed.version, evidenceStatus: resolveEvidenceStatus({ hasEvidence: true, prepaid: locked.prepaid, review: { status: "confirmed" } }), actionRow };
+}
+
+// ── 증빙 면제(06-10 · D-603 · D-611 · UI-SPEC S4 「증빙 면제의 자리」) ─────────────────────────────────
+const WAIVE_HAS_EVIDENCE = "증빙 있음 · 증빙 확인";
+const WAIVE_ALREADY = "이미 면제 · 새로 고침";
+
+// 지급 권한(expenses.payments write — D-601)과 사유(trim, 필수)는 트랜잭션 전. 사유는 확인 기록 waive_reason과 끌 수 없는 행동 로그 evidence_waive(detail.reason)에 같은 원문으로 남는다 —
+// 확인 기록 줄은 06-11 훅이 승인 뒤 기안자 추가 때 지울 수 있어 면제 흔적은 로그가 지킨다. 한 트랜잭션: 05 lockExpenseForUpdate → (테스트 장벽 deps.afterLock — E-26, 05 submitExpense 선례) →
+// 문서 version 비교 → 결재 통과(같은 tx) → hasEvidence(…, tx) 거짓 → 이미 면제 아님 → upsertReview(waived) → bumpExpenseVersion → recordAction(…, { tx }).
+// 지급 기록 · 선결제 표시 · 선결제 사유는 쓰지 않는다 — 면제는 증빙 값만 바꾼다(면제가 선결제를 이긴다: resolveEvidenceStatus · prepaidDueInfo가 면제 기록을 먼저 본다).
+// 지급 전 · 지급 뒤(P6) · 선결제(P4) · 증빙 필수 off(P4) 어느 갈래에서도 선다. 응답은 confirmEvidence와 같은 { version, evidenceStatus, actionRow }.
+export async function waiveEvidence(
+  viewer: Viewer,
+  input: { expenseId: string; version: number; reason: string },
+  deps?: { afterLock?: () => Promise<void> },
+): Promise<ConfirmEvidenceResult> {
+  if (!(await can(viewer, "expenses.payments", "write"))) throw new ForbiddenError("증빙 면제 권한 없음");
+  const reason = input.reason.trim();
+  if (reason === "") throw new UserFacingError(CANCEL_REASON_REQUIRED);
+  if (!UUID_SHAPE.test(input.expenseId)) throw new EvidenceReviewNotFoundError();
+  const row = await findExpenseById(viewer, input.expenseId);
+  if (!row || !(await canSeeExpense(viewer, row))) throw new EvidenceReviewNotFoundError();
+  const payments = await import("@/domain/payments");
+  const shared = await payments.loadPaymentShared(viewer);
+  const amountVisible = await visible(viewer, "expense.amount");
+
+  const committed = await withTransaction(async (tx) => {
+    const locked = await lockExpenseForUpdate(viewer, input.expenseId, tx);
+    if (!locked) throw new EvidenceReviewNotFoundError();
+    await deps?.afterLock?.();
+    const conflict = `다른 사람이 ${formatKstTime(locked.updatedAt)}에 바꿈 · 새로 고침`;
+    if (locked.version !== input.version) throw new EvidenceReviewConflictError(conflict);
+    const instance = await findExpenseApprovalInstance(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, documentId: locked.id }, tx);
+    const approval = approvalGateDecision({ approvalState: instance?.status ?? null, stepName: null });
+    if (!approval.allowed) throw new GateBlockedError(approval.reason);
+    if (await hasEvidence(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: locked.id }, tx)) throw new UserFacingError(WAIVE_HAS_EVIDENCE);
+    if ((await findReviewByExpense(viewer, locked.id, tx))?.status === "waived") throw new EvidenceReviewConflictError(WAIVE_ALREADY);
+
+    const review = await upsertReview(viewer, { expenseId: locked.id, status: "waived", amountBeforeKrw: null, amountAfterKrw: null, waiveReason: reason, reviewedBy: viewer.id }, tx);
+    const version = await bumpExpenseVersion(viewer, { expenseId: locked.id, expectedVersion: locked.version, updatedBy: viewer.id }, tx);
+    if (version === null) throw new EvidenceReviewConflictError(conflict);
+    await recordAction(viewer, { actionType: "evidence_waive", entity: "expense", entityId: locked.id, documentId: locked.id, detail: { reason } }, { tx });
+    const paid = (await findLivePayment(viewer, locked.id, tx)) !== null;
+    return { version, locked, approvalState: instance?.status ?? null, reviewedAt: review.reviewedAt, paid };
+  });
+
+  const { locked } = committed;
+  const evidence = evidenceGateDecision({ evidenceRequired: shared.evidenceRequired, hasEvidence: false, prepaid: locked.prepaid, waived: true, confirmation: null, drafterName: "" });
+  const actionRow = resolveExpenseActionRow(
+    { approvalState: committed.approvalState, paid: committed.paid, hasEvidence: false, waived: true, confirmation: null, evidence, pair: pairGateDecision(payments.pairGateCtx(locked, shared)) },
+    { canPay: true, amountVisible },
+  );
+  return { version: committed.version, evidenceStatus: resolveEvidenceStatus({ hasEvidence: false, prepaid: locked.prepaid, review: { status: "waived" } }), actionRow };
 }

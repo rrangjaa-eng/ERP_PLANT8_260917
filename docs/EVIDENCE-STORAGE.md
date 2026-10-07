@@ -81,6 +81,31 @@ gcloud storage ls gs://$P-plant8-staging-evidence/incoming/ gs://$P-plant8-stagi
 
 ## 6. 남는 객체 정리 — Phase 6 F8
 
-지운 증빙(`removed_at`)의 `evidence/` 객체, 그리고 완료 통보 트랜잭션이 거부된 뒤 남은 `evidence/` 객체의 정리는 이 페이즈가
-하지 않는다 — `Phase 6 F8`이 보존 표식 해제를 포함해 맡는다. 재료는 `files` · `upload_intents` 표다.
-완료 통보 없이 남은 `incoming/` 객체는 수명 주기가 7일 뒤 지운다.
+지운 증빙(`removed_at`)의 `evidence/` 객체와 완료 통보 트랜잭션이 거부된 뒤 남은 `evidence/` 객체는 앱이 지우지 않는다(보존 표식 `temporaryHold`가
+걸려 있다). 이 절의 절차를 운영자가 직접 돌린다 — 앱 코드 · 스크립트는 없다. 재료는 `files` · `upload_intents` 표다.
+완료 통보 없이 남은 `incoming/` 객체는 수명 주기 규칙이 7일 뒤 지우므로 대상이 아니다.
+
+### 대상 둘
+
+1. **지운 증빙** — `files.removed_at`이 **30일보다 오래된** 행의 `evidence/{파일 id}` 객체. 되돌리기 창은 30일이다(05 지운 작성 중 문서 되돌리기 ·
+   06-16 증빙 되살리기가 되살릴 수 있는 행의 객체를 먼저 지우지 않는다). 서버 되돌리기에는 기간 제한이 없어 30일 뒤 직접 호출로 되살린 행은 객체가 없어
+   보기 실패로 끝난다 — 허용한 위험이다. 무효 처리한 파일(`voided_at`)은 기록이므로 대상이 아니다.
+2. **거부된 완료 통보의 객체** — 객체는 있는데 `files.object_key`에 행이 없는 `evidence/` 객체. 객체 생성 시각이 24시간 지난 것만(옮기기와 트랜잭션
+   커밋 사이는 수 초라 하루면 충분하다). 같은 시각대의 `upload_intents`(`completed_at` 없음 · `expires_at` 지남)로 의도가 죽었음을 확인한다.
+
+### 찾기(읽기만 — 실행은 운영자)
+
+```sql
+-- 대상 1: 지운 지 30일 넘은 증빙의 객체 키
+SELECT id, object_key, removed_at FROM files WHERE owner_kind = 'expense' AND removed_at < now() - interval '30 days' ORDER BY removed_at;
+-- 대상 2 대조용: 행이 있는 모든 객체 키(버킷 목록 `gcloud storage ls -l gs://$P-plant8-staging-evidence/evidence/`과 비교)
+SELECT object_key FROM files;
+-- 대상 2 확인: 죽은 의도(완료 통보 없음 · 만료)
+SELECT id, created_at, expires_at FROM upload_intents WHERE completed_at IS NULL AND expires_at < now() - interval '24 hours' ORDER BY created_at;
+```
+
+### 순서(객체마다)
+
+1. 임시 보존 표식 해제 — `temporaryHold: false` PATCH(`devstorage.full_control`). `scripts/gcs-sign-smoke.ts`의 `delete(표식 해제 뒤 삭제)`와 같은 순서다.
+2. 객체 삭제.
+3. 결과 기록 — 지운 객체 키 · 일시 · 실행자를 운영 기록에 남긴다. 파일 행은 지우지 않는다(`removed_at`이 이력이다).

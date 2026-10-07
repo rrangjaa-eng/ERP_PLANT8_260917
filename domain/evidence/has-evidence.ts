@@ -10,8 +10,8 @@ export async function hasEvidence(viewer: Viewer, owner: { ownerKind: string; ow
   return (await countActiveByOwner(viewer, owner.ownerKind, owner.ownerId, tx)) > 0;
 }
 
-// 목록 · 집계용 묶음 판정 — 살아 있는 파일이 있는 주인 id 집합(트랜잭션 없음).
-export async function ownersWithEvidence(viewer: Viewer, input: { ownerKind: string; ownerIds: readonly string[] }): Promise<Set<string>> {
-  const rows = await listAliveByOwners(viewer, input);
+// 목록 · 집계용 묶음 판정 — 살아 있는 파일이 있는 주인 id 집합. 트랜잭션 콜백 안에서는 그 tx를 넘긴다(위와 같다).
+export async function ownersWithEvidence(viewer: Viewer, input: { ownerKind: string; ownerIds: readonly string[] }, tx?: DbOrTx): Promise<Set<string>> {
+  const rows = await listAliveByOwners(viewer, input, tx);
   return new Set(rows.map((row) => row.ownerId));
 }

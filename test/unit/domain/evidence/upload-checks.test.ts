@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   checkEvidenceUpload,
+  duplicateScopeKinds,
   EVIDENCE_CONTENT_TYPES,
   EVIDENCE_DUPLICATE_HIDDEN,
   EVIDENCE_DUPLICATE_SAME_OWNER,
@@ -102,5 +103,25 @@ describe("checkEvidenceUpload — 중복", () => {
       ok: false,
       reason: "같은 파일이 26001-0001 증빙에 있음 · 다른 파일 고르기",
     });
+  });
+});
+
+// 06-11(O-6 · DR-3 · UI-SPEC S7) — 중복 범위: 지출결의 증빙과 카드 사용의 카드 전표는 한 종류, 나머지는 자기 종류끼리만.
+describe("duplicateScopeKinds", () => {
+  it("expense → 지출결의 · 카드 전표", () => {
+    expect(duplicateScopeKinds("expense")).toEqual(["expense", "corp_card_usage"]);
+  });
+
+  it("corp_card_usage → 같은 둘", () => {
+    expect(duplicateScopeKinds("corp_card_usage")).toEqual(["expense", "corp_card_usage"]);
+  });
+
+  it("quote_revision · reserve_entry → 자기 종류만", () => {
+    expect(duplicateScopeKinds("quote_revision")).toEqual(["quote_revision"]);
+    expect(duplicateScopeKinds("reserve_entry")).toEqual(["reserve_entry"]);
+  });
+
+  it("표에 없는 종류 → 자기 하나", () => {
+    expect(duplicateScopeKinds("something_new")).toEqual(["something_new"]);
   });
 });

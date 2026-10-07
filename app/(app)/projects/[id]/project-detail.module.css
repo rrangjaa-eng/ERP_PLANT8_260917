@@ -17,6 +17,14 @@
   color: var(--status-warning);
 }
 
+/* 06-13(S14 · N-3) — 견적 줄 상태 칸 2행 `증빙 {N}일 경과` · `실행가 초과 {액}`(UI-SPEC S14 — 태그 아래 한 줄). */
+.lineStatusNote {
+  flex-basis: 100%;
+  font-size: var(--text-tag);
+  font-weight: var(--fw-regular);
+  color: var(--status-warning);
+}
+
 /* DR-26 — 복사·차수 묶음. PC(≥700)는 버튼군 안에 그대로, 「더보기」 없음. */
 .moreToggle {
   display: none;
@@ -207,6 +215,16 @@
   font-size: var(--text-aux);
 }
 
+/* 06-13 감사 D-1 — 견적 줄 표 행 행동 막힘 이유(행동 아래 — 서버 거부와 같은 문자열). 글자 폭이 열 폭 계산에 들지 않고(contain) 행동이 정한 열 폭 안에서
+   공백에서만 줄바꿈한다 — 막힌 줄이 행동 열을 늘려 항목 열을 누르거나 문서를 넘치게 하지 않는다(SYSTEM §6-0 · §7-3). */
+.doorReason {
+  align-self: stretch;
+  contain: inline-size;
+  color: var(--status-danger);
+  font-size: var(--text-aux);
+  word-break: keep-all;
+}
+
 .sheetDoor {
   display: flex;
   flex-direction: column;
@@ -389,4 +407,35 @@ td:has(> .rowNumber) {
   color: var(--status-danger);
   font-size: var(--text-aux);
   white-space: nowrap;
+}
+
+/* 06-18(UI-SPEC S16) — 매출 섹션 표 소제목(`발행 요청` · `발행 줄`): --text-aux --text-muted 600. 표 caption은 글자 없는 sr-only라 눈에 보이는 이름은 이 줄이다. */
+.tableSubheading {
+  margin: var(--s-4) 0 var(--s-2);
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+  font-weight: var(--fw-medium);
+}
+
+/* 06-18(S16 long-text) — 발행 요청 메모는 표 안 두 줄까지, 셋째 줄부터 말줄임(전체는 title). */
+.requestMemo {
+  display: -webkit-box;
+  max-width: 40ch;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
+}
+
+/* 06-18(S16) — 상태 칸: 낱말 아래 2행(`발행 09-30 · 22,000,000` · `발행 줄 입력 중`) 아래 3차. */
+.requestStatus {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.requestStatusNote {
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+  font-weight: var(--fw-regular);
 }

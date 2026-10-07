@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { ProjectCardUsageDto, ProjectCardUsages } from "@/domain/corp-card-usages";
 import { listProjectCardUsagesAction } from "@/app/(app)/cards/actions";
 import { formatKrw } from "@/lib/format-number";
@@ -16,7 +17,7 @@ import styles from "./project-detail.module.css";
 // 06-07(UI-SPEC S15): 프로젝트 상세 「법인카드 사용」 — 매출 섹션 아래 읽기 표(부제 없음 — C13). 그 프로젝트 견적 줄(견적 외 비용 포함)에 이은
 // 카드 사용만, 사용일 오름차순 · 페이지 나눔 없음. 금액 열 · 합계 행 금액은 서버가 `quote.amount`로 뺀다(없으면 `합계 ({N}건)`만).
 // 섹션이 따로 불러(액션) 실패해도 원장 · 매출 섹션은 선다 — 「Error — 섹션 로드」 `카드 사용 불러오지 못함 · 다시 시도`.
-// 행에서 수정 패널(`/cards?editId=`)로 가는 링크는 06-09가 더한다 — 지금 폰 행은 RowSheet.
+// 06-09: 폰 행 탭 — 그 건의 권리(O-11, 서버 `rights`)가 있으면 수정 패널(`/cards?editId=`), 없으면 RowSheet(보기 전용).
 
 type Row = Partial<ProjectCardUsageDto> & { id: string };
 type Load = { kind: "loading" } | { kind: "error" } | { kind: "ready"; data: ProjectCardUsages };
@@ -24,12 +25,17 @@ type Load = { kind: "loading" } | { kind: "error" } | { kind: "ready"; data: Pro
 // 「표시 — 경영관리 등록」 — 카드 사용 목록(S8)과 같은 글자 모양(--text-strong 600).
 const PROXY_STYLE = { fontWeight: "var(--fw-medium)", color: "var(--text-strong)" } as const;
 
+// 06-12: 구매 완료로 생긴 건 = `구매 요청 {번호}` + 2행 `{구매 완료한 사람} {MM-DD}`(경영관리 등록이 아니다).
+function purchaseText(row: Row): string | null {
+  return row.registeredVia === "purchase" && row.purchaseNumber ? `구매 요청 ${row.purchaseNumber}` : null;
+}
+
 function registeredText(row: Row) {
-  return row.registeredVia === "proxy" ? <span style={PROXY_STYLE}>경영관리 등록</span> : (row.registeredByName ?? "");
+  return row.registeredVia === "proxy" ? <span style={PROXY_STYLE}>경영관리 등록</span> : (purchaseText(row) ?? row.registeredByName ?? "");
 }
 
 function registeredSecond(row: Row): string | null {
-  return row.registeredVia === "proxy" ? `${row.registeredByName ?? ""} ${row.registeredOn?.slice(5) ?? ""}`.trim() : null;
+  return row.registeredVia === "proxy" || purchaseText(row) ? `${row.registeredByName ?? ""} ${row.registeredOn?.slice(5) ?? ""}`.trim() : null;
 }
 
 // 결제 합계 2행 = 공급가(합계와 다를 때만 — 규칙 없음이면 같은 값이라 두 번 말하지 않는다).
@@ -63,6 +69,7 @@ export function CardUsageSection({ projectId }: { projectId: string }) {
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   const [attempt, setAttempt] = useState(0);
   const [sheet, setSheet] = useState<Row | null>(null);
+  const router = useRouter();
 
   useEffect(() => {
     let live = true;
@@ -140,7 +147,7 @@ export function CardUsageSection({ projectId }: { projectId: string }) {
         columns={columns}
         rows={rows}
         getRowId={(row) => row.id}
-        onRowTap={(row) => setSheet(row)}
+        onRowTap={(row) => (row.rights?.edit ? router.push(`/cards?editId=${row.id}`) : setSheet(row))}
         rowLabel={(row) => row.lineLabel ?? row.id}
         footer={
           <tr>
@@ -162,7 +169,7 @@ export function CardUsageSection({ projectId }: { projectId: string }) {
                 { label: "사용일", value: sheet.usedOn ?? "" },
                 ...(sheet.totalKrw !== undefined ? [{ label: "결제 합계", value: <Num value={sheet.totalKrw} /> }] : []),
                 ...(sheet.supplyKrw !== undefined ? [{ label: "공급가", value: <Num value={sheet.supplyKrw} /> }] : []),
-                { label: "등록", value: registeredSecond(sheet) ? `경영관리 등록 · ${registeredSecond(sheet) ?? ""}` : (sheet.registeredByName ?? "") },
+                { label: "등록", value: registeredSecond(sheet) ? `${purchaseText(sheet) ?? "경영관리 등록"} · ${registeredSecond(sheet) ?? ""}` : (sheet.registeredByName ?? "") },
               ]
             : []
         }

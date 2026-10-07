@@ -1,0 +1,60 @@
+/* 06-08 S11 — 품목 칸: 한 줄 말줄임 + title, 같은 칸 링크 아이콘(3차 — 글자 없음). 연결 칸 `.linkCell`과 같은 격자 minmax(0, max-content)라
+   글자 칸의 최소 폭이 0 — 폰 320에서 다른 P1 열(예상 금액 · 상태 2행)이 넓어지면 품목이 말줄임으로 줄고 표가 틀을 넘지 않는다(06-12 감사 D-1 · O-1). */
+.itemCell {
+  display: grid;
+  grid-template-columns: minmax(0, max-content) auto;
+  align-items: center;
+  column-gap: var(--s-1);
+  max-width: 16em;
+  min-width: 0;
+}
+
+/* 06-08 감사 D-1 — 폰에서 품목 · 예상 금액 · 상태가 한 줄에 서므로 품목 칸 상한을 줄인다(링크 아이콘 44 포함). 긴 글자는 말줄임 + title. */
+@media (max-width: 699.98px) {
+  .itemCell {
+    max-width: 9em;
+  }
+}
+
+.itemText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 링크 아이콘 — 누르는 영역 `--touch-min` 44×44(폰 포함, r2 F15). 색은 식별자형 링크와 같은 `--accent`. */
+.linkIcon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--touch-min);
+  min-height: var(--touch-min);
+  color: var(--accent);
+}
+
+.linkIcon:hover {
+  color: var(--accent-hover);
+}
+
+.linkIcon svg {
+  width: var(--s-4);
+  height: var(--s-4);
+}
+
+/* 06-14 폰 S13 패널의 `요청 취소` — 폰 시트(<700)에서만 선다. PC는 행 행동 칸이 취소를 맡는다(감사 D-1). */
+.panelCancel {
+  display: none;
+}
+
+@media (max-width: 699.98px) {
+  .panelCancel {
+    display: inline-flex;
+    flex: none;
+    /* PR #183 m-4 — 본인 취소 거부 한 줄이 버튼 옆에 서면 패널 폭 안에서 줄을 바꾼다(가로 넘침 0). */
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    max-width: 100%;
+  }
+}

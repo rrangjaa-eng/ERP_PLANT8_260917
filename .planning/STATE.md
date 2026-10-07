@@ -4,16 +4,16 @@ current_phase: 06
 current_phase_name: 지급·증빙·법인카드·구매 요청 (경영관리)
 current_plan: 12
 status: executing
-stopped_at: Completed 06-07-PLAN.md
-last_updated: "2026-10-06T16:35:21.413Z"
+stopped_at: 06 PR-D 게이트 끝 · 시각 기준·ready 전
+last_updated: "2026-10-07T12:06:28.918Z"
 last_activity: 2026-10-06
 last_activity_desc: Phase 06 execution started
-state_head: d9a4b49916c5ddf3659f1f6de37d27685a286d7c
+state_head: 939e1af4240cdc888629736e43b3e74a40945793
 progress:
   total_phases: 17
   completed_phases: 7
   total_plans: 197
-  completed_plans: 179
+  completed_plans: 188
   percent: 41
 ---
 
@@ -478,6 +478,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-06T16:35:20.965Z
-Stopped at: Completed 06-07-PLAN.md
+Last session: 2026-10-07T12:06:28.539Z
+Stopped at: 06 PR-D 게이트 끝 · 시각 기준·ready 전
 Resume file: None

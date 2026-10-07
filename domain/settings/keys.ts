@@ -1261,7 +1261,6 @@ export const PURCHASE_ONLINE_VENDOR_NAME: SettingDef<string> = {
   hint: "이 거래처의 견적 줄은 구매 요청으로",
   namespace: "구매 요청",
   default: "",
-  readBy: { phase: "6" },
 };
 
 // 값 = 짝 목록 `{ method: 지급 방식 코드 값, evidence: 증빙 종류 코드 값 }[]` — 빈 목록 = 짝 검사 없음(Q4).

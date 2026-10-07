@@ -131,9 +131,9 @@ export function quoteLockReason(input: { status: string; approvedSeq?: number | 
   return null;
 }
 
-// UI-SPEC rev 5 `Error — 셀(읽기 전용, D-66)`.
-export function linkedDocumentReason(number: string): string {
-  return `지출결의 ${number} 연결됨 · 고치려면 새 차수`;
+// UI-SPEC rev 5 `Error — 셀(읽기 전용, D-66)`. 06-13(S-F4) — 지급 완료 문서면 문서 상태만 바뀐 꼴(줄 DTO · `readonly` 셀 게이트가 함께 부른다).
+export function linkedDocumentReason(number: string, opts: { paid?: boolean } = {}): string {
+  return `지출결의 ${number} ${opts.paid ? "지급 완료" : "연결됨"} · 고치려면 새 차수`;
 }
 
 

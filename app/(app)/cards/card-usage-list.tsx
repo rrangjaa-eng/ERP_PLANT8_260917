@@ -1,18 +1,23 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Table } from "@/ui/table/Table";
+import { RowSheet } from "@/ui/table/RowSheet";
 import type { TableColumn } from "@/ui/table/types";
 import { Num } from "@/ui/num/Num";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
+import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
+import type { CardUsageRights } from "@/domain/corp-card-usages/rights";
 import { formatForeignLine, formatKrw } from "@/lib/format-number";
 // 필터 칸 모양은 프로젝트 목록 필터와 같은 클래스(새 CSS 없음).
 import styles from "@/app/(app)/projects/projects.module.css";
 import cardStyles from "./cards.module.css";
+import { CardUsageDeleteButton, CardUsageEditAction } from "./delete-undo";
 
 // 06-05(UI-SPEC S8): 카드 사용 읽기 표 — 그룹 머리글 = 카드, 그룹 안 사용일 오름차순(서버 정렬). 카드 열은 그룹이 말하므로 두지 않는다.
-// 행동 칸 `수정` · `삭제`는 06-09.
+// 06-09: 행동 칸 — 그 건의 권리(O-11, 서버 `rights`)가 있을 때만 `수정`(→ `?editId=` 옆 패널) · `삭제`(= 보관, 구매 완료 건은 없음),
+// 권리가 없으면 칸이 빈다. 폰 행 탭 — 권리가 있으면 수정 패널, 없으면 `RowSheet`(보기 전용).
 
 export type CardUsageListRowView = {
   id: string;
@@ -26,12 +31,16 @@ export type CardUsageListRowView = {
   registeredVia: string;
   registeredByName: string;
   registeredOn: string | null;
+  /** 06-12 구매 완료로 생긴 건 — 등록 칸 `구매 요청 {번호}`. */
+  purchaseNumber: string | null;
   totalKrw: number | null;
   supplyKrw: number | null;
   vatKrw: number | null;
   currency: string | null;
   foreignAmount: number | null;
   fxRate: number | null;
+  rights: CardUsageRights;
+  version: number;
 };
 
 // 「표시 — 카드 사용 결제 합계 2행」 한 형식: 외화면 `USD 1,000.00 @1,350 · 공급가 N`, 원화 부가세 규칙이면 `공급가 N`, 규칙 없음(공급가 = 합계)은 2행 없음.
@@ -73,6 +82,43 @@ function linkCell(row: CardUsageListRowView): ReactNode {
 // 「표시 — 경영관리 등록」: 대리 등록이면 `경영관리 등록`(--text-strong 600) + 2행 `{등록자} {MM-DD}`, 본인 등록이면 이름(400). 대리 등록 자체는 06-09.
 const PROXY_STYLE = { fontWeight: "var(--fw-medium)", color: "var(--text-strong)" } as const;
 
+// 등록 칸 1행 — 대리 등록 = `경영관리 등록`, 구매 완료로 생긴 건 = `구매 요청 {번호}`(06-12), 본인 등록 = 이름.
+function registeredFirst(row: CardUsageListRowView): ReactNode {
+  if (row.registeredVia === "proxy") return <span style={PROXY_STYLE}>경영관리 등록</span>;
+  if (row.registeredVia === "purchase" && row.purchaseNumber) return `구매 요청 ${row.purchaseNumber}`;
+  return row.registeredByName;
+}
+
+// 등록 칸 2행 `{등록자} {MM-DD}` — 대리 등록 · 구매 완료 건만.
+function registeredSecond(row: CardUsageListRowView): string | null {
+  return row.registeredVia === "proxy" || (row.registeredVia === "purchase" && row.purchaseNumber) ? `${row.registeredByName} ${row.registeredOn?.slice(5) ?? ""}`.trim() : null;
+}
+
+// 접근 이름 `{사용일} {가맹점} 수정` / `… 삭제` — 보이는 글자는 `수정` · `삭제` 그대로(줄마다 같은 이름을 사용일 · 가맹점으로 가른다).
+function actionName(row: CardUsageListRowView): string {
+  return `${row.usedOn.slice(5)}${row.merchantName ? ` ${row.merchantName}` : ""} `;
+}
+
+function editHref(listHref: string, id: string): string {
+  return `${listHref}${listHref.includes("?") ? "&" : "?"}editId=${id}`;
+}
+
+function actionsColumn(listHref: string): TableColumn<CardUsageListRowView> {
+  return {
+    key: "actions",
+    header: "행동",
+    headerHidden: true,
+    priority: "p1",
+    cell: (row) =>
+      row.rights.edit ? (
+        <RowActions>
+          <CardUsageEditAction id={row.id} href={editHref(listHref, row.id)} name={actionName(row)} />
+          {row.rights.delete ? <CardUsageDeleteButton id={row.id} version={row.version} name={actionName(row)} /> : null}
+        </RowActions>
+      ) : null,
+  };
+}
+
 const COLUMNS: TableColumn<CardUsageListRowView>[] = [
   { key: "usedOn", header: "사용일", priority: "p2", cell: (row) => <Num value={row.usedOn.slice(5)} /> },
   { key: "merchant", header: "가맹점", priority: "p2", cell: (row) => row.merchantName ?? "—" },
@@ -90,21 +136,51 @@ const COLUMNS: TableColumn<CardUsageListRowView>[] = [
     key: "registered",
     header: "등록",
     priority: "p1",
-    cell: (row) => (row.registeredVia === "proxy" ? <span style={PROXY_STYLE}>경영관리 등록</span> : row.registeredByName),
-    secondaryLine: (row) => (row.registeredVia === "proxy" ? `${row.registeredByName} ${row.registeredOn?.slice(5) ?? ""}`.trim() : null),
+    cell: registeredFirst,
+    secondaryLine: registeredSecond,
   },
 ];
 
-export function CardUsageList({ rows }: { rows: CardUsageListRowView[] }) {
+export function CardUsageList({ rows, listHref }: { rows: CardUsageListRowView[]; listHref: string }) {
+  const router = useRouter();
+  const [sheet, setSheet] = useState<CardUsageListRowView | null>(null);
   return (
-    <Table
-      caption="카드 사용"
-      columns={COLUMNS}
-      rows={rows}
-      getRowId={(row) => row.id}
-      groupBy={(row) => row.cardId}
-      groupHeader={(row) => row.cardLabel}
-    />
+    <>
+      <Table
+        caption="카드 사용"
+        columns={[...COLUMNS, actionsColumn(listHref)]}
+        rows={rows}
+        getRowId={(row) => row.id}
+        groupBy={(row) => row.cardId}
+        groupHeader={(row) => row.cardLabel}
+        onRowTap={(row) => (row.rights.edit ? router.push(editHref(listHref, row.id), { scroll: false }) : setSheet(row))}
+        rowLabel={(row) => `${row.usedOn.slice(5)}${row.merchantName ? ` ${row.merchantName}` : ""}`}
+      />
+      <RowSheet
+        open={sheet !== null}
+        onClose={() => setSheet(null)}
+        title={sheet ? linkText(sheet) : ""}
+        subtitle={sheet?.merchantName ?? "—"}
+        items={
+          sheet
+            ? [
+                { label: "사용일", value: sheet.usedOn },
+                { label: "카드", value: sheet.cardLabel },
+                ...(sheet.totalKrw !== null ? [{ label: "결제 합계", value: <Num value={sheet.totalKrw} /> }] : []),
+                {
+                  label: "등록",
+                  value:
+                    sheet.registeredVia === "proxy"
+                      ? `경영관리 등록 · ${registeredSecond(sheet) ?? ""}`
+                      : sheet.registeredVia === "purchase" && sheet.purchaseNumber
+                        ? `구매 요청 ${sheet.purchaseNumber} · ${registeredSecond(sheet) ?? ""}`
+                        : sheet.registeredByName,
+                },
+              ]
+            : []
+        }
+      />
+    </>
   );
 }
 
@@ -131,6 +207,7 @@ export function CardUsageFilters({
   link,
   proxyOnly,
   registrationFilter,
+  purchasesLink,
 }: {
   month: string;
   thisMonth: string;
@@ -140,6 +217,8 @@ export function CardUsageFilters({
   link: string;
   proxyOnly: boolean;
   registrationFilter: boolean;
+  /** 06-14 SP-4 하위 목록 링크(`구매 요청 {N}` — 0이면 `구매 요청`만). */
+  purchasesLink: { label: string; href: string };
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -207,6 +286,9 @@ export function CardUsageFilters({
           </select>
         </div>
       ) : null}
+      <RowActions>
+        <RowAction href={purchasesLink.href}>{purchasesLink.label}</RowAction>
+      </RowActions>
     </>
   );
 }

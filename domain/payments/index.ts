@@ -45,6 +45,7 @@ import { prepaidDueInfo, type PrepaidDue } from "@/domain/evidence-reviews/prepa
 import { findReviewByExpense, listAliveCardUsageSuppliesByProject } from "@/repositories/expense-evidence-reviews";
 import { listAliveByOwners } from "@/repositories/files";
 import { findQuoteLineById, listLineageLinesByProjects } from "@/repositories/quote-lines";
+import { findExpenseQuoteLineIds, lockQuoteLines } from "@/repositories/quote-line-links";
 import { formatKrw } from "@/lib/format-number";
 import { kstDateOf } from "@/lib/kst-date";
 
@@ -413,7 +414,7 @@ function transferKrwProblem(value: number): string | null {
 
 export type CompletePaymentDeps = {
   shared?: PaymentShared;
-  // 경합 테스트 장벽 — 지출결의 행을 잠근 직후(05 submitExpense deps.afterLock 꼴). 06-04 · 06-11 · 06-13이 쓴다.
+  // 경합 테스트 장벽 — 견적 줄 · 지출결의 행을 잠근 직후(05 submitExpense deps.afterLock 꼴). 06-04 · 06-11 · 06-13이 쓴다.
   afterLock?: () => Promise<void>;
   now?: Date;
 };
@@ -449,6 +450,10 @@ export async function completeExpensePayment(
 
   try {
     return await withTransaction(async (tx) => {
+      // 06-13(N-2 · N-3): 전역 잠금 순서 프로젝트 행 → 견적 줄 → 문서 행. 지급은 줄 연결을 늘리지 않아 프로젝트 행을 건너뛰고(X-2)
+      // 문서의 견적 줄(하나 — 팀 비용 문서는 없음)을 문서 행보다 먼저 잡는다 — 같은 줄의 새 지출결의 제출과 직렬이다.
+      const lineIds = await findExpenseQuoteLineIds(viewer, pre.expenseId, tx);
+      await lockQuoteLines(viewer, lineIds, tx);
       const locked = await lockExpenseForUpdate(viewer, pre.expenseId, tx);
       await deps?.afterLock?.();
       if (!locked) throw new PaymentNotFoundError();
@@ -691,6 +696,28 @@ export async function approvedSupplyTax(viewer: Viewer, expenseId: string, share
     pre.tax.rates,
   );
   return { supplyKrw: row.supplyAmountKrw, vatKrw: decided.vatKrw };
+}
+
+// PR #183 B-1(사용자 결정 10/7 11:04 「지급액과 같을 때만」) — 지급 뒤 빈 증빙 금액 판정 재료(트랜잭션 전 사전 조회). 살아 있는 지급과,
+// 어떤 금액을 그 지급일 기준 같은 세금 규칙으로 다시 셈한 지급 총액(DB 없음 — 트랜잭션 안에서 불러도 된다). 지급 기록에 세전 금액이
+// 남는 것은 부가세(gross)뿐이라 규칙 종류(부가세 · 원천징수 · 회사 대납 · 없음)마다 같은 기준으로 견주려면 지급 총액으로 되짚는다. 지급 없으면 null.
+export async function paidPayableBasis(
+  viewer: Viewer,
+  expenseId: string,
+  shared: PaymentShared,
+): Promise<{ paymentId: string; payableKrw: number; payableAt: (amountKrw: number) => Promise<number | null> } | null> {
+  const payment = await findLivePayment(viewer, expenseId);
+  if (!payment) return null;
+  const pre = await loadPaymentInputs(viewer, { expenseId, payDate: payment.payDate }, shared);
+  const tax = pre.tax;
+  return {
+    paymentId: payment.id,
+    payableKrw: payment.payableKrw,
+    payableAt: async (amountKrw) =>
+      tax
+        ? (await decidePayable({ amount: { source: "evidence", amountKrw }, taxRule: tax.taxRule, applyOpts: tax.dates.applyOpts, incomeType: tax.incomeType }, tax.rates)).payableKrw
+        : null,
+  };
 }
 
 // [Q-F] 증빙 금액 초과 한 줄(표시만 — 확인 · 게이트 · 규칙은 읽지 않는다). 트랜잭션 없는 읽기. 살아 있는 파일이 없으면 계보 조회 없이 null(R-4).

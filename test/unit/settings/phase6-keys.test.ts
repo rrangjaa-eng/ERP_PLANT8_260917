@@ -45,13 +45,9 @@ describe("Phase 6 설정 키 넷 (06-02)", () => {
     expect(PAYMENT_METHOD_EVIDENCE_PAIRS.schema.safeParse("계좌이체:세금계산서").success).toBe(false);
   });
 
-  // 06-06이 evidence.prepaid_due_days를 처음 읽어 그 readBy를 지웠다.
-  it("넷 모두 SETTING_DEFS에 있고, 06-04 · 06-06이 읽는 셋은 readBy가 없고 나머지 하나는 readBy 6이며 05의 증빙 크기 한도에는 readBy가 없다", () => {
-    for (const def of [PURCHASE_ONLINE_VENDOR_NAME]) {
-      expect(def.readBy?.phase).toBe("6");
-      expect(SETTING_DEFS).toContain(def);
-    }
-    for (const def of [EVIDENCE_REQUIRED, PAYMENT_METHOD_EVIDENCE_PAIRS, EVIDENCE_PREPAID_DUE_DAYS]) {
+  // 06-06이 evidence.prepaid_due_days를, 06-08이 purchase.online_vendor_name을 처음 읽어 그 readBy를 지웠다.
+  it("넷 모두 SETTING_DEFS에 있고, 06-04 · 06-06 · 06-08이 읽는 키는 readBy가 없으며 05의 증빙 크기 한도에도 readBy가 없다", () => {
+    for (const def of [EVIDENCE_REQUIRED, PAYMENT_METHOD_EVIDENCE_PAIRS, EVIDENCE_PREPAID_DUE_DAYS, PURCHASE_ONLINE_VENDOR_NAME]) {
       expect(def.readBy).toBeUndefined();
       expect(SETTING_DEFS).toContain(def);
     }

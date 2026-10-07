@@ -127,6 +127,10 @@ export type ExpenseDraftFields = Partial<
     | "teamExpenseKind"
     | "usageDate"
     | "content"
+    | "prepaid"
+    | "prepaidReason"
+    | "evidenceAmount"
+    | "evidenceDate"
     | "attributedTeamId"
     | "projectId"
     | "quoteLineId"
@@ -356,7 +360,8 @@ export async function closeExpenseRow(
   return row ?? null;
 }
 
-export type NumberedProjectExpense = { quoteLineId: string; number: string; approvalStatus: string | null };
+// 06-13: `id`(지급 · 증빙 사실 조회 키) · `closedAt`(종결 문서는 줄 상태 · D-66에서 빠진다 — UC-7)을 더했다.
+export type NumberedProjectExpense = { id: string; quoteLineId: string; number: string; approvalStatus: string | null; closedAt: Date | null };
 
 // D-66 · 줄 파생 상태(05-15) — 한 프로젝트의 번호 있는 · 삭제 안 된 지출결의와 결재 인스턴스 상태를 한 쿼리로(차수 무관, 줄 id별 계보 해석은 호출자).
 // 결재 문서 종류 키는 domain/expenses의 EXPENSE_DOCUMENT_KIND와 같은 값이다(domain/quotes가 domain/expenses를 import하지 않도록 이 리포지토리가 안다).
@@ -365,12 +370,16 @@ const EXPENSE_APPROVAL_KIND = "expense";
 export async function listNumberedByProject(viewer: Viewer, projectId: string, tx: DbOrTx = db): Promise<NumberedProjectExpense[]> {
   void viewer;
   const rows = await tx
-    .select({ quoteLineId: expenses.quoteLineId, number: expenses.number, approvalStatus: approvalInstances.status })
+    .select({ id: expenses.id, quoteLineId: expenses.quoteLineId, number: expenses.number, approvalStatus: approvalInstances.status, closedAt: expenses.closedAt })
     .from(expenses)
     .leftJoin(approvalInstances, and(eq(approvalInstances.documentKind, EXPENSE_APPROVAL_KIND), eq(approvalInstances.documentId, expenses.id)))
     .where(and(eq(expenses.projectId, projectId), isNotNull(expenses.number), isNull(expenses.deletedAt)))
     .orderBy(asc(expenses.submittedAt), asc(expenses.id));
-  return rows.flatMap((row) => (row.quoteLineId && row.number ? [{ quoteLineId: row.quoteLineId, number: row.number, approvalStatus: row.approvalStatus }] : []));
+  return rows.flatMap((row) =>
+    row.quoteLineId && row.number
+      ? [{ id: row.id, quoteLineId: row.quoteLineId, number: row.number, approvalStatus: row.approvalStatus, closedAt: row.closedAt }]
+      : [],
+  );
 }
 
 // 05 /review A8 — 프로젝트별 결재 중(submitted · in_review) 지출결의 수(삭제 안 된 문서) — 정산 최종 승인 막힘 재료. 승인 tx 안에서는 tx로 부른다.

@@ -1007,7 +1007,9 @@ export function Table<Row>({
                                 : -1
                               : hasEditableCell && isEditableColumn
                                 ? 0
-                                : undefined
+                                : invalid
+                                  ? -1
+                                  : undefined
                           }
                           className={[
                             styles.cell,

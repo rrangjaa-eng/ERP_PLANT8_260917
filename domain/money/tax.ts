@@ -79,7 +79,8 @@ export async function applyTaxRule(
     return { vatKrw: 0, withholdingKrw: 0, companyBorneKrw: 0, payableKrw: supplyKrw };
   }
 
-  const roundingMethod = rule.roundingMethod ?? "round";
+  // 절사 방식이 없으면 원천징수는 시드 규칙처럼 절사, 나머지는 반올림이다(CSO-9).
+  const roundingMethod = rule.roundingMethod ?? (rule.ruleKind === "withholding" ? "truncate" : "round");
 
   if (rule.ruleKind === "vat_surcharge") {
     const vatRate = await readSetting(getValue, TAX_VAT_RATE, opts.evidenceDate);

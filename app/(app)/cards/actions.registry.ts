@@ -9,6 +9,37 @@ registerAction({
   dtoName: null,
 });
 
+// 06-09: 수정의 문은 그 건의 권리(domain `cardUsageRights` — O-11)다 — 메뉴 값은 레지스트리 메타데이터.
+registerAction({
+  name: "updateCardUsageAction",
+  menu: "cards",
+  action: "write",
+  dtoName: null,
+});
+
+// 06-09: 삭제(= 보관) · 되돌리기(= 보관 해제)의 문도 그 건의 권리(O-11)다.
+registerAction({
+  name: "deleteCardUsageAction",
+  menu: "cards",
+  action: "write",
+  dtoName: null,
+});
+
+registerAction({
+  name: "restoreCardUsageAction",
+  menu: "cards",
+  action: "write",
+  dtoName: null,
+});
+
+// 06-09: 사용한 사람 후보 — 대리 등록 권한자만(domain `usedByCandidates`가 cards.proxy write를 본다).
+registerAction({
+  name: "usedByCandidatesAction",
+  menu: "cards.proxy",
+  action: "write",
+  dtoName: null,
+});
+
 registerAction({
   name: "previewCardAmountsAction",
   menu: "cards",

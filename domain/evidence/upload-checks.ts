@@ -1,5 +1,6 @@
 // 05-04(EVID-01 · UI-SPEC Copywriting 「Error — 증빙 업로드」): 업로드 의도를 내주기 전 검사 — 크기 · 형식 · 중복을 순수하게
-// 판정한다. 문자열은 화면(05-05) · E2E가 import하는 상수다. 06-11이 선결제 규칙을 이 함수에 더한다.
+// 판정한다. 문자열은 화면(05-05) · E2E가 import하는 상수다. 선결제는 업로드를 막지 않는다(EXP-13).
+// R-5: 해시는 브라우저가 보낸 참고 값 — 권한 · 금액 · 게이트는 기대지 않고 크기 · 형식 · 해시는 완료 통보의 메타데이터 재확인이 강제한다.
 
 export const EVIDENCE_CONTENT_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "application/pdf"] as const;
 
@@ -8,6 +9,17 @@ export const EVIDENCE_DUPLICATE_SAME_OWNER = "같은 파일이 이미 첨부됨"
 export const EVIDENCE_DUPLICATE_HIDDEN = "이미 첨부된 파일 · 다른 파일 고르기";
 // 완료 통보 거부 · 선언 값이 깨진 요청(크기 0 · 해시 형식) — 사용자에게는 같은 한 줄이다(UI-SPEC S4 「다시 올리기」).
 export const EVIDENCE_UPLOAD_FAILED = "올리지 못함 · 다시 올리기";
+
+// 06-11(O-6 · DR-3) — 중복 범위: 지출결의 증빙과 카드 사용의 카드 전표는 한 종류로 센다. 차수 승인 증빙 · 리저브 줄 증빙은 자기 종류끼리만,
+// 표에 없는 종류도 자기 종류만이다.
+const DUPLICATE_SCOPES: Record<string, readonly string[]> = {
+  expense: ["expense", "corp_card_usage"],
+  corp_card_usage: ["expense", "corp_card_usage"],
+};
+
+export function duplicateScopeKinds(ownerKind: string): readonly string[] {
+  return Object.hasOwn(DUPLICATE_SCOPES, ownerKind) ? (DUPLICATE_SCOPES[ownerKind] ?? [ownerKind]) : [ownerKind];
+}
 
 export function evidenceDuplicateElsewhere(number: string): string {
   return `같은 파일이 ${number} 증빙에 있음 · 다른 파일 고르기`;

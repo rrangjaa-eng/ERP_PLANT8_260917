@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { quoteLines } from "@/db/schema";
+import { projects, quoteLines } from "@/db/schema";
 import { createCorpCard } from "@/domain/corp-cards";
 import { createOrgUnit, createTeam } from "@/domain/org";
 import { createProject } from "@/domain/projects";
@@ -25,6 +25,7 @@ type ProxyFx = {
   pm: Person;
   proxy: Person;
   cardId: string;
+  cardLabel: string;
   cardText: string;
   projectId: string;
   projectName: string;
@@ -84,6 +85,7 @@ async function setup(): Promise<ProxyFx> {
     pm,
     proxy,
     cardId: card.id,
+    cardLabel: label,
     cardText: `${label} · ${issuer} 7788`,
     projectId: project.id,
     projectName,
@@ -91,6 +93,11 @@ async function setup(): Promise<ProxyFx> {
     itemName,
     lineId: line.id,
   };
+}
+
+// 목록 표에서 이 픽스처 카드의 묶음(카드별 rowgroup)만 — 권한자(회사 범위)는 다른 스펙이 같은 달에 만든 건도 본다.
+function fixtureRows(page: Page, fx: ProxyFx) {
+  return page.getByRole("table").getByRole("rowgroup").filter({ hasText: fx.cardLabel });
 }
 
 function cardSection(page: Page) {
@@ -130,9 +137,9 @@ test.describe("법인카드 대리 등록 · 수정 (06-09)", () => {
     const page = await loginPage(browser, baseURL, fx.proxy);
     await registerByProxy(page, fx, "300000");
 
-    const table = page.getByRole("table");
-    await expect(table.getByText("경영관리 등록", { exact: true })).toHaveCount(1);
-    const edit = table.getByRole("link", { name: /수정$/ });
+    const rows = fixtureRows(page, fx);
+    await expect(rows.getByText("경영관리 등록", { exact: true })).toHaveCount(1);
+    const edit = rows.getByRole("link", { name: /수정$/ });
     await expect(edit).toHaveCount(1);
     await waitForHydration(edit);
     await edit.click();
@@ -147,13 +154,90 @@ test.describe("법인카드 대리 등록 · 수정 (06-09)", () => {
     await total.fill("450000");
     await total.press("Control+Enter");
     await expect(sheet).toBeHidden();
-    await expect(page.getByRole("table").getByRole("link", { name: /수정$/ })).toBeFocused();
-    await expect(page.getByRole("table").getByText("450,000", { exact: true })).toHaveCount(1);
+    await expect(fixtureRows(page, fx).getByRole("link", { name: /수정$/ })).toBeFocused();
+    await expect(fixtureRows(page, fx).getByText("450,000", { exact: true })).toHaveCount(1);
     await page.context().close();
 
     const pmPage = await loginPage(browser, baseURL, fx.pm);
     await pmPage.goto(`/projects/${fx.projectId}`);
     await expect(cardSection(pmPage).getByText("경영관리 등록", { exact: true })).toBeVisible();
     await pmPage.context().close();
+  });
+
+  test("[06-09 사용한 사람] 권한자 · 팀 카드 · 팀 비용 → `사용한 사람` 기본값 없음 → 고르면 팀 텍스트 → 사용일을 바꿔 후보에서 빠지면 칸 빔", async ({ browser, baseURL }) => {
+    const fx = await setup();
+    const year = seoulToday().slice(0, 4);
+    const suffix = randomUUID().slice(0, 8);
+    const teamCard = await createCorpCard(SYSTEM_VIEWER, { issuer: `팀카드사-${suffix}`, numberLast4: "7790", label: `팀카드-${suffix}`, kind: "team", teamId: fx.teamId });
+    if (!teamCard.id) throw new Error("카드 id 없음");
+    const newcomer = await makePerson("신입", DEFAULT_ROLE_ID, fx.teamId, `${year}-06-01`);
+    const page = await loginPage(browser, baseURL, fx.proxy);
+    await page.goto("/cards?new=1");
+    const sheet = page.getByRole("dialog", { name: "카드 사용 등록" });
+    const card = sheet.getByLabel("카드", { exact: true });
+    await waitForHydration(card);
+    await card.selectOption(teamCard.id);
+    await sheet.getByRole("radio", { name: "팀 비용" }).check();
+    const usedBy = sheet.getByLabel("사용한 사람");
+    await expect(usedBy.locator("option", { hasText: newcomer.name })).toHaveCount(1);
+    await expect(usedBy).toHaveValue("");
+    await usedBy.selectOption(newcomer.viewer.id);
+    await expect(sheet.locator('[data-ui="card-usage-team"]')).toHaveText(fx.teamName);
+    await sheet.getByLabel("사용일").fill(`${year}-03-02`);
+    await expect(usedBy.locator("option", { hasText: newcomer.name })).toHaveCount(0);
+    await expect(usedBy).toHaveValue("");
+    await page.context().close();
+  });
+
+  test("[06-09 완료 프로젝트] 권한자 → 완료 프로젝트 고름 → 고를 수 있는 줄 0 → `견적 외 비용으로` → 저장", async ({ browser, baseURL }) => {
+    const fx = await setup();
+    await db.update(projects).set({ status: "completed" }).where(eq(projects.id, fx.projectId));
+    const page = await loginPage(browser, baseURL, fx.proxy);
+    await page.goto("/cards?new=1");
+    const sheet = page.getByRole("dialog", { name: "카드 사용 등록" });
+    const card = sheet.getByLabel("카드", { exact: true });
+    await waitForHydration(card);
+    await card.selectOption(fx.cardId);
+    const total = sheet.getByLabel("결제 합계");
+    await total.fill("33000");
+    await sheet.getByRole("radio", { name: "견적 줄" }).check();
+    await sheet.getByRole("button", { name: "프로젝트 바꾸기" }).click();
+    const projectsDialog = page.getByRole("dialog", { name: "프로젝트 고르기" });
+    await projectsDialog.getByRole("textbox", { name: "프로젝트 번호 · 이름 · 클라이언트 검색" }).fill(fx.projectName);
+    const option = projectsDialog.getByRole("option", { name: new RegExp(fx.projectName) });
+    await expect(option).toContainText("완료 · 견적 줄 잠김");
+    await option.click();
+    await projectsDialog.getByRole("button", { name: /^이 프로젝트로/ }).click();
+    await sheet.getByRole("button", { name: "견적 줄 바꾸기" }).click();
+    const lines = page.getByRole("dialog", { name: "견적 줄 고르기" });
+    await expect(lines.getByRole("button", { name: /^이 줄로/ })).toBeDisabled();
+    await lines.getByRole("button", { name: "견적 외 비용으로" }).click();
+    await expect(sheet.getByRole("radio", { name: "견적 외 비용" })).toBeChecked();
+    const item = `완료 뒤 비용-${randomUUID().slice(0, 6)}`;
+    await sheet.getByLabel("항목").fill(item);
+    await total.press("Control+Enter");
+    await expect(sheet.getByRole("status")).toHaveText("카드 사용 등록됨 · 33,000");
+    await expect(page.getByRole("table").getByText(`${fx.projectName} · 견적 외 비용 · ${item}`, { exact: true })).toHaveCount(1);
+    await page.context().close();
+  });
+
+  test("[06-09 수정 상한] 수정에서 결제 합계를 실행가 넘게 → 실행가 초과 막힘 · 패널 열림 유지", async ({ browser, baseURL }) => {
+    const fx = await setup();
+    const page = await loginPage(browser, baseURL, fx.proxy);
+    await registerByProxy(page, fx, "300000");
+    const edit = fixtureRows(page, fx).getByRole("link", { name: /수정$/ });
+    await waitForHydration(edit);
+    await edit.click();
+    const sheet = page.getByRole("dialog", { name: "카드 사용 수정" });
+    const total = sheet.getByLabel("결제 합계");
+    await waitForHydration(total);
+    // 이 건을 뺀 남은 실행가 = 2,000,000 — 카드 전표 2,500,000 → 공급가 2,272,727.
+    await expect(sheet.getByText("남은 실행가 2,000,000", { exact: true })).toBeVisible();
+    await total.fill("2500000");
+    await expect(sheet.getByText("공급가 2,272,727 · 부가세 227,273 · 카드 전표 규칙", { exact: true })).toBeVisible();
+    await total.press("Control+Enter");
+    await expect(sheet.getByText(/^실행가 초과 · 남은 실행가 2,000,000 · /)).toBeVisible();
+    await expect(sheet).toBeVisible();
+    await page.context().close();
   });
 });

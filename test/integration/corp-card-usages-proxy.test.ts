@@ -7,29 +7,35 @@ import { ForbiddenError } from "@/domain/permissions/can";
 import { createCorpCard } from "@/domain/corp-cards";
 import { createOrgUnit, createTeam } from "@/domain/org";
 import { db } from "@/db/client";
-import { actionLog, corpCardUsages, quoteLines } from "@/db/schema";
+import { actionLog, corpCardUsages, corpCards, projects, purchaseRequests, quoteLines, users } from "@/db/schema";
 import { GateBlockedError } from "@/domain/rules/gate";
-import { createProject } from "@/domain/projects";
+import { CompletedProjectError, createProject } from "@/domain/projects";
+import { createExpenseFromLines } from "@/domain/expenses";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { createRevisionFromCurrent } from "@/domain/quotes/revisions";
-import { DroppedQuoteLineError } from "@/domain/corp-card-usages/link-targets";
+import { DroppedQuoteLineError, searchLinesForCardLink, searchProjectsForCardLink } from "@/domain/corp-card-usages/link-targets";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import {
   cardOptionsForUsage,
+  cardUsageFormDefaults,
   createCardUsage,
   listCardUsages,
   loadCardUsageForEdit,
   precheckCardUsage,
   precheckCardUsageUpdate,
   updateCardUsage,
+  usedByCandidates,
   type CardUsageInput,
   type CardUsageUpdateInput,
 } from "@/domain/corp-card-usages";
 import { insertRole } from "@/repositories/roles";
 import { insertVendor } from "@/repositories/vendors";
+import { insertMembership } from "@/repositories/team-memberships";
+import { insertCardUsage } from "@/repositories/corp-card-usages";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { seoulToday } from "@/lib/dates";
 import { makePerson } from "./approvals-fixtures";
+import { setupExpenseProject, submitReadyDraft } from "./fixtures/expenses";
 
 // 06-09(EXP-16 · EXP-07 · O-11 · B-1 · Q3 · E-9): 대리 등록 · 사용한 사람 · 수정 · 삭제 · 되돌리기.
 
@@ -338,3 +344,443 @@ describe("연결 그대로 수정의 상한 바탕(N-1 · N-2)", () => {
   });
 });
 
+// ── Task 2 ──────────────────────────────────────────────────────────────────
+
+const USED_ON = "2026-09-15";
+
+async function setStatus(projectId: string, status: string): Promise<void> {
+  await db.update(projects).set({ status }).where(eq(projects.id, projectId));
+}
+
+async function setEmployment(userId: string, values: { hireDate?: string; resignationDate?: string }): Promise<void> {
+  await db.update(users).set(values).where(eq(users.id, userId));
+}
+
+async function lineCount(revisionId: string): Promise<number> {
+  return (await db.select({ id: quoteLines.id }).from(quoteLines).where(eq(quoteLines.revisionId, revisionId))).length;
+}
+
+async function usagesOnCard(cardId: string): Promise<number> {
+  return (await db.select({ id: corpCardUsages.id }).from(corpCardUsages).where(eq(corpCardUsages.corpCardId, cardId))).length;
+}
+
+function teamCostInput(cardId: string, total: number, usedByUserId: string | null, usedOn = seoulToday()): CardUsageInput {
+  return { ...lineInput(cardId, "", total), usedOn, linkKind: "team_cost", usedByUserId };
+}
+
+function outOfQuoteInput(cardId: string, projectId: string, total: number): CardUsageInput {
+  return { ...lineInput(cardId, "", total), linkKind: "out_of_quote", projectId, itemName: "현장 다과" };
+}
+
+// 같은 팀 · 같은 PM의 두 번째 프로젝트(줄 하나).
+async function secondProject(fx: Fx, execution = 1_000_000): Promise<{ projectId: string; revisionId: string; lineId: string }> {
+  const client = await insertVendor(SYSTEM_VIEWER, { name: `클라이언트-${randomUUID()}`, normalizedName: `클라이언트-${randomUUID()}` });
+  const project = await createProject(fx.pm, { clientId: client.id, teamId: fx.team.id, pmUserId: fx.pm.id, name: `대리2-${randomUUID().slice(0, 8)}`, startDate: "2026-09-01", endDate: "2026-12-31" });
+  const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+  if (!revision) throw new Error("1차 차수 없음");
+  const lineId = randomUUID();
+  await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
+    rows: [
+      {
+        id: lineId,
+        isNew: true as const,
+        subcategory: (await firstSelectableSubcategory()).value,
+        itemName: "둘째 줄",
+        vendorId: null,
+        unitPrice: { currency: "KRW" as const, amount: execution + 500_000, fxRate: 1 },
+        execution: { currency: "KRW" as const, amount: execution, fxRate: 1 },
+      },
+    ],
+  });
+  return { projectId: project.id, revisionId: revision.id, lineId };
+}
+
+describe("사용한 사람(EXP-07 · Q5)", () => {
+  it("대리 등록 권한 없음 → usedByCandidates ForbiddenError", async () => {
+    const fx = await setup();
+    await expect(usedByCandidates(fx.pm, { cardId: fx.cardId, usedOn: USED_ON })).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it("개인 카드 → [소지자]", async () => {
+    const fx = await setup();
+    const candidates = await usedByCandidates(fx.proxy, { cardId: fx.cardId, usedOn: USED_ON });
+    expect(candidates.map((candidate) => candidate.id)).toEqual([fx.pm.id]);
+    expect(candidates[0]?.team).toEqual({ id: fx.team.id, name: fx.team.name });
+  });
+
+  it("팀 카드 → 사용일에 그 팀 소속이던 사람 전부(지금 다른 팀 `지금 {팀}` · 퇴사 `퇴사`) · 사용일 뒤 전입 · 입사 제외 · 팀 = 사용일 팀", async () => {
+    const fx = await setup();
+    const team = await makeTeam();
+    const other = await makeTeam();
+    const stayed = await makePerson("가윤", DEFAULT_ROLE_ID, team.name);
+    const moved = await makePerson("나래", DEFAULT_ROLE_ID, team.name);
+    await insertMembership(SYSTEM_VIEWER, { userId: moved.id, teamId: other.id, effectiveFrom: "2026-09-20" });
+    const resigned = await makePerson("다온", DEFAULT_ROLE_ID, team.name);
+    await setEmployment(resigned.id, { resignationDate: "2026-09-25" });
+    const joinedLater = await makePerson("라희", DEFAULT_ROLE_ID, null);
+    await insertMembership(SYSTEM_VIEWER, { userId: joinedLater.id, teamId: team.id, effectiveFrom: "2026-09-20" });
+    const hiredLater = await makePerson("마루", DEFAULT_ROLE_ID, team.name);
+    await setEmployment(hiredLater.id, { hireDate: "2026-09-20" });
+    const teamCard = await makeCard({ kind: "team", teamId: team.id });
+
+    const candidates = await usedByCandidates(fx.proxy, { cardId: teamCard, usedOn: USED_ON });
+    const byId = new Map(candidates.map((candidate) => [candidate.id, candidate]));
+    expect([...byId.keys()].sort()).toEqual([stayed.id, moved.id, resigned.id].sort());
+    expect(byId.get(stayed.id)?.note).toBeNull();
+    expect(byId.get(moved.id)?.note).toBe(`지금 ${other.name}`);
+    expect(byId.get(resigned.id)?.note).toBe("퇴사");
+    expect(candidates.every((candidate) => candidate.team?.id === team.id && candidate.team.name === team.name)).toBe(true);
+  });
+
+  it("공용 카드 → 사용일 재직자 전부(사용일 뒤 입사 · 사용일 전 퇴사 제외) · 소속 없으면 team null", async () => {
+    const fx = await setup();
+    const team = await makeTeam();
+    const member = await makePerson("가윤", DEFAULT_ROLE_ID, team.name);
+    const noTeam = await makePerson("바다", DEFAULT_ROLE_ID, null);
+    const hiredLater = await makePerson("마루", DEFAULT_ROLE_ID, team.name);
+    await setEmployment(hiredLater.id, { hireDate: "2026-09-20" });
+    const leftBefore = await makePerson("사랑", DEFAULT_ROLE_ID, team.name);
+    await setEmployment(leftBefore.id, { resignationDate: "2026-09-10" });
+    const shared = await makeCard({ kind: "shared" });
+
+    const candidates = await usedByCandidates(fx.proxy, { cardId: shared, usedOn: USED_ON });
+    const byId = new Map(candidates.map((candidate) => [candidate.id, candidate]));
+    expect(byId.get(member.id)?.team).toEqual({ id: team.id, name: team.name });
+    expect(byId.get(noTeam.id)?.team).toBeNull();
+    expect(byId.has(hiredLater.id)).toBe(false);
+    expect(byId.has(leftBefore.id)).toBe(false);
+  });
+
+  it("저장 — 후보 밖 사람(조작 요청) → ForbiddenError `사용한 사람 후보 아님 · 사용한 사람 고르기` · 카드 사용 0", async () => {
+    const fx = await setup();
+    const team = await makeTeam();
+    await makePerson("가윤", DEFAULT_ROLE_ID, team.name);
+    const outsider = await makePerson("라희", DEFAULT_ROLE_ID, fx.team.name);
+    const teamCard = await makeCard({ kind: "team", teamId: team.id });
+    const error = await caught(precheckCardUsage(fx.proxy, teamCostInput(teamCard, 50_000, outsider.id, USED_ON)));
+    expect(error).toBeInstanceOf(ForbiddenError);
+    expect((error as Error).message).toBe("사용한 사람 후보 아님 · 사용한 사람 고르기");
+    expect(await usagesOnCard(teamCard)).toBe(0);
+  });
+
+  it("저장 — 팀 비용 · 사용한 사람 사용일 소속 없음 → `{이름} {MM-DD} 소속 없음 · 소속 발령은 관리자`", async () => {
+    const fx = await setup();
+    const noTeam = await makePerson("바다", DEFAULT_ROLE_ID, null);
+    const shared = await makeCard({ kind: "shared" });
+    const error = await caught(precheckCardUsage(fx.proxy, teamCostInput(shared, 50_000, noTeam.id, USED_ON)));
+    expect((error as Error).message).toBe("바다 09-15 소속 없음 · 소속 발령은 관리자");
+  });
+
+  it("저장 — 팀 카드 · 지금 다른 팀으로 간 사람 → 팀 = 사용일 소속 · 공용 카드 → 그 사람의 사용일 팀", async () => {
+    const fx = await setup();
+    const team = await makeTeam();
+    const other = await makeTeam();
+    const moved = await makePerson("나래", DEFAULT_ROLE_ID, team.name);
+    await insertMembership(SYSTEM_VIEWER, { userId: moved.id, teamId: other.id, effectiveFrom: "2026-09-20" });
+    const teamCard = await makeCard({ kind: "team", teamId: team.id });
+    const viaTeam = await create(fx.proxy, teamCostInput(teamCard, 50_000, moved.id, USED_ON));
+    expect(await rowOf(viaTeam)).toMatchObject({ linkKind: "team_cost", teamId: team.id, usedByUserId: moved.id, registeredVia: "proxy" });
+    const shared = await makeCard({ kind: "shared" });
+    const viaShared = await create(fx.proxy, teamCostInput(shared, 50_000, moved.id, USED_ON));
+    expect(await rowOf(viaShared)).toMatchObject({ teamId: team.id, usedByUserId: moved.id });
+  });
+
+  it("수정 — 후보 밖 사람으로 바꾸기 → ForbiddenError · 행 그대로", async () => {
+    const fx = await setup();
+    const team = await makeTeam();
+    const member = await makePerson("가윤", DEFAULT_ROLE_ID, team.name);
+    const outsider = await makePerson("라희", DEFAULT_ROLE_ID, fx.team.name);
+    const teamCard = await makeCard({ kind: "team", teamId: team.id });
+    const base = teamCostInput(teamCard, 50_000, member.id, USED_ON);
+    const id = await create(fx.proxy, base);
+    const edit = { ...(await editInput(id, base, 60_000)), usedByUserId: outsider.id };
+    await expect(precheckCardUsageUpdate(fx.proxy, edit)).rejects.toBeInstanceOf(ForbiddenError);
+    expect(await rowOf(id)).toMatchObject({ usedByUserId: member.id, totalAmountKrw: 50_000 });
+  });
+});
+
+describe("완료 프로젝트(D-47 · U-4 · Q-B)", () => {
+  it("권한자 · 견적 외 비용 → project.line-edit ③ 갈래로 저장(새 줄 + 카드 사용 · document_create 한 줄)", async () => {
+    const fx = await setup();
+    await setStatus(fx.projectId, "completed");
+    const before = await lineCount(fx.revisionId);
+    const input = outOfQuoteInput(fx.cardId, fx.projectId, 70_000);
+    const pre = await precheckCardUsage(fx.proxy, input);
+    expect(pre.outOfQuote?.completedOutOfQuote).toBe(true);
+    const created = await createCardUsage(fx.proxy, input, pre);
+    expect(await lineCount(fx.revisionId)).toBe(before + 1);
+    const row = await rowOf(created.id);
+    const [line] = await db.select().from(quoteLines).where(eq(quoteLines.id, row.quoteLineId ?? ""));
+    expect(line).toMatchObject({ lineKind: "out_of_quote", itemName: "현장 다과" });
+    expect(await logsOf(fx.proxy.id, "document_create")).toEqual([created.id]);
+  });
+
+  it("권한자 · 완료 프로젝트 견적 줄 → CompletedProjectError", async () => {
+    const fx = await setup();
+    await setStatus(fx.projectId, "completed");
+    await expect(precheckCardUsage(fx.proxy, lineInput(fx.cardId, fx.lines[0] ?? "", 10_000))).rejects.toBeInstanceOf(CompletedProjectError);
+  });
+
+  it("비권한자 · 견적 외 비용 → CompletedProjectError", async () => {
+    const fx = await setup();
+    await setStatus(fx.projectId, "completed");
+    await expect(precheckCardUsage(fx.pm, outOfQuoteInput(fx.cardId, fx.projectId, 10_000))).rejects.toBeInstanceOf(CompletedProjectError);
+  });
+
+  it("비권한자 경합 — 사전 조회 때 settling → 몸통 전에 completed → `완료 · 견적 줄 잠김` · 줄 · 카드 사용 0", async () => {
+    const fx = await setup();
+    await setStatus(fx.projectId, "settling");
+    const input = outOfQuoteInput(fx.cardId, fx.projectId, 10_000);
+    const pre = await precheckCardUsage(fx.pm, input);
+    const before = await lineCount(fx.revisionId);
+    await setStatus(fx.projectId, "completed");
+    const error = await caught(createCardUsage(fx.pm, input, pre));
+    expect(error).toBeInstanceOf(GateBlockedError);
+    expect((error as Error).message).toBe("완료 · 견적 줄 잠김");
+    expect(await lineCount(fx.revisionId)).toBe(before);
+    expect(await usagesOnCard(fx.cardId)).toBe(0);
+  });
+
+  it("searchProjectsForCardLink — 권한자 완료 프로젝트 selectable · 2행 `완료 · 견적 줄 잠김` / 비권한자 selectable 거짓", async () => {
+    const fx = await setup();
+    await setStatus(fx.projectId, "completed");
+    const [project] = await db.select({ name: projects.name }).from(projects).where(eq(projects.id, fx.projectId));
+    const query = project?.name ?? "";
+    const proxyRow = (await searchProjectsForCardLink(fx.proxy, { query })).rows.find((row) => row.id === fx.projectId);
+    expect(proxyRow).toMatchObject({ selectable: true, note: "완료 · 견적 줄 잠김" });
+    const pmRow = (await searchProjectsForCardLink(fx.pm, { query })).rows.find((row) => row.id === fx.projectId);
+    expect(pmRow).toMatchObject({ selectable: false, note: "완료 · 견적 줄 잠김" });
+  });
+
+  it("searchLinesForCardLink — 완료 프로젝트 줄 전부 selectable 거짓(권한자도) + `완료 · 견적 줄 잠김`", async () => {
+    const fx = await setup([500_000, 700_000]);
+    await setStatus(fx.projectId, "completed");
+    const found = await searchLinesForCardLink(fx.proxy, { projectId: fx.projectId, query: "" });
+    expect(found.rows).toHaveLength(2);
+    expect(found.rows.every((row) => row.selectable === false)).toBe(true);
+    // 이유 칸은 지출결의 금액 노출(expense.amount)까지 볼 때만 — 기본 계급(PM)으로 글자를 본다.
+    const reasons = (await searchLinesForCardLink(fx.pm, { projectId: fx.projectId, query: "" })).rows.map((row) => row.reason);
+    expect(reasons).toEqual(["완료 · 견적 줄 잠김", "완료 · 견적 줄 잠김"]);
+  });
+});
+
+describe("수정 연결 변경(B-1 · E-9)", () => {
+  it("줄 A → 지출결의가 이어진 줄 B → `지출결의 {번호} 연결됨 · 다른 줄 고르기` · 행 그대로", async () => {
+    const fx = await setupExpenseProject();
+    const cardId = await makeCard({ kind: "personal", holderUserId: fx.pm.id });
+    const base = lineInput(cardId, fx.lines.noVendor, 100_000);
+    const id = await create(fx.pm, base);
+    const created = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
+    const submitted = await submitReadyDraft(fx.pm, created.created[0]?.expenseId ?? "");
+    if (submitted.kind !== "submitted") throw new Error("제출되지 않음");
+    const edit: CardUsageUpdateInput = { ...(await editInput(id, base, 100_000)), linkKind: "quote_line", lineId: fx.lines.withVendor };
+    const error = await caught(update(fx.pm, edit));
+    expect((error as Error).message).toBe(`지출결의 ${submitted.number} 연결됨 · 다른 줄 고르기`);
+    expect((await rowOf(id)).quoteLineId).toBe(fx.lines.noVendor);
+  });
+
+  it("줄 A → 견적 외 비용 → 같은 tx에 새 줄 + 연결 이동 / 실패(낡은 version)면 줄 수 그대로", async () => {
+    const fx = await setup();
+    const base = lineInput(fx.cardId, fx.lines[0] ?? "", 300_000);
+    const id = await create(fx.pm, base);
+    const before = await lineCount(fx.revisionId);
+    const moveTo = async (version: number) => update(fx.pm, { ...outOfQuoteInput(fx.cardId, fx.projectId, 300_000), id, version });
+    const stale = (await rowOf(id)).version;
+    await update(fx.pm, await editInput(id, base, 310_000));
+    await expect(moveTo(stale)).rejects.toThrow("다른 저장이 먼저 됨 · 새로 고침");
+    expect(await lineCount(fx.revisionId)).toBe(before);
+    await moveTo((await rowOf(id)).version);
+    expect(await lineCount(fx.revisionId)).toBe(before + 1);
+    const row = await rowOf(id);
+    const [line] = await db.select().from(quoteLines).where(eq(quoteLines.id, row.quoteLineId ?? ""));
+    expect(line).toMatchObject({ lineKind: "out_of_quote", executionAmountKrw: 300_000 });
+  });
+
+  it("줄 → 팀 비용 → 팀 = 사용한 사람의 사용일 소속 · 줄 비움", async () => {
+    const fx = await setup();
+    const base = lineInput(fx.cardId, fx.lines[0] ?? "", 300_000);
+    const id = await create(fx.proxy, base);
+    await update(fx.proxy, { ...(await editInput(id, base, 300_000)), linkKind: "team_cost" });
+    expect(await rowOf(id)).toMatchObject({ linkKind: "team_cost", quoteLineId: null, teamId: fx.team.id, usedByUserId: fx.pm.id });
+  });
+
+  it("구매 완료로 생긴 건의 연결 변경 → ForbiddenError", async () => {
+    const fx = await setup([500_000, 500_000]);
+    const [request] = await db
+      .insert(purchaseRequests)
+      .values({ number: `26001-C${randomUUID().slice(0, 8)}`, linkKind: "quote_line", projectId: fx.projectId, quoteLineId: fx.lines[0] ?? "", requestedBy: fx.pm.id, itemName: "현수막", estimateAmountKrw: 40_000 })
+      .returning({ id: purchaseRequests.id });
+    const row = await insertCardUsage(
+      fx.pm,
+      {
+        corpCardId: fx.cardId,
+        usedOn: seoulToday(),
+        merchantVendorId: null,
+        totalCurrency: "KRW",
+        totalForeignAmount: null,
+        totalFxRate: "1",
+        totalAmountKrw: 40_000,
+        supplyKrw: 40_000,
+        vatKrw: 0,
+        evidenceTypeCode: "invoice",
+        linkKind: "quote_line",
+        quoteLineId: fx.lines[0] ?? "",
+        teamId: null,
+        usedByUserId: fx.pm.id,
+        registeredBy: fx.pm.id,
+        registeredVia: "purchase",
+        purchaseRequestId: request?.id ?? null,
+        memo: null,
+      },
+      db,
+    );
+    const edit: CardUsageUpdateInput = { ...lineInput(fx.cardId, fx.lines[1] ?? "", 40_000), id: row.id, version: row.version };
+    await expect(precheckCardUsageUpdate(fx.proxy, edit)).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it("(E-9) settling 프로젝트 줄 건 → 팀 비용 사전 조회 → 완료로 커밋 → 등록자(권한자 아님) → CompletedProjectError · 행 · version 그대로", async () => {
+    const fx = await setup();
+    await setStatus(fx.projectId, "settling");
+    const base = lineInput(fx.cardId, fx.lines[0] ?? "", 300_000);
+    const id = await create(fx.pm, base);
+    const before = await rowOf(id);
+    const edit: CardUsageUpdateInput = { ...(await editInput(id, base, 300_000)), linkKind: "team_cost" };
+    const pre = await precheckCardUsageUpdate(fx.pm, edit);
+    await setStatus(fx.projectId, "completed");
+    await expect(updateCardUsage(fx.pm, edit, pre)).rejects.toBeInstanceOf(CompletedProjectError);
+    expect(await rowOf(id)).toMatchObject({ linkKind: "quote_line", quoteLineId: fx.lines[0], version: before.version });
+  });
+
+  it("(E-9) 같은 순서 · 권한자 → 저장(U-4)", async () => {
+    const fx = await setup();
+    await setStatus(fx.projectId, "settling");
+    const base = lineInput(fx.cardId, fx.lines[0] ?? "", 300_000);
+    const id = await create(fx.proxy, base);
+    const edit: CardUsageUpdateInput = { ...(await editInput(id, base, 300_000)), linkKind: "team_cost" };
+    const pre = await precheckCardUsageUpdate(fx.proxy, edit);
+    await setStatus(fx.projectId, "completed");
+    await updateCardUsage(fx.proxy, edit, pre);
+    expect(await rowOf(id)).toMatchObject({ linkKind: "team_cost", teamId: fx.team.id });
+  });
+
+  it("(E-9) 줄 A(P1) → 줄 B(P2) → pre.lockProjects 프로젝트 id 오름차순 두 항목(옛 쪽 allowCompleted = 권한자 · 새 쪽 revisionId · allowCompleted 거짓)", async () => {
+    const fx = await setup();
+    const p2 = await secondProject(fx);
+    const base = lineInput(fx.cardId, fx.lines[0] ?? "", 300_000);
+    const id = await create(fx.pm, base);
+    const pre = await precheckCardUsageUpdate(fx.pm, await editInput(id, lineInput(fx.cardId, p2.lineId, 300_000), 300_000));
+    const expected = [
+      { projectId: fx.projectId, allowCompleted: false },
+      { projectId: p2.projectId, revisionId: p2.revisionId, allowCompleted: false },
+    ].sort((a, b) => (a.projectId < b.projectId ? -1 : 1));
+    expect(pre.lockProjects).toEqual(expected);
+    await updateCardUsage(fx.pm, await editInput(id, lineInput(fx.cardId, p2.lineId, 300_000), 300_000), pre);
+    expect((await rowOf(id)).quoteLineId).toBe(p2.lineId);
+  });
+
+  it("(E-9) 같은 프로젝트의 줄 A → 줄 B → 새 쪽 한 항목", async () => {
+    const fx = await setup([500_000, 500_000]);
+    const base = lineInput(fx.cardId, fx.lines[0] ?? "", 300_000);
+    const id = await create(fx.pm, base);
+    const pre = await precheckCardUsageUpdate(fx.pm, await editInput(id, lineInput(fx.cardId, fx.lines[1] ?? "", 300_000), 300_000));
+    expect(pre.lockProjects).toEqual([{ projectId: fx.projectId, revisionId: fx.revisionId, allowCompleted: false }]);
+  });
+});
+
+describe("Q3 수정(카드 「빼기」)", () => {
+  async function capFixture() {
+    const fx = await setup([1_000_000]);
+    const line = fx.lines[0] ?? "";
+    await create(fx.pm, lineInput(fx.cardId, line, 600_000));
+    const base = lineInput(fx.cardId, line, 300_000);
+    const id = await create(fx.pm, base);
+    return { fx, line, base, id };
+  }
+
+  it("다른 카드 600,000 · 이 건 300,000 → 400,000으로 → 저장(이 건 제외 남은 실행가 400,000)", async () => {
+    const { fx, base, id } = await capFixture();
+    await update(fx.pm, await editInput(id, base, 400_000));
+    expect((await rowOf(id)).supplyKrw).toBe(400_000);
+  });
+
+  it("400,001 → `실행가 초과 · 남은 실행가 400,000 · 다른 줄 고르기`", async () => {
+    const { fx, base, id } = await capFixture();
+    const error = await caught(update(fx.pm, await editInput(id, base, 400_001)));
+    expect((error as Error).message).toBe("실행가 초과 · 남은 실행가 400,000 · 다른 줄 고르기");
+  });
+
+  it("같은 줄 `신청됨` 구매 요청(예상 공급가 100,000) → 300,000까지 · 300,001 거부", async () => {
+    const { fx, line, base, id } = await capFixture();
+    await db
+      .insert(purchaseRequests)
+      .values({ number: `26001-C${randomUUID().slice(0, 8)}`, linkKind: "quote_line", projectId: fx.projectId, quoteLineId: line, requestedBy: fx.pm.id, itemName: "현수막", estimateAmountKrw: 110_000 });
+    const error = await caught(update(fx.pm, await editInput(id, base, 300_001)));
+    expect((error as Error).message).toBe("실행가 초과 · 남은 실행가 300,000 · 다른 줄 고르기");
+    await update(fx.pm, await editInput(id, base, 300_000));
+    expect((await rowOf(id)).supplyKrw).toBe(300_000);
+  });
+
+  it("견적 외 비용 줄에 이은 건의 금액 올리기 → 같은 상한으로 막힘", async () => {
+    const fx = await setup();
+    const id = await create(fx.pm, outOfQuoteInput(fx.cardId, fx.projectId, 200_000));
+    const lineId = (await rowOf(id)).quoteLineId ?? "";
+    const error = await caught(update(fx.pm, await editInput(id, lineInput(fx.cardId, lineId, 200_000), 200_001)));
+    expect((error as Error).message).toBe("실행가 초과 · 남은 실행가 200,000 · 다른 줄 고르기");
+  });
+});
+
+describe("수정 모드 막힘", () => {
+  it("저장된 증빙 종류가 지금 카드 옵션에 없음 → `증빙 종류 {이름} 카드에 없음 · 증빙 종류 고르기`", async () => {
+    const fx = await setup();
+    const base = lineInput(fx.cardId, fx.lines[0] ?? "", 100_000);
+    const id = await create(fx.pm, base);
+    await db.update(corpCardUsages).set({ evidenceTypeCode: "other_income" }).where(eq(corpCardUsages.id, id));
+    const error = await caught(precheckCardUsageUpdate(fx.pm, { ...(await editInput(id, base, 100_000)), evidenceTypeCode: "other_income" }));
+    expect((error as Error).message).toBe("증빙 종류 기타소득 카드에 없음 · 증빙 종류 고르기");
+  });
+
+  it("사용일 내일 → 거부(Q6)", async () => {
+    const fx = await setup();
+    const base = lineInput(fx.cardId, fx.lines[0] ?? "", 100_000);
+    const id = await create(fx.pm, base);
+    const tomorrow = seoulToday(new Date(Date.now() + 24 * 60 * 60 * 1000));
+    await expect(precheckCardUsageUpdate(fx.pm, { ...(await editInput(id, base, 100_000)), usedOn: tomorrow })).rejects.toThrow();
+    expect((await rowOf(id)).usedOn).toBe(seoulToday());
+  });
+});
+
+describe("[M-4] 새 건 기본값 — 대리 등록", () => {
+  it("권한자가 직전에 남의 개인 카드 C로 등록 → 기본 카드 = C · 옵션 힌트", async () => {
+    const fx = await setup();
+    await create(fx.proxy, lineInput(fx.cardId, fx.lines[0] ?? "", 10_000));
+    const defaults = await cardUsageFormDefaults(fx.proxy, seoulToday());
+    expect(defaults.corpCardId).toBe(fx.cardId);
+    const option = (await cardOptionsForUsage(fx.proxy, seoulToday())).find((candidate) => candidate.id === fx.cardId);
+    expect(option?.proxyHint).toBe("경영관리 등록 · 카드 소지자 박서연");
+  });
+
+  it("C가 비활성 → 카드 비움(옵션 여럿)", async () => {
+    const fx = await setup();
+    await create(fx.proxy, lineInput(fx.cardId, fx.lines[0] ?? "", 10_000));
+    await db.update(corpCards).set({ active: false }).where(eq(corpCards.id, fx.cardId));
+    expect((await cardUsageFormDefaults(fx.proxy, seoulToday())).corpCardId).toBeNull();
+  });
+
+  it("직전 연결 = 완료 프로젝트 P의 견적 외 비용 · 권한자 → 연결 `견적 외 비용` · P 남음", async () => {
+    const fx = await setup();
+    await setStatus(fx.projectId, "completed");
+    await create(fx.proxy, outOfQuoteInput(fx.cardId, fx.projectId, 10_000));
+    const defaults = await cardUsageFormDefaults(fx.proxy, seoulToday());
+    expect(defaults.linkKind).toBe("out_of_quote");
+    expect(defaults.project?.id).toBe(fx.projectId);
+  });
+
+  it("비권한자 · 등록 뒤 P 완료 → 종류만, 프로젝트 빔", async () => {
+    const fx = await setup();
+    await create(fx.pm, outOfQuoteInput(fx.cardId, fx.projectId, 10_000));
+    await setStatus(fx.projectId, "completed");
+    const defaults = await cardUsageFormDefaults(fx.pm, seoulToday());
+    expect(defaults.linkKind).toBe("out_of_quote");
+    expect(defaults.project).toBeNull();
+  });
+});

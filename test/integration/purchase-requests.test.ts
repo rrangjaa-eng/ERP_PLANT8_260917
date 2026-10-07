@@ -33,6 +33,7 @@ import {
   createPurchaseRequest,
   countOpenPurchaseRequests,
   listPurchaseRequests,
+  loadPurchaseCompletion,
   precheckPurchaseCompletion,
   precheckPurchaseRequest,
   previewPurchaseCompletion,
@@ -1781,6 +1782,19 @@ describe("구매 요청 목록 마감(06-14)", () => {
       .returning({ id: purchaseRequests.id });
     return inserted.map((row) => row.id);
   }
+
+  it("[I-1] S13 패널 로드 — `cancelBranch`: 구매 권한자 본인 요청 `own` · 남의 요청 `others` · `신청됨`이 아니면 null · 구매 권한 없으면 패널 없음", async () => {
+    const roleId = await scopedRole();
+    const requester = await person("패널요청자", roleId);
+    const buyer = await purchaser();
+    const [own] = await seed([{ requester: buyer }]);
+    const [others] = await seed([{ requester }]);
+    const [done] = await seed([{ requester, status: "purchased" }]);
+    expect((await loadPurchaseCompletion(buyer, own ?? ""))?.cancelBranch).toBe("own");
+    expect((await loadPurchaseCompletion(buyer, others ?? ""))?.cancelBranch).toBe("others");
+    expect((await loadPurchaseCompletion(buyer, done ?? ""))?.cancelBranch).toBeNull();
+    expect(await loadPurchaseCompletion(requester, others ?? "")).toBeNull();
+  });
 
   it("합계 줄 — 보기의 건수 · 예상 금액 합은 목록과 같은 범위 안 행만(남의 요청 없음) · `전체`는 상태 가리지 않는다", async () => {
     const roleId = await scopedRole();

@@ -29,6 +29,8 @@ import {
   findLastCardUsageByRegistrant,
   insertCardUsage,
   updateCardUsageRow,
+  archiveCardUsageRow,
+  restoreCardUsageRow,
   type CardUsageForWrite,
   listCardUsageRows,
   listProjectCardUsageRows,
@@ -657,6 +659,98 @@ export async function updateCardUsage(
   return tx ? await runUpdate(tx) : await withTransaction(runUpdate);
 }
 
+// ── 삭제(= 보관) · 되돌리기(= 보관 해제) — D-609 · E-9 · X-1 · X-2 · N-1 · N-2 ─────────
+
+/** 삭제 · 되돌리기 사전 조회(06-03 tx 규약) — 권리 · 연결 줄의 프로젝트 · 상한 바탕을 트랜잭션 전에. */
+export type CardUsageRemovalPre = {
+  usageId: string;
+  /** 견적 줄(견적 외 비용 줄 포함) 연결이면 그 줄 · 프로젝트 — 팀 비용이면 null. */
+  lineId: string | null;
+  projectId: string | null;
+  /** 권한자면 참 — 완료 프로젝트 줄 건도 지우고 되살린다(O-11 · U-4). */
+  completedAllowed: boolean;
+  /** 되돌리기 상한 바탕(삭제는 읽지 않는다). */
+  lineRoom: LineRoomBasis | null;
+  amountVisible: boolean;
+  supplyKrw: number;
+  totalKrw: number;
+};
+
+export type CardUsageRemovalResult = { version: number; totalKrw: number };
+
+// 트랜잭션 밖에서만. 건(보관 포함) → 권한 → 권리(O-11 — 삭제 권리) → 연결 줄 · 프로젝트 · 상한 바탕.
+export async function precheckCardUsageRemoval(viewer: Viewer, input: { id: string }): Promise<CardUsageRemovalPre> {
+  const stored = UUID_SHAPE.test(input.id) ? await findCardUsageForWrite(viewer, input.id, { includeArchived: true }) : null;
+  if (!stored) throw new CardUsageRejectedError(STALE_VERSION);
+  const proxy = await can(viewer, "cards.proxy", "write");
+  if (!rightsOf(stored, viewer, proxy).delete) throw new ForbiddenError(RIGHTS_DENIED);
+  const linked = stored.linkKind === "quote_line" && stored.quoteLineId !== null && stored.projectId !== null;
+  return {
+    usageId: stored.id,
+    lineId: linked ? stored.quoteLineId : null,
+    projectId: linked ? stored.projectId : null,
+    completedAllowed: proxy,
+    lineRoom: linked && stored.quoteLineId ? await loadLineRoomBasis(viewer, [stored.quoteLineId]) : null,
+    amountVisible: linked ? await visible(viewer, "quote.amount") : false,
+    supplyKrw: stored.supplyKrw,
+    totalKrw: stored.totalAmountKrw,
+  };
+}
+
+export async function deleteCardUsage(
+  viewer: Viewer,
+  input: { id: string; version: number },
+  pre: CardUsageRemovalPre,
+  tx?: DbOrTx,
+): Promise<CardUsageRemovalResult> {
+  const runDelete = async (innerTx: DbOrTx) => {
+    // 견적 줄 건 — 프로젝트 행 먼저(E-9 · X-2): 정산 최종 승인과 같은 행에서 줄을 선다. 줄이는 쪽이라 줄 잠금 · 상한은 없다.
+    if (pre.projectId) await lockProjectForLinkWrite(viewer, { projectId: pre.projectId, allowCompleted: pre.completedAllowed }, innerTx);
+    const version = await archiveCardUsageRow(viewer, { id: pre.usageId, version: input.version }, innerTx);
+    if (version === null) throw new CardUsageRejectedError(STALE_VERSION);
+    await recordAction(viewer, { actionType: "document_delete", entity: CARD_USAGE_ENTITY, entityId: pre.usageId }, { tx: innerTx });
+    return { version, totalKrw: pre.totalKrw };
+  };
+  return tx ? await runDelete(tx) : await withTransaction(runDelete);
+}
+
+export async function restoreCardUsage(
+  viewer: Viewer,
+  input: { id: string; version: number },
+  pre: CardUsageRemovalPre,
+  tx?: DbOrTx,
+): Promise<CardUsageRemovalResult> {
+  const runRestore = async (innerTx: DbOrTx) => {
+    // 순서 고정(B-1 · X-2 · N-1): 프로젝트 행 → 사슬의 현재 줄 → 견적 줄(한 호출) → 연결(계보) → 이중 연결 → 실행가 상한 → 보관 해제.
+    if (pre.projectId && pre.lineId) {
+      if (!pre.lineRoom) throw new CardUsageRejectedError(LINK_MISSING);
+      const lineId = pre.lineId;
+      await lockProjectForLinkWrite(viewer, { projectId: pre.projectId, allowCompleted: pre.completedAllowed }, innerTx);
+      const current = await currentLineForFixedLink(viewer, { projectId: pre.projectId, lineId }, innerTx);
+      await lockQuoteLines(viewer, current === lineId ? [lineId] : [lineId, current], innerTx);
+      const links = await findLineLinks(viewer, [lineId], innerTx);
+      const lineLinks = links.get(lineId);
+      const dual = await gate(null, "card.dual-link-block", { side: "card", links: lineLinks ?? { expenses: [], cardUsages: [] } });
+      if (!dual.allowed) throw new GateBlockedError(dual.reason);
+      if (!lineLinks?.currentExecution) throw new ForbiddenError(LINK_MISSING);
+      const cap = await gate(null, "card.execution-cap", {
+        execution: lineLinks.currentExecution,
+        otherSupplies: lineRoom({ links, basis: pre.lineRoom, lineId, exclude: {} }).otherSupplies,
+        supply: { currency: "KRW", amount: pre.supplyKrw, fxRate: 1 },
+        source: "entry",
+        link: "pickable",
+        amountVisible: pre.amountVisible,
+      });
+      if (!cap.allowed) throw new GateBlockedError(cap.reason);
+    }
+    const version = await restoreCardUsageRow(viewer, { id: pre.usageId, version: input.version }, innerTx);
+    if (version === null) throw new CardUsageRejectedError(STALE_VERSION);
+    await recordAction(viewer, { actionType: "restore", entity: CARD_USAGE_ENTITY, entityId: pre.usageId }, { tx: innerTx });
+    return { version, totalKrw: pre.totalKrw };
+  };
+  return tx ? await runRestore(tx) : await withTransaction(runRestore);
+}
+
 // ── 수정 패널 로드(`?editId=`) ──────────────────────────────────────────────
 
 export type CardUsageEditDto = {
@@ -893,6 +987,8 @@ export type CardUsageListItemDto = {
   vatKrw: number;
   /** 06-09 수정 · 연결 변경 · 삭제 권리(O-11) — 행동 칸 · 폰 행 탭이 이 값만 쓴다. */
   rights: CardUsageRights;
+  /** 06-09 삭제(version 조건 UPDATE)의 기준. */
+  version: number;
 };
 
 type CardUsageListProjectable = CardUsageListItemDto;
@@ -911,6 +1007,7 @@ const VALUE_KEYS = [
   "registeredOn",
   "memo",
   "rights",
+  "version",
 ] as const;
 // 연결 칸은 프로젝트 이름을 싣는다 — 카드 사용 값과 프로젝트 값을 둘 다 볼 때만(all-of).
 const LINK_LABEL_INFO = ["card_usage.value", "project.value"];
@@ -971,6 +1068,7 @@ function toProjectable(row: CardUsageListRow, lineNo: Map<string, number>, right
     supplyKrw: row.supplyKrw,
     vatKrw: row.vatKrw,
     rights,
+    version: row.version,
   };
 }
 
@@ -1107,6 +1205,8 @@ export type ProjectCardUsageDto = {
   registeredOn: string;
   totalKrw: number;
   supplyKrw: number;
+  /** 06-09 권리(O-11) — 폰 행 탭이 수정 패널로 가는가. */
+  rights: CardUsageRights;
 };
 
 export type ProjectCardUsageTotalsDto = { count: number; totalKrw: number };
@@ -1114,7 +1214,7 @@ export type ProjectCardUsageTotalsDto = { count: number; totalKrw: number };
 // 금액 칸 · 합계 행의 결제 합계 = 견적 표 금액 열과 같은 `quote.amount`(새 정보 항목 없음), 나머지는 `project.value`.
 const PROJECT_CARD_USAGE_DTO_SPEC: DtoSpec<ProjectCardUsageDto, ProjectCardUsageDto> = {
   fields: [
-    ...(["id", "usedOn", "lineLabel", "merchantName", "registeredVia", "registeredByName", "registeredOn"] as const).map((key) => ({
+    ...(["id", "usedOn", "lineLabel", "merchantName", "registeredVia", "registeredByName", "registeredOn", "rights"] as const).map((key) => ({
       key,
       from: key,
       infoItem: "project.value",
@@ -1156,6 +1256,7 @@ export async function listProjectCardUsages(viewer: Viewer, projectId: string): 
   if (!projectRow || (projectRow.archivedAt !== null && !scope.includeArchived)) throw new ProjectNotFoundError();
   const rows = await listProjectCardUsageRows(viewer, projectId);
   const lineNo = await lineNumbers(viewer, rows.map((row) => row.revisionId));
+  const proxy = await can(viewer, "cards.proxy", "write");
   const items: ProjectCardUsageDto[] = rows.map((row) => {
     const number = row.quoteLineId ? lineNo.get(row.quoteLineId) : undefined;
     return {
@@ -1169,6 +1270,10 @@ export async function listProjectCardUsages(viewer: Viewer, projectId: string): 
       registeredOn: seoulToday(row.createdAt),
       totalKrw: row.totalAmountKrw,
       supplyKrw: row.supplyKrw,
+      rights: cardUsageRights(
+        { registeredBy: row.registeredBy, registeredVia: row.registeredVia, projectCompleted: projectRow.status === "completed" },
+        { userId: viewer.id, proxy },
+      ),
     };
   });
   const [totals] = await projectMany(

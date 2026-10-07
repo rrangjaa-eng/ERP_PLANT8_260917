@@ -7,10 +7,13 @@ import { isCalendarDate, seoulToday } from "@/lib/dates";
 import { CURRENCIES } from "@/domain/money/currency";
 import {
   createCardUsage,
+  deleteCardUsage,
   listProjectCardUsages,
   precheckCardUsage,
+  precheckCardUsageRemoval,
   precheckCardUsageUpdate,
   previewCardAmounts,
+  restoreCardUsage,
   searchMerchantsForCard,
   updateCardUsage,
   usedByCandidates,
@@ -120,6 +123,21 @@ export const previewCardAmountsAction = authedActionClient
       evidenceTypeCode: parsedInput.evidenceTypeCode,
     }),
   );
+
+// 06-09(D-609): 행 `삭제`(= 보관) · 결과 줄 `되돌리기`(= 보관 해제). 권리 · 잠금 · 게이트는 domain이 다시 본다.
+const removalSchema = z.object({ id: z.uuid(), version: z.number().int().positive() });
+
+export const deleteCardUsageAction = authedActionClient.schema(removalSchema).action(async ({ parsedInput, ctx }) => {
+  const result = await deleteCardUsage(ctx.viewer, parsedInput, await precheckCardUsageRemoval(ctx.viewer, parsedInput));
+  revalidatePath("/cards");
+  return result;
+});
+
+export const restoreCardUsageAction = authedActionClient.schema(removalSchema).action(async ({ parsedInput, ctx }) => {
+  const result = await restoreCardUsage(ctx.viewer, parsedInput, await precheckCardUsageRemoval(ctx.viewer, parsedInput));
+  revalidatePath("/cards");
+  return result;
+});
 
 // 06-09(EXP-07 · Q5): 대리 등록 · 팀 비용의 `사용한 사람` 후보 — 사용일 기준. 권한(cards.proxy write)은 domain이 본다.
 export const usedByCandidatesAction = authedActionClient

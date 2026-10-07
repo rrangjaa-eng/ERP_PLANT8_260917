@@ -18,6 +18,7 @@ import { SidePanel } from "@/ui/side-panel/SidePanel";
 // 합계 면 한 줄 배치는 프로젝트 목록 합계 줄과 같은 클래스(새 CSS 없음).
 import styles from "@/app/(app)/projects/projects.module.css";
 import { CardUsageFilters, CardUsageList, CardUsageLoadError, type CardUsageListRowView } from "./card-usage-list";
+import { CardUsageDeleteUndo, CardUsageUndoLine } from "./delete-undo";
 import { CardUsageForm, type CardUsageEdit } from "./card-usage-form";
 
 // 06-05(EXP-07 · UI-SPEC S8 · S9 · C12): 법인카드 사용 목록 = 원장. 한 건 등록은 `?new=1` 옆 패널(페이지 폼 없음).
@@ -121,6 +122,7 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
             foreignAmount: row.foreignAmount ?? null,
             fxRate: row.fxRate ?? null,
             rights: row.rights ?? { edit: false, changeLink: false, delete: false },
+            version: row.version ?? 0,
           },
         ]
       : [],
@@ -215,60 +217,81 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
   let empty = undefined;
   let body;
   if (!list) body = <CardUsageLoadError />;
-  else if (rows.length > 0) body = <CardUsageList rows={rows} listHref={listHref} />;
-  else if (filtered) body = <ListEmpty message="조건에 맞는 카드 사용이 없습니다" action={{ label: "필터 지우기", href: LIST_HREF }} />;
+  else if (rows.length > 0)
+    body = (
+      <>
+        <CardUsageUndoLine />
+        <CardUsageList rows={rows} listHref={listHref} />
+      </>
+    );
+  else if (filtered)
+    body = (
+      <>
+        <CardUsageUndoLine />
+        <ListEmpty message="조건에 맞는 카드 사용이 없습니다" action={{ label: "필터 지우기", href: LIST_HREF }} />
+      </>
+    );
   else {
     // DR5 — 빈 목록이면 틀이 머리 1차를 숨기고 빈 화면이 말한다. 쓸 카드가 0장이면 버튼도 없다(할 일이 관리자 몫).
-    empty =
-      cards.length === 0 ? (
-        <ListEmpty message="쓸 수 있는 법인카드가 없습니다 · 카드 등록은 관리자" />
-      ) : (
-        <ListEmpty message="이번 달 카드 사용이 없습니다" action={newAction} />
-      );
+    // 마지막 행을 지워 빈 화면이 되어도 결과 줄 `되돌리기`가 남는다(상태는 화면 전체를 감싼 CardUsageDeleteUndo).
+    empty = (
+      <>
+        <CardUsageUndoLine />
+        {cards.length === 0 ? (
+          <ListEmpty message="쓸 수 있는 법인카드가 없습니다 · 카드 등록은 관리자" />
+        ) : (
+          <ListEmpty message="이번 달 카드 사용이 없습니다" action={newAction} />
+        )}
+      </>
+    );
     body = null;
   }
 
+  // 결과 줄은 필터 · 월 · 쪽이 바뀌면 사라진다(key) — 패널을 열고 닫는 것(`?new=1` · `?editId=`)은 목록을 바꾸지 않아 남는다.
+  const undoKey = [month, cardId ?? "", link ?? "", proxyOnly ? "proxy" : "", list?.page.page ?? 1].join("|");
   return (
-    <ListScreen
-      title="카드 사용"
-      primaryAction={cards.length > 0 ? newAction : undefined}
-      filters={filters}
-      summary={
-        list?.totals && list.totals.count > 0 ? (
-          <section aria-label="합계" className={styles.totals}>
-            <p className={styles.totalsTitle}>{`합계 (${month} · ${list.totals.count}건)`}</p>
-            <dl className={styles.totalsPairs}>
-              <div className={styles.totalsPair}>
-                <dt>결제 합계</dt>
-                <dd>
-                  <Num value={list.totals.totalKrw} />
-                </dd>
-              </div>
-              <div className={styles.totalsPair}>
-                <dt>공급가</dt>
-                <dd>
-                  <Num value={list.totals.supplyKrw} />
-                </dd>
-              </div>
-            </dl>
-          </section>
-        ) : undefined
-      }
-      empty={empty}
-      pagination={
-        list && rows.length > 0 ? (
-          <Pagination
-            label="카드 사용"
-            page={list.page.page}
-            pageCount={list.page.pageCount}
-            href={pageHref}
-            rangeText={pageRangeText({ page: list.page.page, pageSize: list.page.pageSize, total: list.page.total, unit: "건" })}
-          />
-        ) : undefined
-      }
-      panel={panel}
-    >
-      {body}
-    </ListScreen>
+    <CardUsageDeleteUndo key={undoKey}>
+      <ListScreen
+        title="카드 사용"
+        primaryAction={cards.length > 0 ? newAction : undefined}
+        filters={filters}
+        summary={
+          list?.totals && list.totals.count > 0 ? (
+            <section aria-label="합계" className={styles.totals}>
+              <p className={styles.totalsTitle}>{`합계 (${month} · ${list.totals.count}건)`}</p>
+              <dl className={styles.totalsPairs}>
+                <div className={styles.totalsPair}>
+                  <dt>결제 합계</dt>
+                  <dd>
+                    <Num value={list.totals.totalKrw} />
+                  </dd>
+                </div>
+                <div className={styles.totalsPair}>
+                  <dt>공급가</dt>
+                  <dd>
+                    <Num value={list.totals.supplyKrw} />
+                  </dd>
+                </div>
+              </dl>
+            </section>
+          ) : undefined
+        }
+        empty={empty}
+        pagination={
+          list && rows.length > 0 ? (
+            <Pagination
+              label="카드 사용"
+              page={list.page.page}
+              pageCount={list.page.pageCount}
+              href={pageHref}
+              rangeText={pageRangeText({ page: list.page.page, pageSize: list.page.pageSize, total: list.page.total, unit: "건" })}
+            />
+          ) : undefined
+        }
+        panel={panel}
+      >
+        {body}
+      </ListScreen>
+    </CardUsageDeleteUndo>
   );
 }

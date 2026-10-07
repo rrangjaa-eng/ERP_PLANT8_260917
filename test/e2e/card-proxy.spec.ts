@@ -2,8 +2,10 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { projects, quoteLines } from "@/db/schema";
+import { corpCardUsages, projects, purchaseRequests, quoteLines } from "@/db/schema";
 import { createCorpCard } from "@/domain/corp-cards";
+import { createCardUsage, precheckCardUsage, type CardUsageInput } from "@/domain/corp-card-usages";
+import { createExpenseFromLines } from "@/domain/expenses";
 import { createOrgUnit, createTeam } from "@/domain/org";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
@@ -15,6 +17,8 @@ import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { seoulToday } from "@/lib/dates";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
+import { setupExpenseE2E } from "./expense-fixture";
+import { submitReadyDraft } from "../integration/fixtures/expenses";
 
 // 06-09(EXP-16 · O-11 · UI-SPEC S8 · S9 · S15): 경영관리 대리 등록 · 행 `수정` 옆 패널 · 삭제 · 되돌리기.
 // 사람 · 팀 · 카드 · 프로젝트는 도메인 함수로 만든다(스펙마다 전용 본부 · 팀).
@@ -238,6 +242,187 @@ test.describe("법인카드 대리 등록 · 수정 (06-09)", () => {
     await total.press("Control+Enter");
     await expect(sheet.getByText(/^실행가 초과 · 남은 실행가 2,000,000 · /)).toBeVisible();
     await expect(sheet).toBeVisible();
+    await page.context().close();
+  });
+});
+
+// ── 06-09 Task 3: 삭제(= 보관) · 결과 줄 `되돌리기` · 폰 행 탭 ─────────────────
+
+// 도메인으로 카드 사용 한 건(가맹점 = 새 거래처 — 행 접근 이름 `{MM-DD} {가맹점} …`으로 행을 가른다).
+async function seedUsage(viewer: Person["viewer"], cardId: string, lineId: string, amount: number, merchant: string): Promise<string> {
+  const vendor = await insertVendor(SYSTEM_VIEWER, { name: merchant, normalizedName: `${merchant}-${randomUUID()}` });
+  const input: CardUsageInput = {
+    corpCardId: cardId,
+    usedOn: seoulToday(),
+    merchantVendorId: vendor.id,
+    total: { currency: "KRW", amount, fxRate: 1 },
+    evidenceTypeCode: "invoice",
+    linkKind: "quote_line",
+    lineId,
+    memo: null,
+  };
+  return (await createCardUsage(viewer, input, await precheckCardUsage(viewer, input))).id;
+}
+
+// 역할 토큰의 계산 값(리터럴 rgb 대신 — executor brief).
+async function tokenColor(page: Page, token: string): Promise<string> {
+  return page.evaluate((name) => {
+    const probe = document.createElement("span");
+    probe.style.color = `var(${name})`;
+    document.body.append(probe);
+    const color = getComputedStyle(probe).color;
+    probe.remove();
+    return color;
+  }, token);
+}
+
+function undoLine(page: Page) {
+  return page.getByRole("status").filter({ hasText: "카드 사용 삭제됨" });
+}
+
+test.describe("카드 사용 삭제 · 되돌리기 (06-09)", () => {
+  test("행 `삭제` → 확인 창 없음 · 행 빠짐 · 결과 줄 · 포커스 `되돌리기` → 되돌리기 → 같은 행 돌아옴 · 결과 줄 사라짐", async ({ browser, baseURL }) => {
+    const fx = await setup();
+    const merchant = `가맹삭제-${randomUUID().slice(0, 6)}`;
+    await seedUsage(fx.pm.viewer, fx.cardId, fx.lineId, 300_000, merchant);
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await page.goto("/cards");
+    const remove = fixtureRows(page, fx).getByRole("button", { name: new RegExp(`${merchant} 삭제$`) });
+    await waitForHydration(remove);
+    await remove.click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(fixtureRows(page, fx)).toHaveCount(0);
+    await expect(undoLine(page)).toContainText("카드 사용 삭제됨 · 300,000");
+    const undo = page.getByRole("button", { name: "되돌리기" });
+    await expect(undo).toBeFocused();
+    await undo.click();
+    await expect(fixtureRows(page, fx).getByRole("button", { name: new RegExp(`${merchant} 삭제$`) })).toHaveCount(1);
+    await expect(undoLine(page)).toHaveCount(0);
+    await page.context().close();
+  });
+
+  test("A 삭제 → B 삭제 → 결과 줄은 B 한 건", async ({ browser, baseURL }) => {
+    const fx = await setup();
+    const a = `가맹A-${randomUUID().slice(0, 6)}`;
+    const b = `가맹B-${randomUUID().slice(0, 6)}`;
+    await seedUsage(fx.pm.viewer, fx.cardId, fx.lineId, 100_000, a);
+    await seedUsage(fx.pm.viewer, fx.cardId, fx.lineId, 200_000, b);
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await page.goto("/cards");
+    const removeA = fixtureRows(page, fx).getByRole("button", { name: new RegExp(`${a} 삭제$`) });
+    await waitForHydration(removeA);
+    await removeA.click();
+    await expect(undoLine(page)).toContainText("카드 사용 삭제됨 · 100,000");
+    await fixtureRows(page, fx).getByRole("button", { name: new RegExp(`${b} 삭제$`) }).click();
+    await expect(undoLine(page)).toHaveCount(1);
+    await expect(undoLine(page)).toContainText("카드 사용 삭제됨 · 200,000");
+    await expect(page.getByRole("button", { name: "되돌리기" })).toHaveCount(1);
+    await page.context().close();
+  });
+
+  test("삭제 뒤 그 줄에 지출결의 → `되돌리기` → 결과 줄 --status-danger · 이중 연결 문구 · 행 안 돌아옴", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const label = `E2E되돌림-${randomUUID().slice(0, 8)}`;
+    const card = await createCorpCard(SYSTEM_VIEWER, { issuer: `국민-${randomUUID().slice(0, 6)}`, numberLast4: "5511", label, kind: "personal", holderUserId: fx.pm.viewer.id });
+    if (!card.id) throw new Error("카드 id 없음");
+    const merchant = `가맹이중-${randomUUID().slice(0, 6)}`;
+    await seedUsage(fx.pm.viewer, card.id, fx.lines.tracer.id, 100_000, merchant);
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await page.goto(`/cards?card=${card.id}`);
+    const group = page.getByRole("table").getByRole("rowgroup").filter({ hasText: label });
+    const remove = group.getByRole("button", { name: new RegExp(`${merchant} 삭제$`) });
+    await waitForHydration(remove);
+    await remove.click();
+    await expect(page.getByRole("status").filter({ hasText: "카드 사용 삭제됨 · 100,000" })).toHaveCount(1);
+    const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.tracer.id] });
+    const submitted = await submitReadyDraft(fx.pm.viewer, created.created[0]?.expenseId ?? "");
+    if (submitted.kind !== "submitted") throw new Error("제출되지 않음");
+    await page.getByRole("button", { name: "되돌리기" }).click();
+    const failed = page.getByRole("status").getByText(`지출결의 ${submitted.number} 연결됨 · 다른 줄 고르기`, { exact: true });
+    await expect(failed).toBeVisible();
+    await expect(failed).toHaveCSS("color", await tokenColor(page, "--status-danger"));
+    await expect(page.getByRole("button", { name: "되돌리기" })).toHaveCount(0);
+    await expect(group).toHaveCount(0);
+    await page.context().close();
+  });
+
+  test("구매 완료 행 = `수정`만 · 권리 없는 행(남이 등록) = 행동 칸 빔", async ({ browser, baseURL }) => {
+    const fx = await setup();
+    const [request] = await db
+      .insert(purchaseRequests)
+      .values({ number: `26001-C${randomUUID().slice(0, 8)}`, linkKind: "quote_line", projectId: fx.projectId, quoteLineId: fx.lineId, requestedBy: fx.pm.viewer.id, itemName: "현수막", estimateAmountKrw: 40_000 })
+      .returning({ id: purchaseRequests.id });
+    const bought = `가맹구매-${randomUUID().slice(0, 6)}`;
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name: bought, normalizedName: `${bought}-${randomUUID()}` });
+    await db.insert(corpCardUsages).values({
+      corpCardId: fx.cardId,
+      usedOn: seoulToday(),
+      merchantVendorId: vendor.id,
+      totalCurrency: "KRW",
+      totalForeignAmount: null,
+      totalFxRate: "1",
+      totalAmountKrw: 40_000,
+      supplyKrw: 40_000,
+      vatKrw: 0,
+      evidenceTypeCode: "invoice",
+      linkKind: "quote_line",
+      quoteLineId: fx.lineId,
+      teamId: null,
+      usedByUserId: fx.pm.viewer.id,
+      registeredBy: fx.pm.viewer.id,
+      registeredVia: "purchase",
+      purchaseRequestId: request?.id ?? null,
+      memo: null,
+    });
+    const others = `가맹남의-${randomUUID().slice(0, 6)}`;
+    await seedUsage(fx.proxy.viewer, fx.cardId, fx.lineId, 50_000, others);
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await page.goto("/cards");
+    const group = fixtureRows(page, fx);
+    await expect(group.getByRole("link", { name: new RegExp(`${bought} 수정$`) })).toHaveCount(1);
+    await expect(group.getByRole("button", { name: new RegExp(`${bought} 삭제$`) })).toHaveCount(0);
+    await expect(group.getByRole("link", { name: new RegExp(`${others} 수정$`) })).toHaveCount(0);
+    await expect(group.getByRole("button", { name: new RegExp(`${others} 삭제$`) })).toHaveCount(0);
+    await expect(group.getByRole("row").filter({ hasText: others }).locator('[data-ui="row-actions"]')).toHaveCount(0);
+    await page.context().close();
+  });
+
+  test("폰 375 — 권리 있는 행 탭 → 수정 패널(시트) · 없는 행 탭 → RowSheet · S15 권리 있는 행 탭 → `/cards?editId=`", async ({ browser, baseURL }) => {
+    const fx = await setup();
+    const mine = `가맹내것-${randomUUID().slice(0, 6)}`;
+    const others = `가맹남것-${randomUUID().slice(0, 6)}`;
+    await seedUsage(fx.pm.viewer, fx.cardId, fx.lineId, 120_000, mine);
+    await seedUsage(fx.proxy.viewer, fx.cardId, fx.lineId, 80_000, others);
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto("/cards");
+    const group = fixtureRows(page, fx);
+    const mineTap = group.getByRole("row").filter({ hasText: mine }).getByRole("button", { name: /상세 보기$/ });
+    await waitForHydration(mineTap);
+    await mineTap.click();
+    await expect(page).toHaveURL(/\/cards\?editId=/);
+    const sheet = page.getByRole("dialog", { name: "카드 사용 수정" });
+    await expect(sheet).toBeVisible();
+    await sheet.press("Escape");
+    await expect(sheet).toBeHidden();
+    const othersTap = fixtureRows(page, fx).getByRole("row").filter({ hasText: others }).getByRole("button", { name: /상세 보기$/ });
+    await othersTap.click();
+    const rowSheet = page.getByRole("dialog").filter({ hasText: others });
+    await expect(rowSheet).toBeVisible();
+    await expect(page).not.toHaveURL(/editId=/);
+    await rowSheet.getByRole("button", { name: "닫기" }).click();
+
+    await page.setViewportSize({ width: 320, height: 640 });
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto(`/projects/${fx.projectId}`);
+    const section = cardSection(page);
+    const s15Tap = section.getByRole("row").filter({ hasText: mine }).getByRole("button", { name: /상세 보기$/ });
+    await waitForHydration(s15Tap);
+    await s15Tap.click();
+    await expect(page).toHaveURL(/\/cards\?editId=/);
+    await expect(page.getByRole("dialog", { name: "카드 사용 수정" })).toBeVisible();
     await page.context().close();
   });
 });

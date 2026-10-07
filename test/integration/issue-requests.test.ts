@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
-import { db } from "@/db/client";
+import { db, pool } from "@/db/client";
 import { actionLog, projects, revenueEntries, revenueIssueRequests, teams } from "@/db/schema";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import type { Viewer } from "@/domain/viewer";
@@ -15,6 +15,8 @@ import { listProjectIssueRequests } from "@/domain/issue-requests";
 import { SaveRejectedError } from "@/domain/quotes/lines";
 import { ForbiddenError, listRevenue } from "@/domain/revenue";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
+import { insertRole } from "@/repositories/roles";
+import { deferred, waitForLockWaiter } from "./lock-race";
 
 // 06-18 — 발행 요청(D-610): PM이 요청 줄을 일괄 저장하고, 매출 기록 권한자가 새 발행 줄에 `fromIssueRequestId`를 실어 저장하면
 // 같은 트랜잭션에서 요청이 `발행됨`으로 이어진다. 표는 06-27, 이 파일은 domain · 원장 경로만 본다(UI는 E2E).
@@ -270,5 +272,135 @@ describe("발행 요청 표 DTO (listProjectIssueRequests)", () => {
     expect(request).toMatchObject({ id: row.id, amountKrw: 22_000_000, status: "requested", desiredIssueDate: "2026-09-30" });
     expect(request?.vatKrw).toBe(entry?.vatKrw);
     expect(request?.totalKrw).toBe(entry?.totalKrw);
+  });
+});
+
+// 06-18 Task 2 — 권리 · 동시 잇기 · 발행액 노출(A-605) · 상태 잠김.
+async function createRoleViewer(opts: { write: boolean; issuedAmount: boolean }): Promise<Viewer> {
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `요청 노출 계급-${randomUUID()}` });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
+  if (opts.write) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "write", allowed: true });
+  await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "project.value", visible: true });
+  await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "revenue.issued_amount", visible: opts.issuedAmount });
+  const { userId } = await createAccount(SYSTEM_VIEWER, { email: `req-view-${randomUUID()}@example.test`, name: "요청 노출", roleId: role.id });
+  return { id: userId, roleId: role.id };
+}
+
+async function issuedRequest(projectId: string, pm: Viewer, finance: Viewer) {
+  const row = requestRow({ amount: 30_000_000 });
+  await saveProjectLedger(pm, projectId, { seenStatus: "bidding", issueRequests: [row] });
+  await saveProjectLedger(finance, projectId, {
+    seenStatus: "bidding",
+    revenue: { issuedEntries: [{ id: randomUUID(), isNew: true, entryDate: "2026-09-30", amount: krw(30_000_000), fromIssueRequestId: row.id }] },
+  });
+  return row;
+}
+
+describe("발행 요청 — 동시 잇기 · 노출 · 상태 잠김 (06-18 Task 2)", () => {
+  it("동시 잇기 — 장벽: A의 원장 저장이 프로젝트 행 잠금에서 멈춘 동안 B가 같은 요청을 이으면 A만 성공하고 B는 거부 + B의 발행 줄도 되돌아간다", async () => {
+    const { project, pm } = await setupProject();
+    const financeA = await createFinanceViewer();
+    const financeB = await createFinanceViewer();
+    const row = requestRow();
+    await saveProjectLedger(pm, project.id, { seenStatus: "bidding", issueRequests: [row] });
+    const entryA = randomUUID();
+    const entryB = randomUUID();
+    const linkInput = (entryId: string) => ({
+      seenStatus: "bidding" as const,
+      revenue: { issuedEntries: [{ id: entryId, isNew: true as const, entryDate: "2026-09-30", amount: krw(20_000_000), fromIssueRequestId: row.id }] },
+    });
+
+    const locked = deferred();
+    const release = deferred();
+    const first = saveProjectLedger(financeA, project.id, linkInput(entryA), {
+      afterLock: async () => {
+        locked.resolve();
+        await release.promise;
+      },
+    });
+    const reachedLock = await Promise.race([locked.promise.then(() => true), first.then(() => false, () => false)]);
+    expect(reachedLock, "잠금 순서 조건을 만들지 못했다 — A가 프로젝트 행 잠금에 닿지 않음").toBe(true);
+    const second = saveProjectLedger(financeB, project.id, linkInput(entryB));
+    try {
+      await waitForLockWaiter(pool);
+    } catch (error) {
+      release.resolve();
+      await Promise.allSettled([first, second]);
+      throw new Error(`잠금 순서 조건을 만들지 못했다 — B가 A의 잠금을 기다리지 않음(${(error as Error).message})`);
+    }
+    release.resolve();
+    const [a, b] = await Promise.allSettled([first, second]);
+
+    expect(a.status).toBe("fulfilled");
+    expect(b.status).toBe("rejected");
+    const rejection = b.status === "rejected" ? b.reason : null;
+    expect(rejection).toBeInstanceOf(SaveRejectedError);
+    expect((rejection as SaveRejectedError).formatErrors[0]?.reason).toBe("다른 사람이 먼저 이 요청을 이음 · 새로 고침");
+    const entries = await db.select().from(revenueEntries).where(eq(revenueEntries.projectId, project.id));
+    expect(entries.map((entry) => entry.id)).toEqual([entryA]);
+    expect(await storedRequest(row.id)).toMatchObject({ status: "issued", issuedEntryId: entryA });
+  });
+
+  it("DTO — 발행액을 끈 읽기 계정에는 요청 금액 · 부가세 · 합계 · 상태 2행 발행액 키가 없다", async () => {
+    const { project, pm } = await setupProject();
+    const finance = await createFinanceViewer();
+    await issuedRequest(project.id, pm, finance);
+    const reader = await createRoleViewer({ write: false, issuedAmount: false });
+
+    const [dto] = await listProjectIssueRequests(reader, project.id);
+
+    expect(dto).toBeDefined();
+    expect(Object.keys(dto ?? {})).toEqual(expect.arrayContaining(["id", "desiredIssueDate", "status", "issuedEntryDate"]));
+    for (const key of ["amountKrw", "vatKrw", "totalKrw", "issuedAmountKrw"]) expect(Object.keys(dto ?? {})).not.toContain(key);
+  });
+
+  it("DTO — 프로젝트 쓰기 PM은 발행액을 꺼 둬도 요청 금액을 보고, 발행액은 정보 항목대로 빠진다", async () => {
+    const { project, pm } = await setupProject();
+    const finance = await createFinanceViewer();
+    await issuedRequest(project.id, pm, finance);
+    const writer = await createRoleViewer({ write: true, issuedAmount: false });
+
+    const [dto] = await listProjectIssueRequests(writer, project.id);
+
+    expect(dto).toMatchObject({ amountKrw: 30_000_000 });
+    expect(Object.keys(dto ?? {})).toEqual(expect.arrayContaining(["vatKrw", "totalKrw"]));
+    expect(Object.keys(dto ?? {})).not.toContain("issuedAmountKrw");
+  });
+
+  it("DTO — 발행액을 볼 수 있는 읽기 계정은 금액과 상태 2행 발행액을 본다", async () => {
+    const { project, pm } = await setupProject();
+    const finance = await createFinanceViewer();
+    await issuedRequest(project.id, pm, finance);
+    const reader = await createRoleViewer({ write: false, issuedAmount: true });
+
+    const [dto] = await listProjectIssueRequests(reader, project.id);
+
+    expect(dto).toMatchObject({ amountKrw: 30_000_000, issuedAmountKrw: 30_000_000 });
+  });
+
+  it("settling 프로젝트는 PM 요청을 허용한다", async () => {
+    const { project, pm } = await setupProject();
+    await db.update(projects).set({ status: "settling" }).where(eq(projects.id, project.id));
+    const row = requestRow();
+
+    await saveProjectLedger(pm, project.id, { seenStatus: "settling", issueRequests: [row] });
+
+    expect(await storedRequest(row.id)).toMatchObject({ status: "requested" });
+  });
+
+  it("completed 프로젝트의 신청됨 요청을 매출 기록 권한자가 이으면 기존 발행 줄 쓰기 판정 그대로 통과한다(이 플랜은 막지 않는다 — U-4)", async () => {
+    const { project, pm } = await setupProject();
+    const finance = await createFinanceViewer();
+    const row = requestRow();
+    await saveProjectLedger(pm, project.id, { seenStatus: "bidding", issueRequests: [row] });
+    await db.update(projects).set({ status: "completed" }).where(eq(projects.id, project.id));
+    const entryId = randomUUID();
+
+    await saveProjectLedger(finance, project.id, {
+      seenStatus: "completed",
+      revenue: { issuedEntries: [{ id: entryId, isNew: true, entryDate: "2026-09-30", amount: krw(20_000_000), fromIssueRequestId: row.id }] },
+    });
+
+    expect(await storedRequest(row.id)).toMatchObject({ status: "issued", issuedEntryId: entryId });
   });
 });

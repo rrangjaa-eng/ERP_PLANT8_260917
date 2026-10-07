@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { authedActionClient } from "@/lib/actions/client";
 import { cancelExpensePayment, completeExpensePayment, previewPayable, saveScheduledPayDate } from "@/domain/payments";
-import { confirmEvidence } from "@/domain/evidence-reviews";
+import { confirmEvidence, waiveEvidence } from "@/domain/evidence-reviews";
 import { EVIDENCE_AMOUNT_FRACTION, EVIDENCE_AMOUNT_NOT_NUMBER, EVIDENCE_AMOUNT_NOT_POSITIVE, TRANSFER_FRACTION, TRANSFER_NOT_NUMBER, TRANSFER_NOT_POSITIVE } from "@/domain/payments/action-row";
 import { DATE_FORMAT_ERROR, EXPENSE_TEXT_MAX } from "@/domain/expenses/draft-fields";
 import { isCalendarDate } from "@/lib/dates";
@@ -90,6 +90,19 @@ const confirmEvidenceSchema = z.object({
 
 export const confirmEvidenceAction = authedActionClient.schema(confirmEvidenceSchema).action(async ({ parsedInput, ctx }) => {
   const result = await confirmEvidence(ctx.viewer, parsedInput);
+  revalidatePath(`/expenses/${parsedInput.expenseId}`);
+  return result;
+});
+
+// 06-10(D-603 · D-611): 증빙 면제 — 사유 필수(서버가 trim 뒤 다시 거부). 응답은 증빙 확인과 같은 { version, evidenceStatus, actionRow }.
+const waiveEvidenceSchema = z.object({
+  expenseId: z.string().uuid(),
+  version: z.number().int().positive(),
+  reason: z.string().max(EXPENSE_TEXT_MAX, `사유 ${EXPENSE_TEXT_MAX}자 넘음 · 줄여 적기`),
+});
+
+export const waiveEvidenceAction = authedActionClient.schema(waiveEvidenceSchema).action(async ({ parsedInput, ctx }) => {
+  const result = await waiveEvidence(ctx.viewer, parsedInput);
   revalidatePath(`/expenses/${parsedInput.expenseId}`);
   return result;
 });

@@ -14,3 +14,5 @@ registerAction({ name: "saveScheduledPayDateAction", menu: "expenses.payments", 
 registerAction({ name: "cancelExpensePaymentAction", menu: "expenses.payments", action: "write", dtoName: null });
 // 06-06: 증빙 확인(금액 고침 포함) — 새 version · 증빙 상태 낱말 · 행동 줄(DTO 없음 — 금액 칸 없음).
 registerAction({ name: "confirmEvidenceAction", menu: "expenses.payments", action: "write", dtoName: null });
+// 06-10: 증빙 면제 — 새 version · 증빙 상태 낱말 · 행동 줄(DTO 없음).
+registerAction({ name: "waiveEvidenceAction", menu: "expenses.payments", action: "write", dtoName: null });

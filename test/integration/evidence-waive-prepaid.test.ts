@@ -474,7 +474,7 @@ describe("증빙 면제 (06-10)", () => {
     // 결재 중
     const fxA = await setupExpenseProject();
     const pending = await submitPrepaid(fxA);
-    const notApproved = await untouched(pending.expenseId, () => waiveEvidence(manager, { expenseId: pending.expenseId, version: (pending.version), reason: "이르다" }));
+    const notApproved = await untouched(pending.expenseId, async () => waiveEvidence(manager, { expenseId: pending.expenseId, version: (await expenseRow(pending.expenseId)).version, reason: "이르다" }));
     expect(notApproved).toBeInstanceOf(GateBlockedError);
     // 증빙 있음
     const fxB = await setupExpenseProject();

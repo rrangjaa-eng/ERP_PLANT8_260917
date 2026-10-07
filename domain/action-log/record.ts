@@ -47,6 +47,8 @@ export const CORE_ACTION_TYPES = [
   "payment_cancel",
   // 06-06 D-602 · CF-9: 경영관리의 증빙 금액 고침(전 · 후) — 비용의 원본이 바뀌는 돈 기록이라 끌 수 없다(6.1-01과 같은 이름 — 먼저 머지되는 쪽이 더한다).
   "evidence_amount_change",
+  // 06-10 D-603 · D-611: 경영관리의 증빙 면제(사유 원문) — 지급 게이트와 미결 점검을 닫는 길이고 확인 기록은 06-11 훅이 지울 수 있어 끌 수 없다.
+  "evidence_waive",
 ] as const;
 
 export type CoreActionType = (typeof CORE_ACTION_TYPES)[number];
@@ -84,6 +86,7 @@ export const ACTION_TYPE_LABELS: Record<CoreActionType, string> = {
   cert_view: "확인증 조회",
   payment_cancel: "지급 취소",
   evidence_amount_change: "증빙 금액 변경",
+  evidence_waive: "증빙 면제",
 };
 
 // OPS-05: Excel 내보내기·마스킹 해제·행동 로그 정리는 설정으로 못 끄는 핵심
@@ -111,6 +114,8 @@ export const ALWAYS_ON_ACTION_TYPES: CoreActionType[] = [
   "payment_cancel",
   // 06-06 D-602 · CF-9: 증빙 금액 변경(경영관리 고쳐 확인)은 비용 원본이 바뀌는 돈 기록이라 끌 수 없다
   "evidence_amount_change",
+  // 06-10 D-603 · D-611: 증빙 면제는 지급 게이트와 미결 점검을 닫는 흔적이라 끌 수 없다
+  "evidence_waive",
 ];
 
 export class UnknownActionTypeError extends UserFacingError {}

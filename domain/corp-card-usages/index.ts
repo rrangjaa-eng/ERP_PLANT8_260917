@@ -1082,6 +1082,60 @@ export async function cardUsageFormOptions(viewer: Viewer, usedOn: string): Prom
   };
 }
 
+// ── 06-12 구매 완료 패널(S13) — 카드 옵션 · 서버 계산 한 줄 ─────────────────────
+
+export type PurchaseCardFormOptions = Omit<CardUsageFormOptions, "teamName" | "teamAssigned">;
+
+// 구매 권한자의 카드 = 활성 카드 전부(공용 포함, Q5) — 본인 자격 · 대리 등록 힌트 없음(R-3).
+export async function purchaseCardFormOptions(viewer: Viewer): Promise<PurchaseCardFormOptions> {
+  if (!(await can(viewer, "cards.purchases", "write"))) throw new ForbiddenError(PURCHASE_DENIED);
+  const cards = await listCorpCards(viewer, { scope: { rows: "all", includeArchived: false }, includeInactive: false });
+  const evidence = await cardEvidenceTypes(viewer);
+  return {
+    cards: await projectMany(viewer, cards.map((card) => ({ id: card.id, label: cardLabel(card), proxyHint: null, choosesUser: false })), CARD_OPTION_SPEC),
+    evidenceTypes: evidence.options.map(({ value, label }) => ({ value, label })),
+    usdFxRate: await recentFxRate("USD").catch(() => null),
+  };
+}
+
+export type PurchaseCardPreview = Pick<CardAmountsPreview, "split" | "teamName" | "teamAssigned"> & {
+  /** 견적 줄 요청의 실행가 상한 — 완료 아닌 프로젝트 초과면 막힘 문구(고정 갈래), 완료 프로젝트 초과면 초과액(Q-E — 금액을 볼 때만). */
+  cap: { blockedReason: string | null; overKrw: number | null } | null;
+};
+
+// S13 서버 계산 한 줄(트랜잭션 없음 · 잠그지 않음 — 표시용). 팀 = 요청자의 사용일 소속(O-19), 상한 = 06-07 `card.execution-cap` `fixed`
+// (이 요청 자신의 예상 공급가는 빼지 않는다 — 실제 결제 공급가로 판정). 저장은 `runCreate`가 잠근 뒤 다시 판정한다.
+export async function previewPurchaseCard(
+  viewer: Viewer,
+  input: { requestId: string; requesterId: string; lineId: string | null; usedOn: string; total: MoneyInput | null; evidenceTypeCode: string | null },
+): Promise<PurchaseCardPreview> {
+  if (!(await can(viewer, "cards.purchases", "write"))) throw new ForbiddenError(PURCHASE_DENIED);
+  const teamAssigned = (await findMembershipAtDate(viewer, input.requesterId, input.usedOn)) !== null;
+  const teamName = input.lineId ? null : ((await teamAtDate(viewer, input.requesterId, input.usedOn))?.name ?? null);
+  const option = input.evidenceTypeCode ? (await cardEvidenceTypes(viewer)).options.find((candidate) => candidate.value === input.evidenceTypeCode) : undefined;
+  if (!input.total || !option) return { split: null, teamName, teamAssigned, cap: null };
+  const split = splitCardTotal({ money: input.total, rule: option.rule }, await loadTaxRates(input.usedOn));
+  const shown = { split: { ...split, ruleKind: option.rule.ruleKind, evidenceLabel: option.label }, teamName, teamAssigned };
+  if (!input.lineId) return { ...shown, cap: null };
+  const link = await precheckPurchaseLink(viewer, input.lineId, input.requestId);
+  const project = link.projectId ? await findProjectById(viewer, link.projectId) : null;
+  const links = await findLineLinks(viewer, [input.lineId]);
+  const execution = links.get(input.lineId)?.currentExecution;
+  if (!project || !link.lineRoom || !execution) return { ...shown, cap: null };
+  const capInput = {
+    execution,
+    otherSupplies: lineRoom({ links, basis: link.lineRoom, lineId: input.lineId, exclude: link.capExclude }).otherSupplies,
+    supply: { currency: "KRW", amount: split.supplyKrw, fxRate: 1 },
+    source: project.status === "completed" ? "settled" : "entry",
+  } as const;
+  if (capInput.source === "settled") {
+    const settled = cardExecutionCap(capInput);
+    return { ...shown, cap: { blockedReason: null, overKrw: settled.exceeds && link.amountVisible ? diffKrw(split.supplyKrw, settled.remaining.amountKrw) : null } };
+  }
+  const decision = await gate(null, "card.execution-cap", { ...capInput, link: "fixed", pmName: link.pmName, amountVisible: link.amountVisible });
+  return { ...shown, cap: { blockedReason: decision.allowed ? null : decision.reason, overKrw: null } };
+}
+
 // ── 목록 ───────────────────────────────────────────────────────────────────
 
 export type CardUsageListItemDto = {
@@ -1097,6 +1151,8 @@ export type CardUsageListItemDto = {
   registeredByName: string;
   /** 등록한 날(서울 날짜) — 경영관리 등록 행의 2행 `{등록자} {MM-DD}`. */
   registeredOn: string;
+  /** 06-12 구매 완료로 생긴 건의 구매 요청 번호 — 등록 칸 `구매 요청 {번호}`. 아니면 null. */
+  purchaseNumber: string | null;
   /** 연결 칸(S8) — `{프로젝트} · {줄 번호} {항목}` / `{프로젝트} · 견적 외 비용 · {항목}`. 팀 비용이면 null. */
   linkLabel: string | null;
   memo: string | null;
@@ -1126,6 +1182,7 @@ const VALUE_KEYS = [
   "registeredVia",
   "registeredByName",
   "registeredOn",
+  "purchaseNumber",
   "memo",
   "rights",
   "version",
@@ -1180,6 +1237,7 @@ function toProjectable(row: CardUsageListRow, lineNo: Map<string, number>, right
     registeredVia: row.registeredVia,
     registeredByName: row.registeredByName,
     registeredOn: seoulToday(row.createdAt),
+    purchaseNumber: row.purchaseNumber,
     linkLabel: cardLinkLabel(row, lineNo),
     memo: row.memo,
     currency: row.totalCurrency,
@@ -1324,6 +1382,8 @@ export type ProjectCardUsageDto = {
   registeredByName: string;
   /** 등록한 날(서울 날짜) — 경영관리 등록 행의 2행 `{등록자} {MM-DD}`. */
   registeredOn: string;
+  /** 06-12 구매 완료로 생긴 건의 구매 요청 번호 — 아니면 null. */
+  purchaseNumber: string | null;
   totalKrw: number;
   supplyKrw: number;
   /** 06-09 권리(O-11) — 폰 행 탭이 수정 패널로 가는가. */
@@ -1335,7 +1395,7 @@ export type ProjectCardUsageTotalsDto = { count: number; totalKrw: number };
 // 금액 칸 · 합계 행의 결제 합계 = 견적 표 금액 열과 같은 `quote.amount`(새 정보 항목 없음), 나머지는 `project.value`.
 const PROJECT_CARD_USAGE_DTO_SPEC: DtoSpec<ProjectCardUsageDto, ProjectCardUsageDto> = {
   fields: [
-    ...(["id", "usedOn", "lineLabel", "merchantName", "registeredVia", "registeredByName", "registeredOn", "rights"] as const).map((key) => ({
+    ...(["id", "usedOn", "lineLabel", "merchantName", "registeredVia", "registeredByName", "registeredOn", "purchaseNumber", "rights"] as const).map((key) => ({
       key,
       from: key,
       infoItem: "project.value",
@@ -1389,6 +1449,7 @@ export async function listProjectCardUsages(viewer: Viewer, projectId: string): 
       registeredVia: row.registeredVia,
       registeredByName: row.registeredByName,
       registeredOn: seoulToday(row.createdAt),
+      purchaseNumber: row.purchaseNumber,
       totalKrw: row.totalAmountKrw,
       supplyKrw: row.supplyKrw,
       rights: cardUsageRights(

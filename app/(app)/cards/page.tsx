@@ -117,6 +117,7 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
             registeredVia: row.registeredVia ?? "self",
             registeredByName: row.registeredByName ?? "—",
             registeredOn: row.registeredOn ?? null,
+            purchaseNumber: row.purchaseNumber ?? null,
             totalKrw: row.totalKrw ?? null,
             supplyKrw: row.supplyKrw ?? null,
             vatKrw: row.vatKrw ?? null,

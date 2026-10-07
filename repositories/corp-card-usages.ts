@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, gte, isNotNull, isNull, lt, ne, or, sql, type SQL } from "drizzle-orm";
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
-import { corpCardUsages, corpCards, projects, quoteLines, quoteRevisions, teams, users, vendors } from "@/db/schema";
+import { corpCardUsages, corpCards, projects, purchaseRequests, quoteLines, quoteRevisions, teams, users, vendors } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 
 // 06-05(EXP-07): 법인카드 사용 쓰기 · 목록 · 직전 등록. 범위(UA-612)는 목록 쿼리의 조건에서 갈린다 — 보관된 건은 늘 뺀다(H-4 기반).
@@ -47,6 +47,8 @@ export type CardUsageListRow = CardUsageRow & {
   projectName: string | null;
   /** 06-09 권리(O-11) — 연결 줄 프로젝트의 상태(팀 비용이면 null). */
   projectStatus: string | null;
+  /** 06-12 구매 완료로 생긴 건의 구매 요청 번호(등록 칸 `구매 요청 {번호}`) — 아니면 null. */
+  purchaseNumber: string | null;
 };
 
 function scopeCondition(scope: CardUsageScope): SQL | undefined {
@@ -95,10 +97,12 @@ export async function listCardUsageRows(
       lineRevisionId: quoteLines.revisionId,
       projectName: projects.name,
       projectStatus: projects.status,
+      purchaseNumber: purchaseRequests.number,
     })
     .from(corpCardUsages)
     .innerJoin(corpCards, eq(corpCards.id, corpCardUsages.corpCardId))
     .innerJoin(users, eq(users.id, corpCardUsages.registeredBy))
+    .leftJoin(purchaseRequests, eq(purchaseRequests.id, corpCardUsages.purchaseRequestId))
     .leftJoin(vendors, eq(vendors.id, corpCardUsages.merchantVendorId))
     .leftJoin(teams, eq(teams.id, corpCardUsages.teamId))
     .leftJoin(quoteLines, eq(quoteLines.id, corpCardUsages.quoteLineId))
@@ -127,6 +131,7 @@ export async function listCardUsageRows(
     lineRevisionId: row.lineRevisionId,
     projectName: row.projectName,
     projectStatus: row.projectStatus,
+    purchaseNumber: row.purchaseNumber,
   }));
 }
 
@@ -158,6 +163,8 @@ export type ProjectCardUsageRow = Pick<
   lineItemName: string;
   lineKind: string;
   revisionId: string;
+  /** 06-12 구매 완료로 생긴 건의 구매 요청 번호 — 아니면 null. */
+  purchaseNumber: string | null;
 };
 
 export async function listProjectCardUsageRows(viewer: Viewer, projectId: string): Promise<ProjectCardUsageRow[]> {
@@ -177,12 +184,14 @@ export async function listProjectCardUsageRows(viewer: Viewer, projectId: string
       lineItemName: quoteLines.itemName,
       lineKind: quoteLines.lineKind,
       revisionId: quoteLines.revisionId,
+      purchaseNumber: purchaseRequests.number,
     })
     .from(corpCardUsages)
     .innerJoin(quoteLines, eq(quoteLines.id, corpCardUsages.quoteLineId))
     .innerJoin(quoteRevisions, eq(quoteRevisions.id, quoteLines.revisionId))
     .innerJoin(users, eq(users.id, corpCardUsages.registeredBy))
     .leftJoin(vendors, eq(vendors.id, corpCardUsages.merchantVendorId))
+    .leftJoin(purchaseRequests, eq(purchaseRequests.id, corpCardUsages.purchaseRequestId))
     .where(and(eq(quoteRevisions.projectId, projectId), eq(corpCardUsages.linkKind, "quote_line"), isNull(corpCardUsages.archivedAt)))
     .orderBy(asc(corpCardUsages.usedOn), asc(corpCardUsages.createdAt), asc(corpCardUsages.id));
   return rows;

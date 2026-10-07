@@ -1,6 +1,7 @@
 import { requireSession } from "@/lib/viewer";
 import { seoulToday } from "@/lib/dates";
-import { listPurchaseRequests, purchaseRequestEntry, type PurchaseRequestList, type PurchaseRequestStatusView } from "@/domain/purchase-requests";
+import { listPurchaseRequests, loadPurchaseCompletion, purchaseRequestEntry, type PurchaseRequestList, type PurchaseRequestStatusView } from "@/domain/purchase-requests";
+import { cardEvidenceDefault } from "@/domain/corp-card-usages/amounts";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { Pagination } from "@/ui/pagination/Pagination";
@@ -9,9 +10,12 @@ import { SidePanel } from "@/ui/side-panel/SidePanel";
 import { PurchaseFilters, PurchaseList, PurchaseListLoadError, type PurchaseListRowView } from "./purchase-list";
 import { PURCHASE_STATUS_VIEWS, type PurchaseStatusView } from "./purchase-status-word";
 import { PurchaseRequestForm, type PurchaseEntry } from "./purchase-request-form";
+import { CardUsageForm, type CardOption, type CardUsagePurchase } from "../card-usage-form";
 
 // 06-08(EXP-10 · UI-SPEC S11 · S12 · C12): 구매 요청 목록 + 신청 옆 패널. 신청은 `?new=1[&line={id}]`(패널 — 페이지 폼 없음).
 // 필터 · 쪽은 GET 쿼리(`status` · `month` · `page`) — 범위 · 쪽은 서버(listPurchaseRequests)가 정한다. 기본 보기 = `신청됨`.
+// 06-12(UI-SPEC S13): 구매 완료 = `?purchase={id}` 옆 패널(S9 칸 재사용 `card-usage-form.tsx` 구매 완료 모드). 성공 뒤 `?done={id}`로
+// 그 행을 상태 보기와 무관하게 제자리에 남긴다(제자리 결과 — 토스트 없음).
 // WR-07: 인증 검사를 이 페이지가 직접 한다(레이아웃에 기대지 않는다).
 export const dynamic = "force-dynamic";
 
@@ -52,10 +56,12 @@ export default async function PurchasesPage({ searchParams }: { searchParams: Pr
   const monthParam = first(params.month);
   const month = monthParam && MONTH_PATTERN.test(monthParam) ? monthParam : "";
   const filtered = view !== DEFAULT_VIEW || month !== "";
+  const doneParam = first(params.done);
+  const doneId = doneParam && UUID_PATTERN.test(doneParam) ? doneParam : null;
 
   let list: PurchaseRequestList | null = null;
   try {
-    list = await listPurchaseRequests(viewer, { status: STATUS_BY_VIEW[view], month: month || null, page: first(params.page) }, today);
+    list = await listPurchaseRequests(viewer, { status: STATUS_BY_VIEW[view], month: month || null, page: first(params.page), keepId: doneId }, today);
   } catch (error) {
     // 목록 자리 한 줄 + `다시 시도`(UI-SPEC 「Error — 목록 로드」) — 화면의 나머지(머리 · 1차)는 선다.
     console.error(error);
@@ -76,6 +82,8 @@ export default async function PurchasesPage({ searchParams }: { searchParams: Pr
             foreignAmount: row.foreignAmount ?? null,
             fxRate: row.fxRate ?? null,
             estimateKrw: row.estimateKrw ?? null,
+            usageUsedOn: row.usageUsedOn ?? null,
+            usageTotalKrw: row.usageTotalKrw ?? null,
           },
         ]
       : [],
@@ -94,7 +102,55 @@ export default async function PurchasesPage({ searchParams }: { searchParams: Pr
   const newHref = `${listHref}${listHref.includes("?") ? "&" : "?"}new=1`;
 
   let panel = null;
-  if (first(params.new) === "1") {
+  const purchaseParam = first(params.purchase);
+  const completion = purchaseParam ? await loadPurchaseCompletion(viewer, purchaseParam, today) : null;
+  const request = completion?.request;
+  if (completion && request?.id && request.number && request.version !== undefined && request.linkKind) {
+    const cards: CardOption[] = completion.options.cards.flatMap((card) => (card.id && card.label ? [{ id: card.id, label: card.label }] : []));
+    const merchant =
+      completion.merchant?.id && completion.merchant.name
+        ? { id: completion.merchant.id, name: completion.merchant.name, defaultEvidenceType: completion.merchant.defaultEvidenceType ?? null, defaultEvidenceName: completion.merchant.defaultEvidenceName ?? null }
+        : null;
+    const evidenceTypeCode = cardEvidenceDefault(merchant?.defaultEvidenceType ?? null, completion.options.evidenceTypes.map((option) => option.value)).code;
+    const purchase: CardUsagePurchase = {
+      requestId: request.id,
+      version: request.version,
+      number: request.number,
+      itemName: request.itemName ?? "",
+      linkUrl: request.linkUrl ?? null,
+      requesterName: request.requestedByName ?? "",
+      merchant,
+      currency: request.currency === "USD" ? "USD" : "KRW",
+      amount: request.amount ?? null,
+      fxRate: request.fxRate ?? null,
+      statusReason: completion.statusReason,
+      doneHref: `${listHref}${listHref.includes("?") ? "&" : "?"}done=${request.id}`,
+    };
+    const quoteLine = request.linkKind === "quote_line";
+    panel = (
+      <SidePanel title="구매 완료" closeHref={listHref}>
+        <CardUsageForm
+          cards={cards}
+          evidenceTypes={completion.options.evidenceTypes}
+          teamName={completion.teamName}
+          teamAssigned={completion.teamAssigned}
+          userName={request.requestedByName ?? ""}
+          today={today}
+          usdFxRate={completion.options.usdFxRate}
+          defaults={{
+            usedOn: today,
+            corpCardId: cards.length === 1 ? (cards[0]?.id ?? null) : null,
+            linkKind: quoteLine ? "quote_line" : "team_cost",
+            // 연결은 요청의 것 — 읽기 텍스트(바꾸기 없음). 줄 id는 보내지 않는다(서버가 요청에서 읽는다).
+            project: quoteLine ? { id: "", label: request.projectLabel ?? "—" } : null,
+            line: quoteLine ? { id: "", itemName: request.lineItemName ?? "—", remainingKrw: null, hint: null } : null,
+            evidenceTypeCode,
+          }}
+          purchase={purchase}
+        />
+      </SidePanel>
+    );
+  } else if (first(params.new) === "1") {
     // 진입 줄(S14 · S18 `?line=`) — 고를 수 있는 프로젝트의 줄이면 연결을 텍스트로 채운다. 아니면 연결은 패널 안에서 고른다.
     const entryLine = first(params.line);
     const chosen = entryLine && UUID_PATTERN.test(entryLine) ? await purchaseRequestEntry(viewer, entryLine) : null;
@@ -112,7 +168,7 @@ export default async function PurchasesPage({ searchParams }: { searchParams: Pr
   let empty = undefined;
   let body;
   if (!list) body = <PurchaseListLoadError />;
-  else if (rows.length > 0) body = <PurchaseList rows={rows} />;
+  else if (rows.length > 0) body = <PurchaseList rows={rows} listHref={listHref} canComplete={list.privileged} doneId={doneId} />;
   else if (!list.anyInScope) {
     // DR5 — 빈 목록이면 틀이 머리 1차를 숨기고 빈 화면이 말한다. 전체 0건 갈래.
     empty = <ListEmpty message="구매 요청이 없습니다" action={newAction} />;

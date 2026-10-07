@@ -22,3 +22,18 @@ registerAction({
   action: "view",
   dtoName: null,
 });
+
+// 06-12 구매 완료 — 문은 `cards.purchases` write(domain `precheckPurchaseCompletion` · `previewPurchaseCompletion`이 다시 본다).
+registerAction({
+  name: "completePurchaseRequestAction",
+  menu: "cards.purchases",
+  action: "write",
+  dtoName: null,
+});
+
+registerAction({
+  name: "previewPurchaseCompletionAction",
+  menu: "cards.purchases",
+  action: "write",
+  dtoName: null,
+});

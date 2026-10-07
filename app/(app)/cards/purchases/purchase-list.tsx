@@ -1,20 +1,22 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Table } from "@/ui/table/Table";
 import type { TableColumn } from "@/ui/table/types";
 import { Num } from "@/ui/num/Num";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
-import { formatForeignLine } from "@/lib/format-number";
+import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
+import { formatForeignLine, formatKrw } from "@/lib/format-number";
 // 필터 칸 모양은 프로젝트 목록 필터와 같은 클래스(새 CSS 없음).
 import filterStyles from "@/app/(app)/projects/projects.module.css";
 import cardStyles from "../cards.module.css";
 import { PURCHASE_STATUS_VIEWS, purchaseStatusWord, type PurchaseStatus, type PurchaseStatusView } from "./purchase-status-word";
 import styles from "./purchases.module.css";
 
-// 06-08(UI-SPEC S11): 구매 요청 읽기 표 + 필터 줄 + 로드 오류 한 줄. 행동 칸(`구매 완료`)은 06-12, `요청 취소` · 결과 줄 · 합계 줄 · 상태 그룹은 06-14.
+// 06-08(UI-SPEC S11): 구매 요청 읽기 표 + 필터 줄 + 로드 오류 한 줄. `요청 취소` · 결과 줄 · 합계 줄 · 상태 그룹은 06-14.
+// 06-12: 구매 권한자의 `신청됨` 행 행동 `구매 완료`(→ `?purchase={id}` 옆 패널 S13) · 구매 완료 행 2행 `카드 사용 {MM-DD} · {결제 합계}`(취소 없음 — Q2).
 
 export type PurchaseListRowView = {
   id: string;
@@ -29,7 +31,18 @@ export type PurchaseListRowView = {
   foreignAmount: number | null;
   fxRate: number | null;
   estimateKrw: number | null;
+  /** 06-12 구매 완료 건의 카드 사용 — 사용일 · 결제 합계(못 보면 null). */
+  usageUsedOn: string | null;
+  usageTotalKrw: number | null;
 };
+
+// 06-12 S13 성공 뒤 제자리 결과 — 패널(폼)이 성공 순간 남기고, 목록이 `?done={id}`로 다시 그려질 때 읽는다(액션 응답 값 · 한 번만 포커스).
+type PurchaseDone = { id: string; capOver: number | null; focusNext: boolean };
+let lastDone: PurchaseDone | null = null;
+
+export function markPurchaseDone(done: PurchaseDone): void {
+  lastDone = done;
+}
 
 // 링크는 http(s)만 아이콘으로 선다(T-06-37) — 저장 때 이미 거르지만 렌더도 스킴을 다시 확인한다.
 function safeLinkHref(url: string | null): string | null {
@@ -42,7 +55,7 @@ function safeLinkHref(url: string | null): string | null {
   }
 }
 
-function ExternalLinkIcon() {
+export function ExternalLinkIcon() {
   return (
     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
       <path d="M9 2.5h4.5V7M13.5 2.5 7.5 8.5M6.5 3.5h-3a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-3" />
@@ -84,6 +97,20 @@ function estimateSecondLine(row: PurchaseListRowView): ReactNode {
   return formatForeignLine({ currency: row.currency, amount: row.foreignAmount, fxRate: row.fxRate });
 }
 
+// 구매 완료 행 2행 `카드 사용 09-20 · 1,238,000` — 처리 직후(액션 응답에 초과액이 있으면) 끝에 ` · 실행가 초과 {초과액}`(Q-E).
+function statusSecondLine(row: PurchaseListRowView): ReactNode {
+  if (row.status !== "purchased" || !row.usageUsedOn) return null;
+  const head = `카드 사용 ${row.usageUsedOn.slice(5)}${row.usageTotalKrw === null ? "" : ` · ${formatKrw(row.usageTotalKrw)}`}`;
+  const over = lastDone?.id === row.id ? lastDone.capOver : null;
+  if (over === null) return head;
+  return (
+    <>
+      {head}
+      <span style={{ color: "var(--status-warning)" }}>{` · 실행가 초과 ${formatKrw(over)}`}</span>
+    </>
+  );
+}
+
 const COLUMNS: TableColumn<PurchaseListRowView>[] = [
   { key: "number", header: "번호", priority: "p2", cell: (row) => <Num value={row.number} /> },
   { key: "requestedOn", header: "요청일", priority: "p2", cell: (row) => <Num value={row.requestedOn.slice(5)} /> },
@@ -91,11 +118,59 @@ const COLUMNS: TableColumn<PurchaseListRowView>[] = [
   { key: "link", header: "연결", priority: "p2", cell: linkCell },
   { key: "requester", header: "요청자", priority: "p2", cell: (row) => row.requestedByName },
   { key: "estimate", header: "예상 금액", priority: "p1", align: "right", cell: (row) => <Num value={row.estimateKrw} />, secondaryLine: estimateSecondLine },
-  { key: "status", header: "상태", priority: "p1", cell: (row) => <StatusTag variant="text" status={purchaseStatusWord(row.status)} /> },
+  {
+    key: "status",
+    header: "상태",
+    priority: "p1",
+    cell: (row) => <StatusTag variant="text" status={purchaseStatusWord(row.status)} />,
+    secondaryLine: statusSecondLine,
+  },
 ];
 
-export function PurchaseList({ rows }: { rows: PurchaseListRowView[] }) {
-  return <Table caption="구매 요청" columns={COLUMNS} rows={rows} getRowId={(row) => row.id} />;
+function completeHref(listHref: string, id: string): string {
+  return `${listHref}${listHref.includes("?") ? "&" : "?"}purchase=${id}`;
+}
+
+// 행동 칸 — 구매 권한자에게 `신청됨` 행 `구매 완료`(접근 이름 `{번호} 구매 완료`). 구매 완료 · 취소 행에는 행동이 없다(Q2).
+function actionsColumn(listHref: string): TableColumn<PurchaseListRowView> {
+  return {
+    key: "actions",
+    header: "행동",
+    headerHidden: true,
+    priority: "p1",
+    cell: (row) =>
+      row.status === "requested" ? (
+        <RowActions>
+          <RowAction href={completeHref(listHref, row.id)}>
+            <span className="sr-only">{`${row.number} `}</span>구매 완료
+          </RowAction>
+        </RowActions>
+      ) : null,
+  };
+}
+
+// S13 성공 뒤 포커스(r2 F6 — 연달아 처리): 처리한 행 다음의 `신청됨` 행 `구매 완료`(끝이면 앞쪽 첫 행), 없으면 화면 제목(패널이 `moveFocusToResult`로 이미 옮겼다).
+function focusNextComplete(rows: PurchaseListRowView[], doneId: string): void {
+  const at = rows.findIndex((row) => row.id === doneId);
+  const ordered = at < 0 ? rows : [...rows.slice(at + 1), ...rows.slice(0, at)];
+  const next = ordered.find((row) => row.status === "requested");
+  if (!next) return;
+  document.querySelector<HTMLElement>(`a[href$="purchase=${next.id}"]`)?.focus();
+}
+
+export function PurchaseList({ rows, listHref, canComplete, doneId }: { rows: PurchaseListRowView[]; listHref: string; canComplete: boolean; doneId: string | null }) {
+  useEffect(() => {
+    const done = lastDone;
+    if (!done || !done.focusNext || done.id !== doneId) return;
+    // 패널이 닫히며 화면 제목으로 옮긴 포커스 뒤에(같은 커밋의 정리 효과 다음 틱).
+    const timer = window.setTimeout(() => {
+      done.focusNext = false;
+      focusNextComplete(rows, done.id);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [rows, doneId]);
+  const columns = canComplete ? [...COLUMNS, actionsColumn(listHref)] : COLUMNS;
+  return <Table caption="구매 요청" columns={columns} rows={rows} getRowId={(row) => row.id} />;
 }
 
 // 「Error — 목록 로드」 — 목록 자리 한 줄 + 2차 `다시 시도`(같은 쿼리로 서버가 다시 그린다).

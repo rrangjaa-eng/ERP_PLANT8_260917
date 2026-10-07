@@ -5,7 +5,19 @@ import { projectMany, type DtoSpec } from "@/domain/permissions/project";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { recordAction } from "@/domain/action-log/record";
 import { diffKrw, moneyToColumns, normalizeMoneyInput, toKrw, type MoneyInput } from "@/domain/money";
-import { createCardUsage, precheckCardUsage, type CardUsageInput, type CardUsagePre } from "@/domain/corp-card-usages";
+import {
+  createCardUsage,
+  precheckCardUsage,
+  previewPurchaseCard,
+  purchaseCardFormOptions,
+  type CardUsageInput,
+  type CardUsagePre,
+  type PurchaseCardFormOptions,
+  type PurchaseCardPreview,
+} from "@/domain/corp-card-usages";
+import { PICK_VENDOR_OPTION_SPEC, type PickVendorOptionDto } from "@/domain/expenses/pick";
+import { normalizeVendorName } from "@/domain/vendors";
+import { vendorKindsFor } from "@/domain/vendors/kind";
 import { formatKrw } from "@/lib/format-number";
 import { cardExecutionCap } from "@/domain/corp-card-usages/amounts";
 import {
@@ -23,7 +35,7 @@ import {
   type LineRoomBasis,
 } from "@/domain/corp-card-usages/link-targets";
 import { loadPurchaseRequestNumberFormat, allocatePurchaseRequestNumber, type PurchaseRequestNumberFormat } from "@/domain/document-numbering";
-import { lineExecution, numberedSupplyText } from "@/domain/expenses";
+import { codeLabelsOf, lineExecution, numberedSupplyText } from "@/domain/expenses";
 import { EXPENSE_DOCUMENT_KIND } from "@/domain/expenses/access";
 import { CompletedProjectError } from "@/domain/projects";
 import { loadActorTeamScope, ProjectNotFoundError } from "@/domain/projects/status";
@@ -42,7 +54,8 @@ import { findProjectById } from "@/repositories/projects";
 import { findLatestQuoteRevision, findQuoteRevisionById } from "@/repositories/quote-revisions";
 import { findQuoteLineById, listQuoteLinesByRevisions } from "@/repositories/quote-lines";
 import { findLineLinks, lockQuoteLines } from "@/repositories/quote-line-links";
-import { findVendorNamesByIds } from "@/repositories/vendors";
+import { findVendorNamesByIds, listVendorsForPick } from "@/repositories/vendors";
+import { findUserNamesByIds } from "@/repositories/users";
 import type { DbOrTx } from "@/repositories/document-counters";
 import {
   findPurchaseRequestById,
@@ -314,6 +327,132 @@ export async function completePurchaseRequest(viewer: Viewer, input: PurchaseCom
   return withTransaction(runComplete);
 }
 
+// ── S13 패널 로드 · 서버 계산 한 줄(06-12) ───────────────────────────────────
+
+export type PurchaseCompletionDto = {
+  id: string;
+  number: string;
+  itemName: string;
+  linkUrl: string | null;
+  version: number;
+  status: PurchaseRequestStatusValue;
+  linkKind: "quote_line" | "team_cost";
+  /** 견적 줄 요청의 연결 읽기 — `{프로젝트 번호} {이름}` · 줄 항목. 팀 비용이면 null. */
+  projectLabel: string | null;
+  lineItemName: string | null;
+  requestedByName: string;
+  currency: string;
+  /** 예상 금액 입력값 — 원화면 원화, 외화면 외화 금액. */
+  amount: number;
+  fxRate: number;
+  estimateKrw: number;
+};
+
+const PURCHASE_COMPLETION_DTO_SPEC: DtoSpec<PurchaseCompletionDto, PurchaseCompletionDto> = {
+  fields: [
+    ...(["id", "number", "itemName", "linkUrl", "version", "status", "linkKind", "requestedByName"] as const).map((key) => ({ key, from: key, infoItem: "purchase_request.value" })),
+    ...(["projectLabel", "lineItemName"] as const).map((key) => ({ key, from: key, infoItem: ["purchase_request.value", "project.value"] })),
+    ...(["currency", "amount", "fxRate", "estimateKrw"] as const).map((key) => ({ key, from: key, infoItem: "purchase_request.amount" })),
+  ],
+};
+
+registerDto({ name: "PurchaseCompletionDto", fields: PURCHASE_COMPLETION_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
+
+export type PurchaseCompletionPanel = {
+  request: Partial<PurchaseCompletionDto>;
+  /** 가맹점 기본값 = 온라인구매 협력사(견적 줄 요청은 그 줄 거래처). 고를 수 없는 거래처면 null. */
+  merchant: Partial<PickVendorOptionDto> | null;
+  options: PurchaseCardFormOptions;
+  /** 오늘 기준 팀 비용의 팀(요청자 소속) — 사용일을 바꾸면 서버 계산 한 줄이 다시 보낸다. */
+  teamName: string | null;
+  teamAssigned: boolean;
+  /** 그사이 상태가 바뀐 요청의 이유(`구매 요청 취소됨 · 새로 고침` 등) — 1차 비활성. */
+  statusReason: string | null;
+};
+
+async function onlineMerchant(viewer: Viewer): Promise<Partial<PickVendorOptionDto> | null> {
+  const name = await getSettingValue(PURCHASE_ONLINE_VENDOR_NAME);
+  const found = name.trim() ? await listVendorsForPick(viewer, { normalizedQuery: normalizeVendorName(name), limit: 10, kinds: vendorKindsFor("supplier") }) : [];
+  const vendor = found.find((candidate) => candidate.name === name) ?? null;
+  if (!vendor) return null;
+  const evidenceNames = await codeLabelsOf(viewer, "evidence_type");
+  const option: PickVendorOptionDto = {
+    id: vendor.id,
+    name: vendor.name,
+    defaultEvidenceType: vendor.defaultEvidenceType,
+    defaultEvidenceName: vendor.defaultEvidenceType ? (evidenceNames.get(vendor.defaultEvidenceType) ?? vendor.defaultEvidenceType) : null,
+  };
+  const [projected] = await projectMany(viewer, [option], PICK_VENDOR_OPTION_SPEC);
+  return projected?.id ? projected : null;
+}
+
+// `?purchase={id}` — 구매 권한이 없거나 없는 요청이면 null(패널을 그리지 않는다).
+export async function loadPurchaseCompletion(viewer: Viewer, id: string, today: string = seoulToday()): Promise<PurchaseCompletionPanel | null> {
+  if (!UUID_SHAPE.test(id) || !(await can(viewer, "cards.purchases", "write"))) return null;
+  const row = await findPurchaseRequestById(viewer, id);
+  if (!row) return null;
+  let projectLabel: string | null = null;
+  let lineItemName: string | null = null;
+  if (row.quoteLineId && row.projectId) {
+    const project = await findProjectById(viewer, row.projectId);
+    projectLabel = project ? `${project.number} ${project.name}` : null;
+    lineItemName = (await findQuoteLineById(viewer, row.quoteLineId))?.itemName ?? null;
+  }
+  const dto: PurchaseCompletionDto = {
+    id: row.id,
+    number: row.number,
+    itemName: row.itemName,
+    linkUrl: row.linkUrl,
+    version: row.version,
+    status: row.status as PurchaseRequestStatusValue,
+    linkKind: row.linkKind === "team_cost" ? "team_cost" : "quote_line",
+    projectLabel,
+    lineItemName,
+    requestedByName: (await findUserNamesByIds(viewer, [row.requestedBy])).get(row.requestedBy) ?? "",
+    currency: row.estimateCurrency,
+    amount: row.estimateForeignAmount === null ? row.estimateAmountKrw : Number(row.estimateForeignAmount),
+    fxRate: Number(row.estimateFxRate),
+    estimateKrw: row.estimateAmountKrw,
+  };
+  const [request] = await projectMany(viewer, [dto], PURCHASE_COMPLETION_DTO_SPEC);
+  const team = row.linkKind === "team_cost" ? await previewPurchaseCard(viewer, { requestId: row.id, requesterId: row.requestedBy, lineId: null, usedOn: today, total: null, evidenceTypeCode: null }) : null;
+  return {
+    request: request ?? {},
+    merchant: await onlineMerchant(viewer),
+    options: await purchaseCardFormOptions(viewer),
+    teamName: team?.teamName ?? null,
+    teamAssigned: team?.teamAssigned ?? true,
+    statusReason: row.status === "requested" ? null : statusChangedError(row.status).message,
+  };
+}
+
+export type PurchaseCompletionPreview = PurchaseCardPreview & {
+  /** 결제 합계 ≠ 예상 금액이면 두 원화 환산액(O-10 — 막지 않는다). 같거나 예상 금액을 못 보면 null. */
+  estimate: { estimateKrw: number; diffKrw: number } | null;
+};
+
+// S13 서버 계산 한 줄 — 카드 쪽 계산(06-05 · 06-07 식) + 예상 금액 차이. 트랜잭션 없음.
+export async function previewPurchaseCompletion(
+  viewer: Viewer,
+  input: { requestId: string; usedOn: string; total: MoneyInput | null; evidenceTypeCode: string | null },
+): Promise<PurchaseCompletionPreview> {
+  if (!(await can(viewer, "cards.purchases", "write"))) throw new ForbiddenError(PURCHASE_DENIED);
+  const row = await findPurchaseRequestById(viewer, input.requestId);
+  if (!row) throw new PurchaseRequestRejectedError(REQUEST_MISSING);
+  const card = await previewPurchaseCard(viewer, {
+    requestId: row.id,
+    requesterId: row.requestedBy,
+    lineId: row.linkKind === "quote_line" ? row.quoteLineId : null,
+    usedOn: input.usedOn,
+    total: input.total,
+    evidenceTypeCode: input.evidenceTypeCode,
+  });
+  const totalKrw = input.total ? toKrw(normalizeMoneyInput(input.total)) : null;
+  const diff = totalKrw === null ? 0 : diffKrw(totalKrw, row.estimateAmountKrw);
+  const estimateShown = await visible(viewer, "purchase_request.amount");
+  return { ...card, estimate: diff !== 0 && estimateShown ? { estimateKrw: row.estimateAmountKrw, diffKrw: diff } : null };
+}
+
 // ── 목록 ───────────────────────────────────────────────────────────────────
 
 export type PurchaseRequestStatusValue = "requested" | "purchased" | "cancelled";
@@ -333,6 +472,9 @@ export type PurchaseRequestListItemDto = {
   foreignAmount: number | null;
   fxRate: number;
   estimateKrw: number;
+  /** 06-12 구매 완료 행 2행 `카드 사용 {MM-DD} · {결제 합계}` — 구매 완료 건의 카드 사용(아니면 null). */
+  usageUsedOn: string | null;
+  usageTotalKrw: number | null;
 };
 
 const VALUE_KEYS = ["id", "number", "requestedOn", "itemName", "linkUrl", "requestedByName", "status"] as const;
@@ -344,6 +486,8 @@ export const PURCHASE_REQUEST_LIST_DTO_SPEC: DtoSpec<PurchaseRequestListItemDto,
     // 연결 칸은 프로젝트 이름을 싣는다 — 구매 요청 값과 프로젝트 값을 둘 다 볼 때만(all-of).
     { key: "linkLabel", from: "linkLabel", infoItem: ["purchase_request.value", "project.value"] },
     ...AMOUNT_KEYS.map((key) => ({ key, from: key, infoItem: "purchase_request.amount" })),
+    { key: "usageUsedOn", from: "usageUsedOn", infoItem: "card_usage.value" },
+    { key: "usageTotalKrw", from: "usageTotalKrw", infoItem: "card_usage.amount" },
   ],
 };
 
@@ -385,6 +529,8 @@ function toProjectable(row: PurchaseRequestListRow, lineNo: Map<string, number>)
     foreignAmount: row.estimateForeignAmount === null ? null : Number(row.estimateForeignAmount),
     fxRate: Number(row.estimateFxRate),
     estimateKrw: row.estimateAmountKrw,
+    usageUsedOn: row.usageUsedOn,
+    usageTotalKrw: row.usageTotalKrw,
   };
 }
 
@@ -396,6 +542,8 @@ export type PurchaseRequestListFilters = {
   /** `YYYY-MM`(요청일 월) — 없으면 모든 달. */
   month?: string | null;
   page?: string;
+  /** 06-12 방금 구매 완료한 요청 — 상태 보기와 무관하게 제자리에 남긴다(S13 성공 뒤 제자리 결과). 범위 조건은 그대로. */
+  keepId?: string | null;
 };
 
 export type PurchaseRequestList = {
@@ -429,7 +577,8 @@ export async function listPurchaseRequests(viewer: Viewer, filters: PurchaseRequ
     ...(filters.month ? monthBounds(filters.month) : {}),
   };
   // 판정(can · 소속)은 위에서 끝내고 트랜잭션 안에서는 목록 쿼리 하나만 — lock_timeout(5s)이 잠금 대기를 끊는다(로드 오류 갈래).
-  const rows = await withTransaction((tx) => listPurchaseRequestRows(viewer, { scope, filter }, tx));
+  const keepId = filters.keepId && UUID_SHAPE.test(filters.keepId) ? filters.keepId : null;
+  const rows = await withTransaction((tx) => listPurchaseRequestRows(viewer, { scope, filter, keepId }, tx));
   const anyInScope = rows.length > 0 || (Object.keys(filter).length > 0 && (await withTransaction((tx) => listPurchaseRequestRows(viewer, { scope, filter: {} }, tx))).length > 0);
   const lineNo = await lineNumbers(viewer, rows.flatMap((row) => (row.lineRevisionId ? [row.lineRevisionId] : [])));
   const projected = await projectMany(viewer, rows.map((row) => toProjectable(row, lineNo)), PURCHASE_REQUEST_LIST_DTO_SPEC);

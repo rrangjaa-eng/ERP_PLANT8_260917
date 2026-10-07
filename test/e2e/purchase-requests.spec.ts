@@ -306,7 +306,7 @@ test.describe("구매 요청 신청 (06-08)", () => {
 
 // ── 06-12 구매 완료(S13 · S11 구매 완료 행 · S8 등록 칸) ─────────────────────────
 
-const PURCHASER_VISIBLE = ["purchase_request.value", "purchase_request.amount", "project.value", "quote.amount", "card_usage.value", "card_usage.amount", "team.value"];
+const PURCHASER_VISIBLE = ["purchase_request.value", "purchase_request.amount", "project.value", "quote.amount", "card_usage.value", "card_usage.amount", "team.value", "vendor.value"];
 
 // 구매 권한자(`cards.purchases` write) — 요청자와 다른 새 팀.
 async function makePurchaser(): Promise<Person> {
@@ -327,6 +327,13 @@ async function requestOn(requester: Requester, lineId: string, itemName: string,
 
 function completePanel(page: Page) {
   return page.getByRole("dialog", { name: "구매 완료" });
+}
+
+// 활성 카드가 여러 장이면 카드 칸은 기본값 없는 `Select`(UI-SPEC S13 「카드(여러 장일 때)」), 한 장이면 읽기 텍스트 — 다른 스펙이 카드를 더 만들 수 있다.
+async function pickCard(sheet: ReturnType<typeof completePanel>, label: string): Promise<void> {
+  const select = sheet.getByRole("combobox", { name: "카드" });
+  if ((await select.count()) > 0) await select.selectOption({ label });
+  else await expect(sheet.getByText(label, { exact: true })).toBeVisible();
 }
 
 test.describe("구매 완료 (06-12)", () => {
@@ -365,6 +372,7 @@ test.describe("구매 완료 (06-12)", () => {
 
     const amount = sheet.getByLabel("결제 합계");
     await waitForHydration(amount);
+    await pickCard(sheet, `공용카드-${suffix} · 공용사-${suffix} 4401`);
     await amount.press("Control+Enter");
 
     await expect(sheet).toHaveCount(0);
@@ -382,4 +390,5 @@ test.describe("구매 완료 (06-12)", () => {
     await expect(usageRow.getByRole("button", { name: /삭제$/ })).toHaveCount(0);
     await page.context().close();
   });
+
 });

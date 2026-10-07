@@ -15,12 +15,14 @@ import { validateRejectReason } from "@/domain/approvals";
 import { buildEvidenceVoidedMessage } from "@/domain/approvals/conflict-message";
 import { canSeeExpense, EXPENSE_ALREADY_CLOSED, EXPENSE_DOCUMENT_KIND, ExpenseCloseRefusedError, ExpenseConflictError, ExpenseNotFoundError } from "@/domain/expenses";
 import { EVIDENCE_FILE_DTO_SPEC, type EvidenceFileDto } from "@/domain/evidence/dto";
+import { hasEvidence } from "@/domain/evidence/has-evidence";
 import { checkEvidenceUpload, EVIDENCE_UPLOAD_FAILED, type EvidenceDuplicate } from "@/domain/evidence/upload-checks";
 import { bumpInstanceVersion } from "@/repositories/approvals";
-import { deleteReviewByExpense, type EvidenceReviewStatus } from "@/repositories/expense-evidence-reviews";
-import { bumpExpenseVersion } from "@/repositories/expense-payments";
+import { clearEvidenceValues, deleteReviewByExpense, type EvidenceReviewStatus } from "@/repositories/expense-evidence-reviews";
+import { bumpExpenseVersion, findLivePayment } from "@/repositories/expense-payments";
 import { findExpenseApprovalInstance, findExpenseById, lockExpenseForUpdate } from "@/repositories/expenses";
 import { findActiveBySha, findAliveFileOfIntent, findFileById, insertFile, listActiveByOwner, markRemoved, markVoided, type FileRow } from "@/repositories/files";
+import { lockProjectForWrite } from "@/repositories/projects";
 import { findUserById } from "@/repositories/users";
 import { completeIntentIfOpen, findIntentById, insertIntent } from "@/repositories/upload-intents";
 
@@ -83,6 +85,8 @@ type OwnerState = {
   updatedAt: Date;
   // 06-11 — 문서 version(결재 통과 문서의 증빙 변경이 올린다 · B-1). 주인 종류에 문서 version이 없으면 0.
   version: number;
+  // 06-11 — 지출결의의 프로젝트(팀 비용 문서는 null). 무효 잠금(X-12)이 프로젝트 행을 먼저 잡는 데 쓴다.
+  projectId: string | null;
   instance: { id: string; version: number } | null;
   // 06-28: 종결 문서 — 증빙은 읽기만(기안자도 더하거나 떼지 못한다).
   closed: boolean;
@@ -98,6 +102,8 @@ type OwnerRule = {
   // 결재 중(붙이기 권한자만 더함 · 아무도 못 뗌) · 승인(무효 처리만).
   inReview(owner: OwnerState): boolean;
   approved(owner: OwnerState): boolean;
+  // 06-11(X-12) — 주인보다 먼저 잡는 상위 행(05 N-3 순서: 프로젝트 → 지출결의 → 파일). 상위 행이 없는 주인은 건너뛴다.
+  lockParent?(viewer: Viewer, owner: OwnerState, tx: DbOrTx): Promise<unknown>;
   // 06-11(C4 · B-1) — 결재 통과 문서의 증빙 추가 · 무효가 같은 트랜잭션에서 부른다. 풀린 확인 기록의 status를 돌려준다(없으면 null).
   onApprovedEvidenceChange?(viewer: Viewer, owner: OwnerState, change: { kind: "add" | "void" }, tx: DbOrTx): Promise<EvidenceReviewStatus | null>;
   attachMenu: "expenses.evidence_attach";
@@ -119,6 +125,7 @@ async function expenseState(viewer: Viewer, ownerId: string, tx?: DbOrTx): Promi
     status: instance?.status ?? null,
     updatedAt: row.updatedAt,
     version: row.version,
+    projectId: row.projectId,
     instance: instance ? { id: instance.id, version: instance.version } : null,
     closed: row.closedAt !== null,
   };
@@ -129,11 +136,15 @@ const expenseDrafterRemoves = (owner: OwnerState) =>
 
 // 결재 통과 문서에서만 일한다(작성 중 · 결재 중 · 반려 · 회수는 문서 version을 올리지 않는다 — X-1). 확인 기록 줄은 있을 때만 지우고,
 // 문서 version은 기록 유무와 상관없이 올린다 — 보지 않은 증빙은 옛 version으로 확인되지 않는다(B-1). 훅 안에서 권한 · 설정을 읽지 않는다.
-async function expenseApprovedEvidenceChange(viewer: Viewer, owner: OwnerState, tx: DbOrTx): Promise<EvidenceReviewStatus | null> {
+// 무효로 살아 있는 파일이 0이 되면 증빙 금액 · 증빙일을 지운다(EVID-04) — 단 지급 완료 문서는 지우지 않는다(지급 뒤 증빙 금액 수정 막기, 06-10).
+async function expenseApprovedEvidenceChange(viewer: Viewer, owner: OwnerState, change: { kind: "add" | "void" }, tx: DbOrTx): Promise<EvidenceReviewStatus | null> {
   if (owner.status !== "approved") return null;
   const released = await deleteReviewByExpense(viewer, owner.id, tx);
   const version = await bumpExpenseVersion(viewer, { expenseId: owner.id, expectedVersion: owner.version, updatedBy: viewer.id }, tx);
   if (version === null) throw new ExpenseNotFoundError();
+  if (change.kind === "void" && !(await hasEvidence(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: owner.id }, tx)) && !(await findLivePayment(viewer, owner.id, tx))) {
+    await clearEvidenceValues(viewer, owner.id, tx);
+  }
   return released;
 }
 
@@ -146,7 +157,8 @@ const OWNER_RULES: Record<string, OwnerRule> = {
     drafterRemoves: expenseDrafterRemoves,
     inReview: (owner) => owner.status !== null && EXPENSE_IN_REVIEW_STATUSES.has(owner.status),
     approved: (owner) => owner.status === "approved",
-    onApprovedEvidenceChange: (viewer, owner, _change, tx) => expenseApprovedEvidenceChange(viewer, owner, tx),
+    lockParent: (viewer, owner, tx) => (owner.projectId ? lockProjectForWrite(viewer, owner.projectId, tx) : Promise.resolve(null)),
+    onApprovedEvidenceChange: expenseApprovedEvidenceChange,
     attachMenu: "expenses.evidence_attach",
     voidMenu: "expenses.evidence_void",
     notFound: () => new ExpenseNotFoundError(),
@@ -487,7 +499,7 @@ export async function getEvidenceActions(viewer: Viewer, input: { ownerKind: str
 
 // 05-09(사용자 결정 2026-09-26 PR #89): 승인된 문서의 잘못 붙은 증빙 — 행 · 저장소 객체는 그대로 두고 무효 세 칸만 쓴다. 사유는 04.1 반려
 // 사유 검증 그대로, 로그에는 사유 길이만. 승인 뒤라 결재 판정이 없어 인스턴스 version은 올리지 않는다. 되돌리는 길은 없다(G3 — 같은
-// 파일을 다시 올린다). 잠금: 소유 문서 행(rule.lock — 지출결의는 lockExpenseForUpdate) → 파일 행(조건 UPDATE). 06-06 증빙 확인과 같은 순서라
+// 파일을 다시 올린다). 잠금: 상위 행(rule.lockParent — 지출결의는 프로젝트 행 · X-12) → 소유 문서 행(rule.lock — 지출결의는 lockExpenseForUpdate) → 파일 행(조건 UPDATE) → 확인 기록 줄(06-11 훅). 06-06 증빙 확인과 같은 순서라
 // 확인 tx가 읽은 파일 묶음을 무효가 그 사이에 줄이지 못한다(06-06 검토 S-7).
 export async function voidEvidence(viewer: Viewer, input: { fileId: string; reason: string }, deps?: EvidenceDeps): Promise<void> {
   const file = UUID_SHAPE.test(input.fileId) ? await findFileById(viewer, input.fileId) : null;
@@ -500,9 +512,14 @@ export async function voidEvidence(viewer: Viewer, input: { fileId: string; reas
   const gate = await loadActionLogGate();
 
   const already = await withTransaction(async (tx) => {
-    if (!(await rule.lock(viewer, file.ownerId, tx))) throw rule.notFound();
+    // 잠금 순서(X-12 · 05 N-3): 프로젝트 행 → 지출결의 행 → 파일 행(조건 UPDATE) → 확인 기록 줄. 결재 통과 문서는 프로젝트가 바뀌지 않아 다시 읽지 않는다.
+    await rule.lockParent?.(viewer, owner, tx);
+    const locked = await rule.lock(viewer, file.ownerId, tx);
+    if (!locked) throw rule.notFound();
+    await deps?.afterLock?.();
     const voided = await markVoided(viewer, { id: file.id, voidedBy: viewer.id, reason, at: deps?.now }, tx);
     if (!voided) return findFileById(viewer, file.id, tx);
+    const released = (await rule.onApprovedEvidenceChange?.(viewer, locked, { kind: "void" }, tx)) ?? null;
     await recordActionInTx(
       viewer,
       {
@@ -510,7 +527,7 @@ export async function voidEvidence(viewer: Viewer, input: { fileId: string; reas
         entity: "file",
         entityId: file.id,
         documentId: file.ownerId,
-        detail: { change: "evidence_void", fileId: file.id, reasonLength: reason.length },
+        detail: { change: "evidence_void", fileId: file.id, reasonLength: reason.length, ...(released ? { reviewReleased: released } : {}) },
       },
       tx,
       gate,

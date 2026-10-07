@@ -27,7 +27,7 @@ import { insertFile } from "@/repositories/files";
 import { seoulToday } from "@/lib/dates";
 import { createMemoryStorage } from "./fakes/memory-storage";
 import { deferred, waitForLockWaiter } from "./lock-race";
-import { attachEvidence, makeEvidenceManager, setupExpenseProject, submitReadyDraft } from "./fixtures/expenses";
+import { addApprovedRevision, attachEvidence, makeEvidenceManager, setupExpenseProject, submitReadyDraft } from "./fixtures/expenses";
 import { approvedExpenseWithEvidence, approvedExpenseWithoutEvidence, makePaymentManager, setEvidenceRequired, type ApprovedExpense } from "./fixtures/payments";
 
 // 06-11(EVID-02 · EVID-03 · EVID-04 · C4 · B-1 · U-4 · X-12 · E-49) — 증빙 수명 주기: 결재 통과 문서의 증빙 추가 · 무효가 확인을 풀고 문서 version을 올린다.
@@ -401,7 +401,8 @@ describe("중복 범위 (06-11 Task 3)", () => {
     await attachEvidence(fx.pm, approved.expenseId, storage, { sha256: sharedSha });
     const seen = await caught(requestEvidenceUpload(fx.pm, declare(draftA, sharedSha), { storage }));
     expect((seen as Error).message).toBe(evidenceDuplicateElsewhere(await expenseNumber(approved.expenseId)));
-    const otherDraft = (await createExpenseFromLines(fx.otherPm, { lineIds: [fx.lines.noVendor] })).created[0]?.expenseId ?? "";
+    const extra = await addApprovedRevision(fx, [{ itemName: "추가 현장", vendorId: fx.stageOneId, execution: { currency: "KRW", amount: 2_000_000, fxRate: 1 } }]);
+    const otherDraft = (await createExpenseFromLines(fx.otherPm, { lineIds: [extra.lineIds.get("추가 현장") ?? ""] })).created[0]?.expenseId ?? "";
     const hidden = await caught(requestEvidenceUpload(fx.otherPm, declare(otherDraft, sharedSha), { storage }));
     expect((hidden as Error).message).toBe(EVIDENCE_DUPLICATE_HIDDEN);
   });

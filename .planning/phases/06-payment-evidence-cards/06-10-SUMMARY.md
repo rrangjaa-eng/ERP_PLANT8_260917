@@ -203,3 +203,28 @@ C4(`evidenceTypeInactive` · `paymentMethodInactive`)는 있었다 — 선결제
 ## Self-Check: PASSED
 
 파일 6건 · 커밋 8건 모두 확인.
+
+## 검토 반영 (06-10-review.md · 06-10-dom-audit.md)
+
+| 지적 | 처리 | 커밋 | 테스트 |
+|---|---|---|---|
+| B-1 EA-1이 새 팀 비용 첫 저장에서 빠짐 | EA-1 판정을 `assertEvidenceAmountNotTaxInclusive`(`domain/expenses/index.ts`) 하나로 옮겨 `saveExpenseDraft`(합친 행)와 `createTeamExpenseDraft`(칸 값)가 함께 부름 | eb56fae(RED) · 2891ca9 | 통합 「새 팀 비용 첫 저장 — EA-1」 RED → GREEN |
+| I-1 지급 뒤 빈 증빙 금액 채우기 예외 | 추천안 (a): `paidEvidenceAmountRejection`(`domain/evidence-reviews/index.ts`) 한 함수가 지급 완료 문서 판정 — 있는 금액 수정 거부(기존) · 빈 금액은 지급 기록 `gross_supply_krw`와 같은 값만, 다르면 `지급 공급가와 다름 · 지급 취소 뒤 고치기`. 잠금 뒤 같은 tx. 지급 전 동작 그대로 | df7264a(RED) · 2261fa1 | 통합 같은 값 허용(녹색 유지) · 다른 값 거부(RED → GREEN) · 있는 값 수정 거부(기존) |
+| I-2 면제 E2E가 전역 `evidence.required`를 바꿈 | 면제 E2E에서 설정 쓰기를 뺌. 증빙 필수 켬 · 끔 어느 쪽이든 서는 3차 `증빙 면제` 흐름만 단언(P3 전용 단언 `aria-disabled` · S4 empty 줄은 E2E에서 뺌 — DOM 감사 실측으로 남음) | 44238d4 | `--workers=2` evidence-waive-prepaid + payment-single 22/22, + expense-form 35/35 |
+| D-1 P6 면제 뒤 포커스가 2차 `지급 취소` | 결과 글자 `payment-result`를 먼저 찾고 없으면 고정 줄 버튼(P4 1차) | 44238d4(RED) · 12c042f | E2E 「지급된 선결제 문서(P6) → 포커스는 결과 글자」 RED → GREEN |
+| D-2 증빙 금액 서버 오류가 고친 뒤에도 남음 | 증빙 금액 onChange에서 그 칸 오류 지움(증빙일은 지시 범위 밖 — 그대로) | 44238d4(RED) · 12c042f | E2E EA-1 케이스 RED → GREEN |
+| D-3 선결제 끄고 켜면 사유 되살아남 | 끌 때 `setPrepaidReason("")` | 12c042f | E2E 끄고 켜면 빈 칸(D-4 RED 뒤라 RED 단계 미도달 — GREEN 확인) |
+| 검토 S-6 서버 오류를 화면 값으로 짐작해 사유 칸에 붙임 | 같은 곳 — `message === PREPAID_REASON_REQUIRED`일 때만 사유 칸 오류 | 12c042f | (E2E 첫 케이스 녹색) |
+| D-4 `선결제`가 첨부 영역 바로 아래 아님 | `선결제` · `선결제 사유`를 첨부 영역 바로 뒤로, 그다음 증빙 금액 · 증빙일 | 44238d4(RED) · 12c042f | E2E 위치 단언 RED → GREEN |
+| 검토 S-3 새 문서 선결제 사유 검사 테스트 없음 | 통합 「새 팀 비용 첫 저장 — 선결제 · 사유 빔 거부」 1개(기존 동작이라 처음부터 녹색) | eb56fae | 통합 |
+
+- 고치지 않음(지시): S-1 P5 서버 `tertiary: "change"`(06-04 · 06-06 소유), S-2 · S-4 · S-5(D-3과 같음 — 고침) · S-7 · 관찰 O-1~O-7, 260907 숨은 규칙.
+- 점검표: `docs/design/checks/2026-10-07-06-10-review-fixes.md`.
+- 캡처 대상 추가: `/expenses/{작성 중 id}` 증빙 묶음 칸 순서(첨부 → 선결제 → 사유 → 증빙 금액 → 증빙일) · 지급된 선결제 문서 면제 뒤 포커스. O-7 정정: 면제 2행은 `{이름} {MM-DD} · {사유}`(코드 · UI-SPEC과 같음).
+- 검증: 통합 5파일(evidence-waive-prepaid · evidence-reviews · expense-payments-concurrency · expense-team-attribution · expense-create-fields) 74/74 · 단위(domain/expenses · domain/evidence-reviews · import-cycles · leak-scan-coverage) 146/146 · `pnpm lint` · `pnpm typecheck` rc 0(잠금 안) · E2E `CI=true --project=desktop --workers=2` evidence-waive-prepaid + payment-single + expense-form 35/35(두 스펙 짝은 22/22로 한 번 더).
+
+### 사용자 질문 후보(검토 반영분)
+
+| # | 무엇을 골랐나 | 왜 | 다른 안 |
+|---|---|---|---|
+| Q7 | 검토 I-1 (a): 지급 뒤 빈 증빙 금액은 지급 기록 공급가와 같은 값만 받음, 다르면 `지급 공급가와 다름 · 지급 취소 뒤 고치기`(새 문구 — UI-SPEC에 없음, 기존 I-2 문구와 같은 명사형) | 장부 · 통장이 갈리지 않고 P5 교착도 없음(검토자 추천) | (b) 지급 뒤에는 금액 없이 확인만 · (c) 전부 거부(지급 취소 → 확인 → 다시 지급) · (d) 예외 유지 — 판정은 `paidEvidenceAmountRejection` 한 함수라 다른 안도 그 함수만 바뀜 |

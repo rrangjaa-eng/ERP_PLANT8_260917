@@ -4,11 +4,14 @@ import { visible } from "@/domain/permissions/visible";
 import { projectMany, type DtoSpec } from "@/domain/permissions/project";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { recordAction } from "@/domain/action-log/record";
-import { moneyToColumns, normalizeMoneyInput, toKrw, type MoneyInput } from "@/domain/money";
+import { diffKrw, moneyToColumns, normalizeMoneyInput, toKrw, type MoneyInput } from "@/domain/money";
+import { createCardUsage, precheckCardUsage, type CardUsageInput, type CardUsagePre } from "@/domain/corp-card-usages";
+import { formatKrw } from "@/lib/format-number";
 import { cardExecutionCap } from "@/domain/corp-card-usages/amounts";
 import {
   CARD_LINK_LINE_SPEC,
   cardLinkProjectChoice,
+  currentLineForFixedLink,
   lineRoom,
   lineRoomHint,
   loadLineRoomBasis,
@@ -42,8 +45,11 @@ import { findLineLinks, lockQuoteLines } from "@/repositories/quote-line-links";
 import { findVendorNamesByIds } from "@/repositories/vendors";
 import type { DbOrTx } from "@/repositories/document-counters";
 import {
+  findPurchaseRequestById,
   insertPurchaseRequest,
   listPurchaseRequestRows,
+  lockPurchaseRequestForUpdate,
+  markPurchaseRequestPurchased,
   readLockedLineFacts,
   type PurchaseRequestFilter,
   type PurchaseRequestListRow,
@@ -218,6 +224,94 @@ export async function createPurchaseRequest(
     return { id: row.id, number: row.number };
   };
   return tx ? await runCreate(tx) : await withTransaction(runCreate);
+}
+
+// ── 구매 완료(06-12 — EXP-10 · OPS-09 · R-3 · N-3 · Q-E) ─────────────────────
+
+const PURCHASE_DENIED = "구매 처리 권한 없음";
+const REQUEST_CANCELLED = "구매 요청 취소됨 · 새로 고침";
+const REQUEST_PURCHASED = "이미 구매 완료 · 새로 고침";
+const REQUEST_STALE = "다른 저장이 먼저 됨 · 새로 고침";
+const REQUEST_MISSING = "구매 요청 없음 · 새로 고침";
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** 구매 완료 입력 — 사람이 보내는 칸만(카드 · 사용일 · 가맹점 · 결제 합계 · 증빙 종류 · 메모 · version). 연결 · 사용한 사람 · 팀은 요청과 서버가 정한다. */
+export type PurchaseCompletionInput = {
+  requestId: string;
+  version: number;
+  corpCardId: string;
+  usedOn: string;
+  merchantVendorId: string | null;
+  total: MoneyInput;
+  evidenceTypeCode: string;
+  memo: string | null;
+};
+
+/** 트랜잭션 전 사실(06-03 tx 규약) — 요청 · 카드 사용 갈래의 `pre` · 예상 금액과의 차이(O-10). */
+export type PurchaseCompletionPre = {
+  requestId: string;
+  /** 견적 줄 요청이면 그 줄(앞 차수 줄일 수 있다 — 계보로 현재 줄에 닿는다), 팀 비용이면 null. */
+  lineId: string | null;
+  cardInput: CardUsageInput;
+  card: CardUsagePre;
+  /** 결제 합계 원화 − 예상 금액 원화(O-10 — 막지 않는다). */
+  diffKrw: number;
+};
+
+export type CompletedPurchase = { requestId: string; usageId: string; totalKrw: number; usedOn: string; capOver: number | null };
+
+// 그사이 상태가 바뀐 요청의 거부 문구(UI-SPEC S13 「요청이 그사이 취소·완료됐으면」).
+function statusChangedError(status: string): PurchaseRequestRejectedError {
+  return new PurchaseRequestRejectedError(status === "cancelled" ? REQUEST_CANCELLED : status === "purchased" ? REQUEST_PURCHASED : REQUEST_STALE);
+}
+
+// 트랜잭션 밖에서만. 권한 → 요청(잠금 없음) · 상태 · version → 카드 사용 `purchase` 갈래(R-3) → 예상 금액 차이(O-10).
+// 요청자 = 처리자도 막지 않는다(O-20 확정 — 판정 없음).
+export async function precheckPurchaseCompletion(viewer: Viewer, input: PurchaseCompletionInput): Promise<PurchaseCompletionPre> {
+  if (!(await can(viewer, "cards.purchases", "write"))) throw new ForbiddenError(PURCHASE_DENIED);
+  const row = UUID_SHAPE.test(input.requestId) ? await findPurchaseRequestById(viewer, input.requestId) : null;
+  if (!row) throw new PurchaseRequestRejectedError(REQUEST_MISSING);
+  if (row.status !== "requested") throw statusChangedError(row.status);
+  if (row.version !== input.version) throw new PurchaseRequestRejectedError(REQUEST_STALE);
+  const common = {
+    corpCardId: input.corpCardId,
+    usedOn: input.usedOn,
+    merchantVendorId: input.merchantVendorId,
+    total: input.total,
+    evidenceTypeCode: input.evidenceTypeCode,
+    memo: input.memo,
+    usedByUserId: row.requestedBy,
+    purchaseRequestId: row.id,
+  };
+  const lineId = row.linkKind === "quote_line" ? row.quoteLineId : null;
+  if (row.linkKind === "quote_line" && !lineId) throw new PurchaseRequestRejectedError(LINK_MISSING);
+  const cardInput: CardUsageInput = lineId ? { ...common, linkKind: "quote_line", lineId } : { ...common, linkKind: "team_cost" };
+  const card = await precheckCardUsage(viewer, cardInput);
+  return { requestId: row.id, lineId, cardInput, card, diffKrw: diffKrw(toKrw(normalizeMoneyInput(input.total)), row.estimateAmountKrw) };
+}
+
+export async function completePurchaseRequest(viewer: Viewer, input: PurchaseCompletionInput, pre: PurchaseCompletionPre): Promise<CompletedPurchase> {
+  const runComplete = async (innerTx: DbOrTx) => {
+    // 전역 잠금 순서(N-3 · X-2): 프로젝트 행 → 사슬의 현재 줄 → 견적 줄 둘(한 호출 · id 순) → 요청 행. 카드 사용 생성 안의 같은 잠금은 이미 쥔 행이다.
+    // 팀 비용 요청은 프로젝트 · 줄 잠금 없이 요청 행부터.
+    if (pre.card.projectId && pre.lineId) {
+      await lockProjectForLinkWrite(viewer, { projectId: pre.card.projectId, allowCompleted: true }, innerTx);
+      const current = await currentLineForFixedLink(viewer, { projectId: pre.card.projectId, lineId: pre.lineId }, innerTx);
+      await lockQuoteLines(viewer, [pre.lineId, current], innerTx);
+    }
+    const locked = await lockPurchaseRequestForUpdate(viewer, pre.requestId, innerTx);
+    if (!locked) throw new PurchaseRequestRejectedError(REQUEST_MISSING);
+    if (locked.status !== "requested") throw statusChangedError(locked.status);
+    if (locked.version !== input.version) throw new PurchaseRequestRejectedError(REQUEST_STALE);
+    const usage = await createCardUsage(viewer, pre.cardInput, pre.card, innerTx);
+    const version = await markPurchaseRequestPurchased(viewer, { id: pre.requestId, version: input.version, completedBy: viewer.id }, innerTx);
+    if (version === null) throw new PurchaseRequestRejectedError(REQUEST_STALE);
+    // OPS-09 · Q-E: 같은 tx 기록 — 완료 프로젝트 줄의 실행가 초과는 상세에 초과액을 남긴다(막지 않음 · 흔적은 남김).
+    const detail = { usageId: usage.id, ...(usage.capOver === null ? {} : { capOverKrw: usage.capOver, summary: `실행가 초과 ${formatKrw(usage.capOver)}` }) };
+    await recordAction(viewer, { actionType: "purchase_process", entity: PURCHASE_REQUEST_ENTITY, entityId: pre.requestId, detail }, { tx: innerTx });
+    return { requestId: pre.requestId, usageId: usage.id, totalKrw: usage.totalKrw, usedOn: pre.cardInput.usedOn, capOver: usage.capOver };
+  };
+  return withTransaction(runComplete);
 }
 
 // ── 목록 ───────────────────────────────────────────────────────────────────

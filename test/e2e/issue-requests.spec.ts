@@ -1,0 +1,308 @@
+import { randomUUID } from "node:crypto";
+import { test, expect, type Browser, type Page } from "@playwright/test";
+import { createFixtureUser } from "./fixtures";
+import { createAccount } from "@/domain/auth/accounts";
+import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
+import { createProject } from "@/domain/projects";
+import { db } from "@/db/client";
+import { eq, sql } from "drizzle-orm";
+import { revenueIssueRequests } from "@/db/schema";
+import { insertIssueRequest } from "@/repositories/revenue-issue-requests";
+import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
+import { insertVendor } from "@/repositories/vendors";
+import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
+import { addDays, kstToday } from "@/lib/kst-date";
+import { saveProjectLedger } from "@/domain/projects/ledger";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
+
+// 06-18(S16 · D-610) — 발행 요청: PM이 `발행 요청 추가` → 일괄 저장 → `신청됨`, 매출 기록 권한자가 `발행 줄로` → 일괄 저장 → `발행됨` + 2행.
+// 글자 · 색 기대는 리터럴 대신 계산된 역할 토큰 값과 비교한다.
+
+async function grantFinanceRole() {
+  await upsertPermission(SYSTEM_VIEWER, { roleId: "role-ceo", menu: "projects", action: "view", allowed: true });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: "role-ceo", menu: "projects.revenue", action: "write", allowed: true });
+  await upsertVisibility(SYSTEM_VIEWER, { roleId: "role-ceo", infoItem: "project.value", visible: true });
+  await upsertVisibility(SYSTEM_VIEWER, { roleId: "role-ceo", infoItem: "revenue.issued_amount", visible: true });
+  await upsertVisibility(SYSTEM_VIEWER, { roleId: "role-ceo", infoItem: "revenue.paid_amount", visible: true });
+}
+
+async function setupProject() {
+  const today = kstToday(new Date());
+  const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E발행요청-${randomUUID()}`, normalizedName: `e2e발행요청-${randomUUID()}` });
+  const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E본부-${randomUUID()}` });
+  const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E팀-${randomUUID().slice(0, 8)}` });
+  const pmEmail = `e2e-req-pm-${randomUUID()}@example.test`;
+  const pm = await createAccount(SYSTEM_VIEWER, { email: pmEmail, name: "E2E 요청 PM", roleId: DEFAULT_ROLE_ID });
+  await assignTeam(SYSTEM_VIEWER, { userId: pm.userId, teamId: team.id, effectiveFrom: today });
+  const project = await createProject(SYSTEM_VIEWER, {
+    clientId: vendor.id,
+    teamId: team.id,
+    pmUserId: pm.userId,
+    name: `E2E발행요청-${randomUUID().slice(0, 8)}`,
+    startDate: today,
+    endDate: addDays(today, 10),
+  });
+  await grantFinanceRole();
+  const finance = await createFixtureUser({ roleId: "role-ceo" });
+  return { projectUrl: `/projects/${project.id}`, projectId: project.id, pm: { email: pmEmail, password: pm.tempPassword, userId: pm.userId }, finance, today };
+}
+
+async function login(page: Page, email: string, password: string) {
+  await page.goto("/login");
+  await page.getByLabel("이메일").fill(email);
+  await page.getByLabel("비밀번호").fill(password);
+  await page.getByRole("button", { name: "로그인" }).click();
+  await expect(page).toHaveURL(/\/account$/);
+}
+
+async function openAs(browser: Browser, user: { email: string; password: string }, url: string, width = 1280) {
+  const context = await browser.newContext({ viewport: { width, height: 900 } });
+  const page = await context.newPage();
+  await login(page, user.email, user.password);
+  await page.goto(url);
+  return { page, context };
+}
+
+function requestTable(page: Page) {
+  return page.locator("table", { has: page.locator("caption", { hasText: /^발행 요청$/ }) });
+}
+
+function issuedTable(page: Page) {
+  return page.locator("table", { has: page.locator("caption", { hasText: /^발행 줄$/ }) });
+}
+
+async function cssColor(page: Page, token: string): Promise<string> {
+  return page.evaluate((value) => {
+    const probe = document.createElement("span");
+    probe.style.color = value;
+    document.body.append(probe);
+    const color = getComputedStyle(probe).color;
+    probe.remove();
+    return color;
+  }, `var(${token})`);
+}
+
+test.describe("발행 요청 — PM 요청 → 매출 기록 권한자 발행 줄로 → 발행됨 (06-18 Task 1)", () => {
+  test("PM이 요청을 일괄 저장해 `신청됨`, 경영관리가 `발행 줄로` 뒤 일괄 저장해 `발행됨` + 2행", async ({ browser }) => {
+    const { projectUrl, pm, finance, today } = await setupProject();
+    const day = today.slice(5);
+
+    // PM — 빈 표의 첫 행동 버튼 → 금액 · 메모 → 일괄 저장.
+    const pmSession = await openAs(browser, pm, projectUrl);
+    const pmPage = pmSession.page;
+    await expect(requestTable(pmPage).getByText("발행 요청이 없습니다")).toBeVisible();
+    await requestTable(pmPage).getByRole("button", { name: "발행 요청 추가" }).click();
+    await expect(requestTable(pmPage).getByLabel("희망 발행일")).toHaveValue(today);
+    await requestTable(pmPage).getByLabel("금액").fill("22000000");
+    await requestTable(pmPage).getByLabel("메모").fill("선금");
+    await pmPage.getByRole("button", { name: /일괄 저장/ }).click();
+    await expect(pmPage.getByText("바뀐 칸 없음", { exact: true })).toBeVisible();
+    await expect(requestTable(pmPage).getByText("신청됨", { exact: true })).toBeVisible();
+    // 부가세 · 합계는 서버 값(% 글자 없음).
+    await expect(requestTable(pmPage)).toContainText("부가세 2,200,000");
+    await expect(requestTable(pmPage)).toContainText("합계 24,200,000");
+    await expect(requestTable(pmPage)).not.toContainText("%");
+    // PM에게는 `발행 줄로`가 없다(렌더하지 않음).
+    await expect(pmPage.getByRole("button", { name: `희망 ${day} 발행 줄로` })).toHaveCount(0);
+    await pmSession.context.close();
+
+    // 경영관리 — `발행 줄로` → 새 발행 줄(발행일 = 희망일 · 발행액 = 요청 금액) + 발행일 포커스 + 2행 `발행 줄 입력 중`.
+    const financeSession = await openAs(browser, finance, projectUrl);
+    const financePage = financeSession.page;
+    await financePage.getByRole("button", { name: `희망 ${day} 발행 줄로` }).click();
+    await expect(issuedTable(financePage).getByLabel("발행일")).toHaveValue(today);
+    await expect(issuedTable(financePage).getByLabel("발행일")).toBeFocused();
+    await expect(issuedTable(financePage).getByLabel("발행액")).toHaveValue("22,000,000");
+    const inProgress = requestTable(financePage).getByText("발행 줄 입력 중", { exact: true });
+    await expect(inProgress).toBeVisible();
+    expect(await inProgress.evaluate((node) => getComputedStyle(node).color)).toBe(await cssColor(financePage, "--text-muted"));
+
+    // 일괄 저장 → `발행됨` + `발행 MM-DD · 금액`.
+    await financePage.getByRole("button", { name: /일괄 저장/ }).click();
+    await expect(financePage.getByText("바뀐 칸 없음", { exact: true })).toBeVisible();
+    await expect(requestTable(financePage).getByText("발행됨", { exact: true })).toBeVisible();
+    await expect(requestTable(financePage)).toContainText(`발행 ${day} · 22,000,000`);
+    await expect(requestTable(financePage).getByText("발행 줄 입력 중")).toHaveCount(0);
+    await expect(requestTable(financePage).getByRole("button", { name: /발행 줄로/ })).toHaveCount(0);
+    await financeSession.context.close();
+  });
+
+  test("미리 만들어 둔 요청 줄은 PM에게 `신청됨`, 경영관리에게 `발행 줄로`로 보인다", async ({ browser }) => {
+    const { projectUrl, projectId, pm, finance, today } = await setupProject();
+    await insertIssueRequest(
+      SYSTEM_VIEWER,
+      { id: randomUUID(), projectId, requestedBy: pm.userId, desiredIssueDate: today, amountCurrency: "KRW", amountForeignAmount: null, amountFxRate: "1.0000", amountAmountKrw: 10_000_000, memo: "읽기" },
+      db,
+    );
+
+    const pmSession = await openAs(browser, pm, projectUrl);
+    await expect(requestTable(pmSession.page).getByText("신청됨", { exact: true })).toBeVisible();
+    await pmSession.context.close();
+
+    const financeSession = await openAs(browser, finance, projectUrl);
+    await expect(requestTable(financeSession.page).getByRole("button", { name: `희망 ${today.slice(5)} 발행 줄로` })).toBeVisible();
+    await financeSession.context.close();
+  });
+});
+
+async function seedRequest(projectId: string, requestedBy: string, over: { desiredIssueDate: string; amount?: number; memo?: string | null }): Promise<string> {
+  const id = randomUUID();
+  await insertIssueRequest(
+    SYSTEM_VIEWER,
+    {
+      id,
+      projectId,
+      requestedBy,
+      desiredIssueDate: over.desiredIssueDate,
+      amountCurrency: "KRW",
+      amountForeignAmount: null,
+      amountFxRate: "1.0000",
+      amountAmountKrw: over.amount ?? 10_000_000,
+      memo: over.memo ?? null,
+    },
+    db,
+  );
+  return id;
+}
+
+test.describe("발행 요청 — S16 상태 마감 (06-18 Task 3)", () => {
+  test("빈 화면 세 갈래 — 쓰기 PM 1280은 첫 행동 버튼, 그 밖의 사람은 담당 PM 이름, 375는 사실만", async ({ browser }) => {
+    const { projectUrl, pm, finance } = await setupProject();
+
+    const pmWide = await openAs(browser, pm, projectUrl, 1280);
+    await expect(requestTable(pmWide.page).getByText("발행 요청이 없습니다", { exact: true })).toBeVisible();
+    await expect(requestTable(pmWide.page).getByRole("button", { name: "발행 요청 추가" })).toBeVisible();
+    await pmWide.context.close();
+
+    const financeWide = await openAs(browser, finance, projectUrl, 1280);
+    await expect(requestTable(financeWide.page)).toContainText("발행 요청이 없습니다 · 요청은 담당 PM E2E 요청 PM");
+    await expect(requestTable(financeWide.page).getByRole("button")).toHaveCount(0);
+    await financeWide.context.close();
+
+    const pmPhone = await openAs(browser, pm, projectUrl, 375);
+    await expect(requestTable(pmPhone.page).getByText("발행 요청이 없습니다", { exact: true })).toBeVisible();
+    await expect(requestTable(pmPhone.page).getByRole("button")).toHaveCount(0);
+    await pmPhone.context.close();
+
+    const financePhone = await openAs(browser, finance, projectUrl, 375);
+    await expect(requestTable(financePhone.page).getByText("발행 요청이 없습니다", { exact: true })).toBeVisible();
+    await financePhone.context.close();
+  });
+
+  test("`발행 줄로` 뒤 저장 전 = 2행 `발행 줄 입력 중`, 그 새 발행 줄을 빼면 연결이 풀리고 2행이 사라진다", async ({ browser }) => {
+    const { projectUrl, projectId, pm, finance, today } = await setupProject();
+    await seedRequest(projectId, pm.userId, { desiredIssueDate: today, amount: 5_000_000, memo: "빼기" });
+    const day = today.slice(5);
+
+    const { page, context } = await openAs(browser, finance, projectUrl);
+    await page.getByRole("button", { name: `희망 ${day} 발행 줄로` }).click();
+    await expect(requestTable(page).getByText("발행 줄 입력 중", { exact: true })).toBeVisible();
+    await expect(issuedTable(page).getByLabel("발행일")).toHaveCount(1);
+    await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
+
+    await page.getByRole("button", { name: `희망 ${day} 발행 줄 빼기` }).click();
+    await expect(requestTable(page).getByText("발행 줄 입력 중")).toHaveCount(0);
+    await expect(issuedTable(page).getByLabel("발행일")).toHaveCount(0);
+    await expect(requestTable(page).getByRole("button", { name: `희망 ${day} 발행 줄로` })).toBeVisible();
+    await expect(page.getByText("바뀐 칸 없음", { exact: true })).toBeVisible();
+    await context.close();
+  });
+
+  test("다른 사람이 그사이 같은 요청을 이으면 저장이 전부 거부되고 오류가 발행 줄 칸에 선다", async ({ browser }) => {
+    const { projectUrl, projectId, pm, finance, today } = await setupProject();
+    const requestId = await seedRequest(projectId, pm.userId, { desiredIssueDate: today, amount: 7_000_000 });
+
+    const { page, context } = await openAs(browser, finance, projectUrl);
+    await page.getByRole("button", { name: `희망 ${today.slice(5)} 발행 줄로` }).click();
+    await saveProjectLedger(SYSTEM_VIEWER, projectId, {
+      seenStatus: "bidding",
+      revenue: { issuedEntries: [{ id: randomUUID(), isNew: true, entryDate: today, amount: { currency: "KRW", amount: 7_000_000, fxRate: 1 }, fromIssueRequestId: requestId }] },
+    });
+
+    await page.getByRole("button", { name: /일괄 저장/ }).click();
+
+    await expect(issuedTable(page)).toContainText("다른 사람이 먼저 이 요청을 이음 · 새로 고침");
+    await expect(issuedTable(page)).toContainText("오류 1칸 · 전부 거부");
+    await expect(requestTable(page).getByText("신청됨", { exact: true })).toBeVisible();
+    await context.close();
+  });
+
+  test("줄 순서는 희망 발행일 오름차순(같은 날은 만든 순), 200자 메모는 두 줄 뒤 말줄임 + title", async ({ browser }) => {
+    const { projectUrl, projectId, pm, finance, today } = await setupProject();
+    const long = "긴메모".repeat(67).slice(0, 200);
+    await seedRequest(projectId, pm.userId, { desiredIssueDate: addDays(today, 5), amount: 3_000_000, memo: "셋째" });
+    await seedRequest(projectId, pm.userId, { desiredIssueDate: today, amount: 1_000_000, memo: long });
+    await seedRequest(projectId, pm.userId, { desiredIssueDate: today, amount: 2_000_000, memo: "같은날-둘째" });
+
+    const { page, context } = await openAs(browser, finance, projectUrl);
+    // 행마다 폰 접힌 줄이 함께 있어 행 수가 아니라 금액이 읽히는 순서로 센다.
+    const text = await requestTable(page).innerText();
+    const order = ["1,000,000", "2,000,000", "3,000,000"].map((amount) => text.indexOf(amount));
+    expect(order.every((index) => index >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+
+    const memo = requestTable(page).locator("span[title]", { hasText: "긴메모" }).locator("visible=true");
+    await expect(memo).toHaveAttribute("title", long);
+    const metrics = await memo.evaluate((node) => {
+      const style = getComputedStyle(node);
+      return { clamp: style.getPropertyValue("-webkit-line-clamp"), clientHeight: node.clientHeight, scrollHeight: node.scrollHeight, lineHeight: parseFloat(style.lineHeight) };
+    });
+    expect(metrics.clamp).toBe("2");
+    expect(metrics.scrollHeight).toBeGreaterThan(metrics.clientHeight);
+    expect(metrics.clientHeight).toBeLessThanOrEqual(metrics.lineHeight * 2 + 1);
+    await context.close();
+  });
+  test("폰 375 · 320에서도 200자 메모는 접힌 줄에서 두 줄 뒤 말줄임 + title이고 가로로 넘치지 않는다 (DOM 감사 D-1)", async ({ browser }) => {
+    const { projectUrl, projectId, pm, finance, today } = await setupProject();
+    const long = "긴메모".repeat(67).slice(0, 200);
+    await seedRequest(projectId, pm.userId, { desiredIssueDate: today, amount: 1_000_000, memo: long });
+
+    for (const width of [375, 320]) {
+      const { page, context } = await openAs(browser, finance, projectUrl, width);
+      const memo = requestTable(page).locator("span[title]", { hasText: "긴메모" }).locator("visible=true");
+      await expect(memo).toHaveCount(1);
+      await expect(memo).toHaveAttribute("title", long);
+      const metrics = await memo.evaluate((node) => {
+        const style = getComputedStyle(node);
+        return { clamp: style.getPropertyValue("-webkit-line-clamp"), clientHeight: node.clientHeight, scrollHeight: node.scrollHeight, lineHeight: parseFloat(style.lineHeight) };
+      });
+      expect(metrics.clamp, `${width}px`).toBe("2");
+      expect(metrics.scrollHeight, `${width}px`).toBeGreaterThan(metrics.clientHeight);
+      expect(metrics.clientHeight, `${width}px`).toBeLessThanOrEqual(metrics.lineHeight * 2 + 1);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth), `${width}px`).toBe(width);
+      await context.close();
+    }
+  });
+
+  test("요청 줄 저장이 version 충돌로 거부되면 포커스가 오류가 선 상태 칸으로 간다 (DOM 감사 D-2)", async ({ browser }) => {
+    const { projectUrl, projectId, pm, today } = await setupProject();
+    const requestId = await seedRequest(projectId, pm.userId, { desiredIssueDate: today, amount: 4_000_000, memo: "처음" });
+
+    const { page, context } = await openAs(browser, pm, projectUrl);
+    await requestTable(page).getByLabel("메모").fill("내가 고침");
+    await db.update(revenueIssueRequests).set({ version: sql`${revenueIssueRequests.version} + 1`, memo: "다른 사람이 고침" }).where(eq(revenueIssueRequests.id, requestId));
+
+    await page.getByRole("button", { name: /일괄 저장/ }).click();
+
+    await expect(requestTable(page)).toContainText("다른 사람이 먼저 이 요청을 바꿈 · 새로 고침");
+    const focused = await page.evaluate(() => {
+      const cell = document.activeElement?.closest("td");
+      const reasonId = cell?.getAttribute("aria-describedby");
+      return { inCell: cell !== null && cell !== undefined, reason: reasonId ? (document.getElementById(reasonId)?.textContent ?? null) : null };
+    });
+    expect(focused).toEqual({ inCell: true, reason: "다른 사람이 먼저 이 요청을 바꿈 · 새로 고침" });
+    await context.close();
+  });
+
+  test("금액을 비운(0원) 새 요청 줄은 저장이 거부되고 금액 칸에 한 줄 이유가 선다 (검토 I-2)", async ({ browser }) => {
+    const { projectUrl, pm } = await setupProject();
+
+    const { page, context } = await openAs(browser, pm, projectUrl);
+    await requestTable(page).getByRole("button", { name: "발행 요청 추가" }).click();
+    await requestTable(page).getByLabel("메모").fill("금액 없음");
+    await page.getByRole("button", { name: /일괄 저장/ }).click();
+
+    await expect(requestTable(page)).toContainText("0원 초과 · 금액 입력");
+    await context.close();
+  });
+});

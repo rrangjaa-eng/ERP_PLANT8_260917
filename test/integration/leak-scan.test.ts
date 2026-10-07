@@ -27,6 +27,7 @@ import "@/domain/projects/references";
 import "@/domain/quotes/lines";
 import "@/domain/quotes/revisions";
 import "@/domain/revenue";
+import "@/domain/issue-requests";
 import "@/domain/reserves";
 import "@/domain/action-log/export";
 import "@/domain/archive";

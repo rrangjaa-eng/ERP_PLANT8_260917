@@ -67,7 +67,7 @@ export type RevenueDeps = {
   getSettingValue: typeof defaultGetSettingValue;
 };
 
-async function computeVat(
+export async function computeVat(
   supplyKrw: number,
   evidenceDate: Date,
   deps?: Partial<RevenueDeps>,
@@ -266,6 +266,8 @@ export type RevenueEntryWriteRow = {
   /** 환율 칸을 이번 저장에서 실제로 고쳤을 때만 true(외화일 때만 의미가 있다). */
   fxRateTouched?: boolean;
   note?: string | null;
+  /** 06-18(D-610) — 이 새 줄이 닫는 발행 요청 id. 이 모듈은 읽지 않는다 — 원장(domain/projects/ledger)이 저장 뒤 같은 tx로 잇는다. */
+  fromIssueRequestId?: string;
 };
 
 export type SaveRevenueInput = {

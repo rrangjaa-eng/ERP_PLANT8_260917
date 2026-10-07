@@ -29,10 +29,12 @@ export type EntryDraft = {
   foreignLine?: string | null;
   /** 04-16(B3) — 거부 봉투에서 이 줄로 떼어 낸 칸 오류(열 키 → 이유). */
   cellErrors?: Record<string, string>;
+  /** 06-18(D-610) — 「발행 줄로」로 만든 저장 전 새 줄이 닫을 발행 요청 id. 저장 때 새 줄에만 실린다. */
+  fromIssueRequestId?: string;
 };
 
 // 04-16(DR-15) — 숫자 묶음은 꺾지 않고 ` · ` 사이에서만 줄바꿈한다(구분자는 줄바꿈되는 부모의 글자).
-function NumberGroups({ groups, className }: { groups: string[]; className?: string }) {
+export function NumberGroups({ groups, className }: { groups: string[]; className?: string }) {
   return (
     <span className={[styles.secondaryGroups, className].filter(Boolean).join(" ")}>
       {groups.map((group, index) => (
@@ -108,7 +110,7 @@ function amountText(value: number): string {
 // 커밋한 값의 메아리일 때는 다시 마운트하지 않는다(타이핑 중 커서 보존).
 // 렌더 중 "prop 변화에 맞춰 state 조정" 패턴(PermissionGrid.tsx 선례) — ref를
 // 렌더 중에 바꾸면 안 되므로(react-hooks/refs) useState를 쓴다.
-function AmountInput({
+export function AmountInput({
   ariaLabel,
   value,
   kind = "krw",
@@ -217,6 +219,8 @@ export function RevenueSection({
   rejectedCells,
   firstIssue,
   onSave,
+  issueRequestSlot,
+  focusIssued,
 }: {
   /** 04-16(B-19) — quote.amount를 볼 수 없으면 서버가 싣지 않는다(키 부재). */
   contract: ContractInfo | undefined;
@@ -241,8 +245,19 @@ export function RevenueSection({
   firstIssue?: { signal: number; table: "issued" | "paid" } | null;
   /** 04-41 — 발행·입금 표 안의 Ctrl+S도 견적 표와 같은 일괄 저장이다. */
   onSave: () => void;
+  /** 06-18(S16) — 계약 금액 줄과 발행 줄 표 사이의 「발행 요청」 표(소제목 포함). 있으면 발행 줄 표도 소제목으로 갈린다. 순환 import를 피해 슬롯으로 받는다. */
+  issueRequestSlot?: ReactNode;
+  /** 06-18 — 「발행 줄로」 뒤 그 새 줄의 발행일 칸으로 포커스(signal이 바뀔 때마다). */
+  focusIssued?: { clientKey: string; signal: number } | null;
 }) {
   const canEditEntries = canWriteEntries && editableWidth;
+  // 06-18 — 「발행 줄로」로 만든 새 줄의 발행일 칸에 포커스(저장 전 줄은 화면 uuid가 clientKey다).
+  const focusKey = focusIssued?.clientKey;
+  const focusSignal = focusIssued?.signal;
+  useEffect(() => {
+    if (!focusKey || !focusSignal) return;
+    document.querySelector<HTMLInputElement>(`input[data-entry-key="${CSS.escape(focusKey)}"]`)?.focus();
+  }, [focusKey, focusSignal]);
   // 04-16(D-85) — 발행 표는 발행액을 볼 수 있으면, 입금 표는 입금액을 볼 수 있을 때만 렌더한다(DTO 키 부재 = 표 부재).
   const issuedVisible = issuedEntries !== undefined;
   const paidVisible = paidEntries !== undefined;
@@ -274,6 +289,7 @@ export function RevenueSection({
         canEditEntries ? (
           <input
             aria-label="발행일"
+            data-entry-key={row.clientKey}
             type="date"
             value={row.entryDate}
             onChange={(event) => onIssuedChange(row.clientKey, { entryDate: event.target.value })}
@@ -407,8 +423,11 @@ export function RevenueSection({
         </div>
       ) : null}
 
+      {issueRequestSlot}
+
       {issuedVisible ? (
         <>
+          {issueRequestSlot ? <h3 className={styles.tableSubheading}>발행 줄</h3> : null}
           <Table
             caption="발행 줄"
             keyboard={{ onSave }}
@@ -449,6 +468,7 @@ export function RevenueSection({
 
       {paidVisible ? (
         <>
+          {issueRequestSlot ? <h3 className={styles.tableSubheading}>입금 줄</h3> : null}
           <Table
             caption="입금 줄"
             keyboard={{ onSave }}

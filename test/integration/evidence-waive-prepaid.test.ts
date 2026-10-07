@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { ZodError } from "zod";
 import { db } from "@/db/client";
-import { expenses } from "@/db/schema";
+import { actionLog, expenseEvidenceReviews, expenses } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { approveDocument, rejectDocument } from "@/domain/approvals";
 import { createExpenseFromLines, ExpenseFieldError, ExpenseNotFoundError, getExpense, listExpenseFormOptions, saveExpenseDraft, submitExpense } from "@/domain/expenses";
@@ -10,6 +10,7 @@ import { DATE_FORMAT_ERROR } from "@/domain/expenses/draft-fields";
 import { PREPAID_REASON_REQUIRED } from "@/domain/expenses/gate";
 import { cancelExpensePayment, completeExpensePayment, previewPayable } from "@/domain/payments";
 import { GateBlockedError } from "@/domain/rules/gate";
+import { confirmEvidence, EvidenceReviewConflictError, EVIDENCE_AMOUNT_PAID_LOCKED } from "@/domain/evidence-reviews";
 import { EVIDENCE_PREPAID_DUE_DAYS } from "@/domain/settings/keys";
 import { EVIDENCE_AMOUNT_TAX_INCLUSIVE } from "@/domain/evidence-reviews/tax-inclusive";
 import { seoulToday } from "@/lib/dates";
@@ -17,7 +18,7 @@ import { addDays } from "@/lib/kst-date";
 import { seedCodeItem } from "@/repositories/code-tables";
 import { upsertVisibility } from "@/repositories/permissions";
 import { setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
-import { makePaymentManager, setEvidenceRequired } from "./fixtures/payments";
+import { approvedExpenseWithEvidence, makePaymentManager, setEvidenceRequired } from "./fixtures/payments";
 
 // 06-10(EXP-13 · EVID-03 · D-603 · D-611 · O-4 · EA-1): 05 폼의 선결제 · 사유 · 증빙 금액 · 증빙일(기안자 저장)과 경영관리의 증빙 면제.
 // 문서는 05 · 04.1 도메인 함수로 만든다(SQL 직접 삽입 없음). 통과를 기대하는 지급은 증빙 필수 on에서 돌려 선결제 · 면제가 게이트를 여는지 본다.
@@ -282,5 +283,55 @@ describe("부가세 포함 증빙 금액 저장 막힘(EA-1)", () => {
     await save(fx, expenseId, { evidenceType: null });
     await save(fx, expenseId, { evidenceAmountKrw: 11_000_000 });
     expect((await expenseRow(expenseId)).evidenceAmount).toBe(11_000_000);
+  });
+});
+
+// 사용자 결정 10/7 09:08(06-06 검토 I-2): 지급 완료된 지출결의는 경영관리도 증빙 금액을 고칠 수 없다 — 잠금 뒤 판정(260907 expenses.ts:5509 「이미 지급이 나간 건」).
+// 기안자 경로(saveExpenseDraft)는 O-4로 이미 편집 가능 상태에서만 열려 지급 완료 문서에는 닿지 않는다.
+describe("지급 완료 문서의 증빙 금액 고침 막힘(I-2)", () => {
+  async function paidConfirmedDoc(amountKrw: number) {
+    const fx = await setupExpenseProject();
+    const doc = await approvedExpenseWithEvidence(fx);
+    await db.update(expenses).set({ evidenceAmount: amountKrw }).where(eq(expenses.id, doc.expenseId));
+    const manager = await payer();
+    const confirmed = await confirmEvidence(manager, { expenseId: doc.expenseId, version: doc.version });
+    const preview = await previewPayable(manager, { expenseId: doc.expenseId, payDate: seoulToday() });
+    if (preview.payableKrw === undefined || preview.payableKrw === null) throw new Error("지급 총액 없음");
+    const paid = await completeExpensePayment(manager, { expenseId: doc.expenseId, expectedPayableKrw: preview.payableKrw, version: confirmed.version });
+    return { manager, expenseId: doc.expenseId, version: paid.version };
+  }
+
+  async function logCount(expenseId: string, actionType: string): Promise<number> {
+    return (await db.select({ entityId: actionLog.entityId }).from(actionLog).where(and(eq(actionLog.entityId, expenseId), eq(actionLog.actionType, actionType)))).length;
+  }
+
+  it("지급 완료 뒤 고쳐 확인 → 거부 · 증빙 금액 · 확인 기록 · version · 행동 로그 그대로", async () => {
+    const { manager, expenseId, version } = await paidConfirmedDoc(12_400_000);
+    const rowBefore = await expenseRow(expenseId);
+    const [reviewBefore] = await db.select().from(expenseEvidenceReviews).where(eq(expenseEvidenceReviews.expenseId, expenseId));
+    const logsBefore = await logCount(expenseId, "evidence_amount_change");
+
+    const failure = await confirmEvidence(manager, { expenseId, version, correctedAmountKrw: 12_000_000 }).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(EvidenceReviewConflictError);
+    expect((failure as Error).message).toBe(EVIDENCE_AMOUNT_PAID_LOCKED);
+    expect(await expenseRow(expenseId)).toEqual(rowBefore);
+    expect((await db.select().from(expenseEvidenceReviews).where(eq(expenseEvidenceReviews.expenseId, expenseId)))[0]).toEqual(reviewBefore);
+    expect(await logCount(expenseId, "evidence_amount_change")).toBe(logsBefore);
+  });
+
+  it("지급 완료 뒤에도 금액을 바꾸지 않는 확인은 통과한다(P5 — 확인만 기록)", async () => {
+    const { manager, expenseId, version } = await paidConfirmedDoc(12_400_000);
+    const result = await confirmEvidence(manager, { expenseId, version });
+    expect(result.evidenceStatus).toBe("확인됨");
+    expect((await expenseRow(expenseId)).evidenceAmount).toBe(12_400_000);
+  });
+
+  it("지급을 취소하면 다시 고칠 수 있다(지급 완료 상태에서만 막는다)", async () => {
+    const { manager, expenseId, version } = await paidConfirmedDoc(12_400_000);
+    const cancelled = await cancelExpensePayment(manager, { expenseId, reason: "이체 오류", version });
+    const result = await confirmEvidence(manager, { expenseId, version: cancelled.version, correctedAmountKrw: 12_000_000 });
+    expect(result.evidenceStatus).toBe("확인됨");
+    expect((await expenseRow(expenseId)).evidenceAmount).toBe(12_000_000);
   });
 });

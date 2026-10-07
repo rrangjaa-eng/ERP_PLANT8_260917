@@ -203,7 +203,7 @@ export function EvidenceReviewBlock() {
       label: "증빙 금액",
       value: (
         <>
-          {view.row?.tertiary === "change" ? (
+          {view.row?.tertiary === "change" && !(paidRow && serverAmount !== null) ? (
             <span className={styles.valueRow}>
               <span className={styles.fill}>{shown}</span>
               <Button id="evidence-amount-edit" variant="tertiary" onClick={openEdit}>

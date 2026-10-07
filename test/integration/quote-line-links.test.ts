@@ -1,16 +1,24 @@
+import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
-import { expenses } from "@/db/schema";
+import { corpCardUsages, expenses, files, purchaseRequests, quoteLines } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertVisibility } from "@/repositories/permissions";
-import { createExpenseFromLines, ExpenseFieldError, getExpense, saveExpenseDraft } from "@/domain/expenses";
-import { listQuoteLines } from "@/domain/quotes/lines";
+import { closeExpense, createExpenseFromLines, ExpenseFieldError, getExpense, saveExpenseDraft, submitExpense } from "@/domain/expenses";
+import { listQuoteLines, saveQuoteLines } from "@/domain/quotes/lines";
+import { lineStatusWord } from "@/app/(app)/projects/status-display";
+import { approveDocument, rejectDocument } from "@/domain/approvals";
 import { GateBlockedError } from "@/domain/rules/gate";
 import { completeExpensePayment, previewPayable } from "@/domain/payments";
-import { confirmEvidence } from "@/domain/evidence-reviews";
+import { confirmEvidence, waiveEvidence } from "@/domain/evidence-reviews";
+import { voidEvidence } from "@/domain/evidence";
+import { createCorpCard } from "@/domain/corp-cards";
+import { createCardUsage, precheckCardUsage, type CardUsageInput } from "@/domain/corp-card-usages";
+import { setSettingValue } from "@/domain/settings/registry";
+import { PURCHASE_ONLINE_VENDOR_NAME } from "@/domain/settings/keys";
 import { seoulToday } from "@/lib/dates";
-import { addApprovedRevision, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
+import { addApprovedRevision, makeEvidenceManager, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
 import { approvedExpenseWithEvidence, makePaymentManager, setEvidenceRequired, type ApprovedExpense } from "./fixtures/payments";
 
 // 06-13(EXP-06 · EXP-07 · SP-2 · O-14 · C10 · X-3): 견적 줄 상태 파생과 지출결의 쪽 입구 — 지급 완료 잠금 · 이중 연결 · 온라인구매 문.
@@ -135,5 +143,301 @@ describe("새 차수 복사 줄 (X-3 회귀 가드)", () => {
     await save(fx.pm, second, { supply: { currency: "KRW", amount: 4_000_000, fxRate: 1 } });
     expect(await submitReadyDraft(fx.pm, second)).toMatchObject({ kind: "submitted" });
     expect(await expenseRow(second)).toMatchObject({ installment: true, installmentSeq: 2 });
+  });
+});
+
+// ── Task 2 ─────────────────────────────────────────────────────────────
+
+async function linkedStatusOf(fx: ExpenseFixture, lineId: string, revisionId = fx.revisionId) {
+  return (await lineOf(fx.pm, revisionId, lineId)).linkedStatus;
+}
+
+// 분할 문서 하나를 제출한다(공급가 3,000,000 — 분할 줄 실행가 10,000,000이라 셋까지 문이 열려 있다).
+async function submitInstallment(fx: ExpenseFixture, lineId = fx.lines.split, supply = 3_000_000) {
+  const draft = await draftOf(fx.pm, lineId);
+  await save(fx.pm, draft, { installment: true, supply: { currency: "KRW", amount: supply, fxRate: 1 } });
+  const submitted = await submitReadyDraft(fx.pm, draft);
+  if (submitted.kind !== "submitted") throw new Error("제출 안 됨");
+  return { ...submitted, expenseId: draft };
+}
+
+async function approveAll(fx: ExpenseFixture, doc: { instanceId: string; version: number }) {
+  const first = await approveDocument(fx.lead, { instanceId: doc.instanceId, expectedVersion: doc.version });
+  await approveDocument(fx.ceo, { instanceId: doc.instanceId, expectedVersion: first.version });
+}
+
+async function approvedOf(fx: ExpenseFixture, doc: { expenseId: string; instanceId: string; number: string; version: number }): Promise<ApprovedExpense> {
+  await approveAll(fx, doc);
+  return { expenseId: doc.expenseId, instanceId: doc.instanceId, number: doc.number, version: (await expenseRow(doc.expenseId)).version };
+}
+
+// 선결제 문서 — 증빙 없이 제출(06-10 · 제출 ⑧ 예외).
+async function submitPrepaid(fx: ExpenseFixture, lineId = fx.lines.withVendor) {
+  const draft = await draftOf(fx.pm, lineId);
+  await save(fx.pm, draft, { prepaid: true, prepaidReason: "행사장 선결제 요구" });
+  const submitted = await submitExpense(fx.pm, { expenseId: draft, expectedVersion: (await expenseRow(draft)).version });
+  if (submitted.kind !== "submitted") throw new Error("제출 안 됨");
+  return { ...submitted, expenseId: draft };
+}
+
+async function payOn(payer: Viewer, doc: ApprovedExpense, payDate: string): Promise<void> {
+  const preview = await previewPayable(payer, { expenseId: doc.expenseId, payDate });
+  if (preview.payableKrw === null || preview.payableKrw === undefined) throw new Error("지급 총액 없음");
+  await completeExpensePayment(payer, { expenseId: doc.expenseId, payDate, expectedPayableKrw: preview.payableKrw, version: (await expenseRow(doc.expenseId)).version });
+}
+
+async function voidAll(expenseId: string): Promise<void> {
+  const voider = await makeEvidenceManager("증빙무효", { attach: false, void: true });
+  const alive = await db
+    .select({ id: files.id })
+    .from(files)
+    .where(and(eq(files.ownerKind, "expense"), eq(files.ownerId, expenseId), isNull(files.removedAt), isNull(files.voidedAt)));
+  for (const file of alive) await voidEvidence(voider, { fileId: file.id, reason: "다른 건 영수증" });
+}
+
+async function cardOn(fx: ExpenseFixture, lineId: string, supply = 100_000): Promise<string> {
+  const card = await createCorpCard(SYSTEM_VIEWER, {
+    issuer: `카드사-${randomUUID().slice(0, 6)}`,
+    numberLast4: String(1000 + Math.floor(Math.random() * 9000)),
+    label: "개인 카드",
+    kind: "personal",
+    holderUserId: fx.pm.id,
+  });
+  if (!card.id) throw new Error("카드 id 없음");
+  const input: CardUsageInput = {
+    corpCardId: card.id,
+    usedOn: seoulToday(),
+    merchantVendorId: null,
+    total: { currency: "KRW", amount: supply, fxRate: 1 },
+    evidenceTypeCode: "invoice",
+    linkKind: "quote_line",
+    lineId,
+    memo: null,
+  };
+  return (await createCardUsage(fx.pm, input, await precheckCardUsage(fx.pm, input))).id;
+}
+
+async function setArchived(usageId: string, archived: boolean, by: string): Promise<void> {
+  await db
+    .update(corpCardUsages)
+    .set(archived ? { archivedAt: new Date(), archivedBy: by } : { archivedAt: null, archivedBy: null })
+    .where(eq(corpCardUsages.id, usageId));
+}
+
+// 줄 쪽 게이트를 거치지 않는 `신청됨` 구매 요청(상태 파생 입력만 본다 — 입구 게이트는 06-08 통합이 본다).
+async function requestOn(fx: ExpenseFixture, lineId: string): Promise<string> {
+  const [row] = await db
+    .insert(purchaseRequests)
+    .values({ number: `26001-Q${randomUUID().slice(0, 8)}`, linkKind: "quote_line", projectId: fx.projectId, quoteLineId: lineId, requestedBy: fx.pm.id, itemName: "현수막", estimateAmountKrw: 110_000 })
+    .returning({ id: purchaseRequests.id });
+  if (!row) throw new Error("구매 요청 없음");
+  return row.id;
+}
+
+function addDays(date: string, days: number): string {
+  const at = new Date(`${date}T00:00:00Z`);
+  at.setUTCDate(at.getUTCDate() + days);
+  return at.toISOString().slice(0, 10);
+}
+
+describe("우선순위 여덟 값 (SP-2 · O-14)", () => {
+  it("반려 + 결재 중 → rejected", async () => {
+    const fx = await setupExpenseProject();
+    const first = await submitInstallment(fx);
+    await rejectDocument(fx.lead, { instanceId: first.instanceId, expectedVersion: first.version, reason: "금액 확인" });
+    await submitInstallment(fx);
+    expect(await linkedStatusOf(fx, fx.lines.split)).toBe("rejected");
+  });
+
+  it("증빙 없는 결재 중(선결제) + 지급 완료 → evidence_missing", async () => {
+    const fx = await setupExpenseProject();
+    const payer = await makePayer();
+    const first = await approvedOf(fx, await submitInstallment(fx));
+    await pay(payer, first);
+    const second = await draftOf(fx.pm, fx.lines.split);
+    await save(fx.pm, second, { supply: { currency: "KRW", amount: 3_000_000, fxRate: 1 }, prepaid: true, prepaidReason: "행사장 선결제 요구" });
+    expect((await submitExpense(fx.pm, { expenseId: second, expectedVersion: (await expenseRow(second)).version })).kind).toBe("submitted");
+    expect(await linkedStatusOf(fx, fx.lines.split)).toBe("evidence_missing");
+  });
+
+  it("결재 중(증빙 있음) + 구매 요청 `신청됨` → active", async () => {
+    const fx = await setupExpenseProject();
+    await submitInstallment(fx);
+    await requestOn(fx, fx.lines.split);
+    expect(await linkedStatusOf(fx, fx.lines.split)).toBe("active");
+  });
+
+  it("구매 요청 `신청됨` + 지급 완료 → purchase_requested", async () => {
+    const fx = await setupExpenseProject();
+    const { paid } = await paidLine(fx);
+    expect(paid.number).toBeTruthy();
+    await requestOn(fx, fx.lines.withVendor);
+    expect(await linkedStatusOf(fx, fx.lines.withVendor)).toBe("purchase_requested");
+  });
+
+  it("지급 완료 + 카드 사용 → paid", async () => {
+    const fx = await setupExpenseProject();
+    const usage = await cardOn(fx, fx.lines.withVendor);
+    await setArchived(usage, true, fx.pm.id);
+    await paidLine(fx);
+    await setArchived(usage, false, fx.pm.id);
+    expect(await linkedStatusOf(fx, fx.lines.withVendor)).toBe("paid");
+  });
+
+  it("카드 사용만 → card_used · 연결 0 → null(미착수)", async () => {
+    const fx = await setupExpenseProject();
+    await cardOn(fx, fx.lines.withVendor);
+    expect(await linkedStatusOf(fx, fx.lines.withVendor)).toBe("card_used");
+    const free = await lineOf(fx.pm, fx.revisionId, fx.lines.split);
+    expect(free.linkedStatus).toBeNull();
+    expect(lineStatusWord(free)).toBe("미착수");
+  });
+
+  it("줄 취소 + 무엇이든(카드 사용) → 낱말 `취소`", async () => {
+    const fx = await setupExpenseProject();
+    await cardOn(fx, fx.lines.withVendor);
+    await db.update(quoteLines).set({ lineStatus: "cancelled" }).where(eq(quoteLines.id, fx.lines.withVendor));
+    const line = await lineOf(fx.pm, fx.revisionId, fx.lines.withVendor);
+    expect(line.linkedStatus).toBe("card_used");
+    expect(lineStatusWord(line)).toBe("취소");
+  });
+});
+
+describe("증빙 없음 판정 (O-14 · C5)", () => {
+  it("선결제 · 지급 뒤 · 증빙 0 → evidence_missing, 면제 기록 뒤 → paid", async () => {
+    const fx = await setupExpenseProject();
+    const payer = await makePayer();
+    const doc = await approvedOf(fx, await submitPrepaid(fx));
+    await payOn(payer, doc, seoulToday());
+    expect(await linkedStatusOf(fx, fx.lines.withVendor)).toBe("evidence_missing");
+
+    await waiveEvidence(payer, { expenseId: doc.expenseId, version: (await expenseRow(doc.expenseId)).version, reason: "업체 폐업" });
+    expect(await linkedStatusOf(fx, fx.lines.withVendor)).toBe("paid");
+  });
+
+  it("결재 통과 · 무효 파일만 남음 → evidence_missing", async () => {
+    const fx = await setupExpenseProject();
+    const doc = await approvedExpenseWithEvidence(fx);
+    await voidAll(doc.expenseId);
+    expect(await linkedStatusOf(fx, fx.lines.withVendor)).toBe("evidence_missing");
+  });
+});
+
+describe("종결 제외 (C10 · UC-7)", () => {
+  async function rejectedLine(fx: ExpenseFixture) {
+    const draft = await draftOf(fx.pm, fx.lines.withVendor);
+    const submitted = await submitReadyDraft(fx.pm, draft);
+    if (submitted.kind !== "submitted") throw new Error("제출 안 됨");
+    await rejectDocument(fx.lead, { instanceId: submitted.instanceId, expectedVersion: submitted.version, reason: "금액 확인" });
+    return { expenseId: draft, number: submitted.number };
+  }
+
+  it("반려 문서만 → rejected · D-66 이유 그 문서 / 종결 → 미착수 · 연결 없음 · 이유 없음 · 금액 셀 편집 · 줄 저장 통과", async () => {
+    const fx = await setupExpenseProject();
+    const doc = await rejectedLine(fx);
+    const before = await lineOf(fx.pm, fx.revisionId, fx.lines.withVendor);
+    expect(before.linkedStatus).toBe("rejected");
+    expect(before.readonlyReason).toBe(`지출결의 ${doc.number} 연결됨 · 고치려면 새 차수`);
+
+    await closeExpense(fx.pm, { expenseId: doc.expenseId, expectedVersion: (await expenseRow(doc.expenseId)).version, reason: "업체 취소" });
+    const after = await lineOf(fx.pm, fx.revisionId, fx.lines.withVendor);
+    expect(after.linkedStatus).toBeNull();
+    expect(lineStatusWord(after)).toBe("미착수");
+    expect(after.hasLinkedDocuments).toBe(false);
+    expect(after.readonlyReason).toBeNull();
+    expect(after.cellEditability.execution).toBe("edit");
+
+    const [row] = await db.select().from(quoteLines).where(eq(quoteLines.id, fx.lines.withVendor));
+    if (!row) throw new Error("줄 없음");
+    await saveQuoteLines(fx.pm, fx.revisionId, {
+      rows: [
+        {
+          id: row.id,
+          version: row.version,
+          subcategory: row.subcategory,
+          itemName: row.itemName,
+          vendorId: row.vendorId,
+          unitPrice: { currency: "KRW", amount: row.unitPriceAmountKrw, fxRate: 1 },
+          execution: { currency: "KRW", amount: 12_000_000, fxRate: 1 },
+        },
+      ],
+    });
+    const [saved] = await db.select({ execution: quoteLines.executionAmountKrw }).from(quoteLines).where(eq(quoteLines.id, fx.lines.withVendor));
+    expect(saved?.execution).toBe(12_000_000);
+  });
+
+  it("종결 문서 + 종결 안 된 결재 중 문서 → readonlyReason은 남은 문서 번호", async () => {
+    const fx = await setupExpenseProject();
+    const closed = await rejectedLine(fx);
+    await closeExpense(fx.pm, { expenseId: closed.expenseId, expectedVersion: (await expenseRow(closed.expenseId)).version, reason: "업체 취소" });
+    const next = await submitReadyDraft(fx.pm, await draftOf(fx.pm, fx.lines.withVendor));
+    if (next.kind !== "submitted") throw new Error("제출 안 됨");
+    const line = await lineOf(fx.pm, fx.revisionId, fx.lines.withVendor);
+    expect(line.linkedStatus).toBe("active");
+    expect(line.readonlyReason).toBe(`지출결의 ${next.number} 연결됨 · 고치려면 새 차수`);
+  });
+});
+
+describe("선결제 기한 2행", () => {
+  it("기한(14일)이 16일 지난 선결제 · 증빙 0 → prepaidOverdueDays 16, 면제 뒤 → null", async () => {
+    const fx = await setupExpenseProject();
+    const payer = await makePayer();
+    const doc = await approvedOf(fx, await submitPrepaid(fx));
+    await payOn(payer, doc, addDays(seoulToday(), -30));
+    expect((await lineOf(fx.pm, fx.revisionId, fx.lines.withVendor)).prepaidOverdueDays).toBe(16);
+
+    await waiveEvidence(payer, { expenseId: doc.expenseId, version: (await expenseRow(doc.expenseId)).version, reason: "업체 폐업" });
+    expect((await lineOf(fx.pm, fx.revisionId, fx.lines.withVendor)).prepaidOverdueDays).toBeNull();
+  });
+});
+
+describe("새 차수 뒤 같은 상태", () => {
+  it("지급 완료 줄 · 카드 사용 줄을 새 차수로 복사 → 복사 줄도 paid · card_used", async () => {
+    const fx = await setupExpenseProject();
+    await paidLine(fx);
+    await cardOn(fx, fx.lines.noVendor);
+    const extra = await addApprovedRevision(fx, []);
+    expect(await linkedStatusOf(fx, extra.lineIds.get("무대 제작") ?? "", extra.revisionId)).toBe("paid");
+    expect(await linkedStatusOf(fx, extra.lineIds.get("현장 진행 인력") ?? "", extra.revisionId)).toBe("card_used");
+  });
+});
+
+describe("지출결의 쪽 게이트 (EXP-07 · D-609)", () => {
+  it("카드 사용 2건 줄에 제출 → `카드 사용 2건 연결됨 · 지출결의는 다른 줄`", async () => {
+    const fx = await setupExpenseProject();
+    const draft = await draftOf(fx.pm, fx.lines.withVendor);
+    await cardOn(fx, fx.lines.withVendor);
+    await cardOn(fx, fx.lines.withVendor);
+    const error = await caught(submitReadyDraft(fx.pm, draft));
+    expect(error).toBeInstanceOf(GateBlockedError);
+    expect((error as Error).message).toBe("카드 사용 2건 연결됨 · 지출결의는 다른 줄");
+    expect((await expenseRow(draft)).number).toBeNull();
+  });
+
+  it("구매 요청 `신청됨` 줄에 제출 → `구매 요청 1건 연결됨 · 지출결의는 다른 줄`", async () => {
+    const fx = await setupExpenseProject();
+    const draft = await draftOf(fx.pm, fx.lines.withVendor);
+    await requestOn(fx, fx.lines.withVendor);
+    const error = await caught(submitReadyDraft(fx.pm, draft));
+    expect((error as Error).message).toBe("구매 요청 1건 연결됨 · 지출결의는 다른 줄");
+  });
+
+  it("온라인구매 협력사 줄에 제출 → purchase.line-door `온라인구매 협력사 줄 · 구매 요청으로`", async () => {
+    const fx = await setupExpenseProject();
+    const draft = await draftOf(fx.pm, fx.lines.withVendor);
+    await setSettingValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME, "스테이지원");
+    const error = await caught(submitReadyDraft(fx.pm, draft));
+    expect(error).toBeInstanceOf(GateBlockedError);
+    expect((error as Error).message).toBe("온라인구매 협력사 줄 · 구매 요청으로");
+    expect((await expenseRow(draft)).number).toBeNull();
+  });
+
+  it("[H-4] 보관된 카드 사용만 있는 줄 → 제출 통과 · 상태에 카드 사용 없음", async () => {
+    const fx = await setupExpenseProject();
+    const draft = await draftOf(fx.pm, fx.lines.withVendor);
+    await setArchived(await cardOn(fx, fx.lines.withVendor), true, fx.pm.id);
+    expect(await linkedStatusOf(fx, fx.lines.withVendor)).toBeNull();
+    expect((await submitReadyDraft(fx.pm, draft)).kind).toBe("submitted");
+    expect(await linkedStatusOf(fx, fx.lines.withVendor)).toBe("active");
   });
 });

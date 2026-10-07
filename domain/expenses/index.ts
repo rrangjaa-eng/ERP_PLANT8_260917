@@ -53,6 +53,7 @@ import type { ApprovalStatus } from "@/domain/approvals/route";
 import { visible } from "@/domain/permissions/visible";
 import { findApprovalGraphByDocument, type ApprovalGraph } from "@/repositories/approvals";
 import type { DescribeDeps, DocumentSummary, RouteConfigStep } from "@/domain/approvals/kinds";
+import { EVIDENCE_AMOUNT_TAX_INCLUSIVE, isTaxInclusiveEvidenceAmount } from "@/domain/evidence-reviews/tax-inclusive";
 import { gate, GateBlockedError } from "@/domain/rules/gate";
 import "@/domain/rules/register";
 import { moneyFromRow, moneyToColumns, remainingForInstallments, sameAmountOn, type Money } from "@/domain/money";
@@ -791,6 +792,15 @@ export async function saveExpenseDraft(
     const reason = fields.prepaidReason !== undefined ? fields.prepaidReason : row.prepaidReason;
     if (!reason?.trim()) throw new ExpenseFieldError("prepaidReason", PREPAID_REASON_REQUIRED);
   } else if (fields.prepaidReason !== undefined) fields.prepaidReason = null;
+  // 06-10 EA-1(사용자 결정 10/6 11:57 채팅 — 저장 막기): 증빙 금액이 공급가액 + 부가세와 정확히 같으면 부가세 포함 합계로 보고 거부한다.
+  // 합친 값(이번 입력 + 저장된 행)으로 판정하고, 부가세는 지급 총액과 같은 길(computeExpenseTax → applyTaxRule)이다 — 새 세금 계산 없음.
+  const evidenceAmount = fields.evidenceAmount !== undefined ? fields.evidenceAmount : row.evidenceAmount;
+  if (evidenceAmount !== null && evidenceAmount !== undefined) {
+    const merged: ExpenseRow = { ...row, ...fields };
+    const tax = await computeExpenseTax(viewer, merged);
+    if (!tax.unavailable && merged.supplyAmountKrw !== null && isTaxInclusiveEvidenceAmount({ evidenceAmountKrw: evidenceAmount, supplyKrw: merged.supplyAmountKrw, vatKrw: tax.vatKrw }))
+      throw new ExpenseFieldError("evidenceAmount", EVIDENCE_AMOUNT_TAX_INCLUSIVE);
+  }
   // 번호 있는 문서(반려 · 회수)는 공급가액이 있어야 한다(DB 체크 — 번호 있으면 공급가액 > 0) — DB 오류 대신 칸 오류.
   if (row.number !== null && fields.supplyAmountKrw !== undefined && (fields.supplyAmountKrw === null || fields.supplyAmountKrw <= 0)) {
     throw new ExpenseFieldError("supplyAmount", fields.supplyAmountKrw === null ? SUPPLY_EMPTY : SUPPLY_ZERO);

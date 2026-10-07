@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { ProjectCardUsageDto, ProjectCardUsages } from "@/domain/corp-card-usages";
 import { listProjectCardUsagesAction } from "@/app/(app)/cards/actions";
 import { formatKrw } from "@/lib/format-number";
@@ -16,7 +17,7 @@ import styles from "./project-detail.module.css";
 // 06-07(UI-SPEC S15): 프로젝트 상세 「법인카드 사용」 — 매출 섹션 아래 읽기 표(부제 없음 — C13). 그 프로젝트 견적 줄(견적 외 비용 포함)에 이은
 // 카드 사용만, 사용일 오름차순 · 페이지 나눔 없음. 금액 열 · 합계 행 금액은 서버가 `quote.amount`로 뺀다(없으면 `합계 ({N}건)`만).
 // 섹션이 따로 불러(액션) 실패해도 원장 · 매출 섹션은 선다 — 「Error — 섹션 로드」 `카드 사용 불러오지 못함 · 다시 시도`.
-// 행에서 수정 패널(`/cards?editId=`)로 가는 링크는 06-09가 더한다 — 지금 폰 행은 RowSheet.
+// 06-09: 폰 행 탭 — 그 건의 권리(O-11, 서버 `rights`)가 있으면 수정 패널(`/cards?editId=`), 없으면 RowSheet(보기 전용).
 
 type Row = Partial<ProjectCardUsageDto> & { id: string };
 type Load = { kind: "loading" } | { kind: "error" } | { kind: "ready"; data: ProjectCardUsages };
@@ -63,6 +64,7 @@ export function CardUsageSection({ projectId }: { projectId: string }) {
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   const [attempt, setAttempt] = useState(0);
   const [sheet, setSheet] = useState<Row | null>(null);
+  const router = useRouter();
 
   useEffect(() => {
     let live = true;
@@ -140,7 +142,7 @@ export function CardUsageSection({ projectId }: { projectId: string }) {
         columns={columns}
         rows={rows}
         getRowId={(row) => row.id}
-        onRowTap={(row) => setSheet(row)}
+        onRowTap={(row) => (row.rights?.edit ? router.push(`/cards?editId=${row.id}`) : setSheet(row))}
         rowLabel={(row) => row.lineLabel ?? row.id}
         footer={
           <tr>

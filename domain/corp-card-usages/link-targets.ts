@@ -174,13 +174,15 @@ export async function searchProjectsForCardLink(
   input: { query: string },
 ): Promise<{ rows: Partial<CardLinkProjectDto>[]; truncated: boolean; subtitle: string }> {
   if (!(await can(viewer, "projects", "view"))) throw new ForbiddenError(PROJECTS_VIEW_DENIED);
+  // 대리 등록 권한자는 완료 프로젝트도 고른다(견적 외 비용만 — U-4 · Q-B). 2행은 그대로 잠김 이유.
+  const proxy = await can(viewer, "cards.proxy", "write");
   const query = input.query.trim();
   const found = await listLinkProjects(viewer, { query: query === "" ? null : query, limit: LINK_PICK_LIMIT + 1 });
   const kept = found.slice(0, LINK_PICK_LIMIT);
   const rows: CardLinkProjectDto[] = kept.map((row) => {
     const word = PROJECT_STATUS_WORD[row.status as keyof typeof PROJECT_STATUS_WORD] ?? row.status;
     const lock = projectLinkLock(row.status);
-    return { id: row.id, number: row.number, name: row.name, note: lock ?? `${word} · 담당 ${row.pmName ?? "—"}`, selectable: lock === null };
+    return { id: row.id, number: row.number, name: row.name, note: lock ?? `${word} · 담당 ${row.pmName ?? "—"}`, selectable: lock === null || (proxy && row.status === "completed") };
   });
   const subtitle = STATUS_ORDER.flatMap((status) => {
     const count = kept.filter((row) => row.status === status).length;
@@ -293,11 +295,15 @@ export async function searchLinesForCardLink(
 export type CardLinkProjectChoice = { id: string; label: string };
 export type CardLinkLineChoice = { id: string; itemName: string; remainingKrw: number | null; hint: string | null };
 
-// 고를 수 있는 프로젝트면 `{번호} {이름}`(투영 뒤) — 볼 수 없거나 · 보관 · 완료면 null.
-export async function cardLinkProjectChoice(viewer: Viewer, projectId: string): Promise<CardLinkProjectChoice | null> {
+// 고를 수 있는 프로젝트면 `{번호} {이름}`(투영 뒤) — 볼 수 없거나 · 보관 · 완료면 null(완료는 `completedOutOfQuote` — 권한자의 견적 외 비용 — 일 때만 통과).
+export async function cardLinkProjectChoice(
+  viewer: Viewer,
+  projectId: string,
+  options: { completedOutOfQuote?: boolean } = {},
+): Promise<CardLinkProjectChoice | null> {
   if (!(await can(viewer, "projects", "view"))) return null;
   const project = await findProjectById(viewer, projectId);
-  if (!project || project.archivedAt || projectLinkLock(project.status)) return null;
+  if (!project || project.archivedAt || (projectLinkLock(project.status) && !(options.completedOutOfQuote && project.status === "completed"))) return null;
   const [row] = await projectMany(viewer, [{ id: project.id, number: project.number, name: project.name, note: "", selectable: true }], CARD_LINK_PROJECT_SPEC);
   return row?.id && row.number !== undefined && row.name !== undefined ? { id: row.id, label: `${row.number} ${row.name}` } : null;
 }

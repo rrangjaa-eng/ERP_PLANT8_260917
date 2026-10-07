@@ -145,7 +145,9 @@ SUMMARY 커밋 제외 단일 repo 커밋 7건(측정: `git rev-list --count 171d
 
 ## 화면 검토 증거
 
-(독립 감사 · `/design-review` · `/qa` 몫 — 실행자는 비워 둔다)
+- 독립 DOM 감사(CI=true 4폭): `/mnt/project-files/notes/06-review/06-08-dom-audit.md` — 결함은 같은 플랜 「검토 반영」에서 수정
+- 합본 `/design-review`(Codex 실행·후보 8건 결함 아님, DOM 실측 결함 0): `/mnt/project-files/notes/06-review/183-design-review.md` 「플랜별 화면 검토 증거」 06-08 행, 원자료 `/mnt/project-files/notes/06-review/183-design-review-artifacts/`
+- 합본 `/qa`(CI=true 흐름 21 통과, Low 3건 보고): `/mnt/project-files/notes/06-review/183-qa.md`
 
 ## 사용자 질문 후보
 

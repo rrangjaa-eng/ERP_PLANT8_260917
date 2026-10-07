@@ -127,6 +127,9 @@ actuals:
 
 ## 화면 검토 증거
 
+- 독립 DOM 감사(CI=true 4폭): `/mnt/project-files/notes/06-review/06-15-dom-audit.md` — 결함은 같은 플랜 「검토 반영」에서 수정
+- 합본 `/design-review`(Codex 실행·후보 8건 결함 아님, DOM 실측 결함 0): `/mnt/project-files/notes/06-review/183-design-review.md` 「플랜별 화면 검토 증거」 06-15 행, 원자료 `/mnt/project-files/notes/06-review/183-design-review-artifacts/`
+- 합본 `/qa`(CI=true 흐름 21 통과, Low 3건 보고): `/mnt/project-files/notes/06-review/183-qa.md`
 ## 사용자 질문 후보
 1. ~~빈 화면 행동을 버튼으로 했다 — ui/ListEmpty에 prefetch 선택지를 더할지~~ → **사라짐(검토 I-1)**: 원인은 인코딩 안 한 href였고, URLSearchParams로 인코딩한 링크로 되돌렸다(ui/ 변경 없음, 534c87f).
 2. `지급 완료 보기`가 가는 `?status=지급 완료`는 06-20 전까지 S1을 다시 보인다(모르는 값 = 지급 대상). 06-20까지 그대로 둘지.

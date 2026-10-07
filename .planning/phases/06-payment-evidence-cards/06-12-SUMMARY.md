@@ -175,7 +175,9 @@ risk: money 플랜 — Opus 독립 검토 1명이 볼 자리: `completePurchaseR
 - `/cards/purchases?purchase={id}` 결제 합계 칸 Enter(패널 그대로)
 
 ### 화면 검토 증거(검토 반영분)
-- (오케스트레이터가 채움)
+- 독립 DOM 감사(CI=true 4폭): `/mnt/project-files/notes/06-review/06-12-dom-audit.md` — 결함은 위 「검토 반영」에서 수정
+- 합본 `/design-review`(Codex 실행·후보 8건 결함 아님, DOM 실측 결함 0): `/mnt/project-files/notes/06-review/183-design-review.md` 「플랜별 화면 검토 증거」 06-12 행, 원자료 `/mnt/project-files/notes/06-review/183-design-review-artifacts/`
+- 합본 `/qa`(CI=true 흐름 21 통과, Low 3건 보고): `/mnt/project-files/notes/06-review/183-qa.md`
 
 ## Known Stubs
 없음.

@@ -5,6 +5,7 @@ import { REJECT_REASON_EMPTY_MESSAGE } from "@/domain/approvals";
 import { cardEvidenceDefault } from "@/domain/corp-card-usages/amounts";
 import { recentFxRate } from "@/domain/money/currency";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
+import { Num } from "@/ui/num/Num";
 import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { Pagination } from "@/ui/pagination/Pagination";
 import { pageRangeText } from "@/ui/pagination/page-window";
@@ -12,6 +13,8 @@ import { SidePanel } from "@/ui/side-panel/SidePanel";
 import { PurchaseCancelUndo, PurchaseCancelUndoLine } from "./cancel-undo";
 import { PurchaseFilters, PurchaseList, PurchaseListLoadError, type PurchaseListRowView } from "./purchase-list";
 import { PURCHASE_STATUS_VIEWS, type PurchaseStatusView } from "./purchase-status-word";
+// 합계 면은 카드 사용 목록 합계와 같은 클래스(새 CSS 없음).
+import totalsStyles from "@/app/(app)/projects/projects.module.css";
 import { PurchaseRequestForm, type PurchaseEntry } from "./purchase-request-form";
 import { CardUsageForm, type CardOption, type CardUsagePurchase } from "../card-usage-form";
 
@@ -181,7 +184,7 @@ export default async function PurchasesPage({ searchParams }: { searchParams: Pr
     body = (
       <>
         <PurchaseCancelUndoLine />
-        <PurchaseList rows={rows} listHref={listHref} canComplete={list.privileged} doneId={doneId} />
+        <PurchaseList rows={rows} listHref={listHref} canComplete={list.privileged} doneId={doneId} groupByStatus={view === "전체"} />
       </>
     );
   else if (!list.anyInScope) {
@@ -219,6 +222,23 @@ export default async function PurchasesPage({ searchParams }: { searchParams: Pr
         title="구매 요청"
         primaryAction={newAction}
         filters={filters}
+        summary={
+          list && list.totals.count > 0 ? (
+            <section aria-label="합계" className={totalsStyles.totals}>
+              <p className={totalsStyles.totalsTitle}>{`합계 (${view} · ${list.totals.count}건)`}</p>
+              {list.totals.estimateKrw === null ? null : (
+                <dl className={totalsStyles.totalsPairs}>
+                  <div className={totalsStyles.totalsPair}>
+                    <dt>예상 금액</dt>
+                    <dd>
+                      <Num value={list.totals.estimateKrw} />
+                    </dd>
+                  </div>
+                </dl>
+              )}
+            </section>
+          ) : undefined
+        }
         empty={empty}
         pagination={
           list && rows.length > 0 ? (

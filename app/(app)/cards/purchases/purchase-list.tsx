@@ -153,6 +153,28 @@ const COLUMNS: TableColumn<PurchaseListRowView>[] = [
   },
 ];
 
+// 그룹(06-14 S11) — `전체` 보기는 상태(서버가 신청됨 → 구매 완료 → 취소 순으로 준다), 그 밖은 요청일이 속한 주(월 ~ 일).
+function weekStart(date: string): string {
+  const day = new Date(`${date}T00:00:00Z`);
+  day.setUTCDate(day.getUTCDate() - ((day.getUTCDay() + 6) % 7));
+  return day.toISOString().slice(0, 10);
+}
+
+function weekEnd(start: string): string {
+  const day = new Date(`${start}T00:00:00Z`);
+  day.setUTCDate(day.getUTCDate() + 6);
+  return day.toISOString().slice(0, 10);
+}
+
+function groupProps(byStatus: boolean) {
+  return byStatus
+    ? { groupBy: (row: PurchaseListRowView) => row.status, groupHeader: (row: PurchaseListRowView) => purchaseStatusWord(row.status) }
+    : {
+        groupBy: (row: PurchaseListRowView) => weekStart(row.requestedOn),
+        groupHeader: (row: PurchaseListRowView) => `${weekStart(row.requestedOn).slice(5)} ~ ${weekEnd(weekStart(row.requestedOn)).slice(5)}`,
+      };
+}
+
 function completeHref(listHref: string, id: string): string {
   return `${listHref}${listHref.includes("?") ? "&" : "?"}purchase=${id}`;
 }
@@ -208,7 +230,19 @@ function focusNextComplete(rows: PurchaseListRowView[], doneId: string): void {
   target?.focus();
 }
 
-export function PurchaseList({ rows, listHref, canComplete, doneId }: { rows: PurchaseListRowView[]; listHref: string; canComplete: boolean; doneId: string | null }) {
+export function PurchaseList({
+  rows,
+  listHref,
+  canComplete,
+  doneId,
+  groupByStatus,
+}: {
+  rows: PurchaseListRowView[];
+  listHref: string;
+  canComplete: boolean;
+  doneId: string | null;
+  groupByStatus: boolean;
+}) {
   const router = useRouter();
   const [sheet, setSheet] = useState<PurchaseListRowView | null>(null);
   useEffect(() => {
@@ -222,7 +256,7 @@ export function PurchaseList({ rows, listHref, canComplete, doneId }: { rows: Pu
     return () => window.clearTimeout(timer);
   }, [rows, doneId]);
   const sheetTarget = sheet ? cancelTarget(sheet) : null;
-  if (!canComplete && !rows.some((row) => row.cancelBranch !== null)) return <Table caption="구매 요청" columns={COLUMNS} rows={rows} getRowId={(row) => row.id} />;
+  if (!canComplete && !rows.some((row) => row.cancelBranch !== null)) return <Table caption="구매 요청" columns={COLUMNS} rows={rows} getRowId={(row) => row.id} {...groupProps(groupByStatus)} />;
   return (
     <>
       <Table
@@ -230,6 +264,7 @@ export function PurchaseList({ rows, listHref, canComplete, doneId }: { rows: Pu
         columns={[...COLUMNS, actionsColumn(listHref, canComplete)]}
         rows={rows}
         getRowId={(row) => row.id}
+        {...groupProps(groupByStatus)}
         onRowTap={(row) => (canComplete && row.status === "requested" ? router.push(completeHref(listHref, row.id), { scroll: false }) : setSheet(row))}
         rowLabel={(row) => row.number}
       />

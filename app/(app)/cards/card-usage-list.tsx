@@ -7,7 +7,7 @@ import { RowSheet } from "@/ui/table/RowSheet";
 import type { TableColumn } from "@/ui/table/types";
 import { Num } from "@/ui/num/Num";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
-import { RowActions } from "@/ui/row-actions/RowActions";
+import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
 import type { CardUsageRights } from "@/domain/corp-card-usages/rights";
 import { formatForeignLine, formatKrw } from "@/lib/format-number";
 // 필터 칸 모양은 프로젝트 목록 필터와 같은 클래스(새 CSS 없음).
@@ -207,6 +207,7 @@ export function CardUsageFilters({
   link,
   proxyOnly,
   registrationFilter,
+  purchasesLink,
 }: {
   month: string;
   thisMonth: string;
@@ -216,6 +217,8 @@ export function CardUsageFilters({
   link: string;
   proxyOnly: boolean;
   registrationFilter: boolean;
+  /** 06-14 SP-4 하위 목록 링크(`구매 요청 {N}` — 0이면 `구매 요청`만). */
+  purchasesLink: { label: string; href: string };
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -283,6 +286,9 @@ export function CardUsageFilters({
           </select>
         </div>
       ) : null}
+      <RowActions>
+        <RowAction href={purchasesLink.href}>{purchasesLink.label}</RowAction>
+      </RowActions>
     </>
   );
 }

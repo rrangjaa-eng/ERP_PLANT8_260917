@@ -111,8 +111,8 @@ test.describe("팀 비용 구매 요청 (06-14)", () => {
     await expect(status).toHaveText(/^구매 요청됨 · TC\d{2}-\d{4}$/);
     const number = ((await status.textContent()) ?? "").split(" · ")[1] ?? "";
     expect(number).toMatch(/^TC\d{2}-\d{4}$/);
-    // 뒤 목록 첫 줄(최근 요청이 첫 줄).
-    await expect(page.getByRole("row").nth(1)).toContainText(number);
+    // 뒤 목록 첫 줄(최근 요청이 첫 줄) — 첫 행은 요청일 주 그룹 머리(06-14)라 데이터 첫 행은 둘째.
+    await expect(page.getByRole("row").nth(2)).toContainText(number);
     await page.context().close();
 
     const [saved] = await db.select({ id: purchaseRequests.id }).from(purchaseRequests).where(eq(purchaseRequests.number, number));
@@ -215,6 +215,77 @@ test.describe("구매 요청 취소 (06-14)", () => {
     const purchasedRow = rowOf(page, doneNumber);
     await expect(purchasedRow).toHaveCount(1);
     await expect(purchasedRow.getByRole("button", { name: `${doneNumber} 요청 취소` })).toHaveCount(0);
+    await page.context().close();
+  });
+});
+
+test.describe("구매 요청 목록 마감 (06-14)", () => {
+  test("카드 목록 필터 끝 하위 링크 — 0건이면 `구매 요청` · 신청 1건 뒤 `구매 요청 1` → 구매 요청 목록", async ({ browser, baseURL }) => {
+    const requester = await makeRequester();
+    // 쓸 카드가 0장인 직원 — 필터 줄이 서지 않아 빈 화면의 행동이 같은 링크를 맡는다(구매 요청은 카드 없는 직원도 한다).
+    const page = await loginPage(browser, baseURL, requester.person);
+    await page.goto("/cards");
+    await expect(page.getByRole("link", { name: "구매 요청", exact: true })).toBeVisible();
+    await submitTeamRequest(page);
+    await page.goto("/cards");
+    const link = page.getByRole("link", { name: "구매 요청 1", exact: true });
+    await expect(link).toBeVisible();
+    await link.click();
+    await expect(page).toHaveURL(/\/cards\/purchases$/);
+    await page.context().close();
+  });
+
+  test("`전체` 보기 — 그룹 순서 신청됨 → 구매 완료 → 취소 · 합계 줄 `합계 (전체 · 3건)` · 예상 금액 합", async ({ browser, baseURL }) => {
+    const requester = await makeRequester();
+    const page = await loginPage(browser, baseURL, requester.person);
+    const first = await submitTeamRequest(page);
+    const second = await submitTeamRequest(page);
+    const third = await submitTeamRequest(page);
+    const byNumber = async (number: string) => (await db.select({ id: purchaseRequests.id }).from(purchaseRequests).where(eq(purchaseRequests.number, number)))[0]?.id ?? "";
+    // 가장 최근 요청을 취소 · 중간을 구매 완료로 — 요청일 순서(최근 먼저)와 상태 그룹 순서가 정반대가 되게 한다.
+    await db
+      .update(purchaseRequests)
+      .set({ status: "cancelled", cancelledBy: requester.person.viewer.id, cancelledAt: new Date(), cancelReason: null })
+      .where(eq(purchaseRequests.id, await byNumber(third)));
+    await db
+      .update(purchaseRequests)
+      .set({ status: "purchased", completedBy: requester.person.viewer.id, completedAt: new Date() })
+      .where(eq(purchaseRequests.id, await byNumber(second)));
+
+    await page.goto(`/cards/purchases?status=${encodeURIComponent("전체")}`);
+    const table = page.getByRole("table");
+    await expect(table).toContainText(first);
+    const text = (await table.textContent()) ?? "";
+    expect(text.indexOf(first)).toBeGreaterThan(-1);
+    expect(text.indexOf(first)).toBeLessThan(text.indexOf(second));
+    expect(text.indexOf(second)).toBeLessThan(text.indexOf(third));
+    const summary = page.getByRole("region", { name: "합계" });
+    await expect(summary).toContainText("합계 (전체 · 3건)");
+    await expect(summary).toContainText("99,000");
+    // 취소 행 2행 — 본인 취소는 사유 칸이 없다.
+    await expect(rowOf(page, third)).toContainText(`취소 ${seoulToday().slice(5)} · ${requester.person.name}`);
+    await page.context().close();
+  });
+
+  test("외화 요청 — 예상 금액 2행 `USD 1,000.00 @1,350`", async ({ browser, baseURL }) => {
+    const requester = await makeRequester();
+    const number = `TCUSD${randomUUID().slice(0, 6)}`;
+    await db.insert(purchaseRequests).values({
+      number,
+      linkKind: "team_cost",
+      requestedBy: requester.person.viewer.id,
+      itemName: "해외 결제 물건",
+      estimateCurrency: "USD",
+      estimateForeignAmount: "1000",
+      estimateFxRate: "1350",
+      estimateAmountKrw: 1_350_000,
+    });
+    const page = await loginPage(browser, baseURL, requester.person);
+    await page.goto("/cards/purchases");
+    const row = rowOf(page, number);
+    await expect(row).toHaveCount(1);
+    await expect(row).toContainText("1,350,000");
+    await expect(row).toContainText("USD 1,000.00 @1,350");
     await page.context().close();
   });
 });

@@ -20,7 +20,9 @@ import {
   submitExpense,
   withdrawExpense,
 } from "@/domain/expenses";
-import { expenseDraftFieldsSchema } from "@/domain/expenses/draft-fields";
+import { DATE_FORMAT_ERROR, EXPENSE_TEXT_MAX, expenseDraftFieldsSchema } from "@/domain/expenses/draft-fields";
+import { completePaymentsBatch } from "@/domain/payments/batch";
+import { isCalendarDate } from "@/lib/dates";
 import { searchLinesForPick, searchVendorsForPick } from "@/domain/expenses/pick";
 import {
   completeEvidenceUpload,
@@ -242,3 +244,28 @@ export const restoreExpenseDraftAction = authedActionClient
     revalidatePath(`/expenses/${restored.expenseId}`);
     return { expenseId: restored.expenseId };
   });
+
+// 06-15(S2 · AS1) — 일괄 지급. 입력은 모달을 연 순간의 스냅숏(행 id · version · 기대 지급 총액 · 이체액 · 차이 사유)과 지급일 하나(O-3).
+// 지급 총액 · 역산 칸은 받지 않는다 — expectedPayableKrw는 낡았는지 가리는 비교값이다. 지급일은 05 isCalendarDate · DATE_FORMAT_ERROR(E-20 —
+// 달력에 없는 날짜 · 0000년이 DB까지 가지 않는다), 미래 날짜는 허용(Q6). 행 수 1~200(T-06-75). 판정(권한 · 보임 · 게이트)은 도메인.
+const batchPaymentSchema = z.object({
+  payDate: z.string().refine(isCalendarDate, DATE_FORMAT_ERROR),
+  rows: z
+    .array(
+      z.object({
+        expenseId: expenseIdSchema,
+        expenseVersion: z.number().int().positive(),
+        expectedPayableKrw: z.number().int().nonnegative(),
+        transferKrw: z.number().int().positive().optional(),
+        diffReason: z.string().max(EXPENSE_TEXT_MAX).optional(),
+      }),
+    )
+    .min(1)
+    .max(200),
+});
+
+export const completePaymentsBatchAction = authedActionClient.schema(batchPaymentSchema).action(async ({ parsedInput, ctx }) => {
+  const result = await completePaymentsBatch(ctx.viewer, parsedInput);
+  revalidatePath("/expenses");
+  return result;
+});

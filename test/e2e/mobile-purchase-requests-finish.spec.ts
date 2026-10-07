@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { test, expect } from "@playwright/test";
 import { db } from "@/db/client";
 import { purchaseRequests } from "@/db/schema";
+import { eq, sql } from "drizzle-orm";
 import { createOrgUnit, createTeam } from "@/domain/org";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { insertRole } from "@/repositories/roles";
@@ -132,4 +133,26 @@ test.describe("폰 구매 요청 (06-14)", () => {
     await expect(line.getByRole("button", { name: "되돌리기" })).toBeFocused();
     await page.context().close();
   });
+
+  test("[183 m-4] 375 — S13 패널의 본인 `요청 취소`가 서버에서 거부되면 패널은 열린 채 · 패널 안 오류 한 줄", async ({ browser, baseURL }) => {
+    const suffix = randomUUID().slice(0, 8);
+    const buyer = await makePurchaser();
+    const ownNumber = `TCPF${suffix.slice(0, 6)}`;
+    await seedRequest(buyer.viewer.id, ownNumber, "폰 실패 물건");
+
+    const page = await loginPage(browser, baseURL, buyer, { width: 375, height: 700 });
+    await page.goto("/cards/purchases");
+    const panel = page.getByRole("dialog", { name: "구매 완료" });
+    const tapOwn = page.getByRole("button", { name: `${ownNumber} 상세 보기` });
+    await waitForHydration(tapOwn);
+    await tapOwn.click();
+    await expect(panel).toBeVisible();
+    // 패널을 연 뒤 다른 저장이 먼저 된다(version + 1) — 서버가 `다른 저장이 먼저 됨 · 새로 고침`으로 거부한다.
+    await db.update(purchaseRequests).set({ version: sql`${purchaseRequests.version} + 1` }).where(eq(purchaseRequests.number, ownNumber));
+    await panel.getByRole("button", { name: `${ownNumber} 요청 취소` }).click();
+    await expect(panel.getByRole("alert")).toHaveText("다른 저장이 먼저 됨 · 새로 고침");
+    await expect(panel).toBeVisible();
+    await page.context().close();
+  });
 });
+

@@ -125,8 +125,10 @@ plan_head_before: 01a2417
 - 활성 카드 0장 갈래(`활성 법인카드 없음 · 카드 등록은 관리자` · 1차 비활성)는 코드에 있으나 E2E는 없다 — 공유 DB에 다른 스펙 카드가 늘 있어 0장을 만들 수 없다(DOM 감사 대상).
 
 ## 사용자 질문 후보
-- 구매 완료 처리 알림(옛 `purchase_handled`)을 요청자에게 보낼까 — 07 알림 페이즈 몫인지.
+- 구매 완료 처리 알림(옛 `purchase_handled`)을 요청자에게 보낼까 — 07 알림 페이즈 몫인지. 보내게 되면 옛 규칙 「처리자 = 요청자면 안 보냄」 · 설정 `notify.purchase_handled` 켜기 조건도 함께(검토 260907 대조 — 숨은 규칙, 구현 안 함).
 - S13 카드가 여러 장일 때 기본값(지금 비움 — UI-SPEC 「사용자 결정 남음」 자리): 직전 쓴 카드를 기본으로 둘지.
+- (검토 I-4) 완료 프로젝트 줄의 실행가 초과 구매 완료는 초과액이 `purchase_process` 로그 상세에만 남는데, `purchase_process`는 관리자가 끌 수 있는 로그 종류다(`ALWAYS_ON_ACTION_TYPES`에 없음 — `domain/action-log/record.ts:94-118`, 설정 `action_log.optional_types`). 끄면 Q-E 초과가 흔적 없이 들어간다. 끌 수 없게(06-04 `payment_cancel` 선례처럼 한 줄 추가) 할지, 그대로 둘지. 카드 고치기 `document_update` 요약(`카드 고침 · …`)도 같다. 고치지 않았다.
+- (검토 반영 D-1) UI-SPEC S11 「폰에서도 … 행 안 `RowActions`」 대신 폰은 행동 칸을 숨기고 행 탭으로 `구매 완료`(바로 S13)를 연다 — 행 안에 두면 320에서 표가 넘쳤다. SYSTEM §7-3 (차) · 06-09 `/cards` 표 선례를 따랐다. 다른 안: 행동을 상태 칸 2행 자리에 쌓기(품목이 거의 보이지 않을 만큼 줄어 고르지 않음).
 
 ## 넘김
 - 06-14: S11 결과 줄 · 요청 취소 · 상태 그룹(이 플랜은 `?done=` 행 유지만).
@@ -135,6 +137,43 @@ plan_head_before: 01a2417
 
 ## 독립 검토 메모
 risk: money 플랜 — Opus 독립 검토 1명이 볼 자리: `completePurchaseRequest` 잠금 순서(프로젝트 → 현재 줄 · 견적 줄 → 요청 행)와 `runCreate` 고정 연결 갈래(`settled` 판정을 잠근 행으로), `precheckCardUsageUpdate` 카드 고치기 갈래(권리 + 구매 권한 + 활성 카드), `?done=` keepId가 범위(scope) 조건을 지키는지(`listPurchaseRequestRows` — `scopeCondition` AND id).
+
+## 검토 반영(독립 검토 06-12-review.md · DOM 감사 06-12-dom-audit.md)
+
+커밋 5ec8a1f..c8ab98c(7개). 모든 항목은 실패 테스트(RED)를 먼저 커밋하고 고쳤다.
+
+| 지적 | 처리 | 커밋 | 증거 |
+|---|---|---|---|
+| I-1 `전체` 보기 + `?done=` → 목록이 처리한 한 행만 · 다음 행 포커스 소실 | 기본 조건이 없으면(전사 범위 `전체`) keepId 갈래를 타지 않는다(`repositories/purchase-requests.ts` `listPurchaseRequestRows`) | ced70a3(RED) · 2cf0e58 | 통합 「[06-12 검토 I-1]」 1행 → 2행, E2E 「[06-12 검토 I-1]」 `전체` 보기 구매 완료 뒤 다음 `신청됨` 행 포커스 |
+| I-2 card-proxy.spec.ts:241 — Esc 닫기 이동 응답 전 `수정` → 닫힌 SidePanel 재사용 | `/cards` 수정 `key=edit-{id}` · 등록 `key=new`, `/cards/purchases` 구매 완료 `key=purchase-{id}` · 신청 `key=new`(`ui/` 안 고침) | ced70a3(RED) · a9cea46 | E2E 「[06-12 검토 I-2]」 `/cards` 목록 RSC 응답 2.5초 지연 → key 전 `dialog 카드 사용 수정` 0개(빨강) → 뒤 녹색. card-proxy.spec.ts `--workers=2` 3회 연속 14/14 |
+| I-3 테스트 공백(팀 비용 이중 완료 · 비활성 카드 · 금액 숨김 · 비구매 건 카드 고치기) | 통합 4건 추가(「[06-12 검토 I-3]」) | 5ec8a1f | 돌연변이 A(요청 행 FOR UPDATE 삭제) · D(includeInactive true) · G(precheckPurchaseLink amountVisible 늘 참) · E(카드 고치기 `registeredVia === "purchase"` 삭제) 각각 해당 케이스 1건만 빨강, 되돌린 뒤 4/4 |
+| D-1 구매 권한자 폰 표 가로 넘침(320 sw 367 · 외화 행 419~431) | 행동 칸 P1 → P3(폰에서 숨김 — SYSTEM §7-3 (차)), 폰 행 탭: `신청됨` 행 → 바로 S13 · 그 밖 → 보기 전용 `RowSheet`(06-09 `/cards` 선례). 성공 뒤 포커스는 링크가 숨어 있으면 다음 `신청됨` 행 탭 자리. 품목 칸을 연결 칸과 같은 격자 `minmax(0, max-content)`로(최소 폭 0) | ced70a3(RED) · 0a0de35 | E2E 「[06-12 감사 D-1]」 320 · 375 × `신청됨` · `전체`(원화 + 외화 행) scrollWidth ≤ clientWidth(RED 때 320 +48), 375 행 탭 → S13 |
+| O-1 외화 2행 nowrap(06-08부터) | 같은 원인 — `통화 금액` · `@환율` 묶음 사이에서만 꺾는다(`cards.module.css` `.secondaryWrap` · `.segment` 재사용) | 0a0de35 | 위 D-1 E2E의 외화 행 |
+| O-2 결제 합계 칸 그냥 Enter → 구매 완료 실행 | UI-SPEC S13은 1차 `구매 완료 Ctrl+Enter`만 정했고 칸 안 Enter는 정하지 않았다(§7-15 「단일 칸 Enter 제출 막음」은 문서 화면 제자리 칸 규칙). → 구매 완료 모드에서만 입력 칸 Enter(Ctrl · Meta 없음)를 막는다. Ctrl+Enter · 1차 버튼은 그대로, S9 등록 · 수정은 바꾸지 않음 | ced70a3(RED) · f8c09d1 | E2E 「[06-12 감사 O-2]」 Enter 뒤 1.5초 안 구매 완료 POST 0 · 요청 `신청됨` → Ctrl+Enter로 처리 |
+| O-3 카드 고치기 Select 첫 옵션 빈 `—` | **고치지 않음** — 빈 옵션은 공용 `ui/select/Select.tsx`가 늘 그린다(54행). 이 화면만 빼려면 공용 컴포넌트에 갈래가 필요하다(`ui/` 밖 국소 수정 불가). 빈 값을 고르면 `카드 1칸 비어 있음` 막힘이라 잘못 저장되지는 않는다. 넘김: 공용 Select 소유 플랜 | — | — |
+| S-1 낡은 주석 · 점검표 문구(가맹점 = 견적 줄 거래처) | 주석 · 점검표 한 줄씩을 「설정의 온라인구매 협력사」로 | c8ab98c | 글만 |
+| S-2 가맹점 기본값을 이름으로 찾음 | **고치지 않음** — 판단만 남긴 지적(같은 이름 거래처 여럿 · 10개 초과 시 다른 행). 견적 줄 `vendorId`를 쓰는 것은 UI-SPEC 「가맹점 = 온라인구매 협력사」 결정을 바꾸는 일이라 사용자 결정 몫 | — | — |
+| S-3 `runComplete` `currentLineForFixedLink` · version 재확인을 테스트가 지키지 않음 | **고치지 않음** — 검토자도 언급만(다른 방어선이 같은 결과, 돈 위험 없음) | — | — |
+| S-4 `purchaseNumber` 노출 범위(`card_usage.value` 계열) | **고치지 않음** — 금액이 아닌 번호, 정보 항목 설계 확인 몫(정보 항목 표를 바꾸면 권한 경로) | — | — |
+| S-5 처리 결과 2행 초과액이 모듈 변수 | **고치지 않음** — 플랜 결정(「처리 직후」), 기록은 I-4와 엮임 | — | — |
+| I-4 Q-E 초과 기록이 끌 수 있는 로그 종류에만 | **고치지 않음** — 「사용자 질문 후보」 | — | — |
+| 260907 `purchase_handled` 알림 | **고치지 않음** — 「사용자 질문 후보」 | — | — |
+
+플랜 밖 변경(검토 반영): `app/(app)/cards/page.tsx`(SidePanel key 두 줄 — I-2), `test/e2e/card-proxy.spec.ts`(I-2 재현 1건), `app/(app)/cards/card-usage-form.tsx`(O-2 키 처리 — 플랜 files_modified 안), 점검표 `docs/design/checks/2026-10-07-06-12-review-fixes.md`(design-gate 훅 요구).
+
+검증(검토 반영 뒤):
+- `pnpm typecheck` 0 · `pnpm lint` 0(flock)
+- 통합 `purchase-requests` 65/65 · `leak-scan` 포함 2 파일 3822/3822(erp_e0612_test) · 관련 단위 3 파일 24/24
+- E2E CI=true desktop `purchase-requests` · `card-proxy` · `card-usage` · `card-usage-panel-width` 52 통과 · 0 실패(18 skipped = visual), mobile-375 `--no-deps` `mobile-card-usage-320` · `mobile-corp-cards` 7/7, `card-proxy.spec.ts` `--workers=2` 3회 연속 14/14 · 14/14 · 14/14
+- 임시 `next.config.ts` `turbopack.root`는 매번 되돌림(커밋 없음)
+
+### 캡처 · GPT 검사 대상 경로(검토 반영분)
+- `/cards/purchases`(구매 권한자, 폰 320 · 375 — 행동 칸 없음 · 행 탭 → S13 / 구매 완료 · 취소 행 탭 → 행 시트, `전체` 보기 + 외화 요청 + 구매 완료 행이 함께 있을 때 넘침 0 · 품목 말줄임 폭)
+- `/cards/purchases?status=전체` → 구매 완료 → `?done=`(처리한 행 + 나머지 행 · 다음 `신청됨` 행 포커스, PC와 폰)
+- `/cards/purchases?purchase={id}` 결제 합계 칸 Enter(패널 그대로)
+
+### 화면 검토 증거(검토 반영분)
+- (오케스트레이터가 채움)
 
 ## Known Stubs
 없음.

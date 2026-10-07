@@ -19,10 +19,14 @@ import {
   cardOptionsForUsage,
   cardUsageFormDefaults,
   createCardUsage,
+  deleteCardUsage,
   listCardUsages,
+  listProjectCardUsages,
   loadCardUsageForEdit,
   precheckCardUsage,
+  precheckCardUsageRemoval,
   precheckCardUsageUpdate,
+  restoreCardUsage,
   updateCardUsage,
   usedByCandidates,
   type CardUsageInput,
@@ -782,5 +786,267 @@ describe("[M-4] 새 건 기본값 — 대리 등록", () => {
     const defaults = await cardUsageFormDefaults(fx.pm, seoulToday());
     expect(defaults.linkKind).toBe("out_of_quote");
     expect(defaults.project).toBeNull();
+  });
+});
+
+// ── Task 3 ──────────────────────────────────────────────────────────────────
+
+async function removal(viewer: Viewer, id: string) {
+  const row = await rowOf(id);
+  return { input: { id, version: row.version }, pre: await precheckCardUsageRemoval(viewer, { id }) };
+}
+
+async function remove(viewer: Viewer, id: string) {
+  const { input, pre } = await removal(viewer, id);
+  return deleteCardUsage(viewer, input, pre);
+}
+
+async function restore(viewer: Viewer, id: string) {
+  const { input, pre } = await removal(viewer, id);
+  return restoreCardUsage(viewer, input, pre);
+}
+
+async function purchaseRow(fx: Fx, lineId: string): Promise<string> {
+  const [request] = await db
+    .insert(purchaseRequests)
+    .values({ number: `26001-C${randomUUID().slice(0, 8)}`, linkKind: "quote_line", projectId: fx.projectId, quoteLineId: lineId, requestedBy: fx.pm.id, itemName: "현수막", estimateAmountKrw: 40_000 })
+    .returning({ id: purchaseRequests.id });
+  const row = await insertCardUsage(
+    fx.pm,
+    {
+      corpCardId: fx.cardId,
+      usedOn: seoulToday(),
+      merchantVendorId: null,
+      totalCurrency: "KRW",
+      totalForeignAmount: null,
+      totalFxRate: "1",
+      totalAmountKrw: 40_000,
+      supplyKrw: 40_000,
+      vatKrw: 0,
+      evidenceTypeCode: "invoice",
+      linkKind: "quote_line",
+      quoteLineId: lineId,
+      teamId: null,
+      usedByUserId: fx.pm.id,
+      registeredBy: fx.pm.id,
+      registeredVia: "purchase",
+      purchaseRequestId: request?.id ?? null,
+      memo: null,
+    },
+    db,
+  );
+  return row.id;
+}
+
+describe("삭제 = 보관(D-609 · ADMN-12)", () => {
+  it("권리 없음(남이 등록 · 권한자 아님) → ForbiddenError", async () => {
+    const fx = await setup();
+    const id = await create(fx.proxy, lineInput(fx.cardId, fx.lines[0] ?? "", 100_000));
+    await expect(precheckCardUsageRemoval(fx.pm, { id })).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it("구매 완료 건 → ForbiddenError(삭제 없음)", async () => {
+    const fx = await setup();
+    const id = await purchaseRow(fx, fx.lines[0] ?? "");
+    await expect(precheckCardUsageRemoval(fx.pm, { id })).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(precheckCardUsageRemoval(fx.proxy, { id })).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it("완료 프로젝트 줄 · 등록자(권한자 아님) → ForbiddenError", async () => {
+    const fx = await setup();
+    const id = await create(fx.pm, lineInput(fx.cardId, fx.lines[0] ?? "", 100_000));
+    await setStatus(fx.projectId, "completed");
+    await expect(precheckCardUsageRemoval(fx.pm, { id })).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it("정상 → 보관(archived_by = 요청자 · 표의 행 수 그대로) · version +1 · 같은 tx document_delete · 목록 · S10 남은 실행가에서 빠짐", async () => {
+    const fx = await setup();
+    const line = fx.lines[0] ?? "";
+    const id = await create(fx.pm, lineInput(fx.cardId, line, 300_000));
+    const before = await rowOf(id);
+    const result = await remove(fx.proxy, id);
+    const after = await rowOf(id);
+    expect(after.archivedAt).not.toBeNull();
+    expect(after.archivedBy).toBe(fx.proxy.id);
+    expect(after.version).toBe(before.version + 1);
+    expect(result).toEqual({ version: before.version + 1, totalKrw: 300_000 });
+    expect(await usagesOnCard(fx.cardId)).toBe(1);
+    expect(await logsOf(fx.proxy.id, "document_delete")).toEqual([id]);
+    const month = seoulToday().slice(0, 7);
+    expect((await listCardUsages(fx.pm, { month }, seoulToday())).rows.map((row) => row.id)).not.toContain(id);
+    expect((await listProjectCardUsages(fx.pm, fx.projectId)).rows).toHaveLength(0);
+    const found = await searchLinesForCardLink(fx.pm, { projectId: fx.projectId, query: "" });
+    expect(found.rows.find((row) => row.id === line)?.remainingKrw).toBe(1_000_000);
+  });
+
+  it("낡은 version → `다른 저장이 먼저 됨 · 새로 고침` · 보관 안 됨", async () => {
+    const fx = await setup();
+    const base = lineInput(fx.cardId, fx.lines[0] ?? "", 100_000);
+    const id = await create(fx.pm, base);
+    const { input, pre } = await removal(fx.pm, id);
+    await update(fx.pm, await editInput(id, base, 110_000));
+    await expect(deleteCardUsage(fx.pm, input, pre)).rejects.toThrow("다른 저장이 먼저 됨 · 새로 고침");
+    expect((await rowOf(id)).archivedAt).toBeNull();
+  });
+
+  it("(E-9) settling 사전 조회 → 완료로 커밋 → 등록자(권한자 아님) 삭제 → CompletedProjectError · 보관 안 됨 · version 그대로 · 로그 0", async () => {
+    const fx = await setup();
+    await setStatus(fx.projectId, "settling");
+    const id = await create(fx.pm, lineInput(fx.cardId, fx.lines[0] ?? "", 100_000));
+    const { input, pre } = await removal(fx.pm, id);
+    await setStatus(fx.projectId, "completed");
+    await expect(deleteCardUsage(fx.pm, input, pre)).rejects.toBeInstanceOf(CompletedProjectError);
+    expect(await rowOf(id)).toMatchObject({ archivedAt: null, version: input.version });
+    expect(await logsOf(fx.pm.id, "document_delete")).toEqual([]);
+  });
+
+  it("(E-9) 같은 순서 · 권한자 → 보관(U-4)", async () => {
+    const fx = await setup();
+    await setStatus(fx.projectId, "settling");
+    const id = await create(fx.proxy, lineInput(fx.cardId, fx.lines[0] ?? "", 100_000));
+    const { input, pre } = await removal(fx.proxy, id);
+    await setStatus(fx.projectId, "completed");
+    await deleteCardUsage(fx.proxy, input, pre);
+    expect((await rowOf(id)).archivedAt).not.toBeNull();
+  });
+});
+
+describe("되돌리기 = 보관 해제(게이트 재통과 — T-06-192)", () => {
+  it("권리 없음 → ForbiddenError · 보관 그대로", async () => {
+    const fx = await setup();
+    const id = await create(fx.proxy, lineInput(fx.cardId, fx.lines[0] ?? "", 100_000));
+    await remove(fx.proxy, id);
+    await expect(precheckCardUsageRemoval(fx.pm, { id })).rejects.toBeInstanceOf(ForbiddenError);
+    expect((await rowOf(id)).archivedAt).not.toBeNull();
+  });
+
+  it("낡은 version → 거부 · 보관 그대로", async () => {
+    const fx = await setup();
+    const id = await create(fx.pm, { ...lineInput(fx.cardId, "", 100_000), linkKind: "team_cost" });
+    const { input, pre } = await removal(fx.pm, id);
+    await deleteCardUsage(fx.pm, input, pre);
+    await expect(restoreCardUsage(fx.pm, input, pre)).rejects.toThrow("다른 저장이 먼저 됨 · 새로 고침");
+    expect((await rowOf(id)).archivedAt).not.toBeNull();
+  });
+
+  it("지운 사이 그 줄에 지출결의 → `지출결의 {번호} 연결됨 · 다른 줄 고르기` · 보관 그대로", async () => {
+    const fx = await setupExpenseProject();
+    const cardId = await makeCard({ kind: "personal", holderUserId: fx.pm.id });
+    const id = await create(fx.pm, lineInput(cardId, fx.lines.withVendor, 100_000));
+    await remove(fx.pm, id);
+    const created = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
+    const submitted = await submitReadyDraft(fx.pm, created.created[0]?.expenseId ?? "");
+    if (submitted.kind !== "submitted") throw new Error("제출되지 않음");
+    const error = await caught(restore(fx.pm, id));
+    expect((error as Error).message).toBe(`지출결의 ${submitted.number} 연결됨 · 다른 줄 고르기`);
+    expect((await rowOf(id)).archivedAt).not.toBeNull();
+  });
+
+  it("지운 사이 다른 카드 사용이 남은 실행가를 먹음 → `실행가 초과 · 남은 실행가 500,000 · 다른 줄 고르기`", async () => {
+    const fx = await setup();
+    const line = fx.lines[0] ?? "";
+    const id = await create(fx.pm, lineInput(fx.cardId, line, 600_000));
+    await remove(fx.pm, id);
+    await create(fx.pm, lineInput(fx.cardId, line, 500_000));
+    const error = await caught(restore(fx.pm, id));
+    expect(error).toBeInstanceOf(GateBlockedError);
+    expect((error as Error).message).toBe("실행가 초과 · 남은 실행가 500,000 · 다른 줄 고르기");
+    expect((await rowOf(id)).archivedAt).not.toBeNull();
+  });
+
+  it("지운 사이 `신청됨` 구매 요청(예상 공급가 500,000)이 남은 실행가를 먹음 → 거부", async () => {
+    const fx = await setup();
+    const line = fx.lines[0] ?? "";
+    const id = await create(fx.pm, lineInput(fx.cardId, line, 600_000));
+    await remove(fx.pm, id);
+    await db
+      .insert(purchaseRequests)
+      .values({ number: `26001-C${randomUUID().slice(0, 8)}`, linkKind: "quote_line", projectId: fx.projectId, quoteLineId: line, requestedBy: fx.pm.id, itemName: "현수막", estimateAmountKrw: 550_000 });
+    expect(((await caught(restore(fx.pm, id))) as Error).message).toBe("실행가 초과 · 남은 실행가 500,000 · 다른 줄 고르기");
+  });
+
+  it("팀 비용 건 · 정상 → 보관 칸 비움 + 같은 tx restore 로그 · 목록에 돌아옴", async () => {
+    const fx = await setup();
+    const id = await create(fx.pm, { ...lineInput(fx.cardId, "", 100_000), linkKind: "team_cost" });
+    await remove(fx.pm, id);
+    await restore(fx.pm, id);
+    expect(await rowOf(id)).toMatchObject({ archivedAt: null, archivedBy: null });
+    expect(await logsOf(fx.pm.id, "restore")).toEqual([id]);
+    const month = seoulToday().slice(0, 7);
+    expect((await listCardUsages(fx.pm, { month }, seoulToday())).rows.map((row) => row.id)).toContain(id);
+  });
+
+  it("(X-2) 사전 조회 뒤 프로젝트 완료 · 등록자(권한자 아님) 되돌리기 → CompletedProjectError · 보관 그대로", async () => {
+    const fx = await setup();
+    await setStatus(fx.projectId, "settling");
+    const id = await create(fx.pm, lineInput(fx.cardId, fx.lines[0] ?? "", 100_000));
+    await remove(fx.pm, id);
+    const { input, pre } = await removal(fx.pm, id);
+    await setStatus(fx.projectId, "completed");
+    await expect(restoreCardUsage(fx.pm, input, pre)).rejects.toBeInstanceOf(CompletedProjectError);
+    expect((await rowOf(id)).archivedAt).not.toBeNull();
+  });
+
+  it("(X-1) L1 건 300,000 삭제 → 차수 2(L1 → L2) · L2에 다른 카드 800,000 → L1 건 되돌리기 → `실행가 초과 · 남은 실행가 200,000 · 다른 줄 고르기`", async () => {
+    const fx = await setup();
+    const l1 = fx.lines[0] ?? "";
+    const id = await create(fx.pm, lineInput(fx.cardId, l1, 300_000));
+    await remove(fx.pm, id);
+    const l2 = await (await nextRevision(fx)).copyOf(l1);
+    await create(fx.pm, lineInput(fx.cardId, l2, 800_000));
+    expect(((await caught(restore(fx.pm, id))) as Error).message).toBe("실행가 초과 · 남은 실행가 200,000 · 다른 줄 고르기");
+  });
+
+  it("(N-1) L1 건 900,000 삭제 → 차수 2 L2 실행가 800,000 → 되돌리기 `실행가 초과 · 남은 실행가 800,000 · 다른 줄 고르기`", async () => {
+    const fx = await setup();
+    const l1 = fx.lines[0] ?? "";
+    const id = await create(fx.pm, lineInput(fx.cardId, l1, 900_000));
+    await remove(fx.pm, id);
+    const second = await nextRevision(fx);
+    await saveExecution(second.revisionId, await second.copyOf(l1), 800_000);
+    expect(((await caught(restore(fx.pm, id))) as Error).message).toBe("실행가 초과 · 남은 실행가 800,000 · 다른 줄 고르기");
+  });
+
+  it("(N-1) 같은데 L2 실행가 1,200,000 → 되돌리기 통과", async () => {
+    const fx = await setup();
+    const l1 = fx.lines[0] ?? "";
+    const id = await create(fx.pm, lineInput(fx.cardId, l1, 900_000));
+    await remove(fx.pm, id);
+    const second = await nextRevision(fx);
+    await saveExecution(second.revisionId, await second.copyOf(l1), 1_200_000);
+    await restore(fx.pm, id);
+    expect((await rowOf(id)).archivedAt).toBeNull();
+  });
+
+  it("(N-2) 지운 뒤 L2 보관(SQL 직접) → 되돌리기 `견적 줄 빠짐 · 새로 고침` · 보관 그대로", async () => {
+    const fx = await setup();
+    const l1 = fx.lines[0] ?? "";
+    const id = await create(fx.pm, lineInput(fx.cardId, l1, 300_000));
+    await remove(fx.pm, id);
+    const l2 = await (await nextRevision(fx)).copyOf(l1);
+    await db.update(quoteLines).set({ archivedAt: new Date(), archivedBy: fx.pm.id }).where(eq(quoteLines.id, l2));
+    const error = await caught(restore(fx.pm, id));
+    expect(error).toBeInstanceOf(DroppedQuoteLineError);
+    expect((await rowOf(id)).archivedAt).not.toBeNull();
+  });
+});
+
+describe("목록 rights(O-11)", () => {
+  it("구매 완료 건 → 수정만(연결 변경 · 삭제 거짓) · S15 행에도 같은 rights", async () => {
+    const fx = await setup();
+    const id = await purchaseRow(fx, fx.lines[0] ?? "");
+    const month = seoulToday().slice(0, 7);
+    const row = (await listCardUsages(fx.pm, { month }, seoulToday())).rows.find((candidate) => candidate.id === id);
+    expect(row?.rights).toEqual({ edit: true, changeLink: false, delete: false });
+    expect(row?.version).toBe(1);
+    const projectRow = (await listProjectCardUsages(fx.pm, fx.projectId)).rows.find((candidate) => candidate.id === id);
+    expect(projectRow?.rights).toEqual({ edit: true, changeLink: false, delete: false });
+  });
+
+  it("S15 — 남이 등록한 건 · 권한자 아님 → rights 셋 다 거짓", async () => {
+    const fx = await setup();
+    const id = await create(fx.proxy, lineInput(fx.cardId, fx.lines[0] ?? "", 100_000));
+    const projectRow = (await listProjectCardUsages(fx.pm, fx.projectId)).rows.find((candidate) => candidate.id === id);
+    expect(projectRow?.rights).toEqual({ edit: false, changeLink: false, delete: false });
   });
 });

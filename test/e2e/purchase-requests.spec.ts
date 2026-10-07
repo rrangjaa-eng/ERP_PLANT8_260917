@@ -8,9 +8,6 @@ import { createProject } from "@/domain/projects";
 import { completePurchaseRequest, createPurchaseRequest, precheckPurchaseCompletion, precheckPurchaseRequest } from "@/domain/purchase-requests";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
-import { setSettingValue } from "@/domain/settings/registry";
-import { PURCHASE_ONLINE_VENDOR_NAME } from "@/domain/settings/keys";
-import { findSimpleValue, upsertSimpleValue } from "@/repositories/settings";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { createCorpCard } from "@/domain/corp-cards";
@@ -19,10 +16,11 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { seoulToday } from "@/lib/dates";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
+import { E2E_ONLINE_VENDOR_NAME, enableOnlineVendorSetting } from "./online-vendor";
 
 // 06-08(EXP-10 · UI-SPEC S11 · S12): 구매 요청 신청 — 온라인구매 견적 줄 → 옆 패널 → 저장 → 뒤 목록 첫 줄.
 // 사람 · 팀 · 프로젝트 · 줄은 도메인 함수로 만든다(스펙마다 전용 본부 · 팀). 온라인구매 협력사 설정은 전역 한 칸이라
-// 이 스펙이 켜고 끝에 되돌린다(mobile-projects-error 선례).
+// 모든 스펙이 같은 고정 이름(`online-vendor.ts`)으로 켜 둔다 — 스펙마다 다른 값을 쓰고 되돌리면 병렬 워커가 서로의 값을 덮어쓴다.
 
 type Requester = { person: Person; teamId: string };
 type Target = { projectId: string; projectName: string; projectNumber: string; onlineLineId: string; onlineItem: string; otherLineId: string; otherItem: string; vendorName: string };
@@ -38,9 +36,9 @@ async function makeRequester(): Promise<Requester> {
 // 요청자가 담당 PM인 프로젝트 · 견적 줄 둘(온라인구매 협력사 줄 1,000,000 · 다른 거래처 줄).
 async function seedTarget(requester: Requester): Promise<Target> {
   const suffix = randomUUID().slice(0, 8);
-  const vendorName = `E2E쿠팡-${suffix}`;
-  await setSettingValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME, vendorName);
-  const online = await insertVendor(SYSTEM_VIEWER, { name: vendorName, normalizedName: `e2e쿠팡-${suffix}`, defaultEvidenceType: "tax_invoice" });
+  const vendorName = E2E_ONLINE_VENDOR_NAME;
+  await enableOnlineVendorSetting();
+  const online = await insertVendor(SYSTEM_VIEWER, { name: vendorName, normalizedName: vendorName.toLowerCase(), defaultEvidenceType: "tax_invoice" });
   const other = await insertVendor(SYSTEM_VIEWER, { name: `E2E스테이지-${suffix}`, normalizedName: `e2e스테이지-${suffix}`, defaultEvidenceType: "tax_invoice" });
   const client = await insertVendor(SYSTEM_VIEWER, { name: `E2E구매클라이언트-${suffix}`, normalizedName: `e2e구매클라이언트-${suffix}` });
   const year = seoulToday().slice(0, 4);
@@ -84,15 +82,6 @@ function panel(page: Page) {
 test.describe.configure({ mode: "serial" });
 
 test.describe("구매 요청 신청 (06-08)", () => {
-  let original: Awaited<ReturnType<typeof findSimpleValue>>;
-  test.beforeAll(async () => {
-    original = await findSimpleValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME.key);
-  });
-  test.afterAll(async () => {
-    if (original) await upsertSimpleValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME.key, original.value, original.updatedBy);
-    else await upsertSimpleValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME.key, "", null);
-  });
-
   test("[06-08 트레이서] `?new=1&line={id}` → 패널(연결 텍스트) → 품목 · 링크 · 예상 금액 → Ctrl+Enter → 패널 열린 채 결과 한 줄 · 뒤 목록 첫 줄", async ({ browser, baseURL }) => {
     const requester = await makeRequester();
     const target = await seedTarget(requester);
@@ -337,15 +326,6 @@ async function pickCard(sheet: ReturnType<typeof completePanel>, label: string):
 }
 
 test.describe("구매 완료 (06-12)", () => {
-  let original: Awaited<ReturnType<typeof findSimpleValue>>;
-  test.beforeAll(async () => {
-    original = await findSimpleValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME.key);
-  });
-  test.afterAll(async () => {
-    if (original) await upsertSimpleValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME.key, original.value, original.updatedBy);
-    else await upsertSimpleValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME.key, "", null);
-  });
-
   test("[06-12 트레이서] `신청됨` 행 `구매 완료` → 패널(머리 · 첫 줄 · 결제 합계 = 예상 금액 · 연결 텍스트) → Ctrl+Enter → 닫힘 · 그 행 `구매 완료` 2행 · 다음 행 포커스 · `/cards` 등록 칸", async ({ browser, baseURL }) => {
     const requester = await makeRequester();
     const target = await seedTarget(requester);

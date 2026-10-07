@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { test, expect } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { expenseEvidenceReviews, expenses } from "@/db/schema";
+import { expenseEvidenceReviews, expenses, projects } from "@/db/schema";
 import { approveDocument, getApprovalView } from "@/domain/approvals";
 import { confirmEvidence } from "@/domain/evidence-reviews";
 import { EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
@@ -19,6 +19,7 @@ import { setupExpenseE2E, submitLineExpense, uniqueReceipt, type ExpenseE2E } fr
 
 const INFO_ITEMS = ["expense.value", "expense.amount", "approval.value", "project.value", "quote.amount", "vendor.value", "team.value", "person.value"];
 const EVIDENCE_AMOUNT = 12_400_000;
+const EVIDENCE_COMPLETED_PROJECT_LINE = "완료 프로젝트 · 증빙은 경영관리";
 
 // 테스트 계급 「경영관리」 — 전사 업무 범위 · 지출결의 보기 + 지급 처리 쓰기 (+ 선택으로 증빙 붙이기). 결재선 밖 전용 본부 · 팀에 발령한다.
 async function makeManagerE2E(options: { attach?: boolean } = {}): Promise<Person> {
@@ -72,7 +73,8 @@ test.describe("증빙 수명 주기 (06-11)", () => {
     await drafterPage.goto(`/expenses/${expenseId}`);
     await expect(drafterPage.getByText("하나 더", { exact: false }).first()).toBeVisible();
     await drafterPage.getByTestId("attachments-input").setInputFiles(await uniqueReceipt(drafterPage));
-    await expect(drafterPage.locator('[data-ui="attachments"] li')).toHaveCount(2, { timeout: 20_000 });
+    // 완료 통보까지 끝난 행만 `크기 · 날짜`를 그린다(올리는 중인 행은 진행 바).
+    await expect(drafterPage.locator('[data-ui="attachments"] li').getByText(/^\d+KB · \d{2}-\d{2}$/)).toHaveCount(2, { timeout: 20_000 });
     await drafterPage.context().close();
 
     // 경영관리 세션 — 새로 고침 뒤 확인 줄이 `확인 전`, 1차 `증빙 확인`.
@@ -81,5 +83,29 @@ test.describe("증빙 수명 주기 (06-11)", () => {
     await expect(payerPage.getByRole("button", { name: /^증빙 확인/ })).toBeVisible();
     expect(await db.select().from(expenseEvidenceReviews).where(eq(expenseEvidenceReviews.expenseId, expenseId))).toHaveLength(0);
     await payerPage.context().close();
+  });
+
+  test("완료 프로젝트의 승인 문서 — 기안자 화면에는 「하나 더」 없이 잠김 한 줄, 붙이기 권한자 화면에는 「하나 더」", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const expenseId = await submitLineExpense(browser, baseURL, fx, "hold");
+    await approveAll(fx, expenseId);
+    await db.update(projects).set({ status: "completed" }).where(eq(projects.id, fx.projectId));
+    const manager = await makeManagerE2E({ attach: true });
+
+    const drafterPage = await loginPage(browser, baseURL, fx.pm);
+    await drafterPage.goto(`/expenses/${expenseId}`);
+    const drafterArea = drafterPage.locator('[data-ui="attachments"]');
+    await expect(drafterArea).toBeVisible();
+    await expect(drafterArea.getByText(EVIDENCE_COMPLETED_PROJECT_LINE, { exact: true })).toBeVisible();
+    await expect(drafterArea.getByText("하나 더", { exact: false })).toHaveCount(0);
+    await expect(drafterPage.getByTestId("attachments-input")).toHaveCount(0);
+    await drafterPage.context().close();
+
+    const managerPage = await loginPage(browser, baseURL, manager);
+    await managerPage.goto(`/expenses/${expenseId}`);
+    const managerArea = managerPage.locator('[data-ui="attachments"]');
+    await expect(managerArea.getByText("하나 더", { exact: false }).first()).toBeVisible();
+    await expect(managerArea.getByText(EVIDENCE_COMPLETED_PROJECT_LINE, { exact: true })).toHaveCount(0);
+    await managerPage.context().close();
   });
 });

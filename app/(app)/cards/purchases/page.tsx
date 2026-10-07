@@ -1,7 +1,8 @@
 import { requireSession } from "@/lib/viewer";
 import { seoulToday } from "@/lib/dates";
-import { listPurchaseRequests, loadPurchaseCompletion, purchaseRequestEntry, type PurchaseRequestList, type PurchaseRequestStatusView } from "@/domain/purchase-requests";
+import { listPurchaseRequests, loadPurchaseCompletion, loadPurchaseRequestTeam, purchaseRequestEntry, type PurchaseRequestList, type PurchaseRequestStatusView } from "@/domain/purchase-requests";
 import { cardEvidenceDefault } from "@/domain/corp-card-usages/amounts";
+import { recentFxRate } from "@/domain/money/currency";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { Pagination } from "@/ui/pagination/Pagination";
@@ -158,7 +159,7 @@ export default async function PurchasesPage({ searchParams }: { searchParams: Pr
     const entry: PurchaseEntry | null = chosen ? { project: chosen.project, line: chosen.line } : null;
     panel = (
       <SidePanel key="new" title="구매 요청" closeHref={listHref}>
-        <PurchaseRequestForm entry={entry} />
+        <PurchaseRequestForm entry={entry} team={await loadPurchaseRequestTeam(viewer, today)} usdFxRate={await recentFxRate("USD").catch(() => null)} />
       </SidePanel>
     );
   }

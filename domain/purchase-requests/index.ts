@@ -64,6 +64,7 @@ import { findLineLinks, lockQuoteLines } from "@/repositories/quote-line-links";
 import { findVendorNamesByIds, listVendorsForPick } from "@/repositories/vendors";
 import { findUserNamesByIds } from "@/repositories/users";
 import { findMembershipAtDate } from "@/repositories/team-memberships";
+import { teamAtDate } from "@/domain/org";
 import type { DbOrTx } from "@/repositories/document-counters";
 import {
   findPurchaseRequestById,
@@ -168,6 +169,13 @@ function normalizeRequestFields(input: PurchaseRequestFields): PurchaseRequestPr
   return { itemName, linkUrl, estimate };
 }
 
+// 오늘 소속이 없으면 막힘 문구(팀 비용 요청 — 임의의 팀으로 떨어뜨리지 않는다), 있으면 null.
+async function noTeamReason(viewer: Viewer, today: string): Promise<string | null> {
+  if (await findMembershipAtDate(viewer, viewer.id, today)) return null;
+  const name = (await findUserNamesByIds(viewer, [viewer.id])).get(viewer.id) ?? "";
+  return `${name} ${today.slice(5)} 소속 없음 · 소속 발령은 관리자`;
+}
+
 function fxMissing(currency: string): string {
   return `환율 없음 · ${currency} 환율 적기`;
 }
@@ -201,10 +209,8 @@ export async function precheckPurchaseRequest(viewer: Viewer, input: PurchaseReq
   if (input.linkKind === "team_cost") {
     // 팀 비용 — 견적 줄 · 문 · 실행가 판정이 없다. 요청에는 팀을 저장하지 않으므로(구매 완료 사용일 소속 — O-19) 오늘 소속은 막힘 판정에만 쓴다.
     const today = seoulToday();
-    if (!(await findMembershipAtDate(viewer, viewer.id, today))) {
-      const name = (await findUserNamesByIds(viewer, [viewer.id])).get(viewer.id) ?? "";
-      throw new PurchaseRequestRejectedError(`${name} ${today.slice(5)} 소속 없음 · 소속 발령은 관리자`);
-    }
+    const noTeam = await noTeamReason(viewer, today);
+    if (noTeam) throw new PurchaseRequestRejectedError(noTeam);
     const { seqStart, ...numberFormat } = await loadDocumentNumberFormat(TEAM_COUNTER_KEY);
     void seqStart;
     return { linkKind: "team_cost", ...fields, year: Number(today.slice(0, 4)), numberFormat };
@@ -214,6 +220,12 @@ export async function precheckPurchaseRequest(viewer: Viewer, input: PurchaseReq
   const { seqStart, ...numberFormat } = await loadPurchaseRequestNumberFormat();
   void seqStart;
   return { linkKind: "quote_line", ...fields, ...basis, numberFormat };
+}
+
+// S12 `팀 비용` 값 텍스트 — 요청자의 **오늘** 소속(미리보기 · 막힘 판정에만 쓴다, 요청에는 저장하지 않는다 — O-19). 소속이 없으면 막힘 문구.
+export async function loadPurchaseRequestTeam(viewer: Viewer, today: string = seoulToday()): Promise<{ teamName: string | null; blockedReason: string | null }> {
+  const blockedReason = await noTeamReason(viewer, today);
+  return { teamName: blockedReason ? null : ((await teamAtDate(viewer, viewer.id, today))?.name ?? null), blockedReason };
 }
 
 // 서버 계산 한 줄 — 예상 금액의 원화 환산액(외화 `Form.Hint`)과 견적 줄 연결이면 공급가 추정(그 줄 거래처 기본 증빙 종류의 규칙 · 오늘 세율).

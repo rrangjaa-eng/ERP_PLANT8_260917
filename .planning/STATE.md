@@ -4,11 +4,11 @@ current_phase: 06
 current_phase_name: 지급·증빙·법인카드·구매 요청 (경영관리)
 current_plan: 12
 status: executing
-stopped_at: 06 PR-D 게이트 끝 · 시각 기준·ready 전
-last_updated: "2026-10-07T13:29:16.083Z"
+stopped_at: Phase 06.2 UI-SPEC approved
+last_updated: "2026-10-07T14:05:53.679Z"
 last_activity: 2026-10-06
 last_activity_desc: Phase 06 execution started
-state_head: 4c6c7a7dfaf7a58aa03889c5789ccda50795cf9e
+state_head: 365a26dbf7f2eeac0fbe37212fb156b61ccc58af
 progress:
   total_phases: 18
   completed_phases: 7
@@ -468,6 +468,7 @@ Recent decisions affecting current work:
 - Phase 7 edited: edited fields: success_criteria (기준 5 관리자 폼 → PanelForm 옆 패널 배치, 04.6-01)
 - Phase 6 edited: edited fields: success_criteria 1 · 3 + 06-01 plan line (06-01 Task 3, one-time user-approved wording)
 - Phase 06.2 inserted after Phase 6: 보는 범위·참여자 — 계급별 보는 범위(전사·본부·팀·본인)·프로젝트 참여자·지출결의 1단계 = 행사 담당 팀장(D6·G34). 06.1(PR #164) 다음 번호
+- Phase 06.2 edited: edited fields: goal, success_criteria (06.2-CONTEXT·PRD §6에서)
 
 ## Deferred Items
 
@@ -479,6 +480,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-07T12:06:28.539Z
-Stopped at: 06 PR-D 게이트 끝 · 시각 기준·ready 전
-Resume file: None
+Last session: 2026-10-07T14:04:09.443Z
+Stopped at: Phase 06.2 UI-SPEC approved
+Resume file: .planning/phases/06.2-view-scope/06.2-UI-SPEC.md

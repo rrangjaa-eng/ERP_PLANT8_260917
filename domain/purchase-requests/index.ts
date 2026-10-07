@@ -4,7 +4,7 @@ import { visible } from "@/domain/permissions/visible";
 import { projectMany, type DtoSpec } from "@/domain/permissions/project";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { recordAction } from "@/domain/action-log/record";
-import { diffKrw, moneyToColumns, normalizeMoneyInput, toKrw, type MoneyInput } from "@/domain/money";
+import { diffKrw, moneyToColumns, normalizeMoneyInput, sumKrw, toKrw, type MoneyInput } from "@/domain/money";
 import {
   createCardUsage,
   precheckCardUsage,
@@ -70,6 +70,7 @@ import type { DbOrTx } from "@/repositories/document-counters";
 import {
   findPurchaseRequestById,
   insertPurchaseRequest,
+  listPurchaseRequestEstimates,
   listPurchaseRequestRows,
   lockPurchaseRequestForUpdate,
   markPurchaseRequestCancelled,
@@ -784,6 +785,8 @@ function toProjectable(row: PurchaseRequestListRow, lineNo: Map<string, number>)
   };
 }
 
+const STATUS_ORDER: Record<PurchaseRequestStatusValue, number> = { requested: 0, purchased: 1, cancelled: 2 };
+
 export type PurchaseRequestStatusView = PurchaseRequestStatusValue | "all";
 
 export type PurchaseRequestListFilters = {
@@ -803,6 +806,8 @@ export type PurchaseRequestList = {
   privileged: boolean;
   /** 필터와 무관하게 범위 안에 요청이 하나라도 있는가 — 전체 0건 갈래. */
   anyInScope: boolean;
+  /** 06-14 합계 줄 — 보기(상태 · 월) 안 범위 전체(쪽과 무관)의 건수와 원화 예상 금액 합. 예상 금액을 못 보는 사람은 `estimateKrw` null. */
+  totals: { count: number; estimateKrw: number | null };
   /** 06-14 행 `요청 취소` — `신청됨` 행 id → 갈래(요청자 본인 `own` · 구매 권한자의 남의 요청 `others`). 그 밖 행은 없다(Q2). */
   cancelBranches: Record<string, "own" | "others">;
 };
@@ -833,7 +838,10 @@ export async function listPurchaseRequests(viewer: Viewer, filters: PurchaseRequ
   const rows = await withTransaction((tx) => listPurchaseRequestRows(viewer, { scope, filter, keepId }, tx));
   const anyInScope = rows.length > 0 || (Object.keys(filter).length > 0 && (await withTransaction((tx) => listPurchaseRequestRows(viewer, { scope, filter: {} }, tx))).length > 0);
   const lineNo = await lineNumbers(viewer, rows.flatMap((row) => (row.lineRevisionId ? [row.lineRevisionId] : [])));
-  const projected = await projectMany(viewer, rows.map((row) => toProjectable(row, lineNo)), PURCHASE_REQUEST_LIST_DTO_SPEC);
+  // `전체` 보기는 상태 그룹 순서(신청됨 → 구매 완료 → 취소)로 놓는다 — 그룹 안은 최근 요청이 첫 줄(안정 정렬).
+  const ordered = filters.status === "all" ? [...rows].sort((a, b) => STATUS_ORDER[a.status as PurchaseRequestStatusValue] - STATUS_ORDER[b.status as PurchaseRequestStatusValue]) : rows;
+  const projected = await projectMany(viewer, ordered.map((row) => toProjectable(row, lineNo)), PURCHASE_REQUEST_LIST_DTO_SPEC);
+  const estimates = await listPurchaseRequestEstimates(viewer, { scope, filter });
   const pageCount = pageCountFrom(projected.length, LIST_PAGE_SIZE);
   const page = clampPage(filters.page, pageCount);
   return {
@@ -841,6 +849,7 @@ export async function listPurchaseRequests(viewer: Viewer, filters: PurchaseRequ
     page: { page, pageCount, pageSize: LIST_PAGE_SIZE, total: projected.length },
     privileged,
     anyInScope,
+    totals: { count: estimates.length, estimateKrw: (await visible(viewer, "purchase_request.amount")) ? sumKrw(estimates) : null },
     cancelBranches: Object.fromEntries(
       rows.flatMap((row): [string, "own" | "others"][] => {
         if (row.status !== "requested") return [];
@@ -849,6 +858,12 @@ export async function listPurchaseRequests(viewer: Viewer, filters: PurchaseRequ
       }),
     ),
   };
+}
+
+// S8 카드 목록 하위 링크 `구매 요청 {N}` — 목록과 같은 범위의 `신청됨` 건수(새 범위 판정 없음).
+export async function countOpenPurchaseRequests(viewer: Viewer, today: string = seoulToday()): Promise<number> {
+  const { scope } = await listAccess(viewer, today);
+  return (await listPurchaseRequestEstimates(viewer, { scope, filter: { status: "requested" } })).length;
 }
 
 // ── S10 구매 요청 모드 줄 고르기(트랜잭션 밖 읽기) ───────────────────────────

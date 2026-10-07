@@ -72,6 +72,14 @@ function scopeCondition(scope: PurchaseRequestScope): SQL | undefined {
   return or(eq(purchaseRequests.requestedBy, scope.userId), eq(projects.pmUserId, scope.userId));
 }
 
+function filterConditions(scope: PurchaseRequestScope, filter: PurchaseRequestFilter): (SQL | undefined)[] {
+  const conditions: (SQL | undefined)[] = [scopeCondition(scope)];
+  if (filter.status) conditions.push(eq(purchaseRequests.status, filter.status));
+  if (filter.from) conditions.push(gte(purchaseRequests.createdAt, filter.from));
+  if (filter.to) conditions.push(lt(purchaseRequests.createdAt, filter.to));
+  return conditions;
+}
+
 // 최근 요청이 첫 줄(created_at 내림차순).
 export async function listPurchaseRequestRows(
   viewer: Viewer,
@@ -79,11 +87,7 @@ export async function listPurchaseRequestRows(
   tx: DbOrTx = db,
 ): Promise<PurchaseRequestListRow[]> {
   void viewer;
-  const { filter } = input;
-  const conditions: (SQL | undefined)[] = [scopeCondition(input.scope)];
-  if (filter.status) conditions.push(eq(purchaseRequests.status, filter.status));
-  if (filter.from) conditions.push(gte(purchaseRequests.createdAt, filter.from));
-  if (filter.to) conditions.push(lt(purchaseRequests.createdAt, filter.to));
+  const conditions = filterConditions(input.scope, input.filter);
   // 06-12: 방금 구매 완료한 요청은 상태 보기와 무관하게 제자리에 남긴다(제자리 결과 — S13 성공 뒤).
   // 조건이 하나도 없으면(전사 범위 `전체` 보기) 이미 전부 나온다 — `or(undefined, …)`가 그 한 행으로 줄이지 않게 갈래를 타지 않는다(검토 I-1).
   const base = and(...conditions);
@@ -120,6 +124,21 @@ export async function listPurchaseRequestRows(
     usageUsedOn: row.usageUsedOn,
     usageTotalKrw: row.usageTotalKrw,
   }));
+}
+
+// 06-14 합계 줄 · 열린 건수 — 목록과 같은 범위 · 필터 조건에서 예상 금액(원화 환산)만 읽는다(쪽 · keepId와 무관).
+export async function listPurchaseRequestEstimates(
+  viewer: Viewer,
+  input: { scope: PurchaseRequestScope; filter: PurchaseRequestFilter },
+  tx: DbOrTx = db,
+): Promise<number[]> {
+  void viewer;
+  const rows = await tx
+    .select({ estimateKrw: purchaseRequests.estimateAmountKrw })
+    .from(purchaseRequests)
+    .leftJoin(projects, eq(projects.id, purchaseRequests.projectId))
+    .where(and(...filterConditions(input.scope, input.filter)));
+  return rows.map((row) => row.estimateKrw);
 }
 
 // ── 06-12 구매 완료 ──────────────────────────────────────────────────────────

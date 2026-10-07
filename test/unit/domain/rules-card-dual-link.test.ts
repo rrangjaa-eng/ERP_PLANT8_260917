@@ -90,8 +90,8 @@ describe("card.dual-link-block", () => {
 
   // 06-08(06-07 리뷰 I-1) — `신청됨` 구매 요청은 카드로 나갈 돈이라 지출결의 입구도 막는다(보관 안 된 사슬 전체 — findLineLinks가 신청됨만 싣는다).
   const REQUESTS = [
-    { id: "r1", quoteLineId: "L", currency: "KRW", foreignAmount: null, fxRate: "1.0000", amountKrw: 110_000 },
-    { id: "r2", quoteLineId: "L", currency: "KRW", foreignAmount: null, fxRate: "1.0000", amountKrw: 55_000 },
+    { id: "r1", quoteLineId: "L", estimate: krw(110_000) },
+    { id: "r2", quoteLineId: "L", estimate: krw(55_000) },
   ];
   const USAGES = [{ id: "u1", quoteLineId: "L", supplyKrw: 100 }];
 

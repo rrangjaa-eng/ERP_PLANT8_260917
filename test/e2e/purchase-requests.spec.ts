@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
+import { Client } from "pg";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { quoteLines } from "@/db/schema";
+import { purchaseRequests, quoteLines } from "@/db/schema";
 import { createOrgUnit, createTeam } from "@/domain/org";
 import { createProject } from "@/domain/projects";
+import { createPurchaseRequest, precheckPurchaseRequest } from "@/domain/purchase-requests";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { setSettingValue } from "@/domain/settings/registry";
@@ -126,6 +128,147 @@ test.describe("구매 요청 신청 (06-08)", () => {
     await expect(firstRow.getByText(number, { exact: true })).toHaveCount(1);
     await expect(firstRow.getByText("신청됨", { exact: true })).toHaveCount(1);
     await expect(firstRow.getByRole("link", { name: "현수막 3장 링크 열기" })).toHaveAttribute("href", url);
+    await page.context().close();
+  });
+
+  test("[막힘] 비온라인 줄로 `line` 진입 → 저장 → 패널 `reason` 줄에 서버 막힘 문구 · 입력은 남는다", async ({ browser, baseURL }) => {
+    const requester = await makeRequester();
+    const target = await seedTarget(requester);
+    const page = await loginPage(browser, baseURL, requester.person);
+    await page.goto(`/cards/purchases?new=1&line=${target.otherLineId}`);
+    const sheet = panel(page);
+    const item = sheet.getByLabel("품목");
+    await waitForHydration(item);
+    await item.fill("무대 소품");
+    const amount = sheet.getByLabel("예상 금액");
+    await amount.fill("55000");
+    await amount.press("Control+Enter");
+
+    await expect(sheet.getByText("온라인구매 협력사 줄 아님 · 지출결의로", { exact: true })).toBeVisible();
+    await expect(sheet.getByLabel("품목")).toHaveValue("무대 소품");
+    await expect(sheet.getByLabel("예상 금액")).toHaveValue("55,000");
+    await expect(sheet.getByRole("status")).toHaveCount(0);
+    await page.context().close();
+  });
+
+  test("[구매 요청 모드] 목록 1차 `구매 요청` → 패널 → `견적 줄 바꾸기` → 비온라인 줄 `aria-disabled` + `거래처 … · 지출결의로` · 온라인 줄은 고를 수 있다", async ({ browser, baseURL }) => {
+    const requester = await makeRequester();
+    const target = await seedTarget(requester);
+    const page = await loginPage(browser, baseURL, requester.person);
+    await page.goto("/cards/purchases");
+    const open = page.getByRole("link", { name: "구매 요청", exact: true }).or(page.getByRole("button", { name: "구매 요청", exact: true })).first();
+    await waitForHydration(open);
+    await open.click();
+    const sheet = panel(page);
+    await expect(sheet).toBeVisible();
+    await waitForHydration(sheet.getByLabel("품목"));
+    await expect(sheet.getByRole("radio", { name: "견적 줄" })).toBeChecked();
+    await expect(sheet.getByRole("radio", { name: "팀 비용" })).toHaveCount(0);
+    await sheet.getByRole("button", { name: "프로젝트 바꾸기" }).click();
+    const projects = page.getByRole("dialog", { name: "프로젝트 고르기" });
+    await projects.getByRole("textbox", { name: "프로젝트 번호 · 이름 · 클라이언트 검색" }).fill(target.projectName);
+    await projects.getByRole("option", { name: new RegExp(target.projectName) }).click();
+    await projects.getByRole("button", { name: /^이 프로젝트로/ }).click();
+    await sheet.getByRole("button", { name: "견적 줄 바꾸기" }).click();
+    const lines = page.getByRole("dialog", { name: "견적 줄 고르기" });
+    const other = lines.getByRole("option", { name: new RegExp(target.otherItem) });
+    await expect(other).toHaveAttribute("aria-disabled", "true");
+    await expect(other).toContainText("지출결의로");
+    const online = lines.getByRole("option", { name: new RegExp(target.onlineItem) });
+    await expect(online).not.toHaveAttribute("aria-disabled", "true");
+    await online.click();
+    await lines.getByRole("button", { name: /^이 줄로/ }).click();
+    await expect(lines).toBeHidden();
+    await expect(sheet.getByText(target.onlineItem, { exact: true })).toBeVisible();
+    await expect(sheet.getByText("남은 실행가 1,000,000", { exact: true })).toBeVisible();
+    await page.context().close();
+  });
+
+  test("[Empty] 전체 0건 → `구매 요청이 없습니다` + `구매 요청` / 신청됨 0건(취소만 있음) → `신청한 구매 요청이 없습니다` + `구매 요청`", async ({ browser, baseURL }) => {
+    const requester = await makeRequester();
+    const page = await loginPage(browser, baseURL, requester.person);
+    await page.goto("/cards/purchases");
+    await expect(page.getByText("구매 요청이 없습니다", { exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "구매 요청", exact: true }).or(page.getByRole("button", { name: "구매 요청", exact: true }))).toHaveCount(1);
+
+    const target = await seedTarget(requester);
+    const input = { linkKind: "quote_line" as const, lineId: target.onlineLineId, itemName: "취소될 물건", linkUrl: null, estimate: { currency: "KRW" as const, amount: 11_000, fxRate: 1 }, memo: null };
+    const created = await createPurchaseRequest(requester.person.viewer, input, await precheckPurchaseRequest(requester.person.viewer, input));
+    await db.update(purchaseRequests).set({ status: "cancelled", cancelledAt: new Date(), cancelledBy: requester.person.viewer.id, cancelReason: "취소" }).where(eq(purchaseRequests.id, created.id));
+    await page.goto("/cards/purchases");
+    await expect(page.getByText("신청한 구매 요청이 없습니다", { exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "구매 요청", exact: true }).or(page.getByRole("button", { name: "구매 요청", exact: true }))).toHaveCount(1);
+    await page.context().close();
+  });
+
+  test("[로드 오류] 목록 쿼리가 잠금 시간 초과 → `구매 요청 목록 불러오지 못함` + `다시 시도` · 풀리면 목록 복귀", async ({ browser, baseURL }) => {
+    const requester = await makeRequester();
+    const target = await seedTarget(requester);
+    const input = { linkKind: "quote_line" as const, lineId: target.onlineLineId, itemName: "복귀 확인", linkUrl: null, estimate: { currency: "KRW" as const, amount: 11_000, fxRate: 1 }, memo: null };
+    await createPurchaseRequest(requester.person.viewer, input, await precheckPurchaseRequest(requester.person.viewer, input));
+    const page = await loginPage(browser, baseURL, requester.person);
+    const lock = new Client({ connectionString: process.env.DATABASE_URL });
+    await lock.connect();
+    try {
+      await lock.query("BEGIN");
+      await lock.query("LOCK TABLE purchase_requests IN ACCESS EXCLUSIVE MODE");
+      await page.goto("/cards/purchases");
+      await expect(page.getByText("구매 요청 목록 불러오지 못함", { exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "구매 요청", exact: true })).toBeVisible();
+    } finally {
+      await lock.query("ROLLBACK").catch(() => {});
+      await lock.end();
+    }
+    await page.getByRole("button", { name: "다시 시도" }).click();
+    await expect(page.getByText("복귀 확인", { exact: true })).toBeVisible();
+    await page.context().close();
+  });
+
+  test("[링크 아이콘] 품목 옆 링크 아이콘 = 44×44 · 새 탭 · `rel` noopener noreferrer · 글자 없음(접근 이름만)", async ({ browser, baseURL }) => {
+    const requester = await makeRequester();
+    const target = await seedTarget(requester);
+    const url = "https://www.coupang.com/vp/products/777";
+    const input = { linkKind: "quote_line" as const, lineId: target.onlineLineId, itemName: "링크 확인 물건", linkUrl: url, estimate: { currency: "KRW" as const, amount: 22_000, fxRate: 1 }, memo: null };
+    await createPurchaseRequest(requester.person.viewer, input, await precheckPurchaseRequest(requester.person.viewer, input));
+    const page = await loginPage(browser, baseURL, requester.person);
+    await page.goto("/cards/purchases");
+    const icon = page.getByRole("link", { name: "링크 확인 물건 링크 열기" });
+    await expect(icon).toHaveAttribute("href", url);
+    await expect(icon).toHaveAttribute("target", "_blank");
+    const rel = (await icon.getAttribute("rel")) ?? "";
+    expect(rel).toContain("noopener");
+    expect(rel).toContain("noreferrer");
+    const box = await icon.boundingBox();
+    expect(box?.width ?? 0).toBeGreaterThanOrEqual(44);
+    expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+    await page.context().close();
+  });
+
+  test("[S12 partial] 바뀐 칸 없음 → Esc로 바로 닫힘 · 포커스 = 연 요소 / 품목을 적은 뒤 Esc → 「입력 버리기」", async ({ browser, baseURL }) => {
+    const requester = await makeRequester();
+    const target = await seedTarget(requester);
+    const input = { linkKind: "quote_line" as const, lineId: target.onlineLineId, itemName: "열기 확인", linkUrl: null, estimate: { currency: "KRW" as const, amount: 11_000, fxRate: 1 }, memo: null };
+    await createPurchaseRequest(requester.person.viewer, input, await precheckPurchaseRequest(requester.person.viewer, input));
+    const page = await loginPage(browser, baseURL, requester.person);
+    await page.goto("/cards/purchases");
+    const open = page.getByRole("link", { name: "구매 요청", exact: true });
+    await waitForHydration(open);
+
+    await open.click();
+    await expect(panel(page)).toBeVisible();
+    await waitForHydration(panel(page).getByLabel("품목"));
+    await page.keyboard.press("Escape");
+    await expect(panel(page)).toHaveCount(0);
+    await expect(page).toHaveURL(/\/cards\/purchases$/);
+    await expect(open).toBeFocused();
+
+    await open.click();
+    const item = panel(page).getByLabel("품목");
+    await waitForHydration(item);
+    await item.fill("버릴 입력");
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog", { name: "입력 버리기" })).toBeVisible();
+    await expect(panel(page)).toBeVisible();
     await page.context().close();
   });
 });

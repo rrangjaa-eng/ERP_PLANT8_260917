@@ -27,6 +27,7 @@ key-files:
     - test/integration/payment-batch.test.ts
     - test/e2e/payment-batch.spec.ts
     - docs/design/checks/2026-10-07-06-15-payment-targets.md
+    - docs/design/checks/2026-10-07-06-15-review-fixes.md
   modified:
     - domain/expenses/dto.ts
     - app/(app)/expenses/actions.ts
@@ -39,7 +40,8 @@ decisions:
   - "지급 대상 목록도 문서 보임(canSeeExpense, CSO-1 패턴)으로 거른다 — 지급 처리 경로(loadPaymentInputs)와 같은 범위. 전사 범위면 묻지 않는다"
   - "팀 select는 repositories/teams listTeams(활성) — 05 domain listTeams가 admin.people 권한을 요구해 지급 권한자가 못 부른다(지급 권한 판정 뒤에 부름)"
   - "세율을 구할 수 없는 행은 고를 수 없고 이유는 06-04 TAX_UNAVAILABLE 그대로"
-  - "빈 화면 두 행동(`지급 완료 보기` · `필터 지우기`)은 ListEmpty onClick(router.push) 버튼 — 같은 경로 `/expenses?…` Link의 Next 프리페치 응답이 브라우저에서 끝나지 않아 networkidle이 영영 안 온다(실측, design-principles 막힘). ui/ListEmpty에 prefetch 선택지가 없고 ui/는 이 플랜 밖"
+  - "빈 화면 두 행동(`지급 완료 보기` · `필터 지우기`)은 ListEmpty href 링크(<a>) — paidHref는 URLSearchParams로 인코딩한다(검토 I-1: 끝나지 않던 프리페치의 원인은 같은 경로가 아니라 원시 공백 · 한글 href. 처음 결정 「router.push 버튼」은 534c87f에서 정정)"
+  - "금액 숨김 지급 권한자의 1차 `지급 완료` 비활성 이유는 AMOUNT_HIDDEN(문서 화면 1차와 같은 글자) — `고른 건 없음`은 금액이 보일 때만(DOM 감사 O-3)"
 metrics:
   duration: "약 2시간 40분(03:00 무렵 → 05:35, 잠금 대기 포함)"
   completed: "2026-10-07"
@@ -90,7 +92,7 @@ actuals:
 - 정적: `mark-legacy --audit "app/(app)/expenses"` 0줄 · 옛 토큰 grep 0 · `git diff c5ed80f -- docs/design/tokens.css package.json pnpm-lock.yaml ui/ test/integration/leak-scan.test.ts` 빈 출력 · `(list)/loading.tsx` 변경 없음 · `view=pay` 0 · `status=지급 완료` page.tsx 1 · PAYMENT_TARGET_SKELETON_COLUMNS 3 · `grep -c prepaid repositories/payment-targets.ts` 1.
 - 실행 중 잡은 실패(systematic-debugging):
   1. 빌드 52오류 — 클라이언트 모달이 `domain/expenses/draft-fields`(→ currency → settings → db/client)를 import. DATE_FORMAT_ERROR를 서버 page에서 prop으로 넘김.
-  2. design-principles 시스템 관리자 networkidle 무한 대기 — 계측으로 `/expenses?status=지급 완료` 프리페치(metadata-only) 응답이 브라우저에서 끝나지 않음을 확인, 다른 경로 링크로 바꾸면 570ms에 idle(가설 확인). 빈 화면 두 행동을 router.push 버튼으로.
+  2. design-principles 시스템 관리자 networkidle 무한 대기 — 계측으로 `/expenses?status=지급 완료` 프리페치(metadata-only) 응답이 브라우저에서 끝나지 않음을 확인, 다른 경로 링크로 바꾸면 570ms에 idle(가설 확인). 빈 화면 두 행동을 router.push 버튼으로. → **정정(검토 I-1)**: 다른 경로라서가 아니라 인코딩된 href라서 끝났다. 인코딩한 같은 경로 링크로 되돌림(534c87f).
   3. mobile-320 `/expenses` 필터 폼 379px — 긴 팀 이름 select. `.filterForm { max-width: 100% }`(projects 선례).
   4. payment-single:272 지급 버튼 비활성 — 내 스펙 afterAll이 전역 「증빙 필수」를 다른 워커 실행 중에 되돌림. 스펙이 전역 설정을 바꾸지 않게(증빙 금액 = 공급가로 확인 → P4) 고침.
 
@@ -126,7 +128,7 @@ actuals:
 ## 화면 검토 증거
 
 ## 사용자 질문 후보
-1. 빈 화면 `지급 완료 보기` · `필터 지우기`를 링크 대신 버튼(router.push)으로 했다(같은 경로 Link 프리페치가 안 끝남). ui/ListEmpty에 `prefetch={false}` 선택지를 더해 링크로 되돌릴지(ui/ 변경 — 별도 플랜).
+1. ~~빈 화면 행동을 버튼으로 했다 — ui/ListEmpty에 prefetch 선택지를 더할지~~ → **사라짐(검토 I-1)**: 원인은 인코딩 안 한 href였고, URLSearchParams로 인코딩한 링크로 되돌렸다(ui/ 변경 없음, 534c87f).
 2. `지급 완료 보기`가 가는 `?status=지급 완료`는 06-20 전까지 S1을 다시 보인다(모르는 값 = 지급 대상). 06-20까지 그대로 둘지.
 3. 지급일 미래 허용(Q6) — 260907은 사고 뒤 막았다(§5-2 추천: 지급일은 오늘까지). Q6 유지 여부.
 4. 거래처 정렬 · 필터(06-vs-260907-code §5-3 「06-15에 넣는다」 추천) — 이 플랜에 없어 넣지 않았다.
@@ -139,7 +141,7 @@ actuals:
 ## 넘김
 - 06-17: 이체액 편집 · 서버 합계 · 차이 있음/다른 쪽 결과 줄(H-5) · 모달 닫힘 뒤 포커스 · 쪽 넘는 선택 · M-1 쪽 다시 받기 · DR-8 표 안 Ctrl+Enter.
 - 06-20: 계좌 열 · `지급 완료` 보기(S3 — StatusFilter `selects`로 팀 · 월) · 거래처별 합.
-- ui(별도): ListEmpty 링크 프리페치 끄기 선택지. S1 쪽이 2쪽 이상이면 Pagination(같은 경로 링크)도 같은 프리페치 미종료를 낼 수 있다(05 목록 Pagination도 같은 모양 — 확인 못함).
+- ~~ui(별도): ListEmpty 링크 프리페치 끄기 선택지 · Pagination 같은 미종료 가능성~~ → 근거 없음(검토 I-1 — Pagination href는 URLSearchParams로 인코딩돼 있다). 넘김 없음.
 
 ## Known Stubs
 - `app/(app)/expenses/payment-targets-table.tsx` 차이 사유 열 — 늘 `—`(06-17이 이체액 편집과 함께 채운다). 이체액 열은 지급 총액 그대로(편집 06-17).
@@ -148,12 +150,40 @@ actuals:
 1. [Rule 2 - 보안] 목록 행 보임(canSeeExpense) — 계획엔 권한 판정만 있었다. 지급 처리 경로와 같은 범위로 맞춤(ba68538).
 2. [Rule 3 - 막힘] 팀 select를 05 domain listTeams 대신 repositories listTeams로(권한 차이)(ba68538).
 3. [Rule 1 - 버그] 클라이언트 번들에 서버 모듈 — DATE_FORMAT_ERROR를 prop으로(a9b29f0).
-4. [Rule 1 - 버그] 빈 화면 같은 경로 링크 프리페치 미종료 → 버튼(a9b29f0). UI-SPEC의 「링크」와 다르다(질문 후보 1).
+4. [Rule 1 - 버그] 빈 화면 같은 경로 링크 프리페치 미종료 → 버튼(a9b29f0). → **정정(검토 I-1)**: 원인 오진. 인코딩한 href 링크로 되돌려 UI-SPEC 「링크」와 같아졌다(534c87f).
 5. [Rule 1 - 버그] 320 필터 폼 넘침 → `max-width: 100%`(a9b29f0).
 6. TDD: Task 2 · Task 3 테스트는 구현과 같은 커밋에 들어갔다(Task 1만 RED 커밋 분리). 대신 돌연변이 네 개로 돈 · 잠금 테스트가 실제로 막는지 확인했다.
 
 ## 독립 검토
 risk: money — Opus 독립 검토 · `/cso` · 독립 DOM 감사(375 · 320 · 768 · 1280)는 오케스트레이터 몫.
+
+## 검토 반영 (독립 검토 06-15-review.md · DOM 감사 06-15-dom-audit.md)
+커밋 a1d3343(통합 테스트) · 849f1b8(E2E RED) · 534c87f(화면 GREEN) + 이 SUMMARY 커밋.
+
+| 지적 | 처리 | 테스트 · 확인 |
+|---|---|---|
+| I-1 · D-1 빈 화면 행동이 버튼 | `page.tsx` paidHref를 `new URLSearchParams({ status: "지급 완료" })`로, 두 행동을 ListEmpty `{ label, href }` 링크로(ui/ 변경 없음) | E2E 「빈 지급 대상」이 링크 role · 인코딩 href · `waitForLoadState("networkidle")` 단언 — 849f1b8에서 RED(링크 없음) → 534c87f GREEN. design-principles 포함 CI=true 녹색 |
+| O-6 `필터 지우기` 뒤 포커스 BODY | 고치지 않음 | 링크 전환 뒤에도 BODY(CI=true 실측). 05 목록 빈 화면 링크와 같은 Next 같은 쪽 이동 동작이고 SYSTEM §10은 모달 · 시트 닫힘 복귀만 정한다 — 규칙 위반 아님 |
+| I-2 목록 범위 | 코드 그대로, 테스트 추가 | 「I-2 목록 범위」: 작성 중 · 결재 진행 중 · 종결(결재 통과) 문서가 목록 · 합계 건수 · 지급 총액에 없음. 돌연변이 결재 통과 조건 삭제 · 종결 조건 삭제 → 둘 다 RED |
+| S-1 목록 P3 | 테스트 추가 | 증빙 필수 on · 증빙 0 → selectable false · `증빙 없음 · 기안자 …` · `evidence=missing`에 그 행. 돌연변이 목록 증빙 게이트 늘 통과 → RED |
+| S-2 세율 없음 | 테스트 추가 | 증빙 종류 없음 → selectable false · TAX_UNAVAILABLE · payableKrw null. 돌연변이 이유 줄 삭제 → RED |
+| S-3 보임 범위 | 테스트 추가 | 팀 범위 지급 권한자(경영관리팀)는 기획1팀 문서를 못 보고(합계 0), 기획1팀 지급 권한자는 본다. 돌연변이 보임 거르기 삭제 → RED. N+1(행마다 canSeeExpense)은 30명 규모라 그대로 |
+| S-4 요청 안 중복 | 테스트 추가 | 같은 행 두 번 → processedIds 하나 · blocked 없음 · 지급 1. 돌연변이 중복 제거 삭제 → RED |
+| S-5 지급일 서버 검증 | 테스트 추가(서버 액션 직접 호출 — E2E 날짜 칸은 달력에 없는 값을 비운다) | `completePaymentsBatchAction`에 `2026-02-30` · `2026-13-01` → `validationErrors.payDate` = `날짜 형식 오류 · 2026-09-19처럼` · 지급 0. 돌연변이 refine 삭제 → RED |
+| D-2 동시 지급 막힌 행 이유 문구 | **고치지 않음** | 지금 문구 `이미 지급됨 · {이름} · {시:분} · 새로 고침`은 사용자 결정(스레드 카드 2026-10-06 18:30:31 KST 「조사 없애기」, 06-04 검토 P3-5 · 커밋 22d6917)이다 — UI-SPEC 문구 `{이름}이 {시:분}에 지급 완료함`은 받침 없는 이름에서 조사가 틀려 사용자가 버린 꼴. 어긋난 것은 코드가 아니라 UI-SPEC Copywriting(「거부 — 일괄 지급 건별 결과」 동시성 줄)이 결정을 따라가지 않은 것 — 계획 레인이 UI-SPEC을 고친다(질문 후보 7). 단건 화면 · 통합 · E2E 기대값도 그대로 |
+| O-3 금액 숨김 1차 이유 | `!amountColumn`(금액을 못 보는 계급)이면 1차 이유 = 06-04 `AMOUNT_HIDDEN`(기본 톤), 아니면 `고른 건 없음`(info) | E2E 「금액 숨김 지급 권한자」 — 849f1b8 RED(설명 `고른 건 없음`) → 534c87f GREEN(toHaveAccessibleDescription). UI-SPEC에 이 경우 문구가 따로 없어 문서 화면 1차와 같은 글자를 썼다 |
+| S-6 차이 사유 열 · 260907 숨은 규칙 6건 | 고치지 않음(지시) | 사용자 결정 대기 그대로 |
+
+검증(검토 반영 뒤):
+- 통합(erp_e0615_test) payment-batch 22/22(새 it 6 포함). 돌연변이 7종 각자 해당 it 1건 RED, 매번 `git checkout --` 원복.
+- E2E `CI=true` 프로덕션 빌드: desktop payment-batch · payment-single · expense-list · design-principles 61 통과 · 19 건너뜀(기존 skip) · 0 실패. mobile-375 mobile-list-empty · mobile-320-no-overflow · mobile-expense-320 44 통과 · 2 건너뜀 · 0 실패.
+- `pnpm lint` 0 · `pnpm typecheck` 0(잠금 안). `next.config.ts` turbopack.root는 실행 중에만 넣고 되돌렸다(커밋 없음).
+- 참고: desktop 실행 로그에 `[WebServer] Error: The destination stream closed early.` 10줄 — 모두 expense-list(05) 스펙 구간, 테스트 실패 없음. 브라우저 컨텍스트가 닫힐 때 끊긴 스트림의 서버 로그로 보인다 [추정 — 기준 커밋과 비교하지 않음].
+
+질문 후보 추가:
+7. D-2 — UI-SPEC Copywriting 동시성 문구를 사용자 결정(10-06 18:30:31 「조사 없애기」) 꼴 `이미 지급됨 · {이름} · {시:분} · 새로 고침`으로 고칠지(계획 레인). 코드는 결정대로 두었다.
+
+화면 감사 대상 추가: `/expenses` 빈 상태(지급 대상 0 · 필터 0 — 링크 두 개), 금액 숨김 지급 권한자 1280(1차 이유).
 
 ## Self-Check: PASSED
 - 파일: repositories/payment-targets.ts · domain/payments/targets.ts · domain/payments/batch.ts · payment-targets-table.tsx · batch-payment-dialog.tsx · payment-batch.test.ts · payment-batch.spec.ts · 점검표 — 모두 있음.

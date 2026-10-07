@@ -52,6 +52,14 @@ const NOTHING_TO_CONFIRM = "확인할 증빙 없음 · 새로 고침";
 
 // 사용자 결정 10/7 09:08(06-06 검토 I-2): 지급 완료된 문서는 누구도 증빙 금액을 고칠 수 없다 — UI-SPEC에 글자가 없어 기존 「… · 새로 고침」 꼴 추천안(SUMMARY 사용자 질문 후보).
 export const EVIDENCE_AMOUNT_PAID_LOCKED = "지급 완료 문서 · 증빙 금액 못 바꿈 · 새로 고침";
+export const EVIDENCE_AMOUNT_PAID_MISMATCH = "지급 공급가와 다름 · 지급 취소 뒤 고치기";
+
+// I-2(사용자 결정 10/7 09:08) + 06-10 검토 I-1(추천안 a — 사용자 질문 후보): 지급 완료 문서의 증빙 금액 판정은 이 함수 한 곳이다.
+// 있는 금액은 바꾸지 않는다. 빈 금액(지급 뒤 들어온 증빙)은 지급 기록의 공급가와 같은 값만 받는다 — 장부와 통장이 갈리지 않는다.
+export function paidEvidenceAmountRejection(input: { before: number | null; corrected: number; paidGrossSupplyKrw: number | null }): string | null {
+  if (input.before !== null) return EVIDENCE_AMOUNT_PAID_LOCKED;
+  return input.corrected === input.paidGrossSupplyKrw ? null : EVIDENCE_AMOUNT_PAID_MISMATCH;
+}
 
 // ── 증빙 상태 다섯 값 ──────────────────────────────────────────────────
 // 면제 기록 있음 → 면제(선결제를 이긴다) / 증빙 있음 · 확인 기록 없음 → 확인 전 / 증빙 있음 · confirmed → 확인됨 /
@@ -193,8 +201,12 @@ export async function confirmEvidence(viewer: Viewer, input: ConfirmEvidenceInpu
       // F2 — 빈 증빙 금액을 공급가액으로 채우지 않는다.
       if (corrected === undefined && before === null) throw new EvidenceAmountError(EVIDENCE_AMOUNT_REQUIRED);
       const changed = corrected !== undefined && corrected !== before;
-      // I-2 — 이미 있는 금액은 지급 완료 뒤 바꾸지 않는다(잠금 뒤 판정). 빈 금액을 처음 채우는 확인(F2)은 막지 않는다 — 막으면 지급 뒤 들어온 증빙을 확인할 길이 없다.
-      if (changed && before !== null && (await findLivePayment(viewer, locked.id, tx)) !== null) throw new EvidenceReviewConflictError(EVIDENCE_AMOUNT_PAID_LOCKED);
+      // I-2 — 지급 완료 문서의 금액 판정(잠금 뒤). 빈 금액 채우기를 모두 막으면 지급 뒤 들어온 증빙을 확인할 길이 없어(F2) 지급 공급가와 같은 값만 받는다.
+      if (changed) {
+        const payment = await findLivePayment(viewer, locked.id, tx);
+        const rejection = payment ? paidEvidenceAmountRejection({ before, corrected, paidGrossSupplyKrw: payment.grossSupplyKrw }) : null;
+        if (rejection) throw new EvidenceReviewConflictError(rejection);
+      }
       if (changed && !(await updateEvidenceAmount(viewer, { expenseId: locked.id, amountKrw: corrected }, tx))) throw new EvidenceReviewNotFoundError();
       // 06-27 CHECK — 전 · 후는 둘 다 값이거나 둘 다 null. 이전 값이 비었으면 기록에는 남기지 않고 로그(전 null · 후 값)에만 남긴다.
       const amounts = changed && before !== null ? { amountBeforeKrw: before, amountAfterKrw: corrected } : { amountBeforeKrw: null, amountAfterKrw: null };

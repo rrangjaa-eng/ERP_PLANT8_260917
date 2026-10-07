@@ -70,6 +70,8 @@ export type CardUsageEdit = {
   amountHidden: boolean;
   /** 연결을 바꿀 수 있나(O-11 — 구매 완료로 생긴 건은 못 바꾼다). */
   changeLink: boolean;
+  /** 06-12 카드 고치기 — 구매 완료 건 + 구매 권한이면 카드 `Select` 옵션(서버), 아니면 null(읽기 텍스트). */
+  cardOptions: CardOption[] | null;
 };
 
 /** 06-12 구매 완료 모드(S13 `?purchase={id}`) — 요청(서버 투영 값). 연결 · 사용한 사람은 요청의 것이라 보내지 않는다. */
@@ -361,7 +363,7 @@ export function CardUsageForm({
       )
     : cards;
   // 수정 모드의 카드 = 저장된 카드(여는 사람의 카드 옵션을 보지 않는다 — 옵션 0장이어도 선다).
-  const selectedCardId = edit ? edit.cardId : usableCards.some((card) => card.id === cardId) ? cardId : usableCards.length === 1 ? (usableCards[0]?.id ?? "") : "";
+  const selectedCardId = edit ? (edit.cardOptions ? cardId : edit.cardId) : usableCards.some((card) => card.id === cardId) ? cardId : usableCards.length === 1 ? (usableCards[0]?.id ?? "") : "";
   const proxyHint = edit ? edit.proxyHint : (usableCards.find((card) => card.id === selectedCardId)?.proxyHint ?? null);
 
   // 사용한 사람(EXP-07 · Q5) — 대리 등록 권한자 · 본인 개인 카드 밖 · 팀 비용일 때만. 후보는 사용일 기준으로 서버가 보낸다(남의 개인 카드 = 소지자 텍스트,
@@ -611,6 +613,21 @@ export function CardUsageForm({
             <div data-ui="field-row" className={rowStyles.row}>
               <span className={rowStyles.label}>카드</span>
               <span>—</span>
+            </div>
+          ) : edit?.cardOptions ? (
+            <div data-ui="field-row" className={rowStyles.row}>
+              <Form.Field id="card-usage-card" label="카드">
+                <Select
+                  id="card-usage-card"
+                  className={cardStyles.cardSelect}
+                  name="corpCardId"
+                  options={edit.cardOptions.map((card) => ({ value: card.id, label: card.label }))}
+                  defaultValue={edit.cardId}
+                  onChange={(event) => setCardId(event.target.value)}
+                />
+                {/* 06-12 M-5 — 저장된 카드와 다르게 고르면 그때 카드 한 줄(되돌리면 없음). */}
+                {selectedCardId !== edit.cardId ? <Form.Hint>{`구매 완료 때 카드 ${edit.cardText}`}</Form.Hint> : null}
+              </Form.Field>
             </div>
           ) : edit ? (
             <div data-ui="field-row" className={rowStyles.row}>

@@ -264,7 +264,9 @@ export type CardUsageUpdateValues = Pick<
   | "registeredBy"
   | "registeredVia"
   | "memo"
->;
+> &
+  // 06-12 카드 고치기(구매 완료 건) — 있을 때만 카드 칸도 바꾼다.
+  Partial<Pick<CardUsageInsert, "corpCardId">>;
 
 // version 조건 UPDATE(D-609) — 보관 안 된 건 · version 일치일 때만. 바뀌면 새 version, 아니면 null(낡은 version · 그 사이 보관).
 export async function updateCardUsageRow(

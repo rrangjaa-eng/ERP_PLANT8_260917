@@ -607,6 +607,8 @@ export type CardUsageUpdatePre = Omit<CardUsagePre, "card" | "registeredVia"> & 
   completedAllowed: boolean;
   /** 몸통 첫 줄이 차례로 잡을 프로젝트 행 — 프로젝트 id 오름차순 · 중복 없음(06-07 B-1 · E-9). */
   lockProjects: CardUsageProjectLock[];
+  /** 06-12 카드 고치기(구매 완료 건 · 권리 + 구매 권한 + 활성 새 카드) — 새 카드 id와 로그 요약의 카드 글자. 카드 그대로면 null. */
+  cardChange: { id: string; from: string; to: string } | null;
 };
 
 function rightsOf(stored: CardUsageForWrite, viewer: Viewer, proxy: boolean): CardUsageRights {
@@ -637,8 +639,14 @@ export async function precheckCardUsageUpdate(viewer: Viewer, input: CardUsageUp
   const rights = rightsOf(stored, viewer, proxy);
   const linkFixed = sameLink(stored, input);
   if (!rights.edit || (!linkFixed && !rights.changeLink)) throw new ForbiddenError(RIGHTS_DENIED);
-  // 수정은 카드를 바꾸지 않는다(구매 완료 건의 카드 고치기는 06-12).
-  if (input.corpCardId !== stored.corpCardId) throw new ForbiddenError(CARD_NOT_ELIGIBLE);
+  // 수정은 카드를 바꾸지 않는다 — 구매 완료 건만 권리(위) + 구매 권한 + 활성 새 카드일 때 카드 고치기(06-12, rights.ts 그대로).
+  let cardChange: CardUsageUpdatePre["cardChange"] = null;
+  if (input.corpCardId !== stored.corpCardId) {
+    const purchases = stored.registeredVia === "purchase" && (await can(viewer, "cards.purchases", "write"));
+    const next = purchases ? (await listCorpCards(viewer, { scope: { rows: "all", includeArchived: false }, includeInactive: false })).find((candidate) => candidate.id === input.corpCardId) : undefined;
+    if (!next) throw new ForbiddenError(CARD_NOT_ELIGIBLE);
+    cardChange = { id: next.id, from: cardLabel({ label: stored.cardLabel, issuer: stored.cardIssuer, numberLast4: stored.cardLast4 }), to: cardLabel(next) };
+  }
   const amountShown = await visible(viewer, "card_usage.amount");
   const storedTotal: MoneyInput =
     stored.totalForeignAmount === null
@@ -666,7 +674,7 @@ export async function precheckCardUsageUpdate(viewer: Viewer, input: CardUsageUp
     : stored.registeredVia === "purchase" || stored.registeredVia === "proxy"
       ? stored.registeredVia
       : "self";
-  const base = { usageId: stored.id, registeredVia, registeredBy, total, amountShown, usedByUserId: usedBy.usedByUserId, teamId: usedBy.teamId, evidenceRule, rates, capExclude: { usageId: stored.id }, linkFixed, completedAllowed: proxy };
+  const base = { usageId: stored.id, registeredVia, registeredBy, total, amountShown, usedByUserId: usedBy.usedByUserId, teamId: usedBy.teamId, evidenceRule, rates, capExclude: { usageId: stored.id }, linkFixed, completedAllowed: proxy, cardChange };
 
   if (linkFixed) {
     if (input.linkKind !== "quote_line" || !stored.projectId) return { ...base, ...NO_LINK, lockProjects: [] };
@@ -768,12 +776,14 @@ export async function updateCardUsage(
           registeredBy: pre.registeredBy,
           registeredVia: pre.registeredVia,
           memo: input.memo ?? null,
+          ...(pre.cardChange ? { corpCardId: pre.cardChange.id } : {}),
         },
       },
       innerTx,
     );
     if (version === null) throw new CardUsageRejectedError(STALE_VERSION);
-    await recordAction(viewer, { actionType: "document_update", entity: CARD_USAGE_ENTITY, entityId: pre.usageId }, { tx: innerTx });
+    const detail = pre.cardChange ? { detail: { summary: `카드 고침 · ${pre.cardChange.from} → ${pre.cardChange.to}` } } : {};
+    await recordAction(viewer, { actionType: "document_update", entity: CARD_USAGE_ENTITY, entityId: pre.usageId, ...detail }, { tx: innerTx });
     return { id: pre.usageId, totalKrw: pre.amountShown ? split.totalKrw : null };
   };
   return tx ? await runUpdate(tx) : await withTransaction(runUpdate);
@@ -939,7 +949,12 @@ const CARD_USAGE_EDIT_DTO_SPEC: DtoSpec<CardUsageEditDto, CardUsageEditDto> = {
 
 registerDto({ name: "CardUsageEditDto", fields: CARD_USAGE_EDIT_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 
-export type CardUsageForEdit = { usage: Partial<CardUsageEditDto>; rights: CardUsageRights };
+export type CardUsageForEdit = {
+  usage: Partial<CardUsageEditDto>;
+  rights: CardUsageRights;
+  /** 06-12 카드 고치기 — 구매 완료 건 + 구매 권한이면 활성 카드 전부(저장된 카드가 비활성이면 맨 앞), 그 밖은 null(카드 읽기 텍스트). */
+  cardOptions: Partial<CardOptionDto>[] | null;
+};
 
 const ZERO_KRW: MoneyInput = { currency: "KRW", amount: 0, fxRate: 1 };
 
@@ -997,7 +1012,13 @@ export async function loadCardUsageForEdit(viewer: Viewer, id: string): Promise<
     ...line,
   };
   const [usage] = await projectMany(viewer, [dto], CARD_USAGE_EDIT_DTO_SPEC);
-  return { usage: usage ?? {}, rights };
+  let cardOptions: CardUsageForEdit["cardOptions"] = null;
+  if (stored.registeredVia === "purchase" && (await can(viewer, "cards.purchases", "write"))) {
+    const active = (await listCorpCards(viewer, { scope: { rows: "all", includeArchived: false }, includeInactive: false })).map((card) => ({ id: card.id, label: cardLabel(card) }));
+    const options = active.some((card) => card.id === stored.corpCardId) ? active : [{ id: stored.corpCardId, label: dto.cardText }, ...active];
+    cardOptions = await projectMany(viewer, options.map((card) => ({ ...card, proxyHint: null, choosesUser: false })), CARD_OPTION_SPEC);
+  }
+  return { usage: usage ?? {}, rights, cardOptions };
 }
 
 // ── 서버 계산 한 줄(트랜잭션 없음) ─────────────────────────────────────────

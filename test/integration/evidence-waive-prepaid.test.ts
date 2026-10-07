@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { ZodError } from "zod";
-import { db } from "@/db/client";
-import { actionLog, expenseEvidenceReviews, expenses } from "@/db/schema";
+import { db, pool } from "@/db/client";
+import { actionLog, expenseEvidenceReviews, expensePayments, expenses } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { approveDocument, rejectDocument } from "@/domain/approvals";
 import { createExpenseFromLines, ExpenseFieldError, ExpenseNotFoundError, getExpense, listExpenseFormOptions, saveExpenseDraft, submitExpense } from "@/domain/expenses";
@@ -10,7 +10,11 @@ import { DATE_FORMAT_ERROR } from "@/domain/expenses/draft-fields";
 import { PREPAID_REASON_REQUIRED } from "@/domain/expenses/gate";
 import { cancelExpensePayment, completeExpensePayment, previewPayable } from "@/domain/payments";
 import { GateBlockedError } from "@/domain/rules/gate";
-import { confirmEvidence, EvidenceReviewConflictError, EVIDENCE_AMOUNT_PAID_LOCKED } from "@/domain/evidence-reviews";
+import { confirmEvidence, EvidenceReviewConflictError, EVIDENCE_AMOUNT_PAID_LOCKED, waiveEvidence } from "@/domain/evidence-reviews";
+import { ACTION_LOG_OPTIONAL_TYPES } from "@/domain/settings/keys";
+import { upsertSimpleValue } from "@/repositories/settings";
+import { ForbiddenError } from "@/domain/permissions/can";
+import { getPaymentView } from "@/domain/payments";
 import { EVIDENCE_PREPAID_DUE_DAYS } from "@/domain/settings/keys";
 import { EVIDENCE_AMOUNT_TAX_INCLUSIVE } from "@/domain/evidence-reviews/tax-inclusive";
 import { seoulToday } from "@/lib/dates";
@@ -18,7 +22,8 @@ import { addDays } from "@/lib/kst-date";
 import { seedCodeItem } from "@/repositories/code-tables";
 import { upsertVisibility } from "@/repositories/permissions";
 import { setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
-import { approvedExpenseWithEvidence, makePaymentManager, setEvidenceRequired } from "./fixtures/payments";
+import { approvedExpenseWithEvidence, approvedExpenseWithoutEvidence, makePaymentManager, setEvidenceRequired } from "./fixtures/payments";
+import { deferred, waitForLockWaiter } from "./lock-race";
 
 // 06-10(EXP-13 · EVID-03 · D-603 · D-611 · O-4 · EA-1): 05 폼의 선결제 · 사유 · 증빙 금액 · 증빙일(기안자 저장)과 경영관리의 증빙 면제.
 // 문서는 05 · 04.1 도메인 함수로 만든다(SQL 직접 삽입 없음). 통과를 기대하는 지급은 증빙 필수 on에서 돌려 선결제 · 면제가 게이트를 여는지 본다.
@@ -334,4 +339,189 @@ describe("지급 완료 문서의 증빙 금액 고침 막힘(I-2)", () => {
     expect(result.evidenceStatus).toBe("확인됨");
     expect((await expenseRow(expenseId)).evidenceAmount).toBe(12_000_000);
   });
+});
+
+// ── 증빙 면제(D-603 · D-611 · S4) ────────────────────────────────────────────
+describe("증빙 면제 (06-10)", () => {
+  async function reviewRows(expenseId: string) {
+    return db.select().from(expenseEvidenceReviews).where(eq(expenseEvidenceReviews.expenseId, expenseId));
+  }
+
+  async function waiveLogs(expenseId: string) {
+    return db
+      .select({ actorId: actionLog.actorId, detail: actionLog.detail })
+      .from(actionLog)
+      .where(and(eq(actionLog.entityId, expenseId), eq(actionLog.actionType, "evidence_waive")));
+  }
+
+  async function untouched(expenseId: string, run: () => Promise<unknown>) {
+    const rowBefore = await expenseRow(expenseId);
+    const reviewsBefore = await reviewRows(expenseId);
+    const logsBefore = await waiveLogs(expenseId);
+    const failure = await run().then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeDefined();
+    expect(await expenseRow(expenseId)).toEqual(rowBefore);
+    expect(await reviewRows(expenseId)).toEqual(reviewsBefore);
+    expect(await waiveLogs(expenseId)).toEqual(logsBefore);
+    return failure as Error;
+  }
+
+  it("면제 뒤 지급 통과 — P3 문서를 사유와 함께 면제하면 확인 기록 waived · version + 1 · 로그 한 줄 · 응답 actionRow P4, 증빙 필수 on에서도 지급 완료", async () => {
+    await setEvidenceRequired(true);
+    const fx = await setupExpenseProject();
+    const doc = await approvedExpenseWithoutEvidence(fx);
+    const manager = await payer();
+    // 면제 전에는 증빙 게이트가 지급을 막는다.
+    const view = await getPaymentView(manager, doc.expenseId);
+    expect(view?.row).toMatchObject({ row: "P3", primary: "pay", tertiary: "waive" });
+
+    const result = await waiveEvidence(manager, { expenseId: doc.expenseId, version: doc.version, reason: "  거래처 폐업 · 영수증 수취 불가  " });
+
+    expect(result.version).toBe(doc.version + 1);
+    expect(result.evidenceStatus).toBe("면제");
+    expect(result.actionRow).toMatchObject({ row: "P4", primary: "pay", blockReason: null });
+    expect((await expenseRow(doc.expenseId)).version).toBe(result.version);
+    expect(await reviewRows(doc.expenseId)).toMatchObject([{ status: "waived", waiveReason: "거래처 폐업 · 영수증 수취 불가", reviewedBy: manager.id, amountBeforeKrw: null, amountAfterKrw: null }]);
+    expect(await waiveLogs(doc.expenseId)).toEqual([{ actorId: manager.id, detail: { reason: "거래처 폐업 · 영수증 수취 불가" } }]);
+
+    const preview = await previewPayable(manager, { expenseId: doc.expenseId, payDate: seoulToday() });
+    if (preview.payableKrw === undefined || preview.payableKrw === null) throw new Error("지급 총액 없음");
+    const paid = await completeExpensePayment(manager, { expenseId: doc.expenseId, expectedPayableKrw: preview.payableKrw, version: result.version });
+    expect(paid.version).toBe(result.version + 1);
+  });
+
+  it("면제가 선결제를 이긴다 — 면제된 선결제 문서는 지급 DTO prepaidDue null · 증빙 상태 면제 · 선결제 표시 · 사유 그대로", async () => {
+    await setEvidenceRequired(true);
+    const fx = await setupExpenseProject();
+    const { expenseId, instanceId, version } = await submitPrepaid(fx);
+    await approveBoth(fx, instanceId, version);
+    const manager = await payer();
+    const longAgo = addDays(seoulToday(), -60);
+    const before = await getPaymentView(manager, expenseId);
+    expect(before?.row).toMatchObject({ tertiary: "waive" });
+    // 지급 뒤에도 면제된다(P6) — 기한은 지급일 + 14일이 한참 지나 경과로 표시되던 문서다.
+    const preview = await previewPayable(manager, { expenseId, payDate: longAgo });
+    if (preview.payableKrw === undefined || preview.payableKrw === null) throw new Error("지급 총액 없음");
+    const paid = await completeExpensePayment(manager, { expenseId, payDate: longAgo, expectedPayableKrw: preview.payableKrw, version: (await expenseRow(expenseId)).version });
+    const paidView = await getPaymentView(manager, expenseId);
+    expect(paidView?.evidenceStatus).toBe("선결제");
+    expect(paidView?.prepaidDue).toMatchObject({ overdueDays: expect.any(Number) });
+    const payments = await db.select().from(expensePayments).where(eq(expensePayments.expenseId, expenseId));
+
+    const waived = await waiveEvidence(manager, { expenseId, version: paid.version, reason: "증빙 끝내 못 받음" });
+
+    expect(waived.evidenceStatus).toBe("면제");
+    expect(waived.actionRow).toMatchObject({ row: "P6", primary: null, tertiary: null });
+    const after = await getPaymentView(manager, expenseId);
+    expect(after?.evidenceStatus).toBe("면제");
+    expect(after?.prepaidDue ?? null).toBeNull();
+    // 지급 기록 · 선결제 표시 · 선결제 사유는 그대로다.
+    const row = await expenseRow(expenseId);
+    expect(row.prepaid).toBe(true);
+    expect(row.prepaidReason).toBe("행사장 선입금 요구");
+    expect(await db.select().from(expensePayments).where(eq(expensePayments.expenseId, expenseId))).toEqual(payments);
+  });
+
+  it("증빙 필수 off 문서(P4)도 면제된다", async () => {
+    await setEvidenceRequired(false);
+    const fx = await setupExpenseProject();
+    const doc = await approvedExpenseWithoutEvidence(fx);
+    const manager = await payer();
+    const view = await getPaymentView(manager, doc.expenseId);
+    expect(view?.row).toMatchObject({ row: "P4", tertiary: "waive" });
+    const result = await waiveEvidence(manager, { expenseId: doc.expenseId, version: doc.version, reason: "소액 현금 지출" });
+    expect(result.evidenceStatus).toBe("면제");
+    expect(result.actionRow).toMatchObject({ row: "P4", primary: "pay", tertiary: null });
+  });
+
+  it("면제 로그는 끌 수 없다 — action_log.optional_types를 비워도 evidence_waive가 남는다", async () => {
+    await upsertSimpleValue(SYSTEM_VIEWER, ACTION_LOG_OPTIONAL_TYPES.key, [], null);
+    try {
+      const fx = await setupExpenseProject();
+      const doc = await approvedExpenseWithoutEvidence(fx);
+      const manager = await payer();
+      await waiveEvidence(manager, { expenseId: doc.expenseId, version: doc.version, reason: "증빙 수취 불가" });
+      expect(await waiveLogs(doc.expenseId)).toEqual([{ actorId: manager.id, detail: { reason: "증빙 수취 불가" } }]);
+    } finally {
+      await upsertSimpleValue(SYSTEM_VIEWER, ACTION_LOG_OPTIONAL_TYPES.key, ACTION_LOG_OPTIONAL_TYPES.default ?? [], null);
+    }
+  });
+
+  it("사유가 비거나 공백뿐이면 거부 `사유 없음 · 사유 적기` — 행 · 로그 불변", async () => {
+    const fx = await setupExpenseProject();
+    const doc = await approvedExpenseWithoutEvidence(fx);
+    const manager = await payer();
+    for (const reason of ["", "   "]) {
+      const failure = await untouched(doc.expenseId, () => waiveEvidence(manager, { expenseId: doc.expenseId, version: doc.version, reason }));
+      expect(failure.message).toBe("사유 없음 · 사유 적기");
+    }
+  });
+
+  it("지급 권한이 없는 사람(기안자 포함)은 면제할 수 없다(D-601)", async () => {
+    const fx = await setupExpenseProject();
+    const doc = await approvedExpenseWithoutEvidence(fx);
+    for (const viewer of [fx.pm, fx.lead, fx.ceo]) {
+      const failure = await untouched(doc.expenseId, () => waiveEvidence(viewer, { expenseId: doc.expenseId, version: doc.version, reason: "면제 요청" }));
+      expect(failure).toBeInstanceOf(ForbiddenError);
+    }
+  });
+
+  it("결재 통과 전 문서 · 살아 있는 증빙이 있는 문서 · 이미 면제된 문서 · version이 다른 요청은 거부 — 행 · 로그 불변", async () => {
+    const manager = await payer();
+    // 결재 중
+    const fxA = await setupExpenseProject();
+    const pending = await submitPrepaid(fxA);
+    const notApproved = await untouched(pending.expenseId, () => waiveEvidence(manager, { expenseId: pending.expenseId, version: (pending.version), reason: "이르다" }));
+    expect(notApproved).toBeInstanceOf(GateBlockedError);
+    // 증빙 있음
+    const fxB = await setupExpenseProject();
+    const withEvidence = await approvedExpenseWithEvidence(fxB);
+    const alive = await untouched(withEvidence.expenseId, () => waiveEvidence(manager, { expenseId: withEvidence.expenseId, version: withEvidence.version, reason: "증빙 있음" }));
+    expect(alive.message).toBe("증빙 있음 · 증빙 확인");
+    // 이미 면제 · version 불일치
+    const fxC = await setupExpenseProject();
+    const doc = await approvedExpenseWithoutEvidence(fxC);
+    const stale = await untouched(doc.expenseId, () => waiveEvidence(manager, { expenseId: doc.expenseId, version: doc.version + 7, reason: "옛 화면" }));
+    expect(stale).toBeInstanceOf(EvidenceReviewConflictError);
+    const first = await waiveEvidence(manager, { expenseId: doc.expenseId, version: doc.version, reason: "첫 면제" });
+    const again = await untouched(doc.expenseId, () => waiveEvidence(manager, { expenseId: doc.expenseId, version: first.version, reason: "두 번째" }));
+    expect(again.message).toBe("이미 면제 · 새로 고침");
+  });
+
+  it("면제 동시 두 요청 — 장벽: A가 문서 잠금을 쥔 동안 B가 기다리고, A가 끝나면 B는 동시성 거부 · 확인 기록 한 줄 · 로그 한 줄", async () => {
+    const fx = await setupExpenseProject();
+    const doc = await approvedExpenseWithoutEvidence(fx);
+    const manager = await payer();
+    const locked = deferred();
+    const release = deferred();
+
+    const a = waiveEvidence(
+      manager,
+      { expenseId: doc.expenseId, version: doc.version, reason: "첫 요청" },
+      {
+        afterLock: async () => {
+          locked.resolve();
+          await release.promise;
+        },
+      },
+    );
+    await locked.promise;
+    const b = waiveEvidence(manager, { expenseId: doc.expenseId, version: doc.version, reason: "둘째 요청" }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    try {
+      await waitForLockWaiter(pool);
+    } finally {
+      release.resolve();
+    }
+    await a;
+    const error = await b;
+    expect(error).toBeInstanceOf(EvidenceReviewConflictError);
+    expect(await reviewRows(doc.expenseId)).toHaveLength(1);
+    expect(await waiveLogs(doc.expenseId)).toHaveLength(1);
+  }, 20_000);
 });

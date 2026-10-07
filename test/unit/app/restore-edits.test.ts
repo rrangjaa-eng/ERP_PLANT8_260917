@@ -47,6 +47,9 @@ function savedLine(version: number, unitPriceKrw: number): Line {
     hasLinkedDocuments: false,
     readonlyReason: null,
     linkedStatus: null,
+    prepaidOverdueDays: null,
+    hasCardSideLinks: false,
+    executionOverKrw: null,
   };
 }
 

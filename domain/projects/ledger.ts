@@ -12,6 +12,8 @@ import {
 import { saveRevenueInTx, listRevenue, revenueWriteRights, type SaveRevenueInput, type RevenueDto } from "@/domain/revenue";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { findQuoteRevisionById } from "@/repositories/quote-revisions";
+import { lineCardSideFacts } from "@/domain/corp-card-usages/link-targets";
+import { log } from "@/lib/log";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { can } from "@/domain/permissions/can";
 import { visible } from "@/domain/permissions/visible";
@@ -373,7 +375,15 @@ export async function saveProjectLedger(
   // 전 listRevenue를 부르면 자기 자신의 쓰기를 보지 못한다(격리).
   const revenueResult = input.revenue ? await listRevenue(viewer, projectId) : null;
 
-  const quoteLinesResult = quoteLinesWritten ? await finishQuoteLineSave(viewer, quoteLinesWritten) : null;
+  // 06-13(N-3) — 응답 줄도 상세 페이지 읽기와 같이 카드 쪽 사실(보관 대신 취소 · 실행가 초과)을 싣는다. 읽기가 실패해도 저장은 이미 끝났다(사실 없이 — 페이지와 같은 결).
+  const cardSideFacts =
+    quoteLinesWritten && input.quoteLines
+      ? await lineCardSideFacts(viewer, { revisionId: input.quoteLines.revisionId }).catch((error: unknown) => {
+          log.error("project.card_side_facts_failed", { projectId, message: error instanceof Error ? error.message : String(error) });
+          return undefined;
+        })
+      : undefined;
+  const quoteLinesResult = quoteLinesWritten ? await finishQuoteLineSave(viewer, quoteLinesWritten, cardSideFacts) : null;
 
   return { quoteLines: quoteLinesResult, revenue: revenueResult, project };
 }

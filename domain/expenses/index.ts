@@ -56,7 +56,7 @@ import { findApprovalGraphByDocument, type ApprovalGraph } from "@/repositories/
 import type { DescribeDeps, DocumentSummary, RouteConfigStep } from "@/domain/approvals/kinds";
 import { EVIDENCE_AMOUNT_TAX_INCLUSIVE, isTaxInclusiveEvidenceAmount } from "@/domain/evidence-reviews/tax-inclusive";
 import { gate, GateBlockedError } from "@/domain/rules/gate";
-import "@/domain/rules/register";
+import { cardDualLinkDecision, linePaidLockDecision, type CardDualLinkCtx, type ExpenseLinePaidLockCtx } from "@/domain/rules/register";
 import { moneyFromRow, moneyToColumns, remainingForInstallments, sameAmountOn, type Money } from "@/domain/money";
 import { CURRENCIES, recentFxRate } from "@/domain/money/currency";
 import { allocateDocumentNumber, allocateExpenseNumber, loadDocumentNumberFormat, loadExpenseNumberFormat } from "@/domain/document-numbering";
@@ -65,9 +65,9 @@ import { formatKstTime } from "@/domain/holidays/business-day";
 import { computeExpenseTax, storedTaxResult, taxDriftText, taxLineText, type ExpenseTaxResult, type ExpenseTaxSource } from "@/domain/expenses/tax";
 import { buildExpenseDetailRows } from "@/domain/expenses/detail";
 import { canSeeExpense, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses/access";
-import { expenseLineDoor, installmentSeqFor, type ExpenseLineDoor } from "@/domain/expenses/line-door";
+import { expenseLineDoor, installmentSeqFor, type ExpenseLineDoor, type ExpenseLineDoorState } from "@/domain/expenses/line-door";
 import { resolveLinkedDocumentsByLineage, type LineageLine } from "@/domain/quotes/lineage";
-import { resolveLineDoor } from "@/domain/quotes/line-door";
+import { resolveLineDoor, type LineDoorKind } from "@/domain/quotes/line-door";
 import {
   buildExpenseSubmitContext,
   INACTIVE_EVIDENCE_TYPE,
@@ -97,7 +97,7 @@ import { findLatestQuoteRevision, findQuoteRevisionById, listLatestQuoteRevision
 import { findQuoteLineById, listLineageLinesByProjects, listQuoteLinesByRevision, type QuoteLineRow } from "@/repositories/quote-lines";
 import { findExpenseDocFacts, findLineLinks, findLineVendorNames, listExpenseDocFacts, lockQuoteLines } from "@/repositories/quote-line-links";
 import { findUserById, findUserNamesByIds } from "@/repositories/users";
-import { findVendorById } from "@/repositories/vendors";
+import { findVendorById, findVendorNamesByIds } from "@/repositories/vendors";
 import {
   closeExpenseRow,
   listClosedInstallmentsByLines,
@@ -1592,9 +1592,38 @@ export type LineDoorCell = {
   expenseId?: string;
   // 이 줄의 가장 최근 제출 문서(문이 닫힘 `지출결의 열기`의 도착지).
   latestId?: string;
-  // 06-13(S14) — 행 행동 막힘 이유(서버 게이트 거부와 같은 문자열).
-  blocked?: { reason: string };
+  // 06-13(S14 · EXP-10) — 줄의 문(거래처 설정에서만 — `resolveLineDoor`). `purchase`면 행 행동이 `구매 요청`(목적지 `purchaseHref`).
+  branch: LineDoorKind;
+  purchaseHref?: string;
+  // 06-13(S14) — 행 행동 막힘 이유(서버 게이트 거부와 같은 문자열) · 다음 한 수(`rowActionBlock`).
+  blocked?: RowActionBlock;
 };
+
+export type RowActionBlock = { reason: string; next?: { label: "카드 사용 등록"; href: string } };
+
+// 06-13(S14 조합표 — 06-18 소비 계약) — 견적 줄 행 행동의 막힘. 권한 · 설정을 읽지 않는 순수 함수다(06-18이 트랜잭션 안에서 같은 함수를 부른다).
+// 문(`branch`)은 호출자가 `resolveLineDoor`로 정해 넘기고, 이유는 서버 게이트와 같은 함수(`cardDualLinkDecision` · `linePaidLockDecision`)가 만든다.
+// 온라인구매 줄 × 지출결의 연결 → 이유 / 일반 줄 × closed × 지급 완료 → 이유(05 `지출결의 열기` 옆) / 일반 줄 × open × 카드 쪽 연결 → 이유 + 3차
+// `카드 사용 등록` / `no_vendor` · `none`은 05 그대로(막힘 없음).
+export function rowActionBlock(input: {
+  lineId: string;
+  branch: LineDoorKind;
+  door: ExpenseLineDoorState;
+  links: CardDualLinkCtx["links"];
+  paid: ExpenseLinePaidLockCtx["docs"];
+}): RowActionBlock | null {
+  if (input.door === "none" || input.door === "no_vendor") return null;
+  if (input.branch === "purchase") {
+    const expense = input.links.expenses[0];
+    return expense ? { reason: `지출결의 ${expense.number} 연결됨 · 카드 사용은 다른 줄` } : null;
+  }
+  if (input.door === "closed") {
+    const lock = linePaidLockDecision({ door: input.door, docs: input.paid });
+    return lock.allowed ? null : { reason: lock.reason };
+  }
+  const dual = cardDualLinkDecision({ side: "expense", links: input.links });
+  return dual.allowed ? null : { reason: dual.reason, next: { label: "카드 사용 등록", href: `/cards?new=1&line=${input.lineId}` } };
+}
 export type LineDoors = { showColumn: boolean; tableGateReason: string | null; cells: Record<string, LineDoorCell> };
 
 // 화면은 이 값만 그린다 — 셀 · 표 전체 게이트 · 열 여부 판정은 서버다. 열은 `expenses` 쓰기 권한 ∧ 그 프로젝트 쓰기 권리
@@ -1614,22 +1643,35 @@ export async function listLineDoors(viewer: Viewer, input: { projectId: string }
 
   const lines = await listQuoteLinesByRevision(viewer, facts.latestRevisionId);
   const lineIds = lines.map((line) => line.id);
-  const [numbered, drafts] = await Promise.all([listNumberedByLineage(viewer, input.projectId), listDraftsByLines(viewer, { lineIds, drafterId: viewer.id })]);
+  const vendorIds = [...new Set(lines.flatMap((line) => (line.vendorId ? [line.vendorId] : [])))];
+  const [numbered, drafts, links, vendorNames, onlineVendorName] = await Promise.all([
+    listNumberedByLineage(viewer, input.projectId),
+    listDraftsByLines(viewer, { lineIds, drafterId: viewer.id }),
+    findLineLinks(viewer, lineIds),
+    findVendorNamesByIds(viewer, vendorIds),
+    getSettingValue(PURCHASE_ONLINE_VENDOR_NAME),
+  ]);
   const docFacts = await listExpenseDocFacts(viewer, [...numbered.values()].flatMap((docs) => docs.map((doc) => doc.id)));
   const cells: Record<string, LineDoorCell> = {};
   for (const line of lines) {
     const docs = numbered.get(line.id) ?? [];
     const door = doorFor(line, docs);
     const draft = drafts.find((doc) => doc.quoteLineId === line.id);
-    const paidLock = await gate(null, "expense.line-paid-lock", {
+    const branch = resolveLineDoor({ vendorName: line.vendorId ? (vendorNames.get(line.vendorId) ?? null) : null }, onlineVendorName);
+    const blocked = rowActionBlock({
+      lineId: line.id,
+      branch,
       door: door.state,
-      docs: docs.map((doc) => ({ number: doc.number ?? "", installment: doc.installment, paid: docFacts.get(doc.id)?.paid ?? false })),
+      links: links.get(line.id) ?? { expenses: [], cardUsages: [], purchaseRequests: [] },
+      paid: docs.map((doc) => ({ number: doc.number ?? "", installment: doc.installment, paid: docFacts.get(doc.id)?.paid ?? false })),
     });
     cells[line.id] = {
       state: door.state,
+      branch,
+      ...(branch === "purchase" ? { purchaseHref: `/cards/purchases?new=1&line=${line.id}` } : {}),
       ...(door.state === "open" && draft ? { expenseId: draft.id } : {}),
       ...(door.latest ? { latestId: door.latest.id } : {}),
-      ...(paidLock.allowed ? {} : { blocked: { reason: paidLock.reason } }),
+      ...(blocked ? { blocked } : {}),
     };
   }
   return { showColumn: true, tableGateReason: facts.tableGateReason, cells };

@@ -17,6 +17,14 @@
   color: var(--status-warning);
 }
 
+/* 06-13(S14 · N-3) — 견적 줄 상태 칸 2행 `증빙 {N}일 경과` · `실행가 초과 {액}`(UI-SPEC S14 — 태그 아래 한 줄). */
+.lineStatusNote {
+  flex-basis: 100%;
+  font-size: var(--text-tag);
+  font-weight: var(--fw-regular);
+  color: var(--status-warning);
+}
+
 /* DR-26 — 복사·차수 묶음. PC(≥700)는 버튼군 안에 그대로, 「더보기」 없음. */
 .moreToggle {
   display: none;

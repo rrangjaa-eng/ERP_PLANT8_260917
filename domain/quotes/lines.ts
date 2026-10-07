@@ -1303,12 +1303,17 @@ export async function rememberFxAfterCommit(
 }
 
 // ③ 커밋 뒤 — projectMany 투영(ENG-D3 ②). 셀 단계는 트랜잭션 전에 읽은 두 권한으로(04-13 — 입구는 둘 중 하나).
-export async function finishQuoteLineSave(viewer: Viewer, written: WrittenQuoteLines): Promise<SaveQuoteLinesResult> {
+// 06-13(N-3) — `cardSideFacts`는 일괄 저장(ledger)이 커밋 뒤 읽어 넘긴다(화면은 이 응답 줄로 다시 그린다 — 상세 페이지 읽기와 같은 값).
+export async function finishQuoteLineSave(
+  viewer: Viewer,
+  written: WrittenQuoteLines,
+  cardSideFacts?: QuoteLineListCtx["cardSideFacts"],
+): Promise<SaveQuoteLinesResult> {
   return {
     lines: await projectLines(
       viewer,
       written.activeRows,
-      { status: written.projectStatus, canWrite: written.canWrite, canAdjust: written.canAdjust, approvedSeq: written.approvedSeq },
+      { status: written.projectStatus, canWrite: written.canWrite, canAdjust: written.canAdjust, approvedSeq: written.approvedSeq, cardSideFacts },
       written.linkedDocuments,
     ),
   };

@@ -127,6 +127,10 @@ type DraftLine = {
   readonlyReason: string | null;
   /** 05-15 — 줄 상태 열 파생값(서버 DTO 키 하나 — 06-13 SP-2 우선순위는 서버가 정한다). */
   linkedStatus: QuoteLineLinkedStatus | null;
+  /** 06-13(S14) — 상태 2행 재료(서버 DTO 그대로 — 화면은 셈하지 않는다). 카드 쪽 연결이 있는 줄의 삭제는 보관 대신 취소(N-3). */
+  prepaidOverdueDays: number | null;
+  hasCardSideLinks: boolean;
+  executionOverKrw: number | null;
 };
 
 type LineCells = Record<QuoteLineField, QuoteCellEditability>;
@@ -313,6 +317,9 @@ function fromDto(dto: QuoteLineDto): DraftLine {
     hasLinkedDocuments: dto.hasLinkedDocuments,
     readonlyReason: dto.readonlyReason,
     linkedStatus: dto.linkedStatus,
+    prepaidOverdueDays: dto.prepaidOverdueDays,
+    hasCardSideLinks: dto.hasCardSideLinks,
+    executionOverKrw: dto.executionOverKrw,
   };
 }
 
@@ -356,6 +363,9 @@ function newDraftLine(defaultSubcategory: string, cells: LineCells, id: string =
     hasLinkedDocuments: false,
     readonlyReason: null,
     linkedStatus: null,
+    prepaidOverdueDays: null,
+    hasCardSideLinks: false,
+    executionOverKrw: null,
   };
 }
 
@@ -1133,7 +1143,7 @@ export function QuoteLedger({
     if (lineDoors.tableGateReason || doorBusyRef.current) return;
     const lineIds = rows.flatMap((row) => {
       const door = row.id ? lineDoors.cells[row.id] : undefined;
-      return row.id && door && door.state !== "none" ? [row.id] : [];
+      return row.id && door && door.state !== "none" && door.branch === "expense" && !door.blocked ? [row.id] : [];
     });
     if (lineIds.length === 0) return;
     if (dirtyCount >= 1) {
@@ -1173,15 +1183,18 @@ export function QuoteLedger({
     const lineId = row.id;
     const door = lineId ? lineDoors.cells[lineId] : undefined;
     if (!lineDoors.showColumn || !lineId || !door) return;
-    const opensForm = door.state === "open" && !lineDoors.tableGateReason;
-    const opensDocument = door.state === "closed" && door.latestId !== undefined;
-    if (!opensForm && !opensDocument) return;
+    // 06-13(S14) — `Ctrl+E` = 현재 줄의 열린 문(온라인구매 줄은 `구매 요청`). 막힌 문은 아무 일도 하지 않는다(이유는 행 행동 자리에 있다).
+    const opensPurchase = door.branch === "purchase" && door.state !== "none" && !door.blocked && door.purchaseHref !== undefined;
+    const opensForm = door.branch === "expense" && door.state === "open" && !door.blocked && !lineDoors.tableGateReason;
+    const opensDocument = door.branch === "expense" && door.state === "closed" && door.latestId !== undefined;
+    if (!opensPurchase && !opensForm && !opensDocument) return;
     if (dirtyCount >= 1) {
       setDoorUnsaved(true);
       return;
     }
     setDoorUnsaved(false);
-    if (opensForm) void openLineExpense(lineId, door);
+    if (opensPurchase) router.push(door.purchaseHref ?? "");
+    else if (opensForm) void openLineExpense(lineId, door);
     else router.push(`/expenses/${door.latestId}`);
   }
   // 05-15 — 열기 링크는 누름 단계에서 같은 판정으로 막는다(링크라 요청 함수를 거치지 않는다).
@@ -1196,6 +1209,19 @@ export function QuoteLedger({
     const lineId = row.id;
     const door = lineDoors.showColumn && lineId ? lineDoors.cells[lineId] : undefined;
     if (!lineId || !door || door.state === "none") return undefined;
+    if (door.branch === "purchase") {
+      return door.blocked ? (
+        <div className={styles.sheetDoor}>
+          <Button variant="tertiary" disabled disabledReason={door.blocked.reason}>
+            구매 요청
+          </Button>
+        </div>
+      ) : (
+        <Link href={door.purchaseHref ?? ""} className={buttonLinkClassName("tertiary")}>
+          구매 요청
+        </Link>
+      );
+    }
     if (door.state === "closed") {
       if (!door.latestId) return undefined;
       const open = (
@@ -1214,6 +1240,26 @@ export function QuoteLedger({
     }
     if (door.state === "no_vendor") return <p className={styles.doorFailure}>거래처 없음 · PC 견적 표에서 고르기</p>;
     if (lineDoors.tableGateReason) return <p className={styles.doorNote}>{lineDoors.tableGateReason}</p>;
+    if (door.blocked) {
+      return (
+        <div className={styles.sheetDoor}>
+          <Button
+            variant="tertiary"
+            disabled
+            disabledReason={door.blocked.reason}
+            nextStep={
+              door.blocked.next ? (
+                <Link href={door.blocked.next.href} className={buttonLinkClassName("tertiary")}>
+                  {door.blocked.next.label}
+                </Link>
+              ) : undefined
+            }
+          >
+            지출결의 올리기
+          </Button>
+        </div>
+      );
+    }
     return (
       <div className={styles.sheetDoor}>
         {doorFailedLine === lineId ? <p className={styles.doorFailure}>지출결의 만들기 실패 · 다시 시도</p> : null}
@@ -1661,7 +1707,7 @@ export function QuoteLedger({
     if (!deleteConfirm) return;
     persistPendingRef.current = true;
     const target = lines.find((line) => line.clientKey === deleteConfirm.clientKey);
-    if (target?.hasLinkedDocuments) {
+    if (target?.hasLinkedDocuments || target?.hasCardSideLinks) {
       updateLine(target.clientKey, { lineStatus: "cancelled" });
     } else {
       setLines((prev) => prev.filter((line) => line.clientKey !== deleteConfirm.clientKey));
@@ -2066,7 +2112,22 @@ export function QuoteLedger({
       header: "상태",
       priority: "p1",
       pasteRole: "computed",
-      cell: (row) => (row.lineKind === "adjustment" ? "—" : <StatusTag variant="text" status={lineStatusWord(row)} />),
+      cell: (row) => {
+        if (row.lineKind === "adjustment") return "—";
+        // 06-13(S14 · N-3) — 2행은 서버 값 그대로(기한 경과 · 실행가 초과), 둘 다면 ` · `로 한 줄.
+        const notes = [
+          ...(typeof row.prepaidOverdueDays === "number" ? [`증빙 ${row.prepaidOverdueDays}일 경과`] : []),
+          ...(typeof row.executionOverKrw === "number" ? [`실행가 초과 ${formatKrw(row.executionOverKrw)}`] : []),
+        ];
+        const tag = <StatusTag variant="text" status={lineStatusWord(row)} />;
+        if (notes.length === 0) return tag;
+        return (
+          <span className={styles.statusLine}>
+            {tag}
+            <span className={styles.lineStatusNote}>{notes.join(" · ")}</span>
+          </span>
+        );
+      },
     },
     {
       key: "note",
@@ -2100,6 +2161,39 @@ export function QuoteLedger({
               if (!lineId || !door) return null;
               // 05-15 — 셀의 3차는 격자 로빙 밖(tabIndex -1)이고 그 줄 항목 칸을 가리킨다. 키보드 경로는 Ctrl+E다. 갈래는 서버 판정(door.state)만 따른다.
               const itemCellId = `quote-item-${row.clientKey}`;
+              // 06-13(S14 · EXP-10) — 온라인구매 줄은 같은 자리에 `구매 요청`만(「지출결의 올리기」는 그리지 않는다). 막히면 렌더 + 비활성 + 이유.
+              if (door.branch === "purchase" && door.state !== "none") {
+                return door.blocked ? (
+                  <RowActions>
+                    <RowAction tabIndex={-1} describedBy={itemCellId} disabled disabledReason={door.blocked.reason} onClick={() => undefined}>
+                      구매 요청
+                    </RowAction>
+                  </RowActions>
+                ) : (
+                  <span onClickCapture={guardDocumentLink}>
+                    <RowActions noWrap>
+                      <RowAction tabIndex={-1} describedBy={itemCellId} href={door.purchaseHref ?? ""}>
+                        구매 요청
+                      </RowAction>
+                    </RowActions>
+                  </span>
+                );
+              }
+              // 06-13(S14 · D-609) — 카드 쪽 연결 줄의 「지출결의 올리기」는 렌더 + 비활성 + 이유, 이유 옆 3차 다음 한 수(`카드 사용 등록`).
+              if (door.state === "open" && door.blocked && !lineDoors.tableGateReason) {
+                return (
+                  <RowActions>
+                    <RowAction tabIndex={-1} describedBy={itemCellId} disabled disabledReason={door.blocked.reason} onClick={() => undefined}>
+                      지출결의 올리기
+                    </RowAction>
+                    {door.blocked.next ? (
+                      <RowAction tabIndex={-1} describedBy={itemCellId} href={door.blocked.next.href}>
+                        {door.blocked.next.label}
+                      </RowAction>
+                    ) : null}
+                  </RowActions>
+                );
+              }
               if (door.state === "open" && !lineDoors.tableGateReason) {
                 return (
                   <RowActions noWrap>
@@ -2505,7 +2599,12 @@ export function QuoteLedger({
                   : [item],
             )
           : visibleHintItems),
-        { key: "expense", label: "지출결의 올리기", keys: "Ctrl+E" },
+        // 06-13(S14) — 온라인구매 줄이 하나라도 있으면 `지출결의·구매 요청 Ctrl+E`.
+        {
+          key: "expense",
+          label: Object.values(lineDoors.cells).some((cell) => cell.branch === "purchase") ? "지출결의·구매 요청" : "지출결의 올리기",
+          keys: "Ctrl+E",
+        },
       ]
     : visibleHintItems;
 
@@ -2692,7 +2791,7 @@ export function QuoteLedger({
                   itemName: row.itemName,
                   quoteAmountKrw: row.quoteAmountKrw,
                   executionKrw: row.executionAmount,
-                  linked: row.hasLinkedDocuments,
+                  linked: row.hasLinkedDocuments || row.hasCardSideLinks,
                   lineKind: row.lineKind,
                 });
               }

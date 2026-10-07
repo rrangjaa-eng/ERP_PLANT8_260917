@@ -340,16 +340,20 @@ registerGateRule<unknown, PairGateInput>({
 });
 
 // 06-07(D-609) — 견적 줄 하나는 지출결의 쪽 또는 카드 쪽(카드 사용 · 구매 요청) 한 쪽에만 잇는다. 같은 쪽 여러 건은 통과.
-// `links`는 잠근 뒤 같은 tx로 읽은 줄 사슬 전체의 연결(`findLineLinks` — X-1). 카드 쪽 판정은 구매 요청 칸을 읽지 않는다.
-export type CardDualLinkCtx = { side: "card" | "expense"; links: Pick<LineLinks, "expenses" | "cardUsages"> };
+// `links`는 잠근 뒤 같은 tx로 읽은 줄 사슬 전체의 연결(`findLineLinks` — X-1). 카드 쪽 판정은 구매 요청 칸을 읽지 않고,
+// 지출결의 쪽 판정은 카드 사용과 `신청됨` 구매 요청을 함께 센다(06-08 — 06-07 리뷰 I-1).
+export type CardDualLinkCtx = { side: "card" | "expense"; links: Pick<LineLinks, "expenses" | "cardUsages"> & Partial<Pick<LineLinks, "purchaseRequests">> };
 
 export function cardDualLinkDecision(ctx: CardDualLinkCtx): { allowed: true } | { allowed: false; reason: string } {
   if (ctx.side === "card") {
     const expense = ctx.links.expenses[0];
     return expense ? { allowed: false, reason: `지출결의 ${expense.number} 연결됨 · 다른 줄 고르기` } : { allowed: true };
   }
-  const count = ctx.links.cardUsages.length;
-  return count > 0 ? { allowed: false, reason: `카드 사용 ${count}건 연결됨 · 지출결의는 다른 줄` } : { allowed: true };
+  const cards = ctx.links.cardUsages.length;
+  const requests = ctx.links.purchaseRequests?.length ?? 0;
+  if (cards === 0 && requests === 0) return { allowed: true };
+  const parts = [...(cards > 0 ? [`카드 사용 ${cards}건`] : []), ...(requests > 0 ? [`구매 요청 ${requests}건`] : [])];
+  return { allowed: false, reason: `${parts.join(" · ")} 연결됨 · 지출결의는 다른 줄` };
 }
 
 registerGateRule<unknown, CardDualLinkCtx>({

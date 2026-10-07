@@ -82,7 +82,9 @@ export async function listPurchaseRequestRows(
   if (filter.from) conditions.push(gte(purchaseRequests.createdAt, filter.from));
   if (filter.to) conditions.push(lt(purchaseRequests.createdAt, filter.to));
   // 06-12: 방금 구매 완료한 요청은 상태 보기와 무관하게 제자리에 남긴다(제자리 결과 — S13 성공 뒤).
-  const where = input.keepId ? or(and(...conditions), and(scopeCondition(input.scope), eq(purchaseRequests.id, input.keepId))) : and(...conditions);
+  // 조건이 하나도 없으면(전사 범위 `전체` 보기) 이미 전부 나온다 — `or(undefined, …)`가 그 한 행으로 줄이지 않게 갈래를 타지 않는다(검토 I-1).
+  const base = and(...conditions);
+  const where = input.keepId && base ? or(base, and(scopeCondition(input.scope), eq(purchaseRequests.id, input.keepId))) : base;
 
   const rows = await tx
     .select({

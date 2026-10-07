@@ -20,7 +20,11 @@ import { insertVisibilityIfAbsent, listVisibility } from "@/repositories/permiss
 let businessNoSeq = 0;
 export function uniqueBusinessNo(): string {
   businessNoSeq += 1;
-  const digits = String(Date.now() * 10 + (businessNoSeq % 10)).slice(-10).padStart(10, "1");
+  // 앞 아홉 자리는 고유하게, 마지막은 검증 숫자(국세청 규칙)로 채운다 — 등록 폼이 검증 숫자를 본다.
+  const base = String(Date.now() * 10 + (businessNoSeq % 10)).slice(-9).padStart(9, "1");
+  const weights = [1, 3, 7, 1, 3, 7, 1, 3, 5];
+  const sum = weights.reduce((acc, weight, i) => acc + Number(base[i]) * weight, 0) + Math.floor((Number(base[8]) * 5) / 10);
+  const digits = base + String((10 - (sum % 10)) % 10);
   return `${digits.slice(0, 3)}-${digits.slice(3, 5)}-${digits.slice(5)}`;
 }
 

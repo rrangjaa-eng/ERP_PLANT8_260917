@@ -4,98 +4,30 @@ import { and, eq } from "drizzle-orm";
 import { Client } from "pg";
 import { db, pool } from "@/db/client";
 import { actionLog, documentCounters, expenses, projects, purchaseRequests, quoteLines } from "@/db/schema";
-import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createOrgUnit, createTeam } from "@/domain/org";
-import { createProject, CompletedProjectError } from "@/domain/projects";
+import { CompletedProjectError } from "@/domain/projects";
 import { createCorpCard } from "@/domain/corp-cards";
 import { createCardUsage, precheckCardUsage, type CardUsageInput } from "@/domain/corp-card-usages";
 import { StaleQuoteRevisionError } from "@/domain/corp-card-usages/link-targets";
 import { createRevisionFromCurrent } from "@/domain/quotes/revisions";
 import { closeExpense, createExpenseFromLines } from "@/domain/expenses";
 import { rejectDocument } from "@/domain/approvals";
-import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
+import { getCurrentQuoteRevision } from "@/domain/quotes/lines";
 import { gate, GateBlockedError } from "@/domain/rules/gate";
 import { setSettingValue } from "@/domain/settings/registry";
 import { PURCHASE_ONLINE_VENDOR_NAME } from "@/domain/settings/keys";
-import { createPurchaseRequest, precheckPurchaseRequest, PURCHASE_REQUEST_ENTITY, type PurchaseRequestInput } from "@/domain/purchase-requests";
-import { insertVendor } from "@/repositories/vendors";
-import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
+import { createPurchaseRequest, listPurchaseRequests, precheckPurchaseRequest, PURCHASE_REQUEST_ENTITY } from "@/domain/purchase-requests";
+import { insertRole } from "@/repositories/roles";
+import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { seoulToday } from "@/lib/dates";
 import { makePerson } from "./approvals-fixtures";
+import { ONLINE_VENDOR, purchaseProject, request, requestInput, type PurchaseFx } from "./fixtures/purchase-requests";
 import { setupExpenseProject, submitReadyDraft } from "./fixtures/expenses";
 import { waitForLockWaiter } from "./lock-race";
 
 // 06-08(EXP-10 · D-609 · Q3 · GA-38): 구매 요청 신청 경로 통합 파일 — 06-12 · 06-14가 `describe`를 더한다.
-
-const ONLINE_VENDOR = "쿠팡";
-
-type PurchaseFx = {
-  pm: Viewer;
-  projectId: string;
-  projectNumber: string;
-  revisionId: string;
-  /** 온라인구매 협력사 줄(실행가 1,000,000 · 거래처 기본 증빙 = 세금계산서 — 부가세 별도). */
-  onlineLine: string;
-  /** 다른 거래처 줄. */
-  otherLine: string;
-};
-
-async function makeTeam(): Promise<{ id: string; name: string }> {
-  const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `구매본부-${randomUUID()}` });
-  const name = `구매팀-${randomUUID()}`;
-  const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name });
-  return { id: team.id, name };
-}
-
-async function purchaseProject(onlineEvidence = "tax_invoice"): Promise<PurchaseFx> {
-  const team = await makeTeam();
-  const pm = await makePerson("박서연", DEFAULT_ROLE_ID, team.name);
-  await setSettingValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME, ONLINE_VENDOR);
-  const online = await insertVendor(SYSTEM_VIEWER, { name: ONLINE_VENDOR, normalizedName: `${ONLINE_VENDOR}-${randomUUID()}`, defaultEvidenceType: onlineEvidence });
-  const other = await insertVendor(SYSTEM_VIEWER, { name: "스테이지원", normalizedName: `스테이지원-${randomUUID()}`, defaultEvidenceType: "tax_invoice" });
-  const client = await insertVendor(SYSTEM_VIEWER, { name: `클라이언트-${randomUUID()}`, normalizedName: `클라이언트-${randomUUID()}` });
-  const project = await createProject(pm, {
-    clientId: client.id,
-    teamId: team.id,
-    pmUserId: pm.id,
-    name: `구매요청-${randomUUID().slice(0, 8)}`,
-    startDate: "2026-09-01",
-    endDate: "2026-12-31",
-  });
-  const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
-  if (!revision || !project.number) throw new Error("프로젝트 · 1차 차수가 없습니다");
-  const subcategory = (await firstSelectableSubcategory()).value;
-  const onlineLine = randomUUID();
-  const otherLine = randomUUID();
-  const row = (id: string, itemName: string, vendorId: string) => ({
-    id,
-    isNew: true as const,
-    subcategory,
-    itemName,
-    vendorId,
-    unitPrice: { currency: "KRW" as const, amount: 1_500_000, fxRate: 1 },
-    execution: { currency: "KRW" as const, amount: 1_000_000, fxRate: 1 },
-  });
-  await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [row(onlineLine, "현장 소모품", online.id), row(otherLine, "무대 제작", other.id)] });
-  return { pm, projectId: project.id, projectNumber: project.number, revisionId: revision.id, onlineLine, otherLine };
-}
-
-function requestInput(lineId: string, estimateKrw = 110_000): PurchaseRequestInput {
-  return {
-    linkKind: "quote_line",
-    lineId,
-    itemName: "현수막 3장",
-    linkUrl: "https://www.coupang.com/vp/products/1",
-    estimate: { currency: "KRW", amount: estimateKrw, fxRate: 1 },
-    memo: null,
-  };
-}
-
-async function request(fx: PurchaseFx, lineId: string, estimateKrw = 110_000): Promise<{ id: string; number: string }> {
-  const input = requestInput(lineId, estimateKrw);
-  return createPurchaseRequest(fx.pm, input, await precheckPurchaseRequest(fx.pm, input));
-}
 
 describe("purchase.line-door", () => {
   it("구매 요청 입구 + 지출결의 문 → `온라인구매 협력사 줄 아님 · 지출결의로`", async () => {
@@ -517,3 +449,78 @@ describe("링크 스킴 · 결번 없음 · 같은 tx 로그", () => {
   });
 });
 
+
+// ── 목록 범위(구매 요청 목록 — 범위는 리포지토리 쿼리 조건) ───────────────────────
+
+describe("구매 요청 목록 범위", () => {
+  async function person(name: string, roleId: string): Promise<Awaited<ReturnType<typeof makePerson>>> {
+    const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `목록본부-${randomUUID()}` });
+    const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `목록팀-${randomUUID()}` });
+    return makePerson(name, roleId, team.name);
+  }
+
+  async function ids(viewer: Awaited<ReturnType<typeof makePerson>>): Promise<string[]> {
+    const list = await listPurchaseRequests(viewer, { status: "all" }, seoulToday());
+    return list.rows.flatMap((row) => (row.id ? [row.id] : []));
+  }
+
+  // 다른 사람이 신청한 요청 — 신청 권한 경로를 거치지 않고 행으로 만든다(범위 쿼리만 본다).
+  async function requestBy(requester: { id: string }, fx: PurchaseFx): Promise<string> {
+    const [row] = await db
+      .insert(purchaseRequests)
+      .values({ number: `${fx.projectNumber}-C${randomUUID().slice(0, 6)}`, linkKind: "quote_line", projectId: fx.projectId, quoteLineId: fx.onlineLine, requestedBy: requester.id, itemName: "남의 물건", estimateAmountKrw: 11_000 })
+      .returning({ id: purchaseRequests.id });
+    if (!row) throw new Error("구매 요청 없음");
+    return row.id;
+  }
+
+  it("요청자 → 자기 요청 + 자기가 담당 PM인 프로젝트의 요청 · 남의 프로젝트의 남의 요청은 없음", async () => {
+    const fx1 = await purchaseProject();
+    const fx2 = await purchaseProject();
+    const own1 = (await request(fx1, fx1.onlineLine)).id;
+    const own2 = (await request(fx2, fx2.onlineLine)).id;
+    const other = await person("다른요청자", DEFAULT_ROLE_ID);
+    const otherOnProject1 = await requestBy(other, fx1);
+
+    const pm1 = await ids(fx1.pm);
+    expect(pm1).toEqual(expect.arrayContaining([own1, otherOnProject1]));
+    expect(pm1).not.toContain(own2);
+    const pm2 = await ids(fx2.pm);
+    expect(pm2).toContain(own2);
+    expect(pm2).not.toContain(own1);
+    const outsider = await ids(other);
+    expect(outsider).toContain(otherOnProject1);
+    expect(outsider).not.toContain(own1);
+    expect(outsider).not.toContain(own2);
+  });
+
+  it("`cards.purchases` write 계급 · 전사 범위(대표) → 전부 · privileged 표시 / 그 밖 직원 → 남의 요청 없음", async () => {
+    const fx = await purchaseProject();
+    const created = (await request(fx, fx.onlineLine)).id;
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `구매담당-${randomUUID().slice(0, 8)}`, workScope: "team" });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "cards.purchases", action: "write", allowed: true });
+    for (const infoItem of ["purchase_request.value", "purchase_request.amount", "project.value"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+    const purchaser = await person("구매담당", role.id);
+    const ceo = await person("목록대표", "role-ceo");
+    const staff = await person("목록직원", DEFAULT_ROLE_ID);
+
+    expect(await ids(purchaser)).toContain(created);
+    expect(await ids(ceo)).toContain(created);
+    expect(await ids(staff)).not.toContain(created);
+    expect((await listPurchaseRequests(purchaser, { status: "all" }, seoulToday())).privileged).toBe(true);
+    expect((await listPurchaseRequests(staff, { status: "all" }, seoulToday())).anyInScope).toBe(false);
+  });
+
+  it("상태 보기 — 기본 `신청됨`은 취소된 요청을 빼고 `전체`는 넣는다 · 월 필터는 요청일 달", async () => {
+    const fx = await purchaseProject();
+    const open = (await request(fx, fx.onlineLine)).id;
+    const cancelled = (await request(fx, fx.onlineLine)).id;
+    await cancelRequest(fx, cancelled);
+    const today = seoulToday();
+    const requested = await listPurchaseRequests(fx.pm, { status: "requested" }, today);
+    expect(requested.rows.map((row) => row.id)).toEqual([open]);
+    expect((await listPurchaseRequests(fx.pm, { status: "all" }, today)).rows.map((row) => row.id)).toEqual(expect.arrayContaining([open, cancelled]));
+    expect((await listPurchaseRequests(fx.pm, { status: "all", month: today.slice(0, 7) }, today)).rows).toHaveLength(2);
+    expect((await listPurchaseRequests(fx.pm, { status: "all", month: "2020-01" }, today)).rows).toHaveLength(0);
+  });
+});

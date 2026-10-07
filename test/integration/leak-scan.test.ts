@@ -571,3 +571,62 @@ describe("카드 사용 목록 범위 축 — 직원은 남의 카드 사용 · 
     for (const viewer of [proxy, ceo]) expect(await idsOf(viewer)).toEqual(expect.arrayContaining([own, others, shared]));
   });
 });
+
+// 06-08 — 구매 요청 목록 DTO(정보 항목 purchase_request.value · purchase_request.amount · project.value): 범위 밖 계정 · 금액 가린 계정 · 권한자.
+import { listPurchaseRequests } from "@/domain/purchase-requests";
+import { purchaseRequests } from "@/db/schema";
+import { db } from "@/db/client";
+import { purchaseProject, request as purchaseRequest } from "./fixtures/purchase-requests";
+
+describe("구매 요청 목록 누수 — 범위 밖 계정은 남의 요청이 없고, 금액을 가린 계급은 금액 키가 없다 (06-08)", () => {
+  async function team(): Promise<string> {
+    const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `누수구매본부-${randomUUID()}` });
+    const name = `누수구매팀-${randomUUID()}`;
+    await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name });
+    return name;
+  }
+
+  it("범위 밖 직원 결과에는 남의 요청 · 품목 글자가 없고, 구매 권한자 결과에는 있다", async () => {
+    const fx = await purchaseProject();
+    const created = await purchaseRequest(fx, fx.onlineLine);
+    const today = seoulToday();
+    const outsider = await makePerson("누수구매직원", DEFAULT_ROLE_ID, await team());
+    const outsiderList = await listPurchaseRequests(outsider, { status: "all" }, today);
+    expect(outsiderList.rows).toHaveLength(0);
+    expect(outsiderList.anyInScope).toBe(false);
+    expect(JSON.stringify(outsiderList)).not.toContain(created.id);
+    expect(JSON.stringify(outsiderList)).not.toContain("현수막 3장");
+
+    const purchaserRole = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `누수구매담당-${randomUUID().slice(0, 8)}`, workScope: "team" });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: purchaserRole.id, menu: "cards.purchases", action: "write", allowed: true });
+    for (const infoItem of ["purchase_request.value", "purchase_request.amount", "project.value"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: purchaserRole.id, infoItem, visible: true });
+    const purchaser = await makePerson("누수구매담당", purchaserRole.id, await team());
+    const purchaserList = await listPurchaseRequests(purchaser, { status: "all" }, today);
+    expect(purchaserList.rows.map((row) => row.id)).toContain(created.id);
+    expect(purchaserList.privileged).toBe(true);
+  });
+
+  it("purchase_request.amount를 가린 계급 → 행에 금액 키(통화 · 외화 · 환율 · 예상 금액)가 없다", async () => {
+    const fx = await purchaseProject();
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `누수금액가림-${randomUUID().slice(0, 8)}`, workScope: "team" });
+    for (const infoItem of ["purchase_request.value", "project.value"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "purchase_request.amount", visible: false });
+    const viewer = await makePerson("누수금액가림", role.id, await team());
+    const probe = 7_654_321;
+    await db.insert(purchaseRequests).values({
+      number: `${fx.projectNumber}-C${randomUUID().slice(0, 6)}`,
+      linkKind: "quote_line",
+      projectId: fx.projectId,
+      quoteLineId: fx.onlineLine,
+      requestedBy: viewer.id,
+      itemName: "금액 가림 확인",
+      estimateAmountKrw: probe,
+    });
+    const { rows } = await listPurchaseRequests(viewer, { status: "all" }, seoulToday());
+    expect(rows).toHaveLength(1);
+    const dto = rows[0] ?? {};
+    for (const key of ["currency", "foreignAmount", "fxRate", "estimateKrw"]) expect(key in dto, key).toBe(false);
+    expect(JSON.stringify(dto)).not.toContain(String(probe));
+    expect(dto.itemName).toBe("금액 가림 확인");
+  });
+});

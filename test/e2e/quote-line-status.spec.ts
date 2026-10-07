@@ -229,15 +229,32 @@ test.describe("견적 줄 상태 (06-13)", () => {
     await page.context().close();
   });
 
-  // 감사 D-1 — long-text backstop: 막힘 이유가 행동 칸 안에서 줄바꿈하고 행동 열이 항목 열을 누르지 않는다(SYSTEM §6-0 · §7-3 가로 스크롤 금지).
-  test("[감사 D-1] 막힌 줄 이유 + 3차 — 1280 · 1024 · 768에서 문서 가로 넘침 0 · 이유는 행동 칸 안 · 항목 열이 행동 열보다 좁지 않음", async ({ browser, baseURL }) => {
+  // 감사 D-1 — long-text backstop: 막힘 이유가 행동 칸 안에서 줄바꿈하고 막힌 줄이 행동 열을 늘려 항목 열을 누르지 않는다(SYSTEM §6-0 · §7-3 가로 스크롤 금지).
+  // 기준은 같은 프로젝트의 막힘 없는 화면이다 — 상태 낱말(`미착수` → `카드 사용`)이 넓힌 만큼만 항목 열이 줄 수 있다.
+  test("[감사 D-1] 막힌 줄 이유 + 3차 — 1280 · 1024 · 768에서 문서 가로 넘침 0 · 이유는 행동 칸 안 · 행동 열은 막힘 없는 화면 폭 그대로 · 항목 열은 상태 열이 넓힌 만큼만 줄어듦", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
-    await cardOn(fx.pm, fx.lines.hold.id);
-    await cardOn(fx.pm, fx.lines.hold.id);
     const reasonText = "카드 사용 2건 연결됨 · 지출결의는 다른 줄";
+    const widths = [1280, 1024, 768] as const;
+    // 1024 이상은 편집 격자(grid), 700~1023은 보기 전용 표(table) — 같은 캡션 `견적 줄`.
+    const quoteTable = (page: Page) => page.getByRole("grid", { name: "견적 줄" }).or(page.getByRole("table", { name: "견적 줄" }));
+    const columns = async (page: Page) => ({
+      item: await widthOf(quoteTable(page).getByRole("columnheader", { name: "항목", exact: true })),
+      status: await widthOf(quoteTable(page).getByRole("columnheader", { name: "상태", exact: true })),
+      door: await widthOf(quoteTable(page).getByRole("columnheader", { name: "행동", exact: true })),
+    });
 
     const page = await loginPage(browser, baseURL, fx.pm, DESKTOP);
-    for (const width of [1280, 1024, 768]) {
+    const base = new Map<number, Awaited<ReturnType<typeof columns>>>();
+    for (const width of widths) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(`/projects/${fx.projectId}`);
+      await expect(page.getByText(fx.lines.worst.itemName, { exact: true }).first()).toBeVisible();
+      base.set(width, await columns(page));
+    }
+
+    await cardOn(fx.pm, fx.lines.hold.id);
+    await cardOn(fx.pm, fx.lines.hold.id);
+    for (const width of widths) {
       await page.setViewportSize({ width, height: 800 });
       await page.goto(`/projects/${fx.projectId}`);
       const row = page.getByRole("row").filter({ hasText: fx.lines.hold.itemName }).filter({ hasText: reasonText });
@@ -245,13 +262,12 @@ test.describe("견적 줄 상태 (06-13)", () => {
       await expect(reason).toBeVisible();
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
       expect(overflow, `${width} 문서 가로 넘침`).toBeLessThanOrEqual(0);
-      const doorCell = cellOf(reason);
-      expect(await widthOf(reason), `${width} 이유가 행동 칸 안`).toBeLessThanOrEqual(await widthOf(doorCell));
-      if (width >= 1024) {
-        const worst = page.getByRole("row").filter({ hasText: fx.lines.worst.itemName });
-        const itemCell = cellOf(worst.getByText(fx.lines.worst.itemName, { exact: true }));
-        expect(await widthOf(itemCell), `${width} 항목 열 ≥ 행동 열`).toBeGreaterThanOrEqual(await widthOf(doorCell));
-      }
+      expect(await widthOf(reason), `${width} 이유가 행동 칸 안`).toBeLessThanOrEqual(await widthOf(cellOf(reason)));
+      const before = base.get(width);
+      if (!before) throw new Error("기준 폭 없음");
+      const after = await columns(page);
+      expect(after.door, `${width} 행동 열 폭`).toBeLessThanOrEqual(before.door + 1);
+      expect(after.item, `${width} 항목 열 폭`).toBeGreaterThanOrEqual(before.item - Math.max(0, after.status - before.status) - 1);
     }
     await page.context().close();
   });

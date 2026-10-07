@@ -215,6 +215,16 @@
   font-size: var(--text-aux);
 }
 
+/* 06-13 감사 D-1 — 견적 줄 표 행 행동 막힘 이유(행동 아래 — 서버 거부와 같은 문자열). 글자 폭이 열 폭 계산에 들지 않고(contain) 행동이 정한 열 폭 안에서
+   공백에서만 줄바꿈한다 — 막힌 줄이 행동 열을 늘려 항목 열을 누르거나 문서를 넘치게 하지 않는다(SYSTEM §6-0 · §7-3). */
+.doorReason {
+  align-self: stretch;
+  contain: inline-size;
+  color: var(--status-danger);
+  font-size: var(--text-aux);
+  word-break: keep-all;
+}
+
 .sheetDoor {
   display: flex;
   flex-direction: column;

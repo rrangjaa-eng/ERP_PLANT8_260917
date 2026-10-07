@@ -1184,10 +1184,12 @@ export function QuoteLedger({
     const door = lineId ? lineDoors.cells[lineId] : undefined;
     if (!lineDoors.showColumn || !lineId || !door) return;
     // 06-13(S14) — `Ctrl+E` = 현재 줄의 열린 문(온라인구매 줄은 `구매 요청`). 막힌 문은 아무 일도 하지 않는다(이유는 행 행동 자리에 있다).
+    // 감사 D-3 — 카드 쪽으로 막힌 줄은 다음 한 수(`카드 사용 등록`)로 간다(셀 3차는 로빙 밖이라 키보드 경로가 이것뿐이다).
     const opensPurchase = door.branch === "purchase" && door.state !== "none" && !door.blocked && door.purchaseHref !== undefined;
     const opensForm = door.branch === "expense" && door.state === "open" && !door.blocked && !lineDoors.tableGateReason;
+    const opensNext = door.branch === "expense" && door.state === "open" && door.blocked?.next !== undefined && !lineDoors.tableGateReason;
     const opensDocument = door.branch === "expense" && door.state === "closed" && door.latestId !== undefined;
-    if (!opensPurchase && !opensForm && !opensDocument) return;
+    if (!opensPurchase && !opensForm && !opensNext && !opensDocument) return;
     if (dirtyCount >= 1) {
       setDoorUnsaved(true);
       return;
@@ -1195,6 +1197,7 @@ export function QuoteLedger({
     setDoorUnsaved(false);
     if (opensPurchase) router.push(door.purchaseHref ?? "");
     else if (opensForm) void openLineExpense(lineId, door);
+    else if (opensNext) router.push(door.blocked?.next?.href ?? "");
     else router.push(`/expenses/${door.latestId}`);
   }
   // 05-15 — 열기 링크는 누름 단계에서 같은 판정으로 막는다(링크라 요청 함수를 거치지 않는다).
@@ -2161,14 +2164,22 @@ export function QuoteLedger({
               if (!lineId || !door) return null;
               // 05-15 — 셀의 3차는 격자 로빙 밖(tabIndex -1)이고 그 줄 항목 칸을 가리킨다. 키보드 경로는 Ctrl+E다. 갈래는 서버 판정(door.state)만 따른다.
               const itemCellId = `quote-item-${row.clientKey}`;
+              // 감사 D-1 — 막힘 줄은 행동 · 이유 · 다음 한 수를 세로로 쌓고(지급 완료 갈래와 같은 꼴) 이유는 열 폭 안에서 줄바꿈한다 — 행동 열 폭은 막힘 없는 줄과 같다. 행동은 aria-disabled(누름 무시)이고
+              // 설명은 그 줄 항목 칸 + 이유 글자다(RowAction의 옆 이유는 nowrap이라 쓰지 않는다).
+              const reasonId = `quote-door-reason-${row.clientKey}`;
               // 06-13(S14 · EXP-10) — 온라인구매 줄은 같은 자리에 `구매 요청`만(「지출결의 올리기」는 그리지 않는다). 막히면 렌더 + 비활성 + 이유.
               if (door.branch === "purchase" && door.state !== "none") {
                 return door.blocked ? (
-                  <RowActions>
-                    <RowAction tabIndex={-1} describedBy={itemCellId} disabled disabledReason={door.blocked.reason} onClick={() => undefined}>
-                      구매 요청
-                    </RowAction>
-                  </RowActions>
+                  <span className={styles.sheetDoor}>
+                    <RowActions noWrap>
+                      <RowAction tabIndex={-1} describedBy={`${itemCellId} ${reasonId}`} busy onClick={() => undefined}>
+                        구매 요청
+                      </RowAction>
+                    </RowActions>
+                    <span id={reasonId} className={styles.doorReason}>
+                      {door.blocked.reason}
+                    </span>
+                  </span>
                 ) : (
                   <span onClickCapture={guardDocumentLink}>
                     <RowActions noWrap>
@@ -2182,16 +2193,23 @@ export function QuoteLedger({
               // 06-13(S14 · D-609) — 카드 쪽 연결 줄의 「지출결의 올리기」는 렌더 + 비활성 + 이유, 이유 옆 3차 다음 한 수(`카드 사용 등록`).
               if (door.state === "open" && door.blocked && !lineDoors.tableGateReason) {
                 return (
-                  <RowActions>
-                    <RowAction tabIndex={-1} describedBy={itemCellId} disabled disabledReason={door.blocked.reason} onClick={() => undefined}>
-                      지출결의 올리기
-                    </RowAction>
-                    {door.blocked.next ? (
-                      <RowAction tabIndex={-1} describedBy={itemCellId} href={door.blocked.next.href}>
-                        {door.blocked.next.label}
+                  <span className={styles.sheetDoor}>
+                    <RowActions noWrap>
+                      <RowAction tabIndex={-1} describedBy={`${itemCellId} ${reasonId}`} busy onClick={() => undefined}>
+                        지출결의 올리기
                       </RowAction>
+                    </RowActions>
+                    <span id={reasonId} className={styles.doorReason}>
+                      {door.blocked.reason}
+                    </span>
+                    {door.blocked.next ? (
+                      <RowActions noWrap>
+                        <RowAction tabIndex={-1} describedBy={itemCellId} href={door.blocked.next.href}>
+                          {door.blocked.next.label}
+                        </RowAction>
+                      </RowActions>
                     ) : null}
-                  </RowActions>
+                  </span>
                 );
               }
               if (door.state === "open" && !lineDoors.tableGateReason) {

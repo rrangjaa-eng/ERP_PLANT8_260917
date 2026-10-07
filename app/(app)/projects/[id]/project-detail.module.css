@@ -408,3 +408,34 @@ td:has(> .rowNumber) {
   font-size: var(--text-aux);
   white-space: nowrap;
 }
+
+/* 06-18(UI-SPEC S16) — 매출 섹션 표 소제목(`발행 요청` · `발행 줄`): --text-aux --text-muted 600. 표 caption은 글자 없는 sr-only라 눈에 보이는 이름은 이 줄이다. */
+.tableSubheading {
+  margin: var(--s-4) 0 var(--s-2);
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+  font-weight: var(--fw-medium);
+}
+
+/* 06-18(S16 long-text) — 발행 요청 메모는 표 안 두 줄까지, 셋째 줄부터 말줄임(전체는 title). */
+.requestMemo {
+  display: -webkit-box;
+  max-width: 40ch;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
+}
+
+/* 06-18(S16) — 상태 칸: 낱말 아래 2행(`발행 09-30 · 22,000,000` · `발행 줄 입력 중`) 아래 3차. */
+.requestStatus {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.requestStatusNote {
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+  font-weight: var(--fw-regular);
+}

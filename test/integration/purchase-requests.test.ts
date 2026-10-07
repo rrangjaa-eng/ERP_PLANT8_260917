@@ -15,6 +15,7 @@ import { createRevisionFromCurrent } from "@/domain/quotes/revisions";
 import { closeExpense, createExpenseFromLines } from "@/domain/expenses";
 import { rejectDocument } from "@/domain/approvals";
 import { getCurrentQuoteRevision } from "@/domain/quotes/lines";
+import { ForbiddenError } from "@/domain/permissions/can";
 import { gate, GateBlockedError } from "@/domain/rules/gate";
 import { setSettingValue } from "@/domain/settings/registry";
 import { PURCHASE_ONLINE_VENDOR_NAME } from "@/domain/settings/keys";
@@ -522,5 +523,48 @@ describe("구매 요청 목록 범위", () => {
     expect((await listPurchaseRequests(fx.pm, { status: "all" }, today)).rows.map((row) => row.id)).toEqual(expect.arrayContaining([open, cancelled]));
     expect((await listPurchaseRequests(fx.pm, { status: "all", month: today.slice(0, 7) }, today)).rows).toHaveLength(2);
     expect((await listPurchaseRequests(fx.pm, { status: "all", month: "2020-01" }, today)).rows).toHaveLength(0);
+  });
+});
+
+// 06-08 검토 I-2 — 잠금 뒤 줄 판정(현재 차수 밖 · 조정 · 취소 · 보관)과 서버 권한 문(projects view)을 지킨다.
+describe("잠금 뒤 줄 판정 · 서버 권한 문", () => {
+  it("[M7] 차수 2가 생긴 뒤 차수 1 줄 id로 신청 → `연결 없음 · 연결 고르기` · 요청 0 · 카운터 그대로", async () => {
+    const fx = await purchaseProject();
+    await nextRevision(fx);
+    const input = requestInput(fx.onlineLine);
+    const pre = await precheckPurchaseRequest(fx.pm, input);
+    const error = await caught(createPurchaseRequest(fx.pm, input, pre));
+    expect(error).toBeInstanceOf(ForbiddenError);
+    expect((error as Error).message).toBe("연결 없음 · 연결 고르기");
+    expect(await requestCount()).toBe(0);
+    expect(await counterValue(fx.projectNumber)).toBe(0);
+  });
+
+  it.each([
+    ["조정 줄", { lineKind: "adjustment" }],
+    ["취소 줄", { lineStatus: "cancelled" }],
+    ["보관 줄", { archivedAt: new Date() }],
+  ] as const)("[M9] %s → `연결 없음 · 연결 고르기` · 요청 0 · 카운터 그대로", async (_label, change) => {
+    const fx = await purchaseProject();
+    const input = requestInput(fx.onlineLine);
+    const pre = await precheckPurchaseRequest(fx.pm, input);
+    await db.update(quoteLines).set(change).where(eq(quoteLines.id, fx.onlineLine));
+    const error = await caught(createPurchaseRequest(fx.pm, input, pre));
+    expect(error).toBeInstanceOf(ForbiddenError);
+    expect((error as Error).message).toBe("연결 없음 · 연결 고르기");
+    expect(await requestCount()).toBe(0);
+    expect(await counterValue(fx.projectNumber)).toBe(0);
+  });
+
+  it("[M12] `projects` view 없는 계급 → precheck가 ForbiddenError `프로젝트 보기 권한 없음` · 요청 0", async () => {
+    const fx = await purchaseProject();
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `보기없음-${randomUUID().slice(0, 8)}`, workScope: "team" });
+    const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `권한본부-${randomUUID()}` });
+    const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `권한팀-${randomUUID()}` });
+    const outsider = await makePerson("보기없음", role.id, team.name);
+    const error = await caught(precheckPurchaseRequest(outsider, requestInput(fx.onlineLine)));
+    expect(error).toBeInstanceOf(ForbiddenError);
+    expect((error as Error).message).toBe("프로젝트 보기 권한 없음");
+    expect(await requestCount()).toBe(0);
   });
 });

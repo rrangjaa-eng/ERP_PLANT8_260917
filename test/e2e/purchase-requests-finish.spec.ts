@@ -172,6 +172,8 @@ test.describe("구매 요청 취소 (06-14)", () => {
     await expect(line).toHaveCount(0);
     await expect(rowOf(page, number)).toHaveCount(1);
     await expect(rowOf(page, number)).toContainText("신청됨");
+    // 되돌린 행의 `요청 취소`가 포커스를 받는다(06-09 카드 되돌리기 선례 — DOM D-3a).
+    await expect(rowOf(page, number).getByRole("button", { name: `${number} 요청 취소` })).toBeFocused();
     await page.context().close();
   });
 
@@ -201,6 +203,9 @@ test.describe("구매 요청 취소 (06-14)", () => {
     await expect(confirm).not.toHaveAttribute("aria-disabled", "true");
     await reason.press("Control+Enter");
     await expect(dialog).toHaveCount(0);
+    // 행이 사라진(새로 고침이 끝난) 뒤에도 포커스는 화면 제목에 있다(DOM D-3b — 행 `요청 취소`가 사라져 BODY로 떨어지지 않게).
+    await expect(rowOf(page, number)).toHaveCount(0);
+    await expect(page.locator('[data-ui="screen-title"]')).toBeFocused();
     // 남의 요청 취소에는 결과 줄 · `되돌리기`가 없다 — 행 2행이 말한다.
     await expect(page.getByRole("button", { name: "되돌리기" })).toHaveCount(0);
 

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { ZodError } from "zod";
@@ -5,7 +6,7 @@ import { db, pool } from "@/db/client";
 import { actionLog, expenseEvidenceReviews, expensePayments, expenses } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { approveDocument, rejectDocument } from "@/domain/approvals";
-import { createExpenseFromLines, ExpenseFieldError, ExpenseNotFoundError, getExpense, listExpenseFormOptions, saveExpenseDraft, submitExpense } from "@/domain/expenses";
+import { createExpenseFromLines, createTeamExpenseDraft, ExpenseFieldError, ExpenseNotFoundError, getExpense, listExpenseFormOptions, saveExpenseDraft, submitExpense } from "@/domain/expenses";
 import { DATE_FORMAT_ERROR } from "@/domain/expenses/draft-fields";
 import { PREPAID_REASON_REQUIRED } from "@/domain/expenses/gate";
 import { cancelExpensePayment, completeExpensePayment, previewPayable } from "@/domain/payments";
@@ -288,6 +289,34 @@ describe("부가세 포함 증빙 금액 저장 막힘(EA-1)", () => {
     await save(fx, expenseId, { evidenceType: null });
     await save(fx, expenseId, { evidenceAmountKrw: 11_000_000 });
     expect((await expenseRow(expenseId)).evidenceAmount).toBe(11_000_000);
+  });
+});
+
+// 06-10 검토 B-1 · S-3: `/expenses/new` 첫 저장(createTeamExpenseDraft)도 saveExpenseDraft와 같은 EA-1 · 선결제 사유 판정을 지난다.
+describe("새 팀 비용 첫 저장 — EA-1 · 선결제 사유", () => {
+  async function teamDraftRows(fx: ExpenseFixture): Promise<number> {
+    return (await db.select({ id: expenses.id }).from(expenses).where(eq(expenses.drafterId, fx.pm.id))).length;
+  }
+
+  it("공급가 + 부가세와 같은 증빙 금액이면 칸 오류로 거부되고 문서가 생기지 않는다", async () => {
+    const fx = await setupExpenseProject();
+    const before = await teamDraftRows(fx);
+    const failure = await createTeamExpenseDraft(fx.pm, {
+      idempotencyKey: randomUUID(),
+      fields: { evidenceType: "tax_invoice", supply: { currency: "KRW", amount: 10_000_000, fxRate: 1 }, evidenceAmountKrw: 11_000_000 },
+    }).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(ExpenseFieldError);
+    expect(failure).toMatchObject({ field: "evidenceAmount", message: EVIDENCE_AMOUNT_TAX_INCLUSIVE });
+    expect(await teamDraftRows(fx)).toBe(before);
+  });
+
+  it("선결제 · 사유 빔이면 칸 오류로 거부되고 문서가 생기지 않는다", async () => {
+    const fx = await setupExpenseProject();
+    const before = await teamDraftRows(fx);
+    const failure = await createTeamExpenseDraft(fx.pm, { idempotencyKey: randomUUID(), fields: { prepaid: true, prepaidReason: "  " } }).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(ExpenseFieldError);
+    expect(failure).toMatchObject({ field: "prepaidReason", message: PREPAID_REASON_REQUIRED });
+    expect(await teamDraftRows(fx)).toBe(before);
   });
 });
 

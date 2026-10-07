@@ -29,7 +29,7 @@ export default async function NewExpensePage() {
     if (!(error instanceof RouteBlockedError)) throw error;
     routeBlocked = error.message;
   }
-  const [{ evidence, payment }, currencies, maxMb] = await Promise.all([listExpenseFormOptions(viewer), listExpenseCurrencies(), getSettingValue(EVIDENCE_MAX_SIZE_MB)]);
+  const [{ evidence, payment, prepaidDueDays }, currencies, maxMb] = await Promise.all([listExpenseFormOptions(viewer), listExpenseCurrencies(), getSettingValue(EVIDENCE_MAX_SIZE_MB)]);
   const options = (items: { value: string; label: string; description: string | null }[]) => items.map((item) => ({ value: item.value, label: item.label, description: item.description }));
   const skipped = route?.steps.filter((step) => step.skipped).map((step) => `${step.label ?? ""} 단계 건너뜀(자기 승인 없음)`) ?? [];
 
@@ -55,6 +55,11 @@ export default async function NewExpensePage() {
             installmentMode: "none",
             installmentText: null,
             taxLine: null,
+            prepaid: false,
+            prepaidReason: null,
+            evidenceAmountKrw: null,
+            evidenceDate: null,
+            prepaidDueDays,
             block: NEW_DOC_BLOCK,
             team: { kind: null, usageDate: defaults.usageDate ?? "", content: null, teamName: defaults.teamName ?? null, usageDateError: defaults.usageDateError ?? null },
           }}

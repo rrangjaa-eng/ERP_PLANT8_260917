@@ -17,6 +17,8 @@ const PASSING: ExpenseSubmitFacts = {
   paymentMethod: "bank_transfer",
   evidenceTypeInactive: false,
   paymentMethodInactive: false,
+  prepaid: false,
+  prepaidReason: null,
   evidenceCount: 1,
   taxUnavailable: false,
 };
@@ -137,6 +139,45 @@ describe("⑥ 뒤 쓰지 않는 코드", () => {
   it("빈 칸이 있으면 빈 칸 묶음이 먼저, 공급가액 0보다는 앞이다", async () => {
     expect(await reasonOf(facts({ evidenceTypeInactive: true, supplyAmountKrw: null }))).toBe("공급가액 비어 있음 · 공급가액 적기");
     expect(await reasonOf(facts({ evidenceTypeInactive: true, supplyAmountKrw: 0 }))).toBe("쓰지 않는 증빙 종류 · 증빙 종류 고르기");
+  });
+});
+
+// 06-10 A#19: 선결제 단계는 C4 비활성 두 단계 · 공급가 0 단계 뒤, ⑧ 바로 앞이다. 선결제면 ⑧ 증빙 없음이 풀린다.
+describe("⑧ 앞 선결제 단계", () => {
+  const PREPAID_BLANK = "선결제 사유 없음 · 사유 적기";
+
+  it("선결제 · 증빙 0 · 사유 있음 → 통과(⑧이 풀린다)", async () => {
+    expect(await reasonOf(facts(BLOCKS[8], { prepaid: true, prepaidReason: "거래처 선입금 요구" }))).toBeNull();
+  });
+
+  it("선결제 아님 · 증빙 0 → ⑧ 그대로", async () => {
+    expect(await reasonOf(facts(BLOCKS[8], { prepaid: false, prepaidReason: null }))).toBe(REASONS[8]);
+  });
+
+  it.each([null, "", "   "])("선결제 · 사유 %j → 선결제 사유 없음, 대상 prepaidReason", async (prepaidReason) => {
+    const input = facts({ prepaid: true, prepaidReason });
+    expect(await reasonOf(input)).toBe(PREPAID_BLANK);
+    expect(await nextActionTarget(input)).toBe("prepaidReason");
+  });
+
+  it("선결제 · 사유 빔 · 증빙 0 → 선결제 사유가 ⑧보다 앞이다", async () => {
+    expect(await reasonOf(facts(BLOCKS[8], { prepaid: true, prepaidReason: null }))).toBe(PREPAID_BLANK);
+  });
+
+  it("선결제 · 사유 빔 + 비활성 증빙 종류 → 첫 막힘은 C4 비활성 단계", async () => {
+    expect(await reasonOf(facts({ prepaid: true, prepaidReason: null, evidenceTypeInactive: true }))).toBe("쓰지 않는 증빙 종류 · 증빙 종류 고르기");
+  });
+
+  it("선결제 · 사유 빔 + 공급가 0 → 공급가 0이 먼저", async () => {
+    expect(await reasonOf(facts({ prepaid: true, prepaidReason: null, supplyAmountKrw: 0 }))).toBe(REASONS[7]);
+  });
+
+  it("선결제 · 사유 빔 + ⑨ 세율 없음 → 선결제 사유가 먼저", async () => {
+    expect(await reasonOf(facts(BLOCKS[9], { prepaid: true, prepaidReason: null }))).toBe(PREPAID_BLANK);
+  });
+
+  it("선결제 아님 · 사유 빔은 막지 않는다", async () => {
+    expect(await reasonOf(facts({ prepaid: false, prepaidReason: null }))).toBeNull();
   });
 });
 

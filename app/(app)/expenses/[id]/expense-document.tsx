@@ -21,7 +21,7 @@ import { expenseStatusWord } from "../status-display";
 import type { EvidenceActions } from "@/domain/evidence";
 import type { PaymentViewDto } from "@/domain/payments";
 import { EvidenceAttachments } from "./evidence-attachments";
-import { EvidenceReviewBlock } from "./evidence-review-section";
+import { EvidenceReviewBlock, PrepaidReasonLine } from "./evidence-review-section";
 import { SubmittedUndoToast } from "./submitted-undo-toast";
 import { TaxParts } from "./tax-parts";
 import { PaymentActionRow, PaymentLoadError, PaymentPanelProvider, PaymentSection } from "./payment-action-row";
@@ -173,6 +173,7 @@ export function ExpenseDocument({
         />
       </div>
       {review}
+      <PrepaidReasonLine reason={expense.prepaidReason} />
     </DetailScreen.Section>
   );
 
@@ -193,7 +194,7 @@ export function ExpenseDocument({
         {paymentView && paymentView !== "error" ? (
           // 06-06: 결재 통과 문서는 패널 상태가 증빙 섹션 확인부(S4)까지 감싼다 — 증빙 금액 칸 · 1차 `증빙 확인`이 같은 상태를 쓴다.
           <PaymentPanelProvider view={paymentView}>
-            {evidenceSection(<EvidenceReviewBlock />)}
+            {evidenceSection(<EvidenceReviewBlock waiveSubtitle={[expense.number, target, amountText].filter(Boolean).join(" · ")} />)}
             <PaymentSection paymentMethod={expense.paymentMethod ?? null} paymentMethodName={expense.paymentMethodName ?? null} scheduledPaymentDate={expense.scheduledPaymentDate ?? null} />
             <PaymentActionRow />
           </PaymentPanelProvider>

@@ -78,6 +78,11 @@ export type ExpenseDocumentDto = ExpenseDraftDto & {
   // 06-28(S23): 종결 확인 모달 재료 — 반려 · 회수(번호 있음 · 종결 아님) 문서를 보는 기안자 · 지급 권한자에게만, 그 밖은 null(버튼 없음).
   // 부제 = `{번호} · {항목} · {공급가}`(공급가는 금액을 볼 수 있을 때만), 결과 줄 = 열리는 줄 문 · 되돌림 없음.
   closeDialog: { subtitle: string; resultLines: string[] } | null;
+  // 06-10: 선결제 표시 · 사유 · 기안자 증빙 금액(공급가 자리) · 증빙일 — 폼이 저장값을 다시 그리고 문서 화면이 사유 줄을 그린다.
+  prepaid: boolean;
+  prepaidReason: string | null;
+  evidenceAmountKrw: number | null;
+  evidenceDate: string | null;
 };
 
 export const EXPENSE_DOCUMENT_DTO_SPEC: DtoSpec<ExpenseDocumentDto, ExpenseDocumentDto> = {
@@ -116,6 +121,10 @@ export const EXPENSE_DOCUMENT_DTO_SPEC: DtoSpec<ExpenseDocumentDto, ExpenseDocum
     { key: "installmentText", from: "installmentText", infoItem: "expense.amount" },
     { key: "closure", from: "closure", infoItem: "expense.value" },
     { key: "closeDialog", from: "closeDialog", infoItem: "expense.value" },
+    { key: "prepaid", from: "prepaid", infoItem: "expense.value" },
+    { key: "prepaidReason", from: "prepaidReason", infoItem: "expense.value" },
+    { key: "evidenceAmountKrw", from: "evidenceAmountKrw", infoItem: "expense.amount" },
+    { key: "evidenceDate", from: "evidenceDate", infoItem: "expense.value" },
   ],
 };
 

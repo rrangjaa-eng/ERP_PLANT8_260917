@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { and, eq, sql } from "drizzle-orm";
 import { Client } from "pg";
 import { db, pool } from "@/db/client";
 import { actionLog, corpCardUsages, documentCounters, expenses, projects, purchaseRequests, quoteLines } from "@/db/schema";
-import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createOrgUnit, createTeam } from "@/domain/org";
 import { CompletedProjectError } from "@/domain/projects";
@@ -37,7 +37,9 @@ import {
   previewPurchaseCompletion,
   PURCHASE_REQUEST_ENTITY,
   type PurchaseCompletionInput,
+  type PurchaseRequestInput,
 } from "@/domain/purchase-requests";
+import { createPurchaseRequestAction } from "@/app/(app)/cards/purchases/actions";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { findLineLinks } from "@/repositories/quote-line-links";
@@ -48,6 +50,13 @@ import { setupExpenseProject, submitReadyDraft } from "./fixtures/expenses";
 import { waitForLockWaiter } from "./lock-race";
 
 // 06-08(EXP-10 · D-609 · Q3 · GA-38): 구매 요청 신청 경로 통합 파일 — 06-12 · 06-14가 `describe`를 더한다.
+
+// 06-14: 액션(zod 판별 합 · 클라이언트가 보낸 팀 · 원화 환산액 무시)도 같은 파일에서 부른다 — 세션만 가짜로 둔다.
+const session = vi.hoisted(() => ({ viewer: null as Viewer | null }));
+vi.mock("@/lib/viewer", () => ({
+  getSession: () => Promise.resolve(session.viewer ? { viewer: session.viewer, user: { id: session.viewer.id } } : null),
+}));
+vi.mock("next/cache", () => ({ revalidatePath: () => undefined }));
 
 describe("purchase.line-door", () => {
   it("구매 요청 입구 + 지출결의 문 → `온라인구매 협력사 줄 아님 · 지출결의로`", async () => {
@@ -1240,5 +1249,141 @@ describe("[06-12 검토 I-3] 구매 완료 · 카드 고치기 보호", () => {
     expect(await caught(updateUsage(editor, await cardUpdateInput(usageId, { corpCardId: await sharedCard() })))).toBeInstanceOf(ForbiddenError);
     const [after] = await db.select({ corpCardId: corpCardUsages.corpCardId }).from(corpCardUsages).where(eq(corpCardUsages.id, usageId));
     expect(after?.corpCardId).toBe(before?.corpCardId);
+  });
+});
+
+
+// ── 06-14 Task 1 — 팀 비용 요청 · 외화 예상 금액 ─────────────────────────────────
+
+const TEAM_COUNTER_KEY = "purchase_request_team";
+
+function teamInput(patch: { estimate?: PurchaseRequestInput["estimate"]; itemName?: string } = {}): PurchaseRequestInput {
+  return { linkKind: "team_cost", itemName: patch.itemName ?? "팀 간식", linkUrl: null, estimate: patch.estimate ?? { currency: "KRW", amount: 55_000, fxRate: 1 }, memo: null };
+}
+
+async function teamRequestBy(viewer: Viewer, input: PurchaseRequestInput = teamInput()): Promise<{ id: string; number: string }> {
+  return createPurchaseRequest(viewer, input, await precheckPurchaseRequest(viewer, input));
+}
+
+async function teamCounter(): Promise<number> {
+  const [row] = await db
+    .select({ value: documentCounters.value })
+    .from(documentCounters)
+    .where(and(eq(documentCounters.counterKey, TEAM_COUNTER_KEY), eq(documentCounters.period, seoulToday().slice(0, 4))));
+  return row?.value ?? 0;
+}
+
+describe("팀 비용 요청(06-14 — EXP-10 · O-19)", () => {
+  it("오늘 소속 있음 → 저장(`team_cost` · 프로젝트 · 줄 없음 · 팀 칸 없음) + 번호 `TC{YY}-{4자리}` + 같은 tx `document_create` 한 줄", async () => {
+    const requester = await teamCostRequester();
+    const created = await teamRequestBy(requester.viewer);
+
+    expect(created.number).toMatch(new RegExp(`^TC${seoulToday().slice(2, 4)}-\\d{4}$`));
+    const row = await statusOf(created.id);
+    expect(row).toMatchObject({ number: created.number, linkKind: "team_cost", projectId: null, quoteLineId: null, requestedBy: requester.viewer.id, itemName: "팀 간식", estimateAmountKrw: 55_000, status: "requested" });
+    expect(Object.keys(row ?? {})).not.toContain("teamId");
+    const logs = await db.select().from(actionLog).where(and(eq(actionLog.entityId, created.id), eq(actionLog.actionType, "document_create")));
+    expect(logs).toHaveLength(1);
+  });
+
+  it("같은 해 둘째 팀 비용 요청 → 번호 순번 +1(카운터 `purchase_request_team` · 기간 = 연도)", async () => {
+    const requester = await teamCostRequester();
+    const first = await teamRequestBy(requester.viewer);
+    const second = await teamRequestBy(requester.viewer);
+    const seq = (number: string) => Number(number.split("-")[1]);
+    expect(seq(second.number)).toBe(seq(first.number) + 1);
+  });
+
+  it("오늘 소속 없음 → `{이름} {MM-DD} 소속 없음 · 소속 발령은 관리자` 거부 · 요청 0 · 카운터 그대로(임의의 팀으로 떨어뜨리지 않음)", async () => {
+    const stray = await makePerson("이무소속", DEFAULT_ROLE_ID, null);
+    const before = await teamCounter();
+    const error = await caught(teamRequestBy(stray));
+    expect((error as Error).message).toBe(`이무소속 ${seoulToday().slice(5)} 소속 없음 · 소속 발령은 관리자`);
+    expect(await db.select({ id: purchaseRequests.id }).from(purchaseRequests).where(eq(purchaseRequests.requestedBy, stray.id))).toHaveLength(0);
+    expect(await teamCounter()).toBe(before);
+  });
+
+  it("[O-19 · T-06-66] 입력의 팀 id · 사용한 사람 · 원화 환산액은 받지 않는다 — 액션에 실어 보내도 저장은 요청자 · 서버 계산 값", async () => {
+    const requester = await teamCostRequester();
+    const other = await teamCostRequester();
+    session.viewer = requester.viewer;
+    const outcome = await createPurchaseRequestAction({
+      linkKind: "team_cost",
+      itemName: "팀 비품",
+      linkUrl: null,
+      currency: "USD",
+      amount: 100,
+      fxRate: 1_350,
+      memo: null,
+      teamId: other.teamId,
+      usedByUserId: other.viewer.id,
+      amountKrw: 1,
+    } as never);
+    expect(outcome?.serverError).toBeUndefined();
+    const id = outcome?.data?.id;
+    if (!id) throw new Error("저장 결과 없음");
+    expect(await statusOf(id)).toMatchObject({ requestedBy: requester.viewer.id, estimateAmountKrw: 135_000, estimateCurrency: "USD", linkKind: "team_cost" });
+    session.viewer = null;
+  });
+
+  it("요청 INSERT가 실패하면 카운터도 오르지 않는다 — 요청 0 · 로그 0줄 · 다음 요청이 같은 순번(결번 없음)", async () => {
+    const requester = await teamCostRequester();
+    const input = teamInput();
+    const pre = await precheckPurchaseRequest(requester.viewer, input);
+    const before = await teamCounter();
+    const logsBefore = await createLogCount();
+    await expect(createPurchaseRequest(requester.viewer, input, { ...pre, linkUrl: "javascript:alert(1)" })).rejects.toThrow();
+    expect(await teamCounter()).toBe(before);
+    expect(await createLogCount()).toBe(logsBefore);
+    const created = await createPurchaseRequest(requester.viewer, input, pre);
+    expect(created.number.endsWith(String(before + 1).padStart(4, "0"))).toBe(true);
+    expect(await createLogCount()).toBe(logsBefore + 1);
+  });
+
+  it("견적 줄 갈래의 잠금 · 문 · 실행가 상한을 타지 않는다 — 50,000,000원 팀 비용 요청도 저장", async () => {
+    const requester = await teamCostRequester();
+    const created = await teamRequestBy(requester.viewer, teamInput({ estimate: { currency: "KRW", amount: 50_000_000, fxRate: 1 } }));
+    expect((await statusOf(created.id))?.estimateAmountKrw).toBe(50_000_000);
+  });
+
+  it("`projects` view 없는 계급 → 팀 비용 요청도 ForbiddenError(06-08과 같은 판정) · 요청 0", async () => {
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `보기없음-${randomUUID().slice(0, 8)}`, workScope: "team" });
+    const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `보기본부-${randomUUID()}` });
+    const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `보기팀-${randomUUID()}` });
+    const person = await makePerson("보기없음", role.id, team.name);
+    await expect(precheckPurchaseRequest(person, teamInput())).rejects.toBeInstanceOf(ForbiddenError);
+  });
+});
+
+describe("외화 예상 금액(06-14 — T-06-69)", () => {
+  it("팀 비용 USD 1,000.00 @1,350 → 통화 · 외화 금액 · 환율 · 원화 환산액 1,350,000이 함께 저장(서버 `toKrw`)", async () => {
+    const requester = await teamCostRequester();
+    const created = await teamRequestBy(requester.viewer, teamInput({ estimate: { currency: "USD", amount: 1_000, fxRate: 1_350 } }));
+    const row = await statusOf(created.id);
+    expect(row).toMatchObject({ estimateCurrency: "USD", estimateAmountKrw: 1_350_000 });
+    expect(Number(row?.estimateForeignAmount)).toBe(1_000);
+    expect(Number(row?.estimateFxRate)).toBe(1_350);
+  });
+
+  it("견적 줄 요청 USD 500 @1,350(원화 675,000) → 저장 · 상한 판정은 원화 환산액에서 역산", async () => {
+    const fx = await purchaseProject();
+    const input: PurchaseRequestInput = { ...requestInput(fx.onlineLine), estimate: { currency: "USD", amount: 500, fxRate: 1_350 } };
+    const created = await createPurchaseRequest(fx.pm, input, await precheckPurchaseRequest(fx.pm, input));
+    expect(await statusOf(created.id)).toMatchObject({ estimateCurrency: "USD", estimateAmountKrw: 675_000 });
+  });
+
+  it("환율이 비면(0) → `환율 없음 · USD 환율 적기` 거부 · 요청 0 · 계산 불가 요청 없음", async () => {
+    const requester = await teamCostRequester();
+    const error = await caught(precheckPurchaseRequest(requester.viewer, teamInput({ estimate: { currency: "USD", amount: 1_000, fxRate: 0 } })));
+    expect((error as Error).message).toBe("환율 없음 · USD 환율 적기");
+    expect(await db.select({ id: purchaseRequests.id }).from(purchaseRequests).where(eq(purchaseRequests.requestedBy, requester.viewer.id))).toHaveLength(0);
+  });
+
+  it("액션 — 외화인데 환율 칸이 없으면 zod가 `환율 없음 · USD 환율 적기`로 거부", async () => {
+    const requester = await teamCostRequester();
+    session.viewer = requester.viewer;
+    const outcome = await createPurchaseRequestAction({ linkKind: "team_cost", itemName: "팀 비품", linkUrl: null, currency: "USD", amount: 100, memo: null } as never);
+    expect(outcome?.validationErrors?.fxRate?._errors?.[0]).toBe("환율 없음 · USD 환율 적기");
+    session.viewer = null;
   });
 });

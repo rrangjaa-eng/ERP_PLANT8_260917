@@ -17,6 +17,7 @@ import type { StatusWord } from "@/ui/status-tag/status-map";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import type { PaymentTargetRowDto } from "@/domain/expenses/dto";
 import type { BatchPaymentResult } from "@/domain/payments/batch";
+import { AMOUNT_HIDDEN } from "@/domain/payments/action-row";
 import { completePaymentsBatchAction } from "./actions";
 import { BatchPaymentDialog } from "./batch-payment-dialog";
 import { StatusFilter, type FilterSelect } from "./status-filter";
@@ -73,8 +74,7 @@ export type PaymentTargetsScreenProps = {
   page: { page: number; pageCount: number; total: number; pageSize: number };
   prepaidDueDays: number;
   today: string;
-  // 빈 화면 행동 이동 곳 — 지급 완료 보기(V-1 `?status=`). 같은 경로(`/expenses?…`) 링크는 Next 프리페치 응답 스트림이 닫히지 않아(실측 —
-  // networkidle 무한 대기) 빈 화면 두 행동은 링크 대신 router.push 버튼(ListEmpty onClick 갈래)이다.
+  // 빈 화면 행동 이동 곳 — 지급 완료 보기(V-1 `?status=`). URLSearchParams로 인코딩한 값이어야 한다(원시 공백 · 한글 href는 프리페치가 끝나지 않는다).
   paidHref: string;
   // 지급일 칸 오류 글자 — 05 DATE_FORMAT_ERROR(서버 상수).
   dateError: string;
@@ -225,7 +225,7 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
 
   if (!props.hasAny && rows.length === 0) {
     return (
-      <ListScreen title="지출결의" filters={filters} empty={<ListEmpty message="지급할 건이 없습니다" action={{ label: "지급 완료 보기", onClick: () => router.push(props.paidHref) }} />}>
+      <ListScreen title="지출결의" filters={filters} empty={<ListEmpty message="지급할 건이 없습니다" action={{ label: "지급 완료 보기", href: props.paidHref }} />}>
         {null}
       </ListScreen>
     );
@@ -234,7 +234,7 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
   if (rows.length === 0) {
     return (
       <ListScreen title="지출결의" filters={filters}>
-        <ListEmpty message="조건에 맞는 건이 없습니다" action={{ label: "필터 지우기", onClick: () => router.push(href({ status: PAYMENT_TARGET_VIEW })) }} />
+        <ListEmpty message="조건에 맞는 건이 없습니다" action={{ label: "필터 지우기", href: href({ status: PAYMENT_TARGET_VIEW }) }} />
       </ListScreen>
     );
   }
@@ -252,7 +252,8 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
               label: chosen.length === 0 ? "지급 완료" : `지급 완료 ${chosen.length}`,
               onClick: openDialog,
               shortcut: "Ctrl+Enter",
-              ...(chosen.length === 0 ? { disabledReason: "고른 건 없음", reasonTone: "info" as const } : {}),
+              // 금액을 못 보는 지급 권한자는 모든 행이 막힌다 — 1차 이유는 고른 수가 아니라 그 권한(문서 화면 1차와 같은 글자).
+              ...(!amountColumn ? { disabledReason: AMOUNT_HIDDEN } : chosen.length === 0 ? { disabledReason: "고른 건 없음", reasonTone: "info" as const } : {}),
               pending: isExecuting,
             }
           : undefined

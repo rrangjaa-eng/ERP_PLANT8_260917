@@ -198,7 +198,7 @@ async function PaymentTargets({ viewer, team, evidence, page }: { viewer: Viewer
       page={list.page}
       prepaidDueDays={list.prepaidDueDays}
       today={seoulToday()}
-      paidHref="/expenses?status=지급 완료"
+      paidHref={`/expenses?${new URLSearchParams({ status: "지급 완료" })}`}
       dateError={DATE_FORMAT_ERROR}
     />
   );

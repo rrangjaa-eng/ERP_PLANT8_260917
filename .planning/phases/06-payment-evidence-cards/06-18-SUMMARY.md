@@ -122,7 +122,7 @@ Build는 로컬 `turbopack.root`를 임시로 넣어 돌렸고 되돌렸다(커�
 1. **`발행 줄 빼기`**(새 글자): 저장 전 새 발행 줄 지우는 동작이 표에 없어 요청 줄 3차로 만듦. 다른 안: 발행 줄 표 행에 `Delete` 키/지우기 3차를 두기, 또는 지우는 동작 없이 새로 고침으로 푸는 것.
 2. **저장 거부 한 줄 문구**(UI-SPEC에 없음): `요청을 찾을 수 없음 · 새로 고침` · `이미 발행됨 · 새로 고침` · `취소된 요청 · 새로 고침` · `다른 사람이 먼저 이 요청을 바꿈 · 새로 고침` · `이미 저장된 요청과 값이 다름 · 새로 고침` · (플랜 지정) `다른 사람이 먼저 이 요청을 이음 · 새로 고침`. 기존 발행 줄의 `…새로 고침` 꼴을 따랐다.
 3. **프로젝트 쓰기 = 요청 권한**: 「담당 PM」 대신 `projects write`를 쓴다(플랜 문구). 담당 PM이 아닌 쓰기 권한자도 요청을 적을 수 있다. 다른 안: 담당 PM(`pmUserId`)만.
-4. **요청 금액 0 허용**: 검증을 넣지 않았다(발행 줄과 같은 기준). 아래 260907 #3과 같은 사안.
+4. **요청 금액 0 허용**: (해소 — 아래 「검토 반영」 I-2: 0원 초과만 저장으로 진행, 사용자 답 대기)
 5. **완료 · 미수주 프로젝트의 빈 화면**: 쓰기 PM에게도 `발행 요청이 없습니다`만(추가 버튼 없음). UI-SPEC은 이 갈래를 따로 말하지 않는다.
 
 ## 260907 대조 (읽기 전용 — 구현하지 않음)
@@ -131,7 +131,7 @@ Build는 로컬 `turbopack.root`를 임시로 넣어 돌렸고 되돌렸다(커�
 |---|---|---|---|---|
 | 1 | 발행 요청은 프로젝트를 고칠 수 있는 사람이 낸다(확정 2026-08-18) | server/src/invoices.ts:266(`canRequest: can(me,'project.edit')`) | domain/issue-requests/index.ts:59 · domain/projects/ledger.ts:179 | 같음 |
 | 2 | 요청 금액과 실제 발행액이 달라도 막지 않고 발행 줄의 공급가액이 기준 | docs/06_업무/07_매출-수금-지급.md:89 | domain/projects/ledger.ts:373(금액 비교 없음) · test/integration/issue-requests.test.ts(금액이 달라도 막지 않는다) | 같음 |
-| 3 | 요청 금액은 0원보다 커야 한다 | server/src/invoices.ts:165(`invoice_requests_amount_positive`) | domain/issue-requests/index.ts:86-105(`prepare` — 0 검증 없음) | **숨은 규칙(사용자 결정 필요)** |
+| 3 | 요청 금액은 0원보다 커야 한다 | server/src/invoices.ts:165(`invoice_requests_amount_positive`) | domain/issue-requests/index.ts(`prepare` — 0 이하는 칸 오류, 검토 I-2로 반영) | 같음(검토 반영) |
 | 4 | 요청에 「받는 방식」(세금계산서/카드)이 있고 카드 갈래는 장 없이 카드 매출 줄만 선다 | server/src/invoices.ts:171 · :270 · docs/06_업무/07_매출-수금-지급.md:137 | 해당 없음(요청 표에 칸 없음 — 06-27 표 명세 밖) | **숨은 규칙(사용자 결정 필요)** |
 | 5 | 요청에 「이 협력사 앞으로 끊어 주세요」 거래처를 적어 보내면 처리 때 협력사도 고를 수 있다 | docs/06_업무/07_매출-수금-지급.md:36-45 | 해당 없음(요청 표에 거래처 칸 없음) | **숨은 규칙(사용자 결정 필요)** |
 | 6 | 발행됨은 매출 줄이 있어야 하고 누가 언제 발행했는지 남는다 | server/src/invoices.ts:166-167 | db `revenue_issue_requests_issued_check`(06-27) · domain/issue-requests/index.ts:179-218(잇기 + `recordAction` 같은 tx) | 같음(결) |
@@ -139,7 +139,7 @@ Build는 로컬 `turbopack.root`를 임시로 넣어 돌렸고 되돌렸다(커�
 | 8 | 요청 보임 범위는 행사의 담당팀을 따른다 | server/src/invoices.ts:108-113 | domain/issue-requests/index.ts:283(`scopeFor(project)` + 프로젝트 조회) | 같음(결) |
 | 9 | 늦음 = 정산 중인데 요청이 없는 것(`invoice_requests_overdue`) | server/src/invoices.ts:17-20 | 06-19 점검 몫(이 플랜 무관) | 계획 결정(06-19) |
 
-숨은 규칙(사용자 결정 필요) **3건**(#3 · #4 · #5).
+숨은 규칙(사용자 결정 필요) **2건**(#4 · #5) — 검토 반영 전에는 3건(#3 포함)이었고 #3은 I-2로 같아졌다.
 
 ## 캡처·GPT 검사 대상 경로
 
@@ -167,3 +167,38 @@ Build는 로컬 `turbopack.root`를 임시로 넣어 돌렸고 되돌렸다(커�
 
 - 파일 존재: domain/issue-requests/index.ts · repositories/revenue-issue-requests.ts · issue-request-table.tsx · issue-request-word.ts · test/integration/issue-requests.test.ts · test/e2e/issue-requests.spec.ts — 확인.
 - 커밋 존재: 6cd704b · 3c5add2 · e51b2a8 · 2077fa8 · 539d83d · 6acda92 — `git log b078873..HEAD`로 확인.
+
+## 검토 반영 (독립 검토 `06-18-review.md` · DOM 감사 `06-18-dom-audit.md`, 2026-10-07)
+
+커밋(`git rev-list --count 2c0bba3..HEAD` 측정 전 기준 6줄): 1376ac0 · b0abe6a · 0308424 · 546e463 · S-1 테스트 커밋 · 이 문서 커밋. 제품 코드 변경은 b0abe6a(`domain/issue-requests/index.ts` 6줄)와 546e463(화면 · Table) 둘뿐이다.
+
+| 지적 | 처리 | 근거 |
+|---|---|---|
+| **I-1** 교차 프로젝트 방어 셋이 테스트 밖 | 통합 `it` 셋 추가(교차 잇기 · 교차 수정 · 다른 프로젝트 id로 같은 값 재전송) | 돌연변이 M12(잇기 projectId 조건 삭제) · M15(UPDATE projectId 조건 삭제) · M14(재전송 projectId 검사 삭제) 각각 해당 1건만 RED, 복원 뒤 3/3 녹색. M14는 첫 안(값이 다른 재전송)이 samePayload에 걸려 안 빨개져 같은 값으로 고쳐 잡았다 |
+| **I-2** 음수 · 0 금액 | 0원 초과만 저장(260907과 같음, 추천안 진행): `prepare`가 `amountKrw <= 0`이면 칸 오류 `0원 초과 · 금액 입력`으로 전부 거부. 화면은 기존 칸 오류 한 줄 그대로(새 코드 없음) | 통합 음수 · 0 RED(2건) → GREEN. E2E「금액을 비운 새 줄」이 금액 칸에 한 줄이 서는지 단언 |
+| **D-1** 폰 메모 8~9줄 | 접힌 줄 `summary`도 `.requestMemo`(두 줄 말줄임 + title)로 감쌈. CSS 변경 0, 새 토큰 0. 폰에서는 편집 칸이 없어(1024 미만 보기 전용) 전문은 PC에서 그 칸을 편집할 때 보인다 | E2E 375 · 320: clamp 2 · 높이 ≤ 줄높이×2+1 · scrollHeight > clientHeight · title 200자 · 문서 가로 넘침 0. RED(span[title] 0건) → GREEN |
+| **D-2** 요청 줄 거부 뒤 포커스 | 거부 봉투에 요청 칸 오류가 있고 견적 줄 오류가 없으면 `issueTarget.table = "request"` 신호를 내 요청 표 `Table`의 `firstIssueSignal`로 첫 오류 칸에 포커스(순서: 견적 줄 → 발행 요청 → 발행 → 입금) | E2E: version 충돌 뒤 activeElement가 오류 칸 안이고 그 칸 `aria-describedby`가 오류 글자를 가리킴. RED → GREEN |
+| S-1 VAT 기준일 | 고침: 세율이 날짜로 갈리는 값을 주입한 통합 테스트(희망일 9/30 → 10%, 10/5 → 20%) | M16(기준일을 2020-01-01로 고정) RED → 복원 녹색 |
+| S-2 잇기 발행 줄 종류 검사 | 안 고침 | `saveRevenueInTx`가 같은 id 새 줄을 이 프로젝트 `issue`로 이미 넣어 현재 경로에서 닿지 않는 이중 장치. 검토도 「그대로 두어도 됨」 |
+| S-3 `FOR UPDATE` 장벽 | 안 고침 → 06-21 | 원장 밖 경로(취소 ∥ 잇기)에서만 의미가 생긴다 — 06-21이 장벽 테스트로 고정 |
+| S-4 취소된 요청 잇기 문구 | 안 고침 → 06-21 | 취소 경로가 06-21 |
+| S-5 메모 길이 상한 | 안 고침 | 기존 `revenueEntryRowSchema.note`와 같은 관례(편차 아님) |
+| S-6 `issueRequestsResult` 빈 배열 재조회 | 안 고침 | 화면은 dirty가 있을 때만 보내 실제 해 없음 |
+| S-7 `rowActionBlock` 낡은 참조 | 코드 변경 0, 아래 「넘김」 | 06-18 플랜은 이 계약을 쓰지 않는다 |
+
+**플랜 밖 변경(이번 반영):** `ui/table/Table.tsx` — 편집 칸이 없는 오류 칸(`aria-invalid` 칸)에 `tabIndex=-1`(4줄). D-2의 오류 칸이 상태 칸(읽기 칸)이라 프로그램 포커스를 받으려면 필요했다. Tab 순서에는 안 낀다. `ui/table` 단위 52 files 682건 녹색. 점검표 `docs/design/checks/2026-10-07-06-18-issue-requests.md`에 「화면:」에 이 파일을 더하고 검토 반영 항목을 적었다.
+
+**손대지 않음(지시대로):** 260907 숨은 규칙 #4(받는 방식 칸) · #5(받는 거래처 칸), 새 글자 `발행 줄 빼기`.
+
+**넘김:** 소비자 미정, 06-19 계획 확인 필요 — 06-13 계약 `rowActionBlock`(입력은 잠금 뒤 같은 tx · 거부는 등록 게이트). 06-13-PLAN 50 · 314 · 473행의 「06-18이 부른다」는 낡은 참조이고 06-19-PLAN 433행도 의무 소비자를 두지 않는다 — 06-13 SUMMARY 「06-18 계약」 세 줄의 받는 곳을 06-19 계획에서 확정하거나 폐기해야 한다.
+
+**검증(이번 반영, 격리 DB `erp_e0618_test`):**
+- 통합 `issue-requests` 24 passed(18 → 24: I-1 셋 · I-2 둘 · S-1 하나); `issue-requests` · `leak-scan` · `tx-safety` · `revenue-entries` 4 files 3785 passed / 0 failed.
+- `pnpm typecheck` rc=0 · `pnpm lint` rc=0(flock).
+- `CI=true` E2E `issue-requests` + `revenue-section` + `quote-table`(desktop 프로젝트, flock): 81 passed / 0 failed(18 skipped = visual). `issue-requests` 스펙은 6 → 9건. `turbopack.root`는 임시로 넣고 되돌렸다(커밋 없음).
+
+**추가 캡처 대상:** `/projects/{id}` 매출 섹션 `발행 요청` 표 — 폭 375 · 320, 200자 메모 요청 1건(접힌 줄 두 줄 말줄임); 쓰기 PM이 금액 0으로 저장해 거부된 금액 칸 한 줄.
+
+**사용자 질문 후보(추가):** 요청 금액 하한을 0원 초과로 정했다(260907 `invoice_requests_amount_positive`). 다른 안: 0 이상 허용 · 제한 없음. 발행 줄(`revenue_entries`)도 금액 하한이 없어 두 표의 기준이 이제 다르다(발행 줄은 이 플랜 밖).
+
+## Self-Check: PASSED (검토 반영)

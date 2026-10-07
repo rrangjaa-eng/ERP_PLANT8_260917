@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Table } from "@/ui/table/Table";
 import { RowSheet } from "@/ui/table/RowSheet";
@@ -15,7 +15,7 @@ import filterStyles from "@/app/(app)/projects/projects.module.css";
 import cardStyles from "../cards.module.css";
 import { PURCHASE_STATUS_VIEWS, purchaseStatusWord, type PurchaseStatus, type PurchaseStatusView } from "./purchase-status-word";
 import styles from "./purchases.module.css";
-import { PurchaseCancelButton, type PurchaseCancelTarget } from "./cancel-undo";
+import { PurchaseCancelButton, usePurchaseUndoFocus, type PurchaseCancelTarget } from "./cancel-undo";
 
 // 06-08(UI-SPEC S11): 구매 요청 읽기 표 + 필터 줄 + 로드 오류 한 줄. 06-14: 행 `요청 취소`(요청자 본인 즉시 · 구매 권한자의 남의 요청 사유 창) · 취소 행 2행.
 // 06-12: 구매 권한자의 `신청됨` 행 행동 `구매 완료`(→ `?purchase={id}` 옆 패널 S13) · 구매 완료 행 2행 `카드 사용 {MM-DD} · {결제 합계}`(취소 없음 — Q2).
@@ -230,6 +230,13 @@ function focusNextComplete(rows: PurchaseListRowView[], doneId: string): void {
   target?.focus();
 }
 
+// `되돌리기`로 되살아난 `신청됨` 행의 포커스 자리 — 보이는 `{번호} 요청 취소`, 폰은 행동 칸이 숨어 행 탭 자리(`{번호} 상세 보기`).
+function focusRestoredRow(row: PurchaseListRowView): void {
+  const buttons = Array.from(document.querySelectorAll<HTMLElement>("button")).filter((button) => button.textContent?.includes(`${row.number} 요청 취소`) && button.getClientRects().length > 0);
+  const target = buttons[0] ?? document.querySelector<HTMLElement>(`[role="button"][aria-label="${row.number} 상세 보기"]`);
+  target?.focus();
+}
+
 export function PurchaseList({
   rows,
   listHref,
@@ -245,6 +252,17 @@ export function PurchaseList({
 }) {
   const router = useRouter();
   const [sheet, setSheet] = useState<PurchaseListRowView | null>(null);
+  const { focusId, clearFocus, focusUndo } = usePurchaseUndoFocus();
+  // 시트에서 본인 취소를 끝냈으면 시트가 닫힌 뒤 결과 줄 `되돌리기`로 포커스(DOM D-2) — 시트(모달)가 열린 동안은 `autoFocus`가 먹지 않고,
+  // 닫히며 연 요소로 되돌리는 포커스가 그 뒤에 오므로 그 닫힘 처리 다음 틱에 옮긴다.
+  const undoFocusPending = useRef(false);
+  useEffect(() => {
+    if (!focusId) return;
+    const row = rows.find((candidate) => candidate.id === focusId);
+    if (!row || row.status !== "requested") return;
+    focusRestoredRow(row);
+    clearFocus();
+  }, [rows, focusId, clearFocus]);
   useEffect(() => {
     const done = lastDone;
     if (!done || !done.focusNext || done.id !== doneId) return;
@@ -270,7 +288,12 @@ export function PurchaseList({
       />
       <RowSheet
         open={sheet !== null}
-        onClose={() => setSheet(null)}
+        onClose={() => {
+          setSheet(null);
+          if (!undoFocusPending.current) return;
+          undoFocusPending.current = false;
+          window.setTimeout(focusUndo, 0);
+        }}
         title={sheet?.itemName ?? ""}
         subtitle={sheet ? `${sheet.number} · ${purchaseStatusWord(sheet.status)}` : ""}
         items={
@@ -282,7 +305,17 @@ export function PurchaseList({
               ]
             : []
         }
-        action={sheetTarget ? <PurchaseCancelButton target={sheetTarget} onDone={() => setSheet(null)} /> : undefined}
+        action={
+          sheetTarget ? (
+            <PurchaseCancelButton
+              target={sheetTarget}
+              onDone={() => {
+                undoFocusPending.current = true;
+                setSheet(null);
+              }}
+            />
+          ) : undefined
+        }
       />
     </>
   );

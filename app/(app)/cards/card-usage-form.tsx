@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useAction } from "next-safe-action/hooks";
 import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
 import { Form } from "@/ui/form/Form";
@@ -234,6 +234,7 @@ export function CardUsageForm({
   defaults: initialDefaults,
   edit = null,
   purchase = null,
+  purchaseCancel = null,
 }: {
   cards: CardOption[];
   evidenceTypes: EvidenceTypeOption[];
@@ -245,6 +246,8 @@ export function CardUsageForm({
   defaults: CardUsageDefaults;
   edit?: CardUsageEdit | null;
   purchase?: CardUsagePurchase | null;
+  /** 06-14 폰 S13 패널의 `요청 취소`(품목 줄 옆, PC에서는 숨김 — 행 행동이 맡는다). 서버가 취소할 수 있는 사람에게만 준다. */
+  purchaseCancel?: ReactNode;
 }) {
   const panelRef = useRef<PanelFormHandle>(null);
   const [gen, setGen] = useState(0);
@@ -619,6 +622,7 @@ export function CardUsageForm({
                   <ExternalLinkIcon />
                 </a>
               ) : null}
+              {purchaseCancel ? <span className={purchaseStyles.panelCancel}>{purchaseCancel}</span> : null}
             </div>
           ) : null}
           {purchase && usableCards.length === 0 ? (

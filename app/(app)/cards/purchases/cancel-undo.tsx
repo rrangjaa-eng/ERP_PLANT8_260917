@@ -1,10 +1,11 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, useTransition, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, useTransition, type ReactNode, type RefObject } from "react";
 import { useRouter } from "next/navigation";
 import { ConfirmDialog, RefreshStep } from "@/ui/confirm-dialog/ConfirmDialog";
 import { Form } from "@/ui/form/Form";
 import { RowAction } from "@/ui/row-actions/RowActions";
+import { usePanel } from "@/ui/side-panel/SidePanel";
 import dialogStyles from "@/app/(app)/approvals/decision-dialogs.module.css";
 import { cancelPurchaseRequestAction, undoCancelPurchaseRequestAction } from "./actions";
 import styles from "../cards.module.css";
@@ -34,6 +35,12 @@ type CancelUndoValue = {
   shown: number;
   cancelOwn: (target: { id: string; version: number; number: string }) => Promise<void>;
   undo: (cancelled: Cancelled) => void;
+  /** 되돌려 다시 그려질 행 — 목록이 그 행 `요청 취소`(폰은 행 탭 자리)로 포커스를 옮기고 표식을 지운다(06-09 `focusId` 선례, DOM D-3a). */
+  focusId: string | null;
+  clearFocus: () => void;
+  /** 결과 줄 `되돌리기`로 포커스 — 모달(시트 · 패널)이 닫힌 뒤 호출부가 부른다(모달이 열린 동안은 `autoFocus`가 먹지 않는다, DOM D-2). */
+  focusUndo: () => void;
+  lineRef: RefObject<HTMLParagraphElement | null>;
 };
 
 const CancelUndoContext = createContext<CancelUndoValue | null>(null);
@@ -42,6 +49,12 @@ function useCancelUndo(): CancelUndoValue {
   const value = useContext(CancelUndoContext);
   if (!value) throw new Error("PurchaseCancelUndo 밖에서 구매 요청 취소 행동을 그렸다");
   return value;
+}
+
+// 목록이 쓰는 포커스 복귀 도구 — 모달이 닫힌 뒤 `되돌리기`로(`focusUndo`) · 되돌린 행으로(`focusId`).
+export function usePurchaseUndoFocus(): Pick<CancelUndoValue, "focusId" | "clearFocus" | "focusUndo"> {
+  const { focusId, clearFocus, focusUndo } = useCancelUndo();
+  return { focusId, clearFocus, focusUndo };
 }
 
 async function run<T>(action: () => Promise<ActionOutcome<T>>): Promise<ActionOutcome<T>> {
@@ -62,6 +75,10 @@ export function PurchaseCancelUndo({ messages, children }: { messages: CancelRea
   const [pendingId, setPendingId] = useState<string | null>(null);
   // 새로 취소할 때마다 `되돌리기`를 다시 그려 포커스를 준다.
   const [shown, setShown] = useState(0);
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const clearFocus = useCallback(() => setFocusId(null), []);
+  const lineRef = useRef<HTMLParagraphElement>(null);
+  const focusUndo = useCallback(() => lineRef.current?.querySelector<HTMLElement>("button")?.focus(), []);
 
   const cancelOwn = useCallback(
     async (target: { id: string; version: number; number: string }) => {
@@ -85,6 +102,7 @@ export function PurchaseCancelUndo({ messages, children }: { messages: CancelRea
     setPendingId(null);
     if (outcome?.data) {
       setLine(null);
+      setFocusId(cancelled.id);
       router.refresh();
       return;
     }
@@ -98,7 +116,7 @@ export function PurchaseCancelUndo({ messages, children }: { messages: CancelRea
   }
 
   return (
-    <CancelUndoContext.Provider value={{ messages, pendingId, line, shown, cancelOwn, undo: (cancelled) => void undo(cancelled) }}>
+    <CancelUndoContext.Provider value={{ messages, pendingId, line, shown, cancelOwn, undo: (cancelled) => void undo(cancelled), focusId, clearFocus, focusUndo, lineRef }}>
       {children}
     </CancelUndoContext.Provider>
   );
@@ -106,7 +124,7 @@ export function PurchaseCancelUndo({ messages, children }: { messages: CancelRea
 
 // 표 위 결과 줄 — 마지막으로 취소한 한 건(또는 막힘 문구). 포커스 → `되돌리기`, 되돌리기 거부면 → 줄 글자.
 export function PurchaseCancelUndoLine() {
-  const { line, shown, pendingId, undo } = useCancelUndo();
+  const { line, shown, pendingId, undo, lineRef } = useCancelUndo();
   const failedRef = useRef<HTMLSpanElement>(null);
   const focusFailed = line?.kind === "failed" && line.focus;
   useEffect(() => {
@@ -114,7 +132,7 @@ export function PurchaseCancelUndoLine() {
   }, [focusFailed, line]);
   if (!line) return null;
   return (
-    <p role="status" className={styles.undoLine}>
+    <p ref={lineRef} role="status" className={styles.undoLine}>
       {line.kind === "failed" ? (
         <span ref={failedRef} tabIndex={line.focus ? -1 : undefined} className={styles.undoFailed}>
           {line.text}
@@ -145,6 +163,7 @@ export type PurchaseCancelTarget = {
 };
 
 // 행 `요청 취소`(RowAction danger — 맨 끝 · 위험 색). 접근 이름 `{번호} 요청 취소`.
+// `onDone`은 요청이 끝난 뒤(성공 · 실패 모두 — 결과는 결과 줄이 말한다) 호출부가 그 자리의 모달(시트 · 패널)을 닫는 데 쓴다.
 export function PurchaseCancelButton({ target, onDone }: { target: PurchaseCancelTarget; onDone?: () => void }) {
   const { pendingId, cancelOwn } = useCancelUndo();
   const [open, setOpen] = useState(false);
@@ -173,13 +192,13 @@ export function PurchaseCancelButton({ target, onDone }: { target: PurchaseCance
       <RowAction danger onClick={() => setOpen(true)}>
         {label}
       </RowAction>
-      <PurchaseCancelDialog target={target} open={open} onClose={() => setOpen(false)} />
+      <PurchaseCancelDialog target={target} open={open} onClose={() => setOpen(false)} onDone={onDone} />
     </>
   );
 }
 
 // 남의 요청 취소 확인 창 — 사유 한 칸 필수(비면 1차 비활성 + 왼쪽 `사유 없음 · 사유 적기`). 서버 거부는 1차 왼쪽 이유 + 꼬리 `새로 고침`.
-function PurchaseCancelDialog({ target, open, onClose }: { target: PurchaseCancelTarget; open: boolean; onClose: () => void }) {
+function PurchaseCancelDialog({ target, open, onClose, onDone }: { target: PurchaseCancelTarget; open: boolean; onClose: () => void; onDone?: () => void }) {
   const { messages } = useCancelUndo();
   const router = useRouter();
   const fieldId = useId();
@@ -190,6 +209,14 @@ function PurchaseCancelDialog({ target, open, onClose }: { target: PurchaseCance
   const [submitting, setSubmitting] = useState(false);
   const [refreshing, startRefresh] = useTransition();
   const busyRef = useRef(false);
+  // 성공하면 행의 `요청 취소`(이 창을 연 요소)가 목록 새로 고침과 함께 사라진다 — 그 순간(이 컴포넌트가 사라질 때) 포커스를 화면 제목에 둔다(DOM D-3b).
+  const focusTitleOnExitRef = useRef(false);
+  useEffect(
+    () => () => {
+      if (focusTitleOnExitRef.current) focusScreenTitle();
+    },
+    [],
+  );
 
   const trimmed = reason.trim();
   const empty = trimmed.length === 0;
@@ -213,9 +240,10 @@ function PurchaseCancelDialog({ target, open, onClose }: { target: PurchaseCance
       busyRef.current = false;
       setSubmitting(false);
       setReason("");
+      focusTitleOnExitRef.current = true;
       onClose();
       startRefresh(() => router.refresh());
-      window.setTimeout(focusScreenTitle, 0);
+      onDone?.();
       return;
     }
     busyRef.current = false;
@@ -263,6 +291,34 @@ function PurchaseCancelDialog({ target, open, onClose }: { target: PurchaseCance
         blockedBy: tooLong ? errorId : undefined,
         failure,
         nextStep: failure ? <RefreshStep onDone={close} /> : undefined,
+      }}
+    />
+  );
+}
+
+// S13 패널(폰) 안 `요청 취소` — 폰은 행동 칸이 숨고 구매 권한자의 `신청됨` 행 탭이 S13을 열어서(06-12) 취소 길이 여기뿐이다(DOM D-1).
+// 요청이 끝나면 패널을 닫는다: 본인 요청은 결과 줄 `되돌리기`로 포커스(패널이 사라진 뒤), 남의 요청(사유 창)은 화면 제목으로.
+export function PurchaseCancelPanelAction({ target }: { target: PurchaseCancelTarget }) {
+  const panel = usePanel();
+  const { focusUndo } = useCancelUndo();
+  const focusUndoOnExitRef = useRef(false);
+  useEffect(
+    () => () => {
+      if (focusUndoOnExitRef.current) window.setTimeout(focusUndo, 0);
+    },
+    [focusUndo],
+  );
+  return (
+    <PurchaseCancelButton
+      target={target}
+      onDone={() => {
+        if (target.branch === "own") {
+          focusUndoOnExitRef.current = true;
+          panel?.requestClose("success", { returnFocus: false });
+          return;
+        }
+        panel?.moveFocusToResult();
+        panel?.requestClose("success");
       }}
     />
   );

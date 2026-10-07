@@ -5,13 +5,14 @@ import { CANCEL_REASON_MAX, CANCEL_REASON_TOO_LONG, listPurchaseRequests, loadPu
 import { REJECT_REASON_EMPTY_MESSAGE } from "@/domain/approvals";
 import { cardEvidenceDefault } from "@/domain/corp-card-usages/amounts";
 import { recentFxRate } from "@/domain/money/currency";
+import { formatKrw } from "@/lib/format-number";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { Num } from "@/ui/num/Num";
 import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { Pagination } from "@/ui/pagination/Pagination";
 import { pageRangeText } from "@/ui/pagination/page-window";
 import { SidePanel } from "@/ui/side-panel/SidePanel";
-import { PurchaseCancelUndo, PurchaseCancelUndoLine } from "./cancel-undo";
+import { PurchaseCancelPanelAction, PurchaseCancelUndo, PurchaseCancelUndoLine, type PurchaseCancelTarget } from "./cancel-undo";
 import { PurchaseFilters, PurchaseList, PurchaseListLoadError, type PurchaseListRowView } from "./purchase-list";
 import { PURCHASE_STATUS_VIEWS, type PurchaseStatusView } from "./purchase-status-word";
 // 합계 면은 카드 사용 목록 합계와 같은 클래스(새 CSS 없음).
@@ -139,6 +140,18 @@ export default async function PurchasesPage({ searchParams }: { searchParams: Pr
       doneHref: `${listHref}${listHref.includes("?") ? "&" : "?"}done=${request.id}`,
     };
     const quoteLine = request.linkKind === "quote_line";
+    // 폰 S13 패널의 `요청 취소`(06-14 I-1) — 행 `요청 취소`와 같은 대상 모양. 서버가 취소 갈래를 준 사람에게만 서고, 확인 창 부제 금액은 못 보면 빠진다.
+    const cancelTarget: PurchaseCancelTarget | null = completion.cancelBranch
+      ? {
+          id: request.id,
+          number: request.number,
+          version: request.version,
+          itemName: request.itemName ?? "",
+          branch: completion.cancelBranch,
+          quoteLinked: quoteLine,
+          estimateText: request.estimateKrw === undefined ? null : formatKrw(request.estimateKrw),
+        }
+      : null;
     panel = (
       // 열린 대상별 key(06-12 검토 I-2) — 닫기 이동 도중 다른 행의 패널을 열어도 닫힌 SidePanel이 재사용되지 않는다.
       <SidePanel key={`purchase-${request.id}`} title="구매 완료" closeHref={listHref}>
@@ -160,6 +173,7 @@ export default async function PurchasesPage({ searchParams }: { searchParams: Pr
             evidenceTypeCode,
           }}
           purchase={purchase}
+          purchaseCancel={cancelTarget ? <PurchaseCancelPanelAction target={cancelTarget} /> : null}
         />
       </SidePanel>
     );

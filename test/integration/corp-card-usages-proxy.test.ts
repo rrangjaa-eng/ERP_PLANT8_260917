@@ -1061,3 +1061,131 @@ describe("목록 rights(O-11)", () => {
     expect(projectRow?.rights).toEqual({ edit: false, changeLink: false, delete: false });
   });
 });
+
+// ── 06-09 독립 검토 · DOM 감사 반영(B-1 · I-1 · I-2 · I-3 · D-1 · D-3) ─────────────
+
+// 금액 숨김 계정 — 메뉴 권한 없음(카드 사용의 문은 카드 자격) · card_usage.amount만 숨김.
+async function makeAmountHidden(teamName: string): Promise<Viewer> {
+  const roleId = await makeRole([]);
+  await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "card_usage.amount", visible: false });
+  return makePerson("금액숨김", roleId, teamName);
+}
+
+describe("검토 반영 — 수정의 카드 자격 · 등록 경로 · 경합 · 되돌리기 · 금액 숨김", () => {
+  it("(B-1) 직원 · 팀 카드 건의 사용일을 다른 팀 소속이던 날로 수정 → `카드 자격 없음 · 카드 고르기` · 행 그대로(새 건과 같은 판정)", async () => {
+    const teamB = await makeTeam();
+    const teamA = await makeTeam();
+    const staff = await makePerson("전입직원", DEFAULT_ROLE_ID, teamB.name);
+    await insertMembership(SYSTEM_VIEWER, { userId: staff.id, teamId: teamA.id, effectiveFrom: "2026-09-01" });
+    const teamCard = await makeCard({ kind: "team", teamId: teamA.id });
+    const base = teamCostInput(teamCard, 50_000, null);
+    const id = await create(staff, base);
+    const before = await rowOf(id);
+    expect(before.teamId).toBe(teamA.id);
+    // 같은 조합의 새 건은 거부된다(기준).
+    await expect(precheckCardUsage(staff, { ...base, usedOn: "2026-08-15" })).rejects.toThrow("카드 자격 없음 · 카드 고르기");
+    const edit = { ...(await editInput(id, base, 50_000)), usedOn: "2026-08-15" };
+    const error = await caught(precheckCardUsageUpdate(staff, edit));
+    expect(error).toBeInstanceOf(ForbiddenError);
+    expect((error as Error).message).toBe("카드 자격 없음 · 카드 고르기");
+    expect(await rowOf(id)).toMatchObject({ usedOn: before.usedOn, teamId: teamA.id, version: before.version });
+  });
+
+  it("(I-1) 권한자 · 남의 팀 카드 · 견적 줄 → registeredVia proxy(사용한 사람 = 등록자여도) · 목록 `경영관리 등록` 필터에 든다", async () => {
+    const fx = await setup();
+    const otherTeam = await makeTeam();
+    const teamCard = await makeCard({ kind: "team", teamId: otherTeam.id });
+    const id = await create(fx.proxy, lineInput(teamCard, fx.lines[0] ?? "", 100_000));
+    expect(await rowOf(id)).toMatchObject({ registeredVia: "proxy", registeredBy: fx.proxy.id, usedByUserId: fx.proxy.id });
+    const month = seoulToday().slice(0, 7);
+    expect((await listCardUsages(fx.proxy, { month, proxyOnly: true }, seoulToday())).rows.map((row) => row.id)).toContain(id);
+  });
+
+  it("(I-1) 권한자 · 본인 개인 카드 · 공용 카드(본인 사용) → self 그대로", async () => {
+    const fx = await setup();
+    const own = await makeCard({ kind: "personal", holderUserId: fx.proxy.id });
+    const shared = await makeCard({ kind: "shared" });
+    expect((await precheckCardUsage(fx.proxy, lineInput(own, fx.lines[0] ?? "", 1_000))).registeredVia).toBe("self");
+    expect((await precheckCardUsage(fx.proxy, teamCostInput(shared, 1_000, fx.proxy.id))).registeredVia).toBe("self");
+  });
+
+  it("(I-1 · M34) 권한자가 남의 팀 카드로 등록한 건을 금액만 고침 → proxy 그대로", async () => {
+    const fx = await setup();
+    const otherTeam = await makeTeam();
+    const teamCard = await makeCard({ kind: "team", teamId: otherTeam.id });
+    const base = lineInput(teamCard, fx.lines[0] ?? "", 100_000);
+    const id = await create(fx.proxy, base);
+    await update(fx.proxy, await editInput(id, base, 120_000));
+    expect(await rowOf(id)).toMatchObject({ totalAmountKrw: 120_000, registeredVia: "proxy", registeredBy: fx.proxy.id });
+  });
+
+  it("(I-2 · M34) 권한자가 직원 본인 건의 사용한 사람을 팀 동료로 바꿈 → proxy · 등록자 = 수정한 권한자 · 원래 직원 권리 없음", async () => {
+    const fx = await setup();
+    const teamCard = await makeCard({ kind: "team", teamId: fx.team.id });
+    const mate = await makePerson("팀동료", DEFAULT_ROLE_ID, fx.team.name);
+    const base = teamCostInput(teamCard, 50_000, null);
+    const id = await create(fx.pm, base);
+    expect(await rowOf(id)).toMatchObject({ registeredVia: "self", registeredBy: fx.pm.id, usedByUserId: fx.pm.id });
+    await update(fx.proxy, { ...(await editInput(id, base, 50_000)), usedByUserId: mate.id });
+    expect(await rowOf(id)).toMatchObject({ registeredVia: "proxy", registeredBy: fx.proxy.id, usedByUserId: mate.id, teamId: fx.team.id });
+    expect(await loadCardUsageForEdit(fx.pm, id)).toBeNull();
+  });
+
+  it("(I-3 · M25) 연결 그대로 수정 — settling 사전 조회 → 완료로 커밋 → 등록자(권한자 아님) 금액 올리기 → CompletedProjectError · 행 · version 그대로", async () => {
+    const fx = await setup();
+    await setStatus(fx.projectId, "settling");
+    const base = lineInput(fx.cardId, fx.lines[0] ?? "", 300_000);
+    const id = await create(fx.pm, base);
+    const before = await rowOf(id);
+    const edit = await editInput(id, base, 400_000);
+    const pre = await precheckCardUsageUpdate(fx.pm, edit);
+    await setStatus(fx.projectId, "completed");
+    await expect(updateCardUsage(fx.pm, edit, pre)).rejects.toBeInstanceOf(CompletedProjectError);
+    expect(await rowOf(id)).toMatchObject({ totalAmountKrw: 300_000, version: before.version });
+  });
+
+  it("(I-3 · M27) 보관 안 된 건 되돌리기 → `다른 저장이 먼저 됨 · 새로 고침` · version 그대로 · restore 로그 0", async () => {
+    const fx = await setup();
+    const id = await create(fx.pm, teamCostInput(fx.cardId, 100_000, null));
+    const before = await rowOf(id);
+    await expect(restore(fx.pm, id)).rejects.toThrow("다른 저장이 먼저 됨 · 새로 고침");
+    expect(await rowOf(id)).toMatchObject({ archivedAt: null, version: before.version });
+    expect(await logsOf(fx.pm.id, "restore")).toEqual([]);
+  });
+
+  it("(D-1) card_usage.amount 숨김 · 자기 건 삭제 · 되돌리기 · 수정 → 반환에 금액 없음(totalKrw null)", async () => {
+    const team = await makeTeam();
+    const hidden = await makeAmountHidden(team.name);
+    const cardId = await makeCard({ kind: "personal", holderUserId: hidden.id });
+    const base = teamCostInput(cardId, 123_457, null);
+    const id = await create(hidden, base);
+    const removed = await remove(hidden, id);
+    expect(removed.totalKrw).toBeNull();
+    expect(JSON.stringify(removed)).not.toContain("123457");
+    const restored = await restore(hidden, id);
+    expect(restored.totalKrw).toBeNull();
+    const updated = await update(hidden, { ...(await editInput(id, base, 123_457)), total: null, memo: "메모만" });
+    expect(updated.totalKrw).toBeNull();
+    expect(JSON.stringify(updated)).not.toContain("123457");
+  });
+
+  it("(D-3) 금액 숨김 · 자기 건 메모만 수정(결제 합계 안 보냄) → 저장된 금액 유지 · 보내도 덮어쓰지 않음", async () => {
+    const team = await makeTeam();
+    const hidden = await makeAmountHidden(team.name);
+    const cardId = await makeCard({ kind: "personal", holderUserId: hidden.id });
+    const base = teamCostInput(cardId, 77_000, null);
+    const id = await create(hidden, base);
+    await update(hidden, { ...(await editInput(id, base, 77_000)), total: null, memo: "메모만" });
+    expect(await rowOf(id)).toMatchObject({ totalAmountKrw: 77_000, supplyKrw: 77_000, memo: "메모만" });
+    await update(hidden, { ...(await editInput(id, base, 1)), memo: "다시" });
+    expect(await rowOf(id)).toMatchObject({ totalAmountKrw: 77_000, memo: "다시" });
+  });
+
+  it("(D-3) 금액 보이는 등록자 · 결제 합계 안 보냄 → 저장된 금액 유지", async () => {
+    const fx = await setup();
+    const base = teamCostInput(fx.cardId, 88_000, null);
+    const id = await create(fx.pm, base);
+    await update(fx.pm, { ...(await editInput(id, base, 88_000)), total: null, memo: "메모" });
+    expect(await rowOf(id)).toMatchObject({ totalAmountKrw: 88_000, memo: "메모" });
+  });
+});

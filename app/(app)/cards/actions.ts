@@ -18,6 +18,7 @@ import {
   updateCardUsage,
   usedByCandidates,
   type CardUsageInput,
+  type CardUsageUpdateInput,
 } from "@/domain/corp-card-usages";
 import { cardUsedOnError, USED_ON_FUTURE } from "@/domain/corp-card-usages/amounts";
 import { searchLinesForCardLink, searchProjectsForCardLink } from "@/domain/corp-card-usages/link-targets";
@@ -56,14 +57,17 @@ const cardUsageFields = {
   usedByUserId: z.string().min(1).max(64).nullable().optional(),
 };
 
-function fxRequired(value: { currency: string; fxRate?: number | undefined }, ctx: z.RefinementCtx): void {
-  if (value.currency !== "KRW" && value.fxRate === undefined) ctx.addIssue({ code: "custom", message: FX_MISSING, path: ["fxRate"] });
+function fxRequired(value: { currency: string; amount: number | null; fxRate?: number | undefined }, ctx: z.RefinementCtx): void {
+  if (value.currency !== "KRW" && value.amount !== null && value.fxRate === undefined) ctx.addIssue({ code: "custom", message: FX_MISSING, path: ["fxRate"] });
 }
 
 const createCardUsageSchema = z.object(cardUsageFields).superRefine(fxRequired);
 
 // 06-09 수정(B-1 · D-609) — 건 id · version 필수. 공급가 · 부가세 칸은 없다(서버 재역산).
-const updateCardUsageSchema = z.object({ ...cardUsageFields, id: z.uuid(), version: z.number().int().positive() }).superRefine(fxRequired);
+// 결제 합계가 null이면 저장된 값 그대로(금액을 못 보는 사람의 수정 — DOM D-3).
+const updateCardUsageSchema = z
+  .object({ ...cardUsageFields, amount: amountSchema.nullable(), id: z.uuid(), version: z.number().int().positive() })
+  .superRefine(fxRequired);
 
 function toCardUsageInput(parsedInput: z.infer<typeof createCardUsageSchema>): CardUsageInput {
   const base = {
@@ -95,7 +99,9 @@ export const createCardUsageAction = authedActionClient.schema(createCardUsageSc
 
 // 06-09 수정 — 권리(O-11) · 카드 그대로 · 잠금 뒤 게이트 · Q3 상한은 domain이 판정한다(사전 조회 → 몸통).
 export const updateCardUsageAction = authedActionClient.schema(updateCardUsageSchema).action(async ({ parsedInput, ctx }) => {
-  const input = { ...toCardUsageInput(parsedInput), id: parsedInput.id, version: parsedInput.version };
+  const { amount, ...rest } = parsedInput;
+  const base = toCardUsageInput({ ...rest, amount: amount ?? 0 });
+  const input: CardUsageUpdateInput = { ...base, total: amount === null ? null : base.total, id: parsedInput.id, version: parsedInput.version };
   const pre = await precheckCardUsageUpdate(ctx.viewer, input);
   const updated = await updateCardUsage(ctx.viewer, input, pre);
   revalidatePath("/cards");

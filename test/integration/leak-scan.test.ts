@@ -503,7 +503,16 @@ import "@/app/(app)/cards/actions.registry";
 import { randomUUID } from "node:crypto";
 import { createCorpCard } from "@/domain/corp-cards";
 import { createOrgUnit, createTeam } from "@/domain/org";
-import { createCardUsage, listCardUsages, precheckCardUsage } from "@/domain/corp-card-usages";
+import {
+  createCardUsage,
+  deleteCardUsage,
+  listCardUsages,
+  precheckCardUsage,
+  precheckCardUsageRemoval,
+  precheckCardUsageUpdate,
+  restoreCardUsage,
+  updateCardUsage,
+} from "@/domain/corp-card-usages";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { insertRole } from "@/repositories/roles";
 import { seoulToday } from "@/lib/dates";
@@ -567,5 +576,39 @@ describe("카드 사용 목록 범위 축 — 직원은 남의 카드 사용 · 
     expect(staffIds).not.toContain(others);
     expect(staffIds).not.toContain(shared);
     for (const viewer of [proxy, ceo]) expect(await idsOf(viewer)).toEqual(expect.arrayContaining([own, others, shared]));
+  });
+});
+
+// 06-09 DOM D-1 — 삭제 · 되돌리기 · 수정 액션이 돌려주는 값도 목록 DTO와 같은 규칙: card_usage.amount를 못 보면 결제 합계가 없다.
+describe("카드 사용 삭제 · 되돌리기 · 수정 반환 — card_usage.amount 숨김이면 결제 합계 없음 (06-09 D-1)", () => {
+  it("숨김 계정의 자기 건 — 세 반환 모두 금액 값이 실리지 않는다", async () => {
+    const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `누수삭제본부-${randomUUID()}` });
+    const teamName = `누수삭제팀-${randomUUID()}`;
+    await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: teamName });
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `누수숨김-${randomUUID().slice(0, 8)}`, workScope: "team" });
+    for (const infoItem of ["team.value", "card_usage.value"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "card_usage.amount", visible: false });
+    const hidden = await makePerson("누수숨김", role.id, teamName);
+    const card = await createCorpCard(SYSTEM_VIEWER, { issuer: `누수-${randomUUID().slice(0, 8)}`, numberLast4: "2222", label: "누수 숨김 카드", kind: "personal", holderUserId: hidden.id });
+    if (!card.id) throw new Error("카드 id 없음");
+    const probe = 456_789;
+    const input = {
+      corpCardId: card.id,
+      usedOn: seoulToday(),
+      merchantVendorId: null,
+      total: { currency: "KRW" as const, amount: probe, fxRate: 1 },
+      evidenceTypeCode: "invoice",
+      linkKind: "team_cost" as const,
+      memo: null,
+    };
+    const { id } = await createCardUsage(hidden, input, await precheckCardUsage(hidden, input));
+    const removed = await deleteCardUsage(hidden, { id, version: 1 }, await precheckCardUsageRemoval(hidden, { id }));
+    const restored = await restoreCardUsage(hidden, { id, version: removed.version }, await precheckCardUsageRemoval(hidden, { id }));
+    const edit = { ...input, total: null, memo: "메모", id, version: restored.version };
+    const updated = await updateCardUsage(hidden, edit, await precheckCardUsageUpdate(hidden, edit));
+    for (const result of [removed, restored, updated]) {
+      expect(result.totalKrw).toBeNull();
+      expect(JSON.stringify(result)).not.toContain(String(probe));
+    }
   });
 });

@@ -150,12 +150,22 @@ async function eligibleCards(viewer: Viewer, teamId: string | null): Promise<Eli
   const cards = await listCorpCards(viewer, { scope: { rows: "all", includeArchived: false }, includeInactive: false });
   const proxy = await can(viewer, "cards.proxy", "write");
   return cards.flatMap((card) => {
-    const own = card.kind !== "shared" && (card.holderUserId === viewer.id || (teamId !== null && card.teamId === teamId));
+    const own = isOwnCard(card, viewer.id, teamId);
     return own || proxy ? [{ card, own }] : [];
   });
 }
 
+// 본인 자격 카드 — 소지자 본인 또는 사용일 소속 팀의 카드(공용 제외).
+function isOwnCard(card: Pick<CorpCardRow, "kind" | "holderUserId" | "teamId">, viewerId: string, teamId: string | null): boolean {
+  return card.kind !== "shared" && (card.holderUserId === viewerId || (teamId !== null && card.teamId === teamId));
+}
+
 const PROXY_HINT = "경영관리 등록 · 카드 소지자";
+
+// 남의 개인 · 팀 카드는 늘 proxy(EXP-16), 공용 · 본인 자격 카드는 사용한 사람이 등록자면 self(DB self_check).
+function viaOf(card: { kind: string; own: boolean }, usedByUserId: string, registeredBy: string): "self" | "proxy" {
+  return (!card.own && card.kind !== "shared") || usedByUserId !== registeredBy ? "proxy" : "self";
+}
 
 // 남의 카드의 소지자 표시 — 개인 = 소지자 이름 · 팀 = 팀 이름(S9 Form.Hint · 수정 모드의 저장된 등록 표시).
 async function proxyHolderNames(viewer: Viewer, cards: readonly Pick<CorpCardRow, "id" | "holderUserId" | "teamId">[]): Promise<Map<string, string>> {
@@ -386,7 +396,7 @@ export async function precheckCardUsage(viewer: Viewer, input: CardUsageInput): 
   if (!card || !eligible) throw new ForbiddenError(card?.kind === "shared" ? SHARED_CARD_FORBIDDEN : CARD_NOT_ELIGIBLE);
   const proxy = await can(viewer, "cards.proxy", "write");
   const usedBy = await resolveUsedBy(viewer, { proxy, card, linkKind: input.linkKind, usedOn: input.usedOn, requested: input.usedByUserId ?? null, fallback: viewer.id });
-  const registeredVia = usedBy.usedByUserId === viewer.id ? "self" : "proxy";
+  const registeredVia = viaOf({ kind: card.kind, own: eligible.own }, usedBy.usedByUserId, viewer.id);
 
   const evidenceRule = await checkEvidenceAndMerchant(viewer, input);
   const rates = await loadTaxRates(input.usedOn);
@@ -406,6 +416,8 @@ export async function precheckCardUsage(viewer: Viewer, input: CardUsageInput): 
 // ── 등록(단독 / 외부 tx) ───────────────────────────────────────────────────
 
 export type CreatedCardUsage = { id: string; totalKrw: number };
+/** 수정 반환 — 결제 합계를 못 보는 사람에게는 null(DOM D-1). */
+export type UpdatedCardUsage = { id: string; totalKrw: number | null };
 
 export async function createCardUsage(
   viewer: Viewer,
@@ -493,7 +505,9 @@ export async function createCardUsage(
 
 // ── 수정 · 권리(06-09 — O-11 · B-1 · Q3 · E-9) ─────────────────────────────
 
-export type CardUsageUpdateInput = CardUsageInput & { id: string; version: number };
+/** `total`이 null이면 저장된 결제 합계를 그대로 둔다 — 금액을 못 보는 사람(`card_usage.amount` 숨김)은 보내도 덮어쓰지 않는다(DOM D-3). */
+type WithOptionalTotal<T> = T extends unknown ? Omit<T, "total"> & { total: MoneyInput | null } : never;
+export type CardUsageUpdateInput = WithOptionalTotal<CardUsageInput> & { id: string; version: number };
 
 /** 잡을 프로젝트 행 하나 — `revisionId`가 있으면 잠근 뒤 최신 차수를 다시 본다(새 연결), `allowCompleted`면 완료도 지난다(권한자 — U-4). */
 export type CardUsageProjectLock = { projectId: string; revisionId?: string; allowCompleted: boolean };
@@ -503,6 +517,12 @@ export type CardUsageUpdatePre = Omit<CardUsagePre, "card" | "registeredVia"> & 
   usageId: string;
   /** 사용한 사람이 바뀌면 같이 맞춘다(DB self_check) — 구매 완료 건은 그대로 `purchase`. */
   registeredVia: "self" | "proxy" | "purchase";
+  /** 사용한 사람을 바꾼 수정이면 수정한 사람(I-2), 아니면 저장된 등록자. */
+  registeredBy: string;
+  /** 저장할 결제 합계 — 요청 값, 또는 금액을 보내지 않았거나 못 보는 사람이면 저장된 값. */
+  total: MoneyInput;
+  /** 반환 값에 결제 합계를 실어도 되는가(`card_usage.amount`). */
+  amountShown: boolean;
   /** 연결 그대로(고정 연결 — N-1 · N-2)인가. */
   linkFixed: boolean;
   /** 권한자면 참 — 연결 그대로의 대상 줄 · 연결 바꾸기의 옛 줄 프로젝트 잠금에 쓴다(새로 잇는 견적 줄은 권한자에게도 거짓). */
@@ -519,7 +539,7 @@ function rightsOf(stored: CardUsageForWrite, viewer: Viewer, proxy: boolean): Ca
 }
 
 // 연결 그대로 = 같은 견적 줄(견적 외 비용 줄 포함 — 폼은 그대로면 줄 id로 보낸다) 또는 팀 비용 → 팀 비용.
-function sameLink(stored: CardUsageForWrite, input: CardUsageInput): boolean {
+function sameLink(stored: CardUsageForWrite, input: CardUsageUpdateInput): boolean {
   if (stored.linkKind === "team_cost") return input.linkKind === "team_cost";
   return input.linkKind === "quote_line" && input.lineId === stored.quoteLineId;
 }
@@ -541,13 +561,34 @@ export async function precheckCardUsageUpdate(viewer: Viewer, input: CardUsageUp
   if (!rights.edit || (!linkFixed && !rights.changeLink)) throw new ForbiddenError(RIGHTS_DENIED);
   // 수정은 카드를 바꾸지 않는다(구매 완료 건의 카드 고치기는 06-12).
   if (input.corpCardId !== stored.corpCardId) throw new ForbiddenError(CARD_NOT_ELIGIBLE);
-  assertUsageBasics(input);
+  const amountShown = await visible(viewer, "card_usage.amount");
+  const storedTotal: MoneyInput =
+    stored.totalForeignAmount === null
+      ? { currency: "KRW", amount: stored.totalAmountKrw, fxRate: 1 }
+      : { currency: stored.totalCurrency as MoneyInput["currency"], amount: Number(stored.totalForeignAmount), fxRate: Number(stored.totalFxRate) };
+  const total = amountShown && input.total !== null ? input.total : storedTotal;
+  const resolved: CardUsageInput = { ...input, total };
+  assertUsageBasics(resolved);
+  // 카드 자격(U-2 · B-1) — 권한자가 아니면 새 건과 같은 판정: 사용일 소속으로 이 카드를 쓸 수 있어야 한다. 구매 완료 건은 06-12.
+  const teamOnUsedOn = await teamIdOn(viewer, input.usedOn);
+  if (!proxy && stored.registeredVia !== "purchase" && !(await eligibleCards(viewer, teamOnUsedOn)).some((candidate) => candidate.card.id === stored.corpCardId)) {
+    throw new ForbiddenError(CARD_NOT_ELIGIBLE);
+  }
   const card = { id: stored.corpCardId, kind: stored.cardKind, holderUserId: stored.cardHolderUserId };
   const usedBy = await resolveUsedBy(viewer, { proxy, card, linkKind: input.linkKind, usedOn: input.usedOn, requested: input.usedByUserId ?? null, fallback: stored.usedByUserId });
-  const evidenceRule = await checkEvidenceAndMerchant(viewer, input);
+  const evidenceRule = await checkEvidenceAndMerchant(viewer, resolved);
   const rates = await loadTaxRates(input.usedOn);
-  const registeredVia: CardUsageUpdatePre["registeredVia"] = stored.registeredVia === "purchase" ? "purchase" : usedBy.usedByUserId === stored.registeredBy ? "self" : "proxy";
-  const base = { usageId: stored.id, registeredVia, usedByUserId: usedBy.usedByUserId, teamId: usedBy.teamId, evidenceRule, rates, capExclude: { usageId: stored.id }, linkFixed, completedAllowed: proxy };
+  // 등록 경로(I-1 · I-2): 사용한 사람이 그대로면 저장된 경로 · 등록자 그대로. 바뀌면(권한자의 수정) 그 수정을 새 등록으로 보고
+  // 등록자 = 수정한 사람 · 경로는 새 건과 같은 판정 — 원래 등록자의 권리는 사라진다(행동 로그에 남음). 구매 완료 건은 그대로.
+  const usedByChanged = stored.registeredVia !== "purchase" && usedBy.usedByUserId !== stored.usedByUserId;
+  const registeredBy = usedByChanged ? viewer.id : stored.registeredBy;
+  const own = isOwnCard({ kind: stored.cardKind, holderUserId: stored.cardHolderUserId, teamId: stored.cardTeamId }, viewer.id, teamOnUsedOn);
+  const registeredVia: CardUsageUpdatePre["registeredVia"] = usedByChanged
+    ? viaOf({ kind: stored.cardKind, own }, usedBy.usedByUserId, viewer.id)
+    : stored.registeredVia === "purchase" || stored.registeredVia === "proxy"
+      ? stored.registeredVia
+      : "self";
+  const base = { usageId: stored.id, registeredVia, registeredBy, total, amountShown, usedByUserId: usedBy.usedByUserId, teamId: usedBy.teamId, evidenceRule, rates, capExclude: { usageId: stored.id }, linkFixed, completedAllowed: proxy };
 
   if (linkFixed) {
     if (input.linkKind !== "quote_line" || !stored.projectId) return { ...base, ...NO_LINK, lockProjects: [] };
@@ -561,8 +602,8 @@ export async function precheckCardUsageUpdate(viewer: Viewer, input: CardUsageUp
     };
   }
   const oldLock: CardUsageProjectLock[] = stored.projectId ? [{ projectId: stored.projectId, allowCompleted: proxy }] : [];
-  if (input.linkKind === "team_cost" || input.linkKind === null) return { ...base, ...NO_LINK, lockProjects: projectLocks(oldLock) };
-  const link = await precheckLink(viewer, input, proxy);
+  if (resolved.linkKind === "team_cost" || resolved.linkKind === null) return { ...base, ...NO_LINK, lockProjects: projectLocks(oldLock) };
+  const link = await precheckLink(viewer, resolved, proxy);
   const newLock: CardUsageProjectLock[] =
     link.outOfQuote
       ? [{ projectId: link.outOfQuote.projectId, revisionId: link.outOfQuote.revisionId, allowCompleted: true }]
@@ -577,12 +618,12 @@ export async function updateCardUsage(
   input: CardUsageUpdateInput,
   pre: CardUsageUpdatePre,
   tx?: DbOrTx,
-): Promise<CreatedCardUsage> {
+): Promise<UpdatedCardUsage> {
   const runUpdate = async (innerTx: DbOrTx) => {
     // 순서 고정(B-1 · X-2 · E-9 · N-3): 프로젝트 행(id 오름차순) → 견적 줄 → 연결(계보) → 이중 연결 → 실행가 상한 → 조건 UPDATE.
     const lockedProjects = new Map<string, ProjectRow>();
     for (const lock of pre.lockProjects) lockedProjects.set(lock.projectId, await lockProjectForLinkWrite(viewer, lock, innerTx));
-    const total = normalizeMoneyInput(input.total);
+    const total = normalizeMoneyInput(pre.total);
     const money = moneyToColumns(total);
     const split = splitCardTotal({ money: total, rule: pre.evidenceRule }, pre.rates);
     let link: { linkKind: CardUsageLinkKind; quoteLineId: string | null; teamId: string | null } = { linkKind: "team_cost", quoteLineId: null, teamId: pre.teamId };
@@ -646,6 +687,7 @@ export async function updateCardUsage(
           evidenceTypeCode: input.evidenceTypeCode,
           ...link,
           usedByUserId: pre.usedByUserId,
+          registeredBy: pre.registeredBy,
           registeredVia: pre.registeredVia,
           memo: input.memo ?? null,
         },
@@ -654,7 +696,7 @@ export async function updateCardUsage(
     );
     if (version === null) throw new CardUsageRejectedError(STALE_VERSION);
     await recordAction(viewer, { actionType: "document_update", entity: CARD_USAGE_ENTITY, entityId: pre.usageId }, { tx: innerTx });
-    return { id: pre.usageId, totalKrw: split.totalKrw };
+    return { id: pre.usageId, totalKrw: pre.amountShown ? split.totalKrw : null };
   };
   return tx ? await runUpdate(tx) : await withTransaction(runUpdate);
 }
@@ -673,10 +715,11 @@ export type CardUsageRemovalPre = {
   lineRoom: LineRoomBasis | null;
   amountVisible: boolean;
   supplyKrw: number;
-  totalKrw: number;
+  /** 결과 줄 금액 — 결제 합계를 못 보는 사람(`card_usage.amount` 숨김)에게는 null(DOM D-1). */
+  totalKrw: number | null;
 };
 
-export type CardUsageRemovalResult = { version: number; totalKrw: number };
+export type CardUsageRemovalResult = { version: number; totalKrw: number | null };
 
 // 트랜잭션 밖에서만. 건(보관 포함) → 권한 → 권리(O-11 — 삭제 권리) → 연결 줄 · 프로젝트 · 상한 바탕.
 export async function precheckCardUsageRemoval(viewer: Viewer, input: { id: string }): Promise<CardUsageRemovalPre> {
@@ -693,7 +736,7 @@ export async function precheckCardUsageRemoval(viewer: Viewer, input: { id: stri
     lineRoom: linked && stored.quoteLineId ? await loadLineRoomBasis(viewer, [stored.quoteLineId]) : null,
     amountVisible: linked ? await visible(viewer, "quote.amount") : false,
     supplyKrw: stored.supplyKrw,
-    totalKrw: stored.totalAmountKrw,
+    totalKrw: (await visible(viewer, "card_usage.amount")) ? stored.totalAmountKrw : null,
   };
 }
 

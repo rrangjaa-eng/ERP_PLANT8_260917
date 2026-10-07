@@ -496,7 +496,7 @@ test.describe("구매 완료 (06-12)", () => {
     await page.context().close();
   });
 
-  test("[06-12 감사 D-1] 구매 권한자 폰 320 · 375 — `신청됨` · `전체`(외화 행 포함) 문서 가로 넘침 0 · 행 탭 → 행 시트 `구매 완료` → S13", async ({ browser, baseURL }) => {
+  test("[06-12 감사 D-1] 구매 권한자 폰 320 · 375 — `신청됨` · `전체`(외화 행 포함) 문서 가로 넘침 0 · `신청됨` 행 탭 → S13", async ({ browser, baseURL }) => {
     const requester = await makeRequester();
     const target = await seedTarget(requester);
     const krw = await requestOn(requester, target.onlineLineId, `원화-${randomUUID().slice(0, 6)}`, 55_000);
@@ -518,8 +518,6 @@ test.describe("구매 완료 (06-12)", () => {
     const tap = page.getByRole("button", { name: `${krw} 상세 보기`, exact: true });
     await waitForHydration(tap);
     await tap.click();
-    const rowSheet = page.getByRole("dialog").filter({ hasText: krw });
-    await rowSheet.getByRole("link", { name: `${krw} 구매 완료`, exact: true }).click();
     await expect(completePanel(page)).toBeVisible();
     await expect(page).toHaveURL(/\?purchase=/);
     await page.context().close();

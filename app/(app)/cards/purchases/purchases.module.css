@@ -1,9 +1,10 @@
-/* 06-08 S11 — 품목 칸: 한 줄 말줄임 + title, 같은 칸 링크 아이콘(3차 — 글자 없음). 격자 칸 minmax(0, max-content)와 같은 꼴이라
-   긴 품목이 폰 320에서 칸을 밀지 않는다(연결 칸 `.linkCell`과 같은 16em 상한). */
+/* 06-08 S11 — 품목 칸: 한 줄 말줄임 + title, 같은 칸 링크 아이콘(3차 — 글자 없음). 연결 칸 `.linkCell`과 같은 격자 minmax(0, max-content)라
+   글자 칸의 최소 폭이 0 — 폰 320에서 다른 P1 열(예상 금액 · 상태 2행)이 넓어지면 품목이 말줄임으로 줄고 표가 틀을 넘지 않는다(06-12 감사 D-1 · O-1). */
 .itemCell {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, max-content) auto;
   align-items: center;
-  gap: var(--s-1);
+  column-gap: var(--s-1);
   max-width: 16em;
   min-width: 0;
 }

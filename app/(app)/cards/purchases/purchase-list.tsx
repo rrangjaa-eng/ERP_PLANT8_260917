@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Table } from "@/ui/table/Table";
+import { RowSheet } from "@/ui/table/RowSheet";
 import type { TableColumn } from "@/ui/table/types";
 import { Num } from "@/ui/num/Num";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
@@ -17,6 +18,8 @@ import styles from "./purchases.module.css";
 
 // 06-08(UI-SPEC S11): 구매 요청 읽기 표 + 필터 줄 + 로드 오류 한 줄. `요청 취소` · 결과 줄 · 합계 줄 · 상태 그룹은 06-14.
 // 06-12: 구매 권한자의 `신청됨` 행 행동 `구매 완료`(→ `?purchase={id}` 옆 패널 S13) · 구매 완료 행 2행 `카드 사용 {MM-DD} · {결제 합계}`(취소 없음 — Q2).
+// 폰(<700)에서는 행동 칸이 P1 표를 넓혀 320을 넘겼다(감사 D-1) — 행동 칸은 P3로 숨고 행 탭이 행동을 맡는다(06-09 카드 사용 표 선례):
+// `신청됨` 행이면 바로 S13, 그 밖은 `RowSheet`(보기 전용).
 
 export type PurchaseListRowView = {
   id: string;
@@ -91,10 +94,18 @@ function linkCell(row: PurchaseListRowView): ReactNode {
   );
 }
 
-// 외화 2행 `USD 1,000.00 @1,350`(§3 외화 병기)은 06-14가 외화 요청을 만들 때 더한다 — 지금 요청은 원화만이다.
+// 외화 2행 `USD 1,000.00 @1,350`(§3 외화 병기) — 묶음(`통화 금액` · `@환율`) 사이에서만 꺾인다. 한 줄로 두면 폰 320에서 열이 넓어져
+// 문서를 넘겼다(감사 O-1 — 카드 사용 결제 합계 2행과 같은 꼴).
 function estimateSecondLine(row: PurchaseListRowView): ReactNode {
   if (!row.currency || row.currency === "KRW" || row.foreignAmount === null || row.fxRate === null) return null;
-  return formatForeignLine({ currency: row.currency, amount: row.foreignAmount, fxRate: row.fxRate });
+  const foreign = formatForeignLine({ currency: row.currency, amount: row.foreignAmount, fxRate: row.fxRate });
+  if (!foreign) return null;
+  const [amount, rate] = foreign.split(" @");
+  return (
+    <span className={cardStyles.secondaryWrap}>
+      <span className={cardStyles.segment}>{amount}</span> <span className={cardStyles.segment}>{`@${rate ?? ""}`}</span>
+    </span>
+  );
 }
 
 // 구매 완료 행 2행 `카드 사용 09-20 · 1,238,000` — 처리 직후(액션 응답에 초과액이 있으면) 끝에 ` · 실행가 초과 {초과액}`(Q-E).
@@ -137,7 +148,7 @@ function actionsColumn(listHref: string): TableColumn<PurchaseListRowView> {
     key: "actions",
     header: "행동",
     headerHidden: true,
-    priority: "p1",
+    priority: "p3",
     cell: (row) =>
       row.status === "requested" ? (
         <RowActions>
@@ -150,15 +161,20 @@ function actionsColumn(listHref: string): TableColumn<PurchaseListRowView> {
 }
 
 // S13 성공 뒤 포커스(r2 F6 — 연달아 처리): 처리한 행 다음의 `신청됨` 행 `구매 완료`(끝이면 앞쪽 첫 행), 없으면 화면 제목(패널이 `moveFocusToResult`로 이미 옮겼다).
+// 폰은 행동 칸이 숨어 있어 그 행의 탭 자리(`{번호} 상세 보기`)로.
 function focusNextComplete(rows: PurchaseListRowView[], doneId: string): void {
   const at = rows.findIndex((row) => row.id === doneId);
   const ordered = at < 0 ? rows : [...rows.slice(at + 1), ...rows.slice(0, at)];
   const next = ordered.find((row) => row.status === "requested");
   if (!next) return;
-  document.querySelector<HTMLElement>(`a[href$="purchase=${next.id}"]`)?.focus();
+  const link = document.querySelector<HTMLElement>(`a[href$="purchase=${next.id}"]`);
+  const target = link && link.getClientRects().length > 0 ? link : document.querySelector<HTMLElement>(`[role="button"][aria-label="${next.number} 상세 보기"]`);
+  target?.focus();
 }
 
 export function PurchaseList({ rows, listHref, canComplete, doneId }: { rows: PurchaseListRowView[]; listHref: string; canComplete: boolean; doneId: string | null }) {
+  const router = useRouter();
+  const [sheet, setSheet] = useState<PurchaseListRowView | null>(null);
   useEffect(() => {
     const done = lastDone;
     if (!done || !done.focusNext || done.id !== doneId) return;
@@ -169,8 +185,34 @@ export function PurchaseList({ rows, listHref, canComplete, doneId }: { rows: Pu
     }, 0);
     return () => window.clearTimeout(timer);
   }, [rows, doneId]);
-  const columns = canComplete ? [...COLUMNS, actionsColumn(listHref)] : COLUMNS;
-  return <Table caption="구매 요청" columns={columns} rows={rows} getRowId={(row) => row.id} />;
+  if (!canComplete) return <Table caption="구매 요청" columns={COLUMNS} rows={rows} getRowId={(row) => row.id} />;
+  return (
+    <>
+      <Table
+        caption="구매 요청"
+        columns={[...COLUMNS, actionsColumn(listHref)]}
+        rows={rows}
+        getRowId={(row) => row.id}
+        onRowTap={(row) => (row.status === "requested" ? router.push(completeHref(listHref, row.id), { scroll: false }) : setSheet(row))}
+        rowLabel={(row) => row.number}
+      />
+      <RowSheet
+        open={sheet !== null}
+        onClose={() => setSheet(null)}
+        title={sheet?.itemName ?? ""}
+        subtitle={sheet ? `${sheet.number} · ${purchaseStatusWord(sheet.status)}` : ""}
+        items={
+          sheet
+            ? [
+                { label: "요청일", value: sheet.requestedOn },
+                { label: "연결", value: sheet.linkLabel ?? "—" },
+                { label: "요청자", value: sheet.requestedByName },
+              ]
+            : []
+        }
+      />
+    </>
+  );
 }
 
 // 「Error — 목록 로드」 — 목록 자리 한 줄 + 2차 `다시 시도`(같은 쿼리로 서버가 다시 그린다).

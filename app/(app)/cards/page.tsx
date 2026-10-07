@@ -155,7 +155,8 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
   let panel = null;
   if (edit) {
     panel = (
-      <SidePanel title="카드 사용 수정" closeHref={listHref}>
+      // 열린 대상별 key(06-12 검토 I-2) — 닫기 이동이 끝나기 전에 다른 패널을 열면 같은 자리의 닫힌 SidePanel(<dialog>)이 재사용되지 않고 새로 열린다.
+      <SidePanel key={`edit-${edit.id}`} title="카드 사용 수정" closeHref={listHref}>
         <CardUsageForm
           cards={[]}
           evidenceTypes={options.evidenceTypes}
@@ -185,7 +186,7 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
       projectId: entryProject && UUID_PATTERN.test(entryProject) ? entryProject : undefined,
     });
     panel = (
-      <SidePanel title="카드 사용 등록" closeHref={listHref}>
+      <SidePanel key="new" title="카드 사용 등록" closeHref={listHref}>
         <CardUsageForm
           cards={cards}
           evidenceTypes={options.evidenceTypes}

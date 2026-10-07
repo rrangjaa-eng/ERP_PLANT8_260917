@@ -128,7 +128,8 @@ export default async function PurchasesPage({ searchParams }: { searchParams: Pr
     };
     const quoteLine = request.linkKind === "quote_line";
     panel = (
-      <SidePanel title="구매 완료" closeHref={listHref}>
+      // 열린 대상별 key(06-12 검토 I-2) — 닫기 이동 도중 다른 행의 패널을 열어도 닫힌 SidePanel이 재사용되지 않는다.
+      <SidePanel key={`purchase-${request.id}`} title="구매 완료" closeHref={listHref}>
         <CardUsageForm
           cards={cards}
           evidenceTypes={completion.options.evidenceTypes}
@@ -156,7 +157,7 @@ export default async function PurchasesPage({ searchParams }: { searchParams: Pr
     const chosen = entryLine && UUID_PATTERN.test(entryLine) ? await purchaseRequestEntry(viewer, entryLine) : null;
     const entry: PurchaseEntry | null = chosen ? { project: chosen.project, line: chosen.line } : null;
     panel = (
-      <SidePanel title="구매 요청" closeHref={listHref}>
+      <SidePanel key="new" title="구매 요청" closeHref={listHref}>
         <PurchaseRequestForm entry={entry} />
       </SidePanel>
     );

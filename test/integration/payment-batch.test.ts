@@ -22,12 +22,22 @@ import { seedCodeItem } from "@/repositories/code-tables";
 import { upsertSimpleValue } from "@/repositories/settings";
 import { insertVendor } from "@/repositories/vendors";
 import { seoulToday } from "@/lib/dates";
+import { insertRole } from "@/repositories/roles";
+import { upsertPermission } from "@/repositories/permissions";
+import { TAX_UNAVAILABLE } from "@/domain/expenses/gate";
+import { DATE_FORMAT_ERROR } from "@/domain/expenses/draft-fields";
+import { completePaymentsBatchAction } from "@/app/(app)/expenses/actions";
+import { makePerson } from "./approvals-fixtures";
 import { addApprovedRevision, attachEvidence, makeEvidenceManager, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
 import { approvedExpenseWithEvidence, approvedExpenseWithoutEvidence, makePaymentManager, setEvidenceRequired, type ApprovedExpense } from "./fixtures/payments";
 
 // 06-15(EXP-09 · EXP-06 · AS1 · D-604) — 지급 대상 목록(S1)과 건별 트랜잭션 일괄 지급(S2). 통과를 기대하는 문서는 06-03 · 06-04처럼
 // 증빙 0 · evidence.required = false로 만든다(P4). setup.ts가 매 테스트 전 TRUNCATE + 시드로 설정을 기본값으로 되돌린다.
 
+const session = vi.hoisted(() => ({ viewer: null as Viewer | null }));
+vi.mock("@/lib/viewer", () => ({
+  getSession: () => Promise.resolve(session.viewer ? { viewer: session.viewer, user: { id: session.viewer.id } } : null),
+}));
 vi.mock("next/cache", () => ({ revalidatePath: () => undefined }));
 
 beforeEach(async () => {
@@ -415,6 +425,100 @@ describe("막힘 · 재판정 · 스냅숏 (06-15 Task 2)", () => {
     const payer = await makePayer();
     const row = await snapshotOf(payer, a);
     expect(await caught(completePaymentsBatch(fx.pm, { payDate: seoulToday(), rows: [row] }))).toBeInstanceOf(ForbiddenError);
+    expect(await livePayments(a.expenseId)).toHaveLength(0);
+  });
+});
+
+// ── 06-15 독립 검토 반영(I-2 · S-1 ~ S-5) ─────────────────────────────────
+
+// 팀 업무 범위 지급 권한자(지출결의 보기 + 팀 보기 + 지급 쓰기 + 금액 보임) — teamName 팀에 발령한다.
+async function makeTeamPayer(teamName: string): Promise<Viewer> {
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `팀지급-${randomUUID().slice(0, 8)}`, workScope: "team" });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "view", allowed: true });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.team", action: "view", allowed: true });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.payments", action: "write", allowed: true });
+  for (const infoItem of ["expense.value", "expense.amount"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+  return makePerson("팀경영", role.id, teamName);
+}
+
+describe("검토 반영 (06-15 독립 검토)", () => {
+  it("I-2 목록 범위 — 작성 중 · 결재 진행 중 · 종결(결재 통과) 문서는 지급 대상 · 합계 건수 · 지급 총액에 들지 않는다", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    const target = await approvedExpenseWithoutEvidence(fx);
+    const [draftLine, submittedLine, closedLine] = await extraLines(fx, 3);
+    if (!draftLine || !submittedLine || !closedLine) throw new Error("줄 셋이 필요하다");
+    const draft = await createExpenseFromLines(fx.pm, { lineIds: [draftLine] });
+    expect(draft.created).toHaveLength(1);
+    const pending = await createExpenseFromLines(fx.pm, { lineIds: [submittedLine] });
+    const pendingId = pending.created[0]?.expenseId;
+    if (!pendingId) throw new Error("진행 중 문서 없음");
+    expect((await submitReadyDraft(fx.pm, pendingId)).kind).toBe("submitted");
+    const [closed] = await approvedMany(fx, [closedLine], false);
+    if (!closed) throw new Error("종결 문서 없음");
+    await db.update(expenses).set({ closedAt: new Date(), closedBy: fx.pm.id, closedReason: "테스트 종결" }).where(eq(expenses.id, closed.expenseId));
+
+    const list = await listPaymentTargets(payer, {});
+    expect(rowsOf(list).map((row) => row.id)).toEqual([target.expenseId]);
+    expect(list.total).toEqual({ count: 1, sumKrw: await payableNow(payer, target) });
+  });
+
+  it("S-1 목록 증빙 게이트(P3) — 증빙 필수 on · 증빙 0 문서는 목록에서 selectable false · 이유 `증빙 없음 · 기안자 …`", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    const doc = await approvedExpenseWithoutEvidence(fx);
+    await setEvidenceRequired(true);
+
+    const [row] = rowsOf(await listPaymentTargets(payer, {}));
+    expect(row).toMatchObject({ id: doc.expenseId, selectable: false });
+    expect(row?.reason).toMatch(/^증빙 없음 · 기안자 /);
+    expect(rowsOf(await listPaymentTargets(payer, { evidence: "missing" })).map((candidate) => candidate.id)).toEqual([doc.expenseId]);
+  });
+
+  it("S-2 세율 없음 — 세금 규칙을 찾을 수 없는 증빙 종류의 행은 selectable false · 이유 TAX_UNAVAILABLE · payableKrw null", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    const doc = await approvedExpenseWithoutEvidence(fx);
+    await db.update(expenses).set({ evidenceType: null }).where(eq(expenses.id, doc.expenseId));
+
+    const [row] = rowsOf(await listPaymentTargets(payer, {}));
+    expect(row).toMatchObject({ id: doc.expenseId, selectable: false, reason: TAX_UNAVAILABLE, payableKrw: null });
+  });
+
+  it("S-3 보임 범위 — 팀 범위 지급 권한자는 다른 팀 문서를 지급 대상에서 보지 못하고, 같은 팀 지급 권한자는 본다", async () => {
+    const fx = await setupExpenseProject();
+    const doc = await approvedExpenseWithoutEvidence(fx);
+    const otherTeam = await makeTeamPayer("경영관리팀");
+    const sameTeam = await makeTeamPayer("기획1팀");
+
+    const hidden = await listPaymentTargets(otherTeam, {});
+    expect(rowsOf(hidden)).toEqual([]);
+    expect(hidden.total?.count).toBe(0);
+    expect(rowsOf(await listPaymentTargets(sameTeam, {})).map((row) => row.id)).toEqual([doc.expenseId]);
+  });
+
+  it("S-4 요청 안 중복 — 같은 문서를 두 번 실은 요청은 한 번만 처리 · 막힌 행 없음 · 살아 있는 지급 1", async () => {
+    const payer = await makePayer();
+    const { a } = await twoPayable();
+    const row = await snapshotOf(payer, a);
+
+    const result = await completePaymentsBatch(payer, { payDate: seoulToday(), rows: [row, { ...row }] });
+    expect(result.processedIds).toEqual([a.expenseId]);
+    expect(result.blocked).toEqual([]);
+    expect(await livePayments(a.expenseId)).toHaveLength(1);
+  });
+
+  it("S-5 지급일 검증(서버 zod) — 액션에 `2026-02-30` · `2026-13-01`을 보내면 payDate 오류 `날짜 형식 오류 · 2026-09-19처럼` · 지급 0건", async () => {
+    const payer = await makePayer();
+    const { a } = await twoPayable();
+    const row = await snapshotOf(payer, a);
+    session.viewer = payer;
+
+    for (const payDate of ["2026-02-30", "2026-13-01"]) {
+      const result = await completePaymentsBatchAction({ payDate, rows: [row] });
+      expect(result?.data).toBeUndefined();
+      expect(result?.validationErrors?.payDate?._errors).toEqual([DATE_FORMAT_ERROR]);
+    }
     expect(await livePayments(a.expenseId)).toHaveLength(0);
   });
 });

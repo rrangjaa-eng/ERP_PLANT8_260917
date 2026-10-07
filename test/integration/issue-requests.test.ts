@@ -333,7 +333,7 @@ describe("발행 요청 — 동시 잇기 · 노출 · 상태 잠김 (06-18 Task
 
     expect(a.status).toBe("fulfilled");
     expect(b.status).toBe("rejected");
-    const rejection = b.status === "rejected" ? b.reason : null;
+    const rejection: unknown = b.status === "rejected" ? b.reason : null;
     expect(rejection).toBeInstanceOf(SaveRejectedError);
     expect((rejection as SaveRejectedError).formatErrors[0]?.reason).toBe("다른 사람이 먼저 이 요청을 이음 · 새로 고침");
     const entries = await db.select().from(revenueEntries).where(eq(revenueEntries.projectId, project.id));

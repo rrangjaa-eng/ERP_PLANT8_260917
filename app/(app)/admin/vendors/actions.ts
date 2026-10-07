@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { returnValidationErrors } from "next-safe-action";
 import { authedActionClient } from "@/lib/actions/client";
-import { createVendor, updateVendor, setVendorHidden, revealAccountNumber, addVendorKind, DuplicateBusinessNoError } from "@/domain/vendors";
+import { createVendor, updateVendor, setVendorHidden, revealAccountNumber, addVendorKind, DuplicateBusinessNoError, InvalidBusinessNoError } from "@/domain/vendors";
 import { CustomFieldsInvalidError } from "@/domain/custom-fields/preserve";
 import { archive } from "@/domain/archive";
 import { VENDOR_KINDS } from "@/domain/vendors/kind";
@@ -59,6 +59,11 @@ function businessNoConflict(error: DuplicateBusinessNoError) {
   };
 }
 
+// 사업자번호 모양 · 검증 숫자 오류는 같은 통로(링크 · 단추 없는 문구만, name null)로 돌려준다 — 칸 아래 오류 줄이 이미 이를 그려 화면을 안 고친다.
+function invalidBusinessNo(error: InvalidBusinessNoError) {
+  return { businessNoConflict: { id: "", name: null, archived: false, hidden: false, addSide: null, message: error.message } };
+}
+
 function customFieldErrors(error: CustomFieldsInvalidError): Record<string, { _errors: string[] }> {
   return Object.fromEntries(Object.entries(error.fieldErrors).map(([key, message]) => [key, { _errors: [message] }]));
 }
@@ -72,6 +77,7 @@ export const createVendorAction = authedActionClient
       return result;
     } catch (error) {
       if (error instanceof DuplicateBusinessNoError) return businessNoConflict(error);
+      if (error instanceof InvalidBusinessNoError) return invalidBusinessNo(error);
       if (error instanceof CustomFieldsInvalidError) {
         returnValidationErrors(createVendorSchema, { customFields: customFieldErrors(error) });
       }
@@ -89,6 +95,7 @@ export const updateVendorAction = authedActionClient
       return { vendor };
     } catch (error) {
       if (error instanceof DuplicateBusinessNoError) return businessNoConflict(error);
+      if (error instanceof InvalidBusinessNoError) return invalidBusinessNo(error);
       if (error instanceof CustomFieldsInvalidError) {
         returnValidationErrors(updateVendorSchema, { customFields: customFieldErrors(error) });
       }

@@ -239,6 +239,30 @@ describe("applyTaxRule", () => {
     expect(result.companyBorneKrw).toBe(62_700);
     expect(result.payableKrw).toBe(712_500);
   });
+
+  // CSO-9 — 절사 방식 없이 저장된 원천징수 규칙은 시드 규칙처럼 10원 미만 절사한다.
+  it("CSO-9 원천징수 절사 방식 없음 · 1,000,300 · 3.3% → 33,000(절사)", async () => {
+    const getSettingValue = fakeGetSettingValue();
+    const result = await applyTaxRule(
+      1_000_300,
+      { ruleKind: "withholding", roundingUnit: 10, minWithholdingAmount: 0, basisDate: "payment_date" },
+      { paymentDate: PAYMENT_DATE, evidenceDate: EVIDENCE_DATE, incomeType: "business" },
+      { getSettingValue: getSettingValue as never },
+    );
+    expect(result.withholdingKrw).toBe(33_000);
+    expect(result.payableKrw).toBe(967_300);
+  });
+
+  it("CSO-9 부가세 절사 방식 없음은 기존대로 반올림한다", async () => {
+    const getSettingValue = fakeGetSettingValue({ "tax.rounding.vat_unit": 10 });
+    const result = await applyTaxRule(
+      1_000_060,
+      { ruleKind: "vat_surcharge", roundingUnit: 10, minWithholdingAmount: 0, basisDate: "evidence_date" },
+      { paymentDate: PAYMENT_DATE, evidenceDate: EVIDENCE_DATE },
+      { getSettingValue: getSettingValue as never },
+    );
+    expect(result.vatKrw).toBe(100_010);
+  });
 });
 
 // 06-03 ① — 세율 사전 조회. applyTaxRule이 읽는 설정 키 전부를 한 기준일로 트랜잭션 밖에서 읽어 평범한 객체로 두고,

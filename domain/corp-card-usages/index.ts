@@ -286,6 +286,21 @@ async function resolveUsedBy(
   return { usedByUserId, teamId };
 }
 
+// 구매 완료 건 수정(PR #183 CSO-1) — 사용한 사람 = 저장된 요청자 고정(다른 사람을 실어 보내면 거부), 팀 비용의 팀 = 그 사람의 사용일 소속(O-19).
+async function purchaseUsedBy(
+  viewer: Viewer,
+  input: { stored: string; requested: string | null; linkKind: CardUsageInput["linkKind"]; usedOn: string },
+): Promise<{ usedByUserId: string; teamId: string | null }> {
+  if (input.requested !== null && input.requested !== input.stored) throw new ForbiddenError(USED_BY_NOT_CANDIDATE);
+  if (input.linkKind !== "team_cost") return { usedByUserId: input.stored, teamId: null };
+  const teamId = (await findMembershipAtDate(viewer, input.stored, input.usedOn))?.teamId ?? null;
+  if (!teamId) {
+    const name = (await findUserNamesByIds(viewer, [input.stored])).get(input.stored) ?? "";
+    throw new CardUsageRejectedError(`요청자 ${name} ${mmdd(input.usedOn)} 소속 없음 · 소속 발령은 관리자`);
+  }
+  return { usedByUserId: input.stored, teamId };
+}
+
 // ── 증빙 종류(코드표) ──────────────────────────────────────────────────────
 
 type EvidenceTypeOption = { value: string; label: string; rule: TaxRule };
@@ -661,7 +676,10 @@ export async function precheckCardUsageUpdate(viewer: Viewer, input: CardUsageUp
     throw new ForbiddenError(CARD_NOT_ELIGIBLE);
   }
   const card = { id: stored.corpCardId, kind: stored.cardKind, holderUserId: stored.cardHolderUserId };
-  const usedBy = await resolveUsedBy(viewer, { proxy, card, linkKind: input.linkKind, usedOn: input.usedOn, requested: input.usedByUserId ?? null, fallback: stored.usedByUserId });
+  const usedBy =
+    stored.registeredVia === "purchase"
+      ? await purchaseUsedBy(viewer, { stored: stored.usedByUserId, requested: input.usedByUserId ?? null, linkKind: input.linkKind, usedOn: input.usedOn })
+      : await resolveUsedBy(viewer, { proxy, card, linkKind: input.linkKind, usedOn: input.usedOn, requested: input.usedByUserId ?? null, fallback: stored.usedByUserId });
   const evidenceRule = await checkEvidenceAndMerchant(viewer, resolved);
   const rates = await loadTaxRates(input.usedOn);
   // 등록 경로(I-1 · I-2): 사용한 사람이 그대로면 저장된 경로 · 등록자 그대로. 바뀌면(권한자의 수정) 그 수정을 새 등록으로 보고
@@ -1001,7 +1019,7 @@ export async function loadCardUsageForEdit(viewer: Viewer, id: string): Promise<
     evidenceLabel: (await cardEvidenceTypes(viewer)).labels.get(stored.evidenceTypeCode) ?? stored.evidenceTypeCode,
     linkKind: stored.linkKind === "team_cost" ? "team_cost" : stored.lineKind === "out_of_quote" ? "out_of_quote" : "quote_line",
     usedByUserId: stored.usedByUserId,
-    choosesUser: proxy && !(stored.cardKind === "personal" && stored.cardHolderUserId === viewer.id),
+    choosesUser: proxy && stored.registeredVia !== "purchase" && !(stored.cardKind === "personal" && stored.cardHolderUserId === viewer.id),
     memo: stored.memo,
     currency: stored.totalCurrency,
     amount: stored.totalForeignAmount === null ? stored.totalAmountKrw : Number(stored.totalForeignAmount),

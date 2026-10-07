@@ -12,6 +12,7 @@ import { useCommaInput } from "@/ui/input/use-comma-input";
 import { numberInputRejectionReason, parseNumberInput } from "@/lib/format-number";
 import { EVIDENCE_AMOUNT_FRACTION, EVIDENCE_AMOUNT_NOT_NUMBER } from "@/domain/payments/action-row";
 import { EVIDENCE_AMOUNT_TAX_INCLUSIVE } from "@/domain/evidence-reviews/tax-inclusive";
+import { PREPAID_REASON_REQUIRED } from "@/domain/expenses/gate";
 import { isCtrlCombo } from "@/lib/shortcut";
 import { usePhoneWidth } from "@/app/(app)/leave/use-phone-width";
 import {
@@ -493,8 +494,8 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
       setFailure(purpose === "submit" ? failureLine(next) : "임시 저장 실패 · 다시 시도");
     } else {
       const message = result?.serverError;
-      // 서버 칸 오류(ExpenseFieldError)는 글자만 온다 — 어느 칸인지는 화면 값으로 가른다(선결제 켬 · 사유 빔 / 부가세 포함 금액 글자).
-      if (message && prepaid && prepaidReason.trim() === "") {
+      // 서버 칸 오류(ExpenseFieldError)는 글자만 온다 — 어느 칸인지는 그 글자로 가른다(선결제 사유 빔 / 부가세 포함 금액).
+      if (message === PREPAID_REASON_REQUIRED) {
         setErrors({ prepaidReason: message });
         setFailure(purpose === "submit" ? failureLine({ prepaidReason: message }) : "임시 저장 실패 · 다시 시도");
       } else if (message === EVIDENCE_AMOUNT_TAX_INCLUSIVE) {
@@ -929,36 +930,6 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
           </div>
         </Form.Field>
 
-        <Form.Field id="evidenceAmount" label="증빙 금액" width="short">
-          <input
-            id="evidenceAmount"
-            ref={evidenceAmountInput.inputRef}
-            type="text"
-            inputMode="numeric"
-            autoComplete="off"
-            className={`${styles.textInput} ${styles.numeric}`}
-            value={evidenceAmountInput.value}
-            onChange={evidenceAmountInput.onChange}
-            aria-invalid={evidenceAmountError ? true : undefined}
-            aria-describedby={evidenceAmountError ? "evidenceAmount-error" : undefined}
-          />
-          {evidenceAmountError ? <Form.Error id="evidenceAmount-error">{evidenceAmountError}</Form.Error> : null}
-        </Form.Field>
-
-        <Form.Field id="evidenceDate" label="증빙일" width="short">
-          <input
-            id="evidenceDate"
-            ref={evidenceDateRef}
-            type="date"
-            value={evidenceDate}
-            onChange={(event) => setEvidenceDate(event.target.value)}
-            className={styles.textInput}
-            aria-invalid={errors.evidenceDate ? true : undefined}
-            aria-describedby={errors.evidenceDate ? "evidenceDate-error" : undefined}
-          />
-          {errors.evidenceDate ? <Form.Error id="evidenceDate-error">{errors.evidenceDate}</Form.Error> : null}
-        </Form.Field>
-
         <Form.Field id="prepaid" label="선결제" width="long">
           <input
             id="prepaid"
@@ -967,7 +938,10 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
             checked={prepaid}
             onChange={(event) => {
               setPrepaid(event.target.checked);
-              if (!event.target.checked) setErrors((current) => ({ ...current, prepaidReason: undefined }));
+              if (event.target.checked) return;
+              // 끄면 적은 사유는 버린다(S6).
+              setPrepaidReason("");
+              setErrors((current) => ({ ...current, prepaidReason: undefined }));
             }}
           />
         </Form.Field>
@@ -991,6 +965,39 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
             <Form.Hint>{`증빙 기한 지급일부터 ${data.prepaidDueDays}일`}</Form.Hint>
           </Form.Field>
         ) : null}
+
+        <Form.Field id="evidenceAmount" label="증빙 금액" width="short">
+          <input
+            id="evidenceAmount"
+            ref={evidenceAmountInput.inputRef}
+            type="text"
+            inputMode="numeric"
+            autoComplete="off"
+            className={`${styles.textInput} ${styles.numeric}`}
+            value={evidenceAmountInput.value}
+            onChange={(event) => {
+              evidenceAmountInput.onChange(event);
+              if (errors.evidenceAmount) setErrors((current) => ({ ...current, evidenceAmount: undefined }));
+            }}
+            aria-invalid={evidenceAmountError ? true : undefined}
+            aria-describedby={evidenceAmountError ? "evidenceAmount-error" : undefined}
+          />
+          {evidenceAmountError ? <Form.Error id="evidenceAmount-error">{evidenceAmountError}</Form.Error> : null}
+        </Form.Field>
+
+        <Form.Field id="evidenceDate" label="증빙일" width="short">
+          <input
+            id="evidenceDate"
+            ref={evidenceDateRef}
+            type="date"
+            value={evidenceDate}
+            onChange={(event) => setEvidenceDate(event.target.value)}
+            className={styles.textInput}
+            aria-invalid={errors.evidenceDate ? true : undefined}
+            aria-describedby={errors.evidenceDate ? "evidenceDate-error" : undefined}
+          />
+          {errors.evidenceDate ? <Form.Error id="evidenceDate-error">{errors.evidenceDate}</Form.Error> : null}
+        </Form.Field>
 
         <KvList items={[{ label: "결재선", value: route }]} />
 

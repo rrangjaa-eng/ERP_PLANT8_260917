@@ -274,7 +274,8 @@ export function EvidenceReviewBlock({ waiveSubtitle = "" }: { waiveSubtitle?: st
   useEffect(() => {
     if (!justWaivedRef.current || !waivedNow) return;
     justWaivedRef.current = false;
-    const next = document.querySelector<HTMLElement>("[data-fixed-bar] button:not([disabled])") ?? document.querySelector<HTMLElement>('[data-testid="payment-result"]');
+    // 결과 글자가 있으면(P6) 그쪽 — 고정 줄에 남은 버튼은 2차 `지급 취소`뿐이다(DOM 감사 D-1).
+    const next = document.querySelector<HTMLElement>('[data-testid="payment-result"]') ?? document.querySelector<HTMLElement>("[data-fixed-bar] button:not([disabled])");
     next?.focus();
   }, [waivedNow]);
 

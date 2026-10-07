@@ -253,6 +253,76 @@ describe("발행 줄 잇기 (linkIssueRequestToEntry — 원장이 saveRevenueIn
   });
 });
 
+describe("발행 요청 — 교차 프로젝트 방어 · 재전송 id (06-18 검토 I-1)", () => {
+  async function requestOf(pm: Viewer, projectId: string) {
+    const row = requestRow();
+    await saveProjectLedger(pm, projectId, { seenStatus: "bidding", issueRequests: [row] });
+    return row;
+  }
+
+  it("다른 프로젝트의 요청 id를 내 발행 줄 fromIssueRequestId로 이으면 거부하고 그 요청도 발행 줄도 그대로다", async () => {
+    const a = await setupProject();
+    const b = await setupProject();
+    const finance = await createFinanceViewer();
+    const row = await requestOf(a.pm, a.project.id);
+    const entryId = randomUUID();
+
+    const attempt = saveProjectLedger(finance, b.project.id, {
+      seenStatus: "bidding",
+      revenue: { issuedEntries: [{ id: entryId, isNew: true, entryDate: "2026-09-30", amount: krw(20_000_000), fromIssueRequestId: row.id }] },
+    });
+
+    await expect(attempt).rejects.toBeInstanceOf(SaveRejectedError);
+    expect(await storedRequest(row.id)).toMatchObject({ projectId: a.project.id, status: "requested", issuedEntryId: null, version: 1 });
+    expect(await db.select().from(revenueEntries).where(eq(revenueEntries.projectId, b.project.id))).toHaveLength(0);
+  });
+
+  it("다른 프로젝트의 요청 줄을 내 프로젝트 저장으로 고치면 거부하고 값 · version이 그대로다", async () => {
+    const a = await setupProject();
+    const b = await setupProject();
+    const row = await requestOf(a.pm, a.project.id);
+
+    const attempt = saveProjectLedger(b.pm, b.project.id, {
+      seenStatus: "bidding",
+      issueRequests: [{ id: row.id, version: 1, desiredIssueDate: "2026-10-05", amount: krw(1), memo: "남의 요청" }],
+    });
+
+    await expect(attempt).rejects.toBeInstanceOf(SaveRejectedError);
+    expect(await storedRequest(row.id)).toMatchObject({ projectId: a.project.id, memo: "선금", amountAmountKrw: 20_000_000, version: 1 });
+  });
+
+  it("다른 프로젝트에 이미 있는 id로 같은 값의 새 줄을 보내도(재전송처럼 보여도) 거부하고 그 줄을 건드리지 않는다", async () => {
+    const a = await setupProject();
+    const b = await setupProject();
+    const row = await requestOf(a.pm, a.project.id);
+
+    const attempt = saveProjectLedger(b.pm, b.project.id, { seenStatus: "bidding", issueRequests: [row] });
+
+    await expect(attempt).rejects.toBeInstanceOf(SaveRejectedError);
+    expect(await storedRequest(row.id)).toMatchObject({ projectId: a.project.id, memo: "선금", version: 1 });
+    expect((await db.select().from(revenueIssueRequests).where(eq(revenueIssueRequests.projectId, b.project.id)))).toHaveLength(0);
+  });
+});
+
+describe("발행 요청 — 금액은 0원 초과만 (06-18 검토 I-2, 260907 invoice_requests_amount_positive)", () => {
+  it.each([
+    ["음수", -5_000_000],
+    ["0", 0],
+  ])("%s 금액은 칸 오류(금액)로 거부하고 아무것도 저장하지 않는다", async (_label, amount) => {
+    const { project, pm } = await setupProject();
+    const ok = requestRow();
+    const bad = requestRow({ amount });
+
+    const attempt = saveProjectLedger(pm, project.id, { seenStatus: "bidding", issueRequests: [ok, bad] });
+
+    await expect(attempt).rejects.toBeInstanceOf(SaveRejectedError);
+    const error = await attempt.catch((caught: unknown) => caught as SaveRejectedError);
+    expect(error.formatErrors).toEqual([expect.objectContaining({ rowId: bad.id, field: "amount", reason: "0원 초과 · 금액 입력" })]);
+    expect(await storedRequest(ok.id)).toBeUndefined();
+    expect(await storedRequest(bad.id)).toBeUndefined();
+  });
+});
+
 describe("발행 요청 표 DTO (listProjectIssueRequests)", () => {
   it("부가세 · 합계는 희망 발행일 기준 발행 줄과 같은 계산(computeVat)이다", async () => {
     const { project, pm } = await setupProject();

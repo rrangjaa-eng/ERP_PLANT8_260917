@@ -1,14 +1,22 @@
+import "@/app/(app)/document-kinds";
 import { requireSession } from "@/lib/viewer";
 import { seoulToday } from "@/lib/dates";
-import { listPurchaseRequests, loadPurchaseCompletion, purchaseRequestEntry, type PurchaseRequestList, type PurchaseRequestStatusView } from "@/domain/purchase-requests";
+import { CANCEL_REASON_MAX, CANCEL_REASON_TOO_LONG, listPurchaseRequests, loadPurchaseCompletion, loadPurchaseRequestTeam, purchaseRequestEntry, type PurchaseRequestList, type PurchaseRequestStatusView } from "@/domain/purchase-requests";
+import { REJECT_REASON_EMPTY_MESSAGE } from "@/domain/approvals";
 import { cardEvidenceDefault } from "@/domain/corp-card-usages/amounts";
+import { recentFxRate } from "@/domain/money/currency";
+import { formatKrw } from "@/lib/format-number";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
+import { Num } from "@/ui/num/Num";
 import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { Pagination } from "@/ui/pagination/Pagination";
 import { pageRangeText } from "@/ui/pagination/page-window";
 import { SidePanel } from "@/ui/side-panel/SidePanel";
+import { PurchaseCancelPanelAction, PurchaseCancelUndo, PurchaseCancelUndoLine, type PurchaseCancelTarget } from "./cancel-undo";
 import { PurchaseFilters, PurchaseList, PurchaseListLoadError, type PurchaseListRowView } from "./purchase-list";
 import { PURCHASE_STATUS_VIEWS, type PurchaseStatusView } from "./purchase-status-word";
+// 합계 면은 카드 사용 목록 합계와 같은 클래스(새 CSS 없음).
+import totalsStyles from "@/app/(app)/projects/projects.module.css";
 import { PurchaseRequestForm, type PurchaseEntry } from "./purchase-request-form";
 import { CardUsageForm, type CardOption, type CardUsagePurchase } from "../card-usage-form";
 
@@ -84,6 +92,12 @@ export default async function PurchasesPage({ searchParams }: { searchParams: Pr
             estimateKrw: row.estimateKrw ?? null,
             usageUsedOn: row.usageUsedOn ?? null,
             usageTotalKrw: row.usageTotalKrw ?? null,
+            version: row.version ?? 0,
+            quoteLinked: row.linkKind === "quote_line",
+            cancelledOn: row.cancelledOn ?? null,
+            cancelledByName: row.cancelledByName ?? null,
+            cancelReason: row.cancelReason ?? null,
+            cancelBranch: list?.cancelBranches[row.id] ?? null,
           },
         ]
       : [],
@@ -127,6 +141,18 @@ export default async function PurchasesPage({ searchParams }: { searchParams: Pr
       doneHref: `${listHref}${listHref.includes("?") ? "&" : "?"}done=${request.id}`,
     };
     const quoteLine = request.linkKind === "quote_line";
+    // 폰 S13 패널의 `요청 취소`(06-14 I-1) — 행 `요청 취소`와 같은 대상 모양. 서버가 취소 갈래를 준 사람에게만 서고, 확인 창 부제 금액은 못 보면 빠진다.
+    const cancelTarget: PurchaseCancelTarget | null = completion.cancelBranch
+      ? {
+          id: request.id,
+          number: request.number,
+          version: request.version,
+          itemName: request.itemName ?? "",
+          branch: completion.cancelBranch,
+          quoteLinked: quoteLine,
+          estimateText: request.estimateKrw === undefined ? null : formatKrw(request.estimateKrw),
+        }
+      : null;
     panel = (
       // 열린 대상별 key(06-12 검토 I-2) — 닫기 이동 도중 다른 행의 패널을 열어도 닫힌 SidePanel이 재사용되지 않는다.
       <SidePanel key={`purchase-${request.id}`} title="구매 완료" closeHref={listHref}>
@@ -148,6 +174,7 @@ export default async function PurchasesPage({ searchParams }: { searchParams: Pr
             evidenceTypeCode,
           }}
           purchase={purchase}
+          purchaseCancel={cancelTarget ? <PurchaseCancelPanelAction target={cancelTarget} /> : null}
         />
       </SidePanel>
     );
@@ -158,7 +185,7 @@ export default async function PurchasesPage({ searchParams }: { searchParams: Pr
     const entry: PurchaseEntry | null = chosen ? { project: chosen.project, line: chosen.line } : null;
     panel = (
       <SidePanel key="new" title="구매 요청" closeHref={listHref}>
-        <PurchaseRequestForm entry={entry} />
+        <PurchaseRequestForm entry={entry} team={await loadPurchaseRequestTeam(viewer, today)} usdFxRate={await recentFxRate("USD").catch(() => null)} />
       </SidePanel>
     );
   }
@@ -169,43 +196,81 @@ export default async function PurchasesPage({ searchParams }: { searchParams: Pr
   let empty = undefined;
   let body;
   if (!list) body = <PurchaseListLoadError />;
-  else if (rows.length > 0) body = <PurchaseList rows={rows} listHref={listHref} canComplete={list.privileged} doneId={doneId} />;
+  else if (rows.length > 0)
+    body = (
+      <>
+        <PurchaseCancelUndoLine />
+        <PurchaseList rows={rows} listHref={listHref} canComplete={list.privileged} doneId={doneId} groupByStatus={view === "전체"} />
+      </>
+    );
   else if (!list.anyInScope) {
     // DR5 — 빈 목록이면 틀이 머리 1차를 숨기고 빈 화면이 말한다. 전체 0건 갈래.
     empty = <ListEmpty message="구매 요청이 없습니다" action={newAction} />;
     body = null;
   } else if (!filtered) {
     // 기본 보기(신청됨) 0건 — 구매 권한자는 처리할 것이 없다는 말 + 전체 보기, 요청자는 신청 행동.
-    empty = list.privileged ? (
-      <ListEmpty message="처리할 구매 요청이 없습니다" action={{ label: "전체 보기", href: `${LIST_HREF}?status=${encodeURIComponent("전체")}` }} />
-    ) : (
-      <ListEmpty message="신청한 구매 요청이 없습니다" action={newAction} />
+    // 마지막 신청 건을 취소해 이 갈래가 되어도 결과 줄 `되돌리기`가 남는다(상태는 화면 전체를 감싼 PurchaseCancelUndo).
+    empty = (
+      <>
+        <PurchaseCancelUndoLine />
+        {list.privileged ? (
+          <ListEmpty message="처리할 구매 요청이 없습니다" action={{ label: "전체 보기", href: `${LIST_HREF}?status=${encodeURIComponent("전체")}` }} />
+        ) : (
+          <ListEmpty message="신청한 구매 요청이 없습니다" action={newAction} />
+        )}
+      </>
     );
     body = null;
   } else {
-    body = <ListEmpty message="조건에 맞는 구매 요청이 없습니다" action={{ label: "필터 지우기", href: LIST_HREF }} />;
+    body = (
+      <>
+        <PurchaseCancelUndoLine />
+        <ListEmpty message="조건에 맞는 구매 요청이 없습니다" action={{ label: "필터 지우기", href: LIST_HREF }} />
+      </>
+    );
   }
 
+  // 결과 줄은 필터 · 월 · 쪽이 바뀌면 사라진다(key) — 패널을 열고 닫는 것(`?new=1` · `?purchase=`)은 목록을 바꾸지 않아 남는다.
+  const undoKey = [view, month, list?.page.page ?? 1].join("|");
   return (
-    <ListScreen
-      title="구매 요청"
-      primaryAction={newAction}
-      filters={filters}
-      empty={empty}
-      pagination={
-        list && rows.length > 0 ? (
-          <Pagination
-            label="구매 요청"
-            page={list.page.page}
-            pageCount={list.page.pageCount}
-            href={pageHref}
-            rangeText={pageRangeText({ page: list.page.page, pageSize: list.page.pageSize, total: list.page.total, unit: "건" })}
-          />
-        ) : undefined
-      }
-      panel={panel}
-    >
-      {body}
-    </ListScreen>
+    <PurchaseCancelUndo key={undoKey} messages={{ empty: REJECT_REASON_EMPTY_MESSAGE, tooLong: CANCEL_REASON_TOO_LONG, max: CANCEL_REASON_MAX }}>
+      <ListScreen
+        title="구매 요청"
+        primaryAction={newAction}
+        filters={filters}
+        summary={
+          list && list.totals.count > 0 ? (
+            <section aria-label="합계" className={totalsStyles.totals}>
+              <p className={totalsStyles.totalsTitle}>{`합계 (${view} · ${list.totals.count}건)`}</p>
+              {list.totals.estimateKrw === null ? null : (
+                <dl className={totalsStyles.totalsPairs}>
+                  <div className={totalsStyles.totalsPair}>
+                    <dt>예상 금액</dt>
+                    <dd>
+                      <Num value={list.totals.estimateKrw} />
+                    </dd>
+                  </div>
+                </dl>
+              )}
+            </section>
+          ) : undefined
+        }
+        empty={empty}
+        pagination={
+          list && rows.length > 0 ? (
+            <Pagination
+              label="구매 요청"
+              page={list.page.page}
+              pageCount={list.page.pageCount}
+              href={pageHref}
+              rangeText={pageRangeText({ page: list.page.page, pageSize: list.page.pageSize, total: list.page.total, unit: "건" })}
+            />
+          ) : undefined
+        }
+        panel={panel}
+      >
+        {body}
+      </ListScreen>
+    </PurchaseCancelUndo>
   );
 }

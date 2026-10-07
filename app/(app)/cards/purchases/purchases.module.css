@@ -42,3 +42,15 @@
   width: var(--s-4);
   height: var(--s-4);
 }
+
+/* 06-14 폰 S13 패널의 `요청 취소` — 폰 시트(<700)에서만 선다. PC는 행 행동 칸이 취소를 맡는다(감사 D-1). */
+.panelCancel {
+  display: none;
+}
+
+@media (max-width: 699.98px) {
+  .panelCancel {
+    display: inline-flex;
+    flex: none;
+  }
+}

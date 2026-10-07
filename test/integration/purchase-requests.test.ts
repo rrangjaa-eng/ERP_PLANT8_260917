@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { and, eq, sql } from "drizzle-orm";
 import { Client } from "pg";
 import { db, pool } from "@/db/client";
 import { actionLog, corpCardUsages, documentCounters, expenses, projects, purchaseRequests, quoteLines } from "@/db/schema";
-import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createOrgUnit, createTeam } from "@/domain/org";
 import { CompletedProjectError } from "@/domain/projects";
@@ -22,7 +22,7 @@ import {
 import { StaleQuoteRevisionError } from "@/domain/corp-card-usages/link-targets";
 import { createRevisionFromCurrent } from "@/domain/quotes/revisions";
 import { closeExpense, createExpenseFromLines } from "@/domain/expenses";
-import { rejectDocument } from "@/domain/approvals";
+import { rejectDocument, REJECT_REASON_EMPTY_MESSAGE, REJECT_REASON_TOO_LONG_MESSAGE } from "@/domain/approvals";
 import { getCurrentQuoteRevision } from "@/domain/quotes/lines";
 import { ForbiddenError } from "@/domain/permissions/can";
 import { gate, GateBlockedError } from "@/domain/rules/gate";
@@ -31,23 +31,38 @@ import { PURCHASE_ONLINE_VENDOR_NAME } from "@/domain/settings/keys";
 import {
   completePurchaseRequest,
   createPurchaseRequest,
+  countOpenPurchaseRequests,
   listPurchaseRequests,
+  loadPurchaseCompletion,
   precheckPurchaseCompletion,
   precheckPurchaseRequest,
   previewPurchaseCompletion,
   PURCHASE_REQUEST_ENTITY,
+  cancelPurchaseRequest,
+  precheckPurchaseCancel,
+  precheckPurchaseCancelUndo,
+  undoCancelPurchaseRequest,
   type PurchaseCompletionInput,
+  type PurchaseRequestInput,
 } from "@/domain/purchase-requests";
+import { cancelPurchaseRequestAction, createPurchaseRequestAction, undoCancelPurchaseRequestAction } from "@/app/(app)/cards/purchases/actions";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { findLineLinks } from "@/repositories/quote-line-links";
 import { seoulToday } from "@/lib/dates";
 import { makePerson } from "./approvals-fixtures";
 import { ONLINE_VENDOR, purchaseProject, request, requestInput, type PurchaseFx } from "./fixtures/purchase-requests";
-import { setupExpenseProject, submitReadyDraft } from "./fixtures/expenses";
-import { waitForLockWaiter } from "./lock-race";
+import { addApprovedRevision, setupExpenseProject, submitReadyDraft } from "./fixtures/expenses";
+import { deferred, waitForLockWaiter } from "./lock-race";
 
 // 06-08(EXP-10 · D-609 · Q3 · GA-38): 구매 요청 신청 경로 통합 파일 — 06-12 · 06-14가 `describe`를 더한다.
+
+// 06-14: 액션(zod 판별 합 · 클라이언트가 보낸 팀 · 원화 환산액 무시)도 같은 파일에서 부른다 — 세션만 가짜로 둔다.
+const session = vi.hoisted(() => ({ viewer: null as Viewer | null }));
+vi.mock("@/lib/viewer", () => ({
+  getSession: () => Promise.resolve(session.viewer ? { viewer: session.viewer, user: { id: session.viewer.id } } : null),
+}));
+vi.mock("next/cache", () => ({ revalidatePath: () => undefined }));
 
 describe("purchase.line-door", () => {
   it("구매 요청 입구 + 지출결의 문 → `온라인구매 협력사 줄 아님 · 지출결의로`", async () => {
@@ -1240,5 +1255,642 @@ describe("[06-12 검토 I-3] 구매 완료 · 카드 고치기 보호", () => {
     expect(await caught(updateUsage(editor, await cardUpdateInput(usageId, { corpCardId: await sharedCard() })))).toBeInstanceOf(ForbiddenError);
     const [after] = await db.select({ corpCardId: corpCardUsages.corpCardId }).from(corpCardUsages).where(eq(corpCardUsages.id, usageId));
     expect(after?.corpCardId).toBe(before?.corpCardId);
+  });
+});
+
+
+// ── 06-14 Task 1 — 팀 비용 요청 · 외화 예상 금액 ─────────────────────────────────
+
+const TEAM_COUNTER_KEY = "purchase_request_team";
+
+function teamInput(patch: { estimate?: PurchaseRequestInput["estimate"]; itemName?: string } = {}): PurchaseRequestInput {
+  return { linkKind: "team_cost", itemName: patch.itemName ?? "팀 간식", linkUrl: null, estimate: patch.estimate ?? { currency: "KRW", amount: 55_000, fxRate: 1 }, memo: null };
+}
+
+async function teamRequestBy(viewer: Viewer, input: PurchaseRequestInput = teamInput()): Promise<{ id: string; number: string }> {
+  return createPurchaseRequest(viewer, input, await precheckPurchaseRequest(viewer, input));
+}
+
+async function teamCounter(): Promise<number> {
+  const [row] = await db
+    .select({ value: documentCounters.value })
+    .from(documentCounters)
+    .where(and(eq(documentCounters.counterKey, TEAM_COUNTER_KEY), eq(documentCounters.period, seoulToday().slice(0, 4))));
+  return row?.value ?? 0;
+}
+
+describe("팀 비용 요청(06-14 — EXP-10 · O-19)", () => {
+  it("오늘 소속 있음 → 저장(`team_cost` · 프로젝트 · 줄 없음 · 팀 칸 없음) + 번호 `TC{YY}-{4자리}` + 같은 tx `document_create` 한 줄", async () => {
+    const requester = await teamCostRequester();
+    const created = await teamRequestBy(requester.viewer);
+
+    expect(created.number).toMatch(new RegExp(`^TC${seoulToday().slice(2, 4)}-\\d{4}$`));
+    const row = await statusOf(created.id);
+    expect(row).toMatchObject({ number: created.number, linkKind: "team_cost", projectId: null, quoteLineId: null, requestedBy: requester.viewer.id, itemName: "팀 간식", estimateAmountKrw: 55_000, status: "requested" });
+    expect(Object.keys(row ?? {})).not.toContain("teamId");
+    const logs = await db.select().from(actionLog).where(and(eq(actionLog.entityId, created.id), eq(actionLog.actionType, "document_create")));
+    expect(logs).toHaveLength(1);
+  });
+
+  it("같은 해 둘째 팀 비용 요청 → 번호 순번 +1(카운터 `purchase_request_team` · 기간 = 연도)", async () => {
+    const requester = await teamCostRequester();
+    const first = await teamRequestBy(requester.viewer);
+    const second = await teamRequestBy(requester.viewer);
+    const seq = (number: string) => Number(number.split("-")[1]);
+    expect(seq(second.number)).toBe(seq(first.number) + 1);
+  });
+
+  it("오늘 소속 없음 → `{이름} {MM-DD} 소속 없음 · 소속 발령은 관리자` 거부 · 요청 0 · 카운터 그대로(임의의 팀으로 떨어뜨리지 않음)", async () => {
+    const stray = await makePerson("이무소속", DEFAULT_ROLE_ID, null);
+    const before = await teamCounter();
+    const error = await caught(teamRequestBy(stray));
+    expect((error as Error).message).toBe(`이무소속 ${seoulToday().slice(5)} 소속 없음 · 소속 발령은 관리자`);
+    expect(await db.select({ id: purchaseRequests.id }).from(purchaseRequests).where(eq(purchaseRequests.requestedBy, stray.id))).toHaveLength(0);
+    expect(await teamCounter()).toBe(before);
+  });
+
+  it("[O-19 · T-06-66] 입력의 팀 id · 사용한 사람 · 원화 환산액은 받지 않는다 — 액션에 실어 보내도 저장은 요청자 · 서버 계산 값", async () => {
+    const requester = await teamCostRequester();
+    const other = await teamCostRequester();
+    session.viewer = requester.viewer;
+    const outcome = await createPurchaseRequestAction({
+      linkKind: "team_cost",
+      itemName: "팀 비품",
+      linkUrl: null,
+      currency: "USD",
+      amount: 100,
+      fxRate: 1_350,
+      memo: null,
+      teamId: other.teamId,
+      usedByUserId: other.viewer.id,
+      amountKrw: 1,
+    } as never);
+    expect(outcome?.serverError).toBeUndefined();
+    const id = outcome?.data?.id;
+    if (!id) throw new Error("저장 결과 없음");
+    expect(await statusOf(id)).toMatchObject({ requestedBy: requester.viewer.id, estimateAmountKrw: 135_000, estimateCurrency: "USD", linkKind: "team_cost" });
+    session.viewer = null;
+  });
+
+  it("요청 INSERT가 실패하면 카운터도 오르지 않는다 — 요청 0 · 로그 0줄 · 다음 요청이 같은 순번(결번 없음)", async () => {
+    const requester = await teamCostRequester();
+    const input = teamInput();
+    const pre = await precheckPurchaseRequest(requester.viewer, input);
+    const before = await teamCounter();
+    const logsBefore = await createLogCount();
+    await expect(createPurchaseRequest(requester.viewer, input, { ...pre, linkUrl: "javascript:alert(1)" })).rejects.toThrow();
+    expect(await teamCounter()).toBe(before);
+    expect(await createLogCount()).toBe(logsBefore);
+    const created = await createPurchaseRequest(requester.viewer, input, pre);
+    expect(created.number.endsWith(String(before + 1).padStart(4, "0"))).toBe(true);
+    expect(await createLogCount()).toBe(logsBefore + 1);
+  });
+
+  it("견적 줄 갈래의 잠금 · 문 · 실행가 상한을 타지 않는다 — 50,000,000원 팀 비용 요청도 저장", async () => {
+    const requester = await teamCostRequester();
+    const created = await teamRequestBy(requester.viewer, teamInput({ estimate: { currency: "KRW", amount: 50_000_000, fxRate: 1 } }));
+    expect((await statusOf(created.id))?.estimateAmountKrw).toBe(50_000_000);
+  });
+
+  it("`projects` view 없는 계급 → 팀 비용 요청도 ForbiddenError(06-08과 같은 판정) · 요청 0", async () => {
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `보기없음-${randomUUID().slice(0, 8)}`, workScope: "team" });
+    const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `보기본부-${randomUUID()}` });
+    const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `보기팀-${randomUUID()}` });
+    const person = await makePerson("보기없음", role.id, team.name);
+    await expect(precheckPurchaseRequest(person, teamInput())).rejects.toBeInstanceOf(ForbiddenError);
+  });
+});
+
+describe("외화 예상 금액(06-14 — T-06-69)", () => {
+  it("팀 비용 USD 1,000.00 @1,350 → 통화 · 외화 금액 · 환율 · 원화 환산액 1,350,000이 함께 저장(서버 `toKrw`)", async () => {
+    const requester = await teamCostRequester();
+    const created = await teamRequestBy(requester.viewer, teamInput({ estimate: { currency: "USD", amount: 1_000, fxRate: 1_350 } }));
+    const row = await statusOf(created.id);
+    expect(row).toMatchObject({ estimateCurrency: "USD", estimateAmountKrw: 1_350_000 });
+    expect(Number(row?.estimateForeignAmount)).toBe(1_000);
+    expect(Number(row?.estimateFxRate)).toBe(1_350);
+  });
+
+  it("견적 줄 요청 USD 500 @1,350(원화 675,000) → 저장 · 상한 판정은 원화 환산액에서 역산", async () => {
+    const fx = await purchaseProject();
+    const input: PurchaseRequestInput = { ...requestInput(fx.onlineLine), estimate: { currency: "USD", amount: 500, fxRate: 1_350 } };
+    const created = await createPurchaseRequest(fx.pm, input, await precheckPurchaseRequest(fx.pm, input));
+    expect(await statusOf(created.id)).toMatchObject({ estimateCurrency: "USD", estimateAmountKrw: 675_000 });
+  });
+
+  it("환율이 비면(0) → `환율 없음 · USD 환율 적기` 거부 · 요청 0 · 계산 불가 요청 없음", async () => {
+    const requester = await teamCostRequester();
+    const error = await caught(precheckPurchaseRequest(requester.viewer, teamInput({ estimate: { currency: "USD", amount: 1_000, fxRate: 0 } })));
+    expect((error as Error).message).toBe("환율 없음 · USD 환율 적기");
+    expect(await db.select({ id: purchaseRequests.id }).from(purchaseRequests).where(eq(purchaseRequests.requestedBy, requester.viewer.id))).toHaveLength(0);
+  });
+
+  it("액션 — 외화인데 환율 칸이 없으면 zod가 `환율 없음 · USD 환율 적기`로 거부", async () => {
+    const requester = await teamCostRequester();
+    session.viewer = requester.viewer;
+    const outcome = await createPurchaseRequestAction({ linkKind: "team_cost", itemName: "팀 비품", linkUrl: null, currency: "USD", amount: 100, memo: null } as never);
+    expect(outcome?.validationErrors?.fxRate?._errors?.[0]).toBe("환율 없음 · USD 환율 적기");
+    session.viewer = null;
+  });
+});
+
+
+// ── 06-14 Task 2 — 요청 취소(Q2 — `신청됨`에서만) · 취소 되돌리기 · 취소 ∥ 구매 완료 ──────────────────────
+
+async function cancelAs(viewer: Viewer, id: string, reason?: string, version?: number) {
+  return cancelPurchaseRequest(
+    viewer,
+    { id, version: version ?? (await requestVersion(id)), ...(reason === undefined ? {} : { reason }) },
+    await precheckPurchaseCancel(viewer, { id }),
+  );
+}
+
+async function undoAs(viewer: Viewer, id: string) {
+  return undoCancelPurchaseRequest(viewer, { id, version: await requestVersion(id) }, await precheckPurchaseCancelUndo(viewer, { id }));
+}
+
+async function statusLogs(requestId: string) {
+  return db.select().from(actionLog).where(and(eq(actionLog.entityId, requestId), eq(actionLog.actionType, "status_change")));
+}
+
+describe("요청 취소(06-14 — Q2 · O-9 · T-06-67)", () => {
+  it("요청자 본인 · 자기 `신청됨` → 사유 없이 `cancelled`(취소한 사람 · 시각 · version+1) + 같은 tx `status_change` 한 줄(요청 → 취소)", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine);
+    const before = await requestVersion(created.id);
+    await cancelAs(fx.pm, created.id);
+    const row = await statusOf(created.id);
+    expect(row).toMatchObject({ status: "cancelled", cancelledBy: fx.pm.id, cancelReason: null, version: before + 1 });
+    expect(row?.cancelledAt).toBeInstanceOf(Date);
+    const logs = await statusLogs(created.id);
+    expect(logs).toHaveLength(1);
+    expect(logs[0]?.detail).toMatchObject({ from: "requested", to: "cancelled" });
+  });
+
+  it("구매 권한자 · 남의 `신청됨` → 빈 사유 거부(`사유 없음 · 사유 적기`) · 사유 있으면 취소 + 사유 저장 + 로그에 사유", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine);
+    const buyer = await purchaser();
+    expect(((await caught(cancelAs(buyer, created.id, "  "))) as Error).message).toBe(REJECT_REASON_EMPTY_MESSAGE);
+    expect(((await caught(cancelAs(buyer, created.id, "가".repeat(501)))) as Error).message).toBe(REJECT_REASON_TOO_LONG_MESSAGE);
+    expect((await statusOf(created.id))?.status).toBe("requested");
+    await cancelAs(buyer, created.id, "중복 신청");
+    expect(await statusOf(created.id)).toMatchObject({ status: "cancelled", cancelledBy: buyer.id, cancelReason: "중복 신청" });
+    expect((await statusLogs(created.id))[0]?.detail).toMatchObject({ reason: "중복 신청" });
+  });
+
+  it("구매 권한 없는 남 → ForbiddenError · 요청 `신청됨` 그대로", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine);
+    const stranger = await makePerson("남", DEFAULT_ROLE_ID, null);
+    const error = await caught(cancelAs(stranger, created.id, "그냥"));
+    expect(error).toBeInstanceOf(ForbiddenError);
+    expect((await statusOf(created.id))?.status).toBe("requested");
+  });
+
+  it("[Q2] `purchased` 요청의 취소 → `이미 구매 완료 · 새로 고침` 거부 · 요청 구매 완료 · 카드 사용 1 그대로", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine);
+    const buyer = await purchaser();
+    await complete(buyer, await completionInput(created.id, await sharedCard()));
+    const error = await caught(cancelAs(fx.pm, created.id));
+    expect((error as Error).message).toBe("이미 구매 완료 · 새로 고침");
+    const buyerError = await caught(cancelAs(buyer, created.id, "취소하고 싶다"));
+    expect((buyerError as Error).message).toBe("이미 구매 완료 · 새로 고침");
+    expect((await statusOf(created.id))?.status).toBe("purchased");
+    expect(await usagesOf(created.id)).toHaveLength(1);
+    expect(await statusLogs(created.id)).toHaveLength(0);
+  });
+
+  it("이미 취소된 요청의 취소 → `구매 요청 취소됨 · 새로 고침` · 다른 version → `다른 저장이 먼저 됨 · 새로 고침`", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine);
+    const staleVersion = await requestVersion(created.id);
+    await cancelAs(fx.pm, created.id);
+    expect(((await caught(cancelAs(fx.pm, created.id))) as Error).message).toBe("구매 요청 취소됨 · 새로 고침");
+    const other = await request(fx, fx.onlineLine);
+    const error = await caught(cancelAs(fx.pm, other.id, undefined, staleVersion + 5));
+    expect((error as Error).message).toBe("다른 저장이 먼저 됨 · 새로 고침");
+    expect((await statusOf(other.id))?.status).toBe("requested");
+  });
+
+  it("팀 비용 요청도 같은 규칙 — 본인 즉시 취소 · 구매 권한자는 사유", async () => {
+    const requester = await teamCostRequester();
+    const own = await teamRequestBy(requester.viewer);
+    await cancelAs(requester.viewer, own.id);
+    expect((await statusOf(own.id))?.status).toBe("cancelled");
+    const other = await teamRequestBy(requester.viewer);
+    const buyer = await purchaser();
+    await expect(cancelAs(buyer, other.id)).rejects.toThrow(REJECT_REASON_EMPTY_MESSAGE);
+    await cancelAs(buyer, other.id, "필요 없음");
+    expect((await statusOf(other.id))?.status).toBe("cancelled");
+  });
+
+  it("액션 — 본인 취소 → 번호 · version 반환 · 되돌리기 액션 → `신청됨`(같은 서버 판정)", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine);
+    session.viewer = fx.pm;
+    const cancelled = await cancelPurchaseRequestAction({ id: created.id, version: await requestVersion(created.id) });
+    expect(cancelled?.data).toMatchObject({ number: created.number });
+    const restored = await undoCancelPurchaseRequestAction({ id: created.id, version: await requestVersion(created.id) });
+    expect(restored?.serverError).toBeUndefined();
+    expect((await statusOf(created.id))?.status).toBe("requested");
+    session.viewer = null;
+  });
+
+  // E-26 — 05 `deps.afterLock` 장벽으로 순서를 고정한다(두 호출의 사전 조회는 장벽 전에 끝낸다).
+  it("취소 ∥ 구매 완료 — 구매 완료 먼저 잠금: 구매 완료 성공 · 취소는 `이미 구매 완료 · 새로 고침` · 카드 사용 1", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine);
+    const buyer = await purchaser();
+    const input = await completionInput(created.id, await sharedCard());
+    const completePre = await precheckPurchaseCompletion(buyer, input);
+    const cancelPre = await precheckPurchaseCancel(fx.pm, { id: created.id });
+    const held = deferred();
+    const release = deferred();
+    const completing = completePurchaseRequest(buyer, input, completePre, {
+      afterLock: async () => {
+        held.resolve();
+        await release.promise;
+      },
+    });
+    await held.promise;
+    const cancelling = caught(cancelPurchaseRequest(fx.pm, { id: created.id, version: input.version }, cancelPre));
+    await waitForLockWaiter(pool);
+    release.resolve();
+    await completing;
+    expect(((await cancelling) as Error).message).toBe("이미 구매 완료 · 새로 고침");
+    expect((await statusOf(created.id))?.status).toBe("purchased");
+    expect(await usagesOf(created.id)).toHaveLength(1);
+  });
+
+  it("취소 ∥ 구매 완료 — 취소 먼저 잠금: 취소 성공 · 구매 완료는 `구매 요청 취소됨 · 새로 고침` · 카드 사용 0", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine);
+    const buyer = await purchaser();
+    const input = await completionInput(created.id, await sharedCard());
+    const completePre = await precheckPurchaseCompletion(buyer, input);
+    const cancelPre = await precheckPurchaseCancel(fx.pm, { id: created.id });
+    const held = deferred();
+    const release = deferred();
+    const cancelling = cancelPurchaseRequest(fx.pm, { id: created.id, version: input.version }, cancelPre, undefined, {
+      afterLock: async () => {
+        held.resolve();
+        await release.promise;
+      },
+    });
+    await held.promise;
+    const completing = caught(completePurchaseRequest(buyer, input, completePre));
+    await waitForLockWaiter(pool);
+    release.resolve();
+    await cancelling;
+    expect(((await completing) as Error).message).toBe("구매 요청 취소됨 · 새로 고침");
+    expect((await statusOf(created.id))?.status).toBe("cancelled");
+    expect(await usagesOf(created.id)).toHaveLength(0);
+  });
+});
+
+describe("취소 되돌리기(06-14 — D-609 · Q3 · X-1 · X-2 · N-1 · N-2 · T-06-193)", () => {
+  const UNDO_DENIED = "되돌리기 권한 없음";
+
+  it("요청자 본인 · 사유 없는 취소 → `신청됨`(번호 그대로 · 취소 칸 비움) + `status_change`(취소 → 요청)", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine);
+    await cancelAs(fx.pm, created.id);
+    await undoAs(fx.pm, created.id);
+    const row = await statusOf(created.id);
+    expect(row).toMatchObject({ status: "requested", number: created.number, cancelledBy: null, cancelledAt: null, cancelReason: null });
+    const logs = await statusLogs(created.id);
+    expect(logs).toHaveLength(2);
+    expect(logs.map((log) => log.detail)).toEqual(expect.arrayContaining([expect.objectContaining({ from: "cancelled", to: "requested" })]));
+  });
+
+  it("구매 권한자가 사유로 취소한 건 → 요청자도 되돌릴 수 없다 · 요청자 아닌 사람 → 거부 · `취소` 그대로", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine);
+    const buyer = await purchaser();
+    await cancelAs(buyer, created.id, "중복");
+    expect(((await caught(undoAs(fx.pm, created.id))) as Error).message).toBe(UNDO_DENIED);
+    expect(((await caught(undoAs(buyer, created.id))) as Error).message).toBe(UNDO_DENIED);
+    const own = await request(fx, fx.onlineLine);
+    await cancelAs(fx.pm, own.id);
+    const stranger = await makePerson("남", DEFAULT_ROLE_ID, null);
+    expect(((await caught(undoAs(stranger, own.id))) as Error).message).toBe(UNDO_DENIED);
+    expect((await statusOf(created.id))?.status).toBe("cancelled");
+    expect((await statusOf(own.id))?.status).toBe("cancelled");
+  });
+
+  it("`cancelled`가 아닌 요청(신청됨 · 구매 완료) → 거부", async () => {
+    const fx = await purchaseProject();
+    const open = await request(fx, fx.onlineLine);
+    expect(((await caught(undoAs(fx.pm, open.id))) as Error).message).toBe("다른 저장이 먼저 됨 · 새로 고침");
+    const done = await request(fx, fx.onlineLine);
+    await complete(await purchaser(), await completionInput(done.id, await sharedCard()));
+    expect(((await caught(undoAs(fx.pm, done.id))) as Error).message).toBe("이미 구매 완료 · 새로 고침");
+    expect((await statusOf(done.id))?.status).toBe("purchased");
+  });
+
+  it("팀 비용 요청 → 줄 게이트 없이 `신청됨`", async () => {
+    const requester = await teamCostRequester();
+    const created = await teamRequestBy(requester.viewer);
+    await cancelAs(requester.viewer, created.id);
+    await undoAs(requester.viewer, created.id);
+    expect((await statusOf(created.id))?.status).toBe("requested");
+  });
+
+  it("취소된 사이 그 줄에 지출결의가 이어졌다 → `지출결의 {번호} 연결됨 …` 거부 · 요청 `취소` 그대로", async () => {
+    const fx = await setupExpenseProject();
+    await setSettingValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME, "스테이지원");
+    const input = requestInput(fx.lines.withVendor);
+    const created = await createPurchaseRequest(fx.pm, input, await precheckPurchaseRequest(fx.pm, input));
+    await cancelAs(fx.pm, created.id);
+    await setSettingValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME, "");
+    const draft = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
+    const submitted = await submitReadyDraft(fx.pm, draft.created[0]?.expenseId ?? "");
+    if (submitted.kind !== "submitted") throw new Error("제출되지 않음");
+    await setSettingValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME, "스테이지원");
+    const error = await caught(undoAs(fx.pm, created.id));
+    expect(error).toBeInstanceOf(GateBlockedError);
+    expect((error as Error).message).toMatch(new RegExp(`^지출결의 ${submitted.number} 연결됨`));
+    expect((await statusOf(created.id))?.status).toBe("cancelled");
+  });
+
+  it("취소된 사이 프로젝트가 `completed` → `완료 · 견적 줄 잠김` 거부 · 요청 `취소` 그대로", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine);
+    await cancelAs(fx.pm, created.id);
+    await setStatus(fx.projectId, "completed");
+    const error = await caught(undoAs(fx.pm, created.id));
+    expect(error).toBeInstanceOf(CompletedProjectError);
+    expect((error as Error).message).toBe("완료 · 견적 줄 잠김");
+    expect((await statusOf(created.id))?.status).toBe("cancelled");
+  });
+
+  it("[I-2 문] 취소된 사이 `온라인구매 협력사` 설정이 바뀌어 그 줄이 지출결의 문이 됨 → `온라인구매 협력사 줄 아님 · 지출결의로` 거부 · 요청 `취소` 그대로", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine);
+    await cancelAs(fx.pm, created.id);
+    await setSettingValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME, "다른 온라인 협력사");
+    const error = await caught(undoAs(fx.pm, created.id));
+    expect(error).toBeInstanceOf(GateBlockedError);
+    expect((error as Error).message).toBe("온라인구매 협력사 줄 아님 · 지출결의로");
+    expect((await statusOf(created.id))?.status).toBe("cancelled");
+    // 설정이 돌아오면 같은 요청이 되살아난다 — 막은 것은 문 하나다.
+    await setSettingValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME, ONLINE_VENDOR);
+    await undoAs(fx.pm, created.id);
+    expect((await statusOf(created.id))?.status).toBe("requested");
+  });
+
+  it("취소된 사이 카드 사용이 남은 실행가를 먹음 → `실행가 초과 · 남은 실행가 400,000 · 다른 줄 고르기` 거부 · 경계(공급가 400,000)는 통과", async () => {
+    const fx = await purchaseProject();
+    const big = await request(fx, fx.onlineLine, 660_000);
+    await cancelAs(fx.pm, big.id);
+    await cardOnLine(fx, fx.onlineLine, 600_000);
+    const error = await caught(undoAs(fx.pm, big.id));
+    expect(error).toBeInstanceOf(GateBlockedError);
+    expect((error as Error).message).toBe("실행가 초과 · 남은 실행가 400,000 · 다른 줄 고르기");
+    expect((await statusOf(big.id))?.status).toBe("cancelled");
+    const edge = await request(fx, fx.onlineLine, 440_000);
+    await cancelAs(fx.pm, edge.id);
+    await undoAs(fx.pm, edge.id);
+    expect((await statusOf(edge.id))?.status).toBe("requested");
+  });
+
+  it("[X-2 경합] 되돌리기 사전 조회를 끝낸 뒤 풀 밖 연결이 프로젝트 행을 잡고 `completed`로 커밋 → `완료 · 견적 줄 잠김` · 요청 `취소` 그대로", async () => {
+    const fx = await purchaseProject();
+    await setStatus(fx.projectId, "settling");
+    const created = await request(fx, fx.onlineLine);
+    await cancelAs(fx.pm, created.id);
+    const pre = await precheckPurchaseCancelUndo(fx.pm, { id: created.id });
+    const version = await requestVersion(created.id);
+    const client = new Client({ connectionString: process.env.DATABASE_URL });
+    await client.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT id FROM projects WHERE id = $1 FOR UPDATE", [fx.projectId]);
+      await client.query("UPDATE projects SET status = 'completed' WHERE id = $1", [fx.projectId]);
+      const undoing = caught(undoCancelPurchaseRequest(fx.pm, { id: created.id, version }, pre));
+      await waitForLockWaiter(pool);
+      await client.query("COMMIT");
+      const error = await undoing;
+      expect(error).toBeInstanceOf(CompletedProjectError);
+      expect((error as Error).message).toBe("완료 · 견적 줄 잠김");
+    } finally {
+      await client.query("ROLLBACK").catch(() => {});
+      await client.end();
+    }
+    expect((await statusOf(created.id))?.status).toBe("cancelled");
+  });
+
+  it("[X-1 계보] 요청 줄 L이 취소된 사이 새 차수(L → L′)의 L′에 지출결의가 제출됨 → 되돌리기 거부", async () => {
+    const fx = await setupExpenseProject();
+    await setSettingValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME, "스테이지원");
+    const input = requestInput(fx.lines.withVendor);
+    const created = await createPurchaseRequest(fx.pm, input, await precheckPurchaseRequest(fx.pm, input));
+    await cancelAs(fx.pm, created.id);
+    // 2차는 고객 승인까지 받아야 그 줄로 지출결의를 만들 수 있다(05-14 도우미).
+    const next = await addApprovedRevision(fx, []);
+    const [copy] = await db.select({ id: quoteLines.id }).from(quoteLines).where(and(eq(quoteLines.revisionId, next.revisionId), eq(quoteLines.copiedFromLineId, fx.lines.withVendor)));
+    if (!copy) throw new Error("복사된 줄 없음");
+    await setSettingValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME, "");
+    const draft = await createExpenseFromLines(fx.pm, { lineIds: [copy.id] });
+    const submitted = await submitReadyDraft(fx.pm, draft.created[0]?.expenseId ?? "");
+    if (submitted.kind !== "submitted") throw new Error("제출되지 않음");
+    await setSettingValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME, "스테이지원");
+    const error = await caught(undoAs(fx.pm, created.id));
+    expect(error).toBeInstanceOf(GateBlockedError);
+    expect((error as Error).message).toMatch(new RegExp(`^지출결의 ${submitted.number} 연결됨`));
+    expect((await statusOf(created.id))?.status).toBe("cancelled");
+  });
+
+  it("[X-1 계보] 같은 새 차수에서 L′에 연결이 없으면 되돌리기 통과 — 요청은 L 그대로", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine);
+    await cancelAs(fx.pm, created.id);
+    await (await nextRevision(fx)).copyOf(fx.onlineLine);
+    await undoAs(fx.pm, created.id);
+    expect(await statusOf(created.id)).toMatchObject({ status: "requested", quoteLineId: fx.onlineLine });
+  });
+
+  it("[N-1] 새 차수 L2 실행가 1,500,000 + 카드 공급가 300,000 → 요청(예상 공급가 900,000) 되돌리기 통과(옛 L1 실행가로 판정하면 남은 700,000으로 막혔다)", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine, 990_000);
+    await cancelAs(fx.pm, created.id);
+    const l2 = await (await nextRevision(fx)).copyOf(fx.onlineLine);
+    await db.update(quoteLines).set({ executionAmountKrw: 1_500_000 }).where(eq(quoteLines.id, l2));
+    await cardOnLine(fx, l2, 300_000);
+    await undoAs(fx.pm, created.id);
+    expect((await statusOf(created.id))?.status).toBe("requested");
+  });
+
+  it("[N-1] 새 차수 L2 실행가 800,000(카드 사용 없음) → `실행가 초과 · 남은 실행가 800,000 · 다른 줄 고르기` 거부 · 요청 `취소` 그대로", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine, 990_000);
+    await cancelAs(fx.pm, created.id);
+    const l2 = await (await nextRevision(fx)).copyOf(fx.onlineLine);
+    await db.update(quoteLines).set({ executionAmountKrw: 800_000 }).where(eq(quoteLines.id, l2));
+    const error = await caught(undoAs(fx.pm, created.id));
+    expect((error as Error).message).toBe("실행가 초과 · 남은 실행가 800,000 · 다른 줄 고르기");
+    expect((await statusOf(created.id))?.status).toBe("cancelled");
+  });
+
+  it("[N-2] 현재 줄 L2가 보관되면 `견적 줄 빠짐 · 새로 고침` 거부 · 요청 `취소` 그대로", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine);
+    await cancelAs(fx.pm, created.id);
+    const l2 = await (await nextRevision(fx)).copyOf(fx.onlineLine);
+    await db.update(quoteLines).set({ archivedAt: new Date() }).where(eq(quoteLines.id, l2));
+    const error = await caught(undoAs(fx.pm, created.id));
+    expect((error as Error).message).toBe("견적 줄 빠짐 · 새로 고침");
+    expect((await statusOf(created.id))?.status).toBe("cancelled");
+  });
+});
+
+// ── 목록 마감(06-14 Task 3 — 합계 · 열린 건수 · 50건 페이지 · `전체` 그룹 순서) ─────────────────────────────
+
+describe("구매 요청 목록 마감(06-14)", () => {
+  async function scopedRole(): Promise<string> {
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `마감목록-${randomUUID().slice(0, 8)}`, workScope: "team" });
+    for (const infoItem of ["purchase_request.value", "purchase_request.amount", "project.value"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+    return role.id;
+  }
+
+  async function person(name: string, roleId: string): Promise<Awaited<ReturnType<typeof makePerson>>> {
+    const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `마감본부-${randomUUID()}` });
+    const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `마감팀-${randomUUID()}` });
+    return makePerson(name, roleId, team.name);
+  }
+
+  type Seed = { requester: { id: string }; status?: "requested" | "purchased" | "cancelled"; amount?: number; createdAt?: Date };
+
+  async function seed(rows: Seed[]): Promise<string[]> {
+    const inserted = await db
+      .insert(purchaseRequests)
+      .values(
+        rows.map((row) => ({
+          number: `TC${randomUUID().slice(0, 8)}`,
+          linkKind: "team_cost",
+          requestedBy: row.requester.id,
+          itemName: "마감 물건",
+          estimateAmountKrw: row.amount ?? 10_000,
+          status: row.status ?? "requested",
+          ...(row.status === "purchased" ? { completedBy: row.requester.id, completedAt: new Date() } : {}),
+          ...(row.status === "cancelled" ? { cancelledBy: row.requester.id, cancelledAt: new Date(), cancelReason: "마감 취소" } : {}),
+          ...(row.createdAt ? { createdAt: row.createdAt } : {}),
+        })),
+      )
+      .returning({ id: purchaseRequests.id });
+    return inserted.map((row) => row.id);
+  }
+
+  it("[m-3] 목록 DTO `linkKind` — 프로젝트 이름을 못 봐 `linkLabel`이 비어도 견적 줄 연결인 줄 안다(취소 창 `견적 줄 연결 풀림` 판정)", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine);
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `마감값만-${randomUUID().slice(0, 8)}`, workScope: "team" });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "purchase_request.value", visible: true });
+    const restricted = await person("값만", role.id);
+    await db.update(purchaseRequests).set({ requestedBy: restricted.id }).where(eq(purchaseRequests.id, created.id));
+    const list = await listPurchaseRequests(restricted, { status: "requested" });
+    const row = list.rows.find((candidate) => candidate.id === created.id);
+    expect(row?.linkKind).toBe("quote_line");
+    expect(row?.linkLabel).toBeUndefined();
+  });
+
+  it("[I-1] S13 패널 로드 — `cancelBranch`: 구매 권한자 본인 요청 `own` · 남의 요청 `others` · `신청됨`이 아니면 null · 구매 권한 없으면 패널 없음", async () => {
+    const roleId = await scopedRole();
+    const requester = await person("패널요청자", roleId);
+    const buyer = await purchaser();
+    const [own] = await seed([{ requester: buyer }]);
+    const [others] = await seed([{ requester }]);
+    const [done] = await seed([{ requester, status: "purchased" }]);
+    expect((await loadPurchaseCompletion(buyer, own ?? ""))?.cancelBranch).toBe("own");
+    expect((await loadPurchaseCompletion(buyer, others ?? ""))?.cancelBranch).toBe("others");
+    expect((await loadPurchaseCompletion(buyer, done ?? ""))?.cancelBranch).toBeNull();
+    expect(await loadPurchaseCompletion(requester, others ?? "")).toBeNull();
+  });
+
+  it("합계 줄 — 보기의 건수 · 예상 금액 합은 목록과 같은 범위 안 행만(남의 요청 없음) · `전체`는 상태 가리지 않는다", async () => {
+    const roleId = await scopedRole();
+    const mine = await person("마감요청자", roleId);
+    const other = await person("마감남", roleId);
+    await seed([
+      { requester: mine, amount: 11_000 },
+      { requester: mine, amount: 22_000 },
+      { requester: mine, status: "cancelled", amount: 5_000 },
+      { requester: other, amount: 99_000 },
+    ]);
+    const today = seoulToday();
+    expect((await listPurchaseRequests(mine, { status: "requested" }, today)).totals).toEqual({ count: 2, estimateKrw: 33_000 });
+    expect((await listPurchaseRequests(mine, { status: "all" }, today)).totals).toEqual({ count: 3, estimateKrw: 38_000 });
+    expect((await listPurchaseRequests(mine, { status: "cancelled" }, today)).totals).toEqual({ count: 1, estimateKrw: 5_000 });
+    expect((await listPurchaseRequests(other, { status: "requested" }, today)).totals).toEqual({ count: 1, estimateKrw: 99_000 });
+  });
+
+  it("합계 줄 — 예상 금액을 못 보는 계급은 금액 합이 null(건수만)", async () => {
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `금액숨김-${randomUUID().slice(0, 8)}`, workScope: "team" });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "purchase_request.value", visible: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "purchase_request.amount", visible: false });
+    const hidden = await person("금액숨김", role.id);
+    await seed([{ requester: hidden, amount: 11_000 }]);
+    expect((await listPurchaseRequests(hidden, { status: "requested" }, seoulToday())).totals).toEqual({ count: 1, estimateKrw: null });
+  });
+
+  it("50건 페이지 — 51건이면 첫 쪽 50건 · 둘째 쪽 1건 · 합계는 쪽과 무관하게 51건", async () => {
+    const roleId = await scopedRole();
+    const mine = await person("마감쪽", roleId);
+    await seed(Array.from({ length: 51 }, () => ({ requester: mine, amount: 1_000 })));
+    const today = seoulToday();
+    const first = await listPurchaseRequests(mine, { status: "requested", page: "1" }, today);
+    expect(first.rows).toHaveLength(50);
+    expect(first.page).toMatchObject({ page: 1, pageCount: 2, pageSize: 50, total: 51 });
+    const second = await listPurchaseRequests(mine, { status: "requested", page: "2" }, today);
+    expect(second.rows).toHaveLength(1);
+    expect(second.totals).toEqual({ count: 51, estimateKrw: 51_000 });
+  });
+
+  it("`전체` 보기 그룹 순서 — 신청됨 → 구매 완료 → 취소(요청일 내림차순은 그룹 안에서)", async () => {
+    const roleId = await scopedRole();
+    const mine = await person("마감그룹", roleId);
+    const base = Date.now();
+    const [requestedOld, purchased, cancelledNew, requestedNew] = await seed([
+      { requester: mine, status: "requested", createdAt: new Date(base - 4_000) },
+      { requester: mine, status: "purchased", createdAt: new Date(base - 3_000) },
+      { requester: mine, status: "cancelled", createdAt: new Date(base - 1_000) },
+      { requester: mine, status: "requested", createdAt: new Date(base - 2_000) },
+    ]);
+    const all = await listPurchaseRequests(mine, { status: "all" }, seoulToday());
+    expect(all.rows.map((row) => row.id)).toEqual([requestedNew, requestedOld, purchased, cancelledNew]);
+  });
+
+  it("열린 건수 `countOpenPurchaseRequests` — 목록과 같은 범위의 `신청됨`만(구매 완료 · 취소 · 남의 요청 제외)", async () => {
+    const roleId = await scopedRole();
+    const mine = await person("마감열림", roleId);
+    const other = await person("마감다른", roleId);
+    await seed([{ requester: mine }, { requester: mine }, { requester: mine }, { requester: mine, status: "cancelled" }, { requester: mine, status: "purchased" }, { requester: other }]);
+    expect(await countOpenPurchaseRequests(mine)).toBe(3);
+    expect(await countOpenPurchaseRequests(other)).toBe(1);
+    const nobody = await person("마감없음", roleId);
+    expect(await countOpenPurchaseRequests(nobody)).toBe(0);
+  });
+});
+
+// Q3 「빼기」(사용자 결정 2026-10-05 카드 「빼기」) — 신청 · 취소 · 되돌리기 세 입구가 같은 상한 판정을 지난다(06-07 `lineRoom` 한 곳).
+describe("실행가 빼기(Q3 — 신청됨 요청의 예상 공급가)", () => {
+  it("실행가 1,000,000 · A 예상 770,000(공급가 700,000) `신청됨` → B 770,000 거부(남은 300,000) · A 취소 → B 성공 · A 되돌리기 거부(남은 300,000) · A는 `취소` 그대로", async () => {
+    const fx = await purchaseProject();
+    const a = await request(fx, fx.onlineLine, 770_000);
+    const blocked = await caught(request(fx, fx.onlineLine, 770_000));
+    expect(blocked).toBeInstanceOf(GateBlockedError);
+    expect((blocked as Error).message).toBe("실행가 초과 · 남은 실행가 300,000 · 다른 줄 고르기");
+    expect(await requestCount()).toBe(1);
+
+    await cancelAs(fx.pm, a.id);
+    await request(fx, fx.onlineLine, 770_000);
+    expect(await requestCount()).toBe(2);
+
+    const undone = await caught(undoAs(fx.pm, a.id));
+    expect(undone).toBeInstanceOf(GateBlockedError);
+    expect((undone as Error).message).toBe("실행가 초과 · 남은 실행가 300,000 · 다른 줄 고르기");
+    expect((await statusOf(a.id))?.status).toBe("cancelled");
   });
 });

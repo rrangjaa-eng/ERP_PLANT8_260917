@@ -7,7 +7,7 @@ import { searchLinesForPurchaseLinkAction } from "./purchases/actions";
 
 // 06-07(UI-SPEC S10 · SP-8 · C11): 패널 위 연결 고르기 — 프로젝트 · 견적 줄 두 단계를 05 `PickDialog`로 한 번에 하나만 연다.
 // 줄마다 고를 수 있음 · 이유 · 남은 실행가는 서버가 정해 보낸다(이 파일은 셈하지 않는다). `mode`는 부른 폼 — `purchase`(06-08)는 줄 단계만
-// 구매 요청 액션을 부르고(온라인구매 협력사 줄만 고를 수 있음 · 문 가르기) 프로젝트 단계는 카드 모드와 같다. 견적 외 비용 3차는 카드 모드만.
+// 구매 요청 액션을 부르고(온라인구매 협력사 줄만 고를 수 있음 · 문 가르기) 프로젝트 단계는 카드 모드와 같다. 다음 한 수 3차는 카드 모드 `견적 외 비용으로` · 구매 요청 모드(06-14) `팀 비용으로`.
 // 줄 0 · 고를 수 있는 줄 0의 다음 한 수는 `견적 외 비용으로`(UI-SPEC 「Empty — 연결 고르기 목록」) — 라디오를 바꾸는 일은 폼 몫.
 
 export type PickedProject = { id: string; label: string };
@@ -108,7 +108,7 @@ export function LinkPicker({
         primaryLabel="이 줄로"
         failedLine="견적 줄 불러오지 못함"
         search={searchLines}
-        emptyNextStep={mode === "card" ? { label: "견적 외 비용으로", onSelect: onOutOfQuote } : undefined}
+        emptyNextStep={{ label: mode === "card" ? "견적 외 비용으로" : "팀 비용으로", onSelect: onOutOfQuote }}
         onPick={(row) => {
           const line = knownLines.current.get(row.id);
           if (!line) return false;

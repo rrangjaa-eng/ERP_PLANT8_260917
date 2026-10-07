@@ -1,4 +1,5 @@
 import { requireSession } from "@/lib/viewer";
+import { countOpenPurchaseRequests } from "@/domain/purchase-requests";
 import { seoulToday } from "@/lib/dates";
 import {
   cardUsageFormDefaults,
@@ -205,6 +206,9 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
   }
 
   const newAction = { label: "카드 사용 등록", href: newHref };
+  // 06-14(SP-4): 하위 목록 링크 `구매 요청 {N}` — 필터 줄 끝(없으면 0건 빈 화면의 행동). 구매 요청은 카드가 없는 직원도 하므로 이 길이 막히면 안 된다.
+  const openPurchaseCount = list ? await countOpenPurchaseRequests(viewer, today) : 0;
+  const purchasesLink = { label: openPurchaseCount > 0 ? `구매 요청 ${openPurchaseCount}` : "구매 요청", href: "/cards/purchases" };
   // 쓸 카드 0장 · 필터 없는 빈 목록 — 고를 것이 없는 필터 줄은 세우지 않는다(할 수 없는 선택지는 숨김).
   const nothingToFilter = cards.length === 0 && rows.length === 0 && !filtered;
   const filters = list && !nothingToFilter ? (
@@ -217,6 +221,7 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
       link={link ?? ""}
       proxyOnly={proxyOnly}
       registrationFilter={list.registrationFilter}
+      purchasesLink={purchasesLink}
     />
   ) : undefined;
 
@@ -244,7 +249,7 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
       <>
         <CardUsageUndoLine />
         {cards.length === 0 ? (
-          <ListEmpty message="쓸 수 있는 법인카드가 없습니다 · 카드 등록은 관리자" />
+          <ListEmpty message="쓸 수 있는 법인카드가 없습니다 · 카드 등록은 관리자" action={purchasesLink} />
         ) : (
           <ListEmpty message="이번 달 카드 사용이 없습니다" action={newAction} />
         )}

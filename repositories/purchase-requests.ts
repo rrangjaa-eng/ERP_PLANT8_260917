@@ -1,4 +1,5 @@
 import { and, desc, eq, gte, isNull, lt, or, sql, type SQL } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { corpCardUsages, projects, purchaseRequests, quoteLines, quoteRevisions, users, vendors } from "@/db/schema";
@@ -56,6 +57,8 @@ export type PurchaseRequestFilter = {
 
 export type PurchaseRequestListRow = PurchaseRequestRow & {
   requestedByName: string;
+  /** 06-14 취소한 사람 이름 — 취소 행 2행 `취소 {MM-DD} · {사람}`. 취소 아니면 null. */
+  cancelledByName: string | null;
   projectName: string | null;
   lineItemName: string | null;
   lineRevisionId: string | null;
@@ -69,6 +72,14 @@ function scopeCondition(scope: PurchaseRequestScope): SQL | undefined {
   return or(eq(purchaseRequests.requestedBy, scope.userId), eq(projects.pmUserId, scope.userId));
 }
 
+function filterConditions(scope: PurchaseRequestScope, filter: PurchaseRequestFilter): (SQL | undefined)[] {
+  const conditions: (SQL | undefined)[] = [scopeCondition(scope)];
+  if (filter.status) conditions.push(eq(purchaseRequests.status, filter.status));
+  if (filter.from) conditions.push(gte(purchaseRequests.createdAt, filter.from));
+  if (filter.to) conditions.push(lt(purchaseRequests.createdAt, filter.to));
+  return conditions;
+}
+
 // 최근 요청이 첫 줄(created_at 내림차순).
 export async function listPurchaseRequestRows(
   viewer: Viewer,
@@ -76,20 +87,18 @@ export async function listPurchaseRequestRows(
   tx: DbOrTx = db,
 ): Promise<PurchaseRequestListRow[]> {
   void viewer;
-  const { filter } = input;
-  const conditions: (SQL | undefined)[] = [scopeCondition(input.scope)];
-  if (filter.status) conditions.push(eq(purchaseRequests.status, filter.status));
-  if (filter.from) conditions.push(gte(purchaseRequests.createdAt, filter.from));
-  if (filter.to) conditions.push(lt(purchaseRequests.createdAt, filter.to));
+  const conditions = filterConditions(input.scope, input.filter);
   // 06-12: 방금 구매 완료한 요청은 상태 보기와 무관하게 제자리에 남긴다(제자리 결과 — S13 성공 뒤).
   // 조건이 하나도 없으면(전사 범위 `전체` 보기) 이미 전부 나온다 — `or(undefined, …)`가 그 한 행으로 줄이지 않게 갈래를 타지 않는다(검토 I-1).
   const base = and(...conditions);
   const where = input.keepId && base ? or(base, and(scopeCondition(input.scope), eq(purchaseRequests.id, input.keepId))) : base;
 
+  const cancellers = alias(users, "cancellers");
   const rows = await tx
     .select({
       request: purchaseRequests,
       requestedByName: users.name,
+      cancelledByName: cancellers.name,
       projectName: projects.name,
       lineItemName: quoteLines.itemName,
       lineRevisionId: quoteLines.revisionId,
@@ -98,6 +107,7 @@ export async function listPurchaseRequestRows(
     })
     .from(purchaseRequests)
     .innerJoin(users, eq(users.id, purchaseRequests.requestedBy))
+    .leftJoin(cancellers, eq(cancellers.id, purchaseRequests.cancelledBy))
     .leftJoin(projects, eq(projects.id, purchaseRequests.projectId))
     .leftJoin(quoteLines, eq(quoteLines.id, purchaseRequests.quoteLineId))
     .leftJoin(corpCardUsages, and(eq(corpCardUsages.purchaseRequestId, purchaseRequests.id), isNull(corpCardUsages.archivedAt)))
@@ -107,12 +117,28 @@ export async function listPurchaseRequestRows(
   return rows.map((row) => ({
     ...row.request,
     requestedByName: row.requestedByName,
+    cancelledByName: row.cancelledByName,
     projectName: row.projectName,
     lineItemName: row.lineItemName,
     lineRevisionId: row.lineRevisionId,
     usageUsedOn: row.usageUsedOn,
     usageTotalKrw: row.usageTotalKrw,
   }));
+}
+
+// 06-14 합계 줄 · 열린 건수 — 목록과 같은 범위 · 필터 조건에서 예상 금액(원화 환산)만 읽는다(쪽 · keepId와 무관).
+export async function listPurchaseRequestEstimates(
+  viewer: Viewer,
+  input: { scope: PurchaseRequestScope; filter: PurchaseRequestFilter },
+  tx: DbOrTx = db,
+): Promise<number[]> {
+  void viewer;
+  const rows = await tx
+    .select({ estimateKrw: purchaseRequests.estimateAmountKrw })
+    .from(purchaseRequests)
+    .leftJoin(projects, eq(projects.id, purchaseRequests.projectId))
+    .where(and(...filterConditions(input.scope, input.filter)));
+  return rows.map((row) => row.estimateKrw);
 }
 
 // ── 06-12 구매 완료 ──────────────────────────────────────────────────────────
@@ -142,6 +168,34 @@ export async function markPurchaseRequestPurchased(
     .update(purchaseRequests)
     .set({ status: "purchased", completedBy: input.completedBy, completedAt: new Date(), version: sql`${purchaseRequests.version} + 1` })
     .where(and(eq(purchaseRequests.id, input.id), eq(purchaseRequests.version, input.version), eq(purchaseRequests.status, "requested")))
+    .returning({ version: purchaseRequests.version });
+  return row?.version ?? null;
+}
+
+// ── 06-14 취소 · 되돌리기 ────────────────────────────────────────────────────
+
+// 취소 UPDATE — `신청됨` · version 일치일 때만(06-27 `_cancelled_check` — 취소한 사람 · 시각이 함께 선다). 바뀌면 새 version, 아니면 null.
+export async function markPurchaseRequestCancelled(
+  viewer: Viewer,
+  input: { id: string; version: number; cancelledBy: string; reason: string | null },
+  tx: DbOrTx,
+): Promise<number | null> {
+  void viewer;
+  const [row] = await tx
+    .update(purchaseRequests)
+    .set({ status: "cancelled", cancelledBy: input.cancelledBy, cancelledAt: new Date(), cancelReason: input.reason, version: sql`${purchaseRequests.version} + 1` })
+    .where(and(eq(purchaseRequests.id, input.id), eq(purchaseRequests.version, input.version), eq(purchaseRequests.status, "requested")))
+    .returning({ version: purchaseRequests.version });
+  return row?.version ?? null;
+}
+
+// 되돌리기 UPDATE — `취소` · version 일치일 때만 `신청됨`으로(취소 칸 셋을 비운다 — `_cancelled_check`). 번호는 그대로.
+export async function markPurchaseRequestRequested(viewer: Viewer, input: { id: string; version: number }, tx: DbOrTx): Promise<number | null> {
+  void viewer;
+  const [row] = await tx
+    .update(purchaseRequests)
+    .set({ status: "requested", cancelledBy: null, cancelledAt: null, cancelReason: null, version: sql`${purchaseRequests.version} + 1` })
+    .where(and(eq(purchaseRequests.id, input.id), eq(purchaseRequests.version, input.version), eq(purchaseRequests.status, "cancelled")))
     .returning({ version: purchaseRequests.version });
   return row?.version ?? null;
 }

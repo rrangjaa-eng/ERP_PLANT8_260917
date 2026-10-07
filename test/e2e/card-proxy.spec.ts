@@ -512,6 +512,8 @@ test.describe("카드 사용 삭제 · 수정 — DOM 감사 반영 (06-09)", ()
     const deleted = await actionBody(() => remove.click());
     await expect(undoLine(page)).toHaveText(/^카드 사용 삭제됨\s*되돌리기/);
     await expect(page.locator("main")).not.toContainText("123,457");
+    // 삭제의 새로 고침이 끝나 행이 빠진 뒤에 되돌린다 — 그 전에 누르면 행이 DOM에서 한 번도 사라지지 않아 되살아난 행의 `autoFocus`가 일어날 수 없다.
+    await expect(remove).toHaveCount(0);
     const undo = page.getByRole("button", { name: "되돌리기" });
     const undone = await actionBody(() => undo.click());
     const restored = page.getByRole("button", { name: new RegExp(`${fx.merchant} 삭제$`) });

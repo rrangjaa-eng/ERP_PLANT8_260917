@@ -37,3 +37,19 @@ registerAction({
   action: "write",
   dtoName: null,
 });
+
+// 06-14 요청 취소 · 되돌리기 — 문은 메뉴 권한이 아니라 요청자 본인 또는 구매 권한자(domain `precheckPurchaseCancel` · `precheckPurchaseCancelUndo`가 다시 본다).
+// 신청과 같은 입구(프로젝트 보기)로 등록한다 — 요청자는 구매 요청 메뉴 권한 없이 자기 요청을 지운다.
+registerAction({
+  name: "cancelPurchaseRequestAction",
+  menu: "projects",
+  action: "view",
+  dtoName: null,
+});
+
+registerAction({
+  name: "undoCancelPurchaseRequestAction",
+  menu: "projects",
+  action: "view",
+  dtoName: null,
+});

@@ -115,7 +115,8 @@ test.describe("구매 요청 신청 (06-08)", () => {
     await expect(sheet.getByText(target.onlineItem, { exact: true })).toBeVisible();
 
     // 뒤 목록 첫 줄 — 번호 · 상태 `신청됨` · 링크 URL 그대로.
-    const firstRow = page.getByRole("table").getByRole("row").nth(1);
+    // 첫 행은 요청일 주 그룹 머리(06-14)라 데이터 첫 행은 둘째.
+    const firstRow = page.getByRole("table").getByRole("row").nth(2);
     await expect(firstRow.getByText(number, { exact: true })).toHaveCount(1);
     await expect(firstRow.getByText("신청됨", { exact: true })).toHaveCount(1);
     await expect(firstRow.getByRole("link", { name: "현수막 3장 링크 열기" })).toHaveAttribute("href", url);
@@ -153,8 +154,10 @@ test.describe("구매 요청 신청 (06-08)", () => {
     const sheet = panel(page);
     await expect(sheet).toBeVisible();
     await waitForHydration(sheet.getByLabel("품목"));
+    // 목록 1차로 들어오면 `팀 비용`이 골라져 있다(06-14) — 견적 줄 연결로 바꾼다.
+    await expect(sheet.getByRole("radio", { name: "팀 비용" })).toBeChecked();
+    await sheet.getByRole("radio", { name: "견적 줄" }).check();
     await expect(sheet.getByRole("radio", { name: "견적 줄" })).toBeChecked();
-    await expect(sheet.getByRole("radio", { name: "팀 비용" })).toHaveCount(0);
     await sheet.getByRole("button", { name: "프로젝트 바꾸기" }).click();
     const projects = page.getByRole("dialog", { name: "프로젝트 고르기" });
     await projects.getByRole("textbox", { name: "프로젝트 번호 · 이름 · 클라이언트 검색" }).fill(target.projectName);

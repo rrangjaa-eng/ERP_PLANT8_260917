@@ -42,20 +42,29 @@ key-files:
     - test/integration/purchase-requests.test.ts
     - test/unit/app/line-status-word.test.ts
     - test/unit/app/restore-edits.test.ts
+    - test/integration/corp-card-usages.test.ts
+    - test/integration/dual-link-concurrency.test.ts
+    - test/unit/domain/rules-card-dual-link.test.ts
+    - test/e2e/quote-line-status.spec.ts
+    - docs/design/checks/2026-10-07-06-13-review-fixes.md
 decisions:
   - "지급 잠금은 05 expense.submit 앞에서 판정(뒤면 05 ④ 문구가 먼저 선다) — 번호 문서는 loadSubmitFacts의 05 numbered 그대로"
   - "06-07 I-2 이중 연결 호출과 이 플랜의 잠금 뒤 판정을 submitExpense에서 한 번으로 합침"
   - "rowActionBlock은 권한 · 설정을 읽지 않는 순수 함수, 문(branch)은 호출자가 resolveLineDoor로 넘김"
   - "일괄 저장 응답에도 카드 쪽 사실을 싣는다(ledger가 커밋 뒤 lineCardSideFacts — 페이지와 같은 실패 가두기)"
+  - "검토 I-2(오케스트레이터 결정 — 추천안): 카드 쪽 이중 연결 거부 문구 = UI-SPEC S14 `지출결의 {번호} 연결됨 · 카드 사용은 다른 줄`, rowActionBlock purchase 갈래는 cardDualLinkDecision(side card)을 부른다"
+  - "감사 D-2: 다음 한 수 `카드 사용 등록`은 오늘 쓸 카드가 있는 사람에게만(listLineDoors가 cardOptionsForUsage로 거름 — rowActionBlock은 순수 그대로)"
+  - "감사 D-1: 막힌 줄은 행동 · 이유 · 다음 한 수를 세로로 쌓고 이유는 열 폭 계산에서 뺀다(contain: inline-size) — 행동 열 폭 = 막힘 없는 화면"
+  - "감사 D-3: 카드 쪽으로 막힌 줄의 Ctrl+E = 다음 한 수"
 metrics:
   duration: "약 65분(Task 3 · SUMMARY 재개분 포함 02:22–03:27 UTC 커밋 기준)"
   completed: 2026-10-07
-commits: 6
+commits: 10
 plan_head_before: 854e801d57d7fbb2bbb809ebe3bd3fba4834af69
 actuals:
   tokens: 32625
   tasks: 3
-  commits: 6
+  commits: 10
 ---
 
 # Phase 6 Plan 13: 견적 줄 상태 · 지출결의 쪽 세 게이트 · S14 문 가르기 Summary
@@ -92,8 +101,8 @@ Tracer 게이트(Task 1 뒤): `<verify>` 재실행 녹색 뒤 확장.
 | 문(branch) | 05 문 상태 | 연결 | 행 행동 | 막힘 이유 · 다음 한 수 |
 |---|---|---|---|---|
 | purchase | open | 지출결의 없음 | `구매 요청` → `/cards/purchases?new=1&line={id}` · Ctrl+E | 없음 |
-| purchase | open · closed | 지출결의 있음 | `구매 요청` 비활성 | `지출결의 {번호} 연결됨 · 카드 사용은 다른 줄` |
-| expense | open | 카드 사용 · `신청됨` 구매 요청 | `지출결의 올리기` 비활성 | `카드 사용 {N}건[ · 구매 요청 {M}건] 연결됨 · 지출결의는 다른 줄` + 3차 `카드 사용 등록` → `/cards?new=1&line={id}` |
+| purchase | open · closed | 지출결의 있음 | `구매 요청` 비활성 | `지출결의 {번호} 연결됨 · 카드 사용은 다른 줄`(= `cardDualLinkDecision` side card — 서버 거부와 같은 함수 · 검토 I-2) |
+| expense | open | 카드 사용 · `신청됨` 구매 요청 | `지출결의 올리기` 비활성 | `카드 사용 {N}건[ · 구매 요청 {M}건] 연결됨 · 지출결의는 다른 줄` + 3차 `카드 사용 등록` → `/cards?new=1&line={id}`(오늘 쓸 카드가 없으면 3차 없음 — listLineDoors가 거름 · 감사 D-2) · PC `Ctrl+E` = 3차(감사 D-3) |
 | expense | closed | 지급 완료 문서가 닫음 | 05 `지출결의 열기` | `지급 완료 {번호} · 새 지출결의 없음` |
 | expense | open · closed | 그 밖 | 05 그대로 | 없음 |
 | 아무거나 | no_vendor · none | — | 05 그대로 | 없음 |
@@ -124,9 +133,11 @@ Tracer 게이트(Task 1 뒤): `<verify>` 재실행 녹색 뒤 확장.
 | `/projects/{id}` PC 1280 · 1024 | 상태 열 낱말(8값) · 2행 `증빙 {N}일 경과` | 선결제 지출결의(증빙 0) 결재 통과 · 지급일 = 오늘 − (기한 14 + N) |
 | `/projects/{id}` PC 1280 · 1024 | 상태 2행 `실행가 초과 {액}` · 둘 다면 ` · ` 한 줄 | 카드 사용 공급가 합 > 줄 실행가(실행가를 내려 저장) |
 | `/projects/{id}` PC 1280 | 행 행동 `구매 요청`(링크) · 힌트 줄 `지출결의·구매 요청 Ctrl+E` | 설정 `purchase.online_vendor_name` = 그 줄 거래처 이름 |
-| `/projects/{id}` PC 1280 | `지출결의 올리기` 비활성 + 이유(long-text backstop) + 3차 `카드 사용 등록` | 지출결의 없는 줄에 카드 사용 2건 |
+| `/projects/{id}` PC 1280 · 1024 · 768 | (검토 반영) 막힌 줄 세로 쌓기 — `지출결의 올리기` 비활성 / 이유(열 폭 안 줄바꿈) / 3차 `카드 사용 등록` · 행동 열 폭 = 막힘 없는 화면 · 768 가로 넘침 0 · 막힌 줄 높이 104~143px | 지출결의 없는 줄에 카드 사용 2건(+ 긴 항목명 줄) |
+| `/projects/{id}` PC 1280 (카드 없는 계정) | (검토 반영) 막힌 줄에 3차 `카드 사용 등록` 없음 · 이유만 | `cards` 자격 카드가 없는 계정(쓰기 권한은 있음) · 위 데이터 |
 | `/projects/{id}` PC 1280 | `지출결의 열기` + `지급 완료 {번호} · 새 지출결의 없음` | 비분할 지출결의 결재 통과 · 지급 완료 |
-| `/projects/{id}` PC 1280 | `구매 요청` 비활성 + `지출결의 {번호} 연결됨 · 카드 사용은 다른 줄` | 온라인구매 줄에 지출결의 제출 뒤 설정을 그 거래처로 |
+| `/projects/{id}` PC 1280 · 768 | `구매 요청` 비활성 / 아래 `지출결의 {번호} 연결됨 · 카드 사용은 다른 줄`(검토 반영 — 세로 쌓기) | 온라인구매 줄에 지출결의 제출 뒤 설정을 그 거래처로 |
+| `/cards?new=1` · `/cards/purchases?new=1` 패널 | (검토 반영) 서버 이중 연결 거부 문구 `지출결의 {번호} 연결됨 · 카드 사용은 다른 줄`(옛 `… · 다른 줄 고르기`) | 지출결의가 이어진 견적 줄을 골라 저장 |
 | `/projects/{id}` 폰 375 · 320 행 시트 | 시트 문서 행동 자리 — 위 갈래 같은 값(비활성 버튼 + 이유 + 다음 한 수) | 위와 같음 · overflow backstop `구매 요청 중`(6자) |
 | `/projects/{id}` PC 1280 확인 창 | 카드 붙잡은 줄 Delete → `견적 줄 취소` 확인 창 | 수주 중(고객 승인 전) 프로젝트 줄에 카드 사용 |
 | `/cards?new=1&line={id}` | `카드 사용 등록`에서 들어온 패널(연결 `견적 줄` · 그 줄) | 위 카드 2건 줄 |
@@ -137,13 +148,37 @@ Tracer 게이트(Task 1 뒤): `<verify>` 재실행 녹색 뒤 확장.
 
 ## 사용자 질문 후보
 
-1. 온라인구매 줄의 행 이유 `지출결의 {번호} 연결됨 · 카드 사용은 다른 줄`(UI-SPEC S14)과 그 줄로 구매 요청 · 카드 사용을 낼 때 서버 거부 `지출결의 {번호} 연결됨 · 다른 줄 고르기`(06-07 카드 쪽 게이트)가 같은 사실을 다른 문장으로 말한다 — UI-SPEC 문구 그대로 두고 진행. 하나로 맞출지.
+1. (정정 — 검토 I-2 결정, 추천안 진행) 온라인구매 줄의 행 이유와 카드 쪽 서버 거부를 UI-SPEC S14 `지출결의 {번호} 연결됨 · 카드 사용은 다른 줄` 하나로 맞췄다(서버 `cardDualLinkDecision` side card 문구를 바꾸고, 화면 이유는 같은 함수를 부른다). 남은 확인: UI-SPEC 「막힘 — 카드 사용 폼」 행(S9 · 서버 이중 연결 거부 `… · 다른 줄 고르기`)은 아직 옛 문구다 — UI-SPEC 갱신은 오케스트레이터 몫. 다른 안: `· 다른 줄 고르기`로 통일(S14 문구를 바꿈).
 2. 카드 붙잡은 줄의 삭제 확인 창 결과 줄이 05 문구 `견적가 0 · 이력과 연결된 지출결의는 그대로`를 그대로 쓴다(UI-SPEC 「확인 창도 같은 꼴」). 카드 사용만 붙은 줄에도 「지출결의」라고 말한다 — 카드용 문구를 둘지.
 3. N-3 · Q-G 밤 위임(추천안으로 진행, 아침 확인): 카드 쪽 연결 줄의 삭제 = 취소, 실행가 내리기는 막지 않고 2행 `실행가 초과` 표시만.
 4. 고객 승인 게이트(`tableGateReason`)는 지출결의 문만 막고 `구매 요청` 문은 막지 않는다(260907은 둘 다 — 06-08 #5와 같은 질문).
 5. 막힌 `구매 요청`에는 다음 한 수가 없다(UI-SPEC가 카드 쪽 막힘에만 `카드 사용 등록`을 정함) — 그대로 진행.
 6. `prepaidOverdueDays`는 `project.value` 뒤 — 못 보는 계급은 키가 없고 화면은 2행을 그리지 않는다(null과 같게 취급).
 7. 고객 승인된 차수에서는 줄 상태를 바꿀 수 없어(`[상태] 1차 고객 승인됨 · 고치려면 새 차수`) 카드 붙잡은 줄의 `취소`도 새 차수에서만 된다(05 연결 줄과 같음) — E2E는 수주 중 프로젝트로 단언.
+
+## 검토 반영 (06-13-review.md · 06-13-dom-audit.md)
+
+커밋: db4be94 (test — RED) · 852857d (fix — 서버) · 90964b7 (fix — 화면).
+
+| 지적 | 처리 | 테스트 · 확인 |
+|---|---|---|
+| DOM D-1(높음) 막힘 이유 nowrap → 행동 열 350~419px · 768 넘침 · 항목 열 눌림 | 막힌 줄을 행동 / 이유 / 다음 한 수 세로로 쌓음. 이유 `.doorReason`(`--status-danger` · `--text-aux` · `contain: inline-size` · `keep-all`)은 열 폭 계산에 들지 않고 행동이 정한 폭 안에서 줄바꿈. 막힌 행동은 `RowAction busy`(aria-disabled · 누름 무시) + `describedBy`에 이유 글자 id — 공유 `RowAction`은 고치지 않음 | E2E 「[감사 D-1]」 RED(1280 항목 91 < 행동 419) → GREEN: 1280 · 1024 · 768 넘침 0, 행동 열 137/138 · 132/132 · 115/115(막힘 없는 화면과 같음), 항목 열 194→190 · 156→152 · 185→176(상태 낱말 44→56만큼). 대가: 막힌 줄 높이 104px(1280 · 1024) · 143px(768) — 이유가 91~113px 안에서 3~5줄 |
+| DOM D-2(중간) 카드 못 쓰는 사람에게 `카드 사용 등록` | `listLineDoors`가 `cardOptionsForUsage(viewer, 오늘)`가 비면 `blocked.next`를 뺌(카드 페이지가 패널을 여는 조건과 같은 함수, 메뉴 권한이 아니라 카드 자격 — 06-05). corp-card-usages가 domain/expenses를 가져다 쓰므로 런타임 순환을 피해 `await import`(evidence-reviews → payments 선례), 다음 한 수가 있는 줄이 있을 때만 한 번 부름 | 통합 「[감사 D-2]」 RED → GREEN · import-cycles 단위 녹색 |
+| DOM D-3(낮음) 막힌 줄 다음 한 수에 키보드 길 없음 | 카드 쪽으로 막힌 줄(`open` · `blocked.next` · 표 게이트 없음)의 `Ctrl+E` → `blocked.next.href`. Enter(셀 편집) · 여러 줄 Ctrl+E(막힌 줄은 빠짐) · 미저장 편집 가드는 그대로 | E2E 「[감사 D-3]」 RED(URL 그대로) → GREEN |
+| 검토 I-1 지급 취소(D-606) 거르기 테스트 없음 | 통합 「[검토 I-1 · D-606]」: 지급 → 지급 취소 → 줄 상태 `active` · D-66 이유에 `지급 완료` 없음 · 행 막힘 없음 · B 제출 = 05 ④ 문구 | 돌연변이(repositories/quote-line-links.ts:190 `isNull(cancelledAt)` 삭제) → RED(`paid` ≠ `active`), 되돌림 후 녹색 |
+| 검토 I-2 온라인구매 줄 이유 ≠ 서버 거부 | 결정(추천안): 서버 문구를 S14 `· 카드 사용은 다른 줄`로, `rowActionBlock` purchase 갈래가 `cardDualLinkDecision({ side: "card" })`를 부름(조건 사본 제거). 기존 기대값 정정: 06-07 · 06-08 통합(corp-card-usages · dual-link-concurrency · purchase-requests) · 단위 rules-card-dual-link | 통합 「[검토 I-2]」 RED(`… · 다른 줄 고르기`) → GREEN(카드 등록 거부 문구 = 행 이유) |
+| 사소 S-1 줄 id 충돌 검사 생존(M7) | 통합 「[검토 S-1]」: 프로젝트 행을 다른 연결이 쥔 사이 초안의 줄을 바꿈 → `ExpenseConflictError` · 번호 없음 | 돌연변이(domain/expenses/index.ts 충돌 검사 삭제) → RED(`남은 실행가 … 넘음`으로 다른 줄 판정), 되돌림 후 녹색 |
+| 사소 S-2 저장 tx 안 문서마다 `hasEvidence` | 넘김 — 고치려면 hasEvidence에 여러 주인 입력 판이 필요(C5 「hasEvidence만 부른다」 계약 변경, 국소 아님). 문서가 많은 프로젝트가 나오면 06 후속 | — |
+| 사소 S-3 분할 줄 지급 잠금 번호 | 그대로 — 문구의 번호는 실제로 지급된 회차(마지막 *지급된* 회차)라 사실과 맞고 거부 결과는 05와 같다. 제안 없음 | — |
+| 사소 S-4 지급 tx 줄 id 재확인 없음 | 그대로 — 결재 통과 문서는 줄을 바꾸는 입구가 없다(검토도 「실제 위험 없음」 추정). 바꾸려면 지급 쪽에 제출과 같은 충돌 검사 한 줄 — 06-15(일괄 지급) 검토 때 함께 보기를 권함 | — |
+| 사소 S-5 TDD 순서 | 이번 반영은 RED 먼저(커밋 db4be94 — 통합 2 RED · 가드 2는 돌연변이로 RED 확인 · E2E 2 RED 실측) | — |
+| 감사 O-8 E2E 위치자가 S15 행까지 잡음 | `rowOf`를 견적 줄 표(grid `견적 줄`) 안으로 좁힘 | quote-line-status 9 passed |
+
+D-1 E2E 단언 기준 변경: 처음 RED 단언 「항목 열 ≥ 행동 열」은 표의 실제 기준이 아니었다. 첫 수정(두 행동을 nowrap 한 줄 + 아래 이유)에서 행동 열이 두 행동 폭(213px)으로 굳어 여전히 빨갰고(systematic-debugging — 막힘 없는/막힌 화면 열 폭을 실측해 원인 확인), 다음 한 수를 이유 아래 줄로 내리고 이유를 열 폭 계산에서 뺀 뒤 행동 열이 막힘 없는 화면과 같아졌다. 단언은 같은 프로젝트의 막힘 없는 화면 폭을 기준으로 바꿨다(행동 열 ≤ 기준 + 1, 항목 열 ≥ 기준 − 상태 열 증가분 − 1). 원래 코드에서 이 단언은 행동 419 > 138로 빨갛다(감사 실측 · 첫 RED 실행).
+
+관찰(고치지 않음 — 06-13 밖 또는 사용자 결정): 고객 승인 게이트가 `구매 요청`을 막지 않는 점(질문 4 · 사용자 결정 대상) · 취소된 줄에도 2행 `실행가 초과`가 남음(감사 O-5) · 폰 행 시트 `상태` 항목에 2행 없음(O-3) · 300ms 진행 바가 앱에 없음(O-6) · S15 빈 섹션 `카드 사용 등록`도 카드 없는 사람에게 선다(D-2와 같은 꼴, card-usage-section — 06-09/S15 소유) · 패널 진입(entry) 모드의 `purchase-request-form` · `card-usage-form`은 서버 거부에서 ` · 다른 줄 고르기` 꼬리만 지우므로 이중 연결 거부는 새 문구 전체가 보인다(문구상 맞음).
+
+검증(이번 반영, 전부 erp_e0613_test · 무거운 명령 flock): 통합 7 files(quote-line-links · purchase-requests · corp-card-usages · dual-link-concurrency · expense-approval-lifecycle · expense-close · expense-submit-concurrency) 191 passed / 0 failed · 단위 5 files(rules-card-dual-link · import-cycles · rules-line-paid-lock · line-status-word · restore-edits) 57 passed · lint rc=0 · typecheck rc=0 · E2E `CI=true` quote-line-status · card-usage · purchase-requests 38 passed / 0 failed / 18 skipped(visual 프로젝트). 임시 `turbopack.root`는 되돌림(커밋 안 함).
 
 ## Deviations from Plan
 
@@ -187,7 +222,11 @@ Tracer 게이트(Task 1 뒤): `<verify>` 재실행 녹색 뒤 확장.
 ## 넘김
 
 - 독립 DOM 감사(A4 — 별도 에이전트, `CI=true`, backstop loading · overflow · long-text) → `/design-review`(+ codex-design-review.sh) → `/qa`: 오케스트레이터 몫(위 「캡처·GPT 검사 대상 경로」).
-- 06-18: `rowActionBlock`을 트랜잭션 안에서 같은 입력으로 부른다(links = `findLineLinks(…, tx)`, paid = `findExpenseDocFacts(…, tx)`).
+- 06-18 계약(검토 §3):
+  1. `rowActionBlock` 입력(`findLineLinks(…, tx)` · `findExpenseDocFacts(…, tx)` · 문 상태)은 `lockProjectForWrite` → `lockQuoteLines` **뒤에** 같은 `tx`로 읽는다(`listLineDoors`는 잠금 없이 읽는 화면용이다).
+  2. 거부 판단은 등록 게이트(`card.dual-link-block` · `expense.line-paid-lock` · `purchase.line-door`)가 맡는다 — `rowActionBlock`은 화면 이유를 만드는 함수다.
+  3. purchase 갈래는 판정에 쓰지 않는다(이유 글자만 — 서버는 `card.dual-link-block` side card가 판정한다).
+- UI-SPEC: 「막힘 — 카드 사용 폼」 행의 서버 이중 연결 거부 문구를 `지출결의 {번호} 연결됨 · 카드 사용은 다른 줄`로 갱신(검토 I-2 결정 반영) — 오케스트레이터 몫.
 - 06-15: 일괄 지급은 `completeExpensePayment`를 부르므로 줄 → 문서 잠금 순서를 그대로 따른다.
 
 ## Self-Check: PASSED

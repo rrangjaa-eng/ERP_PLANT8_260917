@@ -453,6 +453,78 @@ test.describe("구매 완료 (06-12)", () => {
     await page.context().close();
   });
 
+  test("[06-12 검토 I-1] `전체` 보기에서 구매 완료 → 처리한 행 · 다른 행이 함께 남고 포커스 = 다음 `신청됨` 행", async ({ browser, baseURL }) => {
+    const requester = await makeRequester();
+    const target = await seedTarget(requester);
+    const first = await requestOn(requester, target.onlineLineId, `먼저-${randomUUID().slice(0, 6)}`, 55_000);
+    const number = await requestOn(requester, target.onlineLineId, `나중-${randomUUID().slice(0, 6)}`, 110_000);
+    const buyer = await makePurchaser();
+    const suffix = randomUUID().slice(0, 6);
+    await createCorpCard(SYSTEM_VIEWER, { issuer: `공용사-${suffix}`, numberLast4: "4405", label: `공용카드-${suffix}`, kind: "shared" });
+    const page = await loginPage(browser, baseURL, buyer);
+    await page.goto(`/cards/purchases?status=${encodeURIComponent("전체")}`);
+    const open = page.getByRole("link", { name: `${number} 구매 완료`, exact: true });
+    await waitForHydration(open);
+    await open.click();
+    const sheet = completePanel(page);
+    const total = sheet.getByLabel("결제 합계");
+    await waitForHydration(total);
+    await pickCard(sheet, `공용카드-${suffix} · 공용사-${suffix} 4405`);
+    await total.press("Control+Enter");
+    await expect(sheet).toHaveCount(0);
+    await expect(page).toHaveURL(/done=/);
+    await expect(page.getByRole("row").filter({ hasText: number }).getByText(`카드 사용 ${seoulToday().slice(5)} · 110,000`, { exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: `${first} 구매 완료`, exact: true })).toBeFocused();
+    await page.context().close();
+  });
+
+  test("[06-12 감사 O-2] 결제 합계 칸에서 Enter만 → 구매 완료가 나가지 않는다 · Ctrl+Enter로만 처리", async ({ browser, baseURL }) => {
+    const { page, sheet, total, number } = await openCompletion(browser, baseURL, 110_000);
+    const submitted = page
+      .waitForRequest((request) => request.method() === "POST" && (request.postData() ?? "").includes("corpCardId"), { timeout: 1_500 })
+      .then(
+        () => true,
+        () => false,
+      );
+    await total.press("Enter");
+    expect(await submitted).toBe(false);
+    await expect(sheet).toBeVisible();
+    const [row] = await db.select({ status: purchaseRequests.status }).from(purchaseRequests).where(eq(purchaseRequests.number, number));
+    expect(row?.status).toBe("requested");
+    await total.press("Control+Enter");
+    await expect(sheet).toHaveCount(0);
+    await page.context().close();
+  });
+
+  test("[06-12 감사 D-1] 구매 권한자 폰 320 · 375 — `신청됨` · `전체`(외화 행 포함) 문서 가로 넘침 0 · 행 탭 → 행 시트 `구매 완료` → S13", async ({ browser, baseURL }) => {
+    const requester = await makeRequester();
+    const target = await seedTarget(requester);
+    const krw = await requestOn(requester, target.onlineLineId, `원화-${randomUUID().slice(0, 6)}`, 55_000);
+    const usdInput = { linkKind: "quote_line" as const, lineId: target.onlineLineId, itemName: `외화-${randomUUID().slice(0, 6)}`, linkUrl: null, estimate: { currency: "USD" as const, amount: 100, fxRate: 1350 }, memo: null };
+    await createPurchaseRequest(requester.person.viewer, usdInput, await precheckPurchaseRequest(requester.person.viewer, usdInput));
+    const buyer = await makePurchaser();
+    const page = await loginPage(browser, baseURL, buyer);
+    for (const path of ["/cards/purchases", `/cards/purchases?status=${encodeURIComponent("전체")}`]) {
+      for (const width of [375, 320]) {
+        await page.setViewportSize({ width, height: 800 });
+        await page.goto(path);
+        await expect(page.getByText("USD 100.00", { exact: false }).first()).toBeVisible();
+        const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+        expect(overflow, `scrollWidth 초과 ${path} @${width}`).toBeLessThanOrEqual(0);
+      }
+    }
+    await page.setViewportSize({ width: 375, height: 800 });
+    await page.goto("/cards/purchases");
+    const tap = page.getByRole("button", { name: `${krw} 상세 보기`, exact: true });
+    await waitForHydration(tap);
+    await tap.click();
+    const rowSheet = page.getByRole("dialog").filter({ hasText: krw });
+    await rowSheet.getByRole("link", { name: `${krw} 구매 완료`, exact: true }).click();
+    await expect(completePanel(page)).toBeVisible();
+    await expect(page).toHaveURL(/\?purchase=/);
+    await page.context().close();
+  });
+
   test("[M-5 카드 고치기] 구매 완료 건 수정 → 다른 카드 → 힌트 `구매 완료 때 카드` 한 줄 · 되돌리면 없음 → 다른 카드로 저장 → 닫힘 · 카드 묶음 바뀜", async ({ browser, baseURL }) => {
     const requester = await makeRequester();
     const target = await seedTarget(requester);

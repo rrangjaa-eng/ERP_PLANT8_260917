@@ -704,6 +704,18 @@ describe("completePurchaseRequest — 트레이서(06-12)", () => {
   });
 });
 
+describe("[06-12 검토 I-1] 처리한 행 제자리(`keepId`)", () => {
+  it("전사 범위 `전체` 보기(조건 없음) + keepId → 처리한 행 하나로 줄지 않고 다른 요청도 남는다", async () => {
+    const fx = await purchaseProject();
+    const other = (await request(fx, fx.onlineLine)).id;
+    const created = await request(fx, fx.onlineLine);
+    const buyer = await purchaser();
+    await complete(buyer, await completionInput(created.id, await sharedCard()));
+    const kept = await listPurchaseRequests(buyer, { status: "all", keepId: created.id }, seoulToday());
+    expect(kept.rows.map((row) => row.id)).toEqual(expect.arrayContaining([created.id, other]));
+  });
+});
+
 // ── 06-12 Task 2 — 경합 · 상태 · Q3 고정 갈래 · 완료 프로젝트 · 팀 비용 ─────────────────
 
 // 팀 비용 요청(06-27 표에 직접 — 신청 화면 갈래는 06-08 범위 밖). 요청자 = `requestedBy`.

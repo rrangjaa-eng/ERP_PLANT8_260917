@@ -59,6 +59,7 @@ function toEditView(usage: Partial<CardUsageEditDto>, changeLink: boolean): Card
     usedOn: usage.usedOn,
     merchant: usage.merchantId ? { id: usage.merchantId, name: usage.merchantName ?? "", defaultEvidenceType: null, defaultEvidenceName: null } : null,
     evidenceTypeCode: usage.evidenceTypeCode ?? "",
+    evidenceLabel: usage.evidenceLabel ?? usage.evidenceTypeCode ?? "",
     linkKind: usage.linkKind,
     project: usage.projectId && usage.projectLabel ? { id: usage.projectId, label: usage.projectLabel } : null,
     line:
@@ -66,6 +67,7 @@ function toEditView(usage: Partial<CardUsageEditDto>, changeLink: boolean): Card
         ? { id: usage.lineId, itemName: usage.lineItemName, remainingKrw: usage.lineRemainingKrw ?? null, hint: usage.lineHint ?? null }
         : null,
     usedByUserId: usage.usedByUserId,
+    choosesUser: usage.choosesUser ?? false,
     memo: usage.memo ?? null,
     currency: usage.currency === "USD" ? "USD" : "KRW",
     amount: usage.amount ?? null,
@@ -96,7 +98,7 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
     // 목록 자리 한 줄 + `다시 시도`(UI-SPEC 「Error — 목록 로드」) — 화면의 나머지(머리 · 1차)는 선다.
     console.error(error);
   }
-  const cards = options.cards.flatMap((card) => (card.id && card.label ? [{ id: card.id, label: card.label, proxyHint: card.proxyHint ?? null }] : []));
+  const cards = options.cards.flatMap((card) => (card.id && card.label ? [{ id: card.id, label: card.label, proxyHint: card.proxyHint ?? null, choosesUser: card.choosesUser ?? false }] : []));
   const rows: CardUsageListRowView[] = (list?.rows ?? []).flatMap((row) =>
     row.id && row.cardId && row.cardLabel && row.usedOn && row.linkKind
       ? [

@@ -13,6 +13,7 @@ import {
   previewCardAmounts,
   searchMerchantsForCard,
   updateCardUsage,
+  usedByCandidates,
   type CardUsageInput,
 } from "@/domain/corp-card-usages";
 import { cardUsedOnError, USED_ON_FUTURE } from "@/domain/corp-card-usages/amounts";
@@ -119,6 +120,11 @@ export const previewCardAmountsAction = authedActionClient
       evidenceTypeCode: parsedInput.evidenceTypeCode,
     }),
   );
+
+// 06-09(EXP-07 · Q5): 대리 등록 · 팀 비용의 `사용한 사람` 후보 — 사용일 기준. 권한(cards.proxy write)은 domain이 본다.
+export const usedByCandidatesAction = authedActionClient
+  .schema(z.object({ cardId: z.uuid(), usedOn: usedOnSchema }))
+  .action(async ({ parsedInput, ctx }) => usedByCandidates(ctx.viewer, parsedInput));
 
 export const searchMerchantsAction = authedActionClient
   .schema(z.object({ query: z.string().max(100) }))

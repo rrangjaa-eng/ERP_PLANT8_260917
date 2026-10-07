@@ -111,7 +111,7 @@ export type CardUsageInput = {
 /** 트랜잭션 전 사실 — 평범한 객체(06-03 tx 규약). */
 export type CardUsagePre = {
   card: Pick<CorpCardRow, "id" | "kind" | "holderUserId" | "teamId">;
-  /** 06-09 — 남의 개인 · 팀 카드는 `proxy`, 본인 자격 · 공용 카드는 `self`. */
+  /** 06-09 — 사용한 사람이 등록자 본인이면 `self`, 남(남의 개인 카드 소지자 · 고른 사람)이면 `proxy`(DB self_check와 같은 판정). */
   registeredVia: "self" | "proxy";
   usedByUserId: string;
   /** 팀 비용의 귀속 팀(사용일 소속) — 견적 줄 연결이면 null. */
@@ -136,7 +136,8 @@ function cardLabel(card: Pick<CorpCardRow, "label" | "issuer" | "numberLast4">):
 }
 
 /** `proxyHint` — 남의 개인 · 팀 카드(대리 등록)면 `경영관리 등록 · 카드 소지자 {이름 | 팀}`, 본인 자격 · 공용 카드는 null(서버가 정한다). */
-export type UsageCardOption = { id: string; label: string; kind: CardOwnerKind; proxyHint: string | null };
+/** `choosesUser` — 대리 등록 권한자 · 팀 또는 공용 카드: 팀 비용이면 `사용한 사람` 칸이 선다(EXP-07 · Q5). */
+export type UsageCardOption = { id: string; label: string; kind: CardOwnerKind; proxyHint: string | null; choosesUser: boolean };
 
 type EligibleCard = { card: CorpCardRow; own: boolean };
 
@@ -173,11 +174,18 @@ async function teamIdOn(viewer: Viewer, usedOn: string): Promise<string | null> 
 
 export async function cardOptionsForUsage(viewer: Viewer, usedOn: string): Promise<UsageCardOption[]> {
   const eligible = await eligibleCards(viewer, await teamIdOn(viewer, usedOn));
+  const proxy = await can(viewer, "cards.proxy", "write");
   const others = eligible.filter(({ card, own }) => !own && card.kind !== "shared").map(({ card }) => card);
   const holders = await proxyHolderNames(viewer, others);
   return eligible.map(({ card, own }) => {
     const holder = !own && card.kind !== "shared" ? holders.get(card.id) : undefined;
-    return { id: card.id, label: cardLabel(card), kind: card.kind as CardOwnerKind, proxyHint: holder === undefined ? null : `${PROXY_HINT} ${holder}` };
+    return {
+      id: card.id,
+      label: cardLabel(card),
+      kind: card.kind as CardOwnerKind,
+      proxyHint: holder === undefined ? null : `${PROXY_HINT} ${holder}`,
+      choosesUser: proxy && card.kind !== "personal",
+    };
   });
 }
 
@@ -321,10 +329,11 @@ type LinkPre = Pick<CardUsagePre, "projectId" | "revisionId" | "lineRoom" | "amo
 const NO_LINK: LinkPre = { projectId: null, revisionId: null, lineRoom: null, amountVisible: false, outOfQuote: null };
 
 // 새 연결 판정(새 건 · 수정의 연결 바꾸기 공통) — 견적 줄 · 견적 외 비용은 프로젝트를 고르는 일이라 S10 목록과 같은 문(projects view)을
-// 서버가 다시 본다(I-6). 완료 프로젝트는 누구도 견적 줄로 새로 잇지 않는다(D-47).
+// 서버가 다시 본다(I-6). 완료 프로젝트는 누구도 견적 줄로 새로 잇지 않는다(D-47) — 대리 등록 권한자의 견적 외 비용만 연다(U-4 · Q-B).
 async function precheckLink(
   viewer: Viewer,
   input: CardUsageInput & { linkKind: "quote_line" | "out_of_quote" },
+  proxy: boolean,
 ): Promise<LinkPre> {
   if (!(await can(viewer, "projects", "view"))) throw new ForbiddenError(PROJECTS_VIEW_DENIED);
 
@@ -332,7 +341,9 @@ async function precheckLink(
     // 견적 외 비용(O-8 · X-6): 현재 차수 · 완료 판정 · 항목 기본값은 트랜잭션 전에 — 잠근 뒤 `project.line-edit`가 상태를 다시 본다.
     const project = await findProjectById(viewer, input.projectId);
     if (!project || project.archivedAt) throw new CardUsageRejectedError(LINK_MISSING);
-    if (project.status === "completed") throw new CompletedProjectError(quoteLockReason({ status: project.status }) ?? undefined);
+    // 완료 프로젝트: 권한자만 통과 — 몸통의 `project.line-edit`(D-47 ③)가 잠근 행으로 같은 판정을 다시 한다(X-6).
+    const completedOutOfQuote = project.status === "completed" && proxy;
+    if (project.status === "completed" && !completedOutOfQuote) throw new CompletedProjectError(quoteLockReason({ status: project.status }) ?? undefined);
     const latest = await findLatestQuoteRevision(viewer, project.id);
     if (!latest) throw new CardUsageRejectedError(LINK_MISSING);
     const merchantName = input.merchantVendorId
@@ -344,7 +355,7 @@ async function precheckLink(
       ...NO_LINK,
       projectId: project.id,
       revisionId: latest.id,
-      outOfQuote: { projectId: project.id, revisionId: latest.id, itemName, completedOutOfQuote: false },
+      outOfQuote: { projectId: project.id, revisionId: latest.id, itemName, completedOutOfQuote },
     };
   }
 
@@ -367,13 +378,13 @@ async function precheckLink(
 export async function precheckCardUsage(viewer: Viewer, input: CardUsageInput): Promise<CardUsagePre> {
   assertUsageBasics(input);
 
-  // 카드 자격(U-2 · EXP-16) — 본인 자격 · 공용 카드는 `self`, 남의 개인 · 팀 카드(대리 등록 권한자)는 `proxy`(D-608).
+  // 카드 자격(U-2 · EXP-16) — 남의 개인 · 팀 카드는 대리 등록 권한자만(D-608).
   const card = await findCorpCardById(viewer, input.corpCardId);
   const eligible = card ? (await eligibleCards(viewer, await teamIdOn(viewer, input.usedOn))).find((candidate) => candidate.card.id === card.id) : undefined;
   if (!card || !eligible) throw new ForbiddenError(card?.kind === "shared" ? SHARED_CARD_FORBIDDEN : CARD_NOT_ELIGIBLE);
   const proxy = await can(viewer, "cards.proxy", "write");
-  const registeredVia = eligible.own || card.kind === "shared" ? "self" : "proxy";
   const usedBy = await resolveUsedBy(viewer, { proxy, card, linkKind: input.linkKind, usedOn: input.usedOn, requested: input.usedByUserId ?? null, fallback: viewer.id });
+  const registeredVia = usedBy.usedByUserId === viewer.id ? "self" : "proxy";
 
   const evidenceRule = await checkEvidenceAndMerchant(viewer, input);
   const rates = await loadTaxRates(input.usedOn);
@@ -387,7 +398,7 @@ export async function precheckCardUsage(viewer: Viewer, input: CardUsageInput): 
     capExclude: {},
   } as const;
   if (input.linkKind === "team_cost" || input.linkKind === null) return { ...base, ...NO_LINK };
-  return { ...base, ...(await precheckLink(viewer, input)) };
+  return { ...base, ...(await precheckLink(viewer, input, proxy)) };
 }
 
 // ── 등록(단독 / 외부 tx) ───────────────────────────────────────────────────
@@ -488,6 +499,8 @@ export type CardUsageProjectLock = { projectId: string; revisionId?: string; all
 /** 수정 사전 조회 결과(06-03 tx 규약) — 새 건의 `pre`에 수정 갈래 사실을 더한다. */
 export type CardUsageUpdatePre = Omit<CardUsagePre, "card" | "registeredVia"> & {
   usageId: string;
+  /** 사용한 사람이 바뀌면 같이 맞춘다(DB self_check) — 구매 완료 건은 그대로 `purchase`. */
+  registeredVia: "self" | "proxy" | "purchase";
   /** 연결 그대로(고정 연결 — N-1 · N-2)인가. */
   linkFixed: boolean;
   /** 권한자면 참 — 연결 그대로의 대상 줄 · 연결 바꾸기의 옛 줄 프로젝트 잠금에 쓴다(새로 잇는 견적 줄은 권한자에게도 거짓). */
@@ -531,7 +544,8 @@ export async function precheckCardUsageUpdate(viewer: Viewer, input: CardUsageUp
   const usedBy = await resolveUsedBy(viewer, { proxy, card, linkKind: input.linkKind, usedOn: input.usedOn, requested: input.usedByUserId ?? null, fallback: stored.usedByUserId });
   const evidenceRule = await checkEvidenceAndMerchant(viewer, input);
   const rates = await loadTaxRates(input.usedOn);
-  const base = { usageId: stored.id, usedByUserId: usedBy.usedByUserId, teamId: usedBy.teamId, evidenceRule, rates, capExclude: { usageId: stored.id }, linkFixed, completedAllowed: proxy };
+  const registeredVia: CardUsageUpdatePre["registeredVia"] = stored.registeredVia === "purchase" ? "purchase" : usedBy.usedByUserId === stored.registeredBy ? "self" : "proxy";
+  const base = { usageId: stored.id, registeredVia, usedByUserId: usedBy.usedByUserId, teamId: usedBy.teamId, evidenceRule, rates, capExclude: { usageId: stored.id }, linkFixed, completedAllowed: proxy };
 
   if (linkFixed) {
     if (input.linkKind !== "quote_line" || !stored.projectId) return { ...base, ...NO_LINK, lockProjects: [] };
@@ -546,7 +560,7 @@ export async function precheckCardUsageUpdate(viewer: Viewer, input: CardUsageUp
   }
   const oldLock: CardUsageProjectLock[] = stored.projectId ? [{ projectId: stored.projectId, allowCompleted: proxy }] : [];
   if (input.linkKind === "team_cost" || input.linkKind === null) return { ...base, ...NO_LINK, lockProjects: projectLocks(oldLock) };
-  const link = await precheckLink(viewer, input);
+  const link = await precheckLink(viewer, input, proxy);
   const newLock: CardUsageProjectLock[] =
     link.outOfQuote
       ? [{ projectId: link.outOfQuote.projectId, revisionId: link.outOfQuote.revisionId, allowCompleted: true }]
@@ -630,6 +644,7 @@ export async function updateCardUsage(
           evidenceTypeCode: input.evidenceTypeCode,
           ...link,
           usedByUserId: pre.usedByUserId,
+          registeredVia: pre.registeredVia,
           memo: input.memo ?? null,
         },
       },
@@ -658,8 +673,12 @@ export type CardUsageEditDto = {
   merchantId: string | null;
   merchantName: string | null;
   evidenceTypeCode: string;
+  /** 저장된 증빙 종류 이름 — 지금 카드 옵션에 없을 때의 막힘 문구(UI-SPEC S9). */
+  evidenceLabel: string;
   linkKind: "team_cost" | "quote_line" | "out_of_quote";
   usedByUserId: string;
+  /** 대리 등록 권한자 · 팀 또는 공용 카드 — 팀 비용이면 `사용한 사람` 칸. */
+  choosesUser: boolean;
   memo: string | null;
   currency: string;
   /** 결제 합계 입력값 — 원화면 원화 합계, 외화면 외화 금액. */
@@ -686,8 +705,10 @@ const EDIT_VALUE_KEYS = [
   "merchantId",
   "merchantName",
   "evidenceTypeCode",
+  "evidenceLabel",
   "linkKind",
   "usedByUserId",
+  "choosesUser",
   "memo",
 ] as const;
 
@@ -712,7 +733,8 @@ export async function loadCardUsageForEdit(viewer: Viewer, id: string): Promise<
   if (!UUID_SHAPE.test(id)) return null;
   const stored = await findCardUsageForWrite(viewer, id, { includeArchived: false });
   if (!stored) return null;
-  const rights = rightsOf(stored, viewer, await can(viewer, "cards.proxy", "write"));
+  const proxy = await can(viewer, "cards.proxy", "write");
+  const rights = rightsOf(stored, viewer, proxy);
   if (!rights.edit) return null;
   let line: Pick<CardUsageEditDto, "projectLabel" | "lineRemainingKrw" | "lineHint"> = { projectLabel: null, lineRemainingKrw: null, lineHint: null };
   if (stored.quoteLineId && stored.projectId) {
@@ -746,8 +768,10 @@ export async function loadCardUsageForEdit(viewer: Viewer, id: string): Promise<
     merchantId: stored.merchantVendorId,
     merchantName: stored.merchantName,
     evidenceTypeCode: stored.evidenceTypeCode,
+    evidenceLabel: (await cardEvidenceTypes(viewer)).labels.get(stored.evidenceTypeCode) ?? stored.evidenceTypeCode,
     linkKind: stored.linkKind === "team_cost" ? "team_cost" : stored.lineKind === "out_of_quote" ? "out_of_quote" : "quote_line",
     usedByUserId: stored.usedByUserId,
+    choosesUser: proxy && stored.cardKind !== "personal",
     memo: stored.memo,
     currency: stored.totalCurrency,
     amount: stored.totalForeignAmount === null ? stored.totalAmountKrw : Number(stored.totalForeignAmount),
@@ -782,7 +806,7 @@ export async function previewCardAmounts(
   const teamName = team?.name ?? null;
   const teamAssigned = (await teamIdOn(viewer, input.usedOn)) !== null;
   const usable = await cardOptionsForUsage(viewer, input.usedOn);
-  const cards = await projectMany(viewer, usable.map((card) => ({ id: card.id, label: card.label, proxyHint: card.proxyHint })), CARD_OPTION_SPEC);
+  const cards = await projectMany(viewer, usable.map((card) => ({ id: card.id, label: card.label, proxyHint: card.proxyHint, choosesUser: card.choosesUser })), CARD_OPTION_SPEC);
   if (!input.total || !input.evidenceTypeCode) return { split: null, teamName, teamAssigned, cards };
   const option = (await cardEvidenceTypes(viewer)).options.find((candidate) => candidate.value === input.evidenceTypeCode);
   if (!option) return { split: null, teamName, teamAssigned, cards };
@@ -811,11 +835,11 @@ export async function searchMerchantsForCard(viewer: Viewer, input: { query: str
 
 // ── 폼 선택지 ──────────────────────────────────────────────────────────────
 
-/** `proxyHint` — 06-09 대리 등록 힌트(S9 카드 아래 `Form.Hint`) — 서버가 정한 글자, 없으면 null. */
-export type CardOptionDto = { id: string; label: string; proxyHint: string | null };
+/** `proxyHint` — 06-09 대리 등록 힌트(S9 카드 아래 `Form.Hint`) — 서버가 정한 글자, 없으면 null. `choosesUser` — `사용한 사람` 칸. */
+export type CardOptionDto = { id: string; label: string; proxyHint: string | null; choosesUser: boolean };
 
 const CARD_OPTION_SPEC: DtoSpec<CardOptionDto, CardOptionDto> = {
-  fields: (["id", "label", "proxyHint"] as const).map((key) => ({ key, from: key, infoItem: "card_usage.value" })),
+  fields: (["id", "label", "proxyHint", "choosesUser"] as const).map((key) => ({ key, from: key, infoItem: "card_usage.value" })),
 };
 
 registerDto({ name: "CardUsageCardOptionDto", fields: CARD_OPTION_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
@@ -835,7 +859,7 @@ export async function cardUsageFormOptions(viewer: Viewer, usedOn: string): Prom
   const cards = await cardOptionsForUsage(viewer, usedOn);
   const evidence = await cardEvidenceTypes(viewer);
   return {
-    cards: await projectMany(viewer, cards.map((card) => ({ id: card.id, label: card.label, proxyHint: card.proxyHint })), CARD_OPTION_SPEC),
+    cards: await projectMany(viewer, cards.map((card) => ({ id: card.id, label: card.label, proxyHint: card.proxyHint, choosesUser: card.choosesUser })), CARD_OPTION_SPEC),
     evidenceTypes: evidence.options.map(({ value, label }) => ({ value, label })),
     teamName: team?.name ?? null,
     teamAssigned: (await teamIdOn(viewer, usedOn)) !== null,
@@ -992,7 +1016,7 @@ async function cardChoicesFor(viewer: Viewer, scope: CardUsageScope): Promise<Pa
   const cards = await listCorpCards(viewer, { scope: { rows: "all", includeArchived: false }, includeInactive: true });
   const inScope =
     scope.kind === "all" ? cards : cards.filter((card) => card.holderUserId === scope.userId || (scope.teamId !== null && card.teamId === scope.teamId));
-  return projectMany(viewer, inScope.map((card) => ({ id: card.id, label: cardLabel(card), proxyHint: null })), CARD_OPTION_SPEC);
+  return projectMany(viewer, inScope.map((card) => ({ id: card.id, label: cardLabel(card), proxyHint: null, choosesUser: false })), CARD_OPTION_SPEC);
 }
 
 export async function listCardUsages(viewer: Viewer, filters: CardUsageListFilters, today: string): Promise<CardUsageList> {
@@ -1047,6 +1071,7 @@ export type CardUsageEntry = { lineId?: string | undefined; projectId?: string |
 // 연결(M-4) 우선순위 = 진입 줄(고를 수 있을 때만 · 줄까지) > 진입 프로젝트(고를 수 있을 때만) > 직전 등록의 종류 + 프로젝트
 // (지금 고를 수 없으면 종류만). 견적 줄은 진입 줄일 때만 채운다. 처음 쓰는 사람은 연결이 빈다. 보관된 건은 직전 등록이 아니다.
 export async function cardUsageFormDefaults(viewer: Viewer, today: string, entry: CardUsageEntry = {}): Promise<CardUsageFormDefaults> {
+  const proxy = await can(viewer, "cards.proxy", "write");
   const options = await cardOptionsForUsage(viewer, today);
   const last = await findLastCardUsageByRegistrant(viewer, viewer.id);
   const lastCard = last && options.some((option) => option.id === last.corpCardId) ? last.corpCardId : null;
@@ -1062,8 +1087,10 @@ export async function cardUsageFormDefaults(viewer: Viewer, today: string, entry
   }
   if (!last) return { ...base, linkKind: null, project: null, line: null };
   if (last.linkKind === "team_cost") return { ...base, linkKind: "team_cost", project: null, line: null };
-  const project = last.projectId ? await cardLinkProjectChoice(viewer, last.projectId) : null;
-  return { ...base, linkKind: last.lineKind === "out_of_quote" ? "out_of_quote" : "quote_line", project, line: null };
+  const outOfQuote = last.lineKind === "out_of_quote";
+  // 완료 프로젝트의 견적 외 비용은 권한자에게만 다시 채운다(U-4 — 저장 판정과 같다).
+  const project = last.projectId ? await cardLinkProjectChoice(viewer, last.projectId, { completedOutOfQuote: proxy && outOfQuote }) : null;
+  return { ...base, linkKind: outOfQuote ? "out_of_quote" : "quote_line", project, line: null };
 }
 
 // ── 프로젝트 상세 「법인카드 사용」(S15) ─────────────────────────────────────

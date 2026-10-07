@@ -17,6 +17,14 @@ registerAction({
   dtoName: null,
 });
 
+// 06-09: 사용한 사람 후보 — 대리 등록 권한자만(domain `usedByCandidates`가 cards.proxy write를 본다).
+registerAction({
+  name: "usedByCandidatesAction",
+  menu: "cards.proxy",
+  action: "write",
+  dtoName: null,
+});
+
 registerAction({
   name: "previewCardAmountsAction",
   menu: "cards",

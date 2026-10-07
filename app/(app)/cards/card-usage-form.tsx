@@ -15,7 +15,7 @@ import type { NumberInputKind } from "@/lib/format-number";
 import selectStyles from "@/ui/select/Select.module.css";
 import textFieldStyles from "@/ui/input/TextField.module.css";
 import cardStyles from "./cards.module.css";
-import { createCardUsageAction, previewCardAmountsAction, searchMerchantsAction, updateCardUsageAction } from "./actions";
+import { createCardUsageAction, previewCardAmountsAction, searchMerchantsAction, updateCardUsageAction, usedByCandidatesAction } from "./actions";
 import { LinkPicker, type PickedLine, type PickedProject } from "./link-picker";
 
 // 06-05(UI-SPEC S9 · C12): 카드 사용 등록 옆 패널 본문 — `PanelForm intent="create"` + `Form layout="panel"`. 사람은 결제 합계만 적고
@@ -25,7 +25,8 @@ import { LinkPicker, type PickedLine, type PickedProject } from "./link-picker";
 // 칸은 비제어(defaultValue)이고 등록 뒤 `gen` 키로 새로 그린 다음 `succeed`를 부른다 — `form.reset()`이 새 기본값으로 돌아가게.
 
 /** `proxyHint` — 대리 등록 권한자가 남의 카드를 고르면 카드 아래 서는 글자(서버가 정한다 — 화면이 판정하지 않는다). */
-export type CardOption = { id: string; label: string; proxyHint?: string | null };
+/** `choosesUser` — 대리 등록 권한자 · 팀 또는 공용 카드: 팀 비용이면 `사용한 사람` 칸(서버가 정한다). */
+export type CardOption = { id: string; label: string; proxyHint?: string | null; choosesUser?: boolean };
 export type EvidenceTypeOption = { value: string; label: string };
 type LinkKind = "team_cost" | "quote_line" | "out_of_quote";
 
@@ -51,10 +52,13 @@ export type CardUsageEdit = {
   usedOn: string;
   merchant: Merchant | null;
   evidenceTypeCode: string;
+  /** 저장된 증빙 종류 이름 — 지금 옵션에 없을 때 막힘 문구. */
+  evidenceLabel: string;
   linkKind: LinkKind;
   project: PickedProject | null;
   line: PickedLine | null;
   usedByUserId: string;
+  choosesUser: boolean;
   memo: string | null;
   currency: "KRW" | "USD";
   amount: number | null;
@@ -68,9 +72,17 @@ type Preview = {
   teamName: string | null;
   teamAssigned: boolean;
   /** 사용일 기준 쓸 카드(서버 투영) — 없으면(첫 미리보기 전 · 등록 뒤 오늘로 돌아감) 페이지가 준 오늘 기준 카드. */
-  cards?: { id?: string; label?: string; proxyHint?: string | null }[];
+  cards?: { id?: string; label?: string; proxyHint?: string | null; choosesUser?: boolean }[];
 };
 
+/** 사용한 사람 후보(서버 — 사용일 기준). `note` = `지금 {팀}` · `퇴사`. */
+type UsedByCandidate = { id: string; name: string; note: string | null; team: { id: string; name: string } | null };
+
+
+function usedByLabel(candidate: UsedByCandidate | undefined): string {
+  if (!candidate) return "";
+  return candidate.note ? `${candidate.name} · ${candidate.note}` : candidate.name;
+}
 
 function blankBlock(blanks: { label: string; verb: string }[]): string | undefined {
   const first = blanks[0];
@@ -275,6 +287,7 @@ export function CardUsageForm({
       setLinkLine(null);
       setItemName(null);
       setMerchant(null);
+      setUsedById((current) => (candidates?.length === 1 ? current : ""));
       setCurrency("KRW");
       setFxRaw(usdFxRate === null ? "" : String(usdFxRate));
       setPreview({ split: null, teamName: initialTeamName, teamAssigned: initialTeamAssigned });
@@ -299,11 +312,42 @@ export function CardUsageForm({
 
   // 카드 자격은 사용일 소속으로 정해진다 — 사용일을 바꾸면 그날 쓸 카드로 선택지를 바꾸고, 고른 카드가 빠지면 비운다(한 장이면 그 카드).
   const usableCards: CardOption[] = preview.cards
-    ? preview.cards.flatMap((card) => (card.id && card.label ? [{ id: card.id, label: card.label, proxyHint: card.proxyHint ?? null }] : []))
+    ? preview.cards.flatMap((card) =>
+        card.id && card.label ? [{ id: card.id, label: card.label, proxyHint: card.proxyHint ?? null, choosesUser: card.choosesUser ?? false }] : [],
+      )
     : cards;
   // 수정 모드의 카드 = 저장된 카드(여는 사람의 카드 옵션을 보지 않는다 — 옵션 0장이어도 선다).
   const selectedCardId = edit ? edit.cardId : usableCards.some((card) => card.id === cardId) ? cardId : usableCards.length === 1 ? (usableCards[0]?.id ?? "") : "";
   const proxyHint = edit ? edit.proxyHint : (usableCards.find((card) => card.id === selectedCardId)?.proxyHint ?? null);
+
+  // 사용한 사람(EXP-07 · Q5) — 대리 등록 권한자 · 팀 또는 공용 카드 · 팀 비용일 때만. 후보는 사용일 기준으로 서버가 보낸다(1명 = 텍스트, 여럿 = 기본값 없음).
+  const choosesUser = edit ? edit.choosesUser : (usableCards.find((card) => card.id === selectedCardId)?.choosesUser ?? false);
+  const showUsedBy = linkKind === "team_cost" && choosesUser && selectedCardId !== "" && usedOn !== "";
+  const [usedById, setUsedById] = useState(edit?.usedByUserId ?? "");
+  const [candidates, setCandidates] = useState<UsedByCandidate[] | null>(null);
+  useEffect(() => {
+    if (!showUsedBy) return;
+    let live = true;
+    void (async () => {
+      let outcome: Awaited<ReturnType<typeof usedByCandidatesAction>> | undefined;
+      try {
+        outcome = await usedByCandidatesAction({ cardId: selectedCardId, usedOn });
+      } catch {
+        outcome = undefined;
+      }
+      if (!live) return;
+      const next = outcome?.data ?? [];
+      setCandidates(next);
+      // 사용일을 바꿔 고른 사람이 새 후보에 없으면 칸이 빈다(UI-SPEC S9 partial).
+      setUsedById((current) => (next.length === 1 ? (next[0]?.id ?? "") : next.some((candidate) => candidate.id === current) ? current : ""));
+    })();
+    return () => {
+      live = false;
+    };
+  }, [showUsedBy, selectedCardId, usedOn]);
+  const chosenUser = showUsedBy ? (candidates?.find((candidate) => candidate.id === usedById) ?? null) : null;
+  // 구매 완료로 생긴 건 — 연결은 읽기 텍스트(바꾸기 없음, O-11).
+  const linkLocked = edit !== null && !edit.changeLink;
 
   const onAmountRaw = useCallback((raw: string) => setAmountRaw(raw), []);
   const onFxRaw = useCallback((raw: string) => setFxRaw(raw), []);
@@ -357,6 +401,7 @@ export function CardUsageForm({
     linkLine?.id ?? "",
     itemName ?? "",
     merchant?.id ?? "",
+    usedById,
   ]);
   const lastEditKey = useRef(editKey);
   useEffect(() => {
@@ -371,16 +416,27 @@ export function CardUsageForm({
     ...(usedOn ? [] : [{ label: "사용일", verb: "고르기" }]),
     ...(amountRaw ? [] : [{ label: "결제 합계", verb: "적기" }]),
     ...(linkKind === "out_of_quote" && linkProject && shownItemName.trim() === "" ? [{ label: "항목", verb: "적기" }] : []),
+    ...(showUsedBy && !chosenUser ? [{ label: "사용한 사람", verb: "고르기" }] : []),
   ];
+  // 수정 모드: 저장된 증빙 종류가 지금 옵션에 없으면 `—`에 서고 그 이름으로 막힌다(UI-SPEC S9).
+  const storedEvidenceOutside = edit !== null && edit.evidenceTypeCode !== "" && !evidenceTypes.some((option) => option.value === edit.evidenceTypeCode);
   const evidenceBlock = evidenceTypeCode
     ? undefined
-    : evidenceTypes.length === 0
+    : storedEvidenceOutside
+      ? `증빙 종류 ${edit?.evidenceLabel ?? ""} 카드에 없음 · 증빙 종류 고르기`
+      : evidenceTypes.length === 0
       ? "카드에 쓸 증빙 종류 없음 · 코드표 세금 규칙은 관리자"
       : evidenceTypes.some((option) => option.value === CARD_RECEIPT_CODE)
         ? blankBlock([{ label: "증빙 종류", verb: "고르기" }])
         : "카드 전표 카드에 없음 · 증빙 종류 고르기";
   const fxBlock = currency !== "KRW" && (fxValue === null || fxValue === undefined) ? "환율 없음 · USD 환율 적기" : undefined;
-  const teamBlock = linkKind === "team_cost" && !preview.teamAssigned ? `${userName} ${usedOn.slice(5)} 소속 없음 · 소속 발령은 관리자` : undefined;
+  const teamBlock = showUsedBy
+    ? chosenUser && !chosenUser.team
+      ? `${chosenUser.name} ${usedOn.slice(5)} 소속 없음 · 소속 발령은 관리자`
+      : undefined
+    : linkKind === "team_cost" && !preview.teamAssigned
+      ? `${userName} ${usedOn.slice(5)} 소속 없음 · 소속 발령은 관리자`
+      : undefined;
   const linkBlock =
     linkKind === null || (linkKind === "quote_line" && !linkLine) || (linkKind === "out_of_quote" && !linkProject) ? "연결 없음 · 연결 고르기" : undefined;
   // 실행가 초과(Q3) — 고른 줄 DTO의 남은 실행가와 서버 계산 공급가를 견준다. 서버도 잠근 뒤 같은 판정으로 거부한다.
@@ -420,8 +476,8 @@ export function CardUsageForm({
               : null,
       memo: typeof memo === "string" && memo.trim() !== "" ? memo.trim() : null,
     };
-    if (edit) update.execute({ ...payload, id: edit.id, version: edit.version, usedByUserId: edit.usedByUserId });
-    else executeCreate(payload);
+    if (edit) update.execute({ ...payload, id: edit.id, version: edit.version, usedByUserId: showUsedBy ? usedById : edit.usedByUserId });
+    else executeCreate(showUsedBy ? { ...payload, usedByUserId: usedById } : payload);
   }
 
   function pickMerchant(next: Merchant) {
@@ -568,14 +624,39 @@ export function CardUsageForm({
                 ["out_of_quote", "견적 외 비용"],
                 ["team_cost", "팀 비용"],
               ] as const
-            ).map(([value, label]) => (
-              <label key={value} className={cardStyles.linkOption}>
-                <input type="radio" name="linkKind" value={value} checked={linkKind === value} onChange={() => setLinkKind(value)} /> {label}
-              </label>
-            ))}
-            {/* 팀 비용 = 사용한 사람의 사용일 소속(읽기 텍스트 · 힌트 없음 — M-5). */}
-            {linkKind === "team_cost" && preview.teamName ? <div data-ui="card-usage-team">{preview.teamName}</div> : null}
+            ).map(([value, label]) =>
+              linkLocked ? (
+                linkKind === value ? <span key={value}>{label}</span> : null
+              ) : (
+                <label key={value} className={cardStyles.linkOption}>
+                  <input type="radio" name="linkKind" value={value} checked={linkKind === value} onChange={() => setLinkKind(value)} /> {label}
+                </label>
+              ),
+            )}
+            {/* 팀 비용 = 사용한 사람의 사용일 소속(읽기 텍스트 · 힌트 없음 — M-5). 사용한 사람 칸이 서면 그 칸 아래로. */}
+            {linkKind === "team_cost" && !showUsedBy && preview.teamName ? <div data-ui="card-usage-team">{preview.teamName}</div> : null}
           </div>
+          {showUsedBy && candidates !== null ? (
+            candidates.length === 1 ? (
+              <div data-ui="field-row" className={rowStyles.row}>
+                <span className={rowStyles.label}>사용한 사람</span>
+                <span>{usedByLabel(candidates[0])}</span>
+              </div>
+            ) : (
+              <div data-ui="field-row" className={rowStyles.row}>
+                <Form.Field id="card-usage-used-by" label="사용한 사람">
+                  <Select
+                    id="card-usage-used-by"
+                    name="usedByUserId"
+                    options={candidates.map((candidate) => ({ value: candidate.id, label: usedByLabel(candidate) }))}
+                    value={usedById}
+                    onChange={(event) => setUsedById(event.target.value)}
+                  />
+                </Form.Field>
+              </div>
+            )
+          ) : null}
+          {showUsedBy && chosenUser?.team ? <div data-ui="card-usage-team">{chosenUser.team.name}</div> : null}
           <input
             ref={linkInputRef}
             type="hidden"
@@ -588,9 +669,11 @@ export function CardUsageForm({
               <div data-ui="field-row" className={rowStyles.row}>
                 <span className={rowStyles.label}>프로젝트</span>
                 <span>{linkProject ? linkProject.label : "—"}</span>{" "}
-                <Button id="card-usage-project-change" variant="tertiary" aria-label="프로젝트 바꾸기" onClick={() => setLinkStep("project")}>
-                  {linkProject ? "바꾸기" : "고르기"}
-                </Button>
+                {linkLocked ? null : (
+                  <Button id="card-usage-project-change" variant="tertiary" aria-label="프로젝트 바꾸기" onClick={() => setLinkStep("project")}>
+                    {linkProject ? "바꾸기" : "고르기"}
+                  </Button>
+                )}
               </div>
               {linkKind === "out_of_quote" && linkProject ? (
                 <TextField
@@ -609,9 +692,11 @@ export function CardUsageForm({
                 <div data-ui="field-row" className={rowStyles.row}>
                   <span className={rowStyles.label}>견적 줄</span>
                   <span>{linkLine ? linkLine.itemName : "—"}</span>{" "}
-                  <Button id="card-usage-line-change" variant="tertiary" aria-label="견적 줄 바꾸기" onClick={() => setLinkStep("line")}>
-                    {linkLine ? "바꾸기" : "고르기"}
-                  </Button>
+                  {linkLocked ? null : (
+                    <Button id="card-usage-line-change" variant="tertiary" aria-label="견적 줄 바꾸기" onClick={() => setLinkStep("line")}>
+                      {linkLine ? "바꾸기" : "고르기"}
+                    </Button>
+                  )}
                   {linkLine?.hint ? <Form.Hint>{linkLine.hint}</Form.Hint> : null}
                 </div>
               ) : null}

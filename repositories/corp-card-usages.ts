@@ -252,6 +252,7 @@ export type CardUsageUpdateValues = Pick<
   | "quoteLineId"
   | "teamId"
   | "usedByUserId"
+  | "registeredVia"
   | "memo"
 >;
 

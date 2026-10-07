@@ -60,14 +60,21 @@ import {
   summarizeRevisions as repoSummarizeRevisions,
 } from "@/repositories/quote-revisions";
 import { listNumberedByProject as repoListNumberedExpensesByProject } from "@/repositories/expenses";
-import { findLineLinks as repoFindLineLinks } from "@/repositories/quote-line-links";
+import {
+  findExpenseDocFacts as repoFindExpenseDocFacts,
+  findLineLinks as repoFindLineLinks,
+  listExpenseDocFacts as repoListExpenseDocFacts,
+} from "@/repositories/quote-line-links";
 import { listFieldDefinitions as repoListFieldDefinitions } from "@/repositories/field-definitions";
 import { findVendorKindsByIds as repoFindVendorKindsByIds, findVendorNamesByIds as repoFindVendorNamesByIds } from "@/repositories/vendors";
 import { NOT_SUPPLIER_VENDOR, servesSide } from "@/domain/vendors/kind";
 import { listCodeItems as repoListCodeItems } from "@/repositories/code-tables";
 import { QUOTE_SUBCATEGORY_TABLE_KEY } from "@/domain/projects/references";
 import { getSettingValue } from "@/domain/settings/registry";
-import { QUOTE_LINE_MAX_PER_REVISION } from "@/domain/settings/keys";
+import { EVIDENCE_PREPAID_DUE_DAYS, QUOTE_LINE_MAX_PER_REVISION } from "@/domain/settings/keys";
+import { hasEvidence } from "@/domain/evidence/has-evidence";
+import { prepaidDueInfo } from "@/domain/evidence-reviews/prepaid";
+import { seoulToday } from "@/lib/dates";
 
 export class ForbiddenError extends UserFacingError {}
 export class RevisionNotFoundError extends UserFacingError {}
@@ -75,9 +82,25 @@ export class RevisionNotFoundError extends UserFacingError {}
 const PROJECTS_MENU = "projects";
 const ADJUSTMENT_MENU = "projects.adjustment";
 const QUOTE_LINE_ENTITY = "quote_line";
+// 06-13 — 증빙 파일 주인 종류(domain/expenses EXPENSE_DOCUMENT_KIND와 같은 값 — domain/expenses를 import하지 않는다, 순환 금지).
+const EXPENSE_OWNER_KIND = "expense";
 
-// 05-15 — 줄 파생 상태 입력: 그 줄의 번호 있는 지출결의 중 반려가 있으면 rejected, 결재 중 · 승인이 있으면 active, 그 밖(회수 · 연결 없음)은 null.
-export type QuoteLineLinkedStatus = "rejected" | "active";
+// 05-15 — 줄 파생 상태 키(취소 · 미착수는 줄 칸 · null). 06-13(SP-2 · O-14 확정): 한 줄에 문서가 여럿이면 아래 우선순위의 첫 키 하나만
+// 보낸다 — 취소 > 반려 > 증빙 없음 > 지출결의 중 > 구매 요청 중 > 지급 완료 > 카드 사용 > 미착수. 우선순위는 이 배열 한 곳이다.
+export type QuoteLineLinkedStatus = "rejected" | "evidence_missing" | "active" | "purchase_requested" | "paid" | "card_used";
+
+export const QUOTE_LINE_STATUS_PRIORITY: readonly QuoteLineLinkedStatus[] = [
+  "rejected",
+  "evidence_missing",
+  "active",
+  "purchase_requested",
+  "paid",
+  "card_used",
+];
+
+export function pickLineLinkedStatus(keys: readonly QuoteLineLinkedStatus[]): QuoteLineLinkedStatus | null {
+  return QUOTE_LINE_STATUS_PRIORITY.find((key) => keys.includes(key)) ?? null;
+}
 
 export type MoneyInputDto = { currency: Currency; amount: number; fxRate: number };
 export type MoneyDto = MoneyInputDto & { amountKrw: number };
@@ -113,6 +136,7 @@ type QuoteLineProjectable = {
   hasLinkedDocuments: boolean;
   readonlyReason: string | null;
   linkedStatus: QuoteLineLinkedStatus | null;
+  prepaidOverdueDays: number | null;
   hasCardSideLinks: boolean;
   executionOverKrw: number | null;
 };
@@ -122,6 +146,7 @@ type LineEditFacts = {
   hasLinkedDocuments: boolean;
   readonlyReason: string | null;
   linkedStatus: QuoteLineLinkedStatus | null;
+  prepaidOverdueDays: number | null;
   hasCardSideLinks: boolean;
   executionOverKrw: number | null;
 };
@@ -193,6 +218,8 @@ export type QuoteLineDto = {
   hasLinkedDocuments: boolean;
   readonlyReason: string | null;
   linkedStatus: QuoteLineLinkedStatus | null;
+  // 06-13(S14) — 선결제 기한이 지난 날수(상태 2행 `증빙 {N}일 경과`, 06-06 prepaidDueInfo 그대로) — 없으면 null.
+  prepaidOverdueDays: number | null;
   // 06-07(N-3) — 줄 사슬에 보관 안 된 카드 사용 · `신청됨` 구매 요청이 있음(보관 대신 취소). 값은 호출자가 ctx `cardSideFacts`로 넘긴다.
   hasCardSideLinks: boolean;
   // 06-07(N-3) — 카드 쪽 연결 합이 실행가를 넘은 차액(넘지 않으면 null). 실행가를 못 보는 계급에는 키가 없다(quote.amount).
@@ -225,6 +252,7 @@ export const QUOTE_LINE_DTO_SPEC: DtoSpec<QuoteLineProjectable, QuoteLineDto> = 
     { key: "hasLinkedDocuments", from: "hasLinkedDocuments", infoItem: "project.value" },
     { key: "readonlyReason", from: "readonlyReason", infoItem: "project.value" },
     { key: "linkedStatus", from: "linkedStatus", infoItem: "project.value" },
+    { key: "prepaidOverdueDays", from: "prepaidOverdueDays", infoItem: "project.value" },
     { key: "hasCardSideLinks", from: "hasCardSideLinks", infoItem: "project.value" },
     { key: "executionOverKrw", from: "executionOverKrw", infoItem: "quote.amount" },
   ],
@@ -281,7 +309,18 @@ export type QuoteLineListCtx = {
 
 // D-66 — 줄마다 연결된 지출결의(번호 있는 문서만 — 작성 중 문서는 연결이 아니다). `approvalStatus`는 결재 인스턴스 상태(줄 파생 상태 재료).
 // 저장 트랜잭션 안에서도 불리므로 tx를 받는다.
-export type LinkedDocument = { number: string; approvalStatus?: string | null };
+// 06-13: 문서마다 키 하나(`status` — SP-2 · O-14)와 선결제 기한 재료(지급일 · 증빙 · 면제). 종결 문서(06-28)는 목록에 없다(UC-7).
+export type LinkedDocument = {
+  id?: string;
+  number: string;
+  approvalStatus?: string | null;
+  status?: QuoteLineLinkedStatus | null;
+  paid?: boolean;
+  prepaid?: boolean;
+  hasEvidence?: boolean;
+  waived?: boolean;
+  payDate?: string | null;
+};
 export type LinkedDocumentsByLine = Map<string, LinkedDocument[]>;
 
 // 04-14(D-55) — 문서 출처(줄 id별 번호 있는 지출결의)를 계보 해석으로 현재 차수 줄에 잇는다. 조회 지점은 이 함수 하나다.
@@ -290,15 +329,40 @@ export function linkedDocumentsByLine(viewer: Viewer, revisionId: string, tx?: D
   return loadLinkedDocumentsByLine(viewer, revisionId, tx);
 }
 
+const IN_FLIGHT_APPROVAL = new Set(["submitted", "in_review", "approved"]);
+
 async function loadLinkedDocumentsByLine(viewer: Viewer, revisionId: string, tx?: DbOrTx): Promise<LinkedDocumentsByLine> {
   const revision = await repoFindQuoteRevisionById(viewer, revisionId, tx);
   if (!revision) return new Map();
-  const numbered = await repoListNumberedExpensesByProject(viewer, revision.projectId, tx);
+  // 06-13(C10 · UC-7 확정): 종결 문서는 여기 한 곳에서 거른다 — 상태 파생 · hasLinkedDocuments · readonlyReason · 저장의 readonly 셀 게이트가
+  // 모두 이 목록을 읽는다(종결 기록은 06-28 끌 수 없는 로그).
+  const numbered = (await repoListNumberedExpensesByProject(viewer, revision.projectId, tx)).filter((doc) => doc.closedAt === null);
   if (numbered.length === 0) return new Map();
+  const ids = numbered.map((doc) => doc.id);
+  const facts = tx ? await repoFindExpenseDocFacts(viewer, ids, tx) : await repoListExpenseDocFacts(viewer, ids);
   const docsByLineId = new Map<string, LinkedDocument[]>();
+  // 한 tx(한 연결)에 동시 질의를 걸지 않게 문서마다 차례로 읽는다(06-07 I-5).
   for (const doc of numbered) {
+    const fact = facts.get(doc.id);
+    const paid = fact?.paid ?? false;
+    const waived = fact?.waived ?? false;
+    const inFlight = IN_FLIGHT_APPROVAL.has(doc.approvalStatus ?? "");
+    // O-14: 결재 중 · 통과 · 지급 뒤 어느 쪽이든 증빙이 없으면(면제 제외 · 선결제 포함 · 증빙 필수 설정과 무관) 증빙 없음 — C5 hasEvidence 한 함수.
+    const evidence = inFlight && !waived ? await hasEvidence(viewer, { ownerKind: EXPENSE_OWNER_KIND, ownerId: doc.id }, tx) : true;
+    const status: QuoteLineLinkedStatus | null =
+      doc.approvalStatus === "rejected" ? "rejected" : !inFlight ? null : !evidence ? "evidence_missing" : doc.approvalStatus === "approved" && paid ? "paid" : "active";
     const docs = docsByLineId.get(doc.quoteLineId) ?? [];
-    docs.push({ number: doc.number, approvalStatus: doc.approvalStatus });
+    docs.push({
+      id: doc.id,
+      number: doc.number,
+      approvalStatus: doc.approvalStatus,
+      status,
+      paid,
+      prepaid: fact?.prepaid ?? false,
+      hasEvidence: evidence,
+      waived,
+      payDate: fact?.payDate ?? null,
+    });
     docsByLineId.set(doc.quoteLineId, docs);
   }
   const lineage: LineageLine[] = [];
@@ -310,11 +374,28 @@ async function loadLinkedDocumentsByLine(viewer: Viewer, revisionId: string, tx?
   return resolveLinkedDocumentsByLineage(lineage, docsByLineId).byCurrentLine;
 }
 
-function linkedStatusOf(docs: readonly LinkedDocument[] | undefined): QuoteLineLinkedStatus | null {
-  if (!docs) return null;
-  if (docs.some((doc) => doc.approvalStatus === "rejected")) return "rejected";
-  if (docs.some((doc) => doc.approvalStatus === "submitted" || doc.approvalStatus === "in_review" || doc.approvalStatus === "approved")) return "active";
-  return null;
+// 줄 키 = 지출결의 쪽 문서 키들 + 카드 쪽(살아 있는 구매 요청 → purchase_requested, 보관 안 된 카드 사용 → card_used)의 우선순위 첫 값.
+function linkedStatusOf(docs: readonly LinkedDocument[] | undefined, cardSide: { requests: number; cards: number } | undefined): QuoteLineLinkedStatus | null {
+  const keys: QuoteLineLinkedStatus[] = (docs ?? []).flatMap((doc) => doc.status ?? []);
+  if (cardSide && cardSide.requests > 0) keys.push("purchase_requested");
+  if (cardSide && cardSide.cards > 0) keys.push("card_used");
+  return pickLineLinkedStatus(keys);
+}
+
+// 상태 2행 `증빙 {N}일 경과` — 선결제 · 증빙 없음 · 면제 아님 문서들의 06-06 prepaidDueInfo 경과일 중 가장 큰 값(기한이 지난 것만).
+function prepaidOverdueDaysOf(docs: readonly LinkedDocument[] | undefined, dueDays: number, today: string): number | null {
+  const days = (docs ?? []).flatMap((doc) => {
+    const due = prepaidDueInfo({
+      prepaid: doc.prepaid === true,
+      hasEvidence: doc.hasEvidence !== false,
+      waived: doc.waived === true,
+      paidOn: doc.paid ? (doc.payDate ?? null) : null,
+      dueDays,
+      today,
+    });
+    return due && due.overdueDays > 0 ? [due.overdueDays] : [];
+  });
+  return days.length > 0 ? Math.max(...days) : null;
 }
 
 // 04-13 — DB CHECK(quote_lines_line_kind_check)가 세 값만 받는다.
@@ -330,8 +411,14 @@ async function projectLines(
 ): Promise<QuoteLineDto[]> {
   const vendorIds = [...new Set(rows.flatMap((row) => (row.vendorId ? [row.vendorId] : [])))];
   const vendorNames = await repoFindVendorNamesByIds(viewer, vendorIds);
+  // 06-13 — 카드 쪽 연결(계보 사슬 — 06-07 findLineLinks, 보관 카드 사용 제외 H-4)과 선결제 기한(06-06). 커밋 뒤 · 목록 읽기라 기본 연결.
+  const cardLinks = await repoFindLineLinks(viewer, rows.map((row) => row.id));
+  const anyPrepaid = [...linked.values()].some((docs) => docs.some((doc) => doc.prepaid && doc.hasEvidence === false && doc.paid));
+  const dueDays = anyPrepaid ? await getSettingValue(EVIDENCE_PREPAID_DUE_DAYS) : 0;
+  const today = seoulToday();
   const projectables = rows.map((row) => {
     const linkedDocs = linked.get(row.id);
+    const cardLink = cardLinks.get(row.id);
     const firstLinked = linkedDocs?.[0];
     const hasLinkedDocuments = firstLinked !== undefined;
     return toProjectable(row, {
@@ -345,8 +432,9 @@ async function projectLines(
         approvedSeq: ctx.approvedSeq ?? null,
       }),
       hasLinkedDocuments,
-      readonlyReason: firstLinked ? linkedDocumentReason(firstLinked.number) : null,
-      linkedStatus: linkedStatusOf(linkedDocs),
+      readonlyReason: firstLinked ? linkedDocumentReason(firstLinked.number, { paid: firstLinked.paid === true }) : null,
+      linkedStatus: linkedStatusOf(linkedDocs, cardLink ? { requests: cardLink.purchaseRequests.length, cards: cardLink.cardUsages.length } : undefined),
+      prepaidOverdueDays: anyPrepaid ? prepaidOverdueDaysOf(linkedDocs, dueDays, today) : null,
       hasCardSideLinks: ctx.cardSideFacts?.get(row.id)?.linked ?? false,
       executionOverKrw: ctx.cardSideFacts?.get(row.id)?.overKrw ?? null,
     }, row.vendorId ? (vendorNames.get(row.vendorId) ?? null) : null);
@@ -936,7 +1024,7 @@ export async function writeQuoteLinesInTx(
     const firstLinked = lineId ? linkedDocuments.get(lineId)?.[0] : undefined;
     const actor = { lineKind, actorCanWrite: canWrite, actorCanAdjust: canAdjust, approvedSeq };
     return firstLinked
-      ? { status, ...actor, hasLinkedDocuments: true, linkedDocumentNumber: firstLinked.number, change }
+      ? { status, ...actor, hasLinkedDocuments: true, linkedDocumentNumber: firstLinked.number, linkedDocumentPaid: firstLinked.paid === true, change }
       : { status, ...actor, hasLinkedDocuments: false, change };
   };
 
@@ -1215,12 +1303,17 @@ export async function rememberFxAfterCommit(
 }
 
 // ③ 커밋 뒤 — projectMany 투영(ENG-D3 ②). 셀 단계는 트랜잭션 전에 읽은 두 권한으로(04-13 — 입구는 둘 중 하나).
-export async function finishQuoteLineSave(viewer: Viewer, written: WrittenQuoteLines): Promise<SaveQuoteLinesResult> {
+// 06-13(N-3) — `cardSideFacts`는 일괄 저장(ledger)이 커밋 뒤 읽어 넘긴다(화면은 이 응답 줄로 다시 그린다 — 상세 페이지 읽기와 같은 값).
+export async function finishQuoteLineSave(
+  viewer: Viewer,
+  written: WrittenQuoteLines,
+  cardSideFacts?: QuoteLineListCtx["cardSideFacts"],
+): Promise<SaveQuoteLinesResult> {
   return {
     lines: await projectLines(
       viewer,
       written.activeRows,
-      { status: written.projectStatus, canWrite: written.canWrite, canAdjust: written.canAdjust, approvedSeq: written.approvedSeq },
+      { status: written.projectStatus, canWrite: written.canWrite, canAdjust: written.canAdjust, approvedSeq: written.approvedSeq, cardSideFacts },
       written.linkedDocuments,
     ),
   };
@@ -1260,7 +1353,7 @@ export async function restoreQuoteLine(
     const change = { kind: "restore", quoteAmountZero: current.quoteAmountKrw === 0 } as const;
     const actor = { lineKind: lineKindOf(current), actorCanWrite: canWrite, actorCanAdjust: canAdjust, approvedSeq };
     const ctx: ProjectLineEditCtx = firstLinked
-      ? { status: projectRow.status, ...actor, hasLinkedDocuments: true, linkedDocumentNumber: firstLinked.number, change }
+      ? { status: projectRow.status, ...actor, hasLinkedDocuments: true, linkedDocumentNumber: firstLinked.number, linkedDocumentPaid: firstLinked.paid === true, change }
       : { status: projectRow.status, ...actor, hasLinkedDocuments: false, change };
     const decision = latest?.id !== current.revisionId ? { allowed: false, reason: PAST_REVISION_RESTORE } : await gate(projectRow, LINE_EDIT_RULE, ctx);
     if (!decision.allowed) {

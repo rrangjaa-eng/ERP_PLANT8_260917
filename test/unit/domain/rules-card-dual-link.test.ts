@@ -58,10 +58,10 @@ const EXPENSE = {
 };
 
 describe("card.dual-link-block", () => {
-  it("side card · 이어진 지출결의 있음 → 막힘 `지출결의 {번호} 연결됨 · 다른 줄 고르기`", async () => {
+  it("side card · 이어진 지출결의 있음 → 막힘 `지출결의 {번호} 연결됨 · 카드 사용은 다른 줄`", async () => {
     await expect(gate(null, "card.dual-link-block", { side: "card", links: links({ expenses: [EXPENSE] }) })).resolves.toEqual({
       allowed: false,
-      reason: "지출결의 26001-0007 연결됨 · 다른 줄 고르기",
+      reason: "지출결의 26001-0007 연결됨 · 카드 사용은 다른 줄",
     });
   });
 

@@ -163,17 +163,17 @@ async function nextRevision(fx: PurchaseFx): Promise<{ revisionId: string; copyO
 describe("반대쪽 지출결의(D-609 · 문 거부)", () => {
   it("지출결의가 이어진 온라인구매 줄 → `card.dual-link-block` 거부 · 06-28 종결 뒤 → 저장", async () => {
     const fx = await setupExpenseProject();
-    // 지출결의 fixture의 「무대 제작」 줄(스테이지원)을 온라인구매 협력사로 켠다.
-    await setSettingValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME, "스테이지원");
     const created = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
     const expenseId = created.created[0]?.expenseId ?? "";
     const submitted = await submitReadyDraft(fx.pm, expenseId);
     if (submitted.kind !== "submitted") throw new Error("제출되지 않음");
+    // 제출 뒤 지출결의 fixture의 「무대 제작」 줄(스테이지원)을 온라인구매 협력사로 켠다(06-13 — 온라인구매 줄의 지출결의 제출은 문 게이트가 막는다).
+    await setSettingValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME, "스테이지원");
 
     const input = requestInput(fx.lines.withVendor);
     const error = await caught(createPurchaseRequest(fx.pm, input, await precheckPurchaseRequest(fx.pm, input)));
     expect(error).toBeInstanceOf(GateBlockedError);
-    expect((error as Error).message).toBe(`지출결의 ${submitted.number} 연결됨 · 다른 줄 고르기`);
+    expect((error as Error).message).toBe(`지출결의 ${submitted.number} 연결됨 · 카드 사용은 다른 줄`);
     expect(await requestCount()).toBe(0);
 
     await rejectDocument(fx.lead, { instanceId: submitted.instanceId, expectedVersion: submitted.version, reason: "금액 확인" });
@@ -200,6 +200,8 @@ describe("[06-07 I-1] 구매 요청이 이어진 줄 → 지출결의 제출 거
     expect(row?.number).toBeNull();
 
     await db.update(purchaseRequests).set({ status: "cancelled", cancelledAt: new Date(), cancelledBy: fx.pm.id, cancelReason: "취소" }).where(eq(purchaseRequests.id, created.id));
+    // 06-13 — 온라인구매 줄의 지출결의 제출은 문 게이트가 막는다. 협력사 설정을 끈 줄로 이중 연결만 본다.
+    await setSettingValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME, "");
     expect((await submitReadyDraft(fx.pm, expenseId)).kind).toBe("submitted");
   });
 });

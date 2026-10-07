@@ -5,7 +5,7 @@ import { corpCardUsages, expenseEvidenceReviews, expenses, quoteLines, quoteRevi
 import type { Viewer } from "@/domain/viewer";
 
 // 06-06(EVID-02 · EVID-03 · D-602): 증빙 확인 기록(06-27 expense_evidence_reviews — 문서당 한 줄) 읽기 · upsert와
-// 경영관리 금액 고침의 증빙 금액 칸 갱신. 확인 해제(줄 지움)는 06-11 — 05 증빙 경로 두 곳에 붙는 훅이 한다(B-3 · C4).
+// 경영관리 금액 고침의 증빙 금액 칸 갱신. 확인 해제(줄 지움) · 증빙 금액 지움은 06-11 — 05 증빙 경로 두 곳에 붙는 훅이 한다(B-3 · C4).
 
 export type EvidenceReviewRow = InferSelectModel<typeof expenseEvidenceReviews>;
 export type EvidenceReviewStatus = "confirmed" | "waived";
@@ -59,6 +59,23 @@ export async function updateEvidenceAmount(viewer: Viewer, input: { expenseId: s
     .where(and(eq(expenses.id, input.expenseId), isNull(expenses.deletedAt)))
     .returning({ id: expenses.id });
   return rows.length > 0;
+}
+
+// 06-11(C4) — 결재 통과 문서의 증빙 추가 · 무효가 확인 기록 줄을 지운다(확인 전으로 돌아감). 지운 줄의 status를 돌려준다(없으면 null).
+// version + 1은 호출자가 bumpExpenseVersion으로 — 05 증빙 경로 트랜잭션 안에서만 부른다(기본값 없음).
+export async function deleteReviewByExpense(viewer: Viewer, expenseId: string, tx: DbOrTx): Promise<EvidenceReviewStatus | null> {
+  void viewer;
+  const [row] = await tx.delete(expenseEvidenceReviews).where(eq(expenseEvidenceReviews.expenseId, expenseId)).returning({ status: expenseEvidenceReviews.status });
+  return row ? (row.status as EvidenceReviewStatus) : null;
+}
+
+// 06-11(EVID-04) — 마지막 증빙이 무효가 되면 증빙 금액 · 증빙일 두 칸만 지운다. version은 건드리지 않는다.
+export async function clearEvidenceValues(viewer: Viewer, expenseId: string, tx: DbOrTx): Promise<void> {
+  void viewer;
+  await tx
+    .update(expenses)
+    .set({ evidenceAmount: null, evidenceDate: null })
+    .where(and(eq(expenses.id, expenseId), isNull(expenses.deletedAt)));
 }
 
 // 목록 · 집계용 묶음 읽기(06-19 D-611 · 06-23 기안자 신호) — 문서마다 따로 읽지 않는다. 빈 배열이면 쿼리 없이 빈 Map.

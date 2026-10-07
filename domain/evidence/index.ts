@@ -17,6 +17,8 @@ import { canSeeExpense, EXPENSE_ALREADY_CLOSED, EXPENSE_DOCUMENT_KIND, ExpenseCl
 import { EVIDENCE_FILE_DTO_SPEC, type EvidenceFileDto } from "@/domain/evidence/dto";
 import { checkEvidenceUpload, EVIDENCE_UPLOAD_FAILED, type EvidenceDuplicate } from "@/domain/evidence/upload-checks";
 import { bumpInstanceVersion } from "@/repositories/approvals";
+import { deleteReviewByExpense, type EvidenceReviewStatus } from "@/repositories/expense-evidence-reviews";
+import { bumpExpenseVersion } from "@/repositories/expense-payments";
 import { findExpenseApprovalInstance, findExpenseById, lockExpenseForUpdate } from "@/repositories/expenses";
 import { findActiveBySha, findAliveFileOfIntent, findFileById, insertFile, listActiveByOwner, markRemoved, markVoided, type FileRow } from "@/repositories/files";
 import { findUserById } from "@/repositories/users";
@@ -79,6 +81,8 @@ type OwnerState = {
   number: string | null;
   status: string | null;
   updatedAt: Date;
+  // 06-11 — 문서 version(결재 통과 문서의 증빙 변경이 올린다 · B-1). 주인 종류에 문서 version이 없으면 0.
+  version: number;
   instance: { id: string; version: number } | null;
   // 06-28: 종결 문서 — 증빙은 읽기만(기안자도 더하거나 떼지 못한다).
   closed: boolean;
@@ -94,6 +98,8 @@ type OwnerRule = {
   // 결재 중(붙이기 권한자만 더함 · 아무도 못 뗌) · 승인(무효 처리만).
   inReview(owner: OwnerState): boolean;
   approved(owner: OwnerState): boolean;
+  // 06-11(C4 · B-1) — 결재 통과 문서의 증빙 추가 · 무효가 같은 트랜잭션에서 부른다. 풀린 확인 기록의 status를 돌려준다(없으면 null).
+  onApprovedEvidenceChange?(viewer: Viewer, owner: OwnerState, change: { kind: "add" | "void" }, tx: DbOrTx): Promise<EvidenceReviewStatus | null>;
   attachMenu: "expenses.evidence_attach";
   voidMenu: "expenses.evidence_void";
   notFound(): UserFacingError;
@@ -112,6 +118,7 @@ async function expenseState(viewer: Viewer, ownerId: string, tx?: DbOrTx): Promi
     number: row.number,
     status: instance?.status ?? null,
     updatedAt: row.updatedAt,
+    version: row.version,
     instance: instance ? { id: instance.id, version: instance.version } : null,
     closed: row.closedAt !== null,
   };
@@ -119,6 +126,16 @@ async function expenseState(viewer: Viewer, ownerId: string, tx?: DbOrTx): Promi
 
 const expenseDrafterRemoves = (owner: OwnerState) =>
   !owner.closed && ((owner.number === null && owner.status === null) || (owner.status !== null && EXPENSE_RETURNED_STATUSES.has(owner.status)));
+
+// 결재 통과 문서에서만 일한다(작성 중 · 결재 중 · 반려 · 회수는 문서 version을 올리지 않는다 — X-1). 확인 기록 줄은 있을 때만 지우고,
+// 문서 version은 기록 유무와 상관없이 올린다 — 보지 않은 증빙은 옛 version으로 확인되지 않는다(B-1). 훅 안에서 권한 · 설정을 읽지 않는다.
+async function expenseApprovedEvidenceChange(viewer: Viewer, owner: OwnerState, tx: DbOrTx): Promise<EvidenceReviewStatus | null> {
+  if (owner.status !== "approved") return null;
+  const released = await deleteReviewByExpense(viewer, owner.id, tx);
+  const version = await bumpExpenseVersion(viewer, { expenseId: owner.id, expectedVersion: owner.version, updatedBy: viewer.id }, tx);
+  if (version === null) throw new ExpenseNotFoundError();
+  return released;
+}
 
 const OWNER_RULES: Record<string, OwnerRule> = {
   expense: {
@@ -129,6 +146,7 @@ const OWNER_RULES: Record<string, OwnerRule> = {
     drafterRemoves: expenseDrafterRemoves,
     inReview: (owner) => owner.status !== null && EXPENSE_IN_REVIEW_STATUSES.has(owner.status),
     approved: (owner) => owner.status === "approved",
+    onApprovedEvidenceChange: (viewer, owner, _change, tx) => expenseApprovedEvidenceChange(viewer, owner, tx),
     attachMenu: "expenses.evidence_attach",
     voidMenu: "expenses.evidence_void",
     notFound: () => new ExpenseNotFoundError(),
@@ -341,12 +359,6 @@ export async function completeEvidenceUpload(
         },
         tx,
       );
-      await recordActionInTx(
-        viewer,
-        { actionType: "document_update", entity: "file", entityId: fileId, documentId: intent.ownerId, detail: { change: "evidence_add", fileId } },
-        tx,
-        gate,
-      );
       if (bumpsInstance(rule, owner)) {
         const bumped = await bumpInstanceVersion(
           viewer,
@@ -355,6 +367,19 @@ export async function completeEvidenceUpload(
         );
         if (!bumped) throw new EvidenceUploadRefusedError("restart");
       }
+      const released = (await rule.onApprovedEvidenceChange?.(viewer, owner, { kind: "add" }, tx)) ?? null;
+      await recordActionInTx(
+        viewer,
+        {
+          actionType: "document_update",
+          entity: "file",
+          entityId: fileId,
+          documentId: intent.ownerId,
+          detail: { change: "evidence_add", fileId, ...(released ? { reviewReleased: released } : {}) },
+        },
+        tx,
+        gate,
+      );
       return inserted;
     });
   } catch (error) {

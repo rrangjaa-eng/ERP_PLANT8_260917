@@ -360,7 +360,7 @@ registerDto({ name: "PurchaseCompletionDto", fields: PURCHASE_COMPLETION_DTO_SPE
 
 export type PurchaseCompletionPanel = {
   request: Partial<PurchaseCompletionDto>;
-  /** 가맹점 기본값 = 온라인구매 협력사(견적 줄 요청은 그 줄 거래처). 고를 수 없는 거래처면 null. */
+  /** 가맹점 기본값 = 설정의 온라인구매 협력사(이름으로 찾는다 — 견적 줄 요청도 같다). 고를 수 없는 거래처면 null. */
   merchant: Partial<PickVendorOptionDto> | null;
   options: PurchaseCardFormOptions;
   /** 오늘 기준 팀 비용의 팀(요청자 소속) — 사용일을 바꾸면 서버 계산 한 줄이 다시 보낸다. */

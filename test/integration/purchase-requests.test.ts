@@ -251,6 +251,26 @@ describe("반대쪽 지출결의(D-609 · 문 거부)", () => {
   });
 });
 
+describe("[06-07 I-1] 구매 요청이 이어진 줄 → 지출결의 제출 거부", () => {
+  it("`신청됨` 요청 1건 → `구매 요청 1건 연결됨 · 지출결의는 다른 줄` · 번호 없음 · 요청을 취소하면 제출 통과", async () => {
+    const fx = await setupExpenseProject();
+    await setSettingValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME, "스테이지원");
+    const input = requestInput(fx.lines.withVendor);
+    const created = await createPurchaseRequest(fx.pm, input, await precheckPurchaseRequest(fx.pm, input));
+    const draft = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
+    const expenseId = draft.created[0]?.expenseId ?? "";
+
+    const error = await caught(submitReadyDraft(fx.pm, expenseId));
+    expect(error).toBeInstanceOf(GateBlockedError);
+    expect((error as Error).message).toBe("구매 요청 1건 연결됨 · 지출결의는 다른 줄");
+    const [row] = await db.select({ number: expenses.number }).from(expenses).where(eq(expenses.id, expenseId));
+    expect(row?.number).toBeNull();
+
+    await db.update(purchaseRequests).set({ status: "cancelled", cancelledAt: new Date(), cancelledBy: fx.pm.id, cancelReason: "취소" }).where(eq(purchaseRequests.id, created.id));
+    expect((await submitReadyDraft(fx.pm, expenseId)).kind).toBe("submitted");
+  });
+});
+
 describe("실행가 상한(Q3)", () => {
   it("실행가 1,000,000 · 카드 공급가 600,000 → 예상 금액 440,001(공급가 추정 400,001) 거부 · 요청 0", async () => {
     const fx = await purchaseProject();

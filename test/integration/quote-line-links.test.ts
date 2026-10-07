@@ -5,8 +5,10 @@ import { db } from "@/db/client";
 import { corpCardUsages, expenses, files, purchaseRequests, quoteLines } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertVisibility } from "@/repositories/permissions";
-import { closeExpense, createExpenseFromLines, ExpenseFieldError, getExpense, saveExpenseDraft, submitExpense } from "@/domain/expenses";
+import { closeExpense, createExpenseFromLines, ExpenseFieldError, getExpense, listLineDoors, rowActionBlock, saveExpenseDraft, submitExpense } from "@/domain/expenses";
+import { findLineLinks } from "@/repositories/quote-line-links";
 import { listQuoteLines, saveQuoteLines } from "@/domain/quotes/lines";
+import { saveProjectLedger } from "@/domain/projects/ledger";
 import { lineStatusWord } from "@/app/(app)/projects/status-display";
 import { approveDocument, rejectDocument } from "@/domain/approvals";
 import { GateBlockedError } from "@/domain/rules/gate";
@@ -439,5 +441,82 @@ describe("지출결의 쪽 게이트 (EXP-07 · D-609)", () => {
     expect(await linkedStatusOf(fx, fx.lines.withVendor)).toBeNull();
     expect((await submitReadyDraft(fx.pm, draft)).kind).toBe("submitted");
     expect(await linkedStatusOf(fx, fx.lines.withVendor)).toBe("active");
+  });
+});
+
+describe("행 행동 조합 (S14 · rowActionBlock — 06-18 소비 계약)", () => {
+  const usage = (lineId: string) => ({ id: randomUUID(), quoteLineId: lineId, supplyKrw: 100_000 });
+  const noLinks = { expenses: [], cardUsages: [], purchaseRequests: [] };
+
+  it("조합표 — 온라인구매 × open → 막힘 없음 / 일반 × open × 카드 2건 → 이유 + `카드 사용 등록` / no_vendor · none → 05 그대로", () => {
+    expect(rowActionBlock({ lineId: "L", branch: "purchase", door: "open", links: noLinks, paid: [] })).toBeNull();
+    expect(rowActionBlock({ lineId: "L", branch: "expense", door: "open", links: { ...noLinks, cardUsages: [usage("L"), usage("L")] }, paid: [] })).toEqual({
+      reason: "카드 사용 2건 연결됨 · 지출결의는 다른 줄",
+      next: { label: "카드 사용 등록", href: "/cards?new=1&line=L" },
+    });
+    expect(rowActionBlock({ lineId: "L", branch: "expense", door: "no_vendor", links: { ...noLinks, cardUsages: [usage("L")] }, paid: [] })).toBeNull();
+    expect(rowActionBlock({ lineId: "L", branch: "expense", door: "none", links: { ...noLinks, cardUsages: [usage("L")] }, paid: [] })).toBeNull();
+  });
+
+  it("조합표 — 온라인구매 × 지출결의 연결 → `지출결의 {번호} 연결됨 · 카드 사용은 다른 줄` / 일반 × closed × 지급 완료 → `지급 완료 {번호} · 새 지출결의 없음`", async () => {
+    const fx = await setupExpenseProject();
+    const { paid } = await paidLine(fx);
+    const links = (await findLineLinks(fx.pm, [fx.lines.withVendor])).get(fx.lines.withVendor);
+    if (!links) throw new Error("연결 없음");
+    expect(rowActionBlock({ lineId: fx.lines.withVendor, branch: "purchase", door: "closed", links, paid: [] })).toEqual({
+      reason: `지출결의 ${paid.number} 연결됨 · 카드 사용은 다른 줄`,
+    });
+    expect(
+      rowActionBlock({ lineId: fx.lines.withVendor, branch: "expense", door: "closed", links, paid: [{ number: paid.number, installment: false, paid: true }] }),
+    ).toEqual({ reason: `지급 완료 ${paid.number} · 새 지출결의 없음` });
+    expect(rowActionBlock({ lineId: fx.lines.withVendor, branch: "expense", door: "closed", links, paid: [{ number: paid.number, installment: false, paid: false }] })).toBeNull();
+  });
+
+  it("listLineDoors — 카드 2건 줄은 막힘 + 다음 한 수, 온라인구매 협력사 줄은 `구매 요청` 문(목적지 `/cards/purchases?new=1&line=`) · 제출 거부와 같은 문자열", async () => {
+    const fx = await setupExpenseProject();
+    await cardOn(fx, fx.lines.split);
+    await cardOn(fx, fx.lines.split);
+    const before = await listLineDoors(fx.pm, { projectId: fx.projectId });
+    expect(before.cells[fx.lines.split]).toMatchObject({
+      state: "open",
+      branch: "expense",
+      blocked: { reason: "카드 사용 2건 연결됨 · 지출결의는 다른 줄", next: { label: "카드 사용 등록", href: `/cards?new=1&line=${fx.lines.split}` } },
+    });
+    expect(before.cells[fx.lines.withVendor]).toMatchObject({ state: "open", branch: "expense" });
+    expect(before.cells[fx.lines.withVendor]?.blocked).toBeUndefined();
+    const rejected = await caught(submitReadyDraft(fx.pm, await draftOf(fx.pm, fx.lines.split)));
+    expect((rejected as Error).message).toBe(before.cells[fx.lines.split]?.blocked?.reason);
+
+    await setSettingValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME, "스테이지원");
+    const after = await listLineDoors(fx.pm, { projectId: fx.projectId });
+    expect(after.cells[fx.lines.withVendor]).toMatchObject({ branch: "purchase", purchaseHref: `/cards/purchases?new=1&line=${fx.lines.withVendor}` });
+    expect(after.cells[fx.lines.withVendor]?.blocked).toBeUndefined();
+    expect(after.cells[fx.lines.noVendor]).toMatchObject({ state: "no_vendor", branch: "expense" });
+  });
+});
+
+describe("카드 붙잡은 줄 저장 응답 (N-3 · S14 — 화면은 저장 응답 줄로 다시 그린다)", () => {
+  it("카드 600,000 줄의 실행가를 500,000으로 내려 일괄 저장 → 응답 줄 hasCardSideLinks · executionOverKrw 100,000", async () => {
+    const fx = await setupExpenseProject();
+    await cardOn(fx, fx.lines.withVendor, 600_000);
+    const [row] = await db.select().from(quoteLines).where(eq(quoteLines.id, fx.lines.withVendor));
+    if (!row) throw new Error("줄 없음");
+    const result = await saveProjectLedger(fx.pm, fx.projectId, {
+      seenStatus: "in_progress",
+      quoteLines: {
+        revisionId: fx.revisionId,
+        rows: [
+          {
+            id: row.id,
+            version: row.version,
+            subcategory: row.subcategory,
+            itemName: row.itemName,
+            unitPrice: { currency: "KRW", amount: row.unitPriceAmountKrw, fxRate: 1 },
+            execution: { currency: "KRW", amount: 500_000, fxRate: 1 },
+          },
+        ],
+      },
+    });
+    expect(result.quoteLines?.lines.find((line) => line.id === fx.lines.withVendor)).toMatchObject({ hasCardSideLinks: true, executionOverKrw: 100_000 });
   });
 });

@@ -603,7 +603,7 @@ export function CardUsageForm({
           onKeyDown={
             purchase
               ? (event) => {
-                  if (event.key === "Enter" && !event.ctrlKey && !event.metaKey && event.target instanceof HTMLInputElement) event.preventDefault();
+                  if (event.key === "Enter" && !event.ctrlKey && event.target instanceof HTMLInputElement) event.preventDefault();
                 }
               : undefined
           }

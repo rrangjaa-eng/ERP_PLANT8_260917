@@ -131,7 +131,8 @@ describe("공용 카드 사용 자격", () => {
 
     const proxyIds = (await cardOptionsForUsage(proxy, seoulToday())).map((option) => option.id);
     expect(proxyIds).toEqual(expect.arrayContaining([teamCardId, sharedId]));
-    expect(proxyIds).not.toContain(ownId);
+    // 06-09(EXP-16): 대리 등록 권한자는 활성 카드 전부 — 남의 개인 · 남의 팀 카드도 든다.
+    expect(proxyIds).toEqual(expect.arrayContaining([ownId, otherTeamCardId]));
   });
 });
 

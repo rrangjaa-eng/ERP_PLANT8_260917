@@ -4,6 +4,8 @@ import {
   cardUsageFormDefaults,
   cardUsageFormOptions,
   listCardUsages,
+  loadCardUsageForEdit,
+  type CardUsageEditDto,
   type CardUsageLinkFilter,
   type CardUsageList as CardUsageListResult,
 } from "@/domain/corp-card-usages";
@@ -16,7 +18,7 @@ import { SidePanel } from "@/ui/side-panel/SidePanel";
 // 합계 면 한 줄 배치는 프로젝트 목록 합계 줄과 같은 클래스(새 CSS 없음).
 import styles from "@/app/(app)/projects/projects.module.css";
 import { CardUsageFilters, CardUsageList, CardUsageLoadError, type CardUsageListRowView } from "./card-usage-list";
-import { CardUsageForm } from "./card-usage-form";
+import { CardUsageForm, type CardUsageEdit } from "./card-usage-form";
 
 // 06-05(EXP-07 · UI-SPEC S8 · S9 · C12): 법인카드 사용 목록 = 원장. 한 건 등록은 `?new=1` 옆 패널(페이지 폼 없음).
 // 필터 · 쪽은 GET 쿼리(`month` · `card` · `link` · `via` · `page`) — 범위 · 합계 · 쪽은 서버(listCardUsages)가 정한다.
@@ -45,6 +47,33 @@ function monthChoices(thisMonth: string, selected: string): string[] {
   return months.includes(selected) ? months : [...months, selected].sort().reverse();
 }
 
+// 수정 패널 재료 — 서버가 투영한 건(값을 못 보는 칸은 빈다)을 폼의 평범한 값으로.
+function toEditView(usage: Partial<CardUsageEditDto>, changeLink: boolean): CardUsageEdit | null {
+  if (!usage.id || usage.version === undefined || !usage.cardId || !usage.usedOn || !usage.linkKind || !usage.usedByUserId) return null;
+  return {
+    id: usage.id,
+    version: usage.version,
+    cardId: usage.cardId,
+    cardText: usage.cardText ?? "",
+    proxyHint: usage.proxyHint ?? null,
+    usedOn: usage.usedOn,
+    merchant: usage.merchantId ? { id: usage.merchantId, name: usage.merchantName ?? "", defaultEvidenceType: null, defaultEvidenceName: null } : null,
+    evidenceTypeCode: usage.evidenceTypeCode ?? "",
+    linkKind: usage.linkKind,
+    project: usage.projectId && usage.projectLabel ? { id: usage.projectId, label: usage.projectLabel } : null,
+    line:
+      usage.lineId && usage.lineItemName !== undefined && usage.lineItemName !== null
+        ? { id: usage.lineId, itemName: usage.lineItemName, remainingKrw: usage.lineRemainingKrw ?? null, hint: usage.lineHint ?? null }
+        : null,
+    usedByUserId: usage.usedByUserId,
+    memo: usage.memo ?? null,
+    currency: usage.currency === "USD" ? "USD" : "KRW",
+    amount: usage.amount ?? null,
+    fxRate: usage.fxRate ?? null,
+    changeLink,
+  };
+}
+
 export default async function CardsPage({ searchParams }: { searchParams: Promise<CardsSearchParams> }) {
   const { viewer, user } = await requireSession();
   const params = await searchParams;
@@ -67,7 +96,7 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
     // 목록 자리 한 줄 + `다시 시도`(UI-SPEC 「Error — 목록 로드」) — 화면의 나머지(머리 · 1차)는 선다.
     console.error(error);
   }
-  const cards = options.cards.flatMap((card) => (card.id && card.label ? [{ id: card.id, label: card.label }] : []));
+  const cards = options.cards.flatMap((card) => (card.id && card.label ? [{ id: card.id, label: card.label, proxyHint: card.proxyHint ?? null }] : []));
   const rows: CardUsageListRowView[] = (list?.rows ?? []).flatMap((row) =>
     row.id && row.cardId && row.cardLabel && row.usedOn && row.linkKind
       ? [
@@ -89,6 +118,7 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
             currency: row.currency ?? null,
             foreignAmount: row.foreignAmount ?? null,
             fxRate: row.fxRate ?? null,
+            rights: row.rights ?? { edit: false, changeLink: false, delete: false },
           },
         ]
       : [],
@@ -108,8 +138,36 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
   const listHref = pageHref(1);
   const newHref = `${listHref}${listHref.includes("?") ? "&" : "?"}new=1`;
 
+  // 06-09 수정 모드(`?editId=`) — 권리가 없거나 없는 건이면 패널 없이 목록만(링크로 남의 건을 열 수 없다).
+  const editParam = first(params.editId);
+  const editing = editParam ? await loadCardUsageForEdit(viewer, editParam) : null;
+  const edit = editing ? toEditView(editing.usage, editing.rights.changeLink) : null;
+
   let panel = null;
-  if (first(params.new) === "1" && cards.length > 0) {
+  if (edit) {
+    panel = (
+      <SidePanel title="카드 사용 수정" closeHref={listHref}>
+        <CardUsageForm
+          cards={[]}
+          evidenceTypes={options.evidenceTypes}
+          teamName={options.teamName}
+          teamAssigned={options.teamAssigned}
+          userName={user.name}
+          today={today}
+          usdFxRate={options.usdFxRate}
+          defaults={{
+            usedOn: edit.usedOn,
+            corpCardId: edit.cardId,
+            linkKind: edit.linkKind,
+            project: edit.project,
+            line: edit.line,
+            evidenceTypeCode: edit.evidenceTypeCode,
+          }}
+          edit={edit}
+        />
+      </SidePanel>
+    );
+  } else if (first(params.new) === "1" && cards.length > 0) {
     // 진입(M-4) — S14 견적 줄 행 `?line=` · S15 빈 섹션 `?project=`. 고를 수 없으면 서버가 버리고 직전 등록 기준.
     const entryLine = first(params.line);
     const entryProject = first(params.project);
@@ -155,7 +213,7 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
   let empty = undefined;
   let body;
   if (!list) body = <CardUsageLoadError />;
-  else if (rows.length > 0) body = <CardUsageList rows={rows} />;
+  else if (rows.length > 0) body = <CardUsageList rows={rows} listHref={listHref} />;
   else if (filtered) body = <ListEmpty message="조건에 맞는 카드 사용이 없습니다" action={{ label: "필터 지우기", href: LIST_HREF }} />;
   else {
     // DR5 — 빈 목록이면 틀이 머리 1차를 숨기고 빈 화면이 말한다. 쓸 카드가 0장이면 버튼도 없다(할 일이 관리자 몫).

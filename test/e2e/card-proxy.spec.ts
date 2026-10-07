@@ -55,6 +55,8 @@ async function setup(): Promise<ProxyFx> {
   const label = `PM카드-${suffix}`;
   const card = await createCorpCard(SYSTEM_VIEWER, { issuer, numberLast4: "7788", label, kind: "personal", holderUserId: pm.viewer.id });
   if (!card.id) throw new Error("카드 id 없음");
+  // 경영관리 본인 카드 — 옵션이 늘 둘 이상이라 카드 `Select`가 선다(본인 카드는 힌트 없음).
+  await createCorpCard(SYSTEM_VIEWER, { issuer, numberLast4: "7789", label: `경영카드-${suffix}`, kind: "personal", holderUserId: proxy.viewer.id });
   const client = await insertVendor(SYSTEM_VIEWER, { name: `E2E대리클라이언트-${suffix}`, normalizedName: `e2e대리클라이언트-${suffix}` });
   const projectName = `E2E대리-${suffix}`;
   const project = await createProject(pm.viewer, { clientId: client.id, teamId: team.id, pmUserId: pm.viewer.id, name: projectName, startDate: `${year}-01-01`, endDate: `${year}-12-31` });
@@ -102,7 +104,8 @@ async function registerByProxy(page: Page, fx: ProxyFx, amount: string): Promise
   const card = sheet.getByLabel("카드", { exact: true });
   await waitForHydration(card);
   await card.selectOption(fx.cardId);
-  await expect(sheet.getByText(`경영관리 등록 · 카드 소지자 ${fx.pm.name}`, { exact: true })).toBeVisible();
+  const hint = sheet.getByText(`경영관리 등록 · 카드 소지자 ${fx.pm.name}`, { exact: true });
+  await expect(hint).toBeVisible();
   const total = sheet.getByLabel("결제 합계");
   await total.fill(amount);
   await sheet.getByRole("radio", { name: "견적 줄" }).check();

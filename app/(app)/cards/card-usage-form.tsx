@@ -15,7 +15,7 @@ import type { NumberInputKind } from "@/lib/format-number";
 import selectStyles from "@/ui/select/Select.module.css";
 import textFieldStyles from "@/ui/input/TextField.module.css";
 import cardStyles from "./cards.module.css";
-import { createCardUsageAction, previewCardAmountsAction, searchMerchantsAction } from "./actions";
+import { createCardUsageAction, previewCardAmountsAction, searchMerchantsAction, updateCardUsageAction } from "./actions";
 import { LinkPicker, type PickedLine, type PickedProject } from "./link-picker";
 
 // 06-05(UI-SPEC S9 · C12): 카드 사용 등록 옆 패널 본문 — `PanelForm intent="create"` + `Form layout="panel"`. 사람은 결제 합계만 적고
@@ -24,7 +24,8 @@ import { LinkPicker, type PickedLine, type PickedProject } from "./link-picker";
 //
 // 칸은 비제어(defaultValue)이고 등록 뒤 `gen` 키로 새로 그린 다음 `succeed`를 부른다 — `form.reset()`이 새 기본값으로 돌아가게.
 
-export type CardOption = { id: string; label: string };
+/** `proxyHint` — 대리 등록 권한자가 남의 카드를 고르면 카드 아래 서는 글자(서버가 정한다 — 화면이 판정하지 않는다). */
+export type CardOption = { id: string; label: string; proxyHint?: string | null };
 export type EvidenceTypeOption = { value: string; label: string };
 type LinkKind = "team_cost" | "quote_line" | "out_of_quote";
 
@@ -40,12 +41,34 @@ export type CardUsageDefaults = {
 
 type Merchant = { id: string; name: string; defaultEvidenceType: string | null; defaultEvidenceName: string | null };
 
+/** 06-09 수정 모드(`?editId=`) — 저장된 건(서버 투영 값). 카드는 읽기 텍스트, 저장 = 패널 닫힘. */
+export type CardUsageEdit = {
+  id: string;
+  version: number;
+  cardId: string;
+  cardText: string;
+  proxyHint: string | null;
+  usedOn: string;
+  merchant: Merchant | null;
+  evidenceTypeCode: string;
+  linkKind: LinkKind;
+  project: PickedProject | null;
+  line: PickedLine | null;
+  usedByUserId: string;
+  memo: string | null;
+  currency: "KRW" | "USD";
+  amount: number | null;
+  fxRate: number | null;
+  /** 연결을 바꿀 수 있나(O-11 — 구매 완료로 생긴 건은 못 바꾼다). */
+  changeLink: boolean;
+};
+
 type Preview = {
   split: { supplyKrw: number; vatKrw: number; residualKrw: number; ruleKind: string; evidenceLabel: string } | null;
   teamName: string | null;
   teamAssigned: boolean;
   /** 사용일 기준 쓸 카드(서버 투영) — 없으면(첫 미리보기 전 · 등록 뒤 오늘로 돌아감) 페이지가 준 오늘 기준 카드. */
-  cards?: { id?: string; label?: string }[];
+  cards?: { id?: string; label?: string; proxyHint?: string | null }[];
 };
 
 
@@ -71,8 +94,8 @@ function evidenceForMerchant(vendorDefault: string | null, options: readonly Evi
 // 칸 줄 · 라벨 모양은 TextField 줄과 같은 클래스(ui/input) — 패널 칸 간격이 한 규칙이다.
 const rowStyles = { row: textFieldStyles.row, label: textFieldStyles.label };
 
-function AmountField({ kind, error, onRaw }: { kind: NumberInputKind; error: string | undefined; onRaw: (raw: string) => void }) {
-  const { inputRef, value, onChange, error: inputError, rawValue } = useCommaInput(kind, "");
+function AmountField({ kind, initial, error, onRaw }: { kind: NumberInputKind; initial: string; error: string | undefined; onRaw: (raw: string) => void }) {
+  const { inputRef, value, onChange, error: inputError, rawValue } = useCommaInput(kind, initial);
   useEffect(() => onRaw(rawValue), [rawValue, onRaw]);
   const shown = inputError ?? error;
   return (
@@ -166,6 +189,7 @@ export function CardUsageForm({
   today,
   usdFxRate,
   defaults: initialDefaults,
+  edit = null,
 }: {
   cards: CardOption[];
   evidenceTypes: EvidenceTypeOption[];
@@ -175,16 +199,22 @@ export function CardUsageForm({
   today: string;
   usdFxRate: number | null;
   defaults: CardUsageDefaults;
+  edit?: CardUsageEdit | null;
 }) {
   const panelRef = useRef<PanelFormHandle>(null);
   const [gen, setGen] = useState(0);
   const [defaults, setDefaults] = useState(initialDefaults);
   const [cardId, setCardId] = useState(initialDefaults.corpCardId ?? (cards.length === 1 ? (cards[0]?.id ?? "") : ""));
   const [usedOn, setUsedOn] = useState(initialDefaults.usedOn);
-  const [currency, setCurrency] = useState<"KRW" | "USD">("KRW");
-  const [amountRaw, setAmountRaw] = useState("");
-  const [fxRaw, setFxRaw] = useState(usdFxRate === null ? "" : String(usdFxRate));
-  const [evidenceTypeCode, setEvidenceTypeCode] = useState(initialDefaults.evidenceTypeCode ?? "");
+  const [currency, setCurrency] = useState<"KRW" | "USD">(edit?.currency ?? "KRW");
+  const initialAmount = edit?.amount === null || edit?.amount === undefined ? "" : String(edit.amount);
+  const [amountRaw, setAmountRaw] = useState(initialAmount);
+  const initialFx = edit && edit.currency !== "KRW" && edit.fxRate !== null ? edit.fxRate : usdFxRate;
+  const [fxRaw, setFxRaw] = useState(initialFx === null ? "" : String(initialFx));
+  // 수정 모드: 저장된 증빙 종류가 지금 카드 옵션에 없으면 `—`에 선다(UI-SPEC S9 — 그 값을 옵션에 되살리지 않는다).
+  const [evidenceTypeCode, setEvidenceTypeCode] = useState(
+    edit ? (evidenceTypes.some((option) => option.value === edit.evidenceTypeCode) ? edit.evidenceTypeCode : "") : (initialDefaults.evidenceTypeCode ?? ""),
+  );
   const [linkKind, setLinkKind] = useState<LinkKind | null>(initialDefaults.linkKind);
   // 06-07 견적 줄 연결 — 프로젝트 · 줄은 패널 위 고르기(S10)로만 채운다. 줄 DTO의 남은 실행가 · 힌트를 그대로 보인다(새 셈 없음).
   const [linkProject, setLinkProject] = useState<PickedProject | null>(initialDefaults.project);
@@ -202,7 +232,7 @@ export function CardUsageForm({
     // 고르기 목록이 닫히며 누른 버튼으로 돌린 포커스 뒤에 — 다음 빈 「바꾸기」(프로젝트 뒤 = 견적 줄), 없으면 방금 바뀐 칸.
     window.setTimeout(() => document.getElementById(focusId)?.focus(), 0);
   }, [linkProject, linkLine, linkKind]);
-  const [merchant, setMerchant] = useState<Merchant | null>(null);
+  const [merchant, setMerchant] = useState<Merchant | null>(edit?.merchant ?? null);
   const [pickOpen, setPickOpen] = useState(false);
   // 가맹점은 이름 없는 상태 + 숨은 칸이라 입력 이벤트가 없다 — 고른 뒤 숨은 칸 값이 바뀌면 change를 쏴 PanelForm이 바뀐 칸으로 센다(DR1 · SP-8).
   const merchantInputRef = useRef<HTMLInputElement>(null);
@@ -222,7 +252,9 @@ export function CardUsageForm({
   const [showingResult, setShowingResult] = useState(false);
   const submittedRef = useRef<{ corpCardId: string; linkKind: LinkKind | null; project: PickedProject | null } | null>(null);
 
-  const { execute, result, isExecuting, reset } = useAction(createCardUsageAction, {
+  // 수정 저장 — 성공하면 패널이 닫히고 포커스가 연 요소(그 행 `수정`)로 돌아간다(PanelForm intent="edit").
+  const update = useAction(updateCardUsageAction, { onSuccess: () => panelRef.current?.succeed() });
+  const create = useAction(createCardUsageAction, {
     onSuccess: ({ data }) => {
       const submitted = submittedRef.current;
       const next: CardUsageDefaults = {
@@ -252,6 +284,11 @@ export function CardUsageForm({
     },
   });
 
+  const { execute: executeCreate, result: createResult, isExecuting: creating, reset: resetCreate } = create;
+  const result = edit ? update.result : createResult;
+  const isExecuting = edit ? update.isExecuting : creating;
+  const reset = edit ? update.reset : resetCreate;
+
   // 새 기본값으로 다시 그린 뒤에 성공 신호 — PanelForm이 reset · 스냅숏 · 결과 한 줄 · 첫 칸 포커스를 한다.
   useEffect(() => {
     const status = doneStatusRef.current;
@@ -261,8 +298,12 @@ export function CardUsageForm({
   }, [gen]);
 
   // 카드 자격은 사용일 소속으로 정해진다 — 사용일을 바꾸면 그날 쓸 카드로 선택지를 바꾸고, 고른 카드가 빠지면 비운다(한 장이면 그 카드).
-  const usableCards: CardOption[] = preview.cards ? preview.cards.flatMap((card) => (card.id && card.label ? [{ id: card.id, label: card.label }] : [])) : cards;
-  const selectedCardId = usableCards.some((card) => card.id === cardId) ? cardId : usableCards.length === 1 ? (usableCards[0]?.id ?? "") : "";
+  const usableCards: CardOption[] = preview.cards
+    ? preview.cards.flatMap((card) => (card.id && card.label ? [{ id: card.id, label: card.label, proxyHint: card.proxyHint ?? null }] : []))
+    : cards;
+  // 수정 모드의 카드 = 저장된 카드(여는 사람의 카드 옵션을 보지 않는다 — 옵션 0장이어도 선다).
+  const selectedCardId = edit ? edit.cardId : usableCards.some((card) => card.id === cardId) ? cardId : usableCards.length === 1 ? (usableCards[0]?.id ?? "") : "";
+  const proxyHint = edit ? edit.proxyHint : (usableCards.find((card) => card.id === selectedCardId)?.proxyHint ?? null);
 
   const onAmountRaw = useCallback((raw: string) => setAmountRaw(raw), []);
   const onFxRaw = useCallback((raw: string) => setFxRaw(raw), []);
@@ -271,7 +312,8 @@ export function CardUsageForm({
   // 서버 계산 한 줄 · 사용일 소속 — 결제 합계 · 사용일 · 증빙 종류가 바뀌면 짧은 지연 뒤 서버에 묻는다(늦은 응답은 버린다).
   const previewSeq = useRef(0);
   const previewKey = JSON.stringify([usedOn, currency, amountRaw, currency === "KRW" ? "" : fxRaw, evidenceTypeCode]);
-  const firstPreviewKey = useRef(previewKey);
+  // 수정 모드는 열자마자 서버 계산 한 줄을 받는다(저장된 값의 역산 · 실행가 초과 판정).
+  const firstPreviewKey = useRef(edit ? "" : previewKey);
   useEffect(() => {
     if (previewKey === firstPreviewKey.current) return;
     firstPreviewKey.current = "";
@@ -357,7 +399,9 @@ export function CardUsageForm({
     const formData = new FormData(event.currentTarget);
     const memo = formData.get("memo");
     submittedRef.current = { corpCardId: selectedCardId, linkKind, project: linkKind === "team_cost" ? null : linkProject };
-    execute({
+    // 수정: 저장된 견적 외 비용 줄을 그대로 두면 그 줄 id로 보낸다(연결 그대로 — 새 줄을 만들지 않는다, UC-1 상한).
+    const keptOutOfQuote = edit && edit.linkKind === "out_of_quote" && linkKind === "out_of_quote" && linkProject?.id === edit.project?.id && edit.line;
+    const payload = {
       corpCardId: selectedCardId,
       usedOn,
       merchantVendorId: merchant?.id ?? null,
@@ -365,8 +409,9 @@ export function CardUsageForm({
       amount: Number(amountRaw),
       ...(currency !== "KRW" && fxValue ? { fxRate: fxValue } : {}),
       evidenceTypeCode,
-      link:
-        linkKind === "team_cost"
+      link: keptOutOfQuote
+        ? { kind: "line" as const, lineId: edit.line?.id ?? "" }
+        : linkKind === "team_cost"
           ? { kind: "team" as const }
           : linkKind === "quote_line" && linkLine
             ? { kind: "line" as const, lineId: linkLine.id }
@@ -374,7 +419,9 @@ export function CardUsageForm({
               ? { kind: "out_of_quote" as const, projectId: linkProject.id, itemName: shownItemName.trim() || null }
               : null,
       memo: typeof memo === "string" && memo.trim() !== "" ? memo.trim() : null,
-    });
+    };
+    if (edit) update.execute({ ...payload, id: edit.id, version: edit.version, usedByUserId: edit.usedByUserId });
+    else executeCreate(payload);
   }
 
   function pickMerchant(next: Merchant) {
@@ -395,8 +442,8 @@ export function CardUsageForm({
       <PanelForm
         ref={panelRef}
         id="card-usage-form"
-        label="카드 사용 등록"
-        intent="create"
+        label={edit ? "카드 사용 저장" : "카드 사용 등록"}
+        intent={edit ? "edit" : "create"}
         onSubmit={handleSubmit}
         pending={isExecuting}
         blockedReason={showingResult ? undefined : blockedReason}
@@ -415,11 +462,18 @@ export function CardUsageForm({
       >
         {/* 칸 줄 간격은 TextField 줄(`--s-4`)과 같은 클래스로 맞춘다(새 CSS 모듈 없음). 입력이 시작되면 결과 한 줄 대신 막힘 줄. */}
         <div key={gen} onInput={() => setShowingResult(false)} onChange={() => setShowingResult(false)}>
-          {singleCard ? (
+          {edit ? (
+            <div data-ui="field-row" className={rowStyles.row}>
+              <span className={rowStyles.label}>카드</span>
+              <span>{edit.cardText}</span>
+              {proxyHint ? <Form.Hint>{proxyHint}</Form.Hint> : null}
+            </div>
+          ) : singleCard ? (
             <div data-ui="field-row" className={rowStyles.row}>
               <span className={rowStyles.label}>카드</span>
               <span>{singleCard.label}</span>
               <input type="hidden" name="corpCardId" value={singleCard.id} readOnly />
+              {proxyHint ? <Form.Hint>{proxyHint}</Form.Hint> : null}
             </div>
           ) : (
             <div data-ui="field-row" className={rowStyles.row}>
@@ -432,6 +486,7 @@ export function CardUsageForm({
                   defaultValue={selectedCardId}
                   onChange={(event) => setCardId(event.target.value)}
                 />
+                {proxyHint ? <Form.Hint>{proxyHint}</Form.Hint> : null}
               </Form.Field>
             </div>
           )}
@@ -462,13 +517,19 @@ export function CardUsageForm({
                 aria-label="통화"
                 name="currency"
                 className={selectStyles.select}
-                defaultValue="KRW"
+                defaultValue={edit?.currency ?? "KRW"}
                 onChange={(event) => setCurrency(event.target.value === "USD" ? "USD" : "KRW")}
               >
                 <option value="KRW">KRW</option>
                 <option value="USD">USD</option>
               </select>
-              <AmountField key={currency} kind={currency === "KRW" ? "krw" : "foreign"} error={fieldErrors?.amount?._errors?.[0]} onRaw={onAmountRaw} />
+              <AmountField
+                key={currency}
+                kind={currency === "KRW" ? "krw" : "foreign"}
+                initial={edit && currency === edit.currency ? initialAmount : ""}
+                error={fieldErrors?.amount?._errors?.[0]}
+                onRaw={onAmountRaw}
+              />
               {preview.split ? (
                 <Form.Hint>
                   {/* 서버가 다시 셈하는 동안 이전 값은 흐린 글자(UI-SPEC S9 loading — 토큰 하나, 새 CSS 모듈 없음). */}
@@ -481,7 +542,7 @@ export function CardUsageForm({
           </div>
           {currency === "USD" ? (
             <div data-ui="field-row" className={rowStyles.row}>
-              <FxField initial={usdFxRate} error={fieldErrors?.fxRate?._errors?.[0]} onRaw={onFxRaw} />
+              <FxField initial={initialFx} error={fieldErrors?.fxRate?._errors?.[0]} onRaw={onFxRaw} />
             </div>
           ) : null}
           <div data-ui="field-row" className={rowStyles.row}>
@@ -556,7 +617,7 @@ export function CardUsageForm({
               ) : null}
             </>
           ) : null}
-          <TextField id="card-usage-memo" name="memo" label="메모" maxLength={500} defaultValue="" />
+          <TextField id="card-usage-memo" name="memo" label="메모" maxLength={500} defaultValue={edit?.memo ?? ""} />
         </div>
       </PanelForm>
       <MerchantPickDialog open={pickOpen} onClose={() => setPickOpen(false)} onPick={pickMerchant} />

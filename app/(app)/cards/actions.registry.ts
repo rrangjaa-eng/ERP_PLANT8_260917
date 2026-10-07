@@ -9,6 +9,14 @@ registerAction({
   dtoName: null,
 });
 
+// 06-09: 수정의 문은 그 건의 권리(domain `cardUsageRights` — O-11)다 — 메뉴 값은 레지스트리 메타데이터.
+registerAction({
+  name: "updateCardUsageAction",
+  menu: "cards",
+  action: "write",
+  dtoName: null,
+});
+
 registerAction({
   name: "previewCardAmountsAction",
   menu: "cards",

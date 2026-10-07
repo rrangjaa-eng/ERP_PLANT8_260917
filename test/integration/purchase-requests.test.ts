@@ -22,7 +22,7 @@ import {
 import { StaleQuoteRevisionError } from "@/domain/corp-card-usages/link-targets";
 import { createRevisionFromCurrent } from "@/domain/quotes/revisions";
 import { closeExpense, createExpenseFromLines } from "@/domain/expenses";
-import { rejectDocument } from "@/domain/approvals";
+import { rejectDocument, REJECT_REASON_EMPTY_MESSAGE, REJECT_REASON_TOO_LONG_MESSAGE } from "@/domain/approvals";
 import { getCurrentQuoteRevision } from "@/domain/quotes/lines";
 import { ForbiddenError } from "@/domain/permissions/can";
 import { gate, GateBlockedError } from "@/domain/rules/gate";
@@ -36,10 +36,14 @@ import {
   precheckPurchaseRequest,
   previewPurchaseCompletion,
   PURCHASE_REQUEST_ENTITY,
+  cancelPurchaseRequest,
+  precheckPurchaseCancel,
+  precheckPurchaseCancelUndo,
+  undoCancelPurchaseRequest,
   type PurchaseCompletionInput,
   type PurchaseRequestInput,
 } from "@/domain/purchase-requests";
-import { createPurchaseRequestAction } from "@/app/(app)/cards/purchases/actions";
+import { cancelPurchaseRequestAction, createPurchaseRequestAction, undoCancelPurchaseRequestAction } from "@/app/(app)/cards/purchases/actions";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { findLineLinks } from "@/repositories/quote-line-links";
@@ -47,7 +51,7 @@ import { seoulToday } from "@/lib/dates";
 import { makePerson } from "./approvals-fixtures";
 import { ONLINE_VENDOR, purchaseProject, request, requestInput, type PurchaseFx } from "./fixtures/purchase-requests";
 import { setupExpenseProject, submitReadyDraft } from "./fixtures/expenses";
-import { waitForLockWaiter } from "./lock-race";
+import { deferred, waitForLockWaiter } from "./lock-race";
 
 // 06-08(EXP-10 · D-609 · Q3 · GA-38): 구매 요청 신청 경로 통합 파일 — 06-12 · 06-14가 `describe`를 더한다.
 
@@ -1385,5 +1389,343 @@ describe("외화 예상 금액(06-14 — T-06-69)", () => {
     const outcome = await createPurchaseRequestAction({ linkKind: "team_cost", itemName: "팀 비품", linkUrl: null, currency: "USD", amount: 100, memo: null } as never);
     expect(outcome?.validationErrors?.fxRate?._errors?.[0]).toBe("환율 없음 · USD 환율 적기");
     session.viewer = null;
+  });
+});
+
+
+// ── 06-14 Task 2 — 요청 취소(Q2 — `신청됨`에서만) · 취소 되돌리기 · 취소 ∥ 구매 완료 ──────────────────────
+
+async function cancelAs(viewer: Viewer, id: string, reason?: string, version?: number) {
+  return cancelPurchaseRequest(
+    viewer,
+    { id, version: version ?? (await requestVersion(id)), ...(reason === undefined ? {} : { reason }) },
+    await precheckPurchaseCancel(viewer, { id }),
+  );
+}
+
+async function undoAs(viewer: Viewer, id: string) {
+  return undoCancelPurchaseRequest(viewer, { id, version: await requestVersion(id) }, await precheckPurchaseCancelUndo(viewer, { id }));
+}
+
+async function statusLogs(requestId: string) {
+  return db.select().from(actionLog).where(and(eq(actionLog.entityId, requestId), eq(actionLog.actionType, "status_change")));
+}
+
+describe("요청 취소(06-14 — Q2 · O-9 · T-06-67)", () => {
+  it("요청자 본인 · 자기 `신청됨` → 사유 없이 `cancelled`(취소한 사람 · 시각 · version+1) + 같은 tx `status_change` 한 줄(요청 → 취소)", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine);
+    const before = await requestVersion(created.id);
+    await cancelAs(fx.pm, created.id);
+    const row = await statusOf(created.id);
+    expect(row).toMatchObject({ status: "cancelled", cancelledBy: fx.pm.id, cancelReason: null, version: before + 1 });
+    expect(row?.cancelledAt).toBeInstanceOf(Date);
+    const logs = await statusLogs(created.id);
+    expect(logs).toHaveLength(1);
+    expect(logs[0]?.detail).toMatchObject({ from: "requested", to: "cancelled" });
+  });
+
+  it("구매 권한자 · 남의 `신청됨` → 빈 사유 거부(`사유 없음 · 사유 적기`) · 사유 있으면 취소 + 사유 저장 + 로그에 사유", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine);
+    const buyer = await purchaser();
+    expect(((await caught(cancelAs(buyer, created.id, "  "))) as Error).message).toBe(REJECT_REASON_EMPTY_MESSAGE);
+    expect(((await caught(cancelAs(buyer, created.id, "가".repeat(501)))) as Error).message).toBe(REJECT_REASON_TOO_LONG_MESSAGE);
+    expect((await statusOf(created.id))?.status).toBe("requested");
+    await cancelAs(buyer, created.id, "중복 신청");
+    expect(await statusOf(created.id)).toMatchObject({ status: "cancelled", cancelledBy: buyer.id, cancelReason: "중복 신청" });
+    expect((await statusLogs(created.id))[0]?.detail).toMatchObject({ reason: "중복 신청" });
+  });
+
+  it("구매 권한 없는 남 → ForbiddenError · 요청 `신청됨` 그대로", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine);
+    const stranger = await makePerson("남", DEFAULT_ROLE_ID, null);
+    const error = await caught(cancelAs(stranger, created.id, "그냥"));
+    expect(error).toBeInstanceOf(ForbiddenError);
+    expect((await statusOf(created.id))?.status).toBe("requested");
+  });
+
+  it("[Q2] `purchased` 요청의 취소 → `이미 구매 완료 · 새로 고침` 거부 · 요청 구매 완료 · 카드 사용 1 그대로", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine);
+    const buyer = await purchaser();
+    await complete(buyer, await completionInput(created.id, await sharedCard()));
+    const error = await caught(cancelAs(fx.pm, created.id));
+    expect((error as Error).message).toBe("이미 구매 완료 · 새로 고침");
+    const buyerError = await caught(cancelAs(buyer, created.id, "취소하고 싶다"));
+    expect((buyerError as Error).message).toBe("이미 구매 완료 · 새로 고침");
+    expect((await statusOf(created.id))?.status).toBe("purchased");
+    expect(await usagesOf(created.id)).toHaveLength(1);
+    expect(await statusLogs(created.id)).toHaveLength(0);
+  });
+
+  it("이미 취소된 요청의 취소 → `구매 요청 취소됨 · 새로 고침` · 다른 version → `다른 저장이 먼저 됨 · 새로 고침`", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine);
+    const staleVersion = await requestVersion(created.id);
+    await cancelAs(fx.pm, created.id);
+    expect(((await caught(cancelAs(fx.pm, created.id))) as Error).message).toBe("구매 요청 취소됨 · 새로 고침");
+    const other = await request(fx, fx.onlineLine);
+    const error = await caught(cancelAs(fx.pm, other.id, undefined, staleVersion + 5));
+    expect((error as Error).message).toBe("다른 저장이 먼저 됨 · 새로 고침");
+    expect((await statusOf(other.id))?.status).toBe("requested");
+  });
+
+  it("팀 비용 요청도 같은 규칙 — 본인 즉시 취소 · 구매 권한자는 사유", async () => {
+    const requester = await teamCostRequester();
+    const own = await teamRequestBy(requester.viewer);
+    await cancelAs(requester.viewer, own.id);
+    expect((await statusOf(own.id))?.status).toBe("cancelled");
+    const other = await teamRequestBy(requester.viewer);
+    const buyer = await purchaser();
+    await expect(cancelAs(buyer, other.id)).rejects.toThrow(REJECT_REASON_EMPTY_MESSAGE);
+    await cancelAs(buyer, other.id, "필요 없음");
+    expect((await statusOf(other.id))?.status).toBe("cancelled");
+  });
+
+  it("액션 — 본인 취소 → 번호 · version 반환 · 되돌리기 액션 → `신청됨`(같은 서버 판정)", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine);
+    session.viewer = fx.pm;
+    const cancelled = await cancelPurchaseRequestAction({ id: created.id, version: await requestVersion(created.id) });
+    expect(cancelled?.data).toMatchObject({ number: created.number });
+    const restored = await undoCancelPurchaseRequestAction({ id: created.id, version: await requestVersion(created.id) });
+    expect(restored?.serverError).toBeUndefined();
+    expect((await statusOf(created.id))?.status).toBe("requested");
+    session.viewer = null;
+  });
+
+  // E-26 — 05 `deps.afterLock` 장벽으로 순서를 고정한다(두 호출의 사전 조회는 장벽 전에 끝낸다).
+  it("취소 ∥ 구매 완료 — 구매 완료 먼저 잠금: 구매 완료 성공 · 취소는 `이미 구매 완료 · 새로 고침` · 카드 사용 1", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine);
+    const buyer = await purchaser();
+    const input = await completionInput(created.id, await sharedCard());
+    const completePre = await precheckPurchaseCompletion(buyer, input);
+    const cancelPre = await precheckPurchaseCancel(fx.pm, { id: created.id });
+    const held = deferred();
+    const release = deferred();
+    const completing = completePurchaseRequest(buyer, input, completePre, {
+      afterLock: async () => {
+        held.resolve();
+        await release.promise;
+      },
+    });
+    await held.promise;
+    const cancelling = caught(cancelPurchaseRequest(fx.pm, { id: created.id, version: input.version }, cancelPre));
+    await waitForLockWaiter(pool);
+    release.resolve();
+    await completing;
+    expect(((await cancelling) as Error).message).toBe("이미 구매 완료 · 새로 고침");
+    expect((await statusOf(created.id))?.status).toBe("purchased");
+    expect(await usagesOf(created.id)).toHaveLength(1);
+  });
+
+  it("취소 ∥ 구매 완료 — 취소 먼저 잠금: 취소 성공 · 구매 완료는 `구매 요청 취소됨 · 새로 고침` · 카드 사용 0", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine);
+    const buyer = await purchaser();
+    const input = await completionInput(created.id, await sharedCard());
+    const completePre = await precheckPurchaseCompletion(buyer, input);
+    const cancelPre = await precheckPurchaseCancel(fx.pm, { id: created.id });
+    const held = deferred();
+    const release = deferred();
+    const cancelling = cancelPurchaseRequest(fx.pm, { id: created.id, version: input.version }, cancelPre, undefined, {
+      afterLock: async () => {
+        held.resolve();
+        await release.promise;
+      },
+    });
+    await held.promise;
+    const completing = caught(completePurchaseRequest(buyer, input, completePre));
+    await waitForLockWaiter(pool);
+    release.resolve();
+    await cancelling;
+    expect(((await completing) as Error).message).toBe("구매 요청 취소됨 · 새로 고침");
+    expect((await statusOf(created.id))?.status).toBe("cancelled");
+    expect(await usagesOf(created.id)).toHaveLength(0);
+  });
+});
+
+describe("취소 되돌리기(06-14 — D-609 · Q3 · X-1 · X-2 · N-1 · N-2 · T-06-193)", () => {
+  const UNDO_DENIED = "되돌리기 권한 없음";
+
+  it("요청자 본인 · 사유 없는 취소 → `신청됨`(번호 그대로 · 취소 칸 비움) + `status_change`(취소 → 요청)", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine);
+    await cancelAs(fx.pm, created.id);
+    await undoAs(fx.pm, created.id);
+    const row = await statusOf(created.id);
+    expect(row).toMatchObject({ status: "requested", number: created.number, cancelledBy: null, cancelledAt: null, cancelReason: null });
+    const logs = await statusLogs(created.id);
+    expect(logs).toHaveLength(2);
+    expect(logs.map((log) => log.detail)).toEqual(expect.arrayContaining([expect.objectContaining({ from: "cancelled", to: "requested" })]));
+  });
+
+  it("구매 권한자가 사유로 취소한 건 → 요청자도 되돌릴 수 없다 · 요청자 아닌 사람 → 거부 · `취소` 그대로", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine);
+    const buyer = await purchaser();
+    await cancelAs(buyer, created.id, "중복");
+    expect(((await caught(undoAs(fx.pm, created.id))) as Error).message).toBe(UNDO_DENIED);
+    expect(((await caught(undoAs(buyer, created.id))) as Error).message).toBe(UNDO_DENIED);
+    const own = await request(fx, fx.onlineLine);
+    await cancelAs(fx.pm, own.id);
+    const stranger = await makePerson("남", DEFAULT_ROLE_ID, null);
+    expect(((await caught(undoAs(stranger, own.id))) as Error).message).toBe(UNDO_DENIED);
+    expect((await statusOf(created.id))?.status).toBe("cancelled");
+    expect((await statusOf(own.id))?.status).toBe("cancelled");
+  });
+
+  it("`cancelled`가 아닌 요청(신청됨 · 구매 완료) → 거부", async () => {
+    const fx = await purchaseProject();
+    const open = await request(fx, fx.onlineLine);
+    expect(((await caught(undoAs(fx.pm, open.id))) as Error).message).toBe("다른 저장이 먼저 됨 · 새로 고침");
+    const done = await request(fx, fx.onlineLine);
+    await complete(await purchaser(), await completionInput(done.id, await sharedCard()));
+    expect(((await caught(undoAs(fx.pm, done.id))) as Error).message).toBe("다른 저장이 먼저 됨 · 새로 고침");
+    expect((await statusOf(done.id))?.status).toBe("purchased");
+  });
+
+  it("팀 비용 요청 → 줄 게이트 없이 `신청됨`", async () => {
+    const requester = await teamCostRequester();
+    const created = await teamRequestBy(requester.viewer);
+    await cancelAs(requester.viewer, created.id);
+    await undoAs(requester.viewer, created.id);
+    expect((await statusOf(created.id))?.status).toBe("requested");
+  });
+
+  it("취소된 사이 그 줄에 지출결의가 이어졌다 → `지출결의 {번호} 연결됨 …` 거부 · 요청 `취소` 그대로", async () => {
+    const fx = await setupExpenseProject();
+    await setSettingValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME, "스테이지원");
+    const input = requestInput(fx.lines.withVendor);
+    const created = await createPurchaseRequest(fx.pm, input, await precheckPurchaseRequest(fx.pm, input));
+    await cancelAs(fx.pm, created.id);
+    await setSettingValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME, "");
+    const draft = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
+    const submitted = await submitReadyDraft(fx.pm, draft.created[0]?.expenseId ?? "");
+    if (submitted.kind !== "submitted") throw new Error("제출되지 않음");
+    await setSettingValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME, "스테이지원");
+    const error = await caught(undoAs(fx.pm, created.id));
+    expect(error).toBeInstanceOf(GateBlockedError);
+    expect((error as Error).message).toMatch(new RegExp(`^지출결의 ${submitted.number} 연결됨`));
+    expect((await statusOf(created.id))?.status).toBe("cancelled");
+  });
+
+  it("취소된 사이 프로젝트가 `completed` → `완료 · 견적 줄 잠김` 거부 · 요청 `취소` 그대로", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine);
+    await cancelAs(fx.pm, created.id);
+    await setStatus(fx.projectId, "completed");
+    const error = await caught(undoAs(fx.pm, created.id));
+    expect(error).toBeInstanceOf(CompletedProjectError);
+    expect((error as Error).message).toBe("완료 · 견적 줄 잠김");
+    expect((await statusOf(created.id))?.status).toBe("cancelled");
+  });
+
+  it("취소된 사이 카드 사용이 남은 실행가를 먹음 → `실행가 초과 · 남은 실행가 400,000 · 다른 줄 고르기` 거부 · 경계(공급가 400,000)는 통과", async () => {
+    const fx = await purchaseProject();
+    const big = await request(fx, fx.onlineLine, 660_000);
+    await cancelAs(fx.pm, big.id);
+    await cardOnLine(fx, fx.onlineLine, 600_000);
+    const error = await caught(undoAs(fx.pm, big.id));
+    expect(error).toBeInstanceOf(GateBlockedError);
+    expect((error as Error).message).toBe("실행가 초과 · 남은 실행가 400,000 · 다른 줄 고르기");
+    expect((await statusOf(big.id))?.status).toBe("cancelled");
+    const edge = await request(fx, fx.onlineLine, 440_000);
+    await cancelAs(fx.pm, edge.id);
+    await undoAs(fx.pm, edge.id);
+    expect((await statusOf(edge.id))?.status).toBe("requested");
+  });
+
+  it("[X-2 경합] 되돌리기 사전 조회를 끝낸 뒤 풀 밖 연결이 프로젝트 행을 잡고 `completed`로 커밋 → `완료 · 견적 줄 잠김` · 요청 `취소` 그대로", async () => {
+    const fx = await purchaseProject();
+    await setStatus(fx.projectId, "settling");
+    const created = await request(fx, fx.onlineLine);
+    await cancelAs(fx.pm, created.id);
+    const pre = await precheckPurchaseCancelUndo(fx.pm, { id: created.id });
+    const version = await requestVersion(created.id);
+    const client = new Client({ connectionString: process.env.DATABASE_URL });
+    await client.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT id FROM projects WHERE id = $1 FOR UPDATE", [fx.projectId]);
+      await client.query("UPDATE projects SET status = 'completed' WHERE id = $1", [fx.projectId]);
+      const undoing = caught(undoCancelPurchaseRequest(fx.pm, { id: created.id, version }, pre));
+      await waitForLockWaiter(pool);
+      await client.query("COMMIT");
+      const error = await undoing;
+      expect(error).toBeInstanceOf(CompletedProjectError);
+      expect((error as Error).message).toBe("완료 · 견적 줄 잠김");
+    } finally {
+      await client.query("ROLLBACK").catch(() => {});
+      await client.end();
+    }
+    expect((await statusOf(created.id))?.status).toBe("cancelled");
+  });
+
+  it("[X-1 계보] 요청 줄 L이 취소된 사이 새 차수(L → L′)의 L′에 지출결의가 제출됨 → 되돌리기 거부", async () => {
+    const fx = await setupExpenseProject();
+    await setSettingValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME, "스테이지원");
+    const input = requestInput(fx.lines.withVendor);
+    const created = await createPurchaseRequest(fx.pm, input, await precheckPurchaseRequest(fx.pm, input));
+    await cancelAs(fx.pm, created.id);
+    const latest = await getCurrentQuoteRevision(SYSTEM_VIEWER, fx.projectId);
+    if (!latest) throw new Error("차수 없음");
+    const next = await createRevisionFromCurrent(fx.pm, { projectId: fx.projectId, fromRevisionId: latest.id });
+    const [copy] = await db.select({ id: quoteLines.id }).from(quoteLines).where(and(eq(quoteLines.revisionId, next.revisionId), eq(quoteLines.copiedFromLineId, fx.lines.withVendor)));
+    if (!copy) throw new Error("복사된 줄 없음");
+    await setSettingValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME, "");
+    const draft = await createExpenseFromLines(fx.pm, { lineIds: [copy.id] });
+    const submitted = await submitReadyDraft(fx.pm, draft.created[0]?.expenseId ?? "");
+    if (submitted.kind !== "submitted") throw new Error("제출되지 않음");
+    await setSettingValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME, "스테이지원");
+    const error = await caught(undoAs(fx.pm, created.id));
+    expect(error).toBeInstanceOf(GateBlockedError);
+    expect((error as Error).message).toMatch(new RegExp(`^지출결의 ${submitted.number} 연결됨`));
+    expect((await statusOf(created.id))?.status).toBe("cancelled");
+  });
+
+  it("[X-1 계보] 같은 새 차수에서 L′에 연결이 없으면 되돌리기 통과 — 요청은 L 그대로", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine);
+    await cancelAs(fx.pm, created.id);
+    await (await nextRevision(fx)).copyOf(fx.onlineLine);
+    await undoAs(fx.pm, created.id);
+    expect(await statusOf(created.id)).toMatchObject({ status: "requested", quoteLineId: fx.onlineLine });
+  });
+
+  it("[N-1] 새 차수 L2 실행가 1,500,000 + 카드 공급가 300,000 → 요청(예상 공급가 900,000) 되돌리기 통과(옛 L1 실행가로 판정하면 남은 700,000으로 막혔다)", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine, 990_000);
+    await cancelAs(fx.pm, created.id);
+    const l2 = await (await nextRevision(fx)).copyOf(fx.onlineLine);
+    await db.update(quoteLines).set({ executionAmountKrw: 1_500_000 }).where(eq(quoteLines.id, l2));
+    await cardOnLine(fx, l2, 300_000);
+    await undoAs(fx.pm, created.id);
+    expect((await statusOf(created.id))?.status).toBe("requested");
+  });
+
+  it("[N-1] 새 차수 L2 실행가 800,000(카드 사용 없음) → `실행가 초과 · 남은 실행가 800,000 · 다른 줄 고르기` 거부 · 요청 `취소` 그대로", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine, 990_000);
+    await cancelAs(fx.pm, created.id);
+    const l2 = await (await nextRevision(fx)).copyOf(fx.onlineLine);
+    await db.update(quoteLines).set({ executionAmountKrw: 800_000 }).where(eq(quoteLines.id, l2));
+    const error = await caught(undoAs(fx.pm, created.id));
+    expect((error as Error).message).toBe("실행가 초과 · 남은 실행가 800,000 · 다른 줄 고르기");
+    expect((await statusOf(created.id))?.status).toBe("cancelled");
+  });
+
+  it("[N-2] 현재 줄 L2가 보관되면 `견적 줄 빠짐 · 새로 고침` 거부 · 요청 `취소` 그대로", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine);
+    await cancelAs(fx.pm, created.id);
+    const l2 = await (await nextRevision(fx)).copyOf(fx.onlineLine);
+    await db.update(quoteLines).set({ archivedAt: new Date() }).where(eq(quoteLines.id, l2));
+    const error = await caught(undoAs(fx.pm, created.id));
+    expect((error as Error).message).toBe("견적 줄 빠짐 · 새로 고침");
+    expect((await statusOf(created.id))?.status).toBe("cancelled");
   });
 });

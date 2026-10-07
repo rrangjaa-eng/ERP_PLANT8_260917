@@ -63,9 +63,13 @@ async function payExpense(payer: Person, expenseId: string): Promise<void> {
   await completeExpensePayment(payer.viewer, { expenseId, expectedPayableKrw: preview.payableKrw, version: confirmed.version });
 }
 
+// 감사 O-8 — 같은 화면 S15 「법인카드 사용」 섹션 행(카드 사용의 연결 칸에 줄 이름이 든다)을 잡지 않게 견적 줄 표 안으로 좁힌다.
 function rowOf(page: Page, itemName: string) {
-  return page.getByRole("row").filter({ hasText: itemName });
+  return page.getByRole("grid", { name: "견적 줄" }).getByRole("row").filter({ hasText: itemName });
 }
+
+const cellOf = (locator: Locator) => locator.locator("xpath=ancestor::*[self::td or self::th][1]");
+const widthOf = async (locator: Locator) => (await locator.boundingBox())?.width ?? 0;
 
 // 줄 하나에 소지자 본인 카드로 이은 카드 사용(계산서 — 공급가 = 결제 합계).
 async function cardOn(holder: Person, lineId: string, amount = 100_000): Promise<void> {
@@ -222,6 +226,51 @@ test.describe("견적 줄 상태 (06-13)", () => {
     const sheet = page.getByRole("dialog", { name: "카드 사용 등록" });
     await expect(sheet.getByRole("radio", { name: "견적 줄" })).toBeChecked();
     await expect(sheet.getByText(fx.lines.hold.itemName, { exact: true })).toBeVisible();
+    await page.context().close();
+  });
+
+  // 감사 D-1 — long-text backstop: 막힘 이유가 행동 칸 안에서 줄바꿈하고 행동 열이 항목 열을 누르지 않는다(SYSTEM §6-0 · §7-3 가로 스크롤 금지).
+  test("[감사 D-1] 막힌 줄 이유 + 3차 — 1280 · 1024 · 768에서 문서 가로 넘침 0 · 이유는 행동 칸 안 · 항목 열이 행동 열보다 좁지 않음", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    await cardOn(fx.pm, fx.lines.hold.id);
+    await cardOn(fx.pm, fx.lines.hold.id);
+    const reasonText = "카드 사용 2건 연결됨 · 지출결의는 다른 줄";
+
+    const page = await loginPage(browser, baseURL, fx.pm, DESKTOP);
+    for (const width of [1280, 1024, 768]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(`/projects/${fx.projectId}`);
+      const row = page.getByRole("row").filter({ hasText: fx.lines.hold.itemName }).filter({ hasText: reasonText });
+      const reason = row.getByText(reasonText, { exact: true });
+      await expect(reason).toBeVisible();
+      const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      expect(overflow, `${width} 문서 가로 넘침`).toBeLessThanOrEqual(0);
+      const doorCell = cellOf(reason);
+      expect(await widthOf(reason), `${width} 이유가 행동 칸 안`).toBeLessThanOrEqual(await widthOf(doorCell));
+      if (width >= 1024) {
+        const worst = page.getByRole("row").filter({ hasText: fx.lines.worst.itemName });
+        const itemCell = cellOf(worst.getByText(fx.lines.worst.itemName, { exact: true }));
+        expect(await widthOf(itemCell), `${width} 항목 열 ≥ 행동 열`).toBeGreaterThanOrEqual(await widthOf(doorCell));
+      }
+    }
+    await page.context().close();
+  });
+
+  // 감사 D-3 — 행 안 3차는 로빙 밖(tabIndex -1)이라 키보드 경로는 `Ctrl+E`다. 카드 쪽으로 막힌 줄의 `Ctrl+E`는 다음 한 수로 간다.
+  test("[감사 D-3] 카드 쪽으로 막힌 줄 — 항목 칸에서 `Ctrl+E` → 다음 한 수 `/cards?new=1&line={id}`", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    await cardOn(fx.pm, fx.lines.hold.id);
+    await cardOn(fx.pm, fx.lines.hold.id);
+
+    const page = await loginPage(browser, baseURL, fx.pm, DESKTOP);
+    await page.goto(`/projects/${fx.projectId}`);
+    const item = rowOf(page, fx.lines.hold.itemName).getByRole("gridcell").nth(ITEM_COLUMN);
+    await waitForHydration(item);
+    await expect(async () => {
+      await item.focus();
+      await page.keyboard.press("Control+e");
+      await expect(page).toHaveURL(new RegExp(`/cards\\?new=1&line=${fx.lines.hold.id}$`), { timeout: 2000 });
+    }).toPass({ timeout: 20_000 });
     await page.context().close();
   });
 

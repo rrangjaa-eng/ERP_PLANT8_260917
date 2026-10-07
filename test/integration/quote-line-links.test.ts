@@ -1,18 +1,18 @@
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { and, eq, isNull } from "drizzle-orm";
-import { db } from "@/db/client";
-import { corpCardUsages, expenses, files, purchaseRequests, quoteLines } from "@/db/schema";
+import { db, pool } from "@/db/client";
+import { corpCards, corpCardUsages, expenses, files, purchaseRequests, quoteLines } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertVisibility } from "@/repositories/permissions";
-import { closeExpense, createExpenseFromLines, ExpenseFieldError, getExpense, listLineDoors, rowActionBlock, saveExpenseDraft, submitExpense } from "@/domain/expenses";
+import { closeExpense, createExpenseFromLines, ExpenseConflictError, ExpenseFieldError, getExpense, listLineDoors, rowActionBlock, saveExpenseDraft, submitExpense } from "@/domain/expenses";
 import { findLineLinks } from "@/repositories/quote-line-links";
 import { listQuoteLines, saveQuoteLines } from "@/domain/quotes/lines";
 import { saveProjectLedger } from "@/domain/projects/ledger";
 import { lineStatusWord } from "@/app/(app)/projects/status-display";
 import { approveDocument, rejectDocument } from "@/domain/approvals";
 import { GateBlockedError } from "@/domain/rules/gate";
-import { completeExpensePayment, previewPayable } from "@/domain/payments";
+import { cancelExpensePayment, completeExpensePayment, previewPayable } from "@/domain/payments";
 import { confirmEvidence, waiveEvidence } from "@/domain/evidence-reviews";
 import { voidEvidence } from "@/domain/evidence";
 import { createCorpCard } from "@/domain/corp-cards";
@@ -20,7 +20,8 @@ import { createCardUsage, precheckCardUsage, type CardUsageInput } from "@/domai
 import { setSettingValue } from "@/domain/settings/registry";
 import { PURCHASE_ONLINE_VENDOR_NAME } from "@/domain/settings/keys";
 import { seoulToday } from "@/lib/dates";
-import { addApprovedRevision, makeEvidenceManager, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
+import { addApprovedRevision, attachEvidence, makeEvidenceManager, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
+import { waitForLockWaiter } from "./lock-race";
 import { approvedExpenseWithEvidence, makePaymentManager, setEvidenceRequired, type ApprovedExpense } from "./fixtures/payments";
 
 // 06-13(EXP-06 · EXP-07 · SP-2 · O-14 · C10 · X-3): 견적 줄 상태 파생과 지출결의 쪽 입구 — 지급 완료 잠금 · 이중 연결 · 온라인구매 문.
@@ -109,6 +110,23 @@ describe("지급 완료 줄 (06-13 Task 1)", () => {
     expect(error).toBeInstanceOf(GateBlockedError);
     expect((error as Error).message).toBe(`지급 완료 ${paid.number} · 새 지출결의 없음`);
     expect((error as Error).message).not.toBe(`이 줄에 지출결의 ${paid.number} 있음 · 지출결의 열기`);
+    expect((await expenseRow(staleDraft)).number).toBeNull();
+  });
+
+  // 검토 I-1 — 저장소 거르기(`expense_payments.cancelled_at IS NULL`)를 지나는 경로. 결정 함수 단위 테스트는 `paid`를 직접 넣어 이 조건을 보지 않는다.
+  it("[검토 I-1 · D-606] 지급 → 지급 취소 → 지급 전으로 센다: 상태 `paid` 아님 · D-66 이유에 `지급 완료` 없음 · 행 막힘 없음 · B 제출은 05 ④ 문구", async () => {
+    const fx = await setupExpenseProject();
+    const { payer, paid, staleDraft } = await paidLine(fx);
+    await cancelExpensePayment(payer, { expenseId: paid.expenseId, reason: "이체 오류", version: (await expenseRow(paid.expenseId)).version });
+
+    const line = await lineOf(fx.pm, fx.revisionId, fx.lines.withVendor);
+    expect(line.linkedStatus).toBe("active");
+    expect(line.readonlyReason ?? "").not.toContain("지급 완료");
+    const doors = await listLineDoors(fx.pm, { projectId: fx.projectId });
+    expect(doors.cells[fx.lines.withVendor]).toMatchObject({ state: "closed" });
+    expect(doors.cells[fx.lines.withVendor]?.blocked).toBeUndefined();
+    const error = await caught(submitReadyDraft(fx.otherPm, staleDraft));
+    expect((error as Error).message).toBe(`이 줄에 지출결의 ${paid.number} 있음 · 지출결의 열기`);
     expect((await expenseRow(staleDraft)).number).toBeNull();
   });
 });
@@ -442,6 +460,29 @@ describe("지출결의 쪽 게이트 (EXP-07 · D-609)", () => {
     expect((await submitReadyDraft(fx.pm, draft)).kind).toBe("submitted");
     expect(await linkedStatusOf(fx, fx.lines.withVendor)).toBe("active");
   });
+
+  // 검토 S-1(T-06-13-01) — 줄 id는 트랜잭션 전에 읽는다. 프로젝트 행을 쥔 사이 초안의 줄이 바뀌면 잠그지 않은 줄로 판정하지 않고 충돌로 막는다.
+  it("[검토 S-1] 사전 조회 뒤 초안의 줄이 바뀜 → ExpenseConflictError · 번호 없음", async () => {
+    const fx = await setupExpenseProject();
+    const draft = await draftOf(fx.pm, fx.lines.withVendor);
+    await attachEvidence(fx.pm, draft);
+    const { version } = await expenseRow(draft);
+    const holder = await pool.connect();
+    let outcome: unknown;
+    try {
+      await holder.query("BEGIN");
+      await holder.query("SELECT id FROM projects WHERE id = $1 FOR UPDATE", [fx.projectId]);
+      const submitting = submitExpense(fx.pm, { expenseId: draft, expectedVersion: version });
+      await waitForLockWaiter(pool);
+      await holder.query("UPDATE expenses SET quote_line_id = $1 WHERE id = $2", [fx.lines.split, draft]);
+      await holder.query("COMMIT");
+      outcome = await caught(submitting);
+    } finally {
+      holder.release();
+    }
+    expect(outcome).toBeInstanceOf(ExpenseConflictError);
+    expect((await expenseRow(draft)).number).toBeNull();
+  });
 });
 
 describe("행 행동 조합 (S14 · rowActionBlock — 06-18 소비 계약)", () => {
@@ -492,6 +533,28 @@ describe("행 행동 조합 (S14 · rowActionBlock — 06-18 소비 계약)", ()
     expect(after.cells[fx.lines.withVendor]).toMatchObject({ branch: "purchase", purchaseHref: `/cards/purchases?new=1&line=${fx.lines.withVendor}` });
     expect(after.cells[fx.lines.withVendor]?.blocked).toBeUndefined();
     expect(after.cells[fx.lines.noVendor]).toMatchObject({ state: "no_vendor", branch: "expense" });
+  });
+
+  it("[감사 D-2] 쓸 카드가 없는 사람에게는 다음 한 수 `카드 사용 등록`을 싣지 않는다 · 이유는 그대로", async () => {
+    const fx = await setupExpenseProject();
+    await cardOn(fx, fx.lines.split);
+    await cardOn(fx, fx.lines.split);
+    await db.update(corpCards).set({ active: false }).where(eq(corpCards.holderUserId, fx.pm.id));
+    const doors = await listLineDoors(fx.pm, { projectId: fx.projectId });
+    expect(doors.cells[fx.lines.split]?.blocked).toEqual({ reason: "카드 사용 2건 연결됨 · 지출결의는 다른 줄" });
+  });
+
+  it("[검토 I-2] 온라인구매 줄 막힘 이유 = 카드 사용 등록 서버 거부 문구 `지출결의 {번호} 연결됨 · 카드 사용은 다른 줄`", async () => {
+    const fx = await setupExpenseProject();
+    const draft = await draftOf(fx.pm, fx.lines.withVendor);
+    expect((await submitReadyDraft(fx.pm, draft)).kind).toBe("submitted");
+    const { number } = await expenseRow(draft);
+    const rejected = await caught(cardOn(fx, fx.lines.withVendor));
+    expect((rejected as Error).message).toBe(`지출결의 ${number} 연결됨 · 카드 사용은 다른 줄`);
+
+    await setSettingValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME, "스테이지원");
+    const doors = await listLineDoors(fx.pm, { projectId: fx.projectId });
+    expect(doors.cells[fx.lines.withVendor]).toMatchObject({ branch: "purchase", blocked: { reason: (rejected as Error).message } });
   });
 });
 

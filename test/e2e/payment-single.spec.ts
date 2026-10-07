@@ -345,7 +345,8 @@ test.describe("증빙 없음 막힘 (06-04 · P3)", () => {
       const pay = page.getByRole("button", { name: /^지급 완료/ });
       await waitForHydration(pay);
       await expect(pay).toHaveAttribute("aria-disabled", "true");
-      await expect(page.getByText(/^증빙 없음 · 기안자 \S+$/)).toBeVisible();
+      // 06-10: 같은 서버 이유 글자가 1차 옆 막힘과 증빙 줄(S4 empty) 둘에 선다.
+      await expect(page.getByText(/^증빙 없음 · 기안자 \S+$/)).toHaveCount(2);
       await pay.click({ force: true });
       await page.keyboard.press("Control+Enter");
       await expect(page.getByTestId("payment-result")).toHaveCount(0);

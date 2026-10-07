@@ -1,8 +1,10 @@
 "use client";
 
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import type { PaymentViewDto } from "@/domain/payments";
-import { EVIDENCE_AMOUNT_FRACTION, EVIDENCE_AMOUNT_NOT_NUMBER } from "@/domain/payments/action-row";
+import { CANCEL_REASON_REQUIRED, EVIDENCE_AMOUNT_FRACTION, EVIDENCE_AMOUNT_NOT_NUMBER } from "@/domain/payments/action-row";
+import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { Button } from "@/ui/button/Button";
 import { Form } from "@/ui/form/Form";
 import { KvList, type KvItem } from "@/ui/kv-list/KvList";
@@ -10,7 +12,8 @@ import { Num } from "@/ui/num/Num";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { useCommaInput } from "@/ui/input/use-comma-input";
 import { numberInputRejectionReason } from "@/lib/format-number";
-import { previewPayableAction } from "./actions";
+import dialogStyles from "@/app/(app)/approvals/decision-dialogs.module.css";
+import { previewPayableAction, waiveEvidenceAction } from "./actions";
 import { usePaymentPanel } from "./payment-section";
 import { TaxParts, type TaxPart } from "./tax-parts";
 import styles from "./expense.module.css";
@@ -115,8 +118,112 @@ function WarningLine({ text, testId, stale = false }: { text: string; testId: st
 
 type Preview = { amount: number; taxLine: TaxPart[] | null; overrun: string | null };
 
-export function EvidenceReviewBlock() {
+const WAIVE_FAILED = "결과를 받지 못함 · 새로 고침";
+
+// 06-10(D-603 · D-611 · UI-SPEC 「Destructive — 증빙 면제(S4)」): 증빙 면제 확인 모달 — 사유 한 칸 필수. 결과 줄은 지급 전후 · 선결제로 갈린다(서버가 준 사실).
+// 서버 거부(동시성 · 증빙 있음 · 이미 면제)는 1차 옆 막힘 자리에 서고 창은 닫히지 않으며 사유는 남는다. 응답이 없으면 다시 보내면 되는 실패 한 줄.
+function WaiveEvidenceDialog({
+  open,
+  onClose,
+  expenseId,
+  version,
+  subtitle,
+  resultLines,
+  onWaived,
+}: {
+  open: boolean;
+  onClose: () => void;
+  expenseId: string;
+  version: number;
+  subtitle: string;
+  resultLines: string[];
+  onWaived: () => void;
+}) {
+  const router = useRouter();
+  const fieldId = useId();
+  const [reason, setReason] = useState("");
+  const [serverError, setServerError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<string | undefined>(undefined);
+  const [pending, setPending] = useState(false);
+  const submittingRef = useRef(false);
+
+  function close() {
+    setReason("");
+    setServerError(null);
+    setFailure(undefined);
+    onClose();
+  }
+
+  const trimmed = reason.trim();
+  const blocked = serverError ?? (trimmed === "" ? CANCEL_REASON_REQUIRED : undefined);
+
+  async function confirm() {
+    if (submittingRef.current || blocked) return;
+    submittingRef.current = true;
+    setPending(true);
+    setFailure(undefined);
+    let response: Awaited<ReturnType<typeof waiveEvidenceAction>> | undefined;
+    try {
+      response = await waiveEvidenceAction({ expenseId, version, reason: trimmed });
+    } catch {
+      response = undefined;
+    }
+    submittingRef.current = false;
+    setPending(false);
+    if (response?.data) {
+      setReason("");
+      onWaived();
+      return;
+    }
+    const message = response?.serverError ?? response?.validationErrors?.reason?._errors?.[0];
+    if (message) setServerError(message);
+    else setFailure(WAIVE_FAILED);
+    // 서버 거부 뒤 문서를 다시 읽는다 — 다음 시도가 새 version을 보낸다(지급 취소 모달과 같은 꼴).
+    if (response?.serverError) router.refresh();
+  }
+
+  return (
+    <ConfirmDialog
+      open={open}
+      onClose={close}
+      title="증빙 면제"
+      subtitle={subtitle}
+      resultLines={resultLines}
+      evidenceField={
+        <div className={dialogStyles.reason}>
+          <label htmlFor={fieldId}>사유</label>
+          <textarea
+            id={fieldId}
+            rows={2}
+            maxLength={480}
+            autoComplete="off"
+            value={reason}
+            aria-disabled={pending ? "true" : undefined}
+            readOnly={pending}
+            onChange={(event) => {
+              setReason(event.target.value);
+              setServerError(null);
+            }}
+          />
+        </div>
+      }
+      primary={{
+        label: "증빙 면제",
+        shortcut: "Ctrl+Enter",
+        pending,
+        onConfirm: () => void confirm(),
+        disabledReason: blocked,
+        failure,
+      }}
+    />
+  );
+}
+
+export function EvidenceReviewBlock({ waiveSubtitle = "" }: { waiveSubtitle?: string }) {
+  const router = useRouter();
   const { view, fields } = usePaymentPanel();
+  const [waiveOpen, setWaiveOpen] = useState(false);
+  const justWaivedRef = useRef(false);
   const { edit, setEdit } = useEvidenceEdit();
   const dash = <span className={styles.muted}>—</span>;
   const input = evidenceAmountInput(view, edit);
@@ -161,6 +268,15 @@ export function EvidenceReviewBlock() {
     focusedRef.current = true;
     document.getElementById(EVIDENCE_FIELD_ID)?.focus();
   }, [input.open, serverAmount]);
+
+  // 면제 뒤 다시 읽은 행의 새 1차(P4 `지급 완료`)로 포커스 — 1차가 없으면(P6) 결과 글자로. 누른 3차가 사라져 body로 빠지지 않게(토스트 없음).
+  const waivedNow = view.evidenceStatus === "면제";
+  useEffect(() => {
+    if (!justWaivedRef.current || !waivedNow) return;
+    justWaivedRef.current = false;
+    const next = document.querySelector<HTMLElement>("[data-fixed-bar] button:not([disabled])") ?? document.querySelector<HTMLElement>('[data-testid="payment-result"]');
+    next?.focus();
+  }, [waivedNow]);
 
   function openEdit() {
     setEdit({ raw: serverAmount === null ? "" : String(serverAmount), inputError: null, error: null });
@@ -247,66 +363,108 @@ export function EvidenceReviewBlock() {
       // 지급 권한 없는 사람 — 버튼 대신 담당 표기(D-601).
       second = "확인은 경영관리";
     }
+    // S4 empty(P3 — 결재 통과 · 지급 전 · 증빙 필수 on · 증빙 0 · 선결제 아님 · 면제 아님): 증빙 줄은 서버 이유 글자 `증빙 없음 · 기안자 {이름}`(danger)다.
+    const emptyLine = view.row?.row === "P3" && status === "증빙 없음" ? (view.row.blockReason ?? null) : null;
+    const canWaive = view.row?.tertiary === "waive" && view.expenseId !== undefined && view.version !== undefined;
+    const reviewValue = (
+      <>
+        {emptyLine ? (
+          <span className={styles.blockedReason} data-testid="evidence-empty-line">
+            {emptyLine}
+          </span>
+        ) : word ? (
+          <StatusTag status={word} variant="text" />
+        ) : (
+          dash
+        )}
+        {second ? (
+          <span className={`${styles.subLine} ${styles.muted}`} data-testid="evidence-review-line">
+            {second}
+          </span>
+        ) : null}
+        {status === "선결제" && due ? (
+          due.overdueDays > 0 ? (
+            <span className={styles.drift} data-testid="evidence-prepaid-due">
+              증빙 {due.overdueDays}일 경과
+            </span>
+          ) : (
+            <span className={`${styles.subLine} ${styles.muted}`} data-testid="evidence-prepaid-due">
+              증빙 기한 {due.dueOn.slice(5)}
+            </span>
+          )
+        ) : null}
+      </>
+    );
     items.push({
       label: "확인",
-      value: (
-        <>
-          {word ? <StatusTag status={word} variant="text" /> : dash}
-          {second ? (
-            <span className={`${styles.subLine} ${styles.muted}`} data-testid="evidence-review-line">
-              {second}
-            </span>
-          ) : null}
-          {status === "선결제" && due ? (
-            due.overdueDays > 0 ? (
-              <span className={styles.drift} data-testid="evidence-prepaid-due">
-                증빙 {due.overdueDays}일 경과
-              </span>
-            ) : (
-              <span className={`${styles.subLine} ${styles.muted}`} data-testid="evidence-prepaid-due">
-                증빙 기한 {due.dueOn.slice(5)}
-              </span>
-            )
-          ) : null}
-        </>
+      value: canWaive ? (
+        <span className={styles.valueRow}>
+          <span className={styles.fill}>{reviewValue}</span>
+          <Button id="evidence-waive" variant="tertiary" onClick={() => setWaiveOpen(true)}>
+            증빙 면제
+          </Button>
+        </span>
+      ) : (
+        reviewValue
       ),
     });
   }
 
+  const waiveResultLines = [
+    view.row?.row === "P6" ? "지급 기록 그대로 · 비용은 승인액 그대로" : "증빙 없이 지급 · 비용은 승인액 그대로",
+    ...(view.evidenceStatus === "선결제" ? ["선결제 증빙 기한 없어짐"] : []),
+  ];
   const showHint = input.open && serverAmount !== null && input.value !== null && input.value !== serverAmount;
   return (
-    <div data-testid="evidence-review">
-      {input.open && amount !== undefined ? (
-        <Form
-          aria-label="증빙 금액"
-          onSubmit={(event) => {
-            event.preventDefault();
+    <>
+      <div data-testid="evidence-review">
+        {input.open && amount !== undefined ? (
+          <Form
+            aria-label="증빙 금액"
+            onSubmit={(event) => {
+              event.preventDefault();
+            }}
+          >
+            <Form.Field id={EVIDENCE_FIELD_ID} label="증빙 금액" width="short">
+              <AmountInput
+                key={resetKey}
+                initial={input.raw}
+                error={input.fieldError ?? null}
+                onChange={(raw, inputError) => setEdit({ raw, inputError, error: null })}
+                onEscape={closeEdit}
+              />
+              {input.fieldError ? <Form.Error id={`${EVIDENCE_FIELD_ID}-error`}>{input.fieldError}</Form.Error> : null}
+              <div id={`${EVIDENCE_FIELD_ID}-hint`}>
+                {showHint ? (
+                  <Form.Hint>
+                    <span className={styles.taxSegment} data-testid="evidence-amount-hint">
+                      확인하면 <Num value={serverAmount} /> → <Num value={input.value} />
+                    </span>
+                  </Form.Hint>
+                ) : null}
+                {lines}
+              </div>
+            </Form.Field>
+          </Form>
+        ) : null}
+        {items.length > 0 ? <KvList items={items} /> : null}
+      </div>
+      {view.row?.tertiary === "waive" && view.expenseId !== undefined && view.version !== undefined ? (
+        <WaiveEvidenceDialog
+          open={waiveOpen}
+          onClose={() => setWaiveOpen(false)}
+          expenseId={view.expenseId}
+          version={view.version}
+          subtitle={waiveSubtitle}
+          resultLines={waiveResultLines}
+          onWaived={() => {
+            justWaivedRef.current = true;
+            setWaiveOpen(false);
+            router.refresh();
           }}
-        >
-          <Form.Field id={EVIDENCE_FIELD_ID} label="증빙 금액" width="short">
-            <AmountInput
-              key={resetKey}
-              initial={input.raw}
-              error={input.fieldError ?? null}
-              onChange={(raw, inputError) => setEdit({ raw, inputError, error: null })}
-              onEscape={closeEdit}
-            />
-            {input.fieldError ? <Form.Error id={`${EVIDENCE_FIELD_ID}-error`}>{input.fieldError}</Form.Error> : null}
-            <div id={`${EVIDENCE_FIELD_ID}-hint`}>
-              {showHint ? (
-                <Form.Hint>
-                  <span className={styles.taxSegment} data-testid="evidence-amount-hint">
-                    확인하면 <Num value={serverAmount} /> → <Num value={input.value} />
-                  </span>
-                </Form.Hint>
-              ) : null}
-              {lines}
-            </div>
-          </Form.Field>
-        </Form>
+        />
       ) : null}
-      {items.length > 0 ? <KvList items={items} /> : null}
-    </div>
+    </>
   );
 }
 

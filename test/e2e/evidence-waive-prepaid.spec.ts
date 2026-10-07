@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Browser, type Page } from "@playwright/test";
+import { and, eq, isNull } from "drizzle-orm";
+import { db } from "@/db/client";
+import { actionLog, expenseEvidenceReviews, files } from "@/db/schema";
+import { voidEvidence } from "@/domain/evidence";
 import { approveDocument, getApprovalView } from "@/domain/approvals";
 import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
@@ -7,8 +11,10 @@ import { createOrgUnit, createTeam } from "@/domain/org";
 import { seoulToday } from "@/lib/dates";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
+import { upsertSimpleValue } from "@/repositories/settings";
+import { EVIDENCE_REQUIRED } from "@/domain/settings/keys";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
-import { setupExpenseE2E, type ExpenseE2E, type LineKey } from "./expense-fixture";
+import { makeEvidenceManagerE2E, setupExpenseE2E, submitLineExpense, type ExpenseE2E, type LineKey } from "./expense-fixture";
 
 // 06-10(EXP-13 · EVID-03 · D-603 · D-611 · UI-SPEC S6 · S4 empty): 기안자가 폼에서 `선결제`를 켜고 사유를 적어 증빙 없이 제출 → 결재 통과 →
 // 증빙 필수 on에서도 지급 완료가 통과하고 증빙 섹션에 `선결제` + 2행 `증빙 기한` · `선결제 사유`가 선다. 문서는 05 폼 · 04.1 승인 도메인 함수로 만든다.
@@ -124,5 +130,67 @@ test.describe("선결제 (06-10)", () => {
     await expect(page.getByText(/^임시 저장됨 /)).toBeVisible();
     await expect(page.locator("#evidenceAmount-error")).toHaveCount(0);
     await page.context().close();
+  });
+});
+
+// 결재 통과 → 살아 있는 증빙 전부 무효(증빙 0, 선결제 아님) = 지급 행 P3.
+async function approvedWithoutEvidence(browser: Browser, baseURL: string | undefined, fx: ExpenseE2E, key: LineKey): Promise<string> {
+  const expenseId = await submitLineExpense(browser, baseURL, fx, key);
+  await approveAll(fx, expenseId);
+  const voider = await makeEvidenceManagerE2E();
+  const alive = await db
+    .select({ id: files.id })
+    .from(files)
+    .where(and(eq(files.ownerKind, EXPENSE_DOCUMENT_KIND), eq(files.ownerId, expenseId), isNull(files.removedAt), isNull(files.voidedAt)));
+  for (const file of alive) await voidEvidence(voider.viewer, { fileId: file.id, reason: "다른 건 영수증" });
+  return expenseId;
+}
+
+test.describe("증빙 면제 (06-10)", () => {
+  test("P3 → 3차 `증빙 면제` → 사유 → 확인 → `면제` 2행 · 1차 `지급 완료` → 지급 완료", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const expenseId = await approvedWithoutEvidence(browser, baseURL, fx, "retry");
+    const payer = await makePayerE2E();
+    await upsertSimpleValue(SYSTEM_VIEWER, EVIDENCE_REQUIRED.key, true, null);
+    try {
+      const page = await loginPage(browser, baseURL, payer);
+      await page.goto(`/expenses/${expenseId}`);
+      const pay = page.getByRole("button", { name: /^지급 완료/ });
+      await waitForHydration(pay);
+      await expect(pay).toHaveAttribute("aria-disabled", "true");
+      // S4 empty — 증빙 줄에도 서버 이유 글자가 선다.
+      await expect(page.getByTestId("evidence-empty-line")).toHaveText(/^증빙 없음 · 기안자 \S+$/);
+
+      // 사유가 비면 1차 비활성 + `사유 없음 · 사유 적기`, 적으면 풀린다.
+      await page.getByRole("button", { name: "증빙 면제", exact: true }).click();
+      const dialog = page.getByRole("dialog");
+      const confirm = dialog.getByRole("button", { name: /^증빙 면제/ });
+      await expect(confirm).toHaveAttribute("aria-disabled", "true");
+      await expect(confirm).toHaveAccessibleDescription("사유 없음 · 사유 적기");
+      await dialog.getByLabel("사유").fill("거래처 폐업 · 영수증 재발급 불가");
+      await expect(confirm).not.toHaveAttribute("aria-disabled", "true");
+      await confirm.click();
+
+      // 면제 뒤 다시 읽은 행 — `면제` 2행(누가 · 사유), 1차 `지급 완료`가 켜지고 포커스가 옮겨 간다.
+      await expect(dialog).toHaveCount(0);
+      await expect(page.getByTestId("evidence-empty-line")).toHaveCount(0);
+      await expect(page.getByTestId("evidence-review-line")).toContainText("거래처 폐업 · 영수증 재발급 불가");
+      await expect(page.getByTestId("evidence-review").getByText("면제", { exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "증빙 면제", exact: true })).toHaveCount(0);
+      const payNow = page.getByRole("button", { name: /^지급 완료/ });
+      await expect(payNow).not.toHaveAttribute("aria-disabled", "true");
+      await expect(payNow).toBeFocused();
+
+      await payNow.click();
+      await expect(page.getByTestId("payment-result")).toHaveText(/^지급 완료 → /);
+
+      const logs = await db.select({ detail: actionLog.detail }).from(actionLog).where(and(eq(actionLog.entityId, expenseId), eq(actionLog.actionType, "evidence_waive")));
+      expect(logs).toHaveLength(1);
+      const reviews = await db.select({ status: expenseEvidenceReviews.status, waiveReason: expenseEvidenceReviews.waiveReason }).from(expenseEvidenceReviews).where(eq(expenseEvidenceReviews.expenseId, expenseId));
+      expect(reviews).toEqual([{ status: "waived", waiveReason: "거래처 폐업 · 영수증 재발급 불가" }]);
+      await page.context().close();
+    } finally {
+      await upsertSimpleValue(SYSTEM_VIEWER, EVIDENCE_REQUIRED.key, EVIDENCE_REQUIRED.default ?? true, null);
+    }
   });
 });

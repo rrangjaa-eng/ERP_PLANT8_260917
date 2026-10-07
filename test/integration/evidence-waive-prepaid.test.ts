@@ -408,7 +408,7 @@ describe("증빙 면제 (06-10)", () => {
     const paid = await completeExpensePayment(manager, { expenseId, payDate: longAgo, expectedPayableKrw: preview.payableKrw, version: (await expenseRow(expenseId)).version });
     const paidView = await getPaymentView(manager, expenseId);
     expect(paidView?.evidenceStatus).toBe("선결제");
-    expect(paidView?.prepaidDue).toMatchObject({ overdueDays: expect.any(Number) });
+    expect(typeof paidView?.prepaidDue?.overdueDays).toBe("number");
     const payments = await db.select().from(expensePayments).where(eq(expensePayments.expenseId, expenseId));
 
     const waived = await waiveEvidence(manager, { expenseId, version: paid.version, reason: "증빙 끝내 못 받음" });

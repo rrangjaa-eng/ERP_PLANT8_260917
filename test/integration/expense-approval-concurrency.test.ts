@@ -112,9 +112,9 @@ describe("결재 중 증빙 붙이기 — 경영관리 권한자만", () => {
     const manager = await makeEvidenceManager();
     const doc = await submittedDoc(fx, 1);
     const kind = { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: doc.expenseId };
-    expect(await getEvidenceActions(manager, kind)).toEqual({ canAdd: true, deletableFileIds: [], voidableFileIds: [], drafterLocked: false });
-    expect(await getEvidenceActions(fx.pm, kind)).toEqual({ canAdd: false, deletableFileIds: [], voidableFileIds: [], drafterLocked: true });
-    expect(await getEvidenceActions(fx.lead, kind)).toEqual({ canAdd: false, deletableFileIds: [], voidableFileIds: [], drafterLocked: false });
+    expect(await getEvidenceActions(manager, kind)).toEqual({ canAdd: true, deletableFileIds: [], voidableFileIds: [], drafterLocked: false, completedProjectLocked: false });
+    expect(await getEvidenceActions(fx.pm, kind)).toEqual({ canAdd: false, deletableFileIds: [], voidableFileIds: [], drafterLocked: true, completedProjectLocked: false });
+    expect(await getEvidenceActions(fx.lead, kind)).toEqual({ canAdd: false, deletableFileIds: [], voidableFileIds: [], drafterLocked: false, completedProjectLocked: false });
   });
 });
 
@@ -348,6 +348,7 @@ describe("웨이브 11 검토 수정 — 권한 · 잠금(m1 · m2 · m3)", () =
       deletableFileIds: [],
       voidableFileIds: [],
       drafterLocked: true,
+      completedProjectLocked: false,
     });
     expect(await liveFiles(doc.expenseId)).toHaveLength(1);
     expect((await instanceRow(doc.instanceId)).version).toBe(1);

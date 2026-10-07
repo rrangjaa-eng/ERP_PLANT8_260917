@@ -171,12 +171,14 @@ describe("승인 뒤 증빙 무효 처리", () => {
       deletableFileIds: [],
       voidableFileIds: [b?.id],
       drafterLocked: false,
+      completedProjectLocked: false,
     });
     expect(await getEvidenceActions(fx.pm, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: expenseId })).toEqual({
       canAdd: true,
       deletableFileIds: [],
       voidableFileIds: [],
       drafterLocked: false,
+      completedProjectLocked: false,
     });
   });
 

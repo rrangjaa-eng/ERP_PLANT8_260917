@@ -19,7 +19,7 @@ import { hasEvidence } from "@/domain/evidence/has-evidence";
 import { checkEvidenceUpload, duplicateScopeKinds, EVIDENCE_UPLOAD_FAILED, type EvidenceDuplicate } from "@/domain/evidence/upload-checks";
 import { bumpInstanceVersion } from "@/repositories/approvals";
 import { clearEvidenceValues, deleteReviewByExpense, type EvidenceReviewStatus } from "@/repositories/expense-evidence-reviews";
-import { bumpExpenseVersion, findLivePayment } from "@/repositories/expense-payments";
+import { bumpExpenseVersion } from "@/repositories/expense-payments";
 import { findExpenseApprovalInstance, findExpenseById, lockExpenseForUpdate } from "@/repositories/expenses";
 import { findActiveBySha, findAliveFileOfIntent, findFileById, insertFile, listActiveByOwner, markRemoved, markVoided, type FileRow } from "@/repositories/files";
 import { findProjectById, lockProjectForWrite } from "@/repositories/projects";
@@ -142,13 +142,13 @@ const expenseDrafterRemoves = (owner: OwnerState) =>
 
 // 결재 통과 문서에서만 일한다(작성 중 · 결재 중 · 반려 · 회수는 문서 version을 올리지 않는다 — X-1). 확인 기록 줄은 있을 때만 지우고,
 // 문서 version은 기록 유무와 상관없이 올린다 — 보지 않은 증빙은 옛 version으로 확인되지 않는다(B-1). 훅 안에서 권한 · 설정을 읽지 않는다.
-// 무효로 살아 있는 파일이 0이 되면 증빙 금액 · 증빙일을 지운다(EVID-04) — 단 지급 완료 문서는 지우지 않는다(지급 뒤 증빙 금액 수정 막기, 06-10).
+// 무효로 살아 있는 파일이 0이 되면 지급 여부와 상관없이 증빙 금액 · 증빙일을 지운다(EVID-04 · 검토 I-1) — 지급 뒤 다시 채우는 길은 06-10 paidEvidenceAmountRejection이 막는다.
 async function expenseApprovedEvidenceChange(viewer: Viewer, owner: OwnerState, change: { kind: "add" | "void" }, tx: DbOrTx): Promise<EvidenceReviewStatus | null> {
   if (owner.status !== "approved") return null;
   const released = await deleteReviewByExpense(viewer, owner.id, tx);
   const version = await bumpExpenseVersion(viewer, { expenseId: owner.id, expectedVersion: owner.version, updatedBy: viewer.id }, tx);
   if (version === null) throw new ExpenseNotFoundError();
-  if (change.kind === "void" && !(await hasEvidence(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: owner.id }, tx)) && !(await findLivePayment(viewer, owner.id, tx))) {
+  if (change.kind === "void" && !(await hasEvidence(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: owner.id }, tx))) {
     await clearEvidenceValues(viewer, owner.id, tx);
   }
   return released;

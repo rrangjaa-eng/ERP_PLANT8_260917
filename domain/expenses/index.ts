@@ -61,7 +61,7 @@ import { CURRENCIES, recentFxRate } from "@/domain/money/currency";
 import { allocateDocumentNumber, allocateExpenseNumber, loadDocumentNumberFormat, loadExpenseNumberFormat } from "@/domain/document-numbering";
 import { teamAtDate } from "@/domain/org";
 import { formatKstTime } from "@/domain/holidays/business-day";
-import { computeExpenseTax, storedTaxResult, taxDriftText, taxLineText, type ExpenseTaxResult } from "@/domain/expenses/tax";
+import { computeExpenseTax, storedTaxResult, taxDriftText, taxLineText, type ExpenseTaxResult, type ExpenseTaxSource } from "@/domain/expenses/tax";
 import { buildExpenseDetailRows } from "@/domain/expenses/detail";
 import { canSeeExpense, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses/access";
 import { expenseLineDoor, installmentSeqFor, type ExpenseLineDoor } from "@/domain/expenses/line-door";
@@ -776,6 +776,15 @@ function toDraftColumns(fields: z.output<typeof draftFieldsSchema>): ExpenseDraf
   };
 }
 
+// 06-10 EA-1(사용자 결정 10/6 11:57 채팅 — 저장 막기): 증빙 금액이 공급가액 + 부가세와 정확히 같으면 부가세 포함 합계로 보고 거부한다.
+// 임시 저장(합친 행)과 새 팀 비용 첫 저장(칸 값)이 함께 쓴다. 부가세는 지급 총액과 같은 길(computeExpenseTax → applyTaxRule)이다 — 새 세금 계산 없음.
+async function assertEvidenceAmountNotTaxInclusive(viewer: Viewer, doc: ExpenseTaxSource & { evidenceAmount?: number | null }): Promise<void> {
+  if (doc.evidenceAmount === null || doc.evidenceAmount === undefined || doc.supplyAmountKrw === null) return;
+  const tax = await computeExpenseTax(viewer, doc);
+  if (!tax.unavailable && isTaxInclusiveEvidenceAmount({ evidenceAmountKrw: doc.evidenceAmount, supplyKrw: doc.supplyAmountKrw, vatKrw: tax.vatKrw }))
+    throw new ExpenseFieldError("evidenceAmount", EVIDENCE_AMOUNT_TAX_INCLUSIVE);
+}
+
 // 기안자 · 고칠 수 있는 문서만(작성 중 · 05-09 반려 · 회수 — 아니면 없는 문서). 원화는 서버가 계산한다. version 조건 저장 — 0행이면 충돌.
 export async function saveExpenseDraft(
   viewer: Viewer,
@@ -792,15 +801,8 @@ export async function saveExpenseDraft(
     const reason = fields.prepaidReason !== undefined ? fields.prepaidReason : row.prepaidReason;
     if (!reason?.trim()) throw new ExpenseFieldError("prepaidReason", PREPAID_REASON_REQUIRED);
   } else if (fields.prepaidReason !== undefined) fields.prepaidReason = null;
-  // 06-10 EA-1(사용자 결정 10/6 11:57 채팅 — 저장 막기): 증빙 금액이 공급가액 + 부가세와 정확히 같으면 부가세 포함 합계로 보고 거부한다.
-  // 합친 값(이번 입력 + 저장된 행)으로 판정하고, 부가세는 지급 총액과 같은 길(computeExpenseTax → applyTaxRule)이다 — 새 세금 계산 없음.
-  const evidenceAmount = fields.evidenceAmount !== undefined ? fields.evidenceAmount : row.evidenceAmount;
-  if (evidenceAmount !== null && evidenceAmount !== undefined) {
-    const merged: ExpenseRow = { ...row, ...fields };
-    const tax = await computeExpenseTax(viewer, merged);
-    if (!tax.unavailable && merged.supplyAmountKrw !== null && isTaxInclusiveEvidenceAmount({ evidenceAmountKrw: evidenceAmount, supplyKrw: merged.supplyAmountKrw, vatKrw: tax.vatKrw }))
-      throw new ExpenseFieldError("evidenceAmount", EVIDENCE_AMOUNT_TAX_INCLUSIVE);
-  }
+  // 06-10 EA-1: 합친 값(이번 입력 + 저장된 행)으로 판정한다.
+  await assertEvidenceAmountNotTaxInclusive(viewer, { ...row, ...fields });
   // 번호 있는 문서(반려 · 회수)는 공급가액이 있어야 한다(DB 체크 — 번호 있으면 공급가액 > 0) — DB 오류 대신 칸 오류.
   if (row.number !== null && fields.supplyAmountKrw !== undefined && (fields.supplyAmountKrw === null || fields.supplyAmountKrw <= 0)) {
     throw new ExpenseFieldError("supplyAmount", fields.supplyAmountKrw === null ? SUPPLY_EMPTY : SUPPLY_ZERO);
@@ -855,6 +857,14 @@ export async function createTeamExpenseDraft(
   await assertActiveCodes(viewer, parsed);
   const draftColumns = toDraftColumns(parsed);
   if (draftColumns.prepaid && !draftColumns.prepaidReason) throw new ExpenseFieldError("prepaidReason", PREPAID_REASON_REQUIRED);
+  await assertEvidenceAmountNotTaxInclusive(viewer, {
+    evidenceType: draftColumns.evidenceType ?? null,
+    supplyAmountKrw: draftColumns.supplyAmountKrw ?? null,
+    scheduledPaymentDate: draftColumns.scheduledPaymentDate ?? null,
+    evidenceDate: draftColumns.evidenceDate ?? null,
+    evidenceAmount: draftColumns.evidenceAmount,
+    createdAt: deps?.now ?? new Date(),
+  });
   const usageDate = parsed.usageDate ?? seoulToday(deps?.now);
   const attributedTeamId = await attributedTeamFor(viewer, usageDate);
   const inserted = await insertTeamDraftIfAbsent(viewer, {

@@ -45,6 +45,7 @@ import { prepaidDueInfo, type PrepaidDue } from "@/domain/evidence-reviews/prepa
 import { findReviewByExpense, listAliveCardUsageSuppliesByProject } from "@/repositories/expense-evidence-reviews";
 import { listAliveByOwners } from "@/repositories/files";
 import { findQuoteLineById, listLineageLinesByProjects } from "@/repositories/quote-lines";
+import { findExpenseQuoteLineIds, lockQuoteLines } from "@/repositories/quote-line-links";
 import { formatKrw } from "@/lib/format-number";
 import { kstDateOf } from "@/lib/kst-date";
 
@@ -413,7 +414,7 @@ function transferKrwProblem(value: number): string | null {
 
 export type CompletePaymentDeps = {
   shared?: PaymentShared;
-  // 경합 테스트 장벽 — 지출결의 행을 잠근 직후(05 submitExpense deps.afterLock 꼴). 06-04 · 06-11 · 06-13이 쓴다.
+  // 경합 테스트 장벽 — 견적 줄 · 지출결의 행을 잠근 직후(05 submitExpense deps.afterLock 꼴). 06-04 · 06-11 · 06-13이 쓴다.
   afterLock?: () => Promise<void>;
   now?: Date;
 };
@@ -449,6 +450,10 @@ export async function completeExpensePayment(
 
   try {
     return await withTransaction(async (tx) => {
+      // 06-13(N-2 · N-3): 전역 잠금 순서 프로젝트 행 → 견적 줄 → 문서 행. 지급은 줄 연결을 늘리지 않아 프로젝트 행을 건너뛰고(X-2)
+      // 문서의 견적 줄(하나 — 팀 비용 문서는 없음)을 문서 행보다 먼저 잡는다 — 같은 줄의 새 지출결의 제출과 직렬이다.
+      const lineIds = await findExpenseQuoteLineIds(viewer, pre.expenseId, tx);
+      await lockQuoteLines(viewer, lineIds, tx);
       const locked = await lockExpenseForUpdate(viewer, pre.expenseId, tx);
       await deps?.afterLock?.();
       if (!locked) throw new PaymentNotFoundError();

@@ -31,6 +31,7 @@ import {
   APPROVAL_ROUTE_EXPENSE_STEP4_ORG_UNIT_ID,
   EVIDENCE_PREPAID_DUE_DAYS,
   PROJECT_CUSTOMER_APPROVAL_GATE,
+  PURCHASE_ONLINE_VENDOR_NAME,
 } from "@/domain/settings/keys";
 import {
   ApprovalConflictError,
@@ -66,6 +67,7 @@ import { buildExpenseDetailRows } from "@/domain/expenses/detail";
 import { canSeeExpense, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses/access";
 import { expenseLineDoor, installmentSeqFor, type ExpenseLineDoor } from "@/domain/expenses/line-door";
 import { resolveLinkedDocumentsByLineage, type LineageLine } from "@/domain/quotes/lineage";
+import { resolveLineDoor } from "@/domain/quotes/line-door";
 import {
   buildExpenseSubmitContext,
   INACTIVE_EVIDENCE_TYPE,
@@ -93,7 +95,7 @@ import { countActiveByOwner, listAliveByOwners, markOwnerFilesRemoved, restoreOw
 import { findProjectById, lockProjectForWrite, type ProjectRow } from "@/repositories/projects";
 import { findLatestQuoteRevision, findQuoteRevisionById, listLatestQuoteRevisionsByProjects, type QuoteRevisionRow } from "@/repositories/quote-revisions";
 import { findQuoteLineById, listLineageLinesByProjects, listQuoteLinesByRevision, type QuoteLineRow } from "@/repositories/quote-lines";
-import { findExpenseDocFacts, findLineLinks, listExpenseDocFacts, lockQuoteLines } from "@/repositories/quote-line-links";
+import { findExpenseDocFacts, findLineLinks, findLineVendorNames, listExpenseDocFacts, lockQuoteLines } from "@/repositories/quote-line-links";
 import { findUserById, findUserNamesByIds } from "@/repositories/users";
 import { findVendorById } from "@/repositories/vendors";
 import {
@@ -1005,6 +1007,8 @@ export async function submitExpense(
   const pre = projectRow ? await loadSubmitPre(viewer, projectRow) : null;
   const codes = await loadActiveCodes(viewer);
   const prepared = await prepareSubmission(viewer, { kind: EXPENSE_DOCUMENT_KIND, drafterId: viewer.id });
+  // 06-13 「06-03 tx 규약」: 온라인구매 문 설정은 트랜잭션 전에 읽는다(잠근 줄의 거래처 이름만 tx로).
+  const onlineVendorName = row.quoteLineId ? await getSettingValue(PURCHASE_ONLINE_VENDOR_NAME) : "";
   const numbering = projectRow
     ? ({ kind: "project", projectNumber: projectRow.number, format: await loadExpenseNumberFormat() } as const)
     : ({ kind: "team", format: await loadDocumentNumberFormat("expense_team") } as const);
@@ -1045,10 +1049,14 @@ export async function submitExpense(
     const decision = await gate(locked, "expense.submit", buildExpenseSubmitContext(facts));
     if (!decision.allowed) throw new GateBlockedError(decision.reason);
     if (locked.quoteLineId) {
-      // 06-07 I-2(D-609 지출결의 쪽 입구): 줄 계보 사슬에 카드 사용이 이어져 있으면 막는다 — 잠근 프로젝트 행 아래 같은 tx로 읽는다.
+      // 06-13(EXP-07 · D-609 — 06-07 I-2를 합침): 잠근 줄의 계보 사슬에 카드 사용 · `신청됨` 구매 요청이 이어져 있으면 막고(한 번만 판정),
+      // 온라인구매 협력사 줄이면 구매 요청 문으로 보낸다. 둘 다 같은 tx로 읽는다.
       const links = (await findLineLinks(viewer, [locked.quoteLineId], tx)).get(locked.quoteLineId);
-      const dual = await gate(locked, "card.dual-link-block", { side: "expense", links: links ?? { expenses: [], cardUsages: [] } });
+      const dual = await gate(locked, "card.dual-link-block", { side: "expense", links: links ?? { expenses: [], cardUsages: [], purchaseRequests: [] } });
       if (!dual.allowed) throw new GateBlockedError(dual.reason);
+      const vendorName = (await findLineVendorNames(viewer, [locked.quoteLineId], tx)).get(locked.quoteLineId) ?? null;
+      const lineDoor = await gate(locked, "purchase.line-door", { side: "expense", door: resolveLineDoor({ vendorName }, onlineVendorName), vendorName });
+      if (!lineDoor.allowed) throw new GateBlockedError(lineDoor.reason);
       const current = supplyMoney(locked);
       if (line && current) {
         const others = numbered.filter((doc) => doc.id !== locked.id).flatMap((doc) => supplyMoney(doc) ?? []);

@@ -500,6 +500,8 @@ describe("지급 섹션 DTO 축 — 금액 칸은 expense.amount를 보는 계�
 // 06-05 — 카드 사용 목록 · 폼 선택지 DTO와 카드 사용 액션(06-27 정보 항목 card_usage.value · card_usage.amount).
 import "@/domain/corp-card-usages";
 import "@/app/(app)/cards/actions.registry";
+import "@/domain/purchase-requests";
+import "@/app/(app)/cards/purchases/actions.registry";
 import { randomUUID } from "node:crypto";
 import { createCorpCard } from "@/domain/corp-cards";
 import { createOrgUnit, createTeam } from "@/domain/org";

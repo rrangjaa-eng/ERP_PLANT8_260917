@@ -1,0 +1,154 @@
+import { requireSession } from "@/lib/viewer";
+import { seoulToday } from "@/lib/dates";
+import { listPurchaseRequests, purchaseRequestEntry, type PurchaseRequestList, type PurchaseRequestStatusView } from "@/domain/purchase-requests";
+import { ListEmpty } from "@/ui/list-empty/ListEmpty";
+import { ListScreen } from "@/ui/list-screen/ListScreen";
+import { Pagination } from "@/ui/pagination/Pagination";
+import { pageRangeText } from "@/ui/pagination/page-window";
+import { SidePanel } from "@/ui/side-panel/SidePanel";
+import { PurchaseFilters, PurchaseList, PurchaseListLoadError, type PurchaseListRowView } from "./purchase-list";
+import { PURCHASE_STATUS_VIEWS, type PurchaseStatusView } from "./purchase-status-word";
+import { PurchaseRequestForm, type PurchaseEntry } from "./purchase-request-form";
+
+// 06-08(EXP-10 · UI-SPEC S11 · S12 · C12): 구매 요청 목록 + 신청 옆 패널. 신청은 `?new=1[&line={id}]`(패널 — 페이지 폼 없음).
+// 필터 · 쪽은 GET 쿼리(`status` · `month` · `page`) — 범위 · 쪽은 서버(listPurchaseRequests)가 정한다. 기본 보기 = `신청됨`.
+// WR-07: 인증 검사를 이 페이지가 직접 한다(레이아웃에 기대지 않는다).
+export const dynamic = "force-dynamic";
+
+const LIST_HREF = "/cards/purchases";
+const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const DEFAULT_VIEW: PurchaseStatusView = "신청됨";
+
+const STATUS_BY_VIEW: Record<PurchaseStatusView, PurchaseRequestStatusView> = {
+  신청됨: "requested",
+  "구매 완료": "purchased",
+  취소: "cancelled",
+  전체: "all",
+};
+
+type PurchasesSearchParams = Record<string, string | string[] | undefined>;
+
+function first(raw: string | string[] | undefined): string | undefined {
+  return Array.isArray(raw) ? raw[0] : raw;
+}
+
+// 월 필터 선택지 — 이번 달부터 12달 + 쿼리로 온 다른 달.
+function monthChoices(thisMonth: string, selected: string): string[] {
+  const [year, month] = thisMonth.split("-").map(Number) as [number, number];
+  const months = Array.from({ length: 12 }, (_, back) => {
+    const index = year * 12 + (month - 1) - back;
+    return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, "0")}`;
+  });
+  return selected === "" || months.includes(selected) ? months : [...months, selected].sort().reverse();
+}
+
+export default async function PurchasesPage({ searchParams }: { searchParams: Promise<PurchasesSearchParams> }) {
+  const { viewer } = await requireSession();
+  const params = await searchParams;
+  const today = seoulToday();
+  const statusParam = first(params.status);
+  const view = PURCHASE_STATUS_VIEWS.find((value) => value === statusParam) ?? DEFAULT_VIEW;
+  const monthParam = first(params.month);
+  const month = monthParam && MONTH_PATTERN.test(monthParam) ? monthParam : "";
+  const filtered = view !== DEFAULT_VIEW || month !== "";
+
+  let list: PurchaseRequestList | null = null;
+  try {
+    list = await listPurchaseRequests(viewer, { status: STATUS_BY_VIEW[view], month: month || null, page: first(params.page) }, today);
+  } catch (error) {
+    // 목록 자리 한 줄 + `다시 시도`(UI-SPEC 「Error — 목록 로드」) — 화면의 나머지(머리 · 1차)는 선다.
+    console.error(error);
+  }
+  const rows: PurchaseListRowView[] = (list?.rows ?? []).flatMap((row) =>
+    row.id && row.number && row.requestedOn && row.itemName !== undefined && row.status
+      ? [
+          {
+            id: row.id,
+            number: row.number,
+            requestedOn: row.requestedOn,
+            itemName: row.itemName,
+            linkUrl: row.linkUrl ?? null,
+            linkLabel: row.linkLabel ?? null,
+            requestedByName: row.requestedByName ?? "—",
+            status: row.status,
+            currency: row.currency ?? null,
+            foreignAmount: row.foreignAmount ?? null,
+            fxRate: row.fxRate ?? null,
+            estimateKrw: row.estimateKrw ?? null,
+          },
+        ]
+      : [],
+  );
+
+  const pageHref = (target: number): string => {
+    const query = new URLSearchParams();
+    if (view !== DEFAULT_VIEW) query.set("status", view);
+    if (month) query.set("month", month);
+    if (target > 1) query.set("page", String(target));
+    const text = query.toString();
+    return text ? `${LIST_HREF}?${text}` : LIST_HREF;
+  };
+  // 패널 닫기 · 1차는 지금 필터의 /cards/purchases(쪽은 1로) — 뒤 목록이 바뀌지 않는다.
+  const listHref = pageHref(1);
+  const newHref = `${listHref}${listHref.includes("?") ? "&" : "?"}new=1`;
+
+  let panel = null;
+  if (first(params.new) === "1") {
+    // 진입 줄(S14 · S18 `?line=`) — 고를 수 있는 프로젝트의 줄이면 연결을 텍스트로 채운다. 아니면 연결은 패널 안에서 고른다.
+    const entryLine = first(params.line);
+    const chosen = entryLine && UUID_PATTERN.test(entryLine) ? await purchaseRequestEntry(viewer, entryLine) : null;
+    const entry: PurchaseEntry | null = chosen ? { project: chosen.project, line: chosen.line } : null;
+    panel = (
+      <SidePanel title="구매 요청" closeHref={listHref}>
+        <PurchaseRequestForm entry={entry} />
+      </SidePanel>
+    );
+  }
+
+  const newAction = { label: "구매 요청", href: newHref };
+  const filters = list ? <PurchaseFilters status={view} month={month} months={monthChoices(today.slice(0, 7), month)} /> : undefined;
+
+  let empty = undefined;
+  let body;
+  if (!list) body = <PurchaseListLoadError />;
+  else if (rows.length > 0) body = <PurchaseList rows={rows} />;
+  else if (!list.anyInScope) {
+    // DR5 — 빈 목록이면 틀이 머리 1차를 숨기고 빈 화면이 말한다. 전체 0건 갈래.
+    empty = <ListEmpty message="구매 요청이 없습니다" action={newAction} />;
+    body = null;
+  } else if (!filtered) {
+    // 기본 보기(신청됨) 0건 — 구매 권한자는 처리할 것이 없다는 말 + 전체 보기, 요청자는 신청 행동.
+    empty = list.privileged ? (
+      <ListEmpty message="처리할 구매 요청이 없습니다" action={{ label: "전체 보기", href: `${LIST_HREF}?status=${encodeURIComponent("전체")}` }} />
+    ) : (
+      <ListEmpty message="신청한 구매 요청이 없습니다" action={newAction} />
+    );
+    body = null;
+  } else {
+    body = <ListEmpty message="조건에 맞는 구매 요청이 없습니다" action={{ label: "필터 지우기", href: LIST_HREF }} />;
+  }
+
+  return (
+    <ListScreen
+      title="구매 요청"
+      primaryAction={newAction}
+      filters={filters}
+      empty={empty}
+      pagination={
+        list && rows.length > 0 ? (
+          <Pagination
+            label="구매 요청"
+            page={list.page.page}
+            pageCount={list.page.pageCount}
+            href={pageHref}
+            rangeText={pageRangeText({ page: list.page.page, pageSize: list.page.pageSize, total: list.page.total, unit: "건" })}
+          />
+        ) : undefined
+      }
+      panel={panel}
+    >
+      {body}
+    </ListScreen>
+  );
+}

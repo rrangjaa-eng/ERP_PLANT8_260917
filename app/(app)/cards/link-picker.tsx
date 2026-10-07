@@ -3,9 +3,11 @@
 import { useCallback, useRef } from "react";
 import { PickDialog, type PickResult, type PickRow } from "@/ui/pick-dialog/PickDialog";
 import { searchLinesForCardLinkAction, searchProjectsForCardLinkAction } from "./actions";
+import { searchLinesForPurchaseLinkAction } from "./purchases/actions";
 
 // 06-07(UI-SPEC S10 · SP-8 · C11): 패널 위 연결 고르기 — 프로젝트 · 견적 줄 두 단계를 05 `PickDialog`로 한 번에 하나만 연다.
-// 줄마다 고를 수 있음 · 이유 · 남은 실행가는 서버가 정해 보낸다(이 파일은 셈하지 않는다). `mode`는 부른 폼(06-08이 `purchase`를 더한다).
+// 줄마다 고를 수 있음 · 이유 · 남은 실행가는 서버가 정해 보낸다(이 파일은 셈하지 않는다). `mode`는 부른 폼 — `purchase`(06-08)는 줄 단계만
+// 구매 요청 액션을 부르고(온라인구매 협력사 줄만 고를 수 있음 · 문 가르기) 프로젝트 단계는 카드 모드와 같다. 견적 외 비용 3차는 카드 모드만.
 // 줄 0 · 고를 수 있는 줄 0의 다음 한 수는 `견적 외 비용으로`(UI-SPEC 「Empty — 연결 고르기 목록」) — 라디오를 바꾸는 일은 폼 몫.
 
 export type PickedProject = { id: string; label: string };
@@ -22,7 +24,7 @@ export function LinkPicker({
   onPickLine,
   onOutOfQuote,
 }: {
-  mode: "card";
+  mode: "card" | "purchase";
   step: "project" | "line" | null;
   projectId: string | null;
   currentLineId: string | null;
@@ -31,7 +33,6 @@ export function LinkPicker({
   onPickLine: (line: PickedLine) => void;
   onOutOfQuote: () => void;
 }) {
-  void mode;
   const knownProjects = useRef(new Map<string, PickedProject>());
   const knownLines = useRef(new Map<string, PickedLine>());
 
@@ -50,7 +51,7 @@ export function LinkPicker({
   const searchLines = useCallback(
     async (query: string): Promise<PickResult | null> => {
       if (!projectId) return null;
-      const data = (await searchLinesForCardLinkAction({ projectId, query, currentLineId }))?.data;
+      const data = (await (mode === "purchase" ? searchLinesForPurchaseLinkAction : searchLinesForCardLinkAction)({ projectId, query, currentLineId }))?.data;
       if (!data) return null;
       const items: PickRow[] = [];
       for (const row of data.rows) {
@@ -75,10 +76,10 @@ export function LinkPicker({
         truncated: data.truncated,
         subtitle: data.subtitle,
         emptyDefault: "이 프로젝트에 견적 줄이 없습니다",
-        noneSelectableReason: "이을 수 있는 줄 없음",
+        noneSelectableReason: mode === "purchase" ? "온라인구매 줄 없음" : "이을 수 있는 줄 없음",
       };
     },
-    [projectId, currentLineId],
+    [mode, projectId, currentLineId],
   );
 
   return (
@@ -107,7 +108,7 @@ export function LinkPicker({
         primaryLabel="이 줄로"
         failedLine="견적 줄 불러오지 못함"
         search={searchLines}
-        emptyNextStep={{ label: "견적 외 비용으로", onSelect: onOutOfQuote }}
+        emptyNextStep={mode === "card" ? { label: "견적 외 비용으로", onSelect: onOutOfQuote } : undefined}
         onPick={(row) => {
           const line = knownLines.current.get(row.id);
           if (!line) return false;

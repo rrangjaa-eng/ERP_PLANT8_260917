@@ -1,0 +1,443 @@
+import type { Viewer } from "@/domain/viewer";
+import { can, ForbiddenError } from "@/domain/permissions/can";
+import { visible } from "@/domain/permissions/visible";
+import { projectMany, type DtoSpec } from "@/domain/permissions/project";
+import { registerDto } from "@/domain/permissions/dto-registry";
+import { recordAction } from "@/domain/action-log/record";
+import { moneyToColumns, normalizeMoneyInput, toKrw, type MoneyInput } from "@/domain/money";
+import { cardExecutionCap } from "@/domain/corp-card-usages/amounts";
+import {
+  CARD_LINK_LINE_SPEC,
+  cardLinkProjectChoice,
+  lineRoom,
+  lineRoomHint,
+  loadLineRoomBasis,
+  lockProjectForLinkWrite,
+  projectLinkLock,
+  purchaseEstimateSupply,
+  type CardLinkLineDto,
+  type CardLinkProjectChoice,
+  type LineRoomBasis,
+} from "@/domain/corp-card-usages/link-targets";
+import { loadPurchaseRequestNumberFormat, allocatePurchaseRequestNumber, type PurchaseRequestNumberFormat } from "@/domain/document-numbering";
+import { lineExecution, numberedSupplyText } from "@/domain/expenses";
+import { EXPENSE_DOCUMENT_KIND } from "@/domain/expenses/access";
+import { CompletedProjectError } from "@/domain/projects";
+import { loadActorTeamScope, ProjectNotFoundError } from "@/domain/projects/status";
+import { resolveLineDoor } from "@/domain/quotes/line-door";
+import { quoteLockReason } from "@/domain/quotes/edit-scope";
+import { gate, GateBlockedError } from "@/domain/rules/gate";
+import "@/domain/rules/register";
+import { getSettingValue } from "@/domain/settings/registry";
+import { PURCHASE_ONLINE_VENDOR_NAME } from "@/domain/settings/keys";
+import { clampPage, LIST_PAGE_SIZE, pageCountFrom } from "@/lib/paging";
+import { seoulToday } from "@/lib/dates";
+import { withTransaction } from "@/lib/db-transaction";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
+import { findExpenseApprovalStatuses } from "@/repositories/expenses";
+import { findProjectById } from "@/repositories/projects";
+import { findLatestQuoteRevision, findQuoteRevisionById } from "@/repositories/quote-revisions";
+import { findQuoteLineById, listQuoteLinesByRevisions } from "@/repositories/quote-lines";
+import { findLineLinks, lockQuoteLines } from "@/repositories/quote-line-links";
+import { findVendorNamesByIds } from "@/repositories/vendors";
+import type { DbOrTx } from "@/repositories/document-counters";
+import {
+  insertPurchaseRequest,
+  listPurchaseRequestRows,
+  readLockedLineFacts,
+  type PurchaseRequestFilter,
+  type PurchaseRequestListRow,
+  type PurchaseRequestScope,
+} from "@/repositories/purchase-requests";
+
+// 06-08(EXP-10 · D-609 · Q3 · GA-38 · X-2 · CROSS E-2): 구매 요청 신청 경로 — 온라인구매 견적 줄에 이은 요청이 문 판정 · 이중 연결 ·
+// 실행가 상한(Q3)을 잠금 뒤에 지나 번호를 받는다. 구매 완료(카드 사용 생성)는 06-12, 팀 비용 · 취소 · 외화는 06-14가 이 위에 더한다.
+//
+// 06-03 tx 규약: 생성은 두 단계다. `precheckPurchaseRequest`(트랜잭션 밖)가 전역 풀을 읽는 판정 · 조회(권한 · 설정 · 번호 서식 · 세율 ·
+// 거래처 기본 증빙 종류 · 완료 판정)를 끝내 `pre`로 넘기고, `createPurchaseRequest`의 몸통 `runCreate`는 `pre`의 값 · 순수 함수 · tx를 받는
+// 리포지토리 · 게이트 · 같은 tx의 `recordAction`만 부른다.
+
+export const PURCHASE_REQUEST_ENTITY = "purchase_request";
+
+export class PurchaseRequestRejectedError extends UserFacingError {}
+
+const PROJECTS_VIEW_DENIED = "프로젝트 보기 권한 없음";
+const LINK_MISSING = "연결 없음 · 연결 고르기";
+const AMOUNT_NOT_NUMBER = "숫자 아님 · 1,240,000처럼";
+const ESTIMATE_NOT_POSITIVE = "예상 금액 0 이하 · 금액 고치기";
+const ITEM_MISSING = "품목 없음 · 품목 적기";
+export const LINK_URL_FORMAT = "링크 형식 오류 · https://로 시작하는 주소";
+const LINK_PICK_LIMIT = 50;
+
+// 05 `domain/expenses/pick.ts`의 비공개 결재 상태 낱말 표와 같은 값(06-07 `link-targets.ts`도 같은 사본을 둔다).
+const APPROVAL_STATUS_WORDS: Record<string, string> = { submitted: "결재 중", in_review: "결재 중", approved: "승인", rejected: "반려", withdrawn: "회수" };
+
+// 이 플랜은 견적 줄 연결만 — 팀 비용 요청(`team_cost`)은 06-14가 판별자를 넓힌다.
+export type PurchaseRequestInput = {
+  linkKind: "quote_line";
+  lineId: string;
+  itemName: string;
+  linkUrl: string | null;
+  estimate: MoneyInput;
+  memo: string | null;
+};
+
+/** 트랜잭션 전 사실 — 평범한 객체(06-03 tx 규약). */
+export type PurchaseRequestPre = {
+  projectId: string;
+  /** 사전 조회 때의 현재 차수 — 잠근 뒤 다시 본다(X-2). */
+  revisionId: string;
+  /** 설정 `purchase.online_vendor_name` — 문 판정(`resolveLineDoor`)의 입력. */
+  onlineVendorName: string;
+  numberFormat: Omit<PurchaseRequestNumberFormat, "seqStart">;
+  lineRoom: LineRoomBasis;
+  /** 요청자의 견적 금액(quote.amount) 노출 — 실행가 초과 거부 문구의 남은 실행가 숫자(CSO-2). */
+  amountVisible: boolean;
+  estimate: MoneyInput;
+  itemName: string;
+  linkUrl: string | null;
+};
+
+// 링크는 http(s)만 — 쓰는 쪽(zod · 이 판정 · DB CHECK)이 같은 규칙이다(T-06-37). 비면 null.
+export function normalizeLinkUrl(raw: string | null | undefined): string | null {
+  const text = (raw ?? "").trim();
+  if (text === "") return null;
+  if (!/^https?:\/\//i.test(text)) throw new PurchaseRequestRejectedError(LINK_URL_FORMAT);
+  try {
+    new URL(text);
+  } catch {
+    throw new PurchaseRequestRejectedError(LINK_URL_FORMAT);
+  }
+  return text;
+}
+
+// ── 사전 조회(트랜잭션 밖) ──────────────────────────────────────────────────
+
+export async function precheckPurchaseRequest(viewer: Viewer, input: PurchaseRequestInput): Promise<PurchaseRequestPre> {
+  // 연결 대상은 프로젝트를 고르는 일 — S10 목록과 같은 문(projects view)을 서버가 다시 본다(06-07 I-6). 직원에게 cards 메뉴 시드가 없어 cards write는 쓰지 않는다.
+  if (!(await can(viewer, "projects", "view"))) throw new ForbiddenError(PROJECTS_VIEW_DENIED);
+  const itemName = input.itemName.trim();
+  if (itemName === "") throw new PurchaseRequestRejectedError(ITEM_MISSING);
+  const linkUrl = normalizeLinkUrl(input.linkUrl);
+  const estimate = normalizeMoneyInput(input.estimate);
+  if (estimate.currency === "KRW" && !Number.isInteger(estimate.amount)) throw new PurchaseRequestRejectedError(AMOUNT_NOT_NUMBER);
+  if (toKrw(estimate) <= 0) throw new PurchaseRequestRejectedError(ESTIMATE_NOT_POSITIVE);
+
+  // 견적 줄 · 프로젝트 — 완료 프로젝트는 트랜잭션 전에 거부한다(GA-38 · D-47). 잠근 뒤 `lockProjectForLinkWrite`가 다시 본다(X-2).
+  const line = await findQuoteLineById(viewer, input.lineId);
+  const revision = line ? await findQuoteRevisionById(viewer, line.revisionId) : null;
+  const project = revision ? await findProjectById(viewer, revision.projectId) : null;
+  if (!line || !project || project.archivedAt) throw new PurchaseRequestRejectedError(LINK_MISSING);
+  if (project.status === "completed") throw new CompletedProjectError(quoteLockReason({ status: project.status }) ?? undefined);
+  const latest = await findLatestQuoteRevision(viewer, project.id);
+  if (!latest) throw new PurchaseRequestRejectedError(LINK_MISSING);
+
+  const { seqStart, ...numberFormat } = await loadPurchaseRequestNumberFormat();
+  void seqStart;
+  return {
+    projectId: project.id,
+    revisionId: latest.id,
+    onlineVendorName: await getSettingValue(PURCHASE_ONLINE_VENDOR_NAME),
+    numberFormat,
+    lineRoom: await loadLineRoomBasis(viewer, [line.id]),
+    amountVisible: await visible(viewer, "quote.amount"),
+    estimate,
+    itemName,
+    linkUrl,
+  };
+}
+
+// 서버 계산 한 줄 — 예상 금액의 공급가 추정(그 줄 거래처 기본 증빙 종류의 규칙 · 오늘 세율). 패널 1차의 실행가 초과 막힘(Q3)이 남은 실행가와 견준다.
+// 트랜잭션 없음 · 잠그지 않는다(표시용) — 판정은 `createPurchaseRequest`가 잠근 뒤 다시 한다.
+export async function previewPurchaseSupply(viewer: Viewer, input: { lineId: string; amountKrw: number }): Promise<{ supplyKrw: number }> {
+  if (!(await can(viewer, "projects", "view"))) throw new ForbiddenError(PROJECTS_VIEW_DENIED);
+  const basis = await loadLineRoomBasis(viewer, [input.lineId]);
+  return { supplyKrw: purchaseEstimateSupply({ currency: "KRW", amount: input.amountKrw, fxRate: 1 }, basis, input.lineId) };
+}
+
+// ── 신청(단독 / 외부 tx) ───────────────────────────────────────────────────
+
+export type CreatedPurchaseRequest = { id: string; number: string };
+
+export async function createPurchaseRequest(
+  viewer: Viewer,
+  input: PurchaseRequestInput,
+  pre: PurchaseRequestPre,
+  tx?: DbOrTx,
+): Promise<CreatedPurchaseRequest> {
+  const runCreate = async (inner: DbOrTx) => {
+    // 순서 고정(B-1 · X-2): 프로젝트 행 → 견적 줄(id 순) → 연결(계보 사슬) → 문 → 이중 연결 → 실행가 상한 → 번호 → INSERT → 로그.
+    await lockProjectForLinkWrite(viewer, { projectId: pre.projectId, revisionId: pre.revisionId }, inner);
+    const [locked] = await lockQuoteLines(viewer, [input.lineId], inner);
+    // 화면이 내보내지 않는 줄(조정 · 취소 · 보관 · 현재 차수 밖) — 새 문구 없음.
+    if (!locked || locked.lineKind === "adjustment" || locked.lineStatus === "cancelled" || locked.archivedAt || locked.revisionId !== pre.revisionId) {
+      throw new ForbiddenError(LINK_MISSING);
+    }
+    const facts = await readLockedLineFacts(viewer, input.lineId, inner);
+    if (!facts) throw new ForbiddenError(LINK_MISSING);
+    const links = await findLineLinks(viewer, [input.lineId], inner);
+    const lineLinks = links.get(input.lineId);
+    const door = resolveLineDoor({ vendorName: facts.vendorName }, pre.onlineVendorName);
+    const doorGate = await gate(null, "purchase.line-door", { side: "purchase", door, vendorName: facts.vendorName });
+    if (!doorGate.allowed) throw new GateBlockedError(doorGate.reason);
+    const dual = await gate(null, "card.dual-link-block", { side: "card", links: lineLinks ?? { expenses: [], cardUsages: [] } });
+    if (!dual.allowed) throw new GateBlockedError(dual.reason);
+    if (!lineLinks?.currentExecution) throw new ForbiddenError(LINK_MISSING);
+    const room = lineRoom({ links, basis: pre.lineRoom, lineId: input.lineId, exclude: {} });
+    const supply = purchaseEstimateSupply(pre.estimate, pre.lineRoom, input.lineId);
+    const cap = await gate(null, "card.execution-cap", {
+      execution: lineLinks.currentExecution,
+      otherSupplies: room.otherSupplies,
+      supply: { currency: "KRW", amount: supply, fxRate: 1 },
+      source: "entry",
+      link: "pickable",
+      amountVisible: pre.amountVisible,
+    });
+    if (!cap.allowed) throw new GateBlockedError(cap.reason);
+    const numbered = await allocatePurchaseRequestNumber(viewer, { projectNumber: facts.projectNumber, format: pre.numberFormat }, inner);
+    const money = moneyToColumns(pre.estimate);
+    const row = await insertPurchaseRequest(
+      viewer,
+      {
+        number: numbered.number,
+        linkKind: "quote_line",
+        projectId: pre.projectId,
+        quoteLineId: input.lineId,
+        requestedBy: viewer.id,
+        itemName: pre.itemName,
+        linkUrl: pre.linkUrl,
+        estimateCurrency: money.currency,
+        estimateForeignAmount: money.foreignAmount,
+        estimateFxRate: money.fxRate,
+        estimateAmountKrw: money.amountKrw,
+        memo: input.memo,
+      },
+      inner,
+    );
+    await recordAction(viewer, { actionType: "document_create", entity: PURCHASE_REQUEST_ENTITY, entityId: row.id }, { tx: inner });
+    return { id: row.id, number: row.number };
+  };
+  return tx ? await runCreate(tx) : await withTransaction(runCreate);
+}
+
+// ── 목록 ───────────────────────────────────────────────────────────────────
+
+export type PurchaseRequestStatusValue = "requested" | "purchased" | "cancelled";
+
+export type PurchaseRequestListItemDto = {
+  id: string;
+  number: string;
+  /** 요청일(서울 날짜). */
+  requestedOn: string;
+  itemName: string;
+  linkUrl: string | null;
+  /** 연결 칸 — `{프로젝트} · {줄 번호} {항목}`. */
+  linkLabel: string | null;
+  requestedByName: string;
+  status: PurchaseRequestStatusValue;
+  currency: string;
+  foreignAmount: number | null;
+  fxRate: number;
+  estimateKrw: number;
+};
+
+const VALUE_KEYS = ["id", "number", "requestedOn", "itemName", "linkUrl", "requestedByName", "status"] as const;
+const AMOUNT_KEYS = ["currency", "foreignAmount", "fxRate", "estimateKrw"] as const;
+
+export const PURCHASE_REQUEST_LIST_DTO_SPEC: DtoSpec<PurchaseRequestListItemDto, PurchaseRequestListItemDto> = {
+  fields: [
+    ...VALUE_KEYS.map((key) => ({ key, from: key, infoItem: "purchase_request.value" })),
+    // 연결 칸은 프로젝트 이름을 싣는다 — 구매 요청 값과 프로젝트 값을 둘 다 볼 때만(all-of).
+    { key: "linkLabel", from: "linkLabel", infoItem: ["purchase_request.value", "project.value"] },
+    ...AMOUNT_KEYS.map((key) => ({ key, from: key, infoItem: "purchase_request.amount" })),
+  ],
+};
+
+registerDto({
+  name: "PurchaseRequestListItemDto",
+  fields: PURCHASE_REQUEST_LIST_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })),
+});
+
+// 줄 번호 = 그 줄 차수 안 순번(보관 안 된 줄, 정렬 순 — S10 줄 목록과 같은 셈).
+async function lineNumbers(viewer: Viewer, revisionIds: readonly string[]): Promise<Map<string, number>> {
+  const lines = await listQuoteLinesByRevisions(viewer, [...new Set(revisionIds)]);
+  const lineNo = new Map<string, number>();
+  const seen = new Map<string, number>();
+  for (const line of lines) {
+    const next = (seen.get(line.revisionId) ?? 0) + 1;
+    seen.set(line.revisionId, next);
+    lineNo.set(line.id, next);
+  }
+  return lineNo;
+}
+
+function requestLinkLabel(row: PurchaseRequestListRow, lineNo: Map<string, number>): string | null {
+  if (row.linkKind !== "quote_line" || row.projectName === null || row.lineItemName === null) return null;
+  const number = row.quoteLineId ? lineNo.get(row.quoteLineId) : undefined;
+  return `${row.projectName} · ${number === undefined ? row.lineItemName : `${number} ${row.lineItemName}`}`;
+}
+
+function toProjectable(row: PurchaseRequestListRow, lineNo: Map<string, number>): PurchaseRequestListItemDto {
+  return {
+    id: row.id,
+    number: row.number,
+    requestedOn: seoulToday(row.createdAt),
+    itemName: row.itemName,
+    linkUrl: row.linkUrl,
+    linkLabel: requestLinkLabel(row, lineNo),
+    requestedByName: row.requestedByName,
+    status: row.status as PurchaseRequestStatusValue,
+    currency: row.estimateCurrency,
+    foreignAmount: row.estimateForeignAmount === null ? null : Number(row.estimateForeignAmount),
+    fxRate: Number(row.estimateFxRate),
+    estimateKrw: row.estimateAmountKrw,
+  };
+}
+
+export type PurchaseRequestStatusView = PurchaseRequestStatusValue | "all";
+
+export type PurchaseRequestListFilters = {
+  /** 기본 보기 = `신청됨`. */
+  status: PurchaseRequestStatusView;
+  /** `YYYY-MM`(요청일 월) — 없으면 모든 달. */
+  month?: string | null;
+  page?: string;
+};
+
+export type PurchaseRequestList = {
+  rows: Partial<PurchaseRequestListItemDto>[];
+  page: { page: number; pageCount: number; pageSize: number; total: number };
+  /** 구매 권한자 · 전사 범위 — Empty 문구의 갈래(`처리할 …` / `신청한 …`). */
+  privileged: boolean;
+  /** 필터와 무관하게 범위 안에 요청이 하나라도 있는가 — 전체 0건 갈래. */
+  anyInScope: boolean;
+};
+
+// 서울 월 → [그 달 0시, 다음 달 0시) — `created_at`은 UTC 시각으로 저장된다(seoulToday(createdAt)와 같은 가정).
+function monthBounds(month: string): { from: Date; to: Date } {
+  const [year, mon] = month.split("-").map(Number) as [number, number];
+  const next = mon === 12 ? `${year + 1}-01` : `${year}-${String(mon + 1).padStart(2, "0")}`;
+  return { from: new Date(`${month}-01T00:00:00+09:00`), to: new Date(`${next}-01T00:00:00+09:00`) };
+}
+
+// 범위: `cards.purchases` write 권한자 · 전사 범위 → 전부 / 그 밖 → 자기 요청 + 자기가 담당 PM인 프로젝트 줄의 요청(쿼리 조건).
+async function listAccess(viewer: Viewer, today: string): Promise<{ scope: PurchaseRequestScope; privileged: boolean }> {
+  const purchaser = await can(viewer, "cards.purchases", "write");
+  const actor = await loadActorTeamScope(viewer, { todayKst: today });
+  if (purchaser || actor.workScope === "company") return { scope: { kind: "all" }, privileged: purchaser };
+  return { scope: { kind: "own", userId: viewer.id }, privileged: false };
+}
+
+export async function listPurchaseRequests(viewer: Viewer, filters: PurchaseRequestListFilters, today: string = seoulToday()): Promise<PurchaseRequestList> {
+  const { scope, privileged } = await listAccess(viewer, today);
+  const filter: PurchaseRequestFilter = {
+    ...(filters.status === "all" ? {} : { status: filters.status }),
+    ...(filters.month ? monthBounds(filters.month) : {}),
+  };
+  // 판정(can · 소속)은 위에서 끝내고 트랜잭션 안에서는 목록 쿼리 하나만 — lock_timeout(5s)이 잠금 대기를 끊는다(로드 오류 갈래).
+  const rows = await withTransaction((tx) => listPurchaseRequestRows(viewer, { scope, filter }, tx));
+  const anyInScope = rows.length > 0 || (Object.keys(filter).length > 0 && (await withTransaction((tx) => listPurchaseRequestRows(viewer, { scope, filter: {} }, tx))).length > 0);
+  const lineNo = await lineNumbers(viewer, rows.flatMap((row) => (row.lineRevisionId ? [row.lineRevisionId] : [])));
+  const projected = await projectMany(viewer, rows.map((row) => toProjectable(row, lineNo)), PURCHASE_REQUEST_LIST_DTO_SPEC);
+  const pageCount = pageCountFrom(projected.length, LIST_PAGE_SIZE);
+  const page = clampPage(filters.page, pageCount);
+  return {
+    rows: projected.slice((page - 1) * LIST_PAGE_SIZE, page * LIST_PAGE_SIZE),
+    page: { page, pageCount, pageSize: LIST_PAGE_SIZE, total: projected.length },
+    privileged,
+    anyInScope,
+  };
+}
+
+// ── S10 구매 요청 모드 줄 고르기(트랜잭션 밖 읽기) ───────────────────────────
+
+// 현재 차수의 줄(취소 · 조정 줄 제외). 온라인구매 협력사 줄만 고를 수 있고 나머지는 `거래처 {이름} · 지출결의로`(문 가르기 — 사람이 고르지 않는다).
+// 반대쪽(지출결의 쪽) · 실행가 소진 줄은 카드 모드(`searchLinesForCardLink`)와 같은 이유 · 같은 남은 실행가 식(06-07 `lineRoom` 한 곳)이다.
+export async function searchLinesForPurchaseLink(
+  viewer: Viewer,
+  input: { projectId: string; query: string; currentLineId?: string | null },
+): Promise<{ rows: Partial<CardLinkLineDto>[]; truncated: boolean; subtitle: string; total: number; selectableCount: number }> {
+  if (!(await can(viewer, "projects", "view"))) throw new ForbiddenError(PROJECTS_VIEW_DENIED);
+  const project = await findProjectById(viewer, input.projectId);
+  if (!project || project.archivedAt) throw new ProjectNotFoundError();
+  const revision = await findLatestQuoteRevision(viewer, project.id);
+  const lines = revision ? await listQuoteLinesByRevisions(viewer, [revision.id]) : [];
+  lines.sort((a, b) => a.sortOrder - b.sortOrder || a.id.localeCompare(b.id));
+  const numbered = lines.map((line, index) => ({ line, lineNo: index + 1 })).filter(({ line }) => line.lineKind !== "adjustment" && line.lineStatus !== "cancelled");
+  const lineIds = numbered.map(({ line }) => line.id);
+
+  const links = await findLineLinks(viewer, lineIds);
+  const basis = await loadLineRoomBasis(viewer, lineIds);
+  const expenseIds = [...new Set([...links.values()].flatMap((link) => link.expenses.map((doc) => doc.id)))];
+  const statuses = await findExpenseApprovalStatuses(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, documentIds: expenseIds });
+  const vendorNames = await findVendorNamesByIds(viewer, [...new Set(numbered.flatMap(({ line }) => (line.vendorId ? [line.vendorId] : [])))]);
+  const onlineVendorName = await getSettingValue(PURCHASE_ONLINE_VENDOR_NAME);
+  const vendorVisible = await visible(viewer, "vendor.value");
+  const lock = projectLinkLock(project.status);
+
+  const all: CardLinkLineDto[] = numbered.map(({ line, lineNo }) => {
+    const link = links.get(line.id);
+    const execution = link?.currentExecution ?? lineExecution(line);
+    const room = lineRoom({ links, basis, lineId: line.id, exclude: {} });
+    const remainingKrw = cardExecutionCap({ execution, otherSupplies: room.otherSupplies, supply: { currency: "KRW", amount: 0, fxRate: 1 }, source: "entry" }).remaining.amountKrw;
+    const vendorName = line.vendorId ? (vendorNames.get(line.vendorId) ?? null) : null;
+    const door = resolveLineDoor({ vendorName }, onlineVendorName);
+    const expense = link?.expenses.at(-1);
+    let reason: string | null = null;
+    if (lock) {
+      reason = lock;
+    } else if (door !== "purchase") {
+      reason = vendorName !== null && vendorVisible ? `거래처 ${vendorName} · 지출결의로` : "온라인구매 협력사 줄 아님 · 지출결의로";
+    } else if (expense) {
+      const word = APPROVAL_STATUS_WORDS[statuses.get(expense.id) ?? ""] ?? "";
+      reason = `지출결의 ${expense.number}${word ? ` ${word}` : ""} · ${numberedSupplyText(expense)}`;
+    } else if (remainingKrw <= 0) {
+      reason = "실행가 소진 · 다른 줄";
+    }
+    return {
+      id: line.id,
+      lineNo,
+      itemName: line.itemName,
+      vendorName,
+      execution,
+      remainingKrw,
+      hint: lineRoomHint({ remaining: remainingKrw, cards: room.cards, requests: room.requests }),
+      selectable: reason === null,
+      reason,
+      current: line.id === input.currentLineId,
+    };
+  });
+
+  const lowered = input.query.trim().toLowerCase();
+  const matched = all.filter((row) => lowered === "" || row.itemName.toLowerCase().includes(lowered) || (row.vendorName ?? "").toLowerCase().includes(lowered));
+  const selectableCount = all.filter((row) => row.selectable).length;
+  const projected = (await projectMany(viewer, matched.slice(0, LINK_PICK_LIMIT), CARD_LINK_LINE_SPEC)).filter((row) => row.id !== undefined);
+  return {
+    rows: projected,
+    truncated: matched.length > LINK_PICK_LIMIT,
+    subtitle: `${project.name} · ${all.length}줄 · 구매 요청할 수 있는 줄 ${selectableCount}`,
+    total: all.length,
+    selectableCount,
+  };
+}
+
+// ── 새 건 기본값 — 진입 줄(`?line=`) ─────────────────────────────────────────
+
+export type PurchaseRequestEntry = {
+  project: CardLinkProjectChoice;
+  line: { id: string; itemName: string; remainingKrw: number | null; hint: string | null };
+};
+
+// 견적 줄 행 · 점검 섹션에서 `?new=1&line={id}`로 들어온 줄 — 고를 수 있는 프로젝트(완료 · 보관 · 볼 수 없음 제외)의 줄이면 채운다.
+// 문이 맞지 않는 줄도 채운다(서버가 제출 때 `reason`으로 거부하고 입력은 남는다 — 경합 · 직접 URL).
+export async function purchaseRequestEntry(viewer: Viewer, lineId: string): Promise<PurchaseRequestEntry | null> {
+  const line = await findQuoteLineById(viewer, lineId);
+  const revision = line ? await findQuoteRevisionById(viewer, line.revisionId) : null;
+  if (!revision) return null;
+  const project = await cardLinkProjectChoice(viewer, revision.projectId);
+  if (!project) return null;
+  const found = await searchLinesForPurchaseLink(viewer, { projectId: project.id, query: "", currentLineId: lineId });
+  const row = found.rows.find((candidate) => candidate.id === lineId);
+  if (!row || row.itemName === undefined) return null;
+  return { project, line: { id: lineId, itemName: row.itemName, remainingKrw: row.remainingKrw ?? null, hint: row.hint ?? null } };
+}

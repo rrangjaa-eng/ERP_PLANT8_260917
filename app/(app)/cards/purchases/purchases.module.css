@@ -1,0 +1,36 @@
+/* 06-08 S11 — 품목 칸: 한 줄 말줄임 + title, 같은 칸 링크 아이콘(3차 — 글자 없음). 격자 칸 minmax(0, max-content)와 같은 꼴이라
+   긴 품목이 폰 320에서 칸을 밀지 않는다(연결 칸 `.linkCell`과 같은 16em 상한). */
+.itemCell {
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+  max-width: 16em;
+  min-width: 0;
+}
+
+.itemText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 링크 아이콘 — 누르는 영역 `--touch-min` 44×44(폰 포함, r2 F15). 색은 식별자형 링크와 같은 `--accent`. */
+.linkIcon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--touch-min);
+  min-height: var(--touch-min);
+  color: var(--accent);
+}
+
+.linkIcon:hover {
+  color: var(--accent-hover);
+}
+
+.linkIcon svg {
+  width: var(--s-4);
+  height: var(--s-4);
+}

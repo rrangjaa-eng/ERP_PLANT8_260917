@@ -26,7 +26,7 @@ import type { LineLinks } from "@/repositories/quote-line-links";
 // 주석 한 줄로 적는다: `project.line-edit`(04-06 · 04-12 · 04-13 · 06-07 D-47 ③ 갈래), `quote.line-cap`(04-26),
 // `project.transition`(04-20), `project.auto-settle`(04-53), `project.period-edit`(04-22), `project.pre-estimate-edit`(04-44),
 // `project.start-date-required`(04-20), `quote.revision-create`·`quote.customer-approval`·`quote.approval-toggle`·`quote.vendor-required`(04-14),
-// `card.dual-link-block`·`card.execution-cap`(06-07).
+// `card.dual-link-block`·`card.execution-cap`(06-07), `purchase.line-door`(06-08).
 //
 // side-effect import 모듈 — `import "@/domain/rules/register"`로 불러
 // 등록만 일으킨다(도메인 등록 사이드이펙트 모듈 규약).
@@ -378,5 +378,19 @@ registerGateRule<unknown, CardExecutionCapCtx>({
     const next = ctx.link === "pickable" ? "다른 줄 고르기" : `견적 줄은 담당 PM ${ctx.pmName ?? ""}`;
     if (!ctx.amountVisible) return { allowed: false, reason: `실행가 초과 · ${next}` };
     return { allowed: false, reason: `실행가 초과 · 남은 실행가 ${formatKrw(cap.remaining.amountKrw)} · ${next}` };
+  },
+});
+
+// 06-08(EXP-10 · O-13) — 견적 줄의 문(구매 요청 / 지출결의)은 거래처 설정에서만 나오고 사람이 고르지 않는다. 호출자가 06-02 `resolveLineDoor`(순수)로
+// 문을 정해 넘기고 이 규칙은 입구(`side`)와 맞지 않는 문을 거부한다. 구매 요청 쪽 입구는 06-08 `createPurchaseRequest`, 지출결의 쪽 입구는 06-13이 부른다.
+export type PurchaseLineDoorCtx = { side: "purchase" | "expense"; door: "purchase" | "expense"; vendorName: string | null };
+
+registerGateRule<unknown, PurchaseLineDoorCtx>({
+  name: "purchase.line-door",
+  check: (_doc, ctx) => {
+    if (ctx.side === ctx.door) return { allowed: true };
+    return ctx.side === "purchase"
+      ? { allowed: false, reason: "온라인구매 협력사 줄 아님 · 지출결의로" }
+      : { allowed: false, reason: "온라인구매 협력사 줄 · 구매 요청으로" };
   },
 });

@@ -7,21 +7,19 @@ import { approveDocument, getApprovalView } from "@/domain/approvals";
 import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND, saveExpenseDraft, submitExpense } from "@/domain/expenses";
 import { createCorpCard } from "@/domain/corp-cards";
 import { createCardUsage, precheckCardUsage } from "@/domain/corp-card-usages";
-import { setSettingValue } from "@/domain/settings/registry";
-import { PURCHASE_ONLINE_VENDOR_NAME } from "@/domain/settings/keys";
-import { findSimpleValue, upsertSimpleValue } from "@/repositories/settings";
 import { confirmEvidence } from "@/domain/evidence-reviews";
 import { completeExpensePayment, previewPayable } from "@/domain/payments";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { createOrgUnit, createTeam } from "@/domain/org";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
-import { insertVendor } from "@/repositories/vendors";
+import { insertVendor, updateVendor } from "@/repositories/vendors";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import { seoulToday } from "@/lib/dates";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
+import { E2E_ONLINE_VENDOR_NAME, enableOnlineVendorSetting } from "./online-vendor";
 import { setupExpenseE2E, submitLineExpense, type ExpenseE2E } from "./expense-fixture";
 import { submitReadyDraft } from "../integration/fixtures/expenses";
 
@@ -311,22 +309,15 @@ test.describe("견적 줄 상태 (06-13)", () => {
   });
 
   test.describe("온라인구매 줄 문", () => {
-    let original: Awaited<ReturnType<typeof findSimpleValue>>;
-    test.beforeAll(async () => {
-      original = await findSimpleValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME.key);
-    });
-    test.afterAll(async () => {
-      if (original) await upsertSimpleValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME.key, original.value, original.updatedBy);
-      else await upsertSimpleValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME.key, "", null);
-    });
-
     test("온라인구매 협력사 줄 — 행 행동 `구매 요청` · `Ctrl+E` → `/cards/purchases?new=1&line={id}` · 힌트 줄 `지출결의·구매 요청 Ctrl+E` / 없는 프로젝트는 05 그대로", async ({ browser, baseURL }) => {
       const fx = await setupExpenseE2E();
       const page = await loginPage(browser, baseURL, fx.pm, DESKTOP);
       await page.goto(`/projects/${fx.projectId}`);
       await expect(hintOf(page)).toHaveText(/지출결의 올리기 Ctrl\+E$/);
 
-      await setSettingValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME, fx.vendorName);
+      // 전역 설정은 모든 스펙이 같은 고정 이름으로 켜 둔다(`online-vendor.ts`) — 값을 바꾸지 않고 이 줄들의 거래처 이름을 그 이름으로 바꿔 문을 연다.
+      await enableOnlineVendorSetting();
+      await updateVendor(SYSTEM_VIEWER, fx.vendorId, { name: E2E_ONLINE_VENDOR_NAME, normalizedName: E2E_ONLINE_VENDOR_NAME.toLowerCase() });
       await page.goto(`/projects/${fx.projectId}`);
       await expect(hintOf(page)).toHaveText(/지출결의·구매 요청 Ctrl\+E$/);
       const row = rowOf(page, fx.lines.tracer.itemName);

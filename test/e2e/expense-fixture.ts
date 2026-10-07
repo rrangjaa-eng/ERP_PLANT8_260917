@@ -29,6 +29,7 @@ export type ExpenseE2E = {
   projectNumber: string;
   projectName: string;
   vendorName: string;
+  vendorId: string;
   // 줄 이름 → id. 이름은 문서 제목 · 결재함 문서 칸에 그대로 나온다.
   lines: Record<LineKey, { id: string; itemName: string }>;
 };
@@ -113,6 +114,7 @@ export async function setupExpenseE2E(): Promise<ExpenseE2E> {
     projectNumber: project.number,
     projectName,
     vendorName,
+    vendorId: vendor.id,
     lines: Object.fromEntries((Object.keys(names) as LineKey[]).map((key) => [key, { id: idOf(names[key]), itemName: names[key] }])) as ExpenseE2E["lines"],
   };
 }

@@ -14,6 +14,8 @@ import { saveProjectLedger } from "@/domain/projects/ledger";
 import { listProjectIssueRequests } from "@/domain/issue-requests";
 import { SaveRejectedError } from "@/domain/quotes/lines";
 import { ForbiddenError, listRevenue } from "@/domain/revenue";
+import { getSettingValue as realGetSettingValue } from "@/domain/settings/registry";
+import { TAX_VAT_RATE } from "@/domain/settings/keys";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { insertRole } from "@/repositories/roles";
 import { deferred, waitForLockWaiter } from "./lock-race";
@@ -345,6 +347,23 @@ describe("발행 요청 표 DTO (listProjectIssueRequests)", () => {
     expect(request).toMatchObject({ id: row.id, amountKrw: 22_000_000, status: "requested", desiredIssueDate: "2026-09-30" });
     expect(request?.vatKrw).toBe(entry?.vatKrw);
     expect(request?.totalKrw).toBe(entry?.totalKrw);
+  });
+});
+
+describe("발행 요청 표 DTO — 부가세 기준일 (06-18 검토 S-1)", () => {
+  it("부가세는 요청마다 그 희망 발행일의 세율로 계산한다", async () => {
+    const { project, pm } = await setupProject();
+    const before = requestRow({ desiredIssueDate: "2026-09-30", amount: 10_000_000 });
+    const after = requestRow({ desiredIssueDate: "2026-10-05", amount: 10_000_000 });
+    await saveProjectLedger(pm, project.id, { seenStatus: "bidding", issueRequests: [before, after] });
+    // 설정 표는 모든 테스트가 같이 쓰므로 건드리지 않고, 날짜로 세율이 갈리는 값을 주입한다.
+    const getSettingValue: typeof realGetSettingValue = (def, opts) =>
+      (def.key === TAX_VAT_RATE.key ? Promise.resolve(opts?.asOf && opts.asOf < new Date("2026-10-01") ? 0.1 : 0.2) : realGetSettingValue(def, opts)) as never;
+
+    const dtos = await listProjectIssueRequests(pm, project.id, { getSettingValue });
+
+    expect(dtos.find((dto) => dto.id === before.id)).toMatchObject({ vatKrw: 1_000_000, totalKrw: 11_000_000 });
+    expect(dtos.find((dto) => dto.id === after.id)).toMatchObject({ vatKrw: 2_000_000, totalKrw: 12_000_000 });
   });
 });
 

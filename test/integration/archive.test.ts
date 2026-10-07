@@ -272,7 +272,11 @@ describe("보관함 (ADMN-12, 실제 Postgres)", () => {
   });
 
   it("거래처 복원 — 같은 숫자 사업자번호의 살아 있는 거래처가 있으면 복원 불가 문구로 막고 보관 그대로다", async () => {
-    const no = `${Math.floor(100 + Math.random() * 900)}-${Math.floor(10 + Math.random() * 90)}-${Math.floor(10000 + Math.random() * 90000)}`;
+    const base = String(Math.floor(100_000_000 + Math.random() * 900_000_000));
+    const weights = [1, 3, 7, 1, 3, 7, 1, 3, 5];
+    const sum = weights.reduce((acc, weight, i) => acc + Number(base[i]) * weight, 0) + Math.floor((Number(base[8]) * 5) / 10);
+    const digits = base + String((10 - (sum % 10)) % 10);
+    const no = `${digits.slice(0, 3)}-${digits.slice(3, 5)}-${digits.slice(5)}`;
     const { vendor: a } = await createVendor(SYSTEM_VIEWER, { name: `거래처-${randomUUID()}`, businessNo: no });
     await archive(SYSTEM_VIEWER, "vendor", a.id);
     // 색인 전(PR A)에는 같은 번호의 살아 있는 행을 선검사 없이 직접 넣는다.

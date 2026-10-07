@@ -521,6 +521,19 @@ test.describe("거래처 구분 (261006-biv)", () => {
     await expect(page.locator('dialog[data-ui="side-panel"]').getByLabel("구분")).toHaveValue("client");
   });
 
+  test("검증 숫자가 틀린 사업자번호는 칸 아래 문구로 막히고 저장되지 않는다", async ({ page }) => {
+    await loginAsSysadmin(page);
+    const name = `E2E틀린번호-${randomUUID()}`;
+    await page.goto("/admin/vendors?new=1");
+    const dialog = page.locator('dialog[data-ui="side-panel"]');
+    await dialog.getByLabel("이름").fill(name);
+    await dialog.getByLabel("사업자 번호").fill("214-86-10231");
+    await dialog.getByRole("button", { name: "거래처 등록" }).click();
+    await expect(dialog.getByText("사업자번호 검증 숫자 틀림 · 다시 확인")).toBeVisible();
+    await expect(dialog.getByLabel("사업자 번호")).toHaveValue("214-86-10231");
+    expect(await findVendorsByNormalizedName(SYSTEM_VIEWER, name.toLowerCase())).toHaveLength(0);
+  });
+
   test("같은 사업자번호 등록은 칸 아래 문구와 요약으로 막히고, 다른 갈래면 「구분 더하기」로 그 거래처 수정 패널로 넘어간다", async ({ page }) => {
     await loginAsSysadmin(page);
     const businessNo = uniqueBusinessNo();

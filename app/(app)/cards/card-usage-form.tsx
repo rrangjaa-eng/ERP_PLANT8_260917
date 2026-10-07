@@ -595,7 +595,19 @@ export function CardUsageForm({
         reasonId="card-usage-form-reason"
       >
         {/* 칸 줄 간격은 TextField 줄(`--s-4`)과 같은 클래스로 맞춘다(새 CSS 모듈 없음). 입력이 시작되면 결과 한 줄 대신 막힘 줄. */}
-        <div key={gen} onInput={() => setShowingResult(false)} onChange={() => setShowingResult(false)}>
+        {/* 06-12 감사 O-2 — 구매 완료는 되돌릴 수 없다(Q2): 칸 안 그냥 `Enter`(네이티브 암묵 제출)로 나가지 않게 막는다. 처리는 `Ctrl+Enter` · 1차 버튼만. */}
+        <div
+          key={gen}
+          onInput={() => setShowingResult(false)}
+          onChange={() => setShowingResult(false)}
+          onKeyDown={
+            purchase
+              ? (event) => {
+                  if (event.key === "Enter" && !event.ctrlKey && !event.metaKey && event.target instanceof HTMLInputElement) event.preventDefault();
+                }
+              : undefined
+          }
+        >
           {purchase ? (
             // S13 본문 첫 줄 — `{번호} · {품목}`(말줄임 + title) + 링크 아이콘(S11과 같은 3차).
             <div data-ui="field-row" style={{ display: "flex", alignItems: "center", gap: "var(--s-1)", minWidth: 0 }}>

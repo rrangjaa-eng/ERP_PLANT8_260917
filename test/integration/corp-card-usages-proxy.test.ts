@@ -580,7 +580,7 @@ describe("완료 프로젝트(D-47 · U-4 · Q-B)", () => {
 });
 
 describe("수정 연결 변경(B-1 · E-9)", () => {
-  it("줄 A → 지출결의가 이어진 줄 B → `지출결의 {번호} 연결됨 · 다른 줄 고르기` · 행 그대로", async () => {
+  it("줄 A → 지출결의가 이어진 줄 B → `지출결의 {번호} 연결됨 · 카드 사용은 다른 줄` · 행 그대로", async () => {
     const fx = await setupExpenseProject();
     const cardId = await makeCard({ kind: "personal", holderUserId: fx.pm.id });
     const base = lineInput(cardId, fx.lines.noVendor, 100_000);
@@ -590,7 +590,7 @@ describe("수정 연결 변경(B-1 · E-9)", () => {
     if (submitted.kind !== "submitted") throw new Error("제출되지 않음");
     const edit: CardUsageUpdateInput = { ...(await editInput(id, base, 100_000)), linkKind: "quote_line", lineId: fx.lines.withVendor };
     const error = await caught(update(fx.pm, edit));
-    expect((error as Error).message).toBe(`지출결의 ${submitted.number} 연결됨 · 다른 줄 고르기`);
+    expect((error as Error).message).toBe(`지출결의 ${submitted.number} 연결됨 · 카드 사용은 다른 줄`);
     expect((await rowOf(id)).quoteLineId).toBe(fx.lines.noVendor);
   });
 
@@ -940,7 +940,7 @@ describe("되돌리기 = 보관 해제(게이트 재통과 — T-06-192)", () =>
     expect((await rowOf(id)).archivedAt).not.toBeNull();
   });
 
-  it("지운 사이 그 줄에 지출결의 → `지출결의 {번호} 연결됨 · 다른 줄 고르기` · 보관 그대로", async () => {
+  it("지운 사이 그 줄에 지출결의 → `지출결의 {번호} 연결됨 · 카드 사용은 다른 줄` · 보관 그대로", async () => {
     const fx = await setupExpenseProject();
     const cardId = await makeCard({ kind: "personal", holderUserId: fx.pm.id });
     const id = await create(fx.pm, lineInput(cardId, fx.lines.withVendor, 100_000));
@@ -949,7 +949,7 @@ describe("되돌리기 = 보관 해제(게이트 재통과 — T-06-192)", () =>
     const submitted = await submitReadyDraft(fx.pm, created.created[0]?.expenseId ?? "");
     if (submitted.kind !== "submitted") throw new Error("제출되지 않음");
     const error = await caught(restore(fx.pm, id));
-    expect((error as Error).message).toBe(`지출결의 ${submitted.number} 연결됨 · 다른 줄 고르기`);
+    expect((error as Error).message).toBe(`지출결의 ${submitted.number} 연결됨 · 카드 사용은 다른 줄`);
     expect((await rowOf(id)).archivedAt).not.toBeNull();
   });
 

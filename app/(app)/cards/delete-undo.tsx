@@ -15,7 +15,7 @@ const FAILED_REQUEST = "처리 중 오류 · 잠시 후 다시 시도";
 // 요청이 닿지 않은 되돌리기(SYSTEM §7-8) — `되돌리기`를 남겨 다시 누를 수 있다. 서버 거부(원인 있음)만 버튼을 치운다.
 const UNDO_RETRY = "되돌리기 실패 · 다시 시도";
 // 지운 행이 화면에 없어 할 수 없는 다음 한 수 — 되돌리기 거부 줄에서는 뺀다(DOM O-3).
-const IMPOSSIBLE_NEXT = " · 다른 줄 고르기";
+const IMPOSSIBLE_NEXT = [" · 다른 줄 고르기", " · 카드 사용은 다른 줄"];
 
 // 결제 합계를 못 보는 사람(card_usage.amount 숨김)이면 서버가 null을 보낸다(DOM D-1) — 결과 줄에 금액이 없다.
 type Removed = { id: string; version: number; totalKrw: number | null };
@@ -84,7 +84,8 @@ export function CardUsageDeleteUndo({ children }: { children: ReactNode }) {
       return;
     }
     if (outcome?.serverError) {
-      const text = outcome.serverError.endsWith(IMPOSSIBLE_NEXT) ? outcome.serverError.slice(0, -IMPOSSIBLE_NEXT.length) : outcome.serverError;
+      const next = IMPOSSIBLE_NEXT.find((suffix) => outcome.serverError?.endsWith(suffix));
+      const text = next ? outcome.serverError.slice(0, -next.length) : outcome.serverError;
       setLine({ kind: "failed", text, focus: true });
       return;
     }

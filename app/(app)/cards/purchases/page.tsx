@@ -1,3 +1,4 @@
+import "@/app/(app)/document-kinds";
 import { requireSession } from "@/lib/viewer";
 import { seoulToday } from "@/lib/dates";
 import { CANCEL_REASON_MAX, CANCEL_REASON_TOO_LONG, listPurchaseRequests, loadPurchaseCompletion, loadPurchaseRequestTeam, purchaseRequestEntry, type PurchaseRequestList, type PurchaseRequestStatusView } from "@/domain/purchase-requests";

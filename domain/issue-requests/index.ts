@@ -40,6 +40,8 @@ const ALREADY_LINKED = "다른 사람이 먼저 이 요청을 이음 · 새로 �
 const NOT_EDITABLE_ISSUED = "이미 발행됨 · 새로 고침";
 const NOT_EDITABLE_CANCELLED = "취소된 요청 · 새로 고침";
 const CHANGED_BY_OTHER = "다른 사람이 먼저 이 요청을 바꿈 · 새로 고침";
+// 260907 invoice_requests_amount_positive — 요청 금액은 0원 초과만(검토 I-2).
+const AMOUNT_POSITIVE_ERROR = "0원 초과 · 금액 입력";
 const REPLAY_MISMATCH = "이미 저장된 요청과 값이 다름 · 새로 고침";
 
 export type IssueRequestStatus = "requested" | "issued" | "cancelled";
@@ -93,6 +95,10 @@ function prepare(rows: IssueRequestWriteRow[], errors: CellFormatError[]): Array
     }
     try {
       const columns = moneyToColumns(input.amount);
+      if (columns.amountKrw <= 0) {
+        errors.push({ rowIndex, rowId: input.id, field: "amount", label: "금액", reason: AMOUNT_POSITIVE_ERROR });
+        return;
+      }
       prepared.push({
         input,
         rowIndex,

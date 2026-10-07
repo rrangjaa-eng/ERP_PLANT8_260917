@@ -1,36 +1,38 @@
 {
   "version": "1.0",
-  "timestamp": "2026-10-06T23:40:00.538Z",
-  "phase": "06",
-  "phase_name": "payment-evidence-cards",
-  "phase_dir": ".planning/phases/06-payment-evidence-cards",
-  "plan": 8,
+  "timestamp": "2026-10-07T17:55:59.520Z",
+  "phase": "06.2",
+  "phase_name": "view-scope",
+  "phase_dir": ".planning/phases/06.2-view-scope",
+  "plan": 0,
   "task": 0,
-  "total_tasks": 30,
+  "total_tasks": 0,
   "status": "paused",
   "completed_tasks": [
-    {"id": 1, "name": "PR-A (06-01·06-02·06-27·06-29) 머지", "status": "done", "commit": "#169"},
-    {"id": 2, "name": "PR-B 머지", "status": "done", "commit": "#171"},
-    {"id": 3, "name": "PR-C (06-30·06-03·06-04·06-05·06-28·06-06·06-07) 게이트·Codex 지적 수정·머지, 스테이징 배포 초록", "status": "done", "commit": "accd40e8"}
+    {"id": 1, "name": "REVIEWS.md (eng·design R1) 작성", "status": "done", "commit": "4ad6aa2"},
+    {"id": 2, "name": "검토 R1 반영(플랜 12개·CONTEXT·UI-SPEC)", "status": "done", "commit": "22169278"},
+    {"id": 3, "name": "VALIDATION·ROADMAP 웨이브 맞춤", "status": "done", "commit": "70b4c6c9"},
+    {"id": 4, "name": "정밀 플랜 검사(막힘 0·경고 1·참고 3)", "status": "done"},
+    {"id": 5, "name": "/plan-design-review 2회차(Codex·Opus) + 게이트 기록", "status": "done", "commit": "9b6da580"}
   ],
   "remaining_tasks": [
-    {"id": 4, "name": "PR-D: 06-08…06-15, 06-18 실행 → 검토·DOM 감사 → 게이트 → 머지", "status": "not_started"},
-    {"id": 5, "name": "PR-E: 06-17, 06-19, 06-16, 06-20…06-25", "status": "not_started"},
-    {"id": 6, "name": "/gsd-verify-work (EXP-07이 일찍 Complete 표시됨 — 확인)", "status": "not_started"}
+    {"id": 6, "name": "디자인 재검토 2회차 막힘 1·중요 6 + 플랜 검사 경고 1·참고 반영 (/gsd-plan-phase 06.2 --reviews, Round 2)", "status": "not_started"},
+    {"id": 7, "name": "플랜 검사 재실행(Opus, 새 문맥) 막힘 0 확인", "status": "not_started"},
+    {"id": 8, "name": "커밋·푸시, PR(base claude/project-thread-5jx649) draft 유지, 결과 보고", "status": "not_started"}
   ],
-  "blockers": [],
+  "blockers": [
+    {"description": "게이트 리뷰를 시작한 세션은 gsd-planner를 못 띄움(plant8-session-boundary 훅)", "type": "technical", "workaround": "새 세션에서 재개"}
+  ],
   "async_jobs": [],
   "human_actions_pending": [
-    {"action": "night-1006 질문 파일의 결정들(아침 브리핑)", "context": "/mnt/project-files/notes/night-1006/questions.md", "blocking": false},
-    {"action": "260907 차이 반영 여부 결정", "context": "사용자 10/6 20:36 「보고서 보고 결정」 — 결정 전엔 구현 안 함", "blocking": false}
+    {"action": "카드 3건 답(K1 계급 이행·K2 본부 책임자 카드/구매 목록·K3 참여자 지출결의)", "context": "추천안으로 반영, CONTEXT '바뀔 수 있는 결정' 표에 바꿀 곳", "blocking": false},
+    {"action": "#184 머지(문서만 PR)", "context": "사용자 머지", "blocking": true}
   ],
   "decisions": [
-    {"decision": "06-15는 judgeLockedPayment의 evidenceGate 필수 인자를 넘긴다(06-06 S-3)", "rationale": "evidenceGateCtx 제거됨", "phase": "06"},
-    {"decision": "06-08/06-13에서 register.ts에 구매 요청 이중 연결 판정 추가(06-07 I-1)", "rationale": "지출결의 쪽 판정이 「신청됨」 구매 요청을 아직 안 셈", "phase": "06"},
-    {"decision": "06-11(증빙 바뀌면 확인 해제)이 들어가기 전엔 운영 반영 금지", "rationale": "PR-C /review P2·/cso CSO-3", "phase": "06"},
-    {"decision": "카드 사용 중복 방지 키(CSO-4)는 마이그레이션이라 사용자 머지 PR로 따로", "rationale": "위험 경로 분리", "phase": "06"}
+    {"decision": "G34(02, PR-4)는 PR-3 뒤 별도 PR", "rationale": "PR-5 전엔 참여자가 지출결의를 못 내 잘못 가는 틈 없음", "phase": "06.2"},
+    {"decision": "참여자 다중 선택 유지", "rationale": "260907 projects.ts:3953 personIds 배열·Projects.tsx:2408 체크박스", "phase": "06.2"}
   ],
   "uncommitted_files": [],
-  "next_action": "새 세션(plant8 환경)에서 /gsd-progress → PR-D 첫 웨이브(06-08부터) 실행. 브랜치 claude/phase-06-execute-yacw12는 main accd40e8에서 새로 시작함.",
-  "context_notes": "실행자 프롬프트 틀은 이전 세션 scratchpad(prompt-0607.txt)와 같은 꼴: root-pin, 격리 DB(erp_<x>_test, 모든 명령에 DATABASE_URL), 자기 포트, 260907 대조 표만 SUMMARY에(구현 안 함), Superpowers 스킬 명시. 플랜마다 Opus 독립 검토 + CI=true DOM 감사 → fix-* 워크트리 → --no-ff 머지. PR 묶음당 /review·/cso(Opus 대체)·/design-review→/qa 한 번. ready 뒤 시각 비교 실패 시 visual-baseline.yml을 브랜치에 돌리고 실제 변경 커밋으로 CI 재실행."
+  "next_action": "/mnt/project-files/06.2-prep/design-review-r2.md를 REVIEWS.md Round 2로 넣고 /gsd-plan-phase 06.2 --reviews",
+  "context_notes": "eng 재검토는 하지 않음(브리프). Codex 지적은 후보, 판정은 근거로."
 }

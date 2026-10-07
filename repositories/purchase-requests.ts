@@ -1,4 +1,5 @@
 import { and, desc, eq, gte, isNull, lt, or, sql, type SQL } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { corpCardUsages, projects, purchaseRequests, quoteLines, quoteRevisions, users, vendors } from "@/db/schema";
@@ -56,6 +57,8 @@ export type PurchaseRequestFilter = {
 
 export type PurchaseRequestListRow = PurchaseRequestRow & {
   requestedByName: string;
+  /** 06-14 취소한 사람 이름 — 취소 행 2행 `취소 {MM-DD} · {사람}`. 취소 아니면 null. */
+  cancelledByName: string | null;
   projectName: string | null;
   lineItemName: string | null;
   lineRevisionId: string | null;
@@ -86,10 +89,12 @@ export async function listPurchaseRequestRows(
   const base = and(...conditions);
   const where = input.keepId && base ? or(base, and(scopeCondition(input.scope), eq(purchaseRequests.id, input.keepId))) : base;
 
+  const cancellers = alias(users, "cancellers");
   const rows = await tx
     .select({
       request: purchaseRequests,
       requestedByName: users.name,
+      cancelledByName: cancellers.name,
       projectName: projects.name,
       lineItemName: quoteLines.itemName,
       lineRevisionId: quoteLines.revisionId,
@@ -98,6 +103,7 @@ export async function listPurchaseRequestRows(
     })
     .from(purchaseRequests)
     .innerJoin(users, eq(users.id, purchaseRequests.requestedBy))
+    .leftJoin(cancellers, eq(cancellers.id, purchaseRequests.cancelledBy))
     .leftJoin(projects, eq(projects.id, purchaseRequests.projectId))
     .leftJoin(quoteLines, eq(quoteLines.id, purchaseRequests.quoteLineId))
     .leftJoin(corpCardUsages, and(eq(corpCardUsages.purchaseRequestId, purchaseRequests.id), isNull(corpCardUsages.archivedAt)))
@@ -107,6 +113,7 @@ export async function listPurchaseRequestRows(
   return rows.map((row) => ({
     ...row.request,
     requestedByName: row.requestedByName,
+    cancelledByName: row.cancelledByName,
     projectName: row.projectName,
     lineItemName: row.lineItemName,
     lineRevisionId: row.lineRevisionId,

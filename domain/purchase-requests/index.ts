@@ -715,9 +715,15 @@ export type PurchaseRequestListItemDto = {
   /** 06-12 구매 완료 행 2행 `카드 사용 {MM-DD} · {결제 합계}` — 구매 완료 건의 카드 사용(아니면 null). */
   usageUsedOn: string | null;
   usageTotalKrw: number | null;
+  /** 06-14 취소 행 2행 `취소 {MM-DD} · {사람} · {사유}` — 취소 아니면 null. 본인 취소는 사유가 없다. */
+  cancelledOn: string | null;
+  cancelledByName: string | null;
+  cancelReason: string | null;
+  /** 취소 · 구매 완료 행동이 되돌려 보내는 낙관적 동시성 값. */
+  version: number;
 };
 
-const VALUE_KEYS = ["id", "number", "requestedOn", "itemName", "linkUrl", "requestedByName", "status"] as const;
+const VALUE_KEYS = ["id", "number", "requestedOn", "itemName", "linkUrl", "requestedByName", "status", "version", "cancelledOn", "cancelledByName", "cancelReason"] as const;
 const AMOUNT_KEYS = ["currency", "foreignAmount", "fxRate", "estimateKrw"] as const;
 
 export const PURCHASE_REQUEST_LIST_DTO_SPEC: DtoSpec<PurchaseRequestListItemDto, PurchaseRequestListItemDto> = {
@@ -771,6 +777,10 @@ function toProjectable(row: PurchaseRequestListRow, lineNo: Map<string, number>)
     estimateKrw: row.estimateAmountKrw,
     usageUsedOn: row.usageUsedOn,
     usageTotalKrw: row.usageTotalKrw,
+    cancelledOn: row.cancelledAt ? seoulToday(row.cancelledAt) : null,
+    cancelledByName: row.cancelledByName,
+    cancelReason: row.cancelReason,
+    version: row.version,
   };
 }
 
@@ -793,6 +803,8 @@ export type PurchaseRequestList = {
   privileged: boolean;
   /** 필터와 무관하게 범위 안에 요청이 하나라도 있는가 — 전체 0건 갈래. */
   anyInScope: boolean;
+  /** 06-14 행 `요청 취소` — `신청됨` 행 id → 갈래(요청자 본인 `own` · 구매 권한자의 남의 요청 `others`). 그 밖 행은 없다(Q2). */
+  cancelBranches: Record<string, "own" | "others">;
 };
 
 // 서울 월 → [그 달 0시, 다음 달 0시) — `created_at`은 UTC 시각으로 저장된다(seoulToday(createdAt)와 같은 가정).
@@ -829,6 +841,13 @@ export async function listPurchaseRequests(viewer: Viewer, filters: PurchaseRequ
     page: { page, pageCount, pageSize: LIST_PAGE_SIZE, total: projected.length },
     privileged,
     anyInScope,
+    cancelBranches: Object.fromEntries(
+      rows.flatMap((row): [string, "own" | "others"][] => {
+        if (row.status !== "requested") return [];
+        if (row.requestedBy === viewer.id) return [[row.id, "own"]];
+        return privileged ? [[row.id, "others"]] : [];
+      }),
+    ),
   };
 }
 

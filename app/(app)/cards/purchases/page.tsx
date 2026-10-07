@@ -1,6 +1,7 @@
 import { requireSession } from "@/lib/viewer";
 import { seoulToday } from "@/lib/dates";
-import { listPurchaseRequests, loadPurchaseCompletion, loadPurchaseRequestTeam, purchaseRequestEntry, type PurchaseRequestList, type PurchaseRequestStatusView } from "@/domain/purchase-requests";
+import { CANCEL_REASON_MAX, CANCEL_REASON_TOO_LONG, listPurchaseRequests, loadPurchaseCompletion, loadPurchaseRequestTeam, purchaseRequestEntry, type PurchaseRequestList, type PurchaseRequestStatusView } from "@/domain/purchase-requests";
+import { REJECT_REASON_EMPTY_MESSAGE } from "@/domain/approvals";
 import { cardEvidenceDefault } from "@/domain/corp-card-usages/amounts";
 import { recentFxRate } from "@/domain/money/currency";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
@@ -8,6 +9,7 @@ import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { Pagination } from "@/ui/pagination/Pagination";
 import { pageRangeText } from "@/ui/pagination/page-window";
 import { SidePanel } from "@/ui/side-panel/SidePanel";
+import { PurchaseCancelUndo, PurchaseCancelUndoLine } from "./cancel-undo";
 import { PurchaseFilters, PurchaseList, PurchaseListLoadError, type PurchaseListRowView } from "./purchase-list";
 import { PURCHASE_STATUS_VIEWS, type PurchaseStatusView } from "./purchase-status-word";
 import { PurchaseRequestForm, type PurchaseEntry } from "./purchase-request-form";
@@ -85,6 +87,11 @@ export default async function PurchasesPage({ searchParams }: { searchParams: Pr
             estimateKrw: row.estimateKrw ?? null,
             usageUsedOn: row.usageUsedOn ?? null,
             usageTotalKrw: row.usageTotalKrw ?? null,
+            version: row.version ?? 0,
+            cancelledOn: row.cancelledOn ?? null,
+            cancelledByName: row.cancelledByName ?? null,
+            cancelReason: row.cancelReason ?? null,
+            cancelBranch: list?.cancelBranches[row.id] ?? null,
           },
         ]
       : [],
@@ -170,43 +177,64 @@ export default async function PurchasesPage({ searchParams }: { searchParams: Pr
   let empty = undefined;
   let body;
   if (!list) body = <PurchaseListLoadError />;
-  else if (rows.length > 0) body = <PurchaseList rows={rows} listHref={listHref} canComplete={list.privileged} doneId={doneId} />;
+  else if (rows.length > 0)
+    body = (
+      <>
+        <PurchaseCancelUndoLine />
+        <PurchaseList rows={rows} listHref={listHref} canComplete={list.privileged} doneId={doneId} />
+      </>
+    );
   else if (!list.anyInScope) {
     // DR5 — 빈 목록이면 틀이 머리 1차를 숨기고 빈 화면이 말한다. 전체 0건 갈래.
     empty = <ListEmpty message="구매 요청이 없습니다" action={newAction} />;
     body = null;
   } else if (!filtered) {
     // 기본 보기(신청됨) 0건 — 구매 권한자는 처리할 것이 없다는 말 + 전체 보기, 요청자는 신청 행동.
-    empty = list.privileged ? (
-      <ListEmpty message="처리할 구매 요청이 없습니다" action={{ label: "전체 보기", href: `${LIST_HREF}?status=${encodeURIComponent("전체")}` }} />
-    ) : (
-      <ListEmpty message="신청한 구매 요청이 없습니다" action={newAction} />
+    // 마지막 신청 건을 취소해 이 갈래가 되어도 결과 줄 `되돌리기`가 남는다(상태는 화면 전체를 감싼 PurchaseCancelUndo).
+    empty = (
+      <>
+        <PurchaseCancelUndoLine />
+        {list.privileged ? (
+          <ListEmpty message="처리할 구매 요청이 없습니다" action={{ label: "전체 보기", href: `${LIST_HREF}?status=${encodeURIComponent("전체")}` }} />
+        ) : (
+          <ListEmpty message="신청한 구매 요청이 없습니다" action={newAction} />
+        )}
+      </>
     );
     body = null;
   } else {
-    body = <ListEmpty message="조건에 맞는 구매 요청이 없습니다" action={{ label: "필터 지우기", href: LIST_HREF }} />;
+    body = (
+      <>
+        <PurchaseCancelUndoLine />
+        <ListEmpty message="조건에 맞는 구매 요청이 없습니다" action={{ label: "필터 지우기", href: LIST_HREF }} />
+      </>
+    );
   }
 
+  // 결과 줄은 필터 · 월 · 쪽이 바뀌면 사라진다(key) — 패널을 열고 닫는 것(`?new=1` · `?purchase=`)은 목록을 바꾸지 않아 남는다.
+  const undoKey = [view, month, list?.page.page ?? 1].join("|");
   return (
-    <ListScreen
-      title="구매 요청"
-      primaryAction={newAction}
-      filters={filters}
-      empty={empty}
-      pagination={
-        list && rows.length > 0 ? (
-          <Pagination
-            label="구매 요청"
-            page={list.page.page}
-            pageCount={list.page.pageCount}
-            href={pageHref}
-            rangeText={pageRangeText({ page: list.page.page, pageSize: list.page.pageSize, total: list.page.total, unit: "건" })}
-          />
-        ) : undefined
-      }
-      panel={panel}
-    >
-      {body}
-    </ListScreen>
+    <PurchaseCancelUndo key={undoKey} messages={{ empty: REJECT_REASON_EMPTY_MESSAGE, tooLong: CANCEL_REASON_TOO_LONG, max: CANCEL_REASON_MAX }}>
+      <ListScreen
+        title="구매 요청"
+        primaryAction={newAction}
+        filters={filters}
+        empty={empty}
+        pagination={
+          list && rows.length > 0 ? (
+            <Pagination
+              label="구매 요청"
+              page={list.page.page}
+              pageCount={list.page.pageCount}
+              href={pageHref}
+              rangeText={pageRangeText({ page: list.page.page, pageSize: list.page.pageSize, total: list.page.total, unit: "건" })}
+            />
+          ) : undefined
+        }
+        panel={panel}
+      >
+        {body}
+      </ListScreen>
+    </PurchaseCancelUndo>
   );
 }

@@ -712,6 +712,8 @@ export type PurchaseRequestListItemDto = {
   linkLabel: string | null;
   requestedByName: string;
   status: PurchaseRequestStatusValue;
+  /** 06-14 검토 m-3 — 취소 창이 `견적 줄 연결 풀림`을 말할지 정한다(`linkLabel`은 프로젝트 이름을 못 보면 비므로 연결 여부를 가리지 못한다). */
+  linkKind: "quote_line" | "team_cost";
   currency: string;
   foreignAmount: number | null;
   fxRate: number;
@@ -727,7 +729,7 @@ export type PurchaseRequestListItemDto = {
   version: number;
 };
 
-const VALUE_KEYS = ["id", "number", "requestedOn", "itemName", "linkUrl", "requestedByName", "status", "version", "cancelledOn", "cancelledByName", "cancelReason"] as const;
+const VALUE_KEYS = ["id", "number", "requestedOn", "itemName", "linkUrl", "requestedByName", "status", "linkKind", "version", "cancelledOn", "cancelledByName", "cancelReason"] as const;
 const AMOUNT_KEYS = ["currency", "foreignAmount", "fxRate", "estimateKrw"] as const;
 
 export const PURCHASE_REQUEST_LIST_DTO_SPEC: DtoSpec<PurchaseRequestListItemDto, PurchaseRequestListItemDto> = {
@@ -775,6 +777,7 @@ function toProjectable(row: PurchaseRequestListRow, lineNo: Map<string, number>)
     linkLabel: requestLinkLabel(row, lineNo),
     requestedByName: row.requestedByName,
     status: row.status as PurchaseRequestStatusValue,
+    linkKind: row.linkKind === "team_cost" ? "team_cost" : "quote_line",
     currency: row.estimateCurrency,
     foreignAmount: row.estimateForeignAmount === null ? null : Number(row.estimateForeignAmount),
     fxRate: Number(row.estimateFxRate),

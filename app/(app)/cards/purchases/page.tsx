@@ -93,6 +93,7 @@ export default async function PurchasesPage({ searchParams }: { searchParams: Pr
             usageUsedOn: row.usageUsedOn ?? null,
             usageTotalKrw: row.usageTotalKrw ?? null,
             version: row.version ?? 0,
+            quoteLinked: row.linkKind === "quote_line",
             cancelledOn: row.cancelledOn ?? null,
             cancelledByName: row.cancelledByName ?? null,
             cancelReason: row.cancelReason ?? null,

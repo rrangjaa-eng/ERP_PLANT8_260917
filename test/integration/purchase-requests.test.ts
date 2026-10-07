@@ -1783,6 +1783,19 @@ describe("구매 요청 목록 마감(06-14)", () => {
     return inserted.map((row) => row.id);
   }
 
+  it("[m-3] 목록 DTO `linkKind` — 프로젝트 이름을 못 봐 `linkLabel`이 비어도 견적 줄 연결인 줄 안다(취소 창 `견적 줄 연결 풀림` 판정)", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine);
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `마감값만-${randomUUID().slice(0, 8)}`, workScope: "team" });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "purchase_request.value", visible: true });
+    const restricted = await person("값만", role.id);
+    await db.update(purchaseRequests).set({ requestedBy: restricted.id }).where(eq(purchaseRequests.id, created.id));
+    const list = await listPurchaseRequests(restricted, { status: "requested" });
+    const row = list.rows.find((candidate) => candidate.id === created.id);
+    expect(row?.linkKind).toBe("quote_line");
+    expect(row?.linkLabel).toBeUndefined();
+  });
+
   it("[I-1] S13 패널 로드 — `cancelBranch`: 구매 권한자 본인 요청 `own` · 남의 요청 `others` · `신청됨`이 아니면 null · 구매 권한 없으면 패널 없음", async () => {
     const roleId = await scopedRole();
     const requester = await person("패널요청자", roleId);

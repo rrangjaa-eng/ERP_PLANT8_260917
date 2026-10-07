@@ -39,6 +39,8 @@ export type PurchaseListRowView = {
   usageUsedOn: string | null;
   usageTotalKrw: number | null;
   version: number;
+  /** 06-14 견적 줄 연결 요청인가 — 취소 창 결과 줄 `견적 줄 연결 풀림` 판정(`linkLabel`은 프로젝트 이름을 못 보면 비어 가리지 못한다). */
+  quoteLinked: boolean;
   /** 06-14 취소 행 2행 `취소 {MM-DD} · {사람} · {사유}`(본인 취소는 사유 칸이 없다). */
   cancelledOn: string | null;
   cancelledByName: string | null;
@@ -187,7 +189,7 @@ function cancelTarget(row: PurchaseListRowView): PurchaseCancelTarget | null {
     version: row.version,
     itemName: row.itemName,
     branch: row.cancelBranch,
-    quoteLinked: row.linkLabel !== null,
+    quoteLinked: row.quoteLinked,
     estimateText: row.estimateKrw === null ? null : formatKrw(row.estimateKrw),
   };
 }

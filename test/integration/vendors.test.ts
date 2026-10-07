@@ -21,14 +21,24 @@ import {
   addVendorKind,
   ArchivedVendorError,
   DuplicateBusinessNoError,
+  InvalidBusinessNoError,
   ForbiddenError,
 } from "@/domain/vendors";
 
 const REVEAL_ITEM = "vendor.account_number_unmasked";
 
+// 사업자번호 마지막 검증 숫자 — 앞 아홉 자리로 셈한다(domain 규칙과 같은 셈을 테스트가 따로 쓴다).
+function checkDigit(nine: string): number {
+  const weights = [1, 3, 7, 1, 3, 7, 1, 3, 5];
+  let sum = nine.split("").reduce((acc, ch, i) => acc + Number(ch) * (weights[i] ?? 0), 0);
+  sum += Math.floor((Number(nine[8]) * 5) / 10);
+  return (10 - (sum % 10)) % 10;
+}
+
 // 실행마다 고유한 사업자번호 — 같은 DB를 다시 써도 겹치지 않는다(「xxx-xx-xxxxx」).
 function uniqueBizNo(): string {
-  const digits = String(Math.floor(Math.random() * 9_000_000_000) + 1_000_000_000);
+  const base = String(Math.floor(Math.random() * 900_000_000) + 100_000_000);
+  const digits = base + checkDigit(base);
   return `${digits.slice(0, 3)}-${digits.slice(3, 5)}-${digits.slice(5)}`;
 }
 
@@ -292,7 +302,6 @@ describe("vendors 사업자번호 중복 막기 (실제 Postgres)", () => {
     await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: uniqueBizNo() });
     await createVendor(SYSTEM_VIEWER, { name: uniqueName() });
     await createVendor(SYSTEM_VIEWER, { name: uniqueName() });
-    await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: "---" });
     await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: "" });
   });
 
@@ -492,5 +501,39 @@ describe("vendors 사업자번호 중복 막기 (실제 Postgres)", () => {
       client.release();
       await holder.end();
     }
+  });
+});
+
+describe("vendors 사업자번호 10자리 · 검증 숫자 (실제 Postgres)", () => {
+  async function countByName(name: string): Promise<number> {
+    return (await db.select().from(vendors).where(eq(vendors.name, name))).length;
+  }
+
+  it("등록 — 검증 숫자가 틀리면 InvalidBusinessNoError이고 저장되지 않는다", async () => {
+    const name = uniqueName();
+    const good = uniqueBizNo().replaceAll("-", "");
+    const bad = good.slice(0, 9) + String((Number(good[9]) + 1) % 10);
+    const error = await createVendor(SYSTEM_VIEWER, { name, businessNo: bad }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(InvalidBusinessNoError);
+    expect((error as Error).message).toBe("사업자번호 검증 숫자 틀림 · 다시 확인");
+    expect(await countByName(name)).toBe(0);
+  });
+
+  it("등록 — 열 자리가 아니거나 숫자가 없으면 막는다", async () => {
+    await expect(createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: "123-45-6789" })).rejects.toBeInstanceOf(InvalidBusinessNoError);
+    await expect(createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: "---" })).rejects.toBeInstanceOf(InvalidBusinessNoError);
+  });
+
+  it("수정 — 숫자를 틀린 번호로 바꾸면 막는다", async () => {
+    const { vendor } = await createVendor(SYSTEM_VIEWER, { name: uniqueName(), businessNo: uniqueBizNo() });
+    await expect(updateVendor(SYSTEM_VIEWER, vendor.id, { name: vendor.name, businessNo: "214-86-10231" })).rejects.toBeInstanceOf(InvalidBusinessNoError);
+  });
+
+  it("수정 — 저장된 번호가 틀려도 숫자를 안 바꾸면 이름만 고쳐 저장된다", async () => {
+    const name = uniqueName();
+    const [row] = await db.insert(vendors).values({ name, normalizedName: name, businessNo: "2148610231" }).returning();
+    await updateVendor(SYSTEM_VIEWER, row!.id, { name: `${name}-고침`, businessNo: "214-86-10231" });
+    const [after] = await db.select().from(vendors).where(eq(vendors.id, row!.id));
+    expect(after?.name).toBe(`${name}-고침`);
   });
 });

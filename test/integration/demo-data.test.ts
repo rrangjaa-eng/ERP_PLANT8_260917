@@ -321,12 +321,22 @@ describe("scripts/demo-data 리뷰 지적", () => {
   }, 240_000);
 
   it("이름만 같고 사업자번호가 다른 거래처는 purge가 지우지 않는다", async () => {
-    const lookalike = await createVendor(SYSTEM_VIEWER, { name: `${DEMO_NAME_PREFIX}한빛전자`, businessNo: "999-99-99999" });
+    const lookalike = await createVendor(SYSTEM_VIEWER, { name: `${DEMO_NAME_PREFIX}한빛전자`, businessNo: "999-99-99997" });
     await seedDemoData();
     const result = await purgeDemoData();
     expect(result.counts.vendors).toBe(6);
     const left = await db.select().from(vendors).where(like(vendors.name, `${DEMO_NAME_PREFIX}%`));
     expect(left.map((vendor) => vendor.id)).toEqual([lookalike.vendor.id]);
+  }, 180_000);
+
+  it("옛 견본 번호(검증 숫자 틀림)로 남은 행은 재사용하고 purge가 지운다", async () => {
+    const name = `${DEMO_NAME_PREFIX}한빛전자`;
+    const [old] = await db.insert(vendors).values({ name, normalizedName: name, businessNo: "214-86-10231" }).returning();
+    await seedDemoData();
+    expect((await db.select().from(vendors).where(eq(vendors.name, name))).map((row) => row.id)).toEqual([old?.id]);
+    const result = await purgeDemoData();
+    expect(result.counts.vendors).toBe(6);
+    expect(await db.select().from(vendors).where(eq(vendors.id, old?.id ?? ""))).toEqual([]);
   }, 180_000);
 
   it("자동 정산이 오류를 삼키고 빈 배열을 돌려주면 팀 비용 마커가 생기기 전에 seed가 throw한다", async () => {

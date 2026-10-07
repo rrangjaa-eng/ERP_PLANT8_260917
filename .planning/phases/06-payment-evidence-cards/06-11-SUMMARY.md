@@ -7,7 +7,7 @@ tags: [EVID-02, EVID-03, EVID-04, C4, B-1, X-1, X-12, E-49, E-21, U-4, O-6, DR-3
 requires: ["06-03", "06-06", "06-10", "06-27", "06-28"]
 provides:
   - "OwnerRule.onApprovedEvidenceChange 훅 — 결재 통과 문서의 증빙 추가 · 무효가 확인 기록 줄을 지우고 문서 version +1(확인 · 면제 모두 풀림)"
-  - "voidEvidence 잠금 순서 프로젝트 행 → 지출결의 행 → 파일 행 → 확인 기록 줄(X-12) · 마지막 무효 시 증빙 금액 · 증빙일 지움(지급 완료 문서 제외)"
+  - "voidEvidence 잠금 순서 프로젝트 행 → 지출결의 행 → 파일 행 → 확인 기록 줄(X-12) · 마지막 무효 시 지급 여부와 상관없이 증빙 금액 · 증빙일 지움(검토 I-1 안 a)"
   - "completeEvidenceUpload 결재 통과 문서 프로젝트 행 먼저 잠금 · 완료 판정은 잠금 뒤(E-49) · 잠근 사이 결재 통과면 다시 하기"
   - "expenseCostBasis(domain/evidence-reviews/cost-basis.ts) — 증빙 유무 · 증빙 금액으로만 확정 / 예상"
   - "duplicateScopeKinds — 지출결의 증빙 + 카드 전표 한 범위"
@@ -37,7 +37,7 @@ key-files:
     - test/integration/expense-approval-concurrency.test.ts
     - test/integration/expense-close.test.ts
 decisions:
-  - "지급 완료 문서는 마지막 증빙 무효에도 증빙 금액 · 증빙일을 지우지 않는다(사용자 결정 「지급 뒤 증빙 금액 수정 막기」 10/7 09:08 — paidEvidenceAmountRejection과 같은 방향). 계획 EVID-04 「금액 지워짐」의 예외"
+  - "마지막 증빙 무효는 지급 완료 여부와 상관없이 증빙 금액 · 증빙일을 지운다(검토 I-1 → 사용자 안 (a) 결정, 계획 must_have 그대로). 지급 뒤 다시 채울 때는 06-10 paidEvidenceAmountRejection이 지급 공급가와 같은 금액만 받는다 — 처음 실행은 지급 완료 예외를 뒀으나 지급 취소 뒤 옛 금액이 새 증빙의 확인 금액이 되는 우회가 있어 철회"
   - "훅은 면제(waived) 줄도 지운다 — 06-10이 넘긴 면제 자동 해제 훅을 이 플랜 범위 안에서 처리(면제 흔적은 끌 수 없는 evidence_waive 로그)"
 metrics:
   duration: "약 1시간 30분"
@@ -123,11 +123,28 @@ actuals:
 
 (오케스트레이터가 채움)
 
+## 검토 반영 (독립 코드 검토 06-11-review · DOM 감사 06-11-dom-audit)
+
+커밋(`073a162` 뒤): `5aa18c1`(RED) · `5a62f58` · S-1 · `de3581e` · `e2a0076` · 이 절 커밋. 위 「한 일 · 검증」 수치는 처음 실행 기준이다.
+
+| 항목 | 결과 |
+|---|---|
+| I-1 → 안 (a) | `expenseApprovedEvidenceChange`의 지급 완료 예외(`findLivePayment`)를 지웠다. RED 3건(`5aa18c1`: 지급 뒤 지움 기대 정정 · 지급 완료 → 마지막 무효 → 금액 비어 있음 → 새 증빙 다른 금액 `EVIDENCE_AMOUNT_PAID_MISMATCH` 거부 / 같은 금액 통과 · 지급 취소 뒤 금액 입력 없이 확인 `EvidenceAmountError` 회귀) → GREEN `5a62f58`. 검토자가 재현한 P2 우회는 닫힘 |
+| S-1 | `잠근 사이 결재 통과` 통합 1건(작성 중 의도 → 제출 → 완료 통보 `afterLock`에서 최종 승인 → `restart` 거부 · 파일 · version · 확인 기록 그대로). 돌연변이: 가드 줄(`rule.approved(owner) && !approvedBefore`) 삭제 → 이 테스트만 빨강(`expected undefined to be an instance of EvidenceUploadRefusedError`), 원복 |
+| S-2 | `팀 비용 문서(프로젝트 없음)` 통합 1건(결재 통과 팀 비용 문서 · 마지막 무효 → 확인 풀림 · version +1 · 금액 · 증빙일 null · 로그 `reviewReleased`). 현재 코드가 이미 맞아 처음부터 녹색(특성화 테스트 — 변이 확인은 `lockParent` null 갈래가 읽기로만 보이는 한계) |
+| S-3 | 연결하지 않았다 — 플랜이 이 플랜 안 소비를 요구하지 않는다. 소유 플랜은 Phase 9 PNL-02(「넘김」에 적음) |
+| S-4 | 점검표 「실제 앱 화면을 찍어 보고 확인했다」를 `- [ ]`로 비우고 촬영하지 않았음 · E2E DOM 단언 · `/design-review` 몫을 사실대로 적었다 |
+| 고치지 않은 것 | 260907 숨은 규칙 H1~H3(H3 「승인 끝 — 경영관리도 붙임」은 05 결정이라 보고만) · DOM 관찰 O-1 · O-2 · O-4 · 잠김 문구 |
+
+DOM 관찰 O-4(지급 완료 + 마지막 무효 뒤 `증빙 금액`과 `증빙 없음`이 함께 섬)는 (a) 결정으로 더는 생기지 않는다(금액이 지워진다). 감사가 본 상태(금액 9,876,500 유지)는 이전 동작이다.
+
+검증(검토 반영 뒤, `DATABASE_URL=…/erp_e0611_test`): 통합 9파일 **158 통과 · 0 실패**(`evidence-release` 17 = 이전 13 + 4, 나머지 8파일 그대로) · `pnpm typecheck` · `pnpm lint` 0 오류 · `CI=true pnpm build` 성공(`next.config.ts` `turbopack.root` 임시 지정 → 되돌림, 커밋 안 함) · `CI=true playwright test test/e2e/evidence-lifecycle.spec.ts` **2 통과 · 0 실패**(mobile 18 skipped = 파일명 규칙).
+
 ## 사용자 질문 후보
 
 | # | 무엇을 골랐나 | 왜 | 다른 안 |
 |---|---|---|---|
-| Q1 | 지급 완료 문서는 마지막 증빙을 무효해도 증빙 금액 · 증빙일을 **지우지 않는다**(문서 version은 오르고 확인은 풀림) | 사용자 결정 「지급 뒤 증빙 금액 수정 막기」(06-10 `paidEvidenceAmountRejection`)와 충돌 회피 — 장부 금액과 통장이 갈리지 않게 | EVID-04 문구 그대로 지급 뒤에도 지움(비용이 예상으로 돌아가고 지급 기록과 갈림) |
+| Q1 | **(a) 결정됨(검토 I-1):** 마지막 증빙을 무효하면 지급 완료 문서도 증빙 금액 · 증빙일을 지운다(문서 version은 오르고 확인은 풀림) | 계획 must_have · UI-SPEC L681과 같고, 지급 뒤 다시 채우는 길은 06-10 `paidEvidenceAmountRejection`이 지급 공급가와 같은 금액만 받아 장부 · 통장이 갈리지 않는다. 처음 안(지급 뒤 유지)은 지급 취소 뒤 금액 입력 없이 옛 금액으로 확인되는 F2 우회가 있었다 | 철회된 안: 지급 뒤 유지 · (b) `cancelExpensePayment`에서 지움 · (c) S4 금액 줄 숨김 |
 | Q2 | 승인 뒤 문서 화면에 기안자 증빙 금액 칸을 새로 만들지 않음(추가는 확인만 풀고 금액은 그대로) | 플랜 「열린 선택」 기본값(UI-SPEC S4 「기안자 · PM — 확인 줄만」과 맞춤) | 기안자가 추가할 때 금액도 다시 적는 칸 |
 | Q3 | 260907 H1(증빙 변경 시 증빙일 · 지급 예정일 · 부가세 재셈), H2(승인번호 · 금액 짐작 중복) 채택 여부 | 구현 금지 지시 | 채택 시 Phase 7 지급일 자동 계산과 함께 / 중복은 별도 플랜 |
 | Q4 | F8 객체 정리는 문서 절차만(스크립트 없음), 되돌리기 창 30일 | 플랜 | 정리 스크립트 + Cloud Scheduler |
@@ -148,7 +165,7 @@ files_modified 목록 안 파일만 고쳤고, 그 밖 코드 변경은 위 기�
 - **06-16(W10)**: `repositories/files.ts` `restoreOwnerFilesRemovedAt` / 증빙 되살리기의 「다른 곳에 붙은 같은 파일은 되살리지 않음」 판정을 `duplicateScopeKinds` 묶음으로 넓힌다(플랜 drift ⑸ — 이 플랜은 `repositories/files.ts` · `domain/expenses/index.ts`를 건드리지 않았다).
 - **06-25(카드 전표)**: 중복 범위에 `corp_card_usage`가 들어갔으나 주인 규칙이 아직 없어 카드 전표 파일은 번호 없는 문구로 센다. 카드 사용이 보관되거나 지워진 뒤 남은 파일 행이 중복으로 세지 않도록(주인 `load` null → 건너뛰기) 카드 전표 주인 규칙을 `OWNER_RULES`에 등록할 때 같이 본다(지금은 규칙 없는 종류 = 항상 중복).
 - **06-22(정산 최종 승인)**: `onSettlementFinalApprovalInTx`가 재점검 전에 프로젝트 행을 잡는지가 X-12 직렬화의 반대쪽 절반이다(06-22 소유).
-- 팀 비용 문서(프로젝트 없음) 무효가 프로젝트 행 잠금과 무관한지의 통합 사례는 만들지 않았다 — 결재 통과 팀 비용 문서를 만드는 준비 비용이 커서 `lockParent`가 `projectId` null이면 호출하지 않는 코드 한 줄로 갈음했다(코드 검토 대상).
+- **Phase 9(프로젝트 손익, PNL-02)**: `expenseCostBasis`의 소비자 — 줄 비용 · 손익이 이 함수 하나를 부른다(REQUIREMENTS 추적표 PNL-02 = Phase 9). 이 플랜 안에는 부르는 곳이 없고 플랜도 연결을 요구하지 않는다(단위 테스트로만 규칙을 고정). 06-06의 「같은 규칙」 주석은 `pickPaymentAmount`와의 일치를 가리킨다.
 - TDD 편차: Task 1 E2E 두 번째 시나리오(완료 프로젝트)는 구현 뒤에 썼다(E2E RED 없음). 단위 · 통합은 RED(`ad33528` · `cfeba39` · `f0113fe`) → GREEN 커밋 순서대로.
 
 ## Known Stubs

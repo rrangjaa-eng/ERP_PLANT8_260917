@@ -624,4 +624,32 @@ describe("[183 /review B-1] 선결제 지급 뒤 빈 증빙 금액 확인 — �
     expect(result.evidenceStatus).toBe("확인됨");
     expect((await expenseRow(expenseId)).evidenceAmount).toBe(supplyKrw);
   });
+
+  it("사전 조회 뒤 풀 밖 연결이 지급을 취소하고 다른 지급일로 다시 지급 → 낡은 판정 바탕 · 동시성 거부 · 증빙 금액 그대로", async () => {
+    const { manager, expenseId, version, supplyKrw } = await paidPrepaid("business_income");
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT id FROM expenses WHERE id = $1 FOR UPDATE", [expenseId]);
+      const confirming = confirmEvidence(manager, { expenseId, version, correctedAmountKrw: supplyKrw }).catch((error: unknown) => error);
+      await waitForLockWaiter(pool);
+      const { rows } = await client.query<{ id: string; payable_krw: string; payment_method: string; processed_by: string }>(
+        "UPDATE expense_payments SET cancelled_at = now(), cancelled_by = processed_by, cancel_reason = '재지급' WHERE expense_id = $1 AND cancelled_at IS NULL RETURNING id, payable_krw, payment_method, processed_by",
+        [expenseId],
+      );
+      const old = rows[0];
+      if (!old) throw new Error("지급 없음");
+      await client.query(
+        "INSERT INTO expense_payments (expense_id, pay_date, transfer_krw, payable_krw, diff_krw, payment_method, processed_by) VALUES ($1, $2, $3, $3, 0, $4, $5)",
+        [expenseId, addDays(seoulToday(), -1), old.payable_krw, old.payment_method, old.processed_by],
+      );
+      await client.query("COMMIT");
+      const failure = await confirming;
+      expect(failure).toBeInstanceOf(EvidenceReviewConflictError);
+      expect((failure as Error).message).toMatch(/^다른 사람이 .+에 바꿈 · 새로 고침$/);
+      expect((await expenseRow(expenseId)).evidenceAmount).toBeNull();
+    } finally {
+      client.release();
+    }
+  });
 });

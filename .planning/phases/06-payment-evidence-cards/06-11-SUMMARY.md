@@ -42,12 +42,12 @@ decisions:
 metrics:
   duration: "약 1시간 30분"
   completed: "2026-10-07"
-commits: 8
+commits: 11
 plan_head_before: 854e801d57d7fbb2bbb809ebe3bd3fba4834af69
 actuals:
   tokens: 19000   # git diff 854e801..HEAD 76,291자 / 4 (chars/4)
   tasks: 3
-  commits: 8
+  commits: 11
 ---
 
 # Phase 6 Plan 11: 증빙 수명 주기 Summary
@@ -167,4 +167,4 @@ files_modified 목록 안 파일만 고쳤고, 그 밖 코드 변경은 위 기�
 ## Self-Check: PASSED
 
 - 파일 존재: `domain/evidence-reviews/cost-basis.ts` · `test/integration/evidence-release.test.ts` · `test/unit/domain/evidence-cost-basis.test.ts` · `test/e2e/evidence-lifecycle.spec.ts` · `docs/design/checks/2026-10-07-06-11-evidence-completed-lock.md` 확인
-- 커밋 존재(`git log 854e801..HEAD`): ad33528 · 310f7f9 · cfeba39 · 8f555fa · f0113fe · ece074d · 62666c8 · 7abf8cf
+- 커밋 존재(`git log 854e801..HEAD`): ad33528 · 310f7f9 · cfeba39 · 8f555fa · f0113fe · ece074d · 62666c8 · 7abf8cf · c0b96ab(SUMMARY) · 51179cb(통합 테스트 줄 정정) · 이 정정 커밋

@@ -34,7 +34,14 @@ import {
   type CardLinkProjectChoice,
   type LineRoomBasis,
 } from "@/domain/corp-card-usages/link-targets";
-import { loadPurchaseRequestNumberFormat, allocatePurchaseRequestNumber, type PurchaseRequestNumberFormat } from "@/domain/document-numbering";
+import {
+  allocateDocumentNumber,
+  allocatePurchaseRequestNumber,
+  loadDocumentNumberFormat,
+  loadPurchaseRequestNumberFormat,
+  type DocumentNumberFormat,
+  type PurchaseRequestNumberFormat,
+} from "@/domain/document-numbering";
 import { codeLabelsOf, lineExecution, numberedSupplyText } from "@/domain/expenses";
 import { EXPENSE_DOCUMENT_KIND } from "@/domain/expenses/access";
 import { CompletedProjectError } from "@/domain/projects";
@@ -56,6 +63,7 @@ import { findQuoteLineById, listQuoteLinesByRevisions } from "@/repositories/quo
 import { findLineLinks, lockQuoteLines } from "@/repositories/quote-line-links";
 import { findVendorNamesByIds, listVendorsForPick } from "@/repositories/vendors";
 import { findUserNamesByIds } from "@/repositories/users";
+import { findMembershipAtDate } from "@/repositories/team-memberships";
 import type { DbOrTx } from "@/repositories/document-counters";
 import {
   findPurchaseRequestById,
@@ -87,35 +95,49 @@ const ESTIMATE_NOT_POSITIVE = "예상 금액 0 이하 · 금액 고치기";
 const ITEM_MISSING = "품목 없음 · 품목 적기";
 export const LINK_URL_FORMAT = "링크 형식 오류 · https://로 시작하는 주소";
 const LINK_PICK_LIMIT = 50;
+const TEAM_COUNTER_KEY = "purchase_request_team";
 
 // 05 `domain/expenses/pick.ts`의 비공개 결재 상태 낱말 표와 같은 값(06-07 `link-targets.ts`도 같은 사본을 둔다).
 const APPROVAL_STATUS_WORDS: Record<string, string> = { submitted: "결재 중", in_review: "결재 중", approved: "승인", rejected: "반려", withdrawn: "회수" };
 
-// 이 플랜은 견적 줄 연결만 — 팀 비용 요청(`team_cost`)은 06-14가 판별자를 넓힌다.
-export type PurchaseRequestInput = {
-  linkKind: "quote_line";
-  lineId: string;
+// 06-14: 연결이 판별 합이다 — 견적 줄(`quote_line` + `lineId`) / 팀 비용(`team_cost`). 팀 비용 요청에는 팀 · 사용한 사람 칸이 없다 —
+// 팀은 구매 완료 사용일의 요청자 소속이다(O-19 — 06-12).
+type PurchaseRequestFields = {
   itemName: string;
   linkUrl: string | null;
   estimate: MoneyInput;
   memo: string | null;
 };
+export type PurchaseRequestInput =
+  | (PurchaseRequestFields & { linkKind: "quote_line"; lineId: string })
+  | (PurchaseRequestFields & { linkKind: "team_cost" });
 
-/** 트랜잭션 전 사실 — 평범한 객체(06-03 tx 규약). */
-export type PurchaseRequestPre = {
-  projectId: string;
-  /** 사전 조회 때의 현재 차수 — 잠근 뒤 다시 본다(X-2). */
-  revisionId: string;
-  /** 설정 `purchase.online_vendor_name` — 문 판정(`resolveLineDoor`)의 입력. */
-  onlineVendorName: string;
-  numberFormat: Omit<PurchaseRequestNumberFormat, "seqStart">;
-  lineRoom: LineRoomBasis;
-  /** 요청자의 견적 금액(quote.amount) 노출 — 실행가 초과 거부 문구의 남은 실행가 숫자(CSO-2). */
-  amountVisible: boolean;
+type PurchaseRequestPreFields = {
   estimate: MoneyInput;
   itemName: string;
   linkUrl: string | null;
 };
+
+/** 트랜잭션 전 사실 — 평범한 객체(06-03 tx 규약). */
+export type PurchaseRequestPre =
+  | (PurchaseRequestPreFields & {
+      linkKind: "quote_line";
+      projectId: string;
+      /** 사전 조회 때의 현재 차수 — 잠근 뒤 다시 본다(X-2). */
+      revisionId: string;
+      /** 설정 `purchase.online_vendor_name` — 문 판정(`resolveLineDoor`)의 입력. */
+      onlineVendorName: string;
+      numberFormat: Omit<PurchaseRequestNumberFormat, "seqStart">;
+      lineRoom: LineRoomBasis;
+      /** 요청자의 견적 금액(quote.amount) 노출 — 실행가 초과 거부 문구의 남은 실행가 숫자(CSO-2). */
+      amountVisible: boolean;
+    })
+  | (PurchaseRequestPreFields & {
+      linkKind: "team_cost";
+      /** 번호 연도(서울 오늘) · 서식(`purchase_request_team`) — 트랜잭션 전에 읽는다(풀 소진 교착). */
+      year: number;
+      numberFormat: Omit<DocumentNumberFormat, "seqStart">;
+    });
 
 // 링크는 http(s)만 — 쓰는 쪽(zod · 이 판정 · DB CHECK)이 같은 규칙이다(T-06-37). 비면 null.
 export function normalizeLinkUrl(raw: string | null | undefined): string | null {
@@ -132,46 +154,83 @@ export function normalizeLinkUrl(raw: string | null | undefined): string | null 
 
 // ── 사전 조회(트랜잭션 밖) ──────────────────────────────────────────────────
 
-export async function precheckPurchaseRequest(viewer: Viewer, input: PurchaseRequestInput): Promise<PurchaseRequestPre> {
-  // 연결 대상은 프로젝트를 고르는 일 — S10 목록과 같은 문(projects view)을 서버가 다시 본다(06-07 I-6). 직원에게 cards 메뉴 시드가 없어 cards write는 쓰지 않는다.
-  if (!(await can(viewer, "projects", "view"))) throw new ForbiddenError(PROJECTS_VIEW_DENIED);
+// 품목 · 링크 · 예상 금액 — 신청 · 신청 사전 조회가 같이 쓰는 순수 판정. 외화는 환율이 있어야 한다(`계산 불가` 요청이 없다 — T-06-69).
+function normalizeRequestFields(input: PurchaseRequestFields): PurchaseRequestPreFields {
   const itemName = input.itemName.trim();
   if (itemName === "") throw new PurchaseRequestRejectedError(ITEM_MISSING);
   const linkUrl = normalizeLinkUrl(input.linkUrl);
+  if (input.estimate.currency !== "KRW" && !(Number.isFinite(input.estimate.fxRate) && input.estimate.fxRate > 0)) {
+    throw new PurchaseRequestRejectedError(fxMissing(input.estimate.currency));
+  }
   const estimate = normalizeMoneyInput(input.estimate);
   if (estimate.currency === "KRW" && !Number.isInteger(estimate.amount)) throw new PurchaseRequestRejectedError(AMOUNT_NOT_NUMBER);
   if (toKrw(estimate) <= 0) throw new PurchaseRequestRejectedError(ESTIMATE_NOT_POSITIVE);
+  return { itemName, linkUrl, estimate };
+}
 
-  // 견적 줄 · 프로젝트 — 완료 프로젝트는 트랜잭션 전에 거부한다(GA-38 · D-47). 잠근 뒤 `lockProjectForLinkWrite`가 다시 본다(X-2).
-  const line = await findQuoteLineById(viewer, input.lineId);
+function fxMissing(currency: string): string {
+  return `환율 없음 · ${currency} 환율 적기`;
+}
+
+// 견적 줄 갈래의 사전 조회 한 곳 — 신청(06-08)과 취소 되돌리기(06-14)가 같은 판정을 쓴다. 완료 프로젝트는 트랜잭션 전에 거부한다(GA-38 · D-47) —
+// 잠근 뒤 `lockProjectForLinkWrite`가 다시 본다(X-2).
+type QuoteLineBasis = { projectId: string; revisionId: string; onlineVendorName: string; lineRoom: LineRoomBasis; amountVisible: boolean };
+
+async function loadQuoteLineBasis(viewer: Viewer, lineId: string): Promise<QuoteLineBasis> {
+  const line = await findQuoteLineById(viewer, lineId);
   const revision = line ? await findQuoteRevisionById(viewer, line.revisionId) : null;
   const project = revision ? await findProjectById(viewer, revision.projectId) : null;
   if (!line || !project || project.archivedAt) throw new PurchaseRequestRejectedError(LINK_MISSING);
   if (project.status === "completed") throw new CompletedProjectError(quoteLockReason({ status: project.status }) ?? undefined);
   const latest = await findLatestQuoteRevision(viewer, project.id);
   if (!latest) throw new PurchaseRequestRejectedError(LINK_MISSING);
-
-  const { seqStart, ...numberFormat } = await loadPurchaseRequestNumberFormat();
-  void seqStart;
   return {
     projectId: project.id,
     revisionId: latest.id,
     onlineVendorName: await getSettingValue(PURCHASE_ONLINE_VENDOR_NAME),
-    numberFormat,
     lineRoom: await loadLineRoomBasis(viewer, [line.id]),
     amountVisible: await visible(viewer, "quote.amount"),
-    estimate,
-    itemName,
-    linkUrl,
   };
 }
 
-// 서버 계산 한 줄 — 예상 금액의 공급가 추정(그 줄 거래처 기본 증빙 종류의 규칙 · 오늘 세율). 패널 1차의 실행가 초과 막힘(Q3)이 남은 실행가와 견준다.
-// 트랜잭션 없음 · 잠그지 않는다(표시용) — 판정은 `createPurchaseRequest`가 잠근 뒤 다시 한다.
-export async function previewPurchaseSupply(viewer: Viewer, input: { lineId: string; amountKrw: number }): Promise<{ supplyKrw: number }> {
+export async function precheckPurchaseRequest(viewer: Viewer, input: PurchaseRequestInput): Promise<PurchaseRequestPre> {
+  // 연결 대상은 프로젝트를 고르는 일 — S10 목록과 같은 문(projects view)을 서버가 다시 본다(06-07 I-6). 직원에게 cards 메뉴 시드가 없어 cards write는 쓰지 않는다.
   if (!(await can(viewer, "projects", "view"))) throw new ForbiddenError(PROJECTS_VIEW_DENIED);
+  const fields = normalizeRequestFields(input);
+
+  if (input.linkKind === "team_cost") {
+    // 팀 비용 — 견적 줄 · 문 · 실행가 판정이 없다. 요청에는 팀을 저장하지 않으므로(구매 완료 사용일 소속 — O-19) 오늘 소속은 막힘 판정에만 쓴다.
+    const today = seoulToday();
+    if (!(await findMembershipAtDate(viewer, viewer.id, today))) {
+      const name = (await findUserNamesByIds(viewer, [viewer.id])).get(viewer.id) ?? "";
+      throw new PurchaseRequestRejectedError(`${name} ${today.slice(5)} 소속 없음 · 소속 발령은 관리자`);
+    }
+    const { seqStart, ...numberFormat } = await loadDocumentNumberFormat(TEAM_COUNTER_KEY);
+    void seqStart;
+    return { linkKind: "team_cost", ...fields, year: Number(today.slice(0, 4)), numberFormat };
+  }
+
+  const basis = await loadQuoteLineBasis(viewer, input.lineId);
+  const { seqStart, ...numberFormat } = await loadPurchaseRequestNumberFormat();
+  void seqStart;
+  return { linkKind: "quote_line", ...fields, ...basis, numberFormat };
+}
+
+// 서버 계산 한 줄 — 예상 금액의 원화 환산액(외화 `Form.Hint`)과 견적 줄 연결이면 공급가 추정(그 줄 거래처 기본 증빙 종류의 규칙 · 오늘 세율).
+// 패널 1차의 실행가 초과 막힘(Q3)이 남은 실행가와 견준다. 트랜잭션 없음 · 잠그지 않는다(표시용) — 판정은 `createPurchaseRequest`가 잠근 뒤 다시 한다.
+export async function previewPurchaseSupply(
+  viewer: Viewer,
+  input: { lineId: string | null; estimate: MoneyInput },
+): Promise<{ estimateKrw: number; supplyKrw: number | null }> {
+  if (!(await can(viewer, "projects", "view"))) throw new ForbiddenError(PROJECTS_VIEW_DENIED);
+  if (input.estimate.currency !== "KRW" && !(Number.isFinite(input.estimate.fxRate) && input.estimate.fxRate > 0)) {
+    throw new PurchaseRequestRejectedError(fxMissing(input.estimate.currency));
+  }
+  const estimate = normalizeMoneyInput(input.estimate);
+  const estimateKrw = toKrw(estimate);
+  if (input.lineId === null) return { estimateKrw, supplyKrw: null };
   const basis = await loadLineRoomBasis(viewer, [input.lineId]);
-  return { supplyKrw: purchaseEstimateSupply({ currency: "KRW", amount: input.amountKrw, fxRate: 1 }, basis, input.lineId) };
+  return { estimateKrw, supplyKrw: purchaseEstimateSupply(estimate, basis, input.lineId) };
 }
 
 // ── 신청(단독 / 외부 tx) ───────────────────────────────────────────────────
@@ -185,6 +244,32 @@ export async function createPurchaseRequest(
   tx?: DbOrTx,
 ): Promise<CreatedPurchaseRequest> {
   const runCreate = async (inner: DbOrTx) => {
+    if (pre.linkKind === "team_cost") {
+      // 팀 비용 — 잠금 · 게이트 없이 번호 → INSERT → 같은 tx 로그. 순서는 06-03 규약(번호는 INSERT와 같은 tx — 실패하면 함께 되돌아 결번이 없다).
+      const numbered = await allocateDocumentNumber(viewer, { counterKey: TEAM_COUNTER_KEY, year: pre.year, format: pre.numberFormat }, inner);
+      const teamMoney = moneyToColumns(pre.estimate);
+      const teamRow = await insertPurchaseRequest(
+        viewer,
+        {
+          number: numbered.number,
+          linkKind: "team_cost",
+          projectId: null,
+          quoteLineId: null,
+          requestedBy: viewer.id,
+          itemName: pre.itemName,
+          linkUrl: pre.linkUrl,
+          estimateCurrency: teamMoney.currency,
+          estimateForeignAmount: teamMoney.foreignAmount,
+          estimateFxRate: teamMoney.fxRate,
+          estimateAmountKrw: teamMoney.amountKrw,
+          memo: input.memo,
+        },
+        inner,
+      );
+      await recordAction(viewer, { actionType: "document_create", entity: PURCHASE_REQUEST_ENTITY, entityId: teamRow.id }, { tx: inner });
+      return { id: teamRow.id, number: teamRow.number };
+    }
+    if (input.linkKind !== "quote_line") throw new PurchaseRequestRejectedError(LINK_MISSING);
     // 순서 고정(B-1 · X-2): 프로젝트 행 → 견적 줄(id 순) → 연결(계보 사슬) → 문 → 이중 연결 → 실행가 상한 → 번호 → INSERT → 로그.
     await lockProjectForLinkWrite(viewer, { projectId: pre.projectId, revisionId: pre.revisionId }, inner);
     const [locked] = await lockQuoteLines(viewer, [input.lineId], inner);

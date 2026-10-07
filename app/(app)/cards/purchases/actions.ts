@@ -25,31 +25,43 @@ import "./actions.registry";
 const AMOUNT_NOT_NUMBER = "숫자 아님 · 1,240,000처럼";
 const ESTIMATE_NOT_POSITIVE = "예상 금액 0 이하 · 금액 고치기";
 
-const createPurchaseRequestSchema = z.object({
-  lineId: z.uuid(),
+// 링크는 비어 있거나 http(s)로 시작해야 한다 — DB `purchase_requests_link_url_check`와 같은 규칙.
+const requestFields = {
   itemName: z.string().max(200),
-  // 링크는 비어 있거나 http(s)로 시작해야 한다 — DB `purchase_requests_link_url_check`와 같은 규칙.
   linkUrl: z
     .string()
     .max(2000)
     .refine((value) => value.trim() === "" || /^https?:\/\//i.test(value.trim()), LINK_URL_FORMAT)
     .nullable(),
+  currency: z.enum(CURRENCIES).default("KRW"),
   amount: z.number({ error: AMOUNT_NOT_NUMBER }).positive(ESTIMATE_NOT_POSITIVE),
+  fxRate: z.number().positive().optional(),
   memo: z.string().max(500).nullable(),
-});
+};
+
+// 06-14: 연결 판별 합 — 견적 줄(`lineId`) / 팀 비용. 팀 · 사용한 사람 · 원화 환산액 칸은 없다(보내도 zod가 버린다 — O-19 · T-06-66 · T-06-69).
+const createPurchaseRequestSchema = z
+  .discriminatedUnion("linkKind", [
+    z.object({ linkKind: z.literal("quote_line"), lineId: z.uuid(), ...requestFields }),
+    z.object({ linkKind: z.literal("team_cost"), ...requestFields }),
+  ])
+  .superRefine((value, ctx) => {
+    if (value.currency !== "KRW" && value.fxRate === undefined) ctx.addIssue({ code: "custom", message: `환율 없음 · ${value.currency} 환율 적기`, path: ["fxRate"] });
+  });
 
 export const createPurchaseRequestAction = authedActionClient.schema(createPurchaseRequestSchema).action(async ({ parsedInput, ctx }) => {
-  const input: PurchaseRequestInput = {
-    linkKind: "quote_line",
-    lineId: parsedInput.lineId,
+  const fields = {
     itemName: parsedInput.itemName,
     linkUrl: parsedInput.linkUrl,
-    estimate: { currency: "KRW", amount: parsedInput.amount, fxRate: 1 },
+    estimate: { currency: parsedInput.currency, amount: parsedInput.amount, fxRate: parsedInput.fxRate ?? 1 },
     memo: parsedInput.memo,
   };
+  const input: PurchaseRequestInput =
+    parsedInput.linkKind === "quote_line" ? { linkKind: "quote_line", lineId: parsedInput.lineId, ...fields } : { linkKind: "team_cost", ...fields };
   const pre = await precheckPurchaseRequest(ctx.viewer, input);
   const created = await createPurchaseRequest(ctx.viewer, input, pre);
   revalidatePath("/cards/purchases");
+  revalidatePath("/cards");
   return created;
 });
 
@@ -58,10 +70,12 @@ export const searchLinesForPurchaseLinkAction = authedActionClient
   .schema(z.object({ projectId: z.uuid(), query: z.string().max(100), currentLineId: z.uuid().nullable() }))
   .action(async ({ parsedInput, ctx }) => searchLinesForPurchaseLink(ctx.viewer, parsedInput));
 
-// 서버 계산 한 줄 — 예상 금액의 공급가 추정(트랜잭션 없음). 상한 판정은 신청이 잠근 뒤 다시 한다.
+// 서버 계산 한 줄 — 예상 금액의 원화 환산액(외화) · 견적 줄 연결이면 공급가 추정(트랜잭션 없음). 상한 판정은 신청이 잠근 뒤 다시 한다.
 export const previewPurchaseSupplyAction = authedActionClient
-  .schema(z.object({ lineId: z.uuid(), amount: z.number().positive() }))
-  .action(async ({ parsedInput, ctx }) => previewPurchaseSupply(ctx.viewer, { lineId: parsedInput.lineId, amountKrw: parsedInput.amount }));
+  .schema(z.object({ lineId: z.uuid().nullable(), currency: z.enum(CURRENCIES), amount: z.number().positive(), fxRate: z.number().positive().optional() }))
+  .action(async ({ parsedInput, ctx }) =>
+    previewPurchaseSupply(ctx.viewer, { lineId: parsedInput.lineId, estimate: { currency: parsedInput.currency, amount: parsedInput.amount, fxRate: parsedInput.fxRate ?? 1 } }),
+  );
 
 // ── 06-12 구매 완료(S13) ──────────────────────────────────────────────────────
 // 사람은 카드 · 사용일 · 가맹점 · 결제 합계 · 증빙 종류 · 메모 · version만 보낸다 — 연결 · 사용한 사람 · 팀 · 공급가 칸은 없다(요청과 서버가 정한다).

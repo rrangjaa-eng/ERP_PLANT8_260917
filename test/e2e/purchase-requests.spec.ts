@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
-import { Client } from "pg";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { purchaseRequests, quoteLines } from "@/db/schema";
@@ -201,26 +200,55 @@ test.describe("구매 요청 신청 (06-08)", () => {
     await page.context().close();
   });
 
-  test("[로드 오류] 목록 쿼리가 잠금 시간 초과 → `구매 요청 목록 불러오지 못함` + `다시 시도` · 풀리면 목록 복귀", async ({ browser, baseURL }) => {
+  test("[로드 오류] 목록 쿼리가 실패 → `구매 요청 목록 불러오지 못함` + `다시 시도` · 고쳐진 요청으로 복귀(표 잠금 없음 — 라우트 가로채기)", async ({ browser, baseURL }) => {
     const requester = await makeRequester();
     const target = await seedTarget(requester);
     const input = { linkKind: "quote_line" as const, lineId: target.onlineLineId, itemName: "복귀 확인", linkUrl: null, estimate: { currency: "KRW" as const, amount: 11_000, fxRate: 1 }, memo: null };
     await createPurchaseRequest(requester.person.viewer, input, await precheckPurchaseRequest(requester.person.viewer, input));
     const page = await loginPage(browser, baseURL, requester.person);
-    const lock = new Client({ connectionString: process.env.DATABASE_URL });
-    await lock.connect();
-    try {
-      await lock.query("BEGIN");
-      await lock.query("LOCK TABLE purchase_requests IN ACCESS EXCLUSIVE MODE");
-      await page.goto("/cards/purchases");
-      await expect(page.getByText("구매 요청 목록 불러오지 못함", { exact: true })).toBeVisible();
-      await expect(page.getByRole("heading", { name: "구매 요청", exact: true })).toBeVisible();
-    } finally {
-      await lock.query("ROLLBACK").catch(() => {});
-      await lock.end();
-    }
+    // 범위를 벗어난 달(9999-12)은 서버 목록 쿼리를 실패시킨다 — 다른 스펙이 쓰는 표 · 설정은 건드리지 않는다.
+    await page.goto("/cards/purchases?month=9999-12");
+    await expect(page.getByText("구매 요청 목록 불러오지 못함", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "구매 요청", exact: true })).toBeVisible();
+    // `다시 시도`의 서버 재요청을 정상 주소로 돌려 보낸다(가로채기).
+    await page.route("**/cards/purchases?month=9999-12*", (route) => route.continue({ url: route.request().url().replace("month=9999-12", "month=") }));
     await page.getByRole("button", { name: "다시 시도" }).click();
     await expect(page.getByText("복귀 확인", { exact: true })).toBeVisible();
+    await page.context().close();
+  });
+
+  test("[감사 D-1] 폰 375 · 320 긴 품목(95자) + 링크 → 문서 가로 넘침 0 · 품목은 말줄임 + title · 링크 아이콘 44", async ({ browser, baseURL }) => {
+    const requester = await makeRequester();
+    const target = await seedTarget(requester);
+    const longName = "가".repeat(95);
+    const input = { linkKind: "quote_line" as const, lineId: target.onlineLineId, itemName: longName, linkUrl: "https://www.coupang.com/vp/products/9", estimate: { currency: "KRW" as const, amount: 22_000, fxRate: 1 }, memo: null };
+    await createPurchaseRequest(requester.person.viewer, input, await precheckPurchaseRequest(requester.person.viewer, input));
+    const page = await loginPage(browser, baseURL, requester.person);
+    for (const width of [375, 320]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto("/cards/purchases");
+      await expect(page.getByRole("link", { name: `${longName} 링크 열기` })).toBeVisible();
+      const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      expect(overflow, `scrollWidth 초과 @${width}`).toBeLessThanOrEqual(0);
+      const box = await page.getByRole("link", { name: `${longName} 링크 열기` }).boundingBox();
+      expect(box?.width ?? 0).toBeGreaterThanOrEqual(44);
+      await expect(page.locator(`[title="${longName}"]`).first()).toHaveCount(1);
+    }
+    await page.context().close();
+  });
+
+  test("[감사 O-1] 진입 줄(`&line=`)에서 실행가 초과 막힘 → `다른 줄 고르기` 없이 앞부분만", async ({ browser, baseURL }) => {
+    const requester = await makeRequester();
+    const target = await seedTarget(requester);
+    const page = await loginPage(browser, baseURL, requester.person);
+    await page.goto(`/cards/purchases?new=1&line=${target.onlineLineId}`);
+    const sheet = panel(page);
+    const item = sheet.getByLabel("품목");
+    await waitForHydration(item);
+    await item.fill("너무 큰 물건");
+    await sheet.getByLabel("예상 금액").fill("5000000");
+    await expect(sheet.getByText("실행가 초과 · 남은 실행가 1,000,000", { exact: true })).toBeVisible();
+    await expect(sheet.getByText("다른 줄 고르기")).toHaveCount(0);
     await page.context().close();
   });
 

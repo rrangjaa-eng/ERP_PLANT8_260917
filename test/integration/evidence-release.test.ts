@@ -9,7 +9,7 @@ import { upsertVisibility } from "@/repositories/permissions";
 import { cancelExpensePayment, completeExpensePayment, getPaymentView, previewPayable } from "@/domain/payments";
 import { confirmEvidence, EVIDENCE_AMOUNT_PAID_MISMATCH, EvidenceAmountError, EvidenceReviewConflictError, waiveEvidence } from "@/domain/evidence-reviews";
 import { approveDocument, rejectDocument } from "@/domain/approvals";
-import { createExpenseFromLines } from "@/domain/expenses";
+import { createExpenseFromLines, createTeamExpenseDraft, listExpenseFormOptions, saveExpenseDraft } from "@/domain/expenses";
 import {
   completeEvidenceUpload,
   EVIDENCE_ADD_DRAFTER_ONLY,
@@ -24,6 +24,7 @@ import {
 } from "@/domain/evidence";
 import { EVIDENCE_DUPLICATE_HIDDEN, evidenceDuplicateElsewhere } from "@/domain/evidence/upload-checks";
 import { insertFile } from "@/repositories/files";
+import { insertVendor } from "@/repositories/vendors";
 import { seoulToday } from "@/lib/dates";
 import { createMemoryStorage } from "./fakes/memory-storage";
 import { deferred, waitForLockWaiter } from "./lock-race";
@@ -580,5 +581,38 @@ describe("잠근 사이 결재 통과 (06-11 검토 S-1 · E-49)", () => {
     expect(await allFileCount(expenseId)).toBe(before.files);
     expect(await reviewOf(expenseId)).toEqual(before.review);
     expect((await docRow(expenseId)).version).toBe(before.row.version);
+  });
+});
+
+describe("팀 비용 문서(프로젝트 없음) (06-11 검토 S-2)", () => {
+  it("결재 통과 팀 비용 문서 — 마지막 증빙 무효가 프로젝트 행 잠금 없이 확인을 풀고 version을 올리며 증빙 금액 · 증빙일을 지운다", async () => {
+    const fx = await setupExpenseProject();
+    const payer = await makePayer();
+    const voider = await makeEvidenceManager("증빙무효", { attach: false, void: true });
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name: "회식집", normalizedName: `회식집-${randomUUID()}`, defaultEvidenceType: "tax_invoice" });
+    const { expenseId } = await createTeamExpenseDraft(fx.lead, { idempotencyKey: randomUUID(), fields: { teamExpenseKind: "team_overhead", usageDate: "2026-09-26", content: "팀 회식" } });
+    const payment = (await listExpenseFormOptions(fx.lead)).payment[0]?.value ?? null;
+    await saveExpenseDraft(fx.lead, {
+      expenseId,
+      expectedVersion: (await docRow(expenseId)).version,
+      fields: { vendorId: vendor.id, evidenceType: "tax_invoice", paymentMethod: payment, supply: { currency: "KRW", amount: 440_000, fxRate: 1 } },
+    });
+    const submitted = await submitReadyDraft(fx.lead, expenseId);
+    if (submitted.kind !== "submitted") throw new Error("제출 안 됨");
+    const first = await approveDocument(fx.lead, { instanceId: submitted.instanceId, expectedVersion: submitted.version });
+    const final = await approveDocument(fx.ceo, { instanceId: submitted.instanceId, expectedVersion: first.version });
+    if (final.status !== "approved") throw new Error(`결재 통과 안 됨: ${final.status}`);
+    const [teamRow] = await db.select({ projectId: expenses.projectId }).from(expenses).where(eq(expenses.id, expenseId));
+    expect(teamRow?.projectId).toBeNull();
+
+    const confirmed = await confirmEvidence(payer, { expenseId, version: (await docRow(expenseId)).version, correctedAmountKrw: 440_000 });
+    expect(await reviewOf(expenseId)).toMatchObject({ status: "confirmed" });
+    const [target] = await liveFiles(expenseId);
+
+    await voidEvidence(voider, { fileId: target?.id ?? "", reason: "다른 건 영수증" });
+
+    expect(await reviewOf(expenseId)).toBeNull();
+    expect(await docRow(expenseId)).toMatchObject({ version: confirmed.version + 1, evidenceAmount: null, evidenceDate: null });
+    expect(await evidenceLogs(expenseId, "evidence_void")).toContainEqual({ change: "evidence_void", fileId: target?.id, reasonLength: 8, reviewReleased: "confirmed" });
   });
 });

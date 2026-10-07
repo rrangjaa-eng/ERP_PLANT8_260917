@@ -1,16 +1,19 @@
 import { randomUUID } from "node:crypto";
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Browser, type Page } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { purchaseRequests, quoteLines } from "@/db/schema";
+import { corpCardUsages, projects, purchaseRequests, quoteLines } from "@/db/schema";
 import { createOrgUnit, createTeam } from "@/domain/org";
 import { createProject } from "@/domain/projects";
-import { createPurchaseRequest, precheckPurchaseRequest } from "@/domain/purchase-requests";
+import { completePurchaseRequest, createPurchaseRequest, precheckPurchaseCompletion, precheckPurchaseRequest } from "@/domain/purchase-requests";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { setSettingValue } from "@/domain/settings/registry";
 import { PURCHASE_ONLINE_VENDOR_NAME } from "@/domain/settings/keys";
 import { findSimpleValue, upsertSimpleValue } from "@/repositories/settings";
+import { insertRole } from "@/repositories/roles";
+import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
+import { createCorpCard } from "@/domain/corp-cards";
 import { insertVendor } from "@/repositories/vendors";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { seoulToday } from "@/lib/dates";
@@ -297,6 +300,267 @@ test.describe("구매 요청 신청 (06-08)", () => {
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog", { name: "입력 버리기" })).toBeVisible();
     await expect(panel(page)).toBeVisible();
+    await page.context().close();
+  });
+});
+
+// ── 06-12 구매 완료(S13 · S11 구매 완료 행 · S8 등록 칸) ─────────────────────────
+
+const PURCHASER_VISIBLE = ["purchase_request.value", "purchase_request.amount", "project.value", "quote.amount", "card_usage.value", "card_usage.amount", "team.value", "vendor.value"];
+
+// 구매 권한자(`cards.purchases` write) — 요청자와 다른 새 팀.
+async function makePurchaser(): Promise<Person> {
+  const suffix = randomUUID().slice(0, 8);
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E구매처리-${suffix}`, workScope: "team" });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "cards.purchases", action: "write", allowed: true });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
+  for (const infoItem of PURCHASER_VISIBLE) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+  const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E처리본부-${suffix}` });
+  const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E처리팀-${suffix}` });
+  return makePerson("처리", role.id, team.id, `${seoulToday().slice(0, 4)}-01-01`);
+}
+
+async function requestOn(requester: Requester, lineId: string, itemName: string, amount: number): Promise<string> {
+  const input = { linkKind: "quote_line" as const, lineId, itemName, linkUrl: null, estimate: { currency: "KRW" as const, amount, fxRate: 1 }, memo: null };
+  return (await createPurchaseRequest(requester.person.viewer, input, await precheckPurchaseRequest(requester.person.viewer, input))).number;
+}
+
+function completePanel(page: Page) {
+  return page.getByRole("dialog", { name: "구매 완료" });
+}
+
+// 활성 카드가 여러 장이면 카드 칸은 기본값 없는 `Select`(UI-SPEC S13 「카드(여러 장일 때)」), 한 장이면 읽기 텍스트 — 다른 스펙이 카드를 더 만들 수 있다.
+async function pickCard(sheet: ReturnType<typeof completePanel>, label: string): Promise<void> {
+  const select = sheet.getByRole("combobox", { name: "카드" });
+  if ((await select.count()) > 0) await select.selectOption({ label });
+  else await expect(sheet.getByText(label, { exact: true })).toBeVisible();
+}
+
+test.describe("구매 완료 (06-12)", () => {
+  let original: Awaited<ReturnType<typeof findSimpleValue>>;
+  test.beforeAll(async () => {
+    original = await findSimpleValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME.key);
+  });
+  test.afterAll(async () => {
+    if (original) await upsertSimpleValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME.key, original.value, original.updatedBy);
+    else await upsertSimpleValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME.key, "", null);
+  });
+
+  test("[06-12 트레이서] `신청됨` 행 `구매 완료` → 패널(머리 · 첫 줄 · 결제 합계 = 예상 금액 · 연결 텍스트) → Ctrl+Enter → 닫힘 · 그 행 `구매 완료` 2행 · 다음 행 포커스 · `/cards` 등록 칸", async ({ browser, baseURL }) => {
+    const requester = await makeRequester();
+    const target = await seedTarget(requester);
+    const first = await requestOn(requester, target.onlineLineId, "먼저 신청한 물건", 55_000);
+    const item = `구매할 물건-${randomUUID().slice(0, 6)}`;
+    const number = await requestOn(requester, target.onlineLineId, item, 110_000);
+    const buyer = await makePurchaser();
+    const suffix = randomUUID().slice(0, 6);
+    await createCorpCard(SYSTEM_VIEWER, { issuer: `공용사-${suffix}`, numberLast4: "4401", label: `공용카드-${suffix}`, kind: "shared" });
+    const page = await loginPage(browser, baseURL, buyer);
+    await page.goto("/cards/purchases");
+
+    const open = page.getByRole("link", { name: `${number} 구매 완료`, exact: true });
+    await waitForHydration(open);
+    await open.click();
+    const sheet = completePanel(page);
+    await expect(sheet).toBeVisible();
+    await expect(page).toHaveURL(/\/cards\/purchases\?purchase=/);
+    await expect(sheet.getByText(`${number} · ${item}`, { exact: true })).toBeVisible();
+    await expect(sheet.getByLabel("결제 합계")).toHaveValue("110,000");
+    await expect(sheet.getByText(target.onlineItem, { exact: true })).toBeVisible();
+    await expect(sheet.getByRole("button", { name: "견적 줄 바꾸기" })).toHaveCount(0);
+    await expect(sheet.getByText(target.vendorName, { exact: true })).toBeVisible();
+
+    const amount = sheet.getByLabel("결제 합계");
+    await waitForHydration(amount);
+    await pickCard(sheet, `공용카드-${suffix} · 공용사-${suffix} 4401`);
+    await amount.press("Control+Enter");
+
+    await expect(sheet).toHaveCount(0);
+    const row = page.getByRole("row").filter({ hasText: number });
+    await expect(row.getByText("구매 완료", { exact: true })).toHaveCount(1);
+    await expect(row.getByText(`카드 사용 ${seoulToday().slice(5)} · 110,000`, { exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: `${number} 구매 완료`, exact: true })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: `${first} 구매 완료`, exact: true })).toBeFocused();
+    await expect(page.getByRole("button", { name: "되돌리기" })).toHaveCount(0);
+
+    await page.goto("/cards");
+    const usageRow = page.getByRole("row").filter({ hasText: `구매 요청 ${number}` });
+    await expect(usageRow).toHaveCount(1);
+    await expect(usageRow.getByRole("link", { name: /수정$/ })).toHaveCount(1);
+    await expect(usageRow.getByRole("button", { name: /삭제$/ })).toHaveCount(0);
+    await page.context().close();
+  });
+
+  // 구매 권한자 · 공용 카드 · 요청 하나를 세우고 S13을 연다.
+  async function openCompletion(browser: Browser, baseURL: string | undefined, amount: number, setup?: (target: Target) => Promise<void>) {
+    const requester = await makeRequester();
+    const target = await seedTarget(requester);
+    const number = await requestOn(requester, target.onlineLineId, `물건-${randomUUID().slice(0, 6)}`, amount);
+    await setup?.(target);
+    const buyer = await makePurchaser();
+    const suffix = randomUUID().slice(0, 6);
+    await createCorpCard(SYSTEM_VIEWER, { issuer: `공용사-${suffix}`, numberLast4: "4402", label: `공용카드-${suffix}`, kind: "shared" });
+    const page = await loginPage(browser, baseURL, buyer);
+    await page.goto(`/cards/purchases`);
+    const open = page.getByRole("link", { name: `${number} 구매 완료`, exact: true });
+    await waitForHydration(open);
+    await open.click();
+    const sheet = completePanel(page);
+    const total = sheet.getByLabel("결제 합계");
+    await waitForHydration(total);
+    await pickCard(sheet, `공용카드-${suffix} · 공용사-${suffix} 4402`);
+    return { page, sheet, total, number };
+  }
+
+  test("[S13 partial] 예상 금액과 다른 결제 합계 → `예상 금액 · 차이` 줄 → 구매 완료 성공", async ({ browser, baseURL }) => {
+    const { page, sheet, total, number } = await openCompletion(browser, baseURL, 110_000);
+    await expect(sheet.getByText(/^예상 금액/)).toHaveCount(0);
+    await total.fill("99000");
+    await total.blur();
+    await expect(sheet.getByText("예상 금액 110,000 · 차이 -11,000", { exact: true })).toBeVisible();
+    await total.press("Control+Enter");
+    await expect(sheet).toHaveCount(0);
+    const row = page.getByRole("row").filter({ hasText: number });
+    await expect(row.getByText(`카드 사용 ${seoulToday().slice(5)} · 99,000`, { exact: true })).toBeVisible();
+    await page.context().close();
+  });
+
+  test("[S13 막힘] 완료 아닌 프로젝트 · 상한 초과 → 고정 갈래 문구(담당 PM) · 1차 비활성", async ({ browser, baseURL }) => {
+    const { page, sheet, total } = await openCompletion(browser, baseURL, 110_000);
+    // 세금계산서(거래처 기본) — 1,100,011의 공급가 1,000,010 > 실행가 1,000,000.
+    await total.fill("1100011");
+    await total.blur();
+    await expect(sheet.getByText(/^실행가 초과 · 남은 실행가 1,000,000 · 견적 줄은 담당 PM /)).toBeVisible();
+    await expect(sheet.getByRole("button", { name: /^구매 완료/ })).toHaveAttribute("aria-disabled", "true");
+    await expect(sheet.getByText(/^실행가 초과 [0-9,]+$/)).toHaveCount(0);
+    await page.context().close();
+  });
+
+  test("[S13 Q-E] 완료 프로젝트 줄 · 초과 결제 합계 → `실행가 초과` 힌트 · 1차 활성 → 처리 뒤 행 2행 끝 ` · 실행가 초과`", async ({ browser, baseURL }) => {
+    const { page, sheet, total, number } = await openCompletion(browser, baseURL, 110_000, async (target) => {
+      await db.update(projects).set({ status: "completed" }).where(eq(projects.id, target.projectId));
+    });
+    // 세금계산서 — 1,210,000의 공급가 1,100,000 → 초과 100,000.
+    await total.fill("1210000");
+    await total.blur();
+    await expect(sheet.getByText("실행가 초과 100,000", { exact: true })).toBeVisible();
+    const primary = sheet.getByRole("button", { name: /^구매 완료/ });
+    await expect(primary).not.toHaveAttribute("aria-disabled", "true");
+    await total.press("Control+Enter");
+    await expect(sheet).toHaveCount(0);
+    const row = page.getByRole("row").filter({ hasText: number });
+    await expect(row).toContainText(`카드 사용 ${seoulToday().slice(5)} · 1,210,000 · 실행가 초과 100,000`);
+    await page.context().close();
+  });
+
+  test("[06-12 검토 I-1] `전체` 보기에서 구매 완료 → 처리한 행 · 다른 행이 함께 남고 포커스 = 다음 `신청됨` 행", async ({ browser, baseURL }) => {
+    const requester = await makeRequester();
+    const target = await seedTarget(requester);
+    const first = await requestOn(requester, target.onlineLineId, `먼저-${randomUUID().slice(0, 6)}`, 55_000);
+    const number = await requestOn(requester, target.onlineLineId, `나중-${randomUUID().slice(0, 6)}`, 110_000);
+    const buyer = await makePurchaser();
+    const suffix = randomUUID().slice(0, 6);
+    await createCorpCard(SYSTEM_VIEWER, { issuer: `공용사-${suffix}`, numberLast4: "4405", label: `공용카드-${suffix}`, kind: "shared" });
+    const page = await loginPage(browser, baseURL, buyer);
+    await page.goto(`/cards/purchases?status=${encodeURIComponent("전체")}`);
+    const open = page.getByRole("link", { name: `${number} 구매 완료`, exact: true });
+    await waitForHydration(open);
+    await open.click();
+    const sheet = completePanel(page);
+    const total = sheet.getByLabel("결제 합계");
+    await waitForHydration(total);
+    await pickCard(sheet, `공용카드-${suffix} · 공용사-${suffix} 4405`);
+    await total.press("Control+Enter");
+    await expect(sheet).toHaveCount(0);
+    await expect(page).toHaveURL(/done=/);
+    await expect(page.getByRole("row").filter({ hasText: number }).getByText(`카드 사용 ${seoulToday().slice(5)} · 110,000`, { exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: `${first} 구매 완료`, exact: true })).toBeFocused();
+    await page.context().close();
+  });
+
+  test("[06-12 감사 O-2] 결제 합계 칸에서 Enter만 → 구매 완료가 나가지 않는다 · Ctrl+Enter로만 처리", async ({ browser, baseURL }) => {
+    const { page, sheet, total, number } = await openCompletion(browser, baseURL, 110_000);
+    const submitted = page
+      .waitForRequest((request) => request.method() === "POST" && (request.postData() ?? "").includes("corpCardId"), { timeout: 1_500 })
+      .then(
+        () => true,
+        () => false,
+      );
+    await total.press("Enter");
+    expect(await submitted).toBe(false);
+    await expect(sheet).toBeVisible();
+    const [row] = await db.select({ status: purchaseRequests.status }).from(purchaseRequests).where(eq(purchaseRequests.number, number));
+    expect(row?.status).toBe("requested");
+    await total.press("Control+Enter");
+    await expect(sheet).toHaveCount(0);
+    await page.context().close();
+  });
+
+  test("[06-12 감사 D-1] 구매 권한자 폰 320 · 375 — `신청됨` · `전체`(외화 행 포함) 문서 가로 넘침 0 · `신청됨` 행 탭 → S13", async ({ browser, baseURL }) => {
+    const requester = await makeRequester();
+    const target = await seedTarget(requester);
+    const krw = await requestOn(requester, target.onlineLineId, `원화-${randomUUID().slice(0, 6)}`, 55_000);
+    const usdInput = { linkKind: "quote_line" as const, lineId: target.onlineLineId, itemName: `외화-${randomUUID().slice(0, 6)}`, linkUrl: null, estimate: { currency: "USD" as const, amount: 100, fxRate: 1350 }, memo: null };
+    await createPurchaseRequest(requester.person.viewer, usdInput, await precheckPurchaseRequest(requester.person.viewer, usdInput));
+    const buyer = await makePurchaser();
+    const page = await loginPage(browser, baseURL, buyer);
+    for (const path of ["/cards/purchases", `/cards/purchases?status=${encodeURIComponent("전체")}`]) {
+      for (const width of [375, 320]) {
+        await page.setViewportSize({ width, height: 800 });
+        await page.goto(path);
+        await expect(page.getByText("USD 100.00", { exact: false }).first()).toBeVisible();
+        const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+        expect(overflow, `scrollWidth 초과 ${path} @${width}`).toBeLessThanOrEqual(0);
+      }
+    }
+    await page.setViewportSize({ width: 375, height: 800 });
+    await page.goto("/cards/purchases");
+    const tap = page.getByRole("button", { name: `${krw} 상세 보기`, exact: true });
+    await waitForHydration(tap);
+    await tap.click();
+    await expect(completePanel(page)).toBeVisible();
+    await expect(page).toHaveURL(/\?purchase=/);
+    await page.context().close();
+  });
+
+  test("[M-5 카드 고치기] 구매 완료 건 수정 → 다른 카드 → 힌트 `구매 완료 때 카드` 한 줄 · 되돌리면 없음 → 다른 카드로 저장 → 닫힘 · 카드 묶음 바뀜", async ({ browser, baseURL }) => {
+    const requester = await makeRequester();
+    const target = await seedTarget(requester);
+    const number = await requestOn(requester, target.onlineLineId, `고칠 물건-${randomUUID().slice(0, 6)}`, 110_000);
+    const buyer = await makePurchaser();
+    const suffix = randomUUID().slice(0, 6);
+    const first = await createCorpCard(SYSTEM_VIEWER, { issuer: `공용사-${suffix}`, numberLast4: "4403", label: `처음카드-${suffix}`, kind: "shared" });
+    await createCorpCard(SYSTEM_VIEWER, { issuer: `공용사-${suffix}`, numberLast4: "4404", label: `고친카드-${suffix}`, kind: "shared" });
+    const [requested] = await db.select({ id: purchaseRequests.id, version: purchaseRequests.version }).from(purchaseRequests).where(eq(purchaseRequests.number, number));
+    if (!requested || !first.id) throw new Error("요청 · 카드 없음");
+    const input = { requestId: requested.id, version: requested.version, corpCardId: first.id, usedOn: seoulToday(), merchantVendorId: null, total: { currency: "KRW" as const, amount: 110_000, fxRate: 1 }, evidenceTypeCode: "invoice", memo: null };
+    const done = await completePurchaseRequest(buyer.viewer, input, await precheckPurchaseCompletion(buyer.viewer, input));
+    const firstText = `처음카드-${suffix} · 공용사-${suffix} 4403`;
+    const nextText = `고친카드-${suffix} · 공용사-${suffix} 4404`;
+
+    const page = await loginPage(browser, baseURL, buyer);
+    await page.goto("/cards");
+    const edit = page.getByRole("row").filter({ hasText: `구매 요청 ${number}` }).getByRole("link", { name: /수정$/ });
+    await waitForHydration(edit);
+    await edit.click();
+    const sheet = page.getByRole("dialog", { name: "카드 사용 수정" });
+    const card = sheet.getByRole("combobox", { name: "카드" });
+    await waitForHydration(card);
+    const hint = sheet.getByText(`구매 완료 때 카드 ${firstText}`, { exact: true });
+    await expect(hint).toHaveCount(0);
+    await card.selectOption({ label: nextText });
+    await expect(hint).toBeVisible();
+    await card.selectOption({ label: firstText });
+    await expect(hint).toHaveCount(0);
+    await card.selectOption({ label: nextText });
+    await sheet.getByLabel("결제 합계").press("Control+Enter");
+
+    await expect(sheet).toHaveCount(0);
+    const groups = page.getByRole("table").getByRole("rowgroup");
+    await expect(groups.filter({ hasText: `고친카드-${suffix}` }).getByText(`구매 요청 ${number}`)).toBeVisible();
+    await expect(groups.filter({ hasText: `처음카드-${suffix}` })).toHaveCount(0);
+    const [stored] = await db.select({ corpCardId: corpCardUsages.corpCardId }).from(corpCardUsages).where(eq(corpCardUsages.id, done.usageId));
+    expect(stored?.corpCardId).not.toBe(first.id);
     await page.context().close();
   });
 });

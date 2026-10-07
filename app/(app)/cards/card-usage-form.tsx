@@ -16,6 +16,9 @@ import selectStyles from "@/ui/select/Select.module.css";
 import textFieldStyles from "@/ui/input/TextField.module.css";
 import cardStyles from "./cards.module.css";
 import { createCardUsageAction, previewCardAmountsAction, searchMerchantsAction, updateCardUsageAction, usedByCandidatesAction } from "./actions";
+import { completePurchaseRequestAction, previewPurchaseCompletionAction } from "./purchases/actions";
+import { ExternalLinkIcon, markPurchaseDone } from "./purchases/purchase-list";
+import purchaseStyles from "./purchases/purchases.module.css";
 import { LinkPicker, type PickedLine, type PickedProject } from "./link-picker";
 
 // 06-05(UI-SPEC S9 · C12): 카드 사용 등록 옆 패널 본문 — `PanelForm intent="create"` + `Form layout="panel"`. 사람은 결제 합계만 적고
@@ -67,6 +70,29 @@ export type CardUsageEdit = {
   amountHidden: boolean;
   /** 연결을 바꿀 수 있나(O-11 — 구매 완료로 생긴 건은 못 바꾼다). */
   changeLink: boolean;
+  /** 06-12 카드 고치기 — 구매 완료 건 + 구매 권한이면 카드 `Select` 옵션(서버), 아니면 null(읽기 텍스트). */
+  cardOptions: CardOption[] | null;
+};
+
+/** 06-12 구매 완료 모드(S13 `?purchase={id}`) — 요청(서버 투영 값). 연결 · 사용한 사람은 요청의 것이라 보내지 않는다. */
+export type CardUsagePurchase = {
+  requestId: string;
+  version: number;
+  number: string;
+  itemName: string;
+  linkUrl: string | null;
+  /** 팀 비용 요청의 소속 없음 막힘 문구의 이름. */
+  requesterName: string;
+  /** 가맹점 기본값 = 온라인구매 협력사. */
+  merchant: Merchant | null;
+  /** 결제 합계 기본값 = 예상 금액(통화 · 외화 · 환율 그대로). */
+  currency: "KRW" | "USD";
+  amount: number | null;
+  fxRate: number | null;
+  /** 그사이 상태가 바뀐 요청 — 1차 비활성 이유. */
+  statusReason: string | null;
+  /** 성공 뒤 갈 목록(`?done={id}` — 그 행이 제자리에 남는다). */
+  doneHref: string;
 };
 
 type Preview = {
@@ -75,6 +101,9 @@ type Preview = {
   teamAssigned: boolean;
   /** 사용일 기준 쓸 카드(서버 투영) — 없으면(첫 미리보기 전 · 등록 뒤 오늘로 돌아감) 페이지가 준 오늘 기준 카드. */
   cards?: { id?: string; label?: string; proxyHint?: string | null; choosesUser?: boolean }[];
+  /** 06-12 구매 완료 모드 — 실행가 상한(고정 갈래 막힘 문구 · 완료 프로젝트 초과액)과 예상 금액 차이(서버 계산). */
+  cap?: { blockedReason: string | null; overKrw: number | null } | null;
+  estimate?: { estimateKrw: number; diffKrw: number } | null;
 };
 
 /** 사용한 사람 후보(서버 — 사용일 기준). `note` = `지금 {팀}` · `퇴사`. */
@@ -204,6 +233,7 @@ export function CardUsageForm({
   usdFxRate,
   defaults: initialDefaults,
   edit = null,
+  purchase = null,
 }: {
   cards: CardOption[];
   evidenceTypes: EvidenceTypeOption[];
@@ -214,17 +244,20 @@ export function CardUsageForm({
   usdFxRate: number | null;
   defaults: CardUsageDefaults;
   edit?: CardUsageEdit | null;
+  purchase?: CardUsagePurchase | null;
 }) {
   const panelRef = useRef<PanelFormHandle>(null);
   const [gen, setGen] = useState(0);
   const [defaults, setDefaults] = useState(initialDefaults);
   const [cardId, setCardId] = useState(initialDefaults.corpCardId ?? (cards.length === 1 ? (cards[0]?.id ?? "") : ""));
   const [usedOn, setUsedOn] = useState(initialDefaults.usedOn);
-  const [currency, setCurrency] = useState<"KRW" | "USD">(edit?.currency ?? "KRW");
-  const initialAmount = edit?.amount === null || edit?.amount === undefined ? "" : String(edit.amount);
+  // 결제 합계 씨앗 — 수정 = 저장된 값, 구매 완료 = 예상 금액(통화 · 외화 · 환율 그대로).
+  const seed = edit ?? purchase;
+  const [currency, setCurrency] = useState<"KRW" | "USD">(seed?.currency ?? "KRW");
+  const initialAmount = seed?.amount === null || seed?.amount === undefined ? "" : String(seed.amount);
   const [amountRaw, setAmountRaw] = useState(initialAmount);
   const amountHidden = edit?.amountHidden === true;
-  const initialFx = edit && edit.currency !== "KRW" && edit.fxRate !== null ? edit.fxRate : usdFxRate;
+  const initialFx = seed && seed.currency !== "KRW" && seed.fxRate !== null ? seed.fxRate : usdFxRate;
   const [fxRaw, setFxRaw] = useState(initialFx === null ? "" : String(initialFx));
   // 수정 모드: 저장된 증빙 종류가 지금 카드 옵션에 없으면 `—`에 선다(UI-SPEC S9 — 그 값을 옵션에 되살리지 않는다).
   const [evidenceTypeCode, setEvidenceTypeCode] = useState(
@@ -247,7 +280,7 @@ export function CardUsageForm({
     // 고르기 목록이 닫히며 누른 버튼으로 돌린 포커스 뒤에 — 다음 빈 「바꾸기」(프로젝트 뒤 = 견적 줄), 없으면 방금 바뀐 칸.
     window.setTimeout(() => document.getElementById(focusId)?.focus(), 0);
   }, [linkProject, linkLine, linkKind]);
-  const [merchant, setMerchant] = useState<Merchant | null>(edit?.merchant ?? null);
+  const [merchant, setMerchant] = useState<Merchant | null>(edit?.merchant ?? purchase?.merchant ?? null);
   const [pickOpen, setPickOpen] = useState(false);
   // 가맹점은 이름 없는 상태 + 숨은 칸이라 입력 이벤트가 없다 — 고른 뒤 숨은 칸 값이 바뀌면 change를 쏴 PanelForm이 바뀐 칸으로 센다(DR1 · SP-8).
   const merchantInputRef = useRef<HTMLInputElement>(null);
@@ -300,10 +333,20 @@ export function CardUsageForm({
     },
   });
 
+  // 06-12 구매 완료 — 성공하면 패널이 닫히고 그 행이 제자리에서 `구매 완료` + 2행이 된다(토스트 없음). 포커스는 목록이 다음 `신청됨` 행으로.
+  const complete = useAction(completePurchaseRequestAction, {
+    onSuccess: ({ data }) => {
+      if (!purchase) return;
+      markPurchaseDone({ id: purchase.requestId, capOver: data?.capOver ?? null, focusNext: true });
+      panelRef.current?.succeed({ href: purchase.doneHref });
+    },
+  });
+
   const { execute: executeCreate, result: createResult, isExecuting: creating, reset: resetCreate } = create;
-  const result = edit ? update.result : createResult;
-  const isExecuting = edit ? update.isExecuting : creating;
-  const reset = edit ? update.reset : resetCreate;
+  const active = purchase ? complete : edit ? update : null;
+  const result = active ? active.result : createResult;
+  const isExecuting = active ? active.isExecuting : creating;
+  const reset = active ? active.reset : resetCreate;
 
   // 새 기본값으로 다시 그린 뒤에 성공 신호 — PanelForm이 reset · 스냅숏 · 결과 한 줄 · 첫 칸 포커스를 한다.
   useEffect(() => {
@@ -320,7 +363,7 @@ export function CardUsageForm({
       )
     : cards;
   // 수정 모드의 카드 = 저장된 카드(여는 사람의 카드 옵션을 보지 않는다 — 옵션 0장이어도 선다).
-  const selectedCardId = edit ? edit.cardId : usableCards.some((card) => card.id === cardId) ? cardId : usableCards.length === 1 ? (usableCards[0]?.id ?? "") : "";
+  const selectedCardId = edit ? (edit.cardOptions ? cardId : edit.cardId) : usableCards.some((card) => card.id === cardId) ? cardId : usableCards.length === 1 ? (usableCards[0]?.id ?? "") : "";
   const proxyHint = edit ? edit.proxyHint : (usableCards.find((card) => card.id === selectedCardId)?.proxyHint ?? null);
 
   // 사용한 사람(EXP-07 · Q5) — 대리 등록 권한자 · 본인 개인 카드 밖 · 팀 비용일 때만. 후보는 사용일 기준으로 서버가 보낸다(남의 개인 카드 = 소지자 텍스트,
@@ -354,8 +397,8 @@ export function CardUsageForm({
     };
   }, [showUsedBy, selectedCardId, usedOn]);
   const chosenUser = showUsedBy ? (candidates?.find((candidate) => candidate.id === usedById) ?? null) : null;
-  // 구매 완료로 생긴 건 — 연결은 읽기 텍스트(바꾸기 없음, O-11).
-  const linkLocked = edit !== null && !edit.changeLink;
+  // 구매 완료로 생긴 건 — 연결은 읽기 텍스트(바꾸기 없음, O-11). 구매 완료 모드도 연결은 요청의 것(텍스트).
+  const linkLocked = (edit !== null && !edit.changeLink) || purchase !== null;
 
   const onAmountRaw = useCallback((raw: string) => setAmountRaw(raw), []);
   const onFxRaw = useCallback((raw: string) => setFxRaw(raw), []);
@@ -364,8 +407,8 @@ export function CardUsageForm({
   // 서버 계산 한 줄 · 사용일 소속 — 결제 합계 · 사용일 · 증빙 종류가 바뀌면 짧은 지연 뒤 서버에 묻는다(늦은 응답은 버린다).
   const previewSeq = useRef(0);
   const previewKey = JSON.stringify([usedOn, currency, amountRaw, currency === "KRW" ? "" : fxRaw, evidenceTypeCode]);
-  // 수정 모드는 열자마자 서버 계산 한 줄을 받는다(저장된 값의 역산 · 실행가 초과 판정).
-  const firstPreviewKey = useRef(edit ? "" : previewKey);
+  // 수정 · 구매 완료 모드는 열자마자 서버 계산 한 줄을 받는다(채워진 값의 역산 · 실행가 초과 판정).
+  const firstPreviewKey = useRef(edit || purchase ? "" : previewKey);
   useEffect(() => {
     if (previewKey === firstPreviewKey.current) return;
     firstPreviewKey.current = "";
@@ -374,17 +417,21 @@ export function CardUsageForm({
     const timer = window.setTimeout(() => {
       void (async () => {
         const amount = amountRaw === "" ? null : Number(amountRaw);
-        let outcome: Awaited<ReturnType<typeof previewCardAmountsAction>> | undefined;
+        let outcome: { data?: Preview } | undefined;
         try {
-          outcome = usedOn
-            ? await previewCardAmountsAction({
+          const fx = fxValue !== undefined && fxValue !== null && Number.isFinite(fxValue) && fxValue > 0 ? { fxRate: fxValue } : {};
+          const positive = amount !== null && Number.isFinite(amount) && amount > 0 ? amount : null;
+          outcome = !usedOn
+            ? undefined
+            : purchase
+              ? await previewPurchaseCompletionAction({ requestId: purchase.requestId, usedOn, currency, amount: positive, ...fx, evidenceTypeCode: evidenceTypeCode || null })
+              : await previewCardAmountsAction({
                 usedOn,
                 currency,
                 amount: amount !== null && Number.isFinite(amount) && amount > 0 ? amount : null,
                 ...(fxValue !== undefined && fxValue !== null && Number.isFinite(fxValue) && fxValue > 0 ? { fxRate: fxValue } : {}),
                 evidenceTypeCode: evidenceTypeCode || null,
               })
-            : undefined;
         } catch {
           outcome = undefined;
         }
@@ -394,7 +441,7 @@ export function CardUsageForm({
       })();
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [previewKey, usedOn, currency, amountRaw, fxValue, evidenceTypeCode]);
+  }, [previewKey, usedOn, currency, amountRaw, fxValue, evidenceTypeCode, purchase]);
 
   // 칸을 고치면 지난 서버 거부 줄은 걷는다.
   const editKey = JSON.stringify([
@@ -438,7 +485,11 @@ export function CardUsageForm({
         ? blankBlock([{ label: "증빙 종류", verb: "고르기" }])
         : "카드 전표 카드에 없음 · 증빙 종류 고르기";
   const fxBlock = currency !== "KRW" && (fxValue === null || fxValue === undefined) ? "환율 없음 · USD 환율 적기" : undefined;
-  const teamBlock = showUsedBy
+  const teamBlock = purchase
+    ? linkKind === "team_cost" && !preview.teamAssigned
+      ? `요청자 ${purchase.requesterName} ${usedOn.slice(5)} 소속 없음 · 소속 발령은 관리자`
+      : undefined
+    : showUsedBy
     ? chosenUser && !chosenUser.team
       ? `${chosenUser.name} ${usedOn.slice(5)} 소속 없음 · 소속 발령은 관리자`
       : undefined
@@ -452,7 +503,11 @@ export function CardUsageForm({
     linkKind === "quote_line" && linkLine && linkLine.remainingKrw !== null && preview.split && preview.split.supplyKrw > linkLine.remainingKrw
       ? `실행가 초과 · 남은 실행가 ${formatKrw(linkLine.remainingKrw)} · `
       : undefined;
-  const blockedReason = blankBlock(blanks) ?? fxBlock ?? evidenceBlock ?? linkBlock ?? teamBlock ?? (overCap ? `${overCap}다른 줄 고르기` : undefined);
+  // 06-12 구매 완료 모드: 그사이 상태 변경 · 쓸 카드 0장(r2 R6)이 먼저, 실행가 초과는 서버 고정 갈래 문구(`… · 견적 줄은 담당 PM {이름}` — 완료 아닌 프로젝트만).
+  const noCardBlock = purchase && usableCards.length === 0 ? "활성 법인카드 없음 · 카드 등록은 관리자" : undefined;
+  const blockedReason = purchase
+    ? (purchase.statusReason ?? noCardBlock ?? blankBlock(blanks) ?? fxBlock ?? evidenceBlock ?? teamBlock ?? preview.cap?.blockedReason ?? undefined)
+    : (blankBlock(blanks) ?? fxBlock ?? evidenceBlock ?? linkBlock ?? teamBlock ?? (overCap ? `${overCap}다른 줄 고르기` : undefined));
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -462,6 +517,21 @@ export function CardUsageForm({
     }
     const formData = new FormData(event.currentTarget);
     const memo = formData.get("memo");
+    if (purchase) {
+      complete.execute({
+        requestId: purchase.requestId,
+        version: purchase.version,
+        corpCardId: selectedCardId,
+        usedOn,
+        merchantVendorId: merchant?.id ?? null,
+        currency,
+        amount: Number(amountRaw),
+        ...(currency !== "KRW" && fxValue ? { fxRate: fxValue } : {}),
+        evidenceTypeCode,
+        memo: typeof memo === "string" && memo.trim() !== "" ? memo.trim() : null,
+      });
+      return;
+    }
     submittedRef.current = { corpCardId: selectedCardId, linkKind, project: linkKind === "team_cost" ? null : linkProject };
     // 수정: 저장된 견적 외 비용 줄을 그대로 두면 그 줄 id로 보낸다(연결 그대로 — 새 줄을 만들지 않는다, UC-1 상한).
     const keptOutOfQuote = edit && edit.linkKind === "out_of_quote" && linkKind === "out_of_quote" && linkProject?.id === edit.project?.id && edit.line;
@@ -506,14 +576,14 @@ export function CardUsageForm({
       <PanelForm
         ref={panelRef}
         id="card-usage-form"
-        label={edit ? "카드 사용 저장" : "카드 사용 등록"}
-        intent={edit ? "edit" : "create"}
+        label={purchase ? "구매 완료" : edit ? "카드 사용 저장" : "카드 사용 등록"}
+        intent={edit || purchase ? "edit" : "create"}
         onSubmit={handleSubmit}
         pending={isExecuting}
         blockedReason={showingResult ? undefined : blockedReason}
         reason={
           result.serverError ??
-          (overCap && !showingResult && blankBlock(blanks) === undefined && !fxBlock && !evidenceBlock ? (
+          (!purchase && overCap && !showingResult && blankBlock(blanks) === undefined && !fxBlock && !evidenceBlock ? (
             <>
               {overCap}
               <Button variant="tertiary" onClick={() => document.getElementById("card-usage-line-change")?.focus()}>
@@ -525,8 +595,53 @@ export function CardUsageForm({
         reasonId="card-usage-form-reason"
       >
         {/* 칸 줄 간격은 TextField 줄(`--s-4`)과 같은 클래스로 맞춘다(새 CSS 모듈 없음). 입력이 시작되면 결과 한 줄 대신 막힘 줄. */}
-        <div key={gen} onInput={() => setShowingResult(false)} onChange={() => setShowingResult(false)}>
-          {edit ? (
+        {/* 06-12 감사 O-2 — 구매 완료는 되돌릴 수 없다(Q2): 칸 안 그냥 `Enter`(네이티브 암묵 제출)로 나가지 않게 막는다. 처리는 `Ctrl+Enter` · 1차 버튼만. */}
+        <div
+          key={gen}
+          onInput={() => setShowingResult(false)}
+          onChange={() => setShowingResult(false)}
+          onKeyDown={
+            purchase
+              ? (event) => {
+                  if (event.key === "Enter" && !event.ctrlKey && !event.metaKey && event.target instanceof HTMLInputElement) event.preventDefault();
+                }
+              : undefined
+          }
+        >
+          {purchase ? (
+            // S13 본문 첫 줄 — `{번호} · {품목}`(말줄임 + title) + 링크 아이콘(S11과 같은 3차).
+            <div data-ui="field-row" style={{ display: "flex", alignItems: "center", gap: "var(--s-1)", minWidth: 0 }}>
+              <span className={purchaseStyles.itemText} title={`${purchase.number} · ${purchase.itemName}`}>
+                {`${purchase.number} · ${purchase.itemName}`}
+              </span>
+              {purchase.linkUrl && /^https?:\/\//i.test(purchase.linkUrl) ? (
+                <a href={purchase.linkUrl} target="_blank" rel="noopener noreferrer" aria-label={`${purchase.itemName} 링크 열기`} title={purchase.linkUrl} className={purchaseStyles.linkIcon}>
+                  <ExternalLinkIcon />
+                </a>
+              ) : null}
+            </div>
+          ) : null}
+          {purchase && usableCards.length === 0 ? (
+            <div data-ui="field-row" className={rowStyles.row}>
+              <span className={rowStyles.label}>카드</span>
+              <span>—</span>
+            </div>
+          ) : edit?.cardOptions ? (
+            <div data-ui="field-row" className={rowStyles.row}>
+              <Form.Field id="card-usage-card" label="카드">
+                <Select
+                  id="card-usage-card"
+                  className={cardStyles.cardSelect}
+                  name="corpCardId"
+                  options={edit.cardOptions.map((card) => ({ value: card.id, label: card.label }))}
+                  defaultValue={edit.cardId}
+                  onChange={(event) => setCardId(event.target.value)}
+                />
+                {/* 06-12 M-5 — 저장된 카드와 다르게 고르면 그때 카드 한 줄(되돌리면 없음). */}
+                {selectedCardId !== edit.cardId ? <Form.Hint>{`구매 완료 때 카드 ${edit.cardText}`}</Form.Hint> : null}
+              </Form.Field>
+            </div>
+          ) : edit ? (
             <div data-ui="field-row" className={rowStyles.row}>
               <span className={rowStyles.label}>카드</span>
               <span>{edit.cardText}</span>
@@ -588,7 +703,7 @@ export function CardUsageForm({
                 aria-label="통화"
                 name="currency"
                 className={selectStyles.select}
-                defaultValue={edit?.currency ?? "KRW"}
+                defaultValue={seed?.currency ?? "KRW"}
                 onChange={(event) => setCurrency(event.target.value === "USD" ? "USD" : "KRW")}
               >
                 <option value="KRW">KRW</option>
@@ -597,7 +712,7 @@ export function CardUsageForm({
               <AmountField
                 key={currency}
                 kind={currency === "KRW" ? "krw" : "foreign"}
-                initial={edit && currency === edit.currency ? initialAmount : ""}
+                initial={seed && currency === seed.currency ? initialAmount : ""}
                 error={fieldErrors?.amount?._errors?.[0]}
                 onRaw={onAmountRaw}
               />
@@ -606,6 +721,21 @@ export function CardUsageForm({
                   {/* 서버가 다시 셈하는 동안 이전 값은 흐린 글자(UI-SPEC S9 loading — 토큰 하나, 새 CSS 모듈 없음). */}
                   <span style={previewing ? { color: "var(--text-faint)" } : undefined} data-ui="card-calc-line">
                     {calcLine(preview.split)}
+                  </span>
+                </Form.Hint>
+              ) : null}
+              {/* 06-12 S13 partial — 예상 금액과 다르면 원화 차이(막지 않음, O-10) · 완료 프로젝트 줄 초과액(막지 않음, Q-E). */}
+              {purchase && preview.estimate ? (
+                <Form.Hint>
+                  <span style={{ color: previewing ? "var(--text-faint)" : "var(--text-muted)" }} data-ui="purchase-estimate-diff">
+                    {`예상 금액 ${formatKrw(preview.estimate.estimateKrw)} · 차이 ${preview.estimate.diffKrw > 0 ? "+" : ""}${formatKrw(preview.estimate.diffKrw)}`}
+                  </span>
+                </Form.Hint>
+              ) : null}
+              {purchase && preview.cap?.overKrw ? (
+                <Form.Hint>
+                  <span style={{ color: previewing ? "var(--text-faint)" : "var(--status-warning)" }} data-ui="purchase-cap-over">
+                    {`실행가 초과 ${formatKrw(preview.cap.overKrw)}`}
                   </span>
                 </Form.Hint>
               ) : null}

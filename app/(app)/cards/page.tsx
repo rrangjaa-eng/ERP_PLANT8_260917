@@ -5,6 +5,7 @@ import {
   cardUsageFormOptions,
   listCardUsages,
   loadCardUsageForEdit,
+  type CardOptionDto,
   type CardUsageEditDto,
   type CardUsageLinkFilter,
   type CardUsageList as CardUsageListResult,
@@ -49,7 +50,7 @@ function monthChoices(thisMonth: string, selected: string): string[] {
 }
 
 // 수정 패널 재료 — 서버가 투영한 건(값을 못 보는 칸은 빈다)을 폼의 평범한 값으로.
-function toEditView(usage: Partial<CardUsageEditDto>, changeLink: boolean): CardUsageEdit | null {
+function toEditView(usage: Partial<CardUsageEditDto>, changeLink: boolean, cardOptions: Partial<CardOptionDto>[] | null): CardUsageEdit | null {
   if (!usage.id || usage.version === undefined || !usage.cardId || !usage.usedOn || !usage.linkKind || !usage.usedByUserId) return null;
   return {
     id: usage.id,
@@ -76,6 +77,7 @@ function toEditView(usage: Partial<CardUsageEditDto>, changeLink: boolean): Card
     // 투영이 금액 키를 뺐다 = 결제 합계를 못 보는 사람(card_usage.amount — DOM D-3).
     amountHidden: usage.amount === undefined,
     changeLink,
+    cardOptions: cardOptions ? cardOptions.flatMap((card) => (card.id && card.label ? [{ id: card.id, label: card.label }] : [])) : null,
   };
 }
 
@@ -117,6 +119,7 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
             registeredVia: row.registeredVia ?? "self",
             registeredByName: row.registeredByName ?? "—",
             registeredOn: row.registeredOn ?? null,
+            purchaseNumber: row.purchaseNumber ?? null,
             totalKrw: row.totalKrw ?? null,
             supplyKrw: row.supplyKrw ?? null,
             vatKrw: row.vatKrw ?? null,
@@ -147,12 +150,13 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
   // 06-09 수정 모드(`?editId=`) — 권리가 없거나 없는 건이면 패널 없이 목록만(링크로 남의 건을 열 수 없다).
   const editParam = first(params.editId);
   const editing = editParam ? await loadCardUsageForEdit(viewer, editParam) : null;
-  const edit = editing ? toEditView(editing.usage, editing.rights.changeLink) : null;
+  const edit = editing ? toEditView(editing.usage, editing.rights.changeLink, editing.cardOptions) : null;
 
   let panel = null;
   if (edit) {
     panel = (
-      <SidePanel title="카드 사용 수정" closeHref={listHref}>
+      // 열린 대상별 key(06-12 검토 I-2) — 닫기 이동이 끝나기 전에 다른 패널을 열면 같은 자리의 닫힌 SidePanel(<dialog>)이 재사용되지 않고 새로 열린다.
+      <SidePanel key={`edit-${edit.id}`} title="카드 사용 수정" closeHref={listHref}>
         <CardUsageForm
           cards={[]}
           evidenceTypes={options.evidenceTypes}
@@ -182,7 +186,7 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
       projectId: entryProject && UUID_PATTERN.test(entryProject) ? entryProject : undefined,
     });
     panel = (
-      <SidePanel title="카드 사용 등록" closeHref={listHref}>
+      <SidePanel key="new" title="카드 사용 등록" closeHref={listHref}>
         <CardUsageForm
           cards={cards}
           evidenceTypes={options.evidenceTypes}

@@ -25,12 +25,17 @@ type Load = { kind: "loading" } | { kind: "error" } | { kind: "ready"; data: Pro
 // 「표시 — 경영관리 등록」 — 카드 사용 목록(S8)과 같은 글자 모양(--text-strong 600).
 const PROXY_STYLE = { fontWeight: "var(--fw-medium)", color: "var(--text-strong)" } as const;
 
+// 06-12: 구매 완료로 생긴 건 = `구매 요청 {번호}` + 2행 `{구매 완료한 사람} {MM-DD}`(경영관리 등록이 아니다).
+function purchaseText(row: Row): string | null {
+  return row.registeredVia === "purchase" && row.purchaseNumber ? `구매 요청 ${row.purchaseNumber}` : null;
+}
+
 function registeredText(row: Row) {
-  return row.registeredVia === "proxy" ? <span style={PROXY_STYLE}>경영관리 등록</span> : (row.registeredByName ?? "");
+  return row.registeredVia === "proxy" ? <span style={PROXY_STYLE}>경영관리 등록</span> : (purchaseText(row) ?? row.registeredByName ?? "");
 }
 
 function registeredSecond(row: Row): string | null {
-  return row.registeredVia === "proxy" ? `${row.registeredByName ?? ""} ${row.registeredOn?.slice(5) ?? ""}`.trim() : null;
+  return row.registeredVia === "proxy" || purchaseText(row) ? `${row.registeredByName ?? ""} ${row.registeredOn?.slice(5) ?? ""}`.trim() : null;
 }
 
 // 결제 합계 2행 = 공급가(합계와 다를 때만 — 규칙 없음이면 같은 값이라 두 번 말하지 않는다).
@@ -164,7 +169,7 @@ export function CardUsageSection({ projectId }: { projectId: string }) {
                 { label: "사용일", value: sheet.usedOn ?? "" },
                 ...(sheet.totalKrw !== undefined ? [{ label: "결제 합계", value: <Num value={sheet.totalKrw} /> }] : []),
                 ...(sheet.supplyKrw !== undefined ? [{ label: "공급가", value: <Num value={sheet.supplyKrw} /> }] : []),
-                { label: "등록", value: registeredSecond(sheet) ? `경영관리 등록 · ${registeredSecond(sheet) ?? ""}` : (sheet.registeredByName ?? "") },
+                { label: "등록", value: registeredSecond(sheet) ? `${purchaseText(sheet) ?? "경영관리 등록"} · ${registeredSecond(sheet) ?? ""}` : (sheet.registeredByName ?? "") },
               ]
             : []
         }

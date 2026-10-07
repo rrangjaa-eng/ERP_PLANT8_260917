@@ -1,7 +1,7 @@
-import { and, desc, eq, gte, lt, or, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lt, or, sql, type SQL } from "drizzle-orm";
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
-import { projects, purchaseRequests, quoteLines, quoteRevisions, users, vendors } from "@/db/schema";
+import { corpCardUsages, projects, purchaseRequests, quoteLines, quoteRevisions, users, vendors } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 
 // 06-08(EXP-10): 구매 요청 쓰기 · 목록. 범위는 목록 쿼리의 조건에서 갈린다(리포지토리가 거른다 — domain이 거르지 않는다).
@@ -59,6 +59,9 @@ export type PurchaseRequestListRow = PurchaseRequestRow & {
   projectName: string | null;
   lineItemName: string | null;
   lineRevisionId: string | null;
+  /** 06-12 구매 완료 건의 카드 사용(사용일 · 결제 합계) — 구매 완료 행 2행. 아니면 null. */
+  usageUsedOn: string | null;
+  usageTotalKrw: number | null;
 };
 
 function scopeCondition(scope: PurchaseRequestScope): SQL | undefined {
@@ -69,7 +72,7 @@ function scopeCondition(scope: PurchaseRequestScope): SQL | undefined {
 // 최근 요청이 첫 줄(created_at 내림차순).
 export async function listPurchaseRequestRows(
   viewer: Viewer,
-  input: { scope: PurchaseRequestScope; filter: PurchaseRequestFilter },
+  input: { scope: PurchaseRequestScope; filter: PurchaseRequestFilter; keepId?: string | null },
   tx: DbOrTx = db,
 ): Promise<PurchaseRequestListRow[]> {
   void viewer;
@@ -78,6 +81,10 @@ export async function listPurchaseRequestRows(
   if (filter.status) conditions.push(eq(purchaseRequests.status, filter.status));
   if (filter.from) conditions.push(gte(purchaseRequests.createdAt, filter.from));
   if (filter.to) conditions.push(lt(purchaseRequests.createdAt, filter.to));
+  // 06-12: 방금 구매 완료한 요청은 상태 보기와 무관하게 제자리에 남긴다(제자리 결과 — S13 성공 뒤).
+  // 조건이 하나도 없으면(전사 범위 `전체` 보기) 이미 전부 나온다 — `or(undefined, …)`가 그 한 행으로 줄이지 않게 갈래를 타지 않는다(검토 I-1).
+  const base = and(...conditions);
+  const where = input.keepId && base ? or(base, and(scopeCondition(input.scope), eq(purchaseRequests.id, input.keepId))) : base;
 
   const rows = await tx
     .select({
@@ -86,12 +93,15 @@ export async function listPurchaseRequestRows(
       projectName: projects.name,
       lineItemName: quoteLines.itemName,
       lineRevisionId: quoteLines.revisionId,
+      usageUsedOn: corpCardUsages.usedOn,
+      usageTotalKrw: corpCardUsages.totalAmountKrw,
     })
     .from(purchaseRequests)
     .innerJoin(users, eq(users.id, purchaseRequests.requestedBy))
     .leftJoin(projects, eq(projects.id, purchaseRequests.projectId))
     .leftJoin(quoteLines, eq(quoteLines.id, purchaseRequests.quoteLineId))
-    .where(and(...conditions))
+    .leftJoin(corpCardUsages, and(eq(corpCardUsages.purchaseRequestId, purchaseRequests.id), isNull(corpCardUsages.archivedAt)))
+    .where(where)
     .orderBy(desc(purchaseRequests.createdAt), desc(purchaseRequests.id));
 
   return rows.map((row) => ({
@@ -100,5 +110,38 @@ export async function listPurchaseRequestRows(
     projectName: row.projectName,
     lineItemName: row.lineItemName,
     lineRevisionId: row.lineRevisionId,
+    usageUsedOn: row.usageUsedOn,
+    usageTotalKrw: row.usageTotalKrw,
   }));
+}
+
+// ── 06-12 구매 완료 ──────────────────────────────────────────────────────────
+
+/** 요청 한 건(잠금 없음) — 구매 완료 사전 조회 · 패널 로드. 트랜잭션 밖에서만. */
+export async function findPurchaseRequestById(viewer: Viewer, id: string): Promise<PurchaseRequestRow | null> {
+  void viewer;
+  const [row] = await db.select().from(purchaseRequests).where(eq(purchaseRequests.id, id)).limit(1);
+  return row ?? null;
+}
+
+// 요청 행 `FOR UPDATE` — 구매 완료 몸통이 프로젝트 행 · 견적 줄 다음에 잡는다(N-3).
+export async function lockPurchaseRequestForUpdate(viewer: Viewer, id: string, tx: DbOrTx): Promise<PurchaseRequestRow | null> {
+  void viewer;
+  const [row] = await tx.select().from(purchaseRequests).where(eq(purchaseRequests.id, id)).for("update");
+  return row ?? null;
+}
+
+// 구매 완료 UPDATE — `신청됨` · version 일치일 때만(06-27 `_completed_check`). 바뀌면 새 version, 아니면 null.
+export async function markPurchaseRequestPurchased(
+  viewer: Viewer,
+  input: { id: string; version: number; completedBy: string },
+  tx: DbOrTx,
+): Promise<number | null> {
+  void viewer;
+  const [row] = await tx
+    .update(purchaseRequests)
+    .set({ status: "purchased", completedBy: input.completedBy, completedAt: new Date(), version: sql`${purchaseRequests.version} + 1` })
+    .where(and(eq(purchaseRequests.id, input.id), eq(purchaseRequests.version, input.version), eq(purchaseRequests.status, "requested")))
+    .returning({ version: purchaseRequests.version });
+  return row?.version ?? null;
 }

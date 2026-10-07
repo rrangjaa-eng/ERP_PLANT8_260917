@@ -248,6 +248,29 @@ test.describe("법인카드 대리 등록 · 수정 (06-09)", () => {
     await expect(sheet).toBeVisible();
     await page.context().close();
   });
+
+  // 06-12 검토 I-2 — Esc 닫기 이동(`/cards` 목록 RSC) 응답이 오기 전에 `수정`을 누르면 기다리던 이동은 버려진다.
+  // 등록 · 수정 패널이 같은 자리의 키 없는 SidePanel이면 닫힌 <dialog>가 재사용돼 수정 패널이 서지 않았다.
+  test("[06-12 검토 I-2] 등록 패널 Esc 직후(목록 응답 2.5초 지연) `수정` → 수정 패널이 열린다", async ({ browser, baseURL }) => {
+    const fx = await setup();
+    const page = await loginPage(browser, baseURL, fx.proxy);
+    await page.route(
+      (url) => url.pathname === "/cards" && url.searchParams.has("_rsc") && [...url.searchParams.keys()].every((key) => key === "_rsc"),
+      async (route) => {
+        if (route.request().headers()["next-router-prefetch"]) return route.continue();
+        await new Promise((resolve) => setTimeout(resolve, 2_500));
+        await route.continue().catch(() => {});
+      },
+    );
+    await registerByProxy(page, fx, "300000");
+    await expect(page).toHaveURL(/\?new=1/);
+    const edit = fixtureRows(page, fx).getByRole("link", { name: /수정$/ });
+    await edit.click();
+    const sheet = page.getByRole("dialog", { name: "카드 사용 수정" });
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByLabel("결제 합계")).toHaveValue("300,000");
+    await page.context().close();
+  });
 });
 
 // ── 06-09 Task 3: 삭제(= 보관) · 결과 줄 `되돌리기` · 폰 행 탭 ─────────────────

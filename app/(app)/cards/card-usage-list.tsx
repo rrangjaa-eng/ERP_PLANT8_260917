@@ -31,6 +31,8 @@ export type CardUsageListRowView = {
   registeredVia: string;
   registeredByName: string;
   registeredOn: string | null;
+  /** 06-12 구매 완료로 생긴 건 — 등록 칸 `구매 요청 {번호}`. */
+  purchaseNumber: string | null;
   totalKrw: number | null;
   supplyKrw: number | null;
   vatKrw: number | null;
@@ -80,6 +82,18 @@ function linkCell(row: CardUsageListRowView): ReactNode {
 // 「표시 — 경영관리 등록」: 대리 등록이면 `경영관리 등록`(--text-strong 600) + 2행 `{등록자} {MM-DD}`, 본인 등록이면 이름(400). 대리 등록 자체는 06-09.
 const PROXY_STYLE = { fontWeight: "var(--fw-medium)", color: "var(--text-strong)" } as const;
 
+// 등록 칸 1행 — 대리 등록 = `경영관리 등록`, 구매 완료로 생긴 건 = `구매 요청 {번호}`(06-12), 본인 등록 = 이름.
+function registeredFirst(row: CardUsageListRowView): ReactNode {
+  if (row.registeredVia === "proxy") return <span style={PROXY_STYLE}>경영관리 등록</span>;
+  if (row.registeredVia === "purchase" && row.purchaseNumber) return `구매 요청 ${row.purchaseNumber}`;
+  return row.registeredByName;
+}
+
+// 등록 칸 2행 `{등록자} {MM-DD}` — 대리 등록 · 구매 완료 건만.
+function registeredSecond(row: CardUsageListRowView): string | null {
+  return row.registeredVia === "proxy" || (row.registeredVia === "purchase" && row.purchaseNumber) ? `${row.registeredByName} ${row.registeredOn?.slice(5) ?? ""}`.trim() : null;
+}
+
 // 접근 이름 `{사용일} {가맹점} 수정` / `… 삭제` — 보이는 글자는 `수정` · `삭제` 그대로(줄마다 같은 이름을 사용일 · 가맹점으로 가른다).
 function actionName(row: CardUsageListRowView): string {
   return `${row.usedOn.slice(5)}${row.merchantName ? ` ${row.merchantName}` : ""} `;
@@ -122,8 +136,8 @@ const COLUMNS: TableColumn<CardUsageListRowView>[] = [
     key: "registered",
     header: "등록",
     priority: "p1",
-    cell: (row) => (row.registeredVia === "proxy" ? <span style={PROXY_STYLE}>경영관리 등록</span> : row.registeredByName),
-    secondaryLine: (row) => (row.registeredVia === "proxy" ? `${row.registeredByName} ${row.registeredOn?.slice(5) ?? ""}`.trim() : null),
+    cell: registeredFirst,
+    secondaryLine: registeredSecond,
   },
 ];
 
@@ -155,7 +169,12 @@ export function CardUsageList({ rows, listHref }: { rows: CardUsageListRowView[]
                 ...(sheet.totalKrw !== null ? [{ label: "결제 합계", value: <Num value={sheet.totalKrw} /> }] : []),
                 {
                   label: "등록",
-                  value: sheet.registeredVia === "proxy" ? `경영관리 등록 · ${sheet.registeredByName} ${sheet.registeredOn?.slice(5) ?? ""}`.trim() : sheet.registeredByName,
+                  value:
+                    sheet.registeredVia === "proxy"
+                      ? `경영관리 등록 · ${registeredSecond(sheet) ?? ""}`
+                      : sheet.registeredVia === "purchase" && sheet.purchaseNumber
+                        ? `구매 요청 ${sheet.purchaseNumber} · ${registeredSecond(sheet) ?? ""}`
+                        : sheet.registeredByName,
                 },
               ]
             : []

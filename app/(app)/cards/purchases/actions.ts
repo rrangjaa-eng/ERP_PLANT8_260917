@@ -3,10 +3,16 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { authedActionClient } from "@/lib/actions/client";
+import { isCalendarDate, seoulToday } from "@/lib/dates";
+import { CURRENCIES } from "@/domain/money/currency";
+import { cardUsedOnError, USED_ON_FUTURE } from "@/domain/corp-card-usages/amounts";
 import {
+  completePurchaseRequest,
   createPurchaseRequest,
   LINK_URL_FORMAT,
+  precheckPurchaseCompletion,
   precheckPurchaseRequest,
+  previewPurchaseCompletion,
   previewPurchaseSupply,
   searchLinesForPurchaseLink,
   type PurchaseRequestInput,
@@ -56,3 +62,73 @@ export const searchLinesForPurchaseLinkAction = authedActionClient
 export const previewPurchaseSupplyAction = authedActionClient
   .schema(z.object({ lineId: z.uuid(), amount: z.number().positive() }))
   .action(async ({ parsedInput, ctx }) => previewPurchaseSupply(ctx.viewer, { lineId: parsedInput.lineId, amountKrw: parsedInput.amount }));
+
+// ── 06-12 구매 완료(S13) ──────────────────────────────────────────────────────
+// 사람은 카드 · 사용일 · 가맹점 · 결제 합계 · 증빙 종류 · 메모 · version만 보낸다 — 연결 · 사용한 사람 · 팀 · 공급가 칸은 없다(요청과 서버가 정한다).
+
+const DATE_ERROR = "날짜 없음 · 날짜 고르기";
+const TOTAL_NOT_POSITIVE = "결제 합계 0 이하 · 금액 고치기";
+const FX_MISSING = "환율 없음 · USD 환율 적기";
+
+const completePurchaseSchema = z
+  .object({
+    requestId: z.uuid(),
+    version: z.number().int().positive(),
+    corpCardId: z.uuid(),
+    usedOn: z
+      .string()
+      .refine(isCalendarDate, DATE_ERROR)
+      .refine((usedOn) => cardUsedOnError(usedOn, seoulToday()) === null, USED_ON_FUTURE),
+    merchantVendorId: z.uuid().nullable(),
+    currency: z.enum(CURRENCIES),
+    amount: z.number({ error: AMOUNT_NOT_NUMBER }).positive(TOTAL_NOT_POSITIVE),
+    fxRate: z.number().positive().optional(),
+    evidenceTypeCode: z.string().min(1),
+    memo: z.string().max(500).nullable(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.currency !== "KRW" && value.fxRate === undefined) ctx.addIssue({ code: "custom", message: FX_MISSING, path: ["fxRate"] });
+  });
+
+export const completePurchaseRequestAction = authedActionClient.schema(completePurchaseSchema).action(async ({ parsedInput, ctx }) => {
+  const input = {
+    requestId: parsedInput.requestId,
+    version: parsedInput.version,
+    corpCardId: parsedInput.corpCardId,
+    usedOn: parsedInput.usedOn,
+    merchantVendorId: parsedInput.merchantVendorId,
+    total: { currency: parsedInput.currency, amount: parsedInput.amount, fxRate: parsedInput.fxRate ?? 1 },
+    evidenceTypeCode: parsedInput.evidenceTypeCode,
+    memo: parsedInput.memo,
+  };
+  const pre = await precheckPurchaseCompletion(ctx.viewer, input);
+  const done = await completePurchaseRequest(ctx.viewer, input, pre);
+  revalidatePath("/cards/purchases");
+  revalidatePath("/cards");
+  // 실행가 초과액(Q-E)은 견적 금액을 보는 사람에게만 — 기록(행동 로그)은 그대로 남는다.
+  return { requestId: done.requestId, capOver: pre.card.amountVisible ? done.capOver : null };
+});
+
+// S13 서버 계산 한 줄 — 공급가 · 부가세 · 팀(요청자의 사용일 소속) · 실행가 상한 · 예상 금액 차이(트랜잭션 없음).
+export const previewPurchaseCompletionAction = authedActionClient
+  .schema(
+    z.object({
+      requestId: z.uuid(),
+      usedOn: z.string().refine(isCalendarDate, DATE_ERROR),
+      currency: z.enum(CURRENCIES),
+      amount: z.number().positive().nullable(),
+      fxRate: z.number().positive().optional(),
+      evidenceTypeCode: z.string().min(1).nullable(),
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) =>
+    previewPurchaseCompletion(ctx.viewer, {
+      requestId: parsedInput.requestId,
+      usedOn: parsedInput.usedOn,
+      total:
+        parsedInput.amount === null || (parsedInput.currency !== "KRW" && parsedInput.fxRate === undefined)
+          ? null
+          : { currency: parsedInput.currency, amount: parsedInput.amount, fxRate: parsedInput.fxRate ?? 1 },
+      evidenceTypeCode: parsedInput.evidenceTypeCode,
+    }),
+  );

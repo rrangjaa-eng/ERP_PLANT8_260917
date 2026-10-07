@@ -50,7 +50,7 @@ import { findLineLinks } from "@/repositories/quote-line-links";
 import { seoulToday } from "@/lib/dates";
 import { makePerson } from "./approvals-fixtures";
 import { ONLINE_VENDOR, purchaseProject, request, requestInput, type PurchaseFx } from "./fixtures/purchase-requests";
-import { setupExpenseProject, submitReadyDraft } from "./fixtures/expenses";
+import { addApprovedRevision, setupExpenseProject, submitReadyDraft } from "./fixtures/expenses";
 import { deferred, waitForLockWaiter } from "./lock-race";
 
 // 06-08(EXP-10 · D-609 · Q3 · GA-38): 구매 요청 신청 경로 통합 파일 — 06-12 · 06-14가 `describe`를 더한다.
@@ -1584,7 +1584,7 @@ describe("취소 되돌리기(06-14 — D-609 · Q3 · X-1 · X-2 · N-1 · N-2 
     expect(((await caught(undoAs(fx.pm, open.id))) as Error).message).toBe("다른 저장이 먼저 됨 · 새로 고침");
     const done = await request(fx, fx.onlineLine);
     await complete(await purchaser(), await completionInput(done.id, await sharedCard()));
-    expect(((await caught(undoAs(fx.pm, done.id))) as Error).message).toBe("다른 저장이 먼저 됨 · 새로 고침");
+    expect(((await caught(undoAs(fx.pm, done.id))) as Error).message).toBe("이미 구매 완료 · 새로 고침");
     expect((await statusOf(done.id))?.status).toBe("purchased");
   });
 
@@ -1671,9 +1671,8 @@ describe("취소 되돌리기(06-14 — D-609 · Q3 · X-1 · X-2 · N-1 · N-2 
     const input = requestInput(fx.lines.withVendor);
     const created = await createPurchaseRequest(fx.pm, input, await precheckPurchaseRequest(fx.pm, input));
     await cancelAs(fx.pm, created.id);
-    const latest = await getCurrentQuoteRevision(SYSTEM_VIEWER, fx.projectId);
-    if (!latest) throw new Error("차수 없음");
-    const next = await createRevisionFromCurrent(fx.pm, { projectId: fx.projectId, fromRevisionId: latest.id });
+    // 2차는 고객 승인까지 받아야 그 줄로 지출결의를 만들 수 있다(05-14 도우미).
+    const next = await addApprovedRevision(fx, []);
     const [copy] = await db.select({ id: quoteLines.id }).from(quoteLines).where(and(eq(quoteLines.revisionId, next.revisionId), eq(quoteLines.copiedFromLineId, fx.lines.withVendor)));
     if (!copy) throw new Error("복사된 줄 없음");
     await setSettingValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME, "");

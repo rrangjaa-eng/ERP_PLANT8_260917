@@ -60,7 +60,11 @@ import {
   summarizeRevisions as repoSummarizeRevisions,
 } from "@/repositories/quote-revisions";
 import { listNumberedByProject as repoListNumberedExpensesByProject } from "@/repositories/expenses";
-import { findLineLinks as repoFindLineLinks } from "@/repositories/quote-line-links";
+import {
+  findExpenseDocFacts as repoFindExpenseDocFacts,
+  findLineLinks as repoFindLineLinks,
+  listExpenseDocFacts as repoListExpenseDocFacts,
+} from "@/repositories/quote-line-links";
 import { listFieldDefinitions as repoListFieldDefinitions } from "@/repositories/field-definitions";
 import { findVendorKindsByIds as repoFindVendorKindsByIds, findVendorNamesByIds as repoFindVendorNamesByIds } from "@/repositories/vendors";
 import { NOT_SUPPLIER_VENDOR, servesSide } from "@/domain/vendors/kind";
@@ -76,8 +80,22 @@ const PROJECTS_MENU = "projects";
 const ADJUSTMENT_MENU = "projects.adjustment";
 const QUOTE_LINE_ENTITY = "quote_line";
 
-// 05-15 — 줄 파생 상태 입력: 그 줄의 번호 있는 지출결의 중 반려가 있으면 rejected, 결재 중 · 승인이 있으면 active, 그 밖(회수 · 연결 없음)은 null.
-export type QuoteLineLinkedStatus = "rejected" | "active";
+// 05-15 — 줄 파생 상태 키(취소 · 미착수는 줄 칸 · null). 06-13(SP-2 · O-14 확정): 한 줄에 문서가 여럿이면 아래 우선순위의 첫 키 하나만
+// 보낸다 — 취소 > 반려 > 증빙 없음 > 지출결의 중 > 구매 요청 중 > 지급 완료 > 카드 사용 > 미착수. 우선순위는 이 배열 한 곳이다.
+export type QuoteLineLinkedStatus = "rejected" | "evidence_missing" | "active" | "purchase_requested" | "paid" | "card_used";
+
+export const QUOTE_LINE_STATUS_PRIORITY: readonly QuoteLineLinkedStatus[] = [
+  "rejected",
+  "evidence_missing",
+  "active",
+  "purchase_requested",
+  "paid",
+  "card_used",
+];
+
+export function pickLineLinkedStatus(keys: readonly QuoteLineLinkedStatus[]): QuoteLineLinkedStatus | null {
+  return QUOTE_LINE_STATUS_PRIORITY.find((key) => keys.includes(key)) ?? null;
+}
 
 export type MoneyInputDto = { currency: Currency; amount: number; fxRate: number };
 export type MoneyDto = MoneyInputDto & { amountKrw: number };
@@ -281,7 +299,8 @@ export type QuoteLineListCtx = {
 
 // D-66 — 줄마다 연결된 지출결의(번호 있는 문서만 — 작성 중 문서는 연결이 아니다). `approvalStatus`는 결재 인스턴스 상태(줄 파생 상태 재료).
 // 저장 트랜잭션 안에서도 불리므로 tx를 받는다.
-export type LinkedDocument = { number: string; approvalStatus?: string | null };
+// 06-13: `id` · `paid`(살아 있는 지급 — 06-27 expense_payments, 지급 취소는 지급 전 D-606).
+export type LinkedDocument = { id?: string; number: string; approvalStatus?: string | null; paid?: boolean };
 export type LinkedDocumentsByLine = Map<string, LinkedDocument[]>;
 
 // 04-14(D-55) — 문서 출처(줄 id별 번호 있는 지출결의)를 계보 해석으로 현재 차수 줄에 잇는다. 조회 지점은 이 함수 하나다.
@@ -295,10 +314,12 @@ async function loadLinkedDocumentsByLine(viewer: Viewer, revisionId: string, tx?
   if (!revision) return new Map();
   const numbered = await repoListNumberedExpensesByProject(viewer, revision.projectId, tx);
   if (numbered.length === 0) return new Map();
+  const ids = numbered.map((doc) => doc.id);
+  const facts = tx ? await repoFindExpenseDocFacts(viewer, ids, tx) : await repoListExpenseDocFacts(viewer, ids);
   const docsByLineId = new Map<string, LinkedDocument[]>();
   for (const doc of numbered) {
     const docs = docsByLineId.get(doc.quoteLineId) ?? [];
-    docs.push({ number: doc.number, approvalStatus: doc.approvalStatus });
+    docs.push({ id: doc.id, number: doc.number, approvalStatus: doc.approvalStatus, paid: facts.get(doc.id)?.paid ?? false });
     docsByLineId.set(doc.quoteLineId, docs);
   }
   const lineage: LineageLine[] = [];
@@ -310,11 +331,16 @@ async function loadLinkedDocumentsByLine(viewer: Viewer, revisionId: string, tx?
   return resolveLinkedDocumentsByLineage(lineage, docsByLineId).byCurrentLine;
 }
 
-function linkedStatusOf(docs: readonly LinkedDocument[] | undefined): QuoteLineLinkedStatus | null {
-  if (!docs) return null;
-  if (docs.some((doc) => doc.approvalStatus === "rejected")) return "rejected";
-  if (docs.some((doc) => doc.approvalStatus === "submitted" || doc.approvalStatus === "in_review" || doc.approvalStatus === "approved")) return "active";
+// 문서 하나의 키 — 반려 · 결재 중/통과(05) 위에 「결재 통과 + 지급」이면 paid. 회수 문서는 키가 없다.
+function documentStatusOf(doc: LinkedDocument): QuoteLineLinkedStatus | null {
+  if (doc.approvalStatus === "rejected") return "rejected";
+  if (doc.approvalStatus === "approved" && doc.paid) return "paid";
+  if (doc.approvalStatus === "submitted" || doc.approvalStatus === "in_review" || doc.approvalStatus === "approved") return "active";
   return null;
+}
+
+function linkedStatusOf(docs: readonly LinkedDocument[] | undefined): QuoteLineLinkedStatus | null {
+  return pickLineLinkedStatus((docs ?? []).flatMap((doc) => documentStatusOf(doc) ?? []));
 }
 
 // 04-13 — DB CHECK(quote_lines_line_kind_check)가 세 값만 받는다.
@@ -345,7 +371,7 @@ async function projectLines(
         approvedSeq: ctx.approvedSeq ?? null,
       }),
       hasLinkedDocuments,
-      readonlyReason: firstLinked ? linkedDocumentReason(firstLinked.number) : null,
+      readonlyReason: firstLinked ? linkedDocumentReason(firstLinked.number, { paid: firstLinked.paid === true }) : null,
       linkedStatus: linkedStatusOf(linkedDocs),
       hasCardSideLinks: ctx.cardSideFacts?.get(row.id)?.linked ?? false,
       executionOverKrw: ctx.cardSideFacts?.get(row.id)?.overKrw ?? null,
@@ -936,7 +962,7 @@ export async function writeQuoteLinesInTx(
     const firstLinked = lineId ? linkedDocuments.get(lineId)?.[0] : undefined;
     const actor = { lineKind, actorCanWrite: canWrite, actorCanAdjust: canAdjust, approvedSeq };
     return firstLinked
-      ? { status, ...actor, hasLinkedDocuments: true, linkedDocumentNumber: firstLinked.number, change }
+      ? { status, ...actor, hasLinkedDocuments: true, linkedDocumentNumber: firstLinked.number, linkedDocumentPaid: firstLinked.paid === true, change }
       : { status, ...actor, hasLinkedDocuments: false, change };
   };
 
@@ -1260,7 +1286,7 @@ export async function restoreQuoteLine(
     const change = { kind: "restore", quoteAmountZero: current.quoteAmountKrw === 0 } as const;
     const actor = { lineKind: lineKindOf(current), actorCanWrite: canWrite, actorCanAdjust: canAdjust, approvedSeq };
     const ctx: ProjectLineEditCtx = firstLinked
-      ? { status: projectRow.status, ...actor, hasLinkedDocuments: true, linkedDocumentNumber: firstLinked.number, change }
+      ? { status: projectRow.status, ...actor, hasLinkedDocuments: true, linkedDocumentNumber: firstLinked.number, linkedDocumentPaid: firstLinked.paid === true, change }
       : { status: projectRow.status, ...actor, hasLinkedDocuments: false, change };
     const decision = latest?.id !== current.revisionId ? { allowed: false, reason: PAST_REVISION_RESTORE } : await gate(projectRow, LINE_EDIT_RULE, ctx);
     if (!decision.allowed) {

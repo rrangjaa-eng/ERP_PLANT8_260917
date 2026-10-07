@@ -28,7 +28,7 @@ import { kstToday } from "@/lib/kst-date";
 import { QUOTE_TABLE_PAGE_SIZE } from "@/lib/paging";
 import { useCommaInput } from "@/ui/input/use-comma-input";
 import type { TableColumn, CellIssue, CellEditability } from "@/ui/table/types";
-import type { QuoteLineDto, QuoteLineBaseline } from "@/domain/quotes/lines";
+import type { QuoteLineDto, QuoteLineBaseline, QuoteLineLinkedStatus } from "@/domain/quotes/lines";
 import {
   QUOTE_LINE_KINDS,
   QUOTE_LINE_STATUSES,
@@ -125,8 +125,8 @@ type DraftLine = {
   /** 04-30(D-66 · DR-35) — 연결 문서가 있는 줄의 읽기 전용 이유(서버 DTO). */
   hasLinkedDocuments: boolean;
   readonlyReason: string | null;
-  /** 05-15 — 줄 상태 열 파생값 재료(서버 DTO): 번호 있는 지출결의 중 반려 있음 / 결재 중 · 승인 있음 / 없음. */
-  linkedStatus: "rejected" | "active" | null;
+  /** 05-15 — 줄 상태 열 파생값(서버 DTO 키 하나 — 06-13 SP-2 우선순위는 서버가 정한다). */
+  linkedStatus: QuoteLineLinkedStatus | null;
 };
 
 type LineCells = Record<QuoteLineField, QuoteCellEditability>;
@@ -1197,11 +1197,20 @@ export function QuoteLedger({
     const door = lineDoors.showColumn && lineId ? lineDoors.cells[lineId] : undefined;
     if (!lineId || !door || door.state === "none") return undefined;
     if (door.state === "closed") {
-      return door.latestId ? (
+      if (!door.latestId) return undefined;
+      const open = (
         <Link href={`/expenses/${door.latestId}`} className={buttonLinkClassName("tertiary")}>
           지출결의 열기
         </Link>
-      ) : undefined;
+      );
+      return door.blocked ? (
+        <div className={styles.sheetDoor}>
+          <p className={styles.doorNote}>{door.blocked.reason}</p>
+          {open}
+        </div>
+      ) : (
+        open
+      );
     }
     if (door.state === "no_vendor") return <p className={styles.doorFailure}>거래처 없음 · PC 견적 표에서 고르기</p>;
     if (lineDoors.tableGateReason) return <p className={styles.doorNote}>{lineDoors.tableGateReason}</p>;
@@ -2107,13 +2116,15 @@ export function QuoteLedger({
                 );
               }
               if (door.state === "closed" && door.latestId) {
+                // 06-13(EXP-06) — 지급 완료로 닫힌 줄은 서버가 준 막힘 이유 한 줄을 링크 아래에 둔다(서버 제출 거부와 같은 문자열).
                 return (
-                  <span onClickCapture={guardDocumentLink}>
+                  <span onClickCapture={guardDocumentLink} className={door.blocked ? styles.sheetDoor : undefined}>
                     <RowActions noWrap>
                       <RowAction tabIndex={-1} describedBy={itemCellId} href={`/expenses/${door.latestId}`}>
                         지출결의 열기
                       </RowAction>
                     </RowActions>
+                    {door.blocked ? <span className={styles.doorNote}>{door.blocked.reason}</span> : null}
                   </span>
                 );
               }

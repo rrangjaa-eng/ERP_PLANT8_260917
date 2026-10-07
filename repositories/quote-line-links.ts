@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { corpCardUsages, projects, purchaseRequests, quoteLines, quoteRevisions, users, vendors } from "@/db/schema";
+import { corpCardUsages, expenseEvidenceReviews, expensePayments, expenses, projects, purchaseRequests, quoteLines, quoteRevisions, users, vendors } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 import { moneyFromRow, type Money } from "@/domain/money";
 import { resolveLinkedDocumentsByLineage, type LineageLine } from "@/domain/quotes/lineage";
@@ -173,6 +173,54 @@ export async function findLineLinks(viewer: Viewer, lineIds: readonly string[], 
     });
   }
   return result;
+}
+
+// 06-13 「06-03 tx 규약」 — 아래 셋은 트랜잭션 안에서도 불리므로 `tx`가 필수다(기본값 없음 — 전역 풀로 떨어질 길이 없다).
+
+export type ExpenseDocFact = { expenseId: string; paid: boolean; payDate: string | null; waived: boolean; prepaid: boolean };
+
+// 문서마다 지급 · 증빙 면제 · 선결제 사실을 한 쿼리로 — 살아 있는 지급(취소 안 됨, D-606)만 `paid`. 파일 수는 세지 않는다(C5 — 증빙 유무는 hasEvidence).
+export async function findExpenseDocFacts(viewer: Viewer, expenseIds: readonly string[], tx: DbOrTx): Promise<Map<string, ExpenseDocFact>> {
+  void viewer;
+  const ids = [...new Set(expenseIds)];
+  if (ids.length === 0) return new Map();
+  const rows = await tx
+    .select({ id: expenses.id, prepaid: expenses.prepaid, payDate: expensePayments.payDate, reviewStatus: expenseEvidenceReviews.status })
+    .from(expenses)
+    .leftJoin(expensePayments, and(eq(expensePayments.expenseId, expenses.id), isNull(expensePayments.cancelledAt)))
+    .leftJoin(expenseEvidenceReviews, eq(expenseEvidenceReviews.expenseId, expenses.id))
+    .where(inArray(expenses.id, ids));
+  return new Map(
+    rows.map((row) => [
+      row.id,
+      { expenseId: row.id, paid: row.payDate !== null, payDate: row.payDate, waived: row.reviewStatus === "waived", prepaid: row.prepaid },
+    ]),
+  );
+}
+
+// 트랜잭션 밖 읽기(견적 줄 표 · 행 행동 열) — 같은 조회를 기본 연결로.
+export function listExpenseDocFacts(viewer: Viewer, expenseIds: readonly string[]): Promise<Map<string, ExpenseDocFact>> {
+  return findExpenseDocFacts(viewer, expenseIds, db);
+}
+
+// 지급 트랜잭션 맨 앞(N-2) — 문서의 견적 줄 id(팀 비용 문서는 빈 배열).
+export async function findExpenseQuoteLineIds(viewer: Viewer, expenseId: string, tx: DbOrTx): Promise<string[]> {
+  void viewer;
+  const rows = await tx.select({ quoteLineId: expenses.quoteLineId }).from(expenses).where(eq(expenses.id, expenseId));
+  return rows.flatMap((row) => (row.quoteLineId ? [row.quoteLineId] : []));
+}
+
+// 잠근 줄의 거래처 이름(온라인구매 문 판정 입력) — 거래처 없는 줄은 null.
+export async function findLineVendorNames(viewer: Viewer, lineIds: readonly string[], tx: DbOrTx): Promise<Map<string, string | null>> {
+  void viewer;
+  const ids = [...new Set(lineIds)];
+  if (ids.length === 0) return new Map();
+  const rows = await tx
+    .select({ id: quoteLines.id, vendorName: vendors.name })
+    .from(quoteLines)
+    .leftJoin(vendors, eq(vendors.id, quoteLines.vendorId))
+    .where(inArray(quoteLines.id, ids));
+  return new Map(rows.map((row) => [row.id, row.vendorName ?? null]));
 }
 
 // 줄들의 거래처 기본 증빙 종류를 한 쿼리로(E-33) — 거래처 없는 줄은 null.

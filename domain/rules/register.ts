@@ -9,6 +9,7 @@ import {
   type QuoteLineKind,
 } from "@/domain/quotes/edit-scope";
 import { firstExpenseSubmitBlock, type ExpenseSubmitContext } from "@/domain/expenses/gate";
+import type { ExpenseLineDoorState } from "@/domain/expenses/line-door";
 import {
   approvalGateDecision,
   evidenceGateDecision,
@@ -47,6 +48,8 @@ export type ProjectLineEditCtx = {
   actorCanAdjust: boolean;
   hasLinkedDocuments: boolean;
   linkedDocumentNumber?: string;
+  /** 06-13(S-F4) — 그 연결 문서가 지급 완료 — 읽기 전용 이유가 `지급 완료` 꼴. */
+  linkedDocumentPaid?: boolean;
   /** 04-40(사용자 D7 · OV-1) — 현재 차수가 고객 승인됐으면 그 순번. 견적 줄의 합계를 바꾸는 조작을 막는다. */
   approvedSeq?: number | null;
   /** 04 D-47 ③ — 완료 뒤 견적 외 비용 줄 추가 예외, 호출자가 트랜잭션 전에 권한 사실을 읽어 넘긴다. */
@@ -97,7 +100,7 @@ registerGateRule<unknown, ProjectLineEditCtx>({
         approvedSeq,
       });
       for (const field of ctx.change.fields) {
-        if (cells[field] === "readonly") return { allowed: false, reason: linkedDocumentReason(ctx.linkedDocumentNumber ?? "") };
+        if (cells[field] === "readonly") return { allowed: false, reason: linkedDocumentReason(ctx.linkedDocumentNumber ?? "", { paid: ctx.linkedDocumentPaid === true }) };
         if (cells[field] === "locked" && lockReason) return { allowed: false, reason: lockReason };
       }
       if (approvalLocks && ctx.change.quoteAmountUnchanged !== true) return { allowed: false, reason: lockReason };
@@ -318,6 +321,28 @@ registerGateRule<unknown, ExpenseSubmitContext>({
     const first = await firstExpenseSubmitBlock(doc, ctx);
     return first ? { allowed: false, reason: first.reason } : { allowed: true };
   },
+});
+
+// 06-13(EXP-06 · D-609 · D-606) — 지급 완료된 줄에 새 지출결의 없음. 05 문(`expenseLineDoor`)이 닫혔고 그 문을 닫은 문서(비분할 문서,
+// 없으면 — 남은 실행가 0으로 닫힌 분할 줄 — 회차 전부)에 살아 있는 지급이 있으면 거부한다. 분할로 열린 문은 막지 않고, 지급 취소된
+// 문서는 지급 전으로 센다(05 문 이유가 그대로 선다). `docs`는 제출 문서 자신을 뺀 그 줄 계보 사슬의 번호 문서(제출 순, 종결 제외 — 06-28).
+// 제출은 05 `expense.submit` 앞에서 부른다 — 뒤면 05 ④(`이 줄에 지출결의 … 있음`)가 같은 문서로 먼저 걸린다.
+export type ExpenseLinePaidLockCtx = {
+  door: ExpenseLineDoorState;
+  docs: readonly { number: string; installment: boolean; paid: boolean }[];
+};
+
+export function linePaidLockDecision(ctx: ExpenseLinePaidLockCtx): { allowed: true } | { allowed: false; reason: string } {
+  if (ctx.door !== "closed") return { allowed: true };
+  const whole = ctx.docs.filter((doc) => !doc.installment);
+  const closers = whole.length > 0 ? whole : ctx.docs;
+  const paid = closers.filter((doc) => doc.paid).at(-1);
+  return paid ? { allowed: false, reason: `지급 완료 ${paid.number} · 새 지출결의 없음` } : { allowed: true };
+}
+
+registerGateRule<unknown, ExpenseLinePaidLockCtx>({
+  name: "expense.line-paid-lock",
+  check: (_doc, ctx) => linePaidLockDecision(ctx),
 });
 
 // 06-03(EXP-06 · 기준 1 · UI-SPEC 「지출결의 상태 → 1차」) — 지급 완료는 결재 통과(approved · 자기 승인 포함, UA-607) 문서만. 몸통은 화면 1차와

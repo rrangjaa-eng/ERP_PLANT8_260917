@@ -93,7 +93,7 @@ import { countActiveByOwner, listAliveByOwners, markOwnerFilesRemoved, restoreOw
 import { findProjectById, lockProjectForWrite, type ProjectRow } from "@/repositories/projects";
 import { findLatestQuoteRevision, findQuoteRevisionById, listLatestQuoteRevisionsByProjects, type QuoteRevisionRow } from "@/repositories/quote-revisions";
 import { findQuoteLineById, listLineageLinesByProjects, listQuoteLinesByRevision, type QuoteLineRow } from "@/repositories/quote-lines";
-import { findLineLinks } from "@/repositories/quote-line-links";
+import { findExpenseDocFacts, findLineLinks, listExpenseDocFacts, lockQuoteLines } from "@/repositories/quote-line-links";
 import { findUserById, findUserNamesByIds } from "@/repositories/users";
 import { findVendorById } from "@/repositories/vendors";
 import {
@@ -1012,10 +1012,14 @@ export async function submitExpense(
   const teamNumberYear = Number(seoulToday(deps?.now).slice(0, 4));
 
   return withTransaction(async (tx): Promise<SubmitExpenseResult> => {
+    // 06-13(B-1 · N-3): 전역 잠금 순서 프로젝트 행 → 견적 줄(id 순, 줄 하나) → 문서 행. 줄 id는 트랜잭션 전에 읽은 값이고,
+    // 잠근 문서의 줄이 그 사이 바뀌었으면 잠그지 않은 줄로 판정하지 않고 충돌로 막는다.
     const lockedProject = projectRow ? await lockProjectForWrite(viewer, projectRow.id, tx) : null;
+    if (row.quoteLineId) await lockQuoteLines(viewer, [row.quoteLineId], tx);
     const locked = await lockExpenseForUpdate(viewer, row.id, tx);
     await deps?.afterLock?.();
     if (!locked) throw new ExpenseNotFoundError();
+    if (locked.quoteLineId !== row.quoteLineId) throw new ExpenseConflictError(locked.updatedAt);
     let resubmit: { instanceId: string; version: number } | null = null;
     if (locked.number !== null && locked.closedAt !== null) throw new ExpenseCloseRefusedError(EXPENSE_ALREADY_CLOSED);
     if (locked.number !== null) {
@@ -1028,6 +1032,16 @@ export async function submitExpense(
 
     // 잠근 프로젝트 행 · tx로 읽은 차수 · 줄 · 문 · 증빙 수로 같은 규칙을 다시 판정한다(T-05-601).
     const { facts, line, numbered, door, closedInstallments } = await loadSubmitFacts(viewer, locked, lockedProject ?? projectRow, pre, tax, codes, tx);
+    // 06-13(EXP-06): 지급 완료 잠금은 05 ④보다 먼저 — 입력은 05 계보 사슬 번호 문서(`numbered`, X-3 · R-7) 그대로.
+    if (door) {
+      const others = numbered.filter((doc) => doc.id !== locked.id);
+      const paidFacts = await findExpenseDocFacts(viewer, others.map((doc) => doc.id), tx);
+      const paidLock = await gate(locked, "expense.line-paid-lock", {
+        door: door.state,
+        docs: others.map((doc) => ({ number: doc.number ?? "", installment: doc.installment, paid: paidFacts.get(doc.id)?.paid ?? false })),
+      });
+      if (!paidLock.allowed) throw new GateBlockedError(paidLock.reason);
+    }
     const decision = await gate(locked, "expense.submit", buildExpenseSubmitContext(facts));
     if (!decision.allowed) throw new GateBlockedError(decision.reason);
     if (locked.quoteLineId) {
@@ -1570,6 +1584,8 @@ export type LineDoorCell = {
   expenseId?: string;
   // 이 줄의 가장 최근 제출 문서(문이 닫힘 `지출결의 열기`의 도착지).
   latestId?: string;
+  // 06-13(S14) — 행 행동 막힘 이유(서버 게이트 거부와 같은 문자열).
+  blocked?: { reason: string };
 };
 export type LineDoors = { showColumn: boolean; tableGateReason: string | null; cells: Record<string, LineDoorCell> };
 
@@ -1591,14 +1607,21 @@ export async function listLineDoors(viewer: Viewer, input: { projectId: string }
   const lines = await listQuoteLinesByRevision(viewer, facts.latestRevisionId);
   const lineIds = lines.map((line) => line.id);
   const [numbered, drafts] = await Promise.all([listNumberedByLineage(viewer, input.projectId), listDraftsByLines(viewer, { lineIds, drafterId: viewer.id })]);
+  const docFacts = await listExpenseDocFacts(viewer, [...numbered.values()].flatMap((docs) => docs.map((doc) => doc.id)));
   const cells: Record<string, LineDoorCell> = {};
   for (const line of lines) {
-    const door = doorFor(line, numbered.get(line.id) ?? []);
+    const docs = numbered.get(line.id) ?? [];
+    const door = doorFor(line, docs);
     const draft = drafts.find((doc) => doc.quoteLineId === line.id);
+    const paidLock = await gate(null, "expense.line-paid-lock", {
+      door: door.state,
+      docs: docs.map((doc) => ({ number: doc.number ?? "", installment: doc.installment, paid: docFacts.get(doc.id)?.paid ?? false })),
+    });
     cells[line.id] = {
       state: door.state,
       ...(door.state === "open" && draft ? { expenseId: draft.id } : {}),
       ...(door.latest ? { latestId: door.latest.id } : {}),
+      ...(paidLock.allowed ? {} : { blocked: { reason: paidLock.reason } }),
     };
   }
   return { showColumn: true, tableGateReason: facts.tableGateReason, cells };

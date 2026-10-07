@@ -1,0 +1,155 @@
+"use client";
+
+import type { ReactNode } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Table } from "@/ui/table/Table";
+import type { TableColumn } from "@/ui/table/types";
+import { Num } from "@/ui/num/Num";
+import { StatusTag } from "@/ui/status-tag/StatusTag";
+import { ListEmpty } from "@/ui/list-empty/ListEmpty";
+import { formatForeignLine } from "@/lib/format-number";
+// 필터 칸 모양은 프로젝트 목록 필터와 같은 클래스(새 CSS 없음).
+import filterStyles from "@/app/(app)/projects/projects.module.css";
+import cardStyles from "../cards.module.css";
+import { PURCHASE_STATUS_VIEWS, purchaseStatusWord, type PurchaseStatus, type PurchaseStatusView } from "./purchase-status-word";
+import styles from "./purchases.module.css";
+
+// 06-08(UI-SPEC S11): 구매 요청 읽기 표 + 필터 줄 + 로드 오류 한 줄. 행동 칸(`구매 완료`)은 06-12, `요청 취소` · 결과 줄 · 합계 줄 · 상태 그룹은 06-14.
+
+export type PurchaseListRowView = {
+  id: string;
+  number: string;
+  requestedOn: string;
+  itemName: string;
+  linkUrl: string | null;
+  linkLabel: string | null;
+  requestedByName: string;
+  status: PurchaseStatus;
+  currency: string | null;
+  foreignAmount: number | null;
+  fxRate: number | null;
+  estimateKrw: number | null;
+};
+
+// 링크는 http(s)만 아이콘으로 선다(T-06-37) — 저장 때 이미 거르지만 렌더도 스킴을 다시 확인한다.
+function safeLinkHref(url: string | null): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+function ExternalLinkIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      <path d="M9 2.5h4.5V7M13.5 2.5 7.5 8.5M6.5 3.5h-3a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-3" />
+    </svg>
+  );
+}
+
+function itemCell(row: PurchaseListRowView): ReactNode {
+  const href = safeLinkHref(row.linkUrl);
+  return (
+    <span className={styles.itemCell}>
+      <span className={styles.itemText} title={row.itemName}>
+        {row.itemName}
+      </span>
+      {href ? (
+        <a href={href} target="_blank" rel="noopener noreferrer" aria-label={`${row.itemName} 링크 열기`} title={href} className={styles.linkIcon}>
+          <ExternalLinkIcon />
+        </a>
+      ) : null}
+    </span>
+  );
+}
+
+// 연결 칸은 한 줄 말줄임 + `title` 전문(카드 목록 연결 칸과 같은 클래스).
+function linkCell(row: PurchaseListRowView): ReactNode {
+  const text = row.linkLabel ?? "—";
+  return (
+    <span className={cardStyles.linkCell}>
+      <span className={cardStyles.linkText} title={text}>
+        {text}
+      </span>
+    </span>
+  );
+}
+
+// 외화 2행 `USD 1,000.00 @1,350`(§3 외화 병기)은 06-14가 외화 요청을 만들 때 더한다 — 지금 요청은 원화만이다.
+function estimateSecondLine(row: PurchaseListRowView): ReactNode {
+  if (!row.currency || row.currency === "KRW" || row.foreignAmount === null || row.fxRate === null) return null;
+  return formatForeignLine({ currency: row.currency, amount: row.foreignAmount, fxRate: row.fxRate });
+}
+
+const COLUMNS: TableColumn<PurchaseListRowView>[] = [
+  { key: "number", header: "번호", priority: "p2", cell: (row) => <Num value={row.number} /> },
+  { key: "requestedOn", header: "요청일", priority: "p2", cell: (row) => <Num value={row.requestedOn.slice(5)} /> },
+  { key: "item", header: "품목", priority: "p1", cell: itemCell },
+  { key: "link", header: "연결", priority: "p2", cell: linkCell },
+  { key: "requester", header: "요청자", priority: "p2", cell: (row) => row.requestedByName },
+  { key: "estimate", header: "예상 금액", priority: "p1", align: "right", cell: (row) => <Num value={row.estimateKrw} />, secondaryLine: estimateSecondLine },
+  { key: "status", header: "상태", priority: "p1", cell: (row) => <StatusTag variant="text" status={purchaseStatusWord(row.status)} /> },
+];
+
+export function PurchaseList({ rows }: { rows: PurchaseListRowView[] }) {
+  return <Table caption="구매 요청" columns={COLUMNS} rows={rows} getRowId={(row) => row.id} />;
+}
+
+// 「Error — 목록 로드」 — 목록 자리 한 줄 + 2차 `다시 시도`(같은 쿼리로 서버가 다시 그린다).
+export function PurchaseListLoadError() {
+  const router = useRouter();
+  return <ListEmpty message="구매 요청 목록 불러오지 못함" action={{ label: "다시 시도", onClick: () => router.refresh() }} tone="error" />;
+}
+
+// 필터 줄(UI-SPEC S11) — 상태 · 월. 고르면 바로 GET 이동(쿼리), 쪽은 1로 돌아가고 열린 패널은 닫힌다.
+export function PurchaseFilters({ status, month, months }: { status: PurchaseStatusView; month: string; months: string[] }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  function go(key: "status" | "month", value: string, isDefault: boolean) {
+    const query = new URLSearchParams(searchParams.toString());
+    if (isDefault) query.delete(key);
+    else query.set(key, value);
+    query.delete("page");
+    query.delete("new");
+    query.delete("line");
+    const text = query.toString();
+    router.push(text ? `/cards/purchases?${text}` : "/cards/purchases", { scroll: false });
+  }
+
+  // 뒤로 가기 · `필터 지우기`로 URL이 바뀌면 key로 새로 마운트한다(defaultValue는 마운트 뒤 반영되지 않는다).
+  return (
+    <>
+      <div className={filterStyles.selectLabel}>
+        <label htmlFor="purchase-filter-status">상태</label>
+        <select
+          key={status}
+          id="purchase-filter-status"
+          className={filterStyles.select}
+          defaultValue={status}
+          onChange={(event) => go("status", event.target.value, event.target.value === "신청됨")}
+        >
+          {PURCHASE_STATUS_VIEWS.map((view) => (
+            <option key={view} value={view}>
+              {view}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className={filterStyles.selectLabel}>
+        <label htmlFor="purchase-filter-month">월</label>
+        <select key={month} id="purchase-filter-month" className={filterStyles.select} defaultValue={month} onChange={(event) => go("month", event.target.value, event.target.value === "")}>
+          <option value="">전체</option>
+          {months.map((value) => (
+            <option key={value} value={value}>
+              {value}
+            </option>
+          ))}
+        </select>
+      </div>
+    </>
+  );
+}

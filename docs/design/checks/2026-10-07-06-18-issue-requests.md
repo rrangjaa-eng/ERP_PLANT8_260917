@@ -1,5 +1,5 @@
 # 06-18 발행 요청 표 (S16) — 점검표
-화면: app/(app)/projects/[id]/issue-request-table.tsx, app/(app)/projects/[id]/issue-request-word.ts, app/(app)/projects/[id]/revenue-section.tsx, app/(app)/projects/[id]/quote-table.tsx, app/(app)/projects/[id]/page.tsx, app/(app)/projects/[id]/project-detail.module.css
+화면: app/(app)/projects/[id]/issue-request-table.tsx, app/(app)/projects/[id]/issue-request-word.ts, app/(app)/projects/[id]/revenue-section.tsx, app/(app)/projects/[id]/quote-table.tsx, app/(app)/projects/[id]/page.tsx, app/(app)/projects/[id]/project-detail.module.css, ui/table/Table.tsx
 기준: BRIEF.md · frontend.md 화면 사용성 원칙 · CHECKLIST.md §1 · SYSTEM.md §7-3 편집 표 · §7-5 상태 태그 · 06-UI-SPEC S16 · 「Empty — 상세 「발행 요청」 표(S16)」 · 「표시 — 발행 요청 표(S16)」
 
 ## 원칙
@@ -20,3 +20,8 @@
 - [x] 새 색·서체·radius·그림자를 만들지 않았다(tokens.css 변수만) — 근거: `project-detail.module.css`에 클래스 넷(`.tableSubheading` · `.requestMemo` · `.requestStatus` · `.requestStatusNote`)만 더했고 `--text-muted` · `--text-aux` · `--fw-medium` · `--fw-regular` · `--s-2` · `--s-4`만 쓴다. `docs/design/tokens.css` diff 0
 - [x] 폰 320에서 가로 넘침 없음 · 터치 44px — 근거: 폰(<700)은 `Table`의 P1/P2 접기를 그대로 탄다(날짜 · 금액 · 상태 P1, 메모 P2). 메모는 두 줄 말줄임 + `max-width: 40ch`. 별도 에이전트 CI=true DOM 감사(backstop: overflow · long-text · zero-one-many)가 판정(SUMMARY 「화면 감사 대상」)
 - [x] 실제 앱 화면(PC 1280 · 폰 390)을 찍어 보고 확인했다 — 스크린샷 경로: 육안 판정 금지(CLAUDE.md §6) — CI=true E2E `test/e2e/issue-requests.spec.ts`가 DOM으로 단언(포커스 · 토큰 색), 캡처는 `/design-review` 묶음(오케스트레이터)
+
+## 검토 반영 (D-1 · D-2, 2026-10-07 — 위 항목을 이 변경 기준으로 다시 확인)
+- [x] 안내 문구 · 같은 말 두 번 없음 — 근거: 새 글자 하나(금액 거부 한 줄 `0원 초과 · 금액 입력`, 기존 `… · 새로 고침` 명사형 한 줄 꼴). 폰 접힌 줄 메모는 문구 추가 없이 PC와 같은 두 줄 말줄임 + title
+- [x] 새 색 · 서체 · radius 없음 · 폰 320 가로 넘침 없음 — 근거: 기존 `.requestMemo`(`max-width: 40ch` · line-clamp 2)를 접힌 줄에도 쓴다(CSS 변경 0). E2E가 375 · 320에서 clamp 2 · 높이 ≤ 줄높이 × 2 · 문서 가로 넘침 0을 DOM으로 단언
+- [x] 키보드 · 포커스 — 근거: 요청 줄 저장 거부 뒤 첫 오류 칸으로 포커스(발행 줄 거부와 같은 `firstIssueSignal`). 편집 칸이 없는 오류 칸(상태)은 `ui/table/Table.tsx`가 `tabIndex=-1`을 줘 프로그램 포커스를 받는다(Tab 순서에는 안 낀다). E2E가 activeElement의 칸 `aria-describedby` 글자를 단언

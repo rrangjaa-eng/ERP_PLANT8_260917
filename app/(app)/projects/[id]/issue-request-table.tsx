@@ -108,6 +108,7 @@ export function IssueRequestTable({
   saveButtonId,
   editableWidth,
   onSave,
+  firstIssueSignal,
 }: {
   rows: IssueRequestDraft[];
   props: IssueRequestsProps;
@@ -122,6 +123,8 @@ export function IssueRequestTable({
   /** 1024 미만이면 보기 전용(DR-36 — 편집 칸 · 3차 없음). */
   editableWidth: boolean;
   onSave: () => void;
+  /** 저장 거부 뒤 첫 오류 칸으로 포커스를 옮기는 신호(발행 · 입금 표와 같은 방식). */
+  firstIssueSignal?: number;
 }) {
   const canAdd = props.canRequest && editableWidth;
   const canEditRow = (row: IssueRequestDraft) => canAdd && row.status === "requested" && !linkedRequestIds.has(row.id) && (row.version !== undefined || row.dirty);
@@ -205,7 +208,12 @@ export function IssueRequestTable({
         ) : (
           "—"
         ),
-      summary: (row) => row.memo,
+      summary: (row) =>
+        row.memo ? (
+          <span className={styles.requestMemo} title={row.memo}>
+            {row.memo}
+          </span>
+        ) : null,
     },
     {
       key: "status",
@@ -255,6 +263,7 @@ export function IssueRequestTable({
         emptyAction={canAdd && props.canRequest ? { label: "발행 요청 추가", onClick: onAdd } : undefined}
         saveLocked={saveLocked}
         cellIssue={cellIssue}
+        firstIssueSignal={firstIssueSignal}
       />
       {canAdd && rows.length > 0 ? (
         <div className={styles.addLineButton}>

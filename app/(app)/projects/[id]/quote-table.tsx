@@ -1080,7 +1080,7 @@ export function QuoteLedger({
   // 04-47(B-24) — 그룹 버튼으로 만든 새 줄(표가 그 그룹 끝 쪽으로 옮긴다).
   const [revealRowId, setRevealRowId] = useState<string | null>(null);
   // 04-47(DR-5 · 저장 거부) — 첫 오류로 이동 신호와 그 신호를 받을 표(견적 줄 · 발행 · 입금).
-  const [issueTarget, setIssueTarget] = useState<{ signal: number; table: "quote" | "issued" | "paid" } | null>(null);
+  const [issueTarget, setIssueTarget] = useState<{ signal: number; table: "quote" | "request" | "issued" | "paid" } | null>(null);
   // 04-26(D-86 · DR-16) — 상한에서 막힌 키(Ctrl+Enter·Ctrl+D)·붙여넣기의 이유. 다음 저장 시도·다음 붙여넣기 때 지운다.
   const [lineCapNotice, setLineCapNotice] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{
@@ -1332,8 +1332,17 @@ export function QuoteLedger({
         setIssuedEntries((prev) => prev?.map((entry) => ({ ...entry, cellErrors: entry.id ? routed.issued[entry.id] : undefined })));
         setPaidEntries((prev) => prev?.map((entry) => ({ ...entry, cellErrors: entry.id ? routed.paid[entry.id] : undefined })));
         applyRejectedCells(routed.rest);
-        // 04-47 — 거부 뒤 첫 오류(견적 줄 표 → 발행 → 입금)의 쪽·셀로.
-        const table = routed.rest.length > 0 ? "quote" : Object.keys(routed.issued).length > 0 ? "issued" : Object.keys(routed.paid).length > 0 ? "paid" : null;
+        // 04-47 — 거부 뒤 첫 오류(견적 줄 표 → 발행 요청 → 발행 → 입금)의 쪽·셀로.
+        const table =
+          routed.rest.length > 0
+            ? "quote"
+            : requestSplit.count > 0
+              ? "request"
+              : Object.keys(routed.issued).length > 0
+                ? "issued"
+                : Object.keys(routed.paid).length > 0
+                  ? "paid"
+                  : null;
         if (table) setIssueTarget((prev) => ({ signal: (prev?.signal ?? 0) + 1, table }));
         return; // 전부 거부 — 줄 교체·저장됨·보관본 지우기를 하지 않는다.
       }
@@ -3062,6 +3071,7 @@ export function QuoteLedger({
             onAdd={addIssueRequest}
             onLink={linkIssueRequest}
             onUnlink={unlinkIssueRequest}
+            firstIssueSignal={issueTarget?.table === "request" ? issueTarget.signal : undefined}
             saveLocked={saveLocked}
             saveButtonId={saveButtonId}
             editableWidth={editableWidth}

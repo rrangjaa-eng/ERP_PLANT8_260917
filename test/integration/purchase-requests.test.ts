@@ -34,6 +34,7 @@ import {
   listPurchaseRequests,
   precheckPurchaseCompletion,
   precheckPurchaseRequest,
+  previewPurchaseCompletion,
   PURCHASE_REQUEST_ENTITY,
   type PurchaseCompletionInput,
 } from "@/domain/purchase-requests";
@@ -590,11 +591,12 @@ describe("잠금 뒤 줄 판정 · 서버 권한 문", () => {
 // ── 06-12 구매 완료(EXP-10 · OPS-09 · R-3 · N-3) ─────────────────────────────────
 
 // 구매 권한자(`cards.purchases` write) — 견적 금액 · 카드 사용 · 구매 요청 값을 본다. 팀은 요청자와 다른 새 팀.
-async function purchaser(name = "구매담당"): Promise<Awaited<ReturnType<typeof makePerson>>> {
+async function purchaser(name = "구매담당", hidden: string[] = [], alsoProxy = false): Promise<Awaited<ReturnType<typeof makePerson>>> {
   const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `구매처리-${randomUUID().slice(0, 8)}`, workScope: "team" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "cards.purchases", action: "write", allowed: true });
+  if (alsoProxy) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "cards.proxy", action: "write", allowed: true });
   for (const infoItem of ["purchase_request.value", "purchase_request.amount", "project.value", "quote.amount", "card_usage.value", "card_usage.amount"]) {
-    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+    if (!hidden.includes(infoItem)) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
   }
   const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `처리본부-${randomUUID()}` });
   const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `처리팀-${randomUUID()}` });
@@ -1134,5 +1136,95 @@ describe("카드 고치기", () => {
     expect(afterInactive?.cardOptions?.[0]?.id).toBe(cardId);
     const forProxy = await loadCardUsageForEdit(await proxyOnly(), usageId);
     expect(forProxy?.cardOptions ?? null).toBeNull();
+  });
+});
+
+// ── 06-12 검토 I-3 — 보호를 빼면 빨개지는 케이스(요청 행 잠금 · 비활성 카드 · 금액 숨김 · 비구매 건 카드) ─────────
+
+describe("[06-12 검토 I-3] 구매 완료 · 카드 고치기 보호", () => {
+  it(
+    "팀 비용 요청 동시 2건 — 요청 행 잠금이 직렬화: 성공 1 · `이미 구매 완료 · 새로 고침` 1 · 카드 사용 1",
+    async () => {
+      const requester = await teamCostRequester();
+      const requestId = await teamCostRequest(requester.viewer.id);
+      const buyer = await purchaser();
+      const input = await completionInput(requestId, await sharedCard());
+      const pres = await Promise.all([precheckPurchaseCompletion(buyer, input), precheckPurchaseCompletion(buyer, input)]);
+      const lockClient = new Client({ connectionString: process.env.DATABASE_URL });
+      await lockClient.connect();
+      let calls: ReturnType<typeof completePurchaseRequest>[] = [];
+      let txOpen = false;
+      try {
+        await lockClient.query("BEGIN");
+        txOpen = true;
+        const { rows: pidRows } = await lockClient.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
+        const lockPid = pidRows[0]?.pid;
+        await lockClient.query("SELECT id FROM purchase_requests WHERE id = $1 FOR UPDATE", [requestId]);
+        calls = pres.map((pre) => completePurchaseRequest(buyer, input, pre));
+        let waiting = 0;
+        for (let attempt = 0; attempt < 40 && waiting < 2; attempt++) {
+          const { rows } = await lockClient.query<{ count: string }>(
+            `WITH RECURSIVE blocked_by(pid, blocker) AS (
+               SELECT pid, unnest(pg_blocking_pids(pid)) FROM pg_stat_activity WHERE pid <> pg_backend_pid()
+               UNION
+               SELECT b.pid, unnest(pg_blocking_pids(b.blocker)) FROM blocked_by b
+             )
+             SELECT count(DISTINCT pid)::text AS count FROM blocked_by WHERE blocker = $1`,
+            [lockPid],
+          );
+          waiting = Number(rows[0]?.count ?? 0);
+          if (waiting < 2) await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        expect(waiting).toBeGreaterThanOrEqual(2);
+        await lockClient.query("COMMIT");
+        txOpen = false;
+        const results = await Promise.allSettled(calls);
+        expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+        expect(results.flatMap((result) => (result.status === "rejected" ? [(result.reason as Error).message] : []))).toEqual(["이미 구매 완료 · 새로 고침"]);
+        expect(await usagesOf(requestId)).toHaveLength(1);
+      } finally {
+        if (txOpen) await lockClient.query("ROLLBACK").catch(() => {});
+        await lockClient.end();
+        await Promise.allSettled(calls);
+      }
+    },
+    20_000,
+  );
+
+  it("비활성 카드로 구매 완료 → ForbiddenError · 요청 `신청됨` · 카드 사용 0", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine);
+    const buyer = await purchaser();
+    const cardId = await sharedCard();
+    await setCorpCardActive(SYSTEM_VIEWER, cardId, false);
+    expect(await caught(precheckPurchaseCompletion(buyer, await completionInput(created.id, cardId)))).toBeInstanceOf(ForbiddenError);
+    expect((await statusOf(created.id))?.status).toBe("requested");
+    expect(await usagesOf(created.id)).toHaveLength(0);
+  });
+
+  it("견적 금액(quote.amount) 숨김 구매 권한자 — 거부 문구 · 미리보기에 남은 실행가 없음 · 완료 프로젝트 초과액 null", async () => {
+    const fx = await purchaseProject();
+    await cardOnLine(fx, fx.onlineLine, 600_000);
+    const created = await request(fx, fx.onlineLine, 11_000);
+    const buyer = await purchaser("금액숨김", ["quote.amount"]);
+    const blocked = "실행가 초과 · 견적 줄은 담당 PM 박서연";
+    expect(((await caught(complete(buyer, await completionInput(created.id, await sharedCard(), 438_000)))) as Error).message).toBe(blocked);
+    const preview = { requestId: created.id, usedOn: seoulToday(), total: { currency: "KRW" as const, amount: 438_000, fxRate: 1 }, evidenceTypeCode: "invoice" };
+    expect((await previewPurchaseCompletion(buyer, preview)).cap).toEqual({ blockedReason: blocked, overKrw: null });
+
+    await setStatus(fx.projectId, "completed");
+    expect((await previewPurchaseCompletion(buyer, preview)).cap).toEqual({ blockedReason: null, overKrw: null });
+    const pre = await precheckPurchaseCompletion(buyer, await completionInput(created.id, await sharedCard(), 438_000));
+    expect(pre.card.amountVisible).toBe(false);
+  });
+
+  it("구매 권한 + 대리 등록 권리 보유자도 구매 완료 건이 아닌 건의 카드는 못 바꾼다 → ForbiddenError · 카드 그대로", async () => {
+    const fx = await purchaseProject();
+    const usageId = await cardOnLine(fx, fx.onlineLine, 100_000);
+    const [before] = await db.select({ corpCardId: corpCardUsages.corpCardId }).from(corpCardUsages).where(eq(corpCardUsages.id, usageId));
+    const editor = await purchaser("구매대리", [], true);
+    expect(await caught(updateUsage(editor, await cardUpdateInput(usageId, { corpCardId: await sharedCard() })))).toBeInstanceOf(ForbiddenError);
+    const [after] = await db.select({ corpCardId: corpCardUsages.corpCardId }).from(corpCardUsages).where(eq(corpCardUsages.id, usageId));
+    expect(after?.corpCardId).toBe(before?.corpCardId);
   });
 });

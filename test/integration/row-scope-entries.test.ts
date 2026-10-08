@@ -4,13 +4,24 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { projects } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
-import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
+import { DEFAULT_ROLE_ID, DIVISION_HEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { createProject, findProject, getProjectCopySource, loadProjectList } from "@/domain/projects";
 import { changeProjectStatus, ForbiddenError as StatusForbiddenError, ProjectNotFoundError } from "@/domain/projects/status";
 import { saveProjectLedger } from "@/domain/projects/ledger";
 import { createRevisionFromCurrent, setCustomerApproval } from "@/domain/quotes/revisions";
 import { ForbiddenError as LinesForbiddenError, listQuoteLines, prepareQuoteLineSave, RevisionNotFoundError, restoreQuoteLine } from "@/domain/quotes/lines";
 import { canOpenProject } from "@/domain/projects/visibility";
+import { listRevenue } from "@/domain/revenue";
+import { listProjectIssueRequests } from "@/domain/issue-requests";
+import { getSettlement, getSettlementHeader, submitSettlement } from "@/domain/settlements";
+import { listMyInbox } from "@/domain/approvals";
+import {
+  APPROVAL_ROUTE_SETTLEMENT_STEP4_ORG_UNIT_ID,
+  APPROVAL_ROUTE_SETTLEMENT_STEP4_ROLE_ID,
+  APPROVAL_ROUTE_SETTLEMENT_STEP4_SCOPE,
+} from "@/domain/settings/keys";
+import { upsertSimpleValue } from "@/repositories/settings";
+import { setupSettlementProject } from "./fixtures/settlements";
 import { assignTeam, createTeam } from "@/domain/org";
 import { setTeamArchived } from "@/repositories/teams";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
@@ -184,16 +195,27 @@ const ENTRIES: Entry[] = [
     probe: perProject((viewer, project) => restoreQuoteLine(viewer, project.lineId)),
     expected: (visible, _world, person) => lineWriteOutcomes(visible, person),
   },
+  // 06.2-04 Task 1(D-6208 · D-6205 ③ · D-6218): 프로젝트 하위 — 매출 · 발행 요청. 범위 밖은 기존 「존재하지 않는 프로젝트」.
+  {
+    name: "매출(listRevenue)",
+    probe: perProject((viewer, project) => listRevenue(viewer, project.id)),
+    expected: (visible) => outcomesFor(visible),
+  },
+  {
+    name: "발행 요청(listProjectIssueRequests)",
+    probe: perProject((viewer, project) => listProjectIssueRequests(viewer, project.id)),
+    expected: (visible) => outcomesFor(visible),
+  },
 ];
 
 const cases = ENTRIES.flatMap((entry) => VIEW_SCOPE_PEOPLE.map((person) => ({ entry, person, label: `${entry.name} × ${person}` })));
 
 describe("행 범위 매트릭스 (06.2-03)", () => {
-  it("케이스 하한 — 입구 열둘 × 사람 아홉(화면팀 포함 — K1)", () => {
+  it("케이스 하한 — 입구(06.2-03 열둘 + 06.2-04) × 사람 아홉(화면팀 포함 — K1)", () => {
     expect(VIEW_SCOPE_PEOPLE).toHaveLength(9);
     expect(VIEW_SCOPE_PROJECTS).toHaveLength(3);
-    expect(ENTRIES).toHaveLength(12);
-    expect(cases.length).toBeGreaterThanOrEqual(12 * 9);
+    expect(ENTRIES).toHaveLength(14);
+    expect(cases.length).toBeGreaterThanOrEqual(14 * 9);
   });
 
   it.each(cases)("$label", async ({ entry, person }) => {
@@ -235,6 +257,61 @@ describe("쓰기 입구 · 가시성 도우미 (06.2-03 Task 2)", () => {
     expect(await canOpenProject(w.people.X, w.projects.P2.id)).toBe(true);
     expect(await canOpenProject(w.people.대표, randomUUID())).toBe(false);
     expect(await canOpenProject(w.people.대표, "not-a-uuid")).toBe(false);
+  });
+});
+
+// 06.2-04 Task 1: 정산 머리 · 제출 · 결재자. 정산 머리는 정산 중 · 문서가 있어야 갈래가 갈려 매트릭스 밖에서 정산 중 프로젝트로 잰다.
+// 참여자의 정산 문서 보임은 canSeeSettlement의 work_scope 갈래(eng N2 — 06-19 이월)라 여기서 바꾸지 않는다.
+describe("정산 머리 · 제출 · 범위 밖 결재자 (06.2-04 Task 1)", () => {
+  async function settlingProject(teamId: string, pm: Viewer, label: string): Promise<string> {
+    const created = await createProject(SYSTEM_VIEWER, { clientId: w.clientId, teamId, pmUserId: pm.id, name: `정산 머리 ${label} ${randomUUID()}`, startDate: "2026-09-01", endDate: "2026-09-30" });
+    await db.update(projects).set({ status: "settling" }).where(eq(projects.id, created.id));
+    return created.id;
+  }
+
+  it("정산 머리 — 담당 PM(X)은 다른 팀 프로젝트에서도 올리기를 받고, 범위 밖 사람은 null이다(D-6218)", async () => {
+    const s3 = await settlingProject(w.teams.mgmt, w.people.X, "S3");
+    expect(await getSettlementHeader(w.people.X, { projectId: s3 })).toEqual({ statusWord: null, canSubmit: true });
+    for (const person of ["팀PM", "본부장", "무소속", "메뉴없음"] as const) {
+      expect(await getSettlementHeader(w.people[person], { projectId: s3 })).toBeNull();
+    }
+  });
+
+  it("정산 제출 — 범위 밖 사람의 id 직접 호출은 없음(권리 문구가 아니다)", async () => {
+    const s3 = await settlingProject(w.teams.mgmt, w.people.X, "S3 제출");
+    for (const person of ["팀PM", "본부장", "무소속"] as const) {
+      const attempt = submitSettlement(w.people[person], { projectId: s3 });
+      await expect(attempt).rejects.toThrow(NOT_FOUND_TEXT);
+      await expect(attempt).rejects.not.toBeInstanceOf(StatusForbiddenError);
+    }
+  });
+
+  it("정산 문서가 있으면 — 범위 안 본부장(P2 꼴)은 상태 낱말, 범위 밖 본부장(P3 꼴)은 null", async () => {
+    const s2 = await settlingProject(w.teams.plan2, w.people.X, "S2 문서");
+    const s3 = await settlingProject(w.teams.mgmt, w.people.X, "S3 문서");
+    await submitSettlement(w.people.X, { projectId: s2 });
+    await submitSettlement(w.people.X, { projectId: s3 });
+    expect(await getSettlementHeader(w.people.본부장, { projectId: s2 })).toEqual({ statusWord: "중", canSubmit: false });
+    expect(await getSettlementHeader(w.people.본부장, { projectId: s3 })).toBeNull();
+    expect(await getSettlement(w.people.본부장, { projectId: s3 })).toBeNull();
+  });
+
+  it("범위 밖 결재자(D-6205 ②)는 정산 문서 · 결재함 상세를 오류 없이 열고 두 합을 본다(06.2-03 넘김 — totalsOf)", async () => {
+    const fx = await setupSettlementProject();
+    await upsertSimpleValue(SYSTEM_VIEWER, APPROVAL_ROUTE_SETTLEMENT_STEP4_ROLE_ID.key, DIVISION_HEAD_ROLE_ID, null);
+    await upsertSimpleValue(SYSTEM_VIEWER, APPROVAL_ROUTE_SETTLEMENT_STEP4_SCOPE.key, "org_unit", null);
+    await upsertSimpleValue(SYSTEM_VIEWER, APPROVAL_ROUTE_SETTLEMENT_STEP4_ORG_UNIT_ID.key, await orgUnitIdByName("경영관리본부"), null);
+    const mgmtHead = await makePerson("경영본부장", DIVISION_HEAD_ROLE_ID, "경영관리팀");
+    await submitSettlement(fx.pm, { projectId: fx.projectId });
+    expect(await canOpenProject(mgmtHead, fx.projectId)).toBe(false);
+
+    const asApprover = await getSettlement(mgmtHead, { projectId: fx.projectId });
+    const asPm = await getSettlement(fx.pm, { projectId: fx.projectId });
+    expect(asApprover).not.toBeNull();
+    expect(asApprover?.quoteTotalKrw).toBeTypeOf("number");
+    expect({ quote: asApprover?.quoteTotalKrw, execution: asApprover?.executionTotalKrw }).toEqual({ quote: asPm?.quoteTotalKrw, execution: asPm?.executionTotalKrw });
+    const inbox = await listMyInbox(mgmtHead, { withDetails: true });
+    expect(inbox.mine.some((item) => item.detail?.rows.some((row) => row.label === "견적가 합"))).toBe(true);
   });
 });
 

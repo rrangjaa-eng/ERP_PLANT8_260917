@@ -439,6 +439,8 @@ export async function saveRevenue(
   input: SaveRevenueInput,
   deps?: Partial<RevenueWriteDeps>,
 ): Promise<RevenueDto | null> {
+  // 06.2 F-7: 쓰기 전에 범위 관문 — 범위 밖이면 존재를 새지 않는 없음(listRevenue와 같은 문구).
+  if (!(await findProjectInScope(viewer, await projectRowScope(viewer), projectId))) throw new ProjectNotFoundError("존재하지 않는 프로젝트");
   // 줄을 싣지 않으면 권한을 보지 않는다(saveRevenueInTx도 그때는 rights를 읽지 않는다).
   const rights = deps?.rights ?? (input.issuedEntries || input.paidEntries ? await revenueWriteRights(viewer, deps?.can) : { canWriteEntries: false });
   const fxToRemember = await withTransaction((tx) => saveRevenueInTx(viewer, projectId, input, { rights, recordAction: deps?.recordAction }, tx));

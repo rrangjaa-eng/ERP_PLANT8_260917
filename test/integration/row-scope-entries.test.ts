@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { corpCardUsages, projects, purchaseRequests } from "@/db/schema";
+import { corpCardUsages, projects, purchaseRequests, revenueEntries } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID, DIVISION_HEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { createProject, findProject, getProjectCopySource, loadProjectList } from "@/domain/projects";
@@ -20,7 +20,7 @@ import {
   SaveRejectedError,
 } from "@/domain/quotes/lines";
 import { canOpenProject } from "@/domain/projects/visibility";
-import { listRevenue } from "@/domain/revenue";
+import { listRevenue, saveRevenue } from "@/domain/revenue";
 import { listProjectIssueRequests } from "@/domain/issue-requests";
 import { getSettlement, getSettlementHeader, submitSettlement } from "@/domain/settlements";
 import { listMyInbox } from "@/domain/approvals";
@@ -351,6 +351,18 @@ describe("쓰기 입구 · 가시성 도우미 (06.2-03 Task 2)", () => {
     await expect(setCustomerApproval(w.people.팀PM, w.projects.P3.revisionId, null)).rejects.toBeInstanceOf(ProjectNotFoundError);
     const [row] = await db.select({ status: projects.status }).from(projects).where(eq(projects.id, w.projects.P3.id));
     expect(row?.status).toBe("bidding");
+  });
+
+  // F-7: saveRevenue는 쓰기 전에 범위를 본다 — 권리(rights)를 주입해 권한 문을 지나도 범위 밖이면 없음이고 줄이 남지 않는다.
+  it("매출 줄 저장(saveRevenue) — 범위 밖(팀PM → P3)이면 없음 · 쓰지 않는다", async () => {
+    const attempt = saveRevenue(
+      w.people.팀PM,
+      w.projects.P3.id,
+      { paidEntries: [{ entryDate: "2026-09-01", amount: { currency: "KRW", amount: 1_100_000, fxRate: 1 } }] },
+      { rights: { canWriteEntries: true } },
+    );
+    await expect(attempt).rejects.toThrow(NOT_FOUND_TEXT);
+    expect(await db.select({ id: revenueEntries.id }).from(revenueEntries).where(eq(revenueEntries.projectId, w.projects.P3.id))).toEqual([]);
   });
 
   it("정산 결재 경로(trigger approval + 결속 권한)는 범위와 무관하게 정산 → 완료", async () => {

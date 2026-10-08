@@ -166,8 +166,7 @@ const STATUS_WORDS: Record<string, string> = {
 
 type Totals = Partial<Pick<SettlementDocumentDto, "quoteTotalKrw" | "executionTotalKrw">>;
 
-// G4: 현재 차수 견적 줄의 견적가(원화) 합 · 실행가(원화 환산) 합 — 견적 줄 표가 그리는 같은 줄 DTO 값의 단순 합(새 계산 규칙 없음).
-// viewer가 `quote.amount`를 못 보면 줄 DTO에 두 필드가 없다(투영이 뺐음) — 그때는 합도 만들지 않는다.
+// G4: 현재 차수 견적 줄(보관 제외)의 견적가(원화) 합 · 실행가(원화 환산) 합 — 견적 줄 표가 그리는 같은 줄 값의 단순 합(새 계산 규칙 없음).
 // 06.2(D-6205 ② · 06.2-03 넘김): 두 합은 문서 보임(canSeeSettlement · 결재 엔진의 결재 관련자 판정) 뒤에만 읽는다(post-gate) —
 // 프로젝트 행 범위로 다시 거르지 않는다(범위 밖 결재자도 결재 근거를 오류 없이 본다). 금액 노출은 SETTLEMENT_DOCUMENT_DTO_SPEC의
 // `quote.amount` 투영이 가린다(견적 표 금액 열과 같은 항목 — 못 보면 키째 없다).

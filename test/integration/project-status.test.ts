@@ -380,7 +380,7 @@ describe("사람의 전환 넷 · 팀 범위 · 완료 주체 · 코드표 목�
     }
   });
 
-  it("(j) D11 — 다른 팀 팀장은 프로젝트가 안 보여 없음(06.2 D6), 보이지만 업무 범위 밖인 사람은 거부, 본부 책임자(전사)는 통과, 어제 팀을 옮긴 팀장은 오늘 옛 팀 프로젝트를 못 바꾼다", async () => {
+  it("(j) D11 — 다른 팀 팀장은 프로젝트가 안 보여 없음(06.2 D6), 보이지만 업무 범위 밖인 사람은 거부, 본부 책임자는 자기 본부 프로젝트만 통과(다른 본부는 없음), 어제 팀을 옮긴 팀장은 오늘 옛 팀 프로젝트를 못 바꾼다", async () => {
     const teamA = await makeTeam();
     const teamB = await makeTeam();
     const otherLead = await makeActor("role-team-lead", teamB);
@@ -402,6 +402,12 @@ describe("사람의 전환 넷 · 팀 범위 · 완료 주체 · 코드표 목�
 
     await changeProjectStatus(divisionHead, project.projectId, { from: "bidding", to: "lost" });
     expect((await reloadProject(project.projectId)).status).toBe("lost");
+    // 06.2(D-6203 · D-6219): 본부 책임자의 보는 범위는 org_unit — 다른 본부(makeTeam은 매번 새 본부) 프로젝트는 업무 범위가 전사여도 없음.
+    const otherDivisionProject = await makeStatusProject({ teamId: teamB, status: "bidding", startDate: "2099-10-01" });
+    await expect(
+      changeProjectStatus(divisionHead, otherDivisionProject.projectId, { from: "bidding", to: "lost" }),
+    ).rejects.toBeInstanceOf(ProjectNotFoundError);
+    expect((await reloadProject(otherDivisionProject.projectId)).status).toBe("bidding");
 
     // 2026-06-10에 팀 A → 팀 B 발령. 「오늘」을 2026-06-11(KST)로 주입한다.
     const movedLead = await makeActor("role-team-lead", teamA, "2026-01-01");

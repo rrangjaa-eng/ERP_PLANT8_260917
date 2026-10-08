@@ -10,4 +10,4 @@
 | test/integration/project-status.test.ts:483 「M1 — 전환 권한이 없는 담당 PM·다른 팀 팀장 …」 | GateBlockedError 대신 「존재하지 않는 프로젝트」(다른 팀 팀장 갈래) | 같음 | 같음 |
 | test/integration/vendor-kind.test.ts:239 「고정 — 견적 줄 거래처를 client로 바꿔도 …」 | 「존재하지 않는 차수」 | 06.2-03 listQuoteLines → canOpenRevision 관문 — 테스트 계급이 view_scope team · 팀 없음(Pitfall 2) 추정 | 이 플랜은 listQuoteLines · canOpenRevision을 고치지 않았다 |
 
-결정 필요(project-status 2건): 「다른 팀 프로젝트 · 상태 바꾸기 권한 없음」 문구는 view_scope team 사람에게 더는 닿지 않는다 — 테스트 기대를 404로 바꿀지, 게이트 문구를 살릴 계급(view_scope company · work_scope team)으로 테스트를 바꿀지는 06.2-03 후속(06.2-06 또는 검증 레인)이 정한다.
+결정(06.2-06에서 반영 · 독립 검토 F-1): project-status 2건은 테스트 기대를 「존재하지 않는 프로젝트」(ProjectNotFoundError)로 바꾼다 — D-6203 · D-6219가 본부 책임자를 company에서 org_unit으로 좁혔고 D-6206이 범위 밖을 404로 숨긴다. 옛 「다른 팀 프로젝트 · 상태 바꾸기 권한 없음」 문구는 보는 범위 company · 업무 범위 team 계급(프로젝트는 보이는데 업무 범위가 안 덮음)으로 따로 고정했다. 본부 책임자는 자기 본부 팀 프로젝트만 통과, 다른 본부는 없음. vendor-kind 1건은 Pitfall 2 픽스처(viewScope company)로 고쳤다.

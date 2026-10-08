@@ -67,7 +67,8 @@ test.describe("폰 375 — 「더보기」 안 `참여자 더하기`(S4)", () =>
     const dialog = page.getByRole("dialog", { name: "참여자 더하기" });
     await expect(dialog).toBeVisible();
     await dialog.getByRole("textbox", { name: "사람 검색" }).fill(fx.candidatePrefix);
-    // 검색 결과가 오기 전의 옛 목록에서 고르면 목록이 오는 동안 Enter · 1차가 꺼져 있다 — 접두 결과(셋)를 기다린 뒤 고른다.
+    // 검색 결과가 오기 전의 옛 목록(빈 검색어 결과도 셋일 수 있다)에서 고르면 목록이 오는 동안 Enter · 1차가 꺼져 있다 — 불러오는 중(aria-busy)이 걷힌 뒤 고른다.
+    await expect(dialog.locator('[aria-busy="true"]')).toHaveCount(0);
     await expect(dialog.getByRole("option")).toHaveCount(3);
     await dialog.getByRole("option", { name: new RegExp(c1.name) }).click();
     await dialog.getByRole("button", { name: /^참여자 더하기 1/ }).click();
@@ -94,7 +95,8 @@ test.describe("폰 375 — 「더보기」 안 `참여자 더하기`(S4)", () =>
     await tertiary.click();
     const dialog = page.getByRole("dialog", { name: "참여자 더하기" });
     await dialog.getByRole("textbox", { name: "사람 검색" }).fill(fx.candidatePrefix);
-    // 검색 결과가 오기 전의 옛 목록에서 고르면 목록이 오는 동안 Enter · 1차가 꺼져 있다 — 접두 결과(셋)를 기다린 뒤 고른다.
+    // 검색 결과가 오기 전의 옛 목록(빈 검색어 결과도 셋일 수 있다)에서 고르면 목록이 오는 동안 Enter · 1차가 꺼져 있다 — 불러오는 중(aria-busy)이 걷힌 뒤 고른다.
+    await expect(dialog.locator('[aria-busy="true"]')).toHaveCount(0);
     await expect(dialog.getByRole("option")).toHaveCount(3);
     await dialog.getByRole("option", { name: new RegExp(c1.name) }).click();
     await page.keyboard.press("Enter");

@@ -1,0 +1,96 @@
+import { describe, expect, it } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
+import { projects } from "@/db/schema";
+import type { RowScope } from "@/domain/permissions/scope-for";
+import { rowScopeCondition } from "@/repositories/row-scope";
+
+// 06.2-03(D-6204 · D-6205 ① · ③ · D-6207 · T-06.2-21 · T-06.2-24 · CSO-4): 행 범위 번역기 — DB 없이 생성 SQL로 fail-closed를 고정한다.
+// 주 증거는 통합 매트릭스(test/integration/row-scope-entries.test.ts), 이 파일은 갈래마다 조각이 빠지지 않는다는 보조 증거다.
+
+const dialect = new PgDialect();
+const COLS = { projectId: projects.id, teamId: projects.teamId, pmUserId: projects.pmUserId };
+const VIEWER = "user-viewer-1";
+const TEAM = "11111111-1111-4111-8111-111111111111";
+const ORG = "22222222-2222-4222-8222-222222222222";
+
+function render(scope: RowScope): { sql: string; params: unknown[] } {
+  const query = dialect.sqlToQuery(rowScopeCondition(scope, COLS));
+  return { sql: query.sql, params: query.params };
+}
+
+const limited = (by: Extract<RowScope, { rows: "limited" }>["by"]): RowScope => ({ rows: "limited", includeArchived: false, viewerId: VIEWER, by });
+
+// PM · 참여 OR 조각 — 범위와 무관하게 늘 있다(D-6205 ① · ③).
+function expectPmAndMember(out: { sql: string; params: unknown[] }) {
+  expect(out.sql).toContain('"projects"."pm_user_id" = $');
+  expect(out.sql).toMatch(/exists \(select 1 from "project_members"/);
+  expect(out.sql).toContain('"project_members"."project_id" = "projects"."id"');
+  expect(out.sql).toContain('"project_members"."user_id" = $');
+  expect(out.sql).toContain('"project_members"."archived_at" is null');
+  expect(out.params.filter((value) => value === VIEWER)).toHaveLength(2);
+  expect(out.sql).toMatch(/ or /);
+}
+
+describe("rowScopeCondition (06.2 행 범위 번역기)", () => {
+  it("none → false (조각 없음)", () => {
+    const out = render({ rows: "none", includeArchived: true });
+    expect(out.sql.trim()).toBe("false");
+    expect(out.params).toEqual([]);
+  });
+
+  it("all → true", () => {
+    const out = render({ rows: "all", includeArchived: false });
+    expect(out.sql.trim()).toBe("true");
+    expect(out.params).toEqual([]);
+  });
+
+  it("limited team(T) → PM · 참여 · 살아 있는 팀 비교가 OR로", () => {
+    const out = render(limited({ kind: "team", teamId: TEAM }));
+    expectPmAndMember(out);
+    expect(out.sql).toContain('"projects"."team_id" = $');
+    expect(out.params).toContain(TEAM);
+  });
+
+  it("limited team(T) — 보관된 팀 발령은 팀 범위를 주지 않는다(팀 조각이 보관 아닌 팀만 잇는다)", () => {
+    const out = render(limited({ kind: "team", teamId: TEAM }));
+    expect(out.sql).toMatch(/exists \(select 1 from "teams" "scope_team" where "scope_team"\."id" = \$\d+ and "scope_team"\."archived_at" is null\)/);
+  });
+
+  it("limited team(null) → 팀 조각은 false, PM · 참여는 그대로 OR (CSO-4 — 조각이 사라져 전 행이 되지 않는다)", () => {
+    const out = render(limited({ kind: "team", teamId: null }));
+    expectPmAndMember(out);
+    expect(out.sql).not.toContain('"projects"."team_id"');
+    expect(out.sql).toMatch(/ or false\)$/);
+    expect(out.sql.trim()).not.toBe("true");
+    expect(out.params).not.toContain(null);
+  });
+
+  it("limited org_unit(O) → teams 하위 질의 org_unit_id 비교", () => {
+    const out = render(limited({ kind: "org_unit", orgUnitId: ORG }));
+    expectPmAndMember(out);
+    expect(out.sql).toMatch(/"projects"\."team_id" in \(select "scope_team"\."id" from "teams" "scope_team" where "scope_team"\."org_unit_id" = \$\d+\)/);
+    expect(out.params).toContain(ORG);
+  });
+
+  it("limited org_unit(null) → 본부 조각은 false, PM · 참여는 그대로 OR (CSO-4)", () => {
+    const out = render(limited({ kind: "org_unit", orgUnitId: null }));
+    expectPmAndMember(out);
+    expect(out.sql).not.toContain('"projects"."team_id"');
+    expect(out.sql).toMatch(/ or false\)$/);
+    expect(out.params).not.toContain(null);
+  });
+
+  it("own → PM · 참여 둘만 (범위 조각 false)", () => {
+    const out = render(limited({ kind: "own" }));
+    expectPmAndMember(out);
+    expect(out.sql).not.toContain('"projects"."team_id"');
+    expect(out.sql).toMatch(/ or false\)$/);
+  });
+
+  it("viewerId는 문자열 보간이 아니라 파라미터로만 간다(T-06.2-25)", () => {
+    const hostile = "x' or 1=1 --";
+    const query = dialect.sqlToQuery(rowScopeCondition({ rows: "limited", includeArchived: false, viewerId: hostile, by: { kind: "own" } }, COLS));
+    expect(query.sql).not.toContain(hostile);
+    expect(query.params).toContain(hostile);
+  });
+});

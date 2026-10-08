@@ -31,7 +31,7 @@ const INFO_ITEMS = ["expense.value", "expense.amount", "approval.value", "projec
 // 테스트 계급 「경영관리」 — 전사 업무 범위 · 지출결의 보기 + 지급 처리 쓰기(06-27 「C9-종결키」 — 종결 권한). 결재선 밖 전용 본부 · 팀.
 async function makePayerE2E(): Promise<Person> {
   const suffix = randomUUID().slice(0, 8);
-  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E종결-${suffix}`, workScope: "company" });
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E종결-${suffix}`, workScope: "company", viewScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "view", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.payments", action: "write", allowed: true });
   for (const infoItem of INFO_ITEMS) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });

@@ -23,7 +23,7 @@ const PREPAID_REASON = "행사 장소 선결제 요구로 증빙을 지급 뒤�
 // 테스트 계급 「경영관리」 — 전사 업무 범위 · 지출결의 보기 + 지급 처리 쓰기. 결재선 밖 전용 본부 · 팀에 발령한다.
 async function makePayerE2E(): Promise<Person> {
   const suffix = randomUUID().slice(0, 8);
-  const role = await insertTempRole({ id: `role-${randomUUID()}`, name: `E2E지급-${suffix}`, workScope: "company" });
+  const role = await insertTempRole({ id: `role-${randomUUID()}`, name: `E2E지급-${suffix}`, workScope: "company", viewScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "view", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.payments", action: "write", allowed: true });
   for (const infoItem of INFO_ITEMS) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });

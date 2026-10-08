@@ -49,7 +49,8 @@ test.describe("폰 375 /admin/corp-cards 3차 버튼·터치 목표 (defect 4)",
     await page.getByLabel("별칭").fill("폰카드1");
     await page.getByLabel("소지자").selectOption({ label: "폰카드소지자" });
     await page.getByRole("button", { name: "법인카드 등록" }).click();
-    await expect(page.getByText("폰카드1")).toBeVisible();
+    // 다른 스펙의 사람 이름(「폰카드」+uuid 4자리, 예: 폰카드141a)과 부분 일치하지 않게 정확히 맞춘다.
+    await expect(page.getByText("폰카드1", { exact: true })).toBeVisible();
 
     const toggleButton = page.getByRole("button", { name: "비활성화" }).first();
     const box = await toggleButton.boundingBox();

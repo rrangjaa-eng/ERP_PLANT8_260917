@@ -35,7 +35,8 @@ import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 type Menu = { menu: string; action: "view" | "write" };
 
 async function makeViewer(menus: Menu[], infoItems: string[] = ["project.value", "quote.amount"]): Promise<Viewer> {
-  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `차수 계급-${randomUUID()}` });
+  // 06.2(Pitfall 2): 노출 · 권한만 재는 계급 — DB 기본 보는 범위 team에 팀 없는 사람은 0행이라 company로 둔다.
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `차수 계급-${randomUUID()}`, viewScope: "company" });
   const { userId } = await createAccount(SYSTEM_VIEWER, {
     email: `rev-${randomUUID()}@example.test`,
     name: "차수 테스트 사람",

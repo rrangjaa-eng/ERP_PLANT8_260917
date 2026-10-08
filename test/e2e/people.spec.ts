@@ -299,7 +299,8 @@ test.describe("사람 · 조직 · 계급 옆 패널 (04.6-14)", () => {
       const opener = page.getByRole("link", { name: link, exact: true });
       await opener.click();
       const panel = sidePanel(page);
-      await expect(panel).toBeVisible();
+      // `?new=1`은 서버 화면을 다시 그린다 — CI 샤드 뒤쪽엔 앞 스펙이 만든 사람이 1,300명을 넘어(페이지 나눔 없음) 5초를 넘긴다(#187 CI 두 번).
+      await expect(panel).toBeVisible({ timeout: 15_000 });
       await expect(panel.getByRole("heading", { name: title, level: 2 })).toBeVisible();
       await expect(panel.locator(`${form} input:not([type=hidden])`).first()).toBeFocused();
       expect(await firstRowTop(page)).toBe(topBefore);

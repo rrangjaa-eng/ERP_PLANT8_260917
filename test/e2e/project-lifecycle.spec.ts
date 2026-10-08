@@ -29,11 +29,11 @@ async function makeAccount(roleId: string, teamId?: string): Promise<Account> {
   return { userId, email, password: tempPassword };
 }
 
-async function makeTeam(): Promise<{ id: string; name: string }> {
+async function makeTeam(): Promise<{ id: string; name: string; orgUnitId: string }> {
   const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E본부-${randomUUID()}` });
   const name = `E2E팀-${randomUUID().slice(0, 8)}`;
   const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name });
-  return { id: team.id, name };
+  return { id: team.id, name, orgUnitId: orgUnit.id };
 }
 
 async function login(page: Page, account: Account) {
@@ -613,7 +613,9 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
     const otherTeam = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
     const otherLead = await makeAccount("role-team-lead", otherTeam.id);
-    const divisionHead = await makeAccount("role-division-head");
+    // 06.2(D-6203 · D-6207): 본부 책임자는 본부 보기 범위라 그 본부 팀에 발령해야 프로젝트가 보인다 — 같은 본부의 다른 팀에 둔다(쓰기는 전사 work_scope).
+    const siblingTeam = await createTeam(SYSTEM_VIEWER, { orgUnitId: team.orgUnitId, name: `E2E팀-${randomUUID().slice(0, 8)}` });
+    const divisionHead = await makeAccount("role-division-head", siblingTeam.id);
     const project = await makeProject({
       teamId: team.id,
       pmUserId: pm.userId,
@@ -625,12 +627,14 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
 
     await login(page, otherLead);
     await page.goto(`/projects/${project.id}`);
-    await expect(page.getByRole("heading", { name: project.name })).toBeVisible();
+    // 06.2(D-6206 · D-6219): 팀장은 팀 보기 범위라 다른 팀 프로젝트 상세는 「없음」(404)이다.
+    await expect(page.getByRole("heading", { name: "페이지 찾을 수 없음" })).toBeVisible();
     await expect(page.getByRole("button", { name: "상태 바꾸기" })).toHaveCount(0);
     await logout(page);
 
     await login(page, divisionHead);
     await page.goto(`/projects/${project.id}`);
+    await expect(page.getByRole("heading", { name: project.name })).toBeVisible();
     await expect(page.getByRole("button", { name: "상태 바꾸기" })).toBeVisible();
   });
 

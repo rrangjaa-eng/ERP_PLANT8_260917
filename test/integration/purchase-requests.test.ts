@@ -1092,9 +1092,11 @@ async function updateUsage(viewer: Awaited<ReturnType<typeof makePerson>>, input
 }
 
 // 대리 등록 권한자(`cards.proxy` write) — 구매 권한은 없다(O-11 권리는 있음).
-async function proxyOnly(): Promise<Awaited<ReturnType<typeof makePerson>>> {
-  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `대리-${randomUUID().slice(0, 8)}`, workScope: "team" });
+// seesProjects: 06.2 F-3 — 고정 연결 상한 문구의 담당 PM 이름은 프로젝트 범위 안에서만 나온다. 이름까지 재는 테스트는 프로젝트 보기 + 보는 범위 전사를 준다.
+async function proxyOnly(opts: { seesProjects?: boolean } = {}): Promise<Awaited<ReturnType<typeof makePerson>>> {
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `대리-${randomUUID().slice(0, 8)}`, workScope: "team", ...(opts.seesProjects ? { viewScope: "company" } : {}) });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "cards.proxy", action: "write", allowed: true });
+  if (opts.seesProjects) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
   for (const infoItem of ["project.value", "quote.amount", "card_usage.value", "card_usage.amount"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
   const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `대리본부-${randomUUID()}` });
   const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `대리팀-${randomUUID()}` });
@@ -2008,7 +2010,7 @@ describe("[183 /review I-1] 완료 프로젝트 · capOver 구매 건 수정", (
 
   it("금액을 늘리면 → 거부 `실행가 초과 · 남은 실행가 400,000 · 견적 줄은 담당 PM 박서연`(다른 줄 고르기 없음) · 금액 그대로", async () => {
     const { usageId } = await settledOverPurchase();
-    const error = await caught(updateUsage(await proxyOnly(), await cardUpdateInput(usageId, { total: { currency: "KRW", amount: 438_001, fxRate: 1 } })));
+    const error = await caught(updateUsage(await proxyOnly({ seesProjects: true }), await cardUpdateInput(usageId, { total: { currency: "KRW", amount: 438_001, fxRate: 1 } })));
     expect(error).toBeInstanceOf(GateBlockedError);
     expect((error as Error).message).toBe(PM_CAP("400,000"));
     expect((await usageRow(usageId)).supplyKrw).toBe(438_000);

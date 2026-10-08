@@ -279,7 +279,8 @@ describe("domain/quotes/lines saveQuoteLines — 배치 충돌·전부 거부(04
 describe("domain/quotes/lines saveQuoteLines — 거래처 충돌 이유의 거래처 이름", () => {
   async function createSaver(visible: string[]): Promise<Viewer> {
     const roleId = `role-${randomUUID()}`;
-    await insertRole(SYSTEM_VIEWER, { id: roleId, name: `계급 ${roleId.slice(5, 13)}` });
+    // 06.2(Pitfall 2): 노출 · 권한만 재는 계급 — 보는 범위 company.
+    await insertRole(SYSTEM_VIEWER, { id: roleId, name: `계급 ${roleId.slice(5, 13)}`, viewScope: "company" });
     await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "projects", action: "view", allowed: true });
     await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "projects", action: "write", allowed: true });
     for (const infoItem of visible) await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem, visible: true });

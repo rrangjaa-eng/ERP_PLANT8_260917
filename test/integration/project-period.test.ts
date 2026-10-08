@@ -23,7 +23,8 @@ import type { ProjectStatus } from "@/domain/projects/status-transitions";
 import { recordAction } from "@/domain/action-log/record";
 import { setPermissionCell, setVisibilityCell } from "@/domain/permissions/matrix";
 import { seedMasterData } from "@/domain/seed";
-import { findPermission } from "@/repositories/permissions";
+import { findPermission, upsertPermission } from "@/repositories/permissions";
+import { insertRole } from "@/repositories/roles";
 import { log } from "@/lib/log";
 import { addDays, kstDayStart, kstToday } from "@/lib/kst-date";
 import { gate } from "@/domain/rules/gate";
@@ -323,11 +324,30 @@ describe("기간 저장 — 행위자 · 권리 · 검증 (04-22 Task 2)", () =>
     expect((await reload(s.projectId)).endDate).toBe(s.endDate);
   });
 
-  it("(h) 다른 팀 팀장(업무 범위 team)의 정산 연장은 「기간 바꾸기 권한 없음」 · 본부 책임자(전사)는 통과", async () => {
+  it("(h) 다른 팀 팀장(보는 범위 team)에게는 프로젝트가 없다(06.2 D6) · 보이지만 업무 범위 밖이면 「기간 바꾸기 권한 없음」 · 본부 책임자(전사)는 통과", async () => {
     const s = await setup({ status: "settling", startDate: addDays(TODAY, -10), endDate: addDays(TODAY, -1) });
-    const otherLead = await makeViewer("role-team-lead", await makeTeam());
+    const otherTeamId = await makeTeam();
+    const otherLead = await makeViewer("role-team-lead", otherTeamId);
 
-    const denied = await saveProjectLedger(otherLead, s.projectId, {
+    // 06.2(D6): 보는 범위가 team인 다른 팀 팀장은 범위 밖 — 권한 문구 대신 「존재하지 않는 프로젝트」.
+    const hidden = await saveProjectLedger(otherLead, s.projectId, {
+      seenStatus: "settling",
+      period: period(s, { endDate: addDays(TODAY, 5) }),
+    }).catch((error: unknown) => error);
+    expect(hidden).toBeInstanceOf(Error);
+    expect(hidden).not.toBeInstanceOf(PeriodRejectedError);
+    expect(String(hidden)).toContain("존재하지 않는 프로젝트");
+    expect((await reload(s.projectId)).status).toBe("settling");
+
+    // 보는 범위 company · 업무 범위 team인 계급(화면 계급은 K1로 둘이 같다) — 프로젝트는 보이는데 업무 범위가 덮지 않는다.
+    const roleId = `role-${randomUUID()}`;
+    await insertRole(SYSTEM_VIEWER, { id: roleId, name: `전사 열람 팀장-${randomUUID()}`, workScope: "team", viewScope: "company" });
+    for (const menu of ["projects", "projects.period"]) {
+      await upsertPermission(SYSTEM_VIEWER, { roleId, menu, action: "view", allowed: true });
+      await upsertPermission(SYSTEM_VIEWER, { roleId, menu, action: "write", allowed: true });
+    }
+    const otherCompanyViewLead = await makeViewer(roleId, otherTeamId);
+    const denied = await saveProjectLedger(otherCompanyViewLead, s.projectId, {
       seenStatus: "settling",
       period: period(s, { endDate: addDays(TODAY, 5) }),
     }).catch((error: unknown) => error);
@@ -335,7 +355,8 @@ describe("기간 저장 — 행위자 · 권리 · 검증 (04-22 Task 2)", () =>
     expect(String(denied)).toContain("기간 바꾸기 권한 없음");
     expect((await reload(s.projectId)).status).toBe("settling");
 
-    const divisionHead = await companyViewer("role-division-head");
+    // 06.2(D-6203): 본부 책임자의 보는 범위는 org_unit — 프로젝트 팀의 본부에 발령한다(업무 범위는 전사 그대로).
+    const divisionHead = await makeViewer("role-division-head", s.teamId);
     await saveProjectLedger(divisionHead, s.projectId, { seenStatus: "settling", period: period(s, { endDate: addDays(TODAY, 5) }) });
     expect((await reload(s.projectId)).status).toBe("in_progress");
   });

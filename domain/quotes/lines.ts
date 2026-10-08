@@ -75,6 +75,7 @@ import { EVIDENCE_PREPAID_DUE_DAYS, QUOTE_LINE_MAX_PER_REVISION } from "@/domain
 import { ownersWithEvidence } from "@/domain/evidence/has-evidence";
 import { prepaidDueInfo } from "@/domain/evidence-reviews/prepaid";
 import { seoulToday } from "@/lib/dates";
+import { canOpenRevision } from "@/domain/projects/visibility";
 
 export class ForbiddenError extends UserFacingError {}
 export class RevisionNotFoundError extends UserFacingError {}
@@ -281,6 +282,7 @@ async function quoteLineCustomFieldsSchema(viewer: Viewer) {
 export type CurrentQuoteRevisionInfo = { id: string; seq: number; approved: boolean };
 
 // 잠긴 트랜잭션 안에서 부를 때는 tx를 넘긴다(04-32 — 잠금 안 전역 db 호출 금지).
+// 06.2: 호출 전 가시성 판정 전제(post-gate) — 06.2-04 구조 테스트. 잠근 트랜잭션 안에서도 불려 전역 db 판정을 넣지 않는다.
 export async function getCurrentQuoteRevision(
   viewer: Viewer,
   projectId: string,
@@ -325,6 +327,7 @@ export type LinkedDocumentsByLine = Map<string, LinkedDocument[]>;
 
 // 04-14(D-55) — 문서 출처(줄 id별 번호 있는 지출결의)를 계보 해석으로 현재 차수 줄에 잇는다. 조회 지점은 이 함수 하나다.
 // domain/expenses를 import하지 않고 리포지토리 한 쿼리로 읽는다(순환 금지).
+// 06.2: 호출 전 가시성 판정 전제(post-gate) — 06.2-04 구조 테스트. 잠근 트랜잭션 안에서도 불려 전역 db 판정을 넣지 않는다.
 export function linkedDocumentsByLine(viewer: Viewer, revisionId: string, tx?: DbOrTx): Promise<LinkedDocumentsByLine> {
   return loadLinkedDocumentsByLine(viewer, revisionId, tx);
 }
@@ -444,7 +447,9 @@ async function projectLines(
   return (await projectMany(viewer, projectables, QUOTE_LINE_DTO_SPEC)) as QuoteLineDto[];
 }
 
+// 06.2(Pitfall 1 · M2 · D-6206): 차수 id만 알아도 열리던 입구 — 그 차수의 프로젝트가 보이지 않으면 없음.
 export async function listQuoteLines(viewer: Viewer, revisionId: string, ctx: QuoteLineListCtx): Promise<QuoteLineDto[]> {
+  if (!(await canOpenRevision(viewer, revisionId))) throw new RevisionNotFoundError("존재하지 않는 차수");
   const [rows, revision] = await Promise.all([repoListQuoteLinesByRevision(viewer, revisionId), repoFindQuoteRevisionById(viewer, revisionId)]);
   const approvedSeq = revision?.customerApprovedAt ? revision.seq : null;
   return projectLines(viewer, rows, { ...ctx, approvedSeq }, await linkedDocumentsByLine(viewer, revisionId));
@@ -810,6 +815,8 @@ export async function prepareQuoteLineSave(
     throw new ForbiddenError("견적 금액을 볼 수 없어 견적 줄 저장 불가");
   }
 
+  // 06.2(Pitfall 1 · M2): 권리 판정 다음 · 트랜잭션 전 — 범위 밖 차수는 없는 차수와 같은 문구.
+  if (!(await canOpenRevision(viewer, revisionId))) throw new RevisionNotFoundError("존재하지 않는 차수");
   const revision = await repoFindQuoteRevisionById(viewer, revisionId);
   if (!revision) throw new RevisionNotFoundError("존재하지 않는 차수");
 
@@ -999,6 +1006,7 @@ export type WrittenQuoteLines = {
 // 있으면 재전송 판정), 기존 줄의 sort_order는 `order`가 있을 때만 다시 쓴다(version 그대로), 보관도 같은 tx
 // (f) 행동 로그(같은 tx — 되돌린 저장은 로그도 없다) (g) 활성 줄 전체. 이 단계는 풀을 부르지 않는다 — 모든
 // 리포지토리 호출이 tx를 받는다. 04-26의 줄 수 상한은 (d) 끝에서 실제로 새로 들어갈 줄 수를 센다.
+// 06.2: 호출 전 가시성 판정 전제(post-gate) — 06.2-04 구조 테스트. 잠근 트랜잭션 안에서도 불려 전역 db 판정을 넣지 않는다.
 export async function writeQuoteLinesInTx(
   viewer: Viewer,
   prepared: PreparedQuoteLineSave,
@@ -1336,6 +1344,8 @@ export async function restoreQuoteLine(
   const line = await repoFindQuoteLineById(viewer, id);
   const revision = line ? await repoFindQuoteRevisionById(viewer, line.revisionId) : null;
   if (!line || !revision) throw new RevisionNotFoundError("대상 찾을 수 없음");
+  // 06.2(Pitfall 1): 줄 → 차수 → 프로젝트 범위. 범위 밖 줄은 없는 줄과 같은 문구.
+  if (!(await canOpenRevision(viewer, line.revisionId))) throw new RevisionNotFoundError("대상 찾을 수 없음");
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   // 04-26(A-19 · ENG-D3 ①) — 상한 값은 트랜잭션 전에 읽는다. 복원도 줄 하나를 더하는 것이라 같은 상한을 지난다.
   const lineCap = await getSettingValue(QUOTE_LINE_MAX_PER_REVISION);
@@ -1375,6 +1385,7 @@ export async function restoreQuoteLine(
 
 // 06-07(O-8 · X-6) — 카드 사용 등록 트랜잭션 안에서 견적 외 비용 줄 하나를 현재 차수 끝에 만든다(견적가 0 · 실행가 = 카드 공급가).
 // tx를 받는 리포지토리만 부른다(06-03 tx 규약) — 권한 · 현재 차수 · 완료 판정은 호출자의 사전 조회와 잠근 뒤 `project.line-edit`가 끝냈다.
+// 06.2: 호출 전 가시성 판정 전제(post-gate) — 06.2-04 구조 테스트. 잠근 트랜잭션 안에서도 불려 전역 db 판정을 넣지 않는다.
 export async function createOutOfQuoteLine(
   viewer: Viewer,
   input: { revisionId: string; itemName: string; executionKrw: number },

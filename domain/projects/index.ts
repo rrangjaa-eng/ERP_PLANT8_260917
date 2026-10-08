@@ -1,6 +1,7 @@
 import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
-import { scopeFor } from "@/domain/permissions/scope-for";
+import type { RowScope } from "@/domain/permissions/scope-for";
+import { projectRowScope } from "@/domain/projects/visibility";
 import { project, projectMany, type DtoSpec, type ProjectDeps } from "@/domain/permissions/project";
 import { visible as defaultVisible } from "@/domain/permissions/visible";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
@@ -39,7 +40,7 @@ import { rememberFxAfterCommit } from "@/domain/quotes/lines";
 import {
   listProjectsPage as repoListProjectsPage,
   aggregateProjects as repoAggregateProjects,
-  findProjectById as repoFindProjectById,
+  findProjectInScope,
   insertProject as repoInsertProject,
   PROJECT_SORT_KEYS,
   type ProjectListFilter,
@@ -329,7 +330,7 @@ export type ProjectListResult = {
 
 export type ProjectListDeps = {
   now: () => Date;
-  scope: typeof scopeFor;
+  scope: (viewer: Viewer) => Promise<RowScope>;
   settle: (viewer: Viewer) => Promise<void>;
   repo: { aggregate: typeof repoAggregateProjects; listPage: typeof repoListProjectsPage };
   teams: typeof repoListTeams;
@@ -356,7 +357,7 @@ export async function loadProjectList(
   const projectDeps = deps?.visible ? { visible: deps.visible } : undefined;
 
   await (deps?.settle ?? settleForProjectList)(viewer);
-  const scope = await (deps?.scope ?? scopeFor)(viewer, PROJECT_ENTITY);
+  const scope = await (deps?.scope ?? projectRowScope)(viewer);
 
   // 04-48(C-08) — URL 값은 여기서 한 번 정규화한 뒤에만 쓴다(배열 첫 값 · 팀은 uuid 모양 + 고를 수 있는 팀 · 연도
   // 2000–2100). 팀 목록은 필터 줄과 같은 조회이고, uuid 모양의 팀 값이 왔을 때만 읽는다.
@@ -454,6 +455,7 @@ export async function loadProjectList(
 const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // 04-11(D-76 · 엔지 리뷰 A P3): 행 범위와 id 모양을 확인한 뒤에만 자동 정산을 판정한다 —
+// 06.2: 행 범위 = 그 프로젝트가 보이는지까지(eng N7 — 범위 밖 사람이 404 전에 상태 쓰기를 일으키지 않는다).
 // 보기 권한 없는 요청과 틀린 URL id는 쓰기도 실패 로그도 만들지 않는다. 판정 실패는
 // applyAutoSettlement가 로그만 남기고 삼킨다(읽기는 저장된 상태로 계속된다).
 export async function findProject(
@@ -461,13 +463,15 @@ export async function findProject(
   id: string,
   deps?: { autoSettlement?: Partial<AutoSettlementDeps> },
 ): Promise<ProjectDto | null> {
-  const scope = await scopeFor(viewer, PROJECT_ENTITY);
+  const scope = await projectRowScope(viewer);
   if (scope.rows === "none") return null;
   if (!UUID_SHAPE.test(id)) return null;
+  if (!(await findProjectInScope(viewer, scope, id))) return null;
 
   await applyAutoSettlement({ projectIds: [id] }, deps?.autoSettlement);
 
-  const row = await repoFindProjectById(viewer, id);
+  // 정산으로 상태가 바뀌었을 수 있어 다시 읽는다.
+  const row = await findProjectInScope(viewer, scope, id);
   if (!row) return null;
   if (row.archivedAt !== null && !scope.includeArchived) return null;
 
@@ -479,7 +483,7 @@ export async function findProject(
 // SKIP LOCKED로 서로를 건너뛰면 목록과 합계의 정산 건수가 어긋난다). 보기 권한이 없으면
 // 아무것도 하지 않는다.
 export async function settleForProjectList(viewer: Viewer, deps?: Partial<AutoSettlementDeps>): Promise<void> {
-  const scope = await scopeFor(viewer, PROJECT_ENTITY);
+  const scope = await projectRowScope(viewer);
   if (scope.rows === "none") return;
   await applyAutoSettlement({}, deps);
 }
@@ -542,9 +546,9 @@ const COPY_SOURCE_MISSING = "복사할 프로젝트 없음 · 새로 고침";
 
 // 04-15 — 복사 출처는 보는 사람의 행 범위 안 · 보관 안 된 프로젝트만. 보관함을 볼 수 있어도 보관된 프로젝트는 출처가 아니다.
 async function findCopySourceRow(viewer: Viewer, id: string): Promise<ProjectRow | null> {
-  const scope = await scopeFor(viewer, PROJECT_ENTITY);
+  const scope = await projectRowScope(viewer);
   if (scope.rows === "none" || !UUID_SHAPE.test(id)) return null;
-  const row = await repoFindProjectById(viewer, id);
+  const row = await findProjectInScope(viewer, scope, id);
   if (!row || row.archivedAt !== null) return null;
   return row;
 }

@@ -33,10 +33,13 @@ export function uniqueBusinessNo(): string {
 // 계급만 「E2E Admin」이고 나머지는 전부 「E2E Employee」다 — E2E 스펙이
 // 이미 이 두 문자열로 사용자 메뉴 트리거 등을 찾는다(기존 계약 유지).
 // withTeam — 새 팀에 과거 날짜로 발령한다. 팀 업무 범위 계급은 내 팀으로만 프로젝트를 등록할 수 있다.
+// teamId — 06.2(D-6203): 팀 범위 뷰어가 같은 팀 프로젝트를 보게 — 새 본부 · 팀을 만들지 않고 기존 팀에 같은 날짜로 발령한다.
+// 반환 teamId는 만들었거나 받은 팀(팀 없으면 null) — 다른 사용자를 같은 팀에 둘 때 쓴다.
 export async function createFixtureUser(options: {
   roleId: string;
   withTeam?: boolean;
-}): Promise<{ email: string; password: string }> {
+  teamId?: string;
+}): Promise<{ email: string; password: string; teamId: string | null }> {
   const email = `e2e-${randomUUID()}@example.test`;
   const name = options.roleId === SYSADMIN_ROLE_ID ? "E2E Admin" : "E2E Employee";
   const { userId, tempPassword } = await createAccount(SYSTEM_VIEWER, {
@@ -44,13 +47,17 @@ export async function createFixtureUser(options: {
     name,
     roleId: options.roleId,
   });
-  if (options.withTeam) {
+  let teamId: string | null = null;
+  if (options.teamId) {
+    teamId = options.teamId;
+  } else if (options.withTeam) {
     const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E본부-${randomUUID()}` });
     // 팀 이름은 /projects 팀 필터 select 폭을 정한다 — 전체 UUID면 375px를 넘친다(projects-list-number-nowrap).
     const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E팀-${randomUUID().slice(0, 8)}` });
-    await assignTeam(SYSTEM_VIEWER, { userId, teamId: team.id, effectiveFrom: "2020-01-01" });
+    teamId = team.id;
   }
-  return { email, password: tempPassword };
+  if (teamId) await assignTeam(SYSTEM_VIEWER, { userId, teamId, effectiveFrom: "2020-01-01" });
+  return { email, password: tempPassword, teamId };
 }
 
 // 04.5: 이 페이즈의 E2E는 만든 화면 항목(칸 정의)을 끝에 항상 보관한다 — 뒤 스펙(거래처 · 노출표)에 칸이 남지 않게.

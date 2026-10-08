@@ -11,6 +11,8 @@ import {
   type ArchivedItem,
 } from "@/repositories/archive";
 import { findUserById as defaultFindUserById } from "@/repositories/users";
+import { listProjectIdsInScope } from "@/repositories/projects";
+import { projectRowScope } from "@/domain/projects/visibility";
 import { findVendorById, findVendorsByBusinessNoDigits } from "@/repositories/vendors";
 import { BUSINESS_NO_UNIQUE_INDEX, businessNoDigits } from "@/domain/vendors";
 import { isUniqueViolation } from "@/lib/pg-errors";
@@ -219,7 +221,13 @@ export async function listArchive(viewer: Viewer, deps?: Partial<ListArchiveDeps
   const showReserves = await canViewReserves(viewer);
   // 04.5-04(O21) — 추가 권한 조건이 있는 항목은 그 메뉴 보기 권한이 없으면 행을 뺀다(항목마다 한 번 판정).
   const hiddenEntities = await entitiesWithoutRequired(viewer, canFn, "view");
-  const rows = (await listFn(viewer)).filter((row) => (row.entity !== "reserve_entry" || showReserves) && !hiddenEntities.has(row.entity));
+  const listed = (await listFn(viewer)).filter((row) => (row.entity !== "reserve_entry" || showReserves) && !hiddenEntities.has(row.entity));
+  // 06.2(I-2): 보관된 견적 줄은 그 줄의 프로젝트를 볼 수 있는 사람에게만 — 범위 밖 프로젝트의 품목 이름이 보관함으로 새지 않게.
+  // 보관함 메뉴는 관리자 화면이지만 줄 이름은 프로젝트 정보다 — 예외로 두지 않고 거른다(06.2-03 독립 검토 I-2).
+  const lineProjectIds = [...new Set(listed.flatMap((row) => (row.entity === "quote_line" && row.projectId ? [row.projectId] : [])))];
+  const seenProjects =
+    lineProjectIds.length > 0 ? await listProjectIdsInScope(viewer, await projectRowScope(viewer, deps?.can ? { can: deps.can } : undefined), lineProjectIds) : new Set<string>();
+  const rows = listed.filter((row) => row.entity !== "quote_line" || (row.projectId !== undefined && seenProjects.has(row.projectId)));
 
   // 독립 검토(#138) — 복원할 수 없는 공휴일 행은 「복원」을 내놓지 않는다(§7). 공휴일 복원은 공휴일 쓰기 권한과
   // 소급 금지(오늘 이후 날짜) · 그 날짜에 다른 공휴일(대체일 제외) 없음을 요구한다(restoreHoliday) — 같은 판정을 목록에서 미리 한다.

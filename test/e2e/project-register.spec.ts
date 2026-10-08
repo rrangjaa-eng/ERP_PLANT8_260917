@@ -394,7 +394,8 @@ test.describe("프로젝트 등록 폼 — Ctrl+Enter 제출 · Esc 취소 (Phas
       page.locator("#project-form").getByText("종료일이 시작일보다 빠름 · 종료일 수정", { exact: true }),
     ).toBeVisible();
     await page.goto(`/projects?q=${encodeURIComponent(projectName)}`);
-    await expect(page.getByText("조건에 맞는 프로젝트가 없습니다")).toBeVisible();
+    // 06.2(D-6206): 새 팀의 PM은 범위 안 프로젝트가 없으면 「등록된 프로젝트가 없습니다」 갈래다. 만들어졌다면 자기 프로젝트라 보였을 것이므로 둘 다 「생기지 않음」이다.
+    await expect(page.getByText("조건에 맞는 프로젝트가 없습니다").or(page.getByText("등록된 프로젝트가 없습니다"))).toBeVisible();
   });
 
   test("(d4) USD를 고르면 환율 칸이 설정의 USD 최근 환율로 채워지고, 환율을 안 고친 등록은 설정을 그대로 두며 고친 등록만 설정을 바꾼다(검토 S3)", async ({ page }) => {
@@ -471,7 +472,7 @@ test.describe("프로젝트 등록 폼 — Ctrl+Enter 제출 · Esc 취소 (Phas
 test.describe("프로젝트 등록 폼 — 담당 PM · 팀 기본값 (결정 2)", () => {
   // 기획 PM 권한·노출을 그대로 복사하고 업무 범위만 회사로 둔 등록자 — 본인 소속 팀 하나를 가진다.
   async function loginCompanyScopeCreator(page: Page): Promise<{ userId: string; teamId: string }> {
-    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E 회사 범위-${randomUUID().slice(0, 8)}`, workScope: "company" });
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E 회사 범위-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
     for (const row of await listPermissions(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID })) {
       await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: row.menu, action: row.action, allowed: row.allowed });
     }

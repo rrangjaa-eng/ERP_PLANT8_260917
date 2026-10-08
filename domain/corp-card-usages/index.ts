@@ -45,8 +45,8 @@ import { gate, GateBlockedError } from "@/domain/rules/gate";
 import "@/domain/rules/register";
 import { CompletedProjectError } from "@/domain/projects";
 import { quoteLockReason } from "@/domain/quotes/edit-scope";
-import { findProjectById, type ProjectRow } from "@/repositories/projects";
-import { scopeFor } from "@/domain/permissions/scope-for";
+import { findProjectById, findProjectInScope, type ProjectRow } from "@/repositories/projects";
+import { projectRowScope } from "@/domain/projects/visibility";
 import { findQuoteLineById, listQuoteLinesByRevisions } from "@/repositories/quote-lines";
 import { findLatestQuoteRevision, findQuoteRevisionById } from "@/repositories/quote-revisions";
 import { findLineLinks, lockQuoteLines } from "@/repositories/quote-line-links";
@@ -286,8 +286,10 @@ async function resolveUsedBy(
   return { usedByUserId, teamId };
 }
 
+// 고정 연결(구매 완료 건 — rights.changeLink 거짓)의 상한 문구에만 쓴다 — 수정 권리(등록자 · cards.proxy) 판정 뒤라 cards.purchases 판정은 없다.
+// 06.2 F-3: 수정하는 사람의 프로젝트 범위로 읽는다 — 범위 밖이면 빈 이름(이름 없는 문구)이라 담당 PM 이름이 새지 않는다.
 async function pmNameOf(viewer: Viewer, projectId: string): Promise<string> {
-  const project = await findProjectById(viewer, projectId);
+  const project = await findProjectInScope(viewer, await projectRowScope(viewer), projectId);
   return project?.pmUserId ? ((await findUserNamesByIds(viewer, [project.pmUserId])).get(project.pmUserId) ?? "") : "";
 }
 
@@ -378,7 +380,8 @@ async function precheckLink(
 
   if (input.linkKind === "out_of_quote") {
     // 견적 외 비용(O-8 · X-6): 현재 차수 · 완료 판정 · 항목 기본값은 트랜잭션 전에 — 잠근 뒤 `project.line-edit`가 상태를 다시 본다.
-    const project = await findProjectById(viewer, input.projectId);
+    // 06.2(D-6208 · T-06.2-31): 범위 밖 프로젝트는 기존 「연결 없음」 — 260907 `O: server/src/card-uses.ts:553` 참여자 조각 누락을 따르지 않는다.
+    const project = await findProjectInScope(viewer, await projectRowScope(viewer), input.projectId);
     if (!project || project.archivedAt) throw new CardUsageRejectedError(LINK_MISSING);
     // 완료 프로젝트: 권한자만 통과 — 몸통의 `project.line-edit`(D-47 ③)가 잠근 행으로 같은 판정을 다시 한다(X-6).
     const completedOutOfQuote = project.status === "completed" && proxy;
@@ -399,9 +402,10 @@ async function precheckLink(
   }
 
   // 견적 줄(D-47 · ST-1): 완료 프로젝트는 트랜잭션 전에 거부한다 — 잠근 뒤 `lockProjectForLinkWrite`가 다시 본다(X-2).
+  // 06.2(D-6208 · T-06.2-31): 줄 → 차수 → 프로젝트를 범위로 — 범위 밖 줄 id는 기존 「연결 없음」. 잠근 뒤 판정은 그대로(04-32).
   const line = await findQuoteLineById(viewer, input.lineId);
   const revision = line ? await findQuoteRevisionById(viewer, line.revisionId) : null;
-  const project = revision ? await findProjectById(viewer, revision.projectId) : null;
+  const project = revision ? await findProjectInScope(viewer, await projectRowScope(viewer), revision.projectId) : null;
   if (!line || !project || project.archivedAt) throw new CardUsageRejectedError(LINK_MISSING);
   if (project.status === "completed") throw new CompletedProjectError(quoteLockReason({ status: project.status }) ?? undefined);
   const latest = await findLatestQuoteRevision(viewer, project.id);
@@ -418,6 +422,8 @@ const PURCHASE_DENIED = "구매 처리 권한 없음";
 
 // 06-12 구매 완료의 고정 연결(R-3 · U-4) — 요청의 견적 줄이라 사람이 고르지 않는다(projects view 문 없음). 완료 프로젝트도 지나고,
 // 상한 바탕 · 문구 갈래(`fixed` · 담당 PM) · 이 요청 자신의 예상 공급가 제외를 싣는다. 잠근 뒤 `runCreate`가 다시 본다(X-2).
+// post-gate(06.2 · D-6220): 호출자가 `cards.purchases` write를 먼저 본다 — 구매 처리 권한자는 요청 전부를 다루고(privileged),
+// 줄은 요청 행이 고정한다(요청 작성 때 loadQuoteLineBasis가 범위를 판정). 처리자의 프로젝트 범위로 다시 거르지 않는다.
 async function precheckPurchaseLink(viewer: Viewer, lineId: string, requestId: string): Promise<LinkPre & Pick<CardUsagePre, "linkFixed" | "capLink" | "pmName" | "capExclude">> {
   const line = await findQuoteLineById(viewer, lineId);
   const revision = line ? await findQuoteRevisionById(viewer, line.revisionId) : null;
@@ -998,7 +1004,8 @@ export async function loadCardUsageForEdit(viewer: Viewer, id: string): Promise<
   if (!rights.edit) return null;
   let line: Pick<CardUsageEditDto, "projectLabel" | "lineRemainingKrw" | "lineHint"> = { projectLabel: null, lineRemainingKrw: null, lineHint: null };
   if (stored.quoteLineId && stored.projectId) {
-    const project = await findProjectById(viewer, stored.projectId);
+    // 06.2(D-6208): 이미 이은 건이라 수정은 열되, 범위 밖 프로젝트 이름은 비운다.
+    const project = await findProjectInScope(viewer, await projectRowScope(viewer), stored.projectId);
     const links = await findLineLinks(viewer, [stored.quoteLineId]);
     const basis = await loadLineRoomBasis(viewer, [stored.quoteLineId]);
     const room = lineRoom({ links, basis, lineId: stored.quoteLineId, exclude: { usageId: stored.id } });
@@ -1169,6 +1176,7 @@ export async function previewPurchaseCard(
   const shown = { split: { ...split, ruleKind: option.rule.ruleKind, evidenceLabel: option.label }, teamName, teamAssigned };
   if (!input.lineId) return { ...shown, cap: null };
   const link = await precheckPurchaseLink(viewer, input.lineId, input.requestId);
+  // post-gate(06.2 · D-6220): 위 `cards.purchases` write 판정 뒤 — 구매 처리 권한자 privileged(precheckPurchaseLink와 같은 이유).
   const project = link.projectId ? await findProjectById(viewer, link.projectId) : null;
   const links = await findLineLinks(viewer, [input.lineId]);
   const execution = links.get(input.lineId)?.currentExecution;
@@ -1330,13 +1338,13 @@ function monthRange(month: string): { from: string; to: string } {
   return { from: `${month}-01`, to: `${next}-01` };
 }
 
-// 범위(UA-612 · Q5): `cards.proxy` · `expenses.payments` write 권한자 · 전사 범위 → 전부 /
+// 범위(UA-612 · Q5): `cards.proxy` · `expenses.payments` write 권한자 · 프로젝트 보는 범위 전사(rowScopeFor rows: all) → 전부 — 06.2 K2, 260907 `O: server/src/purchases.ts:1334` /
 // 그 밖(팀장 포함) → 자기 카드 · 오늘 소속 팀 카드의 사용 + 자기가 등록한 것(공용 카드 사용은 자기 등록일 때만 — 쿼리 조건).
 async function listAccess(viewer: Viewer, today: string): Promise<{ scope: CardUsageScope; privileged: boolean; proxy: boolean }> {
   const proxy = await can(viewer, "cards.proxy", "write");
   const privileged = proxy || (await can(viewer, "expenses.payments", "write"));
   const actor = await loadActorTeamScope(viewer, { todayKst: today });
-  if (privileged || actor.workScope === "company") return { scope: { kind: "all" }, privileged, proxy };
+  if (privileged || (await projectRowScope(viewer, { today: () => today })).rows === "all") return { scope: { kind: "all" }, privileged, proxy };
   return { scope: { kind: "own", userId: viewer.id, teamId: actor.teamId }, privileged, proxy };
 }
 
@@ -1483,8 +1491,9 @@ const PROJECTS_VIEW_DENIED = "프로젝트 보기 권한 없음";
 export async function listProjectCardUsages(viewer: Viewer, projectId: string): Promise<ProjectCardUsages> {
   if (!(await can(viewer, "projects", "view"))) throw new ForbiddenError(PROJECTS_VIEW_DENIED);
   // 상세 화면의 findProject와 같은 범위 — 보관된 프로젝트는 보관 보기(admin.archive) 계정에게만(액션을 직접 불러도 같다).
-  const scope = await scopeFor(viewer, "project");
-  const projectRow = await findProjectById(viewer, projectId);
+  // 06.2(D-6208 · compare §3 #7): 프로젝트 범위 — 260907 `O: server/src/card-uses.ts:553` 참여자 조각 누락을 따르지 않는다.
+  const scope = await projectRowScope(viewer);
+  const projectRow = await findProjectInScope(viewer, scope, projectId);
   if (!projectRow || (projectRow.archivedAt !== null && !scope.includeArchived)) throw new ProjectNotFoundError();
   const rows = await listProjectCardUsageRows(viewer, projectId);
   const lineNo = await lineNumbers(viewer, rows.map((row) => row.revisionId));

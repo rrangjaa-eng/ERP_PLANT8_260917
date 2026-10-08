@@ -12,7 +12,8 @@ import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { withTransaction } from "@/lib/db-transaction";
 import { clampPage, pageCountFrom, LIST_PAGE_SIZE } from "@/lib/paging";
 import { projectMany, type DtoSpec } from "@/domain/permissions/project";
-import { scopeFor as defaultScopeFor } from "@/domain/permissions/scope-for";
+import { projectRowScope } from "@/domain/projects/visibility";
+import { listProjectIdsInScope } from "@/repositories/projects";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { formatKrw } from "@/lib/format-number";
 import type { DbOrTx } from "@/repositories/document-counters";
@@ -298,9 +299,15 @@ export async function saveReserves(viewer: Viewer, input: SaveReservesInput, dep
   const [vendorShown, projectShown, projectScope] = await Promise.all([
     (deps?.visible ?? defaultVisible)(viewer, "vendor.value"),
     (deps?.visible ?? defaultVisible)(viewer, "project.value"),
-    defaultScopeFor(viewer, "project", { can: deps?.can ?? defaultCan }),
+    projectRowScope(viewer, { can: deps?.can ?? defaultCan }),
   ]);
-  const pickable = { clients: vendorShown, projects: projectShown && projectScope.rows === "all" };
+  // 06.2(M8): 새로 고르거나 바꾼 프로젝트는 보는 범위 안이어야 한다 — 줄에 실린 프로젝트 id를 트랜잭션 앞에서 판정한다(04-32).
+  const rowProjectIds = [...new Set(prepared.map((row) => row.payload.projectId).filter((id): id is string => id !== null))];
+  const pickable = {
+    clients: vendorShown,
+    projects: projectShown && projectScope.rows !== "none",
+    projectIds: projectShown ? await listProjectIdsInScope(viewer, projectScope, rowProjectIds) : new Set<string>(),
+  };
   const now = deps?.now?.() ?? new Date();
 
   const fxToRemember = await withTransaction(async (tx) => {
@@ -344,7 +351,7 @@ async function planBatch(
   /** Codex B — 활성·보관 아닌 증빙 코드(트랜잭션 앞에서 읽음). */
   activeEvidence: ReadonlySet<string>,
   /** Codex ②③ — 새 줄 클라이언트는 vendor.value, 새로 고르거나 바꾼 프로젝트는 project.value + projects 보기 범위(트랜잭션 앞에서 읽음). */
-  pickable: { clients: boolean; projects: boolean },
+  pickable: { clients: boolean; projects: boolean; projectIds: ReadonlySet<string> },
   tx: DbOrTx,
 ): Promise<Plan> {
   const errors: CellFormatError[] = [];
@@ -403,7 +410,7 @@ async function planBatch(
     if (payload.projectId !== null) {
       // Codex ② — 프로젝트가 안 보이면 새로 고르거나 바꾼 연결만 거부, 저장된 연결은 그대로(Codex #5와 같은 결).
       // 불일치·보관 판정보다 먼저 같은 이유로 거부해 존재·보관 여부를 알리지 않는다.
-      if (!pickable.projects && (input.isNew || stored?.projectId !== payload.projectId)) {
+      if ((!pickable.projects || !pickable.projectIds.has(payload.projectId)) && (input.isNew || stored?.projectId !== payload.projectId)) {
         errors.push(cellError(index, input.id, "projectId", "프로젝트", PROJECT_CLIENT_MISMATCH));
         continue;
       }
@@ -679,11 +686,11 @@ export async function listReserveReferences(viewer: Viewer): Promise<ReserveRefe
   const [vendorShown, projectShown, projectScope] = await Promise.all([
     defaultVisible(viewer, "vendor.value"),
     defaultVisible(viewer, "project.value"),
-    defaultScopeFor(viewer, "project"),
+    projectRowScope(viewer),
   ]);
   const [vendorRows, projectRows, evidenceRows] = await Promise.all([
     vendorShown ? repoListVendors(viewer, { scope: { rows: "all", includeArchived: false }, includeHidden: false }) : [],
-    projectShown && projectScope.rows === "all" ? repoListProjectOptions(viewer) : [],
+    projectShown ? repoListProjectOptions(viewer, projectScope) : [],
     repoListCodeItems(viewer, { tableKey: EVIDENCE_TYPE_TABLE, scope: { rows: "all", includeArchived: false }, includeInactive: false }),
   ]);
   const clientRows = vendorRows.filter((row) => servesSide(row.kind, "client"));
@@ -722,10 +729,10 @@ export async function listReserves(viewer: Viewer, opts: { page?: number | strin
   // 이름(비활성·보관 코드도). 저장된 값을 그대로 보인다.
   const projectIds = [...new Set(pageIds.map((id) => byId.get(id)?.projectId).filter((id): id is string => typeof id === "string"))];
   const [projectScope, evidenceRows] = await Promise.all([
-    defaultScopeFor(viewer, "project"),
+    projectRowScope(viewer),
     repoListCodeItems(viewer, { tableKey: EVIDENCE_TYPE_TABLE, scope: { rows: "all", includeArchived: true }, includeInactive: true }),
   ]);
-  const projectNames = projectScope.rows === "all" ? await repoFindProjectNames(viewer, projectIds) : new Map<string, string>();
+  const projectNames = await repoFindProjectNames(viewer, projectScope, projectIds);
   const evidenceLabels = new Map(evidenceRows.map((row) => [row.value, row.label]));
   const pageRows = pageIds.map((id) => {
     const row = byId.get(id) as ReserveEntryRow;

@@ -1,6 +1,7 @@
 import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
-import { scopeFor, type Scope } from "@/domain/permissions/scope-for";
+import type { RowScope } from "@/domain/permissions/scope-for";
+import { projectRowScope } from "@/domain/projects/visibility";
 import type { RoleWorkScope } from "@/domain/permissions/roles";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { gate, GateBlockedError } from "@/domain/rules/gate";
@@ -13,7 +14,7 @@ import { kstDateOf, kstToday } from "@/lib/kst-date";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { findRoleById as defaultFindRoleById } from "@/repositories/roles";
 import { findMembershipAtDate as defaultFindMembershipAtDate } from "@/repositories/team-memberships";
-import { updateProjectStatusIfCurrent } from "@/repositories/projects";
+import { findProjectInScope, updateProjectStatusIfCurrent } from "@/repositories/projects";
 import { loadProjectForGate } from "@/domain/projects/auto-transition";
 import { listCodeItems as repoListCodeItems } from "@/repositories/code-tables";
 import type { DbOrTx } from "@/repositories/document-counters";
@@ -103,7 +104,7 @@ export async function actorCoversProjectTeam(
 
 // ── 트랜잭션 전 사실(ENG-D3 ① — ARCHITECTURE §4-8) ─────────────────────────
 export type StatusChangeFacts = {
-  rowScope: Scope;
+  rowScope: RowScope;
   menus: { status: boolean; complete: boolean };
   teamScope: ActorTeamScope;
   // 고정 상태 낱말(04.6-10 — 코드표 라벨이 아니다) — 「상태가 … 바뀜」 문구용. 비활성 값 포함.
@@ -162,8 +163,16 @@ export async function loadStatusChangeFacts(
   viewer: Viewer,
   deps?: Partial<StatusChangeFactDeps>,
 ): Promise<StatusChangeFacts> {
+  const now = deps?.now;
   const [rowScope, actor, labels] = await Promise.all([
-    scopeFor(viewer, PROJECT_ENTITY, { can: deps?.can ?? defaultCan }),
+    // 06.2: 주입된 판정이 없으면 요청 memo를 탄다(deps가 있으면 rowScopeFor가 memo를 건너뛴다).
+    // 06.2-03 독립 검토 M-6: 주입한 시계(now)가 있으면 범위의 발령 날짜도 그 시계로 정한다.
+    projectRowScope(
+      viewer,
+      deps?.can || deps?.findRoleById || deps?.findMembershipAtDate || now
+        ? { can: deps.can, findRoleById: deps.findRoleById, findMembershipAtDate: deps.findMembershipAtDate, ...(now ? { today: () => kstToday(now()) } : {}) }
+        : undefined,
+    ),
     loadActorFacts(viewer, deps),
     loadStatusLabels(viewer),
   ]);
@@ -271,11 +280,12 @@ export type ChangeProjectStatusDeps = StatusChangeFactDeps & {
 };
 
 // 05-11(F1): 결재 경로의 권한은 결재 인스턴스의 마지막 단계 담당이라는 사실 하나다 — viewer의 메뉴 · 팀 범위 · 행 범위 대신
+// (06.2: 행 범위는 명시값 all — 정산 결재자가 프로젝트 범위 밖이어도 결속 권한이 경계다)
 // 결속된 approvalAuthority가 경계다. 두 evaluateTransition에 넘길 사실 사본(메뉴 complete 참 · 전사 · 보관 포함).
 function approvalPathFacts(facts: StatusChangeFacts): StatusChangeFacts {
   return {
     ...facts,
-    rowScope: { ...facts.rowScope, includeArchived: true },
+    rowScope: { rows: "all", includeArchived: true },
     menus: { ...facts.menus, complete: true },
     teamScope: { workScope: "company", teamId: null },
   };
@@ -300,6 +310,10 @@ export async function changeProjectStatus(
   const loaded = deps?.facts ?? (await loadStatusChangeFacts(viewer, deps));
   const facts = trigger === "approval" ? approvalPathFacts(loaded) : loaded;
   if (facts.rowScope.rows === "none" && trigger !== "approval") {
+    denyWrite(viewer, "projects.view", ids, new ProjectNotFoundError("존재하지 않는 프로젝트"));
+  }
+  // 06.2(D-6206): 범위 밖 프로젝트는 없음 — 트랜잭션(잠금) 전에 전역 db로 판정한다(04-32).
+  if (trigger !== "approval" && !(await findProjectInScope(viewer, facts.rowScope, projectId))) {
     denyWrite(viewer, "projects.view", ids, new ProjectNotFoundError("존재하지 않는 프로젝트"));
   }
 

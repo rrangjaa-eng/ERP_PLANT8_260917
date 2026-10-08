@@ -41,13 +41,14 @@ describe("quote.amount를 꺼도 견적 줄의 id·itemName은 남는다", () =>
   });
 
   it("quote.amount visibility가 false여도 listQuoteLines는 id·itemName이 있는 행을 돌려준다", async () => {
-    const { revision, subcategoryValue } = await setupProject();
+    const { revision, pmUserId, subcategoryValue } = await setupProject();
     await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
       { id: randomUUID(), isNew: true, subcategory: subcategoryValue, itemName: "항목A", unitPrice: krw(100), execution: krw(0) },
     ] });
 
     await upsertVisibility(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, infoItem: "quote.amount", visible: false });
-    const pmViewer = { id: "pm-viewer", roleId: DEFAULT_ROLE_ID };
+    // 06.2(D-6205 ①): 담당 PM으로 읽는다 — 존재하지 않는 id의 뷰어는 팀 범위에서 프로젝트를 볼 수 없다.
+    const pmViewer = { id: pmUserId, roleId: DEFAULT_ROLE_ID };
 
     const rows = await listQuoteLines(pmViewer, revision.id, { status: "bidding", canWrite: false });
     expect(rows).toHaveLength(1);

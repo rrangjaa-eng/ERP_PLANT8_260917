@@ -2,6 +2,8 @@ import { and, asc, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm
 import { db } from "@/db/client";
 import { corpCardUsages, expenseEvidenceReviews, expensePayments, expenses, projects, purchaseRequests, quoteLines, quoteRevisions, users, vendors } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
+import type { RowScope } from "@/domain/permissions/scope-for";
+import { rowScopeCondition } from "@/repositories/row-scope";
 import { moneyFromRow, type Money } from "@/domain/money";
 import { resolveLinkedDocumentsByLineage, type LineageLine } from "@/domain/quotes/lineage";
 import type { DbOrTx } from "@/repositories/document-counters";
@@ -238,9 +240,10 @@ export async function listLineVendorEvidenceTypes(viewer: Viewer, lineIds: reado
 export type LinkProjectRow = { id: string; number: string; name: string; status: string; clientName: string | null; pmName: string | null };
 
 // S10 프로젝트 고르기 후보 — 보관 안 된 프로젝트, 번호 · 이름 · 클라이언트 부분 일치. 미수주는 끝, 그 안에서 번호 내림차순(새 것 먼저).
-export async function listLinkProjects(viewer: Viewer, input: { query: string | null; limit: number }): Promise<LinkProjectRow[]> {
-  void viewer;
-  const conditions = [isNull(projects.archivedAt)];
+// 06.2(D-6206 · D-6208): 프로젝트 보는 범위 밖은 고르개에서 빠진다 — 세 열 필수 번역기 하나(none이면 조회 없이 빈 목록).
+export async function listLinkProjects(viewer: Viewer, input: { scope: RowScope; query: string | null; limit: number }): Promise<LinkProjectRow[]> {
+  if (input.scope.rows === "none") return [];
+  const conditions = [isNull(projects.archivedAt), rowScopeCondition(viewer, input.scope, { projectId: projects.id, teamId: projects.teamId, pmUserId: projects.pmUserId })];
   if (input.query) {
     const like = `%${input.query}%`;
     const match = or(ilike(projects.name, like), ilike(projects.number, like), ilike(vendors.name, like));

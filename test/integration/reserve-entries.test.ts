@@ -669,7 +669,8 @@ describe("domain/reserves — 입력 계약 · 재전송 · 환율 · 수정 로
 // 권한표·노출표를 이 테스트가 직접 채운 새 계급의 사람(시드 계급과 섞이지 않는다).
 async function createViewerWith(opts: { permissions: [string, "view" | "write"][]; reserveVisible: boolean }): Promise<Viewer> {
   const roleId = `role-${randomUUID()}`;
-  await insertRole(SYSTEM_VIEWER, { id: roleId, name: `계급 ${roleId.slice(5, 13)}` });
+  // 06.2: 노출 · 권한만 보는 계급 — 보는 범위는 전사(기본 team이면 팀 없는 사람은 프로젝트를 못 본다, Pitfall 2).
+  await insertRole(SYSTEM_VIEWER, { id: roleId, name: `계급 ${roleId.slice(5, 13)}`, viewScope: "company" });
   for (const [menu, action] of opts.permissions) await upsertPermission(SYSTEM_VIEWER, { roleId, menu, action, allowed: true });
   await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "reserve.amount", visible: opts.reserveVisible });
   const { userId } = await createAccount(SYSTEM_VIEWER, { email: `u-${randomUUID()}@example.test`, name: "통합테스트 사용자", roleId });
@@ -971,7 +972,8 @@ describe("domain/reserves — 권한 · 노출 · 보관/복원 · 페이지 · 
 // 읽는 사람의 프로젝트 이름·증빙 종류 이름은 대장 DTO가 싣는다(보관된 프로젝트·비활성 코드도 저장된 값 그대로).
 async function createRoleViewer(opts: { permissions: [string, "view" | "write"][]; visible: string[] }): Promise<Viewer> {
   const roleId = `role-${randomUUID()}`;
-  await insertRole(SYSTEM_VIEWER, { id: roleId, name: `계급 ${roleId.slice(5, 13)}` });
+  // 06.2: 노출 · 권한만 보는 계급 — 보는 범위는 전사(기본 team이면 팀 없는 사람은 프로젝트를 못 본다, Pitfall 2).
+  await insertRole(SYSTEM_VIEWER, { id: roleId, name: `계급 ${roleId.slice(5, 13)}`, viewScope: "company" });
   for (const [menu, action] of opts.permissions) await upsertPermission(SYSTEM_VIEWER, { roleId, menu, action, allowed: true });
   for (const infoItem of opts.visible) await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem, visible: true });
   const { userId } = await createAccount(SYSTEM_VIEWER, { email: `r-${randomUUID()}@example.test`, name: "통합테스트 계급", roleId });

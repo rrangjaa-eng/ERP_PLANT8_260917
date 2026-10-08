@@ -18,7 +18,7 @@ import { insertCodeItem, setCodeItemActive, setCodeItemArchived } from "@/reposi
 // 계급은 대표 권한·노출을 복사하고 프로젝트 쓰기·조정만 끈 임시 계급이다 — role-ceo는 다른 스펙이 쓰기를 켜 두어 순서에 따라 재현이 사라진다.
 test("보기만 하는 계급도 견적 원장에서 소분류·거래처를 이름으로 본다", async ({ page }) => {
   const roleId = `role-e2e-readonly-${randomUUID()}`;
-  await insertRole(SYSTEM_VIEWER, { id: roleId, name: `E2E 보기만 ${roleId.slice(-12)}`, sortOrder: 99, workScope: "company" });
+  await insertRole(SYSTEM_VIEWER, { id: roleId, name: `E2E 보기만 ${roleId.slice(-12)}`, sortOrder: 99, workScope: "company", viewScope: "company" });
   for (const row of await listPermissions(SYSTEM_VIEWER, { roleId: "role-ceo" })) {
     await upsertPermission(SYSTEM_VIEWER, { roleId, menu: row.menu, action: row.action, allowed: row.allowed });
   }
@@ -65,7 +65,7 @@ test("비활성 견적 분류를 쓰던 줄도 편집 · 보기 전용 계정 �
   const suffix = randomUUID().slice(0, 8);
   const item = await insertCodeItem(SYSTEM_VIEWER, { tableKey: "quote_subcategory", value: `e2e_off_${suffix}`, label: `끈분류-${suffix}` });
   const viewerRoleId = `role-e2e-readonly-${randomUUID()}`;
-  await insertRole(SYSTEM_VIEWER, { id: viewerRoleId, name: `E2E 보기만 ${viewerRoleId.slice(-12)}`, sortOrder: 99, workScope: "company" });
+  await insertRole(SYSTEM_VIEWER, { id: viewerRoleId, name: `E2E 보기만 ${viewerRoleId.slice(-12)}`, sortOrder: 99, workScope: "company", viewScope: "company" });
   for (const row of await listPermissions(SYSTEM_VIEWER, { roleId: "role-ceo" })) {
     await upsertPermission(SYSTEM_VIEWER, { roleId: viewerRoleId, menu: row.menu, action: row.action, allowed: row.allowed });
   }

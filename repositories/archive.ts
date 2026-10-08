@@ -1,7 +1,7 @@
-import { and, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { alias, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { db } from "@/db/client";
-import { roles, codeItems, orgUnits, teams, corpCards, users, vendors, quoteLines } from "@/db/schema";
+import { roles, codeItems, orgUnits, teams, corpCards, users, vendors, quoteLines, quoteRevisions } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 import {
   findRoleById,
@@ -47,6 +47,8 @@ export type ArchivedItem = {
   dateTaken?: boolean;
   // 거래처만 — 같은 숫자 사업자번호의 살아 있는 거래처가 있으면 참(복원 불가). 화면 DTO에는 싣지 않는다.
   businessNoTaken?: boolean;
+  // 견적 줄만 — 줄이 속한 프로젝트(06.2 I-2: 도메인이 보는 범위로 거른다). 화면 DTO에는 싣지 않는다.
+  projectId?: string;
 };
 
 export type ArchivableEntry = {
@@ -214,10 +216,11 @@ export const ARCHIVABLE_TABLES: ArchivableEntry[] = [
     },
     async listArchived() {
       const rows = await db
-        .select({ id: quoteLines.id, name: quoteLines.itemName, archivedAt: quoteLines.archivedAt, archivedBy: quoteLines.archivedBy })
+        .select({ id: quoteLines.id, name: quoteLines.itemName, archivedAt: quoteLines.archivedAt, archivedBy: quoteLines.archivedBy, projectId: quoteRevisions.projectId })
         .from(quoteLines)
+        .innerJoin(quoteRevisions, eq(quoteRevisions.id, quoteLines.revisionId))
         .where(isNotNull(quoteLines.archivedAt));
-      return rows.map((row) => ({ entity: "quote_line", label: "견적 줄", id: row.id, name: row.name, archivedAt: row.archivedAt as Date, archivedBy: row.archivedBy }));
+      return rows.map((row) => ({ entity: "quote_line", label: "견적 줄", id: row.id, name: row.name, archivedAt: row.archivedAt as Date, archivedBy: row.archivedBy, projectId: row.projectId }));
     },
   },
   // 04-07(B-04 · OV-2) — 리저브 줄. 보관은 잔액 판정을 지나는 domain/reserves의 saveReserves(archived)로만 한다 —

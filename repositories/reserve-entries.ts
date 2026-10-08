@@ -3,6 +3,8 @@ import type { InferSelectModel } from "drizzle-orm";
 import { db } from "@/db/client";
 import { reserveEntries, vendors, projects } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
+import type { RowScope } from "@/domain/permissions/scope-for";
+import { rowScopeCondition } from "@/repositories/row-scope";
 import type { DbOrTx } from "@/repositories/document-counters";
 import type { VendorKind } from "@/domain/vendors/kind";
 
@@ -66,20 +68,24 @@ export async function findProjectClientIds(viewer: Viewer, projectIds: string[],
 }
 
 // 04-42 리뷰 B1 · S1 — 대장 줄이 가리키는 프로젝트 이름(보관된 프로젝트도 — 저장된 값을 그대로 보인다).
-export async function findProjectNames(viewer: Viewer, projectIds: string[]): Promise<Map<string, string>> {
-  void viewer;
-  if (projectIds.length === 0) return new Map();
-  const rows = await db.select({ id: projects.id, name: projects.name }).from(projects).where(inArray(projects.id, projectIds));
+// 06.2(M8): 보는 범위 안 프로젝트만 — 범위 밖 줄은 이름 없이(잔액 · 고객사는 그대로).
+export async function findProjectNames(viewer: Viewer, scope: RowScope, projectIds: string[]): Promise<Map<string, string>> {
+  if (projectIds.length === 0 || scope.rows === "none") return new Map();
+  const rows = await db
+    .select({ id: projects.id, name: projects.name })
+    .from(projects)
+    .where(and(inArray(projects.id, projectIds), rowScopeCondition(viewer, scope, { projectId: projects.id, teamId: projects.teamId, pmUserId: projects.pmUserId })));
   return new Map(rows.map((row) => [row.id, row.name]));
 }
 
 // 04-42 — 리저브 대장 프로젝트 칸의 선택지(보관 제외). 클라이언트별로 거르는 일은 화면이 한다.
-export async function listProjectOptions(viewer: Viewer): Promise<{ id: string; name: string; clientId: string }[]> {
-  void viewer;
+// 06.2(M8): 보는 범위 안 프로젝트만.
+export async function listProjectOptions(viewer: Viewer, scope: RowScope): Promise<{ id: string; name: string; clientId: string }[]> {
+  if (scope.rows === "none") return [];
   return db
     .select({ id: projects.id, name: projects.name, clientId: projects.clientId })
     .from(projects)
-    .where(isNull(projects.archivedAt))
+    .where(and(isNull(projects.archivedAt), rowScopeCondition(viewer, scope, { projectId: projects.id, teamId: projects.teamId, pmUserId: projects.pmUserId })))
     .orderBy(projects.name);
 }
 

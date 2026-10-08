@@ -19,11 +19,12 @@ import { eq } from "drizzle-orm";
 
 // 04-42 — 클라이언트별 리저브 대장(S9). 리저브는 회사 전체 원장 하나라 이 스펙만 쓴다 — 케이스마다 비우고 시작한다.
 // 계급은 이 스펙이 만든 임시 계급이다(공용 계급의 권한을 바꾸지 않는다).
+// 06.2(D-6203 · M8): 대장의 프로젝트 이름 · 선택지는 보는 범위를 탄다 — 회사 전체 원장을 다루는 계급이라 전사 범위로 만든다.
 type Roles = { finance: string; reader: string; hidden: string };
 
 async function createRole(name: string, grants: { menu: string; action: string }[], reserveVisible: boolean, alsoVisible: string[] = []): Promise<string> {
   const id = `role-e2e-rsv-${randomUUID()}`;
-  await insertRole(SYSTEM_VIEWER, { id, name: `E2E 리저브 ${name} ${id.slice(-8)}`, sortOrder: 99 });
+  await insertRole(SYSTEM_VIEWER, { id, name: `E2E 리저브 ${name} ${id.slice(-8)}`, sortOrder: 99, viewScope: "company" });
   for (const grant of grants) await upsertPermission(SYSTEM_VIEWER, { roleId: id, menu: grant.menu, action: grant.action, allowed: true });
   await upsertVisibility(SYSTEM_VIEWER, { roleId: id, infoItem: "reserve.amount", visible: reserveVisible });
   for (const infoItem of alsoVisible) await upsertVisibility(SYSTEM_VIEWER, { roleId: id, infoItem, visible: true });

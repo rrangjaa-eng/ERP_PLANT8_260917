@@ -2,7 +2,7 @@ import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
 import { projectMany, type DtoSpec } from "@/domain/permissions/project";
 import { registerDto } from "@/domain/permissions/dto-registry";
-import { scopeFor } from "@/domain/permissions/scope-for";
+import { projectRowScope } from "@/domain/projects/visibility";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { moneyToColumns, MoneyInputError } from "@/domain/money";
 import { computeVat, ForbiddenError, ProjectNotFoundError, type MoneyInputDto, type RevenueDeps } from "@/domain/revenue";
@@ -13,7 +13,7 @@ import { isCalendarDate, FORMAT_ERROR as DATE_FORMAT_ERROR, EMPTY_ERROR as DATE_
 import { SaveRejectedError, type CellFormatError } from "@/domain/quotes/lines";
 import { isUniqueViolation } from "@/lib/pg-errors";
 import type { DbOrTx } from "@/repositories/document-counters";
-import { findProjectById as repoFindProjectById } from "@/repositories/projects";
+import { findProjectInScope } from "@/repositories/projects";
 import { findRevenueEntryById as repoFindRevenueEntryById } from "@/repositories/revenue-entries";
 import {
   findIssueRequestById,
@@ -286,9 +286,10 @@ export async function listProjectIssueRequests(
   deps?: Partial<RevenueDeps> & { can?: typeof defaultCan },
 ): Promise<IssueRequestDto[]> {
   // domain/projects의 findProject와 같은 검사(보기 범위 + 아카이브)를 listRevenue처럼 최소 복제한다.
-  const scope = await scopeFor(viewer, "project");
+  // 06.2(D-6208): 프로젝트 범위 — 260907 `O: server/src/settlement.ts:453` 참여자 조각 누락을 따르지 않는다.
+  const scope = await projectRowScope(viewer);
   if (scope.rows === "none") throw new ProjectNotFoundError("존재하지 않는 프로젝트");
-  const projectRow = await repoFindProjectById(viewer, projectId);
+  const projectRow = await findProjectInScope(viewer, scope, projectId);
   if (!projectRow || (projectRow.archivedAt !== null && !scope.includeArchived)) throw new ProjectNotFoundError("존재하지 않는 프로젝트");
 
   const rows = await listIssueRequestRowsByProject(viewer, projectId);

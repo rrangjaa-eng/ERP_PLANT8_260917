@@ -407,7 +407,7 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     // 전용 전사 범위 계급에 프로젝트 보기·쓰기와 project.value만 주고 quote.amount는 주지 않는다 — 공유 시드 계급(role-ceo)의
     // quote.amount를 끄면 같은 샤드 뒤 스펙(settlement-approval 대표의 견적가 합)이 깨진다.
     const roleId = `role-${randomUUID()}`;
-    await insertRole(SYSTEM_VIEWER, { id: roleId, name: `E2E금액숨김-${randomUUID().slice(0, 8)}`, workScope: "company" });
+    await insertRole(SYSTEM_VIEWER, { id: roleId, name: `E2E금액숨김-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
     await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "projects", action: "view", allowed: true });
     await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "projects", action: "write", allowed: true });
     await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "project.value", visible: true });

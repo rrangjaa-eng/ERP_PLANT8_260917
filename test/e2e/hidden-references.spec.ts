@@ -245,7 +245,8 @@ test.describe("가려진 참조 정보의 화면(quick 261001-85g)", () => {
     const teamId = await makeTeam();
     const owner = await makeWriter(teamId, "");
     const { projectId } = await makeProjectWithVendorLine(teamId, owner);
-    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E팀없음-${randomUUID().slice(0, 8)}`, workScope: "team" });
+    // 06.2(D-6202 · D-6207): 보기는 view_scope만 정한다 — 팀 없는 팀 보기 범위면 상세가 「없음」이라, 쓰기 게이트(work_scope team)만 재게 보기는 전사로 둔다.
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E팀없음-${randomUUID().slice(0, 8)}`, workScope: "team", viewScope: "company" });
     await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
     await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "write", allowed: true });
     for (const infoItem of ["project.value", "quote.amount", "vendor.value", "team.value", "person.value"]) {

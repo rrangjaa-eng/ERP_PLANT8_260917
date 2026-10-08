@@ -104,7 +104,7 @@ async function addQuoteLine(projectId: string, quote: number, execution = 0) {
 
 // 04-18 — 경영관리(시드 계급에 없다): 전사 범위 새 계급에 목록 보기 + 견적 · 발행 금액 노출을 준다(시드 계급을 바꾸지 않는다).
 async function makeManager(extraInfoItems: string[] = []): Promise<{ email: string; password: string }> {
-  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E경영관리-${randomUUID().slice(0, 8)}`, workScope: "company" });
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E경영관리-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
   for (const infoItem of ["project.value", "quote.amount", "revenue.issued_amount", ...extraInfoItems]) {
     await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
@@ -267,13 +267,12 @@ test.describe("프로젝트 목록 — 올해 보기 · 표 위 귀속 합계 (0
       name: `${marker}클라이언트`,
       normalizedName: `${marker}클라이언트`,
     });
-    const rowPm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
+    // 06.2(D-6206): 팀 없는 팀 범위 사람은 자기가 담당 PM인 프로젝트만 본다 — 행이 보이게 그 사람을 담당 PM으로 둔다.
+    const noTeamPm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
     const [team] = await db.select().from(teams).limit(1);
     if (!team) throw new Error("시드된 팀이 없습니다");
-    const rowPmUserId = await findUserIdByEmail(rowPm.email);
-    await createProject(SYSTEM_VIEWER, { clientId: vendor.id, teamId: team.id, pmUserId: rowPmUserId, name: marker });
+    await createProject(SYSTEM_VIEWER, { clientId: vendor.id, teamId: team.id, pmUserId: await findUserIdByEmail(noTeamPm.email), name: marker });
 
-    const noTeamPm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
     await page.goto("/login");
     await page.getByLabel("이메일").fill(noTeamPm.email);
     await page.getByLabel("비밀번호").fill(noTeamPm.password);
@@ -601,7 +600,7 @@ test.describe("프로젝트 목록 — 조회 조건 (04-48)", () => {
     const marker = `E2E숨긴정렬-${randomUUID().slice(0, 8)}`;
     const pm = await setupPm();
     await createProject(SYSTEM_VIEWER, { clientId: pm.clientId, teamId: pm.teamId, pmUserId: pm.pmUserId, name: `${marker}-행` });
-    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E견적끔-${randomUUID().slice(0, 8)}`, workScope: "company" });
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E견적끔-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
     await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
     await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "project.value", visible: true });
     await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "quote.amount", visible: false });
@@ -632,6 +631,10 @@ test.describe("프로젝트 목록 — 조회 조건 (04-48)", () => {
   test("사용자 필터 0건은 「조건에 맞는 프로젝트가 없습니다 · 필터 지우기」이고 합계 줄 · 페이지 줄이 없으며 1차 등록은 남는다", async ({ page }) => {
     // 팀 발령이 있어야 「프로젝트 등록」이 보인다.
     const pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID, withTeam: true });
+    // 06.2(D-6206): 범위 안 프로젝트가 하나도 없으면 「등록된 프로젝트가 없습니다」 갈래다 — 필터 0건 갈래를 재려면 범위 안 행이 하나 있어야 한다.
+    if (!pm.teamId) throw new Error("팀이 없습니다");
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E필터0건클라이언트-${randomUUID()}`, normalizedName: `e2e필터0건클라이언트-${randomUUID()}` });
+    await createProject(SYSTEM_VIEWER, { clientId: vendor.id, teamId: pm.teamId, pmUserId: await findUserIdByEmail(pm.email), name: `E2E필터0건-${randomUUID().slice(0, 8)}` });
     await login(page, pm);
     await page.goto(`/projects?q=${encodeURIComponent(`E2E없음-${randomUUID()}`)}`);
     await expect(page.getByText("조건에 맞는 프로젝트가 없습니다", { exact: true })).toBeVisible();

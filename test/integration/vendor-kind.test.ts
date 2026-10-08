@@ -185,7 +185,8 @@ describe("마이그레이션 채우기 — 쓰임 기반 갈래 (261006-biv D-2,
 // ── Task 2: 고르는 목록 거르기(D-6) ─────────────────────────────────────
 
 async function makeReferenceViewer(): Promise<Viewer> {
-  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `갈래 선택지-${randomUUID()}`, workScope: "company" });
+  // 06.2(Pitfall 2): 노출 · 권한만 재는 계급 — DB 기본 보는 범위 team에 팀 없는 사람은 0행이라 company로 둔다.
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `갈래 선택지-${randomUUID()}`, workScope: "company", viewScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
   for (const infoItem of ["vendor.value", "team.value", "person.value", "project.value", "quote.amount"]) {
     await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });

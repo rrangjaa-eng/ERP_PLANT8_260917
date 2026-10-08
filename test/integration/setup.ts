@@ -21,6 +21,12 @@ export function skipDbReset(): void {
   skip = true;
 }
 
+// 06.2-03: skipDbReset()을 부른 파일이 beforeAll에서 한 번 비우고 시드할 때도 같은 문장을 쓴다.
+export async function resetDatabase(): Promise<void> {
+  await db.execute(sql.raw(truncateStatement));
+  await seedMasterData(SYSTEM_VIEWER);
+}
+
 beforeEach(async () => {
   if (skip) return;
   await db.execute(sql.raw(truncateStatement));

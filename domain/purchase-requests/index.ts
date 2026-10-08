@@ -45,7 +45,7 @@ import {
 import { codeLabelsOf, lineExecution, numberedSupplyText } from "@/domain/expenses";
 import { EXPENSE_DOCUMENT_KIND } from "@/domain/expenses/access";
 import { CompletedProjectError } from "@/domain/projects";
-import { loadActorTeamScope, ProjectNotFoundError } from "@/domain/projects/status";
+import { ProjectNotFoundError } from "@/domain/projects/status";
 import { resolveLineDoor } from "@/domain/quotes/line-door";
 import { quoteLockReason } from "@/domain/quotes/edit-scope";
 import { REJECT_REASON_EMPTY_MESSAGE, REJECT_REASON_MAX, REJECT_REASON_TOO_LONG_MESSAGE } from "@/domain/approvals";
@@ -58,7 +58,8 @@ import { seoulToday } from "@/lib/dates";
 import { withTransaction } from "@/lib/db-transaction";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { findExpenseApprovalStatuses } from "@/repositories/expenses";
-import { findProjectById } from "@/repositories/projects";
+import { findProjectById, findProjectInScope } from "@/repositories/projects";
+import { projectRowScope } from "@/domain/projects/visibility";
 import { findLatestQuoteRevision, findQuoteRevisionById } from "@/repositories/quote-revisions";
 import { findQuoteLineById, listQuoteLinesByRevisions } from "@/repositories/quote-lines";
 import { findLineLinks, lockQuoteLines } from "@/repositories/quote-line-links";
@@ -189,9 +190,10 @@ function fxMissing(currency: string): string {
 type QuoteLineBasis = { projectId: string; revisionId: string; onlineVendorName: string; lineRoom: LineRoomBasis; amountVisible: boolean };
 
 async function loadQuoteLineBasis(viewer: Viewer, lineId: string): Promise<QuoteLineBasis> {
+  // 06.2(D-6208 · T-06.2-31): 줄 → 차수 → 프로젝트를 범위로 — 범위 밖 줄 id는 기존 「연결 없음」.
   const line = await findQuoteLineById(viewer, lineId);
   const revision = line ? await findQuoteRevisionById(viewer, line.revisionId) : null;
-  const project = revision ? await findProjectById(viewer, revision.projectId) : null;
+  const project = revision ? await findProjectInScope(viewer, await projectRowScope(viewer), revision.projectId) : null;
   if (!line || !project || project.archivedAt) throw new PurchaseRequestRejectedError(LINK_MISSING);
   if (project.status === "completed") throw new CompletedProjectError(quoteLockReason({ status: project.status }) ?? undefined);
   const latest = await findLatestQuoteRevision(viewer, project.id);
@@ -637,6 +639,7 @@ export async function loadPurchaseCompletion(viewer: Viewer, id: string, today: 
   let projectLabel: string | null = null;
   let lineItemName: string | null = null;
   if (row.quoteLineId && row.projectId) {
+    // post-gate(06.2 · D-6220): 위 `cards.purchases` write 판정 뒤 — 구매 처리 권한자는 요청 전부를 다룬다(목록도 privileged 전부).
     const project = await findProjectById(viewer, row.projectId);
     projectLabel = project ? `${project.number} ${project.name}` : null;
     lineItemName = (await findQuoteLineById(viewer, row.quoteLineId))?.itemName ?? null;
@@ -825,11 +828,11 @@ function monthBounds(month: string): { from: Date; to: Date } {
   return { from: new Date(`${month}-01T00:00:00+09:00`), to: new Date(`${next}-01T00:00:00+09:00`) };
 }
 
-// 범위: `cards.purchases` write 권한자 · 전사 범위 → 전부 / 그 밖 → 자기 요청 + 자기가 담당 PM인 프로젝트 줄의 요청(쿼리 조건).
+// 범위: `cards.purchases` write 권한자 · 프로젝트 보는 범위 전사(rowScopeFor rows: all) → 전부 — 06.2 K2, 260907 `O: server/src/purchases.ts:1334` /
+// 그 밖 → 자기 요청 + 자기가 담당 PM인 프로젝트 줄의 요청(쿼리 조건).
 async function listAccess(viewer: Viewer, today: string): Promise<{ scope: PurchaseRequestScope; privileged: boolean }> {
   const purchaser = await can(viewer, "cards.purchases", "write");
-  const actor = await loadActorTeamScope(viewer, { todayKst: today });
-  if (purchaser || actor.workScope === "company") return { scope: { kind: "all" }, privileged: purchaser };
+  if (purchaser || (await projectRowScope(viewer, { today: () => today })).rows === "all") return { scope: { kind: "all" }, privileged: purchaser };
   return { scope: { kind: "own", userId: viewer.id }, privileged: false };
 }
 
@@ -881,7 +884,8 @@ export async function searchLinesForPurchaseLink(
   input: { projectId: string; query: string; currentLineId?: string | null },
 ): Promise<{ rows: Partial<CardLinkLineDto>[]; truncated: boolean; subtitle: string; total: number; selectableCount: number }> {
   if (!(await can(viewer, "projects", "view"))) throw new ForbiddenError(PROJECTS_VIEW_DENIED);
-  const project = await findProjectById(viewer, input.projectId);
+  // 06.2(D-6208): 프로젝트 id 직접 호출도 범위 밖이면 없음.
+  const project = await findProjectInScope(viewer, await projectRowScope(viewer), input.projectId);
   if (!project || project.archivedAt) throw new ProjectNotFoundError();
   const revision = await findLatestQuoteRevision(viewer, project.id);
   const lines = revision ? await listQuoteLinesByRevisions(viewer, [revision.id]) : [];

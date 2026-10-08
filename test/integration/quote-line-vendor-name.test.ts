@@ -7,7 +7,7 @@ import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { createAccount } from "@/domain/auth/accounts";
 import { insertVendor } from "@/repositories/vendors";
 import { insertRole } from "@/repositories/roles";
-import { upsertVisibility } from "@/repositories/permissions";
+import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, listQuoteLines, saveQuoteLines } from "@/domain/quotes/lines";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
@@ -17,7 +17,10 @@ import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 const krw = (amount: number) => ({ currency: "KRW" as const, amount, fxRate: 1 });
 
 async function makeViewer(hidden: string | null): Promise<Viewer> {
-  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `거래처 이름-${randomUUID()}`, workScope: "company" });
+  // 06.2(Pitfall 2): 노출 · 권한만 재는 계급 — DB 기본 보는 범위 team에 팀 없는 사람은 0행이라 company로 둔다.
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `거래처 이름-${randomUUID()}`, workScope: "company", viewScope: "company" });
+  // 06.2(D-6206): 견적 줄 읽기는 프로젝트 보기가 먼저다.
+  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
   for (const infoItem of ["project.value", "quote.amount", "vendor.value"]) {
     await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: infoItem !== hidden });
   }

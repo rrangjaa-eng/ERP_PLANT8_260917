@@ -14,6 +14,7 @@ import { PROJECT_STATUSES } from "@/domain/projects/status-transitions";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import {
   changeProjectStatus,
+  ProjectNotFoundError,
   lastStatusChangeOn,
   listProjectStatusCatalog,
   loadStatusChangeFacts,
@@ -25,7 +26,8 @@ import { addDays, kstDateOf, kstToday } from "@/lib/kst-date";
 import { setPermissionCell, setVisibilityCell } from "@/domain/permissions/matrix";
 import { seedMasterData } from "@/domain/seed";
 import { INFO_ITEMS } from "@/domain/permissions/info-items";
-import { findPermission, findVisibility } from "@/repositories/permissions";
+import { findPermission, findVisibility, upsertPermission } from "@/repositories/permissions";
+import { insertRole } from "@/repositories/roles";
 import { withTransaction } from "@/lib/db-transaction";
 import { deferred, waitForLockWaiter } from "./lock-race";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
@@ -162,6 +164,16 @@ async function makeActor(roleId: string, teamId?: string, effectiveFrom = PAST_A
   });
   if (teamId) await assignTeam(SYSTEM_VIEWER, { userId, teamId, effectiveFrom });
   return { id: userId, roleId };
+}
+
+// 06.2(D6): 보는 범위가 company이고 업무 범위가 team인 계급 — 다른 팀 프로젝트가 보이는데 상태는 못 바꾸는 사람.
+// (화면 계급은 쓰기 범위 복사(K1)로 보는 범위 = 업무 범위라, 이 틈은 이렇게 만든 계급에서만 열린다.)
+async function makeCompanyViewLead(teamId: string, effectiveFrom = PAST_ASSIGNMENT_DATE): Promise<Viewer> {
+  const roleId = `role-${randomUUID()}`;
+  await insertRole(SYSTEM_VIEWER, { id: roleId, name: `전사 열람 팀장-${randomUUID()}`, workScope: "team", viewScope: "company" });
+  await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "projects", action: "view", allowed: true });
+  await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "projects.status", action: "write", allowed: true });
+  return makeActor(roleId, teamId, effectiveFrom);
 }
 
 async function makeStatusProject(input: {
@@ -368,14 +380,21 @@ describe("사람의 전환 넷 · 팀 범위 · 완료 주체 · 코드표 목�
     }
   });
 
-  it("(j) D11 — 다른 팀 팀장은 거부, 본부 책임자(전사)는 통과, 어제 팀을 옮긴 팀장은 오늘 옛 팀 프로젝트를 못 바꾼다", async () => {
+  it("(j) D11 — 다른 팀 팀장은 프로젝트가 안 보여 없음(06.2 D6), 보이지만 업무 범위 밖인 사람은 거부, 본부 책임자(전사)는 통과, 어제 팀을 옮긴 팀장은 오늘 옛 팀 프로젝트를 못 바꾼다", async () => {
     const teamA = await makeTeam();
     const teamB = await makeTeam();
     const otherLead = await makeActor("role-team-lead", teamB);
-    const divisionHead = await makeActor("role-division-head");
+    const otherCompanyViewLead = await makeCompanyViewLead(teamB);
+    // 06.2(D-6203): 본부 책임자의 보는 범위는 org_unit — 프로젝트 팀의 본부에 발령한다(업무 범위는 전사 그대로).
+    const divisionHead = await makeActor("role-division-head", teamA);
 
     const project = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2099-10-01" });
-    await expect(changeProjectStatus(otherLead, project.projectId, { from: "bidding", to: "lost" })).rejects.toThrow(
+    // 06.2(D6): 보는 범위가 team인 다른 팀 팀장에게는 프로젝트가 없다 — 권한 문구 대신 「존재하지 않는 프로젝트」.
+    const hidden = changeProjectStatus(otherLead, project.projectId, { from: "bidding", to: "lost" });
+    await expect(hidden).rejects.toBeInstanceOf(ProjectNotFoundError);
+    await expect(hidden).rejects.toThrow("존재하지 않는 프로젝트");
+    // 프로젝트가 보이는 사람(전사 보기)이 업무 범위 밖이면 옛 문구 그대로.
+    await expect(changeProjectStatus(otherCompanyViewLead, project.projectId, { from: "bidding", to: "lost" })).rejects.toThrow(
       "다른 팀 프로젝트 · 상태 바꾸기 권한 없음",
     );
     expect((await reloadProject(project.projectId)).status).toBe("bidding");
@@ -387,10 +406,17 @@ describe("사람의 전환 넷 · 팀 범위 · 완료 주체 · 코드표 목�
     // 2026-06-10에 팀 A → 팀 B 발령. 「오늘」을 2026-06-11(KST)로 주입한다.
     const movedLead = await makeActor("role-team-lead", teamA, "2026-01-01");
     await assignTeam(SYSTEM_VIEWER, { userId: movedLead.id, teamId: teamB, effectiveFrom: "2026-06-10" });
+    const movedCompanyViewLead = await makeCompanyViewLead(teamA, "2026-01-01");
+    await assignTeam(SYSTEM_VIEWER, { userId: movedCompanyViewLead.id, teamId: teamB, effectiveFrom: "2026-06-10" });
     const now = () => new Date("2026-06-11T03:00:00Z");
     const oldTeamProject = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2099-10-01" });
+    // 06.2(D6): 옮긴 팀장은 오늘 옛 팀 프로젝트가 안 보인다(범위도 발령 날짜 기준).
     await expect(
       changeProjectStatus(movedLead, oldTeamProject.projectId, { from: "bidding", to: "lost" }, { now }),
+    ).rejects.toBeInstanceOf(ProjectNotFoundError);
+    // 보이는 사람(전사 보기)이면 업무 범위(발령 이력의 그날 값)가 옛 팀을 덮지 않아 옛 문구 그대로.
+    await expect(
+      changeProjectStatus(movedCompanyViewLead, oldTeamProject.projectId, { from: "bidding", to: "lost" }, { now }),
     ).rejects.toThrow("다른 팀 프로젝트 · 상태 바꾸기 권한 없음");
     // 발령 전날(2026-06-09)이면 아직 팀 A — 같은 사람이 바꿀 수 있다(판정이 발령 이력의 그날 값이다).
     await changeProjectStatus(movedLead, oldTeamProject.projectId, { from: "bidding", to: "lost" }, {
@@ -469,21 +495,29 @@ describe("원자성·경합·시드 보존(A-01·A-11·OV-3·A-05·ENG-D3 ③·A
     expect(await statusLogs(projectId)).toHaveLength(1);
   });
 
-  it("M1 — 전환 권한이 없는 담당 PM·다른 팀 팀장이 틀린 from을 보내도 권한 거부이고 문구에 지금 상태가 없다", async () => {
+  it("M1 — 전환 권한이 없는 담당 PM · 보이지만 업무 범위 밖인 사람이 틀린 from을 보내도 권한 거부이고 문구에 지금 상태가 없다 · 다른 팀 팀장은 없음(06.2 D6)", async () => {
     const teamA = await makeTeam();
     const teamB = await makeTeam();
     const otherLead = await makeActor("role-team-lead", teamB);
+    const otherCompanyViewLead = await makeCompanyViewLead(teamB);
     const { projectId, pm } = await makeStatusProject({ teamId: teamA, status: "lost", startDate: "2099-10-01" });
 
     for (const [actor, reason] of [
       [pm, "상태 바꾸기 권한 없음"],
-      [otherLead, "다른 팀 프로젝트 · 상태 바꾸기 권한 없음"],
+      [otherCompanyViewLead, "다른 팀 프로젝트 · 상태 바꾸기 권한 없음"],
     ] as const) {
       const attempt = changeProjectStatus(actor, projectId, { from: "bidding", to: "in_progress" });
       await expect(attempt).rejects.toBeInstanceOf(GateBlockedError);
       await expect(attempt).rejects.toThrow(reason);
       await expect(attempt).rejects.not.toThrow("미수주");
     }
+
+    // 06.2(D6): 보는 범위가 team인 다른 팀 팀장은 프로젝트가 없다 — 권한 거부가 아니라 없음이고, 문구에 지금 상태가 없다.
+    const hidden = changeProjectStatus(otherLead, projectId, { from: "bidding", to: "in_progress" });
+    await expect(hidden).rejects.toBeInstanceOf(ProjectNotFoundError);
+    await expect(hidden).rejects.not.toBeInstanceOf(GateBlockedError);
+    await expect(hidden).rejects.toThrow("존재하지 않는 프로젝트");
+    await expect(hidden).rejects.not.toThrow("미수주");
 
     expect((await reloadProject(projectId)).status).toBe("lost");
     expect(await statusLogs(projectId)).toEqual([]);

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   memoizeRowScopeForRequest,
   rowScopeFor,
@@ -6,6 +6,15 @@ import {
   UnknownScopeEntityError,
 } from "@/domain/permissions/scope-for";
 import type { Viewer } from "@/domain/viewer";
+
+// 요청 memo는 deps 없는 호출(실제 경로)에만 걸린다 — memo 테스트는 기본 의존성을 이 가짜로 바꿔 센다.
+const defaults = vi.hoisted(() => ({
+  findRoleById: vi.fn<(viewer: unknown, id: string) => Promise<{ viewScope: string } | null>>(),
+}));
+vi.mock("@/domain/permissions/can", () => ({ can: () => Promise.resolve(true) }));
+vi.mock("@/repositories/roles", () => ({ findRoleById: defaults.findRoleById }));
+vi.mock("@/repositories/team-memberships", () => ({ findMembershipAtDate: () => Promise.resolve(null) }));
+vi.mock("@/repositories/teams", () => ({ findTeamById: () => Promise.resolve(null) }));
 
 const viewer: Viewer = { id: "u1", roleId: "role-pm" };
 
@@ -134,6 +143,13 @@ describe("rowScopeFor (06.2 행 범위 서술자)", () => {
     });
   });
 
+  it("org_unit이면 발령 팀 행을 못 찾을 때 orgUnitId가 null이다", async () => {
+    expect(await rowScopeFor(viewer, "expense", deps({ viewScope: "org_unit", orgByTeam: {} }))).toMatchObject({
+      rows: "limited",
+      by: { kind: "org_unit", orgUnitId: null },
+    });
+  });
+
   it("own이면 본인만 보는 limited다", async () => {
     expect(await rowScopeFor(viewer, "project", deps({ viewScope: "own" }))).toEqual({
       rows: "limited",
@@ -170,71 +186,72 @@ describe("rowScopeFor (06.2 행 범위 서술자)", () => {
 
 // 06.2(성공 기준 4 · eng I10): getSession()이 등록한 viewer 객체에만 요청 안 memo가 붙는다 — 다음 요청은 새 객체라 새 값을 읽는다.
 describe("rowScopeFor 요청 memo", () => {
-  function countingDeps(viewScope: () => string) {
-    const findRoleById = vi.fn(() => Promise.resolve({ viewScope: viewScope() }));
-    return {
-      findRoleById,
-      deps: {
-        can: () => Promise.resolve(true),
-        findRoleById,
-        findMembershipAtDate: () => Promise.resolve(null),
-        findTeamById: () => Promise.resolve(null),
-        today: () => "2026-10-08",
-      },
-    };
+  const findRoleById = defaults.findRoleById;
+  function roleScope(viewScope: () => string) {
+    findRoleById.mockImplementation(() => Promise.resolve({ viewScope: viewScope() }));
   }
+  beforeEach(() => findRoleById.mockReset());
 
   it("등록한 viewer로 같은 entity를 두 번 부르면 계급을 한 번만 읽는다", async () => {
     const v: Viewer = { id: "u1", roleId: "role-pm" };
     memoizeRowScopeForRequest(v);
-    const { findRoleById, deps } = countingDeps(() => "company");
-    await rowScopeFor(v, "project", deps);
-    await rowScopeFor(v, "project", deps);
+    roleScope(() => "company");
+    await rowScopeFor(v, "project");
+    await rowScopeFor(v, "project");
     expect(findRoleById).toHaveBeenCalledTimes(1);
   });
 
   it("등록하지 않은 viewer는 매번 계산한다", async () => {
     const v: Viewer = { id: "u1", roleId: "role-pm" };
-    const { findRoleById, deps } = countingDeps(() => "company");
-    await rowScopeFor(v, "project", deps);
-    await rowScopeFor(v, "project", deps);
+    roleScope(() => "company");
+    await rowScopeFor(v, "project");
+    await rowScopeFor(v, "project");
     expect(findRoleById).toHaveBeenCalledTimes(2);
   });
 
   it("같은 사람의 새로 등록한 viewer 객체는 바뀐 계급 값을 읽는다", async () => {
     let current = "company";
-    const { deps } = countingDeps(() => current);
+    roleScope(() => current);
     const first: Viewer = { id: "u1", roleId: "role-pm" };
     memoizeRowScopeForRequest(first);
-    expect((await rowScopeFor(first, "project", deps)).rows).toBe("all");
+    expect((await rowScopeFor(first, "project")).rows).toBe("all");
 
     current = "own";
-    expect((await rowScopeFor(first, "project", deps)).rows).toBe("all");
+    expect((await rowScopeFor(first, "project")).rows).toBe("all");
     const next: Viewer = { id: "u1", roleId: "role-pm" };
     memoizeRowScopeForRequest(next);
-    expect(await rowScopeFor(next, "project", deps)).toMatchObject({ rows: "limited", by: { kind: "own" } });
+    expect(await rowScopeFor(next, "project")).toMatchObject({ rows: "limited", by: { kind: "own" } });
   });
 
   it("등록한 viewer의 project · expense는 따로 계산된다", async () => {
     const v: Viewer = { id: "u1", roleId: "role-pm" };
     memoizeRowScopeForRequest(v);
-    const { findRoleById, deps } = countingDeps(() => "team");
-    await rowScopeFor(v, "project", deps);
-    await rowScopeFor(v, "expense", deps);
-    await rowScopeFor(v, "expense", deps);
+    roleScope(() => "team");
+    await rowScopeFor(v, "project");
+    await rowScopeFor(v, "expense");
+    await rowScopeFor(v, "expense");
     expect(findRoleById).toHaveBeenCalledTimes(2);
+  });
+
+  it("deps를 넘기면 등록한 viewer라도 memo를 건너뛰고 그 deps로 계산한다", async () => {
+    const v: Viewer = { id: "u1", roleId: "role-pm" };
+    memoizeRowScopeForRequest(v);
+    roleScope(() => "company");
+    expect((await rowScopeFor(v, "project")).rows).toBe("all");
+    const ownRole = vi.fn(() => Promise.resolve({ viewScope: "own" }));
+    expect(await rowScopeFor(v, "project", { findRoleById: ownRole })).toMatchObject({
+      rows: "limited",
+      by: { kind: "own" },
+    });
+    expect(ownRole).toHaveBeenCalledTimes(1);
   });
 
   it("첫 호출이 reject하면 memo에서 지워 다음 호출이 다시 계산한다", async () => {
     const v: Viewer = { id: "u1", roleId: "role-pm" };
     memoizeRowScopeForRequest(v);
-    const findRoleById = vi
-      .fn<(viewer: Viewer, id: string) => Promise<{ viewScope: string } | null>>()
-      .mockRejectedValueOnce(new Error("일시 오류"))
-      .mockResolvedValue({ viewScope: "company" });
-    const deps = { ...countingDeps(() => "company").deps, findRoleById };
-    await expect(rowScopeFor(v, "project", deps)).rejects.toThrow("일시 오류");
-    expect((await rowScopeFor(v, "project", deps)).rows).toBe("all");
+    findRoleById.mockRejectedValueOnce(new Error("일시 오류")).mockResolvedValue({ viewScope: "company" });
+    await expect(rowScopeFor(v, "project")).rejects.toThrow("일시 오류");
+    expect((await rowScopeFor(v, "project")).rows).toBe("all");
     expect(findRoleById).toHaveBeenCalledTimes(2);
   });
 });

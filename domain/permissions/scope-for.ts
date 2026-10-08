@@ -98,7 +98,7 @@ export function memoizeRowScopeForRequest(viewer: Viewer): void {
 
 export async function rowScopeFor(viewer: Viewer, entity: RowScopeEntity, deps?: Partial<RowScopeDeps>): Promise<RowScope> {
   const memo = requestMemo.get(viewer);
-  if (!memo) return computeRowScope(viewer, entity, deps);
+  if (!memo || deps) return computeRowScope(viewer, entity, deps);
   const cached = memo.get(entity);
   if (cached) return cached;
   const pending = computeRowScope(viewer, entity, deps);

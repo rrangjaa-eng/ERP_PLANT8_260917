@@ -20,19 +20,13 @@ import { listExpenses } from "@/domain/expenses/list";
 import { createEvidenceViewUrl, listEvidence } from "@/domain/evidence";
 import { listAllPaymentTargets } from "@/domain/payments/targets";
 import { confirmEvidence, EvidenceReviewConflictError, EvidenceReviewNotFoundError } from "@/domain/evidence-reviews";
-import { createProject } from "@/domain/projects";
-import { changeProjectStatus } from "@/domain/projects/status";
-import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
-import { setCustomerApproval } from "@/domain/quotes/revisions";
-import { approvalBasis } from "@/repositories/quote-revisions";
 import { seoulToday } from "@/lib/dates";
-import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import { insertRole, setRoleViewScope } from "@/repositories/roles";
 import { insertVendor } from "@/repositories/vendors";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { makePerson, orgUnitIdByName, teamIdByName } from "./approvals-fixtures";
 import { insertMembership } from "@/repositories/team-memberships";
-import { setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
+import { setupApprovedProject, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
 import { createMemoryStorage } from "./fakes/memory-storage";
 import { insertLiveMember } from "./fixtures/view-scope";
 import { resetDatabase, skipDbReset } from "./setup";
@@ -424,34 +418,6 @@ async function matrixRole(name: string, viewScope: "own" | "team", menus: { proj
   return role.id;
 }
 
-// 결재 통과 가능한 프로젝트(진행 · 1차 고객 승인 · 거래처 있는 줄 하나) — 시스템 주체가 만들고(다른 팀 PM 지정) 고객 승인은 담당 PM이 한다.
-async function approvedProject(name: string, teamId: string, pm: Viewer, vendorId: string): Promise<{ id: string; lineId: string }> {
-  const client = await insertVendor(SYSTEM_VIEWER, { name: `클라이언트-${randomUUID()}`, normalizedName: `클라이언트-${randomUUID()}` });
-  const project = await createProject(SYSTEM_VIEWER, { clientId: client.id, teamId, pmUserId: pm.id, name, startDate: "2026-09-01", endDate: "2026-12-31" });
-  const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
-  if (!revision) throw new Error(`1차 차수 없음: ${name}`);
-  const subcategory = (await firstSelectableSubcategory()).value;
-  const saved = await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
-    rows: [
-      {
-        id: randomUUID(),
-        isNew: true as const,
-        subcategory,
-        itemName: `${name} 무대`,
-        vendorId,
-        unitPrice: { currency: "KRW" as const, amount: 13_400_000, fxRate: 1 },
-        execution: { currency: "KRW" as const, amount: 12_400_000, fxRate: 1 },
-      },
-    ],
-  });
-  const lineId = saved.lines[0]?.id;
-  if (!lineId) throw new Error(`견적 줄 없음: ${name}`);
-  await changeProjectStatus(SYSTEM_VIEWER, project.id, { from: "bidding", to: "in_progress" });
-  const basis = await approvalBasis(SYSTEM_VIEWER, revision.id);
-  await setCustomerApproval(pm, revision.id, { approvedOn: "2026-09-15", seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
-  return { id: project.id, lineId };
-}
-
 async function buildMatrix(): Promise<MatrixWorld> {
   for (const key of [APPROVAL_ROUTE_EXPENSE_STEP1_ENABLED, APPROVAL_ROUTE_EXPENSE_STEP2_ENABLED, APPROVAL_ROUTE_EXPENSE_STEP3_ENABLED]) {
     await setSettingValue(SYSTEM_VIEWER, key, false);
@@ -482,8 +448,8 @@ async function buildMatrix(): Promise<MatrixWorld> {
   const plan2Staff = await makePerson("기획2직원", DEFAULT_ROLE_ID, "기획2팀");
   const mgmtStaff = await makePerson("경영직원", DEFAULT_ROLE_ID, "경영관리팀");
   const vendor = await insertVendor(SYSTEM_VIEWER, { name: "더테이블", normalizedName: `더테이블-${randomUUID()}`, defaultEvidenceType: "tax_invoice" });
-  const p2 = await approvedProject("기획2 행사", plan2, people.다른팀PM, fx.stageOneId);
-  const p3 = await approvedProject("경영 행사", mgmt, people.다른팀PM, fx.stageOneId);
+  const p2 = await setupApprovedProject("기획2 행사", plan2, people.다른팀PM, fx.stageOneId);
+  const p3 = await setupApprovedProject("경영 행사", mgmt, people.다른팀PM, fx.stageOneId);
   await insertLiveMember(p3.id, people.참여자.id, fx.ceo.id);
 
   const numbered: Record<Exclude<MatrixDoc, "C" | "DR">, { drafter: Viewer; id: string }> = {

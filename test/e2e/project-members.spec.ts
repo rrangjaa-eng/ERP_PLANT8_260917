@@ -389,4 +389,21 @@ test.describe("참여자 섹션 상태(검토 반영 R1: design I10 · I11)", ()
     await expect(membersSection(page).getByText("참여자 잠김")).toHaveCount(0);
     await page.context().close();
   });
+
+  test("떼기 연결 실패 뒤 서버 거부 — 떼기가 사라진 읽기 표에 `떼기 실패 · 다시 시도`가 남지 않고 R 행 팀 칸은 팀 이름(DOM 감사 #189)", async ({ browser, baseURL }) => {
+    const fx = await setupMembersE2E();
+    const page = await openDetail(browser, baseURL, fx, fx.lead);
+    const section = membersSection(page);
+    await page.route("**/*", failActions);
+    await memberRow(page, fx.r).getByRole("button", { name: /떼기/ }).click();
+    await expect(memberRow(page, fx.r).getByRole("alert")).toHaveText("떼기 실패 · 다시 시도");
+    await page.unroute("**/*", failActions);
+    await db.update(projects).set({ status: "completed" }).where(eq(projects.id, fx.projectId));
+    await memberRow(page, fx.z).getByRole("button", { name: /떼기/ }).click();
+    await expect(section.getByRole("status")).toContainText("완료 프로젝트 · 참여자 잠김");
+    await expect(section.getByRole("button", { name: /떼기/ })).toHaveCount(0);
+    await expect(section.getByText("떼기 실패 · 다시 시도")).toHaveCount(0);
+    await expect(memberRow(page, fx.r)).toContainText(fx.otherTeamName);
+    await page.context().close();
+  });
 });

@@ -466,7 +466,8 @@ export function MembersSection() {
       : []),
     ...members.map((member, index) => {
       const userId = member.userId;
-      const failed = userId !== null && failedIds.includes(userId);
+      // 서버 거부로 권리를 잃어 `떼기`가 사라진 읽기 표에는 지난 연결 실패 줄을 남기지 않는다(DOM 감사 #189).
+      const failed = canEdit && userId !== null && failedIds.includes(userId);
       const failId = `member-fail-${userId ?? index}`;
       return {
         key: userId ?? `row-${index}`,

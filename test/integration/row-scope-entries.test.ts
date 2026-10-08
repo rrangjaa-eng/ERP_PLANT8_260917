@@ -9,6 +9,7 @@ import { createProject, findProject, getProjectCopySource, loadProjectList } fro
 import { changeProjectStatus, ForbiddenError as StatusForbiddenError, ProjectNotFoundError } from "@/domain/projects/status";
 import { saveProjectLedger } from "@/domain/projects/ledger";
 import { createRevisionFromCurrent, setCustomerApproval } from "@/domain/quotes/revisions";
+import { ForbiddenError as LinesForbiddenError, listQuoteLines, prepareQuoteLineSave, RevisionNotFoundError, restoreQuoteLine } from "@/domain/quotes/lines";
 import { canOpenProject } from "@/domain/projects/visibility";
 import { assignTeam, createTeam } from "@/domain/org";
 import { setTeamArchived } from "@/repositories/teams";
@@ -55,11 +56,17 @@ const VISIBLE: Record<ViewScopePerson, readonly ViewScopeProject[]> = {
 
 // 입구 하나의 결과 — 없음(404 · 「존재하지 않는 프로젝트」 · 차수 없음)만 hidden이다. 범위 안 사람이 받는 다른 사용자 오류
 // (상태 바뀜 · 낡은 차수 · 게이트 막힘)는 행에 닿았다는 뜻이라 open — 매트릭스 쓰기 입구는 세계를 바꾸지 않는 입력만 쓴다.
-type Outcome = "open" | "hidden";
+// denied: 견적 줄 저장 준비 · 복원은 권리(projects 쓰기 · 조정)를 먼저 본다 — 권리 없는 사람은 행과 무관하게 같은 권리 문구라
+// 존재 여부가 새지 않는다(LINE_WRITERS 밖 사람의 기대값).
+type Outcome = "open" | "hidden" | "denied";
 const NOT_FOUND_TEXT = "존재하지 않는 프로젝트";
 
 function isNotFound(error: unknown): boolean {
-  return error instanceof ProjectNotFoundError || (error instanceof UserFacingError && error.message === NOT_FOUND_TEXT);
+  return (
+    error instanceof ProjectNotFoundError ||
+    error instanceof RevisionNotFoundError ||
+    (error instanceof UserFacingError && error.message === NOT_FOUND_TEXT)
+  );
 }
 
 async function outcomeOf(run: () => Promise<unknown>): Promise<Outcome> {
@@ -67,6 +74,7 @@ async function outcomeOf(run: () => Promise<unknown>): Promise<Outcome> {
     return (await run()) === null ? "hidden" : "open";
   } catch (error) {
     if (isNotFound(error)) return "hidden";
+    if (error instanceof LinesForbiddenError) return "denied";
     if (error instanceof UserFacingError) return "open";
     throw error;
   }
@@ -82,6 +90,14 @@ function perProject(run: (viewer: Viewer, project: ViewScopeWorld["projects"][Vi
 
 function outcomesFor(visible: readonly ViewScopeProject[]): Record<ViewScopeProject, Outcome> {
   return Object.fromEntries(VIEW_SCOPE_PROJECTS.map((key) => [key, visible.includes(key) ? "open" : "hidden"])) as Record<ViewScopeProject, Outcome>;
+}
+
+// 견적 줄 쓰기 권리(projects 쓰기 — 시드상 기획 PM만, 금액 노출 staffDefault)가 있는 사람.
+const LINE_WRITERS: readonly ViewScopePerson[] = ["팀PM", "참여자", "X", "무소속"];
+
+function lineWriteOutcomes(visible: readonly ViewScopeProject[], person: ViewScopePerson): Record<ViewScopeProject, Outcome> {
+  if (LINE_WRITERS.includes(person)) return outcomesFor(visible);
+  return Object.fromEntries(VIEW_SCOPE_PROJECTS.map((key) => [key, "denied"])) as Record<ViewScopeProject, Outcome>;
 }
 
 type Entry = {
@@ -152,15 +168,32 @@ const ENTRIES: Entry[] = [
     probe: perProject((viewer, project) => setCustomerApproval(viewer, project.revisionId, { approvedOn: "2026-10-01", seenTotalKrw: -1, contentToken: "stale" })),
     expected: (visible) => outcomesFor(visible),
   },
+  {
+    name: "견적 줄 목록(listQuoteLines)",
+    probe: perProject((viewer, project) => listQuoteLines(viewer, project.revisionId, { status: "bidding", canWrite: false })),
+    expected: (visible) => outcomesFor(visible),
+  },
+  {
+    name: "견적 줄 저장 준비(prepareQuoteLineSave)",
+    probe: perProject((viewer, project) => prepareQuoteLineSave(viewer, project.revisionId)),
+    expected: (visible, _world, person) => lineWriteOutcomes(visible, person),
+  },
+  {
+    // 살아 있는 줄이라 범위 안이면 「이미 복원됨」(restored false)으로 끝난다 — 쓰지 않는다.
+    name: "견적 줄 복원(restoreQuoteLine)",
+    probe: perProject((viewer, project) => restoreQuoteLine(viewer, project.lineId)),
+    expected: (visible, _world, person) => lineWriteOutcomes(visible, person),
+  },
 ];
 
 const cases = ENTRIES.flatMap((entry) => VIEW_SCOPE_PEOPLE.map((person) => ({ entry, person, label: `${entry.name} × ${person}` })));
 
 describe("행 범위 매트릭스 (06.2-03)", () => {
-  it("케이스 하한 — 입구 × 사람 아홉", () => {
+  it("케이스 하한 — 입구 열둘 × 사람 아홉(화면팀 포함 — K1)", () => {
     expect(VIEW_SCOPE_PEOPLE).toHaveLength(9);
     expect(VIEW_SCOPE_PROJECTS).toHaveLength(3);
-    expect(cases.length).toBeGreaterThanOrEqual(9 * 9);
+    expect(ENTRIES).toHaveLength(12);
+    expect(cases.length).toBeGreaterThanOrEqual(12 * 9);
   });
 
   it.each(cases)("$label", async ({ entry, person }) => {

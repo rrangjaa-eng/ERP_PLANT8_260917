@@ -33,6 +33,7 @@ export type MembersE2E = {
   emptyProjectId: string;
   emptyProjectName: string;
   teamId: string;
+  otherTeamId: string;
   otherTeamName: string;
 };
 
@@ -99,6 +100,7 @@ export async function setupMembersE2E(): Promise<MembersE2E> {
     emptyProjectId: emptyProject,
     emptyProjectName,
     teamId: team.id,
+    otherTeamId: otherTeam.id,
     otherTeamName,
   };
 }
@@ -144,4 +146,30 @@ export async function makeLastCandidateProject(): Promise<LastCandidateE2E> {
     throw new Error(`마지막 후보 프로젝트의 후보가 L 하나가 아님: ${final.rows.length}명 · truncated ${String(final.truncated)}`);
   }
   return { lead, l, projectId, projectName };
+}
+
+// 같은 본부 다른 팀(참여자 팀)에 후보 n명 — 공유 DB에서 본부 없는 대표가 후보에 섞이므로 개수 단언은 접두 검색으로만 한다.
+export async function makeCandidates(fx: Pick<MembersE2E, "otherTeamId">, prefix: string, count: number): Promise<Person[]> {
+  const effectiveFrom = `${year()}-01-01`;
+  const people: Person[] = [];
+  for (let index = 0; index < count; index += 1) {
+    people.push(await makePerson(`${prefix}${String(index).padStart(2, "0")}-`, "role-pm", fx.otherTeamId, effectiveFrom));
+  }
+  return people;
+}
+
+export type LongNameMembers = { long: Person; mixed: Person; longRetired: Person };
+
+// 긴 이름(40자) · 영문 혼용 · 긴 이름 퇴직자를 참여자로 붙인다(폰 행 두 줄 이내 · 태그 잘림 0 실측용, R5 · I7).
+export async function addLongNameMembers(fx: Pick<MembersE2E, "otherTeamId" | "projectId" | "pm">, lead: Person): Promise<LongNameMembers> {
+  const effectiveFrom = `${year()}-01-01`;
+  const longBase = "초장문이름가나다라마바사아자차카타파하거너더러머버서어저처커터퍼허고노도로모보소오조".slice(0, 36);
+  const long = await makePerson(longBase, "role-pm", fx.otherTeamId, effectiveFrom);
+  const mixed = await makePerson("LongEnglishNameMixedWithKorean김", "role-pm", fx.otherTeamId, effectiveFrom);
+  const longRetired = await makePerson(longBase.split("").reverse().join(""), "role-pm", fx.otherTeamId, effectiveFrom);
+  await addProjectMembers(lead.viewer, fx.projectId, [long.viewer.id]);
+  await addProjectMembers(lead.viewer, fx.projectId, [mixed.viewer.id]);
+  await addProjectMembers(lead.viewer, fx.projectId, [longRetired.viewer.id]);
+  await setResignationDate(SYSTEM_VIEWER, longRetired.viewer.id, addDays(seoulToday(), -1));
+  return { long, mixed, longRetired };
 }

@@ -515,3 +515,14 @@ td:has(> .rowNumber) {
     min-height: var(--touch-min);
   }
 }
+
+/* 06.2-12(S4) — 폰 「더보기」 자식 감싸개. PC의 `.copyActions`는 display: contents라 숨은 자식은 상자 · 간격을 만들지 않는다. */
+.memberAddSlot {
+  display: none;
+}
+
+@media (max-width: 699.98px) {
+  .memberAddSlot {
+    display: contents;
+  }
+}

@@ -36,7 +36,7 @@ import type { DetailScreenProps } from "@/ui/detail-screen/DetailScreen";
 import { QuoteLedger } from "./quote-table";
 import { RevisionSection } from "./revision-section";
 import { CardUsageSection } from "./card-usage-section";
-import { MembersSection, ProjectMembersProvider } from "./members-section";
+import { MemberAddHeaderButton, MembersSection, ProjectMembersProvider } from "./members-section";
 import type { StatusChangeProps } from "./status-change";
 import type { CustomerApprovalProps, NewRevisionProps } from "./revision-dialogs";
 import { getPerson } from "@/domain/people";
@@ -268,6 +268,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       settlement={settlementHeader ? { projectId: project.id, ...settlementHeader } : null}
       newRevision={newRevision}
       copyProjectHref={canCopyProject ? `/projects?new=1&copyFrom=${project.id}` : null}
+      memberAdd={memberRights.canEdit && memberRights.hasCandidates ? <MemberAddHeaderButton /> : null}
       customerApproval={customerApproval}
       approvedSeq={approvedSeq}
       revisions={revisionSummaries.flatMap((row) => (row.revisionId && row.seq !== undefined ? [{ id: row.revisionId, seq: row.seq }] : []))}

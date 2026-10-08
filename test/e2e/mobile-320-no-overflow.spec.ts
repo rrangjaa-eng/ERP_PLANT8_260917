@@ -1,5 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
-import { createFixtureUser, uniqueBusinessNo } from "./fixtures";
+import { createFixtureUser, uniqueBusinessNo, waitForCardUsageSection } from "./fixtures";
+import { loginPage } from "./leave-org";
+import { addLongNameMembers, setupMembersE2E } from "./project-members-fixture";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { insertVendor, setVendorArchived, setVendorHidden } from "@/repositories/vendors";
 import { insertCorpCard, setCorpCardArchived } from "@/repositories/corp-cards";
@@ -213,6 +215,65 @@ test.describe("폭 320 — 어느 화면도 가로로 넘치지 않는다", () =
       );
     expect(href, "사람 상세 링크").toBeTruthy();
     await expectNoOverflow(page, href!);
+  });
+
+  // 06.2-12(UI-SPEC S2 overflow · long-text, 검토 반영 R1: design R5 · I7): 참여자 행은 두 줄 이내, `퇴직` 태그는 잘리지 않고, `떼기`는 44, 시트도 넘치지 않는다.
+  test("참여자 섹션(행 있음 · 긴 이름 퇴직자 · 떼기 실패 줄) · 참여자 더하기 시트 — 폭 320", async ({ browser, baseURL }) => {
+    test.setTimeout(90_000);
+    const fx = await setupMembersE2E();
+    const long = await addLongNameMembers(fx, fx.lead);
+    const detail = await loginPage(browser, baseURL, fx.lead, { width: 320, height: 640 });
+    await detail.goto(`/projects/${fx.projectId}`);
+    await waitForCardUsageSection(detail);
+    const section = detail.locator("section").filter({ has: detail.getByRole("heading", { name: "참여자", exact: true }) });
+    expectMeasured("320px 참여자 섹션", await measure(detail));
+
+    // 행(주 행 + 접힌 줄)이 두 줄을 넘지 않는다 — 이름 span은 한 줄 말줄임이고 title이 전체 이름이다.
+    const lines = async (row: import("@playwright/test").Locator) =>
+      row.evaluate((main) => {
+        const fold = main.nextElementSibling;
+        const mainCell = main.querySelector("td");
+        const style = mainCell ? getComputedStyle(mainCell) : null;
+        const lineHeight = style ? Number.parseFloat(style.lineHeight) : 0;
+        const pad = style ? Number.parseFloat(style.paddingTop) : 0;
+        const total = main.getBoundingClientRect().height + (fold && fold.classList.length > 0 ? fold.getBoundingClientRect().height : 0);
+        return { total, limit: 2 * lineHeight + 3 * pad + 4 };
+      });
+    for (const person of [long.long, long.mixed, long.longRetired]) {
+      const row = section.getByRole("row").filter({ hasText: person.name.slice(0, 8) }).first();
+      await expect(row).toBeVisible();
+      const measured = await lines(row);
+      expect.soft(measured.total, `${person.name} 행 높이(두 줄 이내)`).toBeLessThanOrEqual(measured.limit);
+      const nameSpan = row.locator("span[title]").first();
+      await expect.soft(nameSpan).toHaveAttribute("title", person.name);
+      const remove = row.getByRole("button", { name: /떼기/ });
+      expect.soft((await remove.boundingBox())?.height ?? 0, `${person.name} 떼기 높이`).toBeGreaterThanOrEqual(44);
+    }
+    // 퇴직 태그 상자는 행 안에 다 들고 잘리지 않는다.
+    const retiredRow = section.getByRole("row").filter({ hasText: long.longRetired.name.slice(0, 8) }).first();
+    const tag = retiredRow.getByText("퇴직", { exact: true }).first();
+    const [tagBox, rowBox] = [await tag.boundingBox(), await retiredRow.boundingBox()];
+    expect.soft((tagBox?.x ?? 0) + (tagBox?.width ?? 0), "퇴직 태그 오른쪽이 행 안").toBeLessThanOrEqual((rowBox?.x ?? 0) + (rowBox?.width ?? 0) + 0.5);
+    expect.soft(await tag.evaluate((element) => element.scrollWidth <= element.clientWidth), "퇴직 태그 잘림 없음").toBe(true);
+
+    // `떼기` 연결 실패 뒤에도 그 행이 두 줄을 넘지 않는다.
+    const failActions = (route: import("@playwright/test").Route) =>
+      route.request().method() === "POST" && route.request().headers()["next-action"] ? route.abort() : route.fallback();
+    await detail.route("**/*", failActions);
+    const failingRow = section.getByRole("row").filter({ hasText: long.long.name.slice(0, 8) }).first();
+    await failingRow.getByRole("button", { name: /떼기/ }).click();
+    await expect(failingRow.getByRole("alert").first()).toBeVisible();
+    const afterFail = await lines(failingRow);
+    expect.soft(afterFail.total, "떼기 실패 줄 뒤 행 높이(두 줄 이내)").toBeLessThanOrEqual(afterFail.limit);
+    expectMeasured("320px 참여자 섹션(떼기 실패)", await measure(detail));
+    await detail.unroute("**/*", failActions);
+
+    // 시트(참여자 더하기)가 열린 상태도 넘치지 않는다 — 폰은 「더보기」 자식으로 연다.
+    await detail.getByRole("button", { name: "더보기", exact: true }).click();
+    await detail.getByRole("button", { name: "참여자 더하기" }).first().click();
+    await expect(detail.getByRole("dialog", { name: "참여자 더하기" })).toBeVisible();
+    expectMeasured("320px 참여자 더하기 시트", await measure(detail));
+    await detail.context().close();
   });
 
   test("PM이 여는 프로젝트 등록·상세(견적 줄 포함)", async ({ page }) => {

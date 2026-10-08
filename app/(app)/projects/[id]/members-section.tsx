@@ -243,6 +243,27 @@ function RemoveAction({
   );
 }
 
+// 폰(<700) 머리 줄 「더보기」 안 `참여자 더하기`(S4). 누르면 먼저 같은 펼침의 「더보기」 토글에 포커스를 옮긴 뒤 연다 — 다이얼로그가 열 때 잡은
+// 돌아갈 곳이 토글이 되어 더함 · 취소 · Esc 모두 토글로 돌아온다(`ui/` 무변경). PC(≥700)에서는 감싸개가 CSS로 숨어 머리 버튼 줄 간격이 그대로다.
+export function MemberAddHeaderButton() {
+  const { openPicker } = useMembers();
+  return (
+    <span className={styles.memberAddSlot}>
+      <Button
+        variant="secondary"
+        className={styles.headerTouchButton}
+        onClick={(event) => {
+          const groupId = event.currentTarget.closest("[id]")?.id;
+          if (groupId) document.querySelector<HTMLElement>(`button[aria-controls="${CSS.escape(groupId)}"]`)?.focus();
+          openPicker();
+        }}
+      >
+        참여자 더하기
+      </Button>
+    </span>
+  );
+}
+
 function SectionLoading({ canEdit }: { canEdit: boolean }) {
   return (
     <div aria-busy="true">

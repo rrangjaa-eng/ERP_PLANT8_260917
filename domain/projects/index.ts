@@ -1,6 +1,7 @@
 import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
-import { scopeFor } from "@/domain/permissions/scope-for";
+import { scopeFor, type RowScope } from "@/domain/permissions/scope-for";
+import { projectRowScope } from "@/domain/projects/visibility";
 import { project, projectMany, type DtoSpec, type ProjectDeps } from "@/domain/permissions/project";
 import { visible as defaultVisible } from "@/domain/permissions/visible";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
@@ -329,7 +330,7 @@ export type ProjectListResult = {
 
 export type ProjectListDeps = {
   now: () => Date;
-  scope: typeof scopeFor;
+  scope: (viewer: Viewer) => Promise<RowScope>;
   settle: (viewer: Viewer) => Promise<void>;
   repo: { aggregate: typeof repoAggregateProjects; listPage: typeof repoListProjectsPage };
   teams: typeof repoListTeams;
@@ -356,7 +357,7 @@ export async function loadProjectList(
   const projectDeps = deps?.visible ? { visible: deps.visible } : undefined;
 
   await (deps?.settle ?? settleForProjectList)(viewer);
-  const scope = await (deps?.scope ?? scopeFor)(viewer, PROJECT_ENTITY);
+  const scope = await (deps?.scope ?? projectRowScope)(viewer);
 
   // 04-48(C-08) — URL 값은 여기서 한 번 정규화한 뒤에만 쓴다(배열 첫 값 · 팀은 uuid 모양 + 고를 수 있는 팀 · 연도
   // 2000–2100). 팀 목록은 필터 줄과 같은 조회이고, uuid 모양의 팀 값이 왔을 때만 읽는다.

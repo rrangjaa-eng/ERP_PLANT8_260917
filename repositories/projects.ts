@@ -3,7 +3,8 @@ import type { InferSelectModel, SQL } from "drizzle-orm";
 import { db } from "@/db/client";
 import { actionLog, projects, quoteLines, quoteRevisions, revenueEntries, teams, users, vendors } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
-import type { Scope } from "@/domain/permissions/scope-for";
+import type { RowScope } from "@/domain/permissions/scope-for";
+import { rowScopeCondition } from "@/repositories/row-scope";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { ISSUED_BASIS_STATUSES, type ProfitBasis } from "@/domain/projects/list-view";
 import type { ProjectStatus } from "@/domain/projects/status-transitions";
@@ -155,8 +156,12 @@ export type ProjectAggregateBucket = {
 // 고치면 합계가 그 사람이 볼 수 없는 행을 더하거나 덜 더치는 정보 노출이
 // 된다. 두 함수 모두 이 함수 하나만 호출한다.
 // 04-17(사용자 D18 · C-21): 보관된 프로젝트는 보관함을 볼 수 있는 계급에게도 목록·합계에 없다.
-function projectFilterConditions(filter: ProjectListFilter) {
-  const conditions: (SQL | undefined)[] = [isNull(projects.archivedAt)];
+// 06.2(D-6204 · T-06.2-22): 행 범위도 같은 조건 — 목록 · 합계가 이 함수 하나로 같은 행만 본다.
+function projectFilterConditions(viewer: Viewer, filter: ProjectListFilter, scope: RowScope) {
+  const conditions: (SQL | undefined)[] = [
+    isNull(projects.archivedAt),
+    rowScopeCondition(viewer, scope, { projectId: projects.id, teamId: projects.teamId, pmUserId: projects.pmUserId }),
+  ];
   if (filter.status) conditions.push(eq(projects.status, filter.status));
   if (filter.teamId) conditions.push(eq(projects.teamId, filter.teamId));
   if (filter.range) conditions.push(rangeCondition(filter.range));
@@ -237,7 +242,7 @@ function resolveSortColumn(
 // `projects.id`가 쪽 사이 순서를 고정한다).
 export async function listProjectsPage(
   viewer: Viewer,
-  opts: { scope: Scope; filter: ProjectListFilter; sort: ProjectSort; offset: number; limit: number },
+  opts: { scope: RowScope; filter: ProjectListFilter; sort: ProjectSort; offset: number; limit: number },
 ): Promise<ProjectListRow[]> {
   void viewer;
   if (opts.scope.rows === "none") return [];
@@ -246,7 +251,7 @@ export async function listProjectsPage(
   const lineSums = lineSumsSubquery();
   const issued = issuedSumsLateral();
   const money = rowMoneyExpressions(lineSums, issued);
-  const conditions = projectFilterConditions(opts.filter);
+  const conditions = projectFilterConditions(viewer, opts.filter, opts.scope);
   const sortColumn = resolveSortColumn(opts.sort.key, money);
   // 04-18 — 매출(미발행)·수익률(기준 ≤ 0)의 빈 값은 방향과 무관하게 맨 뒤다.
   const nullsLast = opts.sort.key === "revenueKrw" || opts.sort.key === "profitRate";
@@ -301,7 +306,7 @@ export async function listProjectsPage(
 // 그대로 재사용해 목록과 같은 행만 더하고, 귀속은 그 위에 구간 식으로만 나눈다.
 export async function aggregateProjects(
   viewer: Viewer,
-  opts: { scope: Scope; filter: ProjectListFilter },
+  opts: { scope: RowScope; filter: ProjectListFilter },
 ): Promise<ProjectAggregateBucket[]> {
   void viewer;
   if (opts.scope.rows === "none") return [];
@@ -310,7 +315,7 @@ export async function aggregateProjects(
   const lineSums = lineSumsSubquery();
   const issued = issuedSumsLateral();
   const money = rowMoneyExpressions(lineSums, issued);
-  const conditions = projectFilterConditions(opts.filter);
+  const conditions = projectFilterConditions(viewer, opts.filter, opts.scope);
 
   // 구간 식에 날짜 파라미터가 있어 GROUP BY는 선택 목록의 첫 열(bucket) 번호로 건다 — 같은 식을 다시 쓰면
   // 파라미터 번호가 달라 Postgres가 다른 식으로 본다.

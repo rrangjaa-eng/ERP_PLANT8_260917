@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { projects } from "@/db/schema";
 import type { RowScope } from "@/domain/permissions/scope-for";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { rowScopeCondition } from "@/repositories/row-scope";
 
 // 06.2-03(D-6204 · D-6205 ① · ③ · D-6207 · T-06.2-21 · T-06.2-24 · CSO-4): 행 범위 번역기 — DB 없이 생성 SQL로 fail-closed를 고정한다.
@@ -14,7 +15,7 @@ const TEAM = "11111111-1111-4111-8111-111111111111";
 const ORG = "22222222-2222-4222-8222-222222222222";
 
 function render(scope: RowScope): { sql: string; params: unknown[] } {
-  const query = dialect.sqlToQuery(rowScopeCondition(scope, COLS));
+  const query = dialect.sqlToQuery(rowScopeCondition(SYSTEM_VIEWER, scope, COLS));
   return { sql: query.sql, params: query.params };
 }
 
@@ -53,7 +54,7 @@ describe("rowScopeCondition (06.2 행 범위 번역기)", () => {
 
   it("limited team(T) — 보관된 팀 발령은 팀 범위를 주지 않는다(팀 조각이 보관 아닌 팀만 잇는다)", () => {
     const out = render(limited({ kind: "team", teamId: TEAM }));
-    expect(out.sql).toMatch(/exists \(select 1 from "teams" "scope_team" where "scope_team"\."id" = \$\d+ and "scope_team"\."archived_at" is null\)/);
+    expect(out.sql).toMatch(/exists \(select 1 from "teams" where "teams"\."id" = \$\d+ and "teams"\."archived_at" is null\)/);
   });
 
   it("limited team(null) → 팀 조각은 false, PM · 참여는 그대로 OR (CSO-4 — 조각이 사라져 전 행이 되지 않는다)", () => {
@@ -68,7 +69,7 @@ describe("rowScopeCondition (06.2 행 범위 번역기)", () => {
   it("limited org_unit(O) → teams 하위 질의 org_unit_id 비교", () => {
     const out = render(limited({ kind: "org_unit", orgUnitId: ORG }));
     expectPmAndMember(out);
-    expect(out.sql).toMatch(/"projects"\."team_id" in \(select "scope_team"\."id" from "teams" "scope_team" where "scope_team"\."org_unit_id" = \$\d+\)/);
+    expect(out.sql).toMatch(/"projects"\."team_id" in \(select "teams"\."id" from "teams" where "teams"\."org_unit_id" = \$\d+\)/);
     expect(out.params).toContain(ORG);
   });
 
@@ -89,7 +90,7 @@ describe("rowScopeCondition (06.2 행 범위 번역기)", () => {
 
   it("viewerId는 문자열 보간이 아니라 파라미터로만 간다(T-06.2-25)", () => {
     const hostile = "x' or 1=1 --";
-    const query = dialect.sqlToQuery(rowScopeCondition({ rows: "limited", includeArchived: false, viewerId: hostile, by: { kind: "own" } }, COLS));
+    const query = dialect.sqlToQuery(rowScopeCondition(SYSTEM_VIEWER, { rows: "limited", includeArchived: false, viewerId: hostile, by: { kind: "own" } }, COLS));
     expect(query.sql).not.toContain(hostile);
     expect(query.params).toContain(hostile);
   });

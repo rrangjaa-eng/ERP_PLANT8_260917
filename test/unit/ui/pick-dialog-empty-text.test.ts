@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pickEmptyText, pickFootLine } from "@/ui/pick-dialog/PickDialog";
+import { pickEmptyText, pickFootLine, pickManyPrimaryLabel } from "@/ui/pick-dialog/PickDialog";
 
 // 05 /review B2: 골라내기 빈 목록 문구의 조사 — 받침 없는 `거래처`는 `가`, 받침 있는 `줄`은 `이`.
 describe("pickEmptyText", () => {
@@ -25,5 +25,24 @@ describe("pickFootLine — 바닥 줄 우선순위(E-24)", () => {
 
   it("noun `프로젝트`도 받침으로 조사를 고른다", () => {
     expect(pickEmptyText("프로젝트", "no-match")).toBe("조건에 맞는 프로젝트가 없습니다");
+  });
+});
+
+// 06.2 SP-62-1 — 다중 변형: noun `사람`의 조사(받침 있는 `줄`과 같은 `이`)와 1차 라벨 `{동작} N`(0이면 숫자 없음).
+describe("pickEmptyText — noun 사람 (06.2 SP-62-1)", () => {
+  it("사람은 조사 `이`를 쓰고 기존 이름의 조사는 그대로다", () => {
+    expect(pickEmptyText("사람", "no-match")).toBe("조건에 맞는 사람이 없습니다");
+    expect(pickEmptyText("사람", "none-selectable")).toBe("고를 수 있는 사람이 없습니다");
+    expect(pickEmptyText("줄", "no-match")).toBe("조건에 맞는 줄이 없습니다");
+    expect(pickEmptyText("거래처", "no-match")).toBe("조건에 맞는 거래처가 없습니다");
+    expect(pickEmptyText("프로젝트", "none-selectable")).toBe("고를 수 있는 프로젝트가 없습니다");
+  });
+});
+
+describe("pickManyPrimaryLabel — 1차 `{동작} N` (06.2 SP-62-1)", () => {
+  it("0이면 라벨 그대로, 1 이상이면 숫자가 뒤에 붙는다", () => {
+    expect(pickManyPrimaryLabel("참여자 더하기", 0)).toBe("참여자 더하기");
+    expect(pickManyPrimaryLabel("참여자 더하기", 1)).toBe("참여자 더하기 1");
+    expect(pickManyPrimaryLabel("참여자 더하기", 3)).toBe("참여자 더하기 3");
   });
 });

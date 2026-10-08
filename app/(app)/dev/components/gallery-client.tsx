@@ -1,13 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { buttonLinkClassName } from "@/ui/button/Button";
 import { Attachments, type AttachmentActions, type AttachmentFile } from "@/ui/attachments/Attachments";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { Button } from "@/ui/button/Button";
 import { TextField } from "@/ui/input/TextField";
-import { PickDialog, type PickItem, type PickResult, type PickRow } from "@/ui/pick-dialog/PickDialog";
+import { PickDialog, type PickItem, type PickManyOutcome, type PickResult, type PickRow } from "@/ui/pick-dialog/PickDialog";
 import { Num } from "@/ui/num/Num";
 import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
 import { PanelForm } from "@/ui/side-panel/PanelForm";
@@ -420,7 +420,8 @@ export function PickSamples() {
   );
 }
 
-// 06.2-07(SP-62-1) — 다중 고르기 표본. 사람 60명 중 한 번에 50명까지 내려가고(넘으면 `truncated`), 검색은 이름 · 팀에 글자가 들어 있는 사람이다.
+// 06.2-07(SP-62-1) — 다중 고르기 표본. 보통은 사람 60명 중 한 번에 50명까지 내려가고(넘으면 `truncated`), 검색은 이름 · 팀에 글자가 들어 있는 사람이다.
+// 거부 · 연결 실패 표본은 목록이 50 안이라(`truncated` 거짓) `새로 고침` 뒤 목록에 없는 고름이 빠지는 것까지 보인다.
 const PICK_PEOPLE_RAW: [name: string, team: string | null][] = [
   ["김서연", "기획1팀"],
   ["박지훈", "기획1팀"],
@@ -430,11 +431,27 @@ const PICK_PEOPLE_RAW: [name: string, team: string | null][] = [
   ...Array.from({ length: 55 }, (_, index): [string, string] => [`표본 사람 ${index + 6}`, "표본팀"]),
 ];
 const PICK_PEOPLE: PickRow[] = PICK_PEOPLE_RAW.map(([name, team], index) => ({ type: "row", id: `u${index + 1}`, title: name, subtitle: team ?? "—", selectable: true }));
+const PICK_PEOPLE_FEW = PICK_PEOPLE.slice(0, 5);
 
-function pickPeopleSearch(): (query: string) => Promise<PickResult | null> {
+type PickManyKind = "normal" | "none" | "failed" | "reject" | "network";
+
+const PICK_MANY_OPENERS: { kind: PickManyKind; label: string }[] = [
+  { kind: "normal", label: "다중 고르기 열기" },
+  { kind: "none", label: "후보 0 고르기 열기" },
+  { kind: "failed", label: "실패 고르기 열기" },
+  { kind: "reject", label: "거부 고르기 열기" },
+  { kind: "network", label: "연결 고르기 열기" },
+];
+
+function pickPeopleSearch(kind: PickManyKind, excluded: ReadonlySet<string>): (query: string) => Promise<PickResult | null> {
   return (query) => {
     const q = query.trim();
-    const matched = PICK_PEOPLE.filter((row) => q === "" || row.title.includes(q) || (row.subtitle ?? "").includes(q));
+    if (kind === "failed") return Promise.resolve(null);
+    if (kind === "none") {
+      return Promise.resolve(q === "" ? { items: [], truncated: false, emptyDefault: "더할 수 있는 사람 없음" } : { items: [], truncated: false });
+    }
+    const source = kind === "normal" ? PICK_PEOPLE : PICK_PEOPLE_FEW;
+    const matched = source.filter((row) => !excluded.has(row.id) && (q === "" || row.title.includes(q) || (row.subtitle ?? "").includes(q)));
     return Promise.resolve({ items: matched.slice(0, 50), truncated: matched.length > 50, subtitle: "표본 프로젝트" });
   };
 }
@@ -447,33 +464,56 @@ function pickManyResultLine(rows: PickRow[]): string | null {
 }
 
 export function PickManySamples() {
-  const [open, setOpen] = useState(false);
+  const [kind, setKind] = useState<PickManyKind | null>(null);
   const [result, setResult] = useState("");
+  // 거부 · 연결 실패 표본은 첫 시도만 거절한다 — 거부된 사람은 다시 받은 목록에서 빠진다.
+  const attemptedRef = useRef(false);
+  const excludedRef = useRef<Set<string>>(new Set());
+
+  function openKind(next: PickManyKind) {
+    attemptedRef.current = false;
+    excludedRef.current = new Set();
+    setKind(next);
+  }
+
+  function pickMany(rows: PickRow[]): Promise<PickManyOutcome> {
+    const first = rows[0];
+    if (first && !attemptedRef.current && (kind === "reject" || kind === "network")) {
+      attemptedRef.current = true;
+      if (kind === "reject") {
+        excludedRef.current.add(first.id);
+        return Promise.resolve({ ok: false, reason: `${first.title} 더할 수 없음 · 새로 고침`, retryable: false });
+      }
+      return Promise.resolve({ ok: false, reason: "더하지 못함 · 다시 시도", retryable: true });
+    }
+    setResult(`더함 · ${rows.map((row) => row.title).join(", ")}`);
+    return Promise.resolve({ ok: true });
+  }
+
   return (
     <>
       <div className={styles.samples}>
-        <Button variant="secondary" onClick={() => setOpen(true)}>
-          다중 고르기 열기
-        </Button>
+        {PICK_MANY_OPENERS.map((opener) => (
+          <Button key={opener.kind} variant="secondary" onClick={() => openKind(opener.kind)}>
+            {opener.label}
+          </Button>
+        ))}
       </div>
       <p data-gallery="pick-many-result">{result}</p>
       <PickDialog
         mode="multiple"
-        open={open}
-        onClose={() => setOpen(false)}
+        open={kind !== null}
+        onClose={() => setKind(null)}
         title="참여자 더하기"
         subtitle="표본 프로젝트"
         searchLabel="사람 검색"
-        search={pickPeopleSearch()}
+        search={(query) => pickPeopleSearch(kind ?? "normal", excludedRef.current)(query)}
         primaryLabel="참여자 더하기"
         noun="사람"
         failedLine="사람 목록 불러오기 실패"
         emptyNextStep={null}
         resultLineMany={pickManyResultLine}
-        onPickMany={(rows) => {
-          setResult(`더함 · ${rows.map((row) => row.title).join(", ")}`);
-          return Promise.resolve({ ok: true });
-        }}
+        onPickMany={pickMany}
       />
     </>
   );

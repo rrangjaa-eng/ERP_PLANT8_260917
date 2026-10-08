@@ -66,6 +66,14 @@ registerAction({
   dtoName: null,
 });
 
+// 06.2-12(S2): 참여자 섹션 읽기 — 카드 사용 섹션 액션과 같은 보기 등록. 행은 ProjectMemberDto 투영.
+registerAction({
+  name: "listProjectMembersAction",
+  menu: "projects",
+  action: "view",
+  dtoName: "ProjectMemberDto",
+});
+
 // 06.2-05(D-6211): 참여자 후보 — 후보를 보는 것도 더하기 권리 자리라 쓰기로 적는다. 행은 ProjectMemberCandidateDto 투영.
 registerAction({
   name: "listMemberCandidatesAction",

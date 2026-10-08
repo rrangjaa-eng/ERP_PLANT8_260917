@@ -26,10 +26,11 @@ import {
   statusChangedMessage,
 } from "@/domain/projects/status";
 import { PROJECT_STATUSES } from "@/domain/projects/status-transitions";
-import { addProjectMembers, listMemberCandidates, removeProjectMember, restoreProjectMember } from "@/domain/projects/members";
+import { addProjectMembers, listMemberCandidates, listProjectMembers, removeProjectMember, restoreProjectMember } from "@/domain/projects/members";
 import "@/app/(app)/document-kinds";
 import { currentHolderNames, projectActionResult } from "@/domain/approvals";
 import { SETTLEMENT_DOCUMENT_KIND, submitSettlement, withdrawSettlement } from "@/domain/settlements";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { log } from "@/lib/log";
 import "./actions.registry";
 
@@ -339,6 +340,15 @@ export const setCustomerApprovalAction = authedActionClient
 export const listRevisionLinesAction = authedActionClient.schema(revisionLinesInputSchema).action(async ({ parsedInput, ctx }) => {
   return listRevisionLines(ctx.viewer, parsedInput.projectId, { revisionSeq: parsedInput.revisionSeq });
 });
+
+// 06.2-12(S2): 프로젝트 상세 「참여자」 섹션 읽기 — 담당 PM 행 · 참여자 · 권리 불린. 범위 밖이면 없는 id와 같은 일반 문구(존재를 새지 않는다 — 260907 `visibleProject` → 404).
+export const listProjectMembersAction = authedActionClient
+  .schema(z.object({ projectId: z.string().uuid() }))
+  .action(async ({ parsedInput, ctx }) => {
+    const view = await listProjectMembers(ctx.viewer, parsedInput.projectId);
+    if (!view) throw new UserFacingError("처리 실패 · 다시 시도");
+    return view;
+  });
 
 // 06.2-05(D-6211 · D-6221): 참여자 후보 — 서버가 규칙대로 거른 사람(이름순 50행 · truncated). 권리 없음 · 완료 프로젝트면 빈 목록.
 export const listMemberCandidatesAction = authedActionClient

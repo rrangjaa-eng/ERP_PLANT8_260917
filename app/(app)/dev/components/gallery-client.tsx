@@ -7,7 +7,7 @@ import { Attachments, type AttachmentActions, type AttachmentFile } from "@/ui/a
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { Button } from "@/ui/button/Button";
 import { TextField } from "@/ui/input/TextField";
-import { PickDialog, type PickItem, type PickResult } from "@/ui/pick-dialog/PickDialog";
+import { PickDialog, type PickItem, type PickResult, type PickRow } from "@/ui/pick-dialog/PickDialog";
 import { Num } from "@/ui/num/Num";
 import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
 import { PanelForm } from "@/ui/side-panel/PanelForm";
@@ -415,6 +415,65 @@ export function PickSamples() {
         onResult={setResult}
         noun={which === "project" ? "프로젝트" : "줄"}
         empty={which === "empty"}
+      />
+    </>
+  );
+}
+
+// 06.2-07(SP-62-1) — 다중 고르기 표본. 사람 60명 중 한 번에 50명까지 내려가고(넘으면 `truncated`), 검색은 이름 · 팀에 글자가 들어 있는 사람이다.
+const PICK_PEOPLE_RAW: [name: string, team: string | null][] = [
+  ["김서연", "기획1팀"],
+  ["박지훈", "기획1팀"],
+  ["이도윤", "운영팀"],
+  ["최하은", "운영팀"],
+  ["정민재", null],
+  ...Array.from({ length: 55 }, (_, index): [string, string] => [`표본 사람 ${index + 6}`, "표본팀"]),
+];
+const PICK_PEOPLE: PickRow[] = PICK_PEOPLE_RAW.map(([name, team], index) => ({ type: "row", id: `u${index + 1}`, title: name, subtitle: team ?? "—", selectable: true }));
+
+function pickPeopleSearch(): (query: string) => Promise<PickResult | null> {
+  return (query) => {
+    const q = query.trim();
+    const matched = PICK_PEOPLE.filter((row) => q === "" || row.title.includes(q) || (row.subtitle ?? "").includes(q));
+    return Promise.resolve({ items: matched.slice(0, 50), truncated: matched.length > 50, subtitle: "표본 프로젝트" });
+  };
+}
+
+// 고른 사람 전체의 결과 줄 — 호출부가 낱말을 정한다(검색으로 가려진 고름도 센다).
+function pickManyResultLine(rows: PickRow[]): string | null {
+  const first = rows[0];
+  if (!first) return null;
+  return rows.length === 1 ? `${first.title} 선택` : `${first.title} 외 ${rows.length - 1}명 선택`;
+}
+
+export function PickManySamples() {
+  const [open, setOpen] = useState(false);
+  const [result, setResult] = useState("");
+  return (
+    <>
+      <div className={styles.samples}>
+        <Button variant="secondary" onClick={() => setOpen(true)}>
+          다중 고르기 열기
+        </Button>
+      </div>
+      <p data-gallery="pick-many-result">{result}</p>
+      <PickDialog
+        mode="multiple"
+        open={open}
+        onClose={() => setOpen(false)}
+        title="참여자 더하기"
+        subtitle="표본 프로젝트"
+        searchLabel="사람 검색"
+        search={pickPeopleSearch()}
+        primaryLabel="참여자 더하기"
+        noun="사람"
+        failedLine="사람 목록 불러오기 실패"
+        emptyNextStep={null}
+        resultLineMany={pickManyResultLine}
+        onPickMany={(rows) => {
+          setResult(`더함 · ${rows.map((row) => row.title).join(", ")}`);
+          return Promise.resolve({ ok: true });
+        }}
       />
     </>
   );

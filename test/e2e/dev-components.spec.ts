@@ -320,6 +320,88 @@ test.describe("로그인한 뒤", () => {
     expect(dialogBox && dialogBox.y >= 0 && dialogBox.y + dialogBox.height <= page.viewportSize()!.height).toBe(true);
   });
 
+  // 06.2-07 Task 1 — SP-62-1 다중 고르기 변형 트레이서: 키보드로 한 명을 고르면 1차 `{동작} 1`이 켜지고 Enter로 끝난다.
+  test("다중 고르기(SP-62-1) — 키보드로 한 명을 고르면 1차 {동작} 1이 켜지고 면 없이 비대화형 표시로 고름이 보이며 Enter로 끝난다", async ({ page }) => {
+    const dialog = page.locator("dialog:modal");
+    const opener = page.getByRole("button", { name: "다중 고르기 열기" });
+    const search = dialog.getByRole("textbox", { name: "사람 검색" });
+    const list = dialog.getByRole("listbox", { name: "사람 검색" });
+    const primary = dialog.getByRole("button", { name: /^참여자 더하기(?!\s*\d)/ });
+    const primaryOne = dialog.getByRole("button", { name: /^참여자 더하기 1(?!\d)/ });
+    const result = page.locator('[data-gallery="pick-many-result"]');
+    // 토큰 값은 :root에서 읽는다 — 하드코딩 색을 단언하지 않는다.
+    const tokenColor = (name: string, property: "backgroundColor" | "color") =>
+      page.evaluate(
+        ([token, prop]) => {
+          const probe = document.createElement("div");
+          probe.style[prop] = `var(${token})`;
+          document.body.append(probe);
+          const value = getComputedStyle(probe)[prop];
+          probe.remove();
+          return value;
+        },
+        [name, property] as const,
+      );
+
+    await opener.click();
+    await expect(dialog).toBeVisible();
+    await expect(search).toBeFocused();
+    await expect(list).toHaveAttribute("aria-multiselectable", "true");
+    await expect(primary).toHaveAttribute("aria-disabled", "true");
+    await expect(dialog.getByText("고른 사람 없음")).toBeVisible();
+
+    // ↓ → 첫 행 포커스 · Space → 고름 · 결과 줄 · 1차 `참여자 더하기 1`.
+    const first = dialog.locator('[data-pick-id="u1"]');
+    const second = dialog.locator('[data-pick-id="u2"]');
+    await expect(first).toBeVisible();
+    await search.press("ArrowDown");
+    await expect(first).toBeFocused();
+    await page.keyboard.press("Space");
+    await expect(first).toHaveAttribute("aria-selected", "true");
+    await expect(second).toHaveAttribute("aria-selected", "false");
+    await expect(dialog.getByText("김서연 선택")).toBeVisible();
+    await expect(primaryOne).toBeVisible();
+    await expect(primaryOne).not.toHaveAttribute("aria-disabled", "true");
+
+    // 고른 행에 면이 없다 — 고르지 않은 이웃 행과 같고 `--surface-selected` · `--accent-weak`와 다르다. 현재 줄은 2px `--accent` 선.
+    const paint = (locator: typeof first) =>
+      locator.evaluate((el) => {
+        const style = getComputedStyle(el);
+        return { background: style.backgroundColor, borderWidth: style.borderInlineStartWidth, borderColor: style.borderInlineStartColor };
+      });
+    const firstPaint = await paint(first);
+    const secondPaint = await paint(second);
+    expect(firstPaint.background).toBe(secondPaint.background);
+    expect(firstPaint.background).not.toBe(await tokenColor("--surface-selected", "backgroundColor"));
+    expect(firstPaint.background).not.toBe(await tokenColor("--accent-weak", "backgroundColor"));
+    expect(firstPaint.borderWidth).toBe("2px");
+    expect(firstPaint.borderColor).toBe(await tokenColor("--accent", "color"));
+    expect(secondPaint.borderColor).not.toBe(await tokenColor("--accent", "color"));
+
+    // option 안 대화형 요소 0 — 고름 표시는 `aria-hidden` 비대화형 요소이고 tabindex가 없다. 고른 행만 `--native-accent` 채움.
+    await expect(dialog.locator('[role="option"] input')).toHaveCount(0);
+    const mark = (locator: typeof first) =>
+      locator.locator(':scope > [aria-hidden="true"]').evaluate((el) => ({ tabindex: el.getAttribute("tabindex"), background: getComputedStyle(el).backgroundColor }));
+    const firstMark = await mark(first);
+    const secondMark = await mark(second);
+    expect(firstMark.tabindex).toBeNull();
+    expect(secondMark.tabindex).toBeNull();
+    expect(firstMark.background).toBe(await tokenColor("--native-accent", "backgroundColor"));
+    expect(secondMark.background).not.toBe(await tokenColor("--native-accent", "backgroundColor"));
+
+    // 다시 Space → 풀림 · 1차 숫자 없음.
+    await page.keyboard.press("Space");
+    await expect(first).toHaveAttribute("aria-selected", "false");
+    await expect(primary).toHaveAttribute("aria-disabled", "true");
+
+    // 한 명 고른 뒤 Enter → onPickMany가 그 한 명으로 불리고 닫히며 포커스는 연 버튼으로 돌아온다.
+    await page.keyboard.press("Space");
+    await page.keyboard.press("Enter");
+    await expect(dialog).toHaveCount(0);
+    await expect(result).toHaveText("더함 · 김서연");
+    await expect(opener).toBeFocused();
+  });
+
   // 06-29 Task 2 — SP-8 패널 위 겹침: 목록의 Esc는 목록만 닫고 Ctrl+Enter는 패널 1차에 닿지 않는다(T-06-292).
   test("?panel=pick — 목록 Esc는 목록만 닫고 패널 입력이 남으며 Ctrl+Enter는 패널 제출로 번지지 않는다", async ({ page }) => {
     await page.goto("/dev/components?panel=pick");

@@ -86,6 +86,16 @@ describe("status-map — 낱말 → 색 한 표", () => {
     });
   }
 
+  // 06.2 SP-62-2 — 참여자 표의 글자 태그 둘(호출부는 06.2-12가 만든다 — CURRENT_CALL_SITES는 그때 더한다).
+  describe("06.2 SP-62-2", () => {
+    for (const word of ["퇴직", "담당 PM"] as const) {
+      it(`${word} → muted(표에 있다)`, () => {
+        expect(word in STATUS_KIND, `${word}이 표에 있다`).toBe(true);
+        expect(statusKind(word)).toBe("muted");
+      });
+    }
+  });
+
   it("Phase 6 기존 낱말은 같은 색으로 다시 쓴다(신청됨 · 증빙 없음 · 지출결의 중)", () => {
     expect(statusKind("신청됨")).toBe("muted");
     expect(statusKind("증빙 없음")).toBe("danger");

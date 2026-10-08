@@ -72,6 +72,9 @@ export const STATUS_KIND = {
   "대조 제외": "muted",
   // 06 SP-2: 면제(경영관리가 증빙을 면제함)
   면제: "muted",
+  // 06.2 SP-62-2: 퇴직한 참여자 · 참여자 표 첫 행 담당 PM — 이름 뒤 글자 태그
+  퇴직: "muted",
+  "담당 PM": "muted",
 } as const satisfies Record<string, StatusKind>;
 
 /** 표의 낱말 + 단계 이름이 붙은 `{단계} 결재 중`(accent). */

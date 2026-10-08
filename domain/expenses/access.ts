@@ -25,7 +25,7 @@ export type VisibleExpenseScope = ExpenseScope & {
 };
 
 // 보는 범위 서술자(06.2-01 rowScopeFor — `expenses` 보기가 없으면 none: 목록(메뉴 보기)과 문서 · 증빙 GET이 같은 답, 05-08 검토 #2).
-// 기준일을 주입받은 호출(테스트 · 지급 대상)만 요청 memo를 건너뛴다 — 오늘(KST)이면 요청 안 memo를 그대로 쓴다.
+// 기준일을 주입받은 호출(테스트 · 목록 · 지급 대상)은 요청 memo를 건너뛴다 — 오늘(KST)이면 요청 안 memo를 그대로 쓴다.
 function expenseRowScope(viewer: Viewer, injectedToday: string | undefined): Promise<RowScope> {
   return injectedToday === undefined ? rowScopeFor(viewer, "expense") : rowScopeFor(viewer, "expense", { today: () => injectedToday });
 }

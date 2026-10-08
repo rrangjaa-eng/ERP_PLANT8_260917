@@ -298,7 +298,8 @@ export async function restoreProjectMember(viewer: Viewer, projectId: string, us
     const removedRecently =
       latest !== null &&
       (latest.detail as { removed?: unknown }).removed === userId &&
-      now().getTime() - latest.occurredAt.getTime() <= RESTORE_WINDOW_MS;
+      // 양쪽으로 잰다 — occurred_at(시간대 없는 timestamp)이 미래로 읽히면(DB 세션 시간대가 UTC가 아님) 기한이 닫히지 않는다(/review R-1).
+      Math.abs(now().getTime() - latest.occurredAt.getTime()) <= RESTORE_WINDOW_MS;
     if (!removedRecently) throw new UserFacingError(NOT_PROCESSED);
     if (!(await restoreArchivedMember(viewer, { projectId, userId, restoredBy: viewer.id }, tx))) throw new UserFacingError(NOT_PROCESSED);
     await recordAction(viewer, { actionType: MEMBER_ACTION, entity: PROJECT_ENTITY, entityId: projectId, detail: { projectId, restored: userId } }, { tx });

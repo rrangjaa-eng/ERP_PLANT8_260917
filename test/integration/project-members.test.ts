@@ -549,6 +549,16 @@ describe("검토 반영 I-1 — 되돌리기는 그 사람의 마지막 기록�
     expect(await memberRows(P3, w.Y.id)).toEqual([expect.objectContaining({ archivedAt: null })]);
   });
 
+  it("앱 시계가 떼기 기록보다 11분 앞서도(시각이 미래로 읽힘 — DB 세션 시간대 어긋남) 일반 문구 · 줄은 보관 그대로(/review R-1)", async () => {
+    const w = await buildMembersWorld();
+    const P3 = w.projects.P3.id;
+    await addProjectMembers(w.mgmtLead, P3, [w.Y.id]);
+    await removeProjectMember(w.mgmtLead, P3, w.Y.id);
+    const behind = new Date(Date.now() - 11 * MINUTE);
+    await expect(restoreProjectMember(w.mgmtLead, P3, w.Y.id, { now: () => behind })).rejects.toThrow(NOT_PROCESSED);
+    expect((await memberRows(P3, w.Y.id)).map((row) => row.archivedAt !== null)).toEqual([true]);
+  });
+
   it("그 사람 기준이다 — 뒤에 다른 사람을 떼도 Y는 되돌린다 · 떼기 기록 없이 보관된 줄은 되돌리지 않는다", async () => {
     const w = await buildMembersWorld();
     const P3 = w.projects.P3.id;

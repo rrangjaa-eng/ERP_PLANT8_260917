@@ -622,4 +622,32 @@ describe("검토 반영 M-2 · M-3 — 잠근 트랜잭션 안에서 다시 본�
     expect(await memberRows(P3, w.Y.id)).toHaveLength(1);
     expect(await memberLogs(P3)).toHaveLength(1);
   });
+
+  it("M-3: 판정 뒤 · 잠금 전에 담당 팀이 바뀌면 더하기는 일반 문구 · 줄 0 · 로그 0", async () => {
+    const w = await buildMembersWorld();
+    const P3 = w.projects.P3.id;
+    lockHook.before = async () => {
+      await db.update(projects).set({ teamId: w.finance }).where(eq(projects.id, P3));
+    };
+    await expect(addProjectMembers(w.mgmtLead, P3, [w.Y.id])).rejects.toThrow(NOT_PROCESSED);
+    expect(await memberRows(P3, w.Y.id)).toEqual([]);
+    expect(await memberLogs(P3)).toEqual([]);
+  });
+
+  it("M-3: 판정 뒤 · 잠금 전에 담당 PM이 바뀌면 떼기 · 되돌리기도 일반 문구 · 줄 그대로", async () => {
+    const w = await buildMembersWorld();
+    const P3 = w.projects.P3.id;
+    const changePm = (pmUserId: string) => async () => {
+      await db.update(projects).set({ pmUserId }).where(eq(projects.id, P3));
+    };
+    await addProjectMembers(w.mgmtLead, P3, [w.Y.id]);
+    lockHook.before = changePm(w.people.대표.id);
+    await expect(removeProjectMember(w.mgmtLead, P3, w.Y.id)).rejects.toThrow(NOT_PROCESSED);
+    expect((await memberRows(P3, w.Y.id))[0]?.archivedAt).toBeNull();
+
+    await removeProjectMember(w.mgmtLead, P3, w.Y.id);
+    lockHook.before = changePm(w.people.X.id);
+    await expect(restoreProjectMember(w.mgmtLead, P3, w.Y.id)).rejects.toThrow(NOT_PROCESSED);
+    expect((await memberRows(P3, w.Y.id))[0]?.archivedAt).not.toBeNull();
+  });
 });

@@ -238,10 +238,12 @@ async function guardManage(viewer: Viewer, projectId: string, forbidden: string,
 }
 
 // 잠금 읽기 행으로 다시 판정한다 — 확인 뒤 완료 · 보관돼도 붙지 않는다(T-06.2-53).
-async function inLockedProject<T>(viewer: Viewer, projectId: string, write: (tx: DbOrTx, row: ProjectRow) => Promise<T>): Promise<T> {
+// 판정 때와 담당 팀 · PM이 다르면 옛 기준의 권리 · 후보로 쓰지 않는다(검토 반영 M-3, fail-closed).
+async function inLockedProject<T>(viewer: Viewer, basis: ProjectRow, write: (tx: DbOrTx, row: ProjectRow) => Promise<T>): Promise<T> {
   return withTransaction(async (tx) => {
-    const row = await lockProjectForWrite(viewer, projectId, tx);
+    const row = await lockProjectForWrite(viewer, basis.id, tx);
     if (!row || row.archivedAt !== null) throw new UserFacingError(NOT_PROCESSED);
+    if (row.teamId !== basis.teamId || row.pmUserId !== basis.pmUserId) throw new UserFacingError(NOT_PROCESSED);
     if (row.status === "completed") throw new GateBlockedError(LOCKED);
     return write(tx, row);
   });
@@ -267,7 +269,7 @@ export async function addProjectMembers(viewer: Viewer, projectId: string, userI
   // 한 명이라도 어긋나면 트랜잭션을 열기 전에 전체 거부(260907 `O: server/src/projects.ts:3946-3947` — 코드에만 있던 규칙).
   if (rejected.length > 0) throw await rejectedError(viewer, rejected);
 
-  const added = await inLockedProject(viewer, projectId, async (tx) => {
+  const added = await inLockedProject(viewer, project, async (tx) => {
     // 판정 뒤 다른 탭이 먼저 붙였으면 같은 거부 문구(검토 반영 M-2 — 아니면 유일 제약이 일반 오류로 샌다).
     const live = await findLiveMemberUserIds(viewer, projectId, tx);
     const taken = ids.filter((id) => live.has(id));
@@ -280,8 +282,8 @@ export async function addProjectMembers(viewer: Viewer, projectId: string, userI
 }
 
 export async function removeProjectMember(viewer: Viewer, projectId: string, userId: string): Promise<void> {
-  await guardManage(viewer, projectId, NO_CHANGE_RIGHT, kstToday(new Date()));
-  await inLockedProject(viewer, projectId, async (tx) => {
+  const project = await guardManage(viewer, projectId, NO_CHANGE_RIGHT, kstToday(new Date()));
+  await inLockedProject(viewer, project, async (tx) => {
     // 바뀐 줄 0 = 이미 뗐거나 붙은 적 없음.
     if (!(await archiveLiveMember(viewer, { projectId, userId }, tx))) throw new UserFacingError(NOT_PROCESSED);
     await recordAction(viewer, { actionType: MEMBER_ACTION, entity: PROJECT_ENTITY, entityId: projectId, detail: { projectId, removed: userId } }, { tx });
@@ -295,8 +297,8 @@ export async function removeProjectMember(viewer: Viewer, projectId: string, use
 // 260907엔 되돌리기가 없었다(떼기 확인 창 `O: app/src/pages/Projects.tsx:2314` · 다시 붙이기는 퇴직 · 보관 거부 `O: server/src/projects.ts:3969-3976`).
 export async function restoreProjectMember(viewer: Viewer, projectId: string, userId: string, deps?: { now?: () => Date }): Promise<void> {
   const now = deps?.now ?? (() => new Date());
-  await guardManage(viewer, projectId, NO_CHANGE_RIGHT, kstToday(now()));
-  await inLockedProject(viewer, projectId, async (tx, row) => {
+  const project = await guardManage(viewer, projectId, NO_CHANGE_RIGHT, kstToday(now()));
+  await inLockedProject(viewer, project, async (tx, row) => {
     if (userId === row.pmUserId) throw new UserFacingError(NOT_PROCESSED);
     const latest = await findLatestMemberChangeFor(viewer, { actionType: MEMBER_ACTION, entity: PROJECT_ENTITY, projectId, userId }, tx);
     const removedRecently =

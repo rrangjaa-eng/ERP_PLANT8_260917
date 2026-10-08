@@ -11,6 +11,7 @@ function fakeRoleRow(id: string) {
     isSeed: false,
     sortOrder: 9,
     workScope: "team",
+    viewScope: "team",
     customFields: {},
     archivedAt: null,
     archivedBy: null,

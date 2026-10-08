@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { log } from "@/lib/log";
 import type { Viewer } from "@/domain/viewer";
+import { memoizeRowScopeForRequest } from "@/domain/permissions/scope-for";
 
 export type SessionUser = {
   id: string;
@@ -54,7 +55,10 @@ export async function getSession(): Promise<{ viewer: Viewer; user: SessionUser 
     passwordIsTemporary: rawUser.passwordIsTemporary,
   };
 
-  return { viewer: { id: user.id, roleId: user.roleId }, user };
+  const viewer: Viewer = { id: user.id, roleId: user.roleId };
+  // 06.2(성공 기준 4): 이 요청 동안만 rowScopeFor 결과를 entity별로 한 번 계산한다 — 다음 요청은 새 객체다.
+  memoizeRowScopeForRequest(viewer);
+  return { viewer, user };
 }
 
 export async function requireSession(): Promise<{ viewer: Viewer; user: SessionUser }> {

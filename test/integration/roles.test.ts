@@ -3,8 +3,10 @@ import { isNull, eq, and } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { db } from "@/db/client";
-import { users, actionLog } from "@/db/schema";
+import { users, actionLog, teams } from "@/db/schema";
 import { listRoles, insertRole, renameRole, findRoleById } from "@/repositories/roles";
+import { upsertPermission } from "@/repositories/permissions";
+import { makePerson, teamIdByName } from "./approvals-fixtures";
 import { archive, ProtectedRowError } from "@/domain/archive";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { seedMasterData } from "@/domain/seed";
@@ -16,9 +18,12 @@ import {
   ForbiddenError,
   createRole,
   setRoleWorkScope,
+  setRoleViewScope,
   listRoles as listRoleDtos,
+  type RoleViewScope,
   type RoleWorkScope,
 } from "@/domain/permissions/roles";
+import { rowScopeFor } from "@/domain/permissions/scope-for";
 
 describe("roles (ADMN-08, 실제 Postgres)", () => {
   it("시드 5종이 존재한다", async () => {
@@ -160,5 +165,79 @@ describe("계급 업무 범위(D11·D20)", () => {
     await expect(setRoleWorkScope(SYSTEM_VIEWER, `role-missing-${randomUUID()}`, "company")).rejects.toThrow(
       "계급 찾을 수 없음",
     );
+  });
+});
+
+// 06.2(D-6201 · 성공 기준 4): 계급 보는 범위 바꾸기 — 다음 요청(새 viewer 객체)의 rowScopeFor가 새 값을 쓴다.
+describe("계급 보는 범위(06.2 D-6201)", () => {
+  const PM_VIEWER: Viewer = { id: "pm-viewer", roleId: DEFAULT_ROLE_ID };
+
+  async function viewScopeOf(id: string): Promise<string | undefined> {
+    return (await findRoleById(SYSTEM_VIEWER, id))?.viewScope;
+  }
+
+  it("관리자가 기획 PM을 company로 바꾸면 그 계급 사람의 새 viewer가 전 행을, 다시 own으로 바꾸면 본인만 본다", async () => {
+    await setRoleViewScope(SYSTEM_VIEWER, DEFAULT_ROLE_ID, "company");
+    expect((await rowScopeFor({ id: "pm-person", roleId: DEFAULT_ROLE_ID }, "project")).rows).toBe("all");
+
+    await setRoleViewScope(SYSTEM_VIEWER, DEFAULT_ROLE_ID, "own");
+    expect(await rowScopeFor({ id: "pm-person", roleId: DEFAULT_ROLE_ID }, "project")).toMatchObject({
+      rows: "limited",
+      by: { kind: "own" },
+    });
+  });
+
+  it("admin.people 쓰기가 없으면 ForbiddenError, 없는 계급 · 네 값 밖은 거부되고 DB 값이 그대로다", async () => {
+    await expect(setRoleViewScope(PM_VIEWER, "role-team-lead", "company")).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(setRoleViewScope(SYSTEM_VIEWER, `role-missing-${randomUUID()}`, "company")).rejects.toThrow(
+      "계급 찾을 수 없음",
+    );
+    const outOfRange: string = "step";
+    await expect(setRoleViewScope(SYSTEM_VIEWER, "role-team-lead", outOfRange as RoleViewScope)).rejects.toThrow(
+      "보는 범위 값 없음",
+    );
+    expect(await viewScopeOf("role-team-lead")).toBe("team");
+  });
+
+  it("바꾸면 permission_change 로그 한 줄이 detail { viewScope: { from, to } }를 남긴다", async () => {
+    await setRoleViewScope(SYSTEM_VIEWER, "role-team-lead", "company");
+
+    expect(await viewScopeOf("role-team-lead")).toBe("company");
+    const logs = await db
+      .select()
+      .from(actionLog)
+      .where(and(eq(actionLog.entity, "roles"), eq(actionLog.entityId, "role-team-lead")));
+    expect(logs).toHaveLength(1);
+    expect(logs[0]?.actionType).toBe("permission_change");
+    expect(logs[0]?.detail).toEqual({ viewScope: { from: "team", to: "company" } });
+  });
+
+  it("새로 만든 계급의 보는 범위는 업무 범위를 복사한다(K1)", async () => {
+    const company = await createRole(SYSTEM_VIEWER, { name: `전사계급-${randomUUID()}`, workScope: "company" });
+    expect(await viewScopeOf(company.id)).toBe("company");
+    const team = await createRole(SYSTEM_VIEWER, { name: `팀계급-${randomUUID()}` });
+    expect(await viewScopeOf(team.id)).toBe("team");
+  });
+
+  it("팀 발령 있는 사람은 team이면 그 팀 id로, org_unit으로 바꾸면 그 팀의 본부 id로 limited다", async () => {
+    const role = await createRole(SYSTEM_VIEWER, { name: `행범위-${randomUUID()}` });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
+    const person = await makePerson("행범위 확인", role.id, "기획1팀");
+    const teamId = await teamIdByName("기획1팀");
+    const [team] = await db.select({ orgUnitId: teams.orgUnitId }).from(teams).where(eq(teams.id, teamId));
+    expect(team?.orgUnitId).toBeTruthy();
+
+    expect(await rowScopeFor({ ...person }, "project")).toMatchObject({
+      rows: "limited",
+      viewerId: person.id,
+      by: { kind: "team", teamId },
+    });
+
+    await setRoleViewScope(SYSTEM_VIEWER, role.id, "org_unit");
+    expect(await rowScopeFor({ ...person }, "project")).toMatchObject({
+      rows: "limited",
+      viewerId: person.id,
+      by: { kind: "org_unit", orgUnitId: team?.orgUnitId },
+    });
   });
 });

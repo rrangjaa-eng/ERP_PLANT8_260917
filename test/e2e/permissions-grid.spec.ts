@@ -97,6 +97,8 @@ test.describe("권한표 격자 (ADMN-01, D-40, 성공 기준 2)", () => {
     await expect(page.getByRole("checkbox", { name: "시스템 관리자 · 코드표 · 보기" })).toBeVisible();
     await expect(page.getByRole("checkbox", { name: "시스템 관리자 · 코드표 · 쓰기" })).toBeVisible();
     await expect(page.getByRole("checkbox", { name: "시스템 관리자 · 코드표 · 승인" })).toBeVisible();
+    // 06.2(D-6210): 새 메뉴 키는 MENUS에서 권한표 행이 자동으로 생긴다.
+    await expect(page.getByRole("checkbox", { name: "시스템 관리자 · 프로젝트 참여자 변경 · 쓰기" })).toBeVisible();
   });
 
   // 회귀: PermissionGrid.module.css의 .wrap이 overflow-x: auto만 갖고 높이

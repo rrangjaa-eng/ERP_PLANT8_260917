@@ -3,7 +3,7 @@ import { createAccount } from "@/domain/auth/accounts";
 import { seoulToday } from "@/lib/dates";
 import { and, eq, inArray, like, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { corpCards, expenses, files, orgUnits, projects, quoteLines, quoteRevisions, revenueEntries, teamMemberships, teams, users, vendors } from "@/db/schema";
+import { corpCards, expenses, files, orgUnits, projectMembers, projects, quoteLines, quoteRevisions, revenueEntries, teamMemberships, teams, users, vendors } from "@/db/schema";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { createVendor } from "@/domain/vendors";
 import { createProject } from "@/domain/projects";
@@ -293,6 +293,35 @@ describe("scripts/demo-data purge 범위 · 안전", () => {
 });
 
 describe("scripts/demo-data 리뷰 지적", () => {
+  it("purge는 견본 프로젝트의 참여자 줄만 지운 뒤 프로젝트를 지우고, 실제 프로젝트의 참여자 줄은 남긴다(FK)", async () => {
+    const real = await makePerson("참여실제PM", "role-pm", "기획1팀");
+    const client = await createVendor(SYSTEM_VIEWER, { name: "참여실제클라이언트" });
+    const realProject = await createProject(real, {
+      clientId: client.vendor.id,
+      teamId: await teamIdByName("기획1팀"),
+      pmUserId: real.id,
+      name: "참여 실제 프로젝트",
+      startDate: "2026-09-01",
+      endDate: "2026-12-31",
+    });
+    await seedDemoData();
+    const [demoProject] = await db.select({ id: projects.id }).from(projects).where(like(projects.name, namePrefix)).limit(1);
+    const [demoUser] = await db.select({ id: users.id }).from(users).where(like(users.email, DEMO_EMAIL_LIKE)).limit(1);
+    if (!demoProject || !demoUser || !realProject.id) throw new Error("견본 프로젝트 · 사용자가 없습니다");
+    await db.insert(projectMembers).values([
+      { projectId: demoProject.id, userId: real.id, addedBy: real.id },
+      { projectId: realProject.id, userId: demoUser.id, addedBy: real.id },
+      { projectId: realProject.id, userId: real.id, addedBy: demoUser.id },
+    ]);
+
+    await expect(purgeDemoData()).resolves.toMatchObject({ purged: true });
+    expect(await db.select().from(projectMembers).where(eq(projectMembers.projectId, demoProject.id))).toEqual([]);
+    const realRows = await db.select({ userId: projectMembers.userId, addedBy: projectMembers.addedBy }).from(projectMembers).where(eq(projectMembers.projectId, realProject.id));
+    expect(realRows).toEqual(expect.arrayContaining([{ userId: demoUser.id, addedBy: real.id }, { userId: real.id, addedBy: demoUser.id }]));
+    expect(realRows).toHaveLength(2);
+    expect((await db.select().from(projects).where(eq(projects.id, realProject.id))).length).toBe(1);
+  }, 180_000);
+
   it("견본 형식(demo-… · archived-…)이 아닌 plant8-demo.test 계정은 purge가 건드리지 않고 seed도 막지 않는다", async () => {
     const employee = await createAccount(SYSTEM_VIEWER, { email: "employee@plant8-demo.test", name: "실제 직원", roleId: DEFAULT_ROLE_ID });
     const lookalike = await createAccount(SYSTEM_VIEWER, { email: "demo-extra@plant8-demo.test", name: "실제 직원2", roleId: DEFAULT_ROLE_ID });

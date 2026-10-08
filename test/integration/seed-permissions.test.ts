@@ -1,7 +1,16 @@
+import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { seedMasterData } from "@/domain/seed";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
-import { CEO_ROLE_ID, DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
+import {
+  CEO_ROLE_ID,
+  DEFAULT_ROLE_ID,
+  DIVISION_HEAD_ROLE_ID,
+  SYSADMIN_ROLE_ID,
+  TEAM_LEAD_ROLE_ID,
+} from "@/domain/permissions/roles";
+import { can } from "@/domain/permissions/can";
+import { insertRole } from "@/repositories/roles";
 import { MENUS } from "@/domain/permissions/menus";
 import { INFO_ITEMS } from "@/domain/permissions/info-items";
 import {
@@ -176,5 +185,20 @@ describe("expenses.team 시드(05-08)", () => {
     await seedMasterData(SYSTEM_VIEWER);
 
     expect(await allowed(TEAM_LEAD_ROLE_ID, "expenses.team", "view")).toBe(false);
+  });
+});
+
+// 06.2(D-6210): 참여자 붙이기 · 떼기 권한 키 — 시드가 대표 · 본부 책임자 · 팀장 · 기획 PM에 쓰기를 켜고(없을 때만), 시스템 관리자는 MENUS 루프가 켠다.
+describe("projects.member 시드(06.2 D-6210)", () => {
+  it("첫 시드 뒤 네 계급 · 시스템 관리자는 쓰기가 참, 권한 없는 새 계급은 거짓, 관리자가 끈 값은 재시드가 되살리지 않는다", async () => {
+    for (const roleId of [CEO_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID, DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID]) {
+      expect(await can({ id: `viewer-${roleId}`, roleId }, "projects.member", "write")).toBe(true);
+    }
+    const fresh = await insertRole(SYSTEM_VIEWER, { id: `role-test-${randomUUID()}`, name: `새 계급-${randomUUID()}` });
+    expect(await can({ id: "viewer-fresh", roleId: fresh.id }, "projects.member", "write")).toBe(false);
+
+    await upsertPermission(SYSTEM_VIEWER, { roleId: TEAM_LEAD_ROLE_ID, menu: "projects.member", action: "write", allowed: false });
+    await seedMasterData(SYSTEM_VIEWER);
+    expect(await can({ id: "viewer-lead", roleId: TEAM_LEAD_ROLE_ID }, "projects.member", "write")).toBe(false);
   });
 });

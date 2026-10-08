@@ -218,6 +218,13 @@
       "when": 1791302599309,
       "tag": "0030_vendor_business_no_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1791425752536,
+      "tag": "0031_view_scope",
+      "breakpoints": true
     }
   ]
 }

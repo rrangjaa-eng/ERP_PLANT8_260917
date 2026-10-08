@@ -14,6 +14,7 @@ import {
   insertRole as repoInsertRole,
   renameRole as repoRenameRole,
   setRoleWorkScope as repoSetRoleWorkScope,
+  setRoleViewScope as repoSetRoleViewScope,
   type RoleRow,
 } from "@/repositories/roles";
 
@@ -24,15 +25,27 @@ import {
 export const ROLE_WORK_SCOPES = ["team", "company"] as const;
 export type RoleWorkScope = (typeof ROLE_WORK_SCOPES)[number];
 
-export type SeedRole = { id: string; name: string; isSeed: true; sortOrder: number; workScope: RoleWorkScope };
+// 06.2(D-6201): 보는 범위 — company(전사) · org_unit(본부) · team(팀) · own(본인). rowScopeFor만 읽는다.
+export const ROLE_VIEW_SCOPES = ["company", "org_unit", "team", "own"] as const;
+export type RoleViewScope = (typeof ROLE_VIEW_SCOPES)[number];
+
+export type SeedRole = {
+  id: string;
+  name: string;
+  isSeed: true;
+  sortOrder: number;
+  workScope: RoleWorkScope;
+  viewScope: RoleViewScope;
+};
 
 // 업무 범위 값은 마이그레이션 0013의 UPDATE와 같다 — 새 DB(시드)와 기존 DB(마이그레이션)가 같은 값을 갖는다.
+// 보는 범위 값은 마이그레이션 *_view_scope의 시드 UPDATE와 같다.
 export const SEED_ROLES: SeedRole[] = [
-  { id: "role-ceo", name: "대표", isSeed: true, sortOrder: 0, workScope: "company" },
-  { id: "role-division-head", name: "본부 책임자", isSeed: true, sortOrder: 1, workScope: "company" },
-  { id: "role-team-lead", name: "팀장", isSeed: true, sortOrder: 2, workScope: "team" },
-  { id: "role-pm", name: "기획 PM", isSeed: true, sortOrder: 3, workScope: "team" },
-  { id: "role-sysadmin", name: "시스템 관리자", isSeed: true, sortOrder: 4, workScope: "company" },
+  { id: "role-ceo", name: "대표", isSeed: true, sortOrder: 0, workScope: "company", viewScope: "company" },
+  { id: "role-division-head", name: "본부 책임자", isSeed: true, sortOrder: 1, workScope: "company", viewScope: "org_unit" },
+  { id: "role-team-lead", name: "팀장", isSeed: true, sortOrder: 2, workScope: "team", viewScope: "team" },
+  { id: "role-pm", name: "기획 PM", isSeed: true, sortOrder: 3, workScope: "team", viewScope: "team" },
+  { id: "role-sysadmin", name: "시스템 관리자", isSeed: true, sortOrder: 4, workScope: "company", viewScope: "company" },
 ];
 
 export { normalizeRoleName };
@@ -73,6 +86,7 @@ export type RoleDto = {
   isSeed: boolean;
   sortOrder: number;
   workScope: RoleWorkScope;
+  viewScope: RoleViewScope;
   archivedAt: Date | null;
 };
 
@@ -83,6 +97,7 @@ export const ROLE_DTO_SPEC: DtoSpec<RoleRow, RoleDto> = {
     { key: "isSeed", from: "isSeed", infoItem: "role.value" },
     { key: "sortOrder", from: "sortOrder", infoItem: "role.value" },
     { key: "workScope", from: "workScope", infoItem: "role.value" },
+    { key: "viewScope", from: "viewScope", infoItem: "role.value" },
     { key: "archivedAt", from: "archivedAt", infoItem: "role.value" },
   ],
 };
@@ -125,7 +140,7 @@ async function defaultGrantCustomFields(
 
 export async function createRole(
   viewer: Viewer,
-  input: { name: string; sortOrder?: number },
+  input: { name: string; sortOrder?: number; workScope?: RoleWorkScope },
   deps?: Partial<RoleWriteDeps>,
 ): Promise<RoleDto> {
   const canFn = deps?.can ?? defaultCan;
@@ -138,7 +153,13 @@ export async function createRole(
   // 오류가 관리자에게 간다(칸이 안 보이는 계급이 조용히 남지 않는다).
   const grant = deps?.grantCustomFieldsToRole ?? defaultGrantCustomFields;
   const row = await withTransaction(async (tx) => {
-    const inserted = await repoInsertRole(viewer, { id, name: normalizeRoleName(input.name), sortOrder: input.sortOrder }, tx);
+    // 06.2(K1, 사용자 결정 2026-10-08): 새 계급의 보는 범위는 업무 범위를 복사한다.
+    const workScope = input.workScope ?? "team";
+    const inserted = await repoInsertRole(
+      viewer,
+      { id, name: normalizeRoleName(input.name), sortOrder: input.sortOrder, workScope, viewScope: workScope },
+      tx,
+    );
     await grant(viewer, inserted.id, undefined, tx);
     return inserted;
   });
@@ -188,5 +209,35 @@ export async function setRoleWorkScope(
     entity: "roles",
     entityId: id,
     detail: { workScope: { from: row.workScope, to: workScope } },
+  });
+}
+
+// 06.2(D-6201 · 성공 기준 4): 계급 보는 범위 — setRoleWorkScope와 같은 순서. 액션 zod는 06.2-09가 두고, 여기서 한 번 더 거른다.
+// 요청을 넘는 캐시가 없어 다음 요청(getSession이 만든 새 viewer)의 rowScopeFor가 새 값을 읽는다.
+export async function setRoleViewScope(
+  viewer: Viewer,
+  id: string,
+  viewScope: RoleViewScope,
+  deps?: Partial<RoleWriteDeps>,
+): Promise<void> {
+  const canFn = deps?.can ?? defaultCan;
+  if (!(await canFn(viewer, PEOPLE_MENU, "write"))) {
+    throw new ForbiddenError("계급 보는 범위 변경 권한 없음");
+  }
+  if (!(ROLE_VIEW_SCOPES as readonly string[]).includes(viewScope)) {
+    throw new UserFacingError("보는 범위 값 없음");
+  }
+
+  const row = await defaultFindRoleById(viewer, id);
+  if (!row) throw new UserFacingError("계급 찾을 수 없음");
+
+  await repoSetRoleViewScope(viewer, id, viewScope);
+
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
+  await recordAction(viewer, {
+    actionType: "permission_change",
+    entity: "roles",
+    entityId: id,
+    detail: { viewScope: { from: row.viewScope, to: viewScope } },
   });
 }

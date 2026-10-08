@@ -15,6 +15,9 @@ import { sql } from "drizzle-orm";
 // 아니다. 두 값은 크기를 비교하지 않고, can()/visible()/scopeFor()는 이 값을 읽지
 // 않는다. 상태 전환·기간 수정 게이트(04-20·04-21·04-22)가 「담당 PM인가」와 같은
 // 종류의 입력 사실로만 읽는다.
+//
+// 06.2(D-6201 · D-6204): 보는 범위(viewScope — company · org_unit · team · own)는 `rowScopeFor`가 읽는 행 범위
+// 입력이다. 업무 범위(workScope)는 여전히 보기 판정에 쓰이지 않는다(D-6202).
 export const roles = pgTable(
   "roles",
   {
@@ -23,6 +26,7 @@ export const roles = pgTable(
     isSeed: boolean("is_seed").notNull().default(false),
     sortOrder: integer("sort_order").notNull().default(0),
     workScope: text("work_scope").notNull().default("team"),
+    viewScope: text("view_scope").notNull().default("team"),
     customFields: jsonb("custom_fields").notNull().default({}),
     archivedAt: timestamp("archived_at"),
     archivedBy: text("archived_by"),
@@ -32,5 +36,6 @@ export const roles = pgTable(
   (table) => [
     index("roles_custom_fields_idx").using("gin", table.customFields),
     check("roles_work_scope_check", sql`${table.workScope} IN ('team','company')`),
+    check("roles_view_scope_check", sql`${table.viewScope} IN ('company','org_unit','team','own')`),
   ],
 );

@@ -35,13 +35,22 @@ vi.mock("@/domain/rules/gate", async (importOriginal) => {
 const BEFORE_MIDNIGHT = new Date("2026-09-17T14:59:59Z"); // KST 09-17 23:59:59
 const AFTER_MIDNIGHT = new Date("2026-09-17T15:00:00Z"); // KST 09-18 00:00:00
 
-async function makeViewer(roleId: string | null): Promise<Viewer> {
+// teamId — 06.2(D-6203): 팀 범위 뷰어가 프로젝트를 보게 그 팀에 과거 날짜로 발령한다(주제가 자동 정산이지 범위가 아닌 테스트용).
+async function makeViewer(roleId: string | null, teamId?: string): Promise<Viewer> {
   const { userId } = await createAccount(SYSTEM_VIEWER, {
     email: `auto-settle-${randomUUID()}@example.test`,
     name: "자동 정산 테스트 사람",
     roleId: roleId ?? DEFAULT_ROLE_ID,
   });
+  if (teamId) await assignTeam(SYSTEM_VIEWER, { userId, teamId, effectiveFrom: "2020-01-01" });
   return { id: userId, roleId };
+}
+
+// makeProject가 teamId 없이 만들 때 쓰는 팀과 같은 팀.
+async function defaultProjectTeamId(): Promise<string> {
+  const [team] = await db.select().from(teams).limit(1);
+  if (!team) throw new Error("시드된 팀이 없습니다");
+  return team.id;
 }
 
 async function makeProject(input: {
@@ -177,7 +186,7 @@ describe("상세 읽기의 선판정 · 발효일 · 실패 격리 (04-11 Task 1
   });
 
   it("(e) 종료일이 어제인 진행 프로젝트를 findProject로 열면 정산 DTO다", async () => {
-    const viewer = await makeViewer(DEFAULT_ROLE_ID);
+    const viewer = await makeViewer(DEFAULT_ROLE_ID, await defaultProjectTeamId());
     const projectId = await makeProject({ status: "in_progress", endDate: addDays(kstToday(new Date()), -1) });
 
     const dto = await findProject(viewer, projectId);
@@ -188,7 +197,7 @@ describe("상세 읽기의 선판정 · 발효일 · 실패 격리 (04-11 Task 1
   });
 
   it("(e2) KST 9/23에 사람이 진행으로 바꾼 종료일 9/10 프로젝트의 발효일은 9/23이고 부제 날짜도 9/23이다(A-08)", async () => {
-    const viewer = await makeViewer(DEFAULT_ROLE_ID);
+    const viewer = await makeViewer(DEFAULT_ROLE_ID, await defaultProjectTeamId());
     const projectId = await makeProject({ status: "in_progress", endDate: "2026-09-10" });
     await db.insert(actionLog).values({
       actorId: viewer.id,
@@ -211,7 +220,7 @@ describe("상세 읽기의 선판정 · 발효일 · 실패 격리 (04-11 Task 1
   });
 
   it("(e3) 로그 쓰기가 실패하면 상태는 진행 그대로이고 findProject는 오류 없이 진행을 돌려주며 실패 로그가 한 줄이다", async () => {
-    const viewer = await makeViewer(DEFAULT_ROLE_ID);
+    const viewer = await makeViewer(DEFAULT_ROLE_ID, await defaultProjectTeamId());
     const projectId = await makeProject({ status: "in_progress", endDate: addDays(kstToday(new Date()), -1) });
 
     const lines = captureLogLines();
@@ -262,7 +271,7 @@ async function allStatusLogs(projectId: string) {
 
 describe("목록 요청의 판정 한 번 · 보기 권한 (04-11 Task 2 ② · A-07 · 엔지 리뷰 A P3)", () => {
   it("(f) loadProjectList가 판정을 먼저 한 번 하고 지난 진행을 정산으로 돌려준다", async () => {
-    const viewer = await makeViewer(DEFAULT_ROLE_ID);
+    const viewer = await makeViewer(DEFAULT_ROLE_ID, await defaultProjectTeamId());
     const projectId = await makeProject({ status: "in_progress", endDate: addDays(kstToday(new Date()), -1) });
 
     const { rows } = await loadProjectList(viewer, { year: "all" });
@@ -288,7 +297,7 @@ describe("목록 요청의 판정 한 번 · 보기 권한 (04-11 Task 2 ② · 
   });
 
   it("(f3) loadProjectList의 판정 한 번 뒤 정산 목록 건수와 합계 건수가 같다", async () => {
-    const viewer = await makeViewer(DEFAULT_ROLE_ID);
+    const viewer = await makeViewer(DEFAULT_ROLE_ID, await defaultProjectTeamId());
     const yesterday = addDays(kstToday(new Date()), -1);
     await makeProject({ status: "in_progress", endDate: yesterday });
     await makeProject({ status: "in_progress", endDate: addDays(yesterday, -5) });
@@ -334,7 +343,7 @@ describe("쓰기 경로의 잠금 안 선판정 · 경합 · 번호 연도 (04-1
   });
 
   it("(i) 쓰기가 행을 잠근 동안 상세 읽기는 기다리지 않고 저장된 상태로 돌아오고, 쓰기를 풀면 쓰기 쪽이 정산한다 · 로그 1줄", async () => {
-    const viewer = await makeViewer(DEFAULT_ROLE_ID);
+    const viewer = await makeViewer(DEFAULT_ROLE_ID, await defaultProjectTeamId());
     const projectId = await makeProject({ status: "in_progress", endDate: addDays(kstToday(new Date()), -1) });
 
     const locked = deferred();

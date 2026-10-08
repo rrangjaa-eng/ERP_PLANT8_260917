@@ -8,6 +8,7 @@ import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
 import { insertVendor } from "@/repositories/vendors";
 import { createProject } from "@/domain/projects";
+import { assignTeam } from "@/domain/org";
 import { getCurrentQuoteRevision } from "@/domain/quotes/lines";
 import { withTransaction } from "@/lib/db-transaction";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
@@ -341,6 +342,8 @@ describe("잠금·풀 시간 제한(ENG-D3 ①)", () => {
           name: "통합테스트 본부 책임자",
           roleId: "role-division-head",
         });
+        // 06.2(D-6203): 본부 책임자의 보는 범위는 org_unit — 프로젝트 팀의 본부에 발령해 프로젝트가 보이게 한다(주제는 잠금 경합).
+        await assignTeam(SYSTEM_VIEWER, { userId, teamId: project.teamId, effectiveFrom: "2020-01-01" });
         const divisionHead = { id: userId, roleId: "role-division-head" };
 
         const previousPoolMax = process.env.DB_POOL_MAX;

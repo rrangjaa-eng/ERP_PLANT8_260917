@@ -218,6 +218,8 @@ test.describe("견적 줄 종류 — 조정 · 견적 외 비용 화면 (04-23, 
     await expect(footer.getByText(/저장됨/)).toBeVisible();
 
     await page.reload();
+    // 카드 사용 섹션의 불러오는 중 뼈대에도 tfoot이 있다 — 아래 footer(tfoot)가 한 개로 잡히게 먼저 기다린다.
+    await waitForCardUsageSection(page);
     await expect(groupHeaders(page).last()).toHaveText("조정");
     await expect(dataRows(page)).toHaveCount(3);
     await expect(cell(page, adjustmentRow, COL.itemName)).toHaveText("외화 송금 수수료");

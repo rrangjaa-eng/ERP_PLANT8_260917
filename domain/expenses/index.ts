@@ -67,6 +67,7 @@ import { formatKstTime } from "@/domain/holidays/business-day";
 import { computeExpenseTax, storedTaxResult, taxDriftText, taxLineText, type ExpenseTaxResult, type ExpenseTaxSource } from "@/domain/expenses/tax";
 import { buildExpenseDetailRows } from "@/domain/expenses/detail";
 import { canSeeExpense, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses/access";
+import { expenseRouteDocTeamId } from "@/domain/expenses/route-doc";
 import { expenseLineDoor, installmentSeqFor, type ExpenseLineDoor, type ExpenseLineDoorState } from "@/domain/expenses/line-door";
 import { resolveLinkedDocumentsByLineage, type LineageLine } from "@/domain/quotes/lineage";
 import { resolveLineDoor, type LineDoorKind } from "@/domain/quotes/line-door";
@@ -1013,7 +1014,11 @@ export async function submitExpense(
   const tax = await computeExpenseTax(viewer, row);
   const pre = projectRow ? await loadSubmitPre(viewer, projectRow) : null;
   const codes = await loadActiveCodes(viewer);
-  const prepared = await prepareSubmission(viewer, { kind: EXPENSE_DOCUMENT_KIND, drafterId: viewer.id });
+  const prepared = await prepareSubmission(viewer, {
+    kind: EXPENSE_DOCUMENT_KIND,
+    drafterId: viewer.id,
+    doc: { teamId: expenseRouteDocTeamId(projectRow?.teamId ?? null, row.attributedTeamId) },
+  });
   // 06-13 「06-03 tx 규약」: 온라인구매 문 설정은 트랜잭션 전에 읽는다(잠근 줄의 거래처 이름만 tx로).
   const onlineVendorName = row.quoteLineId ? await getSettingValue(PURCHASE_ONLINE_VENDOR_NAME) : "";
   const numbering = projectRow

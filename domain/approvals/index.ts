@@ -153,34 +153,51 @@ function nameOf(list: { id: string; name: string }[], id: string | null): string
   return id === null ? null : (list.find((item) => item.id === id)?.name ?? null);
 }
 
+// 단계 조직 범위 → 저장 모양(scope_kind · scope_target_id). 빠짐없는 switch — 모르는 저장 값은 조용히 「전사」가 되지 않는다
+// (06.2-02 eng I4 · 260907 `O: server/src/scope.ts:106-109` default → 닫힘). project_team은 제출 때 team + 문서 팀 id로 굳는다(D-6215).
+export function resolveStepScope(
+  config: RouteConfigStep,
+  drafter: { teamId: string | null; orgUnitId: string | null },
+  doc: { teamId: string | null } | undefined,
+  names: RouteLabelNames,
+): { scopeKind: ScopeKind; scopeTargetId: string | null; scopeLabel: string } {
+  switch (config.scope) {
+    case "drafter_team":
+      return { scopeKind: "team", scopeTargetId: drafter.teamId, scopeLabel: nameOf(names.teams, drafter.teamId) ?? "기안자 팀" };
+    case "project_team":
+      return { scopeKind: "team", scopeTargetId: doc?.teamId ?? null, scopeLabel: "행사 담당 팀" };
+    case "drafter_org_unit":
+      return { scopeKind: "org_unit", scopeTargetId: drafter.orgUnitId, scopeLabel: nameOf(names.orgUnits, drafter.orgUnitId) ?? "기안자 본부" };
+    case "org_unit": {
+      const scopeTargetId = config.orgUnitId === "" ? null : config.orgUnitId;
+      return { scopeKind: "org_unit", scopeTargetId, scopeLabel: nameOf(names.orgUnits, scopeTargetId) ?? "특정 부서" };
+    }
+    case "company":
+      return { scopeKind: "company", scopeTargetId: null, scopeLabel: "전사" };
+    default: {
+      // 설정 읽기가 스키마로 거르므로 여기 닿으면 저장 값 손상(버그)이다 — 사용자 오류가 아니다.
+      const unknownScope: never = config.scope;
+      throw new Error(`결재선: 모르는 단계 범위 ${String(unknownScope)}`);
+    }
+  }
+}
+
 function planStep(
   stepIndex: number,
   config: RouteConfigStep,
   drafter: { teamId: string | null; orgUnitId: string | null },
   names: RouteLabelNames,
+  doc: { teamId: string | null } | undefined,
 ): NewApprovalStep {
   const roleId = config.roleId === "" ? null : config.roleId;
-  let scopeKind: ScopeKind;
-  let scopeTargetId: string | null;
-  let scopeLabel: string;
-  if (config.scope === "drafter_team") {
-    scopeKind = "team";
-    scopeTargetId = drafter.teamId;
-    scopeLabel = nameOf(names.teams, drafter.teamId) ?? "기안자 팀";
-  } else if (config.scope === "drafter_org_unit") {
-    scopeKind = "org_unit";
-    scopeTargetId = drafter.orgUnitId;
-    scopeLabel = nameOf(names.orgUnits, drafter.orgUnitId) ?? "기안자 본부";
-  } else if (config.scope === "org_unit") {
-    scopeKind = "org_unit";
-    scopeTargetId = config.orgUnitId === "" ? null : config.orgUnitId;
-    scopeLabel = nameOf(names.orgUnits, scopeTargetId) ?? "특정 부서";
-  } else {
-    scopeKind = "company";
-    scopeTargetId = null;
-    scopeLabel = "전사";
-  }
-  const label = (roleId === null ? null : nameOf(names.roles, roleId)) ?? scopeLabel;
+  const { scopeKind, scopeTargetId, scopeLabel } = resolveStepScope(config, drafter, doc, names);
+  // 행사 담당 팀 단계는 「행사 담당 {계급}」(UI-SPEC S5) — 계급 무관이거나 이름이 없으면 「행사 담당 팀」.
+  const label =
+    config.scope === "project_team"
+      ? roleId === null
+        ? "행사 담당 팀"
+        : `행사 담당 ${nameOf(names.roles, roleId) ?? "팀"}`
+      : ((roleId === null ? null : nameOf(names.roles, roleId)) ?? scopeLabel);
   return { stepIndex, label, roleId, scopeKind, scopeTargetId };
 }
 
@@ -200,7 +217,7 @@ function unactedSteps(steps: NewApprovalStep[]): RouteStep[] {
 // 지금 설정 · 지금 소속으로 결재선을 조립한다(아무것도 쓰지 않는다).
 async function planRoute(
   viewer: Viewer,
-  input: { kind: string; drafterId: string },
+  input: { kind: string; drafterId: string; doc?: { teamId: string | null } },
   deps?: ApprovalDeps,
 ): Promise<Omit<PreparedSubmission, "gate"> & { drafterName: string | null }> {
   const def = getDocumentKind(input.kind);
@@ -212,7 +229,7 @@ async function planRoute(
   const drafterOrgUnitId = drafter?.orgUnitId ?? null;
 
   const steps = config.steps.flatMap((step, i) =>
-    step.enabled ? [planStep(i + 1, step, { teamId: drafterTeamId, orgUnitId: drafterOrgUnitId }, names)] : [],
+    step.enabled ? [planStep(i + 1, step, { teamId: drafterTeamId, orgUnitId: drafterOrgUnitId }, names, input.doc)] : [],
   );
   const walk = walkRoute({
     steps: unactedSteps(steps),
@@ -239,7 +256,8 @@ async function planRoute(
 // 결재선이 막히면(대표 없음) 트랜잭션을 열기 전에 제출을 거부한다.
 export async function prepareSubmission(
   viewer: Viewer,
-  input: { kind: string; drafterId: string },
+  // doc — 문서에 매인 단계 범위(project_team)를 풀 문서 팀. 서버가 문서 행에서 계산한다(클라이언트 입력 아님, D-6215).
+  input: { kind: string; drafterId: string; doc?: { teamId: string | null } },
   deps?: ApprovalDeps,
 ): Promise<PreparedSubmission> {
   const { drafterName, ...planned } = await planRoute(viewer, input, deps);

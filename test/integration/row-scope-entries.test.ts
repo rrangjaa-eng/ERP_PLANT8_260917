@@ -22,6 +22,22 @@ import {
 } from "@/domain/settings/keys";
 import { upsertSimpleValue } from "@/repositories/settings";
 import { setupSettlementProject } from "./fixtures/settlements";
+import { requestInput } from "./fixtures/purchase-requests";
+import { ForbiddenError as PermissionForbiddenError } from "@/domain/permissions/can";
+import { createCorpCard } from "@/domain/corp-cards";
+import { createCardUsage, listCardUsages, listProjectCardUsages, precheckCardUsage, type CardUsageInput } from "@/domain/corp-card-usages";
+import { cardLinkLineChoice, cardLinkProjectChoice, searchLinesForCardLink, searchProjectsForCardLink } from "@/domain/corp-card-usages/link-targets";
+import {
+  createPurchaseRequest,
+  listPurchaseRequests,
+  precheckPurchaseRequest,
+  purchaseRequestEntry,
+  searchLinesForPurchaseLink,
+  type PurchaseRequestInput,
+} from "@/domain/purchase-requests";
+import { insertRole } from "@/repositories/roles";
+import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
+import { seoulToday } from "@/lib/dates";
 import { assignTeam, createTeam } from "@/domain/org";
 import { setTeamArchived } from "@/repositories/teams";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
@@ -71,36 +87,60 @@ const VISIBLE: Record<ViewScopePerson, readonly ViewScopeProject[]> = {
 // 존재 여부가 새지 않는다(LINE_WRITERS 밖 사람의 기대값).
 type Outcome = "open" | "hidden" | "denied";
 const NOT_FOUND_TEXT = "존재하지 않는 프로젝트";
+// 06.2-04: 카드 연결 · 구매 요청 줄 기준의 기존 「없음」 갈래(LINK_MISSING) — 범위 밖 줄 id도 이 문구다.
+const LINK_MISSING_TEXT = "연결 없음 · 연결 고르기";
 
 function isNotFound(error: unknown): boolean {
   return (
     error instanceof ProjectNotFoundError ||
     error instanceof RevisionNotFoundError ||
-    (error instanceof UserFacingError && error.message === NOT_FOUND_TEXT)
+    (error instanceof UserFacingError && (error.message === NOT_FOUND_TEXT || error.message === LINK_MISSING_TEXT))
   );
 }
 
-async function outcomeOf(run: () => Promise<unknown>): Promise<Outcome> {
+// menuDenied: 06.2-04 카드 · 구매 입구는 projects 보기 문(can.ts ForbiddenError)을 먼저 본다 — 메뉴없음은 행과 무관하게 denied.
+async function outcomeOf(run: () => Promise<unknown>, opts: { menuDenied?: boolean } = {}): Promise<Outcome> {
   try {
     return (await run()) === null ? "hidden" : "open";
   } catch (error) {
     if (isNotFound(error)) return "hidden";
     if (error instanceof LinesForbiddenError) return "denied";
+    if (opts.menuDenied && error instanceof PermissionForbiddenError) return "denied";
     if (error instanceof UserFacingError) return "open";
     throw error;
   }
 }
 
-function perProject(run: (viewer: Viewer, project: ViewScopeWorld["projects"][ViewScopeProject]) => Promise<unknown>): Entry["probe"] {
+function perProject(
+  run: (viewer: Viewer, project: ViewScopeWorld["projects"][ViewScopeProject]) => Promise<unknown>,
+  opts: { menuDenied?: boolean } = {},
+): Entry["probe"] {
   return async (viewer, world) => {
     const result: Partial<Record<ViewScopeProject, Outcome>> = {};
-    for (const key of VIEW_SCOPE_PROJECTS) result[key] = await outcomeOf(() => run(viewer, world.projects[key]));
+    for (const key of VIEW_SCOPE_PROJECTS) result[key] = await outcomeOf(() => run(viewer, world.projects[key]), opts);
     return result;
   };
 }
 
 function outcomesFor(visible: readonly ViewScopeProject[]): Record<ViewScopeProject, Outcome> {
   return Object.fromEntries(VIEW_SCOPE_PROJECTS.map((key) => [key, visible.includes(key) ? "open" : "hidden"])) as Record<ViewScopeProject, Outcome>;
+}
+
+// projects 보기 문이 먼저인 입구 — 메뉴없음은 denied, 나머지는 보임대로.
+function menuGated(visible: readonly ViewScopeProject[], person: ViewScopePerson): Record<ViewScopeProject, Outcome> | "denied" {
+  if (person === "메뉴없음") return Object.fromEntries(VIEW_SCOPE_PROJECTS.map((key) => [key, "denied"])) as Record<ViewScopeProject, Outcome>;
+  return outcomesFor(visible);
+}
+
+// 고르개 결과 중 세계의 P1~P3만(다른 it이 만든 프로젝트는 뺀다) — 메뉴없음은 projects 보기 문에서 denied.
+async function pickedWorldIds(world: ViewScopeWorld, run: () => Promise<{ rows: { id?: string }[] }>): Promise<string[] | "denied"> {
+  const worldIds = new Set(VIEW_SCOPE_PROJECTS.map((key) => world.projects[key].id));
+  try {
+    return (await run()).rows.flatMap((row) => (row.id && worldIds.has(row.id) ? [row.id] : [])).sort();
+  } catch (error) {
+    if (error instanceof PermissionForbiddenError) return "denied";
+    throw error;
+  }
 }
 
 // 견적 줄 쓰기 권리(projects 쓰기 — 시드상 기획 PM만, 금액 노출 staffDefault)가 있는 사람.
@@ -206,6 +246,53 @@ const ENTRIES: Entry[] = [
     probe: perProject((viewer, project) => listProjectIssueRequests(viewer, project.id)),
     expected: (visible) => outcomesFor(visible),
   },
+  // 06.2-04 Task 2(compare §3 #7 · #8 · RESEARCH M6): 카드 섹션 · 카드 연결 고르개 · 구매 요청 줄 기준.
+  {
+    name: "프로젝트 카드 섹션(listProjectCardUsages)",
+    probe: perProject((viewer, project) => listProjectCardUsages(viewer, project.id), { menuDenied: true }),
+    expected: (visible, _world, person) => menuGated(visible, person),
+  },
+  {
+    name: "카드 연결 프로젝트 고르개(searchProjectsForCardLink, 검색어 없음)",
+    probe: (viewer, world) => pickedWorldIds(world, () => searchProjectsForCardLink(viewer, { query: "" })),
+    expected: (visible, world, person) => (person === "메뉴없음" ? "denied" : idsOf(world, visible)),
+  },
+  {
+    name: "카드 연결 프로젝트 고르개(q = P3 이름)",
+    probe: (viewer, world) => pickedWorldIds(world, () => searchProjectsForCardLink(viewer, { query: world.projects.P3.name })),
+    expected: (visible, world, person) => (person === "메뉴없음" ? "denied" : idsOf(world, visible.filter((key) => key === "P3"))),
+  },
+  {
+    name: "카드 연결 줄 고르개(searchLinesForCardLink)",
+    probe: perProject((viewer, project) => searchLinesForCardLink(viewer, { projectId: project.id, query: "" }), { menuDenied: true }),
+    expected: (visible, _world, person) => menuGated(visible, person),
+  },
+  {
+    name: "카드 연결 프로젝트 선택(cardLinkProjectChoice)",
+    probe: perProject((viewer, project) => cardLinkProjectChoice(viewer, project.id)),
+    expected: (visible) => outcomesFor(visible),
+  },
+  {
+    name: "카드 연결 진입 줄(cardLinkLineChoice)",
+    probe: perProject((viewer, project) => cardLinkLineChoice(viewer, project.lineId)),
+    expected: (visible) => outcomesFor(visible),
+  },
+  {
+    name: "구매 요청 줄 고르개(searchLinesForPurchaseLink)",
+    probe: perProject((viewer, project) => searchLinesForPurchaseLink(viewer, { projectId: project.id, query: "" }), { menuDenied: true }),
+    expected: (visible, _world, person) => menuGated(visible, person),
+  },
+  {
+    name: "구매 요청 진입 줄(purchaseRequestEntry)",
+    probe: perProject((viewer, project) => purchaseRequestEntry(viewer, project.lineId)),
+    expected: (visible) => outcomesFor(visible),
+  },
+  {
+    // 사전 판정만(쓰지 않는다) — 범위 안이면 줄 기준을 돌려주고, 범위 밖 줄 id는 기존 「연결 없음」(T-06.2-31).
+    name: "구매 요청 줄 기준(precheckPurchaseRequest 견적 줄)",
+    probe: perProject((viewer, project) => precheckPurchaseRequest(viewer, requestInput(project.lineId)), { menuDenied: true }),
+    expected: (visible, _world, person) => menuGated(visible, person),
+  },
 ];
 
 const cases = ENTRIES.flatMap((entry) => VIEW_SCOPE_PEOPLE.map((person) => ({ entry, person, label: `${entry.name} × ${person}` })));
@@ -214,8 +301,8 @@ describe("행 범위 매트릭스 (06.2-03)", () => {
   it("케이스 하한 — 입구(06.2-03 열둘 + 06.2-04) × 사람 아홉(화면팀 포함 — K1)", () => {
     expect(VIEW_SCOPE_PEOPLE).toHaveLength(9);
     expect(VIEW_SCOPE_PROJECTS).toHaveLength(3);
-    expect(ENTRIES).toHaveLength(14);
-    expect(cases.length).toBeGreaterThanOrEqual(14 * 9);
+    expect(ENTRIES).toHaveLength(23);
+    expect(cases.length).toBeGreaterThanOrEqual(23 * 9);
   });
 
   it.each(cases)("$label", async ({ entry, person }) => {
@@ -323,6 +410,99 @@ describe("정산 머리 · 제출 · 범위 밖 결재자 (06.2-04 Task 1)", () 
     const doc = await getSettlement(fx.pm, { projectId: fx.projectId });
     expect(doc?.quoteTotalKrw).toBeTypeOf("number");
     await expect(listMyInbox(fx.pm, { withDetails: true })).resolves.toBeDefined();
+  });
+});
+
+// 06.2-04 Task 2 — 카드 연결 쓰기(M7) · 카드 사용 · 구매 요청 목록 「전부 보기」 지름길(K2 · D-6220).
+function uniqueLast4(): string {
+  return String(Math.floor(1000 + Math.random() * 9000));
+}
+
+async function personalCard(holder: Viewer): Promise<string> {
+  const card = await createCorpCard(SYSTEM_VIEWER, { issuer: `카드사-${randomUUID().slice(0, 6)}`, numberLast4: uniqueLast4(), label: "개인 카드", kind: "personal", holderUserId: holder.id });
+  if (!card.id) throw new Error("카드 id 없음");
+  return card.id;
+}
+
+function teamCostUsage(corpCardId: string): CardUsageInput {
+  return { corpCardId, usedOn: seoulToday(), merchantVendorId: null, total: { currency: "KRW", amount: 10_000, fxRate: 1 }, evidenceTypeCode: "card_receipt", linkKind: "team_cost", memo: null };
+}
+
+// 권한 키 하나를 켠 화면 계급(work_scope team · view_scope team — K1 꼴) 사람, 기획1팀.
+async function privilegedPerson(menu: "cards.proxy" | "cards.purchases", name: string): Promise<Viewer> {
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `${name}-${randomUUID().slice(0, 8)}`, workScope: "team", viewScope: "team" });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu, action: "write", allowed: true });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
+  for (const infoItem of ["team.value", "card_usage.value", "card_usage.amount", "purchase_request.value", "purchase_request.amount", "project.value"]) {
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+  }
+  return makePerson(name, role.id, "기획1팀");
+}
+
+describe("카드 연결 쓰기(M7 — T-06.2-31)", () => {
+  it("범위 밖 프로젝트 줄 · 견적 외 비용으로 카드 사용을 이으면 기존 「연결 없음」, 범위 안은 지금처럼 통과", async () => {
+    const card = await personalCard(w.people.팀PM);
+    const base = teamCostUsage(card);
+    const line = (lineId: string): CardUsageInput => ({ ...base, linkKind: "quote_line", lineId });
+    const outOfQuote = (projectId: string): CardUsageInput => ({ ...base, linkKind: "out_of_quote", projectId, itemName: "현장 다과" });
+
+    await expect(precheckCardUsage(w.people.팀PM, line(w.projects.P3.lineId))).rejects.toThrow(LINK_MISSING_TEXT);
+    await expect(precheckCardUsage(w.people.팀PM, outOfQuote(w.projects.P3.id))).rejects.toThrow(LINK_MISSING_TEXT);
+    expect((await precheckCardUsage(w.people.팀PM, line(w.projects.P1.lineId))).projectId).toBe(w.projects.P1.id);
+    expect((await precheckCardUsage(w.people.팀PM, outOfQuote(w.projects.P1.id))).projectId).toBe(w.projects.P1.id);
+    // 참여자는 붙은 P3 줄에 잇는다(D-6205 ③).
+    const memberCard = await personalCard(w.people.참여자);
+    expect((await precheckCardUsage(w.people.참여자, { ...teamCostUsage(memberCard), linkKind: "quote_line", lineId: w.projects.P3.lineId })).projectId).toBe(w.projects.P3.id);
+  });
+});
+
+describe("카드 사용 · 구매 요청 목록 「전부 보기」 지름길(K2 · D-6220)", () => {
+  const usages: Partial<Record<"X" | "본부장" | "팀PM", string>> = {};
+  const requests: Partial<Record<"X" | "본부장" | "팀PM", string>> = {};
+  let proxy: Viewer;
+  let purchaser: Viewer;
+  const month = seoulToday().slice(0, 7);
+
+  beforeAll(async () => {
+    for (const key of ["X", "본부장", "팀PM"] as const) {
+      const viewer = w.people[key];
+      const input = teamCostUsage(await personalCard(viewer));
+      usages[key] = (await createCardUsage(viewer, input, await precheckCardUsage(viewer, input))).id;
+      const request: PurchaseRequestInput = { linkKind: "team_cost", itemName: `${key} 소모품`, linkUrl: "https://www.coupang.com/vp/products/1", estimate: { currency: "KRW", amount: 50_000, fxRate: 1 }, memo: null };
+      requests[key] = (await createPurchaseRequest(viewer, request, await precheckPurchaseRequest(viewer, request))).id;
+    }
+    proxy = await privilegedPerson("cards.proxy", "카드대리");
+    purchaser = await privilegedPerson("cards.purchases", "구매담당");
+  }, 120_000);
+
+  async function seenUsages(viewer: Viewer): Promise<string[]> {
+    const mine = new Set(Object.values(usages));
+    return (await listCardUsages(viewer, { month }, seoulToday())).rows.flatMap((row) => (row.id && mine.has(row.id) ? [row.id] : [])).sort();
+  }
+  async function seenRequests(viewer: Viewer): Promise<string[]> {
+    const mine = new Set(Object.values(requests));
+    return (await listPurchaseRequests(viewer, { status: "all" })).rows.flatMap((row) => (row.id && mine.has(row.id) ? [row.id] : [])).sort();
+  }
+  const ids = (map: Partial<Record<string, string>>, keys: readonly string[]) => keys.map((key) => map[key] as string).sort();
+
+  it("본부장(work_scope company · view_scope org_unit)은 다른 본부 행을 못 보고 자기 카드 사용 · 자기 요청만 본다", async () => {
+    expect(await seenUsages(w.people.본부장)).toEqual(ids(usages, ["본부장"]));
+    expect(await seenRequests(w.people.본부장)).toEqual(ids(requests, ["본부장"]));
+  });
+
+  it("대표(view_scope company) → 전부", async () => {
+    expect(await seenUsages(w.people.대표)).toEqual(ids(usages, ["X", "본부장", "팀PM"]));
+    expect(await seenRequests(w.people.대표)).toEqual(ids(requests, ["X", "본부장", "팀PM"]));
+  });
+
+  it("privileged(view_scope team) — cards.proxy는 카드 사용 전부 · cards.purchases는 구매 요청 전부", async () => {
+    expect(await seenUsages(proxy)).toEqual(ids(usages, ["X", "본부장", "팀PM"]));
+    expect(await seenRequests(purchaser)).toEqual(ids(requests, ["X", "본부장", "팀PM"]));
+  });
+
+  it("팀PM(work_scope team) — 06.2 전과 같은 자기 거름(회귀)", async () => {
+    expect(await seenUsages(w.people.팀PM)).toEqual(ids(usages, ["팀PM"]));
+    expect(await seenRequests(w.people.팀PM)).toEqual(ids(requests, ["팀PM"]));
   });
 });
 

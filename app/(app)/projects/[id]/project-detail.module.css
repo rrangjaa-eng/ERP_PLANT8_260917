@@ -491,6 +491,14 @@ td:has(> .rowNumber) {
 }
 
 @media (max-width: 699.98px) {
+  /* 자동 배치 표 칸 안의 한 줄 말줄임은 칸 최소 폭을 이름 전체로 키워 표가 넘친다 — 이름 트랙을 minmax(0, 1fr)로 두면 최소 폭 계산에서 0이다(태그는 오른쪽 자동 트랙). */
+  .memberName {
+    display: grid;
+    grid-auto-flow: column;
+    grid-template-columns: minmax(0, 1fr);
+    grid-auto-columns: max-content;
+  }
+
   .memberNameText {
     overflow: hidden;
     white-space: nowrap;

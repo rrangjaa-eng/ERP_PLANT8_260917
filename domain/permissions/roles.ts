@@ -140,7 +140,7 @@ async function defaultGrantCustomFields(
 
 export async function createRole(
   viewer: Viewer,
-  input: { name: string; sortOrder?: number },
+  input: { name: string; sortOrder?: number; workScope?: RoleWorkScope },
   deps?: Partial<RoleWriteDeps>,
 ): Promise<RoleDto> {
   const canFn = deps?.can ?? defaultCan;
@@ -153,7 +153,13 @@ export async function createRole(
   // 오류가 관리자에게 간다(칸이 안 보이는 계급이 조용히 남지 않는다).
   const grant = deps?.grantCustomFieldsToRole ?? defaultGrantCustomFields;
   const row = await withTransaction(async (tx) => {
-    const inserted = await repoInsertRole(viewer, { id, name: normalizeRoleName(input.name), sortOrder: input.sortOrder }, tx);
+    // 06.2(K1, 사용자 결정 2026-10-08): 새 계급의 보는 범위는 업무 범위를 복사한다.
+    const workScope = input.workScope ?? "team";
+    const inserted = await repoInsertRole(
+      viewer,
+      { id, name: normalizeRoleName(input.name), sortOrder: input.sortOrder, workScope, viewScope: workScope },
+      tx,
+    );
     await grant(viewer, inserted.id, undefined, tx);
     return inserted;
   });

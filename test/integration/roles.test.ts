@@ -212,6 +212,13 @@ describe("계급 보는 범위(06.2 D-6201)", () => {
     expect(logs[0]?.detail).toEqual({ viewScope: { from: "team", to: "company" } });
   });
 
+  it("새로 만든 계급의 보는 범위는 업무 범위를 복사한다(K1)", async () => {
+    const company = await createRole(SYSTEM_VIEWER, { name: `전사계급-${randomUUID()}`, workScope: "company" });
+    expect(await viewScopeOf(company.id)).toBe("company");
+    const team = await createRole(SYSTEM_VIEWER, { name: `팀계급-${randomUUID()}` });
+    expect(await viewScopeOf(team.id)).toBe("team");
+  });
+
   it("팀 발령 있는 사람은 team이면 그 팀 id로, org_unit으로 바꾸면 그 팀의 본부 id로 limited다", async () => {
     const role = await createRole(SYSTEM_VIEWER, { name: `행범위-${randomUUID()}` });
     await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });

@@ -12,6 +12,7 @@ export * from "./field-definitions";
 export * from "./document-counters";
 export * from "./money-columns";
 export * from "./projects";
+export * from "./project-members";
 export * from "./quote-revisions";
 export * from "./quote-lines";
 export * from "./revenue-entries";

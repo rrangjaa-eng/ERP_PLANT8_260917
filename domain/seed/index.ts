@@ -268,6 +268,13 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
       { roleId, menu: "projects.period", action: "write" as const },
     ]),
     { roleId: CEO_ROLE_ID, menu: "projects.complete", action: "write" },
+    // 06.2(D-6210): ROADMAP 06.2 성공 기준 5(담당 PM · 팀장이 붙인다) + D-6210(관리 권리가 전사인 계급도 키가 있어야 붙인다).
+    // 260907은 기획팀장만이었다(`O: docs/06_업무/02_프로젝트.md:401`). 시스템 관리자는 위 MENUS 루프가 켠다.
+    ...[CEO_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID, DEFAULT_ROLE_ID].map((roleId) => ({
+      roleId,
+      menu: "projects.member",
+      action: "write" as const,
+    })),
   ];
   for (const entry of statusDefaults) {
     await insertPermissionIfAbsent(viewer, { ...entry, allowed: true, updatedBy: null });

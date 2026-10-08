@@ -26,7 +26,7 @@ import {
   statusChangedMessage,
 } from "@/domain/projects/status";
 import { PROJECT_STATUSES } from "@/domain/projects/status-transitions";
-import { addProjectMembers } from "@/domain/projects/members";
+import { addProjectMembers, removeProjectMember, restoreProjectMember } from "@/domain/projects/members";
 import "@/app/(app)/document-kinds";
 import { currentHolderNames, projectActionResult } from "@/domain/approvals";
 import { SETTLEMENT_DOCUMENT_KIND, submitSettlement, withdrawSettlement } from "@/domain/settlements";
@@ -348,4 +348,22 @@ export const addProjectMembersAction = authedActionClient
     const result = await addProjectMembers(ctx.viewer, parsedInput.projectId, parsedInput.userIds);
     revalidatePath(`/projects/${parsedInput.projectId}`);
     return { added: result.added };
+  });
+
+// 06.2-05(D-6209 · D-6222): 참여자 떼기 — 줄을 보관한다(지우지 않는다). 퇴직 · 보관된 참여자도 뗀다.
+export const removeProjectMemberAction = authedActionClient
+  .schema(z.object({ projectId: z.string().uuid(), userId: z.string().min(1) }))
+  .action(async ({ parsedInput, ctx }) => {
+    await removeProjectMember(ctx.viewer, parsedInput.projectId, parsedInput.userId);
+    revalidatePath(`/projects/${parsedInput.projectId}`);
+    return { removed: true };
+  });
+
+// 06.2-05(UI-SPEC 「떼기 — 확인 창 대신 되돌리기」): 되돌리기 = 보관 해제 — 후보 검사 없이 방금 보관한 줄을 되살린다.
+export const restoreProjectMemberAction = authedActionClient
+  .schema(z.object({ projectId: z.string().uuid(), userId: z.string().min(1) }))
+  .action(async ({ parsedInput, ctx }) => {
+    await restoreProjectMember(ctx.viewer, parsedInput.projectId, parsedInput.userId);
+    revalidatePath(`/projects/${parsedInput.projectId}`);
+    return { restored: true };
   });

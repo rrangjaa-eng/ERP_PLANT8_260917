@@ -73,3 +73,18 @@ registerAction({
   action: "write",
   dtoName: null,
 });
+
+// 06.2-05(D-6209): 참여자 떼기 · 되돌리기(보관 해제) — 불린만 돌려준다(DTO 없음). 판정은 더하기와 같은 domain 순서.
+registerAction({
+  name: "removeProjectMemberAction",
+  menu: "projects.member",
+  action: "write",
+  dtoName: null,
+});
+
+registerAction({
+  name: "restoreProjectMemberAction",
+  menu: "projects.member",
+  action: "write",
+  dtoName: null,
+});

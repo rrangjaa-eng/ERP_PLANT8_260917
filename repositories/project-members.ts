@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { projectMembers } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
@@ -48,4 +48,44 @@ export async function reviveOrInsertMembers(
     await tx.insert(projectMembers).values(fresh.map((userId) => ({ projectId: input.projectId, userId, addedBy: input.addedBy })));
   }
   return revived.length + fresh.length;
+}
+
+// 떼기 — 살아 있는 줄의 archived_at만 채운다(사람 상태를 보지 않는다 — 퇴직 · 보관된 참여자도 뗀다, D-6222). 바뀐 줄이 있으면 참.
+export async function archiveLiveMember(viewer: Viewer, input: { projectId: string; userId: string }, tx: DbOrTx = db): Promise<boolean> {
+  void viewer;
+  const rows = await tx
+    .update(projectMembers)
+    .set({ archivedAt: new Date() })
+    .where(and(eq(projectMembers.projectId, input.projectId), eq(projectMembers.userId, input.userId), isNull(projectMembers.archivedAt)))
+    .returning({ id: projectMembers.id });
+  return rows.length > 0;
+}
+
+// 후보 검사 없는 보관 해제 — 되돌리기 전용, 새 줄을 만들지 않는다(restoreHolidayById 꼴). 살아 있는 줄이 없을 때만
+// 그 사람의 가장 최근 보관 줄 하나를 되살린다(created_at 그대로 — 「되돌리면 같은 자리」). 바뀐 줄이 있으면 참.
+export async function restoreArchivedMember(
+  viewer: Viewer,
+  input: { projectId: string; userId: string; restoredBy: string },
+  tx: DbOrTx = db,
+): Promise<boolean> {
+  void viewer;
+  const latestArchived = db
+    .select({ id: projectMembers.id })
+    .from(projectMembers)
+    .where(
+      and(
+        eq(projectMembers.projectId, input.projectId),
+        eq(projectMembers.userId, input.userId),
+        isNotNull(projectMembers.archivedAt),
+        sql`not exists (select 1 from ${projectMembers} live where live.project_id = ${input.projectId} and live.user_id = ${input.userId} and live.archived_at is null)`,
+      ),
+    )
+    .orderBy(desc(projectMembers.archivedAt), desc(projectMembers.createdAt))
+    .limit(1);
+  const rows = await tx
+    .update(projectMembers)
+    .set({ archivedAt: null, addedBy: input.restoredBy })
+    .where(inArray(projectMembers.id, latestArchived))
+    .returning({ id: projectMembers.id });
+  return rows.length > 0;
 }

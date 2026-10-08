@@ -9,6 +9,7 @@ import { ForbiddenError } from "@/domain/permissions/can";
 import { createTeam } from "@/domain/org";
 import { changeExpenseLine, createExpenseFromLines, ExpenseNotFoundError, listLineDoors } from "@/domain/expenses";
 import { searchLinesForPick } from "@/domain/expenses/pick";
+import { projectRowScope } from "@/domain/projects/visibility";
 import { upsertPermission } from "@/repositories/permissions";
 import { makePerson, orgUnitIdByName, teamIdByName } from "./approvals-fixtures";
 import { setupApprovedProject, setupExpenseProject, type ExpenseFixture } from "./fixtures/expenses";
@@ -98,6 +99,22 @@ describe("지출결의 쪽 프로젝트 확인 — 쓰기 게이트 + 보임 (06
     // 프로젝트 팀을 바꾸는 도메인 경로가 없어 행을 직접 고친다(expense-visibility 05-08 검토 #6 선례) — P2를 다른 본부로.
     await db.update(projects).set({ teamId: await teamIdByName("경영관리팀") }).where(eq(projects.id, w.p2.id));
     await expect(searchLinesForPick(w.head, { mode: "change", expenseId })).rejects.toBeInstanceOf(ExpenseNotFoundError);
+  });
+
+  it("보관된 프로젝트는 보관 보기(admin.archive) 없는 사람에게 줄 입구가 모두 없는 것과 같다 (06.2 M10 · Codex #188)", async () => {
+    const w = await setup();
+    expect((await projectRowScope(w.head)).includeArchived).toBe(false);
+    const pickDraft = await draftOn(w.head, w.p2.lineId);
+    const otherDraft = await draftOn(w.head, w.lines.withVendor);
+    // 보관 도메인 경로는 보관함 화면 쪽이라 행을 직접 고친다(위 change 테스트와 같은 선례) — 줄 id를 아는 사람이 직접 부르는 경로.
+    await db.update(projects).set({ archivedAt: new Date() }).where(eq(projects.id, w.p2.id));
+    const missing = await createExpenseFromLines(w.head, { lineIds: [randomUUID()] });
+    const archived = await createExpenseFromLines(w.head, { lineIds: [w.p2.lineId] });
+    expect(archived.created).toEqual([]);
+    expect(archived.blocked).toEqual([{ lineId: w.p2.lineId, reason: missing.blocked[0]?.reason }]);
+    await expect(changeExpenseLine(w.head, { expenseId: otherDraft, lineId: w.p2.lineId, expectedVersion: await versionOf(otherDraft) })).rejects.toBeInstanceOf(ExpenseNotFoundError);
+    expect((await listLineDoors(w.head, { projectId: w.p2.id })).showColumn).toBe(false);
+    await expect(searchLinesForPick(w.head, { mode: "change", expenseId: pickDraft })).rejects.toBeInstanceOf(ExpenseNotFoundError);
   });
 
   it("담당 PM(다른 팀 PM 지정)은 자기 프로젝트 줄로 지금처럼 만든다 (D-6218 보임 + PM 쓰기 게이트)", async () => {

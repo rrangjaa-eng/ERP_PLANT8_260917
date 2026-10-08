@@ -547,6 +547,8 @@ export type ProjectFacts = { project: ProjectRow; latestRevisionId: string | nul
 export async function loadProjectFacts(viewer: Viewer, projectId: string, gateEnabled: boolean, scope: RowScope): Promise<ProjectFacts | null> {
   const projectRow = await findProjectInScope(viewer, scope, projectId);
   if (!projectRow) return null;
+  // 06.2(M10) · Codex #188: 보관된 프로젝트는 보관 보기(admin.archive) 계정에게만 — 프로젝트 상세(findProject)와 같은 판정.
+  if (projectRow.archivedAt !== null && !scope.includeArchived) return null;
   const latest = await findLatestQuoteRevision(viewer, projectId);
   const pmName = async () => (await findUserById(viewer, projectRow.pmUserId))?.name ?? "";
   return projectFactsFrom(viewer, projectRow, latest, pmName, gateEnabled);

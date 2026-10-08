@@ -160,7 +160,8 @@ export async function searchLinesForPick(
     if (!isEditableByDrafter(viewer.id, expense, status)) throw new ExpenseNotFoundError();
     // 06.2(M10): 기안자 문서여도 프로젝트가 보는 범위 밖이면 줄을 고를 수 없다(없는 문서).
     const projectRow = await findProjectInScope(viewer, rowScope, expense.projectId);
-    if (!projectRow) throw new ExpenseNotFoundError();
+    // 06.2(M10) · Codex #188: 보관된 프로젝트도 보관 보기(admin.archive) 없으면 범위 밖과 같다.
+    if (!projectRow || (projectRow.archivedAt !== null && !rowScope.includeArchived)) throw new ExpenseNotFoundError();
     currentLineId = expense.quoteLineId;
     candidates = [projectRow];
   } else {

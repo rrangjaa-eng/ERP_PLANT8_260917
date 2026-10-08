@@ -341,7 +341,7 @@ function doorCellOf(page: Page, itemName: string) {
 async function makeVendorHiddenPerson(): Promise<Person> {
   const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E가림본부-${randomUUID().slice(0, 8)}` });
   const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E가림팀-${randomUUID().slice(0, 8)}` });
-  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E가림-${randomUUID().slice(0, 8)}`, workScope: "company" });
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E가림-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
   for (const menu of ["projects", "expenses"]) {
     for (const action of ["view", "write"] as const) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu, action, allowed: true });
   }

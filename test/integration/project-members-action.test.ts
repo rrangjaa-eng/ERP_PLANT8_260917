@@ -12,17 +12,15 @@ vi.mock("@/lib/viewer", () => ({
 }));
 vi.mock("next/cache", () => ({ revalidatePath: () => undefined }));
 
-const NOT_PROCESSED = "처리 실패 · 다시 시도";
-
 describe("listProjectMembersAction — 읽기 액션 범위(eng I8)", () => {
   it("범위 밖 viewer(담당 팀 밖 · 참여자 아님)는 일반 문구만 받고 data가 없다 · 없는 id도 같은 문구", async () => {
     const w = await buildViewScopeWorld();
     session.viewer = w.people.팀PM;
     const outside = await listProjectMembersAction({ projectId: w.projects.P3.id });
-    expect(outside?.serverError).toBe(NOT_PROCESSED);
+    expect(outside?.serverError).toBe("처리 실패 · 다시 시도");
     expect(outside?.data).toBeUndefined();
     const missing = await listProjectMembersAction({ projectId: randomUUID() });
-    expect(missing?.serverError).toBe(NOT_PROCESSED);
+    expect(missing?.serverError).toBe("처리 실패 · 다시 시도");
     expect(missing?.data).toBeUndefined();
   });
 

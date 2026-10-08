@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { projects } from "@/db/schema";
+import { corpCardUsages, projects, purchaseRequests } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID, DIVISION_HEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { createProject, findProject, getProjectCopySource, loadProjectList } from "@/domain/projects";
@@ -31,14 +31,24 @@ import {
 } from "@/domain/settings/keys";
 import { upsertSimpleValue } from "@/repositories/settings";
 import { setupSettlementProject } from "./fixtures/settlements";
-import { requestInput } from "./fixtures/purchase-requests";
+import { purchaseProject, request as purchaseRequestFor, requestInput } from "./fixtures/purchase-requests";
 import { ForbiddenError as PermissionForbiddenError } from "@/domain/permissions/can";
 import { createCorpCard } from "@/domain/corp-cards";
-import { createCardUsage, listCardUsages, listProjectCardUsages, precheckCardUsage, type CardUsageInput } from "@/domain/corp-card-usages";
+import {
+  createCardUsage,
+  listCardUsages,
+  listProjectCardUsages,
+  loadCardUsageForEdit,
+  precheckCardUsage,
+  precheckCardUsageUpdate,
+  type CardUsageInput,
+} from "@/domain/corp-card-usages";
 import { cardLinkLineChoice, cardLinkProjectChoice, searchLinesForCardLink, searchProjectsForCardLink } from "@/domain/corp-card-usages/link-targets";
 import {
+  completePurchaseRequest,
   createPurchaseRequest,
   listPurchaseRequests,
+  precheckPurchaseCompletion,
   precheckPurchaseRequest,
   purchaseRequestEntry,
   searchLinesForPurchaseLink,
@@ -517,6 +527,13 @@ describe("카드 사용 · 구매 요청 목록 「전부 보기」 지름길(K2
     expect(await seenUsages(w.people.팀PM)).toEqual(ids(usages, ["팀PM"]));
     expect(await seenRequests(w.people.팀PM)).toEqual(ids(requests, ["팀PM"]));
   });
+
+  // 독립 검토 F-8: D-6220 문장 「work_scope team + view_scope company가 지름길을 얻는다」를 직접 잰다 — 보는 범위가 company면 업무 범위가 team이어도 전부.
+  it("work_scope team · view_scope company 계급은 지름길을 얻어 카드 사용 · 구매 요청 전부를 본다(D-6220)", async () => {
+    const wide = await rolePerson("전사열람팀", "company", [], ["team.value", "card_usage.value", "card_usage.amount", "purchase_request.value", "purchase_request.amount", "project.value"]);
+    expect(await seenUsages(wide)).toEqual(ids(usages, ["X", "본부장", "팀PM"]));
+    expect(await seenRequests(wide)).toEqual(ids(requests, ["X", "본부장", "팀PM"]));
+  });
 });
 
 // 권한 · 노출을 고른 계급의 사람(work_scope team — 보는 범위만 바꾼다), 기획1팀.
@@ -717,5 +734,136 @@ describe("자동 정산 순서 · 본인 범위 · 팀 이동 · 보관 팀 (검
     expect(ids).toContain(w.projects.P3.id);
     expect(await findProject(w.people.팀PM, w.projects.P1.id)).toBeNull();
     expect((await findProject(w.people.팀PM, w.projects.P3.id))?.id).toBe(w.projects.P3.id);
+  });
+});
+
+// ── 06.2-06 이행: 06.2-03 검토 M-3 · 06.2-04 검토 F-8 ─────────────────────────────────
+
+// M-3: includeArchived(보관함 보기) 사람 — 보관 프로젝트도 범위 안만 열린다. 보관함 권한이 없으면 범위 안이어도 없음.
+describe("보관 프로젝트 · includeArchived (06.2-03 M-3)", () => {
+  const ITEMS = ["project.value", "quote.amount"];
+  let withArchive: Viewer;
+  let withoutArchive: Viewer;
+  const archived: Record<"inScope" | "outOfScope", { id: string; revisionId: string }> = {
+    inScope: { id: "", revisionId: "" },
+    outOfScope: { id: "", revisionId: "" },
+  };
+
+  async function archivedProject(teamId: string, label: string) {
+    const created = await createProject(SYSTEM_VIEWER, { clientId: w.clientId, teamId, pmUserId: w.people.X.id, name: `보관 프로젝트 ${label} ${randomUUID()}`, startDate: "2026-11-01", endDate: "2026-12-31" });
+    const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, created.id);
+    if (!revision) throw new Error("1차 차수 없음");
+    await db.update(projects).set({ archivedAt: new Date() }).where(eq(projects.id, created.id));
+    return { id: created.id, revisionId: revision.id };
+  }
+
+  beforeAll(async () => {
+    withArchive = await rolePerson("보관보기", "team", [{ menu: "admin.archive", action: "view" }], ITEMS);
+    withoutArchive = await rolePerson("보관못봄", "team", [], ITEMS);
+    archived.inScope = await archivedProject(w.teams.plan1, "기획1팀");
+    archived.outOfScope = await archivedProject(w.teams.mgmt, "경영관리팀");
+  }, 120_000);
+
+  it("보관함 보기 + 팀 범위 — 범위 안 보관 프로젝트는 상세 · 견적 줄이 열리고, 범위 밖 보관 프로젝트는 없음", async () => {
+    expect((await findProject(withArchive, archived.inScope.id))?.id).toBe(archived.inScope.id);
+    expect(await findProject(withArchive, archived.outOfScope.id)).toBeNull();
+    expect(await canOpenProject(withArchive, archived.inScope.id)).toBe(true);
+    expect(await canOpenProject(withArchive, archived.outOfScope.id)).toBe(false);
+    await expect(listQuoteLines(withArchive, archived.inScope.revisionId, { status: "bidding", canWrite: false })).resolves.toBeDefined();
+    await expect(listQuoteLines(withArchive, archived.outOfScope.revisionId, { status: "bidding", canWrite: false })).rejects.toBeInstanceOf(RevisionNotFoundError);
+  });
+
+  it("보관함 권한이 없으면 범위 안 보관 프로젝트도 없음(includeArchived 거짓)", async () => {
+    expect(await findProject(withoutArchive, archived.inScope.id)).toBeNull();
+    expect(await canOpenProject(withoutArchive, archived.inScope.id)).toBe(false);
+    await expect(listQuoteLines(withoutArchive, archived.inScope.revisionId, { status: "bidding", canWrite: false })).rejects.toBeInstanceOf(RevisionNotFoundError);
+  });
+});
+
+// M-3: org_unit 범위인데 오늘 발령이 없는 본부 책임자 — 본부 id가 null이라 범위 조각은 false, 담당 PM 프로젝트만 보인다(D-6207 · CSO-4).
+describe("발령 없는 본부 책임자 · org_unit id null (06.2-03 M-3)", () => {
+  it("본부 조각 없이 PM 프로젝트만 보이고 같은 팀 프로젝트도 없음", async () => {
+    const head = await makePerson("발령없는본부장", DIVISION_HEAD_ROLE_ID, null);
+    const own = await createProject(SYSTEM_VIEWER, { clientId: w.clientId, teamId: w.teams.plan1, pmUserId: head.id, name: `발령 없음 PM ${randomUUID()}`, startDate: "2026-11-01", endDate: "2026-12-31" });
+    expect((await loadProjectList(head, {})).rows.map((row) => row.id)).toEqual([own.id]);
+    expect((await findProject(head, own.id))?.id).toBe(own.id);
+    expect(await findProject(head, w.projects.P1.id)).toBeNull();
+    expect(await canOpenProject(head, w.projects.P1.id)).toBe(false);
+  });
+});
+
+// F-8 ①②: 카드 사용 수정 — 이미 이은 건이라 수정은 열리고 범위 밖 프로젝트 이름만 비며, 범위 밖 줄로 갈아탈 수는 없다.
+describe("카드 사용 수정 · 범위 밖 줄 (06.2-04 F-8)", () => {
+  async function linkedUsage(name: string): Promise<{ viewer: Viewer; cardId: string; usageId: string }> {
+    const viewer = await makePerson(name, DEFAULT_ROLE_ID, "기획1팀");
+    const cardId = await personalCard(viewer);
+    const input: CardUsageInput = { ...teamCostUsage(cardId), linkKind: "quote_line", lineId: w.projects.P1.lineId };
+    const created = await createCardUsage(viewer, input, await precheckCardUsage(viewer, input));
+    return { viewer, cardId, usageId: created.id };
+  }
+
+  it("수정 화면의 프로젝트 이름 — 범위 안이면 번호 · 이름, 범위 밖으로 옮겨도 수정은 열리고 이름만 빈다", async () => {
+    const { viewer, usageId } = await linkedUsage("라벨사람");
+    const before = await loadCardUsageForEdit(viewer, usageId);
+    expect(before?.usage.projectLabel).toContain(w.projects.P1.name);
+
+    await assignTeam(SYSTEM_VIEWER, { userId: viewer.id, teamId: w.teams.mgmt, effectiveFrom: kstToday(new Date()) });
+    const after = await loadCardUsageForEdit(viewer, usageId);
+    expect(after).not.toBeNull();
+    expect(after?.usage.id).toBe(usageId);
+    expect(after?.usage.projectLabel).toBeNull();
+  });
+
+  it("수정에서 범위 밖 줄로 연결을 바꾸면 기존 「연결 없음」, 같은 줄 그대로는 통과", async () => {
+    const { viewer, cardId, usageId } = await linkedUsage("수정사람");
+    const edit = await loadCardUsageForEdit(viewer, usageId);
+    const version = edit?.usage.version;
+    if (version === undefined) throw new Error("수정 화면에 version이 없습니다");
+    const update = (lineId: string) => ({ ...teamCostUsage(cardId), id: usageId, version, linkKind: "quote_line" as const, lineId });
+
+    await expect(precheckCardUsageUpdate(viewer, update(w.projects.P3.lineId))).rejects.toThrow(LINK_MISSING_TEXT);
+    expect((await precheckCardUsageUpdate(viewer, update(w.projects.P1.lineId))).projectId).toBe(w.projects.P1.id);
+  });
+});
+
+// F-8 ④ — RED(알려진 실패): `pmNameOf`(domain/corp-card-usages/index.ts)가 범위 판정 없이 담당 PM 이름을 읽어, 수정 권리(등록자 · cards.proxy)만 있으면
+// 범위 밖 프로젝트의 담당 PM 이름이 상한 문구 재료(pre.pmName)로 나간다. 의도된 동작은 「범위 밖 프로젝트의 PM 이름은 새지 않는다」다.
+// 독립 검토 F-3의 제품 코드 고침은 이 플랜 밖(별도 실행자) — 그 고침이 들어가면 녹색이 된다. 이 플랜에서는 일부러 붉게 둔다.
+describe("구매 완료 건 수정 · 범위 밖 프로젝트의 담당 PM 이름 (06.2-04 F-8 ④ · F-3, 알려진 RED)", () => {
+  it("범위 밖 프로젝트에 이은 구매 완료 건을 수정 사전 조회해도 담당 PM 이름이 나오지 않는다", async () => {
+    const fx = await purchaseProject();
+    const created = await purchaseRequestFor(fx, fx.onlineLine);
+    const buyer = await privilegedPerson("cards.purchases", "구매처리자");
+    const card = await createCorpCard(SYSTEM_VIEWER, { issuer: `공용사-${randomUUID().slice(0, 6)}`, numberLast4: uniqueLast4(), label: "공용 카드", kind: "shared" });
+    if (!card.id) throw new Error("카드 id 없음");
+    const [requestRow] = await db.select({ version: purchaseRequests.version }).from(purchaseRequests).where(eq(purchaseRequests.id, created.id));
+    const completion = {
+      requestId: created.id,
+      version: requestRow?.version ?? 0,
+      corpCardId: card.id,
+      usedOn: seoulToday(),
+      merchantVendorId: null,
+      total: { currency: "KRW" as const, amount: 110_000, fxRate: 1 },
+      evidenceTypeCode: "invoice",
+      memo: null,
+    };
+    const done = await completePurchaseRequest(buyer, completion, await precheckPurchaseCompletion(buyer, completion));
+    // 구매 처리자(기획1팀, 보는 범위 team)에게 이 프로젝트(구매 픽스처의 다른 팀)는 범위 밖이다.
+    expect(await findProject(buyer, fx.projectId)).toBeNull();
+
+    const [usageRow] = await db.select({ version: corpCardUsages.version }).from(corpCardUsages).where(eq(corpCardUsages.id, done.usageId));
+    const pre = await precheckCardUsageUpdate(buyer, {
+      corpCardId: card.id,
+      usedOn: completion.usedOn,
+      merchantVendorId: null,
+      total: completion.total,
+      evidenceTypeCode: completion.evidenceTypeCode,
+      memo: null,
+      linkKind: "quote_line",
+      lineId: fx.onlineLine,
+      id: done.usageId,
+      version: usageRow?.version ?? 0,
+    });
+    expect(pre.pmName ?? "").not.toContain("박서연");
   });
 });

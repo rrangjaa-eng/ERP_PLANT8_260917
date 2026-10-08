@@ -31,7 +31,7 @@ describe("시드 계급 보는 범위 = 이행 백필 값(06.2 D-6203)", () => {
       .find((statement) => statement.includes(`SET "view_scope" = CASE "id"`));
     expect(seedUpdate).toBeDefined();
     const pairs = Object.fromEntries(
-      [...(seedUpdate as string).matchAll(/WHEN '([^']+)' THEN '([^']+)'/g)].map((m) => [m[1], m[2]]),
+      [...(seedUpdate as string).matchAll(/WHEN '([^']+)' THEN '([^']+)'/g)].map((m): [string, string] => [m[1] ?? "", m[2] ?? ""]),
     );
     expect(pairs).toEqual(Object.fromEntries(SEED_ROLES.map((role) => [role.id, role.viewScope])));
     for (const role of SEED_ROLES) expect(seedUpdate).toContain(`'${role.id}'`);

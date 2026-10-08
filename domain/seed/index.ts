@@ -178,6 +178,7 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
       isSeed: role.isSeed,
       sortOrder: role.sortOrder,
       workScope: role.workScope,
+      viewScope: role.viewScope,
     });
     if (inserted) rolesCount++;
   }

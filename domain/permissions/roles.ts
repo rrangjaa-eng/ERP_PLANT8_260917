@@ -24,15 +24,27 @@ import {
 export const ROLE_WORK_SCOPES = ["team", "company"] as const;
 export type RoleWorkScope = (typeof ROLE_WORK_SCOPES)[number];
 
-export type SeedRole = { id: string; name: string; isSeed: true; sortOrder: number; workScope: RoleWorkScope };
+// 06.2(D-6201): 보는 범위 — company(전사) · org_unit(본부) · team(팀) · own(본인). rowScopeFor만 읽는다.
+export const ROLE_VIEW_SCOPES = ["company", "org_unit", "team", "own"] as const;
+export type RoleViewScope = (typeof ROLE_VIEW_SCOPES)[number];
+
+export type SeedRole = {
+  id: string;
+  name: string;
+  isSeed: true;
+  sortOrder: number;
+  workScope: RoleWorkScope;
+  viewScope: RoleViewScope;
+};
 
 // 업무 범위 값은 마이그레이션 0013의 UPDATE와 같다 — 새 DB(시드)와 기존 DB(마이그레이션)가 같은 값을 갖는다.
+// 보는 범위 값은 마이그레이션 *_view_scope의 시드 UPDATE와 같다.
 export const SEED_ROLES: SeedRole[] = [
-  { id: "role-ceo", name: "대표", isSeed: true, sortOrder: 0, workScope: "company" },
-  { id: "role-division-head", name: "본부 책임자", isSeed: true, sortOrder: 1, workScope: "company" },
-  { id: "role-team-lead", name: "팀장", isSeed: true, sortOrder: 2, workScope: "team" },
-  { id: "role-pm", name: "기획 PM", isSeed: true, sortOrder: 3, workScope: "team" },
-  { id: "role-sysadmin", name: "시스템 관리자", isSeed: true, sortOrder: 4, workScope: "company" },
+  { id: "role-ceo", name: "대표", isSeed: true, sortOrder: 0, workScope: "company", viewScope: "company" },
+  { id: "role-division-head", name: "본부 책임자", isSeed: true, sortOrder: 1, workScope: "company", viewScope: "org_unit" },
+  { id: "role-team-lead", name: "팀장", isSeed: true, sortOrder: 2, workScope: "team", viewScope: "team" },
+  { id: "role-pm", name: "기획 PM", isSeed: true, sortOrder: 3, workScope: "team", viewScope: "team" },
+  { id: "role-sysadmin", name: "시스템 관리자", isSeed: true, sortOrder: 4, workScope: "company", viewScope: "company" },
 ];
 
 export { normalizeRoleName };
@@ -73,6 +85,7 @@ export type RoleDto = {
   isSeed: boolean;
   sortOrder: number;
   workScope: RoleWorkScope;
+  viewScope: RoleViewScope;
   archivedAt: Date | null;
 };
 
@@ -83,6 +96,7 @@ export const ROLE_DTO_SPEC: DtoSpec<RoleRow, RoleDto> = {
     { key: "isSeed", from: "isSeed", infoItem: "role.value" },
     { key: "sortOrder", from: "sortOrder", infoItem: "role.value" },
     { key: "workScope", from: "workScope", infoItem: "role.value" },
+    { key: "viewScope", from: "viewScope", infoItem: "role.value" },
     { key: "archivedAt", from: "archivedAt", infoItem: "role.value" },
   ],
 };

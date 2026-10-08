@@ -65,7 +65,7 @@ describe("rowScopeFor (06.2 행 범위 서술자)", () => {
     const canMenus = opts.canMenus ?? ["projects", "expenses"];
     return {
       can: (_v: Viewer, menu: string) => Promise.resolve(canMenus.includes(menu)),
-      findRoleById: (_v: Viewer, _id: string) =>
+      findRoleById: () =>
         Promise.resolve(
           opts.viewScope === null ? null : { viewScope: opts.viewScope ?? "team", archivedAt: opts.archivedAt ?? null },
         ),
@@ -112,9 +112,8 @@ describe("rowScopeFor (06.2 행 범위 서술자)", () => {
       viewerId: "u1",
       by: { kind: "team", teamId: TEAM_ID },
     });
-    expect((await rowScopeFor(viewer, "project", deps({ viewScope: "team", teamByDate: {} }))).by).toEqual({
-      kind: "team",
-      teamId: null,
+    expect(await rowScopeFor(viewer, "project", deps({ viewScope: "team", teamByDate: {} }))).toMatchObject({
+      by: { kind: "team", teamId: null },
     });
   });
 
@@ -125,9 +124,8 @@ describe("rowScopeFor (06.2 행 범위 서술자)", () => {
       viewerId: "u1",
       by: { kind: "org_unit", orgUnitId: ORG_ID },
     });
-    expect((await rowScopeFor(viewer, "expense", deps({ viewScope: "org_unit", teamByDate: {} }))).by).toEqual({
-      kind: "org_unit",
-      orgUnitId: null,
+    expect(await rowScopeFor(viewer, "expense", deps({ viewScope: "org_unit", teamByDate: {} }))).toMatchObject({
+      by: { kind: "org_unit", orgUnitId: null },
     });
   });
 

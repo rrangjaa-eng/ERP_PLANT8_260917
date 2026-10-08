@@ -153,6 +153,7 @@ function roleRow(workScope: string): RoleRow {
     isSeed: true,
     sortOrder: 0,
     workScope,
+    viewScope: "team",
     customFields: null,
     archivedAt: null,
     archivedBy: null,

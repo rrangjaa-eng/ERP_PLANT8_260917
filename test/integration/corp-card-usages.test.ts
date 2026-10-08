@@ -859,7 +859,9 @@ describe("실행가 초과 읽기(N-3 내리기)", () => {
     const fx = await cardProject();
     await cardOnLine(fx, fx.lines[0] ?? "", 900_000);
     await saveExecution(fx.revisionId, fx.lines[0] ?? "", 500_000);
-    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `금액숨김-${randomUUID().slice(0, 8)}`, workScope: "company" });
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `금액숨김-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
+    // 06.2: 견적 줄 목록은 프로젝트 보임(projects 보기 · 행 범위)을 먼저 본다 — 노출만 재는 계급이라 보기를 켠다.
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
     await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "project.value", visible: true });
     await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "quote.amount", visible: false });
     const viewer = await makePerson("금액숨김", role.id, null);
@@ -1131,7 +1133,7 @@ describe("프로젝트 상세 「법인카드 사용」(S15)", () => {
     await db.update(projects).set({ archivedAt: new Date() }).where(eq(projects.id, fx.projectId));
     await expect(listProjectCardUsages(fx.pm, fx.projectId)).rejects.toBeInstanceOf(ProjectNotFoundError);
 
-    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `보관보기-${randomUUID().slice(0, 8)}`, workScope: "company" });
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `보관보기-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
     await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
     await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "admin.archive", action: "view", allowed: true });
     await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "project.value", visible: true });
@@ -1142,7 +1144,7 @@ describe("프로젝트 상세 「법인카드 사용」(S15)", () => {
   it("quote.amount 없는 계급 → 행 · 합계 행에 금액 키 없음(건수만)", async () => {
     const fx = await cardProject();
     await cardOnLine(fx, fx.lines[0] ?? "", 100_000);
-    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `금액숨김-${randomUUID().slice(0, 8)}`, workScope: "company" });
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `금액숨김-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
     await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
     await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "project.value", visible: true });
     await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "quote.amount", visible: false });

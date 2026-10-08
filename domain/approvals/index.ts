@@ -219,7 +219,7 @@ async function planRoute(
   viewer: Viewer,
   input: { kind: string; drafterId: string; doc?: { teamId: string | null } },
   deps?: ApprovalDeps,
-): Promise<Omit<PreparedSubmission, "gate"> & { drafterName: string | null }> {
+): Promise<Omit<PreparedSubmission, "gate"> & { drafterName: string | null; unresolvedStepIndexes: number[] }> {
   const def = getDocumentKind(input.kind);
   const config = await def.loadRouteConfig();
   const snapshot = await readSnapshot(viewer, deps);
@@ -231,6 +231,9 @@ async function planRoute(
   const steps = config.steps.flatMap((step, i) =>
     step.enabled ? [planStep(i + 1, step, { teamId: drafterTeamId, orgUnitId: drafterOrgUnitId }, names, input.doc)] : [],
   );
+  // 문서 정보 없이 푼 행사 담당 팀 단계 — 미리보기는 자리 이름만 싣고(D-6224), 제출은 거부한다.
+  const unresolvedStepIndexes =
+    input.doc === undefined ? config.steps.flatMap((step, i) => (step.enabled && step.scope === "project_team" ? [i + 1] : [])) : [];
   const walk = walkRoute({
     steps: unactedSteps(steps),
     snapshot,
@@ -249,6 +252,7 @@ async function planRoute(
     steps,
     walk,
     snapshot,
+    unresolvedStepIndexes,
   };
 }
 
@@ -260,8 +264,10 @@ export async function prepareSubmission(
   input: { kind: string; drafterId: string; doc?: { teamId: string | null } },
   deps?: ApprovalDeps,
 ): Promise<PreparedSubmission> {
-  const { drafterName, ...planned } = await planRoute(viewer, input, deps);
+  const { drafterName, unresolvedStepIndexes, ...planned } = await planRoute(viewer, input, deps);
   void drafterName;
+  // 호출 계약 위반(제출은 반드시 문서 팀을 넘긴다) — 사용자 오류가 아니다.
+  if (unresolvedStepIndexes.length > 0) throw new Error("결재선: project_team 단계에 문서 팀 없음");
   if (planned.walk.outcome.kind === "blocked") throw new RouteBlockedError(NO_FALLBACK_MESSAGE);
   const gate = await (deps?.loadActionLogGate ?? defaultLoadActionLogGate)();
   return { ...planned, gate };
@@ -270,12 +276,13 @@ export async function prepareSubmission(
 // 제출 전 결재선 미리보기(CX-R3) — 제출과 같은 도우미(planRoute)로 지금 설정 · 지금
 // 소속을 해석하되 아무것도 쓰지 않는다. 빈 자리는 목록에 없고, 자기 승인 건너뜀
 // 자리는 skipped. 이름은 approval.value 투영을 통과할 때만 실린다.
+// 06.2(D-6224): 문서 없이 부르면 행사 담당 팀 단계는 빈 자리여도 자리 이름만(사람 이름 없이) 싣는다.
 export async function previewRoute(
   viewer: Viewer,
-  input: { kind: string },
+  input: { kind: string; doc?: { teamId: string | null } },
   deps?: ApprovalDeps,
 ): Promise<RoutePreviewDTO> {
-  const planned = await planRoute(viewer, { kind: input.kind, drafterId: viewer.id }, deps);
+  const planned = await planRoute(viewer, { kind: input.kind, drafterId: viewer.id, doc: input.doc }, deps);
   if (planned.walk.outcome.kind === "blocked") throw new RouteBlockedError(NO_FALLBACK_MESSAGE);
   const visible = createVisibleMemo(deps?.findVisibility);
 
@@ -283,6 +290,9 @@ export async function previewRoute(
     if (step.state === "skipped_self") return [{ label: step.label, skipped: true }];
     if (step.state === "current" || step.state === "pending") {
       return [{ label: step.label, holderNames: step.holderNames, skipped: false }];
+    }
+    if (step.state === "empty" && planned.unresolvedStepIndexes.includes(step.stepIndex)) {
+      return [{ label: step.label, holderNames: "", skipped: false }];
     }
     return [];
   });

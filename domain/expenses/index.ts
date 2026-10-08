@@ -66,7 +66,7 @@ import { teamAtDate } from "@/domain/org";
 import { formatKstTime } from "@/domain/holidays/business-day";
 import { computeExpenseTax, storedTaxResult, taxDriftText, taxLineText, type ExpenseTaxResult, type ExpenseTaxSource } from "@/domain/expenses/tax";
 import { buildExpenseDetailRows } from "@/domain/expenses/detail";
-import { canSeeExpense, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses/access";
+import { canSeeExpense, EXPENSE_DOCUMENT_KIND, ExpenseNotFoundError } from "@/domain/expenses/access";
 import { expenseRouteDocTeamId } from "@/domain/expenses/route-doc";
 import { expenseLineDoor, installmentSeqFor, type ExpenseLineDoor, type ExpenseLineDoorState } from "@/domain/expenses/line-door";
 import { resolveLinkedDocumentsByLineage, type LineageLine } from "@/domain/quotes/lineage";
@@ -133,7 +133,7 @@ export type { ExpenseDocumentDto, ExpenseDraftDto, ExpenseNewDefaultsDto, Expens
 // 결재 모듈은 이 파일을 import하지 않는다(app/(app)/document-kinds.ts가 적재를 일으킨다).
 
 // 종류 키 — 04.1 연차 "leave"와 같은 영어 소문자 단수 관례, 설정 키 approval_route.expense.*와 같은 낱말. 보임 판정(access.ts)이 정본을 갖는다.
-export { EXPENSE_DOCUMENT_KIND, canSeeExpense };
+export { EXPENSE_DOCUMENT_KIND, canSeeExpense, ExpenseNotFoundError };
 
 const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const NOT_IN_CURRENT_REVISION = "견적 줄이 현재 차수에 없음 · 견적 줄 바꾸기";
@@ -158,12 +158,6 @@ function teamKindLabel(kind: string | null): string | null {
 // 프로젝트 · 견적 줄 없이 팀 이름으로 올리는 문서(EXP-08).
 function isTeamCostRow(row: Pick<ExpenseRow, "projectId" | "quoteLineId">): boolean {
   return row.projectId === null && row.quoteLineId === null;
-}
-
-export class ExpenseNotFoundError extends UserFacingError {
-  constructor() {
-    super("없는 지출결의 · 새로 고침");
-  }
 }
 
 // 칸 오류 — 회차 상한 초과(게이트가 아니라 공급가액 칸 아래 한 줄).

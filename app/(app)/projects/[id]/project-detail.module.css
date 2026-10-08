@@ -497,3 +497,21 @@ td:has(> .rowNumber) {
     text-overflow: ellipsis;
   }
 }
+
+/* 06.2-12(S2) — 표 아래 3차 `참여자 더하기` 한 줄. `all` = 모든 폭(참여자 0 — 폰의 빈 상태 첫 행동), `pcOnly` = 폰(<700)에서는 「더보기」 자식으로만 연다
+   (같은 버튼 하나에 폭 숨김 클래스만 바꾼다 — PC/폰 이중 렌더 없음). */
+.memberAddAll,
+.memberAddPcOnly {
+  display: block;
+  margin-top: var(--s-3);
+}
+
+@media (max-width: 699.98px) {
+  .memberAddPcOnly {
+    display: none;
+  }
+
+  .memberAddAll button {
+    min-height: var(--touch-min);
+  }
+}

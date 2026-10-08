@@ -16,3 +16,19 @@ export function memberUndoFailedLine(serverError: string | null): string {
 export function memberAddedStatus(count: number): string {
   return `참여자 ${count}명 더함`;
 }
+
+// 고르기 결과 줄 — 검색으로 가려진 고름까지 센 이름 목록을 받는다(06.2-07 `resultLineMany`).
+export function memberPickLine(names: string[]): string | null {
+  const [first] = names;
+  if (first === undefined) return null;
+  return names.length === 1 ? `${first} 선택` : `${first} 외 ${names.length - 1}명 선택`;
+}
+
+export type MemberAddPlacement = { tertiary: "none" | "pc" | "all"; headerChild: boolean };
+
+// 표 아래 3차 `참여자 더하기`와 폰 「더보기」 자식의 자리 — 서버 불린(`canEdit` ∧ `hasCandidates`)만 본다.
+// 참여자 0(담당 PM 행만)이면 폰에도 3차가 보여 빈 상태의 첫 행동이 되고, 아니면 폰은 「더보기」 자식으로만 연다.
+export function memberAddPlacement({ canEdit, hasCandidates, rowCount }: { canEdit: boolean; hasCandidates: boolean; rowCount: number }): MemberAddPlacement {
+  if (!canEdit || !hasCandidates) return { tertiary: "none", headerChild: false };
+  return { tertiary: rowCount === 0 ? "all" : "pc", headerChild: true };
+}

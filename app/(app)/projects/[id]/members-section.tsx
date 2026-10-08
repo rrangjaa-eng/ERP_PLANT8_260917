@@ -3,14 +3,22 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { ProjectMemberDto, ProjectMembersView } from "@/domain/projects/members";
-import { listProjectMembersAction, removeProjectMemberAction, restoreProjectMemberAction } from "@/app/(app)/projects/actions";
+import {
+  addProjectMembersAction,
+  listMemberCandidatesAction,
+  listProjectMembersAction,
+  removeProjectMemberAction,
+  restoreProjectMemberAction,
+} from "@/app/(app)/projects/actions";
+import { Button } from "@/ui/button/Button";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
+import { PickDialog, type PickManyOutcome, type PickResult, type PickRow } from "@/ui/pick-dialog/PickDialog";
 import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
 import { StaticTable, type StaticTableColumn, type StaticTableRow } from "@/ui/table/StaticTable";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { TableSkeleton } from "@/ui/table/TableSkeleton";
-import { memberRemovedLine, memberUndoFailedLine } from "./member-words";
+import { memberAddPlacement, memberAddedStatus, memberPickLine, memberRemovedLine, memberUndoFailedLine } from "./member-words";
 import styles from "./project-detail.module.css";
 
 // 06.2-12(UI-SPEC S2): 프로젝트 상세 「참여자」 섹션 — 법인카드 사용 섹션처럼 따로 불러(액션) 실패해도 원장 · 매출 · 차수 섹션은 선다.
@@ -32,6 +40,8 @@ type MembersContextValue = {
   /** 서버 페이지가 계산한 권리 — 읽기 전 뼈대의 열 수만 정한다(읽은 뒤에는 섹션 읽기의 값). */
   canEdit: boolean;
   registerSection: (handle: SectionHandle | null) => void;
+  /** 「참여자 더하기」 고르기(S3)를 연다 — 표 아래 3차와 폰 「더보기」 자식이 같은 다이얼로그를 쓴다. */
+  openPicker: () => void;
 };
 
 const MembersContext = createContext<MembersContextValue | null>(null);
@@ -40,6 +50,51 @@ function useMembers(): MembersContextValue {
   const value = useContext(MembersContext);
   if (!value) throw new Error("ProjectMembersProvider 밖에서 참여자 화면을 그렸다");
   return value;
+}
+
+const PHONE_QUERY = "(max-width: 699.98px)";
+const ADD_LABEL = "참여자 더하기";
+const TOGGLE_LABEL = "더보기";
+
+function isVisible(element: Element | null): element is HTMLElement {
+  return element instanceof HTMLElement && element.checkVisibility();
+}
+
+function isOpenerLike(element: Element | null): boolean {
+  if (!isVisible(element)) return false;
+  if (element.tagName === "H2") return element.textContent === "참여자";
+  const label = element.textContent?.trim();
+  return element.tagName === "BUTTON" && (label === ADD_LABEL || label === TOGGLE_LABEL);
+}
+
+// 더한 뒤 · 취소 · Esc 뒤 포커스 — 폭마다 하나(UI-SPEC S2 SUCCESS 더하기, R2-I5). 포커스가 보이는 연 요소에 그대로 있으면 둔다.
+// 폭은 CSS 경계와 같은 값의 matchMedia로 포커스만 정한다(렌더에는 쓰지 않아 수화 뒤 머리 줄이 움직이지 않는다).
+function focusAfterPicker(): void {
+  if (isOpenerLike(document.activeElement)) return;
+  if (window.matchMedia(PHONE_QUERY).matches) {
+    const toggle = Array.from(document.querySelectorAll<HTMLButtonElement>("button[aria-controls]")).find((button) => button.textContent?.trim() === TOGGLE_LABEL);
+    if (isVisible(toggle ?? null)) {
+      toggle?.focus();
+      return;
+    }
+    document.querySelector<HTMLElement>('[data-ui="screen-title"]')?.focus();
+    return;
+  }
+  const add = document.querySelector<HTMLElement>('[data-ui="project-members"] [data-ui="member-add"]');
+  if (isVisible(add)) {
+    add.focus();
+    return;
+  }
+  // 마지막 후보를 더해 3차가 사라졌거나 거부 뒤 권리를 잃었다 — 섹션 제목 h2가 탭 순서 밖 포커스 자리다(DetailScreen.tsx h1 `tabIndex={-1}`과 같은 꼴).
+  const heading = document.querySelector<HTMLElement>('[data-ui="project-members"]')?.closest("section")?.querySelector("h2");
+  if (heading) {
+    heading.tabIndex = -1;
+    heading.focus();
+  }
+}
+
+function scheduleFocusAfterPicker(): void {
+  window.requestAnimationFrame(() => window.requestAnimationFrame(focusAfterPicker));
 }
 
 export function ProjectMembersProvider({
@@ -53,11 +108,87 @@ export function ProjectMembersProvider({
   canEdit: boolean;
   children: ReactNode;
 }) {
+  const router = useRouter();
   const sectionRef = useRef<SectionHandle | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [addedStatus, setAddedStatus] = useState("");
   const registerSection = useCallback((handle: SectionHandle | null) => {
     sectionRef.current = handle;
   }, []);
-  return <MembersContext.Provider value={{ projectId, projectName, canEdit, registerSection }}>{children}</MembersContext.Provider>;
+  const openPicker = useCallback(() => {
+    setAddedStatus("");
+    setPickerOpen(true);
+  }, []);
+
+  const search = useCallback(
+    async (query: string): Promise<PickResult | null> => {
+      try {
+        const result = await listMemberCandidatesAction({ projectId, query: query.trim() === "" ? undefined : query });
+        const data = result?.data;
+        if (!data) return null;
+        return {
+          items: data.rows.flatMap((row): PickRow[] =>
+            row.userId && row.name !== undefined ? [{ type: "row", id: row.userId, title: row.name, subtitle: row.teamName ?? "—", selectable: true }] : [],
+          ),
+          truncated: data.truncated,
+          emptyDefault: "더할 수 있는 사람 없음",
+        };
+      } catch {
+        return null;
+      }
+    },
+    [projectId],
+  );
+
+  async function onPickMany(rows: PickRow[]): Promise<PickManyOutcome> {
+    sectionRef.current?.dismissFailure();
+    const retry: PickManyOutcome = { ok: false, reason: "더하지 못함 · 다시 시도", retryable: true };
+    let result: Awaited<ReturnType<typeof addProjectMembersAction>> | undefined;
+    try {
+      result = await addProjectMembersAction({ projectId, userIds: rows.map((row) => row.id) });
+    } catch {
+      return retry;
+    }
+    if (result?.data) {
+      await sectionRef.current?.reload();
+      setAddedStatus(memberAddedStatus(result.data.added));
+      return { ok: true };
+    }
+    if (result?.serverError) {
+      // 서버가 하나라도 거부하면 아무도 붙지 않는다 — 원문을 막힘 자리에 그대로 넘기고, 권리 · 잠금이 바뀌었을 수 있어 섹션과 서버 페이지를 다시 읽는다.
+      await sectionRef.current?.reload();
+      router.refresh();
+      return { ok: false, reason: result.serverError, retryable: false };
+    }
+    return retry;
+  }
+
+  return (
+    <MembersContext.Provider value={{ projectId, projectName, canEdit, registerSection, openPicker }}>
+      {children}
+      <p role="status" className="sr-only">
+        {addedStatus}
+      </p>
+      <PickDialog
+        mode="multiple"
+        open={pickerOpen}
+        onClose={() => {
+          setPickerOpen(false);
+          scheduleFocusAfterPicker();
+        }}
+        title="참여자 더하기"
+        subtitle={projectName}
+        searchLabel="사람 검색"
+        search={search}
+        primaryLabel="참여자 더하기"
+        noun="사람"
+        emptyNextStep={null}
+        failedLine="사람 목록 불러오기 실패"
+        resultLineMany={(rows) => memberPickLine(rows.map((row) => row.title))}
+        onPickMany={onPickMany}
+      />
+    </MembersContext.Provider>
+  );
 }
 
 function toMember(row: Partial<ProjectMemberDto>): Member {
@@ -127,7 +258,7 @@ function SectionLoading({ canEdit }: { canEdit: boolean }) {
 }
 
 export function MembersSection() {
-  const { projectId, canEdit: serverCanEdit, registerSection } = useMembers();
+  const { projectId, canEdit: serverCanEdit, registerSection, openPicker } = useMembers();
   const router = useRouter();
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   const [attempt, setAttempt] = useState(0);
@@ -234,7 +365,9 @@ export function MembersSection() {
   if (load.kind === "loading") {
     return (
       <DetailScreen.Section title="참여자">
-        <SectionLoading canEdit={serverCanEdit} />
+        <div data-ui="project-members">
+          <SectionLoading canEdit={serverCanEdit} />
+        </div>
       </DetailScreen.Section>
     );
   }
@@ -242,17 +375,19 @@ export function MembersSection() {
   if (load.kind === "error") {
     return (
       <DetailScreen.Section title="참여자">
-        <ListEmpty
-          tone="error"
-          message="참여자 불러오지 못함"
-          action={{
-            label: "다시 시도",
-            onClick: () => {
-              setLoad({ kind: "loading" });
-              setAttempt((value) => value + 1);
-            },
-          }}
-        />
+        <div data-ui="project-members">
+          <ListEmpty
+            tone="error"
+            message="참여자 불러오지 못함"
+            action={{
+              label: "다시 시도",
+              onClick: () => {
+                setLoad({ kind: "loading" });
+                setAttempt((value) => value + 1);
+              },
+            }}
+          />
+        </div>
       </DetailScreen.Section>
     );
   }
@@ -266,6 +401,7 @@ export function MembersSection() {
   ];
 
   const members = data.rows.map(toMember);
+  const placement = memberAddPlacement({ canEdit, hasCandidates: data.hasCandidates, rowCount: members.length });
   const pm = data.pm ? toMember(data.pm) : null;
   const tableRows: StaticTableRow[] = [
     ...(pm
@@ -322,23 +458,32 @@ export function MembersSection() {
 
   return (
     <DetailScreen.Section title="참여자">
-      {line ? (
-        <p role="status" className={styles.memberResult}>
-          {line.kind === "failed" ? (
-            <span ref={failedLineRef} tabIndex={line.focus ? -1 : undefined} className={styles.memberResultFailed}>
-              {line.text}
-            </span>
-          ) : (
-            <>
-              {line.retryText ? <span className={styles.memberResultFailed}>{line.retryText}</span> : <span>{memberRemovedLine(line.name)}</span>}
-              <RowAction key={shown} pending={pendingId === line.userId} autoFocus onClick={() => void undo(line)}>
-                되돌리기
-              </RowAction>
-            </>
-          )}
-        </p>
-      ) : null}
-      <StaticTable caption="참여자" columns={columns} rows={tableRows} />
+      <div data-ui="project-members">
+        {line ? (
+          <p role="status" className={styles.memberResult}>
+            {line.kind === "failed" ? (
+              <span ref={failedLineRef} tabIndex={line.focus ? -1 : undefined} className={styles.memberResultFailed}>
+                {line.text}
+              </span>
+            ) : (
+              <>
+                {line.retryText ? <span className={styles.memberResultFailed}>{line.retryText}</span> : <span>{memberRemovedLine(line.name)}</span>}
+                <RowAction key={shown} pending={pendingId === line.userId} autoFocus onClick={() => void undo(line)}>
+                  되돌리기
+                </RowAction>
+              </>
+            )}
+          </p>
+        ) : null}
+        <StaticTable caption="참여자" columns={columns} rows={tableRows} />
+        {placement.tertiary !== "none" ? (
+          <span className={placement.tertiary === "all" ? styles.memberAddAll : styles.memberAddPcOnly}>
+            <Button variant="tertiary" data-ui="member-add" onClick={openPicker}>
+              참여자 더하기
+            </Button>
+          </span>
+        ) : null}
+      </div>
     </DetailScreen.Section>
   );
 }

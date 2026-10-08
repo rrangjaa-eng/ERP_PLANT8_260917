@@ -40,7 +40,6 @@ const EXPENSE_GATE = `지출결의 문서 게이트 — 기안자 · canSeeExpen
 // post-gate = 호출 전 판정 위치를 reason에, exempt = 행 노출 없음 사유를 reason에.
 export const ROW_SCOPE_DISPOSITION: readonly DomainDisposition[] = [
   { file: "domain/corp-card-usages/index.ts", fn: "lineNumbers", primitive: "listQuoteLinesByRevisions", kind: "post-gate", reason: "카드 사용 목록 · 카드 섹션의 줄 번호 — 받은 행(listAccess 자기 거름 · listProjectCardUsages findProjectInScope)의 차수만" },
-  { file: "domain/corp-card-usages/index.ts", fn: "pmNameOf", primitive: "findProjectById", kind: "post-gate", reason: "고정 연결(구매 완료 건) 상한 문구의 PM 이름 — 수정 권리(rights) 판정 뒤, cards.purchases write 판정 뒤 — 구매 처리 권한자 privileged(D-6220 · 목록도 전부), 줄은 요청 행이 고정(작성 때 loadQuoteLineBasis가 범위 판정)" },
   { file: "domain/corp-card-usages/index.ts", fn: "precheckLink", primitive: "findQuoteLineById", kind: "post-gate", reason: "줄 → 차수는 프로젝트 id만 꺼낸다 — 같은 함수의 findProjectInScope 판정 전에는 값이 나가지 않는다(범위 밖 → LINK_MISSING)" },
   { file: "domain/corp-card-usages/index.ts", fn: "precheckLink", primitive: "findQuoteRevisionById", kind: "post-gate", reason: "줄 → 차수는 프로젝트 id만 꺼낸다 — 같은 함수의 findProjectInScope 판정 전에는 값이 나가지 않는다(범위 밖 → LINK_MISSING)" },
   { file: "domain/corp-card-usages/index.ts", fn: "precheckLink", primitive: "findLatestQuoteRevision", kind: "post-gate", reason: "같은 함수의 findProjectInScope 판정 뒤 현재 차수 id" },

@@ -826,10 +826,9 @@ describe("카드 사용 수정 · 범위 밖 줄 (06.2-04 F-8)", () => {
   });
 });
 
-// F-8 ④ — RED(알려진 실패): `pmNameOf`(domain/corp-card-usages/index.ts)가 범위 판정 없이 담당 PM 이름을 읽어, 수정 권리(등록자 · cards.proxy)만 있으면
-// 범위 밖 프로젝트의 담당 PM 이름이 상한 문구 재료(pre.pmName)로 나간다. 의도된 동작은 「범위 밖 프로젝트의 PM 이름은 새지 않는다」다.
-// 독립 검토 F-3의 제품 코드 고침은 이 플랜 밖(별도 실행자) — 그 고침이 들어가면 녹색이 된다. 이 플랜에서는 일부러 붉게 둔다.
-describe("구매 완료 건 수정 · 범위 밖 프로젝트의 담당 PM 이름 (06.2-04 F-8 ④ · F-3, 알려진 RED)", () => {
+// F-8 ④ · F-3 — `pmNameOf`(domain/corp-card-usages/index.ts)는 수정 권리(등록자 · cards.proxy) 뒤에 부르므로 범위 판정이 따로 없으면
+// 범위 밖 프로젝트의 담당 PM 이름이 상한 문구 재료(pre.pmName)로 나간다. 고침: findProjectInScope로 읽고 범위 밖이면 빈 이름.
+describe("구매 완료 건 수정 · 범위 밖 프로젝트의 담당 PM 이름 (06.2-04 F-8 ④ · F-3)", () => {
   it("범위 밖 프로젝트에 이은 구매 완료 건을 수정 사전 조회해도 담당 PM 이름이 나오지 않는다", async () => {
     const fx = await purchaseProject();
     const created = await purchaseRequestFor(fx, fx.onlineLine);

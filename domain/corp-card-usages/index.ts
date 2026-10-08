@@ -286,10 +286,10 @@ async function resolveUsedBy(
   return { usedByUserId, teamId };
 }
 
-// post-gate(06.2 · D-6220): 고정 연결(구매 완료 건 — rights.changeLink 거짓)의 상한 문구에만 쓴다 — 수정 권리(rights) 판정 뒤이고,
-// 구매 처리 권한자 privileged 경로라 처리자의 프로젝트 범위로 다시 거르지 않는다(precheckPurchaseLink와 같은 이유).
+// 고정 연결(구매 완료 건 — rights.changeLink 거짓)의 상한 문구에만 쓴다 — 수정 권리(등록자 · cards.proxy) 판정 뒤라 cards.purchases 판정은 없다.
+// 06.2 F-3: 수정하는 사람의 프로젝트 범위로 읽는다 — 범위 밖이면 빈 이름(이름 없는 문구)이라 담당 PM 이름이 새지 않는다.
 async function pmNameOf(viewer: Viewer, projectId: string): Promise<string> {
-  const project = await findProjectById(viewer, projectId);
+  const project = await findProjectInScope(viewer, await projectRowScope(viewer), projectId);
   return project?.pmUserId ? ((await findUserNamesByIds(viewer, [project.pmUserId])).get(project.pmUserId) ?? "") : "";
 }
 

@@ -25,7 +25,7 @@ import { log } from "@/lib/log";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { can } from "@/domain/permissions/can";
 import { visible } from "@/domain/permissions/visible";
-import { scopeFor } from "@/domain/permissions/scope-for";
+import { projectRowScope } from "@/domain/projects/visibility";
 import { gate } from "@/domain/rules/gate";
 import "@/domain/rules/register";
 import { denyWrite } from "@/domain/rules/deny-write";
@@ -45,6 +45,7 @@ import type { ProjectStatus } from "@/domain/projects/status-transitions";
 import { kstToday } from "@/lib/kst-date";
 import {
   findProjectById,
+  findProjectInScope,
   updateProjectPeriod,
   updateProjectPreEstimate,
   updateProjectStatusIfCurrent,
@@ -151,8 +152,12 @@ export async function saveProjectLedger(
     // 볼 수 없는 프로젝트(보기 권한·범위 밖, 권한 없는 보관 프로젝트)에는 쓰지 않는다 — 조회
     // 화면(findProject)과 같은 조건이다(/cso 14b1ae15). 04-22(A-13): findProject는 풀에서 자동
     // 정산을 따로 커밋하므로 부르지 않는다 — 판정은 트랜잭션 안 잠금 읽기가 한다.
-    const scope = await scopeFor(viewer, PROJECT_ENTITY);
+    const scope = await projectRowScope(viewer);
     if (scope.rows === "none" || !UUID_SHAPE.test(projectId)) {
+      throw new UserFacingError("존재하지 않는 프로젝트");
+    }
+    // 06.2(M1 · D-6206): 범위 밖 프로젝트도 같은 문구 — 잠금 안 판정은 그대로 두고 트랜잭션 전에 거른다.
+    if (!(await findProjectInScope(viewer, scope, projectId))) {
       throw new UserFacingError("존재하지 않는 프로젝트");
     }
 

@@ -345,6 +345,28 @@ export async function findProjectById(viewer: Viewer, id: string, tx: DbOrTx = d
   return row ?? null;
 }
 
+// 06.2(D-6204 · D-6206): 범위 안 프로젝트 한 행 — 범위 밖 · none은 null(호출부가 「없음」으로 거부한다). 보관 여부는 호출부가
+// 지금처럼 includeArchived로 판정한다. 잠근 트랜잭션 안에서는 그 tx를 넘긴다(04-32).
+export async function findProjectInScope(viewer: Viewer, scope: RowScope, id: string, tx: DbOrTx = db): Promise<ProjectRow | null> {
+  if (scope.rows === "none") return null;
+  const [row] = await tx
+    .select()
+    .from(projects)
+    .where(and(eq(projects.id, id), rowScopeCondition(viewer, scope, { projectId: projects.id, teamId: projects.teamId, pmUserId: projects.pmUserId })))
+    .limit(1);
+  return row ?? null;
+}
+
+// 06.2: 받은 id 중 범위 안인 것만(06.2-04 · 08이 하위 목록을 거를 때). 빈 배열이면 조회 없이 빈 집합.
+export async function listProjectIdsInScope(viewer: Viewer, scope: RowScope, ids: string[]): Promise<Set<string>> {
+  if (ids.length === 0 || scope.rows === "none") return new Set();
+  const rows = await db
+    .select({ id: projects.id })
+    .from(projects)
+    .where(and(inArray(projects.id, ids), rowScopeCondition(viewer, scope, { projectId: projects.id, teamId: projects.teamId, pmUserId: projects.pmUserId })));
+  return new Set(rows.map((row) => row.id));
+}
+
 export async function findProjectByNumber(viewer: Viewer, number: string): Promise<ProjectRow | null> {
   void viewer;
   const [row] = await db.select().from(projects).where(eq(projects.number, number)).limit(1);

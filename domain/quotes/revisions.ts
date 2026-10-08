@@ -1,7 +1,8 @@
 import { z } from "zod";
 import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
-import { scopeFor } from "@/domain/permissions/scope-for";
+import { projectRowScope } from "@/domain/projects/visibility";
+import { findProjectInScope } from "@/repositories/projects";
 import { visible as defaultVisible } from "@/domain/permissions/visible";
 import { projectMany, type DtoSpec } from "@/domain/permissions/project";
 import { registerDto } from "@/domain/permissions/dto-registry";
@@ -40,7 +41,6 @@ import {
 // loadProjectForGate로 프로젝트 행을 잠가 줄 저장(04-12)과 한 줄로 선다. 권한(can)은 트랜잭션 앞에서 읽고 잠금 뒤
 // 읽기·로그는 전부 tx다(04-32 · ARCHITECTURE §4-8).
 
-const PROJECT_ENTITY = "project";
 const REVISION_ENTITY = "quote_revision";
 const PROJECTS_MENU = "projects";
 const REVISION_CREATE_RULE = "quote.revision-create";
@@ -75,8 +75,10 @@ export async function createRevisionFromCurrent(
   const insertRevision = deps?.insertRevision ?? repoInsertRevision;
   const ids: DenyWriteIds = { projectId: input.projectId, revisionId: input.fromRevisionId };
 
-  const [rowScope, canWrite] = await Promise.all([scopeFor(viewer, PROJECT_ENTITY, { can: canFn }), canFn(viewer, PROJECTS_MENU, "write")]);
+  const [rowScope, canWrite] = await Promise.all([projectRowScope(viewer, deps?.can ? { can: canFn } : undefined), canFn(viewer, PROJECTS_MENU, "write")]);
   if (rowScope.rows === "none") denyWrite(viewer, "projects.view", ids, new ProjectNotFoundError(PROJECT_NOT_FOUND));
+  // 06.2(M3 · D-6206): 범위 밖은 쓰기 권리 판정보다 먼저 없음 — 트랜잭션(잠금) 전 전역 db 판정(04-32).
+  if (!(await findProjectInScope(viewer, rowScope, input.projectId))) denyWrite(viewer, "projects.view", ids, new ProjectNotFoundError(PROJECT_NOT_FOUND));
   if (!canWrite) denyWrite(viewer, REVISION_CREATE_RULE, ids, new GateBlockedError(WRITE_DENIED));
 
   return withTransaction(async (tx) => {
@@ -170,13 +172,15 @@ export async function setCustomerApproval(
 
   // 트랜잭션 앞(04-32) — 권한 · 행 범위 · 차수의 프로젝트(바뀌지 않는 사실).
   const [rowScope, canWrite, revision] = await Promise.all([
-    scopeFor(viewer, PROJECT_ENTITY, { can: canFn }),
+    projectRowScope(viewer, deps?.can ? { can: canFn } : undefined),
     canFn(viewer, PROJECTS_MENU, "write"),
     repoFindQuoteRevisionById(viewer, revisionId),
   ]);
   const ids: DenyWriteIds = { projectId: revision?.projectId, revisionId };
   if (rowScope.rows === "none" || !revision) denyWrite(viewer, "projects.view", ids, new ProjectNotFoundError(PROJECT_NOT_FOUND));
   const projectId = revision.projectId;
+  // 06.2(M3 · D-6206): 범위 밖 프로젝트의 차수는 없음 — 트랜잭션 전 판정.
+  if (!(await findProjectInScope(viewer, rowScope, projectId))) denyWrite(viewer, "projects.view", ids, new ProjectNotFoundError(PROJECT_NOT_FOUND));
 
   return withTransaction(async (tx) => {
     const project = await loadProjectForGate(viewer, projectId, { now, tx, afterLock: deps?.afterLock }, { recordAction });

@@ -853,6 +853,67 @@ Plans:
 
 이 페이즈까지 나가는 돈의 원장은 전부 새 시스템에 있고, Phase 7이 마감·알림·검수를 얹어 인트라넷 패리티를 끝낸다. 관리자 시스템 상태 화면에 더하는 항목은 없다.
 
+### Phase 06.2: 보는 범위·참여자 (view-scope) (INSERTED)
+
+**Goal:** 프로젝트·견적·지출결의 행을 사람마다 계급의 보는 범위(전사·본부·팀·본인)로 거르고, 다른 팀 사람을 프로젝트 참여자로 붙여 그 행사를 담당 팀처럼 보게 하며, 지출결의 결재 1단계를 행사 담당 팀 팀장으로 바꾼다(사용자 결정 D6 2026-10-06 · G34 2026-10-07, 260907 `server/src/scope.ts` 방식 — 06.2-CONTEXT.md)
+**Requirements**: TBD
+**Depends on:** Phase 6
+**Success Criteria** (what must be TRUE):
+
+  1. 팀 범위 사람은 자기 팀 프로젝트 + 참여 프로젝트 + 자기가 PM인 프로젝트만 목록·검색·고르개에서 보고, 다른 팀 프로젝트 주소는 「없음」이다
+  2. 본부 범위는 자기 본부 팀들 것, 전사는 전부, 본인은 자기가 PM·기안자·참여자인 것만 본다
+  3. 지출결의 목록·상세·증빙·검수·지급도 같은 범위 + 기안자 + 결재 관련자로 보인다
+  4. 관리자가 계급 화면에서 보는 범위를 바꾸면 다음 요청부터 반영된다
+  5. 담당 PM·팀장이 같은 본부 다른 팀 사람을 참여자로 붙이면 그 사람이 그 프로젝트를 담당 팀과 똑같이 보고(금액은 그 계급 노출표대로), 떼면 다시 안 보인다. 참여자의 지출결의 올리기는 사용자 카드 답(D-6214)을 따른다
+  6. 프로젝트 지출결의 1단계 결재 담당은 행사 담당 팀의 팀장이다(팀 비용은 귀속 팀, 연차는 바뀌지 않는다)
+  7. 입구 목록 전부가 테스트로 묶여, 술어가 빠진 입구가 생기면 테스트가 실패한다
+  8. 이행 직후 기존 계급이 보던 행을 잃지 않는다(화면에서 만든 계급 중 프로젝트 보기 권한이 있으면 전사, 없으면 work_scope 복사 — 검토 반영 R1, 사용자 카드 답 대기)
+
+**Plans:** 0/12 plans executed
+
+Plans:
+**Wave 1**
+
+- [ ] 06.2-01-PLAN.md
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 06.2-03-PLAN.md
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 06.2-04-PLAN.md
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 06.2-06-PLAN.md
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 06.2-05-PLAN.md
+- [ ] 06.2-08-PLAN.md
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 06.2-07-PLAN.md
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
+- [ ] 06.2-12-PLAN.md
+
+**Wave 8** *(blocked on Wave 7 completion)*
+
+- [ ] 06.2-02-PLAN.md
+
+**Wave 9** *(blocked on Wave 8 completion)*
+
+- [ ] 06.2-09-PLAN.md
+
+**Wave 10** *(blocked on Wave 9 completion)*
+
+- [ ] 06.2-10-PLAN.md
+- [ ] 06.2-11-PLAN.md
+
 ### Phase 7: 공휴일·지급일·마감·알림 + 전 메뉴 권한 검수
 
 **Goal**: 경영관리가 지급 예정일·결재 마감을 공휴일 표 기준의 자동 계산으로 받고, 직원은 마감·기한 알림을 앱과 이메일로 받으며, 인트라넷 패리티가 끝난 이 시점에서 권한·정보 노출·행동 로그를 전 메뉴 기준으로 검수한다

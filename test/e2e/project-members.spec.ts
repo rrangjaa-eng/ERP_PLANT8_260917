@@ -17,6 +17,11 @@ function membersSection(page: Page): Locator {
   return page.locator("section").filter({ has: page.getByRole("heading", { name: "참여자", exact: true }) });
 }
 
+// 한 행이 본 줄 하나와(폰 P2 접힌 줄 — 칸 하나짜리 `colSpan` 줄) 짝이라, 사람 행은 `colSpan` 칸이 없는 줄이다.
+function bodyRows(section: Locator): Locator {
+  return section.getByRole("table", { name: "참여자" }).locator("tbody > tr:not(:has(> td[colspan]))");
+}
+
 function memberRow(page: Page, person: Person): Locator {
   return membersSection(page).getByRole("row").filter({ hasText: person.name });
 }
@@ -89,7 +94,7 @@ test.describe("참여자 섹션(S2)", () => {
     await expect(zRow.getByRole("button", { name: /떼기/ })).toBeFocused();
     await expect(section.getByRole("status")).toHaveCount(0);
     // 붙인 순(담당 PM → Z → R → A)에서 Z는 담당 PM 바로 아래.
-    await expect(section.getByRole("table", { name: "참여자" }).locator("tbody > tr").nth(1)).toContainText(fx.z.name);
+    await expect(bodyRows(section).nth(1)).toContainText(fx.z.name);
     await page.context().close();
   });
 
@@ -150,7 +155,7 @@ test.describe("참여자 더하기(S3)", () => {
     const fx = await setupMembersE2E();
     const page = await openDetail(browser, baseURL, { projectId: fx.emptyProjectId }, fx.lead);
     const section = membersSection(page);
-    await expect(section.getByRole("table", { name: "참여자" }).locator("tbody > tr")).toHaveCount(1);
+    await expect(bodyRows(section)).toHaveCount(1);
     await expect(section.getByText("참여자가 없습니다")).toHaveCount(0);
     await expect(section.getByRole("button", { name: "참여자 더하기" })).toHaveCount(1);
     const dialog = await openPicker(page);
@@ -319,7 +324,7 @@ test.describe("참여자 섹션 상태(검토 반영 R1: design I10 · I11)", ()
     const fx = await setupMembersE2E();
     await addProjectMembers(fx.lead.viewer, fx.projectId, [fx.candidates[0].viewer.id]);
     const page = await openDetail(browser, baseURL, fx, fx.lead);
-    const rows = membersSection(page).getByRole("table", { name: "참여자" }).locator("tbody > tr");
+    const rows = bodyRows(membersSection(page));
     await expect(rows).toHaveCount(5);
     for (const [index, person] of [fx.pm, fx.z, fx.r, fx.a, fx.candidates[0]].entries()) {
       await expect(rows.nth(index)).toContainText(person.name);

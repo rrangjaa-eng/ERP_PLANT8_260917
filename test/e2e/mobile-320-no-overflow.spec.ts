@@ -229,15 +229,20 @@ test.describe("폭 320 — 어느 화면도 가로로 넘치지 않는다", () =
     expectMeasured("320px 참여자 섹션", await measure(detail));
 
     // 행(주 행 + 접힌 줄)이 두 줄을 넘지 않는다 — 이름 span은 한 줄 말줄임이고 title이 전체 이름이다.
+    // 한계 = 주 행 한 줄(줄 높이와 터치 목표 44 중 큰 쪽 + 위아래 여백) + 접힌 줄 한 줄(접힌 줄 줄 높이 + 아래 여백) — 이름이 두 줄로 꺾이면 줄 높이만큼 넘는다.
     const lines = async (row: import("@playwright/test").Locator) =>
       row.evaluate((main) => {
         const fold = main.nextElementSibling;
         const mainCell = main.querySelector("td");
-        const style = mainCell ? getComputedStyle(mainCell) : null;
-        const lineHeight = style ? Number.parseFloat(style.lineHeight) : 0;
-        const pad = style ? Number.parseFloat(style.paddingTop) : 0;
+        const foldCell = fold?.querySelector("td");
+        const mainStyle = mainCell ? getComputedStyle(mainCell) : null;
+        const foldStyle = foldCell ? getComputedStyle(foldCell) : null;
+        const number = (value: string | undefined): number => (value ? Number.parseFloat(value) : 0);
+        const touch = Math.max(44, number(mainStyle?.lineHeight));
+        const mainLimit = touch + number(mainStyle?.paddingTop) + number(mainStyle?.paddingBottom);
+        const foldLimit = number(foldStyle?.lineHeight) + number(foldStyle?.paddingTop) + number(foldStyle?.paddingBottom);
         const total = main.getBoundingClientRect().height + (fold && fold.classList.length > 0 ? fold.getBoundingClientRect().height : 0);
-        return { total, limit: 2 * lineHeight + 3 * pad + 4 };
+        return { total, limit: mainLimit + foldLimit + 2 };
       });
     for (const person of [long.long, long.mixed, long.longRetired]) {
       const row = section.getByRole("row").filter({ hasText: person.name.slice(0, 8) }).first();
@@ -262,14 +267,15 @@ test.describe("폭 320 — 어느 화면도 가로로 넘치지 않는다", () =
     await detail.route("**/*", failActions);
     const failingRow = section.getByRole("row").filter({ hasText: long.long.name.slice(0, 8) }).first();
     await failingRow.getByRole("button", { name: /떼기/ }).click();
-    await expect(failingRow.getByRole("alert").first()).toBeVisible();
+    // 폰에서 팀 칸은 접힌 줄(바로 아래 줄)에만 보인다 — 주 행의 팀 칸은 CSS로 숨는다.
+    await expect(failingRow.locator("xpath=following-sibling::tr[1]").getByRole("alert")).toBeVisible();
     const afterFail = await lines(failingRow);
     expect.soft(afterFail.total, "떼기 실패 줄 뒤 행 높이(두 줄 이내)").toBeLessThanOrEqual(afterFail.limit);
     expectMeasured("320px 참여자 섹션(떼기 실패)", await measure(detail));
     await detail.unroute("**/*", failActions);
 
     // 시트(참여자 더하기)가 열린 상태도 넘치지 않는다 — 폰은 「더보기」 자식으로 연다.
-    await detail.getByRole("button", { name: "더보기", exact: true }).click();
+    await detail.locator("#main-content").getByRole("button", { name: "더보기", exact: true }).click();
     await detail.getByRole("button", { name: "참여자 더하기" }).first().click();
     await expect(detail.getByRole("dialog", { name: "참여자 더하기" })).toBeVisible();
     expectMeasured("320px 참여자 더하기 시트", await measure(detail));

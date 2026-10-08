@@ -31,7 +31,8 @@ async function openDetail(
 }
 
 function moreToggle(page: Page): Locator {
-  return page.getByRole("button", { name: "더보기", exact: true });
+  // 하단 탭에도 「더보기」 탭이 있다 — 머리 줄 토글은 본문 안의 것이다.
+  return page.locator("#main-content").getByRole("button", { name: "더보기", exact: true });
 }
 
 // 펼침 묶음 안의 `참여자 더하기`(표 아래 3차와 구별) — 토글의 aria-controls가 가리키는 상자 안.
@@ -131,7 +132,7 @@ test.describe("폰 375 — 「더보기」 안 `참여자 더하기`(S4)", () =>
     await page.context().close();
   });
 
-  test("마지막 후보(R2-I5): `더보기` → `참여자 더하기` → L 더하면 표에 L · 포커스는 토글 · 다시 열면 `참여자 더하기` 없음(revalidatePath가 머리 자식을 다시 그림)", async ({ browser, baseURL }) => {
+  test("마지막 후보(R2-I5): `더보기` → `참여자 더하기` → L 더하면 표에 L · 토글이 사라져 포커스는 화면 제목 · `참여자 더하기` 없음(revalidatePath가 머리 자식을 다시 그림)", async ({ browser, baseURL }) => {
     const last = await makeLastCandidateProject();
     const page = await openDetail(browser, baseURL, last.projectId, last.lead, PHONE);
     await expandMore(page);
@@ -143,7 +144,9 @@ test.describe("폰 375 — 「더보기」 안 `참여자 더하기`(S4)", () =>
     await page.keyboard.press("Enter");
     await expect(dialog).toBeHidden();
     await expect(memberRow(page, last.l)).toBeVisible();
-    await expect(moreToggle(page)).toBeFocused();
+    // 마지막 후보를 더하면 머리 자식이 0이라 「더보기」 토글도 사라진다 — UI-SPEC S4 · R2-I5: 토글이 사라졌으면 화면 제목이 포커스를 받는다.
+    await expect(moreToggle(page)).toHaveCount(0);
+    await expect(page.locator('[data-ui="screen-title"]')).toBeFocused();
     await expect(page.getByRole("button", { name: "참여자 더하기" })).toHaveCount(0);
     await page.context().close();
   });
@@ -163,14 +166,15 @@ test.describe("768 · 1280 — PC 셸", () => {
   test("1280: 머리 줄에 `참여자 더하기`가 보이지 않고 머리 버튼 사이 간격이 모두 같다(빈 상자 · 간격 없음)", async ({ browser, baseURL }) => {
     const fx = await setupMembersE2E();
     const page = await openDetail(browser, baseURL, fx.projectId, fx.lead, { width: 1280, height: 900 });
-    const copyLink = page.getByRole("link", { name: "프로젝트 복사" });
-    await expect(copyLink).toBeVisible();
-    const actions = copyLink.locator("xpath=../..");
+    // 머리 버튼 묶음 — `일괄 저장`과 `상태 바꾸기`를 함께 담는 가장 가까운 조상(프로젝트 복사 링크는 권리에 따라 없을 수 있다).
+    const actions = page.getByRole("button", { name: /^일괄 저장/ }).locator("xpath=ancestor::*[.//button[normalize-space()='상태 바꾸기']][1]");
+    await expect(actions).toBeVisible();
     const slot = actions.locator("button, a").filter({ hasText: "참여자 더하기" });
     await expect(slot).toBeHidden();
     const boxes = (await actions.locator("button:visible, a:visible").evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().toJSON() as { x: number; width: number; y: number })))
       .filter((box) => box.width > 0)
       .sort((a, b) => a.x - b.x);
+    expect(boxes.length).toBeGreaterThanOrEqual(2);
     const gaps = boxes.slice(1).map((box, index) => Math.round(box.x - (boxes[index]!.x + boxes[index]!.width)));
     for (const gap of gaps) expect(Math.abs(gap - (gaps[0] ?? 0))).toBeLessThanOrEqual(1);
     await page.context().close();

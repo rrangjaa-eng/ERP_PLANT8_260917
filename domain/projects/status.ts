@@ -163,12 +163,14 @@ export async function loadStatusChangeFacts(
   viewer: Viewer,
   deps?: Partial<StatusChangeFactDeps>,
 ): Promise<StatusChangeFacts> {
+  const now = deps?.now;
   const [rowScope, actor, labels] = await Promise.all([
     // 06.2: 주입된 판정이 없으면 요청 memo를 탄다(deps가 있으면 rowScopeFor가 memo를 건너뛴다).
+    // 06.2-03 독립 검토 M-6: 주입한 시계(now)가 있으면 범위의 발령 날짜도 그 시계로 정한다.
     projectRowScope(
       viewer,
-      deps?.can || deps?.findRoleById || deps?.findMembershipAtDate
-        ? { can: deps.can, findRoleById: deps.findRoleById, findMembershipAtDate: deps.findMembershipAtDate }
+      deps?.can || deps?.findRoleById || deps?.findMembershipAtDate || now
+        ? { can: deps.can, findRoleById: deps.findRoleById, findMembershipAtDate: deps.findMembershipAtDate, ...(now ? { today: () => kstToday(now()) } : {}) }
         : undefined,
     ),
     loadActorFacts(viewer, deps),

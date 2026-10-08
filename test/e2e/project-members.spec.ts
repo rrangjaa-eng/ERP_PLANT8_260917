@@ -236,6 +236,8 @@ test.describe("참여자 더하기(S3)", () => {
     const page = await openDetail(browser, baseURL, fx, fx.lead);
     const dialog = await openPicker(page);
     await dialog.getByRole("textbox", { name: "사람 검색" }).fill(fx.candidatePrefix);
+    // 검색 결과가 오기 전의 옛 목록에서 고르면 Enter가 꺼져 있고 담당 팀 이동 뒤 도착한 새 목록에는 C3이 없다 — 접두 결과(셋)를 기다린 뒤 고른다.
+    await expect(dialog.getByRole("option")).toHaveCount(3);
     await dialog.getByRole("option", { name: new RegExp(c3.name) }).click();
     await assignTeam(SYSTEM_VIEWER, { userId: c3.viewer.id, teamId: fx.teamId, effectiveFrom: seoulToday() });
     await page.keyboard.press("Enter");

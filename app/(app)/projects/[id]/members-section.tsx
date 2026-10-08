@@ -70,7 +70,10 @@ function isOpenerLike(element: Element | null): boolean {
 // 더한 뒤 · 취소 · Esc 뒤 포커스 — 폭마다 하나(UI-SPEC S2 SUCCESS 더하기, R2-I5). 포커스가 보이는 연 요소에 그대로 있으면 둔다.
 // 폭은 CSS 경계와 같은 값의 matchMedia로 포커스만 정한다(렌더에는 쓰지 않아 수화 뒤 머리 줄이 움직이지 않는다).
 function focusAfterPicker(): void {
-  if (isOpenerLike(document.activeElement)) return;
+  if (isOpenerLike(document.activeElement)) {
+    if (window.matchMedia(PHONE_QUERY).matches) guardPhoneFocus();
+    return;
+  }
   if (window.matchMedia(PHONE_QUERY).matches) {
     const toggle = Array.from(document.querySelectorAll<HTMLButtonElement>("button[aria-controls]")).find((button) => button.textContent?.trim() === TOGGLE_LABEL);
     if (isVisible(toggle ?? null)) {
@@ -91,6 +94,28 @@ function focusAfterPicker(): void {
     heading.tabIndex = -1;
     heading.focus();
   }
+}
+
+// 폰: 마지막 후보를 더하면 서버가 머리 자식을 다시 그려 「더보기」 토글이 포커스를 둔 채 사라질 수 있다(다시 그림이 포커스 정하기보다 늦게 도착한다).
+// 잠깐 지켜보다 포커스가 문서 몸통으로 떨어지면 화면 제목으로 옮긴다(UI-SPEC S4 — 토글이 사라졌으면 화면 제목). 사용자가 다른 곳으로 옮기면 그만둔다.
+function guardPhoneFocus(): void {
+  const observer = new MutationObserver(() => {
+    if (document.activeElement && document.activeElement !== document.body) return;
+    stop();
+    document.querySelector<HTMLElement>('[data-ui="screen-title"]')?.focus();
+  });
+  const timer = window.setTimeout(() => stop(), 3000);
+  function stop(): void {
+    observer.disconnect();
+    window.clearTimeout(timer);
+    document.removeEventListener("focusin", onFocusIn);
+  }
+  function onFocusIn(event: FocusEvent): void {
+    if (event.target !== document.activeElement) return;
+    stop();
+  }
+  document.addEventListener("focusin", onFocusIn);
+  observer.observe(document.body, { childList: true, subtree: true });
 }
 
 function scheduleFocusAfterPicker(): void {

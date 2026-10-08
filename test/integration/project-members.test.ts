@@ -608,3 +608,18 @@ describe("검토 반영 M-1 — 이름은 person.value 투영을 지난다", () 
     expect((error as Error).message).toBe("1명 더할 수 없음 · 새로 고침");
   });
 });
+
+describe("검토 반영 M-2 · M-3 — 잠근 트랜잭션 안에서 다시 본다", () => {
+  it("M-2: 판정 뒤 · 잠금 전에 다른 탭이 같은 사람을 더하면 뒤 요청은 거부 문구 · 줄 하나 · 로그 하나", async () => {
+    const w = await buildMembersWorld();
+    const P3 = w.projects.P3.id;
+    lockHook.before = async () => {
+      await addProjectMembers(w.mgmtLead, P3, [w.Y.id]);
+    };
+    const error = await errorOf(addProjectMembers(w.mgmtLead, P3, [w.Y.id]));
+    expect(error).toBeInstanceOf(UserFacingError);
+    expect((error as Error).message).toBe("와이 더할 수 없음 · 새로 고침");
+    expect(await memberRows(P3, w.Y.id)).toHaveLength(1);
+    expect(await memberLogs(P3)).toHaveLength(1);
+  });
+});

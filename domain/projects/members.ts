@@ -268,6 +268,10 @@ export async function addProjectMembers(viewer: Viewer, projectId: string, userI
   if (rejected.length > 0) throw await rejectedError(viewer, rejected);
 
   const added = await inLockedProject(viewer, projectId, async (tx) => {
+    // 판정 뒤 다른 탭이 먼저 붙였으면 같은 거부 문구(검토 반영 M-2 — 아니면 유일 제약이 일반 오류로 샌다).
+    const live = await findLiveMemberUserIds(viewer, projectId, tx);
+    const taken = ids.filter((id) => live.has(id));
+    if (taken.length > 0) throw await rejectedError(viewer, taken);
     const count = await reviveOrInsertMembers(viewer, { projectId, userIds: ids, addedBy: viewer.id }, tx);
     await recordAction(viewer, { actionType: MEMBER_ACTION, entity: PROJECT_ENTITY, entityId: projectId, detail: { projectId, added: ids } }, { tx });
     return count;

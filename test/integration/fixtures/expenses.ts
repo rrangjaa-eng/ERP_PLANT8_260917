@@ -90,6 +90,34 @@ export async function setupExpenseProject(): Promise<ExpenseFixture> {
   };
 }
 
+// 06.2-08 — 지출결의를 결재 통과까지 낼 수 있는 프로젝트(진행 · 1차 고객 승인 · 거래처 있는 줄 하나) — 시스템 주체가 만들고(다른 팀 PM 지정) 고객 승인은 담당 PM이 한다.
+export async function setupApprovedProject(name: string, teamId: string, pm: Viewer, vendorId: string): Promise<{ id: string; lineId: string }> {
+  const client = await insertVendor(SYSTEM_VIEWER, { name: `클라이언트-${randomUUID()}`, normalizedName: `클라이언트-${randomUUID()}` });
+  const project = await createProject(SYSTEM_VIEWER, { clientId: client.id, teamId, pmUserId: pm.id, name, startDate: "2026-09-01", endDate: "2026-12-31" });
+  const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+  if (!revision) throw new Error(`1차 차수 없음: ${name}`);
+  const subcategory = (await firstSelectableSubcategory()).value;
+  const saved = await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
+    rows: [
+      {
+        id: randomUUID(),
+        isNew: true as const,
+        subcategory,
+        itemName: `${name} 무대`,
+        vendorId,
+        unitPrice: { currency: "KRW" as const, amount: 13_400_000, fxRate: 1 },
+        execution: { currency: "KRW" as const, amount: 12_400_000, fxRate: 1 },
+      },
+    ],
+  });
+  const lineId = saved.lines[0]?.id;
+  if (!lineId) throw new Error(`견적 줄 없음: ${name}`);
+  await changeProjectStatus(SYSTEM_VIEWER, project.id, { from: "bidding", to: "in_progress" });
+  const basis = await approvalBasis(SYSTEM_VIEWER, revision.id);
+  await setCustomerApproval(pm, revision.id, { approvedOn: "2026-09-15", seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
+  return { id: project.id, lineId };
+}
+
 // 05-04 — 증빙 한 장을 도메인 경로(선언 → 메모리 가짜 PUT → 완료 통보)로 붙인다. sha256은 호출마다 새것이라 다른 문서와
 // 중복으로 막히지 않는다. 05-09가 재사용한다.
 export async function attachEvidence(
@@ -112,7 +140,7 @@ export async function attachEvidence(
 // 05-09 — 테스트 계급 「경영관리」(시드 계급 5종에 없다 — 관리자가 권한표에서 켜는 계급): 전사 업무 범위 · 지출결의 보기 +
 // 결재 중 증빙 붙이기(expenses.evidence_attach) · 증빙 무효 처리(expenses.evidence_void) 쓰기. 팀 발령 없음(결재선 단계 담당이 아니다).
 export async function makeEvidenceManager(name = "경영지원", perms: { attach?: boolean; void?: boolean } = {}): Promise<Viewer> {
-  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `경영관리-${randomUUID().slice(0, 8)}`, workScope: "company" });
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `경영관리-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "view", allowed: true });
   if (perms.attach !== false) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.evidence_attach", action: "write", allowed: true });
   if (perms.void !== false) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.evidence_void", action: "write", allowed: true });

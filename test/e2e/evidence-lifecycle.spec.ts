@@ -23,7 +23,7 @@ const EVIDENCE_COMPLETED_PROJECT_LINE = "완료 프로젝트 · 증빙은 경영
 // 테스트 계급 「경영관리」 — 전사 업무 범위 · 지출결의 보기 + 지급 처리 쓰기 (+ 선택으로 증빙 붙이기). 결재선 밖 전용 본부 · 팀에 발령한다.
 async function makeManagerE2E(options: { attach?: boolean } = {}): Promise<Person> {
   const suffix = randomUUID().slice(0, 8);
-  const role = await insertTempRole({ id: `role-${randomUUID()}`, name: `E2E수명-${suffix}`, workScope: "company" });
+  const role = await insertTempRole({ id: `role-${randomUUID()}`, name: `E2E수명-${suffix}`, workScope: "company", viewScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "view", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.payments", action: "write", allowed: true });
   if (options.attach) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.evidence_attach", action: "write", allowed: true });

@@ -20,13 +20,14 @@ import {
   staticLineBlock,
 } from "@/domain/expenses";
 import { coversProjectTeam, loadActorTeamScope } from "@/domain/projects/status";
+import { projectRowScope } from "@/domain/projects/visibility";
 import { getSettingValue } from "@/domain/settings/registry";
 import { PROJECT_CUSTOMER_APPROVAL_GATE } from "@/domain/settings/keys";
 import type { Money } from "@/domain/money";
 import { seoulToday } from "@/lib/dates";
 import type { NumberedLineExpense } from "@/repositories/expenses";
 import { findExpenseApprovalStatus, findExpenseApprovalStatuses, findExpenseById, listClosedInstallmentsByLines, listPickProjects } from "@/repositories/expenses";
-import { findProjectById } from "@/repositories/projects";
+import { findProjectInScope } from "@/repositories/projects";
 import { listLineageLinesByProjects, listQuoteLinesByRevisions, type QuoteLineRow } from "@/repositories/quote-lines";
 import { resolveLinkedDocumentsByLineage, type LineageLine } from "@/domain/quotes/lineage";
 import { findVendorNamesByIds, listVendorsForPick } from "@/repositories/vendors";
@@ -144,7 +145,11 @@ export async function searchLinesForPick(
   const [canWriteExpense, canWriteProject] = await Promise.all([can(viewer, "expenses", "write"), can(viewer, "projects", "write")]);
   if (!canWriteExpense || !canWriteProject) throw new ForbiddenError("지출결의 작성 권한 없음");
   const query = (input.query ?? "").trim();
-  const [gateEnabled, teamScope] = await Promise.all([getSettingValue(PROJECT_CUSTOMER_APPROVAL_GATE), loadActorTeamScope(viewer, { todayKst: seoulToday() })]);
+  const [gateEnabled, teamScope, rowScope] = await Promise.all([
+    getSettingValue(PROJECT_CUSTOMER_APPROVAL_GATE),
+    loadActorTeamScope(viewer, { todayKst: seoulToday() }),
+    projectRowScope(viewer),
+  ]);
 
   let candidates: Awaited<ReturnType<typeof listPickProjects>>;
   let currentLineId: string | null = null;
@@ -153,8 +158,10 @@ export async function searchLinesForPick(
     if (!expense || !expense.projectId) throw new ExpenseNotFoundError();
     const status = expense.number === null ? null : await findExpenseApprovalStatus(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, documentId: expense.id });
     if (!isEditableByDrafter(viewer.id, expense, status)) throw new ExpenseNotFoundError();
-    const projectRow = await findProjectById(viewer, expense.projectId);
-    if (!projectRow) throw new ExpenseNotFoundError();
+    // 06.2(M10): 기안자 문서여도 프로젝트가 보는 범위 밖이면 줄을 고를 수 없다(없는 문서).
+    const projectRow = await findProjectInScope(viewer, rowScope, expense.projectId);
+    // 06.2(M10) · Codex #188: 보관된 프로젝트도 보관 보기(admin.archive) 없으면 범위 밖과 같다.
+    if (!projectRow || (projectRow.archivedAt !== null && !rowScope.includeArchived)) throw new ExpenseNotFoundError();
     currentLineId = expense.quoteLineId;
     candidates = [projectRow];
   } else {
@@ -163,6 +170,7 @@ export async function searchLinesForPick(
       statuses: query === "" ? DEFAULT_PICK_STATUSES : SEARCH_PICK_STATUSES,
       query: query === "" ? null : query,
       limit: PICK_PROJECT_LIMIT,
+      scope: rowScope,
     });
   }
 

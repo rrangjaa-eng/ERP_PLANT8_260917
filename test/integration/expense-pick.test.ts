@@ -374,14 +374,28 @@ describe("견적 줄 바꾸기 changeExpenseLine", () => {
   });
 
   // 05 /review A14(testing): 담당 PM도 아니고 팀 범위 밖인 프로젝트의 줄로는 옮기지 못한다.
-  it("담당 PM도 아니고 팀 범위 밖 프로젝트의 줄로 바꾸면 ForbiddenError이고 문서 행은 그대로", async () => {
+  // 06.2-08(M10 · D-6206): 보는 범위 밖 프로젝트는 쓰기 게이트 전에 「없는 지출결의」 — 쓰기 게이트(ForbiddenError)는 프로젝트가 보이는
+  // 계급(보는 범위 전사 · 업무 범위 team)으로 그대로 잰다.
+  it("담당 PM도 아니고 팀 범위 밖 프로젝트의 줄로 바꾸면 보는 범위 밖이면 없는 지출결의, 보이면 ForbiddenError이고 문서 행은 그대로", async () => {
     const fx = await setupExpenseProject();
     const outsider = await makePerson("범위밖", DEFAULT_ROLE_ID, "경영관리팀");
     const team = (await createTeamExpenseDraft(outsider, { idempotencyKey: randomUUID(), fields: { usageDate: "2026-09-26" } }, { now: new Date("2026-09-26T03:00:00Z") })).expenseId;
 
-    await expect(changeExpenseLine(outsider, { expenseId: team, lineId: fx.lines.withVendor, expectedVersion: 1 })).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(changeExpenseLine(outsider, { expenseId: team, lineId: fx.lines.withVendor, expectedVersion: 1 })).rejects.toBeInstanceOf(ExpenseNotFoundError);
     const [row] = await db.select().from(expenses).where(eq(expenses.id, team));
     expect(row).toMatchObject({ projectId: null, quoteLineId: null, version: 1 });
+
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `전사 보기-${randomUUID().slice(0, 8)}`, workScope: "team", viewScope: "company" });
+    for (const menu of ["expenses", "projects"]) {
+      for (const action of ["view", "write"] as const) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu, action, allowed: true });
+    }
+    // 팀 비용 문서의 사용일 소속 팀 읽기(teamAtDate 투영)에 팀 정보 항목이 든다 — 시드 기획 PM처럼 켠다.
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "team.value", visible: true });
+    const seer = await makePerson("보는범위밖아님", role.id, "경영관리팀");
+    const seerDoc = (await createTeamExpenseDraft(seer, { idempotencyKey: randomUUID(), fields: { usageDate: "2026-09-26" } }, { now: new Date("2026-09-26T03:00:00Z") })).expenseId;
+    await expect(changeExpenseLine(seer, { expenseId: seerDoc, lineId: fx.lines.withVendor, expectedVersion: 1 })).rejects.toBeInstanceOf(ForbiddenError);
+    const [seerRow] = await db.select().from(expenses).where(eq(expenses.id, seerDoc));
+    expect(seerRow).toMatchObject({ projectId: null, quoteLineId: null, version: 1 });
   });
 
   it("버전이 낡으면 충돌", async () => {

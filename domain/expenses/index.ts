@@ -10,6 +10,8 @@ import { can, ForbiddenError } from "@/domain/permissions/can";
 import { project } from "@/domain/permissions/project";
 import { listEvidenceVoidSignals } from "@/domain/evidence/signals";
 import { coversProjectTeam, loadActorTeamScope } from "@/domain/projects/status";
+import { projectRowScope } from "@/domain/projects/visibility";
+import type { RowScope } from "@/domain/permissions/scope-for";
 import { getSettingValue, getSimpleSettingValues } from "@/domain/settings/registry";
 import {
   APPROVAL_ROUTE_EXPENSE_SELF_APPROVAL,
@@ -92,7 +94,7 @@ import {
 } from "@/domain/expenses/dto";
 import { listCodeItems } from "@/repositories/code-tables";
 import { countActiveByOwner, listAliveByOwners, markOwnerFilesRemoved, restoreOwnerFilesRemovedAt } from "@/repositories/files";
-import { findProjectById, lockProjectForWrite, type ProjectRow } from "@/repositories/projects";
+import { findProjectById, findProjectInScope, lockProjectForWrite, type ProjectRow } from "@/repositories/projects";
 import { findLatestQuoteRevision, findQuoteRevisionById, listLatestQuoteRevisionsByProjects, type QuoteRevisionRow } from "@/repositories/quote-revisions";
 import { findQuoteLineById, listLineageLinesByProjects, listQuoteLinesByRevision, type QuoteLineRow } from "@/repositories/quote-lines";
 import { findExpenseDocFacts, findLineLinks, findLineVendorNames, listExpenseDocFacts, lockQuoteLines } from "@/repositories/quote-line-links";
@@ -541,9 +543,12 @@ async function listNumberedByLineChain(
 export type ProjectFacts = { project: ProjectRow; latestRevisionId: string | null; tableGateReason: string | null };
 
 // 표 전체 게이트 — 완료면 새 문서 없음, 그 밖은 고객 승인 게이트(설정)의 문자열 그대로.
-export async function loadProjectFacts(viewer: Viewer, projectId: string, gateEnabled: boolean): Promise<ProjectFacts | null> {
-  const projectRow = await findProjectById(viewer, projectId);
+// 06.2(M10): 프로젝트는 보는 범위 안일 때만 — 범위 밖이면 없는 프로젝트(null). 쓰기 게이트(담당 PM ∨ 업무 범위)는 호출자가 그대로 따로 본다.
+export async function loadProjectFacts(viewer: Viewer, projectId: string, gateEnabled: boolean, scope: RowScope): Promise<ProjectFacts | null> {
+  const projectRow = await findProjectInScope(viewer, scope, projectId);
   if (!projectRow) return null;
+  // 06.2(M10) · Codex #188: 보관된 프로젝트는 보관 보기(admin.archive) 계정에게만 — 프로젝트 상세(findProject)와 같은 판정.
+  if (projectRow.archivedAt !== null && !scope.includeArchived) return null;
   const latest = await findLatestQuoteRevision(viewer, projectId);
   const pmName = async () => (await findUserById(viewer, projectRow.pmUserId))?.name ?? "";
   return projectFactsFrom(viewer, projectRow, latest, pmName, gateEnabled);
@@ -649,9 +654,10 @@ export async function createExpenseFromLines(
   const typed = lineDraftFieldsSchema.parse(input.fields ?? {});
   await assertActiveCodes(viewer, typed);
 
-  const [gateEnabled, teamScope] = await Promise.all([
+  const [gateEnabled, teamScope, rowScope] = await Promise.all([
     getSettingValue(PROJECT_CUSTOMER_APPROVAL_GATE),
     loadActorTeamScope(viewer, { todayKst: seoulToday() }),
+    projectRowScope(viewer),
   ]);
   const factsByProject = new Map<string, ProjectFacts | null>();
   let paymentMethod: string | null | undefined;
@@ -668,7 +674,7 @@ export async function createExpenseFromLines(
       blocked.push({ lineId, reason: NOT_IN_CURRENT_REVISION });
       continue;
     }
-    if (!factsByProject.has(revision.projectId)) factsByProject.set(revision.projectId, await loadProjectFacts(viewer, revision.projectId, gateEnabled));
+    if (!factsByProject.has(revision.projectId)) factsByProject.set(revision.projectId, await loadProjectFacts(viewer, revision.projectId, gateEnabled, rowScope));
     const facts = factsByProject.get(revision.projectId);
     if (!facts) {
       blocked.push({ lineId, reason: NOT_IN_CURRENT_REVISION });
@@ -920,11 +926,12 @@ export async function changeExpenseLine(
   if (row.number !== null && (row.projectId === null || revision.projectId !== row.projectId)) throw new GateBlockedError(NUMBERED_SAME_PROJECT_ONLY);
   if (row.quoteLineId === line.id) return { version: row.version };
 
-  const [gateEnabled, teamScope] = await Promise.all([
+  const [gateEnabled, teamScope, rowScope] = await Promise.all([
     getSettingValue(PROJECT_CUSTOMER_APPROVAL_GATE),
     loadActorTeamScope(viewer, { todayKst: seoulToday() }),
+    projectRowScope(viewer),
   ]);
-  const facts = await loadProjectFacts(viewer, revision.projectId, gateEnabled);
+  const facts = await loadProjectFacts(viewer, revision.projectId, gateEnabled, rowScope);
   if (!facts) throw new ExpenseNotFoundError();
   if (facts.project.pmUserId !== viewer.id && !coversProjectTeam(teamScope, facts.project.teamId)) throw new ForbiddenError("지출결의 작성 권한 없음");
   const staticReason = staticLineBlock(line, facts);
@@ -1632,11 +1639,12 @@ export async function listLineDoors(viewer: Viewer, input: { projectId: string }
   const hidden: LineDoors = { showColumn: false, tableGateReason: null, cells: {} };
   const [canWriteExpense, canWriteProject] = await Promise.all([can(viewer, "expenses", "write"), can(viewer, "projects", "write")]);
   if (!canWriteExpense || !canWriteProject) return hidden;
-  const [gateEnabled, teamScope] = await Promise.all([
+  const [gateEnabled, teamScope, rowScope] = await Promise.all([
     getSettingValue(PROJECT_CUSTOMER_APPROVAL_GATE),
     loadActorTeamScope(viewer, { todayKst: seoulToday() }),
+    projectRowScope(viewer),
   ]);
-  const facts = await loadProjectFacts(viewer, input.projectId, gateEnabled);
+  const facts = await loadProjectFacts(viewer, input.projectId, gateEnabled, rowScope);
   if (!facts) return hidden;
   if (facts.project.pmUserId !== viewer.id && !coversProjectTeam(teamScope, facts.project.teamId)) return hidden;
   if (!facts.latestRevisionId) return { showColumn: true, tableGateReason: facts.tableGateReason, cells: {} };

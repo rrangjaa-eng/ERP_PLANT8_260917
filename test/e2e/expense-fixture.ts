@@ -136,7 +136,7 @@ export async function archiveTempRoles(): Promise<void> {
 // 전용 본부 · 팀에 발령한다(경영관리본부 밖 — 결재선 단계 담당이 아니다).
 export async function makeEvidenceManagerE2E(): Promise<Person> {
   const suffix = randomUUID().slice(0, 8);
-  const role = await insertTempRole({ id: `role-${randomUUID()}`, name: `E2E경영관리-${suffix}`, workScope: "company" });
+  const role = await insertTempRole({ id: `role-${randomUUID()}`, name: `E2E경영관리-${suffix}`, workScope: "company", viewScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "view", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.evidence_attach", action: "write", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.evidence_void", action: "write", allowed: true });

@@ -3,6 +3,8 @@ import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { approvalInstances, approvalRoutes, approvalSteps, expenses, projects, quoteLines, teams, users, vendors } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
+import type { RowScope } from "@/domain/permissions/scope-for";
+import { rowScopeCondition } from "@/repositories/row-scope";
 
 // 05-03(EXP-01): 지출결의 표. 결재 상태는 approval_instances에 있어 읽기는 문서 종류 키(호출자가 넘긴다)로
 // 인스턴스를 왼쪽 조인한다(연차 리포지토리와 같은 결). 삭제된 문서(deleted_at)는 읽지 않는다.
@@ -473,13 +475,16 @@ export async function listExpenseSummaries(
 }
 
 // 05-07 견적 줄 골라내기 — 후보 프로젝트(보관 아님 · 주어진 상태). 검색어가 있으면 프로젝트 이름 · 번호 또는 현재 차수가 아닌 것까지 포함해 줄 이름이 맞는
-// 프로젝트로 넓힌다(줄은 호출자가 현재 차수만 읽는다). 쓰기 권리(담당 PM · 팀 범위)는 호출자가 거른다 — 이 조회는 상한 limit만 건다.
+// 프로젝트로 넓힌다(줄은 호출자가 현재 차수만 읽는다). 쓰기 권리는 호출자, 보임은 여기 — 06.2 M10(보는 범위 밖 프로젝트는 후보가 아니다). 상한 limit.
 export async function listPickProjects(
   viewer: Viewer,
-  input: { pmUserId: string | null; statuses: readonly string[]; query: string | null; limit: number },
+  input: { pmUserId: string | null; statuses: readonly string[]; query: string | null; limit: number; scope: RowScope },
 ): Promise<ProjectRow[]> {
-  void viewer;
-  const conditions = [inArray(projects.status, [...input.statuses]), isNull(projects.archivedAt)];
+  const conditions = [
+    inArray(projects.status, [...input.statuses]),
+    isNull(projects.archivedAt),
+    rowScopeCondition(viewer, input.scope, { projectId: projects.id, teamId: projects.teamId, pmUserId: projects.pmUserId }),
+  ];
   if (input.pmUserId) conditions.push(eq(projects.pmUserId, input.pmUserId));
   if (input.query) {
     const like = `%${input.query}%`;
@@ -498,12 +503,11 @@ export async function listPickProjects(
 // ── 05-08 목록 · 보임 범위 ─────────────────────────────────────────────
 
 // 보임 범위(domain/expenses/access.ts visibleExpenseScope가 만든다) — 이 조건 하나를 목록 · 합계 · 문서 하나 판정이 같이 쓴다.
-// 작성 중(번호 없음)은 기안자만. 번호가 있으면 기안자 ∪ 전사 ∪ 문서의 팀(팀 비용 = 귀속 팀, 견적 줄 문서 = 프로젝트 팀)이 teamIds 안 ∪
-// 지금 단계 후보(진행 중 인스턴스 한정 목록) ∪ 처리한 사람(결재 단계 표 EXISTS — 차수를 거쳐 인스턴스로, approval_steps(acted_by) 인덱스).
+// 작성 중(번호 없음)은 기안자만. 번호가 있으면 기안자 ∪ 처리한 사람(결재 단계 표 EXISTS — 차수를 거쳐 인스턴스로, approval_steps(acted_by) 인덱스) ∪
+// 지금 단계 후보(진행 중 인스턴스 한정 목록) ∪ 보는 범위(06.2 번역기 — 문서 팀 · 담당 PM · 참여자. 문서 팀은 팀 비용 = 귀속 팀, 견적 줄 문서 = 프로젝트 팀).
 export type ExpenseScope = {
   drafterId: string;
-  company: boolean;
-  teamIds: string[];
+  rowScope: RowScope;
   actedByUserId: string;
   currentHolderInstanceIds: string[];
 };
@@ -514,12 +518,12 @@ export const EXPENSE_GROUP_RANKS = { draft: 1, returned: 2, inReview: 3, approve
 const docTeamId = sql`case when ${expenses.projectId} is not null then ${projects.teamId} else ${expenses.attributedTeamId} end`;
 const groupRankExpr = sql<number>`case when ${approvalInstances.id} is null then 1 when ${approvalInstances.status} in ('rejected', 'withdrawn') then 2 when ${approvalInstances.status} in ('submitted', 'in_review') then 3 when ${approvalInstances.status} = 'approved' then 4 else 5 end`;
 
-function scopeCondition(scope: ExpenseScope): SQL {
+// 세 질의(목록 · 합계 · 문서 하나)는 모두 projects를 left join한다 — docTeamId · 담당 PM 열이 그 조인을 읽는다.
+function scopeCondition(viewer: Viewer, scope: ExpenseScope): SQL {
   const party: SQL[] = [
     sql`exists (select 1 from approval_routes ar join approval_steps st on st.route_id = ar.id where ar.instance_id = ${approvalInstances.id} and st.acted_by = ${scope.actedByUserId})`,
   ];
-  if (scope.company) party.push(sql`true`);
-  if (scope.teamIds.length > 0) party.push(sql`${docTeamId} in (${sql.join(scope.teamIds.map((id) => sql`${id}::uuid`), sql`, `)})`);
+  party.push(rowScopeCondition(viewer, scope.rowScope, { projectId: expenses.projectId, teamId: docTeamId, pmUserId: projects.pmUserId }));
   if (scope.currentHolderInstanceIds.length > 0) party.push(inArray(approvalInstances.id, scope.currentHolderInstanceIds));
   return sql`${expenses.deletedAt} is null and (${expenses.drafterId} = ${scope.drafterId} or (${expenses.number} is not null and (${sql.join(party, sql` or `)})))`;
 }
@@ -560,7 +564,6 @@ export async function listExpensePage(
   viewer: Viewer,
   input: { scope: ExpenseScope; ranks: readonly number[]; documentKind: string; limit: number; offset: number },
 ): Promise<ExpenseListRow[]> {
-  void viewer;
   const q = db
     .select({
       id: expenses.id,
@@ -573,7 +576,7 @@ export async function listExpensePage(
     .from(expenses)
     .leftJoin(approvalInstances, instanceJoin(input.documentKind))
     .leftJoin(projects, eq(projects.id, expenses.projectId))
-    .where(and(scopeCondition(input.scope), ranksCondition(input.ranks)))
+    .where(and(scopeCondition(viewer, input.scope), ranksCondition(input.ranks)))
     .as("q");
   const rows = await db
     .select({
@@ -628,7 +631,6 @@ export async function summarizeExpenseList(
   viewer: Viewer,
   input: { scope: ExpenseScope; ranks: readonly number[]; documentKind: string },
 ): Promise<ExpenseListSummary> {
-  void viewer;
   const inView = ranksCondition(input.ranks);
   const [row] = await db
     .select({
@@ -640,7 +642,7 @@ export async function summarizeExpenseList(
     .from(expenses)
     .leftJoin(approvalInstances, instanceJoin(input.documentKind))
     .leftJoin(projects, eq(projects.id, expenses.projectId))
-    .where(scopeCondition(input.scope));
+    .where(scopeCondition(viewer, input.scope));
   return {
     visibleCount: Number(row?.visibleCount ?? 0),
     viewCount: Number(row?.viewCount ?? 0),
@@ -651,13 +653,24 @@ export async function summarizeExpenseList(
 
 // 문서 하나가 범위 안인지 — 목록과 같은 조건(문서 화면 · 증빙 목록 · 서명 GET의 404 판정).
 export async function isExpenseInScope(viewer: Viewer, input: { id: string; scope: ExpenseScope; documentKind: string }): Promise<boolean> {
-  void viewer;
   const [row] = await db
     .select({ id: expenses.id })
     .from(expenses)
     .leftJoin(approvalInstances, instanceJoin(input.documentKind))
     .leftJoin(projects, eq(projects.id, expenses.projectId))
-    .where(and(eq(expenses.id, input.id), scopeCondition(input.scope)))
+    .where(and(eq(expenses.id, input.id), scopeCondition(viewer, input.scope)))
     .limit(1);
   return row !== undefined;
+}
+
+// 받은 id 가운데 범위 안인 것 — 문서 하나와 같은 scopeCondition을 한 질의로(지급 대상 visibleRows, 06.2-08 검토 I-1 — 행마다 묻지 않는다).
+export async function listExpenseIdsInScope(viewer: Viewer, input: { ids: readonly string[]; scope: ExpenseScope; documentKind: string }): Promise<Set<string>> {
+  if (input.ids.length === 0) return new Set();
+  const rows = await db
+    .select({ id: expenses.id })
+    .from(expenses)
+    .leftJoin(approvalInstances, instanceJoin(input.documentKind))
+    .leftJoin(projects, eq(projects.id, expenses.projectId))
+    .where(and(inArray(expenses.id, [...input.ids]), scopeCondition(viewer, input.scope)));
+  return new Set(rows.map((row) => row.id));
 }

@@ -5,7 +5,7 @@ import { visible } from "@/domain/permissions/visible";
 import { gate } from "@/domain/rules/gate";
 import "@/domain/rules/register";
 import { sumKrw } from "@/domain/money";
-import { canSeeExpense, EXPENSE_DOCUMENT_KIND, visibleExpenseScope } from "@/domain/expenses/access";
+import { EXPENSE_DOCUMENT_KIND, visibleExpenseScope } from "@/domain/expenses/access";
 import { groupExpenses } from "@/domain/expenses/list";
 import { incomeTypeFor, pickTaxDates } from "@/domain/expenses/tax";
 import { TAX_UNAVAILABLE } from "@/domain/expenses/gate";
@@ -15,7 +15,7 @@ import { loadPrepaidDueDays, resolveEvidenceStatus, type EvidenceStatus } from "
 import { decidePayable, loadPaymentShared, pairGateCtx, pickPaymentAmount, type PaymentShared, type PaymentSharedDeps } from "@/domain/payments";
 import { approvalGateDecision, EVIDENCE_UNCONFIRMED, resolveExpenseActionRow, type EvidenceGateInput, type ExpenseActionBar } from "@/domain/payments/action-row";
 import { listTeams as listTeamRows } from "@/repositories/teams";
-import { EXPENSE_GROUP_RANKS } from "@/repositories/expenses";
+import { EXPENSE_GROUP_RANKS, listExpenseIdsInScope } from "@/repositories/expenses";
 import { findPaymentTargetRowsByIds, listPaymentTargetRows, type PaymentTargetRow } from "@/repositories/payment-targets";
 import { seoulToday } from "@/lib/dates";
 import { clampPage, LIST_PAGE_SIZE, pageCountFrom } from "@/lib/paging";
@@ -117,13 +117,13 @@ async function judgeTargets(viewer: Viewer, rows: readonly PaymentTargetRow[], c
   return judged;
 }
 
-// 문서 보임(행 범위, CSO-1 패턴) — 지급 처리 경로(loadPaymentInputs)와 같은 canSeeExpense. 전사 범위면 결재 통과 문서는 모두 보이므로 묻지 않는다.
+// 문서 보임(행 범위, CSO-1 패턴) — 지급 처리 경로(loadPaymentInputs)의 canSeeExpense와 같은 scopeCondition(기안자 ∪ 결재 관련자 ∪ 보는 범위)을
+// visibleExpenseScope 한 번으로 만들어 한 질의로 거른다(06.2-08 검토 I-1 — 행마다 묻지 않는다). 보는 범위 전사(06.2 rowScope all)면 결재 통과 문서는 모두 보이므로 묻지 않는다.
 async function visibleRows(viewer: Viewer, rows: readonly PaymentTargetRow[], today: string): Promise<PaymentTargetRow[]> {
   const scope = await visibleExpenseScope(viewer, { today });
-  if (scope.company) return [...rows];
-  const kept: PaymentTargetRow[] = [];
-  for (const row of rows) if (await canSeeExpense(viewer, row, { today })) kept.push(row);
-  return kept;
+  if (scope.rowScope.rows === "all") return [...rows];
+  const kept = await listExpenseIdsInScope(viewer, { ids: rows.map((row) => row.id), scope, documentKind: EXPENSE_DOCUMENT_KIND });
+  return rows.filter((row) => kept.has(row.id));
 }
 
 async function assertPayer(viewer: Viewer): Promise<void> {

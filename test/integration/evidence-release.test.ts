@@ -25,6 +25,8 @@ import {
 import { EVIDENCE_DUPLICATE_HIDDEN, evidenceDuplicateElsewhere } from "@/domain/evidence/upload-checks";
 import { insertFile } from "@/repositories/files";
 import { insertVendor } from "@/repositories/vendors";
+import { setRoleViewScope } from "@/repositories/roles";
+import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { seoulToday } from "@/lib/dates";
 import { createMemoryStorage } from "./fakes/memory-storage";
 import { deferred, waitForLockWaiter } from "./lock-race";
@@ -476,6 +478,10 @@ describe("중복 범위 (06-11 Task 3)", () => {
     expect((seen as Error).message).toBe(evidenceDuplicateElsewhere(await expenseNumber(approved.expenseId)));
     const extra = await addApprovedRevision(fx, [{ itemName: "추가 현장", vendorId: fx.stageOneId, execution: { currency: "KRW", amount: 2_000_000, fxRate: 1 } }]);
     const otherDraft = (await createExpenseFromLines(fx.otherPm, { lineIds: [extra.lineIds.get("추가 현장") ?? ""] })).created[0]?.expenseId ?? "";
+    // 06.2 D-6217: 같은 팀 PM(보는 범위 team)은 팀원 문서를 읽는다 — 번호가 실린다. 읽지 못하는 사람은 보는 범위 own으로 만든다.
+    const sameTeam = await caught(requestEvidenceUpload(fx.otherPm, declare(otherDraft, sharedSha), { storage }));
+    expect((sameTeam as Error).message).toBe(evidenceDuplicateElsewhere(await expenseNumber(approved.expenseId)));
+    await setRoleViewScope(SYSTEM_VIEWER, DEFAULT_ROLE_ID, "own");
     const hidden = await caught(requestEvidenceUpload(fx.otherPm, declare(otherDraft, sharedSha), { storage }));
     expect((hidden as Error).message).toBe(EVIDENCE_DUPLICATE_HIDDEN);
   });

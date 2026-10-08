@@ -3,8 +3,10 @@ import { isNull, eq, and } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { db } from "@/db/client";
-import { users, actionLog } from "@/db/schema";
+import { users, actionLog, teams } from "@/db/schema";
 import { listRoles, insertRole, renameRole, findRoleById } from "@/repositories/roles";
+import { upsertPermission } from "@/repositories/permissions";
+import { makePerson, teamIdByName } from "./approvals-fixtures";
 import { archive, ProtectedRowError } from "@/domain/archive";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { seedMasterData } from "@/domain/seed";
@@ -191,7 +193,9 @@ describe("계급 보는 범위(06.2 D-6201)", () => {
       "계급 찾을 수 없음",
     );
     const outOfRange: string = "step";
-    await expect(setRoleViewScope(SYSTEM_VIEWER, "role-team-lead", outOfRange as RoleViewScope)).rejects.toThrow();
+    await expect(setRoleViewScope(SYSTEM_VIEWER, "role-team-lead", outOfRange as RoleViewScope)).rejects.toThrow(
+      "보는 범위 값 없음",
+    );
     expect(await viewScopeOf("role-team-lead")).toBe("team");
   });
 
@@ -206,5 +210,27 @@ describe("계급 보는 범위(06.2 D-6201)", () => {
     expect(logs).toHaveLength(1);
     expect(logs[0]?.actionType).toBe("permission_change");
     expect(logs[0]?.detail).toEqual({ viewScope: { from: "team", to: "company" } });
+  });
+
+  it("팀 발령 있는 사람은 team이면 그 팀 id로, org_unit으로 바꾸면 그 팀의 본부 id로 limited다", async () => {
+    const role = await createRole(SYSTEM_VIEWER, { name: `행범위-${randomUUID()}` });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
+    const person = await makePerson("행범위 확인", role.id, "기획1팀");
+    const teamId = await teamIdByName("기획1팀");
+    const [team] = await db.select({ orgUnitId: teams.orgUnitId }).from(teams).where(eq(teams.id, teamId));
+    expect(team?.orgUnitId).toBeTruthy();
+
+    expect(await rowScopeFor({ ...person }, "project")).toMatchObject({
+      rows: "limited",
+      viewerId: person.id,
+      by: { kind: "team", teamId },
+    });
+
+    await setRoleViewScope(SYSTEM_VIEWER, role.id, "org_unit");
+    expect(await rowScopeFor({ ...person }, "project")).toMatchObject({
+      rows: "limited",
+      viewerId: person.id,
+      by: { kind: "org_unit", orgUnitId: team?.orgUnitId },
+    });
   });
 });

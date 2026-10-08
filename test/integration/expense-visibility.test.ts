@@ -4,7 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { approvalInstances, expenses, projects } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
-import { DEFAULT_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
+import { CEO_ROLE_ID, DEFAULT_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { createTeam } from "@/domain/org";
 import { approveDocument, getApprovalView, listCurrentSteps } from "@/domain/approvals";
 import { setSettingValue } from "@/domain/settings/registry";
@@ -16,7 +16,8 @@ import {
 import { canSeeExpense, createExpenseFromLines, createTeamExpenseDraft, EXPENSE_DOCUMENT_KIND, getExpense, listExpenseFormOptions, saveExpenseDraft } from "@/domain/expenses";
 import { listExpenses } from "@/domain/expenses/list";
 import { createEvidenceViewUrl, listEvidence } from "@/domain/evidence";
-import { insertRole } from "@/repositories/roles";
+import { listAllPaymentTargets } from "@/domain/payments/targets";
+import { insertRole, setRoleViewScope } from "@/repositories/roles";
 import { insertVendor } from "@/repositories/vendors";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { makePerson, orgUnitIdByName, teamIdByName } from "./approvals-fixtures";
@@ -25,8 +26,14 @@ import { setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fi
 import { createMemoryStorage } from "./fakes/memory-storage";
 
 // 05-08 Task 1(EXP-08 · D-17 · 사용자 결정 2026-09-26 #5): 지출결의 보임 범위 — 기안자 ∪ 결재 관련자(처리한 사람 · 지금 단계 후보)
-// ∪ (`expenses.team` 보기 ∧ 문서의 팀 = 내 지금 팀) ∪ (업무 범위 company ∧ `expenses` 보기). 작성 중은 기안자만. 목록 · 문서 · 증빙 목록 ·
-// 서명 GET이 같은 판정을 쓴다. 1단(팀장)을 끄고 시작해 팀장의 보임이 결재 관련이 아니라 메뉴 권한에서만 오게 한다.
+// ∪ 보는 범위(06.2 D-6202 · D-6217 — view_scope: 문서 팀 · 담당 PM · 참여자, `expenses` 보기 전제. `expenses.team` · 업무 범위는 판정에 쓰지 않는다).
+// 작성 중은 기안자만. 목록 · 문서 · 증빙 목록 · 서명 GET이 같은 판정을 쓴다. 1단(팀장)을 끄고 시작해 팀장의 보임이 결재 관련이 아니라 보는 범위에서만 오게 한다.
+
+// 06.2-08: 지급 대상 전사 단축이 canSeeExpense를 부르지 않는지 세려고 같은 구현을 감싼다(동작은 그대로).
+vi.mock("@/domain/expenses/access", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/domain/expenses/access")>();
+  return { ...actual, canSeeExpense: vi.fn(actual.canSeeExpense) };
+});
 
 const TODAY = "2026-09-26";
 const NOW = new Date("2026-09-26T03:00:00Z");
@@ -109,6 +116,14 @@ async function setup(): Promise<World> {
   return { ...fx, divisionHead, lead2, pm2, teamDocId, lineDocId, draftId, pm2DocId };
 }
 
+async function approveThrough(expenseId: string, approvers: Viewer[]): Promise<void> {
+  for (const approver of approvers) {
+    const instance = await instanceOf(expenseId);
+    await approveDocument(approver, { instanceId: instance.id, expectedVersion: instance.version });
+  }
+  expect((await instanceOf(expenseId)).status).toBe("approved");
+}
+
 function idsOf(list: Awaited<ReturnType<typeof listExpenses>>): string[] {
   return list.groups.flatMap((group) => group.rows.map((row) => row.id ?? ""));
 }
@@ -123,18 +138,22 @@ describe("지출결의 목록 보임 범위 (listExpenses)", () => {
     expect(list.drafterColumn).toBe(true);
   });
 
-  it("다른 팀 팀장은 자기 팀 문서만, PM은 자기 문서만(기안 열 없음) 본다", async () => {
+  it("같은 팀 PM(team 범위)은 팀원의 제출 문서를 목록 · 문서 하나에서 보고(기안 열 있음) 다른 팀 팀장은 자기 팀 문서만 본다 (06.2 D-6217)", async () => {
     const w = await setup();
     expect(idsOf(await listExpenses(w.lead2, { status: "open" }, { today: TODAY }))).toEqual([w.pm2DocId]);
+    const other = await listExpenses(w.otherPm, { status: "open" }, { today: TODAY });
+    expect(idsOf(other).sort()).toEqual([w.teamDocId, w.lineDocId].sort());
+    expect(other.drafterColumn).toBe(true);
+    expect(await getExpense(w.otherPm, { expenseId: w.teamDocId })).not.toBeNull();
+    // 기안 열은 보는 범위가 본인이고 남의 문서가 없을 때만 빠진다.
+    await setRoleViewScope(SYSTEM_VIEWER, DEFAULT_ROLE_ID, "own");
     const own = await listExpenses(w.pm2, { status: "open" }, { today: TODAY });
     expect(idsOf(own)).toEqual([w.pm2DocId]);
     expect(own.drafterColumn).toBe(false);
     expect(own.groups.flatMap((group) => group.rows).every((row) => !("drafterName" in row))).toBe(true);
-    const other = await listExpenses(w.otherPm, { status: "open" }, { today: TODAY });
-    expect(idsOf(other)).toEqual([]);
   });
 
-  it("대표 · 본부 책임자(업무 범위 company)는 제출 문서 전부를 보고 작성 중은 보지 않는다", async () => {
+  it("대표(보는 범위 전사) · 본부 책임자(보는 범위 본부 — 두 팀 모두 기획본부)는 제출 문서 전부를 보고 작성 중은 보지 않는다", async () => {
     const w = await setup();
     for (const viewer of [w.ceo, w.divisionHead]) {
       expect(idsOf(await listExpenses(viewer, { status: "open" }, { today: TODAY })).sort()).toEqual([w.teamDocId, w.lineDocId, w.pm2DocId].sort());
@@ -147,9 +166,12 @@ describe("지출결의 목록 보임 범위 (listExpenses)", () => {
     expect(list.groups.find((group) => group.label === "작성 중")?.rows.map((row) => row.id)).toEqual([w.draftId]);
   });
 
-  it("관리자가 팀장 계급의 expenses.team 보기를 끄면 팀장 목록에서 팀원 문서가 사라진다(결재 관련자가 아닐 때)", async () => {
+  it("관리자가 팀장 계급의 expenses.team 보기를 꺼도 팀장 목록은 그대로고, 보는 범위를 own으로 바꾸면 팀원 문서가 사라진다(결재 관련자가 아닐 때) (06.2 D-6217)", async () => {
     const w = await setup();
     await upsertPermission(SYSTEM_VIEWER, { roleId: TEAM_LEAD_ROLE_ID, menu: "expenses.team", action: "view", allowed: false });
+    expect(idsOf(await listExpenses(w.lead, { status: "open" }, { today: TODAY })).sort()).toEqual([w.teamDocId, w.lineDocId].sort());
+    expect(await getExpense(w.lead, { expenseId: w.teamDocId })).not.toBeNull();
+    await setRoleViewScope(SYSTEM_VIEWER, TEAM_LEAD_ROLE_ID, "own");
     expect(idsOf(await listExpenses(w.lead, { status: "open" }, { today: TODAY }))).toEqual([]);
     expect(await getExpense(w.lead, { expenseId: w.teamDocId })).toBeNull();
   });
@@ -183,8 +205,8 @@ describe("문서 · 증빙 목록 · 서명 GET이 같은 판정 (404)", () => {
   });
 });
 
-describe("팀 갈래는 expenses 보기도 요구한다 (05-08 검토 #2)", () => {
-  it("팀장 계급의 expenses 보기를 끄고 expenses.team만 남기면 팀원 문서가 문서 화면 · 증빙 목록 · 서명 GET에서 없는 문서다", async () => {
+describe("보는 범위 갈래는 expenses 보기도 요구한다 (05-08 검토 #2)", () => {
+  it("팀장 계급의 expenses 보기를 끄고 expenses.team만 남기면 팀원 문서가 문서 화면 · 증빙 목록 · 서명 GET에서 없는 문서다 — view_scope 판정 (06.2 D-6217)", async () => {
     const w = await setup();
     const storage = createMemoryStorage();
     const fileId = (await listEvidence(w.pm, { ownerKind: "expense", ownerId: w.teamDocId }))[0]?.id;
@@ -251,8 +273,8 @@ describe("결재 당사자가 아닌 보는 사람 — 상태 · 결재선 읽�
 describe("두 갈래가 같은 기준일 (05-08 검토 #3)", () => {
   it("canSeeExpense의 today가 지금 단계 후보 판정(조직 스냅숏)에도 쓰인다 — 그날 기안자 팀으로 옮긴 1단 계급은 그날 기준 후보로 문서를 본다", async () => {
     const w = await setup();
-    // 1단 = 기안자 팀의 이 계급. expenses 보기만(expenses.team 없음 · 업무 범위 team) — 팀 갈래가 아니라 후보 갈래로만 보이게 한다.
-    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `팀 1단-${randomUUID()}`, workScope: "team" });
+    // 1단 = 기안자 팀의 이 계급. expenses 보기만 · 보는 범위 own(06.2) — 팀 갈래가 아니라 후보 갈래로만 보이게 한다.
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `팀 1단-${randomUUID()}`, workScope: "team", viewScope: "own" });
     await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "view", allowed: true });
     const mover = await makePerson("옮길사람", role.id, "경영관리팀");
     const MOVE_ON = "2099-01-01";
@@ -322,5 +344,19 @@ describe("팀 이동 · 프로젝트 팀 변경 · 삭제 (05-08 검토 #6)", ()
       expect(await getExpense(viewer, { expenseId: w.draftId })).toBeNull();
       expect(idsOf(await listExpenses(viewer, { status: "open" }, { today: TODAY }))).not.toContain(w.draftId);
     }
+  });
+});
+
+describe("지급 대상 — 전사 범위 단축 (06.2 T-06.2-83)", () => {
+  it("대표(보는 범위 전사)의 지급 대상은 canSeeExpense를 부르지 않고 결재 통과 문서를 싣는다 — 팀장(팀 범위)은 문서마다 부른다", async () => {
+    const w = await setup();
+    for (const roleId of [CEO_ROLE_ID, TEAM_LEAD_ROLE_ID]) await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "expenses.payments", action: "write", allowed: true });
+    await approveThrough(w.teamDocId, [w.divisionHead, w.ceo]);
+    const seen = vi.mocked(canSeeExpense);
+    seen.mockClear();
+    expect((await listAllPaymentTargets(w.ceo, {})).map((target) => target.row.id)).toEqual([w.teamDocId]);
+    expect(seen).not.toHaveBeenCalled();
+    expect((await listAllPaymentTargets(w.lead, {})).map((target) => target.row.id)).toEqual([w.teamDocId]);
+    expect(seen).toHaveBeenCalled();
   });
 });

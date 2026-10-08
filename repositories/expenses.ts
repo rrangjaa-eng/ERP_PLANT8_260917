@@ -475,13 +475,16 @@ export async function listExpenseSummaries(
 }
 
 // 05-07 견적 줄 골라내기 — 후보 프로젝트(보관 아님 · 주어진 상태). 검색어가 있으면 프로젝트 이름 · 번호 또는 현재 차수가 아닌 것까지 포함해 줄 이름이 맞는
-// 프로젝트로 넓힌다(줄은 호출자가 현재 차수만 읽는다). 쓰기 권리(담당 PM · 팀 범위)는 호출자가 거른다 — 이 조회는 상한 limit만 건다.
+// 프로젝트로 넓힌다(줄은 호출자가 현재 차수만 읽는다). 쓰기 권리는 호출자, 보임은 여기 — 06.2 M10(보는 범위 밖 프로젝트는 후보가 아니다). 상한 limit.
 export async function listPickProjects(
   viewer: Viewer,
-  input: { pmUserId: string | null; statuses: readonly string[]; query: string | null; limit: number },
+  input: { pmUserId: string | null; statuses: readonly string[]; query: string | null; limit: number; scope: RowScope },
 ): Promise<ProjectRow[]> {
-  void viewer;
-  const conditions = [inArray(projects.status, [...input.statuses]), isNull(projects.archivedAt)];
+  const conditions = [
+    inArray(projects.status, [...input.statuses]),
+    isNull(projects.archivedAt),
+    rowScopeCondition(viewer, input.scope, { projectId: projects.id, teamId: projects.teamId, pmUserId: projects.pmUserId }),
+  ];
   if (input.pmUserId) conditions.push(eq(projects.pmUserId, input.pmUserId));
   if (input.query) {
     const like = `%${input.query}%`;

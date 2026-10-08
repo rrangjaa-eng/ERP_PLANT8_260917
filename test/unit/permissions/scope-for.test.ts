@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { rowScopeFor, scopeFor, UnknownScopeEntityError } from "@/domain/permissions/scope-for";
+import { describe, expect, it, vi } from "vitest";
+import {
+  memoizeRowScopeForRequest,
+  rowScopeFor,
+  scopeFor,
+  UnknownScopeEntityError,
+} from "@/domain/permissions/scope-for";
 import type { Viewer } from "@/domain/viewer";
 
 const viewer: Viewer = { id: "u1", roleId: "role-pm" };
@@ -160,5 +165,76 @@ describe("rowScopeFor (06.2 행 범위 서술자)", () => {
       deps({ viewScope: "team", today: "2026-10-07", teamByDate: { "2026-10-07": yesterdayTeam, "2026-10-08": TEAM_ID } }),
     );
     expect(scope).toMatchObject({ rows: "limited", by: { kind: "team", teamId: yesterdayTeam } });
+  });
+});
+
+// 06.2(성공 기준 4 · eng I10): getSession()이 등록한 viewer 객체에만 요청 안 memo가 붙는다 — 다음 요청은 새 객체라 새 값을 읽는다.
+describe("rowScopeFor 요청 memo", () => {
+  function countingDeps(viewScope: () => string) {
+    const findRoleById = vi.fn(() => Promise.resolve({ viewScope: viewScope() }));
+    return {
+      findRoleById,
+      deps: {
+        can: () => Promise.resolve(true),
+        findRoleById,
+        findMembershipAtDate: () => Promise.resolve(null),
+        findTeamById: () => Promise.resolve(null),
+        today: () => "2026-10-08",
+      },
+    };
+  }
+
+  it("등록한 viewer로 같은 entity를 두 번 부르면 계급을 한 번만 읽는다", async () => {
+    const v: Viewer = { id: "u1", roleId: "role-pm" };
+    memoizeRowScopeForRequest(v);
+    const { findRoleById, deps } = countingDeps(() => "company");
+    await rowScopeFor(v, "project", deps);
+    await rowScopeFor(v, "project", deps);
+    expect(findRoleById).toHaveBeenCalledTimes(1);
+  });
+
+  it("등록하지 않은 viewer는 매번 계산한다", async () => {
+    const v: Viewer = { id: "u1", roleId: "role-pm" };
+    const { findRoleById, deps } = countingDeps(() => "company");
+    await rowScopeFor(v, "project", deps);
+    await rowScopeFor(v, "project", deps);
+    expect(findRoleById).toHaveBeenCalledTimes(2);
+  });
+
+  it("같은 사람의 새로 등록한 viewer 객체는 바뀐 계급 값을 읽는다", async () => {
+    let current = "company";
+    const { deps } = countingDeps(() => current);
+    const first: Viewer = { id: "u1", roleId: "role-pm" };
+    memoizeRowScopeForRequest(first);
+    expect((await rowScopeFor(first, "project", deps)).rows).toBe("all");
+
+    current = "own";
+    expect((await rowScopeFor(first, "project", deps)).rows).toBe("all");
+    const next: Viewer = { id: "u1", roleId: "role-pm" };
+    memoizeRowScopeForRequest(next);
+    expect(await rowScopeFor(next, "project", deps)).toMatchObject({ rows: "limited", by: { kind: "own" } });
+  });
+
+  it("등록한 viewer의 project · expense는 따로 계산된다", async () => {
+    const v: Viewer = { id: "u1", roleId: "role-pm" };
+    memoizeRowScopeForRequest(v);
+    const { findRoleById, deps } = countingDeps(() => "team");
+    await rowScopeFor(v, "project", deps);
+    await rowScopeFor(v, "expense", deps);
+    await rowScopeFor(v, "expense", deps);
+    expect(findRoleById).toHaveBeenCalledTimes(2);
+  });
+
+  it("첫 호출이 reject하면 memo에서 지워 다음 호출이 다시 계산한다", async () => {
+    const v: Viewer = { id: "u1", roleId: "role-pm" };
+    memoizeRowScopeForRequest(v);
+    const findRoleById = vi
+      .fn<(viewer: Viewer, id: string) => Promise<{ viewScope: string } | null>>()
+      .mockRejectedValueOnce(new Error("일시 오류"))
+      .mockResolvedValue({ viewScope: "company" });
+    const deps = { ...countingDeps(() => "company").deps, findRoleById };
+    await expect(rowScopeFor(v, "project", deps)).rejects.toThrow("일시 오류");
+    expect((await rowScopeFor(v, "project", deps)).rows).toBe("all");
+    expect(findRoleById).toHaveBeenCalledTimes(2);
   });
 });

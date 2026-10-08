@@ -7,6 +7,7 @@ import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { skipDbReset } from "./setup";
+import { rowScopeFor, type RowScope, type RowScopeDeps } from "@/domain/permissions/scope-for";
 
 // 04-06 Task 2 ④(CEO 리뷰 OV-6) — 기존 통합 테스트는 재시드된 빈 DB만 본다.
 // 이 파일은 난수 이름의 임시 DB를 만들어 앞 마이그레이션까지만 적용하고 옛
@@ -548,5 +549,127 @@ describe("거래처 사업자번호 유일 색인(0030)", () => {
     // 보관 · 빈 값은 여전히 여러 개 들어간다.
     await insertVendor(pool, "00000000-0000-4000-8000-0000000000d3", "214-86-10231", { archived: true });
     await insertVendor(pool, "00000000-0000-4000-8000-0000000000d4", "");
+  });
+});
+
+// 06.2(D-6203 · 성공 기준 8): 계급 보는 범위 백필 — K1 사용자 답 「쓰기 범위 복사」(2026-10-08): 화면에서 만든 계급은
+// 이행 전 업무 범위를 그대로 받고, 시드 계급 다섯은 D-6203 값이다. 시드를 부르지 않는다.
+describe("06.2 view_scope 백필", () => {
+  const TEAM = "00000000-0000-4000-8000-0000000000e1";
+  const SEED = [
+    ["role-ceo", "대표", "company"],
+    ["role-sysadmin", "시스템 관리자", "company"],
+    ["role-division-head", "본부 책임자", "company"],
+    ["role-team-lead", "팀장", "team"],
+    ["role-pm", "기획 PM", "team"],
+  ] as const;
+  // 화면 계급 넷 — [id, work_scope, 켜진 보기 메뉴]
+  const SCREEN = [
+    ["role-s1", "team", ["projects", "expenses", "expenses.team"]],
+    ["role-s2", "company", ["projects", "expenses"]],
+    ["role-s3", "company", ["expenses"]],
+    ["role-s4", "team", ["expenses", "expenses.team"]],
+  ] as const;
+
+  async function upgraded(): Promise<Pool> {
+    const pool = await createScratchDb();
+    await migrateTo(pool, countThrough("_view_scope") - 1);
+    for (const [id, name, workScope] of SEED) {
+      // 앞 마이그레이션(계급 백필)이 시드 계급 행을 이미 넣었을 수 있다 — 있으면 같은 값으로 맞춘다.
+      await pool.query(
+        `INSERT INTO roles (id, name, is_seed, work_scope) VALUES ($1, $2, true, $3)
+         ON CONFLICT (id) DO UPDATE SET is_seed = true, work_scope = EXCLUDED.work_scope`,
+        [id, name, workScope],
+      );
+    }
+    for (const [id, workScope, menus] of SCREEN) {
+      await pool.query(`INSERT INTO roles (id, name, is_seed, work_scope) VALUES ($1, $1, false, $2)`, [id, workScope]);
+      for (const menu of menus) {
+        await pool.query(`INSERT INTO permission_matrix (role_id, menu, action, allowed) VALUES ($1, $2, 'view', true)`, [id, menu]);
+      }
+    }
+    await migrateTo(pool);
+    return pool;
+  }
+
+  async function viewScopes(pool: Pool): Promise<Record<string, string>> {
+    const { rows } = await pool.query<{ id: string; view_scope: string }>(`SELECT id, view_scope FROM roles ORDER BY id`);
+    return Object.fromEntries(rows.map((row) => [row.id, row.view_scope]));
+  }
+
+  // 임시 DB에 묶은 판정 — 계급 · 권한표는 임시 DB에서 읽고, 발령은 고정 팀이다(사람 · 발령 행을 만들지 않는다).
+  function scratchDeps(pool: Pool): Partial<RowScopeDeps> {
+    return {
+      can: async (viewer, menu) => {
+        const { rows } = await pool.query<{ allowed: boolean }>(
+          `SELECT allowed FROM permission_matrix WHERE role_id = $1 AND menu = $2 AND action = 'view'`,
+          [viewer.roleId, menu],
+        );
+        return rows[0]?.allowed === true;
+      },
+      findRoleById: async (_viewer, id) => {
+        const { rows } = await pool.query<{ view_scope: string }>(`SELECT view_scope FROM roles WHERE id = $1`, [id]);
+        return rows[0] ? { viewScope: rows[0].view_scope } : null;
+      },
+      findMembershipAtDate: () => Promise.resolve({ teamId: TEAM }),
+      today: () => "2026-10-08",
+    };
+  }
+
+  // 이행 전 규칙: 프로젝트 = `projects` 보기면 전 행(`domain/permissions/scope-for.ts` 옛 scopeFor),
+  // 지출결의 = `expenses` 보기 ∧ work_scope company면 전사, `expenses` ∧ `expenses.team` 보기면 팀(`domain/expenses/access.ts`).
+  function before(screen: (typeof SCREEN)[number], entity: "project" | "expense"): RowScope {
+    const [, workScope, menus] = screen;
+    const has = (menu: string) => (menus as readonly string[]).includes(menu);
+    if (entity === "project") return { rows: has("projects") ? "all" : "none", includeArchived: false };
+    if (!has("expenses")) return { rows: "none", includeArchived: false };
+    if (workScope === "company") return { rows: "all", includeArchived: false };
+    if (has("expenses.team")) return { rows: "limited", includeArchived: false, viewerId: "person", by: { kind: "team", teamId: TEAM } };
+    return { rows: "none", includeArchived: false };
+  }
+
+  async function after(pool: Pool, roleId: string, entity: "project" | "expense"): Promise<RowScope> {
+    return rowScopeFor({ id: "person", roleId }, entity, scratchDeps(pool));
+  }
+
+  it("시드 계급 다섯은 D-6203 값, 화면 계급 넷은 이행 전 work_scope를 그대로 받는다", async () => {
+    const pool = await upgraded();
+    expect(await viewScopes(pool)).toEqual({
+      "role-ceo": "company",
+      "role-sysadmin": "company",
+      "role-division-head": "org_unit",
+      "role-team-lead": "team",
+      "role-pm": "team",
+      "role-s1": "team",
+      "role-s2": "company",
+      "role-s3": "company",
+      "role-s4": "team",
+    });
+  });
+
+  it("화면 계급 넷의 지출결의 서술자는 이행 전과 같다(줄거나 넓어지는 계급이 없다)", async () => {
+    const pool = await upgraded();
+    for (const screen of SCREEN) {
+      expect(await after(pool, screen[0], "expense")).toEqual(before(screen, "expense"));
+    }
+  });
+
+  it("화면 계급의 프로젝트 서술자 — work_scope company · 보기 없음은 이행 전과 같다", async () => {
+    const pool = await upgraded();
+    for (const screen of SCREEN.filter(([id]) => id !== "role-s1")) {
+      expect(await after(pool, screen[0], "project")).toEqual(before(screen, "project"));
+    }
+  });
+
+  it("(K1 쓰기 범위 복사: work_scope team · projects 보기 화면 계급은 프로젝트가 전 행 → 자기 팀으로 준다 — 의도된 축소)", async () => {
+    const pool = await upgraded();
+    const s1 = SCREEN[0];
+    expect(before(s1, "project").rows).toBe("all");
+    expect(await after(pool, s1[0], "project")).toEqual({
+      rows: "limited",
+      includeArchived: false,
+      viewerId: "person",
+      by: { kind: "team", teamId: TEAM },
+    });
   });
 });

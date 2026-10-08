@@ -46,7 +46,8 @@ async function setupProject() {
 
 // 경영관리 — 시드 계급에 없어 테스트가 새 계급을 만들고 권한을 준다(메뉴 권한은 인자로).
 async function makeViewer(menus: { menu: string; action: "view" | "write" }[]): Promise<Viewer> {
-  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `종류 계급-${randomUUID()}` });
+  // 06.2(Pitfall 2): 노출 · 권한만 재는 계급 — DB 기본 보는 범위 team에 팀 없는 사람은 0행이라 company로 둔다.
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `종류 계급-${randomUUID()}`, viewScope: "company" });
   const { userId } = await createAccount(SYSTEM_VIEWER, {
     email: `kind-${randomUUID()}@example.test`,
     name: "종류 테스트 사람",
@@ -304,7 +305,8 @@ describe("조정 줄 권한 · PM 거부 · 보관 · 복원(04-13 Task 2 · D-8
     await setStatus(project.id, "completed");
     const archiveMenu = { menu: "admin.archive", action: "write" as const };
     const adjuster = await makeViewer([...adjusterMenus, archiveMenu]);
-    const noAdjust = await makeViewer([{ menu: "projects", action: "write" }, archiveMenu]);
+    // 06.2(D-6206): 견적 줄 복원 입구는 프로젝트 보기가 먼저다 — 보기 없이 쓰기만 있으면 「대상 찾을 수 없음」이라 보기를 더한다.
+    const noAdjust = await makeViewer([{ menu: "projects", action: "view" }, { menu: "projects", action: "write" }, archiveMenu]);
 
     await restore(adjuster, "quote_line", first.id);
     expect((await reload(first.id)).archivedAt).toBeNull();

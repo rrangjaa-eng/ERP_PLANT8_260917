@@ -65,3 +65,11 @@ registerAction({
   action: "write",
   dtoName: null,
 });
+
+// 06.2-05(D-6210): 참여자 더하기 — 붙인 수만 돌려준다(DTO 없음). 판정(키 ∧ 담당 PM ∨ 업무 범위 ∧ 보임 · 후보 재계산)은 domain.
+registerAction({
+  name: "addProjectMembersAction",
+  menu: "projects.member",
+  action: "write",
+  dtoName: null,
+});

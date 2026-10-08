@@ -313,6 +313,17 @@ describe("정산 머리 · 제출 · 범위 밖 결재자 (06.2-04 Task 1)", () 
     const inbox = await listMyInbox(mgmtHead, { withDetails: true });
     expect(inbox.mine.some((item) => item.detail?.rows.some((row) => row.label === "견적가 합"))).toBe(true);
   });
+
+  it("기안 뒤 프로젝트가 기안자 범위 밖이 돼도(담당 팀 이동) 기안자는 정산 문서 · 결재함을 오류 없이 연다(검토 I-1)", async () => {
+    const fx = await setupSettlementProject();
+    await submitSettlement(fx.pm, { projectId: fx.projectId });
+    await db.update(projects).set({ teamId: w.teams.mgmt, pmUserId: w.people.X.id }).where(eq(projects.id, fx.projectId));
+    expect(await canOpenProject(fx.pm, fx.projectId)).toBe(false);
+
+    const doc = await getSettlement(fx.pm, { projectId: fx.projectId });
+    expect(doc?.quoteTotalKrw).toBeTypeOf("number");
+    await expect(listMyInbox(fx.pm, { withDetails: true })).resolves.toBeDefined();
+  });
 });
 
 describe("자동 정산 순서 · 본인 범위 · 팀 이동 · 보관 팀 (검토 반영 R1 · 지시 3)", () => {

@@ -369,7 +369,8 @@ describe("발행 요청 표 DTO — 부가세 기준일 (06-18 검토 S-1)", () 
 
 // 06-18 Task 2 — 권리 · 동시 잇기 · 발행액 노출(A-605) · 상태 잠김.
 async function createRoleViewer(opts: { write: boolean; issuedAmount: boolean }): Promise<Viewer> {
-  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `요청 노출 계급-${randomUUID()}` });
+  // 06.2: 노출 조합만 재는 계급이라 보는 범위는 전사(06.2 전 「보기 권한이면 전 행」) — 기본값 team이면 팀 없는 이 사람은 프로젝트를 못 본다.
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `요청 노출 계급-${randomUUID()}`, viewScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
   if (opts.write) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "write", allowed: true });
   await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "project.value", visible: true });

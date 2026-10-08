@@ -376,7 +376,8 @@ describe("파생 계약 금액 — 고객 승인된 현재 차수 합계 (04-16 
   });
 
   it("(B-19) quote.amount를 숨기고 project.value만 보이는 계급에게는 contract 키가 없다", async () => {
-    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `견적 숨김 계급-${randomUUID()}` });
+    // 06.2: 노출만 재는 계급이라 보는 범위는 전사 — 기본값 team이면 팀 없는 이 사람은 프로젝트를 못 본다(Pitfall 2).
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `견적 숨김 계급-${randomUUID()}`, viewScope: "company" });
     await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
     await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "project.value", visible: true });
     await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "quote.amount", visible: false });

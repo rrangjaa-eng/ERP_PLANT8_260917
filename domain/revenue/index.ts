@@ -24,8 +24,8 @@ import { withTransaction } from "@/lib/db-transaction";
 import { kstDateOf } from "@/lib/kst-date";
 import { isCalendarDate, FORMAT_ERROR as DATE_FORMAT_ERROR, EMPTY_ERROR as DATE_EMPTY_ERROR } from "@/domain/projects/period";
 import type { DbOrTx } from "@/repositories/document-counters";
-import { scopeFor } from "@/domain/permissions/scope-for";
-import { findProjectById as repoFindProjectById } from "@/repositories/projects";
+import { projectRowScope } from "@/domain/projects/visibility";
+import { findProjectInScope } from "@/repositories/projects";
 import {
   listRevenueEntriesByProject as repoListRevenueEntriesByProject,
   insertRevenueEntry as repoInsertRevenueEntry,
@@ -41,7 +41,6 @@ export class ProjectNotFoundError extends UserFacingError {}
 
 const REVENUE_SETTLEMENT_MENU = "projects.revenue";
 const REVENUE_ENTITY = "revenue_entry";
-const PROJECT_ENTITY = "project";
 
 export type RevenueEntryKind = "issue" | "payment";
 
@@ -209,10 +208,11 @@ export async function listRevenue(viewer: Viewer, projectId: string, deps?: Part
   // domain/projects의 scope-aware findProject와 같은 검사(뷰 권한 + scope
   // + 아카이브)를 여기서 다시 한다 — domain/projects ↔ domain/revenue
   // 순환 import를 피하기 위한 최소 복제(도메인 4계층 원칙).
-  const scope = await scopeFor(viewer, PROJECT_ENTITY);
+  // 06.2(D-6208): 프로젝트 범위 — 260907 `O: server/src/settlement.ts:453` 참여자 조각 누락을 따르지 않는다.
+  const scope = await projectRowScope(viewer);
   if (scope.rows === "none") throw new ProjectNotFoundError("존재하지 않는 프로젝트");
 
-  const projectRow = await repoFindProjectById(viewer, projectId);
+  const projectRow = await findProjectInScope(viewer, scope, projectId);
   if (!projectRow) throw new ProjectNotFoundError("존재하지 않는 프로젝트");
   if (projectRow.archivedAt !== null && !scope.includeArchived) throw new ProjectNotFoundError("존재하지 않는 프로젝트");
 

@@ -19,7 +19,7 @@ import {
 } from "@/domain/projects/status";
 import { PROJECT_STATUS_WORD } from "@/domain/projects/status-word";
 import type { ProjectStatus } from "@/domain/projects/status-transitions";
-import { getCurrentQuoteRevision, listQuoteLines, type QuoteLineDto } from "@/domain/quotes/lines";
+import { projectRowScope } from "@/domain/projects/visibility";
 import { getSimpleSettingValues } from "@/domain/settings/registry";
 import {
   APPROVAL_ROUTE_SETTLEMENT_SELF_APPROVAL,
@@ -59,7 +59,9 @@ import { GateBlockedError } from "@/domain/rules/gate";
 import { SETTLEMENT_DOCUMENT_DTO_SPEC, type SettlementDocumentDto, type SettlementDocumentSource } from "@/domain/settlements/dto";
 import { findApprovalGraphByDocument, type ApprovalGraph } from "@/repositories/approvals";
 import { countInReviewByProjects } from "@/repositories/expenses";
-import { findProjectById } from "@/repositories/projects";
+import { findProjectById, findProjectInScope } from "@/repositories/projects";
+import { findLatestQuoteRevision } from "@/repositories/quote-revisions";
+import { listQuoteLinesByRevision } from "@/repositories/quote-lines";
 import {
   findFinalStepActorInTx,
   findSettlementByProjectId,
@@ -166,16 +168,18 @@ type Totals = Partial<Pick<SettlementDocumentDto, "quoteTotalKrw" | "executionTo
 
 // G4: 현재 차수 견적 줄의 견적가(원화) 합 · 실행가(원화 환산) 합 — 견적 줄 표가 그리는 같은 줄 DTO 값의 단순 합(새 계산 규칙 없음).
 // viewer가 `quote.amount`를 못 보면 줄 DTO에 두 필드가 없다(투영이 뺐음) — 그때는 합도 만들지 않는다.
-async function totalsOf(viewer: Viewer, row: Pick<SettlementSummaryRow, "projectId" | "projectStatus">): Promise<Totals> {
-  const revision = await getCurrentQuoteRevision(viewer, row.projectId);
+// 06.2(D-6205 ② · 06.2-03 넘김): 두 합은 문서 보임(canSeeSettlement · 결재 엔진의 결재 관련자 판정) 뒤에만 읽는다(post-gate) —
+// 프로젝트 행 범위로 다시 거르지 않는다(범위 밖 결재자도 결재 근거를 오류 없이 본다). 금액 노출은 SETTLEMENT_DOCUMENT_DTO_SPEC의
+// `quote.amount` 투영이 가린다(견적 표 금액 열과 같은 항목 — 못 보면 키째 없다).
+async function totalsOf(viewer: Viewer, row: Pick<SettlementSummaryRow, "projectId">): Promise<Totals> {
+  const revision = await findLatestQuoteRevision(viewer, row.projectId);
   if (!revision) return {};
-  const lines: Partial<QuoteLineDto>[] = await listQuoteLines(viewer, revision.id, { status: row.projectStatus, canWrite: false });
+  const lines = await listQuoteLinesByRevision(viewer, revision.id);
   let quoteTotalKrw = 0;
   let executionTotalKrw = 0;
   for (const line of lines) {
-    if (line.quoteAmountKrw === undefined || line.execution === undefined) return {};
     quoteTotalKrw += line.quoteAmountKrw;
-    executionTotalKrw += line.execution.amountKrw;
+    executionTotalKrw += line.executionAmountKrw;
   }
   return { quoteTotalKrw, executionTotalKrw };
 }
@@ -292,7 +296,8 @@ export async function getSettlementHeader(viewer: Viewer, input: { projectId: st
     if (!row.status || !(await canSeeSettlement(viewer, row))) return null;
     return { statusWord: HEADER_WORDS[row.status] ?? row.status, canSubmit: false };
   }
-  const projectRow = await findProjectById(viewer, input.projectId);
+  // 06.2(D-6208): 프로젝트 범위 — 260907 `O: server/src/settlement.ts:453` 참여자 조각 누락을 따르지 않는다.
+  const projectRow = await findProjectInScope(viewer, await projectRowScope(viewer), input.projectId);
   if (!projectRow || projectRow.status !== SETTLING || !(await isAssignedPmWriter(viewer, projectRow.pmUserId))) return null;
   return { statusWord: null, canSubmit: true };
 }
@@ -325,13 +330,15 @@ export type SubmitSettlementResult =
 export async function submitSettlement(viewer: Viewer, input: { projectId: string }): Promise<SubmitSettlementResult> {
   const found = UUID_SHAPE.test(input.projectId) ? await findProject(viewer, input.projectId) : null;
   if (!found || !found.id) throw new ProjectNotFoundError("존재하지 않는 프로젝트");
-  const projectRow = await findProjectById(viewer, input.projectId);
+  // 06.2(D-6208): 프로젝트 범위 — 260907 `O: server/src/settlement.ts:453` 참여자 조각 누락을 따르지 않는다.
+  const projectRow = await findProjectInScope(viewer, await projectRowScope(viewer), input.projectId);
   if (!projectRow) throw new ProjectNotFoundError("존재하지 않는 프로젝트");
   if (!(await isAssignedPmWriter(viewer, projectRow.pmUserId))) throw new ForbiddenError("정산 결재는 담당 PM만");
   if (projectRow.status !== SETTLING) throw notSettling(projectRow.status);
   const prepared = await prepareSubmission(viewer, { kind: SETTLEMENT_DOCUMENT_KIND, drafterId: viewer.id });
 
   return withTransaction(async (tx): Promise<SubmitSettlementResult> => {
+    // post-gate: 트랜잭션 전 findProjectInScope 판정 뒤 tx 읽기(잠그지 않음 — T-05-1106).
     const current = await findProjectById(viewer, input.projectId, tx);
     if (!current) throw new ProjectNotFoundError("존재하지 않는 프로젝트");
     if (current.status !== SETTLING) throw notSettling(current.status);

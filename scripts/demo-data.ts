@@ -527,12 +527,7 @@ export async function purgeDemoData(): Promise<DemoPurgeResult> {
     await tx.update(quoteLines).set({ copiedFromLineId: null }).where(and(inArray(quoteLines.revisionId, revisionIds), isNotNull(quoteLines.copiedFromLineId)));
     record("quoteLines", await tx.delete(quoteLines).where(inArray(quoteLines.revisionId, revisionIds)));
     record("quoteRevisions", await tx.delete(quoteRevisions).where(inArray(quoteRevisions.id, revisionIds)));
-    record(
-      "projectMembers",
-      await tx
-        .delete(projectMembers)
-        .where(or(inArray(projectMembers.projectId, projectIds), inArray(projectMembers.userId, demoUserIds), inArray(projectMembers.addedBy, demoUserIds))),
-    );
+    record("projectMembers", await tx.delete(projectMembers).where(inArray(projectMembers.projectId, projectIds)));
     record("projects", await tx.delete(projects).where(inArray(projects.id, projectIds)));
 
     record("corpCards", await tx.delete(corpCards).where(inArray(corpCards.id, cardIds)));

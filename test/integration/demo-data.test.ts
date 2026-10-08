@@ -293,7 +293,7 @@ describe("scripts/demo-data purge 범위 · 안전", () => {
 });
 
 describe("scripts/demo-data 리뷰 지적", () => {
-  it("purge는 견본 프로젝트의 참여자 줄과 견본 사용자가 참여 · 추가한 줄을 지운 뒤 프로젝트를 지운다(FK)", async () => {
+  it("purge는 견본 프로젝트의 참여자 줄만 지운 뒤 프로젝트를 지우고, 실제 프로젝트의 참여자 줄은 남긴다(FK)", async () => {
     const real = await makePerson("참여실제PM", "role-pm", "기획1팀");
     const client = await createVendor(SYSTEM_VIEWER, { name: "참여실제클라이언트" });
     const realProject = await createProject(real, {
@@ -315,7 +315,10 @@ describe("scripts/demo-data 리뷰 지적", () => {
     ]);
 
     await expect(purgeDemoData()).resolves.toMatchObject({ purged: true });
-    expect(await db.select().from(projectMembers)).toEqual([]);
+    expect(await db.select().from(projectMembers).where(eq(projectMembers.projectId, demoProject.id))).toEqual([]);
+    const realRows = await db.select({ userId: projectMembers.userId, addedBy: projectMembers.addedBy }).from(projectMembers).where(eq(projectMembers.projectId, realProject.id));
+    expect(realRows).toEqual(expect.arrayContaining([{ userId: demoUser.id, addedBy: real.id }, { userId: real.id, addedBy: demoUser.id }]));
+    expect(realRows).toHaveLength(2);
     expect((await db.select().from(projects).where(eq(projects.id, realProject.id))).length).toBe(1);
   }, 180_000);
 

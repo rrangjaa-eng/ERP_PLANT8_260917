@@ -1344,7 +1344,7 @@ async function listAccess(viewer: Viewer, today: string): Promise<{ scope: CardU
   const proxy = await can(viewer, "cards.proxy", "write");
   const privileged = proxy || (await can(viewer, "expenses.payments", "write"));
   const actor = await loadActorTeamScope(viewer, { todayKst: today });
-  if (privileged || (await projectRowScope(viewer)).rows === "all") return { scope: { kind: "all" }, privileged, proxy };
+  if (privileged || (await projectRowScope(viewer, { today: () => today })).rows === "all") return { scope: { kind: "all" }, privileged, proxy };
   return { scope: { kind: "own", userId: viewer.id, teamId: actor.teamId }, privileged, proxy };
 }
 

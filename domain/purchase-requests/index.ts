@@ -830,16 +830,14 @@ function monthBounds(month: string): { from: Date; to: Date } {
 
 // 범위: `cards.purchases` write 권한자 · 프로젝트 보는 범위 전사(rowScopeFor rows: all) → 전부 — 06.2 K2, 260907 `O: server/src/purchases.ts:1334` /
 // 그 밖 → 자기 요청 + 자기가 담당 PM인 프로젝트 줄의 요청(쿼리 조건).
-async function listAccess(viewer: Viewer): Promise<{ scope: PurchaseRequestScope; privileged: boolean }> {
+async function listAccess(viewer: Viewer, today: string): Promise<{ scope: PurchaseRequestScope; privileged: boolean }> {
   const purchaser = await can(viewer, "cards.purchases", "write");
-  if (purchaser || (await projectRowScope(viewer)).rows === "all") return { scope: { kind: "all" }, privileged: purchaser };
+  if (purchaser || (await projectRowScope(viewer, { today: () => today })).rows === "all") return { scope: { kind: "all" }, privileged: purchaser };
   return { scope: { kind: "own", userId: viewer.id }, privileged: false };
 }
 
 export async function listPurchaseRequests(viewer: Viewer, filters: PurchaseRequestListFilters, today: string = seoulToday()): Promise<PurchaseRequestList> {
-  // 06.2 K2: 범위 지름길이 발령 기준일을 읽지 않게 됐다 — 호출 모양(화면 · 테스트)은 그대로 두고 인자만 받는다.
-  void today;
-  const { scope, privileged } = await listAccess(viewer);
+  const { scope, privileged } = await listAccess(viewer, today);
   const filter: PurchaseRequestFilter = {
     ...(filters.status === "all" ? {} : { status: filters.status }),
     ...(filters.month ? monthBounds(filters.month) : {}),
@@ -873,8 +871,7 @@ export async function listPurchaseRequests(viewer: Viewer, filters: PurchaseRequ
 
 // S8 카드 목록 하위 링크 `구매 요청 {N}` — 목록과 같은 범위의 `신청됨` 건수(새 범위 판정 없음).
 export async function countOpenPurchaseRequests(viewer: Viewer, today: string = seoulToday()): Promise<number> {
-  void today; // 06.2 K2 — listPurchaseRequests와 같은 이유
-  const { scope } = await listAccess(viewer);
+  const { scope } = await listAccess(viewer, today);
   return (await listPurchaseRequestEstimates(viewer, { scope, filter: { status: "requested" } })).length;
 }
 

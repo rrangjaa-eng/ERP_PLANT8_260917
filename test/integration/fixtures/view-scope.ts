@@ -13,7 +13,7 @@ import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import { makePerson, orgUnitIdByName, teamIdByName } from "../approvals-fixtures";
 
 // 06.2-03(D6 · SC-1 · SC-2): 다팀 · 다본부 · 다계급 세계 — 06.2-04 · 05 · 06 · 08 · 10이 재사용한다.
-// 기획본부(기획1팀 · 기획2팀) · 경영관리본부(경영관리팀). P1(기획1팀, PM 팀PM) · P2(기획2팀, PM X) · P3(경영관리팀, PM X).
+// 기획본부(기획1팀 · 기획2팀) · 경영관리본부(경영관리팀). P1(기획1팀, PM 팀장) · P2(기획2팀, PM X) · P3(경영관리팀, PM X).
 // 사람은 도메인 · 리포지토리 함수로만 만든다(approvals-fixtures 규약). 프로젝트는 업무 범위 전사 · projects 쓰기인 시스템 주체가 만든다
 // — 다른 팀 PM 지정(시드 대표에는 projects 쓰기가 없다).
 // K1(사용자 답 「쓰기 범위 복사」, 2026-10-08): 화면 계급 view_scope = work_scope — 화면팀(work_scope team · projects 보기)은 team.
@@ -29,7 +29,7 @@ export const NO_MENU_ROLE_ID = "role-test-no-projects";
 
 export type ViewScopeWorld = {
   people: Record<ViewScopePerson, Viewer>;
-  /** 매트릭스 밖 — 상태 전환(projects.status 쓰기) 성공 경로용 기획1팀 팀장. */
+  /** 매트릭스 밖 — 기획1팀 팀장 · P1 담당 PM(팀PM의 팀 이동이 PM 조각에 가리지 않게) · 상태 전환(projects.status 쓰기) 성공 경로. */
   teamLead: Viewer;
   projects: Record<ViewScopeProject, { id: string; name: string; revisionId: string; lineId: string }>;
   teams: { plan1: string; plan2: string; mgmt: string };
@@ -97,7 +97,7 @@ export async function buildViewScopeWorld(): Promise<ViewScopeWorld> {
   };
 
   const projects: ViewScopeWorld["projects"] = {
-    P1: await make("P1", plan1, people.팀PM),
+    P1: await make("P1", plan1, teamLead),
     P2: await make("P2", plan2, people.X),
     P3: await make("P3", mgmt, people.X),
   };

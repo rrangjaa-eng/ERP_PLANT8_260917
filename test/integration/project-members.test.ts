@@ -219,7 +219,8 @@ describe("떼기 · 되돌리기 · 잠금 · 권리", () => {
     expect(await memberLogs(P3)).toContainEqual({ actorId: w.mgmtLead.id, detail: { projectId: P3, restored: R.id } });
 
     await removeProjectMember(w.mgmtLead, P3, R.id);
-    await expect(addProjectMembers(w.mgmtLead, P3, [R.id])).rejects.toThrow("퇴직자 더할 수 없음 · 새로 고침");
+    // 퇴직자는 오늘 스냅숏(후보 범위) 밖이라 이름 대신 사람 수(/cso M-1(a)).
+    await expect(addProjectMembers(w.mgmtLead, P3, [R.id])).rejects.toThrow("1명 더할 수 없음 · 새로 고침");
   });
 
   it("뗀 뒤 그 사람을 담당 팀으로 발령해도 되돌리기는 성공한다(후보 검사 없음)", async () => {
@@ -606,6 +607,16 @@ describe("검토 반영 M-1 — 이름은 person.value 투영을 지난다", () 
     await upsertVisibility(SYSTEM_VIEWER, { roleId: TEAM_LEAD_ROLE_ID, infoItem: "person.value", visible: false });
     const error = await errorOf(addProjectMembers(w.mgmtLead, P3, [w.Y.id, mgmtPerson.id]));
     expect((error as Error).message).toBe("1명 더할 수 없음 · 새로 고침");
+  });
+
+  it("/cso M-1(a): 후보 범위(담당 본부 · 대표) 밖 사람 id를 넣으면 이름 대신 사람 수 — 없는 id와 같은 문구", async () => {
+    const w = await buildMembersWorld();
+    const P3 = w.projects.P3.id;
+    const elsewhere = await makePerson("다른본부사람", DEFAULT_ROLE_ID, "기획1팀");
+    const outside = await errorOf(addProjectMembers(w.mgmtLead, P3, [elsewhere.id]));
+    const missing = await errorOf(addProjectMembers(w.mgmtLead, P3, ["00000000-0000-4000-8000-000000000000"]));
+    expect((outside as Error).message).toBe("1명 더할 수 없음 · 새로 고침");
+    expect((missing as Error).message).toBe("1명 더할 수 없음 · 새로 고침");
   });
 });
 

@@ -116,6 +116,17 @@ async function personNameOf(viewer: Viewer, userId: string): Promise<string> {
 }
 
 // ── 후보(D-6211 · D-6221) ───────────────────────────────────────────────────
+// 후보 계산의 입력 범위 — 담당 본부 사람 + 본부 없는 대표. 거부 문구가 이름을 실어도 되는 사람도 이 범위다(/cso M-1(a)).
+function inCandidateRange(person: OrgSnapshotRow, division: string | null): boolean {
+  return (division !== null && person.orgUnitId === division) || (person.orgUnitId === null && person.roleId === CEO_ROLE_ID);
+}
+
+async function candidateRangeIds(viewer: Viewer, project: ProjectRow, todayKst: string): Promise<Set<string>> {
+  const [team, people] = await Promise.all([findTeamById(viewer, project.teamId), listOrgSnapshot(viewer, todayKst)]);
+  const division = team?.orgUnitId ?? null;
+  return new Set(people.filter((person) => inCandidateRange(person, division)).map((person) => person.id));
+}
+
 // 후보 목록 · 더하기 재판정 · hasCandidates가 이 하나를 부른다(같은 질의 — UI-SPEC S2). 오늘(KST) 조직 스냅숏은 보관된 사람 ·
 // 퇴직일 < 오늘을 이미 뺐다(퇴직일 = 오늘은 남는다). 발령 없는 신규자는 본부가 null이라 대표 계급이 아니면 빠진다.
 async function computeMemberCandidates(viewer: Viewer, project: ProjectRow, todayKst: string): Promise<OrgSnapshotRow[]> {
@@ -130,7 +141,7 @@ async function computeMemberCandidates(viewer: Viewer, project: ProjectRow, toda
   const canView = new Set(viewers);
   return people.filter(
     (person) =>
-      ((division !== null && person.orgUnitId === division) || (person.orgUnitId === null && person.roleId === CEO_ROLE_ID)) &&
+      inCandidateRange(person, division) &&
       // 권한 판정이 아니라 후보 제외 — Pitfall 6: 260907 `O: server/src/projects.ts:3925` 직책 문자열 대신 계급 id 상수.
       person.roleId !== SYSADMIN_ROLE_ID &&
       person.teamId !== project.teamId &&
@@ -249,10 +260,12 @@ async function inLockedProject<T>(viewer: Viewer, basis: ProjectRow, write: (tx:
   });
 }
 
-// UI-SPEC S3 「오류 문구」 — 고른 순서의 첫 사람 이름. 없는 id(조작한 목록)면 이름이 없어 일반 문구.
-// 사람 정보를 못 보는 계급이면 이름 대신 사람 수(검토 반영 M-1).
-async function rejectedError(viewer: Viewer, rejected: string[]): Promise<UserFacingError> {
-  if (!(await visible(viewer, "person.value"))) return new UserFacingError(`${rejected.length}명 더할 수 없음 · 새로 고침`);
+// UI-SPEC S3 「오류 문구」 — 고른 순서의 첫 사람 이름. 사람 정보를 못 보는 계급이면 이름 대신 사람 수(검토 반영 M-1).
+// 첫 사람이 nameable 밖(후보 범위 밖 · 없는 id — 조작한 목록)이어도 사람 수 — 임의 id의 이름 · 존재를 답하지 않는다(/cso M-1(a)).
+async function rejectedError(viewer: Viewer, rejected: string[], nameable: ReadonlySet<string>): Promise<UserFacingError> {
+  if (!(await visible(viewer, "person.value")) || !nameable.has(rejected[0] ?? "")) {
+    return new UserFacingError(`${rejected.length}명 더할 수 없음 · 새로 고침`);
+  }
   const first = (await findUserNamesByIds(viewer, rejected.slice(0, 1))).get(rejected[0] ?? "");
   if (!first) return new UserFacingError(NOT_PROCESSED);
   const who = rejected.length === 1 ? first : `${first} 외 ${rejected.length - 1}명`;
@@ -267,13 +280,13 @@ export async function addProjectMembers(viewer: Viewer, projectId: string, userI
   const candidates = new Set((await computeMemberCandidates(viewer, project, todayKst)).map((person) => person.id));
   const rejected = ids.filter((id) => !candidates.has(id));
   // 한 명이라도 어긋나면 트랜잭션을 열기 전에 전체 거부(260907 `O: server/src/projects.ts:3946-3947` — 코드에만 있던 규칙).
-  if (rejected.length > 0) throw await rejectedError(viewer, rejected);
+  if (rejected.length > 0) throw await rejectedError(viewer, rejected, await candidateRangeIds(viewer, project, todayKst));
 
   const added = await inLockedProject(viewer, project, async (tx) => {
     // 판정 뒤 다른 탭이 먼저 붙였으면 같은 거부 문구(검토 반영 M-2 — 아니면 유일 제약이 일반 오류로 샌다).
     const live = await findLiveMemberUserIds(viewer, projectId, tx);
     const taken = ids.filter((id) => live.has(id));
-    if (taken.length > 0) throw await rejectedError(viewer, taken);
+    if (taken.length > 0) throw await rejectedError(viewer, taken, live);
     const count = await reviveOrInsertMembers(viewer, { projectId, userIds: ids, addedBy: viewer.id }, tx);
     await recordAction(viewer, { actionType: MEMBER_ACTION, entity: PROJECT_ENTITY, entityId: projectId, detail: { projectId, added: ids } }, { tx });
     return count;

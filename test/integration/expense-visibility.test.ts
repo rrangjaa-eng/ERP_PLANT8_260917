@@ -23,6 +23,7 @@ import { confirmEvidence, EvidenceReviewConflictError, EvidenceReviewNotFoundErr
 import { seoulToday } from "@/lib/dates";
 import { insertRole, setRoleViewScope } from "@/repositories/roles";
 import { insertVendor } from "@/repositories/vendors";
+import { listExpenseIdsInScope } from "@/repositories/expenses";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { makePerson, orgUnitIdByName, teamIdByName } from "./approvals-fixtures";
 import { insertMembership } from "@/repositories/team-memberships";
@@ -39,6 +40,11 @@ import { resetDatabase, skipDbReset } from "./setup";
 vi.mock("@/domain/expenses/access", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/domain/expenses/access")>();
   return { ...actual, canSeeExpense: vi.fn(actual.canSeeExpense) };
+});
+// 06.2-08 검토 I-1: 팀 범위 지급자의 지급 대상이 행마다가 아니라 한 번에 거르는지 세려고 같은 구현을 감싼다(동작은 그대로).
+vi.mock("@/repositories/expenses", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/repositories/expenses")>();
+  return { ...actual, listExpenseIdsInScope: vi.fn(actual.listExpenseIdsInScope) };
 });
 
 // 06.2-08: 파일 끝 SC-3 매트릭스는 세계를 beforeAll 한 번에 만든다(입구 여섯 × 사람 × 문서). 그 앞 describe는 지금처럼 테스트마다 비우고 시드한다.
@@ -361,16 +367,22 @@ describe("팀 이동 · 프로젝트 팀 변경 · 삭제 (05-08 검토 #6)", ()
 });
 
 describe("지급 대상 — 전사 범위 단축 (06.2 T-06.2-83)", () => {
-  it("대표(보는 범위 전사)의 지급 대상은 canSeeExpense를 부르지 않고 결재 통과 문서를 싣는다 — 팀장(팀 범위)은 문서마다 부른다", async () => {
+  it("대표(보는 범위 전사)의 지급 대상은 canSeeExpense를 부르지 않고 결재 통과 문서를 싣는다 — 팀장(팀 범위)도 문서마다 묻지 않고 한 번에 거른다(검토 I-1)", async () => {
     const w = await setup();
     for (const roleId of [CEO_ROLE_ID, TEAM_LEAD_ROLE_ID]) await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "expenses.payments", action: "write", allowed: true });
     await approveThrough(w.teamDocId, [w.divisionHead, w.ceo]);
+    await approveThrough(w.pm2DocId, [w.divisionHead, w.ceo]);
     const seen = vi.mocked(canSeeExpense);
+    const batch = vi.mocked(listExpenseIdsInScope);
     seen.mockClear();
-    expect((await listAllPaymentTargets(w.ceo, {})).map((target) => target.row.id)).toEqual([w.teamDocId]);
+    batch.mockClear();
+    expect((await listAllPaymentTargets(w.ceo, {})).map((target) => target.row.id).sort()).toEqual([w.teamDocId, w.pm2DocId].sort());
     expect(seen).not.toHaveBeenCalled();
+    expect(batch).not.toHaveBeenCalled();
+    // 팀장(기획1팀): 기획2팀 문서는 범위 밖 — 질의는 행 수와 무관하게 한 번.
     expect((await listAllPaymentTargets(w.lead, {})).map((target) => target.row.id)).toEqual([w.teamDocId]);
-    expect(seen).toHaveBeenCalled();
+    expect(seen).not.toHaveBeenCalled();
+    expect(batch).toHaveBeenCalledTimes(1);
   });
 });
 

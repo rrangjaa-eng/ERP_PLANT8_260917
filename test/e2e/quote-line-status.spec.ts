@@ -33,7 +33,7 @@ const INFO_ITEMS = ["expense.value", "expense.amount", "approval.value", "projec
 
 async function makePayerE2E(): Promise<Person> {
   const suffix = randomUUID().slice(0, 8);
-  const role = await insertTempRole({ id: `role-${randomUUID()}`, name: `E2E지급-${suffix}`, workScope: "company" });
+  const role = await insertTempRole({ id: `role-${randomUUID()}`, name: `E2E지급-${suffix}`, workScope: "company", viewScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "view", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.payments", action: "write", allowed: true });
   for (const infoItem of INFO_ITEMS) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });

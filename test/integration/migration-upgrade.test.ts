@@ -563,12 +563,13 @@ describe("06.2 view_scope 백필", () => {
     ["role-team-lead", "팀장", "team"],
     ["role-pm", "기획 PM", "team"],
   ] as const;
-  // 화면 계급 넷 — [id, work_scope, 켜진 보기 메뉴]
+  // 화면 계급 다섯 — [id, work_scope, 켜진 보기 메뉴]
   const SCREEN = [
     ["role-s1", "team", ["projects", "expenses", "expenses.team"]],
     ["role-s2", "company", ["projects", "expenses"]],
     ["role-s3", "company", ["expenses"]],
     ["role-s4", "team", ["expenses", "expenses.team"]],
+    ["role-s5", "team", ["expenses"]],
   ] as const;
 
   async function upgraded(): Promise<Pool> {
@@ -618,6 +619,7 @@ describe("06.2 view_scope 백필", () => {
 
   // 이행 전 규칙: 프로젝트 = `projects` 보기면 전 행(`domain/permissions/scope-for.ts` 옛 scopeFor),
   // 지출결의 = `expenses` 보기 ∧ work_scope company면 전사, `expenses` ∧ `expenses.team` 보기면 팀(`domain/expenses/access.ts`).
+  // 그 밖(`expenses`만 · work_scope team)은 기안자 · 결재자만이라 행 범위 서술자로는 none이다.
   function before(screen: (typeof SCREEN)[number], entity: "project" | "expense"): RowScope {
     const [, workScope, menus] = screen;
     const has = (menu: string) => (menus as readonly string[]).includes(menu);
@@ -632,7 +634,7 @@ describe("06.2 view_scope 백필", () => {
     return rowScopeFor({ id: "person", roleId }, entity, scratchDeps(pool));
   }
 
-  it("시드 계급 다섯은 D-6203 값, 화면 계급 넷은 이행 전 work_scope를 그대로 받는다", async () => {
+  it("시드 계급 다섯은 D-6203 값, 화면 계급 다섯은 이행 전 work_scope를 그대로 받는다", async () => {
     const pool = await upgraded();
     expect(await viewScopes(pool)).toEqual({
       "role-ceo": "company",
@@ -644,12 +646,13 @@ describe("06.2 view_scope 백필", () => {
       "role-s2": "company",
       "role-s3": "company",
       "role-s4": "team",
+      "role-s5": "team",
     });
   });
 
-  it("화면 계급 넷의 지출결의 서술자는 이행 전과 같다(줄거나 넓어지는 계급이 없다)", async () => {
+  it("화면 계급의 지출결의 서술자 — expenses.team 보기가 있거나 work_scope company면 이행 전과 같다", async () => {
     const pool = await upgraded();
-    for (const screen of SCREEN) {
+    for (const screen of SCREEN.filter(([id]) => id !== "role-s5")) {
       expect(await after(pool, screen[0], "expense")).toEqual(before(screen, "expense"));
     }
   });
@@ -666,6 +669,18 @@ describe("06.2 view_scope 백필", () => {
     const s1 = SCREEN[0];
     expect(before(s1, "project").rows).toBe("all");
     expect(await after(pool, s1[0], "project")).toEqual({
+      rows: "limited",
+      includeArchived: false,
+      viewerId: "person",
+      by: { kind: "team", teamId: TEAM },
+    });
+  });
+
+  it("(D-6217: work_scope team · expenses 보기 · expenses.team 없는 화면 계급은 지출결의가 기안자 · 결재자만 → 자기 팀으로 넓어진다 — 의도된 확대)", async () => {
+    const pool = await upgraded();
+    const s5 = SCREEN[4];
+    expect(before(s5, "expense").rows).toBe("none");
+    expect(await after(pool, s5[0], "expense")).toEqual({
       rows: "limited",
       includeArchived: false,
       viewerId: "person",

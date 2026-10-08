@@ -6,10 +6,19 @@ import { projects } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID, DIVISION_HEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { createProject, findProject, getProjectCopySource, loadProjectList } from "@/domain/projects";
-import { changeProjectStatus, ForbiddenError as StatusForbiddenError, ProjectNotFoundError } from "@/domain/projects/status";
+import { changeProjectStatus, ForbiddenError as StatusForbiddenError, loadStatusChangeFacts, ProjectNotFoundError } from "@/domain/projects/status";
 import { saveProjectLedger } from "@/domain/projects/ledger";
 import { createRevisionFromCurrent, setCustomerApproval } from "@/domain/quotes/revisions";
-import { ForbiddenError as LinesForbiddenError, listQuoteLines, prepareQuoteLineSave, RevisionNotFoundError, restoreQuoteLine } from "@/domain/quotes/lines";
+import {
+  ForbiddenError as LinesForbiddenError,
+  getCurrentQuoteRevision,
+  listQuoteLines,
+  prepareQuoteLineSave,
+  RevisionNotFoundError,
+  restoreQuoteLine,
+  saveQuoteLines,
+  SaveRejectedError,
+} from "@/domain/quotes/lines";
 import { canOpenProject } from "@/domain/projects/visibility";
 import { listRevenue } from "@/domain/revenue";
 import { listProjectIssueRequests } from "@/domain/issue-requests";
@@ -35,6 +44,10 @@ import {
   searchLinesForPurchaseLink,
   type PurchaseRequestInput,
 } from "@/domain/purchase-requests";
+import { listReserveReferences, listReserves, saveReserves, type ReserveWriteRow } from "@/domain/reserves";
+import { listArchive } from "@/domain/archive";
+import { setQuoteLineArchived } from "@/repositories/quote-lines";
+import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { seoulToday } from "@/lib/dates";
@@ -503,6 +516,159 @@ describe("카드 사용 · 구매 요청 목록 「전부 보기」 지름길(K2
   it("팀PM(work_scope team) — 06.2 전과 같은 자기 거름(회귀)", async () => {
     expect(await seenUsages(w.people.팀PM)).toEqual(ids(usages, ["팀PM"]));
     expect(await seenRequests(w.people.팀PM)).toEqual(ids(requests, ["팀PM"]));
+  });
+});
+
+// 권한 · 노출을 고른 계급의 사람(work_scope team — 보는 범위만 바꾼다), 기획1팀.
+async function rolePerson(
+  name: string,
+  viewScope: "team" | "company",
+  grants: readonly { menu: string; action: "view" | "write" }[],
+  infoItems: readonly string[],
+): Promise<Viewer> {
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `${name}-${randomUUID().slice(0, 8)}`, workScope: "team", viewScope });
+  for (const grant of [...grants, { menu: "projects", action: "view" as const }]) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, ...grant, allowed: true });
+  for (const infoItem of infoItems) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+  return makePerson(name, role.id, "기획1팀");
+}
+
+describe("리저브 이름 · 선택지 · 저장(M8 — 06.2-04 Task 3)", () => {
+  const RESERVE_GRANTS = [
+    { menu: "pnl", action: "view" },
+    { menu: "pnl", action: "write" },
+  ] as const;
+  const RESERVE_ITEMS = ["reserve.amount", "project.value", "vendor.value"];
+  const MISMATCH = "다른 클라이언트의 프로젝트 · 프로젝트 다시 고르기";
+  let team: Viewer;
+  let company: Viewer;
+  const rowIds: Record<"P1" | "P3", string> = { P1: randomUUID(), P3: randomUUID() };
+
+  const deposit = (projectId: string, id: string = randomUUID()): ReserveWriteRow => ({
+    id,
+    isNew: true,
+    clientId: w.clientId,
+    entryDate: "2026-09-01",
+    direction: "deposit",
+    amount: { currency: "KRW", amount: 100_000, fxRate: 1 },
+    projectId,
+  });
+
+  beforeAll(async () => {
+    team = await rolePerson("리저브팀", "team", RESERVE_GRANTS, RESERVE_ITEMS);
+    company = await rolePerson("리저브전사", "company", RESERVE_GRANTS, RESERVE_ITEMS);
+    await saveReserves(company, { rows: [deposit(w.projects.P1.id, rowIds.P1), deposit(w.projects.P3.id, rowIds.P3)] });
+  }, 120_000);
+
+  async function mine(viewer: Viewer) {
+    const ids = new Set(Object.values(rowIds));
+    return (await listReserves(viewer, {})).rows.filter((row) => ids.has(row.id));
+  }
+
+  it("listReserves — 범위 밖 P3 줄은 프로젝트 이름이 비고 P1은 보인다 · 잔액 · 고객사는 모든 줄(전 고객사 유지)", async () => {
+    const rows = await mine(team);
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    expect(byId.get(rowIds.P1)?.projectName).toBe(w.projects.P1.name);
+    expect(byId.get(rowIds.P3)?.projectName).toBeNull();
+    for (const id of Object.values(rowIds)) {
+      expect(byId.get(id)?.clientName).not.toBe("");
+      expect(byId.get(id)?.balanceKrw).toBeGreaterThan(0);
+    }
+    const all = new Map((await mine(company)).map((row) => [row.id, row]));
+    expect(all.get(rowIds.P3)?.projectName).toBe(w.projects.P3.name);
+  });
+
+  it("listReserveReferences — 프로젝트 선택지는 범위 안만(P1 있음 · P3 없음), 전사는 셋 다", async () => {
+    const teamIds = (await listReserveReferences(team)).projects.map((option) => option.id);
+    expect(teamIds).toContain(w.projects.P1.id);
+    expect(teamIds).not.toContain(w.projects.P3.id);
+    expect((await listReserveReferences(company)).projects.map((option) => option.id)).toEqual(expect.arrayContaining(idsOf(w, ["P1", "P2", "P3"])));
+  });
+
+  it("saveReserves — 범위 밖 P3를 새로 고르면 기존 「고를 수 없음」 갈래로 거부, P1은 저장, 저장된 P3 줄은 프로젝트를 안 바꾸면 그대로 고친다", async () => {
+    const bad = deposit(w.projects.P3.id);
+    const error = await saveReserves(team, { rows: [bad] }).then(
+      () => null,
+      (caught: unknown) => caught,
+    );
+    expect(error).toBeInstanceOf(SaveRejectedError);
+    expect((error as SaveRejectedError).formatErrors).toEqual([expect.objectContaining({ rowId: bad.id, field: "projectId", reason: MISMATCH })]);
+
+    await expect(saveReserves(team, { rows: [deposit(w.projects.P1.id)] })).resolves.toBeUndefined();
+
+    const stored = (await mine(company)).find((row) => row.id === rowIds.P3);
+    if (!stored) throw new Error("P3 리저브 줄 없음");
+    const edit: ReserveWriteRow = {
+      id: rowIds.P3,
+      version: stored.version,
+      clientId: w.clientId,
+      entryDate: "2026-09-01",
+      direction: "deposit",
+      amount: { currency: "KRW", amount: 100_000, fxRate: 1 },
+      projectId: w.projects.P3.id,
+      note: "범위 밖 줄 메모",
+    };
+    await expect(saveReserves(team, { rows: [edit] })).resolves.toBeUndefined();
+  });
+});
+
+describe("보관함 견적 줄(I-2 · M-2 — listProjectIdsInScope 첫 호출자)", () => {
+  const ARCHIVE_GRANTS = [{ menu: "admin.archive", action: "view" }] as const;
+  let team: Viewer;
+  let company: Viewer;
+  const lines: Record<"inScope" | "outOfScope", string> = { inScope: "", outOfScope: "" };
+
+  async function archivedLine(teamId: string, label: string): Promise<string> {
+    const created = await createProject(SYSTEM_VIEWER, { clientId: w.clientId, teamId, pmUserId: w.people.X.id, name: `보관 줄 ${label} ${randomUUID()}`, startDate: "2026-11-01", endDate: "2026-12-31" });
+    const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, created.id);
+    if (!revision) throw new Error("1차 차수 없음");
+    const saved = await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
+      rows: [
+        {
+          id: randomUUID(),
+          isNew: true as const,
+          subcategory: (await firstSelectableSubcategory()).value,
+          itemName: `${label} 보관 줄`,
+          vendorId: null,
+          unitPrice: { currency: "KRW" as const, amount: 1_000_000, fxRate: 1 },
+          execution: { currency: "KRW" as const, amount: 500_000, fxRate: 1 },
+        },
+      ],
+    });
+    const lineId = saved.lines[0]?.id;
+    if (!lineId) throw new Error("견적 줄 없음");
+    expect(await setQuoteLineArchived(SYSTEM_VIEWER, lineId, true)).toBe(true);
+    return lineId;
+  }
+
+  beforeAll(async () => {
+    team = await rolePerson("보관팀", "team", ARCHIVE_GRANTS, ["archive.value"]);
+    company = await rolePerson("보관전사", "company", ARCHIVE_GRANTS, ["archive.value"]);
+    lines.inScope = await archivedLine(w.teams.plan1, "기획1팀");
+    lines.outOfScope = await archivedLine(w.teams.mgmt, "경영관리팀");
+  }, 120_000);
+
+  async function archivedLineIds(viewer: Viewer): Promise<string[]> {
+    const wanted = new Set(Object.values(lines));
+    return (await listArchive(viewer)).filter((row) => row.entity === "quote_line" && wanted.has(row.id)).map((row) => row.id);
+  }
+
+  it("팀 범위는 자기 팀 프로젝트의 보관 줄만 — 범위 밖 줄 이름이 보관함으로 새지 않는다", async () => {
+    expect(await archivedLineIds(team)).toEqual([lines.inScope]);
+  });
+
+  it("전사 범위는 둘 다", async () => {
+    expect((await archivedLineIds(company)).sort()).toEqual([lines.inScope, lines.outOfScope].sort());
+  });
+});
+
+describe("상태 전환 사실의 범위 날짜 — 주입한 시계(M-6)", () => {
+  it("now를 주입하면 그 날짜의 발령으로 범위를 만든다 — 오늘 옮긴 팀이 아니라 그날의 팀", async () => {
+    const mover = await makePerson("시계발령", DEFAULT_ROLE_ID, "기획1팀");
+    await assignTeam(SYSTEM_VIEWER, { userId: mover.id, teamId: w.teams.mgmt, effectiveFrom: kstToday(new Date()) });
+    const today = await loadStatusChangeFacts(mover);
+    expect(today.rowScope).toMatchObject({ rows: "limited", by: { kind: "team", teamId: w.teams.mgmt } });
+    const past = await loadStatusChangeFacts(mover, { now: () => new Date("2026-06-01T03:00:00Z") });
+    expect(past.rowScope).toMatchObject({ rows: "limited", by: { kind: "team", teamId: w.teams.plan1 } });
   });
 });
 

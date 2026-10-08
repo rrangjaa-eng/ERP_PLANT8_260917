@@ -1,6 +1,6 @@
-import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
-import { projectMembers } from "@/db/schema";
+import { projectMembers, teamMemberships, teams, users } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 
 // 06.2-05(D-6209): 프로젝트 참여자 줄 — 붙이기는 되살림-또는-삽입, 떼기는 archived_at(A9).
@@ -88,4 +88,63 @@ export async function restoreArchivedMember(
     .where(inArray(projectMembers.id, latestArchived))
     .returning({ id: projectMembers.id });
   return rows.length > 0;
+}
+
+// 참여자 표 한 행의 재료 — 이름 · 퇴직일 · 사람 보관 · asOf 이하 최신 발령의 보관 안 된 팀 이름(없으면 null).
+// 퇴직 · 보관된 사람도 빠지지 않는다(D-6222 — users 쪽 거름 없음). 퇴직 판정(퇴직일 < 오늘)은 domain이 한다.
+export type MemberPersonRow = {
+  userId: string;
+  name: string;
+  resignationDate: string | null;
+  userArchivedAt: Date | null;
+  teamName: string | null;
+};
+
+// listOrgSnapshot의 latest 하위 질의 꼴 — 사람마다 asOf 이하 가장 늦은 발령 한 줄.
+function latestMemberships(asOf: string) {
+  return db
+    .selectDistinctOn([teamMemberships.userId], { userId: teamMemberships.userId, teamId: teamMemberships.teamId })
+    .from(teamMemberships)
+    .where(lte(teamMemberships.effectiveFrom, asOf))
+    .orderBy(teamMemberships.userId, desc(teamMemberships.effectiveFrom))
+    .as("latest_memberships");
+}
+
+export async function listLiveMembersWithPeople(viewer: Viewer, projectId: string, asOf: string, tx: DbOrTx = db): Promise<MemberPersonRow[]> {
+  void viewer;
+  const latest = latestMemberships(asOf);
+  return tx
+    .select({
+      userId: users.id,
+      name: users.name,
+      resignationDate: users.resignationDate,
+      userArchivedAt: users.archivedAt,
+      teamName: teams.name,
+    })
+    .from(projectMembers)
+    .innerJoin(users, eq(users.id, projectMembers.userId))
+    .leftJoin(latest, eq(latest.userId, users.id))
+    .leftJoin(teams, and(eq(teams.id, latest.teamId), isNull(teams.archivedAt)))
+    .where(and(eq(projectMembers.projectId, projectId), isNull(projectMembers.archivedAt)))
+    .orderBy(asc(projectMembers.createdAt), asc(projectMembers.id));
+}
+
+// 같은 투영으로 한 사람 — 참여자 섹션 첫 행(담당 PM)용. PM은 참여자 줄이 아니다.
+export async function findPersonRow(viewer: Viewer, userId: string, asOf: string, tx: DbOrTx = db): Promise<MemberPersonRow | null> {
+  void viewer;
+  const latest = latestMemberships(asOf);
+  const [row] = await tx
+    .select({
+      userId: users.id,
+      name: users.name,
+      resignationDate: users.resignationDate,
+      userArchivedAt: users.archivedAt,
+      teamName: teams.name,
+    })
+    .from(users)
+    .leftJoin(latest, eq(latest.userId, users.id))
+    .leftJoin(teams, and(eq(teams.id, latest.teamId), isNull(teams.archivedAt)))
+    .where(eq(users.id, userId))
+    .limit(1);
+  return row ?? null;
 }

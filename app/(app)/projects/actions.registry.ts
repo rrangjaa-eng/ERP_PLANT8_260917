@@ -66,6 +66,14 @@ registerAction({
   dtoName: null,
 });
 
+// 06.2-05(D-6211): 참여자 후보 — 후보를 보는 것도 더하기 권리 자리라 쓰기로 적는다. 행은 ProjectMemberCandidateDto 투영.
+registerAction({
+  name: "listMemberCandidatesAction",
+  menu: "projects.member",
+  action: "write",
+  dtoName: "ProjectMemberCandidateDto",
+});
+
 // 06.2-05(D-6210): 참여자 더하기 — 붙인 수만 돌려준다(DTO 없음). 판정(키 ∧ 담당 PM ∨ 업무 범위 ∧ 보임 · 후보 재계산)은 domain.
 registerAction({
   name: "addProjectMembersAction",

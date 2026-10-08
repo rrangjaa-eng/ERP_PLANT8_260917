@@ -26,7 +26,7 @@ import {
   statusChangedMessage,
 } from "@/domain/projects/status";
 import { PROJECT_STATUSES } from "@/domain/projects/status-transitions";
-import { addProjectMembers, removeProjectMember, restoreProjectMember } from "@/domain/projects/members";
+import { addProjectMembers, listMemberCandidates, removeProjectMember, restoreProjectMember } from "@/domain/projects/members";
 import "@/app/(app)/document-kinds";
 import { currentHolderNames, projectActionResult } from "@/domain/approvals";
 import { SETTLEMENT_DOCUMENT_KIND, submitSettlement, withdrawSettlement } from "@/domain/settlements";
@@ -339,6 +339,13 @@ export const setCustomerApprovalAction = authedActionClient
 export const listRevisionLinesAction = authedActionClient.schema(revisionLinesInputSchema).action(async ({ parsedInput, ctx }) => {
   return listRevisionLines(ctx.viewer, parsedInput.projectId, { revisionSeq: parsedInput.revisionSeq });
 });
+
+// 06.2-05(D-6211 · D-6221): 참여자 후보 — 서버가 규칙대로 거른 사람(이름순 50행 · truncated). 권리 없음 · 완료 프로젝트면 빈 목록.
+export const listMemberCandidatesAction = authedActionClient
+  .schema(z.object({ projectId: z.string().uuid(), query: z.string().max(100).optional() }))
+  .action(async ({ parsedInput, ctx }) => {
+    return listMemberCandidates(ctx.viewer, parsedInput.projectId, { query: parsedInput.query });
+  });
 
 // 06.2-05(D-6209 · D-6211): 참여자 더하기 — 고른 사람 id만 받는다. 후보 규칙 · 권리 · 잠금은 domain이 다시 판정하고 거부 문구가
 // 그대로 serverError로 나간다(전체 취소 — 한 명이라도 어긋나면 아무도 붙지 않는다).

@@ -126,7 +126,8 @@ export async function listExpenses(
     summary.viewCount > 0
       ? await listExpensePage(viewer, { scope, ranks, documentKind: EXPENSE_DOCUMENT_KIND, limit: pageSize, offset: (page - 1) * pageSize })
       : [];
-  const drafterColumn = scope.company || scope.teamIds.length > 0 || summary.othersCount > 0;
+  const drafterColumn =
+    scope.rowScope.rows === "all" || (scope.rowScope.rows === "limited" && scope.rowScope.by.kind !== "own") || summary.othersCount > 0;
   const projected = await projectMany(viewer, rows.map((row) => toSource(row, scope.currentSteps)), EXPENSE_LIST_ROW_DTO_SPEC);
   const items = rows.map((row, index) => {
     const dto = { ...projected[index] };

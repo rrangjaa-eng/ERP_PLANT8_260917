@@ -117,10 +117,10 @@ async function judgeTargets(viewer: Viewer, rows: readonly PaymentTargetRow[], c
   return judged;
 }
 
-// 문서 보임(행 범위, CSO-1 패턴) — 지급 처리 경로(loadPaymentInputs)와 같은 canSeeExpense. 전사 범위면 결재 통과 문서는 모두 보이므로 묻지 않는다.
+// 문서 보임(행 범위, CSO-1 패턴) — 지급 처리 경로(loadPaymentInputs)와 같은 canSeeExpense. 보는 범위 전사(06.2 rowScope all)면 결재 통과 문서는 모두 보이므로 묻지 않는다.
 async function visibleRows(viewer: Viewer, rows: readonly PaymentTargetRow[], today: string): Promise<PaymentTargetRow[]> {
   const scope = await visibleExpenseScope(viewer, { today });
-  if (scope.company) return [...rows];
+  if (scope.rowScope.rows === "all") return [...rows];
   const kept: PaymentTargetRow[] = [];
   for (const row of rows) if (await canSeeExpense(viewer, row, { today })) kept.push(row);
   return kept;

@@ -26,9 +26,11 @@ import {
   statusChangedMessage,
 } from "@/domain/projects/status";
 import { PROJECT_STATUSES } from "@/domain/projects/status-transitions";
+import { addProjectMembers, listMemberCandidates, listProjectMembers, removeProjectMember, restoreProjectMember } from "@/domain/projects/members";
 import "@/app/(app)/document-kinds";
 import { currentHolderNames, projectActionResult } from "@/domain/approvals";
 import { SETTLEMENT_DOCUMENT_KIND, submitSettlement, withdrawSettlement } from "@/domain/settlements";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { log } from "@/lib/log";
 import "./actions.registry";
 
@@ -338,3 +340,47 @@ export const setCustomerApprovalAction = authedActionClient
 export const listRevisionLinesAction = authedActionClient.schema(revisionLinesInputSchema).action(async ({ parsedInput, ctx }) => {
   return listRevisionLines(ctx.viewer, parsedInput.projectId, { revisionSeq: parsedInput.revisionSeq });
 });
+
+// 06.2-12(S2): 프로젝트 상세 「참여자」 섹션 읽기 — 담당 PM 행 · 참여자 · 권리 불린. 범위 밖이면 없는 id와 같은 일반 문구(존재를 새지 않는다 — 260907 `visibleProject` → 404).
+export const listProjectMembersAction = authedActionClient
+  .schema(z.object({ projectId: z.string().uuid() }))
+  .action(async ({ parsedInput, ctx }) => {
+    const view = await listProjectMembers(ctx.viewer, parsedInput.projectId);
+    if (!view) throw new UserFacingError("처리 실패 · 다시 시도");
+    return view;
+  });
+
+// 06.2-05(D-6211 · D-6221): 참여자 후보 — 서버가 규칙대로 거른 사람(이름순 50행 · truncated). 권리 없음 · 완료 프로젝트면 빈 목록.
+export const listMemberCandidatesAction = authedActionClient
+  .schema(z.object({ projectId: z.string().uuid(), query: z.string().max(100).optional() }))
+  .action(async ({ parsedInput, ctx }) => {
+    return listMemberCandidates(ctx.viewer, parsedInput.projectId, { query: parsedInput.query });
+  });
+
+// 06.2-05(D-6209 · D-6211): 참여자 더하기 — 고른 사람 id만 받는다. 후보 규칙 · 권리 · 잠금은 domain이 다시 판정하고 거부 문구가
+// 그대로 serverError로 나간다(전체 취소 — 한 명이라도 어긋나면 아무도 붙지 않는다).
+export const addProjectMembersAction = authedActionClient
+  .schema(z.object({ projectId: z.string().uuid(), userIds: z.array(z.string().min(1)).min(1).max(50) }))
+  .action(async ({ parsedInput, ctx }) => {
+    const result = await addProjectMembers(ctx.viewer, parsedInput.projectId, parsedInput.userIds);
+    revalidatePath(`/projects/${parsedInput.projectId}`);
+    return { added: result.added };
+  });
+
+// 06.2-05(D-6209 · D-6222): 참여자 떼기 — 줄을 보관한다(지우지 않는다). 퇴직 · 보관된 참여자도 뗀다.
+export const removeProjectMemberAction = authedActionClient
+  .schema(z.object({ projectId: z.string().uuid(), userId: z.string().min(1) }))
+  .action(async ({ parsedInput, ctx }) => {
+    await removeProjectMember(ctx.viewer, parsedInput.projectId, parsedInput.userId);
+    revalidatePath(`/projects/${parsedInput.projectId}`);
+    return { removed: true };
+  });
+
+// 06.2-05(UI-SPEC 「떼기 — 확인 창 대신 되돌리기」): 되돌리기 = 보관 해제 — 후보 검사 없이 방금 보관한 줄을 되살린다.
+export const restoreProjectMemberAction = authedActionClient
+  .schema(z.object({ projectId: z.string().uuid(), userId: z.string().min(1) }))
+  .action(async ({ parsedInput, ctx }) => {
+    await restoreProjectMember(ctx.viewer, parsedInput.projectId, parsedInput.userId);
+    revalidatePath(`/projects/${parsedInput.projectId}`);
+    return { restored: true };
+  });

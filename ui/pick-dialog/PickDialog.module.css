@@ -167,6 +167,59 @@
   font-weight: var(--fw-regular);
 }
 
+/* 06.2 SP-62-1 — 다중 선택 변형. 행 맨 앞에 비대화형 고름 표시 칸 하나(`aria-hidden` · input 없음)가 서고, 고름은 option `aria-selected`를 따라 그린다.
+   고른 행에는 면을 깔지 않는다(사용자 결정 2026-10-07 표 선택 표시 — 단일 변형의 `.row[aria-selected="true"]` 면은 그대로 두고 여기서만 끈다).
+   현재 줄(로빙 포커스 행)은 단일과 같은 `.current` 왼쪽 2px `--accent` 선이다 — 줄을 옮길 때 글자가 흔들리지 않게 모든 행이 투명 2px 자리를 갖고 굵기는 바꾸지 않는다. */
+.multiList .row {
+  grid-template-columns: var(--icon-sm) minmax(0, 1fr) auto;
+  border-inline-start: var(--focus-w) solid transparent;
+}
+
+.multiList .numbered {
+  grid-template-columns: var(--icon-sm) minmax(var(--row-number-w), auto) minmax(0, 1fr) auto;
+}
+
+.multiList .row[aria-selected="true"] {
+  background: none;
+}
+
+.multiList .current {
+  border-inline-start-color: var(--accent);
+  font-weight: var(--fw-regular);
+}
+
+.multiList .reason {
+  grid-column: 2 / -1;
+}
+
+.multiMark {
+  position: relative;
+  box-sizing: border-box;
+  align-self: center;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  border: var(--line-w) solid var(--border-control);
+  border-radius: var(--radius-tag);
+  background: var(--surface-base);
+}
+
+.row[aria-selected="true"] .multiMark {
+  border-color: var(--native-accent);
+  background: var(--native-accent);
+}
+
+.row[aria-selected="true"] .multiMark::after {
+  content: "";
+  position: absolute;
+  inset-block-start: calc(var(--icon-sm) / 8);
+  inset-inline-start: calc(var(--icon-sm) / 4 + var(--line-w));
+  width: calc(var(--icon-sm) / 4);
+  height: calc(var(--icon-sm) / 2);
+  border: solid var(--text-on-accent);
+  border-width: 0 var(--focus-w) var(--focus-w) 0;
+  transform: rotate(45deg);
+}
+
 .disabled {
   cursor: not-allowed;
   color: var(--text-muted);
@@ -242,8 +295,9 @@
   color: var(--status-danger);
 }
 
-/* 폰 시트 안의 2차 `다시 시도`도 터치 목표 44(Button 기본은 시트 밖 폰 40 유지 — §7-1). */
+/* 폰 시트 안의 2차 `다시 시도` · 다중 거부 꼬리 3차 `새로 고침`도 터치 목표 44(Button 기본은 시트 밖 폰 40 유지 — §7-1). */
 @media (max-width: 699.98px) {
+  .rejectRow button,
   .error button {
     min-height: var(--touch-min);
   }

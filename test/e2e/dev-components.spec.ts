@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { AxeBuilder } from "@axe-core/playwright";
 import { createFixtureUser } from "./fixtures";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { STATUS_KIND } from "@/ui/status-tag/status-map";
@@ -318,6 +319,220 @@ test.describe("로그인한 뒤", () => {
     // 모달 자체는 화면 높이 안에 선다(목록만 스크롤).
     const dialogBox = await dialog.boundingBox();
     expect(dialogBox && dialogBox.y >= 0 && dialogBox.y + dialogBox.height <= page.viewportSize()!.height).toBe(true);
+  });
+
+  // 06.2-07 Task 1 — SP-62-1 다중 고르기 변형 트레이서: 키보드로 한 명을 고르면 1차 `{동작} 1`이 켜지고 Enter로 끝난다.
+  test("다중 고르기(SP-62-1) — 키보드로 한 명을 고르면 1차 {동작} 1이 켜지고 면 없이 비대화형 표시로 고름이 보이며 Enter로 끝난다", async ({ page }) => {
+    const dialog = page.locator("dialog:modal");
+    const opener = page.getByRole("button", { name: "다중 고르기 열기" });
+    const search = dialog.getByRole("textbox", { name: "사람 검색" });
+    const list = dialog.getByRole("listbox", { name: "사람 검색" });
+    const primary = dialog.getByRole("button", { name: /^참여자 더하기(?!\s*\d)/ });
+    const primaryOne = dialog.getByRole("button", { name: /^참여자 더하기 1(?!\d)/ });
+    const result = page.locator('[data-gallery="pick-many-result"]');
+    // 토큰 값은 :root에서 읽는다 — 하드코딩 색을 단언하지 않는다.
+    const tokenColor = (name: string, property: "backgroundColor" | "color") =>
+      page.evaluate(
+        ([token, prop]) => {
+          const probe = document.createElement("div");
+          probe.style[prop] = `var(${token})`;
+          document.body.append(probe);
+          const value = getComputedStyle(probe)[prop];
+          probe.remove();
+          return value;
+        },
+        [name, property] as const,
+      );
+
+    await opener.click();
+    await expect(dialog).toBeVisible();
+    await expect(search).toBeFocused();
+    await expect(list).toHaveAttribute("aria-multiselectable", "true");
+    await expect(primary).toHaveAttribute("aria-disabled", "true");
+    await expect(dialog.getByText("고른 사람 없음")).toBeVisible();
+
+    // ↓ → 첫 행 포커스 · Space → 고름 · 결과 줄 · 1차 `참여자 더하기 1`.
+    const first = dialog.locator('[data-pick-id="u1"]');
+    const second = dialog.locator('[data-pick-id="u2"]');
+    await expect(first).toBeVisible();
+    await search.press("ArrowDown");
+    await expect(first).toBeFocused();
+    await page.keyboard.press("Space");
+    await expect(first).toHaveAttribute("aria-selected", "true");
+    await expect(second).toHaveAttribute("aria-selected", "false");
+    await expect(dialog.getByText("김서연 선택")).toBeVisible();
+    await expect(primaryOne).toBeVisible();
+    await expect(primaryOne).not.toHaveAttribute("aria-disabled", "true");
+
+    // 고른 행에 면이 없다 — 고르지 않은 이웃 행과 같고 `--surface-selected` · `--accent-weak`와 다르다. 현재 줄은 2px `--accent` 선.
+    const paint = (locator: typeof first) =>
+      locator.evaluate((el) => {
+        const style = getComputedStyle(el);
+        return { background: style.backgroundColor, borderWidth: style.borderInlineStartWidth, borderColor: style.borderInlineStartColor };
+      });
+    const firstPaint = await paint(first);
+    const secondPaint = await paint(second);
+    expect(firstPaint.background).toBe(secondPaint.background);
+    expect(firstPaint.background).not.toBe(await tokenColor("--surface-selected", "backgroundColor"));
+    expect(firstPaint.background).not.toBe(await tokenColor("--accent-weak", "backgroundColor"));
+    expect(firstPaint.borderWidth).toBe("2px");
+    expect(firstPaint.borderColor).toBe(await tokenColor("--accent", "color"));
+    expect(secondPaint.borderColor).not.toBe(await tokenColor("--accent", "color"));
+
+    // option 안 대화형 요소 0 — 고름 표시는 `aria-hidden` 비대화형 요소이고 tabindex가 없다. 고른 행만 `--native-accent` 채움.
+    await expect(dialog.locator('[role="option"] input')).toHaveCount(0);
+    const mark = (locator: typeof first) =>
+      locator.locator(':scope > [aria-hidden="true"]').evaluate((el) => ({ tabindex: el.getAttribute("tabindex"), background: getComputedStyle(el).backgroundColor }));
+    const firstMark = await mark(first);
+    const secondMark = await mark(second);
+    expect(firstMark.tabindex).toBeNull();
+    expect(secondMark.tabindex).toBeNull();
+    expect(firstMark.background).toBe(await tokenColor("--native-accent", "backgroundColor"));
+    expect(secondMark.background).not.toBe(await tokenColor("--native-accent", "backgroundColor"));
+
+    // 다시 Space → 풀림 · 1차 숫자 없음.
+    await page.keyboard.press("Space");
+    await expect(first).toHaveAttribute("aria-selected", "false");
+    await expect(primary).toHaveAttribute("aria-disabled", "true");
+
+    // 한 명 고른 뒤 Enter → onPickMany가 그 한 명으로 불리고 닫히며 포커스는 연 버튼으로 돌아온다.
+    await page.keyboard.press("Space");
+    await page.keyboard.press("Enter");
+    await expect(dialog).toHaveCount(0);
+    await expect(result).toHaveText("더함 · 김서연");
+    await expect(opener).toBeFocused();
+  });
+
+  // 06.2-07 Task 2 — SP-62-1 다중 변형의 나머지 상태. 표본은 「골라내기 — 다중(SP-62-1)」 단추 다섯이다.
+  test.describe("다중 고르기(SP-62-1) — 상태", () => {
+    const dialogOf = (page: import("@playwright/test").Page) => page.locator("dialog:modal");
+    const openerOf = (page: import("@playwright/test").Page, name: string) => page.getByRole("button", { name, exact: true });
+    const primaryOf = (page: import("@playwright/test").Page) => dialogOf(page).getByRole("button", { name: /^참여자 더하기/ });
+    const optionOf = (page: import("@playwright/test").Page, id: string) => dialogOf(page).locator(`[data-pick-id="${id}"]`);
+
+    test("후보 0 — 목록 자리 한 줄(뒤 · 3차 없음), 1차 aria-describedby가 그 줄을 가리키고 바닥 줄 `고른 사람 없음`은 없다", async ({ page }) => {
+      const dialog = dialogOf(page);
+      await openerOf(page, "후보 0 고르기 열기").click();
+      const empty = dialog.getByText("더할 수 있는 사람 없음", { exact: true });
+      await expect(empty).toBeVisible();
+      await expect(empty.getByRole("button")).toHaveCount(0);
+      await expect(primaryOf(page)).toHaveAttribute("aria-disabled", "true");
+      expect(await primaryOf(page).getAttribute("aria-describedby")).toBe(await empty.getAttribute("id"));
+      await expect(dialog.getByText("고른 사람 없음")).toHaveCount(0);
+    });
+
+    test("검색 0건 — `조건에 맞는 사람이 없습니다 · 검색 지우기`이고 고른 사람은 검색 지우기 뒤에도 체크된 채다", async ({ page }) => {
+      const dialog = dialogOf(page);
+      await openerOf(page, "다중 고르기 열기").click();
+      await optionOf(page, "u1").click();
+      await expect(optionOf(page, "u1")).toHaveAttribute("aria-selected", "true");
+      await dialog.getByRole("textbox", { name: "사람 검색" }).fill("없는낱말");
+      await expect(dialog.getByText("조건에 맞는 사람이 없습니다 · ")).toBeVisible();
+      await expect(primaryOf(page)).toHaveText(/참여자 더하기 1/);
+      await dialog.getByRole("button", { name: "검색 지우기" }).click();
+      await expect(optionOf(page, "u1")).toHaveAttribute("aria-selected", "true");
+    });
+
+    test("검색으로 가려진 고름도 결과 줄 · 1차 N에 세고 Enter가 전부 넘긴다(design I6)", async ({ page }) => {
+      const dialog = dialogOf(page);
+      const search = dialog.getByRole("textbox", { name: "사람 검색" });
+      await openerOf(page, "다중 고르기 열기").click();
+      await optionOf(page, "u1").click();
+      await optionOf(page, "u2").click();
+      await search.fill("서연");
+      await expect(dialog.getByRole("option")).toHaveCount(1);
+      await expect(dialog.getByText("김서연 외 1명 선택")).toBeVisible();
+      await expect(primaryOf(page)).toHaveText(/참여자 더하기 2/);
+      await search.press("Enter");
+      await expect(dialog).toHaveCount(0);
+      await expect(page.locator('[data-gallery="pick-many-result"]')).toHaveText("더함 · 김서연, 박지훈");
+    });
+
+    test("목록 실패 — `사람 목록 불러오기 실패 · 다시 시도`, 1차 aria-disabled, 검색 칸은 살아 있다", async ({ page }) => {
+      const dialog = dialogOf(page);
+      await openerOf(page, "실패 고르기 열기").click();
+      const alert = dialog.getByRole("alert");
+      await expect(alert).toContainText("사람 목록 불러오기 실패 · ");
+      await expect(alert.getByRole("button", { name: "다시 시도" })).toBeVisible();
+      await expect(primaryOf(page)).toHaveAttribute("aria-disabled", "true");
+      const search = dialog.getByRole("textbox", { name: "사람 검색" });
+      await search.fill("김");
+      await expect(search).toHaveValue("김");
+      await expect(search).toBeEnabled();
+    });
+
+    test("거부 — 열린 채 바닥 줄 원문 + 3차 `새로 고침`, 1차 막힘, 체크 유지, 체크를 바꾸면 풀리고 새로 고침은 목록에 없는 고름만 뺀다", async ({ page }) => {
+      const dialog = dialogOf(page);
+      const search = dialog.getByRole("textbox", { name: "사람 검색" });
+      await openerOf(page, "거부 고르기 열기").click();
+      await optionOf(page, "u1").click();
+      await optionOf(page, "u2").click();
+      await page.keyboard.press("Enter");
+      // 닫히지 않는다 — 원문(꼬리 뺀 글자) + 3차 새로 고침.
+      await expect(dialog.getByText("김서연 더할 수 없음", { exact: true })).toBeVisible();
+      await expect(dialog.getByRole("button", { name: "새로 고침", exact: true })).toBeVisible();
+      await expect(primaryOf(page)).toHaveAttribute("aria-disabled", "true");
+      await expect(optionOf(page, "u1")).toHaveAttribute("aria-selected", "true");
+      await expect(optionOf(page, "u2")).toHaveAttribute("aria-selected", "true");
+      // 체크를 하나 바꾸면 거부가 걷히고 1차가 풀린다.
+      await optionOf(page, "u2").click();
+      await expect(dialog.getByText("김서연 더할 수 없음")).toHaveCount(0);
+      await expect(primaryOf(page)).not.toHaveAttribute("aria-disabled", "true");
+      // 다시 거부 상태로 — 이번엔 첫 시도만 거절이라 닫기 전에 표본을 새로 연다.
+      await page.keyboard.press("Escape");
+      await expect(dialog).toHaveCount(0);
+      await openerOf(page, "거부 고르기 열기").click();
+      await optionOf(page, "u1").click();
+      await optionOf(page, "u2").click();
+      await search.fill("기획");
+      await expect(dialog.getByRole("option")).toHaveCount(2);
+      await primaryOf(page).click();
+      await dialog.getByRole("button", { name: "새로 고침", exact: true }).click();
+      await expect(search).toHaveValue("");
+      // 다시 받은 목록에 없는 사람(김서연)만 고름에서 빠지고 나머지는 남는다.
+      await expect(optionOf(page, "u1")).toHaveCount(0);
+      await expect(optionOf(page, "u2")).toHaveAttribute("aria-selected", "true");
+      await expect(primaryOf(page)).toHaveText(/참여자 더하기 1/);
+      await expect(primaryOf(page)).not.toHaveAttribute("aria-disabled", "true");
+      await expect(dialog.getByText("더할 수 없음")).toHaveCount(0);
+      await expect(dialog).toBeVisible();
+    });
+
+    test("연결 실패 — 바닥 줄 `더하지 못함 · 다시 시도`이고 1차는 막히지 않아 다시 누를 수 있다", async ({ page }) => {
+      const dialog = dialogOf(page);
+      await openerOf(page, "연결 고르기 열기").click();
+      await optionOf(page, "u1").click();
+      await primaryOf(page).click();
+      await expect(dialog.getByText("더하지 못함 · 다시 시도", { exact: true })).toBeVisible();
+      await expect(dialog.getByRole("button", { name: "새로 고침", exact: true })).toHaveCount(0);
+      await expect(primaryOf(page)).not.toHaveAttribute("aria-disabled", "true");
+      await primaryOf(page).click();
+      await expect(dialog).toHaveCount(0);
+      await expect(page.locator('[data-gallery="pick-many-result"]')).toHaveText("더함 · 김서연");
+    });
+
+    test("보통 표본 — 50행 상한 + `50건 넘음 · 검색으로 좁히기`, 목록 안만 스크롤, 두 사람 고른 다이얼로그 axe 위반 0 · option 안 input 0", async ({ page }) => {
+      const dialog = dialogOf(page);
+      await openerOf(page, "다중 고르기 열기").click();
+      await expect(dialog.getByRole("option")).toHaveCount(50);
+      await expect(dialog.getByText("50건 넘음 · 검색으로 좁히기")).toBeVisible();
+      await optionOf(page, "u1").click();
+      await optionOf(page, "u2").click();
+      const primary = primaryOf(page);
+      const before = await primary.boundingBox();
+      const body = dialog.locator("div:has(> ul[role='listbox'])").first();
+      await body.evaluate((el) => {
+        el.scrollTop = el.scrollHeight;
+      });
+      expect(await body.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+      expect((await primary.boundingBox())?.y).toBe(before?.y);
+      await body.evaluate((el) => {
+        el.scrollTop = 0;
+      });
+      await expect(dialog.locator('[role="option"] input')).toHaveCount(0);
+      const results = await new AxeBuilder({ page }).include("dialog").analyze();
+      expect(results.violations.map((violation) => `${violation.id}: ${violation.nodes.length}`)).toEqual([]);
+    });
   });
 
   // 06-29 Task 2 — SP-8 패널 위 겹침: 목록의 Esc는 목록만 닫고 Ctrl+Enter는 패널 1차에 닿지 않는다(T-06-292).

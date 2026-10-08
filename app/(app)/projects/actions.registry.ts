@@ -65,3 +65,42 @@ registerAction({
   action: "write",
   dtoName: null,
 });
+
+// 06.2-12(S2): 참여자 섹션 읽기 — 카드 사용 섹션 액션과 같은 보기 등록. 행은 ProjectMemberDto 투영.
+registerAction({
+  name: "listProjectMembersAction",
+  menu: "projects",
+  action: "view",
+  dtoName: "ProjectMemberDto",
+});
+
+// 06.2-05(D-6211): 참여자 후보 — 후보를 보는 것도 더하기 권리 자리라 쓰기로 적는다. 행은 ProjectMemberCandidateDto 투영.
+registerAction({
+  name: "listMemberCandidatesAction",
+  menu: "projects.member",
+  action: "write",
+  dtoName: "ProjectMemberCandidateDto",
+});
+
+// 06.2-05(D-6210): 참여자 더하기 — 붙인 수만 돌려준다(DTO 없음). 판정(키 ∧ 담당 PM ∨ 업무 범위 ∧ 보임 · 후보 재계산)은 domain.
+registerAction({
+  name: "addProjectMembersAction",
+  menu: "projects.member",
+  action: "write",
+  dtoName: null,
+});
+
+// 06.2-05(D-6209): 참여자 떼기 · 되돌리기(보관 해제) — 불린만 돌려준다(DTO 없음). 판정은 더하기와 같은 domain 순서.
+registerAction({
+  name: "removeProjectMemberAction",
+  menu: "projects.member",
+  action: "write",
+  dtoName: null,
+});
+
+registerAction({
+  name: "restoreProjectMemberAction",
+  menu: "projects.member",
+  action: "write",
+  dtoName: null,
+});

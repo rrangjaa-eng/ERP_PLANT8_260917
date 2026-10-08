@@ -95,3 +95,34 @@ describe("rowScopeCondition (06.2 행 범위 번역기)", () => {
     expect(query.params).toContain(hostile);
   });
 });
+
+// 06.2-05 검토 반영(I-2 · 사용자 결정 2026-10-08 「막기」): 쓰기 권리의 업무 범위 갈래는 참여 조각을 뺀 보는 범위로만 인정한다.
+describe("rowScopeCondition — 참여 조각 뺌(excludeMembership)", () => {
+  function renderWithout(scope: RowScope): { sql: string; params: unknown[] } {
+    const query = dialect.sqlToQuery(rowScopeCondition(SYSTEM_VIEWER, scope, COLS, { excludeMembership: true }));
+    return { sql: query.sql, params: query.params };
+  }
+
+  it("limited team(T) → PM · 팀 조각만 · project_members 하위 질의 없음", () => {
+    const out = renderWithout(limited({ kind: "team", teamId: TEAM }));
+    expect(out.sql).toContain('"projects"."pm_user_id" = $');
+    expect(out.sql).not.toContain("project_members");
+    expect(out.sql).toContain('"projects"."team_id" = $');
+    expect(out.params.filter((value) => value === VIEWER)).toHaveLength(1);
+  });
+
+  it("own → PM 하나만(범위 조각 false)", () => {
+    const out = renderWithout(limited({ kind: "own" }));
+    expect(out.sql).not.toContain("project_members");
+    expect(out.sql).toMatch(/ or false\)$/);
+  });
+
+  it("none · all은 그대로", () => {
+    expect(renderWithout({ rows: "none", includeArchived: false }).sql.trim()).toBe("false");
+    expect(renderWithout({ rows: "all", includeArchived: false }).sql.trim()).toBe("true");
+  });
+
+  it("선택을 주지 않으면 참여 조각이 늘 있다(기존 호출부 그대로)", () => {
+    expectPmAndMember(render(limited({ kind: "own" })));
+  });
+});

@@ -27,6 +27,7 @@ import {
   statusDestinations,
 } from "@/domain/projects/status";
 import { projectResponsibles } from "@/domain/projects/responsibles";
+import { projectMemberRights } from "@/domain/projects/members";
 import { periodEditRights } from "@/domain/projects/period";
 import { PROJECT_STATUSES } from "@/domain/projects/status-transitions";
 import { addDays, kstToday } from "@/lib/kst-date";
@@ -35,6 +36,7 @@ import type { DetailScreenProps } from "@/ui/detail-screen/DetailScreen";
 import { QuoteLedger } from "./quote-table";
 import { RevisionSection } from "./revision-section";
 import { CardUsageSection } from "./card-usage-section";
+import { MemberAddHeaderButton, MembersSection, ProjectMembersProvider } from "./members-section";
 import type { StatusChangeProps } from "./status-change";
 import type { CustomerApprovalProps, NewRevisionProps } from "./revision-dialogs";
 import { getPerson } from "@/domain/people";
@@ -58,7 +60,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   if (!project) notFound();
 
   const todayKst = kstToday(new Date());
-  const [canWrite, canAdjust, canWriteEntries, canEditPeriod, actorCoversTeam, revision] = await Promise.all([
+  const [canWrite, canAdjust, canWriteEntries, canEditPeriod, actorCoversTeam, revision, memberRights] = await Promise.all([
     can(session.viewer, "projects", "write"),
     // 04-23(D-83) — 조정 줄 권한은 서버가 계산해 넘긴다(화면이 계급을 추론하지 않는다).
     can(session.viewer, "projects.adjustment", "write"),
@@ -66,6 +68,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     can(session.viewer, "projects.period", "write"),
     actorCoversProjectTeam(session.viewer, project, { todayKst }),
     getCurrentQuoteRevision(session.viewer, project.id),
+    // 06.2-12(D-6210 · D-6212 · D-6213) — 참여자 권리는 서버가 판정해 불린만 내린다(화면은 계산하지 않는다).
+    projectMemberRights(session.viewer, project.id),
   ]);
 
   // D-53: 프로젝트를 등록하면 상세 견적 1차가 항상 함께 생긴다 — 없으면
@@ -250,6 +254,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const frame = { title: project.name, meta: [project.number, `상세 견적 ${revision.seq}차`].join(" · ") } satisfies Pick<DetailScreenProps, "title" | "meta">;
 
   return (
+    <ProjectMembersProvider projectId={project.id} projectName={project.name} canEdit={memberRights.canEdit}>
     <QuoteLedger
       viewerId={session.viewer.id}
       projectId={project.id}
@@ -263,6 +268,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       settlement={settlementHeader ? { projectId: project.id, ...settlementHeader } : null}
       newRevision={newRevision}
       copyProjectHref={canCopyProject ? `/projects?new=1&copyFrom=${project.id}` : null}
+      memberAdd={memberRights.canEdit && memberRights.hasCandidates ? <MemberAddHeaderButton /> : null}
       customerApproval={customerApproval}
       approvedSeq={approvedSeq}
       revisions={revisionSummaries.flatMap((row) => (row.revisionId && row.seq !== undefined ? [{ id: row.revisionId, seq: row.seq }] : []))}
@@ -302,6 +308,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     >
       {/* 06-07(S15) — 매출 섹션 아래 「법인카드 사용」(섹션이 따로 불러 실패해도 다른 섹션은 선다). */}
       <CardUsageSection projectId={project.id} />
+      {/* 06.2-12(S2) — 법인카드 사용 → 참여자 → 차수, 섹션이 따로 불러 실패해도 다른 섹션은 선다 */}
+      <MembersSection />
       {/* 04-24(S3 섹션 순서 ③ → ④) — 매출(원장 안 마지막 섹션) 뒤에 차수 섹션, 그 아래 이전 차수 읽기 섹션. */}
       <RevisionSection
         projectId={project.id}
@@ -309,5 +317,6 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         references={{ subcategories: references.subcategoryLabels, vendors: references.vendors, vendorShown: references.vendorShown }}
       />
     </QuoteLedger>
+    </ProjectMembersProvider>
   );
 }

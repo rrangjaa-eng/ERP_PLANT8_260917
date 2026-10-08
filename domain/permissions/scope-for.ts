@@ -15,7 +15,7 @@ import { findTeamById as defaultFindTeamById } from "@/repositories/teams";
 //
 // 06.2(D-6204): 행 범위 판정(rowScopeFor) — 서술자만 만들고 SQL은 repositories/row-scope.ts가 번역한다.
 // PM · 참여자 OR 조각은 서술자에 넣지 않는다 — 번역기가 늘 더한다(260907 `O: server/src/scope.ts:36-41` 호출부 누락 구멍 봉쇄).
-// work_scope는 읽지 않는다(D-6202). 요청을 넘는 캐시 없음 — 요청 memo는 Task 3(성공 기준 4).
+// work_scope는 읽지 않는다(D-6202). 요청을 넘는 캐시 없음 — 요청 안 memo는 getSession이 등록한 viewer 객체에만.
 export type Scope = { rows: "all" | "none"; includeArchived: boolean };
 
 export type ScopeForDeps = {
@@ -88,7 +88,26 @@ export type RowScopeDeps = {
 
 // 판정 순서: 메뉴 보기 → 계급 → view_scope. 계급 없음 · 모르는 값은 none(fail-closed — 260907 `default: '(false)'`).
 // 계급의 archivedAt은 보지 않는다(can()과 같음). 팀 · 본부를 못 찾으면 그 id가 null인 limited다.
-export async function rowScopeFor(
+// 요청 memo(성공 기준 4 · eng I10): React cache()는 렌더 안 memo만 문서화돼 서버 액션에서의 동작이 불명확하다 —
+// getSession()이 요청마다 만든 viewer 객체를 WeakMap 키로 쓴다. 다음 요청은 새 객체라 새 값을 읽고, 요청이 끝나면 함께 사라진다.
+const requestMemo = new WeakMap<Viewer, Map<RowScopeEntity, Promise<RowScope>>>();
+
+export function memoizeRowScopeForRequest(viewer: Viewer): void {
+  requestMemo.set(viewer, new Map());
+}
+
+export async function rowScopeFor(viewer: Viewer, entity: RowScopeEntity, deps?: Partial<RowScopeDeps>): Promise<RowScope> {
+  const memo = requestMemo.get(viewer);
+  if (!memo) return computeRowScope(viewer, entity, deps);
+  const cached = memo.get(entity);
+  if (cached) return cached;
+  const pending = computeRowScope(viewer, entity, deps);
+  memo.set(entity, pending);
+  pending.catch(() => memo.delete(entity));
+  return pending;
+}
+
+async function computeRowScope(
   viewer: Viewer,
   entity: RowScopeEntity,
   deps?: Partial<RowScopeDeps>,

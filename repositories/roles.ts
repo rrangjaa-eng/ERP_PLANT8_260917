@@ -68,6 +68,11 @@ export async function setRoleWorkScope(viewer: Viewer, id: string, workScope: st
   await db.update(roles).set({ workScope, updatedAt: new Date() }).where(eq(roles.id, id));
 }
 
+export async function setRoleViewScope(viewer: Viewer, id: string, viewScope: string): Promise<void> {
+  void viewer;
+  await db.update(roles).set({ viewScope, updatedAt: new Date() }).where(eq(roles.id, id));
+}
+
 // 보관·복원 둘 다 조건부 UPDATE로 멱등·경합 안전을 확보한다 — archived_at이 이미
 // 있으면(보관) / 없으면(복원) WHERE절이 걸러 0행이 갱신되고 원래 값이 유지된다.
 export async function setRoleArchived(viewer: Viewer, id: string, value: boolean): Promise<boolean> {

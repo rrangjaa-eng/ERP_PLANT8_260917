@@ -14,6 +14,7 @@ import {
   insertRole as repoInsertRole,
   renameRole as repoRenameRole,
   setRoleWorkScope as repoSetRoleWorkScope,
+  setRoleViewScope as repoSetRoleViewScope,
   type RoleRow,
 } from "@/repositories/roles";
 
@@ -202,5 +203,35 @@ export async function setRoleWorkScope(
     entity: "roles",
     entityId: id,
     detail: { workScope: { from: row.workScope, to: workScope } },
+  });
+}
+
+// 06.2(D-6201 · 성공 기준 4): 계급 보는 범위 — setRoleWorkScope와 같은 순서. 액션 zod는 06.2-09가 두고, 여기서 한 번 더 거른다.
+// 요청을 넘는 캐시가 없어 다음 요청(getSession이 만든 새 viewer)의 rowScopeFor가 새 값을 읽는다.
+export async function setRoleViewScope(
+  viewer: Viewer,
+  id: string,
+  viewScope: RoleViewScope,
+  deps?: Partial<RoleWriteDeps>,
+): Promise<void> {
+  const canFn = deps?.can ?? defaultCan;
+  if (!(await canFn(viewer, PEOPLE_MENU, "write"))) {
+    throw new ForbiddenError("계급 보는 범위 변경 권한 없음");
+  }
+  if (!(ROLE_VIEW_SCOPES as readonly string[]).includes(viewScope)) {
+    throw new UserFacingError("보는 범위 값 없음");
+  }
+
+  const row = await defaultFindRoleById(viewer, id);
+  if (!row) throw new UserFacingError("계급 찾을 수 없음");
+
+  await repoSetRoleViewScope(viewer, id, viewScope);
+
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
+  await recordAction(viewer, {
+    actionType: "permission_change",
+    entity: "roles",
+    entityId: id,
+    detail: { viewScope: { from: row.viewScope, to: viewScope } },
   });
 }

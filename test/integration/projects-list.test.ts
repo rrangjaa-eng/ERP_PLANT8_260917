@@ -115,7 +115,8 @@ const pmViewer = (userId: string): Viewer => ({ id: userId, roleId: DEFAULT_ROLE
 // 금액 두 정보 항목을 조합별로 켠 전용 계급(시드 계급을 고치지 않는다).
 async function viewerWith(visibility: { quote: boolean; revenue: boolean }): Promise<Viewer> {
   const roleId = `role-it-${randomUUID()}`;
-  await insertRole(SYSTEM_VIEWER, { id: roleId, name: `통합 ${roleId.slice(-8)}`, sortOrder: 99 });
+  // 06.2: 금액 노출 조합만 재는 계급이라 보는 범위는 전사(06.2 전 「보기 권한이면 전 행」과 같은 행 집합) — 기본값 team이면 팀 없는 이 사람은 아무 행도 못 본다.
+  await insertRole(SYSTEM_VIEWER, { id: roleId, name: `통합 ${roleId.slice(-8)}`, sortOrder: 99, viewScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "projects", action: "view", allowed: true });
   await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "project.value", visible: true });
   await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "quote.amount", visible: visibility.quote });

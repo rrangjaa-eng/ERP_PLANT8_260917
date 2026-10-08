@@ -15,6 +15,7 @@ import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { createRevisionFromCurrent, setCustomerApproval } from "@/domain/quotes/revisions";
 import { approvalBasis } from "@/repositories/quote-revisions";
 import { insertVendor } from "@/repositories/vendors";
+import { insertRole } from "@/repositories/roles";
 import { createExpenseFromLines } from "@/domain/expenses";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import { makePerson, teamIdByName } from "./approvals-fixtures";
@@ -199,11 +200,22 @@ describe("권리 없음", () => {
     expect(await allDrafts()).toHaveLength(0);
   });
 
-  it("그 프로젝트의 쓰기 권리가 없는 다른 팀 PM이 같은 줄로 부르면 권한 오류이고 작성 중 행은 0이다", async () => {
+  // 06.2-08(M10 · D-6206): 보는 범위 밖 프로젝트의 줄은 없는 줄과 같은 답 — 쓰기 게이트(권한 오류)는 프로젝트가 보이는 계급(보는 범위 전사 · 업무 범위 team)으로 잰다.
+  it("그 프로젝트의 쓰기 권리가 없는 다른 팀 PM이 같은 줄로 부르면 보는 범위 밖이면 없는 줄, 보이면 권한 오류이고 작성 중 행은 0이다", async () => {
     const fx = await setupExpenseProject();
     const outsider = await makePerson("타팀PM", DEFAULT_ROLE_ID, "경영관리팀");
 
-    await expect(createExpenseFromLines(outsider, { lineIds: [fx.lines.withVendor] })).rejects.toBeInstanceOf(ForbiddenError);
+    const missing = await createExpenseFromLines(outsider, { lineIds: [randomUUID()] });
+    const outside = await createExpenseFromLines(outsider, { lineIds: [fx.lines.withVendor] });
+    expect(outside).toEqual({ created: [], blocked: [{ lineId: fx.lines.withVendor, reason: missing.blocked[0]?.reason }] });
+    expect(await allDrafts()).toHaveLength(0);
+
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `전사 보기-${randomUUID().slice(0, 8)}`, workScope: "team", viewScope: "company" });
+    for (const menu of ["expenses", "projects"]) {
+      for (const action of ["view", "write"] as const) await setPermissionCell(SYSTEM_VIEWER, { roleId: role.id, menu, action, allowed: true });
+    }
+    const seer = await makePerson("타팀 전사보기", role.id, "경영관리팀");
+    await expect(createExpenseFromLines(seer, { lineIds: [fx.lines.withVendor] })).rejects.toBeInstanceOf(ForbiddenError);
     expect(await allDrafts()).toHaveLength(0);
   });
 });

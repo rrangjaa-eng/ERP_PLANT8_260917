@@ -140,7 +140,7 @@ export async function attachEvidence(
 // 05-09 — 테스트 계급 「경영관리」(시드 계급 5종에 없다 — 관리자가 권한표에서 켜는 계급): 전사 업무 범위 · 지출결의 보기 +
 // 결재 중 증빙 붙이기(expenses.evidence_attach) · 증빙 무효 처리(expenses.evidence_void) 쓰기. 팀 발령 없음(결재선 단계 담당이 아니다).
 export async function makeEvidenceManager(name = "경영지원", perms: { attach?: boolean; void?: boolean } = {}): Promise<Viewer> {
-  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `경영관리-${randomUUID().slice(0, 8)}`, workScope: "company" });
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `경영관리-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "view", allowed: true });
   if (perms.attach !== false) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.evidence_attach", action: "write", allowed: true });
   if (perms.void !== false) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.evidence_void", action: "write", allowed: true });

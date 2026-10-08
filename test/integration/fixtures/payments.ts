@@ -21,7 +21,7 @@ export type ApprovedExpense = { expenseId: string; instanceId: string; number: s
 
 // 테스트 계급 「경영관리」 — 전사 업무 범위 · 지출결의 보기 + 지급 처리(expenses.payments) 쓰기. 팀 발령 없음.
 export async function makePaymentManager(name = "경영관리"): Promise<Viewer> {
-  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `지급-${randomUUID().slice(0, 8)}`, workScope: "company" });
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `지급-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "view", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.payments", action: "write", allowed: true });
   return makePerson(name, role.id, null);

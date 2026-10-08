@@ -4,11 +4,14 @@ import { db } from "@/db/client";
 import { actionLog, projectMembers, projects } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { CEO_ROLE_ID, DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
+import { GateBlockedError } from "@/domain/rules/gate";
 import { assignTeam, createTeam } from "@/domain/org";
 import { setResignationDate } from "@/domain/people";
 import { createProject, loadProjectList } from "@/domain/projects";
-import { changeProjectStatus } from "@/domain/projects/status";
+import { changeProjectStatus, ForbiddenError } from "@/domain/projects/status";
 import { saveProjectLedger } from "@/domain/projects/ledger";
+import { canOpenProject } from "@/domain/projects/visibility";
 import {
   addProjectMembers,
   listMemberCandidates,
@@ -17,8 +20,13 @@ import {
   removeProjectMember,
   restoreProjectMember,
 } from "@/domain/projects/members";
-import { addProjectMembersAction, removeProjectMemberAction, restoreProjectMemberAction } from "@/app/(app)/projects/actions";
-import { upsertPermission } from "@/repositories/permissions";
+import {
+  addProjectMembersAction,
+  listMemberCandidatesAction,
+  removeProjectMemberAction,
+  restoreProjectMemberAction,
+} from "@/app/(app)/projects/actions";
+import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertRole } from "@/repositories/roles";
 import { setUserArchived } from "@/repositories/users";
 import { addDays, kstToday } from "@/lib/kst-date";
@@ -35,6 +43,21 @@ vi.mock("@/lib/viewer", () => ({
   getSession: () => Promise.resolve(session.viewer ? { viewer: session.viewer, user: { id: session.viewer.id } } : null),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: () => undefined }));
+
+// 검토 반영 I-3(T-06.2-53): 트랜잭션 전 판정과 잠금 사이에 상태를 바꾸는 자리 — 실제 lockProjectForWrite 앞에서만 끼어든다(sleep 없음).
+const lockHook = vi.hoisted(() => ({ before: null as null | (() => Promise<void>) }));
+vi.mock("@/repositories/projects", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/repositories/projects")>();
+  return {
+    ...actual,
+    lockProjectForWrite: async (...args: Parameters<typeof actual.lockProjectForWrite>) => {
+      const before = lockHook.before;
+      lockHook.before = null;
+      if (before) await before();
+      return actual.lockProjectForWrite(...args);
+    },
+  };
+});
 
 type MembersWorld = ViewScopeWorld & { finance: string; Y: Viewer; mgmtLead: Viewer };
 
@@ -138,12 +161,12 @@ describe("떼기 · 되돌리기 · 잠금 · 권리", () => {
     const P3 = w.projects.P3.id;
     await addProjectMembers(w.mgmtLead, P3, [w.Y.id]);
     expect(await projectMemberRights(w.Y, P3)).toMatchObject({ canEdit: false, locked: false });
-    await expect(changeProjectStatus(w.Y, P3, { from: "bidding", to: "lost" })).rejects.toThrow();
+    expect(((await errorOf(changeProjectStatus(w.Y, P3, { from: "bidding", to: "lost" }))) as Error).message).toBe("상태 바꾸기 권한 없음");
     const ledger = saveProjectLedger(w.Y, P3, {
       seenStatus: "bidding",
       period: { startDate: "2026-11-02", endDate: "2026-12-31", baseline: { startDate: "2026-11-01", endDate: "2026-12-31" } },
     });
-    await expect(ledger).rejects.toThrow();
+    expect(((await errorOf(ledger)) as Error).message).toBe("기간 바꾸기 권한 없음");
     const [row] = await db.select({ status: projects.status, startDate: projects.startDate }).from(projects).where(eq(projects.id, P3));
     expect(row).toEqual({ status: "bidding", startDate: "2026-11-01" });
     await expect(addProjectMembers(w.Y, P3, [w.people.대표.id])).rejects.toThrow("참여자 더하기 권한 없음 · 담당 PM X");
@@ -369,5 +392,209 @@ describe("후보 · 목록", () => {
     expect(await listProjectMembers(w.mgmtLead, P3)).toMatchObject({ canEdit: false, locked: true, hasCandidates: false });
     expect(await projectMemberRights(w.mgmtLead, P3)).toMatchObject({ canEdit: false, locked: true, hasCandidates: false });
     expect((await listMemberCandidates(w.mgmtLead, P3, {})).rows).toEqual([]);
+  });
+});
+
+// ── 06.2-05 독립 검토 반영(I-1 · I-2 · I-3 · M-1, 사용자 결정 2026-10-08 「막기」 · 「10분 안만」) ──────────────────
+async function errorOf(promise: Promise<unknown>): Promise<unknown> {
+  try {
+    await promise;
+  } catch (error) {
+    return error;
+  }
+  throw new Error("거부되지 않았다");
+}
+
+async function makeRole(id: string, workScope: "team" | "company", viewScope: "team" | "org_unit"): Promise<void> {
+  await insertRole(SYSTEM_VIEWER, { id, name: id, workScope, viewScope });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: id, menu: "projects", action: "view", allowed: true });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: id, menu: "projects.member", action: "write", allowed: true });
+}
+
+async function archiveProjectRow(projectId: string): Promise<void> {
+  await db.update(projects).set({ archivedAt: new Date() }).where(eq(projects.id, projectId));
+}
+
+const MINUTE = 60_000;
+
+describe("검토 반영 I-2 — 참여로만 보이는 프로젝트에서 업무 범위 갈래는 권리가 아니다", () => {
+  it("업무 범위 전사 · 보는 범위 team 계급 H가 참여자로만 P3를 보면 canEdit 거짓 · 더하기 · 떼기 ForbiddenError", async () => {
+    const w = await buildMembersWorld();
+    const P3 = w.projects.P3.id;
+    await makeRole("role-test-company-work-team-view", "company", "team");
+    const H = await makePerson("에이치", "role-test-company-work-team-view", "재무팀");
+    expect(await canOpenProject(H, P3)).toBe(false);
+    await addProjectMembers(w.mgmtLead, P3, [H.id]);
+    expect(await canOpenProject(H, P3)).toBe(true);
+
+    expect(await projectMemberRights(H, P3)).toMatchObject({ canEdit: false, locked: false, hasCandidates: false });
+    const add = await errorOf(addProjectMembers(H, P3, [w.Y.id]));
+    expect(add).toBeInstanceOf(ForbiddenError);
+    // 새 계급은 노출표 줄이 없어 사람 정보를 못 본다 — 이름 없는 문구(M-1).
+    expect((add as Error).message).toBe("참여자 더하기 권한 없음");
+    expect(await errorOf(removeProjectMember(H, P3, w.people.참여자.id))).toBeInstanceOf(ForbiddenError);
+    expect(await memberRows(P3, w.Y.id)).toEqual([]);
+    expect((await listMemberCandidates(H, P3, {})).rows).toEqual([]);
+  });
+
+  it("같은 업무 범위 전사라도 보는 범위 org_unit이라 참여 없이 P3가 보이면 권리 있음 — 더하기 성공", async () => {
+    const w = await buildMembersWorld();
+    const P3 = w.projects.P3.id;
+    await makeRole("role-test-company-work-division-view", "company", "org_unit");
+    const H2 = await makePerson("에이치투", "role-test-company-work-division-view", "재무팀");
+    expect(await projectMemberRights(H2, P3)).toMatchObject({ canEdit: true, locked: false });
+    await expect(addProjectMembers(H2, P3, [w.Y.id])).resolves.toEqual({ added: 1 });
+  });
+
+  it("담당 PM 갈래 — 담당 팀 밖에 발령된 PM M(업무 범위 team)은 자기 프로젝트에 더할 수 있다", async () => {
+    const w = await buildMembersWorld();
+    const M = await makePerson("엠", DEFAULT_ROLE_ID, "재무팀");
+    const P4 = (
+      await createProject(SYSTEM_VIEWER, { clientId: w.clientId, teamId: w.teams.mgmt, pmUserId: M.id, name: "범위 P4", startDate: "2026-11-01", endDate: "2026-12-31" })
+    ).id;
+    expect(await projectMemberRights(M, P4)).toMatchObject({ canEdit: true, locked: false });
+    await expect(addProjectMembers(M, P4, [w.Y.id])).resolves.toEqual({ added: 1 });
+  });
+
+  it("전사 갈래 — 대표(업무 · 보는 범위 전사)는 담당 팀 밖 프로젝트에 더할 수 있다", async () => {
+    const w = await buildMembersWorld();
+    const P3 = w.projects.P3.id;
+    expect(await projectMemberRights(w.people.대표, P3)).toMatchObject({ canEdit: true });
+    await expect(addProjectMembers(w.people.대표, P3, [w.Y.id])).resolves.toEqual({ added: 1 });
+  });
+
+  it("참여자인 재무팀장(projects.status · period 키 있음, 업무 범위 team)도 P3 상태 전환 · 원장 저장은 ForbiddenError · 값 그대로(D-6213)", async () => {
+    const w = await buildMembersWorld();
+    const P3 = w.projects.P3.id;
+    const finLead = await makePerson("재무팀장", TEAM_LEAD_ROLE_ID, "재무팀");
+    await addProjectMembers(w.mgmtLead, P3, [finLead.id]);
+    expect(await listedIds(finLead)).toContain(P3);
+    const status = await errorOf(changeProjectStatus(finLead, P3, { from: "bidding", to: "lost" }));
+    expect(status).toBeInstanceOf(UserFacingError);
+    expect((status as Error).message).toBe("다른 팀 프로젝트 · 상태 바꾸기 권한 없음");
+    const ledger = await errorOf(
+      saveProjectLedger(finLead, P3, {
+        seenStatus: "bidding",
+        period: { startDate: "2026-11-02", endDate: "2026-12-31", baseline: { startDate: "2026-11-01", endDate: "2026-12-31" } },
+      }),
+    );
+    expect(ledger).toBeInstanceOf(UserFacingError);
+    expect((ledger as Error).message).toBe("기간 바꾸기 권한 없음");
+    const [row] = await db.select({ status: projects.status, startDate: projects.startDate }).from(projects).where(eq(projects.id, P3));
+    expect(row).toEqual({ status: "bidding", startDate: "2026-11-01" });
+  });
+});
+
+describe("검토 반영 I-3 — 잠금 재판정 · 보관 프로젝트", () => {
+  it("트랜잭션 전 판정 뒤 · 잠금 전에 완료로 바뀌면 잠긴 행이 막는다 — 잠김 문구 · 줄 0 · 로그 0", async () => {
+    const w = await buildMembersWorld();
+    const P3 = w.projects.P3.id;
+    lockHook.before = () => completeProject(P3);
+    const error = await errorOf(addProjectMembers(w.mgmtLead, P3, [w.Y.id]));
+    expect(error).toBeInstanceOf(GateBlockedError);
+    expect((error as Error).message).toBe(LOCKED);
+    expect(await memberRows(P3, w.Y.id)).toEqual([]);
+    expect(await memberLogs(P3)).toEqual([]);
+  });
+
+  it("판정 뒤 · 잠금 전에 보관되면 일반 문구 · 줄 0 · 로그 0", async () => {
+    const w = await buildMembersWorld();
+    const P3 = w.projects.P3.id;
+    lockHook.before = () => archiveProjectRow(P3);
+    await expect(addProjectMembers(w.mgmtLead, P3, [w.Y.id])).rejects.toThrow(NOT_PROCESSED);
+    expect(await memberRows(P3, w.Y.id)).toEqual([]);
+    expect(await memberLogs(P3)).toEqual([]);
+  });
+
+  it("보관 프로젝트 — 팀장은 범위 밖과 같은 일반 문구 · 보관함을 보는 시스템 관리자도 canEdit 거짓 · 더하기 일반 문구", async () => {
+    const w = await buildMembersWorld();
+    const P3 = w.projects.P3.id;
+    const sysadmin = await makePerson("관리자", SYSADMIN_ROLE_ID, "재무팀");
+    await archiveProjectRow(P3);
+    expect(await projectMemberRights(w.mgmtLead, P3)).toEqual({ canEdit: false, locked: false, pmName: null, hasCandidates: false });
+    await expect(addProjectMembers(w.mgmtLead, P3, [w.Y.id])).rejects.toThrow(NOT_PROCESSED);
+    expect(await projectMemberRights(sysadmin, P3)).toMatchObject({ canEdit: false, locked: false, hasCandidates: false });
+    await expect(addProjectMembers(sysadmin, P3, [w.Y.id])).rejects.toThrow(NOT_PROCESSED);
+    expect(await memberRows(P3, w.Y.id)).toEqual([]);
+    expect(await memberLogs(P3)).toEqual([]);
+  });
+
+  it("listMemberCandidatesAction — 권리자는 후보 · 참여자 Y와 범위 밖 팀PM은 빈 목록", async () => {
+    const w = await buildMembersWorld();
+    const P3 = w.projects.P3.id;
+    await addProjectMembers(w.mgmtLead, P3, [w.Y.id]);
+    session.viewer = w.mgmtLead;
+    expect((await listMemberCandidatesAction({ projectId: P3 }))?.data?.rows.map((row) => row.userId)).toEqual([w.people.대표.id]);
+    session.viewer = w.Y;
+    expect((await listMemberCandidatesAction({ projectId: P3 }))?.data).toEqual({ rows: [], truncated: false });
+    session.viewer = w.people.팀PM;
+    expect((await listMemberCandidatesAction({ projectId: P3 }))?.data).toEqual({ rows: [], truncated: false });
+    expect(ACTION_REGISTRY.find((entry) => entry.name === "listMemberCandidatesAction")).toMatchObject({ menu: "projects.member" });
+  });
+});
+
+describe("검토 반영 I-1 — 되돌리기는 그 사람의 마지막 기록이 떼기이고 10분 안일 때만", () => {
+  it("뗀 지 9분이면 되돌린다 · 11분이면 일반 문구 · 줄은 보관 그대로 · restored 로그 없음", async () => {
+    const w = await buildMembersWorld();
+    const P3 = w.projects.P3.id;
+    await addProjectMembers(w.mgmtLead, P3, [w.Y.id]);
+    await removeProjectMember(w.mgmtLead, P3, w.Y.id);
+    const late = new Date(Date.now() + 11 * MINUTE);
+    await expect(restoreProjectMember(w.mgmtLead, P3, w.Y.id, { now: () => late })).rejects.toThrow(NOT_PROCESSED);
+    expect((await memberRows(P3, w.Y.id)).map((row) => row.archivedAt !== null)).toEqual([true]);
+    expect((await memberLogs(P3)).filter((log) => (log.detail as { restored?: string }).restored)).toEqual([]);
+
+    const soon = new Date(Date.now() + 9 * MINUTE);
+    await restoreProjectMember(w.mgmtLead, P3, w.Y.id, { now: () => soon });
+    expect(await memberRows(P3, w.Y.id)).toEqual([expect.objectContaining({ archivedAt: null })]);
+  });
+
+  it("그 사람 기준이다 — 뒤에 다른 사람을 떼도 Y는 되돌린다 · 떼기 기록 없이 보관된 줄은 되돌리지 않는다", async () => {
+    const w = await buildMembersWorld();
+    const P3 = w.projects.P3.id;
+    await addProjectMembers(w.mgmtLead, P3, [w.Y.id]);
+    await removeProjectMember(w.mgmtLead, P3, w.Y.id);
+    await removeProjectMember(w.mgmtLead, P3, w.people.참여자.id);
+    await restoreProjectMember(w.mgmtLead, P3, w.Y.id);
+    expect(await memberRows(P3, w.Y.id)).toEqual([expect.objectContaining({ archivedAt: null })]);
+
+    // 마지막 기록이 added인 채로 보관된 줄(앱 밖 보관) — 떼기 기록이 아니다.
+    await db.update(projectMembers).set({ archivedAt: new Date() }).where(and(eq(projectMembers.projectId, P3), eq(projectMembers.userId, w.Y.id)));
+    await addProjectMembers(w.mgmtLead, P3, [w.people.대표.id]);
+    await db.update(projectMembers).set({ archivedAt: new Date() }).where(and(eq(projectMembers.projectId, P3), eq(projectMembers.userId, w.people.대표.id)));
+    await expect(restoreProjectMember(w.mgmtLead, P3, w.people.대표.id)).rejects.toThrow(NOT_PROCESSED);
+    expect((await memberRows(P3, w.people.대표.id)).map((row) => row.archivedAt !== null)).toEqual([true]);
+  });
+
+  it("지금 담당 PM은 10분 안이어도 되살리지 않는다(M-5)", async () => {
+    const w = await buildMembersWorld();
+    const P3 = w.projects.P3.id;
+    await addProjectMembers(w.mgmtLead, P3, [w.Y.id]);
+    await removeProjectMember(w.mgmtLead, P3, w.Y.id);
+    await db.update(projects).set({ pmUserId: w.Y.id }).where(eq(projects.id, P3));
+    await expect(restoreProjectMember(w.mgmtLead, P3, w.Y.id)).rejects.toThrow(NOT_PROCESSED);
+    expect((await memberRows(P3, w.Y.id)).map((row) => row.archivedAt !== null)).toEqual([true]);
+  });
+});
+
+describe("검토 반영 M-1 — 이름은 person.value 투영을 지난다", () => {
+  it("사람 정보를 못 보는 계급에게 pmName은 null · 권한 문구에 담당 PM 이름이 없다", async () => {
+    const w = await buildMembersWorld();
+    const P3 = w.projects.P3.id;
+    await addProjectMembers(w.mgmtLead, P3, [w.Y.id]);
+    expect(await projectMemberRights(w.Y, P3)).toMatchObject({ pmName: "X" });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, infoItem: "person.value", visible: false });
+    expect(await projectMemberRights(w.Y, P3)).toMatchObject({ pmName: null });
+    const error = await errorOf(addProjectMembers(w.Y, P3, [w.people.대표.id]));
+    expect((error as Error).message).toBe("참여자 더하기 권한 없음");
+  });
+
+  it("사람 정보를 못 보는 권리자의 거부 문구는 이름 대신 사람 수", async () => {
+    const w = await buildMembersWorld();
+    const P3 = w.projects.P3.id;
+    const mgmtPerson = await makePerson("경영사원", DEFAULT_ROLE_ID, "경영관리팀");
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: TEAM_LEAD_ROLE_ID, infoItem: "person.value", visible: false });
+    const error = await errorOf(addProjectMembers(w.mgmtLead, P3, [w.Y.id, mgmtPerson.id]));
+    expect((error as Error).message).toBe("1명 더할 수 없음 · 새로 고침");
   });
 });

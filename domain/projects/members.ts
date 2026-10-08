@@ -1,5 +1,6 @@
 import type { Viewer } from "@/domain/viewer";
 import { can } from "@/domain/permissions/can";
+import { visible } from "@/domain/permissions/visible";
 import { recordAction } from "@/domain/action-log/record";
 import { GateBlockedError } from "@/domain/rules/gate";
 import { denyWrite } from "@/domain/rules/deny-write";
@@ -13,6 +14,7 @@ import { kstToday } from "@/lib/kst-date";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { findProjectInScope, lockProjectForWrite, type ProjectRow } from "@/repositories/projects";
+import { findLatestMemberChangeFor } from "@/repositories/action-log";
 import { listOrgSnapshot, type OrgSnapshotRow } from "@/repositories/org-snapshot";
 import { listActiveUserIdsAllowed } from "@/repositories/permissions";
 import { findTeamById, findTeamsByIds } from "@/repositories/teams";
@@ -42,6 +44,8 @@ const NOT_PROCESSED = "처리 실패 · 다시 시도";
 const LOCKED = "완료 프로젝트 · 참여자 잠김";
 const NO_CHANGE_RIGHT = "참여자 변경 권한 없음";
 const CANDIDATE_LIMIT = 50;
+// 되돌리기 기한 — 뗀 뒤 이 안에서만(I-1 · 사용자 결정 2026-10-08 「10분 안만」). 그 뒤엔 더하기(후보 검사)로.
+const RESTORE_WINDOW_MS = 10 * 60_000;
 
 // 참여자 표 한 행(담당 PM 행도 같은 투영 — UI-SPEC S2). 이름 · 팀만 — 가릴 금액이 없다.
 export type ProjectMemberDto = { userId: string; name: string; teamName: string | null; retired: boolean; archived: boolean };
@@ -90,16 +94,25 @@ async function loadManagedProject(viewer: Viewer, projectId: string, todayKst: s
     loadActorTeamScope(viewer, { todayKst }),
   ]);
   // 참여 여부는 권리가 아니다(D-6213 · T-06.2-51) — 기존 쓰기 게이트와 같은 담당 PM ∨ 업무 범위.
-  const manage = key && (project.pmUserId === viewer.id || coversProjectTeam(teamScope, project.teamId));
-  return { project, manage };
+  // 업무 범위 갈래는 참여 조각을 뺀 보는 범위로 보일 때만 인정한다(검토 반영 I-2 · 사용자 결정 2026-10-08 「막기」 — 260907
+  // `O: server/src/projects.ts:705-711`이 참여 조건을 뺀 이유). 전사 업무 범위 계급이 참여자가 돼도 관리하지 못한다.
+  const pm = project.pmUserId === viewer.id;
+  const work =
+    key &&
+    !pm &&
+    coversProjectTeam(teamScope, project.teamId) &&
+    (await findProjectInScope(viewer, scope, projectId, undefined, { excludeMembership: true })) !== null;
+  return { project, manage: key && (pm || work) };
 }
 
 function editable(facts: ManagedProject): boolean {
   return facts.manage && facts.project.status !== "completed" && facts.project.archivedAt === null;
 }
 
-async function pmNameOf(viewer: Viewer, project: ProjectRow): Promise<string> {
-  return (await findUserNamesByIds(viewer, [project.pmUserId])).get(project.pmUserId) ?? "";
+// 이름은 person.value 투영을 지난다(검토 반영 M-1 — 06.2 F-3과 같은 꼴: 못 보면 빈 이름 → 이름 없는 문구).
+async function personNameOf(viewer: Viewer, userId: string): Promise<string> {
+  if (!(await visible(viewer, "person.value"))) return "";
+  return (await findUserNamesByIds(viewer, [userId])).get(userId) ?? "";
 }
 
 // ── 후보(D-6211 · D-6221) ───────────────────────────────────────────────────
@@ -143,7 +156,7 @@ export async function projectMemberRights(viewer: Viewer, projectId: string): Pr
   return {
     canEdit: editable(facts),
     locked: facts.manage && facts.project.status === "completed",
-    pmName: await pmNameOf(viewer, facts.project),
+    pmName: (await personNameOf(viewer, facts.project.pmUserId)) || null,
     hasCandidates: await hasCandidatesFor(viewer, facts, todayKst),
   };
 }
@@ -217,24 +230,27 @@ async function guardManage(viewer: Viewer, projectId: string, forbidden: string,
   const facts = await loadManagedProject(viewer, projectId, todayKst);
   if (!facts) denyWrite(viewer, "projects.view", { projectId }, new UserFacingError(NOT_PROCESSED));
   if (!facts.manage) {
-    denyWrite(viewer, "projects.member", { projectId }, new ForbiddenError(`${forbidden} · 담당 PM ${await pmNameOf(viewer, facts.project)}`));
+    const pmName = await personNameOf(viewer, facts.project.pmUserId);
+    denyWrite(viewer, "projects.member", { projectId }, new ForbiddenError(pmName ? `${forbidden} · 담당 PM ${pmName}` : forbidden));
   }
   if (facts.project.status === "completed") denyWrite(viewer, "projects.member.locked", { projectId }, new GateBlockedError(LOCKED));
   return facts.project;
 }
 
 // 잠금 읽기 행으로 다시 판정한다 — 확인 뒤 완료 · 보관돼도 붙지 않는다(T-06.2-53).
-async function inLockedProject<T>(viewer: Viewer, projectId: string, write: (tx: DbOrTx) => Promise<T>): Promise<T> {
+async function inLockedProject<T>(viewer: Viewer, projectId: string, write: (tx: DbOrTx, row: ProjectRow) => Promise<T>): Promise<T> {
   return withTransaction(async (tx) => {
     const row = await lockProjectForWrite(viewer, projectId, tx);
     if (!row || row.archivedAt !== null) throw new UserFacingError(NOT_PROCESSED);
     if (row.status === "completed") throw new GateBlockedError(LOCKED);
-    return write(tx);
+    return write(tx, row);
   });
 }
 
 // UI-SPEC S3 「오류 문구」 — 고른 순서의 첫 사람 이름. 없는 id(조작한 목록)면 이름이 없어 일반 문구.
+// 사람 정보를 못 보는 계급이면 이름 대신 사람 수(검토 반영 M-1).
 async function rejectedError(viewer: Viewer, rejected: string[]): Promise<UserFacingError> {
+  if (!(await visible(viewer, "person.value"))) return new UserFacingError(`${rejected.length}명 더할 수 없음 · 새로 고침`);
   const first = (await findUserNamesByIds(viewer, rejected.slice(0, 1))).get(rejected[0] ?? "");
   if (!first) return new UserFacingError(NOT_PROCESSED);
   const who = rejected.length === 1 ? first : `${first} 외 ${rejected.length - 1}명`;
@@ -269,11 +285,21 @@ export async function removeProjectMember(viewer: Viewer, projectId: string, use
 }
 
 // 되돌리기 = 보관 해제(UI-SPEC 「떼기 — 확인 창 대신 되돌리기」). 후보 계산을 부르지 않는다 — 퇴직 · 보관된 사람 · 그 사이 담당 팀으로
-// 옮긴 사람도 돌아온다(T-06.2-57: 이미 붙었다가 보관된 줄만 되살린다). 260907엔 되돌리기가 없었다(떼기 확인 창
-// `O: app/src/pages/Projects.tsx:2314` · 다시 붙이기는 퇴직 · 보관 거부 `O: server/src/projects.ts:3969-3976`).
-export async function restoreProjectMember(viewer: Viewer, projectId: string, userId: string): Promise<void> {
-  await guardManage(viewer, projectId, NO_CHANGE_RIGHT, kstToday(new Date()));
-  await inLockedProject(viewer, projectId, async (tx) => {
+// 옮긴 사람도 돌아온다. 대신 그 사람의 마지막 참여자 변경 로그가 떼기이고 10분 안일 때만이다(검토 반영 I-1 · 사용자 결정
+// 2026-10-08 「10분 안만」 — 오래된 보관 줄로 후보 규칙을 우회하지 못한다). 지금 담당 PM은 되살리지 않는다(M-5 · R2-I2).
+// 판정은 잠근 트랜잭션 안 — 같은 프로젝트의 참여자 쓰기가 차례로 돌아 로그가 그 사이 바뀌지 않는다.
+// 260907엔 되돌리기가 없었다(떼기 확인 창 `O: app/src/pages/Projects.tsx:2314` · 다시 붙이기는 퇴직 · 보관 거부 `O: server/src/projects.ts:3969-3976`).
+export async function restoreProjectMember(viewer: Viewer, projectId: string, userId: string, deps?: { now?: () => Date }): Promise<void> {
+  const now = deps?.now ?? (() => new Date());
+  await guardManage(viewer, projectId, NO_CHANGE_RIGHT, kstToday(now()));
+  await inLockedProject(viewer, projectId, async (tx, row) => {
+    if (userId === row.pmUserId) throw new UserFacingError(NOT_PROCESSED);
+    const latest = await findLatestMemberChangeFor(viewer, { actionType: MEMBER_ACTION, entity: PROJECT_ENTITY, projectId, userId }, tx);
+    const removedRecently =
+      latest !== null &&
+      (latest.detail as { removed?: unknown }).removed === userId &&
+      now().getTime() - latest.occurredAt.getTime() <= RESTORE_WINDOW_MS;
+    if (!removedRecently) throw new UserFacingError(NOT_PROCESSED);
     if (!(await restoreArchivedMember(viewer, { projectId, userId, restoredBy: viewer.id }, tx))) throw new UserFacingError(NOT_PROCESSED);
     await recordAction(viewer, { actionType: MEMBER_ACTION, entity: PROJECT_ENTITY, entityId: projectId, detail: { projectId, restored: userId } }, { tx });
   });

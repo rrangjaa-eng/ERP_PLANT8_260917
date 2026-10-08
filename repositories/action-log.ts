@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, isNull, lte, notInArray } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lte, notInArray, sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { actionLog } from "@/db/schema";
@@ -78,6 +78,30 @@ export async function findLatestActionFor(
         eq(actionLog.entity, query.entity),
         eq(actionLog.entityId, query.entityId),
         eq(actionLog.actionType, query.actionType),
+      ),
+    )
+    .orderBy(desc(actionLog.occurredAt), desc(actionLog.seq))
+    .limit(1);
+  return row ?? null;
+}
+
+// 06.2-05 검토 반영(I-1): 한 (프로젝트, 사람)의 마지막 참여자 변경 로그 — detail의 added 배열 · removed · restored 중 그 사람이 든 줄.
+// 되돌리기 판정 근거(같은 tx에 끌 수 없게 남는 로그). 정렬은 findLatestActionFor와 같다. 값은 파라미터로만 간다.
+export async function findLatestMemberChangeFor(
+  viewer: Viewer,
+  query: { actionType: string; entity: string; projectId: string; userId: string },
+  tx?: DbOrTx,
+): Promise<ActionLogRow | null> {
+  void viewer;
+  const [row] = await (tx ?? db)
+    .select()
+    .from(actionLog)
+    .where(
+      and(
+        eq(actionLog.actionType, query.actionType),
+        eq(actionLog.entity, query.entity),
+        eq(actionLog.entityId, query.projectId),
+        sql`(${actionLog.detail} -> 'added' @> ${JSON.stringify([query.userId])}::jsonb or ${actionLog.detail} ->> 'removed' = ${query.userId} or ${actionLog.detail} ->> 'restored' = ${query.userId})`,
       ),
     )
     .orderBy(desc(actionLog.occurredAt), desc(actionLog.seq))

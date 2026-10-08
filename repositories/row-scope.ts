@@ -36,7 +36,9 @@ function scopeFragment(by: RowScopeBy, teamId: AnyColumn | SQL): SQL {
 }
 
 // viewer는 4계층 규약(plant8/repository-viewer-param) 자리 — 판정 대상은 서술자의 viewerId다.
-export function rowScopeCondition(viewer: Viewer, scope: RowScope, cols: RowScopeColumns): SQL {
+// excludeMembership: 참여 조각만 뺀다(06.2-05 검토 반영 I-2 — 쓰기 권리의 업무 범위 갈래는 참여로만 보이는 프로젝트를 덮지 않는다).
+// 기본은 늘 더한다 — 빼려면 이름 있는 선택을 적어야 한다.
+export function rowScopeCondition(viewer: Viewer, scope: RowScope, cols: RowScopeColumns, options?: { excludeMembership: true }): SQL {
   void viewer;
   switch (scope.rows) {
     case "none":
@@ -45,6 +47,7 @@ export function rowScopeCondition(viewer: Viewer, scope: RowScope, cols: RowScop
       return sql`true`;
     case "limited": {
       const pm = sql`${cols.pmUserId} = ${scope.viewerId}`;
+      if (options?.excludeMembership) return sql`(${pm} or ${scopeFragment(scope.by, cols.teamId)})`;
       const member = sql`exists (select 1 from ${projectMembers} where ${projectMembers.projectId} = ${cols.projectId} and ${projectMembers.userId} = ${scope.viewerId} and ${projectMembers.archivedAt} is null)`;
       return sql`(${pm} or ${member} or ${scopeFragment(scope.by, cols.teamId)})`;
     }

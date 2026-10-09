@@ -2,6 +2,8 @@ import { test, expect, type Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { loginAsSysadmin, tokenNumber } from "./row-actions-helpers";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { createAccount } from "@/domain/auth/accounts";
+import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { insertCodeItem, setCodeItemActive } from "@/repositories/code-tables";
 
 // 2026-10-01 PR #126 /design-review(DOM 실측)에서 확인된 기존 결함 2건의 회귀.
@@ -219,10 +221,15 @@ async function expectSectionGapBelowLine(page: Page): Promise<string[]> {
   return gaps.map(({ title }) => title);
 }
 
-async function openFirstPersonDetail(page: Page): Promise<void> {
-  await page.goto("/admin/people");
-  await page.getByRole("link", { name: "상세" }).first().click();
-  await expect(page).toHaveURL(/\/admin\/people\/.+/);
+// 재는 것은 상세 화면이다 — 목록을 거쳐 들어가면 공유 erp_test에 쌓인 사람(CI 한 바퀴 1,000명 넘게) 전부를 그리고
+// 수화한 뒤에야 「상세」가 움직여 5초 단언을 넘긴다. 사람은 도메인으로 만들고 상세 URL로 바로 간다(master-edit.spec.ts와 같은 결).
+async function openPersonDetail(page: Page): Promise<void> {
+  const { userId } = await createAccount(SYSTEM_VIEWER, {
+    email: `e2e-section-gap-${randomUUID()}@example.test`,
+    name: "섹션간격대상",
+    roleId: DEFAULT_ROLE_ID,
+  });
+  await page.goto(`/admin/people/${userId}`);
 }
 
 test.describe("섹션 1px 선 아래 --s-3 (UI-SPEC 「상세 섹션」)", () => {
@@ -240,7 +247,7 @@ test.describe("섹션 1px 선 아래 --s-3 (UI-SPEC 「상세 섹션」)", () =>
     test(`사람 상세 섹션(연차 · 소속 발령 이력) @${width}`, { tag: "@wave-merge" }, async ({ page }) => {
       await loginAsSysadmin(page);
       await page.setViewportSize({ width, height: 900 });
-      await openFirstPersonDetail(page);
+      await openPersonDetail(page);
       const measured = await expectSectionGapBelowLine(page);
       expect(measured).toEqual(expect.arrayContaining(["연차", "소속 발령 이력"]));
     });
@@ -250,7 +257,7 @@ test.describe("섹션 1px 선 아래 --s-3 (UI-SPEC 「상세 섹션」)", () =>
 test.describe("PC 폼 라벨 왼쪽 96 · select 200, 폰은 라벨 위 (SYSTEM.md §6-3 · §7-2 · §7-15)", () => {
   test("사람 상세 계급 변경 · 변경 오류", async ({ page }) => {
     await loginAsSysadmin(page);
-    await openFirstPersonDetail(page);
+    await openPersonDetail(page);
     // 오류 줄(묶음 뒤 형제 `registeredHint`)까지 재려고 없는 계급 id로 바꿔 서버 오류를 낸다 — 계급은 바뀌지 않는다.
     const select = page.locator("#person-role-change");
     await select.evaluate((element: HTMLSelectElement) => {

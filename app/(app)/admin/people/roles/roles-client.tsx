@@ -9,7 +9,7 @@ import {
   setRoleViewScopeAction,
   archiveRoleAction,
 } from "../actions";
-import { ROLE_VIEW_SCOPES, type RoleViewScope, type RoleWorkScope } from "@/domain/permissions/roles";
+import type { RoleViewScope, RoleWorkScope } from "@/domain/permissions/roles";
 import { TextField } from "@/ui/input/TextField";
 import { Num } from "@/ui/num/Num";
 import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
@@ -19,6 +19,9 @@ import { StaticTable } from "@/ui/table/StaticTable";
 import { RowActions } from "@/ui/row-actions/RowActions";
 import { PcOnly, PhoneOnly } from "../../pc-only";
 import styles from "../people.module.css";
+
+// domain/permissions/roles.ts는 DB를 불러 클라이언트 번들에 넣을 수 없어 순서만 여기 둔다(ROLE_VIEW_SCOPES와 같은 순서).
+const ROLE_VIEW_SCOPES = ["company", "org_unit", "team", "own"] as const satisfies readonly RoleViewScope[];
 
 export type RoleRowView = {
   id: string;

@@ -603,6 +603,7 @@ describe("지급 취소 행동 종류 (06-04 Task 3 · C16 · CF-9)", () => {
     expect(ALWAYS_ON_ACTION_TYPES).toContain("payment_cancel");
     expect((ACTION_TYPE_LABELS as Record<string, string>).payment_cancel).toBe("지급 취소");
     expect(ACTION_LOG_OPTIONAL_TYPES.default).not.toContain("payment_cancel");
-    expect(ACTION_LOG_OPTIONAL_TYPES.schema.safeParse(["payment_cancel"]).success).toBe(false);
+    // 사용자 결정 2026-10-09 「읽을 때 빼기」 — 끌 수 없는 종류는 거부 대신 빼고 받는다(선택지에 남지 않는다).
+    expect(ACTION_LOG_OPTIONAL_TYPES.schema.parse(["payment_cancel"])).toEqual([]);
   });
 });

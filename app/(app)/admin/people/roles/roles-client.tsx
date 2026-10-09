@@ -6,9 +6,10 @@ import {
   createRoleAction,
   renameRoleAction,
   setRoleWorkScopeAction,
+  setRoleViewScopeAction,
   archiveRoleAction,
 } from "../actions";
-import type { RoleWorkScope } from "@/domain/permissions/roles";
+import type { RoleViewScope, RoleWorkScope } from "@/domain/permissions/roles";
 import { TextField } from "@/ui/input/TextField";
 import { Num } from "@/ui/num/Num";
 import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
@@ -19,12 +20,17 @@ import { RowActions } from "@/ui/row-actions/RowActions";
 import { PcOnly, PhoneOnly } from "../../pc-only";
 import styles from "../people.module.css";
 
+// domain/permissions/roles.ts는 DB를 불러 클라이언트 번들에 넣을 수 없다. Record가 값을 빠짐없이 요구하므로 선택지는 이 표의 키 순서(ROLE_VIEW_SCOPES와 같은 순서)로 만든다.
+const VIEW_SCOPE_LABEL: Record<RoleViewScope, string> = { company: "전사", org_unit: "본부", team: "팀", own: "본인" };
+const ROLE_VIEW_SCOPES = Object.keys(VIEW_SCOPE_LABEL) as RoleViewScope[];
+
 export type RoleRowView = {
   id: string;
   name: string;
   isSeed: boolean;
   sortOrder: number;
   workScope: RoleWorkScope;
+  viewScope: RoleViewScope;
   archivedAt: Date | null;
 };
 
@@ -35,10 +41,12 @@ function getStringField(formData: FormData, key: string): string {
 
 // 폰 P1은 이름 · 업무 범위 · 동작 3열(SYSTEM §7-3), 시드 여부 · 정렬은 접힌 줄이다(04.6 W1-4 B2·B3).
 // 표는 `StaticTable`(R1 · M4)이다 — 편집 칸(이름 · 업무 범위)은 칸 노드로 들어가는 클라이언트 컴포넌트가 그대로 맡는다.
-function RoleNameCell({ role }: { role: RoleRowView }) {
+function RoleNameCell({ role, canWrite }: { role: RoleRowView; canWrite: boolean }) {
   const [name, setName] = useState(role.name);
   const { execute: executeRename, result: renameResult } =
     useAction(renameRoleAction);
+  // 06.2 PR-6 R-1(사용자 결정 2026-10-09 「글자로」): 쓰기 권한이 없으면 입력 칸 대신 글자(서버가 거부해 값이 되돌아가던 칸).
+  if (!canWrite) return <>{role.name}</>;
   // 폰은 읽기만(사용자 결정 2026-10-03 14:57 KST 카드) — 입력 칸은 폰에서 CSS로 숨고 값만 보인다.
   return (
     <>
@@ -62,7 +70,7 @@ function RoleNameCell({ role }: { role: RoleRowView }) {
   );
 }
 
-function RoleWorkScopeCell({ role }: { role: RoleRowView }) {
+function RoleWorkScopeCell({ role, canWrite }: { role: RoleRowView; canWrite: boolean }) {
   const [workScope, setWorkScope] = useState<RoleWorkScope>(role.workScope);
   const { execute: executeWorkScope, result: workScopeResult } = useAction(
     setRoleWorkScopeAction,
@@ -70,6 +78,7 @@ function RoleWorkScopeCell({ role }: { role: RoleRowView }) {
       onError: () => setWorkScope(role.workScope),
     },
   );
+  if (!canWrite) return <>{role.workScope === "company" ? "전사" : "자기 팀"}</>;
   return (
     <>
       <PhoneOnly>{role.workScope === "company" ? "전사" : "자기 팀"}</PhoneOnly>
@@ -91,6 +100,55 @@ function RoleWorkScopeCell({ role }: { role: RoleRowView }) {
         {workScopeResult.serverError ? (
           <p className={styles.registeredHint}>{workScopeResult.serverError}</p>
         ) : null}
+      </PcOnly>
+    </>
+  );
+}
+
+// 06.2-09(S1 · D-6201): 보는 범위 — 업무 범위 칸과 같은 즉시 저장(확인 · 저장 버튼 · 지연 표시 없음, SYSTEM §7-13 06.2 보강).
+// 폰 접힌 줄은 라벨 없이 값만이라 `보기 {낱말}`로 업무 범위 값과 가른다(UI-SPEC S1 · design I8). 선택지 낱말에는 접두가 없다.
+
+function isRoleViewScope(value: string): value is RoleViewScope {
+  return (ROLE_VIEW_SCOPES as readonly string[]).includes(value);
+}
+
+function RoleViewScopeCell({ role, canWrite }: { role: RoleRowView; canWrite: boolean }) {
+  const [viewScope, setViewScope] = useState<RoleViewScope>(role.viewScope);
+  // 서버 오류도 연결 실패(요청 끊김)도 같은 한 줄 — 연결 실패는 serverError가 없어 기본 문구.
+  const { execute: executeViewScope, result: viewScopeResult, hasErrored } = useAction(setRoleViewScopeAction, {
+    onError: () => setViewScope(role.viewScope),
+  });
+  // 폰 접힌 줄 글자(`보기 {낱말}`)는 그대로, PC는 낱말만 글자로.
+  if (!canWrite)
+    return (
+      <>
+        <PhoneOnly>{`보기 ${VIEW_SCOPE_LABEL[role.viewScope]}`}</PhoneOnly>
+        <PcOnly>{VIEW_SCOPE_LABEL[role.viewScope]}</PcOnly>
+      </>
+    );
+  return (
+    <>
+      <PhoneOnly>{`보기 ${VIEW_SCOPE_LABEL[role.viewScope]}`}</PhoneOnly>
+      <PcOnly>
+        <select
+          className={styles.select}
+          aria-label={`${role.name} 보는 범위`}
+          value={viewScope}
+          disabled={role.archivedAt !== null}
+          onChange={(event) => {
+            const next = event.target.value;
+            if (!isRoleViewScope(next)) return;
+            setViewScope(next);
+            executeViewScope({ id: role.id, viewScope: next });
+          }}
+        >
+          {ROLE_VIEW_SCOPES.map((scope) => (
+            <option key={scope} value={scope}>
+              {VIEW_SCOPE_LABEL[scope]}
+            </option>
+          ))}
+        </select>
+        {hasErrored ? <p className={styles.registeredHint}>{viewScopeResult.serverError ?? "저장 실패 · 다시 시도"}</p> : null}
       </PcOnly>
     </>
   );
@@ -127,18 +185,21 @@ function RoleActionsCell({
 export function RolesList({
   roles,
   canArchive,
+  canWrite,
 }: {
   roles: RoleRowView[];
   canArchive: boolean;
+  canWrite: boolean;
 }) {
   return (
     <div className={styles.rolesTable}>
       <StaticTable
-        editable
+        editable={canWrite}
         caption="계급"
         columns={[
           { key: "name", header: "이름", priority: "p1" },
           { key: "workScope", header: "업무 범위", priority: "p1" },
+          { key: "viewScope", header: "보는 범위", priority: "p2" },
           { key: "seed", header: "시드 여부", priority: "p2" },
           { key: "sortOrder", header: "정렬", priority: "p2", align: "right" },
           { key: "actions", header: "동작", priority: "p1" },
@@ -146,8 +207,9 @@ export function RolesList({
         rows={roles.map((role) => ({
           key: role.id,
           cells: [
-            <RoleNameCell key="name" role={role} />,
-            <RoleWorkScopeCell key="workScope" role={role} />,
+            <RoleNameCell key="name" role={role} canWrite={canWrite} />,
+            <RoleWorkScopeCell key="workScope" role={role} canWrite={canWrite} />,
+            <RoleViewScopeCell key="viewScope" role={role} canWrite={canWrite} />,
             role.isSeed ? "시드" : "—",
             <Num key="sortOrder" value={role.sortOrder} unit="count" />,
             <RoleActionsCell

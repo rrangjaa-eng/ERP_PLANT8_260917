@@ -42,7 +42,7 @@ const OTHER_TEAM = "다른 팀 프로젝트 · 상태 바꾸기 권한 없음";
 const NO_START = "시작일 없음 · 기간 적기";
 
 function projectOf(status: ProjectStatus, startDate: string | null = "2026-10-01") {
-  return { status, teamId: TEAM_A, startDate };
+  return { id: "00000000-0000-4000-8000-0000000000a1", status, teamId: TEAM_A, startDate };
 }
 
 type Expected = string; // "ok" 또는 거부 이유 문자열

@@ -30,7 +30,7 @@ import { gate } from "@/domain/rules/gate";
 import "@/domain/rules/register";
 import { denyWrite } from "@/domain/rules/deny-write";
 import { loadProjectForGate } from "@/domain/projects/auto-transition";
-import { coversProjectTeam, loadActorTeamScope, StatusChangedError, statusChangedMessage } from "@/domain/projects/status";
+import { coversProjectTeam, loadActorTeamScope, StatusChangedError, statusChangedMessage, teamScopeForProject } from "@/domain/projects/status";
 import {
   periodEditRights,
   resolvePeriodSave,
@@ -192,7 +192,8 @@ export async function saveProjectLedger(
             const [canWrite, canEditPeriod, teamScope, canSeeAmount] = await Promise.all([
               can(viewer, "projects", "write"),
               can(viewer, "projects.period", "write"),
-              loadActorTeamScope(viewer, { todayKst }),
+              // 06.2-09(06.2-05 검토 I-2 「막기」): 업무 범위 갈래는 참여 뺀 보임으로 좁힌다 — 참여로만 보이면 「lead」 권리가 없다.
+              loadActorTeamScope(viewer, { todayKst }).then((teamScope) => teamScopeForProject(viewer, teamScope, scope, projectId)),
               input.preEstimate ? visible(viewer, "quote.amount") : Promise.resolve(false),
             ]);
             // 거부 문구의 팀장 이름은 기간 저장에서 권리가 pm이 될 수 있는 사람(담당 PM)일 때만 읽는다.

@@ -41,10 +41,12 @@ function getStringField(formData: FormData, key: string): string {
 
 // 폰 P1은 이름 · 업무 범위 · 동작 3열(SYSTEM §7-3), 시드 여부 · 정렬은 접힌 줄이다(04.6 W1-4 B2·B3).
 // 표는 `StaticTable`(R1 · M4)이다 — 편집 칸(이름 · 업무 범위)은 칸 노드로 들어가는 클라이언트 컴포넌트가 그대로 맡는다.
-function RoleNameCell({ role }: { role: RoleRowView }) {
+function RoleNameCell({ role, canWrite }: { role: RoleRowView; canWrite: boolean }) {
   const [name, setName] = useState(role.name);
   const { execute: executeRename, result: renameResult } =
     useAction(renameRoleAction);
+  // 06.2 PR-6 R-1(사용자 결정 2026-10-09 「글자로」): 쓰기 권한이 없으면 입력 칸 대신 글자(서버가 거부해 값이 되돌아가던 칸).
+  if (!canWrite) return <>{role.name}</>;
   // 폰은 읽기만(사용자 결정 2026-10-03 14:57 KST 카드) — 입력 칸은 폰에서 CSS로 숨고 값만 보인다.
   return (
     <>
@@ -68,7 +70,7 @@ function RoleNameCell({ role }: { role: RoleRowView }) {
   );
 }
 
-function RoleWorkScopeCell({ role }: { role: RoleRowView }) {
+function RoleWorkScopeCell({ role, canWrite }: { role: RoleRowView; canWrite: boolean }) {
   const [workScope, setWorkScope] = useState<RoleWorkScope>(role.workScope);
   const { execute: executeWorkScope, result: workScopeResult } = useAction(
     setRoleWorkScopeAction,
@@ -76,6 +78,7 @@ function RoleWorkScopeCell({ role }: { role: RoleRowView }) {
       onError: () => setWorkScope(role.workScope),
     },
   );
+  if (!canWrite) return <>{role.workScope === "company" ? "전사" : "자기 팀"}</>;
   return (
     <>
       <PhoneOnly>{role.workScope === "company" ? "전사" : "자기 팀"}</PhoneOnly>
@@ -109,12 +112,20 @@ function isRoleViewScope(value: string): value is RoleViewScope {
   return (ROLE_VIEW_SCOPES as readonly string[]).includes(value);
 }
 
-function RoleViewScopeCell({ role }: { role: RoleRowView }) {
+function RoleViewScopeCell({ role, canWrite }: { role: RoleRowView; canWrite: boolean }) {
   const [viewScope, setViewScope] = useState<RoleViewScope>(role.viewScope);
   // 서버 오류도 연결 실패(요청 끊김)도 같은 한 줄 — 연결 실패는 serverError가 없어 기본 문구.
   const { execute: executeViewScope, result: viewScopeResult, hasErrored } = useAction(setRoleViewScopeAction, {
     onError: () => setViewScope(role.viewScope),
   });
+  // 폰 접힌 줄 글자(`보기 {낱말}`)는 그대로, PC는 낱말만 글자로.
+  if (!canWrite)
+    return (
+      <>
+        <PhoneOnly>{`보기 ${VIEW_SCOPE_LABEL[role.viewScope]}`}</PhoneOnly>
+        <PcOnly>{VIEW_SCOPE_LABEL[role.viewScope]}</PcOnly>
+      </>
+    );
   return (
     <>
       <PhoneOnly>{`보기 ${VIEW_SCOPE_LABEL[role.viewScope]}`}</PhoneOnly>
@@ -174,9 +185,11 @@ function RoleActionsCell({
 export function RolesList({
   roles,
   canArchive,
+  canWrite,
 }: {
   roles: RoleRowView[];
   canArchive: boolean;
+  canWrite: boolean;
 }) {
   return (
     <div className={styles.rolesTable}>
@@ -194,9 +207,9 @@ export function RolesList({
         rows={roles.map((role) => ({
           key: role.id,
           cells: [
-            <RoleNameCell key="name" role={role} />,
-            <RoleWorkScopeCell key="workScope" role={role} />,
-            <RoleViewScopeCell key="viewScope" role={role} />,
+            <RoleNameCell key="name" role={role} canWrite={canWrite} />,
+            <RoleWorkScopeCell key="workScope" role={role} canWrite={canWrite} />,
+            <RoleViewScopeCell key="viewScope" role={role} canWrite={canWrite} />,
             role.isSeed ? "시드" : "—",
             <Num key="sortOrder" value={role.sortOrder} unit="count" />,
             <RoleActionsCell

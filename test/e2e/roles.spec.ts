@@ -253,3 +253,46 @@ test.describe("계급 보는 범위 칸 (06.2 S1 · D-6201 · D-6203)", () => {
     await expect(selectedLabel(scope)).toHaveText("팀");
   });
 });
+
+// 06.2 PR-6 R-1(사용자 결정 2026-10-09 「글자로」): admin.people 보기만 있고 쓰기가 없는 사람에게는
+// 이름 · 업무 범위 · 보는 범위 칸이 입력 칸이 아니라 글자다(바꾸면 서버가 거부해 값이 되돌아가던 칸). 쓰기 권한자는 그대로.
+test.describe("계급 표 읽기 전용(admin.people 보기만 · 06.2 PR-6 R-1)", () => {
+  test.afterAll(async () => {
+    await archiveTempRoles();
+  });
+
+  test("보기만이면 이름 · 업무 범위 · 보는 범위가 글자이고 입력 칸이 없다 — 쓰기 권한자는 그대로 입력 칸", async ({ page, browser, baseURL }) => {
+    const suffix = randomUUID().slice(0, 6);
+    const targetName = `E2E읽기계급-${suffix}`;
+    await insertTempRole({ id: `role-${randomUUID()}`, name: targetName, workScope: "company", viewScope: "org_unit" });
+    const readerRole = await insertTempRole({ id: `role-${randomUUID()}`, name: `E2E계급보기만-${suffix}`, workScope: "team", viewScope: "team" });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: readerRole.id, menu: "admin.people", action: "view", allowed: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: readerRole.id, infoItem: "role.value", visible: true });
+    const reader = await createFixtureUser({ roleId: readerRole.id });
+
+    const readerPage = await browser.newPage({ baseURL });
+    await readerPage.goto("/login");
+    await readerPage.getByLabel("이메일").fill(reader.email);
+    await readerPage.getByLabel("비밀번호").fill(reader.password);
+    await readerPage.getByRole("button", { name: "로그인" }).click();
+    await expect(readerPage).toHaveURL(/\/account$/);
+    await readerPage.goto("/admin/people/roles");
+
+    await expect(readerPage.getByRole("heading", { name: "계급" }).first()).toBeVisible();
+    await expect(readerPage.getByLabel(`${targetName} 이름`)).toHaveCount(0);
+    await expect(readerPage.getByLabel(`${targetName} 업무 범위`)).toHaveCount(0);
+    await expect(readerPage.getByLabel(`${targetName} 보는 범위`)).toHaveCount(0);
+    const row = readerPage.getByRole("row").filter({ hasText: targetName }).filter({ visible: true });
+    await expect(row).toHaveCount(1);
+    await expect(row).toContainText("전사");
+    await expect(row).toContainText("본부");
+    await expect(row.locator("select:visible, input:visible")).toHaveCount(0);
+    await readerPage.close();
+
+    await loginAs(page);
+    await page.goto("/admin/people/roles");
+    await expect(page.getByLabel(`${targetName} 이름`)).toBeEnabled();
+    await expect(page.getByLabel(`${targetName} 업무 범위`).filter({ visible: true })).toBeEnabled();
+    await expect(viewScopeSelect(page, targetName)).toBeEnabled();
+  });
+});

@@ -29,6 +29,8 @@ import { listOrgSnapshot as defaultListOrgSnapshot, listRouteLabelNames } from "
 import {
   FALLBACK_LABEL,
   InvalidTransitionError,
+  PROJECT_TEAM_LABEL_NO_ROLE,
+  PROJECT_TEAM_LABEL_PREFIX,
   nextStep,
   type ApprovalEvent,
   type NextStepOptions,
@@ -61,7 +63,7 @@ import {
 
 export { registerDocumentKind, getDocumentKind, listDocumentKinds } from "@/domain/approvals/kinds";
 export type { DocumentDetailEvidenceFile, DocumentDetailRow, DocumentDetailRows, DocumentKindDef, DocumentMeasure, DocumentSummary, RouteConfig, RouteConfigStep, RouteSettingDefs } from "@/domain/approvals/kinds";
-export { nextStep, resolveHolders, walkRoute } from "@/domain/approvals/route";
+export { nextStep, resolveHolders, statusStepLabel, walkRoute } from "@/domain/approvals/route";
 export { loadActionLogGate, recordActionInTx } from "@/domain/approvals/tx-log";
 export type { ApprovalInboxItem, ApprovalInboxItemDto, ApprovalView, ApprovalViewDto, RoutePreviewDTO, RoutePreviewStepDTO } from "@/domain/approvals/dto";
 export { projectActionResult } from "@/domain/approvals/dto";
@@ -153,34 +155,51 @@ function nameOf(list: { id: string; name: string }[], id: string | null): string
   return id === null ? null : (list.find((item) => item.id === id)?.name ?? null);
 }
 
+// 단계 조직 범위 → 저장 모양(scope_kind · scope_target_id). 빠짐없는 switch — 모르는 저장 값은 조용히 「전사」가 되지 않는다
+// (06.2-02 eng I4 · 260907 `O: server/src/scope.ts:106-109` default → 닫힘). project_team은 제출 때 team + 문서 팀 id로 굳는다(D-6215).
+export function resolveStepScope(
+  config: RouteConfigStep,
+  drafter: { teamId: string | null; orgUnitId: string | null },
+  doc: { teamId: string | null } | undefined,
+  names: RouteLabelNames,
+): { scopeKind: ScopeKind; scopeTargetId: string | null; scopeLabel: string } {
+  switch (config.scope) {
+    case "drafter_team":
+      return { scopeKind: "team", scopeTargetId: drafter.teamId, scopeLabel: nameOf(names.teams, drafter.teamId) ?? "기안자 팀" };
+    case "project_team":
+      return { scopeKind: "team", scopeTargetId: doc?.teamId ?? null, scopeLabel: "행사 담당 팀" };
+    case "drafter_org_unit":
+      return { scopeKind: "org_unit", scopeTargetId: drafter.orgUnitId, scopeLabel: nameOf(names.orgUnits, drafter.orgUnitId) ?? "기안자 본부" };
+    case "org_unit": {
+      const scopeTargetId = config.orgUnitId === "" ? null : config.orgUnitId;
+      return { scopeKind: "org_unit", scopeTargetId, scopeLabel: nameOf(names.orgUnits, scopeTargetId) ?? "특정 부서" };
+    }
+    case "company":
+      return { scopeKind: "company", scopeTargetId: null, scopeLabel: "전사" };
+    default: {
+      // 설정 읽기가 스키마로 거르므로 여기 닿으면 저장 값 손상(버그)이다 — 사용자 오류가 아니다.
+      const unknownScope: never = config.scope;
+      throw new Error(`결재선: 모르는 단계 범위 ${String(unknownScope)}`);
+    }
+  }
+}
+
 function planStep(
   stepIndex: number,
   config: RouteConfigStep,
   drafter: { teamId: string | null; orgUnitId: string | null },
   names: RouteLabelNames,
+  doc: { teamId: string | null } | undefined,
 ): NewApprovalStep {
   const roleId = config.roleId === "" ? null : config.roleId;
-  let scopeKind: ScopeKind;
-  let scopeTargetId: string | null;
-  let scopeLabel: string;
-  if (config.scope === "drafter_team") {
-    scopeKind = "team";
-    scopeTargetId = drafter.teamId;
-    scopeLabel = nameOf(names.teams, drafter.teamId) ?? "기안자 팀";
-  } else if (config.scope === "drafter_org_unit") {
-    scopeKind = "org_unit";
-    scopeTargetId = drafter.orgUnitId;
-    scopeLabel = nameOf(names.orgUnits, drafter.orgUnitId) ?? "기안자 본부";
-  } else if (config.scope === "org_unit") {
-    scopeKind = "org_unit";
-    scopeTargetId = config.orgUnitId === "" ? null : config.orgUnitId;
-    scopeLabel = nameOf(names.orgUnits, scopeTargetId) ?? "특정 부서";
-  } else {
-    scopeKind = "company";
-    scopeTargetId = null;
-    scopeLabel = "전사";
-  }
-  const label = (roleId === null ? null : nameOf(names.roles, roleId)) ?? scopeLabel;
+  const { scopeKind, scopeTargetId, scopeLabel } = resolveStepScope(config, drafter, doc, names);
+  // 행사 담당 팀 단계는 「행사 담당 {계급}」(UI-SPEC S5) — 계급 무관이거나 이름이 없으면 「행사 담당 팀」.
+  const label =
+    config.scope === "project_team"
+      ? roleId === null
+        ? PROJECT_TEAM_LABEL_NO_ROLE
+        : `${PROJECT_TEAM_LABEL_PREFIX}${nameOf(names.roles, roleId) ?? "팀"}`
+      : ((roleId === null ? null : nameOf(names.roles, roleId)) ?? scopeLabel);
   return { stepIndex, label, roleId, scopeKind, scopeTargetId };
 }
 
@@ -200,9 +219,9 @@ function unactedSteps(steps: NewApprovalStep[]): RouteStep[] {
 // 지금 설정 · 지금 소속으로 결재선을 조립한다(아무것도 쓰지 않는다).
 async function planRoute(
   viewer: Viewer,
-  input: { kind: string; drafterId: string },
+  input: { kind: string; drafterId: string; doc?: { teamId: string | null } },
   deps?: ApprovalDeps,
-): Promise<Omit<PreparedSubmission, "gate"> & { drafterName: string | null }> {
+): Promise<Omit<PreparedSubmission, "gate"> & { drafterName: string | null; unresolvedStepIndexes: number[] }> {
   const def = getDocumentKind(input.kind);
   const config = await def.loadRouteConfig();
   const snapshot = await readSnapshot(viewer, deps);
@@ -212,8 +231,11 @@ async function planRoute(
   const drafterOrgUnitId = drafter?.orgUnitId ?? null;
 
   const steps = config.steps.flatMap((step, i) =>
-    step.enabled ? [planStep(i + 1, step, { teamId: drafterTeamId, orgUnitId: drafterOrgUnitId }, names)] : [],
+    step.enabled ? [planStep(i + 1, step, { teamId: drafterTeamId, orgUnitId: drafterOrgUnitId }, names, input.doc)] : [],
   );
+  // 문서 정보 없이 푼 행사 담당 팀 단계 — 미리보기는 자리 이름만 싣고(D-6224), 제출은 거부한다.
+  const unresolvedStepIndexes =
+    input.doc === undefined ? config.steps.flatMap((step, i) => (step.enabled && step.scope === "project_team" ? [i + 1] : [])) : [];
   const walk = walkRoute({
     steps: unactedSteps(steps),
     snapshot,
@@ -232,6 +254,7 @@ async function planRoute(
     steps,
     walk,
     snapshot,
+    unresolvedStepIndexes,
   };
 }
 
@@ -239,11 +262,14 @@ async function planRoute(
 // 결재선이 막히면(대표 없음) 트랜잭션을 열기 전에 제출을 거부한다.
 export async function prepareSubmission(
   viewer: Viewer,
-  input: { kind: string; drafterId: string },
+  // doc — 문서에 매인 단계 범위(project_team)를 풀 문서 팀. 서버가 문서 행에서 계산한다(클라이언트 입력 아님, D-6215).
+  input: { kind: string; drafterId: string; doc?: { teamId: string | null } },
   deps?: ApprovalDeps,
 ): Promise<PreparedSubmission> {
-  const { drafterName, ...planned } = await planRoute(viewer, input, deps);
+  const { drafterName, unresolvedStepIndexes, ...planned } = await planRoute(viewer, input, deps);
   void drafterName;
+  // 호출 계약 위반(제출은 반드시 문서 팀을 넘긴다) — 사용자 오류가 아니다.
+  if (unresolvedStepIndexes.length > 0) throw new Error("결재선: project_team 단계에 문서 팀 없음");
   if (planned.walk.outcome.kind === "blocked") throw new RouteBlockedError(NO_FALLBACK_MESSAGE);
   const gate = await (deps?.loadActionLogGate ?? defaultLoadActionLogGate)();
   return { ...planned, gate };
@@ -252,19 +278,29 @@ export async function prepareSubmission(
 // 제출 전 결재선 미리보기(CX-R3) — 제출과 같은 도우미(planRoute)로 지금 설정 · 지금
 // 소속을 해석하되 아무것도 쓰지 않는다. 빈 자리는 목록에 없고, 자기 승인 건너뜀
 // 자리는 skipped. 이름은 approval.value 투영을 통과할 때만 실린다.
+// 06.2(D-6224): 문서 없이 부르면 행사 담당 팀 단계는 빈 자리여도 자리 이름만(사람 이름 없이) 싣는다.
 export async function previewRoute(
   viewer: Viewer,
-  input: { kind: string },
+  input: { kind: string; doc?: { teamId: string | null } },
   deps?: ApprovalDeps,
 ): Promise<RoutePreviewDTO> {
-  const planned = await planRoute(viewer, { kind: input.kind, drafterId: viewer.id }, deps);
-  if (planned.walk.outcome.kind === "blocked") throw new RouteBlockedError(NO_FALLBACK_MESSAGE);
+  const planned = await planRoute(viewer, { kind: input.kind, drafterId: viewer.id, doc: input.doc }, deps);
+  // 안 풀린 문서 단계가 있는데 처리할 단계가 없으면 끝 판정(대표 폴백 · 막힘)은 그 단계가 빈 자리라는 가정에
+  // 기댄다 — 제출 때는 다를 수 있어 미리보기는 끝 판정을 싣지 않고 자리 이름만 낸다(D-6224 · /review #190 P2).
+  const { outcome } = planned.walk;
+  const indeterminate =
+    planned.unresolvedStepIndexes.length > 0 && (outcome.kind === "blocked" || (outcome.kind === "actionable" && outcome.isFallback));
+  if (outcome.kind === "blocked" && !indeterminate) throw new RouteBlockedError(NO_FALLBACK_MESSAGE);
   const visible = createVisibleMemo(deps?.findVisibility);
+  const display = indeterminate ? planned.walk.display.filter((step) => !step.isFallback) : planned.walk.display;
 
-  const rows: Partial<RoutePreviewStepDTO>[] = planned.walk.display.flatMap((step): Partial<RoutePreviewStepDTO>[] => {
+  const rows: Partial<RoutePreviewStepDTO>[] = display.flatMap((step): Partial<RoutePreviewStepDTO>[] => {
     if (step.state === "skipped_self") return [{ label: step.label, skipped: true }];
     if (step.state === "current" || step.state === "pending") {
       return [{ label: step.label, holderNames: step.holderNames, skipped: false }];
+    }
+    if (step.state === "empty" && planned.unresolvedStepIndexes.includes(step.stepIndex)) {
+      return [{ label: step.label, holderNames: "", skipped: false }];
     }
     return [];
   });

@@ -91,6 +91,19 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
     expect((await style("3단 특정 부서")).color).toBe(await tokenColor("--text-strong"));
   });
 
+  // 06.2-02(D-6215 · D-6216 · UI-SPEC S5): 행사 담당 팀은 지출결의 결재선 선택지에만 있고 1단 기본값이다(시드는 이 키를 넣지 않는다).
+  test("지출결의 1단 조직 범위 선택지에 행사 담당 팀이 있고 기본으로 고른 값이며, 연차 결재선에는 없다 (06.2 S5)", async ({ page }) => {
+    const expenseRoute = page.locator("section").filter({ has: page.getByRole("heading", { name: "지출결의 결재선", exact: true }) });
+    await openSettings(page);
+
+    const expenseStep1Scope = expenseRoute.getByLabel("1단 조직 범위");
+    await expect(expenseStep1Scope.locator("option")).toHaveText(["기안자 팀", "행사 담당 팀", "기안자 본부", "전사", "특정 부서"]);
+    await expect(expenseStep1Scope.locator("option:checked")).toHaveText("행사 담당 팀");
+    await expect(expenseRoute.getByLabel("1단 특정 부서")).toBeDisabled();
+    await expect(leaveRoute(page).getByLabel("1단 조직 범위").locator("option").filter({ hasText: "행사 담당 팀" })).toHaveCount(0);
+    expect(await page.locator("main").innerText()).not.toContain("project_team");
+  });
+
   test("자기 승인을 본인 승인으로 바꾸면 즉시 저장되고 새로 고쳐도 남는다", async ({ page }) => {
     const original = await getSettingValue(APPROVAL_ROUTE_LEAVE_SELF_APPROVAL);
     try {

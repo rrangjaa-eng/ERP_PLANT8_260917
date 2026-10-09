@@ -194,7 +194,7 @@ export function RolesList({
   return (
     <div className={styles.rolesTable}>
       <StaticTable
-        editable
+        editable={canWrite}
         caption="계급"
         columns={[
           { key: "name", header: "이름", priority: "p1" },

@@ -19,7 +19,8 @@ import {
   numberedSupplyText,
   staticLineBlock,
 } from "@/domain/expenses";
-import { coversProjectTeam, loadActorTeamScope } from "@/domain/projects/status";
+import { loadActorTeamScope } from "@/domain/projects/status";
+import { canWriteExpenseOnProject } from "@/domain/expenses/write-gate";
 import { projectRowScope } from "@/domain/projects/visibility";
 import { getSettingValue } from "@/domain/settings/registry";
 import { PROJECT_CUSTOMER_APPROVAL_GATE } from "@/domain/settings/keys";
@@ -28,6 +29,7 @@ import { seoulToday } from "@/lib/dates";
 import type { NumberedLineExpense } from "@/repositories/expenses";
 import { findExpenseApprovalStatus, findExpenseApprovalStatuses, findExpenseById, listClosedInstallmentsByLines, listPickProjects } from "@/repositories/expenses";
 import { findProjectInScope } from "@/repositories/projects";
+import { listLiveMemberProjectIds } from "@/repositories/project-members";
 import { listLineageLinesByProjects, listQuoteLinesByRevisions, type QuoteLineRow } from "@/repositories/quote-lines";
 import { resolveLinkedDocumentsByLineage, type LineageLine } from "@/domain/quotes/lineage";
 import { findVendorNamesByIds, listVendorsForPick } from "@/repositories/vendors";
@@ -176,7 +178,8 @@ export async function searchLinesForPick(
 
   const lowered = query.toLowerCase();
   // 후보 프로젝트의 사실 · 현재 차수 줄 · 계보 문서 · 거래처 이름 · 결재 상태를 묶어 읽는다(후보마다 따로 읽지 않는다 — 05 /review A7).
-  const eligible = candidates.filter((candidate) => candidate.pmUserId === viewer.id || coversProjectTeam(teamScope, candidate.teamId));
+  const memberProjectIds = await listLiveMemberProjectIds(viewer, viewer.id, candidates.map((candidate) => candidate.id));
+  const eligible = candidates.filter((candidate) => canWriteExpenseOnProject(candidate, { viewerId: viewer.id, teamScope, memberProjectIds }));
   const factsByProject = await loadProjectFactsMany(viewer, eligible, gateEnabled);
   const listed = eligible.filter((candidate) => {
     const facts = factsByProject.get(candidate.id);

@@ -9,7 +9,7 @@ import { formatForeignAmount, formatFxRate, formatKrw } from "@/lib/format-numbe
 import { can, ForbiddenError } from "@/domain/permissions/can";
 import { project } from "@/domain/permissions/project";
 import { listEvidenceVoidSignals } from "@/domain/evidence/signals";
-import { coversProjectTeam, loadActorTeamScope } from "@/domain/projects/status";
+import { loadActorTeamScope } from "@/domain/projects/status";
 import { canWriteExpenseOnProject } from "@/domain/expenses/write-gate";
 import { projectRowScope } from "@/domain/projects/visibility";
 import type { RowScope } from "@/domain/permissions/scope-for";
@@ -932,7 +932,8 @@ export async function changeExpenseLine(
   ]);
   const facts = await loadProjectFacts(viewer, revision.projectId, gateEnabled, rowScope);
   if (!facts) throw new ExpenseNotFoundError();
-  if (facts.project.pmUserId !== viewer.id && !coversProjectTeam(teamScope, facts.project.teamId)) throw new ForbiddenError("지출결의 작성 권한 없음");
+  const memberProjectIds = await listLiveMemberProjectIds(viewer, viewer.id, [facts.project.id]);
+  if (!canWriteExpenseOnProject(facts.project, { viewerId: viewer.id, teamScope, memberProjectIds })) throw new ForbiddenError("지출결의 작성 권한 없음");
   const staticReason = staticLineBlock(line, facts);
   if (staticReason) throw new GateBlockedError(staticReason);
 
@@ -1637,7 +1638,7 @@ export function rowActionBlock(input: {
 export type LineDoors = { showColumn: boolean; tableGateReason: string | null; cells: Record<string, LineDoorCell> };
 
 // 화면은 이 값만 그린다 — 셀 · 표 전체 게이트 · 열 여부 판정은 서버다. 열은 `expenses` 쓰기 권한 ∧ 그 프로젝트 쓰기 권리
-// (담당 PM 또는 업무 범위가 프로젝트 팀을 덮음 — createExpenseFromLines와 같은 판정)가 있을 때만 선다. 현재(최신) 차수 줄만 셀을 갖는다.
+// (canWriteExpenseOnProject — 담당 PM ∨ 업무 범위 ∨ 살아 있는 참여, createExpenseFromLines와 같은 판정)가 있을 때만 선다. 현재(최신) 차수 줄만 셀을 갖는다.
 export async function listLineDoors(viewer: Viewer, input: { projectId: string }): Promise<LineDoors> {
   const hidden: LineDoors = { showColumn: false, tableGateReason: null, cells: {} };
   const [canWriteExpense, canWriteProject] = await Promise.all([can(viewer, "expenses", "write"), can(viewer, "projects", "write")]);
@@ -1649,7 +1650,8 @@ export async function listLineDoors(viewer: Viewer, input: { projectId: string }
   ]);
   const facts = await loadProjectFacts(viewer, input.projectId, gateEnabled, rowScope);
   if (!facts) return hidden;
-  if (facts.project.pmUserId !== viewer.id && !coversProjectTeam(teamScope, facts.project.teamId)) return hidden;
+  const memberProjectIds = await listLiveMemberProjectIds(viewer, viewer.id, [facts.project.id]);
+  if (!canWriteExpenseOnProject(facts.project, { viewerId: viewer.id, teamScope, memberProjectIds })) return hidden;
   if (!facts.latestRevisionId) return { showColumn: true, tableGateReason: facts.tableGateReason, cells: {} };
 
   const lines = await listQuoteLinesByRevision(viewer, facts.latestRevisionId);

@@ -152,9 +152,10 @@ async function computeMemberCandidates(viewer: Viewer, project: ProjectRow, toda
   );
 }
 
-// canEdit이 거짓이면 계산하지 않는다(T-06.2-56).
+// canEdit이 거짓이면 계산하지 않는다(T-06.2-56). 사람 정보를 못 보면 후보 행의 userId · name이 투영에서 다 빠져 고를 사람이 없다 —
+// 더하기를 열어 「더할 수 있는 사람 없음」을 보이지 않게 거짓(PR #189 Codex P2).
 async function hasCandidatesFor(viewer: Viewer, facts: ManagedProject, todayKst: string): Promise<boolean> {
-  if (!editable(facts)) return false;
+  if (!editable(facts) || !(await visible(viewer, "person.value"))) return false;
   return (await computeMemberCandidates(viewer, facts.project, todayKst)).length > 0;
 }
 

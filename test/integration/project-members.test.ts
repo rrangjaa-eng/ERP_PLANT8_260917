@@ -609,6 +609,16 @@ describe("검토 반영 M-1 — 이름은 person.value 투영을 지난다", () 
     expect((error as Error).message).toBe("1명 더할 수 없음 · 새로 고침");
   });
 
+  it("사람 정보를 못 보는 권리자에게 hasCandidates는 거짓 — 후보 행이 투영에서 다 비어 고를 사람이 없다(PR #189 Codex P2)", async () => {
+    const w = await buildMembersWorld();
+    const P3 = w.projects.P3.id;
+    expect(await projectMemberRights(w.mgmtLead, P3)).toMatchObject({ canEdit: true, hasCandidates: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: TEAM_LEAD_ROLE_ID, infoItem: "person.value", visible: false });
+    expect((await listMemberCandidates(w.mgmtLead, P3, {})).rows.every((row) => row.userId === undefined && row.name === undefined)).toBe(true);
+    expect(await projectMemberRights(w.mgmtLead, P3)).toMatchObject({ canEdit: true, hasCandidates: false });
+    expect(await listProjectMembers(w.mgmtLead, P3)).toMatchObject({ canEdit: true, hasCandidates: false });
+  });
+
   it("/cso M-1(a): 후보 범위(담당 본부 · 대표) 밖 사람 id를 넣으면 이름 대신 사람 수 — 없는 id와 같은 문구", async () => {
     const w = await buildMembersWorld();
     const P3 = w.projects.P3.id;

@@ -186,10 +186,12 @@ export function RolesList({
   roles,
   canArchive,
   canWrite,
+  viewerRoleId,
 }: {
   roles: RoleRowView[];
   canArchive: boolean;
   canWrite: boolean;
+  viewerRoleId: string | null;
 }) {
   return (
     <div className={styles.rolesTable}>
@@ -208,8 +210,9 @@ export function RolesList({
           key: role.id,
           cells: [
             <RoleNameCell key="name" role={role} canWrite={canWrite} />,
-            <RoleWorkScopeCell key="workScope" role={role} canWrite={canWrite} />,
-            <RoleViewScopeCell key="viewScope" role={role} canWrite={canWrite} />,
+            // 06.2 CSO-1 R-1(사용자 결정 2026-10-08 「막기」): 자기 계급의 범위 두 칸은 서버가 거부하므로 글자 — 이름 칸은 그대로.
+            <RoleWorkScopeCell key="workScope" role={role} canWrite={canWrite && role.id !== viewerRoleId} />,
+            <RoleViewScopeCell key="viewScope" role={role} canWrite={canWrite && role.id !== viewerRoleId} />,
             role.isSeed ? "시드" : "—",
             <Num key="sortOrder" value={role.sortOrder} unit="count" />,
             <RoleActionsCell

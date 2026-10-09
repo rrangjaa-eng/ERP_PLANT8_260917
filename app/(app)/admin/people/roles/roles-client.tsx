@@ -20,8 +20,9 @@ import { RowActions } from "@/ui/row-actions/RowActions";
 import { PcOnly, PhoneOnly } from "../../pc-only";
 import styles from "../people.module.css";
 
-// domain/permissions/roles.ts는 DB를 불러 클라이언트 번들에 넣을 수 없어 순서만 여기 둔다(ROLE_VIEW_SCOPES와 같은 순서).
-const ROLE_VIEW_SCOPES = ["company", "org_unit", "team", "own"] as const satisfies readonly RoleViewScope[];
+// domain/permissions/roles.ts는 DB를 불러 클라이언트 번들에 넣을 수 없다. Record가 값을 빠짐없이 요구하므로 선택지는 이 표의 키 순서(ROLE_VIEW_SCOPES와 같은 순서)로 만든다.
+const VIEW_SCOPE_LABEL: Record<RoleViewScope, string> = { company: "전사", org_unit: "본부", team: "팀", own: "본인" };
+const ROLE_VIEW_SCOPES = Object.keys(VIEW_SCOPE_LABEL) as RoleViewScope[];
 
 export type RoleRowView = {
   id: string;
@@ -103,7 +104,6 @@ function RoleWorkScopeCell({ role }: { role: RoleRowView }) {
 
 // 06.2-09(S1 · D-6201): 보는 범위 — 업무 범위 칸과 같은 즉시 저장(확인 · 저장 버튼 · 지연 표시 없음, SYSTEM §7-13 06.2 보강).
 // 폰 접힌 줄은 라벨 없이 값만이라 `보기 {낱말}`로 업무 범위 값과 가른다(UI-SPEC S1 · design I8). 선택지 낱말에는 접두가 없다.
-const VIEW_SCOPE_LABEL: Record<RoleViewScope, string> = { company: "전사", org_unit: "본부", team: "팀", own: "본인" };
 
 function isRoleViewScope(value: string): value is RoleViewScope {
   return (ROLE_VIEW_SCOPES as readonly string[]).includes(value);

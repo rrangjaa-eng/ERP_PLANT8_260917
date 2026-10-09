@@ -74,6 +74,16 @@ export async function roleExists(viewer: Viewer, roleId: string, deps?: Partial<
 }
 
 export class ForbiddenError extends UserFacingError {}
+export class SelfRoleScopeChangeError extends UserFacingError {}
+
+// CSO-1(사용자 결정 2026-10-08 「막기」): 사람은 자기 계급의 범위를 바꿀 수 없다 — changePersonRole의
+// 자기 가드와 같은 줄. 한 줄이 그 계급 모든 사람의 범위를 정해서다. 시스템 주체(SYSTEM_VIEWER — 계급이
+// role-sysadmin)는 사람이 아니라 막지 않는다. viewer.ts가 이 파일을 import해 값으로 못 불러 id로 가른다.
+function assertNotOwnRole(viewer: Viewer, roleId: string): void {
+  if (viewer.id !== "system" && viewer.roleId === roleId) {
+    throw new SelfRoleScopeChangeError("자기 계급의 범위는 바꿀 수 없음");
+  }
+}
 
 const PEOPLE_MENU = "admin.people";
 
@@ -197,6 +207,7 @@ export async function setRoleWorkScope(
   if (!(await canFn(viewer, PEOPLE_MENU, "write"))) {
     throw new ForbiddenError("계급 업무 범위 변경 권한 없음");
   }
+  assertNotOwnRole(viewer, id);
 
   const row = await defaultFindRoleById(viewer, id);
   if (!row) throw new UserFacingError("계급 찾을 수 없음");
@@ -224,6 +235,7 @@ export async function setRoleViewScope(
   if (!(await canFn(viewer, PEOPLE_MENU, "write"))) {
     throw new ForbiddenError("계급 보는 범위 변경 권한 없음");
   }
+  assertNotOwnRole(viewer, id);
   if (!(ROLE_VIEW_SCOPES as readonly string[]).includes(viewScope)) {
     throw new UserFacingError("보는 범위 값 없음");
   }

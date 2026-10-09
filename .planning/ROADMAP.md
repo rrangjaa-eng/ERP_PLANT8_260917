@@ -914,6 +914,17 @@ Plans:
 - [ ] 06.2-10-PLAN.md
 - [ ] 06.2-11-PLAN.md
 
+### Phase 06.3: 연차 중복·공휴일 (leave-overlap-holiday) (INSERTED)
+
+**Goal:** 연차 일수가 주말뿐 아니라 04.2 공휴일 표의 쉬는 날도 빼고 세어지고, 같은 사람이 이미 결재 중·승인된 연차와 날짜가 겹치는 연차를 새로 내거나 다시 낼 수 없다(반차 오전 + 반차 오후만 예외). 260907 `server/src/leave.ts:498-513`(먹는날들·is_business_day)·`548-574`(겹치는신청) 방식 — 260907 감사 G1·G2(`notes/260907-audit-full/design-D.md` 주제 1·2), 06.3-CONTEXT.md
+**Requirements**: TBD
+**Depends on:** Phase 04.2 (공휴일 표·영업일 함수), Phase 04.1 (연차 신청)
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 06.3 to break down)
+
 ### Phase 7: 공휴일·지급일·마감·알림 + 전 메뉴 권한 검수
 
 **Goal**: 경영관리가 지급 예정일·결재 마감을 공휴일 표 기준의 자동 계산으로 받고, 직원은 마감·기한 알림을 앱과 이메일로 받으며, 인트라넷 패리티가 끝난 이 시점에서 권한·정보 노출·행동 로그를 전 메뉴 기준으로 검수한다

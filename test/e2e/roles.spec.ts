@@ -287,6 +287,11 @@ test.describe("계급 표 읽기 전용(admin.people 보기만 · 06.2 PR-6 R-1)
     await expect(row).toContainText("전사");
     await expect(row).toContainText("본부");
     await expect(row.locator("select:visible, input:visible")).toHaveCount(0);
+    const readerHeaderBg = await readerPage
+      .getByRole("columnheader", { name: "이름" })
+      .filter({ visible: true })
+      .first()
+      .evaluate((el) => getComputedStyle(el).backgroundColor);
     await readerPage.close();
 
     await loginAs(page);
@@ -294,5 +299,12 @@ test.describe("계급 표 읽기 전용(admin.people 보기만 · 06.2 PR-6 R-1)
     await expect(page.getByLabel(`${targetName} 이름`)).toBeEnabled();
     await expect(page.getByLabel(`${targetName} 업무 범위`).filter({ visible: true })).toBeEnabled();
     await expect(viewScopeSelect(page, targetName)).toBeEnabled();
+    // 읽기 전용 표는 읽기 표 표면, 쓰기 권한자는 편집 표 표면(--surface-selected) — 헤더 배경이 달라야 한다
+    const writerHeaderBg = await page
+      .getByRole("columnheader", { name: "이름" })
+      .filter({ visible: true })
+      .first()
+      .evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(readerHeaderBg, "계급 표 읽기 전용 · 읽기 표 표면(헤더 배경이 편집 표와 다르다)").not.toBe(writerHeaderBg);
   });
 });

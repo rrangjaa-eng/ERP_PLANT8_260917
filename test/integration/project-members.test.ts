@@ -276,6 +276,15 @@ describe("후보 · 목록", () => {
     for (const out of [sysadmin, retired, archived, joined, ceoInPlan, w.people.무소속]) expect(result.rows.map((row) => row.userId)).not.toContain(out.id);
   });
 
+  it("이름순은 DB 정렬 규칙(collation)과 무관한 한국어 순 — C 정렬이면 B가 a 앞이지만 후보는 a 먼저(PR #189 CI)", async () => {
+    const w = await buildMembersWorld();
+    const P3 = w.projects.P3.id;
+    const upper = await makePerson("B재무", DEFAULT_ROLE_ID, "재무팀");
+    const lower = await makePerson("a재무", DEFAULT_ROLE_ID, "재무팀");
+    const ids = (await listMemberCandidates(w.mgmtLead, P3, {})).rows.map((row) => row.userId);
+    expect(ids.filter((id) => id === upper.id || id === lower.id)).toEqual([lower.id, upper.id]);
+  });
+
   it("프로젝트 보기를 끈 계급의 V는 후보에 없고 더하기는 전체 거부(eng N9)", async () => {
     const w = await buildMembersWorld();
     const P3 = w.projects.P3.id;

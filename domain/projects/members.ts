@@ -227,7 +227,10 @@ export async function listMemberCandidates(
   const teamIds = [...new Set(people.flatMap((person) => (person.teamId ? [person.teamId] : [])))];
   const teamNames = new Map((await findTeamsByIds(viewer, teamIds)).map((team) => [team.id, team.name]));
   const query = input.query?.trim() ?? "";
-  const matched = people
+  // 이름순은 여기서 정한다 — 스냅숏의 SQL 이름 정렬은 DB collation을 따라 C(로컬)와 en_US(CI postgres:16)에서 한글 순서가 갈린다.
+  // 같은 이름은 id로(스냅숏과 같은 꼴 — 50행 경계가 흔들리지 않는다). 선례 domain/projects/responsibles.ts.
+  const matched = [...people]
+    .sort((a, b) => a.name.localeCompare(b.name, "ko") || a.id.localeCompare(b.id))
     .map((person) => ({ userId: person.id, name: person.name, teamName: person.teamId ? (teamNames.get(person.teamId) ?? null) : null }))
     .filter((row) => query === "" || row.name.includes(query) || (row.teamName ?? "").includes(query))
     .slice(0, CANDIDATE_LIMIT + 1);

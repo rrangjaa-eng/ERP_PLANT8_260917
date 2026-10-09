@@ -449,6 +449,27 @@ test.describe("로그인한 뒤", () => {
       await expect(page.locator('[data-gallery="pick-many-result"]')).toHaveText("더함 · 김서연, 박지훈");
     });
 
+    // PR #189 Codex P2 — 검색이 오는 동안 남아 있는 옛 목록의 행은 고를 수 없다(단일 변형과 같은 판정). 시계를 멈춰 지연 조회를 붙잡는다.
+    test("검색이 오는 동안 옛 목록 행을 누르거나 Space를 쳐도 고르지 않는다 — 새 목록이 오면 고른 사람 0", async ({ page }) => {
+      await page.clock.install();
+      await page.reload();
+      const dialog = dialogOf(page);
+      const search = dialog.getByRole("textbox", { name: "사람 검색" });
+      await openerOf(page, "다중 고르기 열기").click();
+      await expect(optionOf(page, "u2")).toBeVisible();
+      await page.clock.pauseAt(new Date(Date.now() + 60_000));
+      await search.fill("서연");
+      await expect(dialog.locator('[aria-busy="true"]')).toHaveCount(1);
+      await optionOf(page, "u2").click();
+      await expect(optionOf(page, "u2")).toBeFocused();
+      await page.keyboard.press("Space");
+      await expect(optionOf(page, "u2")).toHaveAttribute("aria-selected", "false");
+      await page.clock.runFor(1_000);
+      await expect(dialog.getByRole("option")).toHaveCount(1);
+      await expect(dialog.getByText("고른 사람 없음")).toBeVisible();
+      await expect(primaryOf(page)).toHaveAttribute("aria-disabled", "true");
+    });
+
     test("목록 실패 — `사람 목록 불러오기 실패 · 다시 시도`, 1차 aria-disabled, 검색 칸은 살아 있다", async ({ page }) => {
       const dialog = dialogOf(page);
       await openerOf(page, "실패 고르기 열기").click();

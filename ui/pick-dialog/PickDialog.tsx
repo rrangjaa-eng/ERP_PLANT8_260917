@@ -242,9 +242,9 @@ function PickDialogInner(props: PickDialogProps) {
     if (!keep) closeNow();
   }
 
-  // 다중 — 고름 토글(고를 수 없는 행 · 보내는 중에는 무반응). 체크를 바꾸면 거부가 걷힌다.
+  // 다중 — 고름 토글(고를 수 없는 행 · 보내는 중 · 목록이 오는 중이나 오류 중에는 무반응 — 옛 목록의 행은 단일처럼 고르지 않는다). 체크를 바꾸면 거부가 걷힌다.
   function toggleRow(row: PickRow) {
-    if (!row.selectable || picking) return;
+    if (!row.selectable || picking || loading || failed) return;
     setRejection(null);
     setSelected((previous) => (previous.some((item) => item.id === row.id) ? previous.filter((item) => item.id !== row.id) : [...previous, row]));
   }

@@ -208,7 +208,8 @@ export async function openPanelRoute(page: Page, route: PanelRoute, fixtures: Pa
   if (route.open === "approval-sheet") {
     await page.getByRole("button", { name: fixtures.approvalLabel }).click();
   }
-  await expect(page.locator("dialog:modal"), `${route.id} 패널`).toHaveCount(1);
+  // CI 공유 DB에 시험용 사람이 1,000명 넘게 쌓이면 /admin/people 목록이 다 그려진 뒤에야 패널이 열린다(4.5~5.7초) — 기본 5초 대신 15초를 기다린다.
+  await expect(page.locator("dialog:modal"), `${route.id} 패널`).toHaveCount(1, { timeout: 15_000 });
   // 패널이 들어오는 움직임이 끝난 뒤의 자리를 잰다(움직이는 중의 x는 뒤 목록 폭을 틀리게 만든다).
   await page.locator("dialog:modal").evaluate((dialog) => Promise.all(dialog.getAnimations({ subtree: true }).map((animation) => animation.finished)));
 }

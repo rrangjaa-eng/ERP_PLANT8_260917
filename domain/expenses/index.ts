@@ -9,7 +9,8 @@ import { formatForeignAmount, formatFxRate, formatKrw } from "@/lib/format-numbe
 import { can, ForbiddenError } from "@/domain/permissions/can";
 import { project } from "@/domain/permissions/project";
 import { listEvidenceVoidSignals } from "@/domain/evidence/signals";
-import { coversProjectTeam, loadActorTeamScope } from "@/domain/projects/status";
+import { loadActorTeamScope } from "@/domain/projects/status";
+import { canWriteExpenseOnProject } from "@/domain/expenses/write-gate";
 import { projectRowScope } from "@/domain/projects/visibility";
 import type { RowScope } from "@/domain/permissions/scope-for";
 import { getSettingValue, getSimpleSettingValues } from "@/domain/settings/registry";
@@ -96,6 +97,7 @@ import {
 import { listCodeItems } from "@/repositories/code-tables";
 import { countActiveByOwner, listAliveByOwners, markOwnerFilesRemoved, restoreOwnerFilesRemovedAt } from "@/repositories/files";
 import { findProjectById, findProjectInScope, lockProjectForWrite, type ProjectRow } from "@/repositories/projects";
+import { listLiveMemberProjectIds } from "@/repositories/project-members";
 import { findLatestQuoteRevision, findQuoteRevisionById, listLatestQuoteRevisionsByProjects, type QuoteRevisionRow } from "@/repositories/quote-revisions";
 import { findQuoteLineById, listLineageLinesByProjects, listQuoteLinesByRevision, type QuoteLineRow } from "@/repositories/quote-lines";
 import { findExpenseDocFacts, findLineLinks, findLineVendorNames, listExpenseDocFacts, lockQuoteLines } from "@/repositories/quote-line-links";
@@ -659,8 +661,8 @@ export async function createExpenseFromLines(
   const created: { lineId: string; expenseId: string }[] = [];
   const blocked: { lineId: string; reason: string }[] = [];
 
-  // 줄 → 프로젝트를 먼저 다 읽고 그 프로젝트의 쓰기 권리(담당 PM 또는 업무 범위가 프로젝트 팀을 덮음 — Phase 4
-  // 판정)를 판정한다. 하나라도 없으면 아무 행도 만들기 전에 거부한다(T-05-1401).
+  // 줄 → 프로젝트를 먼저 다 읽고 그 프로젝트의 쓰기 권리(canWriteExpenseOnProject — Phase 4 판정 + 06.2-10 참여)를
+  // 판정한다. 하나라도 없으면 아무 행도 만들기 전에 거부한다(T-05-1401).
   const resolved: { lineId: string; line: QuoteLineRow; facts: ProjectFacts }[] = [];
   for (const lineId of [...new Set(input.lineIds)]) {
     const line = UUID_SHAPE.test(lineId) ? await findQuoteLineById(viewer, lineId) : null;
@@ -675,10 +677,12 @@ export async function createExpenseFromLines(
       blocked.push({ lineId, reason: NOT_IN_CURRENT_REVISION });
       continue;
     }
-    if (facts.project.pmUserId !== viewer.id && !coversProjectTeam(teamScope, facts.project.teamId)) {
-      throw new ForbiddenError("지출결의 작성 권한 없음");
-    }
     resolved.push({ lineId, line, facts });
+  }
+  // 06.2-10(D-6214): 참여 줄은 보이는 프로젝트를 다 모은 뒤 한 번에 읽는다 — 쓰기 = 담당 PM ∨ 업무 범위 ∨ 살아 있는 참여.
+  const memberProjectIds = await listLiveMemberProjectIds(viewer, viewer.id, [...new Set(resolved.map(({ facts }) => facts.project.id))]);
+  if (resolved.some(({ facts }) => !canWriteExpenseOnProject(facts.project, { viewerId: viewer.id, teamScope, memberProjectIds }))) {
+    throw new ForbiddenError("지출결의 작성 권한 없음");
   }
 
   const lineageByProject = new Map<string, Map<string, NumberedLineExpense[]>>();
@@ -928,7 +932,8 @@ export async function changeExpenseLine(
   ]);
   const facts = await loadProjectFacts(viewer, revision.projectId, gateEnabled, rowScope);
   if (!facts) throw new ExpenseNotFoundError();
-  if (facts.project.pmUserId !== viewer.id && !coversProjectTeam(teamScope, facts.project.teamId)) throw new ForbiddenError("지출결의 작성 권한 없음");
+  const memberProjectIds = await listLiveMemberProjectIds(viewer, viewer.id, [facts.project.id]);
+  if (!canWriteExpenseOnProject(facts.project, { viewerId: viewer.id, teamScope, memberProjectIds })) throw new ForbiddenError("지출결의 작성 권한 없음");
   const staticReason = staticLineBlock(line, facts);
   if (staticReason) throw new GateBlockedError(staticReason);
 
@@ -1020,6 +1025,10 @@ export async function submitExpense(
     : ({ kind: "team", format: await loadDocumentNumberFormat("expense_team") } as const);
   // 팀 비용 번호 연도 = 제출일(서울)의 연도.
   const teamNumberYear = Number(seoulToday(deps?.now).slice(0, 4));
+  // /review F1 · /cso CSO-PR5-1: 프로젝트 쓰기 권리(네 입구와 같은 판정)를 tx 안에서 다시 잰다 — 범위는 tx 전에 읽는다.
+  const writeScope = projectRow
+    ? await Promise.all([projectRowScope(viewer), loadActorTeamScope(viewer, { todayKst: seoulToday(deps?.now) })])
+    : null;
 
   return withTransaction(async (tx): Promise<SubmitExpenseResult> => {
     // 06-13(B-1 · N-3): 전역 잠금 순서 프로젝트 행 → 견적 줄(id 순, 줄 하나) → 문서 행. 줄 id는 트랜잭션 전에 읽은 값이고,
@@ -1037,6 +1046,14 @@ export async function submitExpense(
       if (instance && ACTIVE_STATUSES.has(instance.status)) return { kind: "already_submitted", expenseId: locked.id, number: locked.number };
       if (!instance || !EDITABLE_STATUSES.has(instance.status)) throw new ExpenseConflictError(locked.updatedAt);
       resubmit = { instanceId: instance.id, version: instance.version };
+    }
+    // 이미 제출된 문서의 재시도(응답을 잃은 경우)는 위에서 already_submitted로 끝난다 — 쓰기 판정은 작성 중 · 재제출에만.
+    if (lockedProject && writeScope) {
+      // 보임이 먼저(없는 것과 같게) — 떼인 참여자처럼 참여로만 보이던 사람에게는 없는 문서다. 보이지만 못 쓰면 권한 없음.
+      const [rowScope, teamScope] = writeScope;
+      if (!(await findProjectInScope(viewer, rowScope, lockedProject.id, tx))) throw new ExpenseNotFoundError();
+      const memberProjectIds = await listLiveMemberProjectIds(viewer, viewer.id, [lockedProject.id], tx);
+      if (!canWriteExpenseOnProject(lockedProject, { viewerId: viewer.id, teamScope, memberProjectIds })) throw new ForbiddenError("지출결의 작성 권한 없음");
     }
     if (locked.version !== input.expectedVersion) throw new ExpenseConflictError(locked.updatedAt);
 
@@ -1633,7 +1650,7 @@ export function rowActionBlock(input: {
 export type LineDoors = { showColumn: boolean; tableGateReason: string | null; cells: Record<string, LineDoorCell> };
 
 // 화면은 이 값만 그린다 — 셀 · 표 전체 게이트 · 열 여부 판정은 서버다. 열은 `expenses` 쓰기 권한 ∧ 그 프로젝트 쓰기 권리
-// (담당 PM 또는 업무 범위가 프로젝트 팀을 덮음 — createExpenseFromLines와 같은 판정)가 있을 때만 선다. 현재(최신) 차수 줄만 셀을 갖는다.
+// (canWriteExpenseOnProject — 담당 PM ∨ 업무 범위 ∨ 살아 있는 참여, createExpenseFromLines와 같은 판정)가 있을 때만 선다. 현재(최신) 차수 줄만 셀을 갖는다.
 export async function listLineDoors(viewer: Viewer, input: { projectId: string }): Promise<LineDoors> {
   const hidden: LineDoors = { showColumn: false, tableGateReason: null, cells: {} };
   const [canWriteExpense, canWriteProject] = await Promise.all([can(viewer, "expenses", "write"), can(viewer, "projects", "write")]);
@@ -1645,7 +1662,8 @@ export async function listLineDoors(viewer: Viewer, input: { projectId: string }
   ]);
   const facts = await loadProjectFacts(viewer, input.projectId, gateEnabled, rowScope);
   if (!facts) return hidden;
-  if (facts.project.pmUserId !== viewer.id && !coversProjectTeam(teamScope, facts.project.teamId)) return hidden;
+  const memberProjectIds = await listLiveMemberProjectIds(viewer, viewer.id, [facts.project.id]);
+  if (!canWriteExpenseOnProject(facts.project, { viewerId: viewer.id, teamScope, memberProjectIds })) return hidden;
   if (!facts.latestRevisionId) return { showColumn: true, tableGateReason: facts.tableGateReason, cells: {} };
 
   const lines = await listQuoteLinesByRevision(viewer, facts.latestRevisionId);

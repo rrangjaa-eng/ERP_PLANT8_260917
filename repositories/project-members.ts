@@ -16,6 +16,17 @@ export async function findLiveMemberUserIds(viewer: Viewer, projectId: string, t
   return new Set(rows.map((row) => row.userId));
 }
 
+// 06.2-10(D-6214): 그 사람이 살아 있는 참여 줄을 가진 프로젝트 — 지출결의 쓰기 게이트용(보임 판정 뒤에 읽는다). 빈 목록이면 질의하지 않는다.
+export async function listLiveMemberProjectIds(viewer: Viewer, userId: string, projectIds: string[], tx: DbOrTx = db): Promise<Set<string>> {
+  void viewer;
+  if (projectIds.length === 0) return new Set();
+  const rows = await tx
+    .select({ projectId: projectMembers.projectId })
+    .from(projectMembers)
+    .where(and(eq(projectMembers.userId, userId), inArray(projectMembers.projectId, projectIds), isNull(projectMembers.archivedAt)));
+  return new Set(rows.map((row) => row.projectId));
+}
+
 // 사람마다 가장 최근 보관 줄을 되살리고(created_at 그대로 — 「되돌리면 같은 자리」) 보관 줄이 없는 사람만 새로 넣는다
 // (260907 `O: server/src/projects.ts:3994-4007` UPDATE 뒤 INSERT와 같은 순서). 되살리거나 넣은 줄 수를 돌려준다.
 export async function reviveOrInsertMembers(

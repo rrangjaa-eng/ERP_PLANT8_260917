@@ -19,6 +19,7 @@ import {
   GalleryPanel,
   ModalSample,
   PanelOpener,
+  PickManySamples,
   PickSamples,
   ReadTableSample,
   RowActionsSamples,
@@ -240,6 +241,10 @@ export default async function ComponentsPage({ searchParams }: { searchParams: P
 
       <DetailScreen.Section title="고르기 목록">
         <PickSamples />
+      </DetailScreen.Section>
+
+      <DetailScreen.Section title="골라내기 — 다중(SP-62-1)">
+        <PickManySamples />
       </DetailScreen.Section>
 
       <DetailScreen.Section title="화면 틀">

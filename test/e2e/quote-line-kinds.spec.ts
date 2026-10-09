@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { test, expect, type Locator, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page, type Request } from "@playwright/test";
 import { waitForCardUsageSection } from "./fixtures";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db/client";
@@ -99,12 +99,14 @@ async function makeProject(input: { teamId: string; pmUserId: string; status: st
   return { id: created.id, name, clientName: client.name, subcategory };
 }
 
-function isSaveAction(method: string, headers: Record<string, string>): boolean {
-  return method === "POST" && headers["next-action"] !== undefined;
+// 일괄 저장(saveProjectLedgerAction)만 — 상세 화면의 섹션 읽기 액션(법인카드 사용 · 참여자, 본문 `{projectId}`)도 같은 머리로 POST하므로
+// 그 액션에만 있는 필수 필드 seenStatus로 가른다.
+function isSaveAction(request: Request): boolean {
+  return request.method() === "POST" && request.headers()["next-action"] !== undefined && (request.postData() ?? "").includes("\"seenStatus\"");
 }
 
 function waitForSaveResponse(page: Page) {
-  return page.waitForResponse((response) => isSaveAction(response.request().method(), response.request().headers()));
+  return page.waitForResponse((response) => isSaveAction(response.request()));
 }
 
 // 표의 데이터 행(그룹 머리글 행·접힌 줄 제외) — 격자면 gridcell, 읽기 표면 td.

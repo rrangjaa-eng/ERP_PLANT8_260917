@@ -347,12 +347,19 @@ export async function findProjectById(viewer: Viewer, id: string, tx: DbOrTx = d
 
 // 06.2(D-6204 · D-6206): 범위 안 프로젝트 한 행 — 범위 밖 · none은 null(호출부가 「없음」으로 거부한다). 보관 여부는 호출부가
 // 지금처럼 includeArchived로 판정한다. 잠근 트랜잭션 안에서는 그 tx를 넘긴다(04-32).
-export async function findProjectInScope(viewer: Viewer, scope: RowScope, id: string, tx: DbOrTx = db): Promise<ProjectRow | null> {
+// options.excludeMembership: 참여 조각을 뺀 보임(06.2-05 검토 반영 I-2 — 참여자 관리 권리의 업무 범위 갈래).
+export async function findProjectInScope(
+  viewer: Viewer,
+  scope: RowScope,
+  id: string,
+  tx: DbOrTx = db,
+  options?: { excludeMembership: true },
+): Promise<ProjectRow | null> {
   if (scope.rows === "none") return null;
   const [row] = await tx
     .select()
     .from(projects)
-    .where(and(eq(projects.id, id), rowScopeCondition(viewer, scope, { projectId: projects.id, teamId: projects.teamId, pmUserId: projects.pmUserId })))
+    .where(and(eq(projects.id, id), rowScopeCondition(viewer, scope, { projectId: projects.id, teamId: projects.teamId, pmUserId: projects.pmUserId }, options)))
     .limit(1);
   return row ?? null;
 }

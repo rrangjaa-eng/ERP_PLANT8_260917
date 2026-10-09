@@ -53,6 +53,13 @@ vi.mock("@/domain/settlements", () => ({ getSettlementHeader: () => Promise.reso
 vi.mock("@/app/(app)/projects/[id]/quote-table", () => ({ QuoteLedger: () => null }));
 vi.mock("@/app/(app)/projects/[id]/revision-section", () => ({ RevisionSection: () => null }));
 vi.mock("@/app/(app)/projects/[id]/card-usage-section", () => ({ CardUsageSection: () => null }));
+// 06.2-12: 페이지가 참여자 권리를 서버에서 읽고 참여자 섹션 · 머리 자식을 그린다 — 이 테스트의 관심사(줄 카드 사실)가 아니라 스텁으로 둔다.
+vi.mock("@/domain/projects/members", () => ({ projectMemberRights: () => Promise.resolve({ canEdit: false, locked: false, pmName: null, hasCandidates: false }) }));
+vi.mock("@/app/(app)/projects/[id]/members-section", () => ({
+  MembersSection: () => null,
+  ProjectMembersProvider: ({ children }: { children: unknown }) => children,
+  MemberAddHeaderButton: () => null,
+}));
 const logError = vi.fn<(...args: unknown[]) => void>();
 vi.mock("@/lib/log", () => ({ log: { error: (...args: unknown[]) => logError(...args), info: vi.fn(), warn: vi.fn() } }));
 

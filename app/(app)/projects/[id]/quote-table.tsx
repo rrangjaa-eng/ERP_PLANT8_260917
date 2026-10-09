@@ -959,6 +959,7 @@ export function QuoteLedger({
   settlement,
   newRevision,
   copyProjectHref,
+  memberAdd,
   customerApproval,
   approvedSeq,
   revisions,
@@ -1006,6 +1007,8 @@ export function QuoteLedger({
   newRevision: NewRevisionProps | null;
   /** 04-15(D-70) — 「프로젝트 복사」가 여는 복사 등록 폼 주소. projects 쓰기가 없으면 null(링크 없음). */
   copyProjectHref: string | null;
+  /** 06.2-12(S4) — 폰 「더보기」 안 「참여자 더하기」. 서버 canEdit ∧ hasCandidates가 거짓이면 null(자식 없음). */
+  memberAdd?: ReactNode;
   /** 04-24(D-56 · CEO-D19) — 부제 옆 고객 승인 줄(글자·버튼 모두 서버 판정). */
   customerApproval: CustomerApprovalProps;
   /** 04-24(ENG-D7) — 현재 차수가 고객 승인됐으면 그 순번(표 위 잠김 줄 — tableLockLine). */
@@ -2724,6 +2727,7 @@ export function QuoteLedger({
           프로젝트 복사
         </Link>
       ) : null}
+      {memberAdd}
     </HeaderCopyActions>
   );
   const statusActions = statusChange ? (

@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/ui/button/Button";
+import { splitRefreshTail } from "@/ui/confirm-dialog/ConfirmDialog";
 import { Num } from "@/ui/num/Num";
 import styles from "./PickDialog.module.css";
 
@@ -9,6 +10,7 @@ import styles from "./PickDialog.module.css";
 // 견적 줄 고르기 · 거래처 바꾸기 · 거래처 고르기(05-07), 06 S10 연결 고르기. 공용 확인 모달에 검색 · 선택을 얹은 것이 아니라
 // 따로 선 컴포넌트다(슬롯에 검색 칸 · 선택 상태가 없다 — B5). 네이티브 <dialog> 틀(포커스 트랩 · Esc · 가림막 · 트리거 복귀)은 같다.
 // 컴포넌트는 지출결의를 모른다 — 검색 함수 · 행 · 문구는 호출처가 넘긴다. 행의 고를 수 있음 · 이유는 서버가 판정해 보낸다.
+// 06.2 SP-62-1: `mode="multiple"` — 같은 틀로 여러 사람을 한 번에 고르는 변형(프로젝트 참여자 더하기). 단일 호출부는 그대로다.
 
 export type PickRow = {
   type: "row";
@@ -47,7 +49,7 @@ export type PickResult = {
   noneSelectableReason?: string | null;
 };
 
-export type PickDialogProps = {
+type PickDialogBaseProps = {
   open: boolean;
   onClose: () => void;
   title: string;
@@ -57,26 +59,48 @@ export type PickDialogProps = {
   searchLabel: string;
   /** 서버 조회 — 실패하면 null을 돌려주거나 던진다. */
   search: (query: string) => Promise<PickResult | null>;
-  /** 1차 라벨(`이 줄로` · `이 거래처로`) — kbd Enter가 붙는다. */
+  /** 1차 라벨(`이 줄로` · `이 거래처로`) — kbd Enter가 붙는다. 다중 변형은 고른 수가 뒤에 붙는다(`참여자 더하기 2`). */
   primaryLabel: string;
   /** 검색 0건 문구의 이름(`줄` → `조건에 맞는 줄이 없습니다 · 검색 지우기`). */
-  noun: "줄" | "거래처" | "프로젝트";
-  /** 고른 행의 결과 줄(1차가 할 일을 미리 말한다) — null이면 줄 없음. */
-  resultLine?: (row: PickRow | null) => string | null;
-  /** 1차를 누르거나 Enter. 거짓을 돌려주면 열린 채 남는다. */
-  onPick: (row: PickRow) => void | boolean | Promise<void | boolean>;
+  noun: "줄" | "거래처" | "프로젝트" | "사람";
   /**
    * 06-29(SP-8) — 빈 목록 줄(`emptyDefault`)과 「고를 수 있는 줄 0」의 다음 한 수 3차. 누르면 `onSelect()` 뒤 목록만 닫는다 —
-   * 연결 라디오를 바꾸는 일은 호출자 몫. 안 주면 빈 목록 줄은 05 그대로 `검색으로 찾기`.
+   * 연결 라디오를 바꾸는 일은 호출자 몫. 안 주면 빈 목록 줄은 05 그대로 `검색으로 찾기`. 06.2: `null`이면 다음 한 수 없이 사실만 선다.
    */
-  emptyNextStep?: { label: string; onSelect: () => void };
+  emptyNextStep?: { label: string; onSelect: () => void } | null;
   /** 06-29(C13) — 목록 로드 오류 줄의 명사형 이름(기본 `목록 불러오기 실패`). 뒤에 ` · ` + 2차 `다시 시도`. */
   failedLine?: string;
 };
 
+export type PickDialogSingleProps = PickDialogBaseProps & {
+  mode?: "single";
+  /** 고른 행의 결과 줄(1차가 할 일을 미리 말한다) — null이면 줄 없음. */
+  resultLine?: (row: PickRow | null) => string | null;
+  /** 1차를 누르거나 Enter. 거짓을 돌려주면 열린 채 남는다. */
+  onPick: (row: PickRow) => void | boolean | Promise<void | boolean>;
+};
+
+/** 다중 변형의 1차 결과 — 거부(`ok: false`)면 다이얼로그가 닫히지 않고 `reason`이 바닥 줄 막힘 자리에 선다. `retryable`이면 1차를 막지 않는다(연결 실패). */
+export type PickManyOutcome = { ok: true } | { ok: false; reason: string; retryable: boolean };
+
+export type PickDialogManyProps = PickDialogBaseProps & {
+  mode: "multiple";
+  /** 고른 사람 전체의 결과 줄(`{이름} 외 N명 선택`) — 검색으로 가려진 고름도 들어온다. null이면 줄 없음. */
+  resultLineMany: (rows: PickRow[]) => string | null;
+  /** 1차를 누르거나 Enter — 고른 순서대로 전체를 넘긴다. 전부 되거나 전부 거부된다(`PickManyOutcome`). */
+  onPickMany: (rows: PickRow[]) => Promise<PickManyOutcome>;
+};
+
+export type PickDialogProps = PickDialogSingleProps | PickDialogManyProps;
+
+// 06.2 SP-62-1 — 1차 라벨 `{동작} N`(0이면 숫자 없음).
+export function pickManyPrimaryLabel(label: string, count: number): string {
+  return count > 0 ? `${label} ${count}` : label;
+}
+
 // 빈 목록 한 줄 — 받침에 맞춰 이/가를 고른다(`줄이` · `거래처가`).
 export function pickEmptyText(noun: PickDialogProps["noun"], kind: "no-match" | "none-selectable"): string {
-  const josa = noun === "줄" ? "이" : "가";
+  const josa = noun === "줄" || noun === "사람" ? "이" : "가";
   return kind === "no-match" ? `조건에 맞는 ${noun}${josa} 없습니다` : `고를 수 있는 ${noun}${josa} 없습니다`;
 }
 
@@ -99,7 +123,10 @@ export function PickDialog(props: PickDialogProps) {
 
 const DEFAULT_FAILED_LINE = "목록 불러오기 실패";
 
-function PickDialogInner({ onClose, title, subtitle, searchLabel, search, primaryLabel, noun, resultLine, onPick, emptyNextStep, failedLine = DEFAULT_FAILED_LINE }: PickDialogProps) {
+function PickDialogInner(props: PickDialogProps) {
+  const { onClose, title, subtitle, searchLabel, search, primaryLabel, noun, emptyNextStep, failedLine = DEFAULT_FAILED_LINE } = props;
+  const many = props.mode === "multiple" ? props : null;
+  const single = props.mode === "multiple" ? null : props;
   const dialogRef = useRef<HTMLDialogElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
@@ -110,12 +137,17 @@ function PickDialogInner({ onClose, title, subtitle, searchLabel, search, primar
   const listId = useId();
   const resultId = useId();
   const errorId = useId();
+  const emptyId = useId();
 
   const [query, setQuery] = useState("");
   const [shown, setShown] = useState<{ query: string; result: PickResult | null; failed: boolean } | null>(null);
   const [retry, setRetry] = useState(0);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
+  // 06.2 SP-62-1 — 다중: 고른 행(고른 순서 · 검색과 무관하게 남는다) · 서버 거부(체크를 바꾸면 풀린다) · `새로 고침` 뒤 첫 결과에서만 목록에 없는 고름을 뺀다.
+  const [selected, setSelected] = useState<PickRow[]>([]);
+  const [rejection, setRejection] = useState<{ reason: string; retryable: boolean } | null>(null);
+  const pruneOnNextResultRef = useRef(false);
 
   useEffect(() => {
     searchRef.current = search;
@@ -144,6 +176,14 @@ function PickDialogInner({ onClose, title, subtitle, searchLabel, search, primar
           result = null;
         }
         if (cancelled) return;
+        if (pruneOnNextResultRef.current && result) {
+          pruneOnNextResultRef.current = false;
+          // 잘린 목록은 없는 사람을 알 수 없다 — 서버가 다시 판정한다.
+          if (!result.truncated) {
+            const ids = new Set(rowsOf(result.items).map((row) => row.id));
+            setSelected((previous) => previous.filter((row) => ids.has(row.id)));
+          }
+        }
         setShown((previous) => ({ query, result: result ?? previous?.result ?? null, failed: result === null }));
       })();
     }, delay);
@@ -166,8 +206,8 @@ function PickDialogInner({ onClose, title, subtitle, searchLabel, search, primar
   const rows = rowsOf(items);
   const activeRow = rows.find((row) => row.id === activeId) ?? null;
   // 06-29(SP-8) — 목록이 오는 중 · 오류 중에는 옛 목록의 행을 고를 수 없다(1차 aria-disabled, Enter도 아무 일 없음).
-  const chosen = !loading && !failed && activeRow?.selectable ? activeRow : null;
-  const line = failed ? null : resultLine?.(chosen ?? null) ?? null;
+  const chosen = !many && !loading && !failed && activeRow?.selectable ? activeRow : null;
+  const line = failed || !single ? null : single.resultLine?.(chosen ?? null) ?? null;
   // UX-06 — 고른 행이 없어 1차가 꺼져 있으면 결과 줄 자리에 이유 한 줄(info 톤 — 막힘이 아니라 아직 안 고른 상태).
   const idleReason = chosen ? null : `고른 ${noun} 없음`;
 
@@ -195,11 +235,43 @@ function PickDialogInner({ onClose, title, subtitle, searchLabel, search, primar
     setPicking(true);
     let keep = false;
     try {
-      keep = (await onPick(target)) === false;
+      keep = (await single?.onPick(target)) === false;
     } finally {
       setPicking(false);
     }
     if (!keep) closeNow();
+  }
+
+  // 다중 — 고름 토글(고를 수 없는 행 · 보내는 중 · 목록이 오는 중이나 오류 중에는 무반응 — 옛 목록의 행은 단일처럼 고르지 않는다). 체크를 바꾸면 거부가 걷힌다.
+  function toggleRow(row: PickRow) {
+    if (!row.selectable || picking || loading || failed) return;
+    setRejection(null);
+    setSelected((previous) => (previous.some((item) => item.id === row.id) ? previous.filter((item) => item.id !== row.id) : [...previous, row]));
+  }
+
+  const rejectionBlocks = rejection !== null && !rejection.retryable;
+  const manyReady = many !== null && !loading && !failed && selected.length > 0 && !rejectionBlocks;
+
+  async function pickMany() {
+    if (!many || !manyReady || picking) return;
+    setPicking(true);
+    let outcome: PickManyOutcome;
+    try {
+      outcome = await many.onPickMany(selected);
+    } finally {
+      setPicking(false);
+    }
+    if (outcome.ok) closeNow();
+    else setRejection({ reason: outcome.reason, retryable: outcome.retryable });
+  }
+
+  // 거부 꼬리 3차 `새로 고침` — 검색어를 지우고 목록만 다시 받는다(다이얼로그는 닫지 않는다). 목록에 없는 고름은 새 목록이 오면 빠진다.
+  function refreshMany() {
+    pruneOnNextResultRef.current = true;
+    setRejection(null);
+    setQuery("");
+    setRetry((count) => count + 1);
+    searchInputRef.current?.focus();
   }
 
   function focusRow(id: string) {
@@ -223,7 +295,12 @@ function PickDialogInner({ onClose, title, subtitle, searchLabel, search, primar
   const fixedSubtitle = result?.subtitle ?? subtitle;
   // E-24 — 고를 수 있는 줄 0의 이유는 바닥 줄 한 자리에만(주어졌을 때 본문 고정 줄은 그리지 않는다).
   const noneSelectableReason = noneSelectable ? (result?.noneSelectableReason ?? null) : null;
-  const footLine = pickFootLine(line, noneSelectableReason, idleReason);
+  // 다중 — 후보 0(검색어 없는 빈 목록)이면 바닥 줄 `고른 {noun} 없음`을 그리지 않는다(같은 사실 두 자리 금지 — 1차가 빈 줄을 가리킨다).
+  const noCandidates = many !== null && noSearchHit && query.trim() === "";
+  const manyResultLine = !many || failed || selected.length === 0 ? null : many.resultLineMany(selected);
+  const manyIdleReason = selected.length > 0 || noCandidates ? null : `고른 ${noun} 없음`;
+  const rejectionSplit = splitRefreshTail(rejection?.reason);
+  const footLine = many ? pickFootLine(rejectionSplit.reason ?? manyResultLine, null, manyIdleReason) : pickFootLine(line, noneSelectableReason, idleReason);
   const nextStepButton = emptyNextStep ? (
     <Button
       variant="tertiary"
@@ -239,18 +316,27 @@ function PickDialogInner({ onClose, title, subtitle, searchLabel, search, primar
   let empty: ReactNode = null;
   if (noSearchHit) {
     if (query.trim() === "" && result?.emptyDefault) {
+      empty =
+        emptyNextStep === null ? (
+          <p id={emptyId} className={styles.empty}>
+            {result.emptyDefault}
+          </p>
+        ) : (
+          <p id={emptyId} className={styles.empty}>
+            {`${result.emptyDefault} · `}
+            {nextStepButton ?? (
+              <Button variant="tertiary" onClick={() => searchInputRef.current?.focus()}>
+                검색으로 찾기
+              </Button>
+            )}
+          </p>
+        );
+    } else if (query.trim() === "") {
       empty = (
-        <p className={styles.empty}>
-          {`${result.emptyDefault} · `}
-          {nextStepButton ?? (
-            <Button variant="tertiary" onClick={() => searchInputRef.current?.focus()}>
-              검색으로 찾기
-            </Button>
-          )}
+        <p id={emptyId} className={styles.empty}>
+          {pickEmptyText(noun, "no-match")}
         </p>
       );
-    } else if (query.trim() === "") {
-      empty = <p className={styles.empty}>{pickEmptyText(noun, "no-match")}</p>;
     } else {
       empty = (
         <p className={styles.empty}>
@@ -329,7 +415,7 @@ function PickDialogInner({ onClose, title, subtitle, searchLabel, search, primar
               if (first) focusRow(first.id);
             } else if (event.key === "Enter" && !event.ctrlKey) {
               event.preventDefault();
-              void pickChosen();
+              void (many ? pickMany() : pickChosen());
             }
           }}
         />
@@ -347,7 +433,7 @@ function PickDialogInner({ onClose, title, subtitle, searchLabel, search, primar
           </p>
         ) : (
           <>
-            <ul id={listId} role="listbox" aria-label={searchLabel} className={styles.list}>
+            <ul id={listId} role="listbox" aria-multiselectable={many ? "true" : undefined} aria-label={searchLabel} className={many ? `${styles.list} ${styles.multiList}` : styles.list}>
               {items.map((item) =>
                 item.type === "group" ? (
                   <li key={`g-${item.id}`} role="presentation" className={styles.group}>
@@ -361,7 +447,8 @@ function PickDialogInner({ onClose, title, subtitle, searchLabel, search, primar
                     active={item.id === activeId}
                     onActivate={() => focusRow(item.id)}
                     onMove={(delta) => moveFrom(item.id, delta)}
-                    onEnter={() => void pickChosen(item)}
+                    onEnter={() => void (many ? pickMany() : pickChosen(item))}
+                    multi={many ? { selected: selected.some((picked) => picked.id === item.id), onToggle: () => toggleRow(item) } : undefined}
                     reasonId={`${listId}-${item.id}`}
                   />
                 ),
@@ -375,7 +462,18 @@ function PickDialogInner({ onClose, title, subtitle, searchLabel, search, primar
       </div>
 
       <div className={styles.foot}>
-        {noneSelectable && nextStepButton ? (
+        {rejection ? (
+          <div className={`${styles.resultRow} ${styles.rejectRow}`}>
+            <p id={resultId} className={`${styles.resultLine} ${styles.error}`}>
+              {rejectionSplit.reason}
+            </p>
+            {rejectionSplit.refresh ? (
+              <Button variant="tertiary" onClick={refreshMany}>
+                새로 고침
+              </Button>
+            ) : null}
+          </div>
+        ) : noneSelectable && nextStepButton ? (
           <div className={styles.resultRow}>
             {footLine ? (
               <p id={resultId} className={styles.resultLine}>
@@ -396,8 +494,15 @@ function PickDialogInner({ onClose, title, subtitle, searchLabel, search, primar
             </Button>
           </span>
           <span className={styles.primaryWrap}>
-            <Button variant="primary" shortcut="Enter" pending={picking} disabled={!chosen} aria-describedby={failed ? errorId : footLine ? resultId : undefined} onClick={() => void pickChosen()}>
-              {primaryLabel}
+            <Button
+              variant="primary"
+              shortcut="Enter"
+              pending={picking}
+              disabled={many ? !manyReady : !chosen}
+              aria-describedby={failed ? errorId : noCandidates ? emptyId : footLine ? resultId : undefined}
+              onClick={() => void (many ? pickMany() : pickChosen())}
+            >
+              {many ? pickManyPrimaryLabel(primaryLabel, selected.length) : primaryLabel}
             </Button>
           </span>
         </div>
@@ -412,6 +517,7 @@ function PickRowView({
   onActivate,
   onMove,
   onEnter,
+  multi,
   reasonId,
 }: {
   row: PickRow;
@@ -419,18 +525,23 @@ function PickRowView({
   onActivate: () => void;
   onMove: (delta: 1 | -1) => void;
   onEnter: () => void;
+  /** 다중 변형 — option `aria-selected`가 고름이고 로빙 포커스 행이 현재 줄이다. */
+  multi?: { selected: boolean; onToggle: () => void };
   reasonId: string;
 }) {
   return (
     <li
       role="option"
       data-pick-id={row.id}
-      aria-selected={active && row.selectable ? "true" : "false"}
+      aria-selected={multi ? (multi.selected ? "true" : "false") : active && row.selectable ? "true" : "false"}
       aria-disabled={row.selectable ? undefined : "true"}
       aria-describedby={row.reason ? reasonId : undefined}
       tabIndex={active ? 0 : -1}
-      className={[styles.row, row.number ? styles.numbered : "", row.current ? styles.current : "", row.selectable ? "" : styles.disabled].filter(Boolean).join(" ")}
-      onClick={onActivate}
+      className={[styles.row, row.number ? styles.numbered : "", (multi ? active : row.current) ? styles.current : "", row.selectable ? "" : styles.disabled].filter(Boolean).join(" ")}
+      onClick={() => {
+        onActivate();
+        multi?.onToggle();
+      }}
       onKeyDown={(event) => {
         if (event.key === "ArrowDown") {
           event.preventDefault();
@@ -438,12 +549,16 @@ function PickRowView({
         } else if (event.key === "ArrowUp") {
           event.preventDefault();
           onMove(-1);
+        } else if (event.key === " " && multi) {
+          event.preventDefault();
+          multi.onToggle();
         } else if (event.key === "Enter" && !event.ctrlKey) {
           event.preventDefault();
           onEnter();
         }
       }}
     >
+      {multi ? <span className={styles.multiMark} aria-hidden="true" /> : null}
       {row.number ? <span className={styles.number}>{row.number}</span> : null}
       <span className={styles.main}>
         <span className={styles.rowTitle}>{row.title}</span>

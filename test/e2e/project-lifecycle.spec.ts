@@ -719,7 +719,7 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
     await expect(page.getByRole("dialog", { name: "상태 바꾸기" })).toBeVisible();
   });
 
-  test("(f) 375px 머리 줄은 제목·상태 태그 → 「상태 바꾸기」 → 메타, 가로 스크롤 0, 「더보기」 없음 (DR-26 · DetailScreen 순서)", async ({
+  test("(f) 375px 머리 줄은 제목·상태 태그 → 「상태 바꾸기」 → 메타, 가로 스크롤 0, 「더보기」에 복사·차수 작업 없음 (DR-26 · DetailScreen 순서)", async ({
     page,
   }) => {
     const team = await makeTeam();
@@ -759,8 +759,13 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
     );
     expect(overflow).toBe(0);
-    // 하단 탭의 「더보기」(셸)는 <main> 밖이다 — 머리 줄의 「더보기」만 본다.
-    await expect(page.getByRole("main").getByRole("button", { name: "더보기" })).toHaveCount(0);
+    // 하단 탭의 「더보기」(셸)는 <main> 밖이다 — 머리 줄의 「더보기」만 본다. 06.2-12(UI-SPEC S4)부터 머리 「더보기」는
+    // 참여자 더하기(canEdit ∧ hasCandidates — 후보는 공유 DB의 본부 없는 대표에 달려 있다)도 품는다. 이 머리 줄에 복사 · 차수
+    // 작업이 없다는 것만 본다 — 「더보기」가 있으면 그 묶음의 자식은 참여자 더하기 하나뿐이다.
+    for (const toggle of await page.getByRole("main").getByRole("button", { name: "더보기" }).all()) {
+      const groupId = await toggle.getAttribute("aria-controls");
+      await expect(page.locator(`[id="${groupId}"] > *`)).toHaveText(["참여자 더하기"]);
+    }
   });
 });
 

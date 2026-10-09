@@ -439,3 +439,98 @@ td:has(> .rowNumber) {
   font-size: var(--text-aux);
   font-weight: var(--fw-regular);
 }
+
+/* 06.2-12(UI-SPEC S2) — 「참여자」 섹션. 이름 칸 = 이름 span + 글자 태그(`담당 PM` · `퇴직` · `보관됨`, 이름 뒤 --s-1). 긴 이름은 PC에서 줄바꿈,
+   폰(<700)에서는 이름 span만 한 줄 말줄임(태그는 말줄임 밖이라 잘리지 않는다). 팀 칸은 한 줄 말줄임. */
+.memberName {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-1);
+  min-width: 0;
+}
+
+.memberNameText {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: keep-all;
+}
+
+.memberTag {
+  flex: none;
+  white-space: nowrap;
+}
+
+.memberTeamText {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.memberFail {
+  color: var(--status-danger);
+  font-size: var(--text-aux);
+  font-weight: var(--fw-medium);
+}
+
+/* 표 위 결과 줄 `{이름} 뗌` + `되돌리기` — cards `.undoLine`과 같은 값. */
+.memberResult {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+  margin: 0 0 var(--s-4);
+  font-size: var(--text-aux);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+  word-break: keep-all;
+}
+
+.memberResultFailed {
+  color: var(--status-danger);
+}
+
+@media (max-width: 699.98px) {
+  /* 자동 배치 표 칸 안의 한 줄 말줄임은 칸 최소 폭을 이름 전체로 키워 표가 넘친다 — 이름 트랙을 minmax(0, 1fr)로 두면 최소 폭 계산에서 0이다(태그는 오른쪽 자동 트랙). */
+  .memberName {
+    display: grid;
+    grid-auto-flow: column;
+    grid-template-columns: minmax(0, 1fr);
+    grid-auto-columns: max-content;
+  }
+
+  .memberNameText {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+}
+
+/* 06.2-12(S2) — 표 아래 3차 `참여자 더하기` 한 줄. `all` = 모든 폭(참여자 0 — 폰의 빈 상태 첫 행동), `pcOnly` = 폰(<700)에서는 「더보기」 자식으로만 연다
+   (같은 버튼 하나에 폭 숨김 클래스만 바꾼다 — PC/폰 이중 렌더 없음). */
+.memberAddAll,
+.memberAddPcOnly {
+  display: block;
+  margin-top: var(--s-3);
+}
+
+@media (max-width: 699.98px) {
+  .memberAddPcOnly {
+    display: none;
+  }
+
+  .memberAddAll button {
+    min-height: var(--touch-min);
+  }
+}
+
+/* 06.2-12(S4) — 폰 「더보기」 자식 감싸개. PC의 `.copyActions`는 display: contents라 숨은 자식은 상자 · 간격을 만들지 않는다. */
+.memberAddSlot {
+  display: none;
+}
+
+@media (max-width: 699.98px) {
+  .memberAddSlot {
+    display: contents;
+  }
+}

@@ -49,6 +49,8 @@ export const CORE_ACTION_TYPES = [
   "evidence_amount_change",
   // 06-10 D-603 · D-611: 경영관리의 증빙 면제(사유 원문) — 지급 게이트와 미결 점검을 닫는 길이고 확인 기록은 06-11 훅이 지울 수 있어 끌 수 없다.
   "evidence_waive",
+  // 06.2-05 D-6223: 프로젝트 참여자 더하기 · 떼기 · 되돌리기 — 다른 팀 프로젝트 접근을 바꾸는 기록이라 끌 수 없다.
+  "project_member_change",
 ] as const;
 
 export type CoreActionType = (typeof CORE_ACTION_TYPES)[number];
@@ -87,6 +89,7 @@ export const ACTION_TYPE_LABELS: Record<CoreActionType, string> = {
   payment_cancel: "지급 취소",
   evidence_amount_change: "증빙 금액 변경",
   evidence_waive: "증빙 면제",
+  project_member_change: "프로젝트 참여자 변경",
 };
 
 // OPS-05: Excel 내보내기·마스킹 해제·행동 로그 정리는 설정으로 못 끄는 핵심
@@ -116,6 +119,8 @@ export const ALWAYS_ON_ACTION_TYPES: CoreActionType[] = [
   "evidence_amount_change",
   // 06-10 D-603 · D-611: 증빙 면제는 지급 게이트와 미결 점검을 닫는 흔적이라 끌 수 없다
   "evidence_waive",
+  // 06.2-05 D-6223: 참여자 변경은 접근 권한을 바꾸는 행위이고 줄에는 뗀 사람이 남지 않아 끌 수 없다
+  "project_member_change",
 ];
 
 export class UnknownActionTypeError extends UserFacingError {}

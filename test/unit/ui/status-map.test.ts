@@ -26,7 +26,7 @@ const CURRENT_CALL_SITES: Record<StatusKind, string[]> = {
   success: ["승인", "완료", "확정", "적용 중", "본인 승인"],
   muted: [
     "대기", "임시", "회수", "수주중", "미수주", "보관됨", "숨김", "비활성", "후보", "예정", "확인 불가", "미설정",
-    "첫 로그인 전", "임시 비밀번호 사용 중", "작성 중", "무효",
+    "첫 로그인 전", "임시 비밀번호 사용 중", "작성 중", "무효", "퇴직", "담당 PM",
   ],
 };
 
@@ -85,6 +85,16 @@ describe("status-map — 낱말 → 색 한 표", () => {
       expect(statusKind(word as StatusWord)).toBe(kind);
     });
   }
+
+  // 06.2 SP-62-2 — 참여자 표의 글자 태그 둘(호출부는 06.2-12가 만든다 — CURRENT_CALL_SITES는 그때 더한다).
+  describe("06.2 SP-62-2", () => {
+    for (const word of ["퇴직", "담당 PM"] as const) {
+      it(`${word} → muted(표에 있다)`, () => {
+        expect(word in STATUS_KIND, `${word}이 표에 있다`).toBe(true);
+        expect(statusKind(word)).toBe("muted");
+      });
+    }
+  });
 
   it("Phase 6 기존 낱말은 같은 색으로 다시 쓴다(신청됨 · 증빙 없음 · 지출결의 중)", () => {
     expect(statusKind("신청됨")).toBe("muted");

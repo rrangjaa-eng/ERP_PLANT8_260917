@@ -114,6 +114,13 @@ describe("recordAction (OPS-05)", () => {
     expect((ACTION_TYPE_LABELS as Record<string, string>).cert_purge).toBe("확인증 파기");
   });
 
+  // 06.2-05(D-6223): 참여자 더하기 · 떼기 · 되돌리기는 다른 팀 프로젝트 접근을 바꾸는 행위라 끌 수 없다.
+  it("project_member_change(프로젝트 참여자 변경)가 세 배열에 함께 있고 끌 수 없다(D-6223)", () => {
+    expect(CORE_ACTION_TYPES as readonly string[]).toContain("project_member_change");
+    expect(ALWAYS_ON_ACTION_TYPES as readonly string[]).toContain("project_member_change");
+    expect((ACTION_TYPE_LABELS as Record<string, string>).project_member_change).toBe("프로젝트 참여자 변경");
+  });
+
   // 04.3-14(사용자 결정 ⑤): 확인증 조회 접속기록 — 안전성 확보조치 기준 제2조3호 요소라 끌 수 없다.
   it("cert_view(확인증 조회)가 세 배열에 함께 있고 선택 로그 설정에서 빼도 기록된다", async () => {
     expect(CORE_ACTION_TYPES as readonly string[]).toContain("cert_view");

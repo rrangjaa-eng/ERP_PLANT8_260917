@@ -29,3 +29,14 @@
     grid-template-columns: calc(var(--label-w) - var(--s-3)) 1fr;
   }
 }
+
+/* 06.2 PR-6 /design-review DOM 감사 — 값 칸의 링크(3차 버튼 · nowrap)가 실제 길이 행사 이름에서 값 칸을 넘어
+   문서가 가로로 넘쳤다(지출결의 문서 프로젝트 칸, 320 +101px · 375 +46px — SYSTEM 「최소 폭 320px」 문서 넘침 0).
+   값 칸 안에서는 글자 링크도 값 글자처럼 줄바꿈한다(이름 · 값 칸 규칙 keep-all + anywhere). */
+.kv dd > a {
+  max-width: 100%;
+  white-space: normal;
+  text-align: start;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}

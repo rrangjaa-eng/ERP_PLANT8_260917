@@ -47,7 +47,13 @@ const OPTIONAL_ACTION_TYPES = CORE_ACTION_TYPES.filter(
 export const ACTION_LOG_OPTIONAL_TYPES: SettingDef<CoreActionType[]> = {
   key: "action_log.optional_types",
   kind: "simple",
-  schema: z.array(z.enum(OPTIONAL_ACTION_TYPES as [CoreActionType, ...CoreActionType[]])),
+  // 끌 수 없는 종류로 옮겨진 값(41010c13의 permission_change 등)이 예전 저장값에 남아 있으면 읽기 ·
+  // 저장 · 가져오기에서 그 값만 뺀다(사용자 결정 2026-10-09 「읽을 때 빼기」) — 통째로 거부하면 행동 로그
+  // 판정이 전부 켬으로 떨어지고 설정 화면이 저장된 선택 대신 기본값을 보인다. 모르는 값은 그대로 거부한다.
+  schema: z.preprocess(
+    (raw) => (Array.isArray(raw) ? raw.filter((type) => !(ALWAYS_ON_ACTION_TYPES as readonly unknown[]).includes(type)) : raw),
+    z.array(z.enum(OPTIONAL_ACTION_TYPES as [CoreActionType, ...CoreActionType[]])),
+  ),
   label: "기록할 행동 종류",
   hint: "여기서 고른 종류만 행동 로그에 남습니다(핵심 로그는 항상 켜져 있어 목록에 없습니다).",
   namespace: "행동 로그",

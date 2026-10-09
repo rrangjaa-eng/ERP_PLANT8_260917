@@ -360,6 +360,12 @@ function zodEnumOptions(schema: unknown): string[] {
   return [];
 }
 
+// z.preprocess로 감싼 스키마(pipe)는 바깥 검증 쪽(out)의 모양으로 서술한다.
+function unwrapPipe(schema: unknown): unknown {
+  if (zodTypeName(schema) === "pipe" && schema && typeof schema === "object" && "out" in schema) return schema.out;
+  return schema;
+}
+
 function zodArrayElement(schema: unknown): unknown {
   if (schema && typeof schema === "object" && "element" in schema) {
     return schema.element;
@@ -369,12 +375,13 @@ function zodArrayElement(schema: unknown): unknown {
 
 export function describeSettingField(def: SettingDef<unknown>): SettingFieldDescriptor {
   if (def.pairGrid) return { kind: "pair-grid", ...def.pairGrid };
-  const typeName = zodTypeName(def.schema);
+  const schema = unwrapPipe(def.schema);
+  const typeName = zodTypeName(schema);
   if (typeName === "boolean") return { kind: "boolean" };
   if (typeName === "number") return { kind: "number", numberKind: def.numberKind };
-  if (typeName === "enum") return { kind: "enum", options: zodEnumOptions(def.schema) };
+  if (typeName === "enum") return { kind: "enum", options: zodEnumOptions(schema) };
   if (typeName === "array") {
-    const element = zodArrayElement(def.schema);
+    const element = zodArrayElement(schema);
     if (zodTypeName(element) === "enum") return { kind: "multi-enum", options: zodEnumOptions(element) };
   }
   return { kind: "string" };

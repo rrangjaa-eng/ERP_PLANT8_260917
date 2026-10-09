@@ -121,6 +121,8 @@ export const ALWAYS_ON_ACTION_TYPES: CoreActionType[] = [
   "evidence_waive",
   // 06.2-05 D-6223: 참여자 변경은 접근 권한을 바꾸는 행위이고 줄에는 뗀 사람이 남지 않아 끌 수 없다
   "project_member_change",
+  // 06.2-09(/cso CSO-2 · 사용자 결정 2026-10-08 「못 끄게」): 권한 변경(계급 보는 범위 · 업무 범위 · 사람 계급)은 행 범위를 넓히는 행위라 끌 수 없다
+  "permission_change",
 ];
 
 export class UnknownActionTypeError extends UserFacingError {}

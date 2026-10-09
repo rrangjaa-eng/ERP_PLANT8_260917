@@ -141,6 +141,28 @@ test.describe("팀 비용 지출결의 (EXP-08)", () => {
     await page.getByRole("button", { name: "종류 고르기" }).click();
     await expect(page.getByLabel("종류", { exact: true })).toBeFocused();
   });
+
+  // 06.2-09(S5 · D-6216 · D-6224): 새 문서(문서 팀 없음)의 결재선 1단은 `행사 담당 팀장` 단계 이름만 — 앞에 사람 이름이 없다.
+  test("새 문서 결재선 한 줄은 행사 담당 팀장 단계 이름만이고 그 앞에 사람 이름이 없다 (06.2 S5)", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await openNew(page);
+    const line = page.getByTestId("approval-route-line");
+    await expect(line).toContainText("행사 담당 팀장");
+    await expect(line).toHaveText(/→ 행사 담당 팀장 →/);
+    await expect(line).not.toContainText(fx.lead.name);
+  });
+
+  // 06.2-09(S5 · D-6215): 첫 저장 뒤 작성 중 문서는 문서 팀(팀 비용 = 귀속 팀)의 팀장 이름까지 그린다.
+  test("첫 저장해 작성 중 문서가 되면 결재선 한 줄이 {귀속 팀 팀장 이름} 행사 담당 팀장 (06.2 S5)", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await openNew(page);
+    await page.getByRole("button", { name: /^임시 저장/ }).click();
+    await expect(page).toHaveURL(/\/expenses\/[0-9a-f-]{36}$/);
+    await waitForHydration(page.getByRole("button", { name: /^임시 저장/ }));
+    await expect(page.getByTestId("approval-route-line")).toContainText(`${fx.lead.name} 행사 담당 팀장`);
+  });
 });
 
 test.describe("골라내기 (S14) · 거래처", () => {

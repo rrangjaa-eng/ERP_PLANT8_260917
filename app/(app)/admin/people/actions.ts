@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { authedActionClient } from "@/lib/actions/client";
 import { registerPerson, changePersonRole, archivePerson } from "@/domain/people";
 import { assignTeam, cancelFutureAssignment, createOrgUnit, renameOrgUnit, createTeam, renameTeam } from "@/domain/org";
-import { createRole, renameRole, setRoleWorkScope, ROLE_WORK_SCOPES } from "@/domain/permissions/roles";
+import { createRole, renameRole, setRoleWorkScope, setRoleViewScope, ROLE_VIEW_SCOPES, ROLE_WORK_SCOPES } from "@/domain/permissions/roles";
 import { archive } from "@/domain/archive";
 import "./actions.registry";
 
@@ -86,6 +86,14 @@ export const setRoleWorkScopeAction = authedActionClient
   .schema(z.object({ id: z.string().min(1), workScope: z.enum(ROLE_WORK_SCOPES) }))
   .action(async ({ parsedInput, ctx }) => {
     await setRoleWorkScope(ctx.viewer, parsedInput.id, parsedInput.workScope);
+    revalidatePath("/admin/people/roles");
+  });
+
+// 06.2-09(S1 · D-6201): 계급 보는 범위 — 권한 판정 · 로그는 setRoleViewScope(06.2-01)가 한다.
+export const setRoleViewScopeAction = authedActionClient
+  .schema(z.object({ id: z.string().min(1), viewScope: z.enum(ROLE_VIEW_SCOPES) }))
+  .action(async ({ parsedInput, ctx }) => {
+    await setRoleViewScope(ctx.viewer, parsedInput.id, parsedInput.viewScope);
     revalidatePath("/admin/people/roles");
   });
 

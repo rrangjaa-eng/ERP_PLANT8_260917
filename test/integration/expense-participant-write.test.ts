@@ -168,6 +168,16 @@ describe("참여자 지출결의 쓰기 — 제출 때 다시 판정 (06.2-10 F1
     expect(await numberOf(expenseId)).toBeNull();
   });
 
+  it("제출이 이미 된 문서의 재시도는 참여에서 떼인 뒤에도 already_submitted다 — 응답을 잃은 재시도 계약", async () => {
+    const w = await setup();
+    const expenseId = await p3Draft(w.member, w.p3.lineId);
+    await attachEvidence(w.member, expenseId);
+    const expectedVersion = await versionOf(expenseId);
+    expect((await submitExpense(w.member, { expenseId, expectedVersion })).kind).toBe("submitted");
+    await removeProjectMember(w.otherTeamPm, w.p3.id, w.member.id);
+    expect((await submitExpense(w.member, { expenseId, expectedVersion })).kind).toBe("already_submitted");
+  });
+
   it("담당 PM이 바뀐 옛 PM(다른 팀)의 기존 작성 중 문서 제출은 거부된다 — 번호가 생기지 않는다", async () => {
     const w = await setup();
     // 같은 팀 PM은 PM이 바뀌어도 업무 범위(팀)로 계속 쓴다 — 쓰기 권리를 잃는 옛 PM은 다른 팀 사람이다.

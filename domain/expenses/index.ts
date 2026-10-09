@@ -1034,13 +1034,6 @@ export async function submitExpense(
     // 06-13(B-1 · N-3): 전역 잠금 순서 프로젝트 행 → 견적 줄(id 순, 줄 하나) → 문서 행. 줄 id는 트랜잭션 전에 읽은 값이고,
     // 잠근 문서의 줄이 그 사이 바뀌었으면 잠그지 않은 줄로 판정하지 않고 충돌로 막는다.
     const lockedProject = projectRow ? await lockProjectForWrite(viewer, projectRow.id, tx) : null;
-    if (lockedProject && writeScope) {
-      // 보임이 먼저(없는 것과 같게) — 떼인 참여자처럼 참여로만 보이던 사람에게는 없는 문서다. 보이지만 못 쓰면 권한 없음.
-      const [rowScope, teamScope] = writeScope;
-      if (!(await findProjectInScope(viewer, rowScope, lockedProject.id, tx))) throw new ExpenseNotFoundError();
-      const memberProjectIds = await listLiveMemberProjectIds(viewer, viewer.id, [lockedProject.id], tx);
-      if (!canWriteExpenseOnProject(lockedProject, { viewerId: viewer.id, teamScope, memberProjectIds })) throw new ForbiddenError("지출결의 작성 권한 없음");
-    }
     if (row.quoteLineId) await lockQuoteLines(viewer, [row.quoteLineId], tx);
     const locked = await lockExpenseForUpdate(viewer, row.id, tx);
     await deps?.afterLock?.();
@@ -1053,6 +1046,14 @@ export async function submitExpense(
       if (instance && ACTIVE_STATUSES.has(instance.status)) return { kind: "already_submitted", expenseId: locked.id, number: locked.number };
       if (!instance || !EDITABLE_STATUSES.has(instance.status)) throw new ExpenseConflictError(locked.updatedAt);
       resubmit = { instanceId: instance.id, version: instance.version };
+    }
+    // 이미 제출된 문서의 재시도(응답을 잃은 경우)는 위에서 already_submitted로 끝난다 — 쓰기 판정은 작성 중 · 재제출에만.
+    if (lockedProject && writeScope) {
+      // 보임이 먼저(없는 것과 같게) — 떼인 참여자처럼 참여로만 보이던 사람에게는 없는 문서다. 보이지만 못 쓰면 권한 없음.
+      const [rowScope, teamScope] = writeScope;
+      if (!(await findProjectInScope(viewer, rowScope, lockedProject.id, tx))) throw new ExpenseNotFoundError();
+      const memberProjectIds = await listLiveMemberProjectIds(viewer, viewer.id, [lockedProject.id], tx);
+      if (!canWriteExpenseOnProject(lockedProject, { viewerId: viewer.id, teamScope, memberProjectIds })) throw new ForbiddenError("지출결의 작성 권한 없음");
     }
     if (locked.version !== input.expectedVersion) throw new ExpenseConflictError(locked.updatedAt);
 

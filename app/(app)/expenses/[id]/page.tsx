@@ -2,8 +2,10 @@ import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/viewer";
 import "@/app/(app)/document-kinds";
 import { getApprovalView, previewRoute, REJECT_REASON_EMPTY_MESSAGE, REJECT_REASON_MAX, REJECT_REASON_TOO_LONG_MESSAGE, RouteBlockedError } from "@/domain/approvals";
-import { can } from "@/domain/permissions/can";
+import { can, ForbiddenError } from "@/domain/permissions/can";
 import { EXPENSE_DOCUMENT_KIND, ExpenseNotFoundError, getExpense, listExpenseCurrencies, listExpenseFormOptions, previewExpense } from "@/domain/expenses";
+import { previewExpenseRoute } from "@/domain/expenses/route-doc";
+import { canOpenProject } from "@/domain/projects/visibility";
 import { teamKindOptions } from "../team-kind-options";
 import { getEvidenceActions, listEvidence } from "@/domain/evidence";
 import { getPaymentView } from "@/domain/payments";
@@ -57,7 +59,8 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
     // 05-09: 문서 화면은 무효 행도 그린다(처리자 · 시각 · 사유) — 파일 행 3차는 서버가 정한 evidenceActions대로.
     // 06-03: 지급 섹션은 결재 통과(approved — 자기 승인 포함, UA-607) 문서만. view가 null(05 C1 — 쓰기 권한 없는 기안자의 번호 없는 작성 중 문서)이거나
     // 통과 전이면 부르지 않는다(섹션 요소 0 · 오류 화면 없음).
-    const [evidenceActions, paymentView] = await Promise.all([
+    // 06.2-09(S6 · D-6206): 프로젝트 칸 링크는 서버가 「열 수 있음」을 판정한 때만 — 결재 차례로 문서만 보이는 사람에게 죽은 링크를 그리지 않는다.
+    const [evidenceActions, paymentView, projectOpenable] = await Promise.all([
       getEvidenceActions(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: id }),
       view?.status === "approved"
         ? getPaymentView(viewer, id).catch((error: unknown) => {
@@ -66,6 +69,7 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
             return "error" as const;
           })
         : null,
+      expense.projectId ? canOpenProject(viewer, expense.projectId) : false,
     ]);
     const documentFiles: AttachmentFile[] = evidence.flatMap((file) =>
       file.id && file.originalName && file.createdAt
@@ -82,19 +86,25 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
           ]
         : [],
     );
-    return <ExpenseDocument expense={expense} view={view} files={documentFiles} evidenceActions={evidenceActions} maxMb={maxMb} submitted={submitted} paymentView={paymentView} />;
+    return <ExpenseDocument expense={expense} view={view} files={documentFiles} evidenceActions={evidenceActions} maxMb={maxMb} submitted={submitted} paymentView={paymentView} projectOpenable={projectOpenable} />;
   }
 
   // 작성 중 — 폼. 결재선은 제출 전 한 줄(기안자 · 문서 종류의 결재선 설정으로 해석 — 막히면 이유 한 줄).
   // 서로 기대지 않는 읽기 넷을 동시에(05 /review A13).
   const [{ route, routeBlocked }, { evidence: evidenceItems, payment: paymentItems, prepaidDueDays }, currencies, initialBlock] = await Promise.all([
-    previewRoute(viewer, { kind: EXPENSE_DOCUMENT_KIND }).then(
-      (preview) => ({ route: preview, routeBlocked: null }),
-      (error: unknown) => {
-        if (!(error instanceof RouteBlockedError)) throw error;
-        return { route: null, routeBlocked: error.message };
-      },
-    ),
+    // 06.2-09(S5 · D-6215 · D-6224): 작성 중 문서는 문서 팀으로 담당자를 푼다 — 기안자가 아니거나 쓰기 권한이 없으면 문서 팀을 풀지 않는다(단계 이름만).
+    previewExpenseRoute(viewer, { expenseId: id })
+      .catch((error: unknown) => {
+        if (error instanceof ExpenseNotFoundError || error instanceof ForbiddenError) return previewRoute(viewer, { kind: EXPENSE_DOCUMENT_KIND });
+        throw error;
+      })
+      .then(
+        (preview) => ({ route: preview, routeBlocked: null }),
+        (error: unknown) => {
+          if (!(error instanceof RouteBlockedError)) throw error;
+          return { route: null, routeBlocked: error.message };
+        },
+      ),
     // 선택지는 지출결의 쓰기 권한으로 받는다(코드표 메뉴가 없는 PM도 증빙 종류를 바꿀 수 있다 — 05-06).
     listExpenseFormOptions(viewer),
     listExpenseCurrencies(),

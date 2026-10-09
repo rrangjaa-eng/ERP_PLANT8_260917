@@ -42,6 +42,7 @@ export function ExpenseDocument({
   maxMb,
   submitted,
   paymentView = null,
+  projectOpenable,
 }: {
   expense: Partial<ExpenseDocumentDto>;
   view: ApprovalView | null;
@@ -51,6 +52,8 @@ export function ExpenseDocument({
   submitted: string | undefined;
   /** 06-03: 결재 통과 문서의 지급 섹션 DTO — 없거나 null이면 지급 섹션 · 행동 줄을 그리지 않는다(P0 · 05 C1 작성 중 문서). */
   paymentView?: Partial<PaymentViewDto> | "error" | null;
+  /** 06.2-09(S6 · D-6206) — 서버가 「열 수 있음」을 판정한다. 거짓이면 링크 없이 글자만(죽은 링크 금지). */
+  projectOpenable: boolean;
 }) {
   const id = expense.id ?? "";
   // 팀 비용 문서(프로젝트 · 견적 줄 없음 · 사용일 있음) — 머리 줄은 `지출결의 — {팀} · {내용}`, 프로젝트 칸은 `프로젝트 미연결 · {종류}`.
@@ -86,9 +89,13 @@ export function ExpenseDocument({
       value: isTeam ? (
         <span className={styles.muted}>{["프로젝트 미연결", expense.teamExpenseKindLabel].filter(Boolean).join(" · ")}</span>
       ) : expense.projectId && expense.projectName ? (
-        <Link href={`/projects/${expense.projectId}`} scroll={false} className={`${buttonStyles.btn} ${buttonStyles.tertiary}`}>
-          {[expense.projectNumber, expense.projectName].filter(Boolean).join(" ")}
-        </Link>
+        projectOpenable ? (
+          <Link href={`/projects/${expense.projectId}`} scroll={false} className={`${buttonStyles.btn} ${buttonStyles.tertiary}`}>
+            {[expense.projectNumber, expense.projectName].filter(Boolean).join(" ")}
+          </Link>
+        ) : (
+          <span>{[expense.projectNumber, expense.projectName].filter(Boolean).join(" ")}</span>
+        )
       ) : (
         dash
       ),

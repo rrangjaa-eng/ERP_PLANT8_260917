@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { test, expect, type Locator, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page, type Request } from "@playwright/test";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { codeItems, projects, quoteLines } from "@/db/schema";
@@ -90,12 +90,14 @@ async function makeProject(input: {
 }
 
 // 서버 액션(일괄 저장) 요청·응답.
-function isSaveAction(method: string, headers: Record<string, string>): boolean {
-  return method === "POST" && headers["next-action"] !== undefined;
+// 일괄 저장(saveProjectLedgerAction)만 — 상세 화면의 섹션 읽기 액션(법인카드 사용 · 참여자, 본문 `{projectId}`)도 같은 머리로 POST하므로
+// 그 액션에만 있는 필수 필드 seenStatus로 가른다.
+function isSaveAction(request: Request): boolean {
+  return request.method() === "POST" && request.headers()["next-action"] !== undefined && (request.postData() ?? "").includes("\"seenStatus\"");
 }
 
 function waitForSaveResponse(page: Page) {
-  return page.waitForResponse((response) => isSaveAction(response.request().method(), response.request().headers()));
+  return page.waitForResponse((response) => isSaveAction(response.request()));
 }
 
 // 격자의 데이터 행(그룹 머리글 행·폰 접힌 줄 제외).
@@ -250,7 +252,7 @@ test.describe("견적 표 편집 범위 — 서버 셀 단계 · 구조 (04-30, 
     await expect(input).toBeVisible();
     await input.fill("987654");
 
-    const request = page.waitForRequest((req) => isSaveAction(req.method(), req.headers()));
+    const request = page.waitForRequest((req) => isSaveAction(req));
     const saved = waitForSaveResponse(page);
     await page.keyboard.press("Control+s");
     expect((await request).postData() ?? "").toContain("987654");
@@ -272,7 +274,7 @@ test.describe("견적 표 편집 범위 — 서버 셀 단계 · 구조 (04-30, 
     await expect(input).toBeVisible();
     await input.fill("123456");
 
-    const request = page.waitForRequest((req) => isSaveAction(req.method(), req.headers()));
+    const request = page.waitForRequest((req) => isSaveAction(req));
     const saved = waitForSaveResponse(page);
     // 편집기가 열린 동안은 dirty 0이라 1차가 aria-disabled(「바뀐 칸 없음」)다 — Playwright의 enabled 대기를 건너뛰고
     // 사람이 누르는 것과 같은 마우스 이벤트를 보낸다(누르는 순간 편집기가 blur로 커밋된다).
@@ -458,7 +460,7 @@ test.describe("견적 표 편집 범위 — 서버 셀 단계 · 구조 (04-30, 
     await cell(page, 2, COL.itemName).focus();
     await page.keyboard.press("Alt+ArrowUp");
     expect(await itemNames(page)).toEqual(["순서 1", "순서 3", "순서 2"]);
-    const moved = page.waitForRequest((req) => isSaveAction(req.method(), req.headers()));
+    const moved = page.waitForRequest((req) => isSaveAction(req));
     await saveAndSettle(page, cell(page, 0, COL.itemName));
     expect((await moved).postData() ?? "").toMatch(/"order":\[/);
 
@@ -466,7 +468,7 @@ test.describe("견적 표 편집 범위 — 서버 셀 단계 · 구조 (04-30, 
     expect(await itemNames(page)).toEqual(["순서 1", "순서 3", "순서 2"]);
 
     await typeInto(page, cell(page, 0, COL.execution), "실행가", "11000");
-    const editOnly = page.waitForRequest((req) => isSaveAction(req.method(), req.headers()));
+    const editOnly = page.waitForRequest((req) => isSaveAction(req));
     await saveAndSettle(page, cell(page, 0, COL.execution));
     expect((await editOnly).postData() ?? "").not.toMatch(/"order":\[/);
     await page.reload();
@@ -510,7 +512,7 @@ test.describe("견적 표 편집 범위 — 서버 셀 단계 · 구조 (04-30, 
     await page.getByRole("dialog", { name: "견적 줄 삭제" }).getByRole("button", { name: "견적 줄 삭제" }).click();
     await page.getByRole("button", { name: "줄 추가", exact: true }).click();
     await typeInto(page, dataRows(page).last().getByRole("gridcell").nth(COL.itemName), "항목", "새 끝 줄");
-    const appended = page.waitForRequest((req) => isSaveAction(req.method(), req.headers()));
+    const appended = page.waitForRequest((req) => isSaveAction(req));
     await saveAndSettle(page, cell(page, 0, COL.itemName));
     expect((await appended).postData() ?? "").not.toMatch(/"order":\[/);
 
@@ -529,12 +531,12 @@ test.describe("견적 표 편집 범위 — 서버 셀 단계 · 구조 (04-30, 
     let dropped = false;
     await page.route(`**/projects/${project.id}`, async (route) => {
       const request = route.request();
-      if (dropped || !isSaveAction(request.method(), request.headers())) return route.fallback();
+      if (dropped || !isSaveAction(request)) return route.fallback();
       dropped = true;
       await route.fetch(); // 서버까지 보내 커밋시킨다.
       await route.abort(); // 응답은 버린다.
     });
-    const failed = page.waitForEvent("requestfailed", (request) => isSaveAction(request.method(), request.headers()));
+    const failed = page.waitForEvent("requestfailed", (request) => isSaveAction(request));
     await cell(page, 0, COL.itemName).focus();
     await page.keyboard.press("Control+s");
     await failed;
@@ -603,7 +605,7 @@ test.describe("견적 표 편집 범위 — 서버 셀 단계 · 구조 (04-30, 
     });
     await page.route("**/*", async (route) => {
       const request = route.request();
-      if (isSaveAction(request.method(), request.headers())) await held;
+      if (isSaveAction(request)) await held;
       await route.continue();
     });
     await primarySave(page).click();

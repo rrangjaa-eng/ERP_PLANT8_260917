@@ -103,6 +103,17 @@ export type WalkRouteResult = {
 
 export const FALLBACK_LABEL = "대표";
 
+// 06.2(UI-SPEC S5): 행사 담당 팀 단계 이름은 「행사 담당 {계급}」 — 계급이 없거나 이름을 못 찾으면 「행사 담당 팀」.
+export const PROJECT_TEAM_LABEL_PREFIX = "행사 담당 ";
+export const PROJECT_TEAM_LABEL_NO_ROLE = "행사 담당 팀";
+
+// 06.2-02 A-9(사용자 결정 2026-10-09 「목록만 줄임」): 목록 · 처리함 상태 낱말은 행사 담당 팀 단계도 계급 이름만 쓴다
+// (「팀장 결재 중」). 결재선 · 결재 시트는 저장된 단계 이름 전체를 그대로 쓴다. 계급 없는 단계 · 다른 단계 이름은 그대로.
+export function statusStepLabel(label: string): string {
+  if (label === PROJECT_TEAM_LABEL_NO_ROLE || !label.startsWith(PROJECT_TEAM_LABEL_PREFIX)) return label;
+  return label.slice(PROJECT_TEAM_LABEL_PREFIX.length);
+}
+
 // 담당 해석 — 계급 조건(null이면 무관) × 범위. 대상 id가 null이면 0명인
 // 규칙은 team·org_unit에만 건다 — company는 대상 id를 보지 않는다(ENG-1).
 export function resolveHolders(

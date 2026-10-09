@@ -13,6 +13,7 @@ import {
   saveExpenseDraft,
   submitExpense,
 } from "@/domain/expenses";
+import { listExpenses } from "@/domain/expenses/list";
 import { previewExpenseRoute } from "@/domain/expenses/route-doc";
 import { getSettingValue } from "@/domain/settings/registry";
 import { APPROVAL_ROUTE_EXPENSE_STEP1_SCOPE } from "@/domain/settings/keys";
@@ -132,6 +133,18 @@ async function versionOf(expenseId: string): Promise<number> {
 }
 
 describe("팀 비용 · 빈 자리 · EXP-04 · 미리보기", () => {
+  it("목록 상태 낱말은 계급 이름만 — 「팀장 결재 중」, 저장 단계 이름은 「행사 담당 팀장」 그대로 (A-9 · 2026-10-09)", async () => {
+    const w = await setup();
+    const lineExpenseId = await submitOnLine(w.pm, w.lines.withVendor);
+    const teamExpenseId = await teamCostDraft(w.pm, w.stageOneId);
+    expect((await submitReadyDraft(w.pm, teamExpenseId)).kind).toBe("submitted");
+    const rows = (await listExpenses(w.pm, { status: "open" })).groups.flatMap((group) => group.rows);
+    for (const expenseId of [lineExpenseId, teamExpenseId]) {
+      expect(rows.find((row) => row.id === expenseId)?.statusWord).toBe("팀장 결재 중");
+      expect((await stepOne((await instanceOf(expenseId)).id)).label).toBe("행사 담당 팀장");
+    }
+  });
+
   it("팀 비용 문서(기획1팀 사람 · 프로젝트 없음)의 1단계는 귀속 팀(기획1팀) 팀장이다", async () => {
     const w = await setup();
     const expenseId = await teamCostDraft(w.pm, w.stageOneId);

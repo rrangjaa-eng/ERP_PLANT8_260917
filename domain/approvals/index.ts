@@ -29,6 +29,8 @@ import { listOrgSnapshot as defaultListOrgSnapshot, listRouteLabelNames } from "
 import {
   FALLBACK_LABEL,
   InvalidTransitionError,
+  PROJECT_TEAM_LABEL_NO_ROLE,
+  PROJECT_TEAM_LABEL_PREFIX,
   nextStep,
   type ApprovalEvent,
   type NextStepOptions,
@@ -61,7 +63,7 @@ import {
 
 export { registerDocumentKind, getDocumentKind, listDocumentKinds } from "@/domain/approvals/kinds";
 export type { DocumentDetailEvidenceFile, DocumentDetailRow, DocumentDetailRows, DocumentKindDef, DocumentMeasure, DocumentSummary, RouteConfig, RouteConfigStep, RouteSettingDefs } from "@/domain/approvals/kinds";
-export { nextStep, resolveHolders, walkRoute } from "@/domain/approvals/route";
+export { nextStep, resolveHolders, statusStepLabel, walkRoute } from "@/domain/approvals/route";
 export { loadActionLogGate, recordActionInTx } from "@/domain/approvals/tx-log";
 export type { ApprovalInboxItem, ApprovalInboxItemDto, ApprovalView, ApprovalViewDto, RoutePreviewDTO, RoutePreviewStepDTO } from "@/domain/approvals/dto";
 export { projectActionResult } from "@/domain/approvals/dto";
@@ -195,8 +197,8 @@ function planStep(
   const label =
     config.scope === "project_team"
       ? roleId === null
-        ? "행사 담당 팀"
-        : `행사 담당 ${nameOf(names.roles, roleId) ?? "팀"}`
+        ? PROJECT_TEAM_LABEL_NO_ROLE
+        : `${PROJECT_TEAM_LABEL_PREFIX}${nameOf(names.roles, roleId) ?? "팀"}`
       : ((roleId === null ? null : nameOf(names.roles, roleId)) ?? scopeLabel);
   return { stepIndex, label, roleId, scopeKind, scopeTargetId };
 }

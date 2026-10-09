@@ -2,13 +2,16 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Browser, type Locator, type Page } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { expenses } from "@/db/schema";
+import { expenses, projects } from "@/db/schema";
 import { approveDocument, getApprovalView } from "@/domain/approvals";
 import { createTeamExpenseDraft, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { createCodeItem, setCodeItemActive, setEvidenceTypeTaxRule } from "@/domain/code-tables";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
-import { loginPage, waitForHydration, type Person } from "./leave-org";
-import { setupExpenseE2E, submitLineExpense } from "./expense-fixture";
+import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
+import { confirmEvidence } from "@/domain/evidence-reviews";
+import { seoulToday } from "@/lib/dates";
+import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
+import { setupExpenseE2E, submitLineExpense, insertTempRole, type ExpenseE2E } from "./expense-fixture";
 
 // 05-13 Task 2(UI-SPEC responsive S2 · S3 · S8 · S9 · overflow S5 backstop): 폭 375(프로젝트) · 320(파일 안 새 컨텍스트)에서
 // 지출결의 목록 · 폼(외화 · 회사 대납 · 13자리 계산 한 줄) · 폰 행 시트 · 결재함 · 결재 시트가 가로로 넘치지 않는다(`scrollWidth ≤ clientWidth`).
@@ -46,6 +49,56 @@ async function expectTouchHeight(target: Locator, label: string): Promise<void> 
 
 async function phone(browser: Browser, baseURL: string | undefined, person: Person, viewport: (typeof WIDTHS)[number]): Promise<Page> {
   return loginPage(browser, baseURL, person, viewport);
+}
+
+// 제목 요소가 한 줄인지: 글자 상자가 한 줄(범위 사각형 1개) · white-space nowrap · text-overflow ellipsis · 실제로 잘렸다(scrollWidth > clientWidth).
+async function expectOneLineTitle(title: Locator, label: string): Promise<void> {
+  const measured = await title.evaluate((el) => {
+    const style = getComputedStyle(el);
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const rects = Array.from(range.getClientRects()).map((r) => `${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)}`);
+    return {
+      rects,
+      whiteSpace: style.whiteSpace,
+      textOverflow: style.textOverflow,
+      overflow: style.overflow,
+      lines: new Set(Array.from(range.getClientRects()).map((r) => Math.round(r.top))).size,
+      clipped: el.scrollWidth > el.clientWidth,
+    };
+  });
+  expect(measured.whiteSpace, `${label} white-space`).toBe("nowrap");
+  expect(measured.textOverflow, `${label} text-overflow`).toBe("ellipsis");
+  expect(measured.overflow, `${label} overflow`).toBe("hidden");
+  expect(measured.lines, `${label} 글자 줄 수 ${measured.rects.join(' | ')}`).toBe(1);
+  expect(measured.clipped, `${label} 실제로 잘림`).toBe(true);
+}
+
+
+// 제목 글자 범위의 세로 가운데가 링크 상자의 세로 가운데와 ±1px 안인지(처리함 `.rowLink`의 padding-block 가운데 맞춤).
+async function expectTextCentered(title: Locator, label: string): Promise<void> {
+  const measured = await title.evaluate((el) => {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const text = range.getBoundingClientRect();
+    const box = el.getBoundingClientRect();
+    return { textCenter: text.top + text.height / 2, boxCenter: box.top + box.height / 2 };
+  });
+  expect(Math.abs(measured.textCenter - measured.boxCenter), `${label} 글자 세로 가운데 (글자 ${measured.textCenter.toFixed(2)} · 상자 ${measured.boxCenter.toFixed(2)})`).toBeLessThanOrEqual(1);
+}
+
+// 지급 권한자(팀 업무 범위 · 지출결의 보기 + 지급 처리) — payment-batch.spec의 makeTeamPayer와 같은 구성.
+async function makeTeamPayer(fx: ExpenseE2E): Promise<Person> {
+  const [team] = await db.select({ teamId: projects.teamId }).from(projects).where(eq(projects.id, fx.projectId));
+  if (!team?.teamId) throw new Error("프로젝트 팀 없음");
+  const role = await insertTempRole({ id: `role-${randomUUID()}`, name: `E2E제목지급-${randomUUID().slice(0, 8)}`, workScope: "team" });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "view", allowed: true });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.team", action: "view", allowed: true });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.payments", action: "write", allowed: true });
+  for (const infoItem of ["expense.value", "expense.amount", "approval.value", "project.value", "quote.amount", "vendor.value", "team.value", "person.value"]) {
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+  }
+  return makePerson("경영관리", role.id, team.teamId, `${seoulToday().slice(0, 4)}-01-01`);
 }
 
 // 회사 대납 규칙 증빙 종류(시드에 없다 — 이 스펙만 쓰고 끝에서 끈다). 이름이 길수록 `… 규칙` 조각이 길다.
@@ -217,6 +270,79 @@ test.describe("지출결의 폭 375 · 320 (05-13)", () => {
       }
     } finally {
       await setCodeItemActive(SYSTEM_VIEWER, evidence.id, false);
+    }
+  });
+
+  // 06.2 후속(사용자 결정 2026-10-09 「한 줄로 자름」): 폰에서 지출결의 목록 · 결재함 행의 긴 문서 제목은 줄바꿈하지 않고 한 줄 말줄임이다
+  // (폰 행은 최대 두 줄 — 제목 한 줄 + 접힌 줄 한 줄). 전체 제목은 접근성 이름으로 그대로 남는다(링크 · 버튼 이름 = 전체 글자).
+  test("긴 문서 제목 — 목록 · 결재함 행의 제목은 한 줄 말줄임 · 전체 이름 유지 · 넘침 0", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const longName = "2026 하반기 신제품 런칭 팝업스토어 운영 총괄 대행 전국 순회 쇼케이스 및 사후 정산 프로젝트";
+    await db.update(projects).set({ name: longName }).where(eq(projects.id, fx.projectId));
+    await submitLineExpense(browser, baseURL, fx, "worst");
+    const item = fx.lines.worst.itemName;
+
+    for (const viewport of WIDTHS) {
+      const pm = await phone(browser, baseURL, fx.pm, viewport);
+      await pm.goto("/expenses");
+      const link = pm.getByRole("link", { name: new RegExp(item) });
+      await expect(link).toHaveCount(1);
+      await expect(link).toContainText(longName);
+      await expectOneLineTitle(link, `목록 제목 ${viewport.width}`);
+      await expectNoOverflow(pm, `목록 ${viewport.width}`);
+      await pm.context().close();
+
+      const lead = await phone(browser, baseURL, fx.lead, viewport);
+      await lead.goto("/approvals");
+      const trigger = lead.getByRole("button", { name: new RegExp(item) });
+      await waitForHydration(trigger);
+      await expect(trigger).toContainText(longName);
+      await expectOneLineTitle(trigger, `결재함 제목 ${viewport.width}`);
+      await expectNoOverflow(lead, `결재함 ${viewport.width}`);
+      await lead.context().close();
+    }
+  });
+
+  // 06.2 리뷰 보강 — 처리함 문서 링크(`.rowLink`: inline-flex → block 전환)와 지급 대상 탭 제목(`.titleCell`/`.link`)도 한 줄 말줄임이고,
+  // 처리함 링크는 높이 ≥ 44 · 글자가 세로 가운데(±1px)다.
+  test("긴 문서 제목 — 처리함 링크 · 지급 대상 탭 제목도 한 줄 말줄임 (처리함은 높이 ≥ 44 · 글자 세로 가운데)", async ({ browser, baseURL }) => {
+    test.setTimeout(120_000);
+    const fx = await setupExpenseE2E();
+    const longName = "2026 하반기 신제품 런칭 팝업스토어 운영 총괄 대행 전국 순회 쇼케이스 및 사후 정산 프로젝트";
+    await db.update(projects).set({ name: longName }).where(eq(projects.id, fx.projectId));
+    const expenseId = await submitLineExpense(browser, baseURL, fx, "worst");
+    const item = fx.lines.worst.itemName;
+    const view = await getApprovalView(fx.lead.viewer, { kind: EXPENSE_DOCUMENT_KIND, documentId: expenseId });
+    if (!view) throw new Error("결재 인스턴스 없음");
+    let version = view.version;
+    // 팀장이 먼저 승인 — 팀장 처리함에 문서 링크가 생긴다. 이어서 나머지 결재선을 통과시키고 증빙을 확인해 지급 대상으로 만든다.
+    for (const approver of [fx.lead, fx.divisionHead, fx.mgmt, fx.ceo]) version = (await approveDocument(approver.viewer, { instanceId: view.instanceId, expectedVersion: version })).version;
+    const [doc] = await db.select({ version: expenses.version, supply: expenses.supplyAmountKrw }).from(expenses).where(eq(expenses.id, expenseId));
+    if (!doc?.supply) throw new Error("문서 · 공급가 없음");
+    const payer = await makeTeamPayer(fx);
+    await confirmEvidence(payer.viewer, { expenseId, version: doc.version, correctedAmountKrw: doc.supply });
+
+    for (const viewport of WIDTHS) {
+      const lead = await phone(browser, baseURL, fx.lead, viewport);
+      await lead.goto("/approvals");
+      const processed = lead.getByRole("link", { name: new RegExp(item) });
+      await expect(processed).toHaveCount(1);
+      await expect(processed).toContainText(longName);
+      await expectOneLineTitle(processed, `처리함 제목 ${viewport.width}`);
+      await expectTouchHeight(processed, `처리함 링크 ${viewport.width}`);
+      await expectTextCentered(processed, `처리함 링크 ${viewport.width}`);
+      await expectNoOverflow(lead, `처리함 ${viewport.width}`);
+      await lead.context().close();
+
+      const page = await phone(browser, baseURL, payer, viewport);
+      await page.goto("/expenses");
+      await expect(page.getByLabel("상태")).toHaveValue("지급 대상");
+      const target = page.getByRole("link", { name: new RegExp(item) });
+      await expect(target).toHaveCount(1);
+      await expect(target).toContainText(longName);
+      await expectOneLineTitle(target, `지급 대상 제목 ${viewport.width}`);
+      await expectNoOverflow(page, `지급 대상 ${viewport.width}`);
+      await page.context().close();
     }
   });
 });

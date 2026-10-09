@@ -56,7 +56,7 @@ export default async function RolesPage({
           action={canWrite ? { label: "계급 추가", href: NEW_ROLE_HREF, phoneHidden: true } : undefined}
         />
       ) : (
-        <RolesList roles={roles} canArchive={canArchive} canWrite={canWrite} />
+        <RolesList roles={roles} canArchive={canArchive} canWrite={canWrite} viewerRoleId={session.viewer.roleId} />
       )}
     </ListScreen>
   );

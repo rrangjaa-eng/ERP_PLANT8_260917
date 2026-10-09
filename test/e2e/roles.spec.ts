@@ -202,7 +202,8 @@ test.describe("계급 보는 범위 칸 (06.2 S1 · D-6201 · D-6203)", () => {
     await viewerPage.getByLabel("비밀번호").fill(viewer.password);
     await viewerPage.getByRole("button", { name: "로그인" }).click();
     await expect(viewerPage).toHaveURL(/\/account$/);
-    await viewerPage.goto("/projects");
+    // 목록은 50건씩 끝난 달 순이라 공유 DB에서는 12월 행사가 1쪽 밖으로 밀린다 — 이 테스트 행사만 남게 검색으로 좁힌다(검색도 보는 범위 조건 안에서 돈다).
+    await viewerPage.goto(`/projects?q=${encodeURIComponent(suffix)}`);
     await expect(viewerPage.getByRole("link", { name: ownProjectName, exact: true }).first()).toBeAttached();
     await expect(viewerPage.getByRole("link", { name: projectName, exact: true })).toHaveCount(0);
 

@@ -46,8 +46,8 @@ test.describe("폰 375 /admin/people/roles 가로 스크롤 금지 · 머리글 
     await loginAs(page);
     await page.goto("/admin/people/roles");
 
-    // 04.6 W1-4 B2·B3 — 폰에서 P2 머리글(시드 여부 · 정렬)은 접혀 안 보인다. 5열 선언은 그대로 두고 보이는 머리글만 줄 수를 잰다.
-    expect(await page.locator("th").count()).toBe(5);
+    // 04.6 W1-4 B2·B3 — 폰에서 P2 머리글(보는 범위 · 시드 여부 · 정렬)은 접혀 안 보인다. 6열 선언(06.2-09 보는 범위)은 그대로 두고 보이는 머리글만 줄 수를 잰다.
+    expect(await page.locator("th").count()).toBe(6);
     const headers = page.locator("th").filter({ visible: true });
     const count = await headers.count();
     expect(count).toBe(3);
@@ -58,6 +58,79 @@ test.describe("폰 375 /admin/people/roles 가로 스크롤 금지 · 머리글 
         return range.getClientRects().length;
       });
       expect(lineCount).toBe(1);
+    }
+  });
+});
+
+// 06.2-09(S1 · design I8): 폰 접힌 줄은 라벨 없이 값만이라 보는 범위 값 앞에 `보기`를 붙여 업무 범위 값과 가른다. 폰은 읽기만(select 안 보임).
+// 행 줄 수 — 보이는 칸마다 글자 줄(같은 높이의 글자 조각을 한 줄로 묶는다)을 세어 주 행의 최댓값 + 바로 뒤 접힌 줄의 줄 수.
+async function rowLines(page: Page, roleName: string): Promise<number> {
+  const row = page.locator("table tbody tr").filter({ has: page.getByRole("cell", { name: roleName, exact: true }) }).first();
+  return row.evaluate((tr) => {
+    const visible = (el: Element) => getComputedStyle(el).display !== "none" && el.getBoundingClientRect().height > 0;
+    const lineCount = (el: Element): number => {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const tops = [...range.getClientRects()]
+        .filter((rect) => rect.width > 1 && rect.height > 1)
+        .map((rect) => rect.top)
+        .sort((a, b) => a - b);
+      let lines = 0;
+      let last = Number.NEGATIVE_INFINITY;
+      for (const top of tops) {
+        if (top - last > 4) {
+          lines += 1;
+          last = top;
+        }
+      }
+      return lines;
+    };
+    const maxLines = (cells: Element[]) => cells.filter(visible).reduce((max, cell) => Math.max(max, lineCount(cell)), 0);
+    const next = tr.nextElementSibling;
+    const nextCell = next?.children.length === 1 ? next.children[0] : null;
+    const folded = next && nextCell instanceof HTMLTableCellElement && nextCell.colSpan > 1 && visible(next) ? maxLines([nextCell]) : 0;
+    return maxLines([...tr.children]) + folded;
+  });
+}
+
+function collapsedLineOf(page: Page, roleName: string) {
+  return page
+    .locator("table tbody tr")
+    .filter({ has: page.getByRole("cell", { name: roleName, exact: true }) })
+    .first()
+    .locator("xpath=following-sibling::tr[1]");
+}
+
+test.describe("폰 375 계급 보는 범위 읽기 글자 (06.2 S1 · design I8)", () => {
+  test("접힌 줄에 대표 `보기 전사` · 팀장 `보기 팀`이 있고 보는 범위 select는 보이지 않으며 행은 두 줄 이내", async ({ page }) => {
+    await loginAs(page);
+    await page.goto("/admin/people/roles");
+
+    await expect(collapsedLineOf(page, "대표")).toBeVisible();
+    expect(await collapsedLineOf(page, "대표").innerText()).toContain("보기 전사");
+    expect(await collapsedLineOf(page, "팀장").innerText()).toContain("보기 팀");
+    await expect(page.getByLabel("대표 보는 범위").filter({ visible: true })).toHaveCount(0);
+    await expect(page.locator("table tbody select").filter({ visible: true })).toHaveCount(0);
+    for (const roleName of ["대표", "본부 책임자", "팀장", "기획 PM"]) {
+      expect(await rowLines(page, roleName), `${roleName} 행 줄 수`).toBeLessThanOrEqual(2);
+    }
+  });
+});
+
+test.describe("폰 320 계급 화면 (06.2 S1)", () => {
+  test.use({ viewport: { width: 320, height: 800 } });
+
+  test("문서 가로 넘침 0 · 시드 계급 행은 두 줄 이내", async ({ page }) => {
+    await loginAs(page);
+    await page.goto("/admin/people/roles");
+    await expect(collapsedLineOf(page, "대표")).toBeVisible();
+    const { scrollWidth, clientWidth } = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }));
+    expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
+    for (const roleName of ["대표", "본부 책임자", "팀장", "기획 PM"]) {
+      expect(await rowLines(page, roleName), `${roleName} 행 줄 수`).toBeLessThanOrEqual(2);
     }
   });
 });

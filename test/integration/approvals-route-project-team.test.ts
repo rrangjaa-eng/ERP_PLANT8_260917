@@ -20,6 +20,8 @@ import { APPROVAL_ROUTE_EXPENSE_STEP1_ROLE_ID, APPROVAL_ROUTE_EXPENSE_STEP1_SCOP
 import { DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertSimpleValue } from "@/repositories/settings";
+import { upsertPermission } from "@/repositories/permissions";
+import { ForbiddenError } from "@/domain/permissions/can";
 import { makePerson, teamIdByName } from "./approvals-fixtures";
 import { setupApprovedProject, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
 
@@ -202,6 +204,15 @@ describe("팀 비용 · 빈 자리 · EXP-04 · 미리보기", () => {
     const others = await draftOnLine(w.pm, w.lines.withVendor);
     await expect(previewExpenseRoute(w.otherTeamPm, { expenseId: others })).rejects.toBeInstanceOf(ExpenseNotFoundError);
     await expect(previewExpenseRoute(w.otherTeamPm, { expenseId: randomUUID() })).rejects.toBeInstanceOf(ExpenseNotFoundError);
+  });
+
+  // 06.2-09(/review R-3 · /cso CSO-4): 미리보기도 제출(submitExpense)과 같은 판정 — 기안자 본인 → 쓰기 키 → 문서 행.
+  it("지출결의 쓰기 키를 잃은 기안자의 자기 작성 중 문서 미리보기는 ForbiddenError — 제출과 같은 판정", async () => {
+    const w = await setup();
+    const own = await draftOnLine(w.otherTeamPm, w.otherProject.lineId);
+    await upsertPermission(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, menu: "expenses", action: "write", allowed: false });
+    await expect(previewExpenseRoute(w.otherTeamPm, { expenseId: own })).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(submitExpense(w.otherTeamPm, { expenseId: own, expectedVersion: await versionOf(own) })).rejects.toBeInstanceOf(ForbiddenError);
   });
 
   it("project_team 단계가 있는 종류를 문서 팀 없이 제출 준비하면 즉시 오류다 — 빈 자리로 조용히 넘어가지 않는다", async () => {

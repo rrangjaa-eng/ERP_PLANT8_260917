@@ -16,6 +16,7 @@ import {
   DEFAULT_ROLE_ID,
   ROLE_WORK_SCOPES,
   ForbiddenError,
+  SelfRoleScopeChangeError,
   createRole,
   setRoleWorkScope,
   setRoleViewScope,
@@ -100,6 +101,23 @@ describe("roles (ADMN-08, 실제 Postgres)", () => {
   });
 });
 
+// CSO-1(사용자 결정 2026-10-08 「막기」): admin.people 쓰기를 가진 사람도 자기 계급의 범위는 바꿀 수 없다 —
+// changePersonRole의 자기 가드와 같은 줄. 다른 계급은 그대로 바꿀 수 있어야 한다.
+async function makePeopleAdmin(): Promise<Viewer> {
+  const role = await createRole(SYSTEM_VIEWER, { name: `인사담당-${randomUUID()}` });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "admin.people", action: "view", allowed: true });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "admin.people", action: "write", allowed: true });
+  return makePerson("인사 담당", role.id, null);
+}
+
+async function roleLogCount(roleId: string): Promise<number> {
+  const logs = await db
+    .select()
+    .from(actionLog)
+    .where(and(eq(actionLog.entity, "roles"), eq(actionLog.entityId, roleId), eq(actionLog.actionType, "permission_change")));
+  return logs.length;
+}
+
 // 04-27(D11·D20): 계급 업무 범위는 데이터다 — 상태 전환·기간 수정 게이트(04-20·
 // 04-21·04-22)가 읽는 입력일 뿐 보기 권한이 아니다.
 describe("계급 업무 범위(D11·D20)", () => {
@@ -161,6 +179,19 @@ describe("계급 업무 범위(D11·D20)", () => {
     expect(await workScopeOf("role-team-lead")).toBe("team");
   });
 
+  it("자기 계급의 업무 범위는 바꿀 수 없고(값·로그 그대로), 다른 계급은 바꿀 수 있다(CSO-1)", async () => {
+    const hr = await makePeopleAdmin();
+    const ownRole = hr.roleId ?? "";
+    const logsBefore = await roleLogCount(ownRole);
+
+    await expect(setRoleWorkScope(hr, ownRole, "company")).rejects.toBeInstanceOf(SelfRoleScopeChangeError);
+    expect(await workScopeOf(ownRole)).toBe("team");
+    expect(await roleLogCount(ownRole)).toBe(logsBefore);
+
+    await setRoleWorkScope(hr, "role-team-lead", "company");
+    expect(await workScopeOf("role-team-lead")).toBe("company");
+  });
+
   it("없는 계급의 업무 범위를 바꾸면 찾을 수 없다고 거부한다", async () => {
     await expect(setRoleWorkScope(SYSTEM_VIEWER, `role-missing-${randomUUID()}`, "company")).rejects.toThrow(
       "계급 찾을 수 없음",
@@ -210,6 +241,19 @@ describe("계급 보는 범위(06.2 D-6201)", () => {
     expect(logs).toHaveLength(1);
     expect(logs[0]?.actionType).toBe("permission_change");
     expect(logs[0]?.detail).toEqual({ viewScope: { from: "team", to: "company" } });
+  });
+
+  it("자기 계급의 보는 범위는 바꿀 수 없고(값·로그 그대로), 다른 계급은 바꿀 수 있다(CSO-1)", async () => {
+    const hr = await makePeopleAdmin();
+    const ownRole = hr.roleId ?? "";
+    const logsBefore = await roleLogCount(ownRole);
+
+    await expect(setRoleViewScope(hr, ownRole, "company")).rejects.toBeInstanceOf(SelfRoleScopeChangeError);
+    expect(await viewScopeOf(ownRole)).toBe("team");
+    expect(await roleLogCount(ownRole)).toBe(logsBefore);
+
+    await setRoleViewScope(hr, "role-team-lead", "company");
+    expect(await viewScopeOf("role-team-lead")).toBe("company");
   });
 
   it("새로 만든 계급의 보는 범위는 업무 범위를 복사한다(K1)", async () => {

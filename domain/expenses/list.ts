@@ -10,7 +10,7 @@ import { EXPENSE_DOCUMENT_KIND, visibleExpenseScope } from "@/domain/expenses/ac
 import { EXPENSE_LIST_ROW_DTO_SPEC, type ExpenseListRowDto } from "@/domain/expenses/dto";
 import { TEAM_EXPENSE_KIND_LABELS, type TeamExpenseKind } from "@/domain/expenses";
 import { EXPENSE_GROUP_RANKS, listExpensePage, summarizeExpenseList, type ExpenseListRow as RepoRow } from "@/repositories/expenses";
-import type { CurrentStep } from "@/domain/approvals";
+import { statusStepLabel, type CurrentStep } from "@/domain/approvals";
 
 export type { ExpenseListRowDto } from "@/domain/expenses/dto";
 
@@ -83,7 +83,7 @@ function statusOf(row: RepoRow, currentSteps: Map<string, CurrentStep>): { statu
   if (row.groupRank === EXPENSE_GROUP_RANKS.returned) return { statusWord: row.status === "withdrawn" ? "회수" : "반려", statusDate: date };
   if (row.groupRank === EXPENSE_GROUP_RANKS.inReview) {
     const stepLabel = row.instanceId ? currentSteps.get(row.instanceId)?.stepLabel : null;
-    return { statusWord: stepLabel ? `${stepLabel} 결재 중` : "결재 중", statusDate: null };
+    return { statusWord: stepLabel ? `${statusStepLabel(stepLabel)} 결재 중` : "결재 중", statusDate: null };
   }
   return { statusWord: "승인", statusDate: date };
 }

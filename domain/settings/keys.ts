@@ -517,6 +517,10 @@ export const APPROVAL_SELF_APPROVAL_VALUES = ["skip", "self_approve"] as const;
 export type ApprovalSelfApprovalValue = (typeof APPROVAL_SELF_APPROVAL_VALUES)[number];
 export const APPROVAL_ROUTE_SCOPE_VALUES = ["drafter_team", "drafter_org_unit", "company", "org_unit"] as const;
 export type ApprovalRouteScopeValue = (typeof APPROVAL_ROUTE_SCOPE_VALUES)[number];
+// 06.2(D-6215): 행사 담당 팀은 지출결의 결재선에만 — 연차 · 정산은 APPROVAL_ROUTE_SCOPE_VALUES 4값(행사에 안 매인 문서,
+// 260907 `O: server/src/expenses.ts:1021-1022`). 순서는 설정 화면 select 순서(UI-SPEC S5).
+export const EXPENSE_ROUTE_SCOPE_VALUES = ["drafter_team", "project_team", "drafter_org_unit", "company", "org_unit"] as const;
+export type ExpenseRouteScopeValue = (typeof EXPENSE_ROUTE_SCOPE_VALUES)[number];
 
 // "" = 특정 부서 없음(그 단계는 빈 자리). 그 밖은 uuid만 — 비uuid가 저장되면
 // 제출의 scope_target_id(uuid) INSERT가 22P02로 실패한다(B-NEW02).
@@ -812,7 +816,7 @@ export const PROJECT_PROFIT_RATE_THRESHOLD: SettingDef<number> = {
 SETTING_DEFS.push(PROJECT_PROFIT_RATE_THRESHOLD);
 
 // ── 05-03 지출결의 결재선(EXP-01 · UI-SPEC S13) · 지출결의 문서 번호 ───────────
-// 연차 결재선 17키와 같은 꼴 · 같은 라벨(namespace만 다르다). 기본값도 연차와 같은 4단이고 3단 특정 부서만
+// 연차 결재선 17키와 같은 꼴 · 같은 라벨(namespace만 다르다). 기본값도 연차와 같은 4단이고(1단 범위만 행사 담당 팀 — 06.2 D-6216) 3단 특정 부서만
 // 기본값 없음(시드가 경영관리본부로 채운다 — domain/seed/expenses.ts). 자기 승인 기본 = 본인 승인(입력 §3).
 const EXPENSE_ROUTE_NAMESPACE = "지출결의 결재선";
 
@@ -849,14 +853,15 @@ export const APPROVAL_ROUTE_EXPENSE_STEP1_ROLE_ID: SettingDef<string> = {
   default: "role-team-lead",
 };
 
-export const APPROVAL_ROUTE_EXPENSE_STEP1_SCOPE: SettingDef<ApprovalRouteScopeValue> = {
+export const APPROVAL_ROUTE_EXPENSE_STEP1_SCOPE: SettingDef<ExpenseRouteScopeValue> = {
   key: "approval_route.expense.step1.scope",
   kind: "simple",
-  schema: z.enum(APPROVAL_ROUTE_SCOPE_VALUES),
+  schema: z.enum(EXPENSE_ROUTE_SCOPE_VALUES),
   label: "1단 조직 범위",
   namespace: EXPENSE_ROUTE_NAMESPACE,
-  optionLabels: { drafter_team: "기안자 팀", drafter_org_unit: "기안자 본부", company: "전사", org_unit: "특정 부서" },
-  default: "drafter_team",
+  optionLabels: { drafter_team: "기안자 팀", project_team: "행사 담당 팀", drafter_org_unit: "기안자 본부", company: "전사", org_unit: "특정 부서" },
+  // 06.2(D-6216): 코드 기본값만 — 저장 행은 이행하지 않는다(D-6225, 06.2-11 체크포인트).
+  default: "project_team",
 };
 
 export const APPROVAL_ROUTE_EXPENSE_STEP1_ORG_UNIT_ID: SettingDef<string> = {
@@ -891,13 +896,13 @@ export const APPROVAL_ROUTE_EXPENSE_STEP2_ROLE_ID: SettingDef<string> = {
   default: "role-division-head",
 };
 
-export const APPROVAL_ROUTE_EXPENSE_STEP2_SCOPE: SettingDef<ApprovalRouteScopeValue> = {
+export const APPROVAL_ROUTE_EXPENSE_STEP2_SCOPE: SettingDef<ExpenseRouteScopeValue> = {
   key: "approval_route.expense.step2.scope",
   kind: "simple",
-  schema: z.enum(APPROVAL_ROUTE_SCOPE_VALUES),
+  schema: z.enum(EXPENSE_ROUTE_SCOPE_VALUES),
   label: "2단 조직 범위",
   namespace: EXPENSE_ROUTE_NAMESPACE,
-  optionLabels: { drafter_team: "기안자 팀", drafter_org_unit: "기안자 본부", company: "전사", org_unit: "특정 부서" },
+  optionLabels: { drafter_team: "기안자 팀", project_team: "행사 담당 팀", drafter_org_unit: "기안자 본부", company: "전사", org_unit: "특정 부서" },
   default: "drafter_org_unit",
 };
 
@@ -933,13 +938,13 @@ export const APPROVAL_ROUTE_EXPENSE_STEP3_ROLE_ID: SettingDef<string> = {
   default: "",
 };
 
-export const APPROVAL_ROUTE_EXPENSE_STEP3_SCOPE: SettingDef<ApprovalRouteScopeValue> = {
+export const APPROVAL_ROUTE_EXPENSE_STEP3_SCOPE: SettingDef<ExpenseRouteScopeValue> = {
   key: "approval_route.expense.step3.scope",
   kind: "simple",
-  schema: z.enum(APPROVAL_ROUTE_SCOPE_VALUES),
+  schema: z.enum(EXPENSE_ROUTE_SCOPE_VALUES),
   label: "3단 조직 범위",
   namespace: EXPENSE_ROUTE_NAMESPACE,
-  optionLabels: { drafter_team: "기안자 팀", drafter_org_unit: "기안자 본부", company: "전사", org_unit: "특정 부서" },
+  optionLabels: { drafter_team: "기안자 팀", project_team: "행사 담당 팀", drafter_org_unit: "기안자 본부", company: "전사", org_unit: "특정 부서" },
   default: "org_unit",
 };
 
@@ -974,13 +979,13 @@ export const APPROVAL_ROUTE_EXPENSE_STEP4_ROLE_ID: SettingDef<string> = {
   default: "role-ceo",
 };
 
-export const APPROVAL_ROUTE_EXPENSE_STEP4_SCOPE: SettingDef<ApprovalRouteScopeValue> = {
+export const APPROVAL_ROUTE_EXPENSE_STEP4_SCOPE: SettingDef<ExpenseRouteScopeValue> = {
   key: "approval_route.expense.step4.scope",
   kind: "simple",
-  schema: z.enum(APPROVAL_ROUTE_SCOPE_VALUES),
+  schema: z.enum(EXPENSE_ROUTE_SCOPE_VALUES),
   label: "4단 조직 범위",
   namespace: EXPENSE_ROUTE_NAMESPACE,
-  optionLabels: { drafter_team: "기안자 팀", drafter_org_unit: "기안자 본부", company: "전사", org_unit: "특정 부서" },
+  optionLabels: { drafter_team: "기안자 팀", project_team: "행사 담당 팀", drafter_org_unit: "기안자 본부", company: "전사", org_unit: "특정 부서" },
   default: "company",
 };
 

@@ -74,6 +74,7 @@ export const ROW_SCOPE_DISPOSITION: readonly DomainDisposition[] = [
   { file: "domain/expenses/index.ts", fn: "loadSubmitFacts", primitive: "findQuoteLineById", kind: "post-gate", reason: `제출 · 미리보기 — ${EXPENSE_DOC_GATE}` },
   { file: "domain/expenses/index.ts", fn: "previewExpense", primitive: "findProjectById", kind: "post-gate", reason: EXPENSE_DOC_GATE },
   { file: "domain/expenses/index.ts", fn: "submitExpense", primitive: "findProjectById", kind: "post-gate", reason: EXPENSE_DOC_GATE },
+  { file: "domain/expenses/route-doc.ts", fn: "previewExpenseRoute", primitive: "findProjectById", kind: "post-gate", reason: "기안자 본인 문서만 — D-6205 ① (06.2-02 결재선 미리보기의 문서 팀)" },
   { file: "domain/expenses/pick.ts", fn: "listClosedInstallmentsByLineageMany", primitive: "listLineageLinesByProjects", kind: "post-gate", reason: "호출자 searchLinesForPick의 범위 판정(listPickProjects · findProjectInScope) 뒤 프로젝트 id만" },
   { file: "domain/expenses/pick.ts", fn: "searchLinesForPick", primitive: "listQuoteLinesByRevisions", kind: "scoped", reason: "같은 함수의 listPickProjects(rowScopeCondition) · findProjectInScope 판정 뒤 현재 차수 줄(06.2-08 M10)" },
   { file: "domain/issue-requests/index.ts", fn: "listProjectIssueRequests", primitive: "listIssueRequestRowsByProject", kind: "scoped", reason: "같은 함수의 projectRowScope + findProjectInScope 판정 뒤(06.2-04)" },

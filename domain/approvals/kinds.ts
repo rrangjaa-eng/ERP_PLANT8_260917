@@ -3,7 +3,7 @@ import type { SettingDef } from "@/domain/settings/registry";
 import type { visible as defaultVisible } from "@/domain/permissions/visible";
 import type { SelfApproval } from "@/domain/approvals/route";
 import type { InfoItemRef } from "@/domain/permissions/project";
-import type { ApprovalRouteScopeValue } from "@/domain/settings/keys";
+import type { ExpenseRouteScopeValue } from "@/domain/settings/keys";
 import type { DbOrTx } from "@/repositories/document-counters";
 import type { BlockedCandidateFilter, RejectedCandidateFilter } from "@/repositories/approvals";
 import type { Currency } from "@/domain/money/currency";
@@ -13,8 +13,8 @@ import type { Currency } from "@/domain/money/currency";
 // 등록하고, 결재 모듈은 등록된 정의(결재선 설정 로더 · 요약 함수)로만 종류별
 // 차이를 받는다 — approvals가 종류 모듈을 import하지 않는다.
 
-// 선택지 원본은 설정 키 한 곳(APPROVAL_ROUTE_SCOPE_VALUES) — 한쪽만 늘면 컴파일이 잡는다(/review).
-export type RouteConfigScope = ApprovalRouteScopeValue;
+// 선택지 원본은 설정 키 — EXPENSE_ROUTE_SCOPE_VALUES ⊇ APPROVAL_ROUTE_SCOPE_VALUES(06.2 D-6215) · 한쪽만 늘면 컴파일이 잡는다(/review).
+export type RouteConfigScope = ExpenseRouteScopeValue;
 
 export type RouteConfigStep = {
   enabled: boolean;

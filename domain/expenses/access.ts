@@ -1,5 +1,6 @@
 import type { Viewer } from "@/domain/viewer";
 import { seoulToday } from "@/lib/dates";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { rowScopeFor, type RowScope } from "@/domain/permissions/scope-for";
 import { listCurrentSteps, type CurrentStep } from "@/domain/approvals";
 import { isExpenseInScope, type ExpenseScope } from "@/repositories/expenses";
@@ -12,6 +13,13 @@ import { isExpenseInScope, type ExpenseScope } from "@/repositories/expenses";
 
 // 결재 문서 종류 키 — domain/expenses/index.ts가 이 값을 다시 내보낸다(index → access 한 방향, 순환 없음).
 export const EXPENSE_DOCUMENT_KIND = "expense";
+
+// 없는 문서와 같은 답 — index.ts가 다시 내보낸다. 06.2-02: route-doc.ts도 index를 거치지 않고 쓰도록 여기 둔다(런타임 순환 금지 — test/unit/import-cycles).
+export class ExpenseNotFoundError extends UserFacingError {
+  constructor() {
+    super("없는 지출결의 · 새로 고침");
+  }
+}
 
 export type ExpenseAccessDeps = {
   today?: string;

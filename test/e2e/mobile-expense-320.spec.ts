@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Browser, type Locator, type Page } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { expenses } from "@/db/schema";
+import { expenses, projects } from "@/db/schema";
 import { approveDocument, getApprovalView } from "@/domain/approvals";
 import { createTeamExpenseDraft, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { createCodeItem, setCodeItemActive, setEvidenceTypeTaxRule } from "@/domain/code-tables";
@@ -217,6 +217,59 @@ test.describe("지출결의 폭 375 · 320 (05-13)", () => {
       }
     } finally {
       await setCodeItemActive(SYSTEM_VIEWER, evidence.id, false);
+    }
+  });
+
+  // 06.2 후속(사용자 결정 2026-10-09 「한 줄로 자름」): 폰에서 지출결의 목록 · 결재함 행의 긴 문서 제목은 줄바꿈하지 않고 한 줄 말줄임이다
+  // (폰 행은 최대 두 줄 — 제목 한 줄 + 접힌 줄 한 줄). 전체 제목은 접근성 이름으로 그대로 남는다(링크 · 버튼 이름 = 전체 글자).
+  test("긴 문서 제목 — 목록 · 결재함 행의 제목은 한 줄 말줄임 · 전체 이름 유지 · 넘침 0", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const longName = "2026 하반기 신제품 런칭 팝업스토어 운영 총괄 대행 전국 순회 쇼케이스 및 사후 정산 프로젝트";
+    await db.update(projects).set({ name: longName }).where(eq(projects.id, fx.projectId));
+    await submitLineExpense(browser, baseURL, fx, "worst");
+    const item = fx.lines.worst.itemName;
+
+    // 제목 요소가 한 줄인지: 글자 상자가 한 줄(범위 사각형 1개) · white-space nowrap · text-overflow ellipsis · 실제로 잘렸다(scrollWidth > clientWidth).
+    async function expectOneLineTitle(title: Locator, label: string): Promise<void> {
+      const measured = await title.evaluate((el) => {
+        const style = getComputedStyle(el);
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        const rects = Array.from(range.getClientRects()).map((r) => `${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)}`);
+        return {
+          rects,
+          whiteSpace: style.whiteSpace,
+          textOverflow: style.textOverflow,
+          overflow: style.overflow,
+          lines: new Set(Array.from(range.getClientRects()).map((r) => Math.round(r.top))).size,
+          clipped: el.scrollWidth > el.clientWidth,
+        };
+      });
+      expect(measured.whiteSpace, `${label} white-space`).toBe("nowrap");
+      expect(measured.textOverflow, `${label} text-overflow`).toBe("ellipsis");
+      expect(measured.overflow, `${label} overflow`).toBe("hidden");
+      expect(measured.lines, `${label} 글자 줄 수 ${measured.rects.join(' | ')}`).toBe(1);
+      expect(measured.clipped, `${label} 실제로 잘림`).toBe(true);
+    }
+
+    for (const viewport of WIDTHS) {
+      const pm = await phone(browser, baseURL, fx.pm, viewport);
+      await pm.goto("/expenses");
+      const link = pm.getByRole("link", { name: new RegExp(item) });
+      await expect(link).toHaveCount(1);
+      await expect(link).toContainText(longName);
+      await expectOneLineTitle(link, `목록 제목 ${viewport.width}`);
+      await expectNoOverflow(pm, `목록 ${viewport.width}`);
+      await pm.context().close();
+
+      const lead = await phone(browser, baseURL, fx.lead, viewport);
+      await lead.goto("/approvals");
+      const trigger = lead.getByRole("button", { name: new RegExp(item) });
+      await waitForHydration(trigger);
+      await expect(trigger).toContainText(longName);
+      await expectOneLineTitle(trigger, `결재함 제목 ${viewport.width}`);
+      await expectNoOverflow(lead, `결재함 ${viewport.width}`);
+      await lead.context().close();
     }
   });
 });

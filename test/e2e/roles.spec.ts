@@ -309,3 +309,23 @@ test.describe("계급 표 읽기 전용(admin.people 보기만 · 06.2 PR-6 R-1)
     expect(readerHeaderBg, "계급 표 읽기 전용 · 읽기 표 표면(헤더 배경이 편집 표와 다르다)").not.toBe(writerHeaderBg);
   });
 });
+
+// 06.2 CSO-1 R-1(사용자 결정 2026-10-08 「막기」): 자기 계급의 업무 범위 · 보는 범위는 바꿀 수 없다 —
+// 서버가 거부하기 전에 화면이 그 두 칸을 글자로 그린다. 다른 계급 행은 쓰기 권한자에게 그대로 입력 칸.
+test.describe("자기 계급 행의 범위 칸(CSO-1 R-1)", () => {
+  test("시스템 관리자가 자기 계급 행에서는 업무 범위 · 보는 범위가 글자이고, 팀장 행은 활성 select", async ({ page }) => {
+    await loginAs(page);
+    await page.goto("/admin/people/roles");
+
+    const own = "시스템 관리자";
+    await expect(page.getByLabel(`${own} 업무 범위`)).toHaveCount(0);
+    await expect(page.getByLabel(`${own} 보는 범위`)).toHaveCount(0);
+    const ownRow = page.getByRole("row").filter({ hasText: own }).filter({ visible: true });
+    await expect(ownRow).toHaveCount(1);
+    await expect(ownRow).toContainText("전사");
+    await expect(ownRow.locator("select:visible")).toHaveCount(0);
+
+    await expect(page.getByLabel("팀장 업무 범위").filter({ visible: true })).toBeEnabled();
+    await expect(viewScopeSelect(page, "팀장")).toBeEnabled();
+  });
+});

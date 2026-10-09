@@ -101,7 +101,8 @@ test.describe("사람 화면 — 목록이 첫 화면, 등록은 행동 (§6-1)"
 
     await page.getByRole("link", { name: "사람 등록" }).click();
     await expect(page).toHaveURL(/[?&]new=1/);
-    await expect(page.locator(PANEL)).toBeVisible();
+    // CI 공유 DB에 시험용 사람이 1,000명 넘게 쌓이면 /admin/people 목록이 다 그려진 뒤에야 패널이 열린다(4.5~5.7초) — 기본 5초 대신 15초를 기다린다.
+    await expect(page.locator(PANEL)).toBeVisible({ timeout: 15_000 });
     await expect(page.locator(PANEL).getByLabel("이름")).toBeVisible();
 
     // 이메일 로컬 파트는 ASCII로 둔다 — 한글을 넣으면 등록 자체가 검증에서 막혀

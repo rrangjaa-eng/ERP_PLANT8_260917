@@ -433,7 +433,8 @@ test.describe("사람 · 조직 · 계급 옆 패널 (04.6-14)", () => {
     ]) {
       await page.goto(path);
       // 패널은 수화 뒤에 열린다 — boundingBox()는 기다리지 않아 부하가 큰 묶음에서 null이었다.
-      await expect(page.locator(`${form} ${select}`)).toBeVisible();
+      // CI 공유 DB에 시험용 사람이 1,000명 넘게 쌓이면 /admin/people 목록이 다 그려진 뒤에야 패널이 열린다(4.5~5.7초) — 기본 5초 대신 15초를 기다린다.
+      await expect(page.locator(`${form} ${select}`)).toBeVisible({ timeout: 15_000 });
       const label = await page.locator(`${form} label[for="${select.slice(1)}"]`).boundingBox();
       const box = await page.locator(`${form} ${select}`).boundingBox();
       const body = await page.locator(`${form} [data-ui="field-row"] input`).first().boundingBox();

@@ -5,7 +5,6 @@ import { db } from "@/db/client";
 import { expenses, projects } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID, DIVISION_HEAD_ROLE_ID } from "@/domain/permissions/roles";
-import { ForbiddenError } from "@/domain/permissions/can";
 import { createTeam } from "@/domain/org";
 import { changeExpenseLine, createExpenseFromLines, ExpenseNotFoundError, listLineDoors } from "@/domain/expenses";
 import { searchLinesForPick } from "@/domain/expenses/pick";
@@ -122,8 +121,8 @@ describe("지출결의 쪽 프로젝트 확인 — 쓰기 게이트 + 보임 (06
     expect((await createExpenseFromLines(w.otherTeamPm, { lineIds: [w.p2.lineId] })).created).toHaveLength(1);
   });
 
-  it("참여자는 이 플랜에서 아직 쓰지 못한다 — 쓰기 게이트 그대로(D-6214는 06.2-10)", async () => {
+  it("참여자는 06.2-10(D-6214)부터 그 프로젝트 줄로 만든다 — 자세한 갈래는 expense-participant-write.test.ts", async () => {
     const w = await setup();
-    await expect(createExpenseFromLines(w.member, { lineIds: [w.p3.lineId] })).rejects.toBeInstanceOf(ForbiddenError);
+    expect((await createExpenseFromLines(w.member, { lineIds: [w.p3.lineId] })).created).toHaveLength(1);
   });
 });

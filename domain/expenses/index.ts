@@ -10,6 +10,7 @@ import { can, ForbiddenError } from "@/domain/permissions/can";
 import { project } from "@/domain/permissions/project";
 import { listEvidenceVoidSignals } from "@/domain/evidence/signals";
 import { coversProjectTeam, loadActorTeamScope } from "@/domain/projects/status";
+import { canWriteExpenseOnProject } from "@/domain/expenses/write-gate";
 import { projectRowScope } from "@/domain/projects/visibility";
 import type { RowScope } from "@/domain/permissions/scope-for";
 import { getSettingValue, getSimpleSettingValues } from "@/domain/settings/registry";
@@ -96,6 +97,7 @@ import {
 import { listCodeItems } from "@/repositories/code-tables";
 import { countActiveByOwner, listAliveByOwners, markOwnerFilesRemoved, restoreOwnerFilesRemovedAt } from "@/repositories/files";
 import { findProjectById, findProjectInScope, lockProjectForWrite, type ProjectRow } from "@/repositories/projects";
+import { listLiveMemberProjectIds } from "@/repositories/project-members";
 import { findLatestQuoteRevision, findQuoteRevisionById, listLatestQuoteRevisionsByProjects, type QuoteRevisionRow } from "@/repositories/quote-revisions";
 import { findQuoteLineById, listLineageLinesByProjects, listQuoteLinesByRevision, type QuoteLineRow } from "@/repositories/quote-lines";
 import { findExpenseDocFacts, findLineLinks, findLineVendorNames, listExpenseDocFacts, lockQuoteLines } from "@/repositories/quote-line-links";
@@ -659,8 +661,8 @@ export async function createExpenseFromLines(
   const created: { lineId: string; expenseId: string }[] = [];
   const blocked: { lineId: string; reason: string }[] = [];
 
-  // 줄 → 프로젝트를 먼저 다 읽고 그 프로젝트의 쓰기 권리(담당 PM 또는 업무 범위가 프로젝트 팀을 덮음 — Phase 4
-  // 판정)를 판정한다. 하나라도 없으면 아무 행도 만들기 전에 거부한다(T-05-1401).
+  // 줄 → 프로젝트를 먼저 다 읽고 그 프로젝트의 쓰기 권리(canWriteExpenseOnProject — Phase 4 판정 + 06.2-10 참여)를
+  // 판정한다. 하나라도 없으면 아무 행도 만들기 전에 거부한다(T-05-1401).
   const resolved: { lineId: string; line: QuoteLineRow; facts: ProjectFacts }[] = [];
   for (const lineId of [...new Set(input.lineIds)]) {
     const line = UUID_SHAPE.test(lineId) ? await findQuoteLineById(viewer, lineId) : null;
@@ -675,10 +677,12 @@ export async function createExpenseFromLines(
       blocked.push({ lineId, reason: NOT_IN_CURRENT_REVISION });
       continue;
     }
-    if (facts.project.pmUserId !== viewer.id && !coversProjectTeam(teamScope, facts.project.teamId)) {
-      throw new ForbiddenError("지출결의 작성 권한 없음");
-    }
     resolved.push({ lineId, line, facts });
+  }
+  // 06.2-10(D-6214): 참여 줄은 보이는 프로젝트를 다 모은 뒤 한 번에 읽는다 — 쓰기 = 담당 PM ∨ 업무 범위 ∨ 살아 있는 참여.
+  const memberProjectIds = await listLiveMemberProjectIds(viewer, viewer.id, [...new Set(resolved.map(({ facts }) => facts.project.id))]);
+  if (resolved.some(({ facts }) => !canWriteExpenseOnProject(facts.project, { viewerId: viewer.id, teamScope, memberProjectIds }))) {
+    throw new ForbiddenError("지출결의 작성 권한 없음");
   }
 
   const lineageByProject = new Map<string, Map<string, NumberedLineExpense[]>>();

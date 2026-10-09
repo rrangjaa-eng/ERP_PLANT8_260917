@@ -16,10 +16,17 @@ import {
 import { listExpenses } from "@/domain/expenses/list";
 import { previewExpenseRoute } from "@/domain/expenses/route-doc";
 import { getSettingValue } from "@/domain/settings/registry";
-import { APPROVAL_ROUTE_EXPENSE_STEP1_ROLE_ID, APPROVAL_ROUTE_EXPENSE_STEP1_SCOPE } from "@/domain/settings/keys";
+import {
+  APPROVAL_ROUTE_EXPENSE_STEP1_ROLE_ID,
+  APPROVAL_ROUTE_EXPENSE_STEP1_SCOPE,
+  APPROVAL_ROUTE_EXPENSE_STEP2_ENABLED,
+  APPROVAL_ROUTE_EXPENSE_STEP3_ENABLED,
+  APPROVAL_ROUTE_EXPENSE_STEP4_ENABLED,
+} from "@/domain/settings/keys";
 import { DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertSimpleValue } from "@/repositories/settings";
+import { setUserArchived } from "@/repositories/users";
 import { makePerson, teamIdByName } from "./approvals-fixtures";
 import { setupApprovedProject, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
 
@@ -191,6 +198,36 @@ describe("팀 비용 · 빈 자리 · EXP-04 · 미리보기", () => {
     const w = await setup();
     const preview = await previewRoute(w.otherTeamPm, { kind: EXPENSE_DOCUMENT_KIND });
     expect(preview.steps[0]).toEqual({ label: "행사 담당 팀장", holderNames: "", skipped: false });
+  });
+
+  // /review #190 Codex P2: 문서 없는 미리보기에서 안 풀린 1단계를 빈 자리로 보고 끝 판정(대표 폴백 · 막힘)을 붙이면
+  // 제출 뒤에는 없을 대표 행이 보이거나, 대표가 없을 때 미리보기가 오류로 죽는다 — 자리 이름만 낸다(D-6224).
+  async function onlyStepOneEnabled(): Promise<void> {
+    for (const def of [APPROVAL_ROUTE_EXPENSE_STEP2_ENABLED, APPROVAL_ROUTE_EXPENSE_STEP3_ENABLED, APPROVAL_ROUTE_EXPENSE_STEP4_ENABLED]) {
+      await upsertSimpleValue(SYSTEM_VIEWER, def.key, false, null);
+    }
+  }
+
+  it("문서 없는 미리보기에서 안 풀린 1단계만 켜져 있으면 대표 폴백 행을 붙이지 않는다", async () => {
+    const w = await setup();
+    await onlyStepOneEnabled();
+    const preview = await previewRoute(w.otherTeamPm, { kind: EXPENSE_DOCUMENT_KIND });
+    expect(preview.steps).toEqual([{ label: "행사 담당 팀장", holderNames: "", skipped: false }]);
+  });
+
+  it("문서 없는 미리보기에서 안 풀린 1단계만 켜져 있고 대표도 없으면 막힘 오류 없이 자리 이름만 낸다", async () => {
+    const w = await setup();
+    await onlyStepOneEnabled();
+    await setUserArchived(SYSTEM_VIEWER, w.ceo.id, true);
+    const preview = await previewRoute(w.otherTeamPm, { kind: EXPENSE_DOCUMENT_KIND });
+    expect(preview.steps).toEqual([{ label: "행사 담당 팀장", holderNames: "", skipped: false }]);
+  });
+
+  it("문서 없는 미리보기에서 뒤 단계가 처리 가능하면 그 단계는 그대로 이름까지 낸다", async () => {
+    const w = await setup();
+    const preview = await previewRoute(w.otherTeamPm, { kind: EXPENSE_DOCUMENT_KIND });
+    expect(preview.steps[0]).toEqual({ label: "행사 담당 팀장", holderNames: "", skipped: false });
+    expect(preview.steps.filter((step) => step.holderNames === "최대표")).toHaveLength(1);
   });
 
   it("문서 id로 부르는 미리보기는 문서 팀을 풀어 담당자 이름까지 내고, 남의 문서 · 없는 id는 없는 문서다", async () => {

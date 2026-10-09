@@ -285,10 +285,16 @@ export async function previewRoute(
   deps?: ApprovalDeps,
 ): Promise<RoutePreviewDTO> {
   const planned = await planRoute(viewer, { kind: input.kind, drafterId: viewer.id, doc: input.doc }, deps);
-  if (planned.walk.outcome.kind === "blocked") throw new RouteBlockedError(NO_FALLBACK_MESSAGE);
+  // 안 풀린 문서 단계가 있는데 처리할 단계가 없으면 끝 판정(대표 폴백 · 막힘)은 그 단계가 빈 자리라는 가정에
+  // 기댄다 — 제출 때는 다를 수 있어 미리보기는 끝 판정을 싣지 않고 자리 이름만 낸다(D-6224 · /review #190 P2).
+  const { outcome } = planned.walk;
+  const indeterminate =
+    planned.unresolvedStepIndexes.length > 0 && (outcome.kind === "blocked" || (outcome.kind === "actionable" && outcome.isFallback));
+  if (outcome.kind === "blocked" && !indeterminate) throw new RouteBlockedError(NO_FALLBACK_MESSAGE);
   const visible = createVisibleMemo(deps?.findVisibility);
+  const display = indeterminate ? planned.walk.display.filter((step) => !step.isFallback) : planned.walk.display;
 
-  const rows: Partial<RoutePreviewStepDTO>[] = planned.walk.display.flatMap((step): Partial<RoutePreviewStepDTO>[] => {
+  const rows: Partial<RoutePreviewStepDTO>[] = display.flatMap((step): Partial<RoutePreviewStepDTO>[] => {
     if (step.state === "skipped_self") return [{ label: step.label, skipped: true }];
     if (step.state === "current" || step.state === "pending") {
       return [{ label: step.label, holderNames: step.holderNames, skipped: false }];

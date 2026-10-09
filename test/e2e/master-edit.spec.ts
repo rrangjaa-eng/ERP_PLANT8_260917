@@ -1,6 +1,9 @@
 import { test, expect, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
+import { createAccount } from "@/domain/auth/accounts";
+import { archive } from "@/domain/archive";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
 
 // 재검증(2026-09-21)이 찾은 미달 2건 — 둘 다 「수정」 진입점이 없었다.
 //
@@ -154,14 +157,14 @@ test.describe("법인카드 소유자 수정 (성공 기준 5 「수정」)", ()
 
     const stamp = Date.now();
     const holderName = `퇴사소지자-${stamp}`;
-    await page.goto("/admin/people");
-    await page.getByRole("link", { name: "사람 등록" }).click();
-    await page.getByLabel("이름").fill(holderName);
-    await page.getByLabel("이메일").fill(`e2e-left-holder-${stamp}@example.test`);
-    await page.getByLabel("계급").selectOption(DEFAULT_ROLE_ID);
-    await page.getByLabel("입사일").fill("2026-01-01");
-    await page.getByRole("button", { name: "사람 등록" }).click();
-    await expect(page.getByText(/초기 비밀번호 — /)).toBeVisible();
+    // 소지자 등록 · 보관은 이 테스트의 대상이 아니라 전제라 도메인으로 한다. /admin/people은 전체
+    // 사람을 페이지 없이 그려, 공유 CI DB에 사람이 천 명쯤 쌓이면 보관 뒤 재렌더가 expect 5초를
+    // 넘긴다(로컬 1,100명 실측 5.8초 · run 37933575898).
+    const { userId: holderId } = await createAccount(SYSTEM_VIEWER, {
+      email: `e2e-left-holder-${stamp}@example.test`,
+      name: holderName,
+      roleId: DEFAULT_ROLE_ID,
+    });
 
     await page.goto("/admin/corp-cards?new=1");
     await page.getByLabel("발급사").fill(`퇴사카드사-${stamp}`);
@@ -172,12 +175,8 @@ test.describe("법인카드 소유자 수정 (성공 기준 5 「수정」)", ()
     await closeCardRegisterPanel(page);
     await expect(page.getByRole("row", { name: new RegExp(`퇴사대상-${stamp}`) })).toBeVisible();
 
-    // 소지자를 보관(퇴사)한다 — 두 단계 삭제.
-    await page.goto("/admin/people");
-    const personRow = page.getByRole("row", { name: new RegExp(holderName) });
-    await personRow.getByRole("button", { name: "삭제" }).click();
-    await personRow.getByRole("button", { name: "삭제" }).click();
-    await expect(personRow.getByText("보관됨")).toBeVisible();
+    // 소지자를 보관(퇴사)한다 — 커밋이 끝난 뒤 카드 목록으로 간다.
+    await archive(SYSTEM_VIEWER, "user", holderId);
 
     await page.goto("/admin/corp-cards");
     const row = page.getByRole("row", { name: new RegExp(`퇴사대상-${stamp}`) });

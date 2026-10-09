@@ -13,7 +13,9 @@
     display: none;
   }
 
+  /* 상자를 더하지 않는다(PcOnly와 같은 contents) — 표 접힌 줄(P2 칸이 ` · `로 이어지는 한 줄)에서 블록 상자가 값마다 줄을 끊어
+     계급 행이 세 줄이 됐다(06.2-09 `보기 {낱말}` · 375 DOM 실측). */
   .phoneOnly {
-    display: block;
+    display: contents;
   }
 }

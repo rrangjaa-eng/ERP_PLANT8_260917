@@ -191,6 +191,10 @@ test.describe("계급 보는 범위 칸 (06.2 S1 · D-6201 · D-6203)", () => {
     const client = await insertVendor(SYSTEM_VIEWER, { name: `E2E보는범위고객-${suffix}`, normalizedName: `e2e보는범위고객-${suffix}` });
     const projectName = `E2E남의팀행사-${suffix}`;
     await createProject(otherPm.viewer, { clientId: client.id, teamId: otherTeam.id, pmUserId: otherPm.viewer.id, name: projectName, startDate: `${year}-01-01`, endDate: `${year}-12-31` });
+    // 대조군 — 자기 팀 행사가 보여야 목록이 그 사람 범위로 그려졌다고 말할 수 있다(빈 목록은 표 없이 빈 화면 문구다).
+    const ownPm = await makePerson("자기팀PM", "role-pm", ownTeam.id, `${year}-01-01`);
+    const ownProjectName = `E2E자기팀행사-${suffix}`;
+    await createProject(ownPm.viewer, { clientId: client.id, teamId: ownTeam.id, pmUserId: ownPm.viewer.id, name: ownProjectName, startDate: `${year}-01-01`, endDate: `${year}-12-31` });
 
     const viewerPage = await browser.newPage({ baseURL });
     await viewerPage.goto("/login");
@@ -199,7 +203,7 @@ test.describe("계급 보는 범위 칸 (06.2 S1 · D-6201 · D-6203)", () => {
     await viewerPage.getByRole("button", { name: "로그인" }).click();
     await expect(viewerPage).toHaveURL(/\/account$/);
     await viewerPage.goto("/projects");
-    await expect(viewerPage.locator("main table:not([aria-hidden='true'])").first()).toBeAttached();
+    await expect(viewerPage.getByRole("link", { name: ownProjectName, exact: true }).first()).toBeAttached();
     await expect(viewerPage.getByRole("link", { name: projectName, exact: true })).toHaveCount(0);
 
     await loginAs(page);

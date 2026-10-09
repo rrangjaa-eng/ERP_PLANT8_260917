@@ -44,9 +44,11 @@ async function setupWorld(): Promise<World> {
   const otherPm = await makePerson("타팀PM", "role-pm", otherTeam.id, `${year}-01-01`);
 
   const client = await insertVendor(SYSTEM_VIEWER, { name: `E2E범위고객-${suffix}`, normalizedName: `e2e범위고객-${suffix}` });
-  // 짧은 이름 — 폰 행 줄 수가 상태 낱말만으로 정해지게 한다.
-  const projectName = `E2E범위-${suffix}`;
-  const project = await createProject(fx.ceo.viewer, {
+  // 짧은 이름 — 폰 행 줄 수가 상태 낱말만으로 정해지게 한다. 320에서 목록 제목 칸(`{행사} · {항목}`) 글자 폭은 89px,
+  // 결재함 행 버튼(`지출결의 · {행사} · {항목}`)은 119px라 `E2E범위-xxxx · 무대-xxxx`도 `P1a2b · M1a2b`도 두 줄로 꺾였다(DOM 실측).
+  // 이름을 가를 필요는 없다 — 기안자 · 결재자가 세계마다 새 사람이라 그 사람의 목록 · 결재함에는 이 문서 하나뿐이다.
+  const projectName = "P";
+  const project = await createProject(SYSTEM_VIEWER, {
     clientId: client.id,
     teamId: fxProject.teamId,
     pmUserId: otherPm.viewer.id,
@@ -57,7 +59,7 @@ async function setupWorld(): Promise<World> {
   if (!project.id || !project.number) throw new Error("행사를 만들지 못했다");
   const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
   if (!revision) throw new Error("1차 차수 없음");
-  const itemName = `무대-${suffix}`;
+  const itemName = "M1";
   const saved = await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
     rows: [
       {
@@ -143,7 +145,8 @@ test.describe("행사 담당 팀장 결재선 낱말 · 담당자 (06.2 S5)", ()
     await waitForHydration(trigger);
     await trigger.click();
     const sheet = lead.getByRole("dialog");
-    await expect(sheet).toContainText(`${world.fx.lead.name} 행사 담당 팀장`);
+    // 보는 사람이 그 단계 담당이면 이름 뒤 `(나)`(SYSTEM §7 결재선 단계별 목록) — 단계 이름은 같은 label 하나.
+    await expect(sheet.locator("dt", { hasText: "결재선" }).locator("xpath=following-sibling::dd[1]").getByRole("listitem").first()).toContainText(`${world.fx.lead.name}(나) 행사 담당 팀장`);
     await lead.context().close();
   });
 
@@ -178,6 +181,8 @@ test.describe("범위 밖 프로젝트로 가는 죽은 링크 없음 (06.2 S6 �
 
     const mgmt = await loginPage(browser, baseURL, world.fx.mgmt);
     await mgmt.goto(`/expenses/${expenseId}`);
+    // 문서가 다 그려질 때까지 기다린다 — 로딩 뼈대(loading.tsx)에도 빈 `프로젝트` 칸이 있어 그동안은 칸이 둘이다.
+    await waitForHydration(mgmt.getByRole("button", { name: /^승인/ }));
     await expect(projectField(mgmt)).toHaveText(world.projectLabel);
     await expect(projectField(mgmt).getByRole("link")).toHaveCount(0);
     await expect(mgmt.getByRole("link", { name: world.projectLabel })).toHaveCount(0);
@@ -186,13 +191,19 @@ test.describe("범위 밖 프로젝트로 가는 죽은 링크 없음 (06.2 S6 �
 });
 
 // 폰 행 줄 수 — 보이는 칸마다 글자 줄(같은 높이의 글자 조각을 한 줄로 묶는다)을 세어 주 행의 최댓값 + 바로 뒤 접힌 줄(칸 하나 · colSpan > 1)의 줄 수.
+// 글자 노드의 조각만 잰다 — 요소 상자까지 재면 결재함 행 버튼의 44px 누르는 상자(top이 글자보다 13px 위)가 한 줄로 더 세어졌다(375 DOM 실측).
 async function rowLines(row: Locator): Promise<number> {
   return row.evaluate((tr) => {
     const visible = (el: Element) => getComputedStyle(el).display !== "none" && el.getBoundingClientRect().height > 0;
     const lineCount = (el: Element): number => {
-      const range = document.createRange();
-      range.selectNodeContents(el);
-      const tops = [...range.getClientRects()]
+      const rects: DOMRect[] = [];
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        rects.push(...range.getClientRects());
+      }
+      const tops = rects
         .filter((rect) => rect.width > 1 && rect.height > 1)
         .map((rect) => rect.top)
         .sort((a, b) => a - b);

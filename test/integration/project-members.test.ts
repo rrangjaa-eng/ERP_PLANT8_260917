@@ -9,7 +9,7 @@ import { GateBlockedError } from "@/domain/rules/gate";
 import { assignTeam, createTeam } from "@/domain/org";
 import { setResignationDate } from "@/domain/people";
 import { createProject, loadProjectList } from "@/domain/projects";
-import { changeProjectStatus, ForbiddenError } from "@/domain/projects/status";
+import { actorCoversProjectTeam, changeProjectStatus, ForbiddenError, statusDestinations } from "@/domain/projects/status";
 import { saveProjectLedger } from "@/domain/projects/ledger";
 import { canOpenProject } from "@/domain/projects/visibility";
 import {
@@ -492,6 +492,61 @@ describe("검토 반영 I-2 — 참여로만 보이는 프로젝트에서 업무
     expect((ledger as Error).message).toBe("기간 바꾸기 권한 없음");
     const [row] = await db.select({ status: projects.status, startDate: projects.startDate }).from(projects).where(eq(projects.id, P3));
     expect(row).toEqual({ status: "bidding", startDate: "2026-11-01" });
+  });
+});
+
+// 06.2-09(06.2-05 검토 I-2 · 사용자 결정 2026-10-08 「막기」): 상태 전환 · 원장(기간) 쓰기의 업무 범위 갈래도 참여 조각을 뺀 보는 범위로만 인정.
+async function makeWriterRole(id: string, viewScope: "team" | "org_unit"): Promise<void> {
+  await makeRole(id, "company", viewScope);
+  await upsertPermission(SYSTEM_VIEWER, { roleId: id, menu: "projects.status", action: "write", allowed: true });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: id, menu: "projects.period", action: "write", allowed: true });
+}
+
+async function projectRowOf(projectId: string) {
+  const [row] = await db.select().from(projects).where(eq(projects.id, projectId));
+  if (!row) throw new Error("프로젝트 없음");
+  return row;
+}
+
+const PERIOD_INPUT = {
+  seenStatus: "bidding" as const,
+  period: { startDate: "2026-11-02", endDate: "2026-12-31", baseline: { startDate: "2026-11-01", endDate: "2026-12-31" } },
+};
+
+describe("06.2-09 I-2 — 참여로만 보이는 프로젝트에서 상태 전환 · 원장 쓰기의 업무 범위 갈래는 권리가 아니다", () => {
+  it("업무 범위 전사 · 보는 범위 team 계급 H(상태 · 기간 키 있음)가 참여자로만 P3를 보면 갈 곳 0 · 상태 전환 · 기간 저장 거부 · 값 그대로", async () => {
+    const w = await buildMembersWorld();
+    const P3 = w.projects.P3.id;
+    await makeWriterRole("role-test-company-work-team-view-writer", "team");
+    const H = await makePerson("에이치", "role-test-company-work-team-view-writer", "재무팀");
+    await addProjectMembers(w.mgmtLead, P3, [H.id]);
+    expect(await canOpenProject(H, P3)).toBe(true);
+
+    const row = await projectRowOf(P3);
+    expect(await actorCoversProjectTeam(H, row, { todayKst: kstToday(new Date()) })).toBe(false);
+    expect(await statusDestinations(H, row)).toEqual([]);
+    const status = await errorOf(changeProjectStatus(H, P3, { from: "bidding", to: "lost" }));
+    expect(status).toBeInstanceOf(GateBlockedError);
+    expect((status as Error).message).toBe("다른 팀 프로젝트 · 상태 바꾸기 권한 없음");
+    const ledger = await errorOf(saveProjectLedger(H, P3, PERIOD_INPUT));
+    expect(ledger).toBeInstanceOf(UserFacingError);
+    expect((ledger as Error).message).toBe("기간 바꾸기 권한 없음");
+    expect(await projectRowOf(P3)).toMatchObject({ status: "bidding", startDate: "2026-11-01" });
+  });
+
+  it("같은 계급 꼴이라도 보는 범위 org_unit이라 참여 없이 P3가 보이면 업무 범위 갈래 인정 — 기간 저장 · 상태 전환 성공", async () => {
+    const w = await buildMembersWorld();
+    const P3 = w.projects.P3.id;
+    await makeWriterRole("role-test-company-work-division-view-writer", "org_unit");
+    const H2 = await makePerson("에이치투", "role-test-company-work-division-view-writer", "재무팀");
+
+    const row = await projectRowOf(P3);
+    expect(await actorCoversProjectTeam(H2, row, { todayKst: kstToday(new Date()) })).toBe(true);
+    expect((await statusDestinations(H2, row)).map((destination) => destination.to)).toContain("lost");
+    await saveProjectLedger(H2, P3, PERIOD_INPUT);
+    expect(await projectRowOf(P3)).toMatchObject({ startDate: "2026-11-02" });
+    await changeProjectStatus(H2, P3, { from: "bidding", to: "lost" });
+    expect(await projectRowOf(P3)).toMatchObject({ status: "lost" });
   });
 });
 

@@ -92,14 +92,31 @@ export function coversProjectTeam(scope: ActorTeamScope, projectTeamId: string):
   return scope.teamId !== null && scope.teamId === projectTeamId;
 }
 
+// 06.2-09(06.2-05 검토 I-2 · 사용자 결정 2026-10-08 「막기」): 쓰기 권리의 업무 범위 갈래는 참여 조각을 뺀 보는 범위로
+// 그 프로젝트가 보일 때만 인정한다 — 참여로만 보이면 덮는 팀이 없는 것으로 좁힌다(참여자 관리 members.ts와 같은 판정,
+// 260907 `O: server/src/projects.ts:705-711`). 전사(all) 범위는 참여와 무관하게 보이므로 조회하지 않는다. 판정은 트랜잭션 전 전역 db로(04-32).
+const NO_TEAM_SCOPE: ActorTeamScope = { workScope: "team", teamId: null };
+
+export async function teamScopeForProject(
+  viewer: Viewer,
+  teamScope: ActorTeamScope,
+  rowScope: RowScope,
+  projectId: string,
+): Promise<ActorTeamScope> {
+  if (rowScope.rows !== "limited") return teamScope;
+  const reach = await findProjectInScope(viewer, rowScope, projectId, undefined, { excludeMembership: true });
+  return reach ? teamScope : NO_TEAM_SCOPE;
+}
+
 // 트랜잭션 밖에서 부르는 곳(화면·갈 곳 목록·04-22 기간 수정 권리)용 합성.
 export async function actorCoversProjectTeam(
   viewer: Viewer,
-  project: { teamId: string },
+  project: { id: string; teamId: string },
   opts: { todayKst: string },
   deps?: Partial<TeamScopeDeps>,
 ): Promise<boolean> {
-  return coversProjectTeam(await loadActorTeamScope(viewer, opts, deps), project.teamId);
+  const [teamScope, rowScope] = await Promise.all([loadActorTeamScope(viewer, opts, deps), projectRowScope(viewer)]);
+  return coversProjectTeam(await teamScopeForProject(viewer, teamScope, rowScope, project.id), project.teamId);
 }
 
 // ── 트랜잭션 전 사실(ENG-D3 ① — ARCHITECTURE §4-8) ─────────────────────────
@@ -214,12 +231,13 @@ export async function evaluateTransition(
 // 권한·팀 범위가 없는 목적지는 싣지 않는다 — 비면 화면이 「상태 바꾸기」를 그리지 않는다.
 export type StatusDestination = { to: ProjectStatus; blockedReason: string | null };
 
+// 06.2-09(I-2): 주입된 사실이 없으면 업무 범위를 그 프로젝트의 참여 뺀 보임으로 좁힌다 — 화면이 서버가 거부할 갈 곳을 그리지 않는다.
 export async function statusDestinations(
   viewer: Viewer,
-  project: { status: string; teamId: string; startDate: string | null },
+  project: { id: string; status: string; teamId: string; startDate: string | null },
   deps?: Partial<StatusChangeFactDeps & { facts: ActorFacts }>,
 ): Promise<StatusDestination[]> {
-  const facts = deps?.facts ?? (await loadActorFacts(viewer, deps));
+  const facts = deps?.facts ?? (await loadProjectActorFacts(viewer, project, deps));
   const destinations: StatusDestination[] = [];
   for (const transition of ALLOWED_TRANSITIONS) {
     // 05-11: 결재로만 가는 전환(정산 → 완료)은 사람이 고르는 갈 곳이 아니다.
@@ -229,6 +247,11 @@ export async function statusDestinations(
     else if (decision.rule === START_DATE_RULE) destinations.push({ to: transition.to, blockedReason: decision.reason });
   }
   return destinations;
+}
+
+async function loadProjectActorFacts(viewer: Viewer, project: { id: string }, deps?: Partial<StatusChangeFactDeps>): Promise<ActorFacts> {
+  const [facts, rowScope] = await Promise.all([loadActorFacts(viewer, deps), projectRowScope(viewer)]);
+  return { ...facts, teamScope: await teamScopeForProject(viewer, facts.teamScope, rowScope, project.id) };
 }
 
 async function loadActorFacts(viewer: Viewer, deps?: Partial<StatusChangeFactDeps>): Promise<ActorFacts> {
@@ -308,13 +331,17 @@ export async function changeProjectStatus(
     denyWrite(viewer, "project.approval-authority", ids, new GateBlockedError("지금 담당이 아님 · 새로 고침"));
   }
   const loaded = deps?.facts ?? (await loadStatusChangeFacts(viewer, deps));
-  const facts = trigger === "approval" ? approvalPathFacts(loaded) : loaded;
+  let facts = trigger === "approval" ? approvalPathFacts(loaded) : loaded;
   if (facts.rowScope.rows === "none" && trigger !== "approval") {
     denyWrite(viewer, "projects.view", ids, new ProjectNotFoundError("존재하지 않는 프로젝트"));
   }
   // 06.2(D-6206): 범위 밖 프로젝트는 없음 — 트랜잭션(잠금) 전에 전역 db로 판정한다(04-32).
   if (trigger !== "approval" && !(await findProjectInScope(viewer, facts.rowScope, projectId))) {
     denyWrite(viewer, "projects.view", ids, new ProjectNotFoundError("존재하지 않는 프로젝트"));
+  }
+  // 06.2-09(I-2): 사람의 전환은 업무 범위 갈래를 참여 뺀 보임으로 좁힌다 — 결재 경로는 결속 권한이 경계라 그대로.
+  if (trigger !== "approval") {
+    facts = { ...facts, teamScope: await teamScopeForProject(viewer, facts.teamScope, facts.rowScope, projectId) };
   }
 
   const recordAction = deps?.recordAction ?? defaultRecordAction;

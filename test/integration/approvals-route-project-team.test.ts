@@ -16,7 +16,7 @@ import {
 import { listExpenses } from "@/domain/expenses/list";
 import { previewExpenseRoute } from "@/domain/expenses/route-doc";
 import { getSettingValue } from "@/domain/settings/registry";
-import { APPROVAL_ROUTE_EXPENSE_STEP1_SCOPE } from "@/domain/settings/keys";
+import { APPROVAL_ROUTE_EXPENSE_STEP1_ROLE_ID, APPROVAL_ROUTE_EXPENSE_STEP1_SCOPE } from "@/domain/settings/keys";
 import { DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertSimpleValue } from "@/repositories/settings";
@@ -90,6 +90,15 @@ describe("G34 1단계 = 행사 담당 팀장", () => {
 
     await expect(approveDocument(w.lead, { instanceId: instance.id, expectedVersion: instance.version })).rejects.toBeInstanceOf(NotCurrentHolderError);
     await expect(approveDocument(w.mgmtLead, { instanceId: instance.id, expectedVersion: instance.version })).resolves.toBeDefined();
+  });
+
+  // /review #190 R-2: UI-SPEC S5 「계급 무관이면 행사 담당 팀」 — 저장 단계 이름 갈래가 테스트에 없었다.
+  it("1단 계급을 무관으로 저장하면 단계 이름은 「행사 담당 팀」이고 범위는 그대로 행사 담당 팀이다 (UI-SPEC S5)", async () => {
+    const w = await setup();
+    await upsertSimpleValue(SYSTEM_VIEWER, APPROVAL_ROUTE_EXPENSE_STEP1_ROLE_ID.key, "", null);
+    const expenseId = await submitOnLine(w.otherTeamPm, w.otherProject.lineId);
+    const instance = await instanceOf(expenseId);
+    expect(await stepOne(instance.id)).toMatchObject({ scopeKind: "team", scopeTargetId: w.plan1, label: "행사 담당 팀" });
   });
 
   it("같은 팀 행사(기획1팀 PM · 기획1팀 프로젝트)는 지금과 같은 사람 — 기획1팀 팀장 (D-6216)", async () => {

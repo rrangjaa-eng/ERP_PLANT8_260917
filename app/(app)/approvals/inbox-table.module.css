@@ -108,11 +108,11 @@ tr:has(.rowTap) {
   }
 
   /* 폰 행은 최대 두 줄(문서 한 줄 + 접힌 줄) — 긴 문서 제목은 줄바꿈 대신 한 줄 말줄임(사용자 결정 2026-10-09 「한 줄로 자름」).
-     width 0 + min-width 100%는 칸이 글자 길이로 늘지 않고 다른 열이 쓰고 남은 폭만 쓰게 한다. 전체 글자는 버튼 · 링크 이름으로 남는다. */
+     width 0 + min-width는 칸이 글자 길이로 늘지 않고 다른 열이 쓰고 남은 폭만 쓰게 한다(max(100%, 5em): 고유 폭 계산에서 %는 0이라 5em 바닥이 남아 제목이 몇 글자로 줄지 않는다). 전체 글자는 버튼 · 링크 이름으로 남는다. */
   .rowTap,
   .rowLink {
     width: 0;
-    min-width: 100%;
+    min-width: max(100%, 5em);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -131,7 +131,9 @@ tr:has(.rowTap) {
     display: block;
     box-sizing: border-box;
     min-height: var(--touch-min);
-    padding-block: var(--s-2);
+    /* 글자 한 줄(폰 본문 15 × --lh-table 1.5 = 22.5)을 44 안 세로 가운데로: (44 - 22.5) / 2 ≈ 10.75 → --s-2 + --s-1 × 0.7 = 10.8.
+       app/ 간격 허용 목록이 1lh 식(app/c 선례)을 받지 않아 토큰 식으로 맞춘다. */
+    padding-block: calc(var(--s-2) + var(--s-1) * 0.7);
   }
 
   .rowLink::after {

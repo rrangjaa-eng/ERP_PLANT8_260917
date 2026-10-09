@@ -1025,11 +1025,22 @@ export async function submitExpense(
     : ({ kind: "team", format: await loadDocumentNumberFormat("expense_team") } as const);
   // 팀 비용 번호 연도 = 제출일(서울)의 연도.
   const teamNumberYear = Number(seoulToday(deps?.now).slice(0, 4));
+  // /review F1 · /cso CSO-PR5-1: 프로젝트 쓰기 권리(네 입구와 같은 판정)를 tx 안에서 다시 잰다 — 범위는 tx 전에 읽는다.
+  const writeScope = projectRow
+    ? await Promise.all([projectRowScope(viewer), loadActorTeamScope(viewer, { todayKst: seoulToday(deps?.now) })])
+    : null;
 
   return withTransaction(async (tx): Promise<SubmitExpenseResult> => {
     // 06-13(B-1 · N-3): 전역 잠금 순서 프로젝트 행 → 견적 줄(id 순, 줄 하나) → 문서 행. 줄 id는 트랜잭션 전에 읽은 값이고,
     // 잠근 문서의 줄이 그 사이 바뀌었으면 잠그지 않은 줄로 판정하지 않고 충돌로 막는다.
     const lockedProject = projectRow ? await lockProjectForWrite(viewer, projectRow.id, tx) : null;
+    if (lockedProject && writeScope) {
+      // 보임이 먼저(없는 것과 같게) — 떼인 참여자처럼 참여로만 보이던 사람에게는 없는 문서다. 보이지만 못 쓰면 권한 없음.
+      const [rowScope, teamScope] = writeScope;
+      if (!(await findProjectInScope(viewer, rowScope, lockedProject.id, tx))) throw new ExpenseNotFoundError();
+      const memberProjectIds = await listLiveMemberProjectIds(viewer, viewer.id, [lockedProject.id], tx);
+      if (!canWriteExpenseOnProject(lockedProject, { viewerId: viewer.id, teamScope, memberProjectIds })) throw new ForbiddenError("지출결의 작성 권한 없음");
+    }
     if (row.quoteLineId) await lockQuoteLines(viewer, [row.quoteLineId], tx);
     const locked = await lockExpenseForUpdate(viewer, row.id, tx);
     await deps?.afterLock?.();

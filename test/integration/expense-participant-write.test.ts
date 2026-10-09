@@ -5,7 +5,7 @@ import { db } from "@/db/client";
 import { expenses, projects } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
-import { changeExpenseLine, createExpenseFromLines, ExpenseNotFoundError, listLineDoors } from "@/domain/expenses";
+import { changeExpenseLine, createExpenseFromLines, deleteExpenseDraft, submitExpense, ExpenseNotFoundError, listLineDoors } from "@/domain/expenses";
 import { searchLinesForPick } from "@/domain/expenses/pick";
 import { removeProjectMember } from "@/domain/projects/members";
 import { changeProjectStatus } from "@/domain/projects/status";
@@ -14,7 +14,7 @@ import { createProject } from "@/domain/projects";
 import { insertVendor } from "@/repositories/vendors";
 import { reviveOrInsertMembers } from "@/repositories/project-members";
 import { makePerson, teamIdByName } from "./approvals-fixtures";
-import { setupApprovedProject, setupExpenseProject, type ExpenseFixture } from "./fixtures/expenses";
+import { attachEvidence, setupApprovedProject, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
 
 // 06.2-10(D-6214 — 사용자 답 대기, 추천 「올리기 허용」으로 진행): 프로젝트의 살아 있는 참여자는 담당 PM · 업무 범위가 덮는 사람과
 // 똑같이 그 프로젝트 견적 줄에서 지출결의를 쓴다(260907 `O: server/src/expenses.ts:1823-1836`). 보임이 먼저 — 참여자 아닌 사람은 없는 줄.
@@ -133,5 +133,60 @@ describe("참여자 지출결의 쓰기 — 나머지 입구 · 떼기 (06.2-10 
     });
     await reviveOrInsertMembers(SYSTEM_VIEWER, { projectId: bidding.id, userIds: [w.member.id], addedBy: w.otherTeamPm.id });
     await expect(changeProjectStatus(w.member, bidding.id, { from: "bidding", to: "lost" })).rejects.toThrow("상태 바꾸기 권한 없음");
+  });
+});
+
+// /review F1 · /cso CSO-PR5-1: 제출은 프로젝트 쓰기 권리를 tx 안에서 다시 잰다 — 떼인 참여자 · 바뀐 PM의 기존 작성 중 문서는 번호를 받지 못한다.
+// 거부 꼴은 네 입구와 같다: 보이지 않으면 없는 문서(ExpenseNotFoundError), 보이지만 못 쓰면 ForbiddenError. 작성 중 문서 지우기는 그대로 열려 있다.
+describe("참여자 지출결의 쓰기 — 제출 때 다시 판정 (06.2-10 F1 · CSO-PR5-1)", () => {
+  async function p3Draft(viewer: Viewer, lineId: string): Promise<string> {
+    const created = await createExpenseFromLines(viewer, { lineIds: [lineId] });
+    const expenseId = created.created[0]?.expenseId;
+    if (!expenseId) throw new Error(`작성 중 문서를 만들지 못했다: ${JSON.stringify(created.blocked)}`);
+    return expenseId;
+  }
+
+  async function numberOf(expenseId: string): Promise<string | null> {
+    const [row] = await db.select({ number: expenses.number }).from(expenses).where(eq(expenses.id, expenseId));
+    if (!row) throw new Error("지출결의 없음");
+    return row.number;
+  }
+
+  it("살아 있는 참여자는 참여 프로젝트 줄의 작성 중 문서를 제출한다", async () => {
+    const w = await setup();
+    const expenseId = await p3Draft(w.member, w.p3.lineId);
+    expect((await submitReadyDraft(w.member, expenseId)).kind).toBe("submitted");
+    expect(await numberOf(expenseId)).not.toBeNull();
+  });
+
+  it("떼인 참여자의 기존 작성 중 문서 제출은 없는 문서다 — 번호가 생기지 않는다", async () => {
+    const w = await setup();
+    const expenseId = await p3Draft(w.member, w.p3.lineId);
+    await attachEvidence(w.member, expenseId);
+    await removeProjectMember(w.otherTeamPm, w.p3.id, w.member.id);
+    await expect(submitExpense(w.member, { expenseId, expectedVersion: await versionOf(expenseId) })).rejects.toBeInstanceOf(ExpenseNotFoundError);
+    expect(await numberOf(expenseId)).toBeNull();
+  });
+
+  it("담당 PM이 바뀐 옛 PM(다른 팀)의 기존 작성 중 문서 제출은 거부된다 — 번호가 생기지 않는다", async () => {
+    const w = await setup();
+    // 같은 팀 PM은 PM이 바뀌어도 업무 범위(팀)로 계속 쓴다 — 쓰기 권리를 잃는 옛 PM은 다른 팀 사람이다.
+    // PM 바꾸기 도메인 경로는 원장 칸 권리가 얽혀 이 파일이 재는 것(제출 게이트) 밖이다 — 행을 직접 바꾼다(손상 행 선례).
+    const formerPm = await makePerson("옛PM", DEFAULT_ROLE_ID, "기획1팀");
+    await db.update(projects).set({ pmUserId: formerPm.id }).where(eq(projects.id, w.p3.id));
+    const expenseId = await p3Draft(formerPm, w.p3.lineId);
+    await attachEvidence(formerPm, expenseId);
+    await db.update(projects).set({ pmUserId: w.otherTeamPm.id }).where(eq(projects.id, w.p3.id));
+    await expect(submitExpense(formerPm, { expenseId, expectedVersion: await versionOf(expenseId) })).rejects.toBeInstanceOf(ExpenseNotFoundError);
+    expect(await numberOf(expenseId)).toBeNull();
+  });
+
+  it("떼인 참여자도 자기 작성 중 문서는 지운다", async () => {
+    const w = await setup();
+    const expenseId = await p3Draft(w.member, w.p3.lineId);
+    await removeProjectMember(w.otherTeamPm, w.p3.id, w.member.id);
+    await expect(deleteExpenseDraft(w.member, { expenseId, expectedVersion: await versionOf(expenseId) })).resolves.toEqual({ expenseId });
+    const [row] = await db.select({ deletedAt: expenses.deletedAt }).from(expenses).where(eq(expenses.id, expenseId));
+    expect(row?.deletedAt).not.toBeNull();
   });
 });

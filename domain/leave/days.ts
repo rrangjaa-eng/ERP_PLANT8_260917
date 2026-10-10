@@ -10,6 +10,9 @@ import { isBusinessDay, type HolidayLookup } from "@/domain/holidays/business-da
 export const LEAVE_KINDS = ["full_day", "half_day", "quarter_day", "remote"] as const;
 export type LeaveKind = (typeof LEAVE_KINDS)[number];
 
+// 갈래 낱말 — 문서 제목(index.ts kindWord)과 겹침 문구(overlap.ts)가 같이 쓴다.
+export const LEAVE_KIND_WORDS: Record<LeaveKind, string> = { full_day: "종일", half_day: "반차", quarter_day: "반반차", remote: "재택" };
+
 export const HALF_PERIODS = ["am", "pm"] as const;
 export type HalfPeriod = (typeof HALF_PERIODS)[number];
 

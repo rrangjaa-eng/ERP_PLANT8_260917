@@ -132,6 +132,10 @@ const NOT_HOLDER_TEXT = "지금 담당이 아님 · 새로 고침";
 const FULL_DAY_T3 = { kind: "full_day", startDate: "2026-09-21", endDate: "2026-09-23", half: "" };
 const RESUBMIT_T3 = { kind: "full_day", startDate: "2026-09-28", endDate: "2026-09-29", half: "" };
 const T3 = { now: NOW_2026 };
+const T3_DAYS = [
+  "2026-11-02", "2026-11-03", "2026-11-04", "2026-11-05", "2026-11-06", "2026-11-09", "2026-11-10", "2026-11-11", "2026-11-12", "2026-11-13",
+  "2026-11-16", "2026-11-17", "2026-11-18", "2026-11-19", "2026-11-20", "2026-11-23", "2026-11-24", "2026-11-25", "2026-11-26", "2026-11-27",
+];
 
 async function instanceRow(instanceId: string) {
   const [row] = await db.select().from(approvalInstances).where(eq(approvalInstances.id, instanceId));
@@ -237,7 +241,7 @@ describe("승인 ↔ 회수 · 승인 ↔ 반려 — 두 순서(EXP-03 concurren
   it("경주 20회 — 승인과 회수를 동시에: 매번 정확히 하나만 성공 · 단계 기록 1건 이하", async () => {
     const o = await org();
     for (let i = 0; i < 20; i++) {
-      const doc = await submitLeave(o.drafter, FULL_DAY_T3, T3);
+      const doc = await submitLeave(o.drafter, { ...FULL_DAY_T3, startDate: T3_DAYS[i]!, endDate: T3_DAYS[i]! }, T3);
       const results = await Promise.allSettled([
         approveDocument(o.lead, { instanceId: doc.instanceId, expectedVersion: 1 }, T3),
         withdrawDocument(o.drafter, { instanceId: doc.instanceId, expectedVersion: 1 }, T3),

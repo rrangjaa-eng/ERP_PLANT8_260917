@@ -4,7 +4,12 @@ import { loadHolidayLookup } from "@/domain/holidays/calendar";
 import type { HolidayLookup } from "@/domain/holidays/business-day";
 import { LUNAR_TABLE_FIRST_YEAR, LUNAR_TABLE_LAST_YEAR } from "@/domain/holidays/lunar-table";
 import { LunarTableRangeError } from "@/domain/holidays/rules";
-import { NO_HOLIDAYS, type LeaveYearRange } from "@/domain/leave/days";
+import { NO_HOLIDAYS, type HalfPeriod, type LeaveKind, type LeaveYearRange } from "@/domain/leave/days";
+import { findLeaveOverlap, type LeaveOverlapHit, type LeaveSpan } from "@/domain/leave/overlap";
+import { LEAVE_DOCUMENT_KIND } from "@/domain/leave/access";
+import { listLiveLeaveInRange } from "@/repositories/leave-usage";
+import type { DbOrTx } from "@/repositories/document-counters";
+import type { Viewer } from "@/domain/viewer";
 
 export async function loadLeaveHolidays(
   startDate: string,
@@ -25,4 +30,33 @@ export async function loadLeaveHolidays(
     if (error instanceof LunarTableRangeError) return NO_HOLIDAYS;
     throw error;
   }
+}
+
+// 06.3-02(D-6307 · D-6308): 같은 기안자의 살아 있는 신청과 겹치는 첫 영업일. 트랜잭션 안에서는 그 `tx`를 넘긴다
+// (전역 db로 읽으면 풀 고갈 교착 — CEO-2).
+export async function findLiveLeaveOverlap(
+  viewer: Viewer,
+  input: { drafterId: string; candidate: LeaveSpan & { fiscalYear: number }; holidays: HolidayLookup; excludeId?: string },
+  tx?: DbOrTx,
+): Promise<LeaveOverlapHit | null> {
+  const { candidate } = input;
+  const rows = await listLiveLeaveInRange(
+    viewer,
+    {
+      drafterId: input.drafterId,
+      fiscalYear: candidate.fiscalYear,
+      startDate: candidate.startDate,
+      endDate: candidate.endDate,
+      documentKind: LEAVE_DOCUMENT_KIND,
+      excludeId: input.excludeId,
+    },
+    tx,
+  );
+  const live = rows.map((row) => ({
+    kind: row.kind as LeaveKind,
+    half: row.half as HalfPeriod | null,
+    startDate: row.startDate,
+    endDate: row.endDate,
+  }));
+  return findLeaveOverlap(candidate, live, input.holidays);
 }

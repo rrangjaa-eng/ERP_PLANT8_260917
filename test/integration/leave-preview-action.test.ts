@@ -133,7 +133,7 @@ describe("previewLeaveAction — 겹침 줄(06.3 D-6313)", () => {
   it("D-6318: 겹침으로 막힌 미리보기의 잔고 행은 휴일 막힘 · 날짜 없음과 같은 날짜 전 꼴이고, 막히지 않은 날은 이번 신청을 보인다", async () => {
     const dates = nextYearDates();
     const drafter = await liveWorld();
-    await submitLeave(drafter, { kind: "full_day", startDate: dates.t, endDate: dates.t1, half: "" }, { now: NOW_2026 });
+    await submitLeave(drafter, { kind: "full_day", startDate: dates.t, endDate: dates.t1, half: "" });
     session.viewer = drafter;
     const previewOf = async (fields: Parameters<typeof input>[0]) => (await previewLeaveAction(input(fields)))?.data;
     const textsOf = (data: Awaited<ReturnType<typeof previewOf>>) => data?.balance?.map((line) => line.text);
@@ -145,6 +145,7 @@ describe("previewLeaveAction — 겹침 줄(06.3 D-6313)", () => {
 
     expect(overlap?.blockedReason).toEqual({ field: "startDate", message: dates.blocked });
     expect(textsOf(overlap)).toEqual(textsOf(noDate));
+    expect(holiday?.blockedReason).not.toBeNull();
     expect(textsOf(holiday)).toEqual(textsOf(noDate));
     expect(textsOf(overlap)).toHaveLength(1);
     expect(textsOf(overlap)?.[0]).toMatch(/^연차 남음 [\d.]+일(?: · 월차 남음 [\d.]+일)? · 결재 중 [\d.]+일$/);
@@ -155,7 +156,7 @@ describe("previewLeaveAction — 겹침 줄(06.3 D-6313)", () => {
   it("D-6318: 재택 겹침은 막힘 줄만 있고 잔고 행이 없다", async () => {
     const dates = nextYearDates();
     const drafter = await liveWorld();
-    await submitLeave(drafter, { kind: "full_day", startDate: dates.t, endDate: dates.t1, half: "" }, { now: NOW_2026 });
+    await submitLeave(drafter, { kind: "full_day", startDate: dates.t, endDate: dates.t1, half: "" });
     session.viewer = drafter;
     const data = (await previewLeaveAction(input({ kind: "remote", startDate: dates.t })))?.data;
     expect(data?.blockedReason).toEqual({ field: "startDate", message: dates.blocked });

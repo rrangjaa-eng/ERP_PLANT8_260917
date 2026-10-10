@@ -869,7 +869,7 @@ Plans:
   7. 입구 목록 전부가 테스트로 묶여, 술어가 빠진 입구가 생기면 테스트가 실패한다
   8. 이행 직후 기존 계급이 보던 행을 잃지 않는다(화면에서 만든 계급 중 프로젝트 보기 권한이 있으면 전사, 없으면 work_scope 복사 — 검토 반영 R1, 사용자 카드 답 대기)
 
-**Plans:** 1/12 plans executed
+**Plans:** 12/12 plans executed
 
 Plans:
 **Wave 1**
@@ -878,41 +878,41 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 06.2-03-PLAN.md
+- [x] 06.2-03-PLAN.md
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 06.2-04-PLAN.md
+- [x] 06.2-04-PLAN.md
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 06.2-06-PLAN.md
+- [x] 06.2-06-PLAN.md
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 06.2-05-PLAN.md
-- [ ] 06.2-08-PLAN.md
+- [x] 06.2-05-PLAN.md
+- [x] 06.2-08-PLAN.md
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 06.2-07-PLAN.md
+- [x] 06.2-07-PLAN.md
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [ ] 06.2-12-PLAN.md
+- [x] 06.2-12-PLAN.md
 
 **Wave 8** *(blocked on Wave 7 completion)*
 
-- [ ] 06.2-02-PLAN.md
+- [x] 06.2-02-PLAN.md
 
 **Wave 9** *(blocked on Wave 8 completion)*
 
-- [ ] 06.2-09-PLAN.md
+- [x] 06.2-09-PLAN.md
 
 **Wave 10** *(blocked on Wave 9 completion)*
 
-- [ ] 06.2-10-PLAN.md
-- [ ] 06.2-11-PLAN.md
+- [x] 06.2-10-PLAN.md
+- [x] 06.2-11-PLAN.md
 
 ### Phase 06.3: 연차 중복·공휴일 (leave-overlap-holiday) (INSERTED)
 

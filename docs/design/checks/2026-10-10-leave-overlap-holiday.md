@@ -39,3 +39,11 @@
 - [x] (리뷰 A5) 결재자 화면(문서 화면 · 결재 시트 · 결재함)은 바꾸지 않는다 — 근거: 이 플랜 diff에 `app/(app)/leave/new/` 밖 화면 파일 없음 — 저장값 `days_quarters` 그대로(D-6305), 260907도 설명 없음
 - [x] (리뷰 A6) 반려 뒤 같은 날 새 신청이 있으면 다시 신청 폼이 열자마자 막힌다 — 근거: 의도된 동작(반려 행은 살아 있지 않고 새 신청이 살아 있음) — E2E 「다시 신청 폼 겹침」이 열자마자 막힘 줄 · `연차 다시 신청` 비활성
 - [x] 시스템(새 색 · 서체 · radius · CSS 없음, docs/DESIGN.md §4만) — 근거: `.css` · `ui/` · `tokens.css` 변경 0, 속성 · 식만. 4폭 DOM 감사 · Codex 검토는 PR의 `/design-review` 게이트 몫(실행자가 하지 않음)
+
+## 06.3-02 /design-review 수정 — 되돌린 제출값의 칸 오류 · 막힘 줄 중복
+
+지금 화면(고치기 전, DOM 실측 `/mnt/project-files/06.3-prep/exec-design-02/dom-적용후-수정전.json` 「stale-reverted」 4폭): 제출이 겹침으로 거절된 뒤 날짜를 바꿨다가 제출값으로 되돌리면 시작일 칸 아래 `#startDate-error` 「{M월 D일} 종일 신청과 겹침 · 날짜 바꾸기」와 막힘 줄 `#leave-blocked` + 3차 `날짜 바꾸기`가 같은 문구로 한 화면에 두 번 보인다(시작일 `aria-describedby="startDate-error leave-blocked"`). 이번 변경: 미리보기 막힘이 같은 칸 · 같은 문구를 말하면 그 칸 오류만 숨긴다(`shownSubmitErrors` 셋째 인자). 새 JSX 요소 · CSS · 토큰 없음.
+
+- [x] 같은 말을 두 번 하지 않는다 — 근거: 수정 뒤 DOM 실측 `dom-적용후.json` 「stale-reverted」 4폭 모두 `fieldErrors` [] · 막힘 줄 1개 · 시작일 `aria-describedby="leave-blocked"` · `aria-invalid` 없음. 단위 「같은 칸 · 같은 문구면 칸 오류는 숨긴다」 · 「다른 문구면 그대로」
+- [x] 막힘 줄 · 1차 비활성 · 다른 상태는 그대로 — 근거: 수정 전후 JSON의 나머지 상태(겹침 3종 · 오전-오후 · 공휴일 · 거절 · 바꾼 뒤) 막힘 문구 · role · 1차 aria-disabled · describedby · 3차 포커스 비교 동일(diff 0). `CI=true pnpm playwright test --project=desktop test/e2e/leave-list.spec.ts` 27 통과
+- [x] 시스템(새 색 · 서체 · radius · CSS 없음) — 근거: diff는 form-state.ts 식 · leave-form.tsx 인자 하나 · 단위 테스트뿐, `.css` · `ui/` · `tokens.css` 변경 0

@@ -191,7 +191,7 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
     fieldErrors: result.data && "rejected" in result.data ? result.data.rejected.errors : [],
     noteError: resubmit ? resubmitted.result.validationErrors?.input?.note?._errors?.[0] : submitted.result.validationErrors?.note?._errors?.[0],
     serverError: result.serverError,
-  });
+  }, blocked);
   const errorOf = (field: LeaveFieldError["field"]) => fieldErrors.find((error) => error.field === field)?.message;
   const firstField = fieldErrors[0]?.field;
   const failure = networkFailed

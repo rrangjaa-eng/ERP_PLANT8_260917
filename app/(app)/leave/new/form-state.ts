@@ -27,6 +27,9 @@ export function sameLeaveInput(a: LeaveInputLike, b: LeaveInputLike): boolean {
 // 06.3-02(리뷰 A1 · eng R2-W2): 입력이 제출값과 달라지면(stale) 낡은 칸 · 비고 오류만 숨긴다 — 입력과 무관한 서버 오류는 그대로.
 type SubmitErrors = { fieldErrors: LeaveFieldError[]; noteError: string | undefined; serverError: string | undefined };
 
-export function shownSubmitErrors(stale: boolean, errors: SubmitErrors): SubmitErrors {
-  return stale ? { fieldErrors: [], noteError: undefined, serverError: errors.serverError } : errors;
+// 06.3-02 /design-review: 제출값으로 되돌려 미리보기 막힘 줄(`blocked`)이 같은 칸 · 같은 문구를 말하면 칸 오류는 숨긴다(같은 말 두 번 금지).
+export function shownSubmitErrors(stale: boolean, errors: SubmitErrors, blocked: LeaveFieldError | null = null): SubmitErrors {
+  if (stale) return { fieldErrors: [], noteError: undefined, serverError: errors.serverError };
+  if (!blocked) return errors;
+  return { ...errors, fieldErrors: errors.fieldErrors.filter((error) => error.field !== blocked.field || error.message !== blocked.message) };
 }

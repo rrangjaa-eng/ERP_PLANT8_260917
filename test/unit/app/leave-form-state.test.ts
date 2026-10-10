@@ -74,4 +74,12 @@ describe("shownSubmitErrors", () => {
   it("stale이 아니면(같은 입력) 그대로", () => {
     expect(shownSubmitErrors(false, errors)).toEqual(errors);
   });
+
+  it("06.3-02 /design-review: 제출값으로 되돌려 미리보기 막힘 줄이 같은 칸 · 같은 문구면 칸 오류는 숨긴다(두 번 말하지 않음)", () => {
+    expect(shownSubmitErrors(false, errors, OVERLAP)).toEqual({ ...errors, fieldErrors: [] });
+  });
+
+  it("막힘 줄이 다른 문구면 칸 오류는 그대로", () => {
+    expect(shownSubmitErrors(false, errors, HOLIDAY)).toEqual(errors);
+  });
 });

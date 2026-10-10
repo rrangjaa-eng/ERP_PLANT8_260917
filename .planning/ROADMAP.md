@@ -934,7 +934,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 06.3-01-PLAN.md — 휴일 빼고 세기: `days.ts` 휴일 판정 인자 · `guard.ts` 휴일 조회(D-6306 잠정 K1) · 호출자 넷 · 힌트 `휴일 N일 제외` · 휴일 충돌 테스트 · E2E 날짜 헬퍼
+- [x] 06.3-01-PLAN.md — 휴일 빼고 세기: `days.ts` 휴일 판정 인자 · `guard.ts` 휴일 조회(D-6306 잠정 K1) · 호출자 넷 · 힌트 `휴일 N일 제외` · 휴일 충돌 테스트 · E2E 날짜 헬퍼
 
 **Wave 2** *(blocked on Wave 1 completion)*
 

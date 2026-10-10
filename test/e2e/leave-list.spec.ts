@@ -11,6 +11,7 @@ import { createOrgUnit, createTeam } from "@/domain/org";
 import { getSettingValue } from "@/domain/settings/registry";
 import { LEAVE_ANNUAL_DAYS } from "@/domain/settings/keys";
 import { seoulDateToUtcDate } from "@/lib/dates";
+import { generateHolidayRules } from "@/domain/holidays/rules";
 import { DEFAULT_HALF_PERIOD, formatLeaveDays, type LeaveKind } from "@/domain/leave/days";
 import {
   allocateLeave,
@@ -329,15 +330,18 @@ async function namedOrg(today: string, drafterRoleId: string) {
 }
 
 test.describe("연차 신청 폼 /leave/new (04.1-06 Task 2 · S2)", () => {
-  test("종일 6일(주말 포함): 힌트 `주말 2일 제외` · 잔고 행 `이번 신청 6일` 한 자리 · 결재선 한 줄", async ({ browser, baseURL }) => {
+  test("종일 영업일 6일: 힌트 `휴일 N일 제외`(주말 + 공휴일) · 잔고 행 `이번 신청 6일` 한 자리 · 결재선 한 줄", async ({ browser, baseURL }) => {
     await onStableSeoulDay(async (today) => {
       const org = await setupLeaveOrg(today);
       const page = await openForm(browser, baseURL, org.drafter);
       const range = leaveWeekdayRange(today, { week: 12, weekdays: 6 });
       await fillRange(page, range);
 
-      await expect(form(page).getByText("주말 2일 제외", { exact: true })).toBeVisible();
-      await expectDayNumbersBold(page.getByTestId("leave-days-hint"), ["2"]);
+      // 구간 달력 일수 − 영업일 6 = 주말 + 공휴일 수(해마다 다름).
+      const span = (Date.parse(`${range.endDate}T00:00:00Z`) - Date.parse(`${range.startDate}T00:00:00Z`)) / 86_400_000 + 1;
+      const offDays = span - 6;
+      await expect(form(page).getByText(`휴일 ${offDays}일 제외`, { exact: true })).toBeVisible();
+      await expectDayNumbersBold(page.getByTestId("leave-days-hint"), [String(offDays)]);
       const expected = await expectedRow(null, today, { startDate: range.startDate, quarters: 24 }, "full_day");
       await expect(balanceRow(page)).toHaveText(expected.lines);
       await expectDayNumbersBold(page.getByTestId("leave-balance-row"), [formatLeaveDays(expected.annualDays * 4).replace("일", ""), "0", "6"]);
@@ -346,6 +350,33 @@ test.describe("연차 신청 폼 /leave/new (04.1-06 Task 2 · S2)", () => {
       await expect(routeLine(page)).toHaveText(new RegExp(`^${org.drafter.name} → .* · 결재 규칙$`));
       // 단계 사이 화살표도 읽힌다 — 보조 기술이 단계를 구분 없이 이어 읽지 않게(DOM 감사 #9 · SYSTEM §10 읽기 순서).
       await expect(routeLine(page).locator('[aria-hidden="true"]')).toHaveCount(0);
+      await page.context().close();
+    });
+  });
+
+  test("공휴일 반차(확정 K-D1): 공휴일을 고르면 막힘 줄 `휴일 · ` · 3차 `다른 날 고르기`로 1차가 꺼지고, 평일로 바꾸면 풀린다", async ({ browser, baseURL }) => {
+    await onStableSeoulDay(async (today) => {
+      const org = await setupLeaveOrg(today);
+      const page = await openForm(browser, baseURL, org.drafter);
+      const year = Number(today.slice(0, 4));
+      // 서버 후보 생성과 같은 규칙에서 대체일이 아니고 월~금인 첫 공휴일(해마다 다름).
+      const holiday = generateHolidayRules(year).find((rule) => {
+        const weekday = new Date(`${rule.date}T00:00:00Z`).getUTCDay();
+        return rule.kind !== "substitute" && weekday >= 1 && weekday <= 5;
+      });
+      if (!holiday) throw new Error(`${year}년 월~금 공휴일 없음`);
+      const primary = page.getByRole("button", { name: /^연차 신청/ });
+      await page.getByLabel("종류").selectOption({ label: "반차" });
+      await page.getByLabel("날짜").fill(holiday.date);
+
+      await expect(page.locator("#leave-blocked")).toHaveText("휴일 · ");
+      await expect(primary).toBeDisabled();
+      await page.getByRole("button", { name: "다른 날 고르기" }).click();
+      await expect(page.getByLabel("날짜")).toBeFocused();
+
+      await page.getByLabel("날짜").fill(leaveWeekdayRange(today, { week: 19, weekdays: 1 }).startDate);
+      await expect(page.locator("#leave-blocked")).toHaveCount(0);
+      await expect(primary).toBeEnabled();
       await page.context().close();
     });
   });

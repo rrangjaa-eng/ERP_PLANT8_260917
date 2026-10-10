@@ -1,15 +1,29 @@
-// 04.1-02(Codex HIGH 06): E2E 연차 날짜 헬퍼 — 실행하는 날과 무관하게 기준일의 연도 안
-// 평일 범위를 만든다. 기준 = 그해 3월 1일 이후 첫 월요일, 거기서 `week`주 뒤 월요일부터
-// 토·일을 건너뛰며 `weekdays`번째 평일까지. 인자 범위(week 0..30 · weekdays 1..20)가 끝을
+// 04.1-02(Codex HIGH 06) · 06.3-01(D-6317): E2E 연차 날짜 헬퍼 — 실행하는 날과 무관하게 기준일의 연도 안
+// 영업일(주말 · 공휴일 제외 — 서버와 같은 휴일 규칙) 범위를 만든다. 기준 = 그해 3월 1일 이후 첫 월요일, 거기서
+// `week`주 뒤 월요일부터 토·일·휴일을 건너뛰며 `weekdays`번째 영업일까지. 인자 범위(week 0..30 · weekdays 1..20)가 끝을
 // 늦어도 11월로 묶어 회계연도를 넘지 않는다. 날짜 산술은 UTC 자정 기준(시간대가 날짜를
 // 밀지 않게). Playwright를 import하지 않는다 — 단위 테스트 대상이다.
 
 import { seoulToday } from "@/lib/dates";
+import { generateHolidayRules, INITIAL_MANUAL_HOLIDAYS, LunarTableRangeError } from "@/domain/holidays/rules";
 
 const DAY_MS = 86_400_000;
 
 function toIso(ms: number): string {
   return new Date(ms).toISOString().slice(0, 10);
+}
+
+// 서버 후보 생성(candidates.ts)과 같은 출처의 그해 휴일 집합 — 법정 + 수동 행, 수동 날짜는 대체일 자리를 막는다.
+// 음력 표 밖 해는 수동 행만(서버 D-6306과 같은 폴백).
+function holidaysOf(year: number): Set<string> {
+  const manual = INITIAL_MANUAL_HOLIDAYS.filter((holiday) => holiday.date.startsWith(`${year}-`)).map((holiday) => holiday.date);
+  try {
+    const rules = generateHolidayRules(year, { blockers: new Set(manual) }).map((holiday) => holiday.date);
+    return new Set([...rules, ...manual].filter((date) => date.startsWith(`${year}-`)));
+  } catch (error) {
+    if (error instanceof LunarTableRangeError) return new Set(manual);
+    throw error;
+  }
 }
 
 export function leaveWeekdayRange(
@@ -24,14 +38,21 @@ export function leaveWeekdayRange(
 
   const march1 = Date.UTC(year, 2, 1);
   const toMonday = (8 - new Date(march1).getUTCDay()) % 7;
-  const start = march1 + (toMonday + week * 7) * DAY_MS;
+  const monday = march1 + (toMonday + week * 7) * DAY_MS;
+
+  const holidays = holidaysOf(year);
+  const isBusinessDay = (ms: number) => {
+    const day = new Date(ms).getUTCDay();
+    return day !== 0 && day !== 6 && !holidays.has(toIso(ms));
+  };
+  let start = monday;
+  while (!isBusinessDay(start)) start += DAY_MS;
 
   let cursor = start;
   let counted = 0;
   let end = start;
   while (counted < weekdays) {
-    const day = new Date(cursor).getUTCDay();
-    if (day !== 0 && day !== 6) {
+    if (isBusinessDay(cursor)) {
       counted += 1;
       end = cursor;
     }

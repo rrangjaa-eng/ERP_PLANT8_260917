@@ -4,7 +4,16 @@ import { z } from "zod";
 import { authedActionClient } from "@/lib/actions/client";
 import "@/app/(app)/document-kinds";
 import { formatRequestBalanceRow, formatRequestBalanceRowBeforeDates, LEAVE_DOCUMENT_KIND, LeaveValidationError, submitLeave } from "@/domain/leave";
-import { countLeaveQuarters, leaveYearRange, type LeaveFieldError } from "@/domain/leave/days";
+import {
+  countLeaveQuarters,
+  LEAVE_DATE_EMPTY_ERROR,
+  LEAVE_HALF_EMPTY_ERROR,
+  LEAVE_KIND_EMPTY_ERROR,
+  LEAVE_START_EMPTY_ERROR,
+  leaveYearRange,
+  type LeaveFieldError,
+} from "@/domain/leave/days";
+import { loadLeaveHolidays } from "@/domain/leave/guard";
 import { seoulToday } from "@/lib/dates";
 import { assertLeaveWrite } from "@/domain/leave/access";
 import { previewLeaveBalance } from "@/domain/leave/balance-service";
@@ -84,25 +93,34 @@ export const resubmitLeaveAction = authedActionClient
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 // 04.1-06(S2 · Codex MEDIUM · CX-R3 · T8): 신청 창 미리보기 — 저장 없음. 첫 문장이 leave write 판정이다(previewRoute는
-// 결재 모듈 함수라 연차 권한을 모른다). 힌트 재료(주말 제외 일수 · 재택 여부)와 잔고 행(formatBalanceRow — 연차 ·
+// 결재 모듈 함수라 연차 권한을 모른다). 힌트 재료(휴일 제외 일수 · 재택 여부)와 잔고 행(formatBalanceRow — 연차 ·
 // 월차 따로, 합계 없음, 재택이면 null)과 결재선(04.1-01 RoutePreviewDTO 그대로 — 이름은 approval.value 투영을
 // 통과할 때만)을 한 응답으로 준다. 이번 신청 일수는 잔고 행에만 있다(힌트에 싣지 않는다).
+// 06.3(확정 K-D1): 막힘 한 줄 `blockedReason` — 폼이 1차를 막는다. 최종 방어는 제출 · 다시 신청 검사.
 export const previewLeaveAction = authedActionClient.schema(leaveInputSchema).action(async ({ parsedInput, ctx }) => {
   await assertLeaveWrite(ctx.viewer);
-  const days = countLeaveQuarters(parsedInput, leaveYearRange(seoulToday()));
-  let weekendDays: number | null = null;
+  const range = leaveYearRange(seoulToday());
+  const holidays = await loadLeaveHolidays(parsedInput.startDate, range);
+  const days = countLeaveQuarters(parsedInput, range, holidays);
+  let offDays: number | null = null;
   let balance: ReturnType<typeof formatRequestBalanceRow> = null;
+  let blockedReason: LeaveFieldError | null = null;
   if (days.ok) {
     const span = (Date.parse(`${days.endDate}T00:00:00Z`) - Date.parse(`${days.startDate}T00:00:00Z`)) / DAY_MS + 1;
-    weekendDays = days.kind === "full_day" ? span - days.quarters / 4 : null;
-    balance = formatRequestBalanceRow(await previewLeaveBalance(ctx.viewer, parsedInput), days.kind);
-  } else if (parsedInput.kind !== "remote") {
+    offDays = days.kind === "full_day" ? span - days.quarters / 4 : null;
+    balance = formatRequestBalanceRow(await previewLeaveBalance(ctx.viewer, parsedInput, { holidays }), days.kind);
+  } else {
+    // 빈 칸 오류는 싣지 않는다 — 폼 blockedOf가 같은 글자로 먼저 막고, 빈 칸 줄이 응답 대기 중 낡은 막힘으로 남지 않게.
+    const emptyMessages = [LEAVE_KIND_EMPTY_ERROR, LEAVE_HALF_EMPTY_ERROR, LEAVE_START_EMPTY_ERROR, LEAVE_DATE_EMPTY_ERROR];
+    if (!days.errors.some((error) => emptyMessages.includes(error.message))) blockedReason = days.errors[0] ?? null;
     // 날짜 전(계산 전) — 두 남음 · 결재 중만(UI-SPEC S2). 재택은 차감이 없어 잔고 행이 없다.
-    balance = formatRequestBalanceRowBeforeDates(await previewLeaveBalance(ctx.viewer, parsedInput));
+    if (parsedInput.kind !== "remote") {
+      balance = formatRequestBalanceRowBeforeDates(await previewLeaveBalance(ctx.viewer, parsedInput, { holidays }));
+    }
   }
   // 결재선이 막혀도(대표 없음) 잔고 행은 버리지 않고 막힌 이유를 결재선 자리에 준다 — 제출해야 처음 보이지 않게
   // (04.1-06 코드 검토 L3). 다른 오류는 그대로 던진다.
   const { route, blocked: routeBlocked } = await previewRouteOrBlocked(ctx.viewer);
-  return { remote: days.ok && days.kind === "remote", weekendDays, balance, route, routeBlocked };
+  return { remote: days.ok && days.kind === "remote", offDays, balance, route, routeBlocked, blockedReason };
 });
 

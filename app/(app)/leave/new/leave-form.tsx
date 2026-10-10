@@ -24,6 +24,7 @@ import { DayNumbers } from "../day-numbers";
 import { HALF_LABELS, LEAVE_KIND_LABELS } from "../labels";
 import { previewLeaveAction, resubmitLeaveAction, submitLeaveAction } from "../actions";
 import { usePhoneWidth } from "../use-phone-width";
+import { formBlocked } from "./form-state";
 import styles from "../leave.module.css";
 
 // 04.1-02 S2 첫 형태 → 04.1-06 완성형(S2): 종류에 따라 칸이 바뀐다(종일·재택 = 시작 · 종료, 반차·반반차 = 날짜 하나 +
@@ -50,7 +51,7 @@ export type LeaveFormResubmit = {
 
 type Values = { kind: string; half: string; startDate: string; endDate: string; note: string };
 type LeaveInput = { kind: string; startDate: string; endDate: string; half: string; note: string };
-type Blocked = { field: "kind" | "half" | "startDate"; message: string };
+type Blocked = { field: LeaveFieldError["field"]; message: string };
 
 const FIELD_LABELS: Record<LeaveFieldError["field"], string> = { kind: "종류", startDate: "시작일", endDate: "종료일", half: "시간" };
 
@@ -177,7 +178,7 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
   }
 
   const singleDay = isSingleDay(values.kind);
-  const blocked = blockedOf(values);
+  const blocked = formBlocked(blockedOf(values), preview);
   const fieldErrors: LeaveFieldError[] = result.data && "rejected" in result.data ? result.data.rejected.errors : [];
   const errorOf = (field: LeaveFieldError["field"]) => fieldErrors.find((error) => error.field === field)?.message;
   const noteError = resubmit
@@ -241,7 +242,7 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
     document.getElementById(field)?.focus();
   }
 
-  const hint = preview ? (preview.remote ? "재택 · 차감 없음" : preview.weekendDays ? `주말 ${preview.weekendDays}일 제외` : null) : null;
+  const hint = preview ? (preview.remote ? "재택 · 차감 없음" : preview.offDays ? `휴일 ${preview.offDays}일 제외` : null) : null;
   const route = !resubmit && preview ? preview.route : null;
   const skippedNote =
     route?.steps

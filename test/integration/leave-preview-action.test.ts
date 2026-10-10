@@ -32,3 +32,55 @@ describe("previewLeaveAction — 결재선 막힘", () => {
     expect(result?.data?.routeBlocked).toBe("대표 없음 · 관리자에게 대표 계급 확인 요청");
   });
 });
+
+const input = (fields: { kind: string; startDate: string; endDate?: string; half?: string }) => ({
+  endDate: fields.startDate,
+  half: "",
+  note: "",
+  ...fields,
+});
+
+describe("previewLeaveAction — 휴일 제외 일수(06.3)", () => {
+  it("종일 2026-09-23~28은 offDays 4(추석 사흘 + 일요일) · 09-21~23은 0 · 반차는 null", async () => {
+    session.viewer = await makePerson("휴일미리보기", DEFAULT_ROLE_ID, "기획1팀");
+    const chuseok = await previewLeaveAction(input({ kind: "full_day", startDate: "2026-09-23", endDate: "2026-09-28" }));
+    const plain = await previewLeaveAction(input({ kind: "full_day", startDate: "2026-09-21", endDate: "2026-09-23" }));
+    const half = await previewLeaveAction(input({ kind: "half_day", startDate: "2026-09-22", half: "am" }));
+    expect(chuseok?.data?.offDays).toBe(4);
+    expect(plain?.data?.offDays).toBe(0);
+    expect(half?.data?.offDays).toBeNull();
+  });
+});
+
+describe("previewLeaveAction — 막힘 줄(06.3 확정 K-D1)", () => {
+  async function blockedOf(fields: Parameters<typeof input>[0]) {
+    session.viewer = await makePerson("막힘줄미리보기", DEFAULT_ROLE_ID, "기획1팀");
+    return (await previewLeaveAction(input(fields)))?.data?.blockedReason;
+  }
+
+  it("추석 당일 반차는 시작일 칸 `휴일 · 다른 날 고르기`", async () => {
+    expect(await blockedOf({ kind: "half_day", startDate: "2026-09-25", half: "am" })).toEqual({ field: "startDate", message: "휴일 · 다른 날 고르기" });
+  });
+
+  it("종일 2026-09-24~27은 `휴일만 고른 기간 · 평일 넣기`", async () => {
+    expect(await blockedOf({ kind: "full_day", startDate: "2026-09-24", endDate: "2026-09-27" })).toEqual({
+      field: "startDate",
+      message: "휴일만 고른 기간 · 평일 넣기",
+    });
+  });
+
+  it("종일 2026-12-30~2027-01-04는 종료일 칸 회계연도 오류", async () => {
+    expect(await blockedOf({ kind: "full_day", startDate: "2026-12-30", endDate: "2027-01-04" })).toEqual({
+      field: "endDate",
+      message: "기간이 회계연도를 넘음 · 12-31과 01-01로 나눠 신청",
+    });
+  });
+
+  it("빈 칸 오류(시작일 비어 있음)는 싣지 않는다 — 폼 blockedOf 몫", async () => {
+    expect(await blockedOf({ kind: "full_day", startDate: "", endDate: "" })).toBeNull();
+  });
+
+  it("종일 2026-09-21~23은 null", async () => {
+    expect(await blockedOf({ kind: "full_day", startDate: "2026-09-21", endDate: "2026-09-23" })).toBeNull();
+  });
+});

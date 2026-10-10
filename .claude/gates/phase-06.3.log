@@ -3,4 +3,4 @@ plan-eng-review 2026-10-09T20:11Z session=e4eee71e-bead-5775-a25c-20b30408cebf (
 design-review 2026-10-10T03:36Z session=02f94775-3d6b-5cf3-af72-bed7c1d8ca7d (06.3-01 PR #197 @d447776, Codex gpt-6.1-sol medium 지적 0, 4폭 DOM 실측 막음 0, 보고서 /mnt/project-files/06.3-prep/exec-design-01/report.md · 훅 줄 되돌린 뒤 손으로 기록)
 design-review 2026-10-10T04:17Z session=02f94775-3d6b-5cf3-af72-bed7c1d8ca7d (06.3-02 PR #197 @4eea35d, Codex 지적 0, 중복 문구 1건 faa67f7, 보고서 exec-design-02/report.md · 손으로 기록)
 review 2026-10-10T04:45Z session=02f94775-3d6b-5cf3-af72-bed7c1d8ca7d (PR #197 @4599d0f 지적 0, 보고서 exec-review-02/review.md · 손으로 기록)
-qa 2026-10-10T04:5xZ session=02f94775-3d6b-5cf3-af72-bed7c1d8ca7d (PR #197 @4599d0f 버그 0 96/100, 보고서 exec-qa/qa-report-leave-2026-10-10.md, 시각은 캡처 파일 시각 기준 · 손으로 기록)
+qa 2026-10-10T04:54Z session=02f94775-3d6b-5cf3-af72-bed7c1d8ca7d (PR #197 @4599d0f 버그 0 96/100, 보고서 exec-qa/qa-report-leave-2026-10-10.md, 시각은 보고서 파일 저장 시각(04:54:46Z) 기준 · 손으로 기록)

@@ -142,4 +142,13 @@ describe("previewLeaveAction — 겹침 줄(06.3 D-6313)", () => {
     expect(free?.blockedReason).toBeNull();
     expect(textsOf(free)?.[0]).toMatch(/ · 이번 신청 0\.5일$/);
   });
+
+  it("D-6318: 재택 겹침은 막힘 줄만 있고 잔고 행이 없다", async () => {
+    const drafter = await liveWorld();
+    await submitLeave(drafter, { kind: "full_day", startDate: "2027-01-05", endDate: "2027-01-06", half: "" }, { now: NOW_2026 });
+    session.viewer = drafter;
+    const data = (await previewLeaveAction(input({ kind: "remote", startDate: "2027-01-05" })))?.data;
+    expect(data?.blockedReason).toEqual({ field: "startDate", message: "1월 5일 종일 신청과 겹침 · 날짜 바꾸기" });
+    expect(data?.balance).toBeNull();
+  });
 });

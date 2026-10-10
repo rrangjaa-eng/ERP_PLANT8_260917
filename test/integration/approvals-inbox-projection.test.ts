@@ -51,12 +51,10 @@ function countingFindVisibility() {
   return { counter, fn };
 }
 
-const DAY = (d: number) => {
-  const date = `2026-10-${String(d).padStart(2, "0")}`;
-  return { kind: "full_day", startDate: date, endDate: date, half: "" };
-};
-// 2026-10의 평일 22일.
-const WEEKDAYS = [1, 2, 5, 6, 7, 8, 9, 12, 13, 14, 15, 16, 19, 20, 21, 22, 23, 26, 27, 28, 29, 30];
+const DATE = (date: string) => ({ kind: "full_day", startDate: date, endDate: date, half: "" });
+const DAY = (d: number) => DATE(`2026-10-${String(d).padStart(2, "0")}`);
+// 2026-10의 영업일 20일(5 대체공휴일 · 9 한글날 제외).
+const WEEKDAYS = [1, 2, 6, 7, 8, 12, 13, 14, 15, 16, 19, 20, 21, 22, 23, 26, 27, 28, 29, 30];
 
 describe("결재함 · 내 연차 목록 노출 조회 수(CEO-17)", () => {
   it("대표 결재함 한 번(진행 중 20건 · 처리 3건)의 노출 조회는 2회 이하, 두 번째 요청도 다시 조회, 결과는 주입 없는 것과 같다", async () => {
@@ -65,7 +63,8 @@ describe("결재함 · 내 연차 목록 노출 조회 수(CEO-17)", () => {
     const ceo = await makePerson("최대표", CEO_ROLE_ID, null);
     const submitted = [];
     for (let i = 0; i < 23; i++) {
-      submitted.push(await submitLeave(drafter, DAY(WEEKDAYS[i % WEEKDAYS.length] ?? 1), { now: NOW_2026 }));
+      const day = i < WEEKDAYS.length ? DAY(WEEKDAYS[i] ?? 1) : DATE(["2026-11-02", "2026-11-03", "2026-11-04"][i - WEEKDAYS.length] ?? "2026-11-02");
+      submitted.push(await submitLeave(drafter, day, { now: NOW_2026 }));
     }
     for (const doc of submitted.slice(0, 3)) {
       await approveDocument(ceo, { instanceId: doc.instanceId, expectedVersion: doc.version }, { now: NOW_2026 });
@@ -173,7 +172,7 @@ describe("새 계급 · 결재 정보 꺼짐(CEO-10 → 사용자 결정 2026-09
     const role = await createRole(SYSTEM_VIEWER, { name: `새계급-${Date.now()}` });
     if (!role.id) throw new Error("계급 id가 없습니다");
     const newcomer = await makePerson("새담당", role.id, "경영관리팀");
-    await submitLeave(drafter, DAY(5), { now: NOW_2026 });
+    await submitLeave(drafter, DAY(7), { now: NOW_2026 });
 
     const inbox = await listMyInbox(newcomer, { now: NOW_2026, withDetails: true });
     expect(inbox.mine).toHaveLength(1);
@@ -293,7 +292,7 @@ describe("결재함 상세 withDetails(CEO-17 · CEO-9 · ENG-17 · CXF2-B-RF01)
     const ceo = await makePerson("최대표", CEO_ROLE_ID, null);
     await setHireDate(SYSTEM_VIEWER, drafter.id, "2025-03-02");
     await setResignationDate(SYSTEM_VIEWER, drafter.id, "2026-12-30");
-    const doc = await submitLeave(drafter, DAY(5), { now: NOW_2026 });
+    const doc = await submitLeave(drafter, DAY(7), { now: NOW_2026 });
 
     const inbox = await listMyInbox(ceo, { now: NOW_2026, withDetails: true });
     const json = JSON.stringify(inbox);
@@ -309,7 +308,7 @@ describe("결재함 상세 withDetails(CEO-17 · CEO-9 · ENG-17 · CXF2-B-RF01)
     const drafter = await makePerson("박서연", DEFAULT_ROLE_ID, "기획1팀");
     const lead = await makePerson("김팀장", TEAM_LEAD_ROLE_ID, "기획1팀");
     await makePerson("최대표", CEO_ROLE_ID, null);
-    await submitLeave(drafter, { ...DAY(5), note: "비고-고유-5d2" }, { now: NOW_2026 });
+    await submitLeave(drafter, { ...DAY(7), note: "비고-고유-5d2" }, { now: NOW_2026 });
 
     await upsertVisibility(SYSTEM_VIEWER, { roleId: TEAM_LEAD_ROLE_ID, infoItem: "leave.value", visible: false });
     const hidden = await listMyInbox(lead, { now: NOW_2026, withDetails: true });
@@ -329,7 +328,7 @@ describe("결재함 상세 withDetails(CEO-17 · CEO-9 · ENG-17 · CXF2-B-RF01)
     const drafter = await makePerson("박서연", DEFAULT_ROLE_ID, "기획1팀");
     const lead = await makePerson("김팀장", TEAM_LEAD_ROLE_ID, "기획1팀");
     await makePerson("최대표", CEO_ROLE_ID, null);
-    const own = await submitLeave(lead, DAY(5), { now: NOW_2026 });
+    const own = await submitLeave(lead, DAY(7), { now: NOW_2026 });
     const other = await submitLeave(drafter, DAY(6), { now: NOW_2026 });
 
     const inbox = await listMyInbox(lead, { now: NOW_2026, withDetails: true });

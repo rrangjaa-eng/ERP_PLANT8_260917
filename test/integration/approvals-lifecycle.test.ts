@@ -14,6 +14,7 @@ import {
   withdrawDocument,
   ApprovalConflictError,
   NotCurrentHolderError,
+  NOT_HOLDER_MESSAGE,
 } from "@/domain/approvals";
 import { submitLeave, getLeave, LEAVE_DOCUMENT_KIND } from "@/domain/leave";
 import { resubmitLeave } from "@/domain/leave/resubmit";
@@ -41,6 +42,8 @@ async function makeOrg(): Promise<Org> {
 }
 
 const FULL_DAY = { kind: "full_day", startDate: "2026-09-21", endDate: "2026-09-23", half: "" };
+const FULL_DAY_B = { ...FULL_DAY, startDate: "2026-09-14", endDate: "2026-09-16" };
+const FULL_DAY_C = { ...FULL_DAY, startDate: "2026-09-07", endDate: "2026-09-09" };
 const RESUBMIT_INPUT = { kind: "full_day", startDate: "2026-09-28", endDate: "2026-09-29", half: "", note: "날짜 변경" };
 const REASON = "현장 일정 겹침";
 const deps = { now: NOW_2026 };
@@ -109,8 +112,8 @@ async function viewActions(viewer: Viewer, leaveId: string) {
   return (await getApprovalView(viewer, { kind: LEAVE_DOCUMENT_KIND, documentId: leaveId }, deps))?.actions;
 }
 
-async function rejectedDoc(org: Org) {
-  const submitted = await submitLeave(org.drafter, FULL_DAY, deps);
+async function rejectedDoc(org: Org, input = FULL_DAY) {
+  const submitted = await submitLeave(org.drafter, input, deps);
   const rejected = await rejectDocument(org.lead, { instanceId: submitted.instanceId, expectedVersion: 1, reason: REASON }, deps);
   return { ...submitted, version: rejected.version };
 }
@@ -247,16 +250,22 @@ describe("다시 신청 — 번호 유지 · 새 차수 고정(EXP-04 ordering)"
   it("rejected가 아닌 문서의 다시 신청과 기안자가 아닌 사람의 다시 신청은 거부된다", async () => {
     const org = await makeOrg();
     const submitted = await submitLeave(org.drafter, FULL_DAY, deps);
-    await expect(
+    const notRejected = await errorOf(
       resubmitLeave(org.drafter, { leaveId: submitted.leaveId, expectedVersion: 1, input: RESUBMIT_INPUT }, deps),
-    ).rejects.toBeInstanceOf(UserFacingError);
+    );
+    expect(notRejected).toBeInstanceOf(UserFacingError);
+    expect(notRejected).toBeInstanceOf(ApprovalConflictError);
+    expect(notRejected.message).toBe(NOT_HOLDER_MESSAGE);
     expect((await roundsOf(submitted.instanceId)).length).toBe(1);
 
-    const doc = await rejectedDoc(org);
+    const doc = await rejectedDoc(org, FULL_DAY_B);
     const before = await state(doc.instanceId, doc.leaveId);
-    await expect(
+    const notDrafter = await errorOf(
       resubmitLeave(org.pm, { leaveId: doc.leaveId, expectedVersion: doc.version, input: RESUBMIT_INPUT }, deps),
-    ).rejects.toBeInstanceOf(UserFacingError);
+    );
+    expect(notDrafter).toBeInstanceOf(UserFacingError);
+    expect(notDrafter).toBeInstanceOf(NotCurrentHolderError);
+    expect(notDrafter.message).toBe(NOT_HOLDER_MESSAGE);
     expect(await state(doc.instanceId, doc.leaveId)).toEqual(before);
   });
 });
@@ -283,7 +292,7 @@ describe("사건별 종결 검사(CX-B1)", () => {
     const approved = await submitLeave(org.drafter, FULL_DAY, deps);
     await approveDocument(org.lead, { instanceId: approved.instanceId, expectedVersion: 1 }, deps);
     await approveDocument(org.ceo, { instanceId: approved.instanceId, expectedVersion: 2 }, deps);
-    const withdrawn = await submitLeave(org.drafter, FULL_DAY, deps);
+    const withdrawn = await submitLeave(org.drafter, FULL_DAY_B, deps);
     await withdrawDocument(org.drafter, { instanceId: withdrawn.instanceId, expectedVersion: 1 }, deps);
 
     for (const [doc, version] of [
@@ -309,10 +318,10 @@ describe("가능 행동(X-5 · CXF-B-F01)", () => {
     await approveDocument(org.ceo, { instanceId: doc.instanceId, expectedVersion: 2 }, deps);
     expect(await viewActions(org.drafter, doc.leaveId)).toEqual([]);
 
-    const rejected = await rejectedDoc(org);
+    const rejected = await rejectedDoc(org, FULL_DAY_B);
     expect(await viewActions(org.drafter, rejected.leaveId)).toEqual(["resubmit"]);
 
-    const withdrawn = await submitLeave(org.drafter, FULL_DAY, deps);
+    const withdrawn = await submitLeave(org.drafter, FULL_DAY_C, deps);
     await withdrawDocument(org.drafter, { instanceId: withdrawn.instanceId, expectedVersion: 1 }, deps);
     expect(await viewActions(org.drafter, withdrawn.leaveId)).toEqual([]);
   });
@@ -336,7 +345,7 @@ describe("가능 행동(X-5 · CXF-B-F01)", () => {
     expect((await stepsOf(doc.instanceId))[0]).toMatchObject({ action: "approved", actedBy: lead.id });
     expect(await viewActions(lead, doc.leaveId)).toEqual(["withdraw"]);
 
-    const second = await submitLeave(lead, FULL_DAY, deps);
+    const second = await submitLeave(lead, FULL_DAY_B, deps);
     await withdrawDocument(lead, { instanceId: second.instanceId, expectedVersion: 1 }, deps);
     expect((await instanceOf(second.instanceId)).status).toBe("withdrawn");
   });
@@ -351,7 +360,7 @@ describe("가능 행동(X-5 · CXF-B-F01)", () => {
     const approved = await approveDocument(ceoDrafter, { instanceId: doc.instanceId, expectedVersion: 1 }, deps);
     expect(approved.status).toBe("approved");
 
-    const second = await submitLeave(ceoDrafter, FULL_DAY, deps);
+    const second = await submitLeave(ceoDrafter, FULL_DAY_B, deps);
     await withdrawDocument(ceoDrafter, { instanceId: second.instanceId, expectedVersion: 1 }, deps);
     expect((await instanceOf(second.instanceId)).status).toBe("withdrawn");
   });
@@ -372,7 +381,7 @@ describe("원자성 — 로그 쓰기 실패면 전이 전체가 롤백(Codex HI
     await expect(withdrawDocument(org.drafter, current, failing)).rejects.toThrow("주입");
     expect(await state(submitted.instanceId, submitted.leaveId)).toEqual(before);
 
-    const doc = await rejectedDoc(org);
+    const doc = await rejectedDoc(org, FULL_DAY_B);
     const rejectedBefore = await state(doc.instanceId, doc.leaveId);
     await expect(
       resubmitLeave(org.drafter, { leaveId: doc.leaveId, expectedVersion: doc.version, input: RESUBMIT_INPUT }, failing),
@@ -399,7 +408,7 @@ describe("액션 반환값 투영(B-A1)", () => {
 
     // 팀장 계급 approval.value 끔 — 다음 담당 · 기안자 이름이 없다.
     await setVisibilityCell(SYSTEM_VIEWER, { roleId: TEAM_LEAD_ROLE_ID, infoItem: "approval.value", visible: false });
-    const hidden = await submitLeave(org.drafter, FULL_DAY, deps);
+    const hidden = await submitLeave(org.drafter, FULL_DAY_B, deps);
     const hiddenApprove = await approveDocument(org.lead, { instanceId: hidden.instanceId, expectedVersion: 1 }, deps);
     const leadResult = await projectActionResult(org.lead, {
       documentId: hiddenApprove.documentId,
@@ -409,7 +418,7 @@ describe("액션 반환값 투영(B-A1)", () => {
     expect(JSON.stringify(leadResult)).not.toContain("최대표");
     expect(leadResult).toMatchObject({ documentId: hidden.leaveId, final: false });
 
-    const toReject = await submitLeave(org.drafter, FULL_DAY, deps);
+    const toReject = await submitLeave(org.drafter, FULL_DAY_C, deps);
     const rejected = await rejectDocument(org.lead, { instanceId: toReject.instanceId, expectedVersion: 1, reason: REASON }, deps);
     const rejectResult = await projectActionResult(org.lead, { documentId: rejected.documentId, final: false, drafterName: rejected.drafterName });
     expect(JSON.stringify(rejectResult)).not.toContain("박서연");

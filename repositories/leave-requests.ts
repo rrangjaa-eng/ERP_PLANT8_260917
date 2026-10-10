@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, max, min } from "drizzle-orm";
+import { and, asc, eq, inArray, max, min, sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { approvalInstances, leaveRequests, users } from "@/db/schema";
@@ -33,6 +33,13 @@ export async function insertLeaveRequest(
   const [row] = await tx.insert(leaveRequests).values(input).returning();
   if (!row) throw new Error("leave_requests insert가 행을 반환하지 않았습니다.");
   return row;
+}
+
+// 06.3(D-6311): 같은 기안자의 제출 · 다시 신청을 줄 세운다 — 겹침 조회와 삽입 사이 틈 없음. 260907은 잠금이
+// 없었다(`O: db/schema/030_constraints_indexes.sql:253,1049`). 트랜잭션 끝에 풀린다.
+export async function lockLeaveDrafter(viewer: Viewer, drafterId: string, tx: DbOrTx): Promise<void> {
+  void viewer;
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${"leave:" + drafterId}, 0))`);
 }
 
 export async function setLeaveNumber(viewer: Viewer, id: string, number: string, tx: DbOrTx): Promise<void> {

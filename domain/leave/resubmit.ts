@@ -3,10 +3,12 @@ import type { Viewer } from "@/domain/viewer";
 import { withTransaction } from "@/lib/db-transaction";
 import { NOT_HOLDER_MESSAGE, NotCurrentHolderError, prepareSubmission, resubmitDocument } from "@/domain/approvals";
 import type { TxLogDeps } from "@/domain/approvals/tx-log";
-import { findLeaveRequestById, updateLeaveRequestFields } from "@/repositories/leave-requests";
+import { findLeaveRequestById, lockLeaveDrafter, updateLeaveRequestFields } from "@/repositories/leave-requests";
 import { countLeaveQuarters, leaveYearRange } from "@/domain/leave/days";
 import { seoulToday } from "@/lib/dates";
 import { assertLeaveWrite, LEAVE_DOCUMENT_KIND } from "@/domain/leave/access";
+import { findLiveLeaveOverlap, loadLeaveHolidays } from "@/domain/leave/guard";
+import { overlapMessage } from "@/domain/leave/overlap";
 import { LeaveValidationError, type SubmitLeaveInput } from "@/domain/leave";
 
 // 04.1-02(EXP-04 ordering): 반려된 연차의 다시 신청 — 번호는 그대로, 새 차수(round + 1)의 결재선은 다시
@@ -23,7 +25,9 @@ export async function resubmitLeave(
 ): Promise<{ leaveId: string; instanceId: string; version: number; round: number; nextHolderNames: string | null }> {
   await assertLeaveWrite(viewer);
   // 검증된 값만 저장한다 — countLeaveQuarters가 돌려준 {kind, half}와 날짜(입력 원문을 쓰지 않는다).
-  const days = countLeaveQuarters(input.input, leaveYearRange(seoulToday(deps?.now)));
+  const range = leaveYearRange(seoulToday(deps?.now));
+  const holidays = await loadLeaveHolidays(input.input.startDate, range);
+  const days = countLeaveQuarters(input.input, range, holidays);
   if (!days.ok) throw new LeaveValidationError(days.errors);
   const note = input.input.note?.trim() ? input.input.note.trim() : null;
 
@@ -34,10 +38,15 @@ export async function resubmitLeave(
   const prepared = await prepareSubmission(viewer, { kind: LEAVE_DOCUMENT_KIND, drafterId: leave.drafterId }, { now: deps?.now });
 
   return withTransaction(async (tx) => {
+    // 06.3(D-6311): 기안자 키로 줄 세운다 — 기안자가 아니면 다음 전이가 `not_drafter`로 막는다.
+    await lockLeaveDrafter(viewer, leave.drafterId, tx);
     // 전이 판정(기안자 · rejected · version)이 먼저 — 거부되면 신청 칸은 쓰지 않는다.
     const resubmitted = await resubmitDocument(viewer, prepared, { instanceId, expectedVersion: input.expectedVersion }, tx, {
       appendActionLog: deps?.appendActionLog,
     });
+    // 06.3(D-6310): 전이 뒤 자기 행은 submitted라 빼고 본다. throw가 전이 · 차수 · 단계 행 · 로그를 같은 tx로 롤백한다.
+    const hit = await findLiveLeaveOverlap(viewer, { drafterId: leave.drafterId, candidate: days, holidays, excludeId: input.leaveId }, tx);
+    if (hit) throw new LeaveValidationError([{ field: "startDate", message: overlapMessage(hit) }]);
     await updateLeaveRequestFields(
       viewer,
       input.leaveId,

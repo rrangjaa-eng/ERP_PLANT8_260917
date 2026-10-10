@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { HolidayLookup } from "@/domain/holidays/business-day";
 import {
   countLeaveQuarters,
   formatLeaveDays,
@@ -9,8 +10,8 @@ import {
   MIN_LEAVE_YEAR,
 } from "@/domain/leave/days";
 
-// LEAV-01: 일수는 정수 1/4일(쿼터). 종일 = 평일 수 × 4, 반차 = 2, 반반차 = 1,
-// 재택 = 0. 공휴일은 빼지 않는다(UI-SPEC Assumptions #4).
+// LEAV-01: 일수는 정수 1/4일(쿼터). 종일 = 기간 안 영업일 × 4, 반차 = 2, 반반차 = 1,
+// 재택 = 0. 휴일 판정은 셋째 인자 — 없으면 주말만(06.3 D-6301 · D-6302).
 
 function quarters(input: Parameters<typeof countLeaveQuarters>[0]): number {
   const result = countLeaveQuarters(input);
@@ -35,7 +36,7 @@ describe("countLeaveQuarters — 단위", () => {
 
   it("종일 토~일만(2026-09-26~27)은 거부", () => {
     expect(errors({ kind: "full_day", startDate: "2026-09-26", endDate: "2026-09-27", half: "" })).toEqual([
-      { field: "startDate", message: "주말만 고른 기간 · 평일 넣기" },
+      { field: "startDate", message: "휴일만 고른 기간 · 평일 넣기" },
     ]);
   });
 
@@ -142,6 +143,61 @@ describe("countLeaveQuarters — 연도 범위", () => {
 
   it("범위를 넘기지 않으면(화면 계산) 연도를 막지 않는다", () => {
     expect(countLeaveQuarters({ kind: "full_day", startDate: "9999-01-04", endDate: "9999-01-04", half: "" }).ok).toBe(true);
+  });
+});
+
+// 06.3(D-6301 · D-6304): 2026 공휴일 집합 — 설 · 삼일절 대체 · 어린이날 · 부처님오신날 대체 · 선거일 · 현충일 · 추석 · 개천절 · 한글날 …
+const HOLIDAYS_2026 = new Set([
+  "2026-01-01", "2026-02-16", "2026-02-17", "2026-02-18", "2026-03-01", "2026-03-02", "2026-05-01", "2026-05-05",
+  "2026-05-24", "2026-05-25", "2026-06-03", "2026-06-06", "2026-07-17", "2026-08-15", "2026-08-17", "2026-09-24",
+  "2026-09-25", "2026-09-26", "2026-10-03", "2026-10-05", "2026-10-09", "2026-12-25",
+]);
+const lookup2026: HolidayLookup = () => HOLIDAYS_2026;
+
+function withHolidays(input: Parameters<typeof countLeaveQuarters>[0]) {
+  return countLeaveQuarters(input, undefined, lookup2026);
+}
+
+describe("countLeaveQuarters — 휴일 판정 인자(06.3 D-6301 · D-6304)", () => {
+  it("종일 2026-09-23~28은 추석 연휴(09-24~26)와 주말을 빼 영업일 2일 = 8쿼터", () => {
+    const result = withHolidays({ kind: "full_day", startDate: "2026-09-23", endDate: "2026-09-28", half: "" });
+    expect(result.ok && result.quarters).toBe(8);
+  });
+
+  it("종일 2026-09-25~28은 영업일 1일(28일) = 4쿼터", () => {
+    const result = withHolidays({ kind: "full_day", startDate: "2026-09-25", endDate: "2026-09-28", half: "" });
+    expect(result.ok && result.quarters).toBe(4);
+  });
+
+  it("반차 추석 당일 · 반반차 선거일 · 재택 대체공휴일 하루는 `휴일 · 다른 날 고르기`", () => {
+    const expected = [{ field: "startDate", message: "휴일 · 다른 날 고르기" }];
+    const half = withHolidays({ kind: "half_day", startDate: "2026-09-25", endDate: "2026-09-25", half: "am" });
+    const quarter = withHolidays({ kind: "quarter_day", startDate: "2026-06-03", endDate: "2026-06-03", half: "pm" });
+    const remote = withHolidays({ kind: "remote", startDate: "2026-10-05", endDate: "2026-10-05", half: "" });
+    expect(half).toEqual({ ok: false, errors: expected });
+    expect(quarter).toEqual({ ok: false, errors: expected });
+    expect(remote).toEqual({ ok: false, errors: expected });
+  });
+
+  it("종일 기간 전체가 휴일(추석 낀 09-24~27 · 개천절 연휴 10-03~05)이면 `휴일만 고른 기간 · 평일 넣기`", () => {
+    const expected = [{ field: "startDate", message: "휴일만 고른 기간 · 평일 넣기" }];
+    expect(withHolidays({ kind: "full_day", startDate: "2026-09-24", endDate: "2026-09-27", half: "" })).toEqual({ ok: false, errors: expected });
+    expect(withHolidays({ kind: "full_day", startDate: "2026-10-03", endDate: "2026-10-05", half: "" })).toEqual({ ok: false, errors: expected });
+  });
+
+  it("재택 2026-10-02~05(금 하루만 영업일)은 통과하고 0쿼터", () => {
+    const result = withHolidays({ kind: "remote", startDate: "2026-10-02", endDate: "2026-10-05", half: "" });
+    expect(result.ok && result.quarters).toBe(0);
+  });
+
+  it("휴일 인자가 없으면 주말만 뺀다 — 09-25~28은 8쿼터 · 토~일은 휴일만 기간 · 반차 토요일은 휴일 하루", () => {
+    expect(quarters({ kind: "full_day", startDate: "2026-09-25", endDate: "2026-09-28", half: "" })).toBe(8);
+    expect(errors({ kind: "full_day", startDate: "2026-09-19", endDate: "2026-09-20", half: "" })).toEqual([
+      { field: "startDate", message: "휴일만 고른 기간 · 평일 넣기" },
+    ]);
+    expect(errors({ kind: "half_day", startDate: "2026-09-19", endDate: "2026-09-19", half: "am" })).toEqual([
+      { field: "startDate", message: "휴일 · 다른 날 고르기" },
+    ]);
   });
 });
 

@@ -929,7 +929,7 @@ Plans:
   6. 공휴일 날짜를 쓰던 기존 테스트·E2E 헬퍼가 고쳐져 CI가 초록이다
   7. 260907 대조가 플랜에 file:line으로 남는다
 
-**Plans:** 2 plans
+**Plans:** 3/3 plans complete
 
 Plans:
 **Wave 1**

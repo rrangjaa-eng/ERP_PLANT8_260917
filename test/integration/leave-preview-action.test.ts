@@ -3,6 +3,7 @@ import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { CEO_ROLE_ID, DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { setUserArchived } from "@/repositories/users";
 import { submitLeave } from "@/domain/leave";
+import { seoulToday } from "@/lib/dates";
 import { makePerson, NOW_2026 } from "./approvals-fixtures";
 
 // 04.1-06 코드 검토 L3: 결재선이 막혀도(대표 없음) 신청 창 미리보기는 잔고 행을 버리지 않고, 막힌 이유를 결재선
@@ -118,5 +119,47 @@ describe("previewLeaveAction — 겹침 줄(06.3 D-6313)", () => {
     session.viewer = drafter;
     const result = await previewLeaveAction(input({ kind: "full_day", startDate: "2026-09-22" }));
     expect(result?.data?.blockedReason).toBeNull();
+  });
+
+  // 다음 해(시계 기준) 1월 4~10일의 첫 화요일 T · T+1(수) · T+2(목) — 올해 날짜면 날짜 있는 계산과 날짜 전 계산이 우연히 같은 해 · 같은 숫자라
+  // 날짜 있는 결과에서 글자만 거르는 잘못된 구현도 통과한다. 다음 해는 늘 다른 회계연도라 그 구현을 붉게 만든다.
+  function nextYearDates() {
+    const year = Number(seoulToday().slice(0, 4)) + 1;
+    const at = (day: number) => `${year}-01-${String(day).padStart(2, "0")}`;
+    const tuesday = 4 + ((2 - new Date(Date.UTC(year, 0, 4)).getUTCDay() + 7) % 7);
+    return { t: at(tuesday), t1: at(tuesday + 1), t2: at(tuesday + 2), blocked: `1월 ${tuesday}일 종일 신청과 겹침 · 날짜 바꾸기` };
+  }
+
+  it("D-6318: 겹침으로 막힌 미리보기의 잔고 행은 휴일 막힘 · 날짜 없음과 같은 날짜 전 꼴이고, 막히지 않은 날은 이번 신청을 보인다", async () => {
+    const dates = nextYearDates();
+    const drafter = await liveWorld();
+    await submitLeave(drafter, { kind: "full_day", startDate: dates.t, endDate: dates.t1, half: "" });
+    session.viewer = drafter;
+    const previewOf = async (fields: Parameters<typeof input>[0]) => (await previewLeaveAction(input(fields)))?.data;
+    const textsOf = (data: Awaited<ReturnType<typeof previewOf>>) => data?.balance?.map((line) => line.text);
+
+    const overlap = await previewOf({ kind: "half_day", startDate: dates.t, half: "am" });
+    const holiday = await previewOf({ kind: "half_day", startDate: "2026-09-25", half: "am" });
+    const noDate = await previewOf({ kind: "half_day", startDate: "", half: "am" });
+    const free = await previewOf({ kind: "half_day", startDate: dates.t2, half: "am" });
+
+    expect(overlap?.blockedReason).toEqual({ field: "startDate", message: dates.blocked });
+    expect(textsOf(overlap)).toEqual(textsOf(noDate));
+    expect(holiday?.blockedReason).not.toBeNull();
+    expect(textsOf(holiday)).toEqual(textsOf(noDate));
+    expect(textsOf(overlap)).toHaveLength(1);
+    expect(textsOf(overlap)?.[0]).toMatch(/^연차 남음 [\d.]+일(?: · 월차 남음 [\d.]+일)? · 결재 중 [\d.]+일$/);
+    expect(free?.blockedReason).toBeNull();
+    expect(textsOf(free)?.[0]).toMatch(/ · 이번 신청 0\.5일$/);
+  });
+
+  it("D-6318: 재택 겹침은 막힘 줄만 있고 잔고 행이 없다", async () => {
+    const dates = nextYearDates();
+    const drafter = await liveWorld();
+    await submitLeave(drafter, { kind: "full_day", startDate: dates.t, endDate: dates.t1, half: "" });
+    session.viewer = drafter;
+    const data = (await previewLeaveAction(input({ kind: "remote", startDate: dates.t })))?.data;
+    expect(data?.blockedReason).toEqual({ field: "startDate", message: dates.blocked });
+    expect(data?.balance).toBeNull();
   });
 });

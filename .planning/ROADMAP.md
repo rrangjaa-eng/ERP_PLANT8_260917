@@ -929,7 +929,7 @@ Plans:
   6. 공휴일 날짜를 쓰던 기존 테스트·E2E 헬퍼가 고쳐져 CI가 초록이다
   7. 260907 대조가 플랜에 file:line으로 남는다
 
-**Plans:** 2 plans
+**Plans:** 3/3 plans complete
 
 Plans:
 **Wave 1**
@@ -939,6 +939,10 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [x] 06.3-02-PLAN.md — 겹침 막기: 순수 겹침 판정 · 기안자 advisory 잠금 · 제출 · 다시 신청 트랜잭션 · 미리보기 겹침 줄 + 신청 버튼 비활성(D-6313 잠정 K2) · 같은 기안자 반복 제출 테스트 (risk: DB 잠금)
+
+**Gap closure** *(UAT G-06.3-8)*
+
+- [x] 06.3-03-PLAN.md — 겹침 막힘 때 잔고 줄 「이번 신청」 · 「차감 예정」 숨김(D-6318, `actions.ts` 한 파일 · #201)
 
 ### Phase 7: 공휴일·지급일·마감·알림 + 전 메뉴 권한 검수
 

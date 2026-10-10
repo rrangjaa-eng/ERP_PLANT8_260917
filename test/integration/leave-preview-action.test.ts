@@ -119,4 +119,27 @@ describe("previewLeaveAction — 겹침 줄(06.3 D-6313)", () => {
     const result = await previewLeaveAction(input({ kind: "full_day", startDate: "2026-09-22" }));
     expect(result?.data?.blockedReason).toBeNull();
   });
+
+  // 다음 해(2027-01-05~06, 화 · 수) 날짜 — 올해 날짜면 날짜 있는 계산과 날짜 전 계산이 우연히 같은 해 · 같은 숫자라
+  // 날짜 있는 결과에서 글자만 거르는 잘못된 구현도 통과한다. 다음 해는 회계연도가 달라 그 구현을 붉게 만든다.
+  it("D-6318: 겹침으로 막힌 미리보기의 잔고 행은 휴일 막힘 · 날짜 없음과 같은 날짜 전 꼴이고, 막히지 않은 날은 이번 신청을 보인다", async () => {
+    const drafter = await liveWorld();
+    await submitLeave(drafter, { kind: "full_day", startDate: "2027-01-05", endDate: "2027-01-06", half: "" }, { now: NOW_2026 });
+    session.viewer = drafter;
+    const previewOf = async (fields: Parameters<typeof input>[0]) => (await previewLeaveAction(input(fields)))?.data;
+    const textsOf = (data: Awaited<ReturnType<typeof previewOf>>) => data?.balance?.map((line) => line.text);
+
+    const overlap = await previewOf({ kind: "half_day", startDate: "2027-01-05", half: "am" });
+    const holiday = await previewOf({ kind: "half_day", startDate: "2026-09-25", half: "am" });
+    const noDate = await previewOf({ kind: "half_day", startDate: "", half: "am" });
+    const free = await previewOf({ kind: "half_day", startDate: "2027-01-07", half: "am" });
+
+    expect(overlap?.blockedReason).toEqual({ field: "startDate", message: "1월 5일 종일 신청과 겹침 · 날짜 바꾸기" });
+    expect(textsOf(overlap)).toEqual(textsOf(noDate));
+    expect(textsOf(holiday)).toEqual(textsOf(noDate));
+    expect(textsOf(overlap)).toHaveLength(1);
+    expect(textsOf(overlap)?.[0]).toMatch(/^연차 남음 [\d.]+일(?: · 월차 남음 [\d.]+일)? · 결재 중 [\d.]+일$/);
+    expect(free?.blockedReason).toBeNull();
+    expect(textsOf(free)?.[0]).toMatch(/ · 이번 신청 0\.5일$/);
+  });
 });

@@ -13,7 +13,8 @@ import {
   leaveYearRange,
   type LeaveFieldError,
 } from "@/domain/leave/days";
-import { loadLeaveHolidays } from "@/domain/leave/guard";
+import { findLiveLeaveOverlap, loadLeaveHolidays } from "@/domain/leave/guard";
+import { overlapMessage } from "@/domain/leave/overlap";
 import { seoulToday } from "@/lib/dates";
 import { assertLeaveWrite } from "@/domain/leave/access";
 import { previewLeaveBalance } from "@/domain/leave/balance-service";
@@ -97,6 +98,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // 월차 따로, 합계 없음, 재택이면 null)과 결재선(04.1-01 RoutePreviewDTO 그대로 — 이름은 approval.value 투영을
 // 통과할 때만)을 한 응답으로 준다. 이번 신청 일수는 잔고 행에만 있다(힌트에 싣지 않는다).
 // 06.3(확정 K-D1): 막힘 한 줄 `blockedReason` — 폼이 1차를 막는다. 최종 방어는 제출 · 다시 신청 검사.
+// 06.3(D-6313 확정 · 카드 2026-10-10): 날짜 오류가 없으면 겹침 한 줄 — 폼이 1차를 막는다. 최종 방어는 제출 트랜잭션(D-6310).
 export const previewLeaveAction = authedActionClient.schema(leaveInputSchema).action(async ({ parsedInput, ctx }) => {
   await assertLeaveWrite(ctx.viewer);
   const range = leaveYearRange(seoulToday());
@@ -109,6 +111,9 @@ export const previewLeaveAction = authedActionClient.schema(leaveInputSchema).ac
     const span = (Date.parse(`${days.endDate}T00:00:00Z`) - Date.parse(`${days.startDate}T00:00:00Z`)) / DAY_MS + 1;
     offDays = days.kind === "full_day" ? span - days.quarters / 4 : null;
     balance = formatRequestBalanceRow(await previewLeaveBalance(ctx.viewer, parsedInput, { holidays }), days.kind);
+    // 기안자는 언제나 세션 — 입력에서 받지 않는다(남의 연차 날짜가 응답에 실리지 않게). 잠금 없는 읽기.
+    const hit = await findLiveLeaveOverlap(ctx.viewer, { drafterId: ctx.viewer.id, candidate: days, holidays });
+    blockedReason = hit ? { field: "startDate", message: overlapMessage(hit) } : null;
   } else {
     // 빈 칸 오류는 싣지 않는다 — 폼 blockedOf가 같은 글자로 먼저 막고, 빈 칸 줄이 응답 대기 중 낡은 막힘으로 남지 않게.
     const emptyMessages = [LEAVE_KIND_EMPTY_ERROR, LEAVE_HALF_EMPTY_ERROR, LEAVE_START_EMPTY_ERROR, LEAVE_DATE_EMPTY_ERROR];

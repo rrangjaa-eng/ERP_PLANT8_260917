@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { CEO_ROLE_ID, DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { setUserArchived } from "@/repositories/users";
-import { makePerson } from "./approvals-fixtures";
+import { submitLeave } from "@/domain/leave";
+import { makePerson, NOW_2026 } from "./approvals-fixtures";
 
 // 04.1-06 코드 검토 L3: 결재선이 막혀도(대표 없음) 신청 창 미리보기는 잔고 행을 버리지 않고, 막힌 이유를 결재선
 // 자리에 준다 — 이유를 제출해야 처음 보는 일이 없게.
@@ -82,5 +83,40 @@ describe("previewLeaveAction — 막힘 줄(06.3 확정 K-D1)", () => {
 
   it("종일 2026-09-21~23은 null", async () => {
     expect(await blockedOf({ kind: "full_day", startDate: "2026-09-21", endDate: "2026-09-23" })).toBeNull();
+  });
+});
+
+describe("previewLeaveAction — 겹침 줄(06.3 D-6313)", () => {
+  const FULL_21_23 = { kind: "full_day", startDate: "2026-09-21", endDate: "2026-09-23", half: "" };
+
+  async function liveWorld() {
+    const drafter = await makePerson("박서연", DEFAULT_ROLE_ID, "기획1팀");
+    await makePerson("김팀장", TEAM_LEAD_ROLE_ID, "기획1팀");
+    await makePerson("최대표", CEO_ROLE_ID, null);
+    return drafter;
+  }
+
+  it("살아 있는 종일 09-21~23이 있으면 반차 09-22 오전은 시작일 칸 겹침 줄 · 09-28은 null · 날짜 없음은 null · 추석 반차는 휴일 줄이 먼저", async () => {
+    const drafter = await liveWorld();
+    await submitLeave(drafter, FULL_21_23, { now: NOW_2026 });
+    session.viewer = drafter;
+    const blockedOf = async (fields: Parameters<typeof input>[0]) => (await previewLeaveAction(input(fields)))?.data?.blockedReason;
+
+    expect(await blockedOf({ kind: "half_day", startDate: "2026-09-22", half: "am" })).toEqual({
+      field: "startDate",
+      message: "9월 22일 종일 신청과 겹침 · 날짜 바꾸기",
+    });
+    expect(await blockedOf({ kind: "half_day", startDate: "2026-09-28", half: "am" })).toBeNull();
+    expect(await blockedOf({ kind: "half_day", startDate: "", half: "am" })).toBeNull();
+    expect(await blockedOf({ kind: "half_day", startDate: "2026-09-25", half: "am" })).toEqual({ field: "startDate", message: "휴일 · 다른 날 고르기" });
+  });
+
+  it("V4: 다른 기안자(김민수)의 살아 있는 09-22만 있으면 박서연 미리보기 09-22는 null(남의 신청은 보이지 않는다)", async () => {
+    const drafter = await liveWorld();
+    const other = await makePerson("김민수", DEFAULT_ROLE_ID, "기획1팀");
+    await submitLeave(other, { kind: "full_day", startDate: "2026-09-22", endDate: "2026-09-22", half: "" }, { now: NOW_2026 });
+    session.viewer = drafter;
+    const result = await previewLeaveAction(input({ kind: "full_day", startDate: "2026-09-22" }));
+    expect(result?.data?.blockedReason).toBeNull();
   });
 });

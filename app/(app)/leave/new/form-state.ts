@@ -10,3 +10,23 @@ export function formBlocked(
 ): LeaveFieldError | null {
   return own ?? preview?.blockedReason ?? null;
 }
+
+// 06.3-02(리뷰 A1): 마지막 제출 입력(next-safe-action `useAction`의 `input`)과 지금 입력이 같은가 — 비고는 없으면 빈 문자열.
+type LeaveInputLike = { kind: string; startDate: string; endDate: string; half: string; note?: string };
+
+export function sameLeaveInput(a: LeaveInputLike, b: LeaveInputLike): boolean {
+  return (
+    a.kind === b.kind &&
+    a.startDate === b.startDate &&
+    a.endDate === b.endDate &&
+    a.half === b.half &&
+    (a.note ?? "") === (b.note ?? "")
+  );
+}
+
+// 06.3-02(리뷰 A1 · eng R2-W2): 입력이 제출값과 달라지면(stale) 낡은 칸 · 비고 오류만 숨긴다 — 입력과 무관한 서버 오류는 그대로.
+type SubmitErrors = { fieldErrors: LeaveFieldError[]; noteError: string | undefined; serverError: string | undefined };
+
+export function shownSubmitErrors(stale: boolean, errors: SubmitErrors): SubmitErrors {
+  return stale ? { fieldErrors: [], noteError: undefined, serverError: errors.serverError } : errors;
+}

@@ -759,7 +759,7 @@ test.describe("연차 신청 폼 /leave/new (04.1-06 Task 2 · S2)", () => {
     });
   });
 
-  test("겹침(06.3 D-6313): 결재 중 종일과 같은 범위를 고르면 막힘 줄 · 1차 비활성 · role=status · 시작일 칸이 막힘 줄을 가리키고, 날짜를 바꾸면 풀린다", async ({ browser, baseURL }) => {
+  test("겹침(06.3 D-6313): 결재 중 종일과 같은 범위를 고르면 막힘 줄 · 1차 비활성 · role=status · 시작일 칸이 막힘 줄을 가리키고, 날짜를 바꾸면 풀린다 · 막힌 동안 잔고 행은 날짜 전 꼴(D-6318)", async ({ browser, baseURL }) => {
     await onStableSeoulDay(async (today) => {
       const org = await setupLeaveOrg(today);
       const range = leaveWeekdayRange(today, { week: 17, weekdays: 2 });
@@ -771,6 +771,8 @@ test.describe("연차 신청 폼 /leave/new (04.1-06 Task 2 · S2)", () => {
       const [, month, day] = range.startDate.split("-").map(Number);
       await expect(page.locator("#leave-blocked")).toHaveText(`${month}월 ${day}일 종일 신청과 겹침 · `);
       await expect(page.locator("#leave-blocked")).toHaveAttribute("role", "status");
+      await expect(balanceRow(page)).toHaveText([/^연차 남음 [\d.]+일(?: · 월차 남음 [\d.]+일)? · 결재 중 [\d.]+일$/]);
+      await expect(page.getByTestId("leave-balance-row")).not.toContainText("이번 신청");
       await expect(primary).toBeDisabled();
       await expect(page.getByLabel("시작일")).toHaveAttribute("aria-describedby", /leave-blocked/);
       await page.getByRole("button", { name: "날짜 바꾸기" }).click();
@@ -778,13 +780,14 @@ test.describe("연차 신청 폼 /leave/new (04.1-06 Task 2 · S2)", () => {
 
       await fillRange(page, leaveWeekdayRange(today, { week: 18, weekdays: 2 }));
       await expect(page.locator("#leave-blocked")).toHaveCount(0);
+      await expect(balanceRow(page).first()).toHaveText(/ · 이번 신청 2일$/);
       await expect(primary).toBeEnabled();
       await expect(page.getByLabel("시작일")).not.toHaveAttribute("aria-describedby", /leave-blocked/);
       await page.context().close();
     });
   });
 
-  test("다시 신청 폼 겹침(06.3 리뷰 A6): 반려된 A 뒤 같은 범위로 B를 냈으면 A의 다시 신청 폼이 열자마자 막힌다", async ({ browser, baseURL }) => {
+  test("다시 신청 폼 겹침(06.3 리뷰 A6): 반려된 A 뒤 같은 범위로 B를 냈으면 A의 다시 신청 폼이 열자마자 막힌다 · 잔고 행 날짜 전 꼴(D-6318)", async ({ browser, baseURL }) => {
     await onStableSeoulDay(async (today) => {
       const org = await setupLeaveOrg(today);
       const range = leaveWeekdayRange(today, { week: 22, weekdays: 2 });
@@ -796,6 +799,8 @@ test.describe("연차 신청 폼 /leave/new (04.1-06 Task 2 · S2)", () => {
       await page.goto(`/leave/${rejected.leaveId}`);
       const [, month, day] = range.startDate.split("-").map(Number);
       await expect(page.locator("#leave-blocked")).toHaveText(`${month}월 ${day}일 종일 신청과 겹침 · `);
+      await expect(balanceRow(page)).toHaveText([/^연차 남음 [\d.]+일(?: · 월차 남음 [\d.]+일)? · 결재 중 [\d.]+일$/]);
+      await expect(page.getByTestId("leave-balance-row")).not.toContainText("이번 신청");
       await expect(page.getByRole("button", { name: /^연차 다시 신청/ })).toBeDisabled();
       await page.context().close();
     });

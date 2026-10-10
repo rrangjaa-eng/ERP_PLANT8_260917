@@ -31,7 +31,7 @@ describe("결재함 — 지출결의 요약 값 (05-10)", () => {
   it("USD 4,200 @1,318.4 팀 비용 + 연차가 함께 있으면 숫자 칸 머리글은 `금액 · 일수`, 지출결의 measure는 원화 환산과 원래 통화를 싣는다", async () => {
     const fx = await setupExpenseProject();
     const expenseId = await submittedTeamExpense(fx.pm, "팀 회식", { currency: "USD", amount: 4200, fxRate: 1318.4 });
-    await submitLeave(fx.pm, { kind: "full_day", startDate: "2026-10-05", endDate: "2026-10-05", half: "" }, { now: NOW_2026 });
+    await submitLeave(fx.pm, { kind: "full_day", startDate: "2026-10-06", endDate: "2026-10-06", half: "" }, { now: NOW_2026 });
 
     const inbox = await listMyInbox(fx.lead, { withDetails: true });
 

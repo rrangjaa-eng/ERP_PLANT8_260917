@@ -43,10 +43,13 @@ import {
   findLeaveRequestsByIds,
   insertLeaveRequest,
   listLeaveRequestsByDrafter,
+  lockLeaveDrafter,
   setLeaveNumber,
   type LeaveRequestWithApproval,
 } from "@/repositories/leave-requests";
-import { countLeaveQuarters, formatLeaveDays, leaveYearRange, type HalfPeriod, type LeaveFieldError, type LeaveKind } from "@/domain/leave/days";
+import { findLiveLeaveOverlap, loadLeaveHolidays } from "@/domain/leave/guard";
+import { overlapMessage } from "@/domain/leave/overlap";
+import { countLeaveQuarters, formatLeaveDays, LEAVE_KIND_WORDS, leaveYearRange, type HalfPeriod, type LeaveFieldError, type LeaveKind } from "@/domain/leave/days";
 import { LEAVE_REQUEST_DTO_SPEC, type LeaveRequestBalanceDto, type LeaveRequestDto } from "@/domain/leave/dto";
 import { assertLeaveWrite, canSeeLeaveDocument, canWriteLeave, LEAVE_DOCUMENT_KIND } from "@/domain/leave/access";
 import { getLeaveBalancesForRequests } from "@/domain/leave/balance-service";
@@ -173,14 +176,13 @@ function leaveSummaryFields(leave: Partial<LeaveRequestDto>): Pick<DocumentSumma
 
 // 04.1-05(T18 · UI-SPEC 사용자 확인 대상 #5): 제목 자리의 종류 · 기간 — 구분자 ` — `는 이 함수 한 곳이다.
 // 문서 화면 머리와 결재 시트 머리가 같이 쓴다(표 셀은 `·` — 표에서 `—`는 「비어 있음」이다).
-const KIND_WORDS: Record<LeaveKind, string> = { full_day: "종일", half_day: "반차", quarter_day: "반반차", remote: "재택" };
 const HALF_WORDS: Record<HalfPeriod, string> = { am: "오전", pm: "오후" };
 
 type LeaveTitleSource = { kind?: LeaveKind; half?: HalfPeriod | null; startDate?: string; endDate?: string };
 
 function kindWord(leave: LeaveTitleSource): string {
   if (!leave.kind) return "";
-  return `${KIND_WORDS[leave.kind]}${leave.half ? ` ${HALF_WORDS[leave.half]}` : ""}`;
+  return `${LEAVE_KIND_WORDS[leave.kind]}${leave.half ? ` ${HALF_WORDS[leave.half]}` : ""}`;
 }
 
 export function formatLeaveTitle(leave: LeaveTitleSource): string {
@@ -318,7 +320,9 @@ export async function submitLeave(
 ): Promise<{ leaveId: string; instanceId: string; number: string; version: number }> {
   await assertLeaveWrite(viewer);
   const today = seoulToday(deps?.now);
-  const days = countLeaveQuarters(input, leaveYearRange(today));
+  const range = leaveYearRange(today);
+  const holidays = await loadLeaveHolidays(input.startDate, range);
+  const days = countLeaveQuarters(input, range, holidays);
   if (!days.ok) throw new LeaveValidationError(days.errors);
   const year = Number(today.slice(0, 4));
 
@@ -327,6 +331,10 @@ export async function submitLeave(
   const note = input.note?.trim() ? input.note.trim() : null;
 
   return withTransaction(async (tx) => {
+    // 06.3: 잠금 → 같은 tx 겹침 조회 → 삽입. throw는 롤백되고 액션이 `rejected.errors`로 바꾼다(actions.ts leaveRejected).
+    await lockLeaveDrafter(viewer, viewer.id, tx);
+    const hit = await findLiveLeaveOverlap(viewer, { drafterId: viewer.id, candidate: days, holidays }, tx);
+    if (hit) throw new LeaveValidationError([{ field: "startDate", message: overlapMessage(hit) }]);
     const leave = await insertLeaveRequest(
       viewer,
       {

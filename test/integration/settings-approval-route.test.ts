@@ -37,6 +37,8 @@ import { makePerson, orgUnitIdByName, NOW_2026 } from "./approvals-fixtures";
 // 결재선은 그 뒤 제출한 문서부터 적용되고, 진행 중 문서의 단계 행은 그대로다.
 
 const FULL_DAY = { kind: "full_day", startDate: "2026-09-21", endDate: "2026-09-21", half: "" };
+const FULL_DAY_22 = { ...FULL_DAY, startDate: "2026-09-22", endDate: "2026-09-22" };
+const FULL_DAY_23 = { ...FULL_DAY, startDate: "2026-09-23", endDate: "2026-09-23" };
 const deps = { now: NOW_2026 };
 
 async function stepsOf(instanceId: string) {
@@ -81,7 +83,7 @@ describe("설정 변경 → 새 제출만 반영 · 진행 중 문서는 그대�
     const currentA = (await viewOf(org.lead, docA.leaveId))?.currentStepIndex;
 
     await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP2_ENABLED, false);
-    const docB = await submitLeave(org.drafter, FULL_DAY, deps);
+    const docB = await submitLeave(org.drafter, FULL_DAY_22, deps);
 
     expect((await stepsOf(docB.instanceId)).map((step) => step.stepIndex)).toEqual([1, 3, 4]);
     expect(await stepsOf(docA.instanceId)).toEqual(stepsA);
@@ -95,7 +97,7 @@ describe("설정 변경 → 새 제출만 반영 · 진행 중 문서는 그대�
     expect(viewDBefore?.currentStepIndex).not.toBe(1);
 
     await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_SELF_APPROVAL, "self_approve");
-    const docC = await submitLeave(org.lead, FULL_DAY, deps);
+    const docC = await submitLeave(org.lead, FULL_DAY_22, deps);
 
     expect((await routeOf(docC.instanceId)).selfApproval).toBe("self_approve");
     const viewC = await viewOf(org.lead, docC.leaveId);
@@ -113,9 +115,9 @@ describe("설정 변경 → 새 제출만 반영 · 진행 중 문서는 그대�
     const before = await submitLeave(org.drafter, FULL_DAY, deps);
 
     await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID, DEFAULT_ROLE_ID);
-    const first = await submitLeave(org.drafter, FULL_DAY, deps);
+    const first = await submitLeave(org.drafter, FULL_DAY_22, deps);
     await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID, DEFAULT_ROLE_ID);
-    const second = await submitLeave(org.drafter, FULL_DAY, deps);
+    const second = await submitLeave(org.drafter, FULL_DAY_23, deps);
 
     const step2Role = async (instanceId: string) => (await stepsOf(instanceId)).find((step) => step.stepIndex === 2)?.roleId;
     expect(await step2Role(before.instanceId)).toBe(DIVISION_HEAD_ROLE_ID);

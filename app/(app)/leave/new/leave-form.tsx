@@ -24,6 +24,7 @@ import { DayNumbers } from "../day-numbers";
 import { HALF_LABELS, LEAVE_KIND_LABELS } from "../labels";
 import { previewLeaveAction, resubmitLeaveAction, submitLeaveAction } from "../actions";
 import { usePhoneWidth } from "../use-phone-width";
+import { formBlocked, sameLeaveInput, shownSubmitErrors } from "./form-state";
 import styles from "../leave.module.css";
 
 // 04.1-02 S2 첫 형태 → 04.1-06 완성형(S2): 종류에 따라 칸이 바뀐다(종일·재택 = 시작 · 종료, 반차·반반차 = 날짜 하나 +
@@ -50,7 +51,7 @@ export type LeaveFormResubmit = {
 
 type Values = { kind: string; half: string; startDate: string; endDate: string; note: string };
 type LeaveInput = { kind: string; startDate: string; endDate: string; half: string; note: string };
-type Blocked = { field: "kind" | "half" | "startDate"; message: string };
+type Blocked = { field: LeaveFieldError["field"]; message: string };
 
 const FIELD_LABELS: Record<LeaveFieldError["field"], string> = { kind: "종류", startDate: "시작일", endDate: "종료일", half: "시간" };
 
@@ -93,6 +94,11 @@ function blockedOf(values: Values): Blocked | null {
   if (singleDay && values.half === "") return { field: "half", message: LEAVE_HALF_EMPTY_ERROR };
   if (values.startDate === "") return { field: "startDate", message: singleDay ? LEAVE_DATE_EMPTY_ERROR : LEAVE_START_EMPTY_ERROR };
   return null;
+}
+
+// 06.3-02(리뷰 F2): 칸 오류와 막힘 줄 — 둘 다면 공백으로 잇고, 없으면 속성 없음.
+function describedBy(...ids: (string | null)[]): string | undefined {
+  return ids.filter((id) => id !== null).join(" ") || undefined;
 }
 
 // 「원인 · 다음 행동」 — 다음 행동은 그 칸으로 가는 3차 버튼이다.
@@ -177,16 +183,20 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
   }
 
   const singleDay = isSingleDay(values.kind);
-  const blocked = blockedOf(values);
-  const fieldErrors: LeaveFieldError[] = result.data && "rejected" in result.data ? result.data.rejected.errors : [];
+  const blocked = formBlocked(blockedOf(values), preview);
+  // 06.3-02(리뷰 A1 · eng R2-W2): 입력이 마지막 제출값과 달라지면 낡은 칸 · 비고 오류를 숨긴다(되돌리면 다시 보인다) — 서버 오류는 그대로.
+  const sent = resubmit ? resubmitted.input?.input : submitted.input;
+  const stale = sent !== undefined && !sameLeaveInput(sent, toInput(values));
+  const { fieldErrors, noteError, serverError } = shownSubmitErrors(stale, {
+    fieldErrors: result.data && "rejected" in result.data ? result.data.rejected.errors : [],
+    noteError: resubmit ? resubmitted.result.validationErrors?.input?.note?._errors?.[0] : submitted.result.validationErrors?.note?._errors?.[0],
+    serverError: result.serverError,
+  }, blocked);
   const errorOf = (field: LeaveFieldError["field"]) => fieldErrors.find((error) => error.field === field)?.message;
-  const noteError = resubmit
-    ? resubmitted.result.validationErrors?.input?.note?._errors?.[0]
-    : submitted.result.validationErrors?.note?._errors?.[0];
   const firstField = fieldErrors[0]?.field;
   const failure = networkFailed
     ? null
-    : (result.serverError ?? (firstField ? `신청 실패 · ${FIELD_LABELS[firstField]} ${fieldErrors.length}칸` : noteError ? "신청 실패 · 비고 1칸" : null));
+    : (serverError ?? (firstField ? `신청 실패 · ${FIELD_LABELS[firstField]} ${fieldErrors.length}칸` : noteError ? "신청 실패 · 비고 1칸" : null));
 
   function run(input: LeaveInput) {
     if (submittingRef.current) return;
@@ -241,7 +251,7 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
     document.getElementById(field)?.focus();
   }
 
-  const hint = preview ? (preview.remote ? "재택 · 차감 없음" : preview.weekendDays ? `주말 ${preview.weekendDays}일 제외` : null) : null;
+  const hint = preview ? (preview.remote ? "재택 · 차감 없음" : preview.offDays ? `휴일 ${preview.offDays}일 제외` : null) : null;
   const route = !resubmit && preview ? preview.route : null;
   const skippedNote =
     route?.steps
@@ -334,7 +344,7 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
             onChange={(event) => change({ ...values, startDate: event.target.value })}
             className={styles.textInput}
             aria-invalid={startError ? true : undefined}
-            aria-describedby={startError ? "startDate-error" : undefined}
+            aria-describedby={describedBy(startError ? "startDate-error" : null, blocked?.field === "startDate" ? "leave-blocked" : null)}
           />
           {startError ? <Form.Error id="startDate-error">{startError}</Form.Error> : null}
           {singleDay ? hintLine : null}
@@ -360,7 +370,7 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
               onChange={(event) => change({ ...values, endDate: event.target.value })}
               className={styles.textInput}
               aria-invalid={endError ? true : undefined}
-              aria-describedby={endError ? "endDate-error" : undefined}
+              aria-describedby={describedBy(endError ? "endDate-error" : null, blocked?.field === "endDate" ? "leave-blocked" : null)}
             />
             {endError ? <Form.Error id="endDate-error">{endError}</Form.Error> : null}
             {hintLine}
@@ -390,7 +400,7 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
             {phone ? null : submitButton}
             {blocked && !submitting ? (
               <span className={styles.blockedLine}>
-                <span id="leave-blocked" className={styles.blockedReason}>{`${blockedCause} · `}</span>
+                <span id="leave-blocked" role="status" className={styles.blockedReason}>{`${blockedCause} · `}</span>
                 <Button variant="tertiary" onClick={() => focusField(blocked.field)}>
                   {blockedNext}
                 </Button>

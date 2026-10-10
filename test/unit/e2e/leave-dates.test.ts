@@ -1,27 +1,58 @@
 import { describe, expect, it } from "vitest";
+import { generateHolidayRules, INITIAL_MANUAL_HOLIDAYS, LunarTableRangeError } from "@/domain/holidays/rules";
 import { leaveWeekdayRange, onStableSeoulDay } from "../../e2e/leave-dates";
 
-// 04.1-02(Codex HIGH 06): E2E가 만드는 연차 날짜는 실행하는 날이 1월 1일이든
-// 12월 31일이든 그해 안의 평일 범위다 — 「그해 3월 첫 월요일 + 주 오프셋」.
+// 04.1-02(Codex HIGH 06) · 06.3-01(D-6317): E2E가 만드는 연차 날짜는 실행하는 날이 1월 1일이든
+// 12월 31일이든 그해 안의 영업일 범위다(주말 · 공휴일 제외) — 「그해 3월 첫 월요일 + 주 오프셋」.
+
+// 서버 후보 생성과 같은 출처로 만든 그해 휴일 집합(법정 + 수동 행, 수동 날짜는 대체일 자리를 막는다).
+function holidaysOf(year: number): Set<string> {
+  const manual = INITIAL_MANUAL_HOLIDAYS.filter((holiday) => holiday.date.startsWith(`${year}-`)).map((holiday) => holiday.date);
+  try {
+    const rules = generateHolidayRules(year, { blockers: new Set(manual) }).map((holiday) => holiday.date);
+    return new Set([...rules, ...manual].filter((date) => date.startsWith(`${year}-`)));
+  } catch (error) {
+    if (error instanceof LunarTableRangeError) return new Set(manual);
+    throw error;
+  }
+}
 
 function weekdayOf(date: string): number {
   return new Date(`${date}T00:00:00Z`).getUTCDay();
 }
 
-function weekdaysBetween(start: string, end: string): number {
+function isBusinessDayOf(date: string): boolean {
+  const day = weekdayOf(date);
+  return day !== 0 && day !== 6 && !holidaysOf(Number(date.slice(0, 4))).has(date);
+}
+
+function businessDaysBetween(start: string, end: string): number {
   let count = 0;
   for (let t = Date.parse(`${start}T00:00:00Z`); t <= Date.parse(`${end}T00:00:00Z`); t += 86_400_000) {
-    const day = new Date(t).getUTCDay();
-    if (day !== 0 && day !== 6) count += 1;
+    if (isBusinessDayOf(new Date(t).toISOString().slice(0, 10))) count += 1;
   }
   return count;
 }
 
 describe("leaveWeekdayRange", () => {
-  it("2026-01-01 기준 week 0 · 평일 2일 → 2026-03-02 ~ 2026-03-03", () => {
+  it("2026-01-01 기준 week 0 · 영업일 2일 → 2026-03-03 ~ 2026-03-04 (03-02 대체공휴일 건너뜀)", () => {
     expect(leaveWeekdayRange("2026-01-01", { week: 0, weekdays: 2 })).toEqual({
-      startDate: "2026-03-02",
-      endDate: "2026-03-03",
+      startDate: "2026-03-03",
+      endDate: "2026-03-04",
+    });
+  });
+
+  it("2026-01-01 기준 week 12 · 영업일 1일 → 2026-05-26 (05-25 대체공휴일 건너뜀)", () => {
+    expect(leaveWeekdayRange("2026-01-01", { week: 12, weekdays: 1 })).toEqual({
+      startDate: "2026-05-26",
+      endDate: "2026-05-26",
+    });
+  });
+
+  it("2026-01-01 기준 week 13 · 영업일 3일 → 2026-06-01 ~ 2026-06-04 (06-03 선거일 건너뜀)", () => {
+    expect(leaveWeekdayRange("2026-01-01", { week: 13, weekdays: 3 })).toEqual({
+      startDate: "2026-06-01",
+      endDate: "2026-06-04",
     });
   });
 
@@ -34,13 +65,15 @@ describe("leaveWeekdayRange", () => {
     ["2026-06-30", 3, 5],
     ["2026-12-31", 30, 20],
     ["2028-02-29", 12, 7],
-  ])("기준일 %s · week %i · 평일 %i일 — 월요일 시작 · 같은 해 · 평일 수 일치", (today, week, weekdays) => {
+  ])("기준일 %s · week %i · 영업일 %i일 — 시작은 그 주 월~금 안의 첫 영업일 · 같은 해 · 영업일 수 일치 · 끝은 영업일", (today, week, weekdays) => {
     const { startDate, endDate } = leaveWeekdayRange(today, { week, weekdays });
-    expect(weekdayOf(startDate)).toBe(1);
+    expect(weekdayOf(startDate)).toBeGreaterThanOrEqual(1);
+    expect(weekdayOf(startDate)).toBeLessThanOrEqual(5);
+    expect(isBusinessDayOf(startDate)).toBe(true);
     expect(startDate.slice(0, 4)).toBe(today.slice(0, 4));
     expect(endDate.slice(0, 4)).toBe(today.slice(0, 4));
-    expect(weekdaysBetween(startDate, endDate)).toBe(weekdays);
-    expect([0, 6]).not.toContain(weekdayOf(endDate));
+    expect(businessDaysBetween(startDate, endDate)).toBe(weekdays);
+    expect(isBusinessDayOf(endDate)).toBe(true);
   });
 
   it.each([

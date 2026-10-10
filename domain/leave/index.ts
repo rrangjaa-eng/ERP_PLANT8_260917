@@ -46,6 +46,7 @@ import {
   setLeaveNumber,
   type LeaveRequestWithApproval,
 } from "@/repositories/leave-requests";
+import { loadLeaveHolidays } from "@/domain/leave/guard";
 import { countLeaveQuarters, formatLeaveDays, leaveYearRange, type HalfPeriod, type LeaveFieldError, type LeaveKind } from "@/domain/leave/days";
 import { LEAVE_REQUEST_DTO_SPEC, type LeaveRequestBalanceDto, type LeaveRequestDto } from "@/domain/leave/dto";
 import { assertLeaveWrite, canSeeLeaveDocument, canWriteLeave, LEAVE_DOCUMENT_KIND } from "@/domain/leave/access";
@@ -318,7 +319,9 @@ export async function submitLeave(
 ): Promise<{ leaveId: string; instanceId: string; number: string; version: number }> {
   await assertLeaveWrite(viewer);
   const today = seoulToday(deps?.now);
-  const days = countLeaveQuarters(input, leaveYearRange(today));
+  const range = leaveYearRange(today);
+  const holidays = await loadLeaveHolidays(input.startDate, range);
+  const days = countLeaveQuarters(input, range, holidays);
   if (!days.ok) throw new LeaveValidationError(days.errors);
   const year = Number(today.slice(0, 4));
 

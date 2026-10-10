@@ -251,7 +251,7 @@ describe("잔고 서비스 — 동시 승인 · 결재자 잔고 행 · 주입 �
     await setHireDate(SYSTEM_VIEWER, org.drafter.id, "2026-10-01");
     const feb = at("2027-02-01T03:00:00Z");
     const now = at("2027-03-15T03:00:00Z");
-    const a = await submit(org.drafter, { kind: "full_day", startDate: "2027-02-08", endDate: "2027-02-12" }, feb);
+    const a = await submit(org.drafter, { kind: "full_day", startDate: "2027-02-15", endDate: "2027-02-19" }, feb);
     await approveFully(org, a.instanceId, feb);
     await submit(org.drafter, { kind: "full_day", startDate: "2027-03-16" }, now);
     const c = await submit(org.drafter, { kind: "half_day", startDate: "2027-03-17", half: "am" }, now);
@@ -283,7 +283,7 @@ describe("잔고 서비스 — 동시 승인 · 결재자 잔고 행 · 주입 �
     await setHireDate(SYSTEM_VIEWER, org.drafter.id, "2026-01-01");
     const may = at("2026-05-20T03:00:00Z");
     const now = at("2027-03-15T03:00:00Z");
-    const june = await submit(org.drafter, { kind: "full_day", startDate: "2026-06-01", endDate: "2026-06-03" }, may);
+    const june = await submit(org.drafter, { kind: "full_day", startDate: "2026-06-08", endDate: "2026-06-10" }, may);
     await approveFully(org, june.instanceId, may);
 
     const mine = await getMyLeaveBalance(org.drafter, { fiscalYear: 2027 }, { now });

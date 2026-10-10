@@ -62,11 +62,11 @@ describe("listNextTurnItems — [결재]", () => {
   it("연차 담당이면 연차 줄도 — 대상 = 기안자, 상황 = 연차 종류 · 기간, 숫자 = 일수 글자", async () => {
     const fx = await setupExpenseProject();
     await submittedExpense(fx);
-    await submitLeave(fx.pm, { kind: "full_day", startDate: "2026-10-05", endDate: "2026-10-05", half: "" }, { now: NOW_2026 });
+    await submitLeave(fx.pm, { kind: "full_day", startDate: "2026-10-06", endDate: "2026-10-06", half: "" }, { now: NOW_2026 });
 
     const items = await listNextTurnItems(fx.lead);
 
-    expect(items.map((item) => item.label)).toEqual(["가을 팝업 · 무대 제작 — 지출결의, 박서연", "박서연 — 연차 종일 10-05"]);
+    expect(items.map((item) => item.label)).toEqual(["가을 팝업 · 무대 제작 — 지출결의, 박서연", "박서연 — 연차 종일 10-06"]);
     expect(items[1]?.measureText).toBe("1일");
     expect(items.every((item) => item.tag === "결재")).toBe(true);
   });
@@ -198,7 +198,7 @@ describe("listNextTurnItems — [막힘] 반려", () => {
 
   it("반려된 연차도 [막힘] — 행동 `연차 열기`", async () => {
     const fx = await setupExpenseProject();
-    const leave = await submitLeave(fx.pm, { kind: "full_day", startDate: "2026-10-05", endDate: "2026-10-05", half: "" }, { now: NOW_2026 });
+    const leave = await submitLeave(fx.pm, { kind: "full_day", startDate: "2026-10-06", endDate: "2026-10-06", half: "" }, { now: NOW_2026 });
     await rejectDocument(fx.lead, { instanceId: leave.instanceId, expectedVersion: leave.version, reason: "일정 겹침" });
 
     const items = await listNextTurnItems(fx.pm);

@@ -1,8 +1,11 @@
 // 04.1(LEAV-01): 연차 일수 계산 — 순수 함수(DB·설정·시계 없음). 일수는 정수
-// 1/4일(쿼터)로 센다 — 종일 = 기간 안 평일 수 × 4, 반차 = 2, 반반차 = 1,
-// 재택 = 0. 공휴일은 빼지 않는다(UI-SPEC Assumptions #4). 입력 kind·half는
-// 폼 경계의 문자열 그대로 받아(빈 값 `""` 포함) 여기서 검증하고, 저장에는
-// 검증된 값만 쓴다.
+// 1/4일(쿼터)로 센다 — 종일 = 기간 안 영업일 × 4, 반차 = 2, 반반차 = 1,
+// 재택 = 0. 입력 kind·half는 폼 경계의 문자열 그대로 받아(빈 값 `""` 포함)
+// 여기서 검증하고, 저장에는 검증된 값만 쓴다.
+// 06.3(D-6301): 종일 = 기간 안 영업일(월~금 중 공휴일 표에 없는 날, `isBusinessDay`) 수 × 4.
+// 휴일 판정은 호출자가 셋째 인자로 넘긴다(없으면 주말만 — 순수 함수 유지). 260907
+// `O: server/src/leave.ts:498-513` 먹는날들과 같은 규칙, 영업일 요일은 월~금 고정(04.2).
+import { isBusinessDay, type HolidayLookup } from "@/domain/holidays/business-day";
 
 export const LEAVE_KINDS = ["full_day", "half_day", "quarter_day", "remote"] as const;
 export type LeaveKind = (typeof LEAVE_KINDS)[number];
@@ -21,7 +24,8 @@ export const LEAVE_START_EMPTY_ERROR = "시작일 비어 있음 · 시작일 적
 export const LEAVE_DATE_EMPTY_ERROR = "날짜 비어 있음 · 날짜 적기";
 const DATE_FORMAT_ERROR = "날짜 형식 오류 · 2026-09-18처럼";
 const END_BEFORE_START_ERROR = "종료일이 시작일보다 빠름 · 종료일 고치기";
-const WEEKEND_ONLY_ERROR = "주말만 고른 기간 · 평일 넣기";
+const HOLIDAY_ONLY_ERROR = "휴일만 고른 기간 · 평일 넣기";
+const HOLIDAY_DAY_ERROR = "휴일 · 다른 날 고르기";
 const FISCAL_YEAR_ERROR = "기간이 회계연도를 넘음 · 12-31과 01-01로 나눠 신청";
 const SINGLE_DAY_ERROR = "반차·반반차는 하루뿐 · 날짜 하나만 적기";
 
@@ -66,16 +70,21 @@ function parseDate(value: string): number | null {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-function countWeekdays(startMs: number, endMs: number): number {
-  let count = 0;
-  for (let t = startMs; t <= endMs; t += DAY_MS) {
-    const weekday = new Date(t).getUTCDay();
-    if (weekday !== 0 && weekday !== 6) count++;
+const NO_HOLIDAY_DATES: ReadonlySet<string> = new Set();
+export const NO_HOLIDAYS: HolidayLookup = () => NO_HOLIDAY_DATES;
+
+// 두 날짜(포함) 사이의 영업일 — 06.3-02 겹침 전개가 재사용한다.
+export function leaveBusinessDays(startDate: string, endDate: string, holidays: HolidayLookup): string[] {
+  const days: string[] = [];
+  const endMs = Date.parse(`${endDate}T00:00:00Z`);
+  for (let t = Date.parse(`${startDate}T00:00:00Z`); t <= endMs; t += DAY_MS) {
+    const date = new Date(t).toISOString().slice(0, 10);
+    if (isBusinessDay(date, holidays)) days.push(date);
   }
-  return count;
+  return days;
 }
 
-export function countLeaveQuarters(input: LeaveDaysInput, range?: LeaveYearRange): LeaveDaysResult {
+export function countLeaveQuarters(input: LeaveDaysInput, range?: LeaveYearRange, holidays: HolidayLookup = NO_HOLIDAYS): LeaveDaysResult {
   if (!isLeaveKind(input.kind)) return { ok: false, errors: [{ field: "kind", message: LEAVE_KIND_EMPTY_ERROR }] };
   const kind = input.kind;
   const singleDay = kind === "half_day" || kind === "quarter_day";
@@ -109,10 +118,13 @@ export function countLeaveQuarters(input: LeaveDaysInput, range?: LeaveYearRange
     return { ok: false, errors: [{ field: "endDate", message: FISCAL_YEAR_ERROR }] };
   }
 
-  const weekdays = countWeekdays(startMs, endMs);
-  if (weekdays === 0) return { ok: false, errors: [{ field: "startDate", message: WEEKEND_ONLY_ERROR }] };
+  const businessDays = leaveBusinessDays(input.startDate, endDate, holidays).length;
+  if (businessDays === 0) {
+    const message = kind !== "full_day" && startMs === endMs ? HOLIDAY_DAY_ERROR : HOLIDAY_ONLY_ERROR;
+    return { ok: false, errors: [{ field: "startDate", message }] };
+  }
 
-  const quarters = kind === "full_day" ? weekdays * 4 : kind === "half_day" ? 2 : kind === "quarter_day" ? 1 : 0;
+  const quarters = kind === "full_day" ? businessDays * 4 : kind === "half_day" ? 2 : kind === "quarter_day" ? 1 : 0;
   return {
     ok: true,
     quarters,

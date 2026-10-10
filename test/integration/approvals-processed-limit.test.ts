@@ -12,7 +12,7 @@ describe("listProcessedInstances — 최근 처리 limit건", () => {
   it("처리 네 건 중 limit 2 → 가장 최근 두 건, 처리 내림차순", async () => {
     const drafter = await makePerson("박서연", DEFAULT_ROLE_ID, "기획1팀");
     const ceo = await makePerson("최대표", CEO_ROLE_ID, null);
-    const days = ["2026-10-01", "2026-10-02", "2026-10-05", "2026-10-06"];
+    const days = ["2026-10-01", "2026-10-02", "2026-10-06", "2026-10-07"];
     const approved: string[] = [];
     for (const day of days) {
       const doc = await submitLeave(drafter, { kind: "full_day", startDate: day, endDate: day, half: "" }, { now: NOW_2026 });

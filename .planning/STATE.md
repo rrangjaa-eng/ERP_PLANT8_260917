@@ -5,16 +5,16 @@ current_phase_name: 지급·증빙·법인카드·구매 요청 (경영관리)
 current_plan: 12
 status: executing
 stopped_at: Phase 06.2 UI-SPEC approved
-last_updated: "2026-10-10T10:26:00.856Z"
+last_updated: "2026-10-10T20:46:59.780Z"
 last_activity: 2026-10-06
 last_activity_desc: Phase 06 execution started
-state_head: ef2c98388f95a2189da8320b73eb74844d7e7793
+state_head: bf6a5556a4dc2ed26435b84f2b96bb4829253f42
 progress:
-  total_phases: 19
+  total_phases: 20
   completed_phases: 7
-  total_plans: 211
-  completed_plans: 202
-  percent: 37
+  total_plans: 212
+  completed_plans: 203
+  percent: 35
 ---
 
 # Project State
@@ -34,7 +34,7 @@ Total Plans in Phase: 29
 Status: Ready to execute
 Last activity: 2026-10-06 — Phase 06 execution started
 
-Progress: [████░░░░░░] 37%
+Progress: [████░░░░░░] 35%
 
 ## Performance Metrics
 
@@ -471,6 +471,7 @@ Recent decisions affecting current work:
 - Phase 06.2 inserted after Phase 6: 보는 범위·참여자 — 계급별 보는 범위(전사·본부·팀·본인)·프로젝트 참여자·지출결의 1단계 = 행사 담당 팀장(D6·G34). 06.1(PR #164) 다음 번호
 - Phase 06.2 edited: edited fields: goal, success_criteria (06.2-CONTEXT·PRD §6에서)
 - Phase 06.3 inserted after Phase 6: 연차 중복·공휴일 (260907 감사 G1·G2)
+- Phase 06.4 inserted after Phase 6: 관리자 상한 (admin-cap): 260907 ③ D5 권한 상한·마지막 관리자 보호·팀장/본부 책임자 1명·G36 보관 복원 우회 막기 (URGENT)
 
 ## Deferred Items
 

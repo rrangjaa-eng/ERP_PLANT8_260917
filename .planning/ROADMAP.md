@@ -853,6 +853,17 @@ Plans:
 
 이 페이즈까지 나가는 돈의 원장은 전부 새 시스템에 있고, Phase 7이 마감·알림·검수를 얹어 인트라넷 패리티를 끝낸다. 관리자 시스템 상태 화면에 더하는 항목은 없다.
 
+### Phase 06.4: 관리자 상한 (admin-cap) (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 6
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 06.4 to break down)
+
 ### Phase 06.2: 보는 범위·참여자 (view-scope) (INSERTED)
 
 **Goal:** 프로젝트·견적·지출결의 행을 사람마다 계급의 보는 범위(전사·본부·팀·본인)로 거르고, 다른 팀 사람을 프로젝트 참여자로 붙여 그 행사를 담당 팀처럼 보게 하며, 지출결의 결재 1단계를 행사 담당 팀 팀장으로 바꾼다(사용자 결정 D6 2026-10-06 · G34 2026-10-07, 260907 `server/src/scope.ts` 방식 — 06.2-CONTEXT.md)

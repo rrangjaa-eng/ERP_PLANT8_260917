@@ -196,6 +196,48 @@ describe("동시 제출(D-6311)", () => {
     expect(await countRows("leave_requests")).toBe(before + 1);
   });
 
+  it("기안자 잠금을 쥔 동안 반려된 A의 다시 신청과 같은 날 새 제출이 그 키에서 둘 다 기다리고, 풀면 하나만 성공 · 하나는 겹침", async () => {
+    const { drafter, lead } = await world();
+    const a = await rejectedLeave(drafter, lead);
+    await loadHolidayLookup([2026]);
+
+    let open: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    let held: () => void = () => {};
+    const holding = new Promise<void>((resolve) => {
+      held = resolve;
+    });
+    const holder = db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${"leave:" + drafter.id}, 0))`);
+      held();
+      await gate;
+    });
+    await holding;
+
+    const both = Promise.allSettled([
+      resubmitLeave(drafter, { leaveId: a.leaveId, expectedVersion: a.version, input: FULL_21_23 }, deps),
+      submitLeave(drafter, HALF_22_AM, deps),
+    ]);
+    let waiting = 0;
+    for (let tries = 0; tries < 60 && waiting < 2; tries++) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      waiting = await waitingOn(drafter.id);
+    }
+    open();
+    await holder;
+    const results = await both;
+
+    expect(waiting).toBe(2);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    const loser = results.find((result) => result.status === "rejected");
+    expect(loser?.status === "rejected" ? loser.reason : null).toBeInstanceOf(LeaveValidationError);
+    const fieldErrors = loser?.status === "rejected" ? (loser.reason as LeaveValidationError).fieldErrors : [];
+    expect(fieldErrors.map((fieldError) => fieldError.field)).toEqual(["startDate"]);
+    expect(fieldErrors[0]?.message).toMatch(/^9월 22일 (종일|반차) 신청과 겹침 · 날짜 바꾸기$/);
+  });
+
   it("스모크 — 잠금 없이 같은 입력 두 제출을 동시에: 성공 1 · 겹침 거절 1", async () => {
     const { drafter } = await world();
     const results = await Promise.allSettled([submitLeave(drafter, FULL_21_23, deps), submitLeave(drafter, FULL_21_23, deps)]);

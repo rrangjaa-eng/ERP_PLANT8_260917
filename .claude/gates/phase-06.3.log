@@ -4,3 +4,7 @@ design-review 2026-10-10T03:36Z session=02f94775-3d6b-5cf3-af72-bed7c1d8ca7d (06
 design-review 2026-10-10T04:17Z session=02f94775-3d6b-5cf3-af72-bed7c1d8ca7d (06.3-02 PR #197 @4eea35d, Codex 지적 0, 중복 문구 1건 faa67f7, 보고서 exec-design-02/report.md · 손으로 기록)
 review 2026-10-10T04:45Z session=02f94775-3d6b-5cf3-af72-bed7c1d8ca7d (PR #197 @4599d0f 지적 0, 보고서 exec-review-02/review.md · 손으로 기록)
 qa 2026-10-10T04:54Z session=02f94775-3d6b-5cf3-af72-bed7c1d8ca7d (PR #197 @4599d0f 버그 0 96/100, 보고서 exec-qa/qa-report-leave-2026-10-10.md, 시각은 보고서 파일 저장 시각(04:54:46Z) 기준 · 손으로 기록)
+gsd-verify-work 2026-10-10T15:21Z session=1eb3a806-2ce4-5ada-be4d-aa15c18326d2 (06.3 UAT 8건 중 7건 통과·1건 이슈 G-06.3-8, PR #200 @87afe41, 06.3-UAT.md · 손으로 기록)
+review 2026-10-10T16:42Z session=718470ee-6053-5b54-ba51-b5c7163f9e31 (06.3-03 PR #201 @c6d6ad6c 막는 문제 0, 테스트 시계 2건 3ab75f30·c6d6ad6c, 보고서 exec-review-03/review.md)
+design-review 2026-10-10T17:04Z session=718470ee-6053-5b54-ba51-b5c7163f9e31 (PR #201 @c6d6ad6c, 4폭 DOM PASS, Codex 후보 1건 기존 화면·범위 밖, 보고서 exec-design-03/design-review.md)
+qa 2026-10-10T17:10Z session=718470ee-6053-5b54-ba51-b5c7163f9e31 (PR #201 @c6d6ad6c 버그 0 98/100, 보고서 exec-qa-03/qa-report-leave-2026-10-11.md)

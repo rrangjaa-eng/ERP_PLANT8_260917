@@ -1,2 +1,6 @@
 plan-design-review 2026-10-09T19:15Z session=03c61c50-1d25-5190-a5f3-42878c91d664 (06.3 계획 PR #195 @f0d3902a, Codex gpt-6.1-sol medium 완료, issues_open — F1 휴일 오류 미리보기(카드 K-D1 잠정)·F2 접근성, 보고서 /mnt/project-files/06.3-prep/design-review.md · 훅이 STATE 현재 페이즈(6) 로그에 적어 이 파일로 옮김)
 plan-eng-review 2026-10-09T20:11Z session=e4eee71e-bead-5775-a25c-20b30408cebf (PR #195 @f3e5347 재검토 1회 — 1차 B1 등 9건 해결, 막음 0 · 경고 2(R2-W1·R2-W2 실행 전 반영) · 참고 6, Codex 없음(CLAUDE.md §6), 보고서 /mnt/project-files/06.3-prep/eng-review-r2.md · 손으로 기록)
+design-review 2026-10-10T03:36Z session=02f94775-3d6b-5cf3-af72-bed7c1d8ca7d (06.3-01 PR #197 @d447776, Codex gpt-6.1-sol medium 지적 0, 4폭 DOM 실측 막음 0, 보고서 /mnt/project-files/06.3-prep/exec-design-01/report.md · 훅 줄 되돌린 뒤 손으로 기록)
+design-review 2026-10-10T04:17Z session=02f94775-3d6b-5cf3-af72-bed7c1d8ca7d (06.3-02 PR #197 @4eea35d, Codex 지적 0, 중복 문구 1건 faa67f7, 보고서 exec-design-02/report.md · 손으로 기록)
+review 2026-10-10T04:45Z session=02f94775-3d6b-5cf3-af72-bed7c1d8ca7d (PR #197 @4599d0f 지적 0, 보고서 exec-review-02/review.md · 손으로 기록)
+qa 2026-10-10T04:5xZ session=02f94775-3d6b-5cf3-af72-bed7c1d8ca7d (PR #197 @4599d0f 버그 0 96/100, 보고서 exec-qa/qa-report-leave-2026-10-10.md, 시각은 캡처 파일 시각 기준 · 손으로 기록)

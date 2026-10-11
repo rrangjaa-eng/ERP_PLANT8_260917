@@ -48,7 +48,7 @@ export class RoleGrantForbiddenError extends UserFacingError {}
 
 export const GRANT_FORBIDDEN_MESSAGE = "계급 지정 권한 없음 · 시스템 관리자";
 
-// DB CHECK가 값을 보장한다 — 타입 좁히기용(순위 표 키로 판정, roles.ts 배열 값은 쓰지 않는다).
+// DB CHECK가 값을 보장하지만 타입 좁히기만 믿지 않는다(순위 표 키로 판정, roles.ts 배열 값은 쓰지 않는다).
 function isViewScope(s: string): s is RoleViewScope {
   return Object.hasOwn(VIEW_SCOPE_RANK, s);
 }
@@ -63,16 +63,15 @@ export async function loadRoleGrantSnapshots(
   tx?: DbOrTx,
 ): Promise<Map<string, RoleGrantSnapshot>> {
   const rows = await listRoleGrantRows(viewer, [...new Set(roleIds)], tx);
-  return new Map(
-    rows.map((row) => [
-      row.roleId,
-      {
-        keys: new Set(row.keys),
-        viewScope: isViewScope(row.viewScope) ? row.viewScope : "own",
-        workScope: isWorkScope(row.workScope) ? row.workScope : "team",
-      },
-    ]),
-  );
+  // 06.4 /review F6: 모르는 범위 값의 계급은 결과에서 뺀다 — 대상이면 없는 계급처럼 거부되고(fail-closed), 행위자면
+  // 호출자가 가장 낮은 NO_ROLE_SNAPSHOT으로 친다. 가장 좁은 범위로 바꿔 끼우면 대상이 상한 안으로 잘못 들어온다.
+  const snapshots = new Map<string, RoleGrantSnapshot>();
+  for (const row of rows) {
+    const { viewScope, workScope } = row;
+    if (!isViewScope(viewScope) || !isWorkScope(workScope)) continue;
+    snapshots.set(row.roleId, { keys: new Set(row.keys), viewScope, workScope });
+  }
+  return snapshots;
 }
 
 export async function assertCanGrantRoles(

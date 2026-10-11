@@ -11,14 +11,15 @@ import { archive as defaultArchive } from "@/domain/archive";
 import { revokeAllSessions as defaultRevokeAllSessions } from "@/domain/auth/password";
 import { findRoleById as defaultFindRoleById, findRolesByIds as defaultFindRolesByIds } from "@/repositories/roles";
 import { findTeamById as defaultFindTeamById } from "@/repositories/teams";
+import { findOrgUnitById as repoFindOrgUnitById } from "@/repositories/org-units";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { kstToday } from "@/lib/kst-date";
 import { isCheckViolation } from "@/lib/pg-errors";
 import { withTransaction } from "@/lib/db-transaction";
 import { assertCanGrantRoles } from "@/domain/permissions/grant-ceiling";
 import { assertNotLastAdmin } from "@/domain/permissions/last-admin";
-import { listOccupiedTeams, lockSeatKeys } from "@/repositories/seats";
-import { assertSeatsFree, newSeats } from "@/domain/people/seat-rules";
+import { listOccupiedTeams, lockSeatKeys, type OccupiedTeamRow } from "@/repositories/seats";
+import { assertSeatsFree, newSeats, SeatTakenError } from "@/domain/people/seat-rules";
 import { loadActionLogGate, recordActionInTx, type TxLogDeps } from "@/domain/approvals/tx-log";
 import {
   listUsers as repoListUsers,
@@ -199,6 +200,8 @@ export type RegisterPersonDeps = {
   findTeamById: typeof defaultFindTeamById;
   recordAction: typeof defaultRecordAction;
   saveHireDate: typeof repoUpdateUserHireDate;
+  now: () => Date;
+  visible: typeof defaultVisible;
 };
 
 // 사람 등록 — 계정 발급과 초기 비밀번호 생성을 같은 흐름에서 부른다.
@@ -208,6 +211,8 @@ export type RegisterPersonDeps = {
 // 실패할 수 있는 조건은 전부 계정 생성 전에 거부하고(이메일 중복·계급/팀
 // 실재와 보관 여부·발령일 형식), (b) 남는 인프라 오류 창에서만 방금 만든
 // 계정을 보상 보관한다.
+// 06.4(D-6404 · Pitfall 2): 상한 · 자리 검사도 (a)에 든다 — 생성 전 tx에서 끝낸다. 잠금이 풀린 뒤 생성 · 발령 사이 창은
+// assignTeam의 재검사가 두 번째로 거르고, 그때는 보상 보관 뒤 자리 문구를 그대로 던진다.
 export async function registerPerson(
   viewer: Viewer,
   input: RegisterPersonInput,
@@ -224,6 +229,7 @@ export async function registerPerson(
     throw new ValidationError(`존재하지 않거나 보관된 계급: ${input.roleId}`);
   }
 
+  let seat: { teamId: string; orgUnitId: string; effectiveFrom: string } | null = null;
   if (input.teamId) {
     if (!input.effectiveFrom || !EFFECTIVE_FROM_PATTERN.test(input.effectiveFrom)) {
       throw new ValidationError("발령일 형식 오류 — YYYY-MM-DD로");
@@ -233,11 +239,36 @@ export async function registerPerson(
     if (!team || team.archivedAt) {
       throw new ValidationError(`존재하지 않거나 보관된 팀: ${input.teamId}`);
     }
+    seat = { teamId: team.id, orgUnitId: team.orgUnitId, effectiveFrom: input.effectiveFrom };
   }
 
   if (input.hireDate !== undefined && !isCalendarDate(input.hireDate)) {
     throw new ValidationError(HIRE_DATE_FORMAT_ERROR);
   }
+
+  // 상한 → 자리(Pitfall 2). 사람이 아직 없어 사람 키 없이 도착 팀 · 본부 키만 잡는다. 보관 본부는 점유 구간 함수처럼 본부 없음.
+  const today = seoulTodayOf(deps);
+  const showNames = await (deps?.visible ?? defaultVisible)(viewer, "person.value");
+  const orgUnit = seat ? await repoFindOrgUnitById(viewer, seat.orgUnitId) : null;
+  await withTransaction(async (tx) => {
+    await assertCanGrantRoles(viewer, [input.roleId], tx);
+    if (!seat) return;
+    const occupied: OccupiedTeamRow = {
+      teamId: seat.teamId,
+      orgUnitId: orgUnit && !orgUnit.archivedAt ? orgUnit.id : null,
+      from: seat.effectiveFrom > today ? seat.effectiveFrom : today,
+      to: null,
+    };
+    const seats = newSeats({
+      roleBefore: null,
+      roleAfter: input.roleId,
+      employedBefore: null,
+      employedAfter: { archivedAt: null, resignationDate: null },
+      occupiedBefore: [],
+      occupiedAfter: [occupied],
+    });
+    await assertSeatsFree(viewer, { roleId: input.roleId, seats, today, showNames }, tx);
+  });
 
   const createAccount = deps?.createAccount ?? defaultCreateAccount;
   const { userId, tempPassword } = await createAccount(viewer, {
@@ -249,8 +280,8 @@ export async function registerPerson(
   if (input.teamId && input.effectiveFrom) {
     const assignTeam = deps?.assignTeam ?? defaultAssignTeam;
     try {
-      await assignTeam(viewer, { userId, teamId: input.teamId, effectiveFrom: input.effectiveFrom });
-    } catch {
+      await assignTeam(viewer, { userId, teamId: input.teamId, effectiveFrom: input.effectiveFrom }, deps?.now ? { now: deps.now } : undefined);
+    } catch (error) {
       // (b) 잔여 창 — 인프라 오류로 발령이 실패하면 방금 만든 계정을 보상
       // 보관한다. 관리자의 보관함 권한과 무관하게 실행되도록 SYSTEM_VIEWER로
       // 부른다. 초기 비밀번호는 반환되지 않으므로 그 계정으로 로그인할 수
@@ -263,6 +294,7 @@ export async function registerPerson(
             detail: { reason: "register_person_rollback", requestedBy: viewer.id },
           }),
       });
+      if (error instanceof SeatTakenError) throw error;
       throw new UserFacingError(
         "발령 실패 · 계정은 발급됨 — 보관함에서 복원 후 발령 추가",
       );

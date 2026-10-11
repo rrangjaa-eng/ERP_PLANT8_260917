@@ -297,7 +297,7 @@ describe("등록 · 발령 · 발령 취소 자리 중복(06.4 D-6404 · D-6415)
     const x = await makeSeated(uniqueName("팀장X"), TEAM_LEAD_ROLE_ID, null);
 
     const error = await refusal(
-      assignTeam(admin, { userId: x.id, teamId, effectiveFrom: "2026-09-01" }, { ...deps, visible: async () => false }),
+      assignTeam(admin, { userId: x.id, teamId, effectiveFrom: "2026-09-01" }, { ...deps, visible: () => Promise.resolve(false) }),
       SeatTakenError,
     );
 

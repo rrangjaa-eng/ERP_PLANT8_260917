@@ -3,6 +3,11 @@ import { can as defaultCan } from "@/domain/permissions/can";
 import { scopeFor } from "@/domain/permissions/scope-for";
 import { project, type DtoSpec, type ProjectDeps } from "@/domain/permissions/project";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
+import { visible as defaultVisible } from "@/domain/permissions/visible";
+import { assertSeatsFree, newSeats } from "@/domain/people/seat-rules";
+import type { DbOrTx } from "@/repositories/document-counters";
+import { listOccupiedTeams, lockSeatKeys, type OccupiedTeamRow } from "@/repositories/seats";
+import { findUserById as repoFindUserById, type UserRow } from "@/repositories/users";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { kstToday } from "@/lib/kst-date";
@@ -239,7 +244,28 @@ export type AssignTeamDeps = {
   findTeamById: typeof defaultFindTeamById;
   insertMembership: typeof repoInsertMembership;
   recordAction: typeof defaultRecordAction;
+  now: () => Date;
+  visible: typeof defaultVisible;
 };
+
+// 발령 쓰기(추가 · 취소) 전후 점유 구간의 차가 새 자리면 보유자와 겹침을 본다 — 계급은 그대로라 앞뒤 같은 계급 · 고용.
+async function assertAssignmentSeatsFree(
+  viewer: Viewer,
+  input: { person: UserRow | null; before: readonly OccupiedTeamRow[]; after: readonly OccupiedTeamRow[]; today: string; showNames: boolean },
+  tx: DbOrTx,
+): Promise<void> {
+  const { person } = input;
+  if (!person?.roleId) return;
+  const seats = newSeats({
+    roleBefore: person.roleId,
+    roleAfter: person.roleId,
+    employedBefore: person,
+    employedAfter: person,
+    occupiedBefore: input.before,
+    occupiedAfter: input.after,
+  });
+  await assertSeatsFree(viewer, { userId: person.id, roleId: person.roleId, seats, today: input.today, showNames: input.showNames }, tx);
+}
 
 // 사람 메뉴 쓰기 권한 확인 → 대상 팀 실재 확인(원시 SQL FK 에러 대신 사람이
 // 읽는 메시지) → 복합 UNIQUE로 같은 발령일 중복 거부(리포지토리 레벨) →
@@ -258,11 +284,22 @@ export async function assignTeam(
     throw new NotFoundError(`팀 찾을 수 없음: ${input.teamId}`);
   }
 
+  // 06.4(D-6404 · D-6408 · D-6415): 사람 키 → 점유 구간(전) → 쓰기 → 점유 구간(후) → 팀/본부 키 → 보유자 구간 겹침. 대상이
+  // 지금 팀장이 아니어도 사람 키를 잡는다 — 계급 변경과 겹치는 경합(RESEARCH 동시성 설계). 없는 사람은 자리 계산 없이 쓰기의
+  // 외래키가 거부한다(기존 동작).
+  const today = kstToday((deps?.now ?? (() => new Date()))());
+  const showNames = await (deps?.visible ?? defaultVisible)(viewer, "person.value");
   const insertMembership = deps?.insertMembership ?? repoInsertMembership;
-  const row = await insertMembership(viewer, input);
-
   const recordAction = deps?.recordAction ?? defaultRecordAction;
-  await recordAction(viewer, { actionType: "document_create", entity: "team_membership", entityId: row.id });
+  await withTransaction(async (tx) => {
+    await lockSeatKeys(viewer, { personIds: [input.userId] }, tx);
+    const person = await repoFindUserById(viewer, input.userId, tx);
+    const before = await listOccupiedTeams(viewer, input.userId, today, tx);
+    const row = await insertMembership(viewer, input, tx);
+    const after = await listOccupiedTeams(viewer, input.userId, today, tx);
+    await assertAssignmentSeatsFree(viewer, { person, before, after, today, showNames }, tx);
+    await recordAction(viewer, { actionType: "document_create", entity: "team_membership", entityId: row.id }, { tx });
+  });
 }
 
 export type CancelAssignmentDeps = {
@@ -270,6 +307,7 @@ export type CancelAssignmentDeps = {
   deleteMembership: typeof repoDeleteMembership;
   recordAction: typeof defaultRecordAction;
   now: () => Date;
+  visible: typeof defaultVisible;
 };
 
 function isIsoDate(value: string): boolean {
@@ -294,19 +332,28 @@ export async function cancelFutureAssignment(
     throw new ValidationError("발령일 형식 오류 — YYYY-MM-DD로");
   }
   const now = deps?.now ?? (() => new Date());
-  if (input.effectiveFrom <= kstToday(now())) {
+  const today = kstToday(now());
+  if (input.effectiveFrom <= today) {
     throw new PastAssignmentCancelError("과거·오늘 발령은 취소할 수 없음 — 미래로 예정된 발령만 취소 가능");
   }
 
   // quick 261001-85g — 삭제와 document_delete 기록을 한 트랜잭션에 묶는다(기록이 실패하면 발령도 남는다).
   // 행이 사라진 뒤에도 누구의 어떤 발령이었는지 남도록 detail에 사람 · 발령일을 싣는다.
+  // 06.4 D-6415 사용자 확정(2026-10-11 카드): 미래 발령을 지우면 앞 팀 구간이 다시 열린다 — 그 사이 앞 팀에 예약된 후임과
+  // 겹치면 거부(Pitfall 1). CONTEXT 재량(대상 아님)보다 오케스트레이터 O1 · D-6415가 앞선다.
+  const showNames = await (deps?.visible ?? defaultVisible)(viewer, "person.value");
   const deleteMembership = deps?.deleteMembership ?? repoDeleteMembership;
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await withTransaction(async (tx) => {
+    await lockSeatKeys(viewer, { personIds: [input.userId] }, tx);
+    const person = await repoFindUserById(viewer, input.userId, tx);
+    const before = await listOccupiedTeams(viewer, input.userId, today, tx);
     const deletedId = await deleteMembership(viewer, input.userId, input.effectiveFrom, tx);
     if (deletedId === null) {
       throw new NotFoundError("취소할 발령 찾을 수 없음");
     }
+    const after = await listOccupiedTeams(viewer, input.userId, today, tx);
+    await assertAssignmentSeatsFree(viewer, { person, before, after, today, showNames }, tx);
     await recordAction(
       viewer,
       {

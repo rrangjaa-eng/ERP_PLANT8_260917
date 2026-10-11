@@ -1,10 +1,14 @@
-import { describe, expect, it } from "vitest";
-import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { randomUUID } from "node:crypto";
+import { describe, expect, it, vi } from "vitest";
+import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
+import { createAccount } from "@/domain/auth/accounts";
 import { DEFAULT_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
-import { changePersonRole } from "@/domain/people";
+import { changePersonRole, registerPerson } from "@/domain/people";
+import { assignTeam, cancelFutureAssignment } from "@/domain/org";
 import { SeatTakenError } from "@/domain/people/seat-rules";
-import { findUserById, updateUserResignationDate } from "@/repositories/users";
-import { NOW_2026 } from "./approvals-fixtures";
+import { listMemberships } from "@/repositories/team-memberships";
+import { findUserById, setUserArchived, updateUserResignationDate } from "@/repositories/users";
+import { countRows, NOW_2026 } from "./approvals-fixtures";
 import { addTeam, countLogs, makeAdmin, makeOrgTeam, makeSeated, roleOf, uniqueName } from "./admin-cap-fixtures";
 
 // 06.4-02: 한 팀 팀장 · 한 본부 책임자 한 명 — 자리 구간이 하루라도 겹치면 둘째(D-6404 · D-6415).
@@ -74,5 +78,288 @@ describe("계급 변경 자리 중복(06.4 D-6404)", () => {
     const error = await refusal(changePersonRole(admin, x.id, TEAM_LEAD_ROLE_ID, deps), SeatTakenError);
 
     expect(error.message).toBe(`팀장 있음 · ${await nameOf(l.id)}`);
+  });
+});
+
+// 2026-10-02 12:00 서울 — X의 T1 구간이 끝난 다음 날.
+const deps1002 = { now: () => new Date("2026-10-02T03:00:00Z") };
+const register = (roleId: string, teamId?: string) => ({
+  name: uniqueName("새 사람"),
+  email: `${randomUUID()}@example.test`,
+  roleId,
+  ...(teamId ? { teamId, effectiveFrom: "2026-09-01" } : {}),
+});
+
+describe("등록 · 발령 · 발령 취소 자리 중복(06.4 D-6404 · D-6415)", () => {
+  it("팀장 Z가 있는 팀으로 팀장을 등록하면 계정을 만들기 전에 거부, 팀 없이 · 빈 팀으로는 등록", async () => {
+    const admin = await makeAdmin("관리자");
+    const { orgUnitId, teamId } = await makeOrgTeam();
+    const z = await makeSeated(uniqueName("팀장Z"), TEAM_LEAD_ROLE_ID, teamId);
+    const spy = vi.fn(createAccount);
+
+    const error = await refusal(
+      registerPerson(admin, register(TEAM_LEAD_ROLE_ID, teamId), { ...deps, createAccount: spy }),
+      SeatTakenError,
+    );
+
+    expect(error.message).toBe(`팀장 있음 · ${await nameOf(z.id)}`);
+    expect(spy).not.toHaveBeenCalled();
+    await registerPerson(admin, register(TEAM_LEAD_ROLE_ID), deps);
+    await registerPerson(admin, register(TEAM_LEAD_ROLE_ID, await addTeam(orgUnitId)), deps);
+  });
+
+  it("검사와 계정 생성 사이에 같은 팀 팀장이 끼어들면 발령 재검사가 자리 문구 그대로 거부하고 새 계정은 보관", async () => {
+    const admin = await makeAdmin("관리자");
+    const { teamId } = await makeOrgTeam();
+    let interloper: Viewer | null = null;
+    let created: string | null = null;
+    const createThenInterlope: typeof createAccount = async (viewer, input) => {
+      const result = await createAccount(viewer, input);
+      created = result.userId;
+      interloper = await makeSeated(uniqueName("끼어든팀장"), TEAM_LEAD_ROLE_ID, teamId);
+      return result;
+    };
+
+    const error = await refusal(
+      registerPerson(admin, register(TEAM_LEAD_ROLE_ID, teamId), { ...deps, createAccount: createThenInterlope }),
+      SeatTakenError,
+    );
+
+    expect(interloper).not.toBeNull();
+    expect(error.message).toBe(`팀장 있음 · ${await nameOf((interloper as unknown as Viewer).id)}`);
+    expect(created).not.toBeNull();
+    expect((await findUserById(SYSTEM_VIEWER, created as unknown as string))?.archivedAt).not.toBeNull();
+  });
+
+  it("책임자 H가 있는 본부의 다른 팀으로 본부 책임자를 등록하면 거부, 다른 본부 팀으로는 등록(R5)", async () => {
+    const admin = await makeAdmin("관리자");
+    const { orgUnitId, teamId } = await makeOrgTeam();
+    const t2 = await addTeam(orgUnitId);
+    const h = await makeSeated(uniqueName("책임자H"), DIVISION_HEAD_ROLE_ID, teamId);
+    const spy = vi.fn(createAccount);
+
+    const error = await refusal(
+      registerPerson(admin, register(DIVISION_HEAD_ROLE_ID, t2), { ...deps, createAccount: spy }),
+      SeatTakenError,
+    );
+
+    expect(error.message).toBe(`본부 책임자 있음 · ${await nameOf(h.id)}`);
+    expect(spy).not.toHaveBeenCalled();
+    const other = await makeOrgTeam();
+    await registerPerson(admin, register(DIVISION_HEAD_ROLE_ID, other.teamId), deps);
+  });
+
+  it("팀 없는 팀장을 팀장 있는 팀으로 발령하면 거부 · 발령 · 로그 그대로, 빈 팀 · PM 발령은 통과", async () => {
+    const admin = await makeAdmin("관리자");
+    const { orgUnitId, teamId } = await makeOrgTeam();
+    const z = await makeSeated(uniqueName("팀장Z"), TEAM_LEAD_ROLE_ID, teamId);
+    const x = await makeSeated(uniqueName("팀장X"), TEAM_LEAD_ROLE_ID, null);
+    const membershipsBefore = await countRows("team_memberships");
+    const logsBefore = await countLogs("document_create", "team_membership");
+
+    const error = await refusal(
+      assignTeam(admin, { userId: x.id, teamId, effectiveFrom: "2026-09-01" }, deps),
+      SeatTakenError,
+    );
+
+    expect(error.message).toBe(`팀장 있음 · ${await nameOf(z.id)}`);
+    expect(await countRows("team_memberships")).toBe(membershipsBefore);
+    expect(await countLogs("document_create", "team_membership")).toBe(logsBefore);
+    await assignTeam(admin, { userId: x.id, teamId: await addTeam(orgUnitId), effectiveFrom: "2026-09-01" }, deps);
+    const pm = await makeSeated(uniqueName("PM"), DEFAULT_ROLE_ID, null);
+    await assignTeam(admin, { userId: pm.id, teamId, effectiveFrom: "2026-09-01" }, deps);
+  });
+
+  it("다른 본부의 본부 책임자를 책임자 있는 본부의 팀으로 발령하면 거부(R5)", async () => {
+    const admin = await makeAdmin("관리자");
+    const { orgUnitId, teamId } = await makeOrgTeam();
+    const t2 = await addTeam(orgUnitId);
+    const h = await makeSeated(uniqueName("책임자H"), DIVISION_HEAD_ROLE_ID, teamId);
+    const other = await makeOrgTeam();
+    const h2 = await makeSeated(uniqueName("책임자H2"), DIVISION_HEAD_ROLE_ID, other.teamId);
+
+    const error = await refusal(
+      assignTeam(admin, { userId: h2.id, teamId: t2, effectiveFrom: "2026-09-01" }, deps),
+      SeatTakenError,
+    );
+
+    expect(error.message).toBe(`본부 책임자 있음 · ${await nameOf(h.id)}`);
+  });
+
+  it("소급 발령 — 늦은 과거(오늘 팀이 바뀜)는 새 자리라 거부, 이른 과거(오늘 전에 끝남)는 통과(R5)", async () => {
+    const admin = await makeAdmin("관리자");
+    const { teamId } = await makeOrgTeam();
+    const z = await makeSeated(uniqueName("팀장Z"), TEAM_LEAD_ROLE_ID, teamId);
+    const t1 = (await makeOrgTeam()).teamId;
+    const x = await makeSeated(uniqueName("팀장X"), TEAM_LEAD_ROLE_ID, t1, "2026-05-01");
+
+    const error = await refusal(
+      assignTeam(admin, { userId: x.id, teamId, effectiveFrom: "2026-08-01" }, deps),
+      SeatTakenError,
+    );
+    expect(error.message).toBe(`팀장 있음 · ${await nameOf(z.id)}`);
+
+    await assignTeam(admin, { userId: x.id, teamId, effectiveFrom: "2026-03-01" }, deps);
+  });
+
+  // 팀장 X: T1(2026-01-01) + T2 미래(2026-10-02). T1 · T2에 PM Y · Y2.
+  async function futureWorld() {
+    const admin = await makeAdmin("관리자");
+    const t1 = (await makeOrgTeam()).teamId;
+    const t2 = (await makeOrgTeam()).teamId;
+    const x = await makeSeated(uniqueName("팀장X"), TEAM_LEAD_ROLE_ID, t1);
+    await assignTeam(admin, { userId: x.id, teamId: t2, effectiveFrom: "2026-10-02" }, deps);
+    const y = await makeSeated(uniqueName("PM Y"), DEFAULT_ROLE_ID, t1);
+    const y2 = await makeSeated(uniqueName("PM Y2"), DEFAULT_ROLE_ID, t2);
+    return { admin, x, y, y2 };
+  }
+
+  it("미래 발령이 있는 팀장은 지금 팀과 미래 팀 둘 다 점유, 지금 팀 구간이 끝난 날부터는 지금 팀이 빈다", async () => {
+    const { admin, x, y, y2 } = await futureWorld();
+    const xName = await nameOf(x.id);
+
+    expect((await refusal(changePersonRole(admin, y.id, TEAM_LEAD_ROLE_ID, deps), SeatTakenError)).message).toBe(
+      `팀장 있음 · ${xName}`,
+    );
+    expect((await refusal(changePersonRole(admin, y2.id, TEAM_LEAD_ROLE_ID, deps), SeatTakenError)).message).toBe(
+      `팀장 있음 · ${xName}`,
+    );
+
+    await changePersonRole(admin, y.id, TEAM_LEAD_ROLE_ID, deps1002);
+    expect(await roleOf(y.id)).toBe(TEAM_LEAD_ROLE_ID);
+  });
+
+  it("미래 발령을 취소하면 그 팀 자리가 비고 지금 팀은 그대로 점유", async () => {
+    const { admin, x, y, y2 } = await futureWorld();
+
+    await cancelFutureAssignment(admin, { userId: x.id, effectiveFrom: "2026-10-02" }, deps);
+
+    await changePersonRole(admin, y2.id, TEAM_LEAD_ROLE_ID, deps);
+    expect(await roleOf(y2.id)).toBe(TEAM_LEAD_ROLE_ID);
+    expect((await refusal(changePersonRole(admin, y.id, TEAM_LEAD_ROLE_ID, deps), SeatTakenError)).message).toBe(
+      `팀장 있음 · ${await nameOf(x.id)}`,
+    );
+  });
+
+  it("이미 있던 중복(팀장 둘)은 강등 · 같은 팀 재발령 · 빈 팀 이동이 통과", async () => {
+    const admin = await makeAdmin("관리자");
+    const { orgUnitId, teamId } = await makeOrgTeam();
+    const z1 = await makeSeated(uniqueName("팀장Z1"), TEAM_LEAD_ROLE_ID, teamId);
+    const z2 = await makeSeated(uniqueName("팀장Z2"), TEAM_LEAD_ROLE_ID, teamId);
+
+    await assignTeam(admin, { userId: z2.id, teamId, effectiveFrom: "2026-06-01" }, deps);
+    await assignTeam(admin, { userId: z2.id, teamId: await addTeam(orgUnitId), effectiveFrom: "2026-07-01" }, deps);
+    await changePersonRole(admin, z1.id, DEFAULT_ROLE_ID, deps);
+
+    expect(await roleOf(z1.id)).toBe(DEFAULT_ROLE_ID);
+    expect(await listMemberships(SYSTEM_VIEWER, z2.id)).toHaveLength(3);
+  });
+
+  it.each([
+    { state: "보관", archive: true, resignation: null, rejected: false },
+    { state: "퇴직일 2026-09-01(지남)", archive: false, resignation: "2026-09-01", rejected: false },
+    { state: "퇴직일 2026-09-18(오늘)", archive: false, resignation: "2026-09-18", rejected: true },
+  ])("팀장 Z가 $state이면 같은 팀 PM의 팀장 승격 거부=$rejected", async ({ archive, resignation, rejected }) => {
+    const admin = await makeAdmin("관리자");
+    const { teamId } = await makeOrgTeam();
+    const z = await makeSeated(uniqueName("팀장Z"), TEAM_LEAD_ROLE_ID, teamId);
+    if (archive) await setUserArchived(SYSTEM_VIEWER, z.id, true);
+    if (resignation) await updateUserResignationDate(SYSTEM_VIEWER, z.id, resignation);
+    const x = await makeSeated(uniqueName("PM X"), DEFAULT_ROLE_ID, teamId);
+
+    if (rejected) {
+      await refusal(changePersonRole(admin, x.id, TEAM_LEAD_ROLE_ID, deps), SeatTakenError);
+      expect(await roleOf(x.id)).toBe(DEFAULT_ROLE_ID);
+    } else {
+      await changePersonRole(admin, x.id, TEAM_LEAD_ROLE_ID, deps);
+      expect(await roleOf(x.id)).toBe(TEAM_LEAD_ROLE_ID);
+    }
+  });
+
+  it("퇴직일 뒤에 시작하는 보유자 발령은 구간이 없어 그 팀 발령을 막지 않는다(뒤집힌 구간)", async () => {
+    const admin = await makeAdmin("관리자");
+    const t0 = (await makeOrgTeam()).teamId;
+    const { teamId } = await makeOrgTeam();
+    const l = await makeSeated(uniqueName("팀장L"), TEAM_LEAD_ROLE_ID, t0);
+    await assignTeam(admin, { userId: l.id, teamId, effectiveFrom: "2027-02-01" }, deps);
+    await updateUserResignationDate(SYSTEM_VIEWER, l.id, "2026-12-31");
+    const x = await makeSeated(uniqueName("팀장X"), TEAM_LEAD_ROLE_ID, null);
+
+    await assignTeam(admin, { userId: x.id, teamId, effectiveFrom: "2026-12-01" }, deps);
+
+    expect(await listMemberships(SYSTEM_VIEWER, x.id)).toHaveLength(1);
+  });
+
+  it("이름을 못 보는 뷰어에게는 이름 대신 담당 시스템 관리자(D3)", async () => {
+    const admin = await makeAdmin("관리자");
+    const { teamId } = await makeOrgTeam();
+    await makeSeated(uniqueName("팀장Z"), TEAM_LEAD_ROLE_ID, teamId);
+    const x = await makeSeated(uniqueName("팀장X"), TEAM_LEAD_ROLE_ID, null);
+
+    const error = await refusal(
+      assignTeam(admin, { userId: x.id, teamId, effectiveFrom: "2026-09-01" }, { ...deps, visible: async () => false }),
+      SeatTakenError,
+    );
+
+    expect(error.message).toBe("팀장 있음 · 시스템 관리자");
+  });
+
+  it("SYSTEM_VIEWER도 자리 검사를 지난다(O4)", async () => {
+    const { teamId } = await makeOrgTeam();
+    await makeSeated(uniqueName("팀장Z"), TEAM_LEAD_ROLE_ID, teamId);
+    const x = await makeSeated(uniqueName("팀장X"), TEAM_LEAD_ROLE_ID, null);
+
+    await refusal(assignTeam(SYSTEM_VIEWER, { userId: x.id, teamId, effectiveFrom: "2026-09-01" }, deps), SeatTakenError);
+  });
+});
+
+// 답이 「지금대로(오늘 재직 기준)」로 바뀌면 이 describe의 기대만 뒤집는다(D-6415).
+describe("후임 예약 · 맞바꾸기(06.4 D-6415 · K-R4)", () => {
+  it("퇴직일 12-31 팀장의 후임은 2027-01-01자 발령이 통과, 12-31자 둘째 후임은 거부, 예약을 지우면 1-1자 통과", async () => {
+    const admin = await makeAdmin("관리자");
+    const { teamId } = await makeOrgTeam();
+    const l = await makeSeated(uniqueName("가-팀장L"), TEAM_LEAD_ROLE_ID, teamId);
+    await updateUserResignationDate(SYSTEM_VIEWER, l.id, "2026-12-31");
+    const z = await makeSeated(uniqueName("하-팀장Z"), TEAM_LEAD_ROLE_ID, null);
+    const z2 = await makeSeated(uniqueName("하-팀장Z2"), TEAM_LEAD_ROLE_ID, null);
+
+    await assignTeam(admin, { userId: z.id, teamId, effectiveFrom: "2027-01-01" }, deps);
+    const error = await refusal(assignTeam(admin, { userId: z2.id, teamId, effectiveFrom: "2026-12-31" }, deps), SeatTakenError);
+    expect(error.message).toBe(`팀장 있음 · ${await nameOf(l.id)}`);
+
+    await cancelFutureAssignment(admin, { userId: z.id, effectiveFrom: "2027-01-01" }, deps);
+    await assignTeam(admin, { userId: z2.id, teamId, effectiveFrom: "2027-01-01" }, deps);
+  });
+
+  it("미래 이동을 취소하면 앞 팀 구간이 다시 열려 그 사이 예약된 후임과 겹쳐 거부 · 미래 발령 그대로", async () => {
+    const admin = await makeAdmin("관리자");
+    const t1 = (await makeOrgTeam()).teamId;
+    const t2 = (await makeOrgTeam()).teamId;
+    const x = await makeSeated(uniqueName("팀장X"), TEAM_LEAD_ROLE_ID, t1);
+    await assignTeam(admin, { userId: x.id, teamId: t2, effectiveFrom: "2026-11-01" }, deps);
+    const z = await makeSeated(uniqueName("팀장Z"), TEAM_LEAD_ROLE_ID, null);
+    await assignTeam(admin, { userId: z.id, teamId: t1, effectiveFrom: "2026-11-01" }, deps);
+
+    const error = await refusal(
+      cancelFutureAssignment(admin, { userId: x.id, effectiveFrom: "2026-11-01" }, deps),
+      SeatTakenError,
+    );
+
+    expect(error.message).toBe(`팀장 있음 · ${await nameOf(z.id)}`);
+    expect(await listMemberships(SYSTEM_VIEWER, x.id)).toHaveLength(2);
+  });
+
+  it("같은 날 맞바꾸는 두 팀장 예약은 어느 쪽을 먼저 저장해도 상대의 열린 구간과 겹쳐 첫 예약이 거부(한계)", async () => {
+    const admin = await makeAdmin("관리자");
+    const t1 = (await makeOrgTeam()).teamId;
+    const t2 = (await makeOrgTeam()).teamId;
+    const x = await makeSeated(uniqueName("팀장X"), TEAM_LEAD_ROLE_ID, t1);
+    const y = await makeSeated(uniqueName("팀장Y"), TEAM_LEAD_ROLE_ID, t2);
+
+    const xFirst = await refusal(assignTeam(admin, { userId: x.id, teamId: t2, effectiveFrom: "2026-11-01" }, deps), SeatTakenError);
+    const yFirst = await refusal(assignTeam(admin, { userId: y.id, teamId: t1, effectiveFrom: "2026-11-01" }, deps), SeatTakenError);
+
+    expect(xFirst.message).toBe(`팀장 있음 · ${await nameOf(y.id)}`);
+    expect(yFirst.message).toBe(`팀장 있음 · ${await nameOf(x.id)}`);
   });
 });

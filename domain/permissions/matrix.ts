@@ -7,6 +7,10 @@ import { INFO_ITEMS } from "@/domain/permissions/info-items";
 import { customFieldColumns } from "@/domain/custom-fields/visibility";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
+import { withTransaction } from "@/lib/db-transaction";
+import { kstToday } from "@/lib/kst-date";
+import { assertAdminRoleRemains } from "@/domain/permissions/last-admin";
+import { lockSeatKeys } from "@/repositories/seats";
 import {
   listPermissions as defaultListPermissions,
   upsertPermission as defaultUpsertPermission,
@@ -41,6 +45,7 @@ export type MatrixDeps = {
   listVisibility: typeof defaultListVisibility;
   upsertVisibility: typeof defaultUpsertVisibility;
   recordAction: typeof defaultRecordAction;
+  now: () => Date;
 };
 
 function cellKey(roleId: string, columnId: string): string {
@@ -111,19 +116,31 @@ export async function setPermissionCell(
     throw new SelfLockoutError("자기 계급 권한표 쓰기는 끌 수 없음");
   }
 
-  await upsertPermission(viewer, {
-    roleId: input.roleId,
-    menu: input.menu,
-    action: input.action,
-    allowed: input.allowed,
-    updatedBy: viewer.id,
-  });
+  await withTransaction(async (tx) => {
+    // 06.4(D-6403 · D-6408): 관리자 칸 끄기만 관리자 키 잠금 뒤 재조회 — 다른 계급 칸도 포함(자기 계급은 위 SelfLockout이 먼저).
+    if (input.menu === "admin.permissions" && input.action === "write" && input.allowed === false) {
+      await lockSeatKeys(viewer, { admin: true }, tx);
+      await assertAdminRoleRemains(viewer, { roleId: input.roleId, asOf: kstToday((deps?.now ?? (() => new Date()))()) }, tx);
+    }
 
-  await recordAction(viewer, {
-    actionType: "permission_change",
-    entity: "permission_matrix",
-    entityId: input.roleId,
-    detail: { roleId: input.roleId, menu: input.menu, action: input.action, allowed: input.allowed },
+    await upsertPermission(viewer, {
+      roleId: input.roleId,
+      menu: input.menu,
+      action: input.action,
+      allowed: input.allowed,
+      updatedBy: viewer.id,
+    }, tx);
+
+    await recordAction(
+      viewer,
+      {
+        actionType: "permission_change",
+        entity: "permission_matrix",
+        entityId: input.roleId,
+        detail: { roleId: input.roleId, menu: input.menu, action: input.action, allowed: input.allowed },
+      },
+      { tx },
+    );
   });
 }
 

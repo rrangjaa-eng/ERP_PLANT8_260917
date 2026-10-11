@@ -14,9 +14,10 @@ export async function findPermission(
   roleId: string,
   menu: string,
   action: string,
+  tx: DbOrTx = db,
 ): Promise<PermissionMatrixRow | null> {
   void viewer;
-  const [row] = await db
+  const [row] = await tx
     .select()
     .from(permissionMatrix)
     .where(
@@ -36,9 +37,10 @@ export async function findPermission(
 export async function upsertPermission(
   viewer: Viewer,
   input: { roleId: string; menu: string; action: string; allowed: boolean; updatedBy?: string | null },
+  tx: DbOrTx = db,
 ): Promise<void> {
   void viewer;
-  await db
+  await tx
     .insert(permissionMatrix)
     .values({
       roleId: input.roleId,
@@ -102,9 +104,10 @@ export async function findVisibility(
 export async function upsertVisibility(
   viewer: Viewer,
   input: { roleId: string; infoItem: string; visible: boolean; updatedBy?: string | null },
+  tx: DbOrTx = db,
 ): Promise<void> {
   void viewer;
-  await db
+  await tx
     .insert(visibilityMatrix)
     .values({
       roleId: input.roleId,

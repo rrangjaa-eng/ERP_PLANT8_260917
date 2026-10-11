@@ -28,6 +28,7 @@ import { seedMasterData } from "@/domain/seed";
 import { INFO_ITEMS } from "@/domain/permissions/info-items";
 import { findPermission, findVisibility, upsertPermission } from "@/repositories/permissions";
 import { insertRole } from "@/repositories/roles";
+import { insertMembership } from "@/repositories/team-memberships";
 import { withTransaction } from "@/lib/db-transaction";
 import { deferred, waitForLockWaiter } from "./lock-race";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
@@ -164,6 +165,17 @@ async function makeActor(roleId: string, teamId?: string, effectiveFrom = PAST_A
   });
   if (teamId) await assignTeam(SYSTEM_VIEWER, { userId, teamId, effectiveFrom });
   return { id: userId, roleId };
+}
+
+// 06.4(D-6404): 같은 팀 둘째 팀장은 자리 가드가 막는다 — 「이미 있던 중복」 세계는 리포지토리 발령으로 만든다(가드 우회 · 테스트 전용).
+async function makeDuplicateLead(teamId: string): Promise<Viewer> {
+  const { userId } = await createAccount(SYSTEM_VIEWER, {
+    email: `actor-${randomUUID()}@example.test`,
+    name: "상태 전환 테스트 사람",
+    roleId: "role-team-lead",
+  });
+  await insertMembership(SYSTEM_VIEWER, { userId, teamId, effectiveFrom: PAST_ASSIGNMENT_DATE });
+  return { id: userId, roleId: "role-team-lead" };
 }
 
 // 06.2(D6): 보는 범위가 company이고 업무 범위가 team인 계급 — 다른 팀 프로젝트가 보이는데 상태는 못 바꾸는 사람.
@@ -411,7 +423,8 @@ describe("사람의 전환 넷 · 팀 범위 · 완료 주체 · 코드표 목�
 
     // 2026-06-10에 팀 A → 팀 B 발령. 「오늘」을 2026-06-11(KST)로 주입한다.
     const movedLead = await makeActor("role-team-lead", teamA, "2026-01-01");
-    await assignTeam(SYSTEM_VIEWER, { userId: movedLead.id, teamId: teamB, effectiveFrom: "2026-06-10" });
+    // 06.4(D-6404): 팀 B에는 otherLead가 있다 — 옮겨 갈 팀은 새 팀(옛 팀 판정만 본다).
+    await assignTeam(SYSTEM_VIEWER, { userId: movedLead.id, teamId: await makeTeam(), effectiveFrom: "2026-06-10" });
     const movedCompanyViewLead = await makeCompanyViewLead(teamA, "2026-01-01");
     await assignTeam(SYSTEM_VIEWER, { userId: movedCompanyViewLead.id, teamId: teamB, effectiveFrom: "2026-06-10" });
     const now = () => new Date("2026-06-11T03:00:00Z");
@@ -489,7 +502,7 @@ describe("원자성·경합·시드 보존(A-01·A-11·OV-3·A-05·ENG-D3 ③·A
   it("A-11 — 동료가 미수주로 닫은 뒤 오래된 화면의 수주중 → 진행은 「상태가 미수주로 바뀜 · 새로 고침」이고 되살아나지 않는다", async () => {
     const teamA = await makeTeam();
     const lead = await makeActor("role-team-lead", teamA);
-    const colleague = await makeActor("role-team-lead", teamA);
+    const colleague = await makeDuplicateLead(teamA);
     const { projectId } = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2099-10-01" });
 
     await changeProjectStatus(colleague, projectId, { from: "bidding", to: "lost" });
@@ -532,7 +545,7 @@ describe("원자성·경합·시드 보존(A-01·A-11·OV-3·A-05·ENG-D3 ③·A
   it("OV-3 — A가 잠금을 쥔 동안 B는 잠금을 기다리고, A를 풀면 A만 커밋되고 B는 from 불일치로 거부된다", async () => {
     const teamA = await makeTeam();
     const leadA = await makeActor("role-team-lead", teamA);
-    const leadB = await makeActor("role-team-lead", teamA);
+    const leadB = await makeDuplicateLead(teamA);
     const { projectId } = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2099-10-01" });
 
     const locked = deferred();

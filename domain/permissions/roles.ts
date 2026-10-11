@@ -8,6 +8,7 @@ import type { grantCustomFieldsToRole as GrantCustomFieldsFn } from "@/domain/cu
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { normalizeRoleName } from "@/domain/permissions/role-name";
 import { withTransaction } from "@/lib/db-transaction";
+import { canGrantRole, loadRoleGrantSnapshots, NO_ROLE_SNAPSHOT } from "@/domain/permissions/grant-ceiling";
 import {
   findRoleById as defaultFindRoleById,
   listRoles as repoListRoles,
@@ -122,6 +123,25 @@ registerDto({
 export async function listRoles(viewer: Viewer, opts?: { includeArchived?: boolean }): Promise<RoleDto[]> {
   const rows = await repoListRoles(viewer, opts);
   return Promise.all(rows.map((row) => project(viewer, row, ROLE_DTO_SPEC))) as Promise<RoleDto[]>;
+}
+
+// 06.4(D-6402): 등록 · 변경 화면의 계급 select 재료(06.4-04). 서버 거부가 진짜 관문이고 이 목록은 할 수 없는 선택지를
+// 숨기는 UX(CLAUDE.md §7).
+export async function assignableRoleIds(viewer: Viewer, roleIds?: readonly string[]): Promise<ReadonlySet<string>> {
+  const targets = roleIds ?? (await repoListRoles(viewer)).map((row) => row.id);
+  const snapshots = await loadRoleGrantSnapshots(viewer, viewer.roleId ? [viewer.roleId, ...targets] : targets);
+  const actor = (viewer.roleId ? snapshots.get(viewer.roleId) : undefined) ?? NO_ROLE_SNAPSHOT;
+  return new Set(
+    targets.filter((id) => {
+      const role = snapshots.get(id);
+      return role !== undefined && canGrantRole(actor, role);
+    }),
+  );
+}
+
+export async function listAssignableRoles(viewer: Viewer): Promise<RoleDto[]> {
+  const [roles, assignable] = await Promise.all([listRoles(viewer), assignableRoleIds(viewer)]);
+  return roles.filter((role) => assignable.has(role.id));
 }
 
 export type RoleWriteDeps = {

@@ -5,14 +5,14 @@ current_phase_name: 지급·증빙·법인카드·구매 요청 (경영관리)
 current_plan: 12
 status: executing
 stopped_at: Phase 06.2 UI-SPEC approved
-last_updated: "2026-10-10T20:56:13.561Z"
+last_updated: "2026-10-11T03:52:46.128Z"
 last_activity: 2026-10-06
 last_activity_desc: Phase 06 execution started
-state_head: d593cb00f351e03f801f7f903782c5094b2e2ef7
+state_head: 1a0e0aa7b96d7d9a579a1ab6b364efe05db694d8
 progress:
   total_phases: 20
   completed_phases: 7
-  total_plans: 212
+  total_plans: 216
   completed_plans: 203
   percent: 35
 ---
@@ -473,6 +473,7 @@ Recent decisions affecting current work:
 - Phase 06.3 inserted after Phase 6: 연차 중복·공휴일 (260907 감사 G1·G2)
 - Phase 06.4 inserted after Phase 6: 관리자 상한 (admin-cap): 260907 ③ D5 권한 상한·마지막 관리자 보호·팀장/본부 책임자 1명·G36 보관 복원 우회 막기 (URGENT)
 - Phase 06.4 edited: edited fields: goal, success_criteria (06.4-CONTEXT에서)
+- Phase 06.4 edited: 06.4-02 플랜 요약 줄 자리 판정을 D-6415 날짜 구간 겹침으로 정정(Codex 리뷰 P2)
 
 ## Deferred Items
 

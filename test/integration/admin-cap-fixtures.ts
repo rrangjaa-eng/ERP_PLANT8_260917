@@ -13,7 +13,12 @@ import type { PermissionAction } from "@/domain/permissions/menus";
 import { VIEW_SCOPE_RANK, WORK_SCOPE_RANK } from "@/domain/permissions/grant-ceiling";
 import { listPermissions, listVisibility, upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { findRoleById, setRoleViewScope, setRoleWorkScope } from "@/repositories/roles";
-import { makePerson } from "./approvals-fixtures";
+import { createAccount } from "@/domain/auth/accounts";
+import { createOrgUnit, createTeam } from "@/domain/org";
+import { insertMembership } from "@/repositories/team-memberships";
+import { queryActionLog } from "@/repositories/action-log";
+import { findUserById } from "@/repositories/users";
+import { makePerson, MEMBERSHIP_FROM } from "./approvals-fixtures";
 
 // 06.4 관리자 상한 통합 테스트 공용 픽스처 — 사람 · 계급은 도메인 · 리포지토리 함수로만 만든다.
 
@@ -107,4 +112,40 @@ export async function holdKey(key: string): Promise<{ release: () => Promise<voi
       await holder;
     },
   };
+}
+
+// 06.4-02: 사례마다 새 본부 · 팀 — 자리 검사가 다른 사례의 보유자와 섞이지 않는다.
+export async function makeOrgTeam(): Promise<{ orgUnitId: string; teamId: string }> {
+  const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `본부-${randomUUID().slice(0, 8)}` });
+  return { orgUnitId: orgUnit.id, teamId: await addTeam(orgUnit.id) };
+}
+
+export async function addTeam(orgUnitId: string): Promise<string> {
+  const team = await createTeam(SYSTEM_VIEWER, { orgUnitId, name: `팀-${randomUUID().slice(0, 8)}` });
+  return team.id;
+}
+
+// 06.4: 가드 우회 — 기존 데이터 · 중복 세계 전용. 가드를 시험하는 쓰기는 도메인 함수로.
+export async function makeSeated(
+  name: string,
+  roleId: string,
+  teamId: string | null,
+  effectiveFrom = MEMBERSHIP_FROM,
+): Promise<Viewer> {
+  const { userId } = await createAccount(SYSTEM_VIEWER, { email: `${randomUUID()}@example.test`, name, roleId });
+  if (teamId) await insertMembership(SYSTEM_VIEWER, { userId, teamId, effectiveFrom });
+  return { id: userId, roleId };
+}
+
+export async function roleOf(userId: string): Promise<string | null> {
+  return (await findUserById(SYSTEM_VIEWER, userId))?.roleId ?? null;
+}
+
+export async function countLogs(actionType: string, entity: string, entityId?: string): Promise<number> {
+  const rows = await queryActionLog(SYSTEM_VIEWER, { actionType });
+  return rows.filter((row) => row.entity === entity && (entityId === undefined || row.entityId === entityId)).length;
+}
+
+export function uniqueName(prefix: string): string {
+  return `${prefix}-${randomUUID().slice(0, 4)}`;
 }

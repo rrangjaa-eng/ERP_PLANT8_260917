@@ -1,4 +1,4 @@
-import type { Viewer } from "@/domain/viewer";
+import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { can } from "@/domain/permissions/can";
 import { visible } from "@/domain/permissions/visible";
 import { listRoles as defaultListRoles } from "@/repositories/roles";
@@ -13,6 +13,7 @@ import { assertAdminRoleRemains } from "@/domain/permissions/last-admin";
 import { assertCanEditRole, visibilityKey } from "@/domain/permissions/grant-ceiling";
 import { lockSeatKeys } from "@/repositories/seats";
 import {
+  findPermission,
   listPermissions as defaultListPermissions,
   upsertPermission as defaultUpsertPermission,
   listVisibility as defaultListVisibility,
@@ -121,7 +122,16 @@ export async function setPermissionCell(
     // 06.4(D-6403 · D-6408): 관리자 칸 끄기만 관리자 키 잠금 뒤 재조회 — 다른 계급 칸도 포함(자기 계급은 위 SelfLockout이 먼저).
     if (input.menu === "admin.permissions" && input.action === "write" && input.allowed === false) {
       await lockSeatKeys(viewer, { admin: true }, tx);
-      await assertAdminRoleRemains(viewer, { roleId: input.roleId, asOf: kstToday((deps?.now ?? (() => new Date()))()) }, tx);
+      // 06.4 /review F5: 잠금을 기다린 사이 앞선 저장이 행위자 계급의 관리자 칸을 껐으면 거부 — 사전 판정만 믿지 않는다.
+      // SYSTEM_VIEWER는 last-admin.ts와 같이 면제.
+      if (viewer.id !== SYSTEM_VIEWER.id) {
+        const own = viewer.roleId ? await findPermission(viewer, viewer.roleId, "admin.permissions", "write", tx) : null;
+        if (own?.allowed !== true) throw new ForbiddenError("권한표 변경 권한 없음");
+      }
+      // 06.4 /review F7: 이미 꺼진 칸을 다시 끄는 저장은 관리자 수를 바꾸지 않으므로 마지막 관리자 판정을 건너뛴다.
+      if ((await findPermission(viewer, input.roleId, "admin.permissions", "write", tx))?.allowed === true) {
+        await assertAdminRoleRemains(viewer, { roleId: input.roleId, asOf: kstToday((deps?.now ?? (() => new Date()))()) }, tx);
+      }
     }
 
     await upsertPermission(viewer, {

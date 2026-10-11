@@ -3,14 +3,20 @@ import { describe, expect, it } from "vitest";
 import { db } from "@/db/client";
 import { actionLog } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
-import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
+import {
+  assignableRoleIds,
+  DEFAULT_ROLE_ID,
+  listAssignableRoles,
+  SYSADMIN_ROLE_ID,
+} from "@/domain/permissions/roles";
+import { assertCanGrantRoles, RoleGrantForbiddenError } from "@/domain/permissions/grant-ceiling";
 import { setPermissionCell, SelfLockoutError } from "@/domain/permissions/matrix";
 import { assertNotLastAdmin, LastAdminError } from "@/domain/permissions/last-admin";
-import { findPermission } from "@/repositories/permissions";
+import { findPermission, listRoleGrantRows } from "@/repositories/permissions";
 import { updateUserResignationDate } from "@/repositories/users";
 import { withTransaction } from "@/lib/db-transaction";
 import { makePerson, NOW_2026 } from "./approvals-fixtures";
-import { makeAdmin, makeAdminRole } from "./admin-cap-fixtures";
+import { makeAdmin, makeAdminRole, makeDelegatedRole } from "./admin-cap-fixtures";
 
 // 06.4-01: 관리자 상한 판정 — 서비스 직접 호출. 행위자는 실제 users 행(SYSTEM_VIEWER 사례만 예외).
 
@@ -130,5 +136,40 @@ describe("권한표 칸 끄기 마지막 관리자(06.4 D-6403 · D-6412)", () =
     await setPermissionCell(x, { roleId: roleB, menu: "admin.people", action: "write", allowed: false }, deps);
 
     expect((await findPermission(SYSTEM_VIEWER, roleB, "admin.people", "write"))?.allowed).toBe(false);
+  });
+});
+
+describe("권한 상한 판정(06.4 D-6401 · D-6402)", () => {
+  it("위임 계급 M(PM 복사 + 사람 관리)의 D는 PM · M을 지정할 수 있고 시스템 관리자는 못 한다 — 목록도 같은 집합", async () => {
+    const roleM = await makeDelegatedRole({ name: "인사 위임" });
+    const d = await makePerson("위임자 D", roleM, null);
+
+    const ids = await assignableRoleIds(d);
+    expect(ids.has(DEFAULT_ROLE_ID)).toBe(true);
+    expect(ids.has(roleM)).toBe(true);
+    expect(ids.has(SYSADMIN_ROLE_ID)).toBe(false);
+
+    const listed = await listAssignableRoles(d);
+    expect(new Set(listed.map((role) => role.id))).toEqual(new Set(ids));
+    expect(listed.every((role) => role.archivedAt === null)).toBe(true);
+  });
+
+  it("assertCanGrantRoles — 상한 밖 계급은 거부, null · 상한 안 계급 · 시스템 관리자 사람 · SYSTEM_VIEWER는 통과(O4)", async () => {
+    const roleM = await makeDelegatedRole({ name: "인사 위임" });
+    const d = await makePerson("위임자 D", roleM, null);
+    const x = await makeAdmin("관리자 X");
+
+    const error = await refusal(assertCanGrantRoles(d, [SYSADMIN_ROLE_ID]), RoleGrantForbiddenError);
+    expect(error.message).toBe("계급 지정 권한 없음 · 시스템 관리자");
+
+    await expect(assertCanGrantRoles(d, [DEFAULT_ROLE_ID, null])).resolves.toBeUndefined();
+    await expect(assertCanGrantRoles(x, [SYSADMIN_ROLE_ID])).resolves.toBeUndefined();
+    await expect(assertCanGrantRoles(SYSTEM_VIEWER, [SYSADMIN_ROLE_ID])).resolves.toBeUndefined();
+  });
+
+  it("listRoleGrantRows — 없는 계급은 행 없음, 빈 입력은 빈 배열", async () => {
+    const rows = await listRoleGrantRows(SYSTEM_VIEWER, [DEFAULT_ROLE_ID, "role-missing"]);
+    expect(rows.map((row) => row.roleId)).toEqual([DEFAULT_ROLE_ID]);
+    expect(await listRoleGrantRows(SYSTEM_VIEWER, [])).toEqual([]);
   });
 });

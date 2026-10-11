@@ -15,6 +15,10 @@ import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { kstToday } from "@/lib/kst-date";
 import { isCheckViolation } from "@/lib/pg-errors";
 import { withTransaction } from "@/lib/db-transaction";
+import { assertCanGrantRoles } from "@/domain/permissions/grant-ceiling";
+import { assertNotLastAdmin } from "@/domain/permissions/last-admin";
+import { listOccupiedTeams, lockSeatKeys } from "@/repositories/seats";
+import { assertSeatsFree, newSeats } from "@/domain/people/seat-rules";
 import { loadActionLogGate, recordActionInTx, type TxLogDeps } from "@/domain/approvals/tx-log";
 import {
   listUsers as repoListUsers,
@@ -295,6 +299,8 @@ export type ChangePersonRoleDeps = {
   can: typeof defaultCan;
   findRoleById: typeof defaultFindRoleById;
   recordAction: typeof defaultRecordAction;
+  now: () => Date;
+  visible: typeof defaultVisible;
 };
 
 // 자기 자신의 계급 변경은 거부한다 — D-33이 순위(rank) 컬럼을 두지 않기로
@@ -327,10 +333,29 @@ export async function changePersonRole(
     throw new ValidationError(`존재하지 않거나 보관된 계급: ${roleId}`);
   }
 
-  await repoUpdateUserRole(viewer, userId, roleId);
-
+  // 06.4(D-6402 · D-6403 · D-6404 · D-6408): 잠금 순서 사람 → 관리자 → (점유를 읽은 뒤) 팀 → 본부. 판정은 전부 잠금 뒤 tx 재조회.
+  const today = seoulTodayOf(deps);
+  const showNames = await (deps?.visible ?? defaultVisible)(viewer, "person.value");
   const recordAction = deps?.recordAction ?? defaultRecordAction;
-  await recordAction(viewer, { actionType: "permission_change", entity: "user", entityId: userId });
+  await withTransaction(async (tx) => {
+    await lockSeatKeys(viewer, { personIds: [userId], admin: true }, tx);
+    const row = await repoFindUserById(viewer, userId, tx);
+    if (!row) throw new UserNotFoundError("사람 찾을 수 없음");
+    await assertCanGrantRoles(viewer, [roleId, row.roleId], tx);
+    await assertNotLastAdmin(viewer, { userId, asOf: today, nextRoleId: roleId }, tx);
+    const occupied = await listOccupiedTeams(viewer, userId, today, tx);
+    const seats = newSeats({
+      roleBefore: row.roleId,
+      roleAfter: roleId,
+      employedBefore: row,
+      employedAfter: row,
+      occupiedBefore: occupied,
+      occupiedAfter: occupied,
+    });
+    await assertSeatsFree(viewer, { userId, roleId, seats, today, showNames }, tx);
+    await repoUpdateUserRole(viewer, userId, roleId, tx);
+    await recordAction(viewer, { actionType: "permission_change", entity: "user", entityId: userId }, { tx });
+  });
 }
 
 export type ArchivePersonDeps = {

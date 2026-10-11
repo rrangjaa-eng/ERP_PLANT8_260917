@@ -181,6 +181,8 @@ describe("계급 업무 범위(D11·D20)", () => {
 
   it("자기 계급의 업무 범위는 바꿀 수 없고(값·로그 그대로), 다른 계급은 바꿀 수 있다(CSO-1)", async () => {
     const hr = await makePeopleAdmin();
+    // 06.4 O7: 이 사례는 CSO-1(자기 계급)만 본다 — 상한은 admin-cap-permissions.test.ts가 본다
+    await upsertPermission(SYSTEM_VIEWER, { roleId: hr.roleId ?? "", menu: "admin.permissions", action: "write", allowed: true });
     const ownRole = hr.roleId ?? "";
     const logsBefore = await roleLogCount(ownRole);
 
@@ -245,6 +247,8 @@ describe("계급 보는 범위(06.2 D-6201)", () => {
 
   it("자기 계급의 보는 범위는 바꿀 수 없고(값·로그 그대로), 다른 계급은 바꿀 수 있다(CSO-1)", async () => {
     const hr = await makePeopleAdmin();
+    // 06.4 O7: 이 사례는 CSO-1(자기 계급)만 본다 — 상한은 admin-cap-permissions.test.ts가 본다
+    await upsertPermission(SYSTEM_VIEWER, { roleId: hr.roleId ?? "", menu: "admin.permissions", action: "write", allowed: true });
     const ownRole = hr.roleId ?? "";
     const logsBefore = await roleLogCount(ownRole);
 

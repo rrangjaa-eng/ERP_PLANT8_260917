@@ -10,6 +10,7 @@ import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { withTransaction } from "@/lib/db-transaction";
 import { kstToday } from "@/lib/kst-date";
 import { assertAdminRoleRemains } from "@/domain/permissions/last-admin";
+import { assertCanEditRole, visibilityKey } from "@/domain/permissions/grant-ceiling";
 import { lockSeatKeys } from "@/repositories/seats";
 import {
   listPermissions as defaultListPermissions,
@@ -186,6 +187,15 @@ export async function setVisibilityCell(
 
   const allowed = await canFn(viewer, "admin.visibility", "write");
   if (!allowed) throw new ForbiddenError("정보 노출표 변경 권한 없음");
+
+  // 06.4(O7 · T-6409): `admin.permissions` 쓰기가 없으면 바꾸기 전 · 바꾼 뒤 계급이 둘 다 내 상한 안이어야 한다 — 자기 계급에
+  // 없는 칸을 켜는 자기 상향도 막힌다(비교 기준은 바꾸기 전 행위자 집합).
+  await assertCanEditRole(viewer, input.roleId, (before) => {
+    const keys = new Set(before.keys);
+    if (input.visible) keys.add(visibilityKey(input.infoItem));
+    else keys.delete(visibilityKey(input.infoItem));
+    return { ...before, keys };
+  });
 
   await upsertVisibility(viewer, {
     roleId: input.roleId,

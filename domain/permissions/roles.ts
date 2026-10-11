@@ -145,7 +145,8 @@ export async function assignableRoleIds(viewer: Viewer, roleIds?: readonly strin
 }
 
 export async function listAssignableRoles(viewer: Viewer): Promise<RoleDto[]> {
-  const [roles, assignable] = await Promise.all([listRoles(viewer), assignableRoleIds(viewer)]);
+  const roles = await listRoles(viewer);
+  const assignable = await assignableRoleIds(viewer, roles.map((role) => role.id));
   return roles.filter((role) => assignable.has(role.id));
 }
 

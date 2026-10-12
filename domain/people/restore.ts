@@ -37,7 +37,7 @@ export type RestoreUserDeps = {
 };
 
 export async function restoreUser(viewer: Viewer, id: string, deps?: Partial<RestoreUserDeps>): Promise<{ restored: boolean }> {
-  // D-6406 기본값(밤 위임, 사용자 미확인): 보관함 쓰기에 더해 사람 쓰기 — 아침 확인.
+  // D-6406 사용자 확정(2026-10-12 카드): 보관함 쓰기에 더해 사람 쓰기.
   if (!(await (deps?.can ?? defaultCan)(viewer, "admin.people", "write"))) {
     throw new PersonRestoreForbiddenError("사람 복원 권한 없음 · 시스템 관리자 · 복원 불가");
   }

@@ -84,7 +84,7 @@ async function assertCanWriteEntry(viewer: Viewer, entry: ArchivableEntry, deps?
 // (`O: server/src/people.ts:1087`) · 본인(`:1095`)만 막았다 — 관리자가 회사에 한 명(`O: db/schema/030_constraints_indexes.sql:1145`)
 // 이라 상한이 필요 없었다.
 async function archiveUser(viewer: Viewer, id: string, deps?: Partial<ArchiveDeps>): Promise<void> {
-  // 06.4 D-6416(K-R1b · eng 재검토 R1) 기본값(밤 위임, 사용자 미확인): 본인 보관 막기 — 260907 `O: server/src/people.ts:1095-1098`
+  // 06.4 D-6416(K-R1b · eng 재검토 R1) 사용자 확정(2026-10-12 카드): 본인 보관 막기 — 260907 `O: server/src/people.ts:1095-1098`
   // 「실수로 누르면 그 자리에서 못 돌아온다」와 같은 동작. 잠금 전 — 판정에 DB가 필요 없다. SYSTEM_VIEWER는 id `system`이라 해당 없음.
   if (viewer.id === id) throw new SelfArchiveError(SELF_ARCHIVE_MESSAGE);
   const today = kstToday((deps?.now ?? (() => new Date()))());
@@ -279,7 +279,7 @@ export async function listArchive(viewer: Viewer, deps?: Partial<ListArchiveDeps
   // 독립 검토(#138) — 복원할 수 없는 공휴일 행은 「복원」을 내놓지 않는다(§7). 공휴일 복원은 공휴일 쓰기 권한과
   // 소급 금지(오늘 이후 날짜) · 그 날짜에 다른 공휴일(대체일 제외) 없음을 요구한다(restoreHoliday) — 같은 판정을 목록에서 미리 한다.
   const holidayWritable = rows.some((row) => row.entity === "holiday") && (await canFn(viewer, HOLIDAYS_MENU, "write"));
-  // 06.4 D-6406 기본값(밤 위임, 사용자 미확인): 사람 쓰기가 없으면 사람 행 「복원」을 내놓지 않는다(§7 할 수 없는 선택지 숨김).
+  // 06.4 D-6406 사용자 확정(2026-10-12 카드): 사람 쓰기가 없으면 사람 행 「복원」을 내놓지 않는다(§7 할 수 없는 선택지 숨김).
   // 상한 · 자리 위반은 행마다 미리 보지 않고 복원 때 원인 토스트로(Pitfall 8).
   const peopleWritable = rows.some((row) => row.entity === "user") && (await canFn(viewer, "admin.people", "write"));
   const today = toKstDate(deps?.now ?? new Date());

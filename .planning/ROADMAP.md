@@ -859,17 +859,19 @@ Plans:
 **Requirements**: TBD
 **Depends on:** Phase 6
 **Success Criteria** (what must be TRUE):
+
   1. `admin.permissions` 쓰기가 없는 행위자가 자기 계급의 권한 집합을 넘는 계급을 등록·계급 변경으로 주거나, 그런 계급의 사람을 바꾸려 하면 `계급 지정 권한 없음`으로 거부되고, 등록·변경 화면의 계급 선택지에는 통과하는 계급만 보인다(D-6401·D-6402)
   2. 계급 변경·사람 보관·퇴직일·권한표 칸 끄기·계급 보관 중 어느 것도 재직 관리자(`admin.permissions` 쓰기 보유) 수를 0으로 만들 수 없다 — `마지막 관리자 · 관리자 먼저 지정`(D-6403, D3 문구 표 06.4-02)
   3. 재직 팀장이 있는 팀(본부 책임자가 있는 본부)에 둘째 보유자를 만드는 등록·계급 변경·발령·복원은 거부되고, 이미 둘인 팀·본부는 그대로 두되 관리자 조직 화면에 표시된다(D-6404·D-6405)
   4. 보관함에서 사람을 되살리려면 `admin.people` 쓰기도 필요하고, 되살리는 사람에게 1~3과 같은 검사가 걸린다(G36 · D-6406)
   5. 동시에 두 저장이 들어와도 둘째 팀장·관리자 0명이 생기지 않음을 통합 테스트가 증명하고, 마이그레이션은 없다(D-6408·D-6409)
-**Plans:** 4 plans
+
+**Plans:** 1/4 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 06.4-01-PLAN.md — 판정 부품 + `domain/permissions/` 배선(PR-A · 위험 경로 · 사용자 머지): 권한 상한 `grant-ceiling.ts` · 마지막 관리자 `last-admin.ts` · 자리 잠금 `seats.ts` · 권한표 관리자 칸 끄기 가드 · 계급 범위/노출 칸 우회 막기(O7) · 계급 보관 관리자 수 불변(O2) · `createRole` 상한(E3) · 남는 관리자 = 퇴직 예정 없는 관리자(D-6412) · 문구 D3 (risk: 권한 · DB 잠금)
+- [x] 06.4-01-PLAN.md — 판정 부품 + `domain/permissions/` 배선(PR-A · 위험 경로 · 사용자 머지): 권한 상한 `grant-ceiling.ts` · 마지막 관리자 `last-admin.ts` · 자리 잠금 `seats.ts` · 권한표 관리자 칸 끄기 가드 · 계급 범위/노출 칸 우회 막기(O7) · 계급 보관 관리자 수 불변(O2) · `createRole` 상한(E3) · 남는 관리자 = 퇴직 예정 없는 관리자(D-6412) · 문구 D3 (risk: 권한 · DB 잠금)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 

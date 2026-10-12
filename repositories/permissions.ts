@@ -1,8 +1,8 @@
-import { and, asc, eq, exists, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, exists, inArray, isNull, sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db, type DbOrTx } from "@/db/client";
-import { fieldDefinitions, permissionMatrix, users, visibilityMatrix } from "@/db/schema";
+import { fieldDefinitions, permissionMatrix, roles, users, visibilityMatrix } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 import { customFieldInfoItem, type FieldDefinitionTarget } from "@/domain/custom-fields/targets";
 
@@ -14,9 +14,10 @@ export async function findPermission(
   roleId: string,
   menu: string,
   action: string,
+  tx: DbOrTx = db,
 ): Promise<PermissionMatrixRow | null> {
   void viewer;
-  const [row] = await db
+  const [row] = await tx
     .select()
     .from(permissionMatrix)
     .where(
@@ -36,9 +37,10 @@ export async function findPermission(
 export async function upsertPermission(
   viewer: Viewer,
   input: { roleId: string; menu: string; action: string; allowed: boolean; updatedBy?: string | null },
+  tx: DbOrTx = db,
 ): Promise<void> {
   void viewer;
-  await db
+  await tx
     .insert(permissionMatrix)
     .values({
       roleId: input.roleId,
@@ -102,9 +104,10 @@ export async function findVisibility(
 export async function upsertVisibility(
   viewer: Viewer,
   input: { roleId: string; infoItem: string; visible: boolean; updatedBy?: string | null },
+  tx: DbOrTx = db,
 ): Promise<void> {
   void viewer;
-  await db
+  await tx
     .insert(visibilityMatrix)
     .values({
       roleId: input.roleId,
@@ -255,4 +258,29 @@ export async function readVendorFieldAccess(
     vendorValueVisible: rows.some((row) => row.valueVisible === true),
     visibleFieldKeys: new Set(rows.filter((row) => row.fieldVisible === true).map((row) => row.definition.key)),
   };
+}
+
+export type RoleGrantRow = { roleId: string; viewScope: string; workScope: string; keys: string[] };
+
+// 06.4(D-6407): 상한 판정 재료 — 허용 칸 · 보임 칸만(거짓 행은 없는 것과 같다 — can.ts와 같은 뜻). 보관 계급도 읽는다
+// (보관된 계급의 사람도 권한을 가진다 — O2). 계급마다 범위 둘 + 키 배열을 SQL 한 문장으로.
+export async function listRoleGrantRows(viewer: Viewer, roleIds: readonly string[], tx: DbOrTx = db): Promise<RoleGrantRow[]> {
+  void viewer;
+  if (roleIds.length === 0) return [];
+  return tx
+    .select({
+      roleId: roles.id,
+      viewScope: roles.viewScope,
+      workScope: roles.workScope,
+      // 한 표 select에서 drizzle은 열 이름을 표 없이 그리므로 부속 질의는 별칭으로 쓴다(바깥 "roles"."id"와 섞이지 않게).
+      keys: sql<string[]>`array(
+        select 'm:' || pm.menu || '::' || pm.action from permission_matrix pm
+        where pm.role_id = "roles"."id" and pm.allowed
+        union all
+        select 'v:' || vm.info_item from visibility_matrix vm
+        where vm.role_id = "roles"."id" and vm.visible
+      )`,
+    })
+    .from(roles)
+    .where(inArray(roles.id, [...roleIds]));
 }

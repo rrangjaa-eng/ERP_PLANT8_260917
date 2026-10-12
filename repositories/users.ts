@@ -1,7 +1,7 @@
-import { and, eq, inArray, isNull, isNotNull } from "drizzle-orm";
+import { and, eq, exists, gte, inArray, isNull, isNotNull, ne, or, sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
-import { users } from "@/db/schema";
+import { permissionMatrix, users } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 import type { Scope } from "@/domain/permissions/scope-for";
 
@@ -90,4 +90,44 @@ export async function updateUserResignationDate(
 ): Promise<void> {
   void viewer;
   await tx.update(users).set({ resignationDate, updatedAt: new Date() }).where(eq(users.id, userId));
+}
+
+// 06.4(D-6403 · O2): 재직 관리자 = 보관 안 됨 ∧ 퇴직일 안 지남 ∧ `admin.permissions` 쓰기 계급. 계급 보관(roles.archived_at)은
+// `can()`이 보지 않으므로 여기서도 보지 않는다.
+export async function countActiveAdmins(
+  viewer: Viewer,
+  opts: { asOf: string; excludeUserId?: string; excludeRoleId?: string; onlyUserId?: string; unscheduledOnly?: boolean },
+  tx: DbOrTx = db,
+): Promise<number> {
+  void viewer;
+  const [row] = await tx
+    .select({ n: sql<number>`count(*)::int` })
+    .from(users)
+    .where(
+      and(
+        isNull(users.archivedAt),
+        // 06.4 D-6412(K-B3, 기본값(사용자 미확인)): 퇴직 예정 관리자는 남은 쪽에 세지 않는다 — 두 번 저장으로 예정 0명이 되는
+        // 길(Codex B3)을 닫는다. 260907도 `left_date is null`만 셌다(`O: server/src/people.ts:735-737`).
+        opts.unscheduledOnly
+          ? isNull(users.resignationDate)
+          : or(isNull(users.resignationDate), gte(users.resignationDate, opts.asOf)),
+        exists(
+          tx
+            .select({ one: permissionMatrix.roleId })
+            .from(permissionMatrix)
+            .where(
+              and(
+                eq(permissionMatrix.roleId, users.roleId),
+                eq(permissionMatrix.menu, "admin.permissions"),
+                eq(permissionMatrix.action, "write"),
+                eq(permissionMatrix.allowed, true),
+              ),
+            ),
+        ),
+        opts.excludeUserId === undefined ? undefined : ne(users.id, opts.excludeUserId),
+        opts.excludeRoleId === undefined ? undefined : ne(users.roleId, opts.excludeRoleId),
+        opts.onlyUserId === undefined ? undefined : eq(users.id, opts.onlyUserId),
+      ),
+    );
+  return row?.n ?? 0;
 }

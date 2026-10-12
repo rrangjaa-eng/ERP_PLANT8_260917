@@ -9,6 +9,12 @@ import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { normalizeRoleName } from "@/domain/permissions/role-name";
 import { withTransaction } from "@/lib/db-transaction";
 import {
+  assertCanEditRole,
+  canGrantRole,
+  loadRoleGrantSnapshots,
+  NO_ROLE_SNAPSHOT,
+} from "@/domain/permissions/grant-ceiling";
+import {
   findRoleById as defaultFindRoleById,
   listRoles as repoListRoles,
   insertRole as repoInsertRole,
@@ -124,6 +130,26 @@ export async function listRoles(viewer: Viewer, opts?: { includeArchived?: boole
   return Promise.all(rows.map((row) => project(viewer, row, ROLE_DTO_SPEC))) as Promise<RoleDto[]>;
 }
 
+// 06.4(D-6402): 등록 · 변경 화면의 계급 select 재료(06.4-04). 서버 거부가 진짜 관문이고 이 목록은 할 수 없는 선택지를
+// 숨기는 UX(CLAUDE.md §7).
+export async function assignableRoleIds(viewer: Viewer, roleIds?: readonly string[]): Promise<ReadonlySet<string>> {
+  const targets = roleIds ?? (await repoListRoles(viewer)).map((row) => row.id);
+  const snapshots = await loadRoleGrantSnapshots(viewer, viewer.roleId ? [viewer.roleId, ...targets] : targets);
+  const actor = (viewer.roleId ? snapshots.get(viewer.roleId) : undefined) ?? NO_ROLE_SNAPSHOT;
+  return new Set(
+    targets.filter((id) => {
+      const role = snapshots.get(id);
+      return role !== undefined && canGrantRole(actor, role);
+    }),
+  );
+}
+
+export async function listAssignableRoles(viewer: Viewer): Promise<RoleDto[]> {
+  const roles = await listRoles(viewer);
+  const assignable = await assignableRoleIds(viewer, roles.map((role) => role.id));
+  return roles.filter((role) => assignable.has(role.id));
+}
+
 export type RoleWriteDeps = {
   can: typeof defaultCan;
   recordAction: typeof RecordActionFn;
@@ -158,13 +184,18 @@ export async function createRole(
     throw new ForbiddenError("계급 추가 권한 없음");
   }
 
+  // 06.2(K1, 사용자 결정 2026-10-08): 새 계급의 보는 범위는 업무 범위를 복사한다.
+  const workScope = input.workScope ?? "team";
+  // 06.4(O7 · E3): 새 계급(빈 키 + 입력 범위)도 내 상한 안이어야 한다 — 위임자가 자기보다 넓은 범위의 계급을 만들어 두는
+  // 길을 닫는다. 260907 `POST /api/roles`는 관리자 전용 `settings.edit`라 비교가 필요 없었다(`O: server/src/access.ts:570`).
+  // D-6401 사용자 확정(2026-10-11 카드): 범위 포함.
+  await assertCanEditRole(viewer, null, () => ({ keys: new Set<string>(), viewScope: workScope, workScope }));
+
   const id = `role-${randomUUID()}`;
   // 04.5-03: 기존 커스텀 항목의 기본 보임 행을 계급 행과 한 트랜잭션에서 넣는다 — 부여가 실패하면 계급도 생기지 않고
   // 오류가 관리자에게 간다(칸이 안 보이는 계급이 조용히 남지 않는다).
   const grant = deps?.grantCustomFieldsToRole ?? defaultGrantCustomFields;
   const row = await withTransaction(async (tx) => {
-    // 06.2(K1, 사용자 결정 2026-10-08): 새 계급의 보는 범위는 업무 범위를 복사한다.
-    const workScope = input.workScope ?? "team";
     const inserted = await repoInsertRole(
       viewer,
       { id, name: normalizeRoleName(input.name), sortOrder: input.sortOrder, workScope, viewScope: workScope },
@@ -212,6 +243,10 @@ export async function setRoleWorkScope(
   const row = await defaultFindRoleById(viewer, id);
   if (!row) throw new UserFacingError("계급 찾을 수 없음");
 
+  // 06.4(O7 · T-6409): `admin.permissions` 쓰기가 없으면 바꾸기 전 · 바꾼 뒤 계급이 둘 다 내 상한 안이어야 한다 — 지정 뒤
+  // 범위를 넓혀 상한을 돌아가지 못하게. 자기 계급은 위 CSO-1이 먼저 막는다.
+  await assertCanEditRole(viewer, id, (before) => ({ ...before, workScope }));
+
   await repoSetRoleWorkScope(viewer, id, workScope);
 
   const recordAction = deps?.recordAction ?? defaultRecordAction;
@@ -242,6 +277,9 @@ export async function setRoleViewScope(
 
   const row = await defaultFindRoleById(viewer, id);
   if (!row) throw new UserFacingError("계급 찾을 수 없음");
+
+  // 06.4(O7 · T-6409): setRoleWorkScope와 같다 — 바꾸기 전 · 바꾼 뒤 둘 다 내 상한 안.
+  await assertCanEditRole(viewer, id, (before) => ({ ...before, viewScope }));
 
   await repoSetRoleViewScope(viewer, id, viewScope);
 

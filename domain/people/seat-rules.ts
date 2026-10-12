@@ -1,9 +1,11 @@
 import type { Viewer } from "@/domain/viewer";
 import type { DbOrTx } from "@/repositories/document-counters";
-import { listSeatHolders, lockSeatKeys, type OccupiedTeamRow } from "@/repositories/seats";
+import { listSeatDuplicateHolders, listSeatHolders, lockSeatKeys, type OccupiedTeamRow } from "@/repositories/seats";
+import { can as defaultCan } from "@/domain/permissions/can";
+import { visible as defaultVisible } from "@/domain/permissions/visible";
 import { DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
-import { addDays } from "@/lib/kst-date";
+import { addDays, kstToday } from "@/lib/kst-date";
 
 // 06.4(D-6404 · D-6408 · D-6415): 한 팀 팀장 · 한 본부 책임자 한 명 — 하루라도 겹치면 둘째. 저장이 새 자리 구간을 더할 때만
 // 본다(이미 있던 중복 · 강등 · 이동 · 당기기는 통과). 잠금 뒤 재조회 — 260907은 DB 부분 유니크 인덱스였고
@@ -130,4 +132,48 @@ export async function assertSeatsFree(
   if (first) {
     throw new SeatTakenError(seatTakenMessage(teams.length > 0 ? "team" : "division", input.showNames ? first.name : null));
   }
+}
+
+export type SeatHolderDto = { userId: string; name: string };
+export type SeatDuplicatesDto = { teams: Record<string, SeatHolderDto[]>; orgUnits: Record<string, SeatHolderDto[]> };
+
+// 06.4(D-6405 · D-6413 · D-6415): 조직 화면 중복 — 자리마다 다른 보유자 구간과 하루라도 겹치는 사람만 남기고(퇴직 예정
+// 보유자와 그 다음 날부터의 후임은 중복이 아니다), 남은 사람이 2명 이상인 자리만 이름 오름차순으로.
+// D-6405 · D-6413 기본값(밤 위임, 사용자 미확인): 사람 · 팀 정보를 둘 다 볼 때만 계산해 보낸다 — 꺼진 뷰어에게는 개수 · 이름조차
+// 보내지 않는다(SYSTEM.md:864 「열은 서버가 아예 보내지 않는다」와 같은 결).
+export async function listSeatDuplicates(
+  viewer: Viewer,
+  deps?: Partial<{ can: typeof defaultCan; visible: typeof defaultVisible; now: () => Date }>,
+): Promise<SeatDuplicatesDto | null> {
+  const can = deps?.can ?? defaultCan;
+  const visible = deps?.visible ?? defaultVisible;
+  const [canView, seesPerson, seesTeam] = await Promise.all([
+    can(viewer, "admin.people", "view"),
+    visible(viewer, "person.value"),
+    visible(viewer, "team.value"),
+  ]);
+  if (!canView || !seesPerson || !seesTeam) return null;
+  const rows = await listSeatDuplicateHolders(viewer, {
+    today: kstToday((deps?.now ?? (() => new Date()))()),
+    teamLeadRoleId: TEAM_LEAD_ROLE_ID,
+    divisionHeadRoleId: DIVISION_HEAD_ROLE_ID,
+  });
+  const result: SeatDuplicatesDto = { teams: {}, orgUnits: {} };
+  const seats = new Map<string, typeof rows>();
+  for (const row of rows) {
+    const key = `${row.kind}:${row.seatId}`;
+    seats.set(key, [...(seats.get(key) ?? []), row]);
+  }
+  for (const spans of seats.values()) {
+    const kept = new Map<string, string>();
+    for (const span of spans) {
+      if (spans.some((other) => other.userId !== span.userId && spansOverlap(span, other))) kept.set(span.userId, span.name);
+    }
+    if (kept.size < 2) continue;
+    const holders = [...kept].map(([userId, name]) => ({ userId, name }));
+    holders.sort((x, y) => (x.name < y.name ? -1 : x.name > y.name ? 1 : 0));
+    const first = spans[0];
+    if (first) (first.kind === "team" ? result.teams : result.orgUnits)[first.seatId] = holders;
+  }
+  return result;
 }

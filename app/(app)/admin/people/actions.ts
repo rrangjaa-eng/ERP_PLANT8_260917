@@ -29,6 +29,8 @@ export const registerPersonAction = authedActionClient
   .action(async ({ parsedInput, ctx }) => {
     const result = await registerPerson(ctx.viewer, parsedInput);
     revalidatePath("/admin/people");
+    // 06.4 D10: 계급 · 소속 · 재직이 바뀌면 조직 화면 중복 태그도 바뀐다
+    revalidatePath("/admin/people/org");
     // 사람 등록의 초기 비밀번호가 반환값에 실리는 것은 의도다(화면이 한 번
     // 보여준다) — next-safe-action의 직렬화를 거쳐 클라이언트로 가는 경로
     // 외에는 남지 않는다(recordAction 기록에는 없음, T-03-29).
@@ -40,6 +42,7 @@ export const changePersonRoleAction = authedActionClient
   .action(async ({ parsedInput, ctx }) => {
     await changePersonRole(ctx.viewer, parsedInput.userId, parsedInput.roleId);
     revalidatePath("/admin/people");
+    revalidatePath("/admin/people/org");
     revalidatePath(`/admin/people/${parsedInput.userId}`);
   });
 
@@ -54,6 +57,7 @@ export const assignTeamAction = authedActionClient
   .action(async ({ parsedInput, ctx }) => {
     await assignTeam(ctx.viewer, parsedInput);
     revalidatePath(`/admin/people/${parsedInput.userId}`);
+    revalidatePath("/admin/people/org");
   });
 
 export const cancelAssignmentAction = authedActionClient
@@ -66,6 +70,7 @@ export const cancelAssignmentAction = authedActionClient
   .action(async ({ parsedInput, ctx }) => {
     await cancelFutureAssignment(ctx.viewer, parsedInput);
     revalidatePath(`/admin/people/${parsedInput.userId}`);
+    revalidatePath("/admin/people/org");
   });
 
 export const createRoleAction = authedActionClient
@@ -127,6 +132,7 @@ export const archivePersonAction = authedActionClient
   .action(async ({ parsedInput, ctx }) => {
     await archivePerson(ctx.viewer, parsedInput.userId);
     revalidatePath("/admin/people");
+    revalidatePath("/admin/people/org");
     revalidatePath("/admin/archive");
   });
 

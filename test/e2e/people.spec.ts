@@ -11,6 +11,7 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { isStrict } from "./design-principles";
 import { checkPrinciples } from "./principles-check";
 import { collapsedRowOf, loginAsAdmin, personRow, registerPerson, statusCell } from "./people-list-helpers";
+import { makeDuplicateLeads } from "./admin-cap-fixtures";
 
 // MAST-02: 사람 등록 화면에서 이름·이메일·계급·팀·발령일을 채워 등록하면 같은
 // 화면에서 계정과 초기 비밀번호가 함께 발급되고, 그 계정으로 실제 로그인이
@@ -469,4 +470,52 @@ test("화면 사용성 원칙(막는 모드) — 사람·조직·계급", async 
     ],
     { strict: isStrict(process.env.DESIGN_PRINCIPLES_STRICT) },
   );
+});
+
+async function tokenColor(page: Page, token: string): Promise<string> {
+  return page.evaluate((name) => {
+    const probe = document.createElement("span");
+    probe.style.color = `var(${name})`;
+    document.body.append(probe);
+    const color = getComputedStyle(probe).color;
+    probe.remove();
+    return color;
+  }, token);
+}
+
+// 조직 화면의 팀 줄 — 이름 입력의 부모 `li`(본부 줄 `li`는 팀 줄을 품으므로 이름 입력으로 고른다).
+function orgRow(page: Page, name: string): Locator {
+  return page.getByLabel(`${name} 이름`, { exact: true }).locator("xpath=..");
+}
+
+test.describe("조직 화면 팀장 · 책임자 중복 (06.4 D-6405 · D-6413)", () => {
+  test("중복 팀 줄 행동 첫 자리에 「팀장 2명」(warning) + 보유자 링크 · 한 명 팀은 없음 → 보유자 강등 뒤 조직 화면에서 사라진다", async ({ page }) => {
+    const world = await makeDuplicateLeads();
+    await loginAsAdmin(page);
+    await page.goto("/admin/people/org");
+
+    const row = orgRow(page, world.teamName);
+    const actions = row.locator('[data-ui="row-actions"]');
+    const tag = actions.getByText("팀장 2명", { exact: true });
+    await expect(tag).toBeVisible();
+    await expect(actions.locator(":scope > *").first()).toHaveText("팀장 2명");
+    expect(await tag.evaluate((element) => getComputedStyle(element).color)).toBe(await tokenColor(page, "--status-warning"));
+    const links = actions.getByRole("link");
+    await expect(links).toHaveCount(2);
+    for (const [index, id] of world.holderIds.entries()) await expect(links.nth(index)).toHaveAttribute("href", `/admin/people/${id}`);
+
+    const single = orgRow(page, world.singleTeamName);
+    await expect(single.getByText(/^팀장 \d+명$/)).toHaveCount(0);
+    await expect(single.getByRole("link")).toHaveCount(0);
+
+    await links.first().click();
+    await expect(page).toHaveURL(new RegExp(`/admin/people/${world.holderIds[0]}$`));
+    await page.locator("#person-role-change").selectOption({ label: "기획 PM" });
+    await expect(page.locator("dd").filter({ hasText: /^기획 PM$/ })).toBeVisible();
+
+    await page.goto("/admin/people/org");
+    const after = orgRow(page, world.teamName);
+    await expect(after.getByText(/^팀장 \d+명$/)).toHaveCount(0);
+    await expect(after.getByRole("link")).toHaveCount(0);
+  });
 });

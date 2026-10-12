@@ -2015,3 +2015,11 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 **버린 대안**: 모든 폰 표로 확대 — 사용자가 「두 목록만」을 골랐다. 줄바꿈 유지 — 위 이유. 제목 글자를 DOM에서 잘라 쓰기 — 접근성 이름이 잘린다.
 **결정자**: 사용자(선택 카드 답 「두 목록만」, 2026-10-09)
 **범위**: SYSTEM.md §7-3 폰 전략. 구현 `expenses.module.css` `.titleCell` · `inbox-table.module.css` `.rowTap` `.rowLink`, DOM 확인 `test/e2e/mobile-expense-320.spec.ts`. 점검표 `docs/design/checks/2026-10-09-phone-title-one-line.md`.
+
+## 2026-10-11 — 06.4 SP-64-1 상태 낱말 `팀장 {n}명` · `책임자 {n}명`: 글자 warning + 보유자 이름 링크 (Phase 06.4 D-6405 · D-6413)
+
+**결정**: 조직 화면(`/admin/people/org`) 팀 줄에 자리 구간이 서로 겹치는 팀장이 2명 이상이면 `팀장 {n}명`, 본부 줄에 본부 책임자가 2명 이상이면 `책임자 {n}명`을 `--status-warning`(`warning`, `variant="text"` 전용) 글자 태그로 그 줄 `RowActions` 첫 자리에 두고, 바로 뒤에 보유자 전원의 이름(이름 오름차순)을 그 사람 상세(`/admin/people/{id}`)로 가는 `RowAction` 링크로 잇는다. 한 명이거나 없으면 아무것도 없다. 낱말 → 색은 `ui/status-tag/status-map.ts`의 템플릿 두 개(`팀장 ${number}명` · `책임자 ${number}명`)와 `statusKind`의 warning 분기 한 줄이다. 개수 · 이름은 뷰어가 `admin.people` 보기 ∧ `person.value` ∧ `team.value`일 때만 서버가 계산해 보낸다.
+**이유**: 한 팀 팀장 · 한 본부 책임자 한 명 규칙(D-6404)은 저장 경로만 막아 06.4 전에 저장된 중복 · 리포지토리 발령으로 생긴 중복을 지우지 못한다 — 사람이 정리하도록 색으로 알린다. 사람 목록에는 팀 거르기가 없어 누구를 고쳐야 하는지 찾을 길이 없으므로 정리할 사람에게 가는 길을 이름 링크로 준다(디자인 검토 D1 · 260907 조직 화면 팀 표의 팀장 이름 열 `O: app/src/pages/Org.tsx:1937-1953` 대조 — 옛은 DB 인덱스라 중복이 생길 수 없어 첫 한 명만 보였다). 조치가 필요하지만 쓸 수 없는 상태는 아니라 warning이다.
+**버린 대안**: 사람 목록 상태 열(D-6405 대안 — 아침 확인 대상) · 고정 낱말 `팀장 2명`만 표에 넣기(3명 이상을 못 담음) · danger(쓸 수 없는 상태가 아님) · 개수만(이름 없음 — 정리하러 갈 길이 없다, D1) · 첫 한 명 이름만(옛 꼴 — 누가 중복인지 다 보이지 않음).
+**결정자**: 오케스트레이터 · 디자인 검토 기본값(밤 위임, 사용자 미확인) — 아침 확인
+**범위**: SYSTEM.md §7-5, `ui/status-tag/status-map.ts`, `app/(app)/admin/people/org/org-client.tsx`, 점검표 `docs/design/checks/2026-10-11-admin-cap.md`.

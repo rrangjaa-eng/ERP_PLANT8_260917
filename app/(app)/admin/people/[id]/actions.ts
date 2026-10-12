@@ -24,6 +24,8 @@ export const setHireDateAction = authedActionClient.schema(employmentDateSchema)
 export const setResignationDateAction = authedActionClient.schema(employmentDateSchema).action(async ({ parsedInput, ctx }) => {
   await setResignationDate(ctx.viewer, parsedInput.userId, parsedInput.date === "" ? null : parsedInput.date);
   revalidatePath(`/admin/people/${parsedInput.userId}`);
+  // 06.4 D10: 퇴직일이 재직을 바꿔 조직 화면 중복 수가 바뀐다(입사일은 재직 판정에 안 든다)
+  revalidatePath("/admin/people/org");
 });
 
 // (S9-FY) 연차는 섹션이 보여 주는 회계연도를 fiscalYear로 — 정수 2000 ≤ y ≤ 올해(상한은 호출 때 seoulToday()로 계산,

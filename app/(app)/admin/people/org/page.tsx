@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
 import { listOrgUnits, listTeams } from "@/domain/org";
+import { listSeatDuplicates } from "@/domain/people/seat-rules";
 import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { SidePanel } from "@/ui/side-panel/SidePanel";
@@ -28,11 +29,12 @@ export default async function OrgPage({
   const { new: newParam, orgUnitId: orgUnitIdParam } = await searchParams;
   const newForm = newParam === "org" || newParam === "team" ? newParam : null;
 
-  const [orgUnits, teams, canArchive, canWrite] = await Promise.all([
+  const [orgUnits, teams, canArchive, canWrite, duplicates] = await Promise.all([
     listOrgUnits(session.viewer),
     listTeams(session.viewer),
     can(session.viewer, "admin.archive", "write"),
     can(session.viewer, "admin.people", "write"),
+    listSeatDuplicates(session.viewer),
   ]);
 
   // DR3 B — 「팀 추가」 행동 링크의 `orgUnitId`는 보관되지 않은 본부와 같을 때만 팀 폼 본부 칸 기본값이다. 모르는 값 ·
@@ -63,7 +65,13 @@ export default async function OrgPage({
           action={canWrite ? { label: "본부 추가", href: NEW_ORG_HREF } : undefined}
         />
       ) : (
-        <OrgList orgUnits={orgUnits} teams={teams} canArchive={canArchive} canWrite={canWrite} />
+        <OrgList
+          orgUnits={orgUnits}
+          teams={teams}
+          canArchive={canArchive}
+          canWrite={canWrite}
+          duplicates={duplicates ?? undefined}
+        />
       )}
     </ListScreen>
   );

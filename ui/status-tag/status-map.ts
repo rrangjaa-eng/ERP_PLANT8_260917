@@ -77,10 +77,12 @@ export const STATUS_KIND = {
   "담당 PM": "muted",
 } as const satisfies Record<string, StatusKind>;
 
-/** 표의 낱말 + 단계 이름이 붙은 `{단계} 결재 중`(accent). */
-export type StatusWord = keyof typeof STATUS_KIND | `${string} 결재 중`;
+/** 표의 낱말 + 단계 이름이 붙은 `{단계} 결재 중`(accent) + 조직 화면 중복 개수(warning). */
+export type StatusWord = keyof typeof STATUS_KIND | `${string} 결재 중` | `팀장 ${number}명` | `책임자 ${number}명`;
 
 export function statusKind(word: StatusWord): StatusKind {
   if (word in STATUS_KIND) return STATUS_KIND[word as keyof typeof STATUS_KIND];
+  // 06.4 SP-64-1: 조직 화면 팀장 · 책임자 중복 개수 — 조치가 필요하지만 막힘은 아님(warning)
+  if (/^(팀장|책임자) \d+명$/.test(word)) return "warning";
   return "accent";
 }

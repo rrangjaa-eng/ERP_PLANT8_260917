@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { orgUnits, teamMemberships, teams, users } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
@@ -127,4 +127,55 @@ export async function listSeatHolders(
         input.excludeUserId === undefined ? undefined : ne(users.id, input.excludeUserId),
       ),
     );
+}
+
+// 06.4(D-6405 · D-6413): 조직 화면 중복 표시 — 개수와 보유자 이름(그 사람 상세로 가는 링크 재료). 점유 구간 · 퇴직일 자르기는
+// 위 `occupancy` · `listSeatHolders`와 같은 정의(06.4-02 D-6415)다. 팀장(teamLeadRoleId)은 팀별, 본부 책임자(divisionHeadRoleId)는
+// 본부별로 모아 서로 다른 보유자가 2명 이상인 자리의 구간 행만 돌려준다. 구간 겹침 판정은 도메인(`spansOverlap`)이 한다.
+// 정렬은 호출자가 JS로(위와 같은 이유).
+export type SeatDuplicateHolderRow = {
+  kind: "team" | "division";
+  seatId: string;
+  userId: string;
+  name: string;
+  from: string;
+  to: string | null;
+};
+
+export async function listSeatDuplicateHolders(
+  viewer: Viewer,
+  input: { today: string; teamLeadRoleId: string; divisionHeadRoleId: string },
+  tx: DbOrTx = db,
+): Promise<SeatDuplicateHolderRow[]> {
+  void viewer;
+  const occ = occupancy(input.today);
+  const kind = sql<"team" | "division">`case when ${users.roleId} = ${input.teamLeadRoleId} then 'team' else 'division' end`;
+  const seatId = sql<string | null>`case when ${users.roleId} = ${input.teamLeadRoleId} then ${occ.teamId} else ${occ.orgUnitId} end`;
+  // 자리별 서로 다른 보유자 2명 이상 = 자리 안 최소 · 최대 사람 id가 다르다(창 함수에는 count(distinct)가 없다).
+  const spans = db
+    .select({
+      kind: kind.as("seat_kind"),
+      seatId: seatId.as("seat_id"),
+      userId: sql<string>`${users.id}`.as("holder_id"),
+      name: sql<string>`${users.name}`.as("holder_name"),
+      from: sql<string>`${occ.from}`.as("holder_from"),
+      to: sql<string | null>`least(${occ.to}::date, ${users.resignationDate})::text`.as("holder_to"),
+      lowest: sql<string>`min(${users.id}) over (partition by ${kind}, ${seatId})`.as("seat_lowest_holder"),
+      highest: sql<string>`max(${users.id}) over (partition by ${kind}, ${seatId})`.as("seat_highest_holder"),
+    })
+    .from(occ)
+    .innerJoin(users, eq(users.id, occ.userId))
+    .where(
+      and(
+        inArray(users.roleId, [input.teamLeadRoleId, input.divisionHeadRoleId]),
+        isNull(users.archivedAt),
+        or(isNull(users.resignationDate), sql`${users.resignationDate} >= ${occ.from}::date`),
+      ),
+    )
+    .as("seat_duplicate_spans");
+  const rows = await tx
+    .select({ kind: spans.kind, seatId: spans.seatId, userId: spans.userId, name: spans.name, from: spans.from, to: spans.to })
+    .from(spans)
+    .where(and(isNotNull(spans.seatId), ne(spans.lowest, spans.highest)));
+  return rows.flatMap((row) => (row.seatId === null ? [] : [{ ...row, seatId: row.seatId }]));
 }

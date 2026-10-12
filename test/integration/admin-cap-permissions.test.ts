@@ -296,3 +296,80 @@ describe("계급 보관과 관리자 수(06.4 O2)", () => {
     expect(await can({ id: q.id, roleId: roleK }, "admin.permissions", "write")).toBe(true);
   });
 });
+
+// /review F4 · F5 · F7: 판정 경계 사례.
+describe("관리자 판정 경계(06.4 /review)", () => {
+  it("assertNotLastAdmin — 마지막 관리자 X를 다른 관리자 계급으로 바꾸면 통과, 관리자 아닌 계급으로 바꾸면 거부", async () => {
+    const x = await makeAdmin("관리자 X");
+    const roleB = await makeAdminRole("관리자급 B");
+
+    await expect(
+      withTransaction((tx) => assertNotLastAdmin(x, { userId: x.id, asOf: "2026-09-18", nextRoleId: roleB }, tx)),
+    ).resolves.toBeUndefined();
+    const error = await refusal(
+      withTransaction((tx) => assertNotLastAdmin(x, { userId: x.id, asOf: "2026-09-18", nextRoleId: DEFAULT_ROLE_ID }, tx)),
+      LastAdminError,
+    );
+    expect(error.message).toBe("마지막 관리자 · 관리자 먼저 지정");
+  });
+
+  it("assertNotLastAdmin — 관리자 아닌 대상은 관리자가 하나뿐이어도 통과", async () => {
+    const x = await makeAdmin("관리자 X");
+    const pm = await makePerson("PM", DEFAULT_ROLE_ID, null);
+
+    await expect(withTransaction((tx) => assertNotLastAdmin(x, { userId: pm.id, asOf: "2026-09-18" }, tx))).resolves.toBeUndefined();
+  });
+
+  it("assertCanGrantRoles — 없는 계급은 위임자에게 거부(fail-closed)", async () => {
+    const roleM = await makeDelegatedRole({ name: "인사 위임" });
+    const d = await makePerson("위임자 D", roleM, null);
+
+    const error = await refusal(assertCanGrantRoles(d, ["role-missing"]), RoleGrantForbiddenError);
+    expect(error.message).toBe("계급 지정 권한 없음 · 시스템 관리자");
+  });
+
+  it("countActiveAdmins — 퇴직일 당일은 세고 다음 날은 세지 않으며, unscheduledOnly는 퇴직일이 있으면 세지 않는다", async () => {
+    const x = await makeAdmin("관리자 X");
+    await updateUserResignationDate(SYSTEM_VIEWER, x.id, "2026-09-18");
+
+    expect(await countActiveAdmins(SYSTEM_VIEWER, { asOf: "2026-09-18" })).toBe(1);
+    expect(await countActiveAdmins(SYSTEM_VIEWER, { asOf: "2026-09-19" })).toBe(0);
+    expect(await countActiveAdmins(SYSTEM_VIEWER, { asOf: "2026-09-18", unscheduledOnly: true })).toBe(0);
+  });
+
+  it("로그 기록이 실패하면 칸 저장도 되돌려진다 — 호출 거부 · 칸 그대로", async () => {
+    const { x, roleB } = await adminWorld(null);
+    const recordAction = (): Promise<never> => Promise.reject(new Error("기록 실패"));
+
+    await expect(setPermissionCell(x, ADMIN_WRITE_OFF(roleB), { ...deps, recordAction })).rejects.toThrow("기록 실패");
+
+    expect(await adminCellAllowed(roleB)).toBe(true);
+  });
+
+  it("잠금 뒤 재확인 — 앞선 저장으로 행위자 계급의 관리자 칸이 꺼졌으면(사전 판정은 지났어도) 권한 없음 · 칸 그대로(F5)", async () => {
+    await makeAdmin("관리자 X");
+    const roleB = await makeAdminRole("관리자급 B");
+    const p = await makePerson("관리자 P", roleB, null);
+    const roleC = await makeAdminRole("관리자급 C");
+    await makePerson("관리자 Q", roleC, null);
+    await setPermissionCell(SYSTEM_VIEWER, ADMIN_WRITE_OFF(roleB), deps);
+    // 사전 판정(can)이 강등 전에 지나간 경합을 재현한다.
+    const staleCan = (): Promise<boolean> => Promise.resolve(true);
+
+    const error = await refusal(setPermissionCell(p, ADMIN_WRITE_OFF(roleC), { ...deps, can: staleCan }), ForbiddenError);
+
+    expect(error.message).toBe("권한표 변경 권한 없음");
+    expect(await adminCellAllowed(roleC)).toBe(true);
+  });
+
+  it("이미 꺼진 관리자 칸을 다시 끄는 저장은 남은 관리자가 퇴직 예정뿐이어도 거부하지 않는다(F7)", async () => {
+    const x = await makeAdmin("관리자 X");
+    await updateUserResignationDate(SYSTEM_VIEWER, x.id, "2026-12-31");
+    const roleC = await makeAdminRole("관리자급 C");
+    await setPermissionCell(SYSTEM_VIEWER, ADMIN_WRITE_OFF(roleC), deps);
+
+    await setPermissionCell(x, ADMIN_WRITE_OFF(roleC), deps);
+
+    expect(await adminCellAllowed(roleC)).toBe(false);
+  });
+});

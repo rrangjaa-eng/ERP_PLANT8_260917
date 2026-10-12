@@ -27,7 +27,11 @@ vi.mock("@/domain/permissions/can", () => ({
     Promise.resolve(menu === "admin.people" && action === "write" ? writeAllowed : true),
 }));
 vi.mock("@/domain/people", () => ({ listPeople: () => Promise.resolve(people) }));
-vi.mock("@/domain/permissions/roles", () => ({ listRoles: () => Promise.resolve([{ id: "role-pm", name: "기획 PM" }]) }));
+vi.mock("@/domain/permissions/roles", () => ({
+  listAssignableRoles: () => Promise.resolve([{ id: "role-pm", name: "기획 PM" }]),
+  // 06.4 D-6417: 상한 판정은 이 테스트의 관심 밖 — 넘긴 계급을 모두 통과로 둔다.
+  assignableRoleIds: (_viewer: unknown, roleIds: string[]) => Promise.resolve(new Set(roleIds)),
+}));
 vi.mock("@/domain/org", () => ({ listOrgUnits: () => Promise.resolve([]), listTeams: () => Promise.resolve([]) }));
 vi.mock("@/app/(app)/admin/people/person-form", async () => {
   const { createElement: h } = await import("react");

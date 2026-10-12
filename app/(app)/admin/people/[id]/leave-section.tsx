@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useAction } from "next-safe-action/hooks";
 import { Form } from "@/ui/form/Form";
@@ -33,6 +33,8 @@ export type LeaveSectionProps = {
   datesVisible: boolean;
   adjustments: LeaveAdjustmentRow[];
   canWrite: boolean;
+  // 06.4(D-6417 · R2): 대상 계급이 상한 밖이면 퇴직일 칸만 그리지 않는다(입사일 칸은 그대로) — 기본 참.
+  resignationWritable?: boolean;
   // 오늘 기준 월차 조정 거부 이유(04.1-03 checkLeaveAdjustment 문구 그대로) — 있으면 `월차` 옵션을 뺀다(CX-R5).
   monthlyBlockedReason: string | null;
 };
@@ -50,9 +52,17 @@ const COLUMNS: TableColumn<LeaveAdjustmentRow>[] = [
 ];
 
 function EmploymentDate({ userId, id, label, initial, kind }: { userId: string; id: string; label: string; initial: string | null; kind: "hire" | "resignation" }) {
-  const [saved, setSaved] = useState(initial ?? "");
-  const hire = useAction(setHireDateAction, { onSuccess: ({ input }) => setSaved(input.date) });
-  const resignation = useAction(setResignationDateAction, { onSuccess: ({ input }) => setSaved(input.date) });
+  // 06.4(D-6417 · R2): 상한 밖 대상은 퇴직일 칸 없음 · 거부되면 저장값으로
+  const savedRef = useRef(initial ?? "");
+  const [value, setValue] = useState(initial ?? "");
+  const callbacks = {
+    onSuccess: ({ input }: { input: { date: string } }) => {
+      savedRef.current = input.date;
+    },
+    onError: () => setValue(savedRef.current),
+  };
+  const hire = useAction(setHireDateAction, callbacks);
+  const resignation = useAction(setResignationDateAction, callbacks);
   const { execute, result } = kind === "hire" ? hire : resignation;
   const error = result.serverError ?? result.validationErrors?.date?._errors?.[0];
   return (
@@ -60,12 +70,13 @@ function EmploymentDate({ userId, id, label, initial, kind }: { userId: string; 
       <input
         id={id}
         type="date"
-        defaultValue={initial ?? ""}
+        value={value}
         className={leaveStyles.textInput}
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? `${id}-error` : undefined}
-        onBlur={(event) => {
-          if (event.target.value !== saved) execute({ userId, date: event.target.value });
+        onChange={(event) => setValue(event.target.value)}
+        onBlur={() => {
+          if (value !== savedRef.current) execute({ userId, date: value });
         }}
       />
       {error ? <Form.Error id={`${id}-error`}>{error}</Form.Error> : null}
@@ -110,7 +121,9 @@ export function LeaveSection(props: LeaveSectionProps) {
           {canWrite && props.datesVisible ? (
             <Form onSubmit={(event) => event.preventDefault()}>
               <EmploymentDate userId={userId} id="hireDate" label="입사일" initial={props.hireDate} kind="hire" />
-              <EmploymentDate userId={userId} id="resignationDate" label="퇴직일" initial={props.resignationDate} kind="resignation" />
+              {props.resignationWritable !== false ? (
+                <EmploymentDate userId={userId} id="resignationDate" label="퇴직일" initial={props.resignationDate} kind="resignation" />
+              ) : null}
             </Form>
           ) : null}
           {/* `잔고` 줄 — 사람 상세 위 KvList와 dl을 겹치지 않게(단일 기둥 단언은 main의 dl 하나를 잰다) 라벨 · 값 한 묶음으로. */}

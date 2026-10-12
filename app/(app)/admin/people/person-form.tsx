@@ -8,7 +8,7 @@ import { Button } from "@/ui/button/Button";
 import { Form } from "@/ui/form/Form";
 import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
 import { usePanel } from "@/ui/side-panel/SidePanel";
-import { DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
+import { ArchiveRejectedError, DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
 import styles from "./people.module.css";
 
 export type RoleOption = { id: string; name: string };
@@ -159,7 +159,7 @@ export function PersonDeleteButton({ userId, name }: { userId: string; name: str
       name={name}
       onArchive={async () => {
         const result = await archivePersonAction({ userId });
-        if (result?.serverError) throw new Error(result.serverError);
+        if (result?.serverError) throw new ArchiveRejectedError(result.serverError);
       }}
     />
   );

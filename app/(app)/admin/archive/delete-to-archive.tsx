@@ -10,6 +10,10 @@ import styles from "./archive.module.css";
 // 하나를 공유한다(D-25 모달 컴포넌트 부재 — 두 단계 제출로 확인을 대신
 // 한다). 붉은 버튼을 쓰지 않는다(§7-1 — 위험 행동은 색이 아니라 확인으로
 // 구분한다). 사유 입력 없음(되돌릴 수 있는 행동이다).
+// 06.4 D-6418: 서버가 거절한 사유는 `ArchiveRejectedError`로 받아 싣는다 — 다시 해도 같은 거절이라 「다시 시도」가 헛걸음(휴일 삭제
+// `deleteFailure` 꼴). 일반 `Error`는 기존 문구 그대로.
+export class ArchiveRejectedError extends Error {}
+
 export type DeleteToArchiveProps = {
   /** 확인 문구에 들어갈 대상 이름. */
   name: string;
@@ -38,8 +42,12 @@ export function DeleteToArchive({ name, onArchive, failureMessage }: DeleteToArc
     try {
       await onArchive();
       setConfirming(false);
-    } catch {
-      setError(failureMessage ?? "삭제 실패 · 다시 시도");
+    } catch (caught) {
+      setError(
+        caught instanceof ArchiveRejectedError && caught.message
+          ? `삭제 실패 · ${caught.message}`
+          : (failureMessage ?? "삭제 실패 · 다시 시도"),
+      );
     } finally {
       setPending(false);
     }

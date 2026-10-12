@@ -7,7 +7,9 @@ import { createFixtureUser } from "./fixtures";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
 import { createOrgUnit } from "@/domain/org";
-import { archivePerson } from "@/domain/people";
+import { archivePerson, changePersonRole } from "@/domain/people";
+import { seoulToday } from "@/lib/dates";
+import { addDays } from "@/lib/kst-date";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { isStrict } from "./design-principles";
 import { checkPrinciples } from "./principles-check";
@@ -648,5 +650,88 @@ test.describe("위임 계급의 계급 자리 (06.4 D-6402 · D-6414 · D7~D9)",
     await select.selectOption("e2e-missing-role");
     await expect(page.locator("div:has(> #person-role-change) + p")).toBeVisible();
     await expect(select).toHaveValue(DEFAULT_ROLE_ID);
+  });
+});
+
+async function makeListedAccount(name: string, roleId: string): Promise<{ userId: string; email: string }> {
+  const email = `e2e-admin-cap-${randomUUID()}@example.test`;
+  const { userId } = await createAccount(SYSTEM_VIEWER, { email, name, roleId });
+  return { userId, email };
+}
+
+const ARCHIVE_DELEGATE_MENUS = [
+  { menu: "admin.people", action: "view" },
+  { menu: "admin.people", action: "write" },
+  { menu: "admin.archive", action: "view" },
+  { menu: "admin.archive", action: "write" },
+] as const;
+
+test.describe("삭제 · 퇴직일 칸 상태와 삭제 사유 (06.4 D-6417 · D-6418)", () => {
+  test.describe.configure({ mode: "serial" });
+
+  test("삭제 숨김(D-6417): 위임 계정은 자기 줄 · 상한 밖 줄에 「삭제」가 없고 PM 줄에는 있다 · 관리자는 자기 줄만 없다", async ({ page, browser, baseURL }) => {
+    const delegate = await createDelegatedAccount({ menus: ARCHIVE_DELEGATE_MENUS });
+    const admin = await makeListedAccount("E2E삭제상한밖", SYSADMIN_ROLE_ID);
+    const pm = await makeListedAccount("E2E삭제대상", DEFAULT_ROLE_ID);
+
+    await loginWith(page, delegate);
+    await page.goto("/admin/people");
+    await expect(personRow(page, pm.email).getByRole("button", { name: "삭제" })).toHaveCount(1);
+    await expect(personRow(page, delegate.email).getByRole("button", { name: "삭제" })).toHaveCount(0);
+    await expect(personRow(page, admin.email).getByRole("button", { name: "삭제" })).toHaveCount(0);
+
+    const context = await browser.newContext({ baseURL });
+    const adminPage = await context.newPage();
+    const self = await loginAsAdmin(adminPage);
+    await adminPage.goto("/admin/people");
+    await expect(personRow(adminPage, admin.email).getByRole("button", { name: "삭제" })).toHaveCount(1);
+    await expect(personRow(adminPage, self.email).getByRole("button", { name: "삭제" })).toHaveCount(0);
+    await context.close();
+  });
+
+  test("퇴직일 칸(D-6417): 상한 밖 대상 상세에는 퇴직일 칸이 없고 입사일 칸은 있다 · PM 대상은 둘 다", async ({ page }) => {
+    const delegate = await createDelegatedAccount({ menus: ARCHIVE_DELEGATE_MENUS });
+    const admin = await makeListedAccount("E2E퇴직일상한밖", SYSADMIN_ROLE_ID);
+    const pm = await makeListedAccount("E2E퇴직일대상", DEFAULT_ROLE_ID);
+
+    await loginWith(page, delegate);
+    await page.goto(`/admin/people/${admin.userId}`);
+    await expect(page.locator("#hireDate")).toHaveCount(1);
+    await expect(page.locator("#resignationDate")).toHaveCount(0);
+
+    await page.goto(`/admin/people/${pm.userId}`);
+    await expect(page.locator("#resignationDate")).toHaveCount(1);
+  });
+
+  test("삭제 사유(D-6418): 낡은 화면에서 상한 밖이 된 대상 「삭제」는 서버 사유를 그대로 보이고 줄이 남는다", async ({ page }) => {
+    const delegate = await createDelegatedAccount({ menus: ARCHIVE_DELEGATE_MENUS });
+    const target = await makeListedAccount("E2E낡은삭제", DEFAULT_ROLE_ID);
+
+    await loginWith(page, delegate);
+    await page.goto("/admin/people");
+    const row = personRow(page, target.email);
+    await expect(row.getByRole("button", { name: "삭제" })).toHaveCount(1);
+    await changePersonRole(SYSTEM_VIEWER, target.userId, SYSADMIN_ROLE_ID);
+
+    await row.getByRole("button", { name: "삭제" }).click();
+    await row.getByRole("button", { name: "삭제" }).click();
+    await expect(row.getByText("삭제 실패 · 계급 지정 권한 없음 · 시스템 관리자", { exact: true })).toBeVisible();
+    await expect(row.getByText("보관됨", { exact: true })).toHaveCount(0);
+  });
+
+  test("퇴직일 거부(R2 · D7 규칙): 거부되면 오류 줄과 함께 칸이 저장값으로 돌아온다", async ({ page }) => {
+    const delegate = await createDelegatedAccount({ menus: ARCHIVE_DELEGATE_MENUS });
+    const target = await makeListedAccount("E2E낡은퇴직일", DEFAULT_ROLE_ID);
+
+    await loginWith(page, delegate);
+    await page.goto(`/admin/people/${target.userId}`);
+    const field = page.locator("#resignationDate");
+    await expect(field).toHaveValue("");
+    await changePersonRole(SYSTEM_VIEWER, target.userId, SYSADMIN_ROLE_ID);
+
+    await field.fill(addDays(seoulToday(), 30));
+    await field.blur();
+    await expect(page.locator("#resignationDate-error")).toHaveText("계급 지정 권한 없음 · 시스템 관리자");
+    await expect(field).toHaveValue("");
   });
 });

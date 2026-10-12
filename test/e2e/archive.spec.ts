@@ -2,6 +2,11 @@ import { randomUUID } from "node:crypto";
 import { test, expect } from "@playwright/test";
 import { createFixtureUser, uniqueBusinessNo } from "./fixtures";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { createAccount } from "@/domain/auth/accounts";
+import { archive } from "@/domain/archive";
+import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
+import { TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
+import { findUserById } from "@/repositories/users";
 import { findVendorById, insertVendor, setVendorArchived, setVendorHidden } from "@/repositories/vendors";
 import { loginAsSysadmin } from "./row-actions-helpers";
 
@@ -137,5 +142,31 @@ test.describe("보관함 화면 (ADMN-12)", () => {
     } finally {
       await setVendorHidden(SYSTEM_VIEWER, taker.id, true);
     }
+  });
+
+  // 06.4(D-6404 · D-6406 · N1): 사람 복원 거부 문구는 ` · 복원 불가`로 끝나 토스트의 「마지막 · 앞까지」 자르기가 이름을 남긴다.
+  test("팀장 자리가 그새 찬 사람 복원은 원인을 토스트에 싣고 「복원」을 치운다 (06.4 D-6404 · D-6406)", async ({ page }) => {
+    await loginAsSysadmin(page);
+    const unique = randomUUID().slice(0, 8);
+    const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E복원본부-${unique}` });
+    const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E복원팀-${unique}` });
+    const lead = async (name: string) => {
+      const { userId } = await createAccount(SYSTEM_VIEWER, { email: `e2e-restore-${randomUUID()}@example.test`, name, roleId: TEAM_LEAD_ROLE_ID });
+      await assignTeam(SYSTEM_VIEWER, { userId, teamId: team.id, effectiveFrom: "2020-01-01" });
+      return userId;
+    };
+    const leadName = `E2E복원팀장-${unique}`;
+    const l = await lead(leadName);
+    await archive(SYSTEM_VIEWER, "user", l);
+    const takerName = `E2E자리팀장-${randomUUID().slice(0, 8)}`;
+    await lead(takerName);
+
+    await page.goto("/admin/archive");
+    const row = page.locator("tr", { hasText: leadName }).first();
+    await row.getByRole("button", { name: "복원" }).click();
+
+    await expect(page.getByText(`복원 · 실패 · 팀장 있음 · ${takerName}`, { exact: true })).toBeVisible();
+    await expect(row.getByRole("button", { name: "복원" })).toHaveCount(0);
+    expect((await findUserById(SYSTEM_VIEWER, l))?.archivedAt).not.toBeNull();
   });
 });

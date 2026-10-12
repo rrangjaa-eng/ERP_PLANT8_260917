@@ -3,7 +3,8 @@ import { Fragment } from "react";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
 import { listPeople } from "@/domain/people";
-import { listRoles } from "@/domain/permissions/roles";
+import { listAssignableRoles } from "@/domain/permissions/roles";
+import { GRANT_FORBIDDEN_MESSAGE } from "@/domain/permissions/grant-ceiling";
 import { listOrgUnits, listTeams } from "@/domain/org";
 import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
@@ -35,7 +36,7 @@ export default async function PeoplePage({
 
   const [people, roles, orgUnits, teams, canArchive, canWrite] = await Promise.all([
     listPeople(session.viewer),
-    listRoles(session.viewer),
+    listAssignableRoles(session.viewer),
     listOrgUnits(session.viewer),
     listTeams(session.viewer),
     can(session.viewer, "admin.archive", "write"),
@@ -46,6 +47,8 @@ export default async function PeoplePage({
   // 없다(D-39, DECISIONS.md 2026-09-21). 쓰기 권한이 없으면 제출이 거부될
   // 폼을 그리지 않는다(표시 조건 — 서버 판정은 createAccount가 따로 한다).
   const showForm = newParam === "1" && canWrite;
+  // 06.4(D-6402 · D8): 통과 계급이 없으면 1차 「사람 등록」이 없다 — 낡은 주소로 열린 패널은 막힘 이유를 보인다.
+  const canRegister = canWrite && roles.length > 0;
 
   const orgUnitNameById = new Map(orgUnits.map((org) => [org.id, org.name]));
   const teamOptions = teams.map((team) => ({
@@ -87,7 +90,7 @@ export default async function PeoplePage({
   ];
 
   // DR5 A — 빈 목록이면 머리 1차를 그리지 않고 빈 화면의 「사람 등록」 하나가 등록을 맡는다.
-  const primaryAction = canWrite && people.length > 0 ? { label: "사람 등록", href: NEW_PERSON_HREF } : undefined;
+  const primaryAction = canRegister && people.length > 0 ? { label: "사람 등록", href: NEW_PERSON_HREF } : undefined;
 
   return (
     <ListScreen
@@ -96,7 +99,11 @@ export default async function PeoplePage({
       panel={
         showForm ? (
           <SidePanel title="사람 등록" closeHref="/admin/people">
-            <PersonForm roles={roles} teams={teamOptions} />
+            <PersonForm
+              roles={roles}
+              teams={teamOptions}
+              noRoleReason={roles.length === 0 ? GRANT_FORBIDDEN_MESSAGE : null}
+            />
           </SidePanel>
         ) : null
       }
@@ -104,7 +111,7 @@ export default async function PeoplePage({
       {people.length === 0 ? (
         <ListEmpty
           message="등록된 사람이 없습니다"
-          action={canWrite ? { label: "사람 등록", href: NEW_PERSON_HREF } : undefined}
+          action={canRegister ? { label: "사람 등록", href: NEW_PERSON_HREF } : undefined}
         />
       ) : textColumns.length === 0 ? (
         // 사람 · 계급 · 팀 정보가 모두 꺼진 계급(새 계급 기본값) — 보는 사람이 바꿀 수 없는 잠김이라 행동이 없다.

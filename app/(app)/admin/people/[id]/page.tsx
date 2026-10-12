@@ -2,7 +2,8 @@ import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
 import { getPerson } from "@/domain/people";
-import { listRoles } from "@/domain/permissions/roles";
+import { assignableRoleIds, listAssignableRoles } from "@/domain/permissions/roles";
+import { GRANT_FORBIDDEN_MESSAGE } from "@/domain/permissions/grant-ceiling";
 import { listOrgUnits, listTeams } from "@/domain/org";
 import { KvList } from "@/ui/kv-list/KvList";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
@@ -55,7 +56,7 @@ export default async function PersonDetailPage({
   const { id } = await params;
   const [detail, roles, orgUnits, teams] = await Promise.all([
     getPerson(session.viewer, id),
-    listRoles(session.viewer),
+    listAssignableRoles(session.viewer),
     listOrgUnits(session.viewer),
     listTeams(session.viewer),
   ]);
@@ -83,6 +84,13 @@ export default async function PersonDetailPage({
     listLeaveAdjustmentsForUser(session.viewer, { userId: id, fiscalYear: leaveYear }),
     can(session.viewer, "admin.people", "write"),
   ]);
+  // 06.4(D-6414 · D4 · D6) 계급 변경 자리 상태표(서버 한 곳): 쓰기 없음 · 자기 상세 · 계급 노출 꺼짐 → 줄 없음 /
+  // C 상한 밖 · 통과 0 → 이유 한 줄 / 그 밖 → select. 노출이 꺼지면 DTO에 roleId 키가 없다.
+  const showRoleChange = canWrite && session.viewer.id !== id && "roleId" in detail.person;
+  const currentRoleId = detail.person.roleId ?? null;
+  const targetOutOfCeiling =
+    currentRoleId !== null && !(await assignableRoleIds(session.viewer, [currentRoleId])).has(currentRoleId);
+  const lockedReason = targetOutOfCeiling || roles.length === 0 ? GRANT_FORBIDDEN_MESSAGE : null;
   const balanceLines = balance.annual
     ? formatBalanceLines({ annual: balance.annual, monthly: balance.monthly ?? null, resignation: balance.resignation ?? null }).map((line) => line.text)
     : [];
@@ -111,7 +119,9 @@ export default async function PersonDetailPage({
           ]}
         />
 
-        <PersonRoleChange userId={detail.person.id} roles={roles} currentRoleId={detail.person.roleId} />
+        {showRoleChange ? (
+          <PersonRoleChange userId={id} roles={roles} currentRoleId={currentRoleId} lockedReason={lockedReason} />
+        ) : null}
       </div>
 
       <LeaveSection

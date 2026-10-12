@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
@@ -11,7 +12,7 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { isStrict } from "./design-principles";
 import { checkPrinciples } from "./principles-check";
 import { collapsedRowOf, loginAsAdmin, personRow, registerPerson, statusCell } from "./people-list-helpers";
-import { makeDuplicateLeads } from "./admin-cap-fixtures";
+import { archiveRolesByPrefix, createDelegatedAccount, makeDuplicateLeads } from "./admin-cap-fixtures";
 
 // MAST-02: 사람 등록 화면에서 이름·이메일·계급·팀·발령일을 채워 등록하면 같은
 // 화면에서 계정과 초기 비밀번호가 함께 발급되고, 그 계정으로 실제 로그인이
@@ -517,5 +518,135 @@ test.describe("조직 화면 팀장 · 책임자 중복 (06.4 D-6405 · D-6413)"
     const after = orgRow(page, world.teamName);
     await expect(after.getByText(/^팀장 \d+명$/)).toHaveCount(0);
     await expect(after.getByRole("link")).toHaveCount(0);
+  });
+});
+
+const GRANT_FORBIDDEN = "계급 지정 권한 없음 · 시스템 관리자";
+// E · F(통과 계급 0 · 1 세계)의 칸 — 같은 집합이라 서로를 줄 수 있으므로 각 사례가 상대 접두 계급을 보관한다.
+const NARROW_INFO_ITEMS = ["person.value", "role.value", "team.value"] as const;
+
+async function loginWith(page: Page, account: { email: string; password: string }): Promise<void> {
+  await page.goto("/login");
+  await page.getByLabel("이메일").fill(account.email);
+  await page.getByLabel("비밀번호").fill(account.password);
+  await page.getByRole("button", { name: "로그인" }).click();
+  await expect(page).toHaveURL(/\/account$/);
+}
+
+async function makeAccount(name: string, roleId: string): Promise<string> {
+  const { userId } = await createAccount(SYSTEM_VIEWER, { email: `e2e-admin-cap-${randomUUID()}@example.test`, name, roleId });
+  return userId;
+}
+
+test.describe("위임 계급의 계급 자리 (06.4 D-6402 · D-6414 · D7~D9)", () => {
+  test.describe.configure({ mode: "serial" });
+
+  test("등록: 위임 계정의 계급 select에 기획 PM은 있고 시스템 관리자는 없다", async ({ page }) => {
+    const delegate = await createDelegatedAccount();
+    await loginWith(page, delegate);
+    await page.goto("/admin/people");
+    await page.getByRole("link", { name: "사람 등록" }).first().click();
+    await expect(page.locator("#roleId")).toBeVisible();
+    const options = await page.locator("#roleId option").allTextContents();
+    expect(options).toContain("기획 PM");
+    expect(options).not.toContain("시스템 관리자");
+  });
+
+  test("등록 0(D8): 통과 계급이 없으면 「사람 등록」 링크 0 · 낡은 주소 패널은 `—` · 막힘 이유 · 상세는 이유 한 줄", async ({ page }) => {
+    const none = await createDelegatedAccount({
+      copyFrom: [],
+      viewScope: "own",
+      workScope: "team",
+      rolePrefix: "E2E위임-none-",
+      infoItems: NARROW_INFO_ITEMS,
+    });
+    const peer = await makeAccount("E2E같은계급", none.roleId);
+    await archiveRolesByPrefix("E2E위임-single-", { keep: "" });
+    // 자기 계급은 상한상 늘 통과 — 보관해야 목록에서 빠진다(보관된 계급도 권한은 남는다, O2). 앞 실행이 남긴 같은 꼴도 함께.
+    await archiveRolesByPrefix("E2E위임-none-", { keep: "" });
+
+    await loginWith(page, none);
+    await page.goto("/admin/people");
+    await expect(page.getByRole("heading", { name: "사람" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "사람 등록" })).toHaveCount(0);
+
+    await page.goto("/admin/people?new=1");
+    const options = page.locator("#roleId option");
+    await expect(options).toHaveCount(1);
+    await expect(options.first()).toHaveText("—");
+    await expect(page.locator("#person-form").getByText(GRANT_FORBIDDEN, { exact: true })).toBeVisible();
+    await expect(page.locator("#person-form").getByRole("button", { name: "사람 등록" })).toHaveAttribute("aria-disabled", "true");
+
+    await page.goto(`/admin/people/${peer}`);
+    await expect(page.getByText(GRANT_FORBIDDEN, { exact: true })).toBeVisible();
+    await expect(page.locator("#person-role-change")).toHaveCount(0);
+  });
+
+  test("등록 1(D9): 통과 계급이 하나면 미리 골라져 있다", async ({ page }) => {
+    const single = await createDelegatedAccount({
+      copyFrom: [],
+      viewScope: "own",
+      workScope: "team",
+      rolePrefix: "E2E위임-single-",
+      infoItems: NARROW_INFO_ITEMS,
+    });
+    await archiveRolesByPrefix("E2E위임-single-", { keep: single.roleId });
+    await archiveRolesByPrefix("E2E위임-none-", { keep: "" });
+
+    await loginWith(page, single);
+    await page.goto("/admin/people?new=1");
+    await expect(page.locator("#roleId")).toHaveValue(single.roleId);
+    await expect(page.locator('#roleId option:not([value=""])')).toHaveCount(1);
+  });
+
+  test("상세 잠김(D4 · D5): 상한 밖 대상은 select 없이 이유 한 줄(보조 글자색) · KvList가 계급을 보인다", async ({ page }) => {
+    const delegate = await createDelegatedAccount();
+    const admin = await makeAccount("E2E상한밖관리자", SYSADMIN_ROLE_ID);
+    await loginWith(page, delegate);
+    await page.goto(`/admin/people/${admin}`);
+    await expect(page.locator("#person-role-change")).toHaveCount(0);
+    const locked = page.getByText(GRANT_FORBIDDEN, { exact: true });
+    await expect(locked).toBeVisible();
+    expect(await locked.evaluate((element) => getComputedStyle(element).color)).toBe(await tokenColor(page, "--text-muted"));
+    await expect(page.locator("dd").filter({ hasText: /^시스템 관리자$/ })).toBeVisible();
+  });
+
+  test("상세 줄 없음(D6): 자기 상세 · 쓰기 없는 계정에는 계급 변경 줄이 없다", async ({ page, browser, baseURL }) => {
+    const delegate = await createDelegatedAccount();
+    await loginWith(page, delegate);
+    await page.goto(`/admin/people/${delegate.userId}`);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await expect(page.locator("#person-role-change")).toHaveCount(0);
+    await expect(page.getByText(GRANT_FORBIDDEN, { exact: true })).toHaveCount(0);
+
+    const viewer = await createDelegatedAccount({ menus: [{ menu: "admin.people", action: "view" }] });
+    const pm = await makeAccount("E2E보기대상", DEFAULT_ROLE_ID);
+    const context = await browser.newContext({ baseURL });
+    const viewerPage = await context.newPage();
+    await loginWith(viewerPage, viewer);
+    await viewerPage.goto(`/admin/people/${pm}`);
+    await expect(viewerPage.getByRole("heading", { level: 1 })).toBeVisible();
+    await expect(viewerPage.locator("#person-role-change")).toHaveCount(0);
+    await expect(viewerPage.getByText(GRANT_FORBIDDEN, { exact: true })).toHaveCount(0);
+    await context.close();
+  });
+
+  test("상세 통과(D7): 통과 계급만 · 지금 계급 선택 · 거부되면 저장값으로 돌아온다", async ({ page }) => {
+    const delegate = await createDelegatedAccount();
+    const pm = await makeAccount("E2E통과대상", DEFAULT_ROLE_ID);
+    await loginWith(page, delegate);
+    await page.goto(`/admin/people/${pm}`);
+    const select = page.locator("#person-role-change");
+    await expect(select).toHaveValue(DEFAULT_ROLE_ID);
+    expect(await select.locator("option").allTextContents()).not.toContain("시스템 관리자");
+    await select.evaluate((element: HTMLSelectElement) => {
+      const option = document.createElement("option");
+      option.value = "e2e-missing-role";
+      option.textContent = "없는 계급";
+      element.append(option);
+    });
+    await select.selectOption("e2e-missing-role");
+    await expect(page.locator("div:has(> #person-role-change) + p")).toBeVisible();
+    await expect(select).toHaveValue(DEFAULT_ROLE_ID);
   });
 });

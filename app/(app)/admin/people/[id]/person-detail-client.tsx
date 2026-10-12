@@ -1,9 +1,11 @@
 "use client";
 
+import { useRef, useState } from "react";
 import { useAction } from "next-safe-action/hooks";
 import { changePersonRoleAction, assignTeamAction, cancelAssignmentAction } from "../actions";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import { HistoryList, type HistoryEntry } from "@/ui/history-list/HistoryList";
+import { Form } from "@/ui/form/Form";
 import styles from "../people.module.css";
 
 function errorMessageOf(result: { serverError?: unknown; validationErrors?: unknown }): string | null {
@@ -19,17 +21,34 @@ export function PersonRoleChange({
   userId,
   roles,
   currentRoleId,
+  lockedReason,
 }: {
   userId: string;
   roles: { id: string; name: string }[];
   currentRoleId: string | null;
+  lockedReason?: string | null;
 }) {
-  const { execute: executeRoleChange, result: roleResult } = useAction(changePersonRoleAction);
-
-  const roleError = errorMessageOf(roleResult);
   // 보관된 계급은 roles에서 빠진다 — 맞는 항목이 없으면 브라우저가 첫 계급을
   // 골라 현재 계급처럼 보이므로 빈 값(「계급 선택」)에서 시작한다.
   const hasCurrentRole = roles.some((role) => role.id === currentRoleId);
+  const initial = hasCurrentRole ? (currentRoleId ?? "") : "";
+  // 06.4(D-6414 · D4 · D5 · D7): 잠기면 이유 한 줄만, 거부되면 저장값으로 — 저장 중 바꾸기는 무시(포커스 유지)
+  const savedRef = useRef(initial);
+  const [value, setValue] = useState(initial);
+  const {
+    execute: executeRoleChange,
+    result: roleResult,
+    isExecuting,
+  } = useAction(changePersonRoleAction, {
+    onSuccess: ({ input }) => {
+      savedRef.current = input.roleId;
+    },
+    onError: () => setValue(savedRef.current),
+  });
+
+  if (lockedReason) return <Form.Hint>{lockedReason}</Form.Hint>;
+
+  const roleError = errorMessageOf(roleResult);
 
   return (
     <>
@@ -38,8 +57,13 @@ export function PersonRoleChange({
         <select
           id="person-role-change"
           className={styles.select}
-          defaultValue={hasCurrentRole ? (currentRoleId ?? "") : ""}
-          onChange={(event) => executeRoleChange({ userId, roleId: event.target.value })}
+          value={value}
+          aria-busy={isExecuting || undefined}
+          onChange={(event) => {
+            if (isExecuting) return;
+            setValue(event.target.value);
+            executeRoleChange({ userId, roleId: event.target.value });
+          }}
         >
           {hasCurrentRole ? null : (
             <option value="" disabled>

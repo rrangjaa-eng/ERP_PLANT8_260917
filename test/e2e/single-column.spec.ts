@@ -1,4 +1,7 @@
+import { randomUUID } from "node:crypto";
 import { test, expect, type Page, type Locator } from "@playwright/test";
+import { createAccount } from "@/domain/auth/accounts";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { createFixtureUser } from "./fixtures";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 
@@ -90,8 +93,13 @@ test.describe("단일 기둥 최대 폭 — 관리자 화면·폼 전면 적용 
     page,
   }) => {
     await loginAs(page, SYSADMIN_ROLE_ID);
-    await page.goto("/admin/people");
-    await page.getByRole("link", { name: "상세" }).first().click();
+    // 06.4 D6: 자기 상세에는 계급 변경 줄이 없다 — 다른 사람 상세를 연다
+    const { userId } = await createAccount(SYSTEM_VIEWER, {
+      email: `e2e-single-column-${randomUUID()}@example.test`,
+      name: "단일기둥대상",
+      roleId: DEFAULT_ROLE_ID,
+    });
+    await page.goto(`/admin/people/${userId}`);
     await expect(page).toHaveURL(/\/admin\/people\/.+/);
     await expectSingleColumn(page, page.locator("main dl"));
     // select 자체는 PC 라벨 열 뒤 200px이다(§6-3 칸 폭, form-label-section-gap.spec.ts) — 기둥은 그 묶음이 잡는다.

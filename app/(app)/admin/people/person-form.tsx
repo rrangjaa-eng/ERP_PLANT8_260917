@@ -23,7 +23,15 @@ function getStringField(formData: FormData, key: string): string {
 // 패널 안 그 자리에 한 번 보여준다(T-03-29) — 클라이언트 상태에만 담고 URL·로컬 저장소에 넣지 않는다.
 // 사용자 답 Q3 A 「패널에 남음」(R9 D의 예외): 사람 상세로 이동하지 않고 결과의 「사람 등록」으로 같은 패널에서 이어서 입력한다.
 // §6-1: page.tsx가 ?new=1일 때만 이 패널을 렌더한다 — 기본 진입에는 없다.
-export function PersonForm({ roles, teams }: { roles: RoleOption[]; teams: TeamOption[] }) {
+export function PersonForm({
+  roles,
+  teams,
+  noRoleReason,
+}: {
+  roles: RoleOption[];
+  teams: TeamOption[];
+  noRoleReason?: string | null;
+}) {
   const panel = usePanel();
   const panelRef = useRef<PanelFormHandle>(null);
   const continueRef = useRef(false);
@@ -98,6 +106,7 @@ export function PersonForm({ roles, teams }: { roles: RoleOption[]; teams: TeamO
       onSubmit={handleSubmit}
       pending={isExecuting}
       reason={roleError ?? result.serverError ?? null}
+      blockedReason={noRoleReason ?? undefined}
     >
       <TextField id="name" name="name" label="이름" required error={nameError} />
       <TextField id="email" name="email" label="이메일" type="email" required error={emailError} />
@@ -108,12 +117,13 @@ export function PersonForm({ roles, teams }: { roles: RoleOption[]; teams: TeamO
           id="roleId"
           name="roleId"
           required
-          defaultValue=""
+          // 06.4(D-6402 · D8 · D9): 선택지는 서버가 계산한 통과 계급만 — 숨김은 UX, 서버 거부가 관문. 없으면 막힘 이유, 하나면 미리 선택
+          defaultValue={roles.length === 1 ? roles[0]?.id : ""}
           aria-invalid={roleError ? true : undefined}
           aria-describedby={roleError ? "roleId-error" : undefined}
         >
           <option value="" disabled>
-            계급 선택
+            {roles.length === 0 ? "—" : "계급 선택"}
           </option>
           {roles.map((role) => (
             <option key={role.id} value={role.id}>

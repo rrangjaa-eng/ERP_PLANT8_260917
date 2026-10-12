@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { LastAdminError } from "@/domain/permissions/last-admin";
 import { RoleGrantForbiddenError } from "@/domain/permissions/grant-ceiling";
@@ -94,7 +94,7 @@ async function resignationOf(userId: string): Promise<string | null> {
 }
 
 function sessionSpy() {
-  return vi.fn((_viewer: Viewer, _userId: string) => Promise.resolve());
+  return vi.fn(() => Promise.resolve());
 }
 
 describe("사람 보관 두 경로 마지막 관리자(06.4 D-6403 · D-6412)", () => {

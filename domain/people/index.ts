@@ -288,11 +288,16 @@ export async function registerPerson(
       // 있는 사람이 없다.
       const archive = deps?.archive ?? defaultArchive;
       await archive(SYSTEM_VIEWER, "user", userId, {
-        recordAction: async (v, entry) =>
-          (deps?.recordAction ?? defaultRecordAction)(v, {
-            ...entry,
-            detail: { reason: "register_person_rollback", requestedBy: viewer.id },
-          }),
+        // 06.4: 보관기가 tx로 로그를 쓴다 — 세 번째 인자를 버리지 않는다.
+        recordAction: async (v, entry, options) =>
+          (deps?.recordAction ?? defaultRecordAction)(
+            v,
+            {
+              ...entry,
+              detail: { reason: "register_person_rollback", requestedBy: viewer.id },
+            },
+            options,
+          ),
       });
       if (error instanceof SeatTakenError) throw error;
       throw new UserFacingError(
@@ -309,11 +314,16 @@ export async function registerPerson(
       // (b) 잔여 창 — 발령 실패와 같은 보상(입사일 없는 새 계정이 조용히 남지 않는다).
       const archive = deps?.archive ?? defaultArchive;
       await archive(SYSTEM_VIEWER, "user", userId, {
-        recordAction: async (v, entry) =>
-          (deps?.recordAction ?? defaultRecordAction)(v, {
-            ...entry,
-            detail: { reason: "register_person_rollback", requestedBy: viewer.id },
-          }),
+        // 06.4: 보관기가 tx로 로그를 쓴다 — 세 번째 인자를 버리지 않는다.
+        recordAction: async (v, entry, options) =>
+          (deps?.recordAction ?? defaultRecordAction)(
+            v,
+            {
+              ...entry,
+              detail: { reason: "register_person_rollback", requestedBy: viewer.id },
+            },
+            options,
+          ),
       });
       throw new UserFacingError(
         "입사일 저장 실패 · 계정은 발급됨 — 보관함에서 복원 후 사람 상세에서 입사일 넣기",
@@ -425,7 +435,7 @@ function isCalendarDate(value: string): boolean {
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
-export type EmploymentDateDeps = { can: typeof defaultCan } & TxLogDeps;
+export type EmploymentDateDeps = { can: typeof defaultCan; now: () => Date; visible: typeof defaultVisible } & TxLogDeps;
 
 async function setEmploymentDate(
   viewer: Viewer,
@@ -453,8 +463,37 @@ async function setEmploymentDate(
 
   // 날짜는 연차 발생 일수 · 결재자 판정을 바꾼다 — 값과 행동 로그는 같은 tx(연차 조정과 같은 규칙, /review).
   const gate = await loadActionLogGate();
+  // 잠금 중 노출 판정이 풀에서 따로 빌리지 않게 tx 전에 정한다(06.4-02와 같은 규칙).
+  const today = seoulTodayOf(deps);
+  const showNames = field === "resignation_date" ? await (deps?.visible ?? defaultVisible)(viewer, "person.value") : false;
   try {
     await withTransaction(async (tx) => {
+      // 06.4(D-6411 · O3 · D-6412 · D-6404 퇴직일 진입점 · D-6415 — eng E2 · Codex B1 · 재검토 R4): 퇴직일 분기는 값과 무관하게
+      // 잠금 → 재조회 → 대상 계급 상한 → (값이 있으면) 마지막 관리자 → 자리 구간(늘어난 날짜만). 퇴직일을 지우거나 늦춰 구간이
+      // 늘어나는 사람은 260907 재개와 같은 자리 검사를 받는다(`O: server/src/people-rules.ts:68-78` `rejoinSeatWhy`, 문구 :75 ·
+      // 재개 라우트 `people.ts:1155` 인덱스 충돌 409 `:1258-1264`). O3 사용자 확정(2026-10-11 카드): 마지막 재직 관리자에게는
+      // 어떤 날짜의 퇴직일도 넣지 않는다 — 미래 날짜는 시간 경과로 0명이 되는 시한폭탄(RESEARCH Pitfall 7).
+      if (field === "resignation_date") {
+        await lockSeatKeys(viewer, { personIds: [userId], admin: true }, tx);
+        const fresh = await repoFindUserById(viewer, userId, tx);
+        if (!fresh) throw new UserNotFoundError("사람 찾을 수 없음");
+        // K-R1 사용자 확정(2026-10-11 카드 「막기」) · D-6411: 대상 계급 C가 내 상한 밖이면 퇴직일을 넣지도 지우지도 못한다.
+        await assertCanGrantRoles(viewer, [fresh.roleId], tx);
+        if (value !== null) await assertNotLastAdmin(viewer, { userId, asOf: today }, tx);
+        if (fresh.roleId !== null) {
+          // 조건 분기 없이 늘 계산 — newSeats가 늘어난 날짜만 돌려주므로 당기기 · 같은 값은 빈 결과로 잠금 · 쿼리 없이 지나간다.
+          const occupied = await listOccupiedTeams(viewer, userId, today, tx);
+          const seats = newSeats({
+            roleBefore: fresh.roleId,
+            roleAfter: fresh.roleId,
+            employedBefore: fresh,
+            employedAfter: { archivedAt: fresh.archivedAt, resignationDate: value },
+            occupiedBefore: occupied,
+            occupiedAfter: occupied,
+          });
+          await assertSeatsFree(viewer, { userId, roleId: fresh.roleId, seats, today, showNames }, tx);
+        }
+      }
       if (field === "hire_date") await repoUpdateUserHireDate(viewer, userId, value, tx);
       else await repoUpdateUserResignationDate(viewer, userId, value, tx);
       await recordActionInTx(

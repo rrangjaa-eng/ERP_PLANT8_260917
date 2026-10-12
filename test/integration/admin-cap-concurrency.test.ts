@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { db } from "@/db/client";
+import { db, pool } from "@/db/client";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { ForbiddenError, setPermissionCell } from "@/domain/permissions/matrix";
 import { LastAdminError } from "@/domain/permissions/last-admin";
-import { changePersonRole } from "@/domain/people";
+import { changePersonRole, setResignationDate } from "@/domain/people";
+import { archive, restore } from "@/domain/archive";
 import { assignTeam } from "@/domain/org";
 import { SeatTakenError } from "@/domain/people/seat-rules";
 import { findPermission } from "@/repositories/permissions";
@@ -202,5 +203,133 @@ describe("자리 · 관리자 경합(06.4 D-6408 · 성공 기준 5)", () => {
 
     expect(loserOf(await race())).toBeInstanceOf(SeatTakenError);
     expect(await teamLeadsOf(t3)).toEqual([z.id]);
+  });
+});
+
+// 06.4-03(D-6408 · 성공 기준 5): (d) 사람 보관 ∥ 권한표 관리자 칸 끄기 — 관리자 키 (e) 퇴직일 지우기 ∥ 같은 팀 새 팀장 — 서로 다른
+// 사람 키 뒤 관리자 키(퇴직일 분기는 값과 무관하게 관리자 키를 잡는다) (f) 사람 복원 ∥ 발령 — 관리자 키 없이 팀 키. 새 코드 없이
+// 06.4-03 Task 1 · 2 배선의 증명이다.
+
+// (d) 관리자는 A(시스템 관리자 계급) · P(커스텀 관리자 계급 B)뿐 — 행위자 X는 퇴직일이 지나 수에 안 든다.
+async function archiveVsCellWorld() {
+  const x = await makeAdmin("관리자 X");
+  await updateUserResignationDate(SYSTEM_VIEWER, x.id, "2026-09-01");
+  const a = await makeAdmin("관리자 A");
+  const roleB = await makeAdminRole("관리자급 B");
+  await makePerson("관리자 P", roleB, null);
+  const race = () =>
+    Promise.allSettled([archive(x, "user", a.id, deps), setPermissionCell(x, off(roleB), deps)]);
+  return { race };
+}
+
+// (e) T의 지난 팀장 L(퇴직일 2026-09-01) · T 소속 PM X.
+async function clearVsPromoteWorld() {
+  const admin = await makeAdmin("관리자");
+  const { teamId } = await makeOrgTeam();
+  const l = await makeSeated(uniqueName("팀장L"), TEAM_LEAD_ROLE_ID, teamId);
+  await updateUserResignationDate(SYSTEM_VIEWER, l.id, "2026-09-01");
+  const x = await makeSeated(uniqueName("PM X"), DEFAULT_ROLE_ID, teamId);
+  const race = () =>
+    Promise.allSettled([setResignationDate(admin, l.id, null, deps), changePersonRole(admin, x.id, TEAM_LEAD_ROLE_ID, deps)]);
+  return { teamId, race };
+}
+
+// (f) T의 보관된 팀장 L · 팀 없는 팀장 Z.
+async function restoreVsAssignWorld() {
+  const admin = await makeAdmin("관리자");
+  const { teamId } = await makeOrgTeam();
+  const l = await makeSeated(uniqueName("팀장L"), TEAM_LEAD_ROLE_ID, teamId);
+  await archive(SYSTEM_VIEWER, "user", l.id, deps);
+  const z = await makeSeated(uniqueName("팀장Z"), TEAM_LEAD_ROLE_ID, null);
+  const race = async (): Promise<PromiseSettledResult<void>[]> => {
+    const [restored, assigned] = await Promise.allSettled([
+      restore(admin, "user", l.id, deps),
+      assignTeam(admin, { userId: z.id, teamId, effectiveFrom: "2026-09-01" }, deps),
+    ]);
+    const restoredVoid: PromiseSettledResult<void> =
+      restored.status === "fulfilled" ? { status: "fulfilled", value: undefined } : restored;
+    return [restoredVoid, assigned];
+  };
+  return { teamId, race };
+}
+
+describe("보관 · 퇴직일 · 복원 경합 · 풀 5(06.4 D-6408 · 성공 기준 5)", () => {
+  it("(d) 관리자 키를 쥔 동안 사람 보관(A) ∥ 관리자 칸 끄기(B)가 둘 다 기다리고, 풀면 하나만 · 패자는 마지막 관리자", async () => {
+    const { race } = await archiveVsCellWorld();
+
+    const { waiting, results } = await heldRace(ADMIN_SEAT_LOCK_KEY, race);
+
+    expect(waiting).toBe(2);
+    expect(loserOf(results)).toBeInstanceOf(LastAdminError);
+    expect(await countActiveAdmins(SYSTEM_VIEWER, { asOf: "2026-09-18" })).toBe(1);
+  });
+
+  it("(d) 스모크 — 홀더 없이 보관 ∥ 칸 끄기도 하나만", async () => {
+    const { race } = await archiveVsCellWorld();
+
+    expect(loserOf(await race())).toBeInstanceOf(LastAdminError);
+    expect(await countActiveAdmins(SYSTEM_VIEWER, { asOf: "2026-09-18" })).toBe(1);
+  });
+
+  it("(e) 관리자 키를 쥔 동안 퇴직일 지우기(L) ∥ 새 팀장(X)이 둘 다 기다리고, 풀면 하나만 · T 팀장 하나", async () => {
+    const { teamId, race } = await clearVsPromoteWorld();
+
+    const { waiting, results } = await heldRace(ADMIN_SEAT_LOCK_KEY, race);
+
+    expect(waiting).toBe(2);
+    expect(loserOf(results)).toBeInstanceOf(SeatTakenError);
+    expect(await teamLeadsOf(teamId)).toHaveLength(1);
+  });
+
+  it("(e) 스모크 — 홀더 없이 퇴직일 지우기 ∥ 새 팀장도 하나만", async () => {
+    const { teamId, race } = await clearVsPromoteWorld();
+
+    expect(loserOf(await race())).toBeInstanceOf(SeatTakenError);
+    expect(await teamLeadsOf(teamId)).toHaveLength(1);
+  });
+
+  it("(f) 팀 키를 쥔 동안 사람 복원(L) ∥ 발령(Z → T)이 둘 다 기다리고, 풀면 하나만 · T 팀장 하나(관리자 키 없는 경로)", async () => {
+    const { teamId, race } = await restoreVsAssignWorld();
+
+    const { waiting, results } = await heldRace("seat:team:" + teamId, race);
+
+    expect(waiting).toBe(2);
+    expect(loserOf(results)).toBeInstanceOf(SeatTakenError);
+    expect(await teamLeadsOf(teamId)).toHaveLength(1);
+  });
+
+  it("(f) 스모크 — 홀더 없이 복원 ∥ 발령도 하나만", async () => {
+    const { teamId, race } = await restoreVsAssignWorld();
+
+    expect(loserOf(await race())).toBeInstanceOf(SeatTakenError);
+    expect(await teamLeadsOf(teamId)).toHaveLength(1);
+  });
+
+  it("풀 5에서 보관 · 계급 변경 · 발령 · 퇴직일 각 둘(동시 8건)이 교착 · 시간 초과 없이 끝난다", { timeout: 15_000 }, async () => {
+    expect(pool.options.max).toBe(5);
+    const admin = await makeAdmin("관리자");
+    const pm = () => makeSeated(uniqueName("PM"), DEFAULT_ROLE_ID, null);
+    const [p1, p2, r1, r2] = [await pm(), await pm(), await pm(), await pm()];
+    const t1 = (await makeOrgTeam()).teamId;
+    const t2 = (await makeOrgTeam()).teamId;
+    const t3 = (await makeOrgTeam()).teamId;
+    const t4 = (await makeOrgTeam()).teamId;
+    const x1 = await makeSeated(uniqueName("PM X1"), DEFAULT_ROLE_ID, t1);
+    const x2 = await makeSeated(uniqueName("PM X2"), DEFAULT_ROLE_ID, t2);
+    const z1 = await makeSeated(uniqueName("팀장Z1"), TEAM_LEAD_ROLE_ID, null);
+    const z2 = await makeSeated(uniqueName("팀장Z2"), TEAM_LEAD_ROLE_ID, null);
+
+    const results = await Promise.allSettled([
+      archive(admin, "user", p1.id, deps),
+      archive(admin, "user", p2.id, deps),
+      changePersonRole(admin, x1.id, TEAM_LEAD_ROLE_ID, deps),
+      changePersonRole(admin, x2.id, TEAM_LEAD_ROLE_ID, deps),
+      assignTeam(admin, { userId: z1.id, teamId: t3, effectiveFrom: "2026-09-01" }, deps),
+      assignTeam(admin, { userId: z2.id, teamId: t4, effectiveFrom: "2026-09-01" }, deps),
+      setResignationDate(admin, r1.id, "2026-12-31", deps),
+      setResignationDate(admin, r2.id, "2026-12-31", deps),
+    ]);
+
+    expect(results.map((result) => result.status)).toEqual(Array<string>(8).fill("fulfilled"));
   });
 });

@@ -59,15 +59,15 @@ export async function updateUserRole(viewer: Viewer, userId: string, roleId: str
 }
 
 // 보관·복원 둘 다 조건부 UPDATE로 멱등·경합 안전을 확보한다(repositories/roles.ts와 같은 패턴).
-export async function setUserArchived(viewer: Viewer, userId: string, value: boolean): Promise<boolean> {
+export async function setUserArchived(viewer: Viewer, userId: string, value: boolean, tx: DbOrTx = db): Promise<boolean> {
   // 조건부 갱신이 실제로 바꾼 행이 있으면 참 — 범용 복원이 「이미 복원됨」 · 로그를 이 결과로 정한다(PR #149).
   const rows = value
-    ? await db
+    ? await tx
         .update(users)
         .set({ archivedAt: new Date(), archivedBy: viewer.id })
         .where(and(eq(users.id, userId), isNull(users.archivedAt)))
         .returning({ id: users.id })
-    : await db
+    : await tx
         .update(users)
         .set({ archivedAt: null, archivedBy: null })
         .where(and(eq(users.id, userId), isNotNull(users.archivedAt)))

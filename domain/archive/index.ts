@@ -21,6 +21,7 @@ import { restoreQuoteLine } from "@/domain/quotes/lines";
 import { canViewReserves, restoreReserve } from "@/domain/reserves";
 import { HOLIDAYS_MENU, restoreHoliday } from "@/domain/holidays/admin";
 import { toKstDate } from "@/domain/holidays/business-day";
+import { restoreUser } from "@/domain/people/restore";
 
 // ADMN-12: "지우지 않는다" — archived_at/archived_by 규약의 유일한 진입점.
 // 물리 삭제 문장은 이 리포 어디에도 넣지 않는다 — DB 레벨 권한 회수(REVOKE)는
@@ -36,6 +37,8 @@ export class VendorBusinessNoTakenError extends UserFacingError {}
 export type ArchiveDeps = {
   can: typeof defaultCan;
   recordAction: typeof defaultRecordAction;
+  now: () => Date;
+  visible: typeof visible;
 };
 
 const ARCHIVE_MENU = "admin.archive";
@@ -100,6 +103,8 @@ const DOMAIN_RESTORERS: Partial<Record<string, (viewer: Viewer, id: string, deps
   reserve_entry: (viewer, id, deps) => restoreReserve(viewer, id, { recordAction: deps?.recordAction }),
   // quick 261001-hfi(ADMN-12) — 공휴일 복원은 달력 잠금 · admin.holidays 쓰기 · 소급 금지 · 재계산 · 로그를 한 트랜잭션에서.
   holiday: (viewer, id, deps) => restoreHoliday(viewer, id, { recordAction: deps?.recordAction }),
+  // 06.4(D-6406): 사람 복원은 사람 쓰기 · 상한 · 자리 재검사를 한 tx에서.
+  user: (viewer, id, deps) => restoreUser(viewer, id, { can: deps?.can, recordAction: deps?.recordAction, now: deps?.now, visible: deps?.visible }),
 };
 
 export type RestoreResult = { restored: boolean };

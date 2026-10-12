@@ -33,6 +33,7 @@ export class ProtectedRowError extends UserFacingError {}
 export class ArchivableRowNotFoundError extends UserFacingError {}
 // 같은 숫자 사업자번호의 살아 있는 거래처가 있어 거래처를 복원할 수 없음 — 화면이 원인을 토스트에 싣도록 따로 둔다.
 export class VendorBusinessNoTakenError extends UserFacingError {}
+export class SelfArchiveError extends UserFacingError {}
 
 export type ArchiveDeps = {
   can: typeof defaultCan;

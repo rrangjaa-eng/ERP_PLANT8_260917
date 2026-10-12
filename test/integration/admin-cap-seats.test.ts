@@ -3,8 +3,9 @@ import { describe, expect, it, vi } from "vitest";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { createAccount } from "@/domain/auth/accounts";
 import { DEFAULT_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
-import { changePersonRole, registerPerson } from "@/domain/people";
+import { changePersonRole, registerPerson, setResignationDate } from "@/domain/people";
 import { assignTeam, cancelFutureAssignment } from "@/domain/org";
+import { archive } from "@/domain/archive";
 import { SeatTakenError } from "@/domain/people/seat-rules";
 import { listMemberships } from "@/repositories/team-memberships";
 import { findUserById, setUserArchived, updateUserResignationDate } from "@/repositories/users";
@@ -361,5 +362,83 @@ describe("후임 예약 · 맞바꾸기(06.4 D-6415 · K-R4)", () => {
 
     expect(xFirst.message).toBe(`팀장 있음 · ${await nameOf(y.id)}`);
     expect(yFirst.message).toBe(`팀장 있음 · ${await nameOf(x.id)}`);
+  });
+});
+
+// 06.4-03(E2 · Codex B1 · D-6415): 퇴직일 지우기 · 늦추기로 자리 구간이 늘어나면 260907 재개(`O: server/src/people-rules.ts:68-78`)와
+// 같은 자리 검사 — 늘어난 날짜가 다른 보유자 구간과 하루라도 겹치면 거부, 겹치는 보유자가 없을 때만 지우기 성공.
+
+async function resignationOf(userId: string): Promise<string | null> {
+  return (await findUserById(SYSTEM_VIEWER, userId))?.resignationDate ?? null;
+}
+
+describe("퇴직일 해제 · 늦추기 자리 중복(06.4 D-6404 · E2)", () => {
+  it("지난 팀장 L의 퇴직일을 지우거나 미래로 늦추면 새 팀장 Z와 겹쳐 거부 · 퇴직일 · 로그 그대로, 지난 날짜끼리는 통과", async () => {
+    const admin = await makeAdmin("관리자");
+    const { teamId } = await makeOrgTeam();
+    const l = await makeSeated(uniqueName("팀장L"), TEAM_LEAD_ROLE_ID, teamId);
+    await updateUserResignationDate(SYSTEM_VIEWER, l.id, "2026-09-01");
+    const z = await makeSeated(uniqueName("팀장Z"), TEAM_LEAD_ROLE_ID, teamId);
+    const logsBefore = await countLogs("document_update", "user", l.id);
+
+    const cleared = await refusal(setResignationDate(admin, l.id, null, deps), SeatTakenError);
+    expect(cleared.message).toBe(`팀장 있음 · ${await nameOf(z.id)}`);
+    expect(await resignationOf(l.id)).toBe("2026-09-01");
+    expect(await countLogs("document_update", "user", l.id)).toBe(logsBefore);
+
+    const later = await refusal(setResignationDate(admin, l.id, "2026-12-31", deps), SeatTakenError);
+    expect(later.message).toBe(`팀장 있음 · ${await nameOf(z.id)}`);
+
+    const hidden = await refusal(setResignationDate(admin, l.id, null, { ...deps, visible: () => Promise.resolve(false) }), SeatTakenError);
+    expect(hidden.message).toBe("팀장 있음 · 시스템 관리자");
+
+    await setResignationDate(admin, l.id, "2026-09-10", deps);
+    expect(await resignationOf(l.id)).toBe("2026-09-10");
+  });
+
+  it("새 팀장 Z를 보관하면 L의 퇴직일 지우기가 통과(겹치는 보유자가 없을 때만)", async () => {
+    const admin = await makeAdmin("관리자");
+    const { teamId } = await makeOrgTeam();
+    const l = await makeSeated(uniqueName("팀장L"), TEAM_LEAD_ROLE_ID, teamId);
+    await updateUserResignationDate(SYSTEM_VIEWER, l.id, "2026-09-01");
+    const z = await makeSeated(uniqueName("팀장Z"), TEAM_LEAD_ROLE_ID, teamId);
+    await archive(SYSTEM_VIEWER, "user", z.id, deps);
+
+    await setResignationDate(admin, l.id, null, deps);
+
+    expect(await resignationOf(l.id)).toBeNull();
+  });
+
+  it("지난 본부 책임자 H의 퇴직일을 지우면 같은 본부 새 책임자와 겹쳐 거부 · 문구에 그 이름", async () => {
+    const admin = await makeAdmin("관리자");
+    const { orgUnitId, teamId } = await makeOrgTeam();
+    const t2 = await addTeam(orgUnitId);
+    const h = await makeSeated(uniqueName("책임자H"), DIVISION_HEAD_ROLE_ID, teamId);
+    await updateUserResignationDate(SYSTEM_VIEWER, h.id, "2026-09-01");
+    const h2 = await makeSeated(uniqueName("책임자H2"), DIVISION_HEAD_ROLE_ID, t2);
+
+    const error = await refusal(setResignationDate(admin, h.id, null, deps), SeatTakenError);
+
+    expect(error.message).toBe(`본부 책임자 있음 · ${await nameOf(h2.id)}`);
+    expect(await resignationOf(h.id)).toBe("2026-09-01");
+  });
+});
+
+describe("퇴직일 늦추기와 예약된 후임(06.4 D-6415 · K-R4)", () => {
+  it("퇴직 다음 날부터 후임이 예약된 팀장 L의 퇴직일을 늦추거나 지우면 거부, 당기면 통과", async () => {
+    const admin = await makeAdmin("관리자");
+    const { teamId } = await makeOrgTeam();
+    const l = await makeSeated(uniqueName("팀장L"), TEAM_LEAD_ROLE_ID, teamId);
+    await updateUserResignationDate(SYSTEM_VIEWER, l.id, "2026-12-31");
+    const z = await makeSeated(uniqueName("후임Z"), TEAM_LEAD_ROLE_ID, null);
+    await assignTeam(admin, { userId: z.id, teamId, effectiveFrom: "2027-01-01" }, deps);
+
+    const later = await refusal(setResignationDate(admin, l.id, "2027-01-05", deps), SeatTakenError);
+    expect(later.message).toBe(`팀장 있음 · ${await nameOf(z.id)}`);
+    await refusal(setResignationDate(admin, l.id, null, deps), SeatTakenError);
+    expect(await resignationOf(l.id)).toBe("2026-12-31");
+
+    await setResignationDate(admin, l.id, "2026-12-20", deps);
+    expect(await resignationOf(l.id)).toBe("2026-12-20");
   });
 });

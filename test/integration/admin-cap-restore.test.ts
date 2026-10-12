@@ -1,12 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
+import { recordAction } from "@/domain/action-log/record";
+import { registerPerson } from "@/domain/people";
+import { createCodeItem } from "@/domain/code-tables";
+import { queryActionLog } from "@/repositories/action-log";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { RoleGrantForbiddenError } from "@/domain/permissions/grant-ceiling";
-import { archive, restore } from "@/domain/archive";
+import { archive, listArchive, restore } from "@/domain/archive";
 import { PersonNotRestorableError, PersonRestoreForbiddenError } from "@/domain/people/restore";
 import { SeatTakenError } from "@/domain/people/seat-rules";
-import { findUserById, updateUserResignationDate } from "@/repositories/users";
+import { findUserByEmail, findUserById, updateUserResignationDate } from "@/repositories/users";
 import { makePerson, NOW_2026 } from "./approvals-fixtures";
 import { addTeam, countLogs, makeAdmin, makeDelegatedRole, makeOrgTeam, makeSeated, uniqueName } from "./admin-cap-fixtures";
 
@@ -40,6 +45,7 @@ async function archiveOnlyViewer() {
   const roleK = await makeDelegatedRole({
     name: "보관함 담당",
     copyFrom: [],
+    infoItems: ["archive.value"],
     menus: [
       { menu: "admin.archive", action: "view" },
       { menu: "admin.archive", action: "write" },
@@ -165,5 +171,56 @@ describe("사람 복원(06.4 D-6406 · G36)", () => {
 
     const error = await refusal(restore(admin, "user", randomUUID(), deps), PersonNotRestorableError);
     expect(error.message).toBe("없는 사람 · 복원 불가");
+  });
+});
+
+describe("보관함 목록 사람 복원 가능(06.4 D-6406)", () => {
+  it("사람 쓰기 없는 사람에게는 사람 행 「복원」이 없고, 관리자에게는 있다 · 다른 항목은 그대로", async () => {
+    const admin = await makeAdmin("관리자");
+    const v = await archiveOnlyViewer();
+    const p = await archivedPm();
+    const codeItem = await createCodeItem(SYSTEM_VIEWER, { tableKey: "project_status", value: "a", label: "A" });
+    await archive(SYSTEM_VIEWER, "code_items", codeItem.id, deps);
+
+    const restorableOf = async (viewer: typeof admin, id: string) => (await listArchive(viewer)).find((row) => row.id === id)?.restorable;
+
+    expect(await restorableOf(v, p.id)).toBe(false);
+    expect(await restorableOf(admin, p.id)).toBe(true);
+    expect(await restorableOf(v, codeItem.id)).toBe(true);
+    expect(await restorableOf(admin, codeItem.id)).toBe(true);
+  });
+});
+
+describe("등록 보상 보관 로그 tx(06.4)", () => {
+  it("발령 단계가 실패하면 새 계정을 보관하고, 보관 로그 래퍼가 tx를 넘긴다", async () => {
+    const admin = await makeAdmin("관리자");
+    const { teamId } = await makeOrgTeam();
+    const email = `${randomUUID()}@example.test`;
+    const options: unknown[] = [];
+
+    const error = await refusal(
+      registerPerson(
+        admin,
+        { name: uniqueName("새 사람"), email, roleId: DEFAULT_ROLE_ID, teamId, effectiveFrom: "2026-09-01" },
+        {
+          now: deps.now,
+          assignTeam: () => Promise.reject(new Error("발령 인프라 오류")),
+          recordAction: (viewer, entry, recordOptions) => {
+            options.push(recordOptions);
+            return recordAction(viewer, entry, recordOptions);
+          },
+        },
+      ),
+      UserFacingError,
+    );
+    expect(error.message).toBe("발령 실패 · 계정은 발급됨 — 보관함에서 복원 후 발령 추가");
+
+    const created = await findUserByEmail(SYSTEM_VIEWER, email);
+    expect(created?.archivedAt).not.toBeNull();
+    const logs = (await queryActionLog(SYSTEM_VIEWER, { actionType: "archive" })).filter((row) => row.entity === "user" && row.entityId === created?.id);
+    expect(logs).toHaveLength(1);
+    expect(logs[0]?.detail).toEqual({ reason: "register_person_rollback", requestedBy: admin.id });
+    expect(options).toHaveLength(1);
+    expect(options[0]).toEqual(expect.objectContaining({ tx: expect.anything() as unknown }));
   });
 });

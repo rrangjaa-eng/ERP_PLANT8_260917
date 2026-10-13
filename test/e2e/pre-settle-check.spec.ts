@@ -408,6 +408,28 @@ test.describe("완료 전 점검 — 섹션 마감(S18 · 06-22)", () => {
     await expect(page.getByRole("button", { name: /거래처 고르기$/ })).toHaveCount(0);
   });
 
+  test("긴 항목(42자) — 폭 1280은 칸에 다 보이고 768도 말줄임은 칸 폭에서 · title은 전체 이름(DOM 감사 D-1)", async ({ browser, baseURL }) => {
+    const fx = await setupUnmatchedSettling({ itemName: "해외 연사 항공·숙박 및 현지 이동 차량 지원 일체 패키지 (비즈니스석 왕복 포함)" });
+    const page = await loginPage(browser, baseURL, fx.org.drafter, { width: 1280, height: 900 });
+    await page.goto(`/projects/${fx.projectId}`);
+    const cell = preSettleSection(page).getByRole("row").filter({ hasText: fx.itemName }).getByRole("cell").filter({ hasText: fx.itemName });
+    const text = cell.getByText(fx.itemName, { exact: true });
+    const measure = () =>
+      text.evaluate((element) => {
+        const td = element.closest("td");
+        const pad = td ? Number.parseFloat(getComputedStyle(td).paddingLeft) + Number.parseFloat(getComputedStyle(td).paddingRight) : 0;
+        return { cw: element.clientWidth, sw: element.scrollWidth, cell: (td?.clientWidth ?? 0) - pad, title: element.closest("[title]")?.getAttribute("title") ?? null };
+      });
+    const wide = await measure();
+    expect(wide.title).toBe(fx.itemName);
+    expect(wide.sw).toBeLessThanOrEqual(wide.cw);
+    await page.setViewportSize({ width: 768, height: 900 });
+    const tablet = await measure();
+    // 잘리더라도 칸 폭까지는 보인다(고정 폭에서 먼저 자르지 않는다).
+    expect(tablet.cw).toBeGreaterThanOrEqual(Math.min(tablet.sw, tablet.cell) - 1);
+    expect(await sectionOverflow(preSettleSection(page))).toBeLessThanOrEqual(0);
+  });
+
   test("세 그룹 빔 — `미결 없음` · 매출 줄 `계약 금액 — · 1차 고객 승인 전` 3차 → 고객 승인 줄로 포커스", async ({ browser, baseURL }) => {
     const fx = await setupUnmatchedSettling({ noLines: true, approve: false, issued: true });
     const page = await loginPage(browser, baseURL, fx.org.drafter, { width: 1280, height: 900 });

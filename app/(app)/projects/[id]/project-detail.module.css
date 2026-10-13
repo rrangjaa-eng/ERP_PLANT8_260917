@@ -580,11 +580,15 @@ td:has(> .rowNumber) {
   font-size: var(--text-aux);
 }
 
-/* 06-22(S18) — 점검 행 항목 이름: PC(≥700)는 한 줄 말줄임(전체 이름은 title), 폰은 항목 셀 2행 구성이라 줄바꿈 — 매출 메모(.noteText) 선례. */
+/* 06-22(S18) — 점검 행 항목 이름: PC(≥700)는 한 줄 말줄임(전체 이름은 title), 폰은 항목 셀 2행 구성이라 줄바꿈.
+   검토 D-1 — 고정 폭이 아니라 칸 폭에서 자른다: 트랙 minmax(0, max-content)라 표에 자리가 있으면 이름 전체 폭을 받고, 좁으면 칸까지 줄어 말줄임. */
 @media (min-width: 700px) {
   .preSettleItem {
-    display: block;
-    max-width: 40ch;
+    display: grid;
+    grid-template-columns: minmax(0, max-content);
+  }
+
+  .preSettleItemText {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

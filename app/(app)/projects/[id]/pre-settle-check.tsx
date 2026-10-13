@@ -104,7 +104,7 @@ function expenseColumns(amountVisible: boolean): TableColumn<PreSettleExpenseRow
       cell: (row) => (
         <>
           <span className={styles.preSettleItem} title={row.itemName ?? undefined}>
-            {row.itemName ?? "—"}
+            <span className={styles.preSettleItemText}>{row.itemName ?? "—"}</span>
           </span>
           <PhoneLine>{openExpenseAction(row)}</PhoneLine>
         </>
@@ -228,7 +228,7 @@ export function PreSettleCheckSection({ check, ownerName }: { check: PreSettleCh
       cell: (row) => (
         <>
           <span className={styles.preSettleItem} title={row.itemName}>
-            {row.itemName}
+            <span className={styles.preSettleItemText}>{row.itemName}</span>
           </span>
           <PhoneLine>{doorCell(row)}</PhoneLine>
         </>

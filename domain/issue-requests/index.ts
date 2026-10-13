@@ -171,12 +171,12 @@ export async function saveIssueRequestRows(
     rejections.push({ rowIndex, rowId, field: "status", label: "상태", reason });
   let written = 0;
 
-  // 06-21 취소 갈래 — 요청 행을 먼저 잠그고(같은 tx), 잠근 행의 프로젝트 · 상태 · 이어짐 · version만 판정한다.
+  // 06-21 취소 갈래 — 이 프로젝트의 요청 행만 잠그고(같은 tx · 프로젝트 행 다음), 잠근 행의 상태 · 이어짐 · version만 판정한다.
   // 권한 · 완료 판정은 원장이 이미 했다(트랜잭션 전 쓰기 권리 · 잠근 프로젝트 행 상태) — 여기서 다시 읽지 않는다(CROSS-R1 F-5).
   for (const [rowIndex, input] of rows.entries()) {
     if (!input.cancel) continue;
-    const locked = await lockIssueRequest(viewer, input.id, tx);
-    if (!locked || locked.projectId !== projectId) {
+    const locked = await lockIssueRequest(viewer, input.id, projectId, tx);
+    if (!locked) {
       reject(rowIndex, input.id, NOT_FOUND);
       continue;
     }
@@ -239,7 +239,7 @@ export async function saveIssueRequestRows(
   return { written };
 }
 
-// 발행 줄 잇기 — 요청 행을 `FOR UPDATE`로 잠근 뒤 프로젝트 · 상태 · 이어짐을 판정한다(잠금 뒤 판정). 거부되면 같은 트랜잭션의
+// 발행 줄 잇기 — 이 프로젝트의 요청 행만 `FOR UPDATE`로 잠근 뒤 상태 · 이어짐을 판정한다(잠금 뒤 판정). 거부되면 같은 트랜잭션의
 // 발행 줄 INSERT도 되돌아간다. 이미 같은 줄로 이어져 있으면(재전송) 쓰기 · 기록 없이 통과한다. 발행 줄 쓰기 권리는
 // saveRevenueInTx가 이미 판정했다 — 여기서 다시 판정하지 않는다(U-4).
 export async function linkIssueRequestToEntry(
@@ -252,8 +252,8 @@ export async function linkIssueRequestToEntry(
   const reject = (reason: string): never => {
     throw new SaveRejectedError([], [{ rowIndex: deps.rowIndex ?? 0, rowId: entryId, field: "amount", label: "발행 요청", reason }]);
   };
-  const locked = await lockIssueRequest(viewer, requestId, tx);
-  if (!locked || locked.projectId !== deps.projectId) return reject(NOT_FOUND);
+  const locked = await lockIssueRequest(viewer, requestId, deps.projectId, tx);
+  if (!locked) return reject(NOT_FOUND);
   // 재전송 — 이미 같은 줄로 이어져 있으면 쓰기 · 기록 없이 통과(전이가 아니다).
   if (locked.status === "issued" && locked.issuedEntryId === entryId) return { linked: false };
   const verdict = issueRequestTransition(locked.status as IssueRequestStatus, "link");

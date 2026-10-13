@@ -721,6 +721,71 @@ describe("발행 요청 — 취소 ∥ 잇기 (E-26 장벽)", () => {
   });
 });
 
+// 06-21 독립 검토(낮음) — 요청 행 잠금은 내 프로젝트 행만 건다. 남의 프로젝트 요청 id를 실은 저장이 그 행을 `FOR UPDATE`로 잡으면
+// 그 프로젝트의 정상 저장과 엇갈린 순서로 행을 잡아 교착(40P01)이 날 수 있다. 다른 연결이 그 요청 행을 쥔 채로 두고, 내 저장이 그
+// 잠금을 기다리지 않고(잠금 대기 연결 0) 곧바로 거부되는지 본다.
+describe("발행 요청 — 남의 프로젝트 요청 행은 잠그지 않는다 (06-21 검토 낮음)", () => {
+  async function rejectsWithoutWaiting(foreignRequestId: string, attempt: () => Promise<unknown>) {
+    const holder = await pool.connect();
+    try {
+      await holder.query("BEGIN");
+      await holder.query("SELECT id FROM revenue_issue_requests WHERE id = $1 FOR UPDATE", [foreignRequestId]);
+      const saving = attempt();
+      saving.catch(() => undefined);
+      const first = await Promise.race([
+        saving.then(
+          () => "settled",
+          () => "settled",
+        ),
+        waitForLockWaiter(pool, { timeoutMs: 3000 }).then(
+          () => "waiting",
+          () => "no-waiter",
+        ),
+      ]);
+      await holder.query("ROLLBACK");
+      const rejection = await rejectionOf(saving);
+      return { first, rejection };
+    } finally {
+      holder.release();
+    }
+  }
+
+  it("취소: 다른 프로젝트의 요청 id를 실은 취소는 그 요청 행 잠금을 기다리지 않고 거부한다", async () => {
+    const a = await setupProject();
+    const b = await setupProject();
+    const row = requestRow();
+    await saveProjectLedger(a.pm, a.project.id, { seenStatus: "bidding", issueRequests: [row] });
+
+    const { first, rejection } = await rejectsWithoutWaiting(row.id, () =>
+      saveProjectLedger(b.pm, b.project.id, { seenStatus: "bidding", issueRequests: [cancelRow(row.id, 1)] }),
+    );
+
+    expect(first).toBe("settled");
+    expect(rejection).toBeInstanceOf(SaveRejectedError);
+    expect(await storedRequest(row.id)).toMatchObject({ projectId: a.project.id, status: "requested", version: 1 });
+  });
+
+  it("잇기: 다른 프로젝트의 요청 id를 실은 발행 줄은 그 요청 행 잠금을 기다리지 않고 거부하고 발행 줄도 되돌린다", async () => {
+    const a = await setupProject();
+    const b = await setupProject();
+    const finance = await createFinanceViewer();
+    const row = requestRow();
+    await saveProjectLedger(a.pm, a.project.id, { seenStatus: "bidding", issueRequests: [row] });
+
+    const { first, rejection } = await rejectsWithoutWaiting(row.id, () =>
+      saveProjectLedger(finance, b.project.id, {
+        seenStatus: "bidding",
+        revenue: { issuedEntries: [{ id: randomUUID(), isNew: true, entryDate: "2026-09-30", amount: krw(20_000_000), fromIssueRequestId: row.id }] },
+      }),
+    );
+
+    expect(first).toBe("settled");
+    expect(rejection).toBeInstanceOf(SaveRejectedError);
+    expect(await storedRequest(row.id)).toMatchObject({ projectId: a.project.id, status: "requested", issuedEntryId: null, version: 1 });
+    expect(await db.select().from(revenueEntries).where(eq(revenueEntries.projectId, b.project.id))).toHaveLength(0);
+  });
+});
+
 // 06-21 Task 2 — S17 발행 요청 목록(listIssueRequests). 통합 DB는 모든 테스트가 같이 쓰므로 보는 범위 own 계급의 사람을 PM으로 둔
 // 프로젝트를 만들어 그 사람의 목록에는 그 프로젝트의 요청만 서게 한다.
 async function createBoardViewer(opts: { revenueView: boolean; issuedAmount: boolean }): Promise<Viewer> {

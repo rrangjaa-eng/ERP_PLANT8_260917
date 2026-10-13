@@ -77,10 +77,14 @@ export async function updateIssueRequestIfVersionMatches(
   return row ?? null;
 }
 
-/** 요청 행 잠금 — 잠근 뒤 상태 · 이어짐을 판정한다. `tx` 필수. */
-export async function lockIssueRequest(viewer: Viewer, id: string, tx: DbOrTx): Promise<IssueRequestRow | null> {
+/** 요청 행 잠금 — 잠근 뒤 상태 · 이어짐을 판정한다. `tx` 필수. 그 프로젝트의 행만 잠근다(남의 프로젝트 행을 잡으면 그 프로젝트 저장과 교착할 수 있다 — 06-21 검토). */
+export async function lockIssueRequest(viewer: Viewer, id: string, projectId: string, tx: DbOrTx): Promise<IssueRequestRow | null> {
   void viewer;
-  const [row] = await tx.select().from(revenueIssueRequests).where(eq(revenueIssueRequests.id, id)).for("update");
+  const [row] = await tx
+    .select()
+    .from(revenueIssueRequests)
+    .where(and(eq(revenueIssueRequests.id, id), eq(revenueIssueRequests.projectId, projectId)))
+    .for("update");
   return row ?? null;
 }
 

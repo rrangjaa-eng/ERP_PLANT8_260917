@@ -333,3 +333,57 @@ test.describe("카드 전표 (06-25 Task 3 — 규칙 마감)", () => {
     await page.context().close();
   });
 });
+
+test.describe("카드 전표 (06-25 DOM 감사 후 수정)", () => {
+  test("올리는 동안 1차가 막히고 저장할 수 없으며 끝나면 풀린다 (D-1)", async ({ browser, baseURL }) => {
+    const holder = await makeHolder();
+    const usageId = await seedUsage(holder, 61_000);
+    const page = await loginPage(browser, baseURL, holder.person);
+    await page.goto(`/cards?editId=${usageId}`);
+    const sheet = editPanel(page);
+    const input = sheet.getByTestId("attachments-input");
+    await waitForHydration(input);
+
+    // 로컬 저장소 PUT을 붙잡아 올리는 행을 세워 둔다.
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let putHeld = false;
+    await page.route("**/api/storage-local/**", async (route) => {
+      putHeld = true;
+      await held;
+      await route.continue();
+    });
+    await input.setInputFiles(await uniqueImage(page));
+    await expect(fileRows(sheet).getByText("올리는 중…")).toBeVisible({ timeout: UPLOAD_WAIT });
+    await expect.poll(() => putHeld, { timeout: UPLOAD_WAIT }).toBe(true);
+
+    const save = sheet.getByRole("button", { name: /^카드 사용 저장/ });
+    await expect(save).toHaveAttribute("aria-disabled", "true");
+    const describedBy = (await save.getAttribute("aria-describedby")) ?? "";
+    await expect(sheet.locator(`[id="${describedBy}"]`)).toHaveText("증빙 올리는 중 · 잠시 뒤 제출");
+
+    // 클릭 · Ctrl+Enter 모두 서버를 부르지 않고 패널도 그대로다.
+    const [before] = await db.select({ version: corpCardUsages.version }).from(corpCardUsages).where(eq(corpCardUsages.id, usageId));
+    // 금액 미리보기(`previewCardAmountsAction`)는 저장이 아니다 — 이 건 id를 실어 보내는 서버 액션(저장)만 센다.
+    let savePosts = 0;
+    page.on("request", (request) => {
+      if (request.method() === "POST" && request.headers()["next-action"] && (request.postData() ?? "").includes(usageId)) savePosts += 1;
+    });
+    await save.click({ force: true });
+    await save.focus();
+    await page.keyboard.press("Control+Enter");
+    await sheet.getByLabel("메모").press("Control+Enter");
+    expect(savePosts).toBe(0);
+    await expect(sheet).toBeVisible();
+    const [during] = await db.select({ version: corpCardUsages.version }).from(corpCardUsages).where(eq(corpCardUsages.id, usageId));
+    expect(during?.version).toBe(before?.version);
+
+    release();
+    await expect(fileRows(sheet).filter({ hasText: /slip-.*\.jpg/ }).getByRole("button", { name: "삭제" })).toBeVisible({ timeout: UPLOAD_WAIT });
+    await expect(sheet.getByText("증빙 올리는 중 · 잠시 뒤 제출")).toHaveCount(0);
+    await expect(save).not.toHaveAttribute("aria-disabled", "true");
+    await page.context().close();
+  });
+});

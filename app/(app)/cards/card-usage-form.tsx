@@ -10,6 +10,7 @@ import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
 import { Attachments, type AttachmentActions, type AttachmentFile } from "@/ui/attachments/Attachments";
 import { isCtrlCombo } from "@/lib/shortcut";
+import { UPLOADING_REASON } from "../expenses/[id]/submit-block";
 import { EVIDENCE_UPLOAD_FAILED } from "@/domain/evidence/upload-checks";
 import { PickDialog, type PickResult, type PickRow } from "@/ui/pick-dialog/PickDialog";
 import { useCommaInput } from "@/ui/input/use-comma-input";
@@ -337,6 +338,8 @@ export function CardUsageForm({
   const saveSlipRef = useRef<() => Promise<SlipSave>>(() => Promise.resolve({ ok: false, message: EVIDENCE_UPLOAD_FAILED }));
   const [attachError, setAttachError] = useState<string | null>(null);
   const [pickSignal, setPickSignal] = useState(0);
+  // 올리는 행 수 — 0보다 크면 1차가 `증빙 올리는 중`으로 막힌다(SYSTEM §7-10 · 지출결의 폼과 같은 문구).
+  const [uploading, setUploading] = useState(0);
 
   // 수정 저장 — 성공하면 패널이 닫히고 포커스가 연 요소(그 행 `수정`)로 돌아간다(PanelForm intent="edit").
   const update = useAction(updateCardUsageAction, { onSuccess: () => panelRef.current?.succeed() });
@@ -557,9 +560,11 @@ export function CardUsageForm({
       : undefined;
   // 06-12 구매 완료 모드: 그사이 상태 변경 · 쓸 카드 0장(r2 R6)이 먼저, 실행가 초과는 서버 고정 갈래 문구(`… · 견적 줄은 담당 PM {이름}` — 완료 아닌 프로젝트만).
   const noCardBlock = purchase && usableCards.length === 0 ? "활성 법인카드 없음 · 카드 등록은 관리자" : undefined;
-  const blockedReason = purchase
+  const formBlock = purchase
     ? (purchase.statusReason ?? noCardBlock ?? blankBlock(blanks) ?? fxBlock ?? evidenceBlock ?? teamBlock ?? preview.cap?.blockedReason ?? undefined)
     : (blankBlock(blanks) ?? fxBlock ?? evidenceBlock ?? linkBlock ?? teamBlock ?? (overCap ? `${overCap}다른 줄 고르기` : undefined));
+  // 올리는 중 막힘은 1차만 막는다 — 첫 저장(`saveForSlip`)과 새 건의 파일 받기는 칸 막힘(`formBlock`)만 본다(올리는 행 자신이 그 저장을 막으면 안 된다).
+  const blockedReason = formBlock ?? (uploading > 0 ? UPLOADING_REASON : undefined);
 
   // 1차 저장과 새 건 `증빙` 줄의 첫 저장이 같은 입력을 쓴다(같은 zod · 같은 서버 판정).
   function buildPayload(memo: FormDataEntryValue | null) {
@@ -589,7 +594,7 @@ export function CardUsageForm({
   // 06-25 새 건 첫 저장 — 1차와 같은 입력 · 같은 서버 판정(막히면 파일을 받지 않고 그 이유를 막힘 자리에 둔다). 저장된 건은 한 번만 만든다.
   async function saveForSlip(): Promise<SlipSave> {
     if (savedSlipIdRef.current) return { ok: true, id: savedSlipIdRef.current };
-    if (blockedReason) return { ok: false, message: blockedReason };
+    if (formBlock) return { ok: false, message: formBlock };
     const form = slipAreaRef.current?.closest("form");
     if (!form) return { ok: false, message: EVIDENCE_UPLOAD_FAILED };
     const payload = buildPayload(new FormData(form).get("memo"));
@@ -610,7 +615,7 @@ export function CardUsageForm({
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     // 파일을 놓아 이미 저장된 새 건(올리기가 모두 실패한 경우) — 같은 건을 한 번 더 만들지 않고 그 건의 수정 패널로.
-    if (!edit && !purchase && savedSlipIdRef.current && slipEditHref) {
+    if (!edit && !purchase && savedSlipIdRef.current && slipEditHref && uploading === 0) {
       router.replace(`${slipEditHref}${savedSlipIdRef.current}`, { scroll: false });
       return;
     }
@@ -987,6 +992,7 @@ export function CardUsageForm({
                   maxMb={slip.maxMb}
                   uploadFailedText={EVIDENCE_UPLOAD_FAILED}
                   onChanged={onSlipChanged}
+                  onUploadingChange={setUploading}
                   openSignal={pickSignal}
                   pickerId="card-slip-picker"
                   canAdd={slip.canAdd}

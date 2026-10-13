@@ -7,6 +7,7 @@ import { listAllPaymentTargets } from "@/domain/payments/targets";
 import { listPurchaseRequests } from "@/domain/purchase-requests";
 import { summarizeOpenIssueRequests, type OpenIssueRequestSummary } from "@/domain/issue-requests";
 import { computePreSettleCheck, loadPreSettleInputs } from "@/domain/pre-settle-check";
+import { projectRowScope } from "@/domain/projects/visibility";
 import { findOldestRequestedPurchaseAt, listSettlingProjectsOfPm } from "@/repositories/next-turn";
 import { seoulToday } from "@/lib/dates";
 import { formatKrw } from "@/lib/format-number";
@@ -104,7 +105,7 @@ export async function listPhase6NextTurnItems(viewer: Viewer, today: string): Pr
     if (bundle) entries.push(bundle);
   }
   // E-31: 사전 조회는 정산 프로젝트가 있을 때만 한 번(입력이 프로젝트와 무관 — 06-19), 계산은 프로젝트마다 한 번(풀 — tx 없음).
-  const settling = await listSettlingProjectsOfPm(viewer, viewer.id);
+  const settling = await listSettlingProjectsOfPm(viewer, await projectRowScope(viewer), viewer.id);
   if (settling.length > 0) {
     const inputs = await loadPreSettleInputs(viewer);
     const rows = [];

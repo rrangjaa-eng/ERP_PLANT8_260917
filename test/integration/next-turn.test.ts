@@ -659,6 +659,14 @@ describe("「내 차례」 Phase 6 — 구매 · 발행 묶음 · PM 점검 · �
     );
   });
 
+  it("담당 PM이라도 계급에 프로젝트 보기가 없으면(행 범위 none) 점검 줄이 없다 (06-23 검토 낮음-1)", async () => {
+    const pm = await roleViewer("보기없는PM", [], []);
+    await pmProject(pm, "보기 없는 정산");
+
+    expect((await listNextTurnItems(pm, undefined, { today })).filter((item) => item.key.startsWith("phase6-presettle-"))).toEqual([]);
+    expect(loadPreSettleInputs).not.toHaveBeenCalledWith(pm);
+  });
+
   it("홈 공급 조회 수 — 경영관리 한 번 로드 · 정산 프로젝트 2개의 PM 한 번 로드 (E-31)", async () => {
     const { fx, manager } = await phase6World();
     await pmProject(fx.pm, "정산 둘째");

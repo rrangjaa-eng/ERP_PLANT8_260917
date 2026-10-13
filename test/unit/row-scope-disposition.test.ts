@@ -147,7 +147,7 @@ export const PROJECT_READ_DISPOSITION: readonly ProjectReadDisposition[] = [
   { file: "repositories/expenses.ts", fn: "summarizeExpenseList", reason: "지출결의 합계 — 목록과 같은 scopeCondition(06.2-08)" },
   { file: "repositories/expenses.ts", fn: "isExpenseInScope", reason: "지출결의 문서 하나(canSeeExpense) — 목록과 같은 scopeCondition(06.2-08)" },
   { file: "repositories/expenses.ts", fn: "listExpenseIdsInScope", reason: "지급 대상 id 묶음 — 문서 하나와 같은 scopeCondition을 한 질의로(06.2-08 검토 I-1)" },
-  { file: "repositories/next-turn.ts", fn: "listSettlingProjectsOfPm", reason: "「내 차례」 PM 점검 항목(06-23) — pm_user_id = 보는 사람 조건이 행을 거른다(자기가 담당 PM인 정산 프로젝트의 번호 · 이름 · id만)" },
+  { file: "repositories/next-turn.ts", fn: "listSettlingProjectsOfPm", reason: "「내 차례」 PM 점검 항목(06-23) — pm_user_id = 보는 사람 ∧ rowScopeCondition(projectRowScope — none이면 PM이라도 0행, 06-23 검토 낮음-1)이 행을 거른다(번호 · 이름 · id만)" },
   { file: "repositories/payment-targets.ts", fn: "selectRows", reason: "지급 대상 — 도메인 visibleRows(rowScope all 단축 · 아니면 listExpenseIdsInScope — scopeCondition 한 질의)가 거른다(06.2-08 검토 I-1)" },
   { file: "repositories/payment-targets.ts", fn: "listPaidPaymentRows", reason: "지급 완료 보기(06-20 S3) — 도메인 listPaidPayments가 keepVisible(rowScope all 단축 · 아니면 listExpenseIdsInScope)로 거른 뒤 쪽 · 합계를 셈한다" },
   { file: "repositories/payment-targets.ts", fn: "listPaidMonthRows", reason: "지급 완료 보기(06-20 S3) 월 select — 도메인 listPaidPayments가 keepVisible로 거른 행의 달만 쓴다" },

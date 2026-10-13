@@ -1,10 +1,11 @@
 import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
+import { visible as defaultVisible } from "@/domain/permissions/visible";
 import { projectMany, type DtoSpec } from "@/domain/permissions/project";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { projectRowScope } from "@/domain/projects/visibility";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
-import { moneyToColumns, MoneyInputError } from "@/domain/money";
+import { moneyToColumns, MoneyInputError, sumKrw } from "@/domain/money";
 import { computeVat, ForbiddenError, ProjectNotFoundError, type MoneyInputDto, type RevenueDeps } from "@/domain/revenue";
 import { CompletedProjectError } from "@/domain/projects";
 import { PROJECT_STATUS_WORD } from "@/domain/projects/status-word";
@@ -12,17 +13,23 @@ import type { ProjectStatus } from "@/domain/projects/status-transitions";
 import { isCalendarDate, FORMAT_ERROR as DATE_FORMAT_ERROR, EMPTY_ERROR as DATE_EMPTY_ERROR } from "@/domain/projects/period";
 import { SaveRejectedError, type CellFormatError } from "@/domain/quotes/lines";
 import { isUniqueViolation } from "@/lib/pg-errors";
+import { seoulToday } from "@/lib/dates";
+import { addDays } from "@/lib/kst-date";
+import { clampPage, LIST_PAGE_SIZE, pageCountFrom } from "@/lib/paging";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { findProjectInScope } from "@/repositories/projects";
 import { findRevenueEntryById as repoFindRevenueEntryById } from "@/repositories/revenue-entries";
 import {
   findIssueRequestById,
   insertIssueRequest,
+  listIssueRequestAmounts,
+  listIssueRequestRows,
   listIssueRequestRowsByProject,
   lockIssueRequest,
   markIssueRequestCancelled,
   markIssueRequestIssued,
   updateIssueRequestIfVersionMatches,
+  type IssueRequestBoardStatus,
   type IssueRequestListRow,
   type IssueRequestRow,
 } from "@/repositories/revenue-issue-requests";
@@ -356,4 +363,63 @@ export async function listProjectIssueRequests(
     if (!source || "amountKrw" in dto) return dto;
     return { ...dto, ...Object.fromEntries(AMOUNT_KEYS.map((key) => [key, source[key]])) };
   });
+}
+
+// ── 06-21 S17 발행 요청 목록 · 열린 요청 요약 ─────────────────────────────
+
+export type IssueRequestGroup = "희망일 지남" | "이번 주" | "다음 주" | "그 뒤";
+
+// IR-1(계획 판단) — 서울 날짜 문자열. 주 = 월~일, `희망일 지남` = 희망일 < 오늘.
+export function issueRequestGroup(desiredIssueDate: string, today: string): IssueRequestGroup {
+  if (desiredIssueDate < today) return "희망일 지남";
+  const [year, month, day] = today.split("-").map(Number) as [number, number, number];
+  const daysToSunday = (7 - new Date(Date.UTC(year, month - 1, day)).getUTCDay()) % 7;
+  const thisSunday = addDays(today, daysToSunday);
+  if (desiredIssueDate <= thisSunday) return "이번 주";
+  if (desiredIssueDate <= addDays(thisSunday, 7)) return "다음 주";
+  return "그 뒤";
+}
+
+export type IssueRequestListStatus = IssueRequestBoardStatus | "all";
+
+/** 목록 행 — 06-18 표 DTO 투영(ISSUE_REQUEST_DTO_SPEC — 금액 키는 발행액 정보 항목대로)에 프로젝트 · 요청자 · 그룹을 더한다. */
+export type IssueRequestBoardDto = IssueRequestDto & {
+  projectId: string;
+  projectNumber: string;
+  projectName: string;
+  requesterName: string | null;
+  group: IssueRequestGroup;
+};
+
+export type IssueRequestList = {
+  rows: IssueRequestBoardDto[];
+  page: { page: number; pageCount: number; pageSize: number; total: number };
+  /** 필터 전체(쪽이 아니라)의 건수 · 공급가 합 — 금액은 발행액을 볼 때만. */
+  totals: { count: number; amountKrw?: number };
+};
+
+const LIST_DENIED = "발행 요청 목록 보기 권한 없음";
+
+type ListDeps = Partial<RevenueDeps> & { can?: typeof defaultCan; visible?: typeof defaultVisible; today?: string };
+
+export async function listIssueRequests(viewer: Viewer, filters: { status?: IssueRequestListStatus; page?: string | number }, deps?: ListDeps): Promise<IssueRequestList> {
+  if (!(await (deps?.can ?? defaultCan)(viewer, "projects.revenue", "view"))) throw new ForbiddenError(LIST_DENIED);
+  const today = deps?.today ?? seoulToday();
+  const status = (filters.status ?? "requested") === "all" ? null : ((filters.status ?? "requested") as IssueRequestBoardStatus);
+  const scope = await projectRowScope(viewer);
+  const amounts = await listIssueRequestAmounts(viewer, scope, { status });
+  const pageCount = pageCountFrom(amounts.length, LIST_PAGE_SIZE);
+  const page = clampPage(filters.page, pageCount);
+  const rows = await listIssueRequestRows(viewer, scope, { status, limit: LIST_PAGE_SIZE, offset: (page - 1) * LIST_PAGE_SIZE });
+  const projectables = await Promise.all(rows.map((row) => toProjectable(row, deps)));
+  const projected = await projectMany(viewer, projectables, ISSUE_REQUEST_DTO_SPEC);
+  const amountVisible = await (deps?.visible ?? defaultVisible)(viewer, "revenue.issued_amount");
+  return {
+    rows: projected.map((dto, index) => {
+      const row = rows[index]!;
+      return { ...dto, projectId: row.projectId, projectNumber: row.projectNumber, projectName: row.projectName, requesterName: row.requesterName, group: issueRequestGroup(row.desiredIssueDate, today) };
+    }),
+    page: { page, pageCount, pageSize: LIST_PAGE_SIZE, total: amounts.length },
+    totals: amountVisible ? { count: amounts.length, amountKrw: sumKrw(amounts.map((entry) => entry.amountKrw)) } : { count: amounts.length },
+  };
 }

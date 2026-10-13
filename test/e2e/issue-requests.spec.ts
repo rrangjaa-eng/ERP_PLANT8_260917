@@ -6,10 +6,11 @@ import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { createProject } from "@/domain/projects";
 import { db } from "@/db/client";
 import { eq, sql } from "drizzle-orm";
-import { revenueIssueRequests } from "@/db/schema";
+import { projects, revenueIssueRequests } from "@/db/schema";
 import { insertIssueRequest } from "@/repositories/revenue-issue-requests";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { insertVendor } from "@/repositories/vendors";
+import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { addDays, kstToday } from "@/lib/kst-date";
 import { saveProjectLedger } from "@/domain/projects/ledger";
@@ -321,10 +322,13 @@ test.describe("발행 요청 취소 (06-21 Task 1 — O-12 · r4 F-F3)", () => {
     const memoCell = requestTable(page).locator("td", { has: page.getByLabel("메모") });
     const dialog = page.getByRole("dialog", { name: "발행 요청 취소" });
 
-    // 2차 `닫기 Esc` — 아무것도 바뀌지 않는다.
-    await memoCell.focus();
-    await page.keyboard.press("Delete");
-    await expect(dialog).toBeVisible();
+    // 2차 `닫기 Esc` — 아무것도 바뀌지 않는다. 첫 로드 직후에는 표가 한 번 다시 그려져 포커스한 칸이 사라질 수 있다(실측 — 포커스가 body로) —
+    // 모달이 설 때까지 포커스 · Delete를 되풀이한다(빗나간 Delete는 body에서 아무 일도 하지 않는다).
+    await expect(async () => {
+      await memoCell.focus();
+      await page.keyboard.press("Delete");
+      await expect(dialog).toBeVisible({ timeout: 1000 });
+    }).toPass();
     await expect(dialog).toContainText(`희망 ${today} · 4,000,000`);
     await expect(dialog).toContainText("경영관리 목록에서 빠짐");
     await expect(dialog.getByRole("button", { name: /닫기/ })).toContainText("Esc");
@@ -348,6 +352,94 @@ test.describe("발행 요청 취소 (06-21 Task 1 — O-12 · r4 F-F3)", () => {
     await expect.poll(() => storedStatus(requestId)).toBe("cancelled");
     await expect(requestTable(page).getByText("취소", { exact: true })).toBeVisible();
     await expect(requestTable(page)).toContainText("취소할 요청");
+    await context.close();
+  });
+});
+
+// 06-21 S17 — 목록 보는 사람: 제 프로젝트만 보는 계급(viewScope own)이라 다른 스펙 · 테스트가 만든 요청이 목록에 끼지 않는다.
+async function setupBoard(opts: { write: boolean }) {
+  const today = kstToday(new Date());
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E발행요청목록-${randomUUID()}`, viewScope: "own" });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects.revenue", action: "view", allowed: true });
+  if (opts.write) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects.revenue", action: "write", allowed: true });
+  await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "project.value", visible: true });
+  await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "revenue.issued_amount", visible: true });
+  const email = `e2e-board-${randomUUID()}@example.test`;
+  const account = await createAccount(SYSTEM_VIEWER, { email, name: "E2E 목록 보는 사람", roleId: role.id });
+  const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E발행목록-${randomUUID()}`, normalizedName: `e2e발행목록-${randomUUID()}` });
+  const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E본부-${randomUUID()}` });
+  const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E팀-${randomUUID().slice(0, 8)}` });
+  const project = await createProject(SYSTEM_VIEWER, { clientId: vendor.id, teamId: team.id, pmUserId: account.userId, name: `E2E발행목록-${randomUUID().slice(0, 8)}`, startDate: today, endDate: addDays(today, 10) });
+  const [stored] = await db.select({ number: projects.number }).from(projects).where(eq(projects.id, project.id));
+  if (!stored) throw new Error("프로젝트가 없습니다");
+  return { user: { email, password: account.tempPassword, userId: account.userId }, projectId: project.id, projectNumber: stored.number, today };
+}
+
+// 오늘(서울)이 속한 주의 일요일 — 주는 월~일(IR-1).
+function sundayOf(today: string): string {
+  return addDays(today, (7 - new Date(`${today}T00:00:00Z`).getUTCDay()) % 7);
+}
+
+test.describe("발행 요청 목록 S17 (06-21 Task 2)", () => {
+  test("[Empty] 기본 보기(신청됨) 0건 → `처리할 발행 요청이 없습니다 · 전체 보기`", async ({ browser }) => {
+    const { user } = await setupBoard({ write: true });
+    const { page, context } = await openAs(browser, user, "/projects/issue-requests");
+    await expect(page.getByRole("heading", { level: 1, name: "발행 요청" })).toBeVisible();
+    await expect(page.getByText("처리할 발행 요청이 없습니다", { exact: true })).toBeVisible();
+    await page.getByRole("link", { name: "전체 보기", exact: true }).click();
+    await expect(page).toHaveURL(/\/projects\/issue-requests\?status=all$/);
+    await expect(page.locator("#issue-request-filter-status")).toHaveValue("all");
+    await context.close();
+  });
+
+  test("그룹은 희망일 지남(경고 색) → 이번 주 → 다음 주 → 그 뒤, 합계 줄 · 행 3차 `발행 줄 입력` / `요청 보기`", async ({ browser }) => {
+    const { user, projectId, projectNumber, today } = await setupBoard({ write: true });
+    const sunday = sundayOf(today);
+    const later = await seedRequest(projectId, user.userId, { desiredIssueDate: addDays(sunday, 8), amount: 1_000_000 });
+    const nextWeek = await seedRequest(projectId, user.userId, { desiredIssueDate: addDays(sunday, 1), amount: 2_000_000 });
+    const overdue = await seedRequest(projectId, user.userId, { desiredIssueDate: addDays(today, -1), amount: 3_000_000 });
+    await seedRequest(projectId, user.userId, { desiredIssueDate: today, amount: 4_000_000 });
+    const cancelledDate = addDays(today, 2);
+    const cancelled = await seedRequest(projectId, user.userId, { desiredIssueDate: cancelledDate, amount: 5_000_000 });
+    await db.update(revenueIssueRequests).set({ status: "cancelled", cancelledAt: new Date(), cancelledBy: user.userId }).where(eq(revenueIssueRequests.id, cancelled));
+
+    const { page, context } = await openAs(browser, user, "/projects/issue-requests");
+    const list = page.locator("table", { has: page.locator("caption", { hasText: /^발행 요청$/ }) });
+    const groups = list.locator("[class*='groupRow']");
+    await expect(groups).toHaveText(["희망일 지남", "이번 주", "다음 주", "그 뒤"]);
+    const overdueHeader = groups.first().getByText("희망일 지남", { exact: true });
+    expect(await overdueHeader.evaluate((node) => getComputedStyle(node).color)).toBe(await cssColor(page, "--status-warning"));
+    // 합계 줄 — 기본 보기(신청됨) 4건 · 공급가 합(취소 건 제외).
+    await expect(page.getByText("합계 (신청됨 · 4건)", { exact: true })).toBeVisible();
+    await expect(page.getByRole("region", { name: "합계" })).toContainText("10,000,000");
+    // 금액 2행 합계(서버 부가세) · 행 3차 접근 이름 `{번호} 희망 {MM-DD} 발행 줄 입력` → `?issueRequest={id}`.
+    await expect(list).toContainText("합계 3,300,000");
+    const overdueAction = page.getByRole("link", { name: `${projectNumber} 희망 ${addDays(today, -1).slice(5)} 발행 줄 입력`, exact: true });
+    await expect(overdueAction).toHaveAttribute("href", `/projects/${projectId}?issueRequest=${overdue}`);
+    await expect(page.getByRole("link", { name: new RegExp(`희망 ${addDays(sunday, 1).slice(5)} 발행 줄 입력$`) })).toHaveAttribute("href", `/projects/${projectId}?issueRequest=${nextWeek}`);
+    await expect(page.getByRole("link", { name: new RegExp(`희망 ${addDays(sunday, 8).slice(5)} 발행 줄 입력$`) })).toHaveAttribute("href", `/projects/${projectId}?issueRequest=${later}`);
+
+    // `취소` 보기 — 그 행의 3차는 `요청 보기`.
+    await page.locator("#issue-request-filter-status").selectOption("cancelled");
+    await expect(page).toHaveURL(/status=cancelled/);
+    await expect(page.getByText("합계 (취소 · 1건)", { exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: `${projectNumber} 희망 ${cancelledDate.slice(5)} 요청 보기`, exact: true })).toHaveAttribute("href", `/projects/${projectId}?issueRequest=${cancelled}`);
+    await context.close();
+  });
+
+  test("1024 미만에는 행동 칸이 없고 행을 누르면 같은 주소의 상세로 간다", async ({ browser }) => {
+    const { user, projectId, today } = await setupBoard({ write: true });
+    const requestId = await seedRequest(projectId, user.userId, { desiredIssueDate: today, amount: 6_000_000, memo: "좁은 폭" });
+
+    const { page, context } = await openAs(browser, user, "/projects/issue-requests", 900);
+    const list = page.locator("table", { has: page.locator("caption", { hasText: /^발행 요청$/ }) });
+    await expect(list.getByText("좁은 폭", { exact: true }).filter({ visible: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: /발행 줄 입력$/ })).toHaveCount(0);
+    await expect(list.getByRole("columnheader", { name: "행동" })).toBeHidden();
+    // 메모 칸(링크 밖)을 눌러도 행 링크가 받는다.
+    await list.getByText("좁은 폭", { exact: true }).filter({ visible: true }).click({ force: true });
+    await expect(page).toHaveURL(new RegExp(`/projects/${projectId}\\?issueRequest=${requestId}$`));
     await context.close();
   });
 });

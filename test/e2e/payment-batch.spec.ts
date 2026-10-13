@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Browser, type Page } from "@playwright/test";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import { actionLog, expenseEvidenceReviews, expensePayments, expenses, files, projects, quoteLines, vendors } from "@/db/schema";
@@ -1698,6 +1698,103 @@ test.describe("지급 완료 보기 마감 (06-20 Task 4)", () => {
     const allowed: string[] = ["번호", "프로젝트 · 항목", "거래처", "금액", "지급 예정", "기안", "상태"];
     expect(headers.every((header) => allowed.includes(header.trim()))).toBe(true);
     expect(headers.length).toBeLessThanOrEqual(allowed.length);
+    await page.context().close();
+  });
+});
+
+// 06-20 검토 반영(독립 DOM 감사 D-1 · D-2 · D-3 · O-3, 독립 검토 R-1).
+const LONG_VENDOR = "주식회사 대한민국무대조명음향종합기술연구소";
+const BIG_KRW = 999_999_999_999;
+
+// 긴 거래처 · 12자리 실행가(지급 총액 13자리) 줄 count개를 가진 프로젝트를 같은 팀에 하나 더 만든다(manyTargets와 같은 도메인 함수 순서).
+async function bigLines(fx: ExpenseE2E, count: number): Promise<{ id: string; itemName: string }[]> {
+  const today = seoulToday();
+  const suffix = randomUUID().slice(0, 6);
+  const client = await insertVendor(SYSTEM_VIEWER, { name: `E2E큰금액클라이언트-${suffix}`, normalizedName: `e2e큰금액클라이언트-${suffix}` });
+  const vendor = await insertVendor(SYSTEM_VIEWER, { name: `${LONG_VENDOR}-${suffix}`, normalizedName: `${LONG_VENDOR}-${suffix}`, defaultEvidenceType: "tax_invoice" });
+  const project = await createProject(fx.pm.viewer, {
+    clientId: client.id,
+    teamId: await teamOf(fx),
+    pmUserId: fx.pm.viewer.id,
+    name: `현대자동차 아이오닉9 신차 발표회 전국 순회 로드쇼 및 고객 초청 시승 행사 ${suffix}`,
+    startDate: `${today.slice(0, 4)}-01-01`,
+    endDate: `${today.slice(0, 4)}-12-31`,
+  });
+  if (!project.id) throw new Error("프로젝트 없음");
+  const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+  if (!revision) throw new Error("차수 없음");
+  const subcategory = (await firstSelectableSubcategory()).value;
+  const names = Array.from({ length: count }, (_, index) => `큰 금액 ${index + 1}-${suffix}`);
+  const saved = await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
+    rows: names.map((itemName) => ({
+      id: randomUUID(),
+      isNew: true as const,
+      subcategory,
+      itemName,
+      vendorId: vendor.id,
+      unitPrice: { currency: "KRW" as const, amount: BIG_KRW, fxRate: 1 },
+      execution: { currency: "KRW" as const, amount: BIG_KRW, fxRate: 1 },
+    })),
+  });
+  await changeProjectStatus(fx.lead.viewer, project.id, { from: "bidding", to: "in_progress" });
+  const basis = await approvalBasis(SYSTEM_VIEWER, revision.id);
+  await setCustomerApproval(fx.pm.viewer, revision.id, { approvedOn: today, seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
+  return names.map((itemName) => {
+    const id = saved.lines.find((row) => row.itemName === itemName)?.id;
+    if (!id) throw new Error(`견적 줄 없음: ${itemName}`);
+    return { id, itemName };
+  });
+}
+
+async function payNow(payer: Person, items: { expenseId: string; short?: { krw: number; reason: string } }[]): Promise<void> {
+  const rows = [];
+  for (const item of items) {
+    const [doc] = await db.select({ version: expenses.version }).from(expenses).where(eq(expenses.id, item.expenseId));
+    const preview = await previewPayable(payer.viewer, { expenseId: item.expenseId, payDate: seoulToday() });
+    if (!doc || typeof preview.payableKrw !== "number") throw new Error("지급할 수 없는 문서");
+    rows.push({
+      expenseId: item.expenseId,
+      expenseVersion: doc.version,
+      expectedPayableKrw: preview.payableKrw,
+      ...(item.short ? { transferKrw: preview.payableKrw - item.short.krw, diffReason: item.short.reason } : {}),
+    });
+  }
+  const result = await completePaymentsBatch(payer.viewer, { payDate: seoulToday(), rows });
+  if (result.processed !== items.length) throw new Error(`지급 안 됨: ${JSON.stringify(result.blocked)}`);
+}
+
+function pageOverflow(page: Page): Promise<number> {
+  return page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+}
+
+// D-1 · D-3 — 지급 권한자의 S3에 13자리 이체액 두 건(하나는 차이 -1,000 · 200자 사유)을 세운 페이지.
+async function bigPaidPage(browser: Browser, baseURL: string | undefined): Promise<{ page: Page; lines: { id: string; itemName: string }[] }> {
+  const fx = await setupExpenseE2E();
+  const payer = await makeTeamPayer(fx);
+  const lines = await bigLines(fx, 2);
+  const ids: string[] = [];
+  for (const line of lines) ids.push(await approvedLine(fx, line.id, "payable", payer));
+  const reason = "이체 수수료 및 해외 송금 중계 은행 수수료 차감분 — 거래처 요청으로 선지급 계약금 일부를 상계하고 남은 금액만 이체함.".padEnd(200, "·");
+  await payNow(payer, [{ expenseId: ids[0] ?? "", short: { krw: 1_000, reason } }, { expenseId: ids[1] ?? "" }]);
+  const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+  await page.goto(paidViewUrl(await teamOf(fx)));
+  await expect(rowOf(page, lines[1]?.itemName ?? "")).toBeVisible();
+  return { page, lines };
+}
+
+test.describe("검토 반영 (06-20 독립 검토 · DOM 감사)", () => {
+  test("S3 좁은 PC(D-1) — 긴 거래처 · 13자리 이체액 · 200자 차이 사유: 1280 · 768 문서 가로 넘침 0 / 768은 번호 · 거래처를 접고 항목 · 지급일 · 이체액 · 증빙이 남는다", async ({ browser, baseURL }) => {
+    test.setTimeout(180_000);
+    const { page, lines } = await bigPaidPage(browser, baseURL);
+    await expect(rowOf(page, lines[0]?.itemName ?? "").getByText("차이 -1,000", { exact: true })).toBeVisible();
+    const headers = () => page.locator("main table thead th:visible").allInnerTexts();
+    for (const width of [1280, 768]) {
+      await page.setViewportSize({ width, height: 900 });
+      await expect.poll(() => pageOverflow(page), { message: `${width}px 문서 가로 넘침` }).toBe(0);
+    }
+    await expect.poll(headers).not.toContain("번호");
+    expect(await headers()).not.toContain("거래처");
+    for (const label of ["프로젝트 · 항목", "지급일", "이체액", "증빙"]) expect(await headers()).toContain(label);
     await page.context().close();
   });
 });

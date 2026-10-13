@@ -118,7 +118,7 @@ export function ExpensesTable({ rows, drafterColumn, amountColumn }: { rows: Exp
       priority: "p1",
       cell: (row) =>
         row.statusWord ? (
-          <span className={styles.statusCell}>
+          <span className={row.statusWord === "지급 완료" ? `${styles.statusCell} ${styles.statusPaid}` : styles.statusCell}>
             <StatusTag status={row.statusWord as StatusWord} variant="text" />
             {row.statusDate ? (
               <>

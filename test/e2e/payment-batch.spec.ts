@@ -1864,6 +1864,34 @@ test.describe("검토 반영 (06-20 독립 검토 · DOM 감사)", () => {
     await expect(page.getByRole("link", { name: /^다음 확인 전/ })).toHaveCount(0);
     await page.context().close();
   });
+
+  test("Phase 5 상태 열 320(O-3) — 12자리 금액 목록에서 `승인 {MM-DD}` 행이 `지급 완료 {MM-DD}`(+ 기한 지난 선결제 둘째 줄)로 바뀌어도 문서 가로 넘침이 늘지 않는다", async ({ browser, baseURL }) => {
+    test.setTimeout(180_000);
+    const fx = await setupExpenseE2E();
+    const payer = await makeTeamPayer(fx);
+    const lines = await bigLines(fx, 2);
+    const ids: string[] = [];
+    for (const line of lines) ids.push(await approvedLine(fx, line.id, "payable", payer));
+
+    const page = await loginPage(browser, baseURL, fx.pm, { width: 320, height: 800 });
+    const url = `/expenses?${new URLSearchParams({ status: "승인" })}`;
+    await page.goto(url);
+    await expect(rowOf(page, lines[1]?.itemName ?? "")).toContainText("승인");
+    const before = await pageOverflow(page);
+
+    await payNow(payer, ids.map((expenseId) => ({ expenseId })));
+    const overdue = ids[1] ?? "";
+    const past = addDays(seoulToday(), -((await loadPrepaidDueDays()) + 2));
+    await movePaidDate(overdue, past);
+    await db.delete(expenseEvidenceReviews).where(eq(expenseEvidenceReviews.expenseId, overdue));
+    await db.update(expenses).set({ prepaid: true, prepaidReason: "해외 결제 선결제" }).where(eq(expenses.id, overdue));
+    await db.update(files).set({ removedAt: new Date() }).where(and(eq(files.ownerKind, "expense"), eq(files.ownerId, overdue)));
+    await page.goto(url);
+    await expect(rowOf(page, lines[1]?.itemName ?? "")).toContainText("증빙 2일 경과");
+    await expect(rowOf(page, lines[0]?.itemName ?? "")).toContainText("지급 완료");
+    expect(await pageOverflow(page)).toBeLessThanOrEqual(before);
+    await page.context().close();
+  });
 });
 
 test.afterAll(archiveTempRoles);

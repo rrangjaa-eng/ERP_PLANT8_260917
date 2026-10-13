@@ -5,11 +5,32 @@ vi.mock("@/domain/payments/targets", async () => {
   const actual = await vi.importActual<typeof import("@/domain/payments/targets")>("@/domain/payments/targets");
   return { ...actual, listAllPaymentTargets: vi.fn(actual.listAllPaymentTargets) };
 });
+vi.mock("@/domain/purchase-requests", async () => {
+  const actual = await vi.importActual<typeof import("@/domain/purchase-requests")>("@/domain/purchase-requests");
+  return { ...actual, listPurchaseRequests: vi.fn(actual.listPurchaseRequests) };
+});
+vi.mock("@/repositories/next-turn", async () => {
+  const actual = await vi.importActual<typeof import("@/repositories/next-turn")>("@/repositories/next-turn");
+  return { ...actual, listSettlingProjectsOfPm: vi.fn(actual.listSettlingProjectsOfPm), findOldestRequestedPurchaseAt: vi.fn(actual.findOldestRequestedPurchaseAt) };
+});
+vi.mock("@/domain/issue-requests", async () => {
+  const actual = await vi.importActual<typeof import("@/domain/issue-requests")>("@/domain/issue-requests");
+  return { ...actual, summarizeOpenIssueRequests: vi.fn(actual.summarizeOpenIssueRequests) };
+});
+vi.mock("@/domain/pre-settle-check", async () => {
+  const actual = await vi.importActual<typeof import("@/domain/pre-settle-check")>("@/domain/pre-settle-check");
+  return {
+    ...actual,
+    loadPreSettleInputs: vi.fn(actual.loadPreSettleInputs),
+    computePreSettleCheck: vi.fn(actual.computePreSettleCheck),
+    getPreSettleCheck: vi.fn(actual.getPreSettleCheck),
+  };
+});
 
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { randomUUID } from "node:crypto";
-import { approvalInstances, expenses, files } from "@/db/schema";
+import { approvalInstances, expenses, files, projects, purchaseRequests, teams } from "@/db/schema";
 import { approveDocument, getDocumentKind, listMyBlockedDocuments, listMyInbox, loadKindDetails, registerDocumentKind, rejectDocument, withdrawDocument } from "@/domain/approvals";
 import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND, saveExpenseDraft } from "@/domain/expenses";
 import { voidEvidence } from "@/domain/evidence";
@@ -28,6 +49,21 @@ import { setupSettlementProject } from "./fixtures/settlements";
 import { approvedExpenseWithEvidence, makePaymentManager } from "./fixtures/payments";
 import { listAllPaymentTargets } from "@/domain/payments/targets";
 import { seoulToday } from "@/lib/dates";
+import { listPurchaseRequests } from "@/domain/purchase-requests";
+import { summarizeOpenIssueRequests } from "@/domain/issue-requests";
+import { computePreSettleCheck, getPreSettleCheck, loadPreSettleInputs } from "@/domain/pre-settle-check";
+import { findOldestRequestedPurchaseAt, listSettlingProjectsOfPm } from "@/repositories/next-turn";
+import { createProject } from "@/domain/projects";
+import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
+import { insertRole } from "@/repositories/roles";
+import { upsertPermission } from "@/repositories/permissions";
+import { insertVendor } from "@/repositories/vendors";
+import { insertIssueRequest } from "@/repositories/revenue-issue-requests";
+import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
+import { formatKrw } from "@/lib/format-number";
+import { CEO_ROLE_ID } from "@/domain/permissions/roles";
+import { makePerson } from "./approvals-fixtures";
+import type { Viewer } from "@/domain/viewer";
 
 // 05-10 Task 1 — 「내 차례」 공급 함수의 [결재] 갈래와 결재 시트 지출결의 상세(구조 → 투영 → 문자열 행, 증빙 갈래 · 세율 바뀜).
 // 판정 · 글자는 전부 종류 요약(nextTurnText · measure)에서 온다 — 함수는 종류 이름으로 분기하지 않는다.
@@ -396,6 +432,249 @@ describe("「내 차례」 Phase 6 — 지급 묶음 (06-23)", () => {
       const items = await listNextTurnItems(viewer, undefined, { today });
       expect(items.filter((item) => item.key === "phase6-payment")).toEqual([]);
     }
+    expect(listAllPaymentTargets).toHaveBeenCalledTimes(0);
+  });
+});
+
+// 06-23 Task 2 — 구매 요청 · 발행 요청 묶음 · PM 완료 전 점검 항목 · 역할 범위(T-06-111) · 조회 수(E-31) · 구매 가장 오래된 날짜 집계(E-54).
+type Grant = { menu: string; action: "view" | "write" };
+
+async function roleViewer(name: string, grants: readonly Grant[], infoItems: readonly string[]): Promise<Viewer> {
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `${name}-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
+  for (const grant of grants) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: grant.menu, action: grant.action, allowed: true });
+  for (const infoItem of infoItems) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+  return makePerson(name, role.id, null);
+}
+
+// 경영관리 — 지급 · 구매 · 매출 기록 쓰기(셋 다).
+function makeFinanceManager(): Promise<Viewer> {
+  return roleViewer(
+    "경영관리",
+    [
+      { menu: "expenses", action: "view" },
+      { menu: "expenses.payments", action: "write" },
+      { menu: "cards.purchases", action: "write" },
+      { menu: "projects", action: "view" },
+      { menu: "projects.revenue", action: "view" },
+      { menu: "projects.revenue", action: "write" },
+    ],
+    ["expense.amount", "purchase_request.value", "purchase_request.amount", "project.value", "revenue.issued_amount"],
+  );
+}
+
+type PurchaseSeed = { requester: { id: string }; status?: "requested" | "purchased" | "cancelled"; amount?: number; createdAt?: Date };
+
+async function seedPurchases(rows: readonly PurchaseSeed[]): Promise<string[]> {
+  const inserted = await db
+    .insert(purchaseRequests)
+    .values(
+      rows.map((row) => ({
+        number: `TC${randomUUID().slice(0, 8)}`,
+        linkKind: "team_cost",
+        requestedBy: row.requester.id,
+        itemName: "내 차례 물건",
+        estimateAmountKrw: row.amount ?? 10_000,
+        status: row.status ?? "requested",
+        ...(row.status === "purchased" ? { completedBy: row.requester.id, completedAt: new Date() } : {}),
+        ...(row.status === "cancelled" ? { cancelledBy: row.requester.id, cancelledAt: new Date(), cancelReason: "취소" } : {}),
+        ...(row.createdAt ? { createdAt: row.createdAt } : {}),
+      })),
+    )
+    .returning({ id: purchaseRequests.id });
+  return inserted.map((row) => row.id);
+}
+
+async function seedIssueRequest(projectId: string, requestedBy: string, desiredIssueDate: string, amount = 10_000_000): Promise<void> {
+  await insertIssueRequest(
+    SYSTEM_VIEWER,
+    { id: randomUUID(), projectId, requestedBy, desiredIssueDate, amountCurrency: "KRW", amountForeignAmount: null, amountFxRate: "1.0000", amountAmountKrw: amount, memo: null },
+    db,
+  );
+}
+
+// 담당 PM의 프로젝트 — 거래처 없는 견적 줄 하나(미매칭 · 매출 미입력이라 완료 전 점검 막힘이 있다). status를 주면 그 상태로 둔다.
+async function pmProject(pm: Viewer, name: string, status: "settling" | "in_progress" = "settling"): Promise<string> {
+  const client = await insertVendor(SYSTEM_VIEWER, { name: `클라이언트-${randomUUID()}`, normalizedName: `클라이언트-${randomUUID()}` });
+  const [team] = await db.select().from(teams).limit(1);
+  if (!team) throw new Error("시드된 팀이 없습니다");
+  const project = await createProject(SYSTEM_VIEWER, { clientId: client.id, teamId: team.id, pmUserId: pm.id, name, startDate: "2026-01-05", endDate: "2026-03-31" });
+  const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+  if (!revision) throw new Error("1차 차수 없음");
+  const subcategory = (await firstSelectableSubcategory()).value;
+  await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
+    rows: [
+      {
+        id: randomUUID(),
+        isNew: true as const,
+        subcategory,
+        itemName: "무대 제작",
+        vendorId: null,
+        unitPrice: { currency: "KRW" as const, amount: 2_000_000, fxRate: 1 },
+        execution: { currency: "KRW" as const, amount: 1_000_000, fxRate: 1 },
+      },
+    ],
+  });
+  await db.update(projects).set({ status }).where(eq(projects.id, project.id));
+  return project.id;
+}
+
+function phase6Kinds(items: readonly { key: string }[]): string[] {
+  return [...new Set(items.filter((item) => item.key.startsWith("phase6-")).map((item) => (item.key.startsWith("phase6-presettle-") ? "phase6-presettle" : item.key)))].sort();
+}
+
+const PHASE6_SOURCES = [listAllPaymentTargets, listPurchaseRequests, findOldestRequestedPurchaseAt, summarizeOpenIssueRequests, listSettlingProjectsOfPm, loadPreSettleInputs, computePreSettleCheck, getPreSettleCheck];
+
+function clearSourceMocks(): void {
+  for (const source of PHASE6_SOURCES) vi.mocked(source).mockClear();
+}
+
+describe("「내 차례」 Phase 6 — 구매 · 발행 묶음 · PM 점검 · 역할 범위 (06-23)", () => {
+  const today = seoulToday();
+
+  // 역할 넷이 한 DB에 함께 있는 세상 — 지급 대상 1 · 구매 신청 1 · 발행 요청 1 · 기안자(PM)의 정산 프로젝트 1.
+  async function phase6World() {
+    const fx = await setupExpenseProject();
+    const manager = await makeFinanceManager();
+    const approved = await approvedExpenseWithEvidence(fx);
+    await db.update(expenses).set({ scheduledPaymentDate: today }).where(eq(expenses.id, approved.expenseId));
+    await seedPurchases([{ requester: fx.otherPm }]);
+    const settlingId = await pmProject(fx.pm, "정산 팝업");
+    await seedIssueRequest(settlingId, fx.pm.id, "2026-12-30");
+    // 대표는 매출 정산 보기만 — 발행 묶음 없음(D-601).
+    await upsertPermission(SYSTEM_VIEWER, { roleId: CEO_ROLE_ID, menu: "projects.revenue", action: "view", allowed: true });
+    return { fx, manager, settlingId };
+  }
+
+  it("역할 넷의 Phase 6 항목 종류 집합 — 경영관리 = 지급 · 구매 · 발행 / PM = 점검 / 기안 직원 · 대표 = 빈 집합", async () => {
+    const { fx, manager } = await phase6World();
+
+    expect(phase6Kinds(await listNextTurnItems(manager, undefined, { today }))).toEqual(["phase6-issue", "phase6-payment", "phase6-purchase"]);
+    expect(phase6Kinds(await listNextTurnItems(fx.pm, undefined, { today }))).toEqual(["phase6-presettle"]);
+    expect(phase6Kinds(await listNextTurnItems(fx.otherPm, undefined, { today }))).toEqual([]);
+    expect(phase6Kinds(await listNextTurnItems(fx.ceo, undefined, { today }))).toEqual([]);
+  });
+
+  it("권한 없는 역할(대표 · 기안 직원 · PM)은 지급 · 구매 · 발행 원천을 부르지 않는다", async () => {
+    const { fx } = await phase6World();
+    clearSourceMocks();
+
+    for (const viewer of [fx.ceo, fx.otherPm, fx.pm]) await listNextTurnItems(viewer, undefined, { today });
+
+    expect(listAllPaymentTargets).toHaveBeenCalledTimes(0);
+    expect(listPurchaseRequests).toHaveBeenCalledTimes(0);
+    expect(findOldestRequestedPurchaseAt).toHaveBeenCalledTimes(0);
+    expect(summarizeOpenIssueRequests).toHaveBeenCalledTimes(0);
+  });
+
+  it("신청 51건 — 가장 오래된 날짜는 집계(첫 쪽 밖의 가장 오래된 요청) · 건수 · 합계 = 06-14 목록 서버 합계", async () => {
+    const requester = await makePerson("요청자", DEFAULT_ROLE_ID, null);
+    const purchaser = await roleViewer("구매담당", [{ menu: "cards.purchases", action: "write" }], ["purchase_request.value", "purchase_request.amount"]);
+    // 가장 오래된 신청은 서울 09-18 01:30(UTC 09-17 16:30) — 목록은 최근 순이라 51번째(둘째 쪽)다. 더 오래된 구매 완료 · 취소는 세지 않는다.
+    const [oldestId] = await seedPurchases([{ requester, createdAt: new Date("2026-09-17T16:30:00Z"), amount: 7_000 }]);
+    await seedPurchases(Array.from({ length: 50 }, () => ({ requester, amount: 1_000 })));
+    await seedPurchases([
+      { requester, status: "purchased", createdAt: new Date("2026-09-01T00:00:00Z") },
+      { requester, status: "cancelled", createdAt: new Date("2026-09-02T00:00:00Z") },
+    ]);
+
+    const list = await listPurchaseRequests(purchaser, { status: "requested" });
+    expect(list.rows.map((row) => row.id)).not.toContain(oldestId);
+    expect(list.totals).toEqual({ count: 51, estimateKrw: 57_000 });
+
+    const items = await listNextTurnItems(purchaser, undefined, { today });
+    expect(items.filter((item) => item.key === "phase6-purchase")).toEqual([
+      {
+        key: "phase6-purchase",
+        tag: "대기",
+        label: "구매 요청 — 신청 51건 · 가장 오래된 09-18",
+        reason: "",
+        measureText: formatKrw(57_000),
+        action: { label: "구매 요청 보기", href: "/cards/purchases" },
+      },
+    ]);
+  });
+
+  it("구매 권한자 — 신청 0건(구매 완료 · 취소만)이면 줄이 없다", async () => {
+    const requester = await makePerson("요청자", DEFAULT_ROLE_ID, null);
+    const purchaser = await roleViewer("구매담당", [{ menu: "cards.purchases", action: "write" }], ["purchase_request.amount"]);
+    await seedPurchases([{ requester, status: "purchased" }, { requester, status: "cancelled" }]);
+
+    expect(await findOldestRequestedPurchaseAt(purchaser)).toBeNull();
+    expect((await listNextTurnItems(purchaser, undefined, { today })).filter((item) => item.key === "phase6-purchase")).toEqual([]);
+  });
+
+  it("매출 기록 권한자 — 발행 요청 묶음 = summarizeOpenIssueRequests(건수 · 가장 이른 희망일 · 공급가 합), 희망일이 오늘 이전이면 [오늘]", async () => {
+    const finance = await roleViewer(
+      "매출기록",
+      [
+        { menu: "projects", action: "view" },
+        { menu: "projects.revenue", action: "view" },
+        { menu: "projects.revenue", action: "write" },
+      ],
+      ["project.value", "revenue.issued_amount"],
+    );
+    const pm = await makePerson("담당", DEFAULT_ROLE_ID, null);
+    const projectId = await pmProject(pm, "발행 프로젝트", "in_progress");
+    await seedIssueRequest(projectId, pm.id, "2026-10-02", 3_000_000);
+    await seedIssueRequest(projectId, pm.id, "2026-09-30", 2_000_000);
+    expect(await summarizeOpenIssueRequests(finance)).toEqual({ count: 2, earliestDesiredDate: "2026-09-30", supplyKrw: 5_000_000 });
+
+    const before = await listNextTurnItems(finance, undefined, { today: "2026-09-24" });
+    expect(before.filter((item) => item.key === "phase6-issue")).toEqual([
+      {
+        key: "phase6-issue",
+        tag: "대기",
+        label: "매출 발행 요청 — 2건 · 희망 09-30",
+        reason: "",
+        measureText: "5,000,000",
+        action: { label: "발행 요청 보기", href: "/projects/issue-requests" },
+      },
+    ]);
+    const due = await listNextTurnItems(finance, undefined, { today: "2026-09-30" });
+    expect(due.find((item) => item.key === "phase6-issue")?.tag).toBe("오늘");
+  });
+
+  it("담당 PM — 막힘 있는 정산 프로젝트마다 한 줄 · 건수 = 06-19 점검 막힘 건수, 진행 중 · 남의 정산 프로젝트는 줄 없음", async () => {
+    const pm = await makePerson("담당PM", DEFAULT_ROLE_ID, "기획1팀");
+    const other = await makePerson("다른PM", DEFAULT_ROLE_ID, "기획1팀");
+    const first = await pmProject(pm, "정산 하나");
+    const second = await pmProject(pm, "정산 둘");
+    await pmProject(pm, "진행 중", "in_progress");
+    await pmProject(other, "남의 정산");
+
+    const items = (await listNextTurnItems(pm, undefined, { today })).filter((item) => item.key.startsWith("phase6-presettle-"));
+
+    const expected = await Promise.all(
+      [first, second].map(async (id) => ({ id, blocked: (await getPreSettleCheck(pm, id)).blockedCount })),
+    );
+    expect(expected.every((entry) => entry.blocked > 0)).toBe(true);
+    expect(items.map((item) => [item.tag, item.label, item.measureText, item.action.href]).sort()).toEqual(
+      [
+        ["막힘", `정산 하나 — 완료 전 점검 ${expected[0]?.blocked}건`, "—", `/projects/${first}#pre-settle-check`],
+        ["막힘", `정산 둘 — 완료 전 점검 ${expected[1]?.blocked}건`, "—", `/projects/${second}#pre-settle-check`],
+      ].sort(),
+    );
+  });
+
+  it("홈 공급 조회 수 — 경영관리 한 번 로드 · 정산 프로젝트 2개의 PM 한 번 로드 (E-31)", async () => {
+    const { fx, manager } = await phase6World();
+    await pmProject(fx.pm, "정산 둘째");
+
+    clearSourceMocks();
+    await listNextTurnItems(manager, undefined, { today });
+    expect(listAllPaymentTargets).toHaveBeenCalledTimes(1);
+    expect(listPurchaseRequests).toHaveBeenCalledTimes(1);
+    expect(findOldestRequestedPurchaseAt).toHaveBeenCalledTimes(1);
+    expect(summarizeOpenIssueRequests).toHaveBeenCalledTimes(1);
+    expect(loadPreSettleInputs).toHaveBeenCalledTimes(0);
+    expect(computePreSettleCheck).toHaveBeenCalledTimes(0);
+
+    clearSourceMocks();
+    await listNextTurnItems(fx.pm, undefined, { today });
+    expect(listSettlingProjectsOfPm).toHaveBeenCalledTimes(1);
+    expect(loadPreSettleInputs).toHaveBeenCalledTimes(1);
+    expect(computePreSettleCheck).toHaveBeenCalledTimes(2);
+    expect(getPreSettleCheck).toHaveBeenCalledTimes(0);
     expect(listAllPaymentTargets).toHaveBeenCalledTimes(0);
   });
 });

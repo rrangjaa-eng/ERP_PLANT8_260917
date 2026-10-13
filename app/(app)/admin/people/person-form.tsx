@@ -6,6 +6,7 @@ import { registerPersonAction, archivePersonAction } from "./actions";
 import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
 import { Form } from "@/ui/form/Form";
+import { kstToday } from "@/lib/kst-date";
 import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
 import { usePanel } from "@/ui/side-panel/SidePanel";
 import { ArchiveRejectedError, DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
@@ -136,7 +137,19 @@ export function PersonForm({
       </div>
       <div className={styles.panelSelect}>
         <label htmlFor="teamId">팀</label>
-        <select className={styles.select} id="teamId" name="teamId" defaultValue="">
+        <select
+          className={styles.select}
+          id="teamId"
+          name="teamId"
+          defaultValue=""
+          // 사용자 카드 2026-10-13 「오늘로 채우기」: 팀을 고르면 비어 있는 발령일만 오늘(KST)로 채운다 — 입력한 날짜는 덮지 않는다.
+          onChange={(event) => {
+            const effectiveFrom = event.currentTarget.form?.elements.namedItem("effectiveFrom");
+            if (event.currentTarget.value && effectiveFrom instanceof HTMLInputElement && !effectiveFrom.value) {
+              effectiveFrom.value = kstToday(new Date());
+            }
+          }}
+        >
           <option value="">배정 없음</option>
           {teams.map((team) => (
             <option key={team.id} value={team.id}>

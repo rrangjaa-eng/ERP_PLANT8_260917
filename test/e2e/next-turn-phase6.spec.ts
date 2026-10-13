@@ -1,15 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { expenses, projects } from "@/db/schema";
+import { expenses, files, projects } from "@/db/schema";
 import { approveDocument, getApprovalView } from "@/domain/approvals";
 import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { seoulToday } from "@/lib/dates";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
+import { insertApprovalInstance } from "@/repositories/approvals";
 import { submitReadyDraft } from "../integration/fixtures/expenses";
-import { loginPage, makePerson, type Person } from "./leave-org";
+import { loginPage, makePerson, setupLeaveOrg, waitForHydration, type Person } from "./leave-org";
 import { archiveTempRoles, insertTempRole, setupExpenseE2E, type ExpenseE2E, type LineKey } from "./expense-fixture";
 
 // 06-23(S19 · UA-611 · O-15): 첫 화면 「내 차례」의 Phase 6 항목. E2E DB는 스펙끼리 초기화 없이 공유한다 — 건수는 시드 전후 상대값으로 본다(E-28).
@@ -80,5 +81,44 @@ test.describe("「내 차례」 Phase 6 — 지급 묶음 (06-23 트레이서)",
     await row.getByRole("link", { name: "지급 대상 보기" }).click();
     await expect.poll(() => new URL(page.url()).pathname).toBe("/expenses");
     expect(new URL(page.url()).searchParams.get("status")).toBe("지급 대상");
+  });
+});
+
+test.describe("「내 차례」 Phase 6 — 기안자 증빙 · 공급 실패 (06-23 Task 3)", () => {
+  test("기안자 — 증빙 없음 · 지급 대기 → 증빙 올리기", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const expenseId = await approvedLine(fx, "hold");
+    // 무효 이력 없는 증빙 0(P3) — 제출 게이트 때문에 도메인 경로로는 못 만들어 파일을 지운 표시만 남긴다.
+    await db.update(files).set({ removedAt: new Date() }).where(and(eq(files.ownerKind, "expense"), eq(files.ownerId, expenseId)));
+
+    const page = await loginPage(browser, baseURL, fx.pm, DESKTOP);
+    await page.goto("/");
+    const targetText = `${fx.projectName} · ${fx.lines.hold.itemName}`;
+    const row = page.getByRole("listitem").filter({ hasText: targetText });
+    await expect(row).toHaveCount(1);
+    await expect(row).toContainText(`${targetText} — 증빙 없음 · 지급 대기`);
+    await expect(row.getByText("막힘", { exact: true })).toBeVisible();
+    const upload = row.getByRole("link", { name: "증빙 올리기" });
+    expect(await upload.getAttribute("href")).toMatch(new RegExp(`/expenses/${expenseId}#evidence$`));
+
+    await upload.click();
+    await expect(page).toHaveURL(new RegExp(`/expenses/${expenseId}#evidence$`));
+    await expect(page.locator("#evidence")).toBeVisible();
+  });
+
+  test("공급 실패 — 오류 한 줄", async ({ browser, baseURL }) => {
+    const org = await setupLeaveOrg(seoulToday());
+    // 등록되지 않은 종류의 반려 인스턴스 — 공급 함수가 던진다(05 스펙과 같은 주입).
+    await insertApprovalInstance(org.drafter.viewer, { documentKind: `ghost-${randomUUID().slice(0, 8)}`, documentId: randomUUID(), drafterId: org.drafter.viewer.id, status: "rejected", currentRound: 1 }, db);
+
+    const page = await loginPage(browser, baseURL, org.drafter, DESKTOP);
+    await page.goto("/");
+
+    await expect(page.getByRole("heading", { level: 1, name: "내 차례" })).toBeVisible();
+    await expect(page.getByText("내 차례 불러오지 못함")).toBeVisible();
+    const retry = page.getByRole("button", { name: "다시 시도" });
+    await waitForHydration(retry);
+    await expect(retry).toBeVisible();
+    await expect(page.getByText("표시할 항목이 없습니다")).toHaveCount(0);
   });
 });

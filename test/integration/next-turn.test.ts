@@ -30,9 +30,10 @@ vi.mock("@/domain/pre-settle-check", async () => {
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { randomUUID } from "node:crypto";
-import { approvalInstances, expenses, files, projects, purchaseRequests, teams } from "@/db/schema";
+import { approvalInstances, expenseEvidenceReviews, expensePayments, expenses, files, projects, purchaseRequests, teams } from "@/db/schema";
 import { approveDocument, getDocumentKind, listMyBlockedDocuments, listMyInbox, loadKindDetails, registerDocumentKind, rejectDocument, withdrawDocument } from "@/domain/approvals";
-import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND, saveExpenseDraft } from "@/domain/expenses";
+import { closeExpense, createExpenseFromLines, EXPENSE_DOCUMENT_KIND, saveExpenseDraft } from "@/domain/expenses";
+import { listExpenseEvidenceSignals, pickExpenseEvidenceSignal } from "@/domain/expenses/evidence-signals";
 import { voidEvidence } from "@/domain/evidence";
 import { submitLeave } from "@/domain/leave";
 import { listNextTurnItems } from "@/domain/next-turn";
@@ -46,7 +47,8 @@ import { NOW_2026 } from "./approvals-fixtures";
 import { attachEvidence, makeEvidenceManager, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
 import { submitSettlement } from "@/domain/settlements";
 import { setupSettlementProject } from "./fixtures/settlements";
-import { approvedExpenseWithEvidence, makePaymentManager } from "./fixtures/payments";
+import { approvedExpenseWithEvidence, makePaymentManager, setEvidenceRequired } from "./fixtures/payments";
+import { addDays } from "@/lib/kst-date";
 import { listAllPaymentTargets } from "@/domain/payments/targets";
 import { seoulToday } from "@/lib/dates";
 import { listPurchaseRequests } from "@/domain/purchase-requests";
@@ -281,7 +283,8 @@ describe("증빙 무효 [막힘] (G1)", () => {
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({
       tag: "막힘",
-      label: "가을 팝업 · 무대 제작 — 증빙 무효",
+      // 06-23 PN-7: 결재 통과 · 지급 전 · 유일한 파일 무효 = 증빙 0 → 문서마다 신호 하나(PN-6)라 `증빙 없음 · 지급 대기`.
+      label: "가을 팝업 · 무대 제작 — 증빙 없음 · 지급 대기",
       reason: "",
       measureText: "12,400,000",
       action: { label: "증빙 올리기", href: `/expenses/${expenseId}#evidence` },
@@ -315,7 +318,7 @@ describe("증빙 무효 [막힘] (G1)", () => {
       const items = await listNextTurnItems(fx.pm);
       expect(items.map((item) => item.label)).toEqual([
         expect.stringMatching(/지출결의 반려, 김도윤$/) as string,
-        "가을 팝업 · 무대 제작 — 증빙 무효",
+        "가을 팝업 · 무대 제작 — 증빙 없음 · 지급 대기",
       ]);
       expect(spy).toHaveBeenCalledTimes(1);
     } finally {
@@ -345,7 +348,7 @@ describe("증빙 무효 [막힘] — 오래된 승인 문서 (A9 · adversarial 
     );
 
     const items = await listNextTurnItems(fx.pm);
-    expect(items.map((item) => item.label)).toEqual(["가을 팝업 · 무대 제작 — 증빙 무효"]);
+    expect(items.map((item) => item.label)).toEqual(["가을 팝업 · 무대 제작 — 증빙 없음 · 지급 대기"]);
   });
 });
 
@@ -676,5 +679,247 @@ describe("「내 차례」 Phase 6 — 구매 · 발행 묶음 · PM 점검 · �
     expect(computePreSettleCheck).toHaveBeenCalledTimes(2);
     expect(getPreSettleCheck).toHaveBeenCalledTimes(0);
     expect(listAllPaymentTargets).toHaveBeenCalledTimes(0);
+  });
+});
+
+// 06-23 Task 3 — 기안자 증빙 신호 하나(B-C8 · H-1 · PN-6) · 승인 뒤 막힘 후보 갈래(E-3 · R-3) · 종결 제외(C10) · 공급 실패(PN-3).
+describe("pickExpenseEvidenceSignal — 문서마다 신호 하나(PN-6)", () => {
+  it("선결제 16일 경과 + 무효 → `선결제 증빙 16일 경과`", () => {
+    expect(pickExpenseEvidenceSignal({ prepaidOverdueDays: 16, missingUnpaid: false, voided: true })).toBe("선결제 증빙 16일 경과");
+  });
+
+  it("증빙 없음 · 지급 대기 + 무효 → `증빙 없음 · 지급 대기`", () => {
+    expect(pickExpenseEvidenceSignal({ prepaidOverdueDays: null, missingUnpaid: true, voided: true })).toBe("증빙 없음 · 지급 대기");
+  });
+
+  it("무효만 → `증빙 무효`", () => {
+    expect(pickExpenseEvidenceSignal({ prepaidOverdueDays: null, missingUnpaid: false, voided: true })).toBe("증빙 무효");
+  });
+
+  it("셋 다 없으면 신호 없음(기한 전 0일 포함)", () => {
+    expect(pickExpenseEvidenceSignal({ prepaidOverdueDays: null, missingUnpaid: false, voided: false })).toBeNull();
+    expect(pickExpenseEvidenceSignal({ prepaidOverdueDays: 0, missingUnpaid: false, voided: false })).toBeNull();
+  });
+});
+
+const SIGNAL_TODAY = "2026-10-13";
+
+// 살아 있는 파일을 지운 표시(removed_at)로 증빙 0을 만든다 — 무효 이력이 없는 증빙 0 결재 통과 문서(제출 게이트 ⑧ 때문에 도메인 경로로는 못 만든다).
+async function removeAllFiles(expenseId: string): Promise<void> {
+  await db.update(files).set({ removedAt: new Date() }).where(and(eq(files.ownerKind, "expense"), eq(files.ownerId, expenseId)));
+}
+
+async function markPaid(expenseId: string, payDate: string, processedBy: string): Promise<void> {
+  await db.insert(expensePayments).values({ expenseId, payDate, transferKrw: 13_640_000, payableKrw: 13_640_000, diffKrw: 0, paymentMethod: "transfer", processedBy });
+}
+
+async function markPrepaid(expenseId: string): Promise<void> {
+  await db.update(expenses).set({ prepaid: true, prepaidReason: "행사장 선입금 요구" }).where(eq(expenses.id, expenseId));
+}
+
+async function markWaived(expenseId: string, reviewedBy: string): Promise<void> {
+  await db.insert(expenseEvidenceReviews).values({ expenseId, status: "waived", waiveReason: "영수증 분실", reviewedBy });
+}
+
+async function signalOf(viewer: Viewer, expenseId: string, today = SIGNAL_TODAY): Promise<string | null> {
+  return (await listExpenseEvidenceSignals(viewer, { ids: [expenseId], today })).get(expenseId)?.situation ?? null;
+}
+
+describe("listExpenseEvidenceSignals — 기안자 증빙 신호(B-C8 · H-1)", () => {
+  it("결재 통과 · 지급 전 · 증빙 필수 on · 살아 있는 파일 0 · 선결제 아님 · 면제 아님 → `증빙 없음 · 지급 대기`", async () => {
+    const fx = await setupExpenseProject();
+    const { expenseId } = await approvedExpenseWithEvidence(fx);
+    await removeAllFiles(expenseId);
+
+    expect(await signalOf(fx.pm, expenseId)).toBe("증빙 없음 · 지급 대기");
+  });
+
+  it("유일한 파일을 무효 처리한 지급 전 문서 → `증빙 없음 · 지급 대기` 한 줄(증빙 무효와 두 줄이 아니다)", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await makeEvidenceManager();
+    const { expenseId } = await approvedExpense(fx);
+    await voidEvidence(manager, { fileId: (await fileIds(expenseId))[0] ?? "", reason: "다른 건" });
+
+    const signals = await listExpenseEvidenceSignals(fx.pm, { ids: [expenseId], today: SIGNAL_TODAY });
+    expect([...signals.values()]).toEqual([{ situation: "증빙 없음 · 지급 대기" }]);
+  });
+
+  it("지급 뒤 · 무효 → `증빙 무효`", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await makeEvidenceManager();
+    const { expenseId } = await approvedExpense(fx);
+    await markPaid(expenseId, "2026-10-01", fx.ceo.id);
+    await voidEvidence(manager, { fileId: (await fileIds(expenseId))[0] ?? "", reason: "다른 건" });
+
+    expect(await signalOf(fx.pm, expenseId)).toBe("증빙 무효");
+  });
+
+  it("`확인 전`(증빙 있음 · 확인 기록 없음) → 신호 없음", async () => {
+    const fx = await setupExpenseProject();
+    const { expenseId } = await approvedExpenseWithEvidence(fx);
+
+    expect(await signalOf(fx.pm, expenseId)).toBeNull();
+  });
+
+  it("증빙 필수 off → 신호 없음", async () => {
+    const fx = await setupExpenseProject();
+    const { expenseId } = await approvedExpenseWithEvidence(fx);
+    await removeAllFiles(expenseId);
+    await setEvidenceRequired(false);
+
+    expect(await signalOf(fx.pm, expenseId)).toBeNull();
+  });
+
+  it("면제 → 신호 없음", async () => {
+    const fx = await setupExpenseProject();
+    const { expenseId } = await approvedExpenseWithEvidence(fx);
+    await removeAllFiles(expenseId);
+    await markWaived(expenseId, fx.ceo.id);
+
+    expect(await signalOf(fx.pm, expenseId)).toBeNull();
+  });
+
+  it("선결제 · 기한(지급일 + 14일) 16일 경과 · 증빙 0 → `선결제 증빙 16일 경과`", async () => {
+    const fx = await setupExpenseProject();
+    const { expenseId } = await approvedExpenseWithEvidence(fx);
+    await markPrepaid(expenseId);
+    await markPaid(expenseId, addDays(SIGNAL_TODAY, -30), fx.ceo.id);
+    await removeAllFiles(expenseId);
+
+    expect(await signalOf(fx.pm, expenseId)).toBe("선결제 증빙 16일 경과");
+  });
+
+  it("선결제 · 기한 전 → 신호 없음", async () => {
+    const fx = await setupExpenseProject();
+    const { expenseId } = await approvedExpenseWithEvidence(fx);
+    await markPrepaid(expenseId);
+    await markPaid(expenseId, addDays(SIGNAL_TODAY, -5), fx.ceo.id);
+    await removeAllFiles(expenseId);
+
+    expect(await signalOf(fx.pm, expenseId)).toBeNull();
+  });
+});
+
+// 기안자를 바꾼다 — 같은 프로젝트의 PM(박서연)이 기안자가 아닌 문서(지출결의 · 결재 인스턴스의 기안자 칸만 옮긴다).
+async function moveDrafter(expenseId: string, drafterId: string): Promise<void> {
+  await db.update(expenses).set({ drafterId }).where(eq(expenses.id, expenseId));
+  await db.update(approvalInstances).set({ drafterId }).where(and(eq(approvalInstances.documentKind, EXPENSE_DOCUMENT_KIND), eq(approvalInstances.documentId, expenseId)));
+}
+
+describe("「내 차례」 기안자 증빙 줄 — 05 훅 경유 (06-23)", () => {
+  it("기안 직원 → 자기 문서의 신호 줄 하나, 같은 프로젝트 PM(기안자 아님) · 경영관리 → 그 줄 없음", async () => {
+    const fx = await setupExpenseProject();
+    const { expenseId } = await approvedExpenseWithEvidence(fx);
+    await removeAllFiles(expenseId);
+    await moveDrafter(expenseId, fx.otherPm.id);
+    const manager = await makeFinanceManager();
+
+    const mine = await listNextTurnItems(fx.otherPm);
+    expect(mine).toEqual([
+      {
+        key: expect.stringMatching(/^blocked-/) as string,
+        tag: "막힘",
+        label: "가을 팝업 · 무대 제작 — 증빙 없음 · 지급 대기",
+        reason: "",
+        measureText: "12,400,000",
+        action: { label: "증빙 올리기", href: `/expenses/${expenseId}#evidence` },
+      },
+    ]);
+    for (const viewer of [fx.pm, manager]) {
+      expect((await listNextTurnItems(viewer)).filter((item) => item.action.href === `/expenses/${expenseId}#evidence`)).toEqual([]);
+    }
+  });
+
+  it("유일한 파일을 무효 처리한 지급 전 문서 → 신호 줄 정확히 1개", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await makeEvidenceManager();
+    const { expenseId } = await approvedExpense(fx);
+    await voidEvidence(manager, { fileId: (await fileIds(expenseId))[0] ?? "", reason: "다른 건" });
+
+    const lines = (await listNextTurnItems(fx.pm)).filter((item) => item.action.href === `/expenses/${expenseId}#evidence`);
+    expect(lines.map((item) => item.label)).toEqual(["가을 팝업 · 무대 제작 — 증빙 없음 · 지급 대기"]);
+  });
+
+  it("종결한 반려 문서 → 기안자 [막힘] 반려 줄 없음(C10 · 06-28, 반려 문서 50건 미만 — E-47 회귀 메모)", async () => {
+    const fx = await setupExpenseProject();
+    const { expenseId, instanceId } = await submittedExpense(fx);
+    await rejectDocument(fx.lead, { instanceId, expectedVersion: 1, reason: "다시" });
+    expect((await listNextTurnItems(fx.pm)).map((item) => item.label)).toEqual([expect.stringMatching(/지출결의 반려, 김도윤$/) as string]);
+
+    const [row] = await db.select({ version: expenses.version }).from(expenses).where(eq(expenses.id, expenseId));
+    await closeExpense(fx.pm, { expenseId, expectedVersion: row?.version ?? 0, reason: "업체 취소" });
+
+    expect(await listNextTurnItems(fx.pm)).toEqual([]);
+  });
+
+  it("공급 실패 — Phase 6 원천 하나가 던지면 listNextTurnItems가 던진다(빈 목록 · 일부 항목으로 숨기지 않는다)", async () => {
+    const manager = await makeFinanceManager();
+    vi.mocked(listAllPaymentTargets).mockRejectedValueOnce(new Error("지급 대상 원천 실패"));
+
+    await expect(listNextTurnItems(manager)).rejects.toThrow("지급 대상 원천 실패");
+  });
+});
+
+// 더 최근에 처리된 승인 인스턴스 n건(결재 인스턴스 행만 · 지출결의 행 없음 — 05 A9와 같은 꼴).
+async function laterApprovedInstances(drafterId: string, count: number): Promise<void> {
+  const later = new Date(Date.now() + 60_000);
+  await db.insert(approvalInstances).values(
+    Array.from({ length: count }, () => ({ documentKind: EXPENSE_DOCUMENT_KIND, documentId: randomUUID(), drafterId, status: "approved", currentRound: 1, createdAt: later, updatedAt: later })),
+  );
+}
+
+describe("승인 뒤 막힘 후보 갈래 expense_blocked_after_approval (E-3 · R-3)", () => {
+  it("증빙 0 승인 문서가 201번째로 오래돼도 홈에 선다", async () => {
+    const fx = await setupExpenseProject();
+    const { expenseId } = await approvedExpenseWithEvidence(fx);
+    await removeAllFiles(expenseId);
+    await laterApprovedInstances(fx.pm.id, 201);
+
+    expect((await listNextTurnItems(fx.pm)).map((item) => item.label)).toEqual(["가을 팝업 · 무대 제작 — 증빙 없음 · 지급 대기"]);
+  });
+
+  it("선결제 · 기한 경과 · 증빙 0 문서도 201번째로 오래돼도 홈에 선다", async () => {
+    const fx = await setupExpenseProject();
+    const { expenseId } = await approvedExpenseWithEvidence(fx);
+    await markPrepaid(expenseId);
+    await markPaid(expenseId, addDays(seoulToday(), -30), fx.ceo.id);
+    await removeAllFiles(expenseId);
+    await laterApprovedInstances(fx.pm.id, 201);
+
+    expect((await listNextTurnItems(fx.pm)).map((item) => item.label)).toEqual(["가을 팝업 · 무대 제작 — 선결제 증빙 16일 경과"]);
+  });
+
+  it("후보 SQL이 거르는 셋(무효 이력 없음) — 증빙 0 · 면제 / 증빙 0 · 지급 뒤(선결제 아님) / 살아 있는 파일 있음 → 훅에 닿지 않는다", async () => {
+    const cases: { name: string; prepare: (fx: ExpenseFixture, expenseId: string) => Promise<void> }[] = [
+      { name: "면제", prepare: async (fx, id) => { await removeAllFiles(id); await markWaived(id, fx.ceo.id); } },
+      { name: "지급 뒤", prepare: async (fx, id) => { await removeAllFiles(id); await markPaid(id, "2026-10-01", fx.ceo.id); } },
+      { name: "살아 있는 파일", prepare: () => Promise.resolve() },
+    ];
+    for (const entry of cases) {
+      const fx = await setupExpenseProject();
+      const { expenseId } = await approvedExpenseWithEvidence(fx);
+      await entry.prepare(fx, expenseId);
+      const spy = vi.spyOn(getDocumentKind(EXPENSE_DOCUMENT_KIND), "blockedAfterApproval");
+      try {
+        expect(await listNextTurnItems(fx.pm), entry.name).toEqual([]);
+        for (const call of spy.mock.calls) expect(call[1], entry.name).not.toContain(expenseId);
+      } finally {
+        spy.mockRestore();
+      }
+    }
+  });
+
+  it("증빙 필수 off — 후보에 들어도 줄 없음", async () => {
+    const fx = await setupExpenseProject();
+    const { expenseId } = await approvedExpenseWithEvidence(fx);
+    await removeAllFiles(expenseId);
+    await setEvidenceRequired(false);
+    const spy = vi.spyOn(getDocumentKind(EXPENSE_DOCUMENT_KIND), "blockedAfterApproval");
+    try {
+      expect(await listNextTurnItems(fx.pm)).toEqual([]);
+      expect(spy.mock.calls.some((call) => call[1].includes(expenseId))).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

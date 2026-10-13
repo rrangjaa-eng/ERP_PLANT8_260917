@@ -81,6 +81,7 @@ export const ROW_SCOPE_DISPOSITION: readonly DomainDisposition[] = [
   { file: "domain/payments/index.ts", fn: "cardSuppliesOnChain", primitive: "listAliveCardUsageSuppliesByProject", kind: "post-gate", reason: PAYMENT_DOC_GATE },
   { file: "domain/payments/index.ts", fn: "cardSuppliesOnChain", primitive: "listLineageLinesByProjects", kind: "post-gate", reason: PAYMENT_DOC_GATE },
   { file: "domain/payments/index.ts", fn: "lineRemainingFor", primitive: "findQuoteLineById", kind: "post-gate", reason: PAYMENT_DOC_GATE },
+  { file: "domain/pre-settle-check/index.ts", fn: "computePreSettleCheck", primitive: "findLatestQuoteRevision", kind: "post-gate", reason: "호출자 판정 뒤 현재 차수 — 상세 페이지 getPreSettleCheck(findProject = findProjectInScope 뒤) · submitSettlement(트랜잭션 전 findProjectInScope 판정 뒤 같은 tx, 06-19)" },
   { file: "domain/projects/index.ts", fn: "createProject", primitive: "findLatestQuoteRevision", kind: "post-gate", reason: "새로 만든 프로젝트(또는 findCopySourceRow 범위 판정을 지난 복사 출처)의 차수" },
   { file: "domain/projects/index.ts", fn: "getProjectCopySource", primitive: "findLatestQuoteRevision", kind: "post-gate", reason: "findCopySourceRow(findProjectInScope) 판정 뒤(06.2-03)" },
   { file: "domain/projects/ledger.ts", fn: "saveProjectLedger", primitive: "findProjectById", kind: "post-gate", reason: "트랜잭션 전 findProjectInScope 판정 뒤 차수 소속 · 팀장 이름(06.2-03)" },

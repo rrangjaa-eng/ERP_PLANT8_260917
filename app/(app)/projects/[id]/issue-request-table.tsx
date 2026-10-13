@@ -136,6 +136,19 @@ export function IssueRequestTable({
   // 06-21 — 취소는 저장된 `신청됨` · 미연결 줄만(새 줄 · 발행 줄 입력 중 · 발행됨 · 취소 줄은 Delete가 아무 일도 하지 않는다).
   const canCancelRow = (row: IssueRequestDraft) => canAdd && row.status === "requested" && row.version !== undefined && !linkedRequestIds.has(row.id);
   const [cancelTarget, setCancelTarget] = useState<IssueRequestDraft | null>(null);
+  // 확인 모달 1차 뒤 트리거 칸은 읽기 칸이 되어 포커스를 받지 못한다(§7-17 · 감사 D-4) — 모달이 닫힌 뒤 취소한 그 줄(tabindex -1)로 옮긴다.
+  const focusAfterCancel = useRef<string | null>(null);
+  useEffect(() => {
+    const id = focusAfterCancel.current;
+    if (cancelTarget !== null || id === null) return;
+    focusAfterCancel.current = null;
+    const row = Array.from(document.querySelectorAll<HTMLElement>("[data-issue-request-id]"))
+      .find((element) => element.dataset.issueRequestId === id)
+      ?.closest("tr");
+    if (!row) return;
+    row.setAttribute("tabindex", "-1");
+    row.focus();
+  }, [cancelTarget]);
   const editability = (row: IssueRequestDraft) => (canEditRow(row) ? "edit" : props.canRequest ? "readonly" : "locked");
 
   // 06-21(S17 → S16) — `?issueRequest={id}`로 들어오면 마운트 뒤 그 요청 줄로 스크롤 · 포커스: `발행 줄로`가 선 줄이면 그 3차, 아니면 줄 자체
@@ -293,6 +306,8 @@ export function IssueRequestTable({
         emptyAction={canAdd && props.canRequest ? { label: "발행 요청 추가", onClick: onAdd } : undefined}
         saveLocked={saveLocked}
         cellIssue={cellIssue}
+        // 취소한 줄의 상태 칸 `취소`는 저장 대기(dirty) 칸이다(§7-3 · 감사 D-6).
+        cellDirty={(row, columnKey) => columnKey === "status" && row.cancel === true}
         firstIssueSignal={firstIssueSignal}
       />
       {canAdd && rows.length > 0 ? (
@@ -312,7 +327,10 @@ export function IssueRequestTable({
         primary={{
           label: "발행 요청 취소",
           onConfirm: () => {
-            if (cancelTarget) onChange(cancelTarget.clientKey, { status: "cancelled", cancel: true });
+            if (cancelTarget) {
+              onChange(cancelTarget.clientKey, { status: "cancelled", cancel: true });
+              focusAfterCancel.current = cancelTarget.id;
+            }
             setCancelTarget(null);
           },
         }}

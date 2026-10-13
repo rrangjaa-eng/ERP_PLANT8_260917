@@ -536,4 +536,39 @@ test.describe("발행 요청 — 06-21 DOM 감사 반영", () => {
       await context.close();
     }
   });
+
+  test("확인 모달 1차 뒤 포커스는 취소한 줄로 가고, 상태 칸 `취소`는 저장 대기(dirty) 표시다 (D-4 · D-6)", async ({ browser }) => {
+    const { projectUrl, projectId, pm, today } = await setupProject();
+    await seedRequest(projectId, pm.userId, { desiredIssueDate: today, amount: 4_000_000, memo: "포커스 볼 요청" });
+
+    const { page, context } = await openAs(browser, pm, projectUrl);
+    const memoCell = requestTable(page).locator("td", { has: page.getByLabel("메모") });
+    const dialog = page.getByRole("dialog", { name: "발행 요청 취소" });
+    await expect(memoCell).toBeVisible();
+    await memoCell.focus();
+    await page.keyboard.press("Delete");
+    await dialog.getByRole("button", { name: /^발행 요청 취소/ }).click();
+    await expect(dialog).toBeHidden();
+
+    const row = requestTable(page).locator("tr", { hasText: "포커스 볼 요청" }).first();
+    await expect(row).toBeFocused();
+    const dirty = requestTable(page).locator("td[class*='dirtyCell']");
+    await expect(dirty).toHaveCount(1);
+    await expect(dirty).toContainText("취소");
+    expect(await dirty.evaluate((node) => getComputedStyle(node).backgroundColor)).toBe(
+      await page.evaluate(() => {
+        const probe = document.createElement("span");
+        probe.style.backgroundColor = "var(--surface-dirty)";
+        document.body.append(probe);
+        const color = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return color;
+      }),
+    );
+
+    await page.getByRole("button", { name: /일괄 저장/ }).click();
+    await expect(page.getByText("바뀐 칸 없음", { exact: true })).toBeVisible();
+    await expect(dirty).toHaveCount(0);
+    await context.close();
+  });
 });

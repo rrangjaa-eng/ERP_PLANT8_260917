@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { createAccount } from "@/domain/auth/accounts";
 import { archive } from "@/domain/archive";
 import { createOrgUnit, createTeam } from "@/domain/org";
-import { listRoles, TEAM_LEAD_ROLE_ID, type RoleViewScope, type RoleWorkScope } from "@/domain/permissions/roles";
+import { listRoles, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID, type RoleViewScope, type RoleWorkScope } from "@/domain/permissions/roles";
 import type { PermissionAction } from "@/domain/permissions/menus";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { makeDelegatedRole, makeSeated } from "../integration/admin-cap-fixtures";
@@ -48,6 +48,17 @@ export async function makeDuplicateLeads(): Promise<{ teamName: string; singleTe
   const second = await makeSeated(`E2E팀장나-${shortId()}`, TEAM_LEAD_ROLE_ID, team.id);
   await makeSeated(`E2E팀장다-${shortId()}`, TEAM_LEAD_ROLE_ID, single.id);
   return { teamName: team.name, singleTeamName: single.name, holderIds: [first.id, second.id] };
+}
+
+// 06.4-04 DOM 감사 ① 최악 줄 — 본부 이름 20자 + 책임자 둘 · 팀 이름 14자 + 팀장 둘, 보유자 이름은 한글 6자(가장 넓은 글자).
+export async function makeWorstCaseDuplicates(): Promise<{ orgUnitName: string; teamName: string }> {
+  const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E긴이름중복책임자본부-${shortId()}` });
+  const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E긴팀중복이-${shortId()}` });
+  await makeSeated("책임자가나다", DIVISION_HEAD_ROLE_ID, team.id);
+  await makeSeated("책임자라마바", DIVISION_HEAD_ROLE_ID, team.id);
+  await makeSeated("팀장가나다라", TEAM_LEAD_ROLE_ID, team.id);
+  await makeSeated("팀장마바사아", TEAM_LEAD_ROLE_ID, team.id);
+  return { orgUnitName: orgUnit.name, teamName: team.name };
 }
 
 // 이름이 prefix로 시작하고 id가 keep이 아닌 보관 안 된 계급을 보관한다 — 앞 실행 · 재시도가 남긴 같은 꼴 계급을 치워

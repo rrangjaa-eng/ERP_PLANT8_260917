@@ -6,6 +6,7 @@ import type { QuoteLineDto } from "@/domain/quotes/lines";
 import { QUOTE_LINE_KINDS, type QuoteLineKind } from "@/domain/quotes/edit-scope";
 import { formatForeignLine, formatKrw, formatQuantity } from "@/lib/format-number";
 import { QUOTE_TABLE_PAGE_SIZE } from "@/lib/paging";
+import { OwnedEvidenceSection } from "@/app/(app)/expenses/owned-evidence";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { Num } from "@/ui/num/Num";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
@@ -165,16 +166,21 @@ type Entry = { kind: "ready"; rows: ReadRow[] } | { kind: "error" };
 
 // DR-13 — 차수 섹션 바로 아래 섹션. 한 번에 한 차수(seq), 닫혀 있으면 null. 순번별 결과는 이 컴포넌트가 들고 있어
 // 같은 차수를 다시 열면 다시 부르지 않는다(닫아도 이 컴포넌트는 남는다).
+export type PreviousRevisionEvidence = { seq: number; revisionId?: string; show: boolean; approvedOn: string | null };
+
 export function PreviousRevisionSection({
   projectId,
   seq,
   headingId,
   references,
+  evidence = [],
 }: {
   projectId: string;
   seq: number | null;
   headingId: string;
   references: QuoteLineReadReferences;
+  /** 06-16(D-56) — 이전 차수의 승인 증빙 블록 재료(요약 행). show면 제목 바로 아래 같은 블록이 선다 — 견적 줄 표는 그대로 읽기다(04 S5 개정 ⒝). */
+  evidence?: PreviousRevisionEvidence[];
 }) {
   const [entries, setEntries] = useState<Record<number, Entry>>({});
   const inflightRef = useRef(new Set<number>());
@@ -202,12 +208,27 @@ export function PreviousRevisionSection({
 
   if (seq === null) return null;
   const entry = entries[seq];
+  const previousEvidence = evidence.find((item) => item.seq === seq && item.show && item.revisionId);
 
   return (
     <section className={styles.section} aria-labelledby={headingId} aria-busy={entry === undefined ? "true" : undefined}>
       <h2 id={headingId} ref={headingRef} tabIndex={-1} className={styles.previousTitle}>
         {`상세 견적 ${seq}차`}
       </h2>
+      {previousEvidence?.revisionId ? (
+        <OwnedEvidenceSection
+          key={previousEvidence.revisionId}
+          kind="quote_revision"
+          ownerId={previousEvidence.revisionId}
+          headingId={`${headingId}-evidence`}
+          title={`상세 견적 ${seq}차 승인 증빙`}
+          subtitle={previousEvidence.approvedOn ? `승인 ${previousEvidence.approvedOn}` : undefined}
+          nested
+          sectionClassName={styles.section}
+          titleClassName={styles.previousTitle}
+          subtitleClassName={styles.sectionSubtitle}
+        />
+      ) : null}
       {entry === undefined ? (
         <PreviousRevisionSkeleton references={references} />
       ) : entry.kind === "error" ? (

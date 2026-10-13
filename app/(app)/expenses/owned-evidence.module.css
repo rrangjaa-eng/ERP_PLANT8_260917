@@ -1,0 +1,42 @@
+/* 06-16(S21 · S22) — 펼침 섹션의 결과 줄 · 빈 문구 · 리저브 펼침 섹션. 색 · 크기는 tokens.css 변수만. */
+.resultLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+  margin: 0 0 var(--s-3);
+  font-size: var(--text-aux);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.failed {
+  color: var(--status-danger);
+}
+
+.emptyText {
+  margin: 0;
+  font-size: var(--text-aux);
+  color: var(--text-muted);
+}
+
+/* S22 — 표 블록 아래 펼침 섹션(위 1px --border-row). 제목은 한 줄 말줄임 + title. */
+.section {
+  margin: var(--s-6) 0 0;
+  padding: var(--s-4) 0 0;
+  border-top: var(--line-w) solid var(--border-row);
+}
+
+.title {
+  margin: 0 0 var(--s-3);
+  font-size: var(--text-aux);
+  font-weight: var(--fw-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 「차수 열기」 섹션 안 승인 증빙 블록 — 제목 바로 아래, 위 선 없음. */
+.nested {
+  margin: 0 0 var(--s-4);
+}

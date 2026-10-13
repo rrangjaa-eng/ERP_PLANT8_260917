@@ -16,12 +16,28 @@ import { buildEvidenceVoidedMessage } from "@/domain/approvals/conflict-message"
 import { canSeeExpense, EXPENSE_ALREADY_CLOSED, EXPENSE_DOCUMENT_KIND, ExpenseCloseRefusedError, ExpenseConflictError, ExpenseNotFoundError } from "@/domain/expenses";
 import { EVIDENCE_FILE_DTO_SPEC, type EvidenceFileDto } from "@/domain/evidence/dto";
 import { hasEvidence } from "@/domain/evidence/has-evidence";
-import { checkEvidenceUpload, duplicateScopeKinds, EVIDENCE_UPLOAD_FAILED, type EvidenceDuplicate } from "@/domain/evidence/upload-checks";
+import { checkEvidenceUpload, duplicateScopeKinds, EVIDENCE_DUPLICATE_HIDDEN, EVIDENCE_UPLOAD_FAILED, type EvidenceDuplicate } from "@/domain/evidence/upload-checks";
+import {
+  APPROVAL_EVIDENCE_KIND,
+  denyRevisionEvidenceWrite,
+  revisionEvidenceNotFound,
+  revisionEvidenceOwner,
+  revisionEvidenceRights,
+  revisionEvidenceWriteOpen,
+} from "@/domain/quotes/revisions";
+import {
+  denyReserveEvidenceWrite,
+  RESERVE_EVIDENCE_KIND,
+  reserveEvidenceNotFound,
+  reserveEvidenceOwner,
+  reserveEvidenceRights,
+  reserveEvidenceWriteOpen,
+} from "@/domain/reserves";
 import { bumpInstanceVersion } from "@/repositories/approvals";
 import { clearEvidenceValues, deleteReviewByExpense, type EvidenceReviewStatus } from "@/repositories/expense-evidence-reviews";
 import { bumpExpenseVersion } from "@/repositories/expense-payments";
 import { findExpenseApprovalInstance, findExpenseById, lockExpenseForUpdate } from "@/repositories/expenses";
-import { findActiveBySha, findAliveFileOfIntent, findFileById, insertFile, listActiveByOwner, markRemoved, markVoided, type FileRow } from "@/repositories/files";
+import { findActiveBySha, findAliveFileOfIntent, findFileById, insertFile, listActiveByOwner, markRemoved, markRestored, markVoided, type FileRow } from "@/repositories/files";
 import { findProjectById, lockProjectForWrite } from "@/repositories/projects";
 import { findUserById } from "@/repositories/users";
 import { completeIntentIfOpen, findIntentById, insertIntent } from "@/repositories/upload-intents";
@@ -96,10 +112,17 @@ type OwnerState = {
   projectCompleted: boolean;
 };
 
+type OwnerRights = { read: boolean; write: boolean };
+
 type OwnerRule = {
   load(viewer: Viewer, ownerId: string): Promise<OwnerState | null>;
   lock(viewer: Viewer, ownerId: string, tx: DbOrTx): Promise<OwnerState | null>;
   canSee(viewer: Viewer, owner: OwnerState): Promise<boolean>;
+  // 06-16 — 있으면 05 기안자 판정(adderOf · addOpen · drafterRemoves)을 거치지 않고 { read, write }로 보기 · 붙이기 · 떼기 · 되살리기를 정한다(트랜잭션 밖 풀 읽기).
+  // 잠근 뒤에는 순수 판정 writeOpen으로 다시 본다. 권리 밖 직접 호출은 denyWrite가 주인 모듈의 거부로 던진다. expense 줄에는 이 셋이 없어 05 동작이 그대로다.
+  rights?(viewer: Viewer, owner: OwnerState): Promise<OwnerRights>;
+  writeOpen?(owner: OwnerState, viewerId: string): boolean;
+  denyWrite?(viewer: Viewer, owner: OwnerState): never;
   // 기안자가 더하는 상태 · 떼는 상태(05-09).
   drafterAdds(owner: OwnerState): boolean;
   drafterRemoves(owner: OwnerState): boolean;
@@ -111,7 +134,7 @@ type OwnerRule = {
   // 06-11(C4 · B-1) — 결재 통과 문서의 증빙 추가 · 무효가 같은 트랜잭션에서 부른다. 풀린 확인 기록의 status를 돌려준다(없으면 null).
   onApprovedEvidenceChange?(viewer: Viewer, owner: OwnerState, change: { kind: "add" | "void" }, tx: DbOrTx): Promise<EvidenceReviewStatus | null>;
   attachMenu: "expenses.evidence_attach";
-  voidMenu: "expenses.evidence_void";
+  voidMenu?: "expenses.evidence_void";
   notFound(): UserFacingError;
 };
 
@@ -154,6 +177,18 @@ async function expenseApprovedEvidenceChange(viewer: Viewer, owner: OwnerState, 
   return released;
 }
 
+type RevisionOwner = NonNullable<Awaited<ReturnType<typeof revisionEvidenceOwner>>>;
+type ReserveOwner = NonNullable<Awaited<ReturnType<typeof reserveEvidenceOwner>>>;
+
+// 기안자 · 결재 흐름이 없는 주인(rights가 판정한다) — 05 칸은 쓰이지 않는 자리다.
+const NO_DRAFTER_FLOW = {
+  drafterAdds: () => false,
+  drafterRemoves: () => false,
+  inReview: () => false,
+  approved: () => false,
+  attachMenu: "expenses.evidence_attach",
+} as const satisfies Pick<OwnerRule, "drafterAdds" | "drafterRemoves" | "inReview" | "approved" | "attachMenu">;
+
 const OWNER_RULES: Record<string, OwnerRule> = {
   expense: {
     load: (viewer, ownerId) => expenseState(viewer, ownerId),
@@ -168,6 +203,28 @@ const OWNER_RULES: Record<string, OwnerRule> = {
     attachMenu: "expenses.evidence_attach",
     voidMenu: "expenses.evidence_void",
     notFound: () => new ExpenseNotFoundError(),
+  },
+  // 06-16(D-56) 차수 고객 승인 증빙 — 권리는 04 승인 표시와 같은 사실(담당 PM · projects 쓰기 · 표시 켜짐 · 완료 아님 · quote.amount). 결재 인스턴스가 없다(instance: null).
+  [APPROVAL_EVIDENCE_KIND]: {
+    load: (viewer, ownerId) => revisionEvidenceOwner(viewer, ownerId),
+    lock: (viewer, ownerId, tx) => revisionEvidenceOwner(viewer, ownerId, tx),
+    canSee: async (viewer, owner) => (await revisionEvidenceRights(viewer, owner as RevisionOwner)).read,
+    rights: (viewer, owner) => revisionEvidenceRights(viewer, owner as RevisionOwner),
+    writeOpen: (owner, viewerId) => revisionEvidenceWriteOpen(owner as RevisionOwner, viewerId),
+    denyWrite: (viewer, owner) => denyRevisionEvidenceWrite(viewer, owner as RevisionOwner),
+    ...NO_DRAFTER_FLOW,
+    notFound: revisionEvidenceNotFound,
+  },
+  // 06-16(D-60) 리저브 줄 증빙 — 권리는 04-07 리저브 읽기 · 쓰기(pnl + reserve.amount), 보관된 줄은 읽기만.
+  [RESERVE_EVIDENCE_KIND]: {
+    load: (viewer, ownerId) => reserveEvidenceOwner(viewer, ownerId),
+    lock: (viewer, ownerId, tx) => reserveEvidenceOwner(viewer, ownerId, tx),
+    canSee: async (viewer, owner) => (await reserveEvidenceRights(viewer, owner as ReserveOwner)).read,
+    rights: (viewer, owner) => reserveEvidenceRights(viewer, owner as ReserveOwner),
+    writeOpen: (owner) => reserveEvidenceWriteOpen(owner as ReserveOwner),
+    denyWrite: (viewer, owner) => denyReserveEvidenceWrite(viewer, owner as ReserveOwner),
+    ...NO_DRAFTER_FLOW,
+    notFound: reserveEvidenceNotFound,
   },
 };
 
@@ -240,14 +297,22 @@ export async function requestEvidenceUpload(viewer: Viewer, raw: EvidenceUploadR
   const input = requestSchema.parse(raw);
   const rule = ruleFor(input.ownerKind);
   const owner = rule ? await rule.load(viewer, input.ownerId) : null;
-  if (!rule || !owner || !(await rule.canSee(viewer, owner))) throw rule?.notFound() ?? new ExpenseNotFoundError();
-  const adder = await adderOf(viewer, rule, owner);
-  if (owner.drafterId !== viewer.id && !adder.attacher) throw rule.notFound();
-  if (!adder.drafter && !adder.attacher) throw new ForbiddenError("지출결의 작성 권한 없음");
-  if (!addOpen(rule, owner, adder)) {
-    if (owner.closed) throw new ExpenseCloseRefusedError(EXPENSE_ALREADY_CLOSED);
-    if (rule.inReview(owner)) throw new EvidenceLockedError(EVIDENCE_LOCKED_IN_REVIEW);
-    throw new EvidenceLockedError(rule.approved(owner) && owner.projectCompleted ? EVIDENCE_COMPLETED_PROJECT_LOCKED : EVIDENCE_ADD_DRAFTER_ONLY);
+  if (!rule || !owner) throw rule?.notFound() ?? new ExpenseNotFoundError();
+  if (rule.rights) {
+    // 06-16 — rights가 있는 주인: 못 보면 없는 문서, 보지만 못 쓰면 주인 모듈의 거부.
+    const rights = await rule.rights(viewer, owner);
+    if (!rights.read) throw rule.notFound();
+    if (!rights.write) rule.denyWrite?.(viewer, owner);
+  } else {
+    if (!(await rule.canSee(viewer, owner))) throw rule.notFound();
+    const adder = await adderOf(viewer, rule, owner);
+    if (owner.drafterId !== viewer.id && !adder.attacher) throw rule.notFound();
+    if (!adder.drafter && !adder.attacher) throw new ForbiddenError("지출결의 작성 권한 없음");
+    if (!addOpen(rule, owner, adder)) {
+      if (owner.closed) throw new ExpenseCloseRefusedError(EXPENSE_ALREADY_CLOSED);
+      if (rule.inReview(owner)) throw new EvidenceLockedError(EVIDENCE_LOCKED_IN_REVIEW);
+      throw new EvidenceLockedError(rule.approved(owner) && owner.projectCompleted ? EVIDENCE_COMPLETED_PROJECT_LOCKED : EVIDENCE_ADD_DRAFTER_ONLY);
+    }
   }
 
   const maxBytes = (await getSettingValue(EVIDENCE_MAX_SIZE_MB)) * MB;
@@ -323,7 +388,14 @@ export async function completeEvidenceUpload(
       sizeBytes: intent.declaredSize,
       createdFrom: intent.createdAt,
     });
-    if (done) return { ...(await project(viewer, toDtoSource({ ...done, voidedByName: null }), EVIDENCE_FILE_DTO_SPEC)), id: done.id };
+    if (done) {
+      // E-46 — rights가 있는 주인 종류는 이 갈래에서도 주인을 다시 읽어 읽기 권리가 참일 때만 같은 파일을 돌려준다(권리 읽기는 트랜잭션 전).
+      if (rule.rights) {
+        const owner = await rule.load(viewer, intent.ownerId);
+        if (!owner || !(await rule.rights(viewer, owner)).read) throw new EvidenceUploadRefusedError("restart");
+      }
+      return { ...(await project(viewer, toDtoSource({ ...done, voidedByName: null }), EVIDENCE_FILE_DTO_SPEC)), id: done.id };
+    }
   }
   if (!intent || !rule || intent.createdBy !== viewer.id || intent.completedAt !== null || intent.expiresAt.getTime() <= now.getTime()) {
     throw new EvidenceUploadRefusedError("restart");
@@ -356,7 +428,8 @@ export async function completeEvidenceUpload(
   // 의도를 만든 뒤 문서를 볼 수 없게 됐으면(팀 · 범위 · 메뉴 보기) 붙이지 않는다(웨이브 11 검토 m2). 보임 판정도 풀 읽기라 tx 전에 —
   // 잠근 tx 안 전역 풀 읽기는 풀 소진 교착이다. 상태 · version은 tx 안에서 잠근 뒤 다시 본다.
   const before = await rule.load(viewer, intent.ownerId);
-  const adder = before && (await rule.canSee(viewer, before)) ? await adderOf(viewer, rule, before) : null;
+  const rights = before && rule.rights ? await rule.rights(viewer, before) : null;
+  const adder = before && !rule.rights && (await rule.canSee(viewer, before)) ? await adderOf(viewer, rule, before) : null;
 
   let row: FileRow;
   try {
@@ -369,7 +442,9 @@ export async function completeEvidenceUpload(
       // 결재(승인 · 반려 · 회수)는 지출결의 행을 잡지 않는다 — 잠근 뒤 결재 상태 · version을 다시 읽고(행은 이미 잡혀 있어 기다리지
       // 않는다), 인스턴스 version 올리기는 그 version 조건으로 건다(그 사이 결재가 커밋하면 0행 → 다시 하기).
       const owner = locked ? await rule.lock(viewer, intent.ownerId, tx) : null;
-      if (!owner || !adder || !addOpen(rule, owner, adder)) throw new EvidenceUploadRefusedError("restart");
+      if (!owner) throw new EvidenceUploadRefusedError("restart");
+      const open = rule.rights ? rights !== null && rights.write && rule.writeOpen?.(owner, viewer.id) === true : adder !== null && addOpen(rule, owner, adder);
+      if (!open) throw new EvidenceUploadRefusedError("restart");
       // 잠근 사이 최종 승인이 커밋돼 결재 통과가 된 문서 — 프로젝트 행을 잡지 않았으니 거꾸로 잡지 않고 다시 하기로 거부한다(05 N-3 방향).
       if (rule.approved(owner) && !approvedBefore) throw new EvidenceUploadRefusedError("restart");
       const completed = await completeIntentIfOpen(viewer, { id: intent.id, createdBy: viewer.id, now }, tx);
@@ -435,10 +510,18 @@ export async function removeEvidence(viewer: Viewer, input: { fileId: string }, 
   const file = UUID_SHAPE.test(input.fileId) ? await findFileById(viewer, input.fileId) : null;
   const rule = file ? ruleFor(file.ownerKind) : null;
   const owner = file && rule ? await rule.load(viewer, file.ownerId) : null;
-  if (!file || !rule || !owner || owner.drafterId !== viewer.id) throw rule?.notFound() ?? new ExpenseNotFoundError();
-  if (!(await can(viewer, "expenses", "write"))) throw new ForbiddenError("지출결의 작성 권한 없음");
+  if (!file || !rule || !owner) throw rule?.notFound() ?? new ExpenseNotFoundError();
+  if (rule.rights) {
+    // 06-16 — 주인 권리는 파일 행에 저장된 주인으로 서버가 다시 읽어 판정한다.
+    const rights = await rule.rights(viewer, owner);
+    if (!rights.read) throw rule.notFound();
+    if (!rights.write) rule.denyWrite?.(viewer, owner);
+  } else {
+    if (owner.drafterId !== viewer.id) throw rule.notFound();
+    if (!(await can(viewer, "expenses", "write"))) throw new ForbiddenError("지출결의 작성 권한 없음");
+  }
   if (file.removedAt !== null) return;
-  if (!rule.drafterRemoves(owner)) {
+  if (!rule.rights && !rule.drafterRemoves(owner)) {
     if (owner.closed) throw new ExpenseCloseRefusedError(EXPENSE_ALREADY_CLOSED);
     if (rule.inReview(owner)) throw new EvidenceLockedError(EVIDENCE_LOCKED_IN_REVIEW);
     if (rule.approved(owner)) throw new EvidenceLockedError(EVIDENCE_REMOVE_LOCKED_APPROVED);
@@ -450,7 +533,9 @@ export async function removeEvidence(viewer: Viewer, input: { fileId: string }, 
     const locked = await rule.lock(viewer, file.ownerId, tx);
     await deps?.afterLock?.();
     if (!locked) throw rule.notFound();
-    if (!rule.drafterRemoves(locked)) throw new ExpenseConflictError(locked.updatedAt);
+    if (rule.rights) {
+      if (rule.writeOpen?.(locked, viewer.id) !== true) rule.denyWrite?.(viewer, locked);
+    } else if (!rule.drafterRemoves(locked)) throw new ExpenseConflictError(locked.updatedAt);
     const current = await findFileById(viewer, file.id, tx);
     if (!current || current.removedAt !== null) return;
     await markRemoved(viewer, { id: file.id, removedBy: viewer.id }, tx);
@@ -500,10 +585,16 @@ export async function getEvidenceActions(viewer: Viewer, input: { ownerKind: str
   if (!rule || !UUID_SHAPE.test(input.ownerId)) return NO_EVIDENCE_ACTIONS;
   const owner = await rule.load(viewer, input.ownerId);
   if (!owner || !(await rule.canSee(viewer, owner))) return NO_EVIDENCE_ACTIONS;
+  if (rule.rights) {
+    // 06-16 — 쓰기 권리면 하나 더 · 모든 살아 있는 파일을 지울 수 있다(무효 처리 · 결재 잠김은 없다).
+    const canWrite = (await rule.rights(viewer, owner)).write;
+    const files = canWrite ? (await listActiveByOwner(viewer, input.ownerKind, owner.id)).filter((file) => file.voidedAt === null) : [];
+    return { ...NO_EVIDENCE_ACTIONS, canAdd: canWrite, deletableFileIds: files.map((file) => file.id) };
+  }
   const adder = await adderOf(viewer, rule, owner);
   const canAdd = addOpen(rule, owner, adder);
   const canRemove = adder.drafter && rule.drafterRemoves(owner);
-  const canVoid = rule.approved(owner) && (await can(viewer, rule.voidMenu, "write"));
+  const canVoid = rule.approved(owner) && !!rule.voidMenu && (await can(viewer, rule.voidMenu, "write"));
   const live = canRemove || canVoid ? (await listActiveByOwner(viewer, input.ownerKind, owner.id)).filter((file) => file.voidedAt === null) : [];
   return {
     canAdd,
@@ -525,7 +616,7 @@ export async function voidEvidence(viewer: Viewer, input: { fileId: string; reas
   const rule = file ? ruleFor(file.ownerKind) : null;
   const owner = file && rule ? await rule.load(viewer, file.ownerId) : null;
   if (!file || !rule || !owner || file.removedAt !== null || !(await rule.canSee(viewer, owner))) throw rule?.notFound() ?? new ExpenseNotFoundError();
-  if (!(await can(viewer, rule.voidMenu, "write"))) throw new ForbiddenError("증빙 무효 처리 권한 없음");
+  if (!rule.voidMenu || !(await can(viewer, rule.voidMenu, "write"))) throw new ForbiddenError("증빙 무효 처리 권한 없음");
   if (!rule.approved(owner)) throw new UserFacingError(EVIDENCE_VOID_ONLY_APPROVED);
   const reason = validateRejectReason(input.reason);
   const gate = await loadActionLogGate();
@@ -557,4 +648,55 @@ export async function voidEvidence(viewer: Viewer, input: { fileId: string; reas
   if (already.voidedAt === null || already.voidedBy === null) throw rule.notFound();
   const actor = await findUserById(viewer, already.voidedBy);
   throw new UserFacingError(buildEvidenceVoidedMessage({ actorName: actor?.name ?? null, at: already.voidedAt }));
+}
+
+// ── 06-16 펼침 한 번 읽기 · 되살리기(F10) ────────────────────────────────────────────────────────────────────────
+
+export type OwnedEvidence = { files: Partial<EvidenceFileDto>[]; actions: EvidenceActions; maxMb: number; writerName: string | null };
+
+const NO_OWNED_EVIDENCE: OwnedEvidence = { files: [], actions: NO_EVIDENCE_ACTIONS, maxMb: 0, writerName: null };
+
+// 펼침 섹션 한 번 읽기 — 파일 목록 · 파일 행 3차 규칙 · 올리기 한도(MB) · 읽기 전용 빈 문구의 담당 이름(차수 승인 증빙 = 담당 PM). rights가 없는 종류 · 읽을 수 없는 사람은 빈 값.
+export async function getOwnedEvidence(viewer: Viewer, input: { ownerKind: string; ownerId: string }): Promise<OwnedEvidence> {
+  const rule = ruleFor(input.ownerKind);
+  if (!rule?.rights || !UUID_SHAPE.test(input.ownerId)) return NO_OWNED_EVIDENCE;
+  const owner = await rule.load(viewer, input.ownerId);
+  if (!owner || !(await rule.rights(viewer, owner)).read) return NO_OWNED_EVIDENCE;
+  const [files, actions, maxMb] = await Promise.all([listEvidence(viewer, input), getEvidenceActions(viewer, input), getSettingValue(EVIDENCE_MAX_SIZE_MB)]);
+  const writer = input.ownerKind === APPROVAL_EVIDENCE_KIND && owner.drafterId ? await findUserById(viewer, owner.drafterId) : null;
+  return { files, actions, maxMb, writerName: writer?.name ?? null };
+}
+
+// 지운 파일 한 건 되살리기(SYSTEM §7-8 결과 줄 `되돌리기`) — rights가 있는 주인 종류만(expense는 결재 문서의 증빙 이력이라 되살리지 않는다).
+// 같은 권리 판정(rights.write + 잠근 뒤 writeOpen). 중복 묶음의 다른 주인에 같은 파일이 살아 있으면 되살리지 않는다 — 판정은 markRestored의
+// 조건 UPDATE(NOT EXISTS) 한 문장이라 조회와 UPDATE 사이 틈이 없다. 이미 살아 있으면 쓰기 · 로그 없이 끝난다.
+export async function restoreEvidence(viewer: Viewer, input: { fileId: string }): Promise<void> {
+  const file = UUID_SHAPE.test(input.fileId) ? await findFileById(viewer, input.fileId) : null;
+  const rule = file ? ruleFor(file.ownerKind) : null;
+  if (!file || !rule?.rights) throw rule?.notFound() ?? new ExpenseNotFoundError();
+  const owner = await rule.load(viewer, file.ownerId);
+  if (!owner) throw rule.notFound();
+  const rights = await rule.rights(viewer, owner);
+  if (!rights.read) throw rule.notFound();
+  if (!rights.write) rule.denyWrite?.(viewer, owner);
+  if (file.removedAt === null) return;
+  const gate = await loadActionLogGate();
+
+  await withTransaction(async (tx) => {
+    const locked = await rule.lock(viewer, file.ownerId, tx);
+    if (!locked) throw rule.notFound();
+    if (rule.writeOpen?.(locked, viewer.id) !== true) rule.denyWrite?.(viewer, locked);
+    const restored = await markRestored(viewer, { id: file.id, scopeKinds: duplicateScopeKinds(file.ownerKind) }, tx);
+    if (!restored) {
+      const current = await findFileById(viewer, file.id, tx);
+      if (current && current.removedAt === null) return;
+      throw new EvidenceCheckError(EVIDENCE_DUPLICATE_HIDDEN);
+    }
+    await recordActionInTx(
+      viewer,
+      { actionType: "document_update", entity: "file", entityId: file.id, documentId: file.ownerId, detail: { change: "evidence_restore", fileId: file.id } },
+      tx,
+      gate,
+    );
+  });
 }

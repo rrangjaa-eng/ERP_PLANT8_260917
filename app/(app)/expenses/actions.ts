@@ -30,10 +30,14 @@ import {
   completeEvidenceUpload,
   createEvidenceViewUrl,
   EvidenceUploadRefusedError,
+  getOwnedEvidence,
   removeEvidence,
   requestEvidenceUpload,
+  restoreEvidence,
   voidEvidence,
 } from "@/domain/evidence";
+import { APPROVAL_EVIDENCE_KIND } from "@/domain/quotes/revisions";
+import { RESERVE_EVIDENCE_KIND } from "@/domain/reserves";
 import { QUOTE_LINE_MAX_PER_REVISION_DEFAULT } from "@/domain/settings/keys";
 import { formatKstTime } from "@/domain/holidays/business-day";
 import { log } from "@/lib/log";
@@ -189,6 +193,57 @@ export const requestEvidenceUploadAction = authedActionClient
     const { expenseId, ...declaration } = parsedInput;
     const intent = await requestEvidenceUpload(ctx.viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: expenseId, ...declaration });
     return { intentId: intent.intentId, url: intent.url, method: intent.method, headers: intent.headers };
+  });
+
+// 06-16(D-56) 차수 승인 증빙 — 05 증빙 액션 집에 둔 주인별 요청 · 펼침 읽기. 완료 통보 · 삭제 · 보기는 위 05 액션을 그대로 쓴다.
+// 권리(담당 PM · projects 쓰기 · 표시 켜짐 · quote.amount)는 domain 주인 표가 차수 행으로 다시 읽어 판정한다 — 넘어온 id만 믿지 않는다.
+export const requestRevisionEvidenceUploadAction = authedActionClient
+  .schema(
+    z.object({
+      revisionId: z.string().uuid(),
+      size: z.number().int().min(0),
+      contentType: z.string().min(1).max(100),
+      sha256: z.string().max(64),
+      name: z.string().min(1).max(255),
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    const { revisionId, ...declaration } = parsedInput;
+    const intent = await requestEvidenceUpload(ctx.viewer, { ownerKind: APPROVAL_EVIDENCE_KIND, ownerId: revisionId, ...declaration });
+    return { intentId: intent.intentId, url: intent.url, method: intent.method, headers: intent.headers };
+  });
+
+export const getRevisionEvidenceAction = authedActionClient
+  .schema(z.object({ revisionId: z.string().uuid() }))
+  .action(async ({ parsedInput, ctx }) => getOwnedEvidence(ctx.viewer, { ownerKind: APPROVAL_EVIDENCE_KIND, ownerId: parsedInput.revisionId }));
+
+// 06-16(D-60) 리저브 줄 증빙 — 차수 승인 증빙과 같은 모양. 권리(pnl 쓰기 · 보기 + reserve.amount · 보관 아님)는 domain 주인 표가 줄 행으로 다시 읽어 판정한다.
+export const requestReserveEvidenceUploadAction = authedActionClient
+  .schema(
+    z.object({
+      entryId: z.string().uuid(),
+      size: z.number().int().min(0),
+      contentType: z.string().min(1).max(100),
+      sha256: z.string().max(64),
+      name: z.string().min(1).max(255),
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    const { entryId, ...declaration } = parsedInput;
+    const intent = await requestEvidenceUpload(ctx.viewer, { ownerKind: RESERVE_EVIDENCE_KIND, ownerId: entryId, ...declaration });
+    return { intentId: intent.intentId, url: intent.url, method: intent.method, headers: intent.headers };
+  });
+
+export const getReserveEvidenceAction = authedActionClient
+  .schema(z.object({ entryId: z.string().uuid() }))
+  .action(async ({ parsedInput, ctx }) => getOwnedEvidence(ctx.viewer, { ownerKind: RESERVE_EVIDENCE_KIND, ownerId: parsedInput.entryId }));
+
+// 06-16(F10) 지운 파일 되돌리기 — 새 두 주인 종류만(판정은 domain 규칙: 쓰기 권리 · 잠근 뒤 열림 · 중복 묶음). 성공 표시만 돌려준다.
+export const restoreEvidenceAction = authedActionClient
+  .schema(z.object({ fileId: z.string().uuid() }))
+  .action(async ({ parsedInput, ctx }) => {
+    await restoreEvidence(ctx.viewer, parsedInput);
+    return { restored: true as const };
   });
 
 // 완료 통보 거부는 오류가 아니라 결과다 — 화면이 `다시 올리기`의 갈래(`complete` · `restart`)를 알아야 한다.

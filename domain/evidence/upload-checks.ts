@@ -17,6 +17,7 @@ const DUPLICATE_SCOPES: Record<string, readonly string[]> = {
   corp_card_usage: ["expense", "corp_card_usage"],
 };
 
+// O-6 답이 바뀌면 이 함수만 고친다.
 export function duplicateScopeKinds(ownerKind: string): readonly string[] {
   return Object.hasOwn(DUPLICATE_SCOPES, ownerKind) ? (DUPLICATE_SCOPES[ownerKind] ?? [ownerKind]) : [ownerKind];
 }

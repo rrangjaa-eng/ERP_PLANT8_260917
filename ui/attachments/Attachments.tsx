@@ -343,7 +343,7 @@ export function Attachments({
                   <span className={styles.text}>
                     <span className={styles.voidedHead}>
                       <StatusTag status="무효" />
-                      <span id={`${nameId}-${file.id}`} className={`${styles.name} ${styles.voidedName}`} aria-describedby={`${nameId}-${file.id}-void`}>
+                      <span id={`${nameId}-${file.id}`} className={`${styles.name} ${styles.voidedName}`} title={file.name} aria-describedby={`${nameId}-${file.id}-void`}>
                         {file.name}
                       </span>
                     </span>
@@ -355,7 +355,7 @@ export function Attachments({
                   </span>
                 ) : (
                   <span className={styles.text}>
-                    <span id={`${nameId}-${file.id}`} className={styles.name}>
+                    <span id={`${nameId}-${file.id}`} className={styles.name} title={file.name}>
                       {file.name}
                     </span>
                     <span className={styles.meta}>{`${sizeOf(file.sizeBytes)} · ${dayOf(file.createdAt)}`}</span>
@@ -392,7 +392,7 @@ export function Attachments({
                   </span>
                 )}
                 <span className={styles.text}>
-                  <span id={`${nameId}-${row.key}`} className={styles.name}>
+                  <span id={`${nameId}-${row.key}`} className={styles.name} title={row.prepared.name}>
                     {row.prepared.name}
                   </span>
                   {row.state === "uploading" ? <span className={styles.meta}>올리는 중…</span> : <span className={styles.error}>{row.message}</span>}

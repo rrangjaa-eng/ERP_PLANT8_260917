@@ -41,6 +41,8 @@ export type CardUsageListRowView = {
   fxRate: number | null;
   rights: CardUsageRights;
   version: number;
+  /** 06-25(C5) 서버가 보낸 카드 전표 유무 — 증빙 열 `있음`/`—`(상태 색 없음). */
+  hasCardSlip: boolean;
 };
 
 // 「표시 — 카드 사용 결제 합계 2행」 한 형식: 외화면 `USD 1,000.00 @1,350 · 공급가 N`, 원화 부가세 규칙이면 `공급가 N`, 규칙 없음(공급가 = 합계)은 2행 없음.
@@ -119,6 +121,10 @@ function actionsColumn(listHref: string): TableColumn<CardUsageListRowView> {
   };
 }
 
+function slipText(row: CardUsageListRowView): string {
+  return row.hasCardSlip ? "있음" : "—";
+}
+
 const COLUMNS: TableColumn<CardUsageListRowView>[] = [
   { key: "usedOn", header: "사용일", priority: "p2", cell: (row) => <Num value={row.usedOn.slice(5)} /> },
   { key: "merchant", header: "가맹점", priority: "p2", cell: (row) => row.merchantName ?? "—" },
@@ -131,7 +137,7 @@ const COLUMNS: TableColumn<CardUsageListRowView>[] = [
     cell: (row) => <Num value={row.totalKrw} />,
     secondaryLine: totalSecondLine,
   },
-  { key: "evidence", header: "증빙", priority: "p3", collapseBelow: 1024, cell: () => "—" },
+  { key: "evidence", header: "증빙", priority: "p3", collapseBelow: 1024, cell: slipText },
   {
     key: "registered",
     header: "등록",
@@ -166,6 +172,7 @@ export function CardUsageList({ rows, listHref }: { rows: CardUsageListRowView[]
             ? [
                 { label: "사용일", value: sheet.usedOn },
                 { label: "카드", value: sheet.cardLabel },
+                { label: "증빙", value: slipText(sheet) },
                 ...(sheet.totalKrw !== null ? [{ label: "결제 합계", value: <Num value={sheet.totalKrw} /> }] : []),
                 {
                   label: "등록",

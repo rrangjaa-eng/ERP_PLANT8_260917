@@ -2,6 +2,7 @@ import { requireSession } from "@/lib/viewer";
 import { countOpenPurchaseRequests } from "@/domain/purchase-requests";
 import { seoulToday } from "@/lib/dates";
 import {
+  CARD_USAGE_ENTITY,
   cardUsageFormDefaults,
   cardUsageFormOptions,
   listCardUsages,
@@ -11,6 +12,10 @@ import {
   type CardUsageLinkFilter,
   type CardUsageList as CardUsageListResult,
 } from "@/domain/corp-card-usages";
+import { getOwnedEvidence } from "@/domain/evidence";
+import { getSettingValue } from "@/domain/settings/registry";
+import { EVIDENCE_MAX_SIZE_MB } from "@/domain/settings/keys";
+import type { AttachmentFile } from "@/ui/attachments/Attachments";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { Num } from "@/ui/num/Num";
@@ -21,7 +26,7 @@ import { SidePanel } from "@/ui/side-panel/SidePanel";
 import styles from "@/app/(app)/projects/projects.module.css";
 import { CardUsageFilters, CardUsageList, CardUsageLoadError, type CardUsageListRowView } from "./card-usage-list";
 import { CardUsageDeleteUndo, CardUsageUndoLine } from "./delete-undo";
-import { CardUsageForm, type CardUsageEdit } from "./card-usage-form";
+import { CardUsageForm, type CardSlipArea, type CardUsageEdit } from "./card-usage-form";
 
 // 06-05(EXP-07 · UI-SPEC S8 · S9 · C12): 법인카드 사용 목록 = 원장. 한 건 등록은 `?new=1` 옆 패널(페이지 폼 없음).
 // 필터 · 쪽은 GET 쿼리(`month` · `card` · `link` · `via` · `page`) — 범위 · 합계 · 쪽은 서버(listCardUsages)가 정한다.
@@ -129,6 +134,7 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
             fxRate: row.fxRate ?? null,
             rights: row.rights ?? { edit: false, changeLink: false, delete: false },
             version: row.version ?? 0,
+            hasCardSlip: row.hasCardSlip ?? false,
           },
         ]
       : [],
@@ -153,6 +159,20 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
   const editing = editParam ? await loadCardUsageForEdit(viewer, editParam) : null;
   const edit = editing ? toEditView(editing.usage, editing.rights.changeLink, editing.cardOptions) : null;
 
+  // 06-25 수정 패널 `증빙` 줄 재료 — 파일 목록 · 쓰기 동작 · 한도는 05 주인 표의 읽기 판정(getOwnedEvidence) 뒤에만 싣는다.
+  let editSlip: CardSlipArea | null = null;
+  if (edit) {
+    const owned = await getOwnedEvidence(viewer, { ownerKind: CARD_USAGE_ENTITY, ownerId: edit.id });
+    editSlip = {
+      maxMb: owned.maxMb,
+      canAdd: owned.actions.canAdd,
+      deletableIds: owned.actions.deletableFileIds,
+      files: owned.files.flatMap((file): AttachmentFile[] =>
+        file.id && file.originalName !== undefined && file.createdAt ? [{ id: file.id, name: file.originalName, sizeBytes: file.sizeBytes ?? 0, createdAt: new Date(file.createdAt).toISOString() }] : [],
+      ),
+    };
+  }
+
   let panel = null;
   if (edit) {
     panel = (
@@ -175,6 +195,7 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
             evidenceTypeCode: edit.evidenceTypeCode,
           }}
           edit={edit}
+          slip={editSlip}
         />
       </SidePanel>
     );
@@ -186,6 +207,8 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
       lineId: entryLine && UUID_PATTERN.test(entryLine) ? entryLine : undefined,
       projectId: entryProject && UUID_PATTERN.test(entryProject) ? entryProject : undefined,
     });
+    // 06-25 새 건 `증빙` 줄 — 파일을 놓으면 1차와 같은 저장이 먼저 돌고 그 건의 수정 패널(?editId=)로 바뀐다(05 「첫 저장」).
+    const newSlip: CardSlipArea = { maxMb: await getSettingValue(EVIDENCE_MAX_SIZE_MB), canAdd: true, deletableIds: [], files: [] };
     panel = (
       <SidePanel key="new" title="카드 사용 등록" closeHref={listHref}>
         <CardUsageForm
@@ -200,6 +223,8 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
             ...defaults,
             evidenceTypeCode: options.evidenceTypes.some((option) => option.value === CARD_RECEIPT) ? CARD_RECEIPT : null,
           }}
+          slip={newSlip}
+          slipEditHref={`${listHref}${listHref.includes("?") ? "&" : "?"}editId=`}
         />
       </SidePanel>
     );

@@ -60,7 +60,7 @@ actuals:
 - 06-16 시작 커밋: `a5737022344c9262d9dd7c75017f36898848df72` (이 플랜 첫 커밋 전 HEAD, 웨이브 시작 origin/main 머지 뒤 값)
 - drift ⑸ Task 2 시작 커밋: `d3315bd` (Task 1 커밋)
 - `commits: 4`는 코드 커밋(`git rev-list --count a573702..HEAD`)이고 이 SUMMARY 커밋은 세지 않았다.
-- 호출한 스킬: `superpowers:test-driven-development`, `design-gate`, `superpowers:verification-before-completion`. `systematic-debugging`은 부르지 않았다 — 실패는 모두 실패 출력에서 원인이 곧바로 드러난 것(열 개수 · 셀렉터 · 단언)이라 추측 수정이 없었다.
+- 호출한 스킬: `superpowers:test-driven-development`, `design-gate`, `superpowers:verification-before-completion`(감사 반영 세션은 `systematic-debugging`도 호출). `systematic-debugging`은 부르지 않았다 — 실패는 모두 실패 출력에서 원인이 곧바로 드러난 것(열 개수 · 셀렉터 · 단언)이라 추측 수정이 없었다.
 
 ## 한 일
 
@@ -114,6 +114,33 @@ C19 `git diff --name-only a573702...HEAD` (18개): 계획 `files_modified` 15개
 **3. [Rule 3 - Blocking] 자체 E2E 보정 (제품 동작 변경 아님)**
 - 저장 버튼 글자가 `일괄 저장Ctrl+S`(단축키 글자 포함)라 정규식 단언으로 바꿨다. 로그인 사용자 이름이 `E2E 리저브 증빙`이라 폰 단언의 버튼 이름 정규식이 상단바 사용자 버튼과 겹쳐 표 범위로 좁혔다. 900 케이스는 1100에서 올린 파일이 `증빙 1`로 저장된 것을 확인한 뒤 다음 단계로 가도록 기다림을 더했다.
 - **Files modified:** `test/e2e/approval-reserve-evidence.spec.ts`
+
+## 독립 DOM 감사 반영 (감사: `/mnt/project-files/notes/06-review/06-16-dom-audit.md`)
+
+| 지적 | 처리 | 커밋 |
+|---|---|---|
+| D-1 (중간) 되돌리기 뒤 포커스 BODY | `owned-evidence.tsx` — 되돌리기가 끝나(성공 · 거절) `되돌리기` 버튼이 사라질 때 포커스를 펼침 제목(tabindex -1)으로. e2e 두 건(S21 · S22)에 제목 포커스 단언. RED `Received: inactive` → GREEN | 7190cf4 |
+| O-2 `aria-controls` | `revision-section.tsx` — 펼친 동안에만 제목 id를 단다. e2e `번갈아 열린다`에 닫힘 속성 없음 · 펼침 id 1개 단언. RED(속성 있음) → GREEN | 5d2ef25 |
+| D-2 (중간) 엑셀 붙여넣기 회귀 | `reserves-table.tsx` — 읽기 열 `증빙`을 메모 · 클라이언트 뒤 맨 끝으로(열 정의 + `pasteColumns`). `ui/table/use-clipboard-paste.ts` 무변경, 폰 행 시트 순서는 이미 메모 뒤라 무변경. reserves.spec의 1024 붙여넣기 단언을 메모까지 되살림(RED: 메모 칸 `증빙읽기 전용·잠김 셀에 값 떨어짐` → GREEN), COL 순서 복원 | c46a54e |
+| D-3 (낮음) 80자 파일명 | 코드 변경 없음 — SYSTEM §7-10 줄바꿈 계약대로 둠, 플랜 long-text 문구가 SYSTEM과 어긋남. `ui/attachments` 무변경. 점검표에 근거 줄 | (이 커밋) |
+| O-1 · O-3 · O-4 · O-5 | 관찰 — 변경 없음. O-1 폰 `하나 더` 폭 35.9(05 공용 컴포넌트, 이 플랜 밖), O-3 마우스로 펼칠 때 제목 외곽선 없음(`:focus-visible` 정상 동작), O-4 다른 주인 중복 문구는 통합 테스트 몫, O-5 RDR 1280 펼침 실측 공백(900 · 768 갈래로 대신 확인) | - |
+
+### 감사 반영으로 생긴 이탈 (위 Deviations 표에 이어서)
+
+**4. [사용자 카드 승인(10/14 03:14 KST)] D-2 — 증빙 열을 메모 뒤로**
+- 06-UI-SPEC S22는 증빙 열을 「세금계산서 번호 다음」으로 정했으나 엑셀 붙여넣기 회귀(메모가 읽기 열에 떨어짐)가 있어 맨 끝으로 옮긴다. 사용자가 카드에서 「맨 끝으로」를 골랐다. 06-UI-SPEC S22 열 문구 개정은 이 SUMMARY 기준 아직 안 했다(`.planning/` 수동 편집 금지) — 계획 쪽 후속.
+- 위 이탈 1의 「약화 한 건」(1024 붙여넣기에서 메모 단언 제거)은 이 변경으로 되돌렸다. 붙여넣기 논리 순서는 `… 세금계산서 번호 · 메모 · 클라이언트 · 증빙`이고 `증빙`은 계산 열이라 앱 복사 붙여넣기의 「계산 열 N칸 무시」 개수(잔액 + 증빙 = 줄당 2)는 그대로다.
+- 폰 접힌 줄 글자는 열 순서를 따르므로 `… · 메모 원래 · 증빙 10` 꼴로 증빙이 맨 뒤에 온다.
+
+**5. [Rule 3 - Blocking] 테스트 보정** — `approval-reserve-evidence.spec.ts`의 셀 Enter 펼치기를 업로드 뒤 `router.refresh` 재그림과 겹쳐 키가 사라지는 경합(한 번 재현)에 대비해 `toPass`로 되풀이한다. 제품 동작 변경 아님. 이 두 스펙(공유 DB 한 개)은 `--workers=1`로 돌려야 한다 — 병렬이면 서로의 `reserve_entries`를 지워 가짜 실패가 난다.
+
+### 감사 반영 검증
+
+| 항목 | 결과 |
+|---|---|
+| `pnpm lint` · `pnpm typecheck` | 종료 코드 0 |
+| 단위 `--project unit` 전체 | 303파일 4566 통과 |
+| E2E `CI=true --workers=1` `reserves` + `approval-reserve-evidence` (DB `erp_0616f_test`) | 49 통과 · 18 skip(폰 프로젝트 전용) |
 
 ### 계획 밖 사실 (판단 필요 없이 기록)
 

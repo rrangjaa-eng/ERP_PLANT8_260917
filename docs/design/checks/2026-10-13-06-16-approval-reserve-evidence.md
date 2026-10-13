@@ -24,6 +24,8 @@
 - [x] 새 색·서체·radius·그림자를 만들지 않았다(tokens.css 변수만) — 근거: `owned-evidence.module.css`는 `--s-2` `--s-3` `--s-4` `--s-6` `--text-aux` `--text-muted` `--status-danger` `--fw-medium` `--line-w` `--border-row`만 쓴다(기존 04 `.section` · `.previousTitle` · `.sectionSubtitle` 규칙과 같은 값). project-detail.module.css 무변경
 - [x] 폰 320에서 가로 넘침 없음 · 터치 44px — 근거: 펼침 안은 05 Attachments(이미 320 검증) 그대로, 결과 줄은 flex-wrap + overflow-wrap anywhere. 4폭 DOM 실측은 독립 DOM 감사 몫(SUMMARY 「오케스트레이터 몫」)
 - [x] 실제 앱 화면(PC 1280 · 폰 390)을 찍어 보고 확인했다 — 스크린샷 경로: 없음 — 육안 판정 금지(CLAUDE.md §6). `CI=true` E2E(approval-reserve-evidence.spec.ts)로 aria-expanded · 포커스 · 파일 행 · 3차 글자를 DOM 단언했고 4폭 독립 DOM 감사 · Codex 검토는 PR의 `/design-review` 게이트 몫
+- [x] 80자 파일명 말줄임(D-3, DOM 감사) — 근거: 05 `ui/attachments`의 `.name`은 SYSTEM §7-10 줄바꿈 계약(`overflow-wrap: anywhere`)이라 4~5줄로 꺾이고 `삭제`를 밀어내지 않는다(감사 실측 행 안). SYSTEM이 플랜의 「말줄임 + title」 문구보다 우선하므로 ui/attachments는 건드리지 않았다
+- [x] 승인 증빙 3차 `aria-controls`(O-2, DOM 감사) — 근거: 닫힌 동안 없는 id를 가리키지 않게 펼침 상태에서만 단다. e2e `번갈아 열린다`가 닫힘 속성 없음 · 펼침 시 id 1개를 단언
 
 ## Task 3 — S22 리저브 줄 증빙(reserves-table · owned-evidence)
 
@@ -45,3 +47,5 @@
 - [x] 새 색·서체·radius·그림자를 만들지 않았다(tokens.css 변수만) — 근거: reserves-table.tsx는 새 CSS를 더하지 않고 `owned-evidence.module.css`의 `.section` `.title`(`--s-4` `--s-6` `--border-row` `--line-w` `--text-aux` `--fw-medium`)만 가져다 쓴다. reserves.module.css · project-detail.module.css 무변경
 - [x] 폰 320에서 가로 넘침 없음 · 터치 44px — 근거: 폰 열은 접힌 줄 글자뿐이고 행 시트는 04 RowSheet(이미 320 검증)에 05 Attachments 읽기 행을 넣는다. 4폭 DOM 실측은 독립 DOM 감사 몫(SUMMARY 「오케스트레이터 몫」)
 - [x] 실제 앱 화면(PC 1280 · 폰 390)을 찍어 보고 확인했다 — 스크린샷 경로: 없음 — 육안 판정 금지(CLAUDE.md §6). `CI=true` E2E(approval-reserve-evidence.spec.ts S22 다섯 건)로 1280 · 1100 · 900 · 390의 열 · 펼침 · 요소 수 · 포커스를 DOM 단언했고 4폭 독립 DOM 감사 · Codex 검토는 PR의 `/design-review` 게이트 몫
+- [x] 80자 파일명 말줄임(D-3, DOM 감사) — 근거: 위 S21 줄과 같다. 리저브 펼침 · 행 시트도 같은 `ui/attachments` 줄바꿈 계약(900/768 3줄, 폰 시트 6~9줄)이고 `삭제`는 행 안에 남는다
+- [x] 엑셀 붙여넣기 순서(D-2, DOM 감사) — 근거: 읽기 열 `증빙`을 메모 · 클라이언트 뒤 맨 끝으로 옮겨 「세금계산서 번호 → 메모」 붙여넣기가 적용 전과 같다(reserves.spec 1024 붙여넣기가 메모까지 단언). 되돌리기 뒤 포커스는 펼침 제목(D-1, e2e)

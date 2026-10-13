@@ -6,3 +6,4 @@ review 2026-10-13T00:20Z session=a8b1159c-92de-5978-b1ec-2be9c928617f (PR-B #207
 cso 2026-10-13T01:16Z session=a8b1159c-92de-5978-b1ec-2be9c928617f (PR-B #207, cso 도우미 64MiB 거부 → Opus 같은 기준 대체 검토, 낮음 1건 F1 수정 fce8494)
 design-review 2026-10-13T01:17Z session=a8b1159c-92de-5978-b1ec-2be9c928617f (PR-B #207, DOM 실측 4폭 결함 0 · main 비교 36쌍 · e2e 48/48. Codex 미실행 — ChatGPT 로그인 만료(401), 통과 아님 · 로그인 갱신 뒤 재실행 대기)
 qa 2026-10-13T02:44Z session=a8b1159c-92de-5978-b1ec-2be9c928617f (PR-B #207, 6개 흐름 통과 · ISSUE-001 수정 585c59b·99adcf6 · ISSUE-002 카드 「오늘로 채우기」 8fdd083, 건강 98→100)
+design-review 2026-10-13T06:05Z session=a8b1159c-92de-5978-b1ec-2be9c928617f (PR-B #207, Codex 재검토 — 로그인 갱신 뒤 gpt-6.1-sol medium 실행 exit 0, 후보 4건 DOM 실측 결함 0 · 등록 패널 375·1280 통과, 보고서 /mnt/project-files/06.4-review/exec-pr-b-design-review.md)

@@ -10,7 +10,7 @@ import { Table } from "@/ui/table/Table";
 import type { TableColumn } from "@/ui/table/types";
 import { useEditableWidth } from "@/ui/table/use-editable-width";
 import { Num } from "@/ui/num/Num";
-import { Button } from "@/ui/button/Button";
+import { Button, buttonLinkClassName } from "@/ui/button/Button";
 import { useCommaInput } from "@/ui/input/use-comma-input";
 import { Pagination } from "@/ui/pagination/Pagination";
 import { pageRangeText } from "@/ui/pagination/page-window";
@@ -20,6 +20,7 @@ import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import type { PaymentTargetRowDto } from "@/domain/expenses/dto";
 import type { BatchPaymentResult } from "@/domain/payments/batch";
 import type { SelectedTransferSum } from "@/domain/payments/targets";
+import type { ConfirmEvidenceResult } from "@/domain/evidence-reviews";
 import { AMOUNT_HIDDEN, DIFF_REASON_REQUIRED, TRANSFER_NOT_NUMBER, TRANSFER_NOT_POSITIVE } from "@/domain/payments/action-row";
 import { formatKrw } from "@/lib/format-number";
 import { completePaymentsBatchAction, sumSelectedTransfersAction } from "./actions";
@@ -41,6 +42,7 @@ import {
   type SelectionState,
 } from "./payment-selection";
 import { BatchPaymentDialog, rememberPayDate, rememberedPayDate } from "./batch-payment-dialog";
+import { EvidenceConfirmDialog } from "./evidence-confirm-dialog";
 import { StatusFilter, type FilterSelect } from "./status-filter";
 import { PAYMENT_TARGET_COLUMN_LABELS, PAYMENT_TARGET_VIEW } from "./list-columns";
 import styles from "./expenses.module.css";
@@ -248,6 +250,10 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
   // 지금 쪽 밖 행의 마지막 서버 상태(합 응답 rowStates) — 고를 수 있음 · version · 지급 총액.
   const [offPage, setOffPage] = useState<ReadonlyMap<string, SelectedTransferSum["rowStates"][number]>>(new Map());
 
+  // 제자리 증빙 확인(DR-4) — 연 행(id · 연 순간 행 version)과 확인 응답으로 덮을 행 값.
+  const [evidenceTarget, setEvidenceTarget] = useState<{ id: string; version: number } | null>(null);
+  const [evidencePatch, setEvidencePatch] = useState<ReadonlyMap<string, { version: number; evidenceStatus: string; selectable: boolean; reason: string | null }>>(new Map());
+
   // 되살리기(C-1 · r2 F-2) — 같은 탭 같은 키의 보관을 수화 뒤 한 번 읽어 선택 · 편집으로 세운다. 다음 합 응답의 rowStates가 고를 수 있는 행만 남긴다.
   const hydrated = useSyncExternalStore(subscribeNothing, () => true, () => false);
   const [restorePending, setRestorePending] = useState(true);
@@ -279,7 +285,11 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
     router.replace(href(props.query, props.page.page));
   }, [askedPage, props.page.page, props.query, router, memoryKey, result, blocked]);
 
-  const rows = mergeRows(props.rows, processed, blocked);
+  // 제자리 증빙 확인 응답(새 version · 상태 · 고를 수 있음)을 다시 받은 목록이 따라올 때까지 그 행에 덮는다 — 뒤이은 일괄 처리가 옛 version으로 막히지 않게.
+  const rows = mergeRows(props.rows, processed, blocked).map((row) => {
+    const patch = evidencePatch.get(row.id);
+    return patch && (row.version ?? 0) < patch.version ? { ...row, ...patch } : row;
+  });
   const selectable = selectableWith(blocked);
   // 다른 쪽 id 유지 — 지금 쪽 행은 그 행 판정, 지금 쪽 밖 id는 마지막 합 응답이 거짓이라 할 때만 빠진다.
   const chosen = reconcileAcrossPages(
@@ -360,10 +370,17 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
     setTimeout(() => {
       const root = rootRef.current;
       if (!root) return;
+      // 「transfer:{id}」 = 그 행 이체액 셀 · 「link:{id}」 = 그 행 링크(제자리 증빙 확인 뒤) · 그 밖 id = 그 행 체크박스.
+      const [kind, id] = target.includes(":") ? target.split(":") : ["checkbox", target];
+      const tr = root.querySelector(`[data-row-id="${CSS.escape(id ?? "")}"]`)?.closest("tr");
       const element =
         target === "primary"
           ? [...root.querySelectorAll<HTMLElement>('[data-ui="primary-button"]')].find((candidate) => !candidate.closest("dialog"))
-          : root.querySelector(`[data-row-id="${CSS.escape(target)}"]`)?.closest("tr")?.querySelector<HTMLElement>('input[type="checkbox"]');
+          : kind === "transfer"
+            ? tr?.querySelector<HTMLElement>('td:has([data-testid="payment-transfer-cell"])')
+            : kind === "link"
+              ? tr?.querySelector<HTMLElement>("a[data-row-link]")
+              : tr?.querySelector<HTMLElement>('input[type="checkbox"]');
       element?.focus();
     }, 0);
   }
@@ -506,6 +523,44 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
     execute({ payDate, rows: sent });
   }
 
+  // 증빙 칸 3차(`확인 전`만) — ≥1024 · 증빙 금액 있음은 제자리 모달, 증빙 금액이 빈 확인 전(R10-F2)과 700~1023은 문서 화면 왕복 링크. 폰은 행 링크(3차 없음).
+  function evidenceAction(row: PaymentTargetScreenRow) {
+    if (row.evidenceStatus !== "확인 전" || phone) return null;
+    const label = `${row.number ?? ""} 증빙 확인`.trim();
+    if (wide && row.evidenceAmountEntered === true && typeof row.version === "number") {
+      const version = row.version;
+      return (
+        <Button variant="tertiary" aria-label={label} data-cell-action="" onClick={() => setEvidenceTarget({ id: row.id, version })}>
+          증빙 확인
+        </Button>
+      );
+    }
+    return (
+      <Link href={docHref(row.id, props.query, props.page.page)} className={buttonLinkClassName("tertiary")} aria-label={label} data-cell-action="">
+        증빙 확인
+      </Link>
+    );
+  }
+
+  // 확인 성공(S1) — 응답 version · 상태로 행을 덮고 「상태 → 1차」를 다시 읽는다: 고를 수 있으면 저절로 골라지고(합계 번호 +1) 포커스 = 이체액 셀,
+  // 짝 막힘(R10-R1 · N3)이면 선택 없이 짝 이유 · 포커스 = 그 행 링크. 토스트 없음. 목록은 다시 받는다.
+  function confirmedEvidence(id: string, result: ConfirmEvidenceResult) {
+    const open = result.actionRow.row === "P4" && result.actionRow.blockReason === null;
+    setEvidencePatch((current) =>
+      new Map(current).set(id, { version: result.version, evidenceStatus: result.evidenceStatus, selectable: open, reason: open ? null : (result.actionRow.blockReason ?? null) }),
+    );
+    if (open) setSelection((current) => (current.selectedIds.includes(id) ? current : { ...current, selectedIds: [...current.selectedIds, id] }));
+    focusAfterCloseRef.current = open ? `transfer:${id}` : `link:${id}`;
+    setEvidenceTarget(null);
+    router.refresh();
+  }
+
+  const evidenceRow = evidenceTarget ? rows.find((row) => row.id === evidenceTarget.id) : undefined;
+  // 증빙 확인 모달은 연 동안만 그린다 — 그리지 않게 된 커밋(06-29 ConfirmDialog가 트리거 · 제목으로 포커스를 돌린 뒤) 다음에 정한 자리로 옮긴다.
+  useEffect(() => {
+    if (evidenceTarget === null) focusAfterClose();
+  }, [evidenceTarget]);
+
   const amountColumn = props.total !== null;
   const columns: TableColumn<PaymentTargetScreenRow>[] = [
     {
@@ -554,7 +609,12 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
       key: "evidence",
       header: PAYMENT_TARGET_COLUMN_LABELS.evidence,
       priority: "p1",
-      cell: (row) => (row.evidenceStatus ? <StatusTag status={row.evidenceStatus as StatusWord} variant="text" /> : null),
+      cell: (row) => (
+        <span className={styles.evidenceCell}>
+          {row.evidenceStatus ? <StatusTag status={row.evidenceStatus as StatusWord} variant="text" /> : null}
+          {evidenceAction(row)}
+        </span>
+      ),
     },
     ...(amountColumn
       ? ([
@@ -776,6 +836,20 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
           dateError={props.dateError}
           onConfirm={confirm}
         />
+        {/* 연 동안만 그린다 — 닫힌 dialog 요소(접근 이름 「증빙 확인」)가 화면 라벨 찾기에 섞이지 않게. */}
+        {evidenceTarget ? (
+          <EvidenceConfirmDialog
+            // 다른 사람이 먼저 확인해 다시 받은 행이 `확인 전`이 아니면 닫는다(저절로 골라지지 않는다 — 포커스 = 그 행 링크).
+            open={evidenceRow === undefined || evidenceRow.evidenceStatus === "확인 전"}
+            expenseId={evidenceTarget.id}
+            rowVersion={evidenceRow?.version ?? evidenceTarget.version}
+            onClose={() => {
+              setEvidenceTarget(null);
+              if (focusAfterCloseRef.current === null && evidenceRow && evidenceRow.evidenceStatus !== "확인 전") focusAfterCloseRef.current = `link:${evidenceTarget.id}`;
+            }}
+            onConfirmed={(result) => confirmedEvidence(evidenceTarget.id, result)}
+          />
+        ) : null}
       </ListScreen>
     </div>
   );

@@ -236,3 +236,21 @@
   outline-offset: var(--focus-offset);
   border-radius: var(--radius-control);
 }
+
+/* 06-17 증빙 칸 — 상태 글자 + 같은 칸 3차 `증빙 확인`(≥1024 제자리 모달 · 그 미만 문서 화면 링크). 좁으면 3차가 다음 줄로. */
+.evidenceCell {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-1) var(--s-2);
+}
+
+/* 06-17 제자리 증빙 확인 모달 — [Q-F] 증빙 금액 초과 한 줄(S4와 같은 꼴: 경고 색 · 숫자만 굵게). 막지 않는다. */
+.overrunLine {
+  color: var(--status-warning);
+}
+
+.overrunAmount {
+  font-weight: var(--fw-bold);
+}
+

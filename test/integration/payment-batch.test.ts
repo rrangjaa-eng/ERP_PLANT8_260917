@@ -2,13 +2,13 @@ import { randomUUID } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db/client";
-import { expenseEvidenceReviews, expensePayments, expenses, files } from "@/db/schema";
+import { expenseEvidenceReviews, expensePayments, expenses, files, quoteLines } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertVisibility } from "@/repositories/permissions";
 import { ForbiddenError } from "@/domain/permissions/can";
-import { completeExpensePayment, getPaymentView, PayableChangedError, PaymentConflictError, previewPayable, saveScheduledPayDate } from "@/domain/payments";
+import { completeExpensePayment, getPaymentView, loadEvidenceOverrun, PayableChangedError, PaymentConflictError, previewPayable, saveScheduledPayDate } from "@/domain/payments";
 import { BATCH_ROW_FAILED, batchRowOutcome, completePaymentsBatch } from "@/domain/payments/batch";
-import { listPaymentTargets, parsePaymentEvidenceFilter, PAYMENT_EVIDENCE_FILTERS, sumSelectedTransfers } from "@/domain/payments/targets";
+import { getEvidenceConfirmView, listPaymentTargets, parsePaymentEvidenceFilter, PAYMENT_EVIDENCE_FILTERS, sumSelectedTransfers } from "@/domain/payments/targets";
 import { DIFF_REASON_REQUIRED, EVIDENCE_UNCONFIRMED } from "@/domain/payments/action-row";
 import { diffKrw, sumKrw } from "@/domain/money";
 import { GateBlockedError } from "@/domain/rules/gate";
@@ -28,6 +28,7 @@ import { upsertPermission } from "@/repositories/permissions";
 import { TAX_UNAVAILABLE } from "@/domain/expenses/gate";
 import { DATE_FORMAT_ERROR } from "@/domain/expenses/draft-fields";
 import { completePaymentsBatchAction } from "@/app/(app)/expenses/actions";
+import { confirmEvidenceAction } from "@/app/(app)/expenses/[id]/actions";
 import { makePerson } from "./approvals-fixtures";
 import { addApprovedRevision, attachEvidence, makeEvidenceManager, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
 import { approvedExpenseWithEvidence, approvedExpenseWithoutEvidence, makePaymentManager, setEvidenceRequired, type ApprovedExpense } from "./fixtures/payments";
@@ -688,5 +689,78 @@ describe("지급일 재계산 막힘 · 재시도 (06-17 Task 2)", () => {
     } finally {
       await cancelHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, rateFrom);
     }
+  });
+});
+
+// ── 06-17 Task 4 — 제자리 증빙 확인 보기(DR-4) ──────────────────────────────
+
+// 결재 통과 · 증빙 한 장 · 확인 기록 없음(확인 전 P2) 문서에 증빙 금액을 둔다(픽스처가 expenses.evidence_amount를 직접 — 기안자 저장 경로 없음).
+async function unreviewedWithAmount(fx: ExpenseFixture, evidenceAmount: number): Promise<ApprovedExpense> {
+  const doc = await approvedExpenseWithEvidence(fx);
+  await db.update(expenses).set({ evidenceAmount }).where(eq(expenses.id, doc.expenseId));
+  return { ...doc, version: await versionOf(doc.expenseId) };
+}
+
+describe("제자리 증빙 확인 보기 (06-17 Task 4)", () => {
+  it("증빙 확인 보기 — 권한 · 확인 전만: 파일 행 · 증빙 금액 · 서버 계산 한 줄 · 지금 version · 지문 / 행 version 다름 → 같은 보기 + 동시성 이유 / 지급 권한 없음 · 확인 전 아님 → 거부", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    const doc = await unreviewedWithAmount(fx, 1_000_000);
+    const paymentView = await getPaymentView(payer, doc.expenseId);
+    expect(paymentView?.row?.row).toBe("P2");
+
+    const view = await getEvidenceConfirmView(payer, { expenseId: doc.expenseId, rowVersion: doc.version });
+    expect(view.version).toBe(doc.version);
+    expect(view.number).toBe(doc.number);
+    expect(view.evidenceAmountKrw).toBe(1_000_000);
+    expect(view.files).toHaveLength(1);
+    expect(view.files?.[0]?.name).not.toBe("");
+    expect(view.evidenceStamp).toBe(paymentView?.evidenceStamp);
+    expect(view.taxLine).toEqual(paymentView?.evidenceTaxLine);
+    expect(view.taxLine?.length).toBeGreaterThan(0);
+    expect(view.conflict).toBeNull();
+
+    const stale = await getEvidenceConfirmView(payer, { expenseId: doc.expenseId, rowVersion: doc.version - 1 });
+    expect(stale.version).toBe(doc.version);
+    expect(stale.conflict).toMatch(/^.+이 \d{2}:\d{2}에 바꿈 · 새로 고침$/);
+
+    await expect(getEvidenceConfirmView(fx.pm, { expenseId: doc.expenseId, rowVersion: doc.version })).rejects.toBeInstanceOf(ForbiddenError);
+    const confirmed = await confirmEvidence(payer, { expenseId: doc.expenseId, version: doc.version });
+    await expect(getEvidenceConfirmView(payer, { expenseId: doc.expenseId, rowVersion: confirmed.version })).rejects.toThrow("확인 전 아님 · 새로 고침");
+  });
+
+  it("증빙 확인 보기 — 증빙 금액 초과 한 줄(Q-F): 승인액 12,000,000 · 실행가 12,250,000 · 증빙 금액 12,400,000 → 06-06 loadEvidenceOverrun과 같은 한 줄 / 11,000,000 → null", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    const doc = await unreviewedWithAmount(fx, 12_400_000);
+    await db.update(expenses).set({ supplyAmountKrw: 12_000_000 }).where(eq(expenses.id, doc.expenseId));
+    await db.update(quoteLines).set({ executionAmountKrw: 12_250_000 }).where(eq(quoteLines.id, fx.lines.withVendor));
+
+    const view = await getEvidenceConfirmView(payer, { expenseId: doc.expenseId, rowVersion: doc.version });
+    expect(view.evidenceOverrun).toBe("승인액보다 +400,000 · 실행가 초과 150,000");
+    const [row] = await db.select().from(expenses).where(eq(expenses.id, doc.expenseId));
+    if (!row) throw new Error("지출결의 없음");
+    expect(view.evidenceOverrun).toBe(await loadEvidenceOverrun(payer, row, 12_400_000));
+
+    await db.update(expenses).set({ evidenceAmount: 11_000_000 }).where(eq(expenses.id, doc.expenseId));
+    expect((await getEvidenceConfirmView(payer, { expenseId: doc.expenseId, rowVersion: doc.version })).evidenceOverrun).toBeNull();
+  });
+
+  it("증빙 지문 다름 → 확인 거부: 보기 뒤 기안자가 증빙 하나 더 → 지금 DB version + 옛 지문으로 확인 → 동시성 거부 · 확인 기록 없음 / 다시 받은 보기 version + 지문 → 확인됨", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    const doc = await unreviewedWithAmount(fx, 1_000_000);
+    const view = await getEvidenceConfirmView(payer, { expenseId: doc.expenseId, rowVersion: doc.version });
+    await attachEvidence(fx.pm, doc.expenseId);
+    session.viewer = payer;
+
+    const refused = await confirmEvidenceAction({ expenseId: doc.expenseId, version: await versionOf(doc.expenseId), evidenceStamp: view.evidenceStamp });
+    expect(refused?.serverError).toMatch(/증빙을 바꿈 · 새로 고침$/);
+    expect(await db.select().from(expenseEvidenceReviews).where(eq(expenseEvidenceReviews.expenseId, doc.expenseId))).toHaveLength(0);
+
+    const again = await getEvidenceConfirmView(payer, { expenseId: doc.expenseId, rowVersion: await versionOf(doc.expenseId) });
+    expect(again.files).toHaveLength(2);
+    const done = await confirmEvidenceAction({ expenseId: doc.expenseId, version: again.version ?? 0, evidenceStamp: again.evidenceStamp });
+    expect(done?.data?.evidenceStatus).toBe("확인됨");
   });
 });

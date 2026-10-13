@@ -22,7 +22,7 @@ import {
 } from "@/domain/expenses";
 import { DATE_FORMAT_ERROR, EXPENSE_TEXT_MAX, expenseDraftFieldsSchema } from "@/domain/expenses/draft-fields";
 import { completePaymentsBatch } from "@/domain/payments/batch";
-import { sumSelectedTransfers } from "@/domain/payments/targets";
+import { getEvidenceConfirmView, sumSelectedTransfers } from "@/domain/payments/targets";
 import { DIFF_REASON_REQUIRED } from "@/domain/payments/action-row";
 import { isCalendarDate } from "@/lib/dates";
 import { searchLinesForPick, searchVendorsForPick } from "@/domain/expenses/pick";
@@ -291,3 +291,11 @@ const sumSelectedTransfersSchema = z.object({
 export const sumSelectedTransfersAction = authedActionClient
   .schema(sumSelectedTransfersSchema)
   .action(async ({ parsedInput, ctx }) => sumSelectedTransfers(ctx.viewer, parsedInput));
+
+// 06-17(UI-SPEC S1 「제자리 증빙 확인」 · DR-4): 확인 모달 보기 — 파일 행 · 증빙 금액 · 서버 계산 한 줄 · 지금 version · 증빙 지문 · 초과 한 줄(Q-F).
+// 확인 자체는 06-06 confirmEvidenceAction(금액 없는 갈래)을 그대로 쓴다 — 새 확인 액션 없음.
+const evidenceConfirmViewSchema = z.object({ expenseId: z.string().uuid(), rowVersion: z.number().int().nonnegative() });
+
+export const getEvidenceConfirmViewAction = authedActionClient
+  .schema(evidenceConfirmViewSchema)
+  .action(async ({ parsedInput, ctx }) => getEvidenceConfirmView(ctx.viewer, parsedInput));

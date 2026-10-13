@@ -7,12 +7,16 @@ import "@/domain/rules/register";
 import { diffKrw, sumKrw } from "@/domain/money";
 import { EXPENSE_DOCUMENT_KIND, visibleExpenseScope } from "@/domain/expenses/access";
 import { groupExpenses } from "@/domain/expenses/list";
-import { incomeTypeFor, pickTaxDates } from "@/domain/expenses/tax";
+import { incomeTypeFor, pickTaxDates, type TaxLinePart } from "@/domain/expenses/tax";
 import { TAX_UNAVAILABLE } from "@/domain/expenses/gate";
 import { PAYMENT_TARGET_ROW_DTO_SPEC, type PaymentTargetRowDto } from "@/domain/expenses/dto";
 import { ownersWithEvidence } from "@/domain/evidence/has-evidence";
+import { listEvidence } from "@/domain/evidence";
+import { formatKstTime } from "@/domain/holidays/business-day";
+import { findUserNamesByIds } from "@/repositories/users";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { loadPrepaidDueDays, resolveEvidenceStatus, type EvidenceStatus } from "@/domain/evidence-reviews";
-import { decidePayable, loadPaymentShared, pairGateCtx, pickPaymentAmount, type PaymentShared, type PaymentSharedDeps } from "@/domain/payments";
+import { decidePayable, getPaymentView, loadEvidenceOverrun, loadPaymentShared, pairGateCtx, pickPaymentAmount, type PaymentShared, type PaymentSharedDeps } from "@/domain/payments";
 import { approvalGateDecision, EVIDENCE_UNCONFIRMED, resolveExpenseActionRow, type EvidenceGateInput, type ExpenseActionBar } from "@/domain/payments/action-row";
 import { listTeams as listTeamRows } from "@/repositories/teams";
 import { EXPENSE_GROUP_RANKS, listExpenseIdsInScope } from "@/repositories/expenses";
@@ -184,6 +188,7 @@ function toDto(target: JudgedPaymentTarget, shared: PaymentShared): PaymentTarge
     reason: target.reason,
     prepaid: row.prepaid,
     quoteLineId: row.quoteLineId,
+    evidenceAmountEntered: row.evidenceAmount !== null,
   };
 }
 
@@ -295,6 +300,86 @@ export async function sumSelectedTransfers(
     PAYMENT_ROW_STATE_SPEC,
   );
   return { seq: input.seq, totalKrw: amountVisible ? sumKrw(transfers) : null, diffs: amountVisible ? diffs : {}, rowStates };
+}
+
+// 06-17(UI-SPEC S1 「제자리 증빙 확인」 · DR-4 · r2 B-1): 확인 모달 보기 — 트랜잭션 없는 읽기. 지급 권한 · 지급 대상 조회 범위(보임) · 「확인 전」(P2 · P5)만.
+// 파일 행은 05 listEvidence(살아 있는 것), 서버 계산 한 줄 · 지금 version · 증빙 지문은 06-06 getPaymentView 값 그대로(새 계산 없음), 증빙 금액 초과
+// 한 줄은 06-06 loadEvidenceOverrun(저장된 증빙 금액 — 표시만, 판정에 쓰지 않는다). 모달이 확인할 때 이 version + 지문을 보내 06-06 confirmEvidence가
+// 잠금 뒤 다시 비교한다 — 보지 않은 증빙이 「확인됨」이 되지 않는다. 행 version이 지금과 다르면 같은 보기에 동시성 이유를 싣는다(화면이 1차를 막는다).
+export const EVIDENCE_NOT_UNREVIEWED = "확인 전 아님 · 새로 고침";
+const EVIDENCE_VIEW_MISSING = "없는 지출결의 · 새로 고침";
+
+export type EvidenceConfirmFile = { id: string; name: string; sizeBytes: number; createdAt: string };
+
+export type EvidenceConfirmView = {
+  expenseId: string;
+  number: string | null;
+  title: string;
+  version: number;
+  evidenceStamp: string;
+  evidenceAmountKrw: number | null;
+  taxLine: TaxLinePart[] | null;
+  evidenceOverrun: string | null;
+  files: EvidenceConfirmFile[];
+  conflict: string | null;
+};
+
+// 금액 칸은 06-06 PAYMENT_VIEW_DTO_SPEC(paymentView)과 같은 정보 항목 expense.amount, 나머지는 expense.value.
+const EVIDENCE_CONFIRM_VIEW_SPEC: DtoSpec<EvidenceConfirmView, EvidenceConfirmView> = {
+  fields: [
+    { key: "expenseId", from: "expenseId", infoItem: "expense.value" },
+    { key: "number", from: "number", infoItem: "expense.value" },
+    { key: "title", from: "title", infoItem: "expense.value" },
+    { key: "version", from: "version", infoItem: "expense.value" },
+    { key: "evidenceStamp", from: "evidenceStamp", infoItem: "expense.amount" },
+    { key: "evidenceAmountKrw", from: "evidenceAmountKrw", infoItem: "expense.amount" },
+    { key: "taxLine", from: "taxLine", infoItem: "expense.amount" },
+    { key: "evidenceOverrun", from: "evidenceOverrun", infoItem: "expense.amount" },
+    { key: "files", from: "files", infoItem: "expense.value" },
+    { key: "conflict", from: "conflict", infoItem: "expense.value" },
+  ],
+};
+
+export async function getEvidenceConfirmView(viewer: Viewer, input: { expenseId: string; rowVersion: number }): Promise<Partial<EvidenceConfirmView>> {
+  await assertPayer(viewer);
+  if (!UUID_SHAPE.test(input.expenseId)) throw new UserFacingError(EVIDENCE_VIEW_MISSING);
+  const found = await findPaymentTargetRowsByIds(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, ids: [input.expenseId] });
+  const [row] = await visibleRows(
+    viewer,
+    found.filter((candidate) => candidate.approvalStatus === "approved"),
+    seoulToday(),
+  );
+  if (!row) throw new UserFacingError(EVIDENCE_VIEW_MISSING);
+  const view = await getPaymentView(viewer, row.id);
+  const state = view?.row?.row;
+  if (!view || (state !== "P2" && state !== "P5")) throw new UserFacingError(EVIDENCE_NOT_UNREVIEWED);
+  const files = (await listEvidence(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: row.id })).flatMap((file) =>
+    file.id && !file.voidedAt ? [{ id: file.id, name: file.originalName ?? "", sizeBytes: file.sizeBytes ?? 0, createdAt: new Date(file.createdAt ?? 0).toISOString() }] : [],
+  );
+  let conflict: string | null = null;
+  if (row.version !== input.rowVersion) {
+    const name = row.updatedBy ? (await findUserNamesByIds(viewer, [row.updatedBy])).get(row.updatedBy) : undefined;
+    conflict = `${name ? `${name}이` : "다른 사람이"} ${formatKstTime(row.updatedAt)}에 바꿈 · 새로 고침`;
+  }
+  const [projected] = await projectMany(
+    viewer,
+    [
+      {
+        expenseId: row.id,
+        number: row.number,
+        title: titleOf(row),
+        version: row.version,
+        evidenceStamp: view.evidenceStamp ?? "",
+        evidenceAmountKrw: row.evidenceAmount,
+        taxLine: view.evidenceTaxLine ?? null,
+        evidenceOverrun: await loadEvidenceOverrun(viewer, row, row.evidenceAmount),
+        files,
+        conflict,
+      },
+    ],
+    EVIDENCE_CONFIRM_VIEW_SPEC,
+  );
+  return projected ?? {};
 }
 
 // 팀 필터 값 — 활성 팀 전부(`팀 전체` + 이름). 05 · 04 listTeams는 관리 메뉴(admin.people) 보기를 요구해 지급 권한자에게 비므로

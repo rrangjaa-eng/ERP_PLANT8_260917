@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
-import { expensePayments, expenses, projects } from "@/db/schema";
+import { expensePayments, expenses, projects, quoteLines } from "@/db/schema";
 import { approveDocument, getApprovalView } from "@/domain/approvals";
 import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { confirmEvidence } from "@/domain/evidence-reviews";
@@ -13,8 +13,9 @@ import { AMOUNT_HIDDEN } from "@/domain/payments/action-row";
 import { previewPayable } from "@/domain/payments";
 import { formatKrw } from "@/lib/format-number";
 import { seedCodeItem } from "@/repositories/code-tables";
-import { addHistorizedValue, cancelHistorizedValue } from "@/domain/settings/registry";
-import { TAX_VAT_RATE } from "@/domain/settings/keys";
+import { addHistorizedValue, cancelHistorizedValue, getSettingValue } from "@/domain/settings/registry";
+import { PAYMENT_METHOD_EVIDENCE_PAIRS, TAX_VAT_RATE } from "@/domain/settings/keys";
+import { upsertSimpleValue } from "@/repositories/settings";
 import { EVIDENCE_UNCONFIRMED } from "@/domain/payments/action-row";
 import { seoulToday } from "@/lib/dates";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
@@ -272,8 +273,8 @@ test.describe("지급 대상 · 일괄 지급 마감 (06-15 Task 3)", () => {
     await page.goto("/expenses");
     await expect(rowOf(page, fx.lines.tracer.itemName)).toHaveCount(1);
     await expect(rowOf(page, fx.lines.hold.itemName)).toHaveCount(1);
-    await waitForHydration(page.getByLabel("증빙"));
-    await page.getByLabel("증빙").selectOption({ label: "확인 전" });
+    await waitForHydration(page.getByLabel("증빙", { exact: true }));
+    await page.getByLabel("증빙", { exact: true }).selectOption({ label: "확인 전" });
     await expect(page).toHaveURL(/evidence=unreviewed/);
     await expect(rowOf(page, fx.lines.hold.itemName)).toHaveCount(0);
     await expect(rowOf(page, fx.lines.tracer.itemName)).toHaveCount(1);
@@ -535,7 +536,7 @@ test.describe("일괄 지급 마감 (06-17)", () => {
     await expect(dialog.getByLabel("지급일")).toHaveValue(tomorrow);
     await page.keyboard.press("Escape");
 
-    await page.getByLabel("증빙").selectOption({ label: "지급 가능" });
+    await page.getByLabel("증빙", { exact: true }).selectOption({ label: "지급 가능" });
     await expect(page).toHaveURL(/evidence=payable/);
     await waitForHydration(row.getByRole("checkbox"));
     await row.getByRole("checkbox").check();
@@ -807,6 +808,367 @@ test.describe("일괄 지급 마감 — 쪽 · 키보드 (06-17 Task 3)", () => 
       .from(expensePayments)
       .where(and(eq(expensePayments.expenseId, last.id), isNull(expensePayments.cancelledAt)));
     expect(record).toEqual({ transferKrw: transfer, diffReason: "이체 수수료" });
+    await page.context().close();
+  });
+});
+
+test.describe("제자리 증빙 확인 · 보관 (06-17 Task 4)", () => {
+  async function docOf(expenseId: string) {
+    const [row] = await db.select().from(expenses).where(eq(expenses.id, expenseId));
+    if (!row?.number || row.supplyAmountKrw === null) throw new Error("문서 · 번호 · 공급가 없음");
+    return { ...row, number: row.number, supplyAmountKrw: row.supplyAmountKrw };
+  }
+
+  // 결재 통과 · 증빙 있음 · 확인 기록 없음(확인 전 P2). 증빙 금액은 픽스처가 문서 행에 직접 둔다(null이면 빈 금액 — R10-F2).
+  async function unreviewedTarget(fx: ExpenseE2E, key: LineKey, evidenceAmount: "supply" | number | null = "supply"): Promise<string> {
+    const id = await approvedTarget(fx, key, "unreviewed");
+    const doc = await docOf(id);
+    await db
+      .update(expenses)
+      .set({ evidenceAmount: evidenceAmount === "supply" ? doc.supplyAmountKrw : evidenceAmount })
+      .where(eq(expenses.id, id));
+    return id;
+  }
+
+  function transferTd(page: Page, itemName: string) {
+    return rowOf(page, itemName).locator('td:has([data-testid="payment-transfer-cell"])');
+  }
+
+  async function openEvidence(page: Page, itemName: string, number: string) {
+    await rowOf(page, itemName).getByRole("button", { name: `${number} 증빙 확인` }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("heading", { name: "증빙 확인" })).toBeVisible();
+    return dialog;
+  }
+
+  test("제자리 증빙 확인 — 3차 → 모달(부제 · 첨부 보기 칸 · 결과 줄) → Ctrl+Enter → 확인됨 · 저절로 골라짐 · 포커스 이체액 셀 · 1차 N+1 → S2(첨부 칸 없음) → 막힘 0", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const a = await unreviewedTarget(fx, "tracer");
+    await approvedTarget(fx, "hold");
+    const doc = await docOf(a);
+    const payer = await makeTeamPayer(fx);
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    await page.goto("/expenses");
+    const rowA = rowOf(page, fx.lines.tracer.itemName);
+    const rowB = rowOf(page, fx.lines.hold.itemName);
+    await waitForHydration(rowB.getByRole("checkbox"));
+    await rowB.getByRole("checkbox").check();
+    await expect(page.getByRole("button", { name: /^지급 완료 1/ })).toBeVisible();
+    await expect(rowA.getByRole("checkbox")).toHaveAttribute("aria-disabled", "true");
+
+    const dialog = await openEvidence(page, fx.lines.tracer.itemName, doc.number);
+    await expect(dialog.getByText(new RegExp(`^${doc.number} · .+ · 증빙 금액 ${formatKrw(doc.supplyAmountKrw)}$`))).toBeVisible();
+    await expect(dialog.locator('[data-ui="confirm-attachments"] li[data-state="done"]')).toHaveCount(1);
+    await expect(dialog.getByTestId("evidence-confirm-tax-line")).toBeVisible();
+    const confirmButton = dialog.getByRole("button", { name: /^증빙 확인/ });
+    await expect(confirmButton).not.toHaveAttribute("aria-disabled", "true");
+    await page.keyboard.press("Control+Enter");
+    await expect(dialog).toBeHidden();
+
+    await expect(rowA.getByText("확인됨", { exact: true })).toBeVisible();
+    await expect(rowA.getByRole("checkbox")).toBeChecked();
+    await expect(transferTd(page, fx.lines.tracer.itemName)).toBeFocused();
+    await expect(page.getByRole("button", { name: /^지급 완료 2/ })).toBeVisible();
+
+    await page.getByRole("button", { name: /^지급 완료 2/ }).click();
+    const batch = page.getByRole("dialog");
+    await expect(batch.getByText(/^2건 · 이체액 합계 [\d,]+$/)).toBeVisible();
+    await expect(batch.locator('[data-ui="confirm-attachments"]')).toHaveCount(0);
+    await batch.getByRole("button", { name: /^지급 완료 2건/ }).click();
+    await expect(batch).toBeHidden();
+    await expect(page.locator('main p[aria-live="polite"]')).toHaveText(/^\d{2}:\d{2} 지급 완료 2건$/);
+    expect(await livePaymentCount(a)).toBe(1);
+    await page.context().close();
+  });
+
+  test("모달 연 뒤 증빙 바뀜 → 새 증빙으로 다시 — ⑴ 기안자가 증빙 더함 → 거부 · 새로 고침 → 두 파일로 다시 → 확인 ⑵ 목록 뒤 문서 바뀜 → 1차 막힘 → 새로 고침 → 켜짐 ⑶ 다른 사람이 먼저 확인 → 거부 → 새로 고침 → 닫힘 · 확인됨 · 고르지 않음 · 포커스 링크", async ({ browser, baseURL }) => {
+    test.setTimeout(120_000);
+    const fx = await setupExpenseE2E();
+    const one = await unreviewedTarget(fx, "tracer");
+    const two = await unreviewedTarget(fx, "hold");
+    const three = await unreviewedTarget(fx, "retry");
+    const other = await approvedTarget(fx, "phone");
+    const [docOne, docTwo, docThree] = await Promise.all([docOf(one), docOf(two), docOf(three)]);
+    const payer = await makeTeamPayer(fx);
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    await page.goto("/expenses");
+    const otherRow = rowOf(page, fx.lines.phone.itemName);
+    await waitForHydration(otherRow.getByRole("checkbox"));
+    const otherPayable = await previewPayable(payer.viewer, { expenseId: other, payDate: seoulToday() });
+    if (otherPayable.payableKrw == null) throw new Error("지급 총액 없음");
+    await otherRow.getByTestId("payment-transfer-cell").click();
+    await otherRow.getByLabel("이체액").fill(String(otherPayable.payableKrw - 500));
+    await otherRow.getByLabel("이체액").press("Enter");
+    await expect(otherRow.getByRole("checkbox")).toBeChecked();
+
+    // ⑵ — 목록을 받은 뒤 문서가 바뀜(다른 경로의 새로 고침이 끼지 않게 맨 먼저)
+    await db
+      .update(expenses)
+      .set({ version: docTwo.version + 1, updatedAt: new Date() })
+      .where(eq(expenses.id, two));
+    let dialog = await openEvidence(page, fx.lines.hold.itemName, docTwo.number);
+    const confirmTwo = dialog.getByRole("button", { name: /^증빙 확인/ });
+    await expect(confirmTwo).toHaveAttribute("aria-disabled", "true");
+    await expect(confirmTwo).toHaveAccessibleDescription(/에 바꿈$/);
+    await dialog.getByRole("button", { name: "새로 고침" }).click();
+    await expect(confirmTwo).not.toHaveAttribute("aria-disabled", "true");
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+
+    // ⑴
+    dialog = await openEvidence(page, fx.lines.tracer.itemName, docOne.number);
+    const files = dialog.locator('[data-ui="confirm-attachments"] li[data-state="done"]');
+    await expect(files).toHaveCount(1);
+    await attachEvidence(fx.pm.viewer, one);
+    await page.keyboard.press("Control+Enter");
+    await expect(dialog.getByRole("button", { name: /^증빙 확인/ })).toHaveAccessibleDescription(/에 (증빙을 )?바꿈$/);
+    await expect(dialog).toBeVisible();
+    await expect(rowOf(page, fx.lines.tracer.itemName).getByText("확인 전", { exact: true })).toBeVisible();
+    await dialog.getByRole("button", { name: "새로 고침" }).click();
+    await expect(files).toHaveCount(2);
+    await expect(otherRow.getByRole("checkbox")).toBeChecked();
+    await expect(otherRow.getByTestId("payment-transfer-cell")).toHaveText(formatKrw(otherPayable.payableKrw - 500));
+    await page.keyboard.press("Control+Enter");
+    await expect(dialog).toBeHidden();
+    await expect(rowOf(page, fx.lines.tracer.itemName).getByText("확인됨", { exact: true })).toBeVisible();
+
+    // ⑶
+    dialog = await openEvidence(page, fx.lines.retry.itemName, docThree.number);
+    await expect(dialog.getByRole("button", { name: /^증빙 확인/ })).not.toHaveAttribute("aria-disabled", "true");
+    const someoneElse = await makeTeamPayer(fx);
+    await confirmEvidence(someoneElse.viewer, { expenseId: three, version: docThree.version });
+    await page.keyboard.press("Control+Enter");
+    await expect(dialog.getByRole("button", { name: /^증빙 확인/ })).toHaveAccessibleDescription(/에 바꿈$/);
+    await dialog.getByRole("button", { name: "새로 고침" }).click();
+    await expect(dialog).toBeHidden();
+    const rowThree = rowOf(page, fx.lines.retry.itemName);
+    await expect(rowThree.getByText("확인됨", { exact: true })).toBeVisible();
+    await expect(rowThree.getByRole("checkbox")).not.toBeChecked();
+    await expect(rowThree.locator("a[data-row-link]")).toBeFocused();
+    await page.context().close();
+  });
+
+  test("제자리 증빙 확인 — 증빙 금액 초과 표시(Q-F): 승인액 12,000,000 · 실행가 12,250,000 · 증빙 금액 12,400,000 → 결과 줄 다음 한 줄 · 1차 막지 않음 → 확인됨 / 초과 없는 행 모달에는 그 글자 없음", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const over = await unreviewedTarget(fx, "tracer", 12_400_000);
+    await db.update(expenses).set({ supplyAmountKrw: 12_000_000 }).where(eq(expenses.id, over));
+    await db.update(quoteLines).set({ executionAmountKrw: 12_250_000 }).where(eq(quoteLines.id, fx.lines.tracer.id));
+    const plain = await unreviewedTarget(fx, "hold");
+    const [docOver, docPlain] = await Promise.all([docOf(over), docOf(plain)]);
+    const payer = await makeTeamPayer(fx);
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    await page.goto("/expenses");
+    await waitForHydration(rowOf(page, fx.lines.hold.itemName).getByRole("button", { name: `${docPlain.number} 증빙 확인` }));
+
+    let dialog = await openEvidence(page, fx.lines.hold.itemName, docPlain.number);
+    await expect(dialog.getByTestId("evidence-confirm-tax-line")).toBeVisible();
+    await expect(dialog.getByText(/승인액보다|실행가 초과/)).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+
+    dialog = await openEvidence(page, fx.lines.tracer.itemName, docOver.number);
+    await expect(dialog.getByTestId("evidence-confirm-overrun")).toHaveText("승인액보다 +400,000 · 실행가 초과 150,000");
+    expect(await colorOf(dialog.getByTestId("evidence-confirm-overrun"))).toBe(await tokenAsColor(page, "--status-warning"));
+    await expect(dialog.getByRole("button", { name: /^증빙 확인/ })).not.toHaveAttribute("aria-disabled", "true");
+    await page.keyboard.press("Control+Enter");
+    await expect(dialog).toBeHidden();
+    await expect(rowOf(page, fx.lines.tracer.itemName).getByText("확인됨", { exact: true })).toBeVisible();
+    await page.context().close();
+  });
+
+  test("짝 막힘 행 제자리 확인(R10-R1 · N3) — 확인 성공 → 확인됨 · 체크박스 aria-disabled · 짝 이유 · 이체액 편집 칸 없음 · 고른 수 그대로 · 포커스 그 행 링크", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const id = await unreviewedTarget(fx, "tracer");
+    const doc = await docOf(id);
+    const method = `e2e_pair_${randomUUID().slice(0, 6)}`;
+    await seedCodeItem(SYSTEM_VIEWER, { tableKey: "payment_method", value: method, label: method, sortOrder: 99 });
+    await db.update(expenses).set({ paymentMethod: method }).where(eq(expenses.id, id));
+    const before = await getSettingValue(PAYMENT_METHOD_EVIDENCE_PAIRS);
+    // 이 테스트만의 지급 방식 하나에 이 문서 증빙 종류가 아닌 짝을 둔다 — 다른 지급 방식 문서는 영향 없음(짝 없는 방식은 검사 없음).
+    await upsertSimpleValue(SYSTEM_VIEWER, PAYMENT_METHOD_EVIDENCE_PAIRS.key, [...before, { method, evidence: `none_${method}` }], null);
+    try {
+      const payer = await makeTeamPayer(fx);
+      const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+      await page.goto("/expenses");
+      const row = rowOf(page, fx.lines.tracer.itemName);
+      await waitForHydration(row.getByRole("button", { name: `${doc.number} 증빙 확인` }));
+      const dialog = await openEvidence(page, fx.lines.tracer.itemName, doc.number);
+      await expect(dialog.getByRole("button", { name: /^증빙 확인/ })).not.toHaveAttribute("aria-disabled", "true");
+      await page.keyboard.press("Control+Enter");
+      await expect(dialog).toBeHidden();
+      await expect(row.getByText("확인됨", { exact: true })).toBeVisible();
+      const box = row.getByRole("checkbox");
+      await expect(box).toHaveAttribute("aria-disabled", "true");
+      await expect(box).not.toBeChecked();
+      await expect(row.getByText(/짝 아님 · 짝 설정은 관리자$/)).toBeVisible();
+      await expect(transferTd(page, fx.lines.tracer.itemName)).not.toHaveAttribute("aria-readonly", "false");
+      await expect(page.getByText("고른 건 없음")).toBeVisible();
+      await expect(row.locator("a[data-row-link]")).toBeFocused();
+      await page.context().close();
+    } finally {
+      await upsertSimpleValue(SYSTEM_VIEWER, PAYMENT_METHOD_EVIDENCE_PAIRS.key, before, null);
+    }
+  });
+
+  test("금액 빈 확인 전 → 문서 화면(R10-F2) — 3차가 `from=pay` 링크 · 모달 없음 / 800px도 3차는 문서 화면 링크", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const empty = await unreviewedTarget(fx, "tracer", null);
+    const filled = await unreviewedTarget(fx, "hold");
+    const [docEmpty, docFilled] = await Promise.all([docOf(empty), docOf(filled)]);
+    const payer = await makeTeamPayer(fx);
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    await page.goto("/expenses");
+    await waitForHydration(rowOf(page, fx.lines.hold.itemName).getByRole("button", { name: `${docFilled.number} 증빙 확인` }));
+    const link = rowOf(page, fx.lines.tracer.itemName).getByRole("link", { name: `${docEmpty.number} 증빙 확인` });
+    await expect(link).toHaveAttribute("href", new RegExp(`^/expenses/${empty}\\?from=pay&`));
+    await link.click();
+    await expect(page).toHaveURL(new RegExp(`/expenses/${empty}\\?from=pay`));
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await page.context().close();
+
+    const tablet = await loginPage(browser, baseURL, payer, { width: 800, height: 900 });
+    await tablet.goto("/expenses");
+    await expect(rowOf(tablet, fx.lines.hold.itemName).getByRole("link", { name: `${docFilled.number} 증빙 확인` })).toHaveAttribute(
+      "href",
+      new RegExp(`^/expenses/${filled}\\?from=pay&`),
+    );
+    await expect(tablet.getByRole("button", { name: /증빙 확인$/ })).toHaveCount(0);
+    await tablet.context().close();
+  });
+
+  test("증빙 불러오지 못함 — 보기 응답이 끊기면 `증빙 불러오지 못함` · 1차 aria-disabled · `다시 시도`로 받으면 켜짐", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const id = await unreviewedTarget(fx, "tracer");
+    const doc = await docOf(id);
+    const payer = await makeTeamPayer(fx);
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    await page.goto("/expenses");
+    await waitForHydration(rowOf(page, fx.lines.tracer.itemName).getByRole("button", { name: `${doc.number} 증빙 확인` }));
+    const cut = (route: import("@playwright/test").Route) => (route.request().headers()["next-action"] ? route.abort() : route.fallback());
+    await page.route("**/expenses**", cut);
+    const dialog = await openEvidence(page, fx.lines.tracer.itemName, doc.number);
+    const confirmButton = dialog.getByRole("button", { name: /^증빙 확인/ });
+    await expect(confirmButton).toHaveAccessibleDescription("증빙 불러오지 못함");
+    await expect(confirmButton).toHaveAttribute("aria-disabled", "true");
+    await page.unroute("**/expenses**", cut);
+    await dialog.getByRole("button", { name: "다시 시도" }).click();
+    await expect(confirmButton).not.toHaveAttribute("aria-disabled", "true");
+    await expect(dialog.locator('[data-ui="confirm-attachments"] li[data-state="done"]')).toHaveCount(1);
+    await page.context().close();
+  });
+
+  test("확인 직후 Ctrl+Enter 반복 무시(M-3) — 누른 채 반복된 Enter는 S2를 열지 않고, 떼고 새로 누른 Ctrl+Enter는 S2를 연다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const id = await unreviewedTarget(fx, "tracer");
+    const doc = await docOf(id);
+    const payer = await makeTeamPayer(fx);
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    await page.goto("/expenses");
+    await waitForHydration(rowOf(page, fx.lines.tracer.itemName).getByRole("button", { name: `${doc.number} 증빙 확인` }));
+    const dialog = await openEvidence(page, fx.lines.tracer.itemName, doc.number);
+    await expect(dialog.getByRole("button", { name: /^증빙 확인/ })).not.toHaveAttribute("aria-disabled", "true");
+
+    await page.keyboard.down("Control");
+    await page.keyboard.down("Enter");
+    // 모달이 닫히고 포커스가 이체액 셀로 간 것을 기다린 뒤(키는 떼지 않음) 반복 Enter를 보낸다.
+    await expect(dialog).toBeHidden();
+    await expect(transferTd(page, fx.lines.tracer.itemName)).toBeFocused();
+    await page.keyboard.down("Enter");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^지급 완료 1/ })).toBeVisible();
+    await page.keyboard.up("Enter");
+    await page.keyboard.up("Control");
+    await page.keyboard.press("Control+Enter");
+    await expect(page.getByRole("dialog").getByRole("button", { name: /^지급 완료 1건/ })).toBeVisible();
+    await page.context().close();
+  });
+
+  test("보관 되살리기(C-1 · r2 F-2) — 이체액 편집 + 선택 → 번호 링크로 문서 화면 → 돌아오면 묻지 않고 되살아남 · 합 다시 / 필터를 바꾸면 되살릴 것 없음", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const a = await approvedTarget(fx, "tracer");
+    const b = await approvedTarget(fx, "hold");
+    const payer = await makeTeamPayer(fx);
+    const payA = await previewPayable(payer.viewer, { expenseId: a, payDate: seoulToday() });
+    const payB = await previewPayable(payer.viewer, { expenseId: b, payDate: seoulToday() });
+    if (payA.payableKrw == null || payB.payableKrw == null) throw new Error("지급 총액 없음");
+    const docA = await docOf(a);
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    await page.goto("/expenses");
+    const rowA = rowOf(page, fx.lines.tracer.itemName);
+    const rowB = rowOf(page, fx.lines.hold.itemName);
+    await waitForHydration(rowB.getByRole("checkbox"));
+    await rowA.getByTestId("payment-transfer-cell").click();
+    await rowA.getByLabel("이체액").fill(String(payA.payableKrw - 1_000));
+    await rowA.getByLabel("이체액").press("Enter");
+    await rowB.getByRole("checkbox").check();
+    const totals = page.getByRole("region", { name: "합계" });
+    const sum = formatKrw(payA.payableKrw - 1_000 + payB.payableKrw);
+    await expect(totals.getByText(sum, { exact: true })).toBeVisible();
+
+    await rowA.getByRole("link", { name: `${docA.number} 지출결의 열기` }).click();
+    await expect(page).toHaveURL(new RegExp(`/expenses/${a}\\?from=pay`));
+    await page.goBack();
+    await expect(page).toHaveURL(/\/expenses$/);
+    await expect(rowB.getByRole("checkbox")).toBeChecked();
+    await expect(rowA.getByRole("checkbox")).toBeChecked();
+    await expect(rowA.getByTestId("payment-transfer-cell")).toHaveText(formatKrw(payA.payableKrw - 1_000));
+    await expect(totals.getByText(/^고른 2건 · 이체액/)).toBeVisible();
+    await expect(totals.getByText(sum, { exact: true })).toBeVisible();
+
+    await page.getByLabel("증빙", { exact: true }).selectOption({ label: "지급 가능" });
+    await expect(page).toHaveURL(/evidence=payable/);
+    await waitForHydration(rowB.getByRole("checkbox"));
+    await expect(rowB.getByRole("checkbox")).not.toBeChecked();
+    await expect(page.getByText("고른 건 없음")).toBeVisible();
+    await page.context().close();
+  });
+
+  test("보관 되살리기 — 51건: 첫 쪽 A 편집(사유) + 둘째 쪽 C 선택 → 둘째 쪽에서 문서 화면 → 돌아옴 → A · C 살아 있고 `지급 완료 2` · 결과 줄 ③ `다른 쪽 1건 포함` → 처리 막힘 0", async ({ browser, baseURL }) => {
+    test.setTimeout(420_000);
+    const fx = await setupExpenseE2E();
+    const made = await manyTargets(fx, 51);
+    const first = made[0];
+    const last = made[50];
+    if (!first || !last) throw new Error("문서 51건 없음");
+    const payer = await makeTeamPayer(fx);
+    const payFirst = await previewPayable(payer.viewer, { expenseId: first.id, payDate: seoulToday() });
+    if (payFirst.payableKrw == null) throw new Error("지급 총액 없음");
+    const docLast = await docOf(last.id);
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    await page.goto("/expenses");
+    const firstRow = rowOf(page, first.itemName);
+    await waitForHydration(firstRow.getByRole("checkbox"));
+    await firstRow.getByTestId("payment-transfer-cell").click();
+    await firstRow.getByLabel("이체액").fill(String(payFirst.payableKrw - 2_000));
+    await firstRow.getByLabel("이체액").press("Enter");
+    await firstRow.locator('td:has([data-testid="payment-diff-reason-cell"])').click();
+    await firstRow.getByLabel("차이 사유").fill("이체 수수료");
+    await firstRow.getByLabel("차이 사유").press("Enter");
+    await expect(firstRow.getByRole("checkbox")).toBeChecked();
+
+    await page.getByRole("navigation", { name: "지급 대상 페이지" }).getByRole("link", { name: "2", exact: true }).click();
+    const lastRow = rowOf(page, last.itemName);
+    await waitForHydration(lastRow.getByRole("checkbox"));
+    await lastRow.getByRole("checkbox").check();
+    await expect(page.getByRole("button", { name: /^지급 완료 2/ })).toBeVisible();
+    await lastRow.getByRole("link", { name: `${docLast.number} 지출결의 열기` }).click();
+    await expect(page).toHaveURL(new RegExp(`/expenses/${last.id}\\?from=pay.*page=2`));
+    await page.goBack();
+    await expect(page).toHaveURL(/page=2/);
+    await expect(lastRow.getByRole("checkbox")).toBeChecked();
+    await expect(page.getByRole("button", { name: /^지급 완료 2/ })).toBeVisible();
+
+    await page.getByRole("button", { name: /^지급 완료 2/ }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByText("다른 쪽 1건 포함 · 차이 있음 1건", { exact: true })).toBeVisible();
+    await dialog.getByRole("button", { name: /^지급 완료 2건/ }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page.locator('main p[aria-live="polite"]')).toHaveText(/^\d{2}:\d{2} 지급 완료 2건$/);
+    const [record] = await db
+      .select({ transferKrw: expensePayments.transferKrw, diffReason: expensePayments.diffReason })
+      .from(expensePayments)
+      .where(and(eq(expensePayments.expenseId, first.id), isNull(expensePayments.cancelledAt)));
+    expect(record).toEqual({ transferKrw: payFirst.payableKrw - 2_000, diffReason: "이체 수수료" });
     await page.context().close();
   });
 });

@@ -62,3 +62,5 @@ registerAction({ name: "restoreExpenseDraftAction", menu: "expenses", action: "w
 registerAction({ name: "completePaymentsBatchAction", menu: "expenses.payments", action: "write", dtoName: null });
 // 06-17 고른 건 이체액 합 · 행별 차이 · 고른 행 상태 — rowStates의 지급 총액 · version은 06-15 행 명세(paymentTargetRow)의 정보 항목을 지난다.
 registerAction({ name: "sumSelectedTransfersAction", menu: "expenses.payments", action: "write", dtoName: "paymentTargetRow" });
+// 06-17 제자리 증빙 확인 모달 보기 — 파일 행은 05 증빙 파일 명세(evidenceFile)의 정보 항목, 금액 칸은 expense.amount(06-06 paymentView와 같다).
+registerAction({ name: "getEvidenceConfirmViewAction", menu: "expenses.payments", action: "write", dtoName: "evidenceFile" });

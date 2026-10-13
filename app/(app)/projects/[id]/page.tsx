@@ -263,6 +263,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       preSettle = { status: "error" };
     }
   }
+  // 미매칭 줄의 다음 한 수는 프로젝트 쓰기 권한자에게만 — 그 밖의 사람에게는 `담당 PM {이름}`(UI-SPEC 「표시 — 점검 행」).
+  const preSettleOwnerName =
+    preSettle?.status === "ready" && !canWrite && preSettle.dto.unmatchedLines.count > 0 ? ((responsibles ?? (await projectResponsibles(session.viewer, project)))?.pmName ?? "") : null;
   const preSettleBlock = preSettle === null ? null : preSettle.status === "ready" ? preSettle.dto.blockReason : "점검 결과 없음 · 다시 시도";
   const frame = { title: project.name, meta: [project.number, `상세 견적 ${revision.seq}차`].join(" · ") } satisfies Pick<DetailScreenProps, "title" | "meta">;
 
@@ -279,7 +282,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       statusSinceText={`${statusLabel} ${statusSince}`}
       statusChange={statusChange}
       settlement={settlementHeader ? { projectId: project.id, ...settlementHeader, preSettleBlock } : null}
-      preSettleSection={preSettle?.status === "ready" ? <PreSettleCheckSection check={preSettle.dto} /> : null}
+      preSettleSection={preSettle?.status === "ready" ? <PreSettleCheckSection check={preSettle.dto} ownerName={preSettleOwnerName} /> : null}
       newRevision={newRevision}
       copyProjectHref={canCopyProject ? `/projects?new=1&copyFrom=${project.id}` : null}
       memberAdd={memberRights.canEdit && memberRights.hasCandidates ? <MemberAddHeaderButton /> : null}

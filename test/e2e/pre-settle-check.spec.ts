@@ -147,8 +147,9 @@ async function setupUnmatchedSettling(): Promise<{ org: LeaveOrg; projectId: str
   await changeProjectStatus(org.teamLead.viewer, project.id, { from: "bidding", to: "in_progress" });
   const basis = await approvalBasis(SYSTEM_VIEWER, revision.id);
   await setCustomerApproval(org.drafter.viewer, revision.id, { approvedOn: today, seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
-  const settled = await applyAutoSettlement({ projectIds: [project.id] });
-  if (!settled.includes(project.id)) throw new Error("자동 정산이 되지 않았습니다");
+  // 고객 승인의 잠금 읽기가 먼저 정산으로 바꿀 수 있다 — 자동 정산 뒤 상태로 확인한다.
+  await applyAutoSettlement({ projectIds: [project.id] });
+  if ((await findProjectById(SYSTEM_VIEWER, project.id))?.status !== "settling") throw new Error("정산 상태가 아닙니다");
   return { org, projectId: project.id, itemName };
 }
 

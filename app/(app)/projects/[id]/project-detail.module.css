@@ -557,3 +557,18 @@ td:has(> .rowNumber) {
   margin: 0;
   color: var(--status-success);
 }
+
+/* 06-19(S18) — 매출 미입력 행 `발행 줄 없음` · 매출 줄(`계약 금액 · 발행 합계 · 차이`, 차이 ≠ 0이면 --status-warning — 막지 않음, D-613). */
+.preSettleMissing {
+  margin: 0;
+}
+
+.preSettleRevenue {
+  margin: var(--s-4) 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+}
+
+.preSettleDiff {
+  color: var(--status-warning);
+}

@@ -17,6 +17,10 @@ vi.mock("@/domain/issue-requests", async () => {
   const actual = await vi.importActual<typeof import("@/domain/issue-requests")>("@/domain/issue-requests");
   return { ...actual, summarizeOpenIssueRequests: vi.fn(actual.summarizeOpenIssueRequests) };
 });
+vi.mock("@/domain/evidence/has-evidence", async () => {
+  const actual = await vi.importActual<typeof import("@/domain/evidence/has-evidence")>("@/domain/evidence/has-evidence");
+  return { ...actual, hasEvidence: vi.fn(actual.hasEvidence), ownersWithEvidence: vi.fn(actual.ownersWithEvidence) };
+});
 vi.mock("@/domain/pre-settle-check", async () => {
   const actual = await vi.importActual<typeof import("@/domain/pre-settle-check")>("@/domain/pre-settle-check");
   return {
@@ -34,6 +38,7 @@ import { approvalInstances, expenseEvidenceReviews, expensePayments, expenses, f
 import { approveDocument, getDocumentKind, listMyBlockedDocuments, listMyInbox, loadKindDetails, registerDocumentKind, rejectDocument, withdrawDocument } from "@/domain/approvals";
 import { closeExpense, createExpenseFromLines, EXPENSE_DOCUMENT_KIND, saveExpenseDraft } from "@/domain/expenses";
 import { listExpenseEvidenceSignals, pickExpenseEvidenceSignal } from "@/domain/expenses/evidence-signals";
+import { hasEvidence, ownersWithEvidence } from "@/domain/evidence/has-evidence";
 import { voidEvidence } from "@/domain/evidence";
 import { submitLeave } from "@/domain/leave";
 import { listNextTurnItems } from "@/domain/next-turn";
@@ -795,6 +800,30 @@ describe("listExpenseEvidenceSignals — 기안자 증빙 신호(B-C8 · H-1)", 
     await removeAllFiles(expenseId);
 
     expect(await signalOf(fx.pm, expenseId)).toBe("선결제 증빙 16일 경과");
+  });
+
+  it("여러 문서 한 번 — 문서마다 신호는 그대로이고 증빙 유무는 묶음 조회 한 번(ownersWithEvidence)이다 (06-23 검토 낮음-3)", async () => {
+    const fx = await setupExpenseProject();
+    const missing = (await approvedExpenseWithEvidence(fx)).expenseId;
+    await removeAllFiles(missing);
+    // 한 줄로는 지출결의 하나만 만들어진다 — 문서마다 프로젝트를 따로 둔다(판정은 문서 id만 본다).
+    const fx2 = await setupExpenseProject();
+    const overdue = (await approvedExpenseWithEvidence(fx2)).expenseId;
+    await markPrepaid(overdue);
+    await markPaid(overdue, addDays(SIGNAL_TODAY, -30), fx.ceo.id);
+    await removeAllFiles(overdue);
+    const withEvidence = (await approvedExpenseWithEvidence(await setupExpenseProject())).expenseId;
+
+    vi.mocked(hasEvidence).mockClear();
+    vi.mocked(ownersWithEvidence).mockClear();
+    const signals = await listExpenseEvidenceSignals(fx.pm, { ids: [missing, overdue, withEvidence], today: SIGNAL_TODAY });
+
+    expect(Object.fromEntries([...signals].map(([id, signal]) => [id, signal.situation]))).toEqual({
+      [missing]: "증빙 없음 · 지급 대기",
+      [overdue]: "선결제 증빙 16일 경과",
+    });
+    expect(hasEvidence).toHaveBeenCalledTimes(0);
+    expect(ownersWithEvidence).toHaveBeenCalledTimes(1);
   });
 
   it("선결제 · 기한 전 → 신호 없음", async () => {

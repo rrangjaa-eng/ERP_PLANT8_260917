@@ -1,5 +1,5 @@
 import type { Viewer } from "@/domain/viewer";
-import { hasEvidence } from "@/domain/evidence/has-evidence";
+import { ownersWithEvidence } from "@/domain/evidence/has-evidence";
 import { listEvidenceVoidSignals } from "@/domain/evidence/signals";
 import { evidenceGateDecision } from "@/domain/payments/action-row";
 import { prepaidDueInfo } from "@/domain/evidence-reviews/prepaid";
@@ -22,22 +22,25 @@ export function pickExpenseEvidenceSignal(facts: EvidenceSignalFacts): string | 
   return null;
 }
 
-// ids = 05 엔진이 넘긴 기안자 본인 승인 문서 id. 지급 행 · 선결제 · 면제로 먼저 좁힌 뒤에만 hasEvidence를 부른다.
+// ids = 05 엔진이 넘긴 기안자 본인 승인 문서 id. 지급 행 · 선결제 · 면제로 먼저 좁힌 문서만 증빙 유무를 묶음 한 번(ownersWithEvidence)으로 읽는다.
 export async function listExpenseEvidenceSignals(viewer: Viewer, input: { ids: readonly string[]; today: string }): Promise<Map<string, { situation: string }>> {
   const signals = new Map<string, { situation: string }>();
   if (input.ids.length === 0) return signals;
   const voided = new Set(await listEvidenceVoidSignals(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerIds: input.ids }));
   const statuses = await findListPaymentStatusByIds(viewer, input.ids);
   const evidenceRequired = await getSettingValue(EVIDENCE_REQUIRED);
-  let dueDays: number | null = null;
-  for (const status of statuses) {
+  const candidates = statuses.map((status) => {
     const paid = status.payDate !== null;
-    const missingCandidate = !paid && !status.prepaid && !status.waived && evidenceRequired;
-    const prepaidCandidate = paid && status.prepaid && !status.waived;
+    return { status, paid, missingCandidate: !paid && !status.prepaid && !status.waived && evidenceRequired, prepaidCandidate: paid && status.prepaid && !status.waived };
+  });
+  const candidateIds = candidates.filter((c) => c.missingCandidate || c.prepaidCandidate).map((c) => c.status.id);
+  const withEvidence = await ownersWithEvidence(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerIds: candidateIds });
+  let dueDays: number | null = null;
+  for (const { status, paid, missingCandidate, prepaidCandidate } of candidates) {
     let missingUnpaid = false;
     let prepaidOverdueDays: number | null = null;
     if (missingCandidate || prepaidCandidate) {
-      const has = await hasEvidence(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: status.id });
+      const has = withEvidence.has(status.id);
       // P3 — 확인 게이트(gates)는 끈다: 증빙이 있으면 기안자 몫이 아니다(`확인 전`은 넣지 않는다).
       missingUnpaid =
         !paid && !evidenceGateDecision({ evidenceRequired, hasEvidence: has, prepaid: status.prepaid, waived: status.waived, confirmation: null, drafterName: "" }, false).allowed;

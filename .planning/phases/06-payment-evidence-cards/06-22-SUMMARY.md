@@ -203,3 +203,11 @@ superpowers:test-driven-development · superpowers:verification-before-completio
 - **O-7** 목록 → 상세 느린 응답은 감사가 재지 못했다. 이제 상세 자체 loading.tsx가 있어 목록 뼈대 대신 상세 뼈대가 뜨는 경로다(측정은 하지 않음).
 - **O-8** `{n}차 고객 승인 전`을 마우스로 누르면 `:focus-visible`이 거짓이라 테두리가 없다(크로미움 휴리스틱). 키보드로는 fv 참 — 통과.
 - D-3 뼈대 열을 견적 줄 표 11열이 아니라 P1 셋(항목 · 실행가 · 상태)으로 한 것은 폰 320에서 11열 머리글이 넘치지 않게 하려는 것(실제 표도 폰은 P1만 보인다). PC에서 뼈대 열 수가 실제 표보다 적다 — `/design-review`에서 볼 일.
+
+## 화면 검토 증거
+| 항목 | 경로 |
+|---|---|
+| 독립 검토(Opus) | /mnt/project-files/notes/06-review/06-22-review.md |
+| DOM 감사(Opus, CI=true) | /mnt/project-files/notes/06-review/06-22-dom-audit.md |
+| 4폭 캡처 적용 전·후(ba46b2f 대비) | /mnt/project-files/06-review/pr-e/06-22/ |
+| Codex 디자인 검토(/design-review, --base ba46b2f) | /mnt/project-files/06-review/pr-e/wave3-codex/06-22-codex.md — `/projects` 4폭, 지적 2건(폰 「필터」 버튼 44px, 375·320) — 이 플랜이 안 바꾼 기존 것(06-21과 같음, 후속). 상세 `/projects/{id}`는 캡처 DB가 비어 DOM 감사 실측으로 판정 |

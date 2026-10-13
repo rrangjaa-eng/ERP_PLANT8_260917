@@ -1,8 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
+
+// 06-23(E-31): 「내 차례」 Phase 6 원천을 실제 함수 그대로 감싸 호출 수를 센다(approvals-inbox-projection.test.ts 꼴 — 동작은 그대로).
+vi.mock("@/domain/payments/targets", async () => {
+  const actual = await vi.importActual<typeof import("@/domain/payments/targets")>("@/domain/payments/targets");
+  return { ...actual, listAllPaymentTargets: vi.fn(actual.listAllPaymentTargets) };
+});
+
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { randomUUID } from "node:crypto";
-import { approvalInstances, files } from "@/db/schema";
+import { approvalInstances, expenses, files } from "@/db/schema";
 import { approveDocument, getDocumentKind, listMyBlockedDocuments, listMyInbox, loadKindDetails, registerDocumentKind, rejectDocument, withdrawDocument } from "@/domain/approvals";
 import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND, saveExpenseDraft } from "@/domain/expenses";
 import { voidEvidence } from "@/domain/evidence";
@@ -18,6 +25,9 @@ import { NOW_2026 } from "./approvals-fixtures";
 import { attachEvidence, makeEvidenceManager, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
 import { submitSettlement } from "@/domain/settlements";
 import { setupSettlementProject } from "./fixtures/settlements";
+import { approvedExpenseWithEvidence, makePaymentManager } from "./fixtures/payments";
+import { listAllPaymentTargets } from "@/domain/payments/targets";
+import { seoulToday } from "@/lib/dates";
 
 // 05-10 Task 1 — 「내 차례」 공급 함수의 [결재] 갈래와 결재 시트 지출결의 상세(구조 → 투영 → 문자열 행, 증빙 갈래 · 세율 바뀜).
 // 판정 · 글자는 전부 종류 요약(nextTurnText · measure)에서 온다 — 함수는 종류 이름으로 분기하지 않는다.
@@ -344,5 +354,48 @@ describe("listNextTurnItems — 정산 결재(05-11)", () => {
     const blocked = await listNextTurnItems(fx.pm);
     expect(blocked).toHaveLength(1);
     expect(blocked[0]).toMatchObject({ tag: "막힘", label: "가을 팝업 — 정산 결재 반려, 최대표", measureText: "—", action: { label: "정산 결재 열기", href } });
+  });
+});
+
+// 06-23 Task 1(S19 · UA-611 · O-15): 지급 권한자 홈에 지급 묶음 한 줄 — 05 공급 함수 뒤에 이어 붙는다. 권한 없는 역할은 원천을 부르지 않는다.
+describe("「내 차례」 Phase 6 — 지급 묶음 (06-23)", () => {
+  const today = seoulToday();
+
+  async function payerWithTarget() {
+    const fx = await setupExpenseProject();
+    const payer = await makePaymentManager();
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: payer.roleId ?? "", infoItem: "expense.amount", visible: true });
+    const approved = await approvedExpenseWithEvidence(fx);
+    await db.update(expenses).set({ scheduledPaymentDate: today }).where(eq(expenses.id, approved.expenseId));
+    return { fx, payer };
+  }
+
+  it("지급 권한자 — [오늘] `지급 — 예정일 지남·오늘 1건 · 확인 전 1건` · 지급 총액 · `지급 대상 보기` → 지급 대상 목록", async () => {
+    const { payer } = await payerWithTarget();
+
+    const items = await listNextTurnItems(payer, undefined, { today });
+
+    const payment = items.filter((item) => item.key === "phase6-payment");
+    expect(payment).toEqual([
+      {
+        key: "phase6-payment",
+        tag: "오늘",
+        label: "지급 — 예정일 지남·오늘 1건 · 확인 전 1건",
+        reason: "",
+        measureText: "13,640,000",
+        action: { label: "지급 대상 보기", href: "/expenses?status=지급 대상" },
+      },
+    ]);
+  });
+
+  it("대표 · 기안 직원 · 팀장 — 지급 줄이 없고 지급 대상 원천을 부르지 않는다", async () => {
+    const { fx } = await payerWithTarget();
+    vi.mocked(listAllPaymentTargets).mockClear();
+
+    for (const viewer of [fx.ceo, fx.pm, fx.lead]) {
+      const items = await listNextTurnItems(viewer, undefined, { today });
+      expect(items.filter((item) => item.key === "phase6-payment")).toEqual([]);
+    }
+    expect(listAllPaymentTargets).toHaveBeenCalledTimes(0);
   });
 });

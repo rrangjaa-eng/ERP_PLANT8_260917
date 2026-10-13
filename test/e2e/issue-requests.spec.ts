@@ -511,4 +511,15 @@ test.describe("발행 요청 — 06-21 DOM 감사 반영", () => {
       await context.close();
     }
   });
+
+  test("S17 — 프로젝트 링크 색은 식별자형 링크 토큰(--accent)이다 (D-5)", async ({ browser }) => {
+    const { user, projectId, today } = await setupBoard({ write: true });
+    await seedRequest(projectId, user.userId, { desiredIssueDate: today, amount: 1_000_000 });
+
+    const { page, context } = await openAs(browser, user, "/projects/issue-requests");
+    const link = page.locator("main table a[data-row-link]").first();
+    await expect(link).toBeVisible();
+    expect(await link.evaluate((node) => getComputedStyle(node).color)).toBe(await cssColor(page, "--accent"));
+    await context.close();
+  });
 });

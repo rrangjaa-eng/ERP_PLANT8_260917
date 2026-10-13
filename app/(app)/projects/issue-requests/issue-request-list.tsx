@@ -9,8 +9,8 @@ import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { Table } from "@/ui/table/Table";
 import type { TableColumn } from "@/ui/table/types";
-// 필터 칸 모양은 프로젝트 목록 필터와 같은 클래스(새 CSS 없음).
-import filterStyles from "@/app/(app)/projects/projects.module.css";
+// 필터 칸 · 식별자 링크(--accent 밑줄) 모양은 프로젝트 목록과 같은 클래스(새 CSS 없음 — 감사 D-5).
+import projectStyles from "@/app/(app)/projects/projects.module.css";
 import { issueRequestStatusWord } from "../[id]/issue-request-word";
 import styles from "./issue-requests.module.css";
 
@@ -39,7 +39,7 @@ function requestHref(row: IssueRequestListRowView): string {
 function projectCell(row: IssueRequestListRowView) {
   const text = `${row.projectNumber} · ${row.projectName}`;
   return (
-    <Link href={requestHref(row)} data-row-link="" className={styles.projectLink} title={text}>
+    <Link href={requestHref(row)} data-row-link="" className={`${projectStyles.link} ${styles.projectLink}`} title={text}>
       <span className={styles.clip}>{text}</span>
     </Link>
   );
@@ -124,12 +124,12 @@ export function IssueRequestFilter({ status, options }: { status: string; option
   const router = useRouter();
   // 뒤로 가기 · `필터 지우기`로 URL이 바뀌면 key로 새로 마운트한다(defaultValue는 마운트 뒤 반영되지 않는다).
   return (
-    <div className={filterStyles.selectLabel}>
+    <div className={projectStyles.selectLabel}>
       <label htmlFor="issue-request-filter-status">상태</label>
       <select
         key={status}
         id="issue-request-filter-status"
-        className={filterStyles.select}
+        className={projectStyles.select}
         defaultValue={status}
         onChange={(event) => router.push(event.target.value === "requested" ? "/projects/issue-requests" : `/projects/issue-requests?status=${event.target.value}`, { scroll: false })}
       >

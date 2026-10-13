@@ -1,5 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { applyBatchResult, diffCount, editReason, editTransfer, nextSumSeq, otherPageCount, sumKeyOf, sumRequestRows, type SelectionState } from "@/app/(app)/expenses/payment-selection";
+import {
+  applyBatchResult,
+  diffCount,
+  editReason,
+  editTransfer,
+  nextSumSeq,
+  otherPageCount,
+  readStoredSelection,
+  reconcileAcrossPages,
+  restoreSelection,
+  selectionKey,
+  sumKeyOf,
+  sumRequestRows,
+  writeStoredSelection,
+  type SelectionState,
+} from "@/app/(app)/expenses/payment-selection";
 
 // 06-17(UI-SPEC S1 「이체액·차이 사유 편집」 · 「합계 줄」) — 선택 상태 순수 함수. 화면은 금액을 셈하지 않는다(O-18) — 여기 함수는
 // 고른 id · 사람이 적은 글자만 다루고, 합 · 차이는 서버 액션 응답이다.
@@ -93,5 +108,65 @@ describe("H-5 개수", () => {
     expect(otherPageCount(["a"], ["a", "b"])).toBe(0);
     expect(diffCount(["a", "b", "c"], { a: -3_300, b: 0, z: 100 })).toBe(1);
     expect(diffCount(["a"], {})).toBe(0);
+  });
+});
+
+describe("되살리기 · 다른 쪽 id 유지 · 보관 키 (06-17 Task 3)", () => {
+  it("되살리기 — 보관한 선택 · 편집 중 rowStates가 selectable: true인 행 것만 남기고(지금 쪽 밖 id 포함), 없거나 거짓이면 버린다", () => {
+    const stored: SelectionState = {
+      selectedIds: ["page", "other", "paid", "gone"],
+      edits: { page: { transfer: "100", reason: "수수료" }, paid: { transfer: "5", reason: "" }, gone: { transfer: "7", reason: "" } },
+    };
+    // 서버 rowStates 꼴(id · selectable · version · 지급 총액) 그대로 — 판정은 selectable만 본다.
+    const rowStates = [
+      { id: "page", selectable: true, version: 2, payableKrw: 110 },
+      { id: "other", selectable: true, version: 1, payableKrw: 50 },
+      { id: "paid", selectable: false, version: 4, payableKrw: 5 },
+    ];
+    const restored = restoreSelection(stored, rowStates);
+    expect(restored.selectedIds).toEqual(["page", "other"]);
+    expect(restored.edits).toEqual({ page: { transfer: "100", reason: "수수료" } });
+  });
+
+  it("다른 쪽 id 유지 — 지금 쪽 id는 그 쪽 판정으로, 지금 쪽 밖 id는 서버 rowStates가 거짓일 때만 빠진다(지금 쪽 목록으로 거르지 않는다)", () => {
+    const pageRows = [
+      { id: "a", selectable: true },
+      { id: "b", selectable: false },
+    ];
+    const offPage = new Map([
+      ["x", true],
+      ["y", false],
+    ]);
+    expect(reconcileAcrossPages(["a", "b", "x", "y", "unknown"], pageRows, offPage)).toEqual(["a", "x", "unknown"]);
+  });
+
+  it("보관 키 = 보기 + 팀 + 증빙(쪽은 들지 않는다) — 필터를 바꾸면 다른 키라 되살릴 것이 없다", () => {
+    const base = selectionKey({ status: "지급 대상" });
+    expect(selectionKey({ status: "지급 대상" })).toBe(base);
+    expect(selectionKey({ status: "지급 대상", evidence: "payable" })).not.toBe(base);
+    expect(selectionKey({ status: "지급 대상", team: "t1" })).not.toBe(base);
+  });
+
+  it("보관 — 행 id · 사람이 적은 값 · 쪽만 쓰고 읽으며, 같은 보기의 다른 필터 키는 지운다", () => {
+    const store = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => void store.set(key, value),
+      removeItem: (key: string) => void store.delete(key),
+      key: (index: number) => [...store.keys()][index] ?? null,
+      get length() {
+        return store.size;
+      },
+    };
+    const key = selectionKey({ status: "지급 대상" });
+    const other = selectionKey({ status: "지급 대상", evidence: "payable" });
+    writeStoredSelection(storage, other, { selectedIds: ["z"], edits: {} }, 1);
+    writeStoredSelection(storage, key, { selectedIds: ["a"], edits: { a: { transfer: "100", reason: "" } } }, 2);
+    expect(store.has(other)).toBe(false);
+    expect(JSON.parse(store.get(key) ?? "{}")).toEqual({ selectedIds: ["a"], edits: { a: { transfer: "100", reason: "" } }, page: 2 });
+    expect(readStoredSelection(storage, key)).toEqual({ selectedIds: ["a"], edits: { a: { transfer: "100", reason: "" } }, page: 2 });
+    expect(readStoredSelection(storage, other)).toBeNull();
+    store.set(key, "{깨짐");
+    expect(readStoredSelection(storage, key)).toBeNull();
   });
 });

@@ -71,3 +71,67 @@ export function diffCount(selectedIds: readonly string[], diffs: Readonly<Record
 export function selectionKey(query: Readonly<Record<string, string>>): string {
   return ["pay", query.status ?? "", query.team ?? "", query.evidence ?? ""].join("|");
 }
+
+// 되살리기(r2 F-2) — 보관한 선택 · 편집 중 서버 rowStates가 「지금 고를 수 있음」인 행 것만 남긴다(지금 쪽 밖 id 포함).
+// rowStates에 없거나(범위 밖 · 처리됨 · 지워짐) selectable이 참이 아니면 버린다 — 그 행 증빙 칸 글자가 이유를 말한다.
+export function restoreSelection(state: SelectionState, rowStates: readonly { id?: string; selectable?: boolean }[]): SelectionState {
+  const open = new Set(rowStates.flatMap((row) => (row.id && row.selectable === true ? [row.id] : [])));
+  return {
+    selectedIds: state.selectedIds.filter((id) => open.has(id)),
+    edits: Object.fromEntries(Object.entries(state.edits).filter(([id]) => open.has(id))),
+  };
+}
+
+// 다른 쪽 id 유지 — 지금 쪽에 있는 id는 그 쪽 행 판정으로, 지금 쪽 밖 id는 마지막 합 응답(rowStates)이 거짓이라 할 때만 뺀다.
+// 응답 전의 지금 쪽 밖 id는 남는다(다음 합 응답이 판정한다).
+export function reconcileAcrossPages(
+  selectedIds: readonly string[],
+  pageRows: readonly { id: string; selectable: boolean }[],
+  offPage: ReadonlyMap<string, boolean>,
+): string[] {
+  const page = new Map(pageRows.map((row) => [row.id, row.selectable]));
+  return selectedIds.filter((id) => (page.has(id) ? page.get(id) === true : offPage.get(id) !== false));
+}
+
+// 보관(sessionStorage, 탭 수명 — C-1): 행 id · 사람이 적은 이체액 · 차이 사유 · 지금 쪽만. 계좌 · 이름 · 계산 금액은 싣지 않는다.
+export type StoredSelection = SelectionState & { page: number };
+
+type SelectionStorage = Pick<Storage, "getItem" | "setItem" | "removeItem" | "key" | "length">;
+
+const KEY_PREFIX = "pay|";
+
+export function readStoredSelection(storage: SelectionStorage, key: string): StoredSelection | null {
+  try {
+    const raw = storage.getItem(key);
+    if (!raw) return null;
+    const value: unknown = JSON.parse(raw);
+    if (typeof value !== "object" || value === null) return null;
+    const { selectedIds, edits, page } = value as Record<string, unknown>;
+    if (!Array.isArray(selectedIds) || !selectedIds.every((id) => typeof id === "string")) return null;
+    if (typeof edits !== "object" || edits === null) return null;
+    const cleanEdits: Record<string, RowEdit> = {};
+    for (const [id, edit] of Object.entries(edits as Record<string, unknown>)) {
+      const { transfer, reason } = (edit ?? {}) as Record<string, unknown>;
+      if (typeof transfer === "string" && typeof reason === "string") cleanEdits[id] = { transfer, reason };
+    }
+    return { selectedIds, edits: cleanEdits, page: typeof page === "number" && Number.isInteger(page) && page > 0 ? page : 1 };
+  } catch {
+    return null;
+  }
+}
+
+// 같은 보기의 다른 필터 키는 지운다(필터를 바꾸면 비운다). 고른 것도 편집도 없으면 이 키도 지운다.
+export function writeStoredSelection(storage: SelectionStorage, key: string, state: SelectionState, page: number): void {
+  try {
+    const others: string[] = [];
+    for (let index = 0; index < storage.length; index += 1) {
+      const candidate = storage.key(index);
+      if (candidate && candidate.startsWith(KEY_PREFIX) && candidate !== key) others.push(candidate);
+    }
+    for (const candidate of others) storage.removeItem(candidate);
+    if (state.selectedIds.length === 0 && Object.keys(state.edits).length === 0) storage.removeItem(key);
+    else storage.setItem(key, JSON.stringify({ selectedIds: state.selectedIds, edits: state.edits, page }));
+  } catch {
+    // 저장소를 쓸 수 없는 브라우저(SecurityError · 용량) — 보관 없이 지금 화면만.
+  }
+}

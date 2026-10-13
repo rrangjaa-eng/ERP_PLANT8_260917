@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
-import { Table, reconcileSelection } from "@/ui/table/Table";
+import { Table } from "@/ui/table/Table";
 import type { TableColumn } from "@/ui/table/types";
 import { useEditableWidth } from "@/ui/table/use-editable-width";
 import { Num } from "@/ui/num/Num";
@@ -30,10 +30,14 @@ import {
   editTransfer,
   nextSumSeq,
   otherPageCount,
+  readStoredSelection,
+  reconcileAcrossPages,
+  restoreSelection,
   selectionKey,
   sumKeyOf,
   sumRequestRows,
   transferNumber,
+  writeStoredSelection,
   type SelectionState,
 } from "./payment-selection";
 import { BatchPaymentDialog, rememberPayDate, rememberedPayDate } from "./batch-payment-dialog";
@@ -144,6 +148,54 @@ function href(query: Record<string, string>, page?: number): string {
   return `/expenses?${params.toString()}`;
 }
 
+// 문서 화면 왕복(C-1) — `/expenses/{id}?from=pay&{지금 보기 · 필터 · 쪽}`.
+function docHref(id: string, query: Record<string, string>, page: number): string {
+  const params = new URLSearchParams({ from: "pay", ...query });
+  if (page > 1) params.set("page", String(page));
+  return `/expenses/${id}?${params.toString()}`;
+}
+
+// 수화가 끝났는가(서버 · 수화 중 첫 렌더는 거짓 — 저장소를 모른다). ui/table use-dirty-storage와 같은 방식.
+const subscribeNothing = () => () => {};
+
+// 폰(<700)인가 — 폰은 행 전체가 문서 화면 링크(06-15 phoneRowLink · `from=pay` 없음). 서버 · 수화 중에는 PC로 본다.
+const subscribePhone = (onChange: () => void) => {
+  const media = window.matchMedia("(max-width: 699.98px)");
+  media.addEventListener("change", onChange);
+  return () => media.removeEventListener("change", onChange);
+};
+function usePhoneWidth(): boolean {
+  return useSyncExternalStore(subscribePhone, () => window.matchMedia("(max-width: 699.98px)").matches, () => false);
+}
+
+// M-1 — 처리 뒤 빈 쪽에서 행이 있는 마지막 쪽으로 주소를 고치면 화면이 새로 마운트된다(page.tsx Suspense 키 = 필터 · 쪽). 결과 글자 · 이유 줄은
+// 그 한 번만 모듈 기억으로 넘긴다(같은 필터 키일 때만 — 지급일 기억 O-3과 같은 자리). 이유 줄은 다시 받은 쪽에 그 행이 있을 때만 붙는다.
+let carried: { key: string; result: ResultLine | null; blocked: ReadonlyMap<string, Blocked> } | null = null;
+
+function carryOver(next: typeof carried) {
+  carried = next;
+}
+
+function takeCarried(key: string, rows: readonly PaymentTargetScreenRow[]): { result: ResultLine | null; blocked: ReadonlyMap<string, Blocked> } {
+  if (carried?.key !== key) return { result: null, blocked: new Map() };
+  const present = new Set(rows.map((row) => row.id));
+  return { result: carried.result, blocked: new Map([...carried.blocked].filter(([id]) => present.has(id))) };
+}
+
+// H-2 — 격자 포커스 칸(편집 칸이 아닌 링크 셀 · 증빙 칸 3차)의 Enter = 그 칸 안 `[data-cell-action]` 누르기. 표를 감싼 요소가 캡처 단계에서
+// 먼저 받는다(ui/table 무변경 — 격자 키 훅은 편집 칸도 막힌 칸도 아닌 칸의 Enter에서 아무것도 하지 않는다). 조합 중 · 수정 키 · 편집 칸 안 입력 ·
+// Space · Ctrl+Enter는 손대지 않는다(06-29 고르기 · 1차 · 04.6 편집 키 그대로).
+function pressCellAction(event: React.KeyboardEvent<HTMLDivElement>) {
+  if (event.key !== "Enter" || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || event.nativeEvent.isComposing) return;
+  const target = event.target;
+  if (!(target instanceof HTMLElement) || !target.matches("td[data-grid-focus]")) return;
+  const action = target.querySelector<HTMLElement>("[data-cell-action]");
+  if (!action) return;
+  event.preventDefault();
+  event.stopPropagation();
+  action.click();
+}
+
 export type PaymentTargetsScreenProps = {
   views: readonly string[];
   selects: FilterSelect[];
@@ -163,11 +215,17 @@ export type PaymentTargetsScreenProps = {
 
 export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const wide = useEditableWidth();
+  const phone = usePhoneWidth();
+  // O-3 — 모달 지급일은 모달 밖 한 곳에 기억한다(같은 필터에서 쪽을 넘겨도 남고, 필터 변경 · 새로 고침 때 잊는다).
+  const memoryKey = selectionKey(props.query);
+  const [carry] = useState(() => takeCarried(memoryKey, props.rows));
+  useEffect(() => carryOver(null), []);
   const [selection, setSelection] = useState<SelectionState>(EMPTY_SELECTION);
   const [processed, setProcessed] = useState<ReadonlySet<string>>(new Set());
-  const [blocked, setBlocked] = useState<ReadonlyMap<string, Blocked>>(new Map());
-  const [result, setResult] = useState<ResultLine | null>(null);
+  const [blocked, setBlocked] = useState<ReadonlyMap<string, Blocked>>(carry.blocked);
+  const [result, setResult] = useState<ResultLine | null>(carry.result);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [rejection, setRejection] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<{ ids: string[]; rows: PaymentTargetScreenRow[]; edits: SelectionState["edits"]; seq: number; otherPage: number }>({
@@ -182,21 +240,59 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
   const [issueSignal, setIssueSignal] = useState(0);
   // 합의 세율 기준일 — 마지막으로 처리 요청에 쓴 지급일(없으면 오늘, 서버가 채운다).
   const [sumPayDate, setSumPayDate] = useState<string | null>(null);
-  // O-3 — 모달 지급일은 모달 밖 한 곳에 기억한다(같은 필터에서 쪽을 넘겨도 남고, 필터 변경 · 새로 고침 때 잊는다).
-  const memoryKey = selectionKey(props.query);
   const [payDate, setPayDate] = useState(() => rememberedPayDate(memoryKey, props.today));
   const rootRef = useRef<HTMLDivElement>(null);
   const focusAfterCloseRef = useRef<string | null>(null);
+  // 처리 응답마다 1 — 합을 다시 불러 지금 쪽 밖에 남은 선택의 version · 지급 총액을 새 응답 값으로 바꾼다.
+  const [batchTick, setBatchTick] = useState(0);
+  // 지금 쪽 밖 행의 마지막 서버 상태(합 응답 rowStates) — 고를 수 있음 · version · 지급 총액.
+  const [offPage, setOffPage] = useState<ReadonlyMap<string, SelectedTransferSum["rowStates"][number]>>(new Map());
+
+  // 되살리기(C-1 · r2 F-2) — 같은 탭 같은 키의 보관을 수화 뒤 한 번 읽어 선택 · 편집으로 세운다. 다음 합 응답의 rowStates가 고를 수 있는 행만 남긴다.
+  const hydrated = useSyncExternalStore(subscribeNothing, () => true, () => false);
+  const [restorePending, setRestorePending] = useState(true);
+  if (hydrated && restorePending) {
+    setRestorePending(false);
+    const stored = readStoredSelection(window.sessionStorage, memoryKey);
+    if (stored) setSelection({ selectedIds: stored.selectedIds, edits: stored.edits });
+  }
+  useEffect(() => {
+    if (!hydrated || restorePending) return;
+    writeStoredSelection(window.sessionStorage, memoryKey, selection, props.page.page);
+  }, [hydrated, restorePending, memoryKey, selection, props.page.page]);
+  // 이탈 경고는 탭 닫기 · 다른 사이트로 떠날 때만(앱 안 이동은 보관이 받는다) — 사람이 적은 편집값이 있을 때.
+  const hasEdits = Object.keys(selection.edits).length > 0;
+  useEffect(() => {
+    if (!hasEdits) return;
+    function warn(event: BeforeUnloadEvent) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [hasEdits]);
+  // M-1 — 처리 뒤 다시 받은 쪽이 비어 서버가 마지막 쪽으로 보냈으면 주소도 그 쪽으로.
+  const askedPage = Number(searchParams.get("page") ?? "1");
+  useEffect(() => {
+    if (!Number.isInteger(askedPage) || askedPage <= props.page.page) return;
+    carryOver({ key: memoryKey, result, blocked });
+    router.replace(href(props.query, props.page.page));
+  }, [askedPage, props.page.page, props.query, router, memoryKey, result, blocked]);
 
   const rows = mergeRows(props.rows, processed, blocked);
   const selectable = selectableWith(blocked);
-  const chosen = reconcileSelection(selection.selectedIds, rows, (row) => row.id, selectable);
+  // 다른 쪽 id 유지 — 지금 쪽 행은 그 행 판정, 지금 쪽 밖 id는 마지막 합 응답이 거짓이라 할 때만 빠진다.
+  const chosen = reconcileAcrossPages(
+    selection.selectedIds,
+    rows.map((row) => ({ id: row.id, selectable: selectable(row) === true })),
+    new Map([...offPage.entries()].flatMap(([id, state]) => (typeof state.selectable === "boolean" ? [[id, state.selectable] as const] : []))),
+  );
   const chosenRows = rows.filter((row) => chosen.includes(row.id));
   const effective: SelectionState = { selectedIds: chosen, edits: selection.edits };
 
-  // 합계 번호 — 고른 id 집합 · 고른 행 이체액(· 합 기준일)이 바뀔 때만 1 는다. 렌더에서 파생(effect 없음).
+  // 합계 번호 — 고른 id 집합 · 고른 행 이체액(· 합 기준일 · 처리 응답)이 바뀔 때만 1 는다. 렌더에서 파생(effect 없음).
   const [sumTicket, setSumTicket] = useState(() => ({ seq: 0, key: sumKeyOf(EMPTY_SELECTION) }));
-  const ticket = nextSumSeq(sumTicket, sumKeyOf(effective, sumPayDate ?? ""));
+  const ticket = nextSumSeq(sumTicket, sumKeyOf(effective, `${sumPayDate ?? ""}#${batchTick}`));
   if (ticket !== sumTicket) setSumTicket(ticket);
   const seq = ticket.seq;
   const [sum, setSum] = useState<SelectedTransferSum | null>(null);
@@ -207,14 +303,30 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
     seqRef.current = seq;
   });
 
-  function requestSum(forSeq: number, requestRows: { id: string; transferKrw?: number }[], payDate: string | null) {
+  function requestSum(forSeq: number, requestRows: { id: string; transferKrw?: number }[], sumDate: string | null) {
     setSumFailedSeq(null);
-    sumSelectedTransfersAction({ seq: forSeq, rows: requestRows, ...(payDate ? { payDate } : {}) }).then(
+    sumSelectedTransfersAction({ seq: forSeq, rows: requestRows, ...(sumDate ? { payDate: sumDate } : {}) }).then(
       (result) => {
         // 응답 번호가 지금 합계 번호가 아니면 버린다(늦게 온 옛 합).
         if (forSeq !== seqRef.current) return;
-        if (result?.data && result.data.seq === forSeq) setSum(result.data);
-        else setSumFailedSeq(forSeq);
+        const data = result?.data;
+        if (!data || data.seq !== forSeq) {
+          setSumFailedSeq(forSeq);
+          return;
+        }
+        setSum(data);
+        setOffPage((current) => new Map([...current, ...data.rowStates.flatMap((state) => (state.id ? [[state.id, state] as const] : []))]));
+        // 되살리기 — 이 합에 물은 id 중 서버가 지금 고를 수 없다고 한 행(처리됨 · 막힘 · 범위 밖 · 응답에 없음)의 선택 · 편집은 버린다.
+        // 묻지 않은 id(요청 뒤에 고른 행 · 고르지 않은 편집)는 그대로 둔다 — 다음 합이 판정한다.
+        const asked = new Set(requestRows.map((row) => row.id));
+        setSelection((current) => {
+          const askedOnly = { selectedIds: current.selectedIds.filter((id) => asked.has(id)), edits: Object.fromEntries(Object.entries(current.edits).filter(([id]) => asked.has(id))) };
+          const restored = restoreSelection(askedOnly, data.rowStates);
+          const keep = new Set([...restored.selectedIds, ...current.selectedIds.filter((id) => !asked.has(id))]);
+          const edits = Object.fromEntries(Object.entries(current.edits).filter(([id]) => !asked.has(id) || id in restored.edits));
+          const unchanged = keep.size === current.selectedIds.length && Object.keys(edits).length === Object.keys(current.edits).length;
+          return unchanged ? current : { selectedIds: current.selectedIds.filter((id) => keep.has(id)), edits };
+        });
       },
       () => {
         if (forSeq === seqRef.current) setSumFailedSeq(forSeq);
@@ -341,6 +453,9 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
     setProcessed(nextProcessed);
     setBlocked(nextBlocked);
     setSelection(applyBatchResult(selection, data));
+    // 남은 선택의 합은 이번 지급일 세율로 다시 받는다(재시도가 새 지급 총액 · version으로 간다 — 지금 쪽 밖 행 포함).
+    setSumPayDate(payDate);
+    setBatchTick((tick) => tick + 1);
     setResult({ time: data.time, processed: data.processed, blocked: data.blocked.length });
     // DR-6 — 모달이 닫힌 뒤 포커스: 첫 막힌 행 체크박스(aria-disabled여도), 막힌 행이 없으면 1차 버튼.
     focusAfterCloseRef.current = nextRows.find((row) => nextBlocked.has(row.id))?.id ?? "primary";
@@ -372,7 +487,13 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
 
   function confirm(payDate: string) {
     if (isExecuting) return;
-    const sent = snapshot.rows.flatMap((row) =>
+    // 지금 쪽 밖의 고른 행은 마지막 합 응답(rowStates)의 version · 지급 총액으로 보낸다(1차는 그 합이 온 뒤에야 켜진다).
+    const pageIds = new Set(snapshot.rows.map((row) => row.id));
+    const offRows: PaymentTargetScreenRow[] = snapshot.ids.flatMap((id) => {
+      const state = offPage.get(id);
+      return !pageIds.has(id) && state ? [{ id, group: "", version: state.version, payableKrw: state.payableKrw }] : [];
+    });
+    const sent = [...snapshot.rows, ...offRows].flatMap((row) =>
       typeof row.version === "number" && typeof row.payableKrw === "number"
         ? [{ expenseId: row.id, expenseVersion: row.version, expectedPayableKrw: row.payableKrw, ...transferPart(row) }]
         : [],
@@ -382,20 +503,34 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
     setBlocked(new Map());
     setResult(null);
     setRejection(null);
-    setSumPayDate(payDate);
     execute({ payDate, rows: sent });
   }
 
   const amountColumn = props.total !== null;
   const columns: TableColumn<PaymentTargetScreenRow>[] = [
-    { key: "number", header: PAYMENT_TARGET_COLUMN_LABELS.number, priority: "p3", collapseBelow: 1280, cell: (row) => <Num value={row.number ?? null} /> },
+    {
+      key: "number",
+      header: PAYMENT_TARGET_COLUMN_LABELS.number,
+      priority: "p3",
+      collapseBelow: 1280,
+      // 식별자형 링크 3차(H-2) — 문서 화면 왕복 `from=pay`. 격자 칸 Enter = 이 링크(pressCellAction).
+      cell: (row) =>
+        row.number ? (
+          <Link href={docHref(row.id, props.query, props.page.page)} className={styles.link} aria-label={`${row.number} 지출결의 열기`} data-cell-action="">
+            <Num value={row.number} />
+          </Link>
+        ) : (
+          <Num value={null} />
+        ),
+    },
     {
       key: "title",
       header: PAYMENT_TARGET_COLUMN_LABELS.title,
       priority: "p1",
+      // 이 1행도 같은 문서 화면 왕복 링크(H-2 — 번호가 숨는 <1280에서는 이것이 유일한 길). 폰은 06-15 행 링크 그대로(`from=pay` 없음 — 일괄 지급이 없다).
       cell: (row) => (
         <span className={styles.titleCell} data-row-id={row.id}>
-          <Link href={`/expenses/${row.id}`} className={styles.link} data-row-link="">
+          <Link href={phone ? `/expenses/${row.id}` : docHref(row.id, props.query, props.page.page)} className={styles.link} data-row-link="" data-cell-action="">
             {row.title ?? "—"}
           </Link>
         </span>
@@ -572,45 +707,48 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
           />
         }
       >
-        <Table
-          caption="지급 대상"
-          columns={columns}
-          rows={rows}
-          getRowId={(row) => row.id}
-          groupBy={(row) => row.group}
-          groupHeader={(row) => (row.groupTone === "warning" ? <span className={styles.warningGroup}>{row.group}</span> : row.group)}
-          phoneRowLink
-          enableGridKeyboard={wide}
-          onCellCommit={commitCell}
-          cellIssue={(row, columnKey) => {
-            const message = columnKey === "transfer" ? transferIssue(row) : columnKey === "diffReason" && showErrors && chosen.includes(row.id) ? reasonIssue(row) : null;
-            return message ? { kind: "error", message } : undefined;
-          }}
-          firstIssueSignal={issueSignal}
-          {...(wide
-            ? {
-                hint: [
-                  { label: "이동", keys: "Tab ↑↓←→" },
-                  { label: "고르기", keys: "Space" },
-                  { label: "취소", keys: "Esc" },
-                ],
-                selection: {
-                  selectedIds: chosen,
-                  selectable,
-                  onChange: (ids: string[]) => setSelection({ ...selection, selectedIds: ids }),
-                  rowLabel: (row: PaymentTargetScreenRow) => row.title ?? row.number ?? row.id,
-                  blockedReason: (row: PaymentTargetScreenRow) => {
-                    const after = blocked.get(row.id);
-                    if (!after) return null;
-                    const gateReason = selectable(row);
-                    // 선택 칸 이유와 같은 글자면 한 번만(같은 말을 두 자리에 쓰지 않는다).
-                    return gateReason !== true && gateReason.reason === after.reason ? null : after.reason;
+        <div onKeyDownCapture={pressCellAction}>
+          <Table
+            caption="지급 대상"
+            columns={columns}
+            rows={rows}
+            getRowId={(row) => row.id}
+            groupBy={(row) => row.group}
+            groupHeader={(row) => (row.groupTone === "warning" ? <span className={styles.warningGroup}>{row.group}</span> : row.group)}
+            phoneRowLink
+            enableGridKeyboard={wide}
+            onCellCommit={commitCell}
+            cellIssue={(row, columnKey) => {
+              const message =
+                columnKey === "transfer" ? transferIssue(row) : columnKey === "diffReason" && showErrors && chosen.includes(row.id) ? reasonIssue(row) : null;
+              return message ? { kind: "error", message } : undefined;
+            }}
+            firstIssueSignal={issueSignal}
+            {...(wide
+              ? {
+                  hint: [
+                    { label: "이동", keys: "Tab ↑↓←→" },
+                    { label: "고르기", keys: "Space" },
+                    { label: "취소", keys: "Esc" },
+                  ],
+                  selection: {
+                    selectedIds: chosen,
+                    selectable,
+                    onChange: (ids: string[]) => setSelection({ ...selection, selectedIds: ids }),
+                    rowLabel: (row: PaymentTargetScreenRow) => row.title ?? row.number ?? row.id,
+                    blockedReason: (row: PaymentTargetScreenRow) => {
+                      const after = blocked.get(row.id);
+                      if (!after) return null;
+                      const gateReason = selectable(row);
+                      // 선택 칸 이유와 같은 글자면 한 번만(같은 말을 두 자리에 쓰지 않는다).
+                      return gateReason !== true && gateReason.reason === after.reason ? null : after.reason;
+                    },
+                    onPrimary: openDialog,
                   },
-                  onPrimary: openDialog,
-                },
-              }
-            : {})}
-        />
+                }
+              : {})}
+          />
+        </div>
         <BatchPaymentDialog
           open={dialogOpen}
           onClose={() => {
@@ -618,7 +756,7 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
             setDialogOpen(false);
             focusAfterClose();
           }}
-          count={snapshot.rows.length}
+          count={snapshot.ids.length}
           // 모달을 연 순간 합계 번호의 서버 합만(아직이면 undefined — 부제 `…` · 1차 막힘). 실패면 「거부 — 이체액 합계 응답 없음」.
           totalKrw={sum !== null && sum.seq === snapshot.seq ? sum.totalKrw : undefined}
           sumFailed={sumFailedSeq === snapshot.seq}

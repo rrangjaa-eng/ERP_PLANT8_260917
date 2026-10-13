@@ -173,14 +173,14 @@ E2E 서버 로그의 `The destination stream closed early`는 탐색 중 스트�
 | D-5 S17 프로젝트 링크 UA 기본 파랑 rgb(0,0,238) | 낮음 | 프로젝트 · 지출결의 목록 행 링크와 같은 `projects.module.css .link`(--accent · 밑줄). E2E 계산 색 === --accent(고치기 전 rgb(0,0,238)) | 89fc5b3 |
 | D-6 취소로 바뀐 상태 칸에 dirty 표시 없음(§7-3) | 낮음 | Table `cellDirty` — `cancel` 줄의 상태 칸. E2E dirty 칸 1개(`취소` · 배경 --surface-dirty) → 저장 뒤 0개(D-4만 고친 상태에서 0개로 실패 확인) | 72313a7 |
 | D-7 상태 필터 ArrowDown 한 번에 이동 · 이동 뒤 BODY | 낮음 | **관찰(같은 공용 동작) — 바꾸지 않음.** 실측(CI=true, 1280): 프로젝트 목록 상태 select도 ArrowDown 한 번에 `?status=bidding…`로 이동하고 이동 뒤 BODY — S17과 같다. 지출결의 `StatusFilter`도 같은 onChange 즉시 제출 + `key` 재마운트 코드(빈 목록이라 필터가 안 서서 실측은 못 함), 구매 요청 목록(S11)도 같은 `router.push` + `key`. 고치려면 목록 필터 공용 동작을 한꺼번에 바꿔야 한다 | — |
+| 검증 중 발견 — revenue-section E2E :469 「힌트 줄 없음」이 2fe639a부터 실패(매출 섹션 안 닫힌 확인 모달의 kbd 2개) | 중간 | 오케스트레이터 결정대로 제품 쪽 수정 — 취소 확인 모달을 열린 동안에만 그린다(테스트 무변경). 이 플랜이 넣은 확인 모달은 이것 하나. D-4 포커스 복귀 유지. CI=true desktop revenue-section 16 · issue-requests 20 · quote-table 56 passed | 4fdec24 |
 | 참고 2 — 목록 건수 · 행 두 조회가 다른 스냅숏 | 참고 | 바꾸지 않음(표시만 1건 어긋날 수 있고 새로 고침으로 회복) | — |
 | 참고 3 — 비격자 Delete 갈래가 Backspace를 받지 않음 | 참고 | 바꾸지 않음(계획 문구는 `Delete` — /design-review · /qa 판단거리) | — |
 | 참고 4 — 저장 안 한 편집 뒤 취소하면 편집이 버려짐 | 참고 | 바꾸지 않음(취소가 우선 — 타당) | — |
 
 - 남은 후속(이번에 못 고침)
-  - **revenue-section E2E 1건이 06-21 Task 1(2fe639a)부터 빨강** — `test/e2e/revenue-section.spec.ts:469`(「경영관리 1280 … 힌트 줄 없음」)의 `section.locator("kbd")` 0 기대에 2가 나온다. 발행 요청 표의 ConfirmDialog(닫힌 `<dialog>`, 버튼 `닫기 Esc` · `발행 요청 취소 Ctrl+Enter`의 kbd 둘)가 매출 섹션 안에 늘 그려져 있어서다. 이번 수정과 무관(그 칸 렌더 변화 없음)하나 CI가 잡는다. 고칠 길: 스펙을 보이는 kbd만 세게(`kbd:visible` — 의도는 「힌트 줄 없음」) 하거나 모달을 열 때만 그린다. 단독 재실행에서도 같은 1건이 실패해 결정적이다.
   - 폰 320에서 금액 10억 이상(예: 13자리)은 P1 세 열(희망 발행일 110 · 프로젝트 머리글 60 · 금액) 예산을 넘는다 — 375는 13자리까지 들어간다. 폰 P1 구성은 UI-SPEC 결정이라 바꾸지 않았다.
-- 검토 반영 검증(로그 `/tmp/claude-0/fix-0621/`): `pnpm lint` 0 · `pnpm lint:sql` 0 · `pnpm typecheck` 0 · 단위 전체 304 파일 4578 passed · 통합 `issue-requests` + `leak-scan` 2 파일 4094 passed(격리 DB `erp_test_0621f`, flock) · E2E `CI=true`(격리 DB `erp_0621f_test`, flock) issue-requests 20 · projects-list 34 · quote-table 56 passed, `mobile-issue-requests-error` 1 passed. mobile-375가 desktop에 의존해 첫 실행이 desktop 전체(1292)를 돌았고 31 실패가 났다 — 대상 스펙 실패 0, quote-edit-scope · quote-line-status는 단독 재실행에서 통과(부하 중 로그인 대기 초과), revenue-section 1건은 위 후속. 그 밖(people · vendors · side-panel · settings · roles 등 이번 변경과 무관한 화면)은 재실행하지 않았다.
+- 검토 반영 검증(로그 `/tmp/claude-0/fix-0621/`): `pnpm lint` 0 · `pnpm lint:sql` 0 · `pnpm typecheck` 0 · 단위 전체 304 파일 4578 passed · 통합 `issue-requests` + `leak-scan` 2 파일 4094 passed(격리 DB `erp_test_0621f`, flock) · E2E `CI=true`(격리 DB `erp_0621f_test`, flock) issue-requests 20 · projects-list 34 · quote-table 56 passed, `mobile-issue-requests-error` 1 passed. mobile-375가 desktop에 의존해 첫 실행이 desktop 전체(1292)를 돌았고 31 실패가 났다 — 대상 스펙 실패 0, quote-edit-scope · quote-line-status는 단독 재실행에서 통과(부하 중 로그인 대기 초과), revenue-section 1건은 4fdec24로 해소. 그 밖(people · vendors · side-panel · settings · roles 등 이번 변경과 무관한 화면)은 재실행하지 않았다.
 - 호출한 스킬(검토 반영): superpowers:systematic-debugging(320 넘침 원인 — 칸 폭 실측으로 금액 2행 nowrap · 프로젝트 머리글 최소 폭 확인) · superpowers:test-driven-development · design-gate(점검표 `docs/design/checks/2026-10-13-06-21-review-fixes.md`) · superpowers:verification-before-completion.
 
 ## Self-Check: PASSED

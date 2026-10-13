@@ -8,6 +8,7 @@ import { Toast } from "@/ui/toast/Toast";
 import { submitSettlementAction, withdrawSettlementAction } from "../actions";
 import { unsavedEditsReason } from "./unsaved-edits";
 import styles from "./project-detail.module.css";
+import { PRE_SETTLE_CHECK_HEADING_ID } from "./pre-settle-check";
 
 // 05-11(UI-SPEC S10 (가) · 확정 #4): 정산 프로젝트 머리 줄의 「상태 바꾸기」 자리. 문서가 없고 담당 PM이면 2차 `정산 결재 올리기` —
 // 확인 창 없이 즉시 기안하고 토스트 3차 `되돌리기`(= 확인 없는 회수). 문서가 있으면 3차 링크 `정산 결재 {중|반려|회수|승인}` → 문서 화면.
@@ -19,6 +20,8 @@ export type SettlementHeaderProps = {
   statusWord: string | null;
   /** 문서가 없을 때 올릴 수 있는 사람(담당 PM의 쓰기 권리 · 정산 — 서버 판정). */
   canSubmit: boolean;
+  /** 06-19(S18 · UA-610) — 완료 전 점검 막힘 이유(`완료 전 점검 N건 · 점검 보기` / 점검 실패 `점검 결과 없음 · 다시 시도`). 막힘 없으면 null. */
+  preSettleBlock?: string | null;
 };
 
 const SUBMIT_LABEL = "정산 결재 올리기";
@@ -84,7 +87,16 @@ export function useSettlementSubmitToast(projectId: string): { showSubmitted: (l
   return { showSubmitted, toastNode };
 }
 
-export function SettlementButton({ projectId, statusWord, canSubmit, dirtyCount }: SettlementHeaderProps & { dirtyCount: number }) {
+// 06-19 — `점검 보기`: 「완료 전 점검」 섹션 제목(h2 `#pre-settle-check`, 탭 순서 밖)으로 포커스. 기본 스크롤(nearest)은 제목을 창 맨 아래에
+// 두어 점검 행이 화면 밖일 수 있다 — 제목을 창 위(상단 바 아래, scroll-margin)로 올린다(검토 D-5).
+function focusPreSettleCheck() {
+  const heading = document.getElementById(PRE_SETTLE_CHECK_HEADING_ID);
+  if (!heading) return;
+  heading.focus({ preventScroll: true });
+  heading.scrollIntoView({ block: "start" });
+}
+
+export function SettlementButton({ projectId, statusWord, canSubmit, preSettleBlock = null, dirtyCount }: SettlementHeaderProps & { dirtyCount: number }) {
   const router = useRouter();
   const busyRef = useRef(false);
   const [pending, setPending] = useState(false);
@@ -113,7 +125,18 @@ export function SettlementButton({ projectId, statusWord, canSubmit, dirtyCount 
     router.refresh();
   }
 
-  const blocked = unsavedEditsReason(dirtyCount);
+  const unsaved = unsavedEditsReason(dirtyCount);
+  // 미저장 편집 이유가 먼저(05 동작), 없으면 완료 전 점검 막힘 — 마지막 ` · ` 뒤가 다음 한 수 3차다.
+  const cut = preSettleBlock ? preSettleBlock.lastIndexOf(" · ") : -1;
+  const preSettleReason = preSettleBlock && cut >= 0 ? preSettleBlock.slice(0, cut) : preSettleBlock;
+  const preSettleNext = preSettleBlock && cut >= 0 ? preSettleBlock.slice(cut + 3) : null;
+  const blocked = unsaved ?? preSettleReason;
+  const nextStep =
+    unsaved === null && preSettleNext ? (
+      <Button type="button" variant="tertiary" onClick={preSettleNext === "점검 보기" ? focusPreSettleCheck : () => router.refresh()}>
+        {preSettleNext}
+      </Button>
+    ) : undefined;
 
   if (statusWord !== null) {
     return (
@@ -137,6 +160,7 @@ export function SettlementButton({ projectId, statusWord, canSubmit, dirtyCount 
           pending={pending}
           disabled={blocked !== null}
           disabledReason={blocked ?? undefined}
+          nextStep={nextStep}
           onClick={() => void submit()}
         >
           {SUBMIT_LABEL}

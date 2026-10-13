@@ -227,7 +227,6 @@ export const PROJECT_FORCE_COMPLETE_ALLOW_OPEN_EXPENSES: SettingDef<boolean> = {
   hint: "켜면 미결 지출결의가 있어도 프로젝트를 완료 처리할 수 있습니다.",
   namespace: "완료 처리 강행",
   default: false,
-  readBy: { phase: "6" },
 };
 
 export const PROJECT_FORCE_COMPLETE_ALLOW_UNMATCHED_ESTIMATE_LINES: SettingDef<boolean> = {
@@ -238,7 +237,6 @@ export const PROJECT_FORCE_COMPLETE_ALLOW_UNMATCHED_ESTIMATE_LINES: SettingDef<b
   hint: "켜면 지출결의에 매칭되지 않은 견적 줄이 있어도 완료 처리할 수 있습니다.",
   namespace: "완료 처리 강행",
   default: false,
-  readBy: { phase: "6" },
 };
 
 export const PROJECT_FORCE_COMPLETE_ALLOW_MISSING_REVENUE: SettingDef<boolean> = {
@@ -249,7 +247,6 @@ export const PROJECT_FORCE_COMPLETE_ALLOW_MISSING_REVENUE: SettingDef<boolean> =
   hint: "켜면 매출이 입력되지 않아도 프로젝트를 완료 처리할 수 있습니다.",
   namespace: "완료 처리 강행",
   default: false,
-  readBy: { phase: "6" },
 };
 
 // 04-14(D-43 · ROADMAP 기준 3) — 고객 승인 게이트(`quote.customer-approval`). 끄면 현재 차수가 미승인이어도

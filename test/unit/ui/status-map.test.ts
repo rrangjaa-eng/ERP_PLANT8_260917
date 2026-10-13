@@ -54,6 +54,8 @@ const PHASE6_WORDS: [string, StatusKind][] = [
   ["면제", "muted"],
   // 06-28 S23 — 반려 · 회수 지출결의 종결(처음 쓰는 플랜이 더한다 — REVIEWS C2).
   ["종결", "muted"],
+  // 06-19 S18 — 완료 전 점검 미결 지출결의 행(처음 쓰는 플랜이 더한다 — C2).
+  ["선결제 · 증빙 없음", "danger"],
 ];
 
 describe("status-map — 낱말 → 색 한 표", () => {

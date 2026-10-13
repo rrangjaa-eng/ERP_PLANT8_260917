@@ -55,7 +55,11 @@ import {
 import { buildConflictMessage, buildLateUndoMessage } from "@/domain/approvals/conflict-message";
 import type { ApprovalStatus } from "@/domain/approvals/route";
 import type { DescribeDeps, DocumentDetailRow, DocumentDetailRows, DocumentSummary, RouteConfigStep } from "@/domain/approvals/kinds";
-import { GateBlockedError } from "@/domain/rules/gate";
+import { gate, GateBlockedError } from "@/domain/rules/gate";
+import "@/domain/rules/register";
+import { computePreSettleCheck, loadPreSettleInputs, preSettleLogDetail } from "@/domain/pre-settle-check";
+import type { TxLogDeps } from "@/domain/approvals/tx-log";
+import { appendActionLog } from "@/repositories/action-log";
 import { SETTLEMENT_DOCUMENT_DTO_SPEC, type SettlementDocumentDto, type SettlementDocumentSource } from "@/domain/settlements/dto";
 import { findApprovalGraphByDocument, type ApprovalGraph } from "@/repositories/approvals";
 import { countInReviewByProjects } from "@/repositories/expenses";
@@ -335,6 +339,8 @@ export async function submitSettlement(viewer: Viewer, input: { projectId: strin
   if (!(await isAssignedPmWriter(viewer, projectRow.pmUserId))) throw new ForbiddenError("정산 결재는 담당 PM만");
   if (projectRow.status !== SETTLING) throw notSettling(projectRow.status);
   const prepared = await prepareSubmission(viewer, { kind: SETTLEMENT_DOCUMENT_KIND, drafterId: viewer.id });
+  // 06-19(UA-610 · ENG E-1): 완료 전 점검의 권한 · 설정은 트랜잭션 앞에서 읽는다(예외면 트랜잭션을 열지 않고 거부).
+  const preSettleInputs = await loadPreSettleInputs(viewer);
 
   return withTransaction(async (tx): Promise<SubmitSettlementResult> => {
     // post-gate: 트랜잭션 전 findProjectInScope 판정 뒤 tx 읽기(잠그지 않음 — T-05-1106).
@@ -344,15 +350,27 @@ export async function submitSettlement(viewer: Viewer, input: { projectId: strin
     const inserted = await insertSettlementIfAbsent(viewer, { projectId: input.projectId, drafterId: viewer.id }, tx);
     const doc = inserted ?? (await findSettlementByProjectId(viewer, input.projectId, tx));
     if (!doc) throw new ProjectNotFoundError("존재하지 않는 프로젝트");
+    // 06-19: 기안 직전 같은 tx로 완료 전 점검 — 막힘이면 거부(문서 행도 롤백). 점검 예외는 잡지 않는다(fail-closed).
+    // 강행으로 통과하면 같은 tx의 document_submit 로그 상세에 기안 시점 요약을 싣는다(PS-4 — 새 행동 종류 없음).
+    const passPreSettle = async (): Promise<TxLogDeps | undefined> => {
+      const check = await computePreSettleCheck(viewer, input.projectId, preSettleInputs, tx);
+      const decision = await gate(null, "project.pre-settle-check", { blockedCount: check.blockedCount });
+      if (!decision.allowed) throw new GateBlockedError(decision.reason);
+      if (check.forcedResultLine === null) return undefined;
+      const preSettle = preSettleLogDetail(check);
+      return { appendActionLog: (v, entry, logTx) => appendActionLog(v, { ...entry, detail: { ...entry.detail, preSettle } }, logTx) };
+    };
     if (!inserted) {
       const graph = await findApprovalGraphByDocument(viewer, { documentKind: SETTLEMENT_DOCUMENT_KIND, documentId: doc.id }, tx);
       if (graph && RESUBMITTABLE_STATUSES.has(graph.instance.status)) {
-        const again = await resubmitDocument(viewer, prepared, { instanceId: graph.instance.id, expectedVersion: graph.instance.version }, tx);
+        const logDeps = await passPreSettle();
+        const again = await resubmitDocument(viewer, prepared, { instanceId: graph.instance.id, expectedVersion: graph.instance.version }, tx, logDeps);
         return { kind: "submitted", documentId: doc.id, instanceId: graph.instance.id, version: again.version, round: again.round };
       }
       if (graph) return { kind: "already_submitted", documentId: doc.id };
     }
-    const instance = await submitDocument(viewer, prepared, { documentId: doc.id }, tx);
+    const logDeps = await passPreSettle();
+    const instance = await submitDocument(viewer, prepared, { documentId: doc.id }, tx, logDeps);
     return { kind: "submitted", documentId: doc.id, instanceId: instance.id, version: instance.version, round: instance.currentRound };
   });
 }

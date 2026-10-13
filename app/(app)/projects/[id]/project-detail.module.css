@@ -534,3 +534,59 @@ td:has(> .rowNumber) {
     display: contents;
   }
 }
+
+/* 06-19(UI-SPEC S18) — 「완료 전 점검」 그룹 머리글(`미결 지출결의 N건` …): 막힘 그룹 건수는 --status-danger, 강행 허용 꼬리는 --text-muted.
+   세 그룹이 다 비면 한 줄 `미결 없음`(--status-success). */
+.preSettleGroup {
+  margin: var(--s-4) 0 var(--s-2);
+  color: var(--text-strong);
+  font-size: var(--text-body);
+  font-weight: var(--fw-medium);
+}
+
+.preSettleBlocked {
+  color: var(--status-danger);
+}
+
+.preSettleForced {
+  color: var(--text-muted);
+  font-weight: var(--fw-regular);
+}
+
+.preSettleNone {
+  margin: 0;
+  color: var(--status-success);
+}
+
+/* 06-19(S18) — 매출 미입력 행 `발행 줄 없음` · 매출 줄(`계약 금액 · 발행 합계 · 차이`, 차이 ≠ 0이면 --status-warning — 막지 않음, D-613). */
+.preSettleMissing {
+  margin: 0;
+}
+
+.preSettleRevenue {
+  margin: var(--s-4) 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+}
+
+.preSettleDiff {
+  color: var(--status-warning);
+}
+
+/* 06-19(S18 · R-6) — 보는 사람의 범위 밖 미결 지출결의는 그룹 끝 한 줄 `그 밖 N건`(건수만 · 행동 없음). */
+.preSettleOutOfScope {
+  margin: var(--s-2) 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+}
+
+/* 06-19 검토 D-1(UI-SPEC S18) — 폰(<700)에서 행동 3차 열(P3)이 숨고 같은 3차가 항목(P1) 셀 2행에 선다. ≥700은 행동 열 그대로. */
+.preSettlePhoneLine {
+  display: none;
+}
+
+@media (max-width: 699.98px) {
+  .preSettlePhoneLine {
+    display: block;
+  }
+}

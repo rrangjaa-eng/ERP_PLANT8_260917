@@ -312,7 +312,7 @@ export function PaymentActionRow() {
     <>
       <div className={barStyles.bar} data-fixed-bar="">
         {conflict ? <ConflictLine message={conflict} /> : null}
-        <div className={barStyles.buttons}>
+        <div className={payReturn ? `${barStyles.buttons} ${listStyles.payReturnButtons}` : barStyles.buttons}>
           {canSaveSchedule ? (
             <span className={barStyles.primaryWrap} ref={primaryRef}>
               <Button variant="primary" shortcut="Ctrl+Enter" pending={pending} onClick={saveSchedule}>

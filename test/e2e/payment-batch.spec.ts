@@ -1767,6 +1767,21 @@ function pageOverflow(page: Page): Promise<number> {
   return page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 }
 
+// 요소 글자가 몇 줄로 그려졌나(Range 줄 사각형의 서로 다른 윗변 수).
+function textLines(locator: ReturnType<Page["locator"]>, text: string): Promise<number> {
+  return locator.evaluate((element, wanted) => {
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    const tops = new Set<number>();
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (!node.textContent?.includes(wanted)) continue;
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      for (const rect of range.getClientRects()) if (rect.width > 0) tops.add(Math.round(rect.top));
+    }
+    return tops.size;
+  }, text);
+}
+
 // D-1 · D-3 — 지급 권한자의 S3에 13자리 이체액 두 건(하나는 차이 -1,000 · 200자 사유)을 세운 페이지.
 async function bigPaidPage(browser: Browser, baseURL: string | undefined): Promise<{ page: Page; lines: { id: string; itemName: string }[] }> {
   const fx = await setupExpenseE2E();
@@ -1795,6 +1810,32 @@ test.describe("검토 반영 (06-20 독립 검토 · DOM 감사)", () => {
     await expect.poll(headers).not.toContain("번호");
     expect(await headers()).not.toContain("거래처");
     for (const label of ["프로젝트 · 항목", "지급일", "이체액", "증빙"]) expect(await headers()).toContain(label);
+    await page.context().close();
+  });
+
+  test("from=pay 문서 화면 폰 폭(D-2) — 375 · 320에서 1차 `지급 완료`는 한 줄 · 행동 줄 폭의 절반 이상, 3차 `지급 대상으로`는 1차 아래 줄", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const id = await approvedTarget(fx, "tracer");
+    // 같은 필터에 다음 `확인 전`이 있어 3차가 둘(`지급 대상으로` · `다음 확인 전 {번호}`)이 되는 가장 넓은 꼴.
+    const next = await unreviewedDoc(fx, "retry");
+    const payer = await makeTeamPayer(fx);
+
+    const page = await loginPage(browser, baseURL, payer, { width: 375, height: 800 });
+    await page.goto(`/expenses/${id}?${new URLSearchParams({ from: "pay", status: "지급 대상", team: await teamOf(fx) })}`);
+    const bar = page.locator("[data-fixed-bar]");
+    const primary = bar.getByRole("button", { name: /^지급 완료/ });
+    const back = bar.getByRole("link", { name: "지급 대상으로" });
+    await expect(back).toBeVisible();
+    await expect(bar.getByRole("link", { name: `다음 확인 전 ${(await numberOf(next)).number}` })).toBeVisible();
+    for (const width of [375, 320]) {
+      await page.setViewportSize({ width, height: 800 });
+      await expect.poll(() => textLines(primary, "지급 완료"), { message: `${width}px 1차 글자 줄 수` }).toBe(1);
+      const [primaryBox, backBox, barBox] = await Promise.all([primary.boundingBox(), back.boundingBox(), bar.boundingBox()]);
+      if (!primaryBox || !backBox || !barBox) throw new Error("행동 줄 요소 없음");
+      expect(primaryBox.width).toBeGreaterThanOrEqual(barBox.width / 2);
+      expect(backBox.height).toBeGreaterThanOrEqual(44);
+      expect(backBox.y).toBeGreaterThanOrEqual(primaryBox.y + primaryBox.height - 1);
+    }
     await page.context().close();
   });
 });

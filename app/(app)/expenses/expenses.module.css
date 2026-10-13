@@ -288,6 +288,22 @@
   margin-left: auto;
 }
 
+/* 폰은 3차 묶음을 1차 아래 자기 줄로 내린다(DOM 감사 D-2 — 같은 줄이면 flex: 2인 1차가 남은 폭만 받아 글자가 꺾인다). */
+@media (max-width: 699.98px) {
+  .payReturnButtons {
+    flex-wrap: wrap;
+  }
+
+  .payReturn {
+    order: 1;
+    flex-basis: 100%;
+  }
+
+  .payReturnEnd {
+    margin-left: 0;
+  }
+}
+
 /* 06-20(UA-605) Phase 5 목록 상태 칸 둘째 줄 `증빙 {N}일 경과`. */
 .statusNote {
   display: block;

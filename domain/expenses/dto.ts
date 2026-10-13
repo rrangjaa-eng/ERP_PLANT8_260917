@@ -2,6 +2,7 @@ import type { DtoSpec } from "@/domain/permissions/project";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import type { Money } from "@/domain/money";
 import type { TaxLinePart } from "@/domain/expenses/tax";
+import type { PaymentAccount } from "@/domain/payments";
 
 // 05-03: 지출결의 DTO 둘 — 문서 칸은 expense.value, 금액 칸(공급가액 · 세율 · 세액 · 지급 총액)은 expense.amount.
 
@@ -271,6 +272,8 @@ export type PaymentTargetRowDto = {
   quoteLineId: string | null;
   // 06-17(R10-F2) — 증빙 금액이 적혀 있는가(값이 아니라 있음만). 빈 `확인 전`은 제자리 확인 모달 대신 문서 화면으로 간다.
   evidenceAmountEntered: boolean;
+  // 06-20(O-17) — 지급 권한자의 계좌이체 행에만 있는 키(domain/payments projectPaymentAccounts).
+  account?: PaymentAccount;
 };
 
 export const PAYMENT_TARGET_ROW_DTO_SPEC: DtoSpec<PaymentTargetRowDto, PaymentTargetRowDto> = {
@@ -290,6 +293,7 @@ export const PAYMENT_TARGET_ROW_DTO_SPEC: DtoSpec<PaymentTargetRowDto, PaymentTa
     { key: "prepaid", from: "prepaid", infoItem: "expense.value" },
     { key: "quoteLineId", from: "quoteLineId", infoItem: "expense.value" },
     { key: "evidenceAmountEntered", from: "evidenceAmountEntered", infoItem: "expense.value" },
+    { key: "account", from: "account", infoItem: "vendor.value" },
   ],
 };
 

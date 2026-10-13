@@ -16,7 +16,7 @@ import { formatKstTime } from "@/domain/holidays/business-day";
 import { findUserNamesByIds } from "@/repositories/users";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { loadPrepaidDueDays, resolveEvidenceStatus, type EvidenceStatus } from "@/domain/evidence-reviews";
-import { decidePayable, getPaymentView, loadEvidenceOverrun, loadPaymentShared, pairGateCtx, pickPaymentAmount, type PaymentShared, type PaymentSharedDeps } from "@/domain/payments";
+import { decidePayable, getPaymentView, loadEvidenceOverrun, loadPaymentShared, pairGateCtx, pickPaymentAmount, projectPaymentAccounts, type PaymentShared, type PaymentSharedDeps } from "@/domain/payments";
 import { approvalGateDecision, EVIDENCE_UNCONFIRMED, resolveExpenseActionRow, type EvidenceGateInput, type ExpenseActionBar } from "@/domain/payments/action-row";
 import { listTeams as listTeamRows } from "@/repositories/teams";
 import { EXPENSE_GROUP_RANKS, listExpenseIdsInScope } from "@/repositories/expenses";
@@ -199,11 +199,12 @@ function toDto(target: JudgedPaymentTarget, shared: PaymentShared): PaymentTarge
 }
 
 export async function projectPaymentTargets(viewer: Viewer, targets: readonly JudgedPaymentTarget[], shared: PaymentShared): Promise<Partial<PaymentTargetRowDto>[]> {
-  return projectMany(
+  // 06-20(O-17) — 계좌 칸은 문서 화면과 같은 투영 함수 하나. 지급 방식 코드 · 거래처 id는 스펙 밖 키라 projectMany가 버린다.
+  const rows = await projectPaymentAccounts(
     viewer,
-    targets.map((target) => toDto(target, shared)),
-    PAYMENT_TARGET_ROW_DTO_SPEC,
+    targets.map((target) => ({ ...toDto(target, shared), paymentMethod: target.row.paymentMethod, vendorId: target.row.vendorId })),
   );
+  return projectMany(viewer, rows, PAYMENT_TARGET_ROW_DTO_SPEC);
 }
 
 export async function listPaymentTargets(

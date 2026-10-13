@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
-import { expensePayments, expenses, projects, quoteLines, vendors } from "@/db/schema";
+import { actionLog, expensePayments, expenses, projects, quoteLines, vendors } from "@/db/schema";
 import { approveDocument, getApprovalView } from "@/domain/approvals";
 import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { confirmEvidence } from "@/domain/evidence-reviews";
@@ -1232,7 +1232,8 @@ test.describe("제자리 증빙 확인 · 보관 (06-17 Task 4)", () => {
 // 이 스펙 거래처에 계좌를 단다(테스트 준비 — 03 관리자 화면 대신 같은 칸을 직접 쓴다). 뒤 4자리 · 예금주는 이 실행에만 있는 값.
 async function seedVendorAccount(fx: ExpenseE2E): Promise<{ bank: string; last4: string; holder: string; plain: string }> {
   const suffix = randomUUID().slice(0, 6);
-  const last4 = String(1000 + Math.floor(Math.random() * 9000));
+  // 9로 시작 — 연도(2026) · 쉼표 금액과 겹치지 않는 뒤 4자리.
+  const last4 = String(9000 + Math.floor(Math.random() * 1000));
   const account = { bank: "신한", last4, holder: `E2E예금주-${suffix}`, plain: `110-${suffix.replace(/\D/g, "7").slice(0, 3)}-29${last4}` };
   await db
     .update(vendors)
@@ -1287,6 +1288,70 @@ test.describe("지급 완료 보기 (06-20 Task 1)", () => {
     await expect(select).toHaveValue("진행 중");
     await expect(select.locator("option", { hasText: "지급 완료" })).toHaveCount(0);
     await pmPage.context().close();
+  });
+});
+
+// ── 06-20 Task 2 — 계좌 칸 · 번호 보기(O-17 · E-50) ─────────────────────
+
+async function setReveal(person: Person, visible: boolean): Promise<void> {
+  if (!person.viewer.roleId) throw new Error("계급 없음");
+  await upsertVisibility(SYSTEM_VIEWER, { roleId: person.viewer.roleId, infoItem: "vendor.account_number_unmasked", visible });
+}
+
+async function revealLogCount(vendorId: string, actorId: string): Promise<number> {
+  const rows = await db
+    .select({ seq: actionLog.seq })
+    .from(actionLog)
+    .where(and(eq(actionLog.actionType, "mask_reveal"), eq(actionLog.entityId, vendorId), eq(actionLog.actorId, actorId)));
+  return rows.length;
+}
+
+test.describe("계좌 칸 · 번호 보기 (06-20 Task 2)", () => {
+  test("번호 보기 — 해제 항목 없음: 해제 항목이 꺼진 지급 권한자 S1 지급 방식 칸에 `{은행} ****-**-{뒤4}` · 예금주, `번호 보기` 0 · HTML에 평문 없음", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const account = await seedVendorAccount(fx);
+    await approvedTarget(fx, "tracer");
+    const payer = await makeTeamPayer(fx);
+    await setReveal(payer, false);
+
+    const page = await loginPage(browser, baseURL, payer);
+    await page.goto("/expenses");
+    const row = rowOf(page, fx.lines.tracer.itemName);
+    await expect(row).toContainText(account.bank);
+    await expect(row).toContainText(`****-**-${account.last4}`);
+    await expect(row).toContainText(account.holder);
+    await expect(page.getByRole("button", { name: "번호 보기" })).toHaveCount(0);
+    expect(await page.content()).not.toContain(account.plain);
+    await page.context().close();
+  });
+
+  test("번호 보기 — 권한자만: 해제 항목을 켠 지급 권한자는 `번호 보기` → 평문 · `가리기` · mask_reveal 1줄 / 대표 문서 화면 S5에 계좌 행 없음 · 뒤 4자리 없음", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const account = await seedVendorAccount(fx);
+    const expenseId = await approvedTarget(fx, "tracer");
+    const payer = await makeTeamPayer(fx);
+    await setReveal(payer, true);
+
+    const page = await loginPage(browser, baseURL, payer);
+    await page.goto("/expenses");
+    const row = rowOf(page, fx.lines.tracer.itemName);
+    await expect(row).toContainText(`${account.bank}`);
+    await expect(row).toContainText(`****-**-${account.last4}`);
+    const reveal = row.getByRole("button", { name: "번호 보기" });
+    await waitForHydration(reveal);
+    await reveal.click();
+    await expect(row).toContainText(account.plain);
+    await expect(row.getByRole("button", { name: "가리기" })).toBeVisible();
+    expect(await revealLogCount(fx.vendorId, payer.viewer.id)).toBe(1);
+    await page.context().close();
+
+    const ceoPage = await loginPage(browser, baseURL, fx.ceo);
+    await ceoPage.goto(`/expenses/${expenseId}`);
+    await expect(ceoPage.getByText("지급 방식", { exact: true }).first()).toBeVisible();
+    await expect(ceoPage.locator("[data-payment-account]")).toHaveCount(0);
+    expect(await ceoPage.locator("main").innerText()).not.toContain(account.last4);
+    expect(await ceoPage.content()).not.toContain(`**-${account.last4}`);
+    await ceoPage.context().close();
   });
 });
 

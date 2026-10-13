@@ -168,3 +168,14 @@ export async function listPaidMonthRows(viewer: Viewer, input: { teamId?: string
     .leftJoin(projects, eq(projects.id, expenses.projectId))
     .where(paidConditions({ teamId: input.teamId ?? null }));
 }
+
+// 06-20(O-17): 지급 권한자에게만 가는 계좌 칸 — 거래처 id 묶음 한 번. 평문 번호(accountNumberEncrypted)는 읽지 않는다(해제는 03 경로 하나).
+export type VendorAccountRow = { vendorId: string; bank: string | null; holder: string | null; last4: string | null };
+
+export async function findVendorAccountsByIds(viewer: Viewer, vendorIds: readonly string[]): Promise<VendorAccountRow[]> {
+  if (vendorIds.length === 0) return [];
+  return db
+    .select({ vendorId: vendors.id, bank: vendors.accountBank, holder: vendors.accountHolder, last4: vendors.accountNumberLast4 })
+    .from(vendors)
+    .where(inArray(vendors.id, [...vendorIds]));
+}

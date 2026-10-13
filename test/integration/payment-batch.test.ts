@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db/client";
-import { expenseEvidenceReviews, expensePayments, expenses, files, quoteLines } from "@/db/schema";
+import { expenseEvidenceReviews, expensePayments, expenses, files, quoteLines, vendors } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertVisibility } from "@/repositories/permissions";
 import { ForbiddenError } from "@/domain/permissions/can";
@@ -49,7 +49,8 @@ beforeEach(async () => {
 async function makePayer(name?: string): Promise<Viewer> {
   const payer = await makePaymentManager(name);
   if (!payer.roleId) throw new Error("계급 없음");
-  for (const infoItem of ["expense.value", "expense.amount"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: payer.roleId, infoItem, visible: true });
+  // 06-20 — 계좌 칸(account)은 03 정보 항목 vendor.value에 걸린다(새 계급은 노출 행이 없으면 숨김).
+  for (const infoItem of ["expense.value", "expense.amount", "vendor.value"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: payer.roleId, infoItem, visible: true });
   return payer;
 }
 
@@ -859,5 +860,75 @@ describe("지급 완료 보기 (06-20 Task 1)", () => {
     expect(await paidViewAllowed(fx.ceo)).toBe(true);
     expect(await paidViewAllowed(fx.pm)).toBe(false);
     expect(await paidViewAllowed(fx.lead)).toBe(false);
+  });
+});
+
+// ── 06-20 Task 2 도우미 ──────────────────────────────────────────────
+
+const REVEAL_ITEM = "vendor.account_number_unmasked";
+
+async function giveAccount(vendorId: string, last4: string): Promise<{ bank: string; holder: string }> {
+  const account = { bank: "신한", holder: `예금주-${randomUUID().slice(0, 4)}` };
+  await db.update(vendors).set({ accountBank: account.bank, accountHolder: account.holder, accountNumberLast4: last4 }).where(eq(vendors.id, vendorId));
+  return account;
+}
+
+async function setReveal(viewer: Viewer, visible: boolean): Promise<void> {
+  if (!viewer.roleId) throw new Error("계급 없음");
+  await upsertVisibility(SYSTEM_VIEWER, { roleId: viewer.roleId, infoItem: REVEAL_ITEM, visible });
+}
+
+describe("계좌 투영 (06-20 Task 2)", () => {
+  it("계좌 투영 — 권한자만: 지급 권한자의 S1 행 · 지급 보기에 account(은행 · 마스킹 · 예금주 · canReveal), 대표 · PM · 직원의 지급 보기 키 목록에 account 없음", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    const { bank, holder } = await giveAccount(fx.stageOneId, "4321");
+    const [doc] = await approvedMany(fx, await extraLines(fx, 1), false);
+    if (!doc) throw new Error("문서 필요");
+
+    const row = rowsOf(await listPaymentTargets(payer, {})).find((candidate) => candidate.id === doc.expenseId);
+    expect(row?.account).toEqual({ status: "registered", vendorId: fx.stageOneId, bank, masked: "****-**-4321", holder, canReveal: false });
+    const payerView = await getPaymentView(payer, doc.expenseId);
+    expect(payerView?.account).toEqual(row?.account);
+
+    for (const reader of [fx.ceo, fx.pm, fx.otherPm]) {
+      const view = await getPaymentView(reader, doc.expenseId);
+      expect(Object.keys(view ?? {})).not.toContain("account");
+      expect(JSON.stringify(view ?? {})).not.toContain("4321");
+    }
+    expect(Object.keys((await getPaymentView(fx.ceo, doc.expenseId)) ?? {})).toContain("payDate");
+  });
+
+  it("계좌 없음 행 고를 수 있음 — 계좌 없는 거래처의 계좌이체 P4 행은 account 「없음」 · selectable 참(M-7)", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    const bare = await insertVendor(SYSTEM_VIEWER, { name: "계좌없는곳", normalizedName: `계좌없는곳-${randomUUID()}`, defaultEvidenceType: "tax_invoice" });
+    const [doc] = await approvedMany(fx, await extraLines(fx, 1, bare.id), false);
+    if (!doc) throw new Error("문서 필요");
+
+    const row = rowsOf(await listPaymentTargets(payer, {})).find((candidate) => candidate.id === doc.expenseId);
+    expect(row?.account).toEqual({ status: "none" });
+    expect(row?.selectable).toBe(true);
+    expect((await getPaymentView(payer, doc.expenseId))?.account).toEqual({ status: "none" });
+  });
+
+  it("계좌 해제 — 노출표 따름: 지급 권한자 계급의 해제 항목을 끄면 canReveal 거짓 · 켜면 참, 나머지 칸은 같다(E-50)", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    await giveAccount(fx.stageOneId, "8765");
+    const [doc] = await approvedMany(fx, await extraLines(fx, 1), false);
+    if (!doc) throw new Error("문서 필요");
+
+    await setReveal(payer, false);
+    const off = rowsOf(await listPaymentTargets(payer, {})).find((candidate) => candidate.id === doc.expenseId)?.account;
+    const offView = (await getPaymentView(payer, doc.expenseId))?.account;
+    await setReveal(payer, true);
+    const on = rowsOf(await listPaymentTargets(payer, {})).find((candidate) => candidate.id === doc.expenseId)?.account;
+    const onView = (await getPaymentView(payer, doc.expenseId))?.account;
+
+    expect(off).toMatchObject({ status: "registered", canReveal: false });
+    expect(offView).toMatchObject({ status: "registered", canReveal: false });
+    expect(on).toEqual({ ...off, canReveal: true });
+    expect(onView).toEqual({ ...offView, canReveal: true });
   });
 });

@@ -263,3 +263,15 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* 06-20 지급 방식 칸 계좌 — 1행 은행 + 마스킹 번호(+ 권한자 3차 `번호 보기`), 계좌 없음은 흐린 글자 한 줄(버튼 없음). */
+.accountLine {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  white-space: nowrap;
+}
+
+.accountNone {
+  color: var(--text-muted);
+}

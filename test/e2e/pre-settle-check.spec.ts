@@ -9,6 +9,9 @@ import { setCustomerApproval } from "@/domain/quotes/revisions";
 import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { getApprovalView, rejectDocument } from "@/domain/approvals";
 import { saveRevenue } from "@/domain/revenue";
+import { submitSettlement } from "@/domain/settlements";
+import { setSettingValue } from "@/domain/settings/registry";
+import { PROJECT_FORCE_COMPLETE_ALLOW_OPEN_EXPENSES } from "@/domain/settings/keys";
 import { approvalBasis } from "@/repositories/quote-revisions";
 import { findExpenseById } from "@/repositories/expenses";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
@@ -251,5 +254,35 @@ test.describe("완료 전 점검 — 보는 범위(R-6)", () => {
     await expect(section.getByText("미결 지출결의 1건", { exact: true })).toBeVisible();
     await expect(section.getByText("그 밖 1건", { exact: true })).toBeVisible();
     await expect(page.getByText(number)).toHaveCount(0);
+  });
+});
+
+// 06-22 Task 1 — [O-16] 대표 최종 승인 앞 재점검. 반려 지출결의 1건이 남은 정산 프로젝트를 강행 허용을 잠시 켜 기안하고(06-19 게이트 통과)
+// 끈다 — 대표가 연 정산 결재 문서의 `승인`은 막히고 이유에 담당 PM, 같은 줄 3차 `점검 보기`, 2차 `반려`는 산다.
+async function draftWithOpenAllowed(fx: PreSettleE2E): Promise<void> {
+  await setSettingValue(SYSTEM_VIEWER, PROJECT_FORCE_COMPLETE_ALLOW_OPEN_EXPENSES, true);
+  try {
+    const result = await submitSettlement(fx.org.drafter.viewer, { projectId: fx.projectId });
+    if (result.kind !== "submitted") throw new Error("정산 결재가 올라가지 않았습니다");
+  } finally {
+    await setSettingValue(SYSTEM_VIEWER, PROJECT_FORCE_COMPLETE_ALLOW_OPEN_EXPENSES, false);
+  }
+}
+
+test.describe("완료 전 점검 — 정산 결재 문서(O-16 · PS-4)", () => {
+  test("대표 승인 막힘 — 점검 보기: `승인` aria-disabled + `완료 전 점검 1건 · 담당 PM {이름}` + 3차 `점검 보기` · `반려` 활성", async ({ browser, baseURL }) => {
+    const fx = await setupRejectedSettling(browser, baseURL);
+    await draftWithOpenAllowed(fx);
+    const page = await loginPage(browser, baseURL, fx.org.ceo);
+    await page.goto(`/projects/${fx.projectId}/settlement`);
+
+    const approve = page.getByRole("button", { name: /^승인/ });
+    await waitForHydration(approve);
+    await expect(approve).toHaveAttribute("aria-disabled", "true");
+    await expect(page.getByText(`완료 전 점검 1건 · 담당 PM ${fx.org.drafter.name}`, { exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "점검 보기", exact: true })).toHaveAttribute("href", `/projects/${fx.projectId}#pre-settle-check`);
+    const reject = page.getByRole("button", { name: "반려", exact: true });
+    await expect(reject).toBeVisible();
+    await expect(reject).not.toHaveAttribute("aria-disabled", "true");
   });
 });

@@ -4,7 +4,7 @@ import { requireSession } from "@/lib/viewer";
 import { kstDateOf } from "@/lib/kst-date";
 import "@/app/(app)/document-kinds";
 import { getApprovalView, getDocumentKind, REJECT_REASON_EMPTY_MESSAGE, REJECT_REASON_MAX, REJECT_REASON_TOO_LONG_MESSAGE } from "@/domain/approvals";
-import { getSettlement, isSettlementResubmitWaiting, periodText, SETTLEMENT_DOCUMENT_KIND } from "@/domain/settlements";
+import { getSettlement, getSettlementPreSettleSummary, isSettlementResubmitWaiting, periodText, SETTLEMENT_DOCUMENT_KIND } from "@/domain/settlements";
 // Button.tsx는 클라이언트 모듈이라 서버 컴포넌트가 buttonLinkClassName을 부를 수 없다 — 같은 3차 클래스를 직접 쓴다(지출결의 문서 화면 선례).
 import buttonStyles from "@/ui/button/Button.module.css";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
@@ -33,6 +33,24 @@ export default async function SettlementPage({ params }: { params: Promise<{ id:
   // 다시 올리기 = 가능 행동 resubmit(서버 판정 — 반려 · 회수 ∧ 정산 ∧ 담당 PM). 못 올리는 까닭이 진행 복귀면 한 줄(D-80).
   const canResubmit = actions.includes("resubmit");
   const resubmitWaiting = !canResubmit && (await isSettlementResubmitWaiting(viewer, { projectId: id }));
+
+  // 06-22(O-16 · S18): 완료 전 점검 요약 — 승인 막힘의 다음 한 수 `점검 보기`(막힘 1 이상일 때 — 이유가 A8 문구여도 그 지출결의가 점검 행으로 보인다).
+  // 진행 복귀면 요약이 null이라 달지 않는다. 결재함 · 결재 시트 · 홈은 이유 글자만(SA-2).
+  let preSettle: { status: "ready"; summary: Awaited<ReturnType<typeof getSettlementPreSettleSummary>> } | { status: "error" };
+  try {
+    preSettle = { status: "ready", summary: await getSettlementPreSettleSummary(viewer, { projectId: id }) };
+  } catch {
+    preSettle = { status: "error" };
+  }
+  const approveBlockedReason = view?.approveBlockedReason ?? null;
+  const checkBlocked = preSettle.status === "ready" && (preSettle.summary?.blockedCount ?? 0) > 0;
+  const approveNextStep =
+    approveBlockedReason && checkBlocked ? (
+      // 상세 「완료 전 점검」 섹션 제목 id(pre-settle-check.tsx PRE_SETTLE_CHECK_HEADING_ID — 클라이언트 모듈이라 서버 컴포넌트가 값을 가져오지 않는다).
+      <Link href={`/projects/${id}#pre-settle-check`} className={`${buttonStyles.btn} ${buttonStyles.tertiary}`}>
+        점검 보기
+      </Link>
+    ) : undefined;
 
   const dash = <span className={styles.muted}>—</span>;
   const projectText = [doc.projectNumber, doc.projectName].filter(Boolean).join(" ");
@@ -70,7 +88,8 @@ export default async function SettlementPage({ params }: { params: Promise<{ id:
           instanceId={view?.instanceId ?? null}
           version={view?.version ?? null}
           actions={actions}
-          approveBlockedReason={view?.approveBlockedReason ?? null}
+          approveBlockedReason={approveBlockedReason}
+          approveNextStep={approveNextStep}
           projectId={id}
           canResubmit={canResubmit}
           resubmitWaiting={resubmitWaiting}

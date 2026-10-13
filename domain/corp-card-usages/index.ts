@@ -28,10 +28,13 @@ import {
   findCardUsageForWrite,
   findLastCardUsageByRegistrant,
   insertCardUsage,
+  isCardUsageInListScope,
+  lockCardUsageForUpdate,
   updateCardUsageRow,
   archiveCardUsageRow,
   restoreCardUsageRow,
   type CardUsageForWrite,
+  type CardUsageRow,
   listCardUsageRows,
   listProjectCardUsageRows,
   type CardUsageFilter,
@@ -1058,6 +1061,72 @@ export async function loadCardUsageForEdit(viewer: Viewer, id: string): Promise<
   return { usage: usage ?? {}, rights, cardOptions };
 }
 
+// ── 카드 전표 주인(06-25 · EVID-01 카드 몫) ───────────────────────────────────────────────────────────────────
+// 05 domain/evidence의 주인 표 `corp_card_usage` 줄이 부른다(이 파일은 evidence 도메인을 import하지 않는다 — 순환, 06-16 reserves와 같은 규칙).
+// 읽기 = S8 목록 범위(보관 무관 — E-46: 보관된 건의 전표도 범위 안 사람은 읽는다), 쓰기 = 읽기 ∧ 06-09 수정 권리(등록한 사람 · 대리 등록 권한자 ·
+// 완료 프로젝트 줄은 대리 등록 권한자만) ∧ 보관 아님. 브라우저가 보낸 권리 · 주인 값은 믿지 않고 카드 사용 행을 서버가 다시 읽는다.
+
+export type CardSlipOwner = {
+  id: string;
+  drafterId: string;
+  number: null;
+  status: "open" | "closed";
+  updatedAt: Date;
+  version: number;
+  projectId: null;
+  instance: null;
+  closed: false;
+  projectCompleted: false;
+};
+
+function toCardSlipOwner(row: Pick<CardUsageRow, "id" | "registeredBy" | "archivedAt" | "updatedAt">): CardSlipOwner {
+  return {
+    id: row.id,
+    drafterId: row.registeredBy,
+    number: null,
+    status: row.archivedAt === null ? "open" : "closed",
+    updatedAt: row.updatedAt,
+    version: 0,
+    projectId: null,
+    instance: null,
+    closed: false,
+    projectCompleted: false,
+  };
+}
+
+// tx가 없으면 보관된 건도 읽는 풀 읽기, 있으면 카드 사용 행 하나를 잠근 뒤 그 행으로(06-03 tx 규약 — 트랜잭션 안은 tx 리포지토리만).
+export async function cardSlipOwner(viewer: Viewer, id: string, tx?: DbOrTx): Promise<CardSlipOwner | null> {
+  if (!UUID_SHAPE.test(id)) return null;
+  if (tx) {
+    const locked = await lockCardUsageForUpdate(viewer, id, tx);
+    return locked ? toCardSlipOwner(locked) : null;
+  }
+  const stored = await findCardUsageForWrite(viewer, id, { includeArchived: true });
+  return stored ? toCardSlipOwner(stored) : null;
+}
+
+export async function cardSlipRights(viewer: Viewer, owner: CardSlipOwner): Promise<{ read: boolean; write: boolean }> {
+  const { scope } = await listAccess(viewer, seoulToday());
+  const read = await isCardUsageInListScope(viewer, { id: owner.id, scope });
+  if (!read || owner.status !== "open") return { read, write: false };
+  const stored = await findCardUsageForWrite(viewer, owner.id, { includeArchived: true });
+  if (!stored) return { read, write: false };
+  return { read, write: rightsOf(stored, viewer, await can(viewer, "cards.proxy", "write")).edit };
+}
+
+export function cardSlipWriteOpen(owner: CardSlipOwner): boolean {
+  return owner.status === "open";
+}
+
+export function cardSlipNotFound(): UserFacingError {
+  return new CardUsageRejectedError(STALE_VERSION);
+}
+
+// 권리 밖 직접 호출 · 보관된 건 — 06-09 수정 권리 거부 문구 그대로.
+export function denyCardSlipWrite(): never {
+  throw new ForbiddenError(RIGHTS_DENIED);
+}
+
 // ── 서버 계산 한 줄(트랜잭션 없음) ─────────────────────────────────────────
 
 export type CardAmountsPreview = {
@@ -1225,6 +1294,8 @@ export type CardUsageListItemDto = {
   rights: CardUsageRights;
   /** 06-09 삭제(version 조건 UPDATE)의 기준. */
   version: number;
+  /** 06-25(C5 · CF-6) 목록 증빙 열 `있음`/`—` — 그 건의 살아 있는 카드 전표 파일이 1개 이상(파일 목록 · 내려받기는 수정 패널만). */
+  hasCardSlip: boolean;
 };
 
 type CardUsageListProjectable = CardUsageListItemDto;
@@ -1245,6 +1316,7 @@ const VALUE_KEYS = [
   "memo",
   "rights",
   "version",
+  "hasCardSlip",
 ] as const;
 // 연결 칸은 프로젝트 이름을 싣는다 — 카드 사용 값과 프로젝트 값을 둘 다 볼 때만(all-of).
 const LINK_LABEL_INFO = ["card_usage.value", "project.value"];
@@ -1307,6 +1379,7 @@ function toProjectable(row: CardUsageListRow, lineNo: Map<string, number>, right
     vatKrw: row.vatKrw,
     rights,
     version: row.version,
+    hasCardSlip: row.hasCardSlip,
   };
 }
 

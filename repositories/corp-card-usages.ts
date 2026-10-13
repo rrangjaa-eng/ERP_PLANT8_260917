@@ -3,6 +3,7 @@ import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { corpCardUsages, corpCards, projects, purchaseRequests, quoteLines, quoteRevisions, teams, users, vendors } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
+import { aliveFileExists } from "@/repositories/files";
 
 // 06-05(EXP-07): 법인카드 사용 쓰기 · 목록 · 직전 등록. 범위(UA-612)는 목록 쿼리의 조건에서 갈린다 — 보관된 건은 늘 뺀다(H-4 기반).
 
@@ -49,6 +50,8 @@ export type CardUsageListRow = CardUsageRow & {
   projectStatus: string | null;
   /** 06-12 구매 완료로 생긴 건의 구매 요청 번호(등록 칸 `구매 요청 {번호}`) — 아니면 null. */
   purchaseNumber: string | null;
+  /** 06-25(C5 · CF-6) 그 건의 살아 있는(removed_at · voided_at 없음) 카드 전표 파일 행이 1개 이상. */
+  hasCardSlip: boolean;
 };
 
 function scopeCondition(scope: CardUsageScope): SQL | undefined {
@@ -98,6 +101,8 @@ export async function listCardUsageRows(
       projectName: projects.name,
       projectStatus: projects.status,
       purchaseNumber: purchaseRequests.number,
+      // 06-25: 카드 전표 유무 한 조건 — 05 `alive()` 정의(삭제 · 무효 아님) 그대로.
+      hasCardSlip: aliveFileExists(viewer, "corp_card_usage", corpCardUsages.id),
     })
     .from(corpCardUsages)
     .innerJoin(corpCards, eq(corpCards.id, corpCardUsages.corpCardId))
@@ -132,7 +137,27 @@ export async function listCardUsageRows(
     projectName: row.projectName,
     projectStatus: row.projectStatus,
     purchaseNumber: row.purchaseNumber,
+    hasCardSlip: row.hasCardSlip,
   }));
+}
+
+// 06-25(E-46): 그 건이 목록 범위(scopeCondition) 안인가 — 보관 여부는 보지 않는다(보관된 건의 전표도 범위 안 사람은 읽는다). 새 범위 판정 없이 목록과 같은 조건 함수.
+export async function isCardUsageInListScope(viewer: Viewer, input: { id: string; scope: CardUsageScope }, tx: DbOrTx = db): Promise<boolean> {
+  void viewer;
+  const [row] = await tx
+    .select({ id: corpCardUsages.id })
+    .from(corpCardUsages)
+    .innerJoin(corpCards, eq(corpCards.id, corpCardUsages.corpCardId))
+    .where(and(eq(corpCardUsages.id, input.id), scopeCondition(input.scope)))
+    .limit(1);
+  return row !== undefined;
+}
+
+// 06-25: 카드 전표 완료 통보 · 삭제 · 되돌리기 트랜잭션이 카드 사용 행 하나를 잠근다(보관된 건도 — 파일은 건과 함께 남는다). 지출결의 행은 잠그지 않는다(X-2).
+export async function lockCardUsageForUpdate(viewer: Viewer, id: string, tx: DbOrTx): Promise<CardUsageRow | null> {
+  void viewer;
+  const [row] = await tx.select().from(corpCardUsages).where(eq(corpCardUsages.id, id)).for("update").limit(1);
+  return row ?? null;
 }
 
 /** 새 건 기본값(M-4)의 「직전 등록」 — 그 사람이 등록한, 보관 안 된 카드 사용 중 가장 최근 것. 06-07: 견적 줄 연결이면 줄 종류 · 프로젝트도. */

@@ -33,6 +33,7 @@ import {
   reserveEvidenceRights,
   reserveEvidenceWriteOpen,
 } from "@/domain/reserves";
+import { CARD_USAGE_ENTITY, cardSlipNotFound, cardSlipOwner, cardSlipRights, cardSlipWriteOpen, denyCardSlipWrite, type CardSlipOwner } from "@/domain/corp-card-usages";
 import { bumpInstanceVersion } from "@/repositories/approvals";
 import { clearEvidenceValues, deleteReviewByExpense, type EvidenceReviewStatus } from "@/repositories/expense-evidence-reviews";
 import { bumpExpenseVersion } from "@/repositories/expense-payments";
@@ -225,6 +226,18 @@ const OWNER_RULES: Record<string, OwnerRule> = {
     denyWrite: (viewer, owner) => denyReserveEvidenceWrite(viewer, owner as ReserveOwner),
     ...NO_DRAFTER_FLOW,
     notFound: reserveEvidenceNotFound,
+  },
+  // 06-25(EVID-01 카드 몫 · C4) 카드 전표 — 권리는 06-09 카드 사용 수정 권리 + 보관 아님, 읽기는 S8 목록 범위(보관 무관 — E-46). 결재 인스턴스가 없다(instance: null).
+  // 06-11 훅(onApprovedEvidenceChange · lockParent)은 expense 줄의 선택 칸이라 이 줄에 두지 않는다 — 지출결의 행 · version · 확인 기록을 건드리지 않는다(X-2).
+  [CARD_USAGE_ENTITY]: {
+    load: (viewer, ownerId) => cardSlipOwner(viewer, ownerId),
+    lock: (viewer, ownerId, tx) => cardSlipOwner(viewer, ownerId, tx),
+    canSee: async (viewer, owner) => (await cardSlipRights(viewer, owner as CardSlipOwner)).read,
+    rights: (viewer, owner) => cardSlipRights(viewer, owner as CardSlipOwner),
+    writeOpen: (owner) => cardSlipWriteOpen(owner as CardSlipOwner),
+    denyWrite: () => denyCardSlipWrite(),
+    ...NO_DRAFTER_FLOW,
+    notFound: cardSlipNotFound,
   },
 };
 

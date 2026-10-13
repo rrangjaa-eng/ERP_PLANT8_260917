@@ -33,6 +33,8 @@ registerAction({ name: "getRevisionEvidenceAction", menu: "projects", action: "v
 // 06-16(D-60) 리저브 줄 증빙 — 차수 승인 증빙과 같은 모양(메뉴는 pnl). 되살리기는 05 removeEvidenceAction의 짝(판정은 domain 규칙).
 registerAction({ name: "requestReserveEvidenceUploadAction", menu: "pnl", action: "write", dtoName: null });
 registerAction({ name: "getReserveEvidenceAction", menu: "pnl", action: "view", dtoName: "evidenceFile" });
+// 06-25 카드 전표 — 서명 PUT 주소만 돌려준다(DTO 없음). 문은 카드 사용 수정 권리(domain 주인 표)이고 메뉴 값은 06-05 카드 사용 액션과 같은 레지스트리 메타데이터.
+registerAction({ name: "requestCardSlipUploadAction", menu: "cards", action: "write", dtoName: null });
 registerAction({ name: "restoreEvidenceAction", menu: "expenses", action: "write", dtoName: null });
 
 registerAction({ name: "completeEvidenceUploadAction", menu: "expenses", action: "write", dtoName: "evidenceFile" });

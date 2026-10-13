@@ -36,6 +36,7 @@ import {
   restoreEvidence,
   voidEvidence,
 } from "@/domain/evidence";
+import { CARD_USAGE_ENTITY } from "@/domain/corp-card-usages";
 import { APPROVAL_EVIDENCE_KIND } from "@/domain/quotes/revisions";
 import { RESERVE_EVIDENCE_KIND } from "@/domain/reserves";
 import { QUOTE_LINE_MAX_PER_REVISION_DEFAULT } from "@/domain/settings/keys";
@@ -237,6 +238,24 @@ export const requestReserveEvidenceUploadAction = authedActionClient
 export const getReserveEvidenceAction = authedActionClient
   .schema(z.object({ entryId: z.string().uuid() }))
   .action(async ({ parsedInput, ctx }) => getOwnedEvidence(ctx.viewer, { ownerKind: RESERVE_EVIDENCE_KIND, ownerId: parsedInput.entryId }));
+
+// 06-25(EVID-01 카드 몫) 카드 전표 — 차수 승인 증빙과 같은 모양. 권리(06-09 수정 권리 + 보관 아님 · 읽기 = S8 목록 범위)는 domain 주인 표가 카드 사용 행으로 다시 읽어 판정한다.
+// 완료 통보 · 삭제 · 보기는 위 05 액션 그대로다. 저장된 카드 사용 id만 받는다 — 주인 없는 업로드는 없다.
+export const requestCardSlipUploadAction = authedActionClient
+  .schema(
+    z.object({
+      cardUsageId: z.string().uuid(),
+      size: z.number().int().min(0),
+      contentType: z.string().min(1).max(100),
+      sha256: z.string().max(64),
+      name: z.string().min(1).max(255),
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    const { cardUsageId, ...declaration } = parsedInput;
+    const intent = await requestEvidenceUpload(ctx.viewer, { ownerKind: CARD_USAGE_ENTITY, ownerId: cardUsageId, ...declaration });
+    return { intentId: intent.intentId, url: intent.url, method: intent.method, headers: intent.headers };
+  });
 
 // 06-16(F10) 지운 파일 되돌리기 — 새 두 주인 종류만(판정은 domain 규칙: 쓰기 권리 · 잠근 뒤 열림 · 중복 묶음). 성공 표시만 돌려준다.
 export const restoreEvidenceAction = authedActionClient

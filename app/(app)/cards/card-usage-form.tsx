@@ -1,12 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
 import { Form } from "@/ui/form/Form";
 import { Select } from "@/ui/select/Select";
 import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
+import { Attachments, type AttachmentActions, type AttachmentFile } from "@/ui/attachments/Attachments";
+import { isCtrlCombo } from "@/lib/shortcut";
+import { EVIDENCE_UPLOAD_FAILED } from "@/domain/evidence/upload-checks";
 import { PickDialog, type PickResult, type PickRow } from "@/ui/pick-dialog/PickDialog";
 import { useCommaInput } from "@/ui/input/use-comma-input";
 import { CARD_RECEIPT_CODE, cardEvidenceDefault } from "@/domain/corp-card-usages/amounts";
@@ -15,6 +19,7 @@ import type { NumberInputKind } from "@/lib/format-number";
 import selectStyles from "@/ui/select/Select.module.css";
 import textFieldStyles from "@/ui/input/TextField.module.css";
 import cardStyles from "./cards.module.css";
+import { completeEvidenceUploadAction, createEvidenceViewUrlAction, removeEvidenceAction, requestCardSlipUploadAction } from "../expenses/actions";
 import { createCardUsageAction, previewCardAmountsAction, searchMerchantsAction, updateCardUsageAction, usedByCandidatesAction } from "./actions";
 import { completePurchaseRequestAction, previewPurchaseCompletionAction } from "./purchases/actions";
 import { ExternalLinkIcon, markPurchaseDone } from "./purchases/purchase-list";
@@ -94,6 +99,23 @@ export type CardUsagePurchase = {
   /** 성공 뒤 갈 목록(`?done={id}` — 그 행이 제자리에 남는다). */
   doneHref: string;
 };
+
+/** 06-25 `증빙` 줄(카드 전표) — 서버가 정한 파일 목록 · 쓰기 동작 · 한도(MB). 구매 완료 모드(S13)에는 주지 않는다(파일 놓기가 되돌릴 수 없는 구매 완료를 부르지 않게). */
+export type CardSlipArea = { maxMb: number; files: AttachmentFile[]; canAdd: boolean; deletableIds: string[] };
+
+type SlipSave = { ok: true; id: string } | { ok: false; message: string };
+
+// next-safe-action 입력 검증 오류(`_errors` 중첩)의 첫 문구.
+function firstValidationMessage(errors: unknown): string | null {
+  if (typeof errors !== "object" || errors === null) return null;
+  const own = (errors as { _errors?: unknown })._errors;
+  if (Array.isArray(own) && typeof own[0] === "string") return own[0];
+  for (const value of Object.values(errors)) {
+    const nested = firstValidationMessage(value);
+    if (nested) return nested;
+  }
+  return null;
+}
 
 type Preview = {
   split: { supplyKrw: number; vatKrw: number; residualKrw: number; ruleKind: string; evidenceLabel: string } | null;
@@ -235,6 +257,8 @@ export function CardUsageForm({
   edit = null,
   purchase = null,
   purchaseCancel = null,
+  slip = null,
+  slipEditHref = null,
 }: {
   cards: CardOption[];
   evidenceTypes: EvidenceTypeOption[];
@@ -248,7 +272,11 @@ export function CardUsageForm({
   purchase?: CardUsagePurchase | null;
   /** 06-14 폰 S13 패널의 `요청 취소`(품목 줄 옆, PC에서는 숨김 — 행 행동이 맡는다). 서버가 취소할 수 있는 사람에게만 준다. */
   purchaseCancel?: ReactNode;
+  /** 06-25 메모 아래 `증빙` 줄 — 수정 = 그 건에 바로 올림(즉시 저장), 새 건 = 첫 저장 뒤 올림(`slipEditHref` + 새 건 id로 수정 패널로 바뀐다). */
+  slip?: CardSlipArea | null;
+  slipEditHref?: string | null;
 }) {
+  const router = useRouter();
   const panelRef = useRef<PanelFormHandle>(null);
   const [gen, setGen] = useState(0);
   const [defaults, setDefaults] = useState(initialDefaults);
@@ -302,11 +330,19 @@ export function CardUsageForm({
   // 결과 한 줄이 선 동안(다음 입력 전) — 같은 자리의 막힘 이유가 그 줄을 가리지 않게 막힘 줄을 미룬다(제출은 handleSubmit이 막는다).
   const [showingResult, setShowingResult] = useState(false);
   const submittedRef = useRef<{ corpCardId: string; linkKind: LinkKind | null; project: PickedProject | null } | null>(null);
+  // 06-25 카드 전표 `증빙` 줄 — 새 건은 파일이 들어오면 1차와 같은 저장이 먼저 돌고(첫 저장), 돌려받은 id로 올린 뒤 그 건의 수정 패널로 바뀐다(05 「첫 저장」).
+  const slipAreaRef = useRef<HTMLDivElement>(null);
+  const savedSlipIdRef = useRef<string | null>(null);
+  const savingSlipRef = useRef<Promise<SlipSave> | null>(null);
+  const saveSlipRef = useRef<() => Promise<SlipSave>>(() => Promise.resolve({ ok: false, message: EVIDENCE_UPLOAD_FAILED }));
+  const [attachError, setAttachError] = useState<string | null>(null);
+  const [pickSignal, setPickSignal] = useState(0);
 
   // 수정 저장 — 성공하면 패널이 닫히고 포커스가 연 요소(그 행 `수정`)로 돌아간다(PanelForm intent="edit").
   const update = useAction(updateCardUsageAction, { onSuccess: () => panelRef.current?.succeed() });
   const create = useAction(createCardUsageAction, {
     onSuccess: ({ data }) => {
+      savedSlipIdRef.current = null;
       const submitted = submittedRef.current;
       const next: CardUsageDefaults = {
         usedOn: today,
@@ -465,6 +501,7 @@ export function CardUsageForm({
   useEffect(() => {
     if (editKey === lastEditKey.current) return;
     lastEditKey.current = editKey;
+    setAttachError(null);
     if (result.serverError || result.validationErrors) reset();
   }, [editKey, result.serverError, result.validationErrors, reset]);
 
@@ -524,8 +561,59 @@ export function CardUsageForm({
     ? (purchase.statusReason ?? noCardBlock ?? blankBlock(blanks) ?? fxBlock ?? evidenceBlock ?? teamBlock ?? preview.cap?.blockedReason ?? undefined)
     : (blankBlock(blanks) ?? fxBlock ?? evidenceBlock ?? linkBlock ?? teamBlock ?? (overCap ? `${overCap}다른 줄 고르기` : undefined));
 
+  // 1차 저장과 새 건 `증빙` 줄의 첫 저장이 같은 입력을 쓴다(같은 zod · 같은 서버 판정).
+  function buildPayload(memo: FormDataEntryValue | null) {
+    // 수정: 저장된 견적 외 비용 줄을 그대로 두면 그 줄 id로 보낸다(연결 그대로 — 새 줄을 만들지 않는다, UC-1 상한).
+    const keptOutOfQuote = edit && edit.linkKind === "out_of_quote" && linkKind === "out_of_quote" && linkProject?.id === edit.project?.id && edit.line;
+    return {
+      corpCardId: selectedCardId,
+      usedOn,
+      merchantVendorId: merchant?.id ?? null,
+      currency,
+      amount: Number(amountRaw),
+      ...(currency !== "KRW" && fxValue ? { fxRate: fxValue } : {}),
+      evidenceTypeCode,
+      link: keptOutOfQuote
+        ? { kind: "line" as const, lineId: edit.line?.id ?? "" }
+        : linkKind === "team_cost"
+          ? { kind: "team" as const }
+          : linkKind === "quote_line" && linkLine
+            ? { kind: "line" as const, lineId: linkLine.id }
+            : linkKind === "out_of_quote" && linkProject
+              ? { kind: "out_of_quote" as const, projectId: linkProject.id, itemName: shownItemName.trim() || null }
+              : null,
+      memo: typeof memo === "string" && memo.trim() !== "" ? memo.trim() : null,
+    };
+  }
+
+  // 06-25 새 건 첫 저장 — 1차와 같은 입력 · 같은 서버 판정(막히면 파일을 받지 않고 그 이유를 막힘 자리에 둔다). 저장된 건은 한 번만 만든다.
+  async function saveForSlip(): Promise<SlipSave> {
+    if (savedSlipIdRef.current) return { ok: true, id: savedSlipIdRef.current };
+    if (blockedReason) return { ok: false, message: blockedReason };
+    const form = slipAreaRef.current?.closest("form");
+    if (!form) return { ok: false, message: EVIDENCE_UPLOAD_FAILED };
+    const payload = buildPayload(new FormData(form).get("memo"));
+    let outcome: Awaited<ReturnType<typeof createCardUsageAction>> | undefined;
+    try {
+      outcome = await createCardUsageAction(showUsedBy ? { ...payload, usedByUserId: usedById } : payload);
+    } catch {
+      outcome = undefined;
+    }
+    const id = outcome?.data?.id;
+    if (id) {
+      savedSlipIdRef.current = id;
+      return { ok: true, id };
+    }
+    return { ok: false, message: outcome?.serverError ?? firstValidationMessage(outcome?.validationErrors) ?? EVIDENCE_UPLOAD_FAILED };
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    // 파일을 놓아 이미 저장된 새 건(올리기가 모두 실패한 경우) — 같은 건을 한 번 더 만들지 않고 그 건의 수정 패널로.
+    if (!edit && !purchase && savedSlipIdRef.current && slipEditHref) {
+      router.replace(`${slipEditHref}${savedSlipIdRef.current}`, { scroll: false });
+      return;
+    }
     if (blockedReason) {
       setShowingResult(false);
       return;
@@ -548,29 +636,51 @@ export function CardUsageForm({
       return;
     }
     submittedRef.current = { corpCardId: selectedCardId, linkKind, project: linkKind === "team_cost" ? null : linkProject };
-    // 수정: 저장된 견적 외 비용 줄을 그대로 두면 그 줄 id로 보낸다(연결 그대로 — 새 줄을 만들지 않는다, UC-1 상한).
-    const keptOutOfQuote = edit && edit.linkKind === "out_of_quote" && linkKind === "out_of_quote" && linkProject?.id === edit.project?.id && edit.line;
-    const payload = {
-      corpCardId: selectedCardId,
-      usedOn,
-      merchantVendorId: merchant?.id ?? null,
-      currency,
-      amount: Number(amountRaw),
-      ...(currency !== "KRW" && fxValue ? { fxRate: fxValue } : {}),
-      evidenceTypeCode,
-      link: keptOutOfQuote
-        ? { kind: "line" as const, lineId: edit.line?.id ?? "" }
-        : linkKind === "team_cost"
-          ? { kind: "team" as const }
-          : linkKind === "quote_line" && linkLine
-            ? { kind: "line" as const, lineId: linkLine.id }
-            : linkKind === "out_of_quote" && linkProject
-              ? { kind: "out_of_quote" as const, projectId: linkProject.id, itemName: shownItemName.trim() || null }
-              : null,
-      memo: typeof memo === "string" && memo.trim() !== "" ? memo.trim() : null,
-    };
+    const payload = buildPayload(memo);
     if (edit) update.execute({ ...payload, amount: amountHidden ? null : payload.amount, id: edit.id, version: edit.version, usedByUserId: showUsedBy ? usedById : edit.usedByUserId });
     else executeCreate(showUsedBy ? { ...payload, usedByUserId: usedById } : payload);
+  }
+
+  useEffect(() => {
+    saveSlipRef.current = () => (savingSlipRef.current ??= saveForSlip().finally(() => (savingSlipRef.current = null)));
+  });
+
+  const slipOwnerId = edit?.id ?? null;
+  const slipActions = useMemo<AttachmentActions>(
+    () => ({
+      request: async (declaration) => {
+        let ownerId = slipOwnerId;
+        if (ownerId === null) {
+          const saved = await saveSlipRef.current();
+          if (!saved.ok) {
+            setAttachError(saved.message);
+            return { ok: false, message: saved.message };
+          }
+          ownerId = saved.id;
+        }
+        const requested = await requestCardSlipUploadAction({ cardUsageId: ownerId, ...declaration });
+        if (requested?.data) return { ok: true, intent: requested.data };
+        return { ok: false, message: requested?.serverError ?? EVIDENCE_UPLOAD_FAILED };
+      },
+      complete: async (intentId) => {
+        const completed = await completeEvidenceUploadAction({ intentId });
+        const data = completed?.data;
+        const file = data?.file;
+        if (file) return { ok: true, file: { id: file.id, name: file.originalName ?? "", sizeBytes: file.sizeBytes ?? 0, createdAt: new Date(file.createdAt ?? Date.now()).toISOString() } };
+        if (data?.failed && data.message && data.retry) return { ok: false, message: data.message, retry: data.retry };
+        return { ok: false, message: completed?.serverError ?? EVIDENCE_UPLOAD_FAILED, retry: "restart" };
+      },
+      remove: async (fileId) => Boolean((await removeEvidenceAction({ fileId }))?.data),
+      viewUrl: async (fileId) => (await createEvidenceViewUrlAction({ fileId }))?.data?.url ?? null,
+    }),
+    [slipOwnerId],
+  );
+
+  // 올리기 · 지우기 뒤 — 수정은 서버 값을 다시 읽고(즉시 저장 · version 그대로), 새 건은 저장된 건의 수정 패널로 바뀐다.
+  function onSlipChanged() {
+    const savedId = savedSlipIdRef.current;
+    if (!edit && savedId && slipEditHref) router.replace(`${slipEditHref}${savedId}`, { scroll: false });
+    else router.refresh();
   }
 
   function pickMerchant(next: Merchant) {
@@ -598,6 +708,7 @@ export function CardUsageForm({
         blockedReason={showingResult ? undefined : blockedReason}
         reason={
           result.serverError ??
+          attachError ??
           (!purchase && overCap && !showingResult && blankBlock(blanks) === undefined && !fxBlock && !evidenceBlock ? (
             <>
               {overCap}
@@ -615,13 +726,14 @@ export function CardUsageForm({
           key={gen}
           onInput={() => setShowingResult(false)}
           onChange={() => setShowingResult(false)}
-          onKeyDown={
-            purchase
-              ? (event) => {
-                  if (event.key === "Enter" && !event.ctrlKey && event.target instanceof HTMLInputElement) event.preventDefault();
-                }
-              : undefined
-          }
+          onKeyDown={(event) => {
+            if (slip?.canAdd && isCtrlCombo(event, "u")) {
+              event.preventDefault();
+              setPickSignal((current) => current + 1);
+              return;
+            }
+            if (purchase && event.key === "Enter" && !event.ctrlKey && event.target instanceof HTMLInputElement) event.preventDefault();
+          }}
         >
           {purchase ? (
             // S13 본문 첫 줄 — `{번호} · {품목}`(말줄임 + title) + 링크 아이콘(S11과 같은 3차).
@@ -865,6 +977,24 @@ export function CardUsageForm({
             </>
           ) : null}
           <TextField id="card-usage-memo" name="memo" label="메모" maxLength={500} defaultValue={edit?.memo ?? ""} />
+          {slip ? (
+            <div data-ui="field-row" className={rowStyles.row} ref={slipAreaRef}>
+              <Form.Field id="card-slip-picker" label="증빙">
+                <Attachments
+                  mode="edit"
+                  files={slip.files}
+                  actions={slipActions}
+                  maxMb={slip.maxMb}
+                  uploadFailedText={EVIDENCE_UPLOAD_FAILED}
+                  onChanged={onSlipChanged}
+                  openSignal={pickSignal}
+                  pickerId="card-slip-picker"
+                  canAdd={slip.canAdd}
+                  deletableIds={slip.deletableIds}
+                />
+              </Form.Field>
+            </div>
+          ) : null}
         </div>
       </PanelForm>
       <MerchantPickDialog open={pickOpen} onClose={() => setPickOpen(false)} onPick={pickMerchant} />

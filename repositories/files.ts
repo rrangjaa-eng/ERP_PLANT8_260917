@@ -1,5 +1,5 @@
 import { and, asc, eq, gte, inArray, isNotNull, isNull, ne, notExists, or, sql, type SQL } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
+import { alias, type AnyPgColumn } from "drizzle-orm/pg-core";
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { files, users } from "@/db/schema";
@@ -12,6 +12,12 @@ export type FileRow = InferSelectModel<typeof files>;
 export type FileInsert = Omit<InferInsertModel<typeof files>, "createdAt" | "removedAt" | "removedBy" | "voidedAt" | "voidedBy" | "voidReason">;
 
 const alive = () => and(isNull(files.removedAt), isNull(files.voidedAt));
+
+// 06-25(C5 · CF-6): 그 주인 id 열을 가진 행에 거는 「살아 있는 파일 행 1개 이상」 한 조건 — 카드 사용 목록 `hasCardSlip`이 쓴다(`alive()` 정의 그대로).
+export function aliveFileExists(viewer: Viewer, ownerKind: string, ownerId: AnyPgColumn): SQL<boolean> {
+  void viewer;
+  return sql<boolean>`exists (select 1 from ${files} where ${files.ownerKind} = ${ownerKind} and ${files.ownerId} = ${ownerId} and ${alive()})`;
+}
 
 export async function insertFile(viewer: Viewer, values: FileInsert, tx: DbOrTx): Promise<FileRow> {
   void viewer;

@@ -169,3 +169,46 @@ Task 1과 2는 같은 폼 파일(`card-usage-form.tsx`)을 함께 바꿔서 한 
 - 파일 존재: test/integration/card-usage-evidence.test.ts · test/e2e/card-usage-evidence.spec.ts · docs/design/checks/2026-10-13-06-25-card-slips.md — FOUND
 - 커밋 존재: 1c53276 · cb713a1 — FOUND (`git log ba46b2f..HEAD`)
 - `commits: 2`는 `git rev-list --count ${plan_head_before}..HEAD`로 측정(코드 커밋만, 이 SUMMARY 커밋 제외)
+
+## 검토 후 고친 것
+
+독립 DOM 감사(`/mnt/project-files/notes/06-review/06-25-dom-audit.md`)의 결함 3건. 실패 E2E를 먼저 두고(RED 확인) 고쳤다.
+
+| 감사 | 심각도 | 고친 곳 | 내용 | 커밋 |
+|---|---|---|---|---|
+| D-1 | 중간 | `app/(app)/cards/card-usage-form.tsx` (`uploading` 상태 · `blockedReason` · `<Attachments onUploadingChange>`) | 올리는 행이 있는 동안 1차가 `aria-disabled` + 이유 줄 `증빙 올리는 중 · 잠시 뒤 제출`로 막힌다(지출결의 `UPLOADING_REASON` 재사용). 클릭 · Ctrl+Enter는 저장을 부르지 않는다(E2E: 이 건 id를 실은 서버 액션 0 · version 그대로). 첫 저장(`saveForSlip`)은 칸 막힘 `formBlock`만 본다 | 7549f6e |
+| D-3 | 낮음 | `app/(app)/cards/card-usage-form.tsx` (`refuseWhileBlocked` · 증빙 칸 래퍼 `onChangeCapture`/`onDropCapture`) | 첫 저장을 못 하는 새 건(칸 막힘)에 놓은 파일은 받지 않는다 — 막힘 줄 한 곳만 남고 실패 파일 행은 만들지 않는다 | 38fc6b6 |
+| D-2 | 낮음 | `ui/attachments/Attachments.module.css` (`.name`) · `ui/attachments/Attachments.tsx` (파일 행 · 올리는 행 · 무효 행 `title`) | 공용 컴포넌트. 한 줄 말줄임(`nowrap` · `ellipsis`) + `title`. E2E가 1280 · 375 · 320에서 한 줄 · title 일치 · 삭제가 행 밖으로 밀리지 않음을 단언 | 87db727 |
+| 점검표 | — | `docs/design/checks/2026-10-13-06-25-card-slips.md` | 「화면:」에 Attachments 두 파일 추가 · 항목 근거 갱신 · 「감사 뒤 수정」 절 | ba01493 |
+
+- 디버깅 기록: D-1 연결 직후 `새 건 첫 저장 첨부`가 실패했다. 원인은 올리는 행이 생기자 `blockedReason`에 올리는 중이 들어가 `saveForSlip`의 막힘 검사에 걸려 첫 저장이 거부된 것이다(실패 행 문구가 `증빙 올리는 중 · 잠시 뒤 제출`). 칸 막힘(`formBlock`)과 1차 막힘(`blockedReason`)을 나눠 고쳤다.
+- D-1 E2E 첫 판은 금액 미리보기 서버 액션(`previewCardAmountsAction`) POST 1건을 저장으로 센 오탐이 있어, 이 건 id를 싣는 액션만 세도록 고쳤다.
+- 위의 「Known/기록」 중 이전 문장 「막힌 새 건에 파일을 놓으면 … 실패 행 + 막힘 이유가 보인다」는 D-3으로 바뀌었다: 이제 막힘 이유 한 줄만 선다(실패 행 없음).
+
+### 검토 후 고친 뒤 검증
+
+- `pnpm lint` exit 0 · `pnpm typecheck` exit 0 · `pnpm test:unit` 304 파일 / 4578 테스트 통과
+- 통합 테스트: 이번 수정은 UI 파일과 E2E뿐이라 건드린 통합 테스트 파일 없음(돌리지 않음)
+- `CI=true` E2E(`--no-deps`, 격리 DB `erp_0625f_test`, `flock`)
+  - desktop: card-usage-evidence · card-usage · card-usage-panel-width · expense-form · expense-submit-mobile-approval · expense-new · evidence-lifecycle · expense-a11y · approval-reserve-evidence — 86 통과 · 1 실패(`폰 전표 사진 축소`, 아래)
+  - mobile-375: mobile-card-usage-320 · mobile-expense-form · mobile-expense-new · mobile-expense-320 · mobile-expense-wave11 — 33 통과
+  - 최종 커밋 뒤 card-usage-evidence + card-usage 29 통과
+- `폰 전표 사진 축소`는 병렬 부하에서 4000x3000 미리보기 디코딩이 5초 폴링을 넘긴 1회 실패였다. 같은 스펙 `--repeat-each=4`는 4/4 통과, 최종 커밋 뒤 재실행도 통과해 환경 지연으로 본다(수정과 무관: D-1 연결 전후 모두 통과한 기록이 있다).
+
+## 검토 후 남긴 것
+
+기록만 하고 고치지 않았다(감사 관찰 O-1 ~ O-9).
+
+- **O-1**: 폰 `하나 더` 버튼 너비 35.9px(높이 44). 05 공용 컴포넌트 소유 · 지출결의와 같은 값. 높이를 44 영역으로 보는 §7-10 기준이면 통과에 가깝다
+- **O-2**: 수정 권리가 있는 주인은 폰 목록 행 탭이 수정 패널로 가서 목록에서 증빙 `있음/—`을 볼 길이 없다(행 시트 `증빙` 줄은 권리 없는 사람에게만). 설계대로
+- **O-3**: 폰 목록 행 128px(375)/159px(320) · 칸 2~6줄 — 적용 전과 같은 값(06-05 열 접기 구조)
+- **O-4**: 새 건 첫 저장 뒤 수정 패널로 바뀔 때 포커스가 사용일 입력(첫 칸)으로 간다. 방금 놓은 파일 행/`하나 더`가 아니라 키보드 사용자는 증빙 칸까지 다시 Tab해야 한다
+- **O-5**: 되돌리기 거부 문구 `이미 첨부된 파일 · 다른 파일 고르기`는 목록 화면에 「다른 파일 고르기」 자리가 없다 — UI-SPEC이 정한 문구라 바꾸지 않았다
+- **O-6**: 13자리 금액은 도메인이 거부한다(10자리 9,999,999,999는 칸 안에 선다)
+- **O-7**: 열림 애니메이션 중 패널 left 842 일시 값 — 1.5초 뒤 안정, 결함 아님
+- **O-8**: `beforeunload` 경고와 업로드 중 저장 클릭 결과는 감사에서 측정하지 못했다. 저장 클릭은 이번 E2E가 막힘을 확인했다. **`beforeunload` 경고는 카드 사용 폼에 아직 없다**(SYSTEM §7-10은 지출결의 · 06 카드 사용 · 구매 완료의 올리는 중 `beforeunload`를 정한다). 이번 지시 범위(D-1: 1차 막힘)에 넣지 않았고, 구매 완료 패널은 첨부가 없다. 후속으로 카드 사용 폼에 같은 `beforeunload` 효과(`expense-form.tsx:233`)를 붙일지 결정이 필요하다
+- **O-9**: 768(좁은 PC)에서는 증빙 열이 숨는다 — 플랜 must_have 「좁은 PC는 P3 증빙부터 숨긴다」 그대로
+
+추가로 알린다.
+- SYSTEM §7-10은 올리는 중 막힘을 `reasonTone: "info"`(진행 상태 톤)로 정한다. `PanelForm`에는 톤 속성이 없어(공용 `ui/side-panel`) 이번에는 막힘 톤 그대로 문구만 선다. 톤 지원은 PanelForm 변경이라 이번 범위 밖이다
+- D-3은 막힌 새 건(칸 막힘)만 다룬다. 서버가 첫 저장을 거부하는 경우(예: 서버 오류)는 기존대로 실패 행 + `attachError` 줄이 같은 문구를 두 번 보일 수 있다 — 감사에서 측정된 바 없어 건드리지 않았다

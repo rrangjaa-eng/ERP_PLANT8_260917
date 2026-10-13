@@ -87,7 +87,7 @@ export function RevisionSection({
               type="button"
               variant="tertiary"
               aria-expanded={expanded}
-              aria-controls={evidenceHeadingId}
+              aria-controls={expanded ? evidenceHeadingId : undefined}
               aria-label={count > 0 ? `${row.seq}차 승인 증빙 ${count}` : `${row.seq}차 승인 증빙`}
               onClick={() => {
                 if (expanded) closedEvidenceRef.current = true;

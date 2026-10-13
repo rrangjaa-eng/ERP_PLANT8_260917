@@ -235,9 +235,14 @@ test.describe("차수 승인 증빙 마감 (06-16 Task 2 — F10 · 04 S5 개정
 
     const evidence = revisionTable(page).getByRole("button", { name: "2차 승인 증빙", exact: true });
     const lines = revisionActionCell(page, 1).getByRole("button");
+    // DOM 감사 O-2: 닫힌 동안 aria-controls는 없는 id를 가리키지 않는다 — 펼치면 제목 id를 가리킨다.
+    await expect(evidence).not.toHaveAttribute("aria-controls");
     await evidence.click();
     await expect(evidence).toHaveText("승인 증빙");
     await expect(evidence).toHaveAttribute("aria-expanded", "true");
+    const controls = await evidence.getAttribute("aria-controls");
+    expect(controls).toBeTruthy();
+    await expect(page.locator(`[id="${controls}"]`)).toHaveCount(1);
     await expect(page.getByRole("heading", { name: "상세 견적 2차 승인 증빙", exact: true })).toBeFocused();
 
     await lines.click();
@@ -252,6 +257,7 @@ test.describe("차수 승인 증빙 마감 (06-16 Task 2 — F10 · 04 S5 개정
     await evidence.click();
     await expect(evidence).toHaveAttribute("aria-expanded", "false");
     await expect(evidence).toBeFocused();
+    await expect(evidence).not.toHaveAttribute("aria-controls");
   });
 
   test("저장 안 한 견적 편집이 있어도 업로드가 되고 상세의 `일괄 저장` N은 그대로다", async ({ page }) => {

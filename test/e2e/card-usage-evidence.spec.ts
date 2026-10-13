@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Locator, type Page } from "@playwright/test";
-import { count, eq } from "drizzle-orm";
+import { and, count, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
-import { corpCardUsages, files, quoteLines } from "@/db/schema";
+import { corpCardUsages, expenses, files, quoteLines } from "@/db/schema";
 import { createCorpCard } from "@/domain/corp-cards";
 import { createCardUsage, precheckCardUsage } from "@/domain/corp-card-usages";
 import { createOrgUnit, createTeam } from "@/domain/org";
@@ -16,7 +16,7 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { seoulToday } from "@/lib/dates";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
-import { insertTempRole } from "./expense-fixture";
+import { insertTempRole, setupExpenseE2E, submitLineExpense } from "./expense-fixture";
 import { E2E_ONLINE_VENDOR_NAME, enableOnlineVendorSetting } from "./online-vendor";
 
 // 06-25(EVID-01 카드 몫 · UI-SPEC S7 · S8 · S9 · S13): 카드 전표 — 수정 패널 `증빙` 줄 · 새 건 첫 저장 · S13 첨부 없음 · 폰 사진 축소.
@@ -267,6 +267,69 @@ test.describe("카드 전표 (06-25 Task 2 — 새 건 첫 저장 · S13 · 폰)
     expect(size.w).toBeLessThanOrEqual(2000);
     expect(size.h).toBeLessThanOrEqual(2000);
     expect(Math.max(size.w, size.h)).toBe(2000);
+    await page.context().close();
+  });
+});
+
+test.describe("카드 전표 (06-25 Task 3 — 규칙 마감)", () => {
+  test("마지막 전표 삭제 확인 창 없음", async ({ browser, baseURL }) => {
+    const holder = await makeHolder();
+    const usageId = await seedUsage(holder, 44_000);
+    const page = await loginPage(browser, baseURL, holder.person);
+    await page.goto(`/cards?editId=${usageId}`);
+    const sheet = editPanel(page);
+    const input = sheet.getByTestId("attachments-input");
+    await waitForHydration(input);
+    await input.setInputFiles(await uniqueImage(page));
+    const row = fileRows(sheet).filter({ hasText: /slip-.*\.jpg/ });
+    await expect(row).toBeVisible({ timeout: UPLOAD_WAIT });
+
+    await row.getByRole("button", { name: "삭제" }).click();
+
+    // 05 보통 삭제 그대로 — 확인 창이 없다(열린 dialog는 옆 패널 하나뿐).
+    await expect(page.getByRole("alertdialog")).toHaveCount(0);
+    await expect(page.getByRole("dialog")).toHaveCount(1);
+    await expect(fileRows(sheet)).toHaveCount(0, { timeout: UPLOAD_WAIT });
+    expect(await db.select({ id: files.id }).from(files).where(and(eq(files.ownerId, usageId), isNull(files.removedAt)))).toHaveLength(0);
+    await sheet.getByRole("button", { name: /^취소/ }).click();
+    await expect(sheet).toBeHidden();
+    await expect.poll(() => slipCellText(page)).toBe("—");
+    await page.context().close();
+  });
+
+  test("카드 패널 중복 번호", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const expenseId = await submitLineExpense(browser, baseURL, fx, "tracer");
+    const [expense] = await db.select({ number: expenses.number }).from(expenses).where(eq(expenses.id, expenseId));
+    const number = expense?.number ?? "";
+    expect(number).not.toBe("");
+    const suffix = randomUUID().slice(0, 8);
+    const card = await createCorpCard(SYSTEM_VIEWER, { issuer: `신한-${suffix}`, numberLast4: "7791", label: `E2E중복카드-${suffix}`, kind: "personal", holderUserId: fx.pm.viewer.id });
+    if (!card.id) throw new Error("카드 id 없음");
+    const holder: Holder = { person: fx.pm, teamId: "", teamName: "", cardId: card.id, cardLabel: `E2E중복카드-${suffix}` };
+    const first = await seedUsage(holder, 55_000);
+    const second = await seedUsage(holder, 56_000);
+
+    // 첫 건에 사진을 올려 브라우저가 계산한 값 그대로의 파일 행을 만들고, 그 행을 담당 지출결의 증빙으로 옮긴다(같은 바이트).
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await page.goto(`/cards?editId=${first}`);
+    const sheet = editPanel(page);
+    const input = sheet.getByTestId("attachments-input");
+    await waitForHydration(input);
+    const image = await uniqueImage(page);
+    await input.setInputFiles(image);
+    // 행은 올리는 중에도 보인다 — 완료 통보로 파일 행이 생길 때까지 기다린 뒤 옮긴다.
+    await expect.poll(() => slipFileCount(first), { timeout: UPLOAD_WAIT }).toBe(1);
+    await db.update(files).set({ ownerKind: "expense", ownerId: expenseId }).where(eq(files.ownerId, first));
+
+    await page.goto(`/cards?editId=${second}`);
+    const next = editPanel(page);
+    const nextInput = next.getByTestId("attachments-input");
+    await waitForHydration(nextInput);
+    await nextInput.setInputFiles(image);
+
+    await expect(next.getByText(`같은 파일이 ${number} 증빙에 있음 · 다른 파일 고르기`)).toBeVisible({ timeout: UPLOAD_WAIT });
+    expect(await db.select({ id: files.id }).from(files).where(eq(files.ownerId, second))).toHaveLength(0);
     await page.context().close();
   });
 });

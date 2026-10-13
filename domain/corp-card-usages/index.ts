@@ -16,6 +16,7 @@ import { recentFxRate } from "@/domain/money/currency";
 import { seoulToday } from "@/lib/dates";
 import { listCodeItems } from "@/repositories/code-tables";
 import { findCorpCardById, listCorpCards, type CorpCardRow } from "@/repositories/corp-cards";
+import { findLiveShaConflicts } from "@/repositories/files";
 import { findUserNamesByIds, listUsers } from "@/repositories/users";
 import { findMembershipAtDate, findMembershipsAtDate } from "@/repositories/team-memberships";
 import { findTeamsByIds } from "@/repositories/teams";
@@ -45,6 +46,7 @@ import {
 import { clampPage, LIST_PAGE_SIZE, pageCountFrom } from "@/lib/paging";
 import { withTransaction } from "@/lib/db-transaction";
 import { gate, GateBlockedError } from "@/domain/rules/gate";
+import { duplicateScopeKinds, EVIDENCE_DUPLICATE_HIDDEN } from "@/domain/evidence/upload-checks";
 import "@/domain/rules/register";
 import { CompletedProjectError } from "@/domain/projects";
 import { quoteLockReason } from "@/domain/quotes/edit-scope";
@@ -913,6 +915,9 @@ export async function restoreCardUsage(
       });
       if (!cap.allowed) throw new GateBlockedError(cap.reason);
     }
+    // 06-25(T-06-201): 보관 사이 같은 파일이 지출결의 · 다른 카드 사용에 살아 있으면(보관 건 제외) 되돌리지 않는다 — 한 전표가 두 비용 주인에 남지 않게 같은 tx로 다시 본다.
+    const taken = await findLiveShaConflicts(viewer, { ownerKind: CARD_USAGE_ENTITY, ownerId: pre.usageId, ownerKinds: duplicateScopeKinds(CARD_USAGE_ENTITY) }, innerTx);
+    if (taken.length > 0) throw new GateBlockedError(EVIDENCE_DUPLICATE_HIDDEN);
     const version = await restoreCardUsageRow(viewer, { id: pre.usageId, version: input.version }, innerTx);
     if (version === null) throw new CardUsageRejectedError(STALE_VERSION);
     await recordAction(viewer, { actionType: "restore", entity: CARD_USAGE_ENTITY, entityId: pre.usageId }, { tx: innerTx });

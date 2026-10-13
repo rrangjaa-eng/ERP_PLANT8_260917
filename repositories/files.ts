@@ -2,7 +2,7 @@ import { and, asc, eq, gte, inArray, isNotNull, isNull, ne, notExists, or, sql, 
 import { alias, type AnyPgColumn } from "drizzle-orm/pg-core";
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
-import { files, users } from "@/db/schema";
+import { corpCardUsages, files, users } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 
 // 05-04(EVID-01): 증빙 파일 표. 「살아 있는 파일」 = 삭제되지 않았고(removed_at) 무효 처리되지 않은(voided_at) 행 —
@@ -12,6 +12,13 @@ export type FileRow = InferSelectModel<typeof files>;
 export type FileInsert = Omit<InferInsertModel<typeof files>, "createdAt" | "removedAt" | "removedBy" | "voidedAt" | "voidedBy" | "voidReason">;
 
 const alive = () => and(isNull(files.removedAt), isNull(files.voidedAt));
+
+// 06-25(T-06-201 · drift ⑸): 보관된 카드 사용의 전표는 「다른 곳에 붙은 같은 파일」로 세지 않는다 — 업로드 중복(findActiveBySha) · 되살리기 · 되돌리기 재확인이
+// 이 한 조건을 나눠 쓴다(주인 종류가 카드 사용이 아니면 항상 참 — 다른 종류 결과는 그대로). 주인 행이 없으면 보관이 아니다.
+const CARD_SLIP_OWNER = "corp_card_usage";
+function notArchivedCardSlip(file: { ownerKind: AnyPgColumn; ownerId: AnyPgColumn }): SQL {
+  return sql`not (${file.ownerKind} = ${CARD_SLIP_OWNER} and exists (select 1 from ${corpCardUsages} where ${corpCardUsages.id} = ${file.ownerId} and ${corpCardUsages.archivedAt} is not null))`;
+}
 
 // 06-25(C5 · CF-6): 그 주인 id 열을 가진 행에 거는 「살아 있는 파일 행 1개 이상」 한 조건 — 카드 사용 목록 `hasCardSlip`이 쓴다(`alive()` 정의 그대로).
 export function aliveFileExists(viewer: Viewer, ownerKind: string, ownerId: AnyPgColumn): SQL<boolean> {
@@ -44,7 +51,7 @@ export async function findActiveBySha(
   return tx
     .select({ id: files.id, ownerKind: files.ownerKind, ownerId: files.ownerId })
     .from(files)
-    .where(and(eq(files.sha256, sha256), inArray(files.ownerKind, [...ownerKinds]), alive()))
+    .where(and(eq(files.sha256, sha256), inArray(files.ownerKind, [...ownerKinds]), alive(), notArchivedCardSlip(files)))
     .orderBy(asc(files.createdAt), asc(files.id));
 }
 
@@ -122,20 +129,39 @@ export async function markOwnerFilesRemoved(
 // 06-16(drift ⑸): 「다른 주인에 살아 있는 같은 파일」 — 같은 sha256 · 중복 묶음(scopeKinds) 안 · 주인 종류가 다르거나 주인 id가 다른 · 삭제 · 무효 아님.
 // 되살리기 두 곳(지운 문서 되돌리기 · 새 주인 증빙 되돌리기)이 조건 UPDATE 안 NOT EXISTS로 쓴다 — 조회와 UPDATE 사이 틈이 없다.
 // sameOwnerBlocks — 같은 주인에 다시 붙은 같은 파일도 막는다(한 파일 되살리기). 거짓이면 05 C3처럼 다른 주인만(주인 단위 되돌리기는 같은 주인 파일을 같은 문장에서 함께 되살린다).
+const otherFiles = () => alias(files, "other_files");
+
+function takenCondition(other: ReturnType<typeof otherFiles>, scopeKinds: readonly string[], sameOwnerBlocks: boolean): SQL | undefined {
+  return and(
+    eq(other.sha256, files.sha256),
+    inArray(other.ownerKind, [...scopeKinds]),
+    ...(sameOwnerBlocks ? [] : [or(ne(other.ownerKind, files.ownerKind), ne(other.ownerId, files.ownerId))]),
+    isNull(other.removedAt),
+    isNull(other.voidedAt),
+    notArchivedCardSlip(other),
+  );
+}
+
 function takenElsewhere(tx: DbOrTx, scopeKinds: readonly string[], sameOwnerBlocks: boolean) {
-  const other = alias(files, "other_files");
+  const other = otherFiles();
+  return tx.select({ id: other.id }).from(other).where(takenCondition(other, scopeKinds, sameOwnerBlocks));
+}
+
+// 06-25(T-06-201): 그 주인의 살아 있는 파일과 SHA-256이 같은 다른 주인(ownerKinds 안 · 보관 카드 사용 제외)의 살아 있는 파일 행 — 카드 사용 되돌리기가 같은 tx로 다시 본다.
+// 조건은 위 도우미(takenCondition)와 한 벌이다.
+export async function findLiveShaConflicts(
+  viewer: Viewer,
+  input: { ownerKind: string; ownerId: string; ownerKinds: readonly string[] },
+  tx: DbOrTx,
+): Promise<{ id: string }[]> {
+  void viewer;
+  if (input.ownerKinds.length === 0) return [];
+  const other = otherFiles();
   return tx
     .select({ id: other.id })
-    .from(other)
-    .where(
-      and(
-        eq(other.sha256, files.sha256),
-        inArray(other.ownerKind, [...scopeKinds]),
-        ...(sameOwnerBlocks ? [] : [or(ne(other.ownerKind, files.ownerKind), ne(other.ownerId, files.ownerId))]),
-        isNull(other.removedAt),
-        isNull(other.voidedAt),
-      ),
-    );
+    .from(files)
+    .innerJoin(other, takenCondition(other, input.ownerKinds, false))
+    .where(and(eq(files.ownerKind, input.ownerKind), eq(files.ownerId, input.ownerId), alive()));
 }
 
 // 지운 문서를 되돌릴 때 그 삭제가 뗀 파일(삭제 시각과 같은 removed_at)만 되살린다 — 그 전에 따로 뗀 파일은 그대로.

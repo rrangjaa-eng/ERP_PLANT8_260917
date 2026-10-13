@@ -2,21 +2,22 @@ import { randomUUID } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db/client";
-import { expenseEvidenceReviews, expensePayments, expenses, files } from "@/db/schema";
+import { expenseEvidenceReviews, expensePayments, expenses, files, quoteLines } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertVisibility } from "@/repositories/permissions";
 import { ForbiddenError } from "@/domain/permissions/can";
-import { completeExpensePayment, PayableChangedError, PaymentConflictError, previewPayable, saveScheduledPayDate } from "@/domain/payments";
+import { completeExpensePayment, getPaymentView, loadEvidenceOverrun, PayableChangedError, PaymentConflictError, previewPayable, saveScheduledPayDate } from "@/domain/payments";
 import { BATCH_ROW_FAILED, batchRowOutcome, completePaymentsBatch } from "@/domain/payments/batch";
-import { listPaymentTargets, parsePaymentEvidenceFilter, PAYMENT_EVIDENCE_FILTERS } from "@/domain/payments/targets";
-import { EVIDENCE_UNCONFIRMED } from "@/domain/payments/action-row";
+import { getEvidenceConfirmView, listPaymentTargets, parsePaymentEvidenceFilter, PAYMENT_EVIDENCE_FILTERS, sumSelectedTransfers } from "@/domain/payments/targets";
+import { DIFF_REASON_REQUIRED, EVIDENCE_UNCONFIRMED } from "@/domain/payments/action-row";
+import { diffKrw, sumKrw } from "@/domain/money";
 import { GateBlockedError } from "@/domain/rules/gate";
 import { confirmEvidence } from "@/domain/evidence-reviews";
 import { voidEvidence } from "@/domain/evidence";
 import { approveDocument } from "@/domain/approvals";
 import { createExpenseFromLines } from "@/domain/expenses";
 import { loadTaxRates } from "@/domain/money/tax";
-import { addHistorizedValue } from "@/domain/settings/registry";
+import { addHistorizedValue, cancelHistorizedValue } from "@/domain/settings/registry";
 import { PAYMENT_METHOD_EVIDENCE_PAIRS, TAX_VAT_RATE } from "@/domain/settings/keys";
 import { seedCodeItem } from "@/repositories/code-tables";
 import { upsertSimpleValue } from "@/repositories/settings";
@@ -27,6 +28,7 @@ import { upsertPermission } from "@/repositories/permissions";
 import { TAX_UNAVAILABLE } from "@/domain/expenses/gate";
 import { DATE_FORMAT_ERROR } from "@/domain/expenses/draft-fields";
 import { completePaymentsBatchAction } from "@/app/(app)/expenses/actions";
+import { confirmEvidenceAction } from "@/app/(app)/expenses/[id]/actions";
 import { makePerson } from "./approvals-fixtures";
 import { addApprovedRevision, attachEvidence, makeEvidenceManager, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
 import { approvedExpenseWithEvidence, approvedExpenseWithoutEvidence, makePaymentManager, setEvidenceRequired, type ApprovedExpense } from "./fixtures/payments";
@@ -520,5 +522,258 @@ describe("검토 반영 (06-15 독립 검토)", () => {
       expect(result?.validationErrors?.payDate?._errors).toEqual([DATE_FORMAT_ERROR]);
     }
     expect(await livePayments(a.expenseId)).toHaveLength(0);
+  });
+});
+
+// ── 06-17 이체액 편집 · 서버 합(합계 번호) · rowStates ──────────────────────
+
+describe("이체액 편집 · 서버 합 (06-17 Task 1)", () => {
+  it("sumSelectedTransfers — 합 = sumKrw(이체액 편집값 · 없으면 지급 총액), 행별 차이 = diffKrw(이체액, 지급 총액), 선택 불가 행은 합에서 빠지고 rowStates selectable false / 지급 권한 없음 → ForbiddenError", async () => {
+    const payer = await makePayer();
+    const { fx, a, b } = await twoPayable();
+    const [p2Line] = await extraLines(fx, 1);
+    if (!p2Line) throw new Error("줄 없음");
+    const [p2] = await approvedMany(fx, [p2Line], true);
+    if (!p2) throw new Error("P2 문서 없음");
+    const payableA = await payableNow(payer, a);
+    const payableB = await payableNow(payer, b);
+
+    const result = await sumSelectedTransfers(payer, {
+      seq: 7,
+      rows: [{ id: a.expenseId, transferKrw: payableA - 3_300 }, { id: b.expenseId }, { id: p2.expenseId, transferKrw: 1_000 }],
+    });
+    expect(result.seq).toBe(7);
+    expect(result.totalKrw).toBe(sumKrw([diffKrw(payableA, 3_300), payableB]));
+    expect(result.diffs).toEqual({ [a.expenseId]: -3_300, [b.expenseId]: 0 });
+    expect(result.rowStates.find((row) => row.id === p2.expenseId)).toMatchObject({ selectable: false });
+
+    expect(await caught(sumSelectedTransfers(fx.pm, { seq: 1, rows: [{ id: a.expenseId }] }))).toBeInstanceOf(ForbiddenError);
+  });
+
+  it("고른 행 상태 일괄 조회 — 두 쪽에 걸친 id · 처리된 id · 게이트로 막힌 id는 행마다 { id, selectable, version, payableKrw }(P4만 selectable), 없는 id · 지급 대상이 아닌 문서는 싣지 않는다(r2 F-2)", async () => {
+    const payer = await makePayer();
+    const { fx, a, b } = await twoPayable();
+    const [thirdLine, p2Line, draftLine] = await extraLines(fx, 3);
+    if (!thirdLine || !p2Line || !draftLine) throw new Error("줄 셋이 필요하다");
+    const [third] = await approvedMany(fx, [thirdLine], false);
+    const [p2] = await approvedMany(fx, [p2Line], true);
+    if (!third || !p2) throw new Error("문서 없음");
+    const draft = (await createExpenseFromLines(fx.pm, { lineIds: [draftLine] })).created[0]?.expenseId;
+    if (!draft) throw new Error("작성 중 문서 없음");
+    // 쪽 크기 2 — P4 세 행 중 하나는 둘째 쪽(지금 쪽 밖)에 있다(51번째 행과 같은 처지 — 쪽 크기만 줄였다).
+    const pageOne = rowsOf(await listPaymentTargets(payer, { evidence: "payable", page: 1 }, { pageSize: 2 })).map((row) => row.id);
+    const pageTwo = rowsOf(await listPaymentTargets(payer, { evidence: "payable", page: 2 }, { pageSize: 2 })).map((row) => row.id);
+    expect(pageOne).toHaveLength(2);
+    expect(pageTwo).toHaveLength(1);
+    const [offPage] = pageTwo;
+    const [paidId, keptId] = pageOne;
+    if (!offPage || !paidId || !keptId) throw new Error("쪽 행 없음");
+    const docOf = (id: string) => [a, b, third].find((doc) => doc.expenseId === id) ?? a;
+    const paid = await completePaymentsBatch(payer, { payDate: seoulToday(), rows: [await snapshotOf(payer, docOf(paidId))] });
+    expect(paid.processedIds).toEqual([paidId]);
+
+    const result = await sumSelectedTransfers(payer, {
+      seq: 3,
+      rows: [keptId, offPage, paidId, p2.expenseId, draft, randomUUID()].map((id) => ({ id })),
+    });
+    expect(result.seq).toBe(3);
+    const states = new Map(result.rowStates.map((row) => [row.id, row]));
+    expect([...states.keys()].sort()).toEqual([keptId, offPage, paidId, p2.expenseId].sort());
+    // 검토 반영(D-2) — 결과 줄 ① · ②가 지금 쪽 밖 행도 세도록 견적 줄 · 선결제를 함께 싣는다(06-15 paymentTargetRow 같은 칸).
+    const [offDoc] = await db.select({ quoteLineId: expenses.quoteLineId }).from(expenses).where(eq(expenses.id, offPage));
+    expect(typeof offDoc?.quoteLineId).toBe("string");
+    expect(states.get(offPage)).toEqual({
+      id: offPage,
+      selectable: true,
+      version: await versionOf(offPage),
+      payableKrw: await payableNow(payer, docOf(offPage)),
+      quoteLineId: offDoc?.quoteLineId,
+      prepaid: false,
+    });
+    expect(states.get(keptId)).toMatchObject({ selectable: true, version: await versionOf(keptId) });
+    expect(states.get(paidId)).toMatchObject({ selectable: false });
+    expect(states.get(p2.expenseId)).toMatchObject({ selectable: false, version: await versionOf(p2.expenseId) });
+    expect(Object.keys(result.diffs).sort()).toEqual([keptId, offPage].sort());
+  });
+
+  it("처리 요청 zod — 이체액 ≠ 기대 지급 총액인데 차이 사유가 비면 그 행 차이 사유 칸 오류 `차이 사유 없음 · 사유 적기` · 지급 0건", async () => {
+    const payer = await makePayer();
+    const { a } = await twoPayable();
+    const row = await snapshotOf(payer, a);
+    session.viewer = payer;
+
+    for (const diffReason of [undefined, "  "]) {
+      const result = await completePaymentsBatchAction({ payDate: seoulToday(), rows: [{ ...row, transferKrw: row.expectedPayableKrw - 3_300, ...(diffReason === undefined ? {} : { diffReason }) }] });
+      expect(result?.data).toBeUndefined();
+      expect(result?.validationErrors).toMatchObject({ rows: { 0: { diffReason: { _errors: [DIFF_REASON_REQUIRED] } } } });
+    }
+    const same = await completePaymentsBatchAction({ payDate: seoulToday(), rows: [{ ...row, transferKrw: row.expectedPayableKrw }] });
+    expect(same?.data?.processedIds).toEqual([a.expenseId]);
+  });
+
+  it("이체액 · 사유가 실린 스냅숏 → 지급 기록에 이체액 · 차이 · 사유(06-04 단건 경로)", async () => {
+    const payer = await makePayer();
+    const { a } = await twoPayable();
+    const row = await snapshotOf(payer, a);
+
+    const result = await completePaymentsBatch(payer, { payDate: seoulToday(), rows: [{ ...row, transferKrw: row.expectedPayableKrw - 3_300, diffReason: "이체 수수료" }] });
+    expect(result.processedIds).toEqual([a.expenseId]);
+    const [record] = await livePayments(a.expenseId);
+    expect(record).toMatchObject({ transferKrw: row.expectedPayableKrw - 3_300, payableKrw: row.expectedPayableKrw, diffKrw: -3_300, diffReason: "이체 수수료" });
+  });
+});
+
+// ── 06-17 Task 2 — 지급일 세율로 바뀐 지급 총액 · 재시도 · 지급 뒤 정본(E-22) ─────────
+
+// 원천징수 · 부가세 세율이 바뀌는 미래 지급일(Q6) — 기준일이 지급일인 증빙 종류 문서 하나와 보통 문서 하나. 세율 바뀜은 테스트 뒤 되돌린다.
+async function taxBoundary(payer: Viewer, label: string) {
+  const fx = await setupExpenseProject();
+  const shifted = await approvedExpenseWithoutEvidence(fx, fx.lines.withVendor);
+  const plain = await approvedExpenseWithoutEvidence(fx, fx.lines.split);
+  const today = seoulToday();
+  const rateFrom = addDays(today, 30);
+  const payDate = addDays(today, 40);
+  await db.update(expenses).set({ evidenceType: await vatEvidenceType(label, "payment_date") }).where(eq(expenses.id, shifted.expenseId));
+  await addHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, { effectiveFrom: rateFrom, value: 0.12 });
+  // 화면이 오늘 기준으로 본 지급 총액(목록 값)을 든 스냅숏.
+  const rows = [await snapshotOf(payer, shifted), await snapshotOf(payer, plain)];
+  return { shifted, plain, payDate, rateFrom, rows };
+}
+
+describe("지급일 재계산 막힘 · 재시도 (06-17 Task 2)", () => {
+  it("세율 경계 지급일 → 막힘 + 새 값 — 미래 지급일로 지급 총액이 바뀐 행은 처리되지 않고 newPayableKrw · 이유, 다른 행은 처리", async () => {
+    const payer = await makePayer();
+    const { shifted, plain, payDate, rateFrom, rows } = await taxBoundary(payer, "test_vat_boundary1");
+    try {
+      const result = await completePaymentsBatch(payer, { payDate, rows });
+      expect(result.processedIds).toEqual([plain.expenseId]);
+      expect(result.blocked).toEqual([
+        { expenseId: shifted.expenseId, reason: `지급일 ${payDate.slice(5)} 기준 지급 총액 바뀜 · 이체액 확인`, newPayableKrw: await payableNow(payer, shifted, payDate), selectable: true, selectableReason: null },
+      ]);
+      expect(await livePayments(shifted.expenseId)).toHaveLength(0);
+    } finally {
+      await cancelHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, rateFrom);
+    }
+  });
+
+  it("새 값 재시도 → 처리 — 합 요청이 같은 지급일로 셈한 rowStates 지급 총액 = newPayableKrw(차이 0)이고, 그 값으로 다시 보내면 같은 이유로 막히지 않는다", async () => {
+    const payer = await makePayer();
+    const { shifted, payDate, rateFrom, rows } = await taxBoundary(payer, "test_vat_boundary2");
+    try {
+      const first = await completePaymentsBatch(payer, { payDate, rows });
+      const newPayable = first.blocked[0]?.newPayableKrw;
+      if (typeof newPayable !== "number") throw new Error("새 지급 총액 없음");
+
+      const sum = await sumSelectedTransfers(payer, { seq: 1, rows: [{ id: shifted.expenseId }], payDate });
+      const [shiftedDoc] = await db.select({ quoteLineId: expenses.quoteLineId }).from(expenses).where(eq(expenses.id, shifted.expenseId));
+      expect(sum.rowStates).toEqual([
+        { id: shifted.expenseId, selectable: true, version: await versionOf(shifted.expenseId), payableKrw: newPayable, quoteLineId: shiftedDoc?.quoteLineId, prepaid: false },
+      ]);
+      expect(sum.diffs).toEqual({ [shifted.expenseId]: 0 });
+
+      const retry = await completePaymentsBatch(payer, {
+        payDate,
+        rows: [{ expenseId: shifted.expenseId, expenseVersion: await versionOf(shifted.expenseId), expectedPayableKrw: newPayable }],
+      });
+      expect(retry.processedIds).toEqual([shifted.expenseId]);
+      expect(retry.blocked).toEqual([]);
+    } finally {
+      await cancelHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, rateFrom);
+    }
+  });
+
+  it("지급된 문서 보기 = 지급 기록(E-22) — 미래 지급일 · 새 지급 총액으로 처리된 문서의 getPaymentView는 지급 기록 값(오늘 기준 재계산이 아님)", async () => {
+    const payer = await makePayer();
+    const { shifted, payDate, rateFrom, rows } = await taxBoundary(payer, "test_vat_boundary3");
+    try {
+      const first = await completePaymentsBatch(payer, { payDate, rows });
+      const newPayable = first.blocked[0]?.newPayableKrw;
+      if (typeof newPayable !== "number") throw new Error("새 지급 총액 없음");
+      const transfer = newPayable - 3_300;
+      await completePaymentsBatch(payer, {
+        payDate,
+        rows: [{ expenseId: shifted.expenseId, expenseVersion: await versionOf(shifted.expenseId), expectedPayableKrw: newPayable, transferKrw: transfer, diffReason: "이체 수수료" }],
+      });
+      const todayPayable = rows[0]?.expectedPayableKrw;
+      expect(todayPayable).not.toBe(newPayable);
+
+      const view = await getPaymentView(payer, shifted.expenseId);
+      expect(view).toMatchObject({ payDate, payableKrw: newPayable, transferKrw: transfer, diffKrw: -3_300, diffReason: "이체 수수료" });
+    } finally {
+      await cancelHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, rateFrom);
+    }
+  });
+});
+
+// ── 06-17 Task 4 — 제자리 증빙 확인 보기(DR-4) ──────────────────────────────
+
+// 결재 통과 · 증빙 한 장 · 확인 기록 없음(확인 전 P2) 문서에 증빙 금액을 둔다(픽스처가 expenses.evidence_amount를 직접 — 기안자 저장 경로 없음).
+async function unreviewedWithAmount(fx: ExpenseFixture, evidenceAmount: number): Promise<ApprovedExpense> {
+  const doc = await approvedExpenseWithEvidence(fx);
+  await db.update(expenses).set({ evidenceAmount }).where(eq(expenses.id, doc.expenseId));
+  return { ...doc, version: await versionOf(doc.expenseId) };
+}
+
+describe("제자리 증빙 확인 보기 (06-17 Task 4)", () => {
+  it("증빙 확인 보기 — 권한 · 확인 전만: 파일 행 · 증빙 금액 · 서버 계산 한 줄 · 지금 version · 지문 / 행 version 다름 → 같은 보기 + 동시성 이유 / 지급 권한 없음 · 확인 전 아님 → 거부", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    const doc = await unreviewedWithAmount(fx, 1_000_000);
+    const paymentView = await getPaymentView(payer, doc.expenseId);
+    expect(paymentView?.row?.row).toBe("P2");
+
+    const view = await getEvidenceConfirmView(payer, { expenseId: doc.expenseId, rowVersion: doc.version });
+    expect(view.version).toBe(doc.version);
+    expect(view.number).toBe(doc.number);
+    expect(view.evidenceAmountKrw).toBe(1_000_000);
+    expect(view.files).toHaveLength(1);
+    expect(view.files?.[0]?.name).not.toBe("");
+    expect(view.evidenceStamp).toBe(paymentView?.evidenceStamp);
+    expect(view.taxLine).toEqual(paymentView?.evidenceTaxLine);
+    expect(view.taxLine?.length).toBeGreaterThan(0);
+    expect(view.conflict).toBeNull();
+
+    const stale = await getEvidenceConfirmView(payer, { expenseId: doc.expenseId, rowVersion: doc.version - 1 });
+    expect(stale.version).toBe(doc.version);
+    expect(stale.conflict).toMatch(/^.+이 \d{2}:\d{2}에 바꿈 · 새로 고침$/);
+
+    await expect(getEvidenceConfirmView(fx.pm, { expenseId: doc.expenseId, rowVersion: doc.version })).rejects.toBeInstanceOf(ForbiddenError);
+    const confirmed = await confirmEvidence(payer, { expenseId: doc.expenseId, version: doc.version });
+    await expect(getEvidenceConfirmView(payer, { expenseId: doc.expenseId, rowVersion: confirmed.version })).rejects.toThrow("확인 전 아님 · 새로 고침");
+  });
+
+  it("증빙 확인 보기 — 증빙 금액 초과 한 줄(Q-F): 승인액 12,000,000 · 실행가 12,250,000 · 증빙 금액 12,400,000 → 06-06 loadEvidenceOverrun과 같은 한 줄 / 11,000,000 → null", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    const doc = await unreviewedWithAmount(fx, 12_400_000);
+    await db.update(expenses).set({ supplyAmountKrw: 12_000_000 }).where(eq(expenses.id, doc.expenseId));
+    await db.update(quoteLines).set({ executionAmountKrw: 12_250_000 }).where(eq(quoteLines.id, fx.lines.withVendor));
+
+    const view = await getEvidenceConfirmView(payer, { expenseId: doc.expenseId, rowVersion: doc.version });
+    expect(view.evidenceOverrun).toBe("승인액보다 +400,000 · 실행가 초과 150,000");
+    const [row] = await db.select().from(expenses).where(eq(expenses.id, doc.expenseId));
+    if (!row) throw new Error("지출결의 없음");
+    expect(view.evidenceOverrun).toBe(await loadEvidenceOverrun(payer, row, 12_400_000));
+
+    await db.update(expenses).set({ evidenceAmount: 11_000_000 }).where(eq(expenses.id, doc.expenseId));
+    expect((await getEvidenceConfirmView(payer, { expenseId: doc.expenseId, rowVersion: doc.version })).evidenceOverrun).toBeNull();
+  });
+
+  it("증빙 지문 다름 → 확인 거부: 보기 뒤 기안자가 증빙 하나 더 → 지금 DB version + 옛 지문으로 확인 → 동시성 거부 · 확인 기록 없음 / 다시 받은 보기 version + 지문 → 확인됨", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    const doc = await unreviewedWithAmount(fx, 1_000_000);
+    const view = await getEvidenceConfirmView(payer, { expenseId: doc.expenseId, rowVersion: doc.version });
+    await attachEvidence(fx.pm, doc.expenseId);
+    session.viewer = payer;
+
+    const refused = await confirmEvidenceAction({ expenseId: doc.expenseId, version: await versionOf(doc.expenseId), evidenceStamp: view.evidenceStamp });
+    expect(refused?.serverError).toMatch(/증빙을 바꿈 · 새로 고침$/);
+    expect(await db.select().from(expenseEvidenceReviews).where(eq(expenseEvidenceReviews.expenseId, doc.expenseId))).toHaveLength(0);
+
+    const again = await getEvidenceConfirmView(payer, { expenseId: doc.expenseId, rowVersion: await versionOf(doc.expenseId) });
+    expect(again.files).toHaveLength(2);
+    const done = await confirmEvidenceAction({ expenseId: doc.expenseId, version: again.version ?? 0, evidenceStamp: again.evidenceStamp });
+    expect(done?.data?.evidenceStatus).toBe("확인됨");
   });
 });

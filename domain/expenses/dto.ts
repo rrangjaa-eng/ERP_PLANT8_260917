@@ -269,6 +269,8 @@ export type PaymentTargetRowDto = {
   reason: string | null;
   prepaid: boolean;
   quoteLineId: string | null;
+  // 06-17(R10-F2) — 증빙 금액이 적혀 있는가(값이 아니라 있음만). 빈 `확인 전`은 제자리 확인 모달 대신 문서 화면으로 간다.
+  evidenceAmountEntered: boolean;
 };
 
 export const PAYMENT_TARGET_ROW_DTO_SPEC: DtoSpec<PaymentTargetRowDto, PaymentTargetRowDto> = {
@@ -287,6 +289,7 @@ export const PAYMENT_TARGET_ROW_DTO_SPEC: DtoSpec<PaymentTargetRowDto, PaymentTa
     { key: "reason", from: "reason", infoItem: "expense.value" },
     { key: "prepaid", from: "prepaid", infoItem: "expense.value" },
     { key: "quoteLineId", from: "quoteLineId", infoItem: "expense.value" },
+    { key: "evidenceAmountEntered", from: "evidenceAmountEntered", infoItem: "expense.value" },
   ],
 };
 

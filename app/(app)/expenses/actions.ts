@@ -22,6 +22,8 @@ import {
 } from "@/domain/expenses";
 import { DATE_FORMAT_ERROR, EXPENSE_TEXT_MAX, expenseDraftFieldsSchema } from "@/domain/expenses/draft-fields";
 import { completePaymentsBatch } from "@/domain/payments/batch";
+import { getEvidenceConfirmView, sumSelectedTransfers } from "@/domain/payments/targets";
+import { DIFF_REASON_REQUIRED } from "@/domain/payments/action-row";
 import { isCalendarDate } from "@/lib/dates";
 import { searchLinesForPick, searchVendorsForPick } from "@/domain/expenses/pick";
 import {
@@ -258,6 +260,11 @@ const batchPaymentSchema = z.object({
         expectedPayableKrw: z.number().int().nonnegative(),
         transferKrw: z.number().int().positive().optional(),
         diffReason: z.string().max(EXPENSE_TEXT_MAX).optional(),
+      })
+      // 06-17(D-605 · 「Error — 차이 사유 칸」) — 이체액이 스냅숏의 지급 총액과 다르면 사유가 필수(같음 비교 — 금액 셈 없음). 그 행 칸 오류로 돌아간다.
+      .refine((row) => row.transferKrw === undefined || row.transferKrw === row.expectedPayableKrw || (row.diffReason ?? "").trim() !== "", {
+        message: DIFF_REASON_REQUIRED,
+        path: ["diffReason"],
       }),
     )
     .min(1)
@@ -269,3 +276,26 @@ export const completePaymentsBatchAction = authedActionClient.schema(batchPaymen
   revalidatePath("/expenses");
   return result;
 });
+
+// 06-17(S1 「합계 줄」 · O-18) — 고른 건 이체액 합 · 행별 차이 · 고른 행 상태(rowStates). 입력은 합계 번호 · 고른 행 id · 고친 이체액 · 모달이 마지막으로 쓴
+// 지급일뿐 — 지급 총액 · version은 서버가 다시 읽는다. 행 수 상한은 처리 요청과 같은 200. 읽기 전용이라 revalidate 없음.
+const sumSelectedTransfersSchema = z.object({
+  seq: z.number().int().nonnegative(),
+  rows: z
+    .array(z.object({ id: expenseIdSchema, transferKrw: z.number().int().positive().optional() }))
+    .min(1)
+    .max(200),
+  payDate: z.string().refine(isCalendarDate, DATE_FORMAT_ERROR).optional(),
+});
+
+export const sumSelectedTransfersAction = authedActionClient
+  .schema(sumSelectedTransfersSchema)
+  .action(async ({ parsedInput, ctx }) => sumSelectedTransfers(ctx.viewer, parsedInput));
+
+// 06-17(UI-SPEC S1 「제자리 증빙 확인」 · DR-4): 확인 모달 보기 — 파일 행 · 증빙 금액 · 서버 계산 한 줄 · 지금 version · 증빙 지문 · 초과 한 줄(Q-F).
+// 확인 자체는 06-06 confirmEvidenceAction(금액 없는 갈래)을 그대로 쓴다 — 새 확인 액션 없음.
+const evidenceConfirmViewSchema = z.object({ expenseId: z.string().uuid(), rowVersion: z.number().int().nonnegative() });
+
+export const getEvidenceConfirmViewAction = authedActionClient
+  .schema(evidenceConfirmViewSchema)
+  .action(async ({ parsedInput, ctx }) => getEvidenceConfirmView(ctx.viewer, parsedInput));

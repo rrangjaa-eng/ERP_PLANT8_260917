@@ -148,3 +148,11 @@ superpowers:test-driven-development · superpowers:verification-before-completio
 - **O-5** 행동 링크 접근 이름이 줄마다 같음(`점검 보기` ×6 · `증빙 올리기` ×3), `aria-describedby` 없음 — 목록 문맥상 통과.
 - **O-6** 대표 320 [결재] 긴 줄 4줄 → 5줄은 시드 무작위 접미사 폭 차이(회귀 아님). D-1 수정으로 폰 두 줄 상한이 걸린다.
 
+
+## 화면 검토 증거
+| 항목 | 경로 |
+|---|---|
+| 독립 검토(Opus) | /mnt/project-files/notes/06-review/06-23-review.md |
+| DOM 감사(Opus, CI=true) | /mnt/project-files/notes/06-review/06-23-dom-audit.md |
+| 4폭 캡처 적용 전·후(ba46b2f 대비) | /mnt/project-files/06-review/pr-e/06-23/ |
+| Codex 디자인 검토(/design-review, --base ba46b2f) | /mnt/project-files/06-review/pr-e/wave3-codex/06-23-codex.md — `/` 4폭, 지적 0. 캡처 DB가 비어 「내 차례」 행은 DOM 감사 실측과 수정 뒤 E2E(mobile-next-turn 2줄 이하)로 판정 |

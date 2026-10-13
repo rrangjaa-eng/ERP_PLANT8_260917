@@ -165,3 +165,9 @@ RED 확인
 - 파일 존재: test/e2e/management-flow.spec.ts · test/e2e/pm-settlement-flow.spec.ts · test/integration/leak-scan.test.ts 확인.
 - 커밋 존재: 410da0b · 45c6492 가 `git log 293c551..HEAD`에 있음(2건, 원장 `plan_head_before` 기준 `git rev-list --count` = 2).
 - U-1: 페이즈 마감 게이트에 외부 모델 재확인 없음(Opus 교차 검토만).
+
+## 오케스트레이터 판정 (2026-10-13)
+
+- **열린 항목 1 → 허용.** #174(`7c55305`) · #177(`32e37c1`) · #179(`bfd0e90`) · #186(`8f7f8fa`)은 06 코드 PR이 아니라 각각 따로 main에 머지된 다른 트랙 PR이고 마이그레이션은 추가형(0027~0031)이다. 허용 목록을 5줄로 늘려 verify 둘째 줄을 다시 돌렸다: `disallowed=0`(종료 0). PR-E(#214)는 `db/migrations`·`db/schema`를 바꾸지 않는다. 6.1 #164는 아직 머지 전이라 범위에 없다.
+- **열린 항목 2 → 호환으로 확정, 사용자 알림.** 0025의 `DROP CONSTRAINT` 둘은 더 넓은 CHECK로 바꾸는 교체(PR-A #169, 사용자 머지)다. 옛 리비전이 쓰는 행은 새 제약도 통과하므로 「Cloud Run 이전 리비전으로 되돌려도 스키마 호환」. 계획 정규식이 DROP CONSTRAINT를 거르지 못해 literal은 실패이므로 PR 보고에 사용자에게 알린다.
+- 열린 항목 3은 CI e2e 결과로 본다(겹침이 보이면 별도 정리).

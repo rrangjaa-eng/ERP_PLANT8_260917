@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull, isNotNull } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
-import { db } from "@/db/client";
+import { db, type DbOrTx } from "@/db/client";
 import { teams } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 import type { Scope } from "@/domain/permissions/scope-for";
@@ -46,15 +46,15 @@ export async function renameTeam(viewer: Viewer, id: string, name: string): Prom
   await db.update(teams).set({ name, updatedAt: new Date() }).where(eq(teams.id, id));
 }
 
-export async function setTeamArchived(viewer: Viewer, id: string, value: boolean): Promise<boolean> {
+export async function setTeamArchived(viewer: Viewer, id: string, value: boolean, tx: DbOrTx = db): Promise<boolean> {
   // 조건부 갱신이 실제로 바꾼 행이 있으면 참 — 범용 복원이 「이미 복원됨」 · 로그를 이 결과로 정한다(PR #149).
   const rows = value
-    ? await db
+    ? await tx
         .update(teams)
         .set({ archivedAt: new Date(), archivedBy: viewer.id })
         .where(and(eq(teams.id, id), isNull(teams.archivedAt)))
         .returning({ id: teams.id })
-    : await db
+    : await tx
         .update(teams)
         .set({ archivedAt: null, archivedBy: null })
         .where(and(eq(teams.id, id), isNotNull(teams.archivedAt)))

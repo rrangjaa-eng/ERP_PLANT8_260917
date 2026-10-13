@@ -26,6 +26,9 @@ import { assertCanGrantRoles } from "@/domain/permissions/grant-ceiling";
 import { assertNotLastAdmin } from "@/domain/permissions/last-admin";
 import { lockSeatKeys } from "@/repositories/seats";
 import { setUserArchived } from "@/repositories/users";
+import { findTeamById, setTeamArchived } from "@/repositories/teams";
+import { setOrgUnitArchived } from "@/repositories/org-units";
+import { assertNoSeatDuplicates, SeatTakenError } from "@/domain/people/seat-rules";
 import { withTransaction } from "@/lib/db-transaction";
 import { kstToday } from "@/lib/kst-date";
 
@@ -162,6 +165,32 @@ async function vendorRestoreBlock(viewer: Viewer, id: string): Promise<UserFacin
   return new VendorBusinessNoTakenError(`같은 사업자번호 거래처 있음${name} · 복원 불가`);
 }
 
+// 06.4 /review: 팀 · 본부를 되살리면 그 안의 팀장 · 본부 책임자 자리가 다시 생긴다 — 보관 동안 자리 검사가 그 팀 · 본부를
+// 보지 않아 둘째 보유자가 생겼을 수 있다. 팀 · 본부 키를 잡고 보관을 푼 뒤 겹치면 tx째 되돌린다(자동 강등 없음 · 사람 복원과
+// 같은 꼴). 팀은 그 팀의 본부 책임자 자리도 되살아나므로 본부 키 · 검사까지. 날짜 · 이름 노출은 tx 전에(풀에서 따로 빌리지 않게).
+async function restoreSeatedOrg(viewer: Viewer, entity: "team" | "org_unit", id: string, deps?: Partial<ArchiveDeps>): Promise<RestoreResult> {
+  const teamIds = entity === "team" ? [id] : [];
+  const orgUnitId = entity === "org_unit" ? id : ((await findTeamById(viewer, id))?.orgUnitId ?? null);
+  const orgUnitIds = orgUnitId === null ? [] : [orgUnitId];
+  const today = kstToday((deps?.now ?? (() => new Date()))());
+  const showNames = await (deps?.visible ?? visible)(viewer, "person.value");
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
+  return withTransaction(async (tx) => {
+    await lockSeatKeys(viewer, { teamIds, orgUnitIds }, tx);
+    const reactivated = entity === "team" ? await setTeamArchived(viewer, id, false, tx) : await setOrgUnitArchived(viewer, id, false, tx);
+    if (!reactivated) return { restored: false };
+    try {
+      await assertNoSeatDuplicates(viewer, { teamIds, orgUnitIds, today, showNames }, tx);
+    } catch (error) {
+      // 보관함 토스트가 마지막 「 · 」 앞까지 자른다 — 사람 복원(`domain/people/restore.ts`)처럼 ` · 복원 불가`로 끝낸다.
+      if (error instanceof SeatTakenError) throw new SeatTakenError(`${error.message} · 복원 불가`);
+      throw error;
+    }
+    await recordAction(viewer, { actionType: "restore", entity, entityId: id }, { tx });
+    return { restored: true };
+  });
+}
+
 export async function restore(
   viewer: Viewer,
   entity: string,
@@ -179,6 +208,8 @@ export async function restore(
   if (!row) throw new ArchivableRowNotFoundError("대상 찾을 수 없음");
   // quick 261002-4jn — 이미 활성인 행(낡은 화면 · 동시 복원의 뒤 사람)은 로그 없이 「이미 복원됨」.
   if (row.archivedAt === null) return { restored: false };
+
+  if (entity === "team" || entity === "org_unit") return restoreSeatedOrg(viewer, entity, id, deps);
 
   // 동시 복원은 둘 다 위 판정을 지날 수 있다 — 조건부 갱신이 실제로 바꾼 쪽만 「복원됨」 · 로그(PR #149 리뷰).
   // 거래처는 같은 사업자번호의 살아 있는 거래처가 생겼으면 유일 색인이 막는다 — 사용자 문구로 바꾼다.

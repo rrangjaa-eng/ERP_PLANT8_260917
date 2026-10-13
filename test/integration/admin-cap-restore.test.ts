@@ -12,6 +12,8 @@ import { archive, listArchive, restore } from "@/domain/archive";
 import { PersonNotRestorableError, PersonRestoreForbiddenError } from "@/domain/people/restore";
 import { SeatTakenError } from "@/domain/people/seat-rules";
 import { findUserByEmail, findUserById, updateUserResignationDate } from "@/repositories/users";
+import { findTeamById } from "@/repositories/teams";
+import { findOrgUnitById } from "@/repositories/org-units";
 import { makePerson, NOW_2026 } from "./approvals-fixtures";
 import { addTeam, countLogs, makeAdmin, makeDelegatedRole, makeOrgTeam, makeSeated, uniqueName } from "./admin-cap-fixtures";
 
@@ -171,6 +173,63 @@ describe("사람 복원(06.4 D-6406 · G36)", () => {
 
     const error = await refusal(restore(admin, "user", randomUUID(), deps), PersonNotRestorableError);
     expect(error.message).toBe("없는 사람 · 복원 불가");
+  });
+});
+
+// 06.4 /review: 팀 · 본부를 보관한 사이 그 자리에 둘째 보유자가 생길 수 있다(자리 검사는 보관된 팀 · 본부를 보지 않는다).
+// 되살리면 한 자리에 둘이 되므로 복원을 막는다 — 사람 복원과 같은 문구 꼴(` · 복원 불가`).
+describe("팀 · 본부 복원 자리 재검사(06.4)", () => {
+  async function archivedTeamAtOf(teamId: string): Promise<Date | null> {
+    return (await findTeamById(SYSTEM_VIEWER, teamId))?.archivedAt ?? null;
+  }
+
+  it("보관된 팀에 그새 팀장이 하나 더 생겼으면 팀 복원 거부 · 보관 · 로그 그대로 · 비운 뒤엔 복원", async () => {
+    const admin = await makeAdmin("관리자");
+    const { teamId } = await makeOrgTeam();
+    const l = await makeSeated(uniqueName("팀장L"), TEAM_LEAD_ROLE_ID, teamId);
+    await archive(SYSTEM_VIEWER, "team", teamId, deps);
+    const z = await makeSeated(uniqueName("팀장Z"), TEAM_LEAD_ROLE_ID, teamId);
+    const logsBefore = await countLogs("restore", "team", teamId);
+
+    const error = await refusal(restore(admin, "team", teamId, deps), SeatTakenError);
+
+    const first = [await nameOf(l.id), await nameOf(z.id)].sort()[0];
+    expect(error.message).toBe(`팀장 있음 · ${first}` + TAIL);
+    expect(await archivedTeamAtOf(teamId)).not.toBeNull();
+    expect(await countLogs("restore", "team", teamId)).toBe(logsBefore);
+
+    await archive(SYSTEM_VIEWER, "user", z.id, deps);
+    expect(await restore(admin, "team", teamId, deps)).toEqual({ restored: true });
+    expect(await archivedTeamAtOf(teamId)).toBeNull();
+  });
+
+  it("되살릴 팀의 본부 책임자가 본부의 다른 책임자와 겹치면 팀 복원 거부", async () => {
+    const admin = await makeAdmin("관리자");
+    const { orgUnitId, teamId } = await makeOrgTeam();
+    const t2 = await addTeam(orgUnitId);
+    await makeSeated(uniqueName("책임자H"), DIVISION_HEAD_ROLE_ID, teamId);
+    await archive(SYSTEM_VIEWER, "team", t2, deps);
+    await makeSeated(uniqueName("책임자H2"), DIVISION_HEAD_ROLE_ID, t2);
+
+    const error = await refusal(restore(admin, "team", t2, deps), SeatTakenError);
+
+    expect(error.message.startsWith("본부 책임자 있음 · ")).toBe(true);
+    expect(error.message.endsWith(TAIL)).toBe(true);
+    expect(await archivedTeamAtOf(t2)).not.toBeNull();
+  });
+
+  it("보관된 본부에 그새 책임자가 하나 더 생겼으면 본부 복원 거부 · 이름을 못 보면 담당", async () => {
+    const admin = await makeAdmin("관리자");
+    const { orgUnitId, teamId } = await makeOrgTeam();
+    const t2 = await addTeam(orgUnitId);
+    await makeSeated(uniqueName("책임자H"), DIVISION_HEAD_ROLE_ID, teamId);
+    await archive(SYSTEM_VIEWER, "org_unit", orgUnitId, deps);
+    await makeSeated(uniqueName("책임자H2"), DIVISION_HEAD_ROLE_ID, t2);
+
+    const error = await refusal(restore(admin, "org_unit", orgUnitId, { ...deps, visible: () => Promise.resolve(false) }), SeatTakenError);
+
+    expect(error.message).toBe("본부 책임자 있음 · 시스템 관리자" + TAIL);
+    expect((await findOrgUnitById(SYSTEM_VIEWER, orgUnitId))?.archivedAt).not.toBeNull();
   });
 });
 

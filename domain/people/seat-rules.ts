@@ -134,6 +134,29 @@ export async function assertSeatsFree(
   }
 }
 
+// 06.4 /review: 팀 · 본부 복원 — 보관된 팀 · 본부는 자리 검사 밖이라 그사이 둘째 보유자가 생길 수 있다. 호출자가 같은 tx에서
+// 그 팀 · 본부 키를 잡고 보관을 푼 뒤 부른다 — 그 자리들에 하루라도 겹치는 다른 보유자가 있으면 거부(tx째 되돌린다).
+export async function assertNoSeatDuplicates(
+  viewer: Viewer,
+  input: { teamIds: readonly string[]; orgUnitIds: readonly string[]; today: string; showNames: boolean },
+  tx: DbOrTx,
+): Promise<void> {
+  const rows = await listSeatDuplicateHolders(
+    viewer,
+    { today: input.today, teamLeadRoleId: TEAM_LEAD_ROLE_ID, divisionHeadRoleId: DIVISION_HEAD_ROLE_ID },
+    tx,
+  );
+  for (const kind of ["team", "division"] as const) {
+    const ids = kind === "team" ? input.teamIds : input.orgUnitIds;
+    const spans = rows.filter((row) => row.kind === kind && ids.includes(row.seatId));
+    const taken = spans
+      .filter((span) => spans.some((other) => other.seatId === span.seatId && other.userId !== span.userId && spansOverlap(span, other)))
+      .sort((x, y) => (x.name < y.name ? -1 : x.name > y.name ? 1 : 0));
+    const first = taken[0];
+    if (first) throw new SeatTakenError(seatTakenMessage(kind, input.showNames ? first.name : null));
+  }
+}
+
 export type SeatHolderDto = { userId: string; name: string };
 export type SeatDuplicatesDto = { teams: Record<string, SeatHolderDto[]>; orgUnits: Record<string, SeatHolderDto[]> };
 

@@ -21,7 +21,8 @@ import styles from "./expenses.module.css";
 
 // 06-20(UI-SPEC S3): 「지급 완료」 보기 표 — 서버가 정한 주 그룹 · 순서 그대로 그리고 1차가 없다(지급 취소는 문서 화면 S5).
 // 지급 방식은 낱말만(계좌 글자 없음 — 대표가 이 목록을 읽는다, O-17). 번호는 식별자형 링크 → 문서 화면, 폰은 행 전체(phoneRowLink).
-// 열 우선순위: P1 = 항목 · 이체액 · 지급일, P2 = 번호 · 거래처 · 증빙, P3 = 지급 방식 · 차이 사유 · 처리한 사람(좁은 PC에서도 P3부터 숨는다).
+// 열 우선순위: P1 = 항목 · 이체액, P2 = 번호 · 거래처 · 지급일 · 증빙, P3 = 지급 방식 · 차이 사유 · 처리한 사람(좁은 PC에서도 P3부터 숨는다).
+// 지급일은 폰 접힌 줄(DOM 감사 D-3 — SYSTEM §7-3 「날짜는 접힌 줄」, 5em 제목 바닥 + 13자리 이체액 + 지급일 세 열이 320에서 넘쳤다).
 // 1024 미만은 P2 번호 · 거래처도 접는다(DOM 감사 D-1 — S1과 같은 collapseBelow, 증빙은 3차 문서 화면 링크 자리라 남긴다). 폰 접힌 줄에는 그대로 낀다.
 export type PaidScreenRow = Partial<PaidPaymentRowDto> & { id: string; group: string };
 
@@ -133,7 +134,7 @@ export function PaidList({ rows, amountColumn, canConfirm }: { rows: PaidScreenR
       collapseBelow: 1280,
       cell: (row) => <span className={styles.nowrap}>{row.paymentMethodName ?? "—"}</span>,
     },
-    { key: "payDate", header: PAID_COLUMN_LABELS.payDate, priority: "p1", cell: (row) => <Num value={row.payDate ? row.payDate.slice(5) : null} /> },
+    { key: "payDate", header: PAID_COLUMN_LABELS.payDate, priority: "p2", cell: (row) => <Num value={row.payDate ? row.payDate.slice(5) : null} /> },
     ...(amountColumn
       ? ([
           {

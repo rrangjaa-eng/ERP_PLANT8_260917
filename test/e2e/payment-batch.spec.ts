@@ -1813,6 +1813,19 @@ test.describe("검토 반영 (06-20 독립 검토 · DOM 감사)", () => {
     await page.context().close();
   });
 
+  test("S3 폰(D-3) — 13자리 이체액 · 차이 2행: 375 · 320 문서 가로 넘침 0 · 이체액 숫자 한 줄 · P1은 항목 · 이체액(지급일은 접힌 줄)", async ({ browser, baseURL }) => {
+    test.setTimeout(180_000);
+    const { page, lines } = await bigPaidPage(browser, baseURL);
+    for (const width of [375, 320]) {
+      await page.setViewportSize({ width, height: 900 });
+      await expect.poll(() => pageOverflow(page), { message: `${width}px 문서 가로 넘침` }).toBe(0);
+      const amount = rowOf(page, lines[1]?.itemName ?? "").locator("td").filter({ hasText: /^[\d,]{17}$/ });
+      expect(await textLines(amount, ",")).toBe(1);
+    }
+    expect(await page.locator("main table thead th:visible").allInnerTexts()).toEqual(["프로젝트 · 항목", "이체액"]);
+    await page.context().close();
+  });
+
   test("from=pay 문서 화면 폰 폭(D-2) — 375 · 320에서 1차 `지급 완료`는 한 줄 · 행동 줄 폭의 절반 이상, 3차 `지급 대상으로`는 1차 아래 줄", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const id = await approvedTarget(fx, "tracer");

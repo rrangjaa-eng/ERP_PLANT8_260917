@@ -389,4 +389,38 @@ test.describe("카드 전표 (06-25 DOM 감사 후 수정)", () => {
     await expect(save).not.toHaveAttribute("aria-disabled", "true");
     await page.context().close();
   });
+
+  test("긴 파일명은 한 줄 말줄임 + title이고 삭제를 밀지 않는다 (D-2)", async ({ browser, baseURL }) => {
+    const holder = await makeHolder();
+    const usageId = await seedUsage(holder, 62_000);
+    const page = await loginPage(browser, baseURL, holder.person);
+    await page.goto(`/cards?editId=${usageId}`);
+    const sheet = editPanel(page);
+    const input = sheet.getByTestId("attachments-input");
+    await waitForHydration(input);
+    const image = await uniqueImage(page);
+    const longName = `${"가나다라마바사아자차카타파하".repeat(7).slice(0, 85)}.png`;
+    await input.setInputFiles({ ...image, name: longName });
+    const row = fileRows(sheet).filter({ hasText: "가나다라마바" });
+    await expect(row.getByRole("button", { name: "삭제" })).toBeVisible({ timeout: UPLOAD_WAIT });
+
+    for (const width of [1280, 375, 320]) {
+      await page.setViewportSize({ width, height: 800 });
+      const name = row.locator("span[id]").first();
+      const measure = await name.evaluate((element: HTMLElement) => {
+        const style = getComputedStyle(element);
+        const lineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.5;
+        return { title: element.getAttribute("title"), whiteSpace: style.whiteSpace, textOverflow: style.textOverflow, height: element.getBoundingClientRect().height, lineHeight, text: element.textContent };
+      });
+      expect(measure.title).toBe(measure.text);
+      expect(measure.title?.startsWith("가나다라마바")).toBe(true);
+      expect(measure.whiteSpace).toBe("nowrap");
+      expect(measure.textOverflow).toBe("ellipsis");
+      expect(measure.height).toBeLessThan(measure.lineHeight * 1.5);
+      const remove = await row.getByRole("button", { name: "삭제" }).boundingBox();
+      const rowBox = await row.boundingBox();
+      expect(remove && rowBox && remove.x + remove.width <= rowBox.x + rowBox.width + 0.5).toBe(true);
+    }
+    await page.context().close();
+  });
 });

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { and, asc, eq } from "drizzle-orm";
 import { db, pool } from "@/db/client";
-import { actionLog, approvalInstances, approvalRoutes, approvalSteps, projects, settlementApprovals } from "@/db/schema";
+import { actionLog, approvalInstances, approvalRoutes, approvalSteps, expenses, projects, settlementApprovals } from "@/db/schema";
 import { ApprovalConflictError, approveDocument, getApprovalView, listMyInbox, loadKindDetails, NotCurrentHolderError, rejectDocument } from "@/domain/approvals";
 import { appendActionLog } from "@/repositories/action-log";
 import { getDocumentKind } from "@/domain/approvals/kinds";
@@ -31,11 +31,12 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { upsertVisibility } from "@/repositories/permissions";
 import { upsertSimpleValue } from "@/repositories/settings";
 import { makePerson, orgUnitIdByName } from "./approvals-fixtures";
-import { extendToInProgress, makeSettlementPeople, SETTLEMENT_LINES, setupSettlementProject } from "./fixtures/settlements";
+import { extendToInProgress, issueRevenue, linkCardUsage, makeSettlementPeople, SETTLEMENT_LINES, setupSettlementProject } from "./fixtures/settlements";
 import { deferred, waitForLockWaiter } from "./lock-race";
-import { createExpenseFromLines, withdrawExpense } from "@/domain/expenses";
+import { createExpenseFromLines, saveExpenseDraft, withdrawExpense } from "@/domain/expenses";
 import { applyAutoSettlement } from "@/domain/projects/auto-transition";
-import { setupExpenseProject, submitReadyDraft } from "./fixtures/expenses";
+import { setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
+import { approvedExpenseWithEvidence } from "./fixtures/payments";
 
 // D-80 ② 승인 먼저 — 승인 트랜잭션이 프로젝트 행을 잡은 직후에 멈출 자리. 엔진 → 정산 훅 → changeProjectStatus 사슬에는 주입 지점이
 // 없어 이 파일만 changeProjectStatus를 감싸 afterLock을 넣는다(race.afterLock이 null이면 원래 함수 그대로 — 나머지 사례는 영향 없음).
@@ -399,15 +400,33 @@ describe("정산 결재 — 다시 올리기 · 늦은 되돌리기 · 행동 �
   });
 });
 
+// 06-19 E-4 — 정산 기안 전에 줄마다 살아 있는 연결이 있어야 완료 전 점검이 막지 않는다. 분할 1회차를 결재 통과(증빙 있음)까지.
+async function approvedInstallment(fx: ExpenseFixture, lineId: string, amountKrw: number): Promise<void> {
+  const expenseId = (await createExpenseFromLines(fx.pm, { lineIds: [lineId] })).created[0]?.expenseId ?? "";
+  const [row] = await db.select({ version: expenses.version }).from(expenses).where(eq(expenses.id, expenseId));
+  if (!row) throw new Error("지출결의 없음");
+  await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: row.version, fields: { installment: true, supply: { currency: "KRW", amount: amountKrw, fxRate: 1 } } });
+  const sent = await submitReadyDraft(fx.pm, expenseId);
+  if (sent.kind !== "submitted") throw new Error("제출 안 됨");
+  const first = await approveDocument(fx.lead, { instanceId: sent.instanceId, expectedVersion: sent.version });
+  await approveDocument(fx.ceo, { instanceId: sent.instanceId, expectedVersion: first.version });
+}
+
 // 05 /review A8 — 사용자 확정(10/5 카드 「승인 막기」): 결재 중 지출결의가 남은 프로젝트는 정산 최종 승인을 막고 남은 건수를 한 줄로 보인다.
+// 06-19 E-4 · R-2: 완료 전 점검(06-19)이 기안을 먼저 막으므로 순서를 「정산 기안 먼저 → 지출결의 제출 뒤」로 바꿨다. 05 단언은 그대로.
 describe("정산 결재 — 결재 중 지출결의가 남은 프로젝트 (A8)", () => {
   it("결재 중 지출결의 1건이면 승인 막힘 한 줄 · 승인은 롤백 · 지출결의를 회수하면 승인되어 완료된다", async () => {
     const fx = await setupExpenseProject();
-    const expenseId = (await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] })).created[0]?.expenseId ?? "";
-    expect(await submitReadyDraft(fx.pm, expenseId)).toMatchObject({ kind: "submitted" });
+    await approvedExpenseWithEvidence(fx, fx.lines.withVendor);
+    await approvedInstallment(fx, fx.lines.split, 6_000_000);
+    await linkCardUsage(fx.pm, fx.lines.noVendor);
+    await issueRevenue(fx.projectId);
     // 종료일(2026-12-31) 다음 날 자동 정산.
     expect(await applyAutoSettlement({ projectIds: [fx.projectId] }, { now: () => new Date("2027-01-02T03:00:00Z") })).toEqual([fx.projectId]);
     const { documentId, instanceId, version } = await submitted(fx.pm, fx.projectId);
+    // 정산 기안 뒤 분할 2회차를 제출해 결재 중으로 남긴다.
+    const expenseId = (await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.split] })).created[0]?.expenseId ?? "";
+    expect(await submitReadyDraft(fx.pm, expenseId)).toMatchObject({ kind: "submitted" });
 
     const blocked = "결재 중 지출결의 1건 · 먼저 결재";
     expect((await getApprovalView(fx.ceo, { kind: SETTLEMENT_DOCUMENT_KIND, documentId }))?.approveBlockedReason).toBe(blocked);
@@ -421,6 +440,22 @@ describe("정산 결재 — 결재 중 지출결의가 남은 프로젝트 (A8)"
     expect((await getApprovalView(fx.ceo, { kind: SETTLEMENT_DOCUMENT_KIND, documentId }))?.approveBlockedReason ?? null).toBeNull();
     await approveDocument(fx.ceo, { instanceId, expectedVersion: version });
     expect(await projectStatus(fx.projectId)).toBe("completed");
+  });
+
+  it("지출결의 제출 뒤 정산 기안 → `완료 전 점검 1건 · 점검 보기`로 거부 · 문서 없음", async () => {
+    const fx = await setupExpenseProject();
+    const expenseId = (await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] })).created[0]?.expenseId ?? "";
+    expect(await submitReadyDraft(fx.pm, expenseId)).toMatchObject({ kind: "submitted" });
+    await approvedExpenseWithEvidence(fx, fx.lines.split);
+    await linkCardUsage(fx.pm, fx.lines.noVendor);
+    await issueRevenue(fx.projectId);
+    expect(await applyAutoSettlement({ projectIds: [fx.projectId] }, { now: () => new Date("2027-01-02T03:00:00Z") })).toEqual([fx.projectId]);
+
+    const refused = await submitSettlement(fx.pm, { projectId: fx.projectId }).catch((e: unknown) => e);
+    expect(refused).toBeInstanceOf(GateBlockedError);
+    expect(refused).toMatchObject({ message: "완료 전 점검 1건 · 점검 보기" });
+    expect(await settlementOf(fx.projectId)).toBeNull();
+    expect(await projectStatus(fx.projectId)).toBe("settling");
   });
 });
 

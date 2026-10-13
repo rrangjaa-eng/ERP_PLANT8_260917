@@ -7,6 +7,10 @@ import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { changeProjectStatus } from "@/domain/projects/status";
 import { applyAutoSettlement } from "@/domain/projects/auto-transition";
 import { saveProjectLedger } from "@/domain/projects/ledger";
+import { createCorpCard } from "@/domain/corp-cards";
+import { createCardUsage, precheckCardUsage, type CardUsageInput } from "@/domain/corp-card-usages";
+import { saveRevenue } from "@/domain/revenue";
+import { seoulToday } from "@/lib/dates";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import { makePerson, teamIdByName } from "../approvals-fixtures";
 
@@ -52,7 +56,7 @@ export async function setupSettlementProject(people?: SettlementPeople, name = "
   if (!revision || !project.id || !project.number) throw new Error("프로젝트 · 1차 차수가 없습니다");
 
   const subcategory = (await firstSelectableSubcategory()).value;
-  await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
+  const saved = await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
     rows: [
       { id: randomUUID(), isNew: true as const, subcategory, itemName: "무대 제작", vendorId: null, ...SETTLEMENT_LINES.krw },
       { id: randomUUID(), isNew: true as const, subcategory, itemName: "해외 영상", vendorId: null, ...SETTLEMENT_LINES.usd },
@@ -60,10 +64,47 @@ export async function setupSettlementProject(people?: SettlementPeople, name = "
   });
 
   await changeProjectStatus(who.lead, project.id, { from: "bidding", to: "in_progress" });
+  await clearPreSettleBlockers(who.pm, project.id, saved.lines.map((line) => line.id));
   const settled = await applyAutoSettlement({ projectIds: [project.id] });
   if (!settled.includes(project.id)) throw new Error("자동 정산이 되지 않았습니다");
 
   return { ...who, projectId: project.id, projectNumber: project.number, projectName: name };
+}
+
+// 06-19 E-2 — 완료 전 점검(06-19 · D-611~D-613)이 기안을 막지 않게: 견적 줄마다 카드 사용 1건(실행가보다 작은 금액 — 카드 쪽 연결이라
+// 지출결의와 섞지 않는다) + 매출 발행 줄 1건. 강행 허용 키는 켜지 않고 실행가는 그대로다. 카드는 호출마다 새로 만든다(X-a — 발급사 · 뒤 4자리 UNIQUE).
+export async function linkCardUsage(holder: Viewer, lineId: string, amountKrw = 100_000): Promise<string> {
+  const tag = randomUUID().slice(0, 8);
+  const card = await createCorpCard(SYSTEM_VIEWER, {
+    issuer: `정산카드사-${tag}`,
+    numberLast4: String(1000 + Math.floor(Math.random() * 9000)),
+    label: `정산카드-${tag}`,
+    kind: "personal",
+    holderUserId: holder.id,
+  });
+  if (!card.id) throw new Error("카드 id 없음");
+  const input: CardUsageInput = {
+    corpCardId: card.id,
+    usedOn: seoulToday(),
+    merchantVendorId: null,
+    total: { currency: "KRW", amount: amountKrw, fxRate: 1 },
+    evidenceTypeCode: "invoice",
+    linkKind: "quote_line",
+    lineId,
+    memo: null,
+  };
+  return (await createCardUsage(holder, input, await precheckCardUsage(holder, input))).id;
+}
+
+export async function issueRevenue(projectId: string, amountKrw = 1_000_000): Promise<void> {
+  await saveRevenue(SYSTEM_VIEWER, projectId, {
+    issuedEntries: [{ id: randomUUID(), isNew: true, entryDate: "2026-09-01", amount: { currency: "KRW", amount: amountKrw, fxRate: 1 } }],
+  });
+}
+
+export async function clearPreSettleBlockers(holder: Viewer, projectId: string, lineIds: readonly string[]): Promise<void> {
+  for (const lineId of lineIds) await linkCardUsage(holder, lineId);
+  await issueRevenue(projectId);
 }
 
 // D-80 — 정산 중 팀장이 종료일을 오늘 뒤로 바꾸면 프로젝트가 진행으로 돌아간다(정산의 기간 권리는 팀장, PM은 없음). 리포지토리로 상태만

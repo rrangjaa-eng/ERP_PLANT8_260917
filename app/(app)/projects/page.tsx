@@ -23,6 +23,7 @@ import { Pagination } from "@/ui/pagination/Pagination";
 import { pageRangeText } from "@/ui/pagination/page-window";
 import { ProjectForm } from "./project-form";
 import { ProjectsFilterBar, type ProjectFilterOption } from "./filter-bar";
+import { summarizeOpenIssueRequests } from "@/domain/issue-requests";
 import { ProjectsTable } from "./projects-table";
 import { ListTotals } from "./list-totals";
 
@@ -83,7 +84,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   const sortDirection = firstListParam(params.dir) === "desc" ? "desc" : "asc";
   const statusLabel = statusOptions.find((option) => option.value === status)?.label;
 
-  const [references, canWrite, canWriteVendors, canViewVendors, list, copySource, usdDefaultFxRate, profitRateThreshold] = await Promise.all([
+  const [references, canWrite, canWriteVendors, canViewVendors, list, copySource, usdDefaultFxRate, profitRateThreshold, openIssueRequests] = await Promise.all([
     listProjectFormReferences(session.viewer),
     can(session.viewer, "projects", "write"),
     can(session.viewer, "admin.vendors", "write"),
@@ -105,6 +106,8 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
     showCreateForm ? recentFxRate("USD") : Promise.resolve(1),
     // quick 261004-51o — 수익률 기준선(설정). 미만 행의 수익률 글자만 위험 색.
     getSettingValue(PROJECT_PROFIT_RATE_THRESHOLD),
+    // 06-21(SP-4) — 하위 목록 링크 `발행 요청 {N}`. `projects.revenue` 보기가 없으면 null(링크 없음).
+    summarizeOpenIssueRequests(session.viewer),
   ]);
 
   // 등록 폼의 팀 · 담당 PM 칸만 업무 범위로 좁힌다 — 필터 줄은 전체 팀(references.teams)을 계속 쓴다.
@@ -169,6 +172,9 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
           sort={{ key: list.sort.key !== "endDate" ? list.sort.key : undefined, dir: list.sort.direction !== "asc" ? list.sort.direction : undefined }}
           hasFilter={hasFilter}
           periodErrors={periodErrors}
+          issueRequestsLink={
+            openIssueRequests ? { label: openIssueRequests.count > 0 ? `발행 요청 ${openIssueRequests.count}` : "발행 요청", href: "/projects/issue-requests" } : null
+          }
         />
       }
       summary={total > 0 ? <ListTotals totals={totals} /> : undefined}

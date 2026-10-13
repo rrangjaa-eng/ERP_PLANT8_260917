@@ -423,3 +423,22 @@ export async function listIssueRequests(viewer: Viewer, filters: { status?: Issu
     totals: amountVisible ? { count: amounts.length, amountKrw: sumKrw(amounts.map((entry) => entry.amountKrw)) } : { count: amounts.length },
   };
 }
+
+/** 열린(신청됨) 발행 요청 요약 — 프로젝트 목록 하위 링크 `발행 요청 {N}`(SP-4)과 06-23 「내 차례」 묶음이 쓴다. 공급가 합은 발행액을 볼 때만(A-605). */
+export type OpenIssueRequestSummary = { count: number; earliestDesiredDate?: string; supplyKrw?: number };
+
+export async function summarizeOpenIssueRequests(
+  viewer: Viewer,
+  deps?: { can?: typeof defaultCan; visible?: typeof defaultVisible },
+): Promise<OpenIssueRequestSummary | null> {
+  if (!(await (deps?.can ?? defaultCan)(viewer, "projects.revenue", "view"))) return null;
+  const amounts = await listIssueRequestAmounts(viewer, await projectRowScope(viewer), { status: "requested" });
+  const earliest = amounts[0];
+  if (!earliest) return { count: 0 };
+  const amountVisible = await (deps?.visible ?? defaultVisible)(viewer, "revenue.issued_amount");
+  return {
+    count: amounts.length,
+    earliestDesiredDate: earliest.desiredIssueDate,
+    ...(amountVisible ? { supplyKrw: sumKrw(amounts.map((entry) => entry.amountKrw)) } : {}),
+  };
+}

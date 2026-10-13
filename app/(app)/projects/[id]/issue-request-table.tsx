@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import type { IssueRequestDto } from "@/domain/issue-requests";
 import { Button } from "@/ui/button/Button";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
@@ -137,6 +138,24 @@ export function IssueRequestTable({
   const [cancelTarget, setCancelTarget] = useState<IssueRequestDraft | null>(null);
   const editability = (row: IssueRequestDraft) => (canEditRow(row) ? "edit" : props.canRequest ? "readonly" : "locked");
 
+  // 06-21(S17 → S16) — `?issueRequest={id}`로 들어오면 마운트 뒤 그 요청 줄로 스크롤 · 포커스: `발행 줄로`가 선 줄이면 그 3차, 아니면 줄 자체
+  // (`tabindex="-1"`). 없는 id면 아무 일도 하지 않는다. 상세 페이지는 동적 렌더(force-dynamic)라 useSearchParams에 Suspense 경계가 필요 없다.
+  const arrivalId = useSearchParams().get("issueRequest");
+  const arrivedId = useRef<string | null>(null);
+  useEffect(() => {
+    if (!arrivalId || arrivedId.current === arrivalId) return;
+    const anchor = Array.from(document.querySelectorAll<HTMLElement>("[data-issue-request-id]")).find((element) => element.dataset.issueRequestId === arrivalId);
+    if (!anchor) return;
+    arrivedId.current = arrivalId;
+    const linkButton = anchor.querySelector<HTMLButtonElement>('button[aria-label$=" 발행 줄로"]');
+    const row = anchor.closest("tr");
+    const target = linkButton ?? row;
+    if (!target) return;
+    if (!linkButton) row?.setAttribute("tabindex", "-1");
+    target.scrollIntoView({ block: "center" });
+    target.focus({ preventScroll: true });
+  }, [arrivalId, rows]);
+
   const emptyMessage =
     props.canRequest || props.pmName === null || !editableWidth ? "발행 요청이 없습니다" : `발행 요청이 없습니다 · 요청은 담당 PM ${props.pmName}`;
 
@@ -236,7 +255,7 @@ export function IssueRequestTable({
               ? "발행 줄 입력 중"
               : null;
         return (
-          <span className={styles.requestStatus}>
+          <span className={styles.requestStatus} data-issue-request-id={row.version !== undefined ? row.id : undefined}>
             <StatusTag variant="text" status={issueRequestStatusWord(row.status)} />
             {note ? <span className={styles.requestStatusNote}>{note}</span> : null}
             {props.canLink && editableWidth && row.status === "requested" && row.version !== undefined && !row.dirty ? (

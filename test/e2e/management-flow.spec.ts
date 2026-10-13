@@ -43,8 +43,13 @@ async function makeTeamPayer(fx: ExpenseE2E): Promise<Person> {
 
 type Upload = { name: string; mimeType: string; buffer: Buffer };
 
+// 05 중복 검사는 파일 해시가 같으면 다른 문서의 파일도 막는다 — 호출마다 한 바이트를 달리한 최소 PDF.
+function uniquePdf(): Upload {
+  return { name: `영수증-${randomUUID().slice(0, 8)}.pdf`, mimeType: "application/pdf", buffer: Buffer.from(`%PDF-1.4\n% ${randomUUID()}\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n`) };
+}
+
 // PM이 줄 하나의 작성 중 문서를 만들고 폼에서 증빙 한 장을 올려 제출한다(화면). 문서 id를 돌려준다.
-async function pmSubmits(browser: Browser, baseURL: string | undefined, fx: ExpenseE2E, key: LineKey, upload: (page: Page) => Promise<Upload>): Promise<string> {
+async function pmSubmits(browser: Browser, baseURL: string | undefined, fx: ExpenseE2E, key: LineKey, upload: (page: Page) => Promise<Upload> | Upload): Promise<string> {
   const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines[key].id] });
   const expenseId = created.created[0]?.expenseId;
   if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
@@ -83,7 +88,7 @@ function rowOf(page: Page, itemName: string) {
 }
 
 // 한 줄 흐름 전체. 증빙 형식만 다르다(이미지 · PDF).
-async function runManagementFlow(browser: Browser, baseURL: string | undefined, key: LineKey, upload: (page: Page) => Promise<Upload>): Promise<void> {
+async function runManagementFlow(browser: Browser, baseURL: string | undefined, key: LineKey, upload: (page: Page) => Promise<Upload> | Upload): Promise<void> {
   // 증빙 필수는 기본값(켜짐) 그대로 돈다 — 읽기만 한다(E-28: E2E에 설정 바꾸는 길이 없다).
   expect(await getSettingValue(EVIDENCE_REQUIRED), "증빙 필수 설정이 기본값이 아님").toBe(true);
 
@@ -156,5 +161,10 @@ test.describe("경영관리 흐름 (06-24)", () => {
   test("이미지 증빙 — PM 제출 → 결재 → 홈 [오늘] 지급 → 증빙 확인 → 지급 완료 → 지급 완료 목록", async ({ browser, baseURL }) => {
     test.setTimeout(120_000);
     await runManagementFlow(browser, baseURL, "tracer", (page) => uniqueReceipt(page));
+  });
+
+  test("PDF 증빙 — 같은 흐름을 PDF 원본으로(서버가 원본 그대로 받는다) → 지급 완료", async ({ browser, baseURL }) => {
+    test.setTimeout(120_000);
+    await runManagementFlow(browser, baseURL, "hold", () => uniquePdf());
   });
 });

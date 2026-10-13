@@ -8,8 +8,9 @@ import { upsertVisibility } from "@/repositories/permissions";
 import { ForbiddenError } from "@/domain/permissions/can";
 import { completeExpensePayment, PayableChangedError, PaymentConflictError, previewPayable, saveScheduledPayDate } from "@/domain/payments";
 import { BATCH_ROW_FAILED, batchRowOutcome, completePaymentsBatch } from "@/domain/payments/batch";
-import { listPaymentTargets, parsePaymentEvidenceFilter, PAYMENT_EVIDENCE_FILTERS } from "@/domain/payments/targets";
-import { EVIDENCE_UNCONFIRMED } from "@/domain/payments/action-row";
+import { listPaymentTargets, parsePaymentEvidenceFilter, PAYMENT_EVIDENCE_FILTERS, sumSelectedTransfers } from "@/domain/payments/targets";
+import { DIFF_REASON_REQUIRED, EVIDENCE_UNCONFIRMED } from "@/domain/payments/action-row";
+import { diffKrw, sumKrw } from "@/domain/money";
 import { GateBlockedError } from "@/domain/rules/gate";
 import { confirmEvidence } from "@/domain/evidence-reviews";
 import { voidEvidence } from "@/domain/evidence";
@@ -520,5 +521,93 @@ describe("검토 반영 (06-15 독립 검토)", () => {
       expect(result?.validationErrors?.payDate?._errors).toEqual([DATE_FORMAT_ERROR]);
     }
     expect(await livePayments(a.expenseId)).toHaveLength(0);
+  });
+});
+
+// ── 06-17 이체액 편집 · 서버 합(합계 번호) · rowStates ──────────────────────
+
+describe("이체액 편집 · 서버 합 (06-17 Task 1)", () => {
+  it("sumSelectedTransfers — 합 = sumKrw(이체액 편집값 · 없으면 지급 총액), 행별 차이 = diffKrw(이체액, 지급 총액), 선택 불가 행은 합에서 빠지고 rowStates selectable false / 지급 권한 없음 → ForbiddenError", async () => {
+    const payer = await makePayer();
+    const { fx, a, b } = await twoPayable();
+    const [p2Line] = await extraLines(fx, 1);
+    if (!p2Line) throw new Error("줄 없음");
+    const [p2] = await approvedMany(fx, [p2Line], true);
+    if (!p2) throw new Error("P2 문서 없음");
+    const payableA = await payableNow(payer, a);
+    const payableB = await payableNow(payer, b);
+
+    const result = await sumSelectedTransfers(payer, {
+      seq: 7,
+      rows: [{ id: a.expenseId, transferKrw: payableA - 3_300 }, { id: b.expenseId }, { id: p2.expenseId, transferKrw: 1_000 }],
+    });
+    expect(result.seq).toBe(7);
+    expect(result.totalKrw).toBe(sumKrw([diffKrw(payableA, 3_300), payableB]));
+    expect(result.diffs).toEqual({ [a.expenseId]: -3_300, [b.expenseId]: 0 });
+    expect(result.rowStates.find((row) => row.id === p2.expenseId)).toMatchObject({ selectable: false });
+
+    expect(await caught(sumSelectedTransfers(fx.pm, { seq: 1, rows: [{ id: a.expenseId }] }))).toBeInstanceOf(ForbiddenError);
+  });
+
+  it("고른 행 상태 일괄 조회 — 두 쪽에 걸친 id · 처리된 id · 게이트로 막힌 id는 행마다 { id, selectable, version, payableKrw }(P4만 selectable), 없는 id · 지급 대상이 아닌 문서는 싣지 않는다(r2 F-2)", async () => {
+    const payer = await makePayer();
+    const { fx, a, b } = await twoPayable();
+    const [thirdLine, p2Line, draftLine] = await extraLines(fx, 3);
+    if (!thirdLine || !p2Line || !draftLine) throw new Error("줄 셋이 필요하다");
+    const [third] = await approvedMany(fx, [thirdLine], false);
+    const [p2] = await approvedMany(fx, [p2Line], true);
+    if (!third || !p2) throw new Error("문서 없음");
+    const draft = (await createExpenseFromLines(fx.pm, { lineIds: [draftLine] })).created[0]?.expenseId;
+    if (!draft) throw new Error("작성 중 문서 없음");
+    // 쪽 크기 2 — P4 세 행 중 하나는 둘째 쪽(지금 쪽 밖)에 있다(51번째 행과 같은 처지 — 쪽 크기만 줄였다).
+    const pageOne = rowsOf(await listPaymentTargets(payer, { evidence: "payable", page: 1 }, { pageSize: 2 })).map((row) => row.id);
+    const pageTwo = rowsOf(await listPaymentTargets(payer, { evidence: "payable", page: 2 }, { pageSize: 2 })).map((row) => row.id);
+    expect(pageOne).toHaveLength(2);
+    expect(pageTwo).toHaveLength(1);
+    const [offPage] = pageTwo;
+    const [paidId, keptId] = pageOne;
+    if (!offPage || !paidId || !keptId) throw new Error("쪽 행 없음");
+    const docOf = (id: string) => [a, b, third].find((doc) => doc.expenseId === id) ?? a;
+    const paid = await completePaymentsBatch(payer, { payDate: seoulToday(), rows: [await snapshotOf(payer, docOf(paidId))] });
+    expect(paid.processedIds).toEqual([paidId]);
+
+    const result = await sumSelectedTransfers(payer, {
+      seq: 3,
+      rows: [keptId, offPage, paidId, p2.expenseId, draft, randomUUID()].map((id) => ({ id })),
+    });
+    expect(result.seq).toBe(3);
+    const states = new Map(result.rowStates.map((row) => [row.id, row]));
+    expect([...states.keys()].sort()).toEqual([keptId, offPage, paidId, p2.expenseId].sort());
+    expect(states.get(offPage)).toEqual({ id: offPage, selectable: true, version: await versionOf(offPage), payableKrw: await payableNow(payer, docOf(offPage)) });
+    expect(states.get(keptId)).toMatchObject({ selectable: true, version: await versionOf(keptId) });
+    expect(states.get(paidId)).toMatchObject({ selectable: false });
+    expect(states.get(p2.expenseId)).toMatchObject({ selectable: false, version: await versionOf(p2.expenseId) });
+    expect(Object.keys(result.diffs).sort()).toEqual([keptId, offPage].sort());
+  });
+
+  it("처리 요청 zod — 이체액 ≠ 기대 지급 총액인데 차이 사유가 비면 그 행 차이 사유 칸 오류 `차이 사유 없음 · 사유 적기` · 지급 0건", async () => {
+    const payer = await makePayer();
+    const { a } = await twoPayable();
+    const row = await snapshotOf(payer, a);
+    session.viewer = payer;
+
+    for (const diffReason of [undefined, "  "]) {
+      const result = await completePaymentsBatchAction({ payDate: seoulToday(), rows: [{ ...row, transferKrw: row.expectedPayableKrw - 3_300, ...(diffReason === undefined ? {} : { diffReason }) }] });
+      expect(result?.data).toBeUndefined();
+      expect(result?.validationErrors?.rows?.[0]?.diffReason?._errors).toEqual([DIFF_REASON_REQUIRED]);
+    }
+    const same = await completePaymentsBatchAction({ payDate: seoulToday(), rows: [{ ...row, transferKrw: row.expectedPayableKrw }] });
+    expect(same?.data?.processedIds).toEqual([a.expenseId]);
+  });
+
+  it("이체액 · 사유가 실린 스냅숏 → 지급 기록에 이체액 · 차이 · 사유(06-04 단건 경로)", async () => {
+    const payer = await makePayer();
+    const { a } = await twoPayable();
+    const row = await snapshotOf(payer, a);
+
+    const result = await completePaymentsBatch(payer, { payDate: seoulToday(), rows: [{ ...row, transferKrw: row.expectedPayableKrw - 3_300, diffReason: "이체 수수료" }] });
+    expect(result.processedIds).toEqual([a.expenseId]);
+    const [record] = await livePayments(a.expenseId);
+    expect(record).toMatchObject({ transferKrw: row.expectedPayableKrw - 3_300, payableKrw: row.expectedPayableKrw, diffKrw: -3_300, diffReason: "이체 수수료" });
   });
 });

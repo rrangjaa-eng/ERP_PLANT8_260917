@@ -10,6 +10,8 @@ import { completePaymentsBatch } from "@/domain/payments/batch";
 import { listAllPaymentTargets } from "@/domain/payments/targets";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { AMOUNT_HIDDEN } from "@/domain/payments/action-row";
+import { previewPayable } from "@/domain/payments";
+import { formatKrw } from "@/lib/format-number";
 import { seoulToday } from "@/lib/dates";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { submitReadyDraft } from "../integration/fixtures/expenses";
@@ -390,6 +392,64 @@ test.describe("지급 대상 · 일괄 지급 마감 (06-15 Task 3)", () => {
     await expect(primary).toHaveAttribute("aria-disabled", "true");
     await expect(primary).toHaveAccessibleDescription(AMOUNT_HIDDEN);
     await expect(page.getByText("고른 건 없음")).toHaveCount(0);
+    await page.context().close();
+  });
+});
+
+test.describe("일괄 지급 마감 (06-17)", () => {
+  test("이체액 고침 → 자동 선택 → 사유 → 처리 — 차이 2행(서버 값 · 경고 색) · 사유 칸 필수 · 합 = 서버 값(굵게) → S2 → 문서 화면 S5에 이체액 · 차이 · 사유 · 세율 바뀜 줄 없음", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const expenseId = await approvedTarget(fx, "tracer");
+    const payer = await makeTeamPayer(fx);
+    const preview = await previewPayable(payer.viewer, { expenseId, payDate: seoulToday() });
+    if (preview.payableKrw == null) throw new Error("지급 총액 없음");
+    const transfer = preview.payableKrw - 3_300;
+
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    await page.goto("/expenses");
+    const row = rowOf(page, fx.lines.tracer.itemName);
+    const checkbox = row.getByRole("checkbox");
+    await waitForHydration(checkbox);
+    await expect(checkbox).not.toBeChecked();
+    await expect(row.getByLabel("차이 사유")).toHaveCount(0);
+
+    await row.getByTestId("payment-transfer-cell").click();
+    await row.getByLabel("이체액").fill(String(transfer));
+    await row.getByLabel("이체액").press("Enter");
+    await expect(checkbox).toBeChecked();
+    const diff = row.getByText("차이 -3,300", { exact: true });
+    await expect(diff).toBeVisible();
+    expect(await colorOf(diff)).toBe(await tokenAsColor(page, "--status-warning"));
+    await expect(row.getByTestId("payment-diff-reason-cell")).toHaveAttribute("aria-readonly", "false");
+
+    const totals = page.getByRole("region", { name: "합계" });
+    await expect(totals.getByText(/^고른 1건 · 이체액/)).toBeVisible();
+    const sum = totals.getByText(formatKrw(transfer), { exact: true });
+    await expect(sum).toBeVisible();
+    expect(await sum.evaluate((element) => getComputedStyle(element).fontWeight)).toBe(await tokenAsWeight(page, "--fw-bold"));
+
+    await row.getByTestId("payment-diff-reason-cell").click();
+    await row.getByLabel("차이 사유").fill("이체 수수료");
+    await row.getByLabel("차이 사유").press("Enter");
+    await expect(row.getByText("이체 수수료", { exact: true })).toBeVisible();
+
+    await page.getByRole("button", { name: /^지급 완료 1/ }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByText(`1건 · 이체액 합계 ${formatKrw(transfer)}`)).toBeVisible();
+    await dialog.getByRole("button", { name: /^지급 완료 1건/ }).click();
+    await expect(dialog).toBeHidden();
+    await expect(row).toHaveCount(0);
+
+    await page.goto(`/expenses/${expenseId}`);
+    await expect(page.getByTestId("payment-paid-line")).toContainText(`지급 총액 ${formatKrw(preview.payableKrw)} · 차이 -3,300`);
+    await expect(page.getByText(formatKrw(transfer), { exact: true }).first()).toBeVisible();
+    await expect(page.getByTestId("payment-diff-reason")).toHaveText("이체 수수료");
+    await expect(page.getByTestId("expense-tax-drift")).toHaveCount(0);
+    const [record] = await db
+      .select({ transferKrw: expensePayments.transferKrw, diffKrw: expensePayments.diffKrw, diffReason: expensePayments.diffReason })
+      .from(expensePayments)
+      .where(and(eq(expensePayments.expenseId, expenseId), isNull(expensePayments.cancelledAt)));
+    expect(record).toEqual({ transferKrw: transfer, diffKrw: -3_300, diffReason: "이체 수수료" });
     await page.context().close();
   });
 });

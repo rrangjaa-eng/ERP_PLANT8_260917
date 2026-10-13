@@ -92,3 +92,13 @@ export async function markIssueRequestIssued(viewer: Viewer, id: string, entryId
     .returning();
   return row ?? null;
 }
+
+/** `신청됨 → 취소` — 잠근 행에만 부른다(06-21). 취소한 사람 · 시각을 남기고 줄은 지우지 않는다. */
+export async function markIssueRequestCancelled(viewer: Viewer, id: string, tx: DbOrTx): Promise<IssueRequestRow | null> {
+  const [row] = await tx
+    .update(revenueIssueRequests)
+    .set({ status: "cancelled", cancelledBy: viewer.id, cancelledAt: sql`now()`, version: sql`${revenueIssueRequests.version} + 1` })
+    .where(and(eq(revenueIssueRequests.id, id), eq(revenueIssueRequests.status, "requested")))
+    .returning();
+  return row ?? null;
+}

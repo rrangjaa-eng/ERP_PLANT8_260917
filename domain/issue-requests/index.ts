@@ -20,6 +20,7 @@ import {
   insertIssueRequest,
   listIssueRequestRowsByProject,
   lockIssueRequest,
+  markIssueRequestCancelled,
   markIssueRequestIssued,
   updateIssueRequestIfVersionMatches,
   type IssueRequestListRow,
@@ -46,7 +47,19 @@ const REPLAY_MISMATCH = "이미 저장된 요청과 값이 다름 · 새로 고�
 
 export type IssueRequestStatus = "requested" | "issued" | "cancelled";
 
-export type IssueRequestWriteRow = {
+// 06-21(O-12) — 상태 전이는 이 함수 하나가 정한다. 잇기 · 취소 · 수정 모두 요청 행을 잠근 뒤(또는 상태 조건 UPDATE가 0행일 때) 이 판정을 부른다.
+export type IssueRequestAction = "link" | "cancel" | "edit";
+export type IssueRequestVerdict = { allowed: true; to: IssueRequestStatus } | { allowed: false; reason: string };
+
+const TRANSITIONS: Record<IssueRequestAction, IssueRequestStatus> = { link: "issued", cancel: "cancelled", edit: "requested" };
+
+export function issueRequestTransition(from: IssueRequestStatus, action: IssueRequestAction): IssueRequestVerdict {
+  if (from === "requested") return { allowed: true, to: TRANSITIONS[action] };
+  if (from === "issued") return { allowed: false, reason: action === "link" ? ALREADY_LINKED : NOT_EDITABLE_ISSUED };
+  return { allowed: false, reason: NOT_EDITABLE_CANCELLED };
+}
+
+export type IssueRequestEditRow = {
   /** 화면이 만든 uuid(새 줄은 `isNew`와 함께 — 재전송에도 같은 id). */
   id: string;
   isNew?: true;
@@ -55,7 +68,13 @@ export type IssueRequestWriteRow = {
   /** 공급가 기준(발행 줄과 같은 기준 — O-12). 부가세 · 합계는 받지 않는다. */
   amount: MoneyInputDto;
   memo?: string | null;
+  cancel?: undefined;
 };
+
+/** 06-21 — 취소 행. 화면의 확인 모달은 이 행을 dirty로 만들 뿐이고, `일괄 저장` 때 원장 트랜잭션 안에서만 반영된다(r4 F-F3). */
+export type IssueRequestCancelRow = { id: string; version?: number; cancel: true };
+
+export type IssueRequestWriteRow = IssueRequestEditRow | IssueRequestCancelRow;
 
 // 트랜잭션을 열기 전에 읽는 쓰기 권리 — 원장이 잠그기 전에 부른다(잠근 트랜잭션 안 풀 호출 금지).
 export async function assertIssueRequestWriteRight(viewer: Viewer, can: typeof defaultCan = defaultCan): Promise<void> {
@@ -82,9 +101,10 @@ function samePayload(stored: IssueRequestRow, payload: Payload): boolean {
   );
 }
 
-function prepare(rows: IssueRequestWriteRow[], errors: CellFormatError[]): Array<{ input: IssueRequestWriteRow; rowIndex: number; payload: Payload }> {
-  const prepared: Array<{ input: IssueRequestWriteRow; rowIndex: number; payload: Payload }> = [];
+function prepare(rows: IssueRequestWriteRow[], errors: CellFormatError[]): Array<{ input: IssueRequestEditRow; rowIndex: number; payload: Payload }> {
+  const prepared: Array<{ input: IssueRequestEditRow; rowIndex: number; payload: Payload }> = [];
   rows.forEach((input, rowIndex) => {
+    if (input.cancel) return;
     if (input.desiredIssueDate === "") {
       errors.push({ rowIndex, rowId: input.id, field: "desiredIssueDate", label: "희망 발행일", reason: DATE_EMPTY_ERROR });
       return;
@@ -144,6 +164,39 @@ export async function saveIssueRequestRows(
     rejections.push({ rowIndex, rowId, field: "status", label: "상태", reason });
   let written = 0;
 
+  // 06-21 취소 갈래 — 요청 행을 먼저 잠그고(같은 tx), 잠근 행의 프로젝트 · 상태 · 이어짐 · version만 판정한다.
+  // 권한 · 완료 판정은 원장이 이미 했다(트랜잭션 전 쓰기 권리 · 잠근 프로젝트 행 상태) — 여기서 다시 읽지 않는다(CROSS-R1 F-5).
+  for (const [rowIndex, input] of rows.entries()) {
+    if (!input.cancel) continue;
+    const locked = await lockIssueRequest(viewer, input.id, tx);
+    if (!locked || locked.projectId !== projectId) {
+      reject(rowIndex, input.id, NOT_FOUND);
+      continue;
+    }
+    const verdict = issueRequestTransition(locked.status as IssueRequestStatus, "cancel");
+    if (!verdict.allowed) {
+      // 응답을 잃은 재전송 — 이 사람의 첫 커밋이 version을 하나 올렸으면 no-op(쓰기 · 기록 없음).
+      const replay = locked.status === "cancelled" && locked.cancelledBy === viewer.id && input.version !== undefined && locked.version === input.version + 1;
+      if (!replay) reject(rowIndex, input.id, verdict.reason);
+      continue;
+    }
+    if (input.version === undefined || locked.version !== input.version) {
+      reject(rowIndex, input.id, CHANGED_BY_OTHER);
+      continue;
+    }
+    const cancelled = await markIssueRequestCancelled(viewer, input.id, tx);
+    if (!cancelled) {
+      reject(rowIndex, input.id, CHANGED_BY_OTHER);
+      continue;
+    }
+    await recordAction(
+      viewer,
+      { actionType: "status_change", entity: REQUEST_ENTITY, entityId: input.id, detail: { projectId, from: locked.status, to: verdict.to } },
+      { tx },
+    );
+    written += 1;
+  }
+
   for (const { input, rowIndex, payload } of prepared) {
     if (input.isNew) {
       const inserted = await insertIssueRequest(viewer, { id: input.id, projectId, requestedBy: viewer.id, ...payload }, tx);
@@ -168,9 +221,9 @@ export async function saveIssueRequestRows(
       continue;
     }
     const stored = await findIssueRequestById(viewer, input.id, tx);
+    const verdict = stored ? issueRequestTransition(stored.status as IssueRequestStatus, "edit") : null;
     if (!stored || stored.projectId !== projectId) reject(rowIndex, input.id, NOT_FOUND);
-    else if (stored.status === "issued") reject(rowIndex, input.id, NOT_EDITABLE_ISSUED);
-    else if (stored.status === "cancelled") reject(rowIndex, input.id, NOT_EDITABLE_CANCELLED);
+    else if (verdict && !verdict.allowed) reject(rowIndex, input.id, verdict.reason);
     // 응답을 잃은 재전송 — 첫 커밋이 version을 하나 올렸고 값이 같으면 no-op(쓰기 · 기록 없음).
     else if (stored.version === input.version + 1 && samePayload(stored, payload)) continue;
     else reject(rowIndex, input.id, CHANGED_BY_OTHER);
@@ -194,11 +247,10 @@ export async function linkIssueRequestToEntry(
   };
   const locked = await lockIssueRequest(viewer, requestId, tx);
   if (!locked || locked.projectId !== deps.projectId) return reject(NOT_FOUND);
-  if (locked.status === "issued") {
-    if (locked.issuedEntryId === entryId) return { linked: false };
-    return reject(ALREADY_LINKED);
-  }
-  if (locked.status !== "requested") return reject(NOT_EDITABLE_CANCELLED);
+  // 재전송 — 이미 같은 줄로 이어져 있으면 쓰기 · 기록 없이 통과(전이가 아니다).
+  if (locked.status === "issued" && locked.issuedEntryId === entryId) return { linked: false };
+  const verdict = issueRequestTransition(locked.status as IssueRequestStatus, "link");
+  if (!verdict.allowed) return reject(verdict.reason);
 
   const entry = await repoFindRevenueEntryById(viewer, entryId, tx);
   if (!entry || entry.projectId !== deps.projectId || entry.kind !== "issue" || entry.archivedAt !== null) return reject(NOT_FOUND);

@@ -125,14 +125,21 @@ const issuedEntryRowSchema = revenueEntryRowSchema
   .refine((row) => row.fromIssueRequestId === undefined || row.isNew === true, { path: ["fromIssueRequestId"], message: "새 발행 줄에만 허용" });
 
 // 06-18 — 발행 요청 줄. 부가세 · 합계 칸은 이 스키마에 없다(서버가 희망 발행일 기준으로 계산한다).
-const issueRequestRowSchema = z.object({
-  id: z.string().uuid(),
-  isNew: z.literal(true).optional(),
-  version: z.number().optional(),
-  desiredIssueDate: z.string().max(10),
-  amount: moneyInputSchema,
-  memo: z.string().optional(),
-});
+// 06-21(O-12 · r4 F-F3) — `cancel`은 저장된 줄(id · version)의 취소 표시다. 새 줄(isNew)과 함께 오면 스키마가 거부한다.
+const issueRequestRowSchema = z
+  .object({
+    id: z.string().uuid(),
+    isNew: z.literal(true).optional(),
+    version: z.number().optional(),
+    desiredIssueDate: z.string().max(10),
+    amount: moneyInputSchema,
+    memo: z.string().optional(),
+    cancel: z.literal(true).optional(),
+  })
+  .refine((row) => row.cancel === undefined || (row.isNew === undefined && row.version !== undefined), {
+    path: ["cancel"],
+    message: "저장된 줄에만 허용",
+  });
 
 // D-63·D-65: 클라이언트가 견적가·차익·원화 환산액·부가세·공급가 역산 필드를
 // 실어 보내도 이 스키마에 그 필드가 없어 애초에 파싱되지 않는다 — domain
@@ -202,7 +209,8 @@ export const saveProjectLedgerAction = authedActionClient
           rows: quoteLines.rows.map(({ id, ...row }) => (id ? { ...row, id } : { ...row, id: randomUUID(), isNew: true as const })),
         },
         revenue: parsedInput.revenue,
-        issueRequests: parsedInput.issueRequests,
+        // 06-21 — 취소 행은 id · version만 도메인으로 넘긴다(값 칸은 취소에 쓰지 않는다).
+        issueRequests: parsedInput.issueRequests?.map(({ cancel, ...row }) => (cancel ? { id: row.id, version: row.version, cancel } : row)),
         period: parsedInput.period,
         preEstimate: parsedInput.preEstimate,
       });

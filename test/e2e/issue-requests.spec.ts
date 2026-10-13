@@ -306,3 +306,48 @@ test.describe("발행 요청 — S16 상태 마감 (06-18 Task 3)", () => {
     await context.close();
   });
 });
+
+async function storedStatus(requestId: string): Promise<string | undefined> {
+  const [row] = await db.select({ status: revenueIssueRequests.status }).from(revenueIssueRequests).where(eq(revenueIssueRequests.id, requestId));
+  return row?.status;
+}
+
+test.describe("발행 요청 취소 (06-21 Task 1 — O-12 · r4 F-F3)", () => {
+  test("발행 요청 취소 — 일괄 저장 때 반영", async ({ browser }) => {
+    const { projectUrl, projectId, pm, today } = await setupProject();
+    const requestId = await seedRequest(projectId, pm.userId, { desiredIssueDate: today, amount: 4_000_000, memo: "취소할 요청" });
+
+    const { page, context } = await openAs(browser, pm, projectUrl);
+    const memoCell = requestTable(page).locator("td", { has: page.getByLabel("메모") });
+    const dialog = page.getByRole("dialog", { name: "발행 요청 취소" });
+
+    // 2차 `닫기 Esc` — 아무것도 바뀌지 않는다.
+    await memoCell.focus();
+    await page.keyboard.press("Delete");
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText(`희망 ${today} · 4,000,000`);
+    await expect(dialog).toContainText("경영관리 목록에서 빠짐");
+    await expect(dialog.getByRole("button", { name: /닫기/ })).toContainText("Esc");
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect(requestTable(page).getByText("신청됨", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toHaveCount(0);
+
+    // 1차 `발행 요청 취소` — 그 줄이 dirty 한 칸(`취소`)이 되고 `일괄 저장 1`, DB는 아직 그대로.
+    await memoCell.focus();
+    await page.keyboard.press("Delete");
+    await dialog.getByRole("button", { name: /^발행 요청 취소/ }).click();
+    await expect(dialog).toBeHidden();
+    await expect(requestTable(page).getByText("취소", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
+    expect(await storedStatus(requestId)).toBe("requested");
+
+    // 일괄 저장 — 그때 반영되고 줄은 `취소`로 남는다.
+    await page.getByRole("button", { name: /일괄 저장/ }).click();
+    await expect(page.getByText("바뀐 칸 없음", { exact: true })).toBeVisible();
+    await expect.poll(() => storedStatus(requestId)).toBe("cancelled");
+    await expect(requestTable(page).getByText("취소", { exact: true })).toBeVisible();
+    await expect(requestTable(page)).toContainText("취소할 요청");
+    await context.close();
+  });
+});

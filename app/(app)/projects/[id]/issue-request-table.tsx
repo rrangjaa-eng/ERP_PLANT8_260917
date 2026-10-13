@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import type { IssueRequestDto } from "@/domain/issue-requests";
 import { Button } from "@/ui/button/Button";
+import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { Table } from "@/ui/table/Table";
 import type { CellIssue, TableColumn } from "@/ui/table/types";
@@ -23,6 +25,8 @@ export type IssueRequestDraft = {
   memo: string | null;
   status: "requested" | "issued" | "cancelled";
   dirty: boolean;
+  /** 06-21(O-12) — 확인 모달로 취소한 저장된 줄. 상태 칸은 `취소`이고 `일괄 저장` 때 `cancel: true`로 간다(04 줄 삭제와 같은 흐름). */
+  cancel?: true;
   /** 서버 값(저장 전 편집한 줄에는 낡은 값이라 2행을 그리지 않는다). */
   vatKrw?: number;
   totalKrw?: number;
@@ -128,6 +132,9 @@ export function IssueRequestTable({
 }) {
   const canAdd = props.canRequest && editableWidth;
   const canEditRow = (row: IssueRequestDraft) => canAdd && row.status === "requested" && !linkedRequestIds.has(row.id) && (row.version !== undefined || row.dirty);
+  // 06-21 — 취소는 저장된 `신청됨` · 미연결 줄만(새 줄 · 발행 줄 입력 중 · 발행됨 · 취소 줄은 Delete가 아무 일도 하지 않는다).
+  const canCancelRow = (row: IssueRequestDraft) => canAdd && row.status === "requested" && row.version !== undefined && !linkedRequestIds.has(row.id);
+  const [cancelTarget, setCancelTarget] = useState<IssueRequestDraft | null>(null);
   const editability = (row: IssueRequestDraft) => (canEditRow(row) ? "edit" : props.canRequest ? "readonly" : "locked");
 
   const emptyMessage =
@@ -255,7 +262,7 @@ export function IssueRequestTable({
       <h3 className={styles.tableSubheading}>발행 요청</h3>
       <Table
         caption="발행 요청"
-        keyboard={{ onSave }}
+        keyboard={{ onSave, onDeleteRow: canAdd ? (row) => (canCancelRow(row) ? setCancelTarget(row) : undefined) : undefined }}
         columns={columns}
         rows={rows}
         getRowId={(row) => row.clientKey}
@@ -272,6 +279,21 @@ export function IssueRequestTable({
           </Button>
         </div>
       ) : null}
+      {/* 06-21(O-12) — 확인하면 서버를 부르지 않고 그 줄을 dirty 한 칸(상태 `취소`)으로 만든다. 반영은 상세 1차 `일괄 저장` 때. */}
+      <ConfirmDialog
+        open={cancelTarget !== null}
+        onClose={() => setCancelTarget(null)}
+        title="발행 요청 취소"
+        subtitle={cancelTarget ? `희망 ${cancelTarget.desiredIssueDate} · ${formatKrw(cancelTarget.amount)}` : undefined}
+        resultLines={["경영관리 목록에서 빠짐"]}
+        primary={{
+          label: "발행 요청 취소",
+          onConfirm: () => {
+            if (cancelTarget) onChange(cancelTarget.clientKey, { status: "cancelled", cancel: true });
+            setCancelTarget(null);
+          },
+        }}
+      />
     </>
   );
 }

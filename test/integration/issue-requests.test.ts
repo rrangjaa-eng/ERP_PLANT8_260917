@@ -18,7 +18,7 @@ import { getSettingValue as realGetSettingValue } from "@/domain/settings/regist
 import { TAX_VAT_RATE } from "@/domain/settings/keys";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { insertRole } from "@/repositories/roles";
-import { deferred, waitForLockWaiter } from "./lock-race";
+import { deferred, waitForLockWaiter, type Deferred } from "./lock-race";
 
 // 06-18 — 발행 요청(D-610): PM이 요청 줄을 일괄 저장하고, 매출 기록 권한자가 새 발행 줄에 `fromIssueRequestId`를 실어 저장하면
 // 같은 트랜잭션에서 요청이 `발행됨`으로 이어진다. 표는 06-27, 이 파일은 domain · 원장 경로만 본다(UI는 E2E).
@@ -647,7 +647,7 @@ describe("발행 요청 취소 (saveIssueRequestRows 취소 갈래 — 06-21)", 
 
 // [E-26] 취소 ∥ 잇기 — 원장 `afterLock` 장벽으로 쥔 쪽을 프로젝트 행 잠금에서 멈추고, 반대 저장이 그 잠금을 기다리는 것을 확인한 뒤 푼다.
 // 두 원장 저장은 프로젝트 행에서 먼저 줄을 서므로 이 테스트가 지키는 것은 「요청 행 잠금 뒤 issueRequestTransition 판정」이다.
-async function raceLedgerSaves(holder: () => Promise<unknown>, contender: () => Promise<unknown>, holderBarrier: { locked: ReturnType<typeof deferred>; release: ReturnType<typeof deferred> }) {
+async function raceLedgerSaves(holder: () => Promise<unknown>, contender: () => Promise<unknown>, holderBarrier: { locked: Deferred<void>; release: Deferred<void> }) {
   const first = holder();
   const reachedLock = await Promise.race([holderBarrier.locked.promise.then(() => true), first.then(() => false, () => false)]);
   expect(reachedLock, "잠금 순서 조건을 만들지 못했다 — 쥔 쪽이 프로젝트 행 잠금에 닿지 않음").toBe(true);

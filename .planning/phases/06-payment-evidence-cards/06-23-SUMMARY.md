@@ -124,3 +124,27 @@ superpowers:test-driven-development · superpowers:verification-before-completio
 
 - 파일 존재: domain/next-turn/phase6-items.ts · domain/expenses/evidence-signals.ts · repositories/next-turn.ts · test/unit/domain/next-turn-phase6.test.ts · test/e2e/next-turn-phase6.spec.ts · docs/design/checks/2026-10-13-06-23-next-turn.md — 모두 FOUND.
 - 커밋: 0a54dcc · 936189e · 127c22c · f20430e · 145b2a5 · 729aa4e — 모두 FOUND(`git rev-list --count ba46b2f1..HEAD` = 6).
+
+## 검토 후 수정 (Opus 수정자 · 독립 검토 06-23-review.md · DOM 감사 06-23-dom-audit.md)
+
+- **D-1(중간) 긴 대상 글자** — `ui/next-turn/NextTurn.tsx:48` 대상 span `title={item.label}` · `ui/next-turn/NextTurn.module.css` PC `.grow` 한 줄 말줄임(:40-47, 대상이 인라인이라 블록인 `.grow`에 건다) · 폰 `.label` 두 줄 말줄임(:91-100) · 폰 `.why` `white-space: normal`. 단위 `test/unit/ui/next-turn-label-title.test.ts` · E2E `test/e2e/mobile-next-turn.spec.ts` 「긴 대상 글자 (06-23 D-1)」 · 점검표 D-1 줄. 커밋 `e89a8d1`.
+- **D-3(낮음) SYSTEM 정본 오류 글자** — `docs/design/SYSTEM.md:1005` `내 차례 불러오지 못함` + 2차 `다시 시도` · `docs/design/DECISIONS.md` 2026-10-13 C13 정렬 한 줄. 커밋 `04149d2`.
+- **검토 낮음-1 행 범위** — `repositories/next-turn.ts:14-25` `listSettlingProjectsOfPm(viewer, scope, pmUserId)` + `rowScopeCondition` AND, 호출부 `domain/next-turn/phase6-items.ts:108` `projectRowScope(viewer)`. 통합 「프로젝트 보기가 없으면(행 범위 none) 점검 줄이 없다」 · 처분표 이유 갱신. 커밋 `ff9613d`.
+- **검토 낮음-3 묶음 조회** — `domain/expenses/evidence-signals.ts:32-40` 후보 문서 id를 모아 `ownersWithEvidence` 한 번(동작 같음). 통합 「여러 문서 한 번」(hasEvidence 0회 · ownersWithEvidence 1회). 커밋 `b124493`.
+
+- **검증(수정 뒤)**: `pnpm lint` 0 · `pnpm typecheck` 0 · 단위 전체 306 파일 4598 통과 · 통합 `test/integration/next-turn.test.ts` 48 통과(격리 DB erp_test_0623f) · E2E `CI=true`(격리 DB erp_0623f_test, flock, `--project=desktop --project=mobile-375 --no-deps`) `next-turn-phase6` · `mobile-next-turn` · `mobile-next-turn-approval` 12 통과. D-1 E2E는 옛 CSS에서 붉음(대상 높이 120 > 49) 확인.
+
+## 검토 후 남긴 것 (코드 변경 없음 — 기록만)
+
+- **D-2(낮음) 폰 짧은 묶음 · 점검 줄이 3줄** — 07 입력으로 미룸(사용자 카드 대기, 추천 「07로 미루기」). D-1 수정 뒤에도 폰 대상은 두 줄까지 서므로 행은 최대 3줄(태그 · 대상 2줄 + 금액)이다. 2안(상황을 `reason`으로 옮김)은 05 「이유 칸 비움」 결정과 부딪혀 사용자 결정이 필요하다.
+- **검토 낮음-2 LIMIT 200 상위 집합** — 후보 갈래는 일부러 상위 집합(증빙 필수 설정 · 선결제 기한은 훅이 판정)이라 훅이 버릴 문서가 200건 넘게 쌓이면 더 오래된 신호 문서가 밀린다. 빈도 낮음 · 설계대로. 필요해지면 `evidenceRequired`를 SQL 갈래 인자로.
+- **참고-1** `expenseBlockedAfterApproval`(`domain/expenses/index.ts:437`)이 `seoulToday()`를 직접 써 `listNextTurnItems(…, { today })` 주입과 기준일이 다를 수 있다(테스트 주입 때만 의미).
+- **참고-2** `findListPaymentStatusByIds`가 `deleted_at`을 보지 않는다 — 05 무효 갈래로 들어온 삭제 문서는 05처럼 `증빙 무효`가 설 수 있다(회귀 아님).
+- **참고-3** `buildPaymentBundle`이 `payableKrw ?? 0`으로 더한다 — 06-15 목록 합계 규칙과 같은지 `/review`에서 맞춰 볼 것.
+- **O-1** `더 보기 N건`이 링크가 아니다(`app/(app)/page.tsx:71` `moreHref` 없음) — PM 7 · 8번째 [막힘] 정산 프로젝트로 갈 길이 없다. 갈 곳 결정 필요.
+- **O-2** `/` 로딩 표시 없음(`loading.tsx` · Suspense 없음, §7-7 LOADING과 다름) — 적용 전과 같음. 06-23이 홈 원천 조회를 늘려 체감 대기가 늘 수 있다.
+- **O-3** 대표 폰 [결재] 줄 `열기` 25.5×49(폭 < 44) · outline none — 05-10 몫, 적용 전과 같음.
+- **O-4** Phase 6 링크 착지(`#pre-settle-check` · `#evidence`) 뒤 포커스가 BODY — 해시 이동이라 스크롤만.
+- **O-5** 행동 링크 접근 이름이 줄마다 같음(`점검 보기` ×6 · `증빙 올리기` ×3), `aria-describedby` 없음 — 목록 문맥상 통과.
+- **O-6** 대표 320 [결재] 긴 줄 4줄 → 5줄은 시드 무작위 접미사 폭 차이(회귀 아님). D-1 수정으로 폰 두 줄 상한이 걸린다.
+

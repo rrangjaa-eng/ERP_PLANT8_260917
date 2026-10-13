@@ -43,6 +43,8 @@ import { getPerson } from "@/domain/people";
 import { listLineDoors } from "@/domain/expenses";
 import "@/app/(app)/document-kinds";
 import { getSettlementHeader } from "@/domain/settlements";
+import { getPreSettleCheck, type PreSettleCheckDto } from "@/domain/pre-settle-check";
+import { PreSettleCheckSection } from "./pre-settle-check";
 
 // SYSTEM.md §6-2 상세 화면 — 이 리포의 첫 목록/상세 분리 화면. 네 숫자 줄
 // (PNL-01)은 아직 없다(Phase 9). 매출 섹션은 04-02가 더한다. WR-07: 인증 검사를
@@ -251,6 +253,17 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const lineDoors = await listLineDoors(session.viewer, { projectId: project.id });
   // 05-11(S10 (가)) — 정산 결재 머리 줄 재료(문서 상태 낱말 · 올리기 권리 — 보임 · 담당 PM 판정은 서버).
   const settlementHeader = await getSettlementHeader(session.viewer, { projectId: project.id });
+  // 06-19(S18 · UA-610) — 정산일 때만 완료 전 점검(섹션과 기안 버튼이 같은 DTO). 실패면 섹션 없이 버튼만 `점검 결과 없음 · 다시 시도`로 막는다.
+  let preSettle: { status: "ready"; dto: PreSettleCheckDto } | { status: "error" } | null = null;
+  if (status === "settling") {
+    try {
+      preSettle = { status: "ready", dto: await getPreSettleCheck(session.viewer, project.id) };
+    } catch (error: unknown) {
+      log.error("project.pre_settle_check_failed", { projectId: project.id, message: error instanceof Error ? error.message : String(error) });
+      preSettle = { status: "error" };
+    }
+  }
+  const preSettleBlock = preSettle === null ? null : preSettle.status === "ready" ? preSettle.dto.blockReason : "점검 결과 없음 · 다시 시도";
   const frame = { title: project.name, meta: [project.number, `상세 견적 ${revision.seq}차`].join(" · ") } satisfies Pick<DetailScreenProps, "title" | "meta">;
 
   return (
@@ -265,7 +278,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       frame={frame}
       statusSinceText={`${statusLabel} ${statusSince}`}
       statusChange={statusChange}
-      settlement={settlementHeader ? { projectId: project.id, ...settlementHeader } : null}
+      settlement={settlementHeader ? { projectId: project.id, ...settlementHeader, preSettleBlock } : null}
+      preSettleSection={preSettle?.status === "ready" ? <PreSettleCheckSection check={preSettle.dto} /> : null}
       newRevision={newRevision}
       copyProjectHref={canCopyProject ? `/projects?new=1&copyFrom=${project.id}` : null}
       memberAdd={memberRights.canEdit && memberRights.hasCandidates ? <MemberAddHeaderButton /> : null}

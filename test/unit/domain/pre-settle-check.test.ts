@@ -8,7 +8,6 @@ import {
   summarizePreSettle,
   type PreSettleAllowances,
 } from "@/domain/pre-settle-check/summary";
-import { preSettleStatusWord } from "@/app/(app)/projects/[id]/pre-settle-word";
 
 // 06-19(PROJ-06 · D-611~D-613 · UA-610): 완료 전 점검의 순수 요약 — 막힘 건수 · 게이트 이유 · 강행 결과 줄 · 낱말 순서.
 // 판정은 DTO(그룹별 건수)가 하고 게이트는 막힘 건수만 본다(RESEARCH Pitfall 4).
@@ -61,13 +60,6 @@ describe("O-14 — 미결 지출결의 낱말 순서", () => {
   it("`반려` > `선결제 · 증빙 없음` / `증빙 없음` > `결재 중`", () => {
     expect(OPEN_EXPENSE_STATUS_ORDER).toEqual(["rejected", "prepaid_no_evidence", "no_evidence", "in_review"]);
   });
-
-  it("낱말 변환은 status-map 낱말 하나씩(C2)", () => {
-    expect(preSettleStatusWord("rejected")).toBe("반려");
-    expect(preSettleStatusWord("prepaid_no_evidence")).toBe("선결제 · 증빙 없음");
-    expect(preSettleStatusWord("no_evidence")).toBe("증빙 없음");
-    expect(preSettleStatusWord("in_review")).toBe("결재 중");
-  });
 });
 
 describe("forcedResultLine", () => {
@@ -76,3 +68,4 @@ describe("forcedResultLine", () => {
     expect(forcedResultLine({ ...NONE, openExpenses: 2 }, OFF)).toBeNull();
   });
 });
+

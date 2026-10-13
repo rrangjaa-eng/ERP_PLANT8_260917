@@ -10,6 +10,7 @@ import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses
 import { getApprovalView, rejectDocument } from "@/domain/approvals";
 import { saveRevenue } from "@/domain/revenue";
 import { approvalBasis } from "@/repositories/quote-revisions";
+import { findProjectById } from "@/repositories/projects";
 import { insertVendor } from "@/repositories/vendors";
 import { seoulToday } from "@/lib/dates";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
@@ -81,8 +82,9 @@ async function setupRejectedSettling(browser: Browser, baseURL: string | undefin
   const view = await getApprovalView(org.teamLead.viewer, { kind: EXPENSE_DOCUMENT_KIND, documentId: expenseId });
   if (!view) throw new Error("지출결의 결재 화면이 없습니다");
   await rejectDocument(org.teamLead.viewer, { instanceId: view.instanceId, expectedVersion: view.version, reason: "금액 다시" });
-  const settled = await applyAutoSettlement({ projectIds: [project.id] });
-  if (!settled.includes(project.id)) throw new Error("자동 정산이 되지 않았습니다");
+  // 종료일이 지난 진행 프로젝트는 지출결의 제출의 잠금 읽기에서 이미 정산이 됐을 수 있다 — 자동 정산 뒤 상태로 확인한다.
+  await applyAutoSettlement({ projectIds: [project.id] });
+  if ((await findProjectById(SYSTEM_VIEWER, project.id))?.status !== "settling") throw new Error("정산 상태가 아닙니다");
   return { org, projectId: project.id, itemName };
 }
 

@@ -965,6 +965,7 @@ export function QuoteLedger({
   revisions,
   endDateNote,
   children,
+  preSettleSection,
   revisionId,
   initialLines,
   vendors,
@@ -1019,6 +1020,8 @@ export function QuoteLedger({
   endDateNote: string | null;
   /** 원장 아래 섹션들(차수 · 이전 차수) — 서버 page.tsx가 넘긴다. */
   children?: ReactNode;
+  /** 06-19(S18) — 정산 프로젝트의 「완료 전 점검」 섹션(견적 줄 표 바로 아래 첫 섹션). 정산이 아니면 없다. */
+  preSettleSection?: ReactNode;
   revisionId: string;
   initialLines: QuoteLineDto[];
   vendors: QuoteTableOption[];
@@ -3040,6 +3043,8 @@ export function QuoteLedger({
           action={sheetDoorAction(openSheetRow)}
         />
       ) : null}
+
+      {preSettleSection}
 
       <RevenueSection
         contract={revenue.contract}

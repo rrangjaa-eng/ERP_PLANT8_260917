@@ -22,12 +22,13 @@ import { cardExecutionCap, type CardCapSource } from "@/domain/corp-card-usages/
 import type { Money, MoneyInput } from "@/domain/money";
 import { formatKrw } from "@/lib/format-number";
 import type { LineLinks } from "@/repositories/quote-line-links";
+import { preSettleBlockReason } from "@/domain/pre-settle-check/summary";
 
 // Phase 4의 프로젝트 게이트 규칙을 등록하는 한 곳 — 규칙마다 등록한 플랜을
 // 주석 한 줄로 적는다: `project.line-edit`(04-06 · 04-12 · 04-13 · 06-07 D-47 ③ 갈래), `quote.line-cap`(04-26),
 // `project.transition`(04-20), `project.auto-settle`(04-53), `project.period-edit`(04-22), `project.pre-estimate-edit`(04-44),
 // `project.start-date-required`(04-20), `quote.revision-create`·`quote.customer-approval`·`quote.approval-toggle`·`quote.vendor-required`(04-14),
-// `card.dual-link-block`·`card.execution-cap`(06-07), `purchase.line-door`(06-08).
+// `card.dual-link-block`·`card.execution-cap`(06-07), `purchase.line-door`(06-08), `project.pre-settle-check`(06-19).
 //
 // side-effect import 모듈 — `import "@/domain/rules/register"`로 불러
 // 등록만 일으킨다(도메인 등록 사이드이펙트 모듈 규약).
@@ -421,5 +422,14 @@ registerGateRule<unknown, PurchaseLineDoorCtx>({
     return ctx.side === "purchase"
       ? { allowed: false, reason: "온라인구매 협력사 줄 아님 · 지출결의로" }
       : { allowed: false, reason: "온라인구매 협력사 줄 · 구매 요청으로" };
+  },
+});
+
+// 06-19(PROJ-06 · UA-610) — 완료 전 점검. 판정은 점검 DTO(그룹별 건수 · 강행 허용)가 하고 이 규칙은 막힘 건수만 본다(RESEARCH Pitfall 4).
+registerGateRule<unknown, { blockedCount: number }>({
+  name: "project.pre-settle-check",
+  check: (_doc, ctx) => {
+    const reason = preSettleBlockReason(ctx.blockedCount);
+    return reason === null ? { allowed: true } : { allowed: false, reason };
   },
 });

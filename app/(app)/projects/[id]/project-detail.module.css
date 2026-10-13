@@ -534,3 +534,26 @@ td:has(> .rowNumber) {
     display: contents;
   }
 }
+
+/* 06-19(UI-SPEC S18) — 「완료 전 점검」 그룹 머리글(`미결 지출결의 N건` …): 막힘 그룹 건수는 --status-danger, 강행 허용 꼬리는 --text-muted.
+   세 그룹이 다 비면 한 줄 `미결 없음`(--status-success). */
+.preSettleGroup {
+  margin: var(--s-4) 0 var(--s-2);
+  color: var(--text-strong);
+  font-size: var(--text-body);
+  font-weight: var(--fw-medium);
+}
+
+.preSettleBlocked {
+  color: var(--status-danger);
+}
+
+.preSettleForced {
+  color: var(--text-muted);
+  font-weight: var(--fw-regular);
+}
+
+.preSettleNone {
+  margin: 0;
+  color: var(--status-success);
+}

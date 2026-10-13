@@ -57,13 +57,13 @@ import type { ApprovalStatus } from "@/domain/approvals/route";
 import type { DescribeDeps, DocumentDetailRow, DocumentDetailRows, DocumentSummary, RouteConfigStep } from "@/domain/approvals/kinds";
 import { gate, GateBlockedError } from "@/domain/rules/gate";
 import "@/domain/rules/register";
-import { computePreSettleCheck, loadPreSettleInputs, preSettleLogDetail } from "@/domain/pre-settle-check";
+import { computePreSettleCheck, loadPreSettleInputs, preSettleLogDetail, type PreSettleInputs } from "@/domain/pre-settle-check";
 import type { TxLogDeps } from "@/domain/approvals/tx-log";
 import { appendActionLog } from "@/repositories/action-log";
 import { SETTLEMENT_DOCUMENT_DTO_SPEC, type SettlementDocumentDto, type SettlementDocumentSource } from "@/domain/settlements/dto";
 import { findApprovalGraphByDocument, type ApprovalGraph } from "@/repositories/approvals";
 import { countInReviewByProjects } from "@/repositories/expenses";
-import { findProjectById, findProjectInScope } from "@/repositories/projects";
+import { findProjectById, findProjectInScope, lockProjectForWrite } from "@/repositories/projects";
 import { findLatestQuoteRevision } from "@/repositories/quote-revisions";
 import { listQuoteLinesByRevision } from "@/repositories/quote-lines";
 import {
@@ -78,7 +78,7 @@ export type { SettlementDocumentDto } from "@/domain/settlements/dto";
 
 // 05-11(D-98 · D-79 · ROADMAP 기준 6): 정산 결재 — 정산 상태 프로젝트의 담당 PM이 올리고 대표가 승인하는 순간 같은 트랜잭션에서
 // 프로젝트가 완료된다(05-01 E2 최종 승인 훅). 문서는 프로젝트마다 하나 · 문서 id = 프로젝트 id · 식별 번호 = 프로젝트 번호(새 카운터 없음).
-// 지출결의 · 증빙 마감 점검으로 막지 않는다(Phase 6 PROJ-06 — D-100 · D-99).
+// 완료 전 점검(Phase 6 PROJ-06 — D-100 · D-99)은 기안(06-19)과 대표 최종 승인(06-22 O-16) 두 자리에서 같은 판정으로 막는다.
 
 export const SETTLEMENT_DOCUMENT_KIND = "settlement";
 
@@ -90,6 +90,12 @@ const SETTLING: ProjectStatus = "settling";
 const BACK_TO_PROGRESS = "진행으로 바뀜 · 반려";
 // 05 /review A8(사용자 확정 10/5): 결재 중 지출결의가 남은 프로젝트는 정산 최종 승인을 막는다 — 남은 건수 한 줄.
 const expensesInReview = (count: number) => `결재 중 지출결의 ${count}건 · 먼저 결재`;
+// 06-22(O-16 · M-6): 대표 최종 승인 앞 완료 전 점검 막힘 — 서버 거부 · 표시가 이 함수 하나를 쓴다(고치는 일은 담당 PM 몫이라 이름을 적는다).
+function preSettleApproveReason(blockedCount: number, pmName: string | null): string {
+  return pmName ? `완료 전 점검 ${blockedCount}건 · 담당 PM ${pmName}` : `완료 전 점검 ${blockedCount}건`;
+}
+// 점검을 계산하지 못한 정산 결재의 `승인` 막힘(fail-closed — 점검 없이 승인하지 않는다).
+const PRE_SETTLE_UNKNOWN = "점검 결과 없음 · 다시 시도";
 
 // ── 결재 권한 브랜드(F1 · A1) ───────────────────────────────────────────────
 // `changeProjectStatus`의 결재 경로(trigger approval)가 요구하는 권한 값 — 이 모듈 안의 비공개 생성 함수만 만든다(타입만 export).
@@ -288,6 +294,19 @@ export async function getSettlement(viewer: Viewer, input: { projectId: string }
   return project(viewer, toSource(row, await totalsOf(viewer, row)), SETTLEMENT_DOCUMENT_DTO_SPEC);
 }
 
+// 06-22(S18 · PS-4): 정산 결재 문서 화면의 완료 전 점검 요약 — 문서를 볼 수 있고 프로젝트가 정산일 때 막힘 건수 · 강행 결과 줄(지금 판정 —
+// 스냅숏 칸 없음), 아니면 null. 계산 예외는 던진다(화면이 오류 갈래로 — 점검 없이 다시 올리지 않는다).
+export async function getSettlementPreSettleSummary(
+  viewer: Viewer,
+  input: { projectId: string },
+): Promise<{ blockedCount: number; forcedResultLine: string | null } | null> {
+  if (!UUID_SHAPE.test(input.projectId)) return null;
+  const [row] = await listSettlementSummaries(viewer, { projectIds: [input.projectId], documentKind: SETTLEMENT_DOCUMENT_KIND });
+  if (!row || row.projectStatus !== SETTLING || !(await canSeeSettlement(viewer, row))) return null;
+  const check = await computePreSettleCheck(viewer, row.projectId, await loadPreSettleInputs(viewer));
+  return { blockedCount: check.blockedCount, forcedResultLine: check.forcedResultLine };
+}
+
 // 프로젝트 상세 머리 줄 재료(S10 (가)) — 문서가 있고 볼 수 있으면 상태 낱말(`정산 결재 {낱말}` 링크), 없고 정산 · 담당 PM 쓰기 권리면 올리기,
 // 둘 다 아니면 null(아무것도 그리지 않는다). 낱말은 04.1 결재 낱말에서 `결재`를 뺀 꼴(`결재 중` → `중`).
 const HEADER_WORDS: Record<string, string> = { submitted: "중", in_review: "중", approved: "승인", rejected: "반려", withdrawn: "회수" };
@@ -445,36 +464,65 @@ export async function withdrawSettlement(viewer: Viewer, input: WithdrawSettleme
 
 // ── 최종 승인 훅(05-01 E2) · 승인 막힘 이유(E3) · 다시 올리기 조건(E1) ─────────
 
-type PreparedFinal = { projectId: string; facts: StatusChangeFacts };
+type PreparedFinal = { projectId: string; facts: StatusChangeFacts; preSettle: { inputs: PreSettleInputs; pmName: string | null } };
 
 function asPreparedFinal(value: unknown): PreparedFinal {
-  if (typeof value === "object" && value !== null && "projectId" in value && "facts" in value) return value as PreparedFinal;
+  if (typeof value === "object" && value !== null && "projectId" in value && "facts" in value && "preSettle" in value) return value as PreparedFinal;
   throw new Error("정산 최종 승인 사전 사실 없음");
 }
 
+// 점검 읽기 · 계산이 던지면 표시 훅과 같은 `점검 결과 없음 · 다시 시도`로 거부한다(06-22 검토 1 — 원인은 로그에만).
+function preSettleUnknown(error: unknown, projectId: string | null): GateBlockedError {
+  log.warn("settlement.pre_settle_approve_failed", { projectId, reason: error instanceof Error ? error.constructor.name : "unknown" });
+  return new GateBlockedError(PRE_SETTLE_UNKNOWN);
+}
+
 // 트랜잭션 전(풀 읽기) — 문서의 프로젝트 id와 상태 전환 사실(문구 라벨 · 시작일 규칙만 쓰인다 — 메뉴 · 팀 범위는 결재 경로에서 쓰이지 않는다).
+// 06-22(O-16 · ENG E-1): 완료 전 점검의 권한 · 설정 · 노출(loadPreSettleInputs)과 담당 PM 이름도 여기서 읽는다 — 던지면 `점검 결과 없음`
+// 으로 거부한다(엔진이 트랜잭션을 열기 전에 거부된다 · 같은 종류의 승인마다 불리므로 앞 단 승인도 막는다 — SA-3).
 async function prepareSettlementFinalApproval(viewer: Viewer, documentId: string): Promise<PreparedFinal> {
   const [row] = await listSettlementSummaries(viewer, { ids: [documentId], documentKind: SETTLEMENT_DOCUMENT_KIND });
   if (!row) throw new SettlementNotFoundError();
-  return { projectId: row.projectId, facts: await loadStatusChangeFacts(viewer) };
+  let preSettle: PreparedFinal["preSettle"];
+  try {
+    const inputs = await loadPreSettleInputs(viewer);
+    // 담당 PM 이름은 문서 DTO의 pmName과 같은 정보 항목(project.value)을 볼 때만 막힘 문구에 싣는다.
+    preSettle = { inputs, pmName: (await visible(viewer, "project.value")) ? row.pmName : null };
+  } catch (error) {
+    throw preSettleUnknown(error, row.projectId);
+  }
+  return { projectId: row.projectId, facts: await loadStatusChangeFacts(viewer), preSettle };
 }
 
 // 같은 tx — ⓐ 이 문서 인스턴스 지금 차수의 마지막 단계 기록이 viewer의 승인인지와 문서의 project_id를 한 번에 읽고(대표 폴백 행 포함)
-// ⓑ 통과하면 브랜드 권한으로 `정산 → 완료`(trigger approval). 던지면 승인 전체가 롤백된다(경고 로그 뒤 다시 던짐 — 이름 · 금액 없음).
+// ⓑ 프로젝트 행을 잡고(06-22 X-12 — 06-11 증빙 무효가 같은 행을 먼저 잡으므로 무효와 재점검이 직렬화된다) ⓒ 정산이면 A8(R-2 — 강행 허용과
+// 무관) → 완료 전 점검(O-16 — 같은 tx · 사전 조회 값만) ⓓ 통과하면 브랜드 권한으로 `정산 → 완료`(trigger approval). 정산이 아니면(진행 복귀)
+// ⓒ를 건너뛰고 ⓓ가 05 그대로 거부한다. 던지면 승인 전체가 롤백된다(경고 로그 뒤 다시 던짐 — 이름 · 금액 없음).
 async function onSettlementFinalApprovalInTx(viewer: Viewer, documentId: string, tx: Parameters<typeof findFinalStepActorInTx>[2], prepared: unknown): Promise<void> {
   const before = asPreparedFinal(prepared);
   try {
     const found = await findFinalStepActorInTx(viewer, { documentId, documentKind: SETTLEMENT_DOCUMENT_KIND }, tx);
     if (!found || found.projectId !== before.projectId) throw new GateBlockedError("지금 담당이 아님 · 새로 고침");
+    const locked = await lockProjectForWrite(viewer, found.projectId, tx);
+    if (locked?.status === SETTLING) {
+      // 프로젝트 행을 잡은 뒤 센다 — 그 사이 지출결의 제출은 이 잠금을 기다렸다가 완료 프로젝트(②)로 막힌다.
+      const inReview = (await countInReviewByProjects(viewer, [found.projectId], tx)).get(found.projectId) ?? 0;
+      if (inReview > 0) throw new GateBlockedError(expensesInReview(inReview));
+      let blockedCount: number;
+      try {
+        blockedCount = (await computePreSettleCheck(viewer, found.projectId, before.preSettle.inputs, tx)).blockedCount;
+      } catch (error) {
+        throw preSettleUnknown(error, found.projectId);
+      }
+      const decision = await gate(null, "project.pre-settle-check", { blockedCount });
+      if (!decision.allowed) throw new GateBlockedError(preSettleApproveReason(blockedCount, before.preSettle.pmName));
+    }
     await changeProjectStatus(
       viewer,
       found.projectId,
       { from: SETTLING, to: "completed", trigger: "approval" },
       { tx, facts: before.facts, approvalAuthority: grantApprovalAuthority(found.projectId, documentId) },
     );
-    // 프로젝트 행을 잡은 뒤 센다 — 그 사이 지출결의 제출은 이 잠금을 기다렸다가 완료 프로젝트(②)로 막힌다.
-    const inReview = (await countInReviewByProjects(viewer, [found.projectId], tx)).get(found.projectId) ?? 0;
-    if (inReview > 0) throw new GateBlockedError(expensesInReview(inReview));
   } catch (error) {
     log.warn("settlement.final_approval_rolled_back", { documentId, projectId: before.projectId, reason: error instanceof Error ? error.constructor.name : "unknown" });
     throw error;
@@ -482,15 +530,41 @@ async function onSettlementFinalApprovalInTx(viewer: Viewer, documentId: string,
 }
 
 // 표시 전용(트랜잭션 없음) — 엔진은 viewer가 지금 담당인 문서만 넘긴다. 프로젝트가 정산이 아니면(D-80 진행 복귀) · 결재 중 지출결의가
-// 남았으면(A8) `승인`을 막아 보인다.
+// 남았으면(A8) · 완료 전 점검이 막히면(06-22 O-16) `승인`을 막아 보인다 — 순서는 서버와 같다(R-2). 점검은 앞 두 갈래에 걸리지 않은
+// 프로젝트마다 한 번, 사전 조회(프로젝트 무관)는 호출당 한 번(E-30). 계산하지 못하면 `점검 결과 없음 · 다시 시도`(fail-closed).
 async function settlementApproveBlockedReason(viewer: Viewer, ids: string[]): Promise<Map<string, string>> {
   const rows = await listSettlementSummaries(viewer, { ids, documentKind: SETTLEMENT_DOCUMENT_KIND });
   const inReview = await countInReviewByProjects(viewer, [...new Set(rows.map((row) => row.projectId))]);
   const reasons = new Map<string, string>();
+  const toCheck: SettlementSummaryRow[] = [];
   for (const row of rows) {
     const count = inReview.get(row.projectId) ?? 0;
     if (row.projectStatus !== SETTLING) reasons.set(row.id, BACK_TO_PROGRESS);
     else if (count > 0) reasons.set(row.id, expensesInReview(count));
+    else toCheck.push(row);
+  }
+  const projectIds = [...new Set(toCheck.map((row) => row.projectId))];
+  if (projectIds.length === 0) return reasons;
+  const blockedByProject = new Map<string, number | null>();
+  let namesVisible = false;
+  try {
+    const inputs = await loadPreSettleInputs(viewer);
+    namesVisible = await visible(viewer, "project.value");
+    for (const projectId of projectIds) {
+      try {
+        blockedByProject.set(projectId, (await computePreSettleCheck(viewer, projectId, inputs)).blockedCount);
+      } catch (error) {
+        log.warn("settlement.pre_settle_display_failed", { projectId, reason: error instanceof Error ? error.constructor.name : "unknown" });
+        blockedByProject.set(projectId, null);
+      }
+    }
+  } catch (error) {
+    log.warn("settlement.pre_settle_display_failed", { projectId: null, reason: error instanceof Error ? error.constructor.name : "unknown" });
+  }
+  for (const row of toCheck) {
+    const blockedCount = blockedByProject.get(row.projectId) ?? null;
+    if (blockedCount === null) reasons.set(row.id, PRE_SETTLE_UNKNOWN);
+    else if (blockedCount > 0) reasons.set(row.id, preSettleApproveReason(blockedCount, namesVisible ? row.pmName : null));
   }
   return reasons;
 }

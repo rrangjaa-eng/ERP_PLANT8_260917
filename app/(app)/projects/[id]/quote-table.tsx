@@ -67,6 +67,7 @@ import { StatusChange, type StatusChangeProps } from "./status-change";
 import { SettlementButton, type SettlementHeaderProps } from "./settlement-button";
 import { unsavedEditsReason } from "./unsaved-edits";
 import { CustomerApprovalLine, NewRevisionDialog, type CustomerApprovalProps, type NewRevisionProps } from "./revision-dialogs";
+import { PreSettleLedgerContext } from "./pre-settle-check";
 import { PeriodField, periodText, type PeriodDraft, type PeriodFieldError } from "./period-field";
 import type { PeriodRights } from "@/domain/projects/period";
 import {
@@ -1792,6 +1793,12 @@ export function QuoteLedger({
     setIssueRequestRows((prev) => [...prev, newIssueRequestDraft()]);
   }
 
+  // 06-22(S18 · PS-6) — 점검 매출 줄 `{n}차 고객 승인 전` 3차가 고객 승인 줄의 트리거로 포커스한다(포커스가 스크롤도 한다).
+  const customerApprovalRef = useRef<HTMLDivElement>(null);
+  function focusCustomerApproval() {
+    customerApprovalRef.current?.querySelector<HTMLElement>("button")?.focus();
+  }
+
   // 「발행 줄로」 — 발행일 = 희망 발행일 · 발행액 = 요청 금액 · 메모 = 요청 메모인 새 발행 줄을 만들고 그 발행일 칸으로 간다.
   function linkIssueRequest(requestId: string) {
     const request = issueRequestRows.find((row) => row.id === requestId);
@@ -2785,7 +2792,9 @@ export function QuoteLedger({
         primary: saveAction,
       }}
     >
-      <CustomerApprovalLine {...customerApproval} className={styles.periodLine} dirtyCount={dirtyCount} />
+      <div ref={customerApprovalRef} className={styles.layoutContents}>
+        <CustomerApprovalLine {...customerApproval} className={styles.periodLine} dirtyCount={dirtyCount} />
+      </div>
       {/* S13 — 칸이 열린 동안 기간 글자와 「기간 바꾸기」는 숨는다(같은 값을 두 번 보이지 않는다). */}
       {periodDraft ? null : (
         <p className={styles.periodLine}>
@@ -3045,7 +3054,21 @@ export function QuoteLedger({
         />
       ) : null}
 
-      {preSettleSection}
+      {/* 06-22(S18) — 점검 섹션의 다음 한 수는 이 화면의 값 · 함수 그대로(PS-3 고르기는 pre-settle-check.tsx 한 곳). */}
+      <PreSettleLedgerContext.Provider
+        value={{
+          editableWidth,
+          canWriteRevenue: canWriteEntries,
+          canRequestIssue: issueRequests.canRequest,
+          addIssued,
+          addIssueRequest,
+          saveLocked,
+          saveButtonId,
+          focusCustomerApproval: customerApproval.control ? focusCustomerApproval : null,
+        }}
+      >
+        {preSettleSection}
+      </PreSettleLedgerContext.Provider>
 
       <RevenueSection
         contract={revenue.contract}

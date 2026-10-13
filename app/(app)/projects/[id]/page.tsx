@@ -282,7 +282,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       statusSinceText={`${statusLabel} ${statusSince}`}
       statusChange={statusChange}
       settlement={settlementHeader ? { projectId: project.id, ...settlementHeader, preSettleBlock } : null}
-      preSettleSection={preSettle?.status === "ready" ? <PreSettleCheckSection check={preSettle.dto} ownerName={preSettleOwnerName} /> : null}
+      preSettleSection={
+        preSettle === null ? null : <PreSettleCheckSection check={preSettle.status === "ready" ? preSettle.dto : null} ownerName={preSettleOwnerName} />
+      }
       newRevision={newRevision}
       copyProjectHref={canCopyProject ? `/projects?new=1&copyFrom=${project.id}` : null}
       memberAdd={memberRights.canEdit && memberRights.hasCandidates ? <MemberAddHeaderButton /> : null}

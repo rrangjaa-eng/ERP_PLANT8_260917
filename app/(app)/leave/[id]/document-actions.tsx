@@ -36,9 +36,21 @@ export type DocumentActionsProps = {
   resubmitRoute: ReactNode;
   /** 05-11(E3): 종류가 준 승인 막힘 이유(예: 정산 결재 `진행으로 바뀜 · 반려`) — 있으면 `승인`이 aria-disabled + 이유, `반려`는 산다. */
   approveBlockedReason?: string | null;
+  /** 06-22: 승인 막힘 이유 옆 다음 한 수 3차(§7-1) — 넘긴 화면만 `승인`의 nextStep으로 그린다. */
+  approveNextStep?: ReactNode;
 };
 
-export function DocumentActions({ instanceId, version, actions, decision, rejectMessages, resubmit, resubmitRoute, approveBlockedReason = null }: DocumentActionsProps) {
+export function DocumentActions({
+  instanceId,
+  version,
+  actions,
+  decision,
+  rejectMessages,
+  resubmit,
+  resubmitRoute,
+  approveBlockedReason = null,
+  approveNextStep,
+}: DocumentActionsProps) {
   const router = useRouter();
   const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null);
   const [conflict, setConflict] = useState<string | null>(null);
@@ -136,6 +148,7 @@ export function DocumentActions({ instanceId, version, actions, decision, reject
                     disabled={approveBlockedReason !== null}
                     disabledReason={approveBlockedReason ?? undefined}
                     reasonTone="block"
+                    nextStep={approveNextStep}
                     onClick={approve}
                   >
                     승인

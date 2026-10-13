@@ -78,8 +78,8 @@ function readRow(page: Page, date: string): Locator {
   return page.getByRole("table", { name: "리저브 대장" }).locator("tbody tr").filter({ has: page.locator("td", { hasText: new RegExp(`^${date}$`) }) });
 }
 
-// 열 순서: 날짜 · 구분 · 금액 · 잔액 · 프로젝트 · 증빙 종류 · 세금계산서 번호 · 증빙(06-16 읽기 열) · 메모 · 클라이언트.
-const COL = { date: 0, direction: 1, amount: 2, balance: 3, project: 4, evidence: 5, taxInvoice: 6, attachments: 7, note: 8, client: 9 } as const;
+// 열 순서: 날짜 · 구분 · 금액 · 잔액 · 프로젝트 · 증빙 종류 · 세금계산서 번호 · 메모 · 클라이언트 · 증빙(06-16 읽기 열 — 엑셀 붙여넣기 순서가 깨지지 않게 맨 끝).
+const COL = { date: 0, direction: 1, amount: 2, balance: 3, project: 4, evidence: 5, taxInvoice: 6, note: 7, client: 8, attachments: 9 } as const;
 
 function cell(page: Page, rowIndex: number, colIndex: number): Locator {
   return dataRows(page).nth(rowIndex).getByRole("gridcell").nth(colIndex);
@@ -585,13 +585,14 @@ test.describe("리저브 대장 — 붙여넣기 Ctrl+V(리뷰 S4)", () => {
     await openLedger(page, roles.finance, 1024);
     await expect(ledger(page).locator("thead th:visible")).toHaveCount(8);
 
-    // 06-16: 세금계산서 번호 다음 `증빙` 열은 계산(읽기) 열이라 엑셀 붙여넣기 값이 닿으면 오류 칸이다 — 이 값은 세 번째(세금계산서 번호)까지만 싣는다.
-    const projectAt1024 = cell(page, 0, 4);
-    await pasteText(page, projectAt1024, "—\t세금계산서\t20261001-0001");
-    await saveWithKeyboard(page, projectAt1024);
+    await pasteText(page, cell(page, 0, COL.project), "—\t세금계산서\t20261001-0001\t숨은 열 뒤 메모");
+    // 숨은 두 열은 접근성 트리에 없어 1024의 메모 칸은 보이는 칸 순서로 여섯째(5)다. 06-16 `증빙` 읽기 열은 메모 뒤 맨 끝이라 붙여넣기 순서를 끼지 않는다(DOM 감사 D-2).
+    const noteAt1024 = cell(page, 0, 5);
+    await expect(noteAt1024).toHaveText("숨은 열 뒤 메모");
+    await saveWithKeyboard(page, noteAt1024);
     await expect(saveButton(page)).not.toContainText("일괄 저장 1");
     const [row] = await db.select().from(reserveEntries).where(eq(reserveEntries.id, id!));
-    expect(row).toMatchObject({ projectId: null, evidenceType: "tax_invoice", taxInvoiceNumber: "20261001-0001" });
+    expect(row).toMatchObject({ projectId: null, evidenceType: "tax_invoice", taxInvoiceNumber: "20261001-0001", note: "숨은 열 뒤 메모" });
   });
 });
 

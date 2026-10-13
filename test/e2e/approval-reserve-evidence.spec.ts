@@ -338,8 +338,8 @@ async function seedReserveFile(viewer: Viewer, entryId: string, name = "세금�
   return completeEvidenceUpload(viewer, { intentId: intent.intentId }, { storage });
 }
 
-// 열 순서: 날짜 · 구분 · 금액 · 잔액 · 프로젝트 · 증빙 종류 · 세금계산서 번호 · 증빙 · 메모 · 클라이언트.
-const EVIDENCE_COL = 7;
+// 열 순서: 날짜 · 구분 · 금액 · 잔액 · 프로젝트 · 증빙 종류 · 세금계산서 번호 · 메모 · 클라이언트 · 증빙(맨 끝).
+const EVIDENCE_COL = 9;
 
 function reserveDataRows(page: Page): Locator {
   return page.locator('tbody tr:has(> td[role="gridcell"])');
@@ -372,7 +372,7 @@ test.describe("리저브 줄 증빙 (06-16 Task 3 — D-60 · S22)", () => {
     await db.delete(reserveEntries);
   });
 
-  test("1280: 세금계산서 번호 다음 `증빙` 3차 → 표 아래 펼침(제목 포커스) → 업로드 → `증빙 1` · 일괄 저장 N 그대로 · 새 줄 `—` · 셀 Enter = 펼치기(한 번에 하나)", async ({ page }) => {
+  test("1280: 맨 끝 `증빙` 3차 → 표 아래 펼침(제목 포커스) → 업로드 → `증빙 1` · 일괄 저장 N 그대로 · 새 줄 `—` · 셀 Enter = 펼치기(한 번에 하나)", async ({ page }) => {
     const roleId = await financeRole();
     const seeded = await seedReserve([
       { date: "2026-04-01", direction: "deposit", amount: 200_000 },
@@ -396,9 +396,12 @@ test.describe("리저브 줄 증빙 (06-16 Task 3 — D-60 · S22)", () => {
     await expect(page.getByRole("button", { name: `2026-04-01 ${seeded.clientName} 증빙 1`, exact: true })).toHaveText("증빙 1", { timeout: UPLOAD_WAIT });
     await expect(page.getByRole("button", { name: /^일괄 저장/ })).toHaveText(/^일괄 저장\s*(Ctrl\+S)?$/);
 
-    await focusReserveCell(reserveCell(page, 1, EVIDENCE_COL));
-    await page.keyboard.press("Enter");
-    await expect(second).toHaveAttribute("aria-expanded", "true");
+    // 업로드 뒤 router.refresh가 표를 다시 그리는 동안 누른 Enter는 사라질 수 있다 — 포커스를 다시 주고 펼쳐질 때까지 되풀이한다.
+    await expect(async () => {
+      await focusReserveCell(reserveCell(page, 1, EVIDENCE_COL));
+      await page.keyboard.press("Enter");
+      await expect(second).toHaveAttribute("aria-expanded", "true", { timeout: 2_000 });
+    }).toPass();
     await expect(page.getByRole("heading", { name: `2026-04-02 ${seeded.clientName} 입금 100,000 증빙`, exact: true })).toBeFocused();
     await expect(page.getByRole("button", { name: `2026-04-01 ${seeded.clientName} 증빙 1`, exact: true })).toHaveAttribute("aria-expanded", "false");
     await expect(page.getByRole("heading", { name: /증빙$/ })).toHaveCount(1);

@@ -1087,31 +1087,6 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
       editCell: (row, ctx) => <TextEditCell ariaLabel="세금계산서 번호" initialValue={row.taxInvoiceNumber ?? ""} onCommit={ctx.onCommit} />,
     },
     {
-      key: "evidence",
-      header: "증빙",
-      priority: "p2",
-      cell: (row) => {
-        if (row.isNew || row.evidenceCount === null) return "—";
-        const count = row.evidenceCount;
-        return (
-          <Button
-            id={evidenceToggleId(row.id)}
-            variant="tertiary"
-            aria-expanded={evidenceOpen === row.id}
-            aria-label={`${row.entryDate} ${row.clientName} 증빙${count > 0 ? ` ${count}` : ""}`}
-            data-cell-action=""
-            onClick={() => toggleEvidence(row)}
-          >
-            {count > 0 ? `증빙 ${count}` : "증빙"}
-          </Button>
-        );
-      },
-      // 폰 접힌 줄 — 글자뿐(버튼 아님). 0개는 줄에 끼지 않는다.
-      summary: (row) => (row.evidenceCount !== null && row.evidenceCount > 0 ? `증빙 ${row.evidenceCount}` : ""),
-      copyText: (row) => (row.evidenceCount !== null && row.evidenceCount > 0 ? `증빙 ${row.evidenceCount}` : ""),
-      pasteRole: "computed",
-    },
-    {
       key: "note",
       header: "메모",
       priority: "p2",
@@ -1141,6 +1116,31 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
         />
       ),
     },
+    {
+      key: "evidence",
+      header: "증빙",
+      priority: "p2",
+      cell: (row) => {
+        if (row.isNew || row.evidenceCount === null) return "—";
+        const count = row.evidenceCount;
+        return (
+          <Button
+            id={evidenceToggleId(row.id)}
+            variant="tertiary"
+            aria-expanded={evidenceOpen === row.id}
+            aria-label={`${row.entryDate} ${row.clientName} 증빙${count > 0 ? ` ${count}` : ""}`}
+            data-cell-action=""
+            onClick={() => toggleEvidence(row)}
+          >
+            {count > 0 ? `증빙 ${count}` : "증빙"}
+          </Button>
+        );
+      },
+      // 폰 접힌 줄 — 글자뿐(버튼 아님). 0개는 줄에 끼지 않는다.
+      summary: (row) => (row.evidenceCount !== null && row.evidenceCount > 0 ? `증빙 ${row.evidenceCount}` : ""),
+      copyText: (row) => (row.evidenceCount !== null && row.evidenceCount > 0 ? `증빙 ${row.evidenceCount}` : ""),
+      pasteRole: "computed",
+    },
   ];
 
   // 리뷰 S4 — 붙여넣기(§7-3 (다)). columns와 같은 순서·길이다 — 숨은 열(collapseBelow)도 논리 순서에 남는다. 파싱·오류 규칙은
@@ -1159,7 +1159,6 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
     },
     { key: "evidenceType", kind: "select", options: [blankOption, ...references.evidenceTypes], isEditable: (row) => editability(row, "evidenceType") === "edit" },
     { key: "taxInvoiceNumber", kind: "text", isEditable: (row) => editability(row, "taxInvoiceNumber") === "edit" },
-    { key: "evidence", kind: "text", isEditable: () => false, pasteRole: "computed" },
     { key: "note", kind: "text", isEditable: (row) => editability(row, "note") === "edit" },
     {
       key: "clientId",
@@ -1169,6 +1168,8 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
       // 리뷰 R5 — 저장된 줄의 잠긴 클라이언트 칸도 값을 읽는다. 같은 클라이언트면 그대로 두고, 다른 클라이언트면 잠김 오류 칸(handlePasteAtCell).
       isEditable: (row) => editability(row, "clientId") !== "readonly",
     },
+    // 06-16 `증빙` 읽기 열은 메모 · 클라이언트 뒤 맨 끝 — 엑셀의 「세금계산서 번호 → 메모」 붙여넣기 순서를 끼지 않는다(DOM 감사 D-2).
+    { key: "evidence", kind: "text", isEditable: () => false, pasteRole: "computed" },
   ];
 
   // 붙여넣은 칸 값 → 줄 패치(견적 원장 handlePasteAtCell과 같은 결 — 금액은 원화로 들어간다, `—`는 빈 칸).

@@ -5,7 +5,7 @@ import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db, pool } from "@/db/client";
 import { actionLog, approvalInstances, expenses, files, quoteLines, settlementApprovals } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
-import { approveDocument, rejectDocument } from "@/domain/approvals";
+import { approveDocument, rejectDocument, withdrawDocument } from "@/domain/approvals";
 import { closeExpense, createExpenseFromLines, saveExpenseDraft } from "@/domain/expenses";
 import { voidEvidence } from "@/domain/evidence";
 import { waiveEvidence } from "@/domain/evidence-reviews";
@@ -461,6 +461,40 @@ describe("완료 전 점검 — R-6 범위 · 금액 노출(Task 3)", () => {
     const wide = await getPreSettleCheck(fx.ceo, fx.projectId);
     expect(wide.openExpenses.rows.every((row) => typeof row.expenseAmountKrw === "number")).toBe(true);
     expect(wide.revenue).toMatchObject({ issuedTotalKrw: 1_000_000 });
+  });
+
+  // 06-19 검토 F-1 — 회수 문서가 이어진 미매칭 줄의 문은 `expense_closed`(listNumberedByLines는 결재 상태 · 범위를 보지 않는다).
+  // 그 문서 id는 범위 밖 사람 · 프로젝트 쓰기 권한이 없는 사람의 DTO(→ RSC 페이로드)에 실리지 않는다(listLineDoors와 같이 문을 숨긴다).
+  async function withdrawnLineProject() {
+    const fx = await setupExpenseProject();
+    const expenseId = (await createExpenseFromLines(fx.otherPm, { lineIds: [fx.lines.withVendor] })).created[0]?.expenseId ?? "";
+    const sent = await submitReadyDraft(fx.otherPm, expenseId);
+    if (sent.kind !== "submitted") throw new Error("제출 안 됨");
+    await withdrawDocument(fx.otherPm, { instanceId: sent.instanceId, expectedVersion: sent.version });
+    await issueRevenue(fx.projectId);
+    return { fx, expenseId };
+  }
+
+  it("F-1 회수 문서가 이어진 미매칭 줄 — 범위 밖 작성자에게 그 문서 id가 없고 문은 none · 팀 범위 PM에게는 expense_closed", async () => {
+    const { fx, expenseId } = await withdrawnLineProject();
+    const wide = await getPreSettleCheck(fx.pm, fx.projectId);
+    expect(wide.unmatchedLines.rows.find((row) => row.lineId === fx.lines.withVendor)?.door).toEqual({ kind: "expense_closed", latestId: expenseId });
+
+    const a = await makeNarrowDrafter();
+    const narrow = await getPreSettleCheck(a, fx.projectId);
+    expect(JSON.stringify(narrow)).not.toContain(expenseId);
+    expect(narrow.unmatchedLines.rows.find((row) => row.lineId === fx.lines.withVendor)?.door).toEqual({ kind: "none" });
+  });
+
+  it("F-1 프로젝트 쓰기 권한이 없는 사람 — 미매칭 줄의 문이 모두 none(문서 id · 구매 링크 없음)", async () => {
+    const { fx, expenseId } = await withdrawnLineProject();
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `보기만-${randomUUID().slice(0, 8)}`, workScope: "team", viewScope: "team" });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
+    const viewer = await makePerson("보기만", role.id, "기획1팀");
+    const check = await getPreSettleCheck(viewer, fx.projectId);
+    expect(check.unmatchedLines.rows.length).toBeGreaterThan(0);
+    expect(check.unmatchedLines.rows.every((row) => row.door.kind === "none")).toBe(true);
+    expect(JSON.stringify(check)).not.toContain(expenseId);
   });
 
   it("DTO_REGISTRY에 PreSettleCheckDto가 있다(@/domain/settlements import 경유)", () => {

@@ -1,5 +1,6 @@
 import type { Viewer } from "@/domain/viewer";
 import type { DbOrTx } from "@/repositories/document-counters";
+import { can } from "@/domain/permissions/can";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { project, type DtoSpec } from "@/domain/permissions/project";
 import { visible } from "@/domain/permissions/visible";
@@ -49,6 +50,8 @@ export type PreSettleInputs = {
   scope: ExpenseScope;
   /** 금액 칸 정보 항목별 노출(visible) — 투영이 트랜잭션 안에서 노출표를 다시 읽지 않게 미리 읽는다. */
   exposure: Record<string, boolean>;
+  /** 프로젝트 쓰기 권한 — 없으면 미매칭 줄의 문을 싣지 않는다(화면은 `담당 PM {이름}` · listLineDoors와 같이 숨김 — 검토 F-1). */
+  lineDoors: boolean;
 };
 
 export type PreSettleExpenseRowDto = {
@@ -121,17 +124,18 @@ registerDto({
 const AMOUNT_INFO_ITEMS = [...new Set(PRE_SETTLE_CHECK_DTO_SPEC.fields.flatMap((field) => (typeof field.infoItem === "string" ? [field.infoItem] : [...field.infoItem])))];
 
 export async function loadPreSettleInputs(viewer: Viewer): Promise<PreSettleInputs> {
-  const [openExpenses, unmatchedLines, missingRevenue, onlineVendorName] = await Promise.all([
+  const [openExpenses, unmatchedLines, missingRevenue, onlineVendorName, lineDoors] = await Promise.all([
     getSettingValue(PROJECT_FORCE_COMPLETE_ALLOW_OPEN_EXPENSES),
     getSettingValue(PROJECT_FORCE_COMPLETE_ALLOW_UNMATCHED_ESTIMATE_LINES),
     getSettingValue(PROJECT_FORCE_COMPLETE_ALLOW_MISSING_REVENUE),
     getSettingValue(PURCHASE_ONLINE_VENDOR_NAME),
+    can(viewer, "projects", "write"),
   ]);
   const scope = await visibleExpenseScope(viewer);
   // 노출 판정은 정보 항목마다 차례로(projectMany와 같이 — 같은 요청이 풀을 한꺼번에 잡지 않는다).
   const exposure: Record<string, boolean> = {};
   for (const item of AMOUNT_INFO_ITEMS) exposure[item] = await visible(viewer, item);
-  return { allowances: { openExpenses, unmatchedLines, missingRevenue }, onlineVendorName, scope, exposure };
+  return { allowances: { openExpenses, unmatchedLines, missingRevenue }, onlineVendorName, scope, exposure, lineDoors };
 }
 
 // 금액 칸 투영 — 노출은 inputs에서만(트랜잭션 안에서 노출표를 다시 읽지 않는다 · ENG E-1).
@@ -141,7 +145,9 @@ function projectAmounts(viewer: Viewer, inputs: PreSettleInputs, source: Partial
 
 const STATE_RANK = new Map<OpenExpenseState, number>(OPEN_EXPENSE_STATUS_ORDER.map((state, index) => [state, index]));
 
-function lineDoorOf(line: PreSettleLineRow, links: LineLinks, onlineVendorName: string): PreSettleLineDoor {
+function lineDoorOf(line: PreSettleLineRow, links: LineLinks, inputs: PreSettleInputs): PreSettleLineDoor {
+  if (!inputs.lineDoors) return { kind: "none" };
+  const { onlineVendorName } = inputs;
   if (resolveLineDoor({ vendorName: line.vendorName }, onlineVendorName) === "purchase") return { kind: "purchase", href: `/cards/purchases?new=1&line=${line.id}` };
   const door = doorFor(line, links.expenses);
   if (door.state === "open") return { kind: "expense_open" };
@@ -179,7 +185,7 @@ export async function computePreSettleCheck(viewer: Viewer, projectId: string, i
     const candidate = { lineKind: line.lineKind, cancelled: line.lineStatus === "cancelled", executionKrw: lineExecution(line).amountKrw, liveLinks: liveLinkCount(lineLinks, liveExpenseIds) };
     if (!isUnmatchedLine(candidate)) continue;
     const amounts = await projectAmounts(viewer, inputs, { executionKrw: candidate.executionKrw });
-    unmatched.push({ lineId: line.id, displayNo: numbers.get(line.id) ?? 0, itemName: line.itemName, door: lineDoorOf(line, lineLinks, inputs.onlineVendorName), ...amounts });
+    unmatched.push({ lineId: line.id, displayNo: numbers.get(line.id) ?? 0, itemName: line.itemName, door: lineDoorOf(line, lineLinks, inputs), ...amounts });
   }
   unmatched.sort((a, b) => a.displayNo - b.displayNo);
 
@@ -199,7 +205,10 @@ export async function computePreSettleCheck(viewer: Viewer, projectId: string, i
     inputs.allowances,
   );
   // 미결 지출결의 행만 보는 사람의 범위로 가른다 — 범위 밖은 건수만(번호 · 항목 · 금액을 싣지 않는다).
-  const inScope = await listExpenseIdsInScope(viewer, { ids: open.map((row) => row.id), scope: inputs.scope, documentKind: EXPENSE_DOCUMENT_KIND }, tx);
+  // 미매칭 줄 문의 마지막 문서(회수 등 — listNumberedByLines는 결재 상태 · 범위를 보지 않는다)도 같은 범위로 거른다 — 범위 밖이면 문 없음(검토 F-1).
+  const closedDoorIds = unmatched.flatMap((row) => (row.door.kind === "expense_closed" ? [row.door.latestId] : []));
+  const inScope = await listExpenseIdsInScope(viewer, { ids: [...open.map((row) => row.id), ...closedDoorIds], scope: inputs.scope, documentKind: EXPENSE_DOCUMENT_KIND }, tx);
+  for (const row of unmatched) if (row.door.kind === "expense_closed" && !inScope.has(row.door.latestId)) row.door = { kind: "none" };
   const visibleRows: PreSettleExpenseRowDto[] = [];
   for (const { supplyAmountKrw, ...row } of open) {
     if (inScope.has(row.id)) visibleRows.push({ ...row, ...(await projectAmounts(viewer, inputs, { expenseAmountKrw: supplyAmountKrw })) });

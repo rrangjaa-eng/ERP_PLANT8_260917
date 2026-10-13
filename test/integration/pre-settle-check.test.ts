@@ -1,21 +1,27 @@
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db, pool } from "@/db/client";
-import { approvalInstances, settlementApprovals } from "@/db/schema";
-import { SYSTEM_VIEWER } from "@/domain/viewer";
-import { rejectDocument } from "@/domain/approvals";
-import { createExpenseFromLines } from "@/domain/expenses";
+import { actionLog, approvalInstances, expenses, files, quoteLines, settlementApprovals } from "@/db/schema";
+import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
+import { approveDocument, rejectDocument } from "@/domain/approvals";
+import { closeExpense, createExpenseFromLines, saveExpenseDraft } from "@/domain/expenses";
+import { voidEvidence } from "@/domain/evidence";
+import { waiveEvidence } from "@/domain/evidence-reviews";
+import { getPreSettleCheck } from "@/domain/pre-settle-check";
+import { saveQuoteLines } from "@/domain/quotes/lines";
+import { createRevisionFromCurrent } from "@/domain/quotes/revisions";
+import { upsertVisibility } from "@/repositories/permissions";
 import { applyAutoSettlement } from "@/domain/projects/auto-transition";
 import { GateBlockedError } from "@/domain/rules/gate";
 import { SETTLEMENT_DOCUMENT_KIND, submitSettlement } from "@/domain/settlements";
 import { setSettingValue } from "@/domain/settings/registry";
-import { PURCHASE_ONLINE_VENDOR_NAME } from "@/domain/settings/keys";
+import { PROJECT_FORCE_COMPLETE_ALLOW_MISSING_REVENUE, PURCHASE_ONLINE_VENDOR_NAME } from "@/domain/settings/keys";
 import { createPurchaseRequest, precheckPurchaseRequest } from "@/domain/purchase-requests";
 import { insertVendor } from "@/repositories/vendors";
-import { addApprovedRevision, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
-import { approvedExpenseWithEvidence } from "./fixtures/payments";
+import { addApprovedRevision, makeEvidenceManager, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
+import { approvedExpenseWithEvidence, approvedExpenseWithoutEvidence, makePaymentManager } from "./fixtures/payments";
 import { requestInput } from "./fixtures/purchase-requests";
 import { issueRevenue, linkCardUsage, setupSettlementProject } from "./fixtures/settlements";
 
@@ -207,4 +213,166 @@ describe("완료 전 점검 — 정산 기안 게이트(05 submitSettlement)", (
     },
     120_000,
   );
+});
+
+// ── Task 2 — 세 그룹(D-611 증빙 · C10 종결 · 무효 파일 · D-612 계보 · D-613) · 강행 로그(PS-4) ──────────
+
+async function versionOf(expenseId: string): Promise<number> {
+  const [row] = await db.select({ version: expenses.version }).from(expenses).where(eq(expenses.id, expenseId));
+  if (!row) throw new Error("지출결의 없음");
+  return row.version;
+}
+
+async function makePayer(): Promise<Viewer> {
+  const payer = await makePaymentManager();
+  if (!payer.roleId) throw new Error("계급 없음");
+  for (const infoItem of ["expense.value", "expense.amount"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: payer.roleId, infoItem, visible: true });
+  return payer;
+}
+
+// 분할 회차 하나를 결재 통과(증빙 있음)까지 — 같은 줄의 다음 회차가 남는다.
+async function approvedInstallment(fx: ExpenseFixture, lineId: string, amountKrw: number): Promise<string> {
+  const expenseId = (await createExpenseFromLines(fx.pm, { lineIds: [lineId] })).created[0]?.expenseId ?? "";
+  await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: await versionOf(expenseId), fields: { installment: true, supply: { currency: "KRW", amount: amountKrw, fxRate: 1 } } });
+  const sent = await submitReadyDraft(fx.pm, expenseId);
+  if (sent.kind !== "submitted") throw new Error("제출 안 됨");
+  const first = await approveDocument(fx.lead, { instanceId: sent.instanceId, expectedVersion: sent.version });
+  await approveDocument(fx.ceo, { instanceId: sent.instanceId, expectedVersion: first.version });
+  return expenseId;
+}
+
+async function aliveFiles(expenseId: string) {
+  return db.select({ id: files.id }).from(files).where(and(eq(files.ownerKind, "expense"), eq(files.ownerId, expenseId), isNull(files.removedAt), isNull(files.voidedAt)));
+}
+
+describe("완료 전 점검 — 세 그룹(D-611 · C10 · D-612 · D-613)", () => {
+  it("증빙 면제 뒤 다시 읽으면 그 행이 빠진다(D-611 — 면제는 행 없음)", async () => {
+    const fx = await setupExpenseProject();
+    const doc = await approvedExpenseWithoutEvidence(fx, fx.lines.withVendor);
+    await approvedExpenseWithEvidence(fx, fx.lines.split);
+    await linkCardUsage(fx.pm, fx.lines.noVendor);
+    await issueRevenue(fx.projectId);
+
+    const before = await getPreSettleCheck(fx.pm, fx.projectId);
+    expect(before.openExpenses.rows.map((row) => [row.number, row.state])).toEqual([[doc.number, "no_evidence"]]);
+    expect(before.blockedCount).toBe(1);
+
+    const payer = await makePayer();
+    await waiveEvidence(payer, { expenseId: doc.expenseId, version: await versionOf(doc.expenseId), reason: "업체 폐업" });
+    const after = await getPreSettleCheck(fx.pm, fx.projectId);
+    expect(after.openExpenses.rows).toEqual([]);
+    expect(after.blockedCount).toBe(0);
+  });
+
+  it("유일한 파일을 무효 처리하면 `증빙 없음` 행이 선다(05 voidEvidence — 살아 있는 파일만)", async () => {
+    const fx = await setupExpenseProject();
+    const doc = await approvedExpenseWithEvidence(fx, fx.lines.withVendor);
+    await approvedExpenseWithEvidence(fx, fx.lines.split);
+    await linkCardUsage(fx.pm, fx.lines.noVendor);
+    await issueRevenue(fx.projectId);
+    expect((await getPreSettleCheck(fx.pm, fx.projectId)).openExpenses.rows).toEqual([]);
+
+    const voider = await makeEvidenceManager("증빙무효", { attach: false, void: true });
+    for (const file of await aliveFiles(doc.expenseId)) await voidEvidence(voider, { fileId: file.id, reason: "다른 건 영수증" });
+    const after = await getPreSettleCheck(fx.pm, fx.projectId);
+    expect(after.openExpenses.rows.map((row) => [row.number, row.state])).toEqual([[doc.number, "no_evidence"]]);
+  });
+
+  it("반려 문서를 종결(06-28)하면 행이 빠지고 막힘이 준다(C10)", async () => {
+    const fx = await setupExpenseProject();
+    await approvedExpenseWithEvidence(fx, fx.lines.withVendor);
+    await approvedInstallment(fx, fx.lines.split, 6_000_000);
+    const rejected = await rejectedExpense(fx, fx.lines.split);
+    await linkCardUsage(fx.pm, fx.lines.noVendor);
+    await issueRevenue(fx.projectId);
+
+    const before = await getPreSettleCheck(fx.pm, fx.projectId);
+    expect(before.openExpenses.rows.map((row) => row.state)).toEqual(["rejected"]);
+    expect(before.blockedCount).toBe(1);
+
+    await closeExpense(fx.pm, { expenseId: rejected, expectedVersion: await versionOf(rejected), reason: "업체 취소" });
+    const after = await getPreSettleCheck(fx.pm, fx.projectId);
+    expect(after.openExpenses.rows).toEqual([]);
+    expect(after.blockedCount).toBe(0);
+  });
+
+  it("발행 줄 1건 저장 뒤 매출 미입력 그룹이 빈다(D-613) · 매출 줄 = 계약 · 발행 합계 · 차이", async () => {
+    const fx = await setupExpenseProject();
+    await approvedExpenseWithEvidence(fx, fx.lines.withVendor);
+    await approvedExpenseWithEvidence(fx, fx.lines.split);
+    await linkCardUsage(fx.pm, fx.lines.noVendor);
+
+    const before = await getPreSettleCheck(fx.pm, fx.projectId);
+    expect(before.missingRevenue.count).toBe(1);
+    expect(before.blockedCount).toBe(1);
+    expect(before.revenue).toMatchObject({ pendingLabel: null, issuedTotalKrw: null, diffKrw: null });
+    const contractKrw = before.revenue.contractKrw ?? 0;
+    expect(contractKrw).toBeGreaterThan(0);
+
+    await issueRevenue(fx.projectId, 1_000_000);
+    const after = await getPreSettleCheck(fx.pm, fx.projectId);
+    expect(after.missingRevenue.count).toBe(0);
+    expect(after.blockedCount).toBe(0);
+    expect(after.revenue).toMatchObject({ contractKrw, issuedTotalKrw: 1_000_000, diffKrw: contractKrw - 1_000_000 });
+  });
+
+  it("미매칭 줄 — 그 줄의 문(거래처 있는 줄 = 지출결의 올리기 · 거래처 없음) · 표시 번호", async () => {
+    const fx = await setupExpenseProject();
+    await approvedExpenseWithEvidence(fx, fx.lines.withVendor);
+    await issueRevenue(fx.projectId);
+
+    const check = await getPreSettleCheck(fx.pm, fx.projectId);
+    expect(check.unmatchedLines.count).toBe(2);
+    expect(check.unmatchedLines.rows.map((row) => [row.lineId, row.displayNo, row.door.kind])).toEqual([
+      [fx.lines.noVendor, 2, "no_vendor"],
+      [fx.lines.split, 3, "expense_open"],
+    ]);
+  });
+
+  it("강행 기안 — 같은 tx 행동 로그(document_submit) 상세에 그룹별 건수 · 강행 그룹(PS-4)", async () => {
+    await setSettingValue(SYSTEM_VIEWER, PROJECT_FORCE_COMPLETE_ALLOW_MISSING_REVENUE, true);
+    const fx = await setupExpenseProject();
+    await approvedExpenseWithEvidence(fx, fx.lines.withVendor);
+    await approvedExpenseWithEvidence(fx, fx.lines.split);
+    await linkCardUsage(fx.pm, fx.lines.noVendor);
+    await settle(fx.projectId);
+
+    const check = await getPreSettleCheck(fx.pm, fx.projectId);
+    expect(check.forcedResultLine).toBe("강행 · 매출 미입력");
+    const result = await submitSettlement(fx.pm, { projectId: fx.projectId });
+    expect(result).toMatchObject({ kind: "submitted" });
+    if (result.kind !== "submitted") throw new Error("기안 안 됨");
+    const [log] = await db.select().from(actionLog).where(and(eq(actionLog.documentId, result.documentId), eq(actionLog.actionType, "document_submit")));
+    expect(log?.detail).toMatchObject({
+      preSettle: {
+        groups: { openExpenses: { count: 0, allowed: false }, unmatchedLines: { count: 0, allowed: false }, missingRevenue: { count: 1, allowed: true } },
+        forced: ["missingRevenue"],
+      },
+    });
+  });
+
+  it("D-612 계보 — 연결은 앞 차수 줄의 것까지(findLineLinks) · 미매칭 행은 최신 차수 줄만(X-1)", async () => {
+    const fx = await setupExpenseProject();
+    // 차수 2 = 1차 줄 셋 + N(연결 없음) · P(다음 차수에서 빠짐). 이 차수를 계보 테스트의 「앞 차수」로 쓴다.
+    const before = await addApprovedRevision(fx, [
+      { itemName: "N 줄", vendorId: null, execution: { currency: "KRW", amount: 500_000, fxRate: 1 } },
+      { itemName: "P 줄", vendorId: null, execution: { currency: "KRW", amount: 700_000, fxRate: 1 } },
+    ]);
+    const id = (itemName: string) => before.lineIds.get(itemName) ?? "";
+    const prior: ExpenseFixture = { ...fx, revisionId: before.revisionId, lines: { withVendor: id("무대 제작"), noVendor: id("현장 진행 인력"), split: id("영상 제작(분할)") } };
+    await linkCardUsage(fx.pm, prior.lines.withVendor); // L — 카드 사용
+    const inReview = (await createExpenseFromLines(fx.pm, { lineIds: [prior.lines.split] })).created[0]?.expenseId ?? ""; // M — 결재 중 지출결의
+    expect(await submitReadyDraft(fx.pm, inReview)).toMatchObject({ kind: "submitted" });
+    await linkCardUsage(fx.pm, prior.lines.noVendor);
+    await issueRevenue(fx.projectId);
+
+    const latest = await createRevisionFromCurrent(fx.pm, { projectId: fx.projectId, fromRevisionId: before.revisionId });
+    const latestLines = await db.select({ id: quoteLines.id, itemName: quoteLines.itemName }).from(quoteLines).where(eq(quoteLines.revisionId, latest.revisionId));
+    const latestId = (itemName: string) => latestLines.find((line) => line.itemName === itemName)?.id ?? "";
+    await saveQuoteLines(SYSTEM_VIEWER, latest.revisionId, { rows: [], archivedLineIds: [latestId("P 줄")] });
+
+    const check = await getPreSettleCheck(fx.pm, fx.projectId);
+    expect(check.unmatchedLines.rows.map((row) => row.lineId)).toEqual([latestId("N 줄")]);
+    expect(check.unmatchedLines.rows.map((row) => row.lineId)).not.toContain(id("N 줄"));
+  });
 });

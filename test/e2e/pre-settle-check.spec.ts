@@ -110,3 +110,66 @@ test.describe("완료 전 점검 — 정산 프로젝트 상세(S18)", () => {
     await expect(heading).toBeFocused();
   });
 });
+
+// Task 2 — 미매칭 견적 줄(그 줄의 문) · 매출 미입력 · 매출 줄. 줄 하나(거래처 있음 · 연결 없음) · 발행 줄 없음 → 막힘 2.
+async function setupUnmatchedSettling(): Promise<{ org: LeaveOrg; projectId: string; itemName: string }> {
+  const today = seoulToday();
+  const lastYear = Number(today.slice(0, 4)) - 1;
+  const suffix = randomUUID().slice(0, 6);
+  const org = await setupLeaveOrg(today);
+  const client = await insertVendor(SYSTEM_VIEWER, { name: `E2E점검클라이언트-${suffix}`, normalizedName: `e2e점검클라이언트-${suffix}` });
+  const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E점검거래처-${suffix}`, normalizedName: `e2e점검거래처-${suffix}`, defaultEvidenceType: "tax_invoice" });
+  const project = await createProject(org.drafter.viewer, {
+    clientId: client.id,
+    teamId: org.teamId,
+    pmUserId: org.drafter.viewer.id,
+    name: `E2E미매칭-${suffix}`,
+    startDate: `${lastYear}-11-01`,
+    endDate: `${lastYear}-12-31`,
+  });
+  const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+  if (!revision || !project.id) throw new Error("프로젝트 · 1차 차수가 없습니다");
+  const subcategory = (await firstSelectableSubcategory()).value;
+  const itemName = `조명 설치-${suffix}`;
+  await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
+    rows: [
+      {
+        id: randomUUID(),
+        isNew: true as const,
+        subcategory,
+        itemName,
+        vendorId: vendor.id,
+        unitPrice: { currency: "KRW" as const, amount: 13_400_000, fxRate: 1 },
+        execution: { currency: "KRW" as const, amount: 12_400_000, fxRate: 1 },
+      },
+    ],
+  });
+  await changeProjectStatus(org.teamLead.viewer, project.id, { from: "bidding", to: "in_progress" });
+  const basis = await approvalBasis(SYSTEM_VIEWER, revision.id);
+  await setCustomerApproval(org.drafter.viewer, revision.id, { approvedOn: today, seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
+  const settled = await applyAutoSettlement({ projectIds: [project.id] });
+  if (!settled.includes(project.id)) throw new Error("자동 정산이 되지 않았습니다");
+  return { org, projectId: project.id, itemName };
+}
+
+test.describe("완료 전 점검 — 미매칭 견적 줄 · 매출 미입력(S18 · D-612 · D-613)", () => {
+  test("줄 하나 미매칭 · 발행 줄 없음 → 그룹 둘 · 문 `지출결의 올리기` · 매출 줄 `발행 합계 — · 차이 —` · 버튼 `완료 전 점검 2건`", async ({ browser, baseURL }) => {
+    const fx = await setupUnmatchedSettling();
+    const page = await loginPage(browser, baseURL, fx.org.drafter);
+    await page.goto(`/projects/${fx.projectId}`);
+
+    const heading = page.getByRole("heading", { name: "완료 전 점검", level: 2 });
+    const section = page.locator("section").filter({ has: heading });
+    await expect(section.getByText("미매칭 견적 줄 1줄", { exact: true })).toBeVisible();
+    const row = section.getByRole("row").filter({ hasText: fx.itemName });
+    await expect(row.getByRole("button", { name: "지출결의 올리기" })).toBeVisible();
+    await expect(section.getByRole("heading", { name: "매출 미입력", level: 3 })).toBeVisible();
+    await expect(section.getByText("발행 줄 없음", { exact: true })).toBeVisible();
+    await expect(section.getByText("계약 금액 13,400,000 · 발행 합계 — · 차이 —", { exact: true })).toBeVisible();
+
+    const submit = page.getByRole("button", { name: "정산 결재 올리기" });
+    await waitForHydration(submit);
+    await expect(submit).toHaveAttribute("aria-disabled", "true");
+    await expect(page.getByText("완료 전 점검 2건", { exact: true })).toBeVisible();
+  });
+});

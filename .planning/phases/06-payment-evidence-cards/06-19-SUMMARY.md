@@ -25,6 +25,7 @@ key-files:
     - app/(app)/projects/[id]/pre-settle-check.tsx
     - app/(app)/projects/[id]/pre-settle-word.ts
     - docs/design/checks/2026-10-13-06-19-pre-settle-check.md
+    - docs/design/checks/2026-10-13-06-19-review-fixes.md
     - test/unit/domain/pre-settle-check.test.ts
     - test/unit/app/pre-settle-word.test.ts
     - test/integration/pre-settle-check.test.ts
@@ -39,6 +40,8 @@ key-files:
     - app/(app)/projects/[id]/quote-table.tsx
     - app/(app)/projects/[id]/project-detail.module.css
     - ui/status-tag/status-map.ts
+    - ui/detail-screen/DetailScreen.tsx
+    - ui/detail-screen/DetailScreen.module.css
     - test/unit/ui/status-map.test.ts
     - test/integration/fixtures/settlements.ts
     - test/integration/settlement-approval.test.ts
@@ -49,6 +52,7 @@ decisions:
   - "06-19: 미매칭 줄은 최신 차수 · 보관 안 됨 · 조정 아님 · 취소 아님 · 실행가 ≠ 0 · 살아 있는 연결 0(지출결의는 ① 대상 목록에 든 것만 산다)"
   - "06-19: R-6 — 그룹 건수 · 막힘 건수는 프로젝트 전체, 미결 지출결의 행만 보는 사람 범위로 가르고 범위 밖은 outOfScopeCount 건수만. 미매칭 · 매출 줄은 범위 거르기 없이 금액 칸만 정보 항목"
   - "06-19: 강행 기안은 새 행동 종류 없이 document_submit 로그 detail.preSettle { groups, forced }"
+  - "06-19 검토 F-1: 미매칭 줄의 문은 프로젝트 쓰기 권한자에게만 싣고(inputs.lineDoors), expense_closed.latestId는 보는 사람의 지출결의 범위 안일 때만 — 아니면 문 none"
 metrics:
   duration: "110 min"
   completed: "2026-10-13"
@@ -113,7 +117,7 @@ plan_head_before: cccfb3714b00aaf236306629fa53fd23b7225005
 
 ## PreSettleInputs 칸 (06-22 · 06-23 ⓪ 가드용)
 
-`allowances { openExpenses, unmatchedLines, missingRevenue }` · `onlineVendorName` · `scope`(05 `visibleExpenseScope`) · `exposure`(`expense.amount` · `quote.amount` · `revenue.issued_amount` → boolean). 프로젝트별 칸 없음.
+`allowances { openExpenses, unmatchedLines, missingRevenue }` · `onlineVendorName` · `scope`(05 `visibleExpenseScope`) · `exposure`(`expense.amount` · `quote.amount` · `revenue.issued_amount` → boolean) · `lineDoors`(`can(viewer, "projects", "write")` — 검토 F-1). 프로젝트별 칸 없음.
 
 ## RED / GREEN 기록
 
@@ -143,7 +147,7 @@ plan_head_before: cccfb3714b00aaf236306629fa53fd23b7225005
 1. **[Rule 3] `loadPreSettleInputs(viewer)`** — projectId 인자 없음(프로젝트별 칸이 없고 06-22 · 06-23이 여러 프로젝트에 한 번 읽어 쓴다).
 2. **[Rule 3] 줄 거르기를 domain에서** — 리포지토리는 최신 차수의 보관 안 된 줄 전부를 돌려주고 domain이 거른다(표시 번호가 줄 전부의 순서에서 나온다).
 3. **[Rule 3] `listIssuedAmountsKrw`** — 발행 줄 금액 목록만 읽고 건수 · 합계는 `domain/money`로(리포지토리에서 돈을 세지 않는다).
-4. **[Rule 3] 포커스 대상** — `id` 대신 `data-ui="pre-settle-check"` → 가까운 section h2(tabIndex -1), ui/ DetailScreen을 고치지 않으려고(members-section 선례).
+4. **[Rule 3] 포커스 대상** — `id` 대신 `data-ui="pre-settle-check"` → 가까운 section h2(tabIndex -1), ui/ DetailScreen을 고치지 않으려고(members-section 선례). **검토 O-1에서 되돌림** — 플랜 ⑥대로 제목 `id="pre-settle-check"`(`DetailScreen.Section headingId`, 0090536).
 5. **[Rule 3] 새 파일 `test/unit/app/pre-settle-word.test.ts`** — eslint boundaries가 `test/unit/domain`에서 app import를 막는다.
 6. **[Rule 3] E2E DB `erp_0619_test`** — 오케스트레이터 지시 이름 `erp_test_0619`는 E2E global-setup이 거부한다(`_test`로 끝나야 함). 내가 만들고 지우는 격리 DB이고, 통합은 지시대로 `erp_test_0619`.
 7. **[Rule 1] E2E 준비 상태 확인** — 지출결의 제출 · 고객 승인의 잠금 읽기가 먼저 자동 정산을 해 `applyAutoSettlement`가 빈 목록을 돌려줄 수 있다 → 자동 정산 뒤 `findProjectById(...).status === "settling"`로 확인.
@@ -153,12 +157,27 @@ plan_head_before: cccfb3714b00aaf236306629fa53fd23b7225005
 
 ## 오케스트레이터 몫(아직 안 함)
 
-- **독립 DOM 감사**(별도 에이전트, `CI=true`, 320 · 375 · 768 · 1280): 「완료 전 점검」 섹션 가로 넘침 · 44px 터치 · 포커스 링, 막힌 `정산 결재 올리기`의 aria-disabled + 이유 + 3차 `점검 보기` → h2 포커스, 표 P1/P2 접힘(금액 열 유무 두 갈래), `그 밖 N건` 글자색 --text-muted.
+- 독립 DOM 감사: /mnt/project-files/notes/06-review/06-19-dom-audit.md, 증거 /mnt/project-files/06-review/pr-e/06-19/ — D-1~D-5 반영(D-1 · D-2 · D-3 · D-5 = 0090536, D-4 = 06-22 몫으로 남김 — 아래 「검토 반영」).
 - **/design-review + Codex 디자인 검토**: S18이 SYSTEM.md · UI-SPEC과 일관한지(부제 없음 · 빈 그룹 접힘 · `미결 없음` · 매출 줄 차이 색), 「문구 없이 이해되는가 · 남은 결정이 있는가」.
 - **/qa**: 정산 상세에서 막힘 → 점검 보기 → 행 3차 이동(지출결의 열기 · 구매 요청 · 지출결의 올리기) 흐름.
 - **/review**: 코드 검토(묶음 PR 단위).
 - **/cso**: 돈 · 결재 경로(`domain/settlements` 게이트 · fail-closed · 강행 로그), R-6 범위 누수(범위 밖 번호 · id · 금액이 DTO에 없음).
-- **Opus 독립 검토(C17, risk: approvals)**: `submitSettlement` 게이트 · fail-closed(사전 조회 · 계산 예외 시 거부) · ENG E-1 구조(트랜잭션 안 전역 풀 읽기 0) · R-6 — 실행자가 아닌 Opus 1명, 결과를 이 SUMMARY에.
+- Opus 독립 검토: 수정 필요 → F-1 반영(49a7101). 보고서 /mnt/project-files/notes/06-review/06-19-review.md
+
+## 검토 반영
+
+| 지적 | 등급 | 처리 | 커밋 |
+|---|---|---|---|
+| F-1(Opus 검토) 회수 문서가 이어진 미매칭 줄의 `expense_closed.latestId`가 범위 밖 · 쓰기 권한 없는 사람의 RSC 페이로드에 실림 | 중간 | `loadPreSettleInputs`가 트랜잭션 전에 `lineDoors = can(projects, write)`를 읽어 없으면 문 `none`(listLineDoors와 같이 숨김). `latestId`는 미결 행과 같은 `listExpenseIdsInScope`(tx, 한 질의)로 걸러 범위 밖이면 문 `none`. 통합 회귀 2건(범위 좁은 작성자 · 보기만 하는 사람 — DTO JSON에 문서 id 없음), 고치기 전 2건 실패 확인 | 49a7101 |
+| D-1(DOM 감사) 폰에서 행동 3차가 따로 P1 열 → 항목 칸 46~104px | 높음 | 행동 열을 P3(폰에서 숨김)로, 같은 3차를 항목(P1) 셀 2행(`.preSettlePhoneLine`, <700에서만 보임)에. 폰 P1 = 항목 · 금액 · 상태(SYSTEM 최대 3열). 항목명은 SYSTEM 「항목명은 줄바꿈 허용」 그대로(말줄임은 지출결의 목록 · 결재함만 — 2026-10-09 결정) | 0090536 |
+| D-2(DOM 감사) 320 · 실행가 상한 줄에서 미매칭 표가 본문보다 12px 넓음 | 중간 | D-1로 행동 열이 빠져 해소. E2E 「폰 320 · 긴 항목 · 실행가 상한」이 섹션 · 표 넘침 ≤ 0 실측 | 0090536 |
+| D-3(DOM 감사) 행 3차 접근 이름에 행 구분 없음 | 중간 | sr-only 앞 조각 — `{번호} 지출결의 열기`(미결 행), `{번호} {항목} 지출결의 올리기` · `구매 요청` · `지출결의 열기`(미매칭 줄, Copywriting :313-314) | 0090536 |
+| D-4(DOM 감사) 거래처 없는 줄에 3차 `거래처 고르기` 없음 | 낮음 | **반영 안 함 — 06-22 몫.** 06-19 플랜 ⑤ · must_haves는 미매칭 3차를 `구매 요청` / `지출결의 올리기` / `담당 PM {이름}`으로만 정하고, `거래처 없음 · 거래처 고르기`는 06-22-PLAN must_haves(:38 · :268 「거래처 없는 줄 → `거래처 없음 · 거래처 고르기`(S14 막힘)」)가 맡는다. 06-19는 문 `no_vendor`를 DTO로 보내고 글자만 그린다 | — |
+| D-5(DOM 감사) 1280 `점검 보기` 뒤 제목이 창 맨 아래 | 낮음 | `focus({ preventScroll: true })` + `scrollIntoView({ block: "start" })`, id 있는 섹션 제목은 `scroll-margin-top: calc(var(--bar-h) + var(--s-4))`(고정 상단 바 아래). E2E가 행 toBeInViewport · 제목 top < 창 절반 단언 | 0090536 |
+| O-1(DOM 감사) 제목 h2에 `id="pre-settle-check"` 없음 | 관찰 | 플랜 ⑥이 「제목 `id="pre-settle-check"` `tabIndex={-1}`」을 요구 → `DetailScreen.Section`에 선택 prop `headingId`(id + tabIndex -1), `점검 보기`는 그 id로 찾는다. 해시 진입(`/projects/{id}#pre-settle-check`) 자리 생김 | 0090536 |
+
+- 검토 반영 검증(로그 `/tmp/claude-0/fix-0619/`): 통합 `test/integration/pre-settle-check.test.ts` 21 passed(격리 DB `erp_test_0619`, flock) · E2E `CI=true` `test/e2e/pre-settle-check.spec.ts` 5 passed(desktop, 격리 DB `erp_0619_test`, flock — 고치기 전 4 실패 확인) · 단위 5 파일 250 passed(pre-settle-check · pre-settle-word · status-map · screen-frames · design-system-docs) · `pnpm typecheck` 0 · `pnpm lint` 0.
+- 호출한 스킬(검토 반영): design-gate(점검표 `docs/design/checks/2026-10-13-06-19-review-fixes.md`) · superpowers:test-driven-development · superpowers:systematic-debugging(F-1 회귀 테스트 대조군이 대표로 실패 — 원인: 대표 계급은 `projects` 쓰기가 없어 문이 숨는 것이 맞음 → 대조군을 팀 범위 PM으로) · superpowers:verification-before-completion.
 
 ## Known Stubs
 

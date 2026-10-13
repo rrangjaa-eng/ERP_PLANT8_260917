@@ -1,8 +1,10 @@
 # 06-22 대표 승인 재점검(O-16) · 정산 결재 문서 막힘 · S18 섹션 마감 — 점검표
-화면: app/(app)/projects/[id]/settlement/, app/(app)/leave/[id]/document-actions.tsx
+화면: app/(app)/projects/[id]/settlement/, app/(app)/leave/[id]/document-actions.tsx, app/(app)/projects/[id]/pre-settle-check.tsx, app/(app)/projects/[id]/quote-table.tsx, app/(app)/projects/[id]/page.tsx, app/(app)/projects/[id]/project-detail.module.css
 기준: BRIEF.md · frontend.md 화면 사용성 원칙 · CHECKLIST.md §1 · SYSTEM.md §7-1 버튼 위계 · §7-7 다섯 상태 · 06-UI-SPEC.md S18 · Copywriting 「막힘 — 대표 승인(S18, O-16)」 「막힘 — 정산 결재 올리기」
 
-지금 화면(고치기 전): 정산 결재 문서의 `승인`은 진행 복귀(`진행으로 바뀜 · 반려`) · 결재 중 지출결의(A8)만 막는다 — 기안 뒤 새 미결(반려 · 증빙 없음 · 미매칭 줄 · 매출 미입력)이 생겨도 대표 승인이 살아 있고, 막혀도 다음 한 수가 없다.
+지금 화면(고치기 전, Task 3 — 상세 「완료 전 점검」): 점검 실패면 섹션이 통째로 사라지고(기안 버튼만 막힘), 매출 미입력 행 · `고객 승인 전`에 다음 한 수가 없고, 긴 항목 이름이 PC에서 줄을 늘린다.
+
+지금 화면(고치기 전, Task 1 · 2 — 정산 결재 문서): 정산 결재 문서의 `승인`은 진행 복귀(`진행으로 바뀜 · 반려`) · 결재 중 지출결의(A8)만 막는다 — 기안 뒤 새 미결(반려 · 증빙 없음 · 미매칭 줄 · 매출 미입력)이 생겨도 대표 승인이 살아 있고, 막혀도 다음 한 수가 없다.
 
 ## 원칙
 - [x] 안내 문구: 화면의 모든 설명문을 셌다. 남긴 것은 오류·되돌릴 수 없는 일·잠김뿐이고 명사형 한 줄이다 — 근거: 더한 글자는 `승인` 막힘 이유 `완료 전 점검 {N}건 · 담당 PM {이름}`(잠김 · 명사형 한 줄) · 계산 실패 `점검 결과 없음 · 다시 시도` 둘뿐이다. 설명 문장 · 부제 없음. Task 2: 강행 결과 줄 `강행 · 미결 지출결의 {N}건`(되돌릴 수 없는 결정의 사실 한 줄 · 기존 `styles.muted`) · 다시 올리기 막힘 `완료 전 점검 {N}건`(머리 줄 06-19와 같은 문자열 `preSettleBlockReason`)
@@ -15,10 +17,13 @@
 - [x] 키보드만으로 끝난다(표는 엑셀 키 구성) — 근거: 막힌 `승인`은 aria-disabled라 탭 순서에 남고(DR-11) 바로 다음 탭이 3차 링크 `점검 보기`(Enter로 상세 `#pre-settle-check` 이동 — 제목 h2 id · tabIndex -1, 06-19). Ctrl+Enter는 막힘이면 무동작(`approve()`가 `approveBlockedReason`이면 반환)
 - [x] 같은 종류의 행동은 같은 모양이다(링크·버튼 섞지 않음) — 근거: 다른 화면으로 가는 `점검 보기`는 링크 3차(`buttonStyles.btn` · `tertiary` — 같은 화면의 `프로젝트` 링크 선례), 같은 화면 안 이동(머리 줄 `점검 보기`)은 06-19 버튼 3차 그대로
 
+- [x] (Task 3) 상세 「완료 전 점검」 — 근거: 오류는 섹션 자리 `점검 불러오지 못함` + 2차 `다시 시도`(카드 사용 섹션 선례 `ListEmpty tone="error"`) · 매출 3차는 권한별 하나(PS-3 — 매출 기록 → `발행 줄 추가`, 발행 요청만 → `발행 요청 추가`, 1024 미만은 없음 · 비활성 아님) · `{n}차 고객 승인 전`은 트리거가 있을 때만 3차(누르면 `고객 승인 표시`로 포커스) · 쓰기 없음은 `담당 PM {이름}`(버튼 0) · 새 설명문 없음. E2E 「섹션 마감」 7건이 DOM으로 단언
+- [x] (Task 3) 검토 D-4 `거래처 없음 · 거래처 고르기` — 근거: 정산의 기존 줄은 거래처 칸이 잠김(`domain/quotes/edit-scope.ts` — 정산은 실행가만 edit)이라 견적 줄 표 문에도 `거래처 고르기`가 없다. 갈 칸 없는 3차는 세우지 않고 `거래처 없음`만 둔다(할 수 없는 선택지는 숨김). 규칙을 바꿀지는 오케스트레이터 결정(SUMMARY 「갈림」)
+
 ## 사용자 결정(§1)
 - [x] §1의 결정을 하나도 어기지 않았다(웜톤 · 견적 엑셀식 · 옆 패널 · 스킨 A …) — 근거: 새 바탕 · 패널 · 모달 없음. 04.1 행동 줄(`DocumentActions`)에 종류 중립 선택 prop `approveNextStep` 하나만 더했다 — 넘기지 않는 연차 · 지출결의 문서 화면은 그대로
 
 ## 시스템
-- [x] 새 색·서체·radius·그림자를 만들지 않았다(tokens.css 변수만) — 근거: 새 CSS 없음. 3차 링크는 기존 `ui/button/Button.module.css`의 `btn` · `tertiary` 클래스, 이유 색은 Button의 `reasonTone="block"`(`--status-danger`)
+- [x] 새 색·서체·radius·그림자를 만들지 않았다(tokens.css 변수만) — 근거: Task 1 · 2 새 CSS 없음. Task 3은 `project-detail.module.css`에 말줄임(`.preSettleItem` — ≥700 한 줄 · `max-width: 40ch` · 매출 메모 `.noteText` 선례)과 `display: contents` 묶음(`.layoutContents`)만 — 색 · 간격 값 없음, 옛 토큰 0(acceptance grep). 3차 링크는 기존 `ui/button/Button.module.css`의 `btn` · `tertiary` 클래스, 이유 색은 Button의 `reasonTone="block"`(`--status-danger`)
 - [x] 폰 320에서 가로 넘침 없음 · 터치 44px — 근거: 이유 + 3차는 Button의 `reasonLine` 묶음이라 좁은 폭에서 버튼 아래 줄로 함께 내려간다(06-19 실측 — 머리 줄 같은 컴포넌트). 폭별 실측은 오케스트레이터의 독립 DOM 감사(CI=true · 320/375) 몫
 - [x] 실제 앱 화면(PC 1280 · 폰 390)을 찍어 보고 확인했다 — 스크린샷 경로: 실행자(서브에이전트)는 스크린샷 육안 판정을 하지 않는다(CLAUDE.md §6). CI=true E2E `test/e2e/pre-settle-check.spec.ts`가 실제 앱 DOM으로 `승인` aria-disabled · 이유 글자 · `점검 보기` href · `반려` 활성을 단언하고, 폭별 실측은 오케스트레이터의 독립 DOM 감사 · `/design-review`가 한다

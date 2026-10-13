@@ -44,7 +44,7 @@ import { listLineDoors } from "@/domain/expenses";
 import "@/app/(app)/document-kinds";
 import { getSettlementHeader } from "@/domain/settlements";
 import { getPreSettleCheck, type PreSettleCheckDto } from "@/domain/pre-settle-check";
-import { PreSettleCheckSection } from "./pre-settle-check";
+import { PreSettleCheckError, PreSettleCheckSection } from "./pre-settle-check";
 
 // SYSTEM.md §6-2 상세 화면 — 이 리포의 첫 목록/상세 분리 화면. 네 숫자 줄
 // (PNL-01)은 아직 없다(Phase 9). 매출 섹션은 04-02가 더한다. WR-07: 인증 검사를
@@ -282,7 +282,13 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       statusSinceText={`${statusLabel} ${statusSince}`}
       statusChange={statusChange}
       settlement={settlementHeader ? { projectId: project.id, ...settlementHeader, preSettleBlock } : null}
-      preSettleSection={preSettle?.status === "ready" ? <PreSettleCheckSection check={preSettle.dto} ownerName={preSettleOwnerName} /> : null}
+      preSettleSection={
+        preSettle?.status === "ready" ? (
+          <PreSettleCheckSection check={preSettle.dto} ownerName={preSettleOwnerName} />
+        ) : preSettle?.status === "error" ? (
+          <PreSettleCheckError />
+        ) : null
+      }
       newRevision={newRevision}
       copyProjectHref={canCopyProject ? `/projects?new=1&copyFrom=${project.id}` : null}
       memberAdd={memberRights.canEdit && memberRights.hasCandidates ? <MemberAddHeaderButton /> : null}

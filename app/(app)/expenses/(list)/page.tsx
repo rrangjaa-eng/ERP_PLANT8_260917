@@ -37,7 +37,7 @@ import {
   type ExpenseStatusView,
 } from "../list-columns";
 import { PaymentTargetsLoadError, PaymentTargetsScreen, type PaymentTargetScreenRow } from "../payment-targets-table";
-import { PaidList, type PaidScreenRow } from "../paid-list";
+import { PaidList, PaidLoadError, type PaidScreenRow } from "../paid-list";
 import styles from "../expenses.module.css";
 
 // 05-08(UI-SPEC S8 · SYSTEM §6-1 목록 = 원장): 보임 범위(domain/expenses/access.ts) 안의 지출결의를 상태 보기 하나로 거른다.
@@ -97,7 +97,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
     const key = [team, month, firstParam(params.page) ?? ""].join("|");
     return (
       <Suspense key={key} fallback={<PaidSkeleton />}>
-        <PaidPayments viewer={session.viewer} views={views} team={team} month={month} page={firstParam(params.page)} />
+        <PaidPayments viewer={session.viewer} views={views} canPay={canPay} team={team} month={month} page={firstParam(params.page)} />
       </Suspense>
     );
   }
@@ -257,8 +257,30 @@ function paidHref(query: Record<string, string>, page?: number): string {
 }
 
 // 06-20(UI-SPEC S3) — 지급 완료 보기. 범위 · 주 그룹 · 합계 · 쪽은 서버(listPaidPayments), 화면은 받은 행을 그린다. 1차 없음.
-async function PaidPayments({ viewer, views, team, month, page }: { viewer: Viewer; views: string[]; team: string; month: string; page: string | undefined }) {
-  const [list, teams] = await Promise.all([listPaidPayments(viewer, { team, month, page }), listPaidTeamOptions(viewer)]);
+async function PaidPayments({
+  viewer,
+  views,
+  canPay,
+  team,
+  month,
+  page,
+}: {
+  viewer: Viewer;
+  views: string[];
+  canPay: boolean;
+  team: string;
+  month: string;
+  page: string | undefined;
+}) {
+  let loaded: [Awaited<ReturnType<typeof listPaidPayments>>, Awaited<ReturnType<typeof listPaidTeamOptions>>];
+  try {
+    loaded = await Promise.all([listPaidPayments(viewer, { team, month, page }), listPaidTeamOptions(viewer)]);
+  } catch (error) {
+    // C13 — 본문 자리에 한 줄 + `다시 시도`. 보기 select는 남겨 다른 보기로 옮겨 갈 수 있다.
+    log.error("지급 완료 로드 실패", { error: error instanceof Error ? error.name : "unknown" });
+    return <ListScreen title="지출결의" filters={<StatusFilter value={PAID_VIEW} views={views} />} empty={<PaidLoadError />}>{null}</ListScreen>;
+  }
+  const [list, teams] = loaded;
   const rows: PaidScreenRow[] = list.groups.flatMap((group) => group.rows.map((row) => ({ ...row, id: row.id ?? "", group: group.label })));
   const teamValue = teams.some((option) => option.value === team) ? team : "";
   const query: Record<string, string> = { status: PAID_VIEW };
@@ -267,6 +289,15 @@ async function PaidPayments({ viewer, views, team, month, page }: { viewer: View
   return (
     <ListScreen
       title="지출결의"
+      // 「Empty — 지급 완료」 — 이 달 · 팀에 지급 완료가 없으면 합계 줄 · 쪽 없이 한 줄 + 지급 권한자에게만 `지급 대상 보기`.
+      empty={
+        rows.length === 0 ? (
+          <ListEmpty
+            message="지급 완료한 건이 없습니다"
+            {...(canPay ? { action: { label: "지급 대상 보기", href: `/expenses?${new URLSearchParams({ status: PAYMENT_TARGET_VIEW })}` } } : {})}
+          />
+        ) : undefined
+      }
       filters={
         <StatusFilter
           value={PAID_VIEW}
@@ -278,7 +309,7 @@ async function PaidPayments({ viewer, views, team, month, page }: { viewer: View
         />
       }
       summary={
-        list.total ? (
+        list.total && rows.length > 0 ? (
           <section aria-label="합계" className={styles.totals}>
             <p className={styles.totalsTitle}>{`합계 (${PAID_VIEW} · ${list.month} · ${list.total.count}건)`}</p>
             <p className={styles.totalsAmount}>
@@ -300,7 +331,7 @@ async function PaidPayments({ viewer, views, team, month, page }: { viewer: View
         ) : undefined
       }
     >
-      <PaidList rows={rows} amountColumn={list.total !== null} />
+      <PaidList rows={rows} amountColumn={list.total !== null} canConfirm={canPay} />
     </ListScreen>
   );
 }

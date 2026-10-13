@@ -1,14 +1,22 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Table } from "@/ui/table/Table";
 import type { TableColumn } from "@/ui/table/types";
+import { useEditableWidth } from "@/ui/table/use-editable-width";
 import { Num } from "@/ui/num/Num";
+import { Button, buttonLinkClassName } from "@/ui/button/Button";
+import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import type { StatusWord } from "@/ui/status-tag/status-map";
 import type { PaidPaymentRowDto } from "@/domain/expenses/dto";
+import type { ConfirmEvidenceResult } from "@/domain/evidence-reviews";
 import { formatKrw } from "@/lib/format-number";
 import { PAID_COLUMN_LABELS } from "./list-columns";
+import { EvidenceConfirmDialog } from "./evidence-confirm-dialog";
+import { usePhoneWidth } from "./payment-targets-table";
 import styles from "./expenses.module.css";
 
 // 06-20(UI-SPEC S3): 「지급 완료」 보기 표 — 서버가 정한 주 그룹 · 순서 그대로 그리고 1차가 없다(지급 취소는 문서 화면 S5).
@@ -21,7 +29,62 @@ function SignedNum({ value }: { value: number }) {
   return <Num value={value > 0 ? `+${formatKrw(value)}` : formatKrw(value)} />;
 }
 
-export function PaidList({ rows, amountColumn }: { rows: PaidScreenRow[]; amountColumn: boolean }) {
+// 「Error — 목록 로드」(C13) — 본문 자리에 한 줄 + 2차 `다시 시도`(같은 주소를 다시 받는다).
+export function PaidLoadError() {
+  const router = useRouter();
+  return <ListEmpty message="지급 완료 목록 불러오지 못함" action={{ label: "다시 시도", onClick: () => router.refresh() }} tone="error" />;
+}
+
+// DR-4 · O-21(UI-SPEC S1 「제자리 증빙 확인」 「성공(S3)」): 지급 권한자에게만 증빙 칸 3차 `증빙 확인`(`확인 전`만). ≥1024 · 증빙 금액 있음은
+// 06-17 EvidenceConfirmDialog(행 version = rowVersion — 새 판정 · 새 액션 없음), 금액이 빈 확인 전과 1024 미만은 문서 화면 링크, 폰은 행 링크(3차 없음).
+// 성공하면 응답 상태로 그 행 증빙 칸을 덮고 3차가 사라지므로 포커스 = 그 행 번호 링크(§7-17). 목록은 다시 받는다.
+export function PaidList({ rows, amountColumn, canConfirm }: { rows: PaidScreenRow[]; amountColumn: boolean; canConfirm: boolean }) {
+  const router = useRouter();
+  const wide = useEditableWidth();
+  const phone = usePhoneWidth();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const focusAfterCloseRef = useRef<string | null>(null);
+  const [evidenceTarget, setEvidenceTarget] = useState<{ id: string; version: number } | null>(null);
+  const [patches, setPatches] = useState<ReadonlyMap<string, { version: number; evidenceStatus: string }>>(new Map());
+  // 확인 응답을 다시 받은 목록이 따라올 때까지 그 행에 덮는다(06-17 S1과 같은 규칙 — 더 새 version일 때만).
+  const shown = rows.map((row) => {
+    const patch = patches.get(row.id);
+    return patch && (row.version ?? 0) < patch.version ? { ...row, ...patch } : row;
+  });
+
+  useEffect(() => {
+    if (evidenceTarget !== null) return;
+    const id = focusAfterCloseRef.current;
+    focusAfterCloseRef.current = null;
+    if (!id) return;
+    setTimeout(() => rootRef.current?.querySelector<HTMLElement>(`a[data-paid-number="${CSS.escape(id)}"]`)?.focus(), 0);
+  }, [evidenceTarget]);
+
+  function confirmed(id: string, result: ConfirmEvidenceResult) {
+    setPatches((current) => new Map(current).set(id, { version: result.version, evidenceStatus: result.evidenceStatus }));
+    focusAfterCloseRef.current = id;
+    setEvidenceTarget(null);
+    router.refresh();
+  }
+
+  function evidenceAction(row: PaidScreenRow) {
+    if (!canConfirm || phone || row.evidenceStatus !== "확인 전") return null;
+    const label = `${row.number ?? ""} 증빙 확인`.trim();
+    if (wide && row.evidenceAmountEntered === true && typeof row.version === "number") {
+      const version = row.version;
+      return (
+        <Button variant="tertiary" aria-label={label} data-cell-action="" onClick={() => setEvidenceTarget({ id: row.id, version })}>
+          증빙 확인
+        </Button>
+      );
+    }
+    return (
+      <Link href={`/expenses/${row.id}`} className={buttonLinkClassName("tertiary")} aria-label={label} data-cell-action="">
+        증빙 확인
+      </Link>
+    );
+  }
+
   const columns: TableColumn<PaidScreenRow>[] = [
     {
       key: "number",
@@ -29,7 +92,7 @@ export function PaidList({ rows, amountColumn }: { rows: PaidScreenRow[]; amount
       priority: "p2",
       cell: (row) =>
         row.number ? (
-          <Link href={`/expenses/${row.id}`} className={styles.link} aria-label={`${row.number} 지출결의 열기`} data-paid-number="">
+          <Link href={`/expenses/${row.id}`} className={styles.link} aria-label={`${row.number} 지출결의 열기`} data-paid-number={row.id}>
             <Num value={row.number} />
           </Link>
         ) : (
@@ -105,7 +168,12 @@ export function PaidList({ rows, amountColumn }: { rows: PaidScreenRow[]; amount
       key: "evidence",
       header: PAID_COLUMN_LABELS.evidence,
       priority: "p2",
-      cell: (row) => <span className={styles.evidenceCell}>{row.evidenceStatus ? <StatusTag status={row.evidenceStatus as StatusWord} variant="text" /> : "—"}</span>,
+      cell: (row) => (
+        <span className={styles.evidenceCell}>
+          {row.evidenceStatus ? <StatusTag status={row.evidenceStatus as StatusWord} variant="text" /> : "—"}
+          {evidenceAction(row)}
+        </span>
+      ),
       summary: (row) => row.evidenceStatus ?? "—",
     },
     {
@@ -117,5 +185,19 @@ export function PaidList({ rows, amountColumn }: { rows: PaidScreenRow[]; amount
     },
   ];
 
-  return <Table caption="지급 완료" columns={columns} rows={rows} getRowId={(row) => row.id} groupBy={(row) => row.group} phoneRowLink />;
+  const evidenceRow = evidenceTarget ? shown.find((row) => row.id === evidenceTarget.id) : undefined;
+  return (
+    <div ref={rootRef}>
+      <Table caption="지급 완료" columns={columns} rows={shown} getRowId={(row) => row.id} groupBy={(row) => row.group} phoneRowLink />
+      {evidenceTarget ? (
+        <EvidenceConfirmDialog
+          open={evidenceRow === undefined || evidenceRow.evidenceStatus === "확인 전"}
+          expenseId={evidenceTarget.id}
+          rowVersion={evidenceRow?.version ?? evidenceTarget.version}
+          onClose={() => setEvidenceTarget(null)}
+          onConfirmed={(result) => confirmed(evidenceTarget.id, result)}
+        />
+      ) : null}
+    </div>
+  );
 }

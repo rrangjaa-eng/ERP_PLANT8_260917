@@ -233,6 +233,8 @@ export type ExpenseListRowDto = {
   // `작성 중` / `{단계} 결재 중` / `반려` / `회수` / `승인`, 날짜는 MM-DD(서울 — 반려 · 회수 · 승인만).
   statusWord: string;
   statusDate: string | null;
+  // 06-20(UA-605) — 상태 칸 둘째 줄 `증빙 {N}일 경과`(기한 지난 선결제 · 지급 뒤). 없으면 키 없음.
+  statusNote?: string | null;
 };
 
 export const EXPENSE_LIST_ROW_DTO_SPEC: DtoSpec<ExpenseListRowDto, ExpenseListRowDto> = {
@@ -247,6 +249,7 @@ export const EXPENSE_LIST_ROW_DTO_SPEC: DtoSpec<ExpenseListRowDto, ExpenseListRo
     { key: "drafterName", from: "drafterName", infoItem: "expense.value" },
     { key: "statusWord", from: "statusWord", infoItem: "expense.value" },
     { key: "statusDate", from: "statusDate", infoItem: "expense.value" },
+    { key: "statusNote", from: "statusNote", infoItem: "expense.value" },
   ],
 };
 

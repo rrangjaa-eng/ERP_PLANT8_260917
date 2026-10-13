@@ -2,10 +2,10 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
-import { actionLog, expensePayments, expenses, projects, quoteLines, vendors } from "@/db/schema";
+import { actionLog, expenseEvidenceReviews, expensePayments, expenses, files, projects, quoteLines, vendors } from "@/db/schema";
 import { approveDocument, getApprovalView } from "@/domain/approvals";
 import { createExpenseFromLines, createTeamExpenseDraft, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
-import { confirmEvidence } from "@/domain/evidence-reviews";
+import { confirmEvidence, loadPrepaidDueDays } from "@/domain/evidence-reviews";
 import { completePaymentsBatch } from "@/domain/payments/batch";
 import { listAllPaymentTargets } from "@/domain/payments/targets";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
@@ -1509,6 +1509,195 @@ test.describe("문서 화면 왕복 (06-20 Task 3)", () => {
     await page.keyboard.press("Control+Enter");
     await expect(page.getByTestId("payment-result")).toBeVisible();
     expect(await livePaymentCount(id)).toBe(1);
+    await page.context().close();
+  });
+});
+
+// ── 06-20 Task 4 — S3 마감 · Phase 5 상태 열 ─────────────────────────────
+
+function paidMonthUrl(teamId: string, month: string): string {
+  return `/expenses?${new URLSearchParams({ status: "지급 완료", team: teamId, month })}`;
+}
+
+// 지급 기록의 지급일만 옮긴다(테스트 준비 — 기한 · 달 경계).
+async function movePaidDate(expenseId: string, payDate: string): Promise<void> {
+  await db.update(expensePayments).set({ payDate }).where(and(eq(expensePayments.expenseId, expenseId), isNull(expensePayments.cancelledAt)));
+}
+
+test.describe("지급 완료 보기 마감 (06-20 Task 4)", () => {
+  test("S3 빈 · 오류 — 0건이면 `지급 완료한 건이 없습니다` + 지급 권한자에게만 `지급 대상 보기`(합계 줄 없음) / 로드 실패면 `지급 완료 목록 불러오지 못함` + `다시 시도`", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const teamId = await teamOf(fx);
+    const payer = await makeTeamPayer(fx);
+
+    const page = await loginPage(browser, baseURL, payer);
+    await page.goto(paidMonthUrl(teamId, "2000-01"));
+    await expect(page.getByText("지급 완료한 건이 없습니다", { exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "지급 대상 보기" })).toHaveAttribute("href", `/expenses?${new URLSearchParams({ status: "지급 대상" })}`);
+    await expect(page.getByRole("region", { name: "합계" })).toHaveCount(0);
+
+    // 없는 해(0000년)는 서버 목록 쿼리를 실패시킨다 — 다른 스펙이 쓰는 표 · 설정은 건드리지 않는다(구매 요청 목록 로드 오류와 같은 방법).
+    await page.goto(paidMonthUrl(teamId, "0000-01"));
+    await expect(page.getByText("지급 완료 목록 불러오지 못함", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("상태")).toHaveValue("지급 완료");
+    await page.route("**/expenses?*month=0000-01*", (route) => route.continue({ url: route.request().url().replace("month=0000-01", "month=2000-01") }));
+    const retry = page.getByRole("button", { name: "다시 시도" });
+    await waitForHydration(retry);
+    await retry.click();
+    await expect(page.getByText("지급 완료한 건이 없습니다", { exact: true })).toBeVisible();
+    await page.context().close();
+
+    const ceoPage = await loginPage(browser, baseURL, fx.ceo);
+    await ceoPage.goto(paidMonthUrl(teamId, "2000-01"));
+    await expect(ceoPage.getByText("지급 완료한 건이 없습니다", { exact: true })).toBeVisible();
+    await expect(ceoPage.getByRole("link", { name: "지급 대상 보기" })).toHaveCount(0);
+    await ceoPage.context().close();
+  });
+
+  test("S3 부분 · 차이 — 차이 0 → 이체액 2행 없음 · 사유 `—` / 차이 있음 → 2행 `차이 -1,000` 경고 색 · 사유 글자", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const payer = await makeTeamPayer(fx);
+    const even = await approvedTarget(fx, "tracer");
+    const short = await approvedTarget(fx, "hold");
+    const rows = await Promise.all(
+      [even, short].map(async (expenseId) => {
+        const [doc] = await db.select({ version: expenses.version }).from(expenses).where(eq(expenses.id, expenseId));
+        const preview = await previewPayable(payer.viewer, { expenseId, payDate: seoulToday() });
+        if (!doc || typeof preview.payableKrw !== "number") throw new Error("지급할 수 없는 문서");
+        return { expenseId, expenseVersion: doc.version, expectedPayableKrw: preview.payableKrw };
+      }),
+    );
+    const [evenRow, shortRow] = rows;
+    if (!evenRow || !shortRow) throw new Error("두 행 필요");
+    const result = await completePaymentsBatch(payer.viewer, {
+      payDate: seoulToday(),
+      rows: [evenRow, { ...shortRow, transferKrw: shortRow.expectedPayableKrw - 1_000, diffReason: "은행 수수료 차감" }],
+    });
+    if (result.processed !== 2) throw new Error(`지급 안 됨: ${JSON.stringify(result.blocked)}`);
+
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    await page.goto(paidViewUrl(await teamOf(fx)));
+    const evenTr = rowOf(page, fx.lines.tracer.itemName);
+    const shortTr = rowOf(page, fx.lines.hold.itemName);
+    await expect(evenTr).toContainText(formatKrw(evenRow.expectedPayableKrw));
+    await expect(evenTr.getByText(/^차이/)).toHaveCount(0);
+    await expect(evenTr.locator("td").filter({ hasText: /^—$/ }).first()).toBeVisible();
+    const diff = shortTr.getByText("차이 -1,000", { exact: true });
+    await expect(diff).toBeVisible();
+    expect(await colorOf(diff)).toBe(await tokenAsColor(page, "--status-warning"));
+    await expect(shortTr.getByText("은행 수수료 차감", { exact: true })).toHaveAttribute("title", "은행 수수료 차감");
+    await page.context().close();
+  });
+
+  test("S3 제자리 증빙 확인 — 지급 뒤 증빙이 들어온 선결제 `확인 전` 행 3차 → 모달(1차 켜짐) → 확인 → 증빙 칸 `확인됨` · 포커스 번호 링크 · 지급 기록 1 그대로 / 800px 문서 화면 링크 / 대표에게는 3차 없음", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const payer = await makeTeamPayer(fx);
+    const id = await paidTarget(fx, "tracer", payer);
+    // 지급 뒤 들어온 증빙 — 확인 기록을 지워 `확인 전`(P5)으로 둔다(증빙 금액은 남는다).
+    await db.delete(expenseEvidenceReviews).where(eq(expenseEvidenceReviews.expenseId, id));
+    await db.update(expenses).set({ prepaid: true, prepaidReason: "해외 결제 선결제" }).where(eq(expenses.id, id));
+    const { number } = await numberOf(id);
+
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    await page.goto(paidViewUrl(await teamOf(fx)));
+    const row = rowOf(page, fx.lines.tracer.itemName);
+    await expect(row.getByText("확인 전", { exact: true })).toBeVisible();
+    const action = row.getByRole("button", { name: `${number} 증빙 확인` });
+    await waitForHydration(action);
+    await action.click();
+    const dialog = page.getByRole("dialog");
+    const confirm = dialog.getByRole("button", { name: /^증빙 확인/ });
+    await expect(confirm).toBeVisible();
+    await expect(confirm).not.toHaveAttribute("aria-disabled", "true");
+    await confirm.click();
+    await expect(dialog).toBeHidden();
+    await expect(row.getByText("확인됨", { exact: true })).toBeVisible();
+    await expect(row.getByRole("link", { name: `${number} 지출결의 열기` })).toBeFocused();
+    expect(await livePaymentCount(id)).toBe(1);
+
+    await db.delete(expenseEvidenceReviews).where(eq(expenseEvidenceReviews.expenseId, id));
+    await page.setViewportSize({ width: 800, height: 900 });
+    await page.reload();
+    await expect(row.getByRole("link", { name: `${number} 증빙 확인` })).toHaveAttribute("href", `/expenses/${id}`);
+    await page.context().close();
+
+    const ceoPage = await loginPage(browser, baseURL, fx.ceo, { width: 1280, height: 900 });
+    await ceoPage.goto(paidViewUrl(await teamOf(fx)));
+    await expect(rowOf(ceoPage, fx.lines.tracer.itemName).getByText("확인 전", { exact: true })).toBeVisible();
+    await expect(ceoPage.getByRole("button", { name: /증빙 확인$/ })).toHaveCount(0);
+    await expect(ceoPage.getByRole("link", { name: /증빙 확인$/ })).toHaveCount(0);
+    await ceoPage.context().close();
+  });
+
+  test("S3 쪽 · 폭 — 51건이면 둘째 쪽 1건 · 합계 줄은 51건 / 1100px · 600px에서 P3 머리글(지급 방식 · 차이 사유 · 처리한 사람)이 먼저 사라진다", async ({ browser, baseURL }) => {
+    test.setTimeout(240_000);
+    const fx = await setupExpenseE2E();
+    const payer = await makeTeamPayer(fx);
+    const made = await manyTargets(fx, 51);
+    const rows = await Promise.all(
+      made.map(async ({ id }) => {
+        const [doc] = await db.select({ version: expenses.version }).from(expenses).where(eq(expenses.id, id));
+        const preview = await previewPayable(payer.viewer, { expenseId: id, payDate: seoulToday() });
+        if (!doc || typeof preview.payableKrw !== "number") throw new Error("지급할 수 없는 문서");
+        return { expenseId: id, expenseVersion: doc.version, expectedPayableKrw: preview.payableKrw };
+      }),
+    );
+    const result = await completePaymentsBatch(payer.viewer, { payDate: seoulToday(), rows });
+    if (result.processed !== 51) throw new Error(`지급 안 됨: ${JSON.stringify(result.blocked)}`);
+
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    const base = paidViewUrl(await teamOf(fx));
+    await page.goto(`${base}&page=2`);
+    await expect(page.locator("main table tbody tr a[data-paid-number]")).toHaveCount(1);
+    await expect(page.getByRole("region", { name: "합계" })).toContainText("51건");
+    const headers = () => page.locator("main table thead th:visible").allInnerTexts();
+    for (const label of ["지급 방식", "차이 사유", "처리한 사람", "번호", "거래처", "증빙"]) expect(await headers()).toContain(label);
+    await page.setViewportSize({ width: 1100, height: 900 });
+    await expect.poll(headers).not.toContain("지급 방식");
+    for (const label of ["차이 사유", "처리한 사람"]) expect(await headers()).not.toContain(label);
+    for (const label of ["번호", "거래처", "증빙", "지급일", "이체액"]) expect(await headers()).toContain(label);
+    await page.setViewportSize({ width: 600, height: 900 });
+    await expect.poll(headers).not.toContain("처리한 사람");
+    for (const label of ["지급 방식", "차이 사유"]) expect(await headers()).not.toContain(label);
+    await page.context().close();
+  });
+
+  test("Phase 5 상태 열 — 기안자 05 목록: 지급된 행 `지급 완료 {MM-DD}` · 기한 지난 선결제 둘째 줄 `증빙 {N}일 경과`(경고 색 · 태그 크기 · 400) · 열 머리글은 05 그대로", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const payer = await makeTeamPayer(fx);
+    await paidTarget(fx, "tracer", payer);
+    const overdue = await paidTarget(fx, "hold", payer);
+    const dueDays = await loadPrepaidDueDays();
+    const past = addDays(seoulToday(), -(dueDays + 2));
+    await movePaidDate(overdue, past);
+    await db.delete(expenseEvidenceReviews).where(eq(expenseEvidenceReviews.expenseId, overdue));
+    await db.update(expenses).set({ prepaid: true, prepaidReason: "해외 결제 선결제" }).where(eq(expenses.id, overdue));
+    // 증빙 없음 — 테스트 준비로 그 문서의 파일을 지운 것으로 둔다(removed_at).
+    await db.update(files).set({ removedAt: new Date() }).where(and(eq(files.ownerKind, "expense"), eq(files.ownerId, overdue)));
+
+    const page = await loginPage(browser, baseURL, fx.pm, { width: 1280, height: 900 });
+    await page.goto(`/expenses?${new URLSearchParams({ status: "승인" })}`);
+    const paidRow = rowOf(page, fx.lines.tracer.itemName);
+    const overdueRow = rowOf(page, fx.lines.hold.itemName);
+    await expect(paidRow).toContainText(`지급 완료 ${seoulToday().slice(5)}`);
+    await expect(overdueRow).toContainText(`지급 완료 ${past.slice(5)}`);
+    const note = overdueRow.getByText("증빙 2일 경과", { exact: true });
+    await expect(note).toBeVisible();
+    expect(await colorOf(note)).toBe(await tokenAsColor(page, "--status-warning"));
+    expect(await note.evaluate((element) => getComputedStyle(element).fontWeight)).toBe(await tokenAsWeight(page, "--fw-regular"));
+    const tagSize = await page.evaluate(() => {
+      const probe = document.createElement("span");
+      probe.style.fontSize = "var(--text-tag)";
+      document.body.append(probe);
+      const size = getComputedStyle(probe).fontSize;
+      probe.remove();
+      return size;
+    });
+    expect(await note.evaluate((element) => getComputedStyle(element).fontSize)).toBe(tagSize);
+    const headers = await page.locator("main table thead th").allInnerTexts();
+    const allowed: string[] = ["번호", "프로젝트 · 항목", "거래처", "금액", "지급 예정", "기안", "상태"];
+    expect(headers.every((header) => allowed.includes(header.trim()))).toBe(true);
+    expect(headers.length).toBeLessThanOrEqual(allowed.length);
     await page.context().close();
   });
 });

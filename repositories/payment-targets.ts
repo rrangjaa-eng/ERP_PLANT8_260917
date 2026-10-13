@@ -114,7 +114,8 @@ const paidMonthOf = sql<string>`to_char(${expensePayments.payDate}, 'YYYY-MM')`;
 function paidConditions(input: { teamId?: string | null; month?: string | null }): SQL | undefined {
   const conditions: SQL[] = [isNull(expensePayments.cancelledAt), isNull(expenses.deletedAt)];
   if (input.teamId) conditions.push(sql`${docTeamId} = ${input.teamId}::uuid`);
-  if (input.month) conditions.push(sql`${paidMonthOf} = ${input.month}`);
+  // 달 = 지급일 범위(달 첫날 ≤ 지급일 < 다음 달 첫날). 모양은 domain이 검사한다.
+  if (input.month) conditions.push(sql`${expensePayments.payDate} >= (${input.month} || '-01')::date and ${expensePayments.payDate} < ((${input.month} || '-01')::date + interval '1 month')`);
   return and(...conditions);
 }
 
@@ -178,4 +179,20 @@ export async function findVendorAccountsByIds(viewer: Viewer, vendorIds: readonl
     .select({ vendorId: vendors.id, bank: vendors.accountBank, holder: vendors.accountHolder, last4: vendors.accountNumberLast4 })
     .from(vendors)
     .where(inArray(vendors.id, [...vendorIds]));
+}
+
+// 06-20(UA-605): Phase 5 목록 상태 열 재료 — 쪽의 결재 통과 행 id 묶음 한 번. 살아 있는 지급 기록의 지급일 · 선결제 · 면제 기록 유무.
+// 증빙 유무는 여기서 세지 않는다(domain이 ownersWithEvidence 한 번 — C5).
+export type ListPaymentStatusRow = { id: string; payDate: string | null; prepaid: boolean; waived: boolean };
+
+export async function findListPaymentStatusByIds(viewer: Viewer, ids: readonly string[]): Promise<ListPaymentStatusRow[]> {
+  void viewer;
+  if (ids.length === 0) return [];
+  const rows = await db
+    .select({ id: expenses.id, payDate: expensePayments.payDate, prepaid: expenses.prepaid, reviewStatus: expenseEvidenceReviews.status })
+    .from(expenses)
+    .leftJoin(expensePayments, and(eq(expensePayments.expenseId, expenses.id), isNull(expensePayments.cancelledAt)))
+    .leftJoin(expenseEvidenceReviews, eq(expenseEvidenceReviews.expenseId, expenses.id))
+    .where(inArray(expenses.id, [...ids]));
+  return rows.map((row) => ({ id: row.id, payDate: row.payDate, prepaid: row.prepaid, waived: row.reviewStatus === "waived" }));
 }

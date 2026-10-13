@@ -287,3 +287,11 @@
 .payReturnEnd {
   margin-left: auto;
 }
+
+/* 06-20(UA-605) Phase 5 목록 상태 칸 둘째 줄 `증빙 {N}일 경과`. */
+.statusNote {
+  display: block;
+  font-size: var(--text-tag);
+  font-weight: var(--fw-regular);
+  color: var(--status-warning);
+}

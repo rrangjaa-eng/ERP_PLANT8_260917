@@ -201,7 +201,7 @@ const subscribePhone = (onChange: () => void) => {
   media.addEventListener("change", onChange);
   return () => media.removeEventListener("change", onChange);
 };
-function usePhoneWidth(): boolean {
+export function usePhoneWidth(): boolean {
   return useSyncExternalStore(subscribePhone, () => window.matchMedia("(max-width: 699.98px)").matches, () => false);
 }
 

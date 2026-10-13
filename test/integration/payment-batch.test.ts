@@ -12,9 +12,10 @@ import { getEvidenceConfirmView, listPaidPayments, listPaymentTargets, nextUnrev
 import { DIFF_REASON_REQUIRED, EVIDENCE_UNCONFIRMED } from "@/domain/payments/action-row";
 import { diffKrw, sumKrw } from "@/domain/money";
 import { GateBlockedError } from "@/domain/rules/gate";
-import { confirmEvidence } from "@/domain/evidence-reviews";
+import { confirmEvidence, loadPrepaidDueDays } from "@/domain/evidence-reviews";
 import { voidEvidence } from "@/domain/evidence";
 import { approveDocument } from "@/domain/approvals";
+import { listExpenses } from "@/domain/expenses/list";
 import { createExpenseFromLines } from "@/domain/expenses";
 import { loadTaxRates } from "@/domain/money/tax";
 import { addHistorizedValue, cancelHistorizedValue } from "@/domain/settings/registry";
@@ -985,5 +986,37 @@ describe("다음 확인 전 (06-20 Task 3)", () => {
     expect(await nextUnreviewedTarget(payer, { afterExpenseId: first.expenseId, evidence: "missing" })).toBeNull();
     expect(await nextUnreviewedTarget(fx.ceo, { afterExpenseId: first.expenseId })).toBeNull();
     expect(await nextUnreviewedTarget(fx.pm, { afterExpenseId: first.expenseId })).toBeNull();
+  });
+});
+
+// ── 06-20 Task 4 — Phase 5 목록 상태 열(UA-605) ─────────────────────────
+
+describe("Phase 5 상태 열 (06-20 Task 4)", () => {
+  it("Phase 5 상태 열 — 지급 기록 → `지급 완료` · 지급일 / 취소만 → `승인` / 기한 지난 선결제 → `증빙 {N}일 경과` / 면제 · 지급 전은 없음", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    const today = seoulToday();
+    const dueDays = await loadPrepaidDueDays();
+    const [lineA, lineB, lineC, lineD, lineE] = await extraLines(fx, 5);
+    if (!lineA || !lineB || !lineC || !lineD || !lineE) throw new Error("줄 다섯 필요");
+    const [paid, cancelled, overdue, waived] = await paidDocs(payer, fx, [lineA, lineB, lineC, lineD]);
+    const [unpaidPrepaid] = await approvedMany(fx, [lineE], false);
+    if (!paid || !cancelled || !overdue || !waived || !unpaidPrepaid) throw new Error("문서 다섯 필요");
+    await cancelExpensePayment(payer, { expenseId: cancelled.expenseId, reason: "잘못 지급", version: await versionOf(cancelled.expenseId) });
+    const past = addDays(today, -(dueDays + 3));
+    for (const doc of [overdue, waived, unpaidPrepaid]) await db.update(expenses).set({ prepaid: true, prepaidReason: "해외 결제 선결제" }).where(eq(expenses.id, doc.expenseId));
+    for (const doc of [overdue, waived]) await movePayDate(doc.expenseId, past);
+    await db.insert(expenseEvidenceReviews).values({ expenseId: waived.expenseId, status: "waived", waiveReason: "해외 결제", reviewedBy: payer.id });
+
+    const rows = (await listExpenses(fx.pm, { status: "approved" })).groups.flatMap((group) => group.rows);
+    const rowOf = (doc: ApprovedExpense) => rows.find((row) => row.id === doc.expenseId);
+    expect(rowOf(paid)).toMatchObject({ statusWord: "지급 완료", statusDate: today.slice(5) });
+    expect(rowOf(paid)?.statusNote ?? null).toBeNull();
+    expect(rowOf(cancelled)?.statusWord).toBe("승인");
+    expect(rowOf(overdue)).toMatchObject({ statusWord: "지급 완료", statusDate: past.slice(5), statusNote: "증빙 3일 경과" });
+    expect(rowOf(waived)).toMatchObject({ statusWord: "지급 완료", statusDate: past.slice(5) });
+    expect(rowOf(waived)?.statusNote ?? null).toBeNull();
+    expect(rowOf(unpaidPrepaid)?.statusWord).toBe("승인");
+    expect(rowOf(unpaidPrepaid)?.statusNote ?? null).toBeNull();
   });
 });

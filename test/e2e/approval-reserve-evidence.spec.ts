@@ -155,6 +155,8 @@ test.describe("차수 승인 증빙 마감 (06-16 Task 2 — F10 · 04 S5 개정
     await undo.click();
     await expect(page.locator('[data-ui="attachments"] li').filter({ hasText: pdf.name })).toBeVisible({ timeout: UPLOAD_WAIT });
     await expect(line).toHaveCount(0);
+    // DOM 감사 D-1: 결과 줄이 사라져도 포커스는 화면 안(펼침 제목)에 남는다.
+    await expect(page.locator('h2[tabindex="-1"]')).toBeFocused();
   });
 
   test("이전 차수(승인된 채 새 차수가 생김): 동작 칸에 3차 없음 · 「차수 열기」 제목 아래 같은 블록, 견적 줄 표는 편집 · 저장 없는 읽기 (⒝)", async ({ page }) => {
@@ -481,5 +483,7 @@ test.describe("리저브 줄 증빙 (06-16 Task 3 — D-60 · S22)", () => {
     await line.getByRole("button", { name: "되돌리기" }).click();
     await expect(page.locator('[data-ui="attachments"] li').filter({ hasText: "지울 계산서.pdf" })).toBeVisible({ timeout: UPLOAD_WAIT });
     await expect(line).toHaveCount(0);
+    // DOM 감사 D-1: 결과 줄이 사라져도 포커스는 화면 안(펼침 제목)에 남는다.
+    await expect(page.locator('h2[tabindex="-1"]')).toBeFocused();
   });
 });

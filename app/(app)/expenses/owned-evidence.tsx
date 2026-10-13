@@ -113,6 +113,8 @@ export function OwnedEvidenceSection({
   const [shown, setShown] = useState(0);
   // 되돌린 파일은 Attachments가 지운 것으로 기억하는 id라(removed 상태) 되돌리기 뒤에는 새로 마운트해 서버 목록을 그대로 그린다.
   const [restored, setRestored] = useState(0);
+  // 되돌리기가 끝나 `되돌리기` 버튼이 사라질 때(성공 · 다시 해도 안 되는 거절) 포커스를 제목으로 옮기는 신호.
+  const [settled, setSettled] = useState(0);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const resultRef = useRef<HTMLParagraphElement>(null);
   const filesRef = useRef<AttachmentFile[]>([]);
@@ -145,6 +147,11 @@ export function OwnedEvidenceSection({
   useEffect(() => {
     if (shown > 0) resultRef.current?.querySelector("button")?.focus();
   }, [shown]);
+
+  // 되돌리기 뒤 포커스 = 제목 — 포커스를 가진 `되돌리기`가 사라지므로 BODY로 흩어지지 않게(DOM 감사 D-1).
+  useEffect(() => {
+    if (settled > 0) headingRef.current?.focus();
+  }, [settled]);
 
   useEffect(() => {
     if (loaded && loaded !== "error") filesRef.current = loaded.files;
@@ -209,6 +216,7 @@ export function OwnedEvidenceSection({
       return;
     }
     setRemovedLine(null);
+    setSettled((count) => count + 1);
     if (failed) {
       setRejection(failed.text);
       return;

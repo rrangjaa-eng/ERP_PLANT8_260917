@@ -1064,6 +1064,12 @@ export function Table<Row>({
                                     if (allowed("save")) keyboard.onSave();
                                     return;
                                   }
+                                  // 06-21 — 칸 자체에 포커스가 있을 때(칸 안 입력 요소가 아닐 때)의 Delete는 줄 삭제 확인이다(발행 요청 표). 입력 요소 안 Delete는 글자 삭제 그대로.
+                                  if (keyboard?.onDeleteRow && event.key === "Delete" && event.target === event.currentTarget) {
+                                    event.preventDefault();
+                                    if (allowed("deleteRow")) keyboard.onDeleteRow(row);
+                                    return;
+                                  }
                                   if ((event.key === "Enter" || event.key === " ") && isEditableColumn && column.editCell && allowed("enterEdit")) {
                                     event.preventDefault();
                                     setActiveCell({ rowId, columnKey: column.key });

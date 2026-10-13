@@ -1936,6 +1936,7 @@ export function QuoteLedger({
           ? dirtyRequests.map((request) => ({
               id: request.id,
               ...(request.version === undefined ? { isNew: true as const } : {}),
+              ...(request.cancel ? { cancel: true as const } : {}),
               version: request.version,
               desiredIssueDate: request.desiredIssueDate,
               amount: { currency: "KRW" as const, amount: request.amount, fxRate: 1 },

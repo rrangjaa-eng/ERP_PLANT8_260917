@@ -202,3 +202,11 @@ superpowers:test-driven-development(⓪) · design-gate(⓪, 점검표) · super
 - 파일: app/(app)/expenses/paid-list.tsx · docs/design/checks/2026-10-13-06-20-paid-list.md 있음.
 - 커밋: 1be59d6 · 249578b · 2a19476 · f094b18 · 9a92a30 · 3083e62 모두 `git log`에 있음.
 - 검토 반영 커밋: 2e39e87 · 7129a31 · c72cfdf · 1c5dbe3 · b026602 모두 `git cat-file -e` 확인. 반영 diff에 금지 경로 · evidence_amount 0.
+
+## 화면 검토 증거
+| 항목 | 경로 |
+|---|---|
+| 독립 검토(Opus) | /mnt/project-files/notes/06-review/06-20-review.md |
+| DOM 감사(Opus, CI=true) | /mnt/project-files/notes/06-review/06-20-dom-audit.md |
+| 4폭 캡처 적용 전·후(a573702 대비) | /mnt/project-files/06-review/pr-e/06-20/ |
+| Codex 디자인 검토(/design-review, --base a573702) | /mnt/project-files/06-review/pr-e/wave2-codex/06-20-codex.md — `/expenses?status=지급 완료`·`/expenses` 4폭, 지적 0건. 캡처 DB가 비어 행·계좌 칸·S5는 DOM 감사 실측으로 판정 |

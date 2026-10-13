@@ -7,3 +7,5 @@ cso 2026-10-13T01:16Z session=a8b1159c-92de-5978-b1ec-2be9c928617f (PR-B #207, c
 design-review 2026-10-13T01:17Z session=a8b1159c-92de-5978-b1ec-2be9c928617f (PR-B #207, DOM 실측 4폭 결함 0 · main 비교 36쌍 · e2e 48/48. Codex 미실행 — ChatGPT 로그인 만료(401), 통과 아님 · 로그인 갱신 뒤 재실행 대기)
 qa 2026-10-13T02:44Z session=a8b1159c-92de-5978-b1ec-2be9c928617f (PR-B #207, 6개 흐름 통과 · ISSUE-001 수정 585c59b·99adcf6 · ISSUE-002 카드 「오늘로 채우기」 8fdd083, 건강 98→100)
 design-review 2026-10-13T06:05Z session=a8b1159c-92de-5978-b1ec-2be9c928617f (PR-B #207, Codex 재검토 — 로그인 갱신 뒤 gpt-6.1-sol medium 실행 exit 0, 후보 4건 DOM 실측 결함 0 · 등록 패널 375·1280 통과, 보고서 /mnt/project-files/06.4-review/exec-pr-b-design-review.md)
+gsd-verify-work 2026-10-13T08:14Z session=d47c5d00-3fa4-51ac-9c84-79b77e947ee0 (06.4 검증 — UAT 29/29 · VERIFICATION passed 44/44 · 범위 칸 G-06.4-30은 사용자 카드 「07로 넘기기」 · PR #209)
+design-review 2026-10-13T08:16Z session=d47c5d00-3fa4-51ac-9c84-79b77e947ee0 (06.4 검증 — Codex gpt-6.1-sol medium exit 0 · 결함 0 · 4폭 넘침 0, 보고서 /mnt/project-files/06.4-review/verify/codex/summary.md)

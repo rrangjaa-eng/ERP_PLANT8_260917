@@ -523,3 +523,56 @@ async function projectPaidRows(viewer: Viewer, rows: readonly PaidPaymentRow[]):
     PAID_PAYMENT_ROW_DTO_SPEC,
   );
 }
+
+// ── 06-20(C-1 문서 화면 쪽) 문서 화면 왕복 ─────────────────────────────────
+// S1 번호 링크(06-17 docHref — `from=pay` + status · team · evidence · page)로 연 문서 화면의 3차 `지급 대상으로` · `다음 확인 전 {번호}`.
+// 받은 쿼리는 허용 키만 검사해 남기고 href는 늘 새로 만든다 — 받은 URL · 경로 · 원문을 되돌려 보내지 않는다(열린 리디렉션 없음, T-06-175).
+export type PayReturn = { backHref: string; next: { number: string; href: string } | null };
+export type PayReturnQuery = { backHref: string; docQuery: string; team: string | null; evidence: PaymentEvidenceFilter | null };
+
+const PAY_RETURN_PAGE = /^[1-9]\d{0,2}$/;
+
+function single(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+export function parsePayReturn(searchParams: Readonly<Record<string, string | string[] | undefined>>): PayReturnQuery | null {
+  if (single(searchParams.from) !== "pay") return null;
+  const teamRaw = single(searchParams.team);
+  const team = teamRaw && UUID_SHAPE.test(teamRaw) ? teamRaw : null;
+  const evidence = parsePaymentEvidenceFilter(single(searchParams.evidence));
+  const pageRaw = single(searchParams.page);
+  const page = pageRaw && PAY_RETURN_PAGE.test(pageRaw) ? pageRaw : null;
+  const kept = new URLSearchParams({ status: "지급 대상" });
+  if (team) kept.set("team", team);
+  if (evidence) kept.set("evidence", evidence);
+  if (page) kept.set("page", page);
+  return { backHref: `/expenses?${kept.toString()}`, docQuery: `from=pay&${kept.toString()}`, team, evidence };
+}
+
+// 정렬 키 = 지급 대상 원천의 정렬(지급 예정일 오름 · 없음은 뒤 → 번호 → id, repositories/payment-targets.ts selectRows).
+function compareTargetKey(a: PaymentTargetRow, b: PaymentTargetRow): number {
+  if (a.scheduledPaymentDate !== b.scheduledPaymentDate) {
+    if (a.scheduledPaymentDate === null) return 1;
+    if (b.scheduledPaymentDate === null) return -1;
+    return a.scheduledPaymentDate < b.scheduledPaymentDate ? -1 : 1;
+  }
+  if ((a.number ?? "") !== (b.number ?? "")) return (a.number ?? "") < (b.number ?? "") ? -1 : 1;
+  if (a.id === b.id) return 0;
+  return a.id < b.id ? -1 : 1;
+}
+
+// 같은 필터 · 같은 판정(listAllPaymentTargets)에서 그 문서의 정렬 키보다 뒤인 첫 `확인 전`(P2). 그 문서가 필터에서 빠졌어도 키로 찾고,
+// 없으면 null(맨 앞으로 돌아가지 않는다). 지급 권한이 없으면 null — 번호를 내지 않는다.
+export async function nextUnreviewedTarget(
+  viewer: Viewer,
+  input: { afterExpenseId: string; team?: string | null; evidence?: PaymentEvidenceFilter | null },
+  deps?: PaymentTargetDeps,
+): Promise<{ id: string; number: string } | null> {
+  if (!UUID_SHAPE.test(input.afterExpenseId) || !(await can(viewer, "expenses.payments", "write"))) return null;
+  const [current] = await findPaymentTargetRowsByIds(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, ids: [input.afterExpenseId] });
+  if (!current) return null;
+  const all = await listAllPaymentTargets(viewer, { team: input.team, evidence: input.evidence }, deps);
+  const next = all.find((target) => target.bar.row === "P2" && target.row.number !== null && compareTargetKey(target.row, current) > 0);
+  return next?.row.number ? { id: next.row.id, number: next.row.number } : null;
+}

@@ -8,7 +8,7 @@ import { upsertVisibility } from "@/repositories/permissions";
 import { ForbiddenError } from "@/domain/permissions/can";
 import { cancelExpensePayment, completeExpensePayment, getPaymentView, loadEvidenceOverrun, PayableChangedError, PaymentConflictError, previewPayable, saveScheduledPayDate } from "@/domain/payments";
 import { BATCH_ROW_FAILED, batchRowOutcome, completePaymentsBatch } from "@/domain/payments/batch";
-import { getEvidenceConfirmView, listPaidPayments, listPaymentTargets, paidViewAllowed, parsePaymentEvidenceFilter, PAYMENT_EVIDENCE_FILTERS, sumSelectedTransfers } from "@/domain/payments/targets";
+import { getEvidenceConfirmView, listPaidPayments, listPaymentTargets, nextUnreviewedTarget, paidViewAllowed, parsePaymentEvidenceFilter, parsePayReturn, PAYMENT_EVIDENCE_FILTERS, sumSelectedTransfers } from "@/domain/payments/targets";
 import { DIFF_REASON_REQUIRED, EVIDENCE_UNCONFIRMED } from "@/domain/payments/action-row";
 import { diffKrw, sumKrw } from "@/domain/money";
 import { GateBlockedError } from "@/domain/rules/gate";
@@ -930,5 +930,60 @@ describe("계좌 투영 (06-20 Task 2)", () => {
     expect(offView).toMatchObject({ status: "registered", canReveal: false });
     expect(on).toEqual({ ...off, canReveal: true });
     expect(onView).toEqual({ ...offView, canReveal: true });
+  });
+});
+
+// ── 06-20 Task 3 — 문서 화면 왕복(C-1) ─────────────────────────────────
+
+describe("순수", () => {
+  it("되돌림 쿼리 — from=pay만 · 허용 키(team uuid · evidence 열거 · page 1~999)만 남기고 backHref는 늘 `/expenses?status=지급 대상`으로 새로 만든다", () => {
+    const team = randomUUID();
+    expect(parsePayReturn({})).toBeNull();
+    expect(parsePayReturn({ from: "list", team })).toBeNull();
+
+    const kept = parsePayReturn({ from: "pay", status: "지급 대상", team, evidence: "unreviewed", page: "2", extra: "x" });
+    expect(kept).toEqual({
+      backHref: `/expenses?${new URLSearchParams({ status: "지급 대상", team, evidence: "unreviewed", page: "2" })}`,
+      docQuery: new URLSearchParams({ from: "pay", status: "지급 대상", team, evidence: "unreviewed", page: "2" }).toString(),
+      team,
+      evidence: "unreviewed",
+    });
+
+    for (const bad of [
+      { from: "pay", team: "//evil.example", evidence: "javascript:alert(1)", page: "0" },
+      { from: "pay", team: "https://evil.example/x", evidence: "all", page: "1000" },
+      { from: "pay", page: "2x", next: "//evil.example", status: "https://evil.example" },
+      { from: ["pay", "pay"], team: [team, team] },
+    ]) {
+      const parsed = parsePayReturn(bad);
+      if (parsed === null) continue;
+      expect(parsed.backHref).toBe(`/expenses?${new URLSearchParams({ status: "지급 대상" })}`);
+      expect(parsed.docQuery).toBe(new URLSearchParams({ from: "pay", status: "지급 대상" }).toString());
+      expect(parsed.backHref).not.toMatch(/evil|javascript/);
+    }
+  });
+});
+
+describe("다음 확인 전 (06-20 Task 3)", () => {
+  it("다음 확인 전 번호 — 지급 대상과 같은 조회 · 판정 · 정렬에서 그 문서 뒤 첫 확인 전(P2), 필터에서 빠진 문서도 정렬 키로 / 없으면 null / 지급 권한 없음 → null", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    const [lineA, lineB, lineC] = await extraLines(fx, 3);
+    if (!lineA || !lineB || !lineC) throw new Error("줄 셋 필요");
+    const [first] = await approvedMany(fx, [lineA], true);
+    const [middle] = await approvedMany(fx, [lineB], false);
+    const [last] = await approvedMany(fx, [lineC], true);
+    if (!first || !middle || !last) throw new Error("문서 셋 필요");
+    const rows = rowsOf(await listPaymentTargets(payer, {}));
+    expect(rows.map((row) => row.id)).toEqual([first.expenseId, middle.expenseId, last.expenseId]);
+    expect(rows.map((row) => row.evidenceStatus)).toEqual(["확인 전", expect.anything(), "확인 전"]);
+
+    expect(await nextUnreviewedTarget(payer, { afterExpenseId: first.expenseId })).toEqual({ id: last.expenseId, number: last.number });
+    // middle(P4)은 unreviewed 필터 목록에 없다 — 정렬 키로 그 뒤를 찾는다.
+    expect(await nextUnreviewedTarget(payer, { afterExpenseId: middle.expenseId, evidence: "unreviewed" })).toEqual({ id: last.expenseId, number: last.number });
+    expect(await nextUnreviewedTarget(payer, { afterExpenseId: last.expenseId })).toBeNull();
+    expect(await nextUnreviewedTarget(payer, { afterExpenseId: first.expenseId, evidence: "missing" })).toBeNull();
+    expect(await nextUnreviewedTarget(fx.ceo, { afterExpenseId: first.expenseId })).toBeNull();
+    expect(await nextUnreviewedTarget(fx.pm, { afterExpenseId: first.expenseId })).toBeNull();
   });
 });

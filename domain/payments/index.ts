@@ -30,6 +30,7 @@ import {
   type PairGateInput,
 } from "@/domain/payments/action-row";
 import type { MethodEvidencePair } from "@/domain/payments/method-evidence-pairs";
+import type { PayReturn } from "@/domain/payments/targets";
 import { visible } from "@/domain/permissions/visible";
 import { listCodeItems as defaultListCodeItems } from "@/repositories/code-tables";
 import { findUserNamesByIds } from "@/repositories/users";
@@ -832,6 +833,8 @@ export type PaymentViewDto = {
   evidenceOverrun?: string | null;
   // 06-20(O-17) — 지급 권한자에게만 있는 키(projectPaymentAccounts). 없으면 S5 계좌 행 없음.
   account?: PaymentAccount;
+  // 06-20(C-1) — `from=pay`로 연 문서 화면의 되돌림 · 다음 확인 전 링크. 서버([id]/page.tsx)가 만든 링크라 DTO 스펙(정보 항목)에 넣지 않는다.
+  payReturn?: PayReturn;
 };
 
 // 증빙 금액 2행 입력자 — 확인 기록에 금액 고침이 있으면 그 사람 · 시각, 없으면 기안자 · 문서 updated_at(입력자 전용 칸이 06-27에 없다).

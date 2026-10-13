@@ -275,3 +275,15 @@
 .accountNone {
   color: var(--text-muted);
 }
+
+/* 06-20 문서 화면 왕복(`from=pay`) — 행동 줄 오른쪽 3차 `지급 대상으로` · `다음 확인 전 {번호}`. 2차 `지급 취소`가 있으면 그 왼쪽(2차가 오른쪽 끝). */
+.payReturn {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-3);
+}
+
+.payReturnEnd {
+  margin-left: auto;
+}

@@ -4,7 +4,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import { actionLog, expensePayments, expenses, projects, quoteLines, vendors } from "@/db/schema";
 import { approveDocument, getApprovalView } from "@/domain/approvals";
-import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
+import { createExpenseFromLines, createTeamExpenseDraft, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { confirmEvidence } from "@/domain/evidence-reviews";
 import { completePaymentsBatch } from "@/domain/payments/batch";
 import { listAllPaymentTargets } from "@/domain/payments/targets";
@@ -1352,6 +1352,164 @@ test.describe("계좌 칸 · 번호 보기 (06-20 Task 2)", () => {
     expect(await ceoPage.locator("main").innerText()).not.toContain(account.last4);
     expect(await ceoPage.content()).not.toContain(`**-${account.last4}`);
     await ceoPage.context().close();
+  });
+});
+
+// ── 06-20 Task 3 — 문서 화면 왕복(C-1 문서 화면 쪽) · M-3 ──────────────────
+
+async function numberOf(expenseId: string): Promise<{ number: string; supplyAmountKrw: number }> {
+  const [row] = await db.select({ number: expenses.number, supplyAmountKrw: expenses.supplyAmountKrw }).from(expenses).where(eq(expenses.id, expenseId));
+  if (!row?.number || row.supplyAmountKrw === null) throw new Error("번호 · 공급가 없음");
+  return { number: row.number, supplyAmountKrw: row.supplyAmountKrw };
+}
+
+// 결재 통과 · 증빙 있음 · 확인 기록 없음(P2) — 증빙 금액 = 공급가(픽스처가 문서 행에 직접).
+async function unreviewedDoc(fx: ExpenseE2E, key: LineKey): Promise<string> {
+  const id = await approvedTarget(fx, key, "unreviewed");
+  const { supplyAmountKrw } = await numberOf(id);
+  await db.update(expenses).set({ evidenceAmount: supplyAmountKrw }).where(eq(expenses.id, id));
+  return id;
+}
+
+test.describe("문서 화면 왕복 (06-20 Task 3)", () => {
+  test("문서 화면 왕복 — 지급 대상으로: A 이체액 편집 + B 선택 → C(확인 전) 번호 링크 → 3차 `지급 대상으로` → 금액 고쳐 확인 → `다음 확인 전 {D}` → `지급 대상으로` → A · B 그대로 + C 고를 수 있음 / `다음 확인 전` → D 문서 화면 · from=pay 유지", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const a = await approvedTarget(fx, "tracer");
+    await approvedTarget(fx, "hold");
+    const c = await unreviewedDoc(fx, "retry");
+    const d = await unreviewedDoc(fx, "phone");
+    const payer = await makeTeamPayer(fx);
+    const payA = await previewPayable(payer.viewer, { expenseId: a, payDate: seoulToday() });
+    if (payA.payableKrw == null) throw new Error("지급 총액 없음");
+    const docC = await numberOf(c);
+    const docD = await numberOf(d);
+
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    await page.goto("/expenses");
+    const rowA = rowOf(page, fx.lines.tracer.itemName);
+    const rowB = rowOf(page, fx.lines.hold.itemName);
+    const rowC = rowOf(page, fx.lines.retry.itemName);
+    await waitForHydration(rowB.getByRole("checkbox"));
+    await rowA.getByTestId("payment-transfer-cell").click();
+    await rowA.getByLabel("이체액").fill(String(payA.payableKrw - 1_000));
+    await rowA.getByLabel("이체액").press("Enter");
+    await rowB.getByRole("checkbox").check();
+    await expect(rowC.getByRole("checkbox")).toHaveAttribute("aria-disabled", "true");
+
+    await rowC.getByRole("link", { name: `${docC.number} 지출결의 열기` }).click();
+    await expect(page).toHaveURL(new RegExp(`/expenses/${c}\\?from=pay`));
+    const back = page.getByRole("link", { name: "지급 대상으로" });
+    await expect(back).toBeVisible();
+    await expect(page.getByRole("link", { name: /^다음 확인 전/ })).toHaveCount(0);
+
+    const review = page.getByTestId("evidence-review");
+    const confirm = page.getByRole("button", { name: /^증빙 확인/ });
+    await waitForHydration(confirm);
+    await review.getByRole("button", { name: "바꾸기" }).click();
+    await page.locator("#evidence-amount").fill(String(docC.supplyAmountKrw - 100_000));
+    await confirm.click();
+    await expect(review.getByText("확인됨", { exact: true })).toBeVisible();
+    const next = page.getByRole("link", { name: `다음 확인 전 ${docD.number}` });
+    await expect(next).toBeVisible();
+    const docUrl = page.url();
+
+    await back.click();
+    await expect(page).toHaveURL(/\/expenses\?status=/);
+    await expect(page.getByLabel("상태")).toHaveValue("지급 대상");
+    await expect(rowB.getByRole("checkbox")).toBeChecked();
+    await expect(rowA.getByTestId("payment-transfer-cell")).toHaveText(formatKrw(payA.payableKrw - 1_000));
+    await expect(rowC.getByRole("checkbox")).not.toHaveAttribute("aria-disabled", "true");
+
+    await page.goto(docUrl);
+    await page.getByRole("link", { name: `다음 확인 전 ${docD.number}` }).click();
+    await expect(page).toHaveURL(new RegExp(`/expenses/${d}\\?from=pay&status=`));
+    await expect(page.getByRole("link", { name: "지급 대상으로" })).toBeVisible();
+    await page.context().close();
+  });
+
+  test("작성 중 문서 + from=pay — 05 C1 입력: 쓰기 권한이 빠진 기안자의 작성 중 문서를 `?from=pay&page=1`로 열면 문서 화면 그대로 · 3차 둘 · 계좌 행 없음", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const suffix = randomUUID().slice(0, 8);
+    const role = await insertTempRole({ id: `role-${randomUUID()}`, name: `E2E쓰기회수지급-${suffix}`, workScope: "company" });
+    for (const action of ["view", "write"] as const) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action, allowed: true });
+    for (const infoItem of INFO_ITEMS) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+    const drafter = await makePerson("회수", role.id, await teamOf(fx), `${seoulToday().slice(0, 4)}-01-01`);
+    const content = `권한회수 지급왕복-${suffix}`;
+    const { expenseId } = await createTeamExpenseDraft(drafter.viewer, {
+      idempotencyKey: randomUUID(),
+      fields: { teamExpenseKind: "team_overhead", usageDate: seoulToday(), content },
+    });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "write", allowed: false });
+    try {
+      const page = await loginPage(browser, baseURL, drafter);
+      await page.goto(`/expenses/${expenseId}?from=pay&page=1`);
+      await expect(page.getByRole("heading", { level: 1 })).toContainText(content);
+      await expect(page.getByText("지출결의 불러오기 실패")).toHaveCount(0);
+      await expect(page.getByRole("button", { name: /^임시 저장/ })).toHaveCount(0);
+      await expect(page.getByRole("link", { name: "지급 대상으로" })).toHaveCount(0);
+      await expect(page.getByRole("link", { name: /^다음 확인 전/ })).toHaveCount(0);
+      await expect(page.locator("[data-payment-account]")).toHaveCount(0);
+      await page.context().close();
+    } finally {
+      await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "write", allowed: true });
+    }
+  });
+
+  test("되돌림 쿼리 조작 — 허용 밖 키 · 바깥 URL 값을 붙여도 `지급 대상으로` href는 `/expenses?status=`로 시작하고 허용 키만 / from=pay 없이 연 문서 화면에는 3차 둘 없음", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const id = await approvedTarget(fx, "tracer");
+    const payer = await makeTeamPayer(fx);
+
+    const page = await loginPage(browser, baseURL, payer);
+    const tampered = new URLSearchParams({ from: "pay", status: "https://evil.example", team: "//evil.example", evidence: "javascript:alert(1)", page: "2", next: "https://evil.example" });
+    await page.goto(`/expenses/${id}?${tampered}`);
+    const back = page.getByRole("link", { name: "지급 대상으로" });
+    await expect(back).toBeVisible();
+    const href = (await back.getAttribute("href")) ?? "";
+    expect(href.startsWith("/expenses?status=")).toBe(true);
+    expect(href).not.toMatch(/evil|javascript/);
+    expect([...new URLSearchParams(href.slice(href.indexOf("?") + 1)).keys()].sort()).toEqual(["page", "status"]);
+
+    await page.goto(`/expenses/${id}`);
+    await expect(page.getByRole("button", { name: /^지급 완료/ })).toBeVisible();
+    await expect(page.getByRole("link", { name: "지급 대상으로" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: /^다음 확인 전/ })).toHaveCount(0);
+    await page.context().close();
+  });
+
+  test("문서 화면 확인 직후 Ctrl+Enter 반복 무시 — 첫 Ctrl+Enter로 증빙 확인 → 1차 `지급 완료` · 포커스 이체액 칸을 기다린 뒤 누른 채 반복 Enter → 지급 0건 · 그대로 / 떼고 새 Ctrl+Enter → 지급", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const id = await unreviewedDoc(fx, "tracer");
+    const payer = await makeTeamPayer(fx);
+
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    await page.goto(`/expenses/${id}?from=pay`);
+    const confirm = page.getByRole("button", { name: /^증빙 확인/ });
+    await waitForHydration(confirm);
+    await expect(confirm).not.toHaveAttribute("aria-disabled", "true");
+    const primary = page.getByRole("button", { name: /^지급 완료/ });
+    const transfer = page.locator("#payment-transfer");
+
+    await page.keyboard.down("Control");
+    await page.keyboard.down("Enter");
+    // 1차가 `지급 완료`로 바뀌고 포커스가 이체액 칸으로 간 뒤(키는 떼지 않음) 반복 Enter를 보낸다(r2 F-4).
+    await expect(primary).toBeVisible();
+    await expect(primary).not.toHaveAttribute("aria-disabled", "true");
+    await expect(transfer).toBeFocused();
+    await page.keyboard.down("Enter");
+    // 없는 일을 증명하는 자리 — 지급 요청이 갔다면 응답 · 다시 읽기가 끝날 시간을 둔다.
+    await page.waitForTimeout(1_500);
+    expect(await livePaymentCount(id)).toBe(0);
+    await expect(primary).toBeVisible();
+    await expect(page.getByTestId("payment-result")).toHaveCount(0);
+    await expect(transfer).toBeFocused();
+
+    await page.keyboard.up("Enter");
+    await page.keyboard.up("Control");
+    await page.keyboard.press("Control+Enter");
+    await expect(page.getByTestId("payment-result")).toBeVisible();
+    expect(await livePaymentCount(id)).toBe(1);
+    await page.context().close();
   });
 });
 

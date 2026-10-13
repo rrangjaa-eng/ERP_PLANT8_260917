@@ -95,6 +95,7 @@ export function PersonForm({
   const nameError = result.validationErrors?.name?._errors?.[0];
   const emailError = result.validationErrors?.email?._errors?.[0];
   const hireDateError = result.validationErrors?.hireDate?._errors?.[0];
+  const effectiveFromError = result.validationErrors?.effectiveFrom?._errors?.[0];
   const roleError = result.validationErrors?.roleId?._errors?.[0];
 
   return (
@@ -144,7 +145,7 @@ export function PersonForm({
           ))}
         </select>
       </div>
-      <TextField id="effectiveFrom" name="effectiveFrom" label="발령일" type="date" />
+      <TextField id="effectiveFrom" name="effectiveFrom" label="발령일" type="date" error={effectiveFromError} />
       {/* 04.1-06(D-96): 입사일 필수 — 네이티브 필수 속성은 두지 않는다(브라우저 말풍선이 서버 문구를 가린다, §7-15 · C-13). */}
       <TextField id="hireDate" name="hireDate" label="입사일" type="date" error={hireDateError} />
     </PanelForm>

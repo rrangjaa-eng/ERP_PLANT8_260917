@@ -296,6 +296,20 @@ test.describe("완료 전 점검 — 정산 결재 문서(O-16 · PS-4)", () => 
     const reject = page.getByRole("button", { name: "반려", exact: true });
     await expect(reject).toBeVisible();
     await expect(reject).not.toHaveAttribute("aria-disabled", "true");
+
+    // 06-22 DOM 감사 D-3 — 느린 응답(상세 RSC 2.5초 지연)에서도 300ms 뒤 상세 뼈대(§7-7 LOADING · 라우트 loading.tsx)가 보이고, 도착하면 점검 섹션이다.
+    await page.route(
+      (url) => url.pathname === `/projects/${fx.projectId}`,
+      async (route) => {
+        const headers = route.request().headers();
+        if (headers.rsc === "1" && headers["next-router-prefetch"] === undefined) await new Promise((resolve) => setTimeout(resolve, 2_500));
+        await route.continue();
+      },
+    );
+    await page.getByRole("link", { name: "점검 보기", exact: true }).click();
+    await expect(page.locator('[data-ui="table-skeleton"]')).toHaveCSS("opacity", "1", { timeout: 2_000 });
+    await expect(page).toHaveURL(new RegExp(`/projects/${fx.projectId}#pre-settle-check$`));
+    await expect(preSettleSection(page).getByRole("row").filter({ hasText: fx.itemName })).toBeVisible();
   });
 
   // Task 2(PS-4) — 강행 허용 그룹만 남은 정산 결재 문서: 행동 줄 위 결과 줄(지금 판정), `승인`은 산다.

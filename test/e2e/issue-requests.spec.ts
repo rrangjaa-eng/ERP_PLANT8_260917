@@ -522,4 +522,18 @@ test.describe("발행 요청 — 06-21 DOM 감사 반영", () => {
     expect(await link.evaluate((node) => getComputedStyle(node).color)).toBe(await cssColor(page, "--accent"));
     await context.close();
   });
+
+  test("1024 미만(900 · 375)에서 `신청됨` 요청으로 들어오면 그 줄 자체에 포커스하고 화면 안으로 스크롤한다 (D-3)", async ({ browser }) => {
+    const { user, projectId, today } = await setupBoard({ write: true });
+    const requestId = await seedRequest(projectId, user.userId, { desiredIssueDate: today, amount: 2_000_000, memo: "좁은 폭 도착" });
+
+    for (const width of [900, 375]) {
+      const { page, context } = await openAs(browser, user, `/projects/${projectId}?issueRequest=${requestId}`, width);
+      const row = requestTable(page).locator("tr", { hasText: "좁은 폭 도착" }).first();
+      await expect(row, `${width}px`).toBeFocused();
+      await expect(row, `${width}px`).toHaveAttribute("tabindex", "-1");
+      await expect(row, `${width}px`).toBeInViewport();
+      await context.close();
+    }
+  });
 });

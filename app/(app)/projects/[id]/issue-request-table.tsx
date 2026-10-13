@@ -140,21 +140,25 @@ export function IssueRequestTable({
 
   // 06-21(S17 → S16) — `?issueRequest={id}`로 들어오면 마운트 뒤 그 요청 줄로 스크롤 · 포커스: `발행 줄로`가 선 줄이면 그 3차, 아니면 줄 자체
   // (`tabindex="-1"`). 없는 id면 아무 일도 하지 않는다. 상세 페이지는 동적 렌더(force-dynamic)라 useSearchParams에 Suspense 경계가 필요 없다.
+  // 수화 렌더는 넓은 폭 스냅숏(editableWidth true)이라 1024 미만에서도 한 번 `발행 줄로`를 잡았다가 실제 폭으로 다시 그릴 때 그 버튼이
+  // 사라져 포커스가 BODY로 빠진다(감사 D-3) — 폭이 바뀌고 포커스를 잃었을 때만 그 폭의 대상으로 다시 잡는다.
   const arrivalId = useSearchParams().get("issueRequest");
-  const arrivedId = useRef<string | null>(null);
+  const arrived = useRef<{ id: string; editableWidth: boolean } | null>(null);
   useEffect(() => {
-    if (!arrivalId || arrivedId.current === arrivalId) return;
+    if (!arrivalId) return;
+    const done = arrived.current;
+    if (done?.id === arrivalId && (done.editableWidth === editableWidth || document.activeElement !== document.body)) return;
     const anchor = Array.from(document.querySelectorAll<HTMLElement>("[data-issue-request-id]")).find((element) => element.dataset.issueRequestId === arrivalId);
     if (!anchor) return;
-    arrivedId.current = arrivalId;
-    const linkButton = anchor.querySelector<HTMLButtonElement>('button[aria-label$=" 발행 줄로"]');
+    arrived.current = { id: arrivalId, editableWidth };
+    const linkButton = editableWidth ? anchor.querySelector<HTMLButtonElement>('button[aria-label$=" 발행 줄로"]') : null;
     const row = anchor.closest("tr");
     const target = linkButton ?? row;
     if (!target) return;
     if (!linkButton) row?.setAttribute("tabindex", "-1");
     target.scrollIntoView({ block: "center" });
     target.focus({ preventScroll: true });
-  }, [arrivalId, rows]);
+  }, [arrivalId, rows, editableWidth]);
 
   const emptyMessage =
     props.canRequest || props.pmName === null || !editableWidth ? "발행 요청이 없습니다" : `발행 요청이 없습니다 · 요청은 담당 PM ${props.pmName}`;

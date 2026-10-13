@@ -1,10 +1,10 @@
 import type { Viewer } from "@/domain/viewer";
 import { can, ForbiddenError } from "@/domain/permissions/can";
-import { projectMany } from "@/domain/permissions/project";
+import { projectMany, type DtoSpec } from "@/domain/permissions/project";
 import { visible } from "@/domain/permissions/visible";
 import { gate } from "@/domain/rules/gate";
 import "@/domain/rules/register";
-import { sumKrw } from "@/domain/money";
+import { diffKrw, sumKrw } from "@/domain/money";
 import { EXPENSE_DOCUMENT_KIND, visibleExpenseScope } from "@/domain/expenses/access";
 import { groupExpenses } from "@/domain/expenses/list";
 import { incomeTypeFor, pickTaxDates } from "@/domain/expenses/tax";
@@ -237,6 +237,64 @@ export async function rejudgePaymentTargets(
   const rows = await visibleRows(viewer, await findPaymentTargetRowsByIds(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, ids }), today);
   const judged = await judgeTargets(viewer, rows, { shared: ctx.shared, today, amountVisible: await visible(viewer, "expense.amount") });
   return new Map(judged.map((target) => [target.row.id, target]));
+}
+
+// 06-17(UI-SPEC S1 「합계 줄」 · O-18 · r2 F-2): 고른 건 이체액 합 · 행별 차이 · 고른 행 상태. 화면은 금액을 셈하지 않는다 — 고른 행 id와 사람이 고친
+// 이체액만 받아 지급 총액 · version을 서버가 다시 읽고(id 묶음 한 번), 고를 수 있는지는 06-15 judgeTargets 그대로다(새 판정 없음).
+// 합 = sumKrw(고를 수 있는 행의 이체액 — 고치지 않았으면 지급 총액), 차이 = diffKrw(이체액, 지급 총액). 응답에 합계 번호(seq)를 그대로 싣는다 —
+// 화면이 낡은 응답을 버린다. 지급 대상 조회 범위 밖(없는 id · 보이지 않는 문서 · 결재 통과가 아닌 문서)은 rowStates에 싣지 않는다.
+// payDate(모달이 마지막으로 쓴 지급일, 없으면 오늘)는 지급 총액의 세율 기준일 자리 — 처리 요청과 같은 날로 셈해 재시도가 다시 막히지 않는다.
+export type PaymentRowState = { id: string; selectable: boolean; version: number; payableKrw: number | null };
+
+// 정보 항목은 06-15 PAYMENT_TARGET_ROW_DTO_SPEC(paymentTargetRow)의 같은 칸 그대로.
+const PAYMENT_ROW_STATE_SPEC: DtoSpec<PaymentRowState, PaymentRowState> = {
+  fields: [
+    { key: "id", from: "id", infoItem: "expense.value" },
+    { key: "selectable", from: "selectable", infoItem: "expense.value" },
+    { key: "version", from: "version", infoItem: "expense.value" },
+    { key: "payableKrw", from: "payableKrw", infoItem: "expense.amount" },
+  ],
+};
+
+export type SelectedTransferSum = {
+  seq: number;
+  // 금액을 볼 수 없는 계급에는 null · 빈 차이.
+  totalKrw: number | null;
+  diffs: Record<string, number>;
+  rowStates: Partial<PaymentRowState>[];
+};
+
+export async function sumSelectedTransfers(
+  viewer: Viewer,
+  input: { seq: number; rows: readonly { id: string; transferKrw?: number }[]; payDate?: string },
+  deps?: PaymentTargetDeps,
+): Promise<SelectedTransferSum> {
+  await assertPayer(viewer);
+  const today = deps?.today ?? seoulToday();
+  const shared = deps?.shared ?? (await loadPaymentShared(viewer, deps?.loadTaxRates ? { loadTaxRates: deps.loadTaxRates } : undefined));
+  const transferOf = new Map(input.rows.map((row) => [row.id, row.transferKrw]));
+  const found = await findPaymentTargetRowsByIds(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, ids: [...transferOf.keys()] });
+  const rows = await visibleRows(
+    viewer,
+    found.filter((row) => row.approvalStatus === "approved"),
+    today,
+  );
+  const amountVisible = await visible(viewer, "expense.amount");
+  const judged = await judgeTargets(viewer, rows, { shared, today: input.payDate ?? today, amountVisible });
+  const diffs: Record<string, number> = {};
+  const transfers: number[] = [];
+  for (const target of judged) {
+    if (!target.selectable || target.payableKrw === null) continue;
+    const transfer = transferOf.get(target.row.id) ?? target.payableKrw;
+    transfers.push(transfer);
+    diffs[target.row.id] = diffKrw(transfer, target.payableKrw);
+  }
+  const rowStates = await projectMany(
+    viewer,
+    judged.map((target) => ({ id: target.row.id, selectable: target.selectable, version: target.row.version, payableKrw: target.payableKrw })),
+    PAYMENT_ROW_STATE_SPEC,
+  );
+  return { seq: input.seq, totalKrw: amountVisible ? sumKrw(transfers) : null, diffs: amountVisible ? diffs : {}, rowStates };
 }
 
 // 팀 필터 값 — 활성 팀 전부(`팀 전체` + 이름). 05 · 04 listTeams는 관리 메뉴(admin.people) 보기를 요구해 지급 권한자에게 비므로

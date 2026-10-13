@@ -2,19 +2,26 @@
 
 import { useId, useState } from "react";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
+import { Button } from "@/ui/button/Button";
 import { Form } from "@/ui/form/Form";
 import { isCalendarDate } from "@/lib/dates";
+import { formatKrw } from "@/lib/format-number";
 import styles from "./expenses.module.css";
 
 // 06-15(UI-SPEC S2 · Copywriting 「Destructive — 일괄 지급 완료」): 일괄 지급 확인 모달 — 제목 `지급 완료` · 부제 `N건` · 결과 줄
 // ① 견적 줄 잠김 ② 선결제 증빙 기한 · 확인 근거 한 칸 `지급일`(기본 오늘 KST · 미래 허용 — Q6, 고른 건 전부 같은 날 — O-3).
 // 날짜 판정은 05 isCalendarDate, 글자는 05 DATE_FORMAT_ERROR 그대로(서버 page가 dateError로 넘긴다 — draft-fields는 서버 모듈을 끌어와 클라이언트 번들에 못 든다)
 // — 서버 zod와 같은 둘이라 화면과 서버가 같은 날짜를 거른다(E-20).
-// 응답이 없으면 모달을 닫지 않고 막힘 자리 `결과를 받지 못함 · 새로 고침`. 토스트 없음(C12). 이체액 합계 부제 · `다른 쪽` 줄은 06-17.
+// 응답이 없으면 모달을 닫지 않고 막힘 자리 `결과를 받지 못함 · 새로 고침`. 토스트 없음(C12).
+// 06-17: 부제 `N건 · 이체액 합계 {합}` — 합은 모달을 연 순간 합계 번호의 서버 합(totalKrw). 아직이면 `…` + 1차 막힘(Ctrl+Enter 무반응),
+// 합 요청이 실패하면 「거부 — 이체액 합계 응답 없음」 `합계를 받지 못함` + 2차 `다시 시도`(같은 합계 번호).
 export function BatchPaymentDialog({
   open,
   onClose,
   count,
+  totalKrw,
+  sumFailed,
+  onRetrySum,
   lineCount,
   prepaidCount,
   prepaidDueDays,
@@ -27,6 +34,10 @@ export function BatchPaymentDialog({
   open: boolean;
   onClose: () => void;
   count: number;
+  // undefined = 그 번호의 합이 아직 오지 않음 · null = 금액을 볼 수 없음.
+  totalKrw: number | null | undefined;
+  sumFailed: boolean;
+  onRetrySum: () => void;
   lineCount: number;
   prepaidCount: number;
   prepaidDueDays: number;
@@ -50,7 +61,7 @@ export function BatchPaymentDialog({
       open={open}
       onClose={onClose}
       title="지급 완료"
-      subtitle={`${count}건`}
+      subtitle={totalKrw === null ? `${count}건` : `${count}건 · 이체액 합계 ${totalKrw === undefined ? "…" : formatKrw(totalKrw)}`}
       resultLines={resultLines}
       evidenceField={
         <Form.Field id={fieldId} label="지급일" width="short">
@@ -74,7 +85,18 @@ export function BatchPaymentDialog({
         onConfirm: () => {
           if (!invalid) onConfirm(payDate);
         },
-        disabledReason: invalid ? undefined : (rejection ?? undefined),
+        ...(sumFailed
+          ? {
+              disabledReason: "합계를 받지 못함",
+              nextStep: (
+                <Button variant="secondary" onClick={onRetrySum}>
+                  다시 시도
+                </Button>
+              ),
+            }
+          : totalKrw === undefined
+            ? { disabledReason: "…", reasonTone: "info" as const }
+            : { disabledReason: invalid ? undefined : (rejection ?? undefined) }),
         blockedBy: invalid ? errorId : undefined,
       }}
     />

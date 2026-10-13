@@ -230,7 +230,7 @@ test.describe("지급 대상 · 일괄 지급 마감 (06-15 Task 3)", () => {
     const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
 
     await page.goto("/expenses");
-    const table = page.getByRole("table", { name: "지급 대상" });
+    const table = page.getByRole("grid", { name: "지급 대상" }); // 06-17 — P4 행에 이체액 편집 칸이 서서 편집 표(grid)다
     const overdue = table.getByText("예정일 지남", { exact: true });
     const thisWeek = table.getByText("이번 주 지급", { exact: true });
     const none = table.getByText("지급 예정일 없음", { exact: true });
@@ -420,7 +420,8 @@ test.describe("일괄 지급 마감 (06-17)", () => {
     const diff = row.getByText("차이 -3,300", { exact: true });
     await expect(diff).toBeVisible();
     expect(await colorOf(diff)).toBe(await tokenAsColor(page, "--status-warning"));
-    await expect(row.getByTestId("payment-diff-reason-cell")).toHaveAttribute("aria-readonly", "false");
+    const reasonCell = row.locator('td:has([data-testid="payment-diff-reason-cell"])');
+    await expect(reasonCell).toHaveAttribute("aria-readonly", "false");
 
     const totals = page.getByRole("region", { name: "합계" });
     await expect(totals.getByText(/^고른 1건 · 이체액/)).toBeVisible();
@@ -428,7 +429,7 @@ test.describe("일괄 지급 마감 (06-17)", () => {
     await expect(sum).toBeVisible();
     expect(await sum.evaluate((element) => getComputedStyle(element).fontWeight)).toBe(await tokenAsWeight(page, "--fw-bold"));
 
-    await row.getByTestId("payment-diff-reason-cell").click();
+    await reasonCell.click();
     await row.getByLabel("차이 사유").fill("이체 수수료");
     await row.getByLabel("차이 사유").press("Enter");
     await expect(row.getByText("이체 수수료", { exact: true })).toBeVisible();

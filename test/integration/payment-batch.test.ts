@@ -594,7 +594,7 @@ describe("이체액 편집 · 서버 합 (06-17 Task 1)", () => {
     for (const diffReason of [undefined, "  "]) {
       const result = await completePaymentsBatchAction({ payDate: seoulToday(), rows: [{ ...row, transferKrw: row.expectedPayableKrw - 3_300, ...(diffReason === undefined ? {} : { diffReason }) }] });
       expect(result?.data).toBeUndefined();
-      expect(result?.validationErrors?.rows?.[0]?.diffReason?._errors).toEqual([DIFF_REASON_REQUIRED]);
+      expect(result?.validationErrors).toMatchObject({ rows: { 0: { diffReason: { _errors: [DIFF_REASON_REQUIRED] } } } });
     }
     const same = await completePaymentsBatchAction({ payDate: seoulToday(), rows: [{ ...row, transferKrw: row.expectedPayableKrw }] });
     expect(same?.data?.processedIds).toEqual([a.expenseId]);

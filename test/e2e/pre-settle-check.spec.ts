@@ -10,17 +10,19 @@ import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses
 import { getApprovalView, rejectDocument } from "@/domain/approvals";
 import { saveRevenue } from "@/domain/revenue";
 import { approvalBasis } from "@/repositories/quote-revisions";
+import { findExpenseById } from "@/repositories/expenses";
+import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { findProjectById } from "@/repositories/projects";
 import { insertVendor } from "@/repositories/vendors";
 import { seoulToday } from "@/lib/dates";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
-import { uniqueReceipt } from "./expense-fixture";
-import { loginPage, setupLeaveOrg, waitForHydration, type LeaveOrg } from "./leave-org";
+import { archiveTempRoles, insertTempRole, uniqueReceipt } from "./expense-fixture";
+import { loginPage, makePerson, setupLeaveOrg, waitForHydration, type LeaveOrg } from "./leave-org";
 
 // 06-19(PROJ-06 · UI-SPEC S18): 정산 프로젝트 상세의 「완료 전 점검」 섹션과 머리 줄 `정산 결재 올리기` 막힘이 한 판정이다.
 // 준비는 도메인 함수(지출결의 제출만 화면 — 증빙 업로드가 브라우저 경로다). 줄 하나 · 발행 줄 1건이라 막힘은 반려 지출결의 1건뿐이다.
 
-type PreSettleE2E = { org: LeaveOrg; projectId: string; itemName: string };
+type PreSettleE2E = { org: LeaveOrg; projectId: string; itemName: string; expenseId: string };
 
 async function submitExpenseInBrowser(browser: Browser, baseURL: string | undefined, org: LeaveOrg, lineId: string): Promise<string> {
   const created = await createExpenseFromLines(org.drafter.viewer, { lineIds: [lineId] });
@@ -85,7 +87,7 @@ async function setupRejectedSettling(browser: Browser, baseURL: string | undefin
   // 종료일이 지난 진행 프로젝트는 지출결의 제출의 잠금 읽기에서 이미 정산이 됐을 수 있다 — 자동 정산 뒤 상태로 확인한다.
   await applyAutoSettlement({ projectIds: [project.id] });
   if ((await findProjectById(SYSTEM_VIEWER, project.id))?.status !== "settling") throw new Error("정산 상태가 아닙니다");
-  return { org, projectId: project.id, itemName };
+  return { org, projectId: project.id, itemName, expenseId };
 }
 
 test.describe("완료 전 점검 — 정산 프로젝트 상세(S18)", () => {
@@ -172,5 +174,30 @@ test.describe("완료 전 점검 — 미매칭 견적 줄 · 매출 미입력(S1
     await waitForHydration(submit);
     await expect(submit).toHaveAttribute("aria-disabled", "true");
     await expect(page.getByText("완료 전 점검 2건", { exact: true })).toBeVisible();
+  });
+});
+
+// Task 3 — R-6 범위. 같은 팀의 범위가 좁은 계정 A(프로젝트 보기만 · 지출결의 보기 없음)는 기안자 B의 반려 문서를 행으로 보지 못하고
+// 그룹 끝 `그 밖 1건`만 본다. 그룹 머리글 건수는 프로젝트 전체 값 그대로다.
+test.describe("완료 전 점검 — 보는 범위(R-6)", () => {
+  test.afterAll(archiveTempRoles);
+
+  test("범위가 좁은 계정 A → `미결 지출결의 1건` · `그 밖 1건` · B 문서 번호 없음", async ({ browser, baseURL }) => {
+    const fx = await setupRejectedSettling(browser, baseURL);
+    const number = (await findExpenseById(SYSTEM_VIEWER, fx.expenseId))?.number;
+    if (!number) throw new Error("반려 문서 번호가 없습니다");
+    const role = await insertTempRole({ id: `role-${randomUUID()}`, name: `E2E좁은범위-${randomUUID().slice(0, 8)}`, workScope: "team", viewScope: "team" });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
+    // 관리자가 새 계급을 만들면 노출표도 켠다 — 프로젝트 상세가 지나는 프로젝트 값만(금액 칸은 숨김 그대로).
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "project.value", visible: true });
+    const narrow = await makePerson("기안A", role.id, fx.org.teamId, `${seoulToday().slice(0, 4)}-01-01`);
+    const page = await loginPage(browser, baseURL, narrow);
+    await page.goto(`/projects/${fx.projectId}`);
+
+    const heading = page.getByRole("heading", { name: "완료 전 점검", level: 2 });
+    const section = page.locator("section").filter({ has: heading });
+    await expect(section.getByText("미결 지출결의 1건", { exact: true })).toBeVisible();
+    await expect(section.getByText("그 밖 1건", { exact: true })).toBeVisible();
+    await expect(page.getByText(number)).toHaveCount(0);
   });
 });

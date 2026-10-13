@@ -12,7 +12,9 @@ import { waiveEvidence } from "@/domain/evidence-reviews";
 import { getPreSettleCheck } from "@/domain/pre-settle-check";
 import { saveQuoteLines } from "@/domain/quotes/lines";
 import { createRevisionFromCurrent } from "@/domain/quotes/revisions";
-import { upsertVisibility } from "@/repositories/permissions";
+import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
+import { insertRole } from "@/repositories/roles";
+import { DTO_REGISTRY } from "@/domain/permissions/dto-registry";
 import { applyAutoSettlement } from "@/domain/projects/auto-transition";
 import { GateBlockedError } from "@/domain/rules/gate";
 import { SETTLEMENT_DOCUMENT_KIND, submitSettlement } from "@/domain/settlements";
@@ -23,6 +25,7 @@ import { insertVendor } from "@/repositories/vendors";
 import { addApprovedRevision, makeEvidenceManager, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
 import { approvedExpenseWithEvidence, approvedExpenseWithoutEvidence, makePaymentManager } from "./fixtures/payments";
 import { requestInput } from "./fixtures/purchase-requests";
+import { makePerson } from "./approvals-fixtures";
 import { issueRevenue, linkCardUsage, setupSettlementProject } from "./fixtures/settlements";
 
 // 06-19(PROJ-06 · D-611~D-613 · UA-610 · ENG E-1): 완료 전 점검 — 정산 기안(05 submitSettlement)이 같은 판정으로 막힌다.
@@ -374,5 +377,93 @@ describe("완료 전 점검 — 세 그룹(D-611 · C10 · D-612 · D-613)", () 
     const check = await getPreSettleCheck(fx.pm, fx.projectId);
     expect(check.unmatchedLines.rows.map((row) => row.lineId)).toEqual([latestId("N 줄")]);
     expect(check.unmatchedLines.rows.map((row) => row.lineId)).not.toContain(id("N 줄"));
+  });
+});
+
+// ── Task 3 — R-6 범위(범위 안 행만 · `그 밖 {N}건` · 막힘 건수는 프로젝트 전체) · 금액 노출 · DTO 등록 ─────────────
+
+// 범위가 좁은 계정 A — 팀 범위로 프로젝트를 보고 쓰며(줄에서 지출결의를 만들려면 projects 쓰기도 든다) 지출결의를 쓰지만 지출결의 보기가 없다(범위 = 자기 문서 · 처리 기록).
+// 정보 항목 노출 행이 없는 계급이라 금액 칸이 전부 빠진다.
+async function makeNarrowDrafter(): Promise<Viewer> {
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `좁은범위-${randomUUID().slice(0, 8)}`, workScope: "team", viewScope: "team" });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "write", allowed: true });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "write", allowed: true });
+  return makePerson("기안A", role.id, "기획1팀");
+}
+
+async function rejectedBy(fx: ExpenseFixture, drafter: Viewer, lineId: string): Promise<{ expenseId: string; number: string }> {
+  const expenseId = (await createExpenseFromLines(drafter, { lineIds: [lineId] })).created[0]?.expenseId ?? "";
+  const sent = await submitReadyDraft(drafter, expenseId);
+  if (sent.kind !== "submitted") throw new Error("제출 안 됨");
+  await rejectDocument(fx.lead, { instanceId: sent.instanceId, expectedVersion: sent.version, reason: "금액 확인" });
+  return { expenseId, number: sent.number };
+}
+
+// 같은 프로젝트에 기안자 A의 반려 1건(withVendor) · 기안자 B(같은 팀 PM)의 반려 1건(split) · noVendor 카드 · 발행 줄 1.
+async function twoDrafterProject() {
+  const fx = await setupExpenseProject();
+  const a = await makeNarrowDrafter();
+  const mine = await rejectedBy(fx, a, fx.lines.withVendor);
+  const theirs = await rejectedBy(fx, fx.otherPm, fx.lines.split);
+  await linkCardUsage(fx.pm, fx.lines.noVendor);
+  await issueRevenue(fx.projectId);
+  return { fx, a, mine, theirs };
+}
+
+describe("완료 전 점검 — R-6 범위 · 금액 노출(Task 3)", () => {
+  it("A(범위 = 자기 문서)로 보면 행 1(A 문서) + `그 밖 1건` · 막힘 2", async () => {
+    const { fx, a, mine } = await twoDrafterProject();
+    const check = await getPreSettleCheck(a, fx.projectId);
+    expect(check.openExpenses.rows.map((row) => row.number)).toEqual([mine.number]);
+    expect(check.openExpenses.outOfScopeCount).toBe(1);
+    expect(check.openExpenses.count).toBe(2);
+    expect(check.blockedCount).toBe(2);
+  });
+
+  it("대표(전사 범위)로 보면 행 2 · `그 밖` 없음 · 막힘 2(보는 사람과 무관한 프로젝트 전체 값)", async () => {
+    const { fx } = await twoDrafterProject();
+    const check = await getPreSettleCheck(fx.ceo, fx.projectId);
+    expect(check.openExpenses.rows).toHaveLength(2);
+    expect(check.openExpenses.outOfScopeCount).toBe(0);
+    expect(check.blockedCount).toBe(2);
+  });
+
+  it("범위가 좁은 계정의 점검 DTO에 범위 밖 문서 번호 · 금액 문자열이 없다(`그 밖`은 건수만)", async () => {
+    const { fx, a, theirs } = await twoDrafterProject();
+    const check = await getPreSettleCheck(a, fx.projectId);
+    const text = JSON.stringify(check);
+    expect(text).not.toContain(theirs.number);
+    expect(text).not.toContain(theirs.expenseId);
+    expect(text).not.toContain("10000000");
+    expect(Object.keys(check.openExpenses).sort()).toEqual(["allowed", "count", "outOfScopeCount", "rows"]);
+  });
+
+  it("미매칭 줄 · 매출 줄은 범위 거르기 대상이 아니다 — 금액 칸만 정보 항목으로 걸러진다", async () => {
+    const fx = await setupExpenseProject();
+    const a = await makeNarrowDrafter();
+    await approvedExpenseWithEvidence(fx, fx.lines.withVendor);
+    const narrow = await getPreSettleCheck(a, fx.projectId);
+    const wide = await getPreSettleCheck(fx.ceo, fx.projectId);
+    expect(narrow.unmatchedLines.rows.map((row) => row.lineId)).toEqual(wide.unmatchedLines.rows.map((row) => row.lineId));
+    expect(narrow.missingRevenue.count).toBe(wide.missingRevenue.count);
+    expect(wide.unmatchedLines.rows.every((row) => typeof row.executionKrw === "number")).toBe(true);
+    expect(narrow.unmatchedLines.rows.every((row) => !("executionKrw" in row))).toBe(true);
+  });
+
+  it("정보 항목 없는 계급: 점검 행 금액 키 없음 · 매출 줄 계약 · 발행 합계 · 차이 키 없음", async () => {
+    const { fx, a } = await twoDrafterProject();
+    const narrow = await getPreSettleCheck(a, fx.projectId);
+    expect(narrow.openExpenses.rows.every((row) => !("expenseAmountKrw" in row))).toBe(true);
+    expect("issuedTotalKrw" in narrow.revenue).toBe(false);
+    expect("diffKrw" in narrow.revenue).toBe(false);
+    expect("contractKrw" in narrow.revenue).toBe(false);
+    const wide = await getPreSettleCheck(fx.ceo, fx.projectId);
+    expect(wide.openExpenses.rows.every((row) => typeof row.expenseAmountKrw === "number")).toBe(true);
+    expect(wide.revenue).toMatchObject({ issuedTotalKrw: 1_000_000 });
+  });
+
+  it("DTO_REGISTRY에 PreSettleCheckDto가 있다(@/domain/settlements import 경유)", () => {
+    expect(DTO_REGISTRY.some((entry) => entry.name === "PreSettleCheckDto")).toBe(true);
   });
 });

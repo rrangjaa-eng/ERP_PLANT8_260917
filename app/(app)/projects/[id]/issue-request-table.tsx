@@ -317,24 +317,25 @@ export function IssueRequestTable({
           </Button>
         </div>
       ) : null}
-      {/* 06-21(O-12) — 확인하면 서버를 부르지 않고 그 줄을 dirty 한 칸(상태 `취소`)으로 만든다. 반영은 상세 1차 `일괄 저장` 때. */}
-      <ConfirmDialog
-        open={cancelTarget !== null}
-        onClose={() => setCancelTarget(null)}
-        title="발행 요청 취소"
-        subtitle={cancelTarget ? `희망 ${cancelTarget.desiredIssueDate} · ${formatKrw(cancelTarget.amount)}` : undefined}
-        resultLines={["경영관리 목록에서 빠짐"]}
-        primary={{
-          label: "발행 요청 취소",
-          onConfirm: () => {
-            if (cancelTarget) {
+      {/* 06-21(O-12) — 확인하면 서버를 부르지 않고 그 줄을 dirty 한 칸(상태 `취소`)으로 만든다. 반영은 상세 1차 `일괄 저장` 때.
+          열린 동안에만 그린다 — 닫힌 모달의 단축키 글자(kbd)가 매출 섹션 DOM에 남지 않게(revenue-section 「힌트 줄 없음」). */}
+      {cancelTarget ? (
+        <ConfirmDialog
+          open
+          onClose={() => setCancelTarget(null)}
+          title="발행 요청 취소"
+          subtitle={`희망 ${cancelTarget.desiredIssueDate} · ${formatKrw(cancelTarget.amount)}`}
+          resultLines={["경영관리 목록에서 빠짐"]}
+          primary={{
+            label: "발행 요청 취소",
+            onConfirm: () => {
               onChange(cancelTarget.clientKey, { status: "cancelled", cancel: true });
               focusAfterCancel.current = cancelTarget.id;
-            }
-            setCancelTarget(null);
-          },
-        }}
-      />
+              setCancelTarget(null);
+            },
+          }}
+        />
+      ) : null}
     </>
   );
 }

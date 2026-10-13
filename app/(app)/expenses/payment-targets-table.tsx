@@ -200,7 +200,7 @@ function takeCarried(
 // 먼저 받는다(ui/table 무변경 — 격자 키 훅은 편집 칸도 막힌 칸도 아닌 칸의 Enter에서 아무것도 하지 않는다). 조합 중 · 수정 키 · 편집 칸 안 입력 ·
 // Space · Ctrl+Enter는 손대지 않는다(06-29 고르기 · 1차 · 04.6 편집 키 그대로).
 function pressCellAction(event: React.KeyboardEvent<HTMLDivElement>) {
-  if (event.key !== "Enter" || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || event.nativeEvent.isComposing) return;
+  if (event.key !== "Enter" || event.ctrlKey || event.altKey || event.shiftKey || event.nativeEvent.isComposing) return;
   const target = event.target;
   if (!(target instanceof HTMLElement) || !target.matches("td[data-grid-focus]")) return;
   const action = target.querySelector<HTMLElement>("[data-cell-action]");

@@ -116,6 +116,8 @@ export const ROW_SCOPE_DISPOSITION: readonly DomainDisposition[] = [
   { file: "domain/quotes/revisions.ts", fn: "listRevisionLines", primitive: "findQuoteRevisionByProjectAndSeq", kind: "post-gate", reason: "같은 함수 첫 줄 findProject(범위) 판정 뒤" },
   { file: "domain/quotes/revisions.ts", fn: "setCustomerApproval", primitive: "findLatestQuoteRevision", kind: "post-gate", reason: "차수 → 프로젝트 id를 꺼낸 뒤 findProjectInScope 판정(06.2-03), 값은 판정 뒤" },
   { file: "domain/quotes/revisions.ts", fn: "setCustomerApproval", primitive: "findQuoteRevisionById", kind: "post-gate", reason: "차수 → 프로젝트 id를 꺼낸 뒤 findProjectInScope 판정(06.2-03), 값은 판정 뒤" },
+  { file: "domain/quotes/revisions.ts", fn: "revisionEvidenceOwner", primitive: "findQuoteRevisionById", kind: "post-gate", reason: "주인 상태 읽기(06-16) — 값은 05 domain/evidence가 revisionEvidenceRights(findProjectInScope · quote.amount) 판정 뒤에만 쓴다" },
+  { file: "domain/quotes/revisions.ts", fn: "revisionEvidenceOwner", primitive: "findProjectById", kind: "post-gate", reason: "주인 상태 읽기(06-16) — 값은 05 domain/evidence가 revisionEvidenceRights(findProjectInScope · quote.amount) 판정 뒤에만 쓴다" },
   { file: "domain/revenue/index.ts", fn: "deriveContract", primitive: "findLatestQuoteRevision", kind: "post-gate", reason: "호출자 listRevenue의 projectRowScope + findProjectInScope 판정 뒤" },
   { file: "domain/revenue/index.ts", fn: "listRevenue", primitive: "listRevenueEntriesByProject", kind: "scoped", reason: "같은 함수의 projectRowScope + findProjectInScope 판정 뒤(06.2-04)" },
   { file: "domain/settlements/index.ts", fn: "canResubmitSettlement", primitive: "listSettlementSummaries", kind: "post-gate", reason: "결재 엔진 훅 — 결재 관련자(지금 단계 후보 · 처리자) 판정 뒤, 결재함은 범위로 거르지 않는다(D-6205 ②) · 담당 PM 쓰기 권리만 돌려준다" },

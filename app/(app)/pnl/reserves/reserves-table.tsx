@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useEffectEvent, useId, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useId, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
@@ -12,6 +12,7 @@ import { Table } from "@/ui/table/Table";
 import { Pagination } from "@/ui/pagination/Pagination";
 import { pageRangeText } from "@/ui/pagination/page-window";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
+import { RowSheet } from "@/ui/table/RowSheet";
 import { Toast } from "@/ui/toast/Toast";
 import { useDirtyStorage, viewerDirtyScope } from "@/ui/table/use-dirty-storage";
 import { applyPaste, type PasteColumn } from "@/ui/table/use-clipboard-paste";
@@ -32,6 +33,8 @@ import type {
   ReserveReferences,
 } from "@/domain/reserves";
 import { RESERVE_ARCHIVED_ROW_REASON, RESERVE_SAVE_MAX_ROWS } from "@/domain/reserves/save-contract";
+import { OwnedEvidenceFiles, OwnedEvidenceSection } from "@/app/(app)/expenses/owned-evidence";
+import ownedStyles from "@/app/(app)/expenses/owned-evidence.module.css";
 import styles from "./reserves.module.css";
 
 // 04-42 — 클라이언트별 리저브 대장(S9). 셀 단계·잔액·클라이언트 잠금은 서버 DTO 그대로 그리고(T-04-43b), 화면은 편집을
@@ -60,6 +63,8 @@ type Row = {
   note: string | null;
   /** 서버 계산 잔액 — 저장 전 새 줄은 없다. */
   balanceKrw: number | null;
+  /** 06-16(D-60) — 서버가 센 증빙 파일 수. 저장 전 새 줄은 null(열 `—`). */
+  evidenceCount: number | null;
   cells: Record<ReserveCellField, ReserveCellEditability>;
 };
 
@@ -151,6 +156,7 @@ function rowFromDto(dto: ReserveEntryDto): Row {
     taxInvoiceNumber: dto.taxInvoiceNumber,
     note: dto.note,
     balanceKrw: dto.balanceKrw,
+    evidenceCount: dto.evidenceCount,
     cells: dto.cellEditability,
   };
 }
@@ -516,6 +522,30 @@ export type ReservesTableProps = {
   todayKst: string;
 };
 
+// 폰(<700)인가 — 서버 · 수화 중에는 PC로 본다. 폰은 증빙 열이 글자뿐이고 펼침 섹션이 없다(행 시트가 파일 행을 보인다 — O-22).
+const PHONE_QUERY = "(max-width: 699.98px)";
+const subscribePhone = (onChange: () => void) => {
+  const media = window.matchMedia(PHONE_QUERY);
+  media.addEventListener("change", onChange);
+  return () => media.removeEventListener("change", onChange);
+};
+function usePhoneWidth(): boolean {
+  return useSyncExternalStore(subscribePhone, () => window.matchMedia(PHONE_QUERY).matches, () => false);
+}
+
+// 06-16(S22) 셀 Enter — 격자 포커스 칸(편집 칸이 아닌 증빙 칸)의 Enter = 그 칸 안 `[data-cell-action]` 누르기. 표를 감싼 요소가 캡처 단계에서
+// 먼저 받는다(ui/table 무변경 — 06-17 payment-targets-table 선례). 조합 중 · 수정 키 · 편집 칸 안 입력은 손대지 않는다(04 편집 칸 Enter · Ctrl+Enter 새 줄 그대로).
+function pressCellAction(event: React.KeyboardEvent<HTMLDivElement>) {
+  if (event.key !== "Enter" || event.ctrlKey || event.altKey || event.shiftKey || event.nativeEvent.isComposing) return;
+  const target = event.target;
+  if (!(target instanceof HTMLElement) || !target.matches("td[data-grid-focus]")) return;
+  const action = target.querySelector<HTMLElement>("[data-cell-action]");
+  if (!action) return;
+  event.preventDefault();
+  event.stopPropagation();
+  action.click();
+}
+
 export function ReservesTable({ viewerId, list: initialList, references, usdDefaultFxRate, todayKst }: ReservesTableProps) {
   // 서버 대장(지금 쪽). 쪽 이동·새로 고침은 props로, 저장 성공은 액션 응답으로 바뀐다 — 표는 다시 마운트되지 않는다.
   const [list, setList] = useState(initialList);
@@ -523,7 +553,11 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
   // 리뷰 S2(DR-5) — 다른 쪽의 첫 오류로 옮겨 가는 중이면, 그 쪽이 도착한 렌더에서 표에 첫 오류 신호를 준다.
   const [pendingIssuePage, setPendingIssuePage] = useState<number | null>(null);
   const [issueSignal, setIssueSignal] = useState(0);
+  // 06-16(S22) — 펼침 섹션 (한 번에 하나, 쪽을 넘기면 닫힘) · 폰 행 시트.
+  const [evidenceOpen, setEvidenceOpen] = useState<string | null>(null);
+  const [sheetRowId, setSheetRowId] = useState<string | null>(null);
   if (initialList !== seenList) {
+    if (initialList.page !== list.page) setEvidenceOpen(null);
     setSeenList(initialList);
     setList(initialList);
     if (pendingIssuePage !== null && initialList.page === pendingIssuePage) {
@@ -751,6 +785,7 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
       taxInvoiceNumber: null,
       note: null,
       balanceKrw: null,
+      evidenceCount: null,
       cells,
       page: list.page,
     };
@@ -936,6 +971,26 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
   const clientProjects = (row: Row) =>
     references.projects.filter((project) => project.clientId === row.clientId).map((project) => ({ value: project.id, label: project.name }));
 
+  // 06-16(S22) — 증빙 열 3차. 열려 있는 줄을 다시 누르면 닫히고 포커스는 그 3차로 돌아온다. 열릴 때는 섹션 제목이 포커스를 받는다.
+  const phone = usePhoneWidth();
+  const evidenceHeadingId = useId();
+  const evidenceRefocusRef = useRef<string | null>(null);
+  const evidenceToggleId = (id: string) => `reserve-evidence-toggle-${id}`;
+  function toggleEvidence(row: Row) {
+    if (evidenceOpen === row.id) {
+      evidenceRefocusRef.current = row.id;
+      setEvidenceOpen(null);
+      return;
+    }
+    setEvidenceOpen(row.id);
+  }
+  useEffect(() => {
+    const id = evidenceRefocusRef.current;
+    if (evidenceOpen !== null || id === null) return;
+    evidenceRefocusRef.current = null;
+    document.getElementById(`reserve-evidence-toggle-${id}`)?.focus();
+  }, [evidenceOpen]);
+
   const columns: TableColumn<Row>[] = [
     {
       key: "entryDate",
@@ -1032,6 +1087,31 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
       editCell: (row, ctx) => <TextEditCell ariaLabel="세금계산서 번호" initialValue={row.taxInvoiceNumber ?? ""} onCommit={ctx.onCommit} />,
     },
     {
+      key: "evidence",
+      header: "증빙",
+      priority: "p2",
+      cell: (row) => {
+        if (row.isNew || row.evidenceCount === null) return "—";
+        const count = row.evidenceCount;
+        return (
+          <Button
+            id={evidenceToggleId(row.id)}
+            variant="tertiary"
+            aria-expanded={evidenceOpen === row.id}
+            aria-label={`${row.entryDate} ${row.clientName} 증빙${count > 0 ? ` ${count}` : ""}`}
+            data-cell-action=""
+            onClick={() => toggleEvidence(row)}
+          >
+            {count > 0 ? `증빙 ${count}` : "증빙"}
+          </Button>
+        );
+      },
+      // 폰 접힌 줄 — 글자뿐(버튼 아님). 0개는 줄에 끼지 않는다.
+      summary: (row) => (row.evidenceCount !== null && row.evidenceCount > 0 ? `증빙 ${row.evidenceCount}` : ""),
+      copyText: (row) => (row.evidenceCount !== null && row.evidenceCount > 0 ? `증빙 ${row.evidenceCount}` : ""),
+      pasteRole: "computed",
+    },
+    {
       key: "note",
       header: "메모",
       priority: "p2",
@@ -1079,6 +1159,7 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
     },
     { key: "evidenceType", kind: "select", options: [blankOption, ...references.evidenceTypes], isEditable: (row) => editability(row, "evidenceType") === "edit" },
     { key: "taxInvoiceNumber", kind: "text", isEditable: (row) => editability(row, "taxInvoiceNumber") === "edit" },
+    { key: "evidence", kind: "text", isEditable: () => false, pasteRole: "computed" },
     { key: "note", kind: "text", isEditable: (row) => editability(row, "note") === "edit" },
     {
       key: "clientId",
@@ -1208,6 +1289,8 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
   const total = list.total ?? 0;
   const canEditHere = canWrite && editableWidth;
   const emptyMessage = !canWrite ? COPY.emptyReadOnly : COPY.empty;
+  const evidenceRow = evidenceOpen ? rows.find((row) => row.id === evidenceOpen && !row.isNew) : undefined;
+  const sheetRow = sheetRowId ? rows.find((row) => row.id === sheetRowId) : undefined;
 
   return (
     <>
@@ -1253,6 +1336,7 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
         </p>
       ) : null}
 
+      <div onKeyDownCapture={pressCellAction}>
       <Table
         caption="리저브 대장"
         columns={columns}
@@ -1265,6 +1349,8 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
         groupAside={groupBalance}
         openCell={openCell}
         enableGridKeyboard
+        onRowTap={(row) => setSheetRowId(row.id)}
+        rowLabel={(row) => `${row.entryDate} ${row.clientName}`}
         saveLocked={saveLocked}
         onEditingChange={setCellEditing}
         onCellCommit={commitCell}
@@ -1290,6 +1376,7 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
           </tr>
         )}
       />
+      </div>
 
       {canEditHere && rows.length > 0 ? (
         <div className={styles.addLine}>
@@ -1327,12 +1414,46 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
         </div>
       ) : null}
 
+      {evidenceRow && !phone ? (
+        <OwnedEvidenceSection
+          key={evidenceRow.id}
+          kind="reserve_entry"
+          ownerId={evidenceRow.id}
+          headingId={evidenceHeadingId}
+          title={`${evidenceRow.entryDate} ${evidenceRow.clientName} ${directionLabel(evidenceRow.direction)} ${formatKrw(evidenceRow.amountKrw)} 증빙`}
+          readOnly={!editableWidth}
+          sectionClassName={ownedStyles.section}
+          titleClassName={ownedStyles.title}
+        />
+      ) : null}
+
+      <RowSheet
+        open={sheetRow !== undefined}
+        onClose={() => setSheetRowId(null)}
+        title={sheetRow ? `${sheetRow.entryDate} ${directionLabel(sheetRow.direction)}` : ""}
+        subtitle={sheetRow ? `${sheetRow.clientName} · ${formatKrw(sheetRow.amountKrw)}` : ""}
+        items={
+          sheetRow
+            ? [
+                { label: "잔액", value: <Num value={sheetRow.balanceKrw} /> },
+                { label: "프로젝트", value: sheetRow.projectName || "—" },
+                { label: "증빙 종류", value: sheetRow.evidenceLabel || sheetRow.evidenceType || "—" },
+                { label: "세금계산서 번호", value: <Num value={sheetRow.taxInvoiceNumber || null} /> },
+                { label: "메모", value: sheetRow.note || "—" },
+                ...(!sheetRow.isNew && sheetRow.evidenceCount !== null
+                  ? [{ label: "증빙", value: <OwnedEvidenceFiles key={sheetRow.id} kind="reserve_entry" ownerId={sheetRow.id} /> }]
+                  : []),
+              ]
+            : []
+        }
+      />
+
       <ConfirmDialog
         open={deleteTarget !== null}
         onClose={closeDeleteDialog}
         title={COPY.deleteTitle}
         subtitle={deleteTarget ? `${deleteTarget.entryDate} · ${deleteTarget.clientName} · ${formatKrw(deleteTarget.amountKrw)}` : undefined}
-        resultLines={[COPY.deleteResult]}
+        resultLines={deleteTarget?.evidenceCount ? [COPY.deleteResult, `증빙 ${deleteTarget.evidenceCount}개 함께 보관`] : [COPY.deleteResult]}
         primary={{ label: COPY.deleteTitle, onConfirm: confirmDelete }}
       />
 

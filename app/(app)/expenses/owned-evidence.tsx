@@ -274,3 +274,39 @@ function Heading({ id, headingRef, level, className, title }: { id: string; head
     </Tag>
   );
 }
+
+// 폰(<700) 행 시트의 §7-8 첨부 행 — 파일 행만(크게 보기). 올리기 · 지우기 요소 없음(O-22). 시트가 열릴 때 마운트되어 한 번 읽는다.
+const READ_ONLY_ACTIONS: AttachmentActions = {
+  request: () => Promise.resolve({ ok: false, message: EVIDENCE_UPLOAD_FAILED }),
+  complete: () => Promise.resolve({ ok: false, message: EVIDENCE_UPLOAD_FAILED, retry: "restart" }),
+  remove: () => Promise.resolve(false),
+  viewUrl: async (fileId) => (await createEvidenceViewUrlAction({ fileId }))?.data?.url ?? null,
+};
+
+export function OwnedEvidenceFiles({ kind, ownerId }: { kind: OwnedEvidenceKind; ownerId: string }) {
+  const [loaded, setLoaded] = useState<Loaded | "error" | null>(null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const reload = useCallback(async () => {
+    const next = await loadOwned(kind, ownerId);
+    if (mountedRef.current) setLoaded(next ?? "error");
+  }, [kind, ownerId]);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  if (loaded === null) return null;
+  if (loaded === "error") return <span className={styles.emptyText}>증빙 불러오지 못함</span>;
+  if (loaded.files.length === 0) return <span className={styles.emptyText}>증빙 없음</span>;
+  return (
+    <Attachments mode="read" files={loaded.files} actions={READ_ONLY_ACTIONS} maxMb={loaded.maxMb} uploadFailedText={EVIDENCE_UPLOAD_FAILED} canAdd={false} deletableIds={[]} />
+  );
+}

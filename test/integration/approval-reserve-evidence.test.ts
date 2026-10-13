@@ -1,8 +1,8 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
-import { actionLog, approvalInstances, expenseEvidenceReviews, expenses, files, projects, quoteRevisions, teams } from "@/db/schema";
+import { actionLog, approvalInstances, expenseEvidenceReviews, expenses, files, projects, quoteRevisions, reserveEntries, teams } from "@/db/schema";
 import { approveDocument } from "@/domain/approvals";
 import { createAccount } from "@/domain/auth/accounts";
 import { createProject } from "@/domain/projects";
@@ -21,8 +21,10 @@ import {
 } from "@/domain/evidence";
 import { EVIDENCE_DUPLICATE_HIDDEN, EVIDENCE_DUPLICATE_SAME_OWNER } from "@/domain/evidence/upload-checks";
 import { getCurrentQuoteRevision } from "@/domain/quotes/lines";
+import { listReserves, restoreReserve, saveReserves, type ReserveWriteRow } from "@/domain/reserves";
 import { customerApprovalColumns, listRevisionSummaries, setCustomerApproval } from "@/domain/quotes/revisions";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
+import { log } from "@/lib/log";
 import { insertFile } from "@/repositories/files";
 import { insertRole } from "@/repositories/roles";
 import { approvalBasis } from "@/repositories/quote-revisions";
@@ -328,5 +330,157 @@ describe("F10 되살리기 — restoreEvidence", () => {
 
     const alive = await db.select({ sha256: files.sha256 }).from(files).where(and(eq(files.ownerKind, "expense"), eq(files.ownerId, draft), isNull(files.removedAt)));
     expect(alive.map((row) => row.sha256).sort()).toEqual([otherSha, ownSha].sort());
+  });
+});
+
+// ---- Task 3 · D-60 리저브 줄 증빙 ----
+
+const PNL_WRITE = [
+  { menu: "pnl", action: "view" as const },
+  { menu: "pnl", action: "write" as const },
+];
+const PNL_VIEW = [{ menu: "pnl", action: "view" as const }];
+
+function reserveRow(clientId: string, entryDate: string, direction: ReserveWriteRow["direction"], amount: number): ReserveWriteRow {
+  return { id: randomUUID(), isNew: true, clientId, entryDate, direction, amount: { currency: "KRW", amount, fxRate: 1 } };
+}
+
+// 리저브 쓰기 권리자(pnl 쓰기 + reserve.amount · 선택지 vendor.value · 증빙 파일 DTO expense.value — 05 증빙 DTO 칸 그대로) · 입금 줄 하나.
+async function reserveFixture() {
+  const writer = await makeViewer(PNL_WRITE, ["reserve.amount", "vendor.value", "expense.value"]);
+  const vendor = await insertVendor(SYSTEM_VIEWER, { name: `리저브-${randomUUID()}`, normalizedName: `리저브-${randomUUID()}` });
+  const row = reserveRow(vendor.id, "2026-03-01", "deposit", 1_000_000);
+  await saveReserves(writer, { rows: [row] });
+  return { writer, clientId: vendor.id, entryId: row.id };
+}
+
+async function reserveListRow(viewer: Viewer, entryId: string) {
+  const list = await listReserves(viewer, { page: 1 });
+  return list.rows.find((candidate) => candidate.id === entryId);
+}
+
+describe("D-60 리저브 줄 증빙 — 권리 · 보관 · 노출", () => {
+  it("쓰기 권리자: 올리기 → 삭제 → 되살리기, 대장 개수가 따라가고 금액 · 잔액 · 줄 version은 그대로다", async () => {
+    const { writer, entryId } = await reserveFixture();
+    const before = await reserveListRow(writer, entryId);
+    expect(before).toMatchObject({ evidenceCount: 0, evidenceWritable: true });
+
+    const file = await upload(writer, "reserve_entry", entryId, createMemoryStorage(), { name: "세금계산서.pdf" });
+    expect((await reserveListRow(writer, entryId))?.evidenceCount).toBe(1);
+    await removeEvidence(writer, { fileId: file.id });
+    expect((await reserveListRow(writer, entryId))?.evidenceCount).toBe(0);
+    await restoreEvidence(writer, { fileId: file.id });
+
+    const after = await reserveListRow(writer, entryId);
+    expect(after?.evidenceCount).toBe(1);
+    expect(after).toMatchObject({ version: before?.version, amount: before?.amount, balanceKrw: before?.balanceKrw });
+  });
+
+  it("보관된 줄: 파일은 읽히지만 올리기 · 지우기 · 되살리기는 거부되고, 줄을 복원하면 파일 그대로 다시 쓸 수 있다", async () => {
+    const { writer, entryId } = await reserveFixture();
+    const kept = await upload(writer, "reserve_entry", entryId);
+    const removed = await upload(writer, "reserve_entry", entryId);
+    await removeEvidence(writer, { fileId: removed.id });
+    const [stored] = await db.select({ version: reserveEntries.version }).from(reserveEntries).where(eq(reserveEntries.id, entryId));
+    await saveReserves(writer, { rows: [], archived: [{ id: entryId, version: stored?.version ?? 1 }] });
+
+    expect((await listEvidence(writer, { ownerKind: "reserve_entry", ownerId: entryId })).map((file) => file.id)).toEqual([kept.id]);
+    const owned = await getOwnedEvidence(writer, { ownerKind: "reserve_entry", ownerId: entryId });
+    expect(owned.files).toHaveLength(1);
+    expect(owned.actions.canAdd).toBe(false);
+    expect(owned.actions.deletableFileIds).toEqual([]);
+    await expect(requestEvidenceUpload(writer, { ownerKind: "reserve_entry", ownerId: entryId, size: 10, contentType: "application/pdf", sha256: sha(), name: "a.pdf" })).rejects.toThrow("리저브 기록 권한 없음");
+    await expect(removeEvidence(writer, { fileId: kept.id })).rejects.toThrow("리저브 기록 권한 없음");
+    await expect(restoreEvidence(writer, { fileId: removed.id })).rejects.toThrow("리저브 기록 권한 없음");
+
+    await restoreReserve(writer, entryId);
+
+    expect((await getOwnedEvidence(writer, { ownerKind: "reserve_entry", ownerId: entryId })).actions.canAdd).toBe(true);
+    expect((await reserveListRow(writer, entryId))?.evidenceCount).toBe(1);
+    const again = await upload(writer, "reserve_entry", entryId);
+    expect(again.id).toEqual(expect.any(String));
+  });
+
+  it("[T-06-80] pnl 보기만 있는 계급은 읽기만 된다 — 직접 호출은 거부 경고가 한 번, 오류 문구 · 로그 객체에 금액 키가 없다", async () => {
+    const { writer, entryId } = await reserveFixture();
+    const file = await upload(writer, "reserve_entry", entryId);
+    const reader = await makeViewer(PNL_VIEW, ["reserve.amount", "expense.value"]);
+
+    expect((await listEvidence(reader, { ownerKind: "reserve_entry", ownerId: entryId })).map((candidate) => candidate.id)).toEqual([file.id]);
+    expect(await reserveListRow(reader, entryId)).toMatchObject({ evidenceCount: 1, evidenceWritable: false });
+    const owned = await getOwnedEvidence(reader, { ownerKind: "reserve_entry", ownerId: entryId });
+    expect(owned.actions.canAdd).toBe(false);
+    const viewed = await createEvidenceViewUrl(reader, { fileId: file.id });
+    expect(typeof viewed?.url).toBe("string");
+
+    const warn = vi.spyOn(log, "warn");
+    try {
+      for (const run of [
+        () => requestEvidenceUpload(reader, { ownerKind: "reserve_entry", ownerId: entryId, size: 10, contentType: "application/pdf", sha256: sha(), name: "a.pdf" }),
+        () => removeEvidence(reader, { fileId: file.id }),
+      ]) {
+        warn.mockClear();
+        const refused = await caught(run());
+        expect(refused.message).toBe("리저브 기록 권한 없음");
+        expect(refused.message).not.toMatch(/\d/);
+        const denied = warn.mock.calls.filter(([event]) => event === "write.denied");
+        expect(denied).toHaveLength(1);
+        const fields = denied[0]?.[1] as Record<string, unknown>;
+        expect(fields.rule).toBe("reserve.forbidden");
+        expect(Object.keys(fields).filter((key) => /amount|balance|krw|note/i.test(key))).toEqual([]);
+      }
+    } finally {
+      warn.mockRestore();
+    }
+    expect(await fileRowsOf("reserve_entry", entryId)).toHaveLength(1);
+  });
+
+  it("[T-06-79] reserve.amount 노출이 없는 계급은 대장 행도 펼침 읽기도 보기 주소도 비어 있다", async () => {
+    const { writer, entryId } = await reserveFixture();
+    const file = await upload(writer, "reserve_entry", entryId);
+    const blind = await makeViewer(PNL_WRITE, ["project.value"]);
+
+    expect(await reserveListRow(blind, entryId)).toBeUndefined();
+    const owned = await getOwnedEvidence(blind, { ownerKind: "reserve_entry", ownerId: entryId });
+    expect(owned.files).toEqual([]);
+    expect(owned.actions.canAdd).toBe(false);
+    expect(await listEvidence(blind, { ownerKind: "reserve_entry", ownerId: entryId })).toEqual([]);
+    expect(await createEvidenceViewUrl(blind, { fileId: file.id })).toBeNull();
+  });
+
+  it("[E-46] 보관 뒤 완료 재시도 = 같은 파일 · 새 행 0", async () => {
+    const { writer, entryId } = await reserveFixture();
+    const storage = createMemoryStorage();
+    const declared = { size: 212_000, contentType: "application/pdf", sha256: sha(), name: "세금계산서.pdf" };
+    const intent = await requestEvidenceUpload(writer, { ownerKind: "reserve_entry", ownerId: entryId, ...declared }, { storage });
+    storage.put(intent.url, { size: declared.size, contentType: declared.contentType, sha256: declared.sha256 });
+    const first = await completeEvidenceUpload(writer, { intentId: intent.intentId }, { storage });
+    const [stored] = await db.select({ version: reserveEntries.version }).from(reserveEntries).where(eq(reserveEntries.id, entryId));
+    await saveReserves(writer, { rows: [], archived: [{ id: entryId, version: stored?.version ?? 1 }] });
+    const before = (await fileRowsOf("reserve_entry", entryId)).length;
+
+    const retried = await completeEvidenceUpload(writer, { intentId: intent.intentId }, { storage });
+
+    expect(retried.id).toBe(first.id);
+    expect((await fileRowsOf("reserve_entry", entryId)).length).toBe(before);
+  });
+
+  it("[DR-3] 같은 파일을 다른 리저브 줄에 올리면 번호 없는 문구로 막히고, 지출결의 증빙에만 있으면 통과한다", async () => {
+    const { writer, clientId, entryId } = await reserveFixture();
+    const other = reserveRow(clientId, "2026-03-02", "deposit", 500_000);
+    await saveReserves(writer, { rows: [other] });
+    const fx = await setupExpenseProject();
+    const draft = (await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] })).created[0]?.expenseId ?? "";
+    const shared = sha();
+    await attachEvidence(fx.pm, draft, createMemoryStorage(), { sha256: shared });
+
+    const first = await upload(writer, "reserve_entry", entryId, createMemoryStorage(), { sha256: shared });
+    expect(first.id).toEqual(expect.any(String));
+
+    const elsewhere = await caught(upload(writer, "reserve_entry", other.id, createMemoryStorage(), { sha256: shared }));
+    expect(elsewhere).toBeInstanceOf(EvidenceCheckError);
+    expect(elsewhere.message).toBe(EVIDENCE_DUPLICATE_HIDDEN);
+    const same = await caught(upload(writer, "reserve_entry", entryId, createMemoryStorage(), { sha256: shared }));
+    expect(same.message).toBe(EVIDENCE_DUPLICATE_SAME_OWNER);
   });
 });

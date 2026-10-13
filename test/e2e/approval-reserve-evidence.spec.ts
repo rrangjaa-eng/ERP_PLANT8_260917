@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
-import { codeItems, quoteRevisions } from "@/db/schema";
+import { codeItems, quoteRevisions, reserveEntries } from "@/db/schema";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
@@ -11,6 +11,9 @@ import { createRevisionFromCurrent, customerApprovalColumns } from "@/domain/quo
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { createMemoryStorage } from "../integration/fakes/memory-storage";
 import { createAccount } from "@/domain/auth/accounts";
+import { insertRole } from "@/repositories/roles";
+import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
+import type { Viewer } from "@/domain/viewer";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { insertVendor } from "@/repositories/vendors";
 import { kstToday } from "@/lib/kst-date";
@@ -273,5 +276,210 @@ test.describe("차수 승인 증빙 마감 (06-16 Task 2 — F10 · 04 S5 개정
     await page.getByTestId("attachments-input").setInputFiles(pdf);
     await expect(page.locator('[data-ui="attachments"] li').filter({ hasText: pdf.name })).toBeVisible({ timeout: UPLOAD_WAIT });
     await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
+  });
+});
+
+// ---- Task 3 · D-60 리저브 줄 증빙 (S22) ----
+// 리저브는 회사 전체 원장 하나라 케이스마다 비우고 시작한다(reserves.spec과 같다). 계급은 이 스펙이 만든 임시 계급이다.
+type ReserveSeed = { date: string; direction: "deposit" | "withdrawal"; amount: number };
+
+async function financeRole(): Promise<string> {
+  const id = `role-e2e-aev-${randomUUID()}`;
+  await insertRole(SYSTEM_VIEWER, { id, name: `E2E 리저브 증빙 ${id.slice(-8)}`, sortOrder: 99, viewScope: "company" });
+  for (const grant of [
+    { menu: "pnl", action: "view" },
+    { menu: "pnl", action: "write" },
+    { menu: "projects", action: "view" },
+  ]) {
+    await upsertPermission(SYSTEM_VIEWER, { roleId: id, menu: grant.menu, action: grant.action, allowed: true });
+  }
+  for (const infoItem of ["reserve.amount", "vendor.value", "project.value", "expense.value"]) {
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: id, infoItem, visible: true });
+  }
+  return id;
+}
+
+async function seedReserve(rows: ReserveSeed[]): Promise<{ clientName: string; ids: string[] }> {
+  const clientName = `E2E증빙리저브-${randomUUID().slice(0, 6)}`;
+  const client = await insertVendor(SYSTEM_VIEWER, { name: clientName, normalizedName: clientName.toLowerCase() });
+  const base = Date.UTC(2026, 0, 1);
+  const inserted = await db
+    .insert(reserveEntries)
+    .values(
+      rows.map((row, index) => ({
+        clientId: client.id,
+        entryDate: row.date,
+        direction: row.direction,
+        amountCurrency: "KRW",
+        amountForeignAmount: null,
+        amountFxRate: "1",
+        amountAmountKrw: row.amount,
+        createdAt: new Date(base + index * 1000),
+      })),
+    )
+    .returning({ id: reserveEntries.id });
+  return { clientName, ids: inserted.map((row) => row.id) };
+}
+
+async function seedReserveFile(viewer: Viewer, entryId: string, name = "세금계산서.pdf") {
+  const storage = createMemoryStorage();
+  const file = uniquePdf(name);
+  const declared = { size: file.buffer.length, contentType: file.mimeType, sha256: (await import("node:crypto")).createHash("sha256").update(file.buffer).digest("hex"), name };
+  const intent = await requestEvidenceUpload(viewer, { ownerKind: "reserve_entry", ownerId: entryId, ...declared }, { storage });
+  storage.put(intent.url, { size: declared.size, contentType: declared.contentType, sha256: declared.sha256 });
+  return completeEvidenceUpload(viewer, { intentId: intent.intentId }, { storage });
+}
+
+// 열 순서: 날짜 · 구분 · 금액 · 잔액 · 프로젝트 · 증빙 종류 · 세금계산서 번호 · 증빙 · 메모 · 클라이언트.
+const EVIDENCE_COL = 7;
+
+function reserveDataRows(page: Page): Locator {
+  return page.locator('tbody tr:has(> td[role="gridcell"])');
+}
+
+function reserveCell(page: Page, rowIndex: number, colIndex: number): Locator {
+  return reserveDataRows(page).nth(rowIndex).getByRole("gridcell").nth(colIndex);
+}
+
+// 수화 전에 준 포커스는 격자가 받지 못한다 — 그 셀이 탭 정지가 될 때까지 다시 준다(reserves.spec 선례).
+async function focusReserveCell(target: Locator) {
+  await expect(async () => {
+    await target.evaluate((element) => (element as HTMLElement).blur());
+    await target.focus();
+    await expect(target).toHaveAttribute("tabindex", "0", { timeout: 1_000 });
+  }).toPass();
+}
+
+async function openReserves(page: Page, roleId: string, width = 1280) {
+  const team = await makeTeam();
+  const account = await makeAccount(roleId, team.id, "E2E 리저브 증빙");
+  await page.setViewportSize({ width, height: 900 });
+  await login(page, account);
+  await page.goto("/pnl/reserves");
+  return { viewer: { id: account.userId, roleId }, account };
+}
+
+test.describe("리저브 줄 증빙 (06-16 Task 3 — D-60 · S22)", () => {
+  test.beforeEach(async () => {
+    await db.delete(reserveEntries);
+  });
+
+  test("1280: 세금계산서 번호 다음 `증빙` 3차 → 표 아래 펼침(제목 포커스) → 업로드 → `증빙 1` · 일괄 저장 N 그대로 · 새 줄 `—` · 셀 Enter = 펼치기(한 번에 하나)", async ({ page }) => {
+    const roleId = await financeRole();
+    const seeded = await seedReserve([
+      { date: "2026-04-01", direction: "deposit", amount: 200_000 },
+      { date: "2026-04-02", direction: "deposit", amount: 100_000 },
+    ]);
+    await openReserves(page, roleId);
+
+    await expect(page.getByRole("columnheader", { name: "증빙", exact: true })).toBeVisible();
+    const first = page.getByRole("button", { name: `2026-04-01 ${seeded.clientName} 증빙`, exact: true });
+    const second = page.getByRole("button", { name: `2026-04-02 ${seeded.clientName} 증빙`, exact: true });
+    await expect(first).toHaveText("증빙");
+    await expect(first).toHaveAttribute("aria-expanded", "false");
+
+    await first.click();
+    await expect(first).toHaveAttribute("aria-expanded", "true");
+    await expect(page.getByRole("heading", { name: `2026-04-01 ${seeded.clientName} 입금 200,000 증빙`, exact: true })).toBeFocused();
+
+    const pdf = uniquePdf("세금계산서.pdf");
+    await page.getByTestId("attachments-input").setInputFiles(pdf);
+    await expect(page.locator('[data-ui="attachments"] li').filter({ hasText: pdf.name })).toBeVisible({ timeout: UPLOAD_WAIT });
+    await expect(page.getByRole("button", { name: `2026-04-01 ${seeded.clientName} 증빙 1`, exact: true })).toHaveText("증빙 1", { timeout: UPLOAD_WAIT });
+    await expect(page.getByRole("button", { name: /^일괄 저장/ })).toHaveText(/^일괄 저장\s*(Ctrl\+S)?$/);
+
+    await focusReserveCell(reserveCell(page, 1, EVIDENCE_COL));
+    await page.keyboard.press("Enter");
+    await expect(second).toHaveAttribute("aria-expanded", "true");
+    await expect(page.getByRole("heading", { name: `2026-04-02 ${seeded.clientName} 입금 100,000 증빙`, exact: true })).toBeFocused();
+    await expect(page.getByRole("button", { name: `2026-04-01 ${seeded.clientName} 증빙 1`, exact: true })).toHaveAttribute("aria-expanded", "false");
+    await expect(page.getByRole("heading", { name: /증빙$/ })).toHaveCount(1);
+
+    await page.getByRole("button", { name: "리저브 줄 추가" }).click();
+    await expect(reserveCell(page, 2, EVIDENCE_COL)).toHaveText("—");
+  });
+
+  test("폭 1100: `증빙` 열이 보이고 업로드가 된다 / 900: 펼침에 파일 행만(올리기 영역 · 삭제 0)", async ({ page }) => {
+    const roleId = await financeRole();
+    const seeded = await seedReserve([{ date: "2026-05-01", direction: "deposit", amount: 300_000 }]);
+    const { viewer } = await openReserves(page, roleId, 1100);
+    const toggleName = `2026-05-01 ${seeded.clientName} 증빙`;
+
+    await expect(page.getByRole("columnheader", { name: "증빙", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: toggleName, exact: true }).click();
+    const pdf = uniquePdf("1100 계산서.pdf");
+    await page.getByTestId("attachments-input").setInputFiles(pdf);
+    await expect(page.locator('[data-ui="attachments"] li').filter({ hasText: pdf.name })).toBeVisible({ timeout: UPLOAD_WAIT });
+    await expect(page.getByRole("button", { name: `${toggleName} 1`, exact: true })).toHaveText("증빙 1", { timeout: UPLOAD_WAIT });
+
+    await seedReserveFile(viewer, seeded.ids[0] ?? "", "900 계산서.pdf");
+    await page.setViewportSize({ width: 900, height: 900 });
+    await page.goto("/pnl/reserves");
+    await page.getByRole("button", { name: `${toggleName} 2`, exact: true }).click();
+    await expect(page.locator('[data-ui="attachments"] li')).toHaveCount(2);
+    await expect(page.locator('input[type="file"]')).toHaveCount(0);
+    await expect(page.locator('[data-ui="attachments"]').getByRole("button", { name: /^삭제/ })).toHaveCount(0);
+  });
+
+  test("폰 390: 접힌 줄 `증빙 {N}` 글자 · 행 시트의 첨부 행에 파일 행만 — 올리기 · 삭제 요소 0", async ({ page }) => {
+    const roleId = await financeRole();
+    const seeded = await seedReserve([{ date: "2026-06-01", direction: "deposit", amount: 400_000 }]);
+    const { viewer } = await openReserves(page, roleId, 390);
+    await seedReserveFile(viewer, seeded.ids[0] ?? "", "폰 계산서.pdf");
+    await page.goto("/pnl/reserves");
+
+    const tap = page.getByRole("button", { name: `2026-06-01 ${seeded.clientName} 상세 보기` });
+    await expect(tap).toContainText("증빙 1");
+    await expect(page.getByRole("table", { name: "리저브 대장" }).getByRole("button", { name: /증빙( \d+)?$/ })).toHaveCount(0);
+    await tap.click();
+    const sheet = page.getByRole("dialog", { name: "2026-06-01 입금" });
+    await expect(sheet).toBeVisible();
+    await expect(sheet.locator('[data-ui="attachments"] li').filter({ hasText: "폰 계산서.pdf" })).toBeVisible({ timeout: UPLOAD_WAIT });
+    await expect(sheet.locator('input[type="file"]')).toHaveCount(0);
+    await expect(sheet.getByRole("button", { name: /^삭제/ })).toHaveCount(0);
+  });
+
+  test("증빙 있는 줄 삭제 모달에는 `증빙 {N}개 함께 보관`, 없는 줄에는 그 줄이 없다", async ({ page }) => {
+    const roleId = await financeRole();
+    const seeded = await seedReserve([
+      { date: "2026-07-01", direction: "deposit", amount: 500_000 },
+      { date: "2026-07-02", direction: "deposit", amount: 100_000 },
+    ]);
+    const { viewer } = await openReserves(page, roleId);
+    await seedReserveFile(viewer, seeded.ids[0] ?? "", "보관될 계산서.pdf");
+    await page.goto("/pnl/reserves");
+
+    const dialog = page.getByRole("dialog", { name: "리저브 줄 삭제" });
+    await focusReserveCell(reserveCell(page, 0, 0));
+    await page.keyboard.press("Delete");
+    await expect(dialog).toContainText("보관함으로 옮겨짐 · 잔액 다시 계산");
+    await expect(dialog).toContainText("증빙 1개 함께 보관");
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+
+    await focusReserveCell(reserveCell(page, 1, 0));
+    await page.keyboard.press("Delete");
+    await expect(dialog).toContainText("보관함으로 옮겨짐 · 잔액 다시 계산");
+    await expect(dialog).not.toContainText("함께 보관");
+  });
+
+  test("펼침에서 파일 삭제 → 결과 줄 `증빙 삭제 · {파일명}` + 포커스 `되돌리기` → 누르면 파일 행이 돌아온다", async ({ page }) => {
+    const roleId = await financeRole();
+    const seeded = await seedReserve([{ date: "2026-08-01", direction: "deposit", amount: 600_000 }]);
+    const { viewer } = await openReserves(page, roleId);
+    await seedReserveFile(viewer, seeded.ids[0] ?? "", "지울 계산서.pdf");
+    await page.goto("/pnl/reserves");
+
+    await page.getByRole("button", { name: `2026-08-01 ${seeded.clientName} 증빙 1`, exact: true }).click();
+    const row = page.locator('[data-ui="attachments"] li').filter({ hasText: "지울 계산서.pdf" });
+    await expect(row).toBeVisible({ timeout: UPLOAD_WAIT });
+    await row.getByRole("button", { name: /^삭제/ }).click();
+    const line = page.locator('p[role="status"]', { hasText: "증빙 삭제 · 지울 계산서.pdf" });
+    await expect(line).toBeVisible({ timeout: UPLOAD_WAIT });
+    await expect(line.getByRole("button", { name: "되돌리기" })).toBeFocused();
+
+    await line.getByRole("button", { name: "되돌리기" }).click();
+    await expect(page.locator('[data-ui="attachments"] li').filter({ hasText: "지울 계산서.pdf" })).toBeVisible({ timeout: UPLOAD_WAIT });
+    await expect(line).toHaveCount(0);
   });
 });

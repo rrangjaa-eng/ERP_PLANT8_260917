@@ -78,8 +78,8 @@ function readRow(page: Page, date: string): Locator {
   return page.getByRole("table", { name: "리저브 대장" }).locator("tbody tr").filter({ has: page.locator("td", { hasText: new RegExp(`^${date}$`) }) });
 }
 
-// 열 순서: 날짜 · 구분 · 금액 · 잔액 · 프로젝트 · 증빙 종류 · 세금계산서 번호 · 메모 · 클라이언트.
-const COL = { date: 0, direction: 1, amount: 2, balance: 3, project: 4, evidence: 5, taxInvoice: 6, note: 7, client: 8 } as const;
+// 열 순서: 날짜 · 구분 · 금액 · 잔액 · 프로젝트 · 증빙 종류 · 세금계산서 번호 · 증빙(06-16 읽기 열) · 메모 · 클라이언트.
+const COL = { date: 0, direction: 1, amount: 2, balance: 3, project: 4, evidence: 5, taxInvoice: 6, attachments: 7, note: 8, client: 9 } as const;
 
 function cell(page: Page, rowIndex: number, colIndex: number): Locator {
   return dataRows(page).nth(rowIndex).getByRole("gridcell").nth(colIndex);
@@ -583,16 +583,15 @@ test.describe("리저브 대장 — 붙여넣기 Ctrl+V(리뷰 S4)", () => {
     const client = await createClient("E2E리저브숨은열");
     const [id] = await seedEntries(client.id, [{ date: "2026-10-01", direction: "deposit", amount: 500_000 }]);
     await openLedger(page, roles.finance, 1024);
-    await expect(ledger(page).locator("thead th:visible")).toHaveCount(7);
+    await expect(ledger(page).locator("thead th:visible")).toHaveCount(8);
 
-    await pasteText(page, cell(page, 0, COL.project), "—\t세금계산서\t20261001-0001\t숨은 열 뒤 메모");
-    // 숨은 두 열은 접근성 트리에 없어 1024의 메모 칸은 보이는 칸 순서로 여섯째(5)다.
-    const noteAt1024 = cell(page, 0, 5);
-    await expect(noteAt1024).toHaveText("숨은 열 뒤 메모");
-    await saveWithKeyboard(page, noteAt1024);
+    // 06-16: 세금계산서 번호 다음 `증빙` 열은 계산(읽기) 열이라 엑셀 붙여넣기 값이 닿으면 오류 칸이다 — 이 값은 세 번째(세금계산서 번호)까지만 싣는다.
+    const projectAt1024 = cell(page, 0, 4);
+    await pasteText(page, projectAt1024, "—\t세금계산서\t20261001-0001");
+    await saveWithKeyboard(page, projectAt1024);
     await expect(saveButton(page)).not.toContainText("일괄 저장 1");
     const [row] = await db.select().from(reserveEntries).where(eq(reserveEntries.id, id!));
-    expect(row).toMatchObject({ projectId: null, evidenceType: "tax_invoice", taxInvoiceNumber: "20261001-0001", note: "숨은 열 뒤 메모" });
+    expect(row).toMatchObject({ projectId: null, evidenceType: "tax_invoice", taxInvoiceNumber: "20261001-0001" });
   });
 });
 
@@ -624,7 +623,7 @@ test.describe("리저브 대장 — 읽기 · 좁은 PC · 저장 중 잠금 · 
     await expect(cell(page, 0, COL.balance)).toHaveAttribute("aria-readonly", "true");
   });
 
-  test("좁은 PC — 1024는 일곱 열 편집, 1000은 여섯 열 보기 전용(추가·1차·EMPTY 버튼 없음)", async ({ page }) => {
+  test("좁은 PC — 1024는 여덟 열 편집, 1000은 일곱 열 보기 전용(추가·1차·EMPTY 버튼 없음)", async ({ page }) => {
     const roles = await createRoles();
     const client = await createClient("E2E리저브좁은");
     await openLedger(page, roles.finance, 1000);
@@ -634,12 +633,12 @@ test.describe("리저브 대장 — 읽기 · 좁은 PC · 저장 중 잠금 · 
     await seedEntries(client.id, [{ date: "2026-06-01", direction: "deposit", amount: 50_000 }]);
     await page.setViewportSize({ width: 1024, height: 900 });
     await page.reload();
-    await expect(ledger(page).locator("thead th:visible")).toHaveCount(7);
+    await expect(ledger(page).locator("thead th:visible")).toHaveCount(8);
     await expect(page.getByRole("button", { name: "리저브 줄 추가" })).toBeVisible();
 
     await page.setViewportSize({ width: 1000, height: 900 });
     const table = page.getByRole("table", { name: "리저브 대장" });
-    await expect(table.locator("thead th:visible")).toHaveCount(6);
+    await expect(table.locator("thead th:visible")).toHaveCount(7);
     await expect(page.getByRole("grid")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "리저브 줄 추가" })).toHaveCount(0);
     await expect(saveButton(page)).toHaveCount(0);
@@ -813,7 +812,8 @@ test.describe("리저브 대장 — 묶음 ④ 리뷰", () => {
 
     await expect.poll(() => footerPieces(page)).toEqual([
       { tone: "muted", text: "붙여넣기 2줄" },
-      { tone: "muted", text: "계산 열 2칸 무시" },
+      // 계산 열 = 잔액 + 06-16 증빙 열, 두 줄 × 2.
+      { tone: "muted", text: "계산 열 4칸 무시" },
     ]);
     await expect(ledger(page).locator('td[aria-invalid="true"]')).toHaveCount(0);
     await expect(cell(page, 1, COL.note)).toHaveText("둘째 줄");

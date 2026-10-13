@@ -293,6 +293,42 @@ export const PAYMENT_TARGET_ROW_DTO_SPEC: DtoSpec<PaymentTargetRowDto, PaymentTa
   ],
 };
 
+// 06-20(S3 「지급 완료」 보기) — 지급 기록 행. 금액(이체액 · 차이)은 expense.amount, 나머지는 expense.value. 계좌 칸은 없다(O-17 — 대표가 읽는다).
+// 지급 방식은 낱말만(지급 기록이 복사한 코드의 이름). 증빙 상태는 06-06 resolveEvidenceStatus, 증빙 금액은 있음만(06-17 R10-F2 — 빈 `확인 전`은 문서 화면으로).
+export type PaidPaymentRowDto = {
+  id: string;
+  number: string | null;
+  title: string;
+  vendorName: string | null;
+  paymentMethodName: string | null;
+  payDate: string;
+  transferKrw: number;
+  diffKrw: number;
+  diffReason: string | null;
+  evidenceStatus: string;
+  evidenceAmountEntered: boolean;
+  processedByName: string;
+  version: number;
+};
+
+export const PAID_PAYMENT_ROW_DTO_SPEC: DtoSpec<PaidPaymentRowDto, PaidPaymentRowDto> = {
+  fields: [
+    { key: "id", from: "id", infoItem: "expense.value" },
+    { key: "number", from: "number", infoItem: "expense.value" },
+    { key: "title", from: "title", infoItem: "expense.value" },
+    { key: "vendorName", from: "vendorName", infoItem: "expense.value" },
+    { key: "paymentMethodName", from: "paymentMethodName", infoItem: "expense.value" },
+    { key: "payDate", from: "payDate", infoItem: "expense.value" },
+    { key: "transferKrw", from: "transferKrw", infoItem: "expense.amount" },
+    { key: "diffKrw", from: "diffKrw", infoItem: "expense.amount" },
+    { key: "diffReason", from: "diffReason", infoItem: "expense.value" },
+    { key: "evidenceStatus", from: "evidenceStatus", infoItem: "expense.value" },
+    { key: "evidenceAmountEntered", from: "evidenceAmountEntered", infoItem: "expense.value" },
+    { key: "processedByName", from: "processedByName", infoItem: "expense.value" },
+    { key: "version", from: "version", infoItem: "expense.value" },
+  ],
+};
+
 registerDto({ name: "expenseDraft", fields: EXPENSE_DRAFT_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 registerDto({ name: "expenseDocument", fields: EXPENSE_DOCUMENT_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 registerDto({ name: "expenseDetail", fields: EXPENSE_DETAIL_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
@@ -300,3 +336,4 @@ registerDto({ name: "expensePreview", fields: EXPENSE_PREVIEW_DTO_SPEC.fields.ma
 registerDto({ name: "expenseNewDefaults", fields: EXPENSE_NEW_DEFAULTS_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 registerDto({ name: "expenseListRow", fields: EXPENSE_LIST_ROW_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 registerDto({ name: "paymentTargetRow", fields: PAYMENT_TARGET_ROW_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
+registerDto({ name: "paidPaymentRow", fields: PAID_PAYMENT_ROW_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });

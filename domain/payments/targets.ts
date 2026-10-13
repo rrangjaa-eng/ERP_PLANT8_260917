@@ -5,11 +5,11 @@ import { visible } from "@/domain/permissions/visible";
 import { gate } from "@/domain/rules/gate";
 import "@/domain/rules/register";
 import { diffKrw, sumKrw } from "@/domain/money";
-import { EXPENSE_DOCUMENT_KIND, visibleExpenseScope } from "@/domain/expenses/access";
+import { EXPENSE_DOCUMENT_KIND, visibleExpenseScope, type VisibleExpenseScope } from "@/domain/expenses/access";
 import { groupExpenses } from "@/domain/expenses/list";
 import { incomeTypeFor, pickTaxDates, type TaxLinePart } from "@/domain/expenses/tax";
 import { TAX_UNAVAILABLE } from "@/domain/expenses/gate";
-import { PAYMENT_TARGET_ROW_DTO_SPEC, type PaymentTargetRowDto } from "@/domain/expenses/dto";
+import { PAID_PAYMENT_ROW_DTO_SPEC, PAYMENT_TARGET_ROW_DTO_SPEC, type PaidPaymentRowDto, type PaymentTargetRowDto } from "@/domain/expenses/dto";
 import { ownersWithEvidence } from "@/domain/evidence/has-evidence";
 import { listEvidence } from "@/domain/evidence";
 import { formatKstTime } from "@/domain/holidays/business-day";
@@ -20,8 +20,9 @@ import { decidePayable, getPaymentView, loadEvidenceOverrun, loadPaymentShared, 
 import { approvalGateDecision, EVIDENCE_UNCONFIRMED, resolveExpenseActionRow, type EvidenceGateInput, type ExpenseActionBar } from "@/domain/payments/action-row";
 import { listTeams as listTeamRows } from "@/repositories/teams";
 import { EXPENSE_GROUP_RANKS, listExpenseIdsInScope } from "@/repositories/expenses";
-import { findPaymentTargetRowsByIds, listPaymentTargetRows, type PaymentTargetRow } from "@/repositories/payment-targets";
+import { findPaymentTargetRowsByIds, listPaidMonthRows, listPaidPaymentRows, listPaymentTargetRows, type PaidPaymentRow, type PaymentTargetRow } from "@/repositories/payment-targets";
 import { seoulToday } from "@/lib/dates";
+import { addDays } from "@/lib/kst-date";
 import { clampPage, LIST_PAGE_SIZE, pageCountFrom } from "@/lib/paging";
 
 // 06-15(EXP-09 · UI-SPEC S1): 지급 대상 목록 — 결재 통과 · 지급 전 · 종결 아님 지출결의. 행마다 고를 수 있는지(selectable)와 이유는
@@ -124,7 +125,10 @@ async function judgeTargets(viewer: Viewer, rows: readonly PaymentTargetRow[], c
 // 문서 보임(행 범위, CSO-1 패턴) — 지급 처리 경로(loadPaymentInputs)의 canSeeExpense와 같은 scopeCondition(기안자 ∪ 결재 관련자 ∪ 보는 범위)을
 // visibleExpenseScope 한 번으로 만들어 한 질의로 거른다(06.2-08 검토 I-1 — 행마다 묻지 않는다). 보는 범위 전사(06.2 rowScope all)면 결재 통과 문서는 모두 보이므로 묻지 않는다.
 async function visibleRows(viewer: Viewer, rows: readonly PaymentTargetRow[], today: string): Promise<PaymentTargetRow[]> {
-  const scope = await visibleExpenseScope(viewer, { today });
+  return keepVisible(viewer, rows, await visibleExpenseScope(viewer, { today }));
+}
+
+async function keepVisible<Row extends { id: string }>(viewer: Viewer, rows: readonly Row[], scope: VisibleExpenseScope): Promise<Row[]> {
   if (scope.rowScope.rows === "all") return [...rows];
   const kept = await listExpenseIdsInScope(viewer, { ids: rows.map((row) => row.id), scope, documentKind: EXPENSE_DOCUMENT_KIND });
   return rows.filter((row) => kept.has(row.id));
@@ -165,7 +169,9 @@ export type PaymentTargetList = {
   prepaidDueDays: number;
 };
 
-function titleOf(row: PaymentTargetRow): string {
+function titleOf(
+  row: Pick<PaymentTargetRow, "projectId" | "quoteLineId" | "teamName" | "content" | "installment" | "installmentSeq" | "projectName" | "itemName">,
+): string {
   if (row.projectId === null && row.quoteLineId === null) return [row.teamName, row.content].filter(Boolean).join(" · ");
   const seq = row.installment && row.installmentSeq ? ` ${row.installmentSeq}회차` : "";
   return `${[row.projectName, row.itemName].filter(Boolean).join(" · ")}${seq}`;
@@ -396,6 +402,123 @@ export async function getEvidenceConfirmView(viewer: Viewer, input: { expenseId:
 // 지급 권한 판정 뒤 활성 팀을 직접 읽는다(보관된 팀 제외).
 export async function listPaymentTeamOptions(viewer: Viewer): Promise<{ value: string; label: string }[]> {
   await assertPayer(viewer);
+  return activeTeamOptions(viewer);
+}
+
+async function activeTeamOptions(viewer: Viewer): Promise<{ value: string; label: string }[]> {
   const rows = await listTeamRows(viewer, { scope: { rows: "all", includeArchived: false } });
   return rows.map((row) => ({ value: row.id, label: row.name }));
+}
+
+// 06-20(S3) 팀 select — 지급 완료 보기를 받는 사람(지급 권한자 · 대표)에게 같은 활성 팀 목록.
+export async function listPaidTeamOptions(viewer: Viewer): Promise<{ value: string; label: string }[]> {
+  if (!(await paidViewAllowed(viewer))) throw new ForbiddenError("지급 완료 보기 권한 없음");
+  return activeTeamOptions(viewer);
+}
+
+// ── 06-20(UI-SPEC S3) 「지급 완료」 보기 ──────────────────────────────────
+// 받는 사람 = 지급 권한자 ∪ 05 visibleExpenseScope의 전사 보는 범위(06.2 rowScope all — 대표). 역할 이름 리터럴 없이 05 보임 규칙으로 판정한다.
+// 행은 보임 범위 안 살아 있는 지급 기록만, 계좌 칸은 조회부터 없다(O-17). 주 그룹 · 합계(sumKrw) · 쪽은 서버가 정한다. 트랜잭션 없는 읽기.
+
+const MONTH_SHAPE = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+function paidAllowedBy(canPay: boolean, scope: VisibleExpenseScope): boolean {
+  return canPay || scope.rowScope.rows === "all";
+}
+
+export async function paidViewAllowed(viewer: Viewer, deps?: { today?: string }): Promise<boolean> {
+  if (await can(viewer, "expenses.payments", "write")) return true;
+  return paidAllowedBy(false, await visibleExpenseScope(viewer, { today: deps?.today ?? seoulToday() }));
+}
+
+// 지급일 주 그룹(KST 달력 · 월요일 시작) — 오늘 뒤 = `예정 지급`, 이번 주 · 지난주, 그 앞은 그 주 `MM-DD ~ MM-DD`.
+function payWeekLabel(payDate: string, today: string): string {
+  if (payDate > today) return "예정 지급";
+  const mondayOf = (date: string) => {
+    const [year, month, day] = date.split("-").map(Number) as [number, number, number];
+    return addDays(date, -((new Date(Date.UTC(year, month - 1, day)).getUTCDay() + 6) % 7));
+  };
+  const thisMonday = mondayOf(today);
+  if (payDate >= thisMonday) return "이번 주";
+  if (payDate >= addDays(thisMonday, -7)) return "지난주";
+  const monday = mondayOf(payDate);
+  return `${monday.slice(5)} ~ ${addDays(monday, 6).slice(5)}`;
+}
+
+export type PaidPaymentGroup = { label: string; rows: Partial<PaidPaymentRowDto>[] };
+
+export type PaidPaymentList = {
+  groups: PaidPaymentGroup[];
+  // 그 달 · 팀 전체(쪽 무관) 건수 · 이체액 합 — 금액을 볼 수 없는 계급에는 null.
+  total: { count: number; sumKrw: number } | null;
+  page: { page: number; pageCount: number; total: number; pageSize: number };
+  // 고른 달(`YYYY-MM`)과 월 select 값(이번 달 + 보임 범위 안 지급이 있는 달, 최근 순).
+  month: string;
+  months: string[];
+};
+
+export async function listPaidPayments(
+  viewer: Viewer,
+  input: { team?: string | null; month?: string | null; page?: string | number },
+  deps?: { today?: string; pageSize?: number },
+): Promise<PaidPaymentList> {
+  const today = deps?.today ?? seoulToday();
+  const [canPay, scope] = await Promise.all([can(viewer, "expenses.payments", "write"), visibleExpenseScope(viewer, { today })]);
+  if (!paidAllowedBy(canPay, scope)) throw new ForbiddenError("지급 완료 보기 권한 없음");
+  const teamId = input.team && UUID_SHAPE.test(input.team) ? input.team : null;
+  const month = input.month && MONTH_SHAPE.test(input.month) ? input.month : today.slice(0, 7);
+  const all = await keepVisible(viewer, await listPaidPaymentRows(viewer, { teamId, month }), scope);
+  const monthRows = await keepVisible(viewer, await listPaidMonthRows(viewer, { teamId }), scope);
+  const months = [...new Set([today.slice(0, 7), ...monthRows.map((row) => row.month)])].sort().reverse();
+  const amountVisible = await visible(viewer, "expense.amount");
+  const pageSize = deps?.pageSize ?? LIST_PAGE_SIZE;
+  const pageCount = pageCountFrom(all.length, pageSize);
+  const page = clampPage(input.page, pageCount);
+  const slice = all.slice((page - 1) * pageSize, page * pageSize);
+  const dtos = await projectPaidRows(viewer, slice);
+  const groups: PaidPaymentGroup[] = [];
+  slice.forEach((row, index) => {
+    const label = payWeekLabel(row.payDate, today);
+    const dto = dtos[index] ?? {};
+    const last = groups.at(-1);
+    if (last && last.label === label) last.rows.push(dto);
+    else groups.push({ label, rows: [dto] });
+  });
+  return {
+    groups,
+    total: amountVisible ? { count: all.length, sumKrw: sumKrw(all.map((row) => row.transferKrw)) } : null,
+    page: { page, pageCount, total: all.length, pageSize },
+    month,
+    months,
+  };
+}
+
+// 쪽 행만 — 증빙 유무는 06-03 ownersWithEvidence 한 번(C5), 상태 낱말은 06-06 resolveEvidenceStatus, 지급 방식은 지급 기록이 복사한 코드의 이름.
+async function projectPaidRows(viewer: Viewer, rows: readonly PaidPaymentRow[]): Promise<Partial<PaidPaymentRowDto>[]> {
+  if (rows.length === 0) return [];
+  const [withEvidence, shared] = await Promise.all([
+    ownersWithEvidence(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerIds: rows.map((row) => row.id) }),
+    loadPaymentShared(viewer),
+  ]);
+  return projectMany(
+    viewer,
+    rows.map(
+      (row): PaidPaymentRowDto => ({
+        id: row.id,
+        number: row.number,
+        title: titleOf(row),
+        vendorName: row.vendorName,
+        paymentMethodName: shared.paymentMethodName(row.paymentMethod),
+        payDate: row.payDate,
+        transferKrw: row.transferKrw,
+        diffKrw: row.diffKrw,
+        diffReason: row.diffReason,
+        evidenceStatus: resolveEvidenceStatus({ hasEvidence: withEvidence.has(row.id), prepaid: row.prepaid, review: row.review }),
+        evidenceAmountEntered: row.evidenceAmount !== null,
+        processedByName: row.processedByName,
+        version: row.version,
+      }),
+    ),
+    PAID_PAYMENT_ROW_DTO_SPEC,
+  );
 }

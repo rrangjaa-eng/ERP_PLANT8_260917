@@ -254,3 +254,12 @@
   font-weight: var(--fw-bold);
 }
 
+
+/* 06-20(S3) 「프로젝트 · 항목」 — PC도 한 줄 말줄임(전체 값은 링크 title). 폰 폭 규칙은 .titleCell 그대로. */
+.paidTitle .link {
+  display: block;
+  max-width: 16em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

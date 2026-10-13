@@ -19,7 +19,7 @@ export const EXPENSE_SKELETON_COLUMNS: (keyof typeof EXPENSE_COLUMN_LABELS)[] = 
 
 // 06-15(UI-SPEC S1 · V-1) — 지급 권한자에게만 더하는 보기 값(`?status=지급 대상`). 지급 권한이 없는 사람의 select에는 없다.
 export const PAYMENT_TARGET_VIEW = "지급 대상";
-export type ExpenseView = ExpenseStatusView | typeof PAYMENT_TARGET_VIEW;
+export type ExpenseView = ExpenseStatusView | typeof PAYMENT_TARGET_VIEW | "지급 완료";
 
 // S1 열 이름 — 표(`payment-targets-table.tsx`)와 뼈대가 같은 낱말을 쓴다.
 export const PAYMENT_TARGET_COLUMN_LABELS = {
@@ -36,3 +36,22 @@ export const PAYMENT_TARGET_COLUMN_LABELS = {
 
 // S1 첫 로드 뼈대 — 보는 사람과 관계없이 늘 있는 열만(금액 열은 노출 설정에 따라 빠진다).
 export const PAYMENT_TARGET_SKELETON_COLUMNS: (keyof typeof PAYMENT_TARGET_COLUMN_LABELS)[] = ["number", "title", "vendor", "method", "payment", "evidence"];
+
+// 06-20(UI-SPEC S3 · V-1) — 지급 권한자 · 전사 보는 범위(대표)에게만 더하는 보기 값(`?status=지급 완료`). 그 밖의 사람의 select에는 없다.
+export const PAID_VIEW = "지급 완료";
+
+// S3 열 이름 — 표(`paid-list.tsx`)와 뼈대가 같은 낱말을 쓴다.
+export const PAID_COLUMN_LABELS = {
+  number: "번호",
+  title: "프로젝트 · 항목",
+  vendor: "거래처",
+  method: "지급 방식",
+  payDate: "지급일",
+  transfer: "이체액",
+  diffReason: "차이 사유",
+  evidence: "증빙",
+  processedBy: "처리한 사람",
+} as const;
+
+// S3 첫 로드 뼈대 — 보는 사람과 관계없이 늘 있는 앞 열만(이체액은 노출 설정에 따라 빠진다).
+export const PAID_SKELETON_COLUMNS: (keyof typeof PAID_COLUMN_LABELS)[] = ["number", "title", "vendor", "method", "payDate"];

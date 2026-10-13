@@ -5,7 +5,15 @@ import { can } from "@/domain/permissions/can";
 import { listExpenses, type ExpenseListStatus } from "@/domain/expenses/list";
 import { DATE_FORMAT_ERROR } from "@/domain/expenses/draft-fields";
 import type { Viewer } from "@/domain/viewer";
-import { listPaymentTargets, listPaymentTeamOptions, parsePaymentEvidenceFilter, PAYMENT_EVIDENCE_FILTERS } from "@/domain/payments/targets";
+import {
+  listPaidPayments,
+  listPaidTeamOptions,
+  listPaymentTargets,
+  listPaymentTeamOptions,
+  paidViewAllowed,
+  parsePaymentEvidenceFilter,
+  PAYMENT_EVIDENCE_FILTERS,
+} from "@/domain/payments/targets";
 import { seoulToday } from "@/lib/dates";
 import { log } from "@/lib/log";
 import { TableSkeleton } from "@/ui/table/TableSkeleton";
@@ -20,12 +28,16 @@ import { ExpensesTable, type ExpenseTableRow } from "../expenses-table";
 import { StatusFilter } from "../status-filter";
 import {
   EXPENSE_STATUS_VIEWS,
+  PAID_COLUMN_LABELS,
+  PAID_SKELETON_COLUMNS,
+  PAID_VIEW,
   PAYMENT_TARGET_COLUMN_LABELS,
   PAYMENT_TARGET_SKELETON_COLUMNS,
   PAYMENT_TARGET_VIEW,
   type ExpenseStatusView,
 } from "../list-columns";
 import { PaymentTargetsLoadError, PaymentTargetsScreen, type PaymentTargetScreenRow } from "../payment-targets-table";
+import { PaidList, type PaidScreenRow } from "../paid-list";
 import styles from "../expenses.module.css";
 
 // 05-08(UI-SPEC S8 · SYSTEM §6-1 목록 = 원장): 보임 범위(domain/expenses/access.ts) 안의 지출결의를 상태 보기 하나로 거른다.
@@ -75,7 +87,20 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
   if (!(await can(session.viewer, "expenses", "view"))) notFound();
 
   const params = await searchParams;
-  const canPay = await can(session.viewer, "expenses.payments", "write");
+  const [canPay, paidAllowed] = await Promise.all([can(session.viewer, "expenses.payments", "write"), paidViewAllowed(session.viewer)]);
+  // 06-20(S3 · V-1): `?status=지급 완료`는 지급 권한자 · 전사 보는 범위(대표)에게만 — 그 밖의 사람은 아래 05 기본 보기로 읽힌다.
+  // 지급 권한자에게는 06-15 「모르는 값 = 지급 대상」보다 먼저 판정한다.
+  const views = [...(canPay ? [PAYMENT_TARGET_VIEW] : []), ...(paidAllowed ? [PAID_VIEW] : []), ...EXPENSE_STATUS_VIEWS];
+  if (paidAllowed && firstParam(params.status) === PAID_VIEW) {
+    const team = firstParam(params.team) ?? "";
+    const month = firstParam(params.month) ?? "";
+    const key = [team, month, firstParam(params.page) ?? ""].join("|");
+    return (
+      <Suspense key={key} fallback={<PaidSkeleton />}>
+        <PaidPayments viewer={session.viewer} views={views} team={team} month={month} page={firstParam(params.page)} />
+      </Suspense>
+    );
+  }
   if (isPaymentTargetView(params.status, canPay)) {
     const team = firstParam(params.team) ?? "";
     const evidence = parsePaymentEvidenceFilter(firstParam(params.evidence));
@@ -83,7 +108,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
     const key = [team, evidence ?? "", firstParam(params.page) ?? ""].join("|");
     return (
       <Suspense key={key} fallback={<PaymentTargetsSkeleton />}>
-        <PaymentTargets viewer={session.viewer} team={team} evidence={evidence} page={firstParam(params.page)} />
+        <PaymentTargets viewer={session.viewer} views={views} team={team} evidence={evidence} page={firstParam(params.page)} />
       </Suspense>
     );
   }
@@ -109,7 +134,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
       // DR5 A — 보임 범위 안 지출결의가 하나도 없을 때만 `empty`를 넘겨 틀이 머리 1차를 숨긴다. 보기 때문에 0건이면 머리 1차가 남는다.
       primaryAction={canWrite ? newAction : undefined}
       // 걸러 낼 문서가 하나도 없으면 상태 select를 넘기지 않는다(wave10 N2 — 사용자 지시(10/5 00:55)에 따라 추천안 적용).
-      filters={list.hasAny ? <StatusFilter value={view} views={canPay ? [PAYMENT_TARGET_VIEW, ...EXPENSE_STATUS_VIEWS] : EXPENSE_STATUS_VIEWS} /> : undefined}
+      filters={list.hasAny ? <StatusFilter value={view} views={views} /> : undefined}
       summary={
         list.total && list.total.count > 0 ? (
           <section aria-label="합계" className={styles.totals}>
@@ -163,7 +188,19 @@ function PaymentTargetsSkeleton() {
 }
 
 // 06-15(UI-SPEC S1) — 지급 대상 보기. 판정 · 합계 · 쪽은 서버(listPaymentTargets), 화면은 받은 행을 그린다. 로드 실패는 「Error — 목록 로드」.
-async function PaymentTargets({ viewer, team, evidence, page }: { viewer: Viewer; team: string; evidence: ReturnType<typeof parsePaymentEvidenceFilter>; page: string | undefined }) {
+async function PaymentTargets({
+  viewer,
+  views,
+  team,
+  evidence,
+  page,
+}: {
+  viewer: Viewer;
+  views: string[];
+  team: string;
+  evidence: ReturnType<typeof parsePaymentEvidenceFilter>;
+  page: string | undefined;
+}) {
   let loaded;
   try {
     const [list, teams] = await Promise.all([listPaymentTargets(viewer, { team, evidence, page }), listPaymentTeamOptions(viewer)]);
@@ -181,7 +218,7 @@ async function PaymentTargets({ viewer, team, evidence, page }: { viewer: Viewer
   if (evidence) query.evidence = evidence;
   return (
     <PaymentTargetsScreen
-      views={[PAYMENT_TARGET_VIEW, ...EXPENSE_STATUS_VIEWS]}
+      views={views}
       selects={[
         { name: "team", label: "팀", value: teams.some((option) => option.value === team) ? team : "", options: [{ value: "", label: "팀 전체" }, ...teams] },
         {
@@ -201,5 +238,69 @@ async function PaymentTargets({ viewer, team, evidence, page }: { viewer: Viewer
       paidHref={`/expenses?${new URLSearchParams({ status: "지급 완료" })}`}
       dateError={DATE_FORMAT_ERROR}
     />
+  );
+}
+
+// S3 첫 로드 — §7-7 LOADING 뼈대(S3 열). 보기 · 팀 · 월 · 쪽 이동은 GET 이동이라 이 자리가 받는다.
+function PaidSkeleton() {
+  return (
+    <ListScreen title="지출결의">
+      <TableSkeleton columns={PAID_SKELETON_COLUMNS.map((key) => ({ key, label: PAID_COLUMN_LABELS[key] }))} />
+    </ListScreen>
+  );
+}
+
+function paidHref(query: Record<string, string>, page?: number): string {
+  const params = new URLSearchParams(query);
+  if (page && page > 1) params.set("page", String(page));
+  return `/expenses?${params.toString()}`;
+}
+
+// 06-20(UI-SPEC S3) — 지급 완료 보기. 범위 · 주 그룹 · 합계 · 쪽은 서버(listPaidPayments), 화면은 받은 행을 그린다. 1차 없음.
+async function PaidPayments({ viewer, views, team, month, page }: { viewer: Viewer; views: string[]; team: string; month: string; page: string | undefined }) {
+  const [list, teams] = await Promise.all([listPaidPayments(viewer, { team, month, page }), listPaidTeamOptions(viewer)]);
+  const rows: PaidScreenRow[] = list.groups.flatMap((group) => group.rows.map((row) => ({ ...row, id: row.id ?? "", group: group.label })));
+  const teamValue = teams.some((option) => option.value === team) ? team : "";
+  const query: Record<string, string> = { status: PAID_VIEW };
+  if (teamValue) query.team = teamValue;
+  query.month = list.month;
+  return (
+    <ListScreen
+      title="지출결의"
+      filters={
+        <StatusFilter
+          value={PAID_VIEW}
+          views={views}
+          selects={[
+            { name: "team", label: "팀", value: teamValue, options: [{ value: "", label: "팀 전체" }, ...teams] },
+            { name: "month", label: "월", value: list.month, options: list.months.map((value) => ({ value, label: value })) },
+          ]}
+        />
+      }
+      summary={
+        list.total ? (
+          <section aria-label="합계" className={styles.totals}>
+            <p className={styles.totalsTitle}>{`합계 (${PAID_VIEW} · ${list.month} · ${list.total.count}건)`}</p>
+            <p className={styles.totalsAmount}>
+              {"이체액 "}
+              <Num value={list.total.sumKrw} />
+            </p>
+          </section>
+        ) : undefined
+      }
+      pagination={
+        rows.length > 0 ? (
+          <Pagination
+            label="지급 완료"
+            page={list.page.page}
+            pageCount={list.page.pageCount}
+            href={(target) => paidHref(query, target)}
+            rangeText={pageRangeText({ page: list.page.page, pageSize: list.page.pageSize, total: list.page.total, unit: "건" })}
+          />
+        ) : undefined
+      }
+    >
+      <PaidList rows={rows} amountColumn={list.total !== null} />
+    </ListScreen>
   );
 }

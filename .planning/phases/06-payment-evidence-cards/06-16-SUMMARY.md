@@ -172,3 +172,11 @@ C19 `git diff --name-only a573702...HEAD` (18개): 계획 `files_modified` 15개
 
 - 파일 존재: `owned-evidence.tsx` · `owned-evidence.module.css` · `approval-reserve-evidence.test.ts` · `approval-reserve-evidence.spec.ts` · 점검표 · 이 SUMMARY — FOUND
 - 커밋: d3315bd · 1513504 · 7a75cb9 · 32ff277 — FOUND (`git log a573702..HEAD`)
+
+## 화면 검토 증거
+| 항목 | 경로 |
+|---|---|
+
+| DOM 감사(Opus, CI=true) | /mnt/project-files/notes/06-review/06-16-dom-audit.md |
+| 4폭 캡처 적용 전·후(a573702 대비) | /mnt/project-files/06-review/pr-e/06-16/ |
+| Codex 디자인 검토(/design-review, --base a573702) | /mnt/project-files/06-review/pr-e/wave2-codex/06-16-codex.md — `/pnl/reserves` 4폭, 지적 1건(빈 화면 버튼 22px) — ui/table 공용 emptyAction, a573702부터 있던 것이라 이 플랜 결함 아님(후속). 캡처 DB가 비어 증빙 칸은 DOM 감사 실측으로 판정 |

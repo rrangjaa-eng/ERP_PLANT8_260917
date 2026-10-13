@@ -123,6 +123,7 @@ export const ROW_SCOPE_DISPOSITION: readonly DomainDisposition[] = [
   { file: "domain/settlements/index.ts", fn: "canResubmitSettlement", primitive: "listSettlementSummaries", kind: "post-gate", reason: "결재 엔진 훅 — 결재 관련자(지금 단계 후보 · 처리자) 판정 뒤, 결재함은 범위로 거르지 않는다(D-6205 ②) · 담당 PM 쓰기 권리만 돌려준다" },
   { file: "domain/settlements/index.ts", fn: "canSeeSettlementDocument", primitive: "listSettlementSummaries", kind: "post-gate", reason: "문서 화면 404 판정 — 바로 canSeeSettlement(기안자 · 결재 관련자 · findProject)로 거른다, 불리언만" },
   { file: "domain/settlements/index.ts", fn: "describeSettlementDocuments", primitive: "listSettlementSummaries", kind: "post-gate", reason: "결재 엔진 훅 — 결재 관련자(지금 단계 후보 · 처리자) 판정 뒤, 결재함은 범위로 거르지 않는다(D-6205 ②)" },
+  { file: "domain/settlements/index.ts", fn: "getSettlementPreSettleSummary", primitive: "listSettlementSummaries", kind: "post-gate", reason: "정산 결재 문서 화면 요약(06-22) — canSeeSettlement(기안자 · 결재 관련자 · findProject) 판정 뒤, 막힘 건수 · 강행 결과 줄만" },
   { file: "domain/settlements/index.ts", fn: "getSettlementHeader", primitive: "listSettlementSummaries", kind: "post-gate", reason: "문서가 있으면 canSeeSettlement, 없으면 findProjectInScope 판정 — 낱말 · 불리언만" },
   { file: "domain/settlements/index.ts", fn: "getSettlement", primitive: "listSettlementSummaries", kind: "post-gate", reason: "canSeeSettlement(기안자 · 결재 관련자 · findProject) 판정 뒤" },
   { file: "domain/settlements/index.ts", fn: "isSettlementResubmitWaiting", primitive: "listSettlementSummaries", kind: "post-gate", reason: "기안자 본인(drafterId = viewer) 판정 — 불리언만" },

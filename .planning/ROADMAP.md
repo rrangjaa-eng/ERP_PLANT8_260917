@@ -853,6 +853,17 @@ Plans:
 
 이 페이즈까지 나가는 돈의 원장은 전부 새 시스템에 있고, Phase 7이 마감·알림·검수를 얹어 인트라넷 패리티를 끝낸다. 관리자 시스템 상태 화면에 더하는 항목은 없다.
 
+### Phase 06.5: 06 후속 (payment-followup) (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 06
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 06.5 to break down)
+
 ### Phase 06.4: 관리자 상한 (admin-cap) (INSERTED)
 
 **Goal:** 사람 관리 권한(`admin.people` 쓰기)을 맡겨도 그 사람이 자기보다 센 계급을 주거나 관리자를 없애지 못하고, 한 팀에 재직 팀장 1명·한 본부에 재직 본부 책임자 1명만 남게 하며, 보관함 되살리기로 이 규칙을 돌아가지 못하게 한다(260907 감사 ③ · D5 권한 상한 2026-10-06 20:57 카드 · 팀장/본부 책임자 1명 22:01·22:05 사용자 채팅 · G36 — 06.4-CONTEXT.md)

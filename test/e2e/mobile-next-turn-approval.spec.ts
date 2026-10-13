@@ -151,7 +151,7 @@ test.describe("첫 화면 [막힘] · 6줄 · 탭 수 (05-10 Task 3)", () => {
     expect(new Set(ids).size).toBe(2);
   });
 
-  test("desktop 1280 — 증빙 무효 [막힘] → `증빙 올리기` → 하나 더 올리면 첫 화면에서 그 줄이 사라진다 (G1)", async ({ browser, baseURL }) => {
+  test("desktop 1280 — 무효 뒤 증빙 없음 [막힘] → `증빙 올리기` → 하나 더 올리면 첫 화면에서 그 줄이 사라진다 (G1)", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const manager = await makeEvidenceManagerE2E();
     const line = fx.lines.phone;
@@ -164,7 +164,8 @@ test.describe("첫 화면 [막힘] · 6줄 · 탭 수 (05-10 Task 3)", () => {
     await pm.goto("/");
     const targetText = `${fx.projectName} · ${line.itemName}`;
     const row = pm.getByRole("listitem").filter({ hasText: targetText });
-    await expect(row).toContainText(`${targetText} — 증빙 무효`);
+    // 06-23 PN-7: 결재 통과 · 지급 전 · 유일한 파일 무효 = 증빙 0 → 문서마다 신호 하나(PN-6).
+    await expect(row).toContainText(`${targetText} — 증빙 없음 · 지급 대기`);
     const upload = row.getByRole("link", { name: "증빙 올리기" });
     expect(await upload.getAttribute("href")).toMatch(new RegExp(`/expenses/${expenseId}#evidence$`));
 
@@ -181,7 +182,7 @@ test.describe("첫 화면 [막힘] · 6줄 · 탭 수 (05-10 Task 3)", () => {
     await expect(pm.getByRole("heading", { level: 2, name: /^내 차례/ })).toHaveCount(0);
   });
 
-  test("desktop 1280 — 공급 함수가 실패하면 블록 자리에 `불러오기 실패` + `다시 시도`(셸은 그대로)", async ({ browser, baseURL }) => {
+  test("desktop 1280 — 공급 함수가 실패하면 블록 자리에 `내 차례 불러오지 못함` + `다시 시도`(셸은 그대로)", async ({ browser, baseURL }) => {
     const today = seoulToday();
     const org = await setupLeaveOrg(today);
     // 등록되지 않은 종류의 반려 인스턴스 — 공급 함수가 종류를 찾지 못해 던진다(리포지토리 함수로만 만든다).
@@ -190,11 +191,11 @@ test.describe("첫 화면 [막힘] · 6줄 · 탭 수 (05-10 Task 3)", () => {
     const pm = await loginPage(browser, baseURL, org.drafter, DESKTOP);
     await pm.goto("/");
 
-    await expect(pm.getByText("불러오기 실패")).toBeVisible();
+    await expect(pm.getByText("내 차례 불러오지 못함")).toBeVisible();
     const retry = pm.getByRole("button", { name: "다시 시도" });
     await waitForHydration(retry);
     await retry.click();
-    await expect(pm.getByText("불러오기 실패")).toBeVisible();
+    await expect(pm.getByText("내 차례 불러오지 못함")).toBeVisible();
     // 하단이 아닌 PC 상단 메뉴는 살아 있다 — 오류가 셸 전체를 깨지 않는다.
     await expect(pm.getByRole("navigation").first()).toBeVisible();
   });

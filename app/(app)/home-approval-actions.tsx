@@ -157,5 +157,5 @@ export function HomeApprovalRow({ labelId, instanceId, version, actions, sheet, 
 // 05-10 §7-7 ERROR — 공급 함수가 실패했을 때 블록 자리 한 줄. `다시 시도`는 이동이 아니라 새로 읽기라 onClick 갈래(클라이언트 함수라 이 파일에 둔다).
 export function HomeNextTurnError() {
   const router = useRouter();
-  return <ListEmpty tone="error" message="불러오기 실패" action={{ label: "다시 시도", onClick: () => router.refresh() }} />;
+  return <ListEmpty tone="error" message="내 차례 불러오지 못함" action={{ label: "다시 시도", onClick: () => router.refresh() }} />;
 }

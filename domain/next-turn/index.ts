@@ -1,13 +1,16 @@
 import type { Viewer } from "@/domain/viewer";
 import { listMyBlockedDocuments, listMyInbox, type ApprovalDeps, type ApprovalInboxItem, type DocumentMeasure } from "@/domain/approvals";
 import { formatKrw } from "@/lib/format-number";
+import { seoulToday } from "@/lib/dates";
+import { listPhase6NextTurnItems } from "@/domain/next-turn/phase6-items";
 
 // 05-10 S11(06 UA-611): 첫 화면 「내 차례」 공급 함수. 06 S19가 같은 함수에 경영관리 · PM 항목을 더한다.
 // 이 함수는 종류 이름으로 분기하지 않는다 — 대상 · 상황 · 숫자 글자는 전부 종류 요약(nextTurnText · measure)에서 온다.
 
 export type NextTurnEntry = {
   key: string;
-  tag: "결재" | "막힘";
+  // ui NextTurnTag와 같은 리터럴(domain은 ui를 import하지 않는다). 06-23이 오늘 · 대기를 더했다.
+  tag: "막힘" | "오늘" | "결재" | "대기";
   // `{대상} — {상황}`. 이유 칸은 쓰지 않는다(상황이 같은 줄에 있다 — §7-4).
   label: string;
   reason: string;
@@ -24,7 +27,8 @@ function measureTextOf(measure: DocumentMeasure | null | undefined): string {
   return measure.kind === "days" ? measure.text : formatKrw(measure.money.amountKrw);
 }
 
-export async function listNextTurnItems(viewer: Viewer, deps?: ApprovalDeps): Promise<NextTurnEntry[]> {
+// 06-23(PN-3): 원천 하나라도 던지면 그대로 던진다 — 홈의 catch가 블록 전체를 오류 한 줄로 바꾼다(일부 항목만 보이지 않는다).
+export async function listNextTurnItems(viewer: Viewer, deps?: ApprovalDeps, options?: { today?: string }): Promise<NextTurnEntry[]> {
   const inbox = await listMyInbox(viewer, deps);
   const entries: NextTurnEntry[] = [];
   for (const item of inbox.mine) {
@@ -54,5 +58,7 @@ export async function listNextTurnItems(viewer: Viewer, deps?: ApprovalDeps): Pr
       action,
     });
   }
+  // 06-23(O-15): 경영관리 묶음 · PM 점검 항목 — 정렬 · 6줄 절단은 ui buildNextTurnView가 한다.
+  entries.push(...(await listPhase6NextTurnItems(viewer, options?.today ?? seoulToday())));
   return entries;
 }

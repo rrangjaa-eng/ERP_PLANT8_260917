@@ -40,6 +40,10 @@
 .grow {
   flex: 1 1 auto;
   min-width: 0;
+  /* 06-23 D-1: 긴 대상은 한 줄 말줄임(전체 글자는 .label의 title). 대상이 인라인이라 말줄임은 블록인 여기에 건다. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .why {
@@ -87,6 +91,12 @@
     grid-row: 1;
     grid-column: 2 / 4;
     min-width: 0;
+    /* 06-23 D-1: 폰은 두 줄까지 보이고 말줄임 — 한 줄이면 건수·날짜가 너무 자주 잘린다. */
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 
   .action {
@@ -108,6 +118,7 @@
     grid-column: 3;
     min-width: 0;
     font-size: var(--text-aux);
+    white-space: normal; /* .grow(contents)의 nowrap을 물려받지 않는다 */
   }
 
   /* §10 터치 목표 44 — 글자 위치는 그대로 두고 닿는 영역만 위아래로 늘린다. */

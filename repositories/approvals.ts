@@ -2,7 +2,7 @@ import { and, asc, desc, eq, inArray, isNotNull, isNull, max, or, sql, type SQL 
 import { alias } from "drizzle-orm/pg-core";
 import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
-import { approvalInstances, approvalRoutes, approvalSteps, expenses, files, users } from "@/db/schema";
+import { approvalInstances, approvalRoutes, approvalSteps, expenseEvidenceReviews, expensePayments, expenses, files, users } from "@/db/schema";
 import { unresolvedVoidHaving } from "@/repositories/files";
 import type { Viewer } from "@/domain/viewer";
 
@@ -304,12 +304,16 @@ export async function listProcessedInstances(viewer: Viewer, userId: string, lim
 export type DrafterInstance = ApprovalInstanceRow & { rejecterName: string | null };
 
 // 05 /review C6: 승인 뒤 막힘 후보를 LIMIT 전에 거르는 조건 — 종류 등록(blockedAfterApprovalCandidates)이 고른다. 「증빙 무효 뒤 아직 새 증빙 없음」 하나.
-export type BlockedCandidateFilter = "unresolved_evidence_void";
+// 06-23(E-3 · R-3): 지출결의 증빙 신호 갈래 — 05 무효 조건 ∨ (지출결의 행 있음 · 살아 있는 증빙 0 · 면제 없음 · (지급 전 ∨ 선결제)).
+// 상위 집합이다 — 증빙 필수 설정 · 선결제 기한은 보지 않고 종류 훅(listExpenseEvidenceSignals)이 판정한다. 종류 조건은 엔진의 documentKind 비교가 건다.
+export type BlockedCandidateFilter = "unresolved_evidence_void" | "expense_blocked_after_approval";
 
 function blockedCandidateSql(viewer: Viewer, filter: BlockedCandidateFilter): SQL {
   switch (filter) {
     case "unresolved_evidence_void":
       return sql`exists (select 1 from ${files} where ${files.ownerKind} = ${approvalInstances.documentKind} and ${files.ownerId} = ${approvalInstances.documentId} and ${files.removedAt} is null group by ${files.ownerId} having ${unresolvedVoidHaving(viewer)})`;
+    case "expense_blocked_after_approval":
+      return sql`(${blockedCandidateSql(viewer, "unresolved_evidence_void")} or exists (select 1 from ${expenses} where ${expenses.id} = ${approvalInstances.documentId} and ${expenses.deletedAt} is null and not exists (select 1 from ${files} where ${files.ownerKind} = ${approvalInstances.documentKind} and ${files.ownerId} = ${approvalInstances.documentId} and ${files.removedAt} is null and ${files.voidedAt} is null) and not exists (select 1 from ${expenseEvidenceReviews} where ${expenseEvidenceReviews.expenseId} = ${expenses.id} and ${expenseEvidenceReviews.status} = 'waived') and (${expenses.prepaid} or not exists (select 1 from ${expensePayments} where ${expensePayments.expenseId} = ${expenses.id} and ${expensePayments.cancelledAt} is null))))`;
   }
 }
 

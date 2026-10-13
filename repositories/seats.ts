@@ -30,10 +30,38 @@ export function seatLockOrder(viewer: Viewer, input: SeatLockInput): string[] {
   ];
 }
 
-export async function lockSeatKeys(viewer: Viewer, input: SeatLockInput, tx: DbOrTx): Promise<void> {
-  for (const key of seatLockOrder(viewer, input)) {
+async function lockKeys(keys: readonly string[], tx: DbOrTx): Promise<void> {
+  for (const key of keys) {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
   }
+}
+
+// 06.4 /cso: 사람 키를 넘기면 사람 · 관리자 층을 잡은 뒤 그 사람의 발령 팀(보관 여부 무관) · 넘긴 팀의 팀 · 본부 키를 함께 잡는다.
+// 팀 · 본부 복원(`restoreSeatedOrg`)은 사람을 모르고 팀 · 본부 키만 잡는다 — 보관된 팀이라 자리가 없어 보여도 그 키에서 줄을
+// 서야 복원이 아직 커밋 안 된 둘째 보유자를 놓치지 않는다. 점유는 이 잠금 뒤에 읽어야 먼저 커밋된 복원을 본다. 뒤따르는
+// 자리 키(`assertSeatsFree`)는 여기서 잡은 키의 부분집합이라 다시 기다리지 않는다(층 순서 유지). 자리 계산은 그대로다.
+export async function lockSeatKeys(viewer: Viewer, input: SeatLockInput, tx: DbOrTx): Promise<void> {
+  const personIds = input.personIds ?? [];
+  if (personIds.length === 0) {
+    await lockKeys(seatLockOrder(viewer, input), tx);
+    return;
+  }
+  await lockKeys(seatLockOrder(viewer, { personIds, admin: input.admin }), tx);
+  const memberTeamIds = tx
+    .select({ teamId: teamMemberships.teamId })
+    .from(teamMemberships)
+    .where(inArray(teamMemberships.userId, [...personIds]));
+  const rows = await tx
+    .select({ teamId: teams.id, orgUnitId: teams.orgUnitId })
+    .from(teams)
+    .where(or(inArray(teams.id, memberTeamIds), input.teamIds?.length ? inArray(teams.id, [...input.teamIds]) : undefined));
+  await lockKeys(
+    seatLockOrder(viewer, {
+      teamIds: [...(input.teamIds ?? []), ...rows.map((row) => row.teamId)],
+      orgUnitIds: [...(input.orgUnitIds ?? []), ...rows.map((row) => row.orgUnitId)],
+    }),
+    tx,
+  );
 }
 
 // 06.4 D-6415 사용자 확정(2026-10-11 카드) · eng 재검토 K-R4 「겹칠 때만 막기」: 자리 = 날짜 구간. 발령 한 줄 =

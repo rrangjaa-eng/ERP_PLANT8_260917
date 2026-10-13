@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { sql } from "drizzle-orm";
 import { db, pool } from "@/db/client";
-import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { ForbiddenError, setPermissionCell } from "@/domain/permissions/matrix";
 import { LastAdminError } from "@/domain/permissions/last-admin";
 import { changePersonRole, setResignationDate } from "@/domain/people";
-import { archive, restore } from "@/domain/archive";
+import { archive, restore, type RestoreResult } from "@/domain/archive";
 import { assignTeam } from "@/domain/org";
 import { SeatTakenError } from "@/domain/people/seat-rules";
 import { findPermission } from "@/repositories/permissions";
@@ -331,5 +332,113 @@ describe("보관 · 퇴직일 · 복원 경합 · 풀 5(06.4 D-6408 · 성공 �
     ]);
 
     expect(results.map((result) => result.status)).toEqual(Array<string>(8).fill("fulfilled"));
+  });
+});
+
+// /cso: 보관된 팀 T(팀장 A) 복원 ∥ T 소속 B의 계급 변경(→ 팀장) — 쓰기가 보관 팀의 팀 키를 잡지 않으면 둘이 줄 서지 않는다.
+// 결정적 끼워 넣기: B 사람 행을 홀더가 FOR UPDATE로 쥐어 계급 변경이 점유를 읽은 뒤 UPDATE에서 멈추게 하고, 그동안 복원을
+// 보낸다. 쓰기가 T 키를 쥐었으면 복원은 그 키에서 기다리고, 아니면 B를 못 본 채 끝낸다. 그 뒤 홀더를 푼다.
+async function holdUserRow(userId: string): Promise<{ release: () => Promise<void> }> {
+  let open: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  let held: () => void = () => {};
+  const holding = new Promise<void>((resolve) => {
+    held = resolve;
+  });
+  const holder = db.transaction(async (tx) => {
+    await tx.execute(sql`select id from users where id = ${userId} for update`);
+    held();
+    await gate;
+  });
+  await holding;
+  return {
+    release: async () => {
+      open();
+      await holder;
+    },
+  };
+}
+
+// 행 잠금에서 멈춘 쓰기 수 — 계급 변경은 B의 users UPDATE, 발령은 행위자의 action_log INSERT 외래키 확인(FOR KEY SHARE)에서 멈춘다.
+async function waitingOnRow(queryPrefix: string): Promise<number> {
+  const result = await db.execute<{ n: string }>(sql`
+    select count(*)::text as n from pg_stat_activity
+    where datname = current_database() and wait_event_type = 'Lock' and query ilike ${queryPrefix + "%"}`);
+  return Number(result.rows[0]?.n ?? 0);
+}
+
+// 홀더가 사람 행을 쥔 동안 쓰기를 보내 행 잠금에서 멈추게 한 뒤 T 복원을 보내고, 복원이 끝나거나 T 키에서 기다리면 홀더를 푼다.
+async function restoreDuringRowHold(input: {
+  admin: Viewer;
+  teamId: string;
+  userId: string;
+  queryPrefix: string;
+  write: () => Promise<void>;
+}): Promise<{ restored: PromiseSettledResult<RestoreResult>; written: PromiseSettledResult<void> }> {
+  const row = await holdUserRow(input.userId);
+  const writing = input.write();
+  for (let tries = 0; tries < 60 && (await waitingOnRow(input.queryPrefix)) < 1; tries++) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  let restoreSettled = false;
+  const restoring = restore(input.admin, "team", input.teamId, deps).finally(() => {
+    restoreSettled = true;
+  });
+  for (let tries = 0; tries < 60 && !restoreSettled && (await waitingOnKey("seat:team:" + input.teamId)) < 1; tries++) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  await row.release();
+  const [restored, written] = await Promise.allSettled([restoring, writing]);
+  return { restored, written };
+}
+
+function expectOneWinner(restored: PromiseSettledResult<RestoreResult>, written: PromiseSettledResult<void>): void {
+  const wins = [restored.status === "fulfilled" && restored.value.restored, written.status === "fulfilled"];
+  expect(wins.filter(Boolean)).toHaveLength(1);
+  const loser = [restored, written].find((result) => result.status === "rejected");
+  expect(loser?.status === "rejected" ? loser.reason : null).toBeInstanceOf(SeatTakenError);
+}
+
+describe("보관 팀 복원 ∥ 그 팀 사람의 자리 쓰기(06.4 /cso)", () => {
+  it("(g) 보관 팀 T 복원 ∥ T 소속 B → 팀장이 끼어들어도 하나만 성공 · T 팀장 하나 이하", async () => {
+    const admin = await makeAdmin("관리자");
+    const { teamId } = await makeOrgTeam();
+    await makeSeated(uniqueName("팀장A"), TEAM_LEAD_ROLE_ID, teamId);
+    const b = await makeSeated(uniqueName("PM B"), DEFAULT_ROLE_ID, teamId);
+    await archive(SYSTEM_VIEWER, "team", teamId, deps);
+
+    const { restored, written } = await restoreDuringRowHold({
+      admin,
+      teamId,
+      userId: b.id,
+      queryPrefix: 'update "users"',
+      write: () => changePersonRole(admin, b.id, TEAM_LEAD_ROLE_ID, deps),
+    });
+
+    expectOneWinner(restored, written);
+    expect((await teamLeadsOf(teamId)).length).toBeLessThanOrEqual(1);
+  });
+
+  it("(h) 보관 팀 T 복원 ∥ 팀장 Z → T 발령이 끼어들어도 하나만 성공 · T 팀장 하나 이하", async () => {
+    const admin = await makeAdmin("관리자");
+    const { teamId } = await makeOrgTeam();
+    await makeSeated(uniqueName("팀장A"), TEAM_LEAD_ROLE_ID, teamId);
+    const z = await makeSeated(uniqueName("팀장Z"), TEAM_LEAD_ROLE_ID, null);
+    await archive(SYSTEM_VIEWER, "team", teamId, deps);
+    // 발령은 점유(후)를 읽은 뒤 행위 기록 INSERT(actor_id 외래키)에서 멈춘다 — 복원은 다른 관리자가 한다.
+    const writer = await makeAdmin("발령 관리자");
+
+    const { restored, written } = await restoreDuringRowHold({
+      admin,
+      teamId,
+      userId: writer.id,
+      queryPrefix: 'insert into "action_log"',
+      write: () => assignTeam(writer, { userId: z.id, teamId, effectiveFrom: "2026-09-01" }, deps),
+    });
+
+    expectOneWinner(restored, written);
+    expect((await teamLeadsOf(teamId)).length).toBeLessThanOrEqual(1);
   });
 });

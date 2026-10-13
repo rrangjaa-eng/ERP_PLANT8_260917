@@ -292,7 +292,8 @@ export async function assignTeam(
   const insertMembership = deps?.insertMembership ?? repoInsertMembership;
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await withTransaction(async (tx) => {
-    await lockSeatKeys(viewer, { personIds: [input.userId] }, tx);
+    // 06.4 /cso: 발령할 팀(보관이어도)의 팀 · 본부 키도 같은 층 정렬로 먼저 — 팀 복원과 줄 서고 뒤 자리 키는 다시 기다리지 않는다.
+    await lockSeatKeys(viewer, { personIds: [input.userId], teamIds: [input.teamId] }, tx);
     const person = await repoFindUserById(viewer, input.userId, tx);
     const before = await listOccupiedTeams(viewer, input.userId, today, tx);
     const row = await insertMembership(viewer, input, tx);

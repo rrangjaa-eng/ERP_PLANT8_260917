@@ -322,13 +322,12 @@ test.describe("발행 요청 취소 (06-21 Task 1 — O-12 · r4 F-F3)", () => {
     const memoCell = requestTable(page).locator("td", { has: page.getByLabel("메모") });
     const dialog = page.getByRole("dialog", { name: "발행 요청 취소" });
 
-    // 2차 `닫기 Esc` — 아무것도 바뀌지 않는다. 첫 로드 직후에는 표가 한 번 다시 그려져 포커스한 칸이 사라질 수 있다(실측 — 포커스가 body로) —
-    // 모달이 설 때까지 포커스 · Delete를 되풀이한다(빗나간 Delete는 body에서 아무 일도 하지 않는다).
-    await expect(async () => {
-      await memoCell.focus();
-      await page.keyboard.press("Delete");
-      await expect(dialog).toBeVisible({ timeout: 1000 });
-    }).toPass();
+    // 2차 `닫기 Esc` — 아무것도 바뀌지 않는다. 스트리밍된 본문은 잠깐 숨은 자리(`<div hidden>`)에 있다가 옮겨진다(실측 ~230ms) —
+    // 숨은 칸에는 포커스가 가지 않으므로 칸이 보일 때까지 기다린 뒤 포커스한다.
+    await expect(memoCell).toBeVisible();
+    await memoCell.focus();
+    await page.keyboard.press("Delete");
+    await expect(dialog).toBeVisible();
     await expect(dialog).toContainText(`희망 ${today} · 4,000,000`);
     await expect(dialog).toContainText("경영관리 목록에서 빠짐");
     await expect(dialog.getByRole("button", { name: /닫기/ })).toContainText("Esc");
@@ -440,6 +439,44 @@ test.describe("발행 요청 목록 S17 (06-21 Task 2)", () => {
     // 메모 칸(링크 밖)을 눌러도 행 링크가 받는다.
     await list.getByText("좁은 폭", { exact: true }).filter({ visible: true }).click({ force: true });
     await expect(page).toHaveURL(new RegExp(`/projects/${projectId}\\?issueRequest=${requestId}$`));
+    await context.close();
+  });
+});
+
+test.describe("프로젝트 목록 하위 링크 `발행 요청 {N}` · `?issueRequest` 포커스 (06-21 Task 3 — SP-4)", () => {
+  test("프로젝트 목록 링크 `발행 요청 1` → 목록 → `발행 줄 입력` → 상세의 `발행 줄로`에 포커스", async ({ browser }) => {
+    const { user, projectId, projectNumber, today } = await setupBoard({ write: true });
+    const requestId = await seedRequest(projectId, user.userId, { desiredIssueDate: today, amount: 8_000_000 });
+    const day = today.slice(5);
+
+    const { page, context } = await openAs(browser, user, "/projects");
+    await page.getByRole("link", { name: "발행 요청 1", exact: true }).click();
+    await expect(page).toHaveURL(/\/projects\/issue-requests$/);
+    await page.getByRole("link", { name: `${projectNumber} 희망 ${day} 발행 줄 입력`, exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/projects/${projectId}\\?issueRequest=${requestId}$`));
+    await expect(page.getByRole("button", { name: `희망 ${day} 발행 줄로` })).toBeFocused();
+    await context.close();
+  });
+
+  test("발행됨 · 취소 요청으로 들어오면 그 요청 줄 자체에 포커스한다", async ({ browser }) => {
+    const { user, projectId, today } = await setupBoard({ write: true });
+    const requestId = await seedRequest(projectId, user.userId, { desiredIssueDate: today, amount: 9_000_000, memo: "취소된 요청 줄" });
+    await db.update(revenueIssueRequests).set({ status: "cancelled", cancelledAt: new Date(), cancelledBy: user.userId }).where(eq(revenueIssueRequests.id, requestId));
+
+    const { page, context } = await openAs(browser, user, `/projects/${projectId}?issueRequest=${requestId}`);
+    // 폰 접힌 줄(aria-hidden)에도 같은 메모가 있다 — 주 행은 첫째다.
+    const row = requestTable(page).locator("tr", { hasText: "취소된 요청 줄" }).first();
+    await expect(row).toBeFocused();
+    await expect(row).toHaveAttribute("tabindex", "-1");
+    await context.close();
+  });
+
+  test("열린 요청 0건이면 링크 글자는 `발행 요청`이고 링크는 남는다", async ({ browser }) => {
+    const { user } = await setupBoard({ write: false });
+    const { page, context } = await openAs(browser, user, "/projects");
+    const link = page.getByRole("link", { name: "발행 요청", exact: true });
+    await expect(link).toBeVisible();
+    await expect(link).toHaveAttribute("href", "/projects/issue-requests");
     await context.close();
   });
 });

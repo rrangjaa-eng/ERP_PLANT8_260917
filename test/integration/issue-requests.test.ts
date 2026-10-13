@@ -11,7 +11,7 @@ import { insertVendor } from "@/repositories/vendors";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { createProject, CompletedProjectError } from "@/domain/projects";
 import { saveProjectLedger } from "@/domain/projects/ledger";
-import { listIssueRequests, listProjectIssueRequests } from "@/domain/issue-requests";
+import { listIssueRequests, listProjectIssueRequests, summarizeOpenIssueRequests } from "@/domain/issue-requests";
 import { SaveRejectedError } from "@/domain/quotes/lines";
 import { ForbiddenError, listRevenue } from "@/domain/revenue";
 import { getSettingValue as realGetSettingValue } from "@/domain/settings/registry";
@@ -831,5 +831,43 @@ describe("발행 요청 목록 (listIssueRequests — S17, 06-21 Task 2)", () =>
     const list = await listIssueRequests(viewer, {}, { today: TODAY });
 
     expect(list.rows.map((row) => row.id)).toEqual([own]);
+  });
+});
+
+describe("열린 발행 요청 요약 (summarizeOpenIssueRequests — SP-4 링크 · 06-23, 06-21 Task 3)", () => {
+  it("projects.revenue 보기가 없으면 null이다(링크 없음)", async () => {
+    const viewer = await createBoardViewer({ revenueView: false, issuedAmount: true });
+
+    expect(await summarizeOpenIssueRequests(viewer)).toBeNull();
+  });
+
+  it("신청됨 0건이면 { count: 0 }이다(발행됨 · 취소는 세지 않는다)", async () => {
+    const viewer = await createBoardViewer({ revenueView: true, issuedAmount: true });
+    const project = await boardProject(viewer);
+    const cancelled = await seedBoardRequest(project.id, viewer.id, { desiredIssueDate: "2026-09-30" });
+    await db.update(revenueIssueRequests).set({ status: "cancelled", cancelledAt: new Date(), cancelledBy: viewer.id }).where(eq(revenueIssueRequests.id, cancelled));
+
+    expect(await summarizeOpenIssueRequests(viewer)).toEqual({ count: 0 });
+  });
+
+  it("신청됨 2건이면 건수 · 가장 이른 희망 발행일 · 공급가 합이다", async () => {
+    const viewer = await createBoardViewer({ revenueView: true, issuedAmount: true });
+    const project = await boardProject(viewer);
+    await seedBoardRequest(project.id, viewer.id, { desiredIssueDate: "2026-10-02", amount: 3_000_000 });
+    await seedBoardRequest(project.id, viewer.id, { desiredIssueDate: "2026-09-30", amount: 2_000_000 });
+
+    expect(await summarizeOpenIssueRequests(viewer)).toEqual({ count: 2, earliestDesiredDate: "2026-09-30", supplyKrw: 5_000_000 });
+  });
+
+  it("발행액을 볼 수 없으면 공급가 키가 없다(A-605)", async () => {
+    const viewer = await createBoardViewer({ revenueView: true, issuedAmount: false });
+    const project = await boardProject(viewer);
+    await seedBoardRequest(project.id, viewer.id, { desiredIssueDate: "2026-10-02", amount: 3_000_000 });
+    await seedBoardRequest(project.id, viewer.id, { desiredIssueDate: "2026-09-30", amount: 2_000_000 });
+
+    const summary = await summarizeOpenIssueRequests(viewer);
+
+    expect(summary).toEqual({ count: 2, earliestDesiredDate: "2026-09-30" });
+    expect(summary).not.toHaveProperty("supplyKrw");
   });
 });

@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Button } from "@/ui/button/Button";
+import { Button, buttonLinkClassName } from "@/ui/button/Button";
 import { isCtrlCombo } from "@/lib/shortcut";
 import { ConflictLine } from "@/app/(app)/approvals/conflict-line";
 import { DocumentActions, type DocumentActionsProps } from "@/app/(app)/leave/[id]/document-actions";
@@ -25,29 +26,43 @@ type SettlementActionsProps = Omit<DocumentActionsProps, "resubmit" | "resubmitR
   canResubmit: boolean;
   /** 반려 · 회수된 내 문서인데 프로젝트가 진행 — `진행 중 · 정산 뒤 다시 올리기`. */
   resubmitWaiting: boolean;
+  /** 06-22(S18 · 「막힘 — 정산 결재 올리기」): 완료 전 점검 막힘 이유(`완료 전 점검 {N}건 · 점검 보기` / `점검 결과 없음 · 다시 시도`). 없으면 null. */
+  resubmitBlock?: string | null;
 };
 
-export function SettlementActions({ projectId, canResubmit, resubmitWaiting, ...props }: SettlementActionsProps) {
+export function SettlementActions({ projectId, canResubmit, resubmitWaiting, resubmitBlock = null, ...props }: SettlementActionsProps) {
   // 토스트는 다시 올린 뒤 행동 줄이 사라져도(새로 고침) 남아야 해서 여기서 든다.
   const { showSubmitted, toastNode } = useSettlementSubmitToast(projectId);
   return (
     <>
       <DocumentActions {...props} resubmit={null} resubmitRoute={null} />
-      {canResubmit ? <ResubmitBar projectId={projectId} onSubmitted={(data) => showSubmitted(RESUBMIT_LABEL, data)} /> : null}
+      {canResubmit ? <ResubmitBar projectId={projectId} block={resubmitBlock} onSubmitted={(data) => showSubmitted(RESUBMIT_LABEL, data)} /> : null}
       {!canResubmit && resubmitWaiting ? <p className={styles.waiting}>진행 중 · 정산 뒤 다시 올리기</p> : null}
       {toastNode}
     </>
   );
 }
 
-function ResubmitBar({ projectId, onSubmitted }: { projectId: string; onSubmitted: (data: { round: number; nextHolderNames: string | null }) => void }) {
+function ResubmitBar({
+  projectId,
+  block,
+  onSubmitted,
+}: {
+  projectId: string;
+  block: string | null;
+  onSubmitted: (data: { round: number; nextHolderNames: string | null }) => void;
+}) {
   const router = useRouter();
+  // 막힘 이유는 마지막 ` · `에서 갈라 앞을 이유, 뒤를 3차(§7-1 「이유 + 다음 한 수」)로 — 머리 줄 `정산 결재 올리기`(06-19)와 같은 규칙.
+  const cut = block ? block.lastIndexOf(" · ") : -1;
+  const blockReason = block && cut > 0 ? block.slice(0, cut) : block;
+  const blockNext = block && cut > 0 ? block.slice(cut + 3) : null;
   const busyRef = useRef(false);
   const [pending, setPending] = useState(false);
   const [conflict, setConflict] = useState<string | null>(null);
 
   async function resubmit() {
-    if (busyRef.current) return;
+    if (block || busyRef.current) return;
     busyRef.current = true;
     setPending(true);
     setConflict(null);
@@ -85,7 +100,26 @@ function ResubmitBar({ projectId, onSubmitted }: { projectId: string; onSubmitte
         {conflict ? <ConflictLine message={conflict} /> : null}
         <div className={barStyles.buttons}>
           <span className={barStyles.primaryWrap}>
-            <Button variant="primary" shortcut="Ctrl+Enter" pending={pending} onClick={() => void resubmit()}>
+            <Button
+              variant="primary"
+              shortcut="Ctrl+Enter"
+              pending={pending}
+              disabled={Boolean(block)}
+              disabledReason={blockReason ?? undefined}
+              reasonTone="block"
+              nextStep={
+                blockNext === "점검 보기" ? (
+                  <Link href={`/projects/${projectId}#pre-settle-check`} className={buttonLinkClassName("tertiary")}>
+                    점검 보기
+                  </Link>
+                ) : blockNext === "다시 시도" ? (
+                  <Button variant="tertiary" onClick={() => router.refresh()}>
+                    다시 시도
+                  </Button>
+                ) : undefined
+              }
+              onClick={() => void resubmit()}
+            >
               {RESUBMIT_LABEL}
             </Button>
           </span>

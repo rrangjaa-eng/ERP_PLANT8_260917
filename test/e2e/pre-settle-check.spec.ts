@@ -9,10 +9,11 @@ import { setCustomerApproval } from "@/domain/quotes/revisions";
 import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { getApprovalView, rejectDocument } from "@/domain/approvals";
 import { saveRevenue } from "@/domain/revenue";
-import { submitSettlement } from "@/domain/settlements";
+import { SETTLEMENT_DOCUMENT_KIND, submitSettlement } from "@/domain/settlements";
 import { setSettingValue } from "@/domain/settings/registry";
 import { PROJECT_FORCE_COMPLETE_ALLOW_OPEN_EXPENSES } from "@/domain/settings/keys";
 import { approvalBasis } from "@/repositories/quote-revisions";
+import { findApprovalGraphByDocument } from "@/repositories/approvals";
 import { findExpenseById } from "@/repositories/expenses";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { findProjectById } from "@/repositories/projects";
@@ -284,5 +285,40 @@ test.describe("완료 전 점검 — 정산 결재 문서(O-16 · PS-4)", () => 
     const reject = page.getByRole("button", { name: "반려", exact: true });
     await expect(reject).toBeVisible();
     await expect(reject).not.toHaveAttribute("aria-disabled", "true");
+  });
+
+  // Task 2(PS-4) — 강행 허용 그룹만 남은 정산 결재 문서: 행동 줄 위 결과 줄(지금 판정), `승인`은 산다.
+  test("강행 결과 줄 — 강행 허용 그룹만 남은 문서에 `강행 · 미결 지출결의 1건`", async ({ browser, baseURL }) => {
+    const fx = await setupRejectedSettling(browser, baseURL);
+    await setSettingValue(SYSTEM_VIEWER, PROJECT_FORCE_COMPLETE_ALLOW_OPEN_EXPENSES, true);
+    try {
+      const result = await submitSettlement(fx.org.drafter.viewer, { projectId: fx.projectId });
+      if (result.kind !== "submitted") throw new Error("정산 결재가 올라가지 않았습니다");
+      const page = await loginPage(browser, baseURL, fx.org.ceo);
+      await page.goto(`/projects/${fx.projectId}/settlement`);
+      await expect(page.getByText("강행 · 미결 지출결의 1건", { exact: true })).toBeVisible();
+      const approve = page.getByRole("button", { name: /^승인/ });
+      await waitForHydration(approve);
+      await expect(approve).not.toHaveAttribute("aria-disabled", "true");
+    } finally {
+      await setSettingValue(SYSTEM_VIEWER, PROJECT_FORCE_COMPLETE_ALLOW_OPEN_EXPENSES, false);
+    }
+  });
+
+  // Task 2 — 반려된 내 정산 결재 · 막힘 1: `정산 결재 다시 올리기`가 먼저 막히고 이유 옆 3차 `점검 보기`(06-19 기안 게이트가 다시 올리기에도 걸린다).
+  test("다시 올리기 막힘 — 점검 보기: `정산 결재 다시 올리기` aria-disabled + `완료 전 점검 1건` + 3차 `점검 보기`", async ({ browser, baseURL }) => {
+    const fx = await setupRejectedSettling(browser, baseURL);
+    await draftWithOpenAllowed(fx);
+    const graph = await findApprovalGraphByDocument(SYSTEM_VIEWER, { documentKind: SETTLEMENT_DOCUMENT_KIND, documentId: fx.projectId });
+    if (!graph) throw new Error("정산 결재 인스턴스가 없습니다");
+    await rejectDocument(fx.org.ceo.viewer, { instanceId: graph.instance.id, expectedVersion: graph.instance.version, reason: "미결 정리" });
+
+    const page = await loginPage(browser, baseURL, fx.org.drafter);
+    await page.goto(`/projects/${fx.projectId}/settlement`);
+    const resubmit = page.getByRole("button", { name: /^정산 결재 다시 올리기/ });
+    await waitForHydration(resubmit);
+    await expect(resubmit).toHaveAttribute("aria-disabled", "true");
+    await expect(page.getByText("완료 전 점검 1건", { exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "점검 보기", exact: true })).toHaveAttribute("href", `/projects/${fx.projectId}#pre-settle-check`);
   });
 });

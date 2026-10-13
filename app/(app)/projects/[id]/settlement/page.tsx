@@ -13,6 +13,7 @@ import { Num } from "@/ui/num/Num";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { ApprovalRoute } from "@/ui/approval-route/ApprovalRoute";
 import { leaveStatusWord, routeListSteps, toLeaveStatusKey, withdrawResultLines } from "@/app/(app)/leave/status-display";
+import { preSettleBlockReason } from "@/domain/pre-settle-check/summary";
 import { SettlementActions } from "./settlement-actions";
 import styles from "./settlement.module.css";
 
@@ -51,6 +52,10 @@ export default async function SettlementPage({ params }: { params: Promise<{ id:
         점검 보기
       </Link>
     ) : undefined;
+  // 강행 결과 줄(대표가 승인 전에 읽는다)과 다시 올리기 막힘 — 머리 줄 `정산 결재 올리기`(06-19)와 같은 이유 글자.
+  const forcedLine = preSettle.status === "ready" ? (preSettle.summary?.forcedResultLine ?? null) : null;
+  const resubmitBlock =
+    preSettle.status === "error" ? "점검 결과 없음 · 다시 시도" : preSettleBlockReason(preSettle.summary?.blockedCount ?? 0);
 
   const dash = <span className={styles.muted}>—</span>;
   const projectText = [doc.projectNumber, doc.projectName].filter(Boolean).join(" ");
@@ -84,6 +89,7 @@ export default async function SettlementPage({ params }: { params: Promise<{ id:
         meta={doc.projectNumber ? <Num value={doc.projectNumber} /> : undefined}
       >
         <KvList items={items} />
+        {forcedLine ? <p className={styles.muted}>{forcedLine}</p> : null}
         <SettlementActions
           instanceId={view?.instanceId ?? null}
           version={view?.version ?? null}
@@ -93,6 +99,7 @@ export default async function SettlementPage({ params }: { params: Promise<{ id:
           projectId={id}
           canResubmit={canResubmit}
           resubmitWaiting={resubmitWaiting}
+          resubmitBlock={resubmitBlock}
           decision={
             view?.instanceId && view.version !== undefined
               ? {

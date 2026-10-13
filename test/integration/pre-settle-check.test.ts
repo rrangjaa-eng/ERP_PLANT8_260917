@@ -17,10 +17,11 @@ import { saveQuoteLines } from "@/domain/quotes/lines";
 import { createRevisionFromCurrent } from "@/domain/quotes/revisions";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertRole } from "@/repositories/roles";
+import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { DTO_REGISTRY } from "@/domain/permissions/dto-registry";
 import { applyAutoSettlement } from "@/domain/projects/auto-transition";
 import { GateBlockedError } from "@/domain/rules/gate";
-import { SETTLEMENT_DOCUMENT_KIND, submitSettlement } from "@/domain/settlements";
+import { getSettlementPreSettleSummary, SETTLEMENT_DOCUMENT_KIND, submitSettlement } from "@/domain/settlements";
 import { setSettingValue } from "@/domain/settings/registry";
 import {
   APPROVAL_ROUTE_SETTLEMENT_STEP1_ENABLED,
@@ -817,4 +818,41 @@ describe("완료 전 점검 — 대표 최종 승인 재점검(O-16 · 05 정산
     },
     180_000,
   );
+});
+
+// ── 06-22 Task 2 — 정산 결재 문서 화면의 점검 요약(PS-4 강행 결과 줄 · 다시 올리기 막힘 재료) ──────────
+
+describe("완료 전 점검 — 정산 결재 문서 요약(getSettlementPreSettleSummary)", () => {
+  it("정산 · 강행 그룹만(막힘 0) → `{ blockedCount: 0, forcedResultLine: 강행 · 미결 지출결의 2건 }`", async () => {
+    const fx = await setupExpenseProject();
+    await approvedExpenseWithoutEvidence(fx, fx.lines.withVendor);
+    await approvedExpenseWithoutEvidence(fx, fx.lines.split);
+    await linkCardUsage(fx.pm, fx.lines.noVendor);
+    await issueRevenue(fx.projectId);
+    await settle(fx.projectId);
+    await setAllowOpenExpenses(true);
+    await draftSettlement(fx);
+    expect(await getSettlementPreSettleSummary(fx.ceo, { projectId: fx.projectId })).toEqual({ blockedCount: 0, forcedResultLine: "강행 · 미결 지출결의 2건" });
+  });
+
+  it("정산 · 강행 없음 · 막힘 0 → 결과 줄 없음", async () => {
+    const { fx } = await draftedWithOpen({});
+    expect(await getSettlementPreSettleSummary(fx.ceo, { projectId: fx.projectId })).toEqual({ blockedCount: 0, forcedResultLine: null });
+  });
+
+  it("진행 복귀 프로젝트 → null", async () => {
+    const { fx } = await draftedWithOpen({});
+    await saveProjectLedger(fx.lead, fx.projectId, {
+      seenStatus: "settling",
+      period: { startDate: "2026-09-01", endDate: "2099-12-31", baseline: { startDate: "2026-09-01", endDate: "2026-12-31" } },
+    });
+    expect(await getSettlementPreSettleSummary(fx.ceo, { projectId: fx.projectId })).toBeNull();
+  });
+
+  it("문서를 볼 수 없는 사람 → null", async () => {
+    const { fx } = await draftedWithOpen({ rejected: true });
+    const outsider = await makePerson("무관피엠", DEFAULT_ROLE_ID, "기획1팀");
+    expect(await getSettlementPreSettleSummary(outsider, { projectId: fx.projectId })).toBeNull();
+    expect(await getSettlementPreSettleSummary(fx.pm, { projectId: fx.projectId })).toEqual({ blockedCount: 1, forcedResultLine: null });
+  });
 });

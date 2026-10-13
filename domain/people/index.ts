@@ -282,8 +282,8 @@ export async function registerPerson(
     try {
       await assignTeam(viewer, { userId, teamId: input.teamId, effectiveFrom: input.effectiveFrom }, deps?.now ? { now: deps.now } : undefined);
     } catch (error) {
-      // (b) 잔여 창 — 인프라 오류로 발령이 실패하면 방금 만든 계정을 보상
-      // 보관한다. 관리자의 보관함 권한과 무관하게 실행되도록 SYSTEM_VIEWER로
+      // (b) 잔여 창 — 발령이 실패하면(인프라 오류, 또는 06.4 사전 검사 뒤 자리가
+      // 먼저 찬 SeatTakenError) 방금 만든 계정을 보상 보관한다. 관리자의 보관함 권한과 무관하게 실행되도록 SYSTEM_VIEWER로
       // 부른다. 초기 비밀번호는 반환되지 않으므로 그 계정으로 로그인할 수
       // 있는 사람이 없다.
       const archive = deps?.archive ?? defaultArchive;

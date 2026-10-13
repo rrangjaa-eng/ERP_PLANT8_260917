@@ -38,8 +38,7 @@ export async function lockSeatKeys(viewer: Viewer, input: SeatLockInput, tx: DbO
 
 // 06.4 D-6415 사용자 확정(2026-10-11 카드) · eng 재검토 K-R4 「겹칠 때만 막기」: 자리 = 날짜 구간. 발령 한 줄 =
 // [max(발령일, 오늘), 다음 발령 전날]. 보유자 구간은 퇴직일에서 잘린다. 겹침이 하루라도 있으면 둘째 보유자 — 시간 경과 ·
-// 예약 취소로 한 날에 둘이 되지 않는다(RESEARCH Pitfall 1). 답이 「지금대로」면 시작을 늘 오늘 · 끝을 늘 열림으로,
-// `listSeatHolders`의 끝 자르기를 퇴직일 ≥ 오늘 거르기로 바꾼다(옛 O1 — 오늘 팀 ∪ 미래 팀). 260907은 팀이 한 값이고
+// 예약 취소로 한 날에 둘이 되지 않는다(RESEARCH Pitfall 1). 260907은 팀이 한 값이고
 // 퇴사일을 적는 순간 자리가 비었다(`O: db/schema/030_constraints_indexes.sql:1155` · `:1165` `left_date IS NULL`).
 // 보관된 팀은 구간이 없고, 본부는 보관 안 된 본부만(보관 본부면 null). 날짜는 'YYYY-MM-DD' 글자로 돌려준다.
 function occupancy(today: string) {

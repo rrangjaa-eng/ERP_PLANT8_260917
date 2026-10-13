@@ -1838,6 +1838,19 @@ test.describe("검토 반영 (06-20 독립 검토 · DOM 감사)", () => {
     }
     await page.context().close();
   });
+
+  test("from=pay · 지급 권한 없음(R-1) — 기안자가 지급된 문서를 `?from=pay`로 열면 결과 줄만 · `지급 대상으로` · `다음 확인 전` 없음", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const payer = await makeTeamPayer(fx);
+    const id = await paidTarget(fx, "tracer", payer);
+
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await page.goto(`/expenses/${id}?${new URLSearchParams({ from: "pay", status: "지급 대상", page: "1" })}`);
+    await expect(page.getByTestId("payment-result")).toBeVisible();
+    await expect(page.getByRole("link", { name: "지급 대상으로" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: /^다음 확인 전/ })).toHaveCount(0);
+    await page.context().close();
+  });
 });
 
 test.afterAll(archiveTempRoles);

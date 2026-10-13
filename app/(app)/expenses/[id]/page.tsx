@@ -90,7 +90,9 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
         : [],
     );
     // 06-20(C-1): S1 번호 링크(`from=pay`)로 열었으면 지급 보기에 되돌림 · 다음 확인 전 링크를 싣는다 — 지급 보기가 있을 때만(05 C1 작성 중 문서는 null이라 없음).
-    const payQuery = paymentView && paymentView !== "error" ? parsePayReturn(query) : null;
+    // 검토 R-1: 되돌림은 지급 처리 권한자(S1 보기와 같은 판정 `expenses.payments` 쓰기)에게만 — 그 밖의 사람은 `from=pay`를 무시한다.
+    const payParsed = paymentView && paymentView !== "error" ? parsePayReturn(query) : null;
+    const payQuery = payParsed && (await can(viewer, "expenses.payments", "write")) ? payParsed : null;
     const payReturn: PayReturn | null = payQuery
       ? await nextUnreviewedTarget(viewer, { afterExpenseId: id, team: payQuery.team, evidence: payQuery.evidence })
           .catch((error: unknown) => {

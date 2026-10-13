@@ -189,6 +189,9 @@ test.describe("카드 전표 (06-25 Task 2 — 새 건 첫 저장 · S13 · 폰)
     // 같은 이유가 막힘 자리에 서고, 저장된 카드 사용 · 파일 행은 0이다.
     await expect(reason).toContainText("결제 합계");
     await expect(fileRows(sheet).locator("[data-state=done]")).toHaveCount(0);
+    // 06-25 감사 D-3: 같은 막힘 문구가 막힘 자리 한 곳에만 서고 실패 파일 행은 만들어지지 않는다.
+    await expect(sheet.getByText("결제 합계 1칸 비어 있음")).toHaveCount(1);
+    await expect(fileRows(sheet)).toHaveCount(0);
     await expect(page).toHaveURL(/\/cards\?new=1$/);
     expect(await db.select({ id: corpCardUsages.id }).from(corpCardUsages).where(eq(corpCardUsages.registeredBy, holder.person.viewer.id))).toHaveLength(0);
     await page.context().close();

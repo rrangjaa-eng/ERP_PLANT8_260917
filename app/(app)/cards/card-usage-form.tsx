@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode, type SyntheticEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
@@ -681,6 +681,15 @@ export function CardUsageForm({
     [slipOwnerId],
   );
 
+  // 막힌 새 건(첫 저장을 못 하는 상태)에 놓은 파일은 받지 않는다 — 막힘 자리 한 곳이 이유를 말하고 실패 파일 행은 만들지 않는다.
+  function refuseWhileBlocked(event: SyntheticEvent) {
+    if (edit || savedSlipIdRef.current || !formBlock) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.target instanceof HTMLInputElement) event.target.value = "";
+    setShowingResult(false);
+  }
+
   // 올리기 · 지우기 뒤 — 수정은 서버 값을 다시 읽고(즉시 저장 · version 그대로), 새 건은 저장된 건의 수정 패널로 바뀐다.
   function onSlipChanged() {
     const savedId = savedSlipIdRef.current;
@@ -983,7 +992,7 @@ export function CardUsageForm({
           ) : null}
           <TextField id="card-usage-memo" name="memo" label="메모" maxLength={500} defaultValue={edit?.memo ?? ""} />
           {slip ? (
-            <div data-ui="field-row" className={rowStyles.row} ref={slipAreaRef}>
+            <div data-ui="field-row" className={rowStyles.row} ref={slipAreaRef} onChangeCapture={refuseWhileBlocked} onDropCapture={refuseWhileBlocked}>
               <Form.Field id="card-slip-picker" label="증빙">
                 <Attachments
                   mode="edit"

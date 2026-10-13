@@ -4,13 +4,16 @@ import {
   diffCount,
   editReason,
   editTransfer,
+  firstOffPageIssue,
   nextSumSeq,
+  offPageSnapshotRows,
   otherPageCount,
   readStoredSelection,
   reconcileAcrossPages,
   restoreSelection,
   selectionKey,
   sumKeyOf,
+  snapshotCounts,
   sumRequestRows,
   writeStoredSelection,
   type SelectionState,
@@ -164,9 +167,72 @@ describe("되살리기 · 다른 쪽 id 유지 · 보관 키 (06-17 Task 3)", ()
     writeStoredSelection(storage, key, { selectedIds: ["a"], edits: { a: { transfer: "100", reason: "" } } }, 2);
     expect(store.has(other)).toBe(false);
     expect(JSON.parse(store.get(key) ?? "{}")).toEqual({ selectedIds: ["a"], edits: { a: { transfer: "100", reason: "" } }, page: 2 });
-    expect(readStoredSelection(storage, key)).toEqual({ selectedIds: ["a"], edits: { a: { transfer: "100", reason: "" } }, page: 2 });
+    // 쪽이 없는 편집은 보관한 쪽(2)에서 고친 것으로 읽는다(검토 M-1).
+    expect(readStoredSelection(storage, key)).toEqual({ selectedIds: ["a"], edits: { a: { transfer: "100", reason: "", page: 2 } }, page: 2 });
     expect(readStoredSelection(storage, other)).toBeNull();
     store.set(key, "{깨짐");
     expect(readStoredSelection(storage, key)).toBeNull();
+  });
+});
+
+describe("검토 반영 (06-17 독립 검토 · DOM 감사)", () => {
+  it("편집한 쪽 기억 — 이체액 · 사유를 고친 쪽 번호가 그 행 편집에 남고, 보관에서 쪽이 없는 옛 편집은 보관한 쪽으로 읽는다", () => {
+    const edited = editReason(editTransfer(empty, { id: "a", transfer: "100", selectable: true, page: 2 }), { id: "a", reason: "", page: 2 });
+    expect(edited.edits.a).toEqual({ transfer: "100", reason: "", page: 2 });
+    const store = new Map<string, string>([["k", JSON.stringify({ selectedIds: ["a", "b"], edits: { a: { transfer: "1", reason: "", page: 3 }, b: { transfer: "2", reason: "" } }, page: 4 })]]);
+    const storage = {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => void store.set(key, value),
+      removeItem: (key: string) => void store.delete(key),
+      key: (index: number) => [...store.keys()][index] ?? null,
+      get length() {
+        return store.size;
+      },
+    };
+    expect(readStoredSelection(storage, "k")?.edits).toEqual({ a: { transfer: "1", reason: "", page: 3 }, b: { transfer: "2", reason: "", page: 4 } });
+  });
+
+  it("M-1 지금 쪽 밖 칸 오류 — 고른 행 중 지금 쪽 밖에서 이체액이 양의 정수가 아니거나 지급 총액과 다른데 사유가 빈 첫 행과 그 쪽(같거나 사유 있으면 없음)", () => {
+    const state: SelectionState = {
+      selectedIds: ["page", "same", "reasoned", "missing", "bad"],
+      edits: {
+        page: { transfer: "1", reason: "", page: 1 },
+        same: { transfer: "500", reason: "", page: 2 },
+        reasoned: { transfer: "400", reason: "수수료", page: 2 },
+        missing: { transfer: "300", reason: "  ", page: 3 },
+        bad: { transfer: "", reason: "", page: 2 },
+      },
+    };
+    const offPage = new Map([
+      ["same", { payableKrw: 500 }],
+      ["reasoned", { payableKrw: 500 }],
+      ["missing", { payableKrw: 500 }],
+      ["bad", { payableKrw: 500 }],
+    ]);
+    expect(firstOffPageIssue(state, ["page"], offPage)).toEqual({ id: "missing", page: 3 });
+    expect(firstOffPageIssue({ ...state, selectedIds: ["bad"] }, ["page"], offPage)).toEqual({ id: "bad", page: 2 });
+    expect(firstOffPageIssue({ ...state, selectedIds: ["page", "same", "reasoned"] }, ["page"], offPage)).toBeNull();
+    // 지급 총액을 아직 모르는 쪽 밖 행은 차이를 판정하지 않는다(서버가 본다).
+    expect(firstOffPageIssue({ ...state, selectedIds: ["missing"] }, [], new Map())).toBeNull();
+  });
+
+  it("L-1 쪽 밖 스냅숏 행 — 합 응답이 selectable 참이라 한 지금 쪽 밖 id만, 응답 version · 지급 총액 · 견적 줄 · 선결제로", () => {
+    const offPage = new Map([
+      ["x", { id: "x", selectable: true, version: 3, payableKrw: 100, quoteLineId: "L1", prepaid: false }],
+      ["y", { id: "y", selectable: false, version: 9, payableKrw: 200, quoteLineId: "L2", prepaid: true }],
+      ["page", { id: "page", selectable: true, version: 1, payableKrw: 300, quoteLineId: "L3", prepaid: false }],
+    ]);
+    expect(offPageSnapshotRows(["page", "x", "y", "unknown"], ["page"], offPage)).toEqual([{ id: "x", version: 3, payableKrw: 100, quoteLineId: "L1", prepaid: false }]);
+  });
+
+  it("D-2 결과 줄 ① · ② 개수 — 모든 쪽 고른 행의 서로 다른 견적 줄 수 · 선결제 수", () => {
+    expect(
+      snapshotCounts([
+        { quoteLineId: "L1", prepaid: false },
+        { quoteLineId: "L2", prepaid: true },
+        { quoteLineId: "L1", prepaid: true },
+        { quoteLineId: null, prepaid: false },
+      ]),
+    ).toEqual({ lineCount: 2, prepaidCount: 2 });
   });
 });

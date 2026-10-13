@@ -29,12 +29,15 @@ import {
   diffCount,
   editReason,
   editTransfer,
+  firstOffPageIssue,
   nextSumSeq,
+  offPageSnapshotRows,
   otherPageCount,
   readStoredSelection,
   reconcileAcrossPages,
   restoreSelection,
   selectionKey,
+  snapshotCounts,
   sumKeyOf,
   sumRequestRows,
   transferNumber,
@@ -172,16 +175,25 @@ function usePhoneWidth(): boolean {
 
 // M-1 — 처리 뒤 빈 쪽에서 행이 있는 마지막 쪽으로 주소를 고치면 화면이 새로 마운트된다(page.tsx Suspense 키 = 필터 · 쪽). 결과 글자 · 이유 줄은
 // 그 한 번만 모듈 기억으로 넘긴다(같은 필터 키일 때만 — 지급일 기억 O-3과 같은 자리). 이유 줄은 다시 받은 쪽에 그 행이 있을 때만 붙는다.
-let carried: { key: string; result: ResultLine | null; blocked: ReadonlyMap<string, Blocked> } | null = null;
+// showIssues(검토 M-1) — 1차를 눌렀는데 지금 쪽 밖 고른 행에 칸 오류가 있어 그 행 쪽으로 옮긴 때: 다시 마운트되면 칸 오류를 세우고 첫 오류 칸으로.
+let carried: { key: string; result: ResultLine | null; blocked: ReadonlyMap<string, Blocked>; showIssues?: boolean } | null = null;
 
 function carryOver(next: typeof carried) {
   carried = next;
 }
 
-function takeCarried(key: string, rows: readonly PaymentTargetScreenRow[]): { result: ResultLine | null; blocked: ReadonlyMap<string, Blocked> } {
-  if (carried?.key !== key) return { result: null, blocked: new Map() };
+const CARRIED_ISSUES = "issues";
+
+function takeCarried(
+  key: string,
+  rows: readonly PaymentTargetScreenRow[],
+): { result: ResultLine | null; blocked: ReadonlyMap<string, Blocked>; focus: string | null } {
+  if (carried?.key !== key) return { result: null, blocked: new Map(), focus: null };
   const present = new Set(rows.map((row) => row.id));
-  return { result: carried.result, blocked: new Map([...carried.blocked].filter(([id]) => present.has(id))) };
+  const blocked = new Map([...carried.blocked].filter(([id]) => present.has(id)));
+  // 검토 D-5 — 처리 뒤 옮긴 쪽에서도 DR-6 포커스: 첫 막힌 행 체크박스, 없으면 1차.
+  const focus = carried.showIssues ? CARRIED_ISSUES : carried.result ? (rows.find((row) => blocked.has(row.id))?.id ?? "primary") : null;
+  return { result: carried.result, blocked, focus };
 }
 
 // H-2 — 격자 포커스 칸(편집 칸이 아닌 링크 셀 · 증빙 칸 3차)의 Enter = 그 칸 안 `[data-cell-action]` 누르기. 표를 감싼 요소가 캡처 단계에서
@@ -240,11 +252,13 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
   // 칸 오류는 1차를 누른 뒤에 세운다(사유 칸 — S5와 같은 결). 값이 바뀌면 표가 첫 오류 칸으로 포커스한다.
   const [showErrors, setShowErrors] = useState(false);
   const [issueSignal, setIssueSignal] = useState(0);
-  // 합의 세율 기준일 — 마지막으로 처리 요청에 쓴 지급일(없으면 오늘, 서버가 채운다).
-  const [sumPayDate, setSumPayDate] = useState<string | null>(null);
+  // 합의 세율 기준일 — 마지막으로 처리 요청에 쓴 지급일. 다시 마운트되면 모달 지급일 기억(O-3)과 같은 날(검토 L-2 — 없으면 오늘).
+  const [sumPayDate, setSumPayDate] = useState<string | null>(() => rememberedPayDate(memoryKey, props.today));
   const [payDate, setPayDate] = useState(() => rememberedPayDate(memoryKey, props.today));
   const rootRef = useRef<HTMLDivElement>(null);
   const focusAfterCloseRef = useRef<string | null>(null);
+  // 다시 마운트된 뒤 한 번 옮길 포커스(takeCarried) — 되살린 선택이 선 뒤에.
+  const carryFocusRef = useRef(carry.focus);
   // 처리 응답마다 1 — 합을 다시 불러 지금 쪽 밖에 남은 선택의 version · 지급 총액을 새 응답 값으로 바꾼다.
   const [batchTick, setBatchTick] = useState(0);
   // 지금 쪽 밖 행의 마지막 서버 상태(합 응답 rowStates) — 고를 수 있음 · version · 지급 총액.
@@ -284,6 +298,18 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
     carryOver({ key: memoryKey, result, blocked });
     router.replace(href(props.query, props.page.page));
   }, [askedPage, props.page.page, props.query, router, memoryKey, result, blocked]);
+  useEffect(() => {
+    const target = carryFocusRef.current;
+    if (!wide || restorePending || target === null) return;
+    carryFocusRef.current = null;
+    if (target === CARRIED_ISSUES) {
+      setShowErrors(true);
+      setIssueSignal((value) => value + 1);
+      return;
+    }
+    focusAfterCloseRef.current = target;
+    focusAfterClose();
+  }, [wide, restorePending]);
 
   // 제자리 증빙 확인 응답(새 version · 상태 · 고를 수 있음)을 다시 받은 목록이 따라올 때까지 그 행에 덮는다 — 뒤이은 일괄 처리가 옛 version으로 막히지 않게.
   const rows = mergeRows(props.rows, processed, blocked).map((row) => {
@@ -370,7 +396,8 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
     setTimeout(() => {
       const root = rootRef.current;
       if (!root) return;
-      // 「transfer:{id}」 = 그 행 이체액 셀 · 「link:{id}」 = 그 행 링크(제자리 증빙 확인 뒤) · 그 밖 id = 그 행 체크박스.
+      // 「transfer:{id}」 = 그 행 이체액 셀 · 「link:{id}」 = 그 행 링크(제자리 증빙 확인 뒤) · 「evidence:{id}」 = 그 행 증빙 칸 3차(제자리 모달 Esc)
+      // · 그 밖 id = 그 행 체크박스.
       const [kind, id] = target.includes(":") ? target.split(":") : ["checkbox", target];
       const tr = root.querySelector(`[data-row-id="${CSS.escape(id ?? "")}"]`)?.closest("tr");
       const element =
@@ -380,7 +407,9 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
             ? tr?.querySelector<HTMLElement>('td:has([data-testid="payment-transfer-cell"])')
             : kind === "link"
               ? tr?.querySelector<HTMLElement>("a[data-row-link]")
-              : tr?.querySelector<HTMLElement>('input[type="checkbox"]');
+              : kind === "evidence"
+                ? tr?.querySelector<HTMLElement>("button[data-cell-action]")
+                : tr?.querySelector<HTMLElement>('input[type="checkbox"]');
       element?.focus();
     }, 0);
   }
@@ -430,12 +459,12 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
     if (columnKey === "transfer") {
       const shown = selection.edits[rowId]?.transfer ?? (typeof row.payableKrw === "number" ? String(row.payableKrw) : "");
       if (value === shown) return;
-      let next = editTransfer(selection, { id: rowId, transfer: value, selectable: selectable(row) === true });
+      let next = editTransfer(selection, { id: rowId, transfer: value, selectable: selectable(row) === true, page: props.page.page });
       // 되돌려 지급 총액과 같아지면 적은 사유는 버린다(D-605).
       if (transferNumber(value) === row.payableKrw) next = editReason(next, { id: rowId, reason: "" });
       setSelection(next);
     }
-    if (columnKey === "diffReason") setSelection(editReason(selection, { id: rowId, reason: value }));
+    if (columnKey === "diffReason") setSelection(editReason(selection, { id: rowId, reason: value, page: props.page.page }));
   }
 
   const { execute, isExecuting } = useAction(completePaymentsBatchAction, {
@@ -480,6 +509,16 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
     router.refresh();
   }
 
+  // 검토 M-1 — 지금 쪽 밖 고른 행에 칸 오류가 있으면 처리 요청 대신 그 행을 고친 쪽으로 가 그 칸 오류를 세운다(요청 전체 거부 · 일반 글자가 아니라).
+  // 고친 쪽을 모르거나 지금 쪽이면(그사이 행이 옮김) 옮기지 않는다 — 서버 zod가 막는다(지급 0건).
+  function goToOffPageIssue(state: SelectionState): boolean {
+    const issue = firstOffPageIssue(state, props.rows.map((row) => row.id), offPage);
+    if (issue === null || issue.page === null || issue.page === props.page.page) return false;
+    carryOver({ key: memoryKey, result, blocked, showIssues: true });
+    router.push(href(props.query, issue.page));
+    return true;
+  }
+
   function openDialog() {
     if (chosen.length === 0 || isExecuting) return;
     // 고른 행에 오류 칸이 있으면 모달 없이 첫 오류 칸으로(04 DR-5와 같은 결).
@@ -488,6 +527,7 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
       setIssueSignal((value) => value + 1);
       return;
     }
+    if (goToOffPageIssue(effective)) return;
     flushSum();
     setSnapshot({ ids: chosen, rows: chosenRows, edits: selection.edits, seq, otherPage: otherPageCount(chosen, props.rows.map((row) => row.id)) });
     setRejection(null);
@@ -504,12 +544,18 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
 
   function confirm(payDate: string) {
     if (isExecuting) return;
-    // 지금 쪽 밖의 고른 행은 마지막 합 응답(rowStates)의 version · 지급 총액으로 보낸다(1차는 그 합이 온 뒤에야 켜진다).
-    const pageIds = new Set(snapshot.rows.map((row) => row.id));
-    const offRows: PaymentTargetScreenRow[] = snapshot.ids.flatMap((id) => {
-      const state = offPage.get(id);
-      return !pageIds.has(id) && state ? [{ id, group: "", version: state.version, payableKrw: state.payableKrw }] : [];
-    });
+    // 모달을 연 뒤 온 합 응답으로 지금 쪽 밖 행의 지급 총액을 알게 된 때도 칸 오류면 그 쪽으로(검토 M-1).
+    if (goToOffPageIssue({ selectedIds: snapshot.ids, edits: snapshot.edits })) {
+      setDialogOpen(false);
+      return;
+    }
+    // 지금 쪽 밖의 고른 행은 마지막 합 응답(rowStates)이 지금 고를 수 있다고 한 행만, 그 응답의 version · 지급 총액으로 보낸다
+    // (1차는 그 합이 온 뒤에야 켜진다 — 검토 L-1: selectable 거짓 행은 싣지 않는다).
+    const offRows: PaymentTargetScreenRow[] = offPageSnapshotRows(
+      snapshot.ids,
+      snapshot.rows.map((row) => row.id),
+      offPage,
+    ).map((row) => ({ ...row, group: "" }));
     const sent = [...snapshot.rows, ...offRows].flatMap((row) =>
       typeof row.version === "number" && typeof row.payableKrw === "number"
         ? [{ expenseId: row.id, expenseVersion: row.version, expectedPayableKrw: row.payableKrw, ...transferPart(row) }]
@@ -583,9 +629,16 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
       header: PAYMENT_TARGET_COLUMN_LABELS.title,
       priority: "p1",
       // 이 1행도 같은 문서 화면 왕복 링크(H-2 — 번호가 숨는 <1280에서는 이것이 유일한 길). 폰은 06-15 행 링크 그대로(`from=pay` 없음 — 일괄 지급이 없다).
+      // 폰은 한 줄 말줄임이라 전체 값을 title로도(검토 D-6). PC는 줄바꿈(SYSTEM §7-3 「항목명은 줄바꿈 허용」)이라 다 보인다.
       cell: (row) => (
         <span className={styles.titleCell} data-row-id={row.id}>
-          <Link href={phone ? `/expenses/${row.id}` : docHref(row.id, props.query, props.page.page)} className={styles.link} data-row-link="" data-cell-action="">
+          <Link
+            href={phone ? `/expenses/${row.id}` : docHref(row.id, props.query, props.page.page)}
+            className={styles.link}
+            title={phone ? (row.title ?? undefined) : undefined}
+            data-row-link=""
+            data-cell-action=""
+          >
             {row.title ?? "—"}
           </Link>
         </span>
@@ -596,7 +649,12 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
       header: PAYMENT_TARGET_COLUMN_LABELS.vendor,
       priority: "p3",
       collapseBelow: 1280,
-      cell: (row) => <span className={styles.vendorCell}>{row.vendorName ?? "—"}</span>,
+      // 한 줄 말줄임 — 전체 값은 title(검토 D-6).
+      cell: (row) => (
+        <span className={styles.vendorCell} title={row.vendorName ?? undefined}>
+          {row.vendorName ?? "—"}
+        </span>
+      ),
     },
     { key: "method", header: PAYMENT_TARGET_COLUMN_LABELS.method, priority: "p2", cell: (row) => <span className={styles.nowrap}>{row.paymentMethodName ?? "—"}</span> },
     {
@@ -709,8 +767,15 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
     );
   }
 
-  const lineCount = new Set(snapshot.rows.flatMap((row) => (row.quoteLineId ? [row.quoteLineId] : []))).size;
-  const prepaidCount = snapshot.rows.filter((row) => row.prepaid === true).length;
+  // 결과 줄 ① · ②는 모든 쪽 고른 행으로 센다 — 지금 쪽 밖 행은 합 응답 rowStates의 견적 줄 · 선결제(검토 D-2).
+  const { lineCount, prepaidCount } = snapshotCounts([
+    ...snapshot.rows,
+    ...offPageSnapshotRows(
+      snapshot.ids,
+      snapshot.rows.map((row) => row.id),
+      offPage,
+    ),
+  ]);
 
   return (
     <div ref={rootRef}>
@@ -737,7 +802,8 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
                 {"지급 총액 "}
                 <Num value={props.total.sumKrw} />
               </p>
-              {chosen.length > 0 ? (
+              {/* 보기 전용 폭(<1024)에는 선택 열 · 1차가 없으므로 고른 건 합계 줄도 없다(검토 D-9). */}
+              {wide && chosen.length > 0 ? (
                 <p className={styles.selectedSum}>
                   {sumFailedSeq === seq ? (
                     <>
@@ -845,7 +911,9 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
             rowVersion={evidenceRow?.version ?? evidenceTarget.version}
             onClose={() => {
               setEvidenceTarget(null);
-              if (focusAfterCloseRef.current === null && evidenceRow && evidenceRow.evidenceStatus !== "확인 전") focusAfterCloseRef.current = `link:${evidenceTarget.id}`;
+              // `확인 전`이 아니게 됐으면 그 행 링크, 아직이면(Esc · 취소) 그 행 3차 — 연 동안 3차가 새로 그려져도 행으로 다시 찾는다(검토 D-4).
+              if (focusAfterCloseRef.current === null && evidenceRow)
+                focusAfterCloseRef.current = evidenceRow.evidenceStatus !== "확인 전" ? `link:${evidenceTarget.id}` : `evidence:${evidenceTarget.id}`;
             }}
             onConfirmed={(result) => confirmedEvidence(evidenceTarget.id, result)}
           />

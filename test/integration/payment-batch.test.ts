@@ -579,7 +579,17 @@ describe("이체액 편집 · 서버 합 (06-17 Task 1)", () => {
     expect(result.seq).toBe(3);
     const states = new Map(result.rowStates.map((row) => [row.id, row]));
     expect([...states.keys()].sort()).toEqual([keptId, offPage, paidId, p2.expenseId].sort());
-    expect(states.get(offPage)).toEqual({ id: offPage, selectable: true, version: await versionOf(offPage), payableKrw: await payableNow(payer, docOf(offPage)) });
+    // 검토 반영(D-2) — 결과 줄 ① · ②가 지금 쪽 밖 행도 세도록 견적 줄 · 선결제를 함께 싣는다(06-15 paymentTargetRow 같은 칸).
+    const [offDoc] = await db.select({ quoteLineId: expenses.quoteLineId }).from(expenses).where(eq(expenses.id, offPage));
+    expect(typeof offDoc?.quoteLineId).toBe("string");
+    expect(states.get(offPage)).toEqual({
+      id: offPage,
+      selectable: true,
+      version: await versionOf(offPage),
+      payableKrw: await payableNow(payer, docOf(offPage)),
+      quoteLineId: offDoc?.quoteLineId,
+      prepaid: false,
+    });
     expect(states.get(keptId)).toMatchObject({ selectable: true, version: await versionOf(keptId) });
     expect(states.get(paidId)).toMatchObject({ selectable: false });
     expect(states.get(p2.expenseId)).toMatchObject({ selectable: false, version: await versionOf(p2.expenseId) });
@@ -655,7 +665,10 @@ describe("지급일 재계산 막힘 · 재시도 (06-17 Task 2)", () => {
       if (typeof newPayable !== "number") throw new Error("새 지급 총액 없음");
 
       const sum = await sumSelectedTransfers(payer, { seq: 1, rows: [{ id: shifted.expenseId }], payDate });
-      expect(sum.rowStates).toEqual([{ id: shifted.expenseId, selectable: true, version: await versionOf(shifted.expenseId), payableKrw: newPayable }]);
+      const [shiftedDoc] = await db.select({ quoteLineId: expenses.quoteLineId }).from(expenses).where(eq(expenses.id, shifted.expenseId));
+      expect(sum.rowStates).toEqual([
+        { id: shifted.expenseId, selectable: true, version: await versionOf(shifted.expenseId), payableKrw: newPayable, quoteLineId: shiftedDoc?.quoteLineId, prepaid: false },
+      ]);
       expect(sum.diffs).toEqual({ [shifted.expenseId]: 0 });
 
       const retry = await completePaymentsBatch(payer, {

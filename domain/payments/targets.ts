@@ -249,7 +249,8 @@ export async function rejudgePaymentTargets(
 // 합 = sumKrw(고를 수 있는 행의 이체액 — 고치지 않았으면 지급 총액), 차이 = diffKrw(이체액, 지급 총액). 응답에 합계 번호(seq)를 그대로 싣는다 —
 // 화면이 낡은 응답을 버린다. 지급 대상 조회 범위 밖(없는 id · 보이지 않는 문서 · 결재 통과가 아닌 문서)은 rowStates에 싣지 않는다.
 // payDate(모달이 마지막으로 쓴 지급일, 없으면 오늘)는 지급 총액의 세율 기준일 자리 — 처리 요청과 같은 날로 셈해 재시도가 다시 막히지 않는다.
-export type PaymentRowState = { id: string; selectable: boolean; version: number; payableKrw: number | null };
+// quoteLineId · prepaid(검토 D-2) — 모달 결과 줄 ① 견적 줄 수 · ② 선결제 수가 지금 쪽 밖 고른 행도 센다.
+export type PaymentRowState = { id: string; selectable: boolean; version: number; payableKrw: number | null; quoteLineId: string | null; prepaid: boolean };
 
 // 정보 항목은 06-15 PAYMENT_TARGET_ROW_DTO_SPEC(paymentTargetRow)의 같은 칸 그대로.
 const PAYMENT_ROW_STATE_SPEC: DtoSpec<PaymentRowState, PaymentRowState> = {
@@ -258,6 +259,8 @@ const PAYMENT_ROW_STATE_SPEC: DtoSpec<PaymentRowState, PaymentRowState> = {
     { key: "selectable", from: "selectable", infoItem: "expense.value" },
     { key: "version", from: "version", infoItem: "expense.value" },
     { key: "payableKrw", from: "payableKrw", infoItem: "expense.amount" },
+    { key: "quoteLineId", from: "quoteLineId", infoItem: "expense.value" },
+    { key: "prepaid", from: "prepaid", infoItem: "expense.value" },
   ],
 };
 
@@ -296,7 +299,14 @@ export async function sumSelectedTransfers(
   }
   const rowStates = await projectMany(
     viewer,
-    judged.map((target) => ({ id: target.row.id, selectable: target.selectable, version: target.row.version, payableKrw: target.payableKrw })),
+    judged.map((target) => ({
+      id: target.row.id,
+      selectable: target.selectable,
+      version: target.row.version,
+      payableKrw: target.payableKrw,
+      quoteLineId: target.row.quoteLineId,
+      prepaid: target.row.prepaid,
+    })),
     PAYMENT_ROW_STATE_SPEC,
   );
   return { seq: input.seq, totalKrw: amountVisible ? sumKrw(transfers) : null, diffs: amountVisible ? diffs : {}, rowStates };

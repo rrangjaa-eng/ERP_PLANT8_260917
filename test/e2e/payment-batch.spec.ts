@@ -413,6 +413,8 @@ test.describe("지급 대상 · 일괄 지급 마감 (06-15 Task 3)", () => {
     await phone.goto("/expenses");
     const link = rowOf(phone, fx.lines.tracer.itemName).locator("a[data-row-link]");
     await expect(link).toHaveAttribute("href", `/expenses/${a}`);
+    // 검토 D-6 — 한 줄로 자른 폰 제목은 전체 값을 title로도 남긴다.
+    expect(await link.getAttribute("title")).toContain(fx.lines.tracer.itemName);
     await expect(phone.getByRole("checkbox")).toHaveCount(0);
     await link.click();
     await expect(phone).toHaveURL(new RegExp(`/expenses/${a}$`));
@@ -535,6 +537,17 @@ test.describe("일괄 지급 마감 (06-17)", () => {
     await primary.click();
     await expect(dialog.getByLabel("지급일")).toHaveValue(tomorrow);
     await page.keyboard.press("Escape");
+
+    // 검토 L-2 — 같은 필터로 다시 마운트되면(문서 화면 왕복) 합의 세율 기준일도 기억한 지급일이다(모달 지급일과 같은 날).
+    const sumRequest = page.waitForRequest(
+      (request) => request.method() === "POST" && Boolean(request.headers()["next-action"]) && (request.postData() ?? "").includes('"seq"'),
+    );
+    await row.locator("a[data-row-link]").click();
+    await expect(page).toHaveURL(/from=pay/);
+    await page.goBack();
+    expect((await sumRequest).postData()).toContain(`"payDate":"${tomorrow}"`);
+    await waitForHydration(row.getByRole("checkbox"));
+    await expect(row.getByRole("checkbox")).toBeChecked();
 
     await page.getByLabel("증빙", { exact: true }).selectOption({ label: "지급 가능" });
     await expect(page).toHaveURL(/evidence=payable/);
@@ -785,6 +798,18 @@ test.describe("일괄 지급 마감 — 쪽 · 키보드 (06-17 Task 3)", () => 
     const totals = page.getByRole("region", { name: "합계" });
     await expect(totals.getByText(/^고른 2건 · 이체액/)).toBeVisible();
     await expect(totals.getByText(formatKrw(firstPayable + transfer), { exact: true })).toBeVisible();
+
+    // 검토 M-1 — 사유를 비운 채 첫 쪽으로 가서 1차를 누르면 모달 · 요청 없이 그 행 쪽으로 가 그 행 사유 칸 오류 · 포커스(요청 전체 거부가 아님).
+    const navigation = page.getByRole("navigation", { name: "지급 대상 페이지" });
+    await navigation.getByRole("link", { name: "1", exact: true }).click();
+    await expect(page).not.toHaveURL(/page=2/);
+    await waitForHydration(firstRow.getByRole("checkbox"));
+    await expect(totals.getByText(formatKrw(firstPayable + transfer), { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: /^지급 완료 2/ }).click();
+    await expect(page).toHaveURL(/page=2/);
+    await expect(lastRow.getByText("차이 사유 없음 · 사유 적기", { exact: true })).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(lastRow.locator(":focus")).toHaveCount(1);
     await lastRow.locator('td:has([data-testid="payment-diff-reason-cell"])').click();
     await lastRow.getByLabel("차이 사유").fill("이체 수수료");
     await lastRow.getByLabel("차이 사유").press("Enter");
@@ -793,6 +818,8 @@ test.describe("일괄 지급 마감 — 쪽 · 키보드 (06-17 Task 3)", () => 
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByText(`2건 · 이체액 합계 ${formatKrw(firstPayable + transfer)}`)).toBeVisible();
     await expect(dialog.getByText("다른 쪽 1건 포함 · 차이 있음 1건", { exact: true })).toBeVisible();
+    // 검토 D-2 — 결과 줄 ①은 모든 쪽 고른 행의 견적 줄 수(두 건은 서로 다른 견적 줄).
+    await expect(dialog.getByText("견적 줄 2줄 잠김", { exact: true })).toBeVisible();
     await dialog.getByRole("button", { name: /^지급 완료 2건/ }).click();
     await expect(dialog).toBeHidden();
 
@@ -802,6 +829,8 @@ test.describe("일괄 지급 마감 — 쪽 · 키보드 (06-17 Task 3)", () => 
     await expect(page.locator('main p[aria-live="polite"]')).toHaveText(/^\d{2}:\d{2} 지급 완료 2건$/);
     await expect(rowOf(page, first.itemName)).toHaveCount(0);
     await expect(page.getByText("고른 건 없음")).toBeVisible();
+    // 검토 D-5 — 첫 쪽으로 옮겨 다시 마운트돼도 막힘 0이면 포커스는 1차(BODY가 아님).
+    await expect(page.getByRole("button", { name: /^지급 완료/ })).toBeFocused();
     expect(await livePaymentCount(first.id)).toBe(1);
     const [record] = await db
       .select({ transferKrw: expensePayments.transferKrw, diffReason: expensePayments.diffReason })
@@ -856,7 +885,22 @@ test.describe("제자리 증빙 확인 · 보관 (06-17 Task 4)", () => {
     await expect(page.getByRole("button", { name: /^지급 완료 1/ })).toBeVisible();
     await expect(rowA.getByRole("checkbox")).toHaveAttribute("aria-disabled", "true");
 
-    const dialog = await openEvidence(page, fx.lines.tracer.itemName, doc.number);
+    // 검토 D-4 — Esc로 닫으면 포커스는 그 3차로(3차는 남아 있다).
+    const trigger = rowA.getByRole("button", { name: `${doc.number} 증빙 확인` });
+    const escaped = await openEvidence(page, fx.lines.tracer.itemName, doc.number);
+    // 연 동안 폭이 폰으로 줄었다 돌아오면 3차가 새로 그려진다(06-29 ConfirmDialog가 기억한 트리거는 문서에서 빠짐) — 그래도 그 행 3차로.
+    await page.setViewportSize({ width: 600, height: 900 });
+    await expect(trigger).toHaveCount(0);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await expect(trigger).toHaveCount(1);
+    await page.keyboard.press("Escape");
+    await expect(escaped).toBeHidden();
+    await expect(trigger).toBeFocused();
+
+    // 키보드만으로 다시 연다(3차 Enter) — 확인 뒤 이체액 셀 포커스 링(D-10)은 키보드 경로에서 보여야 한다.
+    await page.keyboard.press("Enter");
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("heading", { name: "증빙 확인" })).toBeVisible();
     await expect(dialog.getByText(new RegExp(`^${doc.number} · .+ · 증빙 금액 ${formatKrw(doc.supplyAmountKrw)}$`))).toBeVisible();
     await expect(dialog.locator('[data-ui="confirm-attachments"] li[data-state="done"]')).toHaveCount(1);
     await expect(dialog.getByTestId("evidence-confirm-tax-line")).toBeVisible();
@@ -868,6 +912,7 @@ test.describe("제자리 증빙 확인 · 보관 (06-17 Task 4)", () => {
     await expect(rowA.getByText("확인됨", { exact: true })).toBeVisible();
     await expect(rowA.getByRole("checkbox")).toBeChecked();
     await expect(transferTd(page, fx.lines.tracer.itemName)).toBeFocused();
+    await expect.poll(() => transferTd(page, fx.lines.tracer.itemName).evaluate((element) => element.matches(":focus-visible"))).toBe(true);
     await expect(page.getByRole("button", { name: /^지급 완료 2/ })).toBeVisible();
 
     await page.getByRole("button", { name: /^지급 완료 2/ }).click();
@@ -1114,6 +1159,14 @@ test.describe("제자리 증빙 확인 · 보관 (06-17 Task 4)", () => {
     await expect(rowA.getByTestId("payment-transfer-cell")).toHaveText(formatKrw(payA.payableKrw - 1_000));
     await expect(totals.getByText(/^고른 2건 · 이체액/)).toBeVisible();
     await expect(totals.getByText(sum, { exact: true })).toBeVisible();
+    // 검토 D-6 — 한 줄로 자른 거래처는 전체 값을 title로.
+    await expect(rowB.getByText(fx.vendorName, { exact: true })).toHaveAttribute("title", fx.vendorName);
+    // 검토 D-9 — 보기 전용 폭(700~1023)에는 선택 열 · 1차가 없으므로 고른 건 합계 줄도 없다(되살린 선택이 있어도).
+    await page.setViewportSize({ width: 800, height: 900 });
+    await expect(page.getByRole("button", { name: /^지급 완료/ })).toHaveCount(0);
+    await expect(totals.getByText(/^고른 \d+건/)).toHaveCount(0);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await expect(totals.getByText(/^고른 2건 · 이체액/)).toBeVisible();
 
     await page.getByLabel("증빙", { exact: true }).selectOption({ label: "지급 가능" });
     await expect(page).toHaveURL(/evidence=payable/);

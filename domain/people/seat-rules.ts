@@ -1,6 +1,6 @@
 import type { Viewer } from "@/domain/viewer";
 import type { DbOrTx } from "@/repositories/document-counters";
-import { listSeatDuplicateHolders, listSeatHolders, lockSeatKeys, type OccupiedTeamRow } from "@/repositories/seats";
+import { listSeatDuplicateHolders, listSeatHolders, lockSeatKeys, type OccupiedTeamRow, type SeatDuplicateHolderRow } from "@/repositories/seats";
 import { can as defaultCan } from "@/domain/permissions/can";
 import { visible as defaultVisible } from "@/domain/permissions/visible";
 import { DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
@@ -134,11 +134,33 @@ export async function assertSeatsFree(
   }
 }
 
+// 다른 보유자와 하루라도 겹치는 보유자 구간만 — 열쇠 `${kind}:${seatId}:${userId}`.
+function duplicatedHolders(rows: readonly SeatDuplicateHolderRow[]): SeatDuplicateHolderRow[] {
+  return rows.filter((span) =>
+    rows.some((other) => other.kind === span.kind && other.seatId === span.seatId && other.userId !== span.userId && spansOverlap(span, other)),
+  );
+}
+
+function holderKey(row: SeatDuplicateHolderRow): string {
+  return `${row.kind}:${row.seatId}:${row.userId}`;
+}
+
+// 복원 전 이미 있던 중복 보유자 — 복원이 새로 만든 중복만 거부하려고 보관을 풀기 전에 같은 tx에서 읽는다.
+export async function seatDuplicateBaseline(viewer: Viewer, today: string, tx: DbOrTx): Promise<Set<string>> {
+  const rows = await listSeatDuplicateHolders(
+    viewer,
+    { today, teamLeadRoleId: TEAM_LEAD_ROLE_ID, divisionHeadRoleId: DIVISION_HEAD_ROLE_ID },
+    tx,
+  );
+  return new Set(duplicatedHolders(rows).map(holderKey));
+}
+
 // 06.4 /review: 팀 · 본부 복원 — 보관된 팀 · 본부는 자리 검사 밖이라 그사이 둘째 보유자가 생길 수 있다. 호출자가 같은 tx에서
 // 그 팀 · 본부 키를 잡고 보관을 푼 뒤 부른다 — 그 자리들에 하루라도 겹치는 다른 보유자가 있으면 거부(tx째 되돌린다).
+// baseline(복원 전 중복)에 있던 보유자는 넘긴다 — 이미 있던 중복은 다른 화면처럼 허용.
 export async function assertNoSeatDuplicates(
   viewer: Viewer,
-  input: { teamIds: readonly string[]; orgUnitIds: readonly string[]; today: string; showNames: boolean },
+  input: { teamIds: readonly string[]; orgUnitIds: readonly string[]; today: string; showNames: boolean; baseline?: ReadonlySet<string> },
   tx: DbOrTx,
 ): Promise<void> {
   const rows = await listSeatDuplicateHolders(
@@ -148,9 +170,8 @@ export async function assertNoSeatDuplicates(
   );
   for (const kind of ["team", "division"] as const) {
     const ids = kind === "team" ? input.teamIds : input.orgUnitIds;
-    const spans = rows.filter((row) => row.kind === kind && ids.includes(row.seatId));
-    const taken = spans
-      .filter((span) => spans.some((other) => other.seatId === span.seatId && other.userId !== span.userId && spansOverlap(span, other)))
+    const taken = duplicatedHolders(rows.filter((row) => row.kind === kind && ids.includes(row.seatId)))
+      .filter((span) => !input.baseline?.has(holderKey(span)))
       .sort((x, y) => (x.name < y.name ? -1 : x.name > y.name ? 1 : 0));
     const first = taken[0];
     if (first) throw new SeatTakenError(seatTakenMessage(kind, input.showNames ? first.name : null));

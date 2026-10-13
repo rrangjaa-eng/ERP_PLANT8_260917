@@ -218,6 +218,28 @@ describe("팀 · 본부 복원 자리 재검사(06.4)", () => {
     expect(await archivedTeamAtOf(t2)).not.toBeNull();
   });
 
+  it("본부에 이미 겹친 책임자 둘이 있어도 책임자 없는 팀은 복원된다 · 셋째 책임자를 데려오는 팀은 거부", async () => {
+    const admin = await makeAdmin("관리자");
+    const { orgUnitId, teamId } = await makeOrgTeam();
+    const t2 = await addTeam(orgUnitId);
+    const t3 = await addTeam(orgUnitId);
+    const t4 = await addTeam(orgUnitId);
+    await makeSeated(uniqueName("책임자H"), DIVISION_HEAD_ROLE_ID, teamId);
+    await makeSeated(uniqueName("책임자H2"), DIVISION_HEAD_ROLE_ID, t2);
+    await makeSeated(uniqueName("PM P"), DEFAULT_ROLE_ID, t3);
+    await archive(SYSTEM_VIEWER, "team", t3, deps);
+    await archive(SYSTEM_VIEWER, "team", t4, deps);
+    await makeSeated(uniqueName("책임자H3"), DIVISION_HEAD_ROLE_ID, t4);
+
+    expect(await restore(admin, "team", t3, deps)).toEqual({ restored: true });
+    expect(await archivedTeamAtOf(t3)).toBeNull();
+
+    const error = await refusal(restore(admin, "team", t4, deps), SeatTakenError);
+    expect(error.message.startsWith("본부 책임자 있음 · ")).toBe(true);
+    expect(error.message.endsWith(TAIL)).toBe(true);
+    expect(await archivedTeamAtOf(t4)).not.toBeNull();
+  });
+
   it("보관된 본부에 그새 책임자가 하나 더 생겼으면 본부 복원 거부 · 이름을 못 보면 담당", async () => {
     const admin = await makeAdmin("관리자");
     const { orgUnitId, teamId } = await makeOrgTeam();

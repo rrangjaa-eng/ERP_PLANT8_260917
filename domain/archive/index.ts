@@ -28,7 +28,7 @@ import { lockSeatKeys } from "@/repositories/seats";
 import { setUserArchived } from "@/repositories/users";
 import { findTeamById, setTeamArchived } from "@/repositories/teams";
 import { setOrgUnitArchived } from "@/repositories/org-units";
-import { assertNoSeatDuplicates, SeatTakenError } from "@/domain/people/seat-rules";
+import { assertNoSeatDuplicates, SeatTakenError, seatDuplicateBaseline } from "@/domain/people/seat-rules";
 import { withTransaction } from "@/lib/db-transaction";
 import { kstToday } from "@/lib/kst-date";
 
@@ -181,10 +181,11 @@ async function restoreSeatedOrg(viewer: Viewer, entity: "team" | "org_unit", id:
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   return withTransaction(async (tx) => {
     await lockSeatKeys(viewer, { teamIds, orgUnitIds }, tx);
+    const baseline = await seatDuplicateBaseline(viewer, today, tx);
     const reactivated = entity === "team" ? await setTeamArchived(viewer, id, false, tx) : await setOrgUnitArchived(viewer, id, false, tx);
     if (!reactivated) return { restored: false };
     try {
-      await assertNoSeatDuplicates(viewer, { teamIds, orgUnitIds, today, showNames }, tx);
+      await assertNoSeatDuplicates(viewer, { teamIds, orgUnitIds, today, showNames, baseline }, tx);
     } catch (error) {
       // 보관함 토스트가 마지막 「 · 」 앞까지 자른다 — 사람 복원(`domain/people/restore.ts`)처럼 ` · 복원 불가`로 끝낸다.
       if (error instanceof SeatTakenError) throw new SeatTakenError(`${error.message} · 복원 불가`);

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { test, expect, type Browser } from "@playwright/test";
+import { test, expect, type Browser, type Locator } from "@playwright/test";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { createProject } from "@/domain/projects";
 import { changeProjectStatus } from "@/domain/projects/status";
@@ -110,11 +110,47 @@ test.describe("완료 전 점검 — 정산 프로젝트 상세(S18)", () => {
     const next = page.getByRole("button", { name: "점검 보기" });
     await next.click();
     await expect(heading).toBeFocused();
+    // 검토 O-1 · D-5 — 제목 `#pre-settle-check`(해시 진입 자리)에 포커스하고, 제목이 창 위쪽에 와서 점검 행이 보인다.
+    await expect(page.locator("#pre-settle-check")).toBeFocused();
+    await expect(row).toBeInViewport();
+    const top = (await heading.boundingBox())?.y ?? Number.POSITIVE_INFINITY;
+    expect(top).toBeLessThan((page.viewportSize()?.height ?? 0) / 2);
+
+    // 검토 D-3 — 행 3차 접근 이름 앞에 보이는 번호(Copywriting `26001-0004 지출결의 열기`).
+    const number = (await findExpenseById(SYSTEM_VIEWER, fx.expenseId))?.number;
+    if (!number) throw new Error("반려 문서 번호가 없습니다");
+    await expect(row.getByRole("link", { name: `${number} 지출결의 열기`, exact: true })).toBeVisible();
+  });
+
+  // 검토 D-1 · D-2 — 폰은 P1 = 항목 · 금액 · 상태, 행동 3차는 항목(P1) 셀 2행(UI-SPEC S18). 320에서 섹션 표가 본문 폭을 넘지 않는다.
+  test("폰 320 — 미결 지출결의 행의 `지출결의 열기`가 항목 셀 2행 · 섹션 가로 넘침 없음", async ({ browser, baseURL }) => {
+    const fx = await setupRejectedSettling(browser, baseURL);
+    const number = (await findExpenseById(SYSTEM_VIEWER, fx.expenseId))?.number;
+    if (!number) throw new Error("반려 문서 번호가 없습니다");
+    const page = await loginPage(browser, baseURL, fx.org.drafter, { width: 320, height: 800 });
+    await page.goto(`/projects/${fx.projectId}`);
+
+    const heading = page.getByRole("heading", { name: "완료 전 점검", level: 2 });
+    const section = page.locator("section").filter({ has: heading });
+    const itemCell = section.getByRole("row").filter({ hasText: fx.itemName }).getByRole("cell").filter({ hasText: fx.itemName });
+    const open = itemCell.getByRole("link", { name: `${number} 지출결의 열기`, exact: true });
+    await expect(open).toBeVisible();
+    expect((await open.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+    expect(await sectionOverflow(section)).toBeLessThanOrEqual(0);
   });
 });
 
+// 섹션 가로 넘침 — section 스크롤 폭과, 섹션 안 표의 오른쪽 끝이 섹션 오른쪽 끝을 넘는 양 중 큰 값(px).
+async function sectionOverflow(section: Locator): Promise<number> {
+  return section.evaluate((element) => {
+    const right = element.getBoundingClientRect().right;
+    const tables = [...element.querySelectorAll("table")].map((table) => table.getBoundingClientRect().right - right);
+    return Math.max(element.scrollWidth - element.clientWidth, ...tables);
+  });
+}
+
 // Task 2 — 미매칭 견적 줄(그 줄의 문) · 매출 미입력 · 매출 줄. 줄 하나(거래처 있음 · 연결 없음) · 발행 줄 없음 → 막힘 2.
-async function setupUnmatchedSettling(): Promise<{ org: LeaveOrg; projectId: string; itemName: string }> {
+async function setupUnmatchedSettling(line: { itemName?: string; executionKrw?: number } = {}): Promise<{ org: LeaveOrg; projectId: string; itemName: string }> {
   const today = seoulToday();
   const lastYear = Number(today.slice(0, 4)) - 1;
   const suffix = randomUUID().slice(0, 6);
@@ -132,7 +168,7 @@ async function setupUnmatchedSettling(): Promise<{ org: LeaveOrg; projectId: str
   const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
   if (!revision || !project.id) throw new Error("프로젝트 · 1차 차수가 없습니다");
   const subcategory = (await firstSelectableSubcategory()).value;
-  const itemName = `조명 설치-${suffix}`;
+  const itemName = `${line.itemName ?? "조명 설치"}-${suffix}`;
   await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
     rows: [
       {
@@ -141,8 +177,8 @@ async function setupUnmatchedSettling(): Promise<{ org: LeaveOrg; projectId: str
         subcategory,
         itemName,
         vendorId: vendor.id,
-        unitPrice: { currency: "KRW" as const, amount: 13_400_000, fxRate: 1 },
-        execution: { currency: "KRW" as const, amount: 12_400_000, fxRate: 1 },
+        unitPrice: { currency: "KRW" as const, amount: line.executionKrw ?? 13_400_000, fxRate: 1 },
+        execution: { currency: "KRW" as const, amount: line.executionKrw ?? 12_400_000, fxRate: 1 },
       },
     ],
   });
@@ -165,7 +201,8 @@ test.describe("완료 전 점검 — 미매칭 견적 줄 · 매출 미입력(S1
     const section = page.locator("section").filter({ has: heading });
     await expect(section.getByText("미매칭 견적 줄 1줄", { exact: true })).toBeVisible();
     const row = section.getByRole("row").filter({ hasText: fx.itemName });
-    await expect(row.getByRole("button", { name: "지출결의 올리기" })).toBeVisible();
+    // 검토 D-3 — 줄 3차 접근 이름 = `{번호} {항목} 지출결의 올리기`(Copywriting).
+    await expect(row.getByRole("button", { name: `1 ${fx.itemName} 지출결의 올리기`, exact: true })).toBeVisible();
     await expect(section.getByRole("heading", { name: "매출 미입력", level: 3 })).toBeVisible();
     await expect(section.getByText("발행 줄 없음", { exact: true })).toBeVisible();
     await expect(section.getByText("계약 금액 13,400,000 · 발행 합계 — · 차이 —", { exact: true })).toBeVisible();
@@ -174,6 +211,21 @@ test.describe("완료 전 점검 — 미매칭 견적 줄 · 매출 미입력(S1
     await waitForHydration(submit);
     await expect(submit).toHaveAttribute("aria-disabled", "true");
     await expect(page.getByText("완료 전 점검 2건", { exact: true })).toBeVisible();
+  });
+
+  test("폰 320 · 긴 항목 · 실행가 상한 — `지출결의 올리기`가 항목 셀 2행 · 섹션 가로 넘침 없음", async ({ browser, baseURL }) => {
+    const fx = await setupUnmatchedSettling({ itemName: "해외 연사 항공·숙박 및 현지 이동 차량 지원 일체", executionKrw: 999_999_999_999 });
+    const page = await loginPage(browser, baseURL, fx.org.drafter, { width: 320, height: 800 });
+    await page.goto(`/projects/${fx.projectId}`);
+
+    const heading = page.getByRole("heading", { name: "완료 전 점검", level: 2 });
+    const section = page.locator("section").filter({ has: heading });
+    await expect(section.getByText("999,999,999,999", { exact: true })).toBeVisible();
+    const itemCell = section.getByRole("row").filter({ hasText: fx.itemName }).getByRole("cell").filter({ hasText: fx.itemName });
+    const door = itemCell.getByRole("button", { name: `1 ${fx.itemName} 지출결의 올리기`, exact: true });
+    await expect(door).toBeVisible();
+    expect((await door.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+    expect(await sectionOverflow(section)).toBeLessThanOrEqual(0);
   });
 });
 

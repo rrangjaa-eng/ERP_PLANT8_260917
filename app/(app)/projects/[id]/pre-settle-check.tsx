@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { PreSettleCheckDto, PreSettleExpenseRowDto, PreSettleLineRowDto } from "@/domain/pre-settle-check";
 import { createExpenseFromLinesAction } from "@/app/(app)/expenses/actions";
@@ -16,11 +16,19 @@ import styles from "./project-detail.module.css";
 
 // 06-19(UI-SPEC S18 · D-611~D-613): 정산 프로젝트 상세 「완료 전 점검」 — 견적 줄 표 아래 첫 섹션(부제 없음 — r3 · C13). 판정은 서버 DTO 하나
 // (막힘 건수 · 그룹 · 행 낱말 · 줄의 문)이고 화면은 읽기만 한다. 빈 그룹은 접고, 세 그룹이 다 비면 한 줄 `미결 없음`. 매출 줄은 늘 남는다(D-613).
-// 머리 줄 `정산 결재 올리기`의 3차 `점검 보기`가 이 섹션 제목으로 포커스를 옮긴다(`data-ui="pre-settle-check"` → 가까운 section의 h2).
+// 머리 줄 `정산 결재 올리기`의 3차 `점검 보기`가 이 섹션 제목(`#pre-settle-check`)으로 포커스를 옮긴다.
+// 폰(<700): P1 = 항목 · 금액 · 상태, 행동 3차는 열(P3)이 숨고 항목 셀 2행에 선다(S18 · SYSTEM §7-3 P1 최대 3열 — 검토 D-1).
+// 3차 접근 이름 앞에 보이는 행 식별자(`{번호} 지출결의 열기` · `{번호} {항목} 지출결의 올리기`, Copywriting — 검토 D-3).
 // 매출 미입력 행의 3차(`발행 요청 추가` · `발행 줄 추가`)와 섹션 로드 오류 줄은 06-22.
 // R-6: 미결 지출결의 행은 보는 사람의 범위 안 것만 오고 범위 밖은 그룹 끝 `그 밖 {N}건`(건수만). 금액 열은 서버가 금액 키를 실은 행이 있을 때만.
 
 export const PRE_SETTLE_CHECK_TITLE = "완료 전 점검";
+export const PRE_SETTLE_CHECK_HEADING_ID = "pre-settle-check";
+
+// 폰에서만 항목 셀 2행으로 서는 행동 3차(≥700은 행동 열).
+function PhoneLine({ children }: { children: ReactNode }) {
+  return children ? <div className={styles.preSettlePhoneLine}>{children}</div> : null;
+}
 
 function GroupHeading({ text, count, allowed }: { text: string; count?: string; allowed: boolean }) {
   return (
@@ -45,23 +53,33 @@ const EXPENSE_AMOUNT_COLUMN: TableColumn<PreSettleExpenseRowDto> = {
   cell: (row) => <Num value={row.expenseAmountKrw ?? null} />,
 };
 
+function openExpenseAction(row: PreSettleExpenseRowDto) {
+  return (
+    <RowActions>
+      <RowAction href={`/expenses/${row.id}`}>
+        <span className="sr-only">{`${row.number} `}</span>지출결의 열기
+      </RowAction>
+    </RowActions>
+  );
+}
+
 function expenseColumns(amountVisible: boolean): TableColumn<PreSettleExpenseRowDto>[] {
   return [
     { key: "number", header: "번호", priority: "p2", cell: (row) => row.number },
-    { key: "item", header: "항목", priority: "p1", cell: (row) => <span title={row.itemName ?? undefined}>{row.itemName ?? "—"}</span> },
-    ...(amountVisible ? [EXPENSE_AMOUNT_COLUMN] : []),
-    { key: "status", header: "상태", priority: "p1", cell: (row) => <StatusTag variant="text" status={preSettleStatusWord(row.state)} /> },
     {
-      key: "action",
-      header: "행동",
+      key: "item",
+      header: "항목",
       priority: "p1",
-      headerHidden: true,
       cell: (row) => (
-        <RowActions>
-          <RowAction href={`/expenses/${row.id}`}>지출결의 열기</RowAction>
-        </RowActions>
+        <>
+          <span title={row.itemName ?? undefined}>{row.itemName ?? "—"}</span>
+          <PhoneLine>{openExpenseAction(row)}</PhoneLine>
+        </>
       ),
     },
+    ...(amountVisible ? [EXPENSE_AMOUNT_COLUMN] : []),
+    { key: "status", header: "상태", priority: "p1", cell: (row) => <StatusTag variant="text" status={preSettleStatusWord(row.state)} /> },
+    { key: "action", header: "행동", priority: "p3", headerHidden: true, cell: openExpenseAction },
   ];
 }
 
@@ -124,10 +142,11 @@ export function PreSettleCheckSection({ check, ownerName }: { check: PreSettleCh
   function doorCell(row: PreSettleLineRowDto) {
     if (ownerName !== null) return <span className={styles.preSettleForced}>{`담당 PM ${ownerName}`}</span>;
     const { door } = row;
+    const label = <span className="sr-only">{`${row.displayNo} ${row.itemName} `}</span>;
     if (door.kind === "purchase") {
       return (
         <RowActions>
-          <RowAction href={door.href}>구매 요청</RowAction>
+          <RowAction href={door.href}>{label}구매 요청</RowAction>
         </RowActions>
       );
     }
@@ -136,7 +155,7 @@ export function PreSettleCheckSection({ check, ownerName }: { check: PreSettleCh
         <span>
           <RowActions>
             <RowAction pending={pendingLine === row.lineId} busy={pendingLine !== null && pendingLine !== row.lineId} onClick={() => void openExpense(row.lineId)}>
-              지출결의 올리기
+              {label}지출결의 올리기
             </RowAction>
           </RowActions>
           {failedLine === row.lineId ? <span className={styles.doorFailure}>지출결의 만들기 실패 · 다시 시도</span> : null}
@@ -146,7 +165,7 @@ export function PreSettleCheckSection({ check, ownerName }: { check: PreSettleCh
     if (door.kind === "expense_closed") {
       return (
         <RowActions>
-          <RowAction href={`/expenses/${door.latestId}`}>지출결의 열기</RowAction>
+          <RowAction href={`/expenses/${door.latestId}`}>{label}지출결의 열기</RowAction>
         </RowActions>
       );
     }
@@ -156,9 +175,19 @@ export function PreSettleCheckSection({ check, ownerName }: { check: PreSettleCh
 
   const lineColumns: TableColumn<PreSettleLineRowDto>[] = [
     { key: "number", header: "번호", priority: "p2", cell: (row) => row.displayNo },
-    { key: "item", header: "항목", priority: "p1", cell: (row) => <span title={row.itemName}>{row.itemName}</span> },
+    {
+      key: "item",
+      header: "항목",
+      priority: "p1",
+      cell: (row) => (
+        <>
+          <span title={row.itemName}>{row.itemName}</span>
+          <PhoneLine>{doorCell(row)}</PhoneLine>
+        </>
+      ),
+    },
     ...(check.unmatchedLines.rows.some((row) => "executionKrw" in row) ? [LINE_EXECUTION_COLUMN] : []),
-    { key: "door", header: "행동", priority: "p1", headerHidden: true, cell: doorCell },
+    { key: "door", header: "행동", priority: "p3", headerHidden: true, cell: doorCell },
   ];
 
   const open = check.openExpenses;
@@ -166,7 +195,7 @@ export function PreSettleCheckSection({ check, ownerName }: { check: PreSettleCh
   const missing = check.missingRevenue;
   const empty = open.count === 0 && unmatched.count === 0 && missing.count === 0;
   return (
-    <DetailScreen.Section title={PRE_SETTLE_CHECK_TITLE}>
+    <DetailScreen.Section title={PRE_SETTLE_CHECK_TITLE} headingId={PRE_SETTLE_CHECK_HEADING_ID}>
       <div data-ui="pre-settle-check">
         {empty ? <p className={styles.preSettleNone}>미결 없음</p> : null}
         {open.count > 0 ? (

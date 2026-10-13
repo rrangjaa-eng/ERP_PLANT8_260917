@@ -579,3 +579,14 @@ td:has(> .rowNumber) {
   color: var(--text-muted);
   font-size: var(--text-aux);
 }
+
+/* 06-19 검토 D-1(UI-SPEC S18) — 폰(<700)에서 행동 3차 열(P3)이 숨고 같은 3차가 항목(P1) 셀 2행에 선다. ≥700은 행동 열 그대로. */
+.preSettlePhoneLine {
+  display: none;
+}
+
+@media (max-width: 699.98px) {
+  .preSettlePhoneLine {
+    display: block;
+  }
+}

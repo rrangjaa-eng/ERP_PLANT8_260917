@@ -188,3 +188,11 @@ plan_head_before: cccfb3714b00aaf236306629fa53fd23b7225005
 ## Self-Check: PASSED
 
 - 만든 파일 10개 모두 있음 · 커밋 6개(8ce5ebd · 9b6ffed · 9348455 · 6790fba · 86fbf78 · abca4b0) 모두 있음 · `git rev-list --count cccfb37..HEAD` = 6(SUMMARY 커밋 전)
+
+## 화면 검토 증거
+| 항목 | 경로 |
+|---|---|
+| 독립 검토(Opus) | /mnt/project-files/notes/06-review/06-19-review.md |
+| DOM 감사(Opus, CI=true) | /mnt/project-files/notes/06-review/06-19-dom-audit.md |
+| 4폭 캡처 적용 전·후(cccfb37 대비) | /mnt/project-files/06-review/pr-e/06-19/ |
+| Codex 디자인 검토 | 웨이브 1 한 번(/mnt/project-files/06-review/pr-e/wave1-codex/06-17-codex.md). 06-19 화면은 `/projects/{id}`라 캡처 globalSetup의 빈 DB로는 닿지 않음(#183 선례와 같음) → DOM 감사 실측으로 판정 |

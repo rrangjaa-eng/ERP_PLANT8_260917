@@ -390,6 +390,49 @@ test.describe("카드 전표 (06-25 DOM 감사 후 수정)", () => {
     await page.context().close();
   });
 
+  test("올리는 동안 떠나면 beforeunload 경고가 뜨고 끝나면 없다 (D-1)", async ({ browser, baseURL }) => {
+    const holder = await makeHolder();
+    const usageId = await seedUsage(holder, 63_000);
+    const page = await loginPage(browser, baseURL, holder.person);
+    await page.goto(`/cards?editId=${usageId}`);
+    const sheet = editPanel(page);
+    const input = sheet.getByTestId("attachments-input");
+    await waitForHydration(input);
+
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let putHeld = false;
+    await page.route("**/api/storage-local/**", async (route) => {
+      putHeld = true;
+      await held;
+      await route.continue();
+    });
+    // 올리는 행이 없고 칸도 그대로면 떠나도 경고가 없다 — 대화상자 없이 닫혀야 한다(마지막에 다시 확인).
+    const dialogs: string[] = [];
+    page.on("dialog", (dialog) => {
+      dialogs.push(dialog.type());
+      void dialog.dismiss();
+    });
+    await input.setInputFiles(await uniqueImage(page));
+    await expect(fileRows(sheet).getByText("올리는 중…")).toBeVisible({ timeout: UPLOAD_WAIT });
+    await expect.poll(() => putHeld, { timeout: UPLOAD_WAIT }).toBe(true);
+
+    await page.close({ runBeforeUnload: true });
+    await expect.poll(() => dialogs).toEqual(["beforeunload"]);
+    expect(page.isClosed()).toBe(false);
+
+    release();
+    await expect(fileRows(sheet).filter({ hasText: /slip-.*\.jpg/ }).getByRole("button", { name: "삭제" })).toBeVisible({ timeout: UPLOAD_WAIT });
+    await expect(sheet.getByText("증빙 올리는 중 · 잠시 뒤 제출")).toHaveCount(0);
+    // 끝난 뒤에는 떠나는 경고가 없다.
+    await page.close({ runBeforeUnload: true });
+    await expect.poll(() => page.isClosed()).toBe(true);
+    expect(dialogs).toEqual(["beforeunload"]);
+    await page.context().close();
+  });
+
   test("긴 파일명은 한 줄 말줄임 + title이고 삭제를 밀지 않는다 (D-2)", async ({ browser, baseURL }) => {
     const holder = await makeHolder();
     const usageId = await seedUsage(holder, 62_000);

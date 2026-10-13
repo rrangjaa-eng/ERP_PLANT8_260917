@@ -340,6 +340,16 @@ export function CardUsageForm({
   const [pickSignal, setPickSignal] = useState(0);
   // 올리는 행 수 — 0보다 크면 1차가 `증빙 올리는 중`으로 막힌다(SYSTEM §7-10 · 지출결의 폼과 같은 문구).
   const [uploading, setUploading] = useState(0);
+  // 올리는 행이 있는 동안 떠나면 브라우저 기본 경고만(SYSTEM §7-10 · 지출결의 폼과 같은 효과).
+  useEffect(() => {
+    if (uploading === 0) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [uploading]);
 
   // 수정 저장 — 성공하면 패널이 닫히고 포커스가 연 요소(그 행 `수정`)로 돌아간다(PanelForm intent="edit").
   const update = useAction(updateCardUsageAction, { onSuccess: () => panelRef.current?.succeed() });

@@ -6,9 +6,9 @@ import { expenseEvidenceReviews, expensePayments, expenses, files, quoteLines } 
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertVisibility } from "@/repositories/permissions";
 import { ForbiddenError } from "@/domain/permissions/can";
-import { completeExpensePayment, getPaymentView, loadEvidenceOverrun, PayableChangedError, PaymentConflictError, previewPayable, saveScheduledPayDate } from "@/domain/payments";
+import { cancelExpensePayment, completeExpensePayment, getPaymentView, loadEvidenceOverrun, PayableChangedError, PaymentConflictError, previewPayable, saveScheduledPayDate } from "@/domain/payments";
 import { BATCH_ROW_FAILED, batchRowOutcome, completePaymentsBatch } from "@/domain/payments/batch";
-import { getEvidenceConfirmView, listPaymentTargets, parsePaymentEvidenceFilter, PAYMENT_EVIDENCE_FILTERS, sumSelectedTransfers } from "@/domain/payments/targets";
+import { getEvidenceConfirmView, listPaidPayments, listPaymentTargets, paidViewAllowed, parsePaymentEvidenceFilter, PAYMENT_EVIDENCE_FILTERS, sumSelectedTransfers } from "@/domain/payments/targets";
 import { DIFF_REASON_REQUIRED, EVIDENCE_UNCONFIRMED } from "@/domain/payments/action-row";
 import { diffKrw, sumKrw } from "@/domain/money";
 import { GateBlockedError } from "@/domain/rules/gate";
@@ -775,5 +775,89 @@ describe("제자리 증빙 확인 보기 (06-17 Task 4)", () => {
     expect(again.files).toHaveLength(2);
     const done = await confirmEvidenceAction({ expenseId: doc.expenseId, version: again.version ?? 0, evidenceStamp: again.evidenceStamp });
     expect(done?.data?.evidenceStatus).toBe("확인됨");
+  });
+});
+
+// ── 06-20 「지급 완료」 보기(S3) · 계좌 투영 · 문서 화면 왕복 · Phase 5 상태 열 ─────────────────────────
+
+// 결재 통과 · 증빙 0(P4) 문서를 지급 권한자가 처리한다 — 지급일은 오늘(지급 총액 = 단건 재계산과 같은 날).
+async function paidDocs(payer: Viewer, fx: ExpenseFixture, lineIds: readonly string[]): Promise<ApprovedExpense[]> {
+  const docs = await approvedMany(fx, lineIds, false);
+  const rows = await Promise.all(docs.map((doc) => snapshotOf(payer, doc)));
+  const result = await completePaymentsBatch(payer, { payDate: seoulToday(), rows });
+  if (result.processed !== docs.length) throw new Error(`지급 안 됨: ${JSON.stringify(result.blocked)}`);
+  return docs;
+}
+
+// 테스트 준비 전용 — 지급 기록의 지급일만 옮긴다(주 그룹 · 월 필터 경계).
+async function movePayDate(expenseId: string, payDate: string): Promise<void> {
+  await db
+    .update(expensePayments)
+    .set({ payDate })
+    .where(and(eq(expensePayments.expenseId, expenseId), isNull(expensePayments.cancelledAt)));
+}
+
+function paidRowsOf(list: Awaited<ReturnType<typeof listPaidPayments>>) {
+  return list.groups.flatMap((group) => group.rows);
+}
+
+const ACCOUNT_KEY = /account|bank|holder|masked|last4/i;
+
+describe("지급 완료 보기 (06-20 Task 1)", () => {
+  it("지급 완료 목록 — 보임 · 취소 제외 · 합계: 지급 권한자 · 대표는 살아 있는 지급만 · 지급 방식 낱말 · 계좌 키 없음 · 합계 = sumKrw(이체액) / PM · 직원 → ForbiddenError", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    const [a, b, c] = await paidDocs(payer, fx, await extraLines(fx, 3));
+    if (!a || !b || !c) throw new Error("문서 셋 필요");
+    await cancelExpensePayment(payer, { expenseId: c.expenseId, reason: "잘못 지급", version: await versionOf(c.expenseId) });
+
+    for (const reader of [payer, fx.ceo]) {
+      const list = await listPaidPayments(reader, {});
+      const rows = paidRowsOf(list);
+      expect(rows.map((row) => row.id).sort()).toEqual([a.expenseId, b.expenseId].sort());
+      for (const row of rows) {
+        expect(row.paymentMethodName).toBe("계좌이체");
+        expect(Object.keys(row).filter((key) => ACCOUNT_KEY.test(key))).toEqual([]);
+      }
+      const transfers = (await livePayments(a.expenseId)).concat(await livePayments(b.expenseId)).map((payment) => payment.transferKrw);
+      expect(list.total).toEqual({ count: 2, sumKrw: sumKrw(transfers) });
+      expect(list.month).toBe(seoulToday().slice(0, 7));
+    }
+
+    for (const outsider of [fx.pm, fx.otherPm, fx.lead]) {
+      await expect(listPaidPayments(outsider, {})).rejects.toBeInstanceOf(ForbiddenError);
+    }
+  });
+
+  it("지급 완료 주 그룹 — 오늘(KST) 뒤 = `예정 지급` 맨 앞 → `이번 주`(월요일 시작) → `지난주` → `MM-DD ~ MM-DD`, 월 필터는 지급일 달", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    const docs = await paidDocs(payer, fx, await extraLines(fx, 5));
+    const dates = ["2026-10-20", "2026-10-12", "2026-10-06", "2026-10-01", "2026-09-25"];
+    for (const [index, doc] of docs.entries()) await movePayDate(doc.expenseId, dates[index] ?? "");
+
+    const list = await listPaidPayments(payer, { month: "2026-10" }, { today: "2026-10-14" });
+    expect(list.groups.map((group) => [group.label, group.rows.map((row) => row.id)])).toEqual([
+      ["예정 지급", [docs[0]?.expenseId]],
+      ["이번 주", [docs[1]?.expenseId]],
+      ["지난주", [docs[2]?.expenseId]],
+      ["09-28 ~ 10-04", [docs[3]?.expenseId]],
+    ]);
+    expect(list.total?.count).toBe(4);
+    expect(list.months).toEqual(["2026-10", "2026-09"]);
+
+    const september = await listPaidPayments(payer, { month: "2026-09" }, { today: "2026-10-14" });
+    expect(paidRowsOf(september).map((row) => row.id)).toEqual([docs[4]?.expenseId]);
+    // 모르는 월 값은 이번 달(KST).
+    expect((await listPaidPayments(payer, { month: "2026-13" }, { today: "2026-10-14" })).month).toBe("2026-10");
+  });
+
+  it("paidViewAllowed — 지급 권한자 참 · 대표(전사 보는 범위) 참 · PM 거짓 · 팀장 거짓", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    expect(await paidViewAllowed(payer)).toBe(true);
+    expect(await paidViewAllowed(fx.ceo)).toBe(true);
+    expect(await paidViewAllowed(fx.pm)).toBe(false);
+    expect(await paidViewAllowed(fx.lead)).toBe(false);
   });
 });

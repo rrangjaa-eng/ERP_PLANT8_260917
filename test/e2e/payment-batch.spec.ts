@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
-import { expensePayments, expenses, projects, quoteLines } from "@/db/schema";
+import { expensePayments, expenses, projects, quoteLines, vendors } from "@/db/schema";
 import { approveDocument, getApprovalView } from "@/domain/approvals";
 import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { confirmEvidence } from "@/domain/evidence-reviews";
@@ -12,6 +12,7 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { AMOUNT_HIDDEN } from "@/domain/payments/action-row";
 import { previewPayable } from "@/domain/payments";
 import { formatKrw } from "@/lib/format-number";
+import { encrypt } from "@/lib/crypto";
 import { seedCodeItem } from "@/repositories/code-tables";
 import { addHistorizedValue, cancelHistorizedValue, getSettingValue } from "@/domain/settings/registry";
 import { PAYMENT_METHOD_EVIDENCE_PAIRS, TAX_VAT_RATE } from "@/domain/settings/keys";
@@ -1223,6 +1224,69 @@ test.describe("제자리 증빙 확인 · 보관 (06-17 Task 4)", () => {
       .where(and(eq(expensePayments.expenseId, first.id), isNull(expensePayments.cancelledAt)));
     expect(record).toEqual({ transferKrw: payFirst.payableKrw - 2_000, diffReason: "이체 수수료" });
     await page.context().close();
+  });
+});
+
+// ── 06-20 「지급 완료」 보기(S3) · 계좌 칸 · 문서 화면 왕복 · Phase 5 상태 열 ─────────────────────────
+
+// 이 스펙 거래처에 계좌를 단다(테스트 준비 — 03 관리자 화면 대신 같은 칸을 직접 쓴다). 뒤 4자리 · 예금주는 이 실행에만 있는 값.
+async function seedVendorAccount(fx: ExpenseE2E): Promise<{ bank: string; last4: string; holder: string; plain: string }> {
+  const suffix = randomUUID().slice(0, 6);
+  const last4 = String(1000 + Math.floor(Math.random() * 9000));
+  const account = { bank: "신한", last4, holder: `E2E예금주-${suffix}`, plain: `110-${suffix.replace(/\D/g, "7").slice(0, 3)}-29${last4}` };
+  await db
+    .update(vendors)
+    .set({ accountBank: account.bank, accountHolder: account.holder, accountNumberLast4: last4, accountNumberEncrypted: encrypt(account.plain) })
+    .where(eq(vendors.id, fx.vendorId));
+  return account;
+}
+
+// 결재 통과 · 확인됨(P4) 문서를 지급 권한자가 오늘 지급한다(06-15 일괄 경로 — 단건과 같은 지급 기록).
+async function paidTarget(fx: ExpenseE2E, key: LineKey, payer: Person): Promise<string> {
+  const expenseId = await approvedTarget(fx, key, "payable");
+  const [doc] = await db.select({ version: expenses.version }).from(expenses).where(eq(expenses.id, expenseId));
+  const preview = await previewPayable(payer.viewer, { expenseId, payDate: seoulToday() });
+  if (!doc || typeof preview.payableKrw !== "number") throw new Error("지급할 수 없는 문서");
+  const result = await completePaymentsBatch(payer.viewer, {
+    payDate: seoulToday(),
+    rows: [{ expenseId, expenseVersion: doc.version, expectedPayableKrw: preview.payableKrw }],
+  });
+  if (result.processed !== 1) throw new Error(`지급 안 됨: ${JSON.stringify(result.blocked)}`);
+  return expenseId;
+}
+
+function paidViewUrl(teamId: string): string {
+  return `/expenses?${new URLSearchParams({ status: "지급 완료", team: teamId })}`;
+}
+
+test.describe("지급 완료 보기 (06-20 Task 1)", () => {
+  test("대표 지급 완료 보기 — 계좌 문자열 없음: 지급된 건 한 줄 · 합계 줄 `합계 (지급 완료 · {YYYY-MM} · 1건)` · HTML에 계좌 뒤 4자리 · 예금주 없음 / PM 보기 select에 `지급 완료` 없음", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const account = await seedVendorAccount(fx);
+    const payer = await makeTeamPayer(fx);
+    await paidTarget(fx, "tracer", payer);
+
+    const page = await loginPage(browser, baseURL, fx.ceo);
+    await page.goto(paidViewUrl(await teamOf(fx)));
+    await expect(page.getByLabel("상태")).toHaveValue("지급 완료");
+    const row = rowOf(page, fx.lines.tracer.itemName);
+    await expect(row).toHaveCount(1);
+    await expect(row).toContainText("계좌이체");
+    await expect(page.getByRole("region", { name: "합계" })).toContainText(`합계 (지급 완료 · ${seoulToday().slice(0, 7)} · 1건)`);
+    await expect(page.getByRole("button", { name: /^지급 완료/ })).toHaveCount(0);
+    const html = await page.content();
+    expect(html).not.toContain(`**-${account.last4}`);
+    expect(html).not.toContain(account.holder);
+    expect(html).not.toContain(account.plain);
+    expect(await page.locator("main").innerText()).not.toContain(account.last4);
+    await page.context().close();
+
+    const pmPage = await loginPage(browser, baseURL, fx.pm);
+    await pmPage.goto(paidViewUrl(await teamOf(fx)));
+    const select = pmPage.getByLabel("상태");
+    await expect(select).toHaveValue("진행 중");
+    await expect(select.locator("option", { hasText: "지급 완료" })).toHaveCount(0);
+    await pmPage.context().close();
   });
 });
 

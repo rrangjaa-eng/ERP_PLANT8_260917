@@ -455,6 +455,13 @@ test.describe("완료 전 점검 — 섹션 마감(S18 · 06-22)", () => {
       await expect(submit).toHaveAttribute("aria-disabled", "true");
       await expect(page.getByText("점검 결과 없음", { exact: true })).toBeVisible();
       await expect(page.getByRole("button", { name: "다시 시도", exact: true })).toHaveCount(2);
+
+      // 06-22 DOM 감사 D-2 — 원인을 고친 뒤 섹션 2차 `다시 시도`로 회복하면 포커스는 섹션 제목(#pre-settle-check)에 있다(BODY로 사라지지 않음).
+      await setSettingValue(SYSTEM_VIEWER, PROJECT_FORCE_COMPLETE_ALLOW_MISSING_REVENUE, false);
+      await preSettleSection(page).getByRole("button", { name: "다시 시도", exact: true }).click();
+      await expect(preSettleSection(page).getByText("미매칭 견적 줄 1줄", { exact: true })).toBeVisible();
+      await expect(page.getByText("점검 불러오지 못함", { exact: true })).toHaveCount(0);
+      await expect(page.getByRole("heading", { name: "완료 전 점검", level: 2 })).toBeFocused();
     } finally {
       await setSettingValue(SYSTEM_VIEWER, PROJECT_FORCE_COMPLETE_ALLOW_MISSING_REVENUE, false);
     }

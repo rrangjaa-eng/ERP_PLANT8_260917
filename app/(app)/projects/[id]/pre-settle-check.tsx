@@ -22,7 +22,7 @@ import styles from "./project-detail.module.css";
 // 폰(<700): P1 = 항목 · 금액 · 상태, 행동 3차는 열(P3)이 숨고 항목 셀 2행에 선다(S18 · SYSTEM §7-3 P1 최대 3열 — 검토 D-1).
 // 3차 접근 이름 앞에 보이는 행 식별자(`{번호} 지출결의 열기` · `{번호} {항목} 지출결의 올리기`, Copywriting — 검토 D-3).
 // 06-22: 매출 미입력 행의 3차(PS-3 — `발행 요청 추가` · `발행 줄 추가`, ≥1024만) · `고객 승인 전` 3차(PS-6)는
-// 견적 화면(QuoteLedger)이 컨텍스트로 넘긴 값 · 함수 그대로 쓰고(새 판정 · 새 줄 추가 함수 없음), 섹션 로드 오류는 `PreSettleCheckError`.
+// 견적 화면(QuoteLedger)이 컨텍스트로 넘긴 값 · 함수 그대로 쓰고(새 판정 · 새 줄 추가 함수 없음), 섹션 로드 오류는 같은 컴포넌트의 `check` null 갈래.
 // R-6: 미결 지출결의 행은 보는 사람의 범위 안 것만 오고 범위 밖은 그룹 끝 `그 밖 {N}건`(건수만). 금액 열은 서버가 금액 키를 실은 행이 있을 때만.
 
 export const PRE_SETTLE_CHECK_TITLE = "완료 전 점검";
@@ -45,16 +45,6 @@ export type PreSettleLedgerDoors = {
 };
 
 export const PreSettleLedgerContext = createContext<PreSettleLedgerDoors | null>(null);
-
-// 「Error — 섹션 로드」 — 섹션 자리에 `점검 불러오지 못함` + 2차 `다시 시도`(카드 사용 섹션 선례). 기안 버튼은 06-19 `preSettleBlock` 경로로 막힌다.
-export function PreSettleCheckError() {
-  const router = useRouter();
-  return (
-    <DetailScreen.Section title={PRE_SETTLE_CHECK_TITLE} headingId={PRE_SETTLE_CHECK_HEADING_ID}>
-      <ListEmpty tone="error" message="점검 불러오지 못함" action={{ label: "다시 시도", onClick: () => router.refresh() }} />
-    </DetailScreen.Section>
-  );
-}
 
 // 폰에서만 항목 셀 2행으로 서는 행동 3차(≥700은 행동 열).
 function PhoneLine({ children }: { children: ReactNode }) {
@@ -157,7 +147,9 @@ function RevenueLine({ revenue, onPending }: { revenue: PreSettleCheckDto["reven
   );
 }
 
-export function PreSettleCheckSection({ check, ownerName }: { check: PreSettleCheckDto; ownerName: string | null }) {
+// check null = 「Error — 섹션 로드」: 섹션 자리에 `점검 불러오지 못함` + 2차 `다시 시도`(카드 사용 섹션 선례). 기안 버튼은 06-19 `preSettleBlock` 경로로 막힌다.
+// 오류 · 정상이 같은 컴포넌트의 같은 Section이라 refresh 뒤에도 제목 노드가 이어진다 — `다시 시도`는 refresh 전에 제목으로 포커스를 옮긴다(검토 D-2).
+export function PreSettleCheckSection({ check, ownerName }: { check: PreSettleCheckDto | null; ownerName: string | null }) {
   const router = useRouter();
   const doors = useContext(PreSettleLedgerContext);
   const busyRef = useRef(false);
@@ -217,6 +209,24 @@ export function PreSettleCheckSection({ check, ownerName }: { check: PreSettleCh
     }
     if (door.kind === "no_vendor") return <span className={styles.doorNoVendor}>거래처 없음</span>;
     return null;
+  }
+
+  if (check === null) {
+    return (
+      <DetailScreen.Section title={PRE_SETTLE_CHECK_TITLE} headingId={PRE_SETTLE_CHECK_HEADING_ID}>
+        <ListEmpty
+          tone="error"
+          message="점검 불러오지 못함"
+          action={{
+            label: "다시 시도",
+            onClick: () => {
+              document.getElementById(PRE_SETTLE_CHECK_HEADING_ID)?.focus();
+              router.refresh();
+            },
+          }}
+        />
+      </DetailScreen.Section>
+    );
   }
 
   const lineColumns: TableColumn<PreSettleLineRowDto>[] = [

@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db/client";
 import { approvalInstances, expenseEvidenceReviews, expensePayments, expenses, projects, quoteLines, teams, users, vendors } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
@@ -79,4 +79,120 @@ export async function findPaymentTargetRowsByIds(viewer: Viewer, input: { docume
   void viewer;
   if (input.ids.length === 0) return [];
   return selectRows(and(isNull(expenses.deletedAt), inArray(expenses.id, [...input.ids])), input.documentKind);
+}
+
+// 06-20(S3 「지급 완료」 보기) — 살아 있는 지급 기록(cancelled_at IS NULL) + 지출결의(삭제 아님). 지급일 내림차순 → 번호 → id.
+// 계좌 칸(은행 · 번호 · 예금주)은 싣지 않는다(O-17 — 대표가 이 목록을 읽는다). 팀 조건은 S1과 같은 문서 팀 식(docTeamId).
+// 쪽 자르기 · 합계 · 주 그룹은 domain(listPaidPayments) 한 곳 — 보임 판정(visibleExpenseScope) 뒤에 셈해야 해서 쿼리는 달 하나를 다 읽는다(S1 E-25와 같은 꼴).
+export type PaidPaymentRow = {
+  id: string;
+  number: string | null;
+  version: number;
+  projectId: string | null;
+  quoteLineId: string | null;
+  content: string | null;
+  installment: boolean;
+  installmentSeq: number | null;
+  prepaid: boolean;
+  evidenceAmount: number | null;
+  projectName: string | null;
+  itemName: string | null;
+  teamName: string | null;
+  vendorName: string | null;
+  payDate: string;
+  transferKrw: number;
+  payableKrw: number;
+  diffKrw: number;
+  diffReason: string | null;
+  paymentMethod: string;
+  processedByName: string;
+  review: { status: string } | null;
+};
+
+const paidMonthOf = sql<string>`to_char(${expensePayments.payDate}, 'YYYY-MM')`;
+
+function paidConditions(input: { teamId?: string | null; month?: string | null }): SQL | undefined {
+  const conditions: SQL[] = [isNull(expensePayments.cancelledAt), isNull(expenses.deletedAt)];
+  if (input.teamId) conditions.push(sql`${docTeamId} = ${input.teamId}::uuid`);
+  // 달 = 지급일 범위(달 첫날 ≤ 지급일 < 다음 달 첫날). 모양은 domain이 검사한다.
+  if (input.month) conditions.push(sql`${expensePayments.payDate} >= (${input.month} || '-01')::date and ${expensePayments.payDate} < ((${input.month} || '-01')::date + interval '1 month')`);
+  return and(...conditions);
+}
+
+export async function listPaidPaymentRows(viewer: Viewer, input: { teamId?: string | null; month: string }): Promise<PaidPaymentRow[]> {
+  void viewer;
+  const rows = await db
+    .select({
+      id: expenses.id,
+      number: expenses.number,
+      version: expenses.version,
+      projectId: expenses.projectId,
+      quoteLineId: expenses.quoteLineId,
+      content: expenses.content,
+      installment: expenses.installment,
+      installmentSeq: expenses.installmentSeq,
+      prepaid: expenses.prepaid,
+      evidenceAmount: expenses.evidenceAmount,
+      projectName: projects.name,
+      itemName: quoteLines.itemName,
+      teamName: teams.name,
+      vendorName: vendors.name,
+      payDate: expensePayments.payDate,
+      transferKrw: expensePayments.transferKrw,
+      payableKrw: expensePayments.payableKrw,
+      diffKrw: expensePayments.diffKrw,
+      diffReason: expensePayments.diffReason,
+      paymentMethod: expensePayments.paymentMethod,
+      processedByName: users.name,
+      reviewStatus: expenseEvidenceReviews.status,
+    })
+    .from(expensePayments)
+    .innerJoin(expenses, eq(expenses.id, expensePayments.expenseId))
+    .innerJoin(users, eq(users.id, expensePayments.processedBy))
+    .leftJoin(projects, eq(projects.id, expenses.projectId))
+    .leftJoin(quoteLines, eq(quoteLines.id, expenses.quoteLineId))
+    .leftJoin(teams, eq(teams.id, expenses.attributedTeamId))
+    .leftJoin(vendors, eq(vendors.id, expenses.vendorId))
+    .leftJoin(expenseEvidenceReviews, eq(expenseEvidenceReviews.expenseId, expenses.id))
+    .where(paidConditions(input))
+    .orderBy(desc(expensePayments.payDate), asc(expenses.number), asc(expenses.id));
+  return rows.map(({ reviewStatus, ...row }) => ({ ...row, payDate: String(row.payDate), review: reviewStatus ? { status: reviewStatus } : null }));
+}
+
+// 월 select 값 재료 — 살아 있는 지급 기록의 (문서 id, 지급 달). 보임 판정은 domain이 문서 id로 한다.
+export async function listPaidMonthRows(viewer: Viewer, input: { teamId?: string | null }): Promise<{ id: string; month: string }[]> {
+  void viewer;
+  return db
+    .select({ id: expenses.id, month: paidMonthOf })
+    .from(expensePayments)
+    .innerJoin(expenses, eq(expenses.id, expensePayments.expenseId))
+    .leftJoin(projects, eq(projects.id, expenses.projectId))
+    .where(paidConditions({ teamId: input.teamId ?? null }));
+}
+
+// 06-20(O-17): 지급 권한자에게만 가는 계좌 칸 — 거래처 id 묶음 한 번. 평문 번호(accountNumberEncrypted)는 읽지 않는다(해제는 03 경로 하나).
+export type VendorAccountRow = { vendorId: string; bank: string | null; holder: string | null; last4: string | null };
+
+export async function findVendorAccountsByIds(viewer: Viewer, vendorIds: readonly string[]): Promise<VendorAccountRow[]> {
+  if (vendorIds.length === 0) return [];
+  return db
+    .select({ vendorId: vendors.id, bank: vendors.accountBank, holder: vendors.accountHolder, last4: vendors.accountNumberLast4 })
+    .from(vendors)
+    .where(inArray(vendors.id, [...vendorIds]));
+}
+
+// 06-20(UA-605): Phase 5 목록 상태 열 재료 — 쪽의 결재 통과 행 id 묶음 한 번. 살아 있는 지급 기록의 지급일 · 선결제 · 면제 기록 유무.
+// 증빙 유무는 여기서 세지 않는다(domain이 ownersWithEvidence 한 번 — C5).
+export type ListPaymentStatusRow = { id: string; payDate: string | null; prepaid: boolean; waived: boolean };
+
+export async function findListPaymentStatusByIds(viewer: Viewer, ids: readonly string[]): Promise<ListPaymentStatusRow[]> {
+  void viewer;
+  if (ids.length === 0) return [];
+  const rows = await db
+    .select({ id: expenses.id, payDate: expensePayments.payDate, prepaid: expenses.prepaid, reviewStatus: expenseEvidenceReviews.status })
+    .from(expenses)
+    .leftJoin(expensePayments, and(eq(expensePayments.expenseId, expenses.id), isNull(expensePayments.cancelledAt)))
+    .leftJoin(expenseEvidenceReviews, eq(expenseEvidenceReviews.expenseId, expenses.id))
+    .where(inArray(expenses.id, [...ids]));
+  return rows.map((row) => ({ id: row.id, payDate: row.payDate, prepaid: row.prepaid, waived: row.reviewStatus === "waived" }));
 }

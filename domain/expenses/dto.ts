@@ -2,6 +2,7 @@ import type { DtoSpec } from "@/domain/permissions/project";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import type { Money } from "@/domain/money";
 import type { TaxLinePart } from "@/domain/expenses/tax";
+import type { PaymentAccount } from "@/domain/payments";
 
 // 05-03: 지출결의 DTO 둘 — 문서 칸은 expense.value, 금액 칸(공급가액 · 세율 · 세액 · 지급 총액)은 expense.amount.
 
@@ -232,6 +233,8 @@ export type ExpenseListRowDto = {
   // `작성 중` / `{단계} 결재 중` / `반려` / `회수` / `승인`, 날짜는 MM-DD(서울 — 반려 · 회수 · 승인만).
   statusWord: string;
   statusDate: string | null;
+  // 06-20(UA-605) — 상태 칸 둘째 줄 `증빙 {N}일 경과`(기한 지난 선결제 · 지급 뒤). 없으면 키 없음.
+  statusNote?: string | null;
 };
 
 export const EXPENSE_LIST_ROW_DTO_SPEC: DtoSpec<ExpenseListRowDto, ExpenseListRowDto> = {
@@ -246,6 +249,7 @@ export const EXPENSE_LIST_ROW_DTO_SPEC: DtoSpec<ExpenseListRowDto, ExpenseListRo
     { key: "drafterName", from: "drafterName", infoItem: "expense.value" },
     { key: "statusWord", from: "statusWord", infoItem: "expense.value" },
     { key: "statusDate", from: "statusDate", infoItem: "expense.value" },
+    { key: "statusNote", from: "statusNote", infoItem: "expense.value" },
   ],
 };
 
@@ -271,6 +275,8 @@ export type PaymentTargetRowDto = {
   quoteLineId: string | null;
   // 06-17(R10-F2) — 증빙 금액이 적혀 있는가(값이 아니라 있음만). 빈 `확인 전`은 제자리 확인 모달 대신 문서 화면으로 간다.
   evidenceAmountEntered: boolean;
+  // 06-20(O-17) — 지급 권한자의 계좌이체 행에만 있는 키(domain/payments projectPaymentAccounts).
+  account?: PaymentAccount;
 };
 
 export const PAYMENT_TARGET_ROW_DTO_SPEC: DtoSpec<PaymentTargetRowDto, PaymentTargetRowDto> = {
@@ -290,6 +296,43 @@ export const PAYMENT_TARGET_ROW_DTO_SPEC: DtoSpec<PaymentTargetRowDto, PaymentTa
     { key: "prepaid", from: "prepaid", infoItem: "expense.value" },
     { key: "quoteLineId", from: "quoteLineId", infoItem: "expense.value" },
     { key: "evidenceAmountEntered", from: "evidenceAmountEntered", infoItem: "expense.value" },
+    { key: "account", from: "account", infoItem: "vendor.value" },
+  ],
+};
+
+// 06-20(S3 「지급 완료」 보기) — 지급 기록 행. 금액(이체액 · 차이)은 expense.amount, 나머지는 expense.value. 계좌 칸은 없다(O-17 — 대표가 읽는다).
+// 지급 방식은 낱말만(지급 기록이 복사한 코드의 이름). 증빙 상태는 06-06 resolveEvidenceStatus, 증빙 금액은 있음만(06-17 R10-F2 — 빈 `확인 전`은 문서 화면으로).
+export type PaidPaymentRowDto = {
+  id: string;
+  number: string | null;
+  title: string;
+  vendorName: string | null;
+  paymentMethodName: string | null;
+  payDate: string;
+  transferKrw: number;
+  diffKrw: number;
+  diffReason: string | null;
+  evidenceStatus: string;
+  evidenceAmountEntered: boolean;
+  processedByName: string;
+  version: number;
+};
+
+export const PAID_PAYMENT_ROW_DTO_SPEC: DtoSpec<PaidPaymentRowDto, PaidPaymentRowDto> = {
+  fields: [
+    { key: "id", from: "id", infoItem: "expense.value" },
+    { key: "number", from: "number", infoItem: "expense.value" },
+    { key: "title", from: "title", infoItem: "expense.value" },
+    { key: "vendorName", from: "vendorName", infoItem: "expense.value" },
+    { key: "paymentMethodName", from: "paymentMethodName", infoItem: "expense.value" },
+    { key: "payDate", from: "payDate", infoItem: "expense.value" },
+    { key: "transferKrw", from: "transferKrw", infoItem: "expense.amount" },
+    { key: "diffKrw", from: "diffKrw", infoItem: "expense.amount" },
+    { key: "diffReason", from: "diffReason", infoItem: "expense.value" },
+    { key: "evidenceStatus", from: "evidenceStatus", infoItem: "expense.value" },
+    { key: "evidenceAmountEntered", from: "evidenceAmountEntered", infoItem: "expense.value" },
+    { key: "processedByName", from: "processedByName", infoItem: "expense.value" },
+    { key: "version", from: "version", infoItem: "expense.value" },
   ],
 };
 
@@ -300,3 +343,4 @@ registerDto({ name: "expensePreview", fields: EXPENSE_PREVIEW_DTO_SPEC.fields.ma
 registerDto({ name: "expenseNewDefaults", fields: EXPENSE_NEW_DEFAULTS_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 registerDto({ name: "expenseListRow", fields: EXPENSE_LIST_ROW_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 registerDto({ name: "paymentTargetRow", fields: PAYMENT_TARGET_ROW_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
+registerDto({ name: "paidPaymentRow", fields: PAID_PAYMENT_ROW_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });

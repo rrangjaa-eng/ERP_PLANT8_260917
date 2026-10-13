@@ -2,19 +2,20 @@ import { randomUUID } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db/client";
-import { expenseEvidenceReviews, expensePayments, expenses, files, quoteLines } from "@/db/schema";
+import { expenseEvidenceReviews, expensePayments, expenses, files, quoteLines, vendors } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertVisibility } from "@/repositories/permissions";
 import { ForbiddenError } from "@/domain/permissions/can";
-import { completeExpensePayment, getPaymentView, loadEvidenceOverrun, PayableChangedError, PaymentConflictError, previewPayable, saveScheduledPayDate } from "@/domain/payments";
+import { cancelExpensePayment, completeExpensePayment, getPaymentView, loadEvidenceOverrun, PayableChangedError, PaymentConflictError, previewPayable, saveScheduledPayDate } from "@/domain/payments";
 import { BATCH_ROW_FAILED, batchRowOutcome, completePaymentsBatch } from "@/domain/payments/batch";
-import { getEvidenceConfirmView, listPaymentTargets, parsePaymentEvidenceFilter, PAYMENT_EVIDENCE_FILTERS, sumSelectedTransfers } from "@/domain/payments/targets";
+import { getEvidenceConfirmView, listPaidPayments, listPaymentTargets, nextUnreviewedTarget, paidViewAllowed, parsePaymentEvidenceFilter, parsePayReturn, PAYMENT_EVIDENCE_FILTERS, sumSelectedTransfers } from "@/domain/payments/targets";
 import { DIFF_REASON_REQUIRED, EVIDENCE_UNCONFIRMED } from "@/domain/payments/action-row";
 import { diffKrw, sumKrw } from "@/domain/money";
 import { GateBlockedError } from "@/domain/rules/gate";
-import { confirmEvidence } from "@/domain/evidence-reviews";
+import { confirmEvidence, loadPrepaidDueDays } from "@/domain/evidence-reviews";
 import { voidEvidence } from "@/domain/evidence";
 import { approveDocument } from "@/domain/approvals";
+import { listExpenses } from "@/domain/expenses/list";
 import { createExpenseFromLines } from "@/domain/expenses";
 import { loadTaxRates } from "@/domain/money/tax";
 import { addHistorizedValue, cancelHistorizedValue } from "@/domain/settings/registry";
@@ -49,7 +50,8 @@ beforeEach(async () => {
 async function makePayer(name?: string): Promise<Viewer> {
   const payer = await makePaymentManager(name);
   if (!payer.roleId) throw new Error("계급 없음");
-  for (const infoItem of ["expense.value", "expense.amount"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: payer.roleId, infoItem, visible: true });
+  // 06-20 — 계좌 칸(account)은 03 정보 항목 vendor.value에 걸린다(새 계급은 노출 행이 없으면 숨김).
+  for (const infoItem of ["expense.value", "expense.amount", "vendor.value"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: payer.roleId, infoItem, visible: true });
   return payer;
 }
 
@@ -775,5 +777,246 @@ describe("제자리 증빙 확인 보기 (06-17 Task 4)", () => {
     expect(again.files).toHaveLength(2);
     const done = await confirmEvidenceAction({ expenseId: doc.expenseId, version: again.version ?? 0, evidenceStamp: again.evidenceStamp });
     expect(done?.data?.evidenceStatus).toBe("확인됨");
+  });
+});
+
+// ── 06-20 「지급 완료」 보기(S3) · 계좌 투영 · 문서 화면 왕복 · Phase 5 상태 열 ─────────────────────────
+
+// 결재 통과 · 증빙 0(P4) 문서를 지급 권한자가 처리한다 — 지급일은 오늘(지급 총액 = 단건 재계산과 같은 날).
+async function paidDocs(payer: Viewer, fx: ExpenseFixture, lineIds: readonly string[]): Promise<ApprovedExpense[]> {
+  const docs = await approvedMany(fx, lineIds, false);
+  const rows = await Promise.all(docs.map((doc) => snapshotOf(payer, doc)));
+  const result = await completePaymentsBatch(payer, { payDate: seoulToday(), rows });
+  if (result.processed !== docs.length) throw new Error(`지급 안 됨: ${JSON.stringify(result.blocked)}`);
+  return docs;
+}
+
+// 테스트 준비 전용 — 지급 기록의 지급일만 옮긴다(주 그룹 · 월 필터 경계).
+async function movePayDate(expenseId: string, payDate: string): Promise<void> {
+  await db
+    .update(expensePayments)
+    .set({ payDate })
+    .where(and(eq(expensePayments.expenseId, expenseId), isNull(expensePayments.cancelledAt)));
+}
+
+function paidRowsOf(list: Awaited<ReturnType<typeof listPaidPayments>>) {
+  return list.groups.flatMap((group) => group.rows);
+}
+
+const ACCOUNT_KEY = /account|bank|holder|masked|last4/i;
+
+describe("지급 완료 보기 (06-20 Task 1)", () => {
+  it("지급 완료 목록 — 보임 · 취소 제외 · 합계: 지급 권한자 · 대표는 살아 있는 지급만 · 지급 방식 낱말 · 계좌 키 없음 · 합계 = sumKrw(이체액) / PM · 직원 → ForbiddenError", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    const [a, b, c] = await paidDocs(payer, fx, await extraLines(fx, 3));
+    if (!a || !b || !c) throw new Error("문서 셋 필요");
+    await cancelExpensePayment(payer, { expenseId: c.expenseId, reason: "잘못 지급", version: await versionOf(c.expenseId) });
+
+    for (const reader of [payer, fx.ceo]) {
+      const list = await listPaidPayments(reader, {});
+      const rows = paidRowsOf(list);
+      expect(rows.map((row) => row.id).sort()).toEqual([a.expenseId, b.expenseId].sort());
+      for (const row of rows) {
+        expect(row.paymentMethodName).toBe("계좌이체");
+        expect(Object.keys(row).filter((key) => ACCOUNT_KEY.test(key))).toEqual([]);
+      }
+      const transfers = (await livePayments(a.expenseId)).concat(await livePayments(b.expenseId)).map((payment) => payment.transferKrw);
+      expect(list.total).toEqual({ count: 2, sumKrw: sumKrw(transfers) });
+      expect(list.month).toBe(seoulToday().slice(0, 7));
+    }
+
+    for (const outsider of [fx.pm, fx.otherPm, fx.lead]) {
+      await expect(listPaidPayments(outsider, {})).rejects.toBeInstanceOf(ForbiddenError);
+    }
+  });
+
+  it("지급 완료 주 그룹 — 오늘(KST) 뒤 = `예정 지급` 맨 앞 → `이번 주`(월요일 시작) → `지난주` → `MM-DD ~ MM-DD`, 월 필터는 지급일 달", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    const docs = await paidDocs(payer, fx, await extraLines(fx, 5));
+    const dates = ["2026-10-20", "2026-10-12", "2026-10-06", "2026-10-01", "2026-09-25"];
+    for (const [index, doc] of docs.entries()) await movePayDate(doc.expenseId, dates[index] ?? "");
+
+    const list = await listPaidPayments(payer, { month: "2026-10" }, { today: "2026-10-14" });
+    expect(list.groups.map((group) => [group.label, group.rows.map((row) => row.id)])).toEqual([
+      ["예정 지급", [docs[0]?.expenseId]],
+      ["이번 주", [docs[1]?.expenseId]],
+      ["지난주", [docs[2]?.expenseId]],
+      ["09-28 ~ 10-04", [docs[3]?.expenseId]],
+    ]);
+    expect(list.total?.count).toBe(4);
+    expect(list.months).toEqual(["2026-10", "2026-09"]);
+
+    const september = await listPaidPayments(payer, { month: "2026-09" }, { today: "2026-10-14" });
+    expect(paidRowsOf(september).map((row) => row.id)).toEqual([docs[4]?.expenseId]);
+    // 모르는 월 값은 이번 달(KST).
+    expect((await listPaidPayments(payer, { month: "2026-13" }, { today: "2026-10-14" })).month).toBe("2026-10");
+  });
+
+  it("paidViewAllowed — 지급 권한자 참 · 대표(전사 보는 범위) 참 · PM 거짓 · 팀장 거짓", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    expect(await paidViewAllowed(payer)).toBe(true);
+    expect(await paidViewAllowed(fx.ceo)).toBe(true);
+    expect(await paidViewAllowed(fx.pm)).toBe(false);
+    expect(await paidViewAllowed(fx.lead)).toBe(false);
+  });
+});
+
+// ── 06-20 Task 2 도우미 ──────────────────────────────────────────────
+
+const REVEAL_ITEM = "vendor.account_number_unmasked";
+
+async function giveAccount(vendorId: string, last4: string): Promise<{ bank: string; holder: string }> {
+  const account = { bank: "신한", holder: `예금주-${randomUUID().slice(0, 4)}` };
+  await db.update(vendors).set({ accountBank: account.bank, accountHolder: account.holder, accountNumberLast4: last4 }).where(eq(vendors.id, vendorId));
+  return account;
+}
+
+async function setReveal(viewer: Viewer, visible: boolean): Promise<void> {
+  if (!viewer.roleId) throw new Error("계급 없음");
+  await upsertVisibility(SYSTEM_VIEWER, { roleId: viewer.roleId, infoItem: REVEAL_ITEM, visible });
+}
+
+describe("계좌 투영 (06-20 Task 2)", () => {
+  it("계좌 투영 — 권한자만: 지급 권한자의 S1 행 · 지급 보기에 account(은행 · 마스킹 · 예금주 · canReveal), 대표 · PM · 직원의 지급 보기 키 목록에 account 없음", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    const { bank, holder } = await giveAccount(fx.stageOneId, "4321");
+    const [doc] = await approvedMany(fx, await extraLines(fx, 1), false);
+    if (!doc) throw new Error("문서 필요");
+
+    const row = rowsOf(await listPaymentTargets(payer, {})).find((candidate) => candidate.id === doc.expenseId);
+    expect(row?.account).toEqual({ status: "registered", vendorId: fx.stageOneId, bank, masked: "****-**-4321", holder, canReveal: false });
+    const payerView = await getPaymentView(payer, doc.expenseId);
+    expect(payerView?.account).toEqual(row?.account);
+
+    for (const reader of [fx.ceo, fx.pm, fx.otherPm]) {
+      const view = await getPaymentView(reader, doc.expenseId);
+      expect(Object.keys(view ?? {})).not.toContain("account");
+      expect(JSON.stringify(view ?? {})).not.toContain("4321");
+    }
+    expect(Object.keys((await getPaymentView(fx.ceo, doc.expenseId)) ?? {})).toContain("payDate");
+  });
+
+  it("계좌 없음 행 고를 수 있음 — 계좌 없는 거래처의 계좌이체 P4 행은 account 「없음」 · selectable 참(M-7)", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    const bare = await insertVendor(SYSTEM_VIEWER, { name: "계좌없는곳", normalizedName: `계좌없는곳-${randomUUID()}`, defaultEvidenceType: "tax_invoice" });
+    const [doc] = await approvedMany(fx, await extraLines(fx, 1, bare.id), false);
+    if (!doc) throw new Error("문서 필요");
+
+    const row = rowsOf(await listPaymentTargets(payer, {})).find((candidate) => candidate.id === doc.expenseId);
+    expect(row?.account).toEqual({ status: "none" });
+    expect(row?.selectable).toBe(true);
+    expect((await getPaymentView(payer, doc.expenseId))?.account).toEqual({ status: "none" });
+  });
+
+  it("계좌 해제 — 노출표 따름: 지급 권한자 계급의 해제 항목을 끄면 canReveal 거짓 · 켜면 참, 나머지 칸은 같다(E-50)", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    await giveAccount(fx.stageOneId, "8765");
+    const [doc] = await approvedMany(fx, await extraLines(fx, 1), false);
+    if (!doc) throw new Error("문서 필요");
+
+    await setReveal(payer, false);
+    const off = rowsOf(await listPaymentTargets(payer, {})).find((candidate) => candidate.id === doc.expenseId)?.account;
+    const offView = (await getPaymentView(payer, doc.expenseId))?.account;
+    await setReveal(payer, true);
+    const on = rowsOf(await listPaymentTargets(payer, {})).find((candidate) => candidate.id === doc.expenseId)?.account;
+    const onView = (await getPaymentView(payer, doc.expenseId))?.account;
+
+    expect(off).toMatchObject({ status: "registered", canReveal: false });
+    expect(offView).toMatchObject({ status: "registered", canReveal: false });
+    expect(on).toEqual({ ...off, canReveal: true });
+    expect(onView).toEqual({ ...offView, canReveal: true });
+  });
+});
+
+// ── 06-20 Task 3 — 문서 화면 왕복(C-1) ─────────────────────────────────
+
+describe("순수", () => {
+  it("되돌림 쿼리 — from=pay만 · 허용 키(team uuid · evidence 열거 · page 1~999)만 남기고 backHref는 늘 `/expenses?status=지급 대상`으로 새로 만든다", () => {
+    const team = randomUUID();
+    expect(parsePayReturn({})).toBeNull();
+    expect(parsePayReturn({ from: "list", team })).toBeNull();
+
+    const kept = parsePayReturn({ from: "pay", status: "지급 대상", team, evidence: "unreviewed", page: "2", extra: "x" });
+    expect(kept).toEqual({
+      backHref: `/expenses?${new URLSearchParams({ status: "지급 대상", team, evidence: "unreviewed", page: "2" })}`,
+      docQuery: new URLSearchParams({ from: "pay", status: "지급 대상", team, evidence: "unreviewed", page: "2" }).toString(),
+      team,
+      evidence: "unreviewed",
+    });
+
+    for (const bad of [
+      { from: "pay", team: "//evil.example", evidence: "javascript:alert(1)", page: "0" },
+      { from: "pay", team: "https://evil.example/x", evidence: "all", page: "1000" },
+      { from: "pay", page: "2x", next: "//evil.example", status: "https://evil.example" },
+      { from: ["pay", "pay"], team: [team, team] },
+    ]) {
+      const parsed = parsePayReturn(bad);
+      if (parsed === null) continue;
+      expect(parsed.backHref).toBe(`/expenses?${new URLSearchParams({ status: "지급 대상" })}`);
+      expect(parsed.docQuery).toBe(new URLSearchParams({ from: "pay", status: "지급 대상" }).toString());
+      expect(parsed.backHref).not.toMatch(/evil|javascript/);
+    }
+  });
+});
+
+describe("다음 확인 전 (06-20 Task 3)", () => {
+  it("다음 확인 전 번호 — 지급 대상과 같은 조회 · 판정 · 정렬에서 그 문서 뒤 첫 확인 전(P2), 필터에서 빠진 문서도 정렬 키로 / 없으면 null / 지급 권한 없음 → null", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    const [lineA, lineB, lineC] = await extraLines(fx, 3);
+    if (!lineA || !lineB || !lineC) throw new Error("줄 셋 필요");
+    const [first] = await approvedMany(fx, [lineA], true);
+    const [middle] = await approvedMany(fx, [lineB], false);
+    const [last] = await approvedMany(fx, [lineC], true);
+    if (!first || !middle || !last) throw new Error("문서 셋 필요");
+    const rows = rowsOf(await listPaymentTargets(payer, {}));
+    expect(rows.map((row) => row.id)).toEqual([first.expenseId, middle.expenseId, last.expenseId]);
+    expect(rows.map((row) => row.evidenceStatus)).toEqual(["확인 전", expect.anything(), "확인 전"]);
+
+    expect(await nextUnreviewedTarget(payer, { afterExpenseId: first.expenseId })).toEqual({ id: last.expenseId, number: last.number });
+    // middle(P4)은 unreviewed 필터 목록에 없다 — 정렬 키로 그 뒤를 찾는다.
+    expect(await nextUnreviewedTarget(payer, { afterExpenseId: middle.expenseId, evidence: "unreviewed" })).toEqual({ id: last.expenseId, number: last.number });
+    expect(await nextUnreviewedTarget(payer, { afterExpenseId: last.expenseId })).toBeNull();
+    expect(await nextUnreviewedTarget(payer, { afterExpenseId: first.expenseId, evidence: "missing" })).toBeNull();
+    expect(await nextUnreviewedTarget(fx.ceo, { afterExpenseId: first.expenseId })).toBeNull();
+    expect(await nextUnreviewedTarget(fx.pm, { afterExpenseId: first.expenseId })).toBeNull();
+  });
+});
+
+// ── 06-20 Task 4 — Phase 5 목록 상태 열(UA-605) ─────────────────────────
+
+describe("Phase 5 상태 열 (06-20 Task 4)", () => {
+  it("Phase 5 상태 열 — 지급 기록 → `지급 완료` · 지급일 / 취소만 → `승인` / 기한 지난 선결제 → `증빙 {N}일 경과` / 면제 · 지급 전은 없음", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    const today = seoulToday();
+    const dueDays = await loadPrepaidDueDays();
+    const [lineA, lineB, lineC, lineD, lineE] = await extraLines(fx, 5);
+    if (!lineA || !lineB || !lineC || !lineD || !lineE) throw new Error("줄 다섯 필요");
+    const [paid, cancelled, overdue, waived] = await paidDocs(payer, fx, [lineA, lineB, lineC, lineD]);
+    const [unpaidPrepaid] = await approvedMany(fx, [lineE], false);
+    if (!paid || !cancelled || !overdue || !waived || !unpaidPrepaid) throw new Error("문서 다섯 필요");
+    await cancelExpensePayment(payer, { expenseId: cancelled.expenseId, reason: "잘못 지급", version: await versionOf(cancelled.expenseId) });
+    const past = addDays(today, -(dueDays + 3));
+    for (const doc of [overdue, waived, unpaidPrepaid]) await db.update(expenses).set({ prepaid: true, prepaidReason: "해외 결제 선결제" }).where(eq(expenses.id, doc.expenseId));
+    for (const doc of [overdue, waived]) await movePayDate(doc.expenseId, past);
+    await db.insert(expenseEvidenceReviews).values({ expenseId: waived.expenseId, status: "waived", waiveReason: "해외 결제", reviewedBy: payer.id });
+
+    const rows = (await listExpenses(fx.pm, { status: "approved" })).groups.flatMap((group) => group.rows);
+    const rowOf = (doc: ApprovedExpense) => rows.find((row) => row.id === doc.expenseId);
+    expect(rowOf(paid)).toMatchObject({ statusWord: "지급 완료", statusDate: today.slice(5) });
+    expect(rowOf(paid)?.statusNote ?? null).toBeNull();
+    expect(rowOf(cancelled)?.statusWord).toBe("승인");
+    expect(rowOf(overdue)).toMatchObject({ statusWord: "지급 완료", statusDate: past.slice(5), statusNote: "증빙 3일 경과" });
+    expect(rowOf(waived)).toMatchObject({ statusWord: "지급 완료", statusDate: past.slice(5) });
+    expect(rowOf(waived)?.statusNote ?? null).toBeNull();
+    expect(rowOf(unpaidPrepaid)?.statusWord).toBe("승인");
+    expect(rowOf(unpaidPrepaid)?.statusNote ?? null).toBeNull();
   });
 });

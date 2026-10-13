@@ -21,6 +21,8 @@ import type { PaymentTargetRowDto } from "@/domain/expenses/dto";
 import type { BatchPaymentResult } from "@/domain/payments/batch";
 import type { SelectedTransferSum } from "@/domain/payments/targets";
 import type { ConfirmEvidenceResult } from "@/domain/evidence-reviews";
+import type { PaymentAccount } from "@/domain/payments";
+import { AccountNumberCell } from "@/app/(app)/admin/vendors/account-number";
 import { AMOUNT_HIDDEN, DIFF_REASON_REQUIRED, TRANSFER_NOT_NUMBER, TRANSFER_NOT_POSITIVE } from "@/domain/payments/action-row";
 import { formatKrw } from "@/lib/format-number";
 import { completePaymentsBatchAction, sumSelectedTransfersAction } from "./actions";
@@ -57,7 +59,7 @@ import styles from "./expenses.module.css";
 // 결과 글자는 처음부터 DOM에 있는 빈 aria-live 영역에 쓴다(필터 다음 자리 — 1차와 떨어짐, M-2). 토스트 없음(C12).
 // 06-17: P4 행의 이체액 · 차이 사유 편집(04.6 편집 표 칸 — 기본값 = 지급 총액, 고치면 그 행이 저절로 골라짐), 고른 건 이체액 합 · 행별 차이는
 // 서버 액션(sumSelectedTransfersAction) 응답 — 합계 번호(고른 id 집합 · 고른 행 이체액이 바뀔 때만 +1)로 낡은 응답을 버린다(O-18 — 화면은 금액을
-// 셈하지 않고 건수만 센다). 계좌 칸 · 「지급 완료」 보기는 06-20.
+// 셈하지 않고 건수만 센다). 06-20: 지급 방식 칸의 계좌(PaymentAccountValue) — 「지급 완료」 보기는 paid-list.tsx.
 
 export type PaymentTargetScreenRow = Partial<PaymentTargetRowDto> & { id: string; group: string; groupTone?: "warning" };
 
@@ -73,6 +75,36 @@ const SUM_DEBOUNCE_MS = 300;
 const EMPTY_SELECTION: SelectionState = { selectedIds: [], edits: {} };
 
 // 차이는 부호를 붙인다(`-3,300` · `+1,200` — 금액 표시 절 「차이」, S5 SignedNum과 같은 꼴). 값은 서버 diffKrw.
+// 06-20(UI-SPEC 「표시 — 지급 방식 · 계좌」): 계좌이체 칸 — 1행 `{은행} ****-**-{뒤4}` + 권한자 3차 `번호 보기`(03 AccountNumberCell 그대로),
+// 2행 예금주(한 줄 말줄임 + title). 계좌가 없으면 `계좌 없음 · 계좌 등록은 관리자`(버튼 없음 — 지급을 막지 않는다, M-7). S1 칸과 S5 계좌 행이 같이 쓴다.
+export function PaymentAccountValue({ account }: { account: PaymentAccount }) {
+  if (account.status === "none") {
+    return (
+      <span className={styles.accountNone} data-payment-account="">
+        계좌 없음 · 계좌 등록은 관리자
+      </span>
+    );
+  }
+  return (
+    <div data-payment-account="">
+      <div className={styles.accountLine}>
+        {account.bank ? <span className={styles.nowrap}>{account.bank}</span> : null}
+        <AccountNumberCell vendorId={account.vendorId} masked={account.masked} canReveal={account.canReveal} />
+      </div>
+      {account.holder ? (
+        <span className={styles.vendorCell} title={account.holder}>
+          {account.holder}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+// 폰 접힌 줄 · 좁은 폭 요약 — 1행만(번호 보기 없음, 폰은 행이 문서 화면 링크).
+function accountSummary(account: PaymentAccount): string {
+  return account.status === "none" ? "계좌 없음 · 계좌 등록은 관리자" : [account.bank, account.masked].filter(Boolean).join(" ");
+}
+
 function SignedNum({ value }: { value: number }) {
   return <Num value={value > 0 ? `+${formatKrw(value)}` : formatKrw(value)} />;
 }
@@ -169,7 +201,7 @@ const subscribePhone = (onChange: () => void) => {
   media.addEventListener("change", onChange);
   return () => media.removeEventListener("change", onChange);
 };
-function usePhoneWidth(): boolean {
+export function usePhoneWidth(): boolean {
   return useSyncExternalStore(subscribePhone, () => window.matchMedia("(max-width: 699.98px)").matches, () => false);
 }
 
@@ -656,7 +688,13 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
         </span>
       ),
     },
-    { key: "method", header: PAYMENT_TARGET_COLUMN_LABELS.method, priority: "p2", cell: (row) => <span className={styles.nowrap}>{row.paymentMethodName ?? "—"}</span> },
+    {
+      key: "method",
+      header: PAYMENT_TARGET_COLUMN_LABELS.method,
+      priority: "p2",
+      cell: (row) => (row.account ? <PaymentAccountValue account={row.account} /> : <span className={styles.nowrap}>{row.paymentMethodName ?? "—"}</span>),
+      summary: (row) => (row.account ? accountSummary(row.account) : (row.paymentMethodName ?? "—")),
+    },
     {
       key: "payment",
       header: PAYMENT_TARGET_COLUMN_LABELS.payment,

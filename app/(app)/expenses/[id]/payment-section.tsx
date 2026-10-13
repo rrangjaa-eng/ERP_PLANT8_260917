@@ -10,6 +10,7 @@ import { Num } from "@/ui/num/Num";
 import { useCommaInput } from "@/ui/input/use-comma-input";
 import { formatKrw, numberInputRejectionReason } from "@/lib/format-number";
 import { previewPayableAction } from "./actions";
+import { PaymentAccountValue } from "../payment-targets-table";
 import styles from "./expense.module.css";
 
 // 06-04(UI-SPEC S5 · D-604 · D-605): 지급 섹션 칸 — 지급일 · 이체액(라벨 = 지급 방식 이름) · 차이 힌트 · 차이 사유 · 지급 뒤 읽기 줄.
@@ -345,6 +346,8 @@ export function PaymentFields({
     });
   }
   items.push({ label: "지급 방식", value: paymentMethodName ?? dash });
+  // 06-20(O-17) — 계좌 행은 지급 보기에 account 키가 있을 때만(지급 권한자 · 계좌이체). 값 꼴은 S1 지급 방식 칸과 같다.
+  if (view.account) items.push({ label: "계좌", value: <PaymentAccountValue account={view.account} /> });
   if (paid) {
     items.push({
       label: "지급일",

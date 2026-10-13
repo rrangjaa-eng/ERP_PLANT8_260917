@@ -118,7 +118,7 @@ export function ExpensesTable({ rows, drafterColumn, amountColumn }: { rows: Exp
       priority: "p1",
       cell: (row) =>
         row.statusWord ? (
-          <span className={styles.statusCell}>
+          <span className={row.statusWord === "지급 완료" ? `${styles.statusCell} ${styles.statusPaid}` : styles.statusCell}>
             <StatusTag status={row.statusWord as StatusWord} variant="text" />
             {row.statusDate ? (
               <>
@@ -126,6 +126,8 @@ export function ExpensesTable({ rows, drafterColumn, amountColumn }: { rows: Exp
                 <Num value={row.statusDate} />
               </>
             ) : null}
+            {/* 06-20(UA-605) — 기한 지난 선결제 둘째 줄(경고 색 · 태그 크기). 열을 새로 만들지 않는다. */}
+            {row.statusNote ? <span className={styles.statusNote}>{row.statusNote}</span> : null}
           </span>
         ) : null,
     },

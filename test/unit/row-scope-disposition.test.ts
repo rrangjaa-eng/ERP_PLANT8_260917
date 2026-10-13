@@ -148,6 +148,8 @@ export const PROJECT_READ_DISPOSITION: readonly ProjectReadDisposition[] = [
   { file: "repositories/expenses.ts", fn: "isExpenseInScope", reason: "지출결의 문서 하나(canSeeExpense) — 목록과 같은 scopeCondition(06.2-08)" },
   { file: "repositories/expenses.ts", fn: "listExpenseIdsInScope", reason: "지급 대상 id 묶음 — 문서 하나와 같은 scopeCondition을 한 질의로(06.2-08 검토 I-1)" },
   { file: "repositories/payment-targets.ts", fn: "selectRows", reason: "지급 대상 — 도메인 visibleRows(rowScope all 단축 · 아니면 listExpenseIdsInScope — scopeCondition 한 질의)가 거른다(06.2-08 검토 I-1)" },
+  { file: "repositories/payment-targets.ts", fn: "listPaidPaymentRows", reason: "지급 완료 보기(06-20 S3) — 도메인 listPaidPayments가 keepVisible(rowScope all 단축 · 아니면 listExpenseIdsInScope)로 거른 뒤 쪽 · 합계를 셈한다" },
+  { file: "repositories/payment-targets.ts", fn: "listPaidMonthRows", reason: "지급 완료 보기(06-20 S3) 월 select — 도메인 listPaidPayments가 keepVisible로 거른 행의 달만 쓴다" },
   { file: "repositories/projects.ts", fn: "findProjectById", reason: "원시 프리미티브 — 도메인 호출 자리는 ⓒ 처분표가 고정한다" },
   { file: "repositories/projects.ts", fn: "findProjectByNumber", reason: "도메인 · 화면 호출자 없음 — 부르면 ⓒ 프리미티브 목록에 이름을 더한다" },
   { file: "repositories/projects.ts", fn: "lockProjectForWrite", reason: "트랜잭션 안 잠금 — 호출자가 트랜잭션 전 범위 판정(findProjectInScope · precheckLink · 지출결의 게이트, 04-32)" },

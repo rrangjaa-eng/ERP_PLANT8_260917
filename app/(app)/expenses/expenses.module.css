@@ -254,3 +254,72 @@
   font-weight: var(--fw-bold);
 }
 
+
+/* 06-20(S3) 「프로젝트 · 항목」 — PC도 한 줄 말줄임(전체 값은 링크 title). 폰 폭 규칙은 .titleCell 그대로. */
+.paidTitle .link {
+  display: block;
+  max-width: 16em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 06-20 지급 방식 칸 계좌 — 1행 은행 + 마스킹 번호(+ 권한자 3차 `번호 보기`), 계좌 없음은 흐린 글자 한 줄(버튼 없음). */
+.accountLine {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  white-space: nowrap;
+}
+
+.accountNone {
+  color: var(--text-muted);
+}
+
+/* 06-20 문서 화면 왕복(`from=pay`) — 행동 줄 오른쪽 3차 `지급 대상으로` · `다음 확인 전 {번호}`. 2차 `지급 취소`가 있으면 그 왼쪽(2차가 오른쪽 끝). */
+.payReturn {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-3);
+}
+
+.payReturnEnd {
+  margin-left: auto;
+}
+
+/* 폰은 3차 묶음을 1차 아래 자기 줄로 내린다(DOM 감사 D-2 — 같은 줄이면 flex: 2인 1차가 남은 폭만 받아 글자가 꺾인다). */
+@media (max-width: 699.98px) {
+  .payReturnButtons {
+    flex-wrap: wrap;
+  }
+
+  .payReturn {
+    order: 1;
+    flex-basis: 100%;
+  }
+
+  .payReturnEnd {
+    margin-left: 0;
+  }
+}
+
+/* 06-20(UA-605 · DOM 감사 O-3) 폰은 `지급 완료`와 지급일 사이에서만 줄을 바꿀 수 있다(UI-SPEC 「2행 09-19」) — 좁을 때 상태 열이
+   `승인 {MM-DD}`보다 넓어져 320 넘침을 키우지 않게. 낱말 · 날짜 덩어리 안은 각자 nowrap. */
+@media (max-width: 699.98px) {
+  .statusPaid {
+    white-space: normal;
+  }
+
+  .statusPaid .statusNote {
+    white-space: nowrap;
+  }
+}
+
+/* 06-20(UA-605) Phase 5 목록 상태 칸 둘째 줄 `증빙 {N}일 경과`. */
+.statusNote {
+  display: block;
+  font-size: var(--text-tag);
+  font-weight: var(--fw-regular);
+  color: var(--status-warning);
+}

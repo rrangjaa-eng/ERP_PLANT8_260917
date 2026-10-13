@@ -214,3 +214,11 @@ Task 1과 2는 같은 폼 파일(`card-usage-form.tsx`)을 함께 바꿔서 한 
 추가로 알린다.
 - SYSTEM §7-10은 올리는 중 막힘을 `reasonTone: "info"`(진행 상태 톤)로 정한다. `PanelForm`에는 톤 속성이 없어(공용 `ui/side-panel`) 이번에는 막힘 톤 그대로 문구만 선다. 톤 지원은 PanelForm 변경이라 이번 범위 밖이다
 - D-3은 막힌 새 건(칸 막힘)만 다룬다. 서버가 첫 저장을 거부하는 경우(예: 서버 오류)는 기존대로 실패 행 + `attachError` 줄이 같은 문구를 두 번 보일 수 있다 — 감사에서 측정된 바 없어 건드리지 않았다
+
+## 화면 검토 증거
+| 항목 | 경로 |
+|---|---|
+| 독립 검토 | 위험 태그 없음(C17 밖) — 묶음 `/review`·`/cso`(corp-cards)에서 |
+| DOM 감사(Opus, CI=true) | /mnt/project-files/notes/06-review/06-25-dom-audit.md |
+| 4폭 캡처 적용 전·후(ba46b2f 대비) | /mnt/project-files/06-review/pr-e/06-25/ |
+| Codex 디자인 검토(/design-review, --base ba46b2f) | /mnt/project-files/06-review/pr-e/wave3-codex/06-25-codex.md — `/cards` 4폭, 지적 0. 캡처 DB가 비어 증빙 패널·파일명 말줄임·증빙 열은 DOM 감사 실측과 수정 뒤 E2E(card-usage-evidence)로 판정 |

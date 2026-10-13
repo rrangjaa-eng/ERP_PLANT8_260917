@@ -778,7 +778,7 @@ export async function listReserves(viewer: Viewer, opts: { page?: number | strin
 }
 
 // ── 리저브 줄 증빙 주인(06-16 · D-60) ───────────────────────────────────────────────────────────────────────────
-// 05 domain/evidence의 주인 표 `reserve_entry` 줄이 부른다(이 파일은 @/domain/evidence를 import하지 않는다 — 순환). 읽기 = 04 리저브 보기
+// 05 domain/evidence의 주인 표 `reserve_entry` 줄이 부른다(이 파일은 evidence 도메인을 import하지 않는다 — 순환). 읽기 = 04 리저브 보기
 // (pnl 보기 ∧ reserve.amount), 쓰기 = 04-07 리저브 쓰기(pnl 쓰기 ∧ reserve.amount) ∧ 보관된 줄 아님.
 
 export const RESERVE_EVIDENCE_KIND = "reserve_entry";

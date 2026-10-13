@@ -6,6 +6,7 @@ import type { PreSettleCheckDto, PreSettleExpenseRowDto, PreSettleLineRowDto } f
 import { createExpenseFromLinesAction } from "@/app/(app)/expenses/actions";
 import { formatKrw } from "@/lib/format-number";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
+import { Num } from "@/ui/num/Num";
 import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { Table } from "@/ui/table/Table";
@@ -17,6 +18,7 @@ import styles from "./project-detail.module.css";
 // (막힘 건수 · 그룹 · 행 낱말 · 줄의 문)이고 화면은 읽기만 한다. 빈 그룹은 접고, 세 그룹이 다 비면 한 줄 `미결 없음`. 매출 줄은 늘 남는다(D-613).
 // 머리 줄 `정산 결재 올리기`의 3차 `점검 보기`가 이 섹션 제목으로 포커스를 옮긴다(`data-ui="pre-settle-check"` → 가까운 section의 h2).
 // 매출 미입력 행의 3차(`발행 요청 추가` · `발행 줄 추가`)와 섹션 로드 오류 줄은 06-22.
+// R-6: 미결 지출결의 행은 보는 사람의 범위 안 것만 오고 범위 밖은 그룹 끝 `그 밖 {N}건`(건수만). 금액 열은 서버가 금액 키를 실은 행이 있을 때만.
 
 export const PRE_SETTLE_CHECK_TITLE = "완료 전 점검";
 
@@ -31,22 +33,45 @@ function GroupHeading({ text, count, allowed }: { text: string; count?: string; 
   );
 }
 
-const EXPENSE_COLUMNS: TableColumn<PreSettleExpenseRowDto>[] = [
-  { key: "number", header: "번호", priority: "p2", cell: (row) => row.number },
-  { key: "item", header: "항목", priority: "p1", cell: (row) => <span title={row.itemName ?? undefined}>{row.itemName ?? "—"}</span> },
-  { key: "status", header: "상태", priority: "p1", cell: (row) => <StatusTag variant="text" status={preSettleStatusWord(row.state)} /> },
-  {
-    key: "action",
-    header: "행동",
-    priority: "p1",
-    headerHidden: true,
-    cell: (row) => (
-      <RowActions>
-        <RowAction href={`/expenses/${row.id}`}>지출결의 열기</RowAction>
-      </RowActions>
-    ),
-  },
-];
+function OutOfScope({ count }: { count: number }) {
+  return count > 0 ? <p className={styles.preSettleOutOfScope}>{`그 밖 ${count}건`}</p> : null;
+}
+
+const EXPENSE_AMOUNT_COLUMN: TableColumn<PreSettleExpenseRowDto> = {
+  key: "amount",
+  header: "금액",
+  priority: "p1",
+  align: "right",
+  cell: (row) => <Num value={row.expenseAmountKrw ?? null} />,
+};
+
+function expenseColumns(amountVisible: boolean): TableColumn<PreSettleExpenseRowDto>[] {
+  return [
+    { key: "number", header: "번호", priority: "p2", cell: (row) => row.number },
+    { key: "item", header: "항목", priority: "p1", cell: (row) => <span title={row.itemName ?? undefined}>{row.itemName ?? "—"}</span> },
+    ...(amountVisible ? [EXPENSE_AMOUNT_COLUMN] : []),
+    { key: "status", header: "상태", priority: "p1", cell: (row) => <StatusTag variant="text" status={preSettleStatusWord(row.state)} /> },
+    {
+      key: "action",
+      header: "행동",
+      priority: "p1",
+      headerHidden: true,
+      cell: (row) => (
+        <RowActions>
+          <RowAction href={`/expenses/${row.id}`}>지출결의 열기</RowAction>
+        </RowActions>
+      ),
+    },
+  ];
+}
+
+const LINE_EXECUTION_COLUMN: TableColumn<PreSettleLineRowDto> = {
+  key: "execution",
+  header: "실행가",
+  priority: "p1",
+  align: "right",
+  cell: (row) => <Num value={row.executionKrw ?? null} />,
+};
 
 // 매출 줄 — `계약 금액 X · 발행 합계 Y · 차이 Z`(차이 ≠ 0이면 --status-warning, 막지 않음). 계약 미승인이면 `계약 금액 — · {n}차 고객 승인 전`.
 // 금액 칸이 노출 밖이면(키 없음) 그 조각을 그리지 않는다.
@@ -132,6 +157,7 @@ export function PreSettleCheckSection({ check, ownerName }: { check: PreSettleCh
   const lineColumns: TableColumn<PreSettleLineRowDto>[] = [
     { key: "number", header: "번호", priority: "p2", cell: (row) => row.displayNo },
     { key: "item", header: "항목", priority: "p1", cell: (row) => <span title={row.itemName}>{row.itemName}</span> },
+    ...(check.unmatchedLines.rows.some((row) => "executionKrw" in row) ? [LINE_EXECUTION_COLUMN] : []),
     { key: "door", header: "행동", priority: "p1", headerHidden: true, cell: doorCell },
   ];
 
@@ -146,7 +172,16 @@ export function PreSettleCheckSection({ check, ownerName }: { check: PreSettleCh
         {open.count > 0 ? (
           <>
             <GroupHeading text="미결 지출결의" count={`${open.count}건`} allowed={open.allowed} />
-            <Table caption="미결 지출결의" columns={EXPENSE_COLUMNS} rows={open.rows} getRowId={(row) => row.id} rowLabel={(row) => row.number} />
+            {open.rows.length > 0 ? (
+              <Table
+                caption="미결 지출결의"
+                columns={expenseColumns(open.rows.some((row) => "expenseAmountKrw" in row))}
+                rows={open.rows}
+                getRowId={(row) => row.id}
+                rowLabel={(row) => row.number}
+              />
+            ) : null}
+            <OutOfScope count={open.outOfScopeCount} />
           </>
         ) : null}
         {unmatched.count > 0 ? (

@@ -572,3 +572,10 @@ td:has(> .rowNumber) {
 .preSettleDiff {
   color: var(--status-warning);
 }
+
+/* 06-19(S18 · R-6) — 보는 사람의 범위 밖 미결 지출결의는 그룹 끝 한 줄 `그 밖 N건`(건수만 · 행동 없음). */
+.preSettleOutOfScope {
+  margin: var(--s-2) 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+}

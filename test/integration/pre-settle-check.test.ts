@@ -1,11 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { db, pool } from "@/db/client";
-import { actionLog, approvalInstances, expenses, files, quoteLines, settlementApprovals } from "@/db/schema";
+import { actionLog, approvalInstances, approvalRoutes, approvalSteps, expenses, files, projects, quoteLines, settlementApprovals } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
-import { approveDocument, rejectDocument, withdrawDocument } from "@/domain/approvals";
+import { approveDocument, getApprovalView, rejectDocument, withdrawDocument } from "@/domain/approvals";
+import { getDocumentKind } from "@/domain/approvals/kinds";
+import { LEAVE_DOCUMENT_KIND, submitLeave } from "@/domain/leave";
+import { saveProjectLedger } from "@/domain/projects/ledger";
 import { closeExpense, createExpenseFromLines, saveExpenseDraft } from "@/domain/expenses";
 import { voidEvidence } from "@/domain/evidence";
 import { waiveEvidence } from "@/domain/evidence-reviews";
@@ -19,25 +22,31 @@ import { applyAutoSettlement } from "@/domain/projects/auto-transition";
 import { GateBlockedError } from "@/domain/rules/gate";
 import { SETTLEMENT_DOCUMENT_KIND, submitSettlement } from "@/domain/settlements";
 import { setSettingValue } from "@/domain/settings/registry";
-import { PROJECT_FORCE_COMPLETE_ALLOW_MISSING_REVENUE, PURCHASE_ONLINE_VENDOR_NAME } from "@/domain/settings/keys";
+import {
+  APPROVAL_ROUTE_SETTLEMENT_STEP1_ENABLED,
+  PROJECT_FORCE_COMPLETE_ALLOW_MISSING_REVENUE,
+  PROJECT_FORCE_COMPLETE_ALLOW_OPEN_EXPENSES,
+  PURCHASE_ONLINE_VENDOR_NAME,
+} from "@/domain/settings/keys";
 import { createPurchaseRequest, precheckPurchaseRequest } from "@/domain/purchase-requests";
 import { insertVendor } from "@/repositories/vendors";
 import { addApprovedRevision, makeEvidenceManager, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
 import { approvedExpenseWithEvidence, approvedExpenseWithoutEvidence, makePaymentManager } from "./fixtures/payments";
 import { requestInput } from "./fixtures/purchase-requests";
-import { makePerson } from "./approvals-fixtures";
+import { makePerson, NOW_2026 } from "./approvals-fixtures";
 import { issueRevenue, linkCardUsage, setupSettlementProject } from "./fixtures/settlements";
 
 // 06-19(PROJ-06 · D-611~D-613 · UA-610 · ENG E-1): 완료 전 점검 — 정산 기안(05 submitSettlement)이 같은 판정으로 막힌다.
 // 점검은 트랜잭션 앞에서 권한 · 설정을 읽고(loadPreSettleInputs) 트랜잭션 안에서는 tx 리포지토리 · 순수 함수만 쓴다(computePreSettleCheck).
 
 // 점검 예외 주입 — 기본은 원래 함수 그대로(fail-closed 갈래만 켠다).
-const inject = vi.hoisted(() => ({ load: false, compute: false, computeCalls: 0 }));
+const inject = vi.hoisted(() => ({ load: false, compute: false, computeCalls: 0, loadCalls: 0 }));
 vi.mock("@/domain/pre-settle-check", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/domain/pre-settle-check")>();
   return {
     ...actual,
     loadPreSettleInputs: (...args: Parameters<typeof actual.loadPreSettleInputs>) => {
+      inject.loadCalls += 1;
       if (inject.load) return Promise.reject(new Error("점검 사전 조회 실패(주입)"));
       return actual.loadPreSettleInputs(...args);
     },
@@ -53,6 +62,7 @@ beforeEach(() => {
   inject.load = false;
   inject.compute = false;
   inject.computeCalls = 0;
+  inject.loadCalls = 0;
 });
 
 const AFTER_END = { now: () => new Date("2027-01-02T03:00:00Z") };
@@ -76,7 +86,7 @@ async function rejectedExpense(fx: ExpenseFixture, lineId: string): Promise<stri
 // E-10 — 막힘 0이면서 행별 경로가 모두 도는 정산 프로젝트(06-22 「승인 동시 6건」이 다시 쓴다). 견적 줄마다 살아 있는 연결 하나:
 // ⓐ 결재 통과 · 증빙 있음 지출결의(hasEvidence(tx) · 면제 읽기) ⓑ 카드 사용 ⓒ `신청됨` 구매 요청(온라인구매 협력사 줄) + 발행 줄 1.
 const ONLINE_VENDOR = "쿠팡";
-async function blockFreeSettlingProject(): Promise<ExpenseFixture> {
+async function blockFreeSettlingProject(): Promise<ExpenseFixture & { evidenceExpenseId: string }> {
   const fx = await setupExpenseProject();
   await setSettingValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME, ONLINE_VENDOR);
   const online = await insertVendor(SYSTEM_VIEWER, { name: ONLINE_VENDOR, normalizedName: `${ONLINE_VENDOR}-${randomUUID()}`, defaultEvidenceType: "tax_invoice" });
@@ -91,14 +101,14 @@ async function blockFreeSettlingProject(): Promise<ExpenseFixture> {
     revisionId: second.revisionId,
     lines: { withVendor: lineOf("무대 제작"), noVendor: lineOf("현장 진행 인력"), split: lineOf("영상 제작(분할)") },
   };
-  await approvedExpenseWithEvidence(current, current.lines.withVendor);
+  const evidence = await approvedExpenseWithEvidence(current, current.lines.withVendor);
   await linkCardUsage(fx.pm, current.lines.noVendor);
   await linkCardUsage(fx.pm, current.lines.split);
   const input = requestInput(lineOf("현장 소모품"));
   await createPurchaseRequest(fx.pm, input, await precheckPurchaseRequest(fx.pm, input));
   await issueRevenue(fx.projectId);
   await settle(fx.projectId);
-  return current;
+  return { ...current, evidenceExpenseId: evidence.expenseId };
 }
 
 describe("완료 전 점검 — 정산 기안 게이트(05 submitSettlement)", () => {
@@ -500,4 +510,311 @@ describe("완료 전 점검 — R-6 범위 · 금액 노출(Task 3)", () => {
   it("DTO_REGISTRY에 PreSettleCheckDto가 있다(@/domain/settlements import 경유)", () => {
     expect(DTO_REGISTRY.some((entry) => entry.name === "PreSettleCheckDto")).toBe(true);
   });
+});
+
+// ── 06-22 Task 1 — [O-16] 대표 최종 승인 재점검(05 정산 종류 훅) · R-2 순서 · SA-1 · SA-3 · E-30 · ENG E-1 · X-12 ──────────
+
+const PM_NAME = "박서연"; // setupExpenseProject의 담당 PM
+const A8_ONE = "결재 중 지출결의 1건 · 먼저 결재";
+const CHECK_ONE = `완료 전 점검 1건 · 담당 PM ${PM_NAME}`;
+
+type Drafted = { documentId: string; instanceId: string; version: number };
+
+async function draftSettlement(fx: ExpenseFixture): Promise<Drafted> {
+  const result = await submitSettlement(fx.pm, { projectId: fx.projectId });
+  if (result.kind !== "submitted") throw new Error("정산 기안 안 됨");
+  return { documentId: result.documentId, instanceId: result.instanceId, version: result.version };
+}
+
+async function projectStatusOf(projectId: string): Promise<string | undefined> {
+  const [row] = await db.select({ status: projects.status }).from(projects).where(eq(projects.id, projectId));
+  return row?.status;
+}
+
+// 승인 롤백 단언 재료 — 인스턴스 상태 · version · 처리된 단계 수 · 프로젝트 상태.
+async function approvalState(instanceId: string, projectId: string) {
+  const [instance] = await db.select({ status: approvalInstances.status, version: approvalInstances.version }).from(approvalInstances).where(eq(approvalInstances.id, instanceId));
+  const acted = await db
+    .select({ id: approvalSteps.id })
+    .from(approvalSteps)
+    .innerJoin(approvalRoutes, eq(approvalRoutes.id, approvalSteps.routeId))
+    .where(and(eq(approvalRoutes.instanceId, instanceId), isNotNull(approvalSteps.actedBy)));
+  return { status: instance?.status, version: instance?.version, acted: acted.length, project: await projectStatusOf(projectId) };
+}
+
+async function setAllowOpenExpenses(value: boolean): Promise<void> {
+  await setSettingValue(SYSTEM_VIEWER, PROJECT_FORCE_COMPLETE_ALLOW_OPEN_EXPENSES, value);
+}
+
+async function inReviewExpense(fx: ExpenseFixture, lineId: string): Promise<string> {
+  const expenseId = (await createExpenseFromLines(fx.pm, { lineIds: [lineId] })).created[0]?.expenseId ?? "";
+  expect(await submitReadyDraft(fx.pm, expenseId)).toMatchObject({ kind: "submitted" });
+  return expenseId;
+}
+
+// 기안 뒤에 미결이 남은 정산 결재 — 미결 지출결의(반려 · 결재 중)는 강행 허용을 잠시 켜 기안을 통과시키고(06-19 게이트) 기안 뒤 다시 끈다.
+// 그 밖의 줄은 살아 있는 연결 · 발행 줄 1로 막힘이 없다.
+async function draftedWithOpen(open: { rejected?: boolean; inReview?: boolean; noEvidence?: boolean }, keepAllow = false) {
+  const fx = await setupExpenseProject();
+  if (open.rejected) await rejectedExpense(fx, fx.lines.withVendor);
+  else if (open.noEvidence) await approvedExpenseWithoutEvidence(fx, fx.lines.withVendor);
+  else await approvedExpenseWithEvidence(fx, fx.lines.withVendor);
+  if (open.inReview) await inReviewExpense(fx, fx.lines.split);
+  else await approvedExpenseWithEvidence(fx, fx.lines.split);
+  await linkCardUsage(fx.pm, fx.lines.noVendor);
+  await issueRevenue(fx.projectId);
+  await settle(fx.projectId);
+  await setAllowOpenExpenses(true);
+  const doc = await draftSettlement(fx);
+  if (!keepAllow) await setAllowOpenExpenses(false);
+  return { fx, doc };
+}
+
+async function approveBlockedReason(viewer: Viewer, documentId: string): Promise<string | null> {
+  return (await getApprovalView(viewer, { kind: SETTLEMENT_DOCUMENT_KIND, documentId }))?.approveBlockedReason ?? null;
+}
+
+// 풀 밖 Client가 쥔 잠금에 막힌 커넥션 수(pg_blocking_pids를 lockPid까지 재귀 — PR #75 꼴). n개에 이르면 그 수, 약 4초 안에 못 이르면 마지막 관측값.
+async function waitBlockedBy(lockClient: Client, lockPid: number, n: number): Promise<number> {
+  let waiting = 0;
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const { rows } = await lockClient.query<{ count: string }>(
+      `WITH RECURSIVE blocked_by(pid, blocker) AS (
+         SELECT pid, unnest(pg_blocking_pids(pid)) FROM pg_stat_activity WHERE pid <> pg_backend_pid()
+         UNION
+         SELECT b.pid, unnest(pg_blocking_pids(b.blocker)) FROM blocked_by b
+       )
+       SELECT count(DISTINCT pid)::text AS count FROM blocked_by WHERE blocker = $1`,
+      [lockPid],
+    );
+    waiting = Number(rows[0]?.count ?? 0);
+    if (waiting >= n) break;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return waiting;
+}
+
+async function backendPid(client: Client): Promise<number> {
+  const { rows } = await client.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
+  const pid = rows[0]?.pid;
+  if (pid === undefined) throw new Error("pg_backend_pid()를 읽지 못했다");
+  return pid;
+}
+
+describe("완료 전 점검 — 대표 최종 승인 재점검(O-16 · 05 정산 종류 훅)", () => {
+  it("막힘 1(반려 지출결의) — 대표 승인 거부 `완료 전 점검 1건 · 담당 PM {이름}` · 롤백 · 표시 이유와 같은 문자열", async () => {
+    const { fx, doc } = await draftedWithOpen({ rejected: true });
+    const before = await approvalState(doc.instanceId, fx.projectId);
+
+    const refused = await approveDocument(fx.ceo, { instanceId: doc.instanceId, expectedVersion: doc.version }).catch((e: unknown) => e);
+    expect(refused).toBeInstanceOf(GateBlockedError);
+    expect(refused).toMatchObject({ message: CHECK_ONE });
+    expect(await approvalState(doc.instanceId, fx.projectId)).toEqual(before);
+    expect(before.project).toBe("settling");
+    expect(await approveBlockedReason(fx.ceo, doc.documentId)).toBe((refused as Error).message);
+  });
+
+  it("막힘이 있어도 같은 문서의 반려는 된다", async () => {
+    const { fx, doc } = await draftedWithOpen({ rejected: true });
+    const rejected = await rejectDocument(fx.ceo, { instanceId: doc.instanceId, expectedVersion: doc.version, reason: "미결 정리" });
+    expect(rejected.status).toBe("rejected");
+  });
+
+  it("막힘 0 · 강행 그룹만(결재 통과 · 증빙 없음 + allow_open_expenses 켬) — 승인 · 프로젝트 completed", async () => {
+    const { fx, doc } = await draftedWithOpen({ noEvidence: true }, true);
+    expect(await approveBlockedReason(fx.ceo, doc.documentId)).toBeNull();
+    const approved = await approveDocument(fx.ceo, { instanceId: doc.instanceId, expectedVersion: doc.version });
+    expect(approved.status).toBe("approved");
+    expect(await projectStatusOf(fx.projectId)).toBe("completed");
+  });
+
+  it("[R-2 · E-4] 강행 켬 · 결재 중 지출결의 1건 — 표시 · 서버 모두 A8 문구 · 롤백(강행으로 넘어가지 않음)", async () => {
+    const { fx, doc } = await draftedWithOpen({ inReview: true }, true);
+    const before = await approvalState(doc.instanceId, fx.projectId);
+    expect(await approveBlockedReason(fx.ceo, doc.documentId)).toBe(A8_ONE);
+    const refused = await approveDocument(fx.ceo, { instanceId: doc.instanceId, expectedVersion: doc.version }).catch((e: unknown) => e);
+    expect(refused).toBeInstanceOf(GateBlockedError);
+    expect(refused).toMatchObject({ message: A8_ONE });
+    expect(await approvalState(doc.instanceId, fx.projectId)).toEqual(before);
+  });
+
+  it("[R-2] 결재 중 1 + 반려 1(강행 꺼짐) — 서버 · 표시 모두 A8 문구가 점검보다 먼저", async () => {
+    const { fx, doc } = await draftedWithOpen({ rejected: true, inReview: true });
+    expect(await approveBlockedReason(fx.ceo, doc.documentId)).toBe(A8_ONE);
+    const refused = await approveDocument(fx.ceo, { instanceId: doc.instanceId, expectedVersion: doc.version }).catch((e: unknown) => e);
+    expect(refused).toMatchObject({ message: A8_ONE });
+    expect(await projectStatusOf(fx.projectId)).toBe("settling");
+  });
+
+  it("[R-2] 진행 복귀 + 결재 중 지출결의 — 표시 `진행으로 바뀜 · 반려`가 가장 먼저 · 점검을 계산하지 않는다", async () => {
+    const { fx, doc } = await draftedWithOpen({ inReview: true });
+    await saveProjectLedger(fx.lead, fx.projectId, {
+      seenStatus: "settling",
+      period: { startDate: "2026-09-01", endDate: "2099-12-31", baseline: { startDate: "2026-09-01", endDate: "2026-12-31" } },
+    });
+    expect(await projectStatusOf(fx.projectId)).toBe("in_progress");
+    inject.computeCalls = 0;
+    expect(await approveBlockedReason(fx.ceo, doc.documentId)).toBe("진행으로 바뀜 · 반려");
+    expect(inject.computeCalls).toBe(0);
+  });
+
+  it("점검 계산 예외 — 표시 `점검 결과 없음 · 다시 시도` · 승인 거부(fail-closed) · 롤백", async () => {
+    const { fx, doc } = await draftedWithOpen({});
+    const before = await approvalState(doc.instanceId, fx.projectId);
+    inject.compute = true;
+    expect(await approveBlockedReason(fx.ceo, doc.documentId)).toBe("점검 결과 없음 · 다시 시도");
+    await expect(approveDocument(fx.ceo, { instanceId: doc.instanceId, expectedVersion: doc.version })).rejects.toThrow("점검 계산 실패(주입)");
+    expect(await approvalState(doc.instanceId, fx.projectId)).toEqual(before);
+  });
+
+  it("점검 사전 조회 예외 — 표시 `점검 결과 없음 · 다시 시도` · 승인 거부 · 트랜잭션 안 계산까지 가지 않는다", async () => {
+    const { fx, doc } = await draftedWithOpen({});
+    const before = await approvalState(doc.instanceId, fx.projectId);
+    inject.load = true;
+    expect(await approveBlockedReason(fx.ceo, doc.documentId)).toBe("점검 결과 없음 · 다시 시도");
+    inject.computeCalls = 0;
+    await expect(approveDocument(fx.ceo, { instanceId: doc.instanceId, expectedVersion: doc.version })).rejects.toThrow("점검 사전 조회 실패(주입)");
+    expect(inject.computeCalls).toBe(0);
+    expect(await approvalState(doc.instanceId, fx.projectId)).toEqual(before);
+  });
+
+  it("[SA-1] 2단 결재선 — 막힘 1이어도 1단(팀장) 승인은 통과 · 2단(대표 · 최종) 승인은 거부", async () => {
+    await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_SETTLEMENT_STEP1_ENABLED, true);
+    const { fx, doc } = await draftedWithOpen({ rejected: true });
+    const first = await approveDocument(fx.lead, { instanceId: doc.instanceId, expectedVersion: doc.version });
+    expect(first).toMatchObject({ status: "in_review", final: false });
+    const refused = await approveDocument(fx.ceo, { instanceId: doc.instanceId, expectedVersion: first.version }).catch((e: unknown) => e);
+    expect(refused).toMatchObject({ message: CHECK_ONE });
+    expect(await projectStatusOf(fx.projectId)).toBe("settling");
+  });
+
+  it("[SA-3 · E-38] 2단 결재선 — 사전 조회 실패는 1단 승인도 거부 · 트랜잭션 미개시", async () => {
+    await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_SETTLEMENT_STEP1_ENABLED, true);
+    const { fx, doc } = await draftedWithOpen({});
+    const before = await approvalState(doc.instanceId, fx.projectId);
+    inject.load = true;
+    inject.computeCalls = 0;
+    await expect(approveDocument(fx.lead, { instanceId: doc.instanceId, expectedVersion: doc.version })).rejects.toThrow("점검 사전 조회 실패(주입)");
+    expect(inject.computeCalls).toBe(0);
+    expect(await approvalState(doc.instanceId, fx.projectId)).toEqual(before);
+  });
+
+  it("[E-30] 표시 훅 — 프로젝트 id 중복 제거 · 사전 조회 1회 · 점검은 프로젝트마다 1회 · A8로 막힌 행은 계산하지 않는다", async () => {
+    const blocked = await draftedWithOpen({ rejected: true });
+    const clean = await draftedWithOpen({});
+    const a8 = await draftedWithOpen({ inReview: true });
+    const ids = [blocked.doc.documentId, blocked.doc.documentId, clean.doc.documentId, a8.doc.documentId];
+    inject.loadCalls = 0;
+    inject.computeCalls = 0;
+    const hook = getDocumentKind(SETTLEMENT_DOCUMENT_KIND).approveBlockedReason;
+    if (!hook) throw new Error("정산 종류에 승인 막힘 훅 없음");
+    const reasons = await hook(blocked.fx.ceo, ids);
+    expect(inject.loadCalls).toBe(1);
+    expect(inject.computeCalls).toBe(2);
+    expect(reasons.get(blocked.doc.documentId)).toBe(CHECK_ONE);
+    expect(reasons.has(clean.doc.documentId)).toBe(false);
+    expect(reasons.get(a8.doc.documentId)).toBe(A8_ONE);
+  });
+
+  it("지출결의 · 연차 승인은 점검 함수를 부르지 않는다(다른 종류에는 훅이 없다)", async () => {
+    const fx = await setupExpenseProject();
+    inject.loadCalls = 0;
+    inject.computeCalls = 0;
+    await approvedExpenseWithEvidence(fx, fx.lines.withVendor);
+    const leave = await submitLeave(fx.pm, { kind: "full_day", startDate: "2026-09-21", endDate: "2026-09-23", half: "" }, { now: NOW_2026 });
+    const leaveView = await getApprovalView(fx.lead, { kind: LEAVE_DOCUMENT_KIND, documentId: leave.leaveId }, { now: NOW_2026 });
+    expect(leaveView).not.toBeNull();
+    await approveDocument(fx.lead, { instanceId: leave.instanceId, expectedVersion: 1 }, { now: NOW_2026 });
+    expect(inject.loadCalls).toBe(0);
+    expect(inject.computeCalls).toBe(0);
+  });
+
+  it(
+    "무효 ∥ 정산 최종 승인 — 잠금 뒤 재점검: 프로젝트 행을 쥔 무효가 커밋되면 승인은 `완료 전 점검 1건`으로 거부(X-12)",
+    async () => {
+      const fx = await blockFreeSettlingProject();
+      const doc = await draftSettlement(fx);
+      const lockClient = new Client({ connectionString: process.env.DATABASE_URL });
+      await lockClient.connect();
+      let call: Promise<unknown> | undefined;
+      let txOpen = false;
+      try {
+        await lockClient.query("BEGIN");
+        txOpen = true;
+        const lockPid = await backendPid(lockClient);
+        // 06-11 voidEvidence의 첫 잠금 자리 — 그 지출결의의 프로젝트 행.
+        await lockClient.query("SELECT id FROM projects WHERE id = $1 FOR UPDATE", [fx.projectId]);
+        call = approveDocument(fx.ceo, { instanceId: doc.instanceId, expectedVersion: doc.version }).catch((e: unknown) => e);
+        const waiting = await waitBlockedBy(lockClient, lockPid, 1);
+        expect(waiting, `승인 커넥션이 프로젝트 행 잠금에 막히지 않았다(관측: ${waiting}) — 잠금 조건을 만들지 못했다`).toBeGreaterThanOrEqual(1);
+        await lockClient.query(
+          "UPDATE files SET voided_at = now(), voided_by = $2, void_reason = '다른 건 영수증' WHERE owner_kind = 'expense' AND owner_id = $1 AND removed_at IS NULL AND voided_at IS NULL",
+          [fx.evidenceExpenseId, fx.ceo.id],
+        );
+        await lockClient.query("COMMIT");
+        txOpen = false;
+        const result = await call;
+        expect(result).toBeInstanceOf(GateBlockedError);
+        expect(result).toMatchObject({ message: CHECK_ONE });
+        expect(await projectStatusOf(fx.projectId)).toBe("settling");
+      } finally {
+        if (txOpen) await lockClient.query("ROLLBACK").catch(() => {});
+        await lockClient.end();
+        if (call) await Promise.allSettled([call]);
+      }
+    },
+    120_000,
+  );
+
+  it(
+    "승인 동시 6건 — 결재 인스턴스 행을 쥔 외부 커넥션이 풀 전체를 막아도 잠금 해제 뒤 10초 안에 모두 승인된다(ENG E-1)",
+    async () => {
+      const poolMax = pool.options.max ?? 0;
+      expect(poolMax).toBeGreaterThanOrEqual(2);
+      expect(poolMax).toBeLessThan(6);
+
+      const projectsFx: (ExpenseFixture & { evidenceExpenseId: string })[] = [];
+      for (let i = 0; i < 6; i += 1) projectsFx.push(await blockFreeSettlingProject());
+      const docs: Drafted[] = [];
+      for (const fx of projectsFx) docs.push(await draftSettlement(fx));
+
+      const lockClient = new Client({ connectionString: process.env.DATABASE_URL });
+      await lockClient.connect();
+      let calls: Promise<unknown>[] = [];
+      let txOpen = false;
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await lockClient.query("BEGIN");
+        txOpen = true;
+        const lockPid = await backendPid(lockClient);
+        // 승인 트랜잭션이 finalHook.inTx보다 먼저 쓰는 행 — runTransition (5) updateInstanceStatus의 approval_instances 행.
+        await lockClient.query("SELECT id FROM approval_instances WHERE id = ANY($1::uuid[]) FOR UPDATE", [docs.map((doc) => doc.instanceId)]);
+
+        calls = docs.map((doc, i) => approveDocument(projectsFx[i]?.ceo ?? SYSTEM_VIEWER, { instanceId: doc.instanceId, expectedVersion: doc.version }));
+
+        const waiting = await waitBlockedBy(lockClient, lockPid, poolMax);
+        expect(waiting, `풀 커넥션 ${poolMax}개가 결재 인스턴스 행 잠금을 기다리는 상태에 이르지 못했다(관측: ${waiting}) — 교착 조건을 만들지 못했다`).toBeGreaterThanOrEqual(poolMax);
+
+        await lockClient.query("COMMIT");
+        txOpen = false;
+
+        const timeout = new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error("정산 최종 승인 6건 동시 호출이 10초 안에 끝나지 않았다(교착)")), 10_000);
+        });
+        const results = await Promise.race([Promise.all(calls), timeout]);
+        clearTimeout(timeoutId);
+
+        expect(results).toHaveLength(6);
+        for (const result of results) expect(result).toMatchObject({ status: "approved", final: true });
+        const rows = await db.select({ status: projects.status }).from(projects).where(inArray(projects.id, projectsFx.map((fx) => fx.projectId)));
+        expect(rows.map((row) => row.status)).toEqual(Array(6).fill("completed"));
+      } finally {
+        clearTimeout(timeoutId);
+        if (txOpen) await lockClient.query("ROLLBACK").catch(() => {});
+        await lockClient.end();
+        await Promise.allSettled(calls);
+      }
+    },
+    180_000,
+  );
 });

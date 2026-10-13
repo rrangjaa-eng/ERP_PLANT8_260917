@@ -52,8 +52,9 @@ export async function listMemberships(viewer: Viewer, userId: string): Promise<T
 export async function insertMembership(
   viewer: Viewer,
   input: { userId: string; teamId: string; effectiveFrom: string; createdBy?: string | null },
+  tx: DbOrTx = db,
 ): Promise<TeamMembershipRow> {
-  const [row] = await db
+  const [row] = await tx
     .insert(teamMemberships)
     .values({
       userId: input.userId,

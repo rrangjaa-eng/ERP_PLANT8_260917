@@ -11,10 +11,15 @@ import { archive as defaultArchive } from "@/domain/archive";
 import { revokeAllSessions as defaultRevokeAllSessions } from "@/domain/auth/password";
 import { findRoleById as defaultFindRoleById, findRolesByIds as defaultFindRolesByIds } from "@/repositories/roles";
 import { findTeamById as defaultFindTeamById } from "@/repositories/teams";
+import { findOrgUnitById as repoFindOrgUnitById } from "@/repositories/org-units";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { kstToday } from "@/lib/kst-date";
 import { isCheckViolation } from "@/lib/pg-errors";
 import { withTransaction } from "@/lib/db-transaction";
+import { assertCanGrantRoles } from "@/domain/permissions/grant-ceiling";
+import { assertNotLastAdmin } from "@/domain/permissions/last-admin";
+import { listOccupiedTeams, lockSeatKeys, type OccupiedTeamRow } from "@/repositories/seats";
+import { assertSeatsFree, newSeats, SeatTakenError } from "@/domain/people/seat-rules";
 import { loadActionLogGate, recordActionInTx, type TxLogDeps } from "@/domain/approvals/tx-log";
 import {
   listUsers as repoListUsers,
@@ -195,6 +200,8 @@ export type RegisterPersonDeps = {
   findTeamById: typeof defaultFindTeamById;
   recordAction: typeof defaultRecordAction;
   saveHireDate: typeof repoUpdateUserHireDate;
+  now: () => Date;
+  visible: typeof defaultVisible;
 };
 
 // 사람 등록 — 계정 발급과 초기 비밀번호 생성을 같은 흐름에서 부른다.
@@ -204,6 +211,8 @@ export type RegisterPersonDeps = {
 // 실패할 수 있는 조건은 전부 계정 생성 전에 거부하고(이메일 중복·계급/팀
 // 실재와 보관 여부·발령일 형식), (b) 남는 인프라 오류 창에서만 방금 만든
 // 계정을 보상 보관한다.
+// 06.4(D-6404 · Pitfall 2): 상한 · 자리 검사도 (a)에 든다 — 생성 전 tx에서 끝낸다. 잠금이 풀린 뒤 생성 · 발령 사이 창은
+// assignTeam의 재검사가 두 번째로 거르고, 그때는 보상 보관 뒤 자리 문구를 그대로 던진다.
 export async function registerPerson(
   viewer: Viewer,
   input: RegisterPersonInput,
@@ -220,6 +229,7 @@ export async function registerPerson(
     throw new ValidationError(`존재하지 않거나 보관된 계급: ${input.roleId}`);
   }
 
+  let seat: { teamId: string; orgUnitId: string; effectiveFrom: string } | null = null;
   if (input.teamId) {
     if (!input.effectiveFrom || !EFFECTIVE_FROM_PATTERN.test(input.effectiveFrom)) {
       throw new ValidationError("발령일 형식 오류 — YYYY-MM-DD로");
@@ -229,11 +239,36 @@ export async function registerPerson(
     if (!team || team.archivedAt) {
       throw new ValidationError(`존재하지 않거나 보관된 팀: ${input.teamId}`);
     }
+    seat = { teamId: team.id, orgUnitId: team.orgUnitId, effectiveFrom: input.effectiveFrom };
   }
 
   if (input.hireDate !== undefined && !isCalendarDate(input.hireDate)) {
     throw new ValidationError(HIRE_DATE_FORMAT_ERROR);
   }
+
+  // 상한 → 자리(Pitfall 2). 사람이 아직 없어 사람 키 없이 도착 팀 · 본부 키만 잡는다. 보관 본부는 점유 구간 함수처럼 본부 없음.
+  const today = seoulTodayOf(deps);
+  const showNames = await (deps?.visible ?? defaultVisible)(viewer, "person.value");
+  const orgUnit = seat ? await repoFindOrgUnitById(viewer, seat.orgUnitId) : null;
+  await withTransaction(async (tx) => {
+    await assertCanGrantRoles(viewer, [input.roleId], tx);
+    if (!seat) return;
+    const occupied: OccupiedTeamRow = {
+      teamId: seat.teamId,
+      orgUnitId: orgUnit && !orgUnit.archivedAt ? orgUnit.id : null,
+      from: seat.effectiveFrom > today ? seat.effectiveFrom : today,
+      to: null,
+    };
+    const seats = newSeats({
+      roleBefore: null,
+      roleAfter: input.roleId,
+      employedBefore: null,
+      employedAfter: { archivedAt: null, resignationDate: null },
+      occupiedBefore: [],
+      occupiedAfter: [occupied],
+    });
+    await assertSeatsFree(viewer, { roleId: input.roleId, seats, today, showNames }, tx);
+  });
 
   const createAccount = deps?.createAccount ?? defaultCreateAccount;
   const { userId, tempPassword } = await createAccount(viewer, {
@@ -245,20 +280,26 @@ export async function registerPerson(
   if (input.teamId && input.effectiveFrom) {
     const assignTeam = deps?.assignTeam ?? defaultAssignTeam;
     try {
-      await assignTeam(viewer, { userId, teamId: input.teamId, effectiveFrom: input.effectiveFrom });
-    } catch {
-      // (b) 잔여 창 — 인프라 오류로 발령이 실패하면 방금 만든 계정을 보상
-      // 보관한다. 관리자의 보관함 권한과 무관하게 실행되도록 SYSTEM_VIEWER로
+      await assignTeam(viewer, { userId, teamId: input.teamId, effectiveFrom: input.effectiveFrom }, deps?.now ? { now: deps.now } : undefined);
+    } catch (error) {
+      // (b) 잔여 창 — 발령이 실패하면(인프라 오류, 또는 06.4 사전 검사 뒤 자리가
+      // 먼저 찬 SeatTakenError) 방금 만든 계정을 보상 보관한다. 관리자의 보관함 권한과 무관하게 실행되도록 SYSTEM_VIEWER로
       // 부른다. 초기 비밀번호는 반환되지 않으므로 그 계정으로 로그인할 수
       // 있는 사람이 없다.
       const archive = deps?.archive ?? defaultArchive;
       await archive(SYSTEM_VIEWER, "user", userId, {
-        recordAction: async (v, entry) =>
-          (deps?.recordAction ?? defaultRecordAction)(v, {
-            ...entry,
-            detail: { reason: "register_person_rollback", requestedBy: viewer.id },
-          }),
+        // 06.4: 보관기가 tx로 로그를 쓴다 — 세 번째 인자를 버리지 않는다.
+        recordAction: async (v, entry, options) =>
+          (deps?.recordAction ?? defaultRecordAction)(
+            v,
+            {
+              ...entry,
+              detail: { reason: "register_person_rollback", requestedBy: viewer.id },
+            },
+            options,
+          ),
       });
+      if (error instanceof SeatTakenError) throw error;
       throw new UserFacingError(
         "발령 실패 · 계정은 발급됨 — 보관함에서 복원 후 발령 추가",
       );
@@ -273,11 +314,16 @@ export async function registerPerson(
       // (b) 잔여 창 — 발령 실패와 같은 보상(입사일 없는 새 계정이 조용히 남지 않는다).
       const archive = deps?.archive ?? defaultArchive;
       await archive(SYSTEM_VIEWER, "user", userId, {
-        recordAction: async (v, entry) =>
-          (deps?.recordAction ?? defaultRecordAction)(v, {
-            ...entry,
-            detail: { reason: "register_person_rollback", requestedBy: viewer.id },
-          }),
+        // 06.4: 보관기가 tx로 로그를 쓴다 — 세 번째 인자를 버리지 않는다.
+        recordAction: async (v, entry, options) =>
+          (deps?.recordAction ?? defaultRecordAction)(
+            v,
+            {
+              ...entry,
+              detail: { reason: "register_person_rollback", requestedBy: viewer.id },
+            },
+            options,
+          ),
       });
       throw new UserFacingError(
         "입사일 저장 실패 · 계정은 발급됨 — 보관함에서 복원 후 사람 상세에서 입사일 넣기",
@@ -295,6 +341,8 @@ export type ChangePersonRoleDeps = {
   can: typeof defaultCan;
   findRoleById: typeof defaultFindRoleById;
   recordAction: typeof defaultRecordAction;
+  now: () => Date;
+  visible: typeof defaultVisible;
 };
 
 // 자기 자신의 계급 변경은 거부한다 — D-33이 순위(rank) 컬럼을 두지 않기로
@@ -327,10 +375,29 @@ export async function changePersonRole(
     throw new ValidationError(`존재하지 않거나 보관된 계급: ${roleId}`);
   }
 
-  await repoUpdateUserRole(viewer, userId, roleId);
-
+  // 06.4(D-6402 · D-6403 · D-6404 · D-6408): 잠금 순서 사람 → 관리자 → (점유를 읽은 뒤) 팀 → 본부. 판정은 전부 잠금 뒤 tx 재조회.
+  const today = seoulTodayOf(deps);
+  const showNames = await (deps?.visible ?? defaultVisible)(viewer, "person.value");
   const recordAction = deps?.recordAction ?? defaultRecordAction;
-  await recordAction(viewer, { actionType: "permission_change", entity: "user", entityId: userId });
+  await withTransaction(async (tx) => {
+    await lockSeatKeys(viewer, { personIds: [userId], admin: true }, tx);
+    const row = await repoFindUserById(viewer, userId, tx);
+    if (!row) throw new UserNotFoundError("사람 찾을 수 없음");
+    await assertCanGrantRoles(viewer, [roleId, row.roleId], tx);
+    await assertNotLastAdmin(viewer, { userId, asOf: today, nextRoleId: roleId }, tx);
+    const occupied = await listOccupiedTeams(viewer, userId, today, tx);
+    const seats = newSeats({
+      roleBefore: row.roleId,
+      roleAfter: roleId,
+      employedBefore: row,
+      employedAfter: row,
+      occupiedBefore: occupied,
+      occupiedAfter: occupied,
+    });
+    await assertSeatsFree(viewer, { userId, roleId, seats, today, showNames }, tx);
+    await repoUpdateUserRole(viewer, userId, roleId, tx);
+    await recordAction(viewer, { actionType: "permission_change", entity: "user", entityId: userId }, { tx });
+  });
 }
 
 export type ArchivePersonDeps = {
@@ -368,7 +435,7 @@ function isCalendarDate(value: string): boolean {
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
-export type EmploymentDateDeps = { can: typeof defaultCan } & TxLogDeps;
+export type EmploymentDateDeps = { can: typeof defaultCan; now: () => Date; visible: typeof defaultVisible } & TxLogDeps;
 
 async function setEmploymentDate(
   viewer: Viewer,
@@ -396,8 +463,37 @@ async function setEmploymentDate(
 
   // 날짜는 연차 발생 일수 · 결재자 판정을 바꾼다 — 값과 행동 로그는 같은 tx(연차 조정과 같은 규칙, /review).
   const gate = await loadActionLogGate();
+  // 잠금 중 노출 판정이 풀에서 따로 빌리지 않게 tx 전에 정한다(06.4-02와 같은 규칙).
+  const today = seoulTodayOf(deps);
+  const showNames = field === "resignation_date" ? await (deps?.visible ?? defaultVisible)(viewer, "person.value") : false;
   try {
     await withTransaction(async (tx) => {
+      // 06.4(D-6411 · O3 · D-6412 · D-6404 퇴직일 진입점 · D-6415 — eng E2 · Codex B1 · 재검토 R4): 퇴직일 분기는 값과 무관하게
+      // 잠금 → 재조회 → 대상 계급 상한 → (값이 있으면) 마지막 관리자 → 자리 구간(늘어난 날짜만). 퇴직일을 지우거나 늦춰 구간이
+      // 늘어나는 사람은 260907 재개와 같은 자리 검사를 받는다(`O: server/src/people-rules.ts:68-78` `rejoinSeatWhy`, 문구 :75 ·
+      // 재개 라우트 `people.ts:1155` 인덱스 충돌 409 `:1258-1264`). O3 사용자 확정(2026-10-11 카드): 마지막 재직 관리자에게는
+      // 어떤 날짜의 퇴직일도 넣지 않는다 — 미래 날짜는 시간 경과로 0명이 되는 시한폭탄(RESEARCH Pitfall 7).
+      if (field === "resignation_date") {
+        await lockSeatKeys(viewer, { personIds: [userId], admin: true }, tx);
+        const fresh = await repoFindUserById(viewer, userId, tx);
+        if (!fresh) throw new UserNotFoundError("사람 찾을 수 없음");
+        // K-R1 사용자 확정(2026-10-11 카드 「막기」) · D-6411: 대상 계급 C가 내 상한 밖이면 퇴직일을 넣지도 지우지도 못한다.
+        await assertCanGrantRoles(viewer, [fresh.roleId], tx);
+        if (value !== null) await assertNotLastAdmin(viewer, { userId, asOf: today }, tx);
+        if (fresh.roleId !== null) {
+          // 조건 분기 없이 늘 계산 — newSeats가 늘어난 날짜만 돌려주므로 당기기 · 같은 값은 빈 결과로 잠금 · 쿼리 없이 지나간다.
+          const occupied = await listOccupiedTeams(viewer, userId, today, tx);
+          const seats = newSeats({
+            roleBefore: fresh.roleId,
+            roleAfter: fresh.roleId,
+            employedBefore: fresh,
+            employedAfter: { archivedAt: fresh.archivedAt, resignationDate: value },
+            occupiedBefore: occupied,
+            occupiedAfter: occupied,
+          });
+          await assertSeatsFree(viewer, { userId, roleId: fresh.roleId, seats, today, showNames }, tx);
+        }
+      }
       if (field === "hire_date") await repoUpdateUserHireDate(viewer, userId, value, tx);
       else await repoUpdateUserResignationDate(viewer, userId, value, tx);
       await recordActionInTx(

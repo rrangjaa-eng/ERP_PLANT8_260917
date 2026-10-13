@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useAction } from "next-safe-action/hooks";
 import {
   createOrgUnitAction,
@@ -16,6 +16,7 @@ import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
 import { DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
+import type { SeatDuplicatesDto } from "@/domain/people/seat-rules";
 import styles from "../people.module.css";
 
 export const NEW_TEAM_BASE_HREF = "/admin/people/org?new=team";
@@ -56,8 +57,50 @@ function RenameInput({
   );
 }
 
-function TeamRow({ team, canArchive }: { team: TeamView; canArchive: boolean }) {
+// SYSTEM §7-19 폰 줄 안 「더보기」(DECISIONS 2026-10-13): 중복 줄은 폰(<700)에서 태그 + 「더보기」 한 줄로 접고, 펼치면 행동 전부.
+// PC · 태블릿은 지금처럼 태그 뒤에 행동이 바로 있다.
+function DuplicateRowActions({ name, tag, children }: { name: string; tag: ReactNode; children: ReactNode }) {
+  return (
+    <>
+      <span className={styles.wideOnly}>
+        <RowActions>
+          {tag}
+          {children}
+        </RowActions>
+      </span>
+      <div className={styles.phoneOnly}>
+        {tag}
+        <details className={styles.rowMore}>
+          <summary className={styles.rowMoreSummary} aria-label={`${name} 더보기`}>
+            더보기
+          </summary>
+          <RowActions>{children}</RowActions>
+        </details>
+      </div>
+    </>
+  );
+}
+
+function TeamRow({
+  team,
+  canArchive,
+  duplicates,
+}: {
+  team: TeamView;
+  canArchive: boolean;
+  duplicates?: SeatDuplicatesDto;
+}) {
   const { execute, result } = useAction(renameTeamAction);
+  const holders = duplicates?.teams[team.id];
+  const archive = canArchive ? (
+    <DeleteToArchive
+      name={team.name}
+      onArchive={async () => {
+        const archiveResult = await archiveTeamAction({ id: team.id });
+        if (archiveResult?.serverError) throw new Error(archiveResult.serverError);
+      }}
+    />
+  ) : null;
   return (
     <li>
       <RenameInput
@@ -68,16 +111,18 @@ function TeamRow({ team, canArchive }: { team: TeamView; canArchive: boolean }) 
       />
       {team.archivedAt ? (
         <StatusTag status="보관됨" variant="text" />
+      ) : holders ? (
+        // 06.4(D-6413 · D2): 중복 태그와 보유자 이름은 행동 줄 첫 자리 — 이름을 누르면 그 사람 상세(계급을 바꾸는 곳)
+        <DuplicateRowActions name={team.name} tag={<StatusTag status={`팀장 ${holders.length}명`} variant="text" />}>
+          {holders.map((holder) => (
+            <RowAction key={holder.userId} href={`/admin/people/${holder.userId}`}>
+              {holder.name}
+            </RowAction>
+          ))}
+          {archive}
+        </DuplicateRowActions>
       ) : canArchive ? (
-        <RowActions>
-          <DeleteToArchive
-            name={team.name}
-            onArchive={async () => {
-              const archiveResult = await archiveTeamAction({ id: team.id });
-              if (archiveResult?.serverError) throw new Error(archiveResult.serverError);
-            }}
-          />
-        </RowActions>
+        <RowActions>{archive}</RowActions>
       ) : null}
     </li>
   );
@@ -88,13 +133,30 @@ function OrgUnitRow({
   teams,
   canArchive,
   canWrite,
+  duplicates,
 }: {
   orgUnit: OrgUnitView;
   teams: TeamView[];
   canArchive: boolean;
   canWrite: boolean;
+  duplicates?: SeatDuplicatesDto;
 }) {
   const { execute, result } = useAction(renameOrgUnitAction);
+  const holders = duplicates?.orgUnits[orgUnit.id];
+  const actions = (
+    <>
+      {canWrite ? <RowAction href={`${NEW_TEAM_BASE_HREF}&orgUnitId=${orgUnit.id}`}>팀 추가</RowAction> : null}
+      {canArchive ? (
+        <DeleteToArchive
+          name={orgUnit.name}
+          onArchive={async () => {
+            const archiveResult = await archiveOrgUnitAction({ id: orgUnit.id });
+            if (archiveResult?.serverError) throw new Error(archiveResult.serverError);
+          }}
+        />
+      ) : null}
+    </>
+  );
   return (
     <li>
       <RenameInput
@@ -105,26 +167,27 @@ function OrgUnitRow({
       />
       {orgUnit.archivedAt ? (
         <StatusTag status="보관됨" variant="text" />
-      ) : canWrite || canArchive ? (
+      ) : holders || canWrite || canArchive ? (
         // DR3 B — 「팀 추가」는 보관되지 않은 본부 행마다 있는 행동 링크다(그 본부가 미리 골라진 팀 패널).
-        <RowActions>
-          {canWrite ? <RowAction href={`${NEW_TEAM_BASE_HREF}&orgUnitId=${orgUnit.id}`}>팀 추가</RowAction> : null}
-          {canArchive ? (
-            <DeleteToArchive
-              name={orgUnit.name}
-              onArchive={async () => {
-                const archiveResult = await archiveOrgUnitAction({ id: orgUnit.id });
-                if (archiveResult?.serverError) throw new Error(archiveResult.serverError);
-              }}
-            />
-          ) : null}
-        </RowActions>
+        // 06.4(D-6413 · D2): 책임자 중복 태그 · 보유자 이름이 그 앞 첫 자리.
+        holders ? (
+          <DuplicateRowActions name={orgUnit.name} tag={<StatusTag status={`책임자 ${holders.length}명`} variant="text" />}>
+            {holders.map((holder) => (
+              <RowAction key={holder.userId} href={`/admin/people/${holder.userId}`}>
+                {holder.name}
+              </RowAction>
+            ))}
+            {actions}
+          </DuplicateRowActions>
+        ) : (
+          <RowActions>{actions}</RowActions>
+        )
       ) : null}
       <ul>
         {teams
           .filter((team) => team.orgUnitId === orgUnit.id)
           .map((team) => (
-            <TeamRow key={team.id} team={team} canArchive={canArchive} />
+            <TeamRow key={team.id} team={team} canArchive={canArchive} duplicates={duplicates} />
           ))}
       </ul>
     </li>
@@ -138,16 +201,25 @@ export function OrgList({
   teams,
   canArchive,
   canWrite,
+  duplicates,
 }: {
   orgUnits: OrgUnitView[];
   teams: TeamView[];
   canArchive: boolean;
   canWrite: boolean;
+  duplicates?: SeatDuplicatesDto;
 }) {
   return (
     <ul className={`single-column ${styles.orgList}`}>
       {orgUnits.map((org) => (
-        <OrgUnitRow key={org.id} orgUnit={org} teams={teams} canArchive={canArchive} canWrite={canWrite} />
+        <OrgUnitRow
+          key={org.id}
+          orgUnit={org}
+          teams={teams}
+          canArchive={canArchive}
+          canWrite={canWrite}
+          duplicates={duplicates}
+        />
       ))}
     </ul>
   );

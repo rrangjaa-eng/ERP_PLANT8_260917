@@ -27,7 +27,11 @@ vi.mock("@/domain/permissions/can", () => ({
     Promise.resolve(menu === "admin.people" && action === "write" ? writeAllowed : true),
 }));
 vi.mock("@/domain/people", () => ({ listPeople: () => Promise.resolve(people) }));
-vi.mock("@/domain/permissions/roles", () => ({ listRoles: () => Promise.resolve([{ id: "role-pm", name: "기획 PM" }]) }));
+vi.mock("@/domain/permissions/roles", () => ({
+  listAssignableRoles: () => Promise.resolve([{ id: "role-pm", name: "기획 PM" }]),
+  // 06.4 D-6417: 상한 판정은 이 테스트의 관심 밖 — 넘긴 계급을 모두 통과로 둔다.
+  assignableRoleIds: (_viewer: unknown, roleIds: string[]) => Promise.resolve(new Set(roleIds)),
+}));
 vi.mock("@/domain/org", () => ({ listOrgUnits: () => Promise.resolve([]), listTeams: () => Promise.resolve([]) }));
 vi.mock("@/app/(app)/admin/people/person-form", async () => {
   const { createElement: h } = await import("react");
@@ -103,6 +107,17 @@ describe("사람 목록 — person.id가 없는 행", () => {
     expect(html).toContain('href="/admin/people/u-2"');
     expect(html).toContain('data-user-id="u-1"');
     expect(html).toContain('data-user-id="u-2"');
+  });
+});
+
+// 06.4 /review(사용자 결정): 사람 보관은 보관함 쓰기에 더해 사람 쓰기를 요구한다 — 사람 쓰기가 없으면 「삭제」가 언제나 거부라 그리지 않는다.
+describe("사람 목록 — 사람 쓰기 없는 「삭제」", () => {
+  it("보관함 쓰기만 있고 사람 쓰기가 없으면 삭제 버튼이 없고 「상세」는 남는다", async () => {
+    people = visibleIdPeople;
+    writeAllowed = false;
+    const { html } = await render();
+    expect(html).toContain('href="/admin/people/u-1"');
+    expect(html).not.toContain("data-user-id");
   });
 });
 

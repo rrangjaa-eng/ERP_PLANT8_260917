@@ -1,4 +1,4 @@
-import type { Viewer } from "@/domain/viewer";
+import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { projectMany, type DtoSpec } from "@/domain/permissions/project";
@@ -21,6 +21,16 @@ import { restoreQuoteLine } from "@/domain/quotes/lines";
 import { canViewReserves, restoreReserve } from "@/domain/reserves";
 import { HOLIDAYS_MENU, restoreHoliday } from "@/domain/holidays/admin";
 import { toKstDate } from "@/domain/holidays/business-day";
+import { restoreUser } from "@/domain/people/restore";
+import { assertCanGrantRoles } from "@/domain/permissions/grant-ceiling";
+import { assertNotLastAdmin } from "@/domain/permissions/last-admin";
+import { lockSeatKeys } from "@/repositories/seats";
+import { setUserArchived } from "@/repositories/users";
+import { findTeamById, setTeamArchived } from "@/repositories/teams";
+import { setOrgUnitArchived } from "@/repositories/org-units";
+import { assertNoSeatDuplicates, SeatTakenError, seatDuplicateBaseline } from "@/domain/people/seat-rules";
+import { withTransaction } from "@/lib/db-transaction";
+import { kstToday } from "@/lib/kst-date";
 
 // ADMN-12: "지우지 않는다" — archived_at/archived_by 규약의 유일한 진입점.
 // 물리 삭제 문장은 이 리포 어디에도 넣지 않는다 — DB 레벨 권한 회수(REVOKE)는
@@ -32,10 +42,15 @@ export class ProtectedRowError extends UserFacingError {}
 export class ArchivableRowNotFoundError extends UserFacingError {}
 // 같은 숫자 사업자번호의 살아 있는 거래처가 있어 거래처를 복원할 수 없음 — 화면이 원인을 토스트에 싣도록 따로 둔다.
 export class VendorBusinessNoTakenError extends UserFacingError {}
+// 06.4 D-6416(문구 표(D3) 본인 보관 행 — `SELF_LEAVE_EDIT_ERROR` 꼴).
+export class SelfArchiveError extends UserFacingError {}
+export const SELF_ARCHIVE_MESSAGE = "본인 보관 불가 · 다른 관리자에게 요청";
 
 export type ArchiveDeps = {
   can: typeof defaultCan;
   recordAction: typeof defaultRecordAction;
+  now: () => Date;
+  visible: typeof visible;
 };
 
 const ARCHIVE_MENU = "admin.archive";
@@ -66,6 +81,41 @@ async function assertCanWriteEntry(viewer: Viewer, entry: ArchivableEntry, deps?
   }
 }
 
+// 06.4(D-6403 · D-6408 · D-6411 · D-6412): 사람 보관은 `archivePerson` · 보관함 · 등록 보상 세 호출이 모두 여기로 온다 — 사람 ·
+// 관리자 키 뒤 재조회로 대상 계급 상한 → 마지막 재직 관리자 순으로 막는다. SYSTEM_VIEWER는 마지막 관리자만 면제(06.4-01 모듈 —
+// 등록 보상 · 테스트 훅, Pitfall 4), 상한은 시드 성질로 통과. 260907은 퇴사 라우트 하나였고 마지막 관리자
+// (`O: server/src/people.ts:1087`) · 본인(`:1095`)만 막았다 — 관리자가 회사에 한 명(`O: db/schema/030_constraints_indexes.sql:1145`)
+// 이라 상한이 필요 없었다.
+async function archiveUser(viewer: Viewer, id: string, deps?: Partial<ArchiveDeps>): Promise<void> {
+  // 06.4 D-6416(K-R1b · eng 재검토 R1) 사용자 확정(2026-10-12 카드): 본인 보관 막기 — 260907 `O: server/src/people.ts:1095-1098`
+  // 「실수로 누르면 그 자리에서 못 돌아온다」와 같은 동작. 잠금 전 — 판정에 DB가 필요 없다. SYSTEM_VIEWER는 id `system`이라 해당 없음.
+  if (viewer.id === id) throw new SelfArchiveError(SELF_ARCHIVE_MESSAGE);
+  // 06.4 /review(사용자 결정): 복원(`domain/people/restore.ts`)과 같이 보관함 쓰기에 더해 사람 쓰기. 등록 보상(SYSTEM_VIEWER)은 면제.
+  if (viewer.id !== SYSTEM_VIEWER.id && !(await (deps?.can ?? defaultCan)(viewer, "admin.people", "write"))) {
+    throw new ForbiddenError("사람 보관 권한 없음 · 시스템 관리자");
+  }
+  const today = kstToday((deps?.now ?? (() => new Date()))());
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
+  await withTransaction(async (tx) => {
+    await lockSeatKeys(viewer, { personIds: [id], admin: true }, tx);
+    const row = await defaultFindUserById(viewer, id, tx);
+    if (!row) throw new ArchivableRowNotFoundError("대상 찾을 수 없음");
+    // 이미 보관됨 — 범용 경로의 「바꾼 행 없음 → 로그 없이」와 같은 뜻, 판정 전에 끝.
+    if (row.archivedAt !== null) return;
+    // K-R1 사용자 확정(2026-10-11 카드 「막기」) · D-6411: 대상 계급 C가 내 상한 밖이면 보관하지 못한다 — 마지막 관리자 검사보다
+    // 먼저(관리자가 여럿이어도 위임받은 사람이 관리자를 보관해 접속을 끊는 길, `N: lib/viewer.ts:45`). 보관 관문은 `admin.archive` 쓰기 그대로.
+    await assertCanGrantRoles(viewer, [row.roleId], tx);
+    // 남은 쪽 = 퇴직일 NULL(06.4-01 D-6412).
+    await assertNotLastAdmin(viewer, { userId: id, asOf: today }, tx);
+    if (!(await setUserArchived(viewer, id, true, tx))) return;
+    await recordAction(viewer, { actionType: "archive", entity: "user", entityId: id }, { tx });
+  });
+}
+
+const DOMAIN_ARCHIVERS: Partial<Record<string, (viewer: Viewer, id: string, deps?: Partial<ArchiveDeps>) => Promise<void>>> = {
+  user: archiveUser,
+};
+
 // 보관은 대상 행의 보관 시각이 이미 있으면 그 값을 유지한 채 성공으로
 // 돌아온다(멱등 — repositories의 조건부 UPDATE가 보장). 시드 계급은 거부한다
 // (isProtected).
@@ -78,6 +128,8 @@ export async function archive(
   await assertCanWrite(viewer, deps);
   const entry = findEntry(entity);
   await assertCanWriteEntry(viewer, entry, deps);
+  const domainArchiver = DOMAIN_ARCHIVERS[entity];
+  if (domainArchiver) return domainArchiver(viewer, id, deps);
 
   const row = await entry.findById(viewer, id);
   if (!row) throw new ArchivableRowNotFoundError("대상 찾을 수 없음");
@@ -100,6 +152,8 @@ const DOMAIN_RESTORERS: Partial<Record<string, (viewer: Viewer, id: string, deps
   reserve_entry: (viewer, id, deps) => restoreReserve(viewer, id, { recordAction: deps?.recordAction }),
   // quick 261001-hfi(ADMN-12) — 공휴일 복원은 달력 잠금 · admin.holidays 쓰기 · 소급 금지 · 재계산 · 로그를 한 트랜잭션에서.
   holiday: (viewer, id, deps) => restoreHoliday(viewer, id, { recordAction: deps?.recordAction }),
+  // 06.4(D-6406): 사람 복원은 사람 쓰기 · 상한 · 자리 재검사를 한 tx에서.
+  user: (viewer, id, deps) => restoreUser(viewer, id, { can: deps?.can, recordAction: deps?.recordAction, now: deps?.now, visible: deps?.visible }),
 };
 
 export type RestoreResult = { restored: boolean };
@@ -113,6 +167,33 @@ async function vendorRestoreBlock(viewer: Viewer, id: string): Promise<UserFacin
   if (!taker) return null;
   const name = (await visible(viewer, "vendor.value")) ? ` · ${taker.name}` : "";
   return new VendorBusinessNoTakenError(`같은 사업자번호 거래처 있음${name} · 복원 불가`);
+}
+
+// 06.4 /review: 팀 · 본부를 되살리면 그 안의 팀장 · 본부 책임자 자리가 다시 생긴다 — 보관 동안 자리 검사가 그 팀 · 본부를
+// 보지 않아 둘째 보유자가 생겼을 수 있다. 팀 · 본부 키를 잡고 보관을 푼 뒤 겹치면 tx째 되돌린다(자동 강등 없음 · 사람 복원과
+// 같은 꼴). 팀은 그 팀의 본부 책임자 자리도 되살아나므로 본부 키 · 검사까지. 날짜 · 이름 노출은 tx 전에(풀에서 따로 빌리지 않게).
+async function restoreSeatedOrg(viewer: Viewer, entity: "team" | "org_unit", id: string, deps?: Partial<ArchiveDeps>): Promise<RestoreResult> {
+  const teamIds = entity === "team" ? [id] : [];
+  const orgUnitId = entity === "org_unit" ? id : ((await findTeamById(viewer, id))?.orgUnitId ?? null);
+  const orgUnitIds = orgUnitId === null ? [] : [orgUnitId];
+  const today = kstToday((deps?.now ?? (() => new Date()))());
+  const showNames = await (deps?.visible ?? visible)(viewer, "person.value");
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
+  return withTransaction(async (tx) => {
+    await lockSeatKeys(viewer, { teamIds, orgUnitIds }, tx);
+    const baseline = await seatDuplicateBaseline(viewer, today, tx);
+    const reactivated = entity === "team" ? await setTeamArchived(viewer, id, false, tx) : await setOrgUnitArchived(viewer, id, false, tx);
+    if (!reactivated) return { restored: false };
+    try {
+      await assertNoSeatDuplicates(viewer, { teamIds, orgUnitIds, today, showNames, baseline }, tx);
+    } catch (error) {
+      // 보관함 토스트가 마지막 「 · 」 앞까지 자른다 — 사람 복원(`domain/people/restore.ts`)처럼 ` · 복원 불가`로 끝낸다.
+      if (error instanceof SeatTakenError) throw new SeatTakenError(`${error.message} · 복원 불가`);
+      throw error;
+    }
+    await recordAction(viewer, { actionType: "restore", entity, entityId: id }, { tx });
+    return { restored: true };
+  });
 }
 
 export async function restore(
@@ -132,6 +213,8 @@ export async function restore(
   if (!row) throw new ArchivableRowNotFoundError("대상 찾을 수 없음");
   // quick 261002-4jn — 이미 활성인 행(낡은 화면 · 동시 복원의 뒤 사람)은 로그 없이 「이미 복원됨」.
   if (row.archivedAt === null) return { restored: false };
+
+  if (entity === "team" || entity === "org_unit") return restoreSeatedOrg(viewer, entity, id, deps);
 
   // 동시 복원은 둘 다 위 판정을 지날 수 있다 — 조건부 갱신이 실제로 바꾼 쪽만 「복원됨」 · 로그(PR #149 리뷰).
   // 거래처는 같은 사업자번호의 살아 있는 거래처가 생겼으면 유일 색인이 막는다 — 사용자 문구로 바꾼다.
@@ -232,13 +315,17 @@ export async function listArchive(viewer: Viewer, deps?: Partial<ListArchiveDeps
   // 독립 검토(#138) — 복원할 수 없는 공휴일 행은 「복원」을 내놓지 않는다(§7). 공휴일 복원은 공휴일 쓰기 권한과
   // 소급 금지(오늘 이후 날짜) · 그 날짜에 다른 공휴일(대체일 제외) 없음을 요구한다(restoreHoliday) — 같은 판정을 목록에서 미리 한다.
   const holidayWritable = rows.some((row) => row.entity === "holiday") && (await canFn(viewer, HOLIDAYS_MENU, "write"));
+  // 06.4 D-6406 사용자 확정(2026-10-12 카드): 사람 쓰기가 없으면 사람 행 「복원」을 내놓지 않는다(§7 할 수 없는 선택지 숨김).
+  // 상한 · 자리 위반은 행마다 미리 보지 않고 복원 때 원인 토스트로(Pitfall 8).
+  const peopleWritable = rows.some((row) => row.entity === "user") && (await canFn(viewer, "admin.people", "write"));
   const today = toKstDate(deps?.now ?? new Date());
   // 추가 권한 조건(requiredMenu)의 쓰기가 없는 항목의 행은 복원 불가(항목마다 한 번 판정 — restore()의 assertCanWriteEntry와 같은 조건).
   const unwritableEntities = await entitiesWithoutRequired(viewer, canFn, "write");
   const isRestorable = (row: ArchivedItem) =>
     !unwritableEntities.has(row.entity) &&
     (row.entity !== "holiday" || (holidayWritable && row.date !== undefined && row.date > today && !row.dateTaken)) &&
-    (row.entity !== "vendor" || !row.businessNoTaken);
+    (row.entity !== "vendor" || !row.businessNoTaken) &&
+    (row.entity !== "user" || peopleWritable);
 
   const findUserById = deps?.findUserById ?? defaultFindUserById;
   const archivedByIds = [...new Set(rows.map((row) => row.archivedBy).filter((id): id is string => id !== null))];

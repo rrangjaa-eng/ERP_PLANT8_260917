@@ -12,8 +12,8 @@ export async function findUserByEmail(viewer: Viewer, email: string): Promise<Us
   return row ?? null;
 }
 
-export async function findUserById(viewer: Viewer, id: string): Promise<UserRow | null> {
-  const [row] = await db.select().from(users).where(eq(users.id, id)).limit(1);
+export async function findUserById(viewer: Viewer, id: string, tx: DbOrTx = db): Promise<UserRow | null> {
+  const [row] = await tx.select().from(users).where(eq(users.id, id)).limit(1);
   return row ?? null;
 }
 
@@ -54,20 +54,20 @@ export async function listUsers(
     .orderBy(users.name);
 }
 
-export async function updateUserRole(viewer: Viewer, userId: string, roleId: string): Promise<void> {
-  await db.update(users).set({ roleId, updatedAt: new Date() }).where(eq(users.id, userId));
+export async function updateUserRole(viewer: Viewer, userId: string, roleId: string, tx: DbOrTx = db): Promise<void> {
+  await tx.update(users).set({ roleId, updatedAt: new Date() }).where(eq(users.id, userId));
 }
 
 // 보관·복원 둘 다 조건부 UPDATE로 멱등·경합 안전을 확보한다(repositories/roles.ts와 같은 패턴).
-export async function setUserArchived(viewer: Viewer, userId: string, value: boolean): Promise<boolean> {
+export async function setUserArchived(viewer: Viewer, userId: string, value: boolean, tx: DbOrTx = db): Promise<boolean> {
   // 조건부 갱신이 실제로 바꾼 행이 있으면 참 — 범용 복원이 「이미 복원됨」 · 로그를 이 결과로 정한다(PR #149).
   const rows = value
-    ? await db
+    ? await tx
         .update(users)
         .set({ archivedAt: new Date(), archivedBy: viewer.id })
         .where(and(eq(users.id, userId), isNull(users.archivedAt)))
         .returning({ id: users.id })
-    : await db
+    : await tx
         .update(users)
         .set({ archivedAt: null, archivedBy: null })
         .where(and(eq(users.id, userId), isNotNull(users.archivedAt)))

@@ -141,3 +141,43 @@
 .orgList {
   margin: 0;
 }
+
+/* SYSTEM §7-19 폰 줄 안 「더보기」(DECISIONS 2026-10-13) — 중복 줄은 PC · 태블릿에서 행동이 줄에 바로(wideOnly),
+   폰(<700)에서 태그 + 「더보기」 한 줄(phoneOnly). summary는 §7-15 펼침 모양(3차 글자 · 기본 표식 · 폰 44). */
+.phoneOnly {
+  display: none;
+}
+
+.rowMore {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.rowMoreSummary {
+  width: fit-content;
+  min-width: var(--touch-min);
+  min-height: var(--touch-min);
+  color: var(--text-link);
+  font-size: var(--text-aux);
+  font-weight: var(--fw-medium);
+  text-decoration: underline;
+  text-decoration-thickness: var(--line-w);
+  text-underline-offset: var(--underline-offset);
+  cursor: pointer;
+}
+
+.rowMoreSummary:hover {
+  text-decoration-thickness: var(--underline-w-hover);
+}
+
+@media (max-width: 699.98px) {
+  .wideOnly {
+    display: none;
+  }
+
+  .phoneOnly {
+    display: flex;
+    align-items: baseline;
+    gap: var(--s-4);
+  }
+}

@@ -6,9 +6,10 @@ import { registerPersonAction, archivePersonAction } from "./actions";
 import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
 import { Form } from "@/ui/form/Form";
+import { kstToday } from "@/lib/kst-date";
 import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
 import { usePanel } from "@/ui/side-panel/SidePanel";
-import { DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
+import { ArchiveRejectedError, DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
 import styles from "./people.module.css";
 
 export type RoleOption = { id: string; name: string };
@@ -23,7 +24,15 @@ function getStringField(formData: FormData, key: string): string {
 // 패널 안 그 자리에 한 번 보여준다(T-03-29) — 클라이언트 상태에만 담고 URL·로컬 저장소에 넣지 않는다.
 // 사용자 답 Q3 A 「패널에 남음」(R9 D의 예외): 사람 상세로 이동하지 않고 결과의 「사람 등록」으로 같은 패널에서 이어서 입력한다.
 // §6-1: page.tsx가 ?new=1일 때만 이 패널을 렌더한다 — 기본 진입에는 없다.
-export function PersonForm({ roles, teams }: { roles: RoleOption[]; teams: TeamOption[] }) {
+export function PersonForm({
+  roles,
+  teams,
+  noRoleReason,
+}: {
+  roles: RoleOption[];
+  teams: TeamOption[];
+  noRoleReason?: string | null;
+}) {
   const panel = usePanel();
   const panelRef = useRef<PanelFormHandle>(null);
   const continueRef = useRef(false);
@@ -87,6 +96,7 @@ export function PersonForm({ roles, teams }: { roles: RoleOption[]; teams: TeamO
   const nameError = result.validationErrors?.name?._errors?.[0];
   const emailError = result.validationErrors?.email?._errors?.[0];
   const hireDateError = result.validationErrors?.hireDate?._errors?.[0];
+  const effectiveFromError = result.validationErrors?.effectiveFrom?._errors?.[0];
   const roleError = result.validationErrors?.roleId?._errors?.[0];
 
   return (
@@ -98,6 +108,7 @@ export function PersonForm({ roles, teams }: { roles: RoleOption[]; teams: TeamO
       onSubmit={handleSubmit}
       pending={isExecuting}
       reason={roleError ?? result.serverError ?? null}
+      blockedReason={noRoleReason ?? undefined}
     >
       <TextField id="name" name="name" label="이름" required error={nameError} />
       <TextField id="email" name="email" label="이메일" type="email" required error={emailError} />
@@ -108,12 +119,13 @@ export function PersonForm({ roles, teams }: { roles: RoleOption[]; teams: TeamO
           id="roleId"
           name="roleId"
           required
-          defaultValue=""
+          // 06.4(D-6402 · D8 · D9): 선택지는 서버가 계산한 통과 계급만 — 숨김은 UX, 서버 거부가 관문. 없으면 막힘 이유, 하나면 미리 선택
+          defaultValue={roles.length === 1 ? roles[0]?.id : ""}
           aria-invalid={roleError ? true : undefined}
           aria-describedby={roleError ? "roleId-error" : undefined}
         >
           <option value="" disabled>
-            계급 선택
+            {roles.length === 0 ? "—" : "계급 선택"}
           </option>
           {roles.map((role) => (
             <option key={role.id} value={role.id}>
@@ -125,7 +137,19 @@ export function PersonForm({ roles, teams }: { roles: RoleOption[]; teams: TeamO
       </div>
       <div className={styles.panelSelect}>
         <label htmlFor="teamId">팀</label>
-        <select className={styles.select} id="teamId" name="teamId" defaultValue="">
+        <select
+          className={styles.select}
+          id="teamId"
+          name="teamId"
+          defaultValue=""
+          // 사용자 카드 2026-10-13 「오늘로 채우기」: 팀을 고르면 비어 있는 발령일만 오늘(KST)로 채운다 — 입력한 날짜는 덮지 않는다.
+          onChange={(event) => {
+            const effectiveFrom = event.currentTarget.form?.elements.namedItem("effectiveFrom");
+            if (event.currentTarget.value && effectiveFrom instanceof HTMLInputElement && !effectiveFrom.value) {
+              effectiveFrom.value = kstToday(new Date());
+            }
+          }}
+        >
           <option value="">배정 없음</option>
           {teams.map((team) => (
             <option key={team.id} value={team.id}>
@@ -134,7 +158,7 @@ export function PersonForm({ roles, teams }: { roles: RoleOption[]; teams: TeamO
           ))}
         </select>
       </div>
-      <TextField id="effectiveFrom" name="effectiveFrom" label="발령일" type="date" />
+      <TextField id="effectiveFrom" name="effectiveFrom" label="발령일" type="date" error={effectiveFromError} />
       {/* 04.1-06(D-96): 입사일 필수 — 네이티브 필수 속성은 두지 않는다(브라우저 말풍선이 서버 문구를 가린다, §7-15 · C-13). */}
       <TextField id="hireDate" name="hireDate" label="입사일" type="date" error={hireDateError} />
     </PanelForm>
@@ -149,7 +173,7 @@ export function PersonDeleteButton({ userId, name }: { userId: string; name: str
       name={name}
       onArchive={async () => {
         const result = await archivePersonAction({ userId });
-        if (result?.serverError) throw new Error(result.serverError);
+        if (result?.serverError) throw new ArchiveRejectedError(result.serverError);
       }}
     />
   );

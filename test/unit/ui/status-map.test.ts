@@ -96,6 +96,18 @@ describe("status-map — 낱말 → 색 한 표", () => {
     }
   });
 
+  describe("06.4 SP-64-1", () => {
+    it("조직 화면 팀장 중복 개수 → warning", () => {
+      expect(statusKind("팀장 2명")).toBe("warning");
+    });
+    it("조직 화면 책임자 중복 개수 → warning", () => {
+      expect(statusKind("책임자 3명")).toBe("warning");
+    });
+    it("`팀장 결재 중`은 그대로 accent(새 템플릿과 겹치지 않음)", () => {
+      expect(statusKind("팀장 결재 중")).toBe("accent");
+    });
+  });
+
   it("Phase 6 기존 낱말은 같은 색으로 다시 쓴다(신청됨 · 증빙 없음 · 지출결의 중)", () => {
     expect(statusKind("신청됨")).toBe("muted");
     expect(statusKind("증빙 없음")).toBe("danger");

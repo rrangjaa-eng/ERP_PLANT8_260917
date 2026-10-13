@@ -16,7 +16,7 @@ import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { withTransaction } from "@/lib/db-transaction";
 import { setPermissionCell } from "@/domain/permissions/matrix";
 import { projectResponsibles } from "@/domain/projects/responsibles";
-import { teamLeadCandidatesAtDate } from "@/repositories/team-memberships";
+import { insertMembership, teamLeadCandidatesAtDate } from "@/repositories/team-memberships";
 import { addDays, kstToday } from "@/lib/kst-date";
 import { gate } from "@/domain/rules/gate";
 import { deferred } from "./lock-race";
@@ -442,6 +442,12 @@ describe("팀장 이름 출처 — teamLeadCandidatesAtDate 한 쿼리 (04-11 Ta
     return { id: userId, roleId };
   }
 
+  // 06.4(D-6404): 같은 팀 둘째 팀장은 자리 가드가 막는다 — 「이미 있던 중복」 세계는 리포지토리 발령으로 만든다(가드 우회 · 테스트 전용).
+  async function duplicateLead(name: string, teamId: string): Promise<void> {
+    const { userId } = await createAccount(SYSTEM_VIEWER, { email: `lead-${randomUUID()}@example.test`, name, roleId: "role-team-lead" });
+    await insertMembership(SYSTEM_VIEWER, { userId, teamId, effectiveFrom: "2020-01-01" });
+  }
+
   async function freshTeam(): Promise<string> {
     const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `본부-${randomUUID()}` });
     const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `팀-${randomUUID()}` });
@@ -452,7 +458,7 @@ describe("팀장 이름 출처 — teamLeadCandidatesAtDate 한 쿼리 (04-11 Ta
     const teamId = await freshTeam();
     const today = kstToday(new Date());
     await namedViewer("role-team-lead", "하팀장", teamId);
-    await namedViewer("role-team-lead", "가팀장", teamId);
+    await duplicateLead("가팀장", teamId);
     await namedViewer("role-division-head", "나본부장", teamId); // 업무 범위 company — 후보 아님
     await namedViewer(DEFAULT_ROLE_ID, "다피엠", teamId); // projects.status 쓰기 없음 — 후보 아님
     const pm = await makeViewer(DEFAULT_ROLE_ID);

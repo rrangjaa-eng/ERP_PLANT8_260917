@@ -26,6 +26,15 @@ registerAction({ name: "closeExpenseAction", menu: "expenses", action: "write", 
 registerAction({ name: "requestEvidenceUploadAction", menu: "expenses", action: "write", dtoName: null });
 
 // 완료된 증빙 파일 DTO(도메인이 투영해 돌려준 것)를 그대로 돌려준다.
+// 06-16(D-56) 차수 승인 증빙 — 요청은 서명 PUT 주소만(DTO 없음), 펼침 읽기는 증빙 파일 명세(evidenceFile)를 지난 목록을 싣는다(projects 보기 — 판정은 domain).
+registerAction({ name: "requestRevisionEvidenceUploadAction", menu: "projects", action: "write", dtoName: null });
+registerAction({ name: "getRevisionEvidenceAction", menu: "projects", action: "view", dtoName: "evidenceFile" });
+
+// 06-16(D-60) 리저브 줄 증빙 — 차수 승인 증빙과 같은 모양(메뉴는 pnl). 되살리기는 05 removeEvidenceAction의 짝(판정은 domain 규칙).
+registerAction({ name: "requestReserveEvidenceUploadAction", menu: "pnl", action: "write", dtoName: null });
+registerAction({ name: "getReserveEvidenceAction", menu: "pnl", action: "view", dtoName: "evidenceFile" });
+registerAction({ name: "restoreEvidenceAction", menu: "expenses", action: "write", dtoName: null });
+
 registerAction({ name: "completeEvidenceUploadAction", menu: "expenses", action: "write", dtoName: "evidenceFile" });
 
 registerAction({ name: "removeEvidenceAction", menu: "expenses", action: "write", dtoName: null });

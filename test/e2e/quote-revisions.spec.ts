@@ -662,7 +662,9 @@ test.describe("차수 섹션과 이전 차수 읽기 섹션 (04-24 Task 3 — S5
     const table = revisionTable(page);
     const rows = await dataRowTexts(table);
     expect(rows.map((cells) => cells[4])).toEqual(["승인", ""]);
-    expect(rows[0]?.[5]).toBe("");
+    // 06-16 04 S5 개정 ⒜ — 승인된 최신 차수 행의 동작 칸은 quote.amount 노출자에게 3차 `승인 증빙` 하나(「차수 열기」 없음).
+    expect(rows[0]?.[5]).toBe("승인 증빙");
+    await expect(table.getByRole("button", { name: "차수 열기" })).toHaveCount(1);
     await expect(table.getByText("현재", { exact: true })).toHaveCount(0);
 
     await page.setViewportSize({ width: 375, height: 800 });

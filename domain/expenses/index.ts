@@ -9,6 +9,7 @@ import { formatForeignAmount, formatFxRate, formatKrw } from "@/lib/format-numbe
 import { can, ForbiddenError } from "@/domain/permissions/can";
 import { project } from "@/domain/permissions/project";
 import { listEvidenceVoidSignals } from "@/domain/evidence/signals";
+import { duplicateScopeKinds } from "@/domain/evidence/upload-checks";
 import { loadActorTeamScope } from "@/domain/projects/status";
 import { canWriteExpenseOnProject } from "@/domain/expenses/write-gate";
 import { projectRowScope } from "@/domain/projects/visibility";
@@ -1183,7 +1184,7 @@ export async function restoreExpenseDraft(viewer: Viewer, input: { expenseId: st
     return await withTransaction(async (tx) => {
       const restored = await restoreDraft(viewer, { id: row.id, drafterId: viewer.id }, tx);
       if (!restored) throw new ExpenseNotFoundError();
-      if (row.deletedAt) await restoreOwnerFilesRemovedAt(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: row.id, removedAt: row.deletedAt }, tx);
+      if (row.deletedAt) await restoreOwnerFilesRemovedAt(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: row.id, removedAt: row.deletedAt, scopeKinds: duplicateScopeKinds(EXPENSE_DOCUMENT_KIND) }, tx);
       await recordActionInTx(
         viewer,
         { actionType: "document_update", entity: "expense", entityId: row.id, documentId: row.id, detail: { kind: EXPENSE_DOCUMENT_KIND, change: "restore" } },

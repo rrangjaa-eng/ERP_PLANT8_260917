@@ -14,6 +14,7 @@ import { clampPage, pageCountFrom, LIST_PAGE_SIZE } from "@/lib/paging";
 import { projectMany, type DtoSpec } from "@/domain/permissions/project";
 import { projectRowScope } from "@/domain/projects/visibility";
 import { listProjectIdsInScope } from "@/repositories/projects";
+import { listAliveByOwners } from "@/repositories/files";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { formatKrw } from "@/lib/format-number";
 import type { DbOrTx } from "@/repositories/document-counters";
@@ -615,6 +616,9 @@ export type ReserveEntryDto = {
   note: string | null;
   balanceKrw: number;
   cellEditability: Record<ReserveCellField, ReserveCellEditability>;
+  /** 06-16(D-60) — 이 줄의 증빙 파일 수(살아 있는 파일)와 올리고 뗄 수 있는지(리저브 쓰기 권리 ∧ 보관 아님). 대장 전체와 같은 reserve.amount 게이트. */
+  evidenceCount: number;
+  evidenceWritable: boolean;
 };
 
 export type ReserveListResult = {
@@ -631,7 +635,7 @@ export type ReserveListResult = {
 const PROJECT_NAME_INFO_ITEMS = [RESERVE_INFO_ITEM, "project.value"] as const;
 export const RESERVE_DTO_SPEC: DtoSpec<ReserveEntryDto, ReserveEntryDto> = {
   fields: (
-    ["id", "version", "clientId", "clientName", "entryDate", "direction", "amount", "projectId", "projectName", "evidenceType", "evidenceLabel", "taxInvoiceNumber", "note", "balanceKrw", "cellEditability"] as const
+    ["id", "version", "clientId", "clientName", "entryDate", "direction", "amount", "projectId", "projectName", "evidenceType", "evidenceLabel", "taxInvoiceNumber", "note", "balanceKrw", "cellEditability", "evidenceCount", "evidenceWritable"] as const
   ).map((key) => ({ key, from: key, infoItem: key === "projectName" ? PROJECT_NAME_INFO_ITEMS : RESERVE_INFO_ITEM })),
 };
 
@@ -734,6 +738,10 @@ export async function listReserves(viewer: Viewer, opts: { page?: number | strin
   ]);
   const projectNames = await repoFindProjectNames(viewer, projectScope, projectIds);
   const evidenceLabels = new Map(evidenceRows.map((row) => [row.value, row.label]));
+  const evidenceCounts = new Map<string, number>();
+  for (const file of await listAliveByOwners(viewer, { ownerKind: RESERVE_EVIDENCE_KIND, ownerIds: pageIds })) {
+    evidenceCounts.set(file.ownerId, (evidenceCounts.get(file.ownerId) ?? 0) + 1);
+  }
   const pageRows = pageIds.map((id) => {
     const row = byId.get(id) as ReserveEntryRow;
     const money = moneyFromRow({ currency: row.amountCurrency, foreignAmount: row.amountForeignAmount, fxRate: row.amountFxRate, amountKrw: row.amountAmountKrw });
@@ -753,6 +761,8 @@ export async function listReserves(viewer: Viewer, opts: { page?: number | strin
       note: row.note,
       balanceKrw: balanceById.get(row.id) ?? 0,
       cellEditability: reserveCellEditability(false, canWrite),
+      evidenceCount: evidenceCounts.get(row.id) ?? 0,
+      evidenceWritable: canWrite,
     };
     return dto;
   });
@@ -765,4 +775,67 @@ export async function listReserves(viewer: Viewer, opts: { page?: number | strin
     newRowCellEditability: reserveCellEditability(true, canWrite),
     clientBalances: pageClientIds.map((clientId) => ({ clientId, clientName: names.get(clientId) ?? "", balanceKrw: finalByClient.get(clientId) ?? 0 })),
   };
+}
+
+// ── 리저브 줄 증빙 주인(06-16 · D-60) ───────────────────────────────────────────────────────────────────────────
+// 05 domain/evidence의 주인 표 `reserve_entry` 줄이 부른다(이 파일은 evidence 도메인을 import하지 않는다 — 순환). 읽기 = 04 리저브 보기
+// (pnl 보기 ∧ reserve.amount), 쓰기 = 04-07 리저브 쓰기(pnl 쓰기 ∧ reserve.amount) ∧ 보관된 줄 아님.
+
+export const RESERVE_EVIDENCE_KIND = "reserve_entry";
+
+export type ReserveEvidenceOwner = {
+  id: string;
+  drafterId: "";
+  number: null;
+  status: "open" | "closed";
+  updatedAt: Date;
+  version: number;
+  projectId: null;
+  instance: null;
+  closed: false;
+  projectCompleted: false;
+};
+
+function toReserveEvidenceOwner(row: ReserveEntryRow): ReserveEvidenceOwner {
+  return {
+    id: row.id,
+    drafterId: "",
+    number: null,
+    status: row.archivedAt === null ? "open" : "closed",
+    updatedAt: row.updatedAt,
+    version: 0,
+    projectId: null,
+    instance: null,
+    closed: false,
+    projectCompleted: false,
+  };
+}
+
+// tx가 없으면 풀 읽기, 있으면 04-07 saveReserves · restoreReserve와 같은 클라이언트 행 잠금 뒤 같은 tx로 줄을 다시 읽는다(보관된 줄도 읽는다 — 파일은 줄과 함께 남는다).
+export async function reserveEvidenceOwner(viewer: Viewer, entryId: string, tx?: DbOrTx): Promise<ReserveEvidenceOwner | null> {
+  if (!UUID_SHAPE.test(entryId)) return null;
+  const [first] = await repoFindEntriesByIds(viewer, [entryId], tx);
+  if (!first) return null;
+  if (!tx) return toReserveEvidenceOwner(first);
+  await repoLockReserveClients(viewer, [first.clientId], tx);
+  const [current] = await repoFindEntriesByIds(viewer, [entryId], tx);
+  return current ? toReserveEvidenceOwner(current) : null;
+}
+
+export async function reserveEvidenceRights(viewer: Viewer, owner: ReserveEvidenceOwner): Promise<{ read: boolean; write: boolean }> {
+  const [read, write] = await Promise.all([reserveRights(viewer, "view"), reserveRights(viewer, "write")]);
+  return { read, write: write && owner.status === "open" };
+}
+
+export function reserveEvidenceWriteOpen(owner: ReserveEvidenceOwner): boolean {
+  return owner.status === "open";
+}
+
+export function reserveEvidenceNotFound(): UserFacingError {
+  return new UserFacingError(ENTRY_NOT_FOUND);
+}
+
+// 권리 밖 직접 호출 — 04-07 거부 입구(금액 없음) 그대로: 문구는 FORBIDDEN_MESSAGE, 보관된 줄은 읽기만이라 같은 거부.
+export function denyReserveEvidenceWrite(viewer: Viewer, owner: ReserveEvidenceOwner): never {
+  return denyWrite(viewer, FORBIDDEN_RULE, { entryIds: [owner.id] }, new ForbiddenError(FORBIDDEN_MESSAGE));
 }

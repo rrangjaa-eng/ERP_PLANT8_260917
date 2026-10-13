@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, inArray, isNull, ne, notExists, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNotNull, isNull, ne, notExists, or, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
@@ -113,19 +113,48 @@ export async function markOwnerFilesRemoved(
     .where(and(eq(files.ownerKind, input.ownerKind), eq(files.ownerId, input.ownerId), isNull(files.removedAt)));
 }
 
-// 지운 문서를 되돌릴 때 그 삭제가 뗀 파일(삭제 시각과 같은 removed_at)만 되살린다 — 그 전에 따로 뗀 파일은 그대로.
-// 05 /review C3: 그 사이 같은 sha256이 같은 종류의 다른 주인에 살아 있으면(지운 사이 다른 문서에 붙인 같은 영수증) 그 파일은 되살리지 않는다.
-export async function restoreOwnerFilesRemovedAt(viewer: Viewer, input: { ownerKind: string; ownerId: string; removedAt: Date }, tx: DbOrTx): Promise<void> {
-  void viewer;
+// 06-16(drift ⑸): 「다른 주인에 살아 있는 같은 파일」 — 같은 sha256 · 중복 묶음(scopeKinds) 안 · 주인 종류가 다르거나 주인 id가 다른 · 삭제 · 무효 아님.
+// 되살리기 두 곳(지운 문서 되돌리기 · 새 주인 증빙 되돌리기)이 조건 UPDATE 안 NOT EXISTS로 쓴다 — 조회와 UPDATE 사이 틈이 없다.
+// sameOwnerBlocks — 같은 주인에 다시 붙은 같은 파일도 막는다(한 파일 되살리기). 거짓이면 05 C3처럼 다른 주인만(주인 단위 되돌리기는 같은 주인 파일을 같은 문장에서 함께 되살린다).
+function takenElsewhere(tx: DbOrTx, scopeKinds: readonly string[], sameOwnerBlocks: boolean) {
   const other = alias(files, "other_files");
-  const takenElsewhere = tx
+  return tx
     .select({ id: other.id })
     .from(other)
-    .where(and(eq(other.sha256, files.sha256), eq(other.ownerKind, files.ownerKind), ne(other.ownerId, files.ownerId), isNull(other.removedAt), isNull(other.voidedAt)));
+    .where(
+      and(
+        eq(other.sha256, files.sha256),
+        inArray(other.ownerKind, [...scopeKinds]),
+        ...(sameOwnerBlocks ? [] : [or(ne(other.ownerKind, files.ownerKind), ne(other.ownerId, files.ownerId))]),
+        isNull(other.removedAt),
+        isNull(other.voidedAt),
+      ),
+    );
+}
+
+// 지운 문서를 되돌릴 때 그 삭제가 뗀 파일(삭제 시각과 같은 removed_at)만 되살린다 — 그 전에 따로 뗀 파일은 그대로.
+// 05 /review C3: 그 사이 같은 sha256이 중복 묶음(scopeKinds — 06-11 duplicateScopeKinds)의 다른 주인에 살아 있으면(지운 사이 다른 문서에 붙인 같은 영수증) 그 파일은 되살리지 않는다.
+export async function restoreOwnerFilesRemovedAt(
+  viewer: Viewer,
+  input: { ownerKind: string; ownerId: string; removedAt: Date; scopeKinds: readonly string[] },
+  tx: DbOrTx,
+): Promise<void> {
+  void viewer;
   await tx
     .update(files)
     .set({ removedAt: null, removedBy: null })
-    .where(and(eq(files.ownerKind, input.ownerKind), eq(files.ownerId, input.ownerId), eq(files.removedAt, input.removedAt), notExists(takenElsewhere)));
+    .where(and(eq(files.ownerKind, input.ownerKind), eq(files.ownerId, input.ownerId), eq(files.removedAt, input.removedAt), notExists(takenElsewhere(tx, input.scopeKinds, false))));
+}
+
+// 06-16(F10): 지운 파일 한 건 되살리기 — 지워졌고(removed_at) 무효 아닌 행이며 중복 묶음의 다른 주인에 같은 파일이 살아 있지 않을 때만. 바뀐 행이 있으면 true.
+export async function markRestored(viewer: Viewer, input: { id: string; scopeKinds: readonly string[] }, tx: DbOrTx): Promise<boolean> {
+  void viewer;
+  const rows = await tx
+    .update(files)
+    .set({ removedAt: null, removedBy: null })
+    .where(and(eq(files.id, input.id), isNotNull(files.removedAt), isNull(files.voidedAt), notExists(takenElsewhere(tx, input.scopeKinds, true))))
+    .returning({ id: files.id });
+  return rows.length > 0;
 }
 
 // 05-09: 살아 있는 행에만 무효 세 칸을 쓴다 — 0행이면 null(이미 무효 · 지워짐). 시각은 주입이 없으면 DB now() — 올린 시각(files.created_at

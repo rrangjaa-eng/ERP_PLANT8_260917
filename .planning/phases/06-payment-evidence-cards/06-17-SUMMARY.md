@@ -156,3 +156,11 @@ Opus 독립 검토: 통과(막음 0) — M-1·L-1·L-2 반영(65db193). 보고�
 
 ## Self-Check: PASSED
 - 파일 다섯(payment-selection.ts · evidence-confirm-dialog.tsx · 단위 테스트 · 점검표 · 이 SUMMARY) 있음, 커밋 cf30a10 · 49de927 · 51abc99 · d3a2637 · 304c8b0 있음, erp_test_0617_test 지움(pg_database 0).
+
+## 화면 검토 증거
+| 항목 | 경로 |
+|---|---|
+| 독립 검토(Opus) | /mnt/project-files/notes/06-review/06-17-review.md |
+| DOM 감사(Opus, CI=true) | /mnt/project-files/notes/06-review/06-17-dom-audit.md |
+| 4폭 캡처 적용 전·후(cccfb37 대비) | /mnt/project-files/06-review/pr-e/06-17/ |
+| Codex 디자인 검토(/design-review, `/expenses` 4폭, --base cccfb37) | /mnt/project-files/06-review/pr-e/wave1-codex/06-17-codex.md · 산출물 20261013-143608-25723/ — 지적 0건. 캡처 DB가 비어 지급 표·확인 모달은 Codex 자료에 없음 → 그 부분은 DOM 감사 실측으로 판정 |

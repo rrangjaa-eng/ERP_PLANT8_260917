@@ -11,13 +11,14 @@ import { insertVendor } from "@/repositories/vendors";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { createProject, CompletedProjectError } from "@/domain/projects";
 import { saveProjectLedger } from "@/domain/projects/ledger";
-import { listProjectIssueRequests } from "@/domain/issue-requests";
+import { listIssueRequests, listProjectIssueRequests } from "@/domain/issue-requests";
 import { SaveRejectedError } from "@/domain/quotes/lines";
 import { ForbiddenError, listRevenue } from "@/domain/revenue";
 import { getSettingValue as realGetSettingValue } from "@/domain/settings/registry";
 import { TAX_VAT_RATE } from "@/domain/settings/keys";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { insertRole } from "@/repositories/roles";
+import { insertIssueRequest } from "@/repositories/revenue-issue-requests";
 import { deferred, waitForLockWaiter, type Deferred } from "./lock-race";
 
 // 06-18 — 발행 요청(D-610): PM이 요청 줄을 일괄 저장하고, 매출 기록 권한자가 새 발행 줄에 `fromIssueRequestId`를 실어 저장하면
@@ -717,5 +718,118 @@ describe("발행 요청 — 취소 ∥ 잇기 (E-26 장벽)", () => {
     expect((rejection as SaveRejectedError).formatErrors[0]?.reason).toBe("이미 발행됨 · 새로 고침");
     expect(await storedRequest(row.id)).toMatchObject({ status: "issued", issuedEntryId: entryId, cancelledBy: null });
     expect(await db.select().from(revenueEntries).where(eq(revenueEntries.projectId, project.id))).toHaveLength(1);
+  });
+});
+
+// 06-21 Task 2 — S17 발행 요청 목록(listIssueRequests). 통합 DB는 모든 테스트가 같이 쓰므로 보는 범위 own 계급의 사람을 PM으로 둔
+// 프로젝트를 만들어 그 사람의 목록에는 그 프로젝트의 요청만 서게 한다.
+async function createBoardViewer(opts: { revenueView: boolean; issuedAmount: boolean }): Promise<Viewer> {
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `발행 요청 목록-${randomUUID()}`, viewScope: "own" });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
+  if (opts.revenueView) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects.revenue", action: "view", allowed: true });
+  await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "project.value", visible: true });
+  await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "revenue.issued_amount", visible: opts.issuedAmount });
+  const { userId } = await createAccount(SYSTEM_VIEWER, { email: `board-${randomUUID()}@example.test`, name: "목록 보는 사람", roleId: role.id });
+  return { id: userId, roleId: role.id };
+}
+
+async function boardProject(owner: Viewer) {
+  const client = await insertVendor(SYSTEM_VIEWER, { name: `거래처-${randomUUID()}`, normalizedName: `거래처-${randomUUID()}` });
+  const [team] = await db.select().from(teams).limit(1);
+  if (!team) throw new Error("시드된 팀이 없습니다");
+  return createProject(SYSTEM_VIEWER, { clientId: client.id, teamId: team.id, pmUserId: owner.id, name: `목록 프로젝트-${randomUUID()}` });
+}
+
+async function seedBoardRequest(projectId: string, requestedBy: string, over: { desiredIssueDate: string; amount?: number; memo?: string | null }) {
+  const id = randomUUID();
+  await insertIssueRequest(
+    SYSTEM_VIEWER,
+    { id, projectId, requestedBy, desiredIssueDate: over.desiredIssueDate, amountCurrency: "KRW", amountForeignAmount: null, amountFxRate: "1.0000", amountAmountKrw: over.amount ?? 10_000_000, memo: over.memo ?? null },
+    db,
+  );
+  return id;
+}
+
+const TODAY = "2026-10-13";
+
+describe("발행 요청 목록 (listIssueRequests — S17, 06-21 Task 2)", () => {
+  it("projects.revenue 보기가 없으면 거부한다", async () => {
+    const viewer = await createBoardViewer({ revenueView: false, issuedAmount: true });
+
+    await expect(listIssueRequests(viewer, { status: "requested" }, { today: TODAY })).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it("기본 필터는 신청됨이고 행은 희망일 그룹 순서(희망일 지남 → 이번 주 → 다음 주 → 그 뒤)로 선다", async () => {
+    const viewer = await createBoardViewer({ revenueView: true, issuedAmount: true });
+    const project = await boardProject(viewer);
+    const later = await seedBoardRequest(project.id, viewer.id, { desiredIssueDate: "2026-11-30" });
+    const next = await seedBoardRequest(project.id, viewer.id, { desiredIssueDate: "2026-10-20" });
+    const overdue = await seedBoardRequest(project.id, viewer.id, { desiredIssueDate: "2026-10-01" });
+    const thisWeek = await seedBoardRequest(project.id, viewer.id, { desiredIssueDate: "2026-10-15" });
+    const cancelled = await seedBoardRequest(project.id, viewer.id, { desiredIssueDate: "2026-10-14" });
+    await db.update(revenueIssueRequests).set({ status: "cancelled", cancelledBy: viewer.id, cancelledAt: new Date() }).where(eq(revenueIssueRequests.id, cancelled));
+
+    const list = await listIssueRequests(viewer, {}, { today: TODAY });
+
+    expect(list.rows.map((row) => row.id)).toEqual([overdue, thisWeek, next, later]);
+    expect(list.rows.map((row) => row.group)).toEqual(["희망일 지남", "이번 주", "다음 주", "그 뒤"]);
+    expect(list.rows[0]).toMatchObject({ projectId: project.id, projectNumber: project.number, projectName: project.name, requesterName: "목록 보는 사람", status: "requested" });
+  });
+
+  it("합계 줄은 필터 전체의 건수 · 공급가 합(sumKrw)이고, 전체 보기는 세 상태를 모두 싣는다", async () => {
+    const viewer = await createBoardViewer({ revenueView: true, issuedAmount: true });
+    const project = await boardProject(viewer);
+    await seedBoardRequest(project.id, viewer.id, { desiredIssueDate: "2026-10-14", amount: 20_000_000 });
+    await seedBoardRequest(project.id, viewer.id, { desiredIssueDate: "2026-10-16", amount: 24_000_000 });
+    const cancelled = await seedBoardRequest(project.id, viewer.id, { desiredIssueDate: "2026-10-17", amount: 1_000_000 });
+    await db.update(revenueIssueRequests).set({ status: "cancelled", cancelledBy: viewer.id, cancelledAt: new Date() }).where(eq(revenueIssueRequests.id, cancelled));
+
+    const requested = await listIssueRequests(viewer, { status: "requested" }, { today: TODAY });
+    const all = await listIssueRequests(viewer, { status: "all" }, { today: TODAY });
+
+    expect(requested.totals).toEqual({ count: 2, amountKrw: 44_000_000 });
+    expect(all.totals).toEqual({ count: 3, amountKrw: 45_000_000 });
+    expect(all.rows.map((row) => row.status)).toEqual(["requested", "requested", "cancelled"]);
+  });
+
+  it("발행액(revenue.issued_amount)을 못 보는 읽기 계정에게는 행 · 합계 줄에 금액 키가 없다(A-605)", async () => {
+    const viewer = await createBoardViewer({ revenueView: true, issuedAmount: false });
+    const project = await boardProject(viewer);
+    await seedBoardRequest(project.id, viewer.id, { desiredIssueDate: "2026-10-14", amount: 20_000_000 });
+
+    const list = await listIssueRequests(viewer, {}, { today: TODAY });
+
+    expect(list.rows).toHaveLength(1);
+    for (const key of ["amountKrw", "vatKrw", "totalKrw", "issuedAmountKrw"]) expect(Object.keys(list.rows[0] ?? {})).not.toContain(key);
+    expect(list.totals).toEqual({ count: 1 });
+  });
+
+  it("51건이면 50건씩 두 페이지다", async () => {
+    const viewer = await createBoardViewer({ revenueView: true, issuedAmount: true });
+    const project = await boardProject(viewer);
+    for (let index = 0; index < 51; index++) await seedBoardRequest(project.id, viewer.id, { desiredIssueDate: `2026-11-${String((index % 28) + 1).padStart(2, "0")}`, amount: 1_000 });
+
+    const first = await listIssueRequests(viewer, {}, { today: TODAY });
+    const second = await listIssueRequests(viewer, { page: "2" }, { today: TODAY });
+
+    expect(first.rows).toHaveLength(50);
+    expect(first.page).toEqual({ page: 1, pageCount: 2, pageSize: 50, total: 51 });
+    expect(second.rows).toHaveLength(1);
+    expect(second.page.page).toBe(2);
+    expect(new Set([...first.rows, ...second.rows].map((row) => row.id)).size).toBe(51);
+    expect(first.totals.count).toBe(51);
+  });
+
+  it("보는 범위 밖 프로젝트의 요청은 서지 않는다", async () => {
+    const viewer = await createBoardViewer({ revenueView: true, issuedAmount: true });
+    const other = await createBoardViewer({ revenueView: true, issuedAmount: true });
+    const mine = await boardProject(viewer);
+    const theirs = await boardProject(other);
+    const own = await seedBoardRequest(mine.id, viewer.id, { desiredIssueDate: "2026-10-14" });
+    await seedBoardRequest(theirs.id, other.id, { desiredIssueDate: "2026-10-14" });
+
+    const list = await listIssueRequests(viewer, {}, { today: TODAY });
+
+    expect(list.rows.map((row) => row.id)).toEqual([own]);
   });
 });

@@ -471,16 +471,27 @@ function asPreparedFinal(value: unknown): PreparedFinal {
   throw new Error("정산 최종 승인 사전 사실 없음");
 }
 
+// 점검 읽기 · 계산이 던지면 표시 훅과 같은 `점검 결과 없음 · 다시 시도`로 거부한다(06-22 검토 1 — 원인은 로그에만).
+function preSettleUnknown(error: unknown, projectId: string | null): GateBlockedError {
+  log.warn("settlement.pre_settle_approve_failed", { projectId, reason: error instanceof Error ? error.constructor.name : "unknown" });
+  return new GateBlockedError(PRE_SETTLE_UNKNOWN);
+}
+
 // 트랜잭션 전(풀 읽기) — 문서의 프로젝트 id와 상태 전환 사실(문구 라벨 · 시작일 규칙만 쓰인다 — 메뉴 · 팀 범위는 결재 경로에서 쓰이지 않는다).
-// 06-22(O-16 · ENG E-1): 완료 전 점검의 권한 · 설정 · 노출(loadPreSettleInputs)과 담당 PM 이름도 여기서 읽는다 — 예외는 잡지 않는다
-// (엔진이 트랜잭션을 열기 전에 거부된다 · 같은 종류의 승인마다 불리므로 앞 단 승인도 막는다 — SA-3).
+// 06-22(O-16 · ENG E-1): 완료 전 점검의 권한 · 설정 · 노출(loadPreSettleInputs)과 담당 PM 이름도 여기서 읽는다 — 던지면 `점검 결과 없음`
+// 으로 거부한다(엔진이 트랜잭션을 열기 전에 거부된다 · 같은 종류의 승인마다 불리므로 앞 단 승인도 막는다 — SA-3).
 async function prepareSettlementFinalApproval(viewer: Viewer, documentId: string): Promise<PreparedFinal> {
   const [row] = await listSettlementSummaries(viewer, { ids: [documentId], documentKind: SETTLEMENT_DOCUMENT_KIND });
   if (!row) throw new SettlementNotFoundError();
-  const inputs = await loadPreSettleInputs(viewer);
-  // 담당 PM 이름은 문서 DTO의 pmName과 같은 정보 항목(project.value)을 볼 때만 막힘 문구에 싣는다.
-  const pmName = (await visible(viewer, "project.value")) ? row.pmName : null;
-  return { projectId: row.projectId, facts: await loadStatusChangeFacts(viewer), preSettle: { inputs, pmName } };
+  let preSettle: PreparedFinal["preSettle"];
+  try {
+    const inputs = await loadPreSettleInputs(viewer);
+    // 담당 PM 이름은 문서 DTO의 pmName과 같은 정보 항목(project.value)을 볼 때만 막힘 문구에 싣는다.
+    preSettle = { inputs, pmName: (await visible(viewer, "project.value")) ? row.pmName : null };
+  } catch (error) {
+    throw preSettleUnknown(error, row.projectId);
+  }
+  return { projectId: row.projectId, facts: await loadStatusChangeFacts(viewer), preSettle };
 }
 
 // 같은 tx — ⓐ 이 문서 인스턴스 지금 차수의 마지막 단계 기록이 viewer의 승인인지와 문서의 project_id를 한 번에 읽고(대표 폴백 행 포함)
@@ -497,9 +508,14 @@ async function onSettlementFinalApprovalInTx(viewer: Viewer, documentId: string,
       // 프로젝트 행을 잡은 뒤 센다 — 그 사이 지출결의 제출은 이 잠금을 기다렸다가 완료 프로젝트(②)로 막힌다.
       const inReview = (await countInReviewByProjects(viewer, [found.projectId], tx)).get(found.projectId) ?? 0;
       if (inReview > 0) throw new GateBlockedError(expensesInReview(inReview));
-      const check = await computePreSettleCheck(viewer, found.projectId, before.preSettle.inputs, tx);
-      const decision = await gate(null, "project.pre-settle-check", { blockedCount: check.blockedCount });
-      if (!decision.allowed) throw new GateBlockedError(preSettleApproveReason(check.blockedCount, before.preSettle.pmName));
+      let blockedCount: number;
+      try {
+        blockedCount = (await computePreSettleCheck(viewer, found.projectId, before.preSettle.inputs, tx)).blockedCount;
+      } catch (error) {
+        throw preSettleUnknown(error, found.projectId);
+      }
+      const decision = await gate(null, "project.pre-settle-check", { blockedCount });
+      if (!decision.allowed) throw new GateBlockedError(preSettleApproveReason(blockedCount, before.preSettle.pmName));
     }
     await changeProjectStatus(
       viewer,

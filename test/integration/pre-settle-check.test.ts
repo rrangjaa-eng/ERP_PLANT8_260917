@@ -518,6 +518,7 @@ describe("완료 전 점검 — R-6 범위 · 금액 노출(Task 3)", () => {
 const PM_NAME = "박서연"; // setupExpenseProject의 담당 PM
 const A8_ONE = "결재 중 지출결의 1건 · 먼저 결재";
 const CHECK_ONE = `완료 전 점검 1건 · 담당 PM ${PM_NAME}`;
+const PRE_SETTLE_UNKNOWN = "점검 결과 없음 · 다시 시도";
 
 type Drafted = { documentId: string; instanceId: string; version: number };
 
@@ -532,15 +533,19 @@ async function projectStatusOf(projectId: string): Promise<string | undefined> {
   return row?.status;
 }
 
-// 승인 롤백 단언 재료 — 인스턴스 상태 · version · 처리된 단계 수 · 프로젝트 상태.
+// 승인 롤백 단언 재료 — 인스턴스 상태 · version · 처리된 단계 수 · 프로젝트 상태 · 그 문서의 행동 로그 수(고아 로그 없음).
 async function approvalState(instanceId: string, projectId: string) {
-  const [instance] = await db.select({ status: approvalInstances.status, version: approvalInstances.version }).from(approvalInstances).where(eq(approvalInstances.id, instanceId));
+  const [instance] = await db
+    .select({ status: approvalInstances.status, version: approvalInstances.version, documentId: approvalInstances.documentId })
+    .from(approvalInstances)
+    .where(eq(approvalInstances.id, instanceId));
   const acted = await db
     .select({ id: approvalSteps.id })
     .from(approvalSteps)
     .innerJoin(approvalRoutes, eq(approvalRoutes.id, approvalSteps.routeId))
     .where(and(eq(approvalRoutes.instanceId, instanceId), isNotNull(approvalSteps.actedBy)));
-  return { status: instance?.status, version: instance?.version, acted: acted.length, project: await projectStatusOf(projectId) };
+  const logs = instance ? await db.select({ seq: actionLog.seq }).from(actionLog).where(eq(actionLog.documentId, instance.documentId)) : [];
+  return { status: instance?.status, version: instance?.version, acted: acted.length, actionLogs: logs.length, project: await projectStatusOf(projectId) };
 }
 
 async function setAllowOpenExpenses(value: boolean): Promise<void> {
@@ -659,22 +664,26 @@ describe("완료 전 점검 — 대표 최종 승인 재점검(O-16 · 05 정산
     expect(inject.computeCalls).toBe(0);
   });
 
-  it("점검 계산 예외 — 표시 `점검 결과 없음 · 다시 시도` · 승인 거부(fail-closed) · 롤백", async () => {
+  it("점검 계산 예외 — 표시 · 서버 모두 `점검 결과 없음 · 다시 시도`(GateBlockedError) · 승인 거부(fail-closed) · 롤백", async () => {
     const { fx, doc } = await draftedWithOpen({});
     const before = await approvalState(doc.instanceId, fx.projectId);
     inject.compute = true;
-    expect(await approveBlockedReason(fx.ceo, doc.documentId)).toBe("점검 결과 없음 · 다시 시도");
-    await expect(approveDocument(fx.ceo, { instanceId: doc.instanceId, expectedVersion: doc.version })).rejects.toThrow("점검 계산 실패(주입)");
+    expect(await approveBlockedReason(fx.ceo, doc.documentId)).toBe(PRE_SETTLE_UNKNOWN);
+    const refused = await approveDocument(fx.ceo, { instanceId: doc.instanceId, expectedVersion: doc.version }).catch((e: unknown) => e);
+    expect(refused).toBeInstanceOf(GateBlockedError);
+    expect(refused).toMatchObject({ message: PRE_SETTLE_UNKNOWN });
     expect(await approvalState(doc.instanceId, fx.projectId)).toEqual(before);
   });
 
-  it("점검 사전 조회 예외 — 표시 `점검 결과 없음 · 다시 시도` · 승인 거부 · 트랜잭션 안 계산까지 가지 않는다", async () => {
+  it("점검 사전 조회 예외 — 표시 · 서버 모두 `점검 결과 없음 · 다시 시도`(GateBlockedError) · 승인 거부 · 트랜잭션 안 계산까지 가지 않는다", async () => {
     const { fx, doc } = await draftedWithOpen({});
     const before = await approvalState(doc.instanceId, fx.projectId);
     inject.load = true;
-    expect(await approveBlockedReason(fx.ceo, doc.documentId)).toBe("점검 결과 없음 · 다시 시도");
+    expect(await approveBlockedReason(fx.ceo, doc.documentId)).toBe(PRE_SETTLE_UNKNOWN);
     inject.computeCalls = 0;
-    await expect(approveDocument(fx.ceo, { instanceId: doc.instanceId, expectedVersion: doc.version })).rejects.toThrow("점검 사전 조회 실패(주입)");
+    const refused = await approveDocument(fx.ceo, { instanceId: doc.instanceId, expectedVersion: doc.version }).catch((e: unknown) => e);
+    expect(refused).toBeInstanceOf(GateBlockedError);
+    expect(refused).toMatchObject({ message: PRE_SETTLE_UNKNOWN });
     expect(inject.computeCalls).toBe(0);
     expect(await approvalState(doc.instanceId, fx.projectId)).toEqual(before);
   });
@@ -695,7 +704,7 @@ describe("완료 전 점검 — 대표 최종 승인 재점검(O-16 · 05 정산
     const before = await approvalState(doc.instanceId, fx.projectId);
     inject.load = true;
     inject.computeCalls = 0;
-    await expect(approveDocument(fx.lead, { instanceId: doc.instanceId, expectedVersion: doc.version })).rejects.toThrow("점검 사전 조회 실패(주입)");
+    await expect(approveDocument(fx.lead, { instanceId: doc.instanceId, expectedVersion: doc.version })).rejects.toThrow(PRE_SETTLE_UNKNOWN);
     expect(inject.computeCalls).toBe(0);
     expect(await approvalState(doc.instanceId, fx.projectId)).toEqual(before);
   });

@@ -8,7 +8,7 @@ import { DATE_FORMAT_ERROR, expenseDraftFieldsSchema, TEAM_EXPENSE_KINDS, type T
 import { formatForeignAmount, formatFxRate, formatKrw } from "@/lib/format-number";
 import { can, ForbiddenError } from "@/domain/permissions/can";
 import { project } from "@/domain/permissions/project";
-import { listEvidenceVoidSignals } from "@/domain/evidence/signals";
+import { listExpenseEvidenceSignals } from "@/domain/expenses/evidence-signals";
 import { duplicateScopeKinds } from "@/domain/evidence/upload-checks";
 import { loadActorTeamScope } from "@/domain/projects/status";
 import { canWriteExpenseOnProject } from "@/domain/expenses/write-gate";
@@ -431,10 +431,11 @@ async function loadExpenseDetails(viewer: Viewer, ids: string[]): Promise<Map<st
   return result;
 }
 
-// 05-10 G1: 승인된 지출결의의 증빙이 무효 처리된 뒤 새 증빙이 없으면 기안자의 「내 차례」 [막힘] — 글자 · 주소는 여기서 정한다(사유 · 처리자는 싣지 않는다).
+// 05-10 G1: 승인된 지출결의의 증빙 신호가 있으면 기안자의 「내 차례」 [막힘] — 글자 · 주소는 여기서 정한다(사유 · 처리자는 싣지 않는다).
+// 06-23(B-C8 · H-1 · PN-6): 신호는 문서마다 하나 — 선결제 증빙 {N}일 경과 > 증빙 없음 · 지급 대기 > 증빙 무효(05 무효 신호가 이 안의 우선순위로 들어간다).
 async function expenseBlockedAfterApproval(viewer: Viewer, ids: string[]): Promise<Map<string, { situation: string; actionLabel: string; href: string }>> {
-  const voided = await listEvidenceVoidSignals(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerIds: ids });
-  return new Map(voided.map((id) => [id, { situation: "증빙 무효", actionLabel: "증빙 올리기", href: `/expenses/${id}#evidence` }]));
+  const signals = await listExpenseEvidenceSignals(viewer, { ids, today: seoulToday() });
+  return new Map([...signals].map(([id, signal]) => [id, { situation: signal.situation, actionLabel: "증빙 올리기", href: `/expenses/${id}#evidence` }]));
 }
 
 registerDocumentKind({
@@ -455,7 +456,7 @@ registerDocumentKind({
   detailDto: EXPENSE_DETAIL_DTO_SPEC,
   buildDetailRows: buildExpenseDetailRows,
   blockedAfterApproval: expenseBlockedAfterApproval,
-  blockedAfterApprovalCandidates: "unresolved_evidence_void",
+  blockedAfterApprovalCandidates: "expense_blocked_after_approval",
   rejectedCandidates: "not_closed_expense",
 });
 

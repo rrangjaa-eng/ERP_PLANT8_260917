@@ -110,6 +110,17 @@ describe("사람 목록 — person.id가 없는 행", () => {
   });
 });
 
+// 06.4 /review(사용자 결정): 사람 보관은 보관함 쓰기에 더해 사람 쓰기를 요구한다 — 사람 쓰기가 없으면 「삭제」가 언제나 거부라 그리지 않는다.
+describe("사람 목록 — 사람 쓰기 없는 「삭제」", () => {
+  it("보관함 쓰기만 있고 사람 쓰기가 없으면 삭제 버튼이 없고 「상세」는 남는다", async () => {
+    people = visibleIdPeople;
+    writeAllowed = false;
+    const { html } = await render();
+    expect(html).toContain('href="/admin/people/u-1"');
+    expect(html).not.toContain("data-user-id");
+  });
+});
+
 function stripTags(markup: string): string {
   return markup.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
 }

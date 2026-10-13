@@ -1,4 +1,4 @@
-import type { Viewer } from "@/domain/viewer";
+import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { projectMany, type DtoSpec } from "@/domain/permissions/project";
@@ -90,6 +90,10 @@ async function archiveUser(viewer: Viewer, id: string, deps?: Partial<ArchiveDep
   // 06.4 D-6416(K-R1b · eng 재검토 R1) 사용자 확정(2026-10-12 카드): 본인 보관 막기 — 260907 `O: server/src/people.ts:1095-1098`
   // 「실수로 누르면 그 자리에서 못 돌아온다」와 같은 동작. 잠금 전 — 판정에 DB가 필요 없다. SYSTEM_VIEWER는 id `system`이라 해당 없음.
   if (viewer.id === id) throw new SelfArchiveError(SELF_ARCHIVE_MESSAGE);
+  // 06.4 /review(사용자 결정): 복원(`domain/people/restore.ts`)과 같이 보관함 쓰기에 더해 사람 쓰기. 등록 보상(SYSTEM_VIEWER)은 면제.
+  if (viewer.id !== SYSTEM_VIEWER.id && !(await (deps?.can ?? defaultCan)(viewer, "admin.people", "write"))) {
+    throw new ForbiddenError("사람 보관 권한 없음 · 시스템 관리자");
+  }
   const today = kstToday((deps?.now ?? (() => new Date()))());
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await withTransaction(async (tx) => {

@@ -8,7 +8,7 @@ import { queryActionLog } from "@/repositories/action-log";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { RoleGrantForbiddenError } from "@/domain/permissions/grant-ceiling";
-import { archive, listArchive, restore } from "@/domain/archive";
+import { archive, ForbiddenError as ArchiveForbiddenError, listArchive, restore } from "@/domain/archive";
 import { PersonNotRestorableError, PersonRestoreForbiddenError } from "@/domain/people/restore";
 import { SeatTakenError } from "@/domain/people/seat-rules";
 import { findUserByEmail, findUserById, updateUserResignationDate } from "@/repositories/users";
@@ -230,6 +230,29 @@ describe("팀 · 본부 복원 자리 재검사(06.4)", () => {
 
     expect(error.message).toBe("본부 책임자 있음 · 시스템 관리자" + TAIL);
     expect((await findOrgUnitById(SYSTEM_VIEWER, orgUnitId))?.archivedAt).not.toBeNull();
+  });
+});
+
+// 06.4 /review(사용자 결정): 사람 보관도 복원처럼 보관함 쓰기에 더해 사람 쓰기를 요구한다 — 등록 보상(SYSTEM_VIEWER)은 그대로.
+describe("사람 보관 권한(06.4)", () => {
+  it("사람 쓰기 없이 보관함 쓰기만 있으면 사람 보관 거부 · 보관 · 로그 그대로", async () => {
+    const v = await archiveOnlyViewer();
+    const p = await makeSeated(uniqueName("PM P"), DEFAULT_ROLE_ID, null);
+
+    const error = await refusal(archive(v, "user", p.id, deps), ArchiveForbiddenError);
+
+    expect(error.message).toBe("사람 보관 권한 없음 · 시스템 관리자");
+    expect(await archivedAtOf(p.id)).toBeNull();
+    expect(await countLogs("archive", "user", p.id)).toBe(0);
+  });
+
+  it("사람 · 보관함 쓰기가 둘 다 있으면 보관된다", async () => {
+    const d = await delegatedViewer();
+    const p = await makeSeated(uniqueName("PM P"), DEFAULT_ROLE_ID, null);
+
+    await archive(d, "user", p.id, deps);
+
+    expect(await archivedAtOf(p.id)).not.toBeNull();
   });
 });
 

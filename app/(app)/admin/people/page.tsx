@@ -51,7 +51,9 @@ export default async function PeoplePage({
   const canRegister = canWrite && roles.length > 0;
   // 06.4 D-6417(eng 재검토 R2): 본인(D-6416) · 상한 밖 대상(D-6411)은 「삭제」가 언제나 거부라 그리지 않는다. 마지막 관리자 대상은
   // 판정에 전원 조회가 들어 미리 보지 않고 서버 사유로(D-6418). 계급을 못 보는 줄은 서버가 판정. 계급 id는 모아 한 번만 판정한다.
-  const archivableRoles = canArchive
+  // 06.4 /review(사용자 결정): 사람 보관은 보관함 쓰기에 더해 사람 쓰기(`domain/archive` archiveUser) — 둘 다 있어야 「삭제」.
+  const canDelete = canArchive && canWrite;
+  const archivableRoles = canDelete
     ? await assignableRoleIds(
         session.viewer,
         [...new Set(people.flatMap((person) => (!person.archivedAt && person.roleId ? [person.roleId] : [])))],
@@ -164,7 +166,7 @@ export default async function PeoplePage({
                         <RowActions key="actions">
                           <RowAction href={`/admin/people/${person.id}`}>상세</RowAction>
                           {!person.archivedAt &&
-                          canArchive &&
+                          canDelete &&
                           person.id !== session.viewer.id &&
                           (!person.roleId || archivableRoles.has(person.roleId)) ? (
                             <PersonDeleteButton userId={person.id} name={person.name} />

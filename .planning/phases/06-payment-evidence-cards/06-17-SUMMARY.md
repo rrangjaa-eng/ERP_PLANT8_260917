@@ -113,8 +113,8 @@ actuals:
 12. 증빙 확인 모달은 연 동안만 그린다(결정 4).
 
 ## 알려진 한계
-- 지금 쪽 밖에서 고른 행에 차이가 있는데 사유가 비어 있으면 화면이 미리 잡지 못한다 — 서버 zod가 거부하고 일반 거부 글자가 선다.
-- 지금 쪽 밖 행은 견적 줄 수 · 선결제 여부를 모르므로 S2 결과 줄의 그 개수가 적게 셀 수 있다(금액은 서버 값이라 영향 없음).
+- ~~지금 쪽 밖에서 고른 행에 차이가 있는데 사유가 비어 있으면 화면이 미리 잡지 못한다~~ — 검토 M-1로 고침(65db193). 남은 틈: 고친 쪽을 모르거나 그사이 행이 지금 쪽 번호로 옮긴 경우에만 서버 zod가 막는다(지급 0건).
+- ~~지금 쪽 밖 행은 견적 줄 수 · 선결제 여부를 모르므로 S2 결과 줄의 그 개수가 적게 셀 수 있다~~ — 검토 D-2로 고침(65db193).
 - 짝 막힘 행 확인 뒤 포커스가 행 링크에 있을 때, 누른 채 반복된 Ctrl+Enter가 브라우저 기본 동작(새 탭 열기)을 일으키는지는 확인하지 않았다 — 지운 가드는 preventDefault를 했다. 검토에서 판단 필요.
 - 제목 링크는 보이는 글자를 접근 이름으로 쓴다(label-in-name), 번호 링크는 `{번호} 지출결의 열기`.
 
@@ -131,6 +131,28 @@ superpowers:test-driven-development · superpowers:systematic-debugging(Task 3 �
 - Post-build `/review`.
 - Opus 독립 검토 1명(C17) — 합 · 차이가 서버 값인지, 증빙 지문 비교가 `lockExpenseForUpdate` 뒤 같은 `tx`인지, 되살린 선택이 서버 `rowStates`만 따르는지 판정 한 줄. 편차 9(M-3 가드)와 알려진 한계 셋째 줄도 함께 판단.
 - STATE.md · ROADMAP.md 갱신.
+
+## 검토 반영
+Opus 독립 검토: 통과(막음 0) — M-1·L-1·L-2 반영(65db193). 보고서 /mnt/project-files/notes/06-review/06-17-review.md
+독립 DOM 감사: /mnt/project-files/notes/06-review/06-17-dom-audit.md, 증거 /mnt/project-files/06-review/pr-e/06-17/ — 반영 내역: D-2 · D-4 · D-5 · D-6 · D-9 고침(65db193), D-10 앱 변경 없이 E2E 고정, D-1 · D-3 · D-8 후속(ui/ 06-29 소관), D-7 기존.
+
+| 지적 | 처리 | 커밋 · 사유 |
+|---|---|---|
+| M-1(중간) 다른 쪽 행 사유 누락 → 요청 전체가 `결과를 받지 못함`으로 되풀이 | 고침 — 편집에 고친 쪽을 남기고(`RowEdit.page`, 옛 보관은 보관한 쪽), 1차(와 모달 1차)에서 `firstOffPageIssue`가 지금 쪽 밖 칸 오류를 잡으면 요청 없이 그 쪽으로 옮겨 그 행 사유 칸 오류 · 첫 오류 칸 포커스(플랜 「그 행 칸 오류」) | 65db193 — 단위 「M-1 지금 쪽 밖 칸 오류」 · E2E 「다른 쪽 N건 포함(M-1)」 |
+| L-1(낮음) 쪽 밖 id가 selectable 거짓이어도 처리 요청에 실림 | 고침 — `offPageSnapshotRows`가 rowStates selectable 참인 id만 | 65db193 — 단위 「L-1 쪽 밖 스냅숏 행」 |
+| L-2(낮음) 재마운트 뒤 합 기준일(오늘) ≠ 모달 지급일(기억) | 고침 — 합 기준일 초기값 = `rememberedPayDate` | 65db193 — E2E 「모달 지급일 기억(O-3)」이 재마운트 합 요청 `payDate` 단언 |
+| D-1(중간) 모달 부제 · 80자 파일명 줄바꿈(말줄임 + title 아님) → 첨부 칸 행 1.85개 | 후속 — ConfirmDialog `subtitle`은 문자열 prop(ui/confirm-dialog/ConfirmDialog.tsx:306 `.subtitle`), 파일명은 ui/attachments(Attachments.module.css:94 `.name` · Attachments.tsx:358). 앱이 말줄임 · title을 넘길 길이 없고 부제 글자를 줄이면 플랜 부제 계약(`{번호} · {프로젝트} · {항목} · 증빙 금액`)이 바뀐다 | 담당: ui/ 06-29 컴포넌트. 증거 감사 §3(480 3줄 · 폰 4줄, 파일명 3~6줄, scrollHeight 629 > 194) |
+| D-2(중간) S2 ① 견적 줄이 지금 쪽만 셈 | 고침 — rowStates에 `quoteLineId` · `prepaid`(paymentTargetRow 같은 칸, expense.value) · `snapshotCounts`가 모든 쪽 고른 행 | 65db193 — 통합 rowStates 두 곳 · 단위 「D-2」 · E2E `견적 줄 2줄 잠김` |
+| D-3(중간) 1024~1279 막힌 행 이유 줄이 숨은 번호 칸 안 | 후속 — ui/table/Table.tsx:1100-1108이 이유 줄을 `colIndex === 0`(번호 열, collapseBelow 1280)에 그린다. 앱 쪽 대안(열 순서 바꾸기)은 S1 열 순서 계약을 깨고, 이유 줄을 다른 칸에 한 번 더 그리면 화면 하나만 예외다 | 담당: ui/table(06-29) — 「보이는 첫 칸」. 증거 감사 §5(1100 E · G 이유 `visible:false`) |
+| D-4(중간) 제자리 모달 Esc 뒤 포커스 H1 | 고침 — onClose가 `evidence:{id}`를 남겨 그 행 3차를 다시 찾아 포커스(연 동안 3차가 다시 그려지면 06-29가 기억한 트리거가 문서에서 빠져 H1로 갔다) | 65db193 — E2E 600↔1280 왕복 뒤 Esc → 3차 포커스(빨강 확인) |
+| D-5(중간) 처리 뒤 첫 쪽 재마운트 포커스 BODY | 고침 — `takeCarried`가 첫 막힌 행 id · 없으면 `primary`를 넘기고 되살리기 뒤 한 번 옮김 | 65db193 — E2E 1차 toBeFocused(빨강 확인) |
+| D-6(낮음) 거래처 · 폰 행 링크 말줄임에 title 없음, PC 제목 3~4줄 | 고침 — 거래처 span · 폰 제목 링크 title. PC 제목 줄바꿈은 SYSTEM §7-3 「항목명은 줄바꿈 허용(keep-all)」 · 폰 한 줄 말줄임(2026-10-09 결정) 그대로 — 플랜 backstop 「항목 한 줄 말줄임」보다 SYSTEM이 정본 | 65db193 — E2E title 두 곳 |
+| D-7(낮음) 320 가로 넘침 2px | 기존 — 적용 전(cccfb37)도 2px, ui/table 폰 칸 · 13자리 칸(06-15 · 06-29) | 고치지 않음 |
+| D-8(낮음) 막힘 이유 + 다음 한 수일 때 1차 라벨 두 줄 | 후속 — ui/confirm-dialog/ConfirmDialog.module.css:131 `.actions`(버튼 nowrap 없음). 앱은 라벨 글자만 넘긴다 | 담당: ui/confirm-dialog(06-29). 증거 감사 §3 · §4(140 · 164.9px) |
+| D-9(낮음) 보기 전용 폭에 `고른 N건` 줄 | 고침 — 합계 줄을 `wide`일 때만 | 65db193 — E2E 800px count 0 |
+| D-10(낮음) 키보드 확인 뒤 이체액 셀 링 없음 | 앱 변경 없음 — Chrome 141 실측: 마우스로 연 뒤 Ctrl+Enter(수정 키 조합)는 키보드 양식으로 바꾸지 않아 스크립트 포커스가 `:focus-visible`이 되지 않고(`focus({focusVisible})` 미지원), 키보드만 경로(3차 Enter → Ctrl+Enter)는 참. 강제 링은 ui/table `.cell:focus-visible` 계약 밖 화면 하나만 예외라 두지 않음 | 65db193 — E2E가 키보드만 경로 `:focus-visible` 참 고정 |
+
+검증(65db193): 단위 payment-selection 14 + 게이트 4 파일 = 153 통과 · 통합(erp_test_0617 새로 만듦, flock) payment-batch + leak-scan 4049 통과 · `pnpm lint` 0 · `pnpm typecheck` 0 · E2E(`CI=true`, erp_0617_test, desktop, webServer `pnpm build && pnpm start`) payment-batch + payment-single 45 통과 · `git diff --stat cccfb37 -- ui/` 빈 출력. 빨강 확인: 단위 4 · 통합 2 · E2E 4(M-1 · L-2 · D-6 둘) 뒤, D-4 · D-5는 그 고침만 빼고 돌려 빨강.
 
 ## Self-Check: PASSED
 - 파일 다섯(payment-selection.ts · evidence-confirm-dialog.tsx · 단위 테스트 · 점검표 · 이 SUMMARY) 있음, 커밋 cf30a10 · 49de927 · 51abc99 · d3a2637 · 304c8b0 있음, erp_test_0617_test 지움(pg_database 0).

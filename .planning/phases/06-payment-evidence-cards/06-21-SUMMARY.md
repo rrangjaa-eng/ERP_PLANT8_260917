@@ -186,3 +186,11 @@ E2E 서버 로그의 `The destination stream closed early`는 탐색 중 스트�
 ## Self-Check: PASSED
 
 - 만든 파일 8개 존재 확인 · 커밋 aeae465 · 2fe639a · e035d12 · 017be31 · e1adc8a · 1043031 존재 확인(`git log`)
+
+## 화면 검토 증거
+| 항목 | 경로 |
+|---|---|
+| 독립 검토(Opus) | /mnt/project-files/notes/06-review/06-21-review.md |
+| DOM 감사(Opus, CI=true) | /mnt/project-files/notes/06-review/06-21-dom-audit.md |
+| 4폭 캡처 적용 전·후(a573702 대비) | /mnt/project-files/06-review/pr-e/06-21/ |
+| Codex 디자인 검토(/design-review, --base a573702) | /mnt/project-files/06-review/pr-e/wave2-codex/06-21-codex.md — `/projects/issue-requests`·`/projects` 4폭, 지적 2건(폰 「필터」 버튼 44px, 375·320) — filter-bar 버튼은 이 플랜이 안 바꿈, 기존 것(후속). 캡처 DB가 비어 S16·S17 행은 DOM 감사 실측으로 판정 |

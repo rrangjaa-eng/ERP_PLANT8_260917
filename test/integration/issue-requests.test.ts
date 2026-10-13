@@ -497,3 +497,225 @@ describe("발행 요청 — 동시 잇기 · 노출 · 상태 잠김 (06-18 Task
     expect(await storedRequest(row.id)).toMatchObject({ status: "issued", issuedEntryId: entryId });
   });
 });
+
+// 06-21(O-12 · r4 F-F3) — 취소는 원장 일괄 저장의 한 행(`{ id, version, cancel: true }`)으로만 간다. 별도 액션 · 트랜잭션 없음.
+const cancelRow = (id: string, version: number) => ({ id, version, cancel: true as const });
+
+async function cancelLogs(id: string) {
+  return db
+    .select()
+    .from(actionLog)
+    .where(and(eq(actionLog.entity, "revenue_issue_request"), eq(actionLog.entityId, id), eq(actionLog.actionType, "status_change")));
+}
+
+async function rejectionOf(attempt: Promise<unknown>): Promise<unknown> {
+  return attempt.then(
+    () => null,
+    (caught: unknown) => caught,
+  );
+}
+
+describe("발행 요청 취소 (saveIssueRequestRows 취소 갈래 — 06-21)", () => {
+  it("정상: 신청됨 줄을 취소하면 cancelled + 취소한 사람 · 시각이 남고 줄은 지워지지 않으며 같은 tx에 status_change 기록", async () => {
+    const { project, pm } = await setupProject();
+    const row = requestRow();
+    await saveProjectLedger(pm, project.id, { seenStatus: "bidding", issueRequests: [row] });
+
+    const result = await saveProjectLedger(pm, project.id, { seenStatus: "bidding", issueRequests: [cancelRow(row.id, 1)] });
+
+    const stored = await storedRequest(row.id);
+    expect(stored).toMatchObject({ status: "cancelled", cancelledBy: pm.id, version: 2, memo: "선금", amountAmountKrw: 20_000_000 });
+    expect(stored?.cancelledAt).toBeInstanceOf(Date);
+    expect(result.issueRequests?.find((dto) => dto.id === row.id)).toMatchObject({ status: "cancelled" });
+    const logs = await cancelLogs(row.id);
+    expect(logs).toHaveLength(1);
+    expect(logs[0]?.detail).toMatchObject({ projectId: project.id, from: "requested", to: "cancelled" });
+  });
+
+  it("권한: 프로젝트 쓰기 권한이 없으면 트랜잭션을 열기 전에 거부하고 요청은 그대로다", async () => {
+    const { project, pm } = await setupProject();
+    const row = requestRow();
+    await saveProjectLedger(pm, project.id, { seenStatus: "bidding", issueRequests: [row] });
+    const finance = await createFinanceViewer();
+
+    const attempt = saveProjectLedger(finance, project.id, { seenStatus: "bidding", issueRequests: [cancelRow(row.id, 1)] });
+
+    await expect(attempt).rejects.toBeInstanceOf(ForbiddenError);
+    expect(await storedRequest(row.id)).toMatchObject({ status: "requested", version: 1, cancelledBy: null });
+  });
+
+  it("이어짐: 발행됨 요청 취소는 잠금 뒤 거부하고 요청 · 발행 줄이 그대로다", async () => {
+    const { project, pm } = await setupProject();
+    const finance = await createFinanceViewer();
+    const row = await issuedRequest(project.id, pm, finance);
+
+    const rejection = await rejectionOf(saveProjectLedger(pm, project.id, { seenStatus: "bidding", issueRequests: [cancelRow(row.id, 2)] }));
+
+    expect(rejection).toBeInstanceOf(SaveRejectedError);
+    expect((rejection as SaveRejectedError).formatErrors[0]).toMatchObject({ rowId: row.id, reason: "이미 발행됨 · 새로 고침" });
+    expect(await storedRequest(row.id)).toMatchObject({ status: "issued", version: 2, cancelledBy: null });
+    expect(await db.select().from(revenueEntries).where(eq(revenueEntries.projectId, project.id))).toHaveLength(1);
+  });
+
+  it("이미 취소된 요청을 다른 화면이 다시 취소하면(옛 version) 거부한다", async () => {
+    const { project, pm } = await setupProject();
+    const row = requestRow();
+    await saveProjectLedger(pm, project.id, { seenStatus: "bidding", issueRequests: [row] });
+    await saveProjectLedger(pm, project.id, { seenStatus: "bidding", issueRequests: [cancelRow(row.id, 1)] });
+
+    const rejection = await rejectionOf(saveProjectLedger(pm, project.id, { seenStatus: "bidding", issueRequests: [cancelRow(row.id, 5)] }));
+
+    expect(rejection).toBeInstanceOf(SaveRejectedError);
+    expect((rejection as SaveRejectedError).formatErrors[0]?.reason).toBe("취소된 요청 · 새로 고침");
+    expect(await cancelLogs(row.id)).toHaveLength(1);
+  });
+
+  it("같은 취소를 다시 보내면(응답 유실 재전송) 쓰기 · 기록 없이 통과한다", async () => {
+    const { project, pm } = await setupProject();
+    const row = requestRow();
+    await saveProjectLedger(pm, project.id, { seenStatus: "bidding", issueRequests: [row] });
+    await saveProjectLedger(pm, project.id, { seenStatus: "bidding", issueRequests: [cancelRow(row.id, 1)] });
+
+    await saveProjectLedger(pm, project.id, { seenStatus: "bidding", issueRequests: [cancelRow(row.id, 1)] });
+
+    expect(await storedRequest(row.id)).toMatchObject({ status: "cancelled", version: 2 });
+    expect(await cancelLogs(row.id)).toHaveLength(1);
+  });
+
+  it("완료: completed 프로젝트의 취소는 06-18 자리(잠근 프로젝트 행)에서 CompletedProjectError로 막힌다", async () => {
+    const { project, pm } = await setupProject();
+    const row = requestRow();
+    await saveProjectLedger(pm, project.id, { seenStatus: "bidding", issueRequests: [row] });
+    await db.update(projects).set({ status: "completed" }).where(eq(projects.id, project.id));
+
+    const attempt = saveProjectLedger(pm, project.id, { seenStatus: "completed", issueRequests: [cancelRow(row.id, 1)] });
+
+    await expect(attempt).rejects.toBeInstanceOf(CompletedProjectError);
+    expect(await storedRequest(row.id)).toMatchObject({ status: "requested", version: 1 });
+  });
+
+  it("version: 다른 사람이 먼저 고친 요청(version 불일치)의 취소는 거부하고 값을 바꾸지 않는다", async () => {
+    const { project, pm } = await setupProject();
+    const row = requestRow();
+    await saveProjectLedger(pm, project.id, { seenStatus: "bidding", issueRequests: [row] });
+    await saveProjectLedger(pm, project.id, {
+      seenStatus: "bidding",
+      issueRequests: [{ id: row.id, version: 1, desiredIssueDate: "2026-10-05", amount: krw(20_000_000), memo: "고침" }],
+    });
+
+    const rejection = await rejectionOf(saveProjectLedger(pm, project.id, { seenStatus: "bidding", issueRequests: [cancelRow(row.id, 1)] }));
+
+    expect(rejection).toBeInstanceOf(SaveRejectedError);
+    expect((rejection as SaveRejectedError).formatErrors[0]?.reason).toBe("다른 사람이 먼저 이 요청을 바꿈 · 새로 고침");
+    expect(await storedRequest(row.id)).toMatchObject({ status: "requested", version: 2, memo: "고침" });
+  });
+
+  it("다른 프로젝트의 요청 id를 내 프로젝트 저장으로 취소하면 거부한다", async () => {
+    const a = await setupProject();
+    const b = await setupProject();
+    const row = requestRow();
+    await saveProjectLedger(a.pm, a.project.id, { seenStatus: "bidding", issueRequests: [row] });
+
+    const rejection = await rejectionOf(saveProjectLedger(b.pm, b.project.id, { seenStatus: "bidding", issueRequests: [cancelRow(row.id, 1)] }));
+
+    expect(rejection).toBeInstanceOf(SaveRejectedError);
+    expect(await storedRequest(row.id)).toMatchObject({ status: "requested", version: 1 });
+  });
+
+  it("같은 tx 기록: status_change 기록이 실패하면 취소도 되돌아간다", async () => {
+    const { project, pm } = await setupProject();
+    const row = requestRow();
+    await saveProjectLedger(pm, project.id, { seenStatus: "bidding", issueRequests: [row] });
+
+    const attempt = saveProjectLedger(
+      pm,
+      project.id,
+      { seenStatus: "bidding", issueRequests: [cancelRow(row.id, 1)] },
+      {
+        recordAction: async (viewer, entry, deps) => {
+          if (entry.actionType === "status_change" && entry.entity === "revenue_issue_request") throw new UserFacingError("행동 기록 실패(주입)");
+          const { recordAction } = await import("@/domain/action-log/record");
+          return recordAction(viewer, entry, deps);
+        },
+      },
+    );
+
+    await expect(attempt).rejects.toThrow("행동 기록 실패(주입)");
+    expect(await storedRequest(row.id)).toMatchObject({ status: "requested", version: 1, cancelledAt: null });
+  });
+});
+
+// [E-26] 취소 ∥ 잇기 — 원장 `afterLock` 장벽으로 쥔 쪽을 프로젝트 행 잠금에서 멈추고, 반대 저장이 그 잠금을 기다리는 것을 확인한 뒤 푼다.
+// 두 원장 저장은 프로젝트 행에서 먼저 줄을 서므로 이 테스트가 지키는 것은 「요청 행 잠금 뒤 issueRequestTransition 판정」이다.
+async function raceLedgerSaves(holder: () => Promise<unknown>, contender: () => Promise<unknown>, holderBarrier: { locked: ReturnType<typeof deferred>; release: ReturnType<typeof deferred> }) {
+  const first = holder();
+  const reachedLock = await Promise.race([holderBarrier.locked.promise.then(() => true), first.then(() => false, () => false)]);
+  expect(reachedLock, "잠금 순서 조건을 만들지 못했다 — 쥔 쪽이 프로젝트 행 잠금에 닿지 않음").toBe(true);
+  const second = contender();
+  try {
+    await waitForLockWaiter(pool);
+  } catch (error) {
+    holderBarrier.release.resolve();
+    await Promise.allSettled([first, second]);
+    throw new Error(`잠금 순서 조건을 만들지 못했다 — 뒤 저장이 쥔 쪽 잠금을 기다리지 않음(${(error as Error).message})`);
+  }
+  holderBarrier.release.resolve();
+  return Promise.allSettled([first, second]);
+}
+
+describe("발행 요청 — 취소 ∥ 잇기 (E-26 장벽)", () => {
+  async function prepared() {
+    const { project, pm } = await setupProject();
+    const finance = await createFinanceViewer();
+    const row = requestRow();
+    await saveProjectLedger(pm, project.id, { seenStatus: "bidding", issueRequests: [row] });
+    const entryId = randomUUID();
+    const linkInput = {
+      seenStatus: "bidding" as const,
+      revenue: { issuedEntries: [{ id: entryId, isNew: true as const, entryDate: "2026-09-30", amount: krw(20_000_000), fromIssueRequestId: row.id }] },
+    };
+    const cancelInput = { seenStatus: "bidding" as const, issueRequests: [cancelRow(row.id, 1)] };
+    const barrier = { locked: deferred(), release: deferred() };
+    const afterLock = async () => {
+      barrier.locked.resolve();
+      await barrier.release.promise;
+    };
+    return { project, pm, finance, row, entryId, linkInput, cancelInput, barrier, afterLock };
+  }
+
+  it("취소 ∥ 잇기 — 취소 먼저 잠금: 취소만 성공하고 잇기는 거부 + 그 발행 줄 INSERT도 되돌아간다", async () => {
+    const { project, pm, finance, row, linkInput, cancelInput, barrier, afterLock } = await prepared();
+
+    const [cancel, link] = await raceLedgerSaves(
+      () => saveProjectLedger(pm, project.id, cancelInput, { afterLock }),
+      () => saveProjectLedger(finance, project.id, linkInput),
+      barrier,
+    );
+
+    expect([cancel, link].filter((settled) => settled.status === "fulfilled")).toHaveLength(1);
+    expect(cancel.status).toBe("fulfilled");
+    const rejection: unknown = link.status === "rejected" ? link.reason : null;
+    expect(rejection).toBeInstanceOf(UserFacingError);
+    expect((rejection as SaveRejectedError).formatErrors?.[0]?.reason).toBe("취소된 요청 · 새로 고침");
+    expect(await storedRequest(row.id)).toMatchObject({ status: "cancelled", issuedEntryId: null });
+    expect(await db.select().from(revenueEntries).where(eq(revenueEntries.projectId, project.id))).toHaveLength(0);
+  });
+
+  it("취소 ∥ 잇기 — 잇기 먼저 잠금: 잇기만 성공하고 취소는 거부, 요청은 발행됨 · 발행 줄 1건", async () => {
+    const { project, pm, finance, row, entryId, linkInput, cancelInput, barrier, afterLock } = await prepared();
+
+    const [link, cancel] = await raceLedgerSaves(
+      () => saveProjectLedger(finance, project.id, linkInput, { afterLock }),
+      () => saveProjectLedger(pm, project.id, cancelInput),
+      barrier,
+    );
+
+    expect([link, cancel].filter((settled) => settled.status === "fulfilled")).toHaveLength(1);
+    expect(link.status).toBe("fulfilled");
+    const rejection: unknown = cancel.status === "rejected" ? cancel.reason : null;
+    expect(rejection).toBeInstanceOf(SaveRejectedError);
+    expect((rejection as SaveRejectedError).formatErrors[0]?.reason).toBe("이미 발행됨 · 새로 고침");
+    expect(await storedRequest(row.id)).toMatchObject({ status: "issued", issuedEntryId: entryId, cancelledBy: null });
+    expect(await db.select().from(revenueEntries).where(eq(revenueEntries.projectId, project.id))).toHaveLength(1);
+  });
+});

@@ -177,3 +177,29 @@ superpowers:test-driven-development · superpowers:verification-before-completio
 - 파일: SUMMARY · 점검표 · 바뀐 소스 12개 존재(`git diff --name-only ba46b2f1...HEAD`)
 - 커밋: ad08fff · c46742d · 89d69f2 · 51a5ccc · 06b85d3 — `git log` 확인
 - 격리 DB erp_test_0622 · erp_0622_test 삭제함
+
+## 검토 후 고친 것(Opus 고침 에이전트)
+
+| 출처 | 내용 | 커밋 | 자리 |
+|---|---|---|---|
+| 검토 1(낮음) + 참고 2 | 승인 순간 점검 사전 조회 · tx 안 계산 예외를 `GateBlockedError(PRE_SETTLE_UNKNOWN)`(`점검 결과 없음 · 다시 시도`)로 거부 · 원인은 `settlement.pre_settle_approve_failed` 경고 로그. 롤백 단언 `approvalState`에 그 문서 `action_log` 행 수 | c24bcd3 | `domain/settlements/index.ts` `preSettleUnknown` · `prepareSettlementFinalApproval` · `onSettlementFinalApprovalInTx` / `test/integration/pre-settle-check.test.ts` `approvalState` · 「점검 계산 예외」 · 「점검 사전 조회 예외」 · 「SA-3」 |
+| DOM 감사 D-1 | PC 점검 행 항목 말줄임이 칸 폭에서(grid `minmax(0, max-content)` + 안쪽 `.preSettleItemText`) | 9b8afe0 | `project-detail.module.css` `.preSettleItem` · `.preSettleItemText` / `pre-settle-check.tsx` 두 항목 칸 |
+| DOM 감사 D-2 | 오류 갈래를 `PreSettleCheckSection`의 `check` null 갈래로 합쳐 제목 노드를 잇고, `다시 시도`가 refresh 전에 제목으로 포커스 | 4205fe2 | `pre-settle-check.tsx` · `page.tsx` `preSettleSection` |
+| DOM 감사 D-3 | `app/(app)/projects/[id]/loading.tsx` 신설(제목 자리 + 견적 줄 표 P1 열 `TableSkeleton` · 합계 줄) | 34d3790 | `loading.tsx` |
+| 점검표 | D-1 · D-2 · D-3 반영 · 화면 줄에 loading.tsx | 6abf976 | `docs/design/checks/2026-10-13-06-22-pre-settle-approve.md` |
+
+- 테스트: RED 확인 뒤 GREEN — 통합 `pre-settle-check.test.ts` 39/39 · `settlement-approval` · `approvals-extensions` · `tx-safety` 44/44(격리 DB erp_test_0622f) · CI=true E2E `pre-settle-check.spec.ts` 16/16 · 상세를 여는 스펙 9개(desktop + mobile-375) 85/85(erp_0622f_test, flock) · `pnpm lint` · `pnpm typecheck` 0 · 단위 304파일 4578/4578.
+
+## 검토 후 남긴 것(기록만)
+
+- **검토 3(참고)** `settlement/page.tsx:363-371` — 표시 훅(`settlementApproveBlockedReason`)과 페이지 요약(`getSettlementPreSettleSummary`)이 따로 계산해 일시 장애에서 `점검 결과 없음 · 다시 시도` 옆에 `점검 보기`가 서거나 그 반대 조합이 생길 수 있다. 계획 T-06-2203이 받아들인 두 번 계산이라 그대로 둔다.
+- **검토 4(참고)** `domain/settlements/index.ts` 사전 조회가 같은 종류의 모든 승인 단계에서 돌아 설정 · 권한 읽기 장애가 1단(팀장) 승인도 막는다 — 계획 SA-3 · E-38의 의도. 이번 고침으로 그 거부 문구가 `점검 결과 없음 · 다시 시도`가 됐다(1단 승인자에게도 같은 문구).
+- **O-1** 폰에서 긴 항목은 줄바꿈(320에서 4~5줄, 행 158~180px) — SYSTEM §7-3 「폰 표 항목명 줄바꿈 허용」에 맞다.
+- **O-2** 오류 상태에서 같은 접근 이름 `다시 시도`가 둘(머리 3차 · 섹션 2차). 계획 · E2E가 정한 모양. 화면 읽기 구분이 필요하면 이름 조각(`점검 다시 시도`)을 검토할 일.
+- **O-3** 매출 3차 `발행 요청 추가`는 포커스를 옮기지 않아 미결 행이 많으면 새 줄이 창 밖에 생길 수 있다 — 06-18 발행 요청 표 버튼과 같은 동작.
+- **O-4** `점검 보기` 도착 뒤 activeElement는 BODY(첫 Tab이 섹션 첫 행이라 흐름은 이어짐). 해시 직접 진입은 320에서 점검 행이 창 밖 — 적용 전 · 후 같음, S19 「내 차례」 해시 진입 때 다시 볼 일.
+- **O-5** 거래처 없음 줄은 `거래처 없음` 글자만(초점 · 클릭 대상 0, 죽은 컨트롤 없음). UI-SPEC 문구 `거래처 없음 · 거래처 고르기`와 다른 점은 위 「갈림」대로 오케스트레이터 결정.
+- **O-6** 13자리 금액은 도메인 상한(999,999,999,999) 때문에 만들 수 없어 15 · 16자로 대신 쟀고 넘침 0.
+- **O-7** 목록 → 상세 느린 응답은 감사가 재지 못했다. 이제 상세 자체 loading.tsx가 있어 목록 뼈대 대신 상세 뼈대가 뜨는 경로다(측정은 하지 않음).
+- **O-8** `{n}차 고객 승인 전`을 마우스로 누르면 `:focus-visible`이 거짓이라 테두리가 없다(크로미움 휴리스틱). 키보드로는 fv 참 — 통과.
+- D-3 뼈대 열을 견적 줄 표 11열이 아니라 P1 셋(항목 · 실행가 · 상태)으로 한 것은 폰 320에서 11열 머리글이 넘치지 않게 하려는 것(실제 표도 폰은 P1만 보인다). PC에서 뼈대 열 수가 실제 표보다 적다 — `/design-review`에서 볼 일.

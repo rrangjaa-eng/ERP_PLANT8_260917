@@ -12,9 +12,13 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { AMOUNT_HIDDEN } from "@/domain/payments/action-row";
 import { previewPayable } from "@/domain/payments";
 import { formatKrw } from "@/lib/format-number";
+import { seedCodeItem } from "@/repositories/code-tables";
+import { addHistorizedValue, cancelHistorizedValue } from "@/domain/settings/registry";
+import { TAX_VAT_RATE } from "@/domain/settings/keys";
+import { EVIDENCE_UNCONFIRMED } from "@/domain/payments/action-row";
 import { seoulToday } from "@/lib/dates";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
-import { submitReadyDraft } from "../integration/fixtures/expenses";
+import { attachEvidence, submitReadyDraft } from "../integration/fixtures/expenses";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
 import { setupExpenseE2E, type ExpenseE2E, type LineKey, archiveTempRoles, insertTempRole } from "./expense-fixture";
 
@@ -451,6 +455,159 @@ test.describe("일괄 지급 마감 (06-17)", () => {
       .from(expensePayments)
       .where(and(eq(expensePayments.expenseId, expenseId), isNull(expensePayments.cancelledAt)));
     expect(record).toEqual({ transferKrw: transfer, diffKrw: -3_300, diffReason: "이체 수수료" });
+    await page.context().close();
+  });
+  test("모달 지급일 기억(O-3) — 닫고 다시 열면 방금 고른 날, 필터를 바꾸면 오늘", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    await approvedTarget(fx, "tracer");
+    const payer = await makeTeamPayer(fx);
+    const tomorrow = addDays(seoulToday(), 1);
+
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    await page.goto("/expenses");
+    const row = rowOf(page, fx.lines.tracer.itemName);
+    await waitForHydration(row.getByRole("checkbox"));
+    await row.getByRole("checkbox").check();
+    const primary = page.getByRole("button", { name: /^지급 완료 1/ });
+    await primary.click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("지급일").fill(tomorrow);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await primary.click();
+    await expect(dialog.getByLabel("지급일")).toHaveValue(tomorrow);
+    await page.keyboard.press("Escape");
+
+    await page.getByLabel("증빙").selectOption({ label: "지급 가능" });
+    await expect(page).toHaveURL(/evidence=payable/);
+    await waitForHydration(row.getByRole("checkbox"));
+    await row.getByRole("checkbox").check();
+    await page.getByRole("button", { name: /^지급 완료 1/ }).click();
+    await expect(page.getByRole("dialog").getByLabel("지급일")).toHaveValue(seoulToday());
+    await page.context().close();
+  });
+
+  test("합 실패 — S1 `고른 1건 · 합계를 받지 못함 · 다시 시도` · S2 막힘 이유 `합계를 받지 못함` + 1차 aria-disabled → `다시 시도`로 같은 번호 합을 받으면 켜짐", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const expenseId = await approvedTarget(fx, "tracer");
+    const payer = await makeTeamPayer(fx);
+    const preview = await previewPayable(payer.viewer, { expenseId, payDate: seoulToday() });
+    if (preview.payableKrw == null) throw new Error("지급 총액 없음");
+
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    await page.goto("/expenses");
+    const row = rowOf(page, fx.lines.tracer.itemName);
+    await waitForHydration(row.getByRole("checkbox"));
+    // 서버 액션(POST · next-action 머리)을 끊는다 — 고르기 뒤 나가는 요청은 합 액션 하나다.
+    const cut = (route: import("@playwright/test").Route) => (route.request().headers()["next-action"] ? route.abort() : route.fallback());
+    await page.route("**/expenses**", cut);
+    await row.getByRole("checkbox").check();
+    const totals = page.getByRole("region", { name: "합계" });
+    await expect(totals.getByText("고른 1건 · 합계를 받지 못함 ·")).toBeVisible();
+    await expect(totals.getByRole("button", { name: "다시 시도" })).toBeVisible();
+
+    await page.getByRole("button", { name: /^지급 완료 1/ }).click();
+    const dialog = page.getByRole("dialog");
+    const confirm = dialog.getByRole("button", { name: /^지급 완료 1건/ });
+    await expect(confirm).toHaveAccessibleDescription("합계를 받지 못함");
+    await expect(confirm).toHaveAttribute("aria-disabled", "true");
+    await page.unroute("**/expenses**", cut);
+    await dialog.getByRole("button", { name: "다시 시도" }).click();
+    await expect(dialog.getByText(`1건 · 이체액 합계 ${formatKrw(preview.payableKrw)}`)).toBeVisible();
+    await expect(confirm).not.toHaveAttribute("aria-disabled", "true");
+    await page.context().close();
+  });
+
+  test("일괄 결과 알림 · 막힌 행 선택 — 게이트 막힘 · 지급일 세율 막힘 · 처리 한 건씩: 빈 aria-live → 결과 글자, 막힌 행 aria-describedby 둘, 포커스 첫 막힌 행, 게이트 막힘만 선택 풀림", async ({ browser, baseURL }) => {
+    test.setTimeout(120_000);
+    const fx = await setupExpenseE2E();
+    const today = seoulToday();
+    const gateId = await approvedTarget(fx, "tracer");
+    const taxId = await approvedTarget(fx, "hold");
+    await approvedTarget(fx, "retry");
+    await setScheduled(gateId, addDays(today, -1));
+    const typeValue = `e2e_vat_paydate_${randomUUID().slice(0, 6)}`;
+    await seedCodeItem(SYSTEM_VIEWER, {
+      tableKey: "evidence_type",
+      value: typeValue,
+      label: typeValue,
+      sortOrder: 99,
+      taxRule: { ruleKind: "vat_surcharge", roundingUnit: 1, roundingMethod: "round", minWithholdingAmount: 0, basisDate: "payment_date" },
+    });
+    await db.update(expenses).set({ evidenceType: typeValue }).where(eq(expenses.id, taxId));
+    const rateFrom = addDays(today, 30);
+    const payDate = addDays(today, 40);
+    await addHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, { effectiveFrom: rateFrom, value: 0.12 });
+    try {
+      const payer = await makeTeamPayer(fx);
+      const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+      await page.goto("/expenses");
+      const live = page.locator('main p[aria-live="polite"]');
+      await expect(live).toHaveCount(1);
+      await expect(live).toHaveText("");
+      const gateRow = rowOf(page, fx.lines.tracer.itemName);
+      const taxRow = rowOf(page, fx.lines.hold.itemName);
+      const doneRow = rowOf(page, fx.lines.retry.itemName);
+      await waitForHydration(gateRow.getByRole("checkbox"));
+      for (const row of [gateRow, taxRow, doneRow]) await row.getByRole("checkbox").check();
+
+      await page.getByRole("button", { name: /^지급 완료 3/ }).click();
+      const dialog = page.getByRole("dialog");
+      await expect(dialog.getByText(/^3건 · 이체액 합계 [\d,]+$/)).toBeVisible();
+      await dialog.getByLabel("지급일").fill(payDate);
+      // 모달을 연 사이 기안자가 증빙을 더해 확인 기록이 풀린다(C4 — version + 1 · P2).
+      await attachEvidence(fx.pm.viewer, gateId);
+      await dialog.getByRole("button", { name: /^지급 완료 3건/ }).click();
+      await expect(dialog).toBeHidden();
+
+      await expect(live).toHaveText(/^\d{2}:\d{2} 지급 완료 1건 · 막힘 2건$/);
+      await expect(doneRow).toHaveCount(0);
+      const gateBox = gateRow.getByRole("checkbox");
+      await expect(gateBox).toBeFocused();
+      const ids = ((await gateBox.getAttribute("aria-describedby")) ?? "").split(" ").filter(Boolean);
+      expect(ids).toHaveLength(2);
+      const texts = await Promise.all(ids.map((id) => page.locator(`[id="${id}"]`).innerText()));
+      expect(texts[0]).toBe(EVIDENCE_UNCONFIRMED);
+      expect(texts[1]).toMatch(/^다른 사람이 \d{2}:\d{2}에 바꿈 · 새로 고침$/);
+      await expect(gateBox).not.toBeChecked();
+      await expect(gateBox).toHaveAttribute("aria-disabled", "true");
+      await expect(taxRow.getByRole("checkbox")).toBeChecked();
+      await expect(taxRow.getByText(`지급일 ${payDate.slice(5)} 기준 지급 총액 바뀜 · 이체액 확인`)).toBeVisible();
+      const newPayable = await previewPayable(payer.viewer, { expenseId: taxId, payDate });
+      if (newPayable.payableKrw == null) throw new Error("새 지급 총액 없음");
+      await expect(taxRow.getByText(formatKrw(newPayable.payableKrw), { exact: true }).first()).toBeVisible();
+      await expect(page.getByRole("button", { name: /^지급 완료 1/ })).toBeVisible();
+
+      // 재시도 — 기억한 지급일 · 새 지급 총액으로 보내 같은 이유로 다시 막히지 않는다.
+      await page.getByRole("button", { name: /^지급 완료 1/ }).click();
+      await expect(dialog.getByLabel("지급일")).toHaveValue(payDate);
+      await expect(dialog.getByText(`1건 · 이체액 합계 ${formatKrw(newPayable.payableKrw)}`)).toBeVisible();
+      await dialog.getByRole("button", { name: /^지급 완료 1건/ }).click();
+      await expect(dialog).toBeHidden();
+      await expect(live).toHaveText(/^\d{2}:\d{2} 지급 완료 1건$/);
+      expect(await livePaymentCount(taxId)).toBe(1);
+      expect(await payDates(taxId)).toEqual([payDate]);
+      await page.context().close();
+    } finally {
+      await cancelHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, rateFrom);
+    }
+  });
+
+  test("막힘 0 — 처리 뒤 포커스는 1차 버튼", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    await approvedTarget(fx, "tracer");
+    await approvedTarget(fx, "hold");
+    const payer = await makeTeamPayer(fx);
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    await page.goto("/expenses");
+    const row = rowOf(page, fx.lines.tracer.itemName);
+    await waitForHydration(row.getByRole("checkbox"));
+    await row.getByRole("checkbox").check();
+    await page.getByRole("button", { name: /^지급 완료 1/ }).click();
+    await page.getByRole("dialog").getByRole("button", { name: /^지급 완료 1건/ }).click();
+    await expect(page.getByRole("dialog")).toBeHidden();
+    await expect(row).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^지급 완료/ })).toBeFocused();
     await page.context().close();
   });
 });

@@ -23,8 +23,20 @@ import type { SelectedTransferSum } from "@/domain/payments/targets";
 import { AMOUNT_HIDDEN, DIFF_REASON_REQUIRED, TRANSFER_NOT_NUMBER, TRANSFER_NOT_POSITIVE } from "@/domain/payments/action-row";
 import { formatKrw } from "@/lib/format-number";
 import { completePaymentsBatchAction, sumSelectedTransfersAction } from "./actions";
-import { editReason, editTransfer, nextSumSeq, sumKeyOf, sumRequestRows, transferNumber, type SelectionState } from "./payment-selection";
-import { BatchPaymentDialog } from "./batch-payment-dialog";
+import {
+  applyBatchResult,
+  diffCount,
+  editReason,
+  editTransfer,
+  nextSumSeq,
+  otherPageCount,
+  selectionKey,
+  sumKeyOf,
+  sumRequestRows,
+  transferNumber,
+  type SelectionState,
+} from "./payment-selection";
+import { BatchPaymentDialog, rememberPayDate, rememberedPayDate } from "./batch-payment-dialog";
 import { StatusFilter, type FilterSelect } from "./status-filter";
 import { PAYMENT_TARGET_COLUMN_LABELS, PAYMENT_TARGET_VIEW } from "./list-columns";
 import styles from "./expenses.module.css";
@@ -104,7 +116,13 @@ function ReasonEditCell({ initial, onCommit }: { initial: string; onCommit: (val
 
 // 받은 행에서 처리된 행을 빼고, 받은 목록에서 사라진 막힌 행(그사이 다른 사람이 지급 · 종결)은 원래 자리에 남긴다.
 function mergeRows(rows: readonly PaymentTargetScreenRow[], processed: ReadonlySet<string>, blocked: ReadonlyMap<string, Blocked>): PaymentTargetScreenRow[] {
-  const merged = rows.filter((row) => !processed.has(row.id));
+  // 지급일 세율로 막힌 행은 지급 총액 셀이 새 값(06-15 newPayableKrw) — 다시 받은 목록(오늘 기준)이 덮지 않는다.
+  const merged = rows
+    .filter((row) => !processed.has(row.id))
+    .map((row) => {
+      const newPayable = blocked.get(row.id)?.newPayableKrw;
+      return typeof newPayable === "number" ? { ...row, payableKrw: newPayable } : row;
+    });
   const present = new Set(merged.map((row) => row.id));
   const ghosts = [...blocked.entries()].filter(([id]) => !present.has(id)).sort((a, b) => a[1].index - b[1].index);
   for (const [, ghost] of ghosts) merged.splice(Math.min(ghost.index, merged.length), 0, ghost.row);
@@ -152,12 +170,23 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
   const [result, setResult] = useState<ResultLine | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [rejection, setRejection] = useState<string | null>(null);
-  const [snapshot, setSnapshot] = useState<{ ids: string[]; rows: PaymentTargetScreenRow[]; edits: SelectionState["edits"]; seq: number }>({ ids: [], rows: [], edits: {}, seq: 0 });
+  const [snapshot, setSnapshot] = useState<{ ids: string[]; rows: PaymentTargetScreenRow[]; edits: SelectionState["edits"]; seq: number; otherPage: number }>({
+    ids: [],
+    rows: [],
+    edits: {},
+    seq: 0,
+    otherPage: 0,
+  });
   // 칸 오류는 1차를 누른 뒤에 세운다(사유 칸 — S5와 같은 결). 값이 바뀌면 표가 첫 오류 칸으로 포커스한다.
   const [showErrors, setShowErrors] = useState(false);
   const [issueSignal, setIssueSignal] = useState(0);
   // 합의 세율 기준일 — 마지막으로 처리 요청에 쓴 지급일(없으면 오늘, 서버가 채운다).
   const [sumPayDate, setSumPayDate] = useState<string | null>(null);
+  // O-3 — 모달 지급일은 모달 밖 한 곳에 기억한다(같은 필터에서 쪽을 넘겨도 남고, 필터 변경 · 새로 고침 때 잊는다).
+  const memoryKey = selectionKey(props.query);
+  const [payDate, setPayDate] = useState(() => rememberedPayDate(memoryKey, props.today));
+  const rootRef = useRef<HTMLDivElement>(null);
+  const focusAfterCloseRef = useRef<string | null>(null);
 
   const rows = mergeRows(props.rows, processed, blocked);
   const selectable = selectableWith(blocked);
@@ -210,6 +239,22 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
     // 합계 번호가 오를 때만 보낸다 — 그 번호의 입력은 이 렌더의 선택 · 편집이다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seq]);
+
+  // 모달 닫힘(06-29 ConfirmDialog가 onClose 뒤 트리거로 포커스를 돌린다) 다음 차례에 정한 자리로 옮긴다.
+  function focusAfterClose() {
+    const target = focusAfterCloseRef.current;
+    focusAfterCloseRef.current = null;
+    if (!target) return;
+    setTimeout(() => {
+      const root = rootRef.current;
+      if (!root) return;
+      const element =
+        target === "primary"
+          ? [...root.querySelectorAll<HTMLElement>('[data-ui="primary-button"]')].find((candidate) => !candidate.closest("dialog"))
+          : root.querySelector(`[data-row-id="${CSS.escape(target)}"]`)?.closest("tr")?.querySelector<HTMLElement>('input[type="checkbox"]');
+      element?.focus();
+    }, 0);
+  }
 
   // 모아 둔 요청을 바로 보낸다(모달을 여는 순간).
   function flushSum() {
@@ -295,11 +340,10 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
     const nextRows = mergeRows(props.rows, nextProcessed, nextBlocked);
     setProcessed(nextProcessed);
     setBlocked(nextBlocked);
-    setSelection({
-      selectedIds: reconcileSelection(snapshot.ids.filter((id) => !nextProcessed.has(id)), nextRows, (row) => row.id, selectableWith(nextBlocked)),
-      edits: selection.edits,
-    });
+    setSelection(applyBatchResult(selection, data));
     setResult({ time: data.time, processed: data.processed, blocked: data.blocked.length });
+    // DR-6 — 모달이 닫힌 뒤 포커스: 첫 막힌 행 체크박스(aria-disabled여도), 막힌 행이 없으면 1차 버튼.
+    focusAfterCloseRef.current = nextRows.find((row) => nextBlocked.has(row.id))?.id ?? "primary";
     setDialogOpen(false);
     router.refresh();
   }
@@ -313,7 +357,7 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
       return;
     }
     flushSum();
-    setSnapshot({ ids: chosen, rows: chosenRows, edits: selection.edits, seq });
+    setSnapshot({ ids: chosen, rows: chosenRows, edits: selection.edits, seq, otherPage: otherPageCount(chosen, props.rows.map((row) => row.id)) });
     setRejection(null);
     setDialogOpen(true);
   }
@@ -350,7 +394,7 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
       header: PAYMENT_TARGET_COLUMN_LABELS.title,
       priority: "p1",
       cell: (row) => (
-        <span className={styles.titleCell}>
+        <span className={styles.titleCell} data-row-id={row.id}>
           <Link href={`/expenses/${row.id}`} className={styles.link} data-row-link="">
             {row.title ?? "—"}
           </Link>
@@ -474,118 +518,128 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
   const prepaidCount = snapshot.rows.filter((row) => row.prepaid === true).length;
 
   return (
-    <ListScreen
-      title="지출결의"
-      filters={filters}
-      primaryAction={
-        wide
-          ? {
-              label: chosen.length === 0 ? "지급 완료" : `지급 완료 ${chosen.length}`,
-              onClick: openDialog,
-              shortcut: "Ctrl+Enter",
-              // 금액을 못 보는 지급 권한자는 모든 행이 막힌다 — 1차 이유는 고른 수가 아니라 그 권한(문서 화면 1차와 같은 글자).
-              ...(!amountColumn ? { disabledReason: AMOUNT_HIDDEN } : chosen.length === 0 ? { disabledReason: "고른 건 없음", reasonTone: "info" as const } : {}),
-              pending: isExecuting,
-            }
-          : undefined
-      }
-      summary={
-        props.total ? (
-          <section aria-label="합계" className={styles.totals}>
-            <p className={styles.totalsTitle}>{`합계 (${PAYMENT_TARGET_VIEW} · ${props.total.count}건)`}</p>
-            <p className={styles.totalsAmount}>
-              {"지급 총액 "}
-              <Num value={props.total.sumKrw} />
-            </p>
-            {chosen.length > 0 ? (
-              <p className={styles.selectedSum}>
-                {sumFailedSeq === seq ? (
-                  <>
-                    <span className={styles.selectedSumLabel}>{`고른 ${chosen.length}건 · 합계를 받지 못함 · `}</span>
-                    <Button variant="secondary" onClick={retrySum}>
-                      다시 시도
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <span className={styles.selectedSumLabel}>{`고른 ${chosen.length}건 · 이체액`}</span>{" "}
-                    <span className={[styles.selectedSumAmount, sumNow ? "" : styles.stale].join(" ")}>{sum ? <Num value={sum.totalKrw} /> : "…"}</span>
-                  </>
-                )}
+    <div ref={rootRef}>
+      <ListScreen
+        title="지출결의"
+        filters={filters}
+        primaryAction={
+          wide
+            ? {
+                label: chosen.length === 0 ? "지급 완료" : `지급 완료 ${chosen.length}`,
+                onClick: openDialog,
+                shortcut: "Ctrl+Enter",
+                // 금액을 못 보는 지급 권한자는 모든 행이 막힌다 — 1차 이유는 고른 수가 아니라 그 권한(문서 화면 1차와 같은 글자).
+                ...(!amountColumn ? { disabledReason: AMOUNT_HIDDEN } : chosen.length === 0 ? { disabledReason: "고른 건 없음", reasonTone: "info" as const } : {}),
+                pending: isExecuting,
+              }
+            : undefined
+        }
+        summary={
+          props.total ? (
+            <section aria-label="합계" className={styles.totals}>
+              <p className={styles.totalsTitle}>{`합계 (${PAYMENT_TARGET_VIEW} · ${props.total.count}건)`}</p>
+              <p className={styles.totalsAmount}>
+                {"지급 총액 "}
+                <Num value={props.total.sumKrw} />
               </p>
-            ) : null}
-          </section>
-        ) : undefined
-      }
-      pagination={
-        <Pagination
-          label="지급 대상"
-          page={props.page.page}
-          pageCount={props.page.pageCount}
-          href={(target) => href(props.query, target)}
-          rangeText={pageRangeText({ page: props.page.page, pageSize: props.page.pageSize, total: props.page.total, unit: "건" })}
-        />
-      }
-    >
-      <Table
-        caption="지급 대상"
-        columns={columns}
-        rows={rows}
-        getRowId={(row) => row.id}
-        groupBy={(row) => row.group}
-        groupHeader={(row) => (row.groupTone === "warning" ? <span className={styles.warningGroup}>{row.group}</span> : row.group)}
-        phoneRowLink
-        enableGridKeyboard={wide}
-        onCellCommit={commitCell}
-        cellIssue={(row, columnKey) => {
-          const message = columnKey === "transfer" ? transferIssue(row) : columnKey === "diffReason" && showErrors && chosen.includes(row.id) ? reasonIssue(row) : null;
-          return message ? { kind: "error", message } : undefined;
-        }}
-        firstIssueSignal={issueSignal}
-        {...(wide
-          ? {
-              hint: [
-                { label: "이동", keys: "Tab ↑↓←→" },
-                { label: "고르기", keys: "Space" },
-                { label: "취소", keys: "Esc" },
-              ],
-              selection: {
-                selectedIds: chosen,
-                selectable,
-                onChange: (ids: string[]) => setSelection({ ...selection, selectedIds: ids }),
-                rowLabel: (row: PaymentTargetScreenRow) => row.title ?? row.number ?? row.id,
-                blockedReason: (row: PaymentTargetScreenRow) => {
-                  const after = blocked.get(row.id);
-                  if (!after) return null;
-                  const gateReason = selectable(row);
-                  // 선택 칸 이유와 같은 글자면 한 번만(같은 말을 두 자리에 쓰지 않는다).
-                  return gateReason !== true && gateReason.reason === after.reason ? null : after.reason;
+              {chosen.length > 0 ? (
+                <p className={styles.selectedSum}>
+                  {sumFailedSeq === seq ? (
+                    <>
+                      <span className={styles.selectedSumLabel}>{`고른 ${chosen.length}건 · 합계를 받지 못함 · `}</span>
+                      <Button variant="secondary" onClick={retrySum}>
+                        다시 시도
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <span className={styles.selectedSumLabel}>{`고른 ${chosen.length}건 · 이체액`}</span>{" "}
+                      <span className={[styles.selectedSumAmount, sumNow ? "" : styles.stale].join(" ")}>{sum ? <Num value={sum.totalKrw} /> : "…"}</span>
+                    </>
+                  )}
+                </p>
+              ) : null}
+            </section>
+          ) : undefined
+        }
+        pagination={
+          <Pagination
+            label="지급 대상"
+            page={props.page.page}
+            pageCount={props.page.pageCount}
+            href={(target) => href(props.query, target)}
+            rangeText={pageRangeText({ page: props.page.page, pageSize: props.page.pageSize, total: props.page.total, unit: "건" })}
+          />
+        }
+      >
+        <Table
+          caption="지급 대상"
+          columns={columns}
+          rows={rows}
+          getRowId={(row) => row.id}
+          groupBy={(row) => row.group}
+          groupHeader={(row) => (row.groupTone === "warning" ? <span className={styles.warningGroup}>{row.group}</span> : row.group)}
+          phoneRowLink
+          enableGridKeyboard={wide}
+          onCellCommit={commitCell}
+          cellIssue={(row, columnKey) => {
+            const message = columnKey === "transfer" ? transferIssue(row) : columnKey === "diffReason" && showErrors && chosen.includes(row.id) ? reasonIssue(row) : null;
+            return message ? { kind: "error", message } : undefined;
+          }}
+          firstIssueSignal={issueSignal}
+          {...(wide
+            ? {
+                hint: [
+                  { label: "이동", keys: "Tab ↑↓←→" },
+                  { label: "고르기", keys: "Space" },
+                  { label: "취소", keys: "Esc" },
+                ],
+                selection: {
+                  selectedIds: chosen,
+                  selectable,
+                  onChange: (ids: string[]) => setSelection({ ...selection, selectedIds: ids }),
+                  rowLabel: (row: PaymentTargetScreenRow) => row.title ?? row.number ?? row.id,
+                  blockedReason: (row: PaymentTargetScreenRow) => {
+                    const after = blocked.get(row.id);
+                    if (!after) return null;
+                    const gateReason = selectable(row);
+                    // 선택 칸 이유와 같은 글자면 한 번만(같은 말을 두 자리에 쓰지 않는다).
+                    return gateReason !== true && gateReason.reason === after.reason ? null : after.reason;
+                  },
+                  onPrimary: openDialog,
                 },
-                onPrimary: openDialog,
-              },
-            }
-          : {})}
-      />
-      <BatchPaymentDialog
-        open={dialogOpen}
-        onClose={() => {
-          if (!isExecuting) setDialogOpen(false);
-        }}
-        count={snapshot.rows.length}
-        // 모달을 연 순간 합계 번호의 서버 합만(아직이면 undefined — 부제 `…` · 1차 막힘). 실패면 「거부 — 이체액 합계 응답 없음」.
-        totalKrw={sum !== null && sum.seq === snapshot.seq ? sum.totalKrw : undefined}
-        sumFailed={sumFailedSeq === snapshot.seq}
-        onRetrySum={retrySum}
-        lineCount={lineCount}
-        prepaidCount={prepaidCount}
-        prepaidDueDays={props.prepaidDueDays}
-        today={props.today}
-        pending={isExecuting}
-        rejection={rejection}
-        dateError={props.dateError}
-        onConfirm={confirm}
-      />
-    </ListScreen>
+              }
+            : {})}
+        />
+        <BatchPaymentDialog
+          open={dialogOpen}
+          onClose={() => {
+            if (isExecuting) return;
+            setDialogOpen(false);
+            focusAfterClose();
+          }}
+          count={snapshot.rows.length}
+          // 모달을 연 순간 합계 번호의 서버 합만(아직이면 undefined — 부제 `…` · 1차 막힘). 실패면 「거부 — 이체액 합계 응답 없음」.
+          totalKrw={sum !== null && sum.seq === snapshot.seq ? sum.totalKrw : undefined}
+          sumFailed={sumFailedSeq === snapshot.seq}
+          otherPageCount={snapshot.otherPage}
+          diffCount={sum !== null && sum.seq === snapshot.seq ? diffCount(snapshot.ids, sum.diffs) : 0}
+          payDate={payDate}
+          onPayDateChange={(value) => {
+            setPayDate(value);
+            rememberPayDate(memoryKey, value);
+          }}
+          onRetrySum={retrySum}
+          lineCount={lineCount}
+          prepaidCount={prepaidCount}
+          prepaidDueDays={props.prepaidDueDays}
+          pending={isExecuting}
+          rejection={rejection}
+          dateError={props.dateError}
+          onConfirm={confirm}
+        />
+      </ListScreen>
+    </div>
   );
 }
 

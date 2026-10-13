@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { editReason, editTransfer, nextSumSeq, sumKeyOf, sumRequestRows, type SelectionState } from "@/app/(app)/expenses/payment-selection";
+import { applyBatchResult, diffCount, editReason, editTransfer, nextSumSeq, otherPageCount, sumKeyOf, sumRequestRows, type SelectionState } from "@/app/(app)/expenses/payment-selection";
 
 // 06-17(UI-SPEC S1 「이체액·차이 사유 편집」 · 「합계 줄」) — 선택 상태 순수 함수. 화면은 금액을 셈하지 않는다(O-18) — 여기 함수는
 // 고른 id · 사람이 적은 글자만 다루고, 합 · 차이는 서버 액션 응답이다.
@@ -60,5 +60,38 @@ describe("합계 번호", () => {
       edits: { a: { transfer: "13636700", reason: "" }, b: { transfer: "12.5", reason: "" }, z: { transfer: "1", reason: "" } },
     };
     expect(sumRequestRows(state)).toEqual([{ id: "a", transferKrw: 13_636_700 }, { id: "b" }, { id: "c" }]);
+  });
+});
+
+describe("처리 결과 적용", () => {
+  it("처리된 id는 모든 쪽 선택 · 편집에서 지우고, selectable false로 돌아온 막힌 행은 선택 · 편집을 풀고(H-3), selectable true 막힌 행은 둘 다 남긴다", () => {
+    const state: SelectionState = {
+      selectedIds: ["done", "gate", "tax", "other"],
+      edits: {
+        done: { transfer: "1", reason: "" },
+        gate: { transfer: "2", reason: "수수료" },
+        tax: { transfer: "3", reason: "수수료" },
+        untouched: { transfer: "4", reason: "" },
+      },
+    };
+    const next = applyBatchResult(state, {
+      processedIds: ["done"],
+      blocked: [
+        { expenseId: "gate", selectable: false },
+        { expenseId: "tax", selectable: true },
+      ],
+    });
+    expect(next.selectedIds).toEqual(["tax", "other"]);
+    expect(Object.keys(next.edits).sort()).toEqual(["tax", "untouched"]);
+    expect(next.edits.tax).toEqual({ transfer: "3", reason: "수수료" });
+  });
+});
+
+describe("H-5 개수", () => {
+  it("지금 쪽에 없는 고른 id 수 · 서버 차이가 0 아닌 고른 행 수 — 금액이 아니라 개수", () => {
+    expect(otherPageCount(["a", "b", "c"], ["a"])).toBe(2);
+    expect(otherPageCount(["a"], ["a", "b"])).toBe(0);
+    expect(diffCount(["a", "b", "c"], { a: -3_300, b: 0, z: 100 })).toBe(1);
+    expect(diffCount(["a"], {})).toBe(0);
   });
 });

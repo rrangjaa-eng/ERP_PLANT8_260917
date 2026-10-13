@@ -46,3 +46,28 @@ export function sumKeyOf(state: SelectionState, payDate = ""): string {
 export function nextSumSeq(prev: { seq: number; key: string }, key: string): { seq: number; key: string } {
   return prev.key === key ? prev : { seq: prev.seq + 1, key };
 }
+
+// 처리 결과 적용(H-3) — 처리된 id는 모든 쪽 선택 · 편집에서 지운다. 막힌 행은 응답이 다시 판정한 selectable을 따른다:
+// 거짓(게이트로 막혀 이제 고를 수 없음)이면 선택 · 편집을 풀고(편집 칸이 사라지므로 보관값도 버린다), 참이면 둘 다 남긴다(새 판정 없음).
+export function applyBatchResult(state: SelectionState, result: { processedIds: readonly string[]; blocked: readonly { expenseId: string; selectable: boolean }[] }): SelectionState {
+  const dropped = new Set([...result.processedIds, ...result.blocked.filter((row) => !row.selectable).map((row) => row.expenseId)]);
+  return {
+    selectedIds: state.selectedIds.filter((id) => !dropped.has(id)),
+    edits: Object.fromEntries(Object.entries(state.edits).filter(([id]) => !dropped.has(id))),
+  };
+}
+
+// H-5 결과 줄 ③의 두 개수 — 금액이 아니라 건수다(O-18 밖).
+export function otherPageCount(selectedIds: readonly string[], pageIds: readonly string[]): number {
+  const page = new Set(pageIds);
+  return selectedIds.filter((id) => !page.has(id)).length;
+}
+
+export function diffCount(selectedIds: readonly string[], diffs: Readonly<Record<string, number>>): number {
+  return selectedIds.filter((id) => (diffs[id] ?? 0) !== 0).length;
+}
+
+// 보관 · 기억 키 — 보기 + 필터(지급 대상 · 팀 · 증빙 값). 쪽은 들지 않는다(쪽을 넘겨도 같은 키).
+export function selectionKey(query: Readonly<Record<string, string>>): string {
+  return ["pay", query.status ?? "", query.team ?? "", query.evidence ?? ""].join("|");
+}

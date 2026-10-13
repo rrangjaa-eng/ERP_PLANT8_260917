@@ -867,11 +867,29 @@ Plans:
   5. 선결제 지급 전 증빙 금액은 참고값이고 확인 때 지급액과 같아야 확정되며, `payment_process`·`purchase_process` 기록은 설정으로 끌 수 없다(D-6510·D-6511)
   6. QA Low 3건이 고쳐지고, 간헐 실패 두 시험(`cert-review.spec.ts`·`project-period.spec.ts`)은 건너뛰기·재시도 없이 원인을 고쳐 반복 실행에서 통과하며, `KvList` 앞 1px 선은 시스템 부품에서 고쳐지고 보관함 보관 시각은 KST로 보인다(D-6512~D-6515)
 
-**Plans:** 0 plans
+**Plans:** 0/9 plans complete
 
 Plans:
+**Wave 1**
 
-- [ ] TBD (run /gsd-plan-phase 06.5 to break down)
+- [ ] 06.5-01-PLAN.md — 스키마·마이그레이션 한 묶음(PR-A · 위험 경로 · 사용자 머지): 조정 줄 연결 칸 · 카드 사용 번호 · 직원 지급 계좌 · 중복 방지 키 둘 · 받는 직원 칸 · 기타소득 코드표 맞춤 (risk: 마이그레이션 · 돈)
+- [ ] 06.5-07-PLAN.md — 증빙 금액 참고값 · 금액 칸 오류(L-3) · 지급/구매 기록 끄기 막기 · 지급일 오늘까지(카드 답 대기) (PR-B · risk: 돈)
+- [ ] 06.5-09-PLAN.md — PR-E 다섯 경로 보는 범위 배선 · 간헐 실패 E2E 둘 원인 수정 (PR-B · risk: 권한 · 보는 범위)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 06.5-02-PLAN.md — 기타소득 22% 역산 한 가지 · 지급 완료 때 조정 줄 (PR-C · risk: 돈 · DB 잠금)
+- [ ] 06.5-03-PLAN.md — 카드 사용 K 번호 · 카드 사용/구매 요청 중복 방지 · 딥링크 포커스(L-1) (PR-C · risk: DB 잠금 · 돈)
+- [ ] 06.5-04-PLAN.md — 직원 지급 계좌 · 예금주 필수 (PR-C · risk: 암호화 호출 · 계좌)
+- [ ] 06.5-05-PLAN.md — 지급처 계좌 없음 제출 막기 · 받는 직원 고르기 (PR-C · risk: 돈 · 결재)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 06.5-06-PLAN.md — 신한 대량이체 xlsx · 지급처 소계/합산(카드 답 대기) (PR-D · risk: 돈 · 암호화 호출 · 새 의존성 확인)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 06.5-08-PLAN.md — 지출결의 목록 검색 · 발행 줄 접근 이름(L-2) · KvList 선 · 보관 시각 KST (PR-D · 화면)
 
 ### Phase 06.4: 관리자 상한 (admin-cap) (INSERTED)
 

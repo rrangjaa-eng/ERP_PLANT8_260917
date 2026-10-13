@@ -111,7 +111,10 @@ export function OwnedEvidenceSection({
   const [rejection, setRejection] = useState<string | null>(null);
   // 새로 지울 때만 `되돌리기`를 다시 그려 포커스를 준다.
   const [shown, setShown] = useState(0);
+  // 되돌린 파일은 Attachments가 지운 것으로 기억하는 id라(removed 상태) 되돌리기 뒤에는 새로 마운트해 서버 목록을 그대로 그린다.
+  const [restored, setRestored] = useState(0);
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const resultRef = useRef<HTMLParagraphElement>(null);
   const filesRef = useRef<AttachmentFile[]>([]);
   const mountedRef = useRef(true);
   const nameId = useId();
@@ -137,6 +140,11 @@ export function OwnedEvidenceSection({
   useEffect(() => {
     if (!nested) headingRef.current?.focus();
   }, [nested]);
+
+  // 새로 지운 뒤 포커스 = `되돌리기` — 05 Attachments가 지운 행 자리로 옮기는 포커스(자식 효과)보다 나중에 부모 효과로 덮는다.
+  useEffect(() => {
+    if (shown > 0) resultRef.current?.querySelector("button")?.focus();
+  }, [shown]);
 
   useEffect(() => {
     if (loaded && loaded !== "error") filesRef.current = loaded.files;
@@ -205,6 +213,7 @@ export function OwnedEvidenceSection({
       setRejection(failed.text);
       return;
     }
+    setRestored((count) => count + 1);
     afterChange();
   }
 
@@ -215,13 +224,13 @@ export function OwnedEvidenceSection({
   return (
     <>
       {removedLine || rejection ? (
-        <p role="status" className={styles.resultLine}>
+        <p role="status" ref={resultRef} className={styles.resultLine}>
           {rejection ? <span className={styles.failed}>{rejection}</span> : null}
           {removedLine ? (
             <>
               <span className={retryFailure ? styles.failed : undefined}>{retryFailure ?? `증빙 삭제 · ${removedLine.name}`}</span>
               <RowActions>
-                <RowAction key={shown} pending={pendingUndo} autoFocus onClick={() => void undo()}>
+                <RowAction key={shown} pending={pendingUndo} onClick={() => void undo()}>
                   되돌리기
                 </RowAction>
               </RowActions>
@@ -239,6 +248,7 @@ export function OwnedEvidenceSection({
             <p className={styles.emptyText}>{emptyText}</p>
           ) : (
             <Attachments
+              key={restored}
               mode={canEdit ? "edit" : "read"}
               files={ready.files}
               actions={actions}

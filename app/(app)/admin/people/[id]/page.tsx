@@ -79,17 +79,17 @@ export default async function PersonDetailPage({
   const current = await getLeaveBalanceForUser(session.viewer, id, { fiscalYear: thisYear });
   const fallbackYear = current.resignationDate ? Math.min(Number(current.resignationDate.slice(0, 4)), thisYear) : thisYear;
   const leaveYear = resolveLeaveYear((await searchParams).year, thisYear, fallbackYear);
-  const [balance, adjustments, canWrite] = await Promise.all([
+  const currentRoleId = detail.person.roleId ?? null;
+  const [balance, adjustments, canWrite, assignableCurrent] = await Promise.all([
     leaveYear === thisYear ? current : getLeaveBalanceForUser(session.viewer, id, { fiscalYear: leaveYear }),
     listLeaveAdjustmentsForUser(session.viewer, { userId: id, fiscalYear: leaveYear }),
     can(session.viewer, "admin.people", "write"),
+    currentRoleId === null ? new Set<string>() : assignableRoleIds(session.viewer, [currentRoleId]),
   ]);
   // 06.4(D-6414 · D4 · D6) 계급 변경 자리 상태표(서버 한 곳): 쓰기 없음 · 자기 상세 · 계급 노출 꺼짐 → 줄 없음 /
   // C 상한 밖 · 통과 0 → 이유 한 줄 / 그 밖 → select. 노출이 꺼지면 DTO에 roleId 키가 없다.
   const showRoleChange = canWrite && session.viewer.id !== id && "roleId" in detail.person;
-  const currentRoleId = detail.person.roleId ?? null;
-  const targetOutOfCeiling =
-    currentRoleId !== null && !(await assignableRoleIds(session.viewer, [currentRoleId])).has(currentRoleId);
+  const targetOutOfCeiling = currentRoleId !== null && !assignableCurrent.has(currentRoleId);
   const lockedReason = targetOutOfCeiling || roles.length === 0 ? GRANT_FORBIDDEN_MESSAGE : null;
   const balanceLines = balance.annual
     ? formatBalanceLines({ annual: balance.annual, monthly: balance.monthly ?? null, resignation: balance.resignation ?? null }).map((line) => line.text)

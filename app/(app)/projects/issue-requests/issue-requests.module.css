@@ -1,20 +1,36 @@
-/* 06-21 S17 — 프로젝트(번호 · 이름) 칸: 한 줄 말줄임 + title. 행 링크(`data-row-link`)는 이 칸의 링크다. */
+/* 06-21 S17 — 프로젝트(번호 · 이름) 칸: 한 줄 말줄임 + title. 행 링크(`data-row-link`)는 이 칸의 링크다.
+   글자는 안쪽 `.clip`이 자르고, 링크는 격자 minmax(0, max-content)라 칸의 최소 폭이 0이다 — auto 표 레이아웃에서 긴 이름이 표를
+   늘리지 않고 남는 폭만큼 말줄임으로 준다(구매 요청 품목 칸 선례 · 06-21 감사 D-1 · D-2). 상한은 고정 em(백분율 상한은 최소 폭 계산에서 빠진다). */
 .projectLink {
-  display: block;
+  display: grid;
+  grid-template-columns: minmax(0, max-content);
   max-width: 20em;
+  min-width: 0;
+}
+
+/* 메모: 한 줄 말줄임 + title. 같은 격자라 200자 메모도 칸 · 접힌 줄의 최소 폭을 늘리지 않는다(감사 D-1). */
+.memo {
+  display: inline-grid;
+  grid-template-columns: minmax(0, max-content);
+  max-width: 24em;
+  min-width: 0;
+  vertical-align: bottom;
+}
+
+.clip {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* 메모: 한 줄 말줄임 + title. 폰 접힌 줄에서는 줄 폭을 넘지 않는다. */
-.memo {
-  display: inline-block;
-  max-width: min(24em, 100%);
-  overflow: hidden;
-  text-overflow: ellipsis;
+/* 금액 2행 `합계 {금액}` — 숫자 칸(nowrap) 안에서 두 묶음 사이에서만 줄바꿈(ui/num 외화 병기 2행과 같은 규칙). */
+.totalLine {
+  white-space: normal;
+}
+
+.totalLine > span {
   white-space: nowrap;
-  vertical-align: bottom;
 }
 
 /* 폰은 프로젝트 · 금액 · 희망 발행일이 한 줄에 선다 — 프로젝트 칸 상한을 줄인다(구매 요청 품목 칸 선례). */

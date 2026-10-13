@@ -40,7 +40,7 @@ function projectCell(row: IssueRequestListRowView) {
   const text = `${row.projectNumber} · ${row.projectName}`;
   return (
     <Link href={requestHref(row)} data-row-link="" className={styles.projectLink} title={text}>
-      {text}
+      <span className={styles.clip}>{text}</span>
     </Link>
   );
 }
@@ -48,7 +48,7 @@ function projectCell(row: IssueRequestListRowView) {
 function memoText(row: IssueRequestListRowView) {
   return row.memo ? (
     <span className={styles.memo} title={row.memo}>
-      {row.memo}
+      <span className={styles.clip}>{row.memo}</span>
     </span>
   ) : null;
 }
@@ -67,7 +67,13 @@ function columns(showAmount: boolean, canLink: boolean): TableColumn<IssueReques
             priority: "p1" as const,
             align: "right" as const,
             cell: (row: IssueRequestListRowView) => <Num value={row.amountKrw} />,
-            secondaryLine: (row: IssueRequestListRowView) => (row.totalKrw === null ? null : `합계 ${formatKrw(row.totalKrw)}`),
+            // `합계`와 금액 사이에서만 줄을 바꾼다(묶음 안은 nowrap) — 폰 320에서 금액 칸이 표를 넓히지 않게(감사 D-2).
+            secondaryLine: (row: IssueRequestListRowView) =>
+              row.totalKrw === null ? null : (
+                <span className={styles.totalLine}>
+                  <span>합계</span> <span>{formatKrw(row.totalKrw)}</span>
+                </span>
+              ),
           },
         ]
       : []),

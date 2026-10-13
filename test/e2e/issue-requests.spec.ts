@@ -480,3 +480,35 @@ test.describe("프로젝트 목록 하위 링크 `발행 요청 {N}` · `?issueR
     await context.close();
   });
 });
+
+// 06-21 독립 DOM 감사(D-1 ~ D-6) 반영 — 넘침 · 도착 포커스 · 확인 뒤 포커스 · 링크 색 · dirty 표시.
+test.describe("발행 요청 — 06-21 DOM 감사 반영", () => {
+  test("S17 — 200자 메모 · 9억 금액 · 긴 프로젝트 이름이 있어도 1280 · 768 · 375 · 320 가로 넘침 0, 메모는 말줄임 + title (D-1 · D-2)", async ({ browser }) => {
+    const { user, projectId, today } = await setupBoard({ write: true });
+    const longName = "2026 하반기 전국 순회 브랜드 체험 팝업스토어 운영 및 현장 프로모션 대행 (서울·부산·대구·광주·대전 5개 도시)";
+    await db.update(projects).set({ name: longName }).where(eq(projects.id, projectId));
+    const long = "긴메모".repeat(67).slice(0, 200);
+    // 금액은 9억(10자리 미만 — 320의 P1 세 열 예산 안). 13자리는 375까지만 들어간다(SUMMARY 후속 기록).
+    await seedRequest(projectId, user.userId, { desiredIssueDate: addDays(today, 20), amount: 900_000_000, memo: long });
+    await seedRequest(projectId, user.userId, { desiredIssueDate: today, amount: 8_000_000, memo: "짧은 메모" });
+
+    for (const width of [1280, 768, 375, 320]) {
+      const { page, context } = await openAs(browser, user, "/projects/issue-requests", width);
+      const list = page.locator("table", { has: page.locator("caption", { hasText: /^발행 요청$/ }) });
+      const memo = list.locator(`[title="${long}"]`).locator("visible=true");
+      await expect(memo, `${width}px`).toHaveCount(1);
+      const clipped = await memo.evaluate((node) => {
+        const clip = [node, ...Array.from(node.querySelectorAll<HTMLElement>("*"))].find((element) => getComputedStyle(element).textOverflow === "ellipsis");
+        return clip ? clip.scrollWidth > clip.clientWidth : false;
+      });
+      expect(clipped, `${width}px 메모 말줄임`).toBe(true);
+      const overflow = await page.evaluate(() => ({
+        doc: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        table: Math.max(...Array.from(document.querySelectorAll("main table")).map((table) => table.scrollWidth - (table.parentElement?.clientWidth ?? 0))),
+      }));
+      expect(overflow.doc, `${width}px 문서 넘침`).toBe(0);
+      expect(overflow.table, `${width}px 표 넘침`).toBeLessThanOrEqual(0);
+      await context.close();
+    }
+  });
+});

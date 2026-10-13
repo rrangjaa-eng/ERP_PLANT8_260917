@@ -165,6 +165,23 @@ evidence_amount를 새로 읽는 곳(06.5 칼럼 제거 때 함께 바꿀 것):
 - 테스트 준비: `test/e2e/payment-batch.spec.ts` `unreviewedDoc`(evidenceAmount = 공급가 직접 기록).
 pickPaymentAmount 새 사용 없음.
 
+## 검토 반영 (Opus 독립 검토 · 독립 DOM 감사, 2026-10-13)
+독립 검토 판정: 통과(막음 · 중간 0, 낮음 R-1 · 참고 R-2~R-4). DOM 감사: 결함 D-1 · D-2(중간) · D-3(낮음), 관찰 O-1~O-8. 지적마다 E2E(CI=true)를 먼저 빨갛게 본 뒤 고쳤다. 테스트는 `test/e2e/payment-batch.spec.ts` 「검토 반영 (06-20 독립 검토 · DOM 감사)」 다섯.
+
+| 지적 | 처리 | RED → GREEN | 커밋 |
+|---|---|---|---|
+| D-1 S3 768 넘침 107 | 번호 · 거래처에 S1과 같은 `collapseBelow: 1024`(증빙은 1024 미만 3차 문서 화면 링크 자리라 남김, 폰 접힌 줄에는 그대로) | 768 넘침 84 → 1280 · 768 넘침 0, 768 머리글에 번호 · 거래처 없음 | 2e39e87 |
+| D-2 `from=pay` 폰 1차 짓눌림 | 3차 묶음이 있으면 폰에서 버튼 줄 줄바꿈 + 묶음 order 1 · 100% 폭 → 1차 아래 자기 줄. PC 그대로. 고정 줄 높이는 FixedBarInset 실측 | 375 1차 글자 4줄 → 375 · 320 한 줄 · 행동 줄 폭 ≥ 절반 · 3차 높이 44 · 1차 아래 | 7129a31 |
+| R-1 비지급자 `from=pay` 3차 | `[id]/page.tsx`가 쿼리를 읽은 뒤 S1 보기와 같은 판정 `can(expenses.payments, write)`일 때만 되돌림 · 다음 확인 전을 싣는다 | 기안자 화면 `지급 대상으로` 1 → 결과 줄만 · 3차 0 | c72cfdf |
+| D-3 S3 320 넘침 15 | 지급일을 P2(폰 접힌 줄)로 — SYSTEM §7-3 「날짜는 접힌 줄 · P1 = 항목 + 금액 + 상태/행동」. 원인 실측: P1 최소 폭 합 제목 99(5em 바닥) + 지급일 59 + 이체액 159 = 317 > 표 자리 304. 5em 바닥(SYSTEM 이름 붙은 예외)과 숫자 nowrap은 바꾸지 않았다 | 320 넘침 15 → 375 · 320 넘침 0, 이체액 한 줄, 폰 머리글 항목 · 이체액 | 1c5dbe3 |
+| O-3 Phase 5 320 넘침 24 → 45 | 원인은 이 플랜이다(실측: 같은 행 상태 칸 `승인 10-14` 89px → `지급 완료 10-14` 110px nowrap, +21). 폰에서 `지급 완료` 칸만 낱말과 날짜 사이 줄바꿈 허용(UI-SPEC S3 「2행 09-19」), 덩어리 안은 nowrap · 넓으면 한 줄 그대로 | 같은 목록 지급 전 24 → 지급 뒤 45 → 지급 뒤 ≤ 지급 전(24) | b026602 |
+
+- **UI-SPEC에서 벗어남(D-3):** S3 「폰 P1 = 항목 · 이체액 · 지급일」 → 폰 P1 = 항목 · 이체액, 접힌 줄 = 번호 · 거래처 · 지급일 · 증빙. 13자리 이체액에서 셋을 다 지키면서 320 넘침 0(SYSTEM §6-0)을 맞출 길이 없었다(제목 5em 바닥 · 칸 여백 `ui/` · 숫자 nowrap이 모두 시스템 규칙). 700 이상은 그대로. `/design-review`에서 확인 받을 것.
+- **기록만(범위 밖):** Phase 5 목록 base의 320 넘침 24px(12자리 금액, 이 플랜 전부터) · S1 320 넘침 2px(13자리 지급 총액, 이 플랜 전부터).
+- **고치지 않음(참고 · 관찰):** R-2 `listPaidTeamOptions` 활성 팀 전체(06-15 S1 팀 select와 같은 동작, 범위 밖 팀은 행 0건) · R-3 `compareTargetKey` JS 문자열 비교 vs SQL 콜레이션(번호 꼴이 ASCII라 지금 차이 없음) · R-4 `listPaidMonthRows` 기간 제한 없는 읽기(30명 규모에서 문제 없음 — 지급 기록이 수만 건이면 SQL로 내릴 것) · O-1 S1 계좌 2줄로 PC 행이 높아짐 · O-2 S3 「프로젝트 · 항목」 한 줄 말줄임(스펙대로) · O-4 목록에 없는 달을 주소로 열면 월 select가 이번 달 · O-5 S5 계좌 dd 320에서 4줄(넘침 없음) · O-6 S3 오류 상태에 상태 select만 · O-7 빈 상태 문장꼴(UI-SPEC 원문) · O-8 폰 필터 select 40px(05 StatusFilter 몫).
+- **검증:** `pnpm lint` 0 · `pnpm typecheck` 0 · 통합(erp_test_0620f) payment-batch + leak-scan 4168 통과 · E2E(CI=true 빌드 · erp_0620f_test, desktop + mobile-375 `--no-deps`) payment-batch + payment-single + expense-list + expense-a11y + evidence-waive-prepaid + mobile-320-no-overflow + mobile-expense-320 124 통과 · 2 skipped(기존 조건부) · 전체 단위 303파일 4566 통과. 점검표 「검토 반영」 절 `- [ ]` 0.
+- 금지 경로 · `ui/` · tokens.css · package.json 변경 없음. 쓴 스킬: systematic-debugging · test-driven-development · design-gate · verification-before-completion.
+
 ## 쓴 스킬
 superpowers:test-driven-development(⓪) · design-gate(⓪, 점검표) · superpowers:systematic-debugging(Task 2 account 누락 · M-3 RED 미재현 원인) · superpowers:verification-before-completion(커밋 · 완료 전).
 
@@ -184,3 +201,4 @@ superpowers:test-driven-development(⓪) · design-gate(⓪, 점검표) · super
 ## Self-Check: PASSED
 - 파일: app/(app)/expenses/paid-list.tsx · docs/design/checks/2026-10-13-06-20-paid-list.md 있음.
 - 커밋: 1be59d6 · 249578b · 2a19476 · f094b18 · 9a92a30 · 3083e62 모두 `git log`에 있음.
+- 검토 반영 커밋: 2e39e87 · 7129a31 · c72cfdf · 1c5dbe3 · b026602 모두 `git cat-file -e` 확인. 반영 diff에 금지 경로 · evidence_amount 0.

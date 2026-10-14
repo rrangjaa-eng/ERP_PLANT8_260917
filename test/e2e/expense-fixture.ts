@@ -8,6 +8,7 @@ import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { setCustomerApproval } from "@/domain/quotes/revisions";
 import { approvalBasis } from "@/repositories/quote-revisions";
 import { insertVendor } from "@/repositories/vendors";
+import { testVendorAccount } from "../integration/fixtures/expenses";
 import { insertRole, setRoleArchived } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { createOrgUnit, createTeam } from "@/domain/org";
@@ -45,9 +46,14 @@ export async function setupExpenseE2E(): Promise<ExpenseE2E> {
   const suffix = randomUUID().slice(0, 6);
   const org = await setupLeaveOrg(today);
 
-  const client = await insertVendor(SYSTEM_VIEWER, { name: `E2E클라이언트-${suffix}`, normalizedName: `e2e클라이언트-${suffix}` });
+  const client = await insertVendor(SYSTEM_VIEWER, { name: `E2E클라이언트-${suffix}`, normalizedName: `e2e클라이언트-${suffix}`, ...testVendorAccount() });
   const vendorName = `E2E스테이지-${suffix}`;
-  const vendor = await insertVendor(SYSTEM_VIEWER, { name: vendorName, normalizedName: `e2e스테이지-${suffix}`, defaultEvidenceType: "tax_invoice" });
+  const vendor = await insertVendor(SYSTEM_VIEWER, {
+    name: vendorName,
+    normalizedName: `e2e스테이지-${suffix}`,
+    defaultEvidenceType: "tax_invoice",
+    ...testVendorAccount(),
+  });
 
   const projectName = `E2E지출-${suffix}`;
   const project = await createProject(org.drafter.viewer, {

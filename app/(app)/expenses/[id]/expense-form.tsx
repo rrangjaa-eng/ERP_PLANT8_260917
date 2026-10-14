@@ -1077,7 +1077,12 @@ function BlockLine({
   return (
     <span id="expense-blocked" className={styles.blockedLine}>
       <span className={tone}>{head}</span>
-      {href ? (
+      {href && block.target === "payeeAccount" ? (
+        // 06.5 V4: 지급처 계좌 등록은 새 탭 — 작성 중인 폼을 잃지 않는다.
+        <Link id={NEXT_STEP_ID} href={href} className={buttonLinkClassName("tertiary")} target="_blank" rel="noopener">
+          {label}
+        </Link>
+      ) : href ? (
         <Link id={NEXT_STEP_ID} href={href} className={buttonLinkClassName("tertiary")}>
           {label}
         </Link>

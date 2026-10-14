@@ -68,6 +68,7 @@ import { teamAtDate } from "@/domain/org";
 import { formatKstTime } from "@/domain/holidays/business-day";
 import { computeExpenseTax, snapshotSupplyDiffers, storedTaxResult, taxDriftText, taxLineText, type ExpenseTaxResult, type ExpenseTaxSource } from "@/domain/expenses/tax";
 import { buildExpenseDetailRows } from "@/domain/expenses/detail";
+import { BANK_TRANSFER_PAYMENT_METHOD, documentPayee, hasUsableAccount, PAYEE_ACCOUNT_MISSING_FIXABLE, type ExpensePayee } from "@/domain/expenses/payee";
 import { canSeeExpense, EXPENSE_DOCUMENT_KIND, ExpenseNotFoundError } from "@/domain/expenses/access";
 import { expenseRouteDocTeamId } from "@/domain/expenses/route-doc";
 import { expenseLineDoor, installmentSeqFor, type ExpenseLineDoor, type ExpenseLineDoorState } from "@/domain/expenses/line-door";
@@ -113,6 +114,7 @@ import {
   findExpenseApprovalStatus,
   findExpenseById,
   findExpenseByIdempotencyKey,
+  findPayeeAccountPresence,
   insertDraftIfAbsent,
   insertTeamDraftIfAbsent,
   listDraftsByLines,
@@ -1126,8 +1128,6 @@ export async function submitExpense(
         installmentSeq,
         submittedAt,
         updatedAt: deps?.now ?? new Date(),
-        // 견적 줄 문서의 거래처(결재 · 지급이 읽는 값)는 제출 판정 ⑤가 본 줄의 거래처로 맞춘다.
-        ...(line ? { vendorId: line.vendorId } : {}),
       },
       tx,
     );
@@ -1389,6 +1389,9 @@ async function loadSubmitFacts(
   const closedInstallments = chained ? await listClosedInstallmentsByLines(viewer, chained.chainLineIds, tx) : [];
   const door = line ? doorFor(line, numbered, row.id) : null;
   const evidenceCount = await countActiveByOwner(viewer, EXPENSE_DOCUMENT_KIND, row.id, tx);
+  // 06.5 결정 맥락 15 · D-6507: 돈 갈 곳은 문서 지급처 칸 — 견적 줄의 거래처를 읽지 않는다. 계좌이체면 그 지급처의 계좌 유무를 같은 tx로 본다.
+  const payee = documentPayee(row);
+  const account = payee && row.paymentMethod === BANK_TRANSFER_PAYMENT_METHOD ? await findPayeeAccountPresence(viewer, payee, tx) : undefined;
   const facts: ExpenseSubmitFacts = {
     customerApproval:
       row.quoteLineId && latest && projectRow && pre
@@ -1408,7 +1411,8 @@ async function loadSubmitFacts(
           closedBy: door?.state === "closed" && door.latest ? door.latest : null,
         }
       : null,
-    vendorId: line ? line.vendorId : row.vendorId,
+    payee,
+    payeeAccountMissing: account !== undefined && (account === null || !hasUsableAccount(account)),
     // 팀 비용 문서(프로젝트 없음) — ①~④는 건너뛰고 ⑥ 묶음에 종류 · 내용이 든다.
     teamCost: projectRow ? null : { kind: row.teamExpenseKind, content: row.content },
     supplyAmountKrw: row.supplyAmountKrw,
@@ -1426,11 +1430,22 @@ async function loadSubmitFacts(
   return { facts, line, numbered, door, closedInstallments };
 }
 
-// 다음 한 수가 페이지 이동인 막힘의 주소 — ① 담당 PM이면 프로젝트 상세(고객 승인 표시), ④ 가장 최근 제출 문서.
-function blockHref(target: ExpenseSubmitTarget | null, facts: ExpenseSubmitFacts, projectId: string | null): string | null {
+// 다음 한 수가 페이지 이동인 막힘의 주소 — ① 담당 PM이면 프로젝트 상세(고객 승인 표시), ④ 가장 최근 제출 문서,
+// 06.5 V4 지급처 계좌 없음이면 고칠 수 있는 사람에게만 그 지급처의 계좌 칸(권한 판정은 호출자가 한 번 — canFixPayee).
+function blockHref(target: ExpenseSubmitTarget | null, facts: ExpenseSubmitFacts, projectId: string | null, canFixPayee: boolean): string | null {
   if (target === "customerApproval" && projectId && facts.customerApproval?.actorIsAssignedPm) return `/projects/${projectId}`;
   if (target === "openLatest" && facts.line?.closedBy) return `/expenses/${facts.line.closedBy.id}`;
+  if (target === "payeeAccount" && canFixPayee && facts.payee)
+    return facts.payee.kind === "vendor" ? `/admin/vendors?editId=${facts.payee.id}` : `/admin/people/${facts.payee.id}?editAccount=1`;
   return null;
+}
+
+// 06.5 D-6507: 지급처 계좌를 고칠 수 있는 사람 — 거래처는 거래처 관리 쓰기, 직원은 지급 처리 쓰기 ∧ 사람 보기
+// (06.5-04 canManagePayoutAccount와 같은 조건 — 04는 다른 PR이라 import하지 않는다; 06.5-06이 하나로 합친다).
+async function canFixPayeeAccount(viewer: Viewer, payee: ExpensePayee): Promise<boolean> {
+  if (!payee) return false;
+  if (payee.kind === "vendor") return can(viewer, "admin.vendors", "write");
+  return (await can(viewer, "expenses.payments", "write")) && (await can(viewer, "admin.people", "view"));
 }
 
 // ── 미리보기(05-06 — 쓰기 없음) ─────────────────────────────────────────
@@ -1464,7 +1479,12 @@ export async function previewExpense(viewer: Viewer, input: { expenseId: string;
   let block: ExpenseSubmitBlock | null = null;
   if (!decision.allowed) {
     const target = await nextActionTarget(facts);
-    block = { reason: decision.reason, target, href: blockHref(target, facts, projectRow?.id ?? null) };
+    const canFixPayee = target === "payeeAccount" && (await canFixPayeeAccount(viewer, facts.payee));
+    block = {
+      reason: canFixPayee ? PAYEE_ACCOUNT_MISSING_FIXABLE : decision.reason,
+      target,
+      href: blockHref(target, facts, projectRow?.id ?? null, canFixPayee),
+    };
   }
 
   const fieldErrors: ExpensePreviewDto["fieldErrors"] = {};

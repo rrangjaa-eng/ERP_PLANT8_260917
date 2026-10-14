@@ -26,7 +26,7 @@ import {
 } from "@/domain/expenses";
 import { GateBlockedError } from "@/domain/rules/gate";
 import { insertVendor } from "@/repositories/vendors";
-import { addApprovedRevision, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
+import { addApprovedRevision, setupExpenseProject, submitReadyDraft, testVendorAccount, type ExpenseFixture } from "./fixtures/expenses";
 import { listMyInbox } from "@/domain/approvals";
 import { listLineDoors } from "@/domain/expenses";
 import { getDocumentKind } from "@/domain/approvals/kinds";
@@ -434,7 +434,7 @@ describe("회수 뒤 같은 번호 다시 제출", () => {
 
   it("(F6) 회수된 팀 비용 문서에는 견적 줄을 줄 수 없다", async () => {
     const fx = await setupExpenseProject();
-    const vendor = await insertVendor(SYSTEM_VIEWER, { name: "회식집", normalizedName: `회식집-${randomUUID()}`, defaultEvidenceType: "tax_invoice" });
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name: "회식집", normalizedName: `회식집-${randomUUID()}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount() });
     const { expenseId } = await createTeamExpenseDraft(fx.pm, {
       idempotencyKey: randomUUID(),
       fields: { teamExpenseKind: "team_overhead", usageDate: "2026-09-26", content: "팀 회식" },
@@ -505,7 +505,7 @@ describe("본인 승인", () => {
   it("팀장이 기안하면 1단 후보는 기안자 한 사람 · 가능 행동 승인 + 회수(반려 없음) · 승인하면 self_approved · 다음 단계로", async () => {
     const fx = await setupExpenseProject();
     // 팀장은 담당 프로젝트가 없어 팀 비용 문서로 기안한다(결재선 판정은 문서 종류의 설정 하나).
-    const vendor = await insertVendor(SYSTEM_VIEWER, { name: "회식집", normalizedName: `회식집-${randomUUID()}`, defaultEvidenceType: "tax_invoice" });
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name: "회식집", normalizedName: `회식집-${randomUUID()}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount() });
     const { expenseId } = await createTeamExpenseDraft(fx.lead, {
       idempotencyKey: randomUUID(),
       fields: { teamExpenseKind: "team_overhead", usageDate: "2026-09-26", content: "팀 회식" },

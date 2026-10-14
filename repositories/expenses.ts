@@ -113,6 +113,23 @@ export async function findExpenseApprovalStatuses(viewer: Viewer, input: { docum
   return new Map(rows.map((row) => [row.documentId, row.status]));
 }
 
+// 06.5 D-6507(UI-SPEC V4): 지급처(거래처 · 직원)의 계좌 유무 — 은행 칸과 「암호문 있음」 불리언만 읽는다(평문 · 암호문 문자열 · 복호화 없음).
+// 행이 없으면 null. 제출 트랜잭션 안에서는 tx로 읽는다(미리보기와 같은 판정).
+export async function findPayeeAccountPresence(
+  viewer: Viewer,
+  payee: { kind: "vendor" | "user"; id: string },
+  tx: DbOrTx = db,
+): Promise<{ bank: string | null; hasNumber: boolean } | null> {
+  void viewer;
+  const table = payee.kind === "vendor" ? vendors : users;
+  const [row] = await tx
+    .select({ bank: table.accountBank, hasNumber: sql<boolean>`${table.accountNumberEncrypted} is not null` })
+    .from(table)
+    .where(eq(table.id, payee.id))
+    .limit(1);
+  return row ?? null;
+}
+
 export type ExpenseDraftFields = Partial<
   Pick<
     ExpenseRow,
@@ -249,7 +266,6 @@ export async function saveSubmissionSnapshot(
     installmentSeq: number | null;
     submittedAt: Date;
     updatedAt?: Date;
-    vendorId?: string | null;
   },
   tx: DbOrTx,
 ): Promise<void> {
@@ -257,7 +273,6 @@ export async function saveSubmissionSnapshot(
     .update(expenses)
     .set({
       ...input.taxSnapshot,
-      ...(input.vendorId !== undefined ? { vendorId: input.vendorId } : {}),
       installment: input.installment,
       installmentSeq: input.installmentSeq,
       submittedAt: input.submittedAt,

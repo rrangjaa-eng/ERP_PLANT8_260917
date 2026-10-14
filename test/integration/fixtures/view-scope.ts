@@ -8,6 +8,7 @@ import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { insertRole } from "@/repositories/roles";
 import { insertVendor } from "@/repositories/vendors";
+import { testVendorAccount } from "./expenses";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import { makePerson, orgUnitIdByName, teamIdByName } from "../approvals-fixtures";
@@ -70,7 +71,7 @@ export async function buildViewScopeWorld(): Promise<ViewScopeWorld> {
   };
   const teamLead = await makePerson("팀장", TEAM_LEAD_ROLE_ID, "기획1팀");
 
-  const client = await insertVendor(SYSTEM_VIEWER, { name: `클라이언트-${randomUUID()}`, normalizedName: `클라이언트-${randomUUID()}` });
+  const client = await insertVendor(SYSTEM_VIEWER, { name: `클라이언트-${randomUUID()}`, normalizedName: `클라이언트-${randomUUID()}`, ...testVendorAccount() });
   const subcategory = (await firstSelectableSubcategory()).value;
 
   const make = async (key: ViewScopeProject, teamId: string, pm: Viewer) => {

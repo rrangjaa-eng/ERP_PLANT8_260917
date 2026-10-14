@@ -8,6 +8,7 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { seoulToday } from "@/lib/dates";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
+import { insertVendor } from "@/repositories/vendors";
 import { delayServerActions, loginPage, waitForHydration, type Person } from "./leave-org";
 import { setupExpenseE2E, submitLineExpense, uniqueReceipt, type ExpenseE2E, type LineKey } from "./expense-fixture";
 
@@ -327,6 +328,38 @@ test.describe("반려된 번호 있는 문서의 견적 줄 바꾸기 (05-09)", 
 });
 
 // 05 /review C1(adversarial F1): 기안자의 지출결의 쓰기 권한이 그 뒤 빠지면 자기 작성 중 문서는 오류 화면이 아니라 읽기 화면이다.
+// 06.5 D-6507(UI-SPEC V4): 계좌이체인데 지급처에 계좌가 없으면 1차가 막히고 이유는 담당을 적는다(고칠 권한 없는 기안자 — 3차 없음).
+test.describe("지급처 계좌 없음 (06.5 V4)", () => {
+  test("계좌 없는 거래처의 계좌이체 팀 비용 문서: 1차 aria-disabled + `지급처 계좌 없음 · 계좌 등록은 경영관리` · 3차 없음", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const suffix = randomUUID().slice(0, 6);
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E계좌없음-${suffix}`, normalizedName: `e2e계좌없음-${suffix}`, defaultEvidenceType: "tax_invoice" });
+    const { expenseId } = await createTeamExpenseDraft(fx.pm.viewer, {
+      idempotencyKey: randomUUID(),
+      fields: {
+        teamExpenseKind: "team_overhead",
+        usageDate: seoulToday(),
+        content: `계좌없음 회식-${suffix}`,
+        vendorId: vendor.id,
+        supply: { currency: "KRW", amount: 100_000, fxRate: 1 },
+        evidenceType: "tax_invoice",
+        paymentMethod: "bank_transfer",
+      },
+    });
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await page.goto(`/expenses/${expenseId}`);
+    await waitForHydration(page.getByRole("button", { name: /^임시 저장/ }));
+
+    const submit = page.getByRole("button", { name: /^지출결의 제출/ });
+    await expect(submit).toHaveAttribute("aria-disabled", "true");
+    const describedBy = (await submit.getAttribute("aria-describedby")) ?? "";
+    expect(describedBy).not.toBe("");
+    await expect(page.locator(`[id="${describedBy}"]`)).toHaveText("지급처 계좌 없음 · 계좌 등록은 경영관리", { timeout: 10_000 });
+    await expect(page.locator("#expense-next-step")).toHaveCount(0);
+    await page.context().close();
+  });
+});
+
 test.describe("쓰기 권한이 빠진 기안자의 작성 중 문서 (05 /review C1)", () => {
   test("오류 화면 없이 문서 읽기 화면이 서고 폼(임시 저장 · 제출)이 없다", async ({ browser, baseURL }) => {
     const suffix = randomUUID().slice(0, 8);

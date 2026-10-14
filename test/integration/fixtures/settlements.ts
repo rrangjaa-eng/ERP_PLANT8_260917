@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { CEO_ROLE_ID, DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { insertVendor } from "@/repositories/vendors";
+import { testVendorAccount } from "./expenses";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { changeProjectStatus } from "@/domain/projects/status";
@@ -43,7 +44,7 @@ export async function makeSettlementPeople(): Promise<SettlementPeople> {
 
 export async function setupSettlementProject(people?: SettlementPeople, name = "가을 팝업"): Promise<SettlementFixture> {
   const who = people ?? (await makeSettlementPeople());
-  const client = await insertVendor(SYSTEM_VIEWER, { name: `클라이언트-${randomUUID()}`, normalizedName: `클라이언트-${randomUUID()}` });
+  const client = await insertVendor(SYSTEM_VIEWER, { name: `클라이언트-${randomUUID()}`, normalizedName: `클라이언트-${randomUUID()}`, ...testVendorAccount() });
   const project = await createProject(who.pm, {
     clientId: client.id,
     teamId: await teamIdByName("기획1팀"),

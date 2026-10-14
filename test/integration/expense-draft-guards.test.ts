@@ -24,7 +24,7 @@ import { GateBlockedError } from "@/domain/rules/gate";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { insertVendor, setVendorArchived, setVendorHidden } from "@/repositories/vendors";
 import { upsertPermission } from "@/repositories/permissions";
-import { setupExpenseProject, submitReadyDraft } from "./fixtures/expenses";
+import { setupExpenseProject, submitReadyDraft, testVendorAccount } from "./fixtures/expenses";
 
 // 05 /review 배치 A — 임시 저장 경로의 가드(거래처 바꿔치기 · 쓰기 권한).
 
@@ -99,15 +99,20 @@ describe("거래처 바꿔치기 (A1 · adversarial F1)", () => {
     ).rejects.toBeInstanceOf(ExpenseNotFoundError);
   });
 
-  it("제출하면 견적 줄 문서의 거래처는 줄의 거래처로 맞춰진다", async () => {
+  it("제출해도 견적 줄 문서의 지급처는 문서 칸 그대로다(결정 맥락 15)", async () => {
     const fx = await setupExpenseProject();
     const expenseId = await lineDraft(fx.pm, fx.lines.withVendor);
-    // 고치기 전 경로로 어긋난 행(줄 거래처 ≠ 문서 거래처)을 재현한다.
-    const drifted = await vendorNamed("어긋난거래처");
+    // 줄 거래처 ≠ 문서 거래처인 행 — 돈 갈 곳은 문서 칸이고 제출이 줄 거래처로 덮지 않는다.
+    const drifted = await insertVendor(SYSTEM_VIEWER, {
+      name: "어긋난거래처",
+      normalizedName: `어긋난거래처-${randomUUID()}`,
+      defaultEvidenceType: "tax_invoice",
+      ...testVendorAccount(),
+    });
     await db.update(expenses).set({ vendorId: drifted.id }).where(eq(expenses.id, expenseId));
 
     expect(await submitReadyDraft(fx.pm, expenseId)).toMatchObject({ kind: "submitted" });
-    expect((await expenseRow(expenseId)).vendorId).toBe(fx.stageOneId);
+    expect((await expenseRow(expenseId)).vendorId).toBe(drifted.id);
   });
 });
 

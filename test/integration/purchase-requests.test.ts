@@ -1488,6 +1488,43 @@ describe("요청 취소(06-14 — Q2 · O-9 · T-06-67)", () => {
     expect((await statusOf(other.id))?.status).toBe("cancelled");
   });
 
+  // U1-1(06 교차 검토): 완료 전 점검이 `신청됨` 요청을 매칭으로 센다 — 완료 뒤 취소가 통과하면 강행 허용 없이 미매칭 줄이 남는다.
+  it("[U1-1] 완료 프로젝트 줄 요청의 취소 → `완료 · 견적 줄 잠김`(본인 · 구매 권한자 모두) · 요청 `신청됨` · 로그 0", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine);
+    await setStatus(fx.projectId, "completed");
+    const own = await caught(cancelAs(fx.pm, created.id));
+    expect(own).toBeInstanceOf(CompletedProjectError);
+    expect((own as Error).message).toBe("완료 · 견적 줄 잠김");
+    const buyer = await purchaser();
+    expect(await caught(cancelAs(buyer, created.id, "필요 없음"))).toBeInstanceOf(CompletedProjectError);
+    expect(await statusOf(created.id)).toMatchObject({ status: "requested", cancelledBy: null });
+    expect(await statusLogs(created.id)).toHaveLength(0);
+  });
+
+  it("[U1-1] 취소 사전 조회 뒤 풀 밖 연결이 프로젝트 행을 잡고 `completed`로 커밋 → 잠근 행 기준 `CompletedProjectError` · 요청 `신청됨` · 로그 0", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine);
+    const pre = await precheckPurchaseCancel(fx.pm, { id: created.id });
+    const version = await requestVersion(created.id);
+    const client = new Client({ connectionString: process.env.DATABASE_URL });
+    await client.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT id FROM projects WHERE id = $1 FOR UPDATE", [fx.projectId]);
+      await client.query("UPDATE projects SET status = 'completed' WHERE id = $1", [fx.projectId]);
+      const cancelling = caught(cancelPurchaseRequest(fx.pm, { id: created.id, version }, pre));
+      await waitForLockWaiter(pool);
+      await client.query("COMMIT");
+      expect(await cancelling).toBeInstanceOf(CompletedProjectError);
+    } finally {
+      await client.query("ROLLBACK").catch(() => {});
+      await client.end();
+    }
+    expect((await statusOf(created.id))?.status).toBe("requested");
+    expect(await statusLogs(created.id)).toHaveLength(0);
+  });
+
   it("액션 — 본인 취소 → 번호 · version 반환 · 되돌리기 액션 → `신청됨`(같은 서버 판정)", async () => {
     const fx = await purchaseProject();
     const created = await request(fx, fx.onlineLine);
@@ -1809,6 +1846,20 @@ describe("구매 요청 목록 마감(06-14)", () => {
     expect((await loadPurchaseCompletion(buyer, others ?? ""))?.cancelBranch).toBe("others");
     expect((await loadPurchaseCompletion(buyer, done ?? ""))?.cancelBranch).toBeNull();
     expect(await loadPurchaseCompletion(requester, others ?? "")).toBeNull();
+  });
+
+  // U1-1: 서버가 완료 프로젝트 줄 요청의 취소를 거부한다 — 카드 사용 삭제(완료 프로젝트 건은 권리 없음 · U-4)처럼 `요청 취소`를 내놓지 않는다.
+  it("[U1-1] 완료 프로젝트 줄 `신청됨` 요청 → 목록 `cancelBranches`에 없음 · S13 패널 `cancelBranch` null(구매 완료 패널은 그대로)", async () => {
+    const fx = await purchaseProject();
+    const created = await request(fx, fx.onlineLine);
+    const buyer = await purchaser();
+    expect((await listPurchaseRequests(fx.pm, { status: "all" }, seoulToday())).cancelBranches[created.id]).toBe("own");
+    await setStatus(fx.projectId, "completed");
+    expect((await listPurchaseRequests(fx.pm, { status: "all" }, seoulToday())).cancelBranches[created.id]).toBeUndefined();
+    expect((await listPurchaseRequests(buyer, { status: "all" }, seoulToday())).cancelBranches[created.id]).toBeUndefined();
+    const panel = await loadPurchaseCompletion(buyer, created.id);
+    expect(panel?.statusReason).toBeNull();
+    expect(panel?.cancelBranch).toBeNull();
   });
 
   it("합계 줄 — 보기의 건수 · 예상 금액 합은 목록과 같은 범위 안 행만(남의 요청 없음) · `전체`는 상태 가리지 않는다", async () => {

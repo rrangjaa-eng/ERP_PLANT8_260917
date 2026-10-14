@@ -37,8 +37,9 @@ export function PaidLoadError() {
   return <ListEmpty message="지급 완료 목록 불러오지 못함" action={{ label: "다시 시도", onClick: () => router.refresh() }} tone="error" />;
 }
 
-// DR-4 · O-21(UI-SPEC S1 「제자리 증빙 확인」 「성공(S3)」): 지급 권한자에게만 증빙 칸 3차 `증빙 확인`(`확인 전`만). ≥1024 · 증빙 금액 있음은
-// 06-17 EvidenceConfirmDialog(행 version = rowVersion — 새 판정 · 새 액션 없음), 금액이 빈 확인 전과 1024 미만은 문서 화면 링크, 폰은 행 링크(3차 없음).
+// DR-4 · O-21(UI-SPEC S1 「제자리 증빙 확인」 「성공(S3)」): 지급 권한자에게만 증빙 칸 3차 `증빙 확인`(`확인 전`만). ≥1024는
+// 06-17 EvidenceConfirmDialog(행 version = rowVersion — 새 판정 · 새 액션 없음), 1024 미만은 문서 화면 링크, 폰은 행 링크(3차 없음).
+// 06.5 D-6520 — 빈 증빙 금액이 더는 막지 않아 R10-F2 갈래(문서 화면 링크)가 없다(DTO 칸은 06.5-02가 지운다).
 // 성공하면 응답 상태로 그 행 증빙 칸을 덮고 3차가 사라지므로 포커스 = 그 행 번호 링크(§7-17). 목록은 다시 받는다.
 export function PaidList({ rows, amountColumn, canConfirm }: { rows: PaidScreenRow[]; amountColumn: boolean; canConfirm: boolean }) {
   const router = useRouter();
@@ -72,7 +73,7 @@ export function PaidList({ rows, amountColumn, canConfirm }: { rows: PaidScreenR
   function evidenceAction(row: PaidScreenRow) {
     if (!canConfirm || phone || row.evidenceStatus !== "확인 전") return null;
     const label = `${row.number ?? ""} 증빙 확인`.trim();
-    if (wide && row.evidenceAmountEntered === true && typeof row.version === "number") {
+    if (wide && typeof row.version === "number") {
       const version = row.version;
       return (
         <Button variant="tertiary" aria-label={label} data-cell-action="" onClick={() => setEvidenceTarget({ id: row.id, version })}>

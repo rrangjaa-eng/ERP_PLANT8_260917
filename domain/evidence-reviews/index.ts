@@ -65,7 +65,12 @@ export function supplyCorrectionKind(input: { current: Money | null; corrected: 
 }
 
 // 「Error — 공급가액 고침 칸」(V8 상한 오류) — 액션이 오류 종류로 가려 고침 칸 오류 자리에 세운다(문구 비교 없음).
-export class SupplyCorrectionCapError extends UserFacingError {}
+// 문구는 확인 · 미리보기가 같은 한 곳 — 남은 실행가 글자는 호출자가 제출 문구 함수(remainingText)로 만든다.
+export class SupplyCorrectionCapError extends UserFacingError {
+  constructor(remainingLabel: string) {
+    super(`남은 실행가 ${remainingLabel} 넘음 · 공급가액 고치기`);
+  }
+}
 
 // ── 증빙 상태 다섯 값 ──────────────────────────────────────────────────
 // 면제 기록 있음 → 면제(선결제를 이긴다) / 증빙 있음 · 확인 기록 없음 → 확인 전 / 증빙 있음 · confirmed → 확인됨 /
@@ -225,7 +230,7 @@ export async function confirmEvidence(
         const { remainingText } = await import("@/domain/expenses");
         const columns = moneyToColumns({ currency: current?.currency ?? "KRW", amount: corrected, fxRate: current?.fxRate ?? 1 });
         const cap = await payments.supplyCorrectionCap(viewer, locked, moneyFromRow(columns), tx);
-        if (cap?.exceeds) throw new SupplyCorrectionCapError(`남은 실행가 ${remainingText(cap.remaining, cap.basis)} 넘음 · 공급가액 고치기`);
+        if (cap?.exceeds) throw new SupplyCorrectionCapError(remainingText(cap.remaining, cap.basis));
         if (!(await updateCorrectedSupply(viewer, { expenseId: locked.id, columns }, tx))) throw new EvidenceReviewNotFoundError();
         after = columns.amountKrw;
       }

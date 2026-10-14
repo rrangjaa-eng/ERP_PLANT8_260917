@@ -7,6 +7,7 @@ import {
   UnknownActionTypeError,
 } from "@/domain/action-log/record";
 import type { Viewer } from "@/domain/viewer";
+import { ACTION_LOG_OPTIONAL_TYPES } from "@/domain/settings/keys";
 
 const viewer: Viewer = { id: "u1", roleId: "role-pm" };
 
@@ -146,6 +147,17 @@ describe("recordAction (OPS-05)", () => {
       { actionType: "cert_view", entity: "cert_submission", entityId: "s1" },
       { appendActionLog, isActionTypeEnabled: () => Promise.resolve(false) },
     );
+    expect(appendActionLog).toHaveBeenCalledTimes(1);
+  });
+
+  // 06.5 D-6511(10/8 카드 · pr-c-cso.md:69-71 CSO-6 · 06-12-review.md:76-84 I-4): 지급 처리 · 구매 처리는 돈이 나간 기록이라 끌 수 없다.
+  it.each(["payment_process", "purchase_process"])("%s가 끌 수 없는 종류이고 켜기 목록 저장 값에서 걸러지며 설정에서 빼도 기록된다(D-6511)", async (type) => {
+    expect(ALWAYS_ON_ACTION_TYPES as readonly string[]).toContain(type);
+    expect(ACTION_LOG_OPTIONAL_TYPES.default as readonly string[]).not.toContain(type);
+    expect(ACTION_LOG_OPTIONAL_TYPES.schema.parse([type, "login"])).toEqual(["login"]);
+
+    const appendActionLog = vi.fn().mockResolvedValue(undefined);
+    await recordAction(viewer, { actionType: type, entity: "expense", entityId: "e1" }, { appendActionLog, isActionTypeEnabled: () => Promise.resolve(false) });
     expect(appendActionLog).toHaveBeenCalledTimes(1);
   });
 });

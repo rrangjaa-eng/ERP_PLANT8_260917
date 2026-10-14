@@ -144,15 +144,15 @@ describe("증빙 확인 트레이서 (06-06 Task 1)", () => {
     expect(result?.data).toMatchObject({ version: doc.version + 1, evidenceStatus: "확인됨", actionRow: { row: "P4" } });
   });
 
-  it("getPaymentView — 확인 전 문서는 P2(1차 `증빙 확인` · 3차 `바꾸기`)와 증빙 상태 · 증빙 금액 · 입력자를 싣는다", async () => {
+  it("getPaymentView — 확인 전 문서는 P2(1차 확인 · 3차 `바꾸기`)와 증빙 상태를 싣고 증빙 금액 · 입력자 칸은 없다(06.5 D-6520)", async () => {
     const payer = await makePayer();
     const doc = await withEvidenceAmount(await approvedExpenseWithEvidence(await setupExpenseProject()), 12_400_000);
 
     const view = await getPaymentView(payer, doc.expenseId);
     expect(view?.row).toMatchObject({ row: "P2", primary: "confirm", tertiary: "change" });
     expect(view?.evidenceStatus).toBe("확인 전");
-    expect(view?.evidenceAmountKrw).toBe(12_400_000);
-    expect(view?.evidenceAmountDisplay).toMatchObject({ valueKrw: 12_400_000, enteredByName: "박서연" });
+    expect(view && "evidenceAmountKrw" in view).toBe(false);
+    expect(view && "evidenceAmountDisplay" in view).toBe(false);
 
     const confirmed = await confirmEvidence(payer, { expenseId: doc.expenseId, version: doc.version });
     const after = await getPaymentView(payer, doc.expenseId);

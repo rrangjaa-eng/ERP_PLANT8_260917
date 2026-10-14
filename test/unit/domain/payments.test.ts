@@ -61,18 +61,19 @@ function vatInput(amountKrw: number, transferKrw?: number, rule: TaxRule = VAT_R
   return { amount: { source: "supply" as const, amountKrw }, taxRule: rule, applyOpts: OPTS, incomeType: "other" as const, transferKrw };
 }
 
-describe("pickPaymentAmount (R-4 · E-7)", () => {
+// 06.5 D-6520(사용자 카드 10/13 23:44 KST): 지급 금액은 공급가 하나 — 증빙 금액 칸은 금액 원천이 아니다.
+describe("pickPaymentAmount (D-6520)", () => {
+  it("파일 있음 · 증빙 금액 90,000 → 공급가 100,000", () => {
+    expect(pickPaymentAmount({ hasLiveEvidence: true, evidenceAmountKrw: 90_000, supplyAmountKrw: 100_000 })).toEqual({
+      source: "supply",
+      amountKrw: 100_000,
+    });
+  });
+
   it("파일 0 · 증빙 금액만 → 공급가", () => {
     expect(pickPaymentAmount({ hasLiveEvidence: false, evidenceAmountKrw: 900_000, supplyAmountKrw: 1_000_000 })).toEqual({
       source: "supply",
       amountKrw: 1_000_000,
-    });
-  });
-
-  it("파일 있음 · 증빙 금액 → 증빙 금액", () => {
-    expect(pickPaymentAmount({ hasLiveEvidence: true, evidenceAmountKrw: 900_000, supplyAmountKrw: 1_000_000 })).toEqual({
-      source: "evidence",
-      amountKrw: 900_000,
     });
   });
 
@@ -85,10 +86,10 @@ describe("pickPaymentAmount (R-4 · E-7)", () => {
 });
 
 describe("decidePayable", () => {
-  it("금액은 pickPaymentAmount 결과만 쓴다 — 증빙 금액 원천이면 증빙 금액으로 셈한다", async () => {
+  it("금액은 pickPaymentAmount 결과만 쓴다 — 증빙 금액이 남아 있어도 공급가로 셈한다(D-6520)", async () => {
     const amount = pickPaymentAmount({ hasLiveEvidence: true, evidenceAmountKrw: 500_000, supplyAmountKrw: 1_000_000 });
     const result = await decidePayable({ amount, taxRule: VAT_RULE, applyOpts: OPTS, incomeType: "other" }, RATES);
-    expect(result.payableKrw).toBe(550_000);
+    expect(result.payableKrw).toBe(1_100_000);
   });
 
   const SAME_AS_05: [string, TaxRule, string][] = [
@@ -330,19 +331,10 @@ describe("judgeLockedPayment (잠금 뒤 판정)", () => {
     await expect(judge({ locked: { ...ROW, evidenceDate: "2026-09-01" }, expectedPayableKrw: 1_100_000 })).rejects.toBeInstanceOf(BasisChangedSignal);
   });
 
-  it("금액 원천 바뀜(R-4) — 사전 조회 때 살아 있던 증빙이 잠금 뒤 무효면 공급가 기준 새 값으로 PayableChangedError", async () => {
+  it("잠금 뒤 증빙이 무효가 되어도 금액은 공급가 그대로 — 증빙 금액이 남은 문서도 거부하지 않는다(D-6520)", async () => {
     const pre = preOf(ROW, true);
-    expect(pre.amount).toEqual({ source: "evidence", amountKrw: 900_000 });
-    const error = await judge({ pre, lockedHasEvidence: false, expectedPayableKrw: 990_000 }).catch((caught: unknown) => caught);
-    expect(error).toBeInstanceOf(PayableChangedError);
-    expect((error as PayableChangedError).payableKrw).toBe(1_100_000);
-  });
-
-  it("금액 원천만 바뀌고(증빙 금액 = 공급가) 지급 총액이 같으면 거부하지 않는다(리뷰 P3-3)", async () => {
-    const row = { ...ROW, evidenceAmount: 1_000_000 };
-    const pre = preOf(row, true);
-    expect(pre.amount).toEqual({ source: "evidence", amountKrw: 1_000_000 });
-    const result = await judge({ pre, locked: row, lockedHasEvidence: false, expectedPayableKrw: 1_100_000 });
+    expect(pre.amount).toEqual({ source: "supply", amountKrw: 1_000_000 });
+    const result = await judge({ pre, lockedHasEvidence: false, expectedPayableKrw: 1_100_000 });
     expect(result.payable.payableKrw).toBe(1_100_000);
   });
 

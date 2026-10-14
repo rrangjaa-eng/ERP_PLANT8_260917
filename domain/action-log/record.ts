@@ -123,6 +123,10 @@ export const ALWAYS_ON_ACTION_TYPES: CoreActionType[] = [
   "project_member_change",
   // 06.2-09(/cso CSO-2 · 사용자 결정 2026-10-08 「못 끄게」): 권한 변경(계급 보는 범위 · 업무 범위 · 사람 계급)은 행 범위를 넓히는 행위라 끌 수 없다
   "permission_change",
+  // 06.5 D-6511(10/8 카드 · pr-c-cso.md:69-71 CSO-6): 지급 처리는 돈이 나간 기록이라 끌 수 없다
+  "payment_process",
+  // 06.5 D-6511(06-12-review.md:76-84 I-4): 구매 처리는 카드 사용을 만드는 돈 기록이라 끌 수 없다
+  "purchase_process",
 ];
 
 export class UnknownActionTypeError extends UserFacingError {}

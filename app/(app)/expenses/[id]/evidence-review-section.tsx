@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useId, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { useRouter } from "next/navigation";
 import type { PaymentViewDto } from "@/domain/payments";
 import { CANCEL_REASON_REQUIRED, SUPPLY_PAID_LOCKED_LINE } from "@/domain/payments/action-row";
@@ -32,7 +32,7 @@ export type DocSupply = { currency: string; amount: number; fxRate: number; amou
 // 공급가액 고침 칸 — 3차 `바꾸기`(P2)로 연다. raw는 쉼표를 뗀 칸 글자, inputError는 칸이 거절한 입력(기안자 칸과 같은 문구), error는 서버 칸 오류.
 export type EvidenceEdit = { raw: string; inputError: string | null; error: string | null };
 
-type EvidenceEditState = { edit: EvidenceEdit | null; setEdit: (next: EvidenceEdit | null) => void; supply: DocSupply | null };
+type EvidenceEditState = { edit: EvidenceEdit | null; setEdit: Dispatch<SetStateAction<EvidenceEdit | null>>; supply: DocSupply | null };
 
 const EvidenceEditContext = createContext<EvidenceEditState | null>(null);
 
@@ -224,10 +224,10 @@ export function EvidenceReviewBlock({ waiveSubtitle = "" }: { waiveSubtitle?: st
   const input = correctedSupplyInput(view, edit, supply);
   const paidRow = view.row?.row === "P5" || view.row?.row === "P6";
 
-  // 고치는 동안 서버가 새 공급가로 다시 셈한 계산 한 줄. 오는 동안 이전 값은 `--text-faint`(빈칸 · 뼈대 없음 — S4 loading).
-  // 06.5-07 Task 1은 원화 문서만 다시 셈한다(지금 미리보기 입력이 원화 금액) — 외화 고침의 다시 셈은 Task 2가 미리보기 입력을 공급가로 바꾼 뒤 잇는다.
+  // 고치는 동안 서버가 새 공급가(문서 통화)로 다시 셈한 계산 한 줄. 오는 동안 이전 값은 `--text-faint`(빈칸 · 뼈대 없음 — S4 loading).
+  // 미리보기가 상한을 넘으면 같은 문구의 칸 오류가 미리 선다(그사이 칸 값이 바뀌었으면 버린다).
   const [preview, setPreview] = useState<Preview | null>(null);
-  const wanted = supply?.currency === "KRW" && input.corrected !== undefined && Number.isInteger(input.corrected) && input.corrected > 0 ? input.corrected : null;
+  const wanted = input.corrected !== undefined && input.corrected > 0 ? input.corrected : null;
   const payDate = fields.payDate || view.payDate || "";
   useEffect(() => {
     if (wanted === null || view.expenseId === undefined || payDate === "") return;
@@ -237,11 +237,17 @@ export function EvidenceReviewBlock({ waiveSubtitle = "" }: { waiveSubtitle?: st
       void (async () => {
         let result: Awaited<ReturnType<typeof previewPayableAction>> | undefined;
         try {
-          result = await previewPayableAction({ expenseId, payDate, evidenceAmountKrw: wanted });
+          result = await previewPayableAction({ expenseId, payDate, correctedSupplyAmount: wanted });
         } catch {
           result = undefined;
         }
-        if (cancelled || !result?.data) return;
+        if (cancelled) return;
+        const capError = result?.validationErrors?.correctedSupplyAmount?._errors?.[0];
+        if (capError) {
+          setEdit((prev) => (prev && parseNumberInput(prev.raw) === wanted ? { ...prev, error: capError } : prev));
+          return;
+        }
+        if (!result?.data) return;
         setPreview({ amount: wanted, taxLine: result.data.evidenceTaxLine ?? null });
       })();
     }, 250);
@@ -249,7 +255,7 @@ export function EvidenceReviewBlock({ waiveSubtitle = "" }: { waiveSubtitle?: st
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [wanted, view.expenseId, payDate]);
+  }, [wanted, view.expenseId, payDate, setEdit]);
   const usePreview = wanted !== null && preview !== null;
   const stale = wanted !== null && preview?.amount !== wanted;
   // 지급 뒤(P5 · P6) 문서에는 서버 계산 한 줄이 없다(지급 총액은 S5 지급 기록 하나).

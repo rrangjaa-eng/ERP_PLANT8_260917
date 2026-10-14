@@ -44,13 +44,20 @@ const previewPayableSchema = z.object({
   transferKrw: transferKrw.optional(),
   // 예정일 칸 힌트 — 저장 전 예정일로 기준일을 고른다(기준일이 지급 예정일인 규칙, 06-04 검토 P3-2).
   scheduledPayDate: paymentDate.optional(),
-  // 06-06 S4 증빙 금액 칸 — 고치는 동안의 금액으로 서버 계산 한 줄 · Q-F 초과 한 줄을 받는다.
-  evidenceAmountKrw: z.number().int().positive().optional(),
+  // 06.5 D-6520 S4 공급가액 고침 칸(문서 통화) — 고치는 동안의 값으로 서버 계산 한 줄을 받고, 상한을 넘으면 칸 오류가 미리 선다.
+  correctedSupplyAmount: z.number().positive(SUPPLY_ZERO).optional(),
 });
 
-export const previewPayableAction = authedActionClient
-  .schema(previewPayableSchema)
-  .action(async ({ parsedInput, ctx }) => previewPayable(ctx.viewer, parsedInput));
+export const previewPayableAction = authedActionClient.schema(previewPayableSchema).action(async ({ parsedInput, ctx }) => {
+  try {
+    return await previewPayable(ctx.viewer, parsedInput);
+  } catch (error) {
+    if (error instanceof SupplyCorrectionCapError || error instanceof MoneyInputError) {
+      returnValidationErrors(previewPayableSchema, { correctedSupplyAmount: { _errors: [error.message] } });
+    }
+    throw error;
+  }
+});
 
 // 지급 예정일 제자리 저장(SP-3 ②) — 예정일만 바꾼다. 미래 날짜 허용(Q6).
 const saveScheduledPayDateSchema = z.object({

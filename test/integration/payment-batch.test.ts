@@ -1020,3 +1020,26 @@ describe("Phase 5 상태 열 (06-20 Task 4)", () => {
     expect(rowOf(unpaidPrepaid)?.statusNote ?? null).toBeNull();
   });
 });
+
+// 06.5 D-6520(사용자 카드 10/13 23:44 KST): 일괄 지급도 단건 · 미리보기와 같은 공급가 하나로 셈한다.
+describe("일괄 지급 금액 = 공급가 (06.5-07 D-6520)", () => {
+  it("증빙 금액 칸에 공급가와 다른 값이 남은 확인됨 문서 — 공급가 기준 스냅숏으로 처리되고 지급 공급가 = 문서 공급가", async () => {
+    const payer = await makePayer();
+    const doc = await approvedExpenseWithEvidence(await setupExpenseProject());
+    const [before] = await db.select({ supplyAmountKrw: expenses.supplyAmountKrw }).from(expenses).where(eq(expenses.id, doc.expenseId));
+    const supply = before?.supplyAmountKrw ?? null;
+    if (supply === null) throw new Error("공급가 없음");
+    const supplyPayable = await payableNow(payer, doc);
+    await db.update(expenses).set({ evidenceAmount: supply - 400_000 }).where(eq(expenses.id, doc.expenseId));
+    const confirmed = await confirmEvidence(payer, { expenseId: doc.expenseId, version: doc.version });
+
+    const result = await completePaymentsBatch(payer, {
+      payDate: seoulToday(),
+      rows: [{ expenseId: doc.expenseId, expenseVersion: confirmed.version, expectedPayableKrw: supplyPayable }],
+    });
+    expect(result.blocked).toEqual([]);
+    expect(result.processed).toBe(1);
+    const [row] = await livePayments(doc.expenseId);
+    expect([row?.grossSupplyKrw, row?.payableKrw]).toEqual([supply, supplyPayable]);
+  });
+});

@@ -277,6 +277,18 @@ describe("증빙 확인 — 공급가액 고쳐 확인 · 거부 (06-06 Task 3 �
     expect((await docRow(doc.expenseId)).supplyAmountKrw).toBe(12_400_000);
   });
 
+  it("증빙 금액(expense.amount)을 못 보는 지급 권한자 — 고친 공급가 미리보기 → 거부, 상한 문구(남은 실행가)가 실리지 않는다(PR-B 검토 P2-1)", async () => {
+    const blind = await makePaymentManager("가림");
+    if (!blind.roleId) throw new Error("계급 없음");
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: blind.roleId, infoItem: "expense.value", visible: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: blind.roleId, infoItem: "expense.amount", visible: false });
+    const doc = await approvedExpenseWithEvidence(await setupExpenseProject());
+
+    const error = await caught(previewPayable(blind, { expenseId: doc.expenseId, payDate: seoulToday(), correctedSupplyAmount: 900_000_000 }));
+    expect(error).toBeInstanceOf(ForbiddenError);
+    expect(error instanceof Error ? error.message : "").not.toMatch(/\d/);
+  });
+
   it("version 불일치 → 「거부 — 문서 화면 동시성」 · 결재 통과 전 문서 → 거부", async () => {
     const payer = await makePayer();
     const fx = await setupExpenseProject();

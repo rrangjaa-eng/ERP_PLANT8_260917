@@ -642,6 +642,8 @@ export async function previewPayable(
   const shared = await loadPaymentShared(viewer);
   const loaded = await loadPaymentInputs(viewer, { expenseId: input.expenseId, payDate: input.payDate, scheduledPayDate: input.scheduledPayDate, now: deps?.now }, shared);
   const corrected = input.correctedSupplyAmount;
+  // 확인(confirmEvidence)과 같은 막기 — 금액을 못 보는 권한자에게 상한 문구가 남은 실행가를 알려 주지 않게 먼저.
+  if (corrected !== undefined && !(await visible(viewer, "expense.amount"))) throw new ForbiddenError("증빙 금액 볼 권한 없음");
   let pre: PaymentInputs = loaded;
   if (corrected !== undefined && loaded.amount) {
     const row = await findExpenseById(viewer, loaded.expenseId);

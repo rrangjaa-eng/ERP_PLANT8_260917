@@ -356,6 +356,8 @@ test.describe("발행 요청 취소 (06-21 Task 1 — O-12 · r4 F-F3)", () => {
 });
 
 // 06-21 S17 — 목록 보는 사람: 제 프로젝트만 보는 계급(viewScope own)이라 다른 스펙 · 테스트가 만든 요청이 목록에 끼지 않는다.
+// 06.5 카드 ③: 발행 처리 권한(projects.revenue write)을 켜면 범위와 무관하게 전부를 본다 — 건수 · 빈 화면 단언은 쓰기 없이,
+// 쓰기에만 서는 3차 · 도착 포커스는 grantWrite 뒤 제 프로젝트 번호가 든 접근 이름 · 고유 값으로 겨눈다.
 async function setupBoard(opts: { write: boolean }) {
   const today = kstToday(new Date());
   const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E발행요청목록-${randomUUID()}`, viewScope: "own" });
@@ -372,7 +374,11 @@ async function setupBoard(opts: { write: boolean }) {
   const project = await createProject(SYSTEM_VIEWER, { clientId: vendor.id, teamId: team.id, pmUserId: account.userId, name: `E2E발행목록-${randomUUID().slice(0, 8)}`, startDate: today, endDate: addDays(today, 10) });
   const [stored] = await db.select({ number: projects.number }).from(projects).where(eq(projects.id, project.id));
   if (!stored) throw new Error("프로젝트가 없습니다");
-  return { user: { email, password: account.tempPassword, userId: account.userId }, projectId: project.id, projectNumber: stored.number, today };
+  return { user: { email, password: account.tempPassword, userId: account.userId }, roleId: role.id, projectId: project.id, projectNumber: stored.number, today };
+}
+
+async function grantWrite(roleId: string): Promise<void> {
+  await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "projects.revenue", action: "write", allowed: true });
 }
 
 // 오늘(서울)이 속한 주의 일요일 — 주는 월~일(IR-1).
@@ -382,7 +388,7 @@ function sundayOf(today: string): string {
 
 test.describe("발행 요청 목록 S17 (06-21 Task 2)", () => {
   test("[Empty] 기본 보기(신청됨) 0건 → `처리할 발행 요청이 없습니다 · 전체 보기`", async ({ browser }) => {
-    const { user } = await setupBoard({ write: true });
+    const { user } = await setupBoard({ write: false });
     const { page, context } = await openAs(browser, user, "/projects/issue-requests");
     await expect(page.getByRole("heading", { level: 1, name: "발행 요청" })).toBeVisible();
     await expect(page.getByText("처리할 발행 요청이 없습니다", { exact: true })).toBeVisible();
@@ -393,7 +399,7 @@ test.describe("발행 요청 목록 S17 (06-21 Task 2)", () => {
   });
 
   test("그룹은 희망일 지남(경고 색) → 이번 주 → 다음 주 → 그 뒤, 합계 줄 · 행 3차 `발행 줄 입력` / `요청 보기`", async ({ browser }) => {
-    const { user, projectId, projectNumber, today } = await setupBoard({ write: true });
+    const { user, roleId, projectId, projectNumber, today } = await setupBoard({ write: false });
     const sunday = sundayOf(today);
     const later = await seedRequest(projectId, user.userId, { desiredIssueDate: addDays(sunday, 8), amount: 1_000_000 });
     const nextWeek = await seedRequest(projectId, user.userId, { desiredIssueDate: addDays(sunday, 1), amount: 2_000_000 });
@@ -412,17 +418,22 @@ test.describe("발행 요청 목록 S17 (06-21 Task 2)", () => {
     // 합계 줄 — 기본 보기(신청됨) 4건 · 공급가 합(취소 건 제외).
     await expect(page.getByText("합계 (신청됨 · 4건)", { exact: true })).toBeVisible();
     await expect(page.getByRole("region", { name: "합계" })).toContainText("10,000,000");
-    // 금액 2행 합계(서버 부가세) · 행 3차 접근 이름 `{번호} 희망 {MM-DD} 발행 줄 입력` → `?issueRequest={id}`.
+    // 금액 2행 합계(서버 부가세).
     await expect(list).toContainText("합계 3,300,000");
-    const overdueAction = page.getByRole("link", { name: `${projectNumber} 희망 ${addDays(today, -1).slice(5)} 발행 줄 입력`, exact: true });
-    await expect(overdueAction).toHaveAttribute("href", `/projects/${projectId}?issueRequest=${overdue}`);
-    await expect(page.getByRole("link", { name: new RegExp(`희망 ${addDays(sunday, 1).slice(5)} 발행 줄 입력$`) })).toHaveAttribute("href", `/projects/${projectId}?issueRequest=${nextWeek}`);
-    await expect(page.getByRole("link", { name: new RegExp(`희망 ${addDays(sunday, 8).slice(5)} 발행 줄 입력$`) })).toHaveAttribute("href", `/projects/${projectId}?issueRequest=${later}`);
 
-    // `취소` 보기 — 그 행의 3차는 `요청 보기`.
+    // `취소` 보기 합계.
     await page.locator("#issue-request-filter-status").selectOption("cancelled");
     await expect(page).toHaveURL(/status=cancelled/);
     await expect(page.getByText("합계 (취소 · 1건)", { exact: true })).toBeVisible();
+
+    // 발행 처리 권한 — 행 3차 접근 이름 `{번호} 희망 {MM-DD} 발행 줄 입력` → `?issueRequest={id}`, 취소 행은 `요청 보기`.
+    await grantWrite(roleId);
+    await page.goto("/projects/issue-requests");
+    const overdueAction = page.getByRole("link", { name: `${projectNumber} 희망 ${addDays(today, -1).slice(5)} 발행 줄 입력`, exact: true });
+    await expect(overdueAction).toHaveAttribute("href", `/projects/${projectId}?issueRequest=${overdue}`);
+    await expect(page.getByRole("link", { name: `${projectNumber} 희망 ${addDays(sunday, 1).slice(5)} 발행 줄 입력`, exact: true })).toHaveAttribute("href", `/projects/${projectId}?issueRequest=${nextWeek}`);
+    await expect(page.getByRole("link", { name: `${projectNumber} 희망 ${addDays(sunday, 8).slice(5)} 발행 줄 입력`, exact: true })).toHaveAttribute("href", `/projects/${projectId}?issueRequest=${later}`);
+    await page.goto("/projects/issue-requests?status=cancelled");
     await expect(page.getByRole("link", { name: `${projectNumber} 희망 ${cancelledDate.slice(5)} 요청 보기`, exact: true })).toHaveAttribute("href", `/projects/${projectId}?issueRequest=${cancelled}`);
     await context.close();
   });
@@ -445,13 +456,15 @@ test.describe("발행 요청 목록 S17 (06-21 Task 2)", () => {
 
 test.describe("프로젝트 목록 하위 링크 `발행 요청 {N}` · `?issueRequest` 포커스 (06-21 Task 3 — SP-4)", () => {
   test("프로젝트 목록 링크 `발행 요청 1` → 목록 → `발행 줄 입력` → 상세의 `발행 줄로`에 포커스", async ({ browser }) => {
-    const { user, projectId, projectNumber, today } = await setupBoard({ write: true });
+    const { user, roleId, projectId, projectNumber, today } = await setupBoard({ write: false });
     const requestId = await seedRequest(projectId, user.userId, { desiredIssueDate: today, amount: 8_000_000 });
     const day = today.slice(5);
 
     const { page, context } = await openAs(browser, user, "/projects");
     await page.getByRole("link", { name: "발행 요청 1", exact: true }).click();
     await expect(page).toHaveURL(/\/projects\/issue-requests$/);
+    await grantWrite(roleId);
+    await page.reload();
     await page.getByRole("link", { name: `${projectNumber} 희망 ${day} 발행 줄 입력`, exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/projects/${projectId}\\?issueRequest=${requestId}$`));
     await expect(page.getByRole("button", { name: `희망 ${day} 발행 줄로` })).toBeFocused();
@@ -487,7 +500,8 @@ test.describe("발행 요청 — 06-21 DOM 감사 반영", () => {
     const { user, projectId, today } = await setupBoard({ write: true });
     const longName = "2026 하반기 전국 순회 브랜드 체험 팝업스토어 운영 및 현장 프로모션 대행 (서울·부산·대구·광주·대전 5개 도시)";
     await db.update(projects).set({ name: longName }).where(eq(projects.id, projectId));
-    const long = "긴메모".repeat(67).slice(0, 200);
+    // 발행 처리 권한자는 전부를 보므로(06.5 카드 ③) 다른 테스트 · 프로젝트의 같은 메모와 겹치지 않게 앞 8자를 고유 값으로.
+    const long = `${randomUUID().slice(0, 8)}${"긴메모".repeat(67)}`.slice(0, 200);
     // 금액은 9억(10자리 미만 — 320의 P1 세 열 예산 안). 13자리는 375까지만 들어간다(SUMMARY 후속 기록).
     await seedRequest(projectId, user.userId, { desiredIssueDate: addDays(today, 20), amount: 900_000_000, memo: long });
     await seedRequest(projectId, user.userId, { desiredIssueDate: today, amount: 8_000_000, memo: "짧은 메모" });

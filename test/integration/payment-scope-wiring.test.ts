@@ -1,24 +1,28 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, expectTypeOf, it } from "vitest";
 import { db } from "@/db/client";
 import { approvalInstances, expensePayments, expenses, files } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { ForbiddenError } from "@/domain/permissions/can";
-import { approveDocument, listCurrentSteps } from "@/domain/approvals";
+import { approveDocument, listCurrentSteps, rejectDocument } from "@/domain/approvals";
 import { createExpenseFromLines, createTeamExpenseDraft, listExpenseFormOptions, saveExpenseDraft } from "@/domain/expenses";
 import { voidEvidence } from "@/domain/evidence";
 import { previewPayable } from "@/domain/payments";
 import { completePaymentsBatch } from "@/domain/payments/batch";
 import { listPaidPayments, paidViewAllowed } from "@/domain/payments/targets";
+import { getPreSettleCheck } from "@/domain/pre-settle-check";
+import { listIssueRequests, summarizeOpenIssueRequests } from "@/domain/issue-requests";
+import { createProject } from "@/domain/projects";
 import { sumKrw } from "@/domain/money";
 import { seoulToday } from "@/lib/dates";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertVendor } from "@/repositories/vendors";
+import { insertIssueRequest } from "@/repositories/revenue-issue-requests";
 import { makePerson, teamIdByName } from "./approvals-fixtures";
-import { makeEvidenceManager, setupApprovedProject, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
+import { addApprovedRevision, makeEvidenceManager, setupApprovedProject, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
 import { makePaymentManager, setEvidenceRequired } from "./fixtures/payments";
 
 // 06.5-09(D-6516 · 카드 ③ — 사용자 카드 10/13 23:29 KST 「지급 완료·발행 요청 목록 범위 — 전부 보기」): PR-E가 만든 읽기 경로의 보는 범위 회귀.
@@ -173,5 +177,154 @@ describe("보는 범위 배선 — PR-E 경로(06.5 D-6516)", () => {
       expect(await paidViewAllowed(fx.pm)).toBe(false);
       expect(await paidViewAllowed(fx.otherPm)).toBe(false);
     });
+  });
+});
+
+// ── Task 2 — 정산 전 점검 R-6(EP1-11 · 06-19 R-6) · 발행 요청 목록 · 요약(카드 ③ · P1-D) ─────────────
+
+// 계급 하나 + 사람 하나(기획1팀 = 팀 A, null = 팀 없음). 금액 칸 정보 항목은 켠다(금액 키 단언).
+async function personWith(
+  name: string,
+  opts: { viewScope: "team" | "company"; team: string | null; perms: readonly (readonly [string, "view" | "write"])[]; infoItems?: readonly string[] },
+): Promise<Viewer> {
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `${name}-${randomUUID().slice(0, 8)}`, workScope: opts.viewScope, viewScope: opts.viewScope });
+  for (const [menu, action] of opts.perms) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu, action, allowed: true });
+  for (const infoItem of opts.infoItems ?? []) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+  return makePerson(name, role.id, opts.team);
+}
+
+async function rejectedDoc(drafter: Viewer, lead: Viewer, lineId: string): Promise<string> {
+  const expenseId = (await createExpenseFromLines(drafter, { lineIds: [lineId] })).created[0]?.expenseId;
+  if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
+  const sent = await submitReadyDraft(drafter, expenseId);
+  if (sent.kind !== "submitted") throw new Error("제출 안 됨");
+  await rejectDocument(lead, { instanceId: sent.instanceId, expectedVersion: sent.version, reason: "금액 확인" });
+  return sent.number;
+}
+
+// 같은 프로젝트(기획1팀)에 미결(반려) 지출결의 3건 — 좁은 기안자 A 1건 · 같은 팀 직원 2건.
+async function preSettleWorld() {
+  const fx = await setupExpenseProject();
+  const names = ["점검 줄 1", "점검 줄 2", "점검 줄 3"].map((name) => `${name}-${randomUUID().slice(0, 4)}`);
+  const { lineIds } = await addApprovedRevision(
+    fx,
+    names.map((itemName) => ({ itemName, vendorId: fx.stageOneId, execution: { currency: "KRW" as const, amount: 1_000_000, fxRate: 1 } })),
+  );
+  const line = (index: number) => lineIds.get(names[index] ?? "") ?? "";
+  // 팀 범위로 프로젝트를 보고 쓰며 지출결의를 쓰지만 지출결의 보기가 없다 — 보는 범위 = 자기 문서(06-19 makeNarrowDrafter 꼴).
+  const narrow = await personWith("기안A", { viewScope: "team", team: "기획1팀", perms: [["projects", "view"], ["projects", "write"], ["expenses", "write"]] });
+  const mine = await rejectedDoc(narrow, fx.lead, line(0));
+  await rejectedDoc(fx.otherPm, fx.lead, line(1));
+  await rejectedDoc(fx.otherPm, fx.lead, line(2));
+  // 프로젝트 보기만 — 지출결의 보는 범위 none.
+  const projectOnly = await personWith("프로젝트만", { viewScope: "team", team: "기획1팀", perms: [["projects", "view"]] });
+  return { fx, narrow, mine, projectOnly };
+}
+
+describe("보는 범위 배선 — 정산 전 점검 R-6(06.5 EP1-11)", () => {
+  it("R-6 ① 프로젝트 보기만 있고 지출결의 보기가 없는 viewer — 점검 행 0줄 · `그 밖` 3건", async () => {
+    const w = await preSettleWorld();
+
+    const check = await getPreSettleCheck(w.projectOnly, w.fx.projectId);
+
+    expect(check.openExpenses.rows).toEqual([]);
+    expect(check.openExpenses.outOfScopeCount).toBe(3);
+    expect(check.openExpenses.count).toBe(3);
+  }, 30_000);
+
+  it("R-6 ② 막힘 건수는 범위와 무관하게 프로젝트 전체 — 지출결의 전사(대표)와 보기 없는 viewer가 같다", async () => {
+    const w = await preSettleWorld();
+
+    const all = await getPreSettleCheck(w.fx.ceo, w.fx.projectId);
+    const none = await getPreSettleCheck(w.projectOnly, w.fx.projectId);
+
+    expect(all.openExpenses.rows).toHaveLength(3);
+    expect(none.blockedCount).toBe(all.blockedCount);
+    expect(none.openExpenses.count).toBe(all.openExpenses.count);
+  }, 30_000);
+
+  it("R-6 ③ 팀 범위 viewer(3건 중 1건이 자기 기안) — 행 1줄(자기 문서) · `그 밖` 2건", async () => {
+    const w = await preSettleWorld();
+
+    const check = await getPreSettleCheck(w.narrow, w.fx.projectId);
+
+    expect(check.openExpenses.rows.map((row) => row.number)).toEqual([w.mine]);
+    expect(check.openExpenses.outOfScopeCount).toBe(2);
+  }, 30_000);
+});
+
+const ISSUE_INFO = ["project.value", "revenue.issued_amount"] as const;
+const TODAY_ISSUE = "2026-10-14";
+
+async function issueProject(teamName: string): Promise<{ id: string; pmId: string }> {
+  const pm = await makePerson(`${teamName} PM`, DEFAULT_ROLE_ID, teamName);
+  const client = await insertVendor(SYSTEM_VIEWER, { name: `거래처-${randomUUID()}`, normalizedName: `거래처-${randomUUID()}` });
+  const project = await createProject(SYSTEM_VIEWER, { clientId: client.id, teamId: await teamIdByName(teamName), pmUserId: pm.id, name: `발행 행사-${randomUUID().slice(0, 8)}` });
+  if (!project.id) throw new Error("프로젝트 없음");
+  return { id: project.id, pmId: pm.id };
+}
+
+async function seedRequest(project: { id: string; pmId: string }, desiredIssueDate: string, amountKrw: number): Promise<string> {
+  const id = randomUUID();
+  await insertIssueRequest(
+    SYSTEM_VIEWER,
+    { id, projectId: project.id, requestedBy: project.pmId, desiredIssueDate, amountCurrency: "KRW", amountForeignAmount: null, amountFxRate: "1.0000", amountAmountKrw: amountKrw, memo: null },
+    db,
+  );
+  return id;
+}
+
+// 팀 A(기획1팀) 프로젝트 요청 1건 · 팀 B(경영관리팀) 프로젝트 요청 1건.
+async function issueWorld() {
+  const a = await seedRequest(await issueProject("기획1팀"), "2026-10-20", 3_000_000);
+  const b = await seedRequest(await issueProject("경영관리팀"), "2026-10-15", 5_000_000);
+  return { a, b };
+}
+
+const teamViewer = (name: string, perms: readonly (readonly [string, "view" | "write"])[]) =>
+  personWith(name, { viewScope: "team", team: "기획1팀", perms: [["projects", "view"], ...perms], infoItems: ISSUE_INFO });
+
+describe("보는 범위 배선 — 발행 요청 목록 · 요약(06.5 D-6516 · 카드 ③)", () => {
+  it("팀 A 범위(projects.revenue 보기만) — 팀 A 프로젝트의 요청 · 건수 · 금액만 / 경영관리(전사)는 전부", async () => {
+    const w = await issueWorld();
+    const teamA = await teamViewer("팀A보기", [["projects.revenue", "view"]]);
+    const company = await personWith("경영관리", { viewScope: "company", team: null, perms: [["projects", "view"], ["projects.revenue", "view"]], infoItems: ISSUE_INFO });
+
+    const narrow = await listIssueRequests(teamA, { status: "requested" }, { today: TODAY_ISSUE });
+    expect(narrow.rows.map((row) => row.id)).toEqual([w.a]);
+    expect(narrow.totals).toEqual({ count: 1, amountKrw: 3_000_000 });
+    expect(await summarizeOpenIssueRequests(teamA)).toEqual({ count: 1, earliestDesiredDate: "2026-10-20", supplyKrw: 3_000_000 });
+
+    const wide = await listIssueRequests(company, { status: "requested" }, { today: TODAY_ISSUE });
+    expect(wide.rows.map((row) => row.id)).toEqual([w.b, w.a]);
+    expect(await summarizeOpenIssueRequests(company)).toEqual({ count: 2, earliestDesiredDate: "2026-10-15", supplyKrw: 8_000_000 });
+  });
+
+  it("카드 ③ — 팀 A 범위 + 발행 처리(projects.revenue 쓰기) → 두 함수 모두 팀 B 요청까지 전부", async () => {
+    const w = await issueWorld();
+    const issuer = await teamViewer("발행처리", [["projects.revenue", "view"], ["projects.revenue", "write"]]);
+
+    expect((await listIssueRequests(issuer, { status: "requested" }, { today: TODAY_ISSUE })).rows.map((row) => row.id)).toEqual([w.b, w.a]);
+    expect(await summarizeOpenIssueRequests(issuer)).toEqual({ count: 2, earliestDesiredDate: "2026-10-15", supplyKrw: 8_000_000 });
+  });
+
+  it("카드 ③ — 팀 A 범위 + projects.revenue 보기 + 지급 처리(expenses.payments 쓰기) → 전부", async () => {
+    const w = await issueWorld();
+    const payer = await teamViewer("지급담당", [["projects.revenue", "view"], ["expenses.payments", "write"]]);
+
+    expect((await listIssueRequests(payer, { status: "requested" }, { today: TODAY_ISSUE })).rows.map((row) => row.id)).toEqual([w.b, w.a]);
+    expect((await summarizeOpenIssueRequests(payer))?.count).toBe(2);
+  });
+
+  it("projects.revenue 보기가 없으면 지름길과 무관하게 기존 거부 그대로(목록 ForbiddenError · 요약 null)", async () => {
+    await issueWorld();
+    const payerOnly = await teamViewer("지급만", [["expenses.payments", "write"]]);
+
+    await expect(listIssueRequests(payerOnly, { status: "requested" }, { today: TODAY_ISSUE })).rejects.toThrow("발행 요청 목록 보기 권한 없음");
+    expect(await summarizeOpenIssueRequests(payerOnly)).toBeNull();
+  });
+
+  it("EP3-D2 — 목록 필터 인자는 status · page뿐(주소로 범위를 넓힐 칸이 없다)", () => {
+    expectTypeOf<keyof Parameters<typeof listIssueRequests>[1]>().toEqualTypeOf<"status" | "page">();
   });
 });

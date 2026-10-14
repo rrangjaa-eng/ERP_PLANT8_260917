@@ -67,3 +67,23 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+
+/* 06-24 backstop B-2 — 옆 패널의 가맹점 · 카드 이름: 한 줄 말줄임 + title. 가맹점은 `바꾸기` 버튼과 한 줄에 서고 버튼은 줄지 않는다. */
+.valueLine {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-width: 0;
+}
+
+.valueText {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.valueLine > :not(.valueText) {
+  flex: none;
+}

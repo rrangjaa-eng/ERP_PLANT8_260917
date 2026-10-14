@@ -116,3 +116,46 @@ test.describe("폰 375 「내 차례」 두 줄 배치 (§7-4 · 02-VERIFICATION
     expect(box!.height).toBeGreaterThanOrEqual(44);
   });
 });
+
+// 06-23 DOM 감사 D-1 — 긴 대상 글자가 무제한으로 꺾이지 않는다(폰은 최대 2줄 말줄임) · 전체 글자는 title로 남는다.
+const LONG_ITEM: NextTurnItem = {
+  tag: "막힘",
+  label:
+    "아주 긴 프로젝트 이름이 들어가는 정산 프로젝트 쇼케이스 행사 운영 · 무대 철거 및 원상복구 정산 항목 — 증빙 없음 · 지급 대기",
+  reason: "",
+  amount: 12_400_000,
+  action: { label: "증빙 올리기", href: "/expenses/2#evidence" },
+};
+
+test.describe("폰 375 「내 차례」 긴 대상 글자 (06-23 D-1)", () => {
+  test.beforeEach(async ({ page }) => {
+    const html = `<!doctype html><html lang="ko"><head><meta name="viewport" content="width=device-width">
+<style>${css("docs/design/tokens.css")}</style>
+<style>${css("app/globals.css")}</style>
+<style>${css("ui/status-tag/StatusTag.module.css")}</style>
+<style>${css("ui/next-turn/NextTurn.module.css")}</style>
+</head><body><main style="padding: 0 var(--pad-page)">${await renderNextTurn([LONG_ITEM])}</main></body></html>`;
+    await page.setContent(html);
+  });
+
+  test("대상은 최대 2줄에서 잘리고 전체 글자를 title로 가진다", async ({ page }) => {
+    const label = page.locator(".label").first();
+    await expect(label).toHaveAttribute("title", LONG_ITEM.label);
+    const { height, lineHeight, clipped } = await label.evaluate((el) => {
+      const style = getComputedStyle(el);
+      return {
+        height: el.getBoundingClientRect().height,
+        lineHeight: parseFloat(style.lineHeight),
+        clipped: el.scrollHeight > el.clientHeight,
+      };
+    });
+    expect(height).toBeLessThanOrEqual(lineHeight * 2 + 1);
+    expect(clipped).toBe(true);
+
+    const { scrollWidth, clientWidth } = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }));
+    expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
+  });
+});

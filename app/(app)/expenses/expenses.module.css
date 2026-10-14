@@ -168,3 +168,158 @@
 .batchBlocked {
   color: var(--status-danger);
 }
+
+/* 06-17 — 고른 건 이체액 합(합계 면 오른쪽, 서버 값). 라벨은 보조 글자, 숫자는 지급 총액과 같은 무게(r2 F7). */
+.selectedSum {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s-1) var(--s-2);
+  margin: 0 0 0 auto;
+}
+
+.selectedSumLabel {
+  font-size: var(--text-aux);
+  color: var(--text-muted);
+}
+
+.selectedSumAmount {
+  font-size: var(--text-body);
+  font-weight: var(--fw-bold);
+  white-space: nowrap;
+}
+
+/* 합 요청 중 — 이전 값을 흐리게(금액 표시 절 「서버 계산 한 줄」과 같은 규칙). */
+.stale {
+  color: var(--text-faint);
+}
+
+/* 이체액 셀 2행 `차이 {±}` — 서버 diffKrw 값. */
+.diffLine {
+  font-size: var(--text-tag);
+  color: var(--status-warning);
+  white-space: nowrap;
+}
+
+/* 표 안 차이 사유 — 두 줄까지, 전체 값은 title. */
+.reasonCell {
+  display: -webkit-box;
+  max-width: 16em;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
+}
+
+/* 편집 표 칸 입력(리저브 대장 셀 입력과 같은 모양 — 토큰만). */
+.cellInput,
+.cellInputNumeric {
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--control-h);
+  padding: 0 var(--s-1);
+  border: 0;
+  border-bottom: var(--line-w) solid var(--accent);
+  background: var(--accent-weak);
+  color: var(--text-strong);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+}
+
+.cellInputNumeric {
+  text-align: right;
+}
+
+.cellInput:focus-visible,
+.cellInputNumeric:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+  border-radius: var(--radius-control);
+}
+
+/* 06-17 증빙 칸 — 상태 글자 + 같은 칸 3차 `증빙 확인`(≥1024 제자리 모달 · 그 미만 문서 화면 링크). 좁으면 3차가 다음 줄로. */
+.evidenceCell {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-1) var(--s-2);
+}
+
+/* 06-17 제자리 증빙 확인 모달 — [Q-F] 증빙 금액 초과 한 줄(S4와 같은 꼴: 경고 색 · 숫자만 굵게). 막지 않는다. */
+.overrunLine {
+  color: var(--status-warning);
+}
+
+.overrunAmount {
+  font-weight: var(--fw-bold);
+}
+
+
+/* 06-20(S3) 「프로젝트 · 항목」 — PC도 한 줄 말줄임(전체 값은 링크 title). 폰 폭 규칙은 .titleCell 그대로. */
+.paidTitle .link {
+  display: block;
+  max-width: 16em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 06-20 지급 방식 칸 계좌 — 1행 은행 + 마스킹 번호(+ 권한자 3차 `번호 보기`), 계좌 없음은 흐린 글자 한 줄(버튼 없음). */
+.accountLine {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  white-space: nowrap;
+}
+
+.accountNone {
+  color: var(--text-muted);
+}
+
+/* 06-20 문서 화면 왕복(`from=pay`) — 행동 줄 오른쪽 3차 `지급 대상으로` · `다음 확인 전 {번호}`. 2차 `지급 취소`가 있으면 그 왼쪽(2차가 오른쪽 끝). */
+.payReturn {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-3);
+}
+
+.payReturnEnd {
+  margin-left: auto;
+}
+
+/* 폰은 3차 묶음을 1차 아래 자기 줄로 내린다(DOM 감사 D-2 — 같은 줄이면 flex: 2인 1차가 남은 폭만 받아 글자가 꺾인다). */
+@media (max-width: 699.98px) {
+  .payReturnButtons {
+    flex-wrap: wrap;
+  }
+
+  .payReturn {
+    order: 1;
+    flex-basis: 100%;
+  }
+
+  .payReturnEnd {
+    margin-left: 0;
+  }
+}
+
+/* 06-20(UA-605 · DOM 감사 O-3) 폰은 `지급 완료`와 지급일 사이에서만 줄을 바꿀 수 있다(UI-SPEC 「2행 09-19」) — 좁을 때 상태 열이
+   `승인 {MM-DD}`보다 넓어져 320 넘침을 키우지 않게. 낱말 · 날짜 덩어리 안은 각자 nowrap. */
+@media (max-width: 699.98px) {
+  .statusPaid {
+    white-space: normal;
+  }
+
+  .statusPaid .statusNote {
+    white-space: nowrap;
+  }
+}
+
+/* 06-20(UA-605) Phase 5 목록 상태 칸 둘째 줄 `증빙 {N}일 경과`. */
+.statusNote {
+  display: block;
+  font-size: var(--text-tag);
+  font-weight: var(--fw-regular);
+  color: var(--status-warning);
+}

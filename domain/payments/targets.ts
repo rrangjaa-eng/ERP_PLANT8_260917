@@ -1,23 +1,28 @@
 import type { Viewer } from "@/domain/viewer";
 import { can, ForbiddenError } from "@/domain/permissions/can";
-import { projectMany } from "@/domain/permissions/project";
+import { projectMany, type DtoSpec } from "@/domain/permissions/project";
 import { visible } from "@/domain/permissions/visible";
 import { gate } from "@/domain/rules/gate";
 import "@/domain/rules/register";
-import { sumKrw } from "@/domain/money";
-import { EXPENSE_DOCUMENT_KIND, visibleExpenseScope } from "@/domain/expenses/access";
+import { diffKrw, sumKrw } from "@/domain/money";
+import { EXPENSE_DOCUMENT_KIND, visibleExpenseScope, type VisibleExpenseScope } from "@/domain/expenses/access";
 import { groupExpenses } from "@/domain/expenses/list";
-import { incomeTypeFor, pickTaxDates } from "@/domain/expenses/tax";
+import { incomeTypeFor, pickTaxDates, type TaxLinePart } from "@/domain/expenses/tax";
 import { TAX_UNAVAILABLE } from "@/domain/expenses/gate";
-import { PAYMENT_TARGET_ROW_DTO_SPEC, type PaymentTargetRowDto } from "@/domain/expenses/dto";
+import { PAID_PAYMENT_ROW_DTO_SPEC, PAYMENT_TARGET_ROW_DTO_SPEC, type PaidPaymentRowDto, type PaymentTargetRowDto } from "@/domain/expenses/dto";
 import { ownersWithEvidence } from "@/domain/evidence/has-evidence";
+import { listEvidence } from "@/domain/evidence";
+import { formatKstTime } from "@/domain/holidays/business-day";
+import { findUserNamesByIds } from "@/repositories/users";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { loadPrepaidDueDays, resolveEvidenceStatus, type EvidenceStatus } from "@/domain/evidence-reviews";
-import { decidePayable, loadPaymentShared, pairGateCtx, pickPaymentAmount, type PaymentShared, type PaymentSharedDeps } from "@/domain/payments";
+import { decidePayable, getPaymentView, loadEvidenceOverrun, loadPaymentShared, pairGateCtx, pickPaymentAmount, projectPaymentAccounts, type PaymentShared, type PaymentSharedDeps } from "@/domain/payments";
 import { approvalGateDecision, EVIDENCE_UNCONFIRMED, resolveExpenseActionRow, type EvidenceGateInput, type ExpenseActionBar } from "@/domain/payments/action-row";
 import { listTeams as listTeamRows } from "@/repositories/teams";
 import { EXPENSE_GROUP_RANKS, listExpenseIdsInScope } from "@/repositories/expenses";
-import { findPaymentTargetRowsByIds, listPaymentTargetRows, type PaymentTargetRow } from "@/repositories/payment-targets";
+import { findPaymentTargetRowsByIds, listPaidMonthRows, listPaidPaymentRows, listPaymentTargetRows, type PaidPaymentRow, type PaymentTargetRow } from "@/repositories/payment-targets";
 import { seoulToday } from "@/lib/dates";
+import { addDays } from "@/lib/kst-date";
 import { clampPage, LIST_PAGE_SIZE, pageCountFrom } from "@/lib/paging";
 
 // 06-15(EXP-09 · UI-SPEC S1): 지급 대상 목록 — 결재 통과 · 지급 전 · 종결 아님 지출결의. 행마다 고를 수 있는지(selectable)와 이유는
@@ -120,7 +125,10 @@ async function judgeTargets(viewer: Viewer, rows: readonly PaymentTargetRow[], c
 // 문서 보임(행 범위, CSO-1 패턴) — 지급 처리 경로(loadPaymentInputs)의 canSeeExpense와 같은 scopeCondition(기안자 ∪ 결재 관련자 ∪ 보는 범위)을
 // visibleExpenseScope 한 번으로 만들어 한 질의로 거른다(06.2-08 검토 I-1 — 행마다 묻지 않는다). 보는 범위 전사(06.2 rowScope all)면 결재 통과 문서는 모두 보이므로 묻지 않는다.
 async function visibleRows(viewer: Viewer, rows: readonly PaymentTargetRow[], today: string): Promise<PaymentTargetRow[]> {
-  const scope = await visibleExpenseScope(viewer, { today });
+  return keepVisible(viewer, rows, await visibleExpenseScope(viewer, { today }));
+}
+
+async function keepVisible<Row extends { id: string }>(viewer: Viewer, rows: readonly Row[], scope: VisibleExpenseScope): Promise<Row[]> {
   if (scope.rowScope.rows === "all") return [...rows];
   const kept = await listExpenseIdsInScope(viewer, { ids: rows.map((row) => row.id), scope, documentKind: EXPENSE_DOCUMENT_KIND });
   return rows.filter((row) => kept.has(row.id));
@@ -161,7 +169,9 @@ export type PaymentTargetList = {
   prepaidDueDays: number;
 };
 
-function titleOf(row: PaymentTargetRow): string {
+function titleOf(
+  row: Pick<PaymentTargetRow, "projectId" | "quoteLineId" | "teamName" | "content" | "installment" | "installmentSeq" | "projectName" | "itemName">,
+): string {
   if (row.projectId === null && row.quoteLineId === null) return [row.teamName, row.content].filter(Boolean).join(" · ");
   const seq = row.installment && row.installmentSeq ? ` ${row.installmentSeq}회차` : "";
   return `${[row.projectName, row.itemName].filter(Boolean).join(" · ")}${seq}`;
@@ -184,15 +194,17 @@ function toDto(target: JudgedPaymentTarget, shared: PaymentShared): PaymentTarge
     reason: target.reason,
     prepaid: row.prepaid,
     quoteLineId: row.quoteLineId,
+    evidenceAmountEntered: row.evidenceAmount !== null,
   };
 }
 
 export async function projectPaymentTargets(viewer: Viewer, targets: readonly JudgedPaymentTarget[], shared: PaymentShared): Promise<Partial<PaymentTargetRowDto>[]> {
-  return projectMany(
+  // 06-20(O-17) — 계좌 칸은 문서 화면과 같은 투영 함수 하나. 지급 방식 코드 · 거래처 id는 스펙 밖 키라 projectMany가 버린다.
+  const rows = await projectPaymentAccounts(
     viewer,
-    targets.map((target) => toDto(target, shared)),
-    PAYMENT_TARGET_ROW_DTO_SPEC,
+    targets.map((target) => ({ ...toDto(target, shared), paymentMethod: target.row.paymentMethod, vendorId: target.row.vendorId })),
   );
+  return projectMany(viewer, rows, PAYMENT_TARGET_ROW_DTO_SPEC);
 }
 
 export async function listPaymentTargets(
@@ -239,10 +251,328 @@ export async function rejudgePaymentTargets(
   return new Map(judged.map((target) => [target.row.id, target]));
 }
 
+// 06-17(UI-SPEC S1 「합계 줄」 · O-18 · r2 F-2): 고른 건 이체액 합 · 행별 차이 · 고른 행 상태. 화면은 금액을 셈하지 않는다 — 고른 행 id와 사람이 고친
+// 이체액만 받아 지급 총액 · version을 서버가 다시 읽고(id 묶음 한 번), 고를 수 있는지는 06-15 judgeTargets 그대로다(새 판정 없음).
+// 합 = sumKrw(고를 수 있는 행의 이체액 — 고치지 않았으면 지급 총액), 차이 = diffKrw(이체액, 지급 총액). 응답에 합계 번호(seq)를 그대로 싣는다 —
+// 화면이 낡은 응답을 버린다. 지급 대상 조회 범위 밖(없는 id · 보이지 않는 문서 · 결재 통과가 아닌 문서)은 rowStates에 싣지 않는다.
+// payDate(모달이 마지막으로 쓴 지급일, 없으면 오늘)는 지급 총액의 세율 기준일 자리 — 처리 요청과 같은 날로 셈해 재시도가 다시 막히지 않는다.
+// quoteLineId · prepaid(검토 D-2) — 모달 결과 줄 ① 견적 줄 수 · ② 선결제 수가 지금 쪽 밖 고른 행도 센다.
+export type PaymentRowState = { id: string; selectable: boolean; version: number; payableKrw: number | null; quoteLineId: string | null; prepaid: boolean };
+
+// 정보 항목은 06-15 PAYMENT_TARGET_ROW_DTO_SPEC(paymentTargetRow)의 같은 칸 그대로.
+const PAYMENT_ROW_STATE_SPEC: DtoSpec<PaymentRowState, PaymentRowState> = {
+  fields: [
+    { key: "id", from: "id", infoItem: "expense.value" },
+    { key: "selectable", from: "selectable", infoItem: "expense.value" },
+    { key: "version", from: "version", infoItem: "expense.value" },
+    { key: "payableKrw", from: "payableKrw", infoItem: "expense.amount" },
+    { key: "quoteLineId", from: "quoteLineId", infoItem: "expense.value" },
+    { key: "prepaid", from: "prepaid", infoItem: "expense.value" },
+  ],
+};
+
+export type SelectedTransferSum = {
+  seq: number;
+  // 금액을 볼 수 없는 계급에는 null · 빈 차이.
+  totalKrw: number | null;
+  diffs: Record<string, number>;
+  rowStates: Partial<PaymentRowState>[];
+};
+
+export async function sumSelectedTransfers(
+  viewer: Viewer,
+  input: { seq: number; rows: readonly { id: string; transferKrw?: number }[]; payDate?: string },
+  deps?: PaymentTargetDeps,
+): Promise<SelectedTransferSum> {
+  await assertPayer(viewer);
+  const today = deps?.today ?? seoulToday();
+  const shared = deps?.shared ?? (await loadPaymentShared(viewer, deps?.loadTaxRates ? { loadTaxRates: deps.loadTaxRates } : undefined));
+  const transferOf = new Map(input.rows.map((row) => [row.id, row.transferKrw]));
+  const found = await findPaymentTargetRowsByIds(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, ids: [...transferOf.keys()] });
+  const rows = await visibleRows(
+    viewer,
+    found.filter((row) => row.approvalStatus === "approved"),
+    today,
+  );
+  const amountVisible = await visible(viewer, "expense.amount");
+  const judged = await judgeTargets(viewer, rows, { shared, today: input.payDate ?? today, amountVisible });
+  const diffs: Record<string, number> = {};
+  const transfers: number[] = [];
+  for (const target of judged) {
+    if (!target.selectable || target.payableKrw === null) continue;
+    const transfer = transferOf.get(target.row.id) ?? target.payableKrw;
+    transfers.push(transfer);
+    diffs[target.row.id] = diffKrw(transfer, target.payableKrw);
+  }
+  const rowStates = await projectMany(
+    viewer,
+    judged.map((target) => ({
+      id: target.row.id,
+      selectable: target.selectable,
+      version: target.row.version,
+      payableKrw: target.payableKrw,
+      quoteLineId: target.row.quoteLineId,
+      prepaid: target.row.prepaid,
+    })),
+    PAYMENT_ROW_STATE_SPEC,
+  );
+  return { seq: input.seq, totalKrw: amountVisible ? sumKrw(transfers) : null, diffs: amountVisible ? diffs : {}, rowStates };
+}
+
+// 06-17(UI-SPEC S1 「제자리 증빙 확인」 · DR-4 · r2 B-1): 확인 모달 보기 — 트랜잭션 없는 읽기. 지급 권한 · 지급 대상 조회 범위(보임) · 「확인 전」(P2 · P5)만.
+// 파일 행은 05 listEvidence(살아 있는 것), 서버 계산 한 줄 · 지금 version · 증빙 지문은 06-06 getPaymentView 값 그대로(새 계산 없음), 증빙 금액 초과
+// 한 줄은 06-06 loadEvidenceOverrun(저장된 증빙 금액 — 표시만, 판정에 쓰지 않는다). 모달이 확인할 때 이 version + 지문을 보내 06-06 confirmEvidence가
+// 잠금 뒤 다시 비교한다 — 보지 않은 증빙이 「확인됨」이 되지 않는다. 행 version이 지금과 다르면 같은 보기에 동시성 이유를 싣는다(화면이 1차를 막는다).
+export const EVIDENCE_NOT_UNREVIEWED = "확인 전 아님 · 새로 고침";
+const EVIDENCE_VIEW_MISSING = "없는 지출결의 · 새로 고침";
+
+export type EvidenceConfirmFile = { id: string; name: string; sizeBytes: number; createdAt: string };
+
+export type EvidenceConfirmView = {
+  expenseId: string;
+  number: string | null;
+  title: string;
+  version: number;
+  evidenceStamp: string;
+  evidenceAmountKrw: number | null;
+  taxLine: TaxLinePart[] | null;
+  evidenceOverrun: string | null;
+  files: EvidenceConfirmFile[];
+  conflict: string | null;
+};
+
+// 금액 칸은 06-06 PAYMENT_VIEW_DTO_SPEC(paymentView)과 같은 정보 항목 expense.amount, 나머지는 expense.value.
+const EVIDENCE_CONFIRM_VIEW_SPEC: DtoSpec<EvidenceConfirmView, EvidenceConfirmView> = {
+  fields: [
+    { key: "expenseId", from: "expenseId", infoItem: "expense.value" },
+    { key: "number", from: "number", infoItem: "expense.value" },
+    { key: "title", from: "title", infoItem: "expense.value" },
+    { key: "version", from: "version", infoItem: "expense.value" },
+    { key: "evidenceStamp", from: "evidenceStamp", infoItem: "expense.amount" },
+    { key: "evidenceAmountKrw", from: "evidenceAmountKrw", infoItem: "expense.amount" },
+    { key: "taxLine", from: "taxLine", infoItem: "expense.amount" },
+    { key: "evidenceOverrun", from: "evidenceOverrun", infoItem: "expense.amount" },
+    { key: "files", from: "files", infoItem: "expense.value" },
+    { key: "conflict", from: "conflict", infoItem: "expense.value" },
+  ],
+};
+
+export async function getEvidenceConfirmView(viewer: Viewer, input: { expenseId: string; rowVersion: number }): Promise<Partial<EvidenceConfirmView>> {
+  await assertPayer(viewer);
+  if (!UUID_SHAPE.test(input.expenseId)) throw new UserFacingError(EVIDENCE_VIEW_MISSING);
+  const found = await findPaymentTargetRowsByIds(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, ids: [input.expenseId] });
+  const [row] = await visibleRows(
+    viewer,
+    found.filter((candidate) => candidate.approvalStatus === "approved"),
+    seoulToday(),
+  );
+  if (!row) throw new UserFacingError(EVIDENCE_VIEW_MISSING);
+  const view = await getPaymentView(viewer, row.id);
+  const state = view?.row?.row;
+  if (!view || (state !== "P2" && state !== "P5")) throw new UserFacingError(EVIDENCE_NOT_UNREVIEWED);
+  const files = (await listEvidence(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: row.id })).flatMap((file) =>
+    file.id && !file.voidedAt ? [{ id: file.id, name: file.originalName ?? "", sizeBytes: file.sizeBytes ?? 0, createdAt: new Date(file.createdAt ?? 0).toISOString() }] : [],
+  );
+  let conflict: string | null = null;
+  if (row.version !== input.rowVersion) {
+    const name = row.updatedBy ? (await findUserNamesByIds(viewer, [row.updatedBy])).get(row.updatedBy) : undefined;
+    conflict = `${name ? `${name}이` : "다른 사람이"} ${formatKstTime(row.updatedAt)}에 바꿈 · 새로 고침`;
+  }
+  const [projected] = await projectMany(
+    viewer,
+    [
+      {
+        expenseId: row.id,
+        number: row.number,
+        title: titleOf(row),
+        version: row.version,
+        evidenceStamp: view.evidenceStamp ?? "",
+        evidenceAmountKrw: row.evidenceAmount,
+        taxLine: view.evidenceTaxLine ?? null,
+        evidenceOverrun: await loadEvidenceOverrun(viewer, row, row.evidenceAmount),
+        files,
+        conflict,
+      },
+    ],
+    EVIDENCE_CONFIRM_VIEW_SPEC,
+  );
+  return projected ?? {};
+}
+
 // 팀 필터 값 — 활성 팀 전부(`팀 전체` + 이름). 05 · 04 listTeams는 관리 메뉴(admin.people) 보기를 요구해 지급 권한자에게 비므로
 // 지급 권한 판정 뒤 활성 팀을 직접 읽는다(보관된 팀 제외).
 export async function listPaymentTeamOptions(viewer: Viewer): Promise<{ value: string; label: string }[]> {
   await assertPayer(viewer);
+  return activeTeamOptions(viewer);
+}
+
+async function activeTeamOptions(viewer: Viewer): Promise<{ value: string; label: string }[]> {
   const rows = await listTeamRows(viewer, { scope: { rows: "all", includeArchived: false } });
   return rows.map((row) => ({ value: row.id, label: row.name }));
+}
+
+// 06-20(S3) 팀 select — 지급 완료 보기를 받는 사람(지급 권한자 · 대표)에게 같은 활성 팀 목록.
+export async function listPaidTeamOptions(viewer: Viewer): Promise<{ value: string; label: string }[]> {
+  if (!(await paidViewAllowed(viewer))) throw new ForbiddenError("지급 완료 보기 권한 없음");
+  return activeTeamOptions(viewer);
+}
+
+// ── 06-20(UI-SPEC S3) 「지급 완료」 보기 ──────────────────────────────────
+// 받는 사람 = 지급 권한자 ∪ 05 visibleExpenseScope의 전사 보는 범위(06.2 rowScope all — 대표). 역할 이름 리터럴 없이 05 보임 규칙으로 판정한다.
+// 행은 보임 범위 안 살아 있는 지급 기록만, 계좌 칸은 조회부터 없다(O-17). 주 그룹 · 합계(sumKrw) · 쪽은 서버가 정한다. 트랜잭션 없는 읽기.
+
+const MONTH_SHAPE = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+function paidAllowedBy(canPay: boolean, scope: VisibleExpenseScope): boolean {
+  return canPay || scope.rowScope.rows === "all";
+}
+
+export async function paidViewAllowed(viewer: Viewer, deps?: { today?: string }): Promise<boolean> {
+  if (await can(viewer, "expenses.payments", "write")) return true;
+  return paidAllowedBy(false, await visibleExpenseScope(viewer, { today: deps?.today ?? seoulToday() }));
+}
+
+// 지급일 주 그룹(KST 달력 · 월요일 시작) — 오늘 뒤 = `예정 지급`, 이번 주 · 지난주, 그 앞은 그 주 `MM-DD ~ MM-DD`.
+function payWeekLabel(payDate: string, today: string): string {
+  if (payDate > today) return "예정 지급";
+  const mondayOf = (date: string) => {
+    const [year, month, day] = date.split("-").map(Number) as [number, number, number];
+    return addDays(date, -((new Date(Date.UTC(year, month - 1, day)).getUTCDay() + 6) % 7));
+  };
+  const thisMonday = mondayOf(today);
+  if (payDate >= thisMonday) return "이번 주";
+  if (payDate >= addDays(thisMonday, -7)) return "지난주";
+  const monday = mondayOf(payDate);
+  return `${monday.slice(5)} ~ ${addDays(monday, 6).slice(5)}`;
+}
+
+export type PaidPaymentGroup = { label: string; rows: Partial<PaidPaymentRowDto>[] };
+
+export type PaidPaymentList = {
+  groups: PaidPaymentGroup[];
+  // 그 달 · 팀 전체(쪽 무관) 건수 · 이체액 합 — 금액을 볼 수 없는 계급에는 null.
+  total: { count: number; sumKrw: number } | null;
+  page: { page: number; pageCount: number; total: number; pageSize: number };
+  // 고른 달(`YYYY-MM`)과 월 select 값(이번 달 + 보임 범위 안 지급이 있는 달, 최근 순).
+  month: string;
+  months: string[];
+};
+
+export async function listPaidPayments(
+  viewer: Viewer,
+  input: { team?: string | null; month?: string | null; page?: string | number },
+  deps?: { today?: string; pageSize?: number },
+): Promise<PaidPaymentList> {
+  const today = deps?.today ?? seoulToday();
+  const [canPay, scope] = await Promise.all([can(viewer, "expenses.payments", "write"), visibleExpenseScope(viewer, { today })]);
+  if (!paidAllowedBy(canPay, scope)) throw new ForbiddenError("지급 완료 보기 권한 없음");
+  const teamId = input.team && UUID_SHAPE.test(input.team) ? input.team : null;
+  const month = input.month && MONTH_SHAPE.test(input.month) ? input.month : today.slice(0, 7);
+  const all = await keepVisible(viewer, await listPaidPaymentRows(viewer, { teamId, month }), scope);
+  const monthRows = await keepVisible(viewer, await listPaidMonthRows(viewer, { teamId }), scope);
+  const months = [...new Set([today.slice(0, 7), ...monthRows.map((row) => row.month)])].sort().reverse();
+  const amountVisible = await visible(viewer, "expense.amount");
+  const pageSize = deps?.pageSize ?? LIST_PAGE_SIZE;
+  const pageCount = pageCountFrom(all.length, pageSize);
+  const page = clampPage(input.page, pageCount);
+  const slice = all.slice((page - 1) * pageSize, page * pageSize);
+  const dtos = await projectPaidRows(viewer, slice);
+  const groups: PaidPaymentGroup[] = [];
+  slice.forEach((row, index) => {
+    const label = payWeekLabel(row.payDate, today);
+    const dto = dtos[index] ?? {};
+    const last = groups.at(-1);
+    if (last && last.label === label) last.rows.push(dto);
+    else groups.push({ label, rows: [dto] });
+  });
+  return {
+    groups,
+    total: amountVisible ? { count: all.length, sumKrw: sumKrw(all.map((row) => row.transferKrw)) } : null,
+    page: { page, pageCount, total: all.length, pageSize },
+    month,
+    months,
+  };
+}
+
+// 쪽 행만 — 증빙 유무는 06-03 ownersWithEvidence 한 번(C5), 상태 낱말은 06-06 resolveEvidenceStatus, 지급 방식은 지급 기록이 복사한 코드의 이름.
+async function projectPaidRows(viewer: Viewer, rows: readonly PaidPaymentRow[]): Promise<Partial<PaidPaymentRowDto>[]> {
+  if (rows.length === 0) return [];
+  const [withEvidence, shared] = await Promise.all([
+    ownersWithEvidence(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerIds: rows.map((row) => row.id) }),
+    loadPaymentShared(viewer),
+  ]);
+  return projectMany(
+    viewer,
+    rows.map(
+      (row): PaidPaymentRowDto => ({
+        id: row.id,
+        number: row.number,
+        title: titleOf(row),
+        vendorName: row.vendorName,
+        paymentMethodName: shared.paymentMethodName(row.paymentMethod),
+        payDate: row.payDate,
+        transferKrw: row.transferKrw,
+        diffKrw: row.diffKrw,
+        diffReason: row.diffReason,
+        evidenceStatus: resolveEvidenceStatus({ hasEvidence: withEvidence.has(row.id), prepaid: row.prepaid, review: row.review }),
+        evidenceAmountEntered: row.evidenceAmount !== null,
+        processedByName: row.processedByName,
+        version: row.version,
+      }),
+    ),
+    PAID_PAYMENT_ROW_DTO_SPEC,
+  );
+}
+
+// ── 06-20(C-1 문서 화면 쪽) 문서 화면 왕복 ─────────────────────────────────
+// S1 번호 링크(06-17 docHref — `from=pay` + status · team · evidence · page)로 연 문서 화면의 3차 `지급 대상으로` · `다음 확인 전 {번호}`.
+// 받은 쿼리는 허용 키만 검사해 남기고 href는 늘 새로 만든다 — 받은 URL · 경로 · 원문을 되돌려 보내지 않는다(열린 리디렉션 없음, T-06-175).
+export type PayReturn = { backHref: string; next: { number: string; href: string } | null };
+export type PayReturnQuery = { backHref: string; docQuery: string; team: string | null; evidence: PaymentEvidenceFilter | null };
+
+const PAY_RETURN_PAGE = /^[1-9]\d{0,2}$/;
+
+function single(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+export function parsePayReturn(searchParams: Readonly<Record<string, string | string[] | undefined>>): PayReturnQuery | null {
+  if (single(searchParams.from) !== "pay") return null;
+  const teamRaw = single(searchParams.team);
+  const team = teamRaw && UUID_SHAPE.test(teamRaw) ? teamRaw : null;
+  const evidence = parsePaymentEvidenceFilter(single(searchParams.evidence));
+  const pageRaw = single(searchParams.page);
+  const page = pageRaw && PAY_RETURN_PAGE.test(pageRaw) ? pageRaw : null;
+  const kept = new URLSearchParams({ status: "지급 대상" });
+  if (team) kept.set("team", team);
+  if (evidence) kept.set("evidence", evidence);
+  if (page) kept.set("page", page);
+  return { backHref: `/expenses?${kept.toString()}`, docQuery: `from=pay&${kept.toString()}`, team, evidence };
+}
+
+// 정렬 키 = 지급 대상 원천의 정렬(지급 예정일 오름 · 없음은 뒤 → 번호 → id, repositories/payment-targets.ts selectRows).
+function compareTargetKey(a: PaymentTargetRow, b: PaymentTargetRow): number {
+  if (a.scheduledPaymentDate !== b.scheduledPaymentDate) {
+    if (a.scheduledPaymentDate === null) return 1;
+    if (b.scheduledPaymentDate === null) return -1;
+    return a.scheduledPaymentDate < b.scheduledPaymentDate ? -1 : 1;
+  }
+  if ((a.number ?? "") !== (b.number ?? "")) return (a.number ?? "") < (b.number ?? "") ? -1 : 1;
+  if (a.id === b.id) return 0;
+  return a.id < b.id ? -1 : 1;
+}
+
+// 같은 필터 · 같은 판정(listAllPaymentTargets)에서 그 문서의 정렬 키보다 뒤인 첫 `확인 전`(P2). 그 문서가 필터에서 빠졌어도 키로 찾고,
+// 없으면 null(맨 앞으로 돌아가지 않는다). 지급 권한이 없으면 null — 번호를 내지 않는다.
+export async function nextUnreviewedTarget(
+  viewer: Viewer,
+  input: { afterExpenseId: string; team?: string | null; evidence?: PaymentEvidenceFilter | null },
+  deps?: PaymentTargetDeps,
+): Promise<{ id: string; number: string } | null> {
+  if (!UUID_SHAPE.test(input.afterExpenseId) || !(await can(viewer, "expenses.payments", "write"))) return null;
+  const [current] = await findPaymentTargetRowsByIds(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, ids: [input.afterExpenseId] });
+  if (!current) return null;
+  const all = await listAllPaymentTargets(viewer, { team: input.team, evidence: input.evidence }, deps);
+  const next = all.find((target) => target.bar.row === "P2" && target.row.number !== null && compareTargetKey(target.row, current) > 0);
+  return next?.row.number ? { id: next.row.id, number: next.row.number } : null;
 }

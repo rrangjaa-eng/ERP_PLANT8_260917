@@ -49,10 +49,13 @@ function DetailScreenRoot({ title, status, meta, actions, numbers, children }: D
   );
 }
 
-function Section({ title, children }: { title: string; children?: ReactNode }) {
+// headingId — 제목이 해시 · 「점검 보기」 같은 3차의 포커스 자리일 때(06-19 S18 `#pre-settle-check`). 탭 순서 밖(tabIndex -1).
+function Section({ title, headingId, children }: { title: string; headingId?: string; children?: ReactNode }) {
   return (
     <section className={styles.section}>
-      <h2 className={styles.sectionTitle}>{title}</h2>
+      <h2 id={headingId} tabIndex={headingId ? -1 : undefined} className={styles.sectionTitle}>
+        {title}
+      </h2>
       {children}
     </section>
   );

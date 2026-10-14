@@ -67,6 +67,7 @@ import { StatusChange, type StatusChangeProps } from "./status-change";
 import { SettlementButton, type SettlementHeaderProps } from "./settlement-button";
 import { unsavedEditsReason } from "./unsaved-edits";
 import { CustomerApprovalLine, NewRevisionDialog, type CustomerApprovalProps, type NewRevisionProps } from "./revision-dialogs";
+import { PreSettleLedgerContext } from "./pre-settle-check";
 import { PeriodField, periodText, type PeriodDraft, type PeriodFieldError } from "./period-field";
 import type { PeriodRights } from "@/domain/projects/period";
 import {
@@ -965,6 +966,7 @@ export function QuoteLedger({
   revisions,
   endDateNote,
   children,
+  preSettleSection,
   revisionId,
   initialLines,
   vendors,
@@ -1019,6 +1021,8 @@ export function QuoteLedger({
   endDateNote: string | null;
   /** 원장 아래 섹션들(차수 · 이전 차수) — 서버 page.tsx가 넘긴다. */
   children?: ReactNode;
+  /** 06-19(S18) — 정산 프로젝트의 「완료 전 점검」 섹션(견적 줄 표 바로 아래 첫 섹션). 정산이 아니면 없다. */
+  preSettleSection?: ReactNode;
   revisionId: string;
   initialLines: QuoteLineDto[];
   vendors: QuoteTableOption[];
@@ -1789,6 +1793,12 @@ export function QuoteLedger({
     setIssueRequestRows((prev) => [...prev, newIssueRequestDraft()]);
   }
 
+  // 06-22(S18 · PS-6) — 점검 매출 줄 `{n}차 고객 승인 전` 3차가 고객 승인 줄의 트리거로 포커스한다(포커스가 스크롤도 한다).
+  const customerApprovalRef = useRef<HTMLDivElement>(null);
+  function focusCustomerApproval() {
+    customerApprovalRef.current?.querySelector<HTMLElement>("button")?.focus();
+  }
+
   // 「발행 줄로」 — 발행일 = 희망 발행일 · 발행액 = 요청 금액 · 메모 = 요청 메모인 새 발행 줄을 만들고 그 발행일 칸으로 간다.
   function linkIssueRequest(requestId: string) {
     const request = issueRequestRows.find((row) => row.id === requestId);
@@ -1933,6 +1943,7 @@ export function QuoteLedger({
           ? dirtyRequests.map((request) => ({
               id: request.id,
               ...(request.version === undefined ? { isNew: true as const } : {}),
+              ...(request.cancel ? { cancel: true as const } : {}),
               version: request.version,
               desiredIssueDate: request.desiredIssueDate,
               amount: { currency: "KRW" as const, amount: request.amount, fxRate: 1 },
@@ -2781,7 +2792,9 @@ export function QuoteLedger({
         primary: saveAction,
       }}
     >
-      <CustomerApprovalLine {...customerApproval} className={styles.periodLine} dirtyCount={dirtyCount} />
+      <div ref={customerApprovalRef} className={styles.layoutContents}>
+        <CustomerApprovalLine {...customerApproval} className={styles.periodLine} dirtyCount={dirtyCount} />
+      </div>
       {/* S13 — 칸이 열린 동안 기간 글자와 「기간 바꾸기」는 숨는다(같은 값을 두 번 보이지 않는다). */}
       {periodDraft ? null : (
         <p className={styles.periodLine}>
@@ -3040,6 +3053,22 @@ export function QuoteLedger({
           action={sheetDoorAction(openSheetRow)}
         />
       ) : null}
+
+      {/* 06-22(S18) — 점검 섹션의 다음 한 수는 이 화면의 값 · 함수 그대로(PS-3 고르기는 pre-settle-check.tsx 한 곳). */}
+      <PreSettleLedgerContext.Provider
+        value={{
+          editableWidth,
+          canWriteRevenue: canWriteEntries,
+          canRequestIssue: issueRequests.canRequest,
+          addIssued,
+          addIssueRequest,
+          saveLocked,
+          saveButtonId,
+          focusCustomerApproval: customerApproval.control ? focusCustomerApproval : null,
+        }}
+      >
+        {preSettleSection}
+      </PreSettleLedgerContext.Provider>
 
       <RevenueSection
         contract={revenue.contract}

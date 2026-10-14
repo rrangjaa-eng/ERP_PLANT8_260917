@@ -1,10 +1,11 @@
 import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
+import { visible as defaultVisible } from "@/domain/permissions/visible";
 import { projectMany, type DtoSpec } from "@/domain/permissions/project";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { projectRowScope } from "@/domain/projects/visibility";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
-import { moneyToColumns, MoneyInputError } from "@/domain/money";
+import { moneyToColumns, MoneyInputError, sumKrw } from "@/domain/money";
 import { computeVat, ForbiddenError, ProjectNotFoundError, type MoneyInputDto, type RevenueDeps } from "@/domain/revenue";
 import { CompletedProjectError } from "@/domain/projects";
 import { PROJECT_STATUS_WORD } from "@/domain/projects/status-word";
@@ -12,16 +13,23 @@ import type { ProjectStatus } from "@/domain/projects/status-transitions";
 import { isCalendarDate, FORMAT_ERROR as DATE_FORMAT_ERROR, EMPTY_ERROR as DATE_EMPTY_ERROR } from "@/domain/projects/period";
 import { SaveRejectedError, type CellFormatError } from "@/domain/quotes/lines";
 import { isUniqueViolation } from "@/lib/pg-errors";
+import { seoulToday } from "@/lib/dates";
+import { addDays } from "@/lib/kst-date";
+import { clampPage, LIST_PAGE_SIZE, pageCountFrom } from "@/lib/paging";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { findProjectInScope } from "@/repositories/projects";
 import { findRevenueEntryById as repoFindRevenueEntryById } from "@/repositories/revenue-entries";
 import {
   findIssueRequestById,
   insertIssueRequest,
+  listIssueRequestAmounts,
+  listIssueRequestRows,
   listIssueRequestRowsByProject,
   lockIssueRequest,
+  markIssueRequestCancelled,
   markIssueRequestIssued,
   updateIssueRequestIfVersionMatches,
+  type IssueRequestBoardStatus,
   type IssueRequestListRow,
   type IssueRequestRow,
 } from "@/repositories/revenue-issue-requests";
@@ -46,7 +54,19 @@ const REPLAY_MISMATCH = "이미 저장된 요청과 값이 다름 · 새로 고�
 
 export type IssueRequestStatus = "requested" | "issued" | "cancelled";
 
-export type IssueRequestWriteRow = {
+// 06-21(O-12) — 상태 전이는 이 함수 하나가 정한다. 잇기 · 취소 · 수정 모두 요청 행을 잠근 뒤(또는 상태 조건 UPDATE가 0행일 때) 이 판정을 부른다.
+export type IssueRequestAction = "link" | "cancel" | "edit";
+export type IssueRequestVerdict = { allowed: true; to: IssueRequestStatus } | { allowed: false; reason: string };
+
+const TRANSITIONS: Record<IssueRequestAction, IssueRequestStatus> = { link: "issued", cancel: "cancelled", edit: "requested" };
+
+export function issueRequestTransition(from: IssueRequestStatus, action: IssueRequestAction): IssueRequestVerdict {
+  if (from === "requested") return { allowed: true, to: TRANSITIONS[action] };
+  if (from === "issued") return { allowed: false, reason: action === "link" ? ALREADY_LINKED : NOT_EDITABLE_ISSUED };
+  return { allowed: false, reason: NOT_EDITABLE_CANCELLED };
+}
+
+export type IssueRequestEditRow = {
   /** 화면이 만든 uuid(새 줄은 `isNew`와 함께 — 재전송에도 같은 id). */
   id: string;
   isNew?: true;
@@ -55,7 +75,13 @@ export type IssueRequestWriteRow = {
   /** 공급가 기준(발행 줄과 같은 기준 — O-12). 부가세 · 합계는 받지 않는다. */
   amount: MoneyInputDto;
   memo?: string | null;
+  cancel?: undefined;
 };
+
+/** 06-21 — 취소 행. 화면의 확인 모달은 이 행을 dirty로 만들 뿐이고, `일괄 저장` 때 원장 트랜잭션 안에서만 반영된다(r4 F-F3). */
+export type IssueRequestCancelRow = { id: string; version?: number; cancel: true };
+
+export type IssueRequestWriteRow = IssueRequestEditRow | IssueRequestCancelRow;
 
 // 트랜잭션을 열기 전에 읽는 쓰기 권리 — 원장이 잠그기 전에 부른다(잠근 트랜잭션 안 풀 호출 금지).
 export async function assertIssueRequestWriteRight(viewer: Viewer, can: typeof defaultCan = defaultCan): Promise<void> {
@@ -82,9 +108,10 @@ function samePayload(stored: IssueRequestRow, payload: Payload): boolean {
   );
 }
 
-function prepare(rows: IssueRequestWriteRow[], errors: CellFormatError[]): Array<{ input: IssueRequestWriteRow; rowIndex: number; payload: Payload }> {
-  const prepared: Array<{ input: IssueRequestWriteRow; rowIndex: number; payload: Payload }> = [];
+function prepare(rows: IssueRequestWriteRow[], errors: CellFormatError[]): Array<{ input: IssueRequestEditRow; rowIndex: number; payload: Payload }> {
+  const prepared: Array<{ input: IssueRequestEditRow; rowIndex: number; payload: Payload }> = [];
   rows.forEach((input, rowIndex) => {
+    if (input.cancel) return;
     if (input.desiredIssueDate === "") {
       errors.push({ rowIndex, rowId: input.id, field: "desiredIssueDate", label: "희망 발행일", reason: DATE_EMPTY_ERROR });
       return;
@@ -144,6 +171,39 @@ export async function saveIssueRequestRows(
     rejections.push({ rowIndex, rowId, field: "status", label: "상태", reason });
   let written = 0;
 
+  // 06-21 취소 갈래 — 이 프로젝트의 요청 행만 잠그고(같은 tx · 프로젝트 행 다음), 잠근 행의 상태 · 이어짐 · version만 판정한다.
+  // 권한 · 완료 판정은 원장이 이미 했다(트랜잭션 전 쓰기 권리 · 잠근 프로젝트 행 상태) — 여기서 다시 읽지 않는다(CROSS-R1 F-5).
+  for (const [rowIndex, input] of rows.entries()) {
+    if (!input.cancel) continue;
+    const locked = await lockIssueRequest(viewer, input.id, projectId, tx);
+    if (!locked) {
+      reject(rowIndex, input.id, NOT_FOUND);
+      continue;
+    }
+    const verdict = issueRequestTransition(locked.status as IssueRequestStatus, "cancel");
+    if (!verdict.allowed) {
+      // 응답을 잃은 재전송 — 이 사람의 첫 커밋이 version을 하나 올렸으면 no-op(쓰기 · 기록 없음).
+      const replay = locked.status === "cancelled" && locked.cancelledBy === viewer.id && input.version !== undefined && locked.version === input.version + 1;
+      if (!replay) reject(rowIndex, input.id, verdict.reason);
+      continue;
+    }
+    if (input.version === undefined || locked.version !== input.version) {
+      reject(rowIndex, input.id, CHANGED_BY_OTHER);
+      continue;
+    }
+    const cancelled = await markIssueRequestCancelled(viewer, input.id, tx);
+    if (!cancelled) {
+      reject(rowIndex, input.id, CHANGED_BY_OTHER);
+      continue;
+    }
+    await recordAction(
+      viewer,
+      { actionType: "status_change", entity: REQUEST_ENTITY, entityId: input.id, detail: { projectId, from: locked.status, to: verdict.to } },
+      { tx },
+    );
+    written += 1;
+  }
+
   for (const { input, rowIndex, payload } of prepared) {
     if (input.isNew) {
       const inserted = await insertIssueRequest(viewer, { id: input.id, projectId, requestedBy: viewer.id, ...payload }, tx);
@@ -168,9 +228,9 @@ export async function saveIssueRequestRows(
       continue;
     }
     const stored = await findIssueRequestById(viewer, input.id, tx);
+    const verdict = stored ? issueRequestTransition(stored.status as IssueRequestStatus, "edit") : null;
     if (!stored || stored.projectId !== projectId) reject(rowIndex, input.id, NOT_FOUND);
-    else if (stored.status === "issued") reject(rowIndex, input.id, NOT_EDITABLE_ISSUED);
-    else if (stored.status === "cancelled") reject(rowIndex, input.id, NOT_EDITABLE_CANCELLED);
+    else if (verdict && !verdict.allowed) reject(rowIndex, input.id, verdict.reason);
     // 응답을 잃은 재전송 — 첫 커밋이 version을 하나 올렸고 값이 같으면 no-op(쓰기 · 기록 없음).
     else if (stored.version === input.version + 1 && samePayload(stored, payload)) continue;
     else reject(rowIndex, input.id, CHANGED_BY_OTHER);
@@ -179,7 +239,7 @@ export async function saveIssueRequestRows(
   return { written };
 }
 
-// 발행 줄 잇기 — 요청 행을 `FOR UPDATE`로 잠근 뒤 프로젝트 · 상태 · 이어짐을 판정한다(잠금 뒤 판정). 거부되면 같은 트랜잭션의
+// 발행 줄 잇기 — 이 프로젝트의 요청 행만 `FOR UPDATE`로 잠근 뒤 상태 · 이어짐을 판정한다(잠금 뒤 판정). 거부되면 같은 트랜잭션의
 // 발행 줄 INSERT도 되돌아간다. 이미 같은 줄로 이어져 있으면(재전송) 쓰기 · 기록 없이 통과한다. 발행 줄 쓰기 권리는
 // saveRevenueInTx가 이미 판정했다 — 여기서 다시 판정하지 않는다(U-4).
 export async function linkIssueRequestToEntry(
@@ -192,13 +252,12 @@ export async function linkIssueRequestToEntry(
   const reject = (reason: string): never => {
     throw new SaveRejectedError([], [{ rowIndex: deps.rowIndex ?? 0, rowId: entryId, field: "amount", label: "발행 요청", reason }]);
   };
-  const locked = await lockIssueRequest(viewer, requestId, tx);
-  if (!locked || locked.projectId !== deps.projectId) return reject(NOT_FOUND);
-  if (locked.status === "issued") {
-    if (locked.issuedEntryId === entryId) return { linked: false };
-    return reject(ALREADY_LINKED);
-  }
-  if (locked.status !== "requested") return reject(NOT_EDITABLE_CANCELLED);
+  const locked = await lockIssueRequest(viewer, requestId, deps.projectId, tx);
+  if (!locked) return reject(NOT_FOUND);
+  // 재전송 — 이미 같은 줄로 이어져 있으면 쓰기 · 기록 없이 통과(전이가 아니다).
+  if (locked.status === "issued" && locked.issuedEntryId === entryId) return { linked: false };
+  const verdict = issueRequestTransition(locked.status as IssueRequestStatus, "link");
+  if (!verdict.allowed) return reject(verdict.reason);
 
   const entry = await repoFindRevenueEntryById(viewer, entryId, tx);
   if (!entry || entry.projectId !== deps.projectId || entry.kind !== "issue" || entry.archivedAt !== null) return reject(NOT_FOUND);
@@ -304,4 +363,82 @@ export async function listProjectIssueRequests(
     if (!source || "amountKrw" in dto) return dto;
     return { ...dto, ...Object.fromEntries(AMOUNT_KEYS.map((key) => [key, source[key]])) };
   });
+}
+
+// ── 06-21 S17 발행 요청 목록 · 열린 요청 요약 ─────────────────────────────
+
+export type IssueRequestGroup = "희망일 지남" | "이번 주" | "다음 주" | "그 뒤";
+
+// IR-1(계획 판단) — 서울 날짜 문자열. 주 = 월~일, `희망일 지남` = 희망일 < 오늘.
+export function issueRequestGroup(desiredIssueDate: string, today: string): IssueRequestGroup {
+  if (desiredIssueDate < today) return "희망일 지남";
+  const [year, month, day] = today.split("-").map(Number) as [number, number, number];
+  const daysToSunday = (7 - new Date(Date.UTC(year, month - 1, day)).getUTCDay()) % 7;
+  const thisSunday = addDays(today, daysToSunday);
+  if (desiredIssueDate <= thisSunday) return "이번 주";
+  if (desiredIssueDate <= addDays(thisSunday, 7)) return "다음 주";
+  return "그 뒤";
+}
+
+export type IssueRequestListStatus = IssueRequestBoardStatus | "all";
+
+/** 목록 행 — 06-18 표 DTO 투영(ISSUE_REQUEST_DTO_SPEC — 금액 키는 발행액 정보 항목대로)에 프로젝트 · 요청자 · 그룹을 더한다. */
+export type IssueRequestBoardDto = IssueRequestDto & {
+  projectId: string;
+  projectNumber: string;
+  projectName: string;
+  requesterName: string | null;
+  group: IssueRequestGroup;
+};
+
+export type IssueRequestList = {
+  rows: IssueRequestBoardDto[];
+  page: { page: number; pageCount: number; pageSize: number; total: number };
+  /** 필터 전체(쪽이 아니라)의 건수 · 공급가 합 — 금액은 발행액을 볼 때만. */
+  totals: { count: number; amountKrw?: number };
+};
+
+const LIST_DENIED = "발행 요청 목록 보기 권한 없음";
+
+type ListDeps = Partial<RevenueDeps> & { can?: typeof defaultCan; visible?: typeof defaultVisible; today?: string };
+
+export async function listIssueRequests(viewer: Viewer, filters: { status?: IssueRequestListStatus; page?: string | number }, deps?: ListDeps): Promise<IssueRequestList> {
+  if (!(await (deps?.can ?? defaultCan)(viewer, "projects.revenue", "view"))) throw new ForbiddenError(LIST_DENIED);
+  const today = deps?.today ?? seoulToday();
+  const status = (filters.status ?? "requested") === "all" ? null : ((filters.status ?? "requested") as IssueRequestBoardStatus);
+  const scope = await projectRowScope(viewer);
+  const amounts = await listIssueRequestAmounts(viewer, scope, { status });
+  const pageCount = pageCountFrom(amounts.length, LIST_PAGE_SIZE);
+  const page = clampPage(filters.page, pageCount);
+  const rows = await listIssueRequestRows(viewer, scope, { status, limit: LIST_PAGE_SIZE, offset: (page - 1) * LIST_PAGE_SIZE });
+  const projectables = await Promise.all(rows.map((row) => toProjectable(row, deps)));
+  const projected = await projectMany(viewer, projectables, ISSUE_REQUEST_DTO_SPEC);
+  const amountVisible = await (deps?.visible ?? defaultVisible)(viewer, "revenue.issued_amount");
+  return {
+    rows: projected.map((dto, index) => {
+      const row = rows[index]!;
+      return { ...dto, projectId: row.projectId, projectNumber: row.projectNumber, projectName: row.projectName, requesterName: row.requesterName, group: issueRequestGroup(row.desiredIssueDate, today) };
+    }),
+    page: { page, pageCount, pageSize: LIST_PAGE_SIZE, total: amounts.length },
+    totals: amountVisible ? { count: amounts.length, amountKrw: sumKrw(amounts.map((entry) => entry.amountKrw)) } : { count: amounts.length },
+  };
+}
+
+/** 열린(신청됨) 발행 요청 요약 — 프로젝트 목록 하위 링크 `발행 요청 {N}`(SP-4)과 06-23 「내 차례」 묶음이 쓴다. 공급가 합은 발행액을 볼 때만(A-605). */
+export type OpenIssueRequestSummary = { count: number; earliestDesiredDate?: string; supplyKrw?: number };
+
+export async function summarizeOpenIssueRequests(
+  viewer: Viewer,
+  deps?: { can?: typeof defaultCan; visible?: typeof defaultVisible },
+): Promise<OpenIssueRequestSummary | null> {
+  if (!(await (deps?.can ?? defaultCan)(viewer, "projects.revenue", "view"))) return null;
+  const amounts = await listIssueRequestAmounts(viewer, await projectRowScope(viewer), { status: "requested" });
+  const earliest = amounts[0];
+  if (!earliest) return { count: 0 };
+  const amountVisible = await (deps?.visible ?? defaultVisible)(viewer, "revenue.issued_amount");
+  return {
+    count: amounts.length,
+    earliestDesiredDate: earliest.desiredIssueDate,
+    ...(amountVisible ? { supplyKrw: sumKrw(amounts.map((entry) => entry.amountKrw)) } : {}),
+  };
 }

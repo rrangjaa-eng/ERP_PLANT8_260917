@@ -11,14 +11,15 @@ import { insertVendor } from "@/repositories/vendors";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { createProject, CompletedProjectError } from "@/domain/projects";
 import { saveProjectLedger } from "@/domain/projects/ledger";
-import { listProjectIssueRequests } from "@/domain/issue-requests";
+import { listIssueRequests, listProjectIssueRequests, summarizeOpenIssueRequests } from "@/domain/issue-requests";
 import { SaveRejectedError } from "@/domain/quotes/lines";
 import { ForbiddenError, listRevenue } from "@/domain/revenue";
 import { getSettingValue as realGetSettingValue } from "@/domain/settings/registry";
 import { TAX_VAT_RATE } from "@/domain/settings/keys";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { insertRole } from "@/repositories/roles";
-import { deferred, waitForLockWaiter } from "./lock-race";
+import { insertIssueRequest } from "@/repositories/revenue-issue-requests";
+import { deferred, waitForLockWaiter, type Deferred } from "./lock-race";
 
 // 06-18 — 발행 요청(D-610): PM이 요청 줄을 일괄 저장하고, 매출 기록 권한자가 새 발행 줄에 `fromIssueRequestId`를 실어 저장하면
 // 같은 트랜잭션에서 요청이 `발행됨`으로 이어진다. 표는 06-27, 이 파일은 domain · 원장 경로만 본다(UI는 E2E).
@@ -495,5 +496,443 @@ describe("발행 요청 — 동시 잇기 · 노출 · 상태 잠김 (06-18 Task
     });
 
     expect(await storedRequest(row.id)).toMatchObject({ status: "issued", issuedEntryId: entryId });
+  });
+});
+
+// 06-21(O-12 · r4 F-F3) — 취소는 원장 일괄 저장의 한 행(`{ id, version, cancel: true }`)으로만 간다. 별도 액션 · 트랜잭션 없음.
+const cancelRow = (id: string, version: number) => ({ id, version, cancel: true as const });
+
+async function cancelLogs(id: string) {
+  return db
+    .select()
+    .from(actionLog)
+    .where(and(eq(actionLog.entity, "revenue_issue_request"), eq(actionLog.entityId, id), eq(actionLog.actionType, "status_change")));
+}
+
+async function rejectionOf(attempt: Promise<unknown>): Promise<unknown> {
+  return attempt.then(
+    () => null,
+    (caught: unknown) => caught,
+  );
+}
+
+describe("발행 요청 취소 (saveIssueRequestRows 취소 갈래 — 06-21)", () => {
+  it("정상: 신청됨 줄을 취소하면 cancelled + 취소한 사람 · 시각이 남고 줄은 지워지지 않으며 같은 tx에 status_change 기록", async () => {
+    const { project, pm } = await setupProject();
+    const row = requestRow();
+    await saveProjectLedger(pm, project.id, { seenStatus: "bidding", issueRequests: [row] });
+
+    const result = await saveProjectLedger(pm, project.id, { seenStatus: "bidding", issueRequests: [cancelRow(row.id, 1)] });
+
+    const stored = await storedRequest(row.id);
+    expect(stored).toMatchObject({ status: "cancelled", cancelledBy: pm.id, version: 2, memo: "선금", amountAmountKrw: 20_000_000 });
+    expect(stored?.cancelledAt).toBeInstanceOf(Date);
+    expect(result.issueRequests?.find((dto) => dto.id === row.id)).toMatchObject({ status: "cancelled" });
+    const logs = await cancelLogs(row.id);
+    expect(logs).toHaveLength(1);
+    expect(logs[0]?.detail).toMatchObject({ projectId: project.id, from: "requested", to: "cancelled" });
+  });
+
+  it("권한: 프로젝트 쓰기 권한이 없으면 트랜잭션을 열기 전에 거부하고 요청은 그대로다", async () => {
+    const { project, pm } = await setupProject();
+    const row = requestRow();
+    await saveProjectLedger(pm, project.id, { seenStatus: "bidding", issueRequests: [row] });
+    const finance = await createFinanceViewer();
+
+    const attempt = saveProjectLedger(finance, project.id, { seenStatus: "bidding", issueRequests: [cancelRow(row.id, 1)] });
+
+    await expect(attempt).rejects.toBeInstanceOf(ForbiddenError);
+    expect(await storedRequest(row.id)).toMatchObject({ status: "requested", version: 1, cancelledBy: null });
+  });
+
+  it("이어짐: 발행됨 요청 취소는 잠금 뒤 거부하고 요청 · 발행 줄이 그대로다", async () => {
+    const { project, pm } = await setupProject();
+    const finance = await createFinanceViewer();
+    const row = await issuedRequest(project.id, pm, finance);
+
+    const rejection = await rejectionOf(saveProjectLedger(pm, project.id, { seenStatus: "bidding", issueRequests: [cancelRow(row.id, 2)] }));
+
+    expect(rejection).toBeInstanceOf(SaveRejectedError);
+    expect((rejection as SaveRejectedError).formatErrors[0]).toMatchObject({ rowId: row.id, reason: "이미 발행됨 · 새로 고침" });
+    expect(await storedRequest(row.id)).toMatchObject({ status: "issued", version: 2, cancelledBy: null });
+    expect(await db.select().from(revenueEntries).where(eq(revenueEntries.projectId, project.id))).toHaveLength(1);
+  });
+
+  it("이미 취소된 요청을 다른 화면이 다시 취소하면(옛 version) 거부한다", async () => {
+    const { project, pm } = await setupProject();
+    const row = requestRow();
+    await saveProjectLedger(pm, project.id, { seenStatus: "bidding", issueRequests: [row] });
+    await saveProjectLedger(pm, project.id, { seenStatus: "bidding", issueRequests: [cancelRow(row.id, 1)] });
+
+    const rejection = await rejectionOf(saveProjectLedger(pm, project.id, { seenStatus: "bidding", issueRequests: [cancelRow(row.id, 5)] }));
+
+    expect(rejection).toBeInstanceOf(SaveRejectedError);
+    expect((rejection as SaveRejectedError).formatErrors[0]?.reason).toBe("취소된 요청 · 새로 고침");
+    expect(await cancelLogs(row.id)).toHaveLength(1);
+  });
+
+  it("같은 취소를 다시 보내면(응답 유실 재전송) 쓰기 · 기록 없이 통과한다", async () => {
+    const { project, pm } = await setupProject();
+    const row = requestRow();
+    await saveProjectLedger(pm, project.id, { seenStatus: "bidding", issueRequests: [row] });
+    await saveProjectLedger(pm, project.id, { seenStatus: "bidding", issueRequests: [cancelRow(row.id, 1)] });
+
+    await saveProjectLedger(pm, project.id, { seenStatus: "bidding", issueRequests: [cancelRow(row.id, 1)] });
+
+    expect(await storedRequest(row.id)).toMatchObject({ status: "cancelled", version: 2 });
+    expect(await cancelLogs(row.id)).toHaveLength(1);
+  });
+
+  it("완료: completed 프로젝트의 취소는 06-18 자리(잠근 프로젝트 행)에서 CompletedProjectError로 막힌다", async () => {
+    const { project, pm } = await setupProject();
+    const row = requestRow();
+    await saveProjectLedger(pm, project.id, { seenStatus: "bidding", issueRequests: [row] });
+    await db.update(projects).set({ status: "completed" }).where(eq(projects.id, project.id));
+
+    const attempt = saveProjectLedger(pm, project.id, { seenStatus: "completed", issueRequests: [cancelRow(row.id, 1)] });
+
+    await expect(attempt).rejects.toBeInstanceOf(CompletedProjectError);
+    expect(await storedRequest(row.id)).toMatchObject({ status: "requested", version: 1 });
+  });
+
+  it("version: 다른 사람이 먼저 고친 요청(version 불일치)의 취소는 거부하고 값을 바꾸지 않는다", async () => {
+    const { project, pm } = await setupProject();
+    const row = requestRow();
+    await saveProjectLedger(pm, project.id, { seenStatus: "bidding", issueRequests: [row] });
+    await saveProjectLedger(pm, project.id, {
+      seenStatus: "bidding",
+      issueRequests: [{ id: row.id, version: 1, desiredIssueDate: "2026-10-05", amount: krw(20_000_000), memo: "고침" }],
+    });
+
+    const rejection = await rejectionOf(saveProjectLedger(pm, project.id, { seenStatus: "bidding", issueRequests: [cancelRow(row.id, 1)] }));
+
+    expect(rejection).toBeInstanceOf(SaveRejectedError);
+    expect((rejection as SaveRejectedError).formatErrors[0]?.reason).toBe("다른 사람이 먼저 이 요청을 바꿈 · 새로 고침");
+    expect(await storedRequest(row.id)).toMatchObject({ status: "requested", version: 2, memo: "고침" });
+  });
+
+  it("다른 프로젝트의 요청 id를 내 프로젝트 저장으로 취소하면 거부한다", async () => {
+    const a = await setupProject();
+    const b = await setupProject();
+    const row = requestRow();
+    await saveProjectLedger(a.pm, a.project.id, { seenStatus: "bidding", issueRequests: [row] });
+
+    const rejection = await rejectionOf(saveProjectLedger(b.pm, b.project.id, { seenStatus: "bidding", issueRequests: [cancelRow(row.id, 1)] }));
+
+    expect(rejection).toBeInstanceOf(SaveRejectedError);
+    expect(await storedRequest(row.id)).toMatchObject({ status: "requested", version: 1 });
+  });
+
+  it("같은 tx 기록: status_change 기록이 실패하면 취소도 되돌아간다", async () => {
+    const { project, pm } = await setupProject();
+    const row = requestRow();
+    await saveProjectLedger(pm, project.id, { seenStatus: "bidding", issueRequests: [row] });
+
+    const attempt = saveProjectLedger(
+      pm,
+      project.id,
+      { seenStatus: "bidding", issueRequests: [cancelRow(row.id, 1)] },
+      {
+        recordAction: async (viewer, entry, deps) => {
+          if (entry.actionType === "status_change" && entry.entity === "revenue_issue_request") throw new UserFacingError("행동 기록 실패(주입)");
+          const { recordAction } = await import("@/domain/action-log/record");
+          return recordAction(viewer, entry, deps);
+        },
+      },
+    );
+
+    await expect(attempt).rejects.toThrow("행동 기록 실패(주입)");
+    expect(await storedRequest(row.id)).toMatchObject({ status: "requested", version: 1, cancelledAt: null });
+  });
+});
+
+// [E-26] 취소 ∥ 잇기 — 원장 `afterLock` 장벽으로 쥔 쪽을 프로젝트 행 잠금에서 멈추고, 반대 저장이 그 잠금을 기다리는 것을 확인한 뒤 푼다.
+// 두 원장 저장은 프로젝트 행에서 먼저 줄을 서므로 이 테스트가 지키는 것은 「요청 행 잠금 뒤 issueRequestTransition 판정」이다.
+async function raceLedgerSaves(holder: () => Promise<unknown>, contender: () => Promise<unknown>, holderBarrier: { locked: Deferred<void>; release: Deferred<void> }) {
+  const first = holder();
+  const reachedLock = await Promise.race([holderBarrier.locked.promise.then(() => true), first.then(() => false, () => false)]);
+  expect(reachedLock, "잠금 순서 조건을 만들지 못했다 — 쥔 쪽이 프로젝트 행 잠금에 닿지 않음").toBe(true);
+  const second = contender();
+  try {
+    await waitForLockWaiter(pool);
+  } catch (error) {
+    holderBarrier.release.resolve();
+    await Promise.allSettled([first, second]);
+    throw new Error(`잠금 순서 조건을 만들지 못했다 — 뒤 저장이 쥔 쪽 잠금을 기다리지 않음(${(error as Error).message})`);
+  }
+  holderBarrier.release.resolve();
+  return Promise.allSettled([first, second]);
+}
+
+describe("발행 요청 — 취소 ∥ 잇기 (E-26 장벽)", () => {
+  async function prepared() {
+    const { project, pm } = await setupProject();
+    const finance = await createFinanceViewer();
+    const row = requestRow();
+    await saveProjectLedger(pm, project.id, { seenStatus: "bidding", issueRequests: [row] });
+    const entryId = randomUUID();
+    const linkInput = {
+      seenStatus: "bidding" as const,
+      revenue: { issuedEntries: [{ id: entryId, isNew: true as const, entryDate: "2026-09-30", amount: krw(20_000_000), fromIssueRequestId: row.id }] },
+    };
+    const cancelInput = { seenStatus: "bidding" as const, issueRequests: [cancelRow(row.id, 1)] };
+    const barrier = { locked: deferred(), release: deferred() };
+    const afterLock = async () => {
+      barrier.locked.resolve();
+      await barrier.release.promise;
+    };
+    return { project, pm, finance, row, entryId, linkInput, cancelInput, barrier, afterLock };
+  }
+
+  it("취소 ∥ 잇기 — 취소 먼저 잠금: 취소만 성공하고 잇기는 거부 + 그 발행 줄 INSERT도 되돌아간다", async () => {
+    const { project, pm, finance, row, linkInput, cancelInput, barrier, afterLock } = await prepared();
+
+    const [cancel, link] = await raceLedgerSaves(
+      () => saveProjectLedger(pm, project.id, cancelInput, { afterLock }),
+      () => saveProjectLedger(finance, project.id, linkInput),
+      barrier,
+    );
+
+    expect([cancel, link].filter((settled) => settled.status === "fulfilled")).toHaveLength(1);
+    expect(cancel.status).toBe("fulfilled");
+    const rejection: unknown = link.status === "rejected" ? link.reason : null;
+    expect(rejection).toBeInstanceOf(UserFacingError);
+    expect((rejection as SaveRejectedError).formatErrors?.[0]?.reason).toBe("취소된 요청 · 새로 고침");
+    expect(await storedRequest(row.id)).toMatchObject({ status: "cancelled", issuedEntryId: null });
+    expect(await db.select().from(revenueEntries).where(eq(revenueEntries.projectId, project.id))).toHaveLength(0);
+  });
+
+  it("취소 ∥ 잇기 — 잇기 먼저 잠금: 잇기만 성공하고 취소는 거부, 요청은 발행됨 · 발행 줄 1건", async () => {
+    const { project, pm, finance, row, entryId, linkInput, cancelInput, barrier, afterLock } = await prepared();
+
+    const [link, cancel] = await raceLedgerSaves(
+      () => saveProjectLedger(finance, project.id, linkInput, { afterLock }),
+      () => saveProjectLedger(pm, project.id, cancelInput),
+      barrier,
+    );
+
+    expect([link, cancel].filter((settled) => settled.status === "fulfilled")).toHaveLength(1);
+    expect(link.status).toBe("fulfilled");
+    const rejection: unknown = cancel.status === "rejected" ? cancel.reason : null;
+    expect(rejection).toBeInstanceOf(SaveRejectedError);
+    expect((rejection as SaveRejectedError).formatErrors[0]?.reason).toBe("이미 발행됨 · 새로 고침");
+    expect(await storedRequest(row.id)).toMatchObject({ status: "issued", issuedEntryId: entryId, cancelledBy: null });
+    expect(await db.select().from(revenueEntries).where(eq(revenueEntries.projectId, project.id))).toHaveLength(1);
+  });
+});
+
+// 06-21 독립 검토(낮음) — 요청 행 잠금은 내 프로젝트 행만 건다. 남의 프로젝트 요청 id를 실은 저장이 그 행을 `FOR UPDATE`로 잡으면
+// 그 프로젝트의 정상 저장과 엇갈린 순서로 행을 잡아 교착(40P01)이 날 수 있다. 다른 연결이 그 요청 행을 쥔 채로 두고, 내 저장이 그
+// 잠금을 기다리지 않고(잠금 대기 연결 0) 곧바로 거부되는지 본다.
+describe("발행 요청 — 남의 프로젝트 요청 행은 잠그지 않는다 (06-21 검토 낮음)", () => {
+  async function rejectsWithoutWaiting(foreignRequestId: string, attempt: () => Promise<unknown>) {
+    const holder = await pool.connect();
+    try {
+      await holder.query("BEGIN");
+      await holder.query("SELECT id FROM revenue_issue_requests WHERE id = $1 FOR UPDATE", [foreignRequestId]);
+      const saving = attempt();
+      saving.catch(() => undefined);
+      const first = await Promise.race([
+        saving.then(
+          () => "settled",
+          () => "settled",
+        ),
+        waitForLockWaiter(pool, { timeoutMs: 3000 }).then(
+          () => "waiting",
+          () => "no-waiter",
+        ),
+      ]);
+      await holder.query("ROLLBACK");
+      const rejection = await rejectionOf(saving);
+      return { first, rejection };
+    } finally {
+      holder.release();
+    }
+  }
+
+  it("취소: 다른 프로젝트의 요청 id를 실은 취소는 그 요청 행 잠금을 기다리지 않고 거부한다", async () => {
+    const a = await setupProject();
+    const b = await setupProject();
+    const row = requestRow();
+    await saveProjectLedger(a.pm, a.project.id, { seenStatus: "bidding", issueRequests: [row] });
+
+    const { first, rejection } = await rejectsWithoutWaiting(row.id, () =>
+      saveProjectLedger(b.pm, b.project.id, { seenStatus: "bidding", issueRequests: [cancelRow(row.id, 1)] }),
+    );
+
+    expect(first).toBe("settled");
+    expect(rejection).toBeInstanceOf(SaveRejectedError);
+    expect(await storedRequest(row.id)).toMatchObject({ projectId: a.project.id, status: "requested", version: 1 });
+  });
+
+  it("잇기: 다른 프로젝트의 요청 id를 실은 발행 줄은 그 요청 행 잠금을 기다리지 않고 거부하고 발행 줄도 되돌린다", async () => {
+    const a = await setupProject();
+    const b = await setupProject();
+    const finance = await createFinanceViewer();
+    const row = requestRow();
+    await saveProjectLedger(a.pm, a.project.id, { seenStatus: "bidding", issueRequests: [row] });
+
+    const { first, rejection } = await rejectsWithoutWaiting(row.id, () =>
+      saveProjectLedger(finance, b.project.id, {
+        seenStatus: "bidding",
+        revenue: { issuedEntries: [{ id: randomUUID(), isNew: true, entryDate: "2026-09-30", amount: krw(20_000_000), fromIssueRequestId: row.id }] },
+      }),
+    );
+
+    expect(first).toBe("settled");
+    expect(rejection).toBeInstanceOf(SaveRejectedError);
+    expect(await storedRequest(row.id)).toMatchObject({ projectId: a.project.id, status: "requested", issuedEntryId: null, version: 1 });
+    expect(await db.select().from(revenueEntries).where(eq(revenueEntries.projectId, b.project.id))).toHaveLength(0);
+  });
+});
+
+// 06-21 Task 2 — S17 발행 요청 목록(listIssueRequests). 통합 DB는 모든 테스트가 같이 쓰므로 보는 범위 own 계급의 사람을 PM으로 둔
+// 프로젝트를 만들어 그 사람의 목록에는 그 프로젝트의 요청만 서게 한다.
+async function createBoardViewer(opts: { revenueView: boolean; issuedAmount: boolean }): Promise<Viewer> {
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `발행 요청 목록-${randomUUID()}`, viewScope: "own" });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
+  if (opts.revenueView) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects.revenue", action: "view", allowed: true });
+  await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "project.value", visible: true });
+  await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "revenue.issued_amount", visible: opts.issuedAmount });
+  const { userId } = await createAccount(SYSTEM_VIEWER, { email: `board-${randomUUID()}@example.test`, name: "목록 보는 사람", roleId: role.id });
+  return { id: userId, roleId: role.id };
+}
+
+async function boardProject(owner: Viewer) {
+  const client = await insertVendor(SYSTEM_VIEWER, { name: `거래처-${randomUUID()}`, normalizedName: `거래처-${randomUUID()}` });
+  const [team] = await db.select().from(teams).limit(1);
+  if (!team) throw new Error("시드된 팀이 없습니다");
+  return createProject(SYSTEM_VIEWER, { clientId: client.id, teamId: team.id, pmUserId: owner.id, name: `목록 프로젝트-${randomUUID()}` });
+}
+
+async function seedBoardRequest(projectId: string, requestedBy: string, over: { desiredIssueDate: string; amount?: number; memo?: string | null }) {
+  const id = randomUUID();
+  await insertIssueRequest(
+    SYSTEM_VIEWER,
+    { id, projectId, requestedBy, desiredIssueDate: over.desiredIssueDate, amountCurrency: "KRW", amountForeignAmount: null, amountFxRate: "1.0000", amountAmountKrw: over.amount ?? 10_000_000, memo: over.memo ?? null },
+    db,
+  );
+  return id;
+}
+
+const TODAY = "2026-10-13";
+
+describe("발행 요청 목록 (listIssueRequests — S17, 06-21 Task 2)", () => {
+  it("projects.revenue 보기가 없으면 거부한다", async () => {
+    const viewer = await createBoardViewer({ revenueView: false, issuedAmount: true });
+
+    await expect(listIssueRequests(viewer, { status: "requested" }, { today: TODAY })).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it("기본 필터는 신청됨이고 행은 희망일 그룹 순서(희망일 지남 → 이번 주 → 다음 주 → 그 뒤)로 선다", async () => {
+    const viewer = await createBoardViewer({ revenueView: true, issuedAmount: true });
+    const project = await boardProject(viewer);
+    const later = await seedBoardRequest(project.id, viewer.id, { desiredIssueDate: "2026-11-30" });
+    const next = await seedBoardRequest(project.id, viewer.id, { desiredIssueDate: "2026-10-20" });
+    const overdue = await seedBoardRequest(project.id, viewer.id, { desiredIssueDate: "2026-10-01" });
+    const thisWeek = await seedBoardRequest(project.id, viewer.id, { desiredIssueDate: "2026-10-15" });
+    const cancelled = await seedBoardRequest(project.id, viewer.id, { desiredIssueDate: "2026-10-14" });
+    await db.update(revenueIssueRequests).set({ status: "cancelled", cancelledBy: viewer.id, cancelledAt: new Date() }).where(eq(revenueIssueRequests.id, cancelled));
+
+    const list = await listIssueRequests(viewer, {}, { today: TODAY });
+
+    expect(list.rows.map((row) => row.id)).toEqual([overdue, thisWeek, next, later]);
+    expect(list.rows.map((row) => row.group)).toEqual(["희망일 지남", "이번 주", "다음 주", "그 뒤"]);
+    expect(list.rows[0]).toMatchObject({ projectId: project.id, projectNumber: project.number, projectName: project.name, requesterName: "목록 보는 사람", status: "requested" });
+  });
+
+  it("합계 줄은 필터 전체의 건수 · 공급가 합(sumKrw)이고, 전체 보기는 세 상태를 모두 싣는다", async () => {
+    const viewer = await createBoardViewer({ revenueView: true, issuedAmount: true });
+    const project = await boardProject(viewer);
+    await seedBoardRequest(project.id, viewer.id, { desiredIssueDate: "2026-10-14", amount: 20_000_000 });
+    await seedBoardRequest(project.id, viewer.id, { desiredIssueDate: "2026-10-16", amount: 24_000_000 });
+    const cancelled = await seedBoardRequest(project.id, viewer.id, { desiredIssueDate: "2026-10-17", amount: 1_000_000 });
+    await db.update(revenueIssueRequests).set({ status: "cancelled", cancelledBy: viewer.id, cancelledAt: new Date() }).where(eq(revenueIssueRequests.id, cancelled));
+
+    const requested = await listIssueRequests(viewer, { status: "requested" }, { today: TODAY });
+    const all = await listIssueRequests(viewer, { status: "all" }, { today: TODAY });
+
+    expect(requested.totals).toEqual({ count: 2, amountKrw: 44_000_000 });
+    expect(all.totals).toEqual({ count: 3, amountKrw: 45_000_000 });
+    expect(all.rows.map((row) => row.status)).toEqual(["requested", "requested", "cancelled"]);
+  });
+
+  it("발행액(revenue.issued_amount)을 못 보는 읽기 계정에게는 행 · 합계 줄에 금액 키가 없다(A-605)", async () => {
+    const viewer = await createBoardViewer({ revenueView: true, issuedAmount: false });
+    const project = await boardProject(viewer);
+    await seedBoardRequest(project.id, viewer.id, { desiredIssueDate: "2026-10-14", amount: 20_000_000 });
+
+    const list = await listIssueRequests(viewer, {}, { today: TODAY });
+
+    expect(list.rows).toHaveLength(1);
+    for (const key of ["amountKrw", "vatKrw", "totalKrw", "issuedAmountKrw"]) expect(Object.keys(list.rows[0] ?? {})).not.toContain(key);
+    expect(list.totals).toEqual({ count: 1 });
+  });
+
+  it("51건이면 50건씩 두 페이지다", async () => {
+    const viewer = await createBoardViewer({ revenueView: true, issuedAmount: true });
+    const project = await boardProject(viewer);
+    for (let index = 0; index < 51; index++) await seedBoardRequest(project.id, viewer.id, { desiredIssueDate: `2026-11-${String((index % 28) + 1).padStart(2, "0")}`, amount: 1_000 });
+
+    const first = await listIssueRequests(viewer, {}, { today: TODAY });
+    const second = await listIssueRequests(viewer, { page: "2" }, { today: TODAY });
+
+    expect(first.rows).toHaveLength(50);
+    expect(first.page).toEqual({ page: 1, pageCount: 2, pageSize: 50, total: 51 });
+    expect(second.rows).toHaveLength(1);
+    expect(second.page.page).toBe(2);
+    expect(new Set([...first.rows, ...second.rows].map((row) => row.id)).size).toBe(51);
+    expect(first.totals.count).toBe(51);
+  });
+
+  it("보는 범위 밖 프로젝트의 요청은 서지 않는다", async () => {
+    const viewer = await createBoardViewer({ revenueView: true, issuedAmount: true });
+    const other = await createBoardViewer({ revenueView: true, issuedAmount: true });
+    const mine = await boardProject(viewer);
+    const theirs = await boardProject(other);
+    const own = await seedBoardRequest(mine.id, viewer.id, { desiredIssueDate: "2026-10-14" });
+    await seedBoardRequest(theirs.id, other.id, { desiredIssueDate: "2026-10-14" });
+
+    const list = await listIssueRequests(viewer, {}, { today: TODAY });
+
+    expect(list.rows.map((row) => row.id)).toEqual([own]);
+  });
+});
+
+describe("열린 발행 요청 요약 (summarizeOpenIssueRequests — SP-4 링크 · 06-23, 06-21 Task 3)", () => {
+  it("projects.revenue 보기가 없으면 null이다(링크 없음)", async () => {
+    const viewer = await createBoardViewer({ revenueView: false, issuedAmount: true });
+
+    expect(await summarizeOpenIssueRequests(viewer)).toBeNull();
+  });
+
+  it("신청됨 0건이면 { count: 0 }이다(발행됨 · 취소는 세지 않는다)", async () => {
+    const viewer = await createBoardViewer({ revenueView: true, issuedAmount: true });
+    const project = await boardProject(viewer);
+    const cancelled = await seedBoardRequest(project.id, viewer.id, { desiredIssueDate: "2026-09-30" });
+    await db.update(revenueIssueRequests).set({ status: "cancelled", cancelledAt: new Date(), cancelledBy: viewer.id }).where(eq(revenueIssueRequests.id, cancelled));
+
+    expect(await summarizeOpenIssueRequests(viewer)).toEqual({ count: 0 });
+  });
+
+  it("신청됨 2건이면 건수 · 가장 이른 희망 발행일 · 공급가 합이다", async () => {
+    const viewer = await createBoardViewer({ revenueView: true, issuedAmount: true });
+    const project = await boardProject(viewer);
+    await seedBoardRequest(project.id, viewer.id, { desiredIssueDate: "2026-10-02", amount: 3_000_000 });
+    await seedBoardRequest(project.id, viewer.id, { desiredIssueDate: "2026-09-30", amount: 2_000_000 });
+
+    expect(await summarizeOpenIssueRequests(viewer)).toEqual({ count: 2, earliestDesiredDate: "2026-09-30", supplyKrw: 5_000_000 });
+  });
+
+  it("발행액을 볼 수 없으면 공급가 키가 없다(A-605)", async () => {
+    const viewer = await createBoardViewer({ revenueView: true, issuedAmount: false });
+    const project = await boardProject(viewer);
+    await seedBoardRequest(project.id, viewer.id, { desiredIssueDate: "2026-10-02", amount: 3_000_000 });
+    await seedBoardRequest(project.id, viewer.id, { desiredIssueDate: "2026-09-30", amount: 2_000_000 });
+
+    const summary = await summarizeOpenIssueRequests(viewer);
+
+    expect(summary).toEqual({ count: 2, earliestDesiredDate: "2026-09-30" });
+    expect(summary).not.toHaveProperty("supplyKrw");
   });
 });

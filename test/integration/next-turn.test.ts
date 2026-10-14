@@ -1,10 +1,44 @@
 import { describe, expect, it, vi } from "vitest";
+
+// 06-23(E-31): 「내 차례」 Phase 6 원천을 실제 함수 그대로 감싸 호출 수를 센다(approvals-inbox-projection.test.ts 꼴 — 동작은 그대로).
+vi.mock("@/domain/payments/targets", async () => {
+  const actual = await vi.importActual<typeof import("@/domain/payments/targets")>("@/domain/payments/targets");
+  return { ...actual, listAllPaymentTargets: vi.fn(actual.listAllPaymentTargets) };
+});
+vi.mock("@/domain/purchase-requests", async () => {
+  const actual = await vi.importActual<typeof import("@/domain/purchase-requests")>("@/domain/purchase-requests");
+  return { ...actual, listPurchaseRequests: vi.fn(actual.listPurchaseRequests) };
+});
+vi.mock("@/repositories/next-turn", async () => {
+  const actual = await vi.importActual<typeof import("@/repositories/next-turn")>("@/repositories/next-turn");
+  return { ...actual, listSettlingProjectsOfPm: vi.fn(actual.listSettlingProjectsOfPm), findOldestRequestedPurchaseAt: vi.fn(actual.findOldestRequestedPurchaseAt) };
+});
+vi.mock("@/domain/issue-requests", async () => {
+  const actual = await vi.importActual<typeof import("@/domain/issue-requests")>("@/domain/issue-requests");
+  return { ...actual, summarizeOpenIssueRequests: vi.fn(actual.summarizeOpenIssueRequests) };
+});
+vi.mock("@/domain/evidence/has-evidence", async () => {
+  const actual = await vi.importActual<typeof import("@/domain/evidence/has-evidence")>("@/domain/evidence/has-evidence");
+  return { ...actual, hasEvidence: vi.fn(actual.hasEvidence), ownersWithEvidence: vi.fn(actual.ownersWithEvidence) };
+});
+vi.mock("@/domain/pre-settle-check", async () => {
+  const actual = await vi.importActual<typeof import("@/domain/pre-settle-check")>("@/domain/pre-settle-check");
+  return {
+    ...actual,
+    loadPreSettleInputs: vi.fn(actual.loadPreSettleInputs),
+    computePreSettleCheck: vi.fn(actual.computePreSettleCheck),
+    getPreSettleCheck: vi.fn(actual.getPreSettleCheck),
+  };
+});
+
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { randomUUID } from "node:crypto";
-import { approvalInstances, files } from "@/db/schema";
+import { approvalInstances, expenseEvidenceReviews, expensePayments, expenses, files, projects, purchaseRequests, teams } from "@/db/schema";
 import { approveDocument, getDocumentKind, listMyBlockedDocuments, listMyInbox, loadKindDetails, registerDocumentKind, rejectDocument, withdrawDocument } from "@/domain/approvals";
-import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND, saveExpenseDraft } from "@/domain/expenses";
+import { closeExpense, createExpenseFromLines, EXPENSE_DOCUMENT_KIND, saveExpenseDraft } from "@/domain/expenses";
+import { listExpenseEvidenceSignals, pickExpenseEvidenceSignal } from "@/domain/expenses/evidence-signals";
+import { hasEvidence, ownersWithEvidence } from "@/domain/evidence/has-evidence";
 import { voidEvidence } from "@/domain/evidence";
 import { submitLeave } from "@/domain/leave";
 import { listNextTurnItems } from "@/domain/next-turn";
@@ -18,6 +52,25 @@ import { NOW_2026 } from "./approvals-fixtures";
 import { attachEvidence, makeEvidenceManager, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
 import { submitSettlement } from "@/domain/settlements";
 import { setupSettlementProject } from "./fixtures/settlements";
+import { approvedExpenseWithEvidence, makePaymentManager, setEvidenceRequired } from "./fixtures/payments";
+import { addDays } from "@/lib/kst-date";
+import { listAllPaymentTargets } from "@/domain/payments/targets";
+import { seoulToday } from "@/lib/dates";
+import { listPurchaseRequests } from "@/domain/purchase-requests";
+import { summarizeOpenIssueRequests } from "@/domain/issue-requests";
+import { computePreSettleCheck, getPreSettleCheck, loadPreSettleInputs } from "@/domain/pre-settle-check";
+import { findOldestRequestedPurchaseAt, listSettlingProjectsOfPm } from "@/repositories/next-turn";
+import { createProject } from "@/domain/projects";
+import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
+import { insertRole } from "@/repositories/roles";
+import { upsertPermission } from "@/repositories/permissions";
+import { insertVendor } from "@/repositories/vendors";
+import { insertIssueRequest } from "@/repositories/revenue-issue-requests";
+import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
+import { formatKrw } from "@/lib/format-number";
+import { CEO_ROLE_ID } from "@/domain/permissions/roles";
+import { makePerson } from "./approvals-fixtures";
+import type { Viewer } from "@/domain/viewer";
 
 // 05-10 Task 1 — 「내 차례」 공급 함수의 [결재] 갈래와 결재 시트 지출결의 상세(구조 → 투영 → 문자열 행, 증빙 갈래 · 세율 바뀜).
 // 판정 · 글자는 전부 종류 요약(nextTurnText · measure)에서 온다 — 함수는 종류 이름으로 분기하지 않는다.
@@ -235,7 +288,8 @@ describe("증빙 무효 [막힘] (G1)", () => {
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({
       tag: "막힘",
-      label: "가을 팝업 · 무대 제작 — 증빙 무효",
+      // 06-23 PN-7: 결재 통과 · 지급 전 · 유일한 파일 무효 = 증빙 0 → 문서마다 신호 하나(PN-6)라 `증빙 없음 · 지급 대기`.
+      label: "가을 팝업 · 무대 제작 — 증빙 없음 · 지급 대기",
       reason: "",
       measureText: "12,400,000",
       action: { label: "증빙 올리기", href: `/expenses/${expenseId}#evidence` },
@@ -269,7 +323,7 @@ describe("증빙 무효 [막힘] (G1)", () => {
       const items = await listNextTurnItems(fx.pm);
       expect(items.map((item) => item.label)).toEqual([
         expect.stringMatching(/지출결의 반려, 김도윤$/) as string,
-        "가을 팝업 · 무대 제작 — 증빙 무효",
+        "가을 팝업 · 무대 제작 — 증빙 없음 · 지급 대기",
       ]);
       expect(spy).toHaveBeenCalledTimes(1);
     } finally {
@@ -299,7 +353,7 @@ describe("증빙 무효 [막힘] — 오래된 승인 문서 (A9 · adversarial 
     );
 
     const items = await listNextTurnItems(fx.pm);
-    expect(items.map((item) => item.label)).toEqual(["가을 팝업 · 무대 제작 — 증빙 무효"]);
+    expect(items.map((item) => item.label)).toEqual(["가을 팝업 · 무대 제작 — 증빙 없음 · 지급 대기"]);
   });
 });
 
@@ -344,5 +398,588 @@ describe("listNextTurnItems — 정산 결재(05-11)", () => {
     const blocked = await listNextTurnItems(fx.pm);
     expect(blocked).toHaveLength(1);
     expect(blocked[0]).toMatchObject({ tag: "막힘", label: "가을 팝업 — 정산 결재 반려, 최대표", measureText: "—", action: { label: "정산 결재 열기", href } });
+  });
+});
+
+// 06-23 Task 1(S19 · UA-611 · O-15): 지급 권한자 홈에 지급 묶음 한 줄 — 05 공급 함수 뒤에 이어 붙는다. 권한 없는 역할은 원천을 부르지 않는다.
+describe("「내 차례」 Phase 6 — 지급 묶음 (06-23)", () => {
+  const today = seoulToday();
+
+  async function payerWithTarget() {
+    const fx = await setupExpenseProject();
+    const payer = await makePaymentManager();
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: payer.roleId ?? "", infoItem: "expense.amount", visible: true });
+    const approved = await approvedExpenseWithEvidence(fx);
+    await db.update(expenses).set({ scheduledPaymentDate: today }).where(eq(expenses.id, approved.expenseId));
+    return { fx, payer };
+  }
+
+  it("지급 권한자 — [오늘] `지급 — 예정일 지남·오늘 1건 · 확인 전 1건` · 지급 총액 · `지급 대상 보기` → 지급 대상 목록", async () => {
+    const { payer } = await payerWithTarget();
+
+    const items = await listNextTurnItems(payer, undefined, { today });
+
+    const payment = items.filter((item) => item.key === "phase6-payment");
+    expect(payment).toEqual([
+      {
+        key: "phase6-payment",
+        tag: "오늘",
+        label: "지급 — 예정일 지남·오늘 1건 · 확인 전 1건",
+        reason: "",
+        measureText: "13,640,000",
+        action: { label: "지급 대상 보기", href: "/expenses?status=지급 대상" },
+      },
+    ]);
+  });
+
+  it("대표 · 기안 직원 · 팀장 — 지급 줄이 없고 지급 대상 원천을 부르지 않는다", async () => {
+    const { fx } = await payerWithTarget();
+    vi.mocked(listAllPaymentTargets).mockClear();
+
+    for (const viewer of [fx.ceo, fx.pm, fx.lead]) {
+      const items = await listNextTurnItems(viewer, undefined, { today });
+      expect(items.filter((item) => item.key === "phase6-payment")).toEqual([]);
+    }
+    expect(listAllPaymentTargets).toHaveBeenCalledTimes(0);
+  });
+});
+
+// 06-23 Task 2 — 구매 요청 · 발행 요청 묶음 · PM 완료 전 점검 항목 · 역할 범위(T-06-111) · 조회 수(E-31) · 구매 가장 오래된 날짜 집계(E-54).
+type Grant = { menu: string; action: "view" | "write" };
+
+async function roleViewer(name: string, grants: readonly Grant[], infoItems: readonly string[]): Promise<Viewer> {
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `${name}-${randomUUID().slice(0, 8)}`, workScope: "company", viewScope: "company" });
+  for (const grant of grants) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: grant.menu, action: grant.action, allowed: true });
+  for (const infoItem of infoItems) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+  return makePerson(name, role.id, null);
+}
+
+// 경영관리 — 지급 · 구매 · 매출 기록 쓰기(셋 다).
+function makeFinanceManager(): Promise<Viewer> {
+  return roleViewer(
+    "경영관리",
+    [
+      { menu: "expenses", action: "view" },
+      { menu: "expenses.payments", action: "write" },
+      { menu: "cards.purchases", action: "write" },
+      { menu: "projects", action: "view" },
+      { menu: "projects.revenue", action: "view" },
+      { menu: "projects.revenue", action: "write" },
+    ],
+    ["expense.amount", "purchase_request.value", "purchase_request.amount", "project.value", "revenue.issued_amount"],
+  );
+}
+
+type PurchaseSeed = { requester: { id: string }; status?: "requested" | "purchased" | "cancelled"; amount?: number; createdAt?: Date };
+
+async function seedPurchases(rows: readonly PurchaseSeed[]): Promise<string[]> {
+  const inserted = await db
+    .insert(purchaseRequests)
+    .values(
+      rows.map((row) => ({
+        number: `TC${randomUUID().slice(0, 8)}`,
+        linkKind: "team_cost",
+        requestedBy: row.requester.id,
+        itemName: "내 차례 물건",
+        estimateAmountKrw: row.amount ?? 10_000,
+        status: row.status ?? "requested",
+        ...(row.status === "purchased" ? { completedBy: row.requester.id, completedAt: new Date() } : {}),
+        ...(row.status === "cancelled" ? { cancelledBy: row.requester.id, cancelledAt: new Date(), cancelReason: "취소" } : {}),
+        ...(row.createdAt ? { createdAt: row.createdAt } : {}),
+      })),
+    )
+    .returning({ id: purchaseRequests.id });
+  return inserted.map((row) => row.id);
+}
+
+async function seedIssueRequest(projectId: string, requestedBy: string, desiredIssueDate: string, amount = 10_000_000): Promise<void> {
+  await insertIssueRequest(
+    SYSTEM_VIEWER,
+    { id: randomUUID(), projectId, requestedBy, desiredIssueDate, amountCurrency: "KRW", amountForeignAmount: null, amountFxRate: "1.0000", amountAmountKrw: amount, memo: null },
+    db,
+  );
+}
+
+// 담당 PM의 프로젝트 — 거래처 없는 견적 줄 하나(미매칭 · 매출 미입력이라 완료 전 점검 막힘이 있다). status를 주면 그 상태로 둔다.
+async function pmProject(pm: Viewer, name: string, status: "settling" | "in_progress" = "settling"): Promise<string> {
+  const client = await insertVendor(SYSTEM_VIEWER, { name: `클라이언트-${randomUUID()}`, normalizedName: `클라이언트-${randomUUID()}` });
+  const [team] = await db.select().from(teams).limit(1);
+  if (!team) throw new Error("시드된 팀이 없습니다");
+  const project = await createProject(SYSTEM_VIEWER, { clientId: client.id, teamId: team.id, pmUserId: pm.id, name, startDate: "2026-01-05", endDate: "2026-03-31" });
+  const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+  if (!revision) throw new Error("1차 차수 없음");
+  const subcategory = (await firstSelectableSubcategory()).value;
+  await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
+    rows: [
+      {
+        id: randomUUID(),
+        isNew: true as const,
+        subcategory,
+        itemName: "무대 제작",
+        vendorId: null,
+        unitPrice: { currency: "KRW" as const, amount: 2_000_000, fxRate: 1 },
+        execution: { currency: "KRW" as const, amount: 1_000_000, fxRate: 1 },
+      },
+    ],
+  });
+  await db.update(projects).set({ status }).where(eq(projects.id, project.id));
+  return project.id;
+}
+
+function phase6Kinds(items: readonly { key: string }[]): string[] {
+  return [...new Set(items.filter((item) => item.key.startsWith("phase6-")).map((item) => (item.key.startsWith("phase6-presettle-") ? "phase6-presettle" : item.key)))].sort();
+}
+
+const PHASE6_SOURCES = [listAllPaymentTargets, listPurchaseRequests, findOldestRequestedPurchaseAt, summarizeOpenIssueRequests, listSettlingProjectsOfPm, loadPreSettleInputs, computePreSettleCheck, getPreSettleCheck];
+
+function clearSourceMocks(): void {
+  for (const source of PHASE6_SOURCES) vi.mocked(source).mockClear();
+}
+
+describe("「내 차례」 Phase 6 — 구매 · 발행 묶음 · PM 점검 · 역할 범위 (06-23)", () => {
+  const today = seoulToday();
+
+  // 역할 넷이 한 DB에 함께 있는 세상 — 지급 대상 1 · 구매 신청 1 · 발행 요청 1 · 기안자(PM)의 정산 프로젝트 1.
+  async function phase6World() {
+    const fx = await setupExpenseProject();
+    const manager = await makeFinanceManager();
+    const approved = await approvedExpenseWithEvidence(fx);
+    await db.update(expenses).set({ scheduledPaymentDate: today }).where(eq(expenses.id, approved.expenseId));
+    await seedPurchases([{ requester: fx.otherPm }]);
+    const settlingId = await pmProject(fx.pm, "정산 팝업");
+    await seedIssueRequest(settlingId, fx.pm.id, "2026-12-30");
+    // 대표는 매출 정산 보기만 — 발행 묶음 없음(D-601).
+    await upsertPermission(SYSTEM_VIEWER, { roleId: CEO_ROLE_ID, menu: "projects.revenue", action: "view", allowed: true });
+    return { fx, manager, settlingId };
+  }
+
+  it("역할 넷의 Phase 6 항목 종류 집합 — 경영관리 = 지급 · 구매 · 발행 / PM = 점검 / 기안 직원 · 대표 = 빈 집합", async () => {
+    const { fx, manager } = await phase6World();
+
+    expect(phase6Kinds(await listNextTurnItems(manager, undefined, { today }))).toEqual(["phase6-issue", "phase6-payment", "phase6-purchase"]);
+    expect(phase6Kinds(await listNextTurnItems(fx.pm, undefined, { today }))).toEqual(["phase6-presettle"]);
+    expect(phase6Kinds(await listNextTurnItems(fx.otherPm, undefined, { today }))).toEqual([]);
+    expect(phase6Kinds(await listNextTurnItems(fx.ceo, undefined, { today }))).toEqual([]);
+  });
+
+  it("권한 없는 역할(대표 · 기안 직원 · PM)은 지급 · 구매 · 발행 원천을 부르지 않는다", async () => {
+    const { fx } = await phase6World();
+    clearSourceMocks();
+
+    for (const viewer of [fx.ceo, fx.otherPm, fx.pm]) await listNextTurnItems(viewer, undefined, { today });
+
+    expect(listAllPaymentTargets).toHaveBeenCalledTimes(0);
+    expect(listPurchaseRequests).toHaveBeenCalledTimes(0);
+    expect(findOldestRequestedPurchaseAt).toHaveBeenCalledTimes(0);
+    expect(summarizeOpenIssueRequests).toHaveBeenCalledTimes(0);
+  });
+
+  it("신청 51건 — 가장 오래된 날짜는 집계(첫 쪽 밖의 가장 오래된 요청) · 건수 · 합계 = 06-14 목록 서버 합계", async () => {
+    const requester = await makePerson("요청자", DEFAULT_ROLE_ID, null);
+    const purchaser = await roleViewer("구매담당", [{ menu: "cards.purchases", action: "write" }], ["purchase_request.value", "purchase_request.amount"]);
+    // 가장 오래된 신청은 서울 09-18 01:30(UTC 09-17 16:30) — 목록은 최근 순이라 51번째(둘째 쪽)다. 더 오래된 구매 완료 · 취소는 세지 않는다.
+    const [oldestId] = await seedPurchases([{ requester, createdAt: new Date("2026-09-17T16:30:00Z"), amount: 7_000 }]);
+    await seedPurchases(Array.from({ length: 50 }, () => ({ requester, amount: 1_000 })));
+    await seedPurchases([
+      { requester, status: "purchased", createdAt: new Date("2026-09-01T00:00:00Z") },
+      { requester, status: "cancelled", createdAt: new Date("2026-09-02T00:00:00Z") },
+    ]);
+
+    const list = await listPurchaseRequests(purchaser, { status: "requested" });
+    expect(list.rows.map((row) => row.id)).not.toContain(oldestId);
+    expect(list.totals).toEqual({ count: 51, estimateKrw: 57_000 });
+
+    const items = await listNextTurnItems(purchaser, undefined, { today });
+    expect(items.filter((item) => item.key === "phase6-purchase")).toEqual([
+      {
+        key: "phase6-purchase",
+        tag: "대기",
+        label: "구매 요청 — 신청 51건 · 가장 오래된 09-18",
+        reason: "",
+        measureText: formatKrw(57_000),
+        action: { label: "구매 요청 보기", href: "/cards/purchases" },
+      },
+    ]);
+  });
+
+  it("구매 권한자 — 신청 0건(구매 완료 · 취소만)이면 줄이 없다", async () => {
+    const requester = await makePerson("요청자", DEFAULT_ROLE_ID, null);
+    const purchaser = await roleViewer("구매담당", [{ menu: "cards.purchases", action: "write" }], ["purchase_request.amount"]);
+    await seedPurchases([{ requester, status: "purchased" }, { requester, status: "cancelled" }]);
+
+    expect(await findOldestRequestedPurchaseAt(purchaser)).toBeNull();
+    expect((await listNextTurnItems(purchaser, undefined, { today })).filter((item) => item.key === "phase6-purchase")).toEqual([]);
+  });
+
+  it("매출 기록 권한자 — 발행 요청 묶음 = summarizeOpenIssueRequests(건수 · 가장 이른 희망일 · 공급가 합), 희망일이 오늘 이전이면 [오늘]", async () => {
+    const finance = await roleViewer(
+      "매출기록",
+      [
+        { menu: "projects", action: "view" },
+        { menu: "projects.revenue", action: "view" },
+        { menu: "projects.revenue", action: "write" },
+      ],
+      ["project.value", "revenue.issued_amount"],
+    );
+    const pm = await makePerson("담당", DEFAULT_ROLE_ID, null);
+    const projectId = await pmProject(pm, "발행 프로젝트", "in_progress");
+    await seedIssueRequest(projectId, pm.id, "2026-10-02", 3_000_000);
+    await seedIssueRequest(projectId, pm.id, "2026-09-30", 2_000_000);
+    expect(await summarizeOpenIssueRequests(finance)).toEqual({ count: 2, earliestDesiredDate: "2026-09-30", supplyKrw: 5_000_000 });
+
+    const before = await listNextTurnItems(finance, undefined, { today: "2026-09-24" });
+    expect(before.filter((item) => item.key === "phase6-issue")).toEqual([
+      {
+        key: "phase6-issue",
+        tag: "대기",
+        label: "매출 발행 요청 — 2건 · 희망 09-30",
+        reason: "",
+        measureText: "5,000,000",
+        action: { label: "발행 요청 보기", href: "/projects/issue-requests" },
+      },
+    ]);
+    const due = await listNextTurnItems(finance, undefined, { today: "2026-09-30" });
+    expect(due.find((item) => item.key === "phase6-issue")?.tag).toBe("오늘");
+  });
+
+  it("담당 PM — 막힘 있는 정산 프로젝트마다 한 줄 · 건수 = 06-19 점검 막힘 건수, 진행 중 · 남의 정산 프로젝트는 줄 없음", async () => {
+    const pm = await makePerson("담당PM", DEFAULT_ROLE_ID, "기획1팀");
+    const other = await makePerson("다른PM", DEFAULT_ROLE_ID, "기획1팀");
+    const first = await pmProject(pm, "정산 하나");
+    const second = await pmProject(pm, "정산 둘");
+    await pmProject(pm, "진행 중", "in_progress");
+    await pmProject(other, "남의 정산");
+
+    const items = (await listNextTurnItems(pm, undefined, { today })).filter((item) => item.key.startsWith("phase6-presettle-"));
+
+    const expected = await Promise.all(
+      [first, second].map(async (id) => ({ id, blocked: (await getPreSettleCheck(pm, id)).blockedCount })),
+    );
+    expect(expected.every((entry) => entry.blocked > 0)).toBe(true);
+    expect(items.map((item) => [item.tag, item.label, item.measureText, item.action.href]).sort()).toEqual(
+      [
+        ["막힘", `정산 하나 — 완료 전 점검 ${expected[0]?.blocked}건`, "—", `/projects/${first}#pre-settle-check`],
+        ["막힘", `정산 둘 — 완료 전 점검 ${expected[1]?.blocked}건`, "—", `/projects/${second}#pre-settle-check`],
+      ].sort(),
+    );
+  });
+
+  it("담당 PM이라도 계급에 프로젝트 보기가 없으면(행 범위 none) 점검 줄이 없다 (06-23 검토 낮음-1)", async () => {
+    const pm = await roleViewer("보기없는PM", [], []);
+    await pmProject(pm, "보기 없는 정산");
+
+    expect((await listNextTurnItems(pm, undefined, { today })).filter((item) => item.key.startsWith("phase6-presettle-"))).toEqual([]);
+    expect(loadPreSettleInputs).not.toHaveBeenCalledWith(pm);
+  });
+
+  it("홈 공급 조회 수 — 경영관리 한 번 로드 · 정산 프로젝트 2개의 PM 한 번 로드 (E-31)", async () => {
+    const { fx, manager } = await phase6World();
+    await pmProject(fx.pm, "정산 둘째");
+
+    clearSourceMocks();
+    await listNextTurnItems(manager, undefined, { today });
+    expect(listAllPaymentTargets).toHaveBeenCalledTimes(1);
+    expect(listPurchaseRequests).toHaveBeenCalledTimes(1);
+    expect(findOldestRequestedPurchaseAt).toHaveBeenCalledTimes(1);
+    expect(summarizeOpenIssueRequests).toHaveBeenCalledTimes(1);
+    expect(loadPreSettleInputs).toHaveBeenCalledTimes(0);
+    expect(computePreSettleCheck).toHaveBeenCalledTimes(0);
+
+    clearSourceMocks();
+    await listNextTurnItems(fx.pm, undefined, { today });
+    expect(listSettlingProjectsOfPm).toHaveBeenCalledTimes(1);
+    expect(loadPreSettleInputs).toHaveBeenCalledTimes(1);
+    expect(computePreSettleCheck).toHaveBeenCalledTimes(2);
+    expect(getPreSettleCheck).toHaveBeenCalledTimes(0);
+    expect(listAllPaymentTargets).toHaveBeenCalledTimes(0);
+  });
+});
+
+// 06-23 Task 3 — 기안자 증빙 신호 하나(B-C8 · H-1 · PN-6) · 승인 뒤 막힘 후보 갈래(E-3 · R-3) · 종결 제외(C10) · 공급 실패(PN-3).
+describe("pickExpenseEvidenceSignal — 문서마다 신호 하나(PN-6)", () => {
+  it("선결제 16일 경과 + 무효 → `선결제 증빙 16일 경과`", () => {
+    expect(pickExpenseEvidenceSignal({ prepaidOverdueDays: 16, missingUnpaid: false, voided: true })).toBe("선결제 증빙 16일 경과");
+  });
+
+  it("증빙 없음 · 지급 대기 + 무효 → `증빙 없음 · 지급 대기`", () => {
+    expect(pickExpenseEvidenceSignal({ prepaidOverdueDays: null, missingUnpaid: true, voided: true })).toBe("증빙 없음 · 지급 대기");
+  });
+
+  it("무효만 → `증빙 무효`", () => {
+    expect(pickExpenseEvidenceSignal({ prepaidOverdueDays: null, missingUnpaid: false, voided: true })).toBe("증빙 무효");
+  });
+
+  it("셋 다 없으면 신호 없음(기한 전 0일 포함)", () => {
+    expect(pickExpenseEvidenceSignal({ prepaidOverdueDays: null, missingUnpaid: false, voided: false })).toBeNull();
+    expect(pickExpenseEvidenceSignal({ prepaidOverdueDays: 0, missingUnpaid: false, voided: false })).toBeNull();
+  });
+});
+
+const SIGNAL_TODAY = "2026-10-13";
+
+// 살아 있는 파일을 지운 표시(removed_at)로 증빙 0을 만든다 — 무효 이력이 없는 증빙 0 결재 통과 문서(제출 게이트 ⑧ 때문에 도메인 경로로는 못 만든다).
+async function removeAllFiles(expenseId: string): Promise<void> {
+  await db.update(files).set({ removedAt: new Date() }).where(and(eq(files.ownerKind, "expense"), eq(files.ownerId, expenseId)));
+}
+
+async function markPaid(expenseId: string, payDate: string, processedBy: string): Promise<void> {
+  await db.insert(expensePayments).values({ expenseId, payDate, transferKrw: 13_640_000, payableKrw: 13_640_000, diffKrw: 0, paymentMethod: "transfer", processedBy });
+}
+
+async function markPrepaid(expenseId: string): Promise<void> {
+  await db.update(expenses).set({ prepaid: true, prepaidReason: "행사장 선입금 요구" }).where(eq(expenses.id, expenseId));
+}
+
+async function markWaived(expenseId: string, reviewedBy: string): Promise<void> {
+  await db.insert(expenseEvidenceReviews).values({ expenseId, status: "waived", waiveReason: "영수증 분실", reviewedBy });
+}
+
+async function signalOf(viewer: Viewer, expenseId: string, today = SIGNAL_TODAY): Promise<string | null> {
+  return (await listExpenseEvidenceSignals(viewer, { ids: [expenseId], today })).get(expenseId)?.situation ?? null;
+}
+
+describe("listExpenseEvidenceSignals — 기안자 증빙 신호(B-C8 · H-1)", () => {
+  it("결재 통과 · 지급 전 · 증빙 필수 on · 살아 있는 파일 0 · 선결제 아님 · 면제 아님 → `증빙 없음 · 지급 대기`", async () => {
+    const fx = await setupExpenseProject();
+    const { expenseId } = await approvedExpenseWithEvidence(fx);
+    await removeAllFiles(expenseId);
+
+    expect(await signalOf(fx.pm, expenseId)).toBe("증빙 없음 · 지급 대기");
+  });
+
+  it("유일한 파일을 무효 처리한 지급 전 문서 → `증빙 없음 · 지급 대기` 한 줄(증빙 무효와 두 줄이 아니다)", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await makeEvidenceManager();
+    const { expenseId } = await approvedExpense(fx);
+    await voidEvidence(manager, { fileId: (await fileIds(expenseId))[0] ?? "", reason: "다른 건" });
+
+    const signals = await listExpenseEvidenceSignals(fx.pm, { ids: [expenseId], today: SIGNAL_TODAY });
+    expect([...signals.values()]).toEqual([{ situation: "증빙 없음 · 지급 대기" }]);
+  });
+
+  it("지급 뒤 · 무효 → `증빙 무효`", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await makeEvidenceManager();
+    const { expenseId } = await approvedExpense(fx);
+    await markPaid(expenseId, "2026-10-01", fx.ceo.id);
+    await voidEvidence(manager, { fileId: (await fileIds(expenseId))[0] ?? "", reason: "다른 건" });
+
+    expect(await signalOf(fx.pm, expenseId)).toBe("증빙 무효");
+  });
+
+  it("`확인 전`(증빙 있음 · 확인 기록 없음) → 신호 없음", async () => {
+    const fx = await setupExpenseProject();
+    const { expenseId } = await approvedExpenseWithEvidence(fx);
+
+    expect(await signalOf(fx.pm, expenseId)).toBeNull();
+  });
+
+  it("증빙 필수 off → 신호 없음", async () => {
+    const fx = await setupExpenseProject();
+    const { expenseId } = await approvedExpenseWithEvidence(fx);
+    await removeAllFiles(expenseId);
+    await setEvidenceRequired(false);
+
+    expect(await signalOf(fx.pm, expenseId)).toBeNull();
+  });
+
+  it("면제 → 신호 없음", async () => {
+    const fx = await setupExpenseProject();
+    const { expenseId } = await approvedExpenseWithEvidence(fx);
+    await removeAllFiles(expenseId);
+    await markWaived(expenseId, fx.ceo.id);
+
+    expect(await signalOf(fx.pm, expenseId)).toBeNull();
+  });
+
+  it("선결제 · 기한(지급일 + 14일) 16일 경과 · 증빙 0 → `선결제 증빙 16일 경과`", async () => {
+    const fx = await setupExpenseProject();
+    const { expenseId } = await approvedExpenseWithEvidence(fx);
+    await markPrepaid(expenseId);
+    await markPaid(expenseId, addDays(SIGNAL_TODAY, -30), fx.ceo.id);
+    await removeAllFiles(expenseId);
+
+    expect(await signalOf(fx.pm, expenseId)).toBe("선결제 증빙 16일 경과");
+  });
+
+  it("여러 문서 한 번 — 문서마다 신호는 그대로이고 증빙 유무는 묶음 조회 한 번(ownersWithEvidence)이다 (06-23 검토 낮음-3)", async () => {
+    const fx = await setupExpenseProject();
+    const missing = (await approvedExpenseWithEvidence(fx)).expenseId;
+    await removeAllFiles(missing);
+    // 한 줄로는 지출결의 하나만 만들어진다 — 문서마다 프로젝트를 따로 둔다(판정은 문서 id만 본다).
+    const fx2 = await setupExpenseProject();
+    const overdue = (await approvedExpenseWithEvidence(fx2)).expenseId;
+    await markPrepaid(overdue);
+    await markPaid(overdue, addDays(SIGNAL_TODAY, -30), fx.ceo.id);
+    await removeAllFiles(overdue);
+    const withEvidence = (await approvedExpenseWithEvidence(await setupExpenseProject())).expenseId;
+
+    vi.mocked(hasEvidence).mockClear();
+    vi.mocked(ownersWithEvidence).mockClear();
+    const signals = await listExpenseEvidenceSignals(fx.pm, { ids: [missing, overdue, withEvidence], today: SIGNAL_TODAY });
+
+    expect(Object.fromEntries([...signals].map(([id, signal]) => [id, signal.situation]))).toEqual({
+      [missing]: "증빙 없음 · 지급 대기",
+      [overdue]: "선결제 증빙 16일 경과",
+    });
+    expect(hasEvidence).toHaveBeenCalledTimes(0);
+    expect(ownersWithEvidence).toHaveBeenCalledTimes(1);
+  });
+
+  it("선결제 · 기한 전 → 신호 없음", async () => {
+    const fx = await setupExpenseProject();
+    const { expenseId } = await approvedExpenseWithEvidence(fx);
+    await markPrepaid(expenseId);
+    await markPaid(expenseId, addDays(SIGNAL_TODAY, -5), fx.ceo.id);
+    await removeAllFiles(expenseId);
+
+    expect(await signalOf(fx.pm, expenseId)).toBeNull();
+  });
+});
+
+// 기안자를 바꾼다 — 같은 프로젝트의 PM(박서연)이 기안자가 아닌 문서(지출결의 · 결재 인스턴스의 기안자 칸만 옮긴다).
+async function moveDrafter(expenseId: string, drafterId: string): Promise<void> {
+  await db.update(expenses).set({ drafterId }).where(eq(expenses.id, expenseId));
+  await db.update(approvalInstances).set({ drafterId }).where(and(eq(approvalInstances.documentKind, EXPENSE_DOCUMENT_KIND), eq(approvalInstances.documentId, expenseId)));
+}
+
+describe("「내 차례」 기안자 증빙 줄 — 05 훅 경유 (06-23)", () => {
+  it("기안 직원 → 자기 문서의 신호 줄 하나, 같은 프로젝트 PM(기안자 아님) · 경영관리 → 그 줄 없음", async () => {
+    const fx = await setupExpenseProject();
+    const { expenseId } = await approvedExpenseWithEvidence(fx);
+    await removeAllFiles(expenseId);
+    await moveDrafter(expenseId, fx.otherPm.id);
+    const manager = await makeFinanceManager();
+
+    const mine = await listNextTurnItems(fx.otherPm);
+    expect(mine).toEqual([
+      {
+        key: expect.stringMatching(/^blocked-/) as string,
+        tag: "막힘",
+        label: "가을 팝업 · 무대 제작 — 증빙 없음 · 지급 대기",
+        reason: "",
+        measureText: "12,400,000",
+        action: { label: "증빙 올리기", href: `/expenses/${expenseId}#evidence` },
+      },
+    ]);
+    for (const viewer of [fx.pm, manager]) {
+      expect((await listNextTurnItems(viewer)).filter((item) => item.action.href === `/expenses/${expenseId}#evidence`)).toEqual([]);
+    }
+  });
+
+  it("유일한 파일을 무효 처리한 지급 전 문서 → 신호 줄 정확히 1개", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await makeEvidenceManager();
+    const { expenseId } = await approvedExpense(fx);
+    await voidEvidence(manager, { fileId: (await fileIds(expenseId))[0] ?? "", reason: "다른 건" });
+
+    const lines = (await listNextTurnItems(fx.pm)).filter((item) => item.action.href === `/expenses/${expenseId}#evidence`);
+    expect(lines.map((item) => item.label)).toEqual(["가을 팝업 · 무대 제작 — 증빙 없음 · 지급 대기"]);
+  });
+
+  it("종결한 반려 문서 → 기안자 [막힘] 반려 줄 없음(C10 · 06-28, 반려 문서 50건 미만 — E-47 회귀 메모)", async () => {
+    const fx = await setupExpenseProject();
+    const { expenseId, instanceId } = await submittedExpense(fx);
+    await rejectDocument(fx.lead, { instanceId, expectedVersion: 1, reason: "다시" });
+    expect((await listNextTurnItems(fx.pm)).map((item) => item.label)).toEqual([expect.stringMatching(/지출결의 반려, 김도윤$/) as string]);
+
+    const [row] = await db.select({ version: expenses.version }).from(expenses).where(eq(expenses.id, expenseId));
+    await closeExpense(fx.pm, { expenseId, expectedVersion: row?.version ?? 0, reason: "업체 취소" });
+
+    expect(await listNextTurnItems(fx.pm)).toEqual([]);
+  });
+
+  it("공급 실패 — Phase 6 원천 하나가 던지면 listNextTurnItems가 던진다(빈 목록 · 일부 항목으로 숨기지 않는다)", async () => {
+    const manager = await makeFinanceManager();
+    vi.mocked(listAllPaymentTargets).mockRejectedValueOnce(new Error("지급 대상 원천 실패"));
+
+    await expect(listNextTurnItems(manager)).rejects.toThrow("지급 대상 원천 실패");
+  });
+});
+
+// 더 최근에 처리된 승인 인스턴스 n건(결재 인스턴스 행만 · 지출결의 행 없음 — 05 A9와 같은 꼴).
+async function laterApprovedInstances(drafterId: string, count: number): Promise<void> {
+  const later = new Date(Date.now() + 60_000);
+  await db.insert(approvalInstances).values(
+    Array.from({ length: count }, () => ({ documentKind: EXPENSE_DOCUMENT_KIND, documentId: randomUUID(), drafterId, status: "approved", currentRound: 1, createdAt: later, updatedAt: later })),
+  );
+}
+
+describe("승인 뒤 막힘 후보 갈래 expense_blocked_after_approval (E-3 · R-3)", () => {
+  it("증빙 0 승인 문서가 201번째로 오래돼도 홈에 선다", async () => {
+    const fx = await setupExpenseProject();
+    const { expenseId } = await approvedExpenseWithEvidence(fx);
+    await removeAllFiles(expenseId);
+    await laterApprovedInstances(fx.pm.id, 201);
+
+    expect((await listNextTurnItems(fx.pm)).map((item) => item.label)).toEqual(["가을 팝업 · 무대 제작 — 증빙 없음 · 지급 대기"]);
+  });
+
+  it("선결제 · 기한 경과 · 증빙 0 문서도 201번째로 오래돼도 홈에 선다", async () => {
+    const fx = await setupExpenseProject();
+    const { expenseId } = await approvedExpenseWithEvidence(fx);
+    await markPrepaid(expenseId);
+    await markPaid(expenseId, addDays(seoulToday(), -30), fx.ceo.id);
+    await removeAllFiles(expenseId);
+    await laterApprovedInstances(fx.pm.id, 201);
+
+    expect((await listNextTurnItems(fx.pm)).map((item) => item.label)).toEqual(["가을 팝업 · 무대 제작 — 선결제 증빙 16일 경과"]);
+  });
+
+  it("후보 SQL이 거르는 셋(무효 이력 없음) — 증빙 0 · 면제 / 증빙 0 · 지급 뒤(선결제 아님) / 살아 있는 파일 있음 → 훅에 닿지 않는다", async () => {
+    const cases: { name: string; prepare: (fx: ExpenseFixture, expenseId: string) => Promise<void> }[] = [
+      { name: "면제", prepare: async (fx, id) => { await removeAllFiles(id); await markWaived(id, fx.ceo.id); } },
+      { name: "지급 뒤", prepare: async (fx, id) => { await removeAllFiles(id); await markPaid(id, "2026-10-01", fx.ceo.id); } },
+      { name: "살아 있는 파일", prepare: () => Promise.resolve() },
+    ];
+    for (const entry of cases) {
+      const fx = await setupExpenseProject();
+      const { expenseId } = await approvedExpenseWithEvidence(fx);
+      await entry.prepare(fx, expenseId);
+      const spy = vi.spyOn(getDocumentKind(EXPENSE_DOCUMENT_KIND), "blockedAfterApproval");
+      try {
+        expect(await listNextTurnItems(fx.pm), entry.name).toEqual([]);
+        for (const call of spy.mock.calls) expect(call[1], entry.name).not.toContain(expenseId);
+      } finally {
+        spy.mockRestore();
+      }
+    }
+  });
+
+  it("후보 SQL은 (선결제 ∧ 지급 행 있음) ∨ (선결제 아님 ∧ 지급 행 없음)만 훅에 넘긴다 — 지급 전 선결제는 LIMIT 앞에서 빠진다", async () => {
+    const cases: { name: string; prepaid: boolean; paid: boolean; candidate: boolean }[] = [
+      { name: "지급 전 선결제", prepaid: true, paid: false, candidate: false },
+      { name: "지급 뒤 선결제", prepaid: true, paid: true, candidate: true },
+      { name: "지급 전 일반", prepaid: false, paid: false, candidate: true },
+      { name: "지급 뒤 일반", prepaid: false, paid: true, candidate: false },
+    ];
+    for (const entry of cases) {
+      const fx = await setupExpenseProject();
+      const { expenseId } = await approvedExpenseWithEvidence(fx);
+      if (entry.prepaid) await markPrepaid(expenseId);
+      if (entry.paid) await markPaid(expenseId, addDays(seoulToday(), -30), fx.ceo.id);
+      await removeAllFiles(expenseId);
+      const spy = vi.spyOn(getDocumentKind(EXPENSE_DOCUMENT_KIND), "blockedAfterApproval");
+      try {
+        await listNextTurnItems(fx.pm);
+        expect(spy.mock.calls.some((call) => call[1].includes(expenseId)), entry.name).toBe(entry.candidate);
+      } finally {
+        spy.mockRestore();
+      }
+    }
+  });
+
+  it("증빙 필수 off — 후보에 들어도 줄 없음", async () => {
+    const fx = await setupExpenseProject();
+    const { expenseId } = await approvedExpenseWithEvidence(fx);
+    await removeAllFiles(expenseId);
+    await setEvidenceRequired(false);
+    const spy = vi.spyOn(getDocumentKind(EXPENSE_DOCUMENT_KIND), "blockedAfterApproval");
+    try {
+      expect(await listNextTurnItems(fx.pm)).toEqual([]);
+      expect(spy.mock.calls.some((call) => call[1].includes(expenseId))).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

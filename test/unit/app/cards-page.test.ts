@@ -25,10 +25,14 @@ vi.mock("@/lib/viewer", () => ({
 const formOptions = vi.fn<() => Promise<CardUsageFormOptions>>();
 const list = vi.fn<() => Promise<CardUsageList>>();
 vi.mock("@/domain/corp-card-usages", () => ({
+  CARD_USAGE_ENTITY: "corp_card_usage",
   cardUsageFormOptions: () => formOptions(),
   listCardUsages: () => list(),
   cardUsageFormDefaults: () => Promise.resolve({ usedOn: "2026-10-06", corpCardId: null, linkKind: null }),
 }));
+// 06-25 패널 증빙 칸의 서버 읽기(파일 목록 · 한도)는 이 테스트 밖(DB를 읽는다) — 빈 값으로 고정.
+vi.mock("@/domain/evidence", () => ({ getOwnedEvidence: () => Promise.resolve({ files: [], maxMb: 10, actions: { canAdd: true, deletableIds: [] } }) }));
+vi.mock("@/domain/settings/registry", () => ({ getSettingValue: () => Promise.resolve(10) }));
 // 06-14 하위 링크 `구매 요청 {N}`의 건수는 이 테스트 밖(DB를 읽는다) — 0건으로 고정.
 vi.mock("@/domain/purchase-requests", () => ({ countOpenPurchaseRequests: () => Promise.resolve(0) }));
 // 패널 본문(클라이언트 폼)은 이 테스트 밖 — 닫기 href만 본다.

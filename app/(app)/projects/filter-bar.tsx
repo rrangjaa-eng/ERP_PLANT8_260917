@@ -3,6 +3,7 @@
 import { Fragment, useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
 import Link from "next/link";
 import { Button } from "@/ui/button/Button";
+import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
 import { filterSummary, parseListPeriod, periodOverlapsYear } from "@/domain/projects/list-view";
 import styles from "./projects.module.css";
 
@@ -34,6 +35,7 @@ export function ProjectsFilterBar({
   sort,
   hasFilter,
   periodErrors = {},
+  issueRequestsLink = null,
 }: {
   teams: { id: string; name: string }[];
   statusOptions: ProjectFilterOption[];
@@ -44,6 +46,8 @@ export function ProjectsFilterBar({
   hasFilter: boolean;
   /** 04-48(UX-04) — 서버가 판정한 기간 칸 오류(칸 아래 한 줄). */
   periodErrors?: { from?: string; to?: string };
+  /** 06-21(SP-4) — 필터 묶음 끝의 하위 목록 3차 `발행 요청 {N}`(볼 권한이 없으면 null — 링크 없음). */
+  issueRequestsLink?: { label: string; href: string } | null;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const fromRef = useRef<HTMLInputElement>(null);
@@ -252,6 +256,11 @@ export function ProjectsFilterBar({
         <Link href="/projects" className={styles.toggle}>
           필터 지우기
         </Link>
+      ) : null}
+      {issueRequestsLink ? (
+        <RowActions>
+          <RowAction href={issueRequestsLink.href}>{issueRequestsLink.label}</RowAction>
+        </RowActions>
       ) : null}
     </form>
   );

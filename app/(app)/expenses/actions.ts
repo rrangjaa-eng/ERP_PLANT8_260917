@@ -22,16 +22,23 @@ import {
 } from "@/domain/expenses";
 import { DATE_FORMAT_ERROR, EXPENSE_TEXT_MAX, expenseDraftFieldsSchema } from "@/domain/expenses/draft-fields";
 import { completePaymentsBatch } from "@/domain/payments/batch";
+import { getEvidenceConfirmView, sumSelectedTransfers } from "@/domain/payments/targets";
+import { DIFF_REASON_REQUIRED } from "@/domain/payments/action-row";
 import { isCalendarDate } from "@/lib/dates";
 import { searchLinesForPick, searchVendorsForPick } from "@/domain/expenses/pick";
 import {
   completeEvidenceUpload,
   createEvidenceViewUrl,
   EvidenceUploadRefusedError,
+  getOwnedEvidence,
   removeEvidence,
   requestEvidenceUpload,
+  restoreEvidence,
   voidEvidence,
 } from "@/domain/evidence";
+import { CARD_USAGE_ENTITY } from "@/domain/corp-card-usages";
+import { APPROVAL_EVIDENCE_KIND } from "@/domain/quotes/revisions";
+import { RESERVE_EVIDENCE_KIND } from "@/domain/reserves";
 import { QUOTE_LINE_MAX_PER_REVISION_DEFAULT } from "@/domain/settings/keys";
 import { formatKstTime } from "@/domain/holidays/business-day";
 import { log } from "@/lib/log";
@@ -189,6 +196,75 @@ export const requestEvidenceUploadAction = authedActionClient
     return { intentId: intent.intentId, url: intent.url, method: intent.method, headers: intent.headers };
   });
 
+// 06-16(D-56) 차수 승인 증빙 — 05 증빙 액션 집에 둔 주인별 요청 · 펼침 읽기. 완료 통보 · 삭제 · 보기는 위 05 액션을 그대로 쓴다.
+// 권리(담당 PM · projects 쓰기 · 표시 켜짐 · quote.amount)는 domain 주인 표가 차수 행으로 다시 읽어 판정한다 — 넘어온 id만 믿지 않는다.
+export const requestRevisionEvidenceUploadAction = authedActionClient
+  .schema(
+    z.object({
+      revisionId: z.string().uuid(),
+      size: z.number().int().min(0),
+      contentType: z.string().min(1).max(100),
+      sha256: z.string().max(64),
+      name: z.string().min(1).max(255),
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    const { revisionId, ...declaration } = parsedInput;
+    const intent = await requestEvidenceUpload(ctx.viewer, { ownerKind: APPROVAL_EVIDENCE_KIND, ownerId: revisionId, ...declaration });
+    return { intentId: intent.intentId, url: intent.url, method: intent.method, headers: intent.headers };
+  });
+
+export const getRevisionEvidenceAction = authedActionClient
+  .schema(z.object({ revisionId: z.string().uuid() }))
+  .action(async ({ parsedInput, ctx }) => getOwnedEvidence(ctx.viewer, { ownerKind: APPROVAL_EVIDENCE_KIND, ownerId: parsedInput.revisionId }));
+
+// 06-16(D-60) 리저브 줄 증빙 — 차수 승인 증빙과 같은 모양. 권리(pnl 쓰기 · 보기 + reserve.amount · 보관 아님)는 domain 주인 표가 줄 행으로 다시 읽어 판정한다.
+export const requestReserveEvidenceUploadAction = authedActionClient
+  .schema(
+    z.object({
+      entryId: z.string().uuid(),
+      size: z.number().int().min(0),
+      contentType: z.string().min(1).max(100),
+      sha256: z.string().max(64),
+      name: z.string().min(1).max(255),
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    const { entryId, ...declaration } = parsedInput;
+    const intent = await requestEvidenceUpload(ctx.viewer, { ownerKind: RESERVE_EVIDENCE_KIND, ownerId: entryId, ...declaration });
+    return { intentId: intent.intentId, url: intent.url, method: intent.method, headers: intent.headers };
+  });
+
+export const getReserveEvidenceAction = authedActionClient
+  .schema(z.object({ entryId: z.string().uuid() }))
+  .action(async ({ parsedInput, ctx }) => getOwnedEvidence(ctx.viewer, { ownerKind: RESERVE_EVIDENCE_KIND, ownerId: parsedInput.entryId }));
+
+// 06-25(EVID-01 카드 몫) 카드 전표 — 차수 승인 증빙과 같은 모양. 권리(06-09 수정 권리 + 보관 아님 · 읽기 = S8 목록 범위)는 domain 주인 표가 카드 사용 행으로 다시 읽어 판정한다.
+// 완료 통보 · 삭제 · 보기는 위 05 액션 그대로다. 저장된 카드 사용 id만 받는다 — 주인 없는 업로드는 없다.
+export const requestCardSlipUploadAction = authedActionClient
+  .schema(
+    z.object({
+      cardUsageId: z.string().uuid(),
+      size: z.number().int().min(0),
+      contentType: z.string().min(1).max(100),
+      sha256: z.string().max(64),
+      name: z.string().min(1).max(255),
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    const { cardUsageId, ...declaration } = parsedInput;
+    const intent = await requestEvidenceUpload(ctx.viewer, { ownerKind: CARD_USAGE_ENTITY, ownerId: cardUsageId, ...declaration });
+    return { intentId: intent.intentId, url: intent.url, method: intent.method, headers: intent.headers };
+  });
+
+// 06-16(F10) 지운 파일 되돌리기 — 새 두 주인 종류만(판정은 domain 규칙: 쓰기 권리 · 잠근 뒤 열림 · 중복 묶음). 성공 표시만 돌려준다.
+export const restoreEvidenceAction = authedActionClient
+  .schema(z.object({ fileId: z.string().uuid() }))
+  .action(async ({ parsedInput, ctx }) => {
+    await restoreEvidence(ctx.viewer, parsedInput);
+    return { restored: true as const };
+  });
+
 // 완료 통보 거부는 오류가 아니라 결과다 — 화면이 `다시 올리기`의 갈래(`complete` · `restart`)를 알아야 한다.
 export const completeEvidenceUploadAction = authedActionClient
   .schema(z.object({ intentId: z.string().uuid() }))
@@ -258,6 +334,11 @@ const batchPaymentSchema = z.object({
         expectedPayableKrw: z.number().int().nonnegative(),
         transferKrw: z.number().int().positive().optional(),
         diffReason: z.string().max(EXPENSE_TEXT_MAX).optional(),
+      })
+      // 06-17(D-605 · 「Error — 차이 사유 칸」) — 이체액이 스냅숏의 지급 총액과 다르면 사유가 필수(같음 비교 — 금액 셈 없음). 그 행 칸 오류로 돌아간다.
+      .refine((row) => row.transferKrw === undefined || row.transferKrw === row.expectedPayableKrw || (row.diffReason ?? "").trim() !== "", {
+        message: DIFF_REASON_REQUIRED,
+        path: ["diffReason"],
       }),
     )
     .min(1)
@@ -269,3 +350,26 @@ export const completePaymentsBatchAction = authedActionClient.schema(batchPaymen
   revalidatePath("/expenses");
   return result;
 });
+
+// 06-17(S1 「합계 줄」 · O-18) — 고른 건 이체액 합 · 행별 차이 · 고른 행 상태(rowStates). 입력은 합계 번호 · 고른 행 id · 고친 이체액 · 모달이 마지막으로 쓴
+// 지급일뿐 — 지급 총액 · version은 서버가 다시 읽는다. 행 수 상한은 처리 요청과 같은 200. 읽기 전용이라 revalidate 없음.
+const sumSelectedTransfersSchema = z.object({
+  seq: z.number().int().nonnegative(),
+  rows: z
+    .array(z.object({ id: expenseIdSchema, transferKrw: z.number().int().positive().optional() }))
+    .min(1)
+    .max(200),
+  payDate: z.string().refine(isCalendarDate, DATE_FORMAT_ERROR).optional(),
+});
+
+export const sumSelectedTransfersAction = authedActionClient
+  .schema(sumSelectedTransfersSchema)
+  .action(async ({ parsedInput, ctx }) => sumSelectedTransfers(ctx.viewer, parsedInput));
+
+// 06-17(UI-SPEC S1 「제자리 증빙 확인」 · DR-4): 확인 모달 보기 — 파일 행 · 증빙 금액 · 서버 계산 한 줄 · 지금 version · 증빙 지문 · 초과 한 줄(Q-F).
+// 확인 자체는 06-06 confirmEvidenceAction(금액 없는 갈래)을 그대로 쓴다 — 새 확인 액션 없음.
+const evidenceConfirmViewSchema = z.object({ expenseId: z.string().uuid(), rowVersion: z.number().int().nonnegative() });
+
+export const getEvidenceConfirmViewAction = authedActionClient
+  .schema(evidenceConfirmViewSchema)
+  .action(async ({ parsedInput, ctx }) => getEvidenceConfirmView(ctx.viewer, parsedInput));

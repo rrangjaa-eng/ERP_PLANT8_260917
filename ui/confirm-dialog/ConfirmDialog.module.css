@@ -48,6 +48,12 @@
   color: var(--text-muted);
   font-size: var(--text-aux);
   word-break: keep-all;
+  /* 06-24 backstop B-3 — 긴 프로젝트 · 항목 이름의 부제는 두 줄까지 보이고 말줄임(전체 글자는 title). */
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 /* PC에는 닫기 x가 없다(§7-8 PC 모달 — 2차 「취소 Esc」·가림막·Esc로만

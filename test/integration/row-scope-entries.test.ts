@@ -30,7 +30,7 @@ import {
   APPROVAL_ROUTE_SETTLEMENT_STEP4_SCOPE,
 } from "@/domain/settings/keys";
 import { upsertSimpleValue } from "@/repositories/settings";
-import { setupSettlementProject } from "./fixtures/settlements";
+import { issueRevenue, setupSettlementProject } from "./fixtures/settlements";
 import { purchaseProject, request as purchaseRequestFor, requestInput } from "./fixtures/purchase-requests";
 import { ForbiddenError as PermissionForbiddenError } from "@/domain/permissions/can";
 import { createCorpCard } from "@/domain/corp-cards";
@@ -411,6 +411,9 @@ describe("정산 머리 · 제출 · 범위 밖 결재자 (06.2-04 Task 1)", () 
   it("정산 문서가 있으면 — 범위 안 본부장(P2 꼴)은 상태 낱말, 범위 밖 본부장(P3 꼴)은 null", async () => {
     const s2 = await settlingProject(w.teams.plan2, w.people.X, "S2 문서");
     const s3 = await settlingProject(w.teams.mgmt, w.people.X, "S3 문서");
+    // 06-19 E-2: 완료 전 점검(매출 미입력, D-613)이 기안을 막지 않게 매출 발행 줄 1건씩.
+    await issueRevenue(s2);
+    await issueRevenue(s3);
     await submitSettlement(w.people.X, { projectId: s2 });
     await submitSettlement(w.people.X, { projectId: s3 });
     expect(await getSettlementHeader(w.people.본부장, { projectId: s2 })).toEqual({ statusWord: "중", canSubmit: false });

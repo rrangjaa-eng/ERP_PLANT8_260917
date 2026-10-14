@@ -664,9 +664,13 @@ export async function isExpenseInScope(viewer: Viewer, input: { id: string; scop
 }
 
 // 받은 id 가운데 범위 안인 것 — 문서 하나와 같은 scopeCondition을 한 질의로(지급 대상 visibleRows, 06.2-08 검토 I-1 — 행마다 묻지 않는다).
-export async function listExpenseIdsInScope(viewer: Viewer, input: { ids: readonly string[]; scope: ExpenseScope; documentKind: string }): Promise<Set<string>> {
+export async function listExpenseIdsInScope(
+  viewer: Viewer,
+  input: { ids: readonly string[]; scope: ExpenseScope; documentKind: string },
+  tx: DbOrTx = db,
+): Promise<Set<string>> {
   if (input.ids.length === 0) return new Set();
-  const rows = await db
+  const rows = await tx
     .select({ id: expenses.id })
     .from(expenses)
     .leftJoin(approvalInstances, instanceJoin(input.documentKind))

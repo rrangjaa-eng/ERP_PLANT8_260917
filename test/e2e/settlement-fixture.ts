@@ -9,6 +9,10 @@ import { approveDocument, rejectDocument } from "@/domain/approvals";
 import { SETTLEMENT_DOCUMENT_KIND, submitSettlement } from "@/domain/settlements";
 import { findApprovalGraphByDocument } from "@/repositories/approvals";
 import { insertVendor } from "@/repositories/vendors";
+import { createCorpCard } from "@/domain/corp-cards";
+import { createCardUsage, precheckCardUsage, type CardUsageInput } from "@/domain/corp-card-usages";
+import { saveRevenue } from "@/domain/revenue";
+import type { Viewer } from "@/domain/viewer";
 import { seoulToday } from "@/lib/dates";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import { setupLeaveOrg, type Person } from "./leave-org";
@@ -45,7 +49,7 @@ export async function setupSettlementE2E(): Promise<SettlementE2E> {
   const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
   if (!revision || !project.id || !project.number) throw new Error("프로젝트 · 1차 차수가 없습니다");
   const subcategory = (await firstSelectableSubcategory()).value;
-  await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
+  const saved = await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
     rows: [
       {
         id: randomUUID(),
@@ -68,9 +72,38 @@ export async function setupSettlementE2E(): Promise<SettlementE2E> {
     ],
   });
   await changeProjectStatus(org.teamLead.viewer, project.id, { from: "bidding", to: "in_progress" });
+  // 06-19 E-2 — 완료 전 점검이 기안을 막지 않게 줄마다 카드 사용 1건 + 매출 발행 줄 1건(통합 픽스처와 같은 순서 · 강행 키 없음).
+  for (const line of saved.lines) await cardUsageOn(org.drafter.viewer, line.id);
+  await saveRevenue(SYSTEM_VIEWER, project.id, {
+    issuedEntries: [{ id: randomUUID(), isNew: true, entryDate: period.endDate, amount: { currency: "KRW", amount: 1_000_000, fxRate: 1 } }],
+  });
   const settled = await applyAutoSettlement({ projectIds: [project.id] });
   if (!settled.includes(project.id)) throw new Error("자동 정산이 되지 않았습니다");
   return { pm: org.drafter, lead: org.teamLead, ceo: org.ceo, projectId: project.id, projectNumber: project.number, projectName, period };
+}
+
+// 카드는 호출마다 새로 만든다 — 발급사 · 뒤 4자리 UNIQUE(X-a). 금액은 줄 실행가보다 작다.
+async function cardUsageOn(holder: Viewer, lineId: string): Promise<void> {
+  const tag = randomUUID().slice(0, 8);
+  const card = await createCorpCard(SYSTEM_VIEWER, {
+    issuer: `E2E정산카드사-${tag}`,
+    numberLast4: String(1000 + Math.floor(Math.random() * 9000)),
+    label: `E2E정산카드-${tag}`,
+    kind: "personal",
+    holderUserId: holder.id,
+  });
+  if (!card.id) throw new Error("카드 id 없음");
+  const input: CardUsageInput = {
+    corpCardId: card.id,
+    usedOn: seoulToday(),
+    merchantVendorId: null,
+    total: { currency: "KRW", amount: 100_000, fxRate: 1 },
+    evidenceTypeCode: "invoice",
+    linkKind: "quote_line",
+    lineId,
+    memo: null,
+  };
+  await createCardUsage(holder, input, await precheckCardUsage(holder, input));
 }
 
 // 담당 PM이 정산 결재를 올린다(도메인 함수 — 화면 단계를 줄이는 준비).

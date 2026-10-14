@@ -2,7 +2,8 @@ import { z } from "zod";
 import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
 import { projectRowScope } from "@/domain/projects/visibility";
-import { findProjectInScope } from "@/repositories/projects";
+import { findProjectById, findProjectInScope, lockProjectForWrite } from "@/repositories/projects";
+import { listAliveByOwners } from "@/repositories/files";
 import { visible as defaultVisible } from "@/domain/permissions/visible";
 import { projectMany, type DtoSpec } from "@/domain/permissions/project";
 import { registerDto } from "@/domain/permissions/dto-registry";
@@ -282,6 +283,8 @@ export type RevisionSummaryDto = {
   approvedOn: string | null;
   approvedBy: string | null;
   contentToken: string;
+  // 06-16(D-56) — 이 차수의 승인 증빙 파일 수(살아 있는 파일). 합계를 볼 수 있는 사람(quote.amount)에게만 싣는다.
+  approvalEvidenceCount: number;
 };
 
 type RevisionSummaryProjectable = RevisionSummaryDto;
@@ -297,6 +300,7 @@ export const REVISION_SUMMARY_DTO_SPEC: DtoSpec<RevisionSummaryProjectable, Revi
     { key: "approvedOn", from: "approvedOn", infoItem: "project.value" },
     { key: "approvedBy", from: "approvedBy", infoItem: "project.value" },
     { key: "contentToken", from: "contentToken", infoItem: "project.value" },
+    { key: "approvalEvidenceCount", from: "approvalEvidenceCount", infoItem: "quote.amount" },
   ],
 };
 
@@ -305,7 +309,7 @@ registerDto({
   fields: REVISION_SUMMARY_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })),
 });
 
-function toSummaryProjectable(row: RevisionSummaryRow, latestSeq: number): RevisionSummaryProjectable {
+function toSummaryProjectable(row: RevisionSummaryRow, latestSeq: number, evidenceCounts: ReadonlyMap<string, number>): RevisionSummaryProjectable {
   return {
     revisionId: row.id,
     seq: row.seq,
@@ -316,6 +320,7 @@ function toSummaryProjectable(row: RevisionSummaryRow, latestSeq: number): Revis
     approvedOn: approvedOnOf(row.customerApprovedAt),
     approvedBy: row.customerApprovedBy,
     contentToken: row.contentToken,
+    approvalEvidenceCount: evidenceCounts.get(row.id) ?? 0,
   };
 }
 
@@ -325,9 +330,13 @@ export async function listRevisionSummaries(viewer: Viewer, projectId: string): 
   if (!(await findProject(viewer, projectId))) return [];
   const rows = await repoSummarizeRevisions(viewer, projectId);
   const latestSeq = Math.max(...rows.map((row) => row.seq));
+  const evidenceCounts = new Map<string, number>();
+  for (const file of await listAliveByOwners(viewer, { ownerKind: APPROVAL_EVIDENCE_KIND, ownerIds: rows.map((row) => row.id) })) {
+    evidenceCounts.set(file.ownerId, (evidenceCounts.get(file.ownerId) ?? 0) + 1);
+  }
   return projectMany(
     viewer,
-    rows.map((row) => toSummaryProjectable(row, latestSeq)),
+    rows.map((row) => toSummaryProjectable(row, latestSeq, evidenceCounts)),
     REVISION_SUMMARY_DTO_SPEC,
   );
 }
@@ -357,4 +366,75 @@ export async function listRevisionLines(viewer: Viewer, projectId: string, input
     defaultVisible(viewer, "quote.amount"),
   ]);
   return listQuoteLines(viewer, current.id, { status: project.status, canWrite: canWrite && canSeeAmount, canAdjust: canAdjust && canSeeAmount });
+}
+
+// ── 승인 증빙 주인(06-16 · D-56) ───────────────────────────────────────────────────────────────────────────────
+// 05 domain/evidence의 주인 표 `quote_revision` 줄이 부른다(이 파일은 @/domain/evidence를 import하지 않는다 — 순환). 첨부 권리는
+// 04 승인 표시(setCustomerApproval)가 읽는 두 사실 — 담당 PM(actorIsAssignedPm) · projects 쓰기(actorCanWrite) — 과 같은 기준이다.
+
+export const APPROVAL_EVIDENCE_KIND = "quote_revision";
+export const APPROVAL_EVIDENCE_PM_ONLY = "승인 증빙은 담당 PM만";
+export const APPROVAL_EVIDENCE_OFF = "승인 표시 없음 · 증빙 잠김";
+export const APPROVAL_EVIDENCE_PROJECT_CLOSED = "완료 · 보관 프로젝트 · 증빙 잠김";
+
+// status: open = 붙이고 뗄 수 있음 · off = 승인 표시 꺼짐(파일은 남아 읽기) · closed = 완료(completed) · 보관 프로젝트(읽기).
+export type ApprovalEvidenceOwner = {
+  id: string;
+  drafterId: string;
+  number: null;
+  status: "open" | "off" | "closed";
+  updatedAt: Date;
+  version: number;
+  projectId: string;
+  instance: null;
+  closed: false;
+  projectCompleted: false;
+};
+
+// tx가 없으면 풀 읽기(보임 · 권리 판정), 있으면 04 setCustomerApproval과 같은 프로젝트 행 잠금 뒤 같은 tx로 차수를 다시 읽는다.
+export async function revisionEvidenceOwner(viewer: Viewer, revisionId: string, tx?: DbOrTx): Promise<ApprovalEvidenceOwner | null> {
+  const first = await repoFindQuoteRevisionById(viewer, revisionId, tx);
+  if (!first) return null;
+  const project = tx ? await lockProjectForWrite(viewer, first.projectId, tx) : await findProjectById(viewer, first.projectId);
+  if (!project) return null;
+  const revision = tx ? await repoFindQuoteRevisionById(viewer, revisionId, tx) : first;
+  if (!revision) return null;
+  const projectClosed = project.status === "completed" || project.archivedAt !== null;
+  return {
+    id: revision.id,
+    drafterId: project.pmUserId,
+    number: null,
+    status: projectClosed ? "closed" : revision.customerApprovedAt === null ? "off" : "open",
+    updatedAt: revision.updatedAt,
+    version: 0,
+    projectId: project.id,
+    instance: null,
+    closed: false,
+    projectCompleted: false,
+  };
+}
+
+// read = 행 범위 안 프로젝트 ∧ quote.amount 노출(승인 버튼과 같은 노출 기준), write = read ∧ 담당 PM ∧ projects 쓰기 ∧ 열림.
+// 권리 판정(can · visible · 행 범위)은 풀 읽기라 트랜잭션 밖에서만 부른다(06-03 tx 규약).
+export async function revisionEvidenceRights(viewer: Viewer, owner: ApprovalEvidenceOwner): Promise<{ read: boolean; write: boolean }> {
+  const [rowScope, canWrite, showsAmount] = await Promise.all([projectRowScope(viewer), defaultCan(viewer, PROJECTS_MENU, "write"), defaultVisible(viewer, "quote.amount")]);
+  if (rowScope.rows === "none" || !showsAmount) return { read: false, write: false };
+  const project = await findProjectInScope(viewer, rowScope, owner.projectId);
+  if (!project || (project.archivedAt !== null && !rowScope.includeArchived)) return { read: false, write: false };
+  return { read: true, write: canWrite && owner.drafterId === viewer.id && owner.status === "open" };
+}
+
+// 잠근 뒤 순수 판정 — 같은 사실 중 DB 없이 볼 수 있는 것(담당 PM · 열림).
+export function revisionEvidenceWriteOpen(owner: ApprovalEvidenceOwner, viewerId: string): boolean {
+  return owner.status === "open" && owner.drafterId === viewerId;
+}
+
+export function revisionEvidenceNotFound(): UserFacingError {
+  return new ProjectNotFoundError(PROJECT_NOT_FOUND);
+}
+
+// 권리 밖 직접 호출의 거부 — 04 거부 입구(denyWrite)로 운영 로그 write.denied(허용 id만 · 금액 없음)를 남긴다.
+export function denyRevisionEvidenceWrite(viewer: Viewer, owner: ApprovalEvidenceOwner): never {
+  const reason = owner.status === "off" ? APPROVAL_EVIDENCE_OFF : owner.status === "closed" ? APPROVAL_EVIDENCE_PROJECT_CLOSED : APPROVAL_EVIDENCE_PM_ONLY;
+  return denyWrite(viewer, APPROVAL_TOGGLE_RULE, { projectId: owner.projectId, revisionId: owner.id }, new GateBlockedError(reason));
 }

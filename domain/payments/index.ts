@@ -30,6 +30,7 @@ import {
   type PairGateInput,
 } from "@/domain/payments/action-row";
 import type { MethodEvidencePair } from "@/domain/payments/method-evidence-pairs";
+import type { PayReturn } from "@/domain/payments/targets";
 import { visible } from "@/domain/permissions/visible";
 import { listCodeItems as defaultListCodeItems } from "@/repositories/code-tables";
 import { findUserNamesByIds } from "@/repositories/users";
@@ -48,6 +49,8 @@ import { findQuoteLineById, listLineageLinesByProjects } from "@/repositories/qu
 import { findExpenseQuoteLineIds, lockQuoteLines } from "@/repositories/quote-line-links";
 import { formatKrw } from "@/lib/format-number";
 import { kstDateOf } from "@/lib/kst-date";
+import { maskTail4 } from "@/lib/mask-tail4";
+import { findVendorAccountsByIds } from "@/repositories/payment-targets";
 
 // 06-03(EXP-06 · EXP-09 · OPS-09) — 결재 통과 지출결의 한 건의 지급 완료(트레이서). 증빙 게이트 · 짝 게이트 · 지급 칸 · 취소는 06-04,
 // 증빙 확인은 06-06이 더한다.
@@ -772,6 +775,33 @@ async function cardSuppliesOnChain(viewer: Viewer, projectId: string, currentLin
 // 06-03 leak-scan 픽스처가 옛 모양으로 DTO를 만들고, 그 파일은 같은 웨이브 06-05가 써서 이 플랜이 열지 않는다(화면은 없으면 null로 읽는다).
 export type PaymentViewBar = Pick<ExpenseActionBar, "row" | "primary" | "ownerNote"> & Partial<ExpenseActionBar>;
 
+// 06-20(O-17 · UI-SPEC 「표시 — 지급 방식 · 계좌」): 계좌 투영 한 함수 — S1 행(targets.ts)과 S5 지급 보기가 같이 부른다(targets.ts → index.ts 한 방향).
+// 지급 권한(expenses.payments write)이 없으면 행을 그대로 돌려주고 account 키를 만들지 않는다 — projectMany는 원천에 없는 키를 만들지 않는다.
+// 계좌이체 행만 거래처 계좌를 한 번에 읽어 붙이고, 뒤 4자리가 없으면 「없음」. canReveal은 03 해제 액션과 같은 노출표 판정 하나(E-50 —
+// 지급 권한에서 해제를 끌어오지 않는다). 계좌 유무는 고를 수 있는지(resolveExpenseActionRow)에 들어가지 않는다(M-7).
+export type PaymentAccount =
+  | { status: "registered"; vendorId: string; bank: string | null; masked: string; holder: string | null; canReveal: boolean }
+  | { status: "none" };
+
+const BANK_TRANSFER = "bank_transfer";
+
+export async function projectPaymentAccounts<Row extends { paymentMethod: string | null; vendorId: string | null }>(
+  viewer: Viewer,
+  rows: readonly Row[],
+): Promise<(Row & { account?: PaymentAccount })[]> {
+  if (!(await can(viewer, "expenses.payments", "write"))) return [...rows];
+  const vendorIds = [...new Set(rows.flatMap((row) => (row.paymentMethod === BANK_TRANSFER && row.vendorId ? [row.vendorId] : [])))];
+  const [accounts, canReveal] = await Promise.all([findVendorAccountsByIds(viewer, vendorIds), visible(viewer, "vendor.account_number_unmasked")]);
+  const byVendor = new Map(accounts.map((account) => [account.vendorId, account]));
+  return rows.map((row) => {
+    if (row.paymentMethod !== BANK_TRANSFER) return row;
+    const found = row.vendorId ? byVendor.get(row.vendorId) : undefined;
+    const account: PaymentAccount =
+      found?.last4 ? { status: "registered", vendorId: found.vendorId, bank: found.bank, masked: maskTail4(found.last4), holder: found.holder, canReveal } : { status: "none" };
+    return { ...row, account };
+  });
+}
+
 export type PaymentViewDto = {
   expenseId: string;
   version: number;
@@ -801,6 +831,10 @@ export type PaymentViewDto = {
   evidenceStamp?: string;
   evidenceTaxLine?: TaxLinePart[] | null;
   evidenceOverrun?: string | null;
+  // 06-20(O-17) — 지급 권한자에게만 있는 키(projectPaymentAccounts). 없으면 S5 계좌 행 없음.
+  account?: PaymentAccount;
+  // 06-20(C-1) — `from=pay`로 연 문서 화면의 되돌림 · 다음 확인 전 링크. 서버([id]/page.tsx)가 만든 링크라 DTO 스펙(정보 항목)에 넣지 않는다.
+  payReturn?: PayReturn;
 };
 
 // 증빙 금액 2행 입력자 — 확인 기록에 금액 고침이 있으면 그 사람 · 시각, 없으면 기안자 · 문서 updated_at(입력자 전용 칸이 06-27에 없다).
@@ -830,6 +864,7 @@ export const PAYMENT_VIEW_DTO_SPEC: DtoSpec<PaymentViewDto, PaymentViewDto> = {
     { key: "evidenceStamp", from: "evidenceStamp", infoItem: "expense.amount" },
     { key: "evidenceTaxLine", from: "evidenceTaxLine", infoItem: "expense.amount" },
     { key: "evidenceOverrun", from: "evidenceOverrun", infoItem: "expense.amount" },
+    { key: "account", from: "account", infoItem: "vendor.value" },
   ],
 };
 
@@ -916,6 +951,8 @@ export async function getPaymentView(viewer: Viewer, expenseId: string, deps?: {
   const alive = await listAliveByOwners(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerIds: [row.id] });
   const evidenceStamp = evidenceStampOf({ fileIds: alive.map((file) => file.id), evidenceAmountKrw: row.evidenceAmount, evidenceDate: row.evidenceDate });
   const evidenceOverrun = await loadEvidenceOverrun(viewer, row, row.evidenceAmount);
+  const [accountRow] = await projectPaymentAccounts(viewer, [{ paymentMethod: row.paymentMethod, vendorId: row.vendorId }]);
+  const accountPart = accountRow?.account ? { account: accountRow.account } : {};
   if (live) {
     const names = await findUserNamesByIds(viewer, [live.processedBy]);
     return project(
@@ -938,6 +975,7 @@ export async function getPaymentView(viewer: Viewer, expenseId: string, deps?: {
         evidenceStamp,
         evidenceTaxLine: null,
         evidenceOverrun,
+        ...accountPart,
       },
       PAYMENT_VIEW_DTO_SPEC,
     );
@@ -965,6 +1003,7 @@ export async function getPaymentView(viewer: Viewer, expenseId: string, deps?: {
       evidenceStamp,
       evidenceTaxLine,
       evidenceOverrun,
+      ...accountPart,
     },
     PAYMENT_VIEW_DTO_SPEC,
   );

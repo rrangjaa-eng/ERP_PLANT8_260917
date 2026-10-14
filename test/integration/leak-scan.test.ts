@@ -675,3 +675,34 @@ describe("카드 사용 삭제 · 되돌리기 · 수정 반환 — card_usage.a
     }
   });
 });
+
+// 06-24(ROADMAP 기준 5 · T-06-117) — Phase 6(06-01 ~ 06-30)이 새로 등록한 DTO가 전부 레지스트리에 있다.
+// 목록은 05-13 SUMMARY가 들어온 커밋(acf1cf2) 이후 `registerDto`로 새로 생긴 이름을 06-03 · 06-07 · 06-15 · 06-17 · 06-18 · 06-19 · 06-20 SUMMARY(`paymentView` · `CardUsageListItemDto` ·
+// `ProjectCardUsageDto` · `paymentTargetRow` · `IssueRequestDto` · `PreSettleCheckDto` · `paidPaymentRow`)와 `git diff` 대조로 모은 상수다 — 레지스트리에서 거꾸로 만들면 빠진 등록을 잡지 못한다.
+// `ProjectMember*` 둘은 06.2(보임 범위) 몫이라 뺐다.
+const PHASE6_DTO_NAMES = [
+  "paymentView",
+  "payablePreview",
+  "paymentTargetRow",
+  "paidPaymentRow",
+  "CardUsageListItemDto",
+  "CardUsageEditDto",
+  "CardUsageCardOptionDto",
+  "ProjectCardUsageDto",
+  "ProjectCardUsageTotalsDto",
+  "CardLinkProjectDto",
+  "CardLinkLineDto",
+  "PurchaseRequestListItemDto",
+  "PurchaseCompletionDto",
+  "IssueRequestDto",
+  "PreSettleCheckDto",
+] as const;
+
+describe("Phase 6 DTO 완전성 (06-24 · ROADMAP 기준 5)", () => {
+  it("Phase 6 DTO가 모두 등록돼 있다", () => {
+    expect(PHASE6_DTO_NAMES.length).toBeGreaterThanOrEqual(6);
+    const registered = new Set(DTO_REGISTRY.map((entry) => entry.name));
+    const missing = PHASE6_DTO_NAMES.filter((name) => !registered.has(name));
+    expect(missing, `누수 스캔 레지스트리에 없는 Phase 6 DTO: ${missing.join(", ")} (registerDto를 빠뜨렸거나 그 모듈이 누수 스캔 import 목록에 없다)`).toEqual([]);
+  });
+});

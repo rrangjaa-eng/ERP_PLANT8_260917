@@ -4,7 +4,7 @@ import { routeListSteps, withdrawResultLines } from "@/app/(app)/leave/status-di
 import type { ApprovalSheetItem, SheetDetailRow } from "./approval-sheet";
 import type { DecisionTarget } from "./decision-dialogs";
 
-// 결재함(`page.tsx`)과 첫 화면 「내 차례」(`app/(app)/page.tsx`)가 같은 결재 시트 · 반려 확인 재료를 만든다(05-10 — 두 번째 사용처).
+// 결재함(`page.tsx`)과 첫 화면 「내 차례」(`app/(app)/(home)/page.tsx`)가 같은 결재 시트 · 반려 확인 재료를 만든다(05-10 — 두 번째 사용처).
 // 서버가 준 투영 뒤 값만 옮긴다 — 종류 이름으로 분기하지 않는다.
 
 // 확인 창 부제의 숫자 조각 — 숫자 칸 1행과 같은 글자.

@@ -26,6 +26,17 @@ registerAction({ name: "closeExpenseAction", menu: "expenses", action: "write", 
 registerAction({ name: "requestEvidenceUploadAction", menu: "expenses", action: "write", dtoName: null });
 
 // 완료된 증빙 파일 DTO(도메인이 투영해 돌려준 것)를 그대로 돌려준다.
+// 06-16(D-56) 차수 승인 증빙 — 요청은 서명 PUT 주소만(DTO 없음), 펼침 읽기는 증빙 파일 명세(evidenceFile)를 지난 목록을 싣는다(projects 보기 — 판정은 domain).
+registerAction({ name: "requestRevisionEvidenceUploadAction", menu: "projects", action: "write", dtoName: null });
+registerAction({ name: "getRevisionEvidenceAction", menu: "projects", action: "view", dtoName: "evidenceFile" });
+
+// 06-16(D-60) 리저브 줄 증빙 — 차수 승인 증빙과 같은 모양(메뉴는 pnl). 되살리기는 05 removeEvidenceAction의 짝(판정은 domain 규칙).
+registerAction({ name: "requestReserveEvidenceUploadAction", menu: "pnl", action: "write", dtoName: null });
+registerAction({ name: "getReserveEvidenceAction", menu: "pnl", action: "view", dtoName: "evidenceFile" });
+// 06-25 카드 전표 — 서명 PUT 주소만 돌려준다(DTO 없음). 문은 카드 사용 수정 권리(domain 주인 표)이고 메뉴 값은 06-05 카드 사용 액션과 같은 레지스트리 메타데이터.
+registerAction({ name: "requestCardSlipUploadAction", menu: "cards", action: "write", dtoName: null });
+registerAction({ name: "restoreEvidenceAction", menu: "expenses", action: "write", dtoName: null });
+
 registerAction({ name: "completeEvidenceUploadAction", menu: "expenses", action: "write", dtoName: "evidenceFile" });
 
 registerAction({ name: "removeEvidenceAction", menu: "expenses", action: "write", dtoName: null });
@@ -60,3 +71,7 @@ registerAction({ name: "restoreExpenseDraftAction", menu: "expenses", action: "w
 
 // 06-15 일괄 지급 — 행 결과는 id · 이유 글자 · 새 지급 총액 숫자 하나 · 고를 수 있음뿐(DTO 없음). 지급 권한자 전용.
 registerAction({ name: "completePaymentsBatchAction", menu: "expenses.payments", action: "write", dtoName: null });
+// 06-17 고른 건 이체액 합 · 행별 차이 · 고른 행 상태 — rowStates의 지급 총액 · version은 06-15 행 명세(paymentTargetRow)의 정보 항목을 지난다.
+registerAction({ name: "sumSelectedTransfersAction", menu: "expenses.payments", action: "write", dtoName: "paymentTargetRow" });
+// 06-17 제자리 증빙 확인 모달 보기 — 파일 행은 05 증빙 파일 명세(evidenceFile)의 정보 항목, 금액 칸은 expense.amount(06-06 paymentView와 같다).
+registerAction({ name: "getEvidenceConfirmViewAction", menu: "expenses.payments", action: "write", dtoName: "evidenceFile" });

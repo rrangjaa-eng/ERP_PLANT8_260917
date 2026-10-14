@@ -8,7 +8,8 @@ import { previewExpenseRoute } from "@/domain/expenses/route-doc";
 import { canOpenProject } from "@/domain/projects/visibility";
 import { teamKindOptions } from "../team-kind-options";
 import { getEvidenceActions, listEvidence } from "@/domain/evidence";
-import { getPaymentView } from "@/domain/payments";
+import { getPaymentView, type PaymentViewDto } from "@/domain/payments";
+import { nextUnreviewedTarget, parsePayReturn, type PayReturn } from "@/domain/payments/targets";
 import { log } from "@/lib/log";
 import { getSettingValue } from "@/domain/settings/registry";
 import { EVIDENCE_MAX_SIZE_MB } from "@/domain/settings/keys";
@@ -33,10 +34,12 @@ import styles from "./expense.module.css";
 // 여기서는 같은 읽기를 다시 해 null이면 404). 바깥 틀은 둘 다 `DetailScreen`이다. 세션 검사는 이 페이지가 직접 한다(WR-07).
 export const dynamic = "force-dynamic";
 
-export default async function ExpensePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ submitted?: string; undone?: string }> }) {
+export default async function ExpensePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const { viewer } = await requireSession();
   const { id } = await params;
-  const { submitted, undone } = await searchParams;
+  const query = await searchParams;
+  const submitted = typeof query.submitted === "string" ? query.submitted : undefined;
+  const undone = typeof query.undone === "string" ? query.undone : undefined;
   const expense = await getExpense(viewer, { expenseId: id });
   if (!expense) notFound();
 
@@ -86,7 +89,24 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
           ]
         : [],
     );
-    return <ExpenseDocument expense={expense} view={view} files={documentFiles} evidenceActions={evidenceActions} maxMb={maxMb} submitted={submitted} paymentView={paymentView} projectOpenable={projectOpenable} />;
+    // 06-20(C-1): S1 번호 링크(`from=pay`)로 열었으면 지급 보기에 되돌림 · 다음 확인 전 링크를 싣는다 — 지급 보기가 있을 때만(05 C1 작성 중 문서는 null이라 없음).
+    // 검토 R-1: 되돌림은 지급 처리 권한자(S1 보기와 같은 판정 `expenses.payments` 쓰기)에게만 — 그 밖의 사람은 `from=pay`를 무시한다.
+    const payParsed = paymentView && paymentView !== "error" ? parsePayReturn(query) : null;
+    const payQuery = payParsed && (await can(viewer, "expenses.payments", "write")) ? payParsed : null;
+    const payReturn: PayReturn | null = payQuery
+      ? await nextUnreviewedTarget(viewer, { afterExpenseId: id, team: payQuery.team, evidence: payQuery.evidence })
+          .catch((error: unknown) => {
+            // 다음 확인 전을 못 읽어도 문서 화면은 선다 — `지급 대상으로`만 남는다.
+            log.error("expense.next_unreviewed_failed", { expenseId: id, message: error instanceof Error ? error.message : String(error) });
+            return null;
+          })
+          .then((next) => ({
+          backHref: payQuery.backHref,
+          next: next ? { number: next.number, href: `/expenses/${next.id}?${payQuery.docQuery}` } : null,
+        }))
+      : null;
+    const documentPaymentView: Partial<PaymentViewDto> | "error" | null = paymentView && paymentView !== "error" && payReturn ? { ...paymentView, payReturn } : paymentView;
+    return <ExpenseDocument expense={expense} view={view} files={documentFiles} evidenceActions={evidenceActions} maxMb={maxMb} submitted={submitted} paymentView={documentPaymentView} projectOpenable={projectOpenable} />;
   }
 
   // 작성 중 — 폼. 결재선은 제출 전 한 줄(기안자 · 문서 종류의 결재선 설정으로 해석 — 막히면 이유 한 줄).

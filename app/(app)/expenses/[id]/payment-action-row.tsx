@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import type { ReactNode } from "react";
 import type { PaymentViewDto } from "@/domain/payments";
 import { CANCEL_REASON_REQUIRED, DIFF_REASON_REQUIRED, EVIDENCE_AMOUNT_REQUIRED, scheduleDirtyBar, type ExpenseActionBar } from "@/domain/payments/action-row";
 import { EVIDENCE_AMOUNT_TAX_INCLUSIVE } from "@/domain/evidence-reviews/tax-inclusive";
-import { Button } from "@/ui/button/Button";
+import { Button, buttonLinkClassName } from "@/ui/button/Button";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
@@ -21,6 +22,7 @@ import { cancelExpensePaymentAction, completeExpensePaymentAction, confirmEviden
 import { diffReasonNeeded, PaymentFields, PaymentPanelProvider as PaymentFieldsProvider, transferError, transferNumber, usePaymentPanel, type PaymentFieldErrors } from "./payment-section";
 import { EVIDENCE_FIELD_ID, EvidenceEditProvider, evidenceAmountInput, useEvidenceEdit } from "./evidence-review-section";
 import styles from "./expense.module.css";
+import listStyles from "../expenses.module.css";
 
 // 06-03(UI-SPEC S5 · 「지출결의 상태 → 1차」): 결재 통과 문서의 지급 섹션 뼈대 + 행동 줄. 1차는 서버가 정한 `row`(resolveExpenseActionRow)
 // 그대로 — 클라이언트는 상태로 고르지 않고 금액 셈도 하지 않는다(O-18). 지급 완료는 확인 모달 없이 1차로 끝나고(되돌리기 = 지급 취소, 06-04),
@@ -298,6 +300,11 @@ export function PaymentActionRow() {
     }
   }, [canPay]);
 
+  // 06-20(C-1 · UI-SPEC S1 「문서 화면 왕복」): `from=pay`로 열었을 때만 행동 줄 오른쪽 3차 `지급 대상으로`(서버가 새로 만든 href),
+  // 증빙이 `확인됨`이고 같은 필터에 다음 `확인 전`이 있으면 같은 자리에 `다음 확인 전 {번호}`. 1차 규칙은 그대로다.
+  const payReturn = view.payReturn ?? null;
+  const nextUnreviewed = payReturn?.next && view.evidenceStatus === "확인됨" ? payReturn.next : null;
+
   // 지급 뒤(P6)는 1차 없이 결과 글자만(버튼 아님). 지급 권한이 없는 사람에게는 이 페이즈의 버튼이 없다(D-601 — 지급 전 담당 표기는 섹션 지급 예정일 2행).
   const showResult = paid && view.paidTime !== undefined;
   if (!canPay && !canSaveSchedule && !canConfirm && !showResult) return null;
@@ -305,7 +312,7 @@ export function PaymentActionRow() {
     <>
       <div className={barStyles.bar} data-fixed-bar="">
         {conflict ? <ConflictLine message={conflict} /> : null}
-        <div className={barStyles.buttons}>
+        <div className={payReturn ? `${barStyles.buttons} ${listStyles.payReturnButtons}` : barStyles.buttons}>
           {canSaveSchedule ? (
             <span className={barStyles.primaryWrap} ref={primaryRef}>
               <Button variant="primary" shortcut="Ctrl+Enter" pending={pending} onClick={saveSchedule}>
@@ -346,6 +353,18 @@ export function PaymentActionRow() {
               </span>
             </>
           )}
+          {payReturn ? (
+            <span className={canCancel ? listStyles.payReturn : `${listStyles.payReturn} ${listStyles.payReturnEnd}`} data-pay-return="">
+              <Link href={payReturn.backHref} className={buttonLinkClassName("tertiary")}>
+                지급 대상으로
+              </Link>
+              {nextUnreviewed ? (
+                <Link href={nextUnreviewed.href} className={buttonLinkClassName("tertiary")}>
+                  다음 확인 전 {nextUnreviewed.number}
+                </Link>
+              ) : null}
+            </span>
+          ) : null}
           {canCancel ? (
             <span className={barStyles.secondaryWrap}>
               <Button variant="secondary" onClick={() => setCancelOpen(true)}>

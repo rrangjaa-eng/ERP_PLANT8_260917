@@ -60,6 +60,8 @@ export type PurchaseRequestListRow = PurchaseRequestRow & {
   /** 06-14 취소한 사람 이름 — 취소 행 2행 `취소 {MM-DD} · {사람}`. 취소 아니면 null. */
   cancelledByName: string | null;
   projectName: string | null;
+  /** U1-1 — 완료 프로젝트 줄 요청은 `요청 취소`를 내놓지 않는다. 팀 비용이면 null. */
+  projectStatus: string | null;
   lineItemName: string | null;
   lineRevisionId: string | null;
   /** 06-12 구매 완료 건의 카드 사용(사용일 · 결제 합계) — 구매 완료 행 2행. 아니면 null. */
@@ -100,6 +102,7 @@ export async function listPurchaseRequestRows(
       requestedByName: users.name,
       cancelledByName: cancellers.name,
       projectName: projects.name,
+      projectStatus: projects.status,
       lineItemName: quoteLines.itemName,
       lineRevisionId: quoteLines.revisionId,
       usageUsedOn: corpCardUsages.usedOn,
@@ -119,6 +122,7 @@ export async function listPurchaseRequestRows(
     requestedByName: row.requestedByName,
     cancelledByName: row.cancelledByName,
     projectName: row.projectName,
+    projectStatus: row.projectStatus,
     lineItemName: row.lineItemName,
     lineRevisionId: row.lineRevisionId,
     usageUsedOn: row.usageUsedOn,

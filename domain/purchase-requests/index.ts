@@ -444,8 +444,9 @@ const UNDO_DENIED = "되돌리기 권한 없음";
 export const CANCEL_REASON_MAX = REJECT_REASON_MAX;
 export const CANCEL_REASON_TOO_LONG = REJECT_REASON_TOO_LONG_MESSAGE;
 
-/** 취소 갈래 — `own` 요청자 본인(사유 없이 즉시 · 되돌리기 있음) / `others` 구매 권한자의 남의 요청(사유 필수 · 되돌리기 없음). */
-export type PurchaseCancelPre = { requestId: string; branch: "own" | "others" };
+/** 취소 갈래 — `own` 요청자 본인(사유 없이 즉시 · 되돌리기 있음) / `others` 구매 권한자의 남의 요청(사유 필수 · 되돌리기 없음).
+ * `projectId` — 견적 줄 요청의 프로젝트(팀 비용이면 null). 완료 전 점검이 `신청됨` 요청을 매칭으로 세므로 취소는 프로젝트 행에서 줄을 선다(U1-1). */
+export type PurchaseCancelPre = { requestId: string; branch: "own" | "others"; projectId: string | null };
 
 // 트랜잭션 밖에서만. 요청을 잠금 없이 읽고 권한 → 갈래. 상태 판정은 잠근 뒤 `runCancel`이 한다(Q2 — 사전 조회 뒤에 바뀔 수 있다).
 export async function precheckPurchaseCancel(viewer: Viewer, input: { id: string }): Promise<PurchaseCancelPre> {
@@ -453,9 +454,15 @@ export async function precheckPurchaseCancel(viewer: Viewer, input: { id: string
   const purchaser = await can(viewer, "cards.purchases", "write");
   // 요청이 없다는 말도 권한 있는 사람에게만 한다(존재 여부를 흘리지 않는다).
   if (!row) throw purchaser ? new PurchaseRequestRejectedError(REQUEST_MISSING) : new ForbiddenError(CANCEL_DENIED);
-  if (row.requestedBy === viewer.id) return { requestId: row.id, branch: "own" };
-  if (!purchaser) throw new ForbiddenError(CANCEL_DENIED);
-  return { requestId: row.id, branch: "others" };
+  const branch = row.requestedBy === viewer.id ? "own" : "others";
+  if (branch === "others" && !purchaser) throw new ForbiddenError(CANCEL_DENIED);
+  const projectId = row.linkKind === "quote_line" ? row.projectId : null;
+  // 완료 프로젝트는 트랜잭션 전에 거부한다 — 잠근 뒤 `lockProjectForLinkWrite`가 다시 본다(X-2 · U1-1).
+  if (projectId) {
+    const project = await findProjectById(viewer, projectId);
+    if (project?.status === "completed") throw new CompletedProjectError(quoteLockReason({ status: project.status }) ?? undefined);
+  }
+  return { requestId: row.id, branch, projectId };
 }
 
 function normalizeCancelReason(raw: string | undefined): string {
@@ -467,7 +474,8 @@ function normalizeCancelReason(raw: string | undefined): string {
 
 export type CancelledPurchaseRequest = { id: string; number: string; version: number };
 
-// 취소는 `신청됨`에서만(Q2) — 요청 행 하나만 잡는다(견적 줄을 잡지 않아 구매 완료(줄 → 요청 행 순서)와 교착이 없다). `deps.afterLock` = 테스트 장벽(E-26).
+// 취소는 `신청됨`에서만(Q2). 견적 줄 요청은 프로젝트 행 → 요청 행 순서로 잡는다(U1-1 · E-9 — 정산 최종 승인과 같은 행에서 줄을 서고, 완료 프로젝트는
+// 기본값으로 거부). 견적 줄은 잡지 않는다(구매 완료(프로젝트 → 줄 → 요청 행)와 같은 방향이라 교착이 없다). `deps.afterLock` = 테스트 장벽(E-26).
 export async function cancelPurchaseRequest(
   viewer: Viewer,
   input: { id: string; version: number; reason?: string },
@@ -479,6 +487,7 @@ export async function cancelPurchaseRequest(
   // 본인 취소는 사유를 받지 않는다(그래야 되돌릴 수 있다) · 구매 권한자의 남의 요청 취소는 사유가 감사 기록이다.
   const reason = pre.branch === "others" ? normalizeCancelReason(input.reason) : null;
   const runCancel = async (innerTx: DbOrTx) => {
+    if (pre.projectId) await lockProjectForLinkWrite(viewer, { projectId: pre.projectId }, innerTx);
     const locked = await lockPurchaseRequestForUpdate(viewer, pre.requestId, innerTx);
     await deps?.afterLock?.();
     if (!locked) throw new PurchaseRequestRejectedError(REQUEST_MISSING);
@@ -638,10 +647,12 @@ export async function loadPurchaseCompletion(viewer: Viewer, id: string, today: 
   if (!row) return null;
   let projectLabel: string | null = null;
   let lineItemName: string | null = null;
+  let projectCompleted = false;
   if (row.quoteLineId && row.projectId) {
     // post-gate(06.2 · D-6220): 위 `cards.purchases` write 판정 뒤 — 구매 처리 권한자는 요청 전부를 다룬다(목록도 privileged 전부).
     const project = await findProjectById(viewer, row.projectId);
     projectLabel = project ? `${project.number} ${project.name}` : null;
+    projectCompleted = project?.status === "completed";
     lineItemName = (await findQuoteLineById(viewer, row.quoteLineId))?.itemName ?? null;
   }
   const dto: PurchaseCompletionDto = {
@@ -669,7 +680,8 @@ export async function loadPurchaseCompletion(viewer: Viewer, id: string, today: 
     teamName: team?.teamName ?? null,
     teamAssigned: team?.teamAssigned ?? true,
     statusReason: row.status === "requested" ? null : statusChangedError(row.status).message,
-    cancelBranch: row.status !== "requested" ? null : row.requestedBy === viewer.id ? "own" : "others",
+    // U1-1: 완료 프로젝트 줄 요청의 취소는 서버가 거부한다 — 구매 완료는 그대로 되고(U-4) 취소만 내놓지 않는다.
+    cancelBranch: row.status !== "requested" || projectCompleted ? null : row.requestedBy === viewer.id ? "own" : "others",
   };
 }
 
@@ -861,7 +873,8 @@ export async function listPurchaseRequests(viewer: Viewer, filters: PurchaseRequ
     totals: { count: estimates.length, estimateKrw: (await visible(viewer, "purchase_request.amount")) ? sumKrw(estimates) : null },
     cancelBranches: Object.fromEntries(
       rows.flatMap((row): [string, "own" | "others"][] => {
-        if (row.status !== "requested") return [];
+        // U1-1: 완료 프로젝트 줄 요청은 취소를 내놓지 않는다(서버도 거부).
+        if (row.status !== "requested" || row.projectStatus === "completed") return [];
         if (row.requestedBy === viewer.id) return [[row.id, "own"]];
         return privileged ? [[row.id, "others"]] : [];
       }),

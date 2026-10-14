@@ -8,6 +8,8 @@ export const STATUS_KIND = {
   "증빙 없음": "danger",
   반려: "danger",
   "담당 없음": "danger",
+  // 06-19 S18: 완료 전 점검 — 선결제 뒤 증빙이 없는 미결 지출결의(D-611)
+  "선결제 · 증빙 없음": "danger",
   // warning — 오늘 · 마감 임박 · 마감 중 · 정산
   오늘: "warning",
   "마감 임박": "warning",

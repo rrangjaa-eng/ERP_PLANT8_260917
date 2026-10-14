@@ -26,6 +26,10 @@ export const expenses = pgTable(
     content: text("content"),
     attributedTeamId: uuid("attributed_team_id").references(() => teams.id),
     vendorId: uuid("vendor_id").references(() => vendors.id),
+    // 06.5 D-6517: 지급처가 직원일 때(옛 `payee_person_id` + `expenses_payee_one`과 같은 결, O: db/schema/010_tables.sql:1765). 거래처와
+    // 동시에 차지 않는다. 둘 다 빈 행(작성 중 · 기존)은 허용 — 제출 막기는 도메인 게이트(D-6507 · 06.5-05)가 한다. 결재가 시작된 뒤에는
+    // 두 칸을 바꾸는 길이 없다(편집 가능 상태 = 작성 중 · 반려 · 회수) — 그래서 결재 시점 스냅숏 칸을 따로 두지 않는다.
+    payeeUserId: text("payee_user_id").references(() => users.id),
     // 코드표 값 문자열 — vendors.default_evidence_type과 같은 관례(FK 없음).
     evidenceType: text("evidence_type"),
     paymentMethod: text("payment_method"),
@@ -61,6 +65,10 @@ export const expenses = pgTable(
     closedAt: timestamp("closed_at"),
     closedBy: text("closed_by").references(() => users.id),
     closedReason: text("closed_reason"),
+    // 06.5 카드 ①(UI-SPEC V15): 경품(회사 대납 기타소득) 면제 한도를 받는 사람 한 명 몫으로 재기 위한 받는 인원. 서버가
+    // `공급가액 ÷ 받는 인원`으로 판정한다(06.5-02). 옛은 확인증 1장 = 1인이었다(O: server/src/confirmations.ts:775-795).
+    // 상수 기본값 1이라 PG16에서 표 재작성 없이 붙고 기존 행 · 옛 INSERT는 1로 읽힌다.
+    recipientCount: integer("recipient_count").notNull().default(1),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -80,6 +88,8 @@ export const expenses = pgTable(
     check("expenses_submitted_amount_check", sql`${table.number} IS NULL OR (${table.supplyAmountKrw} IS NOT NULL AND ${table.supplyAmountKrw} > 0)`),
     check("expenses_line_or_team_check", sql`NOT (${table.quoteLineId} IS NOT NULL AND ${table.teamExpenseKind} IS NOT NULL)`),
     check("expenses_installment_seq_check", sql`${table.installmentSeq} IS NULL OR ${table.installmentSeq} >= 1`),
+    check("expenses_payee_one_check", sql`NOT (${table.vendorId} IS NOT NULL AND ${table.payeeUserId} IS NOT NULL)`),
+    check("expenses_recipient_count_check", sql`${table.recipientCount} >= 1`),
     check("expenses_tax_rule_kind_check", sql`${table.taxRuleKind} IS NULL OR ${table.taxRuleKind} IN ('none','vat_surcharge','withholding','company_borne')`),
     check(
       "expenses_prepaid_reason_check",

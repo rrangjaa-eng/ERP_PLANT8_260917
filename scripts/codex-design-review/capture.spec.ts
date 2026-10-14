@@ -20,6 +20,10 @@ for (const route of routes) {
     const { userId, tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name: "E2E Admin", roleId: SYSADMIN_ROLE_ID });
     const target = fillRoute(route, { adminId: userId });
     await page.goto("/login");
+    // G-06-G(safari-report §1): 하이드레이션 전에 채우면 제어 입력이 빈 상태로 덮이거나 제출 처리기 전에 눌린다 — React가 붙인 __reactProps$ 키를 본 뒤 채운다(test/e2e/leave-org.ts waitForHydration과 같은 판정).
+    await expect
+      .poll(() => page.getByLabel("이메일").evaluate((element) => Object.keys(element).some((key) => key.startsWith("__reactProps$"))))
+      .toBe(true);
     await page.getByLabel("이메일").fill(email);
     await page.getByLabel("비밀번호").fill(tempPassword);
     await page.getByRole("button", { name: "로그인" }).click();

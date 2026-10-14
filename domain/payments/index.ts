@@ -6,14 +6,14 @@ import { registerDto } from "@/domain/permissions/dto-registry";
 import { recordAction } from "@/domain/action-log/record";
 import { gate, GateBlockedError } from "@/domain/rules/gate";
 import "@/domain/rules/register";
-import { applyTaxRule, loadTaxRates as defaultLoadTaxRates, taxRatesReader, type TaxIncomeType, type TaxRates } from "@/domain/money/tax";
+import { applyTaxRule, loadTaxRates as defaultLoadTaxRates, taxRatesReader, type TaxRates } from "@/domain/money/tax";
 import { diffKrw, grossFromTotal, moneyFromRow, remainingForInstallments, type Money, type RoundingUnit } from "@/domain/money";
 import { taxRuleSchema, type TaxRule } from "@/domain/code-tables/tax-rule";
 import { getSettingValue as defaultGetSettingValue } from "@/domain/settings/registry";
 import { EVIDENCE_REQUIRED, PAYMENT_METHOD_EVIDENCE_PAIRS, TAX_BASIS_DATE_VAT, TAX_BASIS_DATE_WITHHOLDING, type TaxBasisDate } from "@/domain/settings/keys";
 import { getApprovalView } from "@/domain/approvals";
 import { canSeeExpense, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses/access";
-import { incomeTypeFor, pickTaxDates, type PickedTaxDates, type TaxLinePart } from "@/domain/expenses/tax";
+import { pickTaxDates, type PickedTaxDates, type TaxLinePart } from "@/domain/expenses/tax";
 import { lineExecution, listNumberedByLineage, remainingText } from "@/domain/expenses";
 import { resolveLinkedDocumentsByLineage } from "@/domain/quotes/lineage";
 import { TAX_UNAVAILABLE } from "@/domain/expenses/gate";
@@ -42,7 +42,7 @@ import { seoulDateToUtcDate, seoulToday } from "@/lib/dates";
 import { isUniqueViolation } from "@/lib/pg-errors";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { formatKstTime } from "@/domain/holidays/business-day";
-import { evidenceGateInputs, evidenceOverrunLine, evidenceStampOf, loadPrepaidDueDays, resolveEvidenceStatus, SupplyCorrectionCapError, correctedSupplyColumns, type EvidenceStatus } from "@/domain/evidence-reviews";
+import { evidenceGateInputs, evidenceStampOf, loadPrepaidDueDays, resolveEvidenceStatus, SupplyCorrectionCapError, correctedSupplyColumns, type EvidenceStatus } from "@/domain/evidence-reviews";
 import { prepaidDueInfo, type PrepaidDue } from "@/domain/evidence-reviews/prepaid";
 import { findReviewByExpense, listAliveCardUsageSuppliesByProject } from "@/repositories/expense-evidence-reviews";
 import { listAliveByOwners } from "@/repositories/files";
@@ -122,13 +122,12 @@ export class PayableChangedError extends UserFacingError {
 }
 
 // ── 금액 원천(R-4 · E-7) ────────────────────────────────────────────────
-// 늘 공급가액(06-11 원가 기준과 같은 규칙). 입력 타입 · `source`는 06.5-02가 공급가 하나로 좁힌다.
-export type PaymentAmount = { source: "evidence" | "supply"; amountKrw: number };
+// 06.5 D-6520(사용자 카드 10/13 23:44 KST): 지급 금액은 공급가 하나 — 06.5-07이 몸체, 06.5-02가 타입(증빙 금액 칸은 06.5-10이 지운다).
+export type PaymentAmount = { source: "supply"; amountKrw: number };
 
-type PickPaymentAmountInput = { hasLiveEvidence: boolean; evidenceAmountKrw: number | null; supplyAmountKrw: number };
+type PickPaymentAmountInput = { supplyAmountKrw: number };
 
 export function pickPaymentAmount(input: PickPaymentAmountInput): PaymentAmount {
-  // 06.5 D-6520(사용자 카드 10/13 23:44 KST): 지급 금액은 공급가 하나 — 증빙 금액 칸은 06.5-10이 지운다
   return { source: "supply", amountKrw: input.supplyAmountKrw };
 }
 
@@ -137,7 +136,8 @@ export type PayableInput = {
   amount: PaymentAmount;
   taxRule: TaxRule;
   applyOpts: PickedTaxDates["applyOpts"];
-  incomeType: TaxIncomeType;
+  /** 06.5 카드 ① — 회사 대납 면제 판정의 받는 인원(문서 행 칸). */
+  recipientCount: number;
   /** 실제 이체액 — 없으면 지급 총액. */
   transferKrw?: number;
 };
@@ -162,7 +162,7 @@ export async function decidePayable(input: PayableInput, rates: TaxRates): Promi
     {
       paymentDate: seoulDateToUtcDate(input.applyOpts.paymentDate),
       evidenceDate: seoulDateToUtcDate(input.applyOpts.evidenceDate),
-      incomeType: input.incomeType,
+      recipientCount: input.recipientCount,
     },
     { getSettingValue: taxRatesReader(rates) },
   );
@@ -238,7 +238,7 @@ export async function loadPaymentShared(viewer: Viewer, deps?: Partial<PaymentSh
   };
 }
 
-type PaymentTax = { taxRule: TaxRule; dates: PickedTaxDates; incomeType: TaxIncomeType };
+type PaymentTax = { taxRule: TaxRule; dates: PickedTaxDates; recipientCount: number };
 
 export type PaymentInputs = {
   expenseId: string;
@@ -257,22 +257,19 @@ export type PaymentInputs = {
   tax: (PaymentTax & { rates: TaxRates }) | null;
 };
 
-// 잠근 행이든 사전 조회 행이든 같은 규칙으로 기준(세금 규칙 · 기준일 · 소득 종류 · 금액 원천)을 정한다 — DB 없음.
+// 잠근 행이든 사전 조회 행이든 같은 규칙으로 기준(세금 규칙 · 기준일 · 받는 인원 · 금액)을 정한다 — DB 없음.
 function basisOf(
-  row: Pick<ExpenseRow, "evidenceType" | "supplyAmountKrw" | "evidenceAmount" | "scheduledPaymentDate" | "evidenceDate" | "createdAt">,
-  ctx: { shared: PaymentShared; payDate: string | null; today: string; hasLiveEvidence: boolean },
+  row: Pick<ExpenseRow, "evidenceType" | "supplyAmountKrw" | "scheduledPaymentDate" | "evidenceDate" | "createdAt" | "recipientCount">,
+  ctx: { shared: PaymentShared; payDate: string | null; today: string },
 ): { amount: PaymentAmount | null; tax: PaymentTax | null } {
-  const amount =
-    row.supplyAmountKrw === null
-      ? null
-      : pickPaymentAmount({ hasLiveEvidence: ctx.hasLiveEvidence, evidenceAmountKrw: row.evidenceAmount, supplyAmountKrw: row.supplyAmountKrw });
+  const amount = row.supplyAmountKrw === null ? null : pickPaymentAmount({ supplyAmountKrw: row.supplyAmountKrw });
   const taxRule = ctx.shared.taxRuleOf(row.evidenceType);
   if (!taxRule) return { amount, tax: null };
   const dates = pickTaxDates(
     { paidDate: ctx.payDate, scheduledPaymentDate: row.scheduledPaymentDate, evidenceDate: row.evidenceDate, createdAt: row.createdAt },
     { ruleKind: taxRule.ruleKind, codeBasis: taxRule.basisDate, basisWithholding: ctx.shared.basisWithholding, basisVat: ctx.shared.basisVat, todayKst: ctx.today },
   );
-  return { amount, tax: { taxRule, dates, incomeType: incomeTypeFor(row.evidenceType) } };
+  return { amount, tax: { taxRule, dates, recipientCount: row.recipientCount } };
 }
 
 const IN_PROGRESS: readonly string[] = ["submitted", "in_review"];
@@ -298,7 +295,7 @@ export async function loadPaymentInputs(
   const today = seoulToday(input.now);
   const payDate = input.payDate ?? null;
   const basisRow = input.scheduledPayDate === undefined ? row : { ...row, scheduledPaymentDate: input.scheduledPayDate };
-  const { amount, tax } = basisOf(basisRow, { shared: ctxShared, payDate, today, hasLiveEvidence });
+  const { amount, tax } = basisOf(basisRow, { shared: ctxShared, payDate, today });
   return {
     expenseId: row.id,
     projectId: row.projectId,
@@ -322,7 +319,7 @@ async function currentStepName(viewer: Viewer, expenseId: string): Promise<strin
 function payableOf(pre: PaymentInputs, transferKrw?: number): Promise<PayableDecision> | null {
   if (!pre.amount || !pre.tax) return null;
   return decidePayable(
-    { amount: pre.amount, taxRule: pre.tax.taxRule, applyOpts: pre.tax.dates.applyOpts, incomeType: pre.tax.incomeType, transferKrw },
+    { amount: pre.amount, taxRule: pre.tax.taxRule, applyOpts: pre.tax.dates.applyOpts, recipientCount: pre.tax.recipientCount, transferKrw },
     pre.tax.rates,
   );
 }
@@ -333,7 +330,6 @@ export class BasisChangedSignal extends Error {}
 function sameBasis(pre: PaymentInputs, locked: { evidenceType: string | null; amount: PaymentAmount | null; tax: PaymentTax | null }): boolean {
   return (
     pre.evidenceType === locked.evidenceType &&
-    pre.amount?.source === locked.amount?.source &&
     pre.amount?.amountKrw === locked.amount?.amountKrw &&
     pre.tax?.dates.basisDate === locked.tax?.dates.basisDate &&
     pre.tax?.dates.basisKind === locked.tax?.dates.basisKind
@@ -342,7 +338,7 @@ function sameBasis(pre: PaymentInputs, locked: { evidenceType: string | null; am
 
 export type LockedExpense = Pick<
   ExpenseRow,
-  "id" | "evidenceType" | "supplyAmountKrw" | "evidenceAmount" | "scheduledPaymentDate" | "evidenceDate" | "createdAt" | "paymentMethod" | "prepaid"
+  "id" | "evidenceType" | "supplyAmountKrw" | "scheduledPaymentDate" | "evidenceDate" | "createdAt" | "paymentMethod" | "prepaid" | "recipientCount"
 >;
 
 // 06-04 — 짝 게이트 ctx(DB 없음). 증빙 게이트 ctx는 evidenceGateInputs(06-06 — 잠금 뒤 tx로 읽은 증빙 유무 · 면제 · 확인 기록)가 짓는다.
@@ -364,7 +360,6 @@ export async function judgeLockedPayment(input: {
   pre: PaymentInputs;
   locked: LockedExpense;
   approvalState: string | null;
-  lockedHasEvidence: boolean;
   // 06-06 — 잠금 뒤 tx로 지은 증빙 게이트 입력(evidenceGateInputs — 면제 · 확인 기록 포함). 필수(06-06 검토 S-3 — 빠뜨리면 확인된 문서도 막힌다).
   evidenceGate: EvidenceGateInput;
   payDate: string;
@@ -382,11 +377,11 @@ export async function judgeLockedPayment(input: {
   const pair = await gate(locked, "payment.method-evidence-mismatch", pairGateCtx(locked, input.shared));
   if (!pair.allowed) throw new GateBlockedError(pair.reason);
 
-  const basis = basisOf(locked, { shared: input.shared, payDate: input.payDate, today: pre.today, hasLiveEvidence: input.lockedHasEvidence });
+  const basis = basisOf(locked, { shared: input.shared, payDate: input.payDate, today: pre.today });
   if (!sameBasis(pre, { evidenceType: locked.evidenceType, ...basis })) {
     if (!pre.tax || !basis.amount || !basis.tax || basis.tax.dates.basisDate !== pre.tax.rates.asOf) throw new BasisChangedSignal();
     const fresh = await decidePayable(
-      { amount: basis.amount, taxRule: basis.tax.taxRule, applyOpts: basis.tax.dates.applyOpts, incomeType: basis.tax.incomeType },
+      { amount: basis.amount, taxRule: basis.tax.taxRule, applyOpts: basis.tax.dates.applyOpts, recipientCount: basis.tax.recipientCount },
       pre.tax.rates,
     );
     // 기준이 바뀌어도 지급 총액이 화면 값과 같으면 계속한다 — 나머지 검사는 아래 공통 경로가 한다(리뷰 P3-3).
@@ -401,7 +396,7 @@ export async function judgeLockedPayment(input: {
       amount: basis.amount,
       taxRule: basis.tax.taxRule,
       applyOpts: basis.tax.dates.applyOpts,
-      incomeType: basis.tax.incomeType,
+      recipientCount: basis.tax.recipientCount,
       transferKrw: input.transferKrw,
     },
     pre.tax.rates,
@@ -480,7 +475,6 @@ export async function completeExpensePayment(
         pre,
         locked,
         approvalState: instance?.status ?? null,
-        lockedHasEvidence: evidenceGate.hasEvidence,
         evidenceGate,
         payDate,
         expectedPayableKrw: input.expectedPayableKrw,
@@ -716,29 +710,6 @@ function evidenceTaxLineOf(payable: PayableDecision, taxRule: TaxRule, ruleLabel
   return segments.flatMap((part, index) => (index === 0 ? part : [{ text: " · ", emphasis: false }, ...part]));
 }
 
-// [Q-F] 증빙 금액 초과 한 줄(표시만 — 확인 · 게이트 · 규칙은 읽지 않는다). 트랜잭션 없는 읽기. 살아 있는 파일이 없으면 계보 조회 없이 null(R-4).
-// 남은 실행가는 견적 줄 계보 사슬 전체로: 이 문서가 든 현재 차수 줄의 실행가 − 사슬 위 다른 번호 문서 공급가 − 사슬 줄에 이은 보관 안 된 카드 사용 공급가.
-// 팀 비용(견적 줄 없음) · 사슬이 최신 차수에 닿지 않으면 실행가 조각 없음(남은 실행가 null).
-export async function loadEvidenceOverrun(
-  viewer: Viewer,
-  doc: Pick<ExpenseRow, "id" | "projectId" | "quoteLineId" | "supplyAmountKrw">,
-  evidenceAmountKrw: number | null,
-): Promise<string | null> {
-  if (evidenceAmountKrw === null) return null;
-  if (!(await hasEvidence(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: doc.id }))) return null;
-  return evidenceOverrunLine({
-    hasLiveEvidence: true,
-    evidenceAmountKrw,
-    approvedSupplyKrw: doc.supplyAmountKrw,
-    lineRemainingKrw: doc.quoteLineId && doc.projectId ? await lineRemainingFor(viewer, doc.projectId, doc.id) : null,
-  });
-}
-
-async function lineRemainingFor(viewer: Viewer, projectId: string, expenseId: string): Promise<number | null> {
-  const basis = await chainBasisFor(viewer, projectId, expenseId);
-  return basis ? remainingForInstallments(basis.execution, basis.others).remaining.amountKrw : null;
-}
-
 // 06.5 D-6520(P2-C2) — 증빙 확인의 공급가액 고침 상한. 제출 상한과 같은 남은 실행가 판정(사슬의 다른 번호 문서 · 카드 사용 공급가를 뺀
 // 현재 차수 줄 실행가)을 호출자 tx로 읽는다 — 프로젝트 행 → 견적 줄 → 문서 행을 잠근 뒤 판정해야 같은 줄 회차 제출과 엇갈리지 않는다.
 // tx 없이 부르는 곳은 미리보기(previewPayable) 하나 — 잠그지 않은 읽기라 표시만 하고 확정은 확인이 잠금 뒤 다시 판정한다.
@@ -754,8 +725,8 @@ export async function supplyCorrectionCap(
   return basis ? remainingForInstallments(basis.execution, basis.others, corrected) : null;
 }
 
-// 문서가 든 계보 사슬의 현재 차수 줄 실행가와 그 사슬 위 다른 번호 문서 · 카드 사용 공급가 — lineRemainingFor(tx 없음)와
-// supplyCorrectionCap(호출자 tx)이 같이 쓴다.
+// 문서가 든 계보 사슬의 현재 차수 줄 실행가와 그 사슬 위 다른 번호 문서 · 카드 사용 공급가 — supplyCorrectionCap(호출자 tx ·
+// 미리보기는 tx 없음)이 쓴다.
 async function chainBasisFor(viewer: Viewer, projectId: string, expenseId: string, tx?: DbOrTx): Promise<{ execution: Money; others: Money[] } | null> {
   const chain = [...(await listNumberedByLineage(viewer, projectId, tx))].find(([, docs]) => docs.some((doc) => doc.id === expenseId));
   if (!chain) return null;
@@ -947,7 +918,7 @@ export async function getPaymentView(viewer: Viewer, expenseId: string, deps?: {
       })
     : null;
   const alive = await listAliveByOwners(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerIds: [row.id] });
-  const evidenceStamp = evidenceStampOf({ fileIds: alive.map((file) => file.id), evidenceAmountKrw: row.evidenceAmount, evidenceDate: row.evidenceDate });
+  const evidenceStamp = evidenceStampOf({ fileIds: alive.map((file) => file.id), evidenceDate: row.evidenceDate });
   const [accountRow] = await projectPaymentAccounts(viewer, [{ paymentMethod: row.paymentMethod, vendorId: row.vendorId }]);
   const accountPart = accountRow?.account ? { account: accountRow.account } : {};
   if (live) {

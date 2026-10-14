@@ -96,6 +96,33 @@ describe("설정 JSON 내보내기·가져오기 (ADMN-06, 실제 Postgres)", ()
     expect(await getSettingValue(DOCUMENT_NUMBER_PROJECT_SEPARATOR)).toBe("");
   });
 
+  // 06.5 D-6501 — 기타소득 8.8% 원천징수 두 키를 지웠다. 옛 내보내기 파일에 그 두 키가 있어도 막지 않고 건너뛴다(그 밖의 모르는 키는 막는다).
+  it("(p) 옛 파일의 지운 두 키(tax.withholding.other_income.*)는 건너뛰고 다른 키는 적용된다", async () => {
+    await setSettingValue(SYSTEM_VIEWER, AUTH_LOCKOUT_THRESHOLD, 7);
+    const payload = {
+      schemaVersion: "1",
+      exportedAt: new Date().toISOString(),
+      settings: {
+        [AUTH_LOCKOUT_THRESHOLD.key]: 4,
+        "tax.withholding.other_income.rate": [{ effectiveFrom: "2000-01-01", value: 0.088 }],
+        "tax.withholding.other_income.exempt_threshold": [{ effectiveFrom: "2000-01-01", value: 125000 }],
+      },
+    };
+    await expect(importSettings(SYSTEM_VIEWER, payload)).resolves.toBeUndefined();
+    expect(await getSettingValue(AUTH_LOCKOUT_THRESHOLD)).toBe(4);
+  });
+
+  it("(q) 그 밖의 모르는 키는 지금처럼 「등록되지 않은 키」로 막는다", async () => {
+    const payload = {
+      schemaVersion: "1",
+      exportedAt: new Date().toISOString(),
+      settings: { "tax.withholding.other_income.rate": [{ effectiveFrom: "2000-01-01", value: 0.088 }], "tax.unknown.key": 1 },
+    };
+    const error = await importSettings(SYSTEM_VIEWER, payload).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ImportValidationError);
+    expect((error as ImportValidationError).issues).toEqual(["등록되지 않은 키: tax.unknown.key"]);
+  });
+
   describe("저장된 구분자가 허용 목록 밖일 때 (PR #104 /review 2차 A(2))", () => {
     afterEach(() => vi.restoreAllMocks());
 

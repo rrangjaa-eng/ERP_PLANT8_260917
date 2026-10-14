@@ -98,7 +98,7 @@ export async function listReviewStatusByExpenses(viewer: Viewer, expenseIds: rea
   return new Map(rows.map((row) => [row.expenseId, row.status as EvidenceReviewStatus]));
 }
 
-// [Q-F 계보] 프로젝트(모든 차수) 견적 줄에 이은 보관 안 된 카드 사용의 공급가 — 남은 실행가 재료(06-06 loadEvidenceOverrun).
+// [Q-F 계보] 프로젝트(모든 차수) 견적 줄에 이은 보관 안 된 카드 사용의 공급가 — 남은 실행가 재료(06.5-07 supplyCorrectionCap).
 // 06-07 repositories/corp-card-usages.ts · quote-line-links.ts는 같은 웨이브라 쓰지 않는다.
 export async function listAliveCardUsageSuppliesByProject(
   viewer: Viewer,

@@ -119,12 +119,13 @@ const EVIDENCE_TYPE_CODES: {
     value: "other_income",
     label: "기타소득",
     sortOrder: 4,
-    description: "강사료·경품 등 일시 소득 · 원천징수 대상",
+    description: "경품 등 일시 소득 · 회사 대납",
+    // 06.5 D-6501 — 06.5-01 마이그레이션과 같은 값 · roundingUnit은 회사 대납 갈래에서 장식(EP3-A7).
     taxRule: {
-      ruleKind: "withholding",
+      ruleKind: "company_borne",
       roundingUnit: 10,
       roundingMethod: "truncate",
-      minWithholdingAmount: 125000,
+      minWithholdingAmount: 0,
       basisDate: "payment_date",
     },
   },

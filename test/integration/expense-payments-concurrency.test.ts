@@ -43,7 +43,7 @@ describe("지급 완료 — 풀 소진 교착 회귀 가드", () => {
         const pre = await loadPaymentInputs(payer, { expenseId: doc.expenseId });
         if (!pre.amount || !pre.tax) throw new Error("지급 총액을 셈할 수 없는 문서");
         const payable = await decidePayable(
-          { amount: pre.amount, taxRule: pre.tax.taxRule, applyOpts: pre.tax.dates.applyOpts, incomeType: pre.tax.incomeType },
+          { amount: pre.amount, taxRule: pre.tax.taxRule, applyOpts: pre.tax.dates.applyOpts, recipientCount: pre.tax.recipientCount },
           pre.tax.rates,
         );
         expected.push(payable.payableKrw);

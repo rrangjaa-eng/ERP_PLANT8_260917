@@ -94,7 +94,6 @@ export type PaidPaymentRow = {
   installment: boolean;
   installmentSeq: number | null;
   prepaid: boolean;
-  evidenceAmount: number | null;
   projectName: string | null;
   itemName: string | null;
   teamName: string | null;
@@ -132,7 +131,6 @@ export async function listPaidPaymentRows(viewer: Viewer, input: { teamId?: stri
       installment: expenses.installment,
       installmentSeq: expenses.installmentSeq,
       prepaid: expenses.prepaid,
-      evidenceAmount: expenses.evidenceAmount,
       projectName: projects.name,
       itemName: quoteLines.itemName,
       teamName: teams.name,

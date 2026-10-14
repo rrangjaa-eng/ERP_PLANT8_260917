@@ -2,7 +2,7 @@ import { isDeepStrictEqual } from "node:util";
 import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
-import { SEED_HISTORIZED_EFFECTIVE_FROM, SETTING_DEFS } from "@/domain/settings/keys";
+import { RETIRED_SETTING_KEYS, SEED_HISTORIZED_EFFECTIVE_FROM, SETTING_DEFS } from "@/domain/settings/keys";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { seoulDateToUtcDate, seoulToday } from "@/lib/dates";
 import {
@@ -110,7 +110,8 @@ export async function importSettings(
   for (const [key, raw] of Object.entries(payload.settings ?? {})) {
     const def = SETTING_DEFS.find((candidate) => candidate.key === key);
     if (!def) {
-      issues.push(`등록되지 않은 키: ${key}`);
+      // 06.5 D-6501 — 지운 키(옛 기타소득 원천징수)는 옛 내보내기 파일에 남아 있다. 막지 않고 건너뛴다.
+      if (!RETIRED_SETTING_KEYS.includes(key)) issues.push(`등록되지 않은 키: ${key}`);
       continue;
     }
 

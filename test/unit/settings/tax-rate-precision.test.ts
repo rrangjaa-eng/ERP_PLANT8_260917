@@ -3,7 +3,6 @@ import {
   TAX_COMPANY_BORNE_RATE,
   TAX_VAT_RATE,
   TAX_WITHHOLDING_BUSINESS_INCOME_RATE,
-  TAX_WITHHOLDING_OTHER_INCOME_RATE,
 } from "@/domain/settings/keys";
 import { koreanZodErrorMessage } from "@/lib/actions/zod-error-message";
 
@@ -12,7 +11,6 @@ import { koreanZodErrorMessage } from "@/lib/actions/zod-error-message";
 // 결과를 바꾸므로 저장 단계에서 막는다.
 const RATE_KEYS = [
   TAX_VAT_RATE,
-  TAX_WITHHOLDING_OTHER_INCOME_RATE,
   TAX_WITHHOLDING_BUSINESS_INCOME_RATE,
   TAX_COMPANY_BORNE_RATE,
 ];
@@ -30,7 +28,7 @@ describe.each(RATE_KEYS.map((def) => [def.key, def] as const))("세율 정밀도
 });
 
 describe("세율 정밀도: 1(100%)", () => {
-  it.each([TAX_VAT_RATE, TAX_WITHHOLDING_OTHER_INCOME_RATE, TAX_WITHHOLDING_BUSINESS_INCOME_RATE])(
+  it.each([TAX_VAT_RATE, TAX_WITHHOLDING_BUSINESS_INCOME_RATE])(
     "$key는 1을 허용한다",
     (def) => {
       expect(def.schema.safeParse(1).success).toBe(true);

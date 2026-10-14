@@ -273,8 +273,6 @@ export type PaymentTargetRowDto = {
   reason: string | null;
   prepaid: boolean;
   quoteLineId: string | null;
-  // 06-17(R10-F2) — 증빙 금액이 적혀 있는가(값이 아니라 있음만). 빈 `확인 전`은 제자리 확인 모달 대신 문서 화면으로 간다.
-  evidenceAmountEntered: boolean;
   // 06-20(O-17) — 지급 권한자의 계좌이체 행에만 있는 키(domain/payments projectPaymentAccounts).
   account?: PaymentAccount;
 };
@@ -295,13 +293,12 @@ export const PAYMENT_TARGET_ROW_DTO_SPEC: DtoSpec<PaymentTargetRowDto, PaymentTa
     { key: "reason", from: "reason", infoItem: "expense.value" },
     { key: "prepaid", from: "prepaid", infoItem: "expense.value" },
     { key: "quoteLineId", from: "quoteLineId", infoItem: "expense.value" },
-    { key: "evidenceAmountEntered", from: "evidenceAmountEntered", infoItem: "expense.value" },
     { key: "account", from: "account", infoItem: "vendor.value" },
   ],
 };
 
 // 06-20(S3 「지급 완료」 보기) — 지급 기록 행. 금액(이체액 · 차이)은 expense.amount, 나머지는 expense.value. 계좌 칸은 없다(O-17 — 대표가 읽는다).
-// 지급 방식은 낱말만(지급 기록이 복사한 코드의 이름). 증빙 상태는 06-06 resolveEvidenceStatus, 증빙 금액은 있음만(06-17 R10-F2 — 빈 `확인 전`은 문서 화면으로).
+// 지급 방식은 낱말만(지급 기록이 복사한 코드의 이름). 증빙 상태는 06-06 resolveEvidenceStatus(06.5 D-6520 — 증빙 금액 있음 칸 없음).
 export type PaidPaymentRowDto = {
   id: string;
   number: string | null;
@@ -313,7 +310,6 @@ export type PaidPaymentRowDto = {
   diffKrw: number;
   diffReason: string | null;
   evidenceStatus: string;
-  evidenceAmountEntered: boolean;
   processedByName: string;
   version: number;
 };
@@ -330,7 +326,6 @@ export const PAID_PAYMENT_ROW_DTO_SPEC: DtoSpec<PaidPaymentRowDto, PaidPaymentRo
     { key: "diffKrw", from: "diffKrw", infoItem: "expense.amount" },
     { key: "diffReason", from: "diffReason", infoItem: "expense.value" },
     { key: "evidenceStatus", from: "evidenceStatus", infoItem: "expense.value" },
-    { key: "evidenceAmountEntered", from: "evidenceAmountEntered", infoItem: "expense.value" },
     { key: "processedByName", from: "processedByName", infoItem: "expense.value" },
     { key: "version", from: "version", infoItem: "expense.value" },
   ],

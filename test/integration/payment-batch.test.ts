@@ -6,7 +6,7 @@ import { expenseEvidenceReviews, expensePayments, expenses, files, quoteLines, v
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertVisibility } from "@/repositories/permissions";
 import { ForbiddenError } from "@/domain/permissions/can";
-import { cancelExpensePayment, completeExpensePayment, getPaymentView, loadEvidenceOverrun, PayableChangedError, PaymentConflictError, previewPayable, saveScheduledPayDate } from "@/domain/payments";
+import { cancelExpensePayment, completeExpensePayment, getPaymentView, PayableChangedError, PaymentConflictError, previewPayable, saveScheduledPayDate } from "@/domain/payments";
 import { BATCH_ROW_FAILED, batchRowOutcome, completePaymentsBatch } from "@/domain/payments/batch";
 import { getEvidenceConfirmView, listPaidPayments, listPaymentTargets, nextUnreviewedTarget, paidViewAllowed, parsePaymentEvidenceFilter, parsePayReturn, PAYMENT_EVIDENCE_FILTERS, sumSelectedTransfers } from "@/domain/payments/targets";
 import { DIFF_REASON_REQUIRED, EVIDENCE_UNCONFIRMED } from "@/domain/payments/action-row";
@@ -727,7 +727,7 @@ describe("제자리 증빙 확인 보기 (06-17 Task 4)", () => {
     const view = await getEvidenceConfirmView(payer, { expenseId: doc.expenseId, rowVersion: doc.version });
     expect(view.version).toBe(doc.version);
     expect(view.number).toBe(doc.number);
-    expect(view.evidenceAmountKrw).toBe(1_000_000);
+    expect("evidenceAmountKrw" in view).toBe(false);
     expect(view.files).toHaveLength(1);
     expect(view.files?.[0]?.name).not.toBe("");
     expect(view.evidenceStamp).toBe(paymentView?.evidenceStamp);
@@ -758,7 +758,7 @@ describe("제자리 증빙 확인 보기 (06-17 Task 4)", () => {
     expect(foreign.supply).toEqual({ currency: "USD", amount: 1000 });
   }, 30_000);
 
-  it("증빙 확인 보기 — 증빙 금액 초과 한 줄(Q-F): 승인액 12,000,000 · 실행가 12,250,000 · 증빙 금액 12,400,000 → 06-06 loadEvidenceOverrun과 같은 한 줄 / 11,000,000 → null", async () => {
+  it("증빙 확인 보기 — 넘침 줄 없음(06.5 D-6520): 증빙 금액이 승인액 · 실행가를 넘어도 넘침 칸이 없고 세금 한 줄은 공급가 기준이다", async () => {
     const payer = await makePayer();
     const fx = await setupExpenseProject();
     const doc = await unreviewedWithAmount(fx, 12_400_000);
@@ -766,13 +766,19 @@ describe("제자리 증빙 확인 보기 (06-17 Task 4)", () => {
     await db.update(quoteLines).set({ executionAmountKrw: 12_250_000 }).where(eq(quoteLines.id, fx.lines.withVendor));
 
     const view = await getEvidenceConfirmView(payer, { expenseId: doc.expenseId, rowVersion: doc.version });
-    expect(view.evidenceOverrun).toBe("승인액보다 +400,000 · 실행가 초과 150,000");
-    const [row] = await db.select().from(expenses).where(eq(expenses.id, doc.expenseId));
-    if (!row) throw new Error("지출결의 없음");
-    expect(view.evidenceOverrun).toBe(await loadEvidenceOverrun(payer, row, 12_400_000));
+    expect("evidenceOverrun" in view).toBe(false);
+    const paymentView = await getPaymentView(payer, doc.expenseId);
+    expect(view.taxLine).toEqual(paymentView?.evidenceTaxLine);
 
+    // 증빙 금액만 바꿔도 지급 금액 · 세금 한 줄 · 지문이 그대로다 — 금액은 공급가액 하나에서 나온다.
     await db.update(expenses).set({ evidenceAmount: 11_000_000 }).where(eq(expenses.id, doc.expenseId));
-    expect((await getEvidenceConfirmView(payer, { expenseId: doc.expenseId, rowVersion: doc.version })).evidenceOverrun).toBeNull();
+    const after = await getEvidenceConfirmView(payer, { expenseId: doc.expenseId, rowVersion: doc.version });
+    const paymentAfter = await getPaymentView(payer, doc.expenseId);
+    expect({ taxLine: after.taxLine, stamp: after.evidenceStamp, payableKrw: paymentAfter?.payableKrw }).toEqual({
+      taxLine: view.taxLine,
+      stamp: view.evidenceStamp,
+      payableKrw: paymentView?.payableKrw,
+    });
   });
 
   it("증빙 지문 다름 → 확인 거부: 보기 뒤 기안자가 증빙 하나 더 → 지금 DB version + 옛 지문으로 확인 → 동시성 거부 · 확인 기록 없음 / 다시 받은 보기 version + 지문 → 확인됨", async () => {

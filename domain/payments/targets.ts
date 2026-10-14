@@ -7,7 +7,7 @@ import "@/domain/rules/register";
 import { diffKrw, moneyFromRow, sumKrw } from "@/domain/money";
 import { EXPENSE_DOCUMENT_KIND, visibleExpenseScope, type VisibleExpenseScope } from "@/domain/expenses/access";
 import { groupExpenses } from "@/domain/expenses/list";
-import { incomeTypeFor, pickTaxDates, type TaxLinePart } from "@/domain/expenses/tax";
+import { pickTaxDates, type TaxLinePart } from "@/domain/expenses/tax";
 import { TAX_UNAVAILABLE } from "@/domain/expenses/gate";
 import { PAID_PAYMENT_ROW_DTO_SPEC, PAYMENT_TARGET_ROW_DTO_SPEC, type PaidPaymentRowDto, type PaymentTargetRowDto } from "@/domain/expenses/dto";
 import { ownersWithEvidence } from "@/domain/evidence/has-evidence";
@@ -16,7 +16,7 @@ import { formatKstTime } from "@/domain/holidays/business-day";
 import { findUserNamesByIds } from "@/repositories/users";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { loadPrepaidDueDays, resolveEvidenceStatus, type EvidenceStatus } from "@/domain/evidence-reviews";
-import { decidePayable, getPaymentView, loadEvidenceOverrun, loadPaymentShared, pairGateCtx, pickPaymentAmount, projectPaymentAccounts, type PaymentShared, type PaymentSharedDeps } from "@/domain/payments";
+import { decidePayable, getPaymentView, loadPaymentShared, pairGateCtx, pickPaymentAmount, projectPaymentAccounts, type PaymentShared, type PaymentSharedDeps } from "@/domain/payments";
 import { approvalGateDecision, EVIDENCE_UNCONFIRMED, resolveExpenseActionRow, type EvidenceGateInput, type ExpenseActionBar } from "@/domain/payments/action-row";
 import { listTeams as listTeamRows } from "@/repositories/teams";
 import { EXPENSE_GROUP_RANKS, listExpenseIdsInScope } from "@/repositories/expenses";
@@ -61,17 +61,17 @@ type JudgeContext = { shared: PaymentShared; today: string; amountVisible: boole
 const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // 지급 총액(DB 없음 — 세율은 shared 캐시) — 06-03 basisOf와 같은 순서. 금액 · 세금 규칙이 없으면 null(단건 경로는 TAX_UNAVAILABLE).
-async function payableOf(row: PaymentTargetRow, hasLiveEvidence: boolean, ctx: JudgeContext): Promise<number | null> {
+async function payableOf(row: PaymentTargetRow, ctx: JudgeContext): Promise<number | null> {
   if (row.supplyAmountKrw === null) return null;
   const taxRule = ctx.shared.taxRuleOf(row.evidenceType);
   if (!taxRule) return null;
-  const amount = pickPaymentAmount({ hasLiveEvidence, evidenceAmountKrw: row.evidenceAmount, supplyAmountKrw: row.supplyAmountKrw });
+  const amount = pickPaymentAmount({ supplyAmountKrw: row.supplyAmountKrw });
   const dates = pickTaxDates(
     { paidDate: ctx.today, scheduledPaymentDate: row.scheduledPaymentDate, evidenceDate: row.evidenceDate, createdAt: row.createdAt },
     { ruleKind: taxRule.ruleKind, codeBasis: taxRule.basisDate, basisWithholding: ctx.shared.basisWithholding, basisVat: ctx.shared.basisVat, todayKst: ctx.today },
   );
   const rates = await ctx.shared.ratesFor(dates.basisDate);
-  const decision = await decidePayable({ amount, taxRule, applyOpts: dates.applyOpts, incomeType: incomeTypeFor(row.evidenceType) }, rates);
+  const decision = await decidePayable({ amount, taxRule, applyOpts: dates.applyOpts, recipientCount: row.recipientCount }, rates);
   return decision.payableKrw;
 }
 
@@ -108,7 +108,7 @@ async function judgeTargets(viewer: Viewer, rows: readonly PaymentTargetRow[], c
       { approvalState: row.approvalStatus, paid: row.paid, hasEvidence: hasLiveEvidence, waived: evidenceCtx.waived, confirmation: evidenceCtx.confirmation, evidence, pair },
       { canPay: true, amountVisible: ctx.amountVisible },
     );
-    const payableKrw = await payableOf(row, hasLiveEvidence, ctx);
+    const payableKrw = await payableOf(row, ctx);
     const reason = reasonOf(row, bar, payableKrw);
     judged.push({
       row,
@@ -194,7 +194,6 @@ function toDto(target: JudgedPaymentTarget, shared: PaymentShared): PaymentTarge
     reason: target.reason,
     prepaid: row.prepaid,
     quoteLineId: row.quoteLineId,
-    evidenceAmountEntered: row.evidenceAmount !== null,
   };
 }
 
@@ -320,8 +319,8 @@ export async function sumSelectedTransfers(
 }
 
 // 06-17(UI-SPEC S1 「제자리 증빙 확인」 · DR-4 · r2 B-1): 확인 모달 보기 — 트랜잭션 없는 읽기. 지급 권한 · 지급 대상 조회 범위(보임) · 「확인 전」(P2 · P5)만.
-// 파일 행은 05 listEvidence(살아 있는 것), 서버 계산 한 줄 · 지금 version · 증빙 지문은 06-06 getPaymentView 값 그대로(새 계산 없음), 증빙 금액 초과
-// 한 줄은 06-06 loadEvidenceOverrun(저장된 증빙 금액 — 표시만, 판정에 쓰지 않는다). 모달이 확인할 때 이 version + 지문을 보내 06-06 confirmEvidence가
+// 파일 행은 05 listEvidence(살아 있는 것), 서버 계산 한 줄 · 지금 version · 증빙 지문은 06-06 getPaymentView 값 그대로(새 계산 없음 —
+// 06.5 D-6520 증빙 금액 칸 · 넘침 줄 없음). 모달이 확인할 때 이 version + 지문을 보내 06-06 confirmEvidence가
 // 잠금 뒤 다시 비교한다 — 보지 않은 증빙이 「확인됨」이 되지 않는다. 행 version이 지금과 다르면 같은 보기에 동시성 이유를 싣는다(화면이 1차를 막는다).
 export const EVIDENCE_NOT_UNREVIEWED = "확인 전 아님 · 새로 고침";
 const EVIDENCE_VIEW_MISSING = "없는 지출결의 · 새로 고침";
@@ -334,9 +333,7 @@ export type EvidenceConfirmView = {
   title: string;
   version: number;
   evidenceStamp: string;
-  evidenceAmountKrw: number | null;
   taxLine: TaxLinePart[] | null;
-  evidenceOverrun: string | null;
   // 06.5-07 S1 부제 끝 `공급가액 {금액}` — 문서 통화 금액(영수증과 대조하는 값). 공급가가 없으면 null.
   supply: { currency: string; amount: number } | null;
   files: EvidenceConfirmFile[];
@@ -351,9 +348,7 @@ const EVIDENCE_CONFIRM_VIEW_SPEC: DtoSpec<EvidenceConfirmView, EvidenceConfirmVi
     { key: "title", from: "title", infoItem: "expense.value" },
     { key: "version", from: "version", infoItem: "expense.value" },
     { key: "evidenceStamp", from: "evidenceStamp", infoItem: "expense.amount" },
-    { key: "evidenceAmountKrw", from: "evidenceAmountKrw", infoItem: "expense.amount" },
     { key: "taxLine", from: "taxLine", infoItem: "expense.amount" },
-    { key: "evidenceOverrun", from: "evidenceOverrun", infoItem: "expense.amount" },
     { key: "supply", from: "supply", infoItem: "expense.amount" },
     { key: "files", from: "files", infoItem: "expense.value" },
     { key: "conflict", from: "conflict", infoItem: "expense.value" },
@@ -392,9 +387,7 @@ export async function getEvidenceConfirmView(viewer: Viewer, input: { expenseId:
         title: titleOf(row),
         version: row.version,
         evidenceStamp: view.evidenceStamp ?? "",
-        evidenceAmountKrw: row.evidenceAmount,
         taxLine: view.evidenceTaxLine ?? null,
-        evidenceOverrun: await loadEvidenceOverrun(viewer, row, row.evidenceAmount),
         supply: supply && { currency: supply.currency, amount: supply.amount },
         files,
         conflict,
@@ -523,7 +516,6 @@ async function projectPaidRows(viewer: Viewer, rows: readonly PaidPaymentRow[]):
         diffKrw: row.diffKrw,
         diffReason: row.diffReason,
         evidenceStatus: resolveEvidenceStatus({ hasEvidence: withEvidence.has(row.id), prepaid: row.prepaid, review: row.review }),
-        evidenceAmountEntered: row.evidenceAmount !== null,
         processedByName: row.processedByName,
         version: row.version,
       }),

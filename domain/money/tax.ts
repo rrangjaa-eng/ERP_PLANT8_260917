@@ -10,11 +10,10 @@ import {
 } from "@/domain/settings/registry";
 import {
   TAX_VAT_RATE,
-  TAX_WITHHOLDING_OTHER_INCOME_RATE,
   TAX_WITHHOLDING_BUSINESS_INCOME_RATE,
-  TAX_WITHHOLDING_OTHER_INCOME_EXEMPT_THRESHOLD,
   TAX_COMPANY_BORNE_RATE,
   TAX_COMPANY_BORNE_METHOD,
+  TAX_COMPANY_BORNE_EXEMPT_THRESHOLD,
   TAX_BASIS_DATE_WITHHOLDING,
   TAX_BASIS_DATE_VAT,
   TAX_ROUNDING_VAT_UNIT,
@@ -25,16 +24,14 @@ import {
 } from "@/domain/settings/keys";
 import { seoulDateToUtcDate } from "@/lib/dates";
 
-export type TaxIncomeType = "other" | "business";
-
 // ARCHITECTURE §4-2: 원천징수·회사 대납은 지급일, 부가세는 증빙일이
 // 기준일이다 — **어느 날짜를 넘길지는 호출자의 책임**이다. 이 두 날짜가
 // 그 규약의 구현이다.
 export type ApplyTaxRuleOpts = {
   paymentDate: Date;
   evidenceDate: Date;
-  /** 원천징수(withholding) 규칙에서만 쓴다. 기본 "other"(기타소득). */
-  incomeType?: TaxIncomeType;
+  /** 회사 대납(company_borne) 면제 판정에서만 쓴다 — 받는 인원(06.5 카드 ①). 없으면 1. */
+  recipientCount?: number;
 };
 
 export type TaxRuleResult = {
@@ -89,23 +86,11 @@ export async function applyTaxRule(
     return { vatKrw, withholdingKrw: 0, companyBorneKrw: 0, payableKrw: supplyKrw + vatKrw };
   }
 
+  // 06.5 D-6501: 받는 사람이 세금을 내는 현금 기타소득이 없어 원천징수는 사업소득 3.3% 하나다 — 기타소득은 company_borne.
   if (rule.ruleKind === "withholding") {
-    const incomeType = opts.incomeType ?? "other";
-    const rateDef = incomeType === "business" ? TAX_WITHHOLDING_BUSINESS_INCOME_RATE : TAX_WITHHOLDING_OTHER_INCOME_RATE;
-    const rate = await readSetting(getValue, rateDef, opts.paymentDate);
+    const rate = await readSetting(getValue, TAX_WITHHOLDING_BUSINESS_INCOME_RATE, opts.paymentDate);
     const unit = (await readSetting(getValue, TAX_ROUNDING_WITHHOLDING_UNIT, opts.paymentDate)) as RoundingUnit;
     const minWithholding = await readSetting(getValue, TAX_ROUNDING_MIN_WITHHOLDING, opts.paymentDate);
-
-    if (incomeType === "other") {
-      const exemptThreshold = await readSetting(
-        getValue,
-        TAX_WITHHOLDING_OTHER_INCOME_EXEMPT_THRESHOLD,
-        opts.paymentDate,
-      );
-      if (supplyKrw <= exemptThreshold) {
-        return { vatKrw: 0, withholdingKrw: 0, companyBorneKrw: 0, payableKrw: supplyKrw };
-      }
-    }
 
     let withholdingKrw = round(supplyKrw * rate, unit, roundingMethod);
     if (withholdingKrw < minWithholding) withholdingKrw = 0;
@@ -117,6 +102,13 @@ export async function applyTaxRule(
   // 대신 부담한다. flat = 공급가 × 세율. gross-up = 세후 실수령액이
   // 공급가가 되도록 역산한 총액에서 공급가를 뺀 값.
   const rate = await readSetting(getValue, TAX_COMPANY_BORNE_RATE, opts.paymentDate);
+  // 06.5 D-6501 · 카드 ⓪(사용자 카드 10/13 23:30 KST): 과세최저한 — 시가 5만원 이하, 시가 = 세전 금액 = 공급가 ÷ (1 − 세율)(옛과 같다
+  // O: server/src/withholding.ts:194-206 · 절사 전 비교 :311-315). 카드 ①(사용자 카드 10/13 23:29 KST) 한 사람 몫 = 공급가 ÷ 받는 인원 —
+  // 나눗셈 없이 정수 곱으로 비교. 면제 잣대는 계산 방식(flat · gross_up)과 무관.
+  const thresholdKrw = await readSetting(getValue, TAX_COMPANY_BORNE_EXEMPT_THRESHOLD, opts.paymentDate);
+  if (companyBorneExempt({ supplyKrw, rate, thresholdKrw, recipientCount: opts.recipientCount ?? 1 })) {
+    return { vatKrw: 0, withholdingKrw: 0, companyBorneKrw: 0, payableKrw: supplyKrw };
+  }
   const method = await readSetting(getValue, TAX_COMPANY_BORNE_METHOD, opts.paymentDate);
   const unit = (await readSetting(getValue, TAX_ROUNDING_WITHHOLDING_UNIT, opts.paymentDate)) as RoundingUnit;
 
@@ -131,6 +123,16 @@ export async function applyTaxRule(
   return { vatKrw: 0, withholdingKrw: 0, companyBorneKrw, payableKrw: supplyKrw };
 }
 
+// 한 사람 몫 공급가의 세전 금액(공급가 ÷ 받는 인원 ÷ (1 − 세율)) ≤ 기준 — 양변에 받는 인원 × 10000을 곱한 정수 비교(BigInt — 큰 금액도
+// 정밀도 손실 없음). 세율은 소수 4자리 이하라(domain/settings/keys.ts가 강제) 만분율 정수가 정확하다. 만분율 ≥ 10000이면 역산이
+// 성립하지 않아 면제 아님.
+export function companyBorneExempt(input: { supplyKrw: number; rate: number; thresholdKrw: number; recipientCount: number }): boolean {
+  const scale = BigInt(10000);
+  const rateBp = BigInt(Math.round(input.rate * 10000));
+  if (rateBp >= scale) return false;
+  return BigInt(input.supplyKrw) * scale <= BigInt(input.thresholdKrw) * BigInt(input.recipientCount) * (scale - rateBp);
+}
+
 // ── 06-03 ① 세율 사전 조회 ──────────────────────────────────────────────
 // applyTaxRule이 readSetting으로 읽는 설정 키 전부를 한 기준일(서울 날짜)로 읽은 평범한 객체. 전역 풀을 읽으므로
 // 트랜잭션 **밖**에서만 부른다(06-03 tx 규약 — 트랜잭션 안에서 설정을 읽으면 풀 고갈 교착, PR #75).
@@ -139,13 +141,12 @@ export type TaxRates = {
   asOf: string;
   vatRate: number;
   vatUnit: number;
-  withholdingOtherRate: number;
   withholdingBusinessRate: number;
-  withholdingOtherExemptThreshold: number;
   withholdingUnit: number;
   minWithholding: number;
   companyBorneRate: number;
   companyBorneMethod: TaxCompanyBorneMethod;
+  companyBorneExemptThreshold: number;
   basisWithholding: TaxBasisDate;
   basisVat: TaxBasisDate;
 };
@@ -156,26 +157,24 @@ export async function loadTaxRates(asOf: string, deps?: Partial<TaxRuleDeps>): P
   const at = { asOf: seoulDateToUtcDate(asOf) };
   const vatRate = await getValue(TAX_VAT_RATE, at);
   const vatUnit = await getValue(TAX_ROUNDING_VAT_UNIT, at);
-  const withholdingOtherRate = await getValue(TAX_WITHHOLDING_OTHER_INCOME_RATE, at);
   const withholdingBusinessRate = await getValue(TAX_WITHHOLDING_BUSINESS_INCOME_RATE, at);
-  const withholdingOtherExemptThreshold = await getValue(TAX_WITHHOLDING_OTHER_INCOME_EXEMPT_THRESHOLD, at);
   const withholdingUnit = await getValue(TAX_ROUNDING_WITHHOLDING_UNIT, at);
   const minWithholding = await getValue(TAX_ROUNDING_MIN_WITHHOLDING, at);
   const companyBorneRate = await getValue(TAX_COMPANY_BORNE_RATE, at);
   const companyBorneMethod = await getValue(TAX_COMPANY_BORNE_METHOD, at);
+  const companyBorneExemptThreshold = await getValue(TAX_COMPANY_BORNE_EXEMPT_THRESHOLD, at);
   const basisWithholding = await getValue(TAX_BASIS_DATE_WITHHOLDING, at);
   const basisVat = await getValue(TAX_BASIS_DATE_VAT, at);
   return {
     asOf,
     vatRate,
     vatUnit,
-    withholdingOtherRate,
     withholdingBusinessRate,
-    withholdingOtherExemptThreshold,
     withholdingUnit,
     minWithholding,
     companyBorneRate,
     companyBorneMethod,
+    companyBorneExemptThreshold,
     basisWithholding,
     basisVat,
   };
@@ -188,13 +187,12 @@ export function taxRatesReader(rates: TaxRates): typeof defaultGetSettingValue {
   const values: Record<string, unknown> = {
     [TAX_VAT_RATE.key]: rates.vatRate,
     [TAX_ROUNDING_VAT_UNIT.key]: rates.vatUnit,
-    [TAX_WITHHOLDING_OTHER_INCOME_RATE.key]: rates.withholdingOtherRate,
     [TAX_WITHHOLDING_BUSINESS_INCOME_RATE.key]: rates.withholdingBusinessRate,
-    [TAX_WITHHOLDING_OTHER_INCOME_EXEMPT_THRESHOLD.key]: rates.withholdingOtherExemptThreshold,
     [TAX_ROUNDING_WITHHOLDING_UNIT.key]: rates.withholdingUnit,
     [TAX_ROUNDING_MIN_WITHHOLDING.key]: rates.minWithholding,
     [TAX_COMPANY_BORNE_RATE.key]: rates.companyBorneRate,
     [TAX_COMPANY_BORNE_METHOD.key]: rates.companyBorneMethod,
+    [TAX_COMPANY_BORNE_EXEMPT_THRESHOLD.key]: rates.companyBorneExemptThreshold,
     [TAX_BASIS_DATE_WITHHOLDING.key]: rates.basisWithholding,
     [TAX_BASIS_DATE_VAT.key]: rates.basisVat,
   };

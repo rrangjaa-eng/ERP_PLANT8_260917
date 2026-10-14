@@ -85,14 +85,14 @@ test.describe("설정 화면 (ADMN-05, 성공 기준 4)", () => {
 
     await page.goto("/admin/settings");
 
-    // 부가세율과 기타소득 원천징수율은 둘 다 이력형 키다 — 각각의
+    // 부가세율과 사업소득 원천징수율은 둘 다 이력형 키다 — 각각의
     // HistorizedFieldEditor가 HistoryList를 하나씩 렌더한다.
     const vatLabel = page.getByText("부가세율", { exact: true });
     await expect(vatLabel).toBeVisible();
     const vatContainer = vatLabel.locator("xpath=..");
     await vatContainer.getByRole("button", { name: "새 이력 추가" }).click();
 
-    const witaxLabel = page.getByText("기타소득 원천징수율", { exact: true });
+    const witaxLabel = page.getByText("사업소득 원천징수율", { exact: true });
     await expect(witaxLabel).toBeVisible();
     const witaxContainer = witaxLabel.locator("xpath=..");
     await witaxContainer.getByRole("button", { name: "새 이력 추가" }).click();
@@ -108,7 +108,7 @@ test.describe("설정 화면 (ADMN-05, 성공 기준 4)", () => {
     // ("history-list-effective-from")를 가져 여기서 실패했다.
     expect(vatId).not.toBe(witaxId);
 
-    // 두 번째로 연 폼(기타소득 원천징수율)의 「적용 시작일」 라벨을 클릭하면
+    // 두 번째로 연 폼(사업소득 원천징수율)의 「적용 시작일」 라벨을 클릭하면
     // 그 폼 자신의 입력창이 포커스를 받아야 한다. id가 겹치면
     // <label htmlFor>가 문서상 먼저 나오는 첫 번째 폼(부가세율)의
     // 입력창에 포커스를 보낸다.
@@ -319,7 +319,7 @@ test.describe("PR #104 후속 — 설정 힌트 aria-describedby (ISSUE-001) · 
     });
   }
 
-  test("DR-104-03 — 이력 목록 숫자: 면제 기준 125,000, 비율은 저장값 그대로(0.088 · 0.1)", async ({ page }) => {
+  test("DR-104-03 — 이력 목록 숫자: 면제 기준 50,000, 비율은 저장값 그대로(0.033 · 0.1)", async ({ page }) => {
     await openSettings(page);
     // 시드 이력 행의 적용 시작일 — domain/seed/index.ts SEED_HISTORIZED_EFFECTIVE_FROM(export 안 된 상수).
     const seedDate = "2000-01-01";
@@ -327,8 +327,8 @@ test.describe("PR #104 후속 — 설정 힌트 aria-describedby (ISSUE-001) · 
       const row = page.getByRole("table", { name: caption }).getByRole("row").filter({ hasText: seedDate });
       return (await row.getByRole("cell").nth(1).innerText()).trim();
     };
-    expect(await valueOf("기타소득 원천징수 면제 기준(지급액) 이력")).toBe("125,000");
-    expect(await valueOf("기타소득 원천징수율 이력")).toBe("0.088");
+    expect(await valueOf("회사 대납 면제 기준(1인 세전 금액) 이력")).toBe("50,000");
+    expect(await valueOf("사업소득 원천징수율 이력")).toBe("0.033");
     expect(await valueOf("부가세율 이력")).toBe("0.1");
   });
 });

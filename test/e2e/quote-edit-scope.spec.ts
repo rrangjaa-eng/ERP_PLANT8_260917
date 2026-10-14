@@ -422,8 +422,10 @@ test.describe("견적 표 편집 범위 — 서버 셀 단계 · 구조 (04-30, 
     await openAsPm(page, "settling", addDays(TODAY, -3), [{ itemName: "정산 D77 줄", unitPrice: 100_000, execution: 50_000 }]);
     await expect(dataRows(page)).toHaveCount(1);
     await expect(page.getByRole("button", { name: /마감/ })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /발행 요청/ })).toHaveCount(1);
-    await expect(page.getByRole("button", { name: /발행 요청/ })).toHaveText(/발행 요청 추가/);
+    // 발행 요청 표 3차(S16) 하나 + 완료 전 점검 「매출 미입력」 3차(06-22 PS-3) 하나 — 같은 이름 · 같은 onClick.
+    const requestTable = page.locator("table", { has: page.locator("caption", { hasText: /^발행 요청$/ }) });
+    await expect(requestTable.getByRole("button", { name: /발행 요청/ })).toHaveCount(1);
+    await expect(requestTable.getByRole("button", { name: /발행 요청/ })).toHaveText(/발행 요청 추가/);
   });
 
   test("(e) 수주중에서 저장된 줄 삭제 → 확인 모달 → 일괄 저장 1 → 새로 고쳐도 없다", async ({ page }) => {

@@ -303,7 +303,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
           <h2 id={titleId} className={styles.title}>
             {title}
           </h2>
-          {subtitle && !loading ? <p className={styles.subtitle}>{subtitle}</p> : null}
+          {subtitle && !loading ? <p className={styles.subtitle} title={subtitle}>{subtitle}</p> : null}
         </div>
         <button type="button" className={styles.close} aria-label="닫기" onClick={handleCloseButtonClick}>
           <svg viewBox="0 0 24 24" aria-hidden="true" className={styles.closeIcon}>

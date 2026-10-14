@@ -1,9 +1,10 @@
 // 06.5 D-6506(G8, 사용자 10/7 12:04 KST) · REVIEWS DH-3: 계좌 칸 저장 판정 — 거래처와 직원 계좌가 같은 함수를 쓴다.
 // 예금주 필요 조건은 옛 CHECK `vendors_account_holder_required`(O: db/schema/010_tables.sql:5440)와 같다. 세 칸 중 어느 것도
 // 손대지 않은 저장은 옛 값이 어긋나도 막지 않는다(옛 데이터는 이체 파일 막힌 건 + 끝 링크가 잡는다). 예금주만 지운 저장도
-// 판정한다 — D-6506 조건을 어기는 행을 새로 만들지 않는다.
+// 판정한다 — D-6506 조건을 어기는 행을 새로 만들지 않는다. 은행 코드(②) · 예금주 글자(③)는 이체 파일과 같은 함수로,
+// 그 칸을 바꾼 저장에서만 본다(옛 은행 · 옛 긴 예금주를 그대로 둔 저장은 막지 않는다).
 
-const HOLDER_REQUIRED = "예금주 없음 · 예금주 적기";
+import { ACCOUNT_PROBLEMS, accountProblemText, bankNameProblem, holderTextProblem } from "@/domain/bank-transfer";
 
 export type AccountFieldErrors = { accountBank?: string; accountHolder?: string };
 
@@ -38,7 +39,15 @@ export function judgeAccountFields(input: AccountFieldsInput): AccountFieldError
 
   const hasNumber = next.number === "set" ? true : next.number === "clear" ? false : stored.hasNumber;
   const errors: AccountFieldErrors = {};
-  if (bank !== null && hasNumber && holder === null) errors.accountHolder = HOLDER_REQUIRED;
+  if (bank !== null && hasNumber && holder === null) errors.accountHolder = accountProblemText(ACCOUNT_PROBLEMS.holderRequired);
+  if (bankChanged && bank !== null) {
+    const problem = bankNameProblem(bank);
+    if (problem) errors.accountBank = accountProblemText(problem);
+  }
+  if (holderChanged && holder !== null) {
+    const problem = holderTextProblem(holder);
+    if (problem) errors.accountHolder = accountProblemText(problem);
+  }
   return errors;
 }
 

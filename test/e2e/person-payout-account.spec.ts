@@ -105,4 +105,22 @@ test.describe("사람 상세 지급 계좌(06.5 D-6505)", () => {
     await expect(viewerPage.getByText("지급 계좌")).toHaveCount(0);
     await viewerPage.context().close();
   });
+
+  test("칸 오류 — 예금주 한글 11자는 길이 초과, 은행 + 번호 + 빈 예금주는 예금주 없음 · 포커스 예금주", async ({ page }) => {
+    await login(page, await createFixtureUser({ roleId: SYSADMIN_ROLE_ID }));
+    const userId = await makeTarget();
+    await page.goto(`/admin/people/${userId}?editAccount=1`);
+    await panel(page).getByLabel("계좌 은행").fill("신한");
+    await panel(page).getByLabel("예금주").fill("가나다라마바사아자차카");
+    await panel(page).getByRole("button", { name: "계좌 저장" }).click();
+    await expect(panel(page).locator("#accountHolder-error")).toHaveText("예금주 길이 초과 · 예금주 줄이기");
+
+    await panel(page).getByLabel("예금주").fill("");
+    await panel(page).getByLabel("새 계좌번호").fill("110-123-456789");
+    await panel(page).getByRole("button", { name: "계좌 저장" }).click();
+    await expect(panel(page).locator("#accountHolder-error")).toHaveText("예금주 없음 · 예금주 적기");
+    await expect(panel(page).getByLabel("예금주")).toBeFocused();
+    await expect(panel(page).getByLabel("계좌 은행")).toHaveValue("신한");
+  });
 });
+

@@ -25,6 +25,9 @@ import {
   ForbiddenError,
 } from "@/domain/vendors";
 
+import { AccountFieldsError } from "@/domain/vendors/account-fields";
+import { insertVendor } from "@/repositories/vendors";
+
 const REVEAL_ITEM = "vendor.account_number_unmasked";
 
 // 사업자번호 마지막 검증 숫자 — 앞 아홉 자리로 셈한다(domain 규칙과 같은 셈을 테스트가 따로 쓴다).
@@ -537,3 +540,100 @@ describe("vendors 사업자번호 10자리 · 검증 숫자 (실제 Postgres)", 
     expect(after?.name).toBe(`${name}-고침`);
   });
 });
+
+// 06.5-04(D-6506 · REVIEWS DH-3 · EP2-B9): 계좌 칸을 새로 넣거나 바꾼 저장만 서버가 판정한다 — 저장 결과와 같은 실효값으로, 첫 쓰기 전에.
+describe("계좌 칸 저장 판정(06.5 D-6506 · DH-3)", () => {
+  async function fieldErrorsOf(promise: Promise<unknown>): Promise<Record<string, string>> {
+    try {
+      await promise;
+    } catch (error) {
+      if (error instanceof AccountFieldsError) return { ...error.fieldErrors };
+      throw error;
+    }
+    throw new Error("AccountFieldsError가 나지 않았다");
+  }
+
+  async function rowsNamed(name: string) {
+    return db.select().from(vendors).where(eq(vendors.name, name));
+  }
+
+  it("등록 — 은행 + 번호 + 예금주 없음은 거절되고 행이 생기지 않는다", async () => {
+    const name = uniqueName();
+    expect(await fieldErrorsOf(createVendor(SYSTEM_VIEWER, { name, accountBank: "신한", accountNumber: "110-222-330001" }))).toEqual({
+      accountHolder: "예금주 없음 · 예금주 적기",
+    });
+    expect(await rowsNamed(name)).toEqual([]);
+  });
+
+  it("등록 — 은행만 · 번호만은 생성된다", async () => {
+    await expect(createVendor(SYSTEM_VIEWER, { name: uniqueName(), accountBank: "신한" })).resolves.toBeTruthy();
+    await expect(createVendor(SYSTEM_VIEWER, { name: uniqueName(), accountNumber: "110-222-330002" })).resolves.toBeTruthy();
+  });
+
+  it("등록 — 코드로 안 풀리는 은행 이름은 거절", async () => {
+    const name = uniqueName();
+    expect(await fieldErrorsOf(createVendor(SYSTEM_VIEWER, { name, accountBank: "없는은행" }))).toEqual({
+      accountBank: "은행 코드 없음 · 은행 이름 고치기",
+    });
+    expect(await rowsNamed(name)).toEqual([]);
+  });
+
+  it("수정 — 예금주만 지운 저장(keep)은 거절되고 이름 등 본문도 그대로(반쯤 저장 0)", async () => {
+    const { vendor } = await createVendor(SYSTEM_VIEWER, {
+      name: uniqueName(),
+      accountBank: "신한",
+      accountHolder: "홍길동",
+      accountNumber: "110-222-330003",
+    });
+    const errors = await fieldErrorsOf(
+      updateVendor(SYSTEM_VIEWER, vendor.id, { name: `${vendor.name}-고침`, accountBank: "신한", accountHolder: "" }),
+    );
+    expect(errors).toEqual({ accountHolder: "예금주 없음 · 예금주 적기" });
+    const [row] = await db.select().from(vendors).where(eq(vendors.id, vendor.id));
+    expect(row?.name).toBe(vendor.name);
+    expect(row?.accountHolder).toBe("홍길동");
+  });
+
+  it("수정 — 번호를 지우며 예금주를 비우면 통과, 은행 칸 생략(실효 null) + keep도 통과", async () => {
+    const { vendor } = await createVendor(SYSTEM_VIEWER, {
+      name: uniqueName(),
+      accountBank: "신한",
+      accountHolder: "홍길동",
+      accountNumber: "110-222-330004",
+    });
+    await updateVendor(SYSTEM_VIEWER, vendor.id, { name: vendor.name, accountBank: "신한", accountNumber: null });
+    let [row] = await db.select().from(vendors).where(eq(vendors.id, vendor.id));
+    expect(row?.accountNumberEncrypted).toBeNull();
+    expect(row?.accountHolder).toBeNull();
+
+    const { vendor: other } = await createVendor(SYSTEM_VIEWER, {
+      name: uniqueName(),
+      accountBank: "신한",
+      accountHolder: "홍길동",
+      accountNumber: "110-222-330005",
+    });
+    await updateVendor(SYSTEM_VIEWER, other.id, { name: other.name });
+    [row] = await db.select().from(vendors).where(eq(vendors.id, other.id));
+    expect(row?.accountBank).toBeNull();
+    expect(row?.accountNumberEncrypted).not.toBeNull();
+  });
+
+  it("DH-3 stale — 옛 거래처(풀리지 않는 은행 · 번호 · 예금주 없음)의 이름만 고친 저장은 통과, 은행을 고친 저장은 예금주 없음", async () => {
+    const name = uniqueName();
+    const old = await insertVendor(SYSTEM_VIEWER, {
+      name,
+      normalizedName: normalizeVendorName(name),
+      accountBank: "없는은행",
+      accountNumberEncrypted: "v1:old-cipher",
+      accountNumberLast4: "0006",
+    });
+    await updateVendor(SYSTEM_VIEWER, old.id, { name: `${name}-고침`, accountBank: "없는은행" });
+    const [row] = await db.select().from(vendors).where(eq(vendors.id, old.id));
+    expect(row?.name).toBe(`${name}-고침`);
+
+    expect(await fieldErrorsOf(updateVendor(SYSTEM_VIEWER, old.id, { name: `${name}-고침`, accountBank: "신한" }))).toEqual({
+      accountHolder: "예금주 없음 · 예금주 적기",
+    });
+  });
+});
+

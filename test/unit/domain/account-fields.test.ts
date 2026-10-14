@@ -64,3 +64,27 @@ describe("assertAccountFields", () => {
     expect(() => assertAccountFields({ stored: EMPTY, next: { bank: "신한", holder: "김직원", number: "set" } })).not.toThrow();
   });
 });
+
+describe("judgeAccountFields — 은행 코드(②) · 예금주 글자(③)는 그 칸을 바꾼 저장에서만", () => {
+  it("은행만 새로 `없는은행`(번호 없음) → 은행 칸 오류(번호 유무와 무관)", () => {
+    expect(judgeAccountFields({ stored: EMPTY, next: { bank: "없는은행", holder: null, number: "keep" } })).toEqual({
+      accountBank: "은행 코드 없음 · 은행 이름 고치기",
+    });
+  });
+
+  it("저장된 옛 은행 `없는은행`을 그대로 두면 → 통과", () => {
+    const stored = { bank: "없는은행", holder: "홍길동", hasNumber: true };
+    expect(judgeAccountFields({ stored, next: { bank: "없는은행", holder: "홍길동", number: "set" } })).toEqual({});
+  });
+
+  it("예금주를 한글 11자로 바꾸면 길이 초과", () => {
+    expect(judgeAccountFields({ stored: EMPTY, next: { bank: "신한", holder: "가나다라마바사아자차카", number: "set" } })).toEqual({
+      accountHolder: "예금주 길이 초과 · 예금주 줄이기",
+    });
+  });
+
+  it("예금주를 안 바꿨으면 옛 긴 예금주도 통과", () => {
+    const stored = { bank: "신한", holder: "가나다라마바사아자차카", hasNumber: true };
+    expect(judgeAccountFields({ stored, next: { bank: "신한", holder: "가나다라마바사아자차카", number: "set" } })).toEqual({});
+  });
+});

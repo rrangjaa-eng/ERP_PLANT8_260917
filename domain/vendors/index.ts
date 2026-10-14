@@ -27,6 +27,7 @@ import type { DbOrTx } from "@/repositories/document-counters";
 import { pickVisibleCustomFields, visibleCustomFieldKeys } from "@/domain/custom-fields/visibility";
 import { servesSide, vendorKindToAdd, VENDOR_KIND_LABELS, type VendorKind, type VendorSide } from "@/domain/vendors/kind";
 import { isUniqueViolation } from "@/lib/pg-errors";
+import { assertAccountFields } from "@/domain/vendors/account-fields";
 
 export class ForbiddenError extends UserFacingError {}
 
@@ -403,6 +404,11 @@ export async function createVendor(
   // create에는 "안 바꿈" 개념이 없다 — keep이든 clear든 지울 기존 값이 없으므로
   // 둘 다 "계좌번호 없음"으로 같다.
   const accountNumberPlan = planAccountNumberUpdate(input.accountNumber);
+  // 06.5 D-6506 · REVIEWS DH-3: 계좌 칸 판정(account-fields.ts) — 행 삽입 전, 실패 시 행 없음.
+  assertAccountFields({
+    stored: { bank: null, holder: null, hasNumber: false },
+    next: { bank: input.accountBank ?? null, holder: input.accountHolder ?? null, number: accountNumberPlan.kind },
+  });
   const accountNumberEncrypted = accountNumberPlan.kind === "set" ? accountNumberPlan.accountNumberEncrypted : null;
   const accountNumberLast4 = accountNumberPlan.kind === "set" ? accountNumberPlan.accountNumberLast4 : null;
 
@@ -459,6 +465,14 @@ export async function updateVendor(
     throw new ArchivedVendorError(ARCHIVED_VENDOR_MESSAGE);
   }
 
+  // 06.5 D-6506 · REVIEWS DH-3 · EP2-B9: 계좌 칸 판정(account-fields.ts)은 첫 쓰기 전에 — 거절이면 본문도 그대로 둔다.
+  // 판정은 저장 뒤 실효값(은행 · 예금주는 이 저장이 그대로 쓰고, 번호는 keep이면 저장값)으로 한다.
+  const accountNumberPlan = planAccountNumberUpdate(input.accountNumber);
+  assertAccountFields({
+    stored: { bank: existing.accountBank, holder: existing.accountHolder, hasNumber: existing.accountNumberEncrypted !== null },
+    next: { bank: input.accountBank ?? null, holder: input.accountHolder ?? null, number: accountNumberPlan.kind },
+  });
+
   const normalizedName = normalizeVendorName(input.name);
   const visibleFn = deps?.visible ?? defaultVisible;
   // 저장된 번호에서 숫자가 바뀔 때만 검사한다 — 이미 있는 중복을 둔 채 이름 · 계좌만 고치는 저장은 막지 않는다.
@@ -507,7 +521,6 @@ export async function updateVendor(
     throw error;
   }
 
-  const accountNumberPlan = planAccountNumberUpdate(input.accountNumber);
   if (accountNumberPlan.kind === "clear") {
     await repoUpdateVendorAccountNumber(viewer, id, { accountNumberEncrypted: null, accountNumberLast4: null });
   } else if (accountNumberPlan.kind === "set") {

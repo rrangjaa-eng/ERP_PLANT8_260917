@@ -10,7 +10,9 @@ import { recordAction as defaultRecordAction } from "@/domain/action-log/record"
 import { decrypt } from "@/lib/crypto";
 import { ForbiddenError, UserNotFoundError } from "@/domain/people";
 import { planAccountNumberUpdate } from "@/domain/vendors";
-import { assertAccountFields } from "@/domain/vendors/account-fields";
+import { AccountFieldsError, assertAccountFields } from "@/domain/vendors/account-fields";
+import { ACCOUNT_PROBLEMS, accountProblemText } from "@/domain/bank-transfer";
+import { isCheckViolation } from "@/lib/pg-errors";
 import {
   findUserPayoutAccount as repoFindUserPayoutAccount,
   updateUserPayoutAccount as repoUpdateUserPayoutAccount,
@@ -41,7 +43,11 @@ export type PayoutAccountDeps = {
   can: typeof defaultCan;
   visible: typeof defaultVisible;
   recordAction: typeof defaultRecordAction;
+  updateUserPayoutAccount: typeof repoUpdateUserPayoutAccount;
 };
+
+// 0033 마이그레이션의 CHECK — 판정과 쓰기 사이 경합으로 DB가 먼저 거절하면 같은 칸 오류로 바꾼다(EP3-B15 원시 SQL 노출 방지).
+const HOLDER_REQUIRED_CHECK = "users_account_holder_required_check";
 
 // 평문 보기는 거래처 계좌와 같은 정보 항목(새 항목 0 — D-6505 권한 카드, T-06.5-35).
 export const PAYOUT_ACCOUNT_REVEAL_ITEM = "vendor.account_number_unmasked";
@@ -102,15 +108,23 @@ export async function updatePersonPayoutAccount(
     next: { bank: accountBank, holder: accountHolder, number: plan.kind },
   });
 
-  await repoUpdateUserPayoutAccount(viewer, userId, {
-    accountBank,
-    accountHolder,
-    ...(plan.kind === "set"
-      ? { accountNumberEncrypted: plan.accountNumberEncrypted, accountNumberLast4: plan.accountNumberLast4 }
-      : plan.kind === "clear"
-        ? { accountNumberEncrypted: null, accountNumberLast4: null }
-        : {}),
-  });
+  const updateRow = deps?.updateUserPayoutAccount ?? repoUpdateUserPayoutAccount;
+  try {
+    await updateRow(viewer, userId, {
+      accountBank,
+      accountHolder,
+      ...(plan.kind === "set"
+        ? { accountNumberEncrypted: plan.accountNumberEncrypted, accountNumberLast4: plan.accountNumberLast4 }
+        : plan.kind === "clear"
+          ? { accountNumberEncrypted: null, accountNumberLast4: null }
+          : {}),
+    });
+  } catch (error) {
+    if (isCheckViolation(error, HOLDER_REQUIRED_CHECK)) {
+      throw new AccountFieldsError({ accountHolder: accountProblemText(ACCOUNT_PROBLEMS.holderRequired) });
+    }
+    throw error;
+  }
 
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await recordAction(viewer, { actionType: "document_update", entity: "user", entityId: userId, detail: { field: "payout_account" } });

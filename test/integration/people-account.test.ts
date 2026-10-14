@@ -147,4 +147,38 @@ describe("직원 지급 계좌(06.5 D-6505 · D-6506)", () => {
     );
     expect((await readRow(userId))?.accountHolder).toBe("김직원");
   });
+
+  it("EP3-B14 — 저장이 users_account_holder_required_check(23514)에 걸리면 예금주 칸 오류로 바꾼다", async () => {
+    const userId = await makeEmployee();
+    const checkViolation = Object.assign(new Error("check"), { code: "23514", constraint: "users_account_holder_required_check" });
+    const updateUserPayoutAccount = () => Promise.reject(checkViolation);
+    let caught: unknown;
+    try {
+      await updatePersonPayoutAccount(
+        SYSTEM_VIEWER,
+        userId,
+        { accountBank: "신한", accountHolder: "김직원", accountNumber: "110-123-456789" },
+        { updateUserPayoutAccount },
+      );
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(AccountFieldsError);
+    expect((caught as AccountFieldsError).fieldErrors).toEqual({ accountHolder: "예금주 없음 · 예금주 적기" });
+  });
+
+  it("은행 코드 · 예금주 길이 — 칸을 넣은 저장에서 같은 문구로 거절", async () => {
+    const userId = await makeEmployee();
+    let caught: unknown;
+    try {
+      await updatePersonPayoutAccount(SYSTEM_VIEWER, userId, { accountBank: "없는은행", accountHolder: "가나다라마바사아자차카" });
+    } catch (error) {
+      caught = error;
+    }
+    expect((caught as AccountFieldsError).fieldErrors).toEqual({
+      accountBank: "은행 코드 없음 · 은행 이름 고치기",
+      accountHolder: "예금주 길이 초과 · 예금주 줄이기",
+    });
+  });
 });
+

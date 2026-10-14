@@ -83,7 +83,7 @@ export async function findPaymentTargetRowsByIds(viewer: Viewer, input: { docume
 
 // 06-20(S3 「지급 완료」 보기) — 살아 있는 지급 기록(cancelled_at IS NULL) + 지출결의(삭제 아님). 지급일 내림차순 → 번호 → id.
 // 계좌 칸(은행 · 번호 · 예금주)은 싣지 않는다(O-17 — 대표가 이 목록을 읽는다). 팀 조건은 S1과 같은 문서 팀 식(docTeamId).
-// 쪽 자르기 · 합계 · 주 그룹은 domain(listPaidPayments) 한 곳 — 보임 판정(visibleExpenseScope) 뒤에 셈해야 해서 쿼리는 달 하나를 다 읽는다(S1 E-25와 같은 꼴).
+// 쪽 자르기 · 합계 · 주 그룹은 domain(listPaidPayments) 한 곳 — 쿼리는 달 하나를 다 읽는다(S1 E-25와 같은 꼴). 범위 조건 없음 — 06.5 카드 ③(통과한 viewer는 전부).
 export type PaidPaymentRow = {
   id: string;
   number: string | null;
@@ -159,7 +159,7 @@ export async function listPaidPaymentRows(viewer: Viewer, input: { teamId?: stri
   return rows.map(({ reviewStatus, ...row }) => ({ ...row, payDate: String(row.payDate), review: reviewStatus ? { status: reviewStatus } : null }));
 }
 
-// 월 select 값 재료 — 살아 있는 지급 기록의 (문서 id, 지급 달). 보임 판정은 domain이 문서 id로 한다.
+// 월 select 값 재료 — 살아 있는 지급 기록의 (문서 id, 지급 달). 목록과 같은 조건(범위 조건 없음 — 06.5 카드 ③).
 export async function listPaidMonthRows(viewer: Viewer, input: { teamId?: string | null }): Promise<{ id: string; month: string }[]> {
   void viewer;
   return db

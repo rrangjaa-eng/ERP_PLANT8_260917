@@ -419,7 +419,7 @@ export async function listPaidTeamOptions(viewer: Viewer): Promise<{ value: stri
 
 // ── 06-20(UI-SPEC S3) 「지급 완료」 보기 ──────────────────────────────────
 // 받는 사람 = 지급 권한자 ∪ 05 visibleExpenseScope의 전사 보는 범위(06.2 rowScope all — 대표). 역할 이름 리터럴 없이 05 보임 규칙으로 판정한다.
-// 행은 보임 범위 안 살아 있는 지급 기록만, 계좌 칸은 조회부터 없다(O-17). 주 그룹 · 합계(sumKrw) · 쪽은 서버가 정한다. 트랜잭션 없는 읽기.
+// 행은 살아 있는 지급 기록 전부(06.5 카드 ③), 계좌 칸은 조회부터 없다(O-17). 주 그룹 · 합계(sumKrw) · 쪽은 서버가 정한다. 트랜잭션 없는 읽기.
 
 const MONTH_SHAPE = /^\d{4}-(0[1-9]|1[0-2])$/;
 
@@ -466,10 +466,12 @@ export async function listPaidPayments(
   const today = deps?.today ?? seoulToday();
   const [canPay, scope] = await Promise.all([can(viewer, "expenses.payments", "write"), visibleExpenseScope(viewer, { today })]);
   if (!paidAllowedBy(canPay, scope)) throw new ForbiddenError("지급 완료 보기 권한 없음");
+  // 06.5 D-6516 · 카드 ③(사용자 카드 10/13 23:29 KST): 지급 완료는 06.2 K2와 같은 결 — 지급 권한자 · 지출결의 전사 범위는 전부, 그 밖은 06-20이 거부.
+  // 통과한 viewer는 모두 전부라 거르는 갈래를 두지 않는다(팀 비용 포함, EP1-12).
   const teamId = input.team && UUID_SHAPE.test(input.team) ? input.team : null;
   const month = input.month && MONTH_SHAPE.test(input.month) ? input.month : today.slice(0, 7);
-  const all = await keepVisible(viewer, await listPaidPaymentRows(viewer, { teamId, month }), scope);
-  const monthRows = await keepVisible(viewer, await listPaidMonthRows(viewer, { teamId }), scope);
+  const all = await listPaidPaymentRows(viewer, { teamId, month });
+  const monthRows = await listPaidMonthRows(viewer, { teamId });
   const months = [...new Set([today.slice(0, 7), ...monthRows.map((row) => row.month)])].sort().reverse();
   const amountVisible = await visible(viewer, "expense.amount");
   const pageSize = deps?.pageSize ?? LIST_PAGE_SIZE;

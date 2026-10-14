@@ -239,6 +239,20 @@
       "when": 1791952704507,
       "tag": "0033_payment_followup_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1791953583772,
+      "tag": "0034_other_income_company_borne",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1791953584910,
+      "tag": "0035_payment_followup_validate",
+      "breakpoints": true
     }
   ]
 }

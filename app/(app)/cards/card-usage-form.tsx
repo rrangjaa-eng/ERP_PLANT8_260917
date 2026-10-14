@@ -796,7 +796,9 @@ export function CardUsageForm({
           ) : edit ? (
             <div data-ui="field-row" className={rowStyles.row}>
               <span className={rowStyles.label}>카드</span>
-              <span>{edit.cardText}</span>
+              <span className={cardStyles.valueText} title={edit.cardText}>
+                {edit.cardText}
+              </span>
               {proxyHint ? <Form.Hint>{proxyHint}</Form.Hint> : null}
             </div>
           ) : singleCard ? (
@@ -834,10 +836,14 @@ export function CardUsageForm({
           />
           <div data-ui="field-row" className={rowStyles.row}>
             <span className={rowStyles.label}>가맹점</span>
-            <span>{merchant ? merchant.name : "—"}</span>{" "}
-            <Button variant="tertiary" aria-label="가맹점 바꾸기" onClick={() => setPickOpen(true)}>
-              {merchant ? "바꾸기" : "고르기"}
-            </Button>
+            <div className={cardStyles.valueLine}>
+              <span className={cardStyles.valueText} title={merchant ? merchant.name : undefined}>
+                {merchant ? merchant.name : "—"}
+              </span>
+              <Button variant="tertiary" aria-label="가맹점 바꾸기" onClick={() => setPickOpen(true)}>
+                {merchant ? "바꾸기" : "고르기"}
+              </Button>
+            </div>
             <input ref={merchantInputRef} type="hidden" name="merchantVendorId" value={merchant?.id ?? ""} readOnly />
             {merchant?.defaultEvidenceName && evidenceForMerchant(merchant.defaultEvidenceType, evidenceTypes).outside ? (
               <Form.Hint>{`기본 증빙 ${merchant.defaultEvidenceName} · 카드에 없음`}</Form.Hint>

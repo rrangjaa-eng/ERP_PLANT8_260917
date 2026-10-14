@@ -81,6 +81,18 @@ function linkCell(row: CardUsageListRowView): ReactNode {
   );
 }
 
+// 06-24 backstop B-1 — 가맹점은 연결 칸과 같은 한 줄 말줄임 + title(SYSTEM §7-3 「거래처는 한 줄 말줄임」).
+function merchantCell(row: CardUsageListRowView): ReactNode {
+  if (!row.merchantName) return "—";
+  return (
+    <span className={cardStyles.linkCell}>
+      <span className={cardStyles.linkText} title={row.merchantName}>
+        {row.merchantName}
+      </span>
+    </span>
+  );
+}
+
 // 「표시 — 경영관리 등록」: 대리 등록이면 `경영관리 등록`(--text-strong 600) + 2행 `{등록자} {MM-DD}`, 본인 등록이면 이름(400). 대리 등록 자체는 06-09.
 const PROXY_STYLE = { fontWeight: "var(--fw-medium)", color: "var(--text-strong)" } as const;
 
@@ -127,7 +139,7 @@ function slipText(row: CardUsageListRowView): string {
 
 const COLUMNS: TableColumn<CardUsageListRowView>[] = [
   { key: "usedOn", header: "사용일", priority: "p2", cell: (row) => <Num value={row.usedOn.slice(5)} /> },
-  { key: "merchant", header: "가맹점", priority: "p2", cell: (row) => row.merchantName ?? "—" },
+  { key: "merchant", header: "가맹점", priority: "p2", cell: merchantCell },
   { key: "link", header: "연결", priority: "p1", cell: linkCell },
   {
     key: "total",

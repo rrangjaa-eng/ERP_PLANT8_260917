@@ -51,7 +51,7 @@ describe("listNextTurnItemsForRequest — 한 요청에 한 번", () => {
   });
 
   it("레이아웃 · 홈은 공급 함수를 직접 부르지 않고 이 함수를 거친다", () => {
-    for (const file of ["app/(app)/layout.tsx", "app/(app)/page.tsx"]) {
+    for (const file of ["app/(app)/layout.tsx", "app/(app)/(home)/page.tsx"]) {
       const source = readFileSync(resolve(import.meta.dirname, "../../..", file), "utf8");
       expect(source, file).toContain("listNextTurnItemsForRequest(");
       expect(source, file).not.toMatch(/\blistNextTurnItems\(/);

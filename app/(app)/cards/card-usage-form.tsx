@@ -56,6 +56,8 @@ type Merchant = { id: string; name: string; defaultEvidenceType: string | null; 
 export type CardUsageEdit = {
   id: string;
   version: number;
+  /** 06.5 V7 K 번호 — 읽기 칸만(폼 상태 · 바뀐 칸 세기에 넣지 않는다). */
+  number: string | null;
   cardId: string;
   cardText: string;
   proxyHint: string | null;
@@ -810,6 +812,12 @@ export function CardUsageForm({
                 </a>
               ) : null}
               {purchaseCancel ? <span className={purchaseStyles.panelCancel}>{purchaseCancel}</span> : null}
+            </div>
+          ) : null}
+          {edit ? (
+            <div data-ui="field-row" className={rowStyles.row}>
+              <span className={rowStyles.label}>번호</span>
+              <span className={cardStyles.valueText}>{edit.number ?? "—"}</span>
             </div>
           ) : null}
           {purchase && usableCards.length === 0 ? (

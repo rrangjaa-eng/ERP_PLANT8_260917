@@ -955,6 +955,8 @@ export async function restoreCardUsage(
 export type CardUsageEditDto = {
   id: string;
   version: number;
+  /** 06.5 D-6503 K 번호 — 수정 패널 맨 위 읽기 칸(번호 없는 기존 행은 null). */
+  number: string | null;
   /** 저장된 카드 읽기 텍스트 `{카드 이름} · {발급사} {뒤 4자리}`. */
   cardId: string;
   cardText: string;
@@ -989,6 +991,7 @@ export type CardUsageEditDto = {
 const EDIT_VALUE_KEYS = [
   "id",
   "version",
+  "number",
   "cardId",
   "cardText",
   "proxyHint",
@@ -1058,6 +1061,7 @@ export async function loadCardUsageForEdit(viewer: Viewer, id: string): Promise<
   const dto: CardUsageEditDto = {
     id: stored.id,
     version: stored.version,
+    number: stored.number,
     cardId: stored.corpCardId,
     cardText: cardLabel({ label: stored.cardLabel, issuer: stored.cardIssuer, numberLast4: stored.cardLast4 }),
     proxyHint,

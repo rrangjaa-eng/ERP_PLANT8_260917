@@ -186,6 +186,7 @@ export function CardUsageList({ rows, listHref }: { rows: CardUsageListRowView[]
         items={
           sheet
             ? [
+                { label: "번호", value: <Num value={sheet.number} /> },
                 { label: "사용일", value: sheet.usedOn },
                 { label: "카드", value: sheet.cardLabel },
                 { label: "증빙", value: slipText(sheet) },

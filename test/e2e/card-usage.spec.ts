@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { actionLog, quoteLines } from "@/db/schema";
+import { actionLog, corpCardUsages, quoteLines } from "@/db/schema";
 import { createCorpCard } from "@/domain/corp-cards";
 import { createCardUsage, precheckCardUsage } from "@/domain/corp-card-usages";
 import { searchLinesForCardLink } from "@/domain/corp-card-usages/link-targets";
@@ -233,6 +233,85 @@ test.describe("법인카드 사용 등록 (06-05)", () => {
     await expect(table.locator("thead th").first()).toHaveText("번호");
     const row = table.getByRole("row").filter({ hasText: "1,100,000" });
     await expect(row.locator("td").first()).toHaveText(`${target.projectNumber}-K0001`);
+    await page.context().close();
+  });
+
+  test("[06.5 V7] 폰 375 — 권리 없는 행 RowSheet 첫 행 `번호` · 번호 없는 기존 행은 `—`", async ({ browser, baseURL }) => {
+    const holder = await makeCardHolder();
+    const other = await makePerson("대리", DEFAULT_ROLE_ID, holder.teamId, `${seoulToday().slice(0, 4)}-01-01`);
+    const numbered = `가맹번호-${randomUUID().slice(0, 6)}`;
+    const legacy = `가맹옛행-${randomUUID().slice(0, 6)}`;
+    const number = `26T-K${randomUUID().slice(0, 6)}`;
+    // 남이 등록(권리 없음)한 내 카드 행 둘 — 하나는 번호, 하나는 번호 없는 기존 행.
+    for (const [merchantName, value] of [
+      [numbered, number],
+      [legacy, null],
+    ] as const) {
+      const vendor = await insertVendor(SYSTEM_VIEWER, { name: merchantName, normalizedName: `${merchantName}-${randomUUID()}` });
+      await db.insert(corpCardUsages).values({
+        number: value,
+        corpCardId: holder.cardIds[0] ?? "",
+        usedOn: seoulToday(),
+        merchantVendorId: vendor.id,
+        totalCurrency: "KRW",
+        totalForeignAmount: null,
+        totalFxRate: "1",
+        totalAmountKrw: 30_000,
+        supplyKrw: 30_000,
+        vatKrw: 0,
+        evidenceTypeCode: "invoice",
+        linkKind: "team_cost",
+        quoteLineId: null,
+        teamId: holder.teamId,
+        usedByUserId: holder.person.viewer.id,
+        registeredBy: other.viewer.id,
+        registeredVia: "proxy",
+        memo: null,
+      });
+    }
+    const page = await loginPage(browser, baseURL, holder.person);
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto("/cards");
+    for (const [merchantName, value] of [
+      [numbered, number],
+      [legacy, "—"],
+    ] as const) {
+      const tap = page.getByRole("row").filter({ hasText: merchantName }).getByRole("button", { name: /상세 보기$/ });
+      await waitForHydration(tap);
+      await tap.click();
+      const rowSheet = page.getByRole("dialog").filter({ hasText: merchantName });
+      await expect(rowSheet).toBeVisible();
+      await expect(rowSheet.locator("dt").first()).toHaveText("번호");
+      await expect(rowSheet.locator("dd").first()).toHaveText(value);
+      await rowSheet.getByRole("button", { name: "닫기" }).click();
+      await expect(rowSheet).toBeHidden();
+    }
+    await page.context().close();
+  });
+
+  test("[06.5 V7] 1280 — 수정 패널 맨 위 읽기 칸 `번호`(입력 아님 · 그대로 닫으면 입력 버리기 없음) · 등록 패널에는 `번호` 없음", async ({ browser, baseURL }) => {
+    const holder = await makeCardHolder();
+    const target = await seedProjectLine(holder);
+    await seedLineUsage(holder.person.viewer, holder.cardIds[0] ?? "", target.lineId, 50_000);
+    const page = await loginPage(browser, baseURL, holder.person);
+    await page.goto("/cards");
+    const edit = page.getByRole("link", { name: / 수정$/ }).first();
+    await waitForHydration(edit);
+    await edit.click();
+    const sheet = page.getByRole("dialog", { name: "카드 사용 수정" });
+    await expect(sheet).toBeVisible();
+    const first = sheet.locator('[data-ui="field-row"]').first();
+    await expect(first).toContainText("번호");
+    await expect(first).toContainText(`${target.projectNumber}-K0001`);
+    await expect(first.locator("input, select, textarea")).toHaveCount(0);
+    await waitForHydration(sheet.getByLabel("결제 합계"));
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog", { name: "입력 버리기" })).toHaveCount(0);
+    await expect(sheet).toBeHidden();
+
+    await page.goto("/cards?new=1");
+    await waitForHydration(panel(page).getByLabel("결제 합계"));
+    await expect(panel(page).getByText("번호", { exact: true })).toHaveCount(0);
     await page.context().close();
   });
 

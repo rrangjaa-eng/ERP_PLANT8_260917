@@ -61,6 +61,7 @@ function toEditView(usage: Partial<CardUsageEditDto>, changeLink: boolean, cardO
   return {
     id: usage.id,
     version: usage.version,
+    number: usage.number ?? null,
     cardId: usage.cardId,
     cardText: usage.cardText ?? "",
     proxyHint: usage.proxyHint ?? null,

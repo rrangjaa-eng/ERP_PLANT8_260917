@@ -98,7 +98,7 @@ gcloud storage ls gs://$P-plant8-staging-evidence/incoming/ gs://$P-plant8-stagi
 
 ```sql
 -- 대상 1: 지운 지 30일 넘은 증빙의 객체 키
-SELECT id, owner_kind, object_key, removed_at FROM files WHERE removed_at < now() - interval '30 days' ORDER BY removed_at;
+SELECT id, owner_kind, object_key, removed_at FROM files WHERE removed_at < now() - interval '30 days' AND voided_at IS NULL ORDER BY removed_at;
 -- 대상 2 대조용: 행이 있는 모든 객체 키(버킷 목록 `gcloud storage ls -l gs://$P-plant8-staging-evidence/evidence/`과 비교)
 SELECT object_key FROM files;
 -- 대상 2 확인: 죽은 의도(완료 통보 없음 · 만료)

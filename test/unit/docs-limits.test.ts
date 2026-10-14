@@ -240,6 +240,8 @@ describe("docs/EVIDENCE-STORAGE.md", () => {
     expect(sql).not.toMatch(/WHERE[^;]*owner_kind/);
     expect(sql).toContain("owner_kind");
     expect(sql).toContain("interval '30 days'");
+    // /review(PR #219): 무효 파일은 기록이라 대상이 아니다(같은 문단) — 지운 표시가 함께 붙은 무효 파일의 객체를 지우지 않는다.
+    expect(sql).toContain("voided_at IS NULL");
   });
 
   // 06-31(G-06-C · 06-VERIFICATION 경고 1): 스키마 files_owner_kind_check의 주인 종류가 모두 문서에 있다.
@@ -249,8 +251,9 @@ describe("docs/EVIDENCE-STORAGE.md", () => {
     const list = /IN \(([^)]*)\)/.exec(checkLine)?.[1] ?? "";
     const kinds = [...list.matchAll(/'([^']+)'/g)].map((match) => match[1] ?? "");
     expect(kinds.length).toBeGreaterThanOrEqual(4);
+    const kindLine = content.split("\n").find((line) => line.includes("files.owner_kind")) ?? "";
     for (const kind of kinds) {
-      expect(content, kind).toContain(kind);
+      expect(kindLine, kind).toContain(`\`${kind}\``);
     }
   });
 });

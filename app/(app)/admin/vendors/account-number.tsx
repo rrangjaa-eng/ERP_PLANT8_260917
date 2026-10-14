@@ -18,11 +18,14 @@ export function AccountNumberCell({
   masked,
   canReveal,
   revealAction,
+  align = "end",
 }: {
   id: string;
   masked: string;
   canReveal: boolean;
   revealAction: typeof revealVendorAccountNumberAction;
+  /** 표 칸은 오른쪽(기본), 라벨·값 목록은 `start` — 값이 다른 값과 같은 x에서 시작한다. */
+  align?: "start" | "end";
 }) {
   const [revealed, setRevealed] = useState<string | null>(null);
   const { execute, isExecuting, result } = useAction(revealAction, {
@@ -31,16 +34,18 @@ export function AccountNumberCell({
     },
   });
 
+  const start = align === "start";
+
   if (!masked) {
-    return <span className={styles.masked}>—</span>;
+    return <span className={start ? `${styles.masked} ${styles.maskedStart}` : styles.masked}>—</span>;
   }
 
   const display = revealed ?? masked;
 
   return (
     <>
-      <div className={styles.accountCell}>
-        <span className={styles.masked} aria-live="polite">
+      <div className={start ? `${styles.accountCell} ${styles.accountCellStart}` : styles.accountCell}>
+        <span className={start ? `${styles.masked} ${styles.maskedStart}` : styles.masked} aria-live="polite">
           {display}
         </span>
         {canReveal ? (
@@ -62,7 +67,7 @@ export function AccountNumberCell({
         ) : null}
       </div>
       {/* 실패 줄은 번호 줄 밖 아래에 둔다 — 같은 flex 줄에 끼면 번호가 옆 열 쪽으로 밀린다. */}
-      {result.serverError ? <p className={styles.revealError}>번호 불러오기 실패 · 다시 시도</p> : null}
+      {result.serverError ? <p className={start ? `${styles.revealError} ${styles.revealErrorStart}` : styles.revealError}>번호 불러오기 실패 · 다시 시도</p> : null}
     </>
   );
 }

@@ -82,6 +82,25 @@ test.describe("사람 상세 지급 계좌(06.5 D-6505)", () => {
     await expect(section(page).getByRole("link", { name: "계좌 바꾸기" })).toBeVisible();
   });
 
+  test("계좌번호 값은 은행 값과 같은 x에서 시작한다 — 1280 · 375(F7)", async ({ page }) => {
+    await login(page, await createFixtureUser({ roleId: SYSADMIN_ROLE_ID }));
+    const userId = await makeTarget();
+    await updatePersonPayoutAccount(SYSTEM_VIEWER, userId, { accountBank: "신한", accountHolder: "김직원", accountNumber: "110-123-456789" });
+    for (const width of [1280, 375]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/admin/people/${userId}`);
+      const bank = await section(page).locator("dd").first().boundingBox();
+      const number = await section(page).locator('[aria-live="polite"]').boundingBox();
+      const button = await section(page).getByRole("button", { name: "번호 보기" }).boundingBox();
+      expect(bank).not.toBeNull();
+      expect(number).not.toBeNull();
+      expect(button).not.toBeNull();
+      expect(Math.abs(number!.x - bank!.x)).toBeLessThanOrEqual(1);
+      // 번호 보기는 번호 뒤에 선다(같은 줄이면 오른쪽, 폭이 모자라 내려가면 아래).
+      expect(button!.x > number!.x || button!.y >= number!.y + number!.height - 1).toBe(true);
+    }
+  });
+
   test("직원 본인 · 사람 보기만 가진 계급에게는 지급 계좌가 없다(주소로 열어도 패널 없음)", async ({ page, browser, baseURL }) => {
     await login(page, await createFixtureUser({ roleId: DEFAULT_ROLE_ID }));
     await page.goto("/account");

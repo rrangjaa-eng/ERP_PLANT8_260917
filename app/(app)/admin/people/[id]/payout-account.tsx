@@ -11,6 +11,7 @@ import { Button, buttonLinkClassName } from "@/ui/button/Button";
 import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
 import { fieldErrorsReason, formReason } from "@/lib/actions/form-reason";
 import { AccountNumberCell } from "@/app/(app)/admin/vendors/account-number";
+import styles from "../people.module.css";
 import vendorStyles from "@/app/(app)/admin/vendors/vendors.module.css";
 
 // 06.5-04(D-6505 · UI-SPEC V2): 사람 상세 「지급 계좌」 — 읽기는 섹션 안 KvList 3행, 입력은 옆 패널(`?editAccount=1`).
@@ -48,12 +49,12 @@ export function PayoutAccountSection({
               { label: "예금주", value: account.holder ?? "—" },
               {
                 label: "계좌번호",
-                value: <AccountNumberCell id={userId} masked={account.masked} canReveal={canReveal} revealAction={revealPersonAccountNumberAction} />,
+                value: <AccountNumberCell id={userId} masked={account.masked} canReveal={canReveal} revealAction={revealPersonAccountNumberAction} align="start" />,
               },
             ]}
           />
           {/* 3차는 글자만 바뀌는 같은 요소 — 저장 뒤 SidePanel이 연 요소(이 링크)로 포커스를 돌린다. */}
-          <p style={{ margin: "var(--s-4) 0 0" }}>
+          <p className={styles.payoutAction}>
             <Link href={editHref} className={buttonLinkClassName("tertiary")}>
               {empty ? "계좌 적기" : "계좌 바꾸기"}
             </Link>

@@ -15,6 +15,10 @@
 | G-06-E | 06-36 | PR-G3 | 2 | 06.5-01 · 06.5-07 · 06.5-09 merged to main | — (카드 ② 2026-10-14 14:20 KST 「경고만」) | `/review` + `/design-review` → `/qa` + 독립 DOM 감사 |
 | G-06-A | 06-37(`risk:` 마이그레이션) | PR-GA(단독) | 3 | 06.5-01 · 06.5-07 · 06.5-10 merged to main | — (사용자 카드 20:42 「보관 카드 재등록 다시 허용」) | `/review` · Opus 실행자 + Opus 독립 검토 · **사용자 머지**(위험 경로 `db/migrations/` · `db/schema/`) |
 | G-06-F | 06-38 | PR-G4 | 4 | 06.5-07 · 06.5-10 merged to main | — (카드 ③ 2026-10-14 14:20 KST 「지금 모양 유지」) | 없음(문서만 — CLAUDE.md §4) |
+| G-06-H | 06-39(Task 1) | PR-G5 | 2 | 06.5-07 · 06.5-05 merged to main | — (지정한 `defaultPrevented` 한 줄을 먼저 넣고, 칸 안 Ctrl+Enter 회귀 · 막힌 모달 지급이 실행으로 확인되면 열린 dialog 가드로 바꿈 — 06-39 「고칠 줄」 절) | `/review` + `/design-review` → `/qa` + 독립 DOM 감사(PR-G5 한 번) |
+| G-06-I | 06-39(Task 2) | PR-G5 | 2 | 06.5-05 merged to main(`next-turn.test.ts`) | — | PR-G5 한 번(위와 같음) |
+| G-06-J | 06-39(Task 3) | PR-G5 | 2 | 06.5-05 merged to main(PR-G5 묶음) | — (재현 먼저 — CI 빌드 5회, 재현될 때만 수정) | PR-G5 한 번(위와 같음) |
+| G-06-K | — (07로 넘김 · 계획 안 함) | — | — | — | — | — |
 
 요구사항 추적: EVID-04(06-31) · EXP-13(06-32 · 06-38, 추적) · EXP-07(06-33 · 06-37 — 카드 마스터 MAST-03은 Phase 3) · EXP-10(06-34 · 06-35) · PROJ-06(06-36). 각 플랜의 엣지 프로브는 `unclassified · unresolved`로 드러내고 자동 해소하지 않았다.
 

@@ -181,6 +181,15 @@ test.describe("S4 증빙 확인 = 공급가액 하나 (06.5 D-6520 · UI-SPEC V8
     await expect(page.locator("#corrected-supply")).toHaveCount(0);
     const [row] = await db.select({ supply: expenses.supplyAmountKrw }).from(expenses).where(eq(expenses.id, expenseId));
     expect(row?.supply).toBe(12_000_000);
+
+    // 06.5-07 Task 3(UI-SPEC V8 「고친 뒤 문서 화면」) — 다시 그린 문서 화면 금액 묶음: `공급가액` = 고친 값, 계산 한 줄은 고친 값 기준, `세율 바뀜` 0.
+    await page.reload();
+    const taxLine = page.getByTestId("expense-tax-line");
+    await expect(taxLine).toContainText("1,200,000");
+    await expect(taxLine).toContainText("13,200,000");
+    await expect(taxLine.locator("xpath=..")).toContainText("12,000,000");
+    await expect(page.getByTestId("expense-tax-drift")).toHaveCount(0);
+    await expect(page.getByText(/세율 바뀜/)).toHaveCount(0);
     await page.context().close();
   });
 

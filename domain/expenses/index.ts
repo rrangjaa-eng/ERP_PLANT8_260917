@@ -66,7 +66,7 @@ import { CURRENCIES, recentFxRate } from "@/domain/money/currency";
 import { allocateDocumentNumber, allocateExpenseNumber, loadDocumentNumberFormat, loadExpenseNumberFormat } from "@/domain/document-numbering";
 import { teamAtDate } from "@/domain/org";
 import { formatKstTime } from "@/domain/holidays/business-day";
-import { computeExpenseTax, storedTaxResult, taxDriftText, taxLineText, type ExpenseTaxResult, type ExpenseTaxSource } from "@/domain/expenses/tax";
+import { computeExpenseTax, snapshotSupplyDiffers, storedTaxResult, taxDriftText, taxLineText, type ExpenseTaxResult, type ExpenseTaxSource } from "@/domain/expenses/tax";
 import { buildExpenseDetailRows } from "@/domain/expenses/detail";
 import { canSeeExpense, EXPENSE_DOCUMENT_KIND, ExpenseNotFoundError } from "@/domain/expenses/access";
 import { expenseRouteDocTeamId } from "@/domain/expenses/route-doc";
@@ -399,7 +399,10 @@ async function loadExpenseDetails(viewer: Viewer, ids: string[]): Promise<Map<st
     const supply = supplyMoney(row);
     const stored = storedTaxResult(row);
     const current = currents[index] ?? null;
-    const drift = stored && current ? taxDriftText(stored, current) : null;
+    // 06.5 D-6520(UI-SPEC V8 「고친 뒤 문서 화면」): 증빙 확인에서 공급가액을 고친 문서는 지금 기준 한 줄 · 세율 바뀜 없음(문서 화면과 같은 판정).
+    const corrected = stored !== null && row.supplyAmountKrw !== null && snapshotSupplyDiffers(stored, row.supplyAmountKrw);
+    const shown = corrected ? current : stored;
+    const drift = !corrected && stored && current ? taxDriftText(stored, current) : null;
     const evidenceTypeName = row.evidenceType ? (evidenceNames.get(row.evidenceType) ?? row.evidenceType) : null;
     result.set(row.id, {
       number: row.number,
@@ -416,7 +419,7 @@ async function loadExpenseDetails(viewer: Viewer, ids: string[]): Promise<Map<st
       vendorName: row.vendorName,
       evidenceTypeName,
       supply,
-      taxLine: supply && stored ? taxLineText(stored, supply, `${evidenceTypeName ?? ""} 규칙`).text : null,
+      taxLine: supply && shown ? taxLineText(shown, supply, `${evidenceTypeName ?? ""} 규칙`).text : null,
       taxDriftText: drift?.text ?? null,
       evidenceFiles: aliveFiles
         .filter((file) => file.ownerId === row.id)
@@ -1569,9 +1572,12 @@ export async function getExpense(viewer: Viewer, input: { expenseId: string }): 
   const editable = isEditableByDrafter(viewer.id, row, row.status);
   const stored = editable ? null : storedTaxResult(row);
   const current = supply && (stored === null || row.number !== null) ? await computeExpenseTax(viewer, row) : null;
-  const result = stored ?? current;
+  // 06.5 D-6520(UI-SPEC V8 「고친 뒤 문서 화면」): 증빙 확인에서 공급가액을 고친 문서는 고친 공급가로 지금 기준 다시 셈한 한 줄이고
+  // 세율 바뀜이 없다(결재 때 값과의 차이가 세율이 아니라 고침에서 온다). 세금 스냅숏 칸은 그대로다.
+  const corrected = stored !== null && row.supplyAmountKrw !== null && snapshotSupplyDiffers(stored, row.supplyAmountKrw);
+  const result = corrected ? current : (stored ?? current);
   const taxLine = result && supply ? taxLineText(result, supply, `${evidenceTypeName ?? ""} 규칙`) : null;
-  const taxDrift = stored && current && row.number !== null ? taxDriftText(stored, current) : null;
+  const taxDrift = !corrected && stored && current && row.number !== null ? taxDriftText(stored, current) : null;
   const vendor = editable && row.vendorId ? await findVendorById(viewer, row.vendorId) : null;
   return project(
     viewer,

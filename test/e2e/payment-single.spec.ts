@@ -136,12 +136,13 @@ test.describe("한 건 지급 완료 (06-03)", () => {
   test("지급된 문서 — 지급 기록이 정본 · 세율 바뀜 줄 없음", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const expenseId = await approvedWithoutEvidence(browser, baseURL, fx, "retry");
-    // 제출 스냅숏 지급 총액을 이 문서 행 하나만 바꾼다(전역 세율 · 설정은 그대로 — E2E는 DB 하나를 공유한다).
-    const [snapshot] = await db.select({ payableKrw: expenses.payableKrw }).from(expenses).where(eq(expenses.id, expenseId));
-    if (snapshot?.payableKrw == null) throw new Error("스냅숏 지급 총액 없음");
+    // 제출 스냅숏 세액 · 지급 총액을 이 문서 행 하나만 바꾼다(전역 세율 · 설정은 그대로 — E2E는 DB 하나를 공유한다).
+    // 06.5 D-6520 — 실제 세율 바뀜처럼 둘을 같이 올려 「지급 총액 − 부가세 = 공급가」를 지킨다(지급 총액만 바꾸면 공급가액 고친 문서로 읽힌다).
+    const [snapshot] = await db.select({ vatKrw: expenses.vatKrw, payableKrw: expenses.payableKrw }).from(expenses).where(eq(expenses.id, expenseId));
+    if (snapshot?.payableKrw == null || snapshot.vatKrw == null) throw new Error("스냅숏 지급 총액 없음");
     await db
       .update(expenses)
-      .set({ payableKrw: snapshot.payableKrw + 1_000 })
+      .set({ vatKrw: snapshot.vatKrw + 1_000, payableKrw: snapshot.payableKrw + 1_000 })
       .where(eq(expenses.id, expenseId));
     const payer = await makePaymentManagerE2E();
 

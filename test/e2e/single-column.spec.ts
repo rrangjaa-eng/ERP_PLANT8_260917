@@ -101,7 +101,8 @@ test.describe("단일 기둥 최대 폭 — 관리자 화면·폼 전면 적용 
     });
     await page.goto(`/admin/people/${userId}`);
     await expect(page).toHaveURL(/\/admin\/people\/.+/);
-    await expectSingleColumn(page, page.locator("main dl"));
+    // 06.5-04: 시스템 관리자에게는 아래 「지급 계좌」 섹션 dl이 하나 더 있다 — 맨 위 사람 정보 dl을 잰다(둘 다 .single-column 안).
+    await expectSingleColumn(page, page.locator("main dl").first());
     // select 자체는 PC 라벨 열 뒤 200px이다(§6-3 칸 폭, form-label-section-gap.spec.ts) — 기둥은 그 묶음이 잡는다.
     await expectSingleColumn(page, page.locator("div:has(> #person-role-change)"));
   });

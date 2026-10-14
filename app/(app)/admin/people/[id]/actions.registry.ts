@@ -22,3 +22,12 @@ registerAction({
   action: "write",
   dtoName: null,
 });
+
+// 06.5-04: 분류는 누수 스캔용이다 — 실제 게이트는 도메인 `canManagePayoutAccount`(`expenses.payments` 쓰기 ∧ `admin.people` 보기,
+// REVIEWS EP3-B15). `admin.people` 쓰기만으로는 통과하지 않는다.
+registerAction({
+  name: "updatePersonPayoutAccountAction",
+  menu: "admin.people",
+  action: "write",
+  dtoName: null,
+});

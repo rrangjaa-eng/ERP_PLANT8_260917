@@ -2,9 +2,12 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
+import { returnValidationErrors } from "next-safe-action";
 import { authedActionClient } from "@/lib/actions/client";
 import { seoulToday } from "@/lib/dates";
 import { setHireDate, setResignationDate } from "@/domain/people";
+import { updatePersonPayoutAccount } from "@/domain/people/account";
+import { AccountFieldsError } from "@/domain/vendors/account-fields";
 import { addLeaveAdjustment, LeaveAdjustmentValidationError } from "@/domain/leave/balance-service";
 import { MIN_LEAVE_YEAR } from "@/domain/leave/days";
 import { parseAdjustmentDays } from "./adjustment-days";
@@ -65,4 +68,30 @@ export const addLeaveAdjustmentAction = authedActionClient.schema(adjustmentSche
   }
   revalidatePath(`/admin/people/${parsedInput.userId}`);
   return { added: true };
+});
+
+// 06.5-04(D-6505 · D-6506): 직원 지급 계좌 저장 — 게이트(`expenses.payments` 쓰기 ∧ `admin.people` 보기) · 예금주 필요 판정 ·
+// 암호화는 도메인이 한다. 계좌번호는 거래처 `updateVendorSchema`와 같은 꼴(undefined = 안 바꿈 · null = 지움 · 문자열 = 새 값).
+// 칸 판정 오류는 칸마다 validationErrors로 돌려준다(폼이 칸 아래 · 1차 옆 요약에 그린다).
+const payoutAccountSchema = z.object({
+  id: z.string().min(1).max(64),
+  accountBank: z.string().optional(),
+  accountHolder: z.string().optional(),
+  accountNumber: z.string().nullable().optional(),
+});
+
+export const updatePersonPayoutAccountAction = authedActionClient.schema(payoutAccountSchema).action(async ({ parsedInput, ctx }) => {
+  const { id, ...input } = parsedInput;
+  try {
+    await updatePersonPayoutAccount(ctx.viewer, id, input);
+  } catch (error) {
+    if (error instanceof AccountFieldsError) {
+      returnValidationErrors(
+        payoutAccountSchema,
+        Object.fromEntries(Object.entries(error.fieldErrors).map(([key, message]) => [key, { _errors: [message] }])),
+      );
+    }
+    throw error;
+  }
+  revalidatePath(`/admin/people/${id}`);
 });

@@ -37,7 +37,8 @@ export const corpCardUsages = pgTable(
     purchaseRequestId: uuid("purchase_request_id").references(() => purchaseRequests.id),
     memo: text("memo"),
     // 06.5 D-6503: K 번호. 이미 있는 행은 비워 둔다(데이터 이전 없음). 새 행은 도메인이 `insertCardUsage` 인자로 반드시 채운다(06.5-03).
-    // 한 번 받은 번호는 수정에서 바뀌지 않는다(옛 O: server/src/card-uses.ts:788 `where number is null`).
+    // 한 번 받은 번호는 수정에서 바뀌지 않는다(옛 O: server/src/card-uses.ts:765-798 `번호채우기` — 옛은 카드 사용을 purchase_requests 행으로
+    // 두고 `next_card_use_number`의 K 번호를 :789 `where id = $1 and number is null`로 번호가 빈 행에만 적었다).
     number: text("number"),
     // 06.5 D-6509(CSO-4): 지출결의 `idempotency_key`와 같은 뜻 — 재전송이면 같은 행위자의 기존 행을 돌려준다.
     idempotencyKey: text("idempotency_key"),

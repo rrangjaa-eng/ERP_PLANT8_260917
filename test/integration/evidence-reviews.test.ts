@@ -2,14 +2,17 @@ import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { db } from "@/db/client";
+import { db, pool } from "@/db/client";
 import { actionLog, corpCardUsages, corpCards, expenseEvidenceReviews, expenses, files, quoteLines } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertVisibility } from "@/repositories/permissions";
 import { completeExpensePayment, getPaymentView, loadEvidenceOverrun, previewPayable } from "@/domain/payments";
-import { confirmEvidence, EvidenceReviewConflictError } from "@/domain/evidence-reviews";
+import { confirmEvidence, EvidenceReviewConflictError, SupplyCorrectionCapError } from "@/domain/evidence-reviews";
 import { approveDocument } from "@/domain/approvals";
-import { createExpenseFromLines, saveExpenseDraft } from "@/domain/expenses";
+import { createExpenseFromLines, createTeamExpenseDraft, ExpenseFieldError, listExpenseFormOptions, saveExpenseDraft } from "@/domain/expenses";
+import { queryActionLog } from "@/domain/action-log";
+import { moneyToColumns } from "@/domain/money";
+import { insertVendor } from "@/repositories/vendors";
 import { voidEvidence } from "@/domain/evidence";
 import { GateBlockedError } from "@/domain/rules/gate";
 import { ACTION_LOG_OPTIONAL_TYPES } from "@/domain/settings/keys";
@@ -17,11 +20,13 @@ import { upsertSimpleValue } from "@/repositories/settings";
 import { ForbiddenError } from "@/domain/permissions/can";
 import { seoulToday } from "@/lib/dates";
 import { confirmEvidenceAction } from "@/app/(app)/expenses/[id]/actions";
+import { deferred, waitForLockWaiter, type Deferred } from "./lock-race";
 import { addApprovedRevision, attachEvidence, makeEvidenceManager, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
 import { approvedExpenseWithEvidence, makePaymentManager, setEvidenceRequired, type ApprovedExpense } from "./fixtures/payments";
 
 // 06-06(EVID-02 · EVID-03 · D-601 · D-602 · O-2) — 경영관리의 증빙 확인(S4). 확인 기록(06-27 expense_evidence_reviews) · 금액 고쳐 확인 ·
-// 확인 전 지급 막힘 · 증빙 지문 · Q-F 초과 한 줄(표시만) · EA-1. 06-11 · 06-15 · 06-17이 아래 `it` 이름으로 다시 본다.
+// 확인 전 지급 막힘 · 증빙 지문 · Q-F 초과 한 줄(표시만). 06-11 · 06-15 · 06-17이 아래 `it` 이름으로 다시 본다.
+// 06.5 D-6520 — 확인의 금액은 공급가액 하나: 고침 없으면 그대로 확정, 지급 전 고침은 남은 실행가 안에서만(제출 상한과 같은 판정 · 문구).
 
 const session = vi.hoisted(() => ({ viewer: null as Viewer | null }));
 vi.mock("@/lib/viewer", () => ({
@@ -30,13 +35,15 @@ vi.mock("@/lib/viewer", () => ({
 vi.mock("next/cache", () => ({ revalidatePath: () => undefined }));
 
 // 06-06 검토 S-1 — 확인 tx의 행동 로그 뒤 마지막 읽기(findLivePayment)를 한 번 실패시켜 「tx가 되돌려지면 로그도 없다」를 본다. 평소에는 원본 그대로.
-const failAfterLog = vi.hoisted(() => ({ on: false }));
+// 06.5 D-6520: 고침 확인은 로그 앞에서도 지급을 한 번 읽는다(지급 뒤 LOCKED) — skip만큼 원본으로 넘긴 뒤 실패시킨다.
+const failAfterLog = vi.hoisted(() => ({ on: false, skip: 0 }));
 vi.mock("@/repositories/expense-payments", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/repositories/expense-payments")>();
   return {
     ...original,
     findLivePayment: (...args: Parameters<typeof original.findLivePayment>) => {
-      if (failAfterLog.on) return Promise.reject(new Error("확인 tx 강제 실패"));
+      if (failAfterLog.on && failAfterLog.skip > 0) failAfterLog.skip -= 1;
+      else if (failAfterLog.on) return Promise.reject(new Error("확인 tx 강제 실패"));
       return original.findLivePayment(...args);
     },
   };
@@ -56,7 +63,14 @@ async function makePayer(name?: string): Promise<Viewer> {
 
 async function docRow(expenseId: string) {
   const [row] = await db
-    .select({ version: expenses.version, evidenceAmount: expenses.evidenceAmount, supplyAmountKrw: expenses.supplyAmountKrw })
+    .select({
+      version: expenses.version,
+      evidenceAmount: expenses.evidenceAmount,
+      supplyAmountKrw: expenses.supplyAmountKrw,
+      supplyCurrency: expenses.supplyCurrency,
+      supplyForeignAmount: expenses.supplyForeignAmount,
+      supplyFxRate: expenses.supplyFxRate,
+    })
     .from(expenses)
     .where(eq(expenses.id, expenseId));
   if (!row) throw new Error("지출결의 없음");
@@ -90,7 +104,7 @@ async function caught(promise: Promise<unknown>): Promise<unknown> {
 }
 
 describe("증빙 확인 트레이서 (06-06 Task 1)", () => {
-  it("금액 고침 없는 확인 → 확인 기록 confirmed · document_update · version + 1 · 응답 { version, evidenceStatus: 확인됨, actionRow: P4 }", async () => {
+  it("금액 고침 없는 확인 → 확인 기록 confirmed(전 = 후 = 원화 공급가) · document_update · version + 1 · 응답 { version, evidenceStatus: 확인됨, actionRow: P4 } · 공급가 그대로 · 금액 변경 기록 없음", async () => {
     const payer = await makePayer();
     const doc = await withEvidenceAmount(await approvedExpenseWithEvidence(await setupExpenseProject()), 12_400_000);
 
@@ -102,9 +116,11 @@ describe("증빙 확인 트레이서 (06-06 Task 1)", () => {
     expect(result.evidenceStatus).toBe("확인됨");
     expect(result.actionRow).toMatchObject({ row: "P4", primary: "pay" });
     const review = await reviewOf(doc.expenseId);
-    expect(review).toMatchObject({ status: "confirmed", amountBeforeKrw: null, amountAfterKrw: null, reviewedBy: payer.id, waiveReason: null });
+    expect(review).toMatchObject({ status: "confirmed", amountBeforeKrw: 12_400_000, amountAfterKrw: 12_400_000, reviewedBy: payer.id, waiveReason: null });
     expect((await logsOf(doc.expenseId, "document_update")).at(-1)).toMatchObject({ actorId: payer.id, detail: { field: "evidenceReview", status: "confirmed" } });
     expect(row.evidenceAmount).toBe(12_400_000);
+    expect(row.supplyAmountKrw).toBe(12_400_000);
+    expect(await logsOf(doc.expenseId, "evidence_amount_change")).toEqual([]);
   });
 
   it("확인한 문서는 이어서 지급 완료된다 — 증빙 금액이 지급 총액의 기준", async () => {
@@ -144,6 +160,8 @@ describe("증빙 확인 트레이서 (06-06 Task 1)", () => {
     expect(after?.evidenceStatus).toBe("확인됨");
     expect(after?.row).toMatchObject({ row: "P4", primary: "pay" });
     expect(after?.reviewLine).toMatchObject({ byName: "경영관리" });
+    // 06.5 D-6520 — 고침 없는 확인은 확인 기록 전 = 후 = 공급가라 2행에 전 → 후가 없다.
+    expect(after?.reviewAmounts).toBeNull();
   });
 
   it("지급 권한 없는 기안자 → 확인 거부 · 확인 기록 없음 · version 그대로(D-601)", async () => {
@@ -182,67 +200,64 @@ async function errorOf(promise: Promise<unknown>): Promise<Error> {
   return error;
 }
 
-describe("증빙 확인 — 금액 고쳐 확인 · F2 · 거부 (06-06 Task 3)", () => {
-  it("고쳐 확인 → 확인됨 유지 — evidence_amount = 새 값 · 확인 기록 전 · 후 · 끌 수 없는 로그 evidence_amount_change · 공급가액 그대로", async () => {
+describe("증빙 확인 — 공급가액 고쳐 확인 · 거부 (06-06 Task 3 · 06.5 D-6520)", () => {
+  it("지급 전 공급가액 고쳐 확인 → 확인됨 — 문서 공급가 = 새 값 · 증빙 금액 칸 그대로 · 확인 기록 전 · 후 · version + 1 · 끌 수 없는 로그 evidence_amount_change(라벨 `증빙 확인 금액 변경`)", async () => {
     await upsertSimpleValue(SYSTEM_VIEWER, ACTION_LOG_OPTIONAL_TYPES.key, [], null);
     try {
       const payer = await makePayer();
       const doc = await withEvidenceAmount(await approvedExpenseWithEvidence(await setupExpenseProject()), 12_400_000);
       const before = await docRow(doc.expenseId);
 
-      const result = await confirmEvidence(payer, { expenseId: doc.expenseId, version: doc.version, correctedAmountKrw: 12_000_000 });
+      const result = await confirmEvidence(payer, { expenseId: doc.expenseId, version: doc.version, correctedSupplyAmount: 12_000_000 });
 
       expect(result.evidenceStatus).toBe("확인됨");
+      expect(result.version).toBe(doc.version + 1);
       const row = await docRow(doc.expenseId);
-      expect(row.evidenceAmount).toBe(12_000_000);
-      expect(row.supplyAmountKrw).toBe(before.supplyAmountKrw);
+      expect(row).toMatchObject({ version: doc.version + 1, supplyAmountKrw: 12_000_000, supplyCurrency: "KRW", evidenceAmount: before.evidenceAmount });
       expect(await reviewOf(doc.expenseId)).toMatchObject({ status: "confirmed", amountBeforeKrw: 12_400_000, amountAfterKrw: 12_000_000 });
       expect(await logsOf(doc.expenseId, "evidence_amount_change")).toEqual([{ actorId: payer.id, detail: { before: 12_400_000, after: 12_000_000 } }]);
+      const labelled = (await queryActionLog(SYSTEM_VIEWER, { actionType: "evidence_amount_change" })).filter((log) => log.entityId === doc.expenseId);
+      expect(labelled.map((log) => log.actionTypeLabel)).toEqual(["증빙 확인 금액 변경"]);
       const view = await getPaymentView(payer, doc.expenseId);
       expect(view?.evidenceStatus).toBe("확인됨");
       expect(view?.reviewAmounts).toEqual({ beforeKrw: 12_400_000, afterKrw: 12_000_000 });
-      expect(view?.evidenceAmountDisplay).toMatchObject({ valueKrw: 12_000_000, enteredByName: "경영관리" });
     } finally {
       await upsertSimpleValue(SYSTEM_VIEWER, ACTION_LOG_OPTIONAL_TYPES.key, ACTION_LOG_OPTIONAL_TYPES.default ?? [], null);
     }
   });
 
-  it("고쳐 확인 tx가 로그 뒤에 실패하면 evidence_amount_change 로그 · 증빙 금액 · 확인 기록 · version이 모두 되돌려진다(같은 tx)", async () => {
+  it("고쳐 확인 tx가 로그 뒤에 실패하면 evidence_amount_change 로그 · 공급가 · 확인 기록 · version이 모두 되돌려진다(같은 tx)", async () => {
     const payer = await makePayer();
     const doc = await withEvidenceAmount(await approvedExpenseWithEvidence(await setupExpenseProject()), 12_400_000);
 
     failAfterLog.on = true;
+    failAfterLog.skip = 1;
     let error: unknown;
     try {
-      error = await caught(confirmEvidence(payer, { expenseId: doc.expenseId, version: doc.version, correctedAmountKrw: 12_000_000 }));
+      error = await caught(confirmEvidence(payer, { expenseId: doc.expenseId, version: doc.version, correctedSupplyAmount: 12_000_000 }));
     } finally {
       failAfterLog.on = false;
+      failAfterLog.skip = 0;
     }
 
     expect(error).toBeInstanceOf(Error);
     expect(await logsOf(doc.expenseId, "evidence_amount_change")).toEqual([]);
     const row = await docRow(doc.expenseId);
-    expect(row.evidenceAmount).toBe(12_400_000);
+    expect(row.supplyAmountKrw).toBe(12_400_000);
     expect(row.version).toBe(doc.version);
     expect(await reviewOf(doc.expenseId)).toBeNull();
   });
 
-  it("빈 증빙 금액 · 고침 없음 → 거부 `증빙 금액 없음`(F2 — 공급가액으로 채우지 않는다) · 고친 값이면 확인", async () => {
+  it("빈 증빙 금액 · 고침 없음 → 확정(F2 없음 — 확인의 금액은 공급가액) · 확인 기록 전 = 후 = 공급가 · 금액 변경 기록 없음", async () => {
     const payer = await makePayer();
     const doc = await approvedExpenseWithEvidence(await setupExpenseProject());
     await db.update(expenses).set({ evidenceAmount: null }).where(eq(expenses.id, doc.expenseId));
 
-    const error = await errorOf(confirmEvidence(payer, { expenseId: doc.expenseId, version: doc.version }));
-    expect(error.message).toBe("증빙 금액 없음");
-    expect(await reviewOf(doc.expenseId)).toBeNull();
-    expect((await docRow(doc.expenseId)).evidenceAmount).toBeNull();
-
-    const result = await confirmEvidence(payer, { expenseId: doc.expenseId, version: doc.version, correctedAmountKrw: 12_400_000 });
+    const result = await confirmEvidence(payer, { expenseId: doc.expenseId, version: doc.version });
     expect(result.evidenceStatus).toBe("확인됨");
-    expect((await docRow(doc.expenseId)).evidenceAmount).toBe(12_400_000);
-    // 06-27 CHECK(전 · 후 둘 다 null이거나 둘 다 값) — 이전 값이 비었으면 확인 기록은 전 · 후 없이, 로그는 전 null · 후 값.
-    expect(await reviewOf(doc.expenseId)).toMatchObject({ amountBeforeKrw: null, amountAfterKrw: null });
-    expect(await logsOf(doc.expenseId, "evidence_amount_change")).toEqual([{ actorId: payer.id, detail: { before: null, after: 12_400_000 } }]);
+    expect(await docRow(doc.expenseId)).toMatchObject({ evidenceAmount: null, supplyAmountKrw: 12_400_000, version: doc.version + 1 });
+    expect(await reviewOf(doc.expenseId)).toMatchObject({ status: "confirmed", amountBeforeKrw: 12_400_000, amountAfterKrw: 12_400_000 });
+    expect(await logsOf(doc.expenseId, "evidence_amount_change")).toEqual([]);
   });
 
   it("증빙 금액(expense.amount)을 못 보는 지급 권한자 — 고친 금액을 실으면 거부 · 금액 · 확인 기록 · version 그대로, 고침 없이는 확인된다(PR #180 Codex P1)", async () => {
@@ -252,14 +267,14 @@ describe("증빙 확인 — 금액 고쳐 확인 · F2 · 거부 (06-06 Task 3)"
     await upsertVisibility(SYSTEM_VIEWER, { roleId: blind.roleId, infoItem: "expense.amount", visible: false });
     const doc = await withEvidenceAmount(await approvedExpenseWithEvidence(await setupExpenseProject()), 12_400_000);
 
-    const error = await caught(confirmEvidence(blind, { expenseId: doc.expenseId, version: doc.version, correctedAmountKrw: 12_000_000 }));
+    const error = await caught(confirmEvidence(blind, { expenseId: doc.expenseId, version: doc.version, correctedSupplyAmount: 12_000_000 }));
     expect(error).toBeInstanceOf(ForbiddenError);
-    expect(await docRow(doc.expenseId)).toMatchObject({ version: doc.version, evidenceAmount: 12_400_000 });
+    expect(await docRow(doc.expenseId)).toMatchObject({ version: doc.version, supplyAmountKrw: 12_400_000 });
     expect(await reviewOf(doc.expenseId)).toBeNull();
 
     const result = await confirmEvidence(blind, { expenseId: doc.expenseId, version: doc.version });
     expect(result.evidenceStatus).toBe("확인됨");
-    expect((await docRow(doc.expenseId)).evidenceAmount).toBe(12_400_000);
+    expect((await docRow(doc.expenseId)).supplyAmountKrw).toBe(12_400_000);
   });
 
   it("version 불일치 → 「거부 — 문서 화면 동시성」 · 결재 통과 전 문서 → 거부", async () => {
@@ -295,7 +310,7 @@ describe("증빙 확인 — 금액 고쳐 확인 · F2 · 거부 (06-06 Task 3)"
     const payer = await makePayer();
     for (const corrected of [undefined, 12_000_000]) {
       const doc = await withEvidenceAmount(await approvedExpenseWithEvidence(await setupExpenseProject()), 12_400_000);
-      const result = await confirmEvidence(payer, { expenseId: doc.expenseId, version: doc.version, ...(corrected === undefined ? {} : { correctedAmountKrw: corrected }) });
+      const result = await confirmEvidence(payer, { expenseId: doc.expenseId, version: doc.version, ...(corrected === undefined ? {} : { correctedSupplyAmount: corrected }) });
       expect(result.version).toBe((await docRow(doc.expenseId)).version);
       const preview = await previewPayable(payer, { expenseId: doc.expenseId, payDate: seoulToday() });
       const payableKrw = preview.payableKrw ?? 0;
@@ -433,23 +448,30 @@ async function approvedInstallment(fx: ExpenseFixture, lineId: string, supplyKrw
   return expenseId;
 }
 
-describe("증빙 금액 초과(Q-F 표시만) · 부가세 포함 금액(EA-1) (06-06 Task 3)", () => {
-  it("초과 증빙 금액도 확인된다(Q-F 표시만) — 승인액 12,000,000 · 실행가 12,250,000에 12,400,000 → 확인됨 · 한 줄 · 지급도 막히지 않는다", async () => {
+describe("공급가액 고침 상한(06.5 D-6520 — 제출 상한과 같은 판정 · 문구) · Q-F 계보 (06-06 Task 3)", () => {
+  it("남은 실행가를 넘는 고침 → SupplyCorrectionCapError `남은 실행가 12,250,000 넘음 · 공급가액 고치기` · 문서 · 확인 기록 · version 그대로, 액션은 고침 칸 오류 · 12,250,000은 확인됨", async () => {
     const payer = await makePayer();
     const fx = await setupExpenseProject();
     const doc = await approvedExpenseWithEvidence(fx);
     await setSupply(doc.expenseId, 12_000_000);
     await setExecution(fx.lines.withVendor, 12_250_000);
 
-    const result = await confirmEvidence(payer, { expenseId: doc.expenseId, version: doc.version, correctedAmountKrw: 12_400_000 });
+    const error = await errorOf(confirmEvidence(payer, { expenseId: doc.expenseId, version: doc.version, correctedSupplyAmount: 12_400_000 }));
+    expect(error).toBeInstanceOf(SupplyCorrectionCapError);
+    expect(error.message).toBe("남은 실행가 12,250,000 넘음 · 공급가액 고치기");
+    expect(await docRow(doc.expenseId)).toMatchObject({ supplyAmountKrw: 12_000_000, version: doc.version });
+    expect(await reviewOf(doc.expenseId)).toBeNull();
+
+    session.viewer = payer;
+    const viaAction = await confirmEvidenceAction({ expenseId: doc.expenseId, version: doc.version, correctedSupplyAmount: 12_400_000 });
+    expect(viaAction?.serverError).toBeUndefined();
+    expect(viaAction?.validationErrors).toMatchObject({ correctedSupplyAmount: { _errors: ["남은 실행가 12,250,000 넘음 · 공급가액 고치기"] } });
+    const zero = await confirmEvidenceAction({ expenseId: doc.expenseId, version: doc.version, correctedSupplyAmount: 0 });
+    expect(zero?.validationErrors).toMatchObject({ correctedSupplyAmount: { _errors: ["공급가액이 0 · 0보다 크게"] } });
+
+    const result = await confirmEvidence(payer, { expenseId: doc.expenseId, version: doc.version, correctedSupplyAmount: 12_250_000 });
     expect(result.evidenceStatus).toBe("확인됨");
-    expect((await docRow(doc.expenseId)).evidenceAmount).toBe(12_400_000);
-    const view = await getPaymentView(payer, doc.expenseId);
-    expect(view?.evidenceOverrun).toBe("승인액보다 +400,000 · 실행가 초과 150,000");
-    expect(view?.row).toMatchObject({ row: "P4", primary: "pay", blockReason: null });
-    const preview = await previewPayable(payer, { expenseId: doc.expenseId, payDate: seoulToday() });
-    const paid = await completeExpensePayment(payer, { expenseId: doc.expenseId, expectedPayableKrw: preview.payableKrw ?? 0, version: result.version });
-    expect(paid.version).toBe(result.version + 1);
+    expect((await docRow(doc.expenseId)).supplyAmountKrw).toBe(12_250_000);
   });
 
   it("Q-F 계보 — 앞 차수 줄의 문서 · 카드 사용도 남은 실행가에서 빠진다", async () => {
@@ -486,21 +508,142 @@ describe("증빙 금액 초과(Q-F 표시만) · 부가세 포함 금액(EA-1) (
     await db.insert(corpCardUsages).values([usage(300_000, false), usage(1_000_000, true)]);
     expect(await loadEvidenceOverrun(payer, await expenseOf(docB), 8_100_000)).toBe("승인액보다 +500,000 · 실행가 초과 400,000");
   });
+});
 
-  it("부가세 포함 금액으로 고쳐 확인 → 거부(EA-1) — 기록 · 금액 · version 그대로, 13,200,001은 확인됨", async () => {
+async function approvedTeamExpense(fx: ExpenseFixture, supply: { currency: "KRW" | "USD"; amount: number; fxRate: number }): Promise<{ expenseId: string; version: number }> {
+  const vendor = await insertVendor(SYSTEM_VIEWER, { name: "회식집", normalizedName: `회식집-${randomUUID()}`, defaultEvidenceType: "tax_invoice" });
+  const { expenseId } = await createTeamExpenseDraft(fx.lead, { idempotencyKey: randomUUID(), fields: { teamExpenseKind: "team_overhead", usageDate: "2026-09-26", content: "팀 회식" } });
+  const payment = (await listExpenseFormOptions(fx.lead)).payment[0]?.value ?? null;
+  await saveExpenseDraft(fx.lead, {
+    expenseId,
+    expectedVersion: (await docRow(expenseId)).version,
+    fields: { vendorId: vendor.id, evidenceType: "tax_invoice", paymentMethod: payment, supply },
+  });
+  const submitted = await submitReadyDraft(fx.lead, expenseId);
+  if (submitted.kind !== "submitted") throw new Error("제출 안 됨");
+  const first = await approveDocument(fx.lead, { instanceId: submitted.instanceId, expectedVersion: submitted.version });
+  const final = await approveDocument(fx.ceo, { instanceId: submitted.instanceId, expectedVersion: first.version });
+  if (final.status !== "approved") throw new Error(`결재 통과 안 됨: ${final.status}`);
+  return { expenseId, version: (await docRow(expenseId)).version };
+}
+
+describe("공급가액 고침 — 팀 비용 · 외화 (06.5 D-6520)", () => {
+  it("견적 줄 없는 팀 비용 문서 → 상한 없이 고친 값 저장", async () => {
+    const payer = await makePayer();
+    const team = await approvedTeamExpense(await setupExpenseProject(), { currency: "KRW", amount: 440_000, fxRate: 1 });
+
+    const result = await confirmEvidence(payer, { expenseId: team.expenseId, version: team.version, correctedSupplyAmount: 50_000_000 });
+    expect(result.evidenceStatus).toBe("확인됨");
+    expect(await docRow(team.expenseId)).toMatchObject({ supplyAmountKrw: 50_000_000, version: team.version + 1 });
+    expect(await reviewOf(team.expenseId)).toMatchObject({ amountBeforeKrw: 440_000, amountAfterKrw: 50_000_000 });
+  });
+
+  it("외화 문서 고침 → 문서 통화 금액만 바뀌고 환율 그대로 · 원화는 moneyToColumns 결과", async () => {
+    const payer = await makePayer();
+    const team = await approvedTeamExpense(await setupExpenseProject(), { currency: "USD", amount: 1000, fxRate: 1350 });
+    const expected = moneyToColumns({ currency: "USD", amount: 950.5, fxRate: 1350 });
+
+    await confirmEvidence(payer, { expenseId: team.expenseId, version: team.version, correctedSupplyAmount: 950.5 });
+    expect(await docRow(team.expenseId)).toMatchObject({
+      supplyCurrency: "USD",
+      supplyForeignAmount: "950.50",
+      supplyFxRate: "1350.0000",
+      supplyAmountKrw: expected.amountKrw,
+    });
+    expect(await reviewOf(team.expenseId)).toMatchObject({ amountBeforeKrw: 1_350_000, amountAfterKrw: expected.amountKrw });
+  });
+});
+
+async function draftInstallment(fx: ExpenseFixture, lineId: string, supplyKrw: number): Promise<string> {
+  const created = await createExpenseFromLines(fx.pm, { lineIds: [lineId] });
+  const expenseId = created.created[0]?.expenseId;
+  if (!expenseId) throw new Error(`작성 중 문서 없음: ${JSON.stringify(created.blocked)}`);
+  await saveExpenseDraft(fx.pm, {
+    expenseId,
+    expectedVersion: (await docRow(expenseId)).version,
+    fields: { installment: true, supply: { currency: "KRW", amount: supplyKrw, fxRate: 1 } },
+  });
+  return expenseId;
+}
+
+async function chainSupplyKrw(lineId: string): Promise<number> {
+  const [row] = await db
+    .select({ total: sql<number>`coalesce(sum(${expenses.supplyAmountKrw}), 0)::bigint` })
+    .from(expenses)
+    .where(and(eq(expenses.quoteLineId, lineId), sql`${expenses.number} IS NOT NULL`));
+  return Number(row?.total ?? 0);
+}
+
+// P2-C2 — 공급가 고침은 제출과 같은 잠금 순서(프로젝트 행 → 견적 줄 → 문서 행)로 잠근 뒤 같은 tx에서 남은 실행가를 판정한다.
+// 회차 A(결재 통과 · 지급 전) 4,000,000 · 회차 B(작성 중) 5,000,000 · 줄 실행가 9,001,000 — A를 4,002,000으로 고치는 확인과 B 제출이 겨룬다.
+type Hold = { locked: Deferred<void>; release: Deferred<void> };
+
+describe("공급가액 고침 ↔ 같은 줄 회차 제출 동시성 (06.5 D-6520 · P2-C2)", () => {
+  async function setup() {
     const payer = await makePayer();
     const fx = await setupExpenseProject();
-    const doc = await withEvidenceAmount(await approvedExpenseWithEvidence(fx), 12_000_000);
-    await setSupply(doc.expenseId, 12_000_000);
+    const docA = await approvedInstallment(fx, fx.lines.split, 4_000_000);
+    const docB = await draftInstallment(fx, fx.lines.split, 5_000_000);
+    await setExecution(fx.lines.split, 9_001_000);
+    return { payer, fx, docA, docB, versionA: (await docRow(docA)).version };
+  }
 
-    const error = await errorOf(confirmEvidence(payer, { expenseId: doc.expenseId, version: doc.version, correctedAmountKrw: 13_200_000 }));
-    expect(error.message).toBe("부가세 포함 금액 · 공급가로 입력");
-    expect(await reviewOf(doc.expenseId)).toBeNull();
-    const row = await docRow(doc.expenseId);
-    expect(row.evidenceAmount).toBe(12_000_000);
-    expect(row.version).toBe(doc.version);
+  async function race(first: () => Promise<unknown>, second: () => Promise<unknown>, hold: Hold) {
+    const a = first();
+    const reachedLock = await Promise.race([hold.locked.promise.then(() => true), a.then(() => false, () => false)]);
+    expect(reachedLock).toBe(true);
+    const b = second();
+    try {
+      await waitForLockWaiter(pool);
+    } finally {
+      hold.release.resolve();
+    }
+    return Promise.allSettled([a, b]);
+  }
 
-    const result = await confirmEvidence(payer, { expenseId: doc.expenseId, version: doc.version, correctedAmountKrw: 13_200_001 });
-    expect(result.evidenceStatus).toBe("확인됨");
-  });
+  function holdAt(hold: Hold) {
+    return async () => {
+      hold.locked.resolve();
+      await hold.release.promise;
+    };
+  }
+
+  it("고침이 먼저 잠그면 B 제출이 `남은 실행가 4,999,000 넘음 · 공급가액 고치기`로 막힌다 — 하나만 통과 · 사슬 합 ≤ 실행가 · 교착 없음", async () => {
+    const { payer, fx, docA, docB, versionA } = await setup();
+    const hold: Hold = { locked: deferred(), release: deferred() };
+
+    const [correction, submit] = await race(
+      () => confirmEvidence(payer, { expenseId: docA, version: versionA, correctedSupplyAmount: 4_002_000 }, { afterLock: holdAt(hold) }),
+      () => submitReadyDraft(fx.pm, docB),
+      hold,
+    );
+    expect(correction?.status).toBe("fulfilled");
+    expect(submit?.status).toBe("rejected");
+    if (submit?.status === "rejected") {
+      expect(submit.reason).toBeInstanceOf(ExpenseFieldError);
+      expect((submit.reason as Error).message).toBe("남은 실행가 4,999,000 넘음 · 공급가액 고치기");
+    }
+    expect((await docRow(docA)).supplyAmountKrw).toBe(4_002_000);
+    expect(await chainSupplyKrw(fx.lines.split)).toBeLessThanOrEqual(9_001_000);
+  }, 30_000);
+
+  it("B 제출이 먼저 잠그면 고침이 SupplyCorrectionCapError `남은 실행가 4,001,000 넘음 · 공급가액 고치기` — 하나만 통과 · 사슬 합 ≤ 실행가 · 교착 없음", async () => {
+    const { payer, fx, docA, docB, versionA } = await setup();
+    const hold: Hold = { locked: deferred(), release: deferred() };
+
+    const [submit, correction] = await race(
+      () => submitReadyDraft(fx.pm, docB, { afterLock: holdAt(hold) }),
+      () => confirmEvidence(payer, { expenseId: docA, version: versionA, correctedSupplyAmount: 4_002_000 }),
+      hold,
+    );
+    expect(submit?.status).toBe("fulfilled");
+    expect(correction?.status).toBe("rejected");
+    if (correction?.status === "rejected") {
+      expect(correction.reason).toBeInstanceOf(SupplyCorrectionCapError);
+      expect((correction.reason as Error).message).toBe("남은 실행가 4,001,000 넘음 · 공급가액 고치기");
+    }
+    expect(await docRow(docA)).toMatchObject({ supplyAmountKrw: 4_000_000, version: versionA });
+    expect(await reviewOf(docA)).toBeNull();
+    expect(await chainSupplyKrw(fx.lines.split)).toBeLessThanOrEqual(9_001_000);
+  }, 30_000);
 });

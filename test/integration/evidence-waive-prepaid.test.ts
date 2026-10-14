@@ -11,7 +11,7 @@ import { DATE_FORMAT_ERROR } from "@/domain/expenses/draft-fields";
 import { PREPAID_REASON_REQUIRED } from "@/domain/expenses/gate";
 import { cancelExpensePayment, completeExpensePayment, previewPayable } from "@/domain/payments";
 import { GateBlockedError } from "@/domain/rules/gate";
-import { confirmEvidence, EvidenceReviewConflictError, EVIDENCE_AMOUNT_PAID_LOCKED, EVIDENCE_AMOUNT_PAID_MISMATCH, waiveEvidence } from "@/domain/evidence-reviews";
+import { confirmEvidence, EvidenceReviewConflictError, SUPPLY_CORRECTION_PAID_LOCKED, waiveEvidence } from "@/domain/evidence-reviews";
 import { ACTION_LOG_OPTIONAL_TYPES } from "@/domain/settings/keys";
 import { upsertSimpleValue } from "@/repositories/settings";
 import { ForbiddenError } from "@/domain/permissions/can";
@@ -322,7 +322,7 @@ describe("새 팀 비용 첫 저장 — EA-1 · 선결제 사유", () => {
 
 // 사용자 결정 10/7 09:08(06-06 검토 I-2): 지급 완료된 지출결의는 경영관리도 증빙 금액을 고칠 수 없다 — 잠금 뒤 판정(260907 expenses.ts:5509 「이미 지급이 나간 건」).
 // 기안자 경로(saveExpenseDraft)는 O-4로 이미 편집 가능 상태에서만 열려 지급 완료 문서에는 닿지 않는다.
-describe("지급 완료 문서의 증빙 금액 고침 막힘(I-2)", () => {
+describe("지급 완료 문서의 공급가액 고침 막힘(I-2 · 06.5 D-6520 카드 ②)", () => {
   async function paidConfirmedDoc(amountKrw: number) {
     const fx = await setupExpenseProject();
     const doc = await approvedExpenseWithEvidence(fx);
@@ -339,16 +339,16 @@ describe("지급 완료 문서의 증빙 금액 고침 막힘(I-2)", () => {
     return (await db.select({ entityId: actionLog.entityId }).from(actionLog).where(and(eq(actionLog.entityId, expenseId), eq(actionLog.actionType, actionType)))).length;
   }
 
-  it("지급 완료 뒤 고쳐 확인 → 거부 · 증빙 금액 · 확인 기록 · version · 행동 로그 그대로", async () => {
+  it("지급 완료 뒤 공급가액 고쳐 확인 → LOCKED 거부 · 문서 · 확인 기록 · version · 행동 로그 그대로", async () => {
     const { manager, expenseId, version } = await paidConfirmedDoc(12_400_000);
     const rowBefore = await expenseRow(expenseId);
     const [reviewBefore] = await db.select().from(expenseEvidenceReviews).where(eq(expenseEvidenceReviews.expenseId, expenseId));
     const logsBefore = await logCount(expenseId, "evidence_amount_change");
 
-    const failure = await confirmEvidence(manager, { expenseId, version, correctedAmountKrw: 12_000_000 }).catch((error: unknown) => error);
+    const failure = await confirmEvidence(manager, { expenseId, version, correctedSupplyAmount: 12_000_000 }).catch((error: unknown) => error);
 
     expect(failure).toBeInstanceOf(EvidenceReviewConflictError);
-    expect((failure as Error).message).toBe(EVIDENCE_AMOUNT_PAID_LOCKED);
+    expect((failure as Error).message).toBe(SUPPLY_CORRECTION_PAID_LOCKED);
     expect(await expenseRow(expenseId)).toEqual(rowBefore);
     expect((await db.select().from(expenseEvidenceReviews).where(eq(expenseEvidenceReviews.expenseId, expenseId)))[0]).toEqual(reviewBefore);
     expect(await logCount(expenseId, "evidence_amount_change")).toBe(logsBefore);
@@ -358,10 +358,10 @@ describe("지급 완료 문서의 증빙 금액 고침 막힘(I-2)", () => {
     const { manager, expenseId, version } = await paidConfirmedDoc(12_400_000);
     const result = await confirmEvidence(manager, { expenseId, version });
     expect(result.evidenceStatus).toBe("확인됨");
-    expect((await expenseRow(expenseId)).evidenceAmount).toBe(12_400_000);
+    expect(await expenseRow(expenseId)).toMatchObject({ evidenceAmount: 12_400_000, supplyAmountKrw: 12_400_000 });
   });
 
-  // 검토 I-1(추천안 a — 사용자 질문 후보): 선결제 지급 뒤 들어온 증빙의 빈 금액은 지급 기록의 공급가와 같은 값만 받는다.
+  // 06.5 D-6520: 선결제 지급 뒤 들어온 증빙 — 빈 증빙 금액이어도 고침 없이 확인되고(지급액이 공급가에서 나왔다), 공급가를 바꾸는 고침만 막힌다.
   async function paidPrepaidWithLateEvidence() {
     const fx = await setupExpenseProject();
     const { expenseId, instanceId, version } = await submitPrepaid(fx);
@@ -378,20 +378,23 @@ describe("지급 완료 문서의 증빙 금액 고침 막힘(I-2)", () => {
     return { manager, expenseId, version: row.version, grossSupplyKrw: payment.grossSupplyKrw };
   }
 
-  it("지급 뒤 빈 증빙 금액을 지급 기록의 공급가와 같은 값으로 채우는 확인은 통과한다", async () => {
+  it("선결제 지급 뒤 빈 증빙 금액 · 고침 없는 확인 → 확인됨 · 공급가 그대로(지급 공급가와 같다) · 같은 값 고침도 같음으로 통과", async () => {
     const { manager, expenseId, version, grossSupplyKrw } = await paidPrepaidWithLateEvidence();
-    const result = await confirmEvidence(manager, { expenseId, version, correctedAmountKrw: grossSupplyKrw });
+    const result = await confirmEvidence(manager, { expenseId, version });
     expect(result.evidenceStatus).toBe("확인됨");
-    expect((await expenseRow(expenseId)).evidenceAmount).toBe(grossSupplyKrw);
+    expect(await expenseRow(expenseId)).toMatchObject({ evidenceAmount: null, supplyAmountKrw: grossSupplyKrw });
+    const again = await confirmEvidence(manager, { expenseId, version: result.version, correctedSupplyAmount: grossSupplyKrw });
+    expect(again.evidenceStatus).toBe("확인됨");
+    expect(await logCount(expenseId, "evidence_amount_change")).toBe(0);
   });
 
-  it("지급 뒤 빈 증빙 금액을 지급 공급가와 다른 값으로 채우면 거부 · 증빙 금액 · version · 로그 그대로", async () => {
+  it("선결제 지급 뒤 공급가액을 다른 값으로 고치면 LOCKED 거부 · 문서 · version · 로그 그대로", async () => {
     const { manager, expenseId, version, grossSupplyKrw } = await paidPrepaidWithLateEvidence();
     const rowBefore = await expenseRow(expenseId);
     const logsBefore = await logCount(expenseId, "evidence_amount_change");
-    const failure = await confirmEvidence(manager, { expenseId, version, correctedAmountKrw: grossSupplyKrw - 1 }).catch((error: unknown) => error);
+    const failure = await confirmEvidence(manager, { expenseId, version, correctedSupplyAmount: grossSupplyKrw - 1 }).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(EvidenceReviewConflictError);
-    expect((failure as Error).message).toBe(EVIDENCE_AMOUNT_PAID_MISMATCH);
+    expect((failure as Error).message).toBe(SUPPLY_CORRECTION_PAID_LOCKED);
     expect(await expenseRow(expenseId)).toEqual(rowBefore);
     expect(await logCount(expenseId, "evidence_amount_change")).toBe(logsBefore);
   });
@@ -399,9 +402,9 @@ describe("지급 완료 문서의 증빙 금액 고침 막힘(I-2)", () => {
   it("지급을 취소하면 다시 고칠 수 있다(지급 완료 상태에서만 막는다)", async () => {
     const { manager, expenseId, version } = await paidConfirmedDoc(12_400_000);
     const cancelled = await cancelExpensePayment(manager, { expenseId, reason: "이체 오류", version });
-    const result = await confirmEvidence(manager, { expenseId, version: cancelled.version, correctedAmountKrw: 12_000_000 });
+    const result = await confirmEvidence(manager, { expenseId, version: cancelled.version, correctedSupplyAmount: 12_000_000 });
     expect(result.evidenceStatus).toBe("확인됨");
-    expect((await expenseRow(expenseId)).evidenceAmount).toBe(12_000_000);
+    expect((await expenseRow(expenseId)).supplyAmountKrw).toBe(12_000_000);
   });
 });
 
@@ -592,7 +595,7 @@ describe("증빙 면제 (06-10)", () => {
 
 // PR #183 /review B-1 — 사용자 결정(10/7 11:04 「지급액과 같을 때만」): 지급 뒤 빈 증빙 금액은 규칙 종류마다 지급 때의 세전 금액(증빙 금액과
 // 같은 기준)과 같을 때만 받는다. 부가세 · 원천징수 · 세금 없음 세 갈래 — 선결제 지급(공급가 12,400,000 기준) → 증빙 첨부 → 확인.
-describe("[183 /review B-1] 선결제 지급 뒤 빈 증빙 금액 확인 — 규칙 종류마다", () => {
+describe("[183 /review B-1] 선결제 지급 뒤 빈 증빙 금액 확인 — 규칙 종류마다(06.5 D-6520)", () => {
   async function paidPrepaid(evidenceType: string) {
     const fx = await setupExpenseProject();
     const expenseId = await lineDraft(fx);
@@ -614,24 +617,24 @@ describe("[183 /review B-1] 선결제 지급 뒤 빈 증빙 금액 확인 — �
     ["부가세(세금계산서)", "tax_invoice"],
     ["원천징수(사업소득 3.3%)", "business_income"],
     ["세금 없음(계산서)", "invoice"],
-  ])("%s — 지급 때 세전 금액과 다른 값은 거부 · 같은 값은 확인됨", async (_label, evidenceType) => {
+  ])("%s — 공급가를 바꾸는 고침은 LOCKED · 고침 없는 확인은 확인됨 · 공급가 그대로", async (_label, evidenceType) => {
     const { manager, expenseId, version, supplyKrw } = await paidPrepaid(evidenceType);
     expect(supplyKrw).toBe(12_400_000);
-    const mismatch = await confirmEvidence(manager, { expenseId, version, correctedAmountKrw: supplyKrw - 1 }).catch((error: unknown) => error);
-    expect(mismatch).toBeInstanceOf(EvidenceReviewConflictError);
-    expect((mismatch as Error).message).toBe(EVIDENCE_AMOUNT_PAID_MISMATCH);
-    const result = await confirmEvidence(manager, { expenseId, version, correctedAmountKrw: supplyKrw });
+    const locked = await confirmEvidence(manager, { expenseId, version, correctedSupplyAmount: supplyKrw - 1 }).catch((error: unknown) => error);
+    expect(locked).toBeInstanceOf(EvidenceReviewConflictError);
+    expect((locked as Error).message).toBe(SUPPLY_CORRECTION_PAID_LOCKED);
+    const result = await confirmEvidence(manager, { expenseId, version });
     expect(result.evidenceStatus).toBe("확인됨");
-    expect((await expenseRow(expenseId)).evidenceAmount).toBe(supplyKrw);
+    expect(await expenseRow(expenseId)).toMatchObject({ evidenceAmount: null, supplyAmountKrw: supplyKrw });
   });
 
-  it("사전 조회 뒤 풀 밖 연결이 지급을 취소하고 다른 지급일로 다시 지급 → 낡은 판정 바탕 · 동시성 거부 · 증빙 금액 그대로", async () => {
+  it("사전 조회 뒤 풀 밖 연결이 지급을 취소하고 다른 지급일로 다시 지급 → 잠금 뒤 판정이 살아 있는 지급을 보고 고침 LOCKED · 공급가 그대로", async () => {
     const { manager, expenseId, version, supplyKrw } = await paidPrepaid("business_income");
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
       await client.query("SELECT id FROM expenses WHERE id = $1 FOR UPDATE", [expenseId]);
-      const confirming = confirmEvidence(manager, { expenseId, version, correctedAmountKrw: supplyKrw }).catch((error: unknown) => error);
+      const confirming = confirmEvidence(manager, { expenseId, version, correctedSupplyAmount: supplyKrw - 1 }).catch((error: unknown) => error);
       await waitForLockWaiter(pool);
       const { rows } = await client.query<{ id: string; payable_krw: string; payment_method: string; processed_by: string }>(
         "UPDATE expense_payments SET cancelled_at = now(), cancelled_by = processed_by, cancel_reason = '재지급' WHERE expense_id = $1 AND cancelled_at IS NULL RETURNING id, payable_krw, payment_method, processed_by",
@@ -646,8 +649,8 @@ describe("[183 /review B-1] 선결제 지급 뒤 빈 증빙 금액 확인 — �
       await client.query("COMMIT");
       const failure = await confirming;
       expect(failure).toBeInstanceOf(EvidenceReviewConflictError);
-      expect((failure as Error).message).toMatch(/^다른 사람이 .+에 바꿈 · 새로 고침$/);
-      expect((await expenseRow(expenseId)).evidenceAmount).toBeNull();
+      expect((failure as Error).message).toBe(SUPPLY_CORRECTION_PAID_LOCKED);
+      expect((await expenseRow(expenseId)).supplyAmountKrw).toBe(supplyKrw);
     } finally {
       client.release();
     }

@@ -194,6 +194,11 @@ describe("resolveExpenseActionRow", () => {
     expect(resolveExpenseActionRow(base, other)).toEqual({ row: "P4", primary: null, blockReason: null, secondary: null, tertiary: null, ownerNote: "지급은 경영관리" });
     expect(resolveExpenseActionRow({ ...base, paid: true }, other)).toEqual({ row: "P6", primary: null, blockReason: null, secondary: null, tertiary: null, ownerNote: null });
   });
+  // 06.5 D-6520 · UI-SPEC V8: `바꾸기`(공급가액)는 지급 전 · 확인 전(P2)에만 — 지급 뒤(P5)는 3차 없음(잠김 줄).
+  it("P2(지급 전 · 확인 전 · 지급 권한자) → 3차 `change` · P5(지급 뒤 · 확인 전) → 1차 confirm · 3차 없음", () => {
+    expect(resolveExpenseActionRow({ ...base, confirmation: null }, payer)).toMatchObject({ row: "P2", primary: "confirm", tertiary: "change" });
+    expect(resolveExpenseActionRow({ ...base, paid: true, confirmation: null }, payer)).toMatchObject({ row: "P5", primary: "confirm", tertiary: null });
+  });
 });
 
 // Task 2 — 세율 변경 전후 · 원천징수 두 코드 · 조작 필드 무시. 세율은 이력 설정 대역 두 값(2027-01-01부터 12%)을 가짜 읽기로 준다.

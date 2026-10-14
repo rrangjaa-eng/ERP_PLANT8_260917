@@ -2,16 +2,18 @@ import { randomUUID } from "node:crypto";
 import { test, expect } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { expenseEvidenceReviews, expenses, projects } from "@/db/schema";
+import { expenseEvidenceReviews, expensePayments, expenses, projects } from "@/db/schema";
 import { approveDocument, getApprovalView } from "@/domain/approvals";
 import { confirmEvidence } from "@/domain/evidence-reviews";
-import { EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
+import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND, saveExpenseDraft, submitExpense } from "@/domain/expenses";
+import { completeExpensePayment, previewPayable } from "@/domain/payments";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { createOrgUnit, createTeam } from "@/domain/org";
 import { seoulToday } from "@/lib/dates";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
 import { setupExpenseE2E, submitLineExpense, uniqueReceipt, type ExpenseE2E, archiveTempRoles, insertTempRole } from "./expense-fixture";
+import { attachEvidence } from "../integration/fixtures/expenses";
 
 // 06-11(EVID-02 · EVID-04 · C4 · B-1 · U-4) — 증빙 수명 주기: 승인 뒤 기안자가 증빙을 하나 더 붙이면 확인된 문서가 `확인 전`으로 돌아오고,
 // 완료 프로젝트의 승인 문서에는 기안자에게 「하나 더」 대신 잠김 한 줄이 선다. 문서는 05 폼 · 04.1 승인 · 06-06 확인 도메인 함수로 만든다.
@@ -52,7 +54,7 @@ async function versionOf(expenseId: string): Promise<number> {
 }
 
 test.describe("증빙 수명 주기 (06-11)", () => {
-  test("경영관리가 확인한 문서에 승인 뒤 기안자가 파일을 하나 더 붙이면 확인 전으로 돌아오고 1차 `증빙 확인`이 선다", async ({ browser, baseURL }) => {
+  test("경영관리가 확인한 문서에 승인 뒤 기안자가 파일을 하나 더 붙이면 확인 전으로 돌아오고 1차 `공급가액과 같음`이 선다", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const expenseId = await submitLineExpense(browser, baseURL, fx, "tracer");
     await approveAll(fx, expenseId);
@@ -76,10 +78,10 @@ test.describe("증빙 수명 주기 (06-11)", () => {
     await expect(drafterPage.locator('[data-ui="attachments"] li').getByText(/^\d+KB · \d{2}-\d{2}$/)).toHaveCount(2, { timeout: 20_000 });
     await drafterPage.context().close();
 
-    // 경영관리 세션 — 새로 고침 뒤 확인 줄이 `확인 전`, 1차 `증빙 확인`.
+    // 경영관리 세션 — 새로 고침 뒤 확인 줄이 `확인 전`, 1차 `공급가액과 같음`(06.5 D-6520 — 기존 `증빙 확인` 자리).
     await payerPage.reload();
     await expect(payerPage.getByTestId("evidence-review").getByText("확인 전", { exact: true })).toBeVisible();
-    await expect(payerPage.getByRole("button", { name: /^증빙 확인/ })).toBeVisible();
+    await expect(payerPage.getByRole("button", { name: /^공급가액과 같음/ })).toBeVisible();
     expect(await db.select().from(expenseEvidenceReviews).where(eq(expenseEvidenceReviews.expenseId, expenseId))).toHaveLength(0);
     await payerPage.context().close();
   });
@@ -106,6 +108,135 @@ test.describe("증빙 수명 주기 (06-11)", () => {
     await expect(managerArea.getByText("하나 더", { exact: false }).first()).toBeVisible();
     await expect(managerArea.getByText(EVIDENCE_COMPLETED_PROJECT_LINE, { exact: true })).toHaveCount(0);
     await managerPage.context().close();
+  });
+});
+
+// 06.5 D-6520(UI-SPEC V8 개정 4판) — 증빙 확인의 금액은 공급가액 하나: `공급가액과 같음`으로 확정, 지급 전에만 남은 실행가 안에서 고친다,
+// 지급 뒤(P5)에는 `바꾸기` 대신 잠김 줄. 줄 실행가 = 공급가 = 12,400,000(픽스처)이라 남은 실행가는 12,400,000이다.
+async function prepaidPaidWithLateEvidence(fx: ExpenseE2E, payer: Person): Promise<string> {
+  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.hold.id] });
+  const expenseId = created.created[0]?.expenseId;
+  if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
+  await saveExpenseDraft(fx.pm.viewer, { expenseId, expectedVersion: await versionOf(expenseId), fields: { prepaid: true, prepaidReason: "행사장 선입금 요구" } });
+  const submitted = await submitExpense(fx.pm.viewer, { expenseId, expectedVersion: await versionOf(expenseId) });
+  if (submitted.kind !== "submitted") throw new Error("제출 안 됨");
+  await approveAll(fx, expenseId);
+  const preview = await previewPayable(payer.viewer, { expenseId, payDate: seoulToday() });
+  if (preview.payableKrw === undefined || preview.payableKrw === null) throw new Error("지급 총액 없음");
+  await completeExpensePayment(payer.viewer, { expenseId, expectedPayableKrw: preview.payableKrw, version: await versionOf(expenseId) });
+  await attachEvidence(fx.pm.viewer, expenseId);
+  return expenseId;
+}
+
+test.describe("S4 증빙 확인 = 공급가액 하나 (06.5 D-6520 · UI-SPEC V8)", () => {
+  test("P2 — `공급가액` 행 · 1차 `공급가액과 같음` · `공급가액 바꾸기` → 고침 칸 · 다를 때만 `공급가액 고쳐 확인` + 힌트 · 빈 칸 이유 · 상한 오류는 칸에 · 고쳐 확인 → 확인됨 전 → 후", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const expenseId = await submitLineExpense(browser, baseURL, fx, "tracer");
+    await approveAll(fx, expenseId);
+    const manager = await makeManagerE2E();
+    const page = await loginPage(browser, baseURL, manager);
+    await page.goto(`/expenses/${expenseId}`);
+    const evidence = page.getByTestId("evidence-review");
+    const same = page.getByRole("button", { name: /^공급가액과 같음/ });
+    await waitForHydration(same);
+    await expect(evidence.getByText("공급가액", { exact: true })).toBeVisible();
+    await expect(page.getByText("증빙 금액")).toHaveCount(0);
+    const url = page.url();
+
+    // `바꾸기` → 고침 칸(값 = 지금 공급가액 · 포커스) — 같은 값이면 1차 글자 그대로 · 힌트 없음.
+    await page.getByRole("button", { name: "공급가액 바꾸기" }).click();
+    const field = page.locator("#corrected-supply");
+    await expect(field).toBeFocused();
+    await expect(field).toHaveValue("12,400,000");
+    await expect(same).toBeVisible();
+    await expect(page.locator("#corrected-supply-hint")).toHaveCount(0);
+
+    // 다른 값 → 1차 `공급가액 고쳐 확인` + 힌트.
+    await field.fill("12,000,000");
+    const corrected = page.getByRole("button", { name: /^공급가액 고쳐 확인/ });
+    await expect(corrected).toBeVisible();
+    await expect(page.locator("#corrected-supply-hint")).toHaveText("확인하면 12,400,000 → 12,000,000");
+
+    // 빈 칸 → 1차 비활성 + 이유(칸 오류로 되풀이하지 않는다).
+    await field.fill("");
+    await expect(same).toHaveAttribute("aria-disabled", "true");
+    await expect(same).toHaveAccessibleDescription("공급가액 비어 있음 · 공급가액 적기");
+    await expect(page.locator("#corrected-supply-error")).toHaveCount(0);
+
+    // 남은 실행가를 넘는 값 → 고침 칸 아래 상한 문구 · aria-invalid · 값 유지 · 포커스 · `새로 고침` 없음 · 화면 이동 없음.
+    await field.fill("12,500,000");
+    await corrected.click();
+    await expect(page.locator("#corrected-supply-error")).toHaveText("남은 실행가 12,400,000 넘음 · 공급가액 고치기");
+    await expect(field).toHaveAttribute("aria-invalid", "true");
+    await expect(field).toHaveValue("12,500,000");
+    await expect(field).toBeFocused();
+    await expect(page.getByRole("button", { name: "새로 고침" })).toHaveCount(0);
+    expect(page.url()).toBe(url);
+
+    // 남은 실행가 안 값 → 확인됨 + 2행 ` · 전 → 후`.
+    await field.fill("12,000,000");
+    await corrected.click();
+    await expect(evidence.getByText("확인됨", { exact: true })).toBeVisible();
+    await expect(page.getByTestId("evidence-review-line")).toContainText(" · 12,400,000 → 12,000,000");
+    await expect(page.locator("#corrected-supply")).toHaveCount(0);
+    const [row] = await db.select({ supply: expenses.supplyAmountKrw }).from(expenses).where(eq(expenses.id, expenseId));
+    expect(row?.supply).toBe(12_000_000);
+    await page.context().close();
+  });
+
+  test("P2 — 고침 없이 `공급가액과 같음` → 확인됨(2행에 화살표 없음)", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const expenseId = await submitLineExpense(browser, baseURL, fx, "retry");
+    await approveAll(fx, expenseId);
+    const manager = await makeManagerE2E();
+    const page = await loginPage(browser, baseURL, manager);
+    await page.goto(`/expenses/${expenseId}`);
+    const same = page.getByRole("button", { name: /^공급가액과 같음/ });
+    await waitForHydration(same);
+    await same.click();
+    await expect(page.getByTestId("evidence-review").getByText("확인됨", { exact: true })).toBeVisible();
+    await expect(page.getByTestId("evidence-review-line")).not.toContainText("→");
+    await page.context().close();
+  });
+
+  test("P5 — 지급 뒤 · 확인 전: `공급가액 바꾸기` 0 · 잠김 줄 · 1차 `공급가액과 같음`", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const manager = await makeManagerE2E();
+    const expenseId = await prepaidPaidWithLateEvidence(fx, manager);
+    const page = await loginPage(browser, baseURL, manager);
+    await page.goto(`/expenses/${expenseId}`);
+    const same = page.getByRole("button", { name: /^공급가액과 같음/ });
+    await waitForHydration(same);
+    await expect(page.getByRole("button", { name: "공급가액 바꾸기" })).toHaveCount(0);
+    await expect(page.getByText("지급 완료 문서 · 공급가액 못 바꿈 · 지급 취소 뒤 고치기", { exact: true })).toHaveCount(1);
+    await page.context().close();
+  });
+
+  test("LOCKED — 고침 칸을 연 사이 지급이 생기면 1차가 행동 줄 `지급 완료 문서 · 공급가액 못 바꿈 · 새로 고침` + `새로 고침` 하나", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const expenseId = await submitLineExpense(browser, baseURL, fx, "phone");
+    await approveAll(fx, expenseId);
+    const manager = await makeManagerE2E();
+    const page = await loginPage(browser, baseURL, manager);
+    await page.goto(`/expenses/${expenseId}`);
+    await waitForHydration(page.getByRole("button", { name: /^공급가액과 같음/ }));
+    await page.getByRole("button", { name: "공급가액 바꾸기" }).click();
+    await page.locator("#corrected-supply").fill("12,000,000");
+
+    // 다른 탭의 지급 완료를 문서 version을 건드리지 않는 지급 행 하나로 흉내 낸다(서버 잠금 뒤 판정이 살아 있는 지급을 보는지 — 화면 갈래 확인용).
+    await db.insert(expensePayments).values({
+      expenseId,
+      payDate: seoulToday(),
+      transferKrw: 13_640_000,
+      payableKrw: 13_640_000,
+      diffKrw: 0,
+      paymentMethod: "transfer",
+      processedBy: manager.viewer.id,
+    });
+    await page.getByRole("button", { name: /^공급가액 고쳐 확인/ }).click();
+    await expect(page.getByText("지급 완료 문서 · 공급가액 못 바꿈 · 새로 고침", { exact: false })).toBeVisible();
+    await expect(page.getByRole("button", { name: "새로 고침" })).toHaveCount(1);
+    await page.context().close();
   });
 });
 

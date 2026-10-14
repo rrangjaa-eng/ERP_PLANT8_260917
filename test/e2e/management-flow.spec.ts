@@ -118,16 +118,14 @@ async function runManagementFlow(browser: Browser, baseURL: string | undefined, 
   await rowOf(page, itemName).locator("a[data-row-link]").click();
   await expect(page).toHaveURL(new RegExp(`/expenses/${expenseId}(\\?|$)`));
 
-  // 증빙 확인 전에는 `지급 완료`가 서 있지 않다(EVID-02 · D-603 — 1차 자리는 `증빙 확인`).
-  const confirm = page.getByRole("button", { name: /^증빙 확인/ });
+  // 증빙 확인 전에는 `지급 완료`가 서 있지 않다(EVID-02 · D-603 — 1차 자리는 확인 · 06.5 D-6520 글자 `공급가액과 같음`).
+  const confirm = page.getByRole("button", { name: /^공급가액과 같음/ });
   await waitForHydration(confirm);
   const payButtons = page.getByRole("button", { name: /^지급 완료/ });
   expect(await payButtons.count()).toBeLessThanOrEqual(1);
   if ((await payButtons.count()) === 1) await expect(payButtons).toHaveAttribute("aria-disabled", "true");
 
-  // 증빙 금액이 비어 있으면 칸이 열려 있고 1차가 비활성이다 — 공급가액을 적어 확인한다(화면 조작).
-  const amountField = page.locator("#evidence-amount");
-  if ((await amountField.count()) > 0) await amountField.fill(String(doc.supply));
+  // 06.5 D-6520 — 금액은 공급가액 하나라 빈 증빙 금액 칸이 없다. 고침 없이 `공급가액과 같음`으로 확인한다(화면 조작).
   await expect(confirm).not.toHaveAttribute("aria-disabled", "true");
   await confirm.click();
   const review = page.getByTestId("evidence-review");

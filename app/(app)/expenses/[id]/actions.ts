@@ -2,10 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { returnValidationErrors } from "next-safe-action";
 import { authedActionClient } from "@/lib/actions/client";
 import { cancelExpensePayment, completeExpensePayment, previewPayable, saveScheduledPayDate } from "@/domain/payments";
-import { confirmEvidence, waiveEvidence } from "@/domain/evidence-reviews";
-import { EVIDENCE_AMOUNT_FRACTION, EVIDENCE_AMOUNT_NOT_NUMBER, EVIDENCE_AMOUNT_NOT_POSITIVE, TRANSFER_FRACTION, TRANSFER_NOT_NUMBER, TRANSFER_NOT_POSITIVE } from "@/domain/payments/action-row";
+import { confirmEvidence, SupplyCorrectionCapError, waiveEvidence } from "@/domain/evidence-reviews";
+import { TRANSFER_FRACTION, TRANSFER_NOT_NUMBER, TRANSFER_NOT_POSITIVE } from "@/domain/payments/action-row";
+import { SUPPLY_ZERO } from "@/domain/expenses";
+import { MoneyInputError } from "@/domain/money";
 import { DATE_FORMAT_ERROR, EXPENSE_TEXT_MAX } from "@/domain/expenses/draft-fields";
 import { isCalendarDate } from "@/lib/dates";
 import "./actions.registry";
@@ -75,23 +78,28 @@ export const cancelExpensePaymentAction = authedActionClient.schema(cancelPaymen
   return { version: result.version };
 });
 
-// 06-06(S4 · DR-4): 증빙 확인 — 금액을 고치면(correctedAmountKrw) 금액과 확인을 한 번에 저장한다(D-602). 응답은 도메인의
-// { version, evidenceStatus, actionRow } 그대로 — 06-15 · 06-17(S1) · 06-20(S3) 제자리 확인이 이 이름 · 경로로 import한다.
-// 「Error — 증빙 금액 칸」 — 정수 원 · 1 이상.
-const correctedAmountKrw = z.number({ error: EVIDENCE_AMOUNT_NOT_NUMBER }).int(EVIDENCE_AMOUNT_FRACTION).positive(EVIDENCE_AMOUNT_NOT_POSITIVE);
-
+// 06-06(S4 · DR-4): 증빙 확인 — 응답은 도메인의 { version, evidenceStatus, actionRow } 그대로 — 06-15 · 06-17(S1) · 06-20(S3) 제자리 확인이
+// 이 이름 · 경로로 import한다. 06.5 D-6520: 공급가액을 고치면(correctedSupplyAmount — 문서 통화) 공급가와 확인을 한 번에 저장한다.
+// 0은 기안자 공급가액 칸과 같은 문구, 상한 · 금액 형식 거절은 오류 종류로 가려 같은 칸 오류로 돌려준다(L-3 — 문구 비교 없음).
 const confirmEvidenceSchema = z.object({
   expenseId: z.string().uuid(),
   version: z.number().int().positive(),
-  correctedAmountKrw: correctedAmountKrw.optional(),
+  correctedSupplyAmount: z.number().positive(SUPPLY_ZERO).optional(),
   // 화면이 본 증빙 지문(getPaymentView evidenceStamp) — 응답 모양 불변.
   evidenceStamp: z.string().max(4000).optional(),
 });
 
 export const confirmEvidenceAction = authedActionClient.schema(confirmEvidenceSchema).action(async ({ parsedInput, ctx }) => {
-  const result = await confirmEvidence(ctx.viewer, parsedInput);
-  revalidatePath(`/expenses/${parsedInput.expenseId}`);
-  return result;
+  try {
+    const result = await confirmEvidence(ctx.viewer, parsedInput);
+    revalidatePath(`/expenses/${parsedInput.expenseId}`);
+    return result;
+  } catch (error) {
+    if (error instanceof SupplyCorrectionCapError || error instanceof MoneyInputError) {
+      returnValidationErrors(confirmEvidenceSchema, { correctedSupplyAmount: { _errors: [error.message] } });
+    }
+    throw error;
+  }
 });
 
 // 06-10(D-603 · D-611): 증빙 면제 — 사유 필수(서버가 trim 뒤 다시 거부). 응답은 증빙 확인과 같은 { version, evidenceStatus, actionRow }.

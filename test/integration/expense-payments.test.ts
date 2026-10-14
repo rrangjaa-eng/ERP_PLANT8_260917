@@ -666,7 +666,7 @@ describe("문서 보임 범위(CSO-1) — 지급 · 증빙 확인 서버 경로"
       await caught(cancelExpensePayment(outsider, { expenseId: doc.expenseId, reason: "잘못 지급", version: doc.version })),
       await caught(saveScheduledPayDate(outsider, { expenseId: doc.expenseId, scheduledPayDate: addDays(seoulToday(), 3), version: doc.version })),
       await caught(previewPayable(outsider, { expenseId: doc.expenseId, payDate: seoulToday() })),
-      await caught(confirmEvidence(outsider, { expenseId: doc.expenseId, version: doc.version, correctedAmountKrw: 1_000 })),
+      await caught(confirmEvidence(outsider, { expenseId: doc.expenseId, version: doc.version, correctedSupplyAmount: 1_000 })),
     ];
     for (const error of errors) {
       expect(error).toBeInstanceOf(UserFacingError);

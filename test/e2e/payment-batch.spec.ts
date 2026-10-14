@@ -76,8 +76,8 @@ async function approvedLine(fx: ExpenseE2E, lineId: string, state: "payable" | "
   const [doc] = await db.select({ version: expenses.version, supply: expenses.supplyAmountKrw }).from(expenses).where(eq(expenses.id, expenseId));
   if (!doc?.supply) throw new Error("문서 · 공급가 없음");
   const confirmer = confirmerOf ?? (await makeTeamPayer(fx));
-  // 빈 증빙 금액은 확인 때 공급가로 적는다(F2 — 빈 금액은 확인이 채우지 않는다).
-  await confirmEvidence(confirmer.viewer, { expenseId, version: doc.version, correctedAmountKrw: doc.supply });
+  // 06.5 D-6520: 확인의 금액은 공급가액 하나 — 빈 증빙 금액이어도 고침 없이 확인된다.
+  await confirmEvidence(confirmer.viewer, { expenseId, version: doc.version });
   return expenseId;
 }
 

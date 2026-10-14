@@ -7,7 +7,6 @@ import { canSeeExpense, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses/access";
 import { hasEvidence } from "@/domain/evidence/has-evidence";
 import {
   CANCEL_REASON_REQUIRED,
-  EVIDENCE_AMOUNT_REQUIRED,
   approvalGateDecision,
   evidenceGateDecision,
   pairGateDecision,
@@ -16,22 +15,27 @@ import {
   type ExpenseActionBar,
 } from "@/domain/payments/action-row";
 import { getSettingValue } from "@/domain/settings/registry";
-import { EVIDENCE_AMOUNT_TAX_INCLUSIVE, isTaxInclusiveEvidenceAmount } from "@/domain/evidence-reviews/tax-inclusive";
 import { EVIDENCE_PREPAID_DUE_DAYS } from "@/domain/settings/keys";
 import { formatKstTime } from "@/domain/holidays/business-day";
 import { findExpenseApprovalInstance, findExpenseById, lockExpenseForUpdate } from "@/repositories/expenses";
 import { bumpExpenseVersion, findLivePayment } from "@/repositories/expense-payments";
-import { findReviewByExpense, updateEvidenceAmount, upsertReview } from "@/repositories/expense-evidence-reviews";
+import { findReviewByExpense, updateCorrectedSupply, upsertReview } from "@/repositories/expense-evidence-reviews";
+import { lockProjectForWrite } from "@/repositories/projects";
+import { findExpenseQuoteLineIds, lockQuoteLines } from "@/repositories/quote-line-links";
 import { listAliveByOwners } from "@/repositories/files";
 import { findUserNamesByIds } from "@/repositories/users";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { withTransaction } from "@/lib/db-transaction";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { formatKrw } from "@/lib/format-number";
-import { diffKrw } from "@/domain/money";
+import { diffKrw, moneyFromRow, moneyToColumns, type Money } from "@/domain/money";
 
 // 06-06(EVID-02 · EVID-03 · D-601 · D-602 · O-2) — 경영관리의 증빙 확인(S4). 확인 기록(06-27 expense_evidence_reviews)을 쓰고,
 // 증빙 상태 다섯 값을 낸다. 증빙 유무는 06-03 hasEvidence 하나(C5 — 파일 수를 직접 세지 않는다).
+//
+// 06.5 D-6520(사용자 카드 10/13 23:44 KST): 증빙 확인의 금액은 공급가액 하나 — 같으면 그대로 확정, 영수증이 다르면 지급 전에만 남은 실행가 안에서
+// 공급가액을 고친다(제출 상한과 같은 판정 · 문구). 지급 뒤 고침은 막는다(카드 ② · 10/7 I-2). 옛은 지급 뒤 증빙 금액 수정을 막고 잠금 해제로만
+// 열었다(O: server/src/expenses.ts:5509-5513).
 //
 // 06-03 tx 규약: 권한 판정 · 사전 조회(설정 · 코드표 · 세율)는 트랜잭션 전, 트랜잭션 안은 tx 리포지토리 · DB 없는 함수 ·
 // recordAction(…, { tx })뿐이다. domain/payments/index.ts가 이 파일을 값 import하므로(evidenceGateInputs) 이 파일은 지급 모듈의
@@ -50,17 +54,18 @@ export class EvidenceReviewConflictError extends UserFacingError {}
 
 const NOTHING_TO_CONFIRM = "확인할 증빙 없음 · 새로 고침";
 
-// 사용자 결정 10/7 09:08(06-06 검토 I-2): 지급 완료된 문서는 누구도 증빙 금액을 고칠 수 없다 — UI-SPEC에 글자가 없어 기존 「… · 새로 고침」 꼴 추천안(SUMMARY 사용자 질문 후보).
-export const EVIDENCE_AMOUNT_PAID_LOCKED = "지급 완료 문서 · 증빙 금액 못 바꿈 · 새로 고침";
-export const EVIDENCE_AMOUNT_PAID_MISMATCH = "지급 공급가와 다름 · 지급 취소 뒤 고치기";
+// 06.5 D-6520(UI-SPEC V8 개정 4판): 열어 둔 화면에서 고친 사이 지급이 완료되면 — 행동 줄 이유 자리 + 3차 `새로 고침`(충돌 갈래).
+export const SUPPLY_CORRECTION_PAID_LOCKED = "지급 완료 문서 · 공급가액 못 바꿈 · 새로 고침";
 
-// I-2(사용자 결정 10/7 09:08) + 06-10 검토 I-1(사용자 결정 10/7 11:04 「지급액과 같을 때만」): 지급 완료 문서의 증빙 금액 판정은 이 함수 한 곳이다.
-// 있는 금액은 바꾸지 않는다. 빈 금액(지급 뒤 들어온 증빙)은 그 금액을 지급 기준으로 다시 셈한 지급 총액이 지급 기록의 지급 총액과 같을 때만
-// 받는다(PR #183 B-1 — 부가세 · 원천징수 · 세금 없음 모두 같은 기준) — 장부와 통장이 갈리지 않는다.
-export function paidEvidenceAmountRejection(input: { before: number | null; payableAtCorrected: number | null; paidPayableKrw: number }): string | null {
-  if (input.before !== null) return EVIDENCE_AMOUNT_PAID_LOCKED;
-  return input.payableAtCorrected === input.paidPayableKrw ? null : EVIDENCE_AMOUNT_PAID_MISMATCH;
+// 06.5 D-6520 — 고침 판정 한 곳. 고침 칸이 없거나 지금 공급가와 같은 값(문서 통화)이면 same(지급 유무와 무관하게 확정 — 지급액이 공급가에서
+// 나왔다), 다른 값이면 지급 전 correct · 지급 뒤 locked(카드 ② 「지금처럼 막기」).
+export function supplyCorrectionKind(input: { current: Money | null; corrected: number | undefined; paid: boolean }): "same" | "correct" | "locked" {
+  if (input.corrected === undefined || input.corrected === input.current?.amount) return "same";
+  return input.paid ? "locked" : "correct";
 }
+
+// 「Error — 공급가액 고침 칸」(V8 상한 오류) — 액션이 오류 종류로 가려 고침 칸 오류 자리에 세운다(문구 비교 없음).
+export class SupplyCorrectionCapError extends UserFacingError {}
 
 // ── 증빙 상태 다섯 값 ──────────────────────────────────────────────────
 // 면제 기록 있음 → 면제(선결제를 이긴다) / 증빙 있음 · 확인 기록 없음 → 확인 전 / 증빙 있음 · confirmed → 확인됨 /
@@ -140,13 +145,11 @@ export type ConfirmEvidenceResult = { version: number; evidenceStatus: EvidenceS
 export type ConfirmEvidenceInput = {
   expenseId: string;
   version: number;
-  correctedAmountKrw?: number;
+  // 06.5 D-6520 — 고친 공급가액(문서 통화). 없으면 공급가액 그대로 확정.
+  correctedSupplyAmount?: number;
   // 화면이 본 증빙 지문(getPaymentView evidenceStamp) — 있으면 잠금 뒤 같은 tx로 다시 만들어 비교한다. 없으면 version 비교만.
   evidenceStamp?: string;
 };
-
-// 「Error — 증빙 금액 칸」(S4) — F2 빈 금액 · EA-1 부가세 포함 금액. 화면은 이 거부를 금액 칸 오류 자리에 세운다.
-export class EvidenceAmountError extends UserFacingError {}
 
 // 잠금 뒤 지문이 달라짐 — 사람 이름은 풀을 읽어야 하므로 트랜잭션을 되돌린 뒤 밖에서 「거부 — 문서 화면 동시성」으로 바꾼다.
 class EvidenceStampChangedSignal extends Error {
@@ -158,11 +161,16 @@ class EvidenceStampChangedSignal extends Error {
   }
 }
 
-// 지급 권한(expenses.payments write)이 있어야 한다(D-601). 권한 · 사전 조회(EA-1 승인 공급가의 부가세 포함)는 트랜잭션 전. 한 트랜잭션:
-// 05 lockExpenseForUpdate → 문서 version 비교 → (지문이 오면) 증빙 지문 비교 → 결재 통과(같은 tx) → hasEvidence(…, tx) → 금액 검사(F2) →
-// (고친 금액이면) 증빙 금액 칸 갱신 → 확인 기록 upsert → 문서 version + 1 → 행동 로그(같은 tx — 고친 금액은 끌 수 없는 evidence_amount_change).
-// 05 기안자 저장 · 증빙 올리기 · 증빙 무효 경로를 부르지 않는다(B-3).
-export async function confirmEvidence(viewer: Viewer, input: ConfirmEvidenceInput): Promise<ConfirmEvidenceResult> {
+// 지급 권한(expenses.payments write)이 있어야 한다(D-601). 권한 · 사전 조회는 트랜잭션 전. 한 트랜잭션:
+// (고침 칸이 오면 프로젝트 행 → 견적 줄 잠금 — 제출과 같은 N-3 순서) 05 lockExpenseForUpdate → 문서 version 비교 → (지문이 오면) 증빙 지문 비교 →
+// 결재 통과(같은 tx) → hasEvidence(…, tx) → 고침 판정(지급 뒤 LOCKED · 남은 실행가 상한) → (고쳤으면) 공급가 칸 갱신 → 확인 기록 upsert(원화 공급가
+// 전 · 후) → 문서 version + 1 → 행동 로그(같은 tx — 고쳤으면 끌 수 없는 evidence_amount_change). 05 기안자 저장 · 증빙 올리기 · 증빙 무효 경로를
+// 부르지 않는다(B-3).
+export async function confirmEvidence(
+  viewer: Viewer,
+  input: ConfirmEvidenceInput,
+  deps?: { afterLock?: () => Promise<void> },
+): Promise<ConfirmEvidenceResult> {
   if (!(await can(viewer, "expenses.payments", "write"))) throw new ForbiddenError("증빙 확인 권한 없음");
   if (!UUID_SHAPE.test(input.expenseId)) throw new EvidenceReviewNotFoundError();
   // 문서 보임(행 범위, CSO-1) — 트랜잭션 전. 안 보이면 문서 화면과 같은 「없는 지출결의」.
@@ -171,24 +179,28 @@ export async function confirmEvidence(viewer: Viewer, input: ConfirmEvidenceInpu
   const payments = await import("@/domain/payments");
   const shared = await payments.loadPaymentShared(viewer);
   const amountVisible = await visible(viewer, "expense.amount");
-  const corrected = input.correctedAmountKrw;
-  // 화면은 금액을 못 보는 권한자에게 금액 칸을 그리지 않는다 — 서버도 고친 금액을 받지 않는다(고침 없는 확인은 된다 · EA-1 거부가 금액을 알려 주지 않게 먼저).
+  const corrected = input.correctedSupplyAmount;
+  // 화면은 금액을 못 보는 권한자에게 고침 칸을 그리지 않는다 — 서버도 고친 금액을 받지 않는다(고침 없는 확인은 된다 · 상한 문구가 금액을 알려 주지 않게 먼저).
   if (corrected !== undefined && !amountVisible) throw new ForbiddenError("증빙 금액 볼 권한 없음");
-  if (corrected !== undefined) {
-    // EA-1 — 고친 금액만 판정한다(기안자 값은 06-10 저장 때 같은 함수가 막았다). 승인 공급가는 결재 통과 뒤 바뀌지 않아 사전 조회로 충분하다.
-    const supplyTax = await payments.approvedSupplyTax(viewer, input.expenseId, shared);
-    if (supplyTax && isTaxInclusiveEvidenceAmount({ evidenceAmountKrw: corrected, ...supplyTax })) throw new EvidenceAmountError(EVIDENCE_AMOUNT_TAX_INCLUSIVE);
-  }
-  // B-1 — 지급 완료 문서의 빈 금액 판정 재료(지급 기록 · 그 지급일 세율)는 트랜잭션 전에. 잠근 뒤 같은 지급인지 다시 본다.
-  const paidBasis = corrected !== undefined ? await payments.paidPayableBasis(viewer, input.expenseId, shared) : null;
 
   let committed;
   try {
     committed = await withTransaction(async (tx) => {
+      // P2-C2 — 공급가를 바꿀 수 있는 요청만 제출과 같은 잠금 순서(프로젝트 행 → 견적 줄 → 문서 행)로 잠근 뒤 같은 tx에서 상한을 판정한다.
+      const lineIds = corrected !== undefined ? await findExpenseQuoteLineIds(viewer, row.id, tx) : [];
+      if (corrected !== undefined) {
+        if (row.projectId && !(await lockProjectForWrite(viewer, row.projectId, tx))) throw new EvidenceReviewNotFoundError();
+        await lockQuoteLines(viewer, lineIds, tx);
+      }
       const locked = await lockExpenseForUpdate(viewer, input.expenseId, tx);
+      await deps?.afterLock?.();
       if (!locked) throw new EvidenceReviewNotFoundError();
       const conflict = `다른 사람이 ${formatKstTime(locked.updatedAt)}에 바꿈 · 새로 고침`;
       if (locked.version !== input.version) throw new EvidenceReviewConflictError(conflict);
+      // 잠근 문서의 프로젝트 · 줄이 사전 조회와 다르면 잠그지 않은 줄로 판정하지 않고 충돌로 막는다(제출과 같은 꼴).
+      if (corrected !== undefined && (locked.projectId !== row.projectId || locked.quoteLineId !== row.quoteLineId || (lineIds[0] ?? null) !== row.quoteLineId)) {
+        throw new EvidenceReviewConflictError(conflict);
+      }
       if (input.evidenceStamp !== undefined) {
         const alive = await listAliveByOwners(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerIds: [locked.id] }, tx);
         const stamp = evidenceStampOf({ fileIds: alive.map((file) => file.id), evidenceAmountKrw: locked.evidenceAmount, evidenceDate: locked.evidenceDate });
@@ -200,22 +212,24 @@ export async function confirmEvidence(viewer: Viewer, input: ConfirmEvidenceInpu
       if (!approval.allowed) throw new GateBlockedError(approval.reason);
       if (!(await hasEvidence(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: locked.id }, tx))) throw new UserFacingError(NOTHING_TO_CONFIRM);
 
-      const before = locked.evidenceAmount;
-      // F2 — 빈 증빙 금액을 공급가액으로 채우지 않는다.
-      if (corrected === undefined && before === null) throw new EvidenceAmountError(EVIDENCE_AMOUNT_REQUIRED);
-      const changed = corrected !== undefined && corrected !== before;
-      // I-2 — 지급 완료 문서의 금액 판정(잠금 뒤). 빈 금액 채우기를 모두 막으면 지급 뒤 들어온 증빙을 확인할 길이 없어(F2) 지급 공급가와 같은 값만 받는다.
-      if (changed) {
-        const payment = await findLivePayment(viewer, locked.id, tx);
-        if (payment && payment.id !== paidBasis?.paymentId) throw new EvidenceReviewConflictError(conflict);
-        const rejection =
-          payment && paidBasis ? paidEvidenceAmountRejection({ before, payableAtCorrected: await paidBasis.payableAt(corrected), paidPayableKrw: payment.payableKrw }) : null;
-        if (rejection) throw new EvidenceReviewConflictError(rejection);
+      const current =
+        locked.supplyAmountKrw === null
+          ? null
+          : moneyFromRow({ currency: locked.supplyCurrency, foreignAmount: locked.supplyForeignAmount, fxRate: locked.supplyFxRate, amountKrw: locked.supplyAmountKrw });
+      const kind = supplyCorrectionKind({ current, corrected, paid: corrected !== undefined && (await findLivePayment(viewer, locked.id, tx)) !== null });
+      if (kind === "locked") throw new EvidenceReviewConflictError(SUPPLY_CORRECTION_PAID_LOCKED);
+      const before = locked.supplyAmountKrw;
+      let after = before;
+      if (kind === "correct" && corrected !== undefined) {
+        // 상한 문구는 제출과 같은 함수 — domain/expenses는 이 파일을 정적으로 부르는 쪽이라 동적 import(위 지급 모듈과 같은 까닭 · DB 없음).
+        const { remainingText } = await import("@/domain/expenses");
+        const columns = moneyToColumns({ currency: current?.currency ?? "KRW", amount: corrected, fxRate: current?.fxRate ?? 1 });
+        const cap = await payments.supplyCorrectionCap(viewer, locked, moneyFromRow(columns), tx);
+        if (cap?.exceeds) throw new SupplyCorrectionCapError(`남은 실행가 ${remainingText(cap.remaining, cap.basis)} 넘음 · 공급가액 고치기`);
+        if (!(await updateCorrectedSupply(viewer, { expenseId: locked.id, columns }, tx))) throw new EvidenceReviewNotFoundError();
+        after = columns.amountKrw;
       }
-      if (changed && !(await updateEvidenceAmount(viewer, { expenseId: locked.id, amountKrw: corrected }, tx))) throw new EvidenceReviewNotFoundError();
-      // 06-27 CHECK — 전 · 후는 둘 다 값이거나 둘 다 null. 이전 값이 비었으면 기록에는 남기지 않고 로그(전 null · 후 값)에만 남긴다.
-      const amounts = changed && before !== null ? { amountBeforeKrw: before, amountAfterKrw: corrected } : { amountBeforeKrw: null, amountAfterKrw: null };
-      const review = await upsertReview(viewer, { expenseId: locked.id, status: "confirmed", ...amounts, waiveReason: null, reviewedBy: viewer.id }, tx);
+      const review = await upsertReview(viewer, { expenseId: locked.id, status: "confirmed", amountBeforeKrw: before, amountAfterKrw: after, waiveReason: null, reviewedBy: viewer.id }, tx);
       const version = await bumpExpenseVersion(viewer, { expenseId: locked.id, expectedVersion: locked.version, updatedBy: viewer.id }, tx);
       if (version === null) throw new EvidenceReviewConflictError(conflict);
       await recordAction(
@@ -223,10 +237,10 @@ export async function confirmEvidence(viewer: Viewer, input: ConfirmEvidenceInpu
         { actionType: "document_update", entity: "expense", entityId: locked.id, documentId: locked.id, detail: { field: "evidenceReview", status: "confirmed" } },
         { tx },
       );
-      if (changed) {
+      if (kind === "correct") {
         await recordAction(
           viewer,
-          { actionType: "evidence_amount_change", entity: "expense", entityId: locked.id, documentId: locked.id, detail: { before, after: corrected } },
+          { actionType: "evidence_amount_change", entity: "expense", entityId: locked.id, documentId: locked.id, detail: { before, after } },
           { tx },
         );
       }

@@ -148,7 +148,7 @@ const EDITABLE_STATUSES: ReadonlySet<string> = new Set(["rejected", "withdrawn"]
 const IN_PROGRESS_STATUSES: ReadonlySet<string> = new Set(["submitted", "in_review"]);
 const NO_TEAM_AT_USAGE_DATE = "사용일에 소속 팀 없음 · 사용일 고치기";
 const SUPPLY_EMPTY = "공급가액 비어 있음 · 공급가액 적기";
-const SUPPLY_ZERO = "공급가액이 0 · 0보다 크게";
+export const SUPPLY_ZERO = "공급가액이 0 · 0보다 크게";
 
 // 05-07 팀 비용 종류 — 화면 글자(값 목록은 칸 스키마 모듈 draft-fields.ts).
 export { TEAM_EXPENSE_KINDS, type TeamExpenseKind };
@@ -501,15 +501,15 @@ export function doorFor(
 
 // D-66 — 현재 차수 줄마다 계보(copied_from_line_id) 사슬 전체의 번호 있는 문서(제출 순). 줄 파생 상태
 // (domain/quotes/lines.ts linkedDocumentsByLine)와 같은 해석이라 이전 차수에 제출한 줄은 지금 차수에서도 문이 닫힌다.
-export async function listNumberedByLineage(viewer: Viewer, projectId: string): Promise<Map<string, NumberedLineExpense[]>> {
-  return (await listNumberedByLineageMany(viewer, [projectId])).get(projectId) ?? new Map();
+export async function listNumberedByLineage(viewer: Viewer, projectId: string, tx?: DbOrTx): Promise<Map<string, NumberedLineExpense[]>> {
+  return (await listNumberedByLineageMany(viewer, [projectId], tx)).get(projectId) ?? new Map();
 }
 
 // 여러 프로젝트를 한 번에(계보 줄 한 쿼리 + 번호 문서 한 쿼리) — 골라내기가 후보 프로젝트마다 따로 읽지 않는다(05 /review A7).
-export async function listNumberedByLineageMany(viewer: Viewer, projectIds: string[]): Promise<Map<string, Map<string, NumberedLineExpense[]>>> {
-  const lineage = await listLineageLinesByProjects(viewer, projectIds);
+export async function listNumberedByLineageMany(viewer: Viewer, projectIds: string[], tx?: DbOrTx): Promise<Map<string, Map<string, NumberedLineExpense[]>>> {
+  const lineage = await listLineageLinesByProjects(viewer, projectIds, tx);
   const docsByLineId = new Map<string, NumberedLineExpense[]>();
-  for (const doc of await listNumberedByLines(viewer, lineage.map((line) => line.id))) {
+  for (const doc of await listNumberedByLines(viewer, lineage.map((line) => line.id), tx)) {
     docsByLineId.set(doc.quoteLineId, [...(docsByLineId.get(doc.quoteLineId) ?? []), doc]);
   }
   const linesByProject = new Map<string, LineageLine[]>();
@@ -987,7 +987,7 @@ export type SubmitExpenseResult =
   | { kind: "submitted"; expenseId: string; number: string; instanceId: string; version: number; round: number }
   | { kind: "already_submitted"; expenseId: string; number: string };
 
-function remainingText(remaining: Money, basis: "foreign" | "krw"): string {
+export function remainingText(remaining: Money, basis: "foreign" | "krw"): string {
   return basis === "foreign" ? `${remaining.currency} ${formatForeignAmount(remaining.amount)}` : formatKrw(remaining.amountKrw);
 }
 

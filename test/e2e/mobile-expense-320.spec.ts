@@ -320,7 +320,7 @@ test.describe("지출결의 폭 375 · 320 (05-13)", () => {
     const [doc] = await db.select({ version: expenses.version, supply: expenses.supplyAmountKrw }).from(expenses).where(eq(expenses.id, expenseId));
     if (!doc?.supply) throw new Error("문서 · 공급가 없음");
     const payer = await makeTeamPayer(fx);
-    await confirmEvidence(payer.viewer, { expenseId, version: doc.version, correctedAmountKrw: doc.supply });
+    await confirmEvidence(payer.viewer, { expenseId, version: doc.version });
 
     for (const viewport of WIDTHS) {
       const lead = await phone(browser, baseURL, fx.lead, viewport);

@@ -1,4 +1,5 @@
 import type { Viewer } from "@/domain/viewer";
+import type { DbOrTx } from "@/repositories/document-counters";
 import { can, ForbiddenError } from "@/domain/permissions/can";
 import { project, type DtoSpec } from "@/domain/permissions/project";
 import { registerDto } from "@/domain/permissions/dto-registry";
@@ -687,42 +688,6 @@ function evidenceTaxLineOf(payable: PayableDecision, taxRule: TaxRule, ruleLabel
   return segments.flatMap((part, index) => (index === 0 ? part : [{ text: " · ", emphasis: false }, ...part]));
 }
 
-// EA-1 재료(트랜잭션 전 사전 조회) — 승인 공급가와 그 공급가에 붙는 부가세(decidePayable의 vatKrw, 기준일 = 오늘 지급 기준).
-// 세금 규칙이 없으면 부가세 0(판정이 거짓이 된다).
-export async function approvedSupplyTax(viewer: Viewer, expenseId: string, shared: PaymentShared): Promise<{ supplyKrw: number; vatKrw: number } | null> {
-  const row = await findExpenseById(viewer, expenseId);
-  if (!row || row.supplyAmountKrw === null) return null;
-  const pre = await loadPaymentInputs(viewer, { expenseId: row.id, payDate: seoulToday() }, shared);
-  if (!pre.tax) return { supplyKrw: row.supplyAmountKrw, vatKrw: 0 };
-  const decided = await decidePayable(
-    { amount: { source: "supply", amountKrw: row.supplyAmountKrw }, taxRule: pre.tax.taxRule, applyOpts: pre.tax.dates.applyOpts, incomeType: pre.tax.incomeType },
-    pre.tax.rates,
-  );
-  return { supplyKrw: row.supplyAmountKrw, vatKrw: decided.vatKrw };
-}
-
-// PR #183 B-1(사용자 결정 10/7 11:04 「지급액과 같을 때만」) — 지급 뒤 빈 증빙 금액 판정 재료(트랜잭션 전 사전 조회). 살아 있는 지급과,
-// 어떤 금액을 그 지급일 기준 같은 세금 규칙으로 다시 셈한 지급 총액(DB 없음 — 트랜잭션 안에서 불러도 된다). 지급 기록에 세전 금액이
-// 남는 것은 부가세(gross)뿐이라 규칙 종류(부가세 · 원천징수 · 회사 대납 · 없음)마다 같은 기준으로 견주려면 지급 총액으로 되짚는다. 지급 없으면 null.
-export async function paidPayableBasis(
-  viewer: Viewer,
-  expenseId: string,
-  shared: PaymentShared,
-): Promise<{ paymentId: string; payableKrw: number; payableAt: (amountKrw: number) => Promise<number | null> } | null> {
-  const payment = await findLivePayment(viewer, expenseId);
-  if (!payment) return null;
-  const pre = await loadPaymentInputs(viewer, { expenseId, payDate: payment.payDate }, shared);
-  const tax = pre.tax;
-  return {
-    paymentId: payment.id,
-    payableKrw: payment.payableKrw,
-    payableAt: async (amountKrw) =>
-      tax
-        ? (await decidePayable({ amount: { source: "evidence", amountKrw }, taxRule: tax.taxRule, applyOpts: tax.dates.applyOpts, incomeType: tax.incomeType }, tax.rates)).payableKrw
-        : null,
-  };
-}
-
 // [Q-F] 증빙 금액 초과 한 줄(표시만 — 확인 · 게이트 · 규칙은 읽지 않는다). 트랜잭션 없는 읽기. 살아 있는 파일이 없으면 계보 조회 없이 null(R-4).
 // 남은 실행가는 견적 줄 계보 사슬 전체로: 이 문서가 든 현재 차수 줄의 실행가 − 사슬 위 다른 번호 문서 공급가 − 사슬 줄에 이은 보관 안 된 카드 사용 공급가.
 // 팀 비용(견적 줄 없음) · 사슬이 최신 차수에 닿지 않으면 실행가 조각 없음(남은 실행가 null).
@@ -742,29 +707,50 @@ export async function loadEvidenceOverrun(
 }
 
 async function lineRemainingFor(viewer: Viewer, projectId: string, expenseId: string): Promise<number | null> {
-  const chain = [...(await listNumberedByLineage(viewer, projectId))].find(([, docs]) => docs.some((doc) => doc.id === expenseId));
+  const basis = await chainBasisFor(viewer, projectId, expenseId);
+  return basis ? remainingForInstallments(basis.execution, basis.others).remaining.amountKrw : null;
+}
+
+// 06.5 D-6520(P2-C2) — 증빙 확인의 공급가액 고침 상한. 제출 상한과 같은 남은 실행가 판정(사슬의 다른 번호 문서 · 카드 사용 공급가를 뺀
+// 현재 차수 줄 실행가)을 호출자 tx로 읽는다 — 프로젝트 행 → 견적 줄 → 문서 행을 잠근 뒤 판정해야 같은 줄 회차 제출과 엇갈리지 않는다.
+// 견적 줄 없는 문서(팀 비용) · 사슬에 없는 문서는 null(상한 없음).
+export async function supplyCorrectionCap(
+  viewer: Viewer,
+  doc: Pick<ExpenseRow, "id" | "projectId" | "quoteLineId">,
+  corrected: Money,
+  tx: DbOrTx,
+): Promise<{ basis: "foreign" | "krw"; remaining: Money; exceeds: boolean } | null> {
+  if (!doc.quoteLineId || !doc.projectId) return null;
+  const basis = await chainBasisFor(viewer, doc.projectId, doc.id, tx);
+  return basis ? remainingForInstallments(basis.execution, basis.others, corrected) : null;
+}
+
+// 문서가 든 계보 사슬의 현재 차수 줄 실행가와 그 사슬 위 다른 번호 문서 · 카드 사용 공급가 — lineRemainingFor(tx 없음)와
+// supplyCorrectionCap(호출자 tx)이 같이 쓴다.
+async function chainBasisFor(viewer: Viewer, projectId: string, expenseId: string, tx?: DbOrTx): Promise<{ execution: Money; others: Money[] } | null> {
+  const chain = [...(await listNumberedByLineage(viewer, projectId, tx))].find(([, docs]) => docs.some((doc) => doc.id === expenseId));
   if (!chain) return null;
   const [currentLineId, chainDocs] = chain;
-  const line = await findQuoteLineById(viewer, currentLineId);
+  const line = await findQuoteLineById(viewer, currentLineId, tx);
   if (!line) return null;
   const others = chainDocs.flatMap((doc) =>
     doc.id === expenseId || doc.supplyAmountKrw === null
       ? []
       : [moneyFromRow({ currency: doc.supplyCurrency, foreignAmount: doc.supplyForeignAmount, fxRate: doc.supplyFxRate, amountKrw: doc.supplyAmountKrw })],
   );
-  return remainingForInstallments(lineExecution(line), [...others, ...(await cardSuppliesOnChain(viewer, projectId, currentLineId))]).remaining.amountKrw;
+  return { execution: lineExecution(line), others: [...others, ...(await cardSuppliesOnChain(viewer, projectId, currentLineId, tx))] };
 }
 
 // 사슬 줄에 이은 보관 안 된 카드 사용 공급가(원화) — 보통 0건(D-609)이라 그때는 계보 줄을 읽지 않는다.
-async function cardSuppliesOnChain(viewer: Viewer, projectId: string, currentLineId: string): Promise<Money[]> {
-  const usages = await listAliveCardUsageSuppliesByProject(viewer, projectId);
+async function cardSuppliesOnChain(viewer: Viewer, projectId: string, currentLineId: string, tx?: DbOrTx): Promise<Money[]> {
+  const usages = await listAliveCardUsageSuppliesByProject(viewer, projectId, tx);
   if (usages.length === 0) return [];
   const byLine = new Map<string, Money[]>();
   for (const usage of usages) {
     const money = moneyFromRow({ currency: "KRW", foreignAmount: null, fxRate: "1", amountKrw: usage.supplyKrw });
     byLine.set(usage.quoteLineId, [...(byLine.get(usage.quoteLineId) ?? []), money]);
   }
-  const lineage = await listLineageLinesByProjects(viewer, [projectId]);
+  const lineage = await listLineageLinesByProjects(viewer, [projectId], tx);
   return resolveLinkedDocumentsByLineage(lineage, byLine).byCurrentLine.get(currentLineId) ?? [];
 }
 
@@ -887,7 +873,8 @@ async function evidenceViewOf(
 ): Promise<Pick<PaymentViewDto, "evidenceStatus" | "evidenceRequired" | "evidenceAmountKrw" | "evidenceAmountDisplay" | "reviewLine" | "reviewAmounts">> {
   const { row, review } = input;
   const reviewerName = review ? ((await findUserNamesByIds(viewer, [review.reviewedBy])).get(review.reviewedBy) ?? "") : null;
-  const corrected = review !== null && review.amountAfterKrw !== null && review.amountBeforeKrw !== null;
+  // 06.5 D-6520 — 확인 기록은 늘 공급가 전 · 후를 남긴다(고침 없으면 같은 값) — 고친 확인은 둘이 다를 때만.
+  const corrected = review !== null && review.amountAfterKrw !== null && review.amountBeforeKrw !== null && review.amountAfterKrw !== review.amountBeforeKrw;
   const display: EvidenceAmountDisplay =
     row.evidenceAmount === null
       ? { valueKrw: null, enteredByName: null, enteredAt: null }

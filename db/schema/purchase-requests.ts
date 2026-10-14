@@ -29,12 +29,15 @@ export const purchaseRequests = pgTable(
     cancelledBy: text("cancelled_by").references(() => users.id),
     cancelledAt: timestamp("cancelled_at"),
     cancelReason: text("cancel_reason"),
+    // 06.5 D-6509(CSO-4): 지출결의 `idempotency_key`와 같은 뜻 — 재전송이면 같은 행위자의 기존 행을 돌려준다.
+    idempotencyKey: text("idempotency_key"),
     version: integer("version").notNull().default(1),
     source: text("source").notNull().default("demo"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => [
     uniqueIndex("purchase_requests_number_uniq").on(table.number),
+    uniqueIndex("purchase_requests_idempotency_key_uniq").on(table.idempotencyKey),
     check("purchase_requests_link_kind_check", sql`${table.linkKind} IN ('quote_line','team_cost')`),
     check(
       "purchase_requests_link_check",

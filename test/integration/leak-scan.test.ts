@@ -714,9 +714,10 @@ import { eq } from "drizzle-orm";
 
 // 06.5-04(D-6505): users 행에 암호화 계좌 칸이 생겼다 — 행 전체를 읽는 사람 DTO 경로가 그 칸을 싣지 않는다.
 describe("직원 지급 계좌 축 — 계좌 칸은 지급 계좌 DTO에만, 사람 DTO에는 없다 (06.5-04)", () => {
-  it("지급 계좌 DTO와 저장 액션이 레지스트리에 있다", () => {
+  it("지급 계좌 DTO와 저장 · 번호 보기 액션이 레지스트리에 있다", () => {
     expect(DTO_REGISTRY.map((entry) => entry.name)).toContain("PersonPayoutAccountDto");
     expect(ACTION_REGISTRY.map((entry) => entry.name)).toContain("updatePersonPayoutAccountAction");
+    expect(ACTION_REGISTRY.map((entry) => entry.name)).toContain("revealPersonAccountNumberAction");
   });
 
   it("계좌 칸을 채운 사람의 getPerson · listPeople 직렬화에 계좌 키 · 값이 없다", async () => {

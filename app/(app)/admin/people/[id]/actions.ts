@@ -6,7 +6,7 @@ import { returnValidationErrors } from "next-safe-action";
 import { authedActionClient } from "@/lib/actions/client";
 import { seoulToday } from "@/lib/dates";
 import { setHireDate, setResignationDate } from "@/domain/people";
-import { updatePersonPayoutAccount } from "@/domain/people/account";
+import { revealPersonAccountNumber, updatePersonPayoutAccount } from "@/domain/people/account";
 import { AccountFieldsError } from "@/domain/vendors/account-fields";
 import { addLeaveAdjustment, LeaveAdjustmentValidationError } from "@/domain/leave/balance-service";
 import { MIN_LEAVE_YEAR } from "@/domain/leave/days";
@@ -95,3 +95,11 @@ export const updatePersonPayoutAccountAction = authedActionClient.schema(payoutA
   }
   revalidatePath(`/admin/people/${id}`);
 });
+
+// 평문은 이 액션의 반환값으로만 나간다(거래처 `revealVendorAccountNumberAction`과 같은 입력 · 출력 꼴).
+export const revealPersonAccountNumberAction = authedActionClient
+  .schema(z.object({ id: z.string().min(1) }))
+  .action(async ({ parsedInput, ctx }) => {
+    const value = await revealPersonAccountNumber(ctx.viewer, parsedInput.id);
+    return { value };
+  });

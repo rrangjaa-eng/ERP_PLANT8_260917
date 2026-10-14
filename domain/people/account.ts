@@ -3,9 +3,11 @@
 // 못 본다(옛도 본인 예외 없음 O: server/src/people.ts:559-561).
 import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
+import { visible as defaultVisible } from "@/domain/permissions/visible";
 import { project, type DtoSpec } from "@/domain/permissions/project";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
+import { decrypt } from "@/lib/crypto";
 import { ForbiddenError, UserNotFoundError } from "@/domain/people";
 import { planAccountNumberUpdate } from "@/domain/vendors";
 import { assertAccountFields } from "@/domain/vendors/account-fields";
@@ -37,8 +39,12 @@ registerDto({
 
 export type PayoutAccountDeps = {
   can: typeof defaultCan;
+  visible: typeof defaultVisible;
   recordAction: typeof defaultRecordAction;
 };
+
+// 평문 보기는 거래처 계좌와 같은 정보 항목(새 항목 0 — D-6505 권한 카드, T-06.5-35).
+export const PAYOUT_ACCOUNT_REVEAL_ITEM = "vendor.account_number_unmasked";
 
 export async function canManagePayoutAccount(viewer: Viewer, deps?: Partial<Pick<PayoutAccountDeps, "can">>): Promise<boolean> {
   const canFn = deps?.can ?? defaultCan;
@@ -108,4 +114,21 @@ export async function updatePersonPayoutAccount(
 
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await recordAction(viewer, { actionType: "document_update", entity: "user", entityId: userId, detail: { field: "payout_account" } });
+}
+
+// 마스킹 해제 — 거래처 `revealAccountNumber`와 같은 순서: 게이트 → 해제 항목 → 행 → 번호 없으면 "" → 기록 → 복호화.
+// 기록이 실패하면 평문을 돌려주지 않는다(순서가 바뀌면 기록 없이 열람되는 창이 생긴다). 번호가 없으면 열 것이 없어 기록도 없다.
+export async function revealPersonAccountNumber(viewer: Viewer, userId: string, deps?: Partial<PayoutAccountDeps>): Promise<string> {
+  const visibleFn = deps?.visible ?? defaultVisible;
+  if (!(await canManagePayoutAccount(viewer, deps)) || !(await visibleFn(viewer, PAYOUT_ACCOUNT_REVEAL_ITEM))) {
+    throw new ForbiddenError("계좌번호 마스킹 해제 권한 없음");
+  }
+
+  const row = await repoFindUserPayoutAccount(viewer, userId);
+  if (!row?.accountNumberEncrypted) return "";
+
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
+  await recordAction(viewer, { actionType: "mask_reveal", entity: "user", entityId: userId });
+
+  return decrypt(row.accountNumberEncrypted);
 }

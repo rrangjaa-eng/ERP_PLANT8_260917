@@ -31,3 +31,12 @@ registerAction({
   action: "write",
   dtoName: null,
 });
+
+// 마스킹 해제는 값을 반환하지만 DTO 행이 아니다(거래처 reveal 등록과 같은 결 — dtoName null). 실제 게이트는 두 권한 AND +
+// 해제 항목 `vendor.account_number_unmasked`(REVIEWS EP3-B15).
+registerAction({
+  name: "revealPersonAccountNumberAction",
+  menu: "admin.people",
+  action: "view",
+  dtoName: null,
+});

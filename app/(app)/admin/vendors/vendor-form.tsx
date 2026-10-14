@@ -338,6 +338,7 @@ export function VendorForm({
               name="accountNumber"
               label="새 계좌번호"
               autoComplete="off"
+              inputMode="numeric"
               hintId="accountNumber-current"
             />
           ) : null}
@@ -360,7 +361,7 @@ export function VendorForm({
           ) : null}
         </div>
       ) : (
-        <TextField id="accountNumber" name="accountNumber" label="계좌번호" autoComplete="off" />
+        <TextField id="accountNumber" name="accountNumber" label="계좌번호" autoComplete="off" inputMode="numeric" />
       )}
 
       {fieldDefs.length > 0 ? (

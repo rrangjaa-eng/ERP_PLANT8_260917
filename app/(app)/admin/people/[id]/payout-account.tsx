@@ -1,15 +1,16 @@
 "use client";
 
-import { useEffect, useRef, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useAction } from "next-safe-action/hooks";
-import { updatePersonPayoutAccountAction } from "./actions";
+import { revealPersonAccountNumberAction, updatePersonPayoutAccountAction } from "./actions";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import { KvList } from "@/ui/kv-list/KvList";
 import { TextField } from "@/ui/input/TextField";
 import { Button, buttonLinkClassName } from "@/ui/button/Button";
 import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
 import { fieldErrorsReason, formReason } from "@/lib/actions/form-reason";
+import { AccountNumberCell } from "@/app/(app)/admin/vendors/account-number";
 import vendorStyles from "@/app/(app)/admin/vendors/vendors.module.css";
 
 // 06.5-04(D-6505 · UI-SPEC V2): 사람 상세 「지급 계좌」 — 읽기는 섹션 안 KvList 3행, 입력은 옆 패널(`?editAccount=1`).
@@ -23,7 +24,18 @@ export type PayoutAccountView = {
   masked: string;
 };
 
-export function PayoutAccountSection({ account, editHref }: { account: PayoutAccountView; editHref: string }) {
+export function PayoutAccountSection({
+  userId,
+  account,
+  canReveal,
+  editHref,
+}: {
+  userId: string;
+  account: PayoutAccountView;
+  /** 해제 항목(`vendor.account_number_unmasked`) — 거짓이면 `번호 보기`를 그리지 않는다(문구 없음). */
+  canReveal: boolean;
+  editHref: string;
+}) {
   const empty = !account.bank && !account.holder && !account.masked;
   return (
     // 섹션 틀은 `DetailScreen.Section` — 접근 가능한 이름은 바깥 region이 지킨다(연차 섹션과 같은 꼴).
@@ -34,7 +46,10 @@ export function PayoutAccountSection({ account, editHref }: { account: PayoutAcc
             items={[
               { label: "은행", value: account.bank ?? "—" },
               { label: "예금주", value: account.holder ?? "—" },
-              { label: "계좌번호", value: account.masked || "—" },
+              {
+                label: "계좌번호",
+                value: <AccountNumberCell id={userId} masked={account.masked} canReveal={canReveal} revealAction={revealPersonAccountNumberAction} />,
+              },
             ]}
           />
           {/* 3차는 글자만 바뀌는 같은 요소 — 저장 뒤 SidePanel이 연 요소(이 링크)로 포커스를 돌린다. */}
@@ -58,6 +73,7 @@ function getStringField(formData: FormData, key: string): string {
 
 export function PayoutAccountPanel({ userId, account }: { userId: string; account: PayoutAccountView }) {
   const panelRef = useRef<PanelFormHandle>(null);
+  const [clearAccountNumber, setClearAccountNumber] = useState(false);
   const { execute, result, isExecuting } = useAction(updatePersonPayoutAccountAction, {
     onSuccess: () => panelRef.current?.succeed(),
   });
@@ -69,8 +85,8 @@ export function PayoutAccountPanel({ userId, account }: { userId: string; accoun
       id: userId,
       accountBank: getStringField(formData, "accountBank"),
       accountHolder: getStringField(formData, "accountHolder"),
-      // 빈 칸 = 안 바꿈(거래처 폼과 같은 규칙).
-      accountNumber: getStringField(formData, "accountNumber") || undefined,
+      // 「지우기」 체크 = null(지움) · 빈 칸 = 안 바꿈 · 값 = 새 번호(거래처 폼과 같은 규칙).
+      accountNumber: clearAccountNumber ? null : getStringField(formData, "accountNumber") || undefined,
     });
   }
 
@@ -119,10 +135,30 @@ export function PayoutAccountPanel({ userId, account }: { userId: string; accoun
         error={holderError}
       />
       <div className={vendorStyles.accountEdit}>
-        <TextField id="accountNumber" name="accountNumber" label="새 계좌번호" autoComplete="off" hintId="accountNumber-current" />
+        {!clearAccountNumber ? (
+          <TextField
+            id="accountNumber"
+            name="accountNumber"
+            label="새 계좌번호"
+            autoComplete="off"
+            inputMode="numeric"
+            hintId="accountNumber-current"
+          />
+        ) : null}
         <p id="accountNumber-current" className={vendorStyles.hint}>
           {account.masked ? `현재 ${account.masked}` : "등록된 계좌번호 없음"}
         </p>
+        {account.masked ? (
+          <label className={vendorStyles.clearRow}>
+            <input
+              type="checkbox"
+              name="clearAccountNumber"
+              checked={clearAccountNumber}
+              onChange={(event) => setClearAccountNumber(event.target.checked)}
+            />
+            계좌번호 지우기
+          </label>
+        ) : null}
       </div>
     </PanelForm>
   );

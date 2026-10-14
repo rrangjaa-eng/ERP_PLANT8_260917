@@ -114,13 +114,14 @@ describe("scripts/rotate-key — KMS 감싼 키로 회전(04.3-08)", () => {
     await expect(rotateKey([memoryTarget([]).target])).rejects.toThrow(/두 키.*모두 설정돼 있어야/);
   });
 
-  it("TARGETS에 거래처 계좌번호 · cert_submissions.rrn_encrypted · cert_events.token_encrypted가 있다", async () => {
+  it("TARGETS에 거래처 계좌번호 · cert_submissions.rrn_encrypted · cert_events.token_encrypted · 직원 계좌번호(06.5-04)가 있다", async () => {
     const { TARGETS } = await import("@/scripts/rotate-key");
 
     expect(TARGETS.map((t) => t.label)).toEqual([
       "vendors.account_number_encrypted",
       "cert_submissions.rrn_encrypted",
       "cert_events.token_encrypted",
+      "users.account_number_encrypted",
     ]);
   });
 

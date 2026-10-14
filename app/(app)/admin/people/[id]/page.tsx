@@ -16,7 +16,8 @@ import { checkLeaveAdjustment, formatBalanceLines } from "@/domain/leave/balance
 import { formatLeaveDays } from "@/domain/leave/days";
 import { resolveLeaveYear } from "@/app/(app)/leave/year-param";
 import { LeaveSection, type LeaveAdjustmentRow } from "./leave-section";
-import { getPersonPayoutAccount } from "@/domain/people/account";
+import { getPersonPayoutAccount, PAYOUT_ACCOUNT_REVEAL_ITEM } from "@/domain/people/account";
+import { visible } from "@/domain/permissions/visible";
 import { maskTail4 } from "@/lib/mask-tail4";
 import { SidePanel } from "@/ui/side-panel/SidePanel";
 import { PayoutAccountPanel, PayoutAccountSection, type PayoutAccountView } from "./payout-account";
@@ -85,13 +86,14 @@ export default async function PersonDetailPage({
   const query = await searchParams;
   const leaveYear = resolveLeaveYear(query.year, thisYear, fallbackYear);
   const currentRoleId = detail.person.roleId ?? null;
-  const [balance, adjustments, canWrite, assignableCurrent, payoutAccount] = await Promise.all([
+  const [balance, adjustments, canWrite, assignableCurrent, payoutAccount, canRevealAccount] = await Promise.all([
     leaveYear === thisYear ? current : getLeaveBalanceForUser(session.viewer, id, { fiscalYear: leaveYear }),
     listLeaveAdjustmentsForUser(session.viewer, { userId: id, fiscalYear: leaveYear }),
     can(session.viewer, "admin.people", "write"),
     currentRoleId === null ? new Set<string>() : assignableRoleIds(session.viewer, [currentRoleId]),
     // 06.5-04(D-6505): 게이트 밖이면 null — 섹션 · 패널을 그리지 않는다(문구 없음).
     getPersonPayoutAccount(session.viewer, id),
+    visible(session.viewer, PAYOUT_ACCOUNT_REVEAL_ITEM),
   ]);
   // 06.4(D-6414 · D4 · D6) 계급 변경 자리 상태표(서버 한 곳): 쓰기 없음 · 자기 상세 · 계급 노출 꺼짐 → 줄 없음 /
   // C 상한 밖 · 통과 0 → 이유 한 줄 / 그 밖 → select. 노출이 꺼지면 DTO에 roleId 키가 없다.
@@ -153,7 +155,7 @@ export default async function PersonDetailPage({
         monthlyBlockedReason={blocked?.field === "bucket" ? blocked.message : null}
       />
 
-      {payoutView ? <PayoutAccountSection account={payoutView} editHref={editAccountHref} /> : null}
+      {payoutView ? <PayoutAccountSection userId={id} account={payoutView} canReveal={canRevealAccount} editHref={editAccountHref} /> : null}
       {payoutView && query.editAccount === "1" ? (
         <SidePanel title="지급 계좌 수정" closeHref={baseHref}>
           <PayoutAccountPanel userId={id} account={payoutView} />

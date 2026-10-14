@@ -171,3 +171,27 @@ RED 확인
 - **열린 항목 1 → 허용.** #174(`7c55305`) · #177(`32e37c1`) · #179(`bfd0e90`) · #186(`8f7f8fa`)은 06 코드 PR이 아니라 각각 따로 main에 머지된 다른 트랙 PR이고 마이그레이션은 추가형(0027~0031)이다. 허용 목록을 5줄로 늘려 verify 둘째 줄을 다시 돌렸다: `disallowed=0`(종료 0). PR-E(#214)는 `db/migrations`·`db/schema`를 바꾸지 않는다. 6.1 #164는 아직 머지 전이라 범위에 없다.
 - **열린 항목 2 → 호환으로 확정, 사용자 알림.** 0025의 `DROP CONSTRAINT` 둘은 더 넓은 CHECK로 바꾸는 교체(PR-A #169, 사용자 머지)다. 옛 리비전이 쓰는 행은 새 제약도 통과하므로 「Cloud Run 이전 리비전으로 되돌려도 스키마 호환」. 계획 정규식이 DROP CONSTRAINT를 거르지 못해 literal은 실패이므로 PR 보고에 사용자에게 알린다.
 - 열린 항목 3은 CI e2e 결과로 본다(겹침이 보이면 별도 정리).
+
+## 교차 검토(U-1) 반영 (2026-10-14)
+
+출처: `notes/06-review/06-u1-cross-review.md`(Opus 독립 · 읽기 전용). 지적 셋은 고치고(TDD — 실패 테스트를 먼저 보고 고침), 참고 둘은 기록만 한다.
+
+| 지적 | 처리 | 커밋 | 테스트 |
+|---|---|---|---|
+| U1-1 중간 — 구매 요청 취소가 프로젝트 행을 잠그지 않고 완료 판정도 없다 | `cancelPurchaseRequest`가 견적 줄 요청이면 트랜잭션 첫 줄에서 `lockProjectForLinkWrite`(기본값 — 완료 거부)를 잡는다. 잠금 순서는 프로젝트 → 요청 행(구매 완료와 같은 방향). `precheckPurchaseCancel`은 완료 프로젝트를 트랜잭션 전에 거부하고(`CompletedProjectError`) 잠근 행으로 다시 본다(X-2). 형제 동작(카드 사용 삭제 — 완료 프로젝트 건은 권리 없음 U-4)에 이미 있는 숨김 꼴을 따라 목록 `cancelBranches` · S13 패널 `cancelBranch`에서 완료 프로젝트 줄 요청의 `요청 취소`를 뺀다(화면 코드 무변경 — domain 값만) | bd88851 · 5162449(행 범위 처분표 등록) | `purchase-requests.test.ts` [U1-1] 3건(완료 거부 본인 · 구매 권한자 · 로그 0 / 사전 조회 뒤 완료 커밋 경합 / 목록 · 패널 갈래), `pre-settle-check.test.ts` [U1-1] 2건(취소 먼저 쥠 → 승인은 기다린 뒤 `완료 전 점검 1건` 거부 · 승인 먼저 → 취소 `완료 · 견적 줄 잠김` · 요청 `신청됨` · 로그 0). 고치기 전 4건 모두 빨강 확인 |
+| U1-2 중간 — 레이아웃 · 홈이 「내 차례」를 요청마다 두 번 계산 | `app/(app)/next-turn-request.ts` — React `cache()`가 요청마다 새 Map을 주고 열쇠는 사람 id · 계급(레이아웃 · 홈의 viewer 객체가 달라서). 홈이 결재 시트 재료를 쓰므로 한 번 계산에 `withDetails`를 싣는다. 레이아웃 · 홈은 import · 호출 한 줄씩 바꿈(JSX · CSS diff 0, 점검표 `docs/design/checks/2026-10-14-06-u1-next-turn-request-memo.md`). 건수 정의(S19)는 그대로 | 4265193 | `test/unit/app/next-turn-request-memo.test.ts` 4건 — vitest의 일반 react는 `cache`가 그냥 통과하므로 cache를 「한 요청 = 한 memo」로 흉내 내 열쇠 · 재사용 규칙을 본다(같은 사람 두 번 → 공급 함수 1회 · 다음 요청 새로 · 다른 사람/계급 따로 · 레이아웃/홈이 이 함수를 거침). memo를 끄면 빨강(뮤테이션 확인). 실제 요청 단위 memo는 Next 문서(`caching-without-cache-components.md` 「Deduplicating requests」)의 계약 — 실측은 프로덕션 빌드에서 `listNextTurnItems` 호출을 세는 계측(예: 일시 로그 · OpenTelemetry span)으로 홈 전체 로드 1회를 확인하는 방식으로 남긴다 |
+| U1-3 낮음 — `restoreEvidence`가 카드 전표도 되살림 | `restoreEvidence`가 되살리기 주인 종류를 차수 고객 승인(`quote_revision`) · 리저브 줄(`reserve_entry`) 허용 목록으로 한정 — 카드 전표(`corp_card_usage`)는 직접 호출도 카드 쪽 없는 건 문구로 거부(06-25 must_have 「카드 전표 되돌리기 없음」). 액션 주석 「새 두 주인 종류만」과 서버가 이제 같다 | d2a4d78 | `card-usage-evidence.test.ts` [U1-3] 1건(등록한 사람 · 대리 등록 권한자 직접 되살리기 거부 · 파일 지운 채 · `evidence_restore` 로그 0) + 기존 [X-2]의 카드 전표 되살리기 호출을 거부 단언으로 바꿈(version 불변 단언은 그대로). 차수 승인 · 리저브 되살리기는 `approval-reserve-evidence.test.ts` 그대로 통과 |
+| U1-4 참고 — 카드 전표 읽기 범위가 `cards` 메뉴 보기를 보지 않음 | 기록만 — 06-05 S8 목록과 같은 동작 승계라 06-25 prohibition은 문면대로 지켜진다. 메뉴 게이트를 원하면 06-05 · 06-25를 함께 고친다 | — | — |
+| U1-5 참고 — 서로 다른 주인 사이 중복 판정은 잠금으로 직렬화되지 않음 | 기록만 — 05 업로드 중복과 같은 수준의 남은 위험. 유일 제약이 없으니 6.1 대사에서 잡히는지만 본다 | — | — |
+
+### 07 입력 (U1-2 남은 비용)
+- 레이아웃은 전체 로드 · `router.refresh()` · `revalidatePath` 액션마다 여전히 「내 차례」 전체 계산을 한 번 돈다(지급 권한자 `listAllPaymentTargets`, PM 프로젝트별 `computePreSettleCheck`, 대표 `approveBlockedReasonsOf` → 정산 점검). 이번 수정은 홈의 중복 한 번만 없앴다.
+- 한 번 계산에 `withDetails`를 실어서 홈이 아닌 화면의 레이아웃 렌더도 `내 결재` 문서의 결재 시트 재료(`loadKindDetails` · `possibleActions`)를 함께 읽는다 — `내 결재` 건수만큼 늘어나는 비용.
+- 07 후보: 레이아웃 건수용 가벼운 갈래(묶음 존재 여부만 COUNT, 결재 막힘 이유 · 시트 재료 생략 — 건수 정의 S19 유지) 또는 클라이언트 경로 변경 때 건수를 따로 받기(UnreadCountProvider 꼴).
+
+### 실행 기록
+- 격리 DB만: 통합 `erp_test_u1f`, E2E `erp_u1f_test`(`flock /tmp/plant8-erp-test.lock`, 포트 3100, `--no-deps --project=desktop`). 끝난 뒤 둘 다 지움.
+- `pnpm lint` 종료 0(boundaries 설정 경고만) · `pnpm typecheck` 종료 0 · `pnpm test:unit` 307파일 4602건 녹색.
+- 통합: `purchase-requests.test.ts` · `pre-settle-check.test.ts` · `card-usage-evidence.test.ts` · `approval-reserve-evidence.test.ts` · `evidence-upload.test.ts` · `evidence-void.test.ts` · `next-turn.test.ts` 녹색.
+- CI=true E2E(desktop): `purchase-requests-finish.spec.ts` · `next-turn-phase6.spec.ts` 9건 통과.
+- 스킬: superpowers:test-driven-development · verification-before-completion · design-gate(U1-2 화면 파일) 호출.

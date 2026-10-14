@@ -10,7 +10,7 @@ import { NextTurn, nextTurnLabelId } from "@/ui/next-turn/NextTurn";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { toDecision, toSheet } from "@/app/(app)/approvals/sheet-material";
-import { HomeApprovalRow, HomeApprovalsProvider, HomeNextTurnError } from "./home-approval-actions";
+import { HomeApprovalRow, HomeApprovalsProvider, HomeNextTurnError } from "@/app/(app)/home-approval-actions";
 
 // D-28: 루트가 「내 차례」 홈이다. 미인증이면 로그인으로 보내는 분기는
 // 02-04에서 그대로 유지한다(app/(app)/layout.tsx의 requireSession()이 이미

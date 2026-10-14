@@ -60,8 +60,8 @@ describe("app/(app)/approvals/page.tsx — 결재함 EMPTY (§7-7)", () => {
   });
 });
 
-describe("app/(app)/page.tsx — 「내 차례」가 빈 홈 (§7-4)", () => {
-  const source = read("app", "(app)", "page.tsx");
+describe("app/(app)/(home)/page.tsx — 「내 차례」가 빈 홈 (§7-4)", () => {
+  const source = read("app", "(app)", "(home)", "page.tsx");
 
   it("NextTurn 블록 자체는 0건일 때 사라진다", () => {
     expect(source).toContain("view.visible");

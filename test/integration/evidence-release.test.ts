@@ -32,6 +32,7 @@ import { createMemoryStorage } from "./fakes/memory-storage";
 import { deferred, waitForLockWaiter } from "./lock-race";
 import { addApprovedRevision, attachEvidence, makeEvidenceManager, setupExpenseProject, submitReadyDraft } from "./fixtures/expenses";
 import { approvedExpenseWithEvidence, approvedExpenseWithoutEvidence, makePaymentManager, setEvidenceRequired, type ApprovedExpense } from "./fixtures/payments";
+import { linkCardUsage } from "./fixtures/settlements";
 
 // 06-11(EVID-02 · EVID-03 · EVID-04 · C4 · B-1 · U-4 · X-12 · E-49) — 증빙 수명 주기: 결재 통과 문서의 증빙 추가 · 무효가 확인을 풀고 문서 version을 올린다.
 // 06-06 · 06-10 · 05가 이 파일의 `it` 이름으로 다시 본다(이름을 바꾸지 않는다).
@@ -445,9 +446,9 @@ async function expenseNumber(expenseId: string): Promise<string> {
   return row.number;
 }
 
-async function insertOtherOwnerFile(ownerKind: "corp_card_usage" | "quote_revision", sha256: string, uploadedBy: string): Promise<void> {
+async function insertOtherOwnerFile(ownerKind: "corp_card_usage" | "quote_revision", sha256: string, uploadedBy: string, ownerId: string = randomUUID()): Promise<void> {
   const id = randomUUID();
-  await insertFile(SYSTEM_VIEWER, { id, ownerKind, ownerId: randomUUID(), objectKey: `evidence/${id}`, sha256, sizeBytes: 1000, contentType: "image/jpeg", originalName: "전표.jpg", uploadedBy }, db);
+  await insertFile(SYSTEM_VIEWER, { id, ownerKind, ownerId, objectKey: `evidence/${id}`, sha256, sizeBytes: 1000, contentType: "image/jpeg", originalName: "전표.jpg", uploadedBy }, db);
 }
 
 const declare = (ownerId: string, sha256: string) => ({ ownerKind: "expense", ownerId, size: 1000, contentType: "image/jpeg", sha256, name: "영수증.jpg" });
@@ -459,7 +460,8 @@ describe("중복 범위 (06-11 Task 3)", () => {
 
     // 카드 전표(다른 주인 종류이지만 같은 범위) — 번호 없는 문구.
     const slipSha = randomBytes(32).toString("hex");
-    await insertOtherOwnerFile("corp_card_usage", slipSha, fx.pm.id);
+    // 06-25: 카드 전표는 주인 규칙이 있어 주인 행이 없으면 중복이 아니다 — 실제 카드 사용 행에 붙인다.
+    await insertOtherOwnerFile("corp_card_usage", slipSha, fx.pm.id, await linkCardUsage(fx.pm, fx.lines.noVendor));
     const draftA = (await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.split] })).created[0]?.expenseId ?? "";
     const slip = await caught(requestEvidenceUpload(fx.pm, declare(draftA, slipSha), { storage }));
     expect(slip).toBeInstanceOf(EvidenceCheckError);

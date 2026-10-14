@@ -171,3 +171,22 @@ RED 확인
 - **열린 항목 1 → 허용.** #174(`7c55305`) · #177(`32e37c1`) · #179(`bfd0e90`) · #186(`8f7f8fa`)은 06 코드 PR이 아니라 각각 따로 main에 머지된 다른 트랙 PR이고 마이그레이션은 추가형(0027~0031)이다. 허용 목록을 5줄로 늘려 verify 둘째 줄을 다시 돌렸다: `disallowed=0`(종료 0). PR-E(#214)는 `db/migrations`·`db/schema`를 바꾸지 않는다. 6.1 #164는 아직 머지 전이라 범위에 없다.
 - **열린 항목 2 → 호환으로 확정, 사용자 알림.** 0025의 `DROP CONSTRAINT` 둘은 더 넓은 CHECK로 바꾸는 교체(PR-A #169, 사용자 머지)다. 옛 리비전이 쓰는 행은 새 제약도 통과하므로 「Cloud Run 이전 리비전으로 되돌려도 스키마 호환」. 계획 정규식이 DROP CONSTRAINT를 거르지 못해 literal은 실패이므로 PR 보고에 사용자에게 알린다.
 - 열린 항목 3은 CI e2e 결과로 본다(겹침이 보이면 별도 정리).
+
+## backstop 감사 반영
+
+판정 건수 61 = backstop 합 61(필드 줄), 결함 4 → 수정 4
+
+출처: `/mnt/project-files/notes/06-review/06-backstop-audit.md`(기준 트리 `0b841e1`). 모두 낮음. 실패 E2E 단언을 먼저 커밋(RED 3건 실패 확인)한 뒤 수정했다.
+
+| 결함 | 수정 | 위치 | 커밋 |
+|---|---|---|---|
+| B-1 카드 사용 목록 가맹점 칸 3~4줄 꺾임 | 연결 칸과 같은 `.linkCell`/`.linkText` 한 줄 말줄임 + title | `app/(app)/cards/card-usage-list.tsx` `merchantCell` | 0add937 |
+| B-2 옆 패널 가맹점 · 카드 이름 꺾임 | `.valueLine`(flex, `바꾸기` 버튼 줄지 않음) + `.valueText` 한 줄 말줄임 + title | `card-usage-form.tsx` 가맹점 · 수정 모드 카드 이름, `cards.module.css` | 0add937 |
+| B-3 확인 모달 부제 2~4줄 꺾임 | 공용 `ConfirmDialog` 부제 `-webkit-line-clamp: 2` + `overflow-wrap: anywhere` + title 전문 | `ui/confirm-dialog/ConfirmDialog.module.css` `.subtitle`, `ConfirmDialog.tsx` | c6c2147 |
+| B-4 홈 느린 로드 LOADING 없음 | `page.tsx`를 `app/(app)/(home)/`로 옮기고 `loading.tsx`(제목 `내 차례` + `--surface-muted` 행 2개, aria-busy, 300ms 지연) 추가 | `app/(app)/(home)/loading.tsx` · `loading.module.css` | 4d8929d |
+
+- 테스트 선행 커밋: 2ca5772(`test(06)`).
+- B-4 방식 편차: 지시는 페이지 안 Suspense를 선호했으나, Next 16 문서상 동적 라우트는 `loading.js`가 있어야 미리 가져오기가 되고(prefetching.md), 감사가 쓴 계측(RSC 지연 중 클라이언트 이동)에서는 페이지 안 Suspense가 이동 중 뼈대를 만들지 못한다. `app/(app)/loading.tsx`는 하위 전체에 번지므로 `expenses/(list)` 선례의 라우트 그룹으로 홈만 감쌌다. 홈 로드 뒤 화면은 그대로다. `layout.tsx` · `domain/next-turn/*`는 건드리지 않았다.
+- 점검표: `docs/design/checks/2026-10-14-06-24-backstop-fix.md` + 06-05 · 06-17 · 06-23 점검표에 한 줄씩.
+- 검증(CI=true, 격리 DB `erp_bsf_test`, `--no-deps`): backstop 신규 3건 통과 / desktop 관련 182 통과(card-usage · card-usage-evidence · card-usage-panel-width · next-turn-phase6 · payment-batch · payment-single · evidence-lifecycle · issue-requests · dev-components · quote-revisions) / desktop 홈 접촉 95 통과 5 건너뜀 / mobile-375 87 통과 2 건너뜀 / `pnpm lint` · `pnpm typecheck` 0 / `pnpm test:unit` 306 파일 4598 통과.
+- 미실시: 폰 시트 위의 확인 모달 부제 직접 단언(증빙 확인 모달은 PC 폭에서만 열린다 — 규칙은 공용 CSS 한 곳), 320 폭 재실측(독립 DOM 감사 몫).

@@ -334,6 +334,8 @@ export function CardUsageForm({
   // 06-25 카드 전표 `증빙` 줄 — 새 건은 파일이 들어오면 1차와 같은 저장이 먼저 돌고(첫 저장), 돌려받은 id로 올린 뒤 그 건의 수정 패널로 바뀐다(05 「첫 저장」).
   const slipAreaRef = useRef<HTMLDivElement>(null);
   const savedSlipIdRef = useRef<string | null>(null);
+  // 첫 저장 시점의 version · 연결 줄 · 입력 — 파일을 놓아 저장된 새 건을 제출이 고칠 때 쓴다(version 조건 그대로).
+  const savedSlipRef = useRef<{ version: number; lineId: string | null; payload: string } | null>(null);
   const savingSlipRef = useRef<Promise<SlipSave> | null>(null);
   const saveSlipRef = useRef<() => Promise<SlipSave>>(() => Promise.resolve({ ok: false, message: EVIDENCE_UPLOAD_FAILED }));
   const [attachError, setAttachError] = useState<string | null>(null);
@@ -356,6 +358,7 @@ export function CardUsageForm({
   const create = useAction(createCardUsageAction, {
     onSuccess: ({ data }) => {
       savedSlipIdRef.current = null;
+      savedSlipRef.current = null;
       const submitted = submittedRef.current;
       const next: CardUsageDefaults = {
         usedOn: today,
@@ -394,10 +397,17 @@ export function CardUsageForm({
     },
   });
 
+  // 파일 올리기가 실패해 열려 있는 저장된 새 건 — 첫 저장 뒤 고친 값을 그 건에 저장하고 수정 패널로 간다.
+  const resave = useAction(updateCardUsageAction, {
+    onSuccess: () => {
+      const savedId = savedSlipIdRef.current;
+      if (savedId && slipEditHref) router.replace(`${slipEditHref}${savedId}`, { scroll: false });
+    },
+  });
   const { execute: executeCreate, result: createResult, isExecuting: creating, reset: resetCreate } = create;
   const active = purchase ? complete : edit ? update : null;
-  const result = active ? active.result : createResult;
-  const isExecuting = active ? active.isExecuting : creating;
+  const result = active ? active.result : resave.result.serverError || resave.result.validationErrors ? resave.result : createResult;
+  const isExecuting = active ? active.isExecuting : creating || resave.isExecuting;
   const reset = active ? active.reset : resetCreate;
 
   // 새 기본값으로 다시 그린 뒤에 성공 신호 — PanelForm이 reset · 스냅숏 · 결과 한 줄 · 첫 칸 포커스를 한다.
@@ -617,6 +627,7 @@ export function CardUsageForm({
     const id = outcome?.data?.id;
     if (id) {
       savedSlipIdRef.current = id;
+      savedSlipRef.current = { version: outcome?.data?.version ?? 1, lineId: outcome?.data?.quoteLineId ?? null, payload: JSON.stringify(payload) };
       return { ok: true, id };
     }
     return { ok: false, message: outcome?.serverError ?? firstValidationMessage(outcome?.validationErrors) ?? EVIDENCE_UPLOAD_FAILED };
@@ -625,8 +636,22 @@ export function CardUsageForm({
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     // 파일을 놓아 이미 저장된 새 건(올리기가 모두 실패한 경우) — 같은 건을 한 번 더 만들지 않고 그 건의 수정 패널로.
-    if (!edit && !purchase && savedSlipIdRef.current && slipEditHref && uploading === 0) {
-      router.replace(`${slipEditHref}${savedSlipIdRef.current}`, { scroll: false });
+    const savedId = savedSlipIdRef.current;
+    const saved = savedSlipRef.current;
+    if (!edit && !purchase && savedId && slipEditHref && uploading === 0) {
+      // 첫 저장 뒤 고친 값이 있으면 그 건에 저장하고(version 그대로), 같으면 바로 수정 패널로.
+      const payload = buildPayload(new FormData(event.currentTarget).get("memo"));
+      if (saved && JSON.stringify(payload) !== saved.payload) {
+        if (formBlock) {
+          setShowingResult(false);
+          return;
+        }
+        // 견적 외 비용 줄은 첫 저장이 만든 줄 id로 보낸다(새 줄을 또 만들지 않는다).
+        const link = payload.link?.kind === "out_of_quote" && saved.lineId ? { kind: "line" as const, lineId: saved.lineId } : payload.link;
+        resave.execute({ ...payload, link, amount: payload.amount, id: savedId, version: saved.version, usedByUserId: showUsedBy ? usedById : null });
+        return;
+      }
+      router.replace(`${slipEditHref}${savedId}`, { scroll: false });
       return;
     }
     if (blockedReason) {

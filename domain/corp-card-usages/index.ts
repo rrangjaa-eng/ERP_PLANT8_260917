@@ -511,8 +511,8 @@ export async function precheckCardUsage(viewer: Viewer, input: CardUsageInput): 
 
 // ── 등록(단독 / 외부 tx) ───────────────────────────────────────────────────
 
-/** `capOver` — 06-12 완료 프로젝트 줄 구매 완료(`settled`)의 실행가 초과액(원화), 초과가 아니거나 그 밖의 갈래면 null(Q-E). */
-export type CreatedCardUsage = { id: string; totalKrw: number; capOver: number | null };
+/** `capOver` — 06-12 완료 프로젝트 줄 구매 완료(`settled`)의 실행가 초과액(원화), 초과가 아니거나 그 밖의 갈래면 null(Q-E). `version` · `quoteLineId` — 파일 올리기 실패 뒤 같은 건을 고쳐 저장할 때 쓴다. */
+export type CreatedCardUsage = { id: string; version: number; quoteLineId: string | null; totalKrw: number; capOver: number | null };
 /** 수정 반환 — 결제 합계를 못 보는 사람에게는 null(DOM D-1). */
 export type UpdatedCardUsage = { id: string; totalKrw: number | null };
 
@@ -607,7 +607,7 @@ export async function createCardUsage(
       innerTx,
     );
     await recordAction(viewer, { actionType: "document_create", entity: CARD_USAGE_ENTITY, entityId: row.id }, { tx: innerTx });
-    return { id: row.id, totalKrw: row.totalAmountKrw, capOver };
+    return { id: row.id, version: row.version, quoteLineId: row.quoteLineId, totalKrw: row.totalAmountKrw, capOver };
   };
   return tx ? await runCreate(tx) : await withTransaction(runCreate);
 }

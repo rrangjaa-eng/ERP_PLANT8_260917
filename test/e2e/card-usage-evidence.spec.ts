@@ -174,6 +174,35 @@ test.describe("카드 전표 (06-25 Task 2 — 새 건 첫 저장 · S13 · 폰)
     await page.context().close();
   });
 
+  test("새 건 첫 저장 뒤 올리기 실패 → 고친 값이 제출에 저장된다", async ({ browser, baseURL }) => {
+    const holder = await makeHolder();
+    const page = await loginPage(browser, baseURL, holder.person);
+    await page.goto("/cards?new=1");
+    const sheet = newPanel(page);
+    const amount = sheet.getByLabel("결제 합계");
+    await waitForHydration(amount);
+    await amount.fill("88000");
+    await sheet.getByRole("radio", { name: "팀 비용" }).check();
+
+    // 서명 PUT을 실패시킨다 — 건은 만들어졌고 패널은 새 건 그대로 열려 있다.
+    await page.route("**/api/storage-local/**", (route) => route.abort());
+    await sheet.getByTestId("attachments-input").setInputFiles(await uniqueImage(page));
+    await expect(fileRows(sheet).filter({ hasText: /slip-.*\.jpg/ })).toBeVisible({ timeout: UPLOAD_WAIT });
+    await expect.poll(async () => (await db.select({ id: corpCardUsages.id }).from(corpCardUsages).where(eq(corpCardUsages.registeredBy, holder.person.viewer.id))).length).toBe(1);
+    await expect(sheet.getByTestId("attachments-input")).toBeAttached();
+
+    await amount.fill("99000");
+    await sheet.getByLabel("메모").fill("첫 저장 뒤 고침");
+    await sheet.getByRole("button", { name: /^카드 사용 등록/ }).click();
+
+    await expect(page).toHaveURL(/editId=/, { timeout: UPLOAD_WAIT });
+    const rows = await db.select({ total: corpCardUsages.totalAmountKrw, memo: corpCardUsages.memo }).from(corpCardUsages).where(eq(corpCardUsages.registeredBy, holder.person.viewer.id));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.total).toBe(99_000);
+    expect(rows[0]?.memo).toBe("첫 저장 뒤 고침");
+    await page.context().close();
+  });
+
   test("막힌 새 건은 파일을 받지 않는다", async ({ browser, baseURL }) => {
     const holder = await makeHolder();
     const page = await loginPage(browser, baseURL, holder.person);

@@ -18,7 +18,7 @@ import { loginPage, makePerson, waitForHydration, type Person } from "./leave-or
 import { E2E_ONLINE_VENDOR_NAME, enableOnlineVendorSetting } from "./online-vendor";
 import { createExpenseFromLines } from "@/domain/expenses";
 import { setupExpenseE2E, archiveTempRoles, insertTempRole } from "./expense-fixture";
-import { submitReadyDraft } from "../integration/fixtures/expenses";
+import { submitReadyDraft, testVendorAccount } from "../integration/fixtures/expenses";
 
 // 06-08(EXP-10 · UI-SPEC S11 · S12): 구매 요청 신청 — 온라인구매 견적 줄 → 옆 패널 → 저장 → 뒤 목록 첫 줄.
 // 사람 · 팀 · 프로젝트 · 줄은 도메인 함수로 만든다(스펙마다 전용 본부 · 팀). 온라인구매 협력사 설정은 전역 한 칸이라
@@ -40,8 +40,8 @@ async function seedTarget(requester: Requester): Promise<Target> {
   const suffix = randomUUID().slice(0, 8);
   const vendorName = E2E_ONLINE_VENDOR_NAME;
   await enableOnlineVendorSetting();
-  const online = await insertVendor(SYSTEM_VIEWER, { name: vendorName, normalizedName: vendorName.toLowerCase(), defaultEvidenceType: "tax_invoice" });
-  const other = await insertVendor(SYSTEM_VIEWER, { name: `E2E스테이지-${suffix}`, normalizedName: `e2e스테이지-${suffix}`, defaultEvidenceType: "tax_invoice" });
+  const online = await insertVendor(SYSTEM_VIEWER, { name: vendorName, normalizedName: vendorName.toLowerCase(), defaultEvidenceType: "tax_invoice", ...testVendorAccount() });
+  const other = await insertVendor(SYSTEM_VIEWER, { name: `E2E스테이지-${suffix}`, normalizedName: `e2e스테이지-${suffix}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount() });
   const client = await insertVendor(SYSTEM_VIEWER, { name: `E2E구매클라이언트-${suffix}`, normalizedName: `e2e구매클라이언트-${suffix}` });
   const year = seoulToday().slice(0, 4);
   const projectName = `E2E구매요청-${suffix}`;
@@ -560,7 +560,7 @@ test.describe("PR #183 검토 반영", () => {
     if (submitted.kind !== "submitted") throw new Error("제출되지 않음");
     // 제출 뒤 그 줄의 거래처를 온라인구매 협력사로 바꾼다 — 구매 요청 문이 열리고 반대쪽 지출결의가 남는다(경합과 같은 상태).
     await enableOnlineVendorSetting();
-    const online = await insertVendor(SYSTEM_VIEWER, { name: E2E_ONLINE_VENDOR_NAME, normalizedName: E2E_ONLINE_VENDOR_NAME.toLowerCase(), defaultEvidenceType: "tax_invoice" });
+    const online = await insertVendor(SYSTEM_VIEWER, { name: E2E_ONLINE_VENDOR_NAME, normalizedName: E2E_ONLINE_VENDOR_NAME.toLowerCase(), defaultEvidenceType: "tax_invoice", ...testVendorAccount() });
     await db.update(quoteLines).set({ vendorId: online.id }).where(eq(quoteLines.id, fx.lines.closed.id));
 
     const page = await loginPage(browser, baseURL, fx.pm);

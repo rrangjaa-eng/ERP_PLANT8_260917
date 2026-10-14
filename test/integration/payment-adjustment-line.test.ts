@@ -18,7 +18,7 @@ import { insertVendor } from "@/repositories/vendors";
 import { withTransaction } from "@/lib/db-transaction";
 import { seoulToday } from "@/lib/dates";
 import { voidEvidence } from "@/domain/evidence";
-import { makeEvidenceManager, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
+import { makeEvidenceManager, setupExpenseProject, submitReadyDraft, type ExpenseFixture, testVendorAccount } from "./fixtures/expenses";
 import { approvedExpenseWithoutEvidence, makePaymentManager, setEvidenceRequired, type ApprovedExpense } from "./fixtures/payments";
 
 // 06.5 D-6502 — 지급 완료 때 회사 대납 기타소득 세액을 그 프로젝트 현재 차수에 조정 줄 「기타소득세 대납 · {문서번호}」로 세운다.
@@ -117,7 +117,7 @@ async function handEdit(line: QuoteLineRow, executionKrw: number): Promise<Quote
 
 // 결재 통과 팀 비용(프로젝트 없음) — 같은 문서를 기타소득(회사 대납)으로 바꾼다.
 async function approvedTeamOtherIncome(fx: ExpenseFixture, supplyKrw: number): Promise<{ expenseId: string }> {
-  const vendor = await insertVendor(SYSTEM_VIEWER, { name: "강사", normalizedName: `강사-${randomUUID()}`, defaultEvidenceType: "tax_invoice" });
+  const vendor = await insertVendor(SYSTEM_VIEWER, { name: "강사", normalizedName: `강사-${randomUUID()}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount() });
   const { expenseId } = await createTeamExpenseDraft(fx.lead, { idempotencyKey: randomUUID(), fields: { teamExpenseKind: "team_overhead", usageDate: "2026-09-26", content: "팀 강의" } });
   const payment = (await listExpenseFormOptions(fx.lead)).payment[0]?.value ?? null;
   await saveExpenseDraft(fx.lead, {

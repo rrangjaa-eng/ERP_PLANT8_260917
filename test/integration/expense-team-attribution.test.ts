@@ -19,7 +19,7 @@ import {
 import { insertVendor } from "@/repositories/vendors";
 import { insertRole } from "@/repositories/roles";
 import { makePerson, teamIdByName } from "./approvals-fixtures";
-import { attachEvidence, submitReadyDraft } from "./fixtures/expenses";
+import { attachEvidence, submitReadyDraft, testVendorAccount } from "./fixtures/expenses";
 
 // 05-07 Task 1(EXP-08) — 프로젝트 없는 팀 비용 지출결의: 첫 저장 idempotency · 사용일 소속 팀 귀속(저장 때 고정) · 소속 없음 칸 오류 ·
 // 번호 `T{연도 2자리}-{순번 4자리}`(카운터 expense_team · period = 제출일 서울 연도) · 제출 막힘 ⑥ 묶음에 종류 · 내용.
@@ -31,7 +31,7 @@ async function setup() {
   const pm = await makePerson("박서연", DEFAULT_ROLE_ID, "기획1팀");
   await makePerson("김도윤", TEAM_LEAD_ROLE_ID, "기획1팀");
   await makePerson("최대표", CEO_ROLE_ID, null);
-  const vendor = await insertVendor(SYSTEM_VIEWER, { name: "회식집", normalizedName: `회식집-${randomUUID()}`, defaultEvidenceType: "tax_invoice" });
+  const vendor = await insertVendor(SYSTEM_VIEWER, { name: "회식집", normalizedName: `회식집-${randomUUID()}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount() });
   return { pm, vendorId: vendor.id };
 }
 

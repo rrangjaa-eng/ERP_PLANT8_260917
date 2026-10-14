@@ -31,7 +31,7 @@ import { DATE_FORMAT_ERROR } from "@/domain/expenses/draft-fields";
 import { completePaymentsBatchAction } from "@/app/(app)/expenses/actions";
 import { confirmEvidenceAction } from "@/app/(app)/expenses/[id]/actions";
 import { makePerson } from "./approvals-fixtures";
-import { addApprovedRevision, attachEvidence, makeEvidenceManager, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
+import { addApprovedRevision, attachEvidence, makeEvidenceManager, setupExpenseProject, submitReadyDraft, type ExpenseFixture, testVendorAccount } from "./fixtures/expenses";
 import { approvedExpenseWithEvidence, approvedExpenseWithoutEvidence, makePaymentManager, setEvidenceRequired, type ApprovedExpense } from "./fixtures/payments";
 
 // 06-15(EXP-09 · EXP-06 · AS1 · D-604) — 지급 대상 목록(S1)과 건별 트랜잭션 일괄 지급(S2). 통과를 기대하는 문서는 06-03 · 06-04처럼
@@ -357,7 +357,7 @@ describe("막힘 · 재판정 · 스냅숏 (06-15 Task 2)", () => {
   it("짝 막힘 — 계좌이체 · 카드 전표가 짝 목록 밖이면 목록 selectable false + 이유, 조작 요청으로 보내도 같은 문구로 거부", async () => {
     const payer = await makePayer();
     const fx = await setupExpenseProject();
-    const cardVendor = await insertVendor(SYSTEM_VIEWER, { name: "카드가맹", normalizedName: `카드가맹-${randomUUID()}`, defaultEvidenceType: "card_receipt" });
+    const cardVendor = await insertVendor(SYSTEM_VIEWER, { name: "카드가맹", normalizedName: `카드가맹-${randomUUID()}`, defaultEvidenceType: "card_receipt", ...testVendorAccount() });
     const [doc] = await approvedMany(fx, await extraLines(fx, 1, cardVendor.id), false);
     if (!doc) throw new Error("문서 없음");
     const [row] = await db.select({ method: expenses.paymentMethod, evidenceType: expenses.evidenceType }).from(expenses).where(eq(expenses.id, doc.expenseId));
@@ -923,9 +923,11 @@ describe("계좌 투영 (06-20 Task 2)", () => {
   it("계좌 없음 행 고를 수 있음 — 계좌 없는 거래처의 계좌이체 P4 행은 account 「없음」 · selectable 참(M-7)", async () => {
     const payer = await makePayer();
     const fx = await setupExpenseProject();
-    const bare = await insertVendor(SYSTEM_VIEWER, { name: "계좌없는곳", normalizedName: `계좌없는곳-${randomUUID()}`, defaultEvidenceType: "tax_invoice" });
+    // 06.5 D-6507: 계좌 없는 계좌이체는 제출에서 막히므로 결재 통과 뒤 계좌가 지워진 거래처로 만든다(지급 단계 「없음」 갈래는 그대로 남는다).
+    const bare = await insertVendor(SYSTEM_VIEWER, { name: "계좌없는곳", normalizedName: `계좌없는곳-${randomUUID()}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount() });
     const [doc] = await approvedMany(fx, await extraLines(fx, 1, bare.id), false);
     if (!doc) throw new Error("문서 필요");
+    await db.update(vendors).set({ accountBank: null, accountHolder: null, accountNumberEncrypted: null, accountNumberLast4: null }).where(eq(vendors.id, bare.id));
 
     const row = rowsOf(await listPaymentTargets(payer, {})).find((candidate) => candidate.id === doc.expenseId);
     expect(row?.account).toEqual({ status: "none" });

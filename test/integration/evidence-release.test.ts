@@ -30,7 +30,7 @@ import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { seoulToday } from "@/lib/dates";
 import { createMemoryStorage } from "./fakes/memory-storage";
 import { deferred, waitForLockWaiter } from "./lock-race";
-import { addApprovedRevision, attachEvidence, makeEvidenceManager, setupExpenseProject, submitReadyDraft } from "./fixtures/expenses";
+import { addApprovedRevision, attachEvidence, makeEvidenceManager, setupExpenseProject, submitReadyDraft, testVendorAccount } from "./fixtures/expenses";
 import { approvedExpenseWithEvidence, approvedExpenseWithoutEvidence, makePaymentManager, setEvidenceRequired, type ApprovedExpense } from "./fixtures/payments";
 import { linkCardUsage } from "./fixtures/settlements";
 
@@ -623,7 +623,7 @@ describe("팀 비용 문서(프로젝트 없음) (06-11 검토 S-2)", () => {
     const fx = await setupExpenseProject();
     const payer = await makePayer();
     const voider = await makeEvidenceManager("증빙무효", { attach: false, void: true });
-    const vendor = await insertVendor(SYSTEM_VIEWER, { name: "회식집", normalizedName: `회식집-${randomUUID()}`, defaultEvidenceType: "tax_invoice" });
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name: "회식집", normalizedName: `회식집-${randomUUID()}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount() });
     const { expenseId } = await createTeamExpenseDraft(fx.lead, { idempotencyKey: randomUUID(), fields: { teamExpenseKind: "team_overhead", usageDate: "2026-09-26", content: "팀 회식" } });
     const payment = (await listExpenseFormOptions(fx.lead)).payment[0]?.value ?? null;
     await saveExpenseDraft(fx.lead, {

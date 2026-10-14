@@ -8,7 +8,7 @@ import { rejectDocument, withdrawDocument } from "@/domain/approvals";
 import { createTeamExpenseDraft, EXPENSE_DOCUMENT_KIND, listExpenseFormOptions, saveExpenseDraft } from "@/domain/expenses";
 import { listExpenses, type ExpenseListStatus } from "@/domain/expenses/list";
 import { insertVendor } from "@/repositories/vendors";
-import { setupExpenseProject, submitReadyDraft } from "./fixtures/expenses";
+import { setupExpenseProject, submitReadyDraft, testVendorAccount } from "./fixtures/expenses";
 
 // 05-08 Task 2(UI-SPEC S8 · M2): 목록의 돈 · 쪽 계약 — 외화는 원화 환산 + 원래 통화 2행 재료, 합계 줄은 원화 합만,
 // 50건 쪽, 쪽 경계를 넘는 그룹의 머리글 반복, 그리고 정렬은 SQL 한 곳(ORDER BY group_rank, 그룹별 키, id → LIMIT)이라
@@ -55,7 +55,7 @@ async function submitted(viewer: Viewer, vendorId: string, content: string, supp
 }
 
 async function vendorId(): Promise<string> {
-  return (await insertVendor(SYSTEM_VIEWER, { name: `거래처-${randomUUID().slice(0, 6)}`, normalizedName: `거래처-${randomUUID()}`, defaultEvidenceType: "tax_invoice" })).id;
+  return (await insertVendor(SYSTEM_VIEWER, { name: `거래처-${randomUUID().slice(0, 6)}`, normalizedName: `거래처-${randomUUID()}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount() })).id;
 }
 
 async function readPage(viewer: Viewer, status: ExpenseListStatus, page: number, pageSize: number) {

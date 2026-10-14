@@ -21,7 +21,7 @@ import { ForbiddenError } from "@/domain/permissions/can";
 import { seoulToday } from "@/lib/dates";
 import { confirmEvidenceAction } from "@/app/(app)/expenses/[id]/actions";
 import { deferred, waitForLockWaiter, type Deferred } from "./lock-race";
-import { addApprovedRevision, attachEvidence, makeEvidenceManager, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
+import { addApprovedRevision, attachEvidence, makeEvidenceManager, setupExpenseProject, submitReadyDraft, type ExpenseFixture, testVendorAccount } from "./fixtures/expenses";
 import { approvedExpenseWithEvidence, makePaymentManager, setEvidenceRequired, type ApprovedExpense } from "./fixtures/payments";
 
 // 06-06(EVID-02 · EVID-03 · D-601 · D-602 · O-2) — 경영관리의 증빙 확인(S4). 확인 기록(06-27 expense_evidence_reviews) · 금액 고쳐 확인 ·
@@ -529,7 +529,7 @@ describe("공급가액 고침 상한(06.5 D-6520 — 제출 상한과 같은 판
 });
 
 async function approvedTeamExpense(fx: ExpenseFixture, supply: { currency: "KRW" | "USD"; amount: number; fxRate: number }): Promise<{ expenseId: string; version: number }> {
-  const vendor = await insertVendor(SYSTEM_VIEWER, { name: "회식집", normalizedName: `회식집-${randomUUID()}`, defaultEvidenceType: "tax_invoice" });
+  const vendor = await insertVendor(SYSTEM_VIEWER, { name: "회식집", normalizedName: `회식집-${randomUUID()}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount() });
   const { expenseId } = await createTeamExpenseDraft(fx.lead, { idempotencyKey: randomUUID(), fields: { teamExpenseKind: "team_overhead", usageDate: "2026-09-26", content: "팀 회식" } });
   const payment = (await listExpenseFormOptions(fx.lead)).payment[0]?.value ?? null;
   await saveExpenseDraft(fx.lead, {

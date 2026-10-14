@@ -22,7 +22,7 @@ import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertVendor } from "@/repositories/vendors";
 import { insertIssueRequest } from "@/repositories/revenue-issue-requests";
 import { makePerson, teamIdByName } from "./approvals-fixtures";
-import { addApprovedRevision, makeEvidenceManager, setupApprovedProject, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
+import { addApprovedRevision, makeEvidenceManager, setupApprovedProject, setupExpenseProject, submitReadyDraft, type ExpenseFixture, testVendorAccount } from "./fixtures/expenses";
 import { makePaymentManager, setEvidenceRequired } from "./fixtures/payments";
 
 // 06.5-09(D-6516 · 카드 ③ — 사용자 카드 10/13 23:29 KST 「지급 완료·발행 요청 목록 범위 — 전부 보기」): PR-E가 만든 읽기 경로의 보는 범위 회귀.
@@ -83,7 +83,7 @@ async function lineDoc(drafter: Viewer, approvers: readonly Viewer[], lineId: st
 }
 
 async function teamCostDoc(drafter: Viewer, approvers: readonly Viewer[]): Promise<string> {
-  const vendor = await insertVendor(SYSTEM_VIEWER, { name: "회식집", normalizedName: `회식집-${randomUUID()}`, defaultEvidenceType: "tax_invoice" });
+  const vendor = await insertVendor(SYSTEM_VIEWER, { name: "회식집", normalizedName: `회식집-${randomUUID()}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount() });
   const { expenseId } = await createTeamExpenseDraft(drafter, { idempotencyKey: randomUUID(), fields: { teamExpenseKind: "team_overhead", usageDate: seoulToday(), content: "팀 회식" } });
   const payment = (await listExpenseFormOptions(drafter)).payment[0]?.value ?? null;
   await saveExpenseDraft(drafter, {

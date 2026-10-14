@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
+import { SidePanel, editLinkFor } from "@/ui/side-panel/SidePanel";
 import { Form } from "@/ui/form/Form";
 import { Select } from "@/ui/select/Select";
 import { TextField } from "@/ui/input/TextField";
@@ -249,6 +250,15 @@ function MerchantPickDialog({ open, onClose, onPick }: { open: boolean; onClose:
   );
 }
 
+// 06.5 D-6512 L-1 · SP-65-3: 수정 패널 — 서버 페이지는 함수를 넘길 수 없어(RSC) 여기서 그 행 `수정` 링크를 찾는 returnFocusTo를 만든다.
+export function CardUsageEditPanel({ id, closeHref, children }: { id: string; closeHref: string; children: ReactNode }) {
+  return (
+    <SidePanel title="카드 사용 수정" closeHref={closeHref} returnFocusTo={() => editLinkFor(id)}>
+      {children}
+    </SidePanel>
+  );
+}
+
 export function CardUsageForm({
   cards,
   evidenceTypes,
@@ -358,8 +368,12 @@ export function CardUsageForm({
 
   // 수정 저장 — 성공하면 패널이 닫히고 포커스가 연 요소(그 행 `수정`)로 돌아간다(PanelForm intent="edit").
   const update = useAction(updateCardUsageAction, { onSuccess: () => panelRef.current?.succeed() });
+  // 06.5 D-6509 · EP1-8: 등록 중복 방지 키 — 성공마다 새로 만든다(등록 패널은 성공해도 닫히지 않아 같은 키면 다음 건이 첫 행으로 돌아온다).
+  // 실패 · 거부 때는 그대로 둔다(재시도 · 두 번 누름이 같은 키로 한 건).
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const create = useAction(createCardUsageAction, {
     onSuccess: ({ data }) => {
+      setIdempotencyKey(crypto.randomUUID());
       savedSlipIdRef.current = null;
       savedSlipRef.current = null;
       const submitted = submittedRef.current;
@@ -631,12 +645,13 @@ export function CardUsageForm({
     const payload = buildPayload(new FormData(form).get("memo"));
     let outcome: Awaited<ReturnType<typeof createCardUsageAction>> | undefined;
     try {
-      outcome = await createCardUsageAction(showUsedBy ? { ...payload, usedByUserId: usedById } : payload);
+      outcome = await createCardUsageAction({ ...(showUsedBy ? { ...payload, usedByUserId: usedById } : payload), idempotencyKey });
     } catch {
       outcome = undefined;
     }
     const id = outcome?.data?.id;
     if (id) {
+      setIdempotencyKey(crypto.randomUUID());
       savedSlipIdRef.current = id;
       const link = payload.link;
       savedSlipRef.current = {
@@ -694,7 +709,7 @@ export function CardUsageForm({
     submittedRef.current = { corpCardId: selectedCardId, linkKind, project: linkKind === "team_cost" ? null : linkProject };
     const payload = buildPayload(memo);
     if (edit) update.execute({ ...payload, amount: amountHidden ? null : payload.amount, id: edit.id, version: edit.version, usedByUserId: showUsedBy ? usedById : edit.usedByUserId });
-    else executeCreate(showUsedBy ? { ...payload, usedByUserId: usedById } : payload);
+    else executeCreate({ ...(showUsedBy ? { ...payload, usedByUserId: usedById } : payload), idempotencyKey });
   }
 
   useEffect(() => {

@@ -14,6 +14,7 @@ import {
   precheckCardUsageUpdate,
   previewCardAmounts,
   restoreCardUsage,
+  reusableCardUsage,
   searchMerchantsForCard,
   updateCardUsage,
   usedByCandidates,
@@ -61,7 +62,8 @@ function fxRequired(value: { currency: string; amount: number | null; fxRate?: n
   if (value.currency !== "KRW" && value.amount !== null && value.fxRate === undefined) ctx.addIssue({ code: "custom", message: FX_MISSING, path: ["fxRate"] });
 }
 
-const createCardUsageSchema = z.object(cardUsageFields).superRefine(fxRequired);
+// 06.5 D-6509: 중복 방지 키 — 등록 화면이 성공마다 새로 만든다(실패 · 거부 때는 같은 키로 다시 보낸다).
+const createCardUsageSchema = z.object({ ...cardUsageFields, idempotencyKey: z.uuid() }).superRefine(fxRequired);
 
 // 06-09 수정(B-1 · D-609) — 건 id · version 필수. 공급가 · 부가세 칸은 없다(서버 재역산).
 // 결제 합계가 null이면 저장된 값 그대로(금액을 못 보는 사람의 수정 — DOM D-3).
@@ -69,7 +71,7 @@ const updateCardUsageSchema = z
   .object({ ...cardUsageFields, amount: amountSchema.nullable(), id: z.uuid(), version: z.number().int().positive() })
   .superRefine(fxRequired);
 
-function toCardUsageInput(parsedInput: z.infer<typeof createCardUsageSchema>): CardUsageInput {
+function toCardUsageInput(parsedInput: Omit<z.infer<typeof createCardUsageSchema>, "idempotencyKey">): CardUsageInput {
   const base = {
     corpCardId: parsedInput.corpCardId,
     usedOn: parsedInput.usedOn,
@@ -90,7 +92,10 @@ function toCardUsageInput(parsedInput: z.infer<typeof createCardUsageSchema>): C
 }
 
 export const createCardUsageAction = authedActionClient.schema(createCardUsageSchema).action(async ({ parsedInput, ctx }) => {
-  const input = toCardUsageInput(parsedInput);
+  // 재전송은 사전 판정보다 먼저 첫 행을 돌려받는다(EP3-B3).
+  const reused = await reusableCardUsage(ctx.viewer, parsedInput.idempotencyKey);
+  if (reused) return reused;
+  const input = { ...toCardUsageInput(parsedInput), idempotencyKey: parsedInput.idempotencyKey };
   const pre = await precheckCardUsage(ctx.viewer, input);
   const created = await createCardUsage(ctx.viewer, input, pre);
   revalidatePath("/cards");

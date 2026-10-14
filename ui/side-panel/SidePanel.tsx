@@ -74,6 +74,8 @@ type SidePanelCommon = {
   title: string;
   /** 거짓이면 닫힐 때 연 요소로 포커스를 돌리지 않는다(호출부가 새 결과로 옮긴다). 기본 참. */
   returnFocus?: boolean;
+  /** 06.5 SP-65-3 — 연 요소가 없을 때(주소로 직접 연 패널 · 결과 포커스) 화면 제목보다 먼저 갈 요소. 보이지 않거나 null이면 화면 제목. */
+  returnFocusTo?: () => HTMLElement | null;
   children?: ReactNode;
 };
 
@@ -105,6 +107,27 @@ function focusScreenTitle(): void {
   });
   observer.observe(document.body, { childList: true, subtree: true });
   window.setTimeout(() => observer.disconnect(), TITLE_FOCUS_WINDOW_MS);
+}
+
+// 06.5 D-6512 L-1 · SP-65-3(UI-SPEC V9): 주소로 직접 연 수정 패널은 연 요소가 없다 — 방금 고친 행의 열기 요소로 돌아가고, 그 행이 지금 목록에
+// 없거나 화면에 안 보이면(폰에서 숨은 열은 focus()가 무시된다) 제목. CSS 선택자 문자열은 받지 않는다(행 링크 모양이 바뀌면 조용히 깨진다).
+/** 닫힌 뒤 포커스 갈 곳 — 연 요소(문서에 남아 있을 때) → `returnFocusTo`가 준 보이는 요소 → null(화면 제목). */
+export function panelReturnTarget(
+  opener: HTMLElement | null,
+  returnTo: HTMLElement | null,
+  doc: { body: HTMLElement; contains(node: Node | null): boolean },
+): HTMLElement | null {
+  if (opener && doc.contains(opener) && opener !== doc.body) return opener;
+  if (returnTo && doc.contains(returnTo) && returnTo.getClientRects().length > 0) return returnTo;
+  return null;
+}
+
+/** URL 패널(`?editId=`) 목록 행의 열기 링크 — 호출부가 `returnFocusTo`로 넘긴다(06.5 SP-65-3 · 카드 · 법인카드 · 06.5-08 거래처가 같은 꼴). 패널 안 링크는 뺀다. */
+export function editLinkFor(id: string): HTMLElement | null {
+  for (const link of document.querySelectorAll<HTMLAnchorElement>("a[href]")) {
+    if (!link.closest("dialog") && new URL(link.href).searchParams.get("editId") === id) return link;
+  }
+  return null;
 }
 
 export function SidePanel(props: SidePanelProps) {
@@ -141,14 +164,18 @@ export function SidePanel(props: SidePanelProps) {
     return () => {
       root.style.paddingInlineEnd = "";
       if (dialog.open) dialog.close();
+      const focusBack = (from: HTMLElement | null) => {
+        const target = panelReturnTarget(from, propsRef.current.returnFocusTo?.() ?? null, document);
+        if (target) target.focus();
+        else focusScreenTitle();
+      };
       if (resultFocusRef.current) {
-        focusScreenTitle();
+        focusBack(null);
         return;
       }
       if (!returnFocusRef.current || skipReturnFocusRef.current) return;
-      // 연 요소가 아직 문서에 있으면 거기로, 없으면 화면 제목으로(직접 URL로 들어온 패널 · 연 행이 사라진 경우).
-      if (opener && document.contains(opener) && opener !== document.body) opener.focus();
-      else focusScreenTitle();
+      // 연 요소가 아직 문서에 있으면 거기로, 없으면 returnFocusTo · 화면 제목으로(직접 URL로 들어온 패널 · 연 행이 사라진 경우).
+      focusBack(opener);
     };
   }, []);
 

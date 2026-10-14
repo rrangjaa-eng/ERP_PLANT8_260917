@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useAction } from "next-safe-action/hooks";
 import {
   createCorpCardAction,
@@ -12,6 +12,7 @@ import { TextField } from "@/ui/input/TextField";
 import { Form } from "@/ui/form/Form";
 import { RowAction } from "@/ui/row-actions/RowActions";
 import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
+import { SidePanel, editLinkFor } from "@/ui/side-panel/SidePanel";
 import { DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
 import styles from "./corp-cards.module.css";
 
@@ -34,6 +35,16 @@ function toOwnerKind(value: string): OwnerKind {
 // 만들지 않는다(Task 1이 그 컬럼을 두지 않기로 했다 — 입력 칸만 있는 것은 저장된다는 오해를 준다). 종류에 따라 소유 선택 상자 하나만 보인다(공용은 없음).
 // §6-1: page.tsx가 ?new=1일 때만 이 패널을 그린다 — 기본 진입에는 없다. 닫기 경로는 `SidePanel`이 가진다.
 // 성공 뒤(UQ-8 B · R9 D): 등록은 패널을 열어 둔 채 칸을 비우고 첫 칸에 포커스 + 결과 한 줄(`PanelForm.succeed` — 상세 화면이 없는 대상).
+// 06.5 OI-9 · SP-65-3: `?editId=`를 주소로 직접 열어 저장하면 포커스가 화면 제목으로 갔다(재현 2026-10-14) — 그 행 `수정` 링크로 돌린다.
+// 서버 페이지는 함수를 넘길 수 없어(RSC) 여기서 returnFocusTo를 만든다.
+export function CorpCardPanel({ editId, title, closeHref, children }: { editId: string | null; title: string; closeHref: string; children: ReactNode }) {
+  return (
+    <SidePanel title={title} closeHref={closeHref} returnFocusTo={editId ? () => editLinkFor(editId) : undefined}>
+      {children}
+    </SidePanel>
+  );
+}
+
 export function CardForm({ holders, teams }: { holders: HolderOption[]; teams: TeamOption[] }) {
   const panelRef = useRef<PanelFormHandle>(null);
   // 제출 직후 같은 틱의 두 번째 제출(Ctrl+Enter 연타)을 막는 동기 가드 — isExecuting은 다음 렌더에야 참이 된다(D7 · R15-ii).

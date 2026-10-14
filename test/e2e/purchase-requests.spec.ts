@@ -616,3 +616,24 @@ test.describe("PR #183 검토 반영", () => {
 });
 
 test.afterAll(archiveTempRoles);
+
+// 06.5 D-6509 · EP1-8: 등록 패널은 성공해도 닫히지 않는다 — 같은 패널에서 이은 두 번째 요청이 첫 요청으로 돌아오지 않는다(성공마다 새 키).
+test("[06.5 D-6509] 같은 등록 패널에서 두 건 연이어 → `C0001` · `C0002` · 행 둘", async ({ browser, baseURL }) => {
+  const requester = await makeRequester();
+  const target = await seedTarget(requester);
+  const page = await loginPage(browser, baseURL, requester.person);
+  await page.goto(`/cards/purchases?new=1&line=${target.onlineLineId}`);
+  const sheet = panel(page);
+  await waitForHydration(sheet.getByLabel("품목"));
+  for (const [itemName, seq] of [["현수막 1장", "C0001"], ["현수막 2장", "C0002"]] as const) {
+    await sheet.getByLabel("품목").fill(itemName);
+    await sheet.getByLabel("링크").fill("https://www.coupang.com/vp/products/1234?itemId=5");
+    const amount = sheet.getByLabel("예상 금액");
+    await amount.fill("110000");
+    await amount.press("Control+Enter");
+    await expect(sheet.getByRole("status")).toHaveText(`구매 요청됨 · ${target.projectNumber}-${seq}`);
+  }
+  const rows = await db.select({ id: purchaseRequests.id }).from(purchaseRequests).where(eq(purchaseRequests.requestedBy, requester.person.viewer.id));
+  expect(rows).toHaveLength(2);
+  await page.context().close();
+});

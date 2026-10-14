@@ -800,3 +800,70 @@ test.describe("프로젝트 상세 「법인카드 사용」 (06-07 S15)", () =>
   });
 });
 
+
+// 06.5 D-6512 L-1 · SP-65-3(UI-SPEC V9): 주소로 직접 연 수정 패널을 저장해 닫으면 포커스가 그 행 `수정` 링크로(행이 필터 밖이면 화면 제목).
+async function onlyUsageId(holder: CardHolder): Promise<string> {
+  const [row] = await db.select({ id: corpCardUsages.id }).from(corpCardUsages).where(eq(corpCardUsages.registeredBy, holder.person.viewer.id));
+  if (!row) throw new Error("카드 사용이 없습니다");
+  return row.id;
+}
+
+async function saveEditPanel(page: Page, amount: string): Promise<void> {
+  const sheet = page.getByRole("dialog", { name: "카드 사용 수정" });
+  const total = sheet.getByLabel("결제 합계");
+  await waitForHydration(total);
+  await total.fill(amount);
+  await total.press("Control+Enter");
+  await expect(sheet).toHaveCount(0);
+}
+
+test.describe("카드 사용 수정 딥링크 저장 뒤 포커스 (06.5 V9 L-1)", () => {
+  test("`/cards?editId=` 주소로 열어 저장 → 포커스 = 그 행 `수정` 링크 · 목록 `수정`으로 연 경우도 그 링크(기존 경로)", async ({ browser, baseURL }) => {
+    const holder = await makeCardHolder();
+    await seedUsage(holder, 30_000);
+    const id = await onlyUsageId(holder);
+    const page = await loginPage(browser, baseURL, holder.person);
+    await page.goto(`/cards?editId=${id}`);
+    await saveEditPanel(page, "31000");
+    const rowEdit = page.getByRole("link", { name: `${seoulToday().slice(5)} 수정` });
+    await expect(rowEdit).toBeFocused();
+
+    await rowEdit.click();
+    await saveEditPanel(page, "32000");
+    await expect(page.getByRole("link", { name: `${seoulToday().slice(5)} 수정` })).toBeFocused();
+    await page.context().close();
+  });
+
+  test("그 행이 지금 필터 밖(지난달)인 주소로 열어 저장 → 포커스 = 화면 제목", async ({ browser, baseURL }) => {
+    const holder = await makeCardHolder();
+    await seedUsage(holder, 30_000);
+    const id = await onlyUsageId(holder);
+    const page = await loginPage(browser, baseURL, holder.person);
+    await page.goto(`/cards?month=${previousMonth()}&editId=${id}`);
+    await saveEditPanel(page, "31000");
+    await expect(page.locator('[data-ui="screen-title"]')).toBeFocused();
+    await page.context().close();
+  });
+});
+
+// 06.5 D-6509 · EP1-8: 등록 패널은 성공해도 닫히지 않는다 — 같은 패널에서 이은 두 번째 건이 첫 건으로 돌아오지 않는다(성공마다 새 키).
+test("[06.5 D-6509] 같은 등록 패널에서 두 건 연이어 → 행 둘 · 번호 둘(K 겹침 없음)", async ({ browser, baseURL }) => {
+  const holder = await makeCardHolder();
+  const page = await loginPage(browser, baseURL, holder.person);
+  await page.goto("/cards?new=1");
+  const sheet = panel(page);
+  const amount = sheet.getByLabel("결제 합계");
+  await waitForHydration(amount);
+  for (const [value, shown] of [["11000", "11,000"], ["22000", "22,000"]] as const) {
+    await sheet.getByLabel("결제 합계").fill(value);
+    await sheet.getByRole("radio", { name: "팀 비용" }).check();
+    await sheet.getByLabel("결제 합계").press("Control+Enter");
+    await expect(sheet.getByRole("status")).toHaveText(`카드 사용 등록됨 · ${shown}`);
+  }
+  const rows = await db.select({ number: corpCardUsages.number }).from(corpCardUsages).where(eq(corpCardUsages.registeredBy, holder.person.viewer.id));
+  expect(rows).toHaveLength(2);
+  const numbers = rows.map((row) => row.number ?? "");
+  expect(new Set(numbers).size).toBe(2);
+  for (const number of numbers) expect(number).toMatch(/^\d{2}T-K\d{4}$/);
+  await page.context().close();
+});

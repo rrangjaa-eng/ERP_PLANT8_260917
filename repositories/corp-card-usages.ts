@@ -21,6 +21,13 @@ export async function insertCardUsage(viewer: Viewer, values: CardUsageInsert, t
   return row;
 }
 
+// 06.5 D-6509: 중복 방지 키로 찾기 — 보관 행 포함(유일 색인이 보관 행도 덮는다). 같은 행위자인지는 domain이 가른다.
+export async function findCardUsageByIdempotencyKey(viewer: Viewer, key: string, tx: DbOrTx = db): Promise<CardUsageRow | null> {
+  void viewer;
+  const [row] = await tx.select().from(corpCardUsages).where(eq(corpCardUsages.idempotencyKey, key)).limit(1);
+  return row ?? null;
+}
+
 /** 목록 범위 — 전부(권한자 · 전사 범위) 또는 직원(자기 카드 · 자기 팀 카드 · 자기 등록). */
 export type CardUsageScope = { kind: "all" } | { kind: "own"; userId: string; teamId: string | null };
 

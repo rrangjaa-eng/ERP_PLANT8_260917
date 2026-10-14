@@ -148,7 +148,7 @@ describe("카드 사용 K 번호 — 팀 비용 · 구매 완료 · 동시 · �
     const results = await Promise.allSettled(pres.map((pre) => createCardUsage(fx.pm, lineInput(fx), pre)));
 
     expect(results.filter((result) => result.status === "rejected")).toEqual([]);
-    const numbers = await Promise.all(results.map((result) => (result.status === "fulfilled" ? numberOf(result.value.id) : null)));
+    const numbers = await Promise.all(results.map(async (result) => (result.status === "fulfilled" ? numberOf(result.value.id) : null)));
     expect([...numbers].sort()).toEqual([1, 2, 3, 4, 5, 6].map((seq) => `${fx.projectNumber}-K000${seq}`));
   });
 
@@ -158,7 +158,7 @@ describe("카드 사용 K 번호 — 팀 비용 · 구매 완료 · 동시 · �
     const results = await Promise.allSettled(pres.map((pre) => createCardUsage(fx.pm, teamInput(fx), pre)));
 
     expect(results.filter((result) => result.status === "rejected")).toEqual([]);
-    const numbers = await Promise.all(results.map((result) => (result.status === "fulfilled" ? numberOf(result.value.id) : null)));
+    const numbers = await Promise.all(results.map(async (result) => (result.status === "fulfilled" ? numberOf(result.value.id) : null)));
     expect([...numbers].sort()).toEqual([1, 2, 3, 4, 5, 6].map((seq) => `26T-K000${seq}`));
   });
 

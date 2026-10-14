@@ -26,6 +26,7 @@ import { vendorKindsFor } from "@/domain/vendors/kind";
 import { codeLabelsOf } from "@/domain/expenses";
 import { PICK_LIMIT, PICK_VENDOR_OPTION_SPEC, type PickVendorOptionDto } from "@/domain/expenses/pick";
 import {
+  findCardUsageByIdempotencyKey,
   findCardUsageForWrite,
   findLastCardUsageByRegistrant,
   insertCardUsage,
@@ -75,6 +76,7 @@ import { getSimpleSettingValues } from "@/domain/settings/registry";
 import { DOCUMENT_NUMBER_EXPENSE_TEAM_PREFIX } from "@/domain/settings/keys";
 import { kstYear } from "@/lib/kst-date";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
+import { isUniqueViolation } from "@/lib/pg-errors";
 
 // 06-05(EXP-07 · D-607 · D-608 · D-609): 법인카드 사용 — 본인 등록 · 팀 비용 연결 · 목록.
 //
@@ -114,6 +116,8 @@ export type CardUsageInput = {
   usedByUserId?: string | null;
   /** 06-12 구매 완료 갈래(R-3) — 있으면 등록 경로 `purchase`: 카드 자격 = 구매 권한 + 활성 카드 전부, 사용한 사람 = `usedByUserId`(요청자). */
   purchaseRequestId?: string | null;
+  /** 06.5 D-6509 중복 방지 키(등록 화면이 성공마다 새로 만든다) — 없으면 매번 새 행(도메인 직접 호출 · 구매 완료). */
+  idempotencyKey?: string;
 } & (
   | { linkKind: "team_cost" }
   | { linkKind: null }
@@ -537,13 +541,29 @@ export type CreatedCardUsage = { id: string; version: number; quoteLineId: strin
 /** 수정 반환 — 결제 합계를 못 보는 사람에게는 null(DOM D-1). */
 export type UpdatedCardUsage = { id: string; totalKrw: number | null };
 
+// 06.5 D-6509(CSO-4 · 183-cso.md:43-48): 두 번 누름 · 재전송이 결제를 두 번 잡지 않게(새 동작 — 옛 카드 등록은 키가 없었다).
+// 같은 행위자(등록자)만 재사용 — 남의 키로 남의 행을 읽지 못하게(없는 건과 같은 거부). 같은 키 다른 내용은 첫 행(지출결의 선례 — 미결 EP3-B5 기본값).
+function reusedCardUsage(viewer: Viewer, row: CardUsageRow | null): CreatedCardUsage | null {
+  if (!row) return null;
+  if (row.registeredBy !== viewer.id) throw cardSlipNotFound();
+  return { id: row.id, version: row.version, quoteLineId: row.quoteLineId, totalKrw: row.totalAmountKrw, capOver: null };
+}
+
+// 액션이 사전 판정보다 먼저 부른다(트랜잭션 밖) — 재전송이 사전 판정을 다시 돌지 않는다.
+export async function reusableCardUsage(viewer: Viewer, idempotencyKey: string): Promise<CreatedCardUsage | null> {
+  return reusedCardUsage(viewer, await findCardUsageByIdempotencyKey(viewer, idempotencyKey));
+}
+
 export async function createCardUsage(
   viewer: Viewer,
   input: CardUsageInput,
   pre: CardUsagePre,
   tx?: DbOrTx,
 ): Promise<CreatedCardUsage> {
-  const runCreate = async (innerTx: DbOrTx) => {
+  const key = input.idempotencyKey;
+  // 경합 패자는 잠금 뒤 여기서 승자 행을 받는다 — 상한 게이트가 승자 몫까지 세어 거부하기 전에(EP2-B2).
+  const replay = async (innerTx: DbOrTx) => (key ? reusedCardUsage(viewer, await findCardUsageByIdempotencyKey(viewer, key, innerTx)) : null);
+  const runCreate = async (innerTx: DbOrTx): Promise<CreatedCardUsage> => {
     // precheck와 같은 정규화 — KRW에 실려 온 환율은 버린다(원화 = 결제 합계).
     const total = normalizeMoneyInput(input.total);
     const split = splitCardTotal({ money: total, rule: pre.evidenceRule }, pre.rates);
@@ -561,6 +581,8 @@ export async function createCardUsage(
       );
       const current = pre.linkFixed ? await currentLineForFixedLink(viewer, { projectId: pre.projectId, lineId: input.lineId }, innerTx) : null;
       const locked = await lockQuoteLines(viewer, current ? [input.lineId, current] : [input.lineId], innerTx);
+      const again = await replay(innerTx);
+      if (again) return again;
       const target = locked.find((row) => row.id === input.lineId);
       // 화면이 내보내지 않는 줄(조정 · 취소 · 보관 · 현재 차수 밖) — 새 문구 없음. 고정 연결은 차수를 보지 않는다.
       if (!target || target.lineKind === "adjustment" || target.lineStatus === "cancelled" || target.archivedAt || (!pre.linkFixed && target.revisionId !== pre.revisionId)) {
@@ -592,6 +614,8 @@ export async function createCardUsage(
       const out = pre.outOfQuote;
       if (!out) throw new CardUsageRejectedError(LINK_MISSING);
       const project = await lockProjectForLinkWrite(viewer, { projectId: out.projectId, revisionId: out.revisionId, allowCompleted: true }, innerTx);
+      const again = await replay(innerTx);
+      if (again) return again;
       const edit = await gate(project, "project.line-edit", {
         status: project.status,
         lineKind: "out_of_quote",
@@ -627,13 +651,22 @@ export async function createCardUsage(
         registeredVia: pre.registeredVia,
         purchaseRequestId: pre.registeredVia === "purchase" ? (input.purchaseRequestId ?? null) : null,
         memo: input.memo ?? null,
+        idempotencyKey: key ?? null,
       },
       innerTx,
     );
     await recordAction(viewer, { actionType: "document_create", entity: CARD_USAGE_ENTITY, entityId: row.id }, { tx: innerTx });
     return { id: row.id, version: row.version, quoteLineId: row.quoteLineId, totalKrw: row.totalAmountKrw, capOver };
   };
-  return tx ? await runCreate(tx) : await withTransaction(runCreate);
+  if (tx) return runCreate(tx);
+  try {
+    return await withTransaction(runCreate);
+  } catch (error) {
+    // onConflictDoNothing을 쓰지 않는다 — 같은 트랜잭션에서 올린 번호 카운터가 행 없이 커밋돼 빈 번호가 생긴다. 유일 색인 위반은 통째로 되돌아가고 승자 행을 읽는다.
+    const winner = key && isUniqueViolation(error, "corp_card_usages_idempotency_key_uniq") ? reusedCardUsage(viewer, await findCardUsageByIdempotencyKey(viewer, key)) : null;
+    if (winner) return winner;
+    throw error;
+  }
 }
 
 // ── 수정 · 권리(06-09 — O-11 · B-1 · Q3 · E-9) ─────────────────────────────

@@ -214,3 +214,19 @@ RED 확인
 - 점검표: `docs/design/checks/2026-10-14-06-24-backstop-fix.md` + 06-05 · 06-17 · 06-23 점검표에 한 줄씩.
 - 검증(CI=true, 격리 DB `erp_bsf_test`, `--no-deps`): backstop 신규 3건 통과 / desktop 관련 182 통과(card-usage · card-usage-evidence · card-usage-panel-width · next-turn-phase6 · payment-batch · payment-single · evidence-lifecycle · issue-requests · dev-components · quote-revisions) / desktop 홈 접촉 95 통과 5 건너뜀 / mobile-375 87 통과 2 건너뜀 / `pnpm lint` · `pnpm typecheck` 0 / `pnpm test:unit` 306 파일 4598 통과.
 - 미실시: 폰 시트 위의 확인 모달 부제 직접 단언(증빙 확인 모달은 PC 폭에서만 열린다 — 규칙은 공용 CSS 한 곳), 320 폭 재실측(독립 DOM 감사 몫).
+
+## 오케스트레이터 마감 (2026-10-14)
+
+위 「오케스트레이터 몫」 빈칸을 채운다.
+
+- DOM 감사(backstop): 판정 61 = backstop 합 61, 결함 4 → 수정 4(위 「backstop 감사 반영」).
+- 사파리 캡처: 실행 38486761971, `headBranch` claude/phase-06-pr-e-exec-nrr117. WebKit·Chromium 비교 결함 후보 0(`/mnt/project-files/notes/06-review/06-safari-compare.md`).
+- Opus 교차 검토(U-1): 지적 3 수정, 참고 2 기록(위 「교차 검토(U-1) 반영」).
+- `/gsd-validate-phase 6`: 06-VALIDATION.md 갱신(989c92d).
+- E-53 샤드 시간:
+  - main 기준(deploy 38491606151, 01:00Z): e2e(1) 14분 06초, e2e(2) 15분 58초.
+  - ready PR(ci 38503613509, 8db3955): e2e(1) 20분 27초, e2e(2) 22분 09초.
+  - 가장 긴 샤드 22분 09초 < `timeout-minutes` 40의 80%(32분). 가장 짧은 샤드의 1.5배(30분 40초)도 넘지 않음 → `ci.yml` 조정 없음.
+- ready PR CI 전체 게이트: 녹색(quality · integration 1·2 · e2e 1·2 · tested-tree). https://github.com/rrangjaa-eng/ERP_PLANT8_260917/actions/runs/38503613509
+- CI 수정(ready 뒤): 9caedee · bebdac9 · 50eb5bb(Codex 봇 지적 2건), 8e47689 · 94e844b(오래된 테스트), 8db3955(공휴일 되돌리기 경쟁 · 사람 목록 대기 — 근본 해결은 07 입력).
+- Post-build 묶음 게이트: /review · /cso · /design-review(+Codex) · /qa 통과, `.claude/gates/phase-06.log` 기록.

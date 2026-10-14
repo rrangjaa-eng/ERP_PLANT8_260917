@@ -3,7 +3,8 @@ import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/viewer";
 import { REJECT_REASON_EMPTY_MESSAGE, REJECT_REASON_MAX, REJECT_REASON_TOO_LONG_MESSAGE } from "@/domain/approvals";
-import { listNextTurnItems, type NextTurnEntry } from "@/domain/next-turn";
+import type { NextTurnEntry } from "@/domain/next-turn";
+import { listNextTurnItemsForRequest } from "@/app/(app)/next-turn-request";
 import { log } from "@/lib/log";
 import { buildNextTurnView, type NextTurnItem } from "@/ui/next-turn/build-next-turn-view";
 import { NextTurn, nextTurnLabelId } from "@/ui/next-turn/NextTurn";
@@ -27,7 +28,7 @@ export default async function HomePage() {
   let entries: NextTurnEntry[] = [];
   let failed = false;
   try {
-    entries = await listNextTurnItems(session.viewer, { withDetails: true });
+    entries = await listNextTurnItemsForRequest(session.viewer);
   } catch (error) {
     failed = true;
     log.warn("next_turn.load_failed", { message: error instanceof Error ? error.message : String(error) });

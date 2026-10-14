@@ -3,7 +3,7 @@ import { Client } from "pg";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { db, pool } from "@/db/client";
-import { actionLog, approvalInstances, approvalRoutes, approvalSteps, expenses, files, projects, quoteLines, settlementApprovals } from "@/db/schema";
+import { actionLog, approvalInstances, approvalRoutes, approvalSteps, expenses, files, projects, purchaseRequests, quoteLines, settlementApprovals } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { approveDocument, getApprovalView, rejectDocument, withdrawDocument } from "@/domain/approvals";
 import { getDocumentKind } from "@/domain/approvals/kinds";
@@ -29,13 +29,15 @@ import {
   PROJECT_FORCE_COMPLETE_ALLOW_OPEN_EXPENSES,
   PURCHASE_ONLINE_VENDOR_NAME,
 } from "@/domain/settings/keys";
-import { createPurchaseRequest, precheckPurchaseRequest } from "@/domain/purchase-requests";
+import { cancelPurchaseRequest, createPurchaseRequest, precheckPurchaseCancel, precheckPurchaseRequest } from "@/domain/purchase-requests";
+import { CompletedProjectError } from "@/domain/projects";
 import { insertVendor } from "@/repositories/vendors";
 import { addApprovedRevision, makeEvidenceManager, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
 import { approvedExpenseWithEvidence, approvedExpenseWithoutEvidence, makePaymentManager } from "./fixtures/payments";
 import { requestInput } from "./fixtures/purchase-requests";
 import { makePerson, NOW_2026 } from "./approvals-fixtures";
 import { issueRevenue, linkCardUsage, setupSettlementProject } from "./fixtures/settlements";
+import { deferred, waitForLockWaiter } from "./lock-race";
 
 // 06-19(PROJ-06 · D-611~D-613 · UA-610 · ENG E-1): 완료 전 점검 — 정산 기안(05 submitSettlement)이 같은 판정으로 막힌다.
 // 점검은 트랜잭션 앞에서 권한 · 설정을 읽고(loadPreSettleInputs) 트랜잭션 안에서는 tx 리포지토리 · 순수 함수만 쓴다(computePreSettleCheck).
@@ -87,7 +89,7 @@ async function rejectedExpense(fx: ExpenseFixture, lineId: string): Promise<stri
 // E-10 — 막힘 0이면서 행별 경로가 모두 도는 정산 프로젝트(06-22 「승인 동시 6건」이 다시 쓴다). 견적 줄마다 살아 있는 연결 하나:
 // ⓐ 결재 통과 · 증빙 있음 지출결의(hasEvidence(tx) · 면제 읽기) ⓑ 카드 사용 ⓒ `신청됨` 구매 요청(온라인구매 협력사 줄) + 발행 줄 1.
 const ONLINE_VENDOR = "쿠팡";
-async function blockFreeSettlingProject(): Promise<ExpenseFixture & { evidenceExpenseId: string }> {
+async function blockFreeSettlingProject(): Promise<ExpenseFixture & { evidenceExpenseId: string; purchaseRequestId: string }> {
   const fx = await setupExpenseProject();
   await setSettingValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME, ONLINE_VENDOR);
   const online = await insertVendor(SYSTEM_VIEWER, { name: ONLINE_VENDOR, normalizedName: `${ONLINE_VENDOR}-${randomUUID()}`, defaultEvidenceType: "tax_invoice" });
@@ -106,10 +108,10 @@ async function blockFreeSettlingProject(): Promise<ExpenseFixture & { evidenceEx
   await linkCardUsage(fx.pm, current.lines.noVendor);
   await linkCardUsage(fx.pm, current.lines.split);
   const input = requestInput(lineOf("현장 소모품"));
-  await createPurchaseRequest(fx.pm, input, await precheckPurchaseRequest(fx.pm, input));
+  const purchase = await createPurchaseRequest(fx.pm, input, await precheckPurchaseRequest(fx.pm, input));
   await issueRevenue(fx.projectId);
   await settle(fx.projectId);
-  return { ...current, evidenceExpenseId: evidence.expenseId };
+  return { ...current, evidenceExpenseId: evidence.expenseId, purchaseRequestId: purchase.id };
 }
 
 describe("완료 전 점검 — 정산 기안 게이트(05 submitSettlement)", () => {
@@ -600,6 +602,16 @@ async function waitBlockedBy(lockClient: Client, lockPid: number, n: number): Pr
   return waiting;
 }
 
+async function purchaseVersion(requestId: string): Promise<number> {
+  const [row] = await db.select({ version: purchaseRequests.version }).from(purchaseRequests).where(eq(purchaseRequests.id, requestId));
+  return row?.version ?? 0;
+}
+
+async function purchaseStatus(requestId: string): Promise<string | undefined> {
+  const [row] = await db.select({ status: purchaseRequests.status }).from(purchaseRequests).where(eq(purchaseRequests.id, requestId));
+  return row?.status;
+}
+
 async function backendPid(client: Client): Promise<number> {
   const { rows } = await client.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
   const pid = rows[0]?.pid;
@@ -776,6 +788,81 @@ describe("완료 전 점검 — 대표 최종 승인 재점검(O-16 · 05 정산
     120_000,
   );
 
+  // U1-1(06 교차 검토): 점검은 `신청됨` 구매 요청을 매칭으로 센다 — 그 취소가 프로젝트 행에서 정산 최종 승인과 줄을 서야 한다.
+  it(
+    "[U1-1] 구매 요청 취소 ∥ 정산 최종 승인 — 취소가 프로젝트 행을 먼저 쥠: 승인은 기다린 뒤 재점검으로 `완료 전 점검 1건` 거부 · 요청 취소",
+    async () => {
+      const fx = await blockFreeSettlingProject();
+      const doc = await draftSettlement(fx);
+      const pre = await precheckPurchaseCancel(fx.pm, { id: fx.purchaseRequestId });
+      const held = deferred();
+      const release = deferred();
+      let approving: Promise<unknown> | undefined;
+      const cancelling = cancelPurchaseRequest(fx.pm, { id: fx.purchaseRequestId, version: await purchaseVersion(fx.purchaseRequestId) }, pre, undefined, {
+        afterLock: async () => {
+          held.resolve();
+          await release.promise;
+        },
+      });
+      try {
+        await held.promise;
+        approving = approveDocument(fx.ceo, { instanceId: doc.instanceId, expectedVersion: doc.version }).catch((e: unknown) => e);
+        await waitForLockWaiter(pool);
+      } finally {
+        release.resolve();
+      }
+      await cancelling;
+      const result = await approving;
+      expect(result).toBeInstanceOf(GateBlockedError);
+      expect(result).toMatchObject({ message: CHECK_ONE });
+      expect(await projectStatusOf(fx.projectId)).toBe("settling");
+      expect(await purchaseStatus(fx.purchaseRequestId)).toBe("cancelled");
+    },
+    120_000,
+  );
+
+  it(
+    "[U1-1] 정산 최종 승인 ∥ 구매 요청 취소 — 승인이 프로젝트 행 줄의 앞: 승인 완료 뒤 취소는 `완료 · 견적 줄 잠김` · 요청 `신청됨` · 로그 0",
+    async () => {
+      const fx = await blockFreeSettlingProject();
+      const doc = await draftSettlement(fx);
+      const pre = await precheckPurchaseCancel(fx.pm, { id: fx.purchaseRequestId });
+      const version = await purchaseVersion(fx.purchaseRequestId);
+      const lockClient = new Client({ connectionString: process.env.DATABASE_URL });
+      await lockClient.connect();
+      const calls: Promise<unknown>[] = [];
+      let txOpen = false;
+      try {
+        await lockClient.query("BEGIN");
+        txOpen = true;
+        const lockPid = await backendPid(lockClient);
+        await lockClient.query("SELECT id FROM projects WHERE id = $1 FOR UPDATE", [fx.projectId]);
+        calls.push(approveDocument(fx.ceo, { instanceId: doc.instanceId, expectedVersion: doc.version }).catch((e: unknown) => e));
+        expect(await waitBlockedBy(lockClient, lockPid, 1)).toBeGreaterThanOrEqual(1);
+        calls.push(cancelPurchaseRequest(fx.pm, { id: fx.purchaseRequestId, version }, pre).catch((e: unknown) => e));
+        const waiting = await waitBlockedBy(lockClient, lockPid, 2);
+        expect(waiting, `취소 커넥션이 프로젝트 행 잠금에 막히지 않았다(관측: ${waiting})`).toBeGreaterThanOrEqual(2);
+        await lockClient.query("COMMIT");
+        txOpen = false;
+        const [approved, cancelled] = await Promise.all(calls);
+        expect(approved).toMatchObject({ status: "approved", final: true });
+        expect(cancelled).toBeInstanceOf(CompletedProjectError);
+        expect(await projectStatusOf(fx.projectId)).toBe("completed");
+        expect(await purchaseStatus(fx.purchaseRequestId)).toBe("requested");
+        const logs = await db
+          .select({ seq: actionLog.seq })
+          .from(actionLog)
+          .where(and(eq(actionLog.entityId, fx.purchaseRequestId), eq(actionLog.actionType, "status_change")));
+        expect(logs).toHaveLength(0);
+      } finally {
+        if (txOpen) await lockClient.query("ROLLBACK").catch(() => {});
+        await lockClient.end();
+        await Promise.allSettled(calls);
+      }
+    },
+    120_000,
+  );
+
   it(
     "승인 동시 6건 — 결재 인스턴스 행을 쥔 외부 커넥션이 풀 전체를 막아도 잠금 해제 뒤 10초 안에 모두 승인된다(ENG E-1)",
     async () => {
@@ -783,7 +870,7 @@ describe("완료 전 점검 — 대표 최종 승인 재점검(O-16 · 05 정산
       expect(poolMax).toBeGreaterThanOrEqual(2);
       expect(poolMax).toBeLessThan(6);
 
-      const projectsFx: (ExpenseFixture & { evidenceExpenseId: string })[] = [];
+      const projectsFx: (ExpenseFixture & { evidenceExpenseId: string; purchaseRequestId: string })[] = [];
       for (let i = 0; i < 6; i += 1) projectsFx.push(await blockFreeSettlingProject());
       const docs: Drafted[] = [];
       for (const fx of projectsFx) docs.push(await draftSettlement(fx));

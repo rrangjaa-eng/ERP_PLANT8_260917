@@ -618,6 +618,24 @@ describe("계좌 칸 저장 판정(06.5 D-6506 · DH-3)", () => {
     expect(row?.accountNumberEncrypted).not.toBeNull();
   });
 
+  it("판정한 값 그대로 저장 — 앞뒤 공백은 잘라 저장(10글자 + 공백 = 21바이트가 그대로 남지 않는다)", async () => {
+    const holder = "가나다라마바사아자차";
+    const { vendor } = await createVendor(SYSTEM_VIEWER, {
+      name: uniqueName(),
+      accountBank: " 신한 ",
+      accountHolder: `${holder} `,
+      accountNumber: "110-222-330007",
+    });
+    let [row] = await db.select().from(vendors).where(eq(vendors.id, vendor.id));
+    expect(row?.accountBank).toBe("신한");
+    expect(row?.accountHolder).toBe(holder);
+
+    await updateVendor(SYSTEM_VIEWER, vendor.id, { name: vendor.name, accountBank: "신한 ", accountHolder: ` ${holder}` });
+    [row] = await db.select().from(vendors).where(eq(vendors.id, vendor.id));
+    expect(row?.accountBank).toBe("신한");
+    expect(row?.accountHolder).toBe(holder);
+  });
+
   it("DH-3 stale — 옛 거래처(풀리지 않는 은행 · 번호 · 예금주 없음)의 이름만 고친 저장은 통과, 은행을 고친 저장은 예금주 없음", async () => {
     const name = uniqueName();
     const old = await insertVendor(SYSTEM_VIEWER, {

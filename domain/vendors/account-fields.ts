@@ -23,7 +23,8 @@ export type AccountFieldsInput = {
   next: { bank: string | null | undefined; holder: string | null | undefined; number: "keep" | "clear" | "set" };
 };
 
-function present(value: string | null | undefined): string | null {
+// 저장도 이 값으로 한다 — 판정한 값과 저장한 값이 갈라지지 않게(앞뒤 공백 · 빈 칸 → null).
+export function present(value: string | null | undefined): string | null {
   const trimmed = value?.trim() ?? "";
   return trimmed === "" ? null : trimmed;
 }

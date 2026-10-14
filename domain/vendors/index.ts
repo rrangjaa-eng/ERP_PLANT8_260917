@@ -27,7 +27,7 @@ import type { DbOrTx } from "@/repositories/document-counters";
 import { pickVisibleCustomFields, visibleCustomFieldKeys } from "@/domain/custom-fields/visibility";
 import { servesSide, vendorKindToAdd, VENDOR_KIND_LABELS, type VendorKind, type VendorSide } from "@/domain/vendors/kind";
 import { isUniqueViolation } from "@/lib/pg-errors";
-import { assertAccountFields } from "@/domain/vendors/account-fields";
+import { assertAccountFields, present } from "@/domain/vendors/account-fields";
 
 export class ForbiddenError extends UserFacingError {}
 
@@ -419,8 +419,8 @@ export async function createVendor(
       normalizedName,
       businessNo: input.businessNo ?? null,
       defaultEvidenceType: input.defaultEvidenceType ?? null,
-      accountBank: input.accountBank ?? null,
-      accountHolder: input.accountHolder ?? null,
+      accountBank: present(input.accountBank),
+      accountHolder: present(input.accountHolder),
       accountNumberEncrypted,
       accountNumberLast4,
       customFields,
@@ -487,8 +487,8 @@ export async function updateVendor(
     normalizedName,
     businessNo: input.businessNo ?? null,
     defaultEvidenceType: input.defaultEvidenceType ?? null,
-    accountBank: input.accountBank ?? null,
-    accountHolder: input.accountHolder ?? null,
+    accountBank: present(input.accountBank),
+    accountHolder: present(input.accountHolder),
     ...(input.kind !== undefined ? { kind: input.kind } : {}),
   };
   // customFields를 보내지 않으면(undefined) 커스텀 열을 건드리지 않는다(M-5) — 경합이 없어 트랜잭션도 없다.

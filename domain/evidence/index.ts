@@ -680,13 +680,16 @@ export async function getOwnedEvidence(viewer: Viewer, input: { ownerKind: strin
   return { files, actions, maxMb, writerName: writer?.name ?? null };
 }
 
+// F10 결과 줄 되살리기는 S21 · S22 두 주인만 — 카드 전표 삭제에는 `되돌리기`가 없다(06-25 must_have · U1-3).
+const RESTORABLE_OWNER_KINDS: ReadonlySet<string> = new Set([APPROVAL_EVIDENCE_KIND, RESERVE_EVIDENCE_KIND]);
+
 // 지운 파일 한 건 되살리기(SYSTEM §7-8 결과 줄 `되돌리기`) — rights가 있는 주인 종류만(expense는 결재 문서의 증빙 이력이라 되살리지 않는다).
 // 같은 권리 판정(rights.write + 잠근 뒤 writeOpen). 중복 묶음의 다른 주인에 같은 파일이 살아 있으면 되살리지 않는다 — 판정은 markRestored의
 // 조건 UPDATE(NOT EXISTS) 한 문장이라 조회와 UPDATE 사이 틈이 없다. 이미 살아 있으면 쓰기 · 로그 없이 끝난다.
 export async function restoreEvidence(viewer: Viewer, input: { fileId: string }): Promise<void> {
   const file = UUID_SHAPE.test(input.fileId) ? await findFileById(viewer, input.fileId) : null;
   const rule = file ? ruleFor(file.ownerKind) : null;
-  if (!file || !rule?.rights) throw rule?.notFound() ?? new ExpenseNotFoundError();
+  if (!file || !rule?.rights || !RESTORABLE_OWNER_KINDS.has(file.ownerKind)) throw rule?.notFound() ?? new ExpenseNotFoundError();
   const owner = await rule.load(viewer, file.ownerId);
   if (!owner) throw rule.notFound();
   const rights = await rule.rights(viewer, owner);

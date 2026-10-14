@@ -1,8 +1,8 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { approvalInstances, corpCardUsages, expenseEvidenceReviews, expenses, files, uploadIntents } from "@/db/schema";
+import { actionLog, approvalInstances, corpCardUsages, expenseEvidenceReviews, expenses, files, uploadIntents } from "@/db/schema";
 import { approveDocument } from "@/domain/approvals";
 import { createExpenseFromLines, deleteExpenseDraft, restoreExpenseDraft } from "@/domain/expenses";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
@@ -294,6 +294,20 @@ describe("보관 · 되돌리기", () => {
     expect(await aliveRows(KIND, fx.usageId)).toHaveLength(1);
   });
 
+  // U1-3(06 교차 검토): 06-25 must_have 「카드 전표 삭제에는 결과 줄 `되돌리기`가 없다」 — 직접 호출도 서버가 거부한다.
+  it("[U1-3] 지운 카드 전표를 restoreEvidence로 직접 되살리면 거부 · 파일은 지운 채 · 되살리기 로그 0(등록한 사람 · 대리 등록 권한자 모두)", async () => {
+    const fx = await setupUsage();
+    const file = await upload(fx.staff, fx.usageId);
+    await removeEvidence(fx.staff, { fileId: file.id });
+
+    await expect(restoreEvidence(fx.staff, { fileId: file.id })).rejects.toThrow("다른 저장이 먼저 됨 · 새로 고침");
+    await expect(restoreEvidence(fx.proxy, { fileId: file.id })).rejects.toThrow("다른 저장이 먼저 됨 · 새로 고침");
+
+    expect(await aliveRows(KIND, fx.usageId)).toHaveLength(0);
+    const restores = await db.select().from(actionLog).where(and(eq(actionLog.entityId, file.id), sql`${actionLog.detail} ->> 'change' = 'evidence_restore'`));
+    expect(restores).toHaveLength(0);
+  });
+
   it("[T-06-201] 겹친 채 A를 되돌리면 거부되고 A는 보관된 채 · B의 전표는 그대로, 겹침이 없으면 되돌아가며 hasCardSlip 참", async () => {
     const fx = await setupUsage();
     const b = await secondUsage(fx);
@@ -431,7 +445,8 @@ describe("카드 전표는 값을 바꾸지 않는다", () => {
 
     const file = await upload(fx.staff, fx.usageId);
     await removeEvidence(fx.staff, { fileId: file.id });
-    await restoreEvidence(fx.staff, { fileId: file.id });
+    // U1-3: 카드 전표는 되살리기가 없다 — 거부되어도 지출결의 · 인스턴스 version · 확인 기록은 그대로여야 한다.
+    await expect(restoreEvidence(fx.staff, { fileId: file.id })).rejects.toThrow("다른 저장이 먼저 됨 · 새로 고침");
     await upload(fx.staff, fx.usageId);
     await archive(fx.staff, fx.usageId);
     await restoreUsage(fx.staff, fx.usageId);

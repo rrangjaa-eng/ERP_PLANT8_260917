@@ -628,6 +628,7 @@ describe("수정 연결 변경(B-1 · E-9)", () => {
     const row = await insertCardUsage(
       fx.pm,
       {
+        number: `K-${randomUUID()}`,
         corpCardId: fx.cardId,
         usedOn: seoulToday(),
         merchantVendorId: null,
@@ -825,6 +826,7 @@ async function purchaseRow(fx: Fx, lineId: string): Promise<string> {
   const row = await insertCardUsage(
     fx.pm,
     {
+      number: `K-${randomUUID()}`,
       corpCardId: fx.cardId,
       usedOn: seoulToday(),
       merchantVendorId: null,

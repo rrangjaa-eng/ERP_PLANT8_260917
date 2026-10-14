@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { documentNumberFormat, purchaseRequestNumberFormat, type DocumentNumberFormat } from "@/domain/document-numbering";
+import { cardUsageNumberFormat, documentNumberFormat, purchaseRequestNumberFormat, type DocumentNumberFormat } from "@/domain/document-numbering";
 
 // 04-05(ADMN-09) Task 2 ③④ — 서식 조립 순수 함수. 설정·DB 없이 돈다.
 const DEFAULT_FORMAT: DocumentNumberFormat = {
@@ -70,5 +70,20 @@ describe("팀 비용 구매 요청 번호 서식 (06-02)", () => {
   it("기본 팀 서식(TC · 연도 2자리 · - · 4자리)의 2026년 첫 요청은 TC26-0001이다", () => {
     const team: DocumentNumberFormat = { prefix: "TC", yearDigits: 2, seqDigits: 4, separator: "-", seqStart: 1 };
     expect(documentNumberFormat({ year: 2026, seq: 1 }, team)).toBe("TC26-0001");
+  });
+});
+
+// 06.5 D-6503 — 카드 사용 K 번호 서식(가름 글자 K · 4자리 · 구분자 `-`는 상수).
+describe("cardUsageNumberFormat (06.5 D-6503)", () => {
+  it("프로젝트 머리 26001 · 순번 1 → 26001-K0001", () => {
+    expect(cardUsageNumberFormat("26001", 1)).toBe("26001-K0001");
+  });
+
+  it("팀 비용 머리 26T · 순번 12 → 26T-K0012", () => {
+    expect(cardUsageNumberFormat("26T", 12)).toBe("26T-K0012");
+  });
+
+  it("순번이 4자리를 넘치면(10000) 자르지 않는다", () => {
+    expect(cardUsageNumberFormat("26001", 10000)).toBe("26001-K10000");
   });
 });

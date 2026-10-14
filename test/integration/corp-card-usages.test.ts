@@ -1164,6 +1164,7 @@ describe("프로젝트 상세 「법인카드 사용」(S15)", () => {
     await insertCardUsage(
       SYSTEM_VIEWER,
       {
+        number: `K-${randomUUID()}`,
         corpCardId: fx.cardId,
         usedOn: seoulToday(),
         merchantVendorId: null,

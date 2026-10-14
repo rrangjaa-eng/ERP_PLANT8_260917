@@ -8,10 +8,11 @@ import { aliveFileExists } from "@/repositories/files";
 // 06-05(EXP-07): 법인카드 사용 쓰기 · 목록 · 직전 등록. 범위(UA-612)는 목록 쿼리의 조건에서 갈린다 — 보관된 건은 늘 뺀다(H-4 기반).
 
 export type CardUsageRow = InferSelectModel<typeof corpCardUsages>;
+// 06.5 D-6503: 새 행은 번호를 반드시 받는다 — 칸은 기존 행 때문에 NULL 허용.
 export type CardUsageInsert = Omit<
   InferInsertModel<typeof corpCardUsages>,
-  "id" | "version" | "source" | "archivedAt" | "archivedBy" | "createdAt" | "updatedAt"
->;
+  "id" | "version" | "source" | "archivedAt" | "archivedBy" | "createdAt" | "updatedAt" | "number"
+> & { number: string };
 
 export async function insertCardUsage(viewer: Viewer, values: CardUsageInsert, tx: DbOrTx): Promise<CardUsageRow> {
   void viewer;

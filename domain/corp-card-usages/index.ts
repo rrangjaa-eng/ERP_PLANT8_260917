@@ -70,6 +70,10 @@ import {
   type LineRoomBasis,
 } from "@/domain/corp-card-usages/link-targets";
 import type { DbOrTx } from "@/repositories/document-counters";
+import { allocateCardUsageNumber, type CardUsageNumberHead } from "@/domain/document-numbering";
+import { getSimpleSettingValues } from "@/domain/settings/registry";
+import { DOCUMENT_NUMBER_EXPENSE_TEAM_PREFIX } from "@/domain/settings/keys";
+import { kstYear } from "@/lib/kst-date";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 
 // 06-05(EXP-07 · D-607 · D-608 · D-609): 법인카드 사용 — 본인 등록 · 팀 비용 연결 · 목록.
@@ -141,6 +145,8 @@ export type CardUsagePre = {
   /** 06-12 상한 문구 갈래(06-07 `card.execution-cap` `link`) · 담당 PM 이름 — 없으면 `pickable`. */
   capLink?: "pickable" | "fixed";
   pmName?: string;
+  /** 06.5 D-6503 K 번호 재료(프로젝트 번호 · 팀 비용 접두어 · KST 연도) — 트랜잭션 밖에서 만든다(풀 고갈 교착 규약). */
+  numberHead: CardUsageNumberHead;
 };
 
 // ── 카드 자격 ──────────────────────────────────────────────────────────────
@@ -449,9 +455,19 @@ async function precheckPurchaseLink(viewer: Viewer, lineId: string, requestId: s
   };
 }
 
+/** 사전 판정 주입 — 테스트가 KST 연도 경계를 정한다. */
+export type CardUsagePrecheckDeps = { now?: Date };
+
+// 06.5 D-6503: K 번호 재료 — 프로젝트에 매였으면 그 프로젝트 번호, 아니면 지출결의 팀 비용 접두어(기존 설정) + KST 연도.
+async function cardUsageNumberHead(viewer: Viewer, projectId: string | null, now: Date): Promise<CardUsageNumberHead> {
+  const project = projectId ? await findProjectById(viewer, projectId) : null;
+  const [teamPrefix] = await getSimpleSettingValues([DOCUMENT_NUMBER_EXPENSE_TEAM_PREFIX] as const);
+  return { projectNumber: project?.number ?? null, teamPrefix: teamPrefix ?? "T", year: kstYear(now) };
+}
+
 // 06-12 구매 완료 갈래(R-3) — 본인 카드 · 대리 등록 판정을 타지 않는다. 카드 = 구매 권한 + 활성 카드 전부(공용 포함, Q5),
 // 사용한 사람 = 요청자, 팀 비용의 팀 = 요청자의 사용일 소속(O-19). 트랜잭션 밖에서만.
-async function precheckPurchaseCardUsage(viewer: Viewer, input: CardUsageInput, requestId: string): Promise<CardUsagePre> {
+async function precheckPurchaseCardUsage(viewer: Viewer, input: CardUsageInput, requestId: string, now: Date): Promise<CardUsagePre> {
   if (!(await can(viewer, "cards.purchases", "write"))) throw new ForbiddenError(PURCHASE_DENIED);
   const requester = input.usedByUserId;
   if (!requester) throw new ForbiddenError(USED_BY_NOT_CANDIDATE);
@@ -477,14 +493,18 @@ async function precheckPurchaseCardUsage(viewer: Viewer, input: CardUsageInput, 
     rates,
     capExclude: { requestId },
   } as const;
-  if (input.linkKind === "quote_line") return { ...base, ...(await precheckPurchaseLink(viewer, input.lineId, requestId)) };
-  if (input.linkKind === "team_cost") return { ...base, ...NO_LINK };
+  if (input.linkKind === "quote_line") {
+    const link = await precheckPurchaseLink(viewer, input.lineId, requestId);
+    return { ...base, ...link, numberHead: await cardUsageNumberHead(viewer, link.projectId, now) };
+  }
+  if (input.linkKind === "team_cost") return { ...base, ...NO_LINK, numberHead: await cardUsageNumberHead(viewer, null, now) };
   throw new CardUsageRejectedError(LINK_MISSING);
 }
 
-export async function precheckCardUsage(viewer: Viewer, input: CardUsageInput): Promise<CardUsagePre> {
+export async function precheckCardUsage(viewer: Viewer, input: CardUsageInput, deps: CardUsagePrecheckDeps = {}): Promise<CardUsagePre> {
   assertUsageBasics(input);
-  if (input.purchaseRequestId) return precheckPurchaseCardUsage(viewer, input, input.purchaseRequestId);
+  const now = deps.now ?? new Date();
+  if (input.purchaseRequestId) return precheckPurchaseCardUsage(viewer, input, input.purchaseRequestId, now);
 
   // 카드 자격(U-2 · EXP-16) — 남의 개인 · 팀 카드는 대리 등록 권한자만(D-608).
   const card = await findCorpCardById(viewer, input.corpCardId);
@@ -505,8 +525,9 @@ export async function precheckCardUsage(viewer: Viewer, input: CardUsageInput): 
     rates,
     capExclude: {},
   } as const;
-  if (input.linkKind === "team_cost" || input.linkKind === null) return { ...base, ...NO_LINK };
-  return { ...base, ...(await precheckLink(viewer, input, proxy)) };
+  if (input.linkKind === "team_cost" || input.linkKind === null) return { ...base, ...NO_LINK, numberHead: await cardUsageNumberHead(viewer, null, now) };
+  const link = await precheckLink(viewer, input, proxy);
+  return { ...base, ...link, numberHead: await cardUsageNumberHead(viewer, link.projectId, now) };
 }
 
 // ── 등록(단독 / 외부 tx) ───────────────────────────────────────────────────
@@ -584,9 +605,12 @@ export async function createCardUsage(
       const line = await createOutOfQuoteLine(viewer, { revisionId: out.revisionId, itemName: out.itemName, executionKrw: split.supplyKrw }, innerTx);
       link = { linkKind: "quote_line", quoteLineId: line.id, teamId: null };
     }
+    // 채번 자리는 여기 한 곳 — 구매 완료도 이 몸통을 지나므로 따로 채번하지 않는다(두 번 부르면 번호 하나가 빈다, eng 재검토 P1-B).
+    const number = await allocateCardUsageNumber(viewer, pre.numberHead, innerTx);
     const row = await insertCardUsage(
       viewer,
       {
+        number,
         corpCardId: pre.card.id,
         usedOn: input.usedOn,
         merchantVendorId: input.merchantVendorId ?? null,
@@ -622,7 +646,7 @@ export type CardUsageUpdateInput = WithOptionalTotal<CardUsageInput> & { id: str
 export type CardUsageProjectLock = { projectId: string; revisionId?: string; allowCompleted: boolean };
 
 /** 수정 사전 조회 결과(06-03 tx 규약) — 새 건의 `pre`에 수정 갈래 사실을 더한다. */
-export type CardUsageUpdatePre = Omit<CardUsagePre, "card" | "registeredVia"> & {
+export type CardUsageUpdatePre = Omit<CardUsagePre, "card" | "registeredVia" | "numberHead"> & {
   usageId: string;
   /** 사용한 사람이 바뀌면 같이 맞춘다(DB self_check) — 구매 완료 건은 그대로 `purchase`. */
   registeredVia: "self" | "proxy" | "purchase";
@@ -1286,6 +1310,8 @@ export type CardUsageListItemDto = {
   registeredOn: string;
   /** 06-12 구매 완료로 생긴 건의 구매 요청 번호 — 등록 칸 `구매 요청 {번호}`. 아니면 null. */
   purchaseNumber: string | null;
+  /** 06.5 D-6503 K 번호 — 번호 없는 기존 행은 null(화면 `—`). */
+  number: string | null;
   /** 연결 칸(S8) — `{프로젝트} · {줄 번호} {항목}` / `{프로젝트} · 견적 외 비용 · {항목}`. 팀 비용이면 null. */
   linkLabel: string | null;
   memo: string | null;
@@ -1318,6 +1344,7 @@ const VALUE_KEYS = [
   "registeredByName",
   "registeredOn",
   "purchaseNumber",
+  "number",
   "memo",
   "rights",
   "version",
@@ -1374,6 +1401,7 @@ function toProjectable(row: CardUsageListRow, lineNo: Map<string, number>, right
     registeredByName: row.registeredByName,
     registeredOn: seoulToday(row.createdAt),
     purchaseNumber: row.purchaseNumber,
+    number: row.number,
     linkLabel: cardLinkLabel(row, lineNo),
     memo: row.memo,
     currency: row.totalCurrency,

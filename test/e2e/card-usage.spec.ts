@@ -215,6 +215,27 @@ test.describe("법인카드 사용 등록 (06-05)", () => {
     await page.context().close();
   });
 
+  test("[06.5 D-6503 트레이서] 새 프로젝트 줄에 등록 → `/cards` 첫 머리글 `번호` · 그 행 첫 칸 `{프로젝트 번호}-K0001`", async ({ browser, baseURL }) => {
+    const holder = await makeCardHolder();
+    const target = await seedProjectLine(holder);
+    const page = await loginPage(browser, baseURL, holder.person);
+    await page.goto(`/cards?new=1&line=${target.lineId}`);
+    const sheet = panel(page);
+    const amount = sheet.getByLabel("결제 합계");
+    await waitForHydration(amount);
+    await expect(sheet.getByText(target.itemName, { exact: true })).toBeVisible();
+    await amount.fill("1100000");
+    await amount.press("Control+Enter");
+    await expect(sheet.getByRole("status")).toHaveText("카드 사용 등록됨 · 1,100,000");
+
+    await page.goto("/cards");
+    const table = page.getByRole("table");
+    await expect(table.locator("thead th").first()).toHaveText("번호");
+    const row = table.getByRole("row").filter({ hasText: "1,100,000" });
+    await expect(row.locator("td").first()).toHaveText(`${target.projectNumber}-K0001`);
+    await page.context().close();
+  });
+
   test("[06-07 M-4] `?new=1&line={id}` → 그 줄 채움 · `?new=1&project={id}` → 그 프로젝트 · 줄 빔", async ({ browser, baseURL }) => {
     const holder = await makeCardHolder();
     const target = await seedProjectLine(holder);

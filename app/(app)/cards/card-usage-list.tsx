@@ -33,6 +33,8 @@ export type CardUsageListRowView = {
   registeredOn: string | null;
   /** 06-12 구매 완료로 생긴 건 — 등록 칸 `구매 요청 {번호}`. */
   purchaseNumber: string | null;
+  /** 06.5 D-6503 K 번호 — 번호 없는 기존 행은 null(`—`). */
+  number: string | null;
   totalKrw: number | null;
   supplyKrw: number | null;
   vatKrw: number | null;
@@ -137,7 +139,9 @@ function slipText(row: CardUsageListRowView): string {
   return row.hasCardSlip ? "있음" : "—";
 }
 
+// 06.5 V7: 번호 열은 맨 앞 · p3 · `증빙` 열과 같은 접기 값(700~1023에서 가맹점이 눌리지 않게) — 폰 접힌 줄에는 넣지 않는다.
 const COLUMNS: TableColumn<CardUsageListRowView>[] = [
+  { key: "number", header: "번호", priority: "p3", collapseBelow: 1024, cell: (row) => <Num value={row.number} /> },
   { key: "usedOn", header: "사용일", priority: "p2", cell: (row) => <Num value={row.usedOn.slice(5)} /> },
   { key: "merchant", header: "가맹점", priority: "p2", cell: merchantCell },
   { key: "link", header: "연결", priority: "p1", cell: linkCell },

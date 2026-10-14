@@ -8,6 +8,8 @@ import { hasEvidence } from "@/domain/evidence/has-evidence";
 import { EXPENSE_DOCUMENT_KIND } from "@/domain/expenses/access";
 import { markVoided } from "@/repositories/files";
 import { withTransaction } from "@/lib/db-transaction";
+import { lockProjectForWrite } from "@/repositories/projects";
+import { deferred } from "./lock-race";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { upsertVisibility } from "@/repositories/permissions";
 import { setupExpenseProject } from "./fixtures/expenses";
@@ -110,6 +112,62 @@ describe("지급 완료 — 풀 소진 교착 회귀 가드", () => {
     },
     90_000,
   );
+});
+
+describe("지급 완료 — 프로젝트 행 → 견적 줄 → 문서 행 잠금 순서(06.5 D-6502 · N-3)", () => {
+  it("홀더가 프로젝트 행을 쥔 동안 지급은 프로젝트 행에서 기다리고(대기 1) 문서 행은 비어 있다(NOWAIT 성공) · 홀더를 놓으면 지급 성공 · 교착 없음", async () => {
+    await setEvidenceRequired(false);
+    const payer = await makePaymentManager();
+    if (!payer.roleId) throw new Error("계급 없음");
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: payer.roleId, infoItem: "expense.amount", visible: true });
+    const fx = await setupExpenseProject();
+    const doc = await approvedExpenseWithoutEvidence(fx);
+    const pre = await loadPaymentInputs(payer, { expenseId: doc.expenseId });
+    if (!pre.amount || !pre.tax) throw new Error("지급 총액을 셈할 수 없는 문서");
+    const payable = await decidePayable(
+      { amount: pre.amount, taxRule: pre.tax.taxRule, applyOpts: pre.tax.dates.applyOpts, recipientCount: pre.tax.recipientCount },
+      pre.tax.rates,
+    );
+
+    const probe = new Client({ connectionString: process.env.DATABASE_URL });
+    await probe.connect();
+    const held = deferred();
+    const release = deferred();
+    const holder = withTransaction(async (tx) => {
+      await lockProjectForWrite(SYSTEM_VIEWER, fx.projectId, tx);
+      held.resolve();
+      await release.promise;
+    });
+    let call: Promise<Awaited<ReturnType<typeof completeExpensePayment>>> | undefined;
+    try {
+      await held.promise;
+      call = completeExpensePayment(payer, { expenseId: doc.expenseId, expectedPayableKrw: payable.payableKrw, version: doc.version });
+
+      let waiters = 0;
+      for (let attempt = 0; attempt < 200 && waiters === 0; attempt += 1) {
+        const { rows } = await probe.query<{ count: number }>(
+          "SELECT count(*)::int AS count FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'",
+        );
+        waiters = rows[0]?.count ?? 0;
+        if (waiters === 0) await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(waiters).toBe(1);
+
+      await probe.query("BEGIN");
+      const { rows: grabbed } = await probe.query("SELECT id FROM expenses WHERE id = $1 FOR UPDATE NOWAIT", [doc.expenseId]);
+      expect(grabbed).toHaveLength(1);
+      await probe.query("ROLLBACK");
+    } finally {
+      release.resolve();
+      await holder;
+      await probe.end();
+    }
+    if (call === undefined) throw new Error("지급 호출 없음");
+    const result = await call;
+    expect(result.version).toBe(doc.version + 1);
+    const live = await db.select({ id: expensePayments.id }).from(expensePayments).where(and(eq(expensePayments.expenseId, doc.expenseId), isNull(expensePayments.cancelledAt)));
+    expect(live).toHaveLength(1);
+  }, 60_000);
 });
 
 describe("hasEvidence (C5 · RS-13)", () => {

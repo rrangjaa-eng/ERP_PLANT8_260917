@@ -48,7 +48,7 @@ import { findReviewByExpense, listAliveCardUsageSuppliesByProject } from "@/repo
 import { listAliveByOwners } from "@/repositories/files";
 import { findLiveLineBySourceExpense, findQuoteLineById, listLineageLinesByProjects } from "@/repositories/quote-lines";
 import { lockProjectForWrite } from "@/repositories/projects";
-import { syncTaxAdjustmentLine } from "@/domain/payments/adjustment-line";
+import { releaseTaxAdjustmentLine, syncTaxAdjustmentLine } from "@/domain/payments/adjustment-line";
 import { findExpenseQuoteLineIds, lockQuoteLines } from "@/repositories/quote-line-links";
 import { formatKrw } from "@/lib/format-number";
 import { kstDateOf } from "@/lib/kst-date";
@@ -549,27 +549,34 @@ export async function completeExpensePayment(
 }
 
 // 문서 보임(행 범위, CSO-1) — 트랜잭션 전 사전 조회(06-03 tx 규약). 안 보이면 문서 화면과 같은 「없는 지출결의」.
-async function assertExpenseVisible(viewer: Viewer, expenseId: string): Promise<void> {
+async function assertExpenseVisible(viewer: Viewer, expenseId: string): Promise<ExpenseRow> {
   const row = UUID_SHAPE.test(expenseId) ? await findExpenseById(viewer, expenseId) : null;
   if (!row || !(await canSeeExpense(viewer, row))) throw new PaymentNotFoundError();
+  return row;
 }
 
 // ── 지급 취소(06-04 · D-606) ────────────────────────────────────────────
 // 권한은 트랜잭션 전. 사유 필수. 한 트랜잭션: 문서 행 FOR UPDATE → version → 살아 있는 지급(없으면 이미 취소) → 취소 표시(행 삭제 없음) →
 // 문서 version + 1 → 끌 수 없는 행동 로그 payment_cancel(같은 tx). 프로젝트 상태를 읽지 않는다 — 완료 프로젝트도 취소된다(U-4 · D-47).
 // 견적 줄 잠금은 06-13이 「살아 있는 지급 기록」에서 파생하므로 여기서 따로 풀지 않는다.
+// 06.5 D-6502: 연결 조정 줄 보관을 위해 프로젝트 행 → 그 줄 → 문서 행 순서로 잠근다(완료와 같은 순서 · projectId는 트랜잭션 전 사전 조회).
 export async function cancelExpensePayment(
   viewer: Viewer,
   input: { expenseId: string; reason: string; version: number },
 ): Promise<{ version: number }> {
   if (!(await can(viewer, "expenses.payments", "write"))) throw new ForbiddenError("지급 처리 권한 없음");
-  await assertExpenseVisible(viewer, input.expenseId);
+  const pre = await assertExpenseVisible(viewer, input.expenseId);
   const reason = input.reason.trim();
   if (reason === "") throw new UserFacingError(CANCEL_REASON_REQUIRED);
   return withTransaction(async (tx) => {
+    if (pre.projectId) await lockProjectForWrite(viewer, pre.projectId, tx);
+    const linked = await findLiveLineBySourceExpense(viewer, pre.id, tx);
+    if (linked) await lockQuoteLines(viewer, [linked.id], tx);
+    const relinked = linked ? await findQuoteLineById(viewer, linked.id, tx) : null;
     const locked = await lockExpenseForUpdate(viewer, input.expenseId, tx);
     if (!locked) throw new PaymentNotFoundError();
     const conflict = `다른 사람이 ${formatKstTime(locked.updatedAt)}에 바꿈 · 새로 고침`;
+    if (locked.projectId !== pre.projectId) throw new PaymentConflictError(conflict);
     if (locked.version !== input.version) throw new PaymentConflictError(conflict);
     const live = await findLivePayment(viewer, locked.id, tx);
     if (!live) throw new PaymentConflictError(ALREADY_CANCELLED);
@@ -577,6 +584,7 @@ export async function cancelExpensePayment(
     if (!cancelled) throw new PaymentConflictError(ALREADY_CANCELLED);
     const version = await bumpExpenseVersion(viewer, { expenseId: locked.id, expectedVersion: locked.version, updatedBy: viewer.id }, tx);
     if (version === null) throw new PaymentConflictError(conflict);
+    const adjustment = await releaseTaxAdjustmentLine(viewer, { liveLine: relinked && relinked.archivedAt === null ? relinked : null }, tx);
     await recordAction(
       viewer,
       {
@@ -584,7 +592,7 @@ export async function cancelExpensePayment(
         entity: "expense",
         entityId: locked.id,
         documentId: locked.id,
-        detail: { paymentId: live.id, reason, payDate: live.payDate, transferKrw: live.transferKrw, payableKrw: live.payableKrw },
+        detail: { paymentId: live.id, reason, payDate: live.payDate, transferKrw: live.transferKrw, payableKrw: live.payableKrw, ...adjustment },
       },
       { tx },
     );

@@ -69,3 +69,6 @@
 - [x] 할 수 없는 일은 보이지 않는다 — 근거: 선택 열 · 1차가 없는 보기 전용 폭(<1024)에는 `고른 N건 · 이체액` 합계 줄도 두지 않는다(E2E 800px count 0 → 1280 다시 보임)
 - [x] 새 토큰 · 색 · CSS 없음 — 근거: 이번 반영은 tsx · 순수 함수 · 도메인 응답 칸만 고쳤고 CSS는 바꾸지 않았다. `git diff --stat cccfb37 -- ui/` 빈 출력(C11)
 - [x] 고치지 못한 것은 기록 — 근거: D-1(모달 부제 · 80자 파일명 말줄임 + title) · D-3(1024~1279 이유 줄이 숨은 번호 칸에 듦) · D-8(1차 라벨 두 줄)은 `ui/confirm-dialog` · `ui/attachments` · `ui/table` 계약(06-29 소관)이라 이 플랜이 고칠 수 없다(ConfirmDialog `subtitle`이 문자열 prop) — SUMMARY 「검토 반영」에 후속으로. D-7(320 2px)은 고치기 전에도 같음
+
+## 06-24 backstop 감사 반영 — B-3(확인 모달 부제 clamp 2)
+- [x] B-3 증빙 확인 모달 부제: 공용 `ConfirmDialog` 부제를 두 줄 clamp + title 전문으로 — 근거: 점검표 `2026-10-14-06-24-backstop-fix.md` · test/e2e/payment-batch.spec.ts `[backstop B-3]` · 확인 모달 쓰는 payment-batch · payment-single · evidence-lifecycle · issue-requests · quote-revisions E2E 회귀 없음

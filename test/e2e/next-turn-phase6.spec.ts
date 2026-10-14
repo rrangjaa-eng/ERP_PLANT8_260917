@@ -122,3 +122,31 @@ test.describe("「내 차례」 Phase 6 — 기안자 증빙 · 공급 실패 (0
     await expect(page.getByText("표시할 항목이 없습니다")).toHaveCount(0);
   });
 });
+
+// 06-24 backstop 감사 B-4(06-23 O-2 보류분) — 홈 느린 로드(§7-4 · §7-7 LOADING): 300ms 뒤 제목 + 뼈대 행 2개(aria-busy), 도착하면 홈.
+test.describe("「내 차례」 느린 로드 (06-24 backstop B-4)", () => {
+  test("홈 이동 RSC를 2.5초 늦춰도 300ms 뒤 제목 + 뼈대 행 2개(aria-busy)가 보이고, 도착하면 뼈대가 사라진다", async ({ browser, baseURL }) => {
+    const org = await setupLeaveOrg(seoulToday());
+    const page = await loginPage(browser, baseURL, org.drafter, DESKTOP);
+    await page.waitForLoadState("networkidle");
+
+    await page.route(
+      (url) => url.pathname === "/",
+      async (route) => {
+        const headers = route.request().headers();
+        if (headers.rsc === "1" && headers["next-router-prefetch"] === undefined) await new Promise((resolve) => setTimeout(resolve, 2_500));
+        await route.continue();
+      },
+    );
+    await page.locator('a[href="/"]').first().click();
+    const skeleton = page.locator('[data-ui="home-skeleton"]');
+    await expect(skeleton).toHaveCSS("opacity", "1", { timeout: 2_000 });
+    await expect(skeleton).toHaveAttribute("aria-busy", "true");
+    await expect(skeleton.locator('[data-ui="home-skeleton-row"]')).toHaveCount(2);
+    await expect(page.getByRole("heading", { level: 1, name: "내 차례" })).toBeVisible();
+    await expect(page).toHaveURL(/\/$/);
+    await expect(skeleton).toHaveCount(0, { timeout: 5_000 });
+    await expect(page.getByRole("heading", { level: 1, name: "내 차례" })).toBeVisible();
+    await page.context().close();
+  });
+});

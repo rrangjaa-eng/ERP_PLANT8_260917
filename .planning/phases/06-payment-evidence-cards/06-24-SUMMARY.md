@@ -195,3 +195,22 @@ RED 확인
 - 통합: `purchase-requests.test.ts` · `pre-settle-check.test.ts` · `card-usage-evidence.test.ts` · `approval-reserve-evidence.test.ts` · `evidence-upload.test.ts` · `evidence-void.test.ts` · `next-turn.test.ts` 녹색.
 - CI=true E2E(desktop): `purchase-requests-finish.spec.ts` · `next-turn-phase6.spec.ts` 9건 통과.
 - 스킬: superpowers:test-driven-development · verification-before-completion · design-gate(U1-2 화면 파일) 호출.
+
+## backstop 감사 반영
+
+판정 건수 61 = backstop 합 61(필드 줄), 결함 4 → 수정 4
+
+출처: `/mnt/project-files/notes/06-review/06-backstop-audit.md`(기준 트리 `0b841e1`). 모두 낮음. 실패 E2E 단언을 먼저 커밋(RED 3건 실패 확인)한 뒤 수정했다.
+
+| 결함 | 수정 | 위치 | 커밋 |
+|---|---|---|---|
+| B-1 카드 사용 목록 가맹점 칸 3~4줄 꺾임 | 연결 칸과 같은 `.linkCell`/`.linkText` 한 줄 말줄임 + title | `app/(app)/cards/card-usage-list.tsx` `merchantCell` | 0add937 |
+| B-2 옆 패널 가맹점 · 카드 이름 꺾임 | `.valueLine`(flex, `바꾸기` 버튼 줄지 않음) + `.valueText` 한 줄 말줄임 + title | `card-usage-form.tsx` 가맹점 · 수정 모드 카드 이름, `cards.module.css` | 0add937 |
+| B-3 확인 모달 부제 2~4줄 꺾임 | 공용 `ConfirmDialog` 부제 `-webkit-line-clamp: 2` + `overflow-wrap: anywhere` + title 전문 | `ui/confirm-dialog/ConfirmDialog.module.css` `.subtitle`, `ConfirmDialog.tsx` | c6c2147 |
+| B-4 홈 느린 로드 LOADING 없음 | `page.tsx`를 `app/(app)/(home)/`로 옮기고 `loading.tsx`(제목 `내 차례` + `--surface-muted` 행 2개, aria-busy, 300ms 지연) 추가 | `app/(app)/(home)/loading.tsx` · `loading.module.css` | 4d8929d |
+
+- 테스트 선행 커밋: 2ca5772(`test(06)`).
+- B-4 방식 편차: 지시는 페이지 안 Suspense를 선호했으나, Next 16 문서상 동적 라우트는 `loading.js`가 있어야 미리 가져오기가 되고(prefetching.md), 감사가 쓴 계측(RSC 지연 중 클라이언트 이동)에서는 페이지 안 Suspense가 이동 중 뼈대를 만들지 못한다. `app/(app)/loading.tsx`는 하위 전체에 번지므로 `expenses/(list)` 선례의 라우트 그룹으로 홈만 감쌌다. 홈 로드 뒤 화면은 그대로다. `layout.tsx` · `domain/next-turn/*`는 건드리지 않았다.
+- 점검표: `docs/design/checks/2026-10-14-06-24-backstop-fix.md` + 06-05 · 06-17 · 06-23 점검표에 한 줄씩.
+- 검증(CI=true, 격리 DB `erp_bsf_test`, `--no-deps`): backstop 신규 3건 통과 / desktop 관련 182 통과(card-usage · card-usage-evidence · card-usage-panel-width · next-turn-phase6 · payment-batch · payment-single · evidence-lifecycle · issue-requests · dev-components · quote-revisions) / desktop 홈 접촉 95 통과 5 건너뜀 / mobile-375 87 통과 2 건너뜀 / `pnpm lint` · `pnpm typecheck` 0 / `pnpm test:unit` 306 파일 4598 통과.
+- 미실시: 폰 시트 위의 확인 모달 부제 직접 단언(증빙 확인 모달은 PC 폭에서만 열린다 — 규칙은 공용 CSS 한 곳), 320 폭 재실측(독립 DOM 감사 몫).

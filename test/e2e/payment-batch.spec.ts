@@ -927,6 +927,42 @@ test.describe("제자리 증빙 확인 · 보관 (06-17 Task 4)", () => {
     await page.context().close();
   });
 
+  // 06-24 backstop 감사 B-3(06-17 D-1 보류분) — 확인 모달 부제(`{번호} · {프로젝트 · 항목} · 증빙 금액 …`)는 두 줄까지 보이고 말줄임, 전체 글자는 title.
+  test("[backstop B-3] 긴 프로젝트 이름 — 증빙 확인 모달 부제가 두 줄에서 잘리고 전체 글자를 title로 가진다 · 모달 가로 넘침 0", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const a = await unreviewedTarget(fx, "tracer");
+    const doc = await docOf(a);
+    await db.update(projects).set({ name: `Overseas Pavilion Construction ${"Very Long Project Name ".repeat(12)}`.trim() }).where(eq(projects.id, fx.projectId));
+    const payer = await makeTeamPayer(fx);
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    await page.goto("/expenses");
+    await waitForHydration(rowOf(page, fx.lines.tracer.itemName).getByRole("button", { name: `${doc.number} 증빙 확인` }));
+    const dialog = await openEvidence(page, fx.lines.tracer.itemName, doc.number);
+    const subtitle = dialog.locator(`p[title^="${doc.number} · "]`);
+    await expect(subtitle).toBeVisible();
+    const measured = await subtitle.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        clamp: style.webkitLineClamp,
+        overflow: style.overflow,
+        height: element.getBoundingClientRect().height,
+        lineHeight: Number.parseFloat(style.lineHeight),
+        scrollHeight: element.scrollHeight,
+        clientHeight: element.clientHeight,
+        title: element.getAttribute("title"),
+        text: element.textContent,
+        dialogOverflow: (element.closest("dialog")?.scrollWidth ?? 0) - (element.closest("dialog")?.clientWidth ?? 0),
+      };
+    });
+    expect(measured.clamp).toBe("2");
+    expect(measured.overflow).toBe("hidden");
+    expect(measured.height).toBeLessThanOrEqual(measured.lineHeight * 2 + 1);
+    expect(measured.scrollHeight, "긴 글자라 실제로 잘린다").toBeGreaterThan(measured.clientHeight);
+    expect(measured.title).toBe(measured.text);
+    expect(measured.dialogOverflow).toBe(0);
+    await page.context().close();
+  });
+
   test("모달 연 뒤 증빙 바뀜 → 새 증빙으로 다시 — ⑴ 기안자가 증빙 더함 → 거부 · 새로 고침 → 두 파일로 다시 → 확인 ⑵ 목록 뒤 문서 바뀜 → 1차 막힘 → 새로 고침 → 켜짐 ⑶ 다른 사람이 먼저 확인 → 거부 → 새로 고침 → 닫힘 · 확인됨 · 고르지 않음 · 포커스 링크", async ({ browser, baseURL }) => {
     test.setTimeout(120_000);
     const fx = await setupExpenseE2E();

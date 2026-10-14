@@ -78,6 +78,42 @@ describe("직원 지급 계좌(06.5 D-6505 · D-6506)", () => {
     expect(row?.accountNumberEncrypted).toBeNull();
   });
 
+  // 리뷰 P2-1: 게이트에 person.value가 AND — 꺼진 계정은 읽기 · 저장 · 해제가 한 게이트로 막힌다(패널이 빈 은행 · 예금주로 지우는 경로 없음).
+  it("person.value 꺼진 게이트 보유자 — 읽기 null, 저장 ForbiddenError(DB 그대로), 해제 ForbiddenError(기록 없음)", async () => {
+    const userId = await makeEmployee();
+    await updatePersonPayoutAccount(SYSTEM_VIEWER, userId, { accountBank: "신한", accountHolder: "김직원", accountNumber: "110-123-456789" });
+    const visible = (_viewer: unknown, item: string) => Promise.resolve(item !== "person.value");
+    expect(await getPersonPayoutAccount(SYSTEM_VIEWER, userId, { visible })).toBeNull();
+    await expect(
+      updatePersonPayoutAccount(SYSTEM_VIEWER, userId, { accountBank: "", accountHolder: "", accountNumber: "220-1" }, { visible }),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+    const row = await readRow(userId);
+    expect(row?.accountBank).toBe("신한");
+    expect(row?.accountHolder).toBe("김직원");
+    expect(row?.accountNumberLast4).toBe("6789");
+    await expect(revealPersonAccountNumber(SYSTEM_VIEWER, userId, { visible })).rejects.toBeInstanceOf(ForbiddenError);
+    expect((await logsFor(userId)).filter((log) => log.actionType === "mask_reveal")).toEqual([]);
+  });
+
+  // 리뷰 P2-2: 계좌 값과 document_update 기록은 같은 tx — 기록이 실패하면 계좌도 바뀌지 않는다.
+  it("저장 기록이 실패하면 계좌도 그대로다(값과 기록이 같은 tx)", async () => {
+    const userId = await makeEmployee();
+    const appendActionLog = () => Promise.reject(new Error("기록 실패"));
+    await expect(
+      updatePersonPayoutAccount(
+        SYSTEM_VIEWER,
+        userId,
+        { accountBank: "신한", accountHolder: "김직원", accountNumber: "110-123-456789" },
+        { appendActionLog },
+      ),
+    ).rejects.toThrow("기록 실패");
+    const row = await readRow(userId);
+    expect(row?.accountBank).toBeNull();
+    expect(row?.accountHolder).toBeNull();
+    expect(row?.accountNumberEncrypted).toBeNull();
+    expect(await logsFor(userId)).toEqual([]);
+  });
+
   it("은행 + 번호 + 빈 예금주 → AccountFieldsError(예금주 칸)이고 DB 그대로", async () => {
     const userId = await makeEmployee();
     let caught: unknown;

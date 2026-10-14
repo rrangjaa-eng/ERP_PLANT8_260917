@@ -221,7 +221,7 @@ test.describe("S4 증빙 확인 = 공급가액 하나 (06.5 D-6520 · UI-SPEC V8
     await page.context().close();
   });
 
-  test("LOCKED — 고침 칸을 연 사이 지급이 생기면 1차가 행동 줄 `지급 완료 문서 · 공급가액 못 바꿈 · 새로 고침` + `새로 고침` 하나", async ({ browser, baseURL }) => {
+  test("LOCKED — 고침 칸을 연 사이 지급이 생기면 거부 뒤 다시 읽으면 거부 줄 · `새로 고침` 없이 잠김 줄 하나", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const expenseId = await submitLineExpense(browser, baseURL, fx, "phone");
     await approveAll(fx, expenseId);
@@ -243,8 +243,10 @@ test.describe("S4 증빙 확인 = 공급가액 하나 (06.5 D-6520 · UI-SPEC V8
       processedBy: manager.viewer.id,
     });
     await page.getByRole("button", { name: /^공급가액 고쳐 확인/ }).click();
-    await expect(page.getByText("지급 완료 문서 · 공급가액 못 바꿈 · 새로 고침", { exact: false })).toBeVisible();
-    await expect(page.getByRole("button", { name: "새로 고침" })).toHaveCount(1);
+    // 거부 뒤 자동으로 다시 읽어 P5(잠김)가 서면 거부 줄 · `새로 고침`은 사라지고 잠김 줄 하나만 남는다(06.5-07 감사 FAIL 1).
+    await expect(page.getByText("지급 완료 문서 · 공급가액 못 바꿈 · 지급 취소 뒤 고치기", { exact: true })).toHaveCount(1);
+    await expect(page.getByText("지급 완료 문서 · 공급가액 못 바꿈 · 새로 고침", { exact: false })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "새로 고침" })).toHaveCount(0);
     await page.context().close();
   });
 });

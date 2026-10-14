@@ -310,6 +310,12 @@ export function PaymentActionRow() {
   const payReturn = view.payReturn ?? null;
   const nextUnreviewed = payReturn?.next && view.evidenceStatus === "확인됨" ? payReturn.next : null;
 
+  // 거부 뒤 다시 읽은 행이 달라지면(예: 지급 뒤 LOCKED → P5) 거부 줄은 새 행이 대신 말한다 — 같은 행이면(응답 없음 등) 줄이 남는다.
+  const rowKey = `${view.row?.row ?? ""}:${view.version ?? ""}`;
+  useEffect(() => {
+    setConflict(null);
+  }, [rowKey, setConflict]);
+
   // 지급 뒤(P6)는 1차 없이 결과 글자만(버튼 아님). 지급 권한이 없는 사람에게는 이 페이즈의 버튼이 없다(D-601 — 지급 전 담당 표기는 섹션 지급 예정일 2행).
   const showResult = paid && view.paidTime !== undefined;
   if (!canPay && !canSaveSchedule && !canConfirm && !showResult) return null;

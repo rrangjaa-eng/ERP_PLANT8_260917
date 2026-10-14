@@ -8,6 +8,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { skipDbReset } from "./setup";
 import { rowScopeFor, type RowScope, type RowScopeDeps } from "@/domain/permissions/scope-for";
+import { taxRuleSchema } from "@/domain/code-tables/tax-rule";
 
 // 04-06 Task 2 ④(CEO 리뷰 OV-6) — 기존 통합 테스트는 재시드된 빈 DB만 본다.
 // 이 파일은 난수 이름의 임시 DB를 만들어 앞 마이그레이션까지만 적용하고 옛
@@ -66,6 +67,7 @@ async function migrateTo(pool: Pool, count?: number): Promise<void> {
   await migrate(drizzle(pool), { migrationsFolder: folder });
 }
 
+// 임시 DB를 하나씩 지운다 — 마이그레이션을 다 적용한 DB는 하나에 0.4~0.6초(로컬 실측)라 20개면 기본 hookTimeout 10초를 넘는다.
 afterAll(async () => {
   for (const { name, pool } of scratch) {
     await pool.end();
@@ -73,7 +75,7 @@ afterAll(async () => {
   }
   await adminPool.end();
   for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
-});
+}, 60_000);
 
 // 옛 데이터의 부모 행(조직·팀·거래처·PM) — 0010 이후 스키마 어디서나 같은 NOT NULL 칸.
 async function insertParents(pool: Pool): Promise<void> {
@@ -440,7 +442,8 @@ describe("증빙 종류 세금 규칙 시드 맞춤(0029)", () => {
     await insert("other_income", `{"basisDate":"payment_date","minWithholdingAmount":125000,"roundingMethod":"round","roundingUnit":10,"ruleKind":"withholding"}`);
     await insert("business_income", JSON.stringify(ADMIN_BUSINESS));
 
-    await migrateTo(pool);
+    // 0029의 동작만 본다 — 뒤의 06.5 기타소득 회사 대납 맞춤(*_other_income_company_borne)이 other_income을 다시 바꾸므로 0029까지만 적용한다.
+    await migrateTo(pool, countThrough("_evidence_tax_rule_seed_sync"));
 
     const expected = {
       business_income: ADMIN_BUSINESS,
@@ -686,5 +689,89 @@ describe("06.2 view_scope 백필", () => {
       viewerId: "person",
       by: { kind: "team", teamId: TEAM },
     });
+  });
+});
+
+// 06.5 D-6501(사용자 카드 10/13 19:50 KST · 범위 결정 a — 사용자 카드 10/14 13:33 KST): 기타소득은 회사 대납 한 가지다.
+// ruleKind가 withholding인 other_income 행은 전부 company_borne 정본으로 바뀌고, 설명은 정확한 옛 시드 글자일 때만 바뀐다.
+// 관리자가 다른 종류로 바꾼 other_income 행 · 다른 증빙 종류 행은 그대로다. 시드를 부르지 않는다.
+describe("기타소득 회사 대납 맞춤(06.5 D-6501)", () => {
+  const COMPANY_BORNE = { ruleKind: "company_borne", roundingUnit: 10, roundingMethod: "truncate", minWithholdingAmount: 0, basisDate: "payment_date" };
+  const SEED_WITHHOLDING = { ruleKind: "withholding", roundingUnit: 10, roundingMethod: "truncate", minWithholdingAmount: 125000, basisDate: "payment_date" };
+  const BUSINESS = { ruleKind: "withholding", roundingUnit: 10, roundingMethod: "truncate", minWithholdingAmount: 0, basisDate: "payment_date" };
+  const OLD_DESCRIPTION = "강사료·경품 등 일시 소득 · 원천징수 대상";
+  const NEW_DESCRIPTION = "경품 등 일시 소득 · 회사 대납";
+
+  type EvidenceRow = { taxRule: unknown; description: string | null };
+  async function readEvidence(pool: Pool): Promise<Record<string, EvidenceRow>> {
+    const { rows } = await pool.query<{ value: string; tax_rule: unknown; description: string | null }>(
+      `SELECT value, tax_rule, description FROM code_items WHERE table_key = 'evidence_type' ORDER BY value`,
+    );
+    return Object.fromEntries(rows.map((row) => [row.value, { taxRule: row.tax_rule, description: row.description }]));
+  }
+
+  // 이 페이즈 첫 마이그레이션 바로 앞까지 적용하고 증빙 종류 행을 넣은 뒤 나머지를 적용한다.
+  async function upgradeWith(rows: [value: string, rule: unknown, description: string | null][]): Promise<Pool> {
+    const pool = await createScratchDb();
+    await migrateTo(pool, countThrough("_payment_followup_links") - 1);
+    for (const [value, rule, description] of rows) {
+      await pool.query(
+        `INSERT INTO code_items (table_key, value, label, description, tax_rule) VALUES ('evidence_type', $1, $1, $2, $3::jsonb)`,
+        [value, description, JSON.stringify(rule)],
+      );
+    }
+    await migrateTo(pool);
+    return pool;
+  }
+
+  it("company_borne 정본 값은 taxRuleSchema를 통과한다", () => {
+    expect(taxRuleSchema.parse(COMPANY_BORNE)).toEqual(COMPANY_BORNE);
+  });
+
+  it("옛 시드 withholding · 옛 설명인 기타소득 행은 company_borne 정본 · 새 설명으로 바뀐다", async () => {
+    // 키 순서가 시드와 달라도 jsonb라 같은 값이다.
+    const pool = await upgradeWith([
+      ["other_income", { basisDate: "payment_date", minWithholdingAmount: 125000, roundingMethod: "truncate", roundingUnit: 10, ruleKind: "withholding" }, OLD_DESCRIPTION],
+    ]);
+    expect(await readEvidence(pool)).toEqual({ other_income: { taxRule: COMPANY_BORNE, description: NEW_DESCRIPTION } });
+  });
+
+  it("(결정 a) 관리자가 절사만 바꾼 withholding 행은 company_borne 정본으로 바뀌고, 옛 글자가 아닌 설명은 그대로다", async () => {
+    const pool = await upgradeWith([["other_income", { ...SEED_WITHHOLDING, roundingMethod: "round" }, "강사료 등"]]);
+    expect(await readEvidence(pool)).toEqual({ other_income: { taxRule: COMPANY_BORNE, description: "강사료 등" } });
+  });
+
+  it("관리자가 none으로 바꾼 기타소득 행 · 사업소득 withholding 행은 그대로다", async () => {
+    const pool = await upgradeWith([
+      ["other_income", { ruleKind: "none" }, OLD_DESCRIPTION],
+      ["business_income", BUSINESS, "프리랜서 용역 대가 · 원천징수 대상"],
+    ]);
+    expect(await readEvidence(pool)).toEqual({
+      business_income: { taxRule: BUSINESS, description: "프리랜서 용역 대가 · 원천징수 대상" },
+      other_income: { taxRule: { ruleKind: "none" }, description: OLD_DESCRIPTION },
+    });
+  });
+
+  it("다시 적용해도(마이그레이터가 건너뜀 · 같은 SQL 직접 실행) 결과가 같다", async () => {
+    const pool = await upgradeWith([
+      ["other_income", SEED_WITHHOLDING, OLD_DESCRIPTION],
+      ["business_income", BUSINESS, null],
+    ]);
+    const expected = {
+      business_income: { taxRule: BUSINESS, description: null },
+      other_income: { taxRule: COMPANY_BORNE, description: NEW_DESCRIPTION },
+    };
+    expect(await readEvidence(pool)).toEqual(expected);
+
+    await migrateTo(pool);
+    expect(await readEvidence(pool)).toEqual(expected);
+
+    const entry = journal.entries.find((e) => e.tag.endsWith("_other_income_company_borne"));
+    if (!entry) throw new Error("journal에 _other_income_company_borne 마이그레이션이 없습니다");
+    const migrationSql = readFileSync(join(MIGRATIONS_DIR, `${entry.tag}.sql`), "utf8");
+    for (const statement of migrationSql.split("--> statement-breakpoint")) {
+      if (statement.trim()) await pool.query(`BEGIN; ${statement}; COMMIT;`);
+    }
+    expect(await readEvidence(pool)).toEqual(expected);
   });
 });

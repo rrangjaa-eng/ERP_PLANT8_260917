@@ -225,6 +225,34 @@
       "when": 1791425752536,
       "tag": "0031_view_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1791952325676,
+      "tag": "0032_payment_followup_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1791952704507,
+      "tag": "0033_payment_followup_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1791953583772,
+      "tag": "0034_other_income_company_borne",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1791953584910,
+      "tag": "0035_payment_followup_validate",
+      "breakpoints": true
     }
   ]
 }

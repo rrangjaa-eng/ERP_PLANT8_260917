@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, integer, bigint, numeric, jsonb, timestamp, uuid, index, check, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, bigint, numeric, jsonb, timestamp, uuid, index, uniqueIndex, check, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { vendors } from "./vendors";
 import { quoteRevisions } from "./quote-revisions";
 import { moneyColumns } from "./money-columns";
@@ -36,6 +36,13 @@ export const quoteLines = pgTable(
     // 콜백으로 순환을 피한다(Drizzle self-reference pattern).
     copiedFromLineId: uuid("copied_from_line_id").references((): AnyPgColumn => quoteLines.id),
     version: integer("version").notNull().default(1),
+    // 06.5 D-6502: 지급 완료 규칙이 만든 「기타소득세 대납」 조정 줄이 어느 지출결의에서 왔는지. FK를 걸지 않는다 —
+    // db/schema/expenses.ts가 이 파일을 import해 반대 방향 참조는 순환이고(test/unit/import-cycles.test.ts), 지출결의는
+    // 지우지 않고 보관만 한다. `source_synced_version`은 규칙이 마지막으로 쓴 `version` — 사람이 고치면 `version`만 올라
+    // 둘이 갈리고 규칙은 그 줄을 덮지 않는다(옛에 없던 새 규칙 — 옛은 덮어썼다, O: server/src/confirmations.ts:827-837).
+    // 조정 줄은 새 차수로 복사가 아니라 옮겨지고 그때 두 칸이 같이 오른다(06.5-02 `moveAdjustmentLines`) — 살아 있는 줄은 문서당 하나다.
+    sourceExpenseId: uuid("source_expense_id"),
+    sourceSyncedVersion: integer("source_synced_version"),
     source: text("source").notNull().default("demo"),
     customFields: jsonb("custom_fields").notNull().default({}),
     archivedAt: timestamp("archived_at"),
@@ -47,5 +54,10 @@ export const quoteLines = pgTable(
     index("quote_lines_revision_sort_idx").on(table.revisionId, table.sortOrder),
     index("quote_lines_custom_fields_idx").using("gin", table.customFields),
     check("quote_lines_line_kind_check", sql`${table.lineKind} IN ('quote','out_of_quote','adjustment')`),
+    check("quote_lines_source_expense_kind_check", sql`${table.sourceExpenseId} IS NULL OR ${table.lineKind} = 'adjustment'`),
+    check("quote_lines_source_synced_pair_check", sql`(${table.sourceExpenseId} IS NULL) = (${table.sourceSyncedVersion} IS NULL)`),
+    uniqueIndex("quote_lines_source_expense_live_uniq")
+      .on(table.sourceExpenseId)
+      .where(sql`${table.sourceExpenseId} IS NOT NULL AND ${table.archivedAt} IS NULL`),
   ],
 );

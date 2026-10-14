@@ -351,3 +351,97 @@ export async function moveAdjustmentLines(
     .returning({ id: quoteLines.id });
   return rows.length;
 }
+
+// ── 06.5 D-6502: 규칙(지급 완료)이 쓰는 조정 줄 ────────────────────────────
+// 사람 편집 경로(권한 · 줄 수 상한 · project.line-edit)를 지나지 않는다. `source_synced_version = version`이 「사람이 고치지 않은 줄」의
+// 판정이다(옛에 없는 새 규칙 — 옛은 덮어씀 O: server/src/confirmations.ts:827-837). 잠금은 호출자가 lockQuoteLines로 한다.
+
+export type SourcedAdjustmentValues = Omit<QuoteLineInsertInput, "id" | "lineKind" | "copiedFromLineId" | "source" | "customFields" | "vendorId" | "note"> & {
+  sourceExpenseId: string;
+};
+
+export async function findLiveLineBySourceExpense(viewer: Viewer, expenseId: string, tx: DbOrTx): Promise<QuoteLineRow | null> {
+  void viewer;
+  const [row] = await tx
+    .select()
+    .from(quoteLines)
+    .where(and(eq(quoteLines.sourceExpenseId, expenseId), isNull(quoteLines.archivedAt)))
+    .limit(1);
+  return row ?? null;
+}
+
+// 도메인이 만든 칸 값을 그대로 넣는다 — 동기 버전은 삽입 행의 version(한 문장).
+export async function insertSourcedAdjustmentLine(viewer: Viewer, values: SourcedAdjustmentValues, tx: DbOrTx): Promise<QuoteLineRow> {
+  void viewer;
+  const [row] = await tx
+    .insert(quoteLines)
+    .values({ ...values, lineKind: "adjustment", version: 1, sourceSyncedVersion: 1 })
+    .returning();
+  if (!row) throw new Error("조정 줄을 넣지 못했다");
+  return row;
+}
+
+// 보관 안 됨 ∧ 읽은 version ∧ 동기 버전 = version일 때만 칸을 바꾸고 version · 동기 버전을 같이 +1. 0행이면 null.
+export async function updateSourcedAdjustmentLine(
+  viewer: Viewer,
+  input: {
+    id: string;
+    expectedVersion: number;
+    itemName: string;
+    executionCurrency: string;
+    executionForeignAmount: string | null;
+    executionFxRate: string;
+    executionAmountKrw: number;
+    profitKrw: number;
+  },
+  tx: DbOrTx,
+): Promise<QuoteLineRow | null> {
+  void viewer;
+  const [row] = await tx
+    .update(quoteLines)
+    .set({
+      itemName: input.itemName,
+      executionCurrency: input.executionCurrency,
+      executionForeignAmount: input.executionForeignAmount,
+      executionFxRate: input.executionFxRate,
+      executionAmountKrw: input.executionAmountKrw,
+      profitKrw: input.profitKrw,
+      version: sql`${quoteLines.version} + 1`,
+      sourceSyncedVersion: sql`${quoteLines.version} + 1`,
+      updatedAt: new Date(),
+    })
+    .where(sourcedUnchanged(input.id, input.expectedVersion))
+    .returning();
+  return row ?? null;
+}
+
+// 같은 조건에서 보관 + version · 동기 버전 +1(둘은 같게 남는다 — 규칙이 보관한 줄은 재지급이 새 줄을 만든다). 0행이면 null.
+export async function archiveSourcedAdjustmentLine(
+  viewer: Viewer,
+  input: { id: string; expectedVersion: number; archivedBy: string },
+  tx: DbOrTx,
+): Promise<QuoteLineRow | null> {
+  void viewer;
+  const [row] = await tx
+    .update(quoteLines)
+    .set({
+      archivedAt: new Date(),
+      archivedBy: input.archivedBy,
+      version: sql`${quoteLines.version} + 1`,
+      sourceSyncedVersion: sql`${quoteLines.version} + 1`,
+      updatedAt: new Date(),
+    })
+    .where(sourcedUnchanged(input.id, input.expectedVersion))
+    .returning();
+  return row ?? null;
+}
+
+function sourcedUnchanged(id: string, expectedVersion: number) {
+  return and(
+    eq(quoteLines.id, id),
+    isNull(quoteLines.archivedAt),
+    eq(quoteLines.version, expectedVersion),
+    isNotNull(quoteLines.sourceExpenseId),
+    sql`${quoteLines.sourceSyncedVersion} = ${quoteLines.version}`,
+  );
+}

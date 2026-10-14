@@ -274,6 +274,7 @@ function preOf(row: LockedExpense, hasLiveEvidence: boolean): PaymentInputs {
   );
   return {
     expenseId: row.id,
+    projectId: null,
     today: TODAY,
     payDate: PAY_DATE,
     approvalState: "approved",

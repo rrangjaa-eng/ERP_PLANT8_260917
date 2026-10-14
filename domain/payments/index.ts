@@ -46,7 +46,9 @@ import { evidenceGateInputs, evidenceOverrunLine, evidenceStampOf, loadPrepaidDu
 import { prepaidDueInfo, type PrepaidDue } from "@/domain/evidence-reviews/prepaid";
 import { findReviewByExpense, listAliveCardUsageSuppliesByProject } from "@/repositories/expense-evidence-reviews";
 import { listAliveByOwners } from "@/repositories/files";
-import { findQuoteLineById, listLineageLinesByProjects } from "@/repositories/quote-lines";
+import { findLiveLineBySourceExpense, findQuoteLineById, listLineageLinesByProjects } from "@/repositories/quote-lines";
+import { lockProjectForWrite } from "@/repositories/projects";
+import { syncTaxAdjustmentLine } from "@/domain/payments/adjustment-line";
 import { findExpenseQuoteLineIds, lockQuoteLines } from "@/repositories/quote-line-links";
 import { formatKrw } from "@/lib/format-number";
 import { kstDateOf } from "@/lib/kst-date";
@@ -240,6 +242,8 @@ type PaymentTax = { taxRule: TaxRule; dates: PickedTaxDates; incomeType: TaxInco
 
 export type PaymentInputs = {
   expenseId: string;
+  // 06.5 D-6502 — 조정 줄을 쓰는 지급 완료 · 취소가 프로젝트 행을 먼저 잠그는 데 쓴다(사전 조회 문서 행). 팀 비용 문서는 null.
+  projectId: string | null;
   today: string;
   payDate: string | null;
   approvalState: string | null;
@@ -297,6 +301,7 @@ export async function loadPaymentInputs(
   const { amount, tax } = basisOf(basisRow, { shared: ctxShared, payDate, today, hasLiveEvidence });
   return {
     expenseId: row.id,
+    projectId: row.projectId,
     today,
     payDate,
     approvalState,
@@ -455,13 +460,17 @@ export async function completeExpensePayment(
 
   try {
     return await withTransaction(async (tx) => {
-      // 06-13(N-2 · N-3): 전역 잠금 순서 프로젝트 행 → 견적 줄 → 문서 행. 지급은 줄 연결을 늘리지 않아 프로젝트 행을 건너뛰고(X-2)
-      // 문서의 견적 줄(하나 — 팀 비용 문서는 없음)을 문서 행보다 먼저 잡는다 — 같은 줄의 새 지출결의 제출과 직렬이다.
+      // 06.5 D-6502: 조정 줄을 쓰므로 프로젝트 행을 먼저 잡는다(X-2 예외 해제) — 순서 프로젝트 행 → 견적 줄(문서 줄 + 연결 조정 줄) →
+      // 문서 행(06-13 N-2 · N-3). 연결 줄은 잠근 뒤 다시 읽은 행으로 판정한다(잠금 전 읽은 줄은 그사이 보관됐을 수 있다).
+      if (pre.projectId) await lockProjectForWrite(viewer, pre.projectId, tx);
+      const linked = await findLiveLineBySourceExpense(viewer, pre.expenseId, tx);
       const lineIds = await findExpenseQuoteLineIds(viewer, pre.expenseId, tx);
-      await lockQuoteLines(viewer, lineIds, tx);
+      await lockQuoteLines(viewer, linked ? [...lineIds, linked.id] : lineIds, tx);
+      const relinked = linked ? await findQuoteLineById(viewer, linked.id, tx) : null;
       const locked = await lockExpenseForUpdate(viewer, pre.expenseId, tx);
       await deps?.afterLock?.();
       if (!locked) throw new PaymentNotFoundError();
+      if (locked.projectId !== pre.projectId) throw new PaymentConflictError(`다른 사람이 ${formatKstTime(locked.updatedAt)}에 바꿈 · 새로 고침`);
       const live = await findLivePayment(viewer, locked.id, tx);
       if (live) throw new AlreadyPaidSignal(live.processedBy, live.processedAt);
       if (locked.version !== input.version) throw new PaymentConflictError(`다른 사람이 ${formatKstTime(locked.updatedAt)}에 바꿈 · 새로 고침`);
@@ -497,6 +506,17 @@ export async function completeExpensePayment(
       );
       const version = await bumpExpenseVersion(viewer, { expenseId: locked.id, expectedVersion: locked.version, updatedBy: viewer.id }, tx);
       if (version === null) throw new PaymentConflictError(`다른 사람이 ${formatKstTime(locked.updatedAt)}에 바꿈 · 새로 고침`);
+      const adjustment = await syncTaxAdjustmentLine(
+        viewer,
+        {
+          projectId: locked.projectId,
+          expenseId: locked.id,
+          documentNumber: locked.number,
+          companyBorneKrw: payable.companyBorneKrw,
+          liveLine: relinked && relinked.archivedAt === null ? relinked : null,
+        },
+        tx,
+      );
       await recordAction(
         viewer,
         {
@@ -504,7 +524,15 @@ export async function completeExpensePayment(
           entity: "expense",
           entityId: locked.id,
           documentId: locked.id,
-          detail: { paymentId: payment.id, payDate, transferKrw: payable.transferKrw, payableKrw: payable.payableKrw, diffKrw: payable.diffKrw, diffReason },
+          detail: {
+            paymentId: payment.id,
+            payDate,
+            transferKrw: payable.transferKrw,
+            payableKrw: payable.payableKrw,
+            diffKrw: payable.diffKrw,
+            diffReason,
+            ...adjustment,
+          },
         },
         { tx },
       );

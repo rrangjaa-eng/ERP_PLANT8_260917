@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { corpCards, corpCardUsages, expenses, purchaseRequests, quoteLines, users } from "@/db/schema";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
@@ -273,5 +273,23 @@ describe("06.5 스키마 — 계좌 · 번호 · 키 · 지급처 · 받는 인�
     );
     const [row] = await db.insert(expenses).values({ drafterId: p.drafterId, recipientCount: 5 }).returning({ recipientCount: expenses.recipientCount });
     expect(row?.recipientCount).toBe(5);
+  });
+});
+
+// 06.5-01 Task 3: 기존 표에 NOT VALID로 건 이 페이즈의 CHECK · FK 여섯은 *_payment_followup_validate.sql이 검증한다.
+describe("06.5 스키마 — 제약 검증(VALIDATE)", () => {
+  it("이 페이즈의 CHECK · FK 여섯이 전부 convalidated다", async () => {
+    const names = [
+      "quote_lines_source_expense_kind_check",
+      "quote_lines_source_synced_pair_check",
+      "users_account_holder_required_check",
+      "expenses_payee_one_check",
+      "expenses_recipient_count_check",
+      "expenses_payee_user_id_users_id_fk",
+    ];
+    const { rows } = await db.execute<{ conname: string; convalidated: boolean }>(
+      sql`SELECT conname, convalidated FROM pg_constraint WHERE conname IN (${sql.join(names.map((name) => sql`${name}`), sql`, `)}) ORDER BY conname`,
+    );
+    expect(Object.fromEntries(rows.map((row) => [row.conname, row.convalidated]))).toEqual(Object.fromEntries(names.map((name) => [name, true])));
   });
 });

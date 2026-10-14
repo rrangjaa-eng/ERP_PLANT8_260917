@@ -946,6 +946,29 @@ describe("승인 뒤 막힘 후보 갈래 expense_blocked_after_approval (E-3 ·
     }
   });
 
+  it("후보 SQL은 (선결제 ∧ 지급 행 있음) ∨ (선결제 아님 ∧ 지급 행 없음)만 훅에 넘긴다 — 지급 전 선결제는 LIMIT 앞에서 빠진다", async () => {
+    const cases: { name: string; prepaid: boolean; paid: boolean; candidate: boolean }[] = [
+      { name: "지급 전 선결제", prepaid: true, paid: false, candidate: false },
+      { name: "지급 뒤 선결제", prepaid: true, paid: true, candidate: true },
+      { name: "지급 전 일반", prepaid: false, paid: false, candidate: true },
+      { name: "지급 뒤 일반", prepaid: false, paid: true, candidate: false },
+    ];
+    for (const entry of cases) {
+      const fx = await setupExpenseProject();
+      const { expenseId } = await approvedExpenseWithEvidence(fx);
+      if (entry.prepaid) await markPrepaid(expenseId);
+      if (entry.paid) await markPaid(expenseId, addDays(seoulToday(), -30), fx.ceo.id);
+      await removeAllFiles(expenseId);
+      const spy = vi.spyOn(getDocumentKind(EXPENSE_DOCUMENT_KIND), "blockedAfterApproval");
+      try {
+        await listNextTurnItems(fx.pm);
+        expect(spy.mock.calls.some((call) => call[1].includes(expenseId)), entry.name).toBe(entry.candidate);
+      } finally {
+        spy.mockRestore();
+      }
+    }
+  });
+
   it("증빙 필수 off — 후보에 들어도 줄 없음", async () => {
     const fx = await setupExpenseProject();
     const { expenseId } = await approvedExpenseWithEvidence(fx);

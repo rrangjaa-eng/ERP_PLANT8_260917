@@ -568,6 +568,65 @@ test.describe("법인카드 사용 등록 (06-05)", () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
     await page.context().close();
   });
+
+  // 06-24 backstop 감사 B-1 · B-2(06-05 S8 · S9 long-text) — 긴 가맹점 · 카드 이름은 한 줄 말줄임 + title(목록 칸 · 옆 패널).
+  test("[backstop B-1·B-2] 긴 가맹점 · 카드 이름 — 목록 가맹점 칸과 수정 패널의 가맹점 · 카드 이름이 한 줄 말줄임 + title · 문서 가로 넘침 0", async ({ browser, baseURL }) => {
+    const holder = await makeCardHolder(0);
+    const suffix = randomUUID().slice(0, 8);
+    const longLabel = `긴카드${"가".repeat(90)}`;
+    const merchantName = `Overseas Merchant International Trading ${suffix} ${"Very Long Company Name ".repeat(4)}`.trim();
+    const merchant = await insertVendor(SYSTEM_VIEWER, { name: merchantName, normalizedName: merchantName.toLowerCase() });
+    const card = await createCorpCard(SYSTEM_VIEWER, { issuer: `국민-${suffix}`, numberLast4: "9871", label: longLabel, kind: "personal", holderUserId: holder.person.viewer.id });
+    if (!card.id) throw new Error("카드 id 없음");
+    const input = {
+      corpCardId: card.id,
+      usedOn: seoulToday(),
+      merchantVendorId: merchant.id,
+      total: { currency: "KRW" as const, amount: 12_000, fxRate: 1 },
+      evidenceTypeCode: "card_receipt",
+      linkKind: "team_cost" as const,
+      memo: null,
+    };
+    await createCardUsage(holder.person.viewer, input, await precheckCardUsage(holder.person.viewer, input));
+
+    // 한 줄 말줄임 + title — 넘침(scrollWidth > clientWidth)이 실제로 잘리고, 줄 높이가 한 줄이다.
+    const expectEllipsis = async (target: import("@playwright/test").Locator, label: string) => {
+      await expect(target, `${label} title 있는 칸`).toBeVisible();
+      const measured = await target.evaluate((element) => {
+        const style = getComputedStyle(element);
+        const lineHeight = Number.parseFloat(style.lineHeight);
+        return {
+          whiteSpace: style.whiteSpace,
+          textOverflow: style.textOverflow,
+          overflow: style.overflow,
+          height: element.getBoundingClientRect().height,
+          lineHeight: Number.isNaN(lineHeight) ? Number.parseFloat(style.fontSize) * 1.5 : lineHeight,
+        };
+      });
+      expect(measured.whiteSpace, `${label} white-space`).toBe("nowrap");
+      expect(measured.textOverflow, `${label} text-overflow`).toBe("ellipsis");
+      expect(measured.overflow, `${label} overflow`).toBe("hidden");
+      expect(measured.height, `${label} 한 줄 높이`).toBeLessThanOrEqual(measured.lineHeight * 1.5);
+    };
+
+    let editHref: string | null = null;
+    for (const width of [1280, 768, 375]) {
+      const page = await loginPage(browser, baseURL, holder.person, { width, height: 900 });
+      await page.goto("/cards");
+      await expectEllipsis(page.getByRole("table").locator(`[title="${merchantName}"]:visible`).first(), `${width}px 목록 가맹점`);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), `${width}px 문서 넘침`).toBe(0);
+      if (width === 1280) editHref = await page.locator('a[href*="editId="]').first().getAttribute("href");
+      if (!editHref) throw new Error("수정 링크 없음");
+      await page.goto(editHref);
+      const sheet = page.getByRole("dialog");
+      await waitForHydration(sheet.getByLabel("결제 합계"));
+      await expectEllipsis(sheet.locator(`[title="${merchantName}"]`), `${width}px 패널 가맹점`);
+      await expectEllipsis(sheet.locator(`[title*="${longLabel}"]`), `${width}px 패널 카드 이름`);
+      await expect(sheet.getByRole("button", { name: "가맹점 바꾸기" })).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), `${width}px 패널 문서 넘침`).toBe(0);
+      await page.context().close();
+    }
+  });
 });
 
 function cardSection(page: Page) {

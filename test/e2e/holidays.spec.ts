@@ -576,6 +576,7 @@ test.describe("공휴일 삭제 · 되돌리기(04.2-12)", () => {
     await expect(rowOf(page, ROW_A.name)).toHaveCount(0);
     await rowOf(page, ROW_B.name).getByRole("button", { name: "삭제" }).click();
     await expect(resultLine).toContainText(`${ROW_B.date} ${ROW_B.name} 삭제됨`);
+    await expect(rowOf(page, ROW_B.name)).toHaveCount(0);
 
     const releaseUndo = await holdNextAction(page, "abort");
     await resultLine.getByRole("button", { name: "되돌리기" }).click();

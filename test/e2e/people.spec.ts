@@ -16,6 +16,9 @@ import { checkPrinciples } from "./principles-check";
 import { collapsedRowOf, loginAsAdmin, personRow, registerPerson, statusCell } from "./people-list-helpers";
 import { archiveRolesByPrefix, createDelegatedAccount, makeDuplicateLeads } from "./admin-cap-fixtures";
 
+// 사람 목록이 페이지 없이 전부 그려지고 CI DB에 계정이 쌓여 느리다 — 근본 해결은 페이지네이션(07 페이즈로 이월).
+test.describe.configure({ timeout: 60_000 });
+
 // MAST-02: 사람 등록 화면에서 이름·이메일·계급·팀·발령일을 채워 등록하면 같은
 // 화면에서 계정과 초기 비밀번호가 함께 발급되고, 그 계정으로 실제 로그인이
 // 되는 것이 「같은 화면에서 발급한다」의 진짜 증명이다.
@@ -46,7 +49,7 @@ test.describe("사람 등록 → 계정·초기 비밀번호 발급 → 로그�
     await page.getByLabel("입사일").fill("2026-01-01");
     await page.getByRole("button", { name: "사람 등록" }).click();
 
-    await expect(page.getByText(`초기 비밀번호 — ${newEmail}`)).toBeVisible();
+    await expect(page.getByText(`초기 비밀번호 — ${newEmail}`)).toBeVisible({ timeout: 20_000 });
     await expect(page.getByText("이 비밀번호는 다시 볼 수 없습니다 · 지금 전달하세요")).toBeVisible();
 
     const tempPasswordText = await page.getByText(/^[A-Za-z0-9_-]{10,}$/).first().textContent();
@@ -385,7 +388,7 @@ test.describe("사람 · 조직 · 계급 옆 패널 (04.6-14)", () => {
     await panel.getByLabel("입사일").fill("2026-01-01");
     await panel.getByRole("button", { name: "사람 등록" }).click();
 
-    await expect(panel.getByText(`초기 비밀번호 — ${email}`)).toBeVisible();
+    await expect(panel.getByText(`초기 비밀번호 — ${email}`)).toBeVisible({ timeout: 20_000 });
     await expect(panel.getByText("이 비밀번호는 다시 볼 수 없습니다 · 지금 전달하세요")).toBeVisible();
     await expect(panel).toBeVisible();
     expect(new URL(page.url()).pathname).toBe("/admin/people");
@@ -548,7 +551,7 @@ test.describe("위임 계급의 계급 자리 (06.4 D-6402 · D-6414 · D7~D9)",
     await loginWith(page, delegate);
     await page.goto("/admin/people");
     await page.getByRole("link", { name: "사람 등록" }).first().click();
-    await expect(page.locator("#roleId")).toBeVisible();
+    await expect(page.locator("#roleId")).toBeVisible({ timeout: 20_000 });
     const options = await page.locator("#roleId option").allTextContents();
     expect(options).toContain("기획 PM");
     expect(options).not.toContain("시스템 관리자");

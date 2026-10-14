@@ -3,7 +3,7 @@
 export const EXPENSE_COLUMN_LABELS = {
   number: "번호",
   title: "프로젝트 · 항목",
-  vendor: "거래처",
+  vendor: "지급처",
   amount: "금액",
   payment: "지급 예정",
   drafter: "기안",
@@ -25,7 +25,7 @@ export type ExpenseView = ExpenseStatusView | typeof PAYMENT_TARGET_VIEW | "지�
 export const PAYMENT_TARGET_COLUMN_LABELS = {
   number: "번호",
   title: "프로젝트 · 항목",
-  vendor: "거래처",
+  vendor: "지급처",
   method: "지급 방식",
   payment: "예정일",
   evidence: "증빙",
@@ -44,7 +44,7 @@ export const PAID_VIEW = "지급 완료";
 export const PAID_COLUMN_LABELS = {
   number: "번호",
   title: "프로젝트 · 항목",
-  vendor: "거래처",
+  vendor: "지급처",
   method: "지급 방식",
   payDate: "지급일",
   transfer: "이체액",

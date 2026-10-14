@@ -56,6 +56,12 @@ registerAction({ name: "changeExpenseVendorAction", menu: "expenses", action: "w
 // 골라내기 거래처 행 — 도메인이 PickVendorOptionDto로 투영한 결과.
 registerAction({ name: "searchVendorsForPickAction", menu: "expenses", action: "write", dtoName: "PickVendorOptionDto" });
 
+// 06.5 V12: 지급처 고르기 직원 행 — 도메인이 PickPayeeUserOptionDto로 투영한 결과.
+registerAction({ name: "searchPayeeUsersForPickAction", menu: "expenses", action: "write", dtoName: "PickPayeeUserOptionDto" });
+
+// 06.5 D-6517: 새 version만 돌려준다(DTO 없음 — changeExpenseVendorAction과 같은 결).
+registerAction({ name: "changeExpensePayeeUserAction", menu: "expenses", action: "write", dtoName: null });
+
 // 새 문서 화면의 사용일 → 소속 팀 이름 · 칸 오류(도메인이 expenseNewDefaults로 투영, 쓰기 없음).
 registerAction({ name: "previewNewExpenseAction", menu: "expenses", action: "write", dtoName: "expenseNewDefaults" });
 

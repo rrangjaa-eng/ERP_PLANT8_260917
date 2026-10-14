@@ -126,6 +126,7 @@ function toSource(row: RepoRow, currentSteps: Map<string, CurrentStep>, payment?
     title,
     unlinkedText: teamCost ? ["프로젝트 미연결", kindLabel].filter(Boolean).join(" · ") : null,
     vendorName: row.vendorName,
+    payeeUserName: row.payeeUserName,
     supply:
       row.supplyAmountKrw === null
         ? null

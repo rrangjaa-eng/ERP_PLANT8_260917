@@ -13,10 +13,12 @@ import { numberInputRejectionReason, parseNumberInput } from "@/lib/format-numbe
 import { EVIDENCE_AMOUNT_FRACTION, EVIDENCE_AMOUNT_NOT_NUMBER } from "@/domain/payments/action-row";
 import { EVIDENCE_AMOUNT_TAX_INCLUSIVE } from "@/domain/evidence-reviews/tax-inclusive";
 import { PREPAID_REASON_REQUIRED } from "@/domain/expenses/gate";
+import { BANK_TRANSFER_PAYMENT_METHOD } from "@/domain/expenses/payee";
 import { isCtrlCombo } from "@/lib/shortcut";
 import { usePhoneWidth } from "@/app/(app)/leave/use-phone-width";
 import {
   changeExpenseLineAction,
+  changeExpensePayeeUserAction,
   changeExpenseVendorAction,
   createExpenseFromLinesAction,
   createTeamExpenseDraftAction,
@@ -25,7 +27,7 @@ import {
   saveExpenseDraftAction,
   submitExpenseAction,
 } from "../actions";
-import { VendorPickDialog, type PickedVendor } from "./pick-vendor";
+import { VendorPickDialog, type PickedPayee } from "./pick-vendor";
 import { LinePickDialog } from "./pick-line";
 import { EvidenceAttachments } from "./evidence-attachments";
 import { submitBlockReason, type ServerBlock } from "./submit-block";
@@ -42,6 +44,9 @@ export type ExpenseFormData = {
   version: number;
   vendorName: string | null;
   defaultEvidenceName: string | null;
+  // 06.5 D-6517: 직원 지급처 이름 · 그 소속 팀(거래처 지급처면 null).
+  payeeUserName: string | null;
+  payeeTeamName: string | null;
   lineText: string | null;
   executionLines: string[];
   evidenceType: string | null;
@@ -166,8 +171,11 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
   const [usageDateError, setUsageDateError] = useState(team?.usageDateError ?? null);
   // 첫 저장의 idempotency key — 폼이 열릴 때 한 번 만든다(두 번 눌러도 문서 하나).
   const [idempotencyKey] = useState(() => (newDoc ? crypto.randomUUID() : ""));
-  // 고른 거래처 — 새 문서는 첫 저장에 실어 보낼 값이고, 저장된 문서는 화면에 바로 보일 값(서버가 이미 바꿨다).
-  const [pickedVendor, setPickedVendor] = useState<PickedVendor | null>(null);
+  // 고른 지급처 — 새 문서는 첫 저장에 실어 보낼 값이고, 저장된 문서는 화면에 바로 보일 값(서버가 이미 바꿨다).
+  // 06.5 V12: 거래처 · 직원 한 상태 — 다른 종류를 고르면 앞의 것이 사라져 칸에는 언제나 이름 하나만 보인다.
+  const [picked, setPicked] = useState<
+    { kind: "vendor"; id: string; name: string; defaultEvidenceName: string | null } | { kind: "user"; id: string; name: string; teamName: string | null } | null
+  >(null);
   const [pickOpen, setPickOpen] = useState<"vendor" | "line" | null>(null);
 
   const amountInput = useCommaInput(currency === "KRW" ? "krw" : "foreign", data.amount === null ? "" : String(data.amount));
@@ -254,7 +262,7 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
     teamKind,
     usageDate,
     content,
-    pickedVendor?.id ?? "",
+    picked ? `${picked.kind}:${picked.id}` : "",
     prepaid,
     prepaid && prepaidReason.trim() !== "",
   ]);
@@ -396,7 +404,7 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
       installment: data.installmentMode === "none" ? false : installment,
       ...evidenceFields(),
       ...teamFields(),
-      ...(newDoc && pickedVendor ? { vendorId: pickedVendor.id } : {}),
+      ...(newDoc && picked ? (picked.kind === "vendor" ? { vendorId: picked.id } : { payeeUserId: picked.id }) : {}),
     };
   }
 
@@ -601,10 +609,34 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
     else setPickSignal((current) => current + 1);
   }
 
-  // 거래처 고르기 · 바꾸기 — 새 문서는 첫 저장에 실을 값이고, 저장된 문서는 서버가 거래처와 증빙 종류(그 거래처 기본값)를 바로 바꾼다.
-  async function pickVendor(vendor: PickedVendor): Promise<boolean | void> {
+  // 지급처 고르기 · 바꾸기 — 새 문서는 첫 저장에 실을 값이고, 저장된 문서는 서버가 바로 바꾼다(거래처면 증빙 종류도 그 거래처 기본값).
+  // 06.5 V12: 직원은 증빙 종류를 건드리지 않는다(직원에게는 기본 증빙이 없다).
+  async function pickPayee(payee: PickedPayee): Promise<boolean | void> {
+    if (payee.kind === "user") {
+      const user = { kind: "user" as const, id: payee.user.id, name: payee.user.name, teamName: payee.user.teamName };
+      if (newDoc) {
+        setPicked(user);
+        return;
+      }
+      let result: Awaited<ReturnType<typeof changeExpensePayeeUserAction>>;
+      try {
+        result = await changeExpensePayeeUserAction({ expenseId: data.id, userId: payee.user.id, expectedVersion: version });
+      } catch {
+        setFailure("지급처 바꾸기 실패 · 다시 시도");
+        return;
+      }
+      if (!result?.data) {
+        setFailure(result?.serverError ?? "지급처 바꾸기 실패 · 다시 시도");
+        return;
+      }
+      setVersion(result.data.version);
+      setPicked(user);
+      setFailure(null);
+      return;
+    }
+    const vendor = payee.vendor;
     if (newDoc) {
-      setPickedVendor(vendor);
+      setPicked({ kind: "vendor", id: vendor.id, name: vendor.name, defaultEvidenceName: vendor.defaultEvidenceName });
       if (vendor.defaultEvidenceType) setEvidenceType(vendor.defaultEvidenceType);
       return;
     }
@@ -616,15 +648,15 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
         expectedVersion: version,
       });
     } catch {
-      setFailure("거래처 바꾸기 실패 · 다시 시도");
+      setFailure("지급처 바꾸기 실패 · 다시 시도");
       return;
     }
     if (!result?.data) {
-      setFailure(result?.serverError ?? "거래처 바꾸기 실패 · 다시 시도");
+      setFailure(result?.serverError ?? "지급처 바꾸기 실패 · 다시 시도");
       return;
     }
     setVersion(result.data.version);
-    setPickedVendor(vendor);
+    setPicked({ kind: "vendor", id: vendor.id, name: vendor.name, defaultEvidenceName: vendor.defaultEvidenceName });
     if (result.data.evidenceType) {
       // 서버가 증빙 종류까지 저장했다 — 다른 칸이 깨끗했으면 기준선도 그 값으로 맞춰 떠날 때 경고가 뜨지 않게 한다(첫 칸이 증빙 종류).
       if (!dirty) setSavedSnapshot(JSON.stringify([result.data.evidenceType, ...(JSON.parse(snapshot) as unknown[]).slice(1)]));
@@ -744,8 +776,12 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
     </span>
   );
 
-  const vendorName = pickedVendor ? pickedVendor.name : data.vendorName;
-  const vendorEvidenceName = pickedVendor ? pickedVendor.defaultEvidenceName : data.defaultEvidenceName;
+  // 06.5 V12: 칸 값 = 이름(거래처 → 직원 → —), 아래 한 줄 = 거래처 `기본 증빙 {종류}` · 직원 `직원 · {팀}`/`직원`.
+  const payeeName = picked ? picked.name : (data.vendorName ?? data.payeeUserName);
+  const payeeUser = picked ? picked.kind === "user" : data.vendorName === null && data.payeeUserName !== null;
+  const payeeTeamName = picked ? (picked.kind === "user" ? picked.teamName : null) : data.payeeTeamName;
+  const vendorEvidenceName = picked ? (picked.kind === "vendor" ? picked.defaultEvidenceName : null) : data.defaultEvidenceName;
+  const payeeSub = payeeUser ? (payeeTeamName ? `직원 · ${payeeTeamName}` : "직원") : vendorEvidenceName ? `기본 증빙 ${vendorEvidenceName}` : null;
   const usageDateShownError = errors.usageDate ?? usageDateError ?? undefined;
 
   return (
@@ -811,17 +847,23 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
           </>
         ) : null}
 
-        <Form.Field id="vendor" label="거래처" width="long">
+        <Form.Field id="vendor" label="지급처" width="long">
           <span className={styles.valueRow}>
             <span className={styles.fill}>
-              <span data-testid="expense-vendor">{vendorName ?? "—"}</span>
-              {vendorEvidenceName ? <span className={styles.sub}>{`기본 증빙 ${vendorEvidenceName}`}</span> : null}
+              <span data-testid="expense-vendor">{payeeName ?? "—"}</span>
+              {payeeSub ? <span className={styles.sub}>{payeeSub}</span> : null}
             </span>
-            {team ? (
-              <Button id="vendor-pick" variant="tertiary" onClick={() => setPickOpen("vendor")}>
-                {vendorName ? "바꾸기" : "거래처 고르기"}
+            {/* 06.5 결정 맥락 16: 팀 비용 · 프로젝트 비용 모두 지급처를 고른다. 값이 있으면 보이는 글자 `바꾸기`에 접근 이름 `지급처 바꾸기`(R-2 —
+                프로젝트 비용 폼의 견적 줄 `바꾸기`와 이름이 겹치지 않게). */}
+            {payeeName ? (
+              <Button id="vendor-pick" variant="tertiary" aria-label="지급처 바꾸기" onClick={() => setPickOpen("vendor")}>
+                바꾸기
               </Button>
-            ) : null}
+            ) : (
+              <Button id="vendor-pick" variant="tertiary" onClick={() => setPickOpen("vendor")}>
+                지급처 고르기
+              </Button>
+            )}
           </span>
         </Form.Field>
 
@@ -1040,7 +1082,13 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
         onClose={() => setPickOpen(null)}
         onPick={pickLine}
       />
-      <VendorPickDialog open={pickOpen === "vendor"} mode={vendorName ? "change" : "pick"} onClose={() => setPickOpen(null)} onPick={pickVendor} />
+      <VendorPickDialog
+        open={pickOpen === "vendor"}
+        mode={payeeName ? "change" : "pick"}
+        bankTransfer={paymentMethod === BANK_TRANSFER_PAYMENT_METHOD}
+        onClose={() => setPickOpen(null)}
+        onPick={pickPayee}
+      />
     </>
   );
 }

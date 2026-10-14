@@ -33,7 +33,7 @@ describe("buildExpenseDetailRows", () => {
     expect(built.rows).toEqual([
       { label: "프로젝트", value: "26001 아이오닉9 미디어 론칭 쇼케이스", tone: "default" },
       { label: "견적 줄", value: "1 무대설치", tone: "default" },
-      { label: "거래처", value: "스테이지원", tone: "default" },
+      { label: "지급처", value: "스테이지원", tone: "default" },
       { label: "증빙 종류", value: "세금계산서", tone: "default" },
       { label: "공급가액", value: "12,400,000", tone: "default" },
       { label: "공급가액", value: full.taxLine, tone: "default" },
@@ -41,6 +41,11 @@ describe("buildExpenseDetailRows", () => {
       { label: "지급 방식", value: "계좌이체", tone: "default" },
       { label: "비고", value: "—", tone: "muted" },
     ]);
+  });
+
+  it("직원 지급처면 지급처 행 값이 그 직원 이름이다(06.5 D-6517)", () => {
+    const rows = buildExpenseDetailRows({ ...full, vendorName: null, payeeUserName: "김지급" }).rows;
+    expect(rows.find((row) => row.label === "지급처")).toEqual({ label: "지급처", value: "김지급", tone: "default" });
   });
 
   it("분할이면 견적 줄 다음에 분할 지급 행", () => {
@@ -71,7 +76,7 @@ describe("buildExpenseDetailRows", () => {
     };
     delete rest.vendorName;
     const built = buildExpenseDetailRows(rest);
-    expect(built.rows.some((row) => row.label === "거래처")).toBe(false);
+    expect(built.rows.some((row) => row.label === "지급처")).toBe(false);
     expect(built.rows.find((row) => row.label === "증빙 종류")).toEqual({ label: "증빙 종류", value: "—", tone: "muted" });
     expect(built.rows.find((row) => row.label === "지급 예정일")).toEqual({ label: "지급 예정일", value: "—", tone: "muted" });
   });
@@ -98,7 +103,7 @@ describe("buildExpenseDetailRows", () => {
       { label: "팀", value: "기획1팀", tone: "default" },
       { label: "사용일", value: "2026-09-26", tone: "default" },
       { label: "내용", value: "팀 회식", tone: "default" },
-      { label: "거래처", value: "스테이지원", tone: "default" },
+      { label: "지급처", value: "스테이지원", tone: "default" },
       { label: "증빙 종류", value: "세금계산서", tone: "default" },
     ]);
     expect(built.rows.map((row) => row.label)).not.toContain("견적 줄");

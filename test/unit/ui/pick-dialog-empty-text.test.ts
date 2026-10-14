@@ -46,3 +46,11 @@ describe("pickManyPrimaryLabel — 1차 `{동작} N` (06.2 SP-62-1)", () => {
     expect(pickManyPrimaryLabel("참여자 더하기", 3)).toBe("참여자 더하기 3");
   });
 });
+
+// 06.5 V12 — noun `지급처`(거래처 또는 직원)는 받침 없는 `거래처`와 같은 조사 `가`.
+describe("pickEmptyText — noun 지급처 (06.5 V12)", () => {
+  it("두 꼴 모두 조사 `가`", () => {
+    expect(pickEmptyText("지급처", "no-match")).toBe("조건에 맞는 지급처가 없습니다");
+    expect(pickEmptyText("지급처", "none-selectable")).toBe("고를 수 있는 지급처가 없습니다");
+  });
+});

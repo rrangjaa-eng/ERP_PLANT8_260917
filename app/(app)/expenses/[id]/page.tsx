@@ -203,6 +203,8 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
             version: expense.version ?? 1,
             vendorName: expense.vendorName ?? null,
             defaultEvidenceName: expense.defaultEvidenceName ?? null,
+            payeeUserName: expense.payeeUserName ?? null,
+            payeeTeamName: expense.payeeTeamName ?? null,
             lineText: expense.itemName ? [expense.lineNo, expense.itemName].filter(Boolean).join(" ") : null,
             executionLines: expense.executionLines ?? [],
             evidenceType: expense.evidenceType ?? null,

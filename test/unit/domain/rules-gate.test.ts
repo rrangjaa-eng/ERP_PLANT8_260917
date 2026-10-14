@@ -332,8 +332,8 @@ describe("quote.approval-toggle (D-56 · B-30 · ENG-D4 · ENG-D9)", () => {
 
 // 04-14(D-64) — 거래처 필수. 이 페이즈 호출자 없음(Phase 5 지출결의·구매 요청).
 describe("quote.vendor-required (D-64)", () => {
-  it("거래처가 없으면 「거래처 없음 · 거래처 고르기」, 있으면 통과", async () => {
-    await expect(gate({}, "quote.vendor-required", { vendorId: null })).resolves.toEqual({ allowed: false, reason: "거래처 없음 · 거래처 고르기" });
+  it("지급처가 없으면 「지급처 없음 · 지급처 고르기」, 있으면 통과(06.5 결정 맥락 9)", async () => {
+    await expect(gate({}, "quote.vendor-required", { vendorId: null })).resolves.toEqual({ allowed: false, reason: "지급처 없음 · 지급처 고르기" });
     await expect(gate({}, "quote.vendor-required", { vendorId: "v-1" })).resolves.toEqual({ allowed: true });
   });
 });

@@ -37,7 +37,13 @@ export function buildExpenseDetailRows(projected: Partial<ExpenseDetailDto>): Do
   const rows = compact([
     ...(teamRows ?? [textRow("프로젝트", projectText), textRow("견적 줄", lineText)]),
     !teamRows && projected.installment ? textRow("분할 지급", projected.installmentSeq ? `${projected.installmentSeq}회차` : DASH) : null,
-    textRow("거래처", projected.vendorName),
+    // 06.5 결정 맥락 9 · D-6517: 지급처 = 거래처 이름 → 직원 이름(둘 다 투영에서 빠지면 행째 없다).
+    textRow(
+      "지급처",
+      projected.vendorName ||
+        projected.payeeUserName ||
+        (projected.vendorName === undefined && projected.payeeUserName === undefined ? undefined : null),
+    ),
     textRow("증빙 종류", projected.evidenceTypeName),
   ]);
   // 공급가액 — 원화 1행 + 외화면 같은 라벨 둘째 행 + 계산 한 줄 행(결재함 sheetRows가 같은 라벨을 한 칸의 여러 줄로 묶는다).

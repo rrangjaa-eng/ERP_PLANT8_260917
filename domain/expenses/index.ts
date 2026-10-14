@@ -217,6 +217,23 @@ async function usableVendor(viewer: Viewer, vendorId: string) {
   return vendor;
 }
 
+// 06.5 D-6517(V12 후보): 문서에 붙일 수 있는 직원 — 있고 보관 아님 ∧ (퇴사일 없음 ∨ 퇴사일 > 오늘 KST). 후보 질의(listPayeeUserCandidates)와 같은 판정이고
+// 쓸 수 없는 거래처와 같은 결(없는 문서). 옛은 퇴사일이 있으면 날짜와 무관하게 뺐다(O: server/src/expenses.ts:2385-2386) — 퇴사 예정자 정산 때문에 넓혔다.
+async function usablePayeeUser(viewer: Viewer, userId: string, now?: Date) {
+  const user = await findUserById(viewer, userId);
+  if (!user || user.archivedAt !== null || (user.resignationDate !== null && user.resignationDate <= seoulToday(now))) throw new ExpenseNotFoundError();
+  return user;
+}
+
+// 06.5 D-6517 · 결정 맥락 16: 지급처는 거래처 또는 직원 하나 — 칸 저장 · 첫 저장에서 한쪽이 차면 다른 쪽을 비운다(DB 체크 expenses_payee_one_check 앞에서).
+// 둘 다 차 있으면 없는 문서(옛 expenses_payee_one과 같은 결, O: db/schema/010_tables.sql:1765).
+function withOnePayee(fields: ExpenseDraftFields): ExpenseDraftFields {
+  if (fields.vendorId && fields.payeeUserId) throw new ExpenseNotFoundError();
+  if (fields.vendorId) return { ...fields, payeeUserId: null };
+  if (fields.payeeUserId) return { ...fields, vendorId: null };
+  return fields;
+}
+
 // ── 결재선 설정 17키 · 종류 등록 ─────────────────────────────────────────
 
 export const EXPENSE_ROUTE_SETTINGS: RouteSettingDefs = {
@@ -295,7 +312,17 @@ function supplyMoney(row: Pick<ExpenseRow, "supplyCurrency" | "supplyForeignAmou
 type SourceExtras = Partial<
   Pick<
     ExpenseDocumentDto,
-    "evidenceTypeName" | "paymentMethodName" | "taxLine" | "taxDrift" | "defaultEvidenceName" | "executionLines" | "installmentMode" | "installmentText" | "closure" | "closeDialog"
+    | "evidenceTypeName"
+    | "paymentMethodName"
+    | "taxLine"
+    | "taxDrift"
+    | "defaultEvidenceName"
+    | "executionLines"
+    | "installmentMode"
+    | "installmentText"
+    | "closure"
+    | "closeDialog"
+    | "payeeTeamName"
   >
 >;
 
@@ -319,6 +346,8 @@ function toSource(row: ExpenseSummaryRow, extras: SourceExtras = {}): ExpenseDoc
     lineNo: row.lineNo,
     itemName: row.itemName,
     vendorName: row.vendorName,
+    payeeUserName: row.payeeUserName,
+    payeeTeamName: extras.payeeTeamName ?? null,
     evidenceTypeName: extras.evidenceTypeName ?? null,
     paymentMethodName: extras.paymentMethodName ?? null,
     installmentSeq: row.installmentSeq,
@@ -419,6 +448,7 @@ async function loadExpenseDetails(viewer: Viewer, ids: string[]): Promise<Map<st
       installment: row.installment,
       installmentSeq: row.installmentSeq,
       vendorName: row.vendorName,
+      payeeUserName: row.payeeUserName,
       evidenceTypeName,
       supply,
       taxLine: supply && shown ? taxLineText(shown, supply, `${evidenceTypeName ?? ""} 규칙`).text : null,
@@ -803,12 +833,13 @@ async function assertEvidenceAmountNotTaxInclusive(viewer: Viewer, doc: ExpenseT
 export async function saveExpenseDraft(
   viewer: Viewer,
   input: { expenseId: string; expectedVersion: number; fields: ExpenseDraftInput },
+  deps?: { now?: Date },
 ): Promise<{ version: number }> {
   if (!(await can(viewer, "expenses", "write"))) throw new ForbiddenError("지출결의 작성 권한 없음");
   const row = await findEditableExpense(viewer, input.expenseId);
   const parsed = draftFieldsSchema.parse(input.fields);
   await assertActiveCodes(viewer, parsed, row);
-  const fields = toDraftColumns(parsed);
+  const fields = withOnePayee(toDraftColumns(parsed));
   // 06-10: 합친 행이 선결제 · 사유 빔이면 DB 체크(expenses_prepaid_reason_check)를 만나기 전에 칸 오류로 거부한다. 선결제가 아니면 사유는 버린다.
   const prepaid = fields.prepaid ?? row.prepaid;
   if (prepaid) {
@@ -825,10 +856,17 @@ export async function saveExpenseDraft(
   // 팀 id를 호출자가 보낼 수 없다(T-05-703). 트랜잭션 · 잠금 밖의 읽기다.
   // 견적 줄 문서의 거래처는 줄이 정한다(줄 바꾸기만 바꾼다) — 팀 비용 문서의 거래처는 거래처 고르기와 같은 판정을 지난다.
   if (!isTeamCostRow(row)) {
-    if (parsed.teamExpenseKind !== undefined || parsed.usageDate !== undefined || parsed.content !== undefined || parsed.vendorId !== undefined)
+    if (
+      parsed.teamExpenseKind !== undefined ||
+      parsed.usageDate !== undefined ||
+      parsed.content !== undefined ||
+      parsed.vendorId !== undefined ||
+      parsed.payeeUserId !== undefined
+    )
       throw new ExpenseNotFoundError();
   } else {
     if (parsed.vendorId) await usableVendor(viewer, parsed.vendorId);
+    if (parsed.payeeUserId) await usablePayeeUser(viewer, parsed.payeeUserId, deps?.now);
     if (parsed.usageDate !== undefined) fields.attributedTeamId = await attributedTeamFor(viewer, parsed.usageDate);
   }
   const saved = await updateDraftIfVersion(viewer, { id: row.id, expectedVersion: input.expectedVersion, fields, updatedBy: viewer.id });
@@ -868,8 +906,9 @@ export async function createTeamExpenseDraft(
 
   const parsed = draftFieldsSchema.parse(input.fields);
   if (parsed.vendorId) await usableVendor(viewer, parsed.vendorId);
+  if (parsed.payeeUserId) await usablePayeeUser(viewer, parsed.payeeUserId, deps?.now);
   await assertActiveCodes(viewer, parsed);
-  const draftColumns = toDraftColumns(parsed);
+  const draftColumns = withOnePayee(toDraftColumns(parsed));
   if (draftColumns.prepaid && !draftColumns.prepaidReason) throw new ExpenseFieldError("prepaidReason", PREPAID_REASON_REQUIRED);
   await assertEvidenceAmountNotTaxInclusive(viewer, {
     evidenceType: draftColumns.evidenceType ?? null,
@@ -895,24 +934,42 @@ export async function createTeamExpenseDraft(
   return created;
 }
 
-// 05-07 거래처 바꾸기 · 고르기(팀 비용 문서) — 기안자 · 작성 중만. 증빙 종류는 그 거래처 기본값(없거나 쓰지 않는 코드면 그대로 — C5). 견적 줄 문서의 거래처는
-// 줄이 정한다(제출 판정 ⑤가 줄의 거래처를 본다) — 줄을 바꾸는 것이 그 길이다.
+// 05-07 거래처 바꾸기 · 고르기 — 기안자 · 작성 중만. 증빙 종류는 그 거래처 기본값(없거나 쓰지 않는 코드면 그대로 — C5).
+// 06.5 D-6517 · 결정 맥락 16: 지급처는 거래처 또는 직원 하나 — 팀 비용 · 프로젝트 비용 모두(옛도 O: server/src/expenses.ts:1909-1924). 견적 줄의 거래처는
+// 줄을 고를 때의 기본값일 뿐이고 제출 판정 ⑤는 문서 칸을 본다. 결재 중 · 승인 문서는 findEditableExpense가 막는다(옛도 제출 뒤 못 바꿈 :4240-4242).
 export async function changeExpenseVendor(
   viewer: Viewer,
   input: { expenseId: string; vendorId: string; expectedVersion: number },
 ): Promise<{ version: number; evidenceType: string | null }> {
   if (!(await can(viewer, "expenses", "write"))) throw new ForbiddenError("지출결의 작성 권한 없음");
   const row = await findEditableExpense(viewer, input.expenseId);
-  if (!isTeamCostRow(row)) throw new ExpenseNotFoundError();
   const vendor = await usableVendor(viewer, input.vendorId);
   const defaultEvidence = vendor.defaultEvidenceType && (await loadActiveCodes(viewer)).evidence.has(vendor.defaultEvidenceType) ? vendor.defaultEvidenceType : null;
-  const fields: ExpenseDraftFields = { vendorId: vendor.id, ...(defaultEvidence ? { evidenceType: defaultEvidence } : {}) };
+  const fields: ExpenseDraftFields = { vendorId: vendor.id, payeeUserId: null, ...(defaultEvidence ? { evidenceType: defaultEvidence } : {}) };
   const saved = await updateDraftIfVersion(viewer, { id: row.id, expectedVersion: input.expectedVersion, fields, updatedBy: viewer.id });
   if (!saved) {
     const latest = await findExpenseById(viewer, row.id);
     throw new ExpenseConflictError(latest?.updatedAt ?? row.updatedAt);
   }
   return { version: saved.version, evidenceType: saved.evidenceType };
+}
+
+// 06.5 D-6517: 지급처를 직원으로 — changeExpenseVendor와 같은 결(거래처 칸은 비우고 증빙 종류는 그대로 — 직원에게는 기본 증빙이 없다).
+export async function changeExpensePayeeUser(
+  viewer: Viewer,
+  input: { expenseId: string; userId: string; expectedVersion: number },
+  deps?: { now?: Date },
+): Promise<{ version: number }> {
+  if (!(await can(viewer, "expenses", "write"))) throw new ForbiddenError("지출결의 작성 권한 없음");
+  const row = await findEditableExpense(viewer, input.expenseId);
+  const user = await usablePayeeUser(viewer, input.userId, deps?.now);
+  const fields: ExpenseDraftFields = { payeeUserId: user.id, vendorId: null };
+  const saved = await updateDraftIfVersion(viewer, { id: row.id, expectedVersion: input.expectedVersion, fields, updatedBy: viewer.id });
+  if (!saved) {
+    const latest = await findExpenseById(viewer, row.id);
+    throw new ExpenseConflictError(latest?.updatedAt ?? row.updatedAt);
+  }
+  return { version: saved.version };
 }
 
 // 05-07 견적 줄 바꾸기 · 고르기 — 기안자의 작성 중 문서를 새 줄 문서로 다시 채운다(거래처 · 증빙 종류 = 새 줄 거래처 기본값 · 공급가액 = 새 줄 남은 실행가 ·
@@ -958,6 +1015,7 @@ export async function changeExpenseLine(
     projectId: facts.project.id,
     quoteLineId: line.id,
     vendorId: line.vendorId,
+    payeeUserId: null,
     evidenceType: vendor?.defaultEvidenceType ?? null,
     supplyCurrency: supply.currency,
     supplyForeignAmount: supply.foreignAmount,
@@ -1598,7 +1656,10 @@ export async function getExpense(viewer: Viewer, input: { expenseId: string }): 
   const result = corrected ? current : (stored ?? current);
   const taxLine = result && supply ? taxLineText(result, supply, `${evidenceTypeName ?? ""} 규칙`) : null;
   const taxDrift = !corrected && stored && current && row.number !== null ? taxDriftText(stored, current) : null;
-  const vendor = editable && row.vendorId ? await findVendorById(viewer, row.vendorId) : null;
+  // 06.5 V12: 문서 화면 지급처 값 아래 한 줄(거래처 `기본 증빙 {종류}` · 직원 `직원 · {팀}`)이라 읽기 길에도 채운다(앞은 작성 중에만).
+  const vendor = row.vendorId ? await findVendorById(viewer, row.vendorId) : null;
+  // 직원 지급처의 팀은 문서 날짜(팀 비용 사용일 · 아니면 작성일 서울 날짜)의 소속.
+  const payeeTeam = row.payeeUserId ? await teamAtDate(viewer, row.payeeUserId, row.usageDate ?? seoulToday(row.createdAt)) : null;
   return project(
     viewer,
     toSource(row, {
@@ -1610,6 +1671,7 @@ export async function getExpense(viewer: Viewer, input: { expenseId: string }): 
       ...(await lineFactsFor(viewer, row, supply)),
       closure: row.closedAt === null ? null : await closureOf(viewer, row),
       closeDialog: await closeDialogFor(viewer, row),
+      payeeTeamName: payeeTeam?.name ?? null,
     }),
     EXPENSE_DOCUMENT_DTO_SPEC,
   );

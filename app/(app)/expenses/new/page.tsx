@@ -42,6 +42,8 @@ export default async function NewExpensePage() {
             version: 0,
             vendorName: null,
             defaultEvidenceName: null,
+            payeeUserName: null,
+            payeeTeamName: null,
             lineText: null,
             executionLines: [],
             evidenceType: null,

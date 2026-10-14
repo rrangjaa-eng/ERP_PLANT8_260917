@@ -1,12 +1,15 @@
+import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import { createExpenseFromLines } from "@/domain/expenses";
 import { getCurrentQuoteRevision } from "@/domain/quotes/lines";
 import { createRevisionFromCurrent, setCustomerApproval } from "@/domain/quotes/revisions";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { approvalBasis } from "@/repositories/quote-revisions";
+import { insertVendor } from "@/repositories/vendors";
+import { normalizeVendorName } from "@/domain/vendors";
 import { seoulToday } from "@/lib/dates";
 import { delayServerActions, loginPage, waitForHydration } from "./leave-org";
-import { setupExpenseE2E, submitLineExpense, uniqueReceipt, type ExpenseE2E, type LineKey } from "./expense-fixture";
+import { addPayeeCandidates, addPayeeEmployee, setupExpenseE2E, submitLineExpense, uniqueReceipt, type ExpenseE2E, type LineKey } from "./expense-fixture";
 
 // 05-07(EXP-08 · UX-06 · UI-SPEC S3 두 입구 · S14 골라내기): `/expenses/new` 팀 비용 지출결의 — 종류 · 사용일 · 팀 · 내용 → 거래처 고르기 →
 // 첫 저장(주소 교체) → 증빙 → 제출 `T26-` 번호 → 결재선 승인 → 문서 화면 `프로젝트 미연결 · 팀 관리비`. 판정은 DOM 실측(포커스 · 값 · 글자)이다.
@@ -28,13 +31,13 @@ async function openNew(page: Page): Promise<void> {
   await waitForHydration(page.getByRole("button", { name: /^임시 저장/ }));
 }
 
-// 거래처 골라내기를 열어 이름으로 찾아 첫 행을 Enter로 고른다(키보드만).
+// 지급처 골라내기를 열어 이름으로 찾아 첫 행을 Enter로 고른다(키보드만).
 async function pickVendorByKeyboard(page: Page, fx: ExpenseE2E): Promise<void> {
-  await page.getByRole("button", { name: "거래처 고르기" }).click();
-  const dialog = page.getByRole("dialog", { name: "거래처 고르기" });
+  await page.getByRole("button", { name: "지급처 고르기" }).click();
+  const dialog = page.getByRole("dialog", { name: "지급처 고르기" });
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole("textbox", { name: "거래처 이름 검색" })).toBeFocused();
-  await dialog.getByRole("textbox", { name: "거래처 이름 검색" }).fill(fx.vendorName);
+  await expect(dialog.getByRole("textbox", { name: "지급처 이름 검색" })).toBeFocused();
+  await dialog.getByRole("textbox", { name: "지급처 이름 검색" }).fill(fx.vendorName);
   const option = dialog.getByRole("option", { name: new RegExp(fx.vendorName) });
   // 검색이 좁혀진 목록이 올 때까지(이름이 겹치지 않아 한 행) — 지난 목록에서 ↓를 누르면 행이 바뀌며 포커스가 검색 칸으로 돌아간다.
   await expect(dialog.getByRole("option")).toHaveCount(1);
@@ -70,7 +73,7 @@ test.describe("팀 비용 지출결의 (EXP-08)", () => {
     await pickVendorByKeyboard(page, fx);
     await expect(page.getByTestId("expense-vendor")).toHaveText(fx.vendorName);
     await expect(page.getByLabel("증빙 종류")).toHaveValue("tax_invoice");
-    await expect(page.getByRole("button", { name: "바꾸기" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "지급처 바꾸기", exact: true })).toBeVisible();
 
     await page.getByLabel("공급가액").fill("440000");
     await page.getByLabel("지급 방식").selectOption("bank_transfer");
@@ -165,25 +168,25 @@ test.describe("팀 비용 지출결의 (EXP-08)", () => {
   });
 });
 
-test.describe("골라내기 (S14) · 거래처", () => {
-  test("Esc는 닫고 트리거로 돌아가며 검색 0건은 `조건에 맞는 거래처가 없습니다 · 검색 지우기`, 조회 실패는 `목록 불러오기 실패 · 다시 시도`", async ({ browser, baseURL }) => {
+test.describe("골라내기 (S14) · 지급처", () => {
+  test("Esc는 닫고 트리거로 돌아가며 검색 0건은 `조건에 맞는 지급처가 없습니다 · 검색 지우기`, 조회 실패는 `목록 불러오기 실패 · 다시 시도`", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const page = await loginPage(browser, baseURL, fx.pm);
     await openNew(page);
 
-    const trigger = page.getByRole("button", { name: "거래처 고르기" });
+    const trigger = page.getByRole("button", { name: "지급처 고르기" });
     await trigger.click();
-    const dialog = page.getByRole("dialog", { name: "거래처 고르기" });
-    const search = dialog.getByRole("textbox", { name: "거래처 이름 검색" });
+    const dialog = page.getByRole("dialog", { name: "지급처 고르기" });
+    const search = dialog.getByRole("textbox", { name: "지급처 이름 검색" });
     await expect(search).toBeFocused();
     // 주 버튼은 고른 행이 있어야 켜진다(꺼진 동안 aria-disabled, 이유는 목록).
-    const primary = dialog.getByRole("button", { name: /^이 거래처로/ });
+    const primary = dialog.getByRole("button", { name: /^이 지급처로/ });
     await expect(primary).toHaveAttribute("aria-disabled", "true");
     // UX-06 — 꺼진 1차는 이유 한 줄을 aria-describedby로 가리킨다(05 /review B1).
-    await expect(primary).toHaveAccessibleDescription("고른 거래처 없음");
+    await expect(primary).toHaveAccessibleDescription("고른 지급처 없음");
 
     await search.fill("없는거래처-zzzz");
-    await expect(dialog.getByText("조건에 맞는 거래처가 없습니다 ·")).toBeVisible();
+    await expect(dialog.getByText("조건에 맞는 지급처가 없습니다 ·")).toBeVisible();
     await dialog.getByRole("button", { name: "검색 지우기" }).click();
     await expect(search).toHaveValue("");
     await expect(search).toBeFocused();
@@ -199,14 +202,14 @@ test.describe("골라내기 (S14) · 거래처", () => {
     });
     await trigger.click();
     await expect(dialog.getByText("목록 불러오기 실패 ·")).toBeVisible();
-    await expect(dialog.getByRole("textbox", { name: "거래처 이름 검색" })).toBeEnabled();
+    await expect(dialog.getByRole("textbox", { name: "지급처 이름 검색" })).toBeEnabled();
     await page.unrouteAll({ behavior: "ignoreErrors" });
     await dialog.getByRole("button", { name: "다시 시도" }).click();
     await expect(dialog.getByRole("option").first()).toBeVisible();
     await expect(dialog.getByText("목록 불러오기 실패")).toHaveCount(0);
   });
 
-  test("저장된 팀 비용 문서의 `바꾸기`는 서버가 거래처와 증빙 종류를 바꾸고 막힘 ⑤의 다음 한 수 `거래처 고르기`가 같은 골라내기를 연다", async ({ browser, baseURL }) => {
+  test("저장된 팀 비용 문서의 `바꾸기`는 서버가 거래처와 증빙 종류를 바꾸고 막힘 ⑤의 다음 한 수 `지급처 고르기`가 같은 골라내기를 연다", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const page = await loginPage(browser, baseURL, fx.pm);
     await openNew(page);
@@ -216,25 +219,25 @@ test.describe("골라내기 (S14) · 거래처", () => {
     await expect(page).toHaveURL(/\/expenses\/[0-9a-f-]{36}$/);
     await waitForHydration(page.getByRole("button", { name: /^임시 저장/ }));
 
-    // 거래처가 비어 있어 막힘 이유가 ⑤ `거래처 없음 · 거래처 고르기` — 그 다음 한 수 3차가 골라내기를 연다.
+    // 지급처가 비어 있어 막힘 이유가 ⑤ `지급처 없음 · 지급처 고르기` — 그 다음 한 수 3차가 골라내기를 연다.
     await delayServerActions(page, 100);
-    await expect(page.getByText(/^거래처 없음 · /)).toBeVisible();
+    await expect(page.getByText(/^지급처 없음 · /)).toBeVisible();
     await page.locator("#expense-next-step").click();
-    const dialog = page.getByRole("dialog", { name: "거래처 고르기" });
+    const dialog = page.getByRole("dialog", { name: "지급처 고르기" });
     await expect(dialog).toBeVisible();
-    await dialog.getByRole("textbox", { name: "거래처 이름 검색" }).fill(fx.vendorName);
+    await dialog.getByRole("textbox", { name: "지급처 이름 검색" }).fill(fx.vendorName);
     await dialog.getByRole("option", { name: new RegExp(fx.vendorName) }).click();
     await expect(dialog.getByText("증빙 종류 → 세금계산서")).toBeVisible();
-    await dialog.getByRole("button", { name: /^이 거래처로/ }).click();
+    await dialog.getByRole("button", { name: /^이 지급처로/ }).click();
     await expect(dialog).toBeHidden();
     await expect(page.getByTestId("expense-vendor")).toHaveText(fx.vendorName);
     await expect(page.getByLabel("증빙 종류")).toHaveValue("tax_invoice");
-    await expect(page.getByText(/^거래처 없음 · /)).toHaveCount(0);
+    await expect(page.getByText(/^지급처 없음 · /)).toHaveCount(0);
 
     // 새로 열어도 저장돼 있다(서버 값).
     await page.reload();
     await expect(page.getByTestId("expense-vendor")).toHaveText(fx.vendorName);
-    await expect(page.getByRole("button", { name: "바꾸기" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "지급처 바꾸기", exact: true })).toBeVisible();
   });
 });
 
@@ -245,7 +248,7 @@ test.describe("골라내기 (S14) · 견적 줄", () => {
     const page = await loginPage(browser, baseURL, fx.pm);
     await openDraft(page, fx, "tracer");
 
-    const trigger = page.getByRole("button", { name: "바꾸기" });
+    const trigger = page.getByRole("button", { name: "바꾸기", exact: true });
     await trigger.click();
     const dialog = page.getByRole("dialog", { name: "견적 줄 바꾸기" });
     const search = dialog.getByRole("textbox", { name: "견적 줄 검색" });
@@ -277,13 +280,13 @@ test.describe("골라내기 (S14) · 견적 줄", () => {
     const phone = dialog.getByRole("option", { name: new RegExp(fx.lines.phone.itemName) });
     await phone.click();
     await expect(primary).not.toHaveAttribute("aria-disabled", "true");
-    await expect(dialog.getByText("거래처 · 증빙 종류 · 공급가액이 그 줄 값으로 바뀜")).toBeVisible();
+    await expect(dialog.getByText("지급처 · 증빙 종류 · 공급가액이 그 줄 값으로 바뀜")).toBeVisible();
     await page.keyboard.press("Enter");
     await expect(dialog).toBeHidden();
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(`지출결의 — ${fx.projectName} · ${fx.lines.phone.itemName}`);
     await expect(page.getByLabel("공급가액")).toHaveValue("12,400,000");
     await expect(page.getByTestId("expense-vendor")).toHaveText(fx.vendorName);
-    await expect(page.getByRole("button", { name: "바꾸기" })).toBeFocused();
+    await expect(page.getByRole("button", { name: "바꾸기", exact: true })).toBeFocused();
   });
 
   test("/expenses/new — 담당 프로젝트가 없으면 `담당 프로젝트 줄이 없습니다 · 검색으로 찾기`, 검색 0건 · 조회 실패도 검색 칸이 살아 있다", async ({ browser, baseURL }) => {
@@ -343,7 +346,7 @@ test.describe("골라내기 (S14) · 견적 줄", () => {
     await openDraft(page, fx, "tracer");
     await page.getByLabel("비고", { exact: true }).fill("웨이브9 저장 안 한 메모");
     await page.getByLabel("지급 예정일", { exact: true }).fill("2026-10-17");
-    await page.getByRole("button", { name: "바꾸기" }).click();
+    await page.getByRole("button", { name: "바꾸기", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "견적 줄 바꾸기" });
     await dialog.getByRole("option", { name: new RegExp(fx.lines.phone.itemName) }).click();
     await dialog.getByRole("button", { name: /^이 줄로/ }).click();
@@ -372,7 +375,7 @@ test.describe("골라내기 (S14) · 견적 줄", () => {
     await expect(page.getByLabel("지급 예정일", { exact: true })).toHaveValue("2026-10-17");
   });
 
-  test("웨이브 9 D2 · D3 · D5 — 1차 버튼 설명은 결과 줄 · 검색 칸은 거르는 동안 제자리 · 부제 `프로젝트 N · 고를 수 있는 줄 M` · `거래처 N`", async ({ browser, baseURL }) => {
+  test("웨이브 9 D2 · D3 · D5 — 1차 버튼 설명은 결과 줄 · 검색 칸은 거르는 동안 제자리 · 부제 `프로젝트 N · 고를 수 있는 줄 M` · `지급처 N`", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const page = await loginPage(browser, baseURL, fx.pm);
     await openNew(page);
@@ -392,9 +395,9 @@ test.describe("골라내기 (S14) · 견적 줄", () => {
     await expect(page.locator(`[id="${describedBy}"]`)).toHaveText(/그 줄 값으로 채워짐/);
     await page.keyboard.press("Escape");
 
-    await page.getByRole("button", { name: "거래처 고르기" }).click();
-    const vendors = page.getByRole("dialog", { name: "거래처 고르기" });
-    await expect(vendors.getByText(/^거래처 \d+$/)).toBeVisible();
+    await page.getByRole("button", { name: "지급처 고르기" }).click();
+    const vendors = page.getByRole("dialog", { name: "지급처 고르기" });
+    await expect(vendors.getByText(/^지급처 \d+$/)).toBeVisible();
   });
 
   test("막힘 ③(작성 중에 새 차수가 생긴 문서)의 다음 한 수 `견적 줄 바꾸기`가 골라내기를 연다", async ({ browser, baseURL }) => {
@@ -414,5 +417,128 @@ test.describe("골라내기 (S14) · 견적 줄", () => {
     const dialog = page.getByRole("dialog", { name: "견적 줄 바꾸기" });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByRole("option", { name: new RegExp(fx.lines.retry.itemName) })).toBeVisible();
+  });
+});
+
+// 06.5 V12(D-6517 · 결정 맥락 16 · R-1 · R-8): 지급처 = 거래처 또는 직원 — 고르기 대화상자 하나 · 목록 하나 · 폼 상태 하나.
+test.describe("지급처 고르기 — 직원 지급처 (06.5 V12)", () => {
+  async function payeeDialog(page: Page, open: string, title: string, query: string) {
+    await page.getByRole("button", { name: open, exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: title });
+    await dialog.getByRole("textbox", { name: "지급처 이름 검색" }).fill(query);
+    return dialog;
+  }
+
+  test("새 팀 비용 문서에서 직원을 고르고 첫 저장하면 폼 · 목록 지급처 칸에 직원 이름 (EP1-9)", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const tag = `지급${randomUUID().slice(0, 6)}`;
+    const employee = await addPayeeEmployee(fx, `${tag}김`);
+    await insertVendor(SYSTEM_VIEWER, { name: `${tag}거래처`, normalizedName: normalizeVendorName(`${tag}거래처`), defaultEvidenceType: "tax_invoice" });
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await openNew(page);
+    await page.getByLabel("종류", { exact: true }).selectOption("team_overhead");
+    await page.getByLabel("내용", { exact: true }).fill("직원 정산");
+
+    const dialog = await payeeDialog(page, "지급처 고르기", "지급처 고르기", tag);
+    await expect(dialog.getByRole("option")).toHaveCount(2);
+    await expect(dialog.getByText("지급처 2", { exact: true })).toBeVisible();
+    await expect(dialog.getByRole("option", { name: new RegExp(`${tag}거래처`) })).toContainText("기본 증빙 세금계산서");
+    const person = dialog.getByRole("option", { name: new RegExp(employee.name) });
+    await expect(person).toContainText(`직원 · ${fx.teamName}`);
+    await person.click();
+    await dialog.getByRole("button", { name: /^이 지급처로/ }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByTestId("expense-vendor")).toHaveText(employee.name);
+    await expect(page.getByText(`직원 · ${fx.teamName}`, { exact: true })).toBeVisible();
+    // 직원은 증빙 종류를 건드리지 않는다.
+    await expect(page.getByLabel("증빙 종류")).toHaveValue("");
+
+    await page.getByRole("button", { name: /^임시 저장/ }).click();
+    await expect(page).toHaveURL(/\/expenses\/[0-9a-f-]{36}$/);
+    await waitForHydration(page.getByRole("button", { name: /^임시 저장/ }));
+    await expect(page.getByTestId("expense-vendor")).toHaveText(employee.name);
+    await expect(page.getByText(`직원 · ${fx.teamName}`, { exact: true })).toBeVisible();
+
+    await page.goto("/expenses");
+    // 지급처 칸(.vendorCell)이 첫째 — 둘째는 같은 행의 좁은 폭 요약 조각이다.
+    await expect(page.locator("main table").getByText(employee.name, { exact: true }).first()).toBeVisible();
+  });
+
+  test("저장된 문서에서 거래처 → 직원 → 거래처로 바꾸면 칸에 매번 그 이름 하나 · 직원은 증빙 종류를 두고 거래처는 결과 줄 (EP2-B7)", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const tag = `바꿈${randomUUID().slice(0, 6)}`;
+    const employee = await addPayeeEmployee(fx, `${tag}박`);
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await openNew(page);
+    await page.getByLabel("종류", { exact: true }).selectOption("lost_bid");
+    await page.getByLabel("내용", { exact: true }).fill("시안 제작");
+    await pickVendorByKeyboard(page, fx);
+    await page.getByRole("button", { name: /^임시 저장/ }).click();
+    await expect(page).toHaveURL(/\/expenses\/[0-9a-f-]{36}$/);
+    await waitForHydration(page.getByRole("button", { name: /^임시 저장/ }));
+    await expect(page.getByTestId("expense-vendor")).toHaveText(fx.vendorName);
+    await expect(page.getByLabel("증빙 종류")).toHaveValue("tax_invoice");
+
+    let dialog = await payeeDialog(page, "지급처 바꾸기", "지급처 바꾸기", employee.name);
+    await dialog.getByRole("option", { name: new RegExp(employee.name) }).click();
+    await expect(dialog.getByText(/^증빙 종류 → /)).toHaveCount(0);
+    await dialog.getByRole("button", { name: /^이 지급처로/ }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByTestId("expense-vendor")).toHaveText(employee.name);
+    await expect(page.getByLabel("증빙 종류")).toHaveValue("tax_invoice");
+
+    dialog = await payeeDialog(page, "지급처 바꾸기", "지급처 바꾸기", fx.vendorName);
+    await dialog.getByRole("option", { name: new RegExp(fx.vendorName) }).click();
+    await expect(dialog.getByText("증빙 종류 → 세금계산서")).toBeVisible();
+    await dialog.getByRole("button", { name: /^이 지급처로/ }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByTestId("expense-vendor")).toHaveText(fx.vendorName);
+
+    await page.reload();
+    await expect(page.getByTestId("expense-vendor")).toHaveText(fx.vendorName);
+  });
+
+  test("프로젝트 비용 문서에서도 `바꾸기`가 서고 · 계좌이체면 계좌 없는 후보 부제 끝 ` · 계좌 없음`, 현금이면 꼬리 없음 (결정 맥락 16)", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const tag = `꼬리${randomUUID().slice(0, 6)}`;
+    const employee = await addPayeeEmployee(fx, `${tag}최`);
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await openDraft(page, fx, "tracer");
+    await expect(page.getByLabel("지급 방식")).toHaveValue("bank_transfer");
+
+    let dialog = await payeeDialog(page, "지급처 바꾸기", "지급처 바꾸기", employee.name);
+    await expect(dialog.getByRole("option", { name: new RegExp(employee.name) })).toContainText(`직원 · ${fx.teamName} · 계좌 없음`);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+
+    await page.getByLabel("지급 방식").selectOption("cash");
+    dialog = await payeeDialog(page, "지급처 바꾸기", "지급처 바꾸기", employee.name);
+    const option = dialog.getByRole("option", { name: new RegExp(employee.name) });
+    await expect(option).toContainText(`직원 · ${fx.teamName}`);
+    await expect(option).not.toContainText("계좌 없음");
+    await option.click();
+    await dialog.getByRole("button", { name: /^이 지급처로/ }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByTestId("expense-vendor")).toHaveText(employee.name);
+  });
+
+  test("거래처 30 · 직원 30이 걸리는 검색은 option 50 · 넘침 한 줄 · 머리 `지급처 50` · 이름순 · radio 0 (R-1 · R-8)", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const tag = `합침${randomUUID().slice(0, 6)}`;
+    await addPayeeCandidates(tag, 30);
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await openNew(page);
+
+    const dialog = await payeeDialog(page, "지급처 고르기", "지급처 고르기", tag);
+    await expect(dialog.getByRole("listbox")).toHaveCount(1);
+    await expect(dialog.getByRole("option")).toHaveCount(50);
+    await expect(dialog.getByRole("radio")).toHaveCount(0);
+    await expect(dialog.getByText("50건 넘음 · 검색으로 좁히기", { exact: true })).toHaveCount(1);
+    await expect(dialog.getByText("지급처 50", { exact: true })).toHaveCount(1);
+    const titles = (await dialog.getByRole("option").allInnerTexts()).map((text) => new RegExp(`${tag}-[uv]\\d{2}`).exec(text)?.[0] ?? "");
+    expect(titles.every((title) => title !== "")).toBe(true);
+    expect(titles).toEqual([...titles].sort((a, b) => a.localeCompare(b, "ko")));
+    expect(titles.some((title) => title.includes("-u"))).toBe(true);
+    expect(titles.some((title) => title.includes("-v"))).toBe(true);
   });
 });

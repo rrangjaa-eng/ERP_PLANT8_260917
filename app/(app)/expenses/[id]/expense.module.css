@@ -65,7 +65,9 @@
   min-width: 0;
 }
 
+/* 06.5 V12: 문서 화면 지급처 값 아래 한 줄로도 쓴다(KvList 값 안 — 폼의 .fill 세로 줄과 같은 모양). */
 .sub {
+  display: block;
   color: var(--text-muted);
   font-size: var(--text-aux);
 }

@@ -27,7 +27,7 @@ import { createProject } from "@/domain/projects";
 import { changeProjectStatus } from "@/domain/projects/status";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
-import { attachEvidence, submitReadyDraft } from "../integration/fixtures/expenses";
+import { attachEvidence, submitReadyDraft, testVendorAccount } from "../integration/fixtures/expenses";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
 import { setupExpenseE2E, type ExpenseE2E, type LineKey, archiveTempRoles, insertTempRole } from "./expense-fixture";
 
@@ -1688,11 +1688,11 @@ test.describe("지급 완료 보기 마감 (06-20 Task 4)", () => {
     await expect(page.locator("main table tbody tr a[data-paid-number]")).toHaveCount(1);
     await expect(page.getByRole("region", { name: "합계" })).toContainText("51건");
     const headers = () => page.locator("main table thead th:visible").allInnerTexts();
-    for (const label of ["지급 방식", "차이 사유", "처리한 사람", "번호", "거래처", "증빙"]) expect(await headers()).toContain(label);
+    for (const label of ["지급 방식", "차이 사유", "처리한 사람", "번호", "지급처", "증빙"]) expect(await headers()).toContain(label);
     await page.setViewportSize({ width: 1100, height: 900 });
     await expect.poll(headers).not.toContain("지급 방식");
     for (const label of ["차이 사유", "처리한 사람"]) expect(await headers()).not.toContain(label);
-    for (const label of ["번호", "거래처", "증빙", "지급일", "이체액"]) expect(await headers()).toContain(label);
+    for (const label of ["번호", "지급처", "증빙", "지급일", "이체액"]) expect(await headers()).toContain(label);
     await page.setViewportSize({ width: 600, height: 900 });
     await expect.poll(headers).not.toContain("처리한 사람");
     for (const label of ["지급 방식", "차이 사유"]) expect(await headers()).not.toContain(label);
@@ -1732,7 +1732,7 @@ test.describe("지급 완료 보기 마감 (06-20 Task 4)", () => {
     });
     expect(await note.evaluate((element) => getComputedStyle(element).fontSize)).toBe(tagSize);
     const headers = await page.locator("main table thead th").allInnerTexts();
-    const allowed: string[] = ["번호", "프로젝트 · 항목", "거래처", "금액", "지급 예정", "기안", "상태"];
+    const allowed: string[] = ["번호", "프로젝트 · 항목", "지급처", "금액", "지급 예정", "기안", "상태"];
     expect(headers.every((header) => allowed.includes(header.trim()))).toBe(true);
     expect(headers.length).toBeLessThanOrEqual(allowed.length);
     await page.context().close();
@@ -1748,7 +1748,7 @@ async function bigLines(fx: ExpenseE2E, count: number): Promise<{ id: string; it
   const today = seoulToday();
   const suffix = randomUUID().slice(0, 6);
   const client = await insertVendor(SYSTEM_VIEWER, { name: `E2E큰금액클라이언트-${suffix}`, normalizedName: `e2e큰금액클라이언트-${suffix}` });
-  const vendor = await insertVendor(SYSTEM_VIEWER, { name: `${LONG_VENDOR}-${suffix}`, normalizedName: `${LONG_VENDOR}-${suffix}`, defaultEvidenceType: "tax_invoice" });
+  const vendor = await insertVendor(SYSTEM_VIEWER, { name: `${LONG_VENDOR}-${suffix}`, normalizedName: `${LONG_VENDOR}-${suffix}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount() });
   const project = await createProject(fx.pm.viewer, {
     clientId: client.id,
     teamId: await teamOf(fx),
@@ -1845,7 +1845,7 @@ test.describe("검토 반영 (06-20 독립 검토 · DOM 감사)", () => {
       await expect.poll(() => pageOverflow(page), { message: `${width}px 문서 가로 넘침` }).toBe(0);
     }
     await expect.poll(headers).not.toContain("번호");
-    expect(await headers()).not.toContain("거래처");
+    expect(await headers()).not.toContain("지급처");
     for (const label of ["프로젝트 · 항목", "지급일", "이체액", "증빙"]) expect(await headers()).toContain(label);
     await page.context().close();
   });

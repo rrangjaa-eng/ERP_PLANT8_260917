@@ -285,7 +285,7 @@ test.describe("견적 줄 바꾸기 포커스 플래그 (05 /review B9)", () => 
     if (!secondId) throw new Error("두 번째 작성 중 문서를 만들지 못했다");
 
     // 현재 줄을 그대로 고른다 — 서버가 아무것도 바꾸지 않아 폼은 같은 key로 남는다.
-    await page.getByRole("button", { name: "바꾸기" }).click();
+    await page.getByRole("button", { name: "바꾸기", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "견적 줄 바꾸기" });
     await expect(dialog.getByRole("option").first()).toBeVisible();
     await dialog.getByRole("option", { name: new RegExp(fx.lines.tracer.itemName) }).click();
@@ -434,5 +434,20 @@ test.describe("결재 정보를 끈 기안자의 반려 문서 (05 /qa I3)", () 
     } finally {
       await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "approval.value", visible: true });
     }
+  });
+});
+
+// 06.5 V12 R-2: 프로젝트 비용 폼에는 `바꾸기`가 둘(견적 줄 · 지급처) — 지급처 쪽만 접근 이름 `지급처 바꾸기`이고 보이는 글자는 `바꾸기` 그대로.
+test.describe("지급처 바꾸기 접근 이름 (06.5 V12 R-2)", () => {
+  test("견적 줄 있음 + 지급처 값 있음 폼에서 접근 이름 `지급처 바꾸기` 버튼은 하나 · 견적 줄 `바꾸기`는 그 이름이 아니다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await openDraft(page, fx, "tracer");
+    await expect(page.getByTestId("expense-vendor")).toHaveText(fx.vendorName);
+    const payee = page.getByRole("button", { name: "지급처 바꾸기", exact: true });
+    await expect(payee).toHaveCount(1);
+    await expect(payee).toHaveText("바꾸기");
+    await expect(page.locator("#line-pick")).not.toHaveAccessibleName("지급처 바꾸기");
+    await expect(page.locator("#line-pick")).toHaveText("바꾸기");
   });
 });

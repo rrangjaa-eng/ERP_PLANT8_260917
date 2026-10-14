@@ -24,7 +24,7 @@ describe("submitBlockReason", () => {
   });
 
   it("⑤(대상 vendor) · 올리는 행 1 → ⑤ 그대로", () => {
-    const five = { reason: "거래처 없음 · 거래처 고르기", target: "vendor" };
+    const five = { reason: "지급처 없음 · 지급처 고르기", target: "vendor" };
     expect(submitBlockReason({ server: five, uploadingCount: 1 })).toEqual({ reason: five.reason, tone: "block", target: "vendor" });
   });
 

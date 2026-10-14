@@ -111,8 +111,29 @@ export function ExpenseDocument({
     items.push({ label: "견적 줄", value: expense.itemName ? [expense.lineNo, expense.itemName].filter(Boolean).join(" ") : dash });
   }
   if (expense.installment) items.push({ label: "분할 지급", value: expense.installmentSeq ? `${expense.installmentSeq}회차` : dash });
+  // 06.5 V12(결정 맥락 9 · D-6517): 지급처 = 거래처 이름 → 직원 이름, 값 아래 한 줄로 종류(거래처 `기본 증빙 {종류}` · 직원 `직원 · {팀}`).
+  const payeeName = expense.vendorName ?? expense.payeeUserName ?? null;
+  const payeeSub = expense.vendorName
+    ? expense.defaultEvidenceName
+      ? `기본 증빙 ${expense.defaultEvidenceName}`
+      : null
+    : expense.payeeUserName
+      ? expense.payeeTeamName
+        ? `직원 · ${expense.payeeTeamName}`
+        : "직원"
+      : null;
   items.push(
-    { label: "거래처", value: expense.vendorName ?? dash },
+    {
+      label: "지급처",
+      value: payeeName ? (
+        <>
+          {payeeName}
+          {payeeSub ? <span className={styles.sub}>{payeeSub}</span> : null}
+        </>
+      ) : (
+        dash
+      ),
+    },
     { label: "증빙 종류", value: expense.evidenceTypeName ?? dash },
   );
   // 금액을 볼 수 없는 계급에는 공급가액 행째 없다(투영에서 빠진 필드는 행을 만들지 않는다).

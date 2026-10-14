@@ -93,7 +93,7 @@ export function LinePickDialog({
       search={search}
       resultLine={(row) => {
         if (!row) return null;
-        const filled = `거래처 · 증빙 종류 · 공급가액이 그 줄 값으로 ${expenseId ? "바뀜" : "채워짐"}`;
+        const filled = `지급처 · 증빙 종류 · 공급가액이 그 줄 값으로 ${expenseId ? "바뀜" : "채워짐"}`;
         return mode === "pick" && droppedFields.length > 0 ? `${filled} · ${droppedFields.join(" · ")} 지워짐` : filled;
       }}
       onPick={(row) => onPick(row.id)}

@@ -45,6 +45,9 @@ export type ExpenseDocumentDto = ExpenseDraftDto & {
   lineNo: number | null;
   itemName: string | null;
   vendorName: string | null;
+  // 06.5 D-6517: 직원 지급처 이름(사람 정보) · 문서 날짜의 그 직원 소속 팀(팀 정보) — 거래처 지급처면 null.
+  payeeUserName: string | null;
+  payeeTeamName: string | null;
   // 코드표 이름(증빙 종류 · 지급 방식) — 값(코드)은 evidenceType · paymentMethod.
   evidenceTypeName: string | null;
   paymentMethodName: string | null;
@@ -96,6 +99,8 @@ export const EXPENSE_DOCUMENT_DTO_SPEC: DtoSpec<ExpenseDocumentDto, ExpenseDocum
     { key: "lineNo", from: "lineNo", infoItem: "expense.value" },
     { key: "itemName", from: "itemName", infoItem: "expense.value" },
     { key: "vendorName", from: "vendorName", infoItem: "expense.value" },
+    { key: "payeeUserName", from: "payeeUserName", infoItem: "person.value" },
+    { key: "payeeTeamName", from: "payeeTeamName", infoItem: "team.value" },
     { key: "evidenceTypeName", from: "evidenceTypeName", infoItem: "expense.value" },
     { key: "paymentMethodName", from: "paymentMethodName", infoItem: "expense.value" },
     { key: "installmentSeq", from: "installmentSeq", infoItem: "expense.value" },
@@ -146,6 +151,8 @@ export type ExpenseDetailDto = {
   installment: boolean;
   installmentSeq: number | null;
   vendorName: string | null;
+  // 06.5 D-6517: 직원 지급처 이름(사람 정보) — 상세 행 `지급처` 값은 거래처 이름 → 직원 이름.
+  payeeUserName: string | null;
   evidenceTypeName: string | null;
   supply: Money | null;
   taxLine: string | null;
@@ -173,6 +180,7 @@ export const EXPENSE_DETAIL_DTO_SPEC: DtoSpec<ExpenseDetailDto, ExpenseDetailDto
     { key: "installment", from: "installment", infoItem: "expense.value" },
     { key: "installmentSeq", from: "installmentSeq", infoItem: "expense.value" },
     { key: "vendorName", from: "vendorName", infoItem: "expense.value" },
+    { key: "payeeUserName", from: "payeeUserName", infoItem: "person.value" },
     { key: "evidenceTypeName", from: "evidenceTypeName", infoItem: "expense.value" },
     { key: "supply", from: "supply", infoItem: "expense.amount" },
     { key: "taxLine", from: "taxLine", infoItem: "expense.amount" },
@@ -227,6 +235,8 @@ export type ExpenseListRowDto = {
   // 팀 비용 2행 `프로젝트 미연결 · {종류}`(견적 줄 문서 null).
   unlinkedText: string | null;
   vendorName: string | null;
+  // 06.5 D-6517: 직원 지급처 이름(사람 정보) — 지급처 열은 거래처 이름 → 직원 이름. 06.5-08 목록 검색이 이 칸을 이어 쓴다(EP2-D5).
+  payeeUserName: string | null;
   supply: Money | null;
   scheduledPaymentDate: string | null;
   drafterName: string;
@@ -244,6 +254,7 @@ export const EXPENSE_LIST_ROW_DTO_SPEC: DtoSpec<ExpenseListRowDto, ExpenseListRo
     { key: "title", from: "title", infoItem: "expense.value" },
     { key: "unlinkedText", from: "unlinkedText", infoItem: "expense.value" },
     { key: "vendorName", from: "vendorName", infoItem: "expense.value" },
+    { key: "payeeUserName", from: "payeeUserName", infoItem: "person.value" },
     { key: "supply", from: "supply", infoItem: "expense.amount" },
     { key: "scheduledPaymentDate", from: "scheduledPaymentDate", infoItem: "expense.value" },
     { key: "drafterName", from: "drafterName", infoItem: "expense.value" },

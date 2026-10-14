@@ -17,6 +17,8 @@ export const DATE_FORMAT_ERROR = "날짜 형식 오류 · 2026-09-19처럼";
 export const expenseDraftFieldsSchema = z
   .object({
     vendorId: z.string().uuid().nullable(),
+    // 06.5 D-6517: 직원 지급처(users.id는 text). 거래처 칸과 둘 중 하나 — 정리는 도메인이 한다(refine을 걸면 `.pick()`이 깨진다).
+    payeeUserId: z.string().min(1).nullable(),
     evidenceType: z.string().min(1).max(100).nullable(),
     paymentMethod: z.string().min(1).max(100).nullable(),
     supply: z.object({ currency: z.enum(CURRENCIES), amount: z.number().min(0), fxRate: z.number() }).strict().nullable(),

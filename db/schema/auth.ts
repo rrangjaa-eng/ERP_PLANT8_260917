@@ -38,12 +38,24 @@ export const users = pgTable("users", {
   // 적립 중단 · 결재선 후보 제외 · 퇴직 줄). 둘 다 서울 날짜 문자열, 비면 null.
   hireDate: date("hire_date"),
   resignationDate: date("resignation_date"),
+  // 06.5 D-6505 · D-6506: 직원 지급 계좌 — vendors와 같은 네 칸 · 같은 규칙(lib/crypto.ts 암호문 + 평문 끝 4자리). 입력 · 노출은
+  // `expenses.payments` 쓰기 ∧ `admin.people` 보기(사용자 카드 10/13 20:14 KST)라 직원 본인 화면에는 이 칸이 없다. 예금주 필수 조건은
+  // 옛 `vendors_account_holder_required`(O: db/schema/010_tables.sql:5440)와 같다(옛 직원 급여 계좌는 CHECK가 없었다,
+  // O: 010_tables.sql:170-172 — 새는 거래처와 같게 둔다).
+  accountBank: text("account_bank"),
+  accountHolder: text("account_holder"),
+  accountNumberEncrypted: text("account_number_encrypted"),
+  accountNumberLast4: text("account_number_last4"),
 }, (table) => [
   // A2-02: 입사일·퇴직일을 동시에 고쳐 앱 검증이 옛 상대값을 봐도 역전이 커밋되지 않게
   // DB가 마지막으로 막는다(마이그레이션에서 NOT VALID — 새 열이라 기존 행은 null).
   check(
     "users_resignation_on_or_after_hire_check",
     sql`${table.resignationDate} IS NULL OR ${table.hireDate} IS NULL OR ${table.resignationDate} >= ${table.hireDate}`,
+  ),
+  check(
+    "users_account_holder_required_check",
+    sql`${table.accountBank} IS NULL OR ${table.accountNumberEncrypted} IS NULL OR (${table.accountHolder} IS NOT NULL AND btrim(${table.accountHolder}) <> '')`,
   ),
 ]);
 

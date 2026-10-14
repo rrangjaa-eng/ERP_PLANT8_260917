@@ -36,6 +36,11 @@ export const corpCardUsages = pgTable(
     registeredVia: text("registered_via").notNull(),
     purchaseRequestId: uuid("purchase_request_id").references(() => purchaseRequests.id),
     memo: text("memo"),
+    // 06.5 D-6503: K 번호. 이미 있는 행은 비워 둔다(데이터 이전 없음). 새 행은 도메인이 `insertCardUsage` 인자로 반드시 채운다(06.5-03).
+    // 한 번 받은 번호는 수정에서 바뀌지 않는다(옛 O: server/src/card-uses.ts:788 `where number is null`).
+    number: text("number"),
+    // 06.5 D-6509(CSO-4): 지출결의 `idempotency_key`와 같은 뜻 — 재전송이면 같은 행위자의 기존 행을 돌려준다.
+    idempotencyKey: text("idempotency_key"),
     version: integer("version").notNull().default(1),
     source: text("source").notNull().default("demo"),
     archivedAt: timestamp("archived_at"),
@@ -58,6 +63,8 @@ export const corpCardUsages = pgTable(
     check("corp_card_usages_self_check", sql`${table.registeredVia} <> 'self' OR ${table.usedByUserId} = ${table.registeredBy}`),
     check("corp_card_usages_purchase_link_check", sql`(${table.registeredVia} = 'purchase') = (${table.purchaseRequestId} IS NOT NULL)`),
     uniqueIndex("corp_card_usages_purchase_request_uniq").on(table.purchaseRequestId),
+    uniqueIndex("corp_card_usages_number_uniq").on(table.number),
+    uniqueIndex("corp_card_usages_idempotency_key_uniq").on(table.idempotencyKey),
     index("corp_card_usages_card_used_on_idx").on(table.corpCardId, table.usedOn),
     index("corp_card_usages_quote_line_idx").on(table.quoteLineId),
     index("corp_card_usages_registered_by_created_idx").on(table.registeredBy, table.createdAt),

@@ -231,4 +231,29 @@ describe("docs/EVIDENCE-STORAGE.md", () => {
   it("OPERATIONS.md가 이 문서를 가리킨다", () => {
     expect(readDoc("OPERATIONS.md")).toContain("EVIDENCE-STORAGE.md");
   });
+
+  // 06-31(G-06-C · 06-VERIFICATION 경고 1): 대상 1 SQL은 주인 종류로 거르지 않고 owner_kind 칸 · 30일 창을 가진다.
+  it("대상 1 SQL은 주인 종류로 거르지 않고 owner_kind 칸 · 30일 창을 가진다", () => {
+    const sqlLines = content.split("\n").filter((line) => line.startsWith("SELECT") && line.includes("removed_at <"));
+    expect(sqlLines).toHaveLength(1);
+    const sql = sqlLines[0] ?? "";
+    expect(sql).not.toMatch(/WHERE[^;]*owner_kind/);
+    expect(sql).toContain("owner_kind");
+    expect(sql).toContain("interval '30 days'");
+    // /review(PR #219): 무효 파일은 기록이라 대상이 아니다(같은 문단) — 지운 표시가 함께 붙은 무효 파일의 객체를 지우지 않는다.
+    expect(sql).toContain("voided_at IS NULL");
+  });
+
+  // 06-31(G-06-C · 06-VERIFICATION 경고 1): 스키마 files_owner_kind_check의 주인 종류가 모두 문서에 있다.
+  it("files_owner_kind_check의 주인 종류가 모두 문서에 있다", () => {
+    const schema = readFileSync(resolve(process.cwd(), "db", "schema", "files.ts"), "utf8");
+    const checkLine = schema.split("\n").find((line) => line.includes("files_owner_kind_check")) ?? "";
+    const list = /IN \(([^)]*)\)/.exec(checkLine)?.[1] ?? "";
+    const kinds = [...list.matchAll(/'([^']+)'/g)].map((match) => match[1] ?? "");
+    expect(kinds.length).toBeGreaterThanOrEqual(4);
+    const kindLine = content.split("\n").find((line) => line.includes("files.owner_kind")) ?? "";
+    for (const kind of kinds) {
+      expect(kindLine, kind).toContain(`\`${kind}\``);
+    }
+  });
 });

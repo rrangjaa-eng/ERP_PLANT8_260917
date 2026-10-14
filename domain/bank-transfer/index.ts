@@ -207,7 +207,7 @@ export function bankNameProblem(bank: string): AccountProblem | null {
   return resolveBankCode(bank) === null ? ACCOUNT_PROBLEMS.bankCodeUnknown : null;
 }
 
-/** 예금주 — 담을 수 없는 글자를 길이보다 먼저 본다(O: bankTransfer.ts:402-405 순서). */
+/** 예금주 — 담을 수 없는 글자를 길이보다 먼저 본다(O: bankTransfer.ts:421 → :425 순서). */
 export function holderTextProblem(holder: string): AccountProblem | null {
   if (cp949Unsupported(holder).length > 0) return ACCOUNT_PROBLEMS.holderUnsupported;
   if (cp949ByteLength(holder) > BANK_TRANSFER_MAX_BYTES.holder) return ACCOUNT_PROBLEMS.holderTooLong;

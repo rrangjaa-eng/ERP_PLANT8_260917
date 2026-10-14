@@ -902,11 +902,11 @@ test.describe("제자리 증빙 확인 · 보관 (06-17 Task 4)", () => {
     await page.keyboard.press("Enter");
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByRole("heading", { name: "증빙 확인" })).toBeVisible();
-    // 06.5 D-6520 — 부제에 `증빙 금액`이 없다. 부제 끝 `공급가액 {금액}`(UI-SPEC V8 S1)은 확인 보기 DTO(domain/payments/targets.ts — 06.5-09 소유)에
-    // 공급가가 없어 이 플랜이 그리지 못한다(06.5-07-SUMMARY 「열린 일」).
+    // 06.5 D-6520 — 부제에 `증빙 금액`이 없고 끝이 `공급가액 {금액}`(UI-SPEC V8 S1 · 문서 통화)이다.
     const subtitle = dialog.locator(`p[title^="${doc.number} · "]`);
     await expect(subtitle).toBeVisible();
     await expect(subtitle).not.toContainText("증빙 금액");
+    await expect(subtitle).toHaveAttribute("title", new RegExp(` · 공급가액 ${formatKrw(doc.supplyAmountKrw ?? 0)}$`));
     await expect(dialog.locator('[data-ui="confirm-attachments"] li[data-state="done"]')).toHaveCount(1);
     await expect(dialog.getByTestId("evidence-confirm-tax-line")).toBeVisible();
     const confirmButton = dialog.getByRole("button", { name: /^공급가액과 같음/ });

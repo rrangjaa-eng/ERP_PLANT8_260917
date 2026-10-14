@@ -4,7 +4,7 @@ import { projectMany, type DtoSpec } from "@/domain/permissions/project";
 import { visible } from "@/domain/permissions/visible";
 import { gate } from "@/domain/rules/gate";
 import "@/domain/rules/register";
-import { diffKrw, sumKrw } from "@/domain/money";
+import { diffKrw, moneyFromRow, sumKrw } from "@/domain/money";
 import { EXPENSE_DOCUMENT_KIND, visibleExpenseScope, type VisibleExpenseScope } from "@/domain/expenses/access";
 import { groupExpenses } from "@/domain/expenses/list";
 import { incomeTypeFor, pickTaxDates, type TaxLinePart } from "@/domain/expenses/tax";
@@ -337,6 +337,8 @@ export type EvidenceConfirmView = {
   evidenceAmountKrw: number | null;
   taxLine: TaxLinePart[] | null;
   evidenceOverrun: string | null;
+  // 06.5-07 S1 부제 끝 `공급가액 {금액}` — 문서 통화 금액(영수증과 대조하는 값). 공급가가 없으면 null.
+  supply: { currency: string; amount: number } | null;
   files: EvidenceConfirmFile[];
   conflict: string | null;
 };
@@ -352,6 +354,7 @@ const EVIDENCE_CONFIRM_VIEW_SPEC: DtoSpec<EvidenceConfirmView, EvidenceConfirmVi
     { key: "evidenceAmountKrw", from: "evidenceAmountKrw", infoItem: "expense.amount" },
     { key: "taxLine", from: "taxLine", infoItem: "expense.amount" },
     { key: "evidenceOverrun", from: "evidenceOverrun", infoItem: "expense.amount" },
+    { key: "supply", from: "supply", infoItem: "expense.amount" },
     { key: "files", from: "files", infoItem: "expense.value" },
     { key: "conflict", from: "conflict", infoItem: "expense.value" },
   ],
@@ -378,6 +381,8 @@ export async function getEvidenceConfirmView(viewer: Viewer, input: { expenseId:
     const name = row.updatedBy ? (await findUserNamesByIds(viewer, [row.updatedBy])).get(row.updatedBy) : undefined;
     conflict = `${name ? `${name}이` : "다른 사람이"} ${formatKstTime(row.updatedAt)}에 바꿈 · 새로 고침`;
   }
+  const supply =
+    row.supplyAmountKrw === null ? null : moneyFromRow({ currency: row.supplyCurrency, foreignAmount: row.supplyForeignAmount, fxRate: row.supplyFxRate, amountKrw: row.supplyAmountKrw });
   const [projected] = await projectMany(
     viewer,
     [
@@ -390,6 +395,7 @@ export async function getEvidenceConfirmView(viewer: Viewer, input: { expenseId:
         evidenceAmountKrw: row.evidenceAmount,
         taxLine: view.evidenceTaxLine ?? null,
         evidenceOverrun: await loadEvidenceOverrun(viewer, row, row.evidenceAmount),
+        supply: supply && { currency: supply.currency, amount: supply.amount },
         files,
         conflict,
       },

@@ -744,6 +744,20 @@ describe("제자리 증빙 확인 보기 (06-17 Task 4)", () => {
     await expect(getEvidenceConfirmView(payer, { expenseId: doc.expenseId, rowVersion: confirmed.version })).rejects.toThrow("확인 전 아님 · 새로 고침");
   });
 
+  it("증빙 확인 보기 — 공급가(06.5-07 S1 부제 끝 · 문서 통화): 원화 문서 → KRW 공급가액 / 외화 문서 → USD 1,000(원화 환산액 아님)", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    const doc = await unreviewedWithAmount(fx, 1_000_000);
+    const [row] = await db.select({ supplyAmountKrw: expenses.supplyAmountKrw }).from(expenses).where(eq(expenses.id, doc.expenseId));
+    expect(row?.supplyAmountKrw).toBeGreaterThan(0);
+    const view = await getEvidenceConfirmView(payer, { expenseId: doc.expenseId, rowVersion: doc.version });
+    expect(view.supply).toEqual({ currency: "KRW", amount: row?.supplyAmountKrw });
+
+    await db.update(expenses).set({ supplyCurrency: "USD", supplyForeignAmount: "1000.00", supplyFxRate: "1350.0000", supplyAmountKrw: 1_350_000 }).where(eq(expenses.id, doc.expenseId));
+    const foreign = await getEvidenceConfirmView(payer, { expenseId: doc.expenseId, rowVersion: doc.version });
+    expect(foreign.supply).toEqual({ currency: "USD", amount: 1000 });
+  }, 30_000);
+
   it("증빙 확인 보기 — 증빙 금액 초과 한 줄(Q-F): 승인액 12,000,000 · 실행가 12,250,000 · 증빙 금액 12,400,000 → 06-06 loadEvidenceOverrun과 같은 한 줄 / 11,000,000 → null", async () => {
     const payer = await makePayer();
     const fx = await setupExpenseProject();

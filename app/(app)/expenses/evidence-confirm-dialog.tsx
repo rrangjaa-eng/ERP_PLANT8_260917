@@ -12,6 +12,7 @@ import { EVIDENCE_UPLOAD_FAILED } from "@/domain/evidence/upload-checks";
 import { createEvidenceViewUrlAction, getEvidenceConfirmViewAction } from "./actions";
 import { confirmEvidenceAction } from "./[id]/actions";
 import { TaxParts } from "./[id]/tax-parts";
+import { formatForeignAmount, formatKrw } from "@/lib/format-number";
 
 // 06-17(UI-SPEC S1 「제자리 증빙 확인」 · DR-4 · r2 B-1): 목록을 떠나지 않는 증빙 확인 — 06-29 ConfirmDialog(SP-7 첨부 보기 칸 · loading ·
 // refreshKeepsOpen)에 서버 보기(getEvidenceConfirmViewAction)를 그린다. 확인은 06-06 confirmEvidenceAction(금액 없는 갈래)을 보기의
@@ -81,7 +82,9 @@ export function EvidenceConfirmDialog(props: {
     onError: ({ error }) => setRejection(error.serverError ?? LOAD_FAILED),
   });
 
-  const subtitle = view ? [view.number, view.title].filter(Boolean).join(" · ") : undefined;
+  // UI-SPEC V8 S1 — 부제 끝 `공급가액 {금액}`(문서 통화 · 영수증과 대조하는 값).
+  const supplyText = view?.supply ? (view.supply.currency === "KRW" ? formatKrw(view.supply.amount) : `${view.supply.currency} ${formatForeignAmount(view.supply.amount)}`) : null;
+  const subtitle = view ? [view.number, view.title, supplyText && `공급가액 ${supplyText}`].filter(Boolean).join(" · ") : undefined;
   const resultLines = view
     ? [
         view.taxLine ? (

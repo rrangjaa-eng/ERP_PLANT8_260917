@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 06
 current_phase_name: 지급·증빙·법인카드·구매 요청 (경영관리)
-current_plan: 12
+current_plan: 2
 status: executing
 stopped_at: Phase 06.2 UI-SPEC approved
-last_updated: "2026-10-13T11:16:37.703Z"
-last_activity: 2026-10-06
+last_updated: "2026-10-14T09:09:23.028Z"
+last_activity: 2026-10-14
 last_activity_desc: Phase 06 execution started
-state_head: 834469d0f3a5ef0ebcb7d9c0cff2fb9e382f25dd
+state_head: 65cc6ac66596c86227c8b3ac8220c06a7b00b77d
 progress:
   total_phases: 21
   completed_phases: 7
-  total_plans: 216
-  completed_plans: 207
+  total_plans: 236
+  completed_plans: 219
   percent: 33
 ---
 
@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-09-30)
 ## Current Position
 
 Phase: 06 (지급·증빙·법인카드·구매 요청 (경영관리)) — EXECUTING
-Current Plan: 12
-Total Plans in Phase: 29
+Current Plan: 2
+Total Plans in Phase: 38
 Status: Ready to execute
-Last activity: 2026-10-06 — Phase 06 execution started
+Last activity: 2026-10-14 — Phase 06 execution started
 
 Progress: [███░░░░░░░] 33%
 

@@ -781,7 +781,7 @@ Plans:
   4. 프로젝트 완료(정산) 처리 시 미결 지출결의·미매칭 견적 줄·매출 미입력을 `domain/rules.gate`로 점검해 이유와 함께 막고, 강행 허용 여부는 설정이다. 정산 결재 문서(Phase 5)의 기안 전에 이 점검이 돈다
   5. 경영관리 흐름(결재 통과 건 → 증빙 확인 → 지급 완료; 이미지·PDF 두 업로드 경로)이 Playwright E2E로 CI에 있고, 지급 게이트·이중 연결 차단·업로드 의도만 있고 완료 없는 경우가 통합 테스트로 덮인다(Issue 14·F8). 새 액션·DTO(지급·카드·구매 요청·증빙)는 누수 스캔 생성기에 등록되어 계급별 검사가 따라온다
 
-**Plans**: 29/38 plans executed (갭 메우기 9 — 06-31~06-39)
+**Plans**: 31/38 plans executed (갭 메우기 9 — 06-31~06-39)
 
 Plans:
 **Wave 1**
@@ -851,8 +851,8 @@ Plans:
 
 **Gap closure** *(06-GAPS.md — 06 검증 갭 G-06-A~G, 웨이브는 06.5 PR 머지 순서(blocked_until))*
 
-- [ ] 06-31-PLAN.md — G-06-C 고아 증빙 청소 SQL이 모든 owner_kind를 찾는다(docs/EVIDENCE-STORAGE.md) (GW1 · PR-G1)
-- [ ] 06-32-PLAN.md — G-06-G 사파리 캡처 로그인 하이드레이션 대기 (GW1 · PR-G1)
+- [x] 06-31-PLAN.md — G-06-C 고아 증빙 청소 SQL이 모든 owner_kind를 찾는다(docs/EVIDENCE-STORAGE.md) (GW1 · PR-G1)
+- [x] 06-32-PLAN.md — G-06-G 사파리 캡처 로그인 하이드레이션 대기 (GW1 · PR-G1)
 - [ ] 06-33-PLAN.md — G-06-B 카드 사용 폼 카드 기본값 순서 직전 → 개인 → 팀 (GW2 · PR-G2 · 06.5-03 뒤)
 - [ ] 06-34-PLAN.md — G-06-D 구매 요청은 고객 승인 뒤에만 — 서버 판정(카드 ① 「구매 요청만」) (GW2 · PR-G2 · 06.5-02 · 03 뒤)
 - [ ] 06-35-PLAN.md — G-06-D 화면 입구(견적 줄 표 문 · 줄 고르기 이유 · 상태 바꾸기 문구) (GW3 · PR-G2)
@@ -1151,7 +1151,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 04.2. 알림·공휴일 기반 | 15/15 | Complete    | 2026-10-01 |
 | 04.4. 복원 리허설·로그인 상태 | 6/6 | Complete    | 2026-10-01 |
 | 5. 지출결의·결재·연차 | 0/15 | Planned    |  |
-| 6. 지급·증빙·법인카드·구매 요청 (경영관리) | 29/29 | In Progress|  |
+| 6. 지급·증빙·법인카드·구매 요청 (경영관리) | 31/38 | In Progress|  |
 | 7. 공휴일·지급일·마감·알림 + 전 메뉴 권한 검수 | 0/TBD | Not started | - |
 | 8. 전환 | 0/TBD | Not started | - |
 | 9. 프로젝트 손익 | 0/TBD | Not started | - |

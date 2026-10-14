@@ -7,7 +7,7 @@ import { recordAction } from "@/domain/action-log/record";
 import { gate, GateBlockedError } from "@/domain/rules/gate";
 import "@/domain/rules/register";
 import { applyTaxRule, loadTaxRates as defaultLoadTaxRates, taxRatesReader, type TaxIncomeType, type TaxRates } from "@/domain/money/tax";
-import { diffKrw, grossFromTotal, moneyFromRow, moneyToColumns, remainingForInstallments, type Money, type RoundingUnit } from "@/domain/money";
+import { diffKrw, grossFromTotal, moneyFromRow, remainingForInstallments, type Money, type RoundingUnit } from "@/domain/money";
 import { taxRuleSchema, type TaxRule } from "@/domain/code-tables/tax-rule";
 import { getSettingValue as defaultGetSettingValue } from "@/domain/settings/registry";
 import { EVIDENCE_REQUIRED, PAYMENT_METHOD_EVIDENCE_PAIRS, TAX_BASIS_DATE_VAT, TAX_BASIS_DATE_WITHHOLDING, type TaxBasisDate } from "@/domain/settings/keys";
@@ -42,7 +42,7 @@ import { seoulDateToUtcDate, seoulToday } from "@/lib/dates";
 import { isUniqueViolation } from "@/lib/pg-errors";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { formatKstTime } from "@/domain/holidays/business-day";
-import { evidenceGateInputs, evidenceOverrunLine, evidenceStampOf, loadPrepaidDueDays, resolveEvidenceStatus, SupplyCorrectionCapError, type EvidenceStatus } from "@/domain/evidence-reviews";
+import { evidenceGateInputs, evidenceOverrunLine, evidenceStampOf, loadPrepaidDueDays, resolveEvidenceStatus, SupplyCorrectionCapError, correctedSupplyColumns, type EvidenceStatus } from "@/domain/evidence-reviews";
 import { prepaidDueInfo, type PrepaidDue } from "@/domain/evidence-reviews/prepaid";
 import { findReviewByExpense, listAliveCardUsageSuppliesByProject } from "@/repositories/expense-evidence-reviews";
 import { listAliveByOwners } from "@/repositories/files";
@@ -649,7 +649,7 @@ export async function previewPayable(
     const row = await findExpenseById(viewer, loaded.expenseId);
     if (row && row.supplyAmountKrw !== null) {
       const current = moneyFromRow({ currency: row.supplyCurrency, foreignAmount: row.supplyForeignAmount, fxRate: row.supplyFxRate, amountKrw: row.supplyAmountKrw });
-      const columns = moneyToColumns({ currency: current.currency, amount: corrected, fxRate: current.fxRate });
+      const columns = await correctedSupplyColumns(current, corrected);
       const cap = await supplyCorrectionCap(viewer, row, moneyFromRow(columns));
       if (cap?.exceeds) throw new SupplyCorrectionCapError(remainingText(cap.remaining, cap.basis));
       pre = { ...loaded, amount: { source: "supply", amountKrw: columns.amountKrw } };

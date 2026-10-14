@@ -7,6 +7,7 @@ import { canSeeExpense, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses/access";
 import { hasEvidence } from "@/domain/evidence/has-evidence";
 import {
   CANCEL_REASON_REQUIRED,
+  EVIDENCE_AMOUNT_FRACTION,
   approvalGateDecision,
   evidenceGateDecision,
   pairGateDecision,
@@ -28,7 +29,7 @@ import type { DbOrTx } from "@/repositories/document-counters";
 import { withTransaction } from "@/lib/db-transaction";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { formatKrw } from "@/lib/format-number";
-import { diffKrw, moneyFromRow, moneyToColumns, type Money } from "@/domain/money";
+import { diffKrw, MoneyInputError, moneyFromRow, moneyToColumns, type Money } from "@/domain/money";
 
 // 06-06(EVID-02 · EVID-03 · D-601 · D-602 · O-2) — 경영관리의 증빙 확인(S4). 확인 기록(06-27 expense_evidence_reviews)을 쓰고,
 // 증빙 상태 다섯 값을 낸다. 증빙 유무는 06-03 hasEvidence 하나(C5 — 파일 수를 직접 세지 않는다).
@@ -62,6 +63,15 @@ export const SUPPLY_CORRECTION_PAID_LOCKED = "지급 완료 문서 · 공급가�
 export function supplyCorrectionKind(input: { current: Money | null; corrected: number | undefined; paid: boolean }): "same" | "correct" | "locked" {
   if (input.corrected === undefined || input.corrected === input.current?.amount) return "same";
   return input.paid ? "locked" : "correct";
+}
+
+// 고친 공급가(문서 통화) → 공급가 네 칸. 환율 · 통화는 지금 값 그대로. 원화 소수(반올림 저장)와 원화 환산 0(06 CHECK 500)은 고침 칸 오류로 막는다 —
+// 확인 · 미리보기가 같이 쓴다. domain/expenses는 이 파일을 정적으로 부르는 쪽이라 SUPPLY_ZERO는 동적 import.
+export async function correctedSupplyColumns(current: Money, corrected: number): Promise<ReturnType<typeof moneyToColumns>> {
+  if (current.currency === "KRW" && !Number.isInteger(corrected)) throw new MoneyInputError("precision", EVIDENCE_AMOUNT_FRACTION);
+  const columns = moneyToColumns({ currency: current.currency, amount: corrected, fxRate: current.fxRate });
+  if (columns.amountKrw <= 0) throw new MoneyInputError("range", (await import("@/domain/expenses")).SUPPLY_ZERO);
+  return columns;
 }
 
 // 「Error — 공급가액 고침 칸」(V8 상한 오류) — 액션이 오류 종류로 가려 고침 칸 오류 자리에 세운다(문구 비교 없음).
@@ -228,7 +238,9 @@ export async function confirmEvidence(
       if (kind === "correct" && corrected !== undefined) {
         // 상한 문구는 제출과 같은 함수 — domain/expenses는 이 파일을 정적으로 부르는 쪽이라 동적 import(위 지급 모듈과 같은 까닭 · DB 없음).
         const { remainingText } = await import("@/domain/expenses");
-        const columns = moneyToColumns({ currency: current?.currency ?? "KRW", amount: corrected, fxRate: current?.fxRate ?? 1 });
+        const columns = current
+          ? await correctedSupplyColumns(current, corrected)
+          : moneyToColumns({ currency: "KRW", amount: corrected, fxRate: 1 });
         const cap = await payments.supplyCorrectionCap(viewer, locked, moneyFromRow(columns), tx);
         if (cap?.exceeds) throw new SupplyCorrectionCapError(remainingText(cap.remaining, cap.basis));
         if (!(await updateCorrectedSupply(viewer, { expenseId: locked.id, columns }, tx))) throw new EvidenceReviewNotFoundError();

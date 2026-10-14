@@ -564,6 +564,26 @@ describe("공급가액 고침 — 팀 비용 · 외화 (06.5 D-6520)", () => {
     });
     expect(await reviewOf(team.expenseId)).toMatchObject({ amountBeforeKrw: 1_350_000, amountAfterKrw: expected.amountKrw });
   });
+
+  it("원화 소수 고침 → 고침 칸 오류 `원화 소수점 · 소수점 없이`(반올림 저장 없음) · 문서 · 확인 기록 · version 그대로(PR-B /review)", async () => {
+    const payer = await makePayer();
+    session.viewer = payer;
+    const krw = await approvedTeamExpense(await setupExpenseProject(), { currency: "KRW", amount: 440_000, fxRate: 1 });
+    const fraction = await confirmEvidenceAction({ expenseId: krw.expenseId, version: krw.version, correctedSupplyAmount: 440_000.4 });
+    expect(fraction?.serverError).toBeUndefined();
+    expect(fraction?.validationErrors).toMatchObject({ correctedSupplyAmount: { _errors: ["원화 소수점 · 소수점 없이"] } });
+    expect(await docRow(krw.expenseId)).toMatchObject({ supplyAmountKrw: 440_000, version: krw.version });
+    expect(await reviewOf(krw.expenseId)).toBeNull();
+  });
+
+  it("원화 환산 0이 되는 외화 고침 → 고침 칸 오류 `공급가액이 0 · 0보다 크게`(DB CHECK 500 없음) · 문서 그대로(PR-B /review)", async () => {
+    session.viewer = await makePayer();
+    const usd = await approvedTeamExpense(await setupExpenseProject(), { currency: "USD", amount: 1000, fxRate: 10 });
+    const zero = await confirmEvidenceAction({ expenseId: usd.expenseId, version: usd.version, correctedSupplyAmount: 0.01 });
+    expect(zero?.serverError).toBeUndefined();
+    expect(zero?.validationErrors).toMatchObject({ correctedSupplyAmount: { _errors: ["공급가액이 0 · 0보다 크게"] } });
+    expect(await docRow(usd.expenseId)).toMatchObject({ supplyAmountKrw: 10_000, version: usd.version });
+  });
 });
 
 async function draftInstallment(fx: ExpenseFixture, lineId: string, supplyKrw: number): Promise<string> {

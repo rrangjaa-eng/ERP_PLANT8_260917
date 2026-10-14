@@ -39,3 +39,4 @@ qa 2026-10-06T19:30Z session=157802f6-d640-5a76-88ea-648ef79f4d4c (PR #180, CI=t
 review 2026-10-06T22:50Z session=157802f6-d640-5a76-88ea-648ef79f4d4c (PR #180 추가 반영 — Codex 검토 P1 2·P2 3 실제 결함 확인·수정 516f3112~634e4170, 시각 비교에 가려진 e2e 6건 수정 c939c319·769abb9e, 시각 기준 사진 d9e01724 · 손으로 기록)
 review 2026-10-07T01:19Z session=c2610b64-102a-5a86-a641-99bec1c982a0 (PR #182, 결함 0 · P3 1건 그대로, 보고서 /mnt/project-files/notes/vendor-kind/182-review.md · 스킬 기록 훅이 이 세션에서 기록을 남기지 않아 손으로 기록)
 design-review 2026-10-13T14:32Z session=0592c76f-6b2e-5528-b811-98e2202c45bd (PR #214 웨이브 1 Codex 디자인 검토만 — 06-17 /expenses 지적 0, 보고서 /mnt/project-files/06-review/pr-e/wave1-codex/06-17-codex.md · 묶음 /design-review·/qa는 아직)
+review 2026-10-14T01:20Z session=0592c76f-6b2e-5528-b811-98e2202c45bd (PR #214 묶음 /review f7dccff..f1a83be — 독립 검토자 3명, P1·P2 0 · P3 4건 그대로(07 입력), 보고서 /mnt/project-files/notes/06-review/pr-e-review.md)

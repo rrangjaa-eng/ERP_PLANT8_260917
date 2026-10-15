@@ -23,3 +23,6 @@
 - [x] 새 색·서체·radius·그림자를 만들지 않았다(tokens.css 변수만) — 근거: CSS는 `.preSettleWarning { color: var(--status-warning); }` 한 클래스뿐이다(같은 파일 `.preSettleDiff` 선례 · SYSTEM.md 04.3-⑮ 「사실을 알리는 짧은 줄 = 색 글자」). 색 리터럴 · 고정 치수 · 새 토큰 0, `ui/` · `tokens.css` · `SYSTEM.md` 무변경
 - [x] 폰 320에서 가로 넘침 없음 · 터치 44px — 근거: 같은 `expenseColumns`라 폰은 P1 항목 · (금액) · 상태 + 항목 셀 2행 3차(`PhoneLine`)가 `미결 지출결의`와 같다. 폭별 실측은 독립 DOM 감사(SUMMARY 요청 항목)와 E2E 폰 320 사례 몫
 - [x] 실제 앱 화면(PC 1280 · 폰 390)을 찍어 보고 확인했다 — 스크린샷 경로: 실행자는 스크린샷 육안 판정을 하지 않는다(CLAUDE.md §6). CI=true E2E `test/e2e/pre-settle-check.spec.ts` G-06-E 사례가 실제 앱 DOM으로 `미결 없음` · 머리글 `증빙 대기 1건` · 행 `증빙 없음` · 3차 링크 · 버튼 aria-disabled 없음을 단언하고, 폭별 실측은 독립 DOM 감사 · `/design-review`가 한다
+
+## Task 3 — 폰 320 사례
+- [x] (Task 3) 폰 320 증빙 대기 행 — 근거: `미결 지출결의`와 같은 `expenseColumns`라 폰은 P1 항목 · 상태 + 항목 셀 2행 3차다. E2E 「폰 320 — 증빙 대기 행」이 DOM으로 3차 `{번호} 지출결의 열기`가 항목 이름 아래 줄에 서고 높이 44 이상이며 섹션 가로 넘침 0 · 머리글 `증빙 대기 1건` 보임을 단언한다(CI=true 통과). 새 CSS 없음

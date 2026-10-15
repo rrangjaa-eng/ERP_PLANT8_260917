@@ -202,6 +202,25 @@ test.describe("완료 전 점검 — 증빙 대기(G-06-E · 카드 ② 「경�
     await expect(submit).not.toHaveAttribute("aria-disabled", "true");
     await expect(page.getByText(/^완료 전 점검 \d+건/)).toHaveCount(0);
   });
+
+  test("폰 320 — 증빙 대기 행의 `지출결의 열기`가 항목 셀 2행 · 높이 44 이상 · 섹션 가로 넘침 없음 · 머리글 `증빙 대기 1건`", async ({ browser, baseURL }) => {
+    const fx = await setupSettling(browser, baseURL, "evidencePending");
+    const number = (await findExpenseById(SYSTEM_VIEWER, fx.expenseId))?.number;
+    if (!number) throw new Error("문서 번호가 없습니다");
+    const page = await loginPage(browser, baseURL, fx.org.drafter, { width: 320, height: 800 });
+    await page.goto(`/projects/${fx.projectId}`);
+
+    const heading = page.getByRole("heading", { name: "완료 전 점검", level: 2 });
+    const section = page.locator("section").filter({ has: heading });
+    await expect(section.getByRole("heading", { name: "증빙 대기 1건", level: 3 })).toBeVisible();
+    const itemCell = section.getByRole("row").filter({ hasText: fx.itemName }).getByRole("cell").filter({ hasText: fx.itemName });
+    const open = itemCell.getByRole("link", { name: `${number} 지출결의 열기`, exact: true });
+    await expect(open).toBeVisible();
+    expect((await open.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+    const [itemBox, openBox] = [await itemCell.locator("span").first().boundingBox(), await open.boundingBox()];
+    expect((openBox?.y ?? 0) >= (itemBox?.y ?? Number.POSITIVE_INFINITY) + (itemBox?.height ?? 0) - 1, "3차가 항목 이름 아래 줄").toBe(true);
+    expect(await sectionOverflow(section)).toBeLessThanOrEqual(0);
+  });
 });
 
 // 섹션 가로 넘침 — section 스크롤 폭과, 섹션 안 표의 오른쪽 끝이 섹션 오른쪽 끝을 넘는 양 중 큰 값(px).

@@ -112,6 +112,8 @@ test.describe("§10 접근성 계약 (axe-core)", () => {
       await loginScreenAccount(page, fixtures, route.as);
       const response = await page.goto(resolveScreenRoute(route, fixtures));
       expect(response?.status() ?? 0, `${route.id} 응답`).toBeLessThan(400);
+      // 스트리밍 중에는 aria-hidden 로딩 뼈대(loading.tsx)가 먼저 보여 h1이 없다 — 실제 화면 제목이 보인 뒤 잰다.
+      await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
       const results = await new AxeBuilder({ page }).analyze();
       expect(results.violations, formatViolations(results.violations)).toEqual([]);
     });

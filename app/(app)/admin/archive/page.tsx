@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
+import { kstDateTimeOf } from "@/lib/kst-date";
 import { listArchive } from "@/domain/archive";
 import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { ArchiveTable } from "./archive-table";
@@ -28,7 +29,7 @@ export default async function ArchivePage() {
           label: item.label,
           id: item.id,
           name: item.name,
-          archivedAtLabel: new Date(item.archivedAt).toISOString().slice(0, 19).replace("T", " "),
+          archivedAtLabel: kstDateTimeOf(new Date(item.archivedAt)),
           archivedBy: item.archivedBy,
           restorable: item.restorable,
         }))}

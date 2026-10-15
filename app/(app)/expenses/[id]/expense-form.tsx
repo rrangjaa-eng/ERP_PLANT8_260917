@@ -246,7 +246,21 @@ export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, payme
   // 계산에 드는 칸(증빙 종류 · 공급가액 · 통화 · 환율 · 지급 예정일 · 분할 지급)이 바뀌면 짧은 지연 뒤 미리보기를 부른다. 늦게 온 응답이
   // 새 응답을 덮지 않게 요청 순번으로 거른다. 첫 그림은 서버가 보낸 값이라 부르지 않는다.
   // 막힘 판정에 드는 지급 방식 · 증빙 파일 수도 본다(파일을 올리거나 떼면 서버가 다시 그린 files가 바뀐다).
+  // 다른 탭에서 지급처 계좌를 등록하고 돌아오면 막힘이 지난 값으로 남는다 — 탭이 다시 보일 때마다 순번을 올려 미리보기를 다시 부른다.
+  const [returnTick, setReturnTick] = useState(0);
+  useEffect(() => {
+    const onReturn = () => {
+      if (document.visibilityState === "visible") setReturnTick((tick) => tick + 1);
+    };
+    document.addEventListener("visibilitychange", onReturn);
+    window.addEventListener("focus", onReturn);
+    return () => {
+      document.removeEventListener("visibilitychange", onReturn);
+      window.removeEventListener("focus", onReturn);
+    };
+  }, []);
   const previewKey = JSON.stringify([
+    returnTick,
     evidenceType,
     paymentMethod,
     currency,

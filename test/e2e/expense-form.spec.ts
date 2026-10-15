@@ -8,7 +8,7 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { seoulToday } from "@/lib/dates";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
-import { insertVendor } from "@/repositories/vendors";
+import { insertVendor, updateVendor, updateVendorAccountNumber } from "@/repositories/vendors";
 import { delayServerActions, loginPage, waitForHydration, type Person } from "./leave-org";
 import { setupExpenseE2E, submitLineExpense, uniqueReceipt, type ExpenseE2E, type LineKey } from "./expense-fixture";
 
@@ -423,6 +423,46 @@ test.describe("지급처 계좌 없음 (06.5 V4)", () => {
     expect(describedBy).not.toBe("");
     await expect(page.locator(`[id="${describedBy}"]`)).toHaveText("지급처 계좌 없음 · 계좌 등록은 경영관리", { timeout: 10_000 });
     await expect(page.locator("#expense-next-step")).toHaveCount(0);
+    await page.context().close();
+  });
+});
+
+// 06.5 PR-C QA D-1: 새 탭에서 계좌를 등록하고 돌아오면 원래 탭의 막힘이 저절로 풀려야 한다(탭 복귀 = 미리보기 다시 호출).
+test.describe("지급처 계좌 등록 뒤 탭 복귀 (06.5 D-1)", () => {
+  test("계좌 없음으로 막힌 문서: 다른 곳에서 계좌를 등록하고 탭에 돌아오면 1차 막힘이 풀리고 제출된다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const suffix = randomUUID().slice(0, 6);
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E계좌복귀-${suffix}`, normalizedName: `e2e계좌복귀-${suffix}`, defaultEvidenceType: "tax_invoice" });
+    const { expenseId } = await createTeamExpenseDraft(fx.pm.viewer, {
+      idempotencyKey: randomUUID(),
+      fields: {
+        teamExpenseKind: "team_overhead",
+        usageDate: seoulToday(),
+        content: `계좌복귀 회식-${suffix}`,
+        vendorId: vendor.id,
+        supply: { currency: "KRW", amount: 100_000, fxRate: 1 },
+        evidenceType: "tax_invoice",
+        paymentMethod: "bank_transfer",
+      },
+    });
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await page.goto(`/expenses/${expenseId}`);
+    await waitForHydration(page.getByRole("button", { name: /^임시 저장/ }));
+    const submit = page.getByRole("button", { name: /^지출결의 제출/ });
+    await expect(submit).toHaveAttribute("aria-disabled", "true");
+
+    // 새 탭에서 계좌를 등록한 것과 같다 — 같은 DB 값을 바꾸고 원래 탭은 손대지 않는다.
+    await updateVendor(SYSTEM_VIEWER, vendor.id, { accountBank: "국민은행", accountHolder: "E2E" });
+    await updateVendorAccountNumber(SYSTEM_VIEWER, vendor.id, { accountNumberEncrypted: "e2e-encrypted", accountNumberLast4: "1234" });
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+
+    // 계좌 막힘은 풀리고 다음 이유(증빙 없음)가 온다 — 증빙을 올리면 1차가 열려 제출된다.
+    const describedBy = (await submit.getAttribute("aria-describedby")) ?? "";
+    await expect(page.locator(`[id="${describedBy}"]`)).toContainText("증빙 없음");
+    await page.getByTestId("attachments-input").setInputFiles(await uniqueReceipt(page));
+    await expect(submit).not.toHaveAttribute("aria-disabled", "true", { timeout: UPLOAD_WAIT });
+    await submit.click();
+    await expect(page.getByRole("button", { name: /^지출결의 제출/ })).toHaveCount(0);
     await page.context().close();
   });
 });

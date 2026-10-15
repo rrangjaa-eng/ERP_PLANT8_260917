@@ -645,8 +645,9 @@ describe("완료 전 점검 — 대표 최종 승인 재점검(O-16 · 05 정산
     expect(rejected.status).toBe("rejected");
   });
 
-  it("막힘 0 · 강행 그룹만(결재 통과 · 증빙 없음 + allow_open_expenses 켬) — 승인 · 프로젝트 completed", async () => {
-    const { fx, doc } = await draftedWithOpen({ noEvidence: true }, true);
+  // G-06-E(카드 ② 「경고만」): 결재 통과 · 증빙 없음은 이제 막힘이 아니라 강행 갈래를 타지 않는다 — 강행 허용 승인은 반려 문서로 지킨다.
+  it("막힘 0 · 강행 그룹만(반려 + allow_open_expenses 켬) — 승인 · 프로젝트 completed", async () => {
+    const { fx, doc } = await draftedWithOpen({ rejected: true }, true);
     expect(await approveBlockedReason(fx.ceo, doc.documentId)).toBeNull();
     const approved = await approveDocument(fx.ceo, { instanceId: doc.instanceId, expectedVersion: doc.version });
     expect(approved.status).toBe("approved");
@@ -758,7 +759,7 @@ describe("완료 전 점검 — 대표 최종 승인 재점검(O-16 · 05 정산
     expect(inject.computeCalls).toBe(0);
   });
 
-  // G-06-E(카드 ② 「경고만」): 무효로 결재 통과 문서가 증빙 없음이 돼도 막힘이 아니라 증빙 대기 — 잠금을 기다린 승인은 무효 커밋을 보고도(증빙 대기 1) 막히지 않고 통과한다.
+  // G-06-E(카드 ② 「경고만」): 무효로 결재 통과 문서가 증빙 없음이 돼도 막힘이 아니라 증빙 대기 — 승인은 프로젝트 행 잠금을 기다린 뒤 막힘 없이 통과한다.
   // 「재점검이 잠금 뒤 새 막힘을 본다」 쪽은 아래 [U1-1] 구매 요청 취소 사례가 같은 뜻으로 지킨다.
   it(
     "무효 ∥ 정산 최종 승인 — 잠금 뒤 재점검: 프로젝트 행을 쥔 무효가 커밋돼도 증빙 대기는 막지 않아 승인 → completed(X-12 · G-06-E)",

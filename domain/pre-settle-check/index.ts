@@ -211,7 +211,7 @@ export async function computePreSettleCheck(viewer: Viewer, projectId: string, i
     { openExpenses: open.length, unmatchedLines: unmatched.length, missingRevenue: revenue.missingRevenue },
     inputs.allowances,
   );
-  // 미결 지출결의 행만 보는 사람의 범위로 가른다 — 범위 밖은 건수만(번호 · 항목 · 금액을 싣지 않는다).
+  // 미결 지출결의 · 증빙 대기 행만 보는 사람의 범위로 가른다 — 범위 밖은 건수만(번호 · 항목 · 금액을 싣지 않는다).
   // 미매칭 줄 문의 마지막 문서(회수 등 — listNumberedByLines는 결재 상태 · 범위를 보지 않는다)도 같은 범위로 거른다 — 범위 밖이면 문 없음(검토 F-1).
   const closedDoorIds = unmatched.flatMap((row) => (row.door.kind === "expense_closed" ? [row.door.latestId] : []));
   const inScope = await listExpenseIdsInScope(viewer, { ids: [...open.map((row) => row.id), ...pending.map((row) => row.id), ...closedDoorIds], scope: inputs.scope, documentKind: EXPENSE_DOCUMENT_KIND }, tx);

@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 06
 current_phase_name: 지급·증빙·법인카드·구매 요청 (경영관리)
-current_plan: 32
+current_plan: 33
 status: executing
-stopped_at: Phase 06.2 UI-SPEC approved
-last_updated: "2026-10-14T09:41:56.923Z"
+stopped_at: Completed 06-36-PLAN.md
+last_updated: "2026-10-15T03:07:52.526Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 06 execution started
-state_head: 0c4d253902dbe42873ea1cf4d37ad4ad99a733a8
+state_head: 331797167621f5790abea8a1c085bee7e6e08146
 progress:
   total_phases: 21
   completed_phases: 7
   total_plans: 236
-  completed_plans: 219
+  completed_plans: 223
   percent: 33
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-30)
 ## Current Position
 
 Phase: 06 (지급·증빙·법인카드·구매 요청 (경영관리)) — EXECUTING
-Current Plan: 32
+Current Plan: 33
 Total Plans in Phase: 38
 Status: Ready to execute
 Last activity: 2026-10-14 — Phase 06 execution started
@@ -146,6 +146,7 @@ Progress: [███░░░░░░░] 33%
 | Phase 06 P06 | 40m(커밋 구간) | 3 tasks | 21 files |
 | Phase 06 P07 | 105m | 3 tasks | 19 files |
 | Phase 06.2 P11 | 10min | 2 tasks | 1 files |
+| Phase 06 P36 | 26min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -384,6 +385,7 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-07: 계보 사슬의 현재 줄은 프로젝트 최신 차수 순번의 줄만 — 보관된 현재 줄이면 빠진 줄(N-2)
 - [Phase 06]: 06-07: S15 법인카드 사용 섹션은 클라이언트에서 액션으로 따로 불러온다(로드 실패에도 다른 섹션이 선다)
 - [Phase 06]: 06-07: N-3 보관 붙잡기 · 실행가 초과 읽기를 06-13 대신 06-07에서(Q-G 추천안 — 아침 확인)
+- [Phase 06]: 06-36: 카드 ② 「경고만」 — 결재 통과 · 증빙 없음은 완료 전 점검의 막힘이 아니라 증빙 대기 경고 그룹(D-611 결재 통과 갈래 대체) — 연말 행사처럼 세금계산서가 다음 달에 오는 건이 프로젝트 완료를 막지 않게 하되 점검 섹션에서는 계속 보인다. 결재 중 · 반려는 그대로 막는다
 
 ### Pending Todos
 
@@ -487,6 +489,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-07T18:46:47.436Z
-Stopped at: Phase 06.2 UI-SPEC approved
-Resume file: .planning/phases/06.2-view-scope/06.2-UI-SPEC.md
+Last session: 2026-10-15T03:07:52.234Z
+Stopped at: Completed 06-36-PLAN.md
+Resume file: None

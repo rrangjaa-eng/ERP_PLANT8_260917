@@ -2,11 +2,13 @@
 # Codex 디자인 검토 진입점 — Codex는 디자인 검토(/design-review·/plan-design-review)에서만 쓴다
 # (사용자 결정 2026-10-01, CLAUDE.md §6). 이 스크립트는 맨 `codex` 명령이 아니라 디자인 전용 경로다.
 #
-#   bash scripts/codex-design-review.sh <경로…> --out <보고서.md> [--base <ref>] [--plan <파일>]… [--sections 6-10,7-5]
+#   bash scripts/codex-design-review.sh <경로…> --out <보고서.md> [--base <ref>] [--plan <파일>]… [--sections 6-10,7-5] [--seed <시나리오>]
 #
 # CI=true 프로덕션 빌드 화면을 375·320·768·1280 폭으로 찍고 DOM 실측표를 만든 뒤, 변경(diff 또는
 # 계획)·SYSTEM.md 관련 절·실측표·스크린샷을 codex exec에 넘긴다. Codex 지적은 후보이고 판정은 실측.
 # codex CLI나 ChatGPT 로그인이 없으면 보고서에 한 줄만 남기고 0으로 끝낸다(건너뜀, 실패 아님).
+# --seed pre-settle-evidence-pending: 데이터가 있어야 보이는 화면용 — 캡처 전에 시나리오 데이터를 만들고 경로의 {projectId} 자리를 채운다
+#   (예: /projects/{projectId}) 그 화면을 볼 사용자로 로그인한다.
 # 캡처는 E2E와 같은 globalSetup으로 erp_test를 초기화한다 — E2E와 동시에 돌리지 않는다.
 
 cd "$(dirname "$0")/.." || exit 1
@@ -40,7 +42,7 @@ if [ -n "$out" ]; then
 fi
 if [ -z "$out" ]; then
   echo "--out은 .planning/·test-results/ 아래 .md여야 한다" >&2
-  echo "사용법: bash scripts/codex-design-review.sh <경로…> --out <보고서.md> [--base <ref>] [--plan <파일>]… [--sections <id,…>]" >&2
+  echo "사용법: bash scripts/codex-design-review.sh <경로…> --out <보고서.md> [--base <ref>] [--plan <파일>]… [--sections <id,…>] [--seed <시나리오>]" >&2
   exit 2
 fi
 

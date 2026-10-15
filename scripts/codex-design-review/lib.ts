@@ -56,7 +56,11 @@ export type Finding = {
   claim: string;
   expected: string;
 };
-export type ReviewArgs = { routes: string[]; out: string; base: string; plans: string[]; sections: string[] };
+export type ReviewArgs = { routes: string[]; out: string; base: string; plans: string[]; sections: string[]; seed: SeedName | null };
+
+// 데이터가 있어야 보이는 화면용 시드 시나리오(seeds.ts가 구현). 이름은 이 목록만 받는다.
+export const SEED_NAMES = ["pre-settle-evidence-pending"] as const;
+export type SeedName = (typeof SEED_NAMES)[number];
 
 // root 아래 dirs 중 하나에 들고 .md로 끝나는 상대 경로인지 본다(.. 탈출·절대 경로·점 파일 거부).
 function insideMd(path: string, dirs: string[], root: string): boolean {
@@ -72,16 +76,22 @@ export function parseArgs(argv: string[], root = process.cwd()): ReviewArgs {
   const sections = [...DEFAULT_SECTIONS];
   let out = "";
   let base = "origin/main";
+  let seed: SeedName | null = null;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i] ?? "";
     const value = argv[i + 1] ?? "";
-    if (arg === "--out" || arg === "--base" || arg === "--plan" || arg === "--sections") {
+    if (arg === "--out" || arg === "--base" || arg === "--plan" || arg === "--sections" || arg === "--seed") {
       // 값이 비었거나 -로 시작하면 거부한다 — --base 값은 git diff 인자로 들어가 옵션(--output=…)이 될 수 있다.
       if (!value || value.startsWith("-")) throw new Error(`${arg} 뒤에 값이 필요하다`);
       i++;
       if (arg === "--out") out = value;
       else if (arg === "--base") base = value;
       else if (arg === "--plan") plans.push(value);
+      else if (arg === "--seed") {
+        const name = SEED_NAMES.find((known) => known === value);
+        if (!name) throw new Error(`--seed는 ${SEED_NAMES.join("·")} 중 하나여야 한다: ${value}`);
+        seed = name;
+      }
       else for (const id of value.split(",").map((s) => s.trim())) if (id && !sections.includes(id)) sections.push(id);
     } else if (!arg.startsWith("/") || arg.startsWith("//") || arg.includes("\\")) {
       // //host·역슬래시는 URL 해석에서 다른 호스트로 풀린다 — 앱 출처 안의 경로만 받는다.
@@ -97,7 +107,7 @@ export function parseArgs(argv: string[], root = process.cwd()): ReviewArgs {
   for (const plan of plans) {
     if (!insideMd(plan, [".planning", "docs"], root)) throw new Error(`--plan은 .planning/·docs/ 아래 .md여야 한다: ${plan}`);
   }
-  return { routes, out, base, plans, sections };
+  return { routes, out, base, plans, sections, seed };
 }
 
 // 텍스트 노드 상자 [top, bottom]들을 줄 수로 센다. 세로 중심이 이미 센 줄 안에 들면 같은 줄이다
@@ -151,9 +161,14 @@ export function envFileTexts(dir: string): string[] {
     .map((name) => readFileSync(join(dir, name), "utf8"));
 }
 
-// 동적 경로 자리 표시: {adminId} = 캡처 때 만든 관리자 계정 id(예: /admin/people/{adminId}).
-export function fillRoute(route: string, vars: { adminId: string }): string {
-  return route.replaceAll("{adminId}", vars.adminId);
+// 동적 경로 자리 표시: {adminId} = 캡처 때 만든 관리자 계정 id(예: /admin/people/{adminId}), 시드 시나리오 변수는 {이름}(예: /projects/{projectId}).
+// 못 채운 자리 표시가 남으면 없는 화면을 재지 않도록 오류로 멈춘다.
+export function fillRoute(route: string, vars: { adminId: string }, seedVars: Record<string, string> = {}): string {
+  let filled = vars.adminId ? route.replaceAll("{adminId}", vars.adminId) : route;
+  for (const [name, value] of Object.entries(seedVars)) filled = filled.replaceAll(`{${name}}`, value);
+  const left = /\{\w+\}/.exec(filled);
+  if (left) throw new Error(`채우지 못한 자리 표시: ${left[0]} (${route})`);
+  return filled;
 }
 
 // .env 계열 파일에서 가릴 값을 모은다(8자 이상). Codex 출력에 섞여도 파일로 남기기 전에 가린다.

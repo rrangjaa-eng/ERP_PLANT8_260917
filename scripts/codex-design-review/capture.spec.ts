@@ -5,20 +5,30 @@ import { expect, test } from "@playwright/test";
 import { createAccount } from "@/domain/auth/accounts";
 import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
-import { VIEWPORTS, countLines, fillRoute, screenshotName, type ScreenMeasure } from "./lib";
+import { SEED_NAMES, VIEWPORTS, countLines, fillRoute, screenshotName, type ScreenMeasure, type SeedName } from "./lib";
+import { runSeed } from "./seeds";
 
 // Codex 디자인 검토 캡처(playwright.codex-design.config.ts 전용). 요청 경로마다 4폭 전체 화면
 // 스크린샷과 DOM 실측(가로 넘침·요소 높이·줄 수·넘침·세로 간격)을 남긴다. 판정은 이 실측으로 한다.
 const routes = JSON.parse(process.env.CODEX_REVIEW_ROUTES ?? "[]") as string[];
 const dir = process.env.CODEX_REVIEW_DIR ?? "";
+const seed = SEED_NAMES.find((name): name is SeedName => name === process.env.CODEX_REVIEW_SEED);
 if (routes.length === 0 || !dir) throw new Error("CODEX_REVIEW_ROUTES(JSON 배열)·CODEX_REVIEW_DIR가 필요하다");
 
 for (const route of routes) {
-  test(`캡처 ${route}`, async ({ page, baseURL }) => {
-    test.setTimeout(180_000);
-    const email = `e2e-${randomUUID()}@example.test`;
-    const { userId, tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name: "E2E Admin", roleId: SYSADMIN_ROLE_ID });
-    const target = fillRoute(route, { adminId: userId });
+  test(`캡처 ${route}`, async ({ page, baseURL, browser }) => {
+    test.setTimeout(seed ? 300_000 : 180_000);
+    // 시드 시나리오가 있으면 그 화면을 볼 사용자로 로그인하고, 없으면 새 관리자 계정으로 로그인한다.
+    const seeded = seed ? await runSeed(seed, browser, baseURL) : null;
+    const admin = seeded
+      ? { userId: "", email: seeded.viewer.email, tempPassword: seeded.viewer.password }
+      : await (async () => {
+          const email = `e2e-${randomUUID()}@example.test`;
+          const { userId, tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name: "E2E Admin", roleId: SYSADMIN_ROLE_ID });
+          return { userId, email, tempPassword };
+        })();
+    const { email, tempPassword } = admin;
+    const target = fillRoute(route, { adminId: admin.userId }, seeded?.vars);
     await page.goto("/login");
     // G-06-G(safari-report §1): 하이드레이션 전에 채우면 제어 입력이 빈 상태로 덮이거나 제출 처리기 전에 눌린다 — React가 붙인 __reactProps$ 키를 본 뒤 채운다(test/e2e/leave-org.ts waitForHydration과 같은 판정).
     await expect

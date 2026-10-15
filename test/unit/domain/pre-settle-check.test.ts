@@ -9,6 +9,7 @@ import {
   liveLinkCount,
   openExpenseState,
   preSettleBlockReason,
+  preSettleExpenseGroup,
   revenueSummary,
   summarizePreSettle,
   type PreSettleAllowances,
@@ -128,6 +129,32 @@ describe("C10 — 종결 · 회수 · 작성 중", () => {
   it("회수 · 작성 중 → 행 없음", () => {
     expect(stateOf({ approvalStatus: "withdrawn", hasEvidence: false })).toBeNull();
     expect(stateOf({ approvalStatus: "draft", hasEvidence: false })).toBeNull();
+  });
+});
+
+// 06-36(G-06-E · 카드 ② 「경고만」): 결재 통과 · 증빙 없음은 막지 않는 증빙 대기, 결재 중 · 반려만 막는다(D-611의 결재 통과 갈래를 대체).
+describe("G-06-E — preSettleExpenseGroup(카드 ② 「경고만」)", () => {
+  const groupOf = (input: Parameters<typeof stateOf>[0]) => preSettleExpenseGroup({ approvalStatus: input.approvalStatus, state: stateOf(input) });
+
+  it("결재 통과 · 증빙 없음 → 증빙 대기", () => {
+    expect(groupOf({ approvalStatus: "approved", hasEvidence: false })).toBe("evidencePending");
+  });
+  it("결재 통과 · 선결제 · 증빙 없음 → 증빙 대기", () => {
+    expect(groupOf({ approvalStatus: "approved", hasEvidence: false, prepaid: true })).toBe("evidencePending");
+  });
+  it("결재 중(submitted) · 증빙 없음 → 미결 지출결의(막힘 그대로 — 가정 A-1)", () => {
+    expect(groupOf({ approvalStatus: "submitted", hasEvidence: false })).toBe("openExpenses");
+  });
+  it("결재 중(in_review) · 증빙 있음 → 미결 지출결의", () => {
+    expect(groupOf({ approvalStatus: "in_review", hasEvidence: true })).toBe("openExpenses");
+  });
+  it("반려 → 미결 지출결의", () => {
+    expect(groupOf({ approvalStatus: "rejected", hasEvidence: false })).toBe("openExpenses");
+  });
+  it("낱말 없음(면제 · 증빙 있음 · 종결) → null", () => {
+    expect(groupOf({ approvalStatus: "approved", hasEvidence: false, waived: true })).toBeNull();
+    expect(groupOf({ approvalStatus: "approved", hasEvidence: true })).toBeNull();
+    expect(groupOf({ approvalStatus: "rejected", hasEvidence: false, closed: true })).toBeNull();
   });
 });
 

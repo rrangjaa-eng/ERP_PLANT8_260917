@@ -252,7 +252,7 @@ export const PROJECT_CUSTOMER_APPROVAL_GATE: SettingDef<boolean> = {
   kind: "simple",
   schema: z.boolean(),
   label: "고객 승인 게이트",
-  hint: "끄면 고객 승인 전 차수에서도 지출결의를 올릴 수 있습니다.",
+  hint: "끄면 고객 승인 전 차수에서도 지출결의·구매 요청을 올릴 수 있습니다.",
   namespace: "프로젝트",
   default: true,
 };

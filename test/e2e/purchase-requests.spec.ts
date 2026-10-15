@@ -10,7 +10,9 @@ import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { createCorpCard } from "@/domain/corp-cards";
-import { insertVendor } from "@/repositories/vendors";
+import { insertVendor, updateVendor } from "@/repositories/vendors";
+import { setCustomerApproval } from "@/domain/quotes/revisions";
+import { approvalBasis } from "@/repositories/quote-revisions";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { seoulToday } from "@/lib/dates";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
@@ -177,6 +179,79 @@ test.describe("구매 요청 신청 (06-08)", () => {
     await expect(lines).toBeHidden();
     await expect(sheet.getByText(target.onlineItem, { exact: true })).toBeVisible();
     await expect(sheet.getByText("남은 실행가 1,000,000", { exact: true })).toBeVisible();
+    await page.context().close();
+  });
+
+  test("[G-06-D] 진행 · 고객 승인 전 — 견적 줄 표 `구매 요청` 문 없음 · 표 위 이유 · 줄 고르기 이유 · 바닥 줄 · 승인 뒤 복귀", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    await enableOnlineVendorSetting();
+    await updateVendor(SYSTEM_VIEWER, fx.vendorId, { name: E2E_ONLINE_VENDOR_NAME, normalizedName: E2E_ONLINE_VENDOR_NAME.toLowerCase() });
+    const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, fx.projectId);
+    if (!revision) throw new Error("1차 차수가 없습니다");
+    await setCustomerApproval(fx.pm.viewer, revision.id, null);
+    const gateReason = "1차 고객 승인 전 · 고객 승인 표시";
+
+    const page = await loginPage(browser, baseURL, fx.pm, { width: 1280, height: 800 });
+    await page.goto(`/projects/${fx.projectId}`);
+    const grid = page.getByRole("grid", { name: "견적 줄" });
+    const tracerRow = grid.getByRole("row").filter({ hasText: fx.lines.tracer.itemName });
+    // 표 위 한 줄이 이유를 말하고, 셀에는 문이 없다.
+    await expect(page.getByText(gateReason, { exact: true })).toBeVisible();
+    await expect(tracerRow.getByRole("link", { name: "구매 요청" })).toHaveCount(0);
+    await expect(tracerRow.getByRole("button", { name: /^구매 요청/ })).toHaveCount(0);
+    // 항목 칸 Ctrl+E 도 아무 일 없음.
+    const item = tracerRow.getByRole("gridcell").nth(2);
+    await waitForHydration(item);
+    const detailUrl = page.url();
+    await item.focus();
+    await page.keyboard.press("Control+e");
+    await page.waitForTimeout(500);
+    expect(page.url()).toBe(detailUrl);
+
+    // 줄 고르기 — 모든 줄 aria-disabled + 2행 이유, 바닥 줄 = 같은 문구, 1차 비활성.
+    await page.goto("/cards/purchases?new=1");
+    const sheet = panel(page);
+    await expect(sheet).toBeVisible();
+    await waitForHydration(sheet.getByLabel("품목"));
+    await sheet.getByRole("radio", { name: "견적 줄" }).check();
+    await sheet.getByRole("button", { name: "프로젝트 바꾸기" }).click();
+    const projectsDialog = page.getByRole("dialog", { name: "프로젝트 고르기" });
+    await projectsDialog.getByRole("textbox", { name: "프로젝트 번호 · 이름 · 클라이언트 검색" }).fill(fx.projectName);
+    await projectsDialog.getByRole("option", { name: new RegExp(fx.projectName) }).click();
+    await projectsDialog.getByRole("button", { name: /^이 프로젝트로/ }).click();
+    await sheet.getByRole("button", { name: "견적 줄 바꾸기" }).click();
+    const lines = page.getByRole("dialog", { name: "견적 줄 고르기" });
+    const tracerOption = lines.getByRole("option", { name: new RegExp(fx.lines.tracer.itemName) });
+    await expect(tracerOption).toHaveAttribute("aria-disabled", "true");
+    await expect(tracerOption).toContainText(gateReason);
+    const primary = lines.getByRole("button", { name: /^이 줄로/ });
+    await expect(primary).toHaveAttribute("aria-disabled", "true");
+    const footId = await primary.getAttribute("aria-describedby");
+    expect(await page.locator(`[id="${footId}"]`).textContent()).toBe(gateReason);
+    await expect(lines.getByText("온라인구매 줄 없음", { exact: true })).toHaveCount(0);
+
+    // 승인하면 문이 돌아온다.
+    const basis = await approvalBasis(SYSTEM_VIEWER, revision.id);
+    await setCustomerApproval(fx.pm.viewer, revision.id, { approvedOn: seoulToday(), seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
+    await page.goto(`/projects/${fx.projectId}`);
+    await expect(page.getByText(gateReason, { exact: true })).toHaveCount(0);
+    await expect(grid.getByRole("row").filter({ hasText: fx.lines.tracer.itemName }).getByRole("link", { name: "구매 요청" })).toHaveAttribute("href", `/cards/purchases?new=1&line=${fx.lines.tracer.id}`);
+    await page.context().close();
+  });
+
+  test("[G-06-D 폰] 완료 프로젝트 — 375 행 시트의 구매 요청 자리는 `완료 · 견적 줄 잠김`(지출결의 이유 아님)", async ({ browser, baseURL }) => {
+    const requester = await makeRequester();
+    const target = await seedTarget(requester);
+    await db.update(projects).set({ status: "completed" }).where(eq(projects.id, target.projectId));
+    const page = await loginPage(browser, baseURL, requester.person, { width: 375, height: 800 });
+    await page.goto(`/projects/${target.projectId}`);
+    const tap = page.getByRole("button", { name: `${target.onlineItem} 상세 보기` });
+    await waitForHydration(tap);
+    await tap.click();
+    const sheet = page.getByRole("dialog", { name: target.onlineItem });
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByText("완료 · 견적 줄 잠김", { exact: true })).toBeVisible();
+    await expect(sheet.getByText("새 지출결의 없음")).toHaveCount(0);
     await page.context().close();
   });
 

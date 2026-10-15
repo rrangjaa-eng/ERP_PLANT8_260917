@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { and, eq, sql } from "drizzle-orm";
 import { Client } from "pg";
 import { db, pool } from "@/db/client";
-import { actionLog, corpCardUsages, documentCounters, expenses, projects, purchaseRequests, quoteLines } from "@/db/schema";
+import { actionLog, corpCardUsages, documentCounters, expenses, projects, purchaseRequests, quoteLines, teams } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createOrgUnit, createTeam } from "@/domain/org";
@@ -20,14 +20,14 @@ import {
   type CardUsageUpdateInput,
 } from "@/domain/corp-card-usages";
 import { StaleQuoteRevisionError } from "@/domain/corp-card-usages/link-targets";
-import { createRevisionFromCurrent } from "@/domain/quotes/revisions";
+import { createRevisionFromCurrent, setCustomerApproval } from "@/domain/quotes/revisions";
 import { closeExpense, createExpenseFromLines } from "@/domain/expenses";
 import { rejectDocument, REJECT_REASON_EMPTY_MESSAGE, REJECT_REASON_TOO_LONG_MESSAGE } from "@/domain/approvals";
 import { getCurrentQuoteRevision } from "@/domain/quotes/lines";
 import { ForbiddenError } from "@/domain/permissions/can";
 import { gate, GateBlockedError } from "@/domain/rules/gate";
 import { setSettingValue } from "@/domain/settings/registry";
-import { PURCHASE_ONLINE_VENDOR_NAME } from "@/domain/settings/keys";
+import { PROJECT_CUSTOMER_APPROVAL_GATE, PURCHASE_ONLINE_VENDOR_NAME } from "@/domain/settings/keys";
 import {
   completePurchaseRequest,
   createPurchaseRequest,
@@ -41,6 +41,7 @@ import {
   cancelPurchaseRequest,
   precheckPurchaseCancel,
   precheckPurchaseCancelUndo,
+  searchLinesForPurchaseLink,
   undoCancelPurchaseRequest,
   type PurchaseCompletionInput,
   type PurchaseRequestInput,
@@ -49,6 +50,7 @@ import { cancelPurchaseRequestAction, createPurchaseRequestAction, undoCancelPur
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { findLineLinks } from "@/repositories/quote-line-links";
+import { approvalBasis } from "@/repositories/quote-revisions";
 import { seoulToday } from "@/lib/dates";
 import { makePerson } from "./approvals-fixtures";
 import { ONLINE_VENDOR, purchaseProject, request, requestInput, type PurchaseFx } from "./fixtures/purchase-requests";
@@ -178,6 +180,12 @@ async function cancelRequest(fx: PurchaseFx, requestId: string): Promise<void> {
 
 async function setStatus(projectId: string, status: string): Promise<void> {
   await db.update(projects).set({ status }).where(eq(projects.id, projectId));
+}
+
+// 06-34(G-06-D): 고객 승인 표시 — 진행 · 정산 프로젝트의 구매 요청 신청은 최신 차수가 승인돼 있어야 한다.
+async function approve(fx: PurchaseFx): Promise<void> {
+  const basis = await approvalBasis(SYSTEM_VIEWER, fx.revisionId);
+  await setCustomerApproval(fx.pm, fx.revisionId, { approvedOn: seoulToday(), seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
 }
 
 async function nextRevision(fx: PurchaseFx): Promise<{ revisionId: string; copyOf: (lineId: string) => Promise<string> }> {
@@ -1699,6 +1707,8 @@ describe("취소 되돌리기(06-14 — D-609 · Q3 · X-1 · X-2 · N-1 · N-2 
   it("[X-2 경합] 되돌리기 사전 조회를 끝낸 뒤 풀 밖 연결이 프로젝트 행을 잡고 `completed`로 커밋 → `완료 · 견적 줄 잠김` · 요청 `취소` 그대로", async () => {
     const fx = await purchaseProject();
     await setStatus(fx.projectId, "settling");
+    // G-06-D: 정산 프로젝트의 신청은 최신 차수 고객 승인이 먼저다 — 이 사례의 뜻(완료 경합)은 그대로.
+    await approve(fx);
     const created = await request(fx, fx.onlineLine);
     await cancelAs(fx.pm, created.id);
     const pre = await precheckPurchaseCancelUndo(fx.pm, { id: created.id });
@@ -2066,5 +2076,147 @@ describe("[183 /review I-1] 완료 프로젝트 · capOver 구매 건 수정", (
     expect(error).toBeInstanceOf(GateBlockedError);
     expect((error as Error).message).toBe(PM_CAP("400,000"));
     expect((await usageRow(usageId)).supplyKrw).toBe(438_000);
+  });
+});
+
+// 06-34(G-06-D · 카드 ① 2026-10-14 14:20 KST 「구매 요청만」): 진행 · 정산 프로젝트의 최신 차수가 고객 승인 전이면 견적 줄 구매 요청 신청이 막힌다 —
+// 지출결의와 같은 규칙 `quote.customer-approval` · 같은 문구. 카드 사용은 지금대로.
+describe("고객 승인 게이트(G-06-D · 카드 ① 2026-10-14 14:20 KST 「구매 요청만」)", () => {
+  const PM_REASON = "1차 고객 승인 전 · 고객 승인 표시";
+  const OTHER_REASON = "1차 고객 승인 전 · 담당 PM 박서연";
+
+  async function inProgress(): Promise<PurchaseFx> {
+    const fx = await purchaseProject();
+    await setStatus(fx.projectId, "in_progress");
+    return fx;
+  }
+
+  async function sameTeamStaff(fx: PurchaseFx): Promise<Viewer> {
+    const [team] = await db
+      .select({ name: teams.name })
+      .from(projects)
+      .innerJoin(teams, eq(teams.id, projects.teamId))
+      .where(eq(projects.id, fx.projectId));
+    if (!team) throw new Error("프로젝트 팀 없음");
+    return makePerson("김직원", DEFAULT_ROLE_ID, team.name);
+  }
+
+  function actionInput(lineId: string) {
+    return { idempotencyKey: randomUUID(), linkKind: "quote_line" as const, lineId, itemName: "현수막 3장", linkUrl: null, currency: "KRW" as const, amount: 110_000, memo: null };
+  }
+
+  it("진행 · 1차 미승인 · 담당 PM 요청자 → 액션 서버 오류 `1차 고객 승인 전 · 고객 승인 표시` · 요청 0 · 번호 카운터 그대로", async () => {
+    const fx = await inProgress();
+    session.viewer = fx.pm;
+    try {
+      const outcome = await createPurchaseRequestAction(actionInput(fx.onlineLine));
+      expect(outcome?.serverError).toBe(PM_REASON);
+    } finally {
+      session.viewer = null;
+    }
+    expect(await requestCount()).toBe(0);
+    expect(await counterValue(fx.projectNumber)).toBe(0);
+  });
+
+  it("같은 프로젝트를 다른 직원이 신청 → GateBlockedError `1차 고객 승인 전 · 담당 PM 박서연` · 요청 0 · 카운터 그대로", async () => {
+    const fx = await inProgress();
+    const staff = await sameTeamStaff(fx);
+    const input = requestInput(fx.onlineLine);
+    const error = await caught(createPurchaseRequest(staff, input, await precheckPurchaseRequest(staff, input)));
+    expect(error).toBeInstanceOf(GateBlockedError);
+    expect((error as Error).message).toBe(OTHER_REASON);
+    expect(await requestCount()).toBe(0);
+    expect(await counterValue(fx.projectNumber)).toBe(0);
+  });
+
+  it("담당 PM이 고객 승인을 표시한 뒤 같은 신청 → 저장", async () => {
+    const fx = await inProgress();
+    await approve(fx);
+    const created = await request(fx, fx.onlineLine);
+    expect(created.number).toBe(`${fx.projectNumber}-C0001`);
+    expect(await requestCount()).toBe(1);
+  });
+
+  it("줄 고르기 목록 — 승인 전 모든 줄 선택 불가 · reason = 규칙 문구 · selectableCount 0 · projectBlockedReason / 승인 뒤 온라인 줄 선택 가능 · projectBlockedReason null", async () => {
+    const fx = await inProgress();
+    const before = await searchLinesForPurchaseLink(fx.pm, { projectId: fx.projectId, query: "" });
+    expect(before.rows).toHaveLength(2);
+    expect(before.rows.every((row) => row.selectable === false && row.reason === PM_REASON)).toBe(true);
+    expect(before.selectableCount).toBe(0);
+    expect(before.projectBlockedReason).toBe(PM_REASON);
+    await approve(fx);
+    const after = await searchLinesForPurchaseLink(fx.pm, { projectId: fx.projectId, query: "" });
+    expect(after.projectBlockedReason).toBeNull();
+    expect(after.rows.find((row) => row.id === fx.onlineLine)?.selectable).toBe(true);
+  });
+
+  it("취소 되돌리기 — 승인 상태에서 신청 · 본인 취소 · 승인 끔 → undoCancelPurchaseRequest GateBlockedError `1차 고객 승인 전 · 고객 승인 표시` · 요청 `취소` 그대로", async () => {
+    const fx = await inProgress();
+    await approve(fx);
+    const created = await request(fx, fx.onlineLine);
+    await cancelAs(fx.pm, created.id);
+    await setCustomerApproval(fx.pm, fx.revisionId, null);
+    const error = await caught(undoAs(fx.pm, created.id));
+    expect(error).toBeInstanceOf(GateBlockedError);
+    expect((error as Error).message).toBe(PM_REASON);
+    expect((await statusOf(created.id))?.status).toBe("cancelled");
+  });
+
+  it("[경합] 승인 끄기가 프로젝트 행을 쥔 채 멈춘 동안 시작한 신청은 잠금을 기다리고, 끄기 커밋 뒤 GateBlockedError · 요청 0 · 카운터 그대로", async () => {
+    const fx = await inProgress();
+    await approve(fx);
+    const input = requestInput(fx.onlineLine);
+    const pre = await precheckPurchaseRequest(fx.pm, input);
+    const entered = deferred();
+    const held = deferred();
+    const turningOff = setCustomerApproval(fx.pm, fx.revisionId, null, {
+      afterLock: async () => {
+        entered.resolve();
+        await held.promise;
+      },
+    });
+    await entered.promise;
+    const creating = caught(createPurchaseRequest(fx.pm, input, pre));
+    await waitForLockWaiter(pool);
+    held.resolve();
+    await turningOff;
+    const error = await creating;
+    expect(error).toBeInstanceOf(GateBlockedError);
+    expect((error as Error).message).toBe(PM_REASON);
+    expect(await requestCount()).toBe(0);
+    expect(await counterValue(fx.projectNumber)).toBe(0);
+  });
+
+  it("면제 — 미수주(픽스처 기본) · 실주 프로젝트는 승인 전에도 신청된다", async () => {
+    const bidding = await purchaseProject();
+    expect((await request(bidding, bidding.onlineLine)).number).toBe(`${bidding.projectNumber}-C0001`);
+    const lost = await purchaseProject();
+    await setStatus(lost.projectId, "lost");
+    expect((await request(lost, lost.onlineLine)).number).toBe(`${lost.projectNumber}-C0001`);
+  });
+
+  it("면제 — 설정 `project.customer_approval_gate` 끔 → 진행 · 승인 전에도 신청된다(목록도 막지 않는다)", async () => {
+    const fx = await inProgress();
+    await setSettingValue(SYSTEM_VIEWER, PROJECT_CUSTOMER_APPROVAL_GATE, false);
+    try {
+      expect((await request(fx, fx.onlineLine)).number).toBe(`${fx.projectNumber}-C0001`);
+      const listed = await searchLinesForPurchaseLink(fx.pm, { projectId: fx.projectId, query: "" });
+      expect(listed.projectBlockedReason).toBeNull();
+    } finally {
+      await setSettingValue(SYSTEM_VIEWER, PROJECT_CUSTOMER_APPROVAL_GATE, true);
+    }
+  });
+
+  it("면제 — 팀 비용 구매 요청은 고객 승인과 무관하게 신청된다", async () => {
+    await inProgress();
+    const requester = await teamCostRequester();
+    expect((await statusOf((await teamRequestBy(requester.viewer)).id))?.status).toBe("requested");
+  });
+
+  it("카드 사용은 지금대로 — 진행 · 고객 승인 전 프로젝트의 연결 없는 견적 줄에 카드 사용 등록이 성공한다", async () => {
+    const fx = await inProgress();
+    const usageId = await cardOnLine(fx, fx.onlineLine, 100_000);
+    const [row] = await db.select({ id: corpCardUsages.id }).from(corpCardUsages).where(eq(corpCardUsages.id, usageId));
+    expect(row?.id).toBe(usageId);
   });
 });

@@ -77,6 +77,7 @@ import { DOCUMENT_NUMBER_EXPENSE_TEAM_PREFIX } from "@/domain/settings/keys";
 import { kstYear } from "@/lib/kst-date";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { isUniqueViolation } from "@/lib/pg-errors";
+import { pickDefaultCardId } from "@/domain/corp-card-usages/default-card";
 
 // 06-05(EXP-07 · D-607 · D-608 · D-609): 법인카드 사용 — 본인 등록 · 팀 비용 연결 · 목록.
 //
@@ -1546,16 +1547,18 @@ export type CardUsageFormDefaults = {
 /** 진입 — S14 견적 줄 행(`?line=`) · S15 빈 섹션(`?project=`). */
 export type CardUsageEntry = { lineId?: string | undefined; projectId?: string | undefined };
 
-// 사용일 = 오늘(서울) · 카드 = 직전 등록의 카드가 지금 옵션에 있을 때만(아니면 옵션 한 장이면 그 카드).
+// 사용일 = 오늘(서울) · 카드 = G-06-B 순서(직전 등록 카드가 지금 옵션에 있으면 그 카드 → 본인 개인 한 장 → 오늘 팀 카드 한 장 → 옵션 한 장 → 빈칸, default-card.ts).
 // 연결(M-4) 우선순위 = 진입 줄(고를 수 있을 때만 · 줄까지) > 진입 프로젝트(고를 수 있을 때만) > 직전 등록의 종류 + 프로젝트
 // (지금 고를 수 없으면 종류만). 견적 줄은 진입 줄일 때만 채운다. 처음 쓰는 사람은 연결이 빈다. 보관된 건은 직전 등록이 아니다.
 export async function cardUsageFormDefaults(viewer: Viewer, today: string, entry: CardUsageEntry = {}): Promise<CardUsageFormDefaults> {
   const proxy = await can(viewer, "cards.proxy", "write");
-  const options = await cardOptionsForUsage(viewer, today);
+  const eligible = await eligibleCards(viewer, await teamIdOn(viewer, today));
   const last = await findLastCardUsageByRegistrant(viewer, viewer.id);
-  const lastCard = last && options.some((option) => option.id === last.corpCardId) ? last.corpCardId : null;
-  const onlyCard = options.length === 1 ? (options[0]?.id ?? null) : null;
-  const base = { usedOn: today, corpCardId: lastCard ?? onlyCard };
+  const corpCardId = pickDefaultCardId({
+    options: eligible.map(({ card, own }) => ({ id: card.id, kind: card.kind, own })),
+    lastCardId: last?.corpCardId ?? null,
+  });
+  const base = { usedOn: today, corpCardId };
   if (entry.lineId) {
     const chosen = await cardLinkLineChoice(viewer, entry.lineId);
     if (chosen) return { ...base, linkKind: "quote_line", project: chosen.project, line: chosen.line };

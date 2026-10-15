@@ -155,7 +155,8 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
     await expect(confirm).toBeVisible();
     await expect(confirm.getByText(projectName)).toBeVisible();
     await expect(confirm.getByText("종료일 없음 · 시작일로 저장", { exact: true })).toBeVisible();
-    await expect(confirm.getByText("1차 고객 승인 전 · 진행부터 지출결의 멈춤", { exact: true })).toBeVisible();
+    // G-06-D(카드 ①): 승인 줄이 구매 요청도 멈춘다고 말한다.
+    await expect(confirm.getByText("1차 고객 승인 전 · 진행부터 지출결의 · 구매 요청 멈춤", { exact: true })).toBeVisible();
 
     await confirm.getByRole("button", { name: /^진행으로 바꾸기/ }).click();
     await expect(page.getByText(`진행으로 바꾸기 · ${projectNumber}`, { exact: true })).toBeVisible();
@@ -198,7 +199,8 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
     await expect(page.getByRole("button", { name: "진행으로 되돌리기" })).toBeFocused();
     await page.getByRole("button", { name: "진행으로 되돌리기" }).click();
     const revert = page.getByRole("dialog", { name: "진행으로 되돌리기" });
-    await expect(revert.getByText("1차 고객 승인 전 · 진행부터 지출결의 멈춤", { exact: true })).toBeVisible();
+    // G-06-D(카드 ①): 승인 줄이 구매 요청도 멈춘다고 말한다.
+    await expect(revert.getByText("1차 고객 승인 전 · 진행부터 지출결의 · 구매 요청 멈춤", { exact: true })).toBeVisible();
     await revert.getByRole("button", { name: /^진행으로 되돌리기/ }).click();
     await expect(page.getByText(`진행으로 되돌리기 · ${project.number}`, { exact: true })).toBeVisible();
     await expect(headerTag(page, "진행")).toBeVisible();

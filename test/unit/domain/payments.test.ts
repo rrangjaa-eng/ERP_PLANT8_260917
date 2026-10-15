@@ -214,8 +214,8 @@ describe("decidePayable — 기준일 세율 · 소득 종류 · 조작 필드",
   it("회사 대납 — 받는 인원 곱으로 면제를 판정한다(카드 ①)", async () => {
     const input = (amountKrw: number, recipientCount: number) => ({ ...vatInput(amountKrw, undefined, COMPANY_BORNE_RULE), recipientCount });
     expect((await decidePayable(input(228_000, 5), RATES)).companyBorneKrw).toBe(0);
-    // 228,005 × 8.8% = 20,064.4 → 10원 반올림 20,060
-    expect((await decidePayable(input(228_005, 5), RATES)).companyBorneKrw).toBe(20_060);
+    // D-6521 사람별 — 45,601 × 8.8% = 4,012.9 → 10원 반올림 4,010 × 5 = 20,050(합계 한 번이면 20,064.4 → 20,060)
+    expect((await decidePayable(input(228_005, 5), RATES)).companyBorneKrw).toBe(20_050);
     // 1명이면 228,000 × 8.8% = 20,064 → 20,060
     expect((await decidePayable(input(228_000, 1), RATES)).companyBorneKrw).toBe(20_060);
   });

@@ -103,22 +103,24 @@ export async function applyTaxRule(
   // 공급가가 되도록 역산한 총액에서 공급가를 뺀 값.
   const rate = await readSetting(getValue, TAX_COMPANY_BORNE_RATE, opts.paymentDate);
   // 06.5 D-6501 · 카드 ⓪(사용자 카드 10/13 23:30 KST): 과세최저한 — 시가 5만원 이하, 시가 = 세전 금액 = 공급가 ÷ (1 − 세율)(옛과 같다
-  // O: server/src/withholding.ts:194-206 · 절사 전 비교 :311-315). 카드 ①(사용자 카드 10/13 23:29 KST) 한 사람 몫 = 공급가 ÷ 받는 인원 —
-  // 나눗셈 없이 정수 곱으로 비교. 면제 잣대는 계산 방식(flat · gross_up)과 무관.
+  // O: server/src/withholding.ts:194-206 · 절사 전 비교 :311-315). 카드 ①(사용자 카드 10/13 23:29 KST) 한 사람 몫 = 공급가 ÷ 받는 인원.
+  // 면제 잣대는 계산 방식(flat · gross_up)과 무관.
   const thresholdKrw = await readSetting(getValue, TAX_COMPANY_BORNE_EXEMPT_THRESHOLD, opts.paymentDate);
-  if (companyBorneExempt({ supplyKrw, rate, thresholdKrw, recipientCount: opts.recipientCount ?? 1 })) {
-    return { vatKrw: 0, withholdingKrw: 0, companyBorneKrw: 0, payableKrw: supplyKrw };
-  }
   const method = await readSetting(getValue, TAX_COMPANY_BORNE_METHOD, opts.paymentDate);
   const unit = (await readSetting(getValue, TAX_ROUNDING_WITHHOLDING_UNIT, opts.paymentDate)) as RoundingUnit;
 
-  let companyBorneKrw: number;
-  if (method === "flat") {
-    companyBorneKrw = round(supplyKrw * rate, unit, roundingMethod);
-  } else {
-    const gross = supplyKrw / (1 - rate);
-    companyBorneKrw = round(gross - supplyKrw, unit, roundingMethod);
-  }
+  // 06.5 D-6521(사용자 카드 10/15 11:37 KST): 세액은 사람별로 셈해 더한다 — 한 사람 몫마다 면제 판정 · 역산 · 절사 뒤 합(옛은 받는 분이
+  // 서명한 확인증 한 장마다 셈하고 절사했다 O: server/src/confirmations.ts:1204 · withholding.ts:336). 나누어떨어지지 않으면 나머지 원을 앞사람부터 1원씩
+  // 얹는다 — 몫 합이 공급가와 같고, 몫은 두 값(base · base + 1)뿐이라 인원이 커도 두 번 셈해 곱한다.
+  const recipientCount = opts.recipientCount ?? 1;
+  const base = Math.floor(supplyKrw / recipientCount);
+  const extra = supplyKrw - base * recipientCount;
+  const personTax = (shareKrw: number): number => {
+    if (companyBorneExempt({ supplyKrw: shareKrw, rate, thresholdKrw, recipientCount: 1 })) return 0;
+    if (method === "flat") return round(shareKrw * rate, unit, roundingMethod);
+    return round(shareKrw / (1 - rate) - shareKrw, unit, roundingMethod);
+  };
+  const companyBorneKrw = extra * personTax(base + 1) + (recipientCount - extra) * personTax(base);
 
   return { vatKrw: 0, withholdingKrw: 0, companyBorneKrw, payableKrw: supplyKrw };
 }

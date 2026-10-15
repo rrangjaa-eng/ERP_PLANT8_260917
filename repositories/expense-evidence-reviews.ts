@@ -5,7 +5,7 @@ import { corpCardUsages, expenseEvidenceReviews, expenses, quoteLines, quoteRevi
 import type { Viewer } from "@/domain/viewer";
 
 // 06-06(EVID-02 · EVID-03 · D-602): 증빙 확인 기록(06-27 expense_evidence_reviews — 문서당 한 줄) 읽기 · upsert와
-// 경영관리 공급가액 고침의 공급가 칸 갱신(06.5 D-6520). 확인 해제(줄 지움) · 증빙 금액 지움은 06-11 — 05 증빙 경로 두 곳에 붙는 훅이 한다(B-3 · C4).
+// 경영관리 공급가액 고침의 공급가 칸 갱신(06.5 D-6520). 확인 해제(줄 지움) · 증빙일 지움은 06-11 — 05 증빙 경로 두 곳에 붙는 훅이 한다(B-3 · C4).
 
 export type EvidenceReviewRow = InferSelectModel<typeof expenseEvidenceReviews>;
 export type EvidenceReviewStatus = "confirmed" | "waived";

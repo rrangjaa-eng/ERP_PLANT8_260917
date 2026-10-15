@@ -115,7 +115,7 @@ describe("증빙 확인 트레이서 (06-06 Task 1)", () => {
     expect(await logsOf(doc.expenseId, "evidence_amount_change")).toEqual([]);
   });
 
-  it("확인한 문서는 이어서 지급 완료된다 — 증빙 금액이 지급 총액의 기준", async () => {
+  it("확인한 문서는 이어서 지급 완료된다 — 공급가가 지급 총액의 기준", async () => {
     const payer = await makePayer();
     const doc = await approvedExpenseWithEvidence(await setupExpenseProject());
     const confirmed = await confirmEvidence(payer, { expenseId: doc.expenseId, version: doc.version });

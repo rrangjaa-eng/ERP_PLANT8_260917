@@ -285,7 +285,7 @@ describe("지급 완료 문서의 공급가액 고침 막힘(I-2 · 06.5 D-6520 
     expect(await expenseRow(expenseId)).toMatchObject({ supplyAmountKrw: 12_400_000 });
   });
 
-  // 06.5 D-6520: 선결제 지급 뒤 들어온 증빙 — 빈 증빙 금액이어도 고침 없이 확인되고(지급액이 공급가에서 나왔다), 공급가를 바꾸는 고침만 막힌다.
+  // 06.5 D-6520: 선결제 지급 뒤 들어온 증빙 — 고침 없이 확인되고(지급액이 공급가에서 나왔다), 공급가를 바꾸는 고침만 막힌다.
   async function paidPrepaidWithLateEvidence() {
     const fx = await setupExpenseProject();
     const { expenseId, instanceId, version } = await submitPrepaid(fx);
@@ -301,7 +301,7 @@ describe("지급 완료 문서의 공급가액 고침 막힘(I-2 · 06.5 D-6520 
     return { manager, expenseId, version: row.version, grossSupplyKrw: payment.grossSupplyKrw };
   }
 
-  it("선결제 지급 뒤 빈 증빙 금액 · 고침 없는 확인 → 확인됨 · 공급가 그대로(지급 공급가와 같다) · 같은 값 고침도 같음으로 통과", async () => {
+  it("선결제 지급 뒤 고침 없는 확인 → 확인됨 · 공급가 그대로(지급 공급가와 같다) · 같은 값 고침도 같음으로 통과", async () => {
     const { manager, expenseId, version, grossSupplyKrw } = await paidPrepaidWithLateEvidence();
     const result = await confirmEvidence(manager, { expenseId, version });
     expect(result.evidenceStatus).toBe("확인됨");
@@ -516,9 +516,9 @@ describe("증빙 면제 (06-10)", () => {
   }, 20_000);
 });
 
-// PR #183 /review B-1 — 사용자 결정(10/7 11:04 「지급액과 같을 때만」): 지급 뒤 빈 증빙 금액은 규칙 종류마다 지급 때의 세전 금액(증빙 금액과
-// 같은 기준)과 같을 때만 받는다. 부가세 · 원천징수 · 세금 없음 세 갈래 — 선결제 지급(공급가 12,400,000 기준) → 증빙 첨부 → 확인.
-describe("[183 /review B-1] 선결제 지급 뒤 빈 증빙 금액 확인 — 규칙 종류마다(06.5 D-6520)", () => {
+// PR #183 /review B-1 — 사용자 결정(10/7 11:04 「지급액과 같을 때만」): 지급 뒤 확인은 규칙 종류마다 지급 때의 세전 금액(공급가)과
+// 같을 때만 받는다. 부가세 · 원천징수 · 세금 없음 세 갈래 — 선결제 지급(공급가 12,400,000 기준) → 증빙 첨부 → 확인.
+describe("[183 /review B-1] 선결제 지급 뒤 확인 — 규칙 종류마다(06.5 D-6520)", () => {
   async function paidPrepaid(evidenceType: string) {
     const fx = await setupExpenseProject();
     const expenseId = await lineDraft(fx);

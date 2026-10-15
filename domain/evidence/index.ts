@@ -166,7 +166,7 @@ const expenseDrafterRemoves = (owner: OwnerState) =>
 
 // 결재 통과 문서에서만 일한다(작성 중 · 결재 중 · 반려 · 회수는 문서 version을 올리지 않는다 — X-1). 확인 기록 줄은 있을 때만 지우고,
 // 문서 version은 기록 유무와 상관없이 올린다 — 보지 않은 증빙은 옛 version으로 확인되지 않는다(B-1). 훅 안에서 권한 · 설정을 읽지 않는다.
-// 무효로 살아 있는 파일이 0이 되면 지급 여부와 상관없이 증빙 금액 · 증빙일을 지운다(EVID-04 · 검토 I-1) — 지급 뒤 다시 채우는 길은 06-10 paidEvidenceAmountRejection이 막는다.
+// 무효로 살아 있는 파일이 0이 되면 지급 여부와 상관없이 증빙일을 지운다(EVID-04 · 검토 I-1).
 async function expenseApprovedEvidenceChange(viewer: Viewer, owner: OwnerState, change: { kind: "add" | "void" }, tx: DbOrTx): Promise<EvidenceReviewStatus | null> {
   if (owner.status !== "approved") return null;
   const released = await deleteReviewByExpense(viewer, owner.id, tx);

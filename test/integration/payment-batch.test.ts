@@ -717,7 +717,7 @@ async function unreviewedDoc(fx: ExpenseFixture): Promise<ApprovedExpense> {
 }
 
 describe("제자리 증빙 확인 보기 (06-17 Task 4)", () => {
-  it("증빙 확인 보기 — 권한 · 확인 전만: 파일 행 · 증빙 금액 · 서버 계산 한 줄 · 지금 version · 지문 / 행 version 다름 → 같은 보기 + 동시성 이유 / 지급 권한 없음 · 확인 전 아님 → 거부", async () => {
+  it("증빙 확인 보기 — 권한 · 확인 전만: 파일 행 · 서버 계산 한 줄 · 지금 version · 지문 / 행 version 다름 → 같은 보기 + 동시성 이유 / 지급 권한 없음 · 확인 전 아님 → 거부", async () => {
     const payer = await makePayer();
     const fx = await setupExpenseProject();
     const doc = await unreviewedDoc(fx);
@@ -758,7 +758,7 @@ describe("제자리 증빙 확인 보기 (06-17 Task 4)", () => {
     expect(foreign.supply).toEqual({ currency: "USD", amount: 1000 });
   }, 30_000);
 
-  it("증빙 확인 보기 — 넘침 줄 없음(06.5 D-6520): 증빙 금액이 승인액 · 실행가를 넘어도 넘침 칸이 없고 세금 한 줄은 공급가 기준이다", async () => {
+  it("증빙 확인 보기 — 넘침 줄 없음(06.5 D-6520): 넘침 칸이 없고 세금 한 줄은 공급가 기준이다", async () => {
     const payer = await makePayer();
     const fx = await setupExpenseProject();
     const doc = await unreviewedDoc(fx);

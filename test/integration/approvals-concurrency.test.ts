@@ -471,7 +471,7 @@ describe("행동 로그는 전이 tx 안에서만 쓰인다 — 외부 커넥션
   it("제출 · 승인 · 반려 · 회수 · 다시 신청 — 로그 쓰기 직후 외부 커넥션에는 보이지 않고 커밋 뒤에만 보인다", async () => {
     const drafter = await makePerson("박서연", DEFAULT_ROLE_ID, "기획1팀");
     const lead = await makePerson("김팀장", TEAM_LEAD_ROLE_ID, "기획1팀");
-    await makePerson("최대표", CEO_ROLE_ID, null);
+    const ceo = await makePerson("최대표", CEO_ROLE_ID, null);
 
     async function expectInTx(run: (append: typeof appendActionLog) => Promise<unknown>) {
       const seen: number[] = [];
@@ -485,15 +485,15 @@ describe("행동 로그는 전이 tx 안에서만 쓰인다 — 외부 커넥션
     await expectInTx(async (append) => {
       submitted = await submitLeave(drafter, FULL_DAY_T3, { ...T3, appendActionLog: append });
     });
-    await expectInTx((append) => approveDocument(lead, { instanceId: submitted.instanceId, expectedVersion: 1 }, { ...T3, appendActionLog: append }));
-    await expectInTx((append) => withdrawDocument(drafter, { instanceId: submitted.instanceId, expectedVersion: 2 }, { ...T3, appendActionLog: append }));
+    await expectInTx((append) => withdrawDocument(drafter, { instanceId: submitted.instanceId, expectedVersion: 1 }, { ...T3, appendActionLog: append }));
 
     const doc = await submitLeave(drafter, FULL_DAY_T3, T3);
+    await expectInTx((append) => approveDocument(lead, { instanceId: doc.instanceId, expectedVersion: 1 }, { ...T3, appendActionLog: append }));
     await expectInTx((append) =>
-      rejectDocument(lead, { instanceId: doc.instanceId, expectedVersion: 1, reason: "일정 겹침" }, { ...T3, appendActionLog: append }),
+      rejectDocument(ceo, { instanceId: doc.instanceId, expectedVersion: 2, reason: "일정 겹침" }, { ...T3, appendActionLog: append }),
     );
     await expectInTx((append) =>
-      resubmitLeave(drafter, { leaveId: doc.leaveId, expectedVersion: 2, input: RESUBMIT_T3 }, { ...T3, appendActionLog: append }),
+      resubmitLeave(drafter, { leaveId: doc.leaveId, expectedVersion: 3, input: RESUBMIT_T3 }, { ...T3, appendActionLog: append }),
     );
   });
 });

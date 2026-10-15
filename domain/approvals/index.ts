@@ -28,6 +28,7 @@ import {
 import { listOrgSnapshot as defaultListOrgSnapshot, listRouteLabelNames } from "@/repositories/org-snapshot";
 import {
   FALLBACK_LABEL,
+  hasPriorApproval,
   InvalidTransitionError,
   PROJECT_TEAM_LABEL_NO_ROLE,
   PROJECT_TEAM_LABEL_PREFIX,
@@ -85,6 +86,8 @@ export const NOT_HOLDER_MESSAGE = "지금 담당이 아님 · 새로 고침";
 // 04.1-05(T14 · UI-SPEC 사용자 확인 대상 #2): 결재할 사람이 없어 멈춘 진행 중 문서 — 기안자에게만 결재선 끝 줄로.
 // 다음 행동은 같은 행동 줄의 2차 `회수`다. 화면은 막힘을 따로 추론하지 않고 이 줄을 그리기만 한다.
 export const ROUTE_BLOCKED_DRAFTER_LINE = "결재할 사람 없음 · 회수 후 새로 신청";
+// 06.6 D-6604: 앞 승인이 있어 회수가 막힌 멈춘 문서 — 다음 수는 관리자의 담당 지정(04.1-UI-SPEC.md:50 대체 문구).
+export const ROUTE_BLOCKED_ASSIGN_LINE = "결재할 사람 없음 · 담당 지정은 관리자";
 const NO_FALLBACK_MESSAGE = "대표 없음 · 관리자에게 대표 계급 확인 요청";
 
 const IN_PROGRESS: readonly string[] = ["submitted", "in_review"];
@@ -420,7 +423,9 @@ function allowsEvent(status: ApprovalStatus, event: TransitionEvent, opts?: Next
 // resubmit 하나이며 그것도 기안자에게만이다(반려에서 나가는 유일한 전이). 진행 중 상태의 resubmit도 닫힘.
 // 05-01 E1: resubmit은 종류의 resubmitFrom(없으면 rejected만)에 지금 상태가 있을 때만 열리고, withdrawn이 있으면
 // nextStep에 allowResubmitFromWithdrawn을 준다 — approve · reject · withdraw에는 withdrawn이 여전히 닫혔다.
-function closedFor(status: ApprovalStatus, event: TransitionEvent, isDrafter: boolean, kind: string): boolean {
+// 06.6 D28: 회수는 지금 차수에 기안자 아닌 사람의 승인이 있으면 기안자에게도 닫힌다(priorApproval — 호출자가 hasPriorApproval로 계산).
+function closedFor(status: ApprovalStatus, event: TransitionEvent, isDrafter: boolean, kind: string, priorApproval: boolean): boolean {
+  if (event === "withdraw" && isDrafter && priorApproval) return true;
   if (event !== "resubmit") return !allowsEvent(status, event);
   if (!isDrafter) return true;
   const from: readonly string[] = resubmittableStatuses(getDocumentKind(kind));
@@ -529,7 +534,8 @@ async function runTransition<T>(
     throw await refuseStaleOrClosed(viewer, graph, holders, input.event, "conflict", fields, pre);
   }
   // (2) 사건별 종결.
-  if (closedFor(status, input.event, isDrafter, instance.documentKind)) {
+  const priorApproval = hasPriorApproval(currentRouteOf(graph)?.steps ?? [], instance.drafterId);
+  if (closedFor(status, input.event, isDrafter, instance.documentKind, priorApproval)) {
     const reason = IN_PROGRESS.includes(status) ? "invalid_state" : "final";
     throw await refuseStaleOrClosed(viewer, graph, holders, input.event, reason, fields, pre);
   }
@@ -811,7 +817,7 @@ export async function rejectDocument(
   });
 }
 
-// 회수 — 기안자만, 최종 승인 전(submitted · in_review)만. 막힘 · 고아 최종에서도 된다(기안자 판정만, D2).
+// 회수 — 기안자만, 최종 승인 전(submitted · in_review)이고 지금 차수에 기안자 아닌 사람의 승인이 없을 때만(06.6 D28 · D-6601). 결재할 사람 없음(no_fallback_holder) 막힘에서는 되고, 앞 승인이 있는 멈춘 문서는 막힌다(D-6604).
 export async function withdrawDocument(
   viewer: Viewer,
   input: { instanceId: string; expectedVersion: number },
@@ -956,21 +962,26 @@ async function readApprovalState(
 
 // 가능 행동(X-5) — 서버 판정과 같은 규칙(같은 nextStep 허용 표 · 같은 후보 판정)에서 읽는다. 04.1-05의
 // 결재함 상세 · 폰 시트도 이 함수 결과를 싣는다(CXF2-B-RF01). 지금 담당이면 `승인`, 기안자가 아닌 담당이면
-// `반려`, 기안자면 진행 중일 때 `회수`(막힘 · 고아 최종이어도, D2), 반려됐고 종류의 다시 신청 권한이 있으면
+// `반려`, 기안자면 진행 중일 때 `회수`(앞 사람 승인이 없을 때만(06.6 D28)), 반려됐고 종류의 다시 신청 권한이 있으면
 // `다시 신청`(CX-W1). 기안자 = 지금 담당(W5 · W8)이면 [승인, 회수]이고 `반려`는 없다(CXF-B-F01).
 async function possibleActions(
   viewer: Viewer,
-  state: { instance: { status: string; drafterId: string; documentKind: string; documentId: string }; isCandidate: boolean },
+  state: {
+    instance: { status: string; drafterId: string; documentKind: string; documentId: string };
+    isCandidate: boolean;
+    steps: readonly { action: string | null; actedBy: string | null }[];
+  },
 ): Promise<ApprovalAction[]> {
   const { instance } = state;
   const status = instance.status as ApprovalStatus;
   const isDrafter = instance.drafterId === viewer.id;
   const actions: ApprovalAction[] = [];
   const kind = instance.documentKind;
-  if (state.isCandidate && !closedFor(status, "approve", isDrafter, kind)) actions.push("approve");
-  if (state.isCandidate && !isDrafter && !closedFor(status, "reject", isDrafter, kind)) actions.push("reject");
-  if (isDrafter && !closedFor(status, "withdraw", isDrafter, kind)) actions.push("withdraw");
-  if (isDrafter && !closedFor(status, "resubmit", isDrafter, kind)) {
+  const priorApproval = hasPriorApproval(state.steps, instance.drafterId);
+  if (state.isCandidate && !closedFor(status, "approve", isDrafter, kind, priorApproval)) actions.push("approve");
+  if (state.isCandidate && !isDrafter && !closedFor(status, "reject", isDrafter, kind, priorApproval)) actions.push("reject");
+  if (isDrafter && !closedFor(status, "withdraw", isDrafter, kind, priorApproval)) actions.push("withdraw");
+  if (isDrafter && !closedFor(status, "resubmit", isDrafter, kind, priorApproval)) {
     const canResubmit = getDocumentKind(kind).canResubmit;
     if (canResubmit && (await canResubmit(viewer, instance.documentId))) actions.push("resubmit");
   }
@@ -1039,7 +1050,9 @@ export async function getApprovalView(
       );
   }
 
-  if (state.isParty) actions.push(...(await possibleActions(viewer, { instance: graph.instance, isCandidate: state.isCandidate })));
+  if (state.isParty) {
+    actions.push(...(await possibleActions(viewer, { instance: graph.instance, isCandidate: state.isCandidate, steps: route?.steps ?? [] })));
+  }
   const blocked = state.isCandidate
     ? await approveBlockedReasonsOf(viewer, graph.instance.documentKind, [graph.instance.documentId])
     : new Map<string, string>();
@@ -1056,7 +1069,7 @@ export async function getApprovalView(
     endLines: [
       ...routeEndLines(graph.instance.status as ApprovalStatus, steps, graph.instance.updatedAt),
       ...(state.walk?.outcome.kind === "blocked" && graph.instance.drafterId === viewer.id
-        ? [{ text: ROUTE_BLOCKED_DRAFTER_LINE, tone: "danger" as const }]
+        ? [{ text: actions.includes("withdraw") ? ROUTE_BLOCKED_DRAFTER_LINE : ROUTE_BLOCKED_ASSIGN_LINE, tone: "danger" as const }]
         : []),
     ],
     currentStepIndex,
@@ -1163,7 +1176,7 @@ export async function listMyInbox(viewer: Viewer, deps?: ApprovalDeps): Promise<
       detail: null,
       steps,
       endLines: steps ? routeEndLines(instance.status as ApprovalStatus, steps, instance.updatedAt) : null,
-      actions: deps?.withDetails ? await possibleActions(viewer, { instance, isCandidate: true }) : null,
+      actions: deps?.withDetails ? await possibleActions(viewer, { instance, isCandidate: true, steps: instance.steps }) : null,
       approveBlockedReason: null,
     });
   }

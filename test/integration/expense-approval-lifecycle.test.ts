@@ -33,7 +33,7 @@ import { getDocumentKind } from "@/domain/approvals/kinds";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { TEAM_LEAD_ROLE_ID, createRole } from "@/domain/permissions/roles";
 import { upsertVisibility } from "@/repositories/permissions";
-import { makePerson } from "./approvals-fixtures";
+import { countRows, makePerson } from "./approvals-fixtures";
 
 // 05-03 트레이서 — 견적 줄 하나 → 작성 중(자동 채움) → 임시 저장 → 제출(번호 · 세금 스냅숏 · 결재선 고정) → 팀장 ·
 // 대표 승인 → 최종 승인. 가장자리 사례(두 번 제출 · 동시 제출 · 회차 상한 · 거부 문자열)는 05-14가 증명한다.
@@ -365,7 +365,7 @@ describe("회수 뒤 같은 번호 다시 제출", () => {
     }
   });
 
-  it("팀장 승인 뒤 되돌리기는 처리자 · 시각 · approved로 거부되고, 문서 화면 회수는 화면이 본 인스턴스 version으로만 된다 · 거부는 로그 없음", async () => {
+  it("팀장 승인 뒤 되돌리기는 처리자 · 시각 · approved로 거부되고, 문서 화면 회수는 맞는 version이어도 거부된다(06.6 D28) · 거부는 로그 없음", async () => {
     const fx = await setupExpenseProject();
     const { expenseId, instanceId } = await submittedDoc(fx);
     const approved = await approveDocument(fx.lead, { instanceId, expectedVersion: 1 });
@@ -383,13 +383,14 @@ describe("회수 뒤 같은 번호 다시 제출", () => {
     expect(stale).toBeInstanceOf(ApprovalConflictError);
     expect(await instanceOf(expenseId)).toMatchObject({ status: "in_review", version: approved.version });
 
-    const withdrawn = await withdrawExpense(fx.pm, { expenseId, expectedInstanceVersion: approved.version });
-    expect(withdrawn.status).toBe("withdrawn");
-
-    const withdraws = (await logsOf(expenseId)).filter((log) => log.actionType === "document_withdraw");
-    expect(withdraws).toHaveLength(1);
-    expect(withdraws[0]).toMatchObject({ entity: "approval_instance", entityId: instanceId, actorId: fx.pm.id });
-    expect(withdraws[0]?.detail).toMatchObject({ kind: EXPENSE_DOCUMENT_KIND, round: 1 });
+    const logCount = await countRows("action_log");
+    const refused = await withdrawExpense(fx.pm, { expenseId, expectedInstanceVersion: approved.version }).catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(ApprovalConflictError);
+    expect((refused as Error).message.startsWith("김도윤이 ")).toBe(true);
+    expect((refused as Error).message.endsWith("에 승인함 · 새로 고침")).toBe(true);
+    expect(await instanceOf(expenseId)).toMatchObject({ status: "in_review", version: approved.version });
+    expect(await countRows("action_log")).toBe(logCount);
+    expect((await logsOf(expenseId)).filter((log) => log.actionType === "document_withdraw")).toHaveLength(0);
   });
 
   it("팀장 반려 뒤 되돌리기는 `반려함 · 새로 고침`으로 거부된다(상태 rejected)", async () => {

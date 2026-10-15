@@ -264,7 +264,8 @@ export function IssueRequestTable({
       priority: "p1",
       cell: (row) => {
         const linked = linkedRequestIds.has(row.id);
-        const day = monthDay(row.desiredIssueDate);
+        // 06.5 D-6512 L-2(183-qa.md:53-55 · UI-SPEC V9): 같은 희망일이 둘이면 이름이 겹친다 — 금액은 숨김 계급에 새므로 순번(표 전체에서 그 행 위치, 1부터)을 이름에 넣는다.
+        const where = `희망 ${monthDay(row.desiredIssueDate)} · ${rows.findIndex((candidate) => candidate.clientKey === row.clientKey) + 1}번째`;
         const note =
           row.status === "issued"
             ? [row.issuedEntryDate ? `발행 ${monthDay(row.issuedEntryDate)}` : null, row.issuedAmountKrw != null ? formatKrw(row.issuedAmountKrw) : null].filter(Boolean).join(" · ") || null
@@ -277,11 +278,11 @@ export function IssueRequestTable({
             {note ? <span className={styles.requestStatusNote}>{note}</span> : null}
             {props.canLink && editableWidth && row.status === "requested" && row.version !== undefined && !row.dirty ? (
               linked ? (
-                <Button variant="tertiary" disabled={saveLocked} aria-label={`희망 ${day} 발행 줄 빼기`} onClick={() => onUnlink(row.id)}>
+                <Button variant="tertiary" disabled={saveLocked} aria-label={`${where} 발행 줄 빼기`} onClick={() => onUnlink(row.id)}>
                   발행 줄 빼기
                 </Button>
               ) : (
-                <Button variant="tertiary" disabled={saveLocked} aria-label={`희망 ${day} 발행 줄로`} onClick={() => onLink(row.id)}>
+                <Button variant="tertiary" disabled={saveLocked} aria-label={`${where} 발행 줄로`} onClick={() => onLink(row.id)}>
                   발행 줄로
                 </Button>
               )

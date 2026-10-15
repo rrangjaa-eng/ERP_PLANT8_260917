@@ -197,3 +197,24 @@ test.describe("거래처 계좌 칸 정렬 · 해제 실패 줄", () => {
     }
   });
 });
+
+// 06.5 OI-9 · SP-65-3(06.5-03 재현 2026-10-14 · 06.5-08 처리): 주소로 직접 연 수정 패널은 연 요소가 없다 — 저장 뒤 포커스가 화면 제목이 아니라 그 행 「수정」 링크로 간다.
+test.describe("거래처 딥링크 수정 뒤 포커스 (06.5 OI-9)", () => {
+  test("`?editId=`를 주소로 직접 열어 저장하면 닫히며 그 행의 「수정」으로 포커스가 간다", async ({ page }) => {
+    const name = `딥링크-${randomUUID().slice(0, 8)}`;
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name, normalizedName: `딥링크-${randomUUID()}` });
+    try {
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await loginAsSysadmin(page);
+      await page.goto(`/admin/vendors?editId=${vendor.id}`);
+      const dialog = page.locator('dialog[data-ui="side-panel"]');
+      await expect(dialog).toBeVisible();
+      await dialog.getByLabel("이름").fill(`${name}-고침`);
+      await dialog.getByRole("button", { name: "거래처 수정" }).click();
+      await expect(dialog).toHaveCount(0);
+      await expect(page.locator("tr", { hasText: `${name}-고침` }).getByRole("link", { name: "수정" })).toBeFocused();
+    } finally {
+      await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
+    }
+  });
+});

@@ -339,7 +339,8 @@ export const restoreExpenseDraftAction = authedActionClient
 
 // 06-15(S2 · AS1) — 일괄 지급. 입력은 모달을 연 순간의 스냅숏(행 id · version · 기대 지급 총액 · 이체액 · 차이 사유)과 지급일 하나(O-3).
 // 지급 총액 · 역산 칸은 받지 않는다 — expectedPayableKrw는 낡았는지 가리는 비교값이다. 지급일은 05 isCalendarDate · DATE_FORMAT_ERROR(E-20 —
-// 달력에 없는 날짜 · 0000년이 DB까지 가지 않는다), 미래 날짜는 허용(Q6). 행 수 1~200(T-06-75). 판정(권한 · 보임 · 게이트)은 도메인.
+// 달력에 없는 날짜 · 0000년이 DB까지 가지 않는다). 행 수 1~200(T-06-75). 판정(권한 · 보임 · 게이트)은 도메인 — 미래 지급일은 도메인이 묶음 맨 앞에서
+// FuturePayDateError로 거절하고(06.5 D-6518), 이 화면이 이미 쓰는 오류 길(serverError → 대화상자 rejection)로 돌아가 대화상자가 지급일 칸 오류로 세운다.
 // 06.5-06(EP2-C6): 행 스냅숏 스키마 — 일괄 지급과 이체 파일이 같이 쓴다.
 const paymentSnapshotRowShape = z.object({
   expenseId: expenseIdSchema,

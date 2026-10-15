@@ -50,6 +50,12 @@
   font-size: var(--text-aux);
 }
 
+/* 06.5 D-6514 · SP-65-1(UI-SPEC V10): page 배치 폼 안 `KvList`는 묶음 — 위 선 + 선 아래 `--s-3`. 패널 배치는 범위 밖(gap 0 · 래퍼가 dl을 직계에서 뗀다). */
+.form:not(.panel) > dl:not(:first-child) {
+  border-top: var(--line-w) solid var(--border-row);
+  padding-top: var(--s-3);
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;

@@ -36,6 +36,45 @@
   outline-offset: var(--focus-offset);
 }
 
+/* 06.5-08(D-6508 · UI-SPEC V1) 검색 칸 — 프로젝트 목록 `.textInput`과 같은 선언(다른 라우트 CSS 모듈 import 금지). `.select`를 텍스트 칸에 덮어쓰지 않는다. */
+.textInput {
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--field-h, var(--control-h));
+  padding: 0 var(--s-2);
+  border: var(--line-w) solid var(--border-control);
+  border-radius: var(--radius-control);
+  background: var(--surface-base);
+  color: var(--text-strong);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+}
+
+.textInput::placeholder {
+  color: var(--text-faint);
+}
+
+.textInput[aria-invalid="true"] {
+  border-color: var(--status-danger);
+}
+
+.textInput:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+/* 검색 라벨 감싸개 — PC(≥700)는 짧은 칸 폭(줄이 모자라면 max-width 100%), 폰(<700)은 줄 전폭. */
+.searchLabel {
+  width: var(--field-w-short);
+}
+
+@media (max-width: 699.98px) {
+  .searchLabel {
+    flex: 1 1 100%;
+    width: auto;
+  }
+}
+
 /* 합계 줄 — 제목 aux · muted, 금액 body 700(UI-SPEC Typography · projects 합계 줄 선례). */
 .totals {
   display: flex;

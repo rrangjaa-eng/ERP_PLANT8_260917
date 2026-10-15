@@ -22,6 +22,8 @@ import {
   PaymentNotFoundError,
   previewPayable,
   saveScheduledPayDate,
+  FUTURE_PAY_DATE,
+  FuturePayDateError,
 } from "@/domain/payments";
 import { GateBlockedError } from "@/domain/rules/gate";
 import { AMOUNT_HIDDEN, TRANSFER_FRACTION, TRANSFER_NOT_NUMBER, TRANSFER_NOT_POSITIVE } from "@/domain/payments/action-row";
@@ -90,7 +92,7 @@ async function payableNow(payer: Viewer, doc: ApprovedExpense, payDate = seoulTo
 }
 
 describe("지급 완료 — 이체액 · 차이 사유 · 미래 지급일 (06-04 Task 1)", () => {
-  it("지급일 달력 검증 — 달력에 없는 날짜는 05 DATE_FORMAT_ERROR 입력 오류로 DB까지 가지 않고, 미래 지급일은 통과한다(E-20 · Q6)", async () => {
+  it("지급일 달력 검증 — 달력에 없는 날짜는 05 DATE_FORMAT_ERROR 입력 오류로 DB까지 가지 않고, 미래 지급일은 지급일 칸 오류로 거절된다(E-20 · 06.5 D-6518)", async () => {
     const payer = await makePayer();
     const doc = await approvedExpenseWithoutEvidence(await setupExpenseProject());
     session.viewer = payer;
@@ -109,10 +111,36 @@ describe("지급 완료 — 이체액 · 차이 사유 · 미래 지급일 (06-0
     expect(after.payments).toHaveLength(0);
     expect([after.version, after.logCount]).toEqual([before.version, before.logCount]);
 
+    // 06.5 D-6518: 미래 지급일은 지급 완료 · 미리보기 모두 지급일 칸 오류(UI-SPEC V13 문구) — 지급 기록 · version · 로그 그대로.
     const future = addDays(seoulToday(), 10);
     const preview = await previewPayableAction({ expenseId: doc.expenseId, payDate: future });
-    expect(preview?.validationErrors).toBeUndefined();
-    expect(preview?.data?.payDate).toBe(future);
+    expect(preview?.validationErrors?.payDate?._errors).toEqual([FUTURE_PAY_DATE]);
+    expect(preview?.serverError).toBeUndefined();
+    expect(preview?.data).toBeUndefined();
+    const paid = await completeExpensePaymentAction({ expenseId: doc.expenseId, payDate: future, expectedPayableKrw: 1, version: doc.version, transferKrw: 1 });
+    expect(paid?.validationErrors?.payDate?._errors).toEqual([FUTURE_PAY_DATE]);
+    expect(paid?.serverError).toBeUndefined();
+    const refused = await snapshot(doc.expenseId);
+    expect(refused.payments).toHaveLength(0);
+    expect([refused.version, refused.logCount]).toEqual([before.version, before.logCount]);
+  });
+
+  // 06.5 D-6518 · UI-SPEC V13 「대상」: 지급 예정일은 막지 않는다 — 예정일 힌트(payDate = scheduledPayDate = 미래, payment-section ScheduleField 꼴)와
+  // 예정일만 미래인 미리보기는 그대로 지급 총액을 돌려준다.
+  it("예정일 힌트 미리보기(지급일 = 예정일 = 40일 뒤) · 예정일만 40일 뒤인 미리보기는 막히지 않는다(D-6518 대상 아님)", async () => {
+    const payer = await makePayer();
+    const doc = await approvedExpenseWithoutEvidence(await setupExpenseProject());
+    session.viewer = payer;
+    const today = seoulToday();
+    const later = addDays(today, 40);
+
+    const hint = await previewPayableAction({ expenseId: doc.expenseId, payDate: later, scheduledPayDate: later });
+    expect(hint?.validationErrors).toBeUndefined();
+    expect(hint?.data?.payDate).toBe(later);
+    expect(hint?.data?.payableKrw).toEqual(expect.any(Number));
+    const scheduledOnly = await previewPayableAction({ expenseId: doc.expenseId, payDate: today, scheduledPayDate: later });
+    expect(scheduledOnly?.validationErrors).toBeUndefined();
+    expect(scheduledOnly?.data?.payDate).toBe(today);
   });
 
   it("이체액 ≠ 지급 총액 · 사유 없음 → `차이 사유 없음 · 사유 적기`로 거부되고 지급 기록이 없다", async () => {
@@ -126,17 +154,17 @@ describe("지급 완료 — 이체액 · 차이 사유 · 미래 지급일 (06-0
     expect((await snapshot(doc.expenseId)).payments).toHaveLength(0);
   });
 
-  it("이체액이 달라도 사유와 함께 미래 지급일로 저장되고 · 차이 = 이체액 − 지급 총액 · 비용 기준 값(공급가액)은 그대로다(D-605 · Q6)", async () => {
+  it("이체액이 달라도 사유와 함께 과거 지급일로 저장되고 · 차이 = 이체액 − 지급 총액 · 비용 기준 값(공급가액)은 그대로다(D-605 · 06.5 D-6518)", async () => {
     const payer = await makePayer();
     const doc = await approvedExpenseWithoutEvidence(await setupExpenseProject());
     session.viewer = payer;
-    const future = addDays(seoulToday(), 10);
-    const payable = await payableNow(payer, doc, future);
+    const past = addDays(seoulToday(), -10);
+    const payable = await payableNow(payer, doc, past);
     const before = await snapshot(doc.expenseId);
 
     const result = await completeExpensePaymentAction({
       expenseId: doc.expenseId,
-      payDate: future,
+      payDate: past,
       expectedPayableKrw: payable,
       version: doc.version,
       transferKrw: payable - 3_300,
@@ -149,7 +177,7 @@ describe("지급 완료 — 이체액 · 차이 사유 · 미래 지급일 (06-0
     expect(after.payments).toHaveLength(1);
     const [payment] = after.payments;
     expect([payment?.payDate, payment?.transferKrw, payment?.payableKrw, payment?.diffKrw, payment?.diffReason]).toEqual([
-      future,
+      past,
       payable - 3_300,
       payable,
       -3_300,
@@ -183,6 +211,58 @@ describe("지급 완료 — 이체액 · 차이 사유 · 미래 지급일 (06-0
     expect([preview.payableKrw, preview.diffKrw]).toEqual([payable, 1_200]);
     const after = await snapshot(doc.expenseId);
     expect([after.version, after.logCount, after.payments.length]).toEqual([before.version, before.logCount, 0]);
+  });
+});
+
+// 06.5 D-6518(UI-SPEC V13): 실제 지급일은 오늘(KST)까지 — 판정은 KST 날짜 글자(seoulToday(now))라 UTC 자정에 잘리지 않는다.
+describe("지급일 오늘까지 (06.5 D-6518)", () => {
+  // KST 2026-10-13 23:59 = UTC 14:59 · KST 2026-10-14 00:00 = UTC 2026-10-13 15:00(UTC 날짜는 아직 10-13).
+  const kstLateNight = new Date("2026-10-13T14:59:00Z");
+  const kstMidnight = new Date("2026-10-13T15:00:00Z");
+
+  async function payOn(payer: Viewer, doc: ApprovedExpense, payDate: string, now: Date) {
+    const preview = await previewPayable(payer, { expenseId: doc.expenseId, payDate }, { now });
+    if (preview.payableKrw === undefined || preview.payableKrw === null) throw new Error("지급 총액을 셈할 수 없는 문서");
+    return completeExpensePayment(payer, { expenseId: doc.expenseId, payDate, expectedPayableKrw: preview.payableKrw, version: doc.version }, { now });
+  }
+
+  it("KST 10-13 23:59에 지급일 10-14 → FuturePayDateError · 지급 기록 0 · 문서 version · 로그 그대로", async () => {
+    const payer = await makePayer();
+    const doc = await approvedExpenseWithoutEvidence(await setupExpenseProject());
+    const before = await snapshot(doc.expenseId);
+
+    const error = await completeExpensePayment(payer, { expenseId: doc.expenseId, payDate: "2026-10-14", expectedPayableKrw: 1, version: doc.version }, { now: kstLateNight }).catch(
+      (caught: unknown) => caught,
+    );
+    expect(error).toBeInstanceOf(FuturePayDateError);
+    expect((error as Error).message).toBe(FUTURE_PAY_DATE);
+    await expect(previewPayable(payer, { expenseId: doc.expenseId, payDate: "2026-10-14" }, { now: kstLateNight })).rejects.toBeInstanceOf(FuturePayDateError);
+    const after = await snapshot(doc.expenseId);
+    expect(after.payments).toHaveLength(0);
+    expect([after.version, after.logCount]).toEqual([before.version, before.logCount]);
+  });
+
+  it("KST 10-13 23:59에 지급일 = 오늘(10-13) → 지급된다", async () => {
+    const payer = await makePayer();
+    const doc = await approvedExpenseWithoutEvidence(await setupExpenseProject());
+    const paid = await payOn(payer, doc, "2026-10-13", kstLateNight);
+    expect(paid.payDate).toBe("2026-10-13");
+    expect((await snapshot(doc.expenseId)).payments).toHaveLength(1);
+  });
+
+  it("KST 10-13 23:59에 과거 지급일(10-01) → 지급된다", async () => {
+    const payer = await makePayer();
+    const doc = await approvedExpenseWithoutEvidence(await setupExpenseProject());
+    const paid = await payOn(payer, doc, "2026-10-01", kstLateNight);
+    expect(paid.payDate).toBe("2026-10-01");
+  });
+
+  it("KST 자정 경계 — now = 2026-10-13T15:00:00Z(KST 10-14 00:00)에 지급일 10-14 → 지급된다(UTC 날짜로 자르면 미래로 오판)", async () => {
+    const payer = await makePayer();
+    const doc = await approvedExpenseWithoutEvidence(await setupExpenseProject());
+    const paid = await payOn(payer, doc, "2026-10-14", kstMidnight);
+    expect(paid.payDate).toBe("2026-10-14");
+    expect((await snapshot(doc.expenseId)).payments).toHaveLength(1);
   });
 });
 

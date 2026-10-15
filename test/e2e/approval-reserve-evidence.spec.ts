@@ -86,7 +86,7 @@ function uniquePdf(name = "고객 승인 메일.pdf"): { name: string; mimeType:
 }
 
 test.describe("차수 승인 증빙 (06-16 Task 1 — D-56 · S21)", () => {
-  test("승인 증빙 한 장: 승인된 최신 차수 동작 칸 3차 `승인 증빙` → 펼침 제목 포커스 → PDF 업로드 → 파일 행 · 3차 `승인 증빙 1`", async ({ page }) => {
+  test("승인 증빙 한 장: 승인된 최신 차수 동작 칸 3차 `승인 증빙` → 펼침 제목 포커스 → PDF 업로드 → 파일 행 · 3차 `승인 증빙 1` · 두 번째 → 승인 증빙 2 (G-06-J)", async ({ page }) => {
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
     const project = await makeProject({ teamId: team.id, pmUserId: pm.userId });
@@ -111,6 +111,12 @@ test.describe("차수 승인 증빙 (06-16 Task 1 — D-56 · S21)", () => {
     const row = page.locator('[data-ui="attachments"] li').filter({ hasText: pdf.name });
     await expect(row).toBeVisible({ timeout: UPLOAD_WAIT });
     await expect(table.getByRole("button", { name: "1차 승인 증빙 1", exact: true })).toHaveText("승인 증빙 1", { timeout: UPLOAD_WAIT });
+
+    // G-06-J(UAT 45) — 두 번째 업로드 뒤에도 새로 고침 없이 3차 라벨 개수가 파일 행 수를 따른다(1 → 2).
+    const second = uniquePdf("고객 승인 메일 2.pdf");
+    await page.getByTestId("attachments-input").setInputFiles(second);
+    await expect(page.locator('[data-ui="attachments"] li').filter({ hasText: second.name })).toBeVisible({ timeout: UPLOAD_WAIT });
+    await expect(table.getByRole("button", { name: "1차 승인 증빙 2", exact: true })).toHaveText("승인 증빙 2", { timeout: UPLOAD_WAIT });
   });
 });
 

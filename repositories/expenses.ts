@@ -585,7 +585,8 @@ export type ExpenseSearchField = "number" | "content" | "projectName" | "lineIte
 
 export function expenseSearchCondition(viewer: Viewer, query: string, fields: readonly ExpenseSearchField[]): SQL {
   void viewer; // 4계층 규약(plant8/repository-viewer-param) 자리 — 범위 판정은 호출 쪽 scopeCondition이 한다.
-  const like = `%${query}%`;
+  // Codex P2: 사용자 글자의 %·_를 와일드카드가 아니라 글자로 찾는다(LIKE 기본 이스케이프는 백슬래시).
+  const like = `%${query.replace(/[\\%_]/g, "\\$&")}%`;
   const parts: Record<ExpenseSearchField, SQL> = {
     number: sql`${expenses.number} ilike ${like}`,
     // 내용은 팀 비용 행(프로젝트 · 견적 줄 없음)에서만 화면에 보인다 — 보이는 글자만 찾는다(/review P3-1).

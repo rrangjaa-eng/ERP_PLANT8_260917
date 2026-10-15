@@ -124,6 +124,19 @@ describe("지출결의 목록 검색(06.5 D-6508)", () => {
     expect(ids(await search(viewer, term))).toEqual([w.vendorDoc.expenseId]);
   }, 60_000);
 
+  it("검색어의 %·_·\\는 와일드카드가 아니라 글자로 찾는다(Codex P2)", async () => {
+    const w = await world();
+    const viewer = await searcher({ value: true, amount: true, person: true });
+    await db.update(expenses).set({ content: "할인 A%B_C\\D" }).where(eq(expenses.id, w.vendorDoc.expenseId));
+    await db.update(expenses).set({ content: "할인 AxByCzD" }).where(eq(expenses.id, w.payeeDoc.expenseId));
+
+    expect(ids(await search(viewer, "_"))).toEqual([w.vendorDoc.expenseId]);
+    expect(ids(await search(viewer, "%"))).toEqual([w.vendorDoc.expenseId]);
+    expect(ids(await search(viewer, "A%B"))).toEqual([w.vendorDoc.expenseId]);
+    expect(ids(await search(viewer, "B_C"))).toEqual([w.vendorDoc.expenseId]);
+    expect(ids(await search(viewer, "C\\D"))).toEqual([w.vendorDoc.expenseId]);
+  }, 60_000);
+
   it("보는 범위 밖 문서는 번호를 정확히 넣어도 0건이다(T-06.5-61)", async () => {
     const w = await world();
     const vendor = await insertVendor(SYSTEM_VIEWER, { name: "타팀거래처", normalizedName: `타팀-${randomUUID()}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount() });

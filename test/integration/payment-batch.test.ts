@@ -6,7 +6,7 @@ import { expenseEvidenceReviews, expensePayments, expenses, files, quoteLines, u
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertVisibility } from "@/repositories/permissions";
 import { ForbiddenError } from "@/domain/permissions/can";
-import { cancelExpensePayment, completeExpensePayment, getPaymentView, PayableChangedError, PaymentConflictError, previewPayable, saveScheduledPayDate } from "@/domain/payments";
+import { cancelExpensePayment, completeExpensePayment, FUTURE_PAY_DATE, FuturePayDateError, getPaymentView, PayableChangedError, PaymentConflictError, previewPayable, saveScheduledPayDate } from "@/domain/payments";
 import { BATCH_ROW_FAILED, batchRowOutcome, completePaymentsBatch } from "@/domain/payments/batch";
 import { getEvidenceConfirmView, listPaidPayments, listPaymentTargets, nextUnreviewedTarget, paidViewAllowed, parsePaymentEvidenceFilter, parsePayReturn, PAYMENT_EVIDENCE_FILTERS, sumSelectedTransfers } from "@/domain/payments/targets";
 import { DIFF_REASON_REQUIRED, EVIDENCE_UNCONFIRMED } from "@/domain/payments/action-row";
@@ -19,7 +19,7 @@ import { listExpenses } from "@/domain/expenses/list";
 import { changeExpensePayeeUser, createExpenseFromLines } from "@/domain/expenses";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { loadTaxRates } from "@/domain/money/tax";
-import { addHistorizedValue, cancelHistorizedValue } from "@/domain/settings/registry";
+import { addHistorizedValue } from "@/domain/settings/registry";
 import { PAYMENT_METHOD_EVIDENCE_PAIRS, TAX_VAT_RATE } from "@/domain/settings/keys";
 import { seedCodeItem } from "@/repositories/code-tables";
 import { upsertSimpleValue } from "@/repositories/settings";
@@ -250,10 +250,11 @@ describe("막힘 · 재판정 · 스냅숏 (06-15 Task 2)", () => {
     await confirmEvidence(payer, { expenseId: b.expenseId, version: b.version });
     const c = await approvedExpenseWithoutEvidence(fx, fx.lines.split);
     const today = seoulToday();
-    const payDate = addDays(today, 40);
+    const payDate = addDays(today, -1);
     await db.update(expenses).set({ evidenceType: await vatEvidenceType("test_vat_paydate", "payment_date") }).where(eq(expenses.id, c.expenseId));
-    await addHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, { effectiveFrom: addDays(today, 30), value: 0.12 });
-    // 화면이 오늘 기준으로 본 지급 총액(목록 값)을 들고, 고른 지급일은 세율이 바뀐 뒤.
+    // 06.5 D-6518(지급일 오늘까지): 세율 행 적용일 = 오늘 · 지급일 = 어제 — 정리는 매 테스트 TRUNCATE + 시드(오늘 적용 행은 취소 불가).
+    await addHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, { effectiveFrom: today, value: 0.12 });
+    // 화면이 오늘 기준으로 본 지급 총액(목록 값 — 새 세율)을 들고, 고른 지급일은 세율이 바뀌기 전.
     const rows = [await snapshotOf(payer, b), await snapshotOf(payer, c)];
     await attachEvidence(fx.pm, b.expenseId);
 
@@ -628,83 +629,73 @@ describe("이체액 편집 · 서버 합 (06-17 Task 1)", () => {
 
 // ── 06-17 Task 2 — 지급일 세율로 바뀐 지급 총액 · 재시도 · 지급 뒤 정본(E-22) ─────────
 
-// 원천징수 · 부가세 세율이 바뀌는 미래 지급일(Q6) — 기준일이 지급일인 증빙 종류 문서 하나와 보통 문서 하나. 세율 바뀜은 테스트 뒤 되돌린다.
+// 세율이 바뀌는 날을 사이에 둔 지급일 — 기준일이 지급일인 증빙 종류 문서 하나와 보통 문서 하나. 06.5 D-6518(지급일 오늘까지) 뒤로는
+// 세율 행 적용일 = 오늘 · 지급일 = 어제(둘 다 오늘 이하): 스냅숏(오늘 기준 — 새 세율)과 지급일(어제 — 옛 세율)이 세율 행의 양쪽에 선다.
+// 오늘 적용 행은 cancelHistorizedValue가 지우지 못한다(FutureCancelOnlyError) — 정리는 통합 공통 setup의 매 테스트 TRUNCATE + 시드가 한다.
 async function taxBoundary(payer: Viewer, label: string) {
   const fx = await setupExpenseProject();
   const shifted = await approvedExpenseWithoutEvidence(fx, fx.lines.withVendor);
   const plain = await approvedExpenseWithoutEvidence(fx, fx.lines.split);
   const today = seoulToday();
-  const rateFrom = addDays(today, 30);
-  const payDate = addDays(today, 40);
+  const payDate = addDays(today, -1);
   await db.update(expenses).set({ evidenceType: await vatEvidenceType(label, "payment_date") }).where(eq(expenses.id, shifted.expenseId));
-  await addHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, { effectiveFrom: rateFrom, value: 0.12 });
+  await addHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, { effectiveFrom: today, value: 0.12 });
   // 화면이 오늘 기준으로 본 지급 총액(목록 값)을 든 스냅숏.
   const rows = [await snapshotOf(payer, shifted), await snapshotOf(payer, plain)];
-  return { shifted, plain, payDate, rateFrom, rows };
+  return { shifted, plain, payDate, rows };
 }
 
 describe("지급일 재계산 막힘 · 재시도 (06-17 Task 2)", () => {
-  it("세율 경계 지급일 → 막힘 + 새 값 — 미래 지급일로 지급 총액이 바뀐 행은 처리되지 않고 newPayableKrw · 이유, 다른 행은 처리", async () => {
+  it("세율 경계 지급일 → 막힘 + 새 값 — 지급일 세율로 지급 총액이 바뀐 행은 처리되지 않고 newPayableKrw · 이유, 다른 행은 처리", async () => {
     const payer = await makePayer();
-    const { shifted, plain, payDate, rateFrom, rows } = await taxBoundary(payer, "test_vat_boundary1");
-    try {
-      const result = await completePaymentsBatch(payer, { payDate, rows });
-      expect(result.processedIds).toEqual([plain.expenseId]);
-      expect(result.blocked).toEqual([
-        { expenseId: shifted.expenseId, reason: `지급일 ${payDate.slice(5)} 기준 지급 총액 바뀜 · 이체액 확인`, newPayableKrw: await payableNow(payer, shifted, payDate), selectable: true, selectableReason: null },
-      ]);
-      expect(await livePayments(shifted.expenseId)).toHaveLength(0);
-    } finally {
-      await cancelHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, rateFrom);
-    }
+    const { shifted, plain, payDate, rows } = await taxBoundary(payer, "test_vat_boundary1");
+    const result = await completePaymentsBatch(payer, { payDate, rows });
+    expect(result.processedIds).toEqual([plain.expenseId]);
+    expect(result.blocked).toEqual([
+      { expenseId: shifted.expenseId, reason: `지급일 ${payDate.slice(5)} 기준 지급 총액 바뀜 · 이체액 확인`, newPayableKrw: await payableNow(payer, shifted, payDate), selectable: true, selectableReason: null },
+    ]);
+    expect(result.blocked[0]?.newPayableKrw).not.toBe(rows[0]?.expectedPayableKrw);
+    expect(await livePayments(shifted.expenseId)).toHaveLength(0);
   });
 
   it("새 값 재시도 → 처리 — 합 요청이 같은 지급일로 셈한 rowStates 지급 총액 = newPayableKrw(차이 0)이고, 그 값으로 다시 보내면 같은 이유로 막히지 않는다", async () => {
     const payer = await makePayer();
-    const { shifted, payDate, rateFrom, rows } = await taxBoundary(payer, "test_vat_boundary2");
-    try {
-      const first = await completePaymentsBatch(payer, { payDate, rows });
-      const newPayable = first.blocked[0]?.newPayableKrw;
-      if (typeof newPayable !== "number") throw new Error("새 지급 총액 없음");
+    const { shifted, payDate, rows } = await taxBoundary(payer, "test_vat_boundary2");
+    const first = await completePaymentsBatch(payer, { payDate, rows });
+    const newPayable = first.blocked[0]?.newPayableKrw;
+    if (typeof newPayable !== "number") throw new Error("새 지급 총액 없음");
 
-      const sum = await sumSelectedTransfers(payer, { seq: 1, rows: [{ id: shifted.expenseId }], payDate });
-      const [shiftedDoc] = await db.select({ quoteLineId: expenses.quoteLineId }).from(expenses).where(eq(expenses.id, shifted.expenseId));
-      expect(sum.rowStates).toEqual([
-        { id: shifted.expenseId, selectable: true, version: await versionOf(shifted.expenseId), payableKrw: newPayable, quoteLineId: shiftedDoc?.quoteLineId, prepaid: false },
-      ]);
-      expect(sum.diffs).toEqual({ [shifted.expenseId]: 0 });
+    const sum = await sumSelectedTransfers(payer, { seq: 1, rows: [{ id: shifted.expenseId }], payDate });
+    const [shiftedDoc] = await db.select({ quoteLineId: expenses.quoteLineId }).from(expenses).where(eq(expenses.id, shifted.expenseId));
+    expect(sum.rowStates).toEqual([
+      { id: shifted.expenseId, selectable: true, version: await versionOf(shifted.expenseId), payableKrw: newPayable, quoteLineId: shiftedDoc?.quoteLineId, prepaid: false },
+    ]);
+    expect(sum.diffs).toEqual({ [shifted.expenseId]: 0 });
 
-      const retry = await completePaymentsBatch(payer, {
-        payDate,
-        rows: [{ expenseId: shifted.expenseId, expenseVersion: await versionOf(shifted.expenseId), expectedPayableKrw: newPayable }],
-      });
-      expect(retry.processedIds).toEqual([shifted.expenseId]);
-      expect(retry.blocked).toEqual([]);
-    } finally {
-      await cancelHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, rateFrom);
-    }
+    const retry = await completePaymentsBatch(payer, {
+      payDate,
+      rows: [{ expenseId: shifted.expenseId, expenseVersion: await versionOf(shifted.expenseId), expectedPayableKrw: newPayable }],
+    });
+    expect(retry.processedIds).toEqual([shifted.expenseId]);
+    expect(retry.blocked).toEqual([]);
   });
 
-  it("지급된 문서 보기 = 지급 기록(E-22) — 미래 지급일 · 새 지급 총액으로 처리된 문서의 getPaymentView는 지급 기록 값(오늘 기준 재계산이 아님)", async () => {
+  it("지급된 문서 보기 = 지급 기록(E-22) — 어제 지급일 · 새 지급 총액으로 처리된 문서의 getPaymentView는 지급 기록 값(오늘 기준 재계산이 아님)", async () => {
     const payer = await makePayer();
-    const { shifted, payDate, rateFrom, rows } = await taxBoundary(payer, "test_vat_boundary3");
-    try {
-      const first = await completePaymentsBatch(payer, { payDate, rows });
-      const newPayable = first.blocked[0]?.newPayableKrw;
-      if (typeof newPayable !== "number") throw new Error("새 지급 총액 없음");
-      const transfer = newPayable - 3_300;
-      await completePaymentsBatch(payer, {
-        payDate,
-        rows: [{ expenseId: shifted.expenseId, expenseVersion: await versionOf(shifted.expenseId), expectedPayableKrw: newPayable, transferKrw: transfer, diffReason: "이체 수수료" }],
-      });
-      const todayPayable = rows[0]?.expectedPayableKrw;
-      expect(todayPayable).not.toBe(newPayable);
+    const { shifted, payDate, rows } = await taxBoundary(payer, "test_vat_boundary3");
+    const first = await completePaymentsBatch(payer, { payDate, rows });
+    const newPayable = first.blocked[0]?.newPayableKrw;
+    if (typeof newPayable !== "number") throw new Error("새 지급 총액 없음");
+    const transfer = newPayable - 3_300;
+    await completePaymentsBatch(payer, {
+      payDate,
+      rows: [{ expenseId: shifted.expenseId, expenseVersion: await versionOf(shifted.expenseId), expectedPayableKrw: newPayable, transferKrw: transfer, diffReason: "이체 수수료" }],
+    });
+    const todayPayable = rows[0]?.expectedPayableKrw;
+    expect(todayPayable).not.toBe(newPayable);
 
-      const view = await getPaymentView(payer, shifted.expenseId);
-      expect(view).toMatchObject({ payDate, payableKrw: newPayable, transferKrw: transfer, diffKrw: -3_300, diffReason: "이체 수수료" });
-    } finally {
-      await cancelHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, rateFrom);
-    }
+    const view = await getPaymentView(payer, shifted.expenseId);
+    expect(view).toMatchObject({ payDate, payableKrw: newPayable, transferKrw: transfer, diffKrw: -3_300, diffReason: "이체 수수료" });
   });
 });
 
@@ -1132,5 +1123,42 @@ describe("지급 대상 · 지급 완료 목록의 직원 지급처 이름 (06.5
     expect(hidden).toBeDefined();
     expect(hidden && "account" in hidden).toBe(false);
     expect(Object.keys((await getPaymentView(payerOnly, doc.expenseId)) ?? {})).not.toContain("account");
+  });
+});
+
+// 06.5 D-6518(UI-SPEC V13 · 옛 O: server/src/payments.ts:855-866): 일괄 지급은 날짜가 묶음에 하나라 미래 지급일이면 묶음 맨 앞에서 한 번 거절한다 —
+// 한 건도 처리하지 않는다(부분 상태 없음). 같은 행을 오늘로 보내면 처리된다.
+describe("지급일 오늘까지 — 일괄 (06.5 D-6518)", () => {
+  it("내일 지급일 · 3건 → 반복 전에 FuturePayDateError · 처리 0 · 지급 기록 0 / 오늘로 같은 3건 → 3건 처리", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    const docs = await approvedMany(fx, await extraLines(fx, 3), false);
+    const rows = await Promise.all(docs.map((doc) => snapshotOf(payer, doc)));
+    const tomorrow = addDays(seoulToday(), 1);
+
+    const error = await caught(completePaymentsBatch(payer, { payDate: tomorrow, rows }));
+    expect(error).toBeInstanceOf(FuturePayDateError);
+    expect((error as Error).message).toBe(FUTURE_PAY_DATE);
+    for (const doc of docs) {
+      expect(await livePayments(doc.expenseId)).toHaveLength(0);
+      expect(await versionOf(doc.expenseId)).toBe(doc.version);
+    }
+
+    const result = await completePaymentsBatch(payer, { payDate: seoulToday(), rows });
+    expect(result.processed).toBe(3);
+    expect(result.blocked).toEqual([]);
+  });
+
+  it("액션 — 내일 지급일은 서버 오류 `미래 지급일 · 오늘까지 날짜 고르기`(대화상자가 지급일 칸 오류로 세우는 글자) · 지급 0건", async () => {
+    const payer = await makePayer();
+    const { a, b } = await twoPayable();
+    const rows = [await snapshotOf(payer, a), await snapshotOf(payer, b)];
+    session.viewer = payer;
+
+    const result = await completePaymentsBatchAction({ payDate: addDays(seoulToday(), 1), rows });
+    expect(result?.data).toBeUndefined();
+    expect(result?.serverError).toBe(FUTURE_PAY_DATE);
+    expect(await livePayments(a.expenseId)).toHaveLength(0);
+    expect(await livePayments(b.expenseId)).toHaveLength(0);
   });
 });

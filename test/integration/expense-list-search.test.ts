@@ -2,17 +2,24 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { db } from "@/db/client";
-import { users } from "@/db/schema";
+import { expenses, users } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createTeamExpenseDraft, createExpenseFromLines, listExpenseFormOptions, saveExpenseDraft } from "@/domain/expenses";
 import { listExpenses, normalizeListQuery, searchFieldsFor } from "@/domain/expenses/list";
+import { approveDocument } from "@/domain/approvals";
+import { ForbiddenError } from "@/domain/permissions/can";
+import { previewPayable } from "@/domain/payments";
+import { completePaymentsBatch } from "@/domain/payments/batch";
+import { listPaidPayments, listPaymentTargets } from "@/domain/payments/targets";
+import { changeExpensePayeeUser } from "@/domain/expenses";
 import { seoulToday } from "@/lib/dates";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertVendor } from "@/repositories/vendors";
 import { makePerson } from "./approvals-fixtures";
 import { setupExpenseProject, submitReadyDraft, testVendorAccount, type ExpenseFixture } from "./fixtures/expenses";
+import { approvedExpenseWithoutEvidence, makePaymentManager, setEvidenceRequired } from "./fixtures/payments";
 
 // 06.5-08 Task 1(D-6508 · G20 · EP1-13 · EP2-D5 · D2): 지출결의 목록 검색 `q` — 보는 범위와 AND, 열마다 DTO 정보 항목(expense.value · person.value),
 // 0건이어도 hasAny · drafterColumn은 검색과 무관. 팀 이름은 대상이 아니다(ND-9).
@@ -192,4 +199,116 @@ describe("검색어 정규화 · 보기별 검색 열(EP3-D6 · D2)", () => {
     expect(searchFieldsFor("list", { expenseValue: true, personValue: false })).not.toContain("payeeUserName");
     expect(searchFieldsFor("list", { expenseValue: false, personValue: false })).toEqual([]);
   });
+});
+
+// ── Task 2: 지급 대상 · 지급 완료 보기(같은 조건 함수) ─────────────────────────────────
+
+async function approvedLineDoc(fx: ExpenseFixture, lineId: string, payeeUserId?: string): Promise<{ expenseId: string; number: string; version: number }> {
+  const expenseId = (await createExpenseFromLines(fx.pm, { lineIds: [lineId] })).created[0]?.expenseId ?? "";
+  if (payeeUserId) await changeExpensePayeeUser(fx.pm, { expenseId, userId: payeeUserId, expectedVersion: 1 });
+  const submitted = await submitReadyDraft(fx.pm, expenseId, { now: NOW });
+  if (submitted.kind !== "submitted") throw new Error("제출 실패");
+  const first = await approveDocument(fx.lead, { instanceId: submitted.instanceId, expectedVersion: submitted.version });
+  const final = await approveDocument(fx.ceo, { instanceId: submitted.instanceId, expectedVersion: first.version });
+  if (final.status !== "approved") throw new Error(`결재 통과 안 됨: ${final.status}`);
+  const [row] = await db.select({ version: expenses.version }).from(expenses).where(eq(expenses.id, expenseId));
+  return { expenseId, number: submitted.number, version: row?.version ?? 0 };
+}
+
+async function payer(info: { value: boolean; amount: boolean; person: boolean }, team: string | null = null): Promise<Viewer> {
+  const base = await makePaymentManager(`지급자-${randomUUID().slice(0, 4)}`);
+  if (!base.roleId) throw new Error("계급 없음");
+  await upsertVisibility(SYSTEM_VIEWER, { roleId: base.roleId, infoItem: "expense.value", visible: info.value });
+  await upsertVisibility(SYSTEM_VIEWER, { roleId: base.roleId, infoItem: "expense.amount", visible: info.amount });
+  await upsertVisibility(SYSTEM_VIEWER, { roleId: base.roleId, infoItem: "person.value", visible: info.person });
+  if (!team) return base;
+  // 보는 범위 팀 — 다른 팀 문서는 범위 밖이다.
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `팀지급-${randomUUID().slice(0, 8)}`, workScope: "team", viewScope: "team" });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "view", allowed: true });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.payments", action: "write", allowed: true });
+  for (const infoItem of ["expense.value", "expense.amount", "person.value"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+  return makePerson(`팀지급-${randomUUID().slice(0, 4)}`, role.id, team);
+}
+
+function targetIds(list: Awaited<ReturnType<typeof listPaymentTargets>>): string[] {
+  return list.groups.flatMap((group) => group.rows.map((row) => row.id ?? "")).sort();
+}
+
+describe("지급 대상 · 지급 완료 검색(06.5 D-6508 · Task 2)", () => {
+  // 문서 A(프로젝트 문서 · 거래처 스테이지원) · 문서 B(직원 지급처 김직원) 둘 다 결재 통과. 문서 A는 오늘 지급 완료로 만든다.
+  async function paidWorld() {
+    await setEvidenceRequired(false);
+    const fx = await setupExpenseProject();
+    const staff = await makePerson("김직원", DEFAULT_ROLE_ID, "기획1팀");
+    await db.update(users).set(testVendorAccount()).where(eq(users.id, staff.id));
+    const a = await approvedExpenseWithoutEvidence(fx, fx.lines.withVendor);
+    const b = await approvedLineDoc(fx, fx.lines.split, staff.id);
+    return { fx, a, b };
+  }
+
+  async function payDocA(w: Awaited<ReturnType<typeof paidWorld>>): Promise<void> {
+    const manager = await payer({ value: true, amount: true, person: true });
+    const payDate = seoulToday();
+    const preview = await previewPayable(manager, { expenseId: w.a.expenseId, payDate });
+    if (preview.payableKrw === undefined || preview.payableKrw === null) throw new Error("지급 총액을 셈할 수 없는 문서");
+    const result = await completePaymentsBatch(manager, { payDate, rows: [{ expenseId: w.a.expenseId, expenseVersion: w.a.version, expectedPayableKrw: preview.payableKrw }] });
+    if (result.processed !== 1) throw new Error(`지급 안 됨: ${JSON.stringify(result.blocked)}`);
+  }
+
+  it("지급 대상: 번호 · 거래처 · 직원 지급처로 그 문서만, 건수 · 합계가 따르고 0건 검색이어도 hasAny는 참이다(EP1-13)", async () => {
+    const w = await paidWorld();
+    const manager = await payer({ value: true, amount: true, person: true });
+
+    expect(targetIds(await listPaymentTargets(manager, { q: w.a.number }))).toEqual([w.a.expenseId]);
+    expect(targetIds(await listPaymentTargets(manager, { q: ` ${w.b.number} ` }))).toEqual([w.b.expenseId]);
+    expect(targetIds(await listPaymentTargets(manager, { q: "스테이지" }))).toEqual([w.a.expenseId]);
+    expect(targetIds(await listPaymentTargets(manager, { q: "김직원" }))).toEqual([w.b.expenseId]);
+    const one = await listPaymentTargets(manager, { q: w.a.number });
+    expect(one.total?.count).toBe(1);
+    expect((await listPaymentTargets(manager, {})).total?.count).toBe(2);
+
+    const none = await listPaymentTargets(manager, { q: "없는검색어" });
+    expect(targetIds(none)).toEqual([]);
+    expect(none.hasAny).toBe(true);
+  }, 90_000);
+
+  it("지급 대상: 보는 범위 밖 문서는 번호를 정확히 넣어도 0건이다(T-06.5-61)", async () => {
+    const w = await paidWorld();
+    const outsider = await payer({ value: true, amount: true, person: true }, "경영관리팀");
+
+    expect(targetIds(await listPaymentTargets(outsider, { q: w.a.number }))).toEqual([]);
+    expect(targetIds(await listPaymentTargets(await payer({ value: true, amount: true, person: true }), { q: w.a.number }))).toEqual([w.a.expenseId]);
+  }, 90_000);
+
+  it("지급 대상: person.value 꺼진 지급 권한자는 직원 지급처 이름으로 0건이고 같은 문서를 번호로는 찾는다(EP2-D5)", async () => {
+    const w = await paidWorld();
+    const noPerson = await payer({ value: true, amount: true, person: false });
+
+    expect(targetIds(await listPaymentTargets(noPerson, { q: "김직원" }))).toEqual([]);
+    expect(targetIds(await listPaymentTargets(noPerson, { q: w.b.number }))).toEqual([w.b.expenseId]);
+  }, 90_000);
+
+  it("기안자 이름에만 맞는 검색어는 지급 대상 · 지급 완료 0건, 같은 검색어로 목록 보기는 그 문서다(D2)", async () => {
+    const w = await paidWorld();
+    await payDocA(w);
+    const manager = await payer({ value: true, amount: true, person: true });
+
+    expect(targetIds(await listPaymentTargets(manager, { q: "박서연" }))).toEqual([]);
+    expect((await listPaidPayments(manager, { q: "박서연" })).total?.count).toBe(0);
+    expect(ids(await search(manager, "박서연"))).toContain(w.b.expenseId);
+  }, 90_000);
+
+  it("지급 완료: 허용 viewer는 q로 그 지급만 보고, 거부 계급은 q가 있어도 ForbiddenError다(D1)", async () => {
+    const w = await paidWorld();
+    await payDocA(w);
+    const manager = await payer({ value: true, amount: true, person: true });
+
+    const found = await listPaidPayments(manager, { q: w.a.number });
+    expect(found.groups.flatMap((group) => group.rows.map((row) => row.id))).toEqual([w.a.expenseId]);
+    expect(found.total?.count).toBe(1);
+    expect((await listPaidPayments(manager, { q: "스테이지" })).total?.count).toBe(1);
+    expect((await listPaidPayments(manager, { q: w.b.number })).total?.count).toBe(0);
+    expect((await listPaidPayments(manager, {})).total?.count).toBe(1);
+    await expect(listPaidPayments(w.fx.pm, { q: w.a.number })).rejects.toBeInstanceOf(ForbiddenError);
+  }, 90_000);
 });

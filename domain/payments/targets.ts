@@ -6,7 +6,7 @@ import { gate } from "@/domain/rules/gate";
 import "@/domain/rules/register";
 import { diffKrw, moneyFromRow, sumKrw } from "@/domain/money";
 import { EXPENSE_DOCUMENT_KIND, visibleExpenseScope, type VisibleExpenseScope } from "@/domain/expenses/access";
-import { groupExpenses } from "@/domain/expenses/list";
+import { buildExpenseSearch, groupExpenses, normalizeListQuery } from "@/domain/expenses/list";
 import { pickTaxDates, type TaxLinePart } from "@/domain/expenses/tax";
 import { TAX_UNAVAILABLE } from "@/domain/expenses/gate";
 import { PAID_PAYMENT_ROW_DTO_SPEC, PAYMENT_TARGET_ROW_DTO_SPEC, type PaidPaymentRowDto, type PaymentTargetRowDto } from "@/domain/expenses/dto";
@@ -145,14 +145,16 @@ export type PaymentTargetDeps = Partial<Pick<PaymentSharedDeps, "loadTaxRates">>
 // 쪽 자르기 전 단계 전부(E-31) — 권한 · 공유 읽기 · 보임 · 판정 · 증빙 필터. 06-20 · 06-23이 쪽 없이 한 번 부른다.
 export async function listAllPaymentTargets(
   viewer: Viewer,
-  input: { team?: string | null; evidence?: PaymentEvidenceFilter | null },
+  input: { team?: string | null; evidence?: PaymentEvidenceFilter | null; q?: string | null },
   deps?: PaymentTargetDeps,
 ): Promise<JudgedPaymentTarget[]> {
   await assertPayer(viewer);
   const today = deps?.today ?? seoulToday();
   const shared = deps?.shared ?? (await loadPaymentShared(viewer, deps?.loadTaxRates ? { loadTaxRates: deps.loadTaxRates } : undefined));
   const teamId = input.team && UUID_SHAPE.test(input.team) ? input.team : null;
-  const rows = await visibleRows(viewer, await listPaymentTargetRows(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, teamId }), today);
+  // 06.5 D-6508: 검색 열은 지급 대상 보기의 DTO 열(기안자 이름 없음 — D2) × 정보 항목. 보는 범위는 visibleRows가 그 뒤에 거른다(AND).
+  const search = await buildExpenseSearch(viewer, "paymentTargets", input.q);
+  const rows = await visibleRows(viewer, await listPaymentTargetRows(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, teamId, ...(search ? { search } : {}) }), today);
   const judged = await judgeTargets(viewer, rows, { shared, today, amountVisible: await visible(viewer, "expense.amount") });
   const filter = PAYMENT_EVIDENCE_FILTERS.find((candidate) => candidate.value === input.evidence);
   return filter ? judged.filter((target) => target.bar.row === filter.row) : judged;
@@ -217,13 +219,13 @@ export async function projectPaymentTargets(
 
 export async function listPaymentTargets(
   viewer: Viewer,
-  input: { team?: string | null; evidence?: PaymentEvidenceFilter | null; page?: string | number },
+  input: { team?: string | null; evidence?: PaymentEvidenceFilter | null; q?: string | null; page?: string | number },
   deps?: PaymentTargetDeps & { pageSize?: number },
 ): Promise<PaymentTargetList> {
   const today = deps?.today ?? seoulToday();
   await assertPayer(viewer);
   const shared = deps?.shared ?? (await loadPaymentShared(viewer, deps?.loadTaxRates ? { loadTaxRates: deps.loadTaxRates } : undefined));
-  const all = await listAllPaymentTargets(viewer, { team: input.team, evidence: input.evidence }, { ...deps, today, shared });
+  const all = await listAllPaymentTargets(viewer, { team: input.team, evidence: input.evidence, q: input.q }, { ...deps, today, shared });
   const amountVisible = await visible(viewer, "expense.amount");
   const pageSize = deps?.pageSize ?? LIST_PAGE_SIZE;
   const pageCount = pageCountFrom(all.length, pageSize);
@@ -236,7 +238,8 @@ export async function listPaymentTargets(
     ...(group.tone ? { tone: group.tone } : {}),
     rows: group.rows.map((item) => item.dto),
   }));
-  const filtered = Boolean(input.evidence) || Boolean(input.team);
+  // EP1-13: 검색도 필터다 — 검색으로 0건이어도 「필터 없이 하나라도 있나」를 q 없이 다시 센다.
+  const filtered = Boolean(input.evidence) || Boolean(input.team) || normalizeListQuery(input.q) !== null;
   const hasAny = all.length > 0 || (filtered && (await listAllPaymentTargets(viewer, {}, { ...deps, today, shared })).length > 0);
   return {
     groups,
@@ -483,7 +486,7 @@ export type PaidPaymentList = {
 
 export async function listPaidPayments(
   viewer: Viewer,
-  input: { team?: string | null; month?: string | null; page?: string | number },
+  input: { team?: string | null; month?: string | null; q?: string | null; page?: string | number },
   deps?: { today?: string; pageSize?: number },
 ): Promise<PaidPaymentList> {
   const today = deps?.today ?? seoulToday();
@@ -493,7 +496,9 @@ export async function listPaidPayments(
   // 통과한 viewer는 모두 전부라 거르는 갈래를 두지 않는다(팀 비용 포함, EP1-12).
   const teamId = input.team && UUID_SHAPE.test(input.team) ? input.team : null;
   const month = input.month && MONTH_SHAPE.test(input.month) ? input.month : today.slice(0, 7);
-  const all = await listPaidPaymentRows(viewer, { teamId, month });
+  // 06.5 D-6508: 통과한 viewer는 모두 전부를 보므로(카드 ③) 검색은 그 지급만 좁힌다 — 열은 지급 완료 DTO의 열(기안자 이름 없음 — D2) × 정보 항목.
+  const search = await buildExpenseSearch(viewer, "paid", input.q);
+  const all = await listPaidPaymentRows(viewer, { teamId, month, ...(search ? { search } : {}) });
   const monthRows = await listPaidMonthRows(viewer, { teamId });
   const months = [...new Set([today.slice(0, 7), ...monthRows.map((row) => row.month)])].sort().reverse();
   const amountVisible = await visible(viewer, "expense.amount");

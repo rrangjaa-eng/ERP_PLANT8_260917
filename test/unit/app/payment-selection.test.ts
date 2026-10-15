@@ -148,6 +148,8 @@ describe("되살리기 · 다른 쪽 id 유지 · 보관 키 (06-17 Task 3)", ()
     expect(selectionKey({ status: "지급 대상" })).toBe(base);
     expect(selectionKey({ status: "지급 대상", evidence: "payable" })).not.toBe(base);
     expect(selectionKey({ status: "지급 대상", team: "t1" })).not.toBe(base);
+    // 06.5-08(DM-3 · OI-11): 검색어도 키에 든다 — 검색하면 보관한 선택 · 이체액 편집을 되살리지 않는다.
+    expect(selectionKey({ status: "지급 대상", q: "0004" })).not.toBe(base);
   });
 
   it("보관 — 행 id · 사람이 적은 값 · 쪽만 쓰고 읽으며, 같은 보기의 다른 필터 키는 지운다", () => {

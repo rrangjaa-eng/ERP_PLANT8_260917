@@ -97,21 +97,23 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
   if (paidAllowed && firstParam(params.status) === PAID_VIEW) {
     const team = firstParam(params.team) ?? "";
     const month = firstParam(params.month) ?? "";
-    const key = [team, month, firstParam(params.page) ?? ""].join("|");
+    const q = normalizeListQuery(firstParam(params.q));
+    const key = [team, month, q ?? "", firstParam(params.page) ?? ""].join("|");
     return (
       <Suspense key={key} fallback={<PaidSkeleton />}>
-        <PaidPayments viewer={session.viewer} views={views} canPay={canPay} team={team} month={month} page={firstParam(params.page)} />
+        <PaidPayments viewer={session.viewer} views={views} canPay={canPay} team={team} month={month} q={q} page={firstParam(params.page)} />
       </Suspense>
     );
   }
   if (isPaymentTargetView(params.status, canPay)) {
     const team = firstParam(params.team) ?? "";
     const evidence = parsePaymentEvidenceFilter(firstParam(params.evidence));
-    // 필터 · 쪽마다 새로 마운트한다 — 선택 · 이유 줄 · 결과 글자는 필터를 바꾸면 비운다(S1).
-    const key = [team, evidence ?? "", firstParam(params.page) ?? ""].join("|");
+    const q = normalizeListQuery(firstParam(params.q));
+    // 필터 · 쪽마다 새로 마운트한다 — 선택 · 이유 줄 · 결과 글자는 필터를 바꾸면 비운다(S1). 검색어도 같다(DM-3 · OI-11 — 검색하면 고른 행 · 이체액 편집을 비운다).
+    const key = [team, evidence ?? "", q ?? "", firstParam(params.page) ?? ""].join("|");
     return (
       <Suspense key={key} fallback={<PaymentTargetsSkeleton />}>
-        <PaymentTargets viewer={session.viewer} views={views} team={team} evidence={evidence} page={firstParam(params.page)} />
+        <PaymentTargets viewer={session.viewer} views={views} team={team} evidence={evidence} q={q} page={firstParam(params.page)} />
       </Suspense>
     );
   }
@@ -200,18 +202,20 @@ async function PaymentTargets({
   views,
   team,
   evidence,
+  q,
   page,
 }: {
   viewer: Viewer;
   views: string[];
   team: string;
   evidence: ReturnType<typeof parsePaymentEvidenceFilter>;
+  q: string | null;
   page: string | undefined;
 }) {
   let loaded;
   try {
     const [list, teams, canExportTransferFile] = await Promise.all([
-      listPaymentTargets(viewer, { team, evidence, page }),
+      listPaymentTargets(viewer, { team, evidence, q, page }),
       listPaymentTeamOptions(viewer),
       canExportBankTransferFile(viewer),
     ]);
@@ -227,9 +231,11 @@ async function PaymentTargets({
   const query: Record<string, string> = { status: PAYMENT_TARGET_VIEW };
   if (team) query.team = team;
   if (evidence) query.evidence = evidence;
+  if (q) query.q = q;
   return (
     <PaymentTargetsScreen
       views={views}
+      searchValue={q ?? ""}
       selects={[
         { name: "team", label: "팀", value: teams.some((option) => option.value === team) ? team : "", options: [{ value: "", label: "팀 전체" }, ...teams] },
         {
@@ -275,6 +281,7 @@ async function PaidPayments({
   canPay,
   team,
   month,
+  q,
   page,
 }: {
   viewer: Viewer;
@@ -282,15 +289,16 @@ async function PaidPayments({
   canPay: boolean;
   team: string;
   month: string;
+  q: string | null;
   page: string | undefined;
 }) {
   let loaded: [Awaited<ReturnType<typeof listPaidPayments>>, Awaited<ReturnType<typeof listPaidTeamOptions>>];
   try {
-    loaded = await Promise.all([listPaidPayments(viewer, { team, month, page }), listPaidTeamOptions(viewer)]);
+    loaded = await Promise.all([listPaidPayments(viewer, { team, month, q, page }), listPaidTeamOptions(viewer)]);
   } catch (error) {
     // C13 — 본문 자리에 한 줄 + `다시 시도`. 보기 select는 남겨 다른 보기로 옮겨 갈 수 있다.
     log.error("지급 완료 로드 실패", { error: error instanceof Error ? error.name : "unknown" });
-    return <ListScreen title="지출결의" filters={<StatusFilter value={PAID_VIEW} views={views} />} empty={<PaidLoadError />}>{null}</ListScreen>;
+    return <ListScreen title="지출결의" filters={<StatusFilter value={PAID_VIEW} views={views} searchValue={q ?? ""} />} empty={<PaidLoadError />}>{null}</ListScreen>;
   }
   const [list, teams] = loaded;
   const rows: PaidScreenRow[] = list.groups.flatMap((group) => group.rows.map((row) => ({ ...row, id: row.id ?? "", group: group.label })));
@@ -298,22 +306,29 @@ async function PaidPayments({
   const query: Record<string, string> = { status: PAID_VIEW };
   if (teamValue) query.team = teamValue;
   query.month = list.month;
+  if (q) query.q = q;
   return (
     <ListScreen
       title="지출결의"
       // 「Empty — 지급 완료」 — 이 달 · 팀에 지급 완료가 없으면 합계 줄 · 쪽 없이 한 줄 + 지급 권한자에게만 `지급 대상 보기`.
       empty={
         rows.length === 0 ? (
-          <ListEmpty
-            message="지급 완료한 건이 없습니다"
-            {...(canPay ? { action: { label: "지급 대상 보기", href: `/expenses?${new URLSearchParams({ status: PAYMENT_TARGET_VIEW })}` } } : {})}
-          />
+          q ? (
+            // 06.5 D-6508(EP1-13): 검색으로 0건 — 필터 줄 · 검색어는 그대로 서고 `필터 지우기`가 q · 팀 · 월을 기본값으로 되돌린다.
+            <ListEmpty message="조건에 맞는 건이 없습니다" action={{ label: "필터 지우기", href: `/expenses?${new URLSearchParams({ status: PAID_VIEW })}` }} />
+          ) : (
+            <ListEmpty
+              message="지급 완료한 건이 없습니다"
+              {...(canPay ? { action: { label: "지급 대상 보기", href: `/expenses?${new URLSearchParams({ status: PAYMENT_TARGET_VIEW })}` } } : {})}
+            />
+          )
         ) : undefined
       }
       filters={
         <StatusFilter
           value={PAID_VIEW}
           views={views}
+          searchValue={q ?? ""}
           selects={[
             { name: "team", label: "팀", value: teamValue, options: [{ value: "", label: "팀 전체" }, ...teams] },
             { name: "month", label: "월", value: list.month, options: list.months.map((value) => ({ value, label: value })) },

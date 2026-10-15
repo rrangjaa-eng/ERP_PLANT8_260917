@@ -614,7 +614,6 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
   function readSubtotals() {
     const ticket = ++subtotalTicketRef.current;
     setSubtotalLines([]);
-    const rowById = new Map(chosenRows.map((row) => [row.id, row]));
     const sent = transferRequestRows(chosen, chosenRows, selection.edits);
     if (sent.length === 0) return;
     previewPayees({ rows: sent })
@@ -624,8 +623,8 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
           response.data.flatMap((group) => {
             // 투영 DTO는 칸이 빠질 수 있다(정보 항목 숨김) — 합이나 건수가 없으면 그 행을 세우지 않는다.
             if (group.count === undefined || group.count < 2 || group.totalKrw === undefined) return [];
-            const first = (group.expenseIds ?? []).map((id) => rowById.get(id)).find((row) => row !== undefined);
-            return [`${first?.vendorName ?? first?.payeeUserName ?? "—"} ${formatKrw(group.totalKrw)} · ${group.count}건`];
+            // 지급처 이름은 서버 묶음 값 — 지금 쪽 밖 문서만 있는 지급처도 이름이 선다(검토 P3-2). 투영으로 빠지면 `—`(SYSTEM §2-4).
+            return [`${group.vendorName ?? group.payeeUserName ?? "—"} ${formatKrw(group.totalKrw)} · ${group.count}건`];
           }),
         );
       })

@@ -260,11 +260,22 @@ export async function exportBankTransferFile(
 
 // 06.5-06(V14 · SP-65-7 · R-6): `지급 완료` 대화상자의 지급처 소계 — 행 고유 거르기(중복 · 재판정 · 계좌이체만 · 지급처 · 이체액)를 지난 행을
 // 지급처 키로 묶은 합. 계좌 판정 · 복호화 · 기록이 없는 읽기다 — 지급 게이트가 아니라 계좌 문제가 있는 지급처도 든다.
-export type TransferPayeeSubtotalDto = { payeeKey: string; expenseIds: string[]; totalKrw: number; count: number };
+// 지급처 이름은 서버가 싣는다(검토 P3-2) — 화면 행에서 찾으면 지금 쪽 밖 문서만 있는 지급처가 `—`로 선다. 항목은 지급 대상 DTO와 같다
+// (거래처 이름 expense.value · 직원 이름 person.value). 묶음의 지급처 쪽 칸만 채우고 다른 쪽은 null이다.
+export type TransferPayeeSubtotalDto = {
+  payeeKey: string;
+  vendorName: string | null;
+  payeeUserName: string | null;
+  expenseIds: string[];
+  totalKrw: number;
+  count: number;
+};
 
 const TRANSFER_PAYEE_SUBTOTAL_DTO_SPEC: DtoSpec<TransferPayeeSubtotalDto, TransferPayeeSubtotalDto> = {
   fields: [
     { key: "payeeKey", from: "payeeKey", infoItem: "expense.value" },
+    { key: "vendorName", from: "vendorName", infoItem: "expense.value" },
+    { key: "payeeUserName", from: "payeeUserName", infoItem: "person.value" },
     { key: "expenseIds", from: "expenseIds", infoItem: "expense.value" },
     { key: "totalKrw", from: "totalKrw", infoItem: "expense.amount" },
     { key: "count", from: "count", infoItem: "expense.value" },
@@ -291,8 +302,16 @@ export async function summarizeTransferPayees(viewer: Viewer, input: { rows: rea
     // 직원 계좌 권한이 없으면 직원 지급처 묶음(`p:{userId}`)을 내지 않는다 — 이체 파일에서도 그 행은 막힌다(V5 8번 · 검토 P3-4).
     if (payee.kind === "user" && !canPersonAccounts) continue;
     const payeeKey = payeeKeyOf({ expenseId: row.expenseId, vendorId: payee.kind === "vendor" ? payee.id : null, payeeUserId: payee.kind === "user" ? payee.id : null });
-    const group = groups.get(payeeKey) ?? { payeeKey, expenseIds: [], totalKrw: 0, count: 0 };
-    groups.set(payeeKey, { payeeKey, expenseIds: [...group.expenseIds, row.expenseId], totalKrw: sumKrw([group.totalKrw, transferKrw]), count: group.count + 1 });
+    const target = judged.get(row.expenseId)?.row;
+    const group = groups.get(payeeKey) ?? {
+      payeeKey,
+      vendorName: payee.kind === "vendor" ? (target?.vendorName ?? null) : null,
+      payeeUserName: payee.kind === "user" ? (target?.payeeUserName ?? null) : null,
+      expenseIds: [],
+      totalKrw: 0,
+      count: 0,
+    };
+    groups.set(payeeKey, { ...group, expenseIds: [...group.expenseIds, row.expenseId], totalKrw: sumKrw([group.totalKrw, transferKrw]), count: group.count + 1 });
   }
   return projectMany(viewer, [...groups.values()], TRANSFER_PAYEE_SUBTOTAL_DTO_SPEC);
 }

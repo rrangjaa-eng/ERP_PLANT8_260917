@@ -437,6 +437,26 @@ describe("신한 이체 파일 — 막힌 건(06.5 Task 2)", () => {
     expect(allowedGroups.map((group) => group.payeeKey)).toEqual([`p:${userId}`, `v:${fx.stageOneId}`]);
   });
 
+  it("소계 묶음은 지급처 이름(거래처 vendorName · 직원 payeeUserName)을 싣는다 — 지금 쪽 밖 문서만 있는 지급처도 이름이 선다(검토 P3-2)", async () => {
+    const fx = await setupExpenseProject();
+    const lines = await linesFor(fx, 2);
+    const { doc: personDoc, userId } = await employeeDoc(fx, "김소계이름", take(lines, 0));
+    const vendorDoc = await approvedExpenseWithoutEvidence(fx, take(lines, 1));
+    const [vendor] = await db.select({ name: vendors.name }).from(vendors).where(eq(vendors.id, fx.stageOneId));
+    const viewer = await makeExporter("소계이름");
+    if (!viewer.roleId) throw new Error("계급 없음");
+    await upsertPermission(SYSTEM_VIEWER, { roleId: viewer.roleId, menu: "admin.people", action: "view", allowed: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: viewer.roleId, infoItem: "person.value", visible: true });
+
+    const groups = await summarizeTransferPayees(viewer, { rows: [await snapshotOf(viewer, personDoc), await snapshotOf(viewer, vendorDoc)] });
+    expect(groups).toEqual([
+      expect.objectContaining({ payeeKey: `p:${userId}`, vendorName: null, payeeUserName: "김소계이름" }),
+      expect.objectContaining({ payeeKey: `v:${fx.stageOneId}`, vendorName: vendor?.name, payeeUserName: null }),
+    ]);
+    const fields = DTO_REGISTRY.find((entry) => entry.name === "TransferPayeeSubtotalDto")?.fields ?? [];
+    expect(fields.find((field) => field.key === "payeeUserName")?.infoItem).toBe("person.value");
+  });
+
   it("이체 파일 DTO 명세가 직원 지급처 줄의 정보 항목(person.value)을 적는다 — 내보내기 축 누수 스캔이 본다(검토 P3-5)", () => {
     const fields = DTO_REGISTRY.find((entry) => entry.name === "BankTransferRowDto")?.fields ?? [];
     expect(fields.flatMap((field) => (typeof field.infoItem === "string" ? [field.infoItem] : [...field.infoItem]))).toContain("person.value");
@@ -555,10 +575,12 @@ describe("신한 이체 파일 — 지급처 합치기 · 소계(06.5 Task 3)", 
     if (!a || !b || !d) throw new Error("스냅숏 없음");
     const before = await db.select({ seq: actionLog.seq }).from(actionLog).where(eq(actionLog.actorId, payer.id));
 
+    const nameOf = async (id: string) => (await db.select({ name: vendors.name }).from(vendors).where(eq(vendors.id, id)))[0]?.name;
     const groups = await summarizeTransferPayees(payer, { rows: snapshots });
+    // 직원 이름 칸(person.value)은 이 계급에 보이지 않아 투영에서 빠진다.
     expect(groups).toEqual([
-      { payeeKey: `v:${fx.stageOneId}`, expenseIds: [first.expenseId, second.expenseId], totalKrw: a.expectedPayableKrw + b.expectedPayableKrw, count: 2 },
-      { payeeKey: `v:${noAccountVendor}`, expenseIds: [lonely.expenseId], totalKrw: d.expectedPayableKrw, count: 1 },
+      { payeeKey: `v:${fx.stageOneId}`, vendorName: await nameOf(fx.stageOneId), expenseIds: [first.expenseId, second.expenseId], totalKrw: a.expectedPayableKrw + b.expectedPayableKrw, count: 2 },
+      { payeeKey: `v:${noAccountVendor}`, vendorName: await nameOf(noAccountVendor), expenseIds: [lonely.expenseId], totalKrw: d.expectedPayableKrw, count: 1 },
     ]);
     const after = await db.select({ seq: actionLog.seq }).from(actionLog).where(eq(actionLog.actorId, payer.id));
     expect(after).toHaveLength(before.length);

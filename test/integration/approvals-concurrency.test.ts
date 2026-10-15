@@ -153,7 +153,9 @@ async function stepRows(instanceId: string) {
     .select({ round: approvalRoutes.round, stepIndex: approvalSteps.stepIndex, actedBy: approvalSteps.actedBy, isFallback: approvalSteps.isFallback, action: approvalSteps.action })
     .from(approvalSteps)
     .innerJoin(approvalRoutes, eq(approvalRoutes.id, approvalSteps.routeId))
-    .where(eq(approvalRoutes.instanceId, instanceId));
+    .where(eq(approvalRoutes.instanceId, instanceId))
+    // 순서 없이 읽으면 UPDATE로 옮겨진 행이 뒤로 와서 전후 비교가 우연히 갈린다 — 회차 · 단계 순으로 고정한다.
+    .orderBy(approvalRoutes.round, approvalSteps.stepIndex);
 }
 
 async function actedCountOf(instanceId: string): Promise<number> {

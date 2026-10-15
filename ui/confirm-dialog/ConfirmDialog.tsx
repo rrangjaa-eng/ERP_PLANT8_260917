@@ -58,6 +58,11 @@ type ConfirmDialogBaseProps = {
    */
   attachments?: ReactNode;
   /**
+   * 06.5-06(SP-65-7 · §7-17) — 소계 칸(0~1). 첨부 보기 칸 아래 · 결과 줄 위에 그린다. 행(lines)이 하나 이상이고 loading이 아닐 때만 —
+   * 결과 줄(0~3)과 따로 선다. 행 셋 높이를 넘으면 칸 안만 스크롤하고, 칸은 Tab으로 닿아 키보드로 스크롤한다(label = 접근 이름).
+   */
+  subtotals?: { label: string; lines: ReactNode[] };
+  /**
    * 06-29(SP-7 상태 계약 ⑴) — 열 때 값을 읽어 오는 동안. 부제 · 첨부 칸 · 결과 줄 자리에 `…` 하나, 본문 `aria-busy`, 1차 `aria-disabled`
    * (`aria-describedby` → `…`). 누르기 · Enter · Ctrl+Enter는 아무 일도 하지 않는다.
    */
@@ -137,7 +142,7 @@ export function initialFocusTarget(args: {
 }
 
 export function ConfirmDialog(props: ConfirmDialogProps) {
-  const { open, onClose, title, subtitle, resultLines, evidenceField, secondaryLabel, attachments, loading = false, refreshKeepsOpen = false } = props;
+  const { open, onClose, title, subtitle, resultLines, evidenceField, secondaryLabel, attachments, subtotals, loading = false, refreshKeepsOpen = false } = props;
   const primary = props.primary;
   const options = props.options;
 
@@ -323,6 +328,18 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
         {attachments && !loading ? <div className={styles.attachments} data-ui="confirm-attachments">
             {attachments}
           </div> : null}
+
+        {subtotals && subtotals.lines.length > 0 && !loading ? (
+          <div className={styles.subtotals} data-ui="confirm-subtotals" tabIndex={0} role="group" aria-label={subtotals.label}>
+            <ul>
+              {subtotals.lines.map((line, index) => (
+                <li key={index}>
+                  {line}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
 
         {resultLines && resultLines.length > 0 && !loading ? (
           <div className={styles.resultLines}>

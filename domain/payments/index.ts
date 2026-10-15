@@ -405,9 +405,23 @@ export async function judgeLockedPayment(input: {
   );
   if (payable.payableKrw !== input.expectedPayableKrw) throw new PayableChangedError(payable.payableKrw, input.payDate);
   // 차이 사유(D-605) — 차이 0이면 사유를 저장하지 않는다. 비용 기준 칸(증빙 금액 · 공급가액)은 어느 갈래도 쓰지 않는다.
+  const judged = judgeTransferAmount({ payableKrw: payable.payableKrw, transferKrw: input.transferKrw, diffReason: input.diffReason });
+  if (!judged.ok) throw judged.reason === DIFF_REASON_REQUIRED ? new DiffReasonRequiredError() : new UserFacingError(judged.reason);
+  return { payable, paymentMethod: locked.paymentMethod, diffReason: judged.diffReason };
+}
+
+// 06.5-06(EP2-C5): 이체액 칸 · 차이 사유 판정 — 지급(judgeLockedPayment)과 이체 파일(domain/payments/bank-transfer.ts)이 같은 순수 함수를 쓴다.
+// 이체액이 없으면 지급 총액을 보내고, 지급 총액과 다르면 다듬은 사유가 있어야 한다(문구는 기존 그대로).
+export type TransferAmountJudgement = { ok: true; transferKrwToSend: number; diffReason: string | null } | { ok: false; reason: string };
+
+export function judgeTransferAmount(input: { payableKrw: number; transferKrw?: number; diffReason?: string | null }): TransferAmountJudgement {
+  const problem = input.transferKrw === undefined ? null : transferKrwProblem(input.transferKrw);
+  if (problem) return { ok: false, reason: problem };
+  const transferKrwToSend = input.transferKrw ?? input.payableKrw;
   const reason = input.diffReason?.trim() ?? "";
-  if (payable.diffKrw !== 0 && reason === "") throw new DiffReasonRequiredError();
-  return { payable, paymentMethod: locked.paymentMethod, diffReason: payable.diffKrw === 0 ? null : reason };
+  const diff = diffKrw(transferKrwToSend, input.payableKrw);
+  if (diff !== 0 && reason === "") return { ok: false, reason: DIFF_REASON_REQUIRED };
+  return { ok: true, transferKrwToSend, diffReason: diff === 0 ? null : reason };
 }
 
 // 06-04 검토 P3-4 — 액션 zod를 거치지 않는 호출(06-15 일괄 · 06-17)도 이체액 칸 문구로 거부한다(DB 캐스트 · CHECK 오류 500 대신).

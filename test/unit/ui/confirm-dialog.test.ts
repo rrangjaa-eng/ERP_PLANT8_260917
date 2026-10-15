@@ -336,3 +336,66 @@ describe("ConfirmDialog.module.css — 폰 시트 최대 높이", () => {
     expect(code).not.toMatch(/\d\s*vh\b/);
   });
 });
+
+// 06.5-06(SP-65-7 · SYSTEM §7-17) — 소계 칸: 첨부 보기 칸 아래 · 결과 줄 위, 행 셋 높이 상한 · 칸 안 스크롤. 결과 줄(0~3)과 따로 선다.
+describe("ConfirmDialog — 소계 칸 (06.5-06 · SP-65-7)", () => {
+  const primary = { label: "지급 완료 3건", onConfirm: () => {} };
+  const lines = ["스테이지원 50,000 · 2건", "빛나라 30,000 · 2건", "김직원 20,000 · 2건"];
+
+  it("lines가 있으면 data-ui=confirm-subtotals 칸 하나 · tabindex 0 · role group · 접근 이름 · li 셋, 결과 줄 칸 밖에서 부제 → 첨부 → 소계 → 결과 줄 차례", () => {
+    const html = render({
+      title: "지급 완료",
+      subtitle: "표본 부제",
+      attachments: createElement("p", {}, "파일 가"),
+      subtotals: { label: "지급처 소계", lines },
+      resultLines: ["견적 줄 2줄 잠김", "선결제 1건 · 증빙 기한 10-20"],
+      primary,
+    });
+    const boxes = html.match(/<div[^>]*data-ui="confirm-subtotals"[^>]*>/g) ?? [];
+    expect(boxes).toHaveLength(1);
+    const box = boxes[0] ?? "";
+    expect(box).toContain('tabindex="0"');
+    expect(box).toContain('role="group"');
+    expect(box).toContain('aria-label="지급처 소계"');
+    expect(box).toContain(`class="${styles.subtotals}"`);
+    const start = html.indexOf('data-ui="confirm-subtotals"');
+    const inner = html.slice(start, html.indexOf("</div>", start));
+    expect(inner.match(/<li/g)).toHaveLength(3);
+    expect(inner).not.toContain(styles.resultLines);
+    const order = ["표본 부제", "파일 가", 'data-ui="confirm-subtotals"', "견적 줄 2줄 잠김"].map((needle) => html.indexOf(needle));
+    expect(order.every((index) => index >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    const resultStart = html.indexOf(`class="${styles.resultLines}"`);
+    expect(resultStart).toBeGreaterThan(start);
+    for (const line of lines) expect(html.slice(resultStart).includes(line)).toBe(false);
+  });
+
+  it("lines가 비었거나 subtotals가 없거나 loading이면 칸이 없고 같은 렌더의 결과 줄 둘은 그대로", () => {
+    const resultLines = ["견적 줄 2줄 잠김", "선결제 1건 · 증빙 기한 10-20"];
+    for (const props of [{ subtotals: { label: "지급처 소계", lines: [] } }, {}]) {
+      const html = render({ title: "지급 완료", resultLines, primary, ...props });
+      expect(html).not.toContain("confirm-subtotals");
+      expect(html.match(new RegExp(`class="${styles.resultLine}"`, "g"))).toHaveLength(2);
+    }
+    const loading = render({ title: "지급 완료", resultLines, primary, subtotals: { label: "지급처 소계", lines }, loading: true });
+    expect(loading).not.toContain("confirm-subtotals");
+  });
+});
+
+describe("ConfirmDialog.module.css — 소계 칸 (06.5-06 · SP-65-7)", () => {
+  const css = readFileSync(resolve(process.cwd(), "ui/confirm-dialog/ConfirmDialog.module.css"), "utf8");
+  const code = css.replace(/\/\*[\s\S]*?\*\//g, "");
+
+  it(".subtotals는 행 셋 높이 상한 · 칸 안 스크롤 · 첨부 칸과 같은 아래 여백", () => {
+    const rule = /\n\.subtotals\s*\{([^}]*)\}/.exec(code)?.[1] ?? "";
+    expect(rule).toMatch(/max-height:\s*calc\(var\(--text-aux\) \* var\(--lh-table\) \* 3\)/);
+    expect(rule).toMatch(/overflow-y:\s*auto/);
+    expect(rule).toMatch(/margin-bottom:\s*var\(--s-3\)/);
+  });
+
+  it("폰 미디어 블록은 .subtotals를 덮지 않고 새 -- 토큰을 정의하지 않는다", () => {
+    const media = [...code.matchAll(/@media[^{]*\{([\s\S]*?)\n\}/g)].map((match) => match[1] ?? "").join("\n");
+    expect(media).not.toContain(".subtotals");
+    expect(code).not.toMatch(/^\s*--[\w-]+\s*:/m);
+  });
+});

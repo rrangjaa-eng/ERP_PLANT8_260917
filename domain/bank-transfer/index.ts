@@ -1,7 +1,30 @@
+import { sumKrw } from "@/domain/money";
+import { TRANSFER_NOT_NUMBER } from "@/domain/payments/action-row";
+import { isCp949Encodable } from "@/lib/xlsx-server";
+
 // 06.5 D-6504 · D-6506 · REVIEWS DH-3: 신한 대량이체 양식의 판정 몫 — 옛 `app/src/domain/bankTransfer.ts` 이식(O:).
 // 거래처 · 직원 계좌 저장(06.5-04)과 이체 파일 막힌 건(06.5-06 — 행 빌더는 그 플랜이 이 파일에 더한다)이 같은 함수 · 같은
 // 이유 쌍을 쓴다 — 저장 때와 파일 때의 판정이 갈라지지 않게. CP949 길이는 ASCII 1 · 그 외 2바이트(파일은 xlsx 유니코드라
-// 변환표가 필요 없다).
+// 쓰기에는 변환표가 필요 없다 — 못 담는 글자 판정만 lib/xlsx-server.ts의 CP949 표를 본다).
+// 06.5-06: 행 빌더 몫 — 칸 규칙(머리글 9칸 · 시트 · CP949 바이트)은 옛 이식(O:), 출금통장표시내용은 넘으면 자른다(옛은 막음 —
+// 사람이 고칠 수 없는 칸). 막힌 줄은 전부-아니면-전무가 아니라 빼고 나머지를 담는다. DB · 설정 · 암호화는 부르지 않는다 — 복호화는
+// domain/payments/bank-transfer.ts가 하고 평문을 여기로 넘긴다.
+
+/** 양식 머리글 9칸(O: bankTransfer.ts:59-69) — 마지막 칸만 소문자 `key`다(우리가 채우는 시트 쪽이 정본). */
+export const BANK_TRANSFER_HEADER = [
+  "*입금은행",
+  "*입금계좌",
+  "고객관리성명",
+  "*입금액",
+  "출금통장표시내용",
+  "입금통장표시내용",
+  "입금인코드",
+  "비고",
+  "업체사용key",
+] as const;
+
+/** 우리가 채우는 시트 이름(O: bankTransfer.ts:72) — 양식과 같아야 한다. */
+export const BANK_TRANSFER_SHEET = "입력정보";
 
 /** 양식 칸별 바이트 한도(O: bankTransfer.ts:91-101). */
 export const BANK_TRANSFER_MAX_BYTES = {
@@ -178,12 +201,11 @@ export function cp949ByteLength(text: string): number {
   return total;
 }
 
-/** CP949로 담을 수 없는 글자(BMP 밖 — 이모지 · 희귀 한자) — 없으면 빈 배열(O: bankTransfer.ts:322). */
+/** CP949로 담을 수 없는 글자(표에 없는 글자 — 이모지 · 라틴 악센트 · KS X 1001 밖 한자) — 없으면 빈 배열(O: bankTransfer.ts:322는 BMP 밖만 봤다 · Codex P2). */
 export function cp949Unsupported(text: string): string[] {
   const unsupported: string[] = [];
   for (const char of text) {
-    const code = char.codePointAt(0) ?? 0;
-    if (code > 0xffff && !unsupported.includes(char)) unsupported.push(char);
+    if (!isCp949Encodable(char) && !unsupported.includes(char)) unsupported.push(char);
   }
   return unsupported;
 }
@@ -212,4 +234,132 @@ export function holderTextProblem(holder: string): AccountProblem | null {
   if (cp949Unsupported(holder).length > 0) return ACCOUNT_PROBLEMS.holderUnsupported;
   if (cp949ByteLength(holder) > BANK_TRANSFER_MAX_BYTES.holder) return ACCOUNT_PROBLEMS.holderTooLong;
   return null;
+}
+
+/** 계좌번호 글자 · 길이 · 복호화 실패(UI-SPEC V5 14번) — 저장 때 칸 오류에는 없는 파일 몫 이유다. */
+export const ACCOUNT_NUMBER_MALFORMED = { cause: "계좌번호 형식 오류", fix: "계좌 고치기" } as const;
+
+/**
+ * 입금액 글자가 양식 자릿수(15)를 넘음 — 옛 「지급액 자릿수가 15자를 넘습니다」(O: app/src/domain/bankTransfer.ts:496-499). 새 문구 없이 이체액 형식 오류
+ * 문구(TRANSFER_NOT_NUMBER — 지급 판정이 큰 수에 쓰는 것)를 그대로 쓴다. 계좌 칸 문제가 아니라 끝 링크가 없다(이체액 칸이 같은 행에 있다).
+ */
+export const TRANSFER_AMOUNT_TOO_LONG = { text: TRANSFER_NOT_NUMBER } as const;
+
+export type BankTransferProblem = AccountProblem | typeof ACCOUNT_NUMBER_MALFORMED | typeof TRANSFER_AMOUNT_TOO_LONG;
+
+/**
+ * CP949 바이트 한도 이하로 문자 경계에서 자른다(EP2-C8) — 반쪽 글자를 남기지 않는다. 옛은 넘으면 막았다(O: bankTransfer.ts:349-352 ·
+ * :496-499); 출금통장표시내용 · 비고는 사람이 고칠 수 없는 칸이라 자른다.
+ */
+export function truncateCp949(text: string, maxBytes: number): string {
+  let total = 0;
+  let cut = "";
+  for (const char of text) {
+    const size = cp949ByteLength(char);
+    if (total + size > maxBytes) break;
+    total += size;
+    cut += char;
+  }
+  return cut;
+}
+
+/** 파일 한 줄의 재료 — 계좌번호는 복호화한 평문(복호화가 실패했으면 null). key는 막힌 건을 돌려 찾는 열쇠(지급처 키). */
+export type BankTransferSource = { key: string; bank: string; holder: string; accountNumber: string | null; transferKrw: number; memo: string };
+
+/** 양식 9칸 — 전부 글자다(O: bankTransfer.ts:383-403). */
+export type BankTransferRow = {
+  bankCode: string;
+  accountNo: string;
+  holder: string;
+  amount: string;
+  ourNote: string;
+  theirNote: string;
+  payerCode: string;
+  memo: string;
+  key: string;
+};
+
+export type BankTransferBuild = {
+  rows: { key: string; row: BankTransferRow }[];
+  blocked: { key: string; problem: BankTransferProblem }[];
+};
+
+// 계좌 칸 판정(UI-SPEC V5 10~14 차례) — 예금주 없음 → 은행 코드 → 예금주 글자 · 길이(못 담는 글자 먼저, EP2-C7) → 계좌번호 → 입금액 자릿수(옛 차례).
+function sourceProblem(source: BankTransferSource): BankTransferProblem | null {
+  if (source.holder.trim() === "") return ACCOUNT_PROBLEMS.holderRequired;
+  const bank = bankNameProblem(source.bank);
+  if (bank) return bank;
+  const holder = holderTextProblem(source.holder.trim());
+  if (holder) return holder;
+  // 하이픈 · 빈칸은 사람이 보기 좋으라고 넣는 것이라 뗀다(O: bankTransfer.ts:461).
+  const accountNo = source.accountNumber?.replaceAll(/[\s-]/gu, "") ?? "";
+  if (!/^\d+$/u.test(accountNo) || accountNo.length > BANK_TRANSFER_MAX_BYTES.accountNo) return ACCOUNT_NUMBER_MALFORMED;
+  if (String(source.transferKrw).length > BANK_TRANSFER_MAX_BYTES.amount) return TRANSFER_AMOUNT_TOO_LONG;
+  return null;
+}
+
+/** 줄들을 양식 9칸으로 편다(O: bankTransfer.ts:442) — 막힌 줄은 blocked로 모으고 통과분만 rows에 담는다. */
+export function buildBankTransferRows(sources: readonly BankTransferSource[]): BankTransferBuild {
+  const built: BankTransferBuild = { rows: [], blocked: [] };
+  for (const source of sources) {
+    const problem = sourceProblem(source);
+    if (problem) {
+      built.blocked.push({ key: source.key, problem });
+      continue;
+    }
+    const holder = source.holder.trim();
+    const memo = truncateCp949(source.memo, BANK_TRANSFER_MAX_BYTES.memo);
+    built.rows.push({
+      key: source.key,
+      row: {
+        bankCode: resolveBankCode(source.bank) ?? "",
+        accountNo: (source.accountNumber ?? "").replaceAll(/[\s-]/gu, ""),
+        holder,
+        amount: String(source.transferKrw),
+        // 우리 통장에 남을 적요 = 예금주(O: bankTransfer.ts:489) — 14바이트로 자른다(EP2-C8, 옛은 막음).
+        ourNote: truncateCp949(holder, BANK_TRANSFER_MAX_BYTES.ourNote),
+        theirNote: "",
+        // 입금인코드는 CMS 칸이라 늘 비운다(O: bankTransfer.ts:519).
+        payerCode: "",
+        memo,
+        key: truncateCp949(source.memo, BANK_TRANSFER_MAX_BYTES.key),
+      },
+    });
+  }
+  return built;
+}
+
+/** 9칸을 양식 차례대로 편다(O: bankTransfer.ts:542) — 머리글과 짝이 맞아야 한다. */
+export function bankTransferCells(row: BankTransferRow): string[] {
+  return [row.bankCode, row.accountNo, row.holder, row.amount, row.ourNote, row.theirNote, row.payerCode, row.memo, row.key];
+}
+
+// 06.5-06(D-6519 · ND-6): 지급처마다 한 줄. 키는 옛 그대로(O: server/src/payments.ts:352-361) — 거래처 `v:` · 직원 `p:` · 지급처 없음 `x:{문서}`
+// (지급처 없는 문서는 합치지 않는다). 키는 id라 평문 계좌가 아니다 — 기록 detail의 줄 열쇠로도 쓴다.
+export type TransferLineInput = { expenseId: string; vendorId: string | null; payeeUserId: string | null; number: string; transferKrw: number };
+
+export function payeeKeyOf(row: { expenseId: string; vendorId: string | null; payeeUserId: string | null }): string {
+  if (row.vendorId) return `v:${row.vendorId}`;
+  if (row.payeeUserId) return `p:${row.payeeUserId}`;
+  return `x:${row.expenseId}`;
+}
+
+export type MergedTransferLine = { payeeKey: string; expenseIds: string[]; totalKrw: number; memo: string };
+
+/** 같은 키 행은 이체액을 합치고 비고는 첫 문서 번호 + ` 외 {n-1}건`(20바이트 — 옛은 번호를 전부 이어 붙였다, ND-6). 줄 차례 = 키가 처음 나온 차례. */
+export function mergeTransferLines(rows: readonly TransferLineInput[]): MergedTransferLine[] {
+  const groups = new Map<string, { expenseIds: string[]; amounts: number[]; firstNumber: string }>();
+  for (const row of rows) {
+    const key = payeeKeyOf(row);
+    const group = groups.get(key) ?? { expenseIds: [], amounts: [], firstNumber: row.number };
+    group.expenseIds.push(row.expenseId);
+    group.amounts.push(row.transferKrw);
+    groups.set(key, group);
+  }
+  return [...groups].map(([payeeKey, group]) => ({
+    payeeKey,
+    expenseIds: group.expenseIds,
+    totalKrw: sumKrw(group.amounts),
+    memo: truncateCp949(group.expenseIds.length > 1 ? `${group.firstNumber} 외 ${group.expenseIds.length - 1}건` : group.firstNumber, BANK_TRANSFER_MAX_BYTES.memo),
+  }));
 }

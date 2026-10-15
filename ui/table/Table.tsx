@@ -4,6 +4,7 @@ import { Fragment, useEffect, useId, useRef, useState, type ElementType, type Re
 import Link from "next/link";
 import { clampPage } from "@/lib/paging";
 import { isCtrlCombo } from "@/lib/shortcut";
+import { buttonLinkClassName } from "@/ui/button/Button";
 import { Num } from "@/ui/num/Num";
 import { Pagination } from "@/ui/pagination/Pagination";
 import styles from "./Table.module.css";
@@ -49,6 +50,10 @@ export type TableSelection<Row> = {
   rowLabel: (row: Row) => string;
   /** 처리 뒤 막힌 행의 이유(위험 색 글자). 막힌 행에도 배경 칠은 없다. */
   blockedReason?: (row: Row) => string | null;
+  /** 06.5-06(SP-65-5 ①) — 막힘 줄 끝 3차 글자 링크 하나(고치러 가는 길). newTab이면 새 탭으로 열어 이 표의 선택 · 편집을 지킨다. */
+  blockedLink?: (row: Row) => { label: string; href: string; newTab: boolean } | null;
+  /** 06.5-06(SP-65-5 ①) — 막힘 · 고를 수 없음 이유가 없는 행의 정보 줄(muted). 한 행 아래 줄은 하나다(막힘 > 정보). */
+  noteReason?: (row: Row) => string | null;
   /** 표 안 `Ctrl+Enter` — 선택 표에는 새 줄이 없다(DR-8). 화면 1차(`{동사} N`)와 같은 일. */
   onPrimary?: () => void;
 };
@@ -953,6 +958,9 @@ export function Table<Row>({
               const blockedText = selection?.blockedReason?.(row) ?? null;
               const gateReasonId = gateReason !== null ? `${selectIdPrefix}-${rowId}-select-reason` : undefined;
               const blockedReasonId = blockedText ? `${selectIdPrefix}-${rowId}-select-blocked` : undefined;
+              const blockedLink = blockedText ? (selection?.blockedLink?.(row) ?? null) : null;
+              const noteText = !blockedText && gateReason === null ? (selection?.noteReason?.(row) ?? null) : null;
+              const noteId = noteText ? `${selectIdPrefix}-${rowId}-select-note` : undefined;
 
               return (
                 <RowBody key={rowId} {...(phoneRowLink ? { className: styles.rowLinkGroup } : {})}>
@@ -975,7 +983,7 @@ export function Table<Row>({
                             tabIndex={enableGridKeyboard ? -1 : undefined}
                             aria-label={`${selection.rowLabel(row)} 고르기`}
                             aria-disabled={rowSelectable ? undefined : "true"}
-                            aria-describedby={[gateReasonId, blockedReasonId].filter(Boolean).join(" ") || undefined}
+                            aria-describedby={[gateReasonId, blockedReasonId, noteId].filter(Boolean).join(" ") || undefined}
                             checked={rowSelected}
                             onChange={() => toggleRowSelection(row)}
                           />
@@ -1108,15 +1116,44 @@ export function Table<Row>({
                               {gateReason}
                             </p>
                           ) : null}
-                          {selection && colIndex === 0 && blockedText ? (
-                            <p id={blockedReasonId} className={`${styles.selectReason} ${styles.selectBlocked}`}>
-                              {blockedText}
-                            </p>
-                          ) : null}
                         </td>
                       );
                     })}
                   </tr>
+                  {/* 06.5-06 DOM 감사 W-2 · M-1 · M-2 — 행 아래 줄(막힘 > 정보, §7-3 (카))은 주 행 바로 다음 줄에서 데이터 열 전부를 덮는다.
+                      첫 데이터 칸 안이면 좁은 열 폭에 갇혀 꺾이고, 끝 링크가 다음 칸보다 먼저 포커스를 받는다(시각 차례와 어긋남). */}
+                  {selection && (blockedText || noteText) ? (
+                    <tr className={styles.reasonRow}>
+                      <td role={hasEditableCell ? "gridcell" : undefined} className={[styles.reasonCell, rowSelected ? styles.selectedRow : ""].join(" ")} />
+                      <td
+                        role={hasEditableCell ? "gridcell" : undefined}
+                        colSpan={columns.length}
+                        className={[styles.reasonCell, rowSelected ? styles.selectedRow : ""].join(" ")}
+                      >
+                        {blockedText ? (
+                          <p id={blockedReasonId} className={`${styles.selectReason} ${styles.selectBlocked}`}>
+                            {blockedText}
+                            {blockedLink ? (
+                              <>
+                                {" · "}
+                                <a
+                                  href={blockedLink.href}
+                                  className={buttonLinkClassName("tertiary")}
+                                  {...(blockedLink.newTab ? { target: "_blank", rel: "noopener" } : {})}
+                                >
+                                  {blockedLink.label}
+                                </a>
+                              </>
+                            ) : null}
+                          </p>
+                        ) : (
+                          <p id={noteId} className={styles.selectReason}>
+                            {noteText}
+                          </p>
+                        )}
+                      </td>
+                    </tr>
+                  ) : null}
                   {p2Values.length > 0 ? (
                     <tr
                       className={styles.collapsedRow}

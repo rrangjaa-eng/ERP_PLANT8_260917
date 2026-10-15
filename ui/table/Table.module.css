@@ -245,7 +245,7 @@ th.groupHeader {
 }
 
 /* 06-29(SP-1 · SYSTEM §7-3 (카)) — 일괄 처리 표의 선택 열. 칸 폭 = 행 번호 칸 폭 식 · 체크박스는 네이티브(accent-color) · 고른 행 면은 범위 선택과 같은 --accent-weak 하나다.
-   막힌 행에는 배경 칠이 없고 이유 글자(첫 데이터 칸 2행)만 선다. 읽기 표의 행 hover 면은 고른 행 위에서 --accent-weak를 지키지 못하므로 아래 한 줄이 되돌린다. */
+   막힌 행에는 배경 칠이 없고 이유 글자(고를 수 없음 = 첫 데이터 칸 2행 · 막힘 · 정보 = 행 아래 줄)만 선다. 읽기 표의 행 hover 면은 고른 행 위에서 --accent-weak를 지키지 못하므로 아래 한 줄이 되돌린다. */
 .selectHead,
 .selectCell {
   width: calc(var(--row-number-w) + 2 * var(--cell-pad-x));
@@ -284,6 +284,18 @@ th.groupHeader {
   margin: var(--s-1) 0 0;
   color: var(--text-muted);
   font-size: var(--text-aux);
+}
+
+/* 06.5-06 DOM 감사 W-2 · M-1 — 행 아래 줄(막힘 > 정보, §7-3 (카))은 주 행 바로 다음 줄에서 데이터 열 전부를 덮는다(첫 데이터 칸 폭에 갇혀 꺾이지 않게).
+   주 행과 한 행으로 읽히게 행 선은 이 줄 아래에만 긋는다 — 접힌 줄(.collapsedRow)과 같은 방식. 고른 행이면 같은 면(.selectedRow)이 이어진다. */
+.table tr:has(+ .reasonRow) > .cell {
+  border-bottom: 0;
+}
+
+.reasonCell {
+  padding: 0 var(--cell-pad-x) var(--cell-pad-y);
+  border-bottom: var(--line-w) solid var(--border-row);
+  line-height: var(--lh-table);
 }
 
 .selectBlocked {

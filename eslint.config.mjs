@@ -82,6 +82,21 @@ const eslintConfig = defineConfig([
       "plant8/no-row-type-escape": "error",
     },
   },
+  // 06.5-06(EP2-C1): SheetJS(`xlsx`)는 lib/xlsx-server.ts 한 곳만 부른다 — 그 래퍼가 `server-only`를 빼는 대신
+  // 이 규칙이 클라이언트 번들에 수백 KB가 새는 길을 막는다. 시험은 받은 파일을 다시 읽으려고 직접 부른다.
+  {
+    files: ["**/*.{ts,tsx,js,jsx,mjs,cjs}"],
+    ignores: ["lib/xlsx-server.ts", "test/**"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [{ name: "xlsx", message: "xlsx는 lib/xlsx-server.ts에서만 import한다(EP2-C1)" }],
+          patterns: [{ group: ["xlsx/*"], message: "xlsx는 lib/xlsx-server.ts에서만 import한다(EP2-C1)" }],
+        },
+      ],
+    },
+  },
   // 04.6: app/**의 <table>·<dialog> 직접 그리기 금지(이관 전 파일은 첫 줄 표시로 뺀다)
   ...restrictions,
   // *.mjs는 tsconfig project service 밖(타입 정보 없음) — type-checked 규칙 제외.

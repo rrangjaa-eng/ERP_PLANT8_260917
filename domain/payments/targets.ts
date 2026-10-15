@@ -22,7 +22,9 @@ import { listTeams as listTeamRows } from "@/repositories/teams";
 import { EXPENSE_GROUP_RANKS, listExpenseIdsInScope } from "@/repositories/expenses";
 import { findPaymentTargetRowsByIds, listPaidMonthRows, listPaidPaymentRows, listPaymentTargetRows, type PaidPaymentRow, type PaymentTargetRow } from "@/repositories/payment-targets";
 import { seoulToday } from "@/lib/dates";
-import { addDays } from "@/lib/kst-date";
+import { addDays, kstDayStart } from "@/lib/kst-date";
+import { findTransferFileTimes } from "@/repositories/action-log";
+import { canExportBankTransferFile } from "@/domain/payments/transfer-gate";
 import { clampPage, LIST_PAGE_SIZE, pageCountFrom } from "@/lib/paging";
 
 // 06-15(EXP-09 · UI-SPEC S1): 지급 대상 목록 — 결재 통과 · 지급 전 · 종결 아님 지출결의. 행마다 고를 수 있는지(selectable)와 이유는
@@ -177,7 +179,7 @@ function titleOf(
   return `${[row.projectName, row.itemName].filter(Boolean).join(" · ")}${seq}`;
 }
 
-function toDto(target: JudgedPaymentTarget, shared: PaymentShared): PaymentTargetRowDto {
+function toDto(target: JudgedPaymentTarget, shared: PaymentShared, transferFileAt: ReadonlyMap<string, string>): PaymentTargetRowDto {
   const { row } = target;
   return {
     id: row.id,
@@ -195,14 +197,20 @@ function toDto(target: JudgedPaymentTarget, shared: PaymentShared): PaymentTarge
     reason: target.reason,
     prepaid: row.prepaid,
     quoteLineId: row.quoteLineId,
+    transferFileAt: transferFileAt.get(row.id) ?? null,
   };
 }
 
-export async function projectPaymentTargets(viewer: Viewer, targets: readonly JudgedPaymentTarget[], shared: PaymentShared): Promise<Partial<PaymentTargetRowDto>[]> {
+export async function projectPaymentTargets(
+  viewer: Viewer,
+  targets: readonly JudgedPaymentTarget[],
+  shared: PaymentShared,
+  transferFileAt: ReadonlyMap<string, string> = new Map(),
+): Promise<Partial<PaymentTargetRowDto>[]> {
   // 06-20(O-17) — 계좌 칸은 문서 화면과 같은 투영 함수 하나. 지급 방식 코드 · 거래처 id · 직원 지급처 id(06.5 D-6517)는 스펙 밖 키라 projectMany가 버린다.
   const rows = await projectPaymentAccounts(
     viewer,
-    targets.map((target) => ({ ...toDto(target, shared), paymentMethod: target.row.paymentMethod, vendorId: target.row.vendorId, payeeUserId: target.row.payeeUserId })),
+    targets.map((target) => ({ ...toDto(target, shared, transferFileAt), paymentMethod: target.row.paymentMethod, vendorId: target.row.vendorId, payeeUserId: target.row.payeeUserId })),
   );
   return projectMany(viewer, rows, PAYMENT_TARGET_ROW_DTO_SPEC);
 }
@@ -221,7 +229,7 @@ export async function listPaymentTargets(
   const pageCount = pageCountFrom(all.length, pageSize);
   const page = clampPage(input.page, pageCount);
   const slice = all.slice((page - 1) * pageSize, page * pageSize);
-  const dtos = await projectPaymentTargets(viewer, slice, shared);
+  const dtos = await projectPaymentTargets(viewer, slice, shared, await transferFileTimes(viewer, slice, today));
   const items = slice.map((target, index) => ({ groupRank: EXPENSE_GROUP_RANKS.approved, scheduledPaymentDate: target.row.scheduledPaymentDate, dto: dtos[index] ?? {} }));
   const groups = groupExpenses(items, { status: "approved", todayKst: today }).map((group) => ({
     label: group.label,
@@ -237,6 +245,21 @@ export async function listPaymentTargets(
     page: { page, pageCount, total: all.length, pageSize },
     prepaidDueDays: all.some((target) => target.row.prepaid) ? await loadPrepaidDueDays() : 0,
   };
+}
+
+// 06.5-06(결정 맥락 11 · DM-5): 이 쪽 문서 중 오늘(KST) 이체 파일에 담긴 문서 → 가장 늦은 시각 HH:mm. 이체 파일 게이트를 가진 사람에게만 읽는다.
+async function transferFileTimes(viewer: Viewer, targets: readonly JudgedPaymentTarget[], today: string): Promise<ReadonlyMap<string, string>> {
+  if (targets.length === 0 || !(await canExportBankTransferFile(viewer))) return new Map();
+  const ids = new Set(targets.map((target) => target.row.id));
+  const rows = await findTransferFileTimes(viewer, { expenseIds: [...ids], since: kstDayStart(today) });
+  const latest = new Map<string, Date>();
+  for (const row of rows) {
+    for (const id of row.expenseIds) {
+      const before = latest.get(id);
+      if (ids.has(id) && (!before || row.occurredAt > before)) latest.set(id, row.occurredAt);
+    }
+  }
+  return new Map([...latest].map(([id, at]) => [id, formatKstTime(at)]));
 }
 
 // 일괄 처리 응답의 막힌 행 재판정(H-3) — id 묶음 한 번 다시 읽어 응답 순간의 「지금 고를 수 있음」. 보이지 않거나 지워진 문서는 고를 수 없다.

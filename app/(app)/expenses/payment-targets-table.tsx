@@ -27,7 +27,8 @@ import { revealVendorAccountNumberAction } from "@/app/(app)/admin/vendors/actio
 import { revealPersonAccountNumberAction } from "@/app/(app)/admin/people/[id]/actions";
 import { AMOUNT_HIDDEN, DIFF_REASON_REQUIRED, TRANSFER_NOT_NUMBER, TRANSFER_NOT_POSITIVE } from "@/domain/payments/action-row";
 import { formatKrw } from "@/lib/format-number";
-import { completePaymentsBatchAction, sumSelectedTransfersAction } from "./actions";
+import { Toast } from "@/ui/toast/Toast";
+import { completePaymentsBatchAction, exportBankTransferFileAction, previewTransferPayeesAction, sumSelectedTransfersAction } from "./actions";
 import {
   applyBatchResult,
   diffCount,
@@ -65,9 +66,36 @@ import styles from "./expenses.module.css";
 
 export type PaymentTargetScreenRow = Partial<PaymentTargetRowDto> & { id: string; group: string; groupTone?: "warning" };
 
-type Blocked = { reason: string; selectable: boolean; selectableReason: string | null; newPayableKrw: number | null; row: PaymentTargetScreenRow; index: number };
+// 06.5-06: 이체 파일 막힘도 같은 맵 · 같은 줄 자리 — 끝 링크(link)가 있고, 지급 게이트가 아니라 selectable은 참이다(UI-SPEC V5 「막힌 건」).
+type Blocked = {
+  reason: string;
+  selectable: boolean;
+  selectableReason: string | null;
+  newPayableKrw: number | null;
+  row: PaymentTargetScreenRow;
+  index: number;
+  link?: { label: string; href: string } | null;
+};
 
 type ResultLine = { time: string; processed: number; blocked: number };
+
+// 06.5-06(EP3-C4): 이체 파일 결과 — 내려받은 뒤 화면 상태에는 시각 · 줄 수 · 문서 수 · 막힌 수만 남긴다(파일 바이트는 버린다).
+type TransferFileResult = { time: string; lineCount: number; docCount: number; blocked: number };
+
+const XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+// 서버가 준 base64 → Blob 다운로드(action-log ExportButton과 같은 방식). URL은 누른 직후 거둔다.
+function downloadBase64(base64: string, filename: string) {
+  const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
+  const url = URL.createObjectURL(new Blob([bytes], { type: XLSX_TYPE }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
 
 const NO_RESPONSE = "결과를 받지 못함 · 새로 고침";
 
@@ -264,6 +292,8 @@ export type PaymentTargetsScreenProps = {
   paidHref: string;
   // 지급일 칸 오류 글자 — 05 DATE_FORMAT_ERROR(서버 상수).
   dateError: string;
+  // 06.5-06(결정 맥락 8 · DM-4): `이체 파일 받기` 고정 게이트 — 서버 canExportBankTransferFile 값(행 내용과 무관).
+  canExportTransferFile: boolean;
 };
 
 export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
@@ -279,6 +309,8 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
   const [processed, setProcessed] = useState<ReadonlySet<string>>(new Set());
   const [blocked, setBlocked] = useState<ReadonlyMap<string, Blocked>>(carry.blocked);
   const [result, setResult] = useState<ResultLine | null>(carry.result);
+  const [transferResult, setTransferResult] = useState<TransferFileResult | null>(null);
+  const [transferFailed, setTransferFailed] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [rejection, setRejection] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<{ ids: string[]; rows: PaymentTargetScreenRow[]; edits: SelectionState["edits"]; seq: number; otherPage: number }>({
@@ -571,11 +603,53 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
     setSnapshot({ ids: chosen, rows: chosenRows, edits: selection.edits, seq, otherPage: otherPageCount(chosen, props.rows.map((row) => row.id)) });
     setRejection(null);
     setDialogOpen(true);
+    readSubtotals();
+  }
+
+  // 06.5-06(V14 · SP-65-7 · R-5): 대화상자를 여는 순간 지급처 소계를 확정 액션과 따로 읽는다 — 2건 이상 지급처만 한 행.
+  // 읽는 동안 · 실패면 칸이 없을 뿐(오류 문구 · 1차 막힘 없음). 열 때마다 차례를 세어 마지막 응답만 받는다(앞 선택 소계가 새 선택에 서지 않게).
+  const subtotalTicketRef = useRef(0);
+  const [subtotalLines, setSubtotalLines] = useState<string[]>([]);
+  const { executeAsync: previewPayees } = useAction(previewTransferPayeesAction);
+  function readSubtotals() {
+    const ticket = ++subtotalTicketRef.current;
+    setSubtotalLines([]);
+    const sent = transferRequestRows(chosen, chosenRows, selection.edits);
+    if (sent.length === 0) return;
+    previewPayees({ rows: sent })
+      .then((response) => {
+        if (ticket !== subtotalTicketRef.current || !response?.data) return;
+        setSubtotalLines(
+          response.data.flatMap((group) => {
+            // 투영 DTO는 칸이 빠질 수 있다(정보 항목 숨김) — 합이나 건수가 없으면 그 행을 세우지 않는다.
+            if (group.count === undefined || group.count < 2 || group.totalKrw === undefined) return [];
+            // 지급처 이름은 서버 묶음 값 — 지금 쪽 밖 문서만 있는 지급처도 이름이 선다(검토 P3-2). 투영으로 빠지면 `—`(SYSTEM §2-4).
+            return [`${group.vendorName ?? group.payeeUserName ?? "—"} ${formatKrw(group.totalKrw)} · ${group.count}건`];
+          }),
+        );
+      })
+      .catch(() => {
+        // 끊김 · 액션 ID 불일치 — 칸 없이 둔다(SP-65-7 실패).
+      });
+  }
+
+  // 06.5-06: 이체 파일 · 소계 읽기가 보내는 행 — 지금 쪽 고른 행 + 지금 쪽 밖은 마지막 합 응답이 고를 수 있다고 한 행(`지급 완료`와 같은 꼴).
+  function transferRequestRows(ids: string[], onPage: PaymentTargetScreenRow[], edits: SelectionState["edits"]) {
+    const offRows: PaymentTargetScreenRow[] = offPageSnapshotRows(
+      ids,
+      onPage.map((row) => row.id),
+      offPage,
+    ).map((row) => ({ ...row, group: "" }));
+    return [...onPage, ...offRows].flatMap((row) =>
+      typeof row.version === "number" && typeof row.payableKrw === "number"
+        ? [{ expenseId: row.id, expenseVersion: row.version, expectedPayableKrw: row.payableKrw, ...transferPart(row, edits) }]
+        : [],
+    );
   }
 
   // 스냅숏 한 행 — 고친 이체액(양의 정수)과, 지급 총액과 다르면 그 사유.
-  function transferPart(row: PaymentTargetScreenRow): { transferKrw?: number; diffReason?: string } {
-    const edit = snapshot.edits[row.id];
+  function transferPart(row: PaymentTargetScreenRow, edits: SelectionState["edits"] = snapshot.edits): { transferKrw?: number; diffReason?: string } {
+    const edit = edits[row.id];
     const value = edit ? transferNumber(edit.transfer) : null;
     if (value === null || value <= 0) return {};
     return value === row.payableKrw ? { transferKrw: value } : { transferKrw: value, diffReason: (edit?.reason ?? "").trim() };
@@ -604,8 +678,52 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
     // 이유 줄 · 결과 글자는 다음 시도 때 지운다(04 DR-16 수명).
     setBlocked(new Map());
     setResult(null);
+    setTransferResult(null);
     setRejection(null);
     execute({ payDate, rows: sent });
+  }
+
+  // 06.5-06(UI-SPEC V5): `이체 파일 받기` — 확인 창 없이 지금 고른 행(모든 쪽)의 스냅숏을 보낸다(`지급 완료`와 같은 행 꼴 · 지금 편집값).
+  // 고른 행에 칸 오류가 있으면 `지급 완료`처럼 요청 없이 첫 오류 칸으로 간다(고칠 칸이 이 화면에 있다). 그래도 서버에 닿은 사유 없는 편집액은
+  // 그 행만 막힌 건(V5 6번)이 된다 — 액션 스키마는 요청째 거부하지 않는다(검토 P2-2).
+  const { execute: exportFile, isExecuting: exporting } = useAction(exportBankTransferFileAction, {
+    onSuccess: ({ data }) => {
+      if (!data) {
+        setTransferFailed(true);
+        return;
+      }
+      if (data.lineCount > 0) downloadBase64(data.base64, data.filename);
+      // 막힌 건은 지급 막힘과 같은 맵 · 같은 행 아래 줄(지금 쪽 행만) — 선택은 풀지 않는다(파일 제외 사유일 뿐 지급 게이트가 아니다).
+      const nextBlocked = new Map<string, Blocked>();
+      for (const item of data.blocked) {
+        const index = rows.findIndex((row) => row.id === item.expenseId);
+        const row = rows[index];
+        if (!row) continue;
+        nextBlocked.set(item.expenseId, { reason: item.text, selectable: true, selectableReason: null, newPayableKrw: null, row, index, link: item.link });
+      }
+      setBlocked(nextBlocked);
+      setTransferResult({ time: data.time, lineCount: data.lineCount, docCount: data.docCount, blocked: data.blocked.length });
+      // 담김 줄(transferFileAt)은 서버 기록에서 온다 — 목록을 다시 받는다.
+      if (data.lineCount > 0) router.refresh();
+    },
+    onError: () => setTransferFailed(true),
+  });
+
+  function requestTransferFile() {
+    if (chosen.length === 0 || exporting) return;
+    if (chosenRows.some((row) => transferIssue(row) !== null || reasonIssue(row) !== null)) {
+      setShowErrors(true);
+      setIssueSignal((value) => value + 1);
+      return;
+    }
+    if (goToOffPageIssue(effective)) return;
+    const sent = transferRequestRows(chosen, chosenRows, selection.edits);
+    if (sent.length === 0) return;
+    setBlocked(new Map());
+    setResult(null);
+    setTransferResult(null);
+    setTransferFailed(false);
+    exportFile({ rows: sent });
   }
 
   // 증빙 칸 3차(`확인 전`만) — ≥1024는 제자리 모달, 700~1023은 문서 화면 왕복 링크. 폰은 행 링크(3차 없음).
@@ -781,6 +899,18 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
   const filters = (
     <>
       <StatusFilter value={PAYMENT_TARGET_VIEW} views={props.views} selects={props.selects} />
+      {wide && props.canExportTransferFile ? (
+        <span className={styles.transferSlot}>
+          <Button
+            variant="secondary"
+            pending={exporting}
+            onClick={requestTransferFile}
+            {...(chosen.length === 0 ? { disabled: true, disabledReason: "고른 건 없음", reasonTone: "info" as const } : {})}
+          >
+            이체 파일 받기
+          </Button>
+        </span>
+      ) : null}
       <p aria-live="polite" className={styles.batchResult}>
         {result ? (
           <>
@@ -792,8 +922,24 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
               </>
             ) : null}
           </>
+        ) : transferResult ? (
+          <>
+            {/* 06.5-06(V5 · V14): 지급처마다 한 줄 — 줄 수와 문서 수가 같으면 한 번만 쓴다. */}
+            <span className={styles.batchDone}>
+              {transferResult.lineCount === transferResult.docCount
+                ? `${transferResult.time} 이체 파일 ${transferResult.docCount}건`
+                : `${transferResult.time} 이체 파일 ${transferResult.lineCount}줄 · 문서 ${transferResult.docCount}건`}
+            </span>
+            {transferResult.blocked > 0 ? (
+              <>
+                {" · "}
+                <span className={styles.batchBlocked}>{`막힘 ${transferResult.blocked}건`}</span>
+              </>
+            ) : null}
+          </>
         ) : null}
       </p>
+      {transferFailed ? <Toast message="이체 파일 받기 · 실패 · 다시 시도" tone="error" onDismiss={() => setTransferFailed(false)} /> : null}
     </>
   );
 
@@ -915,6 +1061,12 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
                       // 선택 칸 이유와 같은 글자면 한 번만(같은 말을 두 자리에 쓰지 않는다).
                       return gateReason !== true && gateReason.reason === after.reason ? null : after.reason;
                     },
+                    // 06.5-06(SP-65-5 ①): 이체 파일 막힘의 고치러 가는 길 — 새 탭(선택 · 편집 · 결과 글자를 지킨다).
+                    blockedLink: (row: PaymentTargetScreenRow) => {
+                      const link = blocked.get(row.id)?.link;
+                      return link ? { ...link, newTab: true } : null;
+                    },
+                    noteReason: (row: PaymentTargetScreenRow) => (row.transferFileAt ? `${row.transferFileAt} 이체 파일에 담김` : null),
                     onPrimary: openDialog,
                   },
                 }
@@ -926,6 +1078,8 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
           onClose={() => {
             if (isExecuting) return;
             setDialogOpen(false);
+            subtotalTicketRef.current += 1;
+            setSubtotalLines([]);
             focusAfterClose();
           }}
           count={snapshot.ids.length}
@@ -941,6 +1095,7 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
           }}
           onRetrySum={retrySum}
           lineCount={lineCount}
+          subtotalLines={subtotalLines}
           prepaidCount={prepaidCount}
           prepaidDueDays={props.prepaidDueDays}
           pending={isExecuting}

@@ -348,7 +348,8 @@ test.describe("지급 대상 · 일괄 지급 마감 (06-15 Task 3)", () => {
 
     await expect(rowA).toHaveCount(0);
     await expect(rowB).toHaveCount(1);
-    const reasonLine = rowB.locator('p[id$="-select-blocked"]');
+    // 막힘 줄은 주 행 바로 다음 줄에 선다(06.5-06 DOM 감사 W-2 — 데이터 열 전부를 덮는 행 아래 줄).
+    const reasonLine = rowB.locator("xpath=following-sibling::tr[1]").locator('p[id$="-select-blocked"]');
     await expect(reasonLine).toHaveText(/^이미 지급됨 · .+ · \d{2}:\d{2} · 새로 고침$/);
     expect(await colorOf(reasonLine)).toBe(await tokenAsColor(page, "--status-danger"));
     await expect(rowB.getByRole("checkbox")).toHaveAttribute("aria-disabled", "true");
@@ -644,7 +645,8 @@ test.describe("일괄 지급 마감 (06-17)", () => {
       await expect(gateBox).not.toBeChecked();
       await expect(gateBox).toHaveAttribute("aria-disabled", "true");
       await expect(taxRow.getByRole("checkbox")).toBeChecked();
-      await expect(taxRow.getByText(`지급일 ${payDate.slice(5)} 기준 지급 총액 바뀜 · 이체액 확인`)).toBeVisible();
+      // 막힘 줄은 주 행 바로 다음 줄(06.5-06 DOM 감사 W-2).
+      await expect(taxRow.locator("xpath=following-sibling::tr[1]").getByText(`지급일 ${payDate.slice(5)} 기준 지급 총액 바뀜 · 이체액 확인`)).toBeVisible();
       const newPayable = await previewPayable(payer.viewer, { expenseId: taxId, payDate });
       if (newPayable.payableKrw == null) throw new Error("새 지급 총액 없음");
       await expect(taxRow.getByText(formatKrw(newPayable.payableKrw), { exact: true }).first()).toBeVisible();

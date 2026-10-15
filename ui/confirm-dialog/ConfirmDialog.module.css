@@ -84,6 +84,32 @@
   overflow-y: auto;
 }
 
+/* 06.5-06(SP-65-7 · §7-17) — 소계 칸. 높이 상한 = 결과 줄과 같은 글자 행 셋(--text-aux × --lh-table). 넘치면 칸 안만 스크롤하고,
+   폰 시트에서도 행 높이가 같아 덮지 않는다. 포커스 링은 스크롤 칸 안쪽(PickDialog .row:focus-visible 꼴). */
+.subtotals {
+  max-height: calc(var(--text-aux) * var(--lh-table) * 3);
+  overflow-y: auto;
+  margin-bottom: var(--s-3);
+}
+
+.subtotals:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: calc(var(--focus-w) * -1);
+}
+
+.subtotals ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.subtotals li {
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+  line-height: var(--lh-table);
+  word-break: keep-all;
+}
+
 /* 06-29(SP-7 상태 계약 ⑴) — 열 때 읽는 동안 `…` 한 자리(1차 aria-describedby 대상). */
 .loadingMark {
   margin: 0;

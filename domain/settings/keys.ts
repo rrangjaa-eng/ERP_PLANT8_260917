@@ -120,7 +120,7 @@ export const TAX_COMPANY_BORNE_EXEMPT_THRESHOLD: SettingDef<number> = {
   kind: "historized",
   schema: z.coerce.number().int().min(0),
   label: "회사 대납 면제 기준(1인 세전 금액)",
-  hint: "받는 사람 한 명 몫 공급가를 세율로 역산한 세전 금액이 이 금액 이하이면 회사 대납 세금을 붙이지 않습니다.",
+  hint: "1인 몫 세전 금액이 이 금액 이하면 대납 세금을 붙이지 않습니다.",
   namespace: "세율",
   default: 50000,
 };

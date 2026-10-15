@@ -32,6 +32,7 @@ import "@/domain/revenue";
 import "@/domain/issue-requests";
 import "@/domain/reserves";
 import "@/domain/action-log/export";
+import "@/domain/payments/bank-transfer";
 import "@/domain/archive";
 import "@/app/(app)/admin/code-tables/actions.registry";
 import "@/app/(app)/admin/settings/actions.registry";

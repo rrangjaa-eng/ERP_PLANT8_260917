@@ -2,6 +2,25 @@
 // 거래처 · 직원 계좌 저장(06.5-04)과 이체 파일 막힌 건(06.5-06 — 행 빌더는 그 플랜이 이 파일에 더한다)이 같은 함수 · 같은
 // 이유 쌍을 쓴다 — 저장 때와 파일 때의 판정이 갈라지지 않게. CP949 길이는 ASCII 1 · 그 외 2바이트(파일은 xlsx 유니코드라
 // 변환표가 필요 없다).
+// 06.5-06: 행 빌더 몫 — 칸 규칙(머리글 9칸 · 시트 · CP949 바이트)은 옛 이식(O:), 출금통장표시내용은 넘으면 자른다(옛은 막음 —
+// 사람이 고칠 수 없는 칸). 막힌 줄은 전부-아니면-전무가 아니라 빼고 나머지를 담는다. DB · 설정 · 암호화는 부르지 않는다 — 복호화는
+// domain/payments/bank-transfer.ts가 하고 평문을 여기로 넘긴다.
+
+/** 양식 머리글 9칸(O: bankTransfer.ts:59-69) — 마지막 칸만 소문자 `key`다(우리가 채우는 시트 쪽이 정본). */
+export const BANK_TRANSFER_HEADER = [
+  "*입금은행",
+  "*입금계좌",
+  "고객관리성명",
+  "*입금액",
+  "출금통장표시내용",
+  "입금통장표시내용",
+  "입금인코드",
+  "비고",
+  "업체사용key",
+] as const;
+
+/** 우리가 채우는 시트 이름(O: bankTransfer.ts:72) — 양식과 같아야 한다. */
+export const BANK_TRANSFER_SHEET = "입력정보";
 
 /** 양식 칸별 바이트 한도(O: bankTransfer.ts:91-101). */
 export const BANK_TRANSFER_MAX_BYTES = {
@@ -212,4 +231,95 @@ export function holderTextProblem(holder: string): AccountProblem | null {
   if (cp949Unsupported(holder).length > 0) return ACCOUNT_PROBLEMS.holderUnsupported;
   if (cp949ByteLength(holder) > BANK_TRANSFER_MAX_BYTES.holder) return ACCOUNT_PROBLEMS.holderTooLong;
   return null;
+}
+
+/** 계좌번호 글자 · 길이 · 복호화 실패(UI-SPEC V5 14번) — 저장 때 칸 오류에는 없는 파일 몫 이유다. */
+export const ACCOUNT_NUMBER_MALFORMED = { cause: "계좌번호 형식 오류", fix: "계좌 고치기" } as const;
+
+export type BankTransferProblem = AccountProblem | typeof ACCOUNT_NUMBER_MALFORMED;
+
+/**
+ * CP949 바이트 한도 이하로 문자 경계에서 자른다(EP2-C8) — 반쪽 글자를 남기지 않는다. 옛은 넘으면 막았다(O: bankTransfer.ts:349-352 ·
+ * :496-499); 출금통장표시내용 · 비고는 사람이 고칠 수 없는 칸이라 자른다.
+ */
+export function truncateCp949(text: string, maxBytes: number): string {
+  let total = 0;
+  let cut = "";
+  for (const char of text) {
+    const size = cp949ByteLength(char);
+    if (total + size > maxBytes) break;
+    total += size;
+    cut += char;
+  }
+  return cut;
+}
+
+/** 파일 한 줄의 재료 — 계좌번호는 복호화한 평문(복호화가 실패했으면 null). key는 막힌 건을 돌려 찾는 열쇠(지급처 키). */
+export type BankTransferSource = { key: string; bank: string; holder: string; accountNumber: string | null; transferKrw: number; memo: string };
+
+/** 양식 9칸 — 전부 글자다(O: bankTransfer.ts:383-403). */
+export type BankTransferRow = {
+  bankCode: string;
+  accountNo: string;
+  holder: string;
+  amount: string;
+  ourNote: string;
+  theirNote: string;
+  payerCode: string;
+  memo: string;
+  key: string;
+};
+
+export type BankTransferBuild = {
+  rows: { key: string; row: BankTransferRow }[];
+  blocked: { key: string; problem: BankTransferProblem }[];
+};
+
+// 계좌 칸 판정(UI-SPEC V5 10~14 차례) — 예금주 없음 → 은행 코드 → 예금주 글자 · 길이(못 담는 글자 먼저, EP2-C7) → 계좌번호.
+function sourceProblem(source: BankTransferSource): BankTransferProblem | null {
+  if (source.holder.trim() === "") return ACCOUNT_PROBLEMS.holderRequired;
+  const bank = bankNameProblem(source.bank);
+  if (bank) return bank;
+  const holder = holderTextProblem(source.holder.trim());
+  if (holder) return holder;
+  // 하이픈 · 빈칸은 사람이 보기 좋으라고 넣는 것이라 뗀다(O: bankTransfer.ts:461).
+  const accountNo = source.accountNumber?.replaceAll(/[\s-]/gu, "") ?? "";
+  if (!/^\d+$/u.test(accountNo) || accountNo.length > BANK_TRANSFER_MAX_BYTES.accountNo) return ACCOUNT_NUMBER_MALFORMED;
+  return null;
+}
+
+/** 줄들을 양식 9칸으로 편다(O: bankTransfer.ts:442) — 막힌 줄은 blocked로 모으고 통과분만 rows에 담는다. */
+export function buildBankTransferRows(sources: readonly BankTransferSource[]): BankTransferBuild {
+  const built: BankTransferBuild = { rows: [], blocked: [] };
+  for (const source of sources) {
+    const problem = sourceProblem(source);
+    if (problem) {
+      built.blocked.push({ key: source.key, problem });
+      continue;
+    }
+    const holder = source.holder.trim();
+    const memo = truncateCp949(source.memo, BANK_TRANSFER_MAX_BYTES.memo);
+    built.rows.push({
+      key: source.key,
+      row: {
+        bankCode: resolveBankCode(source.bank) ?? "",
+        accountNo: (source.accountNumber ?? "").replaceAll(/[\s-]/gu, ""),
+        holder,
+        amount: String(source.transferKrw),
+        // 우리 통장에 남을 적요 = 예금주(O: bankTransfer.ts:489) — 14바이트로 자른다(EP2-C8, 옛은 막음).
+        ourNote: truncateCp949(holder, BANK_TRANSFER_MAX_BYTES.ourNote),
+        theirNote: "",
+        // 입금인코드는 CMS 칸이라 늘 비운다(O: bankTransfer.ts:519).
+        payerCode: "",
+        memo,
+        key: truncateCp949(source.memo, BANK_TRANSFER_MAX_BYTES.key),
+      },
+    });
+  }
+  return built;
+}
+
+/** 9칸을 양식 차례대로 편다(O: bankTransfer.ts:542) — 머리글과 짝이 맞아야 한다. */
+export function bankTransferCells(row: BankTransferRow): string[] {
+  return [row.bankCode, row.accountNo, row.holder, row.amount, row.ourNote, row.theirNote, row.payerCode, row.memo, row.key];
 }

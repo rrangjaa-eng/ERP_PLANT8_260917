@@ -205,3 +205,29 @@ export async function findListPaymentStatusByIds(viewer: Viewer, ids: readonly s
     .where(inArray(expenses.id, [...ids]));
   return rows.map((row) => ({ id: row.id, payDate: row.payDate, prepaid: row.prepaid, waived: row.reviewStatus === "waived" }));
 }
+
+// 06.5-06(D-6504): 이체 파일 계좌 — 거래처 · 직원 id 묶음 한 번씩. 은행 · 예금주 · 암호문만 읽는다(복호화 · 판정은 domain/payments/bank-transfer.ts).
+// 이 호출의 읽기 값으로 판정과 복호화를 같이 한다(CH5) — 따로 다시 읽지 않는다.
+export type TransferAccountRow = { id: string; bank: string | null; holder: string | null; accountNumberEncrypted: string | null };
+
+export async function findTransferAccounts(
+  viewer: Viewer,
+  input: { vendorIds: readonly string[]; userIds: readonly string[] },
+): Promise<{ vendors: TransferAccountRow[]; users: TransferAccountRow[] }> {
+  void viewer;
+  const [vendorRows, userRows] = await Promise.all([
+    input.vendorIds.length === 0
+      ? Promise.resolve([])
+      : db
+          .select({ id: vendors.id, bank: vendors.accountBank, holder: vendors.accountHolder, accountNumberEncrypted: vendors.accountNumberEncrypted })
+          .from(vendors)
+          .where(inArray(vendors.id, [...input.vendorIds])),
+    input.userIds.length === 0
+      ? Promise.resolve([])
+      : db
+          .select({ id: users.id, bank: users.accountBank, holder: users.accountHolder, accountNumberEncrypted: users.accountNumberEncrypted })
+          .from(users)
+          .where(inArray(users.id, [...input.userIds])),
+  ]);
+  return { vendors: vendorRows, users: userRows };
+}

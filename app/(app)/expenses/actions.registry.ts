@@ -77,6 +77,8 @@ registerAction({ name: "restoreExpenseDraftAction", menu: "expenses", action: "w
 
 // 06-15 일괄 지급 — 행 결과는 id · 이유 글자 · 새 지급 총액 숫자 하나 · 고를 수 있음뿐(DTO 없음). 지급 권한자 전용.
 registerAction({ name: "completePaymentsBatchAction", menu: "expenses.payments", action: "write", dtoName: null });
+// 06.5-06 신한 이체 파일 — 응답은 파일 바이트 · 줄 수 · 막힘 글자(DTO 행 아님). 파일 칸의 정보 항목은 내보내기 축(BankTransferRowDto)이 검사한다.
+registerAction({ name: "exportBankTransferFileAction", menu: "expenses.payments", action: "write", dtoName: null });
 // 06-17 고른 건 이체액 합 · 행별 차이 · 고른 행 상태 — rowStates의 지급 총액 · version은 06-15 행 명세(paymentTargetRow)의 정보 항목을 지난다.
 registerAction({ name: "sumSelectedTransfersAction", menu: "expenses.payments", action: "write", dtoName: "paymentTargetRow" });
 // 06-17 제자리 증빙 확인 모달 보기 — 파일 행은 05 증빙 파일 명세(evidenceFile)의 정보 항목, 금액 칸은 expense.amount(06-06 paymentView와 같다).

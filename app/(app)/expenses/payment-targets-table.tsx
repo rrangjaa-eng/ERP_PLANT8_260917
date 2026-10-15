@@ -27,7 +27,8 @@ import { revealVendorAccountNumberAction } from "@/app/(app)/admin/vendors/actio
 import { revealPersonAccountNumberAction } from "@/app/(app)/admin/people/[id]/actions";
 import { AMOUNT_HIDDEN, DIFF_REASON_REQUIRED, TRANSFER_NOT_NUMBER, TRANSFER_NOT_POSITIVE } from "@/domain/payments/action-row";
 import { formatKrw } from "@/lib/format-number";
-import { completePaymentsBatchAction, sumSelectedTransfersAction } from "./actions";
+import { Toast } from "@/ui/toast/Toast";
+import { completePaymentsBatchAction, exportBankTransferFileAction, sumSelectedTransfersAction } from "./actions";
 import {
   applyBatchResult,
   diffCount,
@@ -68,6 +69,24 @@ export type PaymentTargetScreenRow = Partial<PaymentTargetRowDto> & { id: string
 type Blocked = { reason: string; selectable: boolean; selectableReason: string | null; newPayableKrw: number | null; row: PaymentTargetScreenRow; index: number };
 
 type ResultLine = { time: string; processed: number; blocked: number };
+
+// 06.5-06(EP3-C4): 이체 파일 결과 — 내려받은 뒤 화면 상태에는 시각 · 줄 수 · 문서 수 · 막힌 수만 남긴다(파일 바이트는 버린다).
+type TransferFileResult = { time: string; lineCount: number; docCount: number; blocked: number };
+
+const XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+// 서버가 준 base64 → Blob 다운로드(action-log ExportButton과 같은 방식). URL은 누른 직후 거둔다.
+function downloadBase64(base64: string, filename: string) {
+  const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
+  const url = URL.createObjectURL(new Blob([bytes], { type: XLSX_TYPE }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
 
 const NO_RESPONSE = "결과를 받지 못함 · 새로 고침";
 
@@ -264,6 +283,8 @@ export type PaymentTargetsScreenProps = {
   paidHref: string;
   // 지급일 칸 오류 글자 — 05 DATE_FORMAT_ERROR(서버 상수).
   dateError: string;
+  // 06.5-06(결정 맥락 8 · DM-4): `이체 파일 받기` 고정 게이트 — 서버 canExportBankTransferFile 값(행 내용과 무관).
+  canExportTransferFile: boolean;
 };
 
 export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
@@ -279,6 +300,8 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
   const [processed, setProcessed] = useState<ReadonlySet<string>>(new Set());
   const [blocked, setBlocked] = useState<ReadonlyMap<string, Blocked>>(carry.blocked);
   const [result, setResult] = useState<ResultLine | null>(carry.result);
+  const [transferResult, setTransferResult] = useState<TransferFileResult | null>(null);
+  const [transferFailed, setTransferFailed] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [rejection, setRejection] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<{ ids: string[]; rows: PaymentTargetScreenRow[]; edits: SelectionState["edits"]; seq: number; otherPage: number }>({
@@ -574,8 +597,8 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
   }
 
   // 스냅숏 한 행 — 고친 이체액(양의 정수)과, 지급 총액과 다르면 그 사유.
-  function transferPart(row: PaymentTargetScreenRow): { transferKrw?: number; diffReason?: string } {
-    const edit = snapshot.edits[row.id];
+  function transferPart(row: PaymentTargetScreenRow, edits: SelectionState["edits"] = snapshot.edits): { transferKrw?: number; diffReason?: string } {
+    const edit = edits[row.id];
     const value = edit ? transferNumber(edit.transfer) : null;
     if (value === null || value <= 0) return {};
     return value === row.payableKrw ? { transferKrw: value } : { transferKrw: value, diffReason: (edit?.reason ?? "").trim() };
@@ -604,8 +627,48 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
     // 이유 줄 · 결과 글자는 다음 시도 때 지운다(04 DR-16 수명).
     setBlocked(new Map());
     setResult(null);
+    setTransferResult(null);
     setRejection(null);
     execute({ payDate, rows: sent });
+  }
+
+  // 06.5-06(UI-SPEC V5): `이체 파일 받기` — 확인 창 없이 지금 고른 행(모든 쪽)의 스냅숏을 보낸다(`지급 완료`와 같은 행 꼴 · 지금 편집값).
+  // 고른 행에 칸 오류가 있으면 `지급 완료`처럼 요청 없이 첫 오류 칸으로 간다(서버 행 스키마가 사유 없는 편집액을 요청째 거부한다).
+  const { execute: exportFile, isExecuting: exporting } = useAction(exportBankTransferFileAction, {
+    onSuccess: ({ data }) => {
+      if (!data) {
+        setTransferFailed(true);
+        return;
+      }
+      if (data.lineCount > 0) downloadBase64(data.base64, data.filename);
+      setTransferResult({ time: data.time, lineCount: data.lineCount, docCount: data.docCount, blocked: data.blocked.length });
+    },
+    onError: () => setTransferFailed(true),
+  });
+
+  function requestTransferFile() {
+    if (chosen.length === 0 || exporting) return;
+    if (chosenRows.some((row) => transferIssue(row) !== null || reasonIssue(row) !== null)) {
+      setShowErrors(true);
+      setIssueSignal((value) => value + 1);
+      return;
+    }
+    if (goToOffPageIssue(effective)) return;
+    const offRows: PaymentTargetScreenRow[] = offPageSnapshotRows(
+      chosen,
+      chosenRows.map((row) => row.id),
+      offPage,
+    ).map((row) => ({ ...row, group: "" }));
+    const sent = [...chosenRows, ...offRows].flatMap((row) =>
+      typeof row.version === "number" && typeof row.payableKrw === "number"
+        ? [{ expenseId: row.id, expenseVersion: row.version, expectedPayableKrw: row.payableKrw, ...transferPart(row, selection.edits) }]
+        : [],
+    );
+    if (sent.length === 0) return;
+    setResult(null);
+    setTransferResult(null);
+    setTransferFailed(false);
+    exportFile({ rows: sent });
   }
 
   // 증빙 칸 3차(`확인 전`만) — ≥1024는 제자리 모달, 700~1023은 문서 화면 왕복 링크. 폰은 행 링크(3차 없음).
@@ -781,6 +844,16 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
   const filters = (
     <>
       <StatusFilter value={PAYMENT_TARGET_VIEW} views={props.views} selects={props.selects} />
+      {wide && props.canExportTransferFile ? (
+        <Button
+          variant="secondary"
+          pending={exporting}
+          onClick={requestTransferFile}
+          {...(chosen.length === 0 ? { disabled: true, disabledReason: "고른 건 없음", reasonTone: "info" as const } : {})}
+        >
+          이체 파일 받기
+        </Button>
+      ) : null}
       <p aria-live="polite" className={styles.batchResult}>
         {result ? (
           <>
@@ -792,8 +865,19 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
               </>
             ) : null}
           </>
+        ) : transferResult ? (
+          <>
+            <span className={styles.batchDone}>{`${transferResult.time} 이체 파일 ${transferResult.docCount}건`}</span>
+            {transferResult.blocked > 0 ? (
+              <>
+                {" · "}
+                <span className={styles.batchBlocked}>{`막힘 ${transferResult.blocked}건`}</span>
+              </>
+            ) : null}
+          </>
         ) : null}
       </p>
+      {transferFailed ? <Toast message="이체 파일 받기 · 실패 · 다시 시도" tone="error" onDismiss={() => setTransferFailed(false)} /> : null}
     </>
   );
 

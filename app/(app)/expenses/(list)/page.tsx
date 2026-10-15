@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
+import { canExportBankTransferFile } from "@/domain/payments/bank-transfer";
 import { listExpenses, type ExpenseListStatus } from "@/domain/expenses/list";
 import { DATE_FORMAT_ERROR } from "@/domain/expenses/draft-fields";
 import type { Viewer } from "@/domain/viewer";
@@ -203,13 +204,17 @@ async function PaymentTargets({
 }) {
   let loaded;
   try {
-    const [list, teams] = await Promise.all([listPaymentTargets(viewer, { team, evidence, page }), listPaymentTeamOptions(viewer)]);
-    loaded = { list, teams };
+    const [list, teams, canExportTransferFile] = await Promise.all([
+      listPaymentTargets(viewer, { team, evidence, page }),
+      listPaymentTeamOptions(viewer),
+      canExportBankTransferFile(viewer),
+    ]);
+    loaded = { list, teams, canExportTransferFile };
   } catch (error) {
     log.error("지급 대상 로드 실패", { error: error instanceof Error ? error.name : "unknown" });
     return <PaymentTargetsLoadError />;
   }
-  const { list, teams } = loaded;
+  const { list, teams, canExportTransferFile } = loaded;
   const rows: PaymentTargetScreenRow[] = list.groups.flatMap((group) =>
     group.rows.map((row) => ({ ...row, id: row.id ?? "", group: group.label, ...(group.tone ? { groupTone: group.tone } : {}) })),
   );
@@ -237,6 +242,7 @@ async function PaymentTargets({
       today={seoulToday()}
       paidHref={`/expenses?${new URLSearchParams({ status: "지급 완료" })}`}
       dateError={DATE_FORMAT_ERROR}
+      canExportTransferFile={canExportTransferFile}
     />
   );
 }

@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   ACCOUNT_PROBLEMS,
+  BANK_TRANSFER_HEADER,
   BANK_TRANSFER_MAX_BYTES,
+  BANK_TRANSFER_SHEET,
   accountProblemText,
+  bankTransferCells,
+  buildBankTransferRows,
+  truncateCp949,
   bankNameProblem,
   cp949ByteLength,
   cp949Unsupported,
@@ -67,5 +72,53 @@ describe("이유 쌍 · 칸 판정", () => {
     expect(bankNameProblem("없는은행")).toBe(ACCOUNT_PROBLEMS.bankCodeUnknown);
     expect(accountProblemText(ACCOUNT_PROBLEMS.bankCodeUnknown)).toBe("은행 코드 없음 · 은행 이름 고치기");
     expect(bankNameProblem("신한은행")).toBeNull();
+  });
+});
+
+// 06.5-06(D-6504): 행 빌더 몫 — 칸 규칙은 옛 app/src/domain/bankTransfer.ts:59-69 · :72 · :442 · :542 이식.
+describe("행 빌더(06.5 D-6504)", () => {
+  const source = { key: "v:1", bank: "신한은행", holder: "테스트 예금주", accountNumber: "110-123-456789", transferKrw: 13_640_000, memo: "26001-0004" };
+
+  it("머리글 9칸 · 시트 이름은 옛 양식 그대로(마지막 칸만 소문자 key)", () => {
+    expect(BANK_TRANSFER_HEADER).toEqual(["*입금은행", "*입금계좌", "고객관리성명", "*입금액", "출금통장표시내용", "입금통장표시내용", "입금인코드", "비고", "업체사용key"]);
+    expect(BANK_TRANSFER_SHEET).toBe("입력정보");
+  });
+
+  it("truncateCp949 — 문자 경계에서 바이트 한도 이하로 자르고, 한도 안이면 그대로", () => {
+    const cut = truncateCp949("ABC홍길동가나다라", 14);
+    expect(cut).toBe("ABC홍길동가나");
+    expect(cp949ByteLength(cut)).toBeLessThanOrEqual(14);
+    expect(truncateCp949("홍길동", 14)).toBe("홍길동");
+    expect(truncateCp949("가나다라마바사아", 14)).toBe("가나다라마바사");
+  });
+
+  it("buildBankTransferRows — 은행 코드 088 · 하이픈 뗀 계좌 · 금액 글자 · 출금통장표시내용 = 예금주 14바이트 · 비고 · key = 문서 번호", () => {
+    const built = buildBankTransferRows([{ ...source, holder: "가나다라마바사아자차" }]);
+    expect(built.blocked).toEqual([]);
+    expect(built.rows).toEqual([
+      {
+        key: "v:1",
+        row: {
+          bankCode: "088",
+          accountNo: "110123456789",
+          holder: "가나다라마바사아자차",
+          amount: "13640000",
+          ourNote: "가나다라마바사",
+          theirNote: "",
+          payerCode: "",
+          memo: "26001-0004",
+          key: "26001-0004",
+        },
+      },
+    ]);
+  });
+
+  it("bankTransferCells — 9칸이 머리글 차례이고 모두 문자열", () => {
+    const [line] = buildBankTransferRows([source]).rows;
+    if (!line) throw new Error("줄 없음");
+    const cells = bankTransferCells(line.row);
+    expect(cells).toHaveLength(BANK_TRANSFER_HEADER.length);
+    for (const cell of cells) expect(typeof cell).toBe("string");
+    expect(cells).toEqual(["088", "110123456789", "테스트 예금주", "13640000", "테스트 예금주", "", "", "26001-0004", "26001-0004"]);
   });
 });

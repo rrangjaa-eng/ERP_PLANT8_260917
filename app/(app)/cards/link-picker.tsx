@@ -53,6 +53,7 @@ export function LinkPicker({
       if (!projectId) return null;
       const data = (await (mode === "purchase" ? searchLinesForPurchaseLinkAction : searchLinesForCardLinkAction)({ projectId, query, currentLineId }))?.data;
       if (!data) return null;
+      const projectBlockedReason = "projectBlockedReason" in data && typeof data.projectBlockedReason === "string" ? data.projectBlockedReason : null;
       const items: PickRow[] = [];
       for (const row of data.rows) {
         if (!row.id || row.itemName === undefined) continue;
@@ -76,7 +77,8 @@ export function LinkPicker({
         truncated: data.truncated,
         subtitle: data.subtitle,
         emptyDefault: "이 프로젝트에 견적 줄이 없습니다",
-        noneSelectableReason: mode === "purchase" ? "온라인구매 줄 없음" : "이을 수 있는 줄 없음",
+        // 06-35(G-06-D): 구매 모드는 서버가 프로젝트 전체 이유(고객 승인 전)를 보내면 그것이 바닥 줄이다. 카드 모드 결과에는 칸이 없다.
+        noneSelectableReason: mode === "purchase" ? (projectBlockedReason ?? "온라인구매 줄 없음") : "이을 수 있는 줄 없음",
       };
     },
     [mode, projectId, currentLineId],

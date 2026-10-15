@@ -1206,7 +1206,8 @@ export function QuoteLedger({
     if (!lineDoors.showColumn || !lineId || !door) return;
     // 06-13(S14) — `Ctrl+E` = 현재 줄의 열린 문(온라인구매 줄은 `구매 요청`). 막힌 문은 아무 일도 하지 않는다(이유는 행 행동 자리에 있다).
     // 감사 D-3 — 카드 쪽으로 막힌 줄은 다음 한 수(`카드 사용 등록`)로 간다(셀 3차는 로빙 밖이라 키보드 경로가 이것뿐이다).
-    const opensPurchase = door.branch === "purchase" && door.state !== "none" && !door.blocked && door.purchaseHref !== undefined;
+    // 06-35(G-06-D · 카드 ① 「구매 요청만」): 구매 요청 문도 표 전체 게이트(고객 승인 전 · 완료)를 따른다
+    const opensPurchase = door.branch === "purchase" && door.state !== "none" && !door.blocked && door.purchaseHref !== undefined && !lineDoors.tableGateReason;
     const opensForm = door.branch === "expense" && door.state === "open" && !door.blocked && !lineDoors.tableGateReason;
     const opensNext = door.branch === "expense" && door.state === "open" && door.blocked?.next !== undefined && !lineDoors.tableGateReason;
     const opensDocument = door.branch === "expense" && door.state === "closed" && door.latestId !== undefined;
@@ -1234,6 +1235,8 @@ export function QuoteLedger({
     const door = lineDoors.showColumn && lineId ? lineDoors.cells[lineId] : undefined;
     if (!lineId || !door || door.state === "none") return undefined;
     if (door.branch === "purchase") {
+      // 06-35(G-06-D · 카드 ① 「구매 요청만」): 구매 요청 문도 표 전체 게이트(고객 승인 전 · 완료)를 따른다
+      if (lineDoors.tableGateReason) return <p className={styles.doorNote}>{lineDoors.tableGateReason}</p>;
       return door.blocked ? (
         <div className={styles.sheetDoor}>
           <Button variant="tertiary" disabled disabledReason={door.blocked.reason}>
@@ -2263,6 +2266,8 @@ export function QuoteLedger({
               const reasonId = `quote-door-reason-${row.clientKey}`;
               // 06-13(S14 · EXP-10) — 온라인구매 줄은 같은 자리에 `구매 요청`만(「지출결의 올리기」는 그리지 않는다). 막히면 렌더 + 비활성 + 이유.
               if (door.branch === "purchase" && door.state !== "none") {
+                // 06-35(G-06-D · 카드 ① 「구매 요청만」): 구매 요청 문도 표 전체 게이트(고객 승인 전 · 완료)를 따른다 — 이유는 표 위 한 줄
+                if (lineDoors.tableGateReason) return null;
                 return door.blocked ? (
                   <span className={styles.sheetDoor}>
                     <RowActions noWrap>

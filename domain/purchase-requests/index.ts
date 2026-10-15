@@ -600,7 +600,7 @@ export async function precheckPurchaseCancelUndo(viewer: Viewer, input: { id: st
 }
 
 // 견적 줄 요청은 신청(06-08 B-1 · X-2)과 구매 완료(06-12)와 같은 잠금 순서와 게이트를 다시 지난다: 프로젝트 행 → 사슬의 현재 줄 → 줄 둘(id 순)
-// → 연결(계보 사슬) → 문 → 이중 연결 → 실행가 상한(이 요청 제외 · 실행가 = 현재 줄) → 요청 행. 요청은 고정 연결이라 새 차수 뒤에도 그 줄로 돌아간다.
+// → 연결(계보 사슬) → 고객 승인(G-06-D) → 문 → 이중 연결 → 실행가 상한(이 요청 제외 · 실행가 = 현재 줄) → 요청 행. 요청은 고정 연결이라 새 차수 뒤에도 그 줄로 돌아간다.
 export async function undoCancelPurchaseRequest(
   viewer: Viewer,
   input: { id: string; version: number },
@@ -611,13 +611,21 @@ export async function undoCancelPurchaseRequest(
   const runUndoCancel = async (innerTx: DbOrTx) => {
     if (pre.line) {
       const { lineId } = pre.line;
-      await lockProjectForLinkWrite(viewer, { projectId: pre.line.projectId }, innerTx);
+      const lockedProject = await lockProjectForLinkWrite(viewer, { projectId: pre.line.projectId }, innerTx);
       const current = await currentLineForFixedLink(viewer, { projectId: pre.line.projectId, lineId }, innerTx);
       await lockQuoteLines(viewer, [lineId, current], innerTx);
       const facts = await readLockedLineFacts(viewer, current, innerTx);
       if (!facts) throw new ForbiddenError(LINK_MISSING);
       const links = await findLineLinks(viewer, [lineId], innerTx);
       const lineLinks = links.get(lineId);
+      // G-06-D: 되돌리기도 신청과 같은 고객 승인 판정 — 문 게이트 앞.
+      const approvalReason = await customerApprovalReason({
+        project: lockedProject,
+        revision: await findLatestQuoteRevision(viewer, pre.line.projectId, innerTx),
+        facts: pre.line.approvalGate,
+        viewerId: viewer.id,
+      });
+      if (approvalReason) throw new GateBlockedError(approvalReason);
       const door = resolveLineDoor({ vendorName: facts.vendorName }, pre.line.onlineVendorName);
       const doorGate = await gate(null, "purchase.line-door", { side: "purchase", door, vendorName: facts.vendorName });
       if (!doorGate.allowed) throw new GateBlockedError(doorGate.reason);

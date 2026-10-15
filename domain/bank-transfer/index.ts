@@ -1,3 +1,5 @@
+import { sumKrw } from "@/domain/money";
+
 // 06.5 D-6504 · D-6506 · REVIEWS DH-3: 신한 대량이체 양식의 판정 몫 — 옛 `app/src/domain/bankTransfer.ts` 이식(O:).
 // 거래처 · 직원 계좌 저장(06.5-04)과 이체 파일 막힌 건(06.5-06 — 행 빌더는 그 플랜이 이 파일에 더한다)이 같은 함수 · 같은
 // 이유 쌍을 쓴다 — 저장 때와 파일 때의 판정이 갈라지지 않게. CP949 길이는 ASCII 1 · 그 외 2바이트(파일은 xlsx 유니코드라
@@ -322,4 +324,34 @@ export function buildBankTransferRows(sources: readonly BankTransferSource[]): B
 /** 9칸을 양식 차례대로 편다(O: bankTransfer.ts:542) — 머리글과 짝이 맞아야 한다. */
 export function bankTransferCells(row: BankTransferRow): string[] {
   return [row.bankCode, row.accountNo, row.holder, row.amount, row.ourNote, row.theirNote, row.payerCode, row.memo, row.key];
+}
+
+// 06.5-06(D-6519 · ND-6): 지급처마다 한 줄. 키는 옛 그대로(O: server/src/payments.ts:352-361) — 거래처 `v:` · 직원 `p:` · 지급처 없음 `x:{문서}`
+// (지급처 없는 문서는 합치지 않는다). 키는 id라 평문 계좌가 아니다 — 기록 detail의 줄 열쇠로도 쓴다.
+export type TransferLineInput = { expenseId: string; vendorId: string | null; payeeUserId: string | null; number: string; transferKrw: number };
+
+export function payeeKeyOf(row: { expenseId: string; vendorId: string | null; payeeUserId: string | null }): string {
+  if (row.vendorId) return `v:${row.vendorId}`;
+  if (row.payeeUserId) return `p:${row.payeeUserId}`;
+  return `x:${row.expenseId}`;
+}
+
+export type MergedTransferLine = { payeeKey: string; expenseIds: string[]; totalKrw: number; memo: string };
+
+/** 같은 키 행은 이체액을 합치고 비고는 첫 문서 번호 + ` 외 {n-1}건`(20바이트 — 옛은 번호를 전부 이어 붙였다, ND-6). 줄 차례 = 키가 처음 나온 차례. */
+export function mergeTransferLines(rows: readonly TransferLineInput[]): MergedTransferLine[] {
+  const groups = new Map<string, { expenseIds: string[]; amounts: number[]; firstNumber: string }>();
+  for (const row of rows) {
+    const key = payeeKeyOf(row);
+    const group = groups.get(key) ?? { expenseIds: [], amounts: [], firstNumber: row.number };
+    group.expenseIds.push(row.expenseId);
+    group.amounts.push(row.transferKrw);
+    groups.set(key, group);
+  }
+  return [...groups].map(([payeeKey, group]) => ({
+    payeeKey,
+    expenseIds: group.expenseIds,
+    totalKrw: sumKrw(group.amounts),
+    memo: truncateCp949(group.expenseIds.length > 1 ? `${group.firstNumber} 외 ${group.expenseIds.length - 1}건` : group.firstNumber, BANK_TRANSFER_MAX_BYTES.memo),
+  }));
 }

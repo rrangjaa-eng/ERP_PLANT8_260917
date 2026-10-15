@@ -4,7 +4,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import * as XLSX from "xlsx";
 import { db } from "@/db/client";
-import { expenses, projects } from "@/db/schema";
+import { expenses, projects, quoteLines } from "@/db/schema";
 import { insertVendor } from "@/repositories/vendors";
 import { approveDocument, getApprovalView } from "@/domain/approvals";
 import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
@@ -12,7 +12,11 @@ import { confirmEvidence } from "@/domain/evidence-reviews";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { seoulToday } from "@/lib/dates";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
-import { submitReadyDraft } from "../integration/fixtures/expenses";
+import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
+import { createRevisionFromCurrent, setCustomerApproval } from "@/domain/quotes/revisions";
+import { approvalBasis } from "@/repositories/quote-revisions";
+import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
+import { submitReadyDraft, testVendorAccount } from "../integration/fixtures/expenses";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
 import { setupExpenseE2E, type ExpenseE2E, type LineKey, archiveTempRoles, insertTempRole } from "./expense-fixture";
 
@@ -50,7 +54,11 @@ async function makeTransferPayer(fx: ExpenseE2E, opts: { hidden?: readonly strin
 
 // 줄 하나 → 제출 → 결재선 넷 승인 → 지급 권한자가 증빙 확인 = P4(지급 대상 · 고를 수 있음). 픽스처 거래처는 신한 계좌가 있다.
 async function approvedTarget(fx: ExpenseE2E, key: LineKey, confirmer: Person): Promise<string> {
-  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines[key].id] });
+  return approvedLine(fx, fx.lines[key].id, confirmer);
+}
+
+async function approvedLine(fx: ExpenseE2E, lineId: string, confirmer: Person): Promise<string> {
+  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [lineId] });
   const expenseId = created.created[0]?.expenseId;
   if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
   const submitted = await submitReadyDraft(fx.pm.viewer, expenseId);
@@ -246,3 +254,194 @@ test.describe("지급 대상 · 이체 파일 받기 — 막힌 건 · 담김 �
 });
 
 test.afterAll(archiveTempRoles);
+
+// 06.5-06 Task 3(D-6519 · V14 · SP-65-7): 지급처마다 한 줄 · `지급 완료` 대화상자 소계 칸.
+// 지급처가 넷 이상 필요한 시험은 새 고객 승인 차수에 거래처별 줄을 더해 문서를 만든다(픽스처 줄은 거래처 하나).
+async function payeeVendor(label: string): Promise<{ id: string; name: string }> {
+  const suffix = randomUUID().slice(0, 6);
+  const name = `E2E지급처${label}-${suffix}`;
+  // 증빙 종류 기본값이 없으면 제출 게이트가 막는다(픽스처 거래처와 같은 세금계산서).
+  const vendor = await insertVendor(SYSTEM_VIEWER, { name, normalizedName: name.toLowerCase(), defaultEvidenceType: "tax_invoice", ...testVendorAccount() });
+  return { id: vendor.id, name };
+}
+
+async function payeeTargets(fx: ExpenseE2E, confirmer: Person, vendorIds: readonly string[]): Promise<{ id: string; itemName: string }[]> {
+  const current = await getCurrentQuoteRevision(SYSTEM_VIEWER, fx.projectId);
+  if (!current) throw new Error("차수 없음");
+  const next = await createRevisionFromCurrent(fx.pm.viewer, { projectId: fx.projectId, fromRevisionId: current.id });
+  const subcategory = (await firstSelectableSubcategory()).value;
+  const names = vendorIds.map((_, index) => `지급처 줄 ${index + 1}-${randomUUID().slice(0, 4)}`);
+  await saveQuoteLines(SYSTEM_VIEWER, next.revisionId, {
+    rows: names.map((itemName, index) => ({
+      id: randomUUID(),
+      isNew: true as const,
+      subcategory,
+      itemName,
+      vendorId: vendorIds[index] ?? null,
+      unitPrice: { currency: "KRW" as const, amount: 2_000_000, fxRate: 1 },
+      execution: { currency: "KRW" as const, amount: 1_000_000 + index * 10_000, fxRate: 1 },
+    })),
+  });
+  const basis = await approvalBasis(SYSTEM_VIEWER, next.revisionId);
+  await setCustomerApproval(fx.pm.viewer, next.revisionId, { approvedOn: seoulToday(), seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
+  const lines = await db.select({ id: quoteLines.id, itemName: quoteLines.itemName }).from(quoteLines).where(eq(quoteLines.revisionId, next.revisionId));
+  const targets: { id: string; itemName: string }[] = [];
+  for (const itemName of names) {
+    const line = lines.find((row) => row.itemName === itemName);
+    if (!line) throw new Error(`줄 없음: ${itemName}`);
+    targets.push({ id: await approvedLine(fx, line.id, confirmer), itemName });
+  }
+  return targets;
+}
+
+async function checkAll(page: Page, itemNames: readonly string[]): Promise<void> {
+  for (const itemName of itemNames) await rowOf(page, itemName).getByRole("checkbox").check();
+}
+
+// 소계 칸 · 결과 줄 칸(소계 칸 바로 다음 형제) · 지급일 · 1차 버튼의 위쪽 좌표.
+async function dialogTops(page: Page) {
+  const dialog = page.getByRole("dialog");
+  const box = dialog.locator('[data-ui="confirm-subtotals"]');
+  const top = async (locator: ReturnType<Page["locator"]>) => (await locator.boundingBox())?.y ?? Number.NaN;
+  return {
+    title: await top(dialog.getByRole("heading", { name: "지급 완료" })),
+    results: await top(box.locator("xpath=following-sibling::div[1]")),
+    payDate: await top(dialog.getByLabel("지급일")),
+    primary: await top(dialog.getByRole("button", { name: /^지급 완료 \d+건/ })),
+  };
+}
+
+test.describe("지급 대상 · 이체 파일 받기 — 지급처 합치기 · 소계 칸 (06.5-06 Task 3)", () => {
+  test("같은 거래처 두 문서 + 다른 거래처 한 문서 → 결과 `2줄 · 문서 3건` · 대화상자 소계 칸에 2건 지급처 한 행 · 결과 줄 p ≤ 3 · 첫 포커스 지급일", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const payer = await makeTransferPayer(fx);
+    await approvedTarget(fx, "tracer", payer);
+    await approvedTarget(fx, "hold", payer);
+    const other = await approvedTarget(fx, "retry", payer);
+    const otherVendor = await payeeVendor("다른");
+    await db.update(expenses).set({ vendorId: otherVendor.id }).where(eq(expenses.id, other));
+
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    await page.goto("/expenses");
+    await waitForHydration(rowOf(page, fx.lines.tracer.itemName).getByRole("checkbox"));
+    await checkAll(page, [fx.lines.tracer.itemName, fx.lines.hold.itemName, fx.lines.retry.itemName]);
+    const waiting = page.waitForEvent("download");
+    await page.getByRole("button", { name: "이체 파일 받기" }).click();
+    await waiting;
+    await expect(liveText(page)).toHaveText(/^\d{2}:\d{2} 이체 파일 2줄 · 문서 3건$/);
+
+    await page.getByRole("button", { name: /^지급 완료 3/ }).click();
+    const dialog = page.getByRole("dialog");
+    const box = dialog.locator('[data-ui="confirm-subtotals"]');
+    await expect(box.locator("li")).toHaveCount(1);
+    await expect(dialog.getByRole("group", { name: "지급처 소계" })).toHaveCount(1);
+    await expect(box.locator("li")).toHaveText(new RegExp(`^${fx.vendorName} [\\d,]+ · 2건$`));
+    await expect(box).toHaveAttribute("tabindex", "0");
+    await expect(box.locator("xpath=following-sibling::div[1]").locator("p")).toHaveCount(1);
+    await expect(dialog.locator("p").filter({ hasText: "· 2건" })).toHaveCount(0);
+    await expect(dialog.getByLabel("지급일")).toBeFocused();
+    await expect(page.locator("tbody").getByText(/ · 2건$/)).toHaveCount(0);
+    await page.context().close();
+  });
+
+  test("지급처 넷(각 두 문서) → 소계 행 4 · 칸 안 스크롤(행 셋 높이) · 제목 · 결과 줄 · 지급일 · 1차 위치는 지급처 셋일 때와 같다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const payer = await makeTransferPayer(fx);
+    const vendors = [await payeeVendor("A"), await payeeVendor("B"), await payeeVendor("C"), await payeeVendor("D")];
+    const targets = await payeeTargets(fx, payer, vendors.flatMap((vendor) => [vendor.id, vendor.id]));
+
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    await page.goto("/expenses");
+    await waitForHydration(rowOf(page, take(targets, 0).itemName).getByRole("checkbox"));
+    await checkAll(page, targets.slice(0, 6).map((target) => target.itemName));
+    await page.getByRole("button", { name: /^지급 완료 6/ }).click();
+    const dialog = page.getByRole("dialog");
+    const box = dialog.locator('[data-ui="confirm-subtotals"]');
+    await expect(box.locator("li")).toHaveCount(3);
+    await expect(dialog.getByRole("button", { name: /^지급 완료 6건/ })).not.toHaveAttribute("aria-disabled", "true");
+    const three = await dialogTops(page);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+
+    await checkAll(page, targets.slice(6).map((target) => target.itemName));
+    await page.getByRole("button", { name: /^지급 완료 8/ }).click();
+    await expect(box.locator("li")).toHaveCount(4);
+    await expect(dialog.getByRole("button", { name: /^지급 완료 8건/ })).not.toHaveAttribute("aria-disabled", "true");
+    const measured = await box.evaluate((element) => {
+      const row = element.querySelector("li");
+      return {
+        scrollHeight: element.scrollHeight,
+        clientHeight: element.clientHeight,
+        overflowY: getComputedStyle(element).overflowY,
+        rowHeight: row ? row.getBoundingClientRect().height : 0,
+      };
+    });
+    expect(measured.scrollHeight).toBeGreaterThan(measured.clientHeight);
+    expect(measured.overflowY).toBe("auto");
+    expect(Math.abs(measured.clientHeight - measured.rowHeight * 3)).toBeLessThanOrEqual(2);
+    const four = await dialogTops(page);
+    for (const key of ["title", "results", "payDate", "primary"] as const) expect(Math.abs(four[key] - three[key])).toBeLessThanOrEqual(1);
+    await page.context().close();
+  });
+
+  test("같은 거래처 계좌이체 두 문서 + 현금 한 문서 → 소계 행 `· 2건`(현금은 빠진다 · R-6)", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const payer = await makeTransferPayer(fx);
+    await approvedTarget(fx, "tracer", payer);
+    await approvedTarget(fx, "hold", payer);
+    const cash = await approvedTarget(fx, "retry", payer);
+    await db.update(expenses).set({ paymentMethod: "cash" }).where(eq(expenses.id, cash));
+
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    await page.goto("/expenses");
+    await waitForHydration(rowOf(page, fx.lines.tracer.itemName).getByRole("checkbox"));
+    await checkAll(page, [fx.lines.tracer.itemName, fx.lines.hold.itemName, fx.lines.retry.itemName]);
+    await page.getByRole("button", { name: /^지급 완료 3/ }).click();
+    const box = page.getByRole("dialog").locator('[data-ui="confirm-subtotals"]');
+    await expect(box.locator("li")).toHaveCount(1);
+    await expect(box.locator("li")).toHaveText(new RegExp(`^${fx.vendorName} [\\d,]+ · 2건$`));
+    await page.context().close();
+  });
+
+  test("소계 읽기 실패 → 칸 없음 · 오류 문구 없음 · 1차는 막히지 않고 지급 완료가 끝난다(R-5)", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const payer = await makeTransferPayer(fx);
+    await approvedTarget(fx, "tracer", payer);
+    await approvedTarget(fx, "hold", payer);
+
+    const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
+    await page.goto("/expenses");
+    await waitForHydration(rowOf(page, fx.lines.tracer.itemName).getByRole("checkbox"));
+    await checkAll(page, [fx.lines.tracer.itemName, fx.lines.hold.itemName]);
+    // 여는 순간의 서버 액션 중 지급 행 스냅숏(expectedPayableKrw)을 싣는 것은 소계 읽기뿐이다(합 요청은 id · 이체액만) — 그 하나만 끊는다.
+    let aborted = false;
+    const failed = page.waitForEvent("requestfailed");
+    await page.route("**/*", async (route) => {
+      const request = route.request();
+      if (!aborted && request.method() === "POST" && request.headers()["next-action"] && (request.postData() ?? "").includes("expectedPayableKrw")) {
+        aborted = true;
+        await route.abort();
+        return;
+      }
+      await route.fallback();
+    });
+    await page.getByRole("button", { name: /^지급 완료 2/ }).click();
+    await failed;
+    await page.unroute("**/*");
+    const dialog = page.getByRole("dialog");
+    const primary = dialog.getByRole("button", { name: /^지급 완료 2건/ });
+    await expect(primary).not.toHaveAttribute("aria-disabled", "true");
+    await expect(dialog.locator('[data-ui="confirm-subtotals"]')).toHaveCount(0);
+    await expect(dialog.getByText(/실패|오류|소계/)).toHaveCount(0);
+    await primary.click();
+    await expect(dialog).toBeHidden();
+    await expect(page.locator('[aria-live="polite"]').filter({ hasText: "지급 완료" })).toHaveText(/^\d{2}:\d{2} 지급 완료 2건$/);
+    await page.context().close();
+  });
+});
+
+function take<T>(items: readonly T[], index: number): T {
+  const item = items[index];
+  if (item === undefined) throw new Error("픽스처 모자람");
+  return item;
+}

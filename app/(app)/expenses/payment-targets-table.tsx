@@ -28,7 +28,7 @@ import { revealPersonAccountNumberAction } from "@/app/(app)/admin/people/[id]/a
 import { AMOUNT_HIDDEN, DIFF_REASON_REQUIRED, TRANSFER_NOT_NUMBER, TRANSFER_NOT_POSITIVE } from "@/domain/payments/action-row";
 import { formatKrw } from "@/lib/format-number";
 import { Toast } from "@/ui/toast/Toast";
-import { completePaymentsBatchAction, exportBankTransferFileAction, sumSelectedTransfersAction } from "./actions";
+import { completePaymentsBatchAction, exportBankTransferFileAction, previewTransferPayeesAction, sumSelectedTransfersAction } from "./actions";
 import {
   applyBatchResult,
   diffCount,
@@ -603,6 +603,49 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
     setSnapshot({ ids: chosen, rows: chosenRows, edits: selection.edits, seq, otherPage: otherPageCount(chosen, props.rows.map((row) => row.id)) });
     setRejection(null);
     setDialogOpen(true);
+    readSubtotals();
+  }
+
+  // 06.5-06(V14 · SP-65-7 · R-5): 대화상자를 여는 순간 지급처 소계를 확정 액션과 따로 읽는다 — 2건 이상 지급처만 한 행.
+  // 읽는 동안 · 실패면 칸이 없을 뿐(오류 문구 · 1차 막힘 없음). 열 때마다 차례를 세어 마지막 응답만 받는다(앞 선택 소계가 새 선택에 서지 않게).
+  const subtotalTicketRef = useRef(0);
+  const [subtotalLines, setSubtotalLines] = useState<string[]>([]);
+  const { executeAsync: previewPayees } = useAction(previewTransferPayeesAction);
+  function readSubtotals() {
+    const ticket = ++subtotalTicketRef.current;
+    setSubtotalLines([]);
+    const rowById = new Map(chosenRows.map((row) => [row.id, row]));
+    const sent = transferRequestRows(chosen, chosenRows, selection.edits);
+    if (sent.length === 0) return;
+    previewPayees({ rows: sent })
+      .then((response) => {
+        if (ticket !== subtotalTicketRef.current || !response?.data) return;
+        setSubtotalLines(
+          response.data.flatMap((group) => {
+            // 투영 DTO는 칸이 빠질 수 있다(정보 항목 숨김) — 합이나 건수가 없으면 그 행을 세우지 않는다.
+            if (group.count === undefined || group.count < 2 || group.totalKrw === undefined) return [];
+            const first = (group.expenseIds ?? []).map((id) => rowById.get(id)).find((row) => row !== undefined);
+            return [`${first?.vendorName ?? first?.payeeUserName ?? "—"} ${formatKrw(group.totalKrw)} · ${group.count}건`];
+          }),
+        );
+      })
+      .catch(() => {
+        // 끊김 · 액션 ID 불일치 — 칸 없이 둔다(SP-65-7 실패).
+      });
+  }
+
+  // 06.5-06: 이체 파일 · 소계 읽기가 보내는 행 — 지금 쪽 고른 행 + 지금 쪽 밖은 마지막 합 응답이 고를 수 있다고 한 행(`지급 완료`와 같은 꼴).
+  function transferRequestRows(ids: string[], onPage: PaymentTargetScreenRow[], edits: SelectionState["edits"]) {
+    const offRows: PaymentTargetScreenRow[] = offPageSnapshotRows(
+      ids,
+      onPage.map((row) => row.id),
+      offPage,
+    ).map((row) => ({ ...row, group: "" }));
+    return [...onPage, ...offRows].flatMap((row) =>
+      typeof row.version === "number" && typeof row.payableKrw === "number"
+        ? [{ expenseId: row.id, expenseVersion: row.version, expectedPayableKrw: row.payableKrw, ...transferPart(row, edits) }]
+        : [],
+    );
   }
 
   // 스냅숏 한 행 — 고친 이체액(양의 정수)과, 지급 총액과 다르면 그 사유.
@@ -674,16 +717,7 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
       return;
     }
     if (goToOffPageIssue(effective)) return;
-    const offRows: PaymentTargetScreenRow[] = offPageSnapshotRows(
-      chosen,
-      chosenRows.map((row) => row.id),
-      offPage,
-    ).map((row) => ({ ...row, group: "" }));
-    const sent = [...chosenRows, ...offRows].flatMap((row) =>
-      typeof row.version === "number" && typeof row.payableKrw === "number"
-        ? [{ expenseId: row.id, expenseVersion: row.version, expectedPayableKrw: row.payableKrw, ...transferPart(row, selection.edits) }]
-        : [],
-    );
+    const sent = transferRequestRows(chosen, chosenRows, selection.edits);
     if (sent.length === 0) return;
     setBlocked(new Map());
     setResult(null);
@@ -888,7 +922,12 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
           </>
         ) : transferResult ? (
           <>
-            <span className={styles.batchDone}>{`${transferResult.time} 이체 파일 ${transferResult.docCount}건`}</span>
+            {/* 06.5-06(V5 · V14): 지급처마다 한 줄 — 줄 수와 문서 수가 같으면 한 번만 쓴다. */}
+            <span className={styles.batchDone}>
+              {transferResult.lineCount === transferResult.docCount
+                ? `${transferResult.time} 이체 파일 ${transferResult.docCount}건`
+                : `${transferResult.time} 이체 파일 ${transferResult.lineCount}줄 · 문서 ${transferResult.docCount}건`}
+            </span>
             {transferResult.blocked > 0 ? (
               <>
                 {" · "}
@@ -1037,6 +1076,8 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
           onClose={() => {
             if (isExecuting) return;
             setDialogOpen(false);
+            subtotalTicketRef.current += 1;
+            setSubtotalLines([]);
             focusAfterClose();
           }}
           count={snapshot.ids.length}
@@ -1052,6 +1093,7 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
           }}
           onRetrySum={retrySum}
           lineCount={lineCount}
+          subtotalLines={subtotalLines}
           prepaidCount={prepaidCount}
           prepaidDueDays={props.prepaidDueDays}
           pending={isExecuting}

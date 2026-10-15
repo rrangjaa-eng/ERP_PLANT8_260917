@@ -23,7 +23,7 @@ import {
 } from "@/domain/expenses";
 import { DATE_FORMAT_ERROR, EXPENSE_TEXT_MAX, expenseDraftFieldsSchema } from "@/domain/expenses/draft-fields";
 import { completePaymentsBatch } from "@/domain/payments/batch";
-import { exportBankTransferFile } from "@/domain/payments/bank-transfer";
+import { exportBankTransferFile, summarizeTransferPayees } from "@/domain/payments/bank-transfer";
 import { getEvidenceConfirmView, sumSelectedTransfers } from "@/domain/payments/targets";
 import { DIFF_REASON_REQUIRED } from "@/domain/payments/action-row";
 import { isCalendarDate } from "@/lib/dates";
@@ -371,6 +371,11 @@ export const completePaymentsBatchAction = authedActionClient.schema(batchPaymen
 export const exportBankTransferFileAction = authedActionClient
   .schema(z.object({ rows: z.array(paymentSnapshotRowSchema).min(1).max(200) }))
   .action(async ({ parsedInput, ctx }) => exportBankTransferFile(ctx.viewer, parsedInput));
+
+// 06.5-06(V14 · SP-65-7): `지급 완료` 대화상자를 열 때 따로 읽는 지급처 소계 — 확정 액션과 별개(실패해도 지급을 막지 않는다 · R-5). 읽기 전용.
+export const previewTransferPayeesAction = authedActionClient
+  .schema(z.object({ rows: z.array(paymentSnapshotRowSchema).min(1).max(200) }))
+  .action(async ({ parsedInput, ctx }) => summarizeTransferPayees(ctx.viewer, parsedInput));
 
 // 06-17(S1 「합계 줄」 · O-18) — 고른 건 이체액 합 · 행별 차이 · 고른 행 상태(rowStates). 입력은 합계 번호 · 고른 행 id · 고친 이체액 · 모달이 마지막으로 쓴
 // 지급일뿐 — 지급 총액 · version은 서버가 다시 읽는다. 행 수 상한은 처리 요청과 같은 200. 읽기 전용이라 revalidate 없음.

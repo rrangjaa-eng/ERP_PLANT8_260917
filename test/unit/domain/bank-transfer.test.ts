@@ -7,6 +7,8 @@ import {
   accountProblemText,
   bankTransferCells,
   buildBankTransferRows,
+  mergeTransferLines,
+  payeeKeyOf,
   truncateCp949,
   bankNameProblem,
   cp949ByteLength,
@@ -120,5 +122,53 @@ describe("행 빌더(06.5 D-6504)", () => {
     expect(cells).toHaveLength(BANK_TRANSFER_HEADER.length);
     for (const cell of cells) expect(typeof cell).toBe("string");
     expect(cells).toEqual(["088", "110123456789", "테스트 예금주", "13640000", "테스트 예금주", "", "", "26001-0004", "26001-0004"]);
+  });
+});
+
+// 06.5-06(D-6519 · ND-6): 지급처마다 한 줄 — 키는 옛 O: server/src/payments.ts:352-361 그대로(v: · p: · x:).
+describe("지급처 합치기(06.5 D-6519)", () => {
+  const row = (expenseId: string, extra: { vendorId?: string | null; payeeUserId?: string | null; number?: string; transferKrw?: number }) => ({
+    expenseId,
+    vendorId: extra.vendorId ?? null,
+    payeeUserId: extra.payeeUserId ?? null,
+    number: extra.number ?? `26001-${expenseId}`,
+    transferKrw: extra.transferKrw ?? 10_000,
+  });
+
+  it("payeeKeyOf — 거래처 v: · 직원 p: · 지급처 없음 x:{문서}", () => {
+    expect(payeeKeyOf(row("e1", { vendorId: "a" }))).toBe("v:a");
+    expect(payeeKeyOf(row("e2", { payeeUserId: "a" }))).toBe("p:a");
+    expect(payeeKeyOf(row("e3", {}))).toBe("x:e3");
+  });
+
+  it("같은 거래처 둘 + 다른 거래처 하나 → 줄 둘 · 첫 줄 합 50000 · 비고는 첫 번호 + 외 1건 · 같은 id 글자의 거래처 · 직원은 섞이지 않고 x: 는 합치지 않는다", () => {
+    const lines = mergeTransferLines([
+      row("e1", { vendorId: "a", number: "26001-0004", transferKrw: 30_000 }),
+      row("e2", { vendorId: "b", number: "26001-0005", transferKrw: 7_000 }),
+      row("e3", { vendorId: "a", number: "26001-0006", transferKrw: 20_000 }),
+    ]);
+    expect(lines).toEqual([
+      { payeeKey: "v:a", expenseIds: ["e1", "e3"], totalKrw: 50_000, memo: "26001-0004 외 1건" },
+      { payeeKey: "v:b", expenseIds: ["e2"], totalKrw: 7_000, memo: "26001-0005" },
+    ]);
+    expect(cp949ByteLength(lines[0]?.memo ?? "")).toBeLessThanOrEqual(20);
+    const mixed = mergeTransferLines([row("e1", { vendorId: "a" }), row("e2", { payeeUserId: "a" }), row("e3", {}), row("e4", {})]);
+    expect(mixed.map((line) => line.payeeKey)).toEqual(["v:a", "p:a", "x:e3", "x:e4"]);
+  });
+
+  it("비고가 20바이트를 넘으면 문자 경계에서 자른다", () => {
+    const many = Array.from({ length: 12 }, (_, index) => row(`e${index}`, { vendorId: "a", number: "PRJ-2026-000123-0001" }));
+    const [line] = mergeTransferLines(many);
+    expect(cp949ByteLength(line?.memo ?? "")).toBeLessThanOrEqual(20);
+    expect(line?.memo.startsWith("PRJ-2026-000123-0001")).toBe(true);
+  });
+
+  it("합친 직원 지급처 줄의 계좌(예금주)가 없으면 그 키 하나로 막혀 두 문서 모두 같은 이유가 된다", () => {
+    const [line] = mergeTransferLines([row("e1", { payeeUserId: "u" }), row("e2", { payeeUserId: "u" })]);
+    if (!line) throw new Error("줄 없음");
+    const built = buildBankTransferRows([{ key: line.payeeKey, bank: "신한은행", holder: "", accountNumber: "110-123-456789", transferKrw: line.totalKrw, memo: line.memo }]);
+    expect(built.rows).toEqual([]);
+    expect(built.blocked).toEqual([{ key: "p:u", problem: ACCOUNT_PROBLEMS.holderRequired }]);
+    expect(line.expenseIds).toEqual(["e1", "e2"]);
   });
 });

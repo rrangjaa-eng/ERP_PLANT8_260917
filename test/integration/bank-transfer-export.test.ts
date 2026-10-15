@@ -16,7 +16,7 @@ import { decrypt } from "@/lib/crypto";
 import { ForbiddenError } from "@/domain/permissions/can";
 import { PayableChangedError, PaymentNotFoundError, previewPayable } from "@/domain/payments";
 import { DIFF_REASON_REQUIRED } from "@/domain/payments/action-row";
-import { exportBankTransferFile } from "@/domain/payments/bank-transfer";
+import { exportBankTransferFile, summarizeTransferPayees } from "@/domain/payments/bank-transfer";
 import { BANK_TRANSFER_HEADER } from "@/domain/bank-transfer";
 import { seoulToday } from "@/lib/dates";
 import { addApprovedRevision, makeEvidenceManager, setupExpenseProject, submitReadyDraft, testVendorAccount, type ExpenseFixture } from "./fixtures/expenses";
@@ -406,5 +406,82 @@ describe("신한 이체 파일 — 막힌 건(06.5 Task 2)", () => {
     const noGate = await makePaymentManager("게이트없음");
     const plainRows = (await listPaymentTargets(noGate, {})).groups.flatMap((group) => group.rows);
     expect(plainRows.find((row) => row.id === today.expenseId)?.transferFileAt ?? null).toBeNull();
+  });
+});
+
+// 06.5-06 Task 3(D-6519 · V14 · SP-65-7): 지급처마다 한 줄 · 대화상자 소계 읽기(기록 없음 · 지급 게이트 아님 — R-6).
+// 옛 지급처 키 O: /home/user/erp_plant8_260907/server/src/payments.ts:352-361(`v:` · `p:` · `x:{expense}`).
+describe("신한 이체 파일 — 지급처 합치기 · 소계(06.5 Task 3)", () => {
+  it("같은 거래처 두 문서 + 다른 거래처 한 문서 → 파일 2줄 · 문서 3건 · 금액 합 = 고른 행 합 · 비고는 첫 번호 외 1건 · detail lines는 파일 줄 단위", async () => {
+    const payer = await makeExporter();
+    const fx = await setupExpenseProject();
+    const [first, second, other] = await docsFor(fx, 3);
+    if (!first || !second || !other) throw new Error("픽스처 모자람");
+    const otherVendor = await vendorWith({});
+    await setDoc(other, { vendorId: otherVendor });
+    const snapshots = await Promise.all([first, second, other].map((doc) => snapshotOf(payer, doc)));
+    const [a, b, c] = snapshots;
+    if (!a || !b || !c) throw new Error("스냅숏 없음");
+
+    const result = await exportBankTransferFile(payer, { rows: snapshots });
+    expect(result).toMatchObject({ lineCount: 2, docCount: 3, blocked: [] });
+    const sheet = readFile(result.base64).Sheets["입력정보"];
+    if (!sheet) throw new Error("시트 없음");
+    const amounts = [cellAt(sheet, "D2")?.v, cellAt(sheet, "D3")?.v];
+    expect(amounts).toEqual([String(a.expectedPayableKrw + b.expectedPayableKrw), String(c.expectedPayableKrw)]);
+    expect(cellAt(sheet, "A4")).toBeUndefined();
+    expect(cellAt(sheet, "H2")?.v).toBe(`${first.number} 외 1건`);
+    expect(cellAt(sheet, "H3")?.v).toBe(other.number);
+
+    const detail = (await exportLogs(payer.id))[0]?.detail as Record<string, unknown>;
+    expect(detail).toMatchObject({ requestedDocs: 3, expenseIds: [first.expenseId, second.expenseId, other.expenseId] });
+    expect(detail.lines).toEqual([
+      { payeeKey: `v:${fx.stageOneId}`, totalKrw: a.expectedPayableKrw + b.expectedPayableKrw, expenseIds: [first.expenseId, second.expenseId] },
+      { payeeKey: `v:${otherVendor}`, totalKrw: c.expectedPayableKrw, expenseIds: [other.expenseId] },
+    ]);
+    expect(JSON.stringify(detail)).not.toContain(PLAIN_NUMBER);
+  });
+
+  it("같은 거래처 행 둘 중 하나가 현금이면 그 행만 막히고 나머지는 한 줄 · 계좌 없는 거래처는 두 행 모두 같은 이유로 막힌다", async () => {
+    const payer = await makeExporter();
+    const fx = await setupExpenseProject();
+    const [kept, cash, noA, noB] = await docsFor(fx, 4);
+    if (!kept || !cash || !noA || !noB) throw new Error("픽스처 모자람");
+    await setDoc(cash, { paymentMethod: "cash" });
+    const noAccountVendor = await vendorWith(null);
+    await setDoc(noA, { vendorId: noAccountVendor });
+    await setDoc(noB, { vendorId: noAccountVendor });
+
+    const result = await exportBankTransferFile(payer, { rows: await Promise.all([kept, cash, noA, noB].map((doc) => snapshotOf(payer, doc))) });
+    expect(result).toMatchObject({ lineCount: 1, docCount: 1 });
+    expect(blockedOf(result, cash.expenseId)?.text).toBe("계좌이체 아님");
+    expect(blockedOf(result, noA.expenseId)?.text).toBe(blockedOf(result, noB.expenseId)?.text);
+    expect(blockedOf(result, noA.expenseId)?.text).toContain("계좌 없음");
+  });
+
+  it("소계 읽기 — 지급처별 합 · 건수(계좌이체만 · 현금 제외) · 계좌 없는 지급처도 든다 · action_log 0 · 금액 숨김이면 ForbiddenError", async () => {
+    const payer = await makeExporter();
+    const fx = await setupExpenseProject();
+    const [first, second, cash, lonely] = await docsFor(fx, 4);
+    if (!first || !second || !cash || !lonely) throw new Error("픽스처 모자람");
+    await setDoc(cash, { paymentMethod: "cash" });
+    const noAccountVendor = await vendorWith(null);
+    await setDoc(lonely, { vendorId: noAccountVendor });
+    const snapshots = await Promise.all([first, second, cash, lonely].map((doc) => snapshotOf(payer, doc)));
+    const [a, b, , d] = snapshots;
+    if (!a || !b || !d) throw new Error("스냅숏 없음");
+    const before = await db.select({ seq: actionLog.seq }).from(actionLog).where(eq(actionLog.actorId, payer.id));
+
+    const groups = await summarizeTransferPayees(payer, { rows: snapshots });
+    expect(groups).toEqual([
+      { payeeKey: `v:${fx.stageOneId}`, expenseIds: [first.expenseId, second.expenseId], totalKrw: a.expectedPayableKrw + b.expectedPayableKrw, count: 2 },
+      { payeeKey: `v:${noAccountVendor}`, expenseIds: [lonely.expenseId], totalKrw: d.expectedPayableKrw, count: 1 },
+    ]);
+    const after = await db.select({ seq: actionLog.seq }).from(actionLog).where(eq(actionLog.actorId, payer.id));
+    expect(after).toHaveLength(before.length);
+    expect(JSON.stringify(groups)).not.toContain(PLAIN_NUMBER);
+
+    const hidden = await makeExporter("소계금액숨김", ["expense.amount"]);
+    await expect(summarizeTransferPayees(hidden, { rows: snapshots })).rejects.toBeInstanceOf(ForbiddenError);
   });
 });

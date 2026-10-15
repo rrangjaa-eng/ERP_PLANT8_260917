@@ -35,6 +35,7 @@ export function BatchPaymentDialog({
   sumFailed,
   onRetrySum,
   lineCount,
+  subtotalLines,
   prepaidCount,
   prepaidDueDays,
   otherPageCount,
@@ -54,6 +55,8 @@ export function BatchPaymentDialog({
   sumFailed: boolean;
   onRetrySum: () => void;
   lineCount: number;
+  // 06.5-06(V14 · SP-65-7): 2건 이상 지급처의 소계 행(`{지급처} {합} · {n}건`) — 결과 줄이 아니라 소계 칸. 없으면 칸 DOM 0.
+  subtotalLines: string[];
   prepaidCount: number;
   prepaidDueDays: number;
   // H-5 결과 줄 ③ — 지금 쪽 밖에서 고른 건수 · 차이 2행이 선 고른 행 수(둘 다 개수라 화면이 센다).
@@ -82,6 +85,7 @@ export function BatchPaymentDialog({
       title="지급 완료"
       subtitle={totalKrw === null ? `${count}건` : `${count}건 · 이체액 합계 ${totalKrw === undefined ? "…" : formatKrw(totalKrw)}`}
       resultLines={resultLines}
+      subtotals={subtotalLines.length > 0 ? { label: "지급처 소계", lines: subtotalLines } : undefined}
       evidenceField={
         <Form.Field id={fieldId} label="지급일" width="short">
           <input

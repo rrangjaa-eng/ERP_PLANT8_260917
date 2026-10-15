@@ -1,15 +1,17 @@
 import type { Viewer } from "@/domain/viewer";
 import { can, ForbiddenError } from "@/domain/permissions/can";
 import { canExportBankTransferFile } from "@/domain/payments/transfer-gate";
-import type { DtoSpec } from "@/domain/permissions/project";
+import { projectMany, type DtoSpec } from "@/domain/permissions/project";
+import { visible } from "@/domain/permissions/visible";
+import { sumKrw } from "@/domain/money";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { judgeTransferAmount, loadPaymentShared, PayableChangedError, PaymentConflictError, PaymentNotFoundError } from "@/domain/payments";
 import type { BatchPaymentRow } from "@/domain/payments/batch";
-import { rejudgePaymentTargets } from "@/domain/payments/targets";
+import { rejudgePaymentTargets, type JudgedPaymentTarget } from "@/domain/payments/targets";
 import { BANK_TRANSFER_PAYMENT_METHOD, documentPayee, hasUsableAccount } from "@/domain/expenses/payee";
 import { canManagePayoutAccount } from "@/domain/people/account";
-import { BANK_TRANSFER_HEADER, BANK_TRANSFER_SHEET, bankTransferCells, buildBankTransferRows, type BankTransferSource } from "@/domain/bank-transfer";
+import { BANK_TRANSFER_HEADER, BANK_TRANSFER_SHEET, bankTransferCells, buildBankTransferRows, mergeTransferLines, payeeKeyOf, type BankTransferSource } from "@/domain/bank-transfer";
 import { formatKstTime } from "@/domain/holidays/business-day";
 import { findTransferAccounts, type TransferAccountRow } from "@/repositories/payment-targets";
 import { registerExport } from "@/lib/actions/registry";
@@ -78,6 +80,34 @@ function accountBlocked(expenseId: string, payee: Passed["payee"], cause: string
   return { expenseId, text: cause, link: { label: fix, href: `/admin/vendors?editId=${payee.id}` } };
 }
 
+// 행 고유 이유(V5 1~7) — 파일과 소계가 같이 쓴다. 통과하면 돈 갈 곳(문서 지급처)과 보낼 이체액.
+function judgeRow(
+  row: BatchPaymentRow,
+  target: JudgedPaymentTarget | undefined,
+  today: string,
+): { ok: true; passed: Passed } | { ok: false; text: string; link: BankTransferBlocked["link"] } {
+  const expenseId = row.expenseId;
+  if (!target) return { ok: false, text: new PaymentNotFoundError().message, link: null };
+  if (!target.selectable || target.payableKrw === null) return { ok: false, text: target.reason ?? new PaymentNotFoundError().message, link: null };
+  if (target.row.version !== row.expenseVersion) {
+    return { ok: false, text: new PaymentConflictError(`다른 사람이 ${formatKstTime(target.row.updatedAt)}에 바꿈 · 새로 고침`).message, link: null };
+  }
+  if (target.payableKrw !== row.expectedPayableKrw) return { ok: false, text: new PayableChangedError(target.payableKrw, today).message, link: null };
+  if (target.row.paymentMethod !== BANK_TRANSFER_PAYMENT_METHOD) return { ok: false, text: NOT_BANK_TRANSFER, link: null };
+  const payee = documentPayee(target.row);
+  if (!payee) return { ok: false, text: NO_PAYEE, link: { label: "문서 확인", href: `/expenses/${expenseId}` } };
+  const amount = judgeTransferAmount({ payableKrw: target.payableKrw, transferKrw: row.transferKrw, diffReason: row.diffReason });
+  if (!amount.ok) return { ok: false, text: amount.reason, link: null };
+  if (amount.transferKrwToSend <= 0) return { ok: false, text: TRANSFER_ZERO, link: null };
+  return { ok: true, passed: { row, payee, number: target.row.number ?? "", transferKrw: amount.transferKrwToSend } };
+}
+
+// 같은 문서 id는 첫 행만 센다(CB3 — 일괄 지급 domain/payments/batch.ts와 같은 규칙).
+function firstOfEach(rows: readonly BatchPaymentRow[]): BatchPaymentRow[] {
+  const seen = new Set<string>();
+  return rows.filter((row) => (seen.has(row.expenseId) ? false : (seen.add(row.expenseId), true)));
+}
+
 export async function exportBankTransferFile(
   viewer: Viewer,
   input: { rows: readonly BatchPaymentRow[] },
@@ -86,9 +116,7 @@ export async function exportBankTransferFile(
   if (!(await canExportBankTransferFile(viewer))) throw new ForbiddenError("이체 파일 권한 없음");
   const now = deps?.now ?? new Date();
   const today = seoulToday(now);
-  // 같은 문서 id는 첫 행만 센다(CB3 — 일괄 지급 domain/payments/batch.ts와 같은 규칙).
-  const seen = new Set<string>();
-  const rows = input.rows.filter((row) => (seen.has(row.expenseId) ? false : (seen.add(row.expenseId), true)));
+  const rows = firstOfEach(input.rows);
   const shared = await loadPaymentShared(viewer);
   const judged = await rejudgePaymentTargets(
     viewer,
@@ -101,47 +129,16 @@ export async function exportBankTransferFile(
   const blocked: BankTransferBlocked[] = [];
   const passed: Passed[] = [];
   for (const row of rows) {
-    const expenseId = row.expenseId;
-    const target = judged.get(expenseId);
-    if (!target) {
-      blocked.push({ expenseId, text: new PaymentNotFoundError().message, link: null });
+    const judgedRow = judgeRow(row, judged.get(row.expenseId), today);
+    if (!judgedRow.ok) {
+      blocked.push({ expenseId: row.expenseId, text: judgedRow.text, link: judgedRow.link });
       continue;
     }
-    if (!target.selectable || target.payableKrw === null) {
-      blocked.push({ expenseId, text: target.reason ?? new PaymentNotFoundError().message, link: null });
+    if (judgedRow.passed.payee.kind === "user" && !canPersonAccounts) {
+      blocked.push({ expenseId: row.expenseId, text: NO_PERSON_ACCOUNT_RIGHT, link: null });
       continue;
     }
-    if (target.row.version !== row.expenseVersion) {
-      blocked.push({ expenseId, text: new PaymentConflictError(`다른 사람이 ${formatKstTime(target.row.updatedAt)}에 바꿈 · 새로 고침`).message, link: null });
-      continue;
-    }
-    if (target.payableKrw !== row.expectedPayableKrw) {
-      blocked.push({ expenseId, text: new PayableChangedError(target.payableKrw, today).message, link: null });
-      continue;
-    }
-    if (target.row.paymentMethod !== BANK_TRANSFER_PAYMENT_METHOD) {
-      blocked.push({ expenseId, text: NOT_BANK_TRANSFER, link: null });
-      continue;
-    }
-    const payee = documentPayee(target.row);
-    if (!payee) {
-      blocked.push({ expenseId, text: NO_PAYEE, link: { label: "문서 확인", href: `/expenses/${expenseId}` } });
-      continue;
-    }
-    const amount = judgeTransferAmount({ payableKrw: target.payableKrw, transferKrw: row.transferKrw, diffReason: row.diffReason });
-    if (!amount.ok) {
-      blocked.push({ expenseId, text: amount.reason, link: null });
-      continue;
-    }
-    if (amount.transferKrwToSend <= 0) {
-      blocked.push({ expenseId, text: TRANSFER_ZERO, link: null });
-      continue;
-    }
-    if (payee.kind === "user" && !canPersonAccounts) {
-      blocked.push({ expenseId, text: NO_PERSON_ACCOUNT_RIGHT, link: null });
-      continue;
-    }
-    passed.push({ row, payee, number: target.row.number ?? "", transferKrw: amount.transferKrwToSend });
+    passed.push(judgedRow.passed);
   }
 
   // 계좌는 이 호출의 읽기 값으로 판정한다(CH5) — 문서 지급처의 계좌만 읽는다(돈 갈 곳 = 문서 지급처, 결정 맥락 15).
@@ -154,41 +151,50 @@ export async function exportBankTransferFile(
     ...accounts.users.map((account): [string, TransferAccountRow] => [`p:${account.id}`, account]),
   ]);
   const decrypt = deps?.decrypt ?? defaultDecrypt;
-  // 복호화는 지급처마다 한 번 · 행마다 try — 실패는 그 지급처만 「계좌번호 형식 오류」로 막는다(EP3-C3). 로그 · 결과에 암호문을 싣지 않는다.
-  const plain = new Map<string, string | null>();
-  function plainNumber(key: string, ciphertext: string): string | null {
-    if (!plain.has(key)) {
-      try {
-        plain.set(key, decrypt(ciphertext));
-      } catch (error) {
-        log.error("이체 파일 계좌번호 복호화 실패", { error: error instanceof Error ? error.name : "unknown" });
-        plain.set(key, null);
-      }
+  // 복호화는 지급처 줄마다 try — 실패는 그 지급처만 「계좌번호 형식 오류」로 막는다(EP3-C3). 로그 · 결과에 암호문을 싣지 않는다.
+  function plainNumber(ciphertext: string): string | null {
+    try {
+      return decrypt(ciphertext);
+    } catch (error) {
+      log.error("이체 파일 계좌번호 복호화 실패", { error: error instanceof Error ? error.name : "unknown" });
+      return null;
     }
-    return plain.get(key) ?? null;
   }
 
+  // 행 고유 이유를 지난 행만 지급처마다 한 줄로 합친다(D-6519). 지급처 계좌 문제(V5 9~14)는 그 지급처의 모든 문서를 같은 이유로 막는다.
+  const payeeOf = new Map(passed.map((item) => [item.row.expenseId, item.payee]));
+  const merged = mergeTransferLines(
+    passed.map((item) => ({
+      expenseId: item.row.expenseId,
+      vendorId: item.payee.kind === "vendor" ? item.payee.id : null,
+      payeeUserId: item.payee.kind === "user" ? item.payee.id : null,
+      number: item.number,
+      transferKrw: item.transferKrw,
+    })),
+  );
   const lines: FileLine[] = [];
-  for (const item of passed) {
-    const payeeKey = `${item.payee.kind === "vendor" ? "v" : "p"}:${item.payee.id}`;
-    const account = accountOf.get(payeeKey);
+  for (const line of merged) {
+    const payee = payeeOf.get(line.expenseIds[0] ?? "");
+    if (!payee) continue;
+    const account = accountOf.get(line.payeeKey);
     if (!account || !hasUsableAccount({ bank: account.bank, hasNumber: account.accountNumberEncrypted !== null })) {
-      blocked.push(accountBlocked(item.row.expenseId, item.payee, NO_ACCOUNT, item.payee.kind === "vendor" ? "거래처 계좌 등록" : "직원 계좌 등록", canEditVendors));
+      for (const expenseId of line.expenseIds)
+        blocked.push(accountBlocked(expenseId, payee, NO_ACCOUNT, payee.kind === "vendor" ? "거래처 계좌 등록" : "직원 계좌 등록", canEditVendors));
       continue;
     }
     lines.push({
-      payeeKey,
-      expenseIds: [item.row.expenseId],
-      totalKrw: item.transferKrw,
-      vendorId: item.payee.kind === "vendor" ? item.payee.id : null,
-      userId: item.payee.kind === "user" ? item.payee.id : null,
+      payeeKey: line.payeeKey,
+      expenseIds: line.expenseIds,
+      totalKrw: line.totalKrw,
+      vendorId: payee.kind === "vendor" ? payee.id : null,
+      userId: payee.kind === "user" ? payee.id : null,
       source: {
-        key: payeeKey,
+        key: line.payeeKey,
         bank: account.bank ?? "",
         holder: account.holder ?? "",
-        accountNumber: account.accountNumberEncrypted ? plainNumber(payeeKey, account.accountNumberEncrypted) : null,
-        transferKrw: item.transferKrw,
-        memo: item.number,
+        accountNumber: account.accountNumberEncrypted ? plainNumber(account.accountNumberEncrypted) : null,
+        transferKrw: line.totalKrw,
+        memo: line.memo,
       },
     });
   }
@@ -233,4 +239,41 @@ export async function exportBankTransferFile(
     blocked,
     time: formatKstTime(now),
   };
+}
+
+// 06.5-06(V14 · SP-65-7 · R-6): `지급 완료` 대화상자의 지급처 소계 — 행 고유 거르기(중복 · 재판정 · 계좌이체만 · 지급처 · 이체액)를 지난 행을
+// 지급처 키로 묶은 합. 계좌 판정 · 복호화 · 기록이 없는 읽기다 — 지급 게이트가 아니라 계좌 문제가 있는 지급처도 든다.
+export type TransferPayeeSubtotalDto = { payeeKey: string; expenseIds: string[]; totalKrw: number; count: number };
+
+const TRANSFER_PAYEE_SUBTOTAL_DTO_SPEC: DtoSpec<TransferPayeeSubtotalDto, TransferPayeeSubtotalDto> = {
+  fields: [
+    { key: "payeeKey", from: "payeeKey", infoItem: "expense.value" },
+    { key: "expenseIds", from: "expenseIds", infoItem: "expense.value" },
+    { key: "totalKrw", from: "totalKrw", infoItem: "expense.amount" },
+    { key: "count", from: "count", infoItem: "expense.value" },
+  ],
+};
+
+registerDto({ name: "TransferPayeeSubtotalDto", fields: TRANSFER_PAYEE_SUBTOTAL_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
+
+export async function summarizeTransferPayees(viewer: Viewer, input: { rows: readonly BatchPaymentRow[] }): Promise<Partial<TransferPayeeSubtotalDto>[]> {
+  const [payments, amount] = await Promise.all([can(viewer, "expenses.payments", "write"), visible(viewer, "expense.amount")]);
+  if (!payments || !amount) throw new ForbiddenError("지급처 소계 권한 없음");
+  const rows = firstOfEach(input.rows);
+  const today = seoulToday();
+  const judged = await rejudgePaymentTargets(
+    viewer,
+    rows.map((row) => row.expenseId),
+    { shared: await loadPaymentShared(viewer), today },
+  );
+  const groups = new Map<string, TransferPayeeSubtotalDto>();
+  for (const row of rows) {
+    const judgedRow = judgeRow(row, judged.get(row.expenseId), today);
+    if (!judgedRow.ok) continue;
+    const { payee, transferKrw } = judgedRow.passed;
+    const payeeKey = payeeKeyOf({ expenseId: row.expenseId, vendorId: payee.kind === "vendor" ? payee.id : null, payeeUserId: payee.kind === "user" ? payee.id : null });
+    const group = groups.get(payeeKey) ?? { payeeKey, expenseIds: [], totalKrw: 0, count: 0 };
+    groups.set(payeeKey, { payeeKey, expenseIds: [...group.expenseIds, row.expenseId], totalKrw: sumKrw([group.totalKrw, transferKrw]), count: group.count + 1 });
+  }
+  return projectMany(viewer, [...groups.values()], TRANSFER_PAYEE_SUBTOTAL_DTO_SPEC);
 }

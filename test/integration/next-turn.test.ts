@@ -767,6 +767,27 @@ describe("listExpenseEvidenceSignals — 기안자 증빙 신호(B-C8 · H-1)", 
     expect(await signalOf(fx.pm, expenseId)).toBe("증빙 무효");
   });
 
+  it("G-06-I — 증빙 무효 뒤 면제한 지급 전 문서 → 신호 없음", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await makeEvidenceManager();
+    const { expenseId } = await approvedExpense(fx);
+    await voidEvidence(manager, { fileId: (await fileIds(expenseId))[0] ?? "", reason: "다른 건" });
+    await markWaived(expenseId, manager.id);
+
+    expect(await signalOf(fx.pm, expenseId)).toBeNull();
+  });
+
+  it("G-06-I — 증빙 무효 → 면제 → 지급(UAT T26-0002 순서) → 신호 없음", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await makeEvidenceManager();
+    const { expenseId } = await approvedExpense(fx);
+    await voidEvidence(manager, { fileId: (await fileIds(expenseId))[0] ?? "", reason: "다른 건" });
+    await markWaived(expenseId, manager.id);
+    await markPaid(expenseId, "2026-10-01", fx.ceo.id);
+
+    expect(await signalOf(fx.pm, expenseId)).toBeNull();
+  });
+
   it("`확인 전`(증빙 있음 · 확인 기록 없음) → 신호 없음", async () => {
     const fx = await setupExpenseProject();
     const { expenseId } = await approvedExpenseWithEvidence(fx);
@@ -875,6 +896,17 @@ describe("「내 차례」 기안자 증빙 줄 — 05 훅 경유 (06-23)", () =
 
     const lines = (await listNextTurnItems(fx.pm)).filter((item) => item.action.href === `/expenses/${expenseId}#evidence`);
     expect(lines.map((item) => item.label)).toEqual(["가을 팝업 · 무대 제작 — 증빙 없음 · 지급 대기"]);
+  });
+
+  it("G-06-I — 증빙 무효 → 면제 → 지급한 문서 → 기안자 「내 차례」에 증빙 줄 0", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await makeEvidenceManager();
+    const { expenseId } = await approvedExpense(fx);
+    await voidEvidence(manager, { fileId: (await fileIds(expenseId))[0] ?? "", reason: "다른 건" });
+    await markWaived(expenseId, manager.id);
+    await markPaid(expenseId, "2026-10-01", fx.ceo.id);
+
+    expect((await listNextTurnItems(fx.pm)).filter((item) => item.action.href === `/expenses/${expenseId}#evidence`)).toEqual([]);
   });
 
   it("종결한 반려 문서 → 기안자 [막힘] 반려 줄 없음(C10 · 06-28, 반려 문서 50건 미만 — E-47 회귀 메모)", async () => {

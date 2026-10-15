@@ -341,14 +341,15 @@ export const restoreExpenseDraftAction = authedActionClient
 // 지급 총액 · 역산 칸은 받지 않는다 — expectedPayableKrw는 낡았는지 가리는 비교값이다. 지급일은 05 isCalendarDate · DATE_FORMAT_ERROR(E-20 —
 // 달력에 없는 날짜 · 0000년이 DB까지 가지 않는다), 미래 날짜는 허용(Q6). 행 수 1~200(T-06-75). 판정(권한 · 보임 · 게이트)은 도메인.
 // 06.5-06(EP2-C6): 행 스냅숏 스키마 — 일괄 지급과 이체 파일이 같이 쓴다.
-const paymentSnapshotRowSchema = z
-  .object({
-    expenseId: expenseIdSchema,
-    expenseVersion: z.number().int().positive(),
-    expectedPayableKrw: z.number().int().nonnegative(),
-    transferKrw: z.number().int().positive().optional(),
-    diffReason: z.string().max(EXPENSE_TEXT_MAX).optional(),
-  })
+const paymentSnapshotRowShape = z.object({
+  expenseId: expenseIdSchema,
+  expenseVersion: z.number().int().positive(),
+  expectedPayableKrw: z.number().int().nonnegative(),
+  transferKrw: z.number().int().positive().optional(),
+  diffReason: z.string().max(EXPENSE_TEXT_MAX).optional(),
+});
+
+const paymentSnapshotRowSchema = paymentSnapshotRowShape
   // 06-17(D-605 · 「Error — 차이 사유 칸」) — 이체액이 스냅숏의 지급 총액과 다르면 사유가 필수(같음 비교 — 금액 셈 없음). 그 행 칸 오류로 돌아간다.
   .refine((row) => row.transferKrw === undefined || row.transferKrw === row.expectedPayableKrw || (row.diffReason ?? "").trim() !== "", {
     message: DIFF_REASON_REQUIRED,
@@ -368,8 +369,9 @@ export const completePaymentsBatchAction = authedActionClient.schema(batchPaymen
 
 // 06.5-06(D-6504 · UI-SPEC V5): 신한 대량이체 파일 — 입력은 일괄 지급과 같은 행 스냅숏(1~200). 판정 · 기록 · 직렬화는 도메인.
 // 파일 바이트(base64)는 응답에만 싣고 화면은 내려받은 뒤 버린다. 지급 상태를 바꾸지 않아 revalidate 없음.
+// 차이 사유 refine을 걸지 않는다(검토 P2-2) — 이체액 검증은 V5 6번 행 막힘(도메인 judgeTransferAmount)이라 그 행만 빠지고 나머지는 파일에 든다.
 export const exportBankTransferFileAction = authedActionClient
-  .schema(z.object({ rows: z.array(paymentSnapshotRowSchema).min(1).max(200) }))
+  .schema(z.object({ rows: z.array(paymentSnapshotRowShape).min(1).max(200) }))
   .action(async ({ parsedInput, ctx }) => exportBankTransferFile(ctx.viewer, parsedInput));
 
 // 06.5-06(V14 · SP-65-7): `지급 완료` 대화상자를 열 때 따로 읽는 지급처 소계 — 확정 액션과 별개(실패해도 지급을 막지 않는다 · R-5). 읽기 전용.

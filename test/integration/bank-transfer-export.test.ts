@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as XLSX from "xlsx";
 import { db } from "@/db/client";
 import { actionLog, expenses, files, quoteLines, users, vendors } from "@/db/schema";
@@ -19,6 +19,7 @@ import { DIFF_REASON_REQUIRED } from "@/domain/payments/action-row";
 import { exportBankTransferFile, summarizeTransferPayees } from "@/domain/payments/bank-transfer";
 import { BANK_TRANSFER_HEADER } from "@/domain/bank-transfer";
 import { seoulToday } from "@/lib/dates";
+import { exportBankTransferFileAction } from "@/app/(app)/expenses/actions";
 import { addApprovedRevision, makeEvidenceManager, setupExpenseProject, submitReadyDraft, testVendorAccount, type ExpenseFixture } from "./fixtures/expenses";
 import { makePerson } from "./approvals-fixtures";
 import { approvedExpenseWithoutEvidence, makePaymentManager, setEvidenceRequired, type ApprovedExpense } from "./fixtures/payments";
@@ -27,6 +28,13 @@ import { approvedExpenseWithoutEvidence, makePaymentManager, setEvidenceRequired
 // 직렬화 전 excel_export 기록(평문 계좌 없음). 문서는 06-15 일괄 지급 픽스처(증빙 0 · 증빙 필수 끔 = P4)로 만든다.
 
 const PLAIN_NUMBER = "110123456789";
+
+// 액션 경로 시험(검토 P2-2)은 authedActionClient를 거친다 — 세션만 바꿔 끼운다(payment-batch.test.ts 꼴).
+const session = vi.hoisted(() => ({ viewer: null as Viewer | null }));
+vi.mock("@/lib/viewer", () => ({
+  getSession: () => Promise.resolve(session.viewer ? { viewer: session.viewer, user: { id: session.viewer.id } } : null),
+}));
+vi.mock("next/cache", () => ({ revalidatePath: () => undefined }));
 
 beforeEach(async () => {
   await setEvidenceRequired(false);
@@ -334,6 +342,32 @@ describe("신한 이체 파일 — 막힌 건(06.5 Task 2)", () => {
     const sheet = readFile(result.base64).Sheets["입력정보"];
     if (!sheet) throw new Error("시트 없음");
     expect(cellAt(sheet, "D2")?.v).toBe(String(b.expectedPayableKrw - 1_000));
+  });
+
+  it("액션 경로(검토 P2-2) — 차이 사유 없는 · 공백뿐인 편집 이체액 행은 그 행만 기존 문구로 막히고 나머지 행은 파일에 든다", async () => {
+    const payer = await makeExporter();
+    const fx = await setupExpenseProject();
+    const docs = await docsFor(fx, 3);
+    const [noReason, blank, ok] = [take(docs, 0), take(docs, 1), take(docs, 2)];
+    const a = await snapshotOf(payer, noReason);
+    const b = await snapshotOf(payer, blank);
+    const c = await snapshotOf(payer, ok);
+    session.viewer = payer;
+
+    const response = await exportBankTransferFileAction({
+      rows: [
+        { ...a, transferKrw: a.expectedPayableKrw - 1_000 },
+        { ...b, transferKrw: b.expectedPayableKrw - 1_000, diffReason: "   " },
+        c,
+      ],
+    });
+    expect(response?.validationErrors).toBeUndefined();
+    expect(response?.data?.docCount).toBe(1);
+    expect(response?.data?.blocked).toEqual([
+      { expenseId: noReason.expenseId, text: DIFF_REASON_REQUIRED, link: null },
+      { expenseId: blank.expenseId, text: DIFF_REASON_REQUIRED, link: null },
+    ]);
+    expect((await exportLogs(payer.id))[0]?.detail).toMatchObject({ expenseIds: [ok.expenseId] });
   });
 
   it("직원 지급처 — 계좌 권한이 있으면 그 직원 예금주로 담기고 userIds에 실린다 · 없으면 그 행만 막히고 거래처 행은 담긴다", async () => {

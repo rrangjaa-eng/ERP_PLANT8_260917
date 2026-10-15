@@ -54,6 +54,8 @@ import { formatKrw } from "@/lib/format-number";
 import { kstDateOf } from "@/lib/kst-date";
 import { maskTail4 } from "@/lib/mask-tail4";
 import { findVendorAccountsByIds } from "@/repositories/payment-targets";
+import { findUserPayoutAccountsByIds } from "@/repositories/users";
+import { canManagePayoutAccount } from "@/domain/people/account";
 
 // 06-03(EXP-06 · EXP-09 · OPS-09) — 결재 통과 지출결의 한 건의 지급 완료(트레이서). 증빙 게이트 · 짝 게이트 · 지급 칸 · 취소는 06-04,
 // 증빙 확인은 06-06이 더한다.
@@ -773,26 +775,40 @@ export type PaymentViewBar = Pick<ExpenseActionBar, "row" | "primary" | "ownerNo
 // 지급 권한(expenses.payments write)이 없으면 행을 그대로 돌려주고 account 키를 만들지 않는다 — projectMany는 원천에 없는 키를 만들지 않는다.
 // 계좌이체 행만 거래처 계좌를 한 번에 읽어 붙이고, 뒤 4자리가 없으면 「없음」. canReveal은 03 해제 액션과 같은 노출표 판정 하나(E-50 —
 // 지급 권한에서 해제를 끌어오지 않는다). 계좌 유무는 고를 수 있는지(resolveExpenseActionRow)에 들어가지 않는다(M-7).
+// 06.5 D-6517: 직원 지급처(payeeUserId) 행은 직원 지급 계좌를 읽는다 — D-6505 게이트(canManagePayoutAccount)가 거짓이면 「없음」이라 말하지
+// 않고 account 키를 만들지 않는다(계좌가 있는지조차 그 사람에게 알리지 않는다). 해제 버튼이 부를 액션을 고르게 주인(거래처 · 직원)을 싣는다.
 export type PaymentAccount =
-  | { status: "registered"; vendorId: string; bank: string | null; masked: string; holder: string | null; canReveal: boolean }
+  | { status: "registered"; ownerKind: "vendor" | "user"; ownerId: string; bank: string | null; masked: string; holder: string | null; canReveal: boolean }
   | { status: "none" };
 
 const BANK_TRANSFER = "bank_transfer";
 
-export async function projectPaymentAccounts<Row extends { paymentMethod: string | null; vendorId: string | null }>(
+type AccountSource = { bank: string | null; holder: string | null; last4: string | null };
+
+function accountOf(ownerKind: "vendor" | "user", ownerId: string, found: AccountSource | undefined, canReveal: boolean): PaymentAccount {
+  return found?.last4 ? { status: "registered", ownerKind, ownerId, bank: found.bank, masked: maskTail4(found.last4), holder: found.holder, canReveal } : { status: "none" };
+}
+
+export async function projectPaymentAccounts<Row extends { paymentMethod: string | null; vendorId: string | null; payeeUserId: string | null }>(
   viewer: Viewer,
   rows: readonly Row[],
 ): Promise<(Row & { account?: PaymentAccount })[]> {
   if (!(await can(viewer, "expenses.payments", "write"))) return [...rows];
-  const vendorIds = [...new Set(rows.flatMap((row) => (row.paymentMethod === BANK_TRANSFER && row.vendorId ? [row.vendorId] : [])))];
-  const [accounts, canReveal] = await Promise.all([findVendorAccountsByIds(viewer, vendorIds), visible(viewer, "vendor.account_number_unmasked")]);
+  const transfers = rows.filter((row) => row.paymentMethod === BANK_TRANSFER);
+  const vendorIds = [...new Set(transfers.flatMap((row) => (row.vendorId ? [row.vendorId] : [])))];
+  const userIds = [...new Set(transfers.flatMap((row) => (row.payeeUserId ? [row.payeeUserId] : [])))];
+  const [accounts, canReveal, canSeePeople] = await Promise.all([
+    findVendorAccountsByIds(viewer, vendorIds),
+    visible(viewer, "vendor.account_number_unmasked"),
+    userIds.length > 0 ? canManagePayoutAccount(viewer) : Promise.resolve(false),
+  ]);
+  const people = canSeePeople ? await findUserPayoutAccountsByIds(viewer, userIds) : [];
   const byVendor = new Map(accounts.map((account) => [account.vendorId, account]));
+  const byUser = new Map(people.map((account) => [account.userId, account]));
   return rows.map((row) => {
     if (row.paymentMethod !== BANK_TRANSFER) return row;
-    const found = row.vendorId ? byVendor.get(row.vendorId) : undefined;
-    const account: PaymentAccount =
-      found?.last4 ? { status: "registered", vendorId: found.vendorId, bank: found.bank, masked: maskTail4(found.last4), holder: found.holder, canReveal } : { status: "none" };
-    return { ...row, account };
+    if (row.payeeUserId) return canSeePeople ? { ...row, account: accountOf("user", row.payeeUserId, byUser.get(row.payeeUserId), canReveal) } : row;
+    return { ...row, account: row.vendorId ? accountOf("vendor", row.vendorId, byVendor.get(row.vendorId), canReveal) : { status: "none" } };
   });
 }
 
@@ -927,7 +943,7 @@ export async function getPaymentView(viewer: Viewer, expenseId: string, deps?: {
     : null;
   const alive = await listAliveByOwners(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerIds: [row.id] });
   const evidenceStamp = evidenceStampOf({ fileIds: alive.map((file) => file.id), evidenceDate: row.evidenceDate });
-  const [accountRow] = await projectPaymentAccounts(viewer, [{ paymentMethod: row.paymentMethod, vendorId: row.vendorId }]);
+  const [accountRow] = await projectPaymentAccounts(viewer, [{ paymentMethod: row.paymentMethod, vendorId: row.vendorId, payeeUserId: row.payeeUserId }]);
   const accountPart = accountRow?.account ? { account: accountRow.account } : {};
   if (live) {
     const names = await findUserNamesByIds(viewer, [live.processedBy]);

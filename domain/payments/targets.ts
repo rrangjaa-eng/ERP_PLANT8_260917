@@ -199,10 +199,10 @@ function toDto(target: JudgedPaymentTarget, shared: PaymentShared): PaymentTarge
 }
 
 export async function projectPaymentTargets(viewer: Viewer, targets: readonly JudgedPaymentTarget[], shared: PaymentShared): Promise<Partial<PaymentTargetRowDto>[]> {
-  // 06-20(O-17) — 계좌 칸은 문서 화면과 같은 투영 함수 하나. 지급 방식 코드 · 거래처 id는 스펙 밖 키라 projectMany가 버린다.
+  // 06-20(O-17) — 계좌 칸은 문서 화면과 같은 투영 함수 하나. 지급 방식 코드 · 거래처 id · 직원 지급처 id(06.5 D-6517)는 스펙 밖 키라 projectMany가 버린다.
   const rows = await projectPaymentAccounts(
     viewer,
-    targets.map((target) => ({ ...toDto(target, shared), paymentMethod: target.row.paymentMethod, vendorId: target.row.vendorId })),
+    targets.map((target) => ({ ...toDto(target, shared), paymentMethod: target.row.paymentMethod, vendorId: target.row.vendorId, payeeUserId: target.row.payeeUserId })),
   );
   return projectMany(viewer, rows, PAYMENT_TARGET_ROW_DTO_SPEC);
 }

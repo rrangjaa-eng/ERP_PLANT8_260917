@@ -24,6 +24,7 @@ import type { ConfirmEvidenceResult } from "@/domain/evidence-reviews";
 import type { PaymentAccount } from "@/domain/payments";
 import { AccountNumberCell } from "@/app/(app)/admin/vendors/account-number";
 import { revealVendorAccountNumberAction } from "@/app/(app)/admin/vendors/actions";
+import { revealPersonAccountNumberAction } from "@/app/(app)/admin/people/[id]/actions";
 import { AMOUNT_HIDDEN, DIFF_REASON_REQUIRED, TRANSFER_NOT_NUMBER, TRANSFER_NOT_POSITIVE } from "@/domain/payments/action-row";
 import { formatKrw } from "@/lib/format-number";
 import { completePaymentsBatchAction, sumSelectedTransfersAction } from "./actions";
@@ -77,7 +78,7 @@ const EMPTY_SELECTION: SelectionState = { selectedIds: [], edits: {} };
 
 // 차이는 부호를 붙인다(`-3,300` · `+1,200` — 금액 표시 절 「차이」, S5 SignedNum과 같은 꼴). 값은 서버 diffKrw.
 // 06-20(UI-SPEC 「표시 — 지급 방식 · 계좌」): 계좌이체 칸 — 1행 `{은행} ****-**-{뒤4}` + 권한자 3차 `번호 보기`(03 AccountNumberCell 그대로),
-// 2행 예금주(한 줄 말줄임 + title). 계좌가 없으면 `계좌 없음 · 계좌 등록은 관리자`(버튼 없음 — 지급을 막지 않는다, M-7). S1 칸과 S5 계좌 행이 같이 쓴다.
+// 2행 예금주(한 줄 말줄임 + title). 직원 지급처는 03 해제 대신 사람 해제 액션(06.5 D-6517). 계좌가 없으면 `계좌 없음 · 계좌 등록은 관리자`(버튼 없음 — 지급을 막지 않는다, M-7). S1 칸과 S5 계좌 행이 같이 쓴다.
 export function PaymentAccountValue({ account }: { account: PaymentAccount }) {
   if (account.status === "none") {
     return (
@@ -91,10 +92,10 @@ export function PaymentAccountValue({ account }: { account: PaymentAccount }) {
       <div className={styles.accountLine}>
         {account.bank ? <span className={styles.nowrap}>{account.bank}</span> : null}
         <AccountNumberCell
-          id={account.vendorId}
+          id={account.ownerId}
           masked={account.masked}
           canReveal={account.canReveal}
-          revealAction={revealVendorAccountNumberAction}
+          revealAction={account.ownerKind === "user" ? revealPersonAccountNumberAction : revealVendorAccountNumberAction}
         />
       </div>
       {account.holder ? (

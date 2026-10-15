@@ -909,7 +909,7 @@ describe("계좌 투영 (06-20 Task 2)", () => {
     if (!doc) throw new Error("문서 필요");
 
     const row = rowsOf(await listPaymentTargets(payer, {})).find((candidate) => candidate.id === doc.expenseId);
-    expect(row?.account).toEqual({ status: "registered", vendorId: fx.stageOneId, bank, masked: "****-**-4321", holder, canReveal: false });
+    expect(row?.account).toEqual({ status: "registered", ownerKind: "vendor", ownerId: fx.stageOneId, bank, masked: "****-**-4321", holder, canReveal: false });
     const payerView = await getPaymentView(payer, doc.expenseId);
     expect(payerView?.account).toEqual(row?.account);
 
@@ -1111,5 +1111,26 @@ describe("지급 대상 · 지급 완료 목록의 직원 지급처 이름 (06.5
     const hiddenPaid = paidRowsOf(await listPaidPayments(blind, {})).find((row) => row.id === doc.expenseId);
     expect(hiddenPaid).toBeDefined();
     expect(hiddenPaid && "payeeUserName" in hiddenPaid).toBe(false);
+  });
+
+  // 06.5 D-6517(PR-C 리뷰): 직원 지급처 계좌이체 행은 거래처 id가 없어 「계좌 없음」으로 보였다. 직원 계좌는 D-6505 게이트
+  // (canManagePayoutAccount — 지급 쓰기 ∧ admin.people 보기 ∧ person.value)를 통과한 사람에게만 — 아니면 account 키 자체가 없다.
+  it("직원 지급처 계좌 — 게이트 통과자는 S1 행 · 지급 보기에 직원 계좌(마스킹), admin.people 보기가 없는 지급 권한자는 account 키 없음", async () => {
+    const manager = await makePayer();
+    const payerOnly = await makePayer("사람관리없음");
+    if (!manager.roleId || !payerOnly.roleId) throw new Error("계급 없음");
+    for (const roleId of [manager.roleId, payerOnly.roleId]) await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "person.value", visible: true });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: manager.roleId, menu: "admin.people", action: "view", allowed: true });
+    const fx = await setupExpenseProject();
+    const { doc, payeeUserId } = await employeePayeeDoc(fx, "김직원계좌");
+
+    const expected = { status: "registered", ownerKind: "user", ownerId: payeeUserId, bank: "신한은행", masked: "****-**-6789", holder: "테스트 예금주", canReveal: false };
+    expect(rowsOf(await listPaymentTargets(manager, {})).find((row) => row.id === doc.expenseId)?.account).toEqual(expected);
+    expect((await getPaymentView(manager, doc.expenseId))?.account).toEqual(expected);
+
+    const hidden = rowsOf(await listPaymentTargets(payerOnly, {})).find((row) => row.id === doc.expenseId);
+    expect(hidden).toBeDefined();
+    expect(hidden && "account" in hidden).toBe(false);
+    expect(Object.keys((await getPaymentView(payerOnly, doc.expenseId)) ?? {})).not.toContain("account");
   });
 });

@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 06
 current_phase_name: 지급·증빙·법인카드·구매 요청 (경영관리)
-current_plan: 35
+current_plan: 36
 status: executing
-stopped_at: Completed 06-34-PLAN.md
-last_updated: "2026-10-15T08:04:07.511Z"
+stopped_at: Completed 06-35-PLAN.md
+last_updated: "2026-10-15T08:29:22.477Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 06 execution started
-state_head: 007aaefd259f034f040f7659b0ec7e2da8634b0b
+state_head: 5df7820722569ecaee40d394e2fce0833b9c913d
 progress:
   total_phases: 21
   completed_phases: 7
   total_plans: 236
-  completed_plans: 228
+  completed_plans: 229
   percent: 33
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-30)
 ## Current Position
 
 Phase: 06 (지급·증빙·법인카드·구매 요청 (경영관리)) — EXECUTING
-Current Plan: 35
+Current Plan: 36
 Total Plans in Phase: 38
 Status: Ready to execute
 Last activity: 2026-10-14 — Phase 06 execution started
@@ -149,6 +149,7 @@ Progress: [███░░░░░░░] 33%
 | Phase 06 P36 | 26min | 3 tasks | 8 files |
 | Phase 06 P33 | ~25m | 2 tasks | 4 files |
 | Phase 06 P34 | 30min | 2 tasks | 4 files |
+| Phase 06 P35 | 40min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -389,6 +390,7 @@ Recent decisions affecting current work:
 - [Phase 06]: 06-07: N-3 보관 붙잡기 · 실행가 초과 읽기를 06-13 대신 06-07에서(Q-G 추천안 — 아침 확인)
 - [Phase 06]: 06-36: 카드 ② 「경고만」 — 결재 통과 · 증빙 없음은 완료 전 점검의 막힘이 아니라 증빙 대기 경고 그룹(D-611 결재 통과 갈래 대체) — 연말 행사처럼 세금계산서가 다음 달에 오는 건이 프로젝트 완료를 막지 않게 하되 점검 섹션에서는 계속 보인다. 결재 중 · 반려는 그대로 막는다
 - [Phase 06]: 06-34: 카드 ① 「구매 요청만」 -> 구매 요청 고객 승인 게이트(서버: quote.customer-approval 재사용, 잠긴 tx 최신 차수)
+- [Phase 06]: 06-35: 구매 요청 문도 표 전체 게이트(tableGateReason)를 따르고 줄 고르기 바닥 줄은 서버 projectBlockedReason 우선 (카드 ① 2026-10-14)
 
 ### Pending Todos
 
@@ -492,6 +494,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-15T08:04:06.863Z
-Stopped at: Completed 06-34-PLAN.md
+Last session: 2026-10-15T08:29:21.978Z
+Stopped at: Completed 06-35-PLAN.md
 Resume file: None

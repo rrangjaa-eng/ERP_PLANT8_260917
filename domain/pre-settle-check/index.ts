@@ -30,6 +30,7 @@ import {
   liveLinkCount,
   openExpenseState,
   preSettleBlockReason,
+  preSettleExpenseGroup,
   revenueSummary,
   summarizePreSettle,
   type OpenExpenseState,
@@ -89,6 +90,8 @@ export type PreSettleRevenueDto = {
 export type PreSettleCheckDto = {
   /** count는 프로젝트 전체(막힘 건수와 같은 값) · rows는 보는 사람의 범위 안 · 범위 밖은 건수만(R-6). */
   openExpenses: { count: number; allowed: boolean; rows: PreSettleExpenseRowDto[]; outOfScopeCount: number };
+  /** 06-36 — 결재 통과 · 증빙 없음(막힘 건수 밖). 범위 · 금액은 openExpenses와 같고 강행 대상이 아니라 allowed 없음. */
+  evidencePending: { count: number; rows: PreSettleExpenseRowDto[]; outOfScopeCount: number };
   unmatchedLines: { count: number; allowed: boolean; rows: PreSettleLineRowDto[] };
   missingRevenue: { count: number; allowed: boolean };
   revenue: PreSettleRevenueDto;
@@ -162,6 +165,7 @@ export async function computePreSettleCheck(viewer: Viewer, projectId: string, i
   // ① 미결 지출결의(D-611 · C10) — 증빙은 hasEvidence(살아 있는 파일) · 면제는 리뷰 행 · 낱말은 resolveEvidenceStatus(C5).
   const expenseRows = await listPreSettleExpenseRows(viewer, projectId, tx);
   const open: (PreSettleExpenseRowDto & { supplyAmountKrw: number | null })[] = [];
+  const pending: (PreSettleExpenseRowDto & { supplyAmountKrw: number | null })[] = [];
   for (const row of expenseRows) {
     const evidence = resolveEvidenceStatus({
       hasEvidence: await hasEvidence(viewer, { ownerKind: "expense", ownerId: row.id }, tx),
@@ -169,9 +173,12 @@ export async function computePreSettleCheck(viewer: Viewer, projectId: string, i
       review: await findReviewByExpense(viewer, row.id, tx),
     });
     const state = openExpenseState({ approvalStatus: row.approvalStatus, evidence, closed: false });
-    if (state) open.push({ id: row.id, number: row.number, itemName: row.itemName, state, supplyAmountKrw: row.supplyAmountKrw });
+    const group = preSettleExpenseGroup({ approvalStatus: row.approvalStatus, state });
+    if (state && group) (group === "evidencePending" ? pending : open).push({ id: row.id, number: row.number, itemName: row.itemName, state, supplyAmountKrw: row.supplyAmountKrw });
   }
-  open.sort((a, b) => (STATE_RANK.get(a.state) ?? 0) - (STATE_RANK.get(b.state) ?? 0) || a.number.localeCompare(b.number));
+  const byStateThenNumber = (a: PreSettleExpenseRowDto, b: PreSettleExpenseRowDto) => (STATE_RANK.get(a.state) ?? 0) - (STATE_RANK.get(b.state) ?? 0) || a.number.localeCompare(b.number);
+  open.sort(byStateThenNumber);
+  pending.sort(byStateThenNumber);
 
   // ② 미매칭 견적 줄(D-612) — 최신 차수 줄만, 연결은 그 줄 id 전부로 findLineLinks 한 번(계보 사슬 전체 — X-1). 살아 있는 지출결의 = ①의 대상 목록(PS-2).
   const latest = await findLatestQuoteRevision(viewer, projectId, tx);
@@ -207,14 +214,19 @@ export async function computePreSettleCheck(viewer: Viewer, projectId: string, i
   // 미결 지출결의 행만 보는 사람의 범위로 가른다 — 범위 밖은 건수만(번호 · 항목 · 금액을 싣지 않는다).
   // 미매칭 줄 문의 마지막 문서(회수 등 — listNumberedByLines는 결재 상태 · 범위를 보지 않는다)도 같은 범위로 거른다 — 범위 밖이면 문 없음(검토 F-1).
   const closedDoorIds = unmatched.flatMap((row) => (row.door.kind === "expense_closed" ? [row.door.latestId] : []));
-  const inScope = await listExpenseIdsInScope(viewer, { ids: [...open.map((row) => row.id), ...closedDoorIds], scope: inputs.scope, documentKind: EXPENSE_DOCUMENT_KIND }, tx);
+  const inScope = await listExpenseIdsInScope(viewer, { ids: [...open.map((row) => row.id), ...pending.map((row) => row.id), ...closedDoorIds], scope: inputs.scope, documentKind: EXPENSE_DOCUMENT_KIND }, tx);
   for (const row of unmatched) if (row.door.kind === "expense_closed" && !inScope.has(row.door.latestId)) row.door = { kind: "none" };
   const visibleRows: PreSettleExpenseRowDto[] = [];
   for (const { supplyAmountKrw, ...row } of open) {
     if (inScope.has(row.id)) visibleRows.push({ ...row, ...(await projectAmounts(viewer, inputs, { expenseAmountKrw: supplyAmountKrw })) });
   }
+  const visiblePending: PreSettleExpenseRowDto[] = [];
+  for (const { supplyAmountKrw, ...row } of pending) {
+    if (inScope.has(row.id)) visiblePending.push({ ...row, ...(await projectAmounts(viewer, inputs, { expenseAmountKrw: supplyAmountKrw })) });
+  }
   return {
     openExpenses: { ...summary.groups.openExpenses, rows: visibleRows, outOfScopeCount: open.length - visibleRows.length },
+    evidencePending: { count: pending.length, rows: visiblePending, outOfScopeCount: pending.length - visiblePending.length },
     unmatchedLines: { ...summary.groups.unmatchedLines, rows: unmatched },
     missingRevenue: summary.groups.missingRevenue,
     revenue: {

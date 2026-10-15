@@ -57,6 +57,13 @@ export function openExpenseState(input: { approvalStatus: string; evidence: Evid
   return null;
 }
 
+// 06-36(G-06-E · 카드 ② 2026-10-14 「경고만」): 결재 통과 · 증빙 없음은 막지 않는 증빙 대기, 결재 중 · 반려만 막는다 — D-611의 결재 통과 갈래를 대체.
+export type PreSettleExpenseGroup = "openExpenses" | "evidencePending";
+export function preSettleExpenseGroup(input: { approvalStatus: string; state: OpenExpenseState | null }): PreSettleExpenseGroup | null {
+  if (input.state === null) return null;
+  return input.approvalStatus === "approved" ? "evidencePending" : "openExpenses";
+}
+
 // PS-2 — 줄 사슬의 살아 있는 연결 수. 지출결의는 점검 대상 목록(결재 중 · 반려 · 결재 통과 · 종결 안 됨)에 든 것만 센다 — 회수 · 작성 중 · 종결 제외.
 export function liveLinkCount(
   links: { expenses: readonly { id: string }[]; cardUsages: readonly unknown[]; purchaseRequests: readonly unknown[] },

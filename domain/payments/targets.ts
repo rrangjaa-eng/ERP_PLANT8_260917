@@ -4,7 +4,7 @@ import { projectMany, type DtoSpec } from "@/domain/permissions/project";
 import { visible } from "@/domain/permissions/visible";
 import { gate } from "@/domain/rules/gate";
 import "@/domain/rules/register";
-import { diffKrw, sumKrw } from "@/domain/money";
+import { diffKrw, moneyFromRow, sumKrw } from "@/domain/money";
 import { EXPENSE_DOCUMENT_KIND, visibleExpenseScope, type VisibleExpenseScope } from "@/domain/expenses/access";
 import { groupExpenses } from "@/domain/expenses/list";
 import { incomeTypeFor, pickTaxDates, type TaxLinePart } from "@/domain/expenses/tax";
@@ -337,6 +337,8 @@ export type EvidenceConfirmView = {
   evidenceAmountKrw: number | null;
   taxLine: TaxLinePart[] | null;
   evidenceOverrun: string | null;
+  // 06.5-07 S1 부제 끝 `공급가액 {금액}` — 문서 통화 금액(영수증과 대조하는 값). 공급가가 없으면 null.
+  supply: { currency: string; amount: number } | null;
   files: EvidenceConfirmFile[];
   conflict: string | null;
 };
@@ -352,6 +354,7 @@ const EVIDENCE_CONFIRM_VIEW_SPEC: DtoSpec<EvidenceConfirmView, EvidenceConfirmVi
     { key: "evidenceAmountKrw", from: "evidenceAmountKrw", infoItem: "expense.amount" },
     { key: "taxLine", from: "taxLine", infoItem: "expense.amount" },
     { key: "evidenceOverrun", from: "evidenceOverrun", infoItem: "expense.amount" },
+    { key: "supply", from: "supply", infoItem: "expense.amount" },
     { key: "files", from: "files", infoItem: "expense.value" },
     { key: "conflict", from: "conflict", infoItem: "expense.value" },
   ],
@@ -378,6 +381,8 @@ export async function getEvidenceConfirmView(viewer: Viewer, input: { expenseId:
     const name = row.updatedBy ? (await findUserNamesByIds(viewer, [row.updatedBy])).get(row.updatedBy) : undefined;
     conflict = `${name ? `${name}이` : "다른 사람이"} ${formatKstTime(row.updatedAt)}에 바꿈 · 새로 고침`;
   }
+  const supply =
+    row.supplyAmountKrw === null ? null : moneyFromRow({ currency: row.supplyCurrency, foreignAmount: row.supplyForeignAmount, fxRate: row.supplyFxRate, amountKrw: row.supplyAmountKrw });
   const [projected] = await projectMany(
     viewer,
     [
@@ -390,6 +395,7 @@ export async function getEvidenceConfirmView(viewer: Viewer, input: { expenseId:
         evidenceAmountKrw: row.evidenceAmount,
         taxLine: view.evidenceTaxLine ?? null,
         evidenceOverrun: await loadEvidenceOverrun(viewer, row, row.evidenceAmount),
+        supply: supply && { currency: supply.currency, amount: supply.amount },
         files,
         conflict,
       },
@@ -419,7 +425,7 @@ export async function listPaidTeamOptions(viewer: Viewer): Promise<{ value: stri
 
 // ── 06-20(UI-SPEC S3) 「지급 완료」 보기 ──────────────────────────────────
 // 받는 사람 = 지급 권한자 ∪ 05 visibleExpenseScope의 전사 보는 범위(06.2 rowScope all — 대표). 역할 이름 리터럴 없이 05 보임 규칙으로 판정한다.
-// 행은 보임 범위 안 살아 있는 지급 기록만, 계좌 칸은 조회부터 없다(O-17). 주 그룹 · 합계(sumKrw) · 쪽은 서버가 정한다. 트랜잭션 없는 읽기.
+// 행은 살아 있는 지급 기록 전부(06.5 카드 ③), 계좌 칸은 조회부터 없다(O-17). 주 그룹 · 합계(sumKrw) · 쪽은 서버가 정한다. 트랜잭션 없는 읽기.
 
 const MONTH_SHAPE = /^\d{4}-(0[1-9]|1[0-2])$/;
 
@@ -466,10 +472,12 @@ export async function listPaidPayments(
   const today = deps?.today ?? seoulToday();
   const [canPay, scope] = await Promise.all([can(viewer, "expenses.payments", "write"), visibleExpenseScope(viewer, { today })]);
   if (!paidAllowedBy(canPay, scope)) throw new ForbiddenError("지급 완료 보기 권한 없음");
+  // 06.5 D-6516 · 카드 ③(사용자 카드 10/13 23:29 KST): 지급 완료는 06.2 K2와 같은 결 — 지급 권한자 · 지출결의 전사 범위는 전부, 그 밖은 06-20이 거부.
+  // 통과한 viewer는 모두 전부라 거르는 갈래를 두지 않는다(팀 비용 포함, EP1-12).
   const teamId = input.team && UUID_SHAPE.test(input.team) ? input.team : null;
   const month = input.month && MONTH_SHAPE.test(input.month) ? input.month : today.slice(0, 7);
-  const all = await keepVisible(viewer, await listPaidPaymentRows(viewer, { teamId, month }), scope);
-  const monthRows = await keepVisible(viewer, await listPaidMonthRows(viewer, { teamId }), scope);
+  const all = await listPaidPaymentRows(viewer, { teamId, month });
+  const monthRows = await listPaidMonthRows(viewer, { teamId });
   const months = [...new Set([today.slice(0, 7), ...monthRows.map((row) => row.month)])].sort().reverse();
   const amountVisible = await visible(viewer, "expense.amount");
   const pageSize = deps?.pageSize ?? LIST_PAGE_SIZE;

@@ -191,7 +191,8 @@ test.describe("지출결의 폭 375 · 320 (05-13)", () => {
   });
 
   // 06-06 DOM 감사 O-2 — 결재 통과 문서의 05 「세율 바뀜」 줄(`부가세 10% 1,240,000 → 1,200,000` 묶음)이 320 값 칸보다 넓어 문서가 12px 넘쳤다.
-  // 화살표 앞뒤에서는 꺾일 수 있어 넘침 0. 세율 바뀜은 이 문서 행의 승인 공급가만 바꿔 만든다(전역 세율 · 설정은 그대로).
+  // 화살표 앞뒤에서는 꺾일 수 있어 넘침 0. 세율 바뀜은 이 문서 행의 승인 당시 스냅숏(부가세 · 지급 총액)을 같은 만큼 올려 만든다(전역 세율 · 설정은 그대로).
+  // 06.5 D-6520 — 공급가액을 바꾸면 지급자 정정으로 읽혀 세율 바뀜 줄이 숨는다. 「지급 총액 − 부가세 + 원천세 = 공급가」를 지켜야 세율 바뀜이다.
   test("결재 통과 문서 — 세율 바뀜 줄이 있어도 넘침 0", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const expenseId = await submitLineExpense(browser, baseURL, fx, "tracer");
@@ -199,9 +200,12 @@ test.describe("지출결의 폭 375 · 320 (05-13)", () => {
     if (!view) throw new Error("결재 인스턴스 없음");
     let version = view.version;
     for (const approver of [fx.lead, fx.divisionHead, fx.mgmt, fx.ceo]) version = (await approveDocument(approver.viewer, { instanceId: view.instanceId, expectedVersion: version })).version;
-    const [row] = await db.select({ supplyAmountKrw: expenses.supplyAmountKrw }).from(expenses).where(eq(expenses.id, expenseId));
-    if (row?.supplyAmountKrw == null) throw new Error("공급가액 없음");
-    await db.update(expenses).set({ supplyAmountKrw: row.supplyAmountKrw - 400_000 }).where(eq(expenses.id, expenseId));
+    const [snapshot] = await db.select({ vatKrw: expenses.vatKrw, payableKrw: expenses.payableKrw }).from(expenses).where(eq(expenses.id, expenseId));
+    if (snapshot?.vatKrw == null || snapshot.payableKrw == null) throw new Error("스냅숏 부가세 · 지급 총액 없음");
+    await db
+      .update(expenses)
+      .set({ vatKrw: snapshot.vatKrw + 400_000, payableKrw: snapshot.payableKrw + 400_000 })
+      .where(eq(expenses.id, expenseId));
 
     for (const viewport of WIDTHS) {
       const page = await phone(browser, baseURL, fx.pm, viewport);
@@ -320,7 +324,7 @@ test.describe("지출결의 폭 375 · 320 (05-13)", () => {
     const [doc] = await db.select({ version: expenses.version, supply: expenses.supplyAmountKrw }).from(expenses).where(eq(expenses.id, expenseId));
     if (!doc?.supply) throw new Error("문서 · 공급가 없음");
     const payer = await makeTeamPayer(fx);
-    await confirmEvidence(payer.viewer, { expenseId, version: doc.version, correctedAmountKrw: doc.supply });
+    await confirmEvidence(payer.viewer, { expenseId, version: doc.version });
 
     for (const viewport of WIDTHS) {
       const lead = await phone(browser, baseURL, fx.lead, viewport);

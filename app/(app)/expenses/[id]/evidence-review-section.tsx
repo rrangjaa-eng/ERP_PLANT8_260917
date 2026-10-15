@@ -1,9 +1,9 @@
 "use client";
 
-import { createContext, useContext, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useId, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { useRouter } from "next/navigation";
 import type { PaymentViewDto } from "@/domain/payments";
-import { CANCEL_REASON_REQUIRED, EVIDENCE_AMOUNT_FRACTION, EVIDENCE_AMOUNT_NOT_NUMBER } from "@/domain/payments/action-row";
+import { CANCEL_REASON_REQUIRED, SUPPLY_PAID_LOCKED_LINE } from "@/domain/payments/action-row";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { Button } from "@/ui/button/Button";
 import { Form } from "@/ui/form/Form";
@@ -11,30 +11,34 @@ import { KvList, type KvItem } from "@/ui/kv-list/KvList";
 import { Num } from "@/ui/num/Num";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { useCommaInput } from "@/ui/input/use-comma-input";
-import { numberInputRejectionReason } from "@/lib/format-number";
+import { parseNumberInput } from "@/lib/format-number";
 import dialogStyles from "@/app/(app)/approvals/decision-dialogs.module.css";
 import { previewPayableAction, waiveEvidenceAction } from "./actions";
 import { usePaymentPanel } from "./payment-section";
 import { TaxParts, type TaxPart } from "./tax-parts";
 import styles from "./expense.module.css";
 
-// 06-06(UI-SPEC S4 · D-601 · D-602 · O-2): 결재 통과 문서의 「증빙」 섹션 확인부 — 05 첨부 영역 아래 `증빙 금액` · `확인` 두 행.
-// 값은 서버 DTO(getPaymentView)만 그린다 — 상태 낱말은 resolveEvidenceStatus, 부가세 · 지급 총액 · 초과 차액은 서버 값(previewPayable),
-// 1차 `증빙 확인`은 행동 줄(payment-action-row.tsx)이 서버 행으로 세우고 이 칸의 값을 함께 보낸다(SP-3 ① — 칸 옆 저장 버튼 없음).
-// 금액 칸 · 정보 항목이 안 보이면(project가 칸을 뺀다) 그 행을 그리지 않는다.
+// 06-06(UI-SPEC S4 · D-601 · D-602 · O-2): 결재 통과 문서의 「증빙」 섹션 확인부 — 05 첨부 영역 아래 `공급가액` · `확인` 두 행.
+// 값은 서버 DTO(getPaymentView)만 그린다 — 상태 낱말은 resolveEvidenceStatus, 부가세 · 지급 총액은 서버 값(previewPayable),
+// 1차(`공급가액과 같음` / `공급가액 고쳐 확인`)는 행동 줄(payment-action-row.tsx)이 서버 행으로 세우고 이 칸의 값을 함께 보낸다(SP-3 ① — 칸 옆 저장 버튼 없음).
+// 06.5 D-6520(UI-SPEC V8 개정 4판): 금액은 문서 공급가액 하나 — 지급 전 · 확인 전(P2) 지급 권한자만 3차 `바꾸기`로 고침 칸을 열고, 지급 뒤(P5)에는 그 자리에 잠김 줄.
+// 금액을 못 보는 사람(공급가가 투영에서 빠짐)에게는 `공급가액` 행이 없다.
 
 type PaymentView = Partial<PaymentViewDto>;
 
-// 증빙 금액 칸 — 3차 `바꾸기`로 열거나(P2 · P5) 빈 금액(F2)이면 처음부터 열린다. raw는 쉼표를 뗀 칸 글자.
+// 문서 공급가(문서 DTO의 supply — 문서 통화 금액 · 환율 · 원화 환산액).
+export type DocSupply = { currency: string; amount: number; fxRate: number; amountKrw: number };
+
+// 공급가액 고침 칸 — 3차 `바꾸기`(P2)로 연다. raw는 쉼표를 뗀 칸 글자, inputError는 칸이 거절한 입력(기안자 칸과 같은 문구), error는 서버 칸 오류.
 export type EvidenceEdit = { raw: string; inputError: string | null; error: string | null };
 
-type EvidenceEditState = { edit: EvidenceEdit | null; setEdit: (next: EvidenceEdit | null) => void };
+type EvidenceEditState = { edit: EvidenceEdit | null; setEdit: Dispatch<SetStateAction<EvidenceEdit | null>>; supply: DocSupply | null };
 
 const EvidenceEditContext = createContext<EvidenceEditState | null>(null);
 
-export function EvidenceEditProvider({ children }: { children: ReactNode }) {
+export function EvidenceEditProvider({ supply, children }: { supply: DocSupply | null; children: ReactNode }) {
   const [edit, setEdit] = useState<EvidenceEdit | null>(null);
-  return <EvidenceEditContext.Provider value={{ edit, setEdit }}>{children}</EvidenceEditContext.Provider>;
+  return <EvidenceEditContext.Provider value={{ edit, setEdit, supply }}>{children}</EvidenceEditContext.Provider>;
 }
 
 export function useEvidenceEdit(): EvidenceEditState {
@@ -43,37 +47,48 @@ export function useEvidenceEdit(): EvidenceEditState {
   return state;
 }
 
-export const EVIDENCE_FIELD_ID = "evidence-amount";
+export const CORRECTED_SUPPLY_ID = "corrected-supply";
 
-// 칸 상태 → 1차가 보낼 값. 열림 = 지급 권한자의 확인 전(P2 · P5)이고 `바꾸기`를 눌렀거나 증빙 금액이 비었다(F2).
-// corrected는 서버 값과 다를 때만(같으면 금액 없는 확인).
-export function evidenceAmountInput(view: PaymentView, edit: EvidenceEdit | null) {
-  const canConfirm = view.row?.primary === "confirm";
-  const open = canConfirm && (edit !== null || view.evidenceAmountKrw === null);
-  const raw = edit?.raw ?? "";
-  const value = /^\d+$/.test(raw) ? Number(raw) : null;
-  const corrected = open && value !== null && value !== view.evidenceAmountKrw ? value : undefined;
-  return { open, raw, value, corrected, fieldError: edit?.inputError ?? edit?.error ?? null };
+// 칸 상태 → 1차가 보낼 값. 열림 = 지급 권한자의 지급 전 · 확인 전(P2)이고 `바꾸기`를 눌렀다. corrected는 지금 공급가(문서 통화)와 다를 때만
+// (같으면 고침 없는 확인 — 1차 글자도 `공급가액과 같음`).
+export function correctedSupplyInput(view: PaymentView, edit: EvidenceEdit | null, supply: DocSupply | null) {
+  const open = view.row?.primary === "confirm" && view.row.tertiary === "change" && supply !== null && edit !== null;
+  const raw = open ? (edit?.raw ?? "") : "";
+  const value = open ? parseNumberInput(raw) : null;
+  const corrected = open && value !== null && Number.isFinite(value) && value !== supply?.amount ? value : undefined;
+  return { open, raw, value, corrected, fieldError: open ? (edit?.inputError ?? edit?.error ?? null) : null };
 }
 
-const FRACTION_REASON = numberInputRejectionReason("krw", "krw-fraction");
-
-function AmountInput({ initial, error, onChange, onEscape }: { initial: string; error: string | null; onChange: (raw: string, inputError: string | null) => void; onEscape: () => void }) {
-  const { inputRef, value, onChange: onInputChange, error: inputError, rawValue } = useCommaInput("krw", initial);
+function SupplyInput({
+  currency,
+  initial,
+  error,
+  describedBy,
+  onChange,
+  onEscape,
+}: {
+  currency: string;
+  initial: string;
+  error: string | null;
+  describedBy: string | undefined;
+  onChange: (raw: string, inputError: string | null) => void;
+  onEscape: () => void;
+}) {
+  const { inputRef, value, onChange: onInputChange, error: inputError, rawValue } = useCommaInput(currency === "KRW" ? "krw" : "foreign", initial);
   const reported = useRef(rawValue);
   useEffect(() => {
     if (reported.current === rawValue && inputError === null) return;
     reported.current = rawValue;
-    onChange(rawValue, inputError === null ? null : inputError === FRACTION_REASON ? EVIDENCE_AMOUNT_FRACTION : EVIDENCE_AMOUNT_NOT_NUMBER);
+    onChange(rawValue, inputError);
     // onChange는 렌더마다 새 함수 — 칸 값의 변화만 본다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rawValue, inputError]);
   return (
     <input
-      id={EVIDENCE_FIELD_ID}
+      id={CORRECTED_SUPPLY_ID}
       ref={inputRef}
       type="text"
-      inputMode="numeric"
+      inputMode={currency === "KRW" ? "numeric" : "decimal"}
       autoComplete="off"
       className={`${styles.textInput} ${styles.numeric}`}
       value={value}
@@ -86,37 +101,17 @@ function AmountInput({ initial, error, onChange, onEscape }: { initial: string; 
         }
       }}
       aria-invalid={error ? true : undefined}
-      aria-describedby={[error ? `${EVIDENCE_FIELD_ID}-error` : "", `${EVIDENCE_FIELD_ID}-hint`].filter(Boolean).join(" ")}
+      aria-describedby={describedBy}
     />
   );
 }
 
-// 경고 한 줄(Q-F) — 서버 글자의 숫자 조각만 700, 묶음(` · ` 사이) 안은 꺾지 않는다.
-// stale — 미리보기가 오는 동안 이전 값은 `--text-faint`(.drift가 자기 색을 정하므로 같은 요소에 건다 — 06-06 DOM 감사 D-2).
-function WarningLine({ text, testId, stale = false }: { text: string; testId: string; stale?: boolean }) {
-  return (
-    <span className={stale ? `${styles.drift} ${styles.stale}` : styles.drift} data-testid={testId}>
-      {text.split(" · ").map((segment, index) => (
-        <span key={index}>
-          {index > 0 ? " · " : null}
-          <span className={styles.taxSegment}>
-            {segment.split(/([+-]?\d[\d,]*)/).map((piece, pieceIndex) =>
-              pieceIndex % 2 === 1 ? (
-                <span key={pieceIndex} className={styles.strong}>
-                  <Num value={piece} />
-                </span>
-              ) : (
-                piece
-              ),
-            )}
-          </span>
-        </span>
-      ))}
-    </span>
-  );
+// 문서 통화 금액 한 묶음 — 원화 `12,400,000` · 외화 `USD 1,000.00`(힌트 · UI-SPEC V8 「외화 문서」).
+function DocAmount({ currency, amount }: { currency: string; amount: number }) {
+  return currency === "KRW" ? <Num value={amount} /> : <Num value={amount} currency={currency} />;
 }
 
-type Preview = { amount: number; taxLine: TaxPart[] | null; overrun: string | null };
+type Preview = { amount: number; taxLine: TaxPart[] | null };
 
 const WAIVE_FAILED = "결과를 받지 못함 · 새로 고침";
 
@@ -224,15 +219,15 @@ export function EvidenceReviewBlock({ waiveSubtitle = "" }: { waiveSubtitle?: st
   const { view, fields } = usePaymentPanel();
   const [waiveOpen, setWaiveOpen] = useState(false);
   const justWaivedRef = useRef(false);
-  const { edit, setEdit } = useEvidenceEdit();
+  const { edit, setEdit, supply } = useEvidenceEdit();
   const dash = <span className={styles.muted}>—</span>;
-  const input = evidenceAmountInput(view, edit);
+  const input = correctedSupplyInput(view, edit, supply);
   const paidRow = view.row?.row === "P5" || view.row?.row === "P6";
-  const serverAmount = view.evidenceAmountKrw ?? null;
 
-  // 고치는 동안 서버가 새 금액으로 다시 셈한 계산 한 줄 · 초과 한 줄. 오는 동안 이전 값은 `--text-faint`(빈칸 · 뼈대 없음 — S4 loading).
+  // 고치는 동안 서버가 새 공급가(문서 통화)로 다시 셈한 계산 한 줄. 오는 동안 이전 값은 `--text-faint`(빈칸 · 뼈대 없음 — S4 loading).
+  // 미리보기가 상한을 넘으면 같은 문구의 칸 오류가 미리 선다(그사이 칸 값이 바뀌었으면 버린다).
   const [preview, setPreview] = useState<Preview | null>(null);
-  const wanted = input.open && input.value !== null && input.value > 0 && input.value !== serverAmount ? input.value : null;
+  const wanted = input.corrected !== undefined && input.corrected > 0 ? input.corrected : null;
   const payDate = fields.payDate || view.payDate || "";
   useEffect(() => {
     if (wanted === null || view.expenseId === undefined || payDate === "") return;
@@ -242,32 +237,29 @@ export function EvidenceReviewBlock({ waiveSubtitle = "" }: { waiveSubtitle?: st
       void (async () => {
         let result: Awaited<ReturnType<typeof previewPayableAction>> | undefined;
         try {
-          result = await previewPayableAction({ expenseId, payDate, evidenceAmountKrw: wanted });
+          result = await previewPayableAction({ expenseId, payDate, correctedSupplyAmount: wanted });
         } catch {
           result = undefined;
         }
-        if (cancelled || !result?.data) return;
-        setPreview({ amount: wanted, taxLine: result.data.evidenceTaxLine ?? null, overrun: result.data.evidenceOverrun ?? null });
+        if (cancelled) return;
+        const capError = result?.validationErrors?.correctedSupplyAmount?._errors?.[0];
+        if (capError) {
+          setEdit((prev) => (prev && parseNumberInput(prev.raw) === wanted ? { ...prev, error: capError } : prev));
+          return;
+        }
+        if (!result?.data) return;
+        setPreview({ amount: wanted, taxLine: result.data.evidenceTaxLine ?? null });
       })();
     }, 250);
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [wanted, view.expenseId, payDate]);
+  }, [wanted, view.expenseId, payDate, setEdit]);
   const usePreview = wanted !== null && preview !== null;
   const stale = wanted !== null && preview?.amount !== wanted;
-  // 지급 뒤(P5 · P6) 문서에는 서버 계산 한 줄이 없다(지급 총액은 S5 지급 기록 하나 — 「표시 — 증빙 금액」).
+  // 지급 뒤(P5 · P6) 문서에는 서버 계산 한 줄이 없다(지급 총액은 S5 지급 기록 하나).
   const taxLine = paidRow ? null : usePreview ? preview.taxLine : (view.evidenceTaxLine ?? null);
-  const overrun = usePreview ? preview.overrun : (view.evidenceOverrun ?? null);
-
-  // F2 — 빈 금액으로 열린 칸이 첫 포커스.
-  const focusedRef = useRef(false);
-  useEffect(() => {
-    if (focusedRef.current || !input.open || serverAmount !== null) return;
-    focusedRef.current = true;
-    document.getElementById(EVIDENCE_FIELD_ID)?.focus();
-  }, [input.open, serverAmount]);
 
   // 면제 뒤 다시 읽은 행의 새 1차(P4 `지급 완료`)로 포커스 — 1차가 없으면(P6) 결과 글자로. 누른 3차가 사라져 body로 빠지지 않게(토스트 없음).
   const waivedNow = view.evidenceStatus === "면제";
@@ -279,57 +271,56 @@ export function EvidenceReviewBlock({ waiveSubtitle = "" }: { waiveSubtitle?: st
     next?.focus();
   }, [waivedNow]);
 
+  // `바꾸기` — 값 = 지금 공급가액(문서 통화) · 포커스 · 전체 선택.
   function openEdit() {
-    setEdit({ raw: serverAmount === null ? "" : String(serverAmount), inputError: null, error: null });
-    requestAnimationFrame(() => document.getElementById(EVIDENCE_FIELD_ID)?.focus());
+    if (!supply) return;
+    setEdit({ raw: String(supply.amount), inputError: null, error: null });
+    requestAnimationFrame(() => {
+      const field = document.getElementById(CORRECTED_SUPPLY_ID);
+      if (field instanceof HTMLInputElement) {
+        field.focus();
+        field.select();
+      }
+    });
   }
-  // Esc — 칸을 서버 값으로 되돌리고 닫는다(F2 빈 금액이면 빈 칸으로 다시 — 칸은 열린 채 포커스 유지).
-  const [resetKey, setResetKey] = useState(0);
+  // Esc — 칸을 서버 값으로 되돌려 닫고 포커스를 `바꾸기`로.
   function closeEdit() {
     setEdit(null);
     setPreview(null);
-    setResetKey((key) => key + 1);
-    requestAnimationFrame(() => document.getElementById(serverAmount === null ? EVIDENCE_FIELD_ID : "evidence-amount-edit")?.focus());
+    requestAnimationFrame(() => document.getElementById("corrected-supply-edit")?.focus());
   }
 
-  const lines = (
-    <>
-      {taxLine ? (
-        <span className={`${styles.taxLine} ${stale ? styles.stale : ""}`} data-testid="evidence-tax-line">
-          <TaxParts parts={taxLine} />
-        </span>
-      ) : null}
-      {overrun ? <WarningLine text={overrun} testId="evidence-overrun" stale={stale} /> : null}
-    </>
-  );
+  const lines = taxLine ? (
+    <span className={`${styles.taxLine} ${stale ? styles.stale : ""}`} data-testid="evidence-tax-line">
+      <TaxParts parts={taxLine} />
+    </span>
+  ) : null;
 
   const items: KvItem[] = [];
-  const amount = view.evidenceAmountDisplay;
-  if (amount !== undefined && !input.open) {
-    const shown = (
-      <>
-        {amount.valueKrw === null ? dash : <Num value={amount.valueKrw} />}
-        {amount.valueKrw !== null && amount.enteredByName ? (
-          <span className={`${styles.subLine} ${styles.muted}`} data-testid="evidence-amount-by">
-            {[amount.enteredByName, amount.enteredAt].filter(Boolean).join(" ")}
-          </span>
-        ) : null}
-      </>
-    );
+  if (supply && !input.open) {
+    const shown = <Num value={supply.amountKrw} fx={supply.currency === "KRW" ? undefined : { currency: supply.currency, amount: supply.amount, rate: supply.fxRate }} />;
+    const canChange = view.row?.primary === "confirm" && view.row.tertiary === "change";
+    // P5(지급 뒤 · 확인 전) 지급 권한자 — `바꾸기` 자리에 잠김 줄(상태이지 오류가 아니다 · 칠하지 않음). P6 · 그 밖의 사람에게는 없다.
+    const locked = view.row?.row === "P5" && view.row.primary === "confirm";
     items.push({
-      label: "증빙 금액",
+      label: "공급가액",
       value: (
         <>
-          {view.row?.tertiary === "change" && !(paidRow && serverAmount !== null) ? (
+          {canChange ? (
             <span className={styles.valueRow}>
               <span className={styles.fill}>{shown}</span>
-              <Button id="evidence-amount-edit" variant="tertiary" onClick={openEdit}>
+              <Button id="corrected-supply-edit" variant="tertiary" aria-label="공급가액 바꾸기" onClick={openEdit}>
                 바꾸기
               </Button>
             </span>
           ) : (
             shown
           )}
+          {locked ? (
+            <span className={`${styles.subLine} ${styles.muted}`} data-testid="supply-locked-line">
+              {SUPPLY_PAID_LOCKED_LINE}
+            </span>
+          ) : null}
           {lines}
         </>
       ),
@@ -415,36 +406,38 @@ export function EvidenceReviewBlock({ waiveSubtitle = "" }: { waiveSubtitle?: st
     view.row?.row === "P6" ? "지급 기록 그대로 · 비용은 승인액 그대로" : "증빙 없이 지급 · 비용은 승인액 그대로",
     ...(view.evidenceStatus === "선결제" ? ["선결제 증빙 기한 없어짐"] : []),
   ];
-  const showHint = input.open && serverAmount !== null && input.value !== null && input.value !== serverAmount;
+  const showHint = input.corrected !== undefined && input.fieldError === null && supply !== null;
+  const describedBy = [input.fieldError ? `${CORRECTED_SUPPLY_ID}-error` : "", showHint ? `${CORRECTED_SUPPLY_ID}-hint` : ""].filter(Boolean).join(" ") || undefined;
   return (
     <>
       <div data-testid="evidence-review">
-        {input.open && amount !== undefined ? (
+        {input.open && supply ? (
           <Form
-            aria-label="증빙 금액"
+            aria-label="공급가액"
             onSubmit={(event) => {
               event.preventDefault();
             }}
           >
-            <Form.Field id={EVIDENCE_FIELD_ID} label="증빙 금액" width="short">
-              <AmountInput
-                key={resetKey}
+            <Form.Field id={CORRECTED_SUPPLY_ID} label="공급가액" width="short">
+              <SupplyInput
+                currency={supply.currency}
                 initial={input.raw}
-                error={input.fieldError ?? null}
+                error={input.fieldError}
+                describedBy={describedBy}
                 onChange={(raw, inputError) => setEdit({ raw, inputError, error: null })}
                 onEscape={closeEdit}
               />
-              {input.fieldError ? <Form.Error id={`${EVIDENCE_FIELD_ID}-error`}>{input.fieldError}</Form.Error> : null}
-              <div id={`${EVIDENCE_FIELD_ID}-hint`}>
-                {showHint ? (
+              {input.fieldError ? <Form.Error id={`${CORRECTED_SUPPLY_ID}-error`}>{input.fieldError}</Form.Error> : null}
+              {showHint && input.corrected !== undefined ? (
+                <div id={`${CORRECTED_SUPPLY_ID}-hint`}>
                   <Form.Hint>
-                    <span className={styles.taxSegment} data-testid="evidence-amount-hint">
-                      확인하면 <Num value={serverAmount} /> → <Num value={input.value} />
+                    <span className={styles.taxSegment}>
+                      확인하면 <DocAmount currency={supply.currency} amount={supply.amount} /> → <DocAmount currency={supply.currency} amount={input.corrected} />
                     </span>
                   </Form.Hint>
-                ) : null}
-                {lines}
-              </div>
+                </div>
+              ) : null}
+              {lines}
             </Form.Field>
           </Form>
         ) : null}

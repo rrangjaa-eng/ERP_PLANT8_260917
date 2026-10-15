@@ -6,8 +6,15 @@ import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import type { ReactNode } from "react";
 import type { PaymentViewDto } from "@/domain/payments";
-import { CANCEL_REASON_REQUIRED, DIFF_REASON_REQUIRED, EVIDENCE_AMOUNT_REQUIRED, scheduleDirtyBar, type ExpenseActionBar } from "@/domain/payments/action-row";
-import { EVIDENCE_AMOUNT_TAX_INCLUSIVE } from "@/domain/evidence-reviews/tax-inclusive";
+import {
+  CANCEL_REASON_REQUIRED,
+  CONFIRM_SUPPLY_CORRECTED,
+  CONFIRM_SUPPLY_SAME,
+  CORRECTED_SUPPLY_EMPTY,
+  DIFF_REASON_REQUIRED,
+  scheduleDirtyBar,
+  type ExpenseActionBar,
+} from "@/domain/payments/action-row";
 import { Button, buttonLinkClassName } from "@/ui/button/Button";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
@@ -20,7 +27,7 @@ import barStyles from "@/app/(app)/leave/[id]/document-actions.module.css";
 import dialogStyles from "@/app/(app)/approvals/decision-dialogs.module.css";
 import { cancelExpensePaymentAction, completeExpensePaymentAction, confirmEvidenceAction, saveScheduledPayDateAction } from "./actions";
 import { diffReasonNeeded, PaymentFields, PaymentPanelProvider as PaymentFieldsProvider, transferError, transferNumber, usePaymentPanel, type PaymentFieldErrors } from "./payment-section";
-import { EVIDENCE_FIELD_ID, EvidenceEditProvider, evidenceAmountInput, useEvidenceEdit } from "./evidence-review-section";
+import { CORRECTED_SUPPLY_ID, correctedSupplyInput, EvidenceEditProvider, useEvidenceEdit, type DocSupply } from "./evidence-review-section";
 import styles from "./expense.module.css";
 import listStyles from "../expenses.module.css";
 
@@ -28,20 +35,18 @@ import listStyles from "../expenses.module.css";
 // 그대로 — 클라이언트는 상태로 고르지 않고 금액 셈도 하지 않는다(O-18). 지급 완료는 확인 모달 없이 1차로 끝나고(되돌리기 = 지급 취소, 06-04),
 // 성공하면 응답 뒤 다시 읽은 표로 1차 자리에 결과 글자가 선다(토스트 없음 — §7-6). 행동 뒤 포커스는 결과 글자(r2 F5).
 // 06-04: 이체액 · 지급일 · 차이 사유 칸(payment-section.tsx PaymentFields)이 같은 패널 상태를 쓰고 1차 `지급 완료`가 함께 보낸다.
-// 06-06이 증빙 금액 칸을 같은 패널 상태(PaymentPanelProvider)에 더한다. P2 · P5의 1차 `증빙 확인`(confirmEvidenceAction)도 이 줄이 세우고,
+// 06-06이 증빙 칸을 같은 패널 상태(PaymentPanelProvider)에 더한다. P2 · P5의 1차 확인(confirmEvidenceAction — 06.5 D-6520 글자 `공급가액과 같음` /
+// 고침 칸 값이 다를 때 `공급가액 고쳐 확인`)도 이 줄이 세우고,
 // 응답 뒤 다시 읽은 행이 다음 1차를 정한다(P2 → P4 `지급 완료` · P5 → P6). 토스트 없음.
 
-// 패널 상태 = 지급 칸(payment-section) + 증빙 금액 칸(evidence-review-section). 문서 화면은 이 하나로 증빙 · 지급 섹션과 행동 줄을 감싼다.
-export function PaymentPanelProvider({ view, children }: { view: Partial<PaymentViewDto>; children: ReactNode }) {
+// 패널 상태 = 지급 칸(payment-section) + 공급가액 고침 칸(evidence-review-section — 문서 공급가 supply). 문서 화면은 이 하나로 증빙 · 지급 섹션과 행동 줄을 감싼다.
+export function PaymentPanelProvider({ view, supply, children }: { view: Partial<PaymentViewDto>; supply: DocSupply | null; children: ReactNode }) {
   return (
     <PaymentFieldsProvider view={view}>
-      <EvidenceEditProvider>{children}</EvidenceEditProvider>
+      <EvidenceEditProvider supply={supply}>{children}</EvidenceEditProvider>
     </PaymentFieldsProvider>
   );
 }
-
-// 「Error — 증빙 금액 칸」 서버 거부(F2 · EA-1)는 행동 줄이 아니라 금액 칸 오류 자리에 선다.
-const EVIDENCE_FIELD_REJECTIONS: readonly string[] = [EVIDENCE_AMOUNT_REQUIRED, EVIDENCE_AMOUNT_TAX_INCLUSIVE];
 
 export function PaymentSection(props: { paymentMethod: string | null; paymentMethodName: string | null; scheduledPaymentDate: string | null }) {
   return (
@@ -69,15 +74,15 @@ export function PaymentLoadError() {
 export function PaymentActionRow() {
   const router = useRouter();
   const { view, conflict, setConflict, fields, preview, previewing, refreshPreview, setFieldErrors, schedule, setSchedule, scheduleDirty } = usePaymentPanel();
-  const { edit: evidenceEdit, setEdit: setEvidenceEdit } = useEvidenceEdit();
-  const evidenceInput = evidenceAmountInput(view, evidenceEdit);
+  const { edit: evidenceEdit, setEdit: setEvidenceEdit, supply } = useEvidenceEdit();
+  const evidenceInput = correctedSupplyInput(view, evidenceEdit, supply);
   const [pending, setPending] = useState(false);
   const submittingRef = useRef(false);
   const justPaidRef = useRef(false);
   const justSavedScheduleRef = useRef(false);
   const justConfirmedRef = useRef(false);
   const correctedSentRef = useRef(false);
-  // 고친 금액 확인 뒤 이체액 칸 포커스 — 새 미리보기가 시작(start → waiting)하고 끝난 뒤에 준다(D-1).
+  // 고친 공급가 확인 뒤 이체액 칸 포커스 — 새 미리보기가 시작(start → waiting)하고 끝난 뒤에 준다(D-1).
   const focusTransferAfterPreviewRef = useRef<"start" | "waiting" | null>(null);
   const resultRef = useRef<HTMLSpanElement>(null);
   const primaryRef = useRef<HTMLSpanElement>(null);
@@ -143,10 +148,11 @@ export function PaymentActionRow() {
   });
 
   // 증빙 확인(P2 · P5) — 응답 뒤 문서를 다시 읽는다. 다음 1차 · 포커스는 다시 읽은 행이 정한다(아래 effect).
-  // 칸 오류(검증 · F2 · EA-1)는 금액 칸에 세우고 칸 값은 남긴다. 그 밖(동시성 · 응답 없음)은 행동 줄 이유 자리 + 다시 읽기.
+  // 칸 오류(0 · 형식 · 남은 실행가 상한 — 액션이 오류 종류로 `correctedSupplyAmount` 칸 오류로 옮긴다, L-3)는 고침 칸에 세우고 칸 값은 남긴다 —
+  // `새로 고침` · 다시 읽기 없음. 그 밖(동시성 · 지급 뒤 LOCKED · 응답 없음)은 행동 줄 이유 자리 + 다시 읽기.
   function showEvidenceError(message: string) {
     setEvidenceEdit({ raw: evidenceInput.raw, inputError: null, error: message });
-    requestAnimationFrame(() => document.getElementById(EVIDENCE_FIELD_ID)?.focus());
+    requestAnimationFrame(() => document.getElementById(CORRECTED_SUPPLY_ID)?.focus());
   }
 
   const { execute: executeConfirm } = useAction(confirmEvidenceAction, {
@@ -156,9 +162,8 @@ export function PaymentActionRow() {
       router.refresh();
     },
     onError: ({ error }) => {
-      const fieldError = error.validationErrors?.correctedAmountKrw?._errors?.[0];
+      const fieldError = error.validationErrors?.correctedSupplyAmount?._errors?.[0];
       if (fieldError) return showEvidenceError(fieldError);
-      if (error.serverError && EVIDENCE_FIELD_REJECTIONS.includes(error.serverError) && evidenceInput.open) return showEvidenceError(error.serverError);
       setConflict(error.serverError ?? "결과를 받지 못함 · 새로 고침");
       router.refresh();
     },
@@ -177,8 +182,10 @@ export function PaymentActionRow() {
   const canPay = bar?.primary === "pay" && ready;
   const canSaveSchedule = bar?.primary === "saveSchedule" && ready;
   const canConfirm = bar?.primary === "confirm" && ready;
-  // F2 — 열린 금액 칸이 비면 1차 `증빙 확인`은 비활성 + `증빙 금액 없음`(칸 오류와 같은 사실이라 이유는 버튼 옆 한 자리만).
-  const confirmBlock = canConfirm && evidenceInput.open && evidenceInput.raw === "" && !evidenceInput.fieldError ? EVIDENCE_AMOUNT_REQUIRED : null;
+  // 열린 고침 칸이 비면 1차는 비활성 + 빈 칸 이유(칸 오류로 되풀이하지 않는다 — 이유는 버튼 옆 한 자리만).
+  const confirmBlock = canConfirm && evidenceInput.open && evidenceInput.raw === "" && !evidenceInput.fieldError ? CORRECTED_SUPPLY_EMPTY : null;
+  // 버튼 = 실제 동작(SYSTEM §8) — 고침 칸 값이 지금 공급가와 다를 때만 `공급가액 고쳐 확인`.
+  const confirmLabel = evidenceInput.corrected === undefined ? CONFIRM_SUPPLY_SAME : CONFIRM_SUPPLY_CORRECTED;
   // P3 증빙 없음 · 짝 아님 · 지급 총액 볼 권한 없음 — `지급 완료` 비활성 + 이유(block).
   const blockReason = bar?.blockReason ?? null;
   const paid = view.row?.row === "P6" && view.payDate !== undefined;
@@ -197,19 +204,17 @@ export function PaymentActionRow() {
 
   function confirmEvidence() {
     if (!canConfirm || confirmBlock !== null || submittingRef.current || view.expenseId === undefined || view.version === undefined) return;
-    if (evidenceInput.open && (evidenceInput.fieldError || evidenceInput.value === null)) {
-      return showEvidenceError(evidenceInput.fieldError ?? EVIDENCE_AMOUNT_REQUIRED);
-    }
+    if (evidenceInput.fieldError) return showEvidenceError(evidenceInput.fieldError);
     submittingRef.current = true;
     setPending(true);
     setConflict(null);
     correctedSentRef.current = evidenceInput.corrected !== undefined;
-    // 화면이 본 증빙 지문을 version과 함께 — 그 사이 증빙이 바뀌었으면 서버가 동시성으로 거부한다. 금액은 서버 값과 다를 때만.
+    // 화면이 본 증빙 지문을 version과 함께 — 그 사이 증빙이 바뀌었으면 서버가 동시성으로 거부한다. 공급가는 지금 값과 다를 때만.
     executeConfirm({
       expenseId: view.expenseId,
       version: view.version,
       ...(view.evidenceStamp === undefined ? {} : { evidenceStamp: view.evidenceStamp }),
-      ...(evidenceInput.corrected === undefined ? {} : { correctedAmountKrw: evidenceInput.corrected }),
+      ...(evidenceInput.corrected === undefined ? {} : { correctedSupplyAmount: evidenceInput.corrected }),
     });
   }
 
@@ -265,7 +270,7 @@ export function PaymentActionRow() {
     if (!justConfirmedRef.current || canConfirm) return;
     if (canPay) {
       justConfirmedRef.current = false;
-      // 고친 증빙 금액이면 지급 총액이 바뀐다 — 지금(1차 `지급 완료`가 선 뒤) 미리보기를 다시 받아 안 고친 이체액 칸이 새 값을 따른다.
+      // 고친 공급가면 지급 총액이 바뀐다 — 지금(1차 `지급 완료`가 선 뒤) 미리보기를 다시 받아 안 고친 이체액 칸이 새 값을 따른다.
       // 새 값이 오면 이체액 칸이 다시 서므로(key) 포커스는 미리보기가 끝난 뒤에 준다 — 지금 주면 body로 빠진다(06-06 DOM 감사 D-1).
       if (correctedSentRef.current && fields.payDate !== "") {
         focusTransferAfterPreviewRef.current = "start";
@@ -305,6 +310,12 @@ export function PaymentActionRow() {
   const payReturn = view.payReturn ?? null;
   const nextUnreviewed = payReturn?.next && view.evidenceStatus === "확인됨" ? payReturn.next : null;
 
+  // 거부 뒤 다시 읽은 행이 달라지면(예: 지급 뒤 LOCKED → P5) 거부 줄은 새 행이 대신 말한다 — 같은 행이면(응답 없음 등) 줄이 남는다.
+  const rowKey = `${view.row?.row ?? ""}:${view.version ?? ""}`;
+  useEffect(() => {
+    setConflict(null);
+  }, [rowKey, setConflict]);
+
   // 지급 뒤(P6)는 1차 없이 결과 글자만(버튼 아님). 지급 권한이 없는 사람에게는 이 페이즈의 버튼이 없다(D-601 — 지급 전 담당 표기는 섹션 지급 예정일 2행).
   const showResult = paid && view.paidTime !== undefined;
   if (!canPay && !canSaveSchedule && !canConfirm && !showResult) return null;
@@ -329,7 +340,7 @@ export function PaymentActionRow() {
                 disabledReason={confirmBlock ?? undefined}
                 onClick={confirmEvidence}
               >
-                증빙 확인
+                {confirmLabel}
               </Button>
             </span>
           ) : canPay ? (

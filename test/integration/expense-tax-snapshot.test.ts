@@ -11,6 +11,9 @@ import { seedCodeItem } from "@/repositories/code-tables";
 import { seoulToday } from "@/lib/dates";
 import { addDays } from "@/lib/kst-date";
 import { setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
+import { approvedExpenseWithEvidence, makePaymentManager } from "./fixtures/payments";
+import { confirmEvidence } from "@/domain/evidence-reviews";
+import { upsertVisibility } from "@/repositories/permissions";
 
 // 05-06 Task 1(기준 7 · Eng OV-5 · B1 Round 2) — 제출 때 세율 스냅숏(세율 · 이력 행 id · 그 행의 적용일 — 값 복사, 외래 키 없음)을
 // 저장하고, 문서는 저장값 한 줄을 보이며, 지금 기준 재계산이 다르면 `세율 바뀜` 한 줄이 선다. 판정은 스냅숏 값 대 재계산 값 —
@@ -139,5 +142,47 @@ describe("미리보기(쓰기 없음) · 폼 선택지", () => {
     const options = await listExpenseFormOptions(fx.pm);
     expect(options.evidence.map((option) => option.value)).toEqual(expect.arrayContaining(["tax_invoice", "other_income", "business_income"]));
     expect(options.payment.map((option) => option.value)).toContain("bank_transfer");
+  });
+});
+
+// 06.5 D-6520(UI-SPEC V8 「고친 뒤 문서 화면」): 증빙 확인에서 공급가액을 고친 문서는 계산 한 줄을 고친 공급가로 지금 기준 다시 셈하고
+// `세율 바뀜` 줄을 그리지 않는다(결재 때 값과의 차이가 세율이 아니라 고침에서 온다). 세금 스냅숏 칸은 결재 때 값 그대로.
+describe("공급가액 고친 문서 — D-6520 · UI-SPEC V8 고친 뒤 문서 화면", () => {
+  async function payer() {
+    const viewer = await makePaymentManager();
+    if (!viewer.roleId) throw new Error("계급 없음");
+    for (const infoItem of ["expense.value", "expense.amount"]) await upsertVisibility(SYSTEM_VIEWER, { roleId: viewer.roleId, infoItem, visible: true });
+    return viewer;
+  }
+
+  it("고친 문서 — 계산 한 줄은 12,000,000을 지금 기준(12%)으로 다시 셈한 값 · 세율 바뀜 없음 · 세금 스냅숏 칸은 결재 때 값", async () => {
+    await addHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, { effectiveFrom: "2026-01-01", value: 0.1 });
+    const fx = await setupExpenseProject();
+    const doc = await approvedExpenseWithEvidence(fx);
+    await addHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, { effectiveFrom: "2026-06-01", value: 0.12 });
+    await confirmEvidence(await payer(), { expenseId: doc.expenseId, version: doc.version, correctedSupplyAmount: 12_000_000 });
+
+    const view = await getExpense(fx.pm, { expenseId: doc.expenseId });
+    expect(view?.taxLine?.text).toBe("부가세 12% 1,440,000 · 지급 총액 13,440,000 · 세금계산서 규칙");
+    expect(view?.taxDrift).toBeNull();
+    expect(await expenseRow(doc.expenseId)).toMatchObject({
+      supplyAmountKrw: 12_000_000,
+      taxRuleKind: "vat_surcharge",
+      taxRate: "0.100000",
+      vatKrw: 1_240_000,
+      payableKrw: 13_640_000,
+    });
+  });
+
+  it("고치지 않은 문서 — `공급가액과 같음` 확인 뒤에도 저장값 한 줄 + 세율 바뀜 글자 그대로", async () => {
+    await addHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, { effectiveFrom: "2026-01-01", value: 0.1 });
+    const fx = await setupExpenseProject();
+    const doc = await approvedExpenseWithEvidence(fx);
+    await addHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, { effectiveFrom: "2026-06-01", value: 0.12 });
+    await confirmEvidence(await payer(), { expenseId: doc.expenseId, version: doc.version });
+
+    const view = await getExpense(fx.pm, { expenseId: doc.expenseId });
+    expect(view?.taxLine?.text).toBe("부가세 10% 1,240,000 · 지급 총액 13,640,000 · 세금계산서 규칙");
+    expect(view?.taxDrift?.text).toBe("세율 바뀜 · 부가세 10% → 12% · 지급 총액 13,640,000 → 13,888,000");
   });
 });

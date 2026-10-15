@@ -39,7 +39,13 @@ export const TRANSFER_FRACTION = "원화 소수점 · 소수점 없이";
 export const EVIDENCE_AMOUNT_NOT_NUMBER = "숫자 아님 · 12,400,000처럼";
 export const EVIDENCE_AMOUNT_NOT_POSITIVE = "증빙 금액 0 이하 · 금액 고치기";
 export const EVIDENCE_AMOUNT_FRACTION = "원화 소수점 · 소수점 없이";
-export const EVIDENCE_AMOUNT_REQUIRED = "증빙 금액 없음";
+
+// 06.5 D-6520(UI-SPEC V8 개정 4판) — 증빙 확인 = 공급가액 하나. 1차 글자 둘(값이 다를 때만 고쳐 확인) · 빈 고침 칸 이유(기안자 칸과 같은 글자) ·
+// 지급 뒤(P5) `바꾸기` 자리의 잠김 줄. 잎 모듈이라 화면이 값 import.
+export const CONFIRM_SUPPLY_SAME = "공급가액과 같음";
+export const CONFIRM_SUPPLY_CORRECTED = "공급가액 고쳐 확인";
+export const CORRECTED_SUPPLY_EMPTY = "공급가액 비어 있음 · 공급가액 적기";
+export const SUPPLY_PAID_LOCKED_LINE = "지급 완료 문서 · 공급가액 못 바꿈 · 지급 취소 뒤 고치기";
 
 // 06-04(06-03 독립 검토 P3-4) — 지급 권한자가 지급 총액(정보 항목 expense.amount)을 못 보면 화면이 비교값을 보낼 수 없다.
 export const AMOUNT_HIDDEN = "지급 총액 볼 권한 없음 · 노출 설정은 관리자";
@@ -148,8 +154,8 @@ export function resolveExpenseActionRow(
   if (state.approvalState !== APPROVAL_PASSED) return { row: "P0", ...none };
   const waiveSlot = perms.canPay && !state.hasEvidence && !state.waived ? "waive" : null;
   if (state.paid) {
-    // P5 — 지급 뒤 들어오거나 바뀐 증빙(확인만 기록 — 지급 칸 · 지급 행동은 다시 서지 않는다).
-    if (perms.canPay && unconfirmed(state, gates)) return { row: "P5", primary: "confirm", blockReason: null, secondary: "cancel", tertiary: "change", ownerNote: null };
+    // P5 — 지급 뒤 들어오거나 바뀐 증빙(확인만 기록 — 지급 칸 · 지급 행동은 다시 서지 않는다). 06.5 D-6520: 공급가액 `바꾸기` 없음(잠김 줄).
+    if (perms.canPay && unconfirmed(state, gates)) return { row: "P5", primary: "confirm", blockReason: null, secondary: "cancel", tertiary: null, ownerNote: null };
     return { row: "P6", ...none, secondary: perms.canPay ? "cancel" : null, tertiary: waiveSlot };
   }
   if (!perms.canPay) return { row: "P4", ...none, ownerNote: PAYMENT_OWNER_NOTE };

@@ -66,7 +66,7 @@ import { CURRENCIES, recentFxRate } from "@/domain/money/currency";
 import { allocateDocumentNumber, allocateExpenseNumber, loadDocumentNumberFormat, loadExpenseNumberFormat } from "@/domain/document-numbering";
 import { teamAtDate } from "@/domain/org";
 import { formatKstTime } from "@/domain/holidays/business-day";
-import { computeExpenseTax, storedTaxResult, taxDriftText, taxLineText, type ExpenseTaxResult, type ExpenseTaxSource } from "@/domain/expenses/tax";
+import { computeExpenseTax, snapshotSupplyDiffers, storedTaxResult, taxDriftText, taxLineText, type ExpenseTaxResult, type ExpenseTaxSource } from "@/domain/expenses/tax";
 import { buildExpenseDetailRows } from "@/domain/expenses/detail";
 import { canSeeExpense, EXPENSE_DOCUMENT_KIND, ExpenseNotFoundError } from "@/domain/expenses/access";
 import { expenseRouteDocTeamId } from "@/domain/expenses/route-doc";
@@ -148,7 +148,7 @@ const EDITABLE_STATUSES: ReadonlySet<string> = new Set(["rejected", "withdrawn"]
 const IN_PROGRESS_STATUSES: ReadonlySet<string> = new Set(["submitted", "in_review"]);
 const NO_TEAM_AT_USAGE_DATE = "사용일에 소속 팀 없음 · 사용일 고치기";
 const SUPPLY_EMPTY = "공급가액 비어 있음 · 공급가액 적기";
-const SUPPLY_ZERO = "공급가액이 0 · 0보다 크게";
+export const SUPPLY_ZERO = "공급가액이 0 · 0보다 크게";
 
 // 05-07 팀 비용 종류 — 화면 글자(값 목록은 칸 스키마 모듈 draft-fields.ts).
 export { TEAM_EXPENSE_KINDS, type TeamExpenseKind };
@@ -399,7 +399,10 @@ async function loadExpenseDetails(viewer: Viewer, ids: string[]): Promise<Map<st
     const supply = supplyMoney(row);
     const stored = storedTaxResult(row);
     const current = currents[index] ?? null;
-    const drift = stored && current ? taxDriftText(stored, current) : null;
+    // 06.5 D-6520(UI-SPEC V8 「고친 뒤 문서 화면」): 증빙 확인에서 공급가액을 고친 문서는 지금 기준 한 줄 · 세율 바뀜 없음(문서 화면과 같은 판정).
+    const corrected = stored !== null && row.supplyAmountKrw !== null && snapshotSupplyDiffers(stored, row.supplyAmountKrw);
+    const shown = corrected ? current : stored;
+    const drift = !corrected && stored && current ? taxDriftText(stored, current) : null;
     const evidenceTypeName = row.evidenceType ? (evidenceNames.get(row.evidenceType) ?? row.evidenceType) : null;
     result.set(row.id, {
       number: row.number,
@@ -416,7 +419,7 @@ async function loadExpenseDetails(viewer: Viewer, ids: string[]): Promise<Map<st
       vendorName: row.vendorName,
       evidenceTypeName,
       supply,
-      taxLine: supply && stored ? taxLineText(stored, supply, `${evidenceTypeName ?? ""} 규칙`).text : null,
+      taxLine: supply && shown ? taxLineText(shown, supply, `${evidenceTypeName ?? ""} 규칙`).text : null,
       taxDriftText: drift?.text ?? null,
       evidenceFiles: aliveFiles
         .filter((file) => file.ownerId === row.id)
@@ -501,15 +504,15 @@ export function doorFor(
 
 // D-66 — 현재 차수 줄마다 계보(copied_from_line_id) 사슬 전체의 번호 있는 문서(제출 순). 줄 파생 상태
 // (domain/quotes/lines.ts linkedDocumentsByLine)와 같은 해석이라 이전 차수에 제출한 줄은 지금 차수에서도 문이 닫힌다.
-export async function listNumberedByLineage(viewer: Viewer, projectId: string): Promise<Map<string, NumberedLineExpense[]>> {
-  return (await listNumberedByLineageMany(viewer, [projectId])).get(projectId) ?? new Map();
+export async function listNumberedByLineage(viewer: Viewer, projectId: string, tx?: DbOrTx): Promise<Map<string, NumberedLineExpense[]>> {
+  return (await listNumberedByLineageMany(viewer, [projectId], tx)).get(projectId) ?? new Map();
 }
 
 // 여러 프로젝트를 한 번에(계보 줄 한 쿼리 + 번호 문서 한 쿼리) — 골라내기가 후보 프로젝트마다 따로 읽지 않는다(05 /review A7).
-export async function listNumberedByLineageMany(viewer: Viewer, projectIds: string[]): Promise<Map<string, Map<string, NumberedLineExpense[]>>> {
-  const lineage = await listLineageLinesByProjects(viewer, projectIds);
+export async function listNumberedByLineageMany(viewer: Viewer, projectIds: string[], tx?: DbOrTx): Promise<Map<string, Map<string, NumberedLineExpense[]>>> {
+  const lineage = await listLineageLinesByProjects(viewer, projectIds, tx);
   const docsByLineId = new Map<string, NumberedLineExpense[]>();
-  for (const doc of await listNumberedByLines(viewer, lineage.map((line) => line.id))) {
+  for (const doc of await listNumberedByLines(viewer, lineage.map((line) => line.id), tx)) {
     docsByLineId.set(doc.quoteLineId, [...(docsByLineId.get(doc.quoteLineId) ?? []), doc]);
   }
   const linesByProject = new Map<string, LineageLine[]>();
@@ -987,7 +990,7 @@ export type SubmitExpenseResult =
   | { kind: "submitted"; expenseId: string; number: string; instanceId: string; version: number; round: number }
   | { kind: "already_submitted"; expenseId: string; number: string };
 
-function remainingText(remaining: Money, basis: "foreign" | "krw"): string {
+export function remainingText(remaining: Money, basis: "foreign" | "krw"): string {
   return basis === "foreign" ? `${remaining.currency} ${formatForeignAmount(remaining.amount)}` : formatKrw(remaining.amountKrw);
 }
 
@@ -1569,9 +1572,12 @@ export async function getExpense(viewer: Viewer, input: { expenseId: string }): 
   const editable = isEditableByDrafter(viewer.id, row, row.status);
   const stored = editable ? null : storedTaxResult(row);
   const current = supply && (stored === null || row.number !== null) ? await computeExpenseTax(viewer, row) : null;
-  const result = stored ?? current;
+  // 06.5 D-6520(UI-SPEC V8 「고친 뒤 문서 화면」): 증빙 확인에서 공급가액을 고친 문서는 고친 공급가로 지금 기준 다시 셈한 한 줄이고
+  // 세율 바뀜이 없다(결재 때 값과의 차이가 세율이 아니라 고침에서 온다). 세금 스냅숏 칸은 그대로다.
+  const corrected = stored !== null && row.supplyAmountKrw !== null && snapshotSupplyDiffers(stored, row.supplyAmountKrw);
+  const result = corrected ? current : (stored ?? current);
   const taxLine = result && supply ? taxLineText(result, supply, `${evidenceTypeName ?? ""} 규칙`) : null;
-  const taxDrift = stored && current && row.number !== null ? taxDriftText(stored, current) : null;
+  const taxDrift = !corrected && stored && current && row.number !== null ? taxDriftText(stored, current) : null;
   const vendor = editable && row.vendorId ? await findVendorById(viewer, row.vendorId) : null;
   return project(
     viewer,

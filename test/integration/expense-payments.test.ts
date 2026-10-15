@@ -3,11 +3,12 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { Client } from "pg";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db, pool } from "@/db/client";
-import { actionLog, expenseEvidenceReviews, expensePayments, expenses, files, projects } from "@/db/schema";
+import { actionLog, expenseEvidenceReviews, expensePayments, expenses, files, projects, quoteLines } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertRole } from "@/repositories/roles";
-import { confirmEvidence } from "@/domain/evidence-reviews";
+import { confirmEvidence, SupplyCorrectionCapError } from "@/domain/evidence-reviews";
+import { formatKrw } from "@/lib/format-number";
 import { makePerson } from "./approvals-fixtures";
 import {
   cancelExpensePayment,
@@ -666,7 +667,7 @@ describe("문서 보임 범위(CSO-1) — 지급 · 증빙 확인 서버 경로"
       await caught(cancelExpensePayment(outsider, { expenseId: doc.expenseId, reason: "잘못 지급", version: doc.version })),
       await caught(saveScheduledPayDate(outsider, { expenseId: doc.expenseId, scheduledPayDate: addDays(seoulToday(), 3), version: doc.version })),
       await caught(previewPayable(outsider, { expenseId: doc.expenseId, payDate: seoulToday() })),
-      await caught(confirmEvidence(outsider, { expenseId: doc.expenseId, version: doc.version, correctedAmountKrw: 1_000 })),
+      await caught(confirmEvidence(outsider, { expenseId: doc.expenseId, version: doc.version, correctedSupplyAmount: 1_000 })),
     ];
     for (const error of errors) {
       expect(error).toBeInstanceOf(UserFacingError);
@@ -676,4 +677,71 @@ describe("문서 보임 범위(CSO-1) — 지급 · 증빙 확인 서버 경로"
     expect(after).toEqual(before);
     expect(await db.select().from(expenseEvidenceReviews).where(eq(expenseEvidenceReviews.expenseId, doc.expenseId))).toHaveLength(0);
   }, 30_000);
+});
+
+// 06.5 D-6520(사용자 카드 10/13 23:44 KST): 지급 금액은 공급가 하나 — 증빙 금액 칸에 다른 값이 남아 있어도 미리보기 · 지급 완료 · S4 계산 한 줄이 공급가로 셈한다.
+// 06.5 D-6511: 지급 처리 기록은 켜기 목록 저장 값과 무관하게 남는다.
+describe("지급 금액 = 공급가 · 지급 처리 기록 못 끄기 (06.5-07 D-6520 · D-6511)", () => {
+  async function supplyOf(expenseId: string): Promise<number> {
+    const [row] = await db.select({ supplyAmountKrw: expenses.supplyAmountKrw }).from(expenses).where(eq(expenses.id, expenseId));
+    if (row?.supplyAmountKrw === null || row?.supplyAmountKrw === undefined) throw new Error("공급가 없음");
+    return row.supplyAmountKrw;
+  }
+
+  it("증빙 금액 칸에 공급가와 다른 값이 남은 문서(DB 직접) — 미리보기 · S4 계산 한 줄 · 지급 완료의 지급 공급가가 문서 공급가", async () => {
+    const payer = await makePayer();
+    const doc = await approvedExpenseWithEvidence(await setupExpenseProject());
+    const supply = await supplyOf(doc.expenseId);
+    const supplyPayable = await payableNow(payer, doc);
+    await db.update(expenses).set({ evidenceAmount: supply - 400_000 }).where(eq(expenses.id, doc.expenseId));
+    expect(await payableNow(payer, doc)).toBe(supplyPayable);
+    const view = await getPaymentView(payer, doc.expenseId);
+    expect(view && "evidenceAmountKrw" in view).toBe(false);
+    expect(view && "evidenceOverrun" in view).toBe(false);
+    expect((view?.evidenceTaxLine ?? []).map((part) => part.text).join("")).toContain(formatKrw(supplyPayable));
+
+    const confirmed = await confirmEvidence(payer, { expenseId: doc.expenseId, version: doc.version });
+    await completeExpensePayment(payer, { expenseId: doc.expenseId, expectedPayableKrw: supplyPayable, version: confirmed.version });
+    const [row] = await livePayments(doc.expenseId);
+    expect([row?.grossSupplyKrw, row?.payableKrw]).toEqual([supply, supplyPayable]);
+  });
+
+  it("미리보기에 고친 공급가를 주면 그 공급가로 셈하고, 남은 실행가를 넘으면 확인과 같은 상한 오류 · 액션은 고침 칸 오류", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    const doc = await approvedExpenseWithEvidence(fx);
+    await db.update(expenses).set({ supplyAmountKrw: 12_000_000 }).where(eq(expenses.id, doc.expenseId));
+    await db.update(quoteLines).set({ executionAmountKrw: 12_250_000 }).where(eq(quoteLines.id, fx.lines.withVendor));
+    const today = seoulToday();
+    const pre = await loadPaymentInputs(payer, { expenseId: doc.expenseId, payDate: today });
+    if (!pre.tax) throw new Error("세금 규칙 없음");
+    const expected = await decidePayable(
+      { amount: { source: "supply", amountKrw: 12_100_000 }, taxRule: pre.tax.taxRule, applyOpts: pre.tax.dates.applyOpts, incomeType: pre.tax.incomeType },
+      pre.tax.rates,
+    );
+    const preview = await previewPayable(payer, { expenseId: doc.expenseId, payDate: today, correctedSupplyAmount: 12_100_000 });
+    expect(preview.payableKrw).toBe(expected.payableKrw);
+    expect((preview.evidenceTaxLine ?? []).map((part) => part.text).join("")).toContain(formatKrw(expected.payableKrw));
+    expect("evidenceOverrun" in preview).toBe(false);
+
+    const error = await caught(previewPayable(payer, { expenseId: doc.expenseId, payDate: today, correctedSupplyAmount: 12_400_000 }));
+    expect(error).toBeInstanceOf(SupplyCorrectionCapError);
+    expect((error as Error).message).toBe("남은 실행가 12,250,000 넘음 · 공급가액 고치기");
+    session.viewer = payer;
+    const viaAction = await previewPayableAction({ expenseId: doc.expenseId, payDate: today, correctedSupplyAmount: 12_400_000 });
+    expect(viaAction?.validationErrors).toMatchObject({ correctedSupplyAmount: { _errors: ["남은 실행가 12,250,000 넘음 · 공급가액 고치기"] } });
+  });
+
+  it("켜기 목록 저장 값에서 payment_process를 뺀 상태로 지급 완료해도 지급 처리 기록 한 줄(D-6511)", async () => {
+    const payer = await makePayer();
+    const doc = await approvedExpenseWithoutEvidence(await setupExpenseProject());
+    const withoutPayment = (ACTION_LOG_OPTIONAL_TYPES.default ?? []).filter((type) => type !== "payment_process");
+    await upsertSimpleValue(SYSTEM_VIEWER, ACTION_LOG_OPTIONAL_TYPES.key, withoutPayment, null);
+    await payNow(payer, doc);
+    const logs = await db
+      .select({ seq: actionLog.seq })
+      .from(actionLog)
+      .where(and(eq(actionLog.entityId, doc.expenseId), eq(actionLog.actionType, "payment_process")));
+    expect(logs).toHaveLength(1);
+  });
 });

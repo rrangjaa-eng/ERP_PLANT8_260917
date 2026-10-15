@@ -7,8 +7,15 @@ import {
   evidenceGateDecision,
   resolveExpenseActionRow,
 } from "@/domain/payments/action-row";
-import { evidenceGateInputs, evidenceOverrunLine, evidenceStampOf, resolveEvidenceStatus } from "@/domain/evidence-reviews";
-import { EVIDENCE_AMOUNT_TAX_INCLUSIVE, isTaxInclusiveEvidenceAmount } from "@/domain/evidence-reviews/tax-inclusive";
+import {
+  evidenceGateInputs,
+  evidenceOverrunLine,
+  evidenceStampOf,
+  resolveEvidenceStatus,
+  SUPPLY_CORRECTION_PAID_LOCKED,
+  supplyCorrectionKind,
+} from "@/domain/evidence-reviews";
+import { moneyFromRow } from "@/domain/money";
 
 const mocks = vi.hoisted(() => ({ hasEvidence: vi.fn(), findReviewByExpense: vi.fn() }));
 vi.mock("@/domain/evidence/has-evidence", () => ({ hasEvidence: mocks.hasEvidence }));
@@ -17,7 +24,8 @@ vi.mock("@/repositories/expense-evidence-reviews", async (importOriginal) => ({
   findReviewByExpense: mocks.findReviewByExpense,
 }));
 
-// 06-06(EVID-02 · EVID-03 · O-2) — 증빙 상태 · 확인 게이트 · 행동 줄 P2 · P5 · 증빙 지문 · Q-F 초과 한 줄 · EA-1(DB 없음).
+// 06-06(EVID-02 · EVID-03 · O-2) — 증빙 상태 · 확인 게이트 · 행동 줄 P2 · P5 · 증빙 지문 · Q-F 초과 한 줄(DB 없음).
+// 06.5 D-6520 — 공급가액 고침 판정(같음 · 고침 · 지급 뒤 막힘). EA-1 · F2 · MISMATCH 사례는 D-6520으로 사라졌다.
 
 const OPEN = { allowed: true } as const;
 const payer = { canPay: true };
@@ -98,13 +106,13 @@ describe("O-2 — 확인 전 막힘은 상수 한 곳 (06-06 Task 2)", () => {
 describe("resolveExpenseActionRow — P5 (06-06 Task 2)", () => {
   const paid = { approvalState: "approved", paid: true, hasEvidence: true, waived: false, evidence: OPEN, pair: OPEN };
 
-  it("지급 뒤 · 확인 전 → P5(1차 `증빙 확인` · 2차 `지급 취소` · 3차 `바꾸기`)", () => {
+  it("지급 뒤 · 확인 전 → P5(1차 확인 · 2차 `지급 취소` · 3차 없음 — 06.5 D-6520 · UI-SPEC V8 잠김)", () => {
     expect(resolveExpenseActionRow({ ...paid, confirmation: null }, payer)).toEqual({
       row: "P5",
       primary: "confirm",
       blockReason: null,
       secondary: "cancel",
-      tertiary: "change",
+      tertiary: null,
       ownerNote: null,
     });
   });
@@ -208,21 +216,30 @@ describe("증빙 금액 초과 한 줄(Q-F)", () => {
   });
 });
 
-describe("부가세 포함 증빙 금액(EA-1)", () => {
-  const base = { supplyKrw: 10_000_000, vatKrw: 1_000_000 };
-  it("공급가 + 부가세와 정확히 같으면 참", () => {
-    expect(isTaxInclusiveEvidenceAmount({ ...base, evidenceAmountKrw: 11_000_000 })).toBe(true);
+describe("공급가액 고침 판정 — supplyCorrectionKind (06.5 D-6520)", () => {
+  const krw = moneyFromRow({ currency: "KRW", foreignAmount: null, fxRate: "1", amountKrw: 12_400_000 });
+  const usd = moneyFromRow({ currency: "USD", foreignAmount: "1000.00", fxRate: "1350.0000", amountKrw: 1_350_000 });
+
+  it("고침 칸 없음 → same(지급 유무와 무관하게 확정)", () => {
+    expect(supplyCorrectionKind({ current: krw, corrected: undefined, paid: false })).toBe("same");
+    expect(supplyCorrectionKind({ current: krw, corrected: undefined, paid: true })).toBe("same");
   });
-  it("정확 일치만 — 10,999,999 · 11,000,001 · 10,000,000은 거짓", () => {
-    for (const evidenceAmountKrw of [10_999_999, 11_000_001, 10_000_000]) expect(isTaxInclusiveEvidenceAmount({ ...base, evidenceAmountKrw })).toBe(false);
+
+  it("지금 공급가와 같은 값 → same(고침 아님 — 지급 뒤여도 막지 않는다)", () => {
+    expect(supplyCorrectionKind({ current: krw, corrected: 12_400_000, paid: true })).toBe("same");
+    expect(supplyCorrectionKind({ current: usd, corrected: 1000, paid: true })).toBe("same");
   });
-  it("부가세 0(면세 · 원천징수 규칙) · 증빙 = 공급가 → 거짓", () => {
-    expect(isTaxInclusiveEvidenceAmount({ supplyKrw: 10_000_000, vatKrw: 0, evidenceAmountKrw: 10_000_000 })).toBe(false);
+
+  it("다른 값 · 지급 전 → correct", () => {
+    expect(supplyCorrectionKind({ current: krw, corrected: 12_000_000, paid: false })).toBe("correct");
+    expect(supplyCorrectionKind({ current: usd, corrected: 950.5, paid: false })).toBe("correct");
   });
-  it("증빙 null → 거짓", () => {
-    expect(isTaxInclusiveEvidenceAmount({ ...base, evidenceAmountKrw: null })).toBe(false);
+
+  it("다른 값 · 지급 뒤 → locked(카드 ② 「지금처럼 막기」)", () => {
+    expect(supplyCorrectionKind({ current: krw, corrected: 12_000_000, paid: true })).toBe("locked");
   });
-  it("문구는 명사형 한 줄", () => {
-    expect(EVIDENCE_AMOUNT_TAX_INCLUSIVE).toBe("부가세 포함 금액 · 공급가로 입력");
+
+  it("LOCKED 문구는 UI-SPEC V8 D-6520 개정 글자", () => {
+    expect(SUPPLY_CORRECTION_PAID_LOCKED).toBe("지급 완료 문서 · 공급가액 못 바꿈 · 새로 고침");
   });
 });

@@ -22,7 +22,9 @@ import { seedSubmittedCert, withCertFeatureOff } from "./helpers/cert";
 test.describe.configure({ mode: "serial" });
 
 const RRN_FULL = "930412-2123458";
-const RRN_DIGITS = /\d{6}-?\d{7}/;
+// 06.5 D-6513: 게이트 꺼짐 응답 본문(404 RSC)에는 빌드마다 바뀌는 레이아웃 서버 액션 id(42자 16진)가 실린다 — 형태 정규식(6자리-7자리)은
+// 그 id의 숫자 연속에 빌드에 따라 걸렸다. 그래서 테스트가 넣은 평문 값(하이픈 있음 · 없음)을 겨눈다.
+const RRN_PLAIN = [RRN_FULL, RRN_FULL.replace("-", ""), "930412-1234564", "9304121234564"];
 const PRINT_LINE = "이 화면은 인쇄하지 않습니다 · 머리의 「인쇄」 버튼으로 확인증을 열어 주세요";
 
 type Account = { email: string; password: string };
@@ -340,7 +342,7 @@ test("게이트 꺼짐 — 잡아 둔 세 액션을 직접 보내도 평문 · �
         data: request.postData() ?? "",
       });
       const body = await response.text();
-      expect(body).not.toMatch(RRN_DIGITS);
+      for (const plain of RRN_PLAIN) expect(body).not.toContain(plain);
       expect(body).not.toContain("saved");
     }
 

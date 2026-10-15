@@ -87,7 +87,7 @@ export const ACTION_TYPE_LABELS: Record<CoreActionType, string> = {
   cert_purge: "확인증 파기",
   cert_view: "확인증 조회",
   payment_cancel: "지급 취소",
-  evidence_amount_change: "증빙 금액 변경",
+  evidence_amount_change: "증빙 확인 금액 변경",
   evidence_waive: "증빙 면제",
   project_member_change: "프로젝트 참여자 변경",
 };
@@ -115,7 +115,7 @@ export const ALWAYS_ON_ACTION_TYPES: CoreActionType[] = [
   "cert_view",
   // 06-04 D-606 · C16: 지급 취소는 지급 기록 취소 표시와 한 트랜잭션으로 남기는 돈 기록이라 끌 수 없다
   "payment_cancel",
-  // 06-06 D-602 · CF-9: 증빙 금액 변경(경영관리 고쳐 확인)은 비용 원본이 바뀌는 돈 기록이라 끌 수 없다
+  // 06-06 D-602 · CF-9 · 06.5 D-6520: 증빙 확인 금액 변경(경영관리 공급가액 고쳐 확인)은 비용 원본이 바뀌는 돈 기록이라 끌 수 없다
   "evidence_amount_change",
   // 06-10 D-603 · D-611: 증빙 면제는 지급 게이트와 미결 점검을 닫는 흔적이라 끌 수 없다
   "evidence_waive",
@@ -123,6 +123,10 @@ export const ALWAYS_ON_ACTION_TYPES: CoreActionType[] = [
   "project_member_change",
   // 06.2-09(/cso CSO-2 · 사용자 결정 2026-10-08 「못 끄게」): 권한 변경(계급 보는 범위 · 업무 범위 · 사람 계급)은 행 범위를 넓히는 행위라 끌 수 없다
   "permission_change",
+  // 06.5 D-6511(10/8 카드 · pr-c-cso.md:69-71 CSO-6): 지급 처리는 돈이 나간 기록이라 끌 수 없다
+  "payment_process",
+  // 06.5 D-6511(06-12-review.md:76-84 I-4): 구매 처리는 카드 사용을 만드는 돈 기록이라 끌 수 없다
+  "purchase_process",
 ];
 
 export class UnknownActionTypeError extends UserFacingError {}

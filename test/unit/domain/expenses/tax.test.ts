@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { computeExpenseTax, incomeTypeFor, pickTaxDates, taxDriftText, type ExpenseTaxDeps, type ExpenseTaxResult } from "@/domain/expenses/tax";
+import { computeExpenseTax, incomeTypeFor, pickTaxDates, snapshotSupplyDiffers, taxDriftText, type ExpenseTaxDeps, type ExpenseTaxResult } from "@/domain/expenses/tax";
+import { applyTaxRule } from "@/domain/money/tax";
+import type { TaxRule } from "@/domain/code-tables/tax-rule";
 import { SettingNotFoundError, type SettingDef } from "@/domain/settings/registry";
 import { TAX_ROUNDING_WITHHOLDING_UNIT, TAX_VAT_RATE } from "@/domain/settings/keys";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
@@ -224,5 +226,42 @@ describe("taxDriftText", () => {
   // 05-06 돈 검토 m2 — 저장은 소수 6자리(numeric(7,6))라 그보다 긴 설정 세율과도 같은 세율로 본다.
   it("저장 세율 0.033333 vs 지금 0.0333333 · 금액 같음 → null", () => {
     expect(taxDriftText(vat(0.033333, 33_333, 1_033_333), vat(0.0333333, 33_333, 1_033_333))).toBeNull();
+  });
+});
+
+// 06.5 D-6520(UI-SPEC V8 「고친 뒤 문서 화면」) — 스냅숏이 셈한 공급가(지급 총액 − 부가세 + 원천징수)가 지금 공급가와 다르면 고친 문서다.
+// 엔진 네 갈래가 이 항등식을 지킨다는 단언 — applyTaxRule이 식을 바꾸면 이 시험이 먼저 깨진다.
+describe("snapshotSupplyDiffers (06.5 D-6520)", () => {
+  const SETTINGS: Record<string, unknown> = {
+    "tax.vat.rate": 0.1,
+    "tax.withholding.other_income.rate": 0.088,
+    "tax.withholding.business_income.rate": 0.033,
+    "tax.withholding.other_income.exempt_threshold": 125_000,
+    "tax.company_borne.rate": 0.088,
+    "tax.company_borne.method": "flat",
+    "tax.basis_date.withholding": "payment_date",
+    "tax.basis_date.vat": "evidence_date",
+    "tax.rounding.vat_unit": 1,
+    "tax.rounding.withholding_unit": 10,
+    "tax.rounding.min_withholding": 0,
+  };
+  const getSettingValue = ((def: { key: string }) => Promise.resolve(SETTINGS[def.key])) as never;
+  const RULES: [string, TaxRule][] = [
+    ["없음", { ruleKind: "none" }],
+    ["부가세", { ruleKind: "vat_surcharge", roundingUnit: 1, roundingMethod: "round", minWithholdingAmount: 0, basisDate: "evidence_date" }],
+    ["원천징수", { ruleKind: "withholding", roundingUnit: 10, roundingMethod: "truncate", minWithholdingAmount: 0, basisDate: "payment_date" }],
+    ["회사 대납", { ruleKind: "company_borne", roundingUnit: 10, roundingMethod: "round", minWithholdingAmount: 0, basisDate: "payment_date" }],
+  ];
+
+  it.each(RULES)("%s — 엔진이 공급가 S로 셈한 스냅숏에 S면 거짓 · 다른 공급가면 참", async (_name, rule) => {
+    const supply = 12_400_000;
+    const amounts = await applyTaxRule(supply, rule, { paymentDate: new Date("2026-09-22"), evidenceDate: new Date("2026-09-15") }, { getSettingValue });
+    const stored: ExpenseTaxResult = { ruleKind: rule.ruleKind, rate: null, historizedId: null, rateEffectiveFrom: null, method: null, basisDate: null, ...amounts };
+    expect(snapshotSupplyDiffers(stored, supply)).toBe(false);
+    expect(snapshotSupplyDiffers(stored, 12_000_000)).toBe(true);
+  });
+
+  it("셈할 수 없던 스냅숏은 거짓", () => {
+    expect(snapshotSupplyDiffers({ unavailable: true }, 12_000_000)).toBe(false);
   });
 });

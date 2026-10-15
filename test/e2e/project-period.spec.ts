@@ -64,10 +64,13 @@ async function makeProject(input: {
 }
 
 // 서버 액션(일괄 저장) 응답 — 저장 성공 신호가 화면 글자 변화뿐일 때 먼저 기다린다.
+// 06.5 D-6513: 상세 화면이 마운트 때 쏘는 읽기 액션(참여자 목록 · 카드 사용 — 본문 {projectId}뿐)도 같은 next-action POST라
+// 저장 응답 대신 잡혔다. 일괄 저장 본문에만 있는 seenStatus로 좁힌다.
 function waitForSaveAction(page: Page) {
-  return page.waitForResponse(
-    (response) => response.request().method() === "POST" && response.request().headers()["next-action"] !== undefined,
-  );
+  return page.waitForResponse((response) => {
+    const request = response.request();
+    return request.method() === "POST" && request.headers()["next-action"] !== undefined && (request.postData() ?? "").includes('"seenStatus":');
+  });
 }
 
 function headerTag(page: Page, label: string): Locator {

@@ -1,4 +1,5 @@
 import type { Viewer } from "@/domain/viewer";
+import type { RowScope } from "@/domain/permissions/scope-for";
 import { can as defaultCan } from "@/domain/permissions/can";
 import { visible as defaultVisible } from "@/domain/permissions/visible";
 import { projectMany, type DtoSpec } from "@/domain/permissions/project";
@@ -400,13 +401,22 @@ export type IssueRequestList = {
 
 const LIST_DENIED = "발행 요청 목록 보기 권한 없음";
 
+// 06.5 D-6516(06.2-prep §0 #5 · B-2) · 카드 ③(사용자 카드 10/13 23:29 KST): 발행 처리 · 지급 처리 쓰기 권한자와 전사 범위는 전부(06.2 K2와 같은 결), 그 밖은 프로젝트 보는 범위.
+// 보관 프로젝트 포함 여부는 보는 범위 그대로다. 보기 게이트(projects.revenue view)는 부르는 쪽이 먼저 본다.
+async function issueRequestListScope(viewer: Viewer, can: typeof defaultCan): Promise<RowScope> {
+  const scope = await projectRowScope(viewer);
+  if (scope.rows === "all") return scope;
+  if ((await can(viewer, "projects.revenue", "write")) || (await can(viewer, "expenses.payments", "write"))) return { rows: "all", includeArchived: scope.includeArchived };
+  return scope;
+}
+
 type ListDeps = Partial<RevenueDeps> & { can?: typeof defaultCan; visible?: typeof defaultVisible; today?: string };
 
 export async function listIssueRequests(viewer: Viewer, filters: { status?: IssueRequestListStatus; page?: string | number }, deps?: ListDeps): Promise<IssueRequestList> {
   if (!(await (deps?.can ?? defaultCan)(viewer, "projects.revenue", "view"))) throw new ForbiddenError(LIST_DENIED);
   const today = deps?.today ?? seoulToday();
   const status = (filters.status ?? "requested") === "all" ? null : ((filters.status ?? "requested") as IssueRequestBoardStatus);
-  const scope = await projectRowScope(viewer);
+  const scope = await issueRequestListScope(viewer, deps?.can ?? defaultCan);
   const amounts = await listIssueRequestAmounts(viewer, scope, { status });
   const pageCount = pageCountFrom(amounts.length, LIST_PAGE_SIZE);
   const page = clampPage(filters.page, pageCount);
@@ -432,7 +442,7 @@ export async function summarizeOpenIssueRequests(
   deps?: { can?: typeof defaultCan; visible?: typeof defaultVisible },
 ): Promise<OpenIssueRequestSummary | null> {
   if (!(await (deps?.can ?? defaultCan)(viewer, "projects.revenue", "view"))) return null;
-  const amounts = await listIssueRequestAmounts(viewer, await projectRowScope(viewer), { status: "requested" });
+  const amounts = await listIssueRequestAmounts(viewer, await issueRequestListScope(viewer, deps?.can ?? defaultCan), { status: "requested" });
   const earliest = amounts[0];
   if (!earliest) return { count: 0 };
   const amountVisible = await (deps?.visible ?? defaultVisible)(viewer, "revenue.issued_amount");

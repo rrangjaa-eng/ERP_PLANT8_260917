@@ -5,20 +5,20 @@ import { useAction } from "next-safe-action/hooks";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { Attachments, type AttachmentActions } from "@/ui/attachments/Attachments";
 import { Button } from "@/ui/button/Button";
-import { Num } from "@/ui/num/Num";
 import type { ConfirmEvidenceResult } from "@/domain/evidence-reviews";
 import type { EvidenceConfirmView } from "@/domain/payments/targets";
+import { CONFIRM_SUPPLY_SAME } from "@/domain/payments/action-row";
 import { EVIDENCE_UPLOAD_FAILED } from "@/domain/evidence/upload-checks";
-import { formatKrw } from "@/lib/format-number";
 import { createEvidenceViewUrlAction, getEvidenceConfirmViewAction } from "./actions";
 import { confirmEvidenceAction } from "./[id]/actions";
 import { TaxParts } from "./[id]/tax-parts";
-import styles from "./expenses.module.css";
+import { formatForeignAmount, formatKrw } from "@/lib/format-number";
 
 // 06-17(UI-SPEC S1 「제자리 증빙 확인」 · DR-4 · r2 B-1): 목록을 떠나지 않는 증빙 확인 — 06-29 ConfirmDialog(SP-7 첨부 보기 칸 · loading ·
 // refreshKeepsOpen)에 서버 보기(getEvidenceConfirmViewAction)를 그린다. 확인은 06-06 confirmEvidenceAction(금액 없는 갈래)을 보기의
 // version + evidenceStamp로 부른다 — 모달을 연 뒤 증빙이 바뀌면 서버가 거부하고, 보지 않은 증빙이 「확인됨」이 되지 않는다.
 // 06-20 S3이 같은 컴포넌트를 쓴다(이름 있는 export). 행 version이 바뀌면(목록 새로 고침) 보기를 다시 받아 새 파일 · 새 지문으로 다시 선다.
+// 06.5 D-6520(UI-SPEC V8 S1): 금액은 공급가액 하나 — 증빙 금액 · Q-F 넘침 줄을 그리지 않고 1차는 `공급가액과 같음`(고침 칸 없음).
 
 const LOAD_FAILED = "증빙 불러오지 못함";
 
@@ -31,23 +31,6 @@ const READ_ONLY_ACTIONS: AttachmentActions = {
 };
 
 type Loaded = { key: string } & ({ view: Partial<EvidenceConfirmView> } | { failed: true } | { refused: string });
-
-// [Q-F] 증빙 금액 초과 한 줄(서버 글자 그대로 — 숫자 조각만 700). 표시만, 1차를 막지 않는다.
-function OverrunLine({ text }: { text: string }) {
-  return (
-    <span className={styles.overrunLine} data-testid="evidence-confirm-overrun">
-      {text.split(/([+-]?\d[\d,]*)/).map((piece, index) =>
-        index % 2 === 1 ? (
-          <span key={index} className={styles.overrunAmount}>
-            <Num value={piece} />
-          </span>
-        ) : (
-          piece
-        ),
-      )}
-    </span>
-  );
-}
 
 export function EvidenceConfirmDialog(props: {
   open: boolean;
@@ -99,10 +82,9 @@ export function EvidenceConfirmDialog(props: {
     onError: ({ error }) => setRejection(error.serverError ?? LOAD_FAILED),
   });
 
-  const amount = view?.evidenceAmountKrw;
-  const subtitle = view
-    ? [view.number, view.title, typeof amount === "number" ? `증빙 금액 ${formatKrw(amount)}` : null].filter(Boolean).join(" · ")
-    : undefined;
+  // UI-SPEC V8 S1 — 부제 끝 `공급가액 {금액}`(문서 통화 · 영수증과 대조하는 값).
+  const supplyText = view?.supply ? (view.supply.currency === "KRW" ? formatKrw(view.supply.amount) : `${view.supply.currency} ${formatForeignAmount(view.supply.amount)}`) : null;
+  const subtitle = view ? [view.number, view.title, supplyText && `공급가액 ${supplyText}`].filter(Boolean).join(" · ") : undefined;
   const resultLines = view
     ? [
         view.taxLine ? (
@@ -110,7 +92,6 @@ export function EvidenceConfirmDialog(props: {
             <TaxParts parts={view.taxLine} />
           </span>
         ) : null,
-        view.evidenceOverrun ? <OverrunLine key="overrun" text={view.evidenceOverrun} /> : null,
       ].filter((line) => line !== null)
     : undefined;
 
@@ -135,7 +116,7 @@ export function EvidenceConfirmDialog(props: {
       }
       resultLines={resultLines}
       primary={{
-        label: "증빙 확인",
+        label: CONFIRM_SUPPLY_SAME,
         shortcut: "Ctrl+Enter",
         pending: isExecuting,
         ...(disabledReason ? { disabledReason } : {}),

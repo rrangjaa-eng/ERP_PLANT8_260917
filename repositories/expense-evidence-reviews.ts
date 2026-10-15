@@ -5,7 +5,7 @@ import { corpCardUsages, expenseEvidenceReviews, expenses, quoteLines, quoteRevi
 import type { Viewer } from "@/domain/viewer";
 
 // 06-06(EVID-02 · EVID-03 · D-602): 증빙 확인 기록(06-27 expense_evidence_reviews — 문서당 한 줄) 읽기 · upsert와
-// 경영관리 금액 고침의 증빙 금액 칸 갱신. 확인 해제(줄 지움) · 증빙 금액 지움은 06-11 — 05 증빙 경로 두 곳에 붙는 훅이 한다(B-3 · C4).
+// 경영관리 공급가액 고침의 공급가 칸 갱신(06.5 D-6520). 확인 해제(줄 지움) · 증빙 금액 지움은 06-11 — 05 증빙 경로 두 곳에 붙는 훅이 한다(B-3 · C4).
 
 export type EvidenceReviewRow = InferSelectModel<typeof expenseEvidenceReviews>;
 export type EvidenceReviewStatus = "confirmed" | "waived";
@@ -49,13 +49,22 @@ export async function upsertReview(
   return row;
 }
 
-// 경영관리 금액 고침(D-602 — 고친 값이 새 원본) — expenses.evidence_amount 그 칸만. version · 다른 칸은 건드리지 않는다
-// (version + 1은 호출자가 bumpExpenseVersion으로). 05 기안자 저장 · 05 증빙 경로를 거치지 않는다(B-3).
-export async function updateEvidenceAmount(viewer: Viewer, input: { expenseId: string; amountKrw: number }, tx: DbOrTx): Promise<boolean> {
+// 06.5 D-6520 — 경영관리 공급가액 고침(지급 전 · 남은 실행가 안 — 판정은 domain) — expenses의 공급가 네 칸만(moneyToColumns 결과).
+// version · 다른 칸은 건드리지 않는다(version + 1은 호출자가 bumpExpenseVersion으로). 05 기안자 저장 · 05 증빙 경로를 거치지 않는다(B-3).
+export async function updateCorrectedSupply(
+  viewer: Viewer,
+  input: { expenseId: string; columns: { currency: string; foreignAmount: string | null; fxRate: string; amountKrw: number } },
+  tx: DbOrTx,
+): Promise<boolean> {
   void viewer;
   const rows = await tx
     .update(expenses)
-    .set({ evidenceAmount: input.amountKrw })
+    .set({
+      supplyCurrency: input.columns.currency,
+      supplyForeignAmount: input.columns.foreignAmount,
+      supplyFxRate: input.columns.fxRate,
+      supplyAmountKrw: input.columns.amountKrw,
+    })
     .where(and(eq(expenses.id, input.expenseId), isNull(expenses.deletedAt)))
     .returning({ id: expenses.id });
   return rows.length > 0;

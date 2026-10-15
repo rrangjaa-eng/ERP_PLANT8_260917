@@ -607,11 +607,12 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
     execute({ payDate, rows: sent });
   }
 
-  // 증빙 칸 3차(`확인 전`만) — ≥1024 · 증빙 금액 있음은 제자리 모달, 증빙 금액이 빈 확인 전(R10-F2)과 700~1023은 문서 화면 왕복 링크. 폰은 행 링크(3차 없음).
+  // 증빙 칸 3차(`확인 전`만) — ≥1024는 제자리 모달, 700~1023은 문서 화면 왕복 링크. 폰은 행 링크(3차 없음).
+  // 06.5 D-6520 — 빈 증빙 금액이 더는 막지 않아 R10-F2 갈래(문서 화면 링크)가 없다(DTO 칸은 06.5-02가 지운다).
   function evidenceAction(row: PaymentTargetScreenRow) {
     if (row.evidenceStatus !== "확인 전" || phone) return null;
     const label = `${row.number ?? ""} 증빙 확인`.trim();
-    if (wide && row.evidenceAmountEntered === true && typeof row.version === "number") {
+    if (wide && typeof row.version === "number") {
       const version = row.version;
       return (
         <Button variant="tertiary" aria-label={label} data-cell-action="" onClick={() => setEvidenceTarget({ id: row.id, version })}>

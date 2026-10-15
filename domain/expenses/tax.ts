@@ -234,6 +234,12 @@ function taxAmountOf(result: ComputedTax): number {
   return 0;
 }
 
+// 06.5 D-6520(UI-SPEC V8 「고친 뒤 문서 화면」): 스냅숏이 셈한 공급가(엔진 네 갈래 모두 지급 총액 − 부가세 + 원천징수)가 지금 공급가와 다르면 그 한 줄은 이 공급가의 값이 아니다 — 확인 기록 행은 증빙 추가 · 무효가 지우므로 판정 재료로 쓰지 않는다
+export function snapshotSupplyDiffers(stored: ExpenseTaxResult, supplyKrw: number): boolean {
+  if (stored.unavailable) return false;
+  return stored.payableKrw - stored.vatKrw + stored.withholdingKrw !== supplyKrw;
+}
+
 export function taxDriftText(stored: ExpenseTaxResult, recomputed: ExpenseTaxResult): { text: string; parts: TaxLinePart[] } | null {
   if (stored.unavailable || recomputed.unavailable) return null;
   // 저장 세율은 소수 6자리(numeric(7,6))라 같은 자리로 맞춰 비교한다(05-06 돈 검토 m2).

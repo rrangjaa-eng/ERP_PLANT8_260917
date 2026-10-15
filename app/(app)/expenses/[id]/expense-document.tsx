@@ -199,8 +199,8 @@ export function ExpenseDocument({
       >
         <KvList items={items} />
         {paymentView && paymentView !== "error" ? (
-          // 06-06: 결재 통과 문서는 패널 상태가 증빙 섹션 확인부(S4)까지 감싼다 — 증빙 금액 칸 · 1차 `증빙 확인`이 같은 상태를 쓴다.
-          <PaymentPanelProvider view={paymentView}>
+          // 06-06: 결재 통과 문서는 패널 상태가 증빙 섹션 확인부(S4)까지 감싼다 — 공급가액 고침 칸 · 1차 확인이 같은 상태를 쓴다(06.5 D-6520 — 문서 공급가를 함께 넘긴다).
+          <PaymentPanelProvider view={paymentView} supply={supply}>
             {evidenceSection(<EvidenceReviewBlock waiveSubtitle={[expense.number, target, amountText].filter(Boolean).join(" · ")} />)}
             <PaymentSection paymentMethod={expense.paymentMethod ?? null} paymentMethodName={expense.paymentMethodName ?? null} scheduledPaymentDate={expense.scheduledPaymentDate ?? null} />
             <PaymentActionRow />

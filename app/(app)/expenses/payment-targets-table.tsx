@@ -1091,6 +1091,7 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
           otherPageCount={snapshot.otherPage}
           diffCount={sum !== null && sum.seq === snapshot.seq ? diffCount(snapshot.ids, sum.diffs) : 0}
           payDate={payDate}
+          today={props.today}
           onPayDateChange={(value) => {
             setPayDate(value);
             rememberPayDate(memoryKey, value);

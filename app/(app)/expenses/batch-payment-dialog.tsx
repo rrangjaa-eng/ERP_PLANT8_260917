@@ -66,7 +66,7 @@ export function BatchPaymentDialog({
   diffCount: number;
   payDate: string;
   // 06.5 D-6518(UI-SPEC V13): 서버가 내려준 KST 오늘 — 지급일 칸 `max`(브라우저 시계로 만들지 않는다). 화면은 이 값으로 먼저 비교하지 않는다.
-  today?: string;
+  today: string;
   onPayDateChange: (payDate: string) => void;
   pending: boolean;
   rejection: string | null;

@@ -373,6 +373,7 @@ test.describe("지급 대상 · 일괄 지급 마감 (06-15 Task 3)", () => {
     await page.getByRole("button", { name: /^지급 완료 1/ }).click();
     const dialog = page.getByRole("dialog");
     const field = dialog.getByLabel("지급일");
+    await expect(field).toHaveAttribute("max", seoulToday());
     // type="date"는 달력에 없는 날을 값으로 받지 않는다(브라우저가 빈 값으로 정리) — 그 값이 React onChange로 오는 길을 그대로 탄다.
     for (const bad of ["2026-13-01", "2026-02-30"]) {
       await field.evaluate((element, value) => {

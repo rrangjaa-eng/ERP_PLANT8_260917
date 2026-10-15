@@ -95,6 +95,11 @@ describe("parseArgs", () => {
     expect(args.sections).toEqual([...DEFAULT_SECTIONS, "6-10"]);
   });
 
+  it("--seed는 허용 목록의 시나리오 이름을 받고, 없으면 null이다", () => {
+    expect(parseArgs(["/projects/{projectId}", "--out", "test-results/r.md", "--seed", "pre-settle-evidence-pending"]).seed).toBe("pre-settle-evidence-pending");
+    expect(parseArgs(["/x", "--out", "test-results/r.md"]).seed).toBeNull();
+  });
+
   it("--plan은 반복할 수 있다", () => {
     const args = parseArgs([
       "/x",
@@ -114,6 +119,8 @@ describe("parseArgs", () => {
   it.each([
     [["/x", "--out", ".planning/r.md", "--base", "--output=/tmp/x"], "--base"],
     [["/x", "--out"], "--out"],
+    [["/x", "--out", "test-results/r.md", "--seed"], "--seed"],
+    [["/x", "--out", "test-results/r.md", "--seed", "no-such-scenario"], "--seed"],
     [["/x", "--out", ".planning/r.md", "--plan"], "--plan"],
     [["--out", ".planning/r.md"], "경로"],
     [["admin/people", "--out", ".planning/r.md"], "/"],
@@ -239,6 +246,13 @@ describe("fillRoute · envFileSecrets", () => {
   it("{adminId} 자리를 캡처 때 만든 관리자 id로 바꾼다", () => {
     expect(fillRoute("/admin/people/{adminId}", { adminId: "u-1" })).toBe("/admin/people/u-1");
     expect(fillRoute("/admin/people", { adminId: "u-1" })).toBe("/admin/people");
+  });
+
+  it("시나리오 변수를 채우고, 못 채운 자리 표시는 오류다", () => {
+    expect(fillRoute("/projects/{projectId}", { adminId: "u-1" }, { projectId: "p-1" })).toBe("/projects/p-1");
+    expect(() => fillRoute("/projects/{projectId}", { adminId: "u-1" })).toThrow("{projectId}");
+    // 시드 모드는 관리자 계정을 만들지 않는다(adminId 빈 값) — {adminId} 경로를 빈 값으로 채우지 않고 멈춘다.
+    expect(() => fillRoute("/admin/people/{adminId}", { adminId: "" }, { projectId: "p-1" })).toThrow("{adminId}");
   });
 
   it(".env 파일의 값(8자 이상)을 가릴 비밀로 모은다", () => {

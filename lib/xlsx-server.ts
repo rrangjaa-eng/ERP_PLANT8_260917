@@ -2,7 +2,7 @@
 // 셀은 손으로 짓는다(`{ t: "s", v, z: "@" }` — 옛 O: app/src/domain/bankTransfer.ts:610). 값을 보고 형을 정하는 aoa_to_sheet는
 // `088` 같은 숫자만 든 글자를 숫자 셀로 돌려 앞자리 0을 날린다.
 // `server-only`를 import하지 않는다 — domain/*가 부르고 테스트(Vitest node)가 그 domain을 읽는다(lib/auth.ts 머리주석 규약).
-// 대신 `xlsx` import는 이 파일과 domain/evidence-import/workbook.ts(읽기)만 하도록 import 허용 목록 grep 게이트가 지킨다(EP2-C1).
+// 대신 `xlsx` import는 이 파일(과 시험)만 하도록 eslint.config.mjs의 no-restricted-imports가 지킨다(EP2-C1).
 import * as XLSX from "xlsx";
 
 export function buildTextSheetXlsx(sheetName: string, rows: readonly (readonly string[])[]): Uint8Array {

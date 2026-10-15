@@ -535,7 +535,7 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
 
   // 04.1-05(CXF-B-F01 · CXF2-B-RF01 · T6): 본인 승인이면 팀장 자기 문서의 행동 줄 = 1차 승인 + 2차 회수(반려 없음).
   // PC 결재함 행에는 3차 승인 하나(회수는 문서 화면 · 폰 시트에서만), 폰 결재 시트는 승인 + 회수.
-  test("본인 승인 — 팀장 자기 문서: 문서 화면 승인 + 회수, PC 결재함 행 승인 하나, 폰 시트 승인 + 회수, 본부장 승인 뒤 회수 없음(06.6 D-6602 → D28)", async ({ browser, baseURL }) => {
+  test("본인 승인 — 팀장 자기 문서: 문서 화면 승인 + 회수, PC 결재함 행 승인 하나, 폰 시트 승인 + 회수, 본인 승인 뒤 회수 확인 결과 줄 하나(06.6 D-6610), 본부장 승인 뒤 회수 없음(06.6 D-6602 → D28)", async ({ browser, baseURL }) => {
     const today = seoulToday();
     const range = leaveWeekdayRange(today, { week: 9, weekdays: 2 });
     const original = await getSettingValue(APPROVAL_ROUTE_LEAVE_SELF_APPROVAL);
@@ -571,6 +571,13 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
       await expect(lead.getByRole("status").filter({ hasText: "승인 · " })).toBeVisible();
       await expect(lead.getByRole("button", { name: /^승인/ })).toHaveCount(0);
       await expect(lead.getByRole("button", { name: /^회수/ })).toHaveCount(1);
+
+      await lead.getByRole("button", { name: /^회수/ }).click();
+      const dialog = lead.getByRole("dialog");
+      await expect(dialog.locator('p[class*="resultLine"]')).toHaveCount(1);
+      await expect(dialog.locator('p[class*="resultLine"]')).toHaveText(`결재 멈춤 · ${org.divisionHead.name}의 결재함에서 빠짐`);
+      await lead.keyboard.press("Escape");
+      await expect(dialog).toBeHidden();
 
       const view = await getApprovalView(org.divisionHead.viewer, { kind: "leave", documentId: doc.leaveId });
       await approveDocument(org.divisionHead.viewer, { instanceId: view?.instanceId ?? "", expectedVersion: view?.version ?? 0 });

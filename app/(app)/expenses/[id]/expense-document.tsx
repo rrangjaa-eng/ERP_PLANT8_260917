@@ -247,8 +247,7 @@ export function ExpenseDocument({
                   subtitle: [expense.number, expense.drafterName, target, amountText].filter(Boolean).join(" · "),
                   withdrawSubtitle: [expense.number, target].filter(Boolean).join(" · "),
                   drafterName: view.drafterName ?? expense.drafterName ?? null,
-                  // 지출결의는 회수 뒤 같은 번호로 다시 제출한다 — 승인 기록 줄에 다시 제출이 첫 단계부터임을 붙인다(UI-SPEC Destructive — 회수).
-                  withdrawLines: withdrawResultLines(view.steps).map((line) => (line.endsWith(" 승인 기록은 남음") ? `${line} · 다시 제출 때 첫 단계부터` : line)),
+                  withdrawLines: withdrawResultLines(view.steps),
                 }
               : null
           }

@@ -578,6 +578,31 @@ function instanceJoin(documentKind: string): SQL {
   return sql`${approvalInstances.documentKind} = ${documentKind} and ${approvalInstances.documentId} = ${expenses.id}`;
 }
 
+// 06.5 D-6508(G20 · EP1-13 · EP2-D5 · EP3-D5): 목록 검색 조건 — 보기가 고른 열(fields)만 OR로 잇는다. 열을 고르는 것은 도메인(searchFieldsFor — 그 보기 DTO의 열 ×
+// 열마다 정보 항목)이고 여기는 받은 열을 그대로 쓴다. 이름 열은 조인이 아니라 `exists`(byLine 선례) — 바깥 질의의 조인과 무관해 목록 · 합계 · 지급 대상 · 지급 완료가
+// 한 함수를 쓰고 행이 겹치지 않는다. 값은 모두 바인딩 매개변수(T-06.5-63). 받은 열이 없으면 거짓(숨은 값을 건수로 떠보지 못하게 — 범위 · 노출 판정은 건드리지 않는다).
+export type ExpenseSearchField = "number" | "content" | "projectName" | "lineItem" | "vendorName" | "drafterName" | "payeeUserName";
+
+export function expenseSearchCondition(viewer: Viewer, query: string, fields: readonly ExpenseSearchField[]): SQL {
+  void viewer; // 4계층 규약(plant8/repository-viewer-param) 자리 — 범위 판정은 호출 쪽 scopeCondition이 한다.
+  // Codex P2: 사용자 글자의 %·_를 와일드카드가 아니라 글자로 찾는다(LIKE 기본 이스케이프는 백슬래시).
+  const like = `%${query.replace(/[\\%_]/g, "\\$&")}%`;
+  const parts: Record<ExpenseSearchField, SQL> = {
+    number: sql`${expenses.number} ilike ${like}`,
+    // 내용은 팀 비용 행(프로젝트 · 견적 줄 없음)에서만 화면에 보인다 — 보이는 글자만 찾는다(/review P3-1).
+    content: sql`(${expenses.projectId} is null and ${expenses.quoteLineId} is null and ${expenses.content} ilike ${like})`,
+    projectName: sql`exists (select 1 from projects sp where sp.id = ${expenses.projectId} and sp.name ilike ${like})`,
+    lineItem: sql`exists (select 1 from quote_lines sl where sl.id = ${expenses.quoteLineId} and sl.item_name ilike ${like})`,
+    vendorName: sql`exists (select 1 from vendors sv where sv.id = ${expenses.vendorId} and sv.name ilike ${like})`,
+    drafterName: sql`exists (select 1 from users sd where sd.id = ${expenses.drafterId} and sd.name ilike ${like})`,
+    payeeUserName: sql`exists (select 1 from users su where su.id = ${expenses.payeeUserId} and su.name ilike ${like})`,
+  };
+  const picked = fields.map((field) => parts[field]);
+  return picked.length === 0 ? sql`false` : sql`(${sql.join(picked, sql` or `)})`;
+}
+
+export type ExpenseSearch = { query: string; fields: readonly ExpenseSearchField[] };
+
 export type ExpenseListRow = ExpenseRow & {
   groupRank: number;
   drafterName: string;
@@ -605,7 +630,7 @@ const statusChangedAtExpr = sql<Date | null>`case when ${approvalInstances.statu
 
 export async function listExpensePage(
   viewer: Viewer,
-  input: { scope: ExpenseScope; ranks: readonly number[]; documentKind: string; limit: number; offset: number },
+  input: { scope: ExpenseScope; ranks: readonly number[]; documentKind: string; limit: number; offset: number; search?: ExpenseSearch },
 ): Promise<ExpenseListRow[]> {
   const q = db
     .select({
@@ -619,7 +644,8 @@ export async function listExpensePage(
     .from(expenses)
     .leftJoin(approvalInstances, instanceJoin(input.documentKind))
     .leftJoin(projects, eq(projects.id, expenses.projectId))
-    .where(and(scopeCondition(viewer, input.scope), ranksCondition(input.ranks)))
+    // 06.5 D-6508: 검색은 범위 · 보기와 AND로 안쪽 서브쿼리 WHERE에 — LIMIT 전에 걸린다.
+    .where(and(scopeCondition(viewer, input.scope), ranksCondition(input.ranks), input.search ? expenseSearchCondition(viewer, input.search.query, input.search.fields) : undefined))
     .as("q");
   const rows = await db
     .select({
@@ -675,9 +701,12 @@ export type ExpenseListSummary = { visibleCount: number; viewCount: number; view
 // 남의 문서 건수(기안 열 여부).
 export async function summarizeExpenseList(
   viewer: Viewer,
-  input: { scope: ExpenseScope; ranks: readonly number[]; documentKind: string },
+  input: { scope: ExpenseScope; ranks: readonly number[]; documentKind: string; search?: ExpenseSearch },
 ): Promise<ExpenseListSummary> {
-  const inView = ranksCondition(input.ranks);
+  // 06.5 D-6508(G20 · EP1-13 · EP2-D5): 검색은 보기 건수 · 합계(FILTER)에만 — 범위 전체 건수(visibleCount, 빈 화면 판정)와 남의 문서 수(othersCount, 기안 열)는
+  // 검색과 무관하다. 검색을 바깥 WHERE에 넣으면 0건 검색에서 필터 줄이 사라진다.
+  const inRanks = ranksCondition(input.ranks);
+  const inView = input.search ? sql`${inRanks} and ${expenseSearchCondition(viewer, input.search.query, input.search.fields)}` : inRanks;
   const [row] = await db
     .select({
       visibleCount: sql<number>`count(*)::int`,

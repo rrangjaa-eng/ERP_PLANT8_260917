@@ -1,9 +1,10 @@
 import type { Viewer } from "@/domain/viewer";
 import { can, ForbiddenError } from "@/domain/permissions/can";
-import { completeExpensePayment, loadPaymentShared, PayableChangedError, type PaymentSharedDeps } from "@/domain/payments";
+import { completeExpensePayment, FuturePayDateError, loadPaymentShared, PayableChangedError, type PaymentSharedDeps } from "@/domain/payments";
 import { rejudgePaymentTargets } from "@/domain/payments/targets";
 import { formatKstTime } from "@/domain/holidays/business-day";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
+import { seoulToday } from "@/lib/dates";
 import { log } from "@/lib/log";
 
 // 06-15(AS1 · D-604 부분 성공 · S2): 일괄 지급 — 행마다 06-03 · 06-04 단건 경로(completeExpensePayment)를 그 함수의 트랜잭션으로 부른다.
@@ -47,6 +48,8 @@ export async function completePaymentsBatch(
   deps?: Partial<Pick<PaymentSharedDeps, "loadTaxRates">> & { now?: Date },
 ): Promise<BatchPaymentResult> {
   if (!(await can(viewer, "expenses.payments", "write"))) throw new ForbiddenError("지급 처리 권한 없음");
+  // 06.5 D-6518: 일괄은 날짜가 묶음에 하나라 맨 앞에서 한 번 — 한 건도 처리하지 않는다(옛 O: server/src/payments.ts:855-866).
+  if (input.payDate > seoulToday(deps?.now)) throw new FuturePayDateError();
   const seen = new Set<string>();
   const rows = input.rows.filter((row) => (seen.has(row.expenseId) ? false : (seen.add(row.expenseId), true)));
   const shared = await loadPaymentShared(viewer, deps?.loadTaxRates ? { loadTaxRates: deps.loadTaxRates } : undefined);

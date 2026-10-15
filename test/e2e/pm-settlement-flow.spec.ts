@@ -211,7 +211,7 @@ test.describe("PM 정산 흐름 — 구매 · 지출결의 · 발행 · 정산 �
     const recorder = await makeRevenueRecorder();
     const financePage = await loginPage(browser, baseURL, recorder, { width: 1280, height: 900 });
     await financePage.goto(`/projects/${fx.projectId}`);
-    const issueButton = financePage.getByRole("button", { name: `희망 ${today.slice(5)} 발행 줄로` });
+    const issueButton = financePage.getByRole("button", { name: `희망 ${today.slice(5)} · 1번째 발행 줄로` });
     await waitForHydration(issueButton);
     await issueButton.click();
     await financePage.getByRole("button", { name: /일괄 저장/ }).click();

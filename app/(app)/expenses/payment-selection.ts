@@ -115,9 +115,10 @@ export function diffCount(selectedIds: readonly string[], diffs: Readonly<Record
   return selectedIds.filter((id) => (diffs[id] ?? 0) !== 0).length;
 }
 
-// 보관 · 기억 키 — 보기 + 필터(지급 대상 · 팀 · 증빙 값). 쪽은 들지 않는다(쪽을 넘겨도 같은 키).
+// 보관 · 기억 키 — 보기 + 필터(지급 대상 · 팀 · 증빙 · 검색어 값). 쪽은 들지 않는다(쪽을 넘겨도 같은 키).
+// 06.5-08(DM-3 · OI-11): 검색도 필터라 키에 든다 — 검색하면 다른 키라 보관한 선택 · 이체액 편집을 되살리지 않는다.
 export function selectionKey(query: Readonly<Record<string, string>>): string {
-  return ["pay", query.status ?? "", query.team ?? "", query.evidence ?? ""].join("|");
+  return ["pay", query.status ?? "", query.team ?? "", query.evidence ?? "", query.q ?? ""].join("|");
 }
 
 // 되살리기(r2 F-2) — 보관한 선택 · 편집 중 서버 rowStates가 「지금 고를 수 있음」인 행 것만 남긴다(지금 쪽 밖 id 포함).

@@ -22,6 +22,7 @@ import {
   AMOUNT_HIDDEN,
   CANCEL_REASON_REQUIRED,
   DIFF_REASON_REQUIRED,
+  FUTURE_PAY_DATE,
   resolveExpenseActionRow,
   TRANSFER_FRACTION,
   TRANSFER_NOT_NUMBER,
@@ -104,11 +105,19 @@ async function alreadyDone(viewer: Viewer, live: { processedBy: string; processe
 const PAYMENT_METHOD_MISSING = "지급 방식 없음 · 지출결의 확인";
 
 // 06-04(D-605) — 이체액 ≠ 지급 총액인데 차이 사유가 없음. 화면은 이 문구로 차이 사유 칸 아래에 둔다(「Error — 차이 사유 칸」).
-export { CANCEL_REASON_REQUIRED, DIFF_REASON_REQUIRED } from "@/domain/payments/action-row";
+export { CANCEL_REASON_REQUIRED, DIFF_REASON_REQUIRED, FUTURE_PAY_DATE } from "@/domain/payments/action-row";
 
 export class DiffReasonRequiredError extends UserFacingError {
   constructor() {
     super(DIFF_REASON_REQUIRED);
+  }
+}
+
+// 06.5 D-6518(사용자 10/6 20:42 KST 「오늘까지」 · 카드 10/13 23:31 KST · 옛 O: server/src/expenses.ts:5728-5733 · O: server/src/payments.ts:855-866):
+// 지급일은 실제로 돈이 나간 날 — 미래 날짜는 지급 예정일 자리다. 두 값 모두 KST `YYYY-MM-DD` 글자라 문자열 비교가 날짜 비교다(UTC 자르기 없음).
+export class FuturePayDateError extends UserFacingError {
+  constructor() {
+    super(FUTURE_PAY_DATE);
   }
 }
 
@@ -467,6 +476,8 @@ export async function completeExpensePayment(
   const shared = deps?.shared ?? (await loadPaymentShared(viewer));
   const today = seoulToday(deps?.now);
   const payDate = input.payDate ?? today;
+  // 06.5 D-6518: 트랜잭션 전 · 권한 판정 뒤 — 미래 지급일은 지급 기록 없이 거절(일괄은 batch.ts가 묶음 맨 앞에서 한 번 더 막는다).
+  if (payDate > today) throw new FuturePayDateError();
   const pre = await loadPaymentInputs(viewer, { expenseId: input.expenseId, payDate, now: deps?.now }, shared);
 
   try {
@@ -685,6 +696,9 @@ export async function previewPayable(
   deps?: { now?: Date },
 ): Promise<Partial<PayablePreview>> {
   if (!(await can(viewer, "expenses.payments", "write"))) throw new ForbiddenError("지급 처리 권한 없음");
+  // 06.5 D-6518: 실제 지급일 미리보기만 막는다 — 예정일 힌트(ScheduleField)는 scheduledPayDate와 같은 미래 값을 payDate에도 싣는다(UI-SPEC V13
+  // 「대상 아님」). scheduledPayDate로 판정을 건너뛰어도 미리보기는 쓰기가 없고 지급 완료(단건 · 일괄)가 같은 판정으로 막는다(T-06.5-98).
+  if (input.scheduledPayDate === undefined && input.payDate > seoulToday(deps?.now)) throw new FuturePayDateError();
   const shared = await loadPaymentShared(viewer);
   const loaded = await loadPaymentInputs(viewer, { expenseId: input.expenseId, payDate: input.payDate, scheduledPayDate: input.scheduledPayDate, now: deps?.now }, shared);
   const corrected = input.correctedSupplyAmount;

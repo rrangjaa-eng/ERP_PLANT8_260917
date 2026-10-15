@@ -280,7 +280,9 @@ function pressCellAction(event: React.KeyboardEvent<HTMLDivElement>) {
 export type PaymentTargetsScreenProps = {
   views: readonly string[];
   selects: FilterSelect[];
-  // 지금 필터(보기 · 팀 · 증빙) — 쪽 링크가 같은 필터를 싣는다.
+  // 06.5-08(D-6508): 검색 칸 값(필터 줄 맨 앞). 정규화한 검색어 — 없으면 빈 문자열.
+  searchValue: string;
+  // 지금 필터(보기 · 팀 · 증빙 · 검색어) — 쪽 링크가 같은 필터를 싣는다.
   query: Record<string, string>;
   rows: PaymentTargetScreenRow[];
   total: { count: number; sumKrw: number } | null;
@@ -898,7 +900,7 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
 
   const filters = (
     <>
-      <StatusFilter value={PAYMENT_TARGET_VIEW} views={props.views} selects={props.selects} />
+      <StatusFilter value={PAYMENT_TARGET_VIEW} views={props.views} selects={props.selects} searchValue={props.searchValue} />
       {wide && props.canExportTransferFile ? (
         <span className={styles.transferSlot}>
           <Button
@@ -1089,6 +1091,7 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
           otherPageCount={snapshot.otherPage}
           diffCount={sum !== null && sum.seq === snapshot.seq ? diffCount(snapshot.ids, sum.diffs) : 0}
           payDate={payDate}
+          today={props.today}
           onPayDateChange={(value) => {
             setPayDate(value);
             rememberPayDate(memoryKey, value);

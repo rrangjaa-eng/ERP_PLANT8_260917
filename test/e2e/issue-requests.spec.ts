@@ -104,13 +104,13 @@ test.describe("발행 요청 — PM 요청 → 매출 기록 권한자 발행 �
     await expect(requestTable(pmPage)).toContainText("합계 24,200,000");
     await expect(requestTable(pmPage)).not.toContainText("%");
     // PM에게는 `발행 줄로`가 없다(렌더하지 않음).
-    await expect(pmPage.getByRole("button", { name: `희망 ${day} 발행 줄로` })).toHaveCount(0);
+    await expect(pmPage.getByRole("button", { name: /발행 줄로$/ })).toHaveCount(0);
     await pmSession.context.close();
 
     // 경영관리 — `발행 줄로` → 새 발행 줄(발행일 = 희망일 · 발행액 = 요청 금액) + 발행일 포커스 + 2행 `발행 줄 입력 중`.
     const financeSession = await openAs(browser, finance, projectUrl);
     const financePage = financeSession.page;
-    await financePage.getByRole("button", { name: `희망 ${day} 발행 줄로` }).click();
+    await financePage.getByRole("button", { name: `희망 ${day} · 1번째 발행 줄로` }).click();
     await expect(issuedTable(financePage).getByLabel("발행일")).toHaveValue(today);
     await expect(issuedTable(financePage).getByLabel("발행일")).toBeFocused();
     await expect(issuedTable(financePage).getByLabel("발행액")).toHaveValue("22,000,000");
@@ -141,7 +141,25 @@ test.describe("발행 요청 — PM 요청 → 매출 기록 권한자 발행 �
     await pmSession.context.close();
 
     const financeSession = await openAs(browser, finance, projectUrl);
-    await expect(requestTable(financeSession.page).getByRole("button", { name: `희망 ${today.slice(5)} 발행 줄로` })).toBeVisible();
+    await expect(requestTable(financeSession.page).getByRole("button", { name: `희망 ${today.slice(5)} · 1번째 발행 줄로` })).toBeVisible();
+    await financeSession.context.close();
+  });
+
+  // 06.5-08(D-6512 L-2 · UI-SPEC V9): 같은 희망일 요청이 둘이어도 버튼 접근 이름이 행마다 유일하다 — 순번만(금액은 숨김 계급에 샌다), 보이는 글자 `발행 줄로`가 이름 끝.
+  test("같은 희망일 요청 둘 — `발행 줄로` 접근 이름이 `희망 MM-DD · N번째 발행 줄로`로 행마다 다르고 금액을 담지 않는다", async ({ browser }) => {
+    const { projectUrl, projectId, pm, finance, today } = await setupProject();
+    await seedRequest(projectId, pm.userId, { desiredIssueDate: today, amount: 12_345_000, memo: "하나" });
+    await seedRequest(projectId, pm.userId, { desiredIssueDate: today, amount: 67_890_000, memo: "둘" });
+
+    const financeSession = await openAs(browser, finance, projectUrl);
+    const buttons = requestTable(financeSession.page).getByRole("button", { name: /발행 줄로$/ });
+    await expect(buttons).toHaveCount(2);
+    const names = await buttons.evaluateAll((nodes) => nodes.map((node) => node.getAttribute("aria-label") ?? ""));
+    const day = today.slice(5);
+    expect(names).toEqual([`희망 ${day} · 1번째 발행 줄로`, `희망 ${day} · 2번째 발행 줄로`]);
+    for (const name of names) expect(name).not.toMatch(/\d{1,3}(,\d{3})+|\d{5,}/);
+    await buttons.first().click();
+    await expect(requestTable(financeSession.page).getByRole("button", { name: `희망 ${day} · 1번째 발행 줄 빼기` })).toBeVisible();
     await financeSession.context.close();
   });
 });
@@ -196,15 +214,15 @@ test.describe("발행 요청 — S16 상태 마감 (06-18 Task 3)", () => {
     const day = today.slice(5);
 
     const { page, context } = await openAs(browser, finance, projectUrl);
-    await page.getByRole("button", { name: `희망 ${day} 발행 줄로` }).click();
+    await page.getByRole("button", { name: `희망 ${day} · 1번째 발행 줄로` }).click();
     await expect(requestTable(page).getByText("발행 줄 입력 중", { exact: true })).toBeVisible();
     await expect(issuedTable(page).getByLabel("발행일")).toHaveCount(1);
     await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
 
-    await page.getByRole("button", { name: `희망 ${day} 발행 줄 빼기` }).click();
+    await page.getByRole("button", { name: `희망 ${day} · 1번째 발행 줄 빼기` }).click();
     await expect(requestTable(page).getByText("발행 줄 입력 중")).toHaveCount(0);
     await expect(issuedTable(page).getByLabel("발행일")).toHaveCount(0);
-    await expect(requestTable(page).getByRole("button", { name: `희망 ${day} 발행 줄로` })).toBeVisible();
+    await expect(requestTable(page).getByRole("button", { name: `희망 ${day} · 1번째 발행 줄로` })).toBeVisible();
     await expect(page.getByText("바뀐 칸 없음", { exact: true })).toBeVisible();
     await context.close();
   });
@@ -214,7 +232,7 @@ test.describe("발행 요청 — S16 상태 마감 (06-18 Task 3)", () => {
     const requestId = await seedRequest(projectId, pm.userId, { desiredIssueDate: today, amount: 7_000_000 });
 
     const { page, context } = await openAs(browser, finance, projectUrl);
-    await page.getByRole("button", { name: `희망 ${today.slice(5)} 발행 줄로` }).click();
+    await page.getByRole("button", { name: `희망 ${today.slice(5)} · 1번째 발행 줄로` }).click();
     await saveProjectLedger(SYSTEM_VIEWER, projectId, {
       seenStatus: "bidding",
       revenue: { issuedEntries: [{ id: randomUUID(), isNew: true, entryDate: today, amount: { currency: "KRW", amount: 7_000_000, fxRate: 1 }, fromIssueRequestId: requestId }] },
@@ -467,7 +485,7 @@ test.describe("프로젝트 목록 하위 링크 `발행 요청 {N}` · `?issueR
     await page.reload();
     await page.getByRole("link", { name: `${projectNumber} 희망 ${day} 발행 줄 입력`, exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/projects/${projectId}\\?issueRequest=${requestId}$`));
-    await expect(page.getByRole("button", { name: `희망 ${day} 발행 줄로` })).toBeFocused();
+    await expect(page.getByRole("button", { name: `희망 ${day} · 1번째 발행 줄로` })).toBeFocused();
     await context.close();
   });
 

@@ -419,6 +419,8 @@ export function PaymentFields({
             <input
               id="payment-pay-date"
               type="date"
+              // 06.5 D-6518(UI-SPEC V13): 고르기는 서버가 내려준 KST 오늘까지(지급 전 view.payDate = 오늘). 손으로 친 미래 값은 서버 미리보기가 칸 오류로 막는다 — 화면은 먼저 비교하지 않는다.
+              max={view.payDate}
               value={fields.payDate}
               onChange={(event) => {
                 setFields({ payDate: event.target.value });

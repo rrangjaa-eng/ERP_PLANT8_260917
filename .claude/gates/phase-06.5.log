@@ -20,4 +20,8 @@ review 2026-10-15T08:30Z session=5ae300e7-68b8-5ddc-9729-19f4c5417837 (06.5 PR-D
 cso 2026-10-15T08:30Z session=5ae300e7-68b8-5ddc-9729-19f4c5417837 (06.5 PR-D2 #226 — cso 헬퍼 64MiB 거부로 같은 기준 수동 점검, 보안 결함 0, 훅 미기록이라 손 기록, 같은 보고서)
 design-review 2026-10-15T08:30Z session=5ae300e7-68b8-5ddc-9729-19f4c5417837 (06.5 PR-D2 #226 — Codex 디자인 검토 지적 0(빈 화면만 봄), POLISH 1(D-1 남김), 독립 DOM 감사 막는 문제 0, 훅 미기록이라 손 기록, 보고서 /mnt/project-files/06.5-review/exec/pr-d2-design-qa.md)
 qa 2026-10-15T08:30Z session=5ae300e7-68b8-5ddc-9729-19f4c5417837 (06.5 PR-D2 #226 — CI=true 로컬 QA, Medium Q-1(지급처 링크 쓰기 권한만으로 표시) 0c323eb0로 고침, 훅 미기록이라 손 기록, 같은 보고서)
+review 2026-10-15T14:40Z session=5ae300e7-68b8-5ddc-9729-19f4c5417837 (06.5 PR-D #228 — /review P0·P1·P2 0, P3 2(내용 검색 eaa6d850 고침, 자정 넘긴 날짜 상한 받아들임), Codex 없음(R3), 훅 미기록이라 손 기록, 보고서 /mnt/project-files/06.5-review/exec/pr-d-review-cso.md)
+cso 2026-10-15T14:40Z session=5ae300e7-68b8-5ddc-9729-19f4c5417837 (06.5 PR-D #228 — cso 헬퍼 64MiB 거부로 같은 기준 수동 점검, 결함 0, 훅 미기록이라 손 기록, 같은 보고서)
+design-review 2026-10-15T15:30Z session=5ae300e7-68b8-5ddc-9729-19f4c5417837 (06.5 PR-D #228 — Codex 디자인 검토 exit 0 후보 2(기존 W-1 거래처 폰 링크, 이 PR 밖), 새 지적 0, 독립 DOM 감사 막는 문제 0, 훅 미기록이라 손 기록, 보고서 /mnt/project-files/06.5-review/exec/pr-d-design-qa.md)
+qa 2026-10-15T15:30Z session=5ae300e7-68b8-5ddc-9729-19f4c5417837 (06.5 PR-D #228 — CI=true 로컬 QA 흐름 9 통과, E2E 136 통과, 결함 0, 훅 미기록이라 손 기록, 같은 보고서)
 review 2026-10-15T16:05Z session=5ae300e7-68b8-5ddc-9729-19f4c5417837 (06.5-10 선행 PR #232 — /review P0·P1·P2 0, P3 4(낡은 주석·시험 제목 b98afee0 고침, 증빙 금액 무시 시험 빠짐은 받아들임), Codex 없음(R3), 훅 미기록이라 손 기록, 보고서 /mnt/project-files/06.5-review/exec/pr-a2pre-review.md)

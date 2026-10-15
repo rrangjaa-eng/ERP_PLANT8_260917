@@ -154,6 +154,22 @@ describe("신한 이체 파일(06.5 D-6504)", () => {
     await expect(exportBankTransferFile(noAmount, { rows: [snapshot] })).rejects.toBeInstanceOf(ForbiddenError);
     expect(await exportLogs(noAmount.id)).toHaveLength(0);
   });
+
+  // Codex P2: 파일 칸 명세(BANK_TRANSFER_ROW_DTO_SPEC)가 예금주 → vendor.value · 비고/key → expense.value로 적는데 행은 projectMany를 안 지난다 —
+  // 고정 게이트가 그 둘도 봐야 숨긴 계급이 파일로 받지 못한다.
+  it("고정 게이트 — 거래처 정보 숨김 · 지출결의 정보 숨김이면 ForbiddenError(파일 칸 명세의 항목)", async () => {
+    const fx = await setupExpenseProject();
+    const doc = await approvedExpenseWithoutEvidence(fx);
+    const payer = await makeExporter();
+    const snapshot = await snapshotOf(payer, doc);
+
+    const noVendor = await makeExporter("거래처숨김", ["vendor.value"]);
+    await expect(exportBankTransferFile(noVendor, { rows: [snapshot] })).rejects.toBeInstanceOf(ForbiddenError);
+    const noExpense = await makeExporter("지출숨김", ["expense.value"]);
+    await expect(exportBankTransferFile(noExpense, { rows: [snapshot] })).rejects.toBeInstanceOf(ForbiddenError);
+    expect(await exportLogs(noVendor.id)).toHaveLength(0);
+    expect(await exportLogs(noExpense.id)).toHaveLength(0);
+  });
 });
 
 // 06.5-06 Task 2(UI-SPEC V5 막힌 건 이유 표 1~14 · 결정 맥락 8 · 10 · 11 · 15): 막힌 건은 빼고 나머지를 담는다.

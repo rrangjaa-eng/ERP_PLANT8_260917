@@ -12,9 +12,14 @@ import { applyAutoSettlement } from "@/domain/projects/auto-transition";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { setCustomerApproval } from "@/domain/quotes/revisions";
 import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
-import { approveDocument, getApprovalView } from "@/domain/approvals";
+import { approveDocument, getApprovalView, rejectDocument } from "@/domain/approvals";
+import { SETTLEMENT_DOCUMENT_KIND, submitSettlement } from "@/domain/settlements";
+import { findApprovalGraphByDocument } from "@/repositories/approvals";
+import { createCorpCard } from "@/domain/corp-cards";
+import { createCardUsage, precheckCardUsage, type CardUsageInput } from "@/domain/corp-card-usages";
 import { voidEvidence } from "@/domain/evidence";
 import { saveRevenue } from "@/domain/revenue";
+import { planAccountNumberUpdate } from "@/domain/vendors";
 import { approvalBasis } from "@/repositories/quote-revisions";
 import { findProjectById } from "@/repositories/projects";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
@@ -206,11 +211,165 @@ async function purchaseApprovalPending(): Promise<SeedResult> {
   return { vars: { projectId: project.id }, viewer: pm };
 }
 
+// payment-and-settlement-actions: 같은 프로젝트에 (a) 결재 통과 · 지급 전 지출결의 1건(증빙 살아 있음 — 지급 행동 줄) (b) 반려된 정산 문서(06-39). 기안자(담당 PM)로 본다.
+// 정산 제출 준비는 test/e2e/settlement-fixture.ts와 같은 흐름이지만 scripts는 test를 import할 수 없어 다시 쓴다.
+async function paymentAndSettlementActions(browser: Browser, baseURL: string | undefined): Promise<SeedResult> {
+  const today = seoulToday();
+  const lastYear = Number(today.slice(0, 4)) - 1;
+  const suffix = randomUUID().slice(0, 6);
+  const yearStart = `${today.slice(0, 4)}-01-01`;
+  const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `캡처지급본부-${suffix}` });
+  const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `캡처지급팀-${suffix}` });
+  const mgmtTeam = (await listTeams(SYSTEM_VIEWER)).find((candidate) => candidate.name === "경영관리팀");
+  if (!mgmtTeam) throw new Error("시드된 경영관리팀 없음");
+  const drafter = await makePerson("기안", "role-pm", team.id, yearStart);
+  const teamLead = await makePerson("팀장", "role-team-lead", team.id, yearStart);
+  const divisionHead = await makePerson("본부장", "role-division-head", team.id, yearStart);
+  const mgmt = await makePerson("경영", "role-pm", mgmtTeam.id, yearStart);
+  const ceo = await makePerson("대표", "role-ceo", team.id, yearStart);
+  const client = await insertVendor(SYSTEM_VIEWER, { name: `캡처클라이언트-${suffix}`, normalizedName: `캡처클라이언트-${suffix}` });
+  // 새 초안의 지급 방식 기본값이 계좌이체라 거래처에 쓸 수 있는 계좌가 있어야 제출 버튼이 열린다.
+  const account = planAccountNumberUpdate("110-123-456789");
+  if (account.kind !== "set") throw new Error("계좌번호 암호화 계획 없음");
+  const vendor = await insertVendor(SYSTEM_VIEWER, {
+    name: `캡처거래처-${suffix}`,
+    normalizedName: `캡처거래처-${suffix}`,
+    defaultEvidenceType: "tax_invoice",
+    accountBank: "신한은행",
+    accountHolder: "테스트 예금주",
+    accountNumberEncrypted: account.accountNumberEncrypted,
+    accountNumberLast4: account.accountNumberLast4,
+  });
+  const project = await createProject(drafter.viewer, {
+    clientId: client.id,
+    teamId: team.id,
+    pmUserId: drafter.viewer.id,
+    name: `캡처지급정산-${suffix}`,
+    startDate: `${lastYear}-11-01`,
+    endDate: `${lastYear}-12-31`,
+  });
+  const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+  if (!revision || !project.id) throw new Error("프로젝트 · 1차 차수가 없습니다");
+  const [subcategory] = await listCodeItems(SYSTEM_VIEWER, {
+    tableKey: QUOTE_SUBCATEGORY_TABLE_KEY,
+    scope: { rows: "all", includeArchived: false },
+    includeInactive: false,
+  });
+  if (!subcategory) throw new Error("시드된 quote_subcategory 코드 항목이 없습니다");
+  const row = (itemName: string) => ({
+    id: randomUUID(),
+    isNew: true as const,
+    subcategory: subcategory.value,
+    itemName,
+    vendorId: vendor.id,
+    unitPrice: { currency: "KRW" as const, amount: 13_400_000, fxRate: 1 },
+    execution: { currency: "KRW" as const, amount: 12_400_000, fxRate: 1 },
+  });
+  const saved = await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [row(`무대 제작-${suffix}`), row(`영상 제작-${suffix}`)] });
+  const [expenseLineId, cardLineId] = [saved.lines[0]?.id, saved.lines[1]?.id];
+  if (!expenseLineId || !cardLineId) throw new Error("견적 줄이 없습니다");
+  await changeProjectStatus(teamLead.viewer, project.id, { from: "bidding", to: "in_progress" });
+  const basis = await approvalBasis(SYSTEM_VIEWER, revision.id);
+  await setCustomerApproval(drafter.viewer, revision.id, { approvedOn: today, seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
+  await saveRevenue(SYSTEM_VIEWER, project.id, {
+    issuedEntries: [{ id: randomUUID(), isNew: true, entryDate: `${lastYear}-12-31`, amount: { currency: "KRW", amount: 1_000_000, fxRate: 1 } }],
+  });
+  // 정산 제출 점검을 통과하도록 카드 줄에 법인카드 사용 1건.
+  const tag = randomUUID().slice(0, 8);
+  const card = await createCorpCard(SYSTEM_VIEWER, {
+    issuer: `캡처카드사-${tag}`,
+    numberLast4: String(1000 + Math.floor(Math.random() * 9000)),
+    label: `캡처카드-${tag}`,
+    kind: "personal",
+    holderUserId: drafter.viewer.id,
+  });
+  if (!card.id) throw new Error("카드 id 없음");
+  const usage: CardUsageInput = {
+    corpCardId: card.id,
+    usedOn: today,
+    merchantVendorId: null,
+    total: { currency: "KRW", amount: 100_000, fxRate: 1 },
+    evidenceTypeCode: "invoice",
+    linkKind: "quote_line",
+    lineId: cardLineId,
+    memo: null,
+  };
+  await createCardUsage(drafter.viewer, usage, await precheckCardUsage(drafter.viewer, usage));
+
+  const created = await createExpenseFromLines(drafter.viewer, { lineIds: [expenseLineId] });
+  const expenseId = created.created[0]?.expenseId;
+  if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
+  const context = await browser.newContext({ baseURL });
+  try {
+    const page = await context.newPage();
+    await page.goto("/login");
+    const hydrated = (selector: () => ReturnType<typeof page.getByLabel>) =>
+      expect.poll(() => selector().evaluate((element) => Object.keys(element).some((key) => key.startsWith("__reactProps$")))).toBe(true);
+    await hydrated(() => page.getByLabel("이메일"));
+    await page.getByLabel("이메일").fill(drafter.email);
+    await page.getByLabel("비밀번호").fill(drafter.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+    await page.goto(`/expenses/${expenseId}`);
+    await expect
+      .poll(() => page.getByRole("button", { name: /^임시 저장/ }).evaluate((element) => Object.keys(element).some((key) => key.startsWith("__reactProps$"))))
+      .toBe(true);
+    // 같은 사진은 중복으로 거절된다(내용 해시) — 시드가 캡처마다 돌므로 매번 다른 그림을 캔버스로 그려 올린다(test/e2e/expense-fixture.ts uniqueReceipt와 같은 방식).
+    const tag = randomUUID();
+    const base64 = await page.evaluate(async (label) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 3000;
+      canvas.height = 2000;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("캔버스를 만들 수 없다");
+      ctx.fillStyle = "#eef2f1";
+      ctx.fillRect(0, 0, 3000, 2000);
+      ctx.fillStyle = "#1f2d29";
+      ctx.font = "bold 90px sans-serif";
+      ctx.fillText(label, 100, 300);
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.8));
+      if (!blob) throw new Error("JPEG를 만들 수 없다");
+      let binary = "";
+      for (const byte of new Uint8Array(await blob.arrayBuffer())) binary += String.fromCharCode(byte);
+      return btoa(binary);
+    }, tag);
+    await page.getByTestId("attachments-input").setInputFiles({ name: `receipt-${tag.slice(0, 8)}.jpg`, mimeType: "image/jpeg", buffer: Buffer.from(base64, "base64") });
+    await expect(page.locator('[data-ui="attachments"] li').getByText(/^\d+KB · \d{2}-\d{2}$/)).toBeVisible({ timeout: 20_000 });
+    await page.getByRole("button", { name: /^지출결의 제출/ }).click();
+    await expect(page).toHaveURL(new RegExp(`/expenses/${expenseId}\\?submitted=1$`));
+  } finally {
+    await context.close();
+  }
+  const view = await getApprovalView(teamLead.viewer, { kind: EXPENSE_DOCUMENT_KIND, documentId: expenseId });
+  if (!view) throw new Error("결재 인스턴스가 없습니다");
+  let version = view.version;
+  for (const approver of [teamLead, divisionHead, mgmt, ceo]) {
+    const result = await approveDocument(approver.viewer, { instanceId: view.instanceId, expectedVersion: version });
+    version = result.version;
+    if (approver === ceo && result.status !== "approved") throw new Error(`결재 통과 안 됨: ${result.status}`);
+  }
+
+  // 종료일이 지난 진행 프로젝트 → 자동 정산 → 정산 결재 제출 → 대표 반려.
+  await applyAutoSettlement({ projectIds: [project.id] });
+  if ((await findProjectById(SYSTEM_VIEWER, project.id))?.status !== "settling") throw new Error("정산 상태가 아닙니다");
+  const submitted = await submitSettlement(drafter.viewer, { projectId: project.id });
+  if (submitted.kind !== "submitted") throw new Error("정산 결재가 올라가지 않았습니다");
+  const graph = await findApprovalGraphByDocument(SYSTEM_VIEWER, { documentKind: SETTLEMENT_DOCUMENT_KIND, documentId: project.id });
+  if (!graph) throw new Error("정산 결재 인스턴스가 없습니다");
+  await rejectDocument(ceo.viewer, { instanceId: graph.instance.id, expectedVersion: graph.instance.version, reason: "실행가 확인" });
+
+  // 기안자(담당 PM)가 정산 다시 올리기와 지급 행동 줄을 한 화면 세션에서 모두 보도록 role-pm에 지급·증빙 무효 쓰기를 준다(erp_test는 캡처마다 초기화된다).
+  for (const menu of ["expenses.payments", "expenses.evidence_void"]) await upsertPermission(SYSTEM_VIEWER, { roleId: "role-pm", menu, action: "write", allowed: true });
+  return { vars: { projectId: project.id, expenseId }, viewer: drafter };
+}
+
 export function runSeed(name: SeedName, browser: Browser, baseURL: string | undefined): Promise<SeedResult> {
   switch (name) {
     case "pre-settle-evidence-pending":
       return preSettleEvidencePending(browser, baseURL);
     case "purchase-approval-pending":
       return purchaseApprovalPending();
+    case "payment-and-settlement-actions":
+      return paymentAndSettlementActions(browser, baseURL);
   }
 }

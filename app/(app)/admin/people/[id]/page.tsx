@@ -16,6 +16,11 @@ import { checkLeaveAdjustment, formatBalanceLines } from "@/domain/leave/balance
 import { formatLeaveDays } from "@/domain/leave/days";
 import { resolveLeaveYear } from "@/app/(app)/leave/year-param";
 import { LeaveSection, type LeaveAdjustmentRow } from "./leave-section";
+import { getPersonPayoutAccount, PAYOUT_ACCOUNT_REVEAL_ITEM } from "@/domain/people/account";
+import { visible } from "@/domain/permissions/visible";
+import { maskTail4 } from "@/lib/mask-tail4";
+import { SidePanel } from "@/ui/side-panel/SidePanel";
+import { PayoutAccountPanel, PayoutAccountSection, type PayoutAccountView } from "./payout-account";
 
 export const dynamic = "force-dynamic";
 
@@ -47,7 +52,7 @@ export default async function PersonDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ year?: string | string[] }>;
+  searchParams: Promise<{ year?: string | string[]; editAccount?: string | string[] }>;
 }) {
   const session = await getSession();
   if (!session) redirect("/login");
@@ -78,13 +83,17 @@ export default async function PersonDetailPage({
   const thisYear = Number(today.slice(0, 4));
   const current = await getLeaveBalanceForUser(session.viewer, id, { fiscalYear: thisYear });
   const fallbackYear = current.resignationDate ? Math.min(Number(current.resignationDate.slice(0, 4)), thisYear) : thisYear;
-  const leaveYear = resolveLeaveYear((await searchParams).year, thisYear, fallbackYear);
+  const query = await searchParams;
+  const leaveYear = resolveLeaveYear(query.year, thisYear, fallbackYear);
   const currentRoleId = detail.person.roleId ?? null;
-  const [balance, adjustments, canWrite, assignableCurrent] = await Promise.all([
+  const [balance, adjustments, canWrite, assignableCurrent, payoutAccount, canRevealAccount] = await Promise.all([
     leaveYear === thisYear ? current : getLeaveBalanceForUser(session.viewer, id, { fiscalYear: leaveYear }),
     listLeaveAdjustmentsForUser(session.viewer, { userId: id, fiscalYear: leaveYear }),
     can(session.viewer, "admin.people", "write"),
     currentRoleId === null ? new Set<string>() : assignableRoleIds(session.viewer, [currentRoleId]),
+    // 06.5-04(D-6505): 게이트 밖이면 null — 섹션 · 패널을 그리지 않는다(문구 없음).
+    getPersonPayoutAccount(session.viewer, id),
+    visible(session.viewer, PAYOUT_ACCOUNT_REVEAL_ITEM),
   ]);
   // 06.4(D-6414 · D4 · D6) 계급 변경 자리 상태표(서버 한 곳): 쓰기 없음 · 자기 상세 · 계급 노출 꺼짐 → 줄 없음 /
   // C 상한 밖 · 통과 0 → 이유 한 줄 / 그 밖 → select. 노출이 꺼지면 DTO에 roleId 키가 없다.
@@ -105,6 +114,13 @@ export default async function PersonDetailPage({
     reason: row.reason ?? "",
     author: row.createdByName ?? "",
   }));
+
+  // 패널 주소 토글(`?editAccount=1`) — 닫을 곳은 같은 페이지에서 editAccount만 뺀 주소(year는 남긴다).
+  const baseHref = typeof query.year === "string" ? `/admin/people/${id}?year=${encodeURIComponent(query.year)}` : `/admin/people/${id}`;
+  const editAccountHref = `${baseHref}${baseHref.includes("?") ? "&" : "?"}editAccount=1`;
+  const payoutView: PayoutAccountView | null = payoutAccount
+    ? { bank: payoutAccount.bank ?? null, holder: payoutAccount.holder ?? null, masked: maskTail4(payoutAccount.last4) }
+    : null;
 
   return (
     <DetailScreen title={detail.person.name} meta={detail.person.email}>
@@ -138,6 +154,13 @@ export default async function PersonDetailPage({
         resignationWritable={!targetOutOfCeiling}
         monthlyBlockedReason={blocked?.field === "bucket" ? blocked.message : null}
       />
+
+      {payoutView ? <PayoutAccountSection userId={id} account={payoutView} canReveal={canRevealAccount} editHref={editAccountHref} /> : null}
+      {payoutView && query.editAccount === "1" ? (
+        <SidePanel title="지급 계좌 수정" closeHref={baseHref}>
+          <PayoutAccountPanel userId={id} account={payoutView} />
+        </SidePanel>
+      ) : null}
 
       {/* §3 데이터 표 예외 — 발령 이력 표는 .single-column 밖, 전체 폭(260922-o2b 후속). */}
       <PersonHistorySection userId={detail.person.id} teamOptions={teamOptions} entries={entries} />

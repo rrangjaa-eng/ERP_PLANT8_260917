@@ -6,6 +6,7 @@ import { returnValidationErrors } from "next-safe-action";
 import { authedActionClient } from "@/lib/actions/client";
 import { createVendor, updateVendor, setVendorHidden, revealAccountNumber, addVendorKind, DuplicateBusinessNoError, InvalidBusinessNoError } from "@/domain/vendors";
 import { CustomFieldsInvalidError } from "@/domain/custom-fields/preserve";
+import { AccountFieldsError } from "@/domain/vendors/account-fields";
 import { archive } from "@/domain/archive";
 import { VENDOR_KINDS } from "@/domain/vendors/kind";
 import "./actions.registry";
@@ -68,6 +69,11 @@ function customFieldErrors(error: CustomFieldsInvalidError): Record<string, { _e
   return Object.fromEntries(Object.entries(error.fieldErrors).map(([key, message]) => [key, { _errors: [message] }]));
 }
 
+// 06.5 D-6506 · DH-3: 계좌 칸 판정 오류는 칸별 validationErrors.accountBank · accountHolder로(폼이 칸 아래에 그린다).
+function accountFieldErrors(error: AccountFieldsError): Record<string, { _errors: string[] }> {
+  return Object.fromEntries(Object.entries(error.fieldErrors).map(([key, message]) => [key, { _errors: [message] }]));
+}
+
 export const createVendorAction = authedActionClient
   .schema(createVendorSchema)
   .action(async ({ parsedInput, ctx }) => {
@@ -81,6 +87,7 @@ export const createVendorAction = authedActionClient
       if (error instanceof CustomFieldsInvalidError) {
         returnValidationErrors(createVendorSchema, { customFields: customFieldErrors(error) });
       }
+      if (error instanceof AccountFieldsError) returnValidationErrors(createVendorSchema, accountFieldErrors(error));
       throw error;
     }
   });
@@ -99,6 +106,7 @@ export const updateVendorAction = authedActionClient
       if (error instanceof CustomFieldsInvalidError) {
         returnValidationErrors(updateVendorSchema, { customFields: customFieldErrors(error) });
       }
+      if (error instanceof AccountFieldsError) returnValidationErrors(updateVendorSchema, accountFieldErrors(error));
       throw error;
     }
   });

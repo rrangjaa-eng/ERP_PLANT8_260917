@@ -131,3 +131,54 @@ export async function countActiveAdmins(
     );
   return row?.n ?? 0;
 }
+
+// 06.5-04(D-6505): 직원 지급 계좌 — 판정(두 권한 게이트 · 예금주 필요 · 암호화)은 domain/people/account가 한다.
+// 행 전체가 아니라 계좌 칸만 읽는다.
+export type UserPayoutAccountRow = {
+  accountBank: string | null;
+  accountHolder: string | null;
+  accountNumberEncrypted: string | null;
+  accountNumberLast4: string | null;
+};
+
+export async function findUserPayoutAccount(viewer: Viewer, userId: string, tx: DbOrTx = db): Promise<UserPayoutAccountRow | null> {
+  void viewer;
+  const [row] = await tx
+    .select({
+      accountBank: users.accountBank,
+      accountHolder: users.accountHolder,
+      accountNumberEncrypted: users.accountNumberEncrypted,
+      accountNumberLast4: users.accountNumberLast4,
+    })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  return row ?? null;
+}
+
+// 암호문 키가 values에 없으면(keep) 두 번호 칸을 set에 넣지 않는다. 동시 저장으로 예금주 없는 계좌가 되면
+// users_account_holder_required_check(23514)가 막는다(호출자가 판별).
+export async function updateUserPayoutAccount(
+  viewer: Viewer,
+  userId: string,
+  values: {
+    accountBank: string | null;
+    accountHolder: string | null;
+    accountNumberEncrypted?: string | null;
+    accountNumberLast4?: string | null;
+  },
+  tx: DbOrTx = db,
+): Promise<void> {
+  void viewer;
+  await tx
+    .update(users)
+    .set({
+      accountBank: values.accountBank,
+      accountHolder: values.accountHolder,
+      ...("accountNumberEncrypted" in values
+        ? { accountNumberEncrypted: values.accountNumberEncrypted, accountNumberLast4: values.accountNumberLast4 ?? null }
+        : {}),
+      updatedAt: new Date(),
+    })
+    .where(eq(users.id, userId));
+}

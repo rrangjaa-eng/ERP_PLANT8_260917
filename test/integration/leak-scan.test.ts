@@ -21,6 +21,7 @@ import "@/domain/code-tables";
 import "@/domain/org";
 import "@/domain/corp-cards";
 import "@/domain/people";
+import "@/domain/people/account";
 import "@/domain/vendors";
 import "@/domain/projects";
 import "@/domain/projects/references";
@@ -703,5 +704,38 @@ describe("Phase 6 DTO 완전성 (06-24 · ROADMAP 기준 5)", () => {
     const registered = new Set(DTO_REGISTRY.map((entry) => entry.name));
     const missing = PHASE6_DTO_NAMES.filter((name) => !registered.has(name));
     expect(missing, `누수 스캔 레지스트리에 없는 Phase 6 DTO: ${missing.join(", ")} (registerDto를 빠뜨렸거나 그 모듈이 누수 스캔 import 목록에 없다)`).toEqual([]);
+  });
+});
+
+import { getPerson, listPeople } from "@/domain/people";
+import { users } from "@/db/schema";
+import { eq } from "drizzle-orm";
+
+// 06.5-04(D-6505): users 행에 암호화 계좌 칸이 생겼다 — 행 전체를 읽는 사람 DTO 경로가 그 칸을 싣지 않는다.
+describe("직원 지급 계좌 축 — 계좌 칸은 지급 계좌 DTO에만, 사람 DTO에는 없다 (06.5-04)", () => {
+  it("지급 계좌 DTO와 저장 · 번호 보기 액션이 레지스트리에 있다", () => {
+    expect(DTO_REGISTRY.map((entry) => entry.name)).toContain("PersonPayoutAccountDto");
+    expect(ACTION_REGISTRY.map((entry) => entry.name)).toContain("updatePersonPayoutAccountAction");
+    expect(ACTION_REGISTRY.map((entry) => entry.name)).toContain("revealPersonAccountNumberAction");
+  });
+
+  it("계좌 칸을 채운 사람의 getPerson · listPeople 직렬화에 계좌 키 · 값이 없다", async () => {
+    const { userId } = await createAccount(SYSTEM_VIEWER, {
+      email: `leak-payout-${randomUUID()}@example.test`,
+      name: "누수계좌대상",
+      roleId: SYSADMIN_ROLE_ID,
+    });
+    await db
+      .update(users)
+      .set({ accountBank: "누수은행", accountHolder: "누수예금주", accountNumberEncrypted: "v1:leak-cipher-text", accountNumberLast4: "4321" })
+      .where(eq(users.id, userId));
+
+    const detail = JSON.stringify(await getPerson(SYSTEM_VIEWER, userId));
+    const list = JSON.stringify((await listPeople(SYSTEM_VIEWER)).filter((person) => person.id === userId));
+    expect(list).toContain(userId);
+    for (const text of [detail, list]) {
+      expect(text).not.toMatch(/account(Bank|Holder|NumberEncrypted|NumberLast4)/);
+      for (const value of ["누수은행", "누수예금주", "leak-cipher-text", "4321"]) expect(text).not.toContain(value);
+    }
   });
 });

@@ -219,6 +219,11 @@ export async function exportBankTransferFile(
   for (const line of lines) {
     const problem = problemOf.get(line.payeeKey);
     if (!problem) continue;
+    if ("text" in problem) {
+      // 입금액 자릿수 초과(검토 P3-8) — 계좌 칸이 아니라 링크 없이 문구 그대로.
+      for (const expenseId of line.expenseIds) blocked.push({ expenseId, text: problem.text, link: null });
+      continue;
+    }
     const payee = line.vendorId ? { kind: "vendor" as const, id: line.vendorId } : { kind: "user" as const, id: line.userId ?? "" };
     for (const expenseId of line.expenseIds) blocked.push(accountBlocked(expenseId, payee, problem.cause, problem.fix, canEditVendors));
   }

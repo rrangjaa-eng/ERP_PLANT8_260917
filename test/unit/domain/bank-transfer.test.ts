@@ -15,7 +15,9 @@ import {
   cp949Unsupported,
   holderTextProblem,
   resolveBankCode,
+  TRANSFER_AMOUNT_TOO_LONG,
 } from "@/domain/bank-transfer";
+import { TRANSFER_NOT_NUMBER } from "@/domain/payments/action-row";
 
 // 06.5-04(D-6506 · REVIEWS DH-3): 신한 대량이체 양식의 판정 몫 — 옛 app/src/domain/bankTransfer.ts 이식. 06.5-06이 행 빌더 시험을 더한다.
 describe("resolveBankCode — 옛 코드표 · 별칭 그대로", () => {
@@ -113,6 +115,17 @@ describe("행 빌더(06.5 D-6504)", () => {
         },
       },
     ]);
+  });
+
+  it("buildBankTransferRows — 입금액 글자가 15자를 넘는 줄은 이체액 형식 오류 문구로 막힌다(옛 O: app/src/domain/bankTransfer.ts:496-499 · 검토 P3-8)", () => {
+    const limit = BANK_TRANSFER_MAX_BYTES.amount;
+    const built = buildBankTransferRows([
+      { ...source, transferKrw: 10 ** limit },
+      { ...source, key: "v:2", transferKrw: 10 ** limit - 1 },
+    ]);
+    expect(built.blocked).toEqual([{ key: "v:1", problem: TRANSFER_AMOUNT_TOO_LONG }]);
+    expect(TRANSFER_AMOUNT_TOO_LONG.text).toBe(TRANSFER_NOT_NUMBER);
+    expect(built.rows.map((line) => line.row.amount)).toEqual(["9".repeat(limit)]);
   });
 
   it("bankTransferCells — 9칸이 머리글 차례이고 모두 문자열", () => {

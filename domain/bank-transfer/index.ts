@@ -1,4 +1,5 @@
 import { sumKrw } from "@/domain/money";
+import { TRANSFER_NOT_NUMBER } from "@/domain/payments/action-row";
 
 // 06.5 D-6504 · D-6506 · REVIEWS DH-3: 신한 대량이체 양식의 판정 몫 — 옛 `app/src/domain/bankTransfer.ts` 이식(O:).
 // 거래처 · 직원 계좌 저장(06.5-04)과 이체 파일 막힌 건(06.5-06 — 행 빌더는 그 플랜이 이 파일에 더한다)이 같은 함수 · 같은
@@ -238,7 +239,13 @@ export function holderTextProblem(holder: string): AccountProblem | null {
 /** 계좌번호 글자 · 길이 · 복호화 실패(UI-SPEC V5 14번) — 저장 때 칸 오류에는 없는 파일 몫 이유다. */
 export const ACCOUNT_NUMBER_MALFORMED = { cause: "계좌번호 형식 오류", fix: "계좌 고치기" } as const;
 
-export type BankTransferProblem = AccountProblem | typeof ACCOUNT_NUMBER_MALFORMED;
+/**
+ * 입금액 글자가 양식 자릿수(15)를 넘음 — 옛 「지급액 자릿수가 15자를 넘습니다」(O: app/src/domain/bankTransfer.ts:496-499). 새 문구 없이 이체액 형식 오류
+ * 문구(TRANSFER_NOT_NUMBER — 지급 판정이 큰 수에 쓰는 것)를 그대로 쓴다. 계좌 칸 문제가 아니라 끝 링크가 없다(이체액 칸이 같은 행에 있다).
+ */
+export const TRANSFER_AMOUNT_TOO_LONG = { text: TRANSFER_NOT_NUMBER } as const;
+
+export type BankTransferProblem = AccountProblem | typeof ACCOUNT_NUMBER_MALFORMED | typeof TRANSFER_AMOUNT_TOO_LONG;
 
 /**
  * CP949 바이트 한도 이하로 문자 경계에서 자른다(EP2-C8) — 반쪽 글자를 남기지 않는다. 옛은 넘으면 막았다(O: bankTransfer.ts:349-352 ·
@@ -277,7 +284,7 @@ export type BankTransferBuild = {
   blocked: { key: string; problem: BankTransferProblem }[];
 };
 
-// 계좌 칸 판정(UI-SPEC V5 10~14 차례) — 예금주 없음 → 은행 코드 → 예금주 글자 · 길이(못 담는 글자 먼저, EP2-C7) → 계좌번호.
+// 계좌 칸 판정(UI-SPEC V5 10~14 차례) — 예금주 없음 → 은행 코드 → 예금주 글자 · 길이(못 담는 글자 먼저, EP2-C7) → 계좌번호 → 입금액 자릿수(옛 차례).
 function sourceProblem(source: BankTransferSource): BankTransferProblem | null {
   if (source.holder.trim() === "") return ACCOUNT_PROBLEMS.holderRequired;
   const bank = bankNameProblem(source.bank);
@@ -287,6 +294,7 @@ function sourceProblem(source: BankTransferSource): BankTransferProblem | null {
   // 하이픈 · 빈칸은 사람이 보기 좋으라고 넣는 것이라 뗀다(O: bankTransfer.ts:461).
   const accountNo = source.accountNumber?.replaceAll(/[\s-]/gu, "") ?? "";
   if (!/^\d+$/u.test(accountNo) || accountNo.length > BANK_TRANSFER_MAX_BYTES.accountNo) return ACCOUNT_NUMBER_MALFORMED;
+  if (String(source.transferKrw).length > BANK_TRANSFER_MAX_BYTES.amount) return TRANSFER_AMOUNT_TOO_LONG;
   return null;
 }
 

@@ -834,6 +834,27 @@ test.describe("카드 사용 수정 딥링크 저장 뒤 포커스 (06.5 V9 L-1)
     await page.context().close();
   });
 
+  // PR-C DOM 감사 F1: 바로 앞 기록이 같은 목록 URL이지만 다른 문서(같은 탭에서 다시 연 주소 · 새로 고침)면 뒤로 가기가 문서를 건너가 포커스가 body에 남았다.
+  test("바로 앞 기록이 같은 목록의 다른 문서(다시 연 주소 · 새로 고침)여도 저장 → 포커스 = 그 행 `수정` 링크", async ({ browser, baseURL }) => {
+    const holder = await makeCardHolder();
+    await seedUsage(holder, 30_000);
+    const id = await onlyUsageId(holder);
+    const page = await loginPage(browser, baseURL, holder.person);
+    const rowEdit = page.getByRole("link", { name: `${seoulToday().slice(5)} 수정` });
+    await page.goto("/cards");
+    await page.goto(`/cards?editId=${id}`);
+    await saveEditPanel(page, "31000");
+    await expect(rowEdit).toBeFocused();
+    await expect(page).toHaveURL(/\/cards$/);
+
+    await rowEdit.click();
+    await expect(page.getByRole("dialog", { name: "카드 사용 수정" })).toBeVisible();
+    await page.reload();
+    await saveEditPanel(page, "32000");
+    await expect(rowEdit).toBeFocused();
+    await page.context().close();
+  });
+
   test("그 행이 지금 필터 밖(지난달)인 주소로 열어 저장 → 포커스 = 화면 제목", async ({ browser, baseURL }) => {
     const holder = await makeCardHolder();
     await seedUsage(holder, 30_000);

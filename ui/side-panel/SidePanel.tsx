@@ -55,14 +55,16 @@ export function usePanel(): PanelContextValue | null {
   return useContext(PanelContext);
 }
 
-type NavigationLike = { currentEntry: { index: number } | null; entries(): { url: string | null }[] };
+type NavigationLike = { currentEntry: { index: number } | null; entries(): { url: string | null; sameDocument: boolean }[] };
 
 // 앱 안에서 연 패널인가 — Navigation API로 바로 앞 기록 항목의 URL이 닫을 곳과 같은지 본다(D12). API가 없는 브라우저는 직접 URL로 친다.
+// 같은 URL이라도 다른 문서(같은 탭에서 다시 연 주소 · 새로 고침)면 뒤로 가기가 문서를 건너가 포커스 복귀(L-1)가 사라진다 — 같은 문서만 친다(PR-C DOM 감사 F1).
 function openedFromList(closeHref: string): boolean {
   const navigation = (window as unknown as { navigation?: NavigationLike }).navigation;
   const index = navigation?.currentEntry?.index;
   if (navigation === undefined || index === undefined || index < 1) return false;
-  const previous = navigation.entries()[index - 1]?.url;
+  const entry = navigation.entries()[index - 1];
+  const previous = entry?.sameDocument ? entry.url : null;
   if (!previous) return false;
   const a = new URL(previous);
   const b = new URL(closeHref, window.location.href);

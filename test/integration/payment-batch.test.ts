@@ -1165,6 +1165,45 @@ describe("지급일 오늘까지 — 일괄 (06.5 D-6518)", () => {
     expect(result.blocked).toEqual([]);
   });
 
+  // 06.5-11(검토 P3-2): 단건(expense-payments.test.ts)과 같은 주입 시계 경계 — KST 2026-10-13 23:59 = UTC 14:59 · KST 10-14 00:00 = UTC 10-13 15:00(UTC 날짜는 아직 10-13).
+  it("주입 시계 KST 경계 — 10-13 23:59엔 지급일 10-14 거절(0건)·10-13 허용, UTC 15:00(= KST 10-14 00:00)엔 10-14 허용", async () => {
+    const kstLateNight = new Date("2026-10-13T14:59:00Z");
+    const kstMidnight = new Date("2026-10-13T15:00:00Z");
+    const payer = await makePayer();
+    const { a, b } = await twoPayable();
+    const rowsAt = async (payDate: string, now: Date) =>
+      Promise.all(
+        [a, b].map(async (doc) => {
+          const preview = await previewPayable(payer, { expenseId: doc.expenseId, payDate }, { now });
+          if (preview.payableKrw === undefined || preview.payableKrw === null) throw new Error("지급 총액을 셈할 수 없는 문서");
+          return { expenseId: doc.expenseId, expenseVersion: doc.version, expectedPayableKrw: preview.payableKrw };
+        }),
+      );
+
+    const refused = await caught(completePaymentsBatch(payer, { payDate: "2026-10-14", rows: await rowsAt("2026-10-13", kstLateNight) }, { now: kstLateNight }));
+    expect(refused).toBeInstanceOf(FuturePayDateError);
+    for (const doc of [a, b]) {
+      expect(await livePayments(doc.expenseId)).toHaveLength(0);
+      expect(await versionOf(doc.expenseId)).toBe(doc.version);
+    }
+
+    const midnight = await completePaymentsBatch(payer, { payDate: "2026-10-14", rows: await rowsAt("2026-10-14", kstMidnight) }, { now: kstMidnight });
+    expect(midnight.processed).toBe(2);
+    expect(midnight.blocked).toEqual([]);
+  });
+
+  it("주입 시계 KST 10-13 23:59에 지급일 = 오늘(10-13) → 일괄 지급된다", async () => {
+    const kstLateNight = new Date("2026-10-13T14:59:00Z");
+    const payer = await makePayer();
+    const { a, b } = await twoPayable();
+    const rows = await Promise.all(
+      [a, b].map(async (doc) => ({ expenseId: doc.expenseId, expenseVersion: doc.version, expectedPayableKrw: await payableNow(payer, doc, "2026-10-13") })),
+    );
+    const result = await completePaymentsBatch(payer, { payDate: "2026-10-13", rows }, { now: kstLateNight });
+    expect(result.processed).toBe(2);
+    expect(result.blocked).toEqual([]);
+  });
+
   it("액션 — 내일 지급일은 서버 오류 `미래 지급일 · 오늘까지 날짜 고르기`(대화상자가 지급일 칸 오류로 세우는 글자) · 지급 0건", async () => {
     const payer = await makePayer();
     const { a, b } = await twoPayable();

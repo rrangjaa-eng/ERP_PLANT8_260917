@@ -27,7 +27,19 @@ import { buildTextSheetXlsx } from "@/lib/xlsx-server";
 export { canExportBankTransferFile };
 
 // 파일 한 줄의 칸 → 정보 항목(내보내기 축 누수 스캔이 본다). 파일 바이트는 DTO 행이 아니지만 칸마다 어느 항목을 내보내는지는 이 명세가 정본이다.
-export type BankTransferRowDto = { bankCode: string; accountNo: string; holder: string; amount: string; memo: string; key: string };
+// 직원 지급처 줄(`p:`)은 같은 은행 코드 · 계좌번호 · 예금주 칸에 직원 값을 싣는다 — 그 값의 항목은 person.value다(서버 게이트 canManagePayoutAccount).
+// 한 칸에 항목 하나라 직원 줄 칸을 따로 적어 스캔이 보게 한다(검토 P3-5).
+export type BankTransferRowDto = {
+  bankCode: string;
+  accountNo: string;
+  holder: string;
+  amount: string;
+  memo: string;
+  key: string;
+  personBankCode: string;
+  personAccountNo: string;
+  personHolder: string;
+};
 
 const BANK_TRANSFER_ROW_DTO_SPEC: DtoSpec<BankTransferRowDto, BankTransferRowDto> = {
   fields: [
@@ -37,6 +49,9 @@ const BANK_TRANSFER_ROW_DTO_SPEC: DtoSpec<BankTransferRowDto, BankTransferRowDto
     { key: "amount", from: "amount", infoItem: "expense.amount" },
     { key: "memo", from: "memo", infoItem: "expense.value" },
     { key: "key", from: "key", infoItem: "expense.value" },
+    { key: "personBankCode", from: "personBankCode", infoItem: "person.value" },
+    { key: "personAccountNo", from: "personAccountNo", infoItem: "person.value" },
+    { key: "personHolder", from: "personHolder", infoItem: "person.value" },
   ],
 };
 
@@ -259,7 +274,7 @@ const TRANSFER_PAYEE_SUBTOTAL_DTO_SPEC: DtoSpec<TransferPayeeSubtotalDto, Transf
 registerDto({ name: "TransferPayeeSubtotalDto", fields: TRANSFER_PAYEE_SUBTOTAL_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 
 export async function summarizeTransferPayees(viewer: Viewer, input: { rows: readonly BatchPaymentRow[] }): Promise<Partial<TransferPayeeSubtotalDto>[]> {
-  const [payments, amount] = await Promise.all([can(viewer, "expenses.payments", "write"), visible(viewer, "expense.amount")]);
+  const [payments, amount, canPersonAccounts] = await Promise.all([can(viewer, "expenses.payments", "write"), visible(viewer, "expense.amount"), canManagePayoutAccount(viewer)]);
   if (!payments || !amount) throw new ForbiddenError("지급처 소계 권한 없음");
   const rows = firstOfEach(input.rows);
   const today = seoulToday();
@@ -273,6 +288,8 @@ export async function summarizeTransferPayees(viewer: Viewer, input: { rows: rea
     const judgedRow = judgeRow(row, judged.get(row.expenseId), today);
     if (!judgedRow.ok) continue;
     const { payee, transferKrw } = judgedRow.passed;
+    // 직원 계좌 권한이 없으면 직원 지급처 묶음(`p:{userId}`)을 내지 않는다 — 이체 파일에서도 그 행은 막힌다(V5 8번 · 검토 P3-4).
+    if (payee.kind === "user" && !canPersonAccounts) continue;
     const payeeKey = payeeKeyOf({ expenseId: row.expenseId, vendorId: payee.kind === "vendor" ? payee.id : null, payeeUserId: payee.kind === "user" ? payee.id : null });
     const group = groups.get(payeeKey) ?? { payeeKey, expenseIds: [], totalKrw: 0, count: 0 };
     groups.set(payeeKey, { payeeKey, expenseIds: [...group.expenseIds, row.expenseId], totalKrw: sumKrw([group.totalKrw, transferKrw]), count: group.count + 1 });

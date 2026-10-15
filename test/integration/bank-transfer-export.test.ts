@@ -19,6 +19,7 @@ import { DIFF_REASON_REQUIRED } from "@/domain/payments/action-row";
 import { exportBankTransferFile, summarizeTransferPayees } from "@/domain/payments/bank-transfer";
 import { BANK_TRANSFER_HEADER } from "@/domain/bank-transfer";
 import { seoulToday } from "@/lib/dates";
+import { DTO_REGISTRY } from "@/domain/permissions/dto-registry";
 import { exportBankTransferFileAction } from "@/app/(app)/expenses/actions";
 import { addApprovedRevision, makeEvidenceManager, setupExpenseProject, submitReadyDraft, testVendorAccount, type ExpenseFixture } from "./fixtures/expenses";
 import { makePerson } from "./approvals-fixtures";
@@ -414,6 +415,31 @@ describe("신한 이체 파일 — 막힌 건(06.5 Task 2)", () => {
     const result = await exportBankTransferFile(denied, { rows: [await snapshotOf(denied, personDoc), await snapshotOf(denied, vendorDoc)] });
     expect(blockedOf(result, personDoc.expenseId)?.text).toBe("직원 계좌 권한 없음 · 권한 설정은 관리자");
     expect(result.docCount).toBe(1);
+  });
+
+  it("직원 계좌 권한이 없는 소계 읽기에는 직원 지급처 묶음 · 사용자 id가 없다 · 권한이 있으면 직원 묶음이 든다(검토 P3-4)", async () => {
+    const fx = await setupExpenseProject();
+    const lines = await linesFor(fx, 2);
+    const { doc: personDoc, userId } = await employeeDoc(fx, "김소계직원", take(lines, 0));
+    const vendorDoc = await approvedExpenseWithoutEvidence(fx, take(lines, 1));
+
+    const denied = await makeExporter("소계직원없음");
+    const deniedGroups = await summarizeTransferPayees(denied, { rows: [await snapshotOf(denied, personDoc), await snapshotOf(denied, vendorDoc)] });
+    expect(deniedGroups.map((group) => group.payeeKey)).toEqual([`v:${fx.stageOneId}`]);
+    expect(JSON.stringify(deniedGroups)).not.toContain(userId);
+    expect(JSON.stringify(deniedGroups)).not.toContain(personDoc.expenseId);
+
+    const allowed = await makeExporter("소계직원");
+    if (!allowed.roleId) throw new Error("계급 없음");
+    await upsertPermission(SYSTEM_VIEWER, { roleId: allowed.roleId, menu: "admin.people", action: "view", allowed: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: allowed.roleId, infoItem: "person.value", visible: true });
+    const allowedGroups = await summarizeTransferPayees(allowed, { rows: [await snapshotOf(allowed, personDoc), await snapshotOf(allowed, vendorDoc)] });
+    expect(allowedGroups.map((group) => group.payeeKey)).toEqual([`p:${userId}`, `v:${fx.stageOneId}`]);
+  });
+
+  it("이체 파일 DTO 명세가 직원 지급처 줄의 정보 항목(person.value)을 적는다 — 내보내기 축 누수 스캔이 본다(검토 P3-5)", () => {
+    const fields = DTO_REGISTRY.find((entry) => entry.name === "BankTransferRowDto")?.fields ?? [];
+    expect(fields.flatMap((field) => (typeof field.infoItem === "string" ? [field.infoItem] : [...field.infoItem]))).toContain("person.value");
   });
 
   it("거래처 관리 쓰기 없는 지급 권한자 — 계좌 없음은 링크 없이 평문 담당", async () => {

@@ -44,7 +44,8 @@ test("팀을 고르면 발령일이 오늘로 채워지고 날짜를 채우지 �
   await form.locator("#hireDate").fill("2026-10-01");
   await page.getByRole("button", { name: /사람 등록/ }).last().click();
 
-  await expect(page.getByText(/초기 비밀번호/)).toBeVisible();
+  // 등록 뒤 사람 목록 전체를 다시 그린다 — 공유 테스트 DB에 사람이 쌓일수록 결과가 늦게 뜬다.
+  await expect(page.getByText(/초기 비밀번호/)).toBeVisible({ timeout: 15_000 });
 });
 
 test("이미 입력한 발령일은 팀을 바꿔도 덮어쓰지 않는다", async ({ page }) => {

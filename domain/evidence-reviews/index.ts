@@ -7,7 +7,7 @@ import { canSeeExpense, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses/access";
 import { hasEvidence } from "@/domain/evidence/has-evidence";
 import {
   CANCEL_REASON_REQUIRED,
-  EVIDENCE_AMOUNT_FRACTION,
+  SUPPLY_AMOUNT_FRACTION,
   approvalGateDecision,
   evidenceGateDecision,
   pairGateDecision,
@@ -67,7 +67,7 @@ export function supplyCorrectionKind(input: { current: Money | null; corrected: 
 // 고친 공급가(문서 통화) → 공급가 네 칸. 환율 · 통화는 지금 값 그대로. 원화 소수(반올림 저장)와 원화 환산 0(06 CHECK 500)은 고침 칸 오류로 막는다 —
 // 확인 · 미리보기가 같이 쓴다. domain/expenses는 이 파일을 정적으로 부르는 쪽이라 SUPPLY_ZERO는 동적 import.
 export async function correctedSupplyColumns(current: Money, corrected: number): Promise<ReturnType<typeof moneyToColumns>> {
-  if (current.currency === "KRW" && !Number.isInteger(corrected)) throw new MoneyInputError("precision", EVIDENCE_AMOUNT_FRACTION);
+  if (current.currency === "KRW" && !Number.isInteger(corrected)) throw new MoneyInputError("precision", SUPPLY_AMOUNT_FRACTION);
   const columns = moneyToColumns({ currency: current.currency, amount: corrected, fxRate: current.fxRate });
   if (columns.amountKrw <= 0) throw new MoneyInputError("range", (await import("@/domain/expenses")).SUPPLY_ZERO);
   return columns;

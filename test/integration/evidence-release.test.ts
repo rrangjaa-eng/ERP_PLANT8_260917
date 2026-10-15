@@ -50,7 +50,7 @@ async function makePayer(name?: string): Promise<Viewer> {
 
 async function docRow(expenseId: string) {
   const [row] = await db
-    .select({ version: expenses.version, evidenceAmount: expenses.evidenceAmount, evidenceDate: expenses.evidenceDate, supplyAmountKrw: expenses.supplyAmountKrw })
+    .select({ version: expenses.version, evidenceDate: expenses.evidenceDate, supplyAmountKrw: expenses.supplyAmountKrw })
     .from(expenses)
     .where(eq(expenses.id, expenseId));
   if (!row) throw new Error("지출결의 없음");
@@ -73,9 +73,9 @@ async function evidenceLogs(expenseId: string, change: string) {
   return rows.map((row) => row.detail as Record<string, unknown>).filter((detail) => detail.change === change);
 }
 
-// 테스트 준비 전용 — 기안자 입력(06-10)이 있는 문서처럼 증빙 금액을 이 문서 행에만 적는다(version은 그대로).
-async function withEvidenceAmount(doc: ApprovedExpense, amountKrw: number, evidenceDate = "2026-09-20"): Promise<ApprovedExpense> {
-  await db.update(expenses).set({ evidenceAmount: amountKrw, evidenceDate }).where(eq(expenses.id, doc.expenseId));
+// 테스트 준비 전용 — 기안자 입력(06-10)이 있는 문서처럼 증빙일을 이 문서 행에만 적는다(version은 그대로).
+async function withEvidenceDate(doc: ApprovedExpense, evidenceDate = "2026-09-20"): Promise<ApprovedExpense> {
+  await db.update(expenses).set({ evidenceDate }).where(eq(expenses.id, doc.expenseId));
   return doc;
 }
 
@@ -90,7 +90,7 @@ describe("증빙 수명 주기 트레이서 (06-11 Task 1)", () => {
   it("승인 뒤 기안자가 증빙을 더하면 확인됨 → 확인 전 · 확인 기록 지움 · 문서 version + 1 · 결재 인스턴스 version + 1 · 로그 reviewReleased", async () => {
     const fx = await setupExpenseProject();
     const payer = await makePayer();
-    const doc = await withEvidenceAmount(await approvedExpenseWithEvidence(fx), 12_400_000);
+    const doc = await withEvidenceDate(await approvedExpenseWithEvidence(fx));
     const confirmed = await confirmEvidence(payer, { expenseId: doc.expenseId, version: doc.version });
     expect(await reviewOf(doc.expenseId)).toMatchObject({ status: "confirmed" });
     const instanceBefore = await instanceVersion(doc.expenseId);
@@ -106,7 +106,7 @@ describe("증빙 수명 주기 트레이서 (06-11 Task 1)", () => {
   it("증빙 변경 뒤 옛 version 확인 거부 — 확인 기록이 없던 문서여도 열어 둔 화면의 옛 version 확인 · 면제 · 지급 완료가 거부되고 새 version은 통과한다", async () => {
     const fx = await setupExpenseProject();
     const payer = await makePayer();
-    const doc = await withEvidenceAmount(await approvedExpenseWithEvidence(fx), 12_400_000);
+    const doc = await withEvidenceDate(await approvedExpenseWithEvidence(fx));
     const preview = await previewPayable(payer, { expenseId: doc.expenseId, payDate: seoulToday() });
     if (preview.payableKrw === null || preview.payableKrw === undefined) throw new Error("지급 총액 없음");
 
@@ -165,11 +165,11 @@ async function allFileCount(expenseId: string): Promise<number> {
 }
 
 describe("증빙 무효 훅 (06-11 Task 2)", () => {
-  it("무효(살아 있는 파일 2 → 1) — 확인 기록 줄 지움 · 문서 version + 1 · 증빙 금액 그대로 · 확인 전 · 로그 reviewReleased", async () => {
+  it("무효(살아 있는 파일 2 → 1) — 확인 기록 줄 지움 · 문서 version + 1 · 확인 전 · 로그 reviewReleased", async () => {
     const fx = await setupExpenseProject();
     const payer = await makePayer();
     const voider = await makeEvidenceManager("증빙무효", { attach: false, void: true });
-    const doc = await withEvidenceAmount(await approvedExpenseWithEvidence(fx), 12_400_000);
+    const doc = await withEvidenceDate(await approvedExpenseWithEvidence(fx));
     await attachEvidence(fx.pm, doc.expenseId);
     const confirmed = await confirmEvidence(payer, { expenseId: doc.expenseId, version: (await docRow(doc.expenseId)).version });
     const [target] = await liveFiles(doc.expenseId);
@@ -179,46 +179,45 @@ describe("증빙 무효 훅 (06-11 Task 2)", () => {
     expect(await reviewOf(doc.expenseId)).toBeNull();
     const row = await docRow(doc.expenseId);
     expect(row.version).toBe(confirmed.version + 1);
-    expect(row.evidenceAmount).toBe(12_400_000);
     expect((await getPaymentView(payer, doc.expenseId))?.evidenceStatus).toBe("확인 전");
     expect(await evidenceLogs(doc.expenseId, "evidence_void")).toContainEqual({ change: "evidence_void", fileId: target?.id, reasonLength: 8, reviewReleased: "confirmed" });
   });
 
-  it("무효(1 → 0) — 증빙 금액 · 증빙일 null · 증빙 없음 · 지급 전 P3 / 지급 뒤 문서도 같다(검토 I-1 — 지급 완료 예외 없음)", async () => {
+  it("무효(1 → 0) — 증빙일 null · 증빙 없음 · 지급 전 P3 / 지급 뒤 문서도 같다(검토 I-1 — 지급 완료 예외 없음)", async () => {
     const fx = await setupExpenseProject();
     const payer = await makePayer();
     const voider = await makeEvidenceManager("증빙무효", { attach: false, void: true });
 
     // 지급 전.
     await setEvidenceRequired(true);
-    const doc = await withEvidenceAmount(await approvedExpenseWithEvidence(fx), 12_400_000);
+    const doc = await withEvidenceDate(await approvedExpenseWithEvidence(fx));
     const [only] = await liveFiles(doc.expenseId);
     await voidEvidence(voider, { fileId: only?.id ?? "", reason: "다른 건 영수증" });
     const row = await docRow(doc.expenseId);
-    expect(row).toMatchObject({ evidenceAmount: null, evidenceDate: null });
+    expect(row).toMatchObject({ evidenceDate: null });
     const view = await getPaymentView(payer, doc.expenseId);
     expect(view?.evidenceStatus).toBe("증빙 없음");
     expect(view?.row).toMatchObject({ row: "P3" });
 
-    // 지급 뒤 — 지급 공급가와 같은 증빙 금액을 장부에 남긴다.
+    // 지급 뒤.
     await setEvidenceRequired(false);
-    const paidDoc = await withEvidenceAmount(await approvedExpenseWithEvidence(fx, fx.lines.split), 10_000_000);
+    const paidDoc = await withEvidenceDate(await approvedExpenseWithEvidence(fx, fx.lines.split));
     const confirmed = await confirmEvidence(payer, { expenseId: paidDoc.expenseId, version: paidDoc.version });
     const preview = await previewPayable(payer, { expenseId: paidDoc.expenseId, payDate: seoulToday() });
     if (preview.payableKrw === null || preview.payableKrw === undefined) throw new Error("지급 총액 없음");
     await completeExpensePayment(payer, { expenseId: paidDoc.expenseId, expectedPayableKrw: preview.payableKrw, version: confirmed.version });
     const [paidFile] = await liveFiles(paidDoc.expenseId);
     await voidEvidence(voider, { fileId: paidFile?.id ?? "", reason: "다른 건 영수증" });
-    expect(await docRow(paidDoc.expenseId)).toMatchObject({ evidenceAmount: null, evidenceDate: null });
+    expect(await docRow(paidDoc.expenseId)).toMatchObject({ evidenceDate: null });
     expect(await reviewOf(paidDoc.expenseId)).toBeNull();
   });
 
-  // 검토 I-1(안 a) — 마지막 증빙 무효는 지급 여부와 상관없이 증빙 금액 · 증빙일을 지운다. 06.5 D-6520: 공급가는 문서 금액이라 그대로이고, 지급 뒤 공급가 고침은 LOCKED가 막는다.
+  // 검토 I-1(안 a) — 마지막 증빙 무효는 지급 여부와 상관없이 증빙일을 지운다. 06.5 D-6520: 공급가는 문서 금액이라 그대로이고, 지급 뒤 공급가 고침은 LOCKED가 막는다.
   async function paidDocWithLastEvidenceVoided() {
     const fx = await setupExpenseProject();
     const payer = await makePayer();
     const voider = await makeEvidenceManager("증빙무효", { attach: false, void: true });
-    const doc = await withEvidenceAmount(await approvedExpenseWithEvidence(fx), 10_000_000);
+    const doc = await withEvidenceDate(await approvedExpenseWithEvidence(fx));
     const confirmed = await confirmEvidence(payer, { expenseId: doc.expenseId, version: doc.version });
     const preview = await previewPayable(payer, { expenseId: doc.expenseId, payDate: seoulToday() });
     if (preview.payableKrw === null || preview.payableKrw === undefined) throw new Error("지급 총액 없음");
@@ -233,7 +232,7 @@ describe("증빙 무효 훅 (06-11 Task 2)", () => {
   it("지급 완료 → 마지막 증빙 무효(증빙일 비어짐 · 공급가 그대로) → 새 증빙 + 공급가 고침은 LOCKED · 고침 없는 확인은 확인됨", async () => {
     const { fx, payer, doc, grossSupplyKrw } = await paidDocWithLastEvidenceVoided();
     const emptied = await docRow(doc.expenseId);
-    expect(emptied).toMatchObject({ evidenceAmount: null, evidenceDate: null, supplyAmountKrw: 12_400_000 });
+    expect(emptied).toMatchObject({ evidenceDate: null, supplyAmountKrw: 12_400_000 });
     await attachEvidence(fx.pm, doc.expenseId);
     const version = (await docRow(doc.expenseId)).version;
 
@@ -252,7 +251,7 @@ describe("증빙 무효 훅 (06-11 Task 2)", () => {
     const fx = await setupExpenseProject();
     const payer = await makePayer();
     const voider = await makeEvidenceManager("증빙무효", { attach: false, void: true });
-    const doc = await withEvidenceAmount(await approvedExpenseWithEvidence(fx), 10_000_000);
+    const doc = await withEvidenceDate(await approvedExpenseWithEvidence(fx));
     await db.update(expenses).set({ evidenceType: "business_income" }).where(eq(expenses.id, doc.expenseId));
     const confirmed = await confirmEvidence(payer, { expenseId: doc.expenseId, version: doc.version });
     const preview = await previewPayable(payer, { expenseId: doc.expenseId, payDate: seoulToday() });
@@ -270,12 +269,12 @@ describe("증빙 무효 훅 (06-11 Task 2)", () => {
     expect((await docRow(doc.expenseId)).supplyAmountKrw).toBe(12_400_000);
   });
 
-  it("지급 취소 뒤 새 증빙 — 빈 증빙 금액이어도 고침 없는 확인이 공급가로 확인된다(06.5 D-6520 — F2 없음)", async () => {
+  it("지급 취소 뒤 새 증빙 — 고침 없는 확인이 공급가로 확인된다(06.5 D-6520 — F2 없음)", async () => {
     const { fx, payer, doc, paidVersion } = await paidDocWithLastEvidenceVoided();
     const voidedVersion = (await docRow(doc.expenseId)).version;
     expect(voidedVersion).toBeGreaterThan(paidVersion);
     const cancelled = await cancelExpensePayment(payer, { expenseId: doc.expenseId, reason: "이체 오류", version: voidedVersion });
-    expect(await docRow(doc.expenseId)).toMatchObject({ evidenceAmount: null, evidenceDate: null });
+    expect(await docRow(doc.expenseId)).toMatchObject({ evidenceDate: null });
     await attachEvidence(fx.pm, doc.expenseId);
     const version = (await docRow(doc.expenseId)).version;
     expect(version).toBeGreaterThan(cancelled.version);
@@ -283,7 +282,7 @@ describe("증빙 무효 훅 (06-11 Task 2)", () => {
     const result = await confirmEvidence(payer, { expenseId: doc.expenseId, version });
     expect(result.evidenceStatus).toBe("확인됨");
     expect(await reviewOf(doc.expenseId)).toMatchObject({ status: "confirmed", amountBeforeKrw: 12_400_000, amountAfterKrw: 12_400_000 });
-    expect(await docRow(doc.expenseId)).toMatchObject({ evidenceAmount: null, supplyAmountKrw: 12_400_000 });
+    expect(await docRow(doc.expenseId)).toMatchObject({ supplyAmountKrw: 12_400_000 });
   });
 
   it("면제 풀림 — 면제된 문서에 승인 뒤 기안자가 증빙을 올리면 확인 전 · 면제 로그는 남는다", async () => {
@@ -306,7 +305,7 @@ describe("증빙 무효 훅 (06-11 Task 2)", () => {
   it("의도만 있는 업로드 — 완료 통보가 없으면 파일 행 · 증빙 유무 · 확인 기록 · 문서 version이 그대로다", async () => {
     const fx = await setupExpenseProject();
     const payer = await makePayer();
-    const doc = await withEvidenceAmount(await approvedExpenseWithEvidence(fx), 12_400_000);
+    const doc = await withEvidenceDate(await approvedExpenseWithEvidence(fx));
     await confirmEvidence(payer, { expenseId: doc.expenseId, version: doc.version });
     const before = { files: await allFileCount(doc.expenseId), row: await docRow(doc.expenseId), review: await reviewOf(doc.expenseId) };
 
@@ -328,7 +327,7 @@ describe("무효 ∥ 지급 완료 · 잠금 순서 (06-11 Task 2)", () => {
     const fx = await setupExpenseProject();
     const payer = await makePayer();
     const voider = await makeEvidenceManager("증빙무효", { attach: false, void: true });
-    const approved = await withEvidenceAmount(await approvedExpenseWithEvidence(fx), 12_400_000);
+    const approved = await withEvidenceDate(await approvedExpenseWithEvidence(fx));
     const confirmed = await confirmEvidence(payer, { expenseId: approved.expenseId, version: approved.version });
     const doc = { ...approved, version: confirmed.version };
     const preview = await previewPayable(payer, { expenseId: doc.expenseId, payDate: seoulToday() });
@@ -502,7 +501,7 @@ describe("완료 프로젝트 (06-11 Task 3 · U-4)", () => {
     const fx = await setupExpenseProject();
     const payer = await makePayer();
     const manager = await makeEvidenceManager("경영지원", { void: true });
-    const doc = await withEvidenceAmount(await approvedExpenseWithEvidence(fx), 12_400_000);
+    const doc = await withEvidenceDate(await approvedExpenseWithEvidence(fx));
     await confirmEvidence(payer, { expenseId: doc.expenseId, version: doc.version });
 
     // 완료가 아닌 프로젝트 — 기안자 열림 · 권한자는 05 그대로 「결재 중 아님 · 증빙은 작성자」.
@@ -534,7 +533,7 @@ describe("완료 프로젝트 (06-11 Task 3 · U-4)", () => {
     const fx = await setupExpenseProject();
     const payer = await makePayer();
     const manager = await makeEvidenceManager("경영지원");
-    const doc = await withEvidenceAmount(await approvedExpenseWithEvidence(fx), 12_400_000);
+    const doc = await withEvidenceDate(await approvedExpenseWithEvidence(fx));
     await confirmEvidence(payer, { expenseId: doc.expenseId, version: doc.version });
     const storage = createMemoryStorage();
     const sha = randomBytes(32).toString("hex");
@@ -619,7 +618,7 @@ describe("잠근 사이 결재 통과 (06-11 검토 S-1 · E-49)", () => {
 });
 
 describe("팀 비용 문서(프로젝트 없음) (06-11 검토 S-2)", () => {
-  it("결재 통과 팀 비용 문서 — 마지막 증빙 무효가 프로젝트 행 잠금 없이 확인을 풀고 version을 올리며 증빙 금액 · 증빙일을 지운다", async () => {
+  it("결재 통과 팀 비용 문서 — 마지막 증빙 무효가 프로젝트 행 잠금 없이 확인을 풀고 version을 올리며 증빙일을 지운다", async () => {
     const fx = await setupExpenseProject();
     const payer = await makePayer();
     const voider = await makeEvidenceManager("증빙무효", { attach: false, void: true });
@@ -646,7 +645,7 @@ describe("팀 비용 문서(프로젝트 없음) (06-11 검토 S-2)", () => {
     await voidEvidence(voider, { fileId: target?.id ?? "", reason: "다른 건 영수증" });
 
     expect(await reviewOf(expenseId)).toBeNull();
-    expect(await docRow(expenseId)).toMatchObject({ version: confirmed.version + 1, evidenceAmount: null, evidenceDate: null });
+    expect(await docRow(expenseId)).toMatchObject({ version: confirmed.version + 1, evidenceDate: null });
     expect(await evidenceLogs(expenseId, "evidence_void")).toContainEqual({ change: "evidence_void", fileId: target?.id, reasonLength: 8, reviewReleased: "confirmed" });
   });
 });

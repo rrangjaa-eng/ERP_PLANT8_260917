@@ -73,7 +73,7 @@ function addDays(date: string, days: number): string {
 
 async function snapshot(expenseId: string) {
   const [row] = await db
-    .select({ version: expenses.version, evidenceAmount: expenses.evidenceAmount, supplyAmountKrw: expenses.supplyAmountKrw, scheduledPaymentDate: expenses.scheduledPaymentDate })
+    .select({ version: expenses.version, supplyAmountKrw: expenses.supplyAmountKrw, scheduledPaymentDate: expenses.scheduledPaymentDate })
     .from(expenses)
     .where(eq(expenses.id, expenseId));
   if (!row) throw new Error("지출결의 없음");
@@ -154,7 +154,7 @@ describe("지급 완료 — 이체액 · 차이 사유 · 미래 지급일 (06-0
     expect((await snapshot(doc.expenseId)).payments).toHaveLength(0);
   });
 
-  it("이체액이 달라도 사유와 함께 과거 지급일로 저장되고 · 차이 = 이체액 − 지급 총액 · 비용 기준 값(증빙 금액 · 공급가액)은 그대로다(D-605 · 06.5 D-6518)", async () => {
+  it("이체액이 달라도 사유와 함께 과거 지급일로 저장되고 · 차이 = 이체액 − 지급 총액 · 비용 기준 값(공급가액)은 그대로다(D-605 · 06.5 D-6518)", async () => {
     const payer = await makePayer();
     const doc = await approvedExpenseWithoutEvidence(await setupExpenseProject());
     session.viewer = payer;
@@ -185,7 +185,7 @@ describe("지급 완료 — 이체액 · 차이 사유 · 미래 지급일 (06-0
     ]);
     // 부가세 규칙(세금계산서) — 공급가 역산은 이체액에서(UA-619).
     expect(payment?.grossSupplyKrw).not.toBeNull();
-    expect([after.evidenceAmount, after.supplyAmountKrw]).toEqual([before.evidenceAmount, before.supplyAmountKrw]);
+    expect([after.supplyAmountKrw]).toEqual([before.supplyAmountKrw]);
   });
 
   it("차이 0이면 사유 없이 저장되고 diff_reason은 null이다", async () => {
@@ -300,7 +300,7 @@ describe("지급 예정일 저장 (06-04 Task 2 · SP-3 ②)", () => {
     expect(result.version).toBe(doc.version + 1);
     const after = await snapshot(doc.expenseId);
     expect([after.scheduledPaymentDate, after.version, after.payments.length]).toEqual([future, doc.version + 1, 0]);
-    expect([after.evidenceAmount, after.supplyAmountKrw]).toEqual([before.evidenceAmount, before.supplyAmountKrw]);
+    expect([after.supplyAmountKrw]).toEqual([before.supplyAmountKrw]);
     const logs = await db
       .select({ actionType: actionLog.actionType, actorId: actionLog.actorId, detail: actionLog.detail })
       .from(actionLog)
@@ -759,7 +759,7 @@ describe("문서 보임 범위(CSO-1) — 지급 · 증빙 확인 서버 경로"
   }, 30_000);
 });
 
-// 06.5 D-6520(사용자 카드 10/13 23:44 KST): 지급 금액은 공급가 하나 — 증빙 금액 칸에 다른 값이 남아 있어도 미리보기 · 지급 완료 · S4 계산 한 줄이 공급가로 셈한다.
+// 06.5 D-6520(사용자 카드 10/13 23:44 KST): 지급 금액은 공급가 하나 — 미리보기 · 지급 완료 · S4 계산 한 줄이 공급가로 셈한다.
 // 06.5 D-6511: 지급 처리 기록은 켜기 목록 저장 값과 무관하게 남는다.
 describe("지급 금액 = 공급가 · 지급 처리 기록 못 끄기 (06.5-07 D-6520 · D-6511)", () => {
   async function supplyOf(expenseId: string): Promise<number> {
@@ -768,12 +768,11 @@ describe("지급 금액 = 공급가 · 지급 처리 기록 못 끄기 (06.5-07 
     return row.supplyAmountKrw;
   }
 
-  it("증빙 금액 칸에 공급가와 다른 값이 남은 문서(DB 직접) — 미리보기 · S4 계산 한 줄 · 지급 완료의 지급 공급가가 문서 공급가", async () => {
+  it("미리보기 · S4 계산 한 줄 · 지급 완료의 지급 공급가가 문서 공급가", async () => {
     const payer = await makePayer();
     const doc = await approvedExpenseWithEvidence(await setupExpenseProject());
     const supply = await supplyOf(doc.expenseId);
     const supplyPayable = await payableNow(payer, doc);
-    await db.update(expenses).set({ evidenceAmount: supply - 400_000 }).where(eq(expenses.id, doc.expenseId));
     expect(await payableNow(payer, doc)).toBe(supplyPayable);
     const view = await getPaymentView(payer, doc.expenseId);
     expect(view && "evidenceAmountKrw" in view).toBe(false);

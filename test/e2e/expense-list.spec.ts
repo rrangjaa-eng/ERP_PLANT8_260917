@@ -126,6 +126,12 @@ test.describe("보기 · 빈 상태 · 폭", () => {
     await expect(writerPage.getByRole("region", { name: "합계" })).toHaveCount(0);
     // 걸러 낼 문서가 없으면 상태 select도 없다(wave10 N2 — 쓸 수 없는 선택지는 숨김).
     await expect(writerPage.getByRole("form", { name: "지출결의 보기" })).toHaveCount(0);
+    // 06.5-08(검토 P3-1): 문서가 하나도 없으면 검색어가 붙어도 보통 빈 화면이다 — 검색 0건 문구 · `필터 지우기` 없이 필터 줄도 없다.
+    await writerPage.goto("/expenses?q=x");
+    await expect(writerEmpty).toContainText("등록된 지출결의가 없습니다");
+    await expect(writerEmpty).not.toContainText("조건에 맞는 건이 없습니다");
+    await expect(writerEmpty.getByRole("link", { name: "필터 지우기" })).toHaveCount(0);
+    await expect(writerPage.getByRole("form", { name: "지출결의 보기" })).toHaveCount(0);
     await writerPage.context().close();
 
     const readerPage = await loginPage(browser, baseURL, reader);

@@ -458,9 +458,11 @@ describe("담당 소멸 뒤 고아 최종 — 막힘으로 다룬다(ENG-3 · D2
     const ceoView = await getApprovalView(ceo, { kind: LEAVE_DOCUMENT_KIND, documentId: leaveId }, { now: NOW_2026 });
     expect(ceoView?.actions).toEqual([]);
 
-    await expect(withdrawDocument(drafter, { instanceId, expectedVersion: version }, { now: NOW_2026 })).rejects.toBeInstanceOf(
-      ApprovalConflictError,
-    );
+    const infoSpy = vi.spyOn(log, "info");
+    const refused = withdrawDocument(drafter, { instanceId, expectedVersion: version }, { now: NOW_2026 });
+    await expect(refused).rejects.toBeInstanceOf(ApprovalConflictError);
+    await expect(refused).rejects.toThrow(/^최대표가 \d{2}:\d{2}에 승인함 · 새로 고침$/);
+    expect(infoSpy).toHaveBeenLastCalledWith("approval.refused", expect.objectContaining({ reason: "invalid_state" }));
     expect(await stepsOf(instanceId)).toEqual(stepsBefore);
     expect((await instanceOf(instanceId)).version).toBe(version);
     const withdrawLogs = await db.select().from(actionLog).where(eq(actionLog.entityId, instanceId));

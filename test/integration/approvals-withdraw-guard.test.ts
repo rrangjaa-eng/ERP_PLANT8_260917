@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { approvalInstances, approvalRoutes, approvalSteps, settlementApprovals } from "@/db/schema";
+import { approvalInstances, approvalRoutes, approvalSteps, projects, settlementApprovals } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { CEO_ROLE_ID, DEFAULT_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import {
@@ -17,8 +17,13 @@ import {
 import { submitLeave, LEAVE_DOCUMENT_KIND } from "@/domain/leave";
 import { resubmitLeave } from "@/domain/leave/resubmit";
 import { SETTLEMENT_DOCUMENT_KIND, SettlementUndoRefusedError, submitSettlement, withdrawSettlement } from "@/domain/settlements";
+import { setPermissionCell } from "@/domain/permissions/matrix";
 import { setSettingValue } from "@/domain/settings/registry";
-import { APPROVAL_ROUTE_LEAVE_SELF_APPROVAL, APPROVAL_ROUTE_SETTLEMENT_STEP1_ENABLED } from "@/domain/settings/keys";
+import {
+  APPROVAL_ROUTE_LEAVE_SELF_APPROVAL,
+  APPROVAL_ROUTE_SETTLEMENT_SELF_APPROVAL,
+  APPROVAL_ROUTE_SETTLEMENT_STEP1_ENABLED,
+} from "@/domain/settings/keys";
 import { upsertSimpleValue } from "@/repositories/settings";
 import { setUserArchived } from "@/repositories/users";
 import { countRows, makePerson, NOW_2026 } from "./approvals-fixtures";
@@ -188,6 +193,22 @@ describe("06.6 결재 회수 막기(D28) — 앞 사람 승인 · 승인 0건 �
     const late = await withdrawSettlement(fx.pm, { projectId: fx.projectId, undo: true, round: 1 }).catch((error: unknown) => error);
     expect(late).toBeInstanceOf(SettlementUndoRefusedError);
     expect((late as Error).message.endsWith("에 승인함 · 새로 고침")).toBe(true);
+  });
+
+  it("정산 본인 승인 늦은 되돌리기: 팀장 기안 · 본인 1단 승인 뒤 되돌리기는 문서에서 회수 꼬리로 거부(D-6602 · D-6609)(G8b)", async () => {
+    await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_SETTLEMENT_STEP1_ENABLED, true);
+    await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_SETTLEMENT_SELF_APPROVAL, "self_approve");
+    const fx = await setupSettlementProject();
+    // 팀장이 기안자 — 정산 결재는 담당 PM ∧ projects 쓰기만 올리므로 담당 PM을 팀장으로 바꾸고 팀장 계급에 쓰기를 준다.
+    await setPermissionCell(SYSTEM_VIEWER, { roleId: TEAM_LEAD_ROLE_ID, menu: "projects", action: "write", allowed: true });
+    await db.update(projects).set({ pmUserId: fx.lead.id }).where(eq(projects.id, fx.projectId));
+    const doc = await submittedSettlement(fx.lead, fx.projectId);
+    const selfApproved = await approveDocument(fx.lead, { instanceId: doc.instanceId, expectedVersion: doc.version });
+    expect(selfApproved.status).toBe("in_review");
+
+    const late = await withdrawSettlement(fx.lead, { projectId: fx.projectId, undo: true, round: 1 }).catch((error: unknown) => error);
+    expect(late).toBeInstanceOf(SettlementUndoRefusedError);
+    expect((late as Error).message.endsWith("에 승인함 · 문서에서 회수")).toBe(true);
   });
 
   it("인박스 = 상세: 본부장 기안 · 팀장 1단 승인 · 본부장 2단 지금 담당 → 둘 다 [승인](회수 없음)(G9)", async () => {

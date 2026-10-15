@@ -122,11 +122,11 @@ export function PaidList({ rows, amountColumn, canConfirm }: { rows: PaidScreenR
       priority: "p2",
       collapseBelow: 1024,
       cell: (row) => (
-        <span className={styles.vendorCell} title={row.vendorName ?? undefined}>
-          {row.vendorName ?? "—"}
+        <span className={styles.vendorCell} title={row.vendorName ?? row.payeeUserName ?? undefined}>
+          {row.vendorName ?? row.payeeUserName ?? "—"}
         </span>
       ),
-      summary: (row) => row.vendorName ?? "—",
+      summary: (row) => row.vendorName ?? row.payeeUserName ?? "—",
     },
     {
       key: "method",

@@ -690,8 +690,8 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
       collapseBelow: 1280,
       // 한 줄 말줄임 — 전체 값은 title(검토 D-6).
       cell: (row) => (
-        <span className={styles.vendorCell} title={row.vendorName ?? undefined}>
-          {row.vendorName ?? "—"}
+        <span className={styles.vendorCell} title={row.vendorName ?? row.payeeUserName ?? undefined}>
+          {row.vendorName ?? row.payeeUserName ?? "—"}
         </span>
       ),
     },

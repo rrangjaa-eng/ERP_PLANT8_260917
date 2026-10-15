@@ -275,6 +275,8 @@ export type PaymentTargetRowDto = {
   number: string | null;
   title: string;
   vendorName: string | null;
+  // 06.5 D-6517: 직원 지급처 이름(사람 정보) — 지급처 셀은 거래처 이름 → 직원 이름.
+  payeeUserName: string | null;
   // 지급 방식 낱말(코드표 이름) — 계좌 칸은 06-20.
   paymentMethodName: string | null;
   scheduledPaymentDate: string | null;
@@ -298,6 +300,7 @@ export const PAYMENT_TARGET_ROW_DTO_SPEC: DtoSpec<PaymentTargetRowDto, PaymentTa
     { key: "number", from: "number", infoItem: "expense.value" },
     { key: "title", from: "title", infoItem: "expense.value" },
     { key: "vendorName", from: "vendorName", infoItem: "expense.value" },
+    { key: "payeeUserName", from: "payeeUserName", infoItem: "person.value" },
     { key: "paymentMethodName", from: "paymentMethodName", infoItem: "expense.value" },
     { key: "scheduledPaymentDate", from: "scheduledPaymentDate", infoItem: "expense.value" },
     { key: "evidenceStatus", from: "evidenceStatus", infoItem: "expense.value" },
@@ -319,6 +322,8 @@ export type PaidPaymentRowDto = {
   number: string | null;
   title: string;
   vendorName: string | null;
+  // 06.5 D-6517: 직원 지급처 이름(사람 정보).
+  payeeUserName: string | null;
   paymentMethodName: string | null;
   payDate: string;
   transferKrw: number;
@@ -335,6 +340,7 @@ export const PAID_PAYMENT_ROW_DTO_SPEC: DtoSpec<PaidPaymentRowDto, PaidPaymentRo
     { key: "number", from: "number", infoItem: "expense.value" },
     { key: "title", from: "title", infoItem: "expense.value" },
     { key: "vendorName", from: "vendorName", infoItem: "expense.value" },
+    { key: "payeeUserName", from: "payeeUserName", infoItem: "person.value" },
     { key: "paymentMethodName", from: "paymentMethodName", infoItem: "expense.value" },
     { key: "payDate", from: "payDate", infoItem: "expense.value" },
     { key: "transferKrw", from: "transferKrw", infoItem: "expense.amount" },

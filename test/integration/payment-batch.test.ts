@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db/client";
-import { expenseEvidenceReviews, expensePayments, expenses, files, quoteLines, vendors } from "@/db/schema";
+import { expenseEvidenceReviews, expensePayments, expenses, files, quoteLines, users, vendors } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertVisibility } from "@/repositories/permissions";
 import { ForbiddenError } from "@/domain/permissions/can";
@@ -16,7 +16,8 @@ import { confirmEvidence, loadPrepaidDueDays } from "@/domain/evidence-reviews";
 import { voidEvidence } from "@/domain/evidence";
 import { approveDocument } from "@/domain/approvals";
 import { listExpenses } from "@/domain/expenses/list";
-import { createExpenseFromLines } from "@/domain/expenses";
+import { changeExpensePayeeUser, createExpenseFromLines } from "@/domain/expenses";
+import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { loadTaxRates } from "@/domain/money/tax";
 import { addHistorizedValue, cancelHistorizedValue } from "@/domain/settings/registry";
 import { PAYMENT_METHOD_EVIDENCE_PAIRS, TAX_VAT_RATE } from "@/domain/settings/keys";
@@ -1063,5 +1064,52 @@ describe("일괄 지급 금액 = 공급가 (06.5-07 D-6520)", () => {
     expect(result.processed).toBe(1);
     const [row] = await livePayments(doc.expenseId);
     expect([row?.grossSupplyKrw, row?.payableKrw]).toEqual([supply, supplyPayable]);
+  });
+});
+
+// 06.5 D-6517(PR-C 독립 검토 P2-1): 두 목록의 머리글이 「지급처」인데 셀이 거래처 이름만 읽어 직원 지급처가 「—」였다.
+// 직원 이름은 사람 정보(person.value) — 그 항목이 꺼진 계급에는 키가 실리지 않는다.
+describe("지급 대상 · 지급 완료 목록의 직원 지급처 이름 (06.5 D-6517)", () => {
+  async function employeePayeeDoc(fx: ExpenseFixture, name: string): Promise<{ doc: ApprovedExpense; payeeUserId: string }> {
+    const person = await makePerson(name, DEFAULT_ROLE_ID, "기획1팀");
+    await db.update(users).set(testVendorAccount()).where(eq(users.id, person.id));
+    const [lineId] = await extraLines(fx, 1);
+    const expenseId = (await createExpenseFromLines(fx.pm, { lineIds: [lineId ?? ""] })).created[0]?.expenseId;
+    if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
+    await changeExpensePayeeUser(fx.pm, { expenseId, userId: person.id, expectedVersion: await versionOf(expenseId) });
+    const submitted = await submitReadyDraft(fx.pm, expenseId);
+    if (submitted.kind !== "submitted") throw new Error("제출 안 됨");
+    const first = await approveDocument(fx.lead, { instanceId: submitted.instanceId, expectedVersion: submitted.version });
+    await approveDocument(fx.ceo, { instanceId: submitted.instanceId, expectedVersion: first.version });
+    const voider = await makeEvidenceManager("증빙무효", { attach: false, void: true });
+    const alive = await db
+      .select({ id: files.id })
+      .from(files)
+      .where(and(eq(files.ownerKind, "expense"), eq(files.ownerId, expenseId), isNull(files.removedAt), isNull(files.voidedAt)));
+    for (const file of alive) await voidEvidence(voider, { fileId: file.id, reason: "다른 건 영수증" });
+    return { doc: { expenseId, instanceId: submitted.instanceId, number: submitted.number, version: await versionOf(expenseId) }, payeeUserId: person.id };
+  }
+
+  it("직원 지급처 문서 — 지급 대상 · 지급 완료 행에 직원 이름(거래처 이름 없음), person.value가 꺼진 계급에는 이름 키가 없다", async () => {
+    const payer = await makePayer();
+    const blind = await makePayer("사람안보임");
+    if (!payer.roleId) throw new Error("계급 없음");
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: payer.roleId, infoItem: "person.value", visible: true });
+    const fx = await setupExpenseProject();
+    const { doc } = await employeePayeeDoc(fx, "김직원지급");
+
+    const target = rowsOf(await listPaymentTargets(payer, {})).find((row) => row.id === doc.expenseId);
+    expect(target).toMatchObject({ vendorName: null, payeeUserName: "김직원지급" });
+    const hiddenTarget = rowsOf(await listPaymentTargets(blind, {})).find((row) => row.id === doc.expenseId);
+    expect(hiddenTarget).toBeDefined();
+    expect(hiddenTarget && "payeeUserName" in hiddenTarget).toBe(false);
+
+    const result = await completePaymentsBatch(payer, { payDate: seoulToday(), rows: [await snapshotOf(payer, doc)] });
+    expect(result.processed).toBe(1);
+    const paid = paidRowsOf(await listPaidPayments(payer, {})).find((row) => row.id === doc.expenseId);
+    expect(paid).toMatchObject({ vendorName: null, payeeUserName: "김직원지급" });
+    const hiddenPaid = paidRowsOf(await listPaidPayments(blind, {})).find((row) => row.id === doc.expenseId);
+    expect(hiddenPaid).toBeDefined();
+    expect(hiddenPaid && "payeeUserName" in hiddenPaid).toBe(false);
   });
 });

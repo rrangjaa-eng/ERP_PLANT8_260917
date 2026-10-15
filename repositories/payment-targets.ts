@@ -1,8 +1,12 @@
 import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db/client";
 import { approvalInstances, expenseEvidenceReviews, expensePayments, expenses, projects, quoteLines, teams, users, vendors } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 import type { ExpenseRow } from "@/repositories/expenses";
+
+// 06.5 D-6517: 직원 지급처 이름 — users를 기안자 · 처리자로 이미 조인하므로 별칭(repositories/expenses.ts와 같은 이름).
+const payeeUsers = alias(users, "payee_users");
 
 // 06-15(S1 · AS1): 지급 대상 원천 — 결재 통과 ∧ 살아 있는 지급 없음 ∧ 종결 아님 ∧ 삭제 아님(∧ 문서 팀). 쪽을 자르지 않는다(E-25 —
 // 판정 · 증빙 필터 뒤 쪽 자르기는 domain/payments/targets.ts 한 곳). 판정 재료(결재 상태 · 확인 기록 · 기안자 이름)를 한 쿼리로 같이 읽는다.
@@ -15,6 +19,7 @@ export type PaymentTargetRow = ExpenseRow & {
   itemName: string | null;
   teamName: string | null;
   vendorName: string | null;
+  payeeUserName: string | null;
   approvalStatus: string | null;
   paid: boolean;
   review: { status: string; reviewedAt: Date } | null;
@@ -33,6 +38,7 @@ async function selectRows(where: SQL | undefined, documentKind: string): Promise
       itemName: quoteLines.itemName,
       teamName: teams.name,
       vendorName: vendors.name,
+      payeeUserName: payeeUsers.name,
       approvalStatus: approvalInstances.status,
       paid: livePayment,
       reviewStatus: expenseEvidenceReviews.status,
@@ -44,6 +50,7 @@ async function selectRows(where: SQL | undefined, documentKind: string): Promise
     .leftJoin(quoteLines, eq(quoteLines.id, expenses.quoteLineId))
     .leftJoin(teams, eq(teams.id, expenses.attributedTeamId))
     .leftJoin(vendors, eq(vendors.id, expenses.vendorId))
+    .leftJoin(payeeUsers, eq(payeeUsers.id, expenses.payeeUserId))
     .leftJoin(approvalInstances, and(eq(approvalInstances.documentKind, documentKind), eq(approvalInstances.documentId, expenses.id)))
     .leftJoin(expenseEvidenceReviews, eq(expenseEvidenceReviews.expenseId, expenses.id))
     .where(where)
@@ -55,6 +62,7 @@ async function selectRows(where: SQL | undefined, documentKind: string): Promise
     itemName: row.itemName,
     teamName: row.teamName,
     vendorName: row.vendorName,
+    payeeUserName: row.payeeUserName,
     approvalStatus: row.approvalStatus,
     paid: Boolean(row.paid),
     review: row.reviewStatus && row.reviewedAt ? { status: row.reviewStatus, reviewedAt: row.reviewedAt } : null,
@@ -98,6 +106,7 @@ export type PaidPaymentRow = {
   itemName: string | null;
   teamName: string | null;
   vendorName: string | null;
+  payeeUserName: string | null;
   payDate: string;
   transferKrw: number;
   payableKrw: number;
@@ -135,6 +144,7 @@ export async function listPaidPaymentRows(viewer: Viewer, input: { teamId?: stri
       itemName: quoteLines.itemName,
       teamName: teams.name,
       vendorName: vendors.name,
+      payeeUserName: payeeUsers.name,
       payDate: expensePayments.payDate,
       transferKrw: expensePayments.transferKrw,
       payableKrw: expensePayments.payableKrw,
@@ -151,6 +161,7 @@ export async function listPaidPaymentRows(viewer: Viewer, input: { teamId?: stri
     .leftJoin(quoteLines, eq(quoteLines.id, expenses.quoteLineId))
     .leftJoin(teams, eq(teams.id, expenses.attributedTeamId))
     .leftJoin(vendors, eq(vendors.id, expenses.vendorId))
+    .leftJoin(payeeUsers, eq(payeeUsers.id, expenses.payeeUserId))
     .leftJoin(expenseEvidenceReviews, eq(expenseEvidenceReviews.expenseId, expenses.id))
     .where(paidConditions(input))
     .orderBy(desc(expensePayments.payDate), asc(expenses.number), asc(expenses.id));

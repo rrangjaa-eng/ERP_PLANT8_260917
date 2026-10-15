@@ -50,9 +50,10 @@ import { resolveLineDoor } from "@/domain/quotes/line-door";
 import { quoteLockReason } from "@/domain/quotes/edit-scope";
 import { REJECT_REASON_EMPTY_MESSAGE, REJECT_REASON_MAX, REJECT_REASON_TOO_LONG_MESSAGE } from "@/domain/approvals";
 import { gate, GateBlockedError } from "@/domain/rules/gate";
+import type { QuoteCustomerApprovalCtx } from "@/domain/rules/register";
 import "@/domain/rules/register";
 import { getSettingValue } from "@/domain/settings/registry";
-import { PURCHASE_ONLINE_VENDOR_NAME } from "@/domain/settings/keys";
+import { PROJECT_CUSTOMER_APPROVAL_GATE, PURCHASE_ONLINE_VENDOR_NAME } from "@/domain/settings/keys";
 import { clampPage, LIST_PAGE_SIZE, pageCountFrom } from "@/lib/paging";
 import { seoulToday } from "@/lib/dates";
 import { withTransaction } from "@/lib/db-transaction";
@@ -142,6 +143,8 @@ export type PurchaseRequestPre =
       lineRoom: LineRoomBasis;
       /** 요청자의 견적 금액(quote.amount) 노출 — 실행가 초과 거부 문구의 남은 실행가 숫자(CSO-2). */
       amountVisible: boolean;
+      /** 고객 승인 게이트 판정의 사전 조회 사실(G-06-D) — 설정 켬 · 담당 PM 이름. */
+      approvalGate: ApprovalGateFacts;
     })
   | (PurchaseRequestPreFields & {
       linkKind: "team_cost";
@@ -192,7 +195,34 @@ function fxMissing(currency: string): string {
 
 // 견적 줄 갈래의 사전 조회 한 곳 — 신청(06-08)과 취소 되돌리기(06-14)가 같은 판정을 쓴다. 완료 프로젝트는 트랜잭션 전에 거부한다(GA-38 · D-47) —
 // 잠근 뒤 `lockProjectForLinkWrite`가 다시 본다(X-2).
-type QuoteLineBasis = { projectId: string; revisionId: string; onlineVendorName: string; lineRoom: LineRoomBasis; amountVisible: boolean };
+type QuoteLineBasis = { projectId: string; revisionId: string; onlineVendorName: string; lineRoom: LineRoomBasis; amountVisible: boolean; approvalGate: ApprovalGateFacts };
+
+// 06-34(G-06-D · 카드 ① 「구매 요청만」): 지출결의와 같은 규칙 · 같은 사실 출처(domain/expenses loadSubmitPre) — 신청 · 취소 되돌리기 tx와 줄 고르기 목록이 이 함수 하나를 부른다.
+type ApprovalGateFacts = { gateEnabled: boolean; pmName: string };
+
+async function loadApprovalGateFacts(viewer: Viewer, pmUserId: string): Promise<ApprovalGateFacts> {
+  const gateEnabled = await getSettingValue(PROJECT_CUSTOMER_APPROVAL_GATE);
+  return { gateEnabled, pmName: (await findUserNamesByIds(viewer, [pmUserId])).get(pmUserId) ?? "" };
+}
+
+async function customerApprovalReason(input: {
+  project: { status: string; pmUserId: string };
+  revision: { seq: number; customerApprovedAt: Date | null } | null;
+  facts: ApprovalGateFacts;
+  viewerId: string;
+}): Promise<string | null> {
+  if (!input.revision) return null;
+  const ctx: QuoteCustomerApprovalCtx = {
+    status: input.project.status,
+    revisionSeq: input.revision.seq,
+    revisionApproved: input.revision.customerApprovedAt !== null,
+    gateEnabled: input.facts.gateEnabled,
+    actorIsAssignedPm: input.project.pmUserId === input.viewerId,
+    pmName: input.facts.pmName,
+  };
+  const decision = await gate(null, "quote.customer-approval", ctx);
+  return decision.allowed ? null : decision.reason;
+}
 
 async function loadQuoteLineBasis(viewer: Viewer, lineId: string): Promise<QuoteLineBasis> {
   // 06.2(D-6208 · T-06.2-31): 줄 → 차수 → 프로젝트를 범위로 — 범위 밖 줄 id는 기존 「연결 없음」.
@@ -209,6 +239,7 @@ async function loadQuoteLineBasis(viewer: Viewer, lineId: string): Promise<Quote
     onlineVendorName: await getSettingValue(PURCHASE_ONLINE_VENDOR_NAME),
     lineRoom: await loadLineRoomBasis(viewer, [line.id]),
     amountVisible: await visible(viewer, "quote.amount"),
+    approvalGate: await loadApprovalGateFacts(viewer, project.pmUserId),
   };
 }
 
@@ -308,8 +339,8 @@ export async function createPurchaseRequest(
       return { id: teamRow.id, number: teamRow.number };
     }
     if (input.linkKind !== "quote_line") throw new PurchaseRequestRejectedError(LINK_MISSING);
-    // 순서 고정(B-1 · X-2): 프로젝트 행 → 견적 줄(id 순) → 연결(계보 사슬) → 문 → 이중 연결 → 실행가 상한 → 번호 → INSERT → 로그.
-    await lockProjectForLinkWrite(viewer, { projectId: pre.projectId, revisionId: pre.revisionId }, inner);
+    // 순서 고정(B-1 · X-2): 프로젝트 행 → 견적 줄(id 순) → 연결(계보 사슬) → 고객 승인(G-06-D) → 문 → 이중 연결 → 실행가 상한 → 번호 → INSERT → 로그.
+    const lockedProject = await lockProjectForLinkWrite(viewer, { projectId: pre.projectId, revisionId: pre.revisionId }, inner);
     const [locked] = await lockQuoteLines(viewer, [input.lineId], inner);
     // 화면이 내보내지 않는 줄(조정 · 취소 · 보관 · 현재 차수 밖) — 새 문구 없음.
     if (!locked || locked.lineKind === "adjustment" || locked.lineStatus === "cancelled" || locked.archivedAt || locked.revisionId !== pre.revisionId) {
@@ -322,6 +353,13 @@ export async function createPurchaseRequest(
     if (!facts) throw new ForbiddenError(LINK_MISSING);
     const links = await findLineLinks(viewer, [input.lineId], inner);
     const lineLinks = links.get(input.lineId);
+    const approvalReason = await customerApprovalReason({
+      project: lockedProject,
+      revision: await findLatestQuoteRevision(viewer, pre.projectId, inner),
+      facts: pre.approvalGate,
+      viewerId: viewer.id,
+    });
+    if (approvalReason) throw new GateBlockedError(approvalReason);
     const door = resolveLineDoor({ vendorName: facts.vendorName }, pre.onlineVendorName);
     const doorGate = await gate(null, "purchase.line-door", { side: "purchase", door, vendorName: facts.vendorName });
     if (!doorGate.allowed) throw new GateBlockedError(doorGate.reason);
@@ -927,7 +965,7 @@ export async function countOpenPurchaseRequests(viewer: Viewer, today: string = 
 export async function searchLinesForPurchaseLink(
   viewer: Viewer,
   input: { projectId: string; query: string; currentLineId?: string | null },
-): Promise<{ rows: Partial<CardLinkLineDto>[]; truncated: boolean; subtitle: string; total: number; selectableCount: number }> {
+): Promise<{ rows: Partial<CardLinkLineDto>[]; truncated: boolean; subtitle: string; total: number; selectableCount: number; projectBlockedReason: string | null }> {
   if (!(await can(viewer, "projects", "view"))) throw new ForbiddenError(PROJECTS_VIEW_DENIED);
   // 06.2(D-6208): 프로젝트 id 직접 호출도 범위 밖이면 없음.
   const project = await findProjectInScope(viewer, await projectRowScope(viewer), input.projectId);
@@ -946,6 +984,8 @@ export async function searchLinesForPurchaseLink(
   const onlineVendorName = await getSettingValue(PURCHASE_ONLINE_VENDOR_NAME);
   const vendorVisible = await visible(viewer, "vendor.value");
   const lock = projectLinkLock(project.status);
+  // G-06-D: 완료 잠김이 먼저 — 잠기지 않았을 때만 고객 승인 판정(신청 tx와 같은 도우미).
+  const approval = lock ? null : await customerApprovalReason({ project, revision, facts: await loadApprovalGateFacts(viewer, project.pmUserId), viewerId: viewer.id });
 
   const all: CardLinkLineDto[] = numbered.map(({ line, lineNo }) => {
     const link = links.get(line.id);
@@ -958,6 +998,8 @@ export async function searchLinesForPurchaseLink(
     let reason: string | null = null;
     if (lock) {
       reason = lock;
+    } else if (approval) {
+      reason = approval;
     } else if (door !== "purchase") {
       reason = vendorName !== null && vendorVisible ? `거래처 ${vendorName} · 지출결의로` : "온라인구매 협력사 줄 아님 · 지출결의로";
     } else if (expense) {
@@ -990,6 +1032,7 @@ export async function searchLinesForPurchaseLink(
     subtitle: `${project.name} · ${all.length}줄 · 구매 요청할 수 있는 줄 ${selectableCount}`,
     total: all.length,
     selectableCount,
+    projectBlockedReason: approval,
   };
 }
 

@@ -9,7 +9,7 @@ import { approveDocument, getApprovalView, rejectDocument, withdrawDocument } fr
 import { getDocumentKind } from "@/domain/approvals/kinds";
 import { LEAVE_DOCUMENT_KIND, submitLeave } from "@/domain/leave";
 import { saveProjectLedger } from "@/domain/projects/ledger";
-import { closeExpense, createExpenseFromLines, saveExpenseDraft } from "@/domain/expenses";
+import { closeExpense, createExpenseFromLines, saveExpenseDraft, submitExpense } from "@/domain/expenses";
 import { voidEvidence } from "@/domain/evidence";
 import { waiveEvidence } from "@/domain/evidence-reviews";
 import { getPreSettleCheck } from "@/domain/pre-settle-check";
@@ -269,13 +269,16 @@ describe("완료 전 점검 — 세 그룹(D-611 · C10 · D-612 · D-613)", () 
     await linkCardUsage(fx.pm, fx.lines.noVendor);
     await issueRevenue(fx.projectId);
 
+    // G-06-E(카드 ② 「경고만」): 결재 통과 · 증빙 없음은 막지 않는 증빙 대기 그룹 — 행은 증빙 대기 쪽, 막힘 건수는 0.
     const before = await getPreSettleCheck(fx.pm, fx.projectId);
-    expect(before.openExpenses.rows.map((row) => [row.number, row.state])).toEqual([[doc.number, "no_evidence"]]);
-    expect(before.blockedCount).toBe(1);
+    expect(before.evidencePending.rows.map((row) => [row.number, row.state])).toEqual([[doc.number, "no_evidence"]]);
+    expect(before.openExpenses.rows).toEqual([]);
+    expect(before.blockedCount).toBe(0);
 
     const payer = await makePayer();
     await waiveEvidence(payer, { expenseId: doc.expenseId, version: await versionOf(doc.expenseId), reason: "업체 폐업" });
     const after = await getPreSettleCheck(fx.pm, fx.projectId);
+    expect(after.evidencePending.rows).toEqual([]);
     expect(after.openExpenses.rows).toEqual([]);
     expect(after.blockedCount).toBe(0);
   });
@@ -287,11 +290,15 @@ describe("완료 전 점검 — 세 그룹(D-611 · C10 · D-612 · D-613)", () 
     await linkCardUsage(fx.pm, fx.lines.noVendor);
     await issueRevenue(fx.projectId);
     expect((await getPreSettleCheck(fx.pm, fx.projectId)).openExpenses.rows).toEqual([]);
+    expect((await getPreSettleCheck(fx.pm, fx.projectId)).evidencePending.rows).toEqual([]);
 
     const voider = await makeEvidenceManager("증빙무효", { attach: false, void: true });
     for (const file of await aliveFiles(doc.expenseId)) await voidEvidence(voider, { fileId: file.id, reason: "다른 건 영수증" });
+    // G-06-E(카드 ② 「경고만」): 무효 뒤 `증빙 없음` 행은 증빙 대기 그룹에 선다(막힘 아님).
     const after = await getPreSettleCheck(fx.pm, fx.projectId);
-    expect(after.openExpenses.rows.map((row) => [row.number, row.state])).toEqual([[doc.number, "no_evidence"]]);
+    expect(after.evidencePending.rows.map((row) => [row.number, row.state])).toEqual([[doc.number, "no_evidence"]]);
+    expect(after.openExpenses.rows).toEqual([]);
+    expect(after.blockedCount).toBe(0);
   });
 
   it("반려 문서를 종결(06-28)하면 행이 빠지고 막힘이 준다(C10)", async () => {
@@ -751,8 +758,10 @@ describe("완료 전 점검 — 대표 최종 승인 재점검(O-16 · 05 정산
     expect(inject.computeCalls).toBe(0);
   });
 
+  // G-06-E(카드 ② 「경고만」): 무효로 결재 통과 문서가 증빙 없음이 돼도 막힘이 아니라 증빙 대기 — 잠금을 기다린 승인은 무효 커밋을 보고도(증빙 대기 1) 막히지 않고 통과한다.
+  // 「재점검이 잠금 뒤 새 막힘을 본다」 쪽은 아래 [U1-1] 구매 요청 취소 사례가 같은 뜻으로 지킨다.
   it(
-    "무효 ∥ 정산 최종 승인 — 잠금 뒤 재점검: 프로젝트 행을 쥔 무효가 커밋되면 승인은 `완료 전 점검 1건`으로 거부(X-12)",
+    "무효 ∥ 정산 최종 승인 — 잠금 뒤 재점검: 프로젝트 행을 쥔 무효가 커밋돼도 증빙 대기는 막지 않아 승인 → completed(X-12 · G-06-E)",
     async () => {
       const fx = await blockFreeSettlingProject();
       const doc = await draftSettlement(fx);
@@ -776,9 +785,11 @@ describe("완료 전 점검 — 대표 최종 승인 재점검(O-16 · 05 정산
         await lockClient.query("COMMIT");
         txOpen = false;
         const result = await call;
-        expect(result).toBeInstanceOf(GateBlockedError);
-        expect(result).toMatchObject({ message: CHECK_ONE });
-        expect(await projectStatusOf(fx.projectId)).toBe("settling");
+        expect(result).toMatchObject({ status: "approved", final: true });
+        expect(await projectStatusOf(fx.projectId)).toBe("completed");
+        const after = await getPreSettleCheck(fx.ceo, fx.projectId);
+        expect(after.evidencePending.rows.map((row) => row.state)).toEqual(["no_evidence"]);
+        expect(after.blockedCount).toBe(0);
       } finally {
         if (txOpen) await lockClient.query("ROLLBACK").catch(() => {});
         await lockClient.end();
@@ -921,8 +932,9 @@ describe("완료 전 점검 — 대표 최종 승인 재점검(O-16 · 05 정산
 describe("완료 전 점검 — 정산 결재 문서 요약(getSettlementPreSettleSummary)", () => {
   it("정산 · 강행 그룹만(막힘 0) → `{ blockedCount: 0, forcedResultLine: 강행 · 미결 지출결의 2건 }`", async () => {
     const fx = await setupExpenseProject();
-    await approvedExpenseWithoutEvidence(fx, fx.lines.withVendor);
-    await approvedExpenseWithoutEvidence(fx, fx.lines.split);
+    // G-06-E(카드 ② 「경고만」): 결재 통과 · 증빙 없음은 이제 막힘이 아니라 이 사례의 미결은 같은 뜻을 지키는 반려 문서 두 건이다.
+    await rejectedExpense(fx, fx.lines.withVendor);
+    await rejectedExpense(fx, fx.lines.split);
     await linkCardUsage(fx.pm, fx.lines.noVendor);
     await issueRevenue(fx.projectId);
     await settle(fx.projectId);
@@ -950,5 +962,151 @@ describe("완료 전 점검 — 정산 결재 문서 요약(getSettlementPreSett
     const outsider = await makePerson("무관피엠", DEFAULT_ROLE_ID, "기획1팀");
     expect(await getSettlementPreSettleSummary(outsider, { projectId: fx.projectId })).toBeNull();
     expect(await getSettlementPreSettleSummary(fx.pm, { projectId: fx.projectId })).toEqual({ blockedCount: 1, forcedResultLine: null });
+  });
+});
+
+// ── 06-36 G-06-E(카드 ② 2026-10-14 「경고만」) — 결재 통과 · 증빙 없음은 증빙 대기 그룹(막힘 밖), 결재 중 · 반려만 막는다 ──────────
+
+// 결재 통과 뒤 살아 있는 증빙을 전부 무효 처리한 문서 — 기안자가 달라도 되게 viewer를 받는다(fixtures/payments는 고치지 않는다).
+async function approvedWithoutEvidenceBy(fx: ExpenseFixture, drafter: Viewer, lineId: string): Promise<{ expenseId: string; number: string }> {
+  const expenseId = (await createExpenseFromLines(drafter, { lineIds: [lineId] })).created[0]?.expenseId ?? "";
+  const sent = await submitReadyDraft(drafter, expenseId);
+  if (sent.kind !== "submitted") throw new Error("제출 안 됨");
+  const first = await approveDocument(fx.lead, { instanceId: sent.instanceId, expectedVersion: sent.version });
+  const final = await approveDocument(fx.ceo, { instanceId: sent.instanceId, expectedVersion: first.version });
+  if (final.status !== "approved") throw new Error(`결재 통과 안 됨: ${final.status}`);
+  const voider = await makeEvidenceManager("증빙무효", { attach: false, void: true });
+  for (const file of await aliveFiles(expenseId)) await voidEvidence(voider, { fileId: file.id, reason: "다른 건 영수증" });
+  return { expenseId, number: sent.number };
+}
+
+// 선결제(증빙 없이 제출) 결재 통과 문서.
+async function approvedPrepaid(fx: ExpenseFixture, lineId: string): Promise<{ expenseId: string; number: string }> {
+  const expenseId = (await createExpenseFromLines(fx.pm, { lineIds: [lineId] })).created[0]?.expenseId ?? "";
+  await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: await versionOf(expenseId), fields: { prepaid: true, prepaidReason: "행사장 선입금 요구" } });
+  const sent = await submitExpense(fx.pm, { expenseId, expectedVersion: await versionOf(expenseId) });
+  if (sent.kind !== "submitted") throw new Error("제출 안 됨");
+  const first = await approveDocument(fx.lead, { instanceId: sent.instanceId, expectedVersion: sent.version });
+  const final = await approveDocument(fx.ceo, { instanceId: sent.instanceId, expectedVersion: first.version });
+  if (final.status !== "approved") throw new Error(`결재 통과 안 됨: ${final.status}`);
+  return { expenseId, number: sent.number };
+}
+
+// 결재 통과 · 증빙 없음 1건(withVendor) + 그 밖 막힘 없음(split 증빙 있음 · noVendor 카드 · 발행 줄 1)인 정산 프로젝트.
+async function evidencePendingProject(settleNow = false) {
+  const fx = await setupExpenseProject();
+  const pending = await approvedWithoutEvidenceBy(fx, fx.pm, fx.lines.withVendor);
+  await approvedExpenseWithEvidence(fx, fx.lines.split);
+  await linkCardUsage(fx.pm, fx.lines.noVendor);
+  await issueRevenue(fx.projectId);
+  if (settleNow) await settle(fx.projectId);
+  return { fx, pending };
+}
+
+describe("G-06-E — 결재 통과 · 증빙 대기(카드 ② 「경고만」)", () => {
+  it("결재 통과 · 증빙 없음 1건 → 증빙 대기 1 · 행 [번호, no_evidence] · 미결 0 · 막힘 0 · 이유 없음 · 강행 줄 없음", async () => {
+    const { fx, pending } = await evidencePendingProject();
+    const check = await getPreSettleCheck(fx.pm, fx.projectId);
+    expect(check.evidencePending.count).toBe(1);
+    expect(check.evidencePending.rows.map((row) => [row.number, row.state])).toEqual([[pending.number, "no_evidence"]]);
+    expect(check.evidencePending.outOfScopeCount).toBe(0);
+    expect(check.openExpenses.count).toBe(0);
+    expect(check.blockedCount).toBe(0);
+    expect(check.blockReason).toBeNull();
+    expect(check.forcedResultLine).toBeNull();
+  });
+
+  it("선결제 · 증빙 없음(결재 통과) → 증빙 대기 행 낱말 prepaid_no_evidence", async () => {
+    const fx = await setupExpenseProject();
+    const prepaid = await approvedPrepaid(fx, fx.lines.withVendor);
+    await approvedExpenseWithEvidence(fx, fx.lines.split);
+    await linkCardUsage(fx.pm, fx.lines.noVendor);
+    await issueRevenue(fx.projectId);
+    const check = await getPreSettleCheck(fx.pm, fx.projectId);
+    expect(check.evidencePending.rows.map((row) => [row.number, row.state])).toEqual([[prepaid.number, "prepaid_no_evidence"]]);
+    expect(check.blockedCount).toBe(0);
+  });
+
+  // 결재 중에는 증빙을 무효 처리할 수 없다(voidEvidence — 승인 뒤에만) — 결재 중 · 증빙 0 문서는 선결제로 제출한 것이다.
+  it("결재 중 · 증빙 없음(선결제 제출)은 미결 지출결의에 남고 막힘 1(가정 A-1 — 결재 중 · 반려만 막음)", async () => {
+    const fx = await setupExpenseProject();
+    const expenseId = (await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] })).created[0]?.expenseId ?? "";
+    await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: await versionOf(expenseId), fields: { prepaid: true, prepaidReason: "행사장 선입금 요구" } });
+    expect(await submitExpense(fx.pm, { expenseId, expectedVersion: await versionOf(expenseId) })).toMatchObject({ kind: "submitted" });
+    await approvedExpenseWithEvidence(fx, fx.lines.split);
+    await linkCardUsage(fx.pm, fx.lines.noVendor);
+    await issueRevenue(fx.projectId);
+    const check = await getPreSettleCheck(fx.pm, fx.projectId);
+    expect(check.openExpenses.rows.map((row) => row.state)).toEqual(["prepaid_no_evidence"]);
+    expect(check.evidencePending.count).toBe(0);
+    expect(check.blockedCount).toBe(1);
+  });
+
+  it("반려 1 + 증빙 대기 1 → 막힘은 반려 1건만(증빙 대기는 세지 않는다)", async () => {
+    const fx = await setupExpenseProject();
+    await rejectedExpense(fx, fx.lines.withVendor);
+    const pending = await approvedWithoutEvidenceBy(fx, fx.pm, fx.lines.split);
+    await linkCardUsage(fx.pm, fx.lines.noVendor);
+    await issueRevenue(fx.projectId);
+    const check = await getPreSettleCheck(fx.pm, fx.projectId);
+    expect(check.openExpenses.rows.map((row) => row.state)).toEqual(["rejected"]);
+    expect(check.evidencePending.rows.map((row) => row.number)).toEqual([pending.number]);
+    expect(check.blockedCount).toBe(1);
+    expect(check.blockReason).toBe("완료 전 점검 1건 · 점검 보기");
+  });
+
+  it("증빙 대기만 남은 정산 프로젝트 — 강행 꺼짐에서 기안이 거부 없이 올라가고 행동 로그 상세에 증빙 대기가 없다(가정 A-5)", async () => {
+    const { fx } = await evidencePendingProject(true);
+    const result = await submitSettlement(fx.pm, { projectId: fx.projectId });
+    expect(result).toMatchObject({ kind: "submitted" });
+    if (result.kind !== "submitted") throw new Error("기안 안 됨");
+    const [log] = await db.select().from(actionLog).where(and(eq(actionLog.documentId, result.documentId), eq(actionLog.actionType, "document_submit")));
+    // 강행 결과 줄이 없으면 기안 로그 상세에 점검 요약을 싣지 않는다 — 증빙 대기는 막힘이 아니라 강행 기록 대상도 아니다.
+    expect(log?.detail).toEqual({ kind: "settlement", round: 1 });
+    expect(JSON.stringify(log?.detail)).not.toContain("evidencePending");
+  });
+
+  it("증빙 대기만 남은 정산 — 대표 승인 재점검이 막지 않아 승인 → 프로젝트 completed", async () => {
+    const { fx, doc } = await draftedWithOpen({ noEvidence: true });
+    expect(await approveBlockedReason(fx.ceo, doc.documentId)).toBeNull();
+    const approved = await approveDocument(fx.ceo, { instanceId: doc.instanceId, expectedVersion: doc.version });
+    expect(approved.status).toBe("approved");
+    expect(await projectStatusOf(fx.projectId)).toBe("completed");
+  });
+
+  it("강행 꺼짐 · 증빙 대기 2건 → { blockedCount: 0, forcedResultLine: null }", async () => {
+    const fx = await setupExpenseProject();
+    await approvedWithoutEvidenceBy(fx, fx.pm, fx.lines.withVendor);
+    await approvedWithoutEvidenceBy(fx, fx.pm, fx.lines.split);
+    await linkCardUsage(fx.pm, fx.lines.noVendor);
+    await issueRevenue(fx.projectId);
+    await settle(fx.projectId);
+    await draftSettlement(fx);
+    expect(await getSettlementPreSettleSummary(fx.ceo, { projectId: fx.projectId })).toEqual({ blockedCount: 0, forcedResultLine: null });
+  });
+
+  it("범위가 좁은 기안자 A: 증빙 대기 행은 A 문서만 · 그 밖 1건 · count 2 · DTO 글자에 B 문서 번호 · id 없음 · 키 셋 고정", async () => {
+    const fx = await setupExpenseProject();
+    const a = await makeNarrowDrafter();
+    const mine = await approvedWithoutEvidenceBy(fx, a, fx.lines.withVendor);
+    const theirs = await approvedWithoutEvidenceBy(fx, fx.otherPm, fx.lines.split);
+    await linkCardUsage(fx.pm, fx.lines.noVendor);
+    await issueRevenue(fx.projectId);
+
+    const narrow = await getPreSettleCheck(a, fx.projectId);
+    expect(narrow.evidencePending.rows.map((row) => row.number)).toEqual([mine.number]);
+    expect(narrow.evidencePending.outOfScopeCount).toBe(1);
+    expect(narrow.evidencePending.count).toBe(2);
+    expect(narrow.blockedCount).toBe(0);
+    const text = JSON.stringify(narrow);
+    expect(text).not.toContain(theirs.number);
+    expect(text).not.toContain(theirs.expenseId);
+    expect(narrow.evidencePending.rows.every((row) => !("expenseAmountKrw" in row))).toBe(true);
+    expect(Object.keys(narrow.evidencePending).sort()).toEqual(["count", "outOfScopeCount", "rows"]);
+
+    const wide = await getPreSettleCheck(fx.ceo, fx.projectId);
+    expect(wide.evidencePending.rows).toHaveLength(2);
+    expect(wide.evidencePending.outOfScopeCount).toBe(0);
+    expect(wide.evidencePending.count).toBe(2);
   });
 });

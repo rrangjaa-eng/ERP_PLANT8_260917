@@ -851,15 +851,9 @@ test.describe("제자리 증빙 확인 · 보관 (06-17 Task 4)", () => {
     return { ...row, number: row.number, supplyAmountKrw: row.supplyAmountKrw };
   }
 
-  // 결재 통과 · 증빙 있음 · 확인 기록 없음(확인 전 P2). 증빙 금액은 픽스처가 문서 행에 직접 둔다(null이면 빈 금액 — R10-F2).
-  async function unreviewedTarget(fx: ExpenseE2E, key: LineKey, evidenceAmount: "supply" | number | null = "supply"): Promise<string> {
-    const id = await approvedTarget(fx, key, "unreviewed");
-    const doc = await docOf(id);
-    await db
-      .update(expenses)
-      .set({ evidenceAmount: evidenceAmount === "supply" ? doc.supplyAmountKrw : evidenceAmount })
-      .where(eq(expenses.id, id));
-    return id;
+  // 결재 통과 · 증빙 있음 · 확인 기록 없음(확인 전 P2).
+  async function unreviewedTarget(fx: ExpenseE2E, key: LineKey): Promise<string> {
+    return approvedTarget(fx, key, "unreviewed");
   }
 
   function transferTd(page: Page, itemName: string) {
@@ -1039,7 +1033,7 @@ test.describe("제자리 증빙 확인 · 보관 (06-17 Task 4)", () => {
   // 06-17 「증빙 금액 초과 표시(Q-F)」를 바꾼 사례 — 06.5 D-6520으로 넘침 줄이 없다(승인액 · 실행가를 넘는 증빙 금액이 남은 문서도).
   test("제자리 증빙 확인 — 넘침 줄 없음(06.5 D-6520): 승인액 12,000,000 · 실행가 12,250,000 · 증빙 금액 12,400,000 문서도 결과 줄은 계산 한 줄 하나 · 1차 `공급가액과 같음` → 확인됨", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
-    const over = await unreviewedTarget(fx, "tracer", 12_400_000);
+    const over = await unreviewedTarget(fx, "tracer");
     await db.update(expenses).set({ supplyAmountKrw: 12_000_000 }).where(eq(expenses.id, over));
     await db.update(quoteLines).set({ executionAmountKrw: 12_250_000 }).where(eq(quoteLines.id, fx.lines.tracer.id));
     const docOver = await docOf(over);
@@ -1096,7 +1090,7 @@ test.describe("제자리 증빙 확인 · 보관 (06-17 Task 4)", () => {
   // 06-17 「금액 빈 확인 전 → 문서 화면(R10-F2)」을 바꾼 사례 — 06.5 D-6520으로 빈 증빙 금액이 막지 않아 ≥1024는 모든 확인 전 행이 모달을 연다.
   test("금액 빈 확인 전도 모달(06.5 D-6520) — ≥1024 3차가 `role=dialog`를 연다(문서 화면 링크 0) / 800px은 3차가 문서 화면 링크", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
-    const empty = await unreviewedTarget(fx, "tracer", null);
+    const empty = await unreviewedTarget(fx, "tracer");
     const filled = await unreviewedTarget(fx, "hold");
     const [docEmpty, docFilled] = await Promise.all([docOf(empty), docOf(filled)]);
     const payer = await makeTeamPayer(fx);
@@ -1402,12 +1396,9 @@ async function numberOf(expenseId: string): Promise<{ number: string; supplyAmou
   return { number: row.number, supplyAmountKrw: row.supplyAmountKrw };
 }
 
-// 결재 통과 · 증빙 있음 · 확인 기록 없음(P2) — 증빙 금액 = 공급가(픽스처가 문서 행에 직접).
+// 결재 통과 · 증빙 있음 · 확인 기록 없음(P2).
 async function unreviewedDoc(fx: ExpenseE2E, key: LineKey): Promise<string> {
-  const id = await approvedTarget(fx, key, "unreviewed");
-  const { supplyAmountKrw } = await numberOf(id);
-  await db.update(expenses).set({ evidenceAmount: supplyAmountKrw }).where(eq(expenses.id, id));
-  return id;
+  return approvedTarget(fx, key, "unreviewed");
 }
 
 test.describe("문서 화면 왕복 (06-20 Task 3)", () => {

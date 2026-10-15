@@ -19,7 +19,6 @@ import { attachEvidence } from "../integration/fixtures/expenses";
 // 완료 프로젝트의 승인 문서에는 기안자에게 「하나 더」 대신 잠김 한 줄이 선다. 문서는 05 폼 · 04.1 승인 · 06-06 확인 도메인 함수로 만든다.
 
 const INFO_ITEMS = ["expense.value", "expense.amount", "approval.value", "project.value", "quote.amount", "vendor.value", "team.value", "person.value"];
-const EVIDENCE_AMOUNT = 12_400_000;
 const EVIDENCE_COMPLETED_PROJECT_LINE = "완료 프로젝트 · 증빙은 경영관리";
 
 // 테스트 계급 「경영관리」 — 전사 업무 범위 · 지출결의 보기 + 지급 처리 쓰기 (+ 선택으로 증빙 붙이기). 결재선 밖 전용 본부 · 팀에 발령한다.
@@ -59,8 +58,8 @@ test.describe("증빙 수명 주기 (06-11)", () => {
     const fx = await setupExpenseE2E();
     const expenseId = await submitLineExpense(browser, baseURL, fx, "tracer");
     await approveAll(fx, expenseId);
-    // 테스트 준비 전용 — 기안자 증빙 금액 입력(06-10)을 거치지 않고 금액을 적은 뒤 경영관리가 확인한다.
-    await db.update(expenses).set({ evidenceAmount: EVIDENCE_AMOUNT, evidenceDate: seoulToday() }).where(eq(expenses.id, expenseId));
+    // 테스트 준비 전용 — 기안자 증빙일 입력(06-10)을 거치지 않고 증빙일을 적은 뒤 경영관리가 확인한다.
+    await db.update(expenses).set({ evidenceDate: seoulToday() }).where(eq(expenses.id, expenseId));
     const manager = await makeManagerE2E();
     await confirmEvidence(manager.viewer, { expenseId, version: await versionOf(expenseId) });
 

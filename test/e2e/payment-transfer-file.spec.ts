@@ -42,13 +42,16 @@ async function teamOf(fx: ExpenseE2E): Promise<string> {
   return row.teamId;
 }
 
-// hidden — 끄는 정보 항목(버튼 게이트 확인용) · vendorsWrite — 거래처 관리 쓰기(막힌 줄 끝 링크).
+// hidden — 끄는 정보 항목(버튼 게이트 확인용) · vendorsWrite — 거래처 관리 보기 ∧ 쓰기(막힌 줄 끝 링크 — 보기 없으면 거래처 화면이 404라 링크도 없다).
 async function makeTransferPayer(fx: ExpenseE2E, opts: { hidden?: readonly string[]; vendorsWrite?: boolean } = {}): Promise<Person> {
   const role = await insertTempRole({ id: `role-${randomUUID()}`, name: `E2E이체파일-${randomUUID().slice(0, 8)}`, workScope: "team" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "view", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.team", action: "view", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.payments", action: "write", allowed: true });
-  if (opts.vendorsWrite) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "admin.vendors", action: "write", allowed: true });
+  if (opts.vendorsWrite) {
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "admin.vendors", action: "view", allowed: true });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "admin.vendors", action: "write", allowed: true });
+  }
   for (const infoItem of INFO_ITEMS) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: !opts.hidden?.includes(infoItem) });
   return makePerson("경영관리", role.id, await teamOf(fx), `${seoulToday().slice(0, 4)}-01-01`);
 }

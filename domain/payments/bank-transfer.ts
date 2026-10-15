@@ -87,8 +87,8 @@ const NO_ACCOUNT = "계좌 없음";
 
 type Passed = { row: BatchPaymentRow; payee: { kind: "vendor" | "user"; id: string }; number: string; transferKrw: number };
 
-// 계좌 칸 이유(V5 9~14) → 행 아래 줄. 거래처는 거래처 관리 쓰기가 있으면 고치러 가는 링크, 없으면 평문 담당(결정 맥락 10).
-// 직원은 8번(canManagePayoutAccount)을 지났으니 늘 링크다.
+// 계좌 칸 이유(V5 9~14) → 행 아래 줄. 거래처는 거래처 관리 쓰기 ∧ 보기가 있으면 고치러 가는 링크, 없으면 평문 담당(결정 맥락 10).
+// 직원은 8번(canManagePayoutAccount · admin.people 보기 포함 = 인물 상세 게이트)을 지났으니 늘 링크다.
 function accountBlocked(expenseId: string, payee: Passed["payee"], cause: string, fix: string, canEditVendors: boolean): BankTransferBlocked {
   if (payee.kind === "user") return { expenseId, text: cause, link: { label: fix, href: `/admin/people/${payee.id}?editAccount=1` } };
   if (!canEditVendors) return { expenseId, text: `${cause} · ${VENDOR_FIX_OWNER}`, link: null };
@@ -138,7 +138,13 @@ export async function exportBankTransferFile(
     rows.map((row) => row.expenseId),
     { shared, today },
   );
-  const [canEditVendors, canPersonAccounts] = await Promise.all([can(viewer, "admin.vendors", "write"), canManagePayoutAccount(viewer)]);
+  // 링크는 그 사람이 열 수 있는 화면으로만 — 거래처 화면은 보기가 없으면 404라 쓰기 ∧ 보기(검토 Q-1).
+  const [vendorsWrite, vendorsView, canPersonAccounts] = await Promise.all([
+    can(viewer, "admin.vendors", "write"),
+    can(viewer, "admin.vendors", "view"),
+    canManagePayoutAccount(viewer),
+  ]);
+  const canEditVendors = vendorsWrite && vendorsView;
 
   // 행 고유 이유(V5 1~8) — 위에서부터 첫 해당 하나. 범위 밖 id는 계좌를 읽기 전에 거른다(EP2-C4).
   const blocked: BankTransferBlocked[] = [];

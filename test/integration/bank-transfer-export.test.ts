@@ -225,6 +225,7 @@ describe("신한 이체 파일 — 막힌 건(06.5 Task 2)", () => {
     const payer = await makeExporter();
     if (!payer.roleId) throw new Error("계급 없음");
     await upsertPermission(SYSTEM_VIEWER, { roleId: payer.roleId, menu: "admin.vendors", action: "write", allowed: true });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: payer.roleId, menu: "admin.vendors", action: "view", allowed: true });
     const fx = await setupExpenseProject();
     const [ok, cash, card, noPayee, noAccount, badBank] = await docsFor(fx, 6);
     if (!ok || !cash || !card || !noPayee || !noAccount || !badBank) throw new Error("픽스처 모자람");
@@ -265,6 +266,7 @@ describe("신한 이체 파일 — 막힌 건(06.5 Task 2)", () => {
     const payer = await makeExporter();
     if (!payer.roleId) throw new Error("계급 없음");
     await upsertPermission(SYSTEM_VIEWER, { roleId: payer.roleId, menu: "admin.vendors", action: "write", allowed: true });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: payer.roleId, menu: "admin.vendors", action: "view", allowed: true });
     const fx = await setupExpenseProject();
     const docs = await docsFor(fx, 3);
     const [ok, emoji, broken] = [take(docs, 0), take(docs, 1), take(docs, 2)];
@@ -470,6 +472,18 @@ describe("신한 이체 파일 — 막힌 건(06.5 Task 2)", () => {
     const result = await exportBankTransferFile(payer, { rows: [await snapshotOf(payer, doc)] });
     expect(blockedOf(result, doc.expenseId)).toEqual({ expenseId: doc.expenseId, text: "계좌 없음 · 거래처 수정은 경영관리", link: null });
     expect(result.lineCount).toBe(0);
+  });
+
+  it("거래처 관리 쓰기만 있고 보기 없는 지급 권한자(검토 Q-1) — 거래처 화면이 404라 링크 없이 평문 담당", async () => {
+    const payer = await makeExporter();
+    if (!payer.roleId) throw new Error("계급 없음");
+    await upsertPermission(SYSTEM_VIEWER, { roleId: payer.roleId, menu: "admin.vendors", action: "write", allowed: true });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: payer.roleId, menu: "admin.vendors", action: "view", allowed: false });
+    const fx = await setupExpenseProject();
+    const doc = take(await docsFor(fx, 1), 0);
+    await setDoc(doc, { vendorId: await vendorWith(null) });
+    const result = await exportBankTransferFile(payer, { rows: [await snapshotOf(payer, doc)] });
+    expect(blockedOf(result, doc.expenseId)).toEqual({ expenseId: doc.expenseId, text: "계좌 없음 · 거래처 수정은 경영관리", link: null });
   });
 
   it("승인 뒤 견적 줄 거래처를 바꿔도 파일의 예금주 · 계좌는 문서 지급처의 것(결정 맥락 15)", async () => {

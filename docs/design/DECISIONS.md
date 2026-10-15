@@ -2095,3 +2095,17 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 **버린 대안**: 결과 줄로 소계를 무제한 더하기 — §7-17 「결과 줄 0~3」 위반 · 높이 상한 없음. 선택 막대에 소계 — UI-SPEC이 버린 안(R-3).
 **결정자**: 사용자 확정(2026-10-14 03:17 KST 카드 ① — 디자인 재검토 B-1) · 06.5-UI-SPEC(개정 5판)
 **범위**: SYSTEM.md §7-17. 구현 06.5-06(`ui/confirm-dialog/ConfirmDialog.tsx` 선택 prop · `ConfirmDialog.module.css` `data-ui="confirm-subtotals"`).
+
+## 2026-10-13 — Phase 06.5(06.5-10) ARCHITECTURE §5 예외: expenses.evidence_amount DROP (사용자 카드 D-6520 10/13 23:44 KST)
+
+**결정**: 06-27(0025)이 더한 `expenses.evidence_amount` 칸과 `expenses_evidence_amount_check` 제약을 마이그레이션 `0036_drop_expense_evidence_amount`가 지운다 — ARCHITECTURE §5 「확장 전용(DROP 없음)」의 두 번째 예외(첫째는 04-41 `projects.contract_*`). 칸을 읽고 쓰던 코드는 앞선 PR이 모두 놓았다(06.5-07 확인 = 공급가액 · 06.5-02 · 06.5-05 · 선행 PR #232 마지막 증빙 무효의 칸 쓰기). 값은 옮기지 않는다 — 확인 기록의 금액 전 · 후와 행동 기록 detail에 남아 있다. `ban-drop-column`은 `.squawk.toml`이 아니라 DROP 문장마다 인라인 무시 주석과 이유 한 줄로만 비켜 간다.
+
+**가드**: 사용자 결정 체크포인트 a(2026-10-15 「가드 둠」 · 제출된 문서만 — 추천 기본값). DROP 앞의 DO 블록이 `deleted_at IS NULL` · `closed_at IS NULL` · `number IS NOT NULL` · 살아 있는 지급 행(`expense_payments.cancelled_at IS NULL`) 없음 · `evidence_amount IS NOT NULL` · `evidence_amount IS DISTINCT FROM supply_amount_krw`인 지출결의를 세고, 한 건이라도 있으면 RAISE로 멈춘다 — 이번에 적용할 마이그레이션 전부가 한 트랜잭션이라 그 DB는 한 칸도 바뀌지 않는다(0015 선례). 번호 없는 작성 중 문서는 공급가가 빈 칸일 수 있고 지급에 쓰이지 않아 세지 않는다(A-P3-2). 스테이징 · 운영 수는 사용자가 따로 세지 않았다 — 배포 때 가드가 센다. 멈추면 경영관리가 증빙 확인(06.5-07)에서 공급가액을 맞추거나 「가드 없이」로 다시 정한 뒤 다시 배포한다.
+
+**배포 창**: migrate Job이 새 리비전보다 먼저 돌므로(`scripts/deploy.sh`) 새 리비전이 100%가 되기 전까지 직전 리비전의 지출결의 select(drizzle가 모든 칸을 부른다)가 없는 칸으로 오류를 낸다(T-06.5-86 · 04-50 T-04-372 선례) — 분 단위 창이라 사용 적은 시각에 승격한다. `lock_timeout = '1s'`로 `expenses` 락을 못 잡아 migrate Job이 실패하면 데이터는 바뀌지 않으므로 Job을 다시 실행한다.
+
+**하한**: 0036 첫 줄의 `-- rollback-floor:` 표시로 이 마이그레이션이 롤백 하한이 된다 — 06.5-10 이전 리비전(칸을 select하는 모든 리비전)으로의 트래픽 되돌림은 `scripts/rollback.sh`가 거부한다.
+
+**되돌리는 법(복구 절차)**: 전진 전용이다 — 되돌리는 마이그레이션 파일은 만들지 않는다. 하한 아래가 필요한 사고는 전진 수정이 먼저이고, 불가피하면 쓰기를 멈춘 상태에서 역 SQL — `ALTER TABLE "expenses" ADD COLUMN "evidence_amount" bigint` · `ADD CONSTRAINT "expenses_evidence_amount_check" CHECK ("evidence_amount" IS NULL OR "evidence_amount" >= 0)` — 을 적용한 뒤 사람이 트래픽을 옮긴다. 값은 돌아오지 않는다(공급가액이 정본 · D-6520).
+
+**범위**: `db/schema/expenses.ts` · `db/migrations/0036_drop_expense_evidence_amount.sql` · 배포 절차(PR-A2 사용자 머지). 이 항목은 SYSTEM.md를 바꾸지 않는다.

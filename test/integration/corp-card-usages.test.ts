@@ -1060,6 +1060,16 @@ describe("새 건 연결 기본값(M-4)", () => {
   });
 });
 
+describe("새 건 카드 기본값 순서(G-06-B · 사용자 카드 2026-10-06 20:42)", () => {
+  it("개인 카드 P와 오늘 소속 팀 카드 T가 활성 · 직전 없음 → 기본 카드 = P", async () => {
+    const team = await makeTeam();
+    const staff = await makePerson("박서연", DEFAULT_ROLE_ID, team.name);
+    const personalId = await makeCard({ kind: "personal", holderUserId: staff.id });
+    await makeCard({ kind: "team", teamId: team.id });
+    expect((await cardUsageFormDefaults(staff, seoulToday())).corpCardId).toBe(personalId);
+  });
+});
+
 describe("보관 건 제외(H-4)", () => {
   it("카드 사용 한 건만 이어진 줄에서 그 건을 보관 → findLineLinks 0건 · side expense 통과 · S10 2행 복귀", async () => {
     const fx = await cardProject();

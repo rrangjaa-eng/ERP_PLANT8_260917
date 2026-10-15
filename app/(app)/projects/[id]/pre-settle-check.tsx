@@ -23,6 +23,7 @@ import styles from "./project-detail.module.css";
 // 3차 접근 이름 앞에 보이는 행 식별자(`{번호} 지출결의 열기` · `{번호} {항목} 지출결의 올리기`, Copywriting — 검토 D-3).
 // 06-22: 매출 미입력 행의 3차(PS-3 — `발행 요청 추가` · `발행 줄 추가`, ≥1024만) · `고객 승인 전` 3차(PS-6)는
 // 견적 화면(QuoteLedger)이 컨텍스트로 넘긴 값 · 함수 그대로 쓰고(새 판정 · 새 줄 추가 함수 없음), 섹션 로드 오류는 같은 컴포넌트의 `check` null 갈래.
+// 06-36(G-06-E · 카드 ② 「경고만」): 결재 통과 · 증빙 없는 문서는 막는 그룹 뒤 `증빙 대기` 그룹(막힘 · `미결 없음` 판정 밖).
 // R-6: 미결 지출결의 행은 보는 사람의 범위 안 것만 오고 범위 밖은 그룹 끝 `그 밖 {N}건`(건수만). 금액 열은 서버가 금액 키를 실은 행이 있을 때만.
 
 export const PRE_SETTLE_CHECK_TITLE = "완료 전 점검";
@@ -51,12 +52,12 @@ function PhoneLine({ children }: { children: ReactNode }) {
   return children ? <div className={styles.preSettlePhoneLine}>{children}</div> : null;
 }
 
-function GroupHeading({ text, count, allowed }: { text: string; count?: string; allowed: boolean }) {
+function GroupHeading({ text, count, allowed, warning }: { text: string; count?: string; allowed: boolean; warning?: boolean }) {
   return (
     <h3 className={styles.preSettleGroup}>
       {text}
       {count ? " " : null}
-      {count ? <span className={allowed ? undefined : styles.preSettleBlocked}>{count}</span> : null}
+      {count ? <span className={warning ? styles.preSettleWarning : allowed ? undefined : styles.preSettleBlocked}>{count}</span> : null}
       {allowed ? <span className={styles.preSettleForced}> · 강행 허용</span> : null}
     </h3>
   );
@@ -251,6 +252,7 @@ export function PreSettleCheckSection({ check, ownerName }: { check: PreSettleCh
   const open = check.openExpenses;
   const unmatched = check.unmatchedLines;
   const missing = check.missingRevenue;
+  const pending = check.evidencePending;
   const empty = open.count === 0 && unmatched.count === 0 && missing.count === 0;
   // PS-3 — 매출 기록 권한이면 `발행 줄 추가`(발행 요청 권한도 있어도), 발행 요청 권한만이면 `발행 요청 추가`. 1024 미만은 둘 다 없다(사실만).
   const revenueDoor = !doors?.editableWidth
@@ -301,6 +303,21 @@ export function PreSettleCheckSection({ check, ownerName }: { check: PreSettleCh
                 </Button>
               ) : null}
             </p>
+          </>
+        ) : null}
+        {pending.count > 0 ? (
+          <>
+            <GroupHeading text="증빙 대기" count={`${pending.count}건`} allowed={false} warning />
+            {pending.rows.length > 0 ? (
+              <Table
+                caption="증빙 대기"
+                columns={expenseColumns(pending.rows.some((row) => "expenseAmountKrw" in row))}
+                rows={pending.rows}
+                getRowId={(row) => row.id}
+                rowLabel={(row) => row.number}
+              />
+            ) : null}
+            <OutOfScope count={pending.outOfScopeCount} />
           </>
         ) : null}
         <RevenueLine revenue={check.revenue} onPending={doors?.focusCustomerApproval ?? null} />

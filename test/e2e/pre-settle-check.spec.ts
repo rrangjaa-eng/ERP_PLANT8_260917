@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Browser, type Locator, type Page } from "@playwright/test";
+import { and, eq, isNull } from "drizzle-orm";
+import { db } from "@/db/client";
+import { files } from "@/db/schema";
+import { voidEvidence } from "@/domain/evidence";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { createProject } from "@/domain/projects";
 import { changeProjectStatus } from "@/domain/projects/status";
@@ -7,7 +11,7 @@ import { applyAutoSettlement } from "@/domain/projects/auto-transition";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { setCustomerApproval } from "@/domain/quotes/revisions";
 import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
-import { getApprovalView, rejectDocument } from "@/domain/approvals";
+import { approveDocument, getApprovalView, rejectDocument } from "@/domain/approvals";
 import { saveRevenue } from "@/domain/revenue";
 import { SETTLEMENT_DOCUMENT_KIND, submitSettlement } from "@/domain/settlements";
 import { setSettingValue } from "@/domain/settings/registry";
@@ -21,7 +25,7 @@ import { upsertSimpleValue } from "@/repositories/settings";
 import { insertVendor } from "@/repositories/vendors";
 import { seoulToday } from "@/lib/dates";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
-import { archiveTempRoles, insertTempRole, uniqueReceipt } from "./expense-fixture";
+import { archiveTempRoles, insertTempRole, makeEvidenceManagerE2E, uniqueReceipt } from "./expense-fixture";
 import { loginPage, makePerson, setupLeaveOrg, waitForHydration, type LeaveOrg } from "./leave-org";
 
 // 06-19(PROJ-06 · UI-SPEC S18): 정산 프로젝트 상세의 「완료 전 점검」 섹션과 머리 줄 `정산 결재 올리기` 막힘이 한 판정이다.
@@ -44,7 +48,33 @@ async function submitExpenseInBrowser(browser: Browser, baseURL: string | undefi
   return expenseId;
 }
 
+// 06-36(G-06-E): 제출 뒤 처리 — 반려, 또는 결재 통과 + 살아 있는 증빙 전부 무효(증빙 대기 = 결재 통과 · 증빙 없음).
+type SettlingOutcome = "rejected" | "evidencePending";
+
+async function approveAndVoidEvidence(org: LeaveOrg, expenseId: string): Promise<void> {
+  const view = await getApprovalView(org.teamLead.viewer, { kind: EXPENSE_DOCUMENT_KIND, documentId: expenseId });
+  if (!view) throw new Error("지출결의 결재 화면이 없습니다");
+  let version = view.version;
+  let status = "";
+  for (const approver of [org.teamLead, org.divisionHead, org.mgmt, org.ceo]) {
+    const result = await approveDocument(approver.viewer, { instanceId: view.instanceId, expectedVersion: version });
+    version = result.version;
+    status = result.status;
+  }
+  if (status !== "approved") throw new Error(`결재 통과 안 됨: ${status}`);
+  const voider = await makeEvidenceManagerE2E();
+  const alive = await db
+    .select({ id: files.id })
+    .from(files)
+    .where(and(eq(files.ownerKind, EXPENSE_DOCUMENT_KIND), eq(files.ownerId, expenseId), isNull(files.removedAt), isNull(files.voidedAt)));
+  for (const file of alive) await voidEvidence(voider.viewer, { fileId: file.id, reason: "다른 건 영수증" });
+}
+
 async function setupRejectedSettling(browser: Browser, baseURL: string | undefined): Promise<PreSettleE2E> {
+  return setupSettling(browser, baseURL, "rejected");
+}
+
+async function setupSettling(browser: Browser, baseURL: string | undefined, outcome: SettlingOutcome): Promise<PreSettleE2E> {
   const today = seoulToday();
   const lastYear = Number(today.slice(0, 4)) - 1;
   const suffix = randomUUID().slice(0, 6);
@@ -86,9 +116,13 @@ async function setupRejectedSettling(browser: Browser, baseURL: string | undefin
   });
 
   const expenseId = await submitExpenseInBrowser(browser, baseURL, org, lineId);
-  const view = await getApprovalView(org.teamLead.viewer, { kind: EXPENSE_DOCUMENT_KIND, documentId: expenseId });
-  if (!view) throw new Error("지출결의 결재 화면이 없습니다");
-  await rejectDocument(org.teamLead.viewer, { instanceId: view.instanceId, expectedVersion: view.version, reason: "금액 다시" });
+  if (outcome === "rejected") {
+    const view = await getApprovalView(org.teamLead.viewer, { kind: EXPENSE_DOCUMENT_KIND, documentId: expenseId });
+    if (!view) throw new Error("지출결의 결재 화면이 없습니다");
+    await rejectDocument(org.teamLead.viewer, { instanceId: view.instanceId, expectedVersion: view.version, reason: "금액 다시" });
+  } else {
+    await approveAndVoidEvidence(org, expenseId);
+  }
   // 종료일이 지난 진행 프로젝트는 지출결의 제출의 잠금 읽기에서 이미 정산이 됐을 수 있다 — 자동 정산 뒤 상태로 확인한다.
   await applyAutoSettlement({ projectIds: [project.id] });
   if ((await findProjectById(SYSTEM_VIEWER, project.id))?.status !== "settling") throw new Error("정산 상태가 아닙니다");
@@ -141,6 +175,50 @@ test.describe("완료 전 점검 — 정산 프로젝트 상세(S18)", () => {
     const open = itemCell.getByRole("link", { name: `${number} 지출결의 열기`, exact: true });
     await expect(open).toBeVisible();
     expect((await open.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+    expect(await sectionOverflow(section)).toBeLessThanOrEqual(0);
+  });
+});
+
+test.describe("완료 전 점검 — 증빙 대기(G-06-E · 카드 ② 「경고만」)", () => {
+  test("결재 통과 · 증빙 없음 1건만 → `미결 없음` + `증빙 대기 1건` · 행 `증빙 없음` · 3차 열기 · 기안 버튼 살아 있음", async ({ browser, baseURL }) => {
+    const fx = await setupSettling(browser, baseURL, "evidencePending");
+    const number = (await findExpenseById(SYSTEM_VIEWER, fx.expenseId))?.number;
+    if (!number) throw new Error("문서 번호가 없습니다");
+    const page = await loginPage(browser, baseURL, fx.org.drafter);
+    await page.goto(`/projects/${fx.projectId}`);
+
+    const heading = page.getByRole("heading", { name: "완료 전 점검", level: 2 });
+    await expect(heading).toBeVisible();
+    const section = page.locator("section").filter({ has: heading });
+    await expect(section.getByText("미결 없음", { exact: true })).toBeVisible();
+    await expect(section.getByRole("heading", { name: "증빙 대기 1건", level: 3 })).toBeVisible();
+    await expect(section.getByRole("heading", { name: /^미결 지출결의/ })).toHaveCount(0);
+    const row = section.getByRole("row").filter({ hasText: fx.itemName });
+    await expect(row.getByText("증빙 없음", { exact: true })).toBeVisible();
+    await expect(row.getByRole("link", { name: `${number} 지출결의 열기`, exact: true })).toBeVisible();
+
+    const submit = page.getByRole("button", { name: "정산 결재 올리기" });
+    await waitForHydration(submit);
+    await expect(submit).not.toHaveAttribute("aria-disabled", "true");
+    await expect(page.getByText(/^완료 전 점검 \d+건/)).toHaveCount(0);
+  });
+
+  test("폰 320 — 증빙 대기 행의 `지출결의 열기`가 항목 셀 2행 · 높이 44 이상 · 섹션 가로 넘침 없음 · 머리글 `증빙 대기 1건`", async ({ browser, baseURL }) => {
+    const fx = await setupSettling(browser, baseURL, "evidencePending");
+    const number = (await findExpenseById(SYSTEM_VIEWER, fx.expenseId))?.number;
+    if (!number) throw new Error("문서 번호가 없습니다");
+    const page = await loginPage(browser, baseURL, fx.org.drafter, { width: 320, height: 800 });
+    await page.goto(`/projects/${fx.projectId}`);
+
+    const heading = page.getByRole("heading", { name: "완료 전 점검", level: 2 });
+    const section = page.locator("section").filter({ has: heading });
+    await expect(section.getByRole("heading", { name: "증빙 대기 1건", level: 3 })).toBeVisible();
+    const itemCell = section.getByRole("row").filter({ hasText: fx.itemName }).getByRole("cell").filter({ hasText: fx.itemName });
+    const open = itemCell.getByRole("link", { name: `${number} 지출결의 열기`, exact: true });
+    await expect(open).toBeVisible();
+    expect((await open.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+    const [itemBox, openBox] = [await itemCell.locator("span").first().boundingBox(), await open.boundingBox()];
+    expect((openBox?.y ?? 0) >= (itemBox?.y ?? Number.POSITIVE_INFINITY) + (itemBox?.height ?? 0) - 1, "3차가 항목 이름 아래 줄").toBe(true);
     expect(await sectionOverflow(section)).toBeLessThanOrEqual(0);
   });
 });

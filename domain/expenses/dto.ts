@@ -292,6 +292,8 @@ export type PaymentTargetRowDto = {
   quoteLineId: string | null;
   // 06-20(O-17) — 지급 권한자의 계좌이체 행에만 있는 키(domain/payments projectPaymentAccounts).
   account?: PaymentAccount;
+  // 06.5-06(결정 맥락 11): 오늘(KST) 이체 파일에 담긴 가장 늦은 시각 HH:mm — 이체 파일 게이트를 가진 사람에게만, 아니면 null.
+  transferFileAt: string | null;
 };
 
 export const PAYMENT_TARGET_ROW_DTO_SPEC: DtoSpec<PaymentTargetRowDto, PaymentTargetRowDto> = {
@@ -312,6 +314,7 @@ export const PAYMENT_TARGET_ROW_DTO_SPEC: DtoSpec<PaymentTargetRowDto, PaymentTa
     { key: "prepaid", from: "prepaid", infoItem: "expense.value" },
     { key: "quoteLineId", from: "quoteLineId", infoItem: "expense.value" },
     { key: "account", from: "account", infoItem: "vendor.value" },
+    { key: "transferFileAt", from: "transferFileAt", infoItem: "expense.value" },
   ],
 };
 

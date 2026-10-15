@@ -78,6 +78,36 @@ describe("Table selection — 선택 열 마크업", () => {
     expect(html).not.toContain("selectedRow");
   });
 
+  // 06.5-06(SP-65-5 ①): 막힘 줄 끝 링크 · 정보 줄 — 한 행 아래 줄은 하나(막힘 > 정보), 서 있는 줄 id를 체크박스가 가리킨다.
+  it("blockedLink가 링크를 주면 막힘 줄 끝에 새 탭 링크 a가 하나 선다", () => {
+    const html = render(selectionOf({ selectedIds: [], blockedLink: (row) => (row.blocked ? { label: "계좌 고치기", href: "/admin/vendors?editId=v1", newTab: true } : null) }));
+    const anchors = html.match(/<a [^>]*>계좌 고치기<\/a>/g) ?? [];
+    expect(anchors).toHaveLength(1);
+    expect(anchors[0]).toContain('target="_blank"');
+    expect(anchors[0]).toContain('rel="noopener"');
+    expect(anchors[0]).toContain('href="/admin/vendors?editId=v1"');
+    expect(html).toMatch(/selectBlocked[^>]*>계좌 오류 · <a /);
+  });
+
+  it("막힘이 없고 noteReason이 글자를 주면 정보 줄 하나 · 체크박스 aria-describedby가 그 줄을 가리킨다", () => {
+    const html = render(selectionOf({ selectedIds: [], noteReason: (row) => (row.id === "a" ? "14:05 이체 파일에 담김" : null) }));
+    const a = checkboxes(html).find((box) => box.includes('aria-label="가 줄 고르기"'))!;
+    const ids = /aria-describedby="([^"]+)"/.exec(a)?.[1]?.split(" ") ?? [];
+    expect(ids).toHaveLength(1);
+    expect(html).toMatch(new RegExp(`id="${ids[0]}"[^>]*>14:05 이체 파일에 담김<`));
+    expect(html.match(/14:05 이체 파일에 담김/g)).toHaveLength(1);
+  });
+
+  it("막힘과 정보 줄이 둘 다 있으면 막힘 줄만 선다", () => {
+    const html = render(selectionOf({ selectedIds: [], noteReason: () => "14:05 이체 파일에 담김" }));
+    const c = checkboxes(html).find((box) => box.includes('aria-label="다 줄 고르기"'))!;
+    const ids = /aria-describedby="([^"]+)"/.exec(c)?.[1]?.split(" ") ?? [];
+    expect(ids).toHaveLength(1);
+    expect(html).toMatch(new RegExp(`id="${ids[0]}"[^>]*>계좌 오류<|class="[^"]*selectBlocked[^"]*"[^>]*id="${ids[0]}"[^>]*>계좌 오류<`));
+    // 가(고를 수 있음) · 다(막힘) 중 정보 줄은 가에만 — 다에는 서지 않는다.
+    expect(html.match(/14:05 이체 파일에 담김/g)).toHaveLength(1);
+  });
+
   it("선택 때문에 어떤 tr · td에도 aria-selected=true가 붙지 않는다(DR-7)", () => {
     const html = render(selectionOf({ selectedIds: ["a", "c"] }));
     expect(html).not.toContain('aria-selected="true"');

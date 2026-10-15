@@ -85,6 +85,35 @@ export async function findLatestActionFor(
   return row ?? null;
 }
 
+// 06.5-06(결정 맥락 11 · DM-5): 이체 파일 기록(excel_export · bank_transfer) 중 since 이후 · 주어진 문서 id를 하나라도 품은 줄 —
+// 지급 대상 행의 「{HH:mm} 이체 파일에 담김」. 값은 파라미터로만 간다(jsonb `?|`는 글자 배열 매개변수). 시각 · 문서 id 배열만 돌려준다.
+export async function findTransferFileTimes(
+  viewer: Viewer,
+  input: { expenseIds: readonly string[]; since: Date },
+): Promise<{ occurredAt: Date; expenseIds: string[] }[]> {
+  void viewer;
+  if (input.expenseIds.length === 0) return [];
+  const ids = sql.join(
+    input.expenseIds.map((id) => sql`${id}`),
+    sql`, `,
+  );
+  const rows = await db
+    .select({ occurredAt: actionLog.occurredAt, expenseIds: sql<unknown>`${actionLog.detail} -> 'expenseIds'` })
+    .from(actionLog)
+    .where(
+      and(
+        eq(actionLog.actionType, "excel_export"),
+        eq(actionLog.entity, "bank_transfer"),
+        gte(actionLog.occurredAt, input.since),
+        sql`(${actionLog.detail} -> 'expenseIds') ?| array[${ids}]::text[]`,
+      ),
+    );
+  return rows.map((row) => ({
+    occurredAt: row.occurredAt,
+    expenseIds: Array.isArray(row.expenseIds) ? row.expenseIds.filter((id): id is string => typeof id === "string") : [],
+  }));
+}
+
 // 06.2-05 검토 반영(I-1): 한 (프로젝트, 사람)의 마지막 참여자 변경 로그 — detail의 added 배열 · removed · restored 중 그 사람이 든 줄.
 // 되돌리기 판정 근거(같은 tx에 끌 수 없게 남는 로그). 정렬은 findLatestActionFor와 같다. 값은 파라미터로만 간다.
 export async function findLatestMemberChangeFor(

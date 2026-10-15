@@ -66,7 +66,16 @@ import styles from "./expenses.module.css";
 
 export type PaymentTargetScreenRow = Partial<PaymentTargetRowDto> & { id: string; group: string; groupTone?: "warning" };
 
-type Blocked = { reason: string; selectable: boolean; selectableReason: string | null; newPayableKrw: number | null; row: PaymentTargetScreenRow; index: number };
+// 06.5-06: 이체 파일 막힘도 같은 맵 · 같은 줄 자리 — 끝 링크(link)가 있고, 지급 게이트가 아니라 selectable은 참이다(UI-SPEC V5 「막힌 건」).
+type Blocked = {
+  reason: string;
+  selectable: boolean;
+  selectableReason: string | null;
+  newPayableKrw: number | null;
+  row: PaymentTargetScreenRow;
+  index: number;
+  link?: { label: string; href: string } | null;
+};
 
 type ResultLine = { time: string; processed: number; blocked: number };
 
@@ -641,7 +650,18 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
         return;
       }
       if (data.lineCount > 0) downloadBase64(data.base64, data.filename);
+      // 막힌 건은 지급 막힘과 같은 맵 · 같은 행 아래 줄(지금 쪽 행만) — 선택은 풀지 않는다(파일 제외 사유일 뿐 지급 게이트가 아니다).
+      const nextBlocked = new Map<string, Blocked>();
+      for (const item of data.blocked) {
+        const index = rows.findIndex((row) => row.id === item.expenseId);
+        const row = rows[index];
+        if (!row) continue;
+        nextBlocked.set(item.expenseId, { reason: item.text, selectable: true, selectableReason: null, newPayableKrw: null, row, index, link: item.link });
+      }
+      setBlocked(nextBlocked);
       setTransferResult({ time: data.time, lineCount: data.lineCount, docCount: data.docCount, blocked: data.blocked.length });
+      // 담김 줄(transferFileAt)은 서버 기록에서 온다 — 목록을 다시 받는다.
+      if (data.lineCount > 0) router.refresh();
     },
     onError: () => setTransferFailed(true),
   });
@@ -665,6 +685,7 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
         : [],
     );
     if (sent.length === 0) return;
+    setBlocked(new Map());
     setResult(null);
     setTransferResult(null);
     setTransferFailed(false);
@@ -999,6 +1020,12 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
                       // 선택 칸 이유와 같은 글자면 한 번만(같은 말을 두 자리에 쓰지 않는다).
                       return gateReason !== true && gateReason.reason === after.reason ? null : after.reason;
                     },
+                    // 06.5-06(SP-65-5 ①): 이체 파일 막힘의 고치러 가는 길 — 새 탭(선택 · 편집 · 결과 글자를 지킨다).
+                    blockedLink: (row: PaymentTargetScreenRow) => {
+                      const link = blocked.get(row.id)?.link;
+                      return link ? { ...link, newTab: true } : null;
+                    },
+                    noteReason: (row: PaymentTargetScreenRow) => (row.transferFileAt ? `${row.transferFileAt} 이체 파일에 담김` : null),
                     onPrimary: openDialog,
                   },
                 }

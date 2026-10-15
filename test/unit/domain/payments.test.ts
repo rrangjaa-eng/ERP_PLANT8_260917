@@ -9,6 +9,7 @@ import {
   DiffReasonRequiredError,
   decidePayable,
   judgeLockedPayment,
+  judgeTransferAmount,
   PayableChangedError,
   pickPaymentAmount,
   type LockedExpense,
@@ -17,7 +18,7 @@ import {
   type PaymentInputs,
   type PaymentShared,
 } from "@/domain/payments";
-import { AMOUNT_HIDDEN } from "@/domain/payments/action-row";
+import { AMOUNT_HIDDEN, TRANSFER_FRACTION } from "@/domain/payments/action-row";
 import { ACTION_TYPE_LABELS, ALWAYS_ON_ACTION_TYPES, CORE_ACTION_TYPES } from "@/domain/action-log/record";
 import { ACTION_LOG_OPTIONAL_TYPES } from "@/domain/settings/keys";
 import { approvalGateDecision, evidenceGateDecision, pairGateDecision, resolveExpenseActionRow, scheduleDirtyBar, type EvidenceGateInput } from "@/domain/payments/action-row";
@@ -596,5 +597,24 @@ describe("지급 취소 행동 종류 (06-04 Task 3 · C16 · CF-9)", () => {
     expect(ACTION_LOG_OPTIONAL_TYPES.default).not.toContain("payment_cancel");
     // 사용자 결정 2026-10-09 「읽을 때 빼기」 — 끌 수 없는 종류는 거부 대신 빼고 받는다(선택지에 남지 않는다).
     expect(ACTION_LOG_OPTIONAL_TYPES.schema.parse(["payment_cancel"])).toEqual([]);
+  });
+});
+
+// 06.5-06(EP2-C5): 이체액 · 차이 사유 판정 — 단건 · 일괄 지급(judgeLockedPayment)과 이체 파일이 같은 순수 함수를 쓴다(문구 · 저장 값 불변).
+describe("judgeTransferAmount (06.5 EP2-C5)", () => {
+  it("편집 이체액이 지급 총액과 다르고 사유가 비었거나 공백뿐이면 차이 사유 문구", () => {
+    expect(judgeTransferAmount({ payableKrw: 100_000, transferKrw: 90_000, diffReason: "" })).toEqual({ ok: false, reason: DIFF_REASON_REQUIRED });
+    expect(judgeTransferAmount({ payableKrw: 100_000, transferKrw: 90_000, diffReason: "  " })).toEqual({ ok: false, reason: DIFF_REASON_REQUIRED });
+    expect(new DiffReasonRequiredError().message).toBe(DIFF_REASON_REQUIRED);
+  });
+
+  it("사유가 있으면 편집액을 보내고 사유는 다듬어 남긴다 · 이체액이 없으면 지급 총액 · 차이 0이면 사유 null", () => {
+    expect(judgeTransferAmount({ payableKrw: 100_000, transferKrw: 90_000, diffReason: " 수수료 " })).toEqual({ ok: true, transferKrwToSend: 90_000, diffReason: "수수료" });
+    expect(judgeTransferAmount({ payableKrw: 100_000 })).toEqual({ ok: true, transferKrwToSend: 100_000, diffReason: null });
+    expect(judgeTransferAmount({ payableKrw: 100_000, transferKrw: 100_000, diffReason: "남은 글" })).toEqual({ ok: true, transferKrwToSend: 100_000, diffReason: null });
+  });
+
+  it("소수 이체액은 기존 이체액 칸 문구", () => {
+    expect(judgeTransferAmount({ payableKrw: 100_000, transferKrw: 1.5, diffReason: "x" })).toEqual({ ok: false, reason: TRANSFER_FRACTION });
   });
 });

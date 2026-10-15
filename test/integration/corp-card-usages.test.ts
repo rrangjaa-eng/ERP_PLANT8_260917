@@ -8,7 +8,7 @@ import { createOrgUnit, createTeam } from "@/domain/org";
 import { and, eq } from "drizzle-orm";
 import { Client } from "pg";
 import { db, pool } from "@/db/client";
-import { corpCardUsages, expenses, projects, purchaseRequests, quoteLines, vendors } from "@/db/schema";
+import { corpCards, corpCardUsages, expenses, projects, purchaseRequests, quoteLines, vendors } from "@/db/schema";
 import { gate, GateBlockedError } from "@/domain/rules/gate";
 import { createProject, CompletedProjectError } from "@/domain/projects";
 import { ProjectNotFoundError } from "@/domain/projects/status";
@@ -1067,6 +1067,43 @@ describe("새 건 카드 기본값 순서(G-06-B · 사용자 카드 2026-10-06 
     const personalId = await makeCard({ kind: "personal", holderUserId: staff.id });
     await makeCard({ kind: "team", teamId: team.id });
     expect((await cardUsageFormDefaults(staff, seoulToday())).corpCardId).toBe(personalId);
+  });
+
+  it("팀 카드 T로 한 번 등록한 뒤 → 기본 카드 = T(직전 우선)", async () => {
+    const team = await makeTeam();
+    const staff = await makePerson("박서연", DEFAULT_ROLE_ID, team.name);
+    await makeCard({ kind: "personal", holderUserId: staff.id });
+    const teamCardId = await makeCard({ kind: "team", teamId: team.id });
+    await createCardUsage(staff, usageInput(teamCardId), await precheckCardUsage(staff, usageInput(teamCardId)));
+    expect((await cardUsageFormDefaults(staff, seoulToday())).corpCardId).toBe(teamCardId);
+  });
+
+  it("직전 T가 비활성 → 옵션 밖이라 건너뛰고 기본 카드 = P", async () => {
+    const team = await makeTeam();
+    const staff = await makePerson("박서연", DEFAULT_ROLE_ID, team.name);
+    const personalId = await makeCard({ kind: "personal", holderUserId: staff.id });
+    const teamCardId = await makeCard({ kind: "team", teamId: team.id });
+    await createCardUsage(staff, usageInput(teamCardId), await precheckCardUsage(staff, usageInput(teamCardId)));
+    await db.update(corpCards).set({ active: false }).where(eq(corpCards.id, teamCardId));
+    expect((await cardUsageFormDefaults(staff, seoulToday())).corpCardId).toBe(personalId);
+  });
+
+  it("대리 등록 권한자 · 팀 B 카드 TB 한 장 + 남의 개인 카드 Q · 직전 없음 → 기본 카드 = TB", async () => {
+    const teamB = await makeTeam();
+    const proxy = await makeProxyRegistrant(teamB.name);
+    const other = await makePerson("남", DEFAULT_ROLE_ID, null);
+    const teamCardId = await makeCard({ kind: "team", teamId: teamB.id });
+    await makeCard({ kind: "personal", holderUserId: other.id });
+    expect((await cardUsageFormDefaults(proxy, seoulToday())).corpCardId).toBe(teamCardId);
+  });
+
+  it("본인 개인 카드 P1 · P2와 팀 카드 T → 기본 카드 비움(G-06-B · A-1)", async () => {
+    const team = await makeTeam();
+    const staff = await makePerson("박서연", DEFAULT_ROLE_ID, team.name);
+    await makeCard({ kind: "personal", holderUserId: staff.id });
+    await makeCard({ kind: "personal", holderUserId: staff.id });
+    await makeCard({ kind: "team", teamId: team.id });
+    expect((await cardUsageFormDefaults(staff, seoulToday())).corpCardId).toBeNull();
   });
 });
 

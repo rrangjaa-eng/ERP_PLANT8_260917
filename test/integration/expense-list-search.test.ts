@@ -114,6 +114,16 @@ describe("지출결의 목록 검색(06.5 D-6508)", () => {
     expect(one.page.total).toBe(1);
   }, 60_000);
 
+  it("내용(content)은 팀 비용 행에서만 찾는다 — 프로젝트 지출결의의 내용은 목록에 안 보이므로 걸리지 않는다(/review P3-1)", async () => {
+    const w = await world();
+    const viewer = await searcher({ value: true, amount: true, person: true });
+    const term = `숨은내용-${randomUUID().slice(0, 8)}`;
+    await db.update(expenses).set({ content: term }).where(eq(expenses.id, w.line.expenseId));
+    expect(ids(await search(viewer, term))).toEqual([]);
+    await db.update(expenses).set({ content: term }).where(eq(expenses.id, w.vendorDoc.expenseId));
+    expect(ids(await search(viewer, term))).toEqual([w.vendorDoc.expenseId]);
+  }, 60_000);
+
   it("보는 범위 밖 문서는 번호를 정확히 넣어도 0건이다(T-06.5-61)", async () => {
     const w = await world();
     const vendor = await insertVendor(SYSTEM_VIEWER, { name: "타팀거래처", normalizedName: `타팀-${randomUUID()}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount() });

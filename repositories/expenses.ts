@@ -588,7 +588,8 @@ export function expenseSearchCondition(viewer: Viewer, query: string, fields: re
   const like = `%${query}%`;
   const parts: Record<ExpenseSearchField, SQL> = {
     number: sql`${expenses.number} ilike ${like}`,
-    content: sql`${expenses.content} ilike ${like}`,
+    // 내용은 팀 비용 행(프로젝트 · 견적 줄 없음)에서만 화면에 보인다 — 보이는 글자만 찾는다(/review P3-1).
+    content: sql`(${expenses.projectId} is null and ${expenses.quoteLineId} is null and ${expenses.content} ilike ${like})`,
     projectName: sql`exists (select 1 from projects sp where sp.id = ${expenses.projectId} and sp.name ilike ${like})`,
     lineItem: sql`exists (select 1 from quote_lines sl where sl.id = ${expenses.quoteLineId} and sl.item_name ilike ${like})`,
     vendorName: sql`exists (select 1 from vendors sv where sv.id = ${expenses.vendorId} and sv.name ilike ${like})`,

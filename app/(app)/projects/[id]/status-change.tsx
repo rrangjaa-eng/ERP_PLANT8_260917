@@ -49,7 +49,7 @@ const REVERT_LABEL = "진행으로 되돌리기";
 const END_PASSED_LINE = "종료일 지남 · 바로 정산";
 
 function approvalLine(props: StatusChangeProps): string[] {
-  return props.currentRevisionApproved ? [] : [`${props.currentRevisionSeq}차 고객 승인 전 · 진행부터 지출결의 멈춤`];
+  return props.currentRevisionApproved ? [] : [`${props.currentRevisionSeq}차 고객 승인 전 · 진행부터 지출결의 · 구매 요청 멈춤`];
 }
 
 // UI-SPEC rev 5 Copywriting 「확인 — 진행으로 바꾸기 · 진행으로 되돌리기」 — 해당하는 것만, 최대 셋.

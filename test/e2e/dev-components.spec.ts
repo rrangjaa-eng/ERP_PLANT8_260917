@@ -188,7 +188,8 @@ test.describe("로그인한 뒤", () => {
     await bodyRows.first().locator("td").nth(1).click();
     await page.keyboard.press("Control+Enter");
     await expect(sample.getByText("계좌 오류")).toBeVisible();
-    await expect(bodyRows).toHaveCount(3);
+    // 막힌 행 아래 이유 줄(06.5-06 W-2)도 tbody의 tr이라 체크 칸이 있는 주 행만 센다.
+    await expect(table.locator('tbody tr:has(input[type="checkbox"])')).toHaveCount(3);
     await expect(table.locator('tbody input[type="checkbox"]:checked')).toHaveCount(0);
     await expect(primary).toHaveAttribute("aria-disabled", "true");
     await expect(sample).toContainText("고른 건 없음");

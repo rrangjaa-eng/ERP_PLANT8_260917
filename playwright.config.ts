@@ -17,7 +17,9 @@ process.env.APP_ENV ??= "local";
 // (10/60초, lib/env.ts)이 전체 스위트를 자체적으로 막는다 — webServer는 process.env를
 // 그대로 물려받으므로 여기 값만 올리고 webServer.env 블록은 건드리지 않는다(acceptance:
 // 그 블록은 변경 전과 동일해야 한다).
-process.env.RATE_LIMIT_LOGIN_MAX ??= "1000";
+// better-auth 1.7.5 DB 저장소의 창은 「마지막 요청 뒤 60초 무요청」일 때만 초기화된다 — 쉼 없이 로그인하는
+// 샤드 전체가 한 카운터를 나눠 써서 1000을 넘기면 끝 무렵 로그인이 429(화면엔 일반 오류 문구)로 떨어진다.
+process.env.RATE_LIMIT_LOGIN_MAX ??= "100000";
 // 규약 C4(04.3-02) — 확인증 E2E는 webServer가 물려받는 이 값으로 기능
 // 게이트를 켠다(설정 cert.enabled는 cert.setup.ts가 켠다).
 process.env.CERT_FEATURE_ALLOWED ??= "true";

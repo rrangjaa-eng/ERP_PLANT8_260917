@@ -1235,8 +1235,10 @@ export function QuoteLedger({
     const door = lineDoors.showColumn && lineId ? lineDoors.cells[lineId] : undefined;
     if (!lineId || !door || door.state === "none") return undefined;
     if (door.branch === "purchase") {
-      // 06-35(G-06-D · 카드 ① 「구매 요청만」): 구매 요청 문도 표 전체 게이트(고객 승인 전 · 완료)를 따른다
-      if (lineDoors.tableGateReason) return <p className={styles.doorNote}>{lineDoors.tableGateReason}</p>;
+      // 06-35(G-06-D · 카드 ① 「구매 요청만」): 구매 요청 문도 표 전체 게이트(고객 승인 전 · 완료)를 따른다. 완료의 이유는 지출결의 문구가 아니라 견적 줄 잠김(서버 구매 거절과 같은 말)이다
+      if (lineDoors.tableGateReason) {
+        return <p className={styles.doorNote}>{status === "completed" && lockReason ? lockReason : lineDoors.tableGateReason}</p>;
+      }
       return door.blocked ? (
         <div className={styles.sheetDoor}>
           <Button variant="tertiary" disabled disabledReason={door.blocked.reason}>

@@ -239,6 +239,22 @@ test.describe("구매 요청 신청 (06-08)", () => {
     await page.context().close();
   });
 
+  test("[G-06-D 폰] 완료 프로젝트 — 375 행 시트의 구매 요청 자리는 `완료 · 견적 줄 잠김`(지출결의 이유 아님)", async ({ browser, baseURL }) => {
+    const requester = await makeRequester();
+    const target = await seedTarget(requester);
+    await db.update(projects).set({ status: "completed" }).where(eq(projects.id, target.projectId));
+    const page = await loginPage(browser, baseURL, requester.person, { width: 375, height: 800 });
+    await page.goto(`/projects/${target.projectId}`);
+    const tap = page.getByRole("button", { name: `${target.onlineItem} 상세 보기` });
+    await waitForHydration(tap);
+    await tap.click();
+    const sheet = page.getByRole("dialog", { name: target.onlineItem });
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByText("완료 · 견적 줄 잠김", { exact: true })).toBeVisible();
+    await expect(sheet.getByText("새 지출결의 없음")).toHaveCount(0);
+    await page.context().close();
+  });
+
   test("[Empty] 전체 0건 → `구매 요청이 없습니다` + `구매 요청` / 신청됨 0건(취소만 있음) → `신청한 구매 요청이 없습니다` + `구매 요청`", async ({ browser, baseURL }) => {
     const requester = await makeRequester();
     const page = await loginPage(browser, baseURL, requester.person);

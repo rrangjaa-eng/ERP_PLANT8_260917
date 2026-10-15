@@ -10,7 +10,7 @@ import { insertRole } from "@/repositories/roles";
 import { upsertPermission } from "@/repositories/permissions";
 import { insertVendor } from "@/repositories/vendors";
 import { seoulToday } from "@/lib/dates";
-import { submitReadyDraft } from "../integration/fixtures/expenses";
+import { submitReadyDraft, testVendorAccount } from "../integration/fixtures/expenses";
 import { loginPage, makePerson, setupLeaveOrg, waitForHydration } from "./leave-org";
 import { setupExpenseE2E, type ExpenseE2E } from "./expense-fixture";
 
@@ -22,7 +22,7 @@ async function submittedTeamCost(viewer: Viewer, content: string): Promise<strin
 }
 
 async function submitTeamCost(viewer: Viewer, content: string) {
-  const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E목록거래처-${randomUUID().slice(0, 6)}`, normalizedName: `e2e목록-${randomUUID()}`, defaultEvidenceType: "tax_invoice" });
+  const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E목록거래처-${randomUUID().slice(0, 6)}`, normalizedName: `e2e목록-${randomUUID()}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount() });
   const { expenseId } = await createTeamExpenseDraft(viewer, { idempotencyKey: randomUUID(), fields: { teamExpenseKind: "team_overhead", usageDate: seoulToday(), content } });
   const payment = (await listExpenseFormOptions(viewer)).payment[0]?.value ?? null;
   await saveExpenseDraft(viewer, {
@@ -182,12 +182,12 @@ test.describe("보기 · 빈 상태 · 폭", () => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto("/expenses");
     await expect(page.locator("main table a[data-row-link]").first()).toBeVisible();
-    expect(await visibleHeaders()).toEqual(["번호", "프로젝트 · 항목", "거래처", "금액", "지급 예정", "기안", "상태"]);
+    expect(await visibleHeaders()).toEqual(["번호", "프로젝트 · 항목", "지급처", "금액", "지급 예정", "기안", "상태"]);
     await page.setViewportSize({ width: 1100, height: 900 });
-    await expect.poll(visibleHeaders).toEqual(["프로젝트 · 항목", "거래처", "금액", "지급 예정", "상태"]);
+    await expect.poll(visibleHeaders).toEqual(["프로젝트 · 항목", "지급처", "금액", "지급 예정", "상태"]);
     expect(await noOverflow()).toBe(true);
     await page.setViewportSize({ width: 800, height: 900 });
-    await expect.poll(visibleHeaders).toEqual(["프로젝트 · 항목", "거래처", "금액", "지급 예정", "상태"]);
+    await expect.poll(visibleHeaders).toEqual(["프로젝트 · 항목", "지급처", "금액", "지급 예정", "상태"]);
     expect(await noOverflow()).toBe(true);
     await page.context().close();
   });

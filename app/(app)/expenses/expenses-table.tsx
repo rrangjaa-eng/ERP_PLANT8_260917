@@ -46,8 +46,9 @@ export function ExpensesTable({ rows, drafterColumn, amountColumn }: { rows: Exp
       key: "vendor",
       header: EXPENSE_COLUMN_LABELS.vendor,
       priority: "p2",
-      cell: (row) => <span className={styles.vendorCell}>{row.vendorName ?? "—"}</span>,
-      summary: (row) => row.vendorName ?? "—",
+      // 06.5 V12: 지급처 열은 이름만(거래처 → 직원) — 구별은 문서에서.
+      cell: (row) => <span className={styles.vendorCell}>{row.vendorName ?? row.payeeUserName ?? "—"}</span>,
+      summary: (row) => row.vendorName ?? row.payeeUserName ?? "—",
     },
     ...(amountColumn
       ? [

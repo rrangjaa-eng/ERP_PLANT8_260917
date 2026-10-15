@@ -30,6 +30,13 @@ export async function insertPurchaseRequest(viewer: Viewer, values: PurchaseRequ
   return row;
 }
 
+// 06.5 D-6509: 중복 방지 키로 찾기 — 취소 행 포함(유일 색인이 모든 행을 덮는다). 같은 행위자인지는 domain이 가른다.
+export async function findPurchaseRequestByIdempotencyKey(viewer: Viewer, key: string, tx: DbOrTx = db): Promise<PurchaseRequestRow | null> {
+  void viewer;
+  const [row] = await tx.select().from(purchaseRequests).where(eq(purchaseRequests.idempotencyKey, key)).limit(1);
+  return row ?? null;
+}
+
 export type LockedLineFacts = { projectNumber: string; vendorName: string | null };
 
 // 잠근 줄의 프로젝트 번호 · 거래처 이름 — 번호 매기기와 문 판정이 잠근 뒤 같은 tx로 읽는다.

@@ -280,6 +280,24 @@ test.describe("법인카드 옆 패널 (04.6-15)", () => {
     }
   });
 
+  // 06.5 OI-9 · SP-65-3: 주소로 직접 연 수정 패널은 연 요소가 없다 — 저장 뒤 포커스가 화면 제목이 아니라 그 행 「수정」(재현 2026-10-14).
+  test("`?editId=`를 주소로 직접 열어 저장하면 닫히며 그 행의 「수정」으로 포커스가 간다(06.5 OI-9)", async ({ page }) => {
+    const card = await seedOwnedCard("딥링크");
+    try {
+      await loginAsSysadmin(page);
+      await page.goto(`/admin/corp-cards?editId=${card.id}`);
+      const dialog = page.locator(PANEL);
+      await expect(dialog).toBeVisible();
+      await dialog.getByLabel("종류").selectOption("team");
+      await dialog.getByLabel("팀").selectOption({ index: 1 });
+      await dialog.getByRole("button", { name: "소유자 변경" }).click();
+      await expect(dialog).toHaveCount(0);
+      await expect(page.locator("tr", { hasText: card.label }).getByRole("link", { name: "수정" })).toBeFocused();
+    } finally {
+      await card.cleanup();
+    }
+  });
+
   test("칸을 바꾼 채 Esc는 「입력 버리기」 확인 창이고 칸을 비운 채면 바로 닫힌다(DR1 A)", async ({ page }) => {
     await loginAsSysadmin(page);
     await page.goto("/admin/corp-cards?new=1");

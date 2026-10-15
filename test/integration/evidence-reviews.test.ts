@@ -6,12 +6,12 @@ import { db, pool } from "@/db/client";
 import { actionLog, corpCardUsages, corpCards, expenseEvidenceReviews, expenses, files, quoteLines } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertVisibility } from "@/repositories/permissions";
-import { completeExpensePayment, getPaymentView, loadEvidenceOverrun, previewPayable } from "@/domain/payments";
+import { completeExpensePayment, getPaymentView, previewPayable, supplyCorrectionCap } from "@/domain/payments";
 import { confirmEvidence, EvidenceReviewConflictError, SupplyCorrectionCapError } from "@/domain/evidence-reviews";
 import { approveDocument } from "@/domain/approvals";
 import { createExpenseFromLines, createTeamExpenseDraft, ExpenseFieldError, listExpenseFormOptions, saveExpenseDraft } from "@/domain/expenses";
 import { queryActionLog } from "@/domain/action-log";
-import { moneyToColumns } from "@/domain/money";
+import { moneyFromRow, moneyToColumns } from "@/domain/money";
 import { insertVendor } from "@/repositories/vendors";
 import { voidEvidence } from "@/domain/evidence";
 import { GateBlockedError } from "@/domain/rules/gate";
@@ -21,7 +21,7 @@ import { ForbiddenError } from "@/domain/permissions/can";
 import { seoulToday } from "@/lib/dates";
 import { confirmEvidenceAction } from "@/app/(app)/expenses/[id]/actions";
 import { deferred, waitForLockWaiter, type Deferred } from "./lock-race";
-import { addApprovedRevision, attachEvidence, makeEvidenceManager, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
+import { addApprovedRevision, attachEvidence, makeEvidenceManager, setupExpenseProject, submitReadyDraft, type ExpenseFixture, testVendorAccount } from "./fixtures/expenses";
 import { approvedExpenseWithEvidence, makePaymentManager, setEvidenceRequired, type ApprovedExpense } from "./fixtures/payments";
 
 // 06-06(EVID-02 · EVID-03 · D-601 · D-602 · O-2) — 경영관리의 증빙 확인(S4). 확인 기록(06-27 expense_evidence_reviews) · 금액 고쳐 확인 ·
@@ -443,6 +443,11 @@ async function expenseOf(expenseId: string) {
   return row;
 }
 
+async function capOf(viewer: Viewer, expenseId: string, correctedKrw: number) {
+  const cap = await supplyCorrectionCap(viewer, await expenseOf(expenseId), moneyFromRow({ currency: "KRW", foreignAmount: null, fxRate: "1", amountKrw: correctedKrw }));
+  return cap ? { remainingKrw: cap.remaining.amountKrw, exceeds: cap.exceeds } : null;
+}
+
 async function approvedInstallment(fx: ExpenseFixture, lineId: string, supplyKrw: number): Promise<string> {
   const created = await createExpenseFromLines(fx.pm, { lineIds: [lineId] });
   const expenseId = created.created[0]?.expenseId;
@@ -486,7 +491,7 @@ describe("공급가액 고침 상한(06.5 D-6520 — 제출 상한과 같은 판
     expect((await docRow(doc.expenseId)).supplyAmountKrw).toBe(12_250_000);
   });
 
-  it("Q-F 계보 — 앞 차수 줄의 문서 · 카드 사용도 남은 실행가에서 빠진다", async () => {
+  it("Q-F 계보 — 앞 차수 줄의 문서 · 카드 사용도 고침 상한의 남은 실행가에서 빠진다", async () => {
     const payer = await makePayer();
     const fx = await setupExpenseProject();
     const docA = await approvedInstallment(fx, fx.lines.split, 5_000_000);
@@ -495,8 +500,9 @@ describe("공급가액 고침 상한(06.5 D-6520 — 제출 상한과 같은 판
     await setExecution(lineL2, 13_000_000);
     const docB = await approvedInstallment(fx, lineL2, 7_600_000);
 
-    expect(await loadEvidenceOverrun(payer, await expenseOf(docB), 8_100_000)).toBe("승인액보다 +500,000 · 실행가 초과 100,000");
-    expect(await loadEvidenceOverrun(payer, await expenseOf(docA), 5_400_000)).toBe("승인액보다 +400,000");
+    // D-6520 — 증빙 금액 넘침 한 줄은 지웠다. 같은 계보 셈은 공급가액 고침 상한이 쓴다(남은 실행가 = 줄 실행가 − 사슬의 다른 문서).
+    expect(await capOf(payer, docB, 8_100_000)).toEqual({ remainingKrw: 8_000_000, exceeds: true });
+    expect(await capOf(payer, docA, 5_400_000)).toEqual({ remainingKrw: 5_400_000, exceeds: false });
 
     const [card] = await db
       .insert(corpCards)
@@ -518,12 +524,12 @@ describe("공급가액 고침 상한(06.5 D-6520 — 제출 상한과 같은 판
       ...(archived ? { archivedAt: new Date(), archivedBy: fx.pm.id } : {}),
     });
     await db.insert(corpCardUsages).values([usage(300_000, false), usage(1_000_000, true)]);
-    expect(await loadEvidenceOverrun(payer, await expenseOf(docB), 8_100_000)).toBe("승인액보다 +500,000 · 실행가 초과 400,000");
+    expect(await capOf(payer, docB, 8_100_000)).toEqual({ remainingKrw: 7_700_000, exceeds: true });
   });
 });
 
 async function approvedTeamExpense(fx: ExpenseFixture, supply: { currency: "KRW" | "USD"; amount: number; fxRate: number }): Promise<{ expenseId: string; version: number }> {
-  const vendor = await insertVendor(SYSTEM_VIEWER, { name: "회식집", normalizedName: `회식집-${randomUUID()}`, defaultEvidenceType: "tax_invoice" });
+  const vendor = await insertVendor(SYSTEM_VIEWER, { name: "회식집", normalizedName: `회식집-${randomUUID()}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount() });
   const { expenseId } = await createTeamExpenseDraft(fx.lead, { idempotencyKey: randomUUID(), fields: { teamExpenseKind: "team_overhead", usageDate: "2026-09-26", content: "팀 회식" } });
   const payment = (await listExpenseFormOptions(fx.lead)).payment[0]?.value ?? null;
   await saveExpenseDraft(fx.lead, {

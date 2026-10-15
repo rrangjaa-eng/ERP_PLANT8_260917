@@ -57,6 +57,7 @@ import { clampPage, LIST_PAGE_SIZE, pageCountFrom } from "@/lib/paging";
 import { seoulToday } from "@/lib/dates";
 import { withTransaction } from "@/lib/db-transaction";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
+import { isUniqueViolation } from "@/lib/pg-errors";
 import { findExpenseApprovalStatuses } from "@/repositories/expenses";
 import { findProjectById, findProjectInScope } from "@/repositories/projects";
 import { projectRowScope } from "@/domain/projects/visibility";
@@ -71,6 +72,8 @@ import type { DbOrTx } from "@/repositories/document-counters";
 import {
   findPurchaseRequestById,
   insertPurchaseRequest,
+  findPurchaseRequestByIdempotencyKey,
+  type PurchaseRequestRow,
   listPurchaseRequestEstimates,
   listPurchaseRequestRows,
   lockPurchaseRequestForUpdate,
@@ -113,6 +116,8 @@ type PurchaseRequestFields = {
   linkUrl: string | null;
   estimate: MoneyInput;
   memo: string | null;
+  /** 06.5 D-6509 중복 방지 키(등록 화면이 성공마다 새로 만든다) — 없으면 매번 새 행(도메인 직접 호출). */
+  idempotencyKey?: string;
 };
 export type PurchaseRequestInput =
   | (PurchaseRequestFields & { linkKind: "quote_line"; lineId: string })
@@ -255,13 +260,27 @@ export async function previewPurchaseSupply(
 
 export type CreatedPurchaseRequest = { id: string; number: string };
 
+// 06.5 D-6509(CSO-4 · 183-cso.md:43-48): 두 번 누름 · 재전송이 요청을 두 번 만들지 않게(새 동작 — 옛 구매 요청에는 키가 없었다).
+// 같은 행위자(요청자)만 재사용 — 남의 키로 남의 행을 읽지 못하게(없는 건과 같은 거부). 같은 키 다른 내용은 첫 행(지출결의 선례 — 미결 EP3-B5 기본값).
+function reusedRequest(viewer: Viewer, row: PurchaseRequestRow | null): CreatedPurchaseRequest | null {
+  if (!row) return null;
+  if (row.requestedBy !== viewer.id) throw new PurchaseRequestRejectedError(REQUEST_MISSING);
+  return { id: row.id, number: row.number };
+}
+
+// 액션이 사전 판정보다 먼저 부른다(트랜잭션 밖) — 재전송이 사전 판정을 다시 돌지 않는다.
+export async function reusablePurchaseRequest(viewer: Viewer, idempotencyKey: string): Promise<CreatedPurchaseRequest | null> {
+  return reusedRequest(viewer, await findPurchaseRequestByIdempotencyKey(viewer, idempotencyKey));
+}
+
 export async function createPurchaseRequest(
   viewer: Viewer,
   input: PurchaseRequestInput,
   pre: PurchaseRequestPre,
   tx?: DbOrTx,
 ): Promise<CreatedPurchaseRequest> {
-  const runCreate = async (inner: DbOrTx) => {
+  const key = input.idempotencyKey;
+  const runCreate = async (inner: DbOrTx): Promise<CreatedPurchaseRequest> => {
     if (pre.linkKind === "team_cost") {
       // 팀 비용 — 잠금 · 게이트 없이 번호 → INSERT → 같은 tx 로그. 순서는 06-03 규약(번호는 INSERT와 같은 tx — 실패하면 함께 되돌아 결번이 없다).
       const numbered = await allocateDocumentNumber(viewer, { counterKey: TEAM_COUNTER_KEY, year: pre.year, format: pre.numberFormat }, inner);
@@ -281,6 +300,7 @@ export async function createPurchaseRequest(
           estimateFxRate: teamMoney.fxRate,
           estimateAmountKrw: teamMoney.amountKrw,
           memo: input.memo,
+          idempotencyKey: key ?? null,
         },
         inner,
       );
@@ -295,6 +315,9 @@ export async function createPurchaseRequest(
     if (!locked || locked.lineKind === "adjustment" || locked.lineStatus === "cancelled" || locked.archivedAt || locked.revisionId !== pre.revisionId) {
       throw new ForbiddenError(LINK_MISSING);
     }
+    // 경합 패자는 잠금 뒤 여기서 승자 행을 받는다 — 상한 게이트가 승자 몫까지 세어 거부하기 전에(EP2-B2).
+    const replay = key ? reusedRequest(viewer, await findPurchaseRequestByIdempotencyKey(viewer, key, inner)) : null;
+    if (replay) return replay;
     const facts = await readLockedLineFacts(viewer, input.lineId, inner);
     if (!facts) throw new ForbiddenError(LINK_MISSING);
     const links = await findLineLinks(viewer, [input.lineId], inner);
@@ -333,13 +356,22 @@ export async function createPurchaseRequest(
         estimateFxRate: money.fxRate,
         estimateAmountKrw: money.amountKrw,
         memo: input.memo,
+        idempotencyKey: key ?? null,
       },
       inner,
     );
     await recordAction(viewer, { actionType: "document_create", entity: PURCHASE_REQUEST_ENTITY, entityId: row.id }, { tx: inner });
     return { id: row.id, number: row.number };
   };
-  return tx ? await runCreate(tx) : await withTransaction(runCreate);
+  if (tx) return runCreate(tx);
+  try {
+    return await withTransaction(runCreate);
+  } catch (error) {
+    // onConflictDoNothing을 쓰지 않는다 — 같은 트랜잭션에서 올린 번호 카운터가 행 없이 커밋돼 빈 번호가 생긴다. 유일 색인 위반은 통째로 되돌아가고 승자 행을 읽는다.
+    const winner = key && isUniqueViolation(error, "purchase_requests_idempotency_key_uniq") ? reusedRequest(viewer, await findPurchaseRequestByIdempotencyKey(viewer, key)) : null;
+    if (winner) return winner;
+    throw error;
+  }
 }
 
 // ── 구매 완료(06-12 — EXP-10 · OPS-09 · R-3 · N-3 · Q-E) ─────────────────────

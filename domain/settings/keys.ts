@@ -78,16 +78,6 @@ export const TAX_VAT_RATE: SettingDef<number> = {
   default: 0.1,
 };
 
-export const TAX_WITHHOLDING_OTHER_INCOME_RATE: SettingDef<number> = {
-  key: "tax.withholding.other_income.rate",
-  kind: "historized",
-  schema: z.coerce.number().min(0).max(1).refine(atMostFourDecimals, RATE_PRECISION_MESSAGE),
-  label: "기타소득 원천징수율",
-  hint: "기타소득 지급액에서 이 비율만큼 원천징수합니다.",
-  namespace: "세율",
-  default: 0.088,
-};
-
 export const TAX_WITHHOLDING_BUSINESS_INCOME_RATE: SettingDef<number> = {
   key: "tax.withholding.business_income.rate",
   kind: "historized",
@@ -96,16 +86,6 @@ export const TAX_WITHHOLDING_BUSINESS_INCOME_RATE: SettingDef<number> = {
   hint: "사업소득 지급액에서 이 비율만큼 원천징수합니다.",
   namespace: "세율",
   default: 0.033,
-};
-
-export const TAX_WITHHOLDING_OTHER_INCOME_EXEMPT_THRESHOLD: SettingDef<number> = {
-  key: "tax.withholding.other_income.exempt_threshold",
-  kind: "historized",
-  schema: z.coerce.number().int().min(0),
-  label: "기타소득 원천징수 면제 기준(지급액)",
-  hint: "지급액이 이 금액 이하이면 원천징수하지 않습니다.",
-  namespace: "세율",
-  default: 125000,
 };
 
 export const TAX_COMPANY_BORNE_RATE: SettingDef<number> = {
@@ -132,6 +112,22 @@ export const TAX_COMPANY_BORNE_METHOD: SettingDef<TaxCompanyBorneMethod> = {
   namespace: "세율",
   default: "gross_up",
 };
+
+// 06.5 D-6501 · 카드 ① · 카드 ⓪(사용자 카드 10/13 23:29 · 23:30 KST): 경품 기타소득 과세최저한 — 시가 5만원 이하 면제(프로젝트 지침 §7 ·
+// REPORT.md §9 D1), 시가 = 세전 금액(공급가 ÷ (1 − 세율), 옛 O: server/src/withholding.ts:194-206과 같다), 한 사람 몫(UI-SPEC V15).
+export const TAX_COMPANY_BORNE_EXEMPT_THRESHOLD: SettingDef<number> = {
+  key: "tax.company_borne.exempt_threshold",
+  kind: "historized",
+  schema: z.coerce.number().int().min(0),
+  label: "회사 대납 면제 기준(1인 세전 금액)",
+  hint: "1인 몫 세전 금액이 이 금액 이하면 대납 세금을 붙이지 않습니다.",
+  namespace: "세율",
+  default: 50000,
+};
+
+// 06.5 D-6501에서 지운 키 — 옛 설정 내보내기 파일을 가져올 때 막지 않고 건너뛴다. DB에 남은 이력 행은 화면 · 내보내기가
+// SETTING_DEFS만 돌아 읽히지 않는다.
+export const RETIRED_SETTING_KEYS: readonly string[] = ["tax.withholding.other_income.rate", "tax.withholding.other_income.exempt_threshold"];
 
 // 규칙 종류별 적용 기준일(Eng OV-5) — 이 설정은 "어느 날짜 필드를 기준으로
 // 삼는지"만 담고, 미지급 시 지급 예정일로 넘어가는 등의 대체 규칙은 Phase 4의
@@ -474,11 +470,10 @@ export const SETTING_DEFS: SettingDef<unknown>[] = [
   AUTH_LOCKOUT_WINDOW_MINUTES,
   ACTION_LOG_OPTIONAL_TYPES,
   TAX_VAT_RATE,
-  TAX_WITHHOLDING_OTHER_INCOME_RATE,
   TAX_WITHHOLDING_BUSINESS_INCOME_RATE,
-  TAX_WITHHOLDING_OTHER_INCOME_EXEMPT_THRESHOLD,
   TAX_COMPANY_BORNE_RATE,
   TAX_COMPANY_BORNE_METHOD,
+  TAX_COMPANY_BORNE_EXEMPT_THRESHOLD,
   TAX_BASIS_DATE_WITHHOLDING,
   TAX_BASIS_DATE_VAT,
   TAX_ROUNDING_VAT_UNIT,

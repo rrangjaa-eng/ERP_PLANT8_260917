@@ -124,8 +124,12 @@ export function PurchaseRequestForm({ entry, team, usdFxRate }: { entry: Purchas
     window.setTimeout(() => document.getElementById(focusId)?.focus(), 0);
   }, [linkProject, linkLine]);
 
+  // 06.5 D-6509 · EP1-8: 등록 중복 방지 키 — 성공마다 새로 만든다(등록 패널은 성공해도 닫히지 않아 같은 키면 다음 건이 첫 행으로 돌아온다).
+  // 실패 · 거부 때는 그대로 둔다(재시도 · 두 번 누름이 같은 키로 한 건).
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const { execute, result, isExecuting, reset } = useAction(createPurchaseRequestAction, {
     onSuccess: ({ data }) => {
+      setIdempotencyKey(crypto.randomUUID());
       // 줄 · 입력은 건마다 다르다 — 진입 줄이면 남고, 고른 줄이면 프로젝트는 남고 줄은 빈다(카드 패널 M-4와 같은 꼴). 연결 종류 · 통화는 이어 입력하기 좋게 둔다.
       setLinkLine(null);
       setItemName("");
@@ -221,6 +225,7 @@ export function PurchaseRequestForm({ entry, team, usdFxRate }: { entry: Purchas
       amount: Number(amountRaw),
       ...(currency !== "KRW" && fxValue ? { fxRate: fxValue } : {}),
       memo: typeof memo === "string" && memo.trim() !== "" ? memo.trim() : null,
+      idempotencyKey,
     };
     execute(teamMode ? { linkKind: "team_cost", ...fields } : { linkKind: "quote_line", lineId: line?.id ?? "", ...fields });
   }

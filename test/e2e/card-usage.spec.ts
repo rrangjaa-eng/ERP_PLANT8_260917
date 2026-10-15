@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { actionLog, quoteLines } from "@/db/schema";
+import { actionLog, corpCardUsages, quoteLines } from "@/db/schema";
 import { createCorpCard } from "@/domain/corp-cards";
 import { createCardUsage, precheckCardUsage } from "@/domain/corp-card-usages";
 import { searchLinesForCardLink } from "@/domain/corp-card-usages/link-targets";
@@ -212,6 +212,106 @@ test.describe("법인카드 사용 등록 (06-05)", () => {
     await amount.fill("1000");
     await expect(sheet.getByText("연결 없음 · 연결 고르기", { exact: true })).toBeVisible();
     await expect(sheet.getByRole("button", { name: /^카드 사용 등록/ })).toBeDisabled();
+    await page.context().close();
+  });
+
+  test("[06.5 D-6503 트레이서] 새 프로젝트 줄에 등록 → `/cards` 첫 머리글 `번호` · 그 행 첫 칸 `{프로젝트 번호}-K0001`", async ({ browser, baseURL }) => {
+    const holder = await makeCardHolder();
+    const target = await seedProjectLine(holder);
+    const page = await loginPage(browser, baseURL, holder.person);
+    await page.goto(`/cards?new=1&line=${target.lineId}`);
+    const sheet = panel(page);
+    const amount = sheet.getByLabel("결제 합계");
+    await waitForHydration(amount);
+    await expect(sheet.getByText(target.itemName, { exact: true })).toBeVisible();
+    await amount.fill("1100000");
+    await amount.press("Control+Enter");
+    await expect(sheet.getByRole("status")).toHaveText("카드 사용 등록됨 · 1,100,000");
+
+    await page.goto("/cards");
+    const table = page.getByRole("table");
+    await expect(table.locator("thead th").first()).toHaveText("번호");
+    const row = table.getByRole("row").filter({ hasText: "1,100,000" });
+    await expect(row.locator("td").first()).toHaveText(`${target.projectNumber}-K0001`);
+    await page.context().close();
+  });
+
+  test("[06.5 V7] 폰 375 — 권리 없는 행 RowSheet 첫 행 `번호` · 번호 없는 기존 행은 `—`", async ({ browser, baseURL }) => {
+    const holder = await makeCardHolder();
+    const other = await makePerson("대리", DEFAULT_ROLE_ID, holder.teamId, `${seoulToday().slice(0, 4)}-01-01`);
+    const numbered = `가맹번호-${randomUUID().slice(0, 6)}`;
+    const legacy = `가맹옛행-${randomUUID().slice(0, 6)}`;
+    const number = `26T-K${randomUUID().slice(0, 6)}`;
+    // 남이 등록(권리 없음)한 내 카드 행 둘 — 하나는 번호, 하나는 번호 없는 기존 행.
+    for (const [merchantName, value] of [
+      [numbered, number],
+      [legacy, null],
+    ] as const) {
+      const vendor = await insertVendor(SYSTEM_VIEWER, { name: merchantName, normalizedName: `${merchantName}-${randomUUID()}` });
+      await db.insert(corpCardUsages).values({
+        number: value,
+        corpCardId: holder.cardIds[0] ?? "",
+        usedOn: seoulToday(),
+        merchantVendorId: vendor.id,
+        totalCurrency: "KRW",
+        totalForeignAmount: null,
+        totalFxRate: "1",
+        totalAmountKrw: 30_000,
+        supplyKrw: 30_000,
+        vatKrw: 0,
+        evidenceTypeCode: "invoice",
+        linkKind: "team_cost",
+        quoteLineId: null,
+        teamId: holder.teamId,
+        usedByUserId: holder.person.viewer.id,
+        registeredBy: other.viewer.id,
+        registeredVia: "proxy",
+        memo: null,
+      });
+    }
+    const page = await loginPage(browser, baseURL, holder.person);
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto("/cards");
+    for (const [merchantName, value] of [
+      [numbered, number],
+      [legacy, "—"],
+    ] as const) {
+      const tap = page.getByRole("row").filter({ hasText: merchantName }).getByRole("button", { name: /상세 보기$/ });
+      await waitForHydration(tap);
+      await tap.click();
+      const rowSheet = page.getByRole("dialog").filter({ hasText: merchantName });
+      await expect(rowSheet).toBeVisible();
+      await expect(rowSheet.locator("dt").first()).toHaveText("번호");
+      await expect(rowSheet.locator("dd").first()).toHaveText(value);
+      await rowSheet.getByRole("button", { name: "닫기" }).click();
+      await expect(rowSheet).toBeHidden();
+    }
+    await page.context().close();
+  });
+
+  test("[06.5 V7] 1280 — 수정 패널 맨 위 읽기 칸 `번호`(입력 아님 · 그대로 닫으면 입력 버리기 없음) · 등록 패널에는 `번호` 없음", async ({ browser, baseURL }) => {
+    const holder = await makeCardHolder();
+    const target = await seedProjectLine(holder);
+    await seedLineUsage(holder.person.viewer, holder.cardIds[0] ?? "", target.lineId, 50_000);
+    const page = await loginPage(browser, baseURL, holder.person);
+    await page.goto("/cards");
+    const edit = page.getByRole("link", { name: / 수정$/ }).first();
+    await waitForHydration(edit);
+    await edit.click();
+    const sheet = page.getByRole("dialog", { name: "카드 사용 수정" });
+    await expect(sheet).toBeVisible();
+    const first = sheet.locator('[data-ui="field-row"]').first();
+    await expect(first).toContainText("번호");
+    await expect(first).toContainText(`${target.projectNumber}-K0001`);
+    await expect(first.locator("input, select, textarea")).toHaveCount(0);
+    await waitForHydration(sheet.getByLabel("결제 합계"));
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog", { name: "입력 버리기" })).toHaveCount(0);
+    await expect(sheet).toBeHidden();
+
+    await page.goto("/cards?new=1");
+    await waitForHydration(panel(page).getByLabel("결제 합계"));
+    await expect(panel(page).getByText("번호", { exact: true })).toHaveCount(0);
     await page.context().close();
   });
 
@@ -700,3 +800,91 @@ test.describe("프로젝트 상세 「법인카드 사용」 (06-07 S15)", () =>
   });
 });
 
+
+// 06.5 D-6512 L-1 · SP-65-3(UI-SPEC V9): 주소로 직접 연 수정 패널을 저장해 닫으면 포커스가 그 행 `수정` 링크로(행이 필터 밖이면 화면 제목).
+async function onlyUsageId(holder: CardHolder): Promise<string> {
+  const [row] = await db.select({ id: corpCardUsages.id }).from(corpCardUsages).where(eq(corpCardUsages.registeredBy, holder.person.viewer.id));
+  if (!row) throw new Error("카드 사용이 없습니다");
+  return row.id;
+}
+
+async function saveEditPanel(page: Page, amount: string): Promise<void> {
+  const sheet = page.getByRole("dialog", { name: "카드 사용 수정" });
+  const total = sheet.getByLabel("결제 합계");
+  await waitForHydration(total);
+  await total.fill(amount);
+  await total.press("Control+Enter");
+  await expect(sheet).toHaveCount(0);
+}
+
+test.describe("카드 사용 수정 딥링크 저장 뒤 포커스 (06.5 V9 L-1)", () => {
+  test("`/cards?editId=` 주소로 열어 저장 → 포커스 = 그 행 `수정` 링크 · 목록 `수정`으로 연 경우도 그 링크(기존 경로)", async ({ browser, baseURL }) => {
+    const holder = await makeCardHolder();
+    await seedUsage(holder, 30_000);
+    const id = await onlyUsageId(holder);
+    const page = await loginPage(browser, baseURL, holder.person);
+    await page.goto(`/cards?editId=${id}`);
+    await saveEditPanel(page, "31000");
+    const rowEdit = page.getByRole("link", { name: `${seoulToday().slice(5)} 수정` });
+    await expect(rowEdit).toBeFocused();
+
+    await rowEdit.click();
+    await saveEditPanel(page, "32000");
+    await expect(page.getByRole("link", { name: `${seoulToday().slice(5)} 수정` })).toBeFocused();
+    await page.context().close();
+  });
+
+  // PR-C DOM 감사 F1: 바로 앞 기록이 같은 목록 URL이지만 다른 문서(같은 탭에서 다시 연 주소 · 새로 고침)면 뒤로 가기가 문서를 건너가 포커스가 body에 남았다.
+  test("바로 앞 기록이 같은 목록의 다른 문서(다시 연 주소 · 새로 고침)여도 저장 → 포커스 = 그 행 `수정` 링크", async ({ browser, baseURL }) => {
+    const holder = await makeCardHolder();
+    await seedUsage(holder, 30_000);
+    const id = await onlyUsageId(holder);
+    const page = await loginPage(browser, baseURL, holder.person);
+    const rowEdit = page.getByRole("link", { name: `${seoulToday().slice(5)} 수정` });
+    await page.goto("/cards");
+    await page.goto(`/cards?editId=${id}`);
+    await saveEditPanel(page, "31000");
+    await expect(rowEdit).toBeFocused();
+    await expect(page).toHaveURL(/\/cards$/);
+
+    await rowEdit.click();
+    await expect(page.getByRole("dialog", { name: "카드 사용 수정" })).toBeVisible();
+    await page.reload();
+    await saveEditPanel(page, "32000");
+    await expect(rowEdit).toBeFocused();
+    await page.context().close();
+  });
+
+  test("그 행이 지금 필터 밖(지난달)인 주소로 열어 저장 → 포커스 = 화면 제목", async ({ browser, baseURL }) => {
+    const holder = await makeCardHolder();
+    await seedUsage(holder, 30_000);
+    const id = await onlyUsageId(holder);
+    const page = await loginPage(browser, baseURL, holder.person);
+    await page.goto(`/cards?month=${previousMonth()}&editId=${id}`);
+    await saveEditPanel(page, "31000");
+    await expect(page.locator('[data-ui="screen-title"]')).toBeFocused();
+    await page.context().close();
+  });
+});
+
+// 06.5 D-6509 · EP1-8: 등록 패널은 성공해도 닫히지 않는다 — 같은 패널에서 이은 두 번째 건이 첫 건으로 돌아오지 않는다(성공마다 새 키).
+test("[06.5 D-6509] 같은 등록 패널에서 두 건 연이어 → 행 둘 · 번호 둘(K 겹침 없음)", async ({ browser, baseURL }) => {
+  const holder = await makeCardHolder();
+  const page = await loginPage(browser, baseURL, holder.person);
+  await page.goto("/cards?new=1");
+  const sheet = panel(page);
+  const amount = sheet.getByLabel("결제 합계");
+  await waitForHydration(amount);
+  for (const [value, shown] of [["11000", "11,000"], ["22000", "22,000"]] as const) {
+    await sheet.getByLabel("결제 합계").fill(value);
+    await sheet.getByRole("radio", { name: "팀 비용" }).check();
+    await sheet.getByLabel("결제 합계").press("Control+Enter");
+    await expect(sheet.getByRole("status")).toHaveText(`카드 사용 등록됨 · ${shown}`);
+  }
+  const rows = await db.select({ number: corpCardUsages.number }).from(corpCardUsages).where(eq(corpCardUsages.registeredBy, holder.person.viewer.id));
+  expect(rows).toHaveLength(2);
+  const numbers = rows.map((row) => row.number ?? "");
+  expect(new Set(numbers).size).toBe(2);
+  for (const number of numbers) expect(number).toMatch(/^\d{2}T-K\d{4}$/);
+  await page.context().close();
+});

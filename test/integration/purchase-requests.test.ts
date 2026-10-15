@@ -1316,6 +1316,7 @@ describe("팀 비용 요청(06-14 — EXP-10 · O-19)", () => {
     const other = await teamCostRequester();
     session.viewer = requester.viewer;
     const outcome = await createPurchaseRequestAction({
+      idempotencyKey: randomUUID(),
       linkKind: "team_cost",
       itemName: "팀 비품",
       linkUrl: null,
@@ -1390,7 +1391,7 @@ describe("외화 예상 금액(06-14 — T-06-69)", () => {
   it("액션 — 외화인데 환율 칸이 없으면 zod가 `환율 없음 · USD 환율 적기`로 거부", async () => {
     const requester = await teamCostRequester();
     session.viewer = requester.viewer;
-    const outcome = await createPurchaseRequestAction({ linkKind: "team_cost", itemName: "팀 비품", linkUrl: null, currency: "USD", amount: 100, memo: null } as never);
+    const outcome = await createPurchaseRequestAction({ linkKind: "team_cost", itemName: "팀 비품", linkUrl: null, currency: "USD", amount: 100, memo: null, idempotencyKey: randomUUID() } as never);
     expect(outcome?.validationErrors?.fxRate?._errors?.[0]).toBe("환율 없음 · USD 환율 적기");
     session.viewer = null;
   });

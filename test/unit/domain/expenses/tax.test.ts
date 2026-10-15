@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { computeExpenseTax, incomeTypeFor, pickTaxDates, snapshotSupplyDiffers, taxDriftText, type ExpenseTaxDeps, type ExpenseTaxResult } from "@/domain/expenses/tax";
+import { computeExpenseTax, pickTaxDates, snapshotSupplyDiffers, taxDriftText, taxLineText, type ExpenseTaxDeps, type ExpenseTaxResult } from "@/domain/expenses/tax";
+import { moneyFromRow } from "@/domain/money";
 import { applyTaxRule } from "@/domain/money/tax";
 import type { TaxRule } from "@/domain/code-tables/tax-rule";
 import { SettingNotFoundError, type SettingDef } from "@/domain/settings/registry";
@@ -8,16 +9,6 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import type { CodeItemRow } from "@/repositories/code-tables";
 
 // 05-03 — 세금 호출자의 순수 조각. 05-06이 기준일 사슬 전체(코드표 필드 → 설정) · 세율 바뀜 · 규칙별 계산을 굳힌다.
-describe("incomeTypeFor", () => {
-  it("사업소득 증빙은 business다", () => {
-    expect(incomeTypeFor("business_income")).toBe("business");
-  });
-
-  it.each(["other_income", "tax_invoice", null])("%s는 other다", (evidenceType) => {
-    expect(incomeTypeFor(evidenceType)).toBe("other");
-  });
-});
-
 describe("pickTaxDates (D-101)", () => {
   // 작성 시각 2026-09-30 23:30 서울(UTC 14:30) — 서울 날짜로 읽어야 9월 30일이다.
   const createdAt = new Date("2026-09-30T14:30:00Z");
@@ -85,7 +76,8 @@ describe("pickTaxDates (D-101)", () => {
 const RULE = { roundingUnit: 1, roundingMethod: "round", minWithholdingAmount: 0 } as const;
 const CODE_ITEMS = [
   { value: "tax_invoice", taxRule: { ruleKind: "vat_surcharge", ...RULE, basisDate: "evidence_date" } },
-  { value: "other_income", taxRule: { ruleKind: "withholding", ...RULE, roundingUnit: 10, basisDate: "payment_date" } },
+  // 06.5 D-6501 — 기타소득은 회사 대납(시드 · 06.5-01 마이그레이션과 같은 jsonb).
+  { value: "other_income", taxRule: { ruleKind: "company_borne", ...RULE, roundingUnit: 10, roundingMethod: "truncate", basisDate: "payment_date" } },
   { value: "business_income", taxRule: { ruleKind: "withholding", ...RULE, roundingUnit: 10, basisDate: "payment_date" } },
   { value: "prize", taxRule: { ruleKind: "company_borne", ...RULE, basisDate: "payment_date" } },
 ] as unknown as CodeItemRow[];
@@ -100,9 +92,10 @@ function deps(overrides: Record<string, unknown> = {}, entry?: ExpenseTaxDeps["g
   };
 }
 
-const doc = (evidenceType: string, supplyAmountKrw: number) => ({
+const doc = (evidenceType: string, supplyAmountKrw: number, recipientCount?: number) => ({
   evidenceType,
   supplyAmountKrw,
+  ...(recipientCount === undefined ? {} : { recipientCount }),
   scheduledPaymentDate: null,
   createdAt: new Date("2026-10-01T03:00:00Z"),
 });
@@ -113,9 +106,17 @@ describe("computeExpenseTax", () => {
     expect(result).toMatchObject({ ruleKind: "withholding", rate: 0.033, withholdingKrw: 33_000, payableKrw: 967_000 });
   });
 
-  it("기타소득 1,000,000 → 원천징수 88,000(8.8%)", async () => {
+  // 06.5 D-6501 — 1,000,000 ÷ 0.78 − 1,000,000 = 282,051.3 → 10원 절사 282,050.
+  it("기타소득 1,000,000 → 회사 대납 22% 역산 282,050 · 지급 총액 1,000,000", async () => {
     const result = await computeExpenseTax(SYSTEM_VIEWER, doc("other_income", 1_000_000), deps());
-    expect(result).toMatchObject({ ruleKind: "withholding", rate: 0.088, withholdingKrw: 88_000, payableKrw: 912_000 });
+    expect(result).toMatchObject({ ruleKind: "company_borne", rate: 0.22, withholdingKrw: 0, companyBorneKrw: 282_050, payableKrw: 1_000_000 });
+  });
+
+  // 카드 ① — 받는 인원은 문서 칸 값(없으면 1).
+  it("기타소득 195,000 · 받는 인원 5 → 한 사람 몫 세전 50,000이라 면제 · 받는 인원 칸이 없으면 1명으로 셈한다(55,000)", async () => {
+    expect(await computeExpenseTax(SYSTEM_VIEWER, doc("other_income", 195_000, 5), deps())).toMatchObject({ companyBorneKrw: 0, payableKrw: 195_000 });
+    // 195,000 ÷ 0.78 − 195,000 = 55,000 → 1명 몫 세전 250,000 > 50,000
+    expect(await computeExpenseTax(SYSTEM_VIEWER, doc("other_income", 195_000), deps())).toMatchObject({ companyBorneKrw: 55_000 });
   });
 
   it("회사 대납 3,000,000 · 설정 기본값(22% · gross-up) · 1원 반올림 → 회사 대납 846,154 · 지급 총액 3,000,000", async () => {
@@ -234,10 +235,9 @@ describe("taxDriftText", () => {
 describe("snapshotSupplyDiffers (06.5 D-6520)", () => {
   const SETTINGS: Record<string, unknown> = {
     "tax.vat.rate": 0.1,
-    "tax.withholding.other_income.rate": 0.088,
     "tax.withholding.business_income.rate": 0.033,
-    "tax.withholding.other_income.exempt_threshold": 125_000,
     "tax.company_borne.rate": 0.088,
+    "tax.company_borne.exempt_threshold": 50_000,
     "tax.company_borne.method": "flat",
     "tax.basis_date.withholding": "payment_date",
     "tax.basis_date.vat": "evidence_date",
@@ -263,5 +263,21 @@ describe("snapshotSupplyDiffers (06.5 D-6520)", () => {
 
   it("셈할 수 없던 스냅숏은 거짓", () => {
     expect(snapshotSupplyDiffers({ unavailable: true }, 12_000_000)).toBe(false);
+  });
+});
+
+// 06.5 D-6501 — 회사 대납 세금이 0이면(면제) 원천징수 면제 줄과 같은 꼴로 적는다(새 문구 없음).
+describe("taxLineText — 회사 대납 면제(06.5 D-6501)", () => {
+  const krw = (amount: number) => moneyFromRow({ currency: "KRW", foreignAmount: null, fxRate: "1.0000", amountKrw: amount });
+  const base = { ruleKind: "company_borne", rate: 0.22, historizedId: null, rateEffectiveFrom: null, method: "gross_up", basisDate: null, vatKrw: 0, withholdingKrw: 0 } as const;
+
+  it("세금 0이면 `회사 대납 세금 0 · 면제 기준 이하 · 지급 총액 …`", () => {
+    const line = taxLineText({ ...base, companyBorneKrw: 0, payableKrw: 39_000 }, krw(39_000), "기타소득 규칙");
+    expect(line.text).toBe("회사 대납 세금 0 · 면제 기준 이하 · 지급 총액 39,000 · 기타소득 규칙");
+  });
+
+  it("세금이 있으면 기존 글자 그대로", () => {
+    const line = taxLineText({ ...base, companyBorneKrw: 28_200, payableKrw: 100_000 }, krw(100_000), "기타소득 규칙");
+    expect(line.text).toBe("회사 대납 세금 22% 28,200 · 지급 총액 100,000 · 기타소득 규칙");
   });
 });

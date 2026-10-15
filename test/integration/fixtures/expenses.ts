@@ -4,7 +4,8 @@ import { db } from "@/db/client";
 import { expenses, quoteLines } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { CEO_ROLE_ID, DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
-import { insertVendor } from "@/repositories/vendors";
+import { insertVendor, type VendorInsertInput } from "@/repositories/vendors";
+import { planAccountNumberUpdate } from "@/domain/vendors";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission } from "@/repositories/permissions";
 import { approvalBasis } from "@/repositories/quote-revisions";
@@ -21,6 +22,14 @@ import { createMemoryStorage, type MemoryStorage } from "../fakes/memory-storage
 // 05-03 지출결의 통합 픽스처 — 사람 · 발령 · 프로젝트 · 차수 승인 · 견적 줄은 도메인 · 리포지토리 함수로만 만든다
 // (SQL 직접 삽입 없음). 기획1팀: 기획 PM 박서연 · 팀장 김도윤 · 무관한 기획 PM, 대표 최대표(팀 없음).
 // 경영관리본부에는 사람이 없어 3단은 빈 자리다.
+
+// 06.5 D-6507(EP2-B6): 새 초안의 지급 방식 기본값이 계좌이체라 제출하는 테스트의 거래처에는 쓸 수 있는 계좌(은행 · 예금주 · 암호문)를
+// 기본으로 둔다 — 판정을 약하게 하지 않는다. 막힘 사례만 계좌 없는 거래처를 따로 만든다.
+export function testVendorAccount(): Pick<VendorInsertInput, "accountBank" | "accountHolder" | "accountNumberEncrypted" | "accountNumberLast4"> {
+  const plan = planAccountNumberUpdate("110-123-456789");
+  if (plan.kind !== "set") throw new Error("계좌번호 암호화 계획 없음");
+  return { accountBank: "신한은행", accountHolder: "테스트 예금주", accountNumberEncrypted: plan.accountNumberEncrypted, accountNumberLast4: plan.accountNumberLast4 };
+}
 
 export type ExpenseFixture = {
   pm: Viewer;
@@ -40,8 +49,13 @@ export async function setupExpenseProject(): Promise<ExpenseFixture> {
   const ceo = await makePerson("최대표", CEO_ROLE_ID, null);
   const otherPm = await makePerson("무관PM", DEFAULT_ROLE_ID, "기획1팀");
 
-  const client = await insertVendor(SYSTEM_VIEWER, { name: `클라이언트-${randomUUID()}`, normalizedName: `클라이언트-${randomUUID()}` });
-  const stageOne = await insertVendor(SYSTEM_VIEWER, { name: "스테이지원", normalizedName: `스테이지원-${randomUUID()}`, defaultEvidenceType: "tax_invoice" });
+  const client = await insertVendor(SYSTEM_VIEWER, { name: `클라이언트-${randomUUID()}`, normalizedName: `클라이언트-${randomUUID()}`, ...testVendorAccount() });
+  const stageOne = await insertVendor(SYSTEM_VIEWER, {
+    name: "스테이지원",
+    normalizedName: `스테이지원-${randomUUID()}`,
+    defaultEvidenceType: "tax_invoice",
+    ...testVendorAccount(),
+  });
 
   const project = await createProject(pm, {
     clientId: client.id,
@@ -92,7 +106,7 @@ export async function setupExpenseProject(): Promise<ExpenseFixture> {
 
 // 06.2-08 — 지출결의를 결재 통과까지 낼 수 있는 프로젝트(진행 · 1차 고객 승인 · 거래처 있는 줄 하나) — 시스템 주체가 만들고(다른 팀 PM 지정) 고객 승인은 담당 PM이 한다.
 export async function setupApprovedProject(name: string, teamId: string, pm: Viewer, vendorId: string): Promise<{ id: string; lineId: string }> {
-  const client = await insertVendor(SYSTEM_VIEWER, { name: `클라이언트-${randomUUID()}`, normalizedName: `클라이언트-${randomUUID()}` });
+  const client = await insertVendor(SYSTEM_VIEWER, { name: `클라이언트-${randomUUID()}`, normalizedName: `클라이언트-${randomUUID()}`, ...testVendorAccount() });
   const project = await createProject(SYSTEM_VIEWER, { clientId: client.id, teamId, pmUserId: pm.id, name, startDate: "2026-09-01", endDate: "2026-12-31" });
   const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
   if (!revision) throw new Error(`1차 차수 없음: ${name}`);

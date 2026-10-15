@@ -5,6 +5,7 @@ import { createExpenseFromLines, createTeamExpenseDraft, EXPENSE_DOCUMENT_KIND, 
 import { insertVendor } from "@/repositories/vendors";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { seoulToday } from "@/lib/dates";
+import { testVendorAccount } from "../integration/fixtures/expenses";
 import { loginPage, waitForHydration } from "./leave-org";
 import { makeEvidenceManagerE2E, setupExpenseE2E, submitLineExpense, uniqueReceipt, type ExpenseE2E, type LineKey } from "./expense-fixture";
 
@@ -128,7 +129,7 @@ test.describe("작성 중 삭제 · 문서 화면 회수 · 본인 승인 (Task 
   test("팀장이 기안한 문서 — 제출 토스트 `본인 승인 차례` · 행동 줄 승인 + 회수(반려 없음)", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const suffix = randomUUID().slice(0, 6);
-    const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E회식집-${suffix}`, normalizedName: `e2e회식집-${suffix}`, defaultEvidenceType: "tax_invoice" });
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E회식집-${suffix}`, normalizedName: `e2e회식집-${suffix}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount() });
     const { expenseId, version } = await createTeamExpenseDraft(fx.lead.viewer, {
       idempotencyKey: randomUUID(),
       fields: { teamExpenseKind: "team_overhead", usageDate: seoulToday(), content: `팀 회식-${suffix}` },

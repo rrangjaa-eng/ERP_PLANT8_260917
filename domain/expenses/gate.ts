@@ -1,5 +1,6 @@
 import { gate, type GateDecision } from "@/domain/rules/gate";
 import type { QuoteCustomerApprovalCtx } from "@/domain/rules/register";
+import { PAYEE_ACCOUNT_MISSING, type ExpensePayee } from "@/domain/expenses/payee";
 
 // 05-03(UI-SPEC S6): 지출결의 제출 판정 — 첫 이유 하나. 05-06이 ①~⑨ 전부를 순서 표 하나(`stepsOf`)로 모았다:
 // 규칙 `expense.submit`(domain/rules/register.ts)은 이 표를 순서대로 보고 첫 막힘의 글자를, `nextActionTarget`은 같은 표에서
@@ -16,6 +17,7 @@ export type ExpenseSubmitTarget =
   | "supplyAmount"
   | "evidenceType"
   | "paymentMethod"
+  | "payeeAccount"
   | "prepaidReason"
   | "evidence";
 
@@ -50,8 +52,10 @@ export type ExpenseSubmitFacts = {
   projectCompleted: boolean;
   // ③ ④ 견적 줄 문서만 — 줄이 현재(최신) 차수에 살아 있는가(D-54) · 작성 중에 그 줄의 문이 닫혔으면 가장 최근 문서.
   line: { inCurrentRevision: boolean; closedBy: { id: string; number: string } | null } | null;
-  // ⑤ 거래처(견적 줄 문서는 그 줄의 거래처).
-  vendorId: string | null;
+  // ⑤ 문서 지급처 — 결정 맥락 15. 견적 줄의 거래처가 아니다.
+  payee: ExpensePayee;
+  // 계좌이체인데 지급처에 쓸 수 있는 계좌가 없다(D-6507). 지급처가 없으면 거짓 — ⑤가 먼저 막는다.
+  payeeAccountMissing: boolean;
   // ⑥ 팀 비용 문서의 칸(견적 줄 문서 null).
   teamCost: { kind: string | null; content: string | null } | null;
   supplyAmountKrw: number | null;
@@ -97,7 +101,7 @@ function stepsOf(facts: ExpenseSubmitFacts): Step[] {
     { target: null, reason: facts.projectCompleted ? PROJECT_COMPLETED : null },
     { target: "quoteLine", reason: facts.line && !facts.line.inCurrentRevision ? "견적 줄이 현재 차수에 없음 · 견적 줄 바꾸기" : null },
     { target: "openLatest", reason: closedBy ? `이 줄에 지출결의 ${closedBy.number} 있음 · 지출결의 열기` : null },
-    { target: "vendor", rule: "quote.vendor-required", ruleCtx: { vendorId: facts.vendorId } },
+    { target: "vendor", rule: "quote.vendor-required", ruleCtx: { vendorId: facts.payee?.id ?? null } },
     {
       target: first?.target ?? null,
       reason: first
@@ -106,6 +110,7 @@ function stepsOf(facts: ExpenseSubmitFacts): Step[] {
     },
     { target: "evidenceType", reason: facts.evidenceTypeInactive ? INACTIVE_EVIDENCE_TYPE : null },
     { target: "paymentMethod", reason: facts.paymentMethodInactive ? INACTIVE_PAYMENT_METHOD : null },
+    { target: "payeeAccount", reason: facts.payeeAccountMissing ? PAYEE_ACCOUNT_MISSING : null },
     { target: "supplyAmount", reason: facts.supplyAmountKrw === 0 ? "공급가액이 0 · 0보다 크게" : null },
     { target: "prepaidReason", reason: facts.prepaid && !facts.prepaidReason?.trim() ? PREPAID_REASON_REQUIRED : null },
     { target: "evidence", reason: facts.evidenceCount === 0 && !facts.prepaid ? "증빙 없음 · 증빙 올리기 Ctrl+U" : null },

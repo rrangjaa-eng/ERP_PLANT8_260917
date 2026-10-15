@@ -111,8 +111,29 @@ export function ExpenseDocument({
     items.push({ label: "견적 줄", value: expense.itemName ? [expense.lineNo, expense.itemName].filter(Boolean).join(" ") : dash });
   }
   if (expense.installment) items.push({ label: "분할 지급", value: expense.installmentSeq ? `${expense.installmentSeq}회차` : dash });
+  // 06.5 V12(결정 맥락 9 · D-6517): 지급처 = 거래처 이름 → 직원 이름, 값 아래 한 줄로 종류(거래처 `기본 증빙 {종류}` · 직원 `직원 · {팀}`).
+  const payeeName = expense.vendorName ?? expense.payeeUserName ?? null;
+  const payeeSub = expense.vendorName
+    ? expense.defaultEvidenceName
+      ? `기본 증빙 ${expense.defaultEvidenceName}`
+      : null
+    : expense.payeeUserName
+      ? expense.payeeTeamName
+        ? `직원 · ${expense.payeeTeamName}`
+        : "직원"
+      : null;
   items.push(
-    { label: "거래처", value: expense.vendorName ?? dash },
+    {
+      label: "지급처",
+      value: payeeName ? (
+        <>
+          {payeeName}
+          {payeeSub ? <span className={styles.sub}>{payeeSub}</span> : null}
+        </>
+      ) : (
+        dash
+      ),
+    },
     { label: "증빙 종류", value: expense.evidenceTypeName ?? dash },
   );
   // 금액을 볼 수 없는 계급에는 공급가액 행째 없다(투영에서 빠진 필드는 행을 만들지 않는다).
@@ -137,6 +158,8 @@ export function ExpenseDocument({
       ),
     });
   }
+  // 06.5 V15: 받는 인원 — 회사 대납 문서에서 투영에 칸이 있을 때만(금액을 못 보는 계급은 빠진다), 공급가액 다음(폼의 칸 순서).
+  if (expense.taxRuleKind === "company_borne" && expense.recipientCount !== undefined) items.push({ label: "받는 인원", value: `${expense.recipientCount}명` });
   // 06-03: 지급 섹션이 서면 지급 예정일 · 지급 방식은 그 섹션 한 자리에만(같은 사실 두 자리 금지 — UI-SPEC S5).
   if (!paymentView || paymentView === "error") {
     items.push({ label: "지급 예정일", value: expense.scheduledPaymentDate ?? dash }, { label: "지급 방식", value: expense.paymentMethodName ?? dash });

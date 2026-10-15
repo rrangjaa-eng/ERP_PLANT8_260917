@@ -8,6 +8,7 @@ import { setSettingValue } from "@/domain/settings/registry";
 import { PURCHASE_ONLINE_VENDOR_NAME } from "@/domain/settings/keys";
 import { createPurchaseRequest, precheckPurchaseRequest, type PurchaseRequestInput } from "@/domain/purchase-requests";
 import { insertVendor } from "@/repositories/vendors";
+import { testVendorAccount } from "./expenses";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import { makePerson } from "../approvals-fixtures";
 
@@ -37,9 +38,19 @@ export async function purchaseProject(onlineEvidence = "tax_invoice"): Promise<P
   const team = await makeTeam();
   const pm = await makePerson("박서연", DEFAULT_ROLE_ID, team.name);
   await setSettingValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME, ONLINE_VENDOR);
-  const online = await insertVendor(SYSTEM_VIEWER, { name: ONLINE_VENDOR, normalizedName: `${ONLINE_VENDOR}-${randomUUID()}`, defaultEvidenceType: onlineEvidence });
-  const other = await insertVendor(SYSTEM_VIEWER, { name: "스테이지원", normalizedName: `스테이지원-${randomUUID()}`, defaultEvidenceType: "tax_invoice" });
-  const client = await insertVendor(SYSTEM_VIEWER, { name: `클라이언트-${randomUUID()}`, normalizedName: `클라이언트-${randomUUID()}` });
+  const online = await insertVendor(SYSTEM_VIEWER, {
+    name: ONLINE_VENDOR,
+    normalizedName: `${ONLINE_VENDOR}-${randomUUID()}`,
+    defaultEvidenceType: onlineEvidence,
+    ...testVendorAccount(),
+  });
+  const other = await insertVendor(SYSTEM_VIEWER, {
+    name: "스테이지원",
+    normalizedName: `스테이지원-${randomUUID()}`,
+    defaultEvidenceType: "tax_invoice",
+    ...testVendorAccount(),
+  });
+  const client = await insertVendor(SYSTEM_VIEWER, { name: `클라이언트-${randomUUID()}`, normalizedName: `클라이언트-${randomUUID()}`, ...testVendorAccount() });
   const project = await createProject(pm, {
     clientId: client.id,
     teamId: team.id,

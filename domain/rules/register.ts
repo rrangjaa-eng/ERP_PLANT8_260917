@@ -306,11 +306,12 @@ registerGateRule<unknown, QuoteApprovalToggleCtx>({
 });
 
 // 04-14(D-64) — 거래처 필수. Phase 5 지출결의·구매 요청이 부른다(이 페이즈 호출자 없음).
+// 06.5 결정 맥락 9(DH-1): 지출결의 지급처는 거래처 또는 직원이라 문구가 「지급처」다 — ctx.vendorId는 문서 지급처 id(gate.ts ⑤).
 export type QuoteVendorRequiredCtx = { vendorId: string | null };
 
 registerGateRule<unknown, QuoteVendorRequiredCtx>({
   name: "quote.vendor-required",
-  check: (_doc, ctx) => (ctx.vendorId ? { allowed: true } : { allowed: false, reason: "거래처 없음 · 거래처 고르기" }),
+  check: (_doc, ctx) => (ctx.vendorId ? { allowed: true } : { allowed: false, reason: "지급처 없음 · 지급처 고르기" }),
 });
 
 // 05-06(UI-SPEC S6 · EXP-14 · UX-06) — 지출결의 제출. ①~⑨를 문맥의 순서 표(domain/expenses/gate.ts `buildExpenseSubmitContext`)대로

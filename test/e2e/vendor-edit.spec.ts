@@ -103,8 +103,8 @@ test.describe("거래처 기본 증빙 종류 설명 힌트 (D-93, S14)", () => 
 
     // 다른 값으로 바꾸면 즉시 그 값의 설명으로 바뀐다.
     await select.selectOption({ label: "기타소득" });
-    await expect(page.getByText("강사료·경품 등 일시 소득 · 원천징수 대상")).toBeVisible();
-    await expect(select).toHaveAccessibleDescription("강사료·경품 등 일시 소득 · 원천징수 대상");
+    await expect(page.getByText("경품 등 일시 소득 · 회사 대납")).toBeVisible();
+    await expect(select).toHaveAccessibleDescription("경품 등 일시 소득 · 회사 대납");
     await expect(page.getByText("과세 거래 · 부가세가 붙는 세금계산서")).toHaveCount(0);
 
     // 설명이 없는 값 — 힌트 줄 자체가 없다(빈 줄·`—` 힌트 금지).
@@ -119,7 +119,7 @@ test.describe("거래처 기본 증빙 종류 설명 힌트 (D-93, S14)", () => 
     await expect(field.locator("p")).toHaveCount(0);
 
     // `<option>` 안에 설명을 넣지 않는다(§7-2, S14).
-    await expect(select.locator("option", { hasText: "원천징수 대상" })).toHaveCount(0);
+    await expect(select.locator("option", { hasText: "회사 대납" })).toHaveCount(0);
   });
 });
 

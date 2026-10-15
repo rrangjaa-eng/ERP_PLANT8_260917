@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import {
@@ -9,7 +9,6 @@ import {
 } from "@/domain/payments/action-row";
 import {
   evidenceGateInputs,
-  evidenceOverrunLine,
   evidenceStampOf,
   resolveEvidenceStatus,
   SUPPLY_CORRECTION_PAID_LOCKED,
@@ -166,53 +165,21 @@ describe("evidenceGateInputs — 잠금 뒤 tx로 한 함수에서 (06-06 Task 2
   });
 });
 
-describe("evidenceStampOf — 증빙 지문 (06-06 Task 3)", () => {
-  const base = { fileIds: ["b", "a", "c"], evidenceAmountKrw: 12_400_000, evidenceDate: "2026-09-17" };
+// 06.5 D-6520 — 지문은 살아 있는 파일 id와 증빙일로만 만든다(증빙 금액 칸은 읽지 않는다 · 공급가 고침은 version을 올린다).
+describe("evidenceStampOf — 증빙 지문 (06-06 Task 3 · 06.5 D-6520)", () => {
+  const base = { fileIds: ["b", "a", "c"], evidenceDate: "2026-09-17" };
   it("파일 id 순서가 달라도 같은 문자열", () => {
     expect(evidenceStampOf(base)).toBe(evidenceStampOf({ ...base, fileIds: ["c", "b", "a"] }));
   });
-  it("증빙 금액이나 증빙일이 다르면 다른 문자열", () => {
-    expect(evidenceStampOf({ ...base, evidenceAmountKrw: 12_000_000 })).not.toBe(evidenceStampOf(base));
+  it("증빙일이 다르면 다른 문자열", () => {
     expect(evidenceStampOf({ ...base, evidenceDate: "2026-09-18" })).not.toBe(evidenceStampOf(base));
-    expect(evidenceStampOf({ ...base, evidenceAmountKrw: null })).not.toBe(evidenceStampOf(base));
+    expect(evidenceStampOf({ ...base, evidenceDate: null })).not.toBe(evidenceStampOf(base));
+  });
+  it("입력에 증빙 금액 칸이 없다(타입 수준)", () => {
+    expectTypeOf(evidenceStampOf).parameter(0).toEqualTypeOf<{ fileIds: readonly string[]; evidenceDate: string | null }>();
   });
   it("파일이 하나 늘면 다른 문자열", () => {
     expect(evidenceStampOf({ ...base, fileIds: [...base.fileIds, "d"] })).not.toBe(evidenceStampOf(base));
-  });
-});
-
-describe("증빙 금액 초과 한 줄(Q-F)", () => {
-  const base = { hasLiveEvidence: true, evidenceAmountKrw: 12_400_000, approvedSupplyKrw: 12_000_000, lineRemainingKrw: 20_000_000 };
-  it("승인액만 넘음 → `승인액보다 +400,000`", () => {
-    expect(evidenceOverrunLine(base)).toBe("승인액보다 +400,000");
-  });
-  it("둘 다 넘음 → ` · `로 이은 한 줄", () => {
-    expect(evidenceOverrunLine({ ...base, lineRemainingKrw: 12_250_000 })).toBe("승인액보다 +400,000 · 실행가 초과 150,000");
-  });
-  it("남은 실행가만 넘음 → `실행가 초과 100,000`", () => {
-    expect(evidenceOverrunLine({ ...base, evidenceAmountKrw: 11_900_000, lineRemainingKrw: 11_800_000 })).toBe("실행가 초과 100,000");
-  });
-  it("둘 다 이하 → null", () => {
-    expect(evidenceOverrunLine({ ...base, evidenceAmountKrw: 11_000_000 })).toBeNull();
-  });
-  it("증빙 금액 null → null", () => {
-    expect(evidenceOverrunLine({ ...base, evidenceAmountKrw: null })).toBeNull();
-  });
-  it("남은 실행가 null(팀 비용) · 증빙 > 승인액 → `승인액보다 +{차액}`만", () => {
-    expect(evidenceOverrunLine({ ...base, lineRemainingKrw: null })).toBe("승인액보다 +400,000");
-  });
-  it("남은 실행가가 음수(사슬 위 다른 문서가 이미 넘음) → 실행가 초과는 이 문서 증빙 금액까지만(06-06 검토 S-4)", () => {
-    expect(evidenceOverrunLine({ ...base, evidenceAmountKrw: 500_000, approvedSupplyKrw: 500_000, lineRemainingKrw: -1_000_000 })).toBe("실행가 초과 500,000");
-  });
-  it("남은 실행가 0 → 실행가 초과 = 증빙 금액", () => {
-    expect(evidenceOverrunLine({ ...base, evidenceAmountKrw: 500_000, approvedSupplyKrw: 500_000, lineRemainingKrw: 0 })).toBe("실행가 초과 500,000");
-  });
-  it("승인 공급가 null → 승인액 조각 없음(증빙 금액 전체를 「승인액보다 +」로 보이지 않는다 — 06-06 검토 S-5)", () => {
-    expect(evidenceOverrunLine({ ...base, approvedSupplyKrw: null, lineRemainingKrw: null })).toBeNull();
-    expect(evidenceOverrunLine({ ...base, approvedSupplyKrw: null, lineRemainingKrw: 12_250_000 })).toBe("실행가 초과 150,000");
-  });
-  it("파일 0 · 증빙 금액만 → null(R-4 · E-7)", () => {
-    expect(evidenceOverrunLine({ hasLiveEvidence: false, evidenceAmountKrw: 12_400_000, approvedSupplyKrw: 12_000_000, lineRemainingKrw: 11_800_000 })).toBeNull();
   });
 });
 

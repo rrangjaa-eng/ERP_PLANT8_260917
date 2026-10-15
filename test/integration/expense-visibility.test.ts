@@ -27,7 +27,7 @@ import { listExpenseIdsInScope } from "@/repositories/expenses";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { makePerson, orgUnitIdByName, teamIdByName } from "./approvals-fixtures";
 import { insertMembership } from "@/repositories/team-memberships";
-import { setupApprovedProject, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
+import { setupApprovedProject, setupExpenseProject, submitReadyDraft, type ExpenseFixture, testVendorAccount } from "./fixtures/expenses";
 import { createMemoryStorage } from "./fakes/memory-storage";
 import { insertLiveMember } from "./fixtures/view-scope";
 import { resetDatabase, skipDbReset } from "./setup";
@@ -124,7 +124,7 @@ async function setup(): Promise<World> {
   const pm2 = await makePerson("이지훈", DEFAULT_ROLE_ID, "기획2팀");
   const lead2 = await makePerson("정하나", TEAM_LEAD_ROLE_ID, "기획2팀");
   const divisionHead = await makePerson("본부책임", DIVISION_HEAD_ROLE_ID, "기획1팀");
-  const vendor = await insertVendor(SYSTEM_VIEWER, { name: "더테이블", normalizedName: `더테이블-${randomUUID()}`, defaultEvidenceType: "tax_invoice" });
+  const vendor = await insertVendor(SYSTEM_VIEWER, { name: "더테이블", normalizedName: `더테이블-${randomUUID()}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount() });
 
   const teamDocId = await submittedTeamDoc(fx.pm, vendor.id, "팀 회식");
   const lineDocId = await submittedLineDoc(fx.pm, fx.lines.withVendor);
@@ -459,7 +459,7 @@ async function buildMatrix(): Promise<MatrixWorld> {
   }
   const plan2Staff = await makePerson("기획2직원", DEFAULT_ROLE_ID, "기획2팀");
   const mgmtStaff = await makePerson("경영직원", DEFAULT_ROLE_ID, "경영관리팀");
-  const vendor = await insertVendor(SYSTEM_VIEWER, { name: "더테이블", normalizedName: `더테이블-${randomUUID()}`, defaultEvidenceType: "tax_invoice" });
+  const vendor = await insertVendor(SYSTEM_VIEWER, { name: "더테이블", normalizedName: `더테이블-${randomUUID()}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount() });
   const p2 = await setupApprovedProject("기획2 행사", plan2, people.다른팀PM, fx.stageOneId);
   const p3 = await setupApprovedProject("경영 행사", mgmt, people.다른팀PM, fx.stageOneId);
   await insertLiveMember(p3.id, people.참여자.id, fx.ceo.id);

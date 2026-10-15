@@ -346,3 +346,25 @@ export async function allocatePurchaseRequestNumber(
   });
   return { number: purchaseRequestNumberFormat(input.projectNumber, seq, { ...input.format, seqStart }), seq };
 }
+
+// 06.5 D-6503(REPORT.md D8): 카드 사용 K 번호 — 옛 `next_card_use_number`(O: db/schema/020_functions.sql:3097-3156)의 모양(프로젝트 번호
+// 또는 연도 두 자 + 팀 비용 접두어, 가름 글자 K). 순번은 프로젝트별(이 저장소의 지출결의 · 구매 요청 C 규약) — 옛 전사 통번호(:3143)와 다르다.
+// K · 4자리 · 시작 1은 상수다(새 설정 키를 만들지 않는다 — 시작값 설정이 없으니 `seqStartGuardFor` 대상도 아니다). 재료(프로젝트 번호 ·
+// 팀 비용 접두어 · KST 연도)는 사전 판정이 트랜잭션 밖에서 만든다.
+export const CARD_USAGE_NUMBER_MARK = "K";
+const CARD_USAGE_SEQ_DIGITS = 4;
+
+export type CardUsageNumberHead = { projectNumber: string | null; teamPrefix: string; year: number };
+
+export function cardUsageNumberFormat(head: string, seq: number): string {
+  return `${head}-${CARD_USAGE_NUMBER_MARK}${String(seq).padStart(CARD_USAGE_SEQ_DIGITS, "0")}`;
+}
+
+// 카드 사용 INSERT 바로 앞, 같은 트랜잭션에서 부른다 — 카운터 행 잠금을 가장 짧게(지출결의 「마지막 쓰기로 번호」 규약).
+export async function allocateCardUsageNumber(viewer: Viewer, numberHead: CardUsageNumberHead, tx: DbOrTx): Promise<string> {
+  if (numberHead.projectNumber) {
+    return cardUsageNumberFormat(numberHead.projectNumber, await repoAllocateNumber(viewer, "card_usage", numberHead.projectNumber, tx));
+  }
+  const head = String(numberHead.year % 100).padStart(2, "0") + numberHead.teamPrefix;
+  return cardUsageNumberFormat(head, await repoAllocateNumber(viewer, "card_usage_team", String(numberHead.year), tx));
+}

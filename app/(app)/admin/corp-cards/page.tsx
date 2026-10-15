@@ -8,7 +8,6 @@ import { listPeople } from "@/domain/people";
 import { listOrgUnits, listTeams } from "@/domain/org";
 import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
-import { SidePanel } from "@/ui/side-panel/SidePanel";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { StaticTable } from "@/ui/table/StaticTable";
 import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
@@ -17,6 +16,7 @@ import {
   CardOwnerForm,
   CorpCardActiveToggle,
   CorpCardDeleteButton,
+  CorpCardPanel,
 } from "./card-form";
 import styles from "./corp-cards.module.css";
 
@@ -129,13 +129,14 @@ export default async function CorpCardsPage({
       panel={
         // 쓰기 권한이 없는 계급에는 패널 자체를 렌더하지 않는다 — "이유 있는 비활성" 대신 "버튼 자체가 없음"(03-UI-SPEC.md).
         panelBody ? (
-          <SidePanel
+          <CorpCardPanel
             key={editingCard?.id ?? "new"}
+            editId={editingCard?.id ?? null}
             title={editingCard ? "법인카드 수정" : "법인카드 등록"}
             closeHref={cancelHref}
           >
             {panelBody}
-          </SidePanel>
+          </CorpCardPanel>
         ) : null
       }
     >

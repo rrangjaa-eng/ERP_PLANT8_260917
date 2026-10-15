@@ -19,6 +19,7 @@ import {
   precheckPurchaseRequest,
   previewPurchaseCompletion,
   previewPurchaseSupply,
+  reusablePurchaseRequest,
   searchLinesForPurchaseLink,
   undoCancelPurchaseRequest,
   type PurchaseRequestInput,
@@ -46,21 +47,26 @@ const requestFields = {
 };
 
 // 06-14: 연결 판별 합 — 견적 줄(`lineId`) / 팀 비용. 팀 · 사용한 사람 · 원화 환산액 칸은 없다(보내도 zod가 버린다 — O-19 · T-06-66 · T-06-69).
+// 06.5 D-6509: 중복 방지 키 — 등록 화면이 성공마다 새로 만든다(실패 · 거부 때는 같은 키로 다시 보낸다).
 const createPurchaseRequestSchema = z
   .discriminatedUnion("linkKind", [
-    z.object({ linkKind: z.literal("quote_line"), lineId: z.uuid(), ...requestFields }),
-    z.object({ linkKind: z.literal("team_cost"), ...requestFields }),
+    z.object({ linkKind: z.literal("quote_line"), lineId: z.uuid(), ...requestFields, idempotencyKey: z.uuid() }),
+    z.object({ linkKind: z.literal("team_cost"), ...requestFields, idempotencyKey: z.uuid() }),
   ])
   .superRefine((value, ctx) => {
     if (value.currency !== "KRW" && value.fxRate === undefined) ctx.addIssue({ code: "custom", message: `환율 없음 · ${value.currency} 환율 적기`, path: ["fxRate"] });
   });
 
 export const createPurchaseRequestAction = authedActionClient.schema(createPurchaseRequestSchema).action(async ({ parsedInput, ctx }) => {
+  // 재전송은 사전 판정보다 먼저 첫 행을 돌려받는다(EP3-B3).
+  const reused = await reusablePurchaseRequest(ctx.viewer, parsedInput.idempotencyKey);
+  if (reused) return reused;
   const fields = {
     itemName: parsedInput.itemName,
     linkUrl: parsedInput.linkUrl,
     estimate: { currency: parsedInput.currency, amount: parsedInput.amount, fxRate: parsedInput.fxRate ?? 1 },
     memo: parsedInput.memo,
+    idempotencyKey: parsedInput.idempotencyKey,
   };
   const input: PurchaseRequestInput =
     parsedInput.linkKind === "quote_line" ? { linkKind: "quote_line", lineId: parsedInput.lineId, ...fields } : { linkKind: "team_cost", ...fields };

@@ -26,8 +26,18 @@ import { getSettingValue } from "@/domain/settings/registry";
 import { PROJECT_CUSTOMER_APPROVAL_GATE } from "@/domain/settings/keys";
 import type { Money } from "@/domain/money";
 import { seoulToday } from "@/lib/dates";
+import { hasUsableAccount } from "@/domain/expenses/payee";
 import type { NumberedLineExpense } from "@/repositories/expenses";
-import { findExpenseApprovalStatus, findExpenseApprovalStatuses, findExpenseById, listClosedInstallmentsByLines, listPickProjects } from "@/repositories/expenses";
+import {
+  findExpenseApprovalStatus,
+  findExpenseApprovalStatuses,
+  findExpenseById,
+  listClosedInstallmentsByLines,
+  listPayeeUserCandidates,
+  listPickProjects,
+} from "@/repositories/expenses";
+import { findMembershipsAtDate } from "@/repositories/team-memberships";
+import { findTeamsByIds } from "@/repositories/teams";
 import { findProjectInScope } from "@/repositories/projects";
 import { listLiveMemberProjectIds } from "@/repositories/project-members";
 import { listLineageLinesByProjects, listQuoteLinesByRevisions, type QuoteLineRow } from "@/repositories/quote-lines";
@@ -45,10 +55,12 @@ export type PickVendorOptionDto = {
   name: string;
   defaultEvidenceType: string | null;
   defaultEvidenceName: string | null;
+  // 06.5 V12: 쓸 수 있는 계좌 없음(은행 ∧ 번호 — 유무만, 평문 · 끝 4자리 없음). 지출결의 지급처 고르기만 싣는다(카드 가맹점 고르기는 같은 DTO에 싣지 않는다).
+  accountMissing?: boolean;
 };
 
 export const PICK_VENDOR_OPTION_SPEC: DtoSpec<PickVendorOptionDto, PickVendorOptionDto> = {
-  fields: (["id", "name", "defaultEvidenceType", "defaultEvidenceName"] as const).map((key) => ({ key, from: key, infoItem: "vendor.value" })),
+  fields: (["id", "name", "defaultEvidenceType", "defaultEvidenceName", "accountMissing"] as const).map((key) => ({ key, from: key, infoItem: "vendor.value" })),
 };
 
 registerDto({ name: "PickVendorOptionDto", fields: PICK_VENDOR_OPTION_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
@@ -64,8 +76,53 @@ export async function searchVendorsForPick(viewer: Viewer, input: { query: strin
     name: vendor.name,
     defaultEvidenceType: vendor.defaultEvidenceType,
     defaultEvidenceName: vendor.defaultEvidenceType ? (evidenceNames.get(vendor.defaultEvidenceType) ?? vendor.defaultEvidenceType) : null,
+    accountMissing: !hasUsableAccount({ bank: vendor.accountBank, hasNumber: vendor.accountNumberEncrypted !== null }),
   }));
   const rows = (await projectMany(viewer, options, PICK_VENDOR_OPTION_SPEC)).filter((row) => row.id !== undefined);
+  return { rows, truncated: found.length > PICK_LIMIT };
+}
+
+// ── 직원 지급처 골라내기(06.5 V12 · D-6517) ───────────────────────────────
+
+// 직원 행 — 이름 · 계좌 없음은 사람 정보(person.value), 팀 이름은 팀 정보(team.value). 이메일 · 계좌 문자열은 싣지 않는다(V12 후보 「계좌 · 연락처는 싣지 않는다」).
+export type PickPayeeUserOptionDto = { id: string; name: string; teamName: string | null; accountMissing: boolean };
+
+export const PICK_PAYEE_USER_OPTION_SPEC: DtoSpec<PickPayeeUserOptionDto, PickPayeeUserOptionDto> = {
+  fields: [
+    { key: "id", from: "id", infoItem: "person.value" },
+    { key: "name", from: "name", infoItem: "person.value" },
+    { key: "teamName", from: "teamName", infoItem: "team.value" },
+    { key: "accountMissing", from: "accountMissing", infoItem: "person.value" },
+  ],
+};
+
+registerDto({ name: "PickPayeeUserOptionDto", fields: PICK_PAYEE_USER_OPTION_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
+
+// 거래처 고르기와 같은 문(지출결의 쓰기) · 같은 상한(PICK_LIMIT + 1로 넘침 판정). 후보는 보관 아님 ∧ (퇴사일 없음 ∨ 퇴사일 > 오늘 KST) — 옛은 퇴사일이 있으면
+// 날짜와 무관하게 뺐다(O: server/src/expenses.ts:2385-2386 `left_date is null`) — 퇴사 예정자의 정산 때문에 의도적으로 다르다. 팀은 오늘 소속.
+export async function searchPayeeUsersForPick(
+  viewer: Viewer,
+  input: { query: string },
+  deps?: { now?: Date },
+): Promise<{ rows: Partial<PickPayeeUserOptionDto>[]; truncated: boolean }> {
+  if (!(await can(viewer, "expenses", "write"))) throw new ForbiddenError("지출결의 작성 권한 없음");
+  const today = seoulToday(deps?.now);
+  const found = await listPayeeUserCandidates(viewer, { query: input.query, today, limit: PICK_LIMIT + 1 });
+  const shown = found.slice(0, PICK_LIMIT);
+  const memberships = await findMembershipsAtDate(
+    viewer,
+    shown.map((user) => user.id),
+    today,
+  );
+  const teamNames = new Map((await findTeamsByIds(viewer, [...new Set(memberships.map((row) => row.teamId))])).map((team) => [team.id, team.name]));
+  const teamOf = new Map(memberships.map((row) => [row.userId, teamNames.get(row.teamId) ?? null]));
+  const options: PickPayeeUserOptionDto[] = shown.map((user) => ({
+    id: user.id,
+    name: user.name,
+    teamName: teamOf.get(user.id) ?? null,
+    accountMissing: !hasUsableAccount({ bank: user.bank, hasNumber: user.hasNumber }),
+  }));
+  const rows = (await projectMany(viewer, options, PICK_PAYEE_USER_OPTION_SPEC)).filter((row) => row.id !== undefined);
   return { rows, truncated: found.length > PICK_LIMIT };
 }
 

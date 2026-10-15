@@ -8,6 +8,7 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { seoulToday } from "@/lib/dates";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
+import { insertVendor, updateVendor, updateVendorAccountNumber } from "@/repositories/vendors";
 import { delayServerActions, loginPage, waitForHydration, type Person } from "./leave-org";
 import { setupExpenseE2E, submitLineExpense, uniqueReceipt, type ExpenseE2E, type LineKey } from "./expense-fixture";
 
@@ -43,7 +44,8 @@ async function colorOf(target: Locator): Promise<string> {
 }
 
 test.describe("계산 한 줄 즉시 재계산 (S5)", () => {
-  test("증빙 종류를 기타소득으로 바꾸면 원천징수 한 줄이 오고, 오는 동안 이전 줄이 흐린 색으로 남으며, 제출한 문서 화면에 같은 한 줄", async ({ browser, baseURL }) => {
+  // 06.5 D-6501 · EP1-7: 기타소득은 회사 대납 22% 역산 — 12,400,000 ÷ 0.78 − 12,400,000 = 3,497,435.89… → 10원 절사 3,497,430(식으로 계산한 값).
+  test("증빙 종류를 기타소득으로 바꾸면 회사 대납 한 줄이 오고, 오는 동안 이전 줄이 흐린 색으로 남으며, 제출한 문서 화면에 같은 한 줄", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const page = await loginPage(browser, baseURL, fx.pm);
     const expenseId = await openDraft(page, fx, "tracer");
@@ -59,20 +61,20 @@ test.describe("계산 한 줄 즉시 재계산 (S5)", () => {
     // 오는 동안 — 이전 줄이 그대로(빈칸 · 뼈대 없음) 흐린 색.
     await expect.poll(() => colorOf(line)).toBe(faint);
     await expect(line).toHaveText("부가세 10% 1,240,000 · 지급 총액 13,640,000 · 세금계산서 규칙");
-    await expect(line).toHaveText("원천징수 8.8% 1,091,200 · 실지급액 11,308,800 · 기타소득 규칙", { timeout: 10_000 });
+    await expect(line).toHaveText("회사 대납 세금 22% 3,497,430 · 지급 총액 12,400,000 · 기타소득 규칙", { timeout: 10_000 });
     expect(await colorOf(line)).toBe(muted);
     // 숫자 조각만 700.
     const bold = await line.locator("span").evaluateAll((spans) =>
       spans.filter((span) => getComputedStyle(span).fontWeight === "700" && span.children.length === 0).map((span) => span.textContent),
     );
-    expect(bold).toEqual(["8.8%", "1,091,200", "11,308,800"]);
+    expect(bold).toEqual(["22%", "3,497,430", "12,400,000"]);
 
     await page.unrouteAll({ behavior: "ignoreErrors" });
     await page.getByTestId("attachments-input").setInputFiles(await uniqueReceipt(page));
     await expect(page.locator('[data-ui="attachments"] li').getByText(META)).toBeVisible({ timeout: UPLOAD_WAIT });
     await page.getByRole("button", { name: /^지출결의 제출/ }).click();
     await expect(page).toHaveURL(new RegExp(`/expenses/${expenseId}\\?submitted=1$`));
-    await expect(page.getByTestId("expense-tax-line")).toHaveText("원천징수 8.8% 1,091,200 · 실지급액 11,308,800 · 기타소득 규칙");
+    await expect(page.getByTestId("expense-tax-line")).toHaveText("회사 대납 세금 22% 3,497,430 · 지급 총액 12,400,000 · 기타소득 규칙");
     await expect(page.getByTestId("expense-tax-drift")).toHaveCount(0);
   });
 });
@@ -184,6 +186,72 @@ test.describe("결과 줄 aria-live (05 /review B4)", () => {
   });
 });
 
+// 06.5 V15(카드 ①): 받는 인원 칸 — 회사 대납 증빙 종류에서만, 공급가액 바로 뒤 · 분할 지급 앞. 기본 1 · 숫자만 · 비우면 한 문구 ·
+// 바꾸면 계산 한 줄이 면제 ↔ 세금으로 다시 온다. 증빙 종류를 바꿨다 되돌리면 적어 둔 값이 남는다.
+test.describe("받는 인원 칸 (06.5 V15)", () => {
+  test("기타소득에서만 칸이 서고, 숫자만 받고, 비우면 칸 오류 · 포커스, 바꾸면 계산 한 줄이 다시 온다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await openDraft(page, fx, "tracer");
+    const headcount = page.locator("#headcount");
+    const line = page.getByTestId("expense-tax-line");
+
+    await expect(headcount).toHaveCount(0);
+    await page.getByLabel("증빙 종류").selectOption("other_income");
+    await expect(headcount).toHaveCount(1);
+    await expect(page.getByLabel("받는 인원", { exact: true })).toHaveValue("1");
+    await expect(headcount).toHaveAttribute("inputmode", "numeric");
+    const order = await page.locator("#supplyAmount, #headcount, #installment, #scheduledPaymentDate").evaluateAll((elements) => elements.map((element) => element.id));
+    expect(order.slice(0, 2)).toEqual(["supplyAmount", "headcount"]);
+    expect(order.at(-1)).toBe("scheduledPaymentDate");
+
+    await page.locator("#supplyAmount").fill("150000");
+    await headcount.fill("5");
+    await expect(line).toHaveText("회사 대납 세금 0 · 면제 기준 이하 · 지급 총액 150,000 · 기타소득 규칙", { timeout: 10_000 });
+    await headcount.fill("1");
+    await expect(line).toHaveText("회사 대납 세금 22% 42,300 · 지급 총액 150,000 · 기타소득 규칙", { timeout: 10_000 });
+
+    // 숫자 아닌 글자는 칸에 남지 않는다.
+    await headcount.click();
+    await headcount.press("End");
+    await headcount.pressSequentially("a,.");
+    await expect(headcount).toHaveValue("1");
+
+    // 비우고 임시 저장 → 한 문구 · aria · 포커스.
+    await headcount.fill("");
+    await page.getByRole("button", { name: /^임시 저장/ }).click();
+    await expect(page.locator("#headcount-error")).toHaveText("받는 인원 1 미만 · 1 이상 적기");
+    await expect(headcount).toHaveAttribute("aria-invalid", "true");
+    await expect(headcount).toHaveAttribute("aria-describedby", "headcount-error");
+    await expect(headcount).toBeFocused();
+
+    // 증빙 종류를 바꿨다 되돌리면 적어 둔 값이 남는다.
+    await headcount.fill("3");
+    await page.getByLabel("증빙 종류").selectOption("tax_invoice");
+    await expect(headcount).toHaveCount(0);
+    await page.getByLabel("증빙 종류").selectOption("other_income");
+    await expect(headcount).toHaveValue("3");
+    await page.context().close();
+  });
+});
+
+// 06.5 D-6520: 기안자 폼에 증빙 금액 칸이 없다(금액은 공급가액 하나) — 증빙일 칸은 그대로.
+test.describe("증빙 금액 칸 없음 (06.5 D-6520)", () => {
+  test("작성 중 폼 · 새 팀 비용 폼에 `증빙 금액` 라벨 0 · `증빙일` 칸은 있다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await openDraft(page, fx, "tracer");
+    await expect(page.getByText("증빙 금액", { exact: true })).toHaveCount(0);
+    await expect(page.getByLabel("증빙일", { exact: true })).toHaveCount(1);
+
+    await page.goto("/expenses/new");
+    await waitForHydration(page.getByRole("button", { name: /^임시 저장/ }));
+    await expect(page.getByText("증빙 금액", { exact: true })).toHaveCount(0);
+    await expect(page.getByLabel("증빙일", { exact: true })).toHaveCount(1);
+    await page.context().close();
+  });
+});
+
 test.describe("증빙 첨부 영역 (05 /review B5 · B7)", () => {
   test("여러 파일을 한 번에 올려도 문서 화면 새로 고침은 마지막에 한 번이다", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
@@ -284,7 +352,7 @@ test.describe("견적 줄 바꾸기 포커스 플래그 (05 /review B9)", () => 
     if (!secondId) throw new Error("두 번째 작성 중 문서를 만들지 못했다");
 
     // 현재 줄을 그대로 고른다 — 서버가 아무것도 바꾸지 않아 폼은 같은 key로 남는다.
-    await page.getByRole("button", { name: "바꾸기" }).click();
+    await page.getByRole("button", { name: "바꾸기", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "견적 줄 바꾸기" });
     await expect(dialog.getByRole("option").first()).toBeVisible();
     await dialog.getByRole("option", { name: new RegExp(fx.lines.tracer.itemName) }).click();
@@ -327,6 +395,78 @@ test.describe("반려된 번호 있는 문서의 견적 줄 바꾸기 (05-09)", 
 });
 
 // 05 /review C1(adversarial F1): 기안자의 지출결의 쓰기 권한이 그 뒤 빠지면 자기 작성 중 문서는 오류 화면이 아니라 읽기 화면이다.
+// 06.5 D-6507(UI-SPEC V4): 계좌이체인데 지급처에 계좌가 없으면 1차가 막히고 이유는 담당을 적는다(고칠 권한 없는 기안자 — 3차 없음).
+test.describe("지급처 계좌 없음 (06.5 V4)", () => {
+  test("계좌 없는 거래처의 계좌이체 팀 비용 문서: 1차 aria-disabled + `지급처 계좌 없음 · 계좌 등록은 경영관리` · 3차 없음", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const suffix = randomUUID().slice(0, 6);
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E계좌없음-${suffix}`, normalizedName: `e2e계좌없음-${suffix}`, defaultEvidenceType: "tax_invoice" });
+    const { expenseId } = await createTeamExpenseDraft(fx.pm.viewer, {
+      idempotencyKey: randomUUID(),
+      fields: {
+        teamExpenseKind: "team_overhead",
+        usageDate: seoulToday(),
+        content: `계좌없음 회식-${suffix}`,
+        vendorId: vendor.id,
+        supply: { currency: "KRW", amount: 100_000, fxRate: 1 },
+        evidenceType: "tax_invoice",
+        paymentMethod: "bank_transfer",
+      },
+    });
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await page.goto(`/expenses/${expenseId}`);
+    await waitForHydration(page.getByRole("button", { name: /^임시 저장/ }));
+
+    const submit = page.getByRole("button", { name: /^지출결의 제출/ });
+    await expect(submit).toHaveAttribute("aria-disabled", "true");
+    const describedBy = (await submit.getAttribute("aria-describedby")) ?? "";
+    expect(describedBy).not.toBe("");
+    await expect(page.locator(`[id="${describedBy}"]`)).toHaveText("지급처 계좌 없음 · 계좌 등록은 경영관리", { timeout: 10_000 });
+    await expect(page.locator("#expense-next-step")).toHaveCount(0);
+    await page.context().close();
+  });
+});
+
+// 06.5 PR-C QA D-1: 새 탭에서 계좌를 등록하고 돌아오면 원래 탭의 막힘이 저절로 풀려야 한다(탭 복귀 = 미리보기 다시 호출).
+test.describe("지급처 계좌 등록 뒤 탭 복귀 (06.5 D-1)", () => {
+  test("계좌 없음으로 막힌 문서: 다른 곳에서 계좌를 등록하고 탭에 돌아오면 1차 막힘이 풀리고 제출된다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const suffix = randomUUID().slice(0, 6);
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E계좌복귀-${suffix}`, normalizedName: `e2e계좌복귀-${suffix}`, defaultEvidenceType: "tax_invoice" });
+    const { expenseId } = await createTeamExpenseDraft(fx.pm.viewer, {
+      idempotencyKey: randomUUID(),
+      fields: {
+        teamExpenseKind: "team_overhead",
+        usageDate: seoulToday(),
+        content: `계좌복귀 회식-${suffix}`,
+        vendorId: vendor.id,
+        supply: { currency: "KRW", amount: 100_000, fxRate: 1 },
+        evidenceType: "tax_invoice",
+        paymentMethod: "bank_transfer",
+      },
+    });
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await page.goto(`/expenses/${expenseId}`);
+    await waitForHydration(page.getByRole("button", { name: /^임시 저장/ }));
+    const submit = page.getByRole("button", { name: /^지출결의 제출/ });
+    await expect(submit).toHaveAttribute("aria-disabled", "true");
+
+    // 새 탭에서 계좌를 등록한 것과 같다 — 같은 DB 값을 바꾸고 원래 탭은 손대지 않는다.
+    await updateVendor(SYSTEM_VIEWER, vendor.id, { accountBank: "국민은행", accountHolder: "E2E" });
+    await updateVendorAccountNumber(SYSTEM_VIEWER, vendor.id, { accountNumberEncrypted: "e2e-encrypted", accountNumberLast4: "1234" });
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+
+    // 계좌 막힘은 풀리고 다음 이유(증빙 없음)가 온다 — 증빙을 올리면 1차가 열려 제출된다.
+    const describedBy = (await submit.getAttribute("aria-describedby")) ?? "";
+    await expect(page.locator(`[id="${describedBy}"]`)).toContainText("증빙 없음");
+    await page.getByTestId("attachments-input").setInputFiles(await uniqueReceipt(page));
+    await expect(submit).not.toHaveAttribute("aria-disabled", "true", { timeout: UPLOAD_WAIT });
+    await submit.click();
+    await expect(page.getByRole("button", { name: /^지출결의 제출/ })).toHaveCount(0);
+    await page.context().close();
+  });
+});
+
 test.describe("쓰기 권한이 빠진 기안자의 작성 중 문서 (05 /review C1)", () => {
   test("오류 화면 없이 문서 읽기 화면이 서고 폼(임시 저장 · 제출)이 없다", async ({ browser, baseURL }) => {
     const suffix = randomUUID().slice(0, 8);
@@ -401,5 +541,20 @@ test.describe("결재 정보를 끈 기안자의 반려 문서 (05 /qa I3)", () 
     } finally {
       await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "approval.value", visible: true });
     }
+  });
+});
+
+// 06.5 V12 R-2: 프로젝트 비용 폼에는 `바꾸기`가 둘(견적 줄 · 지급처) — 지급처 쪽만 접근 이름 `지급처 바꾸기`이고 보이는 글자는 `바꾸기` 그대로.
+test.describe("지급처 바꾸기 접근 이름 (06.5 V12 R-2)", () => {
+  test("견적 줄 있음 + 지급처 값 있음 폼에서 접근 이름 `지급처 바꾸기` 버튼은 하나 · 견적 줄 `바꾸기`는 그 이름이 아니다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await openDraft(page, fx, "tracer");
+    await expect(page.getByTestId("expense-vendor")).toHaveText(fx.vendorName);
+    const payee = page.getByRole("button", { name: "지급처 바꾸기", exact: true });
+    await expect(payee).toHaveCount(1);
+    await expect(payee).toHaveText("바꾸기");
+    await expect(page.locator("#line-pick")).not.toHaveAccessibleName("지급처 바꾸기");
+    await expect(page.locator("#line-pick")).toHaveText("바꾸기");
   });
 });

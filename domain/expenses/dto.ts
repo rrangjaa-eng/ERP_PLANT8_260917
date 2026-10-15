@@ -45,6 +45,9 @@ export type ExpenseDocumentDto = ExpenseDraftDto & {
   lineNo: number | null;
   itemName: string | null;
   vendorName: string | null;
+  // 06.5 D-6517: 직원 지급처 이름(사람 정보) · 문서 날짜의 그 직원 소속 팀(팀 정보) — 거래처 지급처면 null.
+  payeeUserName: string | null;
+  payeeTeamName: string | null;
   // 코드표 이름(증빙 종류 · 지급 방식) — 값(코드)은 evidenceType · paymentMethod.
   evidenceTypeName: string | null;
   paymentMethodName: string | null;
@@ -79,11 +82,12 @@ export type ExpenseDocumentDto = ExpenseDraftDto & {
   // 06-28(S23): 종결 확인 모달 재료 — 반려 · 회수(번호 있음 · 종결 아님) 문서를 보는 기안자 · 지급 권한자에게만, 그 밖은 null(버튼 없음).
   // 부제 = `{번호} · {항목} · {공급가}`(공급가는 금액을 볼 수 있을 때만), 결과 줄 = 열리는 줄 문 · 되돌림 없음.
   closeDialog: { subtitle: string; resultLines: string[] } | null;
-  // 06-10: 선결제 표시 · 사유 · 기안자 증빙 금액(공급가 자리) · 증빙일 — 폼이 저장값을 다시 그리고 문서 화면이 사유 줄을 그린다.
+  // 06-10: 선결제 표시 · 사유 · 증빙일 — 폼이 저장값을 다시 그리고 문서 화면이 사유 줄을 그린다(증빙 금액 칸은 06.5 D-6520으로 걷었다).
   prepaid: boolean;
   prepaidReason: string | null;
-  evidenceAmountKrw: number | null;
   evidenceDate: string | null;
+  // 06.5 V15(카드 ①): 회사 대납 면제의 받는 인원 — 금액 정보 항목(금액을 못 보는 계급에는 빠진다).
+  recipientCount: number;
 };
 
 export const EXPENSE_DOCUMENT_DTO_SPEC: DtoSpec<ExpenseDocumentDto, ExpenseDocumentDto> = {
@@ -96,6 +100,8 @@ export const EXPENSE_DOCUMENT_DTO_SPEC: DtoSpec<ExpenseDocumentDto, ExpenseDocum
     { key: "lineNo", from: "lineNo", infoItem: "expense.value" },
     { key: "itemName", from: "itemName", infoItem: "expense.value" },
     { key: "vendorName", from: "vendorName", infoItem: "expense.value" },
+    { key: "payeeUserName", from: "payeeUserName", infoItem: "person.value" },
+    { key: "payeeTeamName", from: "payeeTeamName", infoItem: "team.value" },
     { key: "evidenceTypeName", from: "evidenceTypeName", infoItem: "expense.value" },
     { key: "paymentMethodName", from: "paymentMethodName", infoItem: "expense.value" },
     { key: "installmentSeq", from: "installmentSeq", infoItem: "expense.value" },
@@ -124,8 +130,8 @@ export const EXPENSE_DOCUMENT_DTO_SPEC: DtoSpec<ExpenseDocumentDto, ExpenseDocum
     { key: "closeDialog", from: "closeDialog", infoItem: "expense.value" },
     { key: "prepaid", from: "prepaid", infoItem: "expense.value" },
     { key: "prepaidReason", from: "prepaidReason", infoItem: "expense.value" },
-    { key: "evidenceAmountKrw", from: "evidenceAmountKrw", infoItem: "expense.amount" },
     { key: "evidenceDate", from: "evidenceDate", infoItem: "expense.value" },
+    { key: "recipientCount", from: "recipientCount", infoItem: "expense.amount" },
   ],
 };
 
@@ -146,7 +152,11 @@ export type ExpenseDetailDto = {
   installment: boolean;
   installmentSeq: number | null;
   vendorName: string | null;
+  // 06.5 D-6517: 직원 지급처 이름(사람 정보) — 상세 행 `지급처` 값은 거래처 이름 → 직원 이름.
+  payeeUserName: string | null;
   evidenceTypeName: string | null;
+  // 06.5 V15: 회사 대납 문서의 받는 인원(금액 정보 항목) — 회사 대납이 아니면 null(상세 행 없음).
+  recipientCount: number | null;
   supply: Money | null;
   taxLine: string | null;
   // 05-10: 세율 바뀜 한 줄(번호 있는 문서에서 저장 스냅숏 ≠ 지금 기준 재계산일 때) · 살아 있는 증빙 파일(주소 없음).
@@ -173,7 +183,9 @@ export const EXPENSE_DETAIL_DTO_SPEC: DtoSpec<ExpenseDetailDto, ExpenseDetailDto
     { key: "installment", from: "installment", infoItem: "expense.value" },
     { key: "installmentSeq", from: "installmentSeq", infoItem: "expense.value" },
     { key: "vendorName", from: "vendorName", infoItem: "expense.value" },
+    { key: "payeeUserName", from: "payeeUserName", infoItem: "person.value" },
     { key: "evidenceTypeName", from: "evidenceTypeName", infoItem: "expense.value" },
+    { key: "recipientCount", from: "recipientCount", infoItem: "expense.amount" },
     { key: "supply", from: "supply", infoItem: "expense.amount" },
     { key: "taxLine", from: "taxLine", infoItem: "expense.amount" },
     { key: "taxDriftText", from: "taxDriftText", infoItem: "expense.amount" },
@@ -227,6 +239,8 @@ export type ExpenseListRowDto = {
   // 팀 비용 2행 `프로젝트 미연결 · {종류}`(견적 줄 문서 null).
   unlinkedText: string | null;
   vendorName: string | null;
+  // 06.5 D-6517: 직원 지급처 이름(사람 정보) — 지급처 열은 거래처 이름 → 직원 이름. 06.5-08 목록 검색이 이 칸을 이어 쓴다(EP2-D5).
+  payeeUserName: string | null;
   supply: Money | null;
   scheduledPaymentDate: string | null;
   drafterName: string;
@@ -244,6 +258,7 @@ export const EXPENSE_LIST_ROW_DTO_SPEC: DtoSpec<ExpenseListRowDto, ExpenseListRo
     { key: "title", from: "title", infoItem: "expense.value" },
     { key: "unlinkedText", from: "unlinkedText", infoItem: "expense.value" },
     { key: "vendorName", from: "vendorName", infoItem: "expense.value" },
+    { key: "payeeUserName", from: "payeeUserName", infoItem: "person.value" },
     { key: "supply", from: "supply", infoItem: "expense.amount" },
     { key: "scheduledPaymentDate", from: "scheduledPaymentDate", infoItem: "expense.value" },
     { key: "drafterName", from: "drafterName", infoItem: "expense.value" },
@@ -260,6 +275,8 @@ export type PaymentTargetRowDto = {
   number: string | null;
   title: string;
   vendorName: string | null;
+  // 06.5 D-6517: 직원 지급처 이름(사람 정보) — 지급처 셀은 거래처 이름 → 직원 이름.
+  payeeUserName: string | null;
   // 지급 방식 낱말(코드표 이름) — 계좌 칸은 06-20.
   paymentMethodName: string | null;
   scheduledPaymentDate: string | null;
@@ -273,8 +290,6 @@ export type PaymentTargetRowDto = {
   reason: string | null;
   prepaid: boolean;
   quoteLineId: string | null;
-  // 06-17(R10-F2) — 증빙 금액이 적혀 있는가(값이 아니라 있음만). 빈 `확인 전`은 제자리 확인 모달 대신 문서 화면으로 간다.
-  evidenceAmountEntered: boolean;
   // 06-20(O-17) — 지급 권한자의 계좌이체 행에만 있는 키(domain/payments projectPaymentAccounts).
   account?: PaymentAccount;
 };
@@ -285,6 +300,7 @@ export const PAYMENT_TARGET_ROW_DTO_SPEC: DtoSpec<PaymentTargetRowDto, PaymentTa
     { key: "number", from: "number", infoItem: "expense.value" },
     { key: "title", from: "title", infoItem: "expense.value" },
     { key: "vendorName", from: "vendorName", infoItem: "expense.value" },
+    { key: "payeeUserName", from: "payeeUserName", infoItem: "person.value" },
     { key: "paymentMethodName", from: "paymentMethodName", infoItem: "expense.value" },
     { key: "scheduledPaymentDate", from: "scheduledPaymentDate", infoItem: "expense.value" },
     { key: "evidenceStatus", from: "evidenceStatus", infoItem: "expense.value" },
@@ -295,25 +311,25 @@ export const PAYMENT_TARGET_ROW_DTO_SPEC: DtoSpec<PaymentTargetRowDto, PaymentTa
     { key: "reason", from: "reason", infoItem: "expense.value" },
     { key: "prepaid", from: "prepaid", infoItem: "expense.value" },
     { key: "quoteLineId", from: "quoteLineId", infoItem: "expense.value" },
-    { key: "evidenceAmountEntered", from: "evidenceAmountEntered", infoItem: "expense.value" },
     { key: "account", from: "account", infoItem: "vendor.value" },
   ],
 };
 
 // 06-20(S3 「지급 완료」 보기) — 지급 기록 행. 금액(이체액 · 차이)은 expense.amount, 나머지는 expense.value. 계좌 칸은 없다(O-17 — 대표가 읽는다).
-// 지급 방식은 낱말만(지급 기록이 복사한 코드의 이름). 증빙 상태는 06-06 resolveEvidenceStatus, 증빙 금액은 있음만(06-17 R10-F2 — 빈 `확인 전`은 문서 화면으로).
+// 지급 방식은 낱말만(지급 기록이 복사한 코드의 이름). 증빙 상태는 06-06 resolveEvidenceStatus(06.5 D-6520 — 증빙 금액 있음 칸 없음).
 export type PaidPaymentRowDto = {
   id: string;
   number: string | null;
   title: string;
   vendorName: string | null;
+  // 06.5 D-6517: 직원 지급처 이름(사람 정보).
+  payeeUserName: string | null;
   paymentMethodName: string | null;
   payDate: string;
   transferKrw: number;
   diffKrw: number;
   diffReason: string | null;
   evidenceStatus: string;
-  evidenceAmountEntered: boolean;
   processedByName: string;
   version: number;
 };
@@ -324,13 +340,13 @@ export const PAID_PAYMENT_ROW_DTO_SPEC: DtoSpec<PaidPaymentRowDto, PaidPaymentRo
     { key: "number", from: "number", infoItem: "expense.value" },
     { key: "title", from: "title", infoItem: "expense.value" },
     { key: "vendorName", from: "vendorName", infoItem: "expense.value" },
+    { key: "payeeUserName", from: "payeeUserName", infoItem: "person.value" },
     { key: "paymentMethodName", from: "paymentMethodName", infoItem: "expense.value" },
     { key: "payDate", from: "payDate", infoItem: "expense.value" },
     { key: "transferKrw", from: "transferKrw", infoItem: "expense.amount" },
     { key: "diffKrw", from: "diffKrw", infoItem: "expense.amount" },
     { key: "diffReason", from: "diffReason", infoItem: "expense.value" },
     { key: "evidenceStatus", from: "evidenceStatus", infoItem: "expense.value" },
-    { key: "evidenceAmountEntered", from: "evidenceAmountEntered", infoItem: "expense.value" },
     { key: "processedByName", from: "processedByName", infoItem: "expense.value" },
     { key: "version", from: "version", infoItem: "expense.value" },
   ],

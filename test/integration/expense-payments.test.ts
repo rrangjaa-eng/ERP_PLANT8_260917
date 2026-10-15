@@ -457,7 +457,7 @@ describe("지급 동시성 · 권한 · 조작 (06-04 Task 3)", () => {
     const [row] = await livePayments(doc.expenseId);
     const pre = await loadPaymentInputs(payer, { expenseId: doc.expenseId });
     if (!pre.amount || !pre.tax) throw new Error("지급 총액을 셈할 수 없는 문서");
-    const server = await decidePayable({ amount: pre.amount, taxRule: pre.tax.taxRule, applyOpts: pre.tax.dates.applyOpts, incomeType: pre.tax.incomeType }, pre.tax.rates);
+    const server = await decidePayable({ amount: pre.amount, taxRule: pre.tax.taxRule, applyOpts: pre.tax.dates.applyOpts, recipientCount: pre.tax.recipientCount }, pre.tax.rates);
     expect(server.payableKrw).toBe(payable);
     expect([row?.payableKrw, row?.grossSupplyKrw]).toEqual([server.payableKrw, server.grossSupplyKrw]);
   });
@@ -716,7 +716,7 @@ describe("지급 금액 = 공급가 · 지급 처리 기록 못 끄기 (06.5-07 
     const pre = await loadPaymentInputs(payer, { expenseId: doc.expenseId, payDate: today });
     if (!pre.tax) throw new Error("세금 규칙 없음");
     const expected = await decidePayable(
-      { amount: { source: "supply", amountKrw: 12_100_000 }, taxRule: pre.tax.taxRule, applyOpts: pre.tax.dates.applyOpts, incomeType: pre.tax.incomeType },
+      { amount: { source: "supply", amountKrw: 12_100_000 }, taxRule: pre.tax.taxRule, applyOpts: pre.tax.dates.applyOpts, recipientCount: pre.tax.recipientCount },
       pre.tax.rates,
     );
     const preview = await previewPayable(payer, { expenseId: doc.expenseId, payDate: today, correctedSupplyAmount: 12_100_000 });

@@ -2,11 +2,11 @@ import { randomUUID } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db/client";
-import { expenseEvidenceReviews, expensePayments, expenses, files, quoteLines, vendors } from "@/db/schema";
+import { expenseEvidenceReviews, expensePayments, expenses, files, quoteLines, users, vendors } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { upsertVisibility } from "@/repositories/permissions";
 import { ForbiddenError } from "@/domain/permissions/can";
-import { cancelExpensePayment, completeExpensePayment, getPaymentView, loadEvidenceOverrun, PayableChangedError, PaymentConflictError, previewPayable, saveScheduledPayDate } from "@/domain/payments";
+import { cancelExpensePayment, completeExpensePayment, getPaymentView, PayableChangedError, PaymentConflictError, previewPayable, saveScheduledPayDate } from "@/domain/payments";
 import { BATCH_ROW_FAILED, batchRowOutcome, completePaymentsBatch } from "@/domain/payments/batch";
 import { getEvidenceConfirmView, listPaidPayments, listPaymentTargets, nextUnreviewedTarget, paidViewAllowed, parsePaymentEvidenceFilter, parsePayReturn, PAYMENT_EVIDENCE_FILTERS, sumSelectedTransfers } from "@/domain/payments/targets";
 import { DIFF_REASON_REQUIRED, EVIDENCE_UNCONFIRMED } from "@/domain/payments/action-row";
@@ -16,7 +16,8 @@ import { confirmEvidence, loadPrepaidDueDays } from "@/domain/evidence-reviews";
 import { voidEvidence } from "@/domain/evidence";
 import { approveDocument } from "@/domain/approvals";
 import { listExpenses } from "@/domain/expenses/list";
-import { createExpenseFromLines } from "@/domain/expenses";
+import { changeExpensePayeeUser, createExpenseFromLines } from "@/domain/expenses";
+import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { loadTaxRates } from "@/domain/money/tax";
 import { addHistorizedValue, cancelHistorizedValue } from "@/domain/settings/registry";
 import { PAYMENT_METHOD_EVIDENCE_PAIRS, TAX_VAT_RATE } from "@/domain/settings/keys";
@@ -31,7 +32,7 @@ import { DATE_FORMAT_ERROR } from "@/domain/expenses/draft-fields";
 import { completePaymentsBatchAction } from "@/app/(app)/expenses/actions";
 import { confirmEvidenceAction } from "@/app/(app)/expenses/[id]/actions";
 import { makePerson } from "./approvals-fixtures";
-import { addApprovedRevision, attachEvidence, makeEvidenceManager, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
+import { addApprovedRevision, attachEvidence, makeEvidenceManager, setupExpenseProject, submitReadyDraft, type ExpenseFixture, testVendorAccount } from "./fixtures/expenses";
 import { approvedExpenseWithEvidence, approvedExpenseWithoutEvidence, makePaymentManager, setEvidenceRequired, type ApprovedExpense } from "./fixtures/payments";
 
 // 06-15(EXP-09 · EXP-06 · AS1 · D-604) — 지급 대상 목록(S1)과 건별 트랜잭션 일괄 지급(S2). 통과를 기대하는 문서는 06-03 · 06-04처럼
@@ -357,7 +358,7 @@ describe("막힘 · 재판정 · 스냅숏 (06-15 Task 2)", () => {
   it("짝 막힘 — 계좌이체 · 카드 전표가 짝 목록 밖이면 목록 selectable false + 이유, 조작 요청으로 보내도 같은 문구로 거부", async () => {
     const payer = await makePayer();
     const fx = await setupExpenseProject();
-    const cardVendor = await insertVendor(SYSTEM_VIEWER, { name: "카드가맹", normalizedName: `카드가맹-${randomUUID()}`, defaultEvidenceType: "card_receipt" });
+    const cardVendor = await insertVendor(SYSTEM_VIEWER, { name: "카드가맹", normalizedName: `카드가맹-${randomUUID()}`, defaultEvidenceType: "card_receipt", ...testVendorAccount() });
     const [doc] = await approvedMany(fx, await extraLines(fx, 1, cardVendor.id), false);
     if (!doc) throw new Error("문서 없음");
     const [row] = await db.select({ method: expenses.paymentMethod, evidenceType: expenses.evidenceType }).from(expenses).where(eq(expenses.id, doc.expenseId));
@@ -727,7 +728,7 @@ describe("제자리 증빙 확인 보기 (06-17 Task 4)", () => {
     const view = await getEvidenceConfirmView(payer, { expenseId: doc.expenseId, rowVersion: doc.version });
     expect(view.version).toBe(doc.version);
     expect(view.number).toBe(doc.number);
-    expect(view.evidenceAmountKrw).toBe(1_000_000);
+    expect("evidenceAmountKrw" in view).toBe(false);
     expect(view.files).toHaveLength(1);
     expect(view.files?.[0]?.name).not.toBe("");
     expect(view.evidenceStamp).toBe(paymentView?.evidenceStamp);
@@ -758,7 +759,7 @@ describe("제자리 증빙 확인 보기 (06-17 Task 4)", () => {
     expect(foreign.supply).toEqual({ currency: "USD", amount: 1000 });
   }, 30_000);
 
-  it("증빙 확인 보기 — 증빙 금액 초과 한 줄(Q-F): 승인액 12,000,000 · 실행가 12,250,000 · 증빙 금액 12,400,000 → 06-06 loadEvidenceOverrun과 같은 한 줄 / 11,000,000 → null", async () => {
+  it("증빙 확인 보기 — 넘침 줄 없음(06.5 D-6520): 증빙 금액이 승인액 · 실행가를 넘어도 넘침 칸이 없고 세금 한 줄은 공급가 기준이다", async () => {
     const payer = await makePayer();
     const fx = await setupExpenseProject();
     const doc = await unreviewedWithAmount(fx, 12_400_000);
@@ -766,13 +767,19 @@ describe("제자리 증빙 확인 보기 (06-17 Task 4)", () => {
     await db.update(quoteLines).set({ executionAmountKrw: 12_250_000 }).where(eq(quoteLines.id, fx.lines.withVendor));
 
     const view = await getEvidenceConfirmView(payer, { expenseId: doc.expenseId, rowVersion: doc.version });
-    expect(view.evidenceOverrun).toBe("승인액보다 +400,000 · 실행가 초과 150,000");
-    const [row] = await db.select().from(expenses).where(eq(expenses.id, doc.expenseId));
-    if (!row) throw new Error("지출결의 없음");
-    expect(view.evidenceOverrun).toBe(await loadEvidenceOverrun(payer, row, 12_400_000));
+    expect("evidenceOverrun" in view).toBe(false);
+    const paymentView = await getPaymentView(payer, doc.expenseId);
+    expect(view.taxLine).toEqual(paymentView?.evidenceTaxLine);
 
+    // 증빙 금액만 바꿔도 지급 금액 · 세금 한 줄 · 지문이 그대로다 — 금액은 공급가액 하나에서 나온다.
     await db.update(expenses).set({ evidenceAmount: 11_000_000 }).where(eq(expenses.id, doc.expenseId));
-    expect((await getEvidenceConfirmView(payer, { expenseId: doc.expenseId, rowVersion: doc.version })).evidenceOverrun).toBeNull();
+    const after = await getEvidenceConfirmView(payer, { expenseId: doc.expenseId, rowVersion: doc.version });
+    const paymentAfter = await getPaymentView(payer, doc.expenseId);
+    expect({ taxLine: after.taxLine, stamp: after.evidenceStamp, payableKrw: paymentAfter?.payableKrw }).toEqual({
+      taxLine: view.taxLine,
+      stamp: view.evidenceStamp,
+      payableKrw: paymentView?.payableKrw,
+    });
   });
 
   it("증빙 지문 다름 → 확인 거부: 보기 뒤 기안자가 증빙 하나 더 → 지금 DB version + 옛 지문으로 확인 → 동시성 거부 · 확인 기록 없음 / 다시 받은 보기 version + 지문 → 확인됨", async () => {
@@ -902,7 +909,7 @@ describe("계좌 투영 (06-20 Task 2)", () => {
     if (!doc) throw new Error("문서 필요");
 
     const row = rowsOf(await listPaymentTargets(payer, {})).find((candidate) => candidate.id === doc.expenseId);
-    expect(row?.account).toEqual({ status: "registered", vendorId: fx.stageOneId, bank, masked: "****-**-4321", holder, canReveal: false });
+    expect(row?.account).toEqual({ status: "registered", ownerKind: "vendor", ownerId: fx.stageOneId, bank, masked: "****-**-4321", holder, canReveal: false });
     const payerView = await getPaymentView(payer, doc.expenseId);
     expect(payerView?.account).toEqual(row?.account);
 
@@ -917,9 +924,11 @@ describe("계좌 투영 (06-20 Task 2)", () => {
   it("계좌 없음 행 고를 수 있음 — 계좌 없는 거래처의 계좌이체 P4 행은 account 「없음」 · selectable 참(M-7)", async () => {
     const payer = await makePayer();
     const fx = await setupExpenseProject();
-    const bare = await insertVendor(SYSTEM_VIEWER, { name: "계좌없는곳", normalizedName: `계좌없는곳-${randomUUID()}`, defaultEvidenceType: "tax_invoice" });
+    // 06.5 D-6507: 계좌 없는 계좌이체는 제출에서 막히므로 결재 통과 뒤 계좌가 지워진 거래처로 만든다(지급 단계 「없음」 갈래는 그대로 남는다).
+    const bare = await insertVendor(SYSTEM_VIEWER, { name: "계좌없는곳", normalizedName: `계좌없는곳-${randomUUID()}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount() });
     const [doc] = await approvedMany(fx, await extraLines(fx, 1, bare.id), false);
     if (!doc) throw new Error("문서 필요");
+    await db.update(vendors).set({ accountBank: null, accountHolder: null, accountNumberEncrypted: null, accountNumberLast4: null }).where(eq(vendors.id, bare.id));
 
     const row = rowsOf(await listPaymentTargets(payer, {})).find((candidate) => candidate.id === doc.expenseId);
     expect(row?.account).toEqual({ status: "none" });
@@ -1055,5 +1064,73 @@ describe("일괄 지급 금액 = 공급가 (06.5-07 D-6520)", () => {
     expect(result.processed).toBe(1);
     const [row] = await livePayments(doc.expenseId);
     expect([row?.grossSupplyKrw, row?.payableKrw]).toEqual([supply, supplyPayable]);
+  });
+});
+
+// 06.5 D-6517(PR-C 독립 검토 P2-1): 두 목록의 머리글이 「지급처」인데 셀이 거래처 이름만 읽어 직원 지급처가 「—」였다.
+// 직원 이름은 사람 정보(person.value) — 그 항목이 꺼진 계급에는 키가 실리지 않는다.
+describe("지급 대상 · 지급 완료 목록의 직원 지급처 이름 (06.5 D-6517)", () => {
+  async function employeePayeeDoc(fx: ExpenseFixture, name: string): Promise<{ doc: ApprovedExpense; payeeUserId: string }> {
+    const person = await makePerson(name, DEFAULT_ROLE_ID, "기획1팀");
+    await db.update(users).set(testVendorAccount()).where(eq(users.id, person.id));
+    const [lineId] = await extraLines(fx, 1);
+    const expenseId = (await createExpenseFromLines(fx.pm, { lineIds: [lineId ?? ""] })).created[0]?.expenseId;
+    if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
+    await changeExpensePayeeUser(fx.pm, { expenseId, userId: person.id, expectedVersion: await versionOf(expenseId) });
+    const submitted = await submitReadyDraft(fx.pm, expenseId);
+    if (submitted.kind !== "submitted") throw new Error("제출 안 됨");
+    const first = await approveDocument(fx.lead, { instanceId: submitted.instanceId, expectedVersion: submitted.version });
+    await approveDocument(fx.ceo, { instanceId: submitted.instanceId, expectedVersion: first.version });
+    const voider = await makeEvidenceManager("증빙무효", { attach: false, void: true });
+    const alive = await db
+      .select({ id: files.id })
+      .from(files)
+      .where(and(eq(files.ownerKind, "expense"), eq(files.ownerId, expenseId), isNull(files.removedAt), isNull(files.voidedAt)));
+    for (const file of alive) await voidEvidence(voider, { fileId: file.id, reason: "다른 건 영수증" });
+    return { doc: { expenseId, instanceId: submitted.instanceId, number: submitted.number, version: await versionOf(expenseId) }, payeeUserId: person.id };
+  }
+
+  it("직원 지급처 문서 — 지급 대상 · 지급 완료 행에 직원 이름(거래처 이름 없음), person.value가 꺼진 계급에는 이름 키가 없다", async () => {
+    const payer = await makePayer();
+    const blind = await makePayer("사람안보임");
+    if (!payer.roleId) throw new Error("계급 없음");
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: payer.roleId, infoItem: "person.value", visible: true });
+    const fx = await setupExpenseProject();
+    const { doc } = await employeePayeeDoc(fx, "김직원지급");
+
+    const target = rowsOf(await listPaymentTargets(payer, {})).find((row) => row.id === doc.expenseId);
+    expect(target).toMatchObject({ vendorName: null, payeeUserName: "김직원지급" });
+    const hiddenTarget = rowsOf(await listPaymentTargets(blind, {})).find((row) => row.id === doc.expenseId);
+    expect(hiddenTarget).toBeDefined();
+    expect(hiddenTarget && "payeeUserName" in hiddenTarget).toBe(false);
+
+    const result = await completePaymentsBatch(payer, { payDate: seoulToday(), rows: [await snapshotOf(payer, doc)] });
+    expect(result.processed).toBe(1);
+    const paid = paidRowsOf(await listPaidPayments(payer, {})).find((row) => row.id === doc.expenseId);
+    expect(paid).toMatchObject({ vendorName: null, payeeUserName: "김직원지급" });
+    const hiddenPaid = paidRowsOf(await listPaidPayments(blind, {})).find((row) => row.id === doc.expenseId);
+    expect(hiddenPaid).toBeDefined();
+    expect(hiddenPaid && "payeeUserName" in hiddenPaid).toBe(false);
+  });
+
+  // 06.5 D-6517(PR-C 리뷰): 직원 지급처 계좌이체 행은 거래처 id가 없어 「계좌 없음」으로 보였다. 직원 계좌는 D-6505 게이트
+  // (canManagePayoutAccount — 지급 쓰기 ∧ admin.people 보기 ∧ person.value)를 통과한 사람에게만 — 아니면 account 키 자체가 없다.
+  it("직원 지급처 계좌 — 게이트 통과자는 S1 행 · 지급 보기에 직원 계좌(마스킹), admin.people 보기가 없는 지급 권한자는 account 키 없음", async () => {
+    const manager = await makePayer();
+    const payerOnly = await makePayer("사람관리없음");
+    if (!manager.roleId || !payerOnly.roleId) throw new Error("계급 없음");
+    for (const roleId of [manager.roleId, payerOnly.roleId]) await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "person.value", visible: true });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: manager.roleId, menu: "admin.people", action: "view", allowed: true });
+    const fx = await setupExpenseProject();
+    const { doc, payeeUserId } = await employeePayeeDoc(fx, "김직원계좌");
+
+    const expected = { status: "registered", ownerKind: "user", ownerId: payeeUserId, bank: "신한은행", masked: "****-**-6789", holder: "테스트 예금주", canReveal: false };
+    expect(rowsOf(await listPaymentTargets(manager, {})).find((row) => row.id === doc.expenseId)?.account).toEqual(expected);
+    expect((await getPaymentView(manager, doc.expenseId))?.account).toEqual(expected);
+
+    const hidden = rowsOf(await listPaymentTargets(payerOnly, {})).find((row) => row.id === doc.expenseId);
+    expect(hidden).toBeDefined();
+    expect(hidden && "account" in hidden).toBe(false);
+    expect(Object.keys((await getPaymentView(payerOnly, doc.expenseId)) ?? {})).not.toContain("account");
   });
 });

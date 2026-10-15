@@ -26,7 +26,7 @@ import { SidePanel } from "@/ui/side-panel/SidePanel";
 import styles from "@/app/(app)/projects/projects.module.css";
 import { CardUsageFilters, CardUsageList, CardUsageLoadError, type CardUsageListRowView } from "./card-usage-list";
 import { CardUsageDeleteUndo, CardUsageUndoLine } from "./delete-undo";
-import { CardUsageForm, type CardSlipArea, type CardUsageEdit } from "./card-usage-form";
+import { CardUsageEditPanel, CardUsageForm, type CardSlipArea, type CardUsageEdit } from "./card-usage-form";
 
 // 06-05(EXP-07 · UI-SPEC S8 · S9 · C12): 법인카드 사용 목록 = 원장. 한 건 등록은 `?new=1` 옆 패널(페이지 폼 없음).
 // 필터 · 쪽은 GET 쿼리(`month` · `card` · `link` · `via` · `page`) — 범위 · 합계 · 쪽은 서버(listCardUsages)가 정한다.
@@ -61,6 +61,7 @@ function toEditView(usage: Partial<CardUsageEditDto>, changeLink: boolean, cardO
   return {
     id: usage.id,
     version: usage.version,
+    number: usage.number ?? null,
     cardId: usage.cardId,
     cardText: usage.cardText ?? "",
     proxyHint: usage.proxyHint ?? null,
@@ -126,6 +127,7 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
             registeredByName: row.registeredByName ?? "—",
             registeredOn: row.registeredOn ?? null,
             purchaseNumber: row.purchaseNumber ?? null,
+            number: row.number ?? null,
             totalKrw: row.totalKrw ?? null,
             supplyKrw: row.supplyKrw ?? null,
             vatKrw: row.vatKrw ?? null,
@@ -177,7 +179,8 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
   if (edit) {
     panel = (
       // 열린 대상별 key(06-12 검토 I-2) — 닫기 이동이 끝나기 전에 다른 패널을 열면 같은 자리의 닫힌 SidePanel(<dialog>)이 재사용되지 않고 새로 열린다.
-      <SidePanel key={`edit-${edit.id}`} title="카드 사용 수정" closeHref={listHref}>
+      // 06.5 L-1: 주소로 직접 열어 저장하면 그 행 `수정`으로 — returnFocusTo는 클라이언트 감싸개(CardUsageEditPanel)가 만든다.
+      <CardUsageEditPanel key={`edit-${edit.id}`} id={edit.id} closeHref={listHref}>
         <CardUsageForm
           cards={[]}
           evidenceTypes={options.evidenceTypes}
@@ -197,7 +200,7 @@ export default async function CardsPage({ searchParams }: { searchParams: Promis
           edit={edit}
           slip={editSlip}
         />
-      </SidePanel>
+      </CardUsageEditPanel>
     );
   } else if (first(params.new) === "1" && cards.length > 0) {
     // 진입(M-4) — S14 견적 줄 행 `?line=` · S15 빈 섹션 `?project=`. 고를 수 없으면 서버가 버리고 직전 등록 기준.

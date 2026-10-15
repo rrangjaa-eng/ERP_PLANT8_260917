@@ -127,7 +127,8 @@ describe("미리보기(쓰기 없음) · 폼 선택지", () => {
     const expenseId = await draftOnStageLine(fx);
 
     const preview = await previewExpense(fx.pm, { expenseId, fields: { evidenceType: "other_income", supply: { currency: "KRW", amount: 3_000_000, fxRate: 1 } } });
-    expect(preview.taxLine?.text).toBe("원천징수 8.8% 264,000 · 실지급액 2,736,000 · 기타소득 규칙");
+    // 06.5 D-6501 — 기타소득은 회사 대납 22% 역산: 3,000,000 ÷ 0.78 − 3,000,000 = 846,153.8 → 10원 절사 846,150.
+    expect(preview.taxLine?.text).toBe("회사 대납 세금 22% 846,150 · 지급 총액 3,000,000 · 기타소득 규칙");
     expect(await expenseRow(expenseId)).toMatchObject({ evidenceType: "tax_invoice", supplyAmountKrw: 12_400_000, version: 1 });
   });
 

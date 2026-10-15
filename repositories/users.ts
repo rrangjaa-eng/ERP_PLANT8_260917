@@ -156,6 +156,18 @@ export async function findUserPayoutAccount(viewer: Viewer, userId: string, tx: 
   return row ?? null;
 }
 
+// 06.5 D-6517: 지급 대상 · 지급 보기의 직원 지급처 계좌 칸 — id 묶음 한 번. 평문(암호문)은 읽지 않는다(해제는 revealPersonAccountNumber 하나).
+export type UserPayoutAccountByIdRow = { userId: string; bank: string | null; holder: string | null; last4: string | null };
+
+export async function findUserPayoutAccountsByIds(viewer: Viewer, userIds: readonly string[]): Promise<UserPayoutAccountByIdRow[]> {
+  void viewer;
+  if (userIds.length === 0) return [];
+  return db
+    .select({ userId: users.id, bank: users.accountBank, holder: users.accountHolder, last4: users.accountNumberLast4 })
+    .from(users)
+    .where(inArray(users.id, [...userIds]));
+}
+
 // 암호문 키가 values에 없으면(keep) 두 번호 칸을 set에 넣지 않는다. 동시 저장으로 예금주 없는 계좌가 되면
 // users_account_holder_required_check(23514)가 막는다(호출자가 판별).
 export async function updateUserPayoutAccount(

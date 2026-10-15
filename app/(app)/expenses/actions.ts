@@ -8,6 +8,7 @@ import { currentHolderNames, projectActionResult } from "@/domain/approvals";
 import {
   EXPENSE_DOCUMENT_KIND,
   changeExpenseLine,
+  changeExpensePayeeUser,
   changeExpenseVendor,
   closeExpense,
   createExpenseFromLines,
@@ -25,7 +26,7 @@ import { completePaymentsBatch } from "@/domain/payments/batch";
 import { getEvidenceConfirmView, sumSelectedTransfers } from "@/domain/payments/targets";
 import { DIFF_REASON_REQUIRED } from "@/domain/payments/action-row";
 import { isCalendarDate } from "@/lib/dates";
-import { searchLinesForPick, searchVendorsForPick } from "@/domain/expenses/pick";
+import { searchLinesForPick, searchPayeeUsersForPick, searchVendorsForPick } from "@/domain/expenses/pick";
 import {
   completeEvidenceUpload,
   createEvidenceViewUrl,
@@ -97,6 +98,20 @@ export const changeExpenseVendorAction = authedActionClient
 export const searchVendorsForPickAction = authedActionClient
   .schema(z.object({ query: z.string().max(100) }))
   .action(async ({ parsedInput, ctx }) => searchVendorsForPick(ctx.viewer, parsedInput));
+
+// 06.5 V12(D-6517): 지급처 고르기의 직원 후보 — 서버 조회(행은 PickPayeeUserOptionDto 투영). 거래처 검색과 같은 검색어 하나로 함께 부른다.
+export const searchPayeeUsersForPickAction = authedActionClient
+  .schema(z.object({ query: z.string().max(100) }))
+  .action(async ({ parsedInput, ctx }) => searchPayeeUsersForPick(ctx.viewer, parsedInput));
+
+// 06.5 D-6517: 지급처를 직원으로 바꾸기 — 새 version만 돌려준다(증빙 종류는 건드리지 않는다).
+export const changeExpensePayeeUserAction = authedActionClient
+  .schema(z.object({ expenseId: expenseIdSchema, userId: z.string().min(1).max(100), expectedVersion: z.number().int().min(1) }))
+  .action(async ({ parsedInput, ctx }) => {
+    const changed = await changeExpensePayeeUser(ctx.viewer, parsedInput);
+    revalidatePath(`/expenses/${parsedInput.expenseId}`);
+    return { version: changed.version };
+  });
 
 // 05-07 골라내기 견적 줄 검색 — change = 그 문서 프로젝트의 줄 전부, pick = 내 담당 프로젝트(검색어가 있으면 쓰기 범위 전체). 행 · 그룹은 투영 DTO다.
 export const searchLinesForPickAction = authedActionClient

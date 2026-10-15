@@ -20,7 +20,7 @@ import { insertVendor, setVendorHidden } from "@/repositories/vendors";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { makePerson, teamIdByName } from "./approvals-fixtures";
-import { setupExpenseProject, submitReadyDraft } from "./fixtures/expenses";
+import { setupExpenseProject, submitReadyDraft, testVendorAccount } from "./fixtures/expenses";
 
 // 05-07 골라내기 · 서버 판정 — 거래처(Task 1) · 견적 줄(Task 2). 행은 투영 DTO(PickVendorOptionDto · PickLineOptionDto)다.
 
@@ -102,7 +102,7 @@ describe("거래처 바꾸기 changeExpenseVendor", () => {
     expect(afterSecond).toMatchObject({ vendorId: plain.id, evidenceType: "other_income" });
   });
 
-  it("버전이 낡으면 충돌, 남의 문서 · 없는 거래처는 없는 문서, 견적 줄 문서의 거래처는 줄이 정한다", async () => {
+  it("버전이 낡으면 충돌, 남의 문서 · 없는 거래처는 없는 문서, 견적 줄 문서도 거래처를 바꿀 수 있다(06.5 결정 맥락 16)", async () => {
     const pm = await makePerson("박서연", DEFAULT_ROLE_ID, "기획1팀");
     const other = await makePerson("남", DEFAULT_ROLE_ID, "기획1팀");
     const expenseId = await teamDraft(pm);
@@ -115,7 +115,9 @@ describe("거래처 바꾸기 changeExpenseVendor", () => {
     const fx = await setupExpenseProject();
     const created = await createExpenseFromLines(fx.pm, { lineIds: [fx.lines.withVendor] });
     const lineDoc = created.created[0]?.expenseId ?? "";
-    await expect(changeExpenseVendor(fx.pm, { expenseId: lineDoc, vendorId: vendor.id, expectedVersion: 1 })).rejects.toBeInstanceOf(ExpenseNotFoundError);
+    expect(await changeExpenseVendor(fx.pm, { expenseId: lineDoc, vendorId: vendor.id, expectedVersion: 1 })).toMatchObject({ version: 2 });
+    const [lineRow] = await db.select().from(expenses).where(eq(expenses.id, lineDoc));
+    expect(lineRow).toMatchObject({ vendorId: vendor.id, payeeUserId: null });
   });
 });
 
@@ -287,7 +289,13 @@ describe("견적 줄 골라내기 searchLinesForPick · pick", () => {
 describe("견적 줄 골라내기 쿼리 수 (A7 · performance)", () => {
   // 후보 프로젝트 하나에 거래처가 다른 줄 둘 · 그중 하나는 제출 문서로 닫힌 줄.
   async function closedLineProject(pm: Viewer, tag: string): Promise<void> {
-    const vendor = await vendorNamed(`쿼리수거래처-${tag}`, "tax_invoice");
+    // 06.5 D-6507: 제출까지 가는 문서라 계좌이체 지급처에 계좌를 둔다.
+    const vendor = await insertVendor(SYSTEM_VIEWER, {
+      name: `쿼리수거래처-${tag}`,
+      normalizedName: `쿼리수거래처-${tag}-${randomUUID()}`,
+      defaultEvidenceType: "tax_invoice",
+      ...testVendorAccount(),
+    });
     const { lineIds } = await projectWithLines(pm, `쿼리수프로젝트-${tag}`, [`닫힌줄-${tag}`, `열린줄-${tag}`], vendor.id);
     const created = await createExpenseFromLines(pm, { lineIds: [lineIds[0] ?? ""] });
     const result = await submitReadyDraft(pm, created.created[0]?.expenseId ?? "");

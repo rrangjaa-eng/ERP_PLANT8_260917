@@ -10,7 +10,8 @@ const PASSING: ExpenseSubmitFacts = {
   customerApproval: { status: "in_progress", revisionSeq: 2, revisionApproved: true, gateEnabled: true, actorIsAssignedPm: true, pmName: "박서연" },
   projectCompleted: false,
   line: { inCurrentRevision: true, closedBy: null },
-  vendorId: "vendor-1",
+  payee: { kind: "vendor", id: "vendor-1" },
+  payeeAccountMissing: false,
   teamCost: null,
   supplyAmountKrw: 12_400_000,
   evidenceType: "tax_invoice",
@@ -30,7 +31,7 @@ const BLOCKS = {
   2: { projectCompleted: true },
   3: { line: { inCurrentRevision: false, closedBy: null } },
   4: { line: { inCurrentRevision: true, closedBy: { id: "expense-4", number: "26001-0004" } } },
-  5: { vendorId: null },
+  5: { payee: null },
   6: { evidenceType: null },
   7: { supplyAmountKrw: 0 },
   8: { evidenceCount: 0 },
@@ -51,7 +52,7 @@ const REASONS = {
   2: "완료 프로젝트 · 새 지출결의 없음",
   3: "견적 줄이 현재 차수에 없음 · 견적 줄 바꾸기",
   4: "이 줄에 지출결의 26001-0004 있음 · 지출결의 열기",
-  5: "거래처 없음 · 거래처 고르기",
+  5: "지급처 없음 · 지급처 고르기",
   6: "증빙 종류 비어 있음 · 증빙 종류 고르기",
   7: "공급가액이 0 · 0보다 크게",
   8: "증빙 없음 · 증빙 올리기 Ctrl+U",
@@ -178,6 +179,33 @@ describe("⑧ 앞 선결제 단계", () => {
 
   it("선결제 아님 · 사유 빔은 막지 않는다", async () => {
     expect(await reasonOf(facts({ prepaid: false, prepaidReason: null }))).toBeNull();
+  });
+});
+
+// 06.5 D-6507(UI-SPEC V4): 계좌이체인데 지급처에 쓸 수 있는 계좌가 없으면 막는다 — 쓰지 않는 지급 방식 바로 뒤 · 공급가액 0 앞.
+describe("지급처 계좌 없음 단계", () => {
+  const MISSING = "지급처 계좌 없음 · 계좌 등록은 경영관리";
+
+  it("계좌가 없으면 그 글자와 payeeAccount 대상", async () => {
+    const input = facts({ payeeAccountMissing: true });
+    expect(await reasonOf(input)).toBe(MISSING);
+    expect(await nextActionTarget(input)).toBe("payeeAccount");
+  });
+
+  it("쓰지 않는 지급 방식이 먼저다", async () => {
+    expect(await reasonOf(facts({ payeeAccountMissing: true, paymentMethodInactive: true }))).toBe("쓰지 않는 지급 방식 · 지급 방식 고르기");
+  });
+
+  it("공급가액 0보다 앞이다", async () => {
+    expect(await reasonOf(facts({ payeeAccountMissing: true, supplyAmountKrw: 0 }))).toBe(MISSING);
+  });
+
+  it("지급처가 없으면 ⑤가 먼저다", async () => {
+    expect(await reasonOf(facts({ payeeAccountMissing: true, payee: null }))).toBe(REASONS[5]);
+  });
+
+  it("직원 지급처도 ⑤를 통과한다", async () => {
+    expect(await reasonOf(facts({ payee: { kind: "user", id: "user-1" } }))).toBeNull();
   });
 });
 

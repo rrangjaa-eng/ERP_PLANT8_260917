@@ -6,7 +6,7 @@ import { submitLeave } from "@/domain/leave";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { insertVendor } from "@/repositories/vendors";
 import { NOW_2026 } from "./approvals-fixtures";
-import { setupExpenseProject, submitReadyDraft } from "./fixtures/expenses";
+import { setupExpenseProject, submitReadyDraft, testVendorAccount } from "./fixtures/expenses";
 
 // 05-10 Task 2 ① — 결재함 지출결의 요약 값: 숫자 칸 머리글 · measure(원화 + 원래 통화) · 문서 칸 글자.
 // 요약 값은 종류가 만들고(describeDocuments) 결재함 화면은 그대로 그리므로, 이 파일은 요약이 화면 재료로 맞는지만 본다.
@@ -18,7 +18,7 @@ async function submittedTeamExpense(viewer: Viewer, content: string, supply: { c
     idempotencyKey: randomUUID(),
     fields: { teamExpenseKind: "team_overhead", usageDate: TODAY, content },
   });
-  const vendor = await insertVendor(SYSTEM_VIEWER, { name: `거래처-${randomUUID().slice(0, 6)}`, normalizedName: `거래처-${randomUUID()}`, defaultEvidenceType: "tax_invoice" });
+  const vendor = await insertVendor(SYSTEM_VIEWER, { name: `거래처-${randomUUID().slice(0, 6)}`, normalizedName: `거래처-${randomUUID()}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount() });
   const payment = (await listExpenseFormOptions(viewer)).payment[0]?.value;
   if (!payment) throw new Error("지급 방식 코드 없음");
   await saveExpenseDraft(viewer, { expenseId, expectedVersion: 1, fields: { vendorId: vendor.id, evidenceType: "tax_invoice", paymentMethod: payment, supply } });

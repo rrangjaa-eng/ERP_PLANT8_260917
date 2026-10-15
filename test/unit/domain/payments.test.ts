@@ -1,7 +1,7 @@
 import { describe, expect, expectTypeOf, it, vi } from "vitest";
 import type { TaxRule } from "@/domain/code-tables/tax-rule";
 import { loadTaxRates, type TaxRates } from "@/domain/money/tax";
-import { computeExpenseTax, incomeTypeFor, pickTaxDates } from "@/domain/expenses/tax";
+import { computeExpenseTax, pickTaxDates } from "@/domain/expenses/tax";
 import { GateBlockedError } from "@/domain/rules/gate";
 import {
   BasisChangedSignal,
@@ -13,6 +13,7 @@ import {
   pickPaymentAmount,
   type LockedExpense,
   type PayableInput,
+  type PaymentAmount,
   type PaymentInputs,
   type PaymentShared,
 } from "@/domain/payments";
@@ -27,13 +28,12 @@ const RATES: TaxRates = {
   asOf: "2026-09-22",
   vatRate: 0.1,
   vatUnit: 1,
-  withholdingOtherRate: 0.088,
   withholdingBusinessRate: 0.033,
-  withholdingOtherExemptThreshold: 125_000,
   withholdingUnit: 10,
   minWithholding: 0,
   companyBorneRate: 0.088,
   companyBorneMethod: "flat",
+  companyBorneExemptThreshold: 50_000,
   basisWithholding: "payment_date",
   basisVat: "evidence_date",
 };
@@ -41,13 +41,12 @@ const RATES: TaxRates = {
 const SETTING_VALUES: Record<string, unknown> = {
   "tax.vat.rate": RATES.vatRate,
   "tax.rounding.vat_unit": RATES.vatUnit,
-  "tax.withholding.other_income.rate": RATES.withholdingOtherRate,
   "tax.withholding.business_income.rate": RATES.withholdingBusinessRate,
-  "tax.withholding.other_income.exempt_threshold": RATES.withholdingOtherExemptThreshold,
   "tax.rounding.withholding_unit": RATES.withholdingUnit,
   "tax.rounding.min_withholding": RATES.minWithholding,
   "tax.company_borne.rate": RATES.companyBorneRate,
   "tax.company_borne.method": RATES.companyBorneMethod,
+  "tax.company_borne.exempt_threshold": RATES.companyBorneExemptThreshold,
   "tax.basis_date.withholding": RATES.basisWithholding,
   "tax.basis_date.vat": RATES.basisVat,
 };
@@ -58,43 +57,31 @@ const COMPANY_BORNE_RULE: TaxRule = { ruleKind: "company_borne", roundingUnit: 1
 const OPTS = { paymentDate: "2026-09-22", evidenceDate: "2026-09-22" };
 
 function vatInput(amountKrw: number, transferKrw?: number, rule: TaxRule = VAT_RULE) {
-  return { amount: { source: "supply" as const, amountKrw }, taxRule: rule, applyOpts: OPTS, incomeType: "other" as const, transferKrw };
+  return { amount: { source: "supply" as const, amountKrw }, taxRule: rule, applyOpts: OPTS, recipientCount: 1, transferKrw };
 }
 
 // 06.5 D-6520(사용자 카드 10/13 23:44 KST): 지급 금액은 공급가 하나 — 증빙 금액 칸은 금액 원천이 아니다.
 describe("pickPaymentAmount (D-6520)", () => {
-  it("파일 있음 · 증빙 금액 90,000 → 공급가 100,000", () => {
-    expect(pickPaymentAmount({ hasLiveEvidence: true, evidenceAmountKrw: 90_000, supplyAmountKrw: 100_000 })).toEqual({
-      source: "supply",
-      amountKrw: 100_000,
-    });
+  it("공급가 1,000,000 → { source: supply, amountKrw: 1,000,000 }", () => {
+    expect(pickPaymentAmount({ supplyAmountKrw: 1_000_000 })).toEqual({ source: "supply", amountKrw: 1_000_000 });
   });
 
-  it("파일 0 · 증빙 금액만 → 공급가", () => {
-    expect(pickPaymentAmount({ hasLiveEvidence: false, evidenceAmountKrw: 900_000, supplyAmountKrw: 1_000_000 })).toEqual({
-      source: "supply",
-      amountKrw: 1_000_000,
-    });
-  });
-
-  it("파일 있음 · 증빙 금액 없음 → 공급가", () => {
-    expect(pickPaymentAmount({ hasLiveEvidence: true, evidenceAmountKrw: null, supplyAmountKrw: 1_000_000 })).toEqual({
-      source: "supply",
-      amountKrw: 1_000_000,
-    });
+  it("입력에 증빙 유무 · 증빙 금액 칸이 없고 금액 원천은 supply 하나다(타입 수준)", () => {
+    expectTypeOf(pickPaymentAmount).parameter(0).toEqualTypeOf<{ supplyAmountKrw: number }>();
+    expectTypeOf<PaymentAmount["source"]>().toEqualTypeOf<"supply">();
   });
 });
 
 describe("decidePayable", () => {
   it("금액은 pickPaymentAmount 결과만 쓴다 — 증빙 금액이 남아 있어도 공급가로 셈한다(D-6520)", async () => {
-    const amount = pickPaymentAmount({ hasLiveEvidence: true, evidenceAmountKrw: 500_000, supplyAmountKrw: 1_000_000 });
-    const result = await decidePayable({ amount, taxRule: VAT_RULE, applyOpts: OPTS, incomeType: "other" }, RATES);
+    const amount = pickPaymentAmount({ supplyAmountKrw: 1_000_000 });
+    const result = await decidePayable({ amount, taxRule: VAT_RULE, applyOpts: OPTS, recipientCount: 1 }, RATES);
     expect(result.payableKrw).toBe(1_100_000);
   });
 
   const SAME_AS_05: [string, TaxRule, string][] = [
     ["부가세", VAT_RULE, "tax_invoice"],
-    ["원천징수", WITHHOLDING_RULE, "other_income"],
+    ["원천징수", WITHHOLDING_RULE, "business_income"],
     ["회사 대납", COMPANY_BORNE_RULE, "company_borne"],
   ];
   for (const [label, rule, evidenceType] of SAME_AS_05) {
@@ -109,7 +96,7 @@ describe("decidePayable", () => {
       if (tax.unavailable) throw new Error("계산 불가");
       const dates = pickTaxDates(doc, { ruleKind: rule.ruleKind, codeBasis: rule.basisDate, basisWithholding: "payment_date", basisVat: "evidence_date", todayKst: "2026-09-22" });
       const result = await decidePayable(
-        { amount: { source: "supply", amountKrw: 712_500 }, taxRule: rule, applyOpts: dates.applyOpts, incomeType: evidenceType === "business_income" ? "business" : "other" },
+        { amount: { source: "supply", amountKrw: 712_500 }, taxRule: rule, applyOpts: dates.applyOpts, recipientCount: 1 },
         RATES,
       );
       expect(result.payableKrw).toBe(tax.payableKrw);
@@ -222,13 +209,21 @@ describe("decidePayable — 기준일 세율 · 소득 종류 · 조작 필드",
     expect([next.payableKrw, next.grossSupplyKrw]).toEqual([1_120_000, 982_143]);
   });
 
-  it("원천징수 business_income · other_income — 역산 null이고 incomeType만 다르다", async () => {
-    const input = (incomeType: "business" | "other") => ({ ...vatInput(1_000_000, undefined, WITHHOLDING_RULE), incomeType });
-    const business = await decidePayable(input("business"), RATES);
-    const other = await decidePayable(input("other"), RATES);
+  // 06.5 카드 ① — 받는 인원이 면제 판정에 들어간다(세율 8.8% flat 픽스처): 228,000 ÷ 5 = 45,600 ÷ 0.912 = 50,000 → 면제 경계 ·
+  // 228,005 ÷ 5 = 45,601 → 과세.
+  it("회사 대납 — 받는 인원 곱으로 면제를 판정한다(카드 ①)", async () => {
+    const input = (amountKrw: number, recipientCount: number) => ({ ...vatInput(amountKrw, undefined, COMPANY_BORNE_RULE), recipientCount });
+    expect((await decidePayable(input(228_000, 5), RATES)).companyBorneKrw).toBe(0);
+    // D-6521 사람별 — 45,601 × 8.8% = 4,012.9 → 10원 반올림 4,010 × 5 = 20,050(합계 한 번이면 20,064.4 → 20,060)
+    expect((await decidePayable(input(228_005, 5), RATES)).companyBorneKrw).toBe(20_050);
+    // 1명이면 228,000 × 8.8% = 20,064 → 20,060
+    expect((await decidePayable(input(228_000, 1), RATES)).companyBorneKrw).toBe(20_060);
+  });
+
+  // 06.5 D-6501 — 원천징수는 사업소득 세율 하나(기타소득 8.8% 경로 없음).
+  it("원천징수 — 사업소득 세율 하나 · 역산 null", async () => {
+    const business = await decidePayable(vatInput(1_000_000, undefined, WITHHOLDING_RULE), RATES);
     expect([business.withholdingKrw, business.payableKrw, business.grossSupplyKrw]).toEqual([33_000, 967_000, null]);
-    expect([other.withholdingKrw, other.payableKrw, other.grossSupplyKrw]).toEqual([88_000, 912_000, null]);
-    expect([incomeTypeFor("business_income"), incomeTypeFor("other_income")]).toEqual(["business", "other"]);
   });
 
   it("지급 총액 · 역산 필드를 담은 조작 입력도 결과는 재계산값과 같다(필드를 읽지 않는다)", async () => {
@@ -241,7 +236,7 @@ describe("decidePayable — 기준일 세율 · 소득 종류 · 조작 필드",
 // 잠금 뒤 판정 — 트랜잭션 콜백이 tx로 읽은 값(잠근 행 · 결재 상태 · 살아 있는 증빙 유무)을 주입한다. DB 없음.
 const TODAY = "2026-09-22";
 const PAY_DATE = "2026-09-22";
-const RULES: Record<string, TaxRule> = { tax_invoice: VAT_RULE, other_income: WITHHOLDING_RULE };
+const RULES: Record<string, TaxRule> = { tax_invoice: VAT_RULE, business_income: WITHHOLDING_RULE };
 const SHARED: PaymentShared = {
   taxRuleOf: (evidenceType) => (evidenceType ? (RULES[evidenceType] ?? null) : null),
   basisWithholding: "payment_date",
@@ -256,15 +251,15 @@ const ROW: LockedExpense = {
   id: "00000000-0000-4000-8000-000000000001",
   evidenceType: "tax_invoice",
   supplyAmountKrw: 1_000_000,
-  evidenceAmount: 900_000,
   scheduledPaymentDate: null,
   evidenceDate: PAY_DATE,
   createdAt: new Date("2026-09-01T00:00:00Z"),
   paymentMethod: "bank_transfer",
   prepaid: false,
+  recipientCount: 1,
 };
 
-// 사전 조회 결과(loadPaymentInputs와 같은 규칙 — 05 pickTaxDates · incomeTypeFor · pickPaymentAmount).
+// 사전 조회 결과(loadPaymentInputs와 같은 규칙 — 05 pickTaxDates · pickPaymentAmount).
 function preOf(row: LockedExpense, hasLiveEvidence: boolean): PaymentInputs {
   const taxRule = SHARED.taxRuleOf(row.evidenceType);
   if (!taxRule || row.supplyAmountKrw === null) throw new Error("테스트 행에 규칙 · 공급가 필요");
@@ -274,6 +269,7 @@ function preOf(row: LockedExpense, hasLiveEvidence: boolean): PaymentInputs {
   );
   return {
     expenseId: row.id,
+    projectId: null,
     today: TODAY,
     payDate: PAY_DATE,
     approvalState: "approved",
@@ -281,8 +277,8 @@ function preOf(row: LockedExpense, hasLiveEvidence: boolean): PaymentInputs {
     evidenceType: row.evidenceType,
     hasLiveEvidence,
     drafterName: "박서연",
-    amount: pickPaymentAmount({ hasLiveEvidence, evidenceAmountKrw: row.evidenceAmount, supplyAmountKrw: row.supplyAmountKrw }),
-    tax: { taxRule, dates, incomeType: incomeTypeFor(row.evidenceType), rates: { ...RATES, asOf: dates.basisDate } },
+    amount: pickPaymentAmount({ supplyAmountKrw: row.supplyAmountKrw }),
+    tax: { taxRule, dates, recipientCount: row.recipientCount, rates: { ...RATES, asOf: dates.basisDate } },
   };
 }
 
@@ -296,7 +292,6 @@ function judge(over: { pre?: PaymentInputs; locked?: LockedExpense; approvalStat
     pre: over.pre ?? preOf(ROW, false),
     locked: over.locked ?? ROW,
     approvalState: over.approvalState ?? "approved",
-    lockedHasEvidence: over.lockedHasEvidence ?? false,
     evidenceGate: gateOf(over.shared ?? SHARED, over.lockedHasEvidence ?? false, over.locked ?? ROW),
     payDate: PAY_DATE,
     expectedPayableKrw: over.expectedPayableKrw,
@@ -322,9 +317,9 @@ describe("judgeLockedPayment (잠금 뒤 판정)", () => {
   });
 
   it("잠금 뒤 증빙 종류 바뀜 → PayableChangedError(잠근 행 기준 새 값)", async () => {
-    const error = await judge({ locked: { ...ROW, evidenceType: "other_income" }, expectedPayableKrw: 1_100_000 }).catch((caught: unknown) => caught);
+    const error = await judge({ locked: { ...ROW, evidenceType: "business_income" }, expectedPayableKrw: 1_100_000 }).catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(PayableChangedError);
-    expect((error as PayableChangedError).payableKrw).toBe(912_000);
+    expect((error as PayableChangedError).payableKrw).toBe(967_000);
   });
 
   it("잠금 뒤 기준일 바뀜 → BasisChangedSignal(그날 세율은 트랜잭션 밖에서 읽어 PayableChangedError로 바꾼다)", async () => {
@@ -348,7 +343,7 @@ describe("judgeLockedPayment (잠금 뒤 판정)", () => {
 
   it("미래 지급일 — 원천징수 기준일 = 그 지급일, 사전 조회 세율로 그대로 셈한다", async () => {
     const future = "2027-03-02";
-    const row: LockedExpense = { ...ROW, evidenceType: "other_income" };
+    const row: LockedExpense = { ...ROW, evidenceType: "business_income" };
     const dates = pickTaxDates(
       { paidDate: future, scheduledPaymentDate: null, evidenceDate: row.evidenceDate, createdAt: row.createdAt },
       { ruleKind: "withholding", codeBasis: "payment_date", basisWithholding: "payment_date", basisVat: "evidence_date", todayKst: TODAY },
@@ -356,11 +351,11 @@ describe("judgeLockedPayment (잠금 뒤 판정)", () => {
     const pre: PaymentInputs = {
       ...preOf(row, false),
       payDate: future,
-      tax: { taxRule: WITHHOLDING_RULE, dates, incomeType: "other", rates: { ...RATES, asOf: future } },
+      tax: { taxRule: WITHHOLDING_RULE, dates, recipientCount: 1, rates: { ...RATES, asOf: future } },
     };
-    const result = await judgeLockedPayment({ pre, locked: row, approvalState: "approved", lockedHasEvidence: false, evidenceGate: gateOf(SHARED, false, row), payDate: future, expectedPayableKrw: 912_000, shared: SHARED });
+    const result = await judgeLockedPayment({ pre, locked: row, approvalState: "approved", evidenceGate: gateOf(SHARED, false, row), payDate: future, expectedPayableKrw: 967_000, shared: SHARED });
     expect(dates.basisDate).toBe(future);
-    expect(result.payable.payableKrw).toBe(912_000);
+    expect(result.payable.payableKrw).toBe(967_000);
   });
 });
 
@@ -372,7 +367,6 @@ describe("judgeLockedPayment — 이체액 · 차이 사유 (06-04 · D-605)", (
       pre: preOf(locked, false),
       locked,
       approvalState: "approved",
-      lockedHasEvidence: false,
       evidenceGate: gateOf(SHARED, false, locked),
       payDate: PAY_DATE,
       expectedPayableKrw: over.expectedPayableKrw ?? 1_100_000,
@@ -413,8 +407,8 @@ describe("judgeLockedPayment — 이체액 · 차이 사유 (06-04 · D-605)", (
   it("부가세 규칙이면 공급가 역산은 이체액에서 셈한다 — 원천징수는 null(UA-619)", async () => {
     const vat = await judgeTransfer({ transferKrw: 1_096_700, diffReason: "수수료" });
     expect(vat.payable.grossSupplyKrw).toBe(997_000);
-    const withholding = await judgeTransfer({ locked: { ...ROW, evidenceType: "other_income" }, transferKrw: 900_000, diffReason: "수수료", expectedPayableKrw: 912_000 });
-    expect([withholding.payable.diffKrw, withholding.payable.grossSupplyKrw]).toEqual([-12_000, null]);
+    const withholding = await judgeTransfer({ locked: { ...ROW, evidenceType: "business_income" }, transferKrw: 900_000, diffReason: "수수료", expectedPayableKrw: 967_000 });
+    expect([withholding.payable.diffKrw, withholding.payable.grossSupplyKrw]).toEqual([-67_000, null]);
   });
 
   it("이체액이 달라도 화면이 본 지급 총액 비교가 먼저다 — 낡으면 PayableChangedError", async () => {

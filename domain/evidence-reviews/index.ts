@@ -28,8 +28,7 @@ import { findUserNamesByIds } from "@/repositories/users";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { withTransaction } from "@/lib/db-transaction";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
-import { formatKrw } from "@/lib/format-number";
-import { diffKrw, MoneyInputError, moneyFromRow, moneyToColumns, type Money } from "@/domain/money";
+import { MoneyInputError, moneyFromRow, moneyToColumns, type Money } from "@/domain/money";
 
 // 06-06(EVID-02 · EVID-03 · D-601 · D-602 · O-2) — 경영관리의 증빙 확인(S4). 확인 기록(06-27 expense_evidence_reviews)을 쓰고,
 // 증빙 상태 다섯 값을 낸다. 증빙 유무는 06-03 hasEvidence 하나(C5 — 파일 수를 직접 세지 않는다).
@@ -103,28 +102,10 @@ export function resolveEvidenceStatus(input: EvidenceStatusInput): EvidenceStatu
 }
 
 // ── 증빙 지문(재조정 — 06-17에서 옮김) ───────────────────────────────────
-// 화면이 본 증빙(살아 있는 파일 · 증빙 금액 · 증빙일)과 확인하는 순간의 증빙이 같은지 — 파일 id 정렬 + 금액 + 날짜를 한 문자열로(해시 없음).
-export function evidenceStampOf(input: { fileIds: readonly string[]; evidenceAmountKrw: number | null; evidenceDate: string | null }): string {
-  return [[...input.fileIds].sort().join(","), input.evidenceAmountKrw ?? "", input.evidenceDate ?? ""].join("|");
-}
-
-// ── 증빙 금액 초과 한 줄(Q-F — 사용자 결정 2026-10-05 UC-4 「표시만」) ──────────────
-// 막지 않는다 — 확인 · 지급 게이트 · 규칙은 이 값을 읽지 않는다. 살아 있는 파일이 없거나 증빙 금액이 없으면 null(R-4 — pickPaymentAmount와 같은 조건).
-// 남은 실행가 null = 팀 비용 · 사슬이 최신 차수에 닿지 않음(실행가 조각 없음). 음수(사슬 위 다른 문서가 이미 넘음)는 0으로 본다 — 이 문서의 초과는 증빙 금액까지만(06-06 검토 S-4).
-export function evidenceOverrunLine(input: {
-  hasLiveEvidence: boolean;
-  evidenceAmountKrw: number | null;
-  // null = 승인 공급가 없음 — 승인액 조각을 뺀다(06-06 검토 S-5).
-  approvedSupplyKrw: number | null;
-  lineRemainingKrw: number | null;
-}): string | null {
-  const amount = input.evidenceAmountKrw;
-  if (!input.hasLiveEvidence || amount === null) return null;
-  const parts: string[] = [];
-  if (input.approvedSupplyKrw !== null && amount > input.approvedSupplyKrw) parts.push(`승인액보다 +${formatKrw(diffKrw(amount, input.approvedSupplyKrw))}`);
-  const remaining = input.lineRemainingKrw === null ? null : Math.max(input.lineRemainingKrw, 0);
-  if (remaining !== null && amount > remaining) parts.push(`실행가 초과 ${formatKrw(diffKrw(amount, remaining))}`);
-  return parts.length > 0 ? parts.join(" · ") : null;
+// 화면이 본 증빙(살아 있는 파일 · 증빙일)과 확인하는 순간의 증빙이 같은지 — 파일 id 정렬 + 날짜를 한 문자열로(해시 없음).
+// 06.5 D-6520: 금액은 공급가 하나 — 공급가 고침은 version을 올리므로 지문에 넣지 않는다(06.5-07).
+export function evidenceStampOf(input: { fileIds: readonly string[]; evidenceDate: string | null }): string {
+  return [[...input.fileIds].sort().join(","), input.evidenceDate ?? ""].join("|");
 }
 
 // ── 증빙 게이트 입력(O-2 · CROSS R-3) ─────────────────────────────────────
@@ -218,7 +199,7 @@ export async function confirmEvidence(
       }
       if (input.evidenceStamp !== undefined) {
         const alive = await listAliveByOwners(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerIds: [locked.id] }, tx);
-        const stamp = evidenceStampOf({ fileIds: alive.map((file) => file.id), evidenceAmountKrw: locked.evidenceAmount, evidenceDate: locked.evidenceDate });
+        const stamp = evidenceStampOf({ fileIds: alive.map((file) => file.id), evidenceDate: locked.evidenceDate });
         const latest = alive.at(-1);
         if (stamp !== input.evidenceStamp) throw new EvidenceStampChangedSignal(latest?.uploadedBy ?? null, latest?.createdAt ?? locked.updatedAt);
       }

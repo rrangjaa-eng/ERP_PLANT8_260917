@@ -19,14 +19,14 @@ async function tokenPx(page: Page, name: string): Promise<number> {
 }
 
 test.describe("폰 골라내기 시트 (R6-04)", () => {
-  test("거래처 고르기 시트의 최대 높이는 --sheet-max-h이고 아래에 붙으며 행동 줄 버튼은 --touch-min 이상이다", async ({ browser, baseURL }) => {
+  test("지급처 고르기 시트의 최대 높이는 --sheet-max-h이고 아래에 붙으며 행동 줄 버튼은 --touch-min 이상이다", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const page = await loginPage(browser, baseURL, fx.pm, PHONE);
     await page.goto("/expenses/new");
-    const trigger = page.getByRole("button", { name: "거래처 고르기" });
+    const trigger = page.getByRole("button", { name: "지급처 고르기" });
     await waitForHydration(trigger);
     await trigger.click();
-    const sheet = page.getByRole("dialog", { name: "거래처 고르기" });
+    const sheet = page.getByRole("dialog", { name: "지급처 고르기" });
     await expect(sheet).toBeVisible();
     await expect(sheet.getByRole("option").first()).toBeVisible();
 
@@ -43,7 +43,7 @@ test.describe("폰 골라내기 시트 (R6-04)", () => {
 
     const touchMin = await tokenPx(page, "--touch-min");
     const cancel = await sheet.getByRole("button", { name: /^취소/ }).boundingBox();
-    const primary = await sheet.getByRole("button", { name: /^이 거래처로/ }).boundingBox();
+    const primary = await sheet.getByRole("button", { name: /^이 지급처로/ }).boundingBox();
     expect(cancel?.height ?? 0).toBeGreaterThanOrEqual(touchMin - 0.5);
     expect(primary?.height ?? 0).toBeGreaterThanOrEqual(touchMin - 0.5);
     // 1차가 2차의 두 배 폭(§7-8 시트 행동 줄).
@@ -62,16 +62,16 @@ test.describe("폰 골라내기 시트 (R6-04)", () => {
     const fx = await setupExpenseE2E();
     const page = await loginPage(browser, baseURL, fx.pm, PHONE);
     await page.goto("/expenses/new");
-    const trigger = page.getByRole("button", { name: "거래처 고르기" });
+    const trigger = page.getByRole("button", { name: "지급처 고르기" });
     await waitForHydration(trigger);
     await expect(page.getByRole("button", { name: /^증빙 올리기/ }).locator("kbd:visible")).toHaveCount(0);
     await trigger.click();
-    const sheet = page.getByRole("dialog", { name: "거래처 고르기" });
+    const sheet = page.getByRole("dialog", { name: "지급처 고르기" });
     await expect(sheet.getByRole("option").first()).toBeVisible();
     await expect(sheet.locator("kbd:visible")).toHaveCount(0);
     const full = (await sheet.boundingBox())?.height ?? 0;
-    await sheet.getByRole("textbox", { name: "거래처 이름 검색" }).fill("없는거래처-zzzz");
-    await expect(sheet.getByText("조건에 맞는 거래처가 없습니다 ·")).toBeVisible();
+    await sheet.getByRole("textbox", { name: "지급처 이름 검색" }).fill("없는거래처-zzzz");
+    await expect(sheet.getByText("조건에 맞는 지급처가 없습니다 ·")).toBeVisible();
     expect((await sheet.boundingBox())?.height ?? 0).toBeCloseTo(full, 0);
   });
 });

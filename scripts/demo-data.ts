@@ -99,10 +99,12 @@ const LEGACY_DEMO_BUSINESS_NO: Record<string, string> = {
   "129-86-20918": "129-86-20917",
   "105-87-66308": "105-87-66302",
 };
+// 06.5 D-6507: 계좌이체 제출은 지급처 계좌(은행 + 암호화 번호)가 있어야 선다 — 견본 지출결의를 받는 협력사에 가짜 번호를 준다
+// (createVendor가 domain/vendors의 암호화 계획으로 암호문 · 끝 4자리를 만든다). 클라이언트는 지급처가 아니라 계좌가 없다.
 const DEMO_PARTNERS = [
-  { name: "스테이지웍스 (무대)", businessNo: "211-88-47729", accountBank: "국민은행", accountHolder: "스테이지웍스" },
-  { name: "대성프린팅 (인쇄)", businessNo: "129-86-20918", accountBank: "신한은행", accountHolder: "대성프린팅" },
-  { name: "휴먼스태프 (인력)", businessNo: "105-87-66308", accountBank: "우리은행", accountHolder: "휴먼스태프" },
+  { name: "스테이지웍스 (무대)", businessNo: "211-88-47729", accountBank: "국민은행", accountHolder: "스테이지웍스", accountNumber: "000-0000-0001" },
+  { name: "대성프린팅 (인쇄)", businessNo: "129-86-20918", accountBank: "신한은행", accountHolder: "대성프린팅", accountNumber: "000-0000-0002" },
+  { name: "휴먼스태프 (인력)", businessNo: "105-87-66308", accountBank: "우리은행", accountHolder: "휴먼스태프", accountNumber: "000-0000-0003" },
 ] as const;
 
 type LineSpec = { itemName: string; partner: 0 | 1 | 2; subcategory: "stage_construction" | "print_production" | "staffing" | "etc"; quantity: number; unitPrice: number; execution: number };
@@ -308,7 +310,7 @@ export async function seedDemoData(): Promise<DemoSeedResult> {
   const partnerIds: string[] = [];
   for (const partner of DEMO_PARTNERS) {
     partnerIds.push(
-      await ensureDemoVendor({ name: named(partner.name), businessNo: partner.businessNo, accountBank: partner.accountBank, accountHolder: partner.accountHolder, defaultEvidenceType: "tax_invoice" }),
+      await ensureDemoVendor({ name: named(partner.name), businessNo: partner.businessNo, accountBank: partner.accountBank, accountHolder: partner.accountHolder, accountNumber: partner.accountNumber, defaultEvidenceType: "tax_invoice" }),
     );
   }
 

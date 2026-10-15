@@ -26,7 +26,7 @@ import {
 } from "@/domain/expenses";
 import { GateBlockedError } from "@/domain/rules/gate";
 import { insertVendor } from "@/repositories/vendors";
-import { addApprovedRevision, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
+import { addApprovedRevision, setupExpenseProject, submitReadyDraft, testVendorAccount, type ExpenseFixture } from "./fixtures/expenses";
 import { listMyInbox } from "@/domain/approvals";
 import { listLineDoors } from "@/domain/expenses";
 import { getDocumentKind } from "@/domain/approvals/kinds";
@@ -162,7 +162,7 @@ describe("트레이서 — 견적 줄에서 최종 승인까지", () => {
 // 결재함 `내 결재` 항목이 결재 시트 재료(문자열 행)를 갖는다.
 describe("결재 시트 상세 — 문자열 행", () => {
   // 05-10: 살아 있는 증빙 파일이 있으면 지급 방식 다음 · 비고 앞에 증빙 행이 선다(제출 도우미가 파일 한 장을 붙인다).
-  const LABEL_ORDER = ["프로젝트", "견적 줄", "거래처", "증빙 종류", "공급가액", "지급 예정일", "지급 방식", "증빙", "비고"];
+  const LABEL_ORDER = ["프로젝트", "견적 줄", "지급처", "증빙 종류", "공급가액", "지급 예정일", "지급 방식", "증빙", "비고"];
   const uniqueLabels = (rows: { label: string }[]) => [...new Set(rows.map((row) => row.label))];
 
   it("팀장의 내 결재 항목에 제목 · 부제 · 문자열 행 · 가능 행동이 있고 loadDetails는 한 번만 불린다", async () => {
@@ -204,7 +204,7 @@ describe("결재 시트 상세 — 문자열 행", () => {
     const valueOf = (label: string) => detail?.rows.filter((row) => row.label === label).map((row) => row.value);
     expect(valueOf("프로젝트")).toEqual(["26001 가을 팝업"]);
     expect(valueOf("견적 줄")).toEqual(["1 무대 제작"]);
-    expect(valueOf("거래처")).toEqual(["스테이지원"]);
+    expect(valueOf("지급처")).toEqual(["스테이지원"]);
     expect(valueOf("증빙 종류")).toEqual(["세금계산서"]);
     expect(valueOf("공급가액")).toEqual(["12,400,000", "부가세 10% 1,240,000 · 지급 총액 13,640,000 · 세금계산서 규칙"]);
     expect(valueOf("지급 예정일")).toEqual(["—"]);
@@ -434,7 +434,7 @@ describe("회수 뒤 같은 번호 다시 제출", () => {
 
   it("(F6) 회수된 팀 비용 문서에는 견적 줄을 줄 수 없다", async () => {
     const fx = await setupExpenseProject();
-    const vendor = await insertVendor(SYSTEM_VIEWER, { name: "회식집", normalizedName: `회식집-${randomUUID()}`, defaultEvidenceType: "tax_invoice" });
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name: "회식집", normalizedName: `회식집-${randomUUID()}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount() });
     const { expenseId } = await createTeamExpenseDraft(fx.pm, {
       idempotencyKey: randomUUID(),
       fields: { teamExpenseKind: "team_overhead", usageDate: "2026-09-26", content: "팀 회식" },
@@ -505,7 +505,7 @@ describe("본인 승인", () => {
   it("팀장이 기안하면 1단 후보는 기안자 한 사람 · 가능 행동 승인 + 회수(반려 없음) · 승인하면 self_approved · 다음 단계로", async () => {
     const fx = await setupExpenseProject();
     // 팀장은 담당 프로젝트가 없어 팀 비용 문서로 기안한다(결재선 판정은 문서 종류의 설정 하나).
-    const vendor = await insertVendor(SYSTEM_VIEWER, { name: "회식집", normalizedName: `회식집-${randomUUID()}`, defaultEvidenceType: "tax_invoice" });
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name: "회식집", normalizedName: `회식집-${randomUUID()}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount() });
     const { expenseId } = await createTeamExpenseDraft(fx.lead, {
       idempotencyKey: randomUUID(),
       fields: { teamExpenseKind: "team_overhead", usageDate: "2026-09-26", content: "팀 회식" },

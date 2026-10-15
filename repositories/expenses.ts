@@ -1,5 +1,6 @@
-import { and, asc, eq, ilike, inArray, isNotNull, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, gt, ilike, inArray, isNotNull, isNull, or, sql, type SQL } from "drizzle-orm";
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db, type DbOrTx } from "@/db/client";
 import { approvalInstances, approvalRoutes, approvalSteps, expenses, projects, quoteLines, teams, users, vendors } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
@@ -10,6 +11,8 @@ import { rowScopeCondition } from "@/repositories/row-scope";
 // 인스턴스를 왼쪽 조인한다(연차 리포지토리와 같은 결). 삭제된 문서(deleted_at)는 읽지 않는다.
 
 export type ExpenseRow = InferSelectModel<typeof expenses>;
+// 06.5 D-6517: 직원 지급처 이름 — 거래처 이름과 따로 둔다(정보 항목이 다르다). 06.5-08 목록 검색이 이 조인을 이어 쓴다(EP2-D5 — 검색 노출은 이 칸의 person.value).
+const payeeUsers = alias(users, "payee_users");
 type ProjectRow = InferSelectModel<typeof projects>;
 export type ExpenseDraftInsert = Omit<InferInsertModel<typeof expenses>, "id" | "number" | "version" | "createdAt" | "updatedAt">;
 
@@ -113,10 +116,47 @@ export async function findExpenseApprovalStatuses(viewer: Viewer, input: { docum
   return new Map(rows.map((row) => [row.documentId, row.status]));
 }
 
+// 06.5 D-6507(UI-SPEC V4): 지급처(거래처 · 직원)의 계좌 유무 — 은행 칸과 「암호문 있음」 불리언만 읽는다(평문 · 암호문 문자열 · 복호화 없음).
+// 행이 없으면 null. 제출 트랜잭션 안에서는 tx로 읽는다(미리보기와 같은 판정).
+export async function findPayeeAccountPresence(
+  viewer: Viewer,
+  payee: { kind: "vendor" | "user"; id: string },
+  tx: DbOrTx = db,
+): Promise<{ bank: string | null; hasNumber: boolean } | null> {
+  void viewer;
+  const table = payee.kind === "vendor" ? vendors : users;
+  const [row] = await tx
+    .select({ bank: table.accountBank, hasNumber: sql<boolean>`${table.accountNumberEncrypted} is not null` })
+    .from(table)
+    .where(eq(table.id, payee.id))
+    .limit(1);
+  return row ?? null;
+}
+
+// 06.5 D-6517(V12 후보): 직원 지급처 후보 — 보관 아님 ∧ (퇴사일 없음 ∨ 퇴사일 > today), 이름 부분 일치(앞뒤 공백 뗀 검색어) · 이름 → id 순 · 최대 limit행.
+// today는 호출자가 넘기는 서울 날짜(SQL current_date 아님). 이름 · 은행 · 「암호문 있음」 불리언만 읽는다(평문 · 이메일 없음).
+export async function listPayeeUserCandidates(
+  viewer: Viewer,
+  input: { query: string; today: string; limit: number },
+  tx: DbOrTx = db,
+): Promise<{ id: string; name: string; bank: string | null; hasNumber: boolean }[]> {
+  void viewer;
+  const conditions: (SQL | undefined)[] = [isNull(users.archivedAt), or(isNull(users.resignationDate), gt(users.resignationDate, input.today))];
+  const query = input.query.trim();
+  if (query !== "") conditions.push(ilike(users.name, `%${query}%`));
+  return tx
+    .select({ id: users.id, name: users.name, bank: users.accountBank, hasNumber: sql<boolean>`${users.accountNumberEncrypted} is not null` })
+    .from(users)
+    .where(and(...conditions))
+    .orderBy(asc(users.name), asc(users.id))
+    .limit(input.limit);
+}
+
 export type ExpenseDraftFields = Partial<
   Pick<
     ExpenseRow,
     | "vendorId"
+    | "payeeUserId"
     | "evidenceType"
     | "paymentMethod"
     | "supplyCurrency"
@@ -131,7 +171,7 @@ export type ExpenseDraftFields = Partial<
     | "content"
     | "prepaid"
     | "prepaidReason"
-    | "evidenceAmount"
+    | "recipientCount"
     | "evidenceDate"
     | "attributedTeamId"
     | "projectId"
@@ -249,7 +289,6 @@ export async function saveSubmissionSnapshot(
     installmentSeq: number | null;
     submittedAt: Date;
     updatedAt?: Date;
-    vendorId?: string | null;
   },
   tx: DbOrTx,
 ): Promise<void> {
@@ -257,7 +296,6 @@ export async function saveSubmissionSnapshot(
     .update(expenses)
     .set({
       ...input.taxSnapshot,
-      ...(input.vendorId !== undefined ? { vendorId: input.vendorId } : {}),
       installment: input.installment,
       installmentSeq: input.installmentSeq,
       submittedAt: input.submittedAt,
@@ -422,6 +460,7 @@ export type ExpenseSummaryRow = ExpenseRow & {
   itemName: string | null;
   teamName: string | null;
   vendorName: string | null;
+  payeeUserName: string | null;
   instanceId: string | null;
   status: string | null;
   approvalVersion: number | null;
@@ -444,6 +483,7 @@ export async function listExpenseSummaries(
       itemName: quoteLines.itemName,
       teamName: teams.name,
       vendorName: vendors.name,
+      payeeUserName: payeeUsers.name,
       instanceId: approvalInstances.id,
       status: approvalInstances.status,
       approvalVersion: approvalInstances.version,
@@ -454,6 +494,7 @@ export async function listExpenseSummaries(
     .leftJoin(quoteLines, eq(quoteLines.id, expenses.quoteLineId))
     .leftJoin(teams, eq(teams.id, expenses.attributedTeamId))
     .leftJoin(vendors, eq(vendors.id, expenses.vendorId))
+    .leftJoin(payeeUsers, eq(payeeUsers.id, expenses.payeeUserId))
     .leftJoin(
       approvalInstances,
       and(eq(approvalInstances.documentKind, input.documentKind), eq(approvalInstances.documentId, expenses.id)),
@@ -468,6 +509,7 @@ export async function listExpenseSummaries(
     itemName: row.itemName,
     teamName: row.teamName,
     vendorName: row.vendorName,
+    payeeUserName: row.payeeUserName,
     instanceId: row.instanceId,
     status: row.status,
     approvalVersion: row.approvalVersion,
@@ -543,6 +585,7 @@ export type ExpenseListRow = ExpenseRow & {
   itemName: string | null;
   teamName: string | null;
   vendorName: string | null;
+  payeeUserName: string | null;
   instanceId: string | null;
   status: string | null;
   statusChangedAt: Date | null;
@@ -587,6 +630,7 @@ export async function listExpensePage(
       itemName: quoteLines.itemName,
       teamName: teams.name,
       vendorName: vendors.name,
+      payeeUserName: payeeUsers.name,
       instanceId: approvalInstances.id,
       status: approvalInstances.status,
       statusChangedAt: statusChangedAtExpr,
@@ -598,6 +642,7 @@ export async function listExpensePage(
     .leftJoin(quoteLines, eq(quoteLines.id, expenses.quoteLineId))
     .leftJoin(teams, eq(teams.id, expenses.attributedTeamId))
     .leftJoin(vendors, eq(vendors.id, expenses.vendorId))
+    .leftJoin(payeeUsers, eq(payeeUsers.id, expenses.payeeUserId))
     .leftJoin(approvalInstances, instanceJoin(input.documentKind))
     .orderBy(
       asc(q.groupRank),
@@ -617,6 +662,7 @@ export async function listExpensePage(
     itemName: row.itemName,
     teamName: row.teamName,
     vendorName: row.vendorName,
+    payeeUserName: row.payeeUserName,
     instanceId: row.instanceId,
     status: row.status,
     statusChangedAt: row.statusChangedAt,

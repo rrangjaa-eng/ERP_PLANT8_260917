@@ -1,8 +1,8 @@
-import { and, eq, getTableColumns, inArray, isNotNull, isNull, ne } from "drizzle-orm";
+import { and, desc, eq, getTableColumns, inArray, isNotNull, isNull, ne, or } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db } from "@/db/client";
-import { quoteLines, quoteRevisions } from "@/db/schema";
+import { expensePayments, quoteLines, quoteRevisions } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 import type { DbOrTx } from "@/repositories/document-counters";
 
@@ -205,10 +205,28 @@ export async function archiveQuoteLines(
   if (input.ids.length === 0) return 0;
   const rows = await tx
     .update(quoteLines)
-    .set({ archivedAt: input.archivedAt, archivedBy: input.archivedBy })
+    .set({ archivedAt: input.archivedAt, archivedBy: input.archivedBy, version: humanArchiveVersion() })
     .where(and(inArray(quoteLines.id, input.ids), eq(quoteLines.revisionId, input.revisionId), isNull(quoteLines.archivedAt)))
     .returning({ id: quoteLines.id });
   return rows.length;
+}
+
+// 06.5 OI-12: 사람이 지운 규칙 줄은 손 편집이다 — version만 올려 `version ≠ source_synced_version`으로 남기고, 재지급이 다시 만들지 않게 한다.
+// 연결 없는 줄은 +0(동작 그대로).
+function humanArchiveVersion() {
+  return sql`${quoteLines.version} + case when ${quoteLines.sourceExpenseId} is null then 0 else 1 end`;
+}
+
+// 06.5 EP2-A1: 규칙 줄은 지급이 살아 있고 형제가 없을 때만 사람이 되살린다 — 취소된 지급의 대납 세금 부활 · 부분 유일 색인 23505를 막는다.
+// 0행은 호출자의 기존 갈래(restoreQuoteLine 실패 · 보관함 「바뀐 행 없음」)가 받는다.
+function restorableByHuman() {
+  return or(
+    isNull(quoteLines.sourceExpenseId),
+    and(
+      sql`not exists (select 1 from ${quoteLines} as sibling where sibling.source_expense_id = ${quoteLines.sourceExpenseId} and sibling.archived_at is null)`,
+      sql`exists (select 1 from ${expensePayments} where ${expensePayments.expenseId} = ${quoteLines.sourceExpenseId} and ${expensePayments.cancelledAt} is null)`,
+    ),
+  );
 }
 
 // 04-12(A-19 · OV-2) — 보관 해제(도메인 복원 restoreQuoteLine이 잠근 tx로 부른다). 해제한 행이 없으면 null.
@@ -217,7 +235,7 @@ export async function restoreQuoteLineRow(viewer: Viewer, id: string, tx: DbOrTx
   const [row] = await tx
     .update(quoteLines)
     .set({ archivedAt: null, archivedBy: null })
-    .where(and(eq(quoteLines.id, id), isNotNull(quoteLines.archivedAt)))
+    .where(and(eq(quoteLines.id, id), isNotNull(quoteLines.archivedAt), restorableByHuman()))
     .returning();
   return row ?? null;
 }
@@ -228,13 +246,13 @@ export async function setQuoteLineArchived(viewer: Viewer, id: string, value: bo
   const rows = value
     ? await db
         .update(quoteLines)
-        .set({ archivedAt: new Date(), archivedBy: viewer.id })
+        .set({ archivedAt: new Date(), archivedBy: viewer.id, version: humanArchiveVersion() })
         .where(and(eq(quoteLines.id, id), isNull(quoteLines.archivedAt)))
         .returning({ id: quoteLines.id })
     : await db
         .update(quoteLines)
         .set({ archivedAt: null, archivedBy: null })
-        .where(and(eq(quoteLines.id, id), isNotNull(quoteLines.archivedAt)))
+        .where(and(eq(quoteLines.id, id), isNotNull(quoteLines.archivedAt), restorableByHuman()))
         .returning({ id: quoteLines.id });
   return rows.length > 0;
 }
@@ -346,8 +364,125 @@ export async function moveAdjustmentLines(
   void viewer;
   const rows = await tx
     .update(quoteLines)
-    .set({ revisionId: input.toRevisionId, version: sql`${quoteLines.version} + 1`, updatedAt: new Date() })
+    .set({
+      revisionId: input.toRevisionId,
+      version: sql`${quoteLines.version} + 1`,
+      // 06.5 D-6502 · EP1-5: 차수 이동은 사람의 편집이 아니다 — 규칙 줄의 동기 버전을 version과 함께 올린다(옛은 조정이 행사에 매인
+      // 별도 표라 이 문제가 없었다 O: server/src/confirmations.ts:704-707). 손 편집 줄은 불일치 그대로, 연결 없는 줄은 null 그대로.
+      sourceSyncedVersion: sql`case when ${quoteLines.sourceSyncedVersion} = ${quoteLines.version} then ${quoteLines.version} + 1 else ${quoteLines.sourceSyncedVersion} end`,
+      updatedAt: new Date(),
+    })
     .where(and(eq(quoteLines.revisionId, input.fromRevisionId), eq(quoteLines.lineKind, "adjustment")))
     .returning({ id: quoteLines.id });
   return rows.length;
+}
+
+// ── 06.5 D-6502: 규칙(지급 완료)이 쓰는 조정 줄 ────────────────────────────
+// 사람 편집 경로(권한 · 줄 수 상한 · project.line-edit)를 지나지 않는다. `source_synced_version = version`이 「사람이 고치지 않은 줄」의
+// 판정이다(옛에 없는 새 규칙 — 옛은 덮어씀 O: server/src/confirmations.ts:827-837). 잠금은 호출자가 lockQuoteLines로 한다.
+
+export type SourcedAdjustmentValues = Omit<QuoteLineInsertInput, "id" | "lineKind" | "copiedFromLineId" | "source" | "customFields" | "vendorId" | "note"> & {
+  sourceExpenseId: string;
+};
+
+export async function findLiveLineBySourceExpense(viewer: Viewer, expenseId: string, tx: DbOrTx): Promise<QuoteLineRow | null> {
+  void viewer;
+  const [row] = await tx
+    .select()
+    .from(quoteLines)
+    .where(and(eq(quoteLines.sourceExpenseId, expenseId), isNull(quoteLines.archivedAt)))
+    .limit(1);
+  return row ?? null;
+}
+
+// OI-12 — 가장 최근에 보관된 연결 줄(같으면 id 내림차순 — 매번 같은 줄). 사람이 지운 줄(version ≠ 동기 버전)이면 재지급이 다시 만들지 않는다.
+export async function findLastArchivedLineBySourceExpense(
+  viewer: Viewer,
+  expenseId: string,
+  tx: DbOrTx,
+): Promise<Pick<QuoteLineRow, "id" | "version" | "sourceSyncedVersion"> | null> {
+  void viewer;
+  const [row] = await tx
+    .select({ id: quoteLines.id, version: quoteLines.version, sourceSyncedVersion: quoteLines.sourceSyncedVersion })
+    .from(quoteLines)
+    .where(and(eq(quoteLines.sourceExpenseId, expenseId), isNotNull(quoteLines.archivedAt)))
+    .orderBy(desc(quoteLines.archivedAt), desc(quoteLines.id))
+    .limit(1);
+  return row ?? null;
+}
+
+// 도메인이 만든 칸 값을 그대로 넣는다 — 동기 버전은 삽입 행의 version(한 문장).
+export async function insertSourcedAdjustmentLine(viewer: Viewer, values: SourcedAdjustmentValues, tx: DbOrTx): Promise<QuoteLineRow> {
+  void viewer;
+  const [row] = await tx
+    .insert(quoteLines)
+    .values({ ...values, lineKind: "adjustment", version: 1, sourceSyncedVersion: 1 })
+    .returning();
+  if (!row) throw new Error("조정 줄을 넣지 못했다");
+  return row;
+}
+
+// 보관 안 됨 ∧ 읽은 version ∧ 동기 버전 = version일 때만 칸을 바꾸고 version · 동기 버전을 같이 +1. 0행이면 null.
+export async function updateSourcedAdjustmentLine(
+  viewer: Viewer,
+  input: {
+    id: string;
+    expectedVersion: number;
+    itemName: string;
+    executionCurrency: string;
+    executionForeignAmount: string | null;
+    executionFxRate: string;
+    executionAmountKrw: number;
+    profitKrw: number;
+  },
+  tx: DbOrTx,
+): Promise<QuoteLineRow | null> {
+  void viewer;
+  const [row] = await tx
+    .update(quoteLines)
+    .set({
+      itemName: input.itemName,
+      executionCurrency: input.executionCurrency,
+      executionForeignAmount: input.executionForeignAmount,
+      executionFxRate: input.executionFxRate,
+      executionAmountKrw: input.executionAmountKrw,
+      profitKrw: input.profitKrw,
+      version: sql`${quoteLines.version} + 1`,
+      sourceSyncedVersion: sql`${quoteLines.version} + 1`,
+      updatedAt: new Date(),
+    })
+    .where(sourcedUnchanged(input.id, input.expectedVersion))
+    .returning();
+  return row ?? null;
+}
+
+// 같은 조건에서 보관 + version · 동기 버전 +1(둘은 같게 남는다 — 규칙이 보관한 줄은 재지급이 새 줄을 만든다). 0행이면 null.
+export async function archiveSourcedAdjustmentLine(
+  viewer: Viewer,
+  input: { id: string; expectedVersion: number; archivedBy: string },
+  tx: DbOrTx,
+): Promise<QuoteLineRow | null> {
+  void viewer;
+  const [row] = await tx
+    .update(quoteLines)
+    .set({
+      archivedAt: new Date(),
+      archivedBy: input.archivedBy,
+      version: sql`${quoteLines.version} + 1`,
+      sourceSyncedVersion: sql`${quoteLines.version} + 1`,
+      updatedAt: new Date(),
+    })
+    .where(sourcedUnchanged(input.id, input.expectedVersion))
+    .returning();
+  return row ?? null;
+}
+
+function sourcedUnchanged(id: string, expectedVersion: number) {
+  return and(
+    eq(quoteLines.id, id),
+    isNull(quoteLines.archivedAt),
+    eq(quoteLines.version, expectedVersion),
+    isNotNull(quoteLines.sourceExpenseId),
+    sql`${quoteLines.sourceSyncedVersion} = ${quoteLines.version}`,
+  );
 }

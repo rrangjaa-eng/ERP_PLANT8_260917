@@ -13,7 +13,7 @@ import { getEvidenceActions, listEvidence, voidEvidence } from "@/domain/evidenc
 import { confirmEvidence, waiveEvidence } from "@/domain/evidence-reviews";
 import { completeExpensePayment } from "@/domain/payments";
 import { insertVendor } from "@/repositories/vendors";
-import { setupExpenseProject, submitReadyDraft } from "./fixtures/expenses";
+import { setupExpenseProject, submitReadyDraft, testVendorAccount } from "./fixtures/expenses";
 
 // 06.2-08 검토 I-2(D-6217): 읽기가 넓어진 만큼 쓰기가 넓어지지 않았다 — 시드 기획 PM(role-pm, 권한 더하지 않음)은 같은 팀 동료의 문서를
 // 보게 됐지만(보는 범위 team) 지급 · 증빙 확인 · 면제 · 종결 · 무효 · 증빙 붙이기는 별도 권한(expenses.payments · evidence_void · evidence_attach)을 먼저 본다.
@@ -53,7 +53,7 @@ async function setup(): Promise<World> {
     await setSettingValue(SYSTEM_VIEWER, key, false);
   }
   const fx = await setupExpenseProject();
-  const vendor = await insertVendor(SYSTEM_VIEWER, { name: "더테이블", normalizedName: `더테이블-${randomUUID()}`, defaultEvidenceType: "tax_invoice" });
+  const vendor = await insertVendor(SYSTEM_VIEWER, { name: "더테이블", normalizedName: `더테이블-${randomUUID()}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount() });
   const approvedId = await submittedTeamDoc(fx.pm, vendor.id, "팀 회식");
   const inReviewId = await submittedTeamDoc(fx.pm, vendor.id, "팀 다과");
   const [instance] = await db

@@ -63,7 +63,10 @@ describe("scripts/demo-data seed", () => {
 
     const demoVendors = await db.select().from(vendors).where(like(vendors.name, namePrefix));
     expect(demoVendors).toHaveLength(6);
-    expect(demoVendors.every((vendor) => vendor.accountNumberEncrypted === null)).toBe(true);
+    // 06.5 D-6507: 계좌이체로 제출하는 견본 지출결의의 지급처(협력사 셋)만 암호화 번호 · 끝 4자리를 갖는다 — 클라이언트 셋은 계좌 없음.
+    const withAccount = demoVendors.filter((vendor) => vendor.accountNumberEncrypted !== null);
+    expect(withAccount).toHaveLength(3);
+    expect(withAccount.every((vendor) => vendor.accountBank && vendor.accountHolder && vendor.accountNumberLast4?.length === 4)).toBe(true);
 
     const demoProjects = await db.select().from(projects).where(like(projects.name, namePrefix));
     expect(demoProjects).toHaveLength(4);

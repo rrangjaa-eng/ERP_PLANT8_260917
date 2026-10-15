@@ -1,5 +1,5 @@
 import type { Viewer } from "@/domain/viewer";
-import { applyTaxRule, type TaxIncomeType } from "@/domain/money/tax";
+import { applyTaxRule } from "@/domain/money/tax";
 import { taxRuleSchema, type TaxRule, type TaxRuleBasisDate, type TaxRuleKind } from "@/domain/code-tables/tax-rule";
 import {
   getSettingEntry as defaultGetSettingEntry,
@@ -14,7 +14,6 @@ import {
   TAX_COMPANY_BORNE_RATE,
   TAX_VAT_RATE,
   TAX_WITHHOLDING_BUSINESS_INCOME_RATE,
-  TAX_WITHHOLDING_OTHER_INCOME_RATE,
   type TaxBasisDate,
   type TaxCompanyBorneMethod,
 } from "@/domain/settings/keys";
@@ -25,7 +24,7 @@ import { formatKrw } from "@/lib/format-number";
 import { formatRatePercent, type Money } from "@/domain/money";
 
 // 05-03(Pattern 2) — 지출결의의 세금 호출자. 계산은 domain/money/tax.ts의 applyTaxRule 하나이고, 이 파일은 그 함수에
-// 넘길 날짜 · 소득 종류 · 세율 행을 고른다. 06-03이 같은 파일 · 같은 이름을 확장한다.
+// 넘길 날짜 · 세율 행을 고른다. 06-03이 같은 파일 · 같은 이름을 확장한다.
 
 // D-101 대체 사슬(05-06 전 사슬): 기준일 종류 = 증빙 종류 코드 항목의 taxRule.basisDate가 있으면 그것, 없으면 규칙 종류의 설정
 // (원천징수 · 회사 대납 → tax.basis_date.withholding, 부가세 → tax.basis_date.vat). 날짜 사슬은 D-101 기본값 —
@@ -61,11 +60,6 @@ export function pickTaxDates(
   return { basisKind, basisDate, applyOpts: { paymentDate: basisDate, evidenceDate: basisDate } };
 }
 
-// 사업소득 증빙만 사업소득 세율(3.3%) — 그 밖은 기타소득(applyTaxRule 기본).
-export function incomeTypeFor(evidenceType: string | null): TaxIncomeType {
-  return evidenceType === "business_income" ? "business" : "other";
-}
-
 export type ExpenseTaxDeps = {
   getSettingEntry: typeof defaultGetSettingEntry;
   getSettingValue: typeof defaultGetSettingValue;
@@ -85,9 +79,10 @@ export type AppliedRate = {
 
 type RatedRuleKind = Exclude<TaxRuleKind, "none">;
 
-function rateDefFor(ruleKind: RatedRuleKind, incomeType: TaxIncomeType): SettingDef<number> {
+// 06.5 D-6501 — 원천징수는 사업소득 세율 하나(기타소득은 회사 대납).
+function rateDefFor(ruleKind: RatedRuleKind): SettingDef<number> {
   if (ruleKind === "vat_surcharge") return TAX_VAT_RATE;
-  if (ruleKind === "withholding") return incomeType === "business" ? TAX_WITHHOLDING_BUSINESS_INCOME_RATE : TAX_WITHHOLDING_OTHER_INCOME_RATE;
+  if (ruleKind === "withholding") return TAX_WITHHOLDING_BUSINESS_INCOME_RATE;
   return TAX_COMPANY_BORNE_RATE;
 }
 
@@ -95,14 +90,14 @@ function rateDefFor(ruleKind: RatedRuleKind, incomeType: TaxIncomeType): Setting
 // 규칙 없음(none)이면 null.
 export async function resolveAppliedRate(
   rule: TaxRule,
-  dates: { basisDate: string; incomeType: TaxIncomeType },
+  dates: { basisDate: string },
   deps?: Partial<ExpenseTaxDeps>,
 ): Promise<AppliedRate | null> {
   if (rule.ruleKind === "none") return null;
   const getEntry = deps?.getSettingEntry ?? defaultGetSettingEntry;
   const { basisDate } = dates;
   const asOf = seoulDateToUtcDate(basisDate);
-  const def = rateDefFor(rule.ruleKind, dates.incomeType);
+  const def = rateDefFor(rule.ruleKind);
   const entry = await getEntry(def, { asOf });
   const applied: AppliedRate = { key: def.key, rate: entry.value, historizedId: entry.historizedId, effectiveFrom: entry.effectiveFrom, basisDate };
   if (rule.ruleKind === "company_borne") {
@@ -111,7 +106,8 @@ export async function resolveAppliedRate(
   return applied;
 }
 
-export type ExpenseTaxSource = TaxDateSource & { evidenceType: string | null; supplyAmountKrw: number | null };
+// recipientCount — 06.5 카드 ① 회사 대납 면제의 받는 인원(지출결의 행은 늘 값이 있다 · 칸이 없는 입력은 1 — DB 기본값과 같다).
+export type ExpenseTaxSource = TaxDateSource & { evidenceType: string | null; supplyAmountKrw: number | null; recipientCount?: number };
 
 export type ExpenseTaxResult =
   | {
@@ -129,7 +125,7 @@ export type ExpenseTaxResult =
     }
   | { unavailable: true };
 
-// 증빙 종류 코드 항목의 세금 규칙 → 기준일 · 소득 종류 · 세율 행 → 세금 계산 한 번. 증빙 종류 · 공급가액이 비었거나
+// 증빙 종류 코드 항목의 세금 규칙 → 기준일 · 세율 행 → 세금 계산 한 번. 증빙 종류 · 공급가액이 비었거나
 // 규칙이 없거나 세율이 없으면 unavailable.
 export async function computeExpenseTax(
   viewer: Viewer,
@@ -149,16 +145,19 @@ export async function computeExpenseTax(
   const getValue = deps?.getSettingValue ?? defaultGetSettingValue;
   const [basisWithholding, basisVat] = await Promise.all([getValue(TAX_BASIS_DATE_WITHHOLDING), getValue(TAX_BASIS_DATE_VAT)]);
   const dates = pickTaxDates(doc, { ruleKind: rule.ruleKind, codeBasis: rule.basisDate, basisWithholding, basisVat, todayKst: seoulToday(deps?.now) });
-  const incomeType = incomeTypeFor(doc.evidenceType);
   try {
-    const applied = await resolveAppliedRate(rule, { basisDate: dates.basisDate, incomeType }, deps);
+    const applied = await resolveAppliedRate(rule, { basisDate: dates.basisDate }, deps);
     // 세율 키는 위에서 읽은 행의 값을 그대로 쓴다 — 스냅숏 세율과 금액이 한 번의 읽기에서 나온다(05-06 돈 검토 m1).
     const getValueOnce: typeof defaultGetSettingValue = (def, opts) =>
       applied && def.key === applied.key ? Promise.resolve(def.schema.parse(applied.rate)) : getValue(def, opts);
     const amounts = await applyTaxRule(
       doc.supplyAmountKrw,
       rule,
-      { paymentDate: seoulDateToUtcDate(dates.applyOpts.paymentDate), evidenceDate: seoulDateToUtcDate(dates.applyOpts.evidenceDate), incomeType },
+      {
+        paymentDate: seoulDateToUtcDate(dates.applyOpts.paymentDate),
+        evidenceDate: seoulDateToUtcDate(dates.applyOpts.evidenceDate),
+        recipientCount: doc.recipientCount ?? 1,
+      },
       { getSettingValue: getValueOnce },
     );
     return {
@@ -205,7 +204,13 @@ export function taxLineText(result: ExpenseTaxResult, supply: Money, ruleLabel: 
       }
       segments.push(label("실지급액", formatKrw(result.payableKrw)));
     } else if (result.ruleKind === "company_borne") {
-      segments.push(label("회사 대납 세금", ...(rate ? [rate] : []), formatKrw(result.companyBorneKrw)), label("지급 총액", formatKrw(result.payableKrw)));
+      // 06.5 D-6501 — 면제(세금 0)는 원천징수 면제 줄과 같은 꼴.
+      if (result.companyBorneKrw === 0) {
+        segments.push(label("회사 대납 세금", "0"), [{ text: "면제 기준 이하", emphasis: false }]);
+      } else {
+        segments.push(label("회사 대납 세금", ...(rate ? [rate] : []), formatKrw(result.companyBorneKrw)));
+      }
+      segments.push(label("지급 총액", formatKrw(result.payableKrw)));
     } else {
       segments.push(label("지급 총액", formatKrw(result.payableKrw)));
     }

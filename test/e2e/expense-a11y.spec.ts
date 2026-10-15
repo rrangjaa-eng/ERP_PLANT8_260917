@@ -73,7 +73,7 @@ test.describe("지출결의 화면 접근성 (05-13)", () => {
     const page = await loginPage(browser, baseURL, fx.pm);
     await openDraft(page, fx, "tracer");
 
-    const trigger = page.getByRole("button", { name: "바꾸기" });
+    const trigger = page.getByRole("button", { name: "바꾸기", exact: true });
     await waitForHydration(trigger);
     await trigger.click();
     const dialog = page.getByRole("dialog", { name: "견적 줄 바꾸기" });

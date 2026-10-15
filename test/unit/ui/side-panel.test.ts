@@ -59,6 +59,33 @@ describe("SidePanel 소스 계약 — 모든 폭 모달(Q1 A)", () => {
   });
 });
 
+// 06.5 D-6512 L-1 · SP-65-3(UI-SPEC V9): 연 요소 → returnFocusTo가 준 보이는 요소 → null(화면 제목). jsdom이 없어 가짜 요소로 판정만 본다.
+describe("panelReturnTarget — 닫힌 뒤 포커스 갈 곳(SP-65-3)", () => {
+  const { panelReturnTarget } = sidePanelModule;
+  const body = { getClientRects: () => [] } as unknown as HTMLElement;
+  const element = (rects: number) => ({ getClientRects: () => Array.from({ length: rects }) }) as unknown as HTMLElement;
+  const docWith = (...inside: HTMLElement[]) => ({ body, contains: (node: Node | null) => inside.includes(node as HTMLElement) });
+
+  it("연 요소가 없고 returnFocusTo가 보이는 요소를 주면 그 요소", () => {
+    const row = element(1);
+    expect(panelReturnTarget(null, row, docWith(row))).toBe(row);
+  });
+
+  it("returnFocusTo가 숨은 요소(getClientRects 0) · 문서 밖 요소 · null이면 null(화면 제목)", () => {
+    const hidden = element(0);
+    expect(panelReturnTarget(null, hidden, docWith(hidden))).toBeNull();
+    expect(panelReturnTarget(null, element(1), docWith())).toBeNull();
+    expect(panelReturnTarget(null, null, docWith())).toBeNull();
+  });
+
+  it("연 요소가 문서에 있으면 returnFocusTo보다 연 요소(기존 경로) · body는 연 요소로 치지 않는다", () => {
+    const opener = element(1);
+    const row = element(1);
+    expect(panelReturnTarget(opener, row, docWith(opener, row))).toBe(opener);
+    expect(panelReturnTarget(body, row, docWith(body, row))).toBe(row);
+  });
+});
+
 describe("isPanelCloseKey — Esc로 닫힘(조합 중 · 안쪽 컨트롤이 먼저 쓴 Esc는 아님)", () => {
   it.each([
     [{ key: "Escape" }, true],

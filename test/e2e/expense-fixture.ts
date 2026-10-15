@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { expect, type Browser, type Page } from "@playwright/test";
+import { db } from "@/db/client";
+import { users } from "@/db/schema";
 import { createExpenseFromLines } from "@/domain/expenses";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { createProject } from "@/domain/projects";
@@ -8,6 +10,9 @@ import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { setCustomerApproval } from "@/domain/quotes/revisions";
 import { approvalBasis } from "@/repositories/quote-revisions";
 import { insertVendor } from "@/repositories/vendors";
+import { findTeamById } from "@/repositories/teams";
+import { normalizeVendorName } from "@/domain/vendors";
+import { testVendorAccount } from "../integration/fixtures/expenses";
 import { insertRole, setRoleArchived } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { createOrgUnit, createTeam } from "@/domain/org";
@@ -30,6 +35,9 @@ export type ExpenseE2E = {
   projectName: string;
   vendorName: string;
   vendorId: string;
+  // 06.5 V12: 기안 PM의 팀 — 직원 지급처 후보의 부제 `직원 · {팀}`.
+  teamId: string;
+  teamName: string;
   // 줄 이름 → id. 이름은 문서 제목 · 결재함 문서 칸에 그대로 나온다.
   lines: Record<LineKey, { id: string; itemName: string }>;
 };
@@ -45,9 +53,14 @@ export async function setupExpenseE2E(): Promise<ExpenseE2E> {
   const suffix = randomUUID().slice(0, 6);
   const org = await setupLeaveOrg(today);
 
-  const client = await insertVendor(SYSTEM_VIEWER, { name: `E2E클라이언트-${suffix}`, normalizedName: `e2e클라이언트-${suffix}` });
+  const client = await insertVendor(SYSTEM_VIEWER, { name: `E2E클라이언트-${suffix}`, normalizedName: `e2e클라이언트-${suffix}`, ...testVendorAccount() });
   const vendorName = `E2E스테이지-${suffix}`;
-  const vendor = await insertVendor(SYSTEM_VIEWER, { name: vendorName, normalizedName: `e2e스테이지-${suffix}`, defaultEvidenceType: "tax_invoice" });
+  const vendor = await insertVendor(SYSTEM_VIEWER, {
+    name: vendorName,
+    normalizedName: `e2e스테이지-${suffix}`,
+    defaultEvidenceType: "tax_invoice",
+    ...testVendorAccount(),
+  });
 
   const projectName = `E2E지출-${suffix}`;
   const project = await createProject(org.drafter.viewer, {
@@ -115,8 +128,22 @@ export async function setupExpenseE2E(): Promise<ExpenseE2E> {
     projectName,
     vendorName,
     vendorId: vendor.id,
+    teamId: org.teamId,
+    teamName: (await findTeamById(SYSTEM_VIEWER, org.teamId))?.name ?? "",
     lines: Object.fromEntries((Object.keys(names) as LineKey[]).map((key) => [key, { id: idOf(names[key]), itemName: names[key] }])) as ExpenseE2E["lines"],
   };
+}
+
+// 06.5 V12(D-6517): 직원 지급처 후보 — 기안 PM 팀 소속 직원 한 명(계좌 없음). 이름은 prefix 뒤 4자리(leave-org makePerson).
+export async function addPayeeEmployee(fx: ExpenseE2E, prefix: string): Promise<Person> {
+  return makePerson(prefix, "role-pm", fx.teamId, `${seoulToday().slice(0, 4)}-01-01`);
+}
+
+// 06.5 V12 R-1: 검색어 prefix 하나에 거래처 count · 직원 count가 함께 걸린다(직원은 소속 없음 — 부제 `직원`). 직원 행은 계정 없이 사람 행만.
+export async function addPayeeCandidates(prefix: string, count: number): Promise<void> {
+  const names = (kind: string) => Array.from({ length: count }, (_, i) => `${prefix}-${kind}${String(i).padStart(2, "0")}`);
+  for (const name of names("v")) await insertVendor(SYSTEM_VIEWER, { name, normalizedName: normalizeVendorName(name) });
+  await db.insert(users).values(names("u").map((name) => ({ id: randomUUID(), name, email: `e2e-payee-${randomUUID()}@example.test`, roleId: "role-pm" })));
 }
 
 // 임시 계급은 보관하지 않으면 권한표 열로 쌓여 열 폭 검사를 흔든다 — 스펙 파일 끝(afterAll)에서 한꺼번에 보관한다.

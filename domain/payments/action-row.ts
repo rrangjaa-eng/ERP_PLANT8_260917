@@ -35,8 +35,8 @@ export const TRANSFER_NOT_NUMBER = "숫자 아님 · 13,640,000처럼";
 export const TRANSFER_NOT_POSITIVE = "이체액 0 이하 · 금액 고치기";
 export const TRANSFER_FRACTION = "원화 소수점 · 소수점 없이";
 
-// 06-06 「Error — 증빙 금액 칸」(UI-SPEC S4) — 액션 입력 검증 · 화면 칸 오류 · F2 막힘이 같은 문구를 읽는다(잎 모듈이라 화면이 값 import).
-export const EVIDENCE_AMOUNT_FRACTION = "원화 소수점 · 소수점 없이";
+// 06-06 「Error — 공급가액 칸」(UI-SPEC S4) — 액션 입력 검증 · 화면 칸 오류 · F2 막힘이 같은 문구를 읽는다(잎 모듈이라 화면이 값 import).
+export const SUPPLY_AMOUNT_FRACTION = "원화 소수점 · 소수점 없이";
 
 // 06.5 D-6520(UI-SPEC V8 개정 4판) — 증빙 확인 = 공급가액 하나. 1차 글자 둘(값이 다를 때만 고쳐 확인) · 빈 고침 칸 이유(기안자 칸과 같은 글자) ·
 // 지급 뒤(P5) `바꾸기` 자리의 잠김 줄. 잎 모듈이라 화면이 값 import.

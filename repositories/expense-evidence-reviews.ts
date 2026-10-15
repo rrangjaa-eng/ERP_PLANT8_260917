@@ -78,12 +78,12 @@ export async function deleteReviewByExpense(viewer: Viewer, expenseId: string, t
   return row ? (row.status as EvidenceReviewStatus) : null;
 }
 
-// 06-11(EVID-04) — 마지막 증빙이 무효가 되면 증빙 금액 · 증빙일 두 칸만 지운다. version은 건드리지 않는다.
+// 06-11(EVID-04) — 마지막 증빙이 무효가 되면 증빙일 칸만 지운다. version은 건드리지 않는다.
 export async function clearEvidenceValues(viewer: Viewer, expenseId: string, tx: DbOrTx): Promise<void> {
   void viewer;
   await tx
     .update(expenses)
-    .set({ evidenceAmount: null, evidenceDate: null })
+    .set({ evidenceDate: null })
     .where(and(eq(expenses.id, expenseId), isNull(expenses.deletedAt)));
 }
 

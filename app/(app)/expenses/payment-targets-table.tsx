@@ -23,6 +23,7 @@ import type { SelectedTransferSum } from "@/domain/payments/targets";
 import type { ConfirmEvidenceResult } from "@/domain/evidence-reviews";
 import type { PaymentAccount } from "@/domain/payments";
 import { AccountNumberCell } from "@/app/(app)/admin/vendors/account-number";
+import { revealVendorAccountNumberAction } from "@/app/(app)/admin/vendors/actions";
 import { AMOUNT_HIDDEN, DIFF_REASON_REQUIRED, TRANSFER_NOT_NUMBER, TRANSFER_NOT_POSITIVE } from "@/domain/payments/action-row";
 import { formatKrw } from "@/lib/format-number";
 import { completePaymentsBatchAction, sumSelectedTransfersAction } from "./actions";
@@ -89,7 +90,12 @@ export function PaymentAccountValue({ account }: { account: PaymentAccount }) {
     <div data-payment-account="">
       <div className={styles.accountLine}>
         {account.bank ? <span className={styles.nowrap}>{account.bank}</span> : null}
-        <AccountNumberCell vendorId={account.vendorId} masked={account.masked} canReveal={account.canReveal} />
+        <AccountNumberCell
+          id={account.vendorId}
+          masked={account.masked}
+          canReveal={account.canReveal}
+          revealAction={revealVendorAccountNumberAction}
+        />
       </div>
       {account.holder ? (
         <span className={styles.vendorCell} title={account.holder}>

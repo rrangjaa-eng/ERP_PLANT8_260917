@@ -1,7 +1,7 @@
 import { pathToFileURL } from "node:url";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { db, closeDb } from "@/db/client";
-import { certEvents, certSubmissions, vendors } from "@/db/schema";
+import { certEvents, certSubmissions, users, vendors } from "@/db/schema";
 import { encrypt, decrypt, isKeyVersionUsable, loadDataKeys, newestKeyVersion } from "@/lib/crypto";
 import { log } from "@/lib/log";
 
@@ -74,6 +74,24 @@ export const TARGETS: RotateTarget[] = [
         .set({ tokenEncrypted: value })
         .where(and(eq(certEvents.id, id), eq(certEvents.tokenEncrypted, previous)))
         .returning({ id: certEvents.id });
+      return updated.length;
+    },
+  },
+  {
+    // 06.5-04(D-6505): 직원 지급 계좌 — 회전 도중 저장(지급 계좌 수정)이 먼저 쓴 값을 덮지 않게 이전 암호문 조건.
+    label: "users.account_number_encrypted",
+    async fetchRows() {
+      return db
+        .select({ id: users.id, value: users.accountNumberEncrypted })
+        .from(users)
+        .where(isNotNull(users.accountNumberEncrypted));
+    },
+    async writeRow(id, value, previous) {
+      const updated = await db
+        .update(users)
+        .set({ accountNumberEncrypted: value })
+        .where(and(eq(users.id, id), eq(users.accountNumberEncrypted, previous)))
+        .returning({ id: users.id });
       return updated.length;
     },
   },

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useAction } from "next-safe-action/hooks";
-import { revealVendorAccountNumberAction } from "./actions";
+import type { revealVendorAccountNumberAction } from "./actions";
 import { Button } from "@/ui/button/Button";
 import styles from "./vendors.module.css";
 
@@ -11,32 +11,43 @@ import styles from "./vendors.module.css";
 // (canReveal)는 서버가 계산해 행마다 실어 보낸 값이다 — 권한이 없으면
 // 「번호 보기」가 이유 있는 비활성이 아니라 처음부터 렌더되지 않는다(권한이
 // 없다는 사실 자체를 화면에 노출하지 않는다).
+// 06.5-04(DM-11): 거래처 목록과 사람 상세 「지급 계좌」가 같이 쓴다 — 해제 액션은 호출부가 넘긴다(입력 `{ id }` · 출력 `{ value }`).
+// 번호 글자는 `aria-live="polite"` — 해제 결과를 보조 기술이 듣는다.
 export function AccountNumberCell({
-  vendorId,
+  id,
   masked,
   canReveal,
+  revealAction,
+  align = "end",
 }: {
-  vendorId: string;
+  id: string;
   masked: string;
   canReveal: boolean;
+  revealAction: typeof revealVendorAccountNumberAction;
+  /** 표 칸은 오른쪽(기본), 라벨·값 목록은 `start` — 값이 다른 값과 같은 x에서 시작한다. */
+  align?: "start" | "end";
 }) {
   const [revealed, setRevealed] = useState<string | null>(null);
-  const { execute, isExecuting, result } = useAction(revealVendorAccountNumberAction, {
+  const { execute, isExecuting, result } = useAction(revealAction, {
     onSuccess: ({ data }) => {
       if (data) setRevealed(data.value);
     },
   });
 
+  const start = align === "start";
+
   if (!masked) {
-    return <span className={styles.masked}>—</span>;
+    return <span className={start ? `${styles.masked} ${styles.maskedStart}` : styles.masked}>—</span>;
   }
 
   const display = revealed ?? masked;
 
   return (
     <>
-      <div className={styles.accountCell}>
-        <span className={styles.masked}>{display}</span>
+      <div className={start ? `${styles.accountCell} ${styles.accountCellStart}` : styles.accountCell}>
+        <span className={start ? `${styles.masked} ${styles.maskedStart}` : styles.masked} aria-live="polite">
+          {display}
+        </span>
         {canReveal ? (
           <Button
             variant="tertiary"
@@ -48,7 +59,7 @@ export function AccountNumberCell({
                 setRevealed(null);
                 return;
               }
-              execute({ id: vendorId });
+              execute({ id });
             }}
           >
             {revealed !== null ? "가리기" : "번호 보기"}
@@ -56,7 +67,7 @@ export function AccountNumberCell({
         ) : null}
       </div>
       {/* 실패 줄은 번호 줄 밖 아래에 둔다 — 같은 flex 줄에 끼면 번호가 옆 열 쪽으로 밀린다. */}
-      {result.serverError ? <p className={styles.revealError}>번호 불러오기 실패 · 다시 시도</p> : null}
+      {result.serverError ? <p className={start ? `${styles.revealError} ${styles.revealErrorStart}` : styles.revealError}>번호 불러오기 실패 · 다시 시도</p> : null}
     </>
   );
 }

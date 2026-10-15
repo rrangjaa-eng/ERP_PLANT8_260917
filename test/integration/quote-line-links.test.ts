@@ -61,7 +61,6 @@ async function save(viewer: Viewer, expenseId: string, fields: Parameters<typeof
 // 결재 통과 · 증빙 있음 문서를 증빙 확인(06-06) 뒤 지급 완료(06-03)한다.
 async function pay(payer: Viewer, doc: ApprovedExpense): Promise<void> {
   const row = await expenseRow(doc.expenseId);
-  await db.update(expenses).set({ evidenceAmount: row.supplyAmountKrw }).where(eq(expenses.id, doc.expenseId));
   const confirmed = await confirmEvidence(payer, { expenseId: doc.expenseId, version: row.version });
   const preview = await previewPayable(payer, { expenseId: doc.expenseId, payDate: seoulToday() });
   if (preview.payableKrw === null || preview.payableKrw === undefined) throw new Error("지급 총액 없음");

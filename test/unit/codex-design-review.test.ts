@@ -100,6 +100,10 @@ describe("parseArgs", () => {
     expect(parseArgs(["/x", "--out", "test-results/r.md"]).seed).toBeNull();
   });
 
+  it("--seed purchase-approval-pending도 받는다", () => {
+    expect(parseArgs(["/projects/{projectId}", "--out", "test-results/r.md", "--seed", "purchase-approval-pending"]).seed).toBe("purchase-approval-pending");
+  });
+
   it("--plan은 반복할 수 있다", () => {
     const args = parseArgs([
       "/x",

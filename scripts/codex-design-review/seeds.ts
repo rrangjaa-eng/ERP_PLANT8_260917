@@ -21,6 +21,8 @@ import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertRole } from "@/repositories/roles";
 import { insertVendor } from "@/repositories/vendors";
 import { seoulToday } from "@/lib/dates";
+import { setSettingValue } from "@/domain/settings/registry";
+import { PURCHASE_ONLINE_VENDOR_NAME } from "@/domain/settings/keys";
 import { QUOTE_SUBCATEGORY_TABLE_KEY } from "@/domain/projects/references";
 import { listCodeItems } from "@/repositories/code-tables";
 import type { SeedName } from "./lib";
@@ -154,9 +156,61 @@ async function preSettleEvidencePending(browser: Browser, baseURL: string | unde
   return { vars: { projectId: project.id }, viewer: org.drafter };
 }
 
+// purchase-approval-pending: 진행 프로젝트의 현재(1차) 차수가 고객 승인 전 — 온라인구매 협력사 줄의 `구매 요청` 문이 닫힌 화면(06-35).
+// 설정 `purchase.online_vendor_name`은 전역 한 칸이라 시드가 값을 쓴다. test/e2e/online-vendor.ts와 같은 흐름이지만 scripts는 test를 import할 수 없어 다시 쓴다.
+const CAPTURE_ONLINE_VENDOR_NAME = "캡처온라인구매협력사";
+
+async function purchaseApprovalPending(): Promise<SeedResult> {
+  const today = seoulToday();
+  const year = today.slice(0, 4);
+  const suffix = randomUUID().slice(0, 6);
+  const yearStart = `${year}-01-01`;
+  const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `캡처구매본부-${suffix}` });
+  const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `캡처구매팀-${suffix}` });
+  const pm = await makePerson("담당", "role-pm", team.id, yearStart);
+  const teamLead = await makePerson("팀장", "role-team-lead", team.id, yearStart);
+  await setSettingValue(SYSTEM_VIEWER, PURCHASE_ONLINE_VENDOR_NAME, CAPTURE_ONLINE_VENDOR_NAME);
+  const client = await insertVendor(SYSTEM_VIEWER, { name: `캡처클라이언트-${suffix}`, normalizedName: `캡처클라이언트-${suffix}` });
+  const onlineVendor = await insertVendor(SYSTEM_VIEWER, { name: CAPTURE_ONLINE_VENDOR_NAME, normalizedName: CAPTURE_ONLINE_VENDOR_NAME.toLowerCase() });
+  const vendor = await insertVendor(SYSTEM_VIEWER, { name: `캡처거래처-${suffix}`, normalizedName: `캡처거래처-${suffix}` });
+  const project = await createProject(pm.viewer, {
+    clientId: client.id,
+    teamId: team.id,
+    pmUserId: pm.viewer.id,
+    name: `캡처구매-${suffix}`,
+    startDate: yearStart,
+    endDate: `${year}-12-31`,
+  });
+  const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+  if (!revision || !project.id) throw new Error("프로젝트 · 1차 차수가 없습니다");
+  const [subcategory] = await listCodeItems(SYSTEM_VIEWER, {
+    tableKey: QUOTE_SUBCATEGORY_TABLE_KEY,
+    scope: { rows: "all", includeArchived: false },
+    includeInactive: false,
+  });
+  if (!subcategory) throw new Error("시드된 quote_subcategory 코드 항목이 없습니다");
+  const row = (itemName: string, vendorId: string) => ({
+    id: randomUUID(),
+    isNew: true as const,
+    subcategory: subcategory.value,
+    itemName,
+    vendorId,
+    unitPrice: { currency: "KRW" as const, amount: 1_200_000, fxRate: 1 },
+    execution: { currency: "KRW" as const, amount: 1_000_000, fxRate: 1 },
+  });
+  await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
+    rows: [row(`온라인 소모품-${suffix}`, onlineVendor.id), row(`무대 제작-${suffix}`, vendor.id)],
+  });
+  // 고객 승인 표시는 하지 않는다 — 그 상태가 이 시나리오다.
+  await changeProjectStatus(teamLead.viewer, project.id, { from: "bidding", to: "in_progress" });
+  return { vars: { projectId: project.id }, viewer: pm };
+}
+
 export function runSeed(name: SeedName, browser: Browser, baseURL: string | undefined): Promise<SeedResult> {
   switch (name) {
     case "pre-settle-evidence-pending":
       return preSettleEvidencePending(browser, baseURL);
+    case "purchase-approval-pending":
+      return purchaseApprovalPending();
   }
 }

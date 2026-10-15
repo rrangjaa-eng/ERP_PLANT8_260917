@@ -166,13 +166,10 @@ export function routeListSteps(steps: RouteStepSource[] | null | undefined): Rou
 }
 
 // 04.1-05(UI-SPEC Destructive — 회수 · #18): 회수 확인 결과 줄 — 첫 줄 `결재 멈춤 · {지금 담당}의 결재함에서 빠짐`
-// (담당 표기는 서버 표시 목록의 후보 글자 그대로, 지금 담당이 없으면 `결재 멈춤`만), 이미 승인한 단계가 있으면
-// 둘째 줄 `{단계} 승인 기록은 남음`.
+// (담당 표기는 서버 표시 목록의 후보 글자 그대로, 지금 담당이 없으면 `결재 멈춤`만). 06.6 D-6610: 회수는 앞 사람 승인이
+// 없을 때만 되므로 승인 기록 줄을 두지 않는다.
 export function withdrawResultLines(steps: RouteStepSource[] | null | undefined): string[] {
   const current = (steps ?? []).find((step) => step.state === "current");
   const holders = current?.holderNames ?? "";
-  const lines = [holders ? `결재 멈춤 · ${holders}의 결재함에서 빠짐` : "결재 멈춤"];
-  const approved = (steps ?? []).filter((step) => step.state === "approved").map((step) => step.label ?? "");
-  if (approved.length > 0) lines.push(`${approved.join(" · ")} 승인 기록은 남음`);
-  return lines;
+  return [holders ? `결재 멈춤 · ${holders}의 결재함에서 빠짐` : "결재 멈춤"];
 }

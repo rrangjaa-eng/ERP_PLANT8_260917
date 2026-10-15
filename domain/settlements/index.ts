@@ -53,7 +53,7 @@ import {
   type RouteSettingDefs,
 } from "@/domain/approvals";
 import { buildConflictMessage, buildLateUndoMessage } from "@/domain/approvals/conflict-message";
-import type { ApprovalStatus } from "@/domain/approvals/route";
+import { hasPriorApproval, type ApprovalStatus } from "@/domain/approvals/route";
 import type { DescribeDeps, DocumentDetailRow, DocumentDetailRows, DocumentSummary, RouteConfigStep } from "@/domain/approvals/kinds";
 import { gate, GateBlockedError } from "@/domain/rules/gate";
 import "@/domain/rules/register";
@@ -426,7 +426,9 @@ async function undoRefusal(viewer: Viewer, graph: ApprovalGraph, round: number, 
   const namesVisible = await visible(viewer, "approval.value", deps?.findVisibility ? { findVisibility: deps.findVisibility } : undefined);
   if (acted && (acted.action === "approved" || acted.action === "rejected")) {
     const actorName = namesVisible ? acted.actedByName : null;
-    const message = buildLateUndoMessage({ actorName, at: acted.actedAt, action: acted.action, withdrawable: IN_PROGRESS_STATUSES.has(instance.status) });
+    // 06.6 D-6609: 기안자 아닌 사람의 승인이 있으면 문서 화면 회수도 막혀 꼬리는 새로 고침.
+    const withdrawable = IN_PROGRESS_STATUSES.has(instance.status) && !hasPriorApproval(steps, instance.drafterId);
+    const message = buildLateUndoMessage({ actorName, at: acted.actedAt, action: acted.action, withdrawable });
     return new SettlementUndoRefusedError(message, { actorName, at: acted.actedAt, status: acted.action });
   }
   const actorName = namesVisible && instance.updatedBy === instance.drafterId ? instance.drafterName : null;

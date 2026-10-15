@@ -53,6 +53,12 @@ export type RouteStep = {
   selfApproved: boolean;
 };
 
+// 06.6 D28 · D-6601: 지금 차수 단계 중 기안자 아닌 사람이 누른 승인이 있는가 — 건너뜀 · 빈 자리는 저장되지 않아 자연히 0, 폴백 승인도 사람이 누른 승인이라 센다. 호출자가 지금 차수 단계만 넘긴다.
+// D-6602: 본인 승인은 세지 않는다 — 기안자 아님 절이 그 결정이다(D28 「앞 사람」. 옛 260907 지출결의는 기본 설정에서 본인 승인도 셌다 — 다르게 정함).
+export function hasPriorApproval(steps: readonly { action: string | null; actedBy: string | null }[], drafterId: string): boolean {
+  return steps.some((step) => step.action === "approved" && step.actedBy !== null && step.actedBy !== drafterId);
+}
+
 // 처리·표시 시점의 조직 스냅숏 — 보관되지 않은 사람 × 계급 × 현재 소속.
 export type SnapshotPerson = {
   id: string;

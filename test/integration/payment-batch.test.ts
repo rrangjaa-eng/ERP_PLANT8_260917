@@ -962,7 +962,20 @@ describe("순수", () => {
       docQuery: new URLSearchParams({ from: "pay", status: "지급 대상", team, evidence: "unreviewed", page: "2" }).toString(),
       team,
       evidence: "unreviewed",
+      q: null,
     });
+
+    // 06.5-08(검토 P2-2): 검색어가 문서 왕복에서 유지된다 — 정규화(공백 자름 · 100자) 뒤 backHref · docQuery에 싣고 q로 돌려준다.
+    const withQ = parsePayReturn({ from: "pay", q: "  더테이블  ", page: "2" });
+    expect(withQ).toEqual({
+      backHref: `/expenses?${new URLSearchParams({ status: "지급 대상", q: "더테이블", page: "2" })}`,
+      docQuery: new URLSearchParams({ from: "pay", status: "지급 대상", q: "더테이블", page: "2" }).toString(),
+      team: null,
+      evidence: null,
+      q: "더테이블",
+    });
+    expect(parsePayReturn({ from: "pay", q: "   " })?.q).toBeNull();
+    expect(parsePayReturn({ from: "pay", q: "x".repeat(150) })?.q).toBe("x".repeat(100));
 
     for (const bad of [
       { from: "pay", team: "//evil.example", evidence: "javascript:alert(1)", page: "0" },
@@ -1000,6 +1013,9 @@ describe("다음 확인 전 (06-20 Task 3)", () => {
     expect(await nextUnreviewedTarget(payer, { afterExpenseId: first.expenseId, evidence: "missing" })).toBeNull();
     expect(await nextUnreviewedTarget(fx.ceo, { afterExpenseId: first.expenseId })).toBeNull();
     expect(await nextUnreviewedTarget(fx.pm, { afterExpenseId: first.expenseId })).toBeNull();
+    // 06.5-08(검토 P2-2): 검색어가 걸리면 그 검색 결과 안에서만 다음 확인 전을 찾는다 — 검색에 안 걸린 마지막 문서로 건너뛰지 않는다.
+    expect(await nextUnreviewedTarget(payer, { afterExpenseId: first.expenseId, q: last.number })).toEqual({ id: last.expenseId, number: last.number });
+    expect(await nextUnreviewedTarget(payer, { afterExpenseId: first.expenseId, q: middle.number })).toBeNull();
   });
 });
 

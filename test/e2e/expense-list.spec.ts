@@ -280,3 +280,93 @@ test.describe("여러 줄 Ctrl+E · 두 번 눌러도 하나", () => {
     await page.context().close();
   });
 });
+
+// 06.5-08 Task 1(D-6508 · UI-SPEC V1): 목록 검색 칸 — 필터 줄 DOM 첫째, Enter만 제출(DM-1), `q`는 보기 전환에 남고 1쪽부터 다시 그린다, 0건에도 필터 줄이 남는다(EP1-13).
+test.describe("목록 검색 (06.5 D-6508)", () => {
+  async function twoDocs() {
+    const fx = await setupExpenseE2E();
+    const a = await submitTeamCost(fx.pm.viewer, `검색대상-${randomUUID().slice(0, 4)}`);
+    const b = await submitTeamCost(fx.pm.viewer, `다른문서-${randomUUID().slice(0, 4)}`);
+    return { fx, a, b };
+  }
+
+  test("번호로 연 주소는 입력 값이 남고 그 문서만 보이며, 상태를 바꿔도 q가 남고 Enter 제출에는 page가 없다", async ({ browser, baseURL }) => {
+    const { fx, a, b } = await twoDocs();
+    const page = await loginPage(browser, baseURL, fx.pm, DESKTOP);
+    await page.goto(`/expenses?q=${encodeURIComponent(a.number)}`);
+    await expect(page.getByRole("textbox", { name: "검색" })).toHaveValue(a.number);
+    await expect(rowOf(page, a.expenseId)).toHaveCount(1);
+    await expect(rowOf(page, b.expenseId)).toHaveCount(0);
+    await expect(page.getByRole("region", { name: "합계" })).toContainText("합계 (진행 중 · 1건)");
+
+    await page.getByRole("combobox", { name: "상태" }).selectOption("전체");
+    await expect(page).toHaveURL((url) => url.searchParams.get("status") === "전체" && url.searchParams.get("q") === a.number);
+    await expect(rowOf(page, a.expenseId)).toHaveCount(1);
+
+    await page.goto(`/expenses?q=${encodeURIComponent(a.number)}&page=2`);
+    await page.getByRole("textbox", { name: "검색" }).press("Enter");
+    await expect(page).toHaveURL((url) => url.searchParams.get("q") === a.number && !url.searchParams.has("page"));
+    await page.context().close();
+  });
+
+  test("검색어를 넣고 Tab으로 상태로 가도 주소가 바뀌지 않고, 검색 칸에서 Enter를 눌러야 q가 주소에 실린다 (DM-1)", async ({ browser, baseURL }) => {
+    const { fx, a } = await twoDocs();
+    const page = await loginPage(browser, baseURL, fx.pm, DESKTOP);
+    await page.goto("/expenses");
+    const search = page.getByRole("textbox", { name: "검색" });
+    await waitForHydration(search);
+    const before = page.url();
+    await search.fill(a.number);
+    await page.keyboard.press("Tab");
+    await expect(page.getByRole("combobox", { name: "상태" })).toBeFocused();
+    await page.waitForTimeout(500);
+    expect(page.url()).toBe(before);
+
+    await search.focus();
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL((url) => url.searchParams.get("q") === a.number);
+    await expect(rowOf(page, a.expenseId)).toHaveCount(1);
+    await page.context().close();
+  });
+
+  test("문서는 있는데 0건이면 필터 줄 · 검색어가 남고 `조건에 맞는 건이 없습니다` + 2차 `필터 지우기`가 q를 지운다 (EP1-13)", async ({ browser, baseURL }) => {
+    const { fx, a } = await twoDocs();
+    const page = await loginPage(browser, baseURL, fx.pm, DESKTOP);
+    await page.goto(`/expenses?q=${encodeURIComponent("없는검색어zz")}`);
+    await expect(page.getByRole("form", { name: "지출결의 보기" })).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "검색" })).toHaveValue("없는검색어zz");
+    const empty = page.locator('[data-ui="empty-state"]');
+    await expect(empty).toContainText("조건에 맞는 건이 없습니다");
+    await empty.getByRole("link", { name: "필터 지우기" }).click();
+    await expect(page).toHaveURL((url) => url.searchParams.get("status") === "진행 중" && !url.searchParams.has("q"));
+    await expect(rowOf(page, a.expenseId)).toHaveCount(1);
+    await page.context().close();
+  });
+
+  test("375 · 320에서 검색 칸은 필터 줄 DOM 첫째이고 줄 전폭이며 가로 스크롤이 없다", async ({ browser, baseURL }) => {
+    const { fx } = await twoDocs();
+    for (const width of [375, 320]) {
+      const page = await loginPage(browser, baseURL, fx.pm, { width, height: 800 });
+      await page.goto("/expenses");
+      const form = page.getByRole("form", { name: "지출결의 보기" });
+      const search = form.getByRole("textbox", { name: "검색" });
+      await expect(search).toBeVisible();
+      const measure = await form.evaluate((element) => {
+        const input = element.querySelector<HTMLInputElement>('input[name="q"]');
+        const formBox = element.getBoundingClientRect();
+        const inputBox = input?.getBoundingClientRect();
+        const firstControl = element.querySelector("input, select");
+        return {
+          first: firstControl?.getAttribute("name"),
+          formWidth: formBox.width,
+          inputWidth: inputBox?.width ?? 0,
+          overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+        };
+      });
+      expect(measure.first).toBe("q");
+      expect(Math.abs(measure.formWidth - measure.inputWidth)).toBeLessThanOrEqual(1);
+      expect(measure.overflow).toBe(false);
+      await page.context().close();
+    }
+  });
+});

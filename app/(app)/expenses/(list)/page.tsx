@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
 import { canExportBankTransferFile } from "@/domain/payments/bank-transfer";
-import { listExpenses, type ExpenseListStatus } from "@/domain/expenses/list";
+import { listExpenses, normalizeListQuery, type ExpenseListStatus } from "@/domain/expenses/list";
 import { DATE_FORMAT_ERROR } from "@/domain/expenses/draft-fields";
 import type { Viewer } from "@/domain/viewer";
 import {
@@ -61,8 +61,10 @@ function firstParam(raw: string | string[] | undefined): string | undefined {
   return Array.isArray(raw) ? raw[0] : raw;
 }
 
-function viewHref(view: ExpenseStatusView, page?: number): string {
+function viewHref(view: ExpenseStatusView, page?: number, q?: string | null): string {
   const params = new URLSearchParams({ status: view });
+  // 06.5 D-6508: 쪽 이동 · 보기 링크는 검색어를 잇는다(필터를 바꿀 때는 폼 제출이 page 없이 다시 연다).
+  if (q) params.set("q", q);
   if (page && page > 1) params.set("page", String(page));
   return `/expenses?${params.toString()}`;
 }
@@ -115,8 +117,9 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
   }
   const view = toView(params.status);
   const page = Array.isArray(params.page) ? params.page[0] : params.page;
+  const q = normalizeListQuery(firstParam(params.q));
   const [list, canWrite] = await Promise.all([
-    listExpenses(session.viewer, { status: VIEW_STATUS[view], page }),
+    listExpenses(session.viewer, { status: VIEW_STATUS[view], page, q }),
     can(session.viewer, "expenses", "write"),
   ]);
 
@@ -135,7 +138,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
       // DR5 A — 보임 범위 안 지출결의가 하나도 없을 때만 `empty`를 넘겨 틀이 머리 1차를 숨긴다. 보기 때문에 0건이면 머리 1차가 남는다.
       primaryAction={canWrite ? newAction : undefined}
       // 걸러 낼 문서가 하나도 없으면 상태 select를 넘기지 않는다(wave10 N2 — 사용자 지시(10/5 00:55)에 따라 추천안 적용).
-      filters={list.hasAny ? <StatusFilter value={view} views={views} /> : undefined}
+      filters={list.hasAny ? <StatusFilter value={view} views={views} searchValue={q ?? ""} /> : undefined}
       summary={
         list.total && list.total.count > 0 ? (
           <section aria-label="합계" className={styles.totals}>
@@ -160,7 +163,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
             label="지출결의"
             page={list.page.page}
             pageCount={list.page.pageCount}
-            href={(target) => viewHref(view, target)}
+            href={(target) => viewHref(view, target, q)}
             rangeText={pageRangeText({ page: list.page.page, pageSize: list.page.pageSize, total: list.page.total, unit: "건" })}
           />
         ) : undefined
@@ -168,6 +171,9 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
     >
       {rows.length > 0 ? (
         <ExpensesTable rows={rows} drafterColumn={list.drafterColumn} amountColumn={list.amountColumn} />
+      ) : q ? (
+        // 06.5 D-6508(EP1-13): 문서는 있는데 검색으로 0건 — 필터 줄 · 검색어는 그대로 서고 표 자리에서 검색을 지우고 빠져나간다.
+        <ListEmpty message="조건에 맞는 건이 없습니다" action={{ label: "필터 지우기", href: viewHref(view) }} />
       ) : view === "승인" ? (
         <ListEmpty message="승인된 지출결의가 없습니다" action={{ label: "진행 중 보기", href: viewHref("진행 중") }} />
       ) : (

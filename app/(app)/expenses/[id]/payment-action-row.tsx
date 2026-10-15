@@ -73,7 +73,7 @@ export function PaymentLoadError() {
 
 export function PaymentActionRow() {
   const router = useRouter();
-  const { view, conflict, setConflict, fields, preview, previewing, refreshPreview, setFieldErrors, schedule, setSchedule, scheduleDirty } = usePaymentPanel();
+  const { view, conflict, setConflict, fields, preview, previewing, refreshPreview, fieldErrors, setFieldErrors, schedule, setSchedule, scheduleDirty } = usePaymentPanel();
   const { edit: evidenceEdit, setEdit: setEvidenceEdit, supply } = useEvidenceEdit();
   const evidenceInput = correctedSupplyInput(view, evidenceEdit, supply);
   const [pending, setPending] = useState(false);
@@ -188,6 +188,8 @@ export function PaymentActionRow() {
   const confirmLabel = evidenceInput.corrected === undefined ? CONFIRM_SUPPLY_SAME : CONFIRM_SUPPLY_CORRECTED;
   // P3 증빙 없음 · 짝 아님 · 지급 총액 볼 권한 없음 — `지급 완료` 비활성 + 이유(block).
   const blockReason = bar?.blockReason ?? null;
+  // 06.5-11 W-2: 지급일 칸 오류(미래)가 서 있는 동안 1차는 일괄 대화상자의 blockedBy처럼 꺼진 모양 — 이유는 칸 아래 오류 줄 한 자리(aria-describedby), 날짜를 바꾸면 풀린다.
+  const payDateBlocked = Boolean(fieldErrors.payDate);
   const paid = view.row?.row === "P6" && view.payDate !== undefined;
   // 2차 `지급 취소`(D-606) — 지급 뒤(P5 · P6) 지급 권한자에게만(서버 행의 secondary).
   const canCancel = (paid || (view.row?.row === "P5" && view.payDate !== undefined)) && bar?.secondary === "cancel" && ready;
@@ -219,7 +221,7 @@ export function PaymentActionRow() {
   }
 
   function pay() {
-    if (!canPay || blockReason !== null || submittingRef.current || previewing || view.expenseId === undefined || view.version === undefined) return;
+    if (!canPay || blockReason !== null || payDateBlocked || submittingRef.current || previewing || view.expenseId === undefined || view.version === undefined) return;
     const expectedPayableKrw = preview.payableKrw ?? view.payableKrw ?? null;
     if (expectedPayableKrw === null) return;
     const transferProblem = transferError(fields);
@@ -348,9 +350,10 @@ export function PaymentActionRow() {
               <Button
                 variant="primary"
                 shortcut="Ctrl+Enter"
-                pending={blockReason === null && (pending || previewing)}
-                disabled={blockReason !== null}
+                pending={blockReason === null && !payDateBlocked && (pending || previewing)}
+                disabled={blockReason !== null || payDateBlocked}
                 disabledReason={blockReason ?? undefined}
+                aria-describedby={blockReason === null && payDateBlocked ? "payment-pay-date-error" : undefined}
                 onClick={pay}
               >
                 지급 완료

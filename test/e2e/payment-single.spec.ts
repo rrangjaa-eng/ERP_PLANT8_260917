@@ -237,14 +237,20 @@ test.describe("지급 섹션 칸 (06-04)", () => {
     await expect(field).toHaveAttribute("aria-invalid", "true");
     await expect(field).toHaveAttribute("aria-describedby", "payment-pay-date-error");
     await expect(field).toHaveValue(tomorrow);
+    // 06.5-11 W-2: 칸 오류가 서 있는 동안 1차도 일괄 대화상자처럼 꺼진 모양(aria-disabled) — 눌러도 기록 없음.
+    await expect(pay).toHaveAttribute("aria-disabled", "true");
+    await expect(pay).toHaveAttribute("aria-describedby", "payment-pay-date-error");
 
-    await pay.click();
+    await pay.click({ force: true });
     await expect(error).toHaveText(FUTURE_PAY_DATE);
-    await expect(field).toBeFocused();
     await expect(field).toHaveValue(tomorrow);
     await expect(page.getByTestId("payment-result")).toHaveCount(0);
     const live = await db.select({ id: expensePayments.id }).from(expensePayments).where(eq(expensePayments.expenseId, expenseId));
     expect(live).toHaveLength(0);
+
+    await field.fill(today);
+    await expect(error).toHaveCount(0);
+    await expect(pay).not.toHaveAttribute("aria-disabled", "true");
 
     await section.getByRole("button", { name: "지급 예정일 바꾸기" }).click();
     await expect(section.getByLabel("지급 예정일")).not.toHaveAttribute("max", /.*/);

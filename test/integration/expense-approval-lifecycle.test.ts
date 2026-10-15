@@ -375,7 +375,7 @@ describe("회수 뒤 같은 번호 다시 제출", () => {
     const detail = (late as ExpenseUndoRefusedError).detail;
     expect(detail).toMatchObject({ actorName: "김도윤", status: "approved" });
     expect(detail.at).toBeInstanceOf(Date);
-    expect((late as Error).message).toBe(`김도윤이 ${SEOUL_HHMM.format(detail.at)}에 승인함 · 문서에서 회수`);
+    expect((late as Error).message).toBe(`김도윤이 ${SEOUL_HHMM.format(detail.at)}에 승인함 · 새로 고침`);
     expect(await instanceOf(expenseId)).toMatchObject({ status: "in_review", version: approved.version });
 
     // 문서 화면 회수 — 승인 전 version이면 04.1 충돌 문구.
@@ -534,6 +534,10 @@ describe("본인 승인", () => {
     const after = await getApprovalView(fx.lead, { kind: EXPENSE_DOCUMENT_KIND, documentId: expenseId });
     expect(after?.steps?.find((row) => row.stepIndex === 1)).toMatchObject({ state: "approved", selfApproved: true });
     expect(after?.actions).toEqual(["withdraw"]);
+
+    const late = await withdrawExpense(fx.lead, { expenseId, undo: true, round: 1 }).catch((error: unknown) => error);
+    expect(late).toBeInstanceOf(ExpenseUndoRefusedError);
+    expect((late as Error).message.endsWith("에 승인함 · 문서에서 회수")).toBe(true);
   });
 });
 

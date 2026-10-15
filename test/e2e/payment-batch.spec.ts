@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Browser, type Page } from "@playwright/test";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
-import { actionLog, expenseEvidenceReviews, expensePayments, expenses, files, projects, quoteLines, vendors } from "@/db/schema";
+import { actionLog, expenseEvidenceReviews, expensePayments, expenses, files, projects, quoteLines, settingsHistorized, vendors } from "@/db/schema";
 import { approveDocument, getApprovalView } from "@/domain/approvals";
 import { createExpenseFromLines, createTeamExpenseDraft, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { confirmEvidence, loadPrepaidDueDays } from "@/domain/evidence-reviews";
@@ -10,11 +10,11 @@ import { completePaymentsBatch } from "@/domain/payments/batch";
 import { listAllPaymentTargets } from "@/domain/payments/targets";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { AMOUNT_HIDDEN } from "@/domain/payments/action-row";
-import { previewPayable } from "@/domain/payments";
+import { FUTURE_PAY_DATE, previewPayable } from "@/domain/payments";
 import { formatKrw } from "@/lib/format-number";
 import { encrypt } from "@/lib/crypto";
 import { seedCodeItem } from "@/repositories/code-tables";
-import { addHistorizedValue, cancelHistorizedValue, getSettingValue } from "@/domain/settings/registry";
+import { addHistorizedValue, getSettingValue } from "@/domain/settings/registry";
 import { PAYMENT_METHOD_EVIDENCE_PAIRS, TAX_VAT_RATE } from "@/domain/settings/keys";
 import { upsertSimpleValue } from "@/repositories/settings";
 import { EVIDENCE_UNCONFIRMED } from "@/domain/payments/action-row";
@@ -359,7 +359,7 @@ test.describe("지급 대상 · 일괄 지급 마감 (06-15 Task 3)", () => {
     await page.context().close();
   });
 
-  test("미래 지급일 — 내일로 처리하면 지급일 = 내일 / `2026-13-01` · `2026-02-30`은 둘 다 `날짜 형식 오류 · 2026-09-19처럼` · 모달 유지 · 지급 0건", async ({ browser, baseURL }) => {
+  test("미래 지급일 — 내일이면 대화상자 열린 채 지급일 칸 오류 `미래 지급일 · 오늘까지 날짜 고르기` · 지급 0건 → 오늘로 바꾸면 처리 / `2026-13-01` · `2026-02-30`은 둘 다 `날짜 형식 오류 · 2026-09-19처럼` · 모달 유지 · 지급 0건", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const a = await approvedTarget(fx, "tracer");
     const b = await approvedTarget(fx, "hold");
@@ -389,12 +389,27 @@ test.describe("지급 대상 · 일괄 지급 마감 (06-15 Task 3)", () => {
       await expect(dialog.getByText("날짜 형식 오류 · 2026-09-19처럼")).toHaveCount(0);
     }
 
+    // 06.5 D-6518(UI-SPEC V13): 서버가 묶음 맨 앞에서 거절 — 대화상자는 열린 채 지급일 칸 오류(값 유지 · 포커스 · 왼쪽 이유 자리에 다시 쓰지 않음).
     const tomorrow = addDays(seoulToday(), 1);
     await field.fill(tomorrow);
-    await dialog.getByRole("button", { name: /^지급 완료 1건/ }).click();
+    const confirm = dialog.getByRole("button", { name: /^지급 완료 1건/ });
+    await confirm.click();
+    const fieldError = dialog.getByText(FUTURE_PAY_DATE, { exact: true });
+    await expect(fieldError).toBeVisible();
+    await expect(dialog).toBeVisible();
+    await expect(field).toHaveAttribute("aria-invalid", "true");
+    await expect(field).toHaveAttribute("aria-describedby", (await fieldError.getAttribute("id")) ?? "");
+    await expect(field).toHaveValue(tomorrow);
+    await expect(field).toBeFocused();
+    await expect(dialog.getByText(FUTURE_PAY_DATE)).toHaveCount(1);
+    expect(await livePaymentCount(b)).toBe(0);
+
+    await field.fill(seoulToday());
+    await expect(fieldError).toHaveCount(0);
+    await confirm.click();
     await expect(dialog).toBeHidden();
     await expect(rowB).toHaveCount(0);
-    expect(await payDates(b)).toEqual([tomorrow]);
+    expect(await payDates(b)).toEqual([seoulToday()]);
     expect(await livePaymentCount(a)).toBe(0);
     await page.context().close();
   });
@@ -608,9 +623,15 @@ test.describe("일괄 지급 마감 (06-17)", () => {
       taxRule: { ruleKind: "vat_surcharge", roundingUnit: 1, roundingMethod: "round", minWithholdingAmount: 0, basisDate: "payment_date" },
     });
     await db.update(expenses).set({ evidenceType: typeValue }).where(eq(expenses.id, taxId));
-    const rateFrom = addDays(today, 30);
-    const payDate = addDays(today, 40);
+    // 06.5 D-6518(지급일 오늘까지): 지급일은 오늘 이하 — 지난 하루짜리 세율 창(20일 전 0.12 · 19일 전 원래 값)에 지급일을 둬 목록 지급 총액(오늘 ·
+    // 원래 세율)과 지급일 세율이 갈린다. 오늘 세율은 바뀌지 않아 다른 워커에서 같이 도는 스펙의 금액이 흔들리지 않는다(desktop은 파일 병렬).
+    // 오늘 이하 행은 cancelHistorizedValue가 거절하고 E2E는 스펙 사이에 DB를 비우지 않으므로 finally에서 이 테스트가 넣은 두 행만 직접 지운다(테스트 전용).
+    const baseRate = await getSettingValue(TAX_VAT_RATE);
+    const rateFrom = addDays(today, -20);
+    const restoreFrom = addDays(today, -19);
+    const payDate = rateFrom;
     await addHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, { effectiveFrom: rateFrom, value: 0.12 });
+    await addHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, { effectiveFrom: restoreFrom, value: baseRate });
     try {
       const payer = await makeTeamPayer(fx);
       const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
@@ -663,7 +684,7 @@ test.describe("일괄 지급 마감 (06-17)", () => {
       expect(await payDates(taxId)).toEqual([payDate]);
       await page.context().close();
     } finally {
-      await cancelHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, rateFrom);
+      await db.delete(settingsHistorized).where(and(eq(settingsHistorized.key, TAX_VAT_RATE.key), inArray(settingsHistorized.effectiveFrom, [rateFrom, restoreFrom])));
     }
   });
 

@@ -1,15 +1,16 @@
 "use client";
 
-import { useId } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { Button } from "@/ui/button/Button";
 import { Form } from "@/ui/form/Form";
 import { isCalendarDate } from "@/lib/dates";
 import { formatKrw } from "@/lib/format-number";
+import { FUTURE_PAY_DATE } from "@/domain/payments/action-row";
 import styles from "./expenses.module.css";
 
 // 06-15(UI-SPEC S2 · Copywriting 「Destructive — 일괄 지급 완료」): 일괄 지급 확인 모달 — 제목 `지급 완료` · 부제 `N건` · 결과 줄
-// ① 견적 줄 잠김 ② 선결제 증빙 기한 · 확인 근거 한 칸 `지급일`(기본 오늘 KST · 미래 허용 — Q6, 고른 건 전부 같은 날 — O-3).
+// ① 견적 줄 잠김 ② 선결제 증빙 기한 · 확인 근거 한 칸 `지급일`(기본 오늘 KST · 오늘까지 — 06.5 D-6518, 고른 건 전부 같은 날 — O-3).
 // 날짜 판정은 05 isCalendarDate, 글자는 05 DATE_FORMAT_ERROR 그대로(서버 page가 dateError로 넘긴다 — draft-fields는 서버 모듈을 끌어와 클라이언트 번들에 못 든다)
 // — 서버 zod와 같은 둘이라 화면과 서버가 같은 날짜를 거른다(E-20).
 // O-3(확정 U-6): 지급일은 모달 밖 한 곳(화면 상태 + 아래 기억)에 둔다 — 다시 열면 방금 고른 날, 같은 필터에서 쪽을 넘겨도(화면이 다시 마운트돼도)
@@ -41,6 +42,7 @@ export function BatchPaymentDialog({
   otherPageCount,
   diffCount,
   payDate,
+  today,
   onPayDateChange,
   pending,
   rejection,
@@ -63,6 +65,8 @@ export function BatchPaymentDialog({
   otherPageCount: number;
   diffCount: number;
   payDate: string;
+  // 06.5 D-6518(UI-SPEC V13): 서버가 내려준 KST 오늘 — 지급일 칸 `max`(브라우저 시계로 만들지 않는다). 화면은 이 값으로 먼저 비교하지 않는다.
+  today?: string;
   onPayDateChange: (payDate: string) => void;
   pending: boolean;
   rejection: string | null;
@@ -72,6 +76,21 @@ export function BatchPaymentDialog({
   const fieldId = useId();
   const errorId = `${fieldId}-error`;
   const invalid = !isCalendarDate(payDate);
+  // 06.5 D-6518(UI-SPEC V13 · SYSTEM §7-8 날짜형 근거 칸): 서버가 묶음 맨 앞에서 미래 지급일을 거절하면(rejection = FUTURE_PAY_DATE — 단건
+  // payment-action-row의 DIFF_REASON_REQUIRED와 같은 상수 대조) 대화상자는 열린 채 그 날짜에 지급일 칸 오류를 세운다 — 행동 줄 왼쪽에 다시 쓰지 않고,
+  // 날짜를 바꾸면 오류가 걷히고 1차가 다시 열린다(다음 요청이 rejection을 비운다). 렌더에서 파생 · effect 안 setState 없음.
+  const [seenRejection, setSeenRejection] = useState(rejection);
+  const [futureDate, setFutureDate] = useState<string | null>(null);
+  if (seenRejection !== rejection) {
+    setSeenRejection(rejection);
+    setFutureDate(rejection === FUTURE_PAY_DATE ? payDate : null);
+  }
+  const fieldError = invalid ? dateError : futureDate !== null && futureDate === payDate ? FUTURE_PAY_DATE : null;
+  const inputRef = useRef<HTMLInputElement>(null);
+  // 거절 뒤 포커스는 지급일 칸(값은 그대로).
+  useEffect(() => {
+    if (futureDate !== null) inputRef.current?.focus();
+  }, [futureDate]);
   const resultLines = [
     lineCount > 0 ? `견적 줄 ${lineCount}줄 잠김` : null,
     prepaidCount > 0 ? `선결제 ${prepaidCount}건 · 증빙 기한 지급일부터 ${prepaidDueDays}일` : null,
@@ -89,16 +108,18 @@ export function BatchPaymentDialog({
       evidenceField={
         <Form.Field id={fieldId} label="지급일" width="short">
           <input
+            ref={inputRef}
             id={fieldId}
             type="date"
             autoComplete="off"
+            max={today}
             value={payDate}
-            aria-invalid={invalid ? "true" : undefined}
-            aria-describedby={invalid ? errorId : undefined}
+            aria-invalid={fieldError ? "true" : undefined}
+            aria-describedby={fieldError ? errorId : undefined}
             className={styles.dateInput}
             onChange={(event) => onPayDateChange(event.target.value)}
           />
-          {invalid ? <Form.Error id={errorId}>{dateError}</Form.Error> : null}
+          {fieldError ? <Form.Error id={errorId}>{fieldError}</Form.Error> : null}
         </Form.Field>
       }
       primary={{
@@ -106,7 +127,7 @@ export function BatchPaymentDialog({
         shortcut: "Ctrl+Enter",
         pending,
         onConfirm: () => {
-          if (!invalid) onConfirm(payDate);
+          if (!fieldError) onConfirm(payDate);
         },
         ...(sumFailed
           ? {
@@ -119,8 +140,8 @@ export function BatchPaymentDialog({
             }
           : totalKrw === undefined
             ? { disabledReason: "…", reasonTone: "info" as const }
-            : { disabledReason: invalid ? undefined : (rejection ?? undefined) }),
-        blockedBy: invalid ? errorId : undefined,
+            : { disabledReason: fieldError || rejection === FUTURE_PAY_DATE ? undefined : (rejection ?? undefined) }),
+        blockedBy: fieldError ? errorId : undefined,
       }}
     />
   );

@@ -83,9 +83,10 @@ function ResubmitBar({
     router.refresh();
   }
 
-  // 문서 화면의 1차 = Ctrl+Enter(§7-9). 렌더마다 다시 건다(지금 렌더의 resubmit을 쓴다).
+  // 문서 화면의 1차 = Ctrl+Enter(§7-9). 렌더마다 다시 건다(지금 렌더의 resubmit을 쓴다). 모달 안 키는 모달 몫(G-06-H).
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
+      if (event.target instanceof Element && event.target.closest("dialog[open]")) return;
       if (!isCtrlCombo(event, "Enter")) return;
       event.preventDefault();
       void resubmit();

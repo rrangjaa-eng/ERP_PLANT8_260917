@@ -49,7 +49,7 @@ export async function listExpenseEvidenceSignals(viewer: Viewer, input: { ids: r
         prepaidOverdueDays = prepaidDueInfo({ prepaid: true, hasEvidence: has, waived: false, paidOn: status.payDate, dueDays, today: input.today })?.overdueDays ?? null;
       }
     }
-    const situation = pickExpenseEvidenceSignal({ prepaidOverdueDays, missingUnpaid, voided: voided.has(status.id) });
+    const situation = pickExpenseEvidenceSignal({ prepaidOverdueDays, missingUnpaid, voided: voided.has(status.id) && !status.waived });
     if (situation) signals.set(status.id, { situation });
   }
   return signals;

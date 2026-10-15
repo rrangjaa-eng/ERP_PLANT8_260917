@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { test, expect } from "@playwright/test";
-import { eq } from "drizzle-orm";
+import { test, expect, type Browser, type Page } from "@playwright/test";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { expenseEvidenceReviews, expensePayments, expenses, projects } from "@/db/schema";
+import { actionLog, expenseEvidenceReviews, expensePayments, expenses, projects } from "@/db/schema";
 import { approveDocument, getApprovalView } from "@/domain/approvals";
 import { confirmEvidence } from "@/domain/evidence-reviews";
 import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND, saveExpenseDraft, submitExpense } from "@/domain/expenses";
@@ -12,7 +12,7 @@ import { createOrgUnit, createTeam } from "@/domain/org";
 import { seoulToday } from "@/lib/dates";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
-import { setupExpenseE2E, submitLineExpense, uniqueReceipt, type ExpenseE2E, archiveTempRoles, insertTempRole } from "./expense-fixture";
+import { setupExpenseE2E, submitLineExpense, uniqueReceipt, type ExpenseE2E, type LineKey, archiveTempRoles, insertTempRole } from "./expense-fixture";
 import { attachEvidence } from "../integration/fixtures/expenses";
 
 // 06-11(EVID-02 · EVID-04 · C4 · B-1 · U-4) — 증빙 수명 주기: 승인 뒤 기안자가 증빙을 하나 더 붙이면 확인된 문서가 `확인 전`으로 돌아오고,
@@ -23,12 +23,13 @@ const EVIDENCE_AMOUNT = 12_400_000;
 const EVIDENCE_COMPLETED_PROJECT_LINE = "완료 프로젝트 · 증빙은 경영관리";
 
 // 테스트 계급 「경영관리」 — 전사 업무 범위 · 지출결의 보기 + 지급 처리 쓰기 (+ 선택으로 증빙 붙이기). 결재선 밖 전용 본부 · 팀에 발령한다.
-async function makeManagerE2E(options: { attach?: boolean } = {}): Promise<Person> {
+async function makeManagerE2E(options: { attach?: boolean; void?: boolean } = {}): Promise<Person> {
   const suffix = randomUUID().slice(0, 8);
   const role = await insertTempRole({ id: `role-${randomUUID()}`, name: `E2E수명-${suffix}`, workScope: "company", viewScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses", action: "view", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.payments", action: "write", allowed: true });
   if (options.attach) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.evidence_attach", action: "write", allowed: true });
+  if (options.void) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "expenses.evidence_void", action: "write", allowed: true });
   for (const infoItem of INFO_ITEMS) await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
   const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E수명본부-${suffix}` });
   const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E수명팀-${suffix}` });
@@ -247,6 +248,104 @@ test.describe("S4 증빙 확인 = 공급가액 하나 (06.5 D-6520 · UI-SPEC V8
     await expect(page.getByText("지급 완료 문서 · 공급가액 못 바꿈 · 지급 취소 뒤 고치기", { exact: true })).toHaveCount(1);
     await expect(page.getByText("지급 완료 문서 · 공급가액 못 바꿈 · 새로 고침", { exact: false })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "새로 고침" })).toHaveCount(0);
+    await page.context().close();
+  });
+});
+
+// 06-39(G-06-H · UAT 23) — 지급 행동 줄의 Ctrl+Enter 리스너는 열린 모달 안 키를 모달 몫으로 둔다: 한 키 = 1차 하나.
+// 준비: 결재 통과 → 경영관리 증빙 확인 → 확인됨 · 지급 전 문서(1차 `지급 완료`).
+async function confirmedUnpaid(fx: ExpenseE2E, browser: Browser, baseURL: string | undefined, key: LineKey, manager: Person): Promise<string> {
+  const expenseId = await submitLineExpense(browser, baseURL, fx, key);
+  await approveAll(fx, expenseId);
+  await confirmEvidence(manager.viewer, { expenseId, version: await versionOf(expenseId) });
+  return expenseId;
+}
+
+async function paymentTraces(expenseId: string): Promise<{ payments: number; processLogs: number }> {
+  const payments = await db.select({ id: expensePayments.id }).from(expensePayments).where(eq(expensePayments.expenseId, expenseId));
+  const logs = await db
+    .select({ seq: actionLog.seq })
+    .from(actionLog)
+    .where(and(eq(actionLog.entityId, expenseId), eq(actionLog.actionType, "payment_process")));
+  return { payments: payments.length, processLogs: logs.length };
+}
+
+const EVIDENCE_ROWS = '[data-ui="attachments"] li';
+
+// 서버 액션 POST 가운데 `지급 완료`(payDate · expectedPayableKrw · version)를 실어 보낸 것만 센다 — 한 키가 모달 1차 말고 화면 1차까지 불렀는지의 직접 증거.
+function trackPayActionPosts(page: Page): { count: () => number } {
+  let count = 0;
+  page.on("request", (request) => {
+    if (request.method() !== "POST" || request.headers()["next-action"] === undefined) return;
+    if ((request.postData() ?? "").includes("expectedPayableKrw")) count += 1;
+  });
+  return { count: () => count };
+}
+
+test.describe("Ctrl+Enter 한 번 = 보이는 1차 하나 (G-06-H · UAT 23)", () => {
+  test("G-06-H ⓐ — 무효 모달 사유 칸 Ctrl+Enter: 모달 1차만 돈다(무효 · `다른 사람이` 줄 0 · 지급 0)", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const manager = await makeManagerE2E({ void: true });
+    const expenseId = await confirmedUnpaid(fx, browser, baseURL, "tracer", manager);
+
+    const page = await loginPage(browser, baseURL, manager);
+    await page.goto(`/expenses/${expenseId}`);
+    await waitForHydration(page.getByRole("button", { name: /^지급 완료/ }));
+    await page.locator(EVIDENCE_ROWS).getByRole("button", { name: "무효 처리" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("heading", { name: "증빙 무효 처리" })).toBeVisible();
+    const reason = dialog.getByLabel("사유");
+    await reason.fill("다른 건 영수증");
+    const payPosts = trackPayActionPosts(page);
+    await reason.press("Control+Enter");
+
+    await expect(dialog).toHaveCount(0);
+    await expect(page.locator(EVIDENCE_ROWS).first().getByText("무효", { exact: true })).toBeVisible();
+    expect(payPosts.count()).toBe(0);
+    await expect(page.getByText("다른 사람이", { exact: false })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "새로 고침" })).toHaveCount(0);
+    await expect(page.getByTestId("payment-result")).toHaveCount(0);
+    expect(await paymentTraces(expenseId)).toEqual({ payments: 0, processLogs: 0 });
+    await page.context().close();
+  });
+
+  test("G-06-H ⓑ — 막힌 모달(사유 빈 칸) Ctrl+Enter: 아무 행동도 없다(모달 그대로 · 지급 0) → 사유 적고 Ctrl+Enter로 무효 처리", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const manager = await makeManagerE2E({ void: true });
+    const expenseId = await confirmedUnpaid(fx, browser, baseURL, "hold", manager);
+
+    const page = await loginPage(browser, baseURL, manager);
+    await page.goto(`/expenses/${expenseId}`);
+    await waitForHydration(page.getByRole("button", { name: /^지급 완료/ }));
+    await page.locator(EVIDENCE_ROWS).getByRole("button", { name: "무효 처리" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("heading", { name: "증빙 무효 처리" })).toBeVisible();
+    const reason = dialog.getByLabel("사유");
+    const payPosts = trackPayActionPosts(page);
+    await reason.press("Control+Enter");
+    await expect(dialog.getByRole("heading", { name: "증빙 무효 처리" })).toBeVisible();
+
+    await reason.fill("다른 건 영수증");
+    await reason.press("Control+Enter");
+    await expect(dialog).toHaveCount(0);
+    await expect(page.locator(EVIDENCE_ROWS).first().getByText("무효", { exact: true })).toBeVisible();
+    expect(payPosts.count()).toBe(0);
+    expect(await paymentTraces(expenseId)).toEqual({ payments: 0, processLogs: 0 });
+    await expect(page.getByText("다른 사람이", { exact: false })).toHaveCount(0);
+    await page.context().close();
+  });
+
+  test("G-06-H ⓒ — 대조: 모달 밖 `지급일` 칸(Enter 기본 동작을 막는 칸) Ctrl+Enter는 그때 보이는 1차 `지급 완료`를 돌린다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const manager = await makeManagerE2E();
+    const expenseId = await confirmedUnpaid(fx, browser, baseURL, "retry", manager);
+
+    const page = await loginPage(browser, baseURL, manager);
+    await page.goto(`/expenses/${expenseId}`);
+    await waitForHydration(page.getByRole("button", { name: /^지급 완료/ }));
+    await page.locator("#payment-pay-date").press("Control+Enter");
+    await expect(page.getByTestId("payment-result")).toHaveText(/^지급 완료 → \d{4}-\d{2}-\d{2} · \d{2}:\d{2}$/);
+    expect((await paymentTraces(expenseId)).payments).toBe(1);
     await page.context().close();
   });
 });

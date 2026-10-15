@@ -55,7 +55,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [ ] **EVID-01**: 세금계산서·영수증·카드 전표 파일을 지출결의·법인카드 건에 첨부한다(폰 사진 포함). 업로드는 크기 한도(기본 10MB, 설정)·형식(이미지·PDF)을 검사하고 SHA-256으로 중복을 감지하며 폰 사진은 축소한다
 - [x] **EVID-02**: 증빙 필수 규칙이 켜져 있으면 증빙 없는 건은 지급 완료가 되지 않는다. 규칙은 설정에서 on/off
-- [ ] **EVID-03**: 증빙 금액(공급가액)을 기록하면 그 줄의 확정 비용이 된다. 증빙의 부가세·원천징수는 종류별 규칙(EXP-15)으로 다시 계산되어 지급 총액에만 반영된다
+- [x] **EVID-03**: 증빙 금액(공급가액)을 기록하면 그 줄의 확정 비용이 된다. 증빙의 부가세·원천징수는 종류별 규칙(EXP-15)으로 다시 계산되어 지급 총액에만 반영된다
 - [ ] **EVID-04**: 증빙을 떼면 그 줄의 비용은 다시 예상(견적 실행가 또는 지출결의 승인액) 상태로 돌아간다
 
 ### 손익 (PNL)
@@ -225,7 +225,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | EXP-16 | Phase 6 | Pending |
 | EVID-01 | Phase 5(지출결의) + Phase 6(카드 사용) | Pending |
 | EVID-02 | Phase 6 | Complete |
-| EVID-03 | Phase 6 | Pending |
+| EVID-03 | Phase 6 | Complete |
 | EVID-04 | Phase 6 | Pending |
 | PNL-01 | Phase 9 | Pending |
 | PNL-02 | Phase 9 | Pending |

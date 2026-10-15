@@ -104,6 +104,10 @@ describe("parseArgs", () => {
     expect(parseArgs(["/projects/{projectId}", "--out", "test-results/r.md", "--seed", "purchase-approval-pending"]).seed).toBe("purchase-approval-pending");
   });
 
+  it("--seed payment-and-settlement-actions도 받는다", () => {
+    expect(parseArgs(["/expenses/{expenseId}", "--out", "test-results/r.md", "--seed", "payment-and-settlement-actions"]).seed).toBe("payment-and-settlement-actions");
+  });
+
   it("--plan은 반복할 수 있다", () => {
     const args = parseArgs([
       "/x",

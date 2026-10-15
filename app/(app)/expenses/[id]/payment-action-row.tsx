@@ -241,10 +241,11 @@ export function PaymentActionRow() {
     });
   }
 
-  // Ctrl+Enter = 그때 보이는 1차(§7-9 — dirty면 `예정일 저장`). 렌더마다 다시 건다(지금 렌더의 함수를 쓴다).
+  // Ctrl+Enter = 그때 보이는 1차(§7-9 — dirty면 `예정일 저장`). 렌더마다 다시 건다(지금 렌더의 함수를 쓴다). 모달 안 키는 모달 몫(G-06-H).
   useEffect(() => {
     if (!canPay && !canSaveSchedule && !canConfirm) return;
     function onKeyDown(event: KeyboardEvent) {
+      if (event.target instanceof Element && event.target.closest("dialog[open]")) return;
       if (!isCtrlCombo(event, "Enter")) return;
       event.preventDefault();
       // 누른 채 자동 반복된 keydown은 받지 않는다 — `증빙 확인` 응답으로 1차가 `지급 완료`로 바뀐 직후 지급되지 않게(M-3).

@@ -130,6 +130,37 @@ test.describe("정산 결재 — PM 올리기(확인 없음) → 대표 승인 �
     await pm.context().close();
   });
 
+  test("G-06-H — 폰 「더보기」 시트 안 Ctrl+Enter는 `정산 결재 다시 올리기`를 부르지 않고, 시트를 닫은 뒤 화면의 Ctrl+Enter는 다시 올린다", async ({ browser, baseURL }) => {
+    const fx = await setupSettlementE2E();
+    await submitSettlementE2E(fx);
+    await rejectSettlementE2E(fx, "실행가 확인");
+
+    const pm = await loginPage(browser, baseURL, fx.pm);
+    await pm.goto(`/projects/${fx.projectId}/settlement`);
+    const again = pm.getByRole("button", { name: /^정산 결재 다시 올리기/ });
+    await waitForHydration(again);
+    await pm.setViewportSize({ width: 375, height: 800 });
+    let actionPosts = 0;
+    pm.on("request", (request) => {
+      if (request.method() === "POST" && request.headers()["next-action"] !== undefined) actionPosts += 1;
+    });
+    await pm.getByRole("navigation", { name: "하단 탭" }).getByRole("button", { name: "더보기" }).click();
+    const sheet = pm.getByRole("dialog", { name: "더보기" });
+    await expect(sheet).toBeVisible();
+    await sheet.getByRole("heading", { name: "더보기" }).dispatchEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true });
+    await pm.waitForTimeout(1_000);
+    expect(actionPosts).toBe(0);
+    await expect(pm.getByRole("status").filter({ hasText: /^정산 결재 다시 올리기 · 결재 요청됨/ })).toHaveCount(0);
+    await expect(sheet).toBeVisible();
+
+    await sheet.getByRole("button", { name: "닫기" }).click();
+    await expect(sheet).toBeHidden();
+    await pm.keyboard.press("Control+Enter");
+    await expect(pm.getByRole("status").filter({ hasText: /^정산 결재 다시 올리기 · 결재 요청됨/ })).toBeVisible();
+    await expect(again).toHaveCount(0);
+    await pm.context().close();
+  });
+
   // 사용자 확정(10/5 16:14): 다시 올리기도 첫 올리기와 같은 `되돌리기` 토스트(늦은 되돌리기 오류 토스트 포함)다.
   test("다시 올리기 토스트 `되돌리기` — 누르면 `되돌리기 · 결재 멈춤`, 대표가 먼저 승인하면 오류 토스트 + `새로 고침`", async ({ browser, baseURL }) => {
     const fx = await setupSettlementE2E();

@@ -900,14 +900,16 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
     <>
       <StatusFilter value={PAYMENT_TARGET_VIEW} views={props.views} selects={props.selects} />
       {wide && props.canExportTransferFile ? (
-        <Button
-          variant="secondary"
-          pending={exporting}
-          onClick={requestTransferFile}
-          {...(chosen.length === 0 ? { disabled: true, disabledReason: "고른 건 없음", reasonTone: "info" as const } : {})}
-        >
-          이체 파일 받기
-        </Button>
+        <span className={styles.transferSlot}>
+          <Button
+            variant="secondary"
+            pending={exporting}
+            onClick={requestTransferFile}
+            {...(chosen.length === 0 ? { disabled: true, disabledReason: "고른 건 없음", reasonTone: "info" as const } : {})}
+          >
+            이체 파일 받기
+          </Button>
+        </span>
       ) : null}
       <p aria-live="polite" className={styles.batchResult}>
         {result ? (

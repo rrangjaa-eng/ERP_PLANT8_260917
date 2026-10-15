@@ -21,6 +21,7 @@ import { upsertSimpleValue } from "@/repositories/settings";
 import { insertVendor } from "@/repositories/vendors";
 import { seoulToday } from "@/lib/dates";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
+import { testVendorAccount } from "../integration/fixtures/expenses";
 import { archiveTempRoles, insertTempRole, uniqueReceipt } from "./expense-fixture";
 import { loginPage, makePerson, setupLeaveOrg, waitForHydration, type LeaveOrg } from "./leave-org";
 
@@ -50,7 +51,7 @@ async function setupRejectedSettling(browser: Browser, baseURL: string | undefin
   const suffix = randomUUID().slice(0, 6);
   const org = await setupLeaveOrg(today);
   const client = await insertVendor(SYSTEM_VIEWER, { name: `E2E점검클라이언트-${suffix}`, normalizedName: `e2e점검클라이언트-${suffix}` });
-  const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E점검거래처-${suffix}`, normalizedName: `e2e점검거래처-${suffix}`, defaultEvidenceType: "tax_invoice" });
+  const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E점검거래처-${suffix}`, normalizedName: `e2e점검거래처-${suffix}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount() });
   const project = await createProject(org.drafter.viewer, {
     clientId: client.id,
     teamId: org.teamId,
@@ -165,7 +166,7 @@ async function setupUnmatchedSettling(
   const suffix = randomUUID().slice(0, 6);
   const org = await setupLeaveOrg(today);
   const client = await insertVendor(SYSTEM_VIEWER, { name: `E2E점검클라이언트-${suffix}`, normalizedName: `e2e점검클라이언트-${suffix}` });
-  const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E점검거래처-${suffix}`, normalizedName: `e2e점검거래처-${suffix}`, defaultEvidenceType: "tax_invoice" });
+  const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E점검거래처-${suffix}`, normalizedName: `e2e점검거래처-${suffix}`, defaultEvidenceType: "tax_invoice", ...testVendorAccount() });
   const project = await createProject(org.drafter.viewer, {
     clientId: client.id,
     teamId: org.teamId,

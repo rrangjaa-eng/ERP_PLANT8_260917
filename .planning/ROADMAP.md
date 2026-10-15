@@ -870,7 +870,7 @@ Plans:
 **Goal:** 앞 사람이 한 명이라도 승인한 결재 문서는 기안자가 회수할 수 없다 — 결재 모듈 공통 규칙이라 지출결의·연차·정산 모두에 적용되고, 건너뜀(자기 단계 skip·빈 자리)은 승인으로 세지 않는다(260907 결정 D28, `/mnt/project-files/notes/260907-audit-full/REPORT.md:134`·`:203` · 06.6-CONTEXT.md). 06.5 다음, 06.1 앞에 실행한다.
 **Requirements**: EXP-03(회수 범위 좁힘)
 **Depends on:** Phase 06
-**Plans:** 0 plans
+**Plans:** 1 plan
 
 **Success Criteria** (what must be TRUE):
   1. 현재 차수에서 기안자 아닌 사람이 한 단계라도 승인한 문서는 서버가 회수를 거부하고(행·version·행동 로그 불변), 문서 화면·결재 시트·홈 어디에도 `회수` 버튼이 없다. 세 종류(지출결의·연차·정산) 각각 통합 시험으로 증명된다
@@ -880,7 +880,9 @@ Plans:
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 06.6 to break down)
+**Wave 1**
+
+- [ ] 06.6-01-PLAN.md — 결재 회수 막기 한 묶음(PR 하나 · 세션 머지 대상): 엔진 판정 `hasPriorApproval` + `closedFor` 필수 인자 · 가능 행동 · 멈춤 끝 줄(트레이서, 지출결의 E2E) → 정산까지 세 종류 증명 · 늦은 되돌리기 꼬리 → 회수 확인 결과 줄 · DECISIONS/SYSTEM 정정 · 점검표 (risk: approvals-permission)
 
 ### Phase 06.5: 06 후속 (payment-followup) (INSERTED)
 

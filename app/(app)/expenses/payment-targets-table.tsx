@@ -684,7 +684,8 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
   }
 
   // 06.5-06(UI-SPEC V5): `이체 파일 받기` — 확인 창 없이 지금 고른 행(모든 쪽)의 스냅숏을 보낸다(`지급 완료`와 같은 행 꼴 · 지금 편집값).
-  // 고른 행에 칸 오류가 있으면 `지급 완료`처럼 요청 없이 첫 오류 칸으로 간다(서버 행 스키마가 사유 없는 편집액을 요청째 거부한다).
+  // 고른 행에 칸 오류가 있으면 `지급 완료`처럼 요청 없이 첫 오류 칸으로 간다(고칠 칸이 이 화면에 있다). 그래도 서버에 닿은 사유 없는 편집액은
+  // 그 행만 막힌 건(V5 6번)이 된다 — 액션 스키마는 요청째 거부하지 않는다(검토 P2-2).
   const { execute: exportFile, isExecuting: exporting } = useAction(exportBankTransferFileAction, {
     onSuccess: ({ data }) => {
       if (!data) {

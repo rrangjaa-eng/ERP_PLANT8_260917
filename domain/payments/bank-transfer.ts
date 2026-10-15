@@ -212,6 +212,8 @@ export async function exportBankTransferFile(
   // 화면이 요청 차례대로 행 아래 줄을 찾으므로 막힌 건도 요청 차례로 돌려준다.
   const order = new Map(rows.map((row, index) => [row.expenseId, index]));
   blocked.sort((a, b) => (order.get(a.expenseId) ?? 0) - (order.get(b.expenseId) ?? 0));
+  // 받은 건 0이면 파일이 없다(V5 「전부 막힘」) — 나가지 않은 파일을 반출 기록으로 남기지 않는다(검토 P3-1).
+  if (fileLines.length === 0) return { filename: `이체파일_${today}.xlsx`, base64: "", lineCount: 0, docCount: 0, blocked, time: formatKstTime(now) };
 
   // 직렬화 전에 기록한다 — 기록이 실패하면 복호화한 값은 버려지고 파일이 없다(excel_export는 끌 수 없는 핵심 로그). 평문 계좌는 싣지 않는다.
   await (deps?.recordAction ?? defaultRecordAction)(viewer, {

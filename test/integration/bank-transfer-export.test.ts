@@ -370,6 +370,29 @@ describe("신한 이체 파일 — 막힌 건(06.5 Task 2)", () => {
     expect((await exportLogs(payer.id))[0]?.detail).toMatchObject({ expenseIds: [ok.expenseId] });
   });
 
+  it("받은 건 0(전부 막힘)이면 파일 · excel_export 기록 · 직렬화가 없고 막힌 건만 돌려준다(검토 P3-1)", async () => {
+    const payer = await makeExporter();
+    const fx = await setupExpenseProject();
+    const [cash] = await docsFor(fx, 1);
+    if (!cash) throw new Error("픽스처 모자람");
+    await setDoc(cash, { paymentMethod: "cash" });
+    let built = 0;
+
+    const result = await exportBankTransferFile(
+      payer,
+      { rows: [await snapshotOf(payer, cash)] },
+      {
+        buildXlsx: () => {
+          built += 1;
+          return new Uint8Array();
+        },
+      },
+    );
+    expect(result).toMatchObject({ lineCount: 0, docCount: 0, base64: "", blocked: [{ expenseId: cash.expenseId, text: "계좌이체 아님", link: null }] });
+    expect(built).toBe(0);
+    expect(await exportLogs(payer.id)).toHaveLength(0);
+  });
+
   it("직원 지급처 — 계좌 권한이 있으면 그 직원 예금주로 담기고 userIds에 실린다 · 없으면 그 행만 막히고 거래처 행은 담긴다", async () => {
     const fx = await setupExpenseProject();
     const lines = await linesFor(fx, 2);

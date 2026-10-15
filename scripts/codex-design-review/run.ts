@@ -35,7 +35,7 @@ mkdirSync(absDir); // 이미 있으면 실패 — 이전 실행의 측정 파일
 // 자격 원본은 빌드·서버·브라우저·codex 어디에도 넘기지 않는다.
 const { CODEX_AUTH_JSON_B64: authB64, ...baseEnv } = process.env;
 const capture = spawnSync("pnpm", ["exec", "playwright", "test", "-c", "playwright.codex-design.config.ts"], {
-  env: { ...baseEnv, CI: "true", CODEX_REVIEW_ROUTES: JSON.stringify(args.routes), CODEX_REVIEW_DIR: absDir, ...(args.seed ? { CODEX_REVIEW_SEED: args.seed } : {}) },
+  env: { ...baseEnv, CI: "true", CODEX_REVIEW_ROUTES: JSON.stringify(args.routes), CODEX_REVIEW_DIR: absDir, CODEX_REVIEW_SEED: args.seed ?? "" },
   encoding: "utf8",
   maxBuffer: 50 * 1024 * 1024,
   timeout: 1_200_000,

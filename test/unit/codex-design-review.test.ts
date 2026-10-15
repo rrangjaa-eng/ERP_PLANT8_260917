@@ -251,7 +251,8 @@ describe("fillRoute · envFileSecrets", () => {
   it("시나리오 변수를 채우고, 못 채운 자리 표시는 오류다", () => {
     expect(fillRoute("/projects/{projectId}", { adminId: "u-1" }, { projectId: "p-1" })).toBe("/projects/p-1");
     expect(() => fillRoute("/projects/{projectId}", { adminId: "u-1" })).toThrow("{projectId}");
-    expect(() => fillRoute("/admin/people/{adminId}", { adminId: "" })).not.toThrow();
+    // 시드 모드는 관리자 계정을 만들지 않는다(adminId 빈 값) — {adminId} 경로를 빈 값으로 채우지 않고 멈춘다.
+    expect(() => fillRoute("/admin/people/{adminId}", { adminId: "" }, { projectId: "p-1" })).toThrow("{adminId}");
   });
 
   it(".env 파일의 값(8자 이상)을 가릴 비밀로 모은다", () => {

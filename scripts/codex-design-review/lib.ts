@@ -164,7 +164,7 @@ export function envFileTexts(dir: string): string[] {
 // 동적 경로 자리 표시: {adminId} = 캡처 때 만든 관리자 계정 id(예: /admin/people/{adminId}), 시드 시나리오 변수는 {이름}(예: /projects/{projectId}).
 // 못 채운 자리 표시가 남으면 없는 화면을 재지 않도록 오류로 멈춘다.
 export function fillRoute(route: string, vars: { adminId: string }, seedVars: Record<string, string> = {}): string {
-  let filled = route.replaceAll("{adminId}", vars.adminId);
+  let filled = vars.adminId ? route.replaceAll("{adminId}", vars.adminId) : route;
   for (const [name, value] of Object.entries(seedVars)) filled = filled.replaceAll(`{${name}}`, value);
   const left = /\{\w+\}/.exec(filled);
   if (left) throw new Error(`채우지 못한 자리 표시: ${left[0]} (${route})`);

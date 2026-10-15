@@ -103,25 +103,28 @@ async function preSettleEvidencePending(browser: Browser, baseURL: string | unde
   const expenseId = created.created[0]?.expenseId;
   if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
   const context = await browser.newContext({ baseURL });
-  const page = await context.newPage();
-  await page.goto("/login");
-  // 하이드레이션 전에 채우면 입력이 덮인다 — React가 붙인 __reactProps$ 키를 본 뒤 채운다.
-  const hydrated = (selector: () => ReturnType<typeof page.getByLabel>) =>
-    expect.poll(() => selector().evaluate((element) => Object.keys(element).some((key) => key.startsWith("__reactProps$")))).toBe(true);
-  await hydrated(() => page.getByLabel("이메일"));
-  await page.getByLabel("이메일").fill(org.drafter.email);
-  await page.getByLabel("비밀번호").fill(org.drafter.password);
-  await page.getByRole("button", { name: "로그인" }).click();
-  await expect(page).toHaveURL(/\/account$/);
-  await page.goto(`/expenses/${expenseId}`);
-  await expect
-    .poll(() => page.getByRole("button", { name: /^임시 저장/ }).evaluate((element) => Object.keys(element).some((key) => key.startsWith("__reactProps$"))))
-    .toBe(true);
-  await page.getByTestId("attachments-input").setInputFiles("test/e2e/assets/receipt-3000x2000.jpg");
-  await expect(page.locator('[data-ui="attachments"] li').getByText(/^\d+KB · \d{2}-\d{2}$/)).toBeVisible({ timeout: 20_000 });
-  await page.getByRole("button", { name: /^지출결의 제출/ }).click();
-  await expect(page).toHaveURL(new RegExp(`/expenses/${expenseId}\\?submitted=1$`));
-  await context.close();
+  try {
+    const page = await context.newPage();
+    await page.goto("/login");
+    // 하이드레이션 전에 채우면 입력이 덮인다 — React가 붙인 __reactProps$ 키를 본 뒤 채운다.
+    const hydrated = (selector: () => ReturnType<typeof page.getByLabel>) =>
+      expect.poll(() => selector().evaluate((element) => Object.keys(element).some((key) => key.startsWith("__reactProps$")))).toBe(true);
+    await hydrated(() => page.getByLabel("이메일"));
+    await page.getByLabel("이메일").fill(org.drafter.email);
+    await page.getByLabel("비밀번호").fill(org.drafter.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+    await page.goto(`/expenses/${expenseId}`);
+    await expect
+      .poll(() => page.getByRole("button", { name: /^임시 저장/ }).evaluate((element) => Object.keys(element).some((key) => key.startsWith("__reactProps$"))))
+      .toBe(true);
+    await page.getByTestId("attachments-input").setInputFiles("test/e2e/assets/receipt-3000x2000.jpg");
+    await expect(page.locator('[data-ui="attachments"] li').getByText(/^\d+KB · \d{2}-\d{2}$/)).toBeVisible({ timeout: 20_000 });
+    await page.getByRole("button", { name: /^지출결의 제출/ }).click();
+    await expect(page).toHaveURL(new RegExp(`/expenses/${expenseId}\\?submitted=1$`));
+  } finally {
+    await context.close();
+  }
 
   const view = await getApprovalView(org.teamLead.viewer, { kind: EXPENSE_DOCUMENT_KIND, documentId: expenseId });
   if (!view) throw new Error("결재 인스턴스가 없습니다");

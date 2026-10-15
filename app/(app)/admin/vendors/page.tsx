@@ -16,6 +16,7 @@ import { StaticTable } from "@/ui/table/StaticTable";
 import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
 import { VendorForm, VendorHiddenToggle, VendorDeleteButton } from "./vendor-form";
 import { AccountNumberCell } from "./account-number";
+import { revealVendorAccountNumberAction } from "./actions";
 import styles from "./vendors.module.css";
 
 const REVEAL_INFO_ITEM = "vendor.account_number_unmasked";
@@ -164,9 +165,10 @@ export default async function VendorsPage({
                 evidenceType ?? "—",
                 <AccountNumberCell
                   key="account"
-                  vendorId={vendor.id}
+                  id={vendor.id}
                   masked={maskTail4(vendor.accountNumberLast4)}
                   canReveal={canReveal}
+                  revealAction={revealVendorAccountNumberAction}
                 />,
                 <Fragment key="status">
                   {vendor.archivedAt ? (

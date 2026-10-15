@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
@@ -197,6 +197,9 @@ export function VendorForm({
   }
 
   const nameError = result.validationErrors?.name?._errors?.[0];
+  // 06.5 D-6506 · DH-3: 계좌 칸 판정은 서버가 한다(필수 표시 · 클라이언트 사전 차단 없음 — UI-SPEC V3).
+  const accountBankError = result.validationErrors?.accountBank?._errors?.[0];
+  const accountHolderError = result.validationErrors?.accountHolder?._errors?.[0];
   const maskedCurrent = editing ? maskTail4(editing.accountNumberLast4) : "";
 
   // 04.5-06: 칸 오류는 칸 아래에, 요약은 1차 옆 이유 자리에 — 화면 순서(기본 칸 먼저, 그다음 커스텀 칸 정렬 순서).
@@ -204,6 +207,8 @@ export function VendorForm({
   const errorFields: { label: string; id: string }[] = [];
   if (nameError) errorFields.push({ label: "이름", id: "name" });
   if (businessNoConflict) errorFields.push({ label: "사업자 번호", id: "businessNo" });
+  if (accountBankError) errorFields.push({ label: "계좌 은행", id: "accountBank" });
+  if (accountHolderError) errorFields.push({ label: "예금주", id: "accountHolder" });
   for (const def of fieldDefs) {
     if (customFieldErrors?.[def.key]?._errors?.[0]) errorFields.push({ label: def.label, id: `cf_${def.key}` });
   }
@@ -217,6 +222,12 @@ export function VendorForm({
   const serverReason = staleReason ?? (!summary && result.serverError ? formReason(verb, result.serverError) : null);
   const blocked = serverReason?.blocked === true;
   const firstErrorId = errorFields[0]?.id;
+
+  // 계좌 칸 오류가 오면 첫 오류 칸으로 포커스(UI-SPEC V3 「칸 오류」 · 직원 지급 계좌 패널과 같은 꼴).
+  const hasAccountError = Boolean(accountBankError ?? accountHolderError);
+  useEffect(() => {
+    if (hasAccountError && firstErrorId) document.getElementById(firstErrorId)?.focus();
+  }, [result.validationErrors, hasAccountError, firstErrorId]);
 
   // 같은 사업자번호 오류 줄의 다음 한 수 — 「원인 · 다음 행동」 한 줄 안에 붙인다(field-definition-form 「보관함에서 복원」과 같은 모양).
   // 「거래처 정보」를 못 보면(name null) 링크를 내지 않고, 「구분 더하기」가 실패하면 다시 눌러도 같은 실패라 치운다.
@@ -327,8 +338,14 @@ export function VendorForm({
         ) : null}
       </div>
 
-      <TextField id="accountBank" name="accountBank" label="계좌 은행" defaultValue={editing?.accountBank ?? undefined} />
-      <TextField id="accountHolder" name="accountHolder" label="예금주" defaultValue={editing?.accountHolder ?? undefined} />
+      <TextField id="accountBank" name="accountBank" label="계좌 은행" defaultValue={editing?.accountBank ?? undefined} error={accountBankError} />
+      <TextField
+        id="accountHolder"
+        name="accountHolder"
+        label="예금주"
+        defaultValue={editing?.accountHolder ?? undefined}
+        error={accountHolderError}
+      />
 
       {isEditing ? (
         <div className={styles.accountEdit}>
@@ -338,6 +355,7 @@ export function VendorForm({
               name="accountNumber"
               label="새 계좌번호"
               autoComplete="off"
+              inputMode="numeric"
               hintId="accountNumber-current"
             />
           ) : null}
@@ -360,7 +378,7 @@ export function VendorForm({
           ) : null}
         </div>
       ) : (
-        <TextField id="accountNumber" name="accountNumber" label="계좌번호" autoComplete="off" />
+        <TextField id="accountNumber" name="accountNumber" label="계좌번호" autoComplete="off" inputMode="numeric" />
       )}
 
       {fieldDefs.length > 0 ? (

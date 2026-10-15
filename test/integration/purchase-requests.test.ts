@@ -1707,6 +1707,8 @@ describe("취소 되돌리기(06-14 — D-609 · Q3 · X-1 · X-2 · N-1 · N-2 
   it("[X-2 경합] 되돌리기 사전 조회를 끝낸 뒤 풀 밖 연결이 프로젝트 행을 잡고 `completed`로 커밋 → `완료 · 견적 줄 잠김` · 요청 `취소` 그대로", async () => {
     const fx = await purchaseProject();
     await setStatus(fx.projectId, "settling");
+    // G-06-D: 정산 프로젝트의 신청은 최신 차수 고객 승인이 먼저다 — 이 사례의 뜻(완료 경합)은 그대로.
+    await approve(fx);
     const created = await request(fx, fx.onlineLine);
     await cancelAs(fx.pm, created.id);
     const pre = await precheckPurchaseCancelUndo(fx.pm, { id: created.id });

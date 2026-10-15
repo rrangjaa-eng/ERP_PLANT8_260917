@@ -133,6 +133,21 @@ describe("카드 사용 등록 중복 방지 키(06.5 D-6509)", () => {
     expect(await usageRows()).toHaveLength(1);
   });
 
+  // 팀 비용은 줄 잠금이 없어 패자가 트랜잭션 안 재조회(replay)를 지나지 않는다 — 카운터 잠금 뒤 INSERT의 23505를 잡아 승자 행을 받는 갈래(PR-C 독립 검토 P2-2).
+  it("팀 비용 · 같은 키 동시 두 번 → 행 1 · 둘 다 같은 id · 팀 K 카운터 1(23505 복구 갈래)", async () => {
+    const fx = await cardProject();
+    const key = randomUUID();
+    const teamInput: CardUsageInput = { corpCardId: fx.cardId, usedOn: seoulToday(), merchantVendorId: null, total: { currency: "KRW", amount: 10_000, fxRate: 1 }, evidenceTypeCode: "invoice", linkKind: "team_cost", memo: null };
+    const pres = await Promise.all([precheckCardUsage(fx.pm, teamInput), precheckCardUsage(fx.pm, teamInput)]);
+    const results = await Promise.allSettled(pres.map((pre) => createCardUsage(fx.pm, { ...teamInput, idempotencyKey: key }, pre)));
+
+    expect(results.map((result) => (result.status === "rejected" ? String(result.reason) : result.status))).toEqual(["fulfilled", "fulfilled"]);
+    const ids = results.map((result) => (result.status === "fulfilled" ? result.value.id : null));
+    expect(ids[0]).toBe(ids[1]);
+    expect(await usageRows()).toHaveLength(1);
+    expect(await counter("card_usage_team", seoulToday().slice(0, 4))).toBe(1);
+  });
+
   it("다른 행위자가 같은 키 → 남의 행을 돌려주지 않는다(없는 건 거부) · 행 수 그대로", async () => {
     const fx = await cardProject();
     const other = await cardProject();
@@ -204,6 +219,21 @@ describe("구매 요청 등록 중복 방지 키(06.5 D-6509)", () => {
     const ids = results.map((result) => (result.status === "fulfilled" ? result.value.id : null));
     expect(ids[0]).toBe(ids[1]);
     expect(await requestRows()).toHaveLength(1);
+  });
+
+  // 팀 비용 요청은 잠금 없이 번호 → INSERT라 패자는 23505 복구 갈래로만 승자 행을 받는다(PR-C 독립 검토 P2-2).
+  it("팀 비용 · 같은 키 동시 두 번 → 행 1 · 둘 다 같은 id · 팀 C 카운터 1(23505 복구 갈래)", async () => {
+    const fx = await purchaseProject();
+    const key = randomUUID();
+    const input = { linkKind: "team_cost" as const, itemName: "현수막 3장", linkUrl: null, estimate: { currency: "KRW" as const, amount: 110_000, fxRate: 1 }, memo: null, idempotencyKey: key };
+    const pres = await Promise.all([precheckPurchaseRequest(fx.pm, input), precheckPurchaseRequest(fx.pm, input)]);
+    const results = await Promise.allSettled(pres.map((pre) => createPurchaseRequest(fx.pm, input, pre)));
+
+    expect(results.map((result) => (result.status === "rejected" ? String(result.reason) : result.status))).toEqual(["fulfilled", "fulfilled"]);
+    const values = results.map((result) => (result.status === "fulfilled" ? result.value : null));
+    expect(values[0]).toEqual(values[1]);
+    expect(await requestRows()).toHaveLength(1);
+    expect(await counter("purchase_request_team", seoulToday().slice(0, 4))).toBe(1);
   });
 
   it("다른 행위자가 같은 키 → 남의 행을 돌려주지 않는다(없는 건 거부) · 행 수 그대로", async () => {

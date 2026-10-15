@@ -4,7 +4,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import { actionLog, expensePayments, expenses, files, quoteLines } from "@/db/schema";
 import { approveDocument, getApprovalView } from "@/domain/approvals";
-import { cancelExpensePayment, completeExpensePayment, previewPayable } from "@/domain/payments";
+import { cancelExpensePayment, completeExpensePayment, FUTURE_PAY_DATE, previewPayable } from "@/domain/payments";
 import { createTeamExpenseDraft, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { voidEvidence } from "@/domain/evidence";
 import { createAccount } from "@/domain/auth/accounts";
@@ -172,14 +172,14 @@ function addDays(date: string, days: number): string {
   return at.toISOString().slice(0, 10);
 }
 
-// 06-04(D-604 · D-605 · Q6): 지급 섹션 칸 — 이체액 · 차이 사유 · 미래 지급일.
+// 06-04(D-604 · D-605): 지급 섹션 칸 — 이체액 · 차이 사유 · 오늘이 아닌 지급일(06.5 D-6518 뒤로는 과거 날짜 — 미래는 거절).
 test.describe("지급 섹션 칸 (06-04)", () => {
-  test("이체액을 다르게 + 차이 사유 + 미래 지급일 → 지급 완료 → 읽기 줄 2행에 차이 부호 · 지급일 = 그 날짜", async ({ browser, baseURL }) => {
+  test("이체액을 다르게 + 차이 사유 + 어제 지급일 → 지급 완료 → 읽기 줄 2행에 차이 부호 · 지급일 = 그 날짜", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const expenseId = await approvedWithoutEvidence(browser, baseURL, fx, "tracer");
     const payer = await makePaymentManagerE2E();
-    const future = addDays(seoulToday(), 10);
-    const preview = await previewPayable(payer.viewer, { expenseId, payDate: future });
+    const past = addDays(seoulToday(), -1);
+    const preview = await previewPayable(payer.viewer, { expenseId, payDate: past });
     if (preview.payableKrw == null) throw new Error("지급 총액 없음");
     const transfer = preview.payableKrw - 3_300;
 
@@ -191,7 +191,7 @@ test.describe("지급 섹션 칸 (06-04)", () => {
     await expect(section.getByLabel("이체액")).toHaveValue(formatKrw(preview.payableKrw));
     await expect(section.getByLabel("차이 사유")).toHaveCount(0);
 
-    await section.getByLabel("지급일").fill(future);
+    await section.getByLabel("지급일").fill(past);
     await section.getByLabel("이체액").fill(String(transfer));
     const hint = section.getByTestId("payment-transfer-hint");
     await expect(hint).toHaveText(`지급 총액 ${formatKrw(preview.payableKrw)} · 차이 -3,300`);
@@ -202,7 +202,7 @@ test.describe("지급 섹션 칸 (06-04)", () => {
     await section.getByLabel("차이 사유").fill("이체 수수료 차감");
     await pay.click();
 
-    await expect(page.getByTestId("payment-result")).toHaveText(new RegExp(`^지급 완료 → ${future} · \\d{2}:\\d{2}$`));
+    await expect(page.getByTestId("payment-result")).toHaveText(new RegExp(`^지급 완료 → ${past} · \\d{2}:\\d{2}$`));
     await expect(page.getByTestId("payment-paid-line")).toContainText(`지급 총액 ${formatKrw(preview.payableKrw)} · 차이 -3,300`);
     await expect(section.getByText(formatKrw(transfer), { exact: true })).toBeVisible();
     await expect(page.getByTestId("payment-diff-reason")).toHaveText("이체 수수료 차감");
@@ -210,7 +210,44 @@ test.describe("지급 섹션 칸 (06-04)", () => {
       .select({ payDate: expensePayments.payDate, diffKrw: expensePayments.diffKrw })
       .from(expensePayments)
       .where(and(eq(expensePayments.expenseId, expenseId), isNull(expensePayments.cancelledAt)));
-    expect(record).toEqual({ payDate: future, diffKrw: -3_300 });
+    expect(record).toEqual({ payDate: past, diffKrw: -3_300 });
+    await page.context().close();
+  });
+
+  // 06.5 D-6518(UI-SPEC V13): 지급일 고르기는 서버가 준 KST 오늘까지 · 손으로 친 내일은 미리보기가 칸 오류로 막고, 1차를 눌러도 지급 기록이 없다.
+  test("지급일 `max` = KST 오늘 · 내일을 치면 칸 오류 `미래 지급일 · 오늘까지 날짜 고르기`(값 유지) · `지급 완료`를 눌러도 기록 없음 · 예정일 칸에는 `max` 없음", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const expenseId = await approvedWithoutEvidence(browser, baseURL, fx, "tracer");
+    const payer = await makePaymentManagerE2E();
+    const today = seoulToday();
+    const tomorrow = addDays(today, 1);
+
+    const page = await loginPage(browser, baseURL, payer);
+    await page.goto(`/expenses/${expenseId}`);
+    const pay = page.getByRole("button", { name: /^지급 완료/ });
+    await waitForHydration(pay);
+    const section = paymentSection(page);
+    const field = section.getByLabel("지급일", { exact: true });
+    await expect(field).toHaveAttribute("max", today);
+    await expect(field).toHaveValue(today);
+
+    await field.fill(tomorrow);
+    const error = section.locator("#payment-pay-date-error");
+    await expect(error).toHaveText(FUTURE_PAY_DATE);
+    await expect(field).toHaveAttribute("aria-invalid", "true");
+    await expect(field).toHaveAttribute("aria-describedby", "payment-pay-date-error");
+    await expect(field).toHaveValue(tomorrow);
+
+    await pay.click();
+    await expect(error).toHaveText(FUTURE_PAY_DATE);
+    await expect(field).toBeFocused();
+    await expect(field).toHaveValue(tomorrow);
+    await expect(page.getByTestId("payment-result")).toHaveCount(0);
+    const live = await db.select({ id: expensePayments.id }).from(expensePayments).where(eq(expensePayments.expenseId, expenseId));
+    expect(live).toHaveLength(0);
+
+    await section.getByRole("button", { name: "지급 예정일 바꾸기" }).click();
+    await expect(section.getByLabel("지급 예정일")).not.toHaveAttribute("max", /.*/);
     await page.context().close();
   });
 });

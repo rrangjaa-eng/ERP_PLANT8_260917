@@ -30,6 +30,9 @@ export const CANCEL_REASON_REQUIRED = "사유 없음 · 사유 적기";
 // 06-04(D-605 · UI-SPEC 「Error — 차이 사유 칸」) — 서버 거부 문구와 화면 칸 오류 자리가 같은 상수를 읽는다(잎 모듈이라 화면이 값 import).
 export const DIFF_REASON_REQUIRED = "차이 사유 없음 · 사유 적기";
 
+// 06.5 D-6518(UI-SPEC V13 「막힘 문구」) — 미래 실제 지급일. 서버 거부(FuturePayDateError)와 지급일 칸 오류(단건 · 일괄 대화상자)가 같은 상수를 읽는다.
+export const FUTURE_PAY_DATE = "미래 지급일 · 오늘까지 날짜 고르기";
+
 // 「Error — 이체액 칸」(UI-SPEC S1 · S5) — 액션 입력 검증과 화면 칸 오류가 같은 문구를 읽는다.
 export const TRANSFER_NOT_NUMBER = "숫자 아님 · 13,640,000처럼";
 export const TRANSFER_NOT_POSITIVE = "이체액 0 이하 · 금액 고치기";

@@ -54,6 +54,8 @@ export function buildExpenseDetailRows(projected: Partial<ExpenseDetailDto>): Do
   }
   if (projected.taxLine) rows.push({ label: "공급가액", value: projected.taxLine, tone: "default" });
   if (projected.taxDriftText) rows.push({ label: "공급가액", value: projected.taxDriftText, tone: "warning" });
+  // 06.5 V15: 받는 인원 — 회사 대납 문서(값이 있을 때)만, 공급가액 행들 다음(폼의 칸 순서와 같다). 금액 숨김 계급은 투영에서 빠져 행이 없다.
+  if (typeof projected.recipientCount === "number") rows.push({ label: "받는 인원", value: `${projected.recipientCount}명`, tone: "default" });
   // 증빙 갈래(05-10) — 살아 있는 파일이 있을 때만, 지급 방식 다음 · 비고 앞(문서 화면 순서).
   const evidenceRow: DocumentDetailRow | null = projected.evidenceFiles?.length
     ? {

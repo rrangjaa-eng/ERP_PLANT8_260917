@@ -9,9 +9,7 @@ import { Button, buttonLinkClassName } from "@/ui/button/Button";
 import { KvList } from "@/ui/kv-list/KvList";
 import type { AttachmentFile } from "@/ui/attachments/Attachments";
 import { useCommaInput } from "@/ui/input/use-comma-input";
-import { numberInputRejectionReason, parseNumberInput } from "@/lib/format-number";
-import { EVIDENCE_AMOUNT_FRACTION, EVIDENCE_AMOUNT_NOT_NUMBER } from "@/domain/payments/action-row";
-import { EVIDENCE_AMOUNT_TAX_INCLUSIVE } from "@/domain/evidence-reviews/tax-inclusive";
+import { parseNumberInput } from "@/lib/format-number";
 import { PREPAID_REASON_REQUIRED } from "@/domain/expenses/gate";
 import { BANK_TRANSFER_PAYMENT_METHOD } from "@/domain/expenses/payee";
 import { isCtrlCombo } from "@/lib/shortcut";
@@ -63,11 +61,11 @@ export type ExpenseFormData = {
     text: string;
     parts: { text: string; emphasis: boolean }[];
   } | null;
-  // 06-10 증빙 묶음 — 선결제 · 사유 · 기안자 증빙 금액(공급가 자리) · 증빙일 저장값, 선결제 힌트의 기한 일수(설정 값).
+  // 06-10 증빙 묶음 — 선결제 · 사유 · 증빙일 저장값, 선결제 힌트의 기한 일수(설정 값). 06.5 V15 받는 인원 저장값(새 문서 1).
   prepaid: boolean;
   prepaidReason: string | null;
-  evidenceAmountKrw: number | null;
   evidenceDate: string | null;
+  recipientCount: number;
   prepaidDueDays: number;
   // 05-06 제출 막힘 첫 이유(규칙 `expense.submit`) · 다음 한 수 대상 · 이동 주소 — 처음 그림은 서버 미리보기 값, 그 뒤는 미리보기 응답.
   block: (ServerBlock & { href: string | null }) | null;
@@ -101,6 +99,8 @@ let refocusLineTrigger = false;
 export type ExpenseFormProps = {
   data: ExpenseFormData;
   evidenceOptions: SelectOption[];
+  // 06.5 V15: 세금 규칙이 회사 대납인 증빙 코드 — 이 증빙 종류에서만 받는 인원 칸이 선다.
+  companyBorneEvidence: string[];
   paymentOptions: SelectOption[];
   teamKindOptions: SelectOption[];
   /** true면 `/expenses/new` — 문서가 아직 없다(`data.id` 빈 값). 첫 저장(임시 저장 · 증빙 올리기)이 문서를 만든다. */
@@ -115,7 +115,6 @@ export type ExpenseFormProps = {
 };
 
 const DATE_EMPTY_ERROR = "날짜 없음 · 날짜 고르기";
-const EVIDENCE_AMOUNT_FRACTION_REASON = numberInputRejectionReason("krw", "krw-fraction");
 const FX_ERROR = "환율 형식 오류 · 1,318.4처럼";
 
 // 환율 칸 — 통화를 바꾸면 그 통화의 기본 환율로 다시 열린다(훅이 값을 밖에서 못 바꾸므로 통화를 key로 다시 마운트한다).
@@ -143,12 +142,7 @@ function FxField({ initial, error, onRaw, below }: { initial: number; error: str
   );
 }
 
-// 증빙 금액 칸의 입력 거절 이유 → 06-06 「Error — 증빙 금액 칸」 원문(소수점 · 숫자 아님).
-function evidenceAmountInputError(reason: string): string {
-  return reason === EVIDENCE_AMOUNT_FRACTION_REASON ? EVIDENCE_AMOUNT_FRACTION : EVIDENCE_AMOUNT_NOT_NUMBER;
-}
-
-export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOptions, newDoc, resubmit = false, currencies, files, maxMb, route }: ExpenseFormProps) {
+export function ExpenseForm({ data, evidenceOptions, companyBorneEvidence, paymentOptions, teamKindOptions, newDoc, resubmit = false, currencies, files, maxMb, route }: ExpenseFormProps) {
   const router = useRouter();
   const [evidenceType, setEvidenceType] = useState(data.evidenceType ?? "");
   const [paymentMethod, setPaymentMethod] = useState(data.paymentMethod ?? "");
@@ -162,6 +156,9 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
   const [prepaid, setPrepaid] = useState(data.prepaid);
   const [prepaidReason, setPrepaidReason] = useState(data.prepaidReason ?? "");
   const [evidenceDate, setEvidenceDate] = useState(data.evidenceDate ?? "");
+  // 06.5 V15: 받는 인원 — 숫자 글자만 담는다(비우면 서버가 칸 오류). 증빙 종류를 바꿨다 되돌려도 적어 둔 값이 남는다.
+  const [headcountRaw, setHeadcountRaw] = useState(String(data.recipientCount));
+  const headcountShown = companyBorneEvidence.includes(evidenceType);
   const usageDateRef = useRef<HTMLInputElement>(null);
   const team = data.team;
   const [teamKind, setTeamKind] = useState(team?.kind ?? "");
@@ -179,7 +176,6 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
   const [pickOpen, setPickOpen] = useState<"vendor" | "line" | null>(null);
 
   const amountInput = useCommaInput(currency === "KRW" ? "krw" : "foreign", data.amount === null ? "" : String(data.amount));
-  const evidenceAmountInput = useCommaInput("krw", data.evidenceAmountKrw === null ? "" : String(data.evidenceAmountKrw));
 
   const [version, setVersion] = useState(data.version);
   const [uploading, setUploading] = useState(0);
@@ -198,7 +194,7 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
     note?: string;
     usageDate?: string;
     prepaidReason?: string;
-    evidenceAmount?: string;
+    headcount?: string;
     evidenceDate?: string;
   }>({});
 
@@ -230,8 +226,8 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
     content,
     prepaid,
     prepaid ? prepaidReason : "",
-    evidenceAmountInput.rawValue,
     evidenceDate,
+    headcountShown ? headcountRaw : "",
   ]);
   const [savedSnapshot, setSavedSnapshot] = useState(snapshot);
   const dirty = snapshot !== savedSnapshot;
@@ -265,6 +261,7 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
     picked ? `${picked.kind}:${picked.id}` : "",
     prepaid,
     prepaid && prepaidReason.trim() !== "",
+    headcountShown ? headcountRaw : "",
   ]);
   const firstPreviewKey = useRef(previewKey);
   useEffect(() => {
@@ -388,7 +385,6 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
     }
     if (dateRef.current?.validity.badInput) next.scheduledPaymentDate = DATE_EMPTY_ERROR;
     if (evidenceDateRef.current?.validity.badInput) next.evidenceDate = DATE_EMPTY_ERROR;
-    if (evidenceAmountInput.error) next.evidenceAmount = evidenceAmountInputError(evidenceAmountInput.error);
     if (team && (usageDate === "" || usageDateRef.current?.validity.badInput)) next.usageDate = DATE_EMPTY_ERROR;
     setErrors(next);
     if (Object.keys(next).length > 0) {
@@ -403,21 +399,24 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
       note: note || null,
       installment: data.installmentMode === "none" ? false : installment,
       ...evidenceFields(),
+      ...headcountFields(),
       ...teamFields(),
       ...(newDoc && picked ? (picked.kind === "vendor" ? { vendorId: picked.id } : { payeeUserId: picked.id }) : {}),
     };
   }
 
-  // 06-10 증빙 묶음 칸 넷 — 선결제를 끄면 사유는 보내지 않고 서버가 버린다(S6). 증빙 금액 · 증빙일은 비면 null(제출 필수 아님).
+  // 06-10 증빙 묶음 칸 셋 — 선결제를 끄면 사유는 보내지 않고 서버가 버린다(S6). 증빙일은 비면 null(제출 필수 아님).
   function evidenceFields(): Record<string, unknown> {
-    const raw = evidenceAmountInput.rawValue;
-    const amount = raw === "" ? null : parseNumberInput(raw);
     return {
       prepaid,
       prepaidReason: prepaid ? prepaidReason.trim() || null : null,
-      evidenceAmountKrw: amount !== null && Number.isFinite(amount) ? amount : null,
       evidenceDate: evidenceDateRef.current?.validity.badInput ? null : evidenceDate || null,
     };
+  }
+
+  // 06.5 V15: 받는 인원 — 칸이 있을 때만 보낸다. 비우면 null(서버 스키마가 같은 한 문구로 거부한다).
+  function headcountFields(): Record<string, unknown> {
+    return headcountShown ? { recipientCount: headcountRaw === "" ? null : Number(headcountRaw) } : {};
   }
 
   // 팀 비용 칸 넷 중 보낼 셋(팀은 서버가 사용일 소속으로 정한다) — 견적 줄 문서는 보내지 않는다.
@@ -443,6 +442,7 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
       installment: data.installmentMode === "none" ? false : installment,
       prepaid,
       prepaidReason: prepaid ? prepaidReason.trim() || null : null,
+      ...(headcountShown && headcountRaw !== "" ? headcountFields() : {}),
       ...(team && usageDate !== "" && !usageDateRef.current?.validity.badInput ? teamFields() : {}),
     };
   }
@@ -455,7 +455,7 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
       note: "비고",
       usageDate: "사용일",
       prepaidReason: "선결제 사유",
-      evidenceAmount: "증빙 금액",
+      headcount: "받는 인원",
       evidenceDate: "증빙일",
     } as const;
     const keys = (Object.keys(fieldErrors) as (keyof typeof names)[]).filter((key) => fieldErrors[key]);
@@ -487,28 +487,27 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
     const fieldErrors = result?.validationErrors?.fields;
     const noteError = fieldErrors?.note?._errors?.[0];
     const dateError = fieldErrors?.scheduledPaymentDate?._errors?.[0];
-    const evidenceAmountError = fieldErrors?.evidenceAmountKrw?._errors?.[0];
+    const headcountError = fieldErrors?.recipientCount?._errors?.[0];
     const evidenceDateError = fieldErrors?.evidenceDate?._errors?.[0];
     const prepaidReasonError = fieldErrors?.prepaidReason?._errors?.[0];
-    if (noteError || dateError || evidenceAmountError || evidenceDateError || prepaidReasonError) {
+    if (noteError || dateError || headcountError || evidenceDateError || prepaidReasonError) {
       const next = {
         ...(noteError ? { note: noteError } : {}),
         ...(dateError ? { scheduledPaymentDate: dateError } : {}),
-        ...(evidenceAmountError ? { evidenceAmount: evidenceAmountError } : {}),
+        ...(headcountError ? { headcount: headcountError } : {}),
         ...(evidenceDateError ? { evidenceDate: evidenceDateError } : {}),
         ...(prepaidReasonError ? { prepaidReason: prepaidReasonError } : {}),
       };
       setErrors(next);
       setFailure(purpose === "submit" ? failureLine(next) : "임시 저장 실패 · 다시 시도");
+      // 받는 인원 칸 오류는 그 칸으로 포커스(V15).
+      if (headcountError) document.getElementById("headcount")?.focus();
     } else {
       const message = result?.serverError;
-      // 서버 칸 오류(ExpenseFieldError)는 글자만 온다 — 어느 칸인지는 그 글자로 가른다(선결제 사유 빔 / 부가세 포함 금액).
+      // 서버 칸 오류(ExpenseFieldError)는 글자만 온다 — 어느 칸인지는 그 글자로 가른다(선결제 사유 빔).
       if (message === PREPAID_REASON_REQUIRED) {
         setErrors({ prepaidReason: message });
         setFailure(purpose === "submit" ? failureLine({ prepaidReason: message }) : "임시 저장 실패 · 다시 시도");
-      } else if (message === EVIDENCE_AMOUNT_TAX_INCLUSIVE) {
-        setErrors({ evidenceAmount: message });
-        setFailure(purpose === "submit" ? failureLine({ evidenceAmount: message }) : "임시 저장 실패 · 다시 시도");
       } else {
         setFailure(message ?? (purpose === "submit" ? "제출 실패 · 다시 제출" : "임시 저장 실패 · 다시 시도"));
       }
@@ -529,6 +528,13 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
       setSavedSnapshot(snapshot);
       router.replace(`/expenses/${result.data.expenseId}`);
       return result.data.version;
+    }
+    const headcountError = result?.validationErrors?.fields?.recipientCount?._errors?.[0];
+    if (headcountError) {
+      setErrors({ headcount: headcountError });
+      setFailure(failureLine({ headcount: headcountError }, purpose));
+      document.getElementById("headcount")?.focus();
+      return null;
     }
     const message = result?.serverError;
     if (message?.startsWith("사용일에")) {
@@ -736,7 +742,6 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
   }
 
   const amountError = errors.supplyAmount ?? amountInput.error ?? previewFieldError ?? undefined;
-  const evidenceAmountError = errors.evidenceAmount ?? (evidenceAmountInput.error ? evidenceAmountInputError(evidenceAmountInput.error) : undefined);
   // 계산 한 줄은 값 줄이라 설명 문단(`Form.Hint`의 <p>)이 아니라 같은 모양(힌트 글자)의 span이다 — 화면 사용성 원칙 검사의 「긴 설명」과 구분.
   const taxHint = previewFailed ? (
     <span className={`${styles.taxLine} ${styles.stale}`} data-testid="expense-tax-line">
@@ -906,6 +911,27 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
 
         {currency === "KRW" ? null : <FxField key={currency} initial={Number(fxRaw) || 1} error={errors.fxRate} onRaw={setFxRaw} below={taxHint} />}
 
+        {headcountShown ? (
+          <Form.Field id="headcount" label="받는 인원" width="short">
+            <input
+              id="headcount"
+              type="text"
+              inputMode="numeric"
+              autoComplete="off"
+              className={`${styles.textInput} ${styles.numeric}`}
+              value={headcountRaw}
+              onChange={(event) => {
+                // 숫자 아닌 글자(붙여넣기 포함)는 칸에 남기지 않는다.
+                setHeadcountRaw(event.target.value.replace(/\D/g, ""));
+                if (errors.headcount) setErrors((current) => ({ ...current, headcount: undefined }));
+              }}
+              aria-invalid={errors.headcount ? true : undefined}
+              aria-describedby={errors.headcount ? "headcount-error" : undefined}
+            />
+            {errors.headcount ? <Form.Error id="headcount-error">{errors.headcount}</Form.Error> : null}
+          </Form.Field>
+        ) : null}
+
         {data.installmentMode === "checkbox" ? (
           <Form.Field id="installment" label="분할 지급" width="long">
             <input id="installment" type="checkbox" className={styles.installmentCheck} checked={installment} onChange={(event) => setInstallment(event.target.checked)} />
@@ -1007,25 +1033,6 @@ export function ExpenseForm({ data, evidenceOptions, paymentOptions, teamKindOpt
             <Form.Hint>{`증빙 기한 지급일부터 ${data.prepaidDueDays}일`}</Form.Hint>
           </Form.Field>
         ) : null}
-
-        <Form.Field id="evidenceAmount" label="증빙 금액" width="short">
-          <input
-            id="evidenceAmount"
-            ref={evidenceAmountInput.inputRef}
-            type="text"
-            inputMode="numeric"
-            autoComplete="off"
-            className={`${styles.textInput} ${styles.numeric}`}
-            value={evidenceAmountInput.value}
-            onChange={(event) => {
-              evidenceAmountInput.onChange(event);
-              if (errors.evidenceAmount) setErrors((current) => ({ ...current, evidenceAmount: undefined }));
-            }}
-            aria-invalid={evidenceAmountError ? true : undefined}
-            aria-describedby={evidenceAmountError ? "evidenceAmount-error" : undefined}
-          />
-          {evidenceAmountError ? <Form.Error id="evidenceAmount-error">{evidenceAmountError}</Form.Error> : null}
-        </Form.Field>
 
         <Form.Field id="evidenceDate" label="증빙일" width="short">
           <input

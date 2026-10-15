@@ -48,6 +48,17 @@ describe("buildExpenseDetailRows", () => {
     expect(rows.find((row) => row.label === "지급처")).toEqual({ label: "지급처", value: "김지급", tone: "default" });
   });
 
+  it("회사 대납 문서(받는 인원 값이 있다)면 공급가액 행들 다음에 `받는 인원 {N}명`(06.5 V15)", () => {
+    const labels = buildExpenseDetailRows({ ...full, recipientCount: 5 }).rows;
+    expect(labels.map((row) => row.label)).toEqual(["프로젝트", "견적 줄", "지급처", "증빙 종류", "공급가액", "공급가액", "받는 인원", "지급 예정일", "지급 방식", "비고"]);
+    expect(labels.find((row) => row.label === "받는 인원")).toEqual({ label: "받는 인원", value: "5명", tone: "default" });
+  });
+
+  it("받는 인원이 null(회사 대납 아님)이거나 투영에서 빠지면 행이 없다", () => {
+    expect(buildExpenseDetailRows({ ...full, recipientCount: null }).rows.some((row) => row.label === "받는 인원")).toBe(false);
+    expect(buildExpenseDetailRows(full).rows.some((row) => row.label === "받는 인원")).toBe(false);
+  });
+
   it("분할이면 견적 줄 다음에 분할 지급 행", () => {
     const rows = buildExpenseDetailRows({ ...full, installment: true, installmentSeq: 2 }).rows;
     expect(rows.slice(0, 3).map((row) => row.label)).toEqual(["프로젝트", "견적 줄", "분할 지급"]);

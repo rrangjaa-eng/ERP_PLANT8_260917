@@ -158,6 +158,8 @@ export function ExpenseDocument({
       ),
     });
   }
+  // 06.5 V15: 받는 인원 — 회사 대납 문서에서 투영에 칸이 있을 때만(금액을 못 보는 계급은 빠진다), 공급가액 다음(폼의 칸 순서).
+  if (expense.taxRuleKind === "company_borne" && expense.recipientCount !== undefined) items.push({ label: "받는 인원", value: `${expense.recipientCount}명` });
   // 06-03: 지급 섹션이 서면 지급 예정일 · 지급 방식은 그 섹션 한 자리에만(같은 사실 두 자리 금지 — UI-SPEC S5).
   if (!paymentView || paymentView === "error") {
     items.push({ label: "지급 예정일", value: expense.scheduledPaymentDate ?? dash }, { label: "지급 방식", value: expense.paymentMethodName ?? dash });

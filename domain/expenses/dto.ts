@@ -82,11 +82,12 @@ export type ExpenseDocumentDto = ExpenseDraftDto & {
   // 06-28(S23): 종결 확인 모달 재료 — 반려 · 회수(번호 있음 · 종결 아님) 문서를 보는 기안자 · 지급 권한자에게만, 그 밖은 null(버튼 없음).
   // 부제 = `{번호} · {항목} · {공급가}`(공급가는 금액을 볼 수 있을 때만), 결과 줄 = 열리는 줄 문 · 되돌림 없음.
   closeDialog: { subtitle: string; resultLines: string[] } | null;
-  // 06-10: 선결제 표시 · 사유 · 기안자 증빙 금액(공급가 자리) · 증빙일 — 폼이 저장값을 다시 그리고 문서 화면이 사유 줄을 그린다.
+  // 06-10: 선결제 표시 · 사유 · 증빙일 — 폼이 저장값을 다시 그리고 문서 화면이 사유 줄을 그린다(증빙 금액 칸은 06.5 D-6520으로 걷었다).
   prepaid: boolean;
   prepaidReason: string | null;
-  evidenceAmountKrw: number | null;
   evidenceDate: string | null;
+  // 06.5 V15(카드 ①): 회사 대납 면제의 받는 인원 — 금액 정보 항목(금액을 못 보는 계급에는 빠진다).
+  recipientCount: number;
 };
 
 export const EXPENSE_DOCUMENT_DTO_SPEC: DtoSpec<ExpenseDocumentDto, ExpenseDocumentDto> = {
@@ -129,8 +130,8 @@ export const EXPENSE_DOCUMENT_DTO_SPEC: DtoSpec<ExpenseDocumentDto, ExpenseDocum
     { key: "closeDialog", from: "closeDialog", infoItem: "expense.value" },
     { key: "prepaid", from: "prepaid", infoItem: "expense.value" },
     { key: "prepaidReason", from: "prepaidReason", infoItem: "expense.value" },
-    { key: "evidenceAmountKrw", from: "evidenceAmountKrw", infoItem: "expense.amount" },
     { key: "evidenceDate", from: "evidenceDate", infoItem: "expense.value" },
+    { key: "recipientCount", from: "recipientCount", infoItem: "expense.amount" },
   ],
 };
 
@@ -154,6 +155,8 @@ export type ExpenseDetailDto = {
   // 06.5 D-6517: 직원 지급처 이름(사람 정보) — 상세 행 `지급처` 값은 거래처 이름 → 직원 이름.
   payeeUserName: string | null;
   evidenceTypeName: string | null;
+  // 06.5 V15: 회사 대납 문서의 받는 인원(금액 정보 항목) — 회사 대납이 아니면 null(상세 행 없음).
+  recipientCount: number | null;
   supply: Money | null;
   taxLine: string | null;
   // 05-10: 세율 바뀜 한 줄(번호 있는 문서에서 저장 스냅숏 ≠ 지금 기준 재계산일 때) · 살아 있는 증빙 파일(주소 없음).
@@ -182,6 +185,7 @@ export const EXPENSE_DETAIL_DTO_SPEC: DtoSpec<ExpenseDetailDto, ExpenseDetailDto
     { key: "vendorName", from: "vendorName", infoItem: "expense.value" },
     { key: "payeeUserName", from: "payeeUserName", infoItem: "person.value" },
     { key: "evidenceTypeName", from: "evidenceTypeName", infoItem: "expense.value" },
+    { key: "recipientCount", from: "recipientCount", infoItem: "expense.amount" },
     { key: "supply", from: "supply", infoItem: "expense.amount" },
     { key: "taxLine", from: "taxLine", infoItem: "expense.amount" },
     { key: "taxDriftText", from: "taxDriftText", infoItem: "expense.amount" },

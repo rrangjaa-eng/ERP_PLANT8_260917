@@ -17,10 +17,8 @@ import { upsertSimpleValue } from "@/repositories/settings";
 import { ForbiddenError } from "@/domain/permissions/can";
 import { getPaymentView } from "@/domain/payments";
 import { EVIDENCE_PREPAID_DUE_DAYS } from "@/domain/settings/keys";
-import { EVIDENCE_AMOUNT_TAX_INCLUSIVE } from "@/domain/evidence-reviews/tax-inclusive";
 import { seoulToday } from "@/lib/dates";
 import { addDays } from "@/lib/kst-date";
-import { seedCodeItem } from "@/repositories/code-tables";
 import { upsertVisibility } from "@/repositories/permissions";
 import { attachEvidence, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
 import { approvedExpenseWithEvidence, approvedExpenseWithoutEvidence, makePaymentManager, setEvidenceRequired } from "./fixtures/payments";
@@ -122,22 +120,22 @@ describe("선결제 · 사유 (EXP-13 · S6)", () => {
     expect(options.prepaidDueDays).toBe(EVIDENCE_PREPAID_DUE_DAYS.default);
   });
 
-  it("문서 DTO가 선결제 · 사유 · 증빙 금액 · 증빙일을 싣는다", async () => {
+  it("문서 DTO가 선결제 · 사유 · 증빙일을 싣고 증빙 금액은 싣지 않는다(06.5 D-6520)", async () => {
     const fx = await setupExpenseProject();
     const expenseId = await lineDraft(fx);
-    await save(fx, expenseId, { prepaid: true, prepaidReason: "선입금", evidenceAmountKrw: 12_400_000, evidenceDate: "2026-09-17" });
+    await save(fx, expenseId, { prepaid: true, prepaidReason: "선입금", evidenceDate: "2026-09-17" });
     const doc = await getExpense(fx.pm, { expenseId });
-    expect(doc).toMatchObject({ prepaid: true, prepaidReason: "선입금", evidenceAmountKrw: 12_400_000, evidenceDate: "2026-09-17" });
+    expect(doc).toMatchObject({ prepaid: true, prepaidReason: "선입금", evidenceDate: "2026-09-17" });
+    expect(doc && "evidenceAmountKrw" in doc).toBe(false);
   });
 });
 
-describe("기안자 증빙 금액 · 증빙일 (C6 · EVID-03 · E-20)", () => {
-  it("증빙 금액 · 증빙일이 expenses.evidence_amount · evidence_date로 저장된다", async () => {
+describe("기안자 증빙일 (C6 · EVID-03 · E-20)", () => {
+  it("증빙일이 expenses.evidence_date로 저장된다", async () => {
     const fx = await setupExpenseProject();
     const expenseId = await lineDraft(fx);
-    await save(fx, expenseId, { evidenceAmountKrw: 12_400_000, evidenceDate: "2026-09-17" });
+    await save(fx, expenseId, { evidenceDate: "2026-09-17" });
     const row = await expenseRow(expenseId);
-    expect(row.evidenceAmount).toBe(12_400_000);
     expect(row.evidenceDate).toBe("2026-09-17");
   });
 
@@ -147,21 +145,6 @@ describe("기안자 증빙 금액 · 증빙일 (C6 · EVID-03 · E-20)", () => {
     const future = addDays(seoulToday(), 400);
     await save(fx, expenseId, { evidenceDate: future });
     expect((await expenseRow(expenseId)).evidenceDate).toBe(future);
-  });
-
-  it.each([
-    [0, "증빙 금액 0 이하 · 금액 고치기"],
-    [-1, "증빙 금액 0 이하 · 금액 고치기"],
-    [1.5, "원화 소수점 · 소수점 없이"],
-    ["12,400,000", "숫자 아님 · 12,400,000처럼"],
-  ] as const)("증빙 금액 %j → 칸 오류 %s · 행 불변", async (value, message) => {
-    const fx = await setupExpenseProject();
-    const expenseId = await lineDraft(fx);
-    const before = await expenseRow(expenseId);
-    const failure = await save(fx, expenseId, { evidenceAmountKrw: value as number }).catch((error: unknown) => error);
-    expect(failure).toBeInstanceOf(ZodError);
-    expect((failure as ZodError).issues[0]?.message).toBe(message);
-    expect(await expenseRow(expenseId)).toEqual(before);
   });
 
   it.each(["2026-9-7", "2026-02-30", "0000-01-01"])("증빙일 %s → 05 날짜 형식 입력 검증 오류 · 행 불변", async (value) => {
@@ -174,7 +157,7 @@ describe("기안자 증빙 금액 · 증빙일 (C6 · EVID-03 · E-20)", () => {
     expect(await expenseRow(expenseId)).toEqual(before);
   });
 
-  it("증빙 금액 · 증빙일이 비어도 제출된다(제출 필수 아님)", async () => {
+  it("증빙일이 비어도 제출된다(제출 필수 아님)", async () => {
     const fx = await setupExpenseProject();
     const expenseId = await lineDraft(fx);
     const submitted = await submitReadyDraft(fx.pm, expenseId);
@@ -185,13 +168,13 @@ describe("기안자 증빙 금액 · 증빙일 (C6 · EVID-03 · E-20)", () => {
   });
 });
 
-describe("O-4 — 제출 뒤 선결제 · 증빙 금액은 기안자 경로로 바뀌지 않는다", () => {
+describe("O-4 — 제출 뒤 선결제 · 증빙일은 기안자 경로로 바뀌지 않는다", () => {
   it("결재 중 문서에 기안자 저장을 보내면 편집 불가 거부 · 행 불변", async () => {
     const fx = await setupExpenseProject();
     const { expenseId } = await submitPrepaid(fx);
     const before = await expenseRow(expenseId);
     await expect(save(fx, expenseId, { prepaid: false })).rejects.toBeInstanceOf(ExpenseNotFoundError);
-    await expect(save(fx, expenseId, { evidenceAmountKrw: 1_000_000 })).rejects.toBeInstanceOf(ExpenseNotFoundError);
+    await expect(save(fx, expenseId, { evidenceDate: "2026-09-17" })).rejects.toBeInstanceOf(ExpenseNotFoundError);
     expect(await expenseRow(expenseId)).toEqual(before);
   });
 
@@ -204,14 +187,13 @@ describe("O-4 — 제출 뒤 선결제 · 증빙 금액은 기안자 경로로 �
     expect(await expenseRow(expenseId)).toEqual(before);
   });
 
-  it("반려 문서(편집 가능)는 선결제 · 증빙 금액을 고쳐 다시 제출할 수 있다", async () => {
+  it("반려 문서(편집 가능)는 선결제 사유를 고쳐 다시 제출할 수 있다", async () => {
     const fx = await setupExpenseProject();
     const { expenseId, instanceId } = await submitPrepaid(fx);
     await rejectDocument(fx.lead, { instanceId, expectedVersion: 1, reason: "사유 보완" });
-    await save(fx, expenseId, { prepaidReason: "선입금 · 계약서 3조", evidenceAmountKrw: 12_400_000 });
+    await save(fx, expenseId, { prepaidReason: "선입금 · 계약서 3조" });
     const row = await expenseRow(expenseId);
     expect(row.prepaidReason).toBe("선입금 · 계약서 3조");
-    expect(row.evidenceAmount).toBe(12_400_000);
     const resubmitted = await submitExpense(fx.pm, { expenseId, expectedVersion: row.version });
     expect(resubmitted.kind).toBe("submitted");
   });
@@ -233,82 +215,26 @@ describe("EXP-13 — 선결제 기한은 표시뿐이고 처리를 막지 않는
   });
 });
 
-describe("부가세 포함 증빙 금액 저장 막힘(EA-1)", () => {
-  async function supplyTenMillion(fx: ExpenseFixture, evidenceType?: string): Promise<string> {
-    const expenseId = await lineDraft(fx);
-    await save(fx, expenseId, { supply: { currency: "KRW", amount: 10_000_000, fxRate: 1 }, ...(evidenceType ? { evidenceType } : {}) });
-    return expenseId;
-  }
-
-  it("공급가 + 부가세와 정확히 같은 증빙 금액은 칸 오류로 거부되고 행은 그대로다", async () => {
+// 06.5 D-6520(사용자 카드 10/13 23:44 KST): 기안자 증빙 금액 칸과 그 「부가세 포함」 저장 막힘(EA-1)을 걷었다 — 금액은 공급가액 하나다.
+describe("기안자 증빙 금액 칸 없음(06.5 D-6520)", () => {
+  it("공급가 + 부가세와 같던 옛 막힘 사례는 칸 스키마에서 거부되고(키 없음) 행은 그대로 · 공급가액 저장은 지금처럼 된다", async () => {
     const fx = await setupExpenseProject();
-    const expenseId = await supplyTenMillion(fx);
+    const expenseId = await lineDraft(fx);
+    await save(fx, expenseId, { supply: { currency: "KRW", amount: 10_000_000, fxRate: 1 } });
+    expect((await expenseRow(expenseId)).supplyAmountKrw).toBe(10_000_000);
     const before = await expenseRow(expenseId);
-    const failure = await save(fx, expenseId, { evidenceAmountKrw: 11_000_000 }).catch((error: unknown) => error);
-    expect(failure).toBeInstanceOf(ExpenseFieldError);
-    expect(failure).toMatchObject({ field: "evidenceAmount", message: EVIDENCE_AMOUNT_TAX_INCLUSIVE });
+    const legacy: Record<string, unknown> = { evidenceAmountKrw: 11_000_000 };
+    const failure = await save(fx, expenseId, legacy as Parameters<typeof saveExpenseDraft>[1]["fields"]).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(ZodError);
     expect(await expenseRow(expenseId)).toEqual(before);
-  });
-
-  it("1원이라도 다르면 저장된다(10,000,000 · 11,000,001)", async () => {
-    const fx = await setupExpenseProject();
-    const expenseId = await supplyTenMillion(fx);
-    await save(fx, expenseId, { evidenceAmountKrw: 10_000_000 });
-    expect((await expenseRow(expenseId)).evidenceAmount).toBe(10_000_000);
-    await save(fx, expenseId, { evidenceAmountKrw: 11_000_001 });
-    expect((await expenseRow(expenseId)).evidenceAmount).toBe(11_000_001);
-  });
-
-  it("공급가액만 바꾼 저장도 합친 값으로 판정한다", async () => {
-    const fx = await setupExpenseProject();
-    const expenseId = await lineDraft(fx);
-    await save(fx, expenseId, { evidenceAmountKrw: 11_000_000 });
-    // 공급가를 10,000,000으로 내리면 저장된 증빙 금액이 공급가 + 부가세와 같아진다.
-    const failure = await save(fx, expenseId, { supply: { currency: "KRW", amount: 10_000_000, fxRate: 1 } }).catch((error: unknown) => error);
-    expect(failure).toMatchObject({ field: "evidenceAmount", message: EVIDENCE_AMOUNT_TAX_INCLUSIVE });
-  });
-
-  it("부가세 0 규칙 증빙 종류는 막지 않는다", async () => {
-    await seedCodeItem(SYSTEM_VIEWER, {
-      tableKey: "evidence_type",
-      value: "test_no_vat",
-      label: "면세 영수증",
-      sortOrder: 98,
-      taxRule: { ruleKind: "none", roundingUnit: 1, roundingMethod: "round", minWithholdingAmount: 0, basisDate: "scheduled_payment_date" },
-    });
-    const fx = await setupExpenseProject();
-    const value = "test_no_vat";
-    const expenseId = await supplyTenMillion(fx, value);
-    await save(fx, expenseId, { evidenceAmountKrw: 11_000_000 });
-    expect((await expenseRow(expenseId)).evidenceAmount).toBe(11_000_000);
-  });
-
-  it("증빙 종류가 비어 세금을 셈할 수 없으면 막지 않는다", async () => {
-    const fx = await setupExpenseProject();
-    const expenseId = await supplyTenMillion(fx);
-    await save(fx, expenseId, { evidenceType: null });
-    await save(fx, expenseId, { evidenceAmountKrw: 11_000_000 });
-    expect((await expenseRow(expenseId)).evidenceAmount).toBe(11_000_000);
   });
 });
 
-// 06-10 검토 B-1 · S-3: `/expenses/new` 첫 저장(createTeamExpenseDraft)도 saveExpenseDraft와 같은 EA-1 · 선결제 사유 판정을 지난다.
-describe("새 팀 비용 첫 저장 — EA-1 · 선결제 사유", () => {
+// 06-10 검토 B-1 · S-3: `/expenses/new` 첫 저장(createTeamExpenseDraft)도 saveExpenseDraft와 같은 선결제 사유 판정을 지난다(EA-1 판정은 06.5 D-6520으로 걷었다).
+describe("새 팀 비용 첫 저장 — 선결제 사유", () => {
   async function teamDraftRows(fx: ExpenseFixture): Promise<number> {
     return (await db.select({ id: expenses.id }).from(expenses).where(eq(expenses.drafterId, fx.pm.id))).length;
   }
-
-  it("공급가 + 부가세와 같은 증빙 금액이면 칸 오류로 거부되고 문서가 생기지 않는다", async () => {
-    const fx = await setupExpenseProject();
-    const before = await teamDraftRows(fx);
-    const failure = await createTeamExpenseDraft(fx.pm, {
-      idempotencyKey: randomUUID(),
-      fields: { evidenceType: "tax_invoice", supply: { currency: "KRW", amount: 10_000_000, fxRate: 1 }, evidenceAmountKrw: 11_000_000 },
-    }).catch((error: unknown) => error);
-    expect(failure).toBeInstanceOf(ExpenseFieldError);
-    expect(failure).toMatchObject({ field: "evidenceAmount", message: EVIDENCE_AMOUNT_TAX_INCLUSIVE });
-    expect(await teamDraftRows(fx)).toBe(before);
-  });
 
   it("선결제 · 사유 빔이면 칸 오류로 거부되고 문서가 생기지 않는다", async () => {
     const fx = await setupExpenseProject();

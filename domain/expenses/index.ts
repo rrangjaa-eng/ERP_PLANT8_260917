@@ -58,15 +58,15 @@ import type { ApprovalStatus } from "@/domain/approvals/route";
 import { visible } from "@/domain/permissions/visible";
 import { findApprovalGraphByDocument, type ApprovalGraph } from "@/repositories/approvals";
 import type { DescribeDeps, DocumentSummary, RouteConfigStep } from "@/domain/approvals/kinds";
-import { EVIDENCE_AMOUNT_TAX_INCLUSIVE, isTaxInclusiveEvidenceAmount } from "@/domain/evidence-reviews/tax-inclusive";
 import { gate, GateBlockedError } from "@/domain/rules/gate";
+import { taxRuleSchema } from "@/domain/code-tables/tax-rule";
 import { cardDualLinkDecision, linePaidLockDecision, type CardDualLinkCtx, type ExpenseLinePaidLockCtx } from "@/domain/rules/register";
 import { moneyFromRow, moneyToColumns, remainingForInstallments, sameAmountOn, type Money } from "@/domain/money";
 import { CURRENCIES, recentFxRate } from "@/domain/money/currency";
 import { allocateDocumentNumber, allocateExpenseNumber, loadDocumentNumberFormat, loadExpenseNumberFormat } from "@/domain/document-numbering";
 import { teamAtDate } from "@/domain/org";
 import { formatKstTime } from "@/domain/holidays/business-day";
-import { computeExpenseTax, snapshotSupplyDiffers, storedTaxResult, taxDriftText, taxLineText, type ExpenseTaxResult, type ExpenseTaxSource } from "@/domain/expenses/tax";
+import { computeExpenseTax, snapshotSupplyDiffers, storedTaxResult, taxDriftText, taxLineText, type ExpenseTaxResult } from "@/domain/expenses/tax";
 import { buildExpenseDetailRows } from "@/domain/expenses/detail";
 import { BANK_TRANSFER_PAYMENT_METHOD, documentPayee, hasUsableAccount, PAYEE_ACCOUNT_MISSING_FIXABLE, type ExpensePayee } from "@/domain/expenses/payee";
 import { canSeeExpense, EXPENSE_DOCUMENT_KIND, ExpenseNotFoundError } from "@/domain/expenses/access";
@@ -168,7 +168,7 @@ function isTeamCostRow(row: Pick<ExpenseRow, "projectId" | "quoteLineId">): bool
 // 칸 오류 — 회차 상한 초과(게이트가 아니라 공급가액 칸 아래 한 줄).
 export class ExpenseFieldError extends UserFacingError {
   constructor(
-    readonly field: "supplyAmount" | "usageDate" | "prepaidReason" | "evidenceAmount",
+    readonly field: "supplyAmount" | "usageDate" | "prepaidReason",
     message: string,
   ) {
     super(message);
@@ -377,7 +377,7 @@ function toSource(row: ExpenseSummaryRow, extras: SourceExtras = {}): ExpenseDoc
     closeDialog: extras.closeDialog ?? null,
     prepaid: row.prepaid,
     prepaidReason: row.prepaidReason,
-    evidenceAmountKrw: row.evidenceAmount,
+    recipientCount: row.recipientCount,
     evidenceDate: row.evidenceDate,
   };
 }
@@ -450,6 +450,8 @@ async function loadExpenseDetails(viewer: Viewer, ids: string[]): Promise<Map<st
       vendorName: row.vendorName,
       payeeUserName: row.payeeUserName,
       evidenceTypeName,
+      // 06.5 V15: 받는 인원은 회사 대납 문서(제출 스냅숏의 규칙)에만 — 아니면 null이라 상세 행이 서지 않는다.
+      recipientCount: row.taxRuleKind === "company_borne" ? row.recipientCount : null,
       supply,
       taxLine: supply && shown ? taxLineText(shown, supply, `${evidenceTypeName ?? ""} 규칙`).text : null,
       taxDriftText: drift?.text ?? null,
@@ -796,17 +798,16 @@ const lineDraftFieldsSchema = draftFieldsSchema.pick({ note: true, scheduledPaym
 export type LineDraftFieldsInput = z.input<typeof lineDraftFieldsSchema>;
 
 function toDraftColumns(fields: z.output<typeof draftFieldsSchema>): ExpenseDraftFields {
-  const { supply, content, evidenceAmountKrw, prepaidReason, ...others } = fields;
+  const { supply, content, prepaidReason, ...others } = fields;
   // 공백뿐인 내용은 비운 것과 같다.
   const withContent = content === undefined ? others : { ...others, content: content?.trim() ? content.trim() : null };
-  // 06-10: 증빙 금액은 칸 이름이 다르다(evidence_amount). 선결제를 끄면 적은 사유는 버린다(S6) — 사유는 앞뒤 공백을 뗀다.
-  const withEvidence = evidenceAmountKrw === undefined ? withContent : { ...withContent, evidenceAmount: evidenceAmountKrw };
+  // 06-10: 선결제를 끄면 적은 사유는 버린다(S6) — 사유는 앞뒤 공백을 뗀다. 받는 인원(06.5)은 칸 이름이 같아 그대로 실린다.
   const rest =
     fields.prepaid === false
-      ? { ...withEvidence, prepaidReason: null }
+      ? { ...withContent, prepaidReason: null }
       : prepaidReason === undefined
-        ? withEvidence
-        : { ...withEvidence, prepaidReason: prepaidReason?.trim() ? prepaidReason.trim() : null };
+        ? withContent
+        : { ...withContent, prepaidReason: prepaidReason?.trim() ? prepaidReason.trim() : null };
   if (supply === undefined) return rest;
   if (supply === null) return { ...rest, supplyCurrency: "KRW", supplyForeignAmount: null, supplyFxRate: "1.0000", supplyAmountKrw: null };
   // moneyToColumns가 normalizeMoneyInput으로 통화 · 정밀도 · 범위를 판정한다.
@@ -818,15 +819,6 @@ function toDraftColumns(fields: z.output<typeof draftFieldsSchema>): ExpenseDraf
     supplyFxRate: columns.fxRate,
     supplyAmountKrw: columns.amountKrw,
   };
-}
-
-// 06-10 EA-1(사용자 결정 10/6 11:57 채팅 — 저장 막기): 증빙 금액이 공급가액 + 부가세와 정확히 같으면 부가세 포함 합계로 보고 거부한다.
-// 임시 저장(합친 행)과 새 팀 비용 첫 저장(칸 값)이 함께 쓴다. 부가세는 지급 총액과 같은 길(computeExpenseTax → applyTaxRule)이다 — 새 세금 계산 없음.
-async function assertEvidenceAmountNotTaxInclusive(viewer: Viewer, doc: ExpenseTaxSource & { evidenceAmount?: number | null }): Promise<void> {
-  if (doc.evidenceAmount === null || doc.evidenceAmount === undefined || doc.supplyAmountKrw === null) return;
-  const tax = await computeExpenseTax(viewer, doc);
-  if (!tax.unavailable && isTaxInclusiveEvidenceAmount({ evidenceAmountKrw: doc.evidenceAmount, supplyKrw: doc.supplyAmountKrw, vatKrw: tax.vatKrw }))
-    throw new ExpenseFieldError("evidenceAmount", EVIDENCE_AMOUNT_TAX_INCLUSIVE);
 }
 
 // 기안자 · 고칠 수 있는 문서만(작성 중 · 05-09 반려 · 회수 — 아니면 없는 문서). 원화는 서버가 계산한다. version 조건 저장 — 0행이면 충돌.
@@ -846,8 +838,6 @@ export async function saveExpenseDraft(
     const reason = fields.prepaidReason !== undefined ? fields.prepaidReason : row.prepaidReason;
     if (!reason?.trim()) throw new ExpenseFieldError("prepaidReason", PREPAID_REASON_REQUIRED);
   } else if (fields.prepaidReason !== undefined) fields.prepaidReason = null;
-  // 06-10 EA-1: 합친 값(이번 입력 + 저장된 행)으로 판정한다.
-  await assertEvidenceAmountNotTaxInclusive(viewer, { ...row, ...fields });
   // 번호 있는 문서(반려 · 회수)는 공급가액이 있어야 한다(DB 체크 — 번호 있으면 공급가액 > 0) — DB 오류 대신 칸 오류.
   if (row.number !== null && fields.supplyAmountKrw !== undefined && (fields.supplyAmountKrw === null || fields.supplyAmountKrw <= 0)) {
     throw new ExpenseFieldError("supplyAmount", fields.supplyAmountKrw === null ? SUPPLY_EMPTY : SUPPLY_ZERO);
@@ -910,14 +900,6 @@ export async function createTeamExpenseDraft(
   await assertActiveCodes(viewer, parsed);
   const draftColumns = withOnePayee(toDraftColumns(parsed));
   if (draftColumns.prepaid && !draftColumns.prepaidReason) throw new ExpenseFieldError("prepaidReason", PREPAID_REASON_REQUIRED);
-  await assertEvidenceAmountNotTaxInclusive(viewer, {
-    evidenceType: draftColumns.evidenceType ?? null,
-    supplyAmountKrw: draftColumns.supplyAmountKrw ?? null,
-    scheduledPaymentDate: draftColumns.scheduledPaymentDate ?? null,
-    evidenceDate: draftColumns.evidenceDate ?? null,
-    evidenceAmount: draftColumns.evidenceAmount,
-    createdAt: deps?.now ?? new Date(),
-  });
   const usageDate = parsed.usageDate ?? seoulToday(deps?.now);
   const attributedTeamId = await attributedTeamFor(viewer, usageDate);
   const inserted = await insertTeamDraftIfAbsent(viewer, {
@@ -1606,18 +1588,16 @@ export type ExpenseCodeOption = { value: string; label: string; description: str
 
 export async function listExpenseFormOptions(
   viewer: Viewer,
-): Promise<{ evidence: ExpenseCodeOption[]; payment: ExpenseCodeOption[]; prepaidDueDays: number }> {
+): Promise<{ evidence: ExpenseCodeOption[]; payment: ExpenseCodeOption[]; prepaidDueDays: number; companyBorne: string[] }> {
   // 06-10: 선결제 칸 힌트 `증빙 기한 지급일부터 {N}일`의 N(evidence.prepaid_due_days — 06-06 loadPrepaidDueDays와 같은 설정, domain/evidence-reviews를 값 import하면 순환이라 설정을 직접 읽는다. 트랜잭션 없는 사전 조회).
   const prepaidDueDays = await getSettingValue(EVIDENCE_PREPAID_DUE_DAYS);
-  if (!(await can(viewer, "expenses", "write"))) return { evidence: [], payment: [], prepaidDueDays };
-  const read = async (tableKey: string): Promise<ExpenseCodeOption[]> =>
-    (await listCodeItems(viewer, { tableKey, scope: { rows: "all", includeArchived: false }, includeInactive: false })).map((item) => ({
-      value: item.value,
-      label: item.label,
-      description: item.description,
-    }));
-  const [evidence, payment] = await Promise.all([read("evidence_type"), read("payment_method")]);
-  return { evidence, payment, prepaidDueDays };
+  if (!(await can(viewer, "expenses", "write"))) return { evidence: [], payment: [], prepaidDueDays, companyBorne: [] };
+  const read = (tableKey: string) => listCodeItems(viewer, { tableKey, scope: { rows: "all", includeArchived: false }, includeInactive: false });
+  const toOption = (item: Awaited<ReturnType<typeof read>>[number]): ExpenseCodeOption => ({ value: item.value, label: item.label, description: item.description });
+  const [evidenceItems, paymentItems] = await Promise.all([read("evidence_type"), read("payment_method")]);
+  // 06.5 V15: 받는 인원 칸이 서는 증빙 종류 — 세금 규칙이 회사 대납인 코드(계산이 읽는 같은 규칙 칸 · 새 판정 없음).
+  const companyBorne = evidenceItems.filter((item) => taxRuleSchema.safeParse(item.taxRule).data?.ruleKind === "company_borne").map((item) => item.value);
+  return { evidence: evidenceItems.map(toOption), payment: paymentItems.map(toOption), prepaidDueDays, companyBorne };
 }
 
 // 05-05 폼 통화 선택지 — 통화마다 설정의 최근 환율(Phase 4 D-71)이 기본 환율이다.

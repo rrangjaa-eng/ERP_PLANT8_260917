@@ -111,7 +111,7 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
 
   // 작성 중 — 폼. 결재선은 제출 전 한 줄(기안자 · 문서 종류의 결재선 설정으로 해석 — 막히면 이유 한 줄).
   // 서로 기대지 않는 읽기 넷을 동시에(05 /review A13).
-  const [{ route, routeBlocked }, { evidence: evidenceItems, payment: paymentItems, prepaidDueDays }, currencies, initialBlock] = await Promise.all([
+  const [{ route, routeBlocked }, { evidence: evidenceItems, payment: paymentItems, prepaidDueDays, companyBorne }, currencies, initialBlock] = await Promise.all([
     // 06.2-09(S5 · D-6215 · D-6224): 작성 중 문서는 문서 팀으로 담당자를 푼다 — 기안자가 아니거나 쓰기 권한이 없으면 문서 팀을 풀지 않는다(단계 이름만).
     previewExpenseRoute(viewer, { expenseId: id })
       .catch((error: unknown) => {
@@ -220,7 +220,7 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
             taxLine: expense.taxLine ?? null,
             prepaid: expense.prepaid ?? false,
             prepaidReason: expense.prepaidReason ?? null,
-            evidenceAmountKrw: expense.evidenceAmountKrw ?? null,
+            recipientCount: expense.recipientCount ?? 1,
             evidenceDate: expense.evidenceDate ?? null,
             prepaidDueDays,
             block: initialBlock,
@@ -238,6 +238,7 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
           resubmit={resubmitting}
           teamKindOptions={teamKindOptions()}
           evidenceOptions={optionsOf(evidenceItems, expense.evidenceType, expense.evidenceTypeName)}
+          companyBorneEvidence={companyBorne}
           paymentOptions={optionsOf(paymentItems, expense.paymentMethod, expense.paymentMethodName)}
           currencies={currencies}
           files={files}

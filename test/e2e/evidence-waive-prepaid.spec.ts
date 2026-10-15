@@ -74,11 +74,11 @@ test.describe("선결제 (06-10)", () => {
     await expect(page.getByText("증빙 기한 지급일부터 14일")).toBeVisible();
     await expect(page.locator("#expense-blocked")).toContainText("선결제 사유 없음 · 사유 적기");
     await expect(page.getByRole("button", { name: /^지출결의 제출/ })).toBeDisabled();
-    // must_have 1 · S6 — `선결제`는 첨부 영역 바로 아래(증빙 금액 칸보다 위).
+    // must_have 1 · S6 — `선결제`는 첨부 영역 바로 아래(증빙일 칸보다 위 — 06.5 D-6520으로 증빙 금액 칸은 없다).
     const prepaidBox = await page.getByLabel("선결제", { exact: true }).boundingBox();
     const attachBox = await page.locator('[data-ui="attachments"]').boundingBox();
-    const amountBox = await page.getByLabel("증빙 금액").boundingBox();
-    expect(prepaidBox && attachBox && amountBox && attachBox.y < prepaidBox.y && prepaidBox.y < amountBox.y).toBe(true);
+    const dateBox = await page.getByLabel("증빙일").boundingBox();
+    expect(prepaidBox && attachBox && dateBox && attachBox.y < prepaidBox.y && prepaidBox.y < dateBox.y).toBe(true);
 
     // 끄면 적은 사유는 버린다(S6) — 다시 켜면 빈 칸.
     await reason.fill("버릴 사유");
@@ -113,34 +113,6 @@ test.describe("선결제 (06-10)", () => {
     await expect(payerPage.getByTestId("evidence-prepaid-due")).toHaveText(`증빙 기한 ${addDays(seoulToday(), 14).slice(5)}`);
     await expect(payerPage.getByTestId("prepaid-reason")).toHaveText(PREPAID_REASON);
     await payerPage.context().close();
-  });
-
-  test("증빙 금액 칸 오류 → 고쳐 저장 · 부가세 포함 금액은 저장 막힘(EA-1)", async ({ browser, baseURL }) => {
-    const fx = await setupExpenseE2E();
-    const { page } = await openDraftForm(browser, baseURL, fx, "hold");
-    const amount = page.getByLabel("증빙 금액");
-    const save = page.getByRole("button", { name: /^임시 저장/ });
-
-    // 0 이하 → 서버 칸 오류 원문, 칸 입력값은 남는다.
-    await amount.fill("0");
-    await save.click();
-    await expect(page.locator("#evidenceAmount-error")).toHaveText("증빙 금액 0 이하 · 금액 고치기");
-    await expect(amount).toHaveValue("0");
-
-    // 공급가 12,400,000 + 부가세 1,240,000(세금계산서 10%) = 13,640,000 → 부가세 포함 금액 거부.
-    await amount.fill("13640000");
-    await save.click();
-    await expect(page.locator("#evidenceAmount-error")).toHaveText("부가세 포함 금액 · 공급가로 입력");
-
-    // 공급가로 고쳐 적으면 저장 전에 칸 오류가 사라지고, 저장된다.
-    await amount.fill("12400000");
-    await expect(page.locator("#evidenceAmount-error")).toHaveCount(0);
-    await expect(amount).not.toHaveAttribute("aria-invalid", "true");
-    await page.getByLabel("증빙일").fill(seoulToday());
-    await save.click();
-    await expect(page.getByText(/^임시 저장됨 /)).toBeVisible();
-    await expect(page.locator("#evidenceAmount-error")).toHaveCount(0);
-    await page.context().close();
   });
 });
 

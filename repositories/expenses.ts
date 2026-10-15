@@ -171,7 +171,7 @@ export type ExpenseDraftFields = Partial<
     | "content"
     | "prepaid"
     | "prepaidReason"
-    | "evidenceAmount"
+    | "recipientCount"
     | "evidenceDate"
     | "attributedTeamId"
     | "projectId"

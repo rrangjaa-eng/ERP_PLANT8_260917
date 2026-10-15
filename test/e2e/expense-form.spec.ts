@@ -44,7 +44,8 @@ async function colorOf(target: Locator): Promise<string> {
 }
 
 test.describe("계산 한 줄 즉시 재계산 (S5)", () => {
-  test("증빙 종류를 기타소득으로 바꾸면 원천징수 한 줄이 오고, 오는 동안 이전 줄이 흐린 색으로 남으며, 제출한 문서 화면에 같은 한 줄", async ({ browser, baseURL }) => {
+  // 06.5 D-6501 · EP1-7: 기타소득은 회사 대납 22% 역산 — 12,400,000 ÷ 0.78 − 12,400,000 = 3,497,435.89… → 10원 절사 3,497,430(식으로 계산한 값).
+  test("증빙 종류를 기타소득으로 바꾸면 회사 대납 한 줄이 오고, 오는 동안 이전 줄이 흐린 색으로 남으며, 제출한 문서 화면에 같은 한 줄", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const page = await loginPage(browser, baseURL, fx.pm);
     const expenseId = await openDraft(page, fx, "tracer");
@@ -60,20 +61,20 @@ test.describe("계산 한 줄 즉시 재계산 (S5)", () => {
     // 오는 동안 — 이전 줄이 그대로(빈칸 · 뼈대 없음) 흐린 색.
     await expect.poll(() => colorOf(line)).toBe(faint);
     await expect(line).toHaveText("부가세 10% 1,240,000 · 지급 총액 13,640,000 · 세금계산서 규칙");
-    await expect(line).toHaveText("원천징수 8.8% 1,091,200 · 실지급액 11,308,800 · 기타소득 규칙", { timeout: 10_000 });
+    await expect(line).toHaveText("회사 대납 세금 22% 3,497,430 · 지급 총액 12,400,000 · 기타소득 규칙", { timeout: 10_000 });
     expect(await colorOf(line)).toBe(muted);
     // 숫자 조각만 700.
     const bold = await line.locator("span").evaluateAll((spans) =>
       spans.filter((span) => getComputedStyle(span).fontWeight === "700" && span.children.length === 0).map((span) => span.textContent),
     );
-    expect(bold).toEqual(["8.8%", "1,091,200", "11,308,800"]);
+    expect(bold).toEqual(["22%", "3,497,430", "12,400,000"]);
 
     await page.unrouteAll({ behavior: "ignoreErrors" });
     await page.getByTestId("attachments-input").setInputFiles(await uniqueReceipt(page));
     await expect(page.locator('[data-ui="attachments"] li').getByText(META)).toBeVisible({ timeout: UPLOAD_WAIT });
     await page.getByRole("button", { name: /^지출결의 제출/ }).click();
     await expect(page).toHaveURL(new RegExp(`/expenses/${expenseId}\\?submitted=1$`));
-    await expect(page.getByTestId("expense-tax-line")).toHaveText("원천징수 8.8% 1,091,200 · 실지급액 11,308,800 · 기타소득 규칙");
+    await expect(page.getByTestId("expense-tax-line")).toHaveText("회사 대납 세금 22% 3,497,430 · 지급 총액 12,400,000 · 기타소득 규칙");
     await expect(page.getByTestId("expense-tax-drift")).toHaveCount(0);
   });
 });
@@ -181,6 +182,72 @@ test.describe("결과 줄 aria-live (05 /review B4)", () => {
     await expect(page.getByText(failed, { exact: true })).toBeVisible();
     await expect(page.locator('[aria-live="polite"]').filter({ hasText: failed })).toHaveCount(1);
     await page.unrouteAll({ behavior: "ignoreErrors" });
+    await page.context().close();
+  });
+});
+
+// 06.5 V15(카드 ①): 받는 인원 칸 — 회사 대납 증빙 종류에서만, 공급가액 바로 뒤 · 분할 지급 앞. 기본 1 · 숫자만 · 비우면 한 문구 ·
+// 바꾸면 계산 한 줄이 면제 ↔ 세금으로 다시 온다. 증빙 종류를 바꿨다 되돌리면 적어 둔 값이 남는다.
+test.describe("받는 인원 칸 (06.5 V15)", () => {
+  test("기타소득에서만 칸이 서고, 숫자만 받고, 비우면 칸 오류 · 포커스, 바꾸면 계산 한 줄이 다시 온다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await openDraft(page, fx, "tracer");
+    const headcount = page.locator("#headcount");
+    const line = page.getByTestId("expense-tax-line");
+
+    await expect(headcount).toHaveCount(0);
+    await page.getByLabel("증빙 종류").selectOption("other_income");
+    await expect(headcount).toHaveCount(1);
+    await expect(page.getByLabel("받는 인원", { exact: true })).toHaveValue("1");
+    await expect(headcount).toHaveAttribute("inputmode", "numeric");
+    const order = await page.locator("#supplyAmount, #headcount, #installment, #scheduledPaymentDate").evaluateAll((elements) => elements.map((element) => element.id));
+    expect(order.slice(0, 2)).toEqual(["supplyAmount", "headcount"]);
+    expect(order.at(-1)).toBe("scheduledPaymentDate");
+
+    await page.locator("#supplyAmount").fill("150000");
+    await headcount.fill("5");
+    await expect(line).toHaveText("회사 대납 세금 0 · 면제 기준 이하 · 지급 총액 150,000 · 기타소득 규칙", { timeout: 10_000 });
+    await headcount.fill("1");
+    await expect(line).toHaveText("회사 대납 세금 22% 42,300 · 지급 총액 150,000 · 기타소득 규칙", { timeout: 10_000 });
+
+    // 숫자 아닌 글자는 칸에 남지 않는다.
+    await headcount.click();
+    await headcount.press("End");
+    await headcount.pressSequentially("a,.");
+    await expect(headcount).toHaveValue("1");
+
+    // 비우고 임시 저장 → 한 문구 · aria · 포커스.
+    await headcount.fill("");
+    await page.getByRole("button", { name: /^임시 저장/ }).click();
+    await expect(page.locator("#headcount-error")).toHaveText("받는 인원 1 미만 · 1 이상 적기");
+    await expect(headcount).toHaveAttribute("aria-invalid", "true");
+    await expect(headcount).toHaveAttribute("aria-describedby", "headcount-error");
+    await expect(headcount).toBeFocused();
+
+    // 증빙 종류를 바꿨다 되돌리면 적어 둔 값이 남는다.
+    await headcount.fill("3");
+    await page.getByLabel("증빙 종류").selectOption("tax_invoice");
+    await expect(headcount).toHaveCount(0);
+    await page.getByLabel("증빙 종류").selectOption("other_income");
+    await expect(headcount).toHaveValue("3");
+    await page.context().close();
+  });
+});
+
+// 06.5 D-6520: 기안자 폼에 증빙 금액 칸이 없다(금액은 공급가액 하나) — 증빙일 칸은 그대로.
+test.describe("증빙 금액 칸 없음 (06.5 D-6520)", () => {
+  test("작성 중 폼 · 새 팀 비용 폼에 `증빙 금액` 라벨 0 · `증빙일` 칸은 있다", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.pm);
+    await openDraft(page, fx, "tracer");
+    await expect(page.getByText("증빙 금액", { exact: true })).toHaveCount(0);
+    await expect(page.getByLabel("증빙일", { exact: true })).toHaveCount(1);
+
+    await page.goto("/expenses/new");
+    await waitForHydration(page.getByRole("button", { name: /^임시 저장/ }));
+    await expect(page.getByText("증빙 금액", { exact: true })).toHaveCount(0);
+    await expect(page.getByLabel("증빙일", { exact: true })).toHaveCount(1);
     await page.context().close();
   });
 });

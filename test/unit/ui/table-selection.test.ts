@@ -200,3 +200,34 @@ describe("Table selection — 이유 줄 id 유일성(검토 P3-4)", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 });
+
+// 06.5-06 DOM 감사 W-2 · M-1 · M-2(SYSTEM §7-3 (카) 「행 아래 줄」 · UI-SPEC V5 「행 아래 한 줄」): 막힘 · 정보 줄은 첫 데이터 칸(좁은 번호 열)에 갇히지 않고
+// 주 행 바로 다음 줄에서 데이터 열 전부를 덮는다 — 1280에서 한 줄로 서고, 포커스 차례가 행 안 칸들 다음이다(시각 차례).
+describe("Table selection — 행 아래 줄은 행 폭 아래 줄", () => {
+  const twoColumns: TableColumn<Row>[] = [...columns, { key: "memo", header: "메모", priority: "p1", cell: () => "메모 칸" }];
+
+  function renderTwo(selection: TableSelection<Row>): string {
+    return renderToStaticMarkup(createElement(Table<Row>, { caption: "지급 대상", columns: twoColumns, rows, getRowId: (row) => row.id, selection }));
+  }
+
+  function tableRows(html: string): string[] {
+    return html.match(/<tr[^>]*>.*?<\/tr>/g) ?? [];
+  }
+
+  it("막힘 줄은 주 행 칸 안이 아니라 바로 다음 줄 — 선택 열 아래 빈 칸 + 데이터 열 전부를 덮는 칸 하나에 선다", () => {
+    const trs = tableRows(renderTwo(selectionOf({ selectedIds: [] })));
+    const main = trs.findIndex((tr) => tr.includes('aria-label="다 줄 고르기"'));
+    expect(trs[main]).not.toContain("계좌 오류");
+    expect(trs[main + 1]).toMatch(/^<tr[^>]*><td[^>]*><\/td><td[^>]*colspan="2"[^>]*><p [^>]*selectBlocked[^>]*>계좌 오류<\/p><\/td><\/tr>$/i);
+  });
+
+  it("정보 줄도 다음 줄에 서고, 고를 수 없는 이유는 그 행 첫 데이터 칸 2행 그대로다 · 아래 줄이 없는 행은 다음 줄도 없다", () => {
+    const trs = tableRows(renderTwo(selectionOf({ selectedIds: [], blockedReason: () => null, noteReason: (row) => (row.id === "a" ? "14:05 이체 파일에 담김" : null) })));
+    const a = trs.findIndex((tr) => tr.includes('aria-label="가 줄 고르기"'));
+    expect(trs[a]).not.toContain("이체 파일에 담김");
+    expect(trs[a + 1]).toMatch(/colspan="2"[^>]*><p [^>]*>14:05 이체 파일에 담김<\/p>/i);
+    const b = trs.findIndex((tr) => tr.includes('aria-label="나 줄 고르기"'));
+    expect(trs[b]).toMatch(/>증빙 확인 전<\/p>/);
+    expect(trs[b + 1]).toContain('aria-label="다 줄 고르기"');
+  });
+});

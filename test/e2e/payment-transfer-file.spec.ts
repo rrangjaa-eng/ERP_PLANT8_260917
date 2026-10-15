@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import * as XLSX from "xlsx";
 import { db } from "@/db/client";
@@ -11,6 +11,7 @@ import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses
 import { confirmEvidence } from "@/domain/evidence-reviews";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { seoulToday } from "@/lib/dates";
+import { encrypt } from "@/lib/crypto";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { createRevisionFromCurrent, setCustomerApproval } from "@/domain/quotes/revisions";
@@ -78,6 +79,11 @@ async function approvedLine(fx: ExpenseE2E, lineId: string, confirmer: Person): 
 
 function rowOf(page: Page, itemName: string) {
   return page.locator("tbody tr").filter({ hasText: itemName });
+}
+
+// 행 아래 줄(막힘 · 담김)은 주 행 바로 다음 줄에 선다(DOM 감사 W-2 — 데이터 열 전부를 덮는 줄).
+function lineUnder(row: Locator) {
+  return row.locator("xpath=following-sibling::tr[1]");
 }
 
 test.describe("지급 대상 · 이체 파일 받기 (06.5-06 Task 1)", () => {
@@ -166,7 +172,7 @@ test.describe("지급 대상 · 이체 파일 받기 — 막힌 건 · 담김 �
     await waiting;
 
     await expect(liveText(page)).toHaveText(/^\d{2}:\d{2} 이체 파일 1건 · 막힘 1건$/);
-    const line = badRow.locator("p").filter({ hasText: "계좌 없음 · " });
+    const line = lineUnder(badRow).locator("p").filter({ hasText: "계좌 없음 · " });
     await expect(line).toHaveText("계좌 없음 · 거래처 계좌 등록");
     const link = line.getByRole("link", { name: "거래처 계좌 등록" });
     await expect(link).toHaveAttribute("target", "_blank");
@@ -185,7 +191,7 @@ test.describe("지급 대상 · 이체 파일 받기 — 막힌 건 · 담김 �
     const linkFont = await link.evaluate((element) => ({ size: getComputedStyle(element).fontSize, weight: getComputedStyle(element).fontWeight }));
     expect(linkFont).toEqual({ size: "14px", weight: "600" });
     await expect(badRow.getByRole("checkbox")).toBeChecked();
-    await expect(okRow.locator("p").filter({ hasText: /^\d{2}:\d{2} 이체 파일에 담김$/ })).toHaveCount(1);
+    await expect(lineUnder(okRow).locator("p").filter({ hasText: /^\d{2}:\d{2} 이체 파일에 담김$/ })).toHaveCount(1);
 
     await page.getByRole("button", { name: /^지급 완료 2/ }).click();
     const dialog = page.getByRole("dialog");
@@ -240,7 +246,7 @@ test.describe("지급 대상 · 이체 파일 받기 — 막힌 건 · 담김 �
       page.on("download", () => (downloads += 1));
       await page.getByRole("button", { name: "이체 파일 받기" }).click();
       await expect(liveText(page)).toHaveText(/^\d{2}:\d{2} 이체 파일 0건 · 막힘 1건$/);
-      await expect(row.locator("p").filter({ hasText: "계좌 없음 · 거래처 수정은 경영관리" })).toHaveCount(1);
+      await expect(lineUnder(row).locator("p").filter({ hasText: "계좌 없음 · 거래처 수정은 경영관리" })).toHaveCount(1);
       expect(downloads).toBe(0);
       const edges = await page.getByRole("button", { name: /^지급 완료/ }).evaluate((button) => {
         let bar = button.parentElement;
@@ -251,6 +257,122 @@ test.describe("지급 대상 · 이체 파일 받기 — 막힌 건 · 담김 �
       await page.context().close();
     });
   }
+});
+
+// 06.5-06 DOM 감사 W-1 · W-2 · M-1 · M-2 회귀(1280): 2차는 필터 칸 줄에 서고, 행 아래 줄(V5 이유 표의 가장 긴 문구 · 담김 줄)은 행 폭 아래 한 줄,
+// 막힌 행 안 Tab은 그 행 칸들을 다 지난 뒤 아래 줄 끝 링크로 간다(시각 차례). 잰 값은 MEASURE 줄로 남긴다.
+test.describe("지급 대상 · 이체 파일 받기 — 필터 줄 정렬 · 행 아래 줄 (06.5-06 DOM 감사)", () => {
+  test("1280 — 2차 · 결과 글자는 필터 칸 줄 · 가장 긴 막힘 줄과 담김 줄은 한 줄 · 막힌 행 Tab은 행 칸 다음 끝 링크", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const plain = await makeTransferPayer(fx);
+    await approvedTarget(fx, "tracer", plain);
+    const broken = await approvedTarget(fx, "worst", plain);
+    // V5 이유 표의 가장 긴 문구 — 계좌번호 형식 오류(평문 담당 꼬리 `거래처 수정은 경영관리`).
+    const suffix = randomUUID().slice(0, 6);
+    const vendor = await insertVendor(SYSTEM_VIEWER, {
+      name: `E2E계좌형식-${suffix}`,
+      normalizedName: `e2e계좌형식-${suffix}`,
+      ...testVendorAccount(),
+      accountNumberEncrypted: encrypt("110-123-45678A"),
+    });
+    await db.update(expenses).set({ vendorId: vendor.id }).where(eq(expenses.id, broken));
+
+    const page = await loginPage(browser, baseURL, plain, { width: 1280, height: 900 });
+    await page.goto("/expenses");
+    const okRow = rowOf(page, fx.lines.tracer.itemName);
+    const badRow = rowOf(page, fx.lines.worst.itemName);
+    await waitForHydration(okRow.getByRole("checkbox"));
+    await okRow.getByRole("checkbox").check();
+    await badRow.getByRole("checkbox").check();
+    const waiting = page.waitForEvent("download");
+    await page.getByRole("button", { name: "이체 파일 받기" }).click();
+    await waiting;
+    await expect(liveText(page)).toHaveText(/^\d{2}:\d{2} 이체 파일 1건 · 막힘 1건$/);
+    const blockedLine = lineUnder(badRow).locator("p");
+    await expect(blockedLine).toHaveText("계좌번호 형식 오류 · 거래처 수정은 경영관리");
+    const noteLine = lineUnder(okRow).locator("p");
+    await expect(noteLine).toHaveText(/^\d{2}:\d{2} 이체 파일에 담김$/);
+
+    const box = async (locator: Locator) => {
+      const rect = await locator.evaluate((element) => {
+        const r = element.getBoundingClientRect();
+        return { top: r.top, bottom: r.bottom, height: r.height, width: r.width, lineHeight: parseFloat(getComputedStyle(element).lineHeight) };
+      });
+      return rect;
+    };
+    const select = await box(page.getByLabel("상태", { exact: true }));
+    const secondary = await box(page.getByRole("button", { name: "이체 파일 받기" }));
+    const primary = await box(page.getByRole("button", { name: /^지급 완료/ }));
+    const result = await box(liveText(page));
+    const blocked = await box(blockedLine);
+    const note = await box(noteLine);
+    console.log(`MEASURE ${JSON.stringify({ select, secondary, primary, result, blocked, note })}`);
+    expect(Math.abs(secondary.top - select.top)).toBeLessThanOrEqual(1);
+    expect(Math.abs(secondary.bottom - select.bottom)).toBeLessThanOrEqual(1);
+    expect(Math.abs(primary.bottom - select.bottom)).toBeLessThanOrEqual(1);
+    expect(result.top).toBeGreaterThanOrEqual(select.top - 1);
+    expect(result.bottom).toBeLessThanOrEqual(select.bottom + 1);
+    // 한 줄 — 높이가 줄 높이의 1.5배 미만(끝 링크 14px가 줄 상자를 조금 키울 수 있다).
+    expect(blocked.height).toBeLessThan(blocked.lineHeight * 1.5);
+    expect(note.height).toBeLessThan(note.lineHeight * 1.5);
+    // 주 행과 아래 줄은 한 행으로 읽힌다 — 행 선은 아래 줄 밑에만(표의 마지막 행이면 선 없음), 아래 줄은 고른 행 면(--accent-weak)을 잇는다.
+    for (const row of [okRow, badRow]) {
+      const borders = await row.evaluate((tr) => {
+        const bodies = tr.closest("table")?.tBodies;
+        return {
+          last: bodies ? tr.parentElement === bodies[bodies.length - 1] : false,
+          main: [...tr.children].map((cell) => getComputedStyle(cell).borderBottomWidth),
+          under: [...(tr.nextElementSibling?.children ?? [])].map((cell) => getComputedStyle(cell).borderBottomWidth),
+          mainBg: getComputedStyle(tr.children[1] ?? tr).backgroundColor,
+          underBg: getComputedStyle(tr.nextElementSibling?.children[1] ?? tr).backgroundColor,
+        };
+      });
+      console.log(`MEASURE borders ${JSON.stringify(borders)}`);
+      expect(new Set(borders.main)).toEqual(new Set(["0px"]));
+      expect(new Set(borders.under)).toEqual(new Set([borders.last ? "0px" : "1px"]));
+      expect(borders.underBg).toBe(borders.mainBg);
+    }
+    await page.context().close();
+
+    // M-2 — 거래처 관리 쓰기가 있으면 같은 막힘이 끝 링크 `계좌 고치기`로 선다. 막힌 행 체크박스에서 Tab: 행 칸들 → 아래 줄 링크 → 다음 행.
+    const linked = await makeTransferPayer(fx, { vendorsWrite: true });
+    const second = await loginPage(browser, baseURL, linked, { width: 1280, height: 900 });
+    await second.goto("/expenses");
+    const bad = rowOf(second, fx.lines.worst.itemName);
+    await waitForHydration(bad.getByRole("checkbox"));
+    await bad.getByRole("checkbox").check();
+    await second.getByRole("button", { name: "이체 파일 받기" }).click();
+    const link = lineUnder(bad).getByRole("link", { name: "계좌 고치기" });
+    await expect(link).toHaveCount(1);
+    await bad.getByRole("checkbox").focus();
+    const label = `${await bad.getByRole("checkbox").getAttribute("aria-label")}`;
+    const order: string[] = [];
+    for (let step = 0; step < 30; step += 1) {
+      await second.keyboard.press("Tab");
+      const where = await second.evaluate((checkboxLabel) => {
+        const active = document.activeElement;
+        const main = document.querySelector(`[aria-label="${CSS.escape(checkboxLabel)}"]`)?.closest("tr");
+        const tr = active?.closest("tr");
+        if (!active || !main || !tr) return "out";
+        if (tr === main) return "row";
+        if (tr === main.nextElementSibling) return active.textContent === "계좌 고치기" ? "link" : "under";
+        return "out";
+      }, label);
+      order.push(where);
+      if (where !== "row") break;
+    }
+    console.log(`MEASURE tab ${JSON.stringify(order)}`);
+    expect(order.at(-1)).toBe("link");
+    expect(order.slice(0, -1).every((where) => where === "row")).toBe(true);
+    await second.keyboard.press("Tab");
+    const afterLink = await second.evaluate((checkboxLabel) => {
+      const main = document.querySelector(`[aria-label="${CSS.escape(checkboxLabel)}"]`)?.closest("tr");
+      const tr = document.activeElement?.closest("tr");
+      return tr === main || tr === main?.nextElementSibling ? "same" : "next";
+    }, label);
+    expect(afterLink).toBe("next");
+    await second.context().close();
+  });
 });
 
 test.afterAll(archiveTempRoles);

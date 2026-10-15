@@ -1116,32 +1116,44 @@ export function Table<Row>({
                               {gateReason}
                             </p>
                           ) : null}
-                          {selection && colIndex === 0 && blockedText ? (
-                            <p id={blockedReasonId} className={`${styles.selectReason} ${styles.selectBlocked}`}>
-                              {blockedText}
-                              {blockedLink ? (
-                                <>
-                                  {" · "}
-                                  <a
-                                    href={blockedLink.href}
-                                    className={buttonLinkClassName("tertiary")}
-                                    {...(blockedLink.newTab ? { target: "_blank", rel: "noopener" } : {})}
-                                  >
-                                    {blockedLink.label}
-                                  </a>
-                                </>
-                              ) : null}
-                            </p>
-                          ) : null}
-                          {selection && colIndex === 0 && noteText ? (
-                            <p id={noteId} className={styles.selectReason}>
-                              {noteText}
-                            </p>
-                          ) : null}
                         </td>
                       );
                     })}
                   </tr>
+                  {/* 06.5-06 DOM 감사 W-2 · M-1 · M-2 — 행 아래 줄(막힘 > 정보, §7-3 (카))은 주 행 바로 다음 줄에서 데이터 열 전부를 덮는다.
+                      첫 데이터 칸 안이면 좁은 열 폭에 갇혀 꺾이고, 끝 링크가 다음 칸보다 먼저 포커스를 받는다(시각 차례와 어긋남). */}
+                  {selection && (blockedText || noteText) ? (
+                    <tr className={styles.reasonRow}>
+                      <td role={hasEditableCell ? "gridcell" : undefined} className={[styles.reasonCell, rowSelected ? styles.selectedRow : ""].join(" ")} />
+                      <td
+                        role={hasEditableCell ? "gridcell" : undefined}
+                        colSpan={columns.length}
+                        className={[styles.reasonCell, rowSelected ? styles.selectedRow : ""].join(" ")}
+                      >
+                        {blockedText ? (
+                          <p id={blockedReasonId} className={`${styles.selectReason} ${styles.selectBlocked}`}>
+                            {blockedText}
+                            {blockedLink ? (
+                              <>
+                                {" · "}
+                                <a
+                                  href={blockedLink.href}
+                                  className={buttonLinkClassName("tertiary")}
+                                  {...(blockedLink.newTab ? { target: "_blank", rel: "noopener" } : {})}
+                                >
+                                  {blockedLink.label}
+                                </a>
+                              </>
+                            ) : null}
+                          </p>
+                        ) : (
+                          <p id={noteId} className={styles.selectReason}>
+                            {noteText}
+                          </p>
+                        )}
+                      </td>
+                    </tr>
+                  ) : null}
                   {p2Values.length > 0 ? (
                     <tr
                       className={styles.collapsedRow}

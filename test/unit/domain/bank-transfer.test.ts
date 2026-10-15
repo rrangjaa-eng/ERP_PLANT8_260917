@@ -54,6 +54,14 @@ describe("CP949 바이트 자", () => {
     expect(cp949Unsupported("김철수")).toEqual([]);
   });
 
+  // Codex P2: BMP 안이라도 CP949 표에 없는 글자(라틴 악센트 · KS X 1001 밖 한자)는 못 담는다. 확장 완성형 한글(똠)과 ㈜는 담긴다.
+  it("BMP 안이라도 CP949 표에 없는 글자를 고른다 — 확장 한글 · 표 안 한자 · ASCII는 통과", () => {
+    expect(cp949Unsupported("José")).toEqual(["é"]);
+    expect(cp949Unsupported("丂김")).toEqual(["丂"]);
+    expect(cp949Unsupported("똠㈜金(주) A-1")).toEqual([]);
+    expect(holderTextProblem("José")).toBe(ACCOUNT_PROBLEMS.holderUnsupported);
+  });
+
   it("예금주 한도는 20바이트", () => {
     expect(BANK_TRANSFER_MAX_BYTES.holder).toBe(20);
   });

@@ -4,6 +4,15 @@
 // `server-only`를 import하지 않는다 — domain/*가 부르고 테스트(Vitest node)가 그 domain을 읽는다(lib/auth.ts 머리주석 규약).
 // 대신 `xlsx` import는 이 파일(과 시험)만 하도록 eslint.config.mjs의 no-restricted-imports가 지킨다(EP2-C1).
 import * as XLSX from "xlsx";
+import { cptable } from "xlsx/dist/cpexcel.full.mjs";
+
+// CP949 표(SheetJS codepage — xlsx 패키지에 함께 든 것, 새 의존성 아님). 파일은 유니코드 xlsx지만 신한이 CP949로 받으므로
+// 표에 없는 글자는 그 줄을 깬다. Node TextDecoder("euc-kr")는 확장 완성형(똠 등)을 못 풀어 쓰지 않는다.
+const CP949_ENCODE = cptable[949]?.enc ?? {};
+
+export function isCp949Encodable(char: string): boolean {
+  return Object.hasOwn(CP949_ENCODE, char);
+}
 
 export function buildTextSheetXlsx(sheetName: string, rows: readonly (readonly string[])[]): Uint8Array {
   const sheet: XLSX.WorkSheet = {};

@@ -1,10 +1,11 @@
 import { sumKrw } from "@/domain/money";
 import { TRANSFER_NOT_NUMBER } from "@/domain/payments/action-row";
+import { isCp949Encodable } from "@/lib/xlsx-server";
 
 // 06.5 D-6504 · D-6506 · REVIEWS DH-3: 신한 대량이체 양식의 판정 몫 — 옛 `app/src/domain/bankTransfer.ts` 이식(O:).
 // 거래처 · 직원 계좌 저장(06.5-04)과 이체 파일 막힌 건(06.5-06 — 행 빌더는 그 플랜이 이 파일에 더한다)이 같은 함수 · 같은
 // 이유 쌍을 쓴다 — 저장 때와 파일 때의 판정이 갈라지지 않게. CP949 길이는 ASCII 1 · 그 외 2바이트(파일은 xlsx 유니코드라
-// 변환표가 필요 없다).
+// 쓰기에는 변환표가 필요 없다 — 못 담는 글자 판정만 lib/xlsx-server.ts의 CP949 표를 본다).
 // 06.5-06: 행 빌더 몫 — 칸 규칙(머리글 9칸 · 시트 · CP949 바이트)은 옛 이식(O:), 출금통장표시내용은 넘으면 자른다(옛은 막음 —
 // 사람이 고칠 수 없는 칸). 막힌 줄은 전부-아니면-전무가 아니라 빼고 나머지를 담는다. DB · 설정 · 암호화는 부르지 않는다 — 복호화는
 // domain/payments/bank-transfer.ts가 하고 평문을 여기로 넘긴다.
@@ -200,12 +201,11 @@ export function cp949ByteLength(text: string): number {
   return total;
 }
 
-/** CP949로 담을 수 없는 글자(BMP 밖 — 이모지 · 희귀 한자) — 없으면 빈 배열(O: bankTransfer.ts:322). */
+/** CP949로 담을 수 없는 글자(표에 없는 글자 — 이모지 · 라틴 악센트 · KS X 1001 밖 한자) — 없으면 빈 배열(O: bankTransfer.ts:322는 BMP 밖만 봤다 · Codex P2). */
 export function cp949Unsupported(text: string): string[] {
   const unsupported: string[] = [];
   for (const char of text) {
-    const code = char.codePointAt(0) ?? 0;
-    if (code > 0xffff && !unsupported.includes(char)) unsupported.push(char);
+    if (!isCp949Encodable(char) && !unsupported.includes(char)) unsupported.push(char);
   }
   return unsupported;
 }

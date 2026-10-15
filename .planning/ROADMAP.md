@@ -865,6 +865,17 @@ Plans:
 
 이 페이즈까지 나가는 돈의 원장은 전부 새 시스템에 있고, Phase 7이 마감·알림·검수를 얹어 인트라넷 패리티를 끝낸다. 관리자 시스템 상태 화면에 더하는 항목은 없다.
 
+### Phase 06.6: 결재 회수 막기 (withdraw-guard) (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 06
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 06.6 to break down)
+
 ### Phase 06.5: 06 후속 (payment-followup) (INSERTED)
 
 **Goal:** 06에서 미룬 지급·증빙 후속을 닫는다 — 기타소득 세금은 회사 대납 22% 역산 하나만 남고 지급 완료 때 대납 세액이 견적 조정 줄 실행가로 저절로 붙으며, 모든 카드 사용에 K 번호가 붙고, 경영관리가 계좌가 갖춰진 지급을 신한 대량이체 파일로 한 번에 내보내며, 중복 저장·꺼지는 기록·보는 범위 빈틈이 막힌다(260907 감사 D1·D2·D8~D10·G8·G20·G21 · 06 검토 I-2·CSO-4·CSO-6·QA Low · 사용자 카드 10/13 다섯 장 — 06.5-CONTEXT.md). 06 PR-E 실행이 끝난 뒤 실행한다.

@@ -5,16 +5,16 @@ current_phase_name: 지급·증빙·법인카드·구매 요청 (경영관리)
 current_plan: 37
 status: executing
 stopped_at: Completed 06-39-PLAN.md
-last_updated: "2026-10-15T11:43:09.633Z"
+last_updated: "2026-10-15T13:52:28.589Z"
 last_activity: 2026-10-14
 last_activity_desc: Phase 06 execution started
-state_head: feea3e63afff27a0a2a04e9fa2bd6864311ae414
+state_head: 8fdb56fe542283d28cbe5650a8d7214f6ddf2567
 progress:
-  total_phases: 21
+  total_phases: 22
   completed_phases: 7
   total_plans: 236
-  completed_plans: 230
-  percent: 33
+  completed_plans: 231
+  percent: 32
 ---
 
 # Project State
@@ -34,7 +34,7 @@ Total Plans in Phase: 38
 Status: Ready to execute
 Last activity: 2026-10-14 — Phase 06 execution started
 
-Progress: [███░░░░░░░] 33%
+Progress: [███░░░░░░░] 32%
 
 ## Performance Metrics
 
@@ -484,6 +484,7 @@ Recent decisions affecting current work:
 - Phase 06.4 edited: 06.4-02 플랜 요약 줄 자리 판정을 D-6415 날짜 구간 겹침으로 정정(Codex 리뷰 P2)
 - Phase 06.5 inserted after Phase 06: 06 후속 (payment-followup) — 06 지급·증빙 후속, 06 PR-E 완료 뒤 실행
 - Phase 06.5 edited: edited fields: goal, success_criteria (06.5-CONTEXT에서)
+- Phase 06.6 inserted after Phase 06: 결재 회수 막기 — 260907 D28(앞 사람 승인 뒤 기안자 회수 막기, REPORT.md:134·:203). 06.5 다음, 06.1 앞
 
 ## Deferred Items
 

@@ -1914,6 +1914,8 @@ test.describe("검토 반영 (06-20 독립 검토 · DOM 감사)", () => {
     const url = `/expenses?${new URLSearchParams({ status: "승인" })}`;
     await page.goto(url);
     await expect(rowOf(page, lines[1]?.itemName ?? "")).toContainText("승인");
+    // 스트리밍 중에는 행이 숨은 채 DOM에 먼저 오고 화면은 로딩 뼈대다 — 보이는 표에서 잰다.
+    await expect(rowOf(page, lines[1]?.itemName ?? "")).toBeVisible();
     const before = await pageOverflow(page);
 
     await payNow(payer, ids.map((expenseId) => ({ expenseId })));
@@ -1926,6 +1928,7 @@ test.describe("검토 반영 (06-20 독립 검토 · DOM 감사)", () => {
     await page.goto(url);
     await expect(rowOf(page, lines[1]?.itemName ?? "")).toContainText("증빙 2일 경과");
     await expect(rowOf(page, lines[0]?.itemName ?? "")).toContainText("지급 완료");
+    await expect(rowOf(page, lines[0]?.itemName ?? "")).toBeVisible();
     expect(await pageOverflow(page)).toBeLessThanOrEqual(before);
     await page.context().close();
   });

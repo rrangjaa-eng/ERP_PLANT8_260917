@@ -1,6 +1,7 @@
 import { gate, type GateDecision } from "@/domain/rules/gate";
 import type { QuoteCustomerApprovalCtx } from "@/domain/rules/register";
 import { PAYEE_ACCOUNT_MISSING, type ExpensePayee } from "@/domain/expenses/payee";
+import type { PairGateInput } from "@/domain/payments/action-row";
 
 // 05-03(UI-SPEC S6): 지출결의 제출 판정 — 첫 이유 하나. 05-06이 ①~⑨ 전부를 순서 표 하나(`stepsOf`)로 모았다:
 // 규칙 `expense.submit`(domain/rules/register.ts)은 이 표를 순서대로 보고 첫 막힘의 글자를, `nextActionTarget`은 같은 표에서
@@ -64,6 +65,9 @@ export type ExpenseSubmitFacts = {
   // ⑥ 뒤 — 저장된 값이 그 뒤 보관 · 비활성된 코드(폼에는 이름으로 보이므로 빈 칸이 아니다).
   evidenceTypeInactive: boolean;
   paymentMethodInactive: boolean;
+  // 06.1-12(E06 · RP-12 · 카드 R4): 지급 방식 × 증빙 종류 짝 판정 입력 — 첫째는 문서 증빙 종류 칸, 그 뒤는 살아 있는 붙임 기록의 종류 중
+  // 문서 칸과 다른 것(methodEvidencePairsOf). 판정 몸통 · 글은 지급 게이트와 같은 등록 규칙이다.
+  methodEvidencePairs: PairGateInput[];
   // ⑧ 앞 — 선결제 표시와 사유(잠근 행의 칸). 선결제면 ⑧ 증빙 없음이 풀린다.
   prepaid: boolean;
   prepaidReason: string | null;
@@ -89,7 +93,29 @@ function emptyFields(facts: ExpenseSubmitFacts): ExpenseRequiredField[] {
   return fields.filter((field) => values[field.target] === null || values[field.target] === "");
 }
 
+// 06.1-12(카드 R4): 짝 판정 입력 — 문서 증빙 종류 칸 하나 + 붙은 기록 종류 중 문서 칸과 다른 것(중복 없이 코드 순). 이름은 같은 코드표
+// 이름(보관 · 비활성 포함 — 없으면 규칙이 코드 값을 쓴다). DB 없음 — 짝 설정 · 이름 표는 트랜잭션 전, 기록 종류는 잠근 뒤 tx로 읽어 넘긴다.
+export function methodEvidencePairsOf(input: {
+  pairs: PairGateInput["pairs"];
+  paymentMethod: string | null;
+  evidenceType: string | null;
+  recordEvidenceTypes: readonly string[];
+  paymentNames: ReadonlyMap<string, string>;
+  evidenceNames: ReadonlyMap<string, string>;
+}): PairGateInput[] {
+  const recordTypes = [...new Set(input.recordEvidenceTypes)].filter((type) => type !== input.evidenceType).sort();
+  const paymentMethodName = input.paymentMethod ? (input.paymentNames.get(input.paymentMethod) ?? null) : null;
+  return [input.evidenceType, ...recordTypes].map((evidenceType) => ({
+    pairs: input.pairs,
+    paymentMethod: input.paymentMethod,
+    evidenceType,
+    paymentMethodName,
+    evidenceTypeName: evidenceType ? (input.evidenceNames.get(evidenceType) ?? null) : null,
+  }));
+}
+
 // ①~⑨ 순서 표 — 이 함수 하나에만 순서가 있다. 선결제 사유 단계(06-10)는 공급가 0 단계 뒤, ⑧ 바로 앞이다.
+// 짝 단계(06.1-12)는 지급 방식 비활성 바로 뒤 — 쓰지 않는 코드가 먼저 막고, 지급처 계좌 · ⑧보다 앞이다.
 function stepsOf(facts: ExpenseSubmitFacts): Step[] {
   const empty = emptyFields(facts);
   const first = empty[0];
@@ -110,6 +136,7 @@ function stepsOf(facts: ExpenseSubmitFacts): Step[] {
     },
     { target: "evidenceType", reason: facts.evidenceTypeInactive ? INACTIVE_EVIDENCE_TYPE : null },
     { target: "paymentMethod", reason: facts.paymentMethodInactive ? INACTIVE_PAYMENT_METHOD : null },
+    ...facts.methodEvidencePairs.map((ruleCtx): Step => ({ target: "paymentMethod", rule: "payment.method-evidence-mismatch", ruleCtx })),
     { target: "payeeAccount", reason: facts.payeeAccountMissing ? PAYEE_ACCOUNT_MISSING : null },
     { target: "supplyAmount", reason: facts.supplyAmountKrw === 0 ? "공급가액이 0 · 0보다 크게" : null },
     { target: "prepaidReason", reason: facts.prepaid && !facts.prepaidReason?.trim() ? PREPAID_REASON_REQUIRED : null },

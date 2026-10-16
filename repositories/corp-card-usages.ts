@@ -3,6 +3,7 @@ import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { corpCardUsages, corpCards, projects, purchaseRequests, quoteLines, quoteRevisions, teams, users, vendors } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
+import { liveLinkExists } from "@/repositories/evidence-record-links";
 import { aliveFileExists } from "@/repositories/files";
 
 // 06-05(EXP-07): 법인카드 사용 쓰기 · 목록 · 직전 등록. 범위(UA-612)는 목록 쿼리의 조건에서 갈린다 — 보관된 건은 늘 뺀다(H-4 기반).
@@ -109,8 +110,8 @@ export async function listCardUsageRows(
       projectName: projects.name,
       projectStatus: projects.status,
       purchaseNumber: purchaseRequests.number,
-      // 06-25: 카드 전표 유무 한 조건 — 05 `alive()` 정의(삭제 · 무효 아님) 그대로.
-      hasCardSlip: aliveFileExists(viewer, "corp_card_usage", corpCardUsages.id),
+      // 06-25: 카드 전표 유무 한 조건 — 05 `alive()` 정의(삭제 · 무효 아님) 그대로. 06.1-12(PA-CARDSLIP): 살아 있는 증빙 붙임도 증빙이다(열 머리글 `증빙`).
+      hasCardSlip: sql<boolean>`(${aliveFileExists(viewer, "corp_card_usage", corpCardUsages.id)} or ${liveLinkExists(viewer, "corp_card_usage", corpCardUsages.id)})`,
     })
     .from(corpCardUsages)
     .innerJoin(corpCards, eq(corpCards.id, corpCardUsages.corpCardId))

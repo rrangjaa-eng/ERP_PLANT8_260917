@@ -11,7 +11,7 @@ import {
   PROJECT_FORCE_COMPLETE_ALLOW_UNMATCHED_ESTIMATE_LINES,
   PURCHASE_ONLINE_VENDOR_NAME,
 } from "@/domain/settings/keys";
-import { hasEvidence } from "@/domain/evidence/has-evidence";
+import { evidenceSourcesOf } from "@/domain/evidence/has-evidence";
 import { resolveEvidenceStatus } from "@/domain/evidence-reviews";
 import { doorFor, lineExecution } from "@/domain/expenses";
 import { EXPENSE_DOCUMENT_KIND, visibleExpenseScope } from "@/domain/expenses/access";
@@ -162,13 +162,15 @@ function lineDoorOf(line: PreSettleLineRow, links: LineLinks, inputs: PreSettleI
 const NO_LINKS: LineLinks = { currentLineId: null, currentExecution: null, expenses: [], cardUsages: [], purchaseRequests: [] };
 
 export async function computePreSettleCheck(viewer: Viewer, projectId: string, inputs: PreSettleInputs, tx?: DbOrTx): Promise<PreSettleCheckDto> {
-  // ① 미결 지출결의(D-611 · C10) — 증빙은 hasEvidence(살아 있는 파일) · 면제는 리뷰 행 · 낱말은 resolveEvidenceStatus(C5).
+  // ① 미결 지출결의(D-611 · C10) — 증빙은 evidenceSourcesOf 묶음 하나(살아 있는 파일 또는 붙임 — 06.1-12 · T-061-63) · 면제는 리뷰 행 ·
+  // 낱말은 resolveEvidenceStatus(C5).
   const expenseRows = await listPreSettleExpenseRows(viewer, projectId, tx);
+  const evidenceSources = await evidenceSourcesOf(viewer, { ownerKind: "expense", ownerIds: expenseRows.map((row) => row.id) }, tx);
   const open: (PreSettleExpenseRowDto & { supplyAmountKrw: number | null })[] = [];
   const pending: (PreSettleExpenseRowDto & { supplyAmountKrw: number | null })[] = [];
   for (const row of expenseRows) {
     const evidence = resolveEvidenceStatus({
-      hasEvidence: await hasEvidence(viewer, { ownerKind: "expense", ownerId: row.id }, tx),
+      hasEvidence: evidenceSources.has(row.id),
       prepaid: row.prepaid,
       review: await findReviewByExpense(viewer, row.id, tx),
     });

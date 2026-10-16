@@ -33,8 +33,8 @@ vi.mock("@/domain/pre-settle-check", async () => {
 
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { randomUUID } from "node:crypto";
-import { approvalInstances, expenseEvidenceReviews, expensePayments, expenses, files, projects, purchaseRequests, teams } from "@/db/schema";
+import { randomBytes, randomUUID } from "node:crypto";
+import { approvalInstances, evidenceImportBatches, evidenceRecordLinks, evidenceRecords, expenseEvidenceReviews, expensePayments, expenses, files, projects, purchaseRequests, teams } from "@/db/schema";
 import { approveDocument, getDocumentKind, listMyBlockedDocuments, listMyInbox, loadKindDetails, registerDocumentKind, rejectDocument, withdrawDocument } from "@/domain/approvals";
 import { closeExpense, createExpenseFromLines, EXPENSE_DOCUMENT_KIND, saveExpenseDraft } from "@/domain/expenses";
 import { listExpenseEvidenceSignals, pickExpenseEvidenceSignal } from "@/domain/expenses/evidence-signals";
@@ -937,6 +937,21 @@ async function laterApprovedInstances(drafterId: string, count: number): Promise
   );
 }
 
+// 06.1-12 /review P3-1: 살아 있는 증빙 기록 붙임 한 줄(등록 묶음 → 기록 → 붙임) — 증빙 = 파일 ∨ 살아 있는 기록 붙임.
+async function linkRecord(expenseId: string, by: Viewer): Promise<void> {
+  const [batch] = await db
+    .insert(evidenceImportBatches)
+    .values({ format: "hometax-tax-invoice", originalName: "매입 세금계산서.xls", fileSha256: randomBytes(32).toString("hex"), rowCount: 1, registeredCount: 1, skippedDuplicateCount: 0, uploadedBy: by.id })
+    .returning({ id: evidenceImportBatches.id });
+  if (!batch) throw new Error("등록 묶음 없음");
+  const [record] = await db
+    .insert(evidenceRecords)
+    .values({ batchId: batch.id, format: "hometax-tax-invoice", evidenceType: "tax_invoice", dedupeKey: `test:${randomUUID()}`, issuedOn: "2026-09-20", supplyKrw: 12_400_000, vatKrw: 0, totalKrw: 12_400_000, createdBy: by.id })
+    .returning({ id: evidenceRecords.id });
+  if (!record) throw new Error("증빙 기록 없음");
+  await db.insert(evidenceRecordLinks).values({ evidenceRecordId: record.id, ownerKind: "expense", ownerId: expenseId, attachMode: "registrar", attachedBy: by.id });
+}
+
 describe("승인 뒤 막힘 후보 갈래 expense_blocked_after_approval (E-3 · R-3)", () => {
   it("증빙 0 승인 문서가 201번째로 오래돼도 홈에 선다", async () => {
     const fx = await setupExpenseProject();
@@ -967,6 +982,31 @@ describe("승인 뒤 막힘 후보 갈래 expense_blocked_after_approval (E-3 ·
     for (const entry of cases) {
       const fx = await setupExpenseProject();
       const { expenseId } = await approvedExpenseWithEvidence(fx);
+      await entry.prepare(fx, expenseId);
+      const spy = vi.spyOn(getDocumentKind(EXPENSE_DOCUMENT_KIND), "blockedAfterApproval");
+      try {
+        expect(await listNextTurnItems(fx.pm), entry.name).toEqual([]);
+        for (const call of spy.mock.calls) expect(call[1], entry.name).not.toContain(expenseId);
+      } finally {
+        spy.mockRestore();
+      }
+    }
+  });
+
+  it("살아 있는 기록 붙임이 있으면 후보 SQL이 LIMIT 앞에서 거른다 — 기록만(파일 0) / 무효 파일 + 기록 (06.1-12 /review P3-1)", async () => {
+    const cases: { name: string; prepare: (fx: ExpenseFixture, expenseId: string) => Promise<void> }[] = [
+      { name: "기록만", prepare: async (fx, id) => { await removeAllFiles(id); await linkRecord(id, fx.ceo); } },
+      {
+        name: "무효 파일 + 기록",
+        prepare: async (fx, id) => {
+          await voidEvidence(await makeEvidenceManager(), { fileId: (await fileIds(id))[0] ?? "", reason: "다른 건" });
+          await linkRecord(id, fx.ceo);
+        },
+      },
+    ];
+    for (const entry of cases) {
+      const fx = await setupExpenseProject();
+      const { expenseId } = await approvedExpense(fx);
       await entry.prepare(fx, expenseId);
       const spy = vi.spyOn(getDocumentKind(EXPENSE_DOCUMENT_KIND), "blockedAfterApproval");
       try {

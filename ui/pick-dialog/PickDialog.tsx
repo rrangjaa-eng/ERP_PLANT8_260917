@@ -130,6 +130,11 @@ export function pickOutcomeOf(result: void | boolean | PickManyOutcome): PickOut
   return "close";
 }
 
+// 06.1 SP-6106 ⑷ — 단일 거부는 가리키는 행이 거부된 행과 「다른 고를 수 있는 행」으로 바뀔 때만 걷힌다(막힌 행을 눌렀다 돌아와도 1차는 계속 막힌다).
+export function pickRejectionClears(rejectedId: string | null, next: PickRow | null): boolean {
+  return next !== null && next.selectable && next.id !== rejectedId;
+}
+
 // 06.1 SP-6106 ⑸ — 넘침 바닥 줄(`limit` 기본 50).
 export function pickTruncatedText(limit: number | undefined): string {
   return `${limit ?? 50}건 넘음 · 검색으로 좁히기`;
@@ -178,6 +183,7 @@ function PickDialogInner(props: PickDialogProps) {
   // 06.2 SP-62-1 — 다중: 고른 행(고른 순서 · 검색과 무관하게 남는다) · 서버 거부(체크를 바꾸면 풀린다) · `새로 고침` 뒤 첫 결과에서만 목록에 없는 고름을 뺀다.
   const [selected, setSelected] = useState<PickRow[]>([]);
   const [rejection, setRejection] = useState<{ reason: string; retryable: boolean } | null>(null);
+  const [rejectedId, setRejectedId] = useState<string | null>(null);
   const pruneOnNextResultRef = useRef(false);
   // 06.1 SP-6106 — 미리 고르기는 첫 결과에서만(그 뒤 결과는 사용자가 바꾼 고름을 덮지 않는다). 단일은 모양이 현재 행 표시라 그 id를 따로 든다.
   const preselectDoneRef = useRef(false);
@@ -294,7 +300,10 @@ function PickDialogInner(props: PickDialogProps) {
       setPicking(false);
     }
     if (outcome === "close") closeNow();
-    else if (outcome !== "keep") setRejection(outcome.reject);
+    else if (outcome !== "keep") {
+      setRejectedId(target.id);
+      setRejection(outcome.reject);
+    }
   }
 
   // 다중 — 고름 토글(고를 수 없는 행 · 보내는 중 · 목록이 오는 중이나 오류 중에는 무반응 — 옛 목록의 행은 단일처럼 고르지 않는다). 체크를 바꾸면 거부가 걷힌다.
@@ -329,9 +338,9 @@ function PickDialogInner(props: PickDialogProps) {
     searchInputRef.current?.focus();
   }
 
-  // 단일 — 가리키는 행이 바뀌면 거부를 걷는다(다중 `toggleRow`와 같은 규칙).
+  // 단일 — 가리키는 행이 다른 고를 수 있는 행으로 바뀔 때만 거부를 걷는다(다중 `toggleRow`와 같은 규칙, 막힌 행은 거부를 풀지 않는다).
   function activate(id: string | null) {
-    if (!many && id !== activeId) setRejection(null);
+    if (!many && pickRejectionClears(rejectedId, rows.find((row) => row.id === id) ?? null)) setRejection(null);
     setActiveId(id);
   }
 

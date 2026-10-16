@@ -5,12 +5,15 @@ import { flagSameApprovalOtherAmount, planAmbiguousGroups, resolveCardForLine } 
 import { EVIDENCE_IMPORT_MAX_BYTES, sizeRefusalHeadline } from "@/domain/evidence-import/limits";
 import { EVIDENCE_FORMATS, finalizeAmounts as defaultFinalizeAmounts, parseWorkbook as defaultParseWorkbook, type ParseResult } from "@/domain/evidence-import/registry";
 import type { EvidenceFormatKey, FinalLine, FormatRule, ParseSuccess, RefusalKind } from "@/domain/evidence-import/types";
+import { ensureVendorsForLines, type EnsureVendorsDeps } from "@/domain/evidence-import/vendor-autocreate";
 import { loadTaxRates as defaultLoadTaxRates, type TaxRates } from "@/domain/money/tax";
 import { can, ForbiddenError } from "@/domain/permissions/can";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { project, type DtoSpec } from "@/domain/permissions/project";
 import type { Viewer } from "@/domain/viewer";
+import { BUSINESS_NO_UNIQUE_INDEX } from "@/domain/vendors";
 import { withTransaction } from "@/lib/db-transaction";
+import { isUniqueViolation } from "@/lib/pg-errors";
 import { listCodeItems } from "@/repositories/code-tables";
 import { findCardsByLast4 } from "@/repositories/corp-cards";
 import { findBatchIdBySha, insertBatch, setBatchCounts } from "@/repositories/evidence-import-batches";
@@ -20,10 +23,12 @@ import {
   insertRecordsIgnoringDuplicates,
   type EvidenceRecordInsert,
 } from "@/repositories/evidence-records";
+import { lockVendorAutocreate } from "@/repositories/vendors";
 
 // 06.1-04: 증빙 등록 서비스 — 엑셀 파일 하나 → 권한 · 크기 · 읽기(06.1-02) · 사전 조회 · 한 트랜잭션(묶음 + 기록 + 행동 로그) · 결과.
 // 사용자가 고칠 수 있는 거절은 던지지 않고 결과 데이터 `refused`로 돌려준다(E2 — 06.1-05가 결과 행으로 그린다).
-// 06-03 tx 규약: 권한 · 세율 · 코드표 · 같은 파일 · 이미 있는 열쇠 · 카드 · 앞 기록 조회는 트랜잭션 전, 트랜잭션 안은 tx 리포지토리와 순수 함수만.
+// 06-03 tx 규약: 권한 · 세율 · 코드표 · 같은 파일 · 이미 있는 열쇠 · 카드 · 앞 기록 조회는 트랜잭션 전, 트랜잭션 안은 tx 리포지토리와 순수 함수만
+// (거래처 서식의 잠금 뒤 이미 등록 열쇠 · 거래처 조회도 tx — vendor-autocreate.ts).
 
 export const EVIDENCE_IMPORT_BATCH_ENTITY = "evidence_import_batch";
 
@@ -33,6 +38,8 @@ const NOT_A_FILE = "엑셀·CSV 파일 아님 · 내려받은 파일 그대로";
 const MAX_FILE_NAME_CHARS = 255;
 // GH-P1: 앞 파일과 겹친 같은 내용 줄의 열쇠 꼬리 `@{파일 sha256 앞 16자}`.
 const GROUP_SHA_PREFIX_CHARS = 16;
+// 이름 다름 결과 줄 — 06.1-02 줄 오류 거절과 같은 앞 5줄 + 나머지 수.
+const SHOWN_NAME_MISMATCH = 5;
 
 export type EvidenceImportRefusal = { kind: RefusalKind; headline: string; lines: string[]; restCount: number };
 
@@ -73,6 +80,7 @@ export type RegisterEvidenceDeps = {
   parseWorkbook: (bytes: Uint8Array) => ParseResult;
   finalizeAmounts: typeof defaultFinalizeAmounts;
   loadTaxRates: (asOf: string) => Promise<TaxRates>;
+  findVendorsByBusinessNoDigitsList: EnsureVendorsDeps["findVendorsByBusinessNoDigitsList"];
 };
 
 async function assertCanIntake(viewer: Viewer): Promise<void> {
@@ -138,7 +146,7 @@ async function planCardLines(
   return grouped.map((line) => ({ ...line, corpCardId: resolveCardForLine(line, rule, candidates) }));
 }
 
-function recordOf(line: PlannedLine, format: EvidenceFormatKey, batchId: string, viewer: Viewer): EvidenceRecordInsert {
+function recordOf(line: PlannedLine & { vendorId: string | null }, format: EvidenceFormatKey, batchId: string, viewer: Viewer): EvidenceRecordInsert {
   return {
     batchId,
     format,
@@ -149,7 +157,7 @@ function recordOf(line: PlannedLine, format: EvidenceFormatKey, batchId: string,
     supplyKrw: line.supplyKrw,
     vatKrw: line.vatKrw,
     totalKrw: line.totalKrw,
-    vendorId: null,
+    vendorId: line.vendorId,
     businessNoDigits: line.businessNoDigits,
     nameOnDocument: line.nameOnDocument,
     merchant: line.merchant,
@@ -202,26 +210,41 @@ export async function registerEvidenceFile(
   const rowCount = parsed.lines.length + parsed.offsetLines.length * 2;
   const offsetPairs = parsed.offsetPairs - cancels.length;
 
-  const written = await withTransaction(async (tx) => {
-    const batch = await insertBatch(viewer, { format: parsed.format, originalName, fileSha256, rowCount, uploadedBy: viewer.id }, tx);
-    const rows = planned.map((line) => recordOf(line, parsed.format, batch.id, viewer));
-    const insertedKeys = new Set((await insertRecordsIgnoringDuplicates(viewer, rows, tx)).map((row) => row.dedupeKey));
-    const inserted = rows.filter((row) => insertedKeys.has(row.dedupeKey));
-    const counts = {
-      rowCount,
-      registered: inserted.length,
-      // 취소 줄을 등록한 쌍의 원거래 줄은 앞 파일로 이미 등록된 줄이다.
-      skippedDuplicate: rows.length - inserted.length + cancels.length,
-      offsetPairs,
-      cardUnknown: card ? inserted.filter((row) => row.corpCardId === null).length : 0,
-      needsCheck: inserted.filter((row) => row.needsCheck !== null).length,
-    };
-    await setBatchCounts(viewer, batch.id, { registeredCount: counts.registered, skippedDuplicateCount: counts.skippedDuplicate }, tx);
-    await recordAction(viewer, { actionType: "document_create", entity: EVIDENCE_IMPORT_BATCH_ENTITY, entityId: batch.id, detail: counts }, { tx });
-    return { batchId: batch.id, ...counts };
+  const write = () =>
+    withTransaction(async (tx) => {
+      // (eng B-P3) 거래처를 만드는 서식은 거래처 잠금이 첫 줄이고, 이미 등록된 줄은 그 뒤에 걸러 새 줄만 거래처 단계로 보낸다(E11) —
+      // 잠금 앞에서 거르면 기다리는 사이 다른 등록이 커밋한 줄이 「새 줄」로 남아 그 사이 보관된 거래처를 되살린다. 카드 서식은 잠그지 않는다.
+      if (rule.createsVendor) await lockVendorAutocreate(viewer, tx);
+      const already = rule.createsVendor ? await findExistingDedupeKeys(viewer, planned.map((line) => line.dedupeKey), tx) : new Set<string>();
+      const linked = await ensureVendorsForLines(viewer, planned.filter((line) => !already.has(line.dedupeKey)), rule, tx, deps);
+      const batch = await insertBatch(viewer, { format: parsed.format, originalName, fileSha256, rowCount, uploadedBy: viewer.id }, tx);
+      const rows = linked.lines.map((line) => recordOf(line, parsed.format, batch.id, viewer));
+      const insertedKeys = new Set((await insertRecordsIgnoringDuplicates(viewer, rows, tx)).map((row) => row.dedupeKey));
+      const inserted = rows.filter((row) => insertedKeys.has(row.dedupeKey));
+      const counts = {
+        rowCount,
+        registered: inserted.length,
+        // 걸러 낸 줄 · INSERT가 건너뛴 줄은 이미 등록 — 취소 줄을 등록한 쌍의 원거래 줄도 앞 파일로 이미 등록된 줄이다.
+        skippedDuplicate: planned.length - inserted.length + cancels.length,
+        offsetPairs,
+        vendorCreated: linked.created,
+        vendorRestored: linked.restored,
+        cardUnknown: card ? inserted.filter((row) => row.corpCardId === null).length : 0,
+        needsCheck: inserted.filter((row) => row.needsCheck !== null).length,
+      };
+      await setBatchCounts(viewer, batch.id, { registeredCount: counts.registered, skippedDuplicateCount: counts.skippedDuplicate }, tx);
+      await recordAction(viewer, { actionType: "document_create", entity: EVIDENCE_IMPORT_BATCH_ENTITY, entityId: batch.id, detail: counts }, { tx });
+      return { batchId: batch.id, ...counts, nameMismatchLines: linked.nameMismatchLines };
+    });
+  // RP-7: 관리 화면 저장은 거래처 잠금을 쓰지 않아 조회와 생성 · 되살림 사이에 같은 번호가 살아날 수 있다 — 유일 색인 위반이면
+  // 트랜잭션을 통째로 한 번 다시 돈다(앞 시도는 롤백됐다 · 사전 조회 값은 그대로 쓴다). 두 번째 위반은 그대로 던진다.
+  const written = await write().catch((error: unknown) => {
+    if (!isUniqueViolation(error, BUSINESS_NO_UNIQUE_INDEX)) throw error;
+    return write();
   });
 
-  const projected = await project(viewer, { nameMismatchLines: [] }, EVIDENCE_IMPORT_RESULT_DTO_SPEC);
+  const shownMismatch = written.nameMismatchLines.slice(0, SHOWN_NAME_MISMATCH);
+  const projected = await project(viewer, { nameMismatchLines: shownMismatch }, EVIDENCE_IMPORT_RESULT_DTO_SPEC);
   return {
     refused: null,
     batchId: written.batchId,
@@ -229,11 +252,11 @@ export async function registerEvidenceFile(
     skippedDuplicate: written.skippedDuplicate,
     sameFile,
     offsetPairs: written.offsetPairs,
-    vendorCreated: 0,
-    vendorRestored: 0,
+    vendorCreated: written.vendorCreated,
+    vendorRestored: written.vendorRestored,
     cardUnknown: written.cardUnknown,
     needsCheck: written.needsCheck,
-    nameMismatchRest: 0,
+    nameMismatchRest: written.nameMismatchLines.length - shownMismatch.length,
     ...projected,
   };
 }

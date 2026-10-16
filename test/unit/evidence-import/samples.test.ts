@@ -53,6 +53,14 @@ describe.skipIf(!DIR)("실물 견본 — 건수만", () => {
     expect(result.lines.every((line) => line.approvalNo?.length === 26)).toBe(true);
   });
 
+  // 06.1-11: 견본 매입 현금영수증 목록은 승인 1줄이다(samples/hometax-cash-receipt-purchase.md).
+  describe("hometax-cash-receipt 실물", () => {
+    it("서식 키 · 거절 아님 · 줄 1", () => {
+      const result = parsedSample("hometax-cash-receipt-purchase", "hometax-cash-receipt");
+      expect(result.lines.length).toBe(1);
+    });
+  });
+
   it("실물 계산서 꼴 → 모르는 서식 · 세금계산서로 읽히지 않음", () => {
     const file = sampleOf("hometax-invoice-purchase");
     expect(file, "견본 없음 — 서식 hometax-invoice(계산서 꼴)").toBeDefined();

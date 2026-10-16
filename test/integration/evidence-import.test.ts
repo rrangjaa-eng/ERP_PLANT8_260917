@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { actionLog, evidenceImportBatches, evidenceRecords } from "@/db/schema";
+import { actionLog, evidenceImportBatches, evidenceRecords, vendors } from "@/db/schema";
 import { archive } from "@/domain/archive";
 import { createAccount } from "@/domain/auth/accounts";
 import { setEvidenceTypeTaxRule } from "@/domain/code-tables";
@@ -17,11 +17,23 @@ import { can, ForbiddenError } from "@/domain/permissions/can";
 import { TAX_VAT_RATE } from "@/domain/settings/keys";
 import { addHistorizedValue } from "@/domain/settings/registry";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
+import { normalizeVendorName } from "@/domain/vendors";
+import type { VendorKind } from "@/domain/vendors/kind";
 import { listCodeItems } from "@/repositories/code-tables";
 import { findCardsByLast4 } from "@/repositories/corp-cards";
 import { upsertPermission } from "@/repositories/permissions";
 import { insertRole } from "@/repositories/roles";
-import { bcFixture, hometaxTaxInvoiceFixture, lotteFixture, shinhanFixture } from "@/test/fixtures/evidence-import/build";
+import { insertVendor } from "@/repositories/vendors";
+import {
+  bcFixture,
+  FAKE_BUSINESS_NO,
+  FAKE_BUSINESS_NO_BAD,
+  FAKE_COMPANY_BUSINESS_NO,
+  hometaxCashReceiptFixture,
+  hometaxTaxInvoiceFixture,
+  lotteFixture,
+  shinhanFixture,
+} from "@/test/fixtures/evidence-import/build";
 import { createIntakeViewer, registerFixtureFile } from "./fixtures/evidence";
 
 // 06.1-04: 증빙 등록 서비스 — 파일 하나 → 권한 · 크기 · 읽기 · 한 트랜잭션(묶음 + 기록) · 결과 DTO(실제 Postgres).
@@ -563,5 +575,94 @@ describe("domain/evidence-import — 서식 넷 · 세율 · 카드 · A-10 · G
     const expected = splitCardTotal({ money: { currency: "KRW", amount: 113_400, fxRate: 1 }, rule }, await loadTaxRates("2026-05-28"));
     expect(expected.supplyKrw).toBe(103_090);
     expect((await recordsInOrder())[0]).toMatchObject({ supplyKrw: expected.supplyKrw, vatKrw: expected.vatKrw });
+  });
+});
+
+// 06.1-11: 홈택스 매입 현금영수증 · 계산서 목록 → 등록 서비스(06.1-04) → 거래처 자동 생성(D-6114 · RP-7 · D31) → 기록.
+// 픽스처 가맹점 · 공급자 번호는 06.1-02 상수(FAKE_BUSINESS_NO — 검증 숫자 맞음 · FAKE_BUSINESS_NO_BAD — 틀림)만 쓴다.
+const FAKE_DIGITS = FAKE_BUSINESS_NO.replaceAll("-", "");
+
+async function addVendor(name: string, businessNo: string, kind: VendorKind) {
+  return insertVendor(SYSTEM_VIEWER, { name, normalizedName: normalizeVendorName(name), businessNo, kind });
+}
+
+async function vendorsByDigits(digits: string) {
+  return (await db.select().from(vendors)).filter((row) => (row.businessNo ?? "").replaceAll(/\D/g, "") === digits);
+}
+
+describe("domain/evidence-import — 홈택스 매입 현금영수증 등록 (06.1-11 Task 1)", () => {
+  it("현금영수증 2줄 → 기록 2(현금영수증 종류 · 봉사료는 공급가에) · 없는 번호의 협력사 생성(기본 종류 현금영수증) · 이름 다름 1 · 다시 올리면 이미 등록 2", async () => {
+    await addVendor("등록된가맹점", FAKE_COMPANY_BUSINESS_NO, "supplier");
+    const viewer = await createIntakeViewer();
+    const bytes = hometaxCashReceiptFixture([
+      {},
+      { 승인번호: "A10000002", 가맹점사업자번호: FAKE_COMPANY_BUSINESS_NO, 가맹점명: "다른이름가맹점", 공급가액: 9091, 부가세: 909, 봉사료: 500, 매입금액: 10500 },
+    ]);
+
+    const result = await registerFixtureFile(viewer, bytes, "현금영수증.xls");
+
+    expect(result).toMatchObject({ registered: 2, skippedDuplicate: 0, vendorCreated: 1, vendorRestored: 0, needsCheck: 0, cardUnknown: 0 });
+    expect(result.nameMismatchLines).toEqual(["999-99-99997 · 파일 다른이름가맹점 · 등록 등록된가맹점"]);
+    const created = await vendorsByDigits(FAKE_DIGITS);
+    expect(created).toMatchObject([{ name: "가맹점가", businessNo: FAKE_BUSINESS_NO, kind: "supplier", defaultEvidenceType: "cash_receipt", archivedAt: null }]);
+    const byApproval = new Map((await recordsInOrder()).map((record) => [record.approvalNo, record]));
+    expect(byApproval.get("A10000001")).toMatchObject({
+      format: "hometax-cash-receipt",
+      evidenceType: "cash_receipt",
+      dedupeKey: "hometax-cash-receipt|A10000001|2026-07-15|1234567891|10000",
+      issuedOn: "2026-07-15",
+      supplyKrw: 9091,
+      vatKrw: 909,
+      totalKrw: 10000,
+      businessNoDigits: FAKE_DIGITS,
+      nameOnDocument: "가맹점가",
+      vendorId: created[0]?.id,
+      needsCheck: null,
+      corpCardId: null,
+      cardLast4: null,
+    });
+    expect(byApproval.get("A10000002")).toMatchObject({ supplyKrw: 9591, vatKrw: 909, totalKrw: 10500, nameOnDocument: "다른이름가맹점" });
+
+    const again = await registerFixtureFile(viewer, bytes, "현금영수증.xls");
+
+    expect(again).toMatchObject({ registered: 0, skippedDuplicate: 2, sameFile: true, vendorCreated: 0, vendorRestored: 0 });
+    expect(await recordsInOrder()).toHaveLength(2);
+    expect(await vendorsByDigits(FAKE_DIGITS)).toHaveLength(1);
+  });
+
+  it("(E17 · DA-5) 취소거래 줄 → 그 기록 확인 필요 「취소거래 · 원거래 확인」 · 합계 음수(합계 = 공급가 + 세액) · 결과 확인 필요 1", async () => {
+    const viewer = await createIntakeViewer();
+
+    const result = await registerFixtureFile(viewer, hometaxCashReceiptFixture([{}, { 거래구분: "취소거래" }]), "현금영수증.xls");
+
+    expect(result).toMatchObject({ registered: 2, needsCheck: 1 });
+    const cancel = (await recordsInOrder()).find((record) => record.totalKrw < 0);
+    expect(cancel).toMatchObject({ totalKrw: -10000, supplyKrw: -9091, vatKrw: -909, needsCheck: "취소거래 · 원거래 확인" });
+  });
+
+  it("(RP-7 · D31) 가맹점 번호가 숨기지 않은 고객 전용 거래처면 붙이고 둘 다(both)로 올리며 evidence_vendor_kind_change 한 줄", async () => {
+    const client = await addVendor("가맹점가", FAKE_BUSINESS_NO, "client");
+    const viewer = await createIntakeViewer();
+
+    const result = await registerFixtureFile(viewer, hometaxCashReceiptFixture([{}]), "현금영수증.xls");
+
+    expect(result).toMatchObject({ registered: 1, vendorCreated: 0 });
+    expect(await vendorsByDigits(FAKE_DIGITS)).toMatchObject([{ id: client.id, kind: "both" }]);
+    expect(await recordsInOrder()).toMatchObject([{ vendorId: client.id }]);
+    const logs = await db
+      .select()
+      .from(actionLog)
+      .where(and(eq(actionLog.entity, "vendor"), eq(actionLog.actionType, "evidence_vendor_kind_change")));
+    expect(logs).toMatchObject([{ entityId: client.id, actorId: viewer.id, detail: { batchId: result.batchId, kind: { from: "client", to: "both" } } }]);
+  });
+
+  it("(RP-7) 10자리지만 검증 숫자가 틀린 가맹점 번호 줄 → 거래처 생성 0 · vendor_id null · 「사업자번호 틀림 · 거래처 확인」", async () => {
+    const viewer = await createIntakeViewer();
+
+    const result = await registerFixtureFile(viewer, hometaxCashReceiptFixture([{ 가맹점사업자번호: FAKE_BUSINESS_NO_BAD }]), "현금영수증.xls");
+
+    expect(result).toMatchObject({ registered: 1, vendorCreated: 0, needsCheck: 1 });
+    expect(await vendorsByDigits(FAKE_BUSINESS_NO_BAD.replaceAll("-", ""))).toHaveLength(0);
+    expect(await recordsInOrder()).toMatchObject([{ vendorId: null, businessNoDigits: "1234567890", needsCheck: "사업자번호 틀림 · 거래처 확인" }]);
   });
 });

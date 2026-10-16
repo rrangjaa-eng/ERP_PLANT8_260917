@@ -7,6 +7,7 @@ export const EVIDENCE_FORMAT_TYPES = [
   { key: "card-shinhan", evidenceType: "card_receipt" },
   { key: "card-bc", evidenceType: "card_receipt" },
   { key: "hometax-tax-invoice", evidenceType: "tax_invoice" },
+  { key: "hometax-cash-receipt", evidenceType: "cash_receipt" },
 ] as const;
 
 export type EvidenceFormatKey = (typeof EVIDENCE_FORMAT_TYPES)[number]["key"];
@@ -54,8 +55,9 @@ export type FormatRule = {
   evidenceType: string;
   createsVendor: boolean;
   issuerAliases: readonly string[];
-  /** card = 카드 열쇠(끝4 · 승인번호 · 날짜 · 합계)와 같은 파일 안 `#n`, approval = 승인번호 하나(겹침은 줄 오류). */
-  keyKind: "card" | "approval";
+  /** card = 카드 열쇠(끝4 · 승인번호 · 날짜 · 합계)와 같은 파일 안 `#n`, approval = 승인번호 하나(겹침은 줄 오류),
+   *  approval-dated = 승인번호 · 날짜 · 사업자번호 · 부호 있는 합계(현금영수증 — 겹침은 줄 오류). */
+  keyKind: "card" | "approval" | "approval-dated";
   detect(sheets: readonly SheetPreview[], container: Container): DetectResult;
   read(rows: Rows, ctx: ReadContext): FormatReadResult;
 };

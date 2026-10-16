@@ -1,13 +1,16 @@
 import * as XLSX from "xlsx";
 import { describe, expect, it, vi } from "vitest";
 import { sizeRefusalHeadline, rowRefusalHeadline, EVIDENCE_IMPORT_MAX_BYTES, EVIDENCE_IMPORT_MAX_ROWS } from "@/domain/evidence-import/limits";
-import { finalizeAmounts, parseWorkbook, type ParseResult } from "@/domain/evidence-import/registry";
+import { DETECT_ROWS } from "@/domain/evidence-import/detect";
+import { EVIDENCE_FORMATS, finalizeAmounts, parseWorkbook, type ParseResult } from "@/domain/evidence-import/registry";
 import { sniff } from "@/domain/evidence-import/workbook";
 import { readWorkbookRows, zipEntryStats } from "@/lib/xlsx-server";
 import { cardLotte } from "@/domain/evidence-import/formats/card-lotte";
 import {
+  bcFixture,
   encryptedFixture,
   forgedZipFixture,
+  hometaxCashReceiptFixture,
   hometaxTaxInvoiceFixture,
   LOTTE_HEADER,
   lotteFixture,
@@ -301,5 +304,32 @@ describe("컨테이너 · 시트 수 · 행 상한(B-F18 · P1-4)", () => {
     const csv = shinhanFixture(rowsOf(2999), { as: "csv-utf8" });
     const padded = new Uint8Array([...csv, ...new TextEncoder().encode("\n\n\n\n\n")]);
     expect(parseWorkbook(padded)).toMatchObject({ ok: false, kind: "rows" });
+  });
+});
+
+describe("홈택스 매입 현금영수증 — xlsx · csv(E39 · 06.1-11)", () => {
+  const CASH_ROWS: FixtureRow[] = [{}, null, { 승인번호: "A10000002", 거래구분: "취소거래" }];
+  for (const as of ["xlsx", "csv-utf8"] as const) {
+    it(`${as}는 .xls와 같은 줄 · 같은 열쇠`, () => {
+      const expected = ok(parseWorkbook(hometaxCashReceiptFixture(CASH_ROWS)));
+      const result = ok(parseWorkbook(hometaxCashReceiptFixture(CASH_ROWS, { as })));
+      expect(result.format).toBe("hometax-cash-receipt");
+      expect(result.lines).toEqual(expected.lines);
+    });
+  }
+});
+
+// 서식 교차 표 — 픽스처마다 앞 6줄만 읽어(1차 판별과 같은 읽기) 등록 배열의 모든 규칙에 detect를 돌린다. 판별이 서로를 가로채면 빨갛다.
+describe.each([
+  ["card-lotte", () => lotteFixture([{}])],
+  ["card-shinhan", () => shinhanFixture([{}])],
+  ["card-bc", () => bcFixture([{}])],
+  ["hometax-tax-invoice", () => hometaxTaxInvoiceFixture([{}])],
+  ["hometax-cash-receipt", () => hometaxCashReceiptFixture([{}])],
+] as const)("서식 교차 표 — %s 픽스처", (key, build) => {
+  it("등록 배열의 규칙 가운데 제 규칙 하나에만 맞는다", () => {
+    const book = readWorkbookRows(build(), { sheetRows: DETECT_ROWS });
+    const matched = EVIDENCE_FORMATS.filter((rule) => rule.detect(book.sheets, "cfb").match).map((rule) => rule.key);
+    expect(matched).toEqual([key]);
   });
 });

@@ -3,16 +3,25 @@ import { describe, expect, it, vi } from "vitest";
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { actionLog, evidenceImportBatches, evidenceRecords } from "@/db/schema";
+import { archive } from "@/domain/archive";
 import { createAccount } from "@/domain/auth/accounts";
+import { setEvidenceTypeTaxRule } from "@/domain/code-tables";
+import { taxRuleSchema } from "@/domain/code-tables/tax-rule";
+import { splitCardTotal } from "@/domain/corp-card-usages/amounts";
+import { createCorpCard, setCorpCardActive } from "@/domain/corp-cards";
 import { registerEvidenceFile, registerEvidenceUpload } from "@/domain/evidence-import";
-import { EVIDENCE_IMPORT_MAX_BYTES, sizeRefusalHeadline } from "@/domain/evidence-import/limits";
+import { EVIDENCE_IMPORT_MAX_BYTES, EVIDENCE_IMPORT_MAX_ROWS, sizeRefusalHeadline } from "@/domain/evidence-import/limits";
 import { finalizeAmounts, parseWorkbook } from "@/domain/evidence-import/registry";
 import { loadTaxRates } from "@/domain/money/tax";
-import { ForbiddenError } from "@/domain/permissions/can";
+import { can, ForbiddenError } from "@/domain/permissions/can";
+import { TAX_VAT_RATE } from "@/domain/settings/keys";
+import { addHistorizedValue } from "@/domain/settings/registry";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
+import { listCodeItems } from "@/repositories/code-tables";
+import { findCardsByLast4 } from "@/repositories/corp-cards";
 import { upsertPermission } from "@/repositories/permissions";
 import { insertRole } from "@/repositories/roles";
-import { lotteFixture } from "@/test/fixtures/evidence-import/build";
+import { bcFixture, hometaxTaxInvoiceFixture, lotteFixture, shinhanFixture } from "@/test/fixtures/evidence-import/build";
 import { createIntakeViewer, registerFixtureFile } from "./fixtures/evidence";
 
 // 06.1-04: 증빙 등록 서비스 — 파일 하나 → 권한 · 크기 · 읽기 · 한 트랜잭션(묶음 + 기록) · 결과 DTO(실제 Postgres).
@@ -212,5 +221,281 @@ describe("domain/evidence-import — 트레이서: 롯데 파일 하나 → 묶�
     const names = (await db.select().from(evidenceImportBatches).orderBy(asc(evidenceImportBatches.createdAt))).map((batch) => batch.originalName);
     expect(names[0]).toBe("롯데.xls");
     expect(names[1]).toBe("가".repeat(255));
+  });
+});
+
+// ─── Task 2 ────────────────────────────────────────────────────────────────────────────────────────────────
+
+const A10_CHECK = "같은 승인번호 다른 금액 · 원거래 확인";
+const GHP1_CHECK = "같은 내용 줄 · 앞 파일과 건수 확인";
+// 승인번호 없는 신한 줄 하나의 열쇠(06.1-02 baseKeyOf — 끝4 · 이용일시 · 가맹점 · 합계).
+const SHINHAN_SAME = "card-shinhan|1278|2026-05-28 18:43:28|가맹점나|113400";
+
+async function addCard(issuer: string, numberLast4: string): Promise<string> {
+  const dto = await createCorpCard(SYSTEM_VIEWER, { issuer, numberLast4, label: `${issuer} ${numberLast4}`, kind: "shared" });
+  return dto.id;
+}
+
+async function recordOf(dedupeKey: string) {
+  const [record] = await db.select().from(evidenceRecords).where(eq(evidenceRecords.dedupeKey, dedupeKey));
+  return record;
+}
+
+// 승인번호 없는 같은 내용 신한 줄 n개 — 열쇠에 들지 않는 결제예정일로 파일 바이트만 가른다(GH-P1 「다른 바이트」).
+function sameContentShinhan(count: number, payDay: string): Uint8Array {
+  return shinhanFixture(Array.from({ length: count }, () => ({ 승인번호: "", 결제예정일: payDay })));
+}
+
+function shaPrefix(bytes: Uint8Array): string {
+  return sha256Hex(bytes).slice(0, 16);
+}
+
+describe("domain/evidence-import — 서식 넷 · 세율 · 카드 · A-10 · GH-P1 · 3000줄 (06.1-04 Task 2)", () => {
+  it("신한 — 부가세율 이력이 파일 가운데 날짜에서 바뀌면 줄 날짜의 세율로 역산하고, 같은 날짜 세율 조회는 한 번이다", async () => {
+    await addHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, { effectiveFrom: "2026-06-01", value: 0.12 });
+    const viewer = await createIntakeViewer();
+    const rates = vi.fn(loadTaxRates);
+    const bytes = shinhanFixture([
+      { 이용일시: "2026.05.28 18:43:28", 승인번호: "11110001", 이용금액: 113400 },
+      { 이용일시: "2026.05.28 19:00:00", 승인번호: "11110002", 이용금액: 113400 },
+      { 이용일시: "2026.06.02 10:00:00", 승인번호: "11110003", 이용금액: 112000 },
+    ]);
+
+    const result = await registerFixtureFile(viewer, bytes, "신한.xls", { loadTaxRates: rates });
+
+    expect(result.registered).toBe(3);
+    expect(rates.mock.calls.map(([asOf]) => asOf)).toEqual(["2026-05-28", "2026-06-02"]);
+    const byApproval = new Map((await recordsInOrder()).map((record) => [record.approvalNo, record]));
+    expect(byApproval.get("11110001")).toMatchObject({ totalKrw: 113_400, supplyKrw: 103_091, vatKrw: 10_309, cardLast4: "1278" });
+    expect(byApproval.get("11110002")).toMatchObject({ totalKrw: 113_400, supplyKrw: 103_091, vatKrw: 10_309 });
+    expect(byApproval.get("11110003")).toMatchObject({ totalKrw: 112_000, supplyKrw: 100_000, vatKrw: 12_000 });
+  });
+
+  it("비씨 — 면세 줄은 부가세 0 · SIGN `-` 줄은 음수 금액과 취소 표시 사유 · 결과 확인 필요 1", async () => {
+    const viewer = await createIntakeViewer();
+    const bytes = bcFixture([
+      { 승인번호: "64706307" },
+      { 승인번호: "64706308", "거래금액(원화)": "10,000", 부가세: "0" },
+      { 승인번호: "64706309", 금액SIGN코드: "-", "거래금액(원화)": "5,500", 부가세: "500" },
+    ]);
+
+    const result = await registerFixtureFile(viewer, bytes, "비씨.xls");
+
+    expect(result).toMatchObject({ registered: 3, needsCheck: 1 });
+    const byApproval = new Map((await recordsInOrder()).map((record) => [record.approvalNo, record]));
+    expect(byApproval.get("64706307")).toMatchObject({ format: "card-bc", totalKrw: 28_500, vatKrw: 2_591, supplyKrw: 25_909, cardLast4: "2942", needsCheck: null });
+    expect(byApproval.get("64706308")).toMatchObject({ totalKrw: 10_000, vatKrw: 0, supplyKrw: 10_000, needsCheck: null });
+    expect(byApproval.get("64706309")).toMatchObject({ totalKrw: -5_500, vatKrw: -500, supplyKrw: -5_000, needsCheck: "취소 표시 줄 · 원거래 확인" });
+  });
+
+  it("홈택스 세금계산서 — 파일의 합계 · 공급가 · 세액 그대로 · 음수 수정세금계산서도 그대로", async () => {
+    const viewer = await createIntakeViewer();
+    const bytes = hometaxTaxInvoiceFixture([
+      {},
+      { 승인번호: "20260620-10260620-71160002", 합계금액: -110000, 공급가액: -100000, 세액: -10000, 전자세금계산서분류: "수정세금계산서" },
+    ]);
+
+    const result = await registerFixtureFile(viewer, bytes, "홈택스.xls");
+
+    expect(result).toMatchObject({ registered: 2, cardUnknown: 0 });
+    const byApproval = new Map((await recordsInOrder()).map((record) => [record.approvalNo, record]));
+    expect(byApproval.get("20260615-10260615-71160001")).toMatchObject({
+      format: "hometax-tax-invoice",
+      evidenceType: "tax_invoice",
+      totalKrw: 110_000,
+      supplyKrw: 100_000,
+      vatKrw: 10_000,
+      businessNoDigits: "1234567891",
+      nameOnDocument: "공급회사가",
+      cardLast4: null,
+      corpCardId: null,
+    });
+    expect(byApproval.get("20260620-10260620-71160002")).toMatchObject({ totalKrw: -110_000, supplyKrw: -100_000, vatKrw: -10_000 });
+  });
+
+  it("카드 연결 — 등록자에게 법인카드 관리 권한이 없어도 파일의 끝 4자리 · 발급사(롯데)로 카드가 붙는다", async () => {
+    const cardId = await addCard("롯데카드", "2222");
+    const viewer = await createIntakeViewer();
+    expect(await can(viewer, "admin.corp-cards", "view")).toBe(false);
+
+    const result = await registerFixtureFile(viewer, lotteLines(["10000001"]));
+
+    expect(result).toMatchObject({ registered: 1, cardUnknown: 0 });
+    expect((await recordsInOrder())[0]?.corpCardId).toBe(cardId);
+  });
+
+  it("(B-F15) 별칭이 맞는 카드가 보관된 것뿐이면 카드 미등록 — findCardsByLast4는 보관 카드를 빼고 비활성 카드는 담는다", async () => {
+    const archivedId = await addCard("롯데카드", "2222");
+    await archive(SYSTEM_VIEWER, "corp_card", archivedId);
+    const inactiveId = await addCard("신한카드", "2222");
+    await setCorpCardActive(SYSTEM_VIEWER, inactiveId, false);
+    const viewer = await createIntakeViewer();
+
+    const result = await registerFixtureFile(viewer, lotteLines(["10000001"]));
+
+    expect(result).toMatchObject({ registered: 1, cardUnknown: 1 });
+    expect((await recordsInOrder())[0]?.corpCardId).toBeNull();
+    const candidates = await findCardsByLast4(viewer, ["2222"]);
+    expect(candidates.map((candidate) => candidate.id)).toEqual([inactiveId]);
+    expect(candidates[0]).toMatchObject({ issuer: "신한카드", numberLast4: "2222", active: false });
+  });
+
+  it("(E1) 끝 4자리를 못 읽은 줄 · 짝 카드가 없는 줄은 corp_card_id null로 등록되고 결과 카드 미등록에 센다", async () => {
+    await addCard("롯데카드", "2222");
+    const viewer = await createIntakeViewer();
+    const bytes = lotteFixture([{ 승인번호: "10000001" }, { 승인번호: "10000002", 카드번호: "9999-****-****-****" }, { 승인번호: "10000003", 카드번호: "9999000011113333" }]);
+
+    const result = await registerFixtureFile(viewer, bytes);
+
+    expect(result).toMatchObject({ registered: 3, cardUnknown: 2 });
+    const byApproval = new Map((await recordsInOrder()).map((record) => [record.approvalNo, record]));
+    expect(byApproval.get("10000001")?.corpCardId).not.toBeNull();
+    expect(byApproval.get("10000002")).toMatchObject({ cardLast4: null, corpCardId: null });
+    expect(byApproval.get("10000003")).toMatchObject({ cardLast4: "3333", corpCardId: null });
+  });
+
+  it(`(A-10) 같은 끝 4자리 · 같은 승인번호 · 같은 부호 · 다른 금액의 앞 기록이 있으면 등록하고 「${A10_CHECK}」`, async () => {
+    const viewer = await createIntakeViewer();
+    await registerFixtureFile(viewer, lotteFixture([{ 승인번호: "30000001" }]), "롯데A.xls");
+
+    const result = await registerFixtureFile(viewer, lotteFixture([{ 승인번호: "30000001", 매입금액: "200,000", 부가세: "18,182" }]), "롯데B.xls");
+
+    expect(result).toMatchObject({ registered: 1, needsCheck: 1 });
+    expect(await recordOf("card-lotte|2222|30000001|2026-04-30|200000")).toMatchObject({ needsCheck: "같은 승인번호 다른 금액 · 원거래 확인" });
+    expect((await recordOf("card-lotte|2222|30000001|2026-04-30|204100"))?.needsCheck).toBeNull();
+  });
+
+  it("(A-10) 부호가 다른 같은 승인번호 줄(부분 취소)은 확인 필요가 서지 않는다", async () => {
+    const viewer = await createIntakeViewer();
+    await registerFixtureFile(viewer, lotteFixture([{ 승인번호: "30000001" }]), "롯데A.xls");
+
+    const result = await registerFixtureFile(viewer, lotteFixture([{ 승인번호: "30000001", 매입일자: "2026.05.02", 매입금액: "-4,100", 부가세: "-373" }]), "롯데C.xls");
+
+    expect(result).toMatchObject({ registered: 1, needsCheck: 0 });
+    expect((await recordOf("card-lotte|2222|30000001|2026-05-02|-4100"))?.needsCheck).toBeNull();
+  });
+
+  it("(GH-P1) 파일 X = [A,B] 뒤 파일 Y = [B,C] → Y 두 줄 다 @{Y sha 앞 16자} 열쇠 · 확인 필요로 등록(이미 등록 0)", async () => {
+    const viewer = await createIntakeViewer();
+    const first = await registerFixtureFile(viewer, sameContentShinhan(2, "2026.06.15"), "X.xls");
+    expect(first).toMatchObject({ registered: 2, needsCheck: 0 });
+    const y = sameContentShinhan(2, "2026.06.16");
+
+    const second = await registerFixtureFile(viewer, y, "Y.xls");
+
+    expect(second).toMatchObject({ registered: 2, skippedDuplicate: 0, sameFile: false, needsCheck: 2 });
+    const added = await db.select().from(evidenceRecords).where(eq(evidenceRecords.batchId, second.batchId));
+    expect(added.map((record) => record.dedupeKey).sort()).toEqual([`${SHINHAN_SAME}#2@${shaPrefix(y)}`, `${SHINHAN_SAME}@${shaPrefix(y)}`]);
+    expect(added.map((record) => record.needsCheck)).toEqual([GHP1_CHECK, GHP1_CHECK]);
+  });
+
+  it("(GH-P1) Y를 다시 올리면 등록 0 · 이미 등록 2 · 같은 파일 — @ 줄을 또 만들지 않는다", async () => {
+    const viewer = await createIntakeViewer();
+    await registerFixtureFile(viewer, sameContentShinhan(2, "2026.06.15"), "X.xls");
+    const y = sameContentShinhan(2, "2026.06.16");
+    await registerFixtureFile(viewer, y, "Y.xls");
+
+    const again = await registerFixtureFile(viewer, y, "Y.xls");
+
+    expect(again).toMatchObject({ registered: 0, skippedDuplicate: 2, sameFile: true, needsCheck: 0 });
+    expect(await recordsInOrder()).toHaveLength(4);
+  });
+
+  it("(GH-P1) X 뒤 파일 Z = [C] → 기존 #2가 있어 @ 열쇠 · 확인 필요로 등록 1", async () => {
+    const viewer = await createIntakeViewer();
+    await registerFixtureFile(viewer, sameContentShinhan(2, "2026.06.15"), "X.xls");
+    const z = sameContentShinhan(1, "2026.06.17");
+
+    const result = await registerFixtureFile(viewer, z, "Z.xls");
+
+    expect(result).toMatchObject({ registered: 1, skippedDuplicate: 0, needsCheck: 1 });
+    expect(await recordOf(`${SHINHAN_SAME}@${shaPrefix(z)}`)).toMatchObject({ needsCheck: GHP1_CHECK });
+  });
+
+  it("(GH-P1) X 뒤 파일 W = [A,B,C] → 등록 3(C는 #3) · 확인 필요 3", async () => {
+    const viewer = await createIntakeViewer();
+    await registerFixtureFile(viewer, sameContentShinhan(2, "2026.06.15"), "X.xls");
+    const w = sameContentShinhan(3, "2026.06.18");
+
+    const result = await registerFixtureFile(viewer, w, "W.xls");
+
+    expect(result).toMatchObject({ registered: 3, skippedDuplicate: 0, needsCheck: 3 });
+    const added = await db.select().from(evidenceRecords).where(eq(evidenceRecords.batchId, result.batchId));
+    expect(added.map((record) => record.dedupeKey).sort()).toEqual([`${SHINHAN_SAME}#2@${shaPrefix(w)}`, `${SHINHAN_SAME}#3`, `${SHINHAN_SAME}@${shaPrefix(w)}`]);
+  });
+
+  it("(GH-P1) 홑 줄 하나가 든 두 파일(다른 바이트) → 둘째는 이미 등록 1 · 확인 필요 0(같은 거래)", async () => {
+    const viewer = await createIntakeViewer();
+    await registerFixtureFile(viewer, sameContentShinhan(1, "2026.06.15"), "한줄1.xls");
+
+    const result = await registerFixtureFile(viewer, sameContentShinhan(1, "2026.06.16"), "한줄2.xls");
+
+    expect(result).toMatchObject({ registered: 0, skippedDuplicate: 1, sameFile: false, needsCheck: 0 });
+    expect(await recordsInOrder()).toHaveLength(1);
+  });
+
+  it("(앞 파일 대조) 9/1~15 파일로 원거래가 먼저 등록된 뒤 9/1~30 파일에 원거래 · 취소 쌍이 오면 취소 줄을 등록해 합이 0이 된다", async () => {
+    const viewer = await createIntakeViewer();
+    const original = { 승인번호: "20000001", 매입일자: "2026.09.05", 매입금액: "50,000", 부가세: "4,545" };
+    const early = { 승인번호: "20000002", 매입일자: "2026.09.10" };
+    await registerFixtureFile(viewer, lotteFixture([original, early]), "롯데_0901-0915.xls");
+
+    const result = await registerFixtureFile(
+      viewer,
+      lotteFixture([original, early, { 승인번호: "20000001", 매입일자: "2026.09.20", 매입금액: "-50,000", 부가세: "-4,545" }, { 승인번호: "20000003", 매입일자: "2026.09.25" }]),
+      "롯데_0901-0930.xls",
+    );
+
+    expect(result).toMatchObject({ registered: 2, skippedDuplicate: 2, offsetPairs: 0 });
+    const pair = (await recordsInOrder()).filter((record) => record.approvalNo === "20000001");
+    expect(pair.map((record) => record.totalKrw).sort((a, b) => a - b)).toEqual([-50_000, 50_000]);
+    expect(pair.reduce((sum, record) => sum + record.totalKrw, 0)).toBe(0);
+    expect(await recordOf("card-lotte|2222|20000001|2026-09-20|-50000")).toMatchObject({ batchId: result.batchId, vatKrw: -4_545, supplyKrw: -45_455 });
+  });
+
+  it("(앞 파일 대조) 원거래가 아직 등록되지 않은 상쇄 쌍은 둘 다 등록하지 않고 상쇄 1쌍에 센다", async () => {
+    const viewer = await createIntakeViewer();
+
+    const result = await registerFixtureFile(
+      viewer,
+      lotteFixture([
+        { 승인번호: "20000001", 매입일자: "2026.09.05", 매입금액: "50,000", 부가세: "4,545" },
+        { 승인번호: "20000001", 매입일자: "2026.09.20", 매입금액: "-50,000", 부가세: "-4,545" },
+        { 승인번호: "20000003" },
+      ]),
+    );
+
+    expect(result).toMatchObject({ registered: 1, skippedDuplicate: 0, offsetPairs: 1 });
+    expect((await recordsInOrder()).map((record) => record.approvalNo)).toEqual(["20000003"]);
+    const [batch] = await db.select().from(evidenceImportBatches).where(eq(evidenceImportBatches.id, result.batchId));
+    expect(batch).toMatchObject({ rowCount: 3, registeredCount: 1, skippedDuplicateCount: 0 });
+  });
+
+  it(`(E10) ${EVIDENCE_IMPORT_MAX_ROWS}줄 롯데 파일이 한 번에 등록된다(500줄 묶음 INSERT — 바인드 변수 한도 안)`, async () => {
+    const viewer = await createIntakeViewer();
+    const rows = Array.from({ length: EVIDENCE_IMPORT_MAX_ROWS }, (_, i) => ({ 승인번호: String(40_000_000 + i) }));
+    const bytes = lotteFixture(rows, { as: "xlsx" });
+    expect(bytes.length).toBeLessThanOrEqual(EVIDENCE_IMPORT_MAX_BYTES);
+
+    const result = await registerFixtureFile(viewer, bytes, "롯데_3000.xlsx");
+
+    expect(result).toMatchObject({ registered: EVIDENCE_IMPORT_MAX_ROWS, skippedDuplicate: 0 });
+    expect(await recordsInOrder()).toHaveLength(EVIDENCE_IMPORT_MAX_ROWS);
+  }, 120_000);
+
+  it("(P2-A5) 코드표 card_receipt 규칙의 끝처리 방식을 절사로 바꾸면 신한 역산 공급가가 같은 규칙의 splitCardTotal과 같다", async () => {
+    const [item] = (await listCodeItems(SYSTEM_VIEWER, { tableKey: "evidence_type", scope: { rows: "all", includeArchived: true }, includeInactive: true })).filter(
+      (one) => one.value === "card_receipt",
+    );
+    if (!item) throw new Error("card_receipt 코드표 항목 없음");
+    const rule = { ...taxRuleSchema.parse(item.taxRule), roundingMethod: "truncate" as const };
+    await setEvidenceTypeTaxRule(SYSTEM_VIEWER, item.id, rule);
+    const viewer = await createIntakeViewer();
+
+    await registerFixtureFile(viewer, shinhanFixture([{ 승인번호: "11110001", 이용금액: 113400 }]), "신한.xls");
+
+    const expected = splitCardTotal({ money: { currency: "KRW", amount: 113_400, fxRate: 1 }, rule }, await loadTaxRates("2026-05-28"));
+    expect(expected.supplyKrw).toBe(103_090);
+    expect((await recordsInOrder())[0]).toMatchObject({ supplyKrw: expected.supplyKrw, vatKrw: expected.vatKrw });
   });
 });

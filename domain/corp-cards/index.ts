@@ -4,6 +4,7 @@ import { scopeFor } from "@/domain/permissions/scope-for";
 import { project, type DtoSpec } from "@/domain/permissions/project";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { registerDto } from "@/domain/permissions/dto-registry";
+import { relinkUnknownCardRecords as defaultRelinkUnknownCardRecords } from "@/domain/evidence-import/card-relink";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { isUniqueViolation } from "@/lib/pg-errors";
 import { findUserById as defaultFindUserById } from "@/repositories/users";
@@ -117,6 +118,7 @@ export type CorpCardWriteDeps = {
   findCorpCardById: typeof repoFindCorpCardById;
   findUserById: typeof defaultFindUserById;
   findTeamById: typeof defaultFindTeamById;
+  relinkUnknownCardRecords: typeof defaultRelinkUnknownCardRecords;
 };
 
 // 등록·수정 두 경로가 같은 가드를 쓴다 — 한쪽만 막으면 다른 쪽으로 같은 값이
@@ -177,6 +179,8 @@ export async function createCorpCard(
   }
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await recordAction(viewer, { actionType: "document_create", entity: "corp_card", entityId: row.id });
+  // 06.1-04 G11: 이 끝 4자리의 「카드 미등록」 증빙 기록을 다시 잇는다(카드 마스터 저장의 부수 효과).
+  await (deps?.relinkUnknownCardRecords ?? defaultRelinkUnknownCardRecords)(viewer, row.id);
 
   return (await project(viewer, row, CORP_CARD_DTO_SPEC)) as CorpCardDto;
 }
@@ -230,7 +234,7 @@ export async function setCorpCardActive(
   viewer: Viewer,
   id: string,
   active: boolean,
-  deps?: Partial<Pick<CorpCardWriteDeps, "can">>,
+  deps?: Partial<Pick<CorpCardWriteDeps, "can" | "relinkUnknownCardRecords">>,
 ): Promise<CorpCardDto | null> {
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, CARDS_MENU, "write"))) {
@@ -245,6 +249,8 @@ export async function setCorpCardActive(
   }
 
   await repoSetCorpCardActive(viewer, id, active);
+  // 06.1-04 G11: 활성이 바뀌면 같은 끝 4자리 카드 중 활성 하나가 정해질 수 있다 — 카드 미등록 기록을 다시 잇는다.
+  await (deps?.relinkUnknownCardRecords ?? defaultRelinkUnknownCardRecords)(viewer, id);
   const updated = await repoFindCorpCardById(viewer, id);
   return updated ? ((await project(viewer, updated, CORP_CARD_DTO_SPEC)) as CorpCardDto) : null;
 }

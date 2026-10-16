@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 import { recordAction } from "@/domain/action-log/record";
 import { taxRuleSchema, type TaxRule } from "@/domain/code-tables/tax-rule";
+import { flagSameApprovalOtherAmount, planAmbiguousGroups, resolveCardForLine } from "@/domain/evidence-import/cards";
 import { EVIDENCE_IMPORT_MAX_BYTES, sizeRefusalHeadline } from "@/domain/evidence-import/limits";
 import { EVIDENCE_FORMATS, finalizeAmounts as defaultFinalizeAmounts, parseWorkbook as defaultParseWorkbook, type ParseResult } from "@/domain/evidence-import/registry";
-import type { EvidenceFormatKey, FinalLine, FormatRule, RefusalKind } from "@/domain/evidence-import/types";
+import type { EvidenceFormatKey, FinalLine, FormatRule, ParseSuccess, RefusalKind } from "@/domain/evidence-import/types";
 import { loadTaxRates as defaultLoadTaxRates, type TaxRates } from "@/domain/money/tax";
 import { can, ForbiddenError } from "@/domain/permissions/can";
 import { registerDto } from "@/domain/permissions/dto-registry";
@@ -11,12 +12,18 @@ import { project, type DtoSpec } from "@/domain/permissions/project";
 import type { Viewer } from "@/domain/viewer";
 import { withTransaction } from "@/lib/db-transaction";
 import { listCodeItems } from "@/repositories/code-tables";
+import { findCardsByLast4 } from "@/repositories/corp-cards";
 import { findBatchIdBySha, insertBatch, setBatchCounts } from "@/repositories/evidence-import-batches";
-import { insertRecordsIgnoringDuplicates, type EvidenceRecordInsert } from "@/repositories/evidence-records";
+import {
+  findCardRecordsByApprovalNos,
+  findExistingDedupeKeys,
+  insertRecordsIgnoringDuplicates,
+  type EvidenceRecordInsert,
+} from "@/repositories/evidence-records";
 
 // 06.1-04: 증빙 등록 서비스 — 엑셀 파일 하나 → 권한 · 크기 · 읽기(06.1-02) · 사전 조회 · 한 트랜잭션(묶음 + 기록 + 행동 로그) · 결과.
 // 사용자가 고칠 수 있는 거절은 던지지 않고 결과 데이터 `refused`로 돌려준다(E2 — 06.1-05가 결과 행으로 그린다).
-// 06-03 tx 규약: 권한 · 세율 · 코드표 · 같은 파일 조회는 트랜잭션 전, 트랜잭션 안은 tx 리포지토리와 순수 함수만.
+// 06-03 tx 규약: 권한 · 세율 · 코드표 · 같은 파일 · 이미 있는 열쇠 · 카드 · 앞 기록 조회는 트랜잭션 전, 트랜잭션 안은 tx 리포지토리와 순수 함수만.
 
 export const EVIDENCE_IMPORT_BATCH_ENTITY = "evidence_import_batch";
 
@@ -24,6 +31,8 @@ const INTAKE_FORBIDDEN = "증빙 등록 권한 없음";
 // 파일 칸이 File이 아닐 때 — 06.1-02 registry.ts의 「엑셀·CSV 아님」 거절과 같은 UI-SPEC 글자.
 const NOT_A_FILE = "엑셀·CSV 파일 아님 · 내려받은 파일 그대로";
 const MAX_FILE_NAME_CHARS = 255;
+// GH-P1: 앞 파일과 겹친 같은 내용 줄의 열쇠 꼬리 `@{파일 sha256 앞 16자}`.
+const GROUP_SHA_PREFIX_CHARS = 16;
 
 export type EvidenceImportRefusal = { kind: RefusalKind; headline: string; lines: string[]; restCount: number };
 
@@ -97,7 +106,39 @@ async function loadEvidenceTaxRules(viewer: Viewer): Promise<Map<string, TaxRule
   return rules;
 }
 
-function recordOf(line: FinalLine, format: EvidenceFormatKey, batchId: string, viewer: Viewer): EvidenceRecordInsert {
+// 등록 직전 줄 — 금액 · 사유 · 열쇠가 정해지고 카드가 붙은(또는 카드 미등록인) 줄.
+type PlannedLine = FinalLine & { corpCardId: string | null };
+
+function presentValues(values: readonly (string | null)[]): string[] {
+  return [...new Set(values.filter((value): value is string => value !== null))];
+}
+
+// 앞 파일 대조 · GH-P1이 묻는 열쇠(카드 서식) — 상쇄 쌍의 원거래 열쇠, 같은 파일이 아니면 줄 열쇠 전부와 홑 줄의 `{baseKey}#2`.
+// 같은 파일을 다시 올리면 GH-P1을 돌리지 않는다 — 돌리면 처음 올릴 때 이미 등록한 무리를 `@` 열쇠로 또 만든다.
+function keysToCheck(parsed: ParseSuccess, sameFile: boolean): string[] {
+  const originals = parsed.offsetLines.map((pair) => pair.original.dedupeKey);
+  if (sameFile) return originals;
+  const lines = [...parsed.lines, ...parsed.offsetLines.map((pair) => pair.cancel)];
+  return [...originals, ...lines.flatMap((line) => (line.sameKeyCount === 1 ? [line.dedupeKey, `${line.baseKey}#2`] : [line.dedupeKey]))];
+}
+
+// 카드 서식 줄의 사전 조회(트랜잭션 전): 끝 4자리 → 카드 후보 한 번 · 승인번호 → 앞 기록 한 번(A-10). 사유는 06.1-02 → A-10 →
+// GH-P1 차례이고 먼저 선 사유를 덮지 않는다. 카드는 파일의 끝 4자리 · 카드사로만 정한다(등록자의 카드 관리 권한과 무관).
+async function planCardLines(
+  viewer: Viewer,
+  rule: FormatRule,
+  lines: readonly FinalLine[],
+  existingKeys: ReadonlySet<string>,
+  input: { sameFile: boolean; fileSha256: string },
+): Promise<PlannedLine[]> {
+  const candidates = await findCardsByLast4(viewer, presentValues(lines.map((line) => line.cardLast4)));
+  const earlier = await findCardRecordsByApprovalNos(viewer, rule.key, presentValues(lines.map((line) => line.approvalNo)));
+  const flagged = flagSameApprovalOtherAmount(lines, earlier);
+  const grouped = input.sameFile ? flagged : planAmbiguousGroups(flagged, existingKeys, input.fileSha256.slice(0, GROUP_SHA_PREFIX_CHARS));
+  return grouped.map((line) => ({ ...line, corpCardId: resolveCardForLine(line, rule, candidates) }));
+}
+
+function recordOf(line: PlannedLine, format: EvidenceFormatKey, batchId: string, viewer: Viewer): EvidenceRecordInsert {
   return {
     batchId,
     format,
@@ -112,7 +153,7 @@ function recordOf(line: FinalLine, format: EvidenceFormatKey, batchId: string, v
     businessNoDigits: line.businessNoDigits,
     nameOnDocument: line.nameOnDocument,
     merchant: line.merchant,
-    corpCardId: null,
+    corpCardId: line.corpCardId,
     cardLast4: line.cardLast4,
     needsCheck: line.needsCheck,
     originalApprovalNo: line.originalApprovalNo,
@@ -145,25 +186,34 @@ export async function registerEvidenceFile(
   const ratesByDate = new Map<string, TaxRates>();
   for (const date of parsed.rateDates) ratesByDate.set(date, await loadRates(date));
   const rulesByType = await loadEvidenceTaxRules(viewer);
-  const lines = (deps?.finalizeAmounts ?? defaultFinalizeAmounts)(parsed.lines, ratesByDate, rulesByType);
 
   const fileSha256 = createHash("sha256").update(input.bytes).digest("hex");
   const sameFile = (await findBatchIdBySha(viewer, fileSha256)) !== null;
+  const card = rule.keyKind === "card";
+  // 앞 파일 대조(사용자 결정 2026-10-16): 파일 안 상쇄 쌍의 원거래가 앞 파일로 이미 등록돼 있으면 취소 줄을 등록해 합을 0으로
+  // 맞춘다 — 원거래가 없으면 둘 다 등록하지 않는다(06.1-02가 뺀 그대로). 이미 있는 열쇠는 GH-P1과 한 번에 읽는다.
+  const existingKeys = card ? await findExistingDedupeKeys(viewer, keysToCheck(parsed, sameFile)) : new Set<string>();
+  const cancels = parsed.offsetLines.filter((pair) => existingKeys.has(pair.original.dedupeKey)).map((pair) => pair.cancel);
+  const lines = (deps?.finalizeAmounts ?? defaultFinalizeAmounts)([...parsed.lines, ...cancels], ratesByDate, rulesByType);
+  const planned = card
+    ? await planCardLines(viewer, rule, lines, existingKeys, { sameFile, fileSha256 })
+    : lines.map((line) => ({ ...line, corpCardId: null }));
   const originalName = originalNameOf(input.fileName);
   const rowCount = parsed.lines.length + parsed.offsetLines.length * 2;
-  const offsetPairs = parsed.offsetPairs;
+  const offsetPairs = parsed.offsetPairs - cancels.length;
 
   const written = await withTransaction(async (tx) => {
     const batch = await insertBatch(viewer, { format: parsed.format, originalName, fileSha256, rowCount, uploadedBy: viewer.id }, tx);
-    const rows = lines.map((line) => recordOf(line, parsed.format, batch.id, viewer));
+    const rows = planned.map((line) => recordOf(line, parsed.format, batch.id, viewer));
     const insertedKeys = new Set((await insertRecordsIgnoringDuplicates(viewer, rows, tx)).map((row) => row.dedupeKey));
     const inserted = rows.filter((row) => insertedKeys.has(row.dedupeKey));
     const counts = {
       rowCount,
       registered: inserted.length,
-      skippedDuplicate: rows.length - inserted.length,
+      // 취소 줄을 등록한 쌍의 원거래 줄은 앞 파일로 이미 등록된 줄이다.
+      skippedDuplicate: rows.length - inserted.length + cancels.length,
       offsetPairs,
-      cardUnknown: rule.keyKind === "card" ? inserted.filter((row) => row.corpCardId === null).length : 0,
+      cardUnknown: card ? inserted.filter((row) => row.corpCardId === null).length : 0,
       needsCheck: inserted.filter((row) => row.needsCheck !== null).length,
     };
     await setBatchCounts(viewer, batch.id, { registeredCount: counts.registered, skippedDuplicateCount: counts.skippedDuplicate }, tx);

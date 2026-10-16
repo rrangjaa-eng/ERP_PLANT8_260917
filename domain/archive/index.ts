@@ -22,6 +22,7 @@ import { canViewReserves, restoreReserve } from "@/domain/reserves";
 import { HOLIDAYS_MENU, restoreHoliday } from "@/domain/holidays/admin";
 import { toKstDate } from "@/domain/holidays/business-day";
 import { restoreUser } from "@/domain/people/restore";
+import { relinkUnknownCardRecords as defaultRelinkUnknownCardRecords } from "@/domain/evidence-import/card-relink";
 import { assertCanGrantRoles } from "@/domain/permissions/grant-ceiling";
 import { assertNotLastAdmin } from "@/domain/permissions/last-admin";
 import { lockSeatKeys } from "@/repositories/seats";
@@ -54,6 +55,7 @@ export type ArchiveDeps = {
   recordAction: typeof defaultRecordAction;
   now: () => Date;
   visible: typeof visible;
+  relinkUnknownCardRecords: typeof defaultRelinkUnknownCardRecords;
 };
 
 const ARCHIVE_MENU = "admin.archive";
@@ -237,6 +239,8 @@ export async function restore(
     throw error;
   }
   if (!reactivated) return { restored: false };
+  // 06.1-04 G11: 되살린 카드의 끝 4자리 「카드 미등록」 증빙 기록을 다시 잇는다(실제로 되살린 때만).
+  if (entity === "corp_card") await (deps?.relinkUnknownCardRecords ?? defaultRelinkUnknownCardRecords)(viewer, id);
 
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await recordAction(viewer, { actionType: "restore", entity, entityId: id });

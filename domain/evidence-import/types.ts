@@ -2,7 +2,11 @@
 // `EVIDENCE_FORMAT_TYPES`만 읽는다(C-F15).
 
 // 서식 키 → 증빙 종류(코드표 값). 서식 규칙의 `evidenceType`은 이 표 값을 쓰고, 등록 배열과 1:1이다.
-export const EVIDENCE_FORMAT_TYPES = [{ key: "card-lotte", evidenceType: "card_receipt" }] as const;
+export const EVIDENCE_FORMAT_TYPES = [
+  { key: "card-lotte", evidenceType: "card_receipt" },
+  { key: "card-shinhan", evidenceType: "card_receipt" },
+  { key: "card-bc", evidenceType: "card_receipt" },
+] as const;
 
 export type EvidenceFormatKey = (typeof EVIDENCE_FORMAT_TYPES)[number]["key"];
 export type Container = "cfb" | "xlsx" | "csv";

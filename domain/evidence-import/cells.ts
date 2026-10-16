@@ -18,6 +18,12 @@ export function cardLast4Of(value: unknown): string | null {
   return /^\d{4}$/.test(last4) ? last4 : null;
 }
 
+// 카드 승인번호 — `00000000` 같은 가짜 번호(1~9 숫자 없음)와 빈칸은 null: 열쇠로 쓰지 않고 대체 열쇠로 간다.
+export function cardApprovalNoOf(value: unknown): string | null {
+  const text = cellText(value);
+  return /[1-9]/.test(text) ? text : null;
+}
+
 // 원 정수 칸. 공백 · 쉼표 · `원` · `₩`를 뗀다. 정수가 아니거나 금액 울타리 밖이면 null — 반올림하지 않는다(B-F19).
 export function cellKrw(value: unknown): number | null {
   let amount: number;
@@ -41,6 +47,14 @@ function pad2(value: number): string {
 function validDate(y: number, m: number, d: number): boolean {
   if (m < 1 || m > 12 || d < 1) return false;
   return d <= new Date(Date.UTC(y, m, 0)).getUTCDate();
+}
+
+// 외화 · 현지 금액 칸이 0(또는 빈칸)인가 — 해외 이용 표시(E15)에만 쓴다. 금액으로 읽지 않으므로 소수도 받는다.
+// 숫자로 못 읽는 값은 0이 아니라고 본다(확인 필요 쪽으로 닫는다).
+export function isZeroOrBlank(value: unknown): boolean {
+  const text = cellText(value).replaceAll(/[\s,]/g, "");
+  if (text === "") return true;
+  return /^[+-]?\d+(\.\d+)?$/.test(text) && Number(text) === 0;
 }
 
 // 날짜 칸 → 한국 날짜 글자 `YYYY-MM-DD`(+ 같은 칸에 시각이 있으면 `HH:MM:SS`). `Date` 객체로 바꾸지 않는다 — 시간대 하루 밀림.

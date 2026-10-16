@@ -152,3 +152,129 @@ export function zipBombFixture(): Uint8Array {
   }
   return bytes;
 }
+
+export const SHINHAN_HEADER = [
+  "이용일시",
+  "접수일",
+  "승인번호",
+  "이용카드",
+  "이용자명",
+  "가맹점명",
+  "이용금액",
+  "이용구분",
+  "할부개월수",
+  "이용지역",
+  "카드구분",
+  "결제예정일",
+] as const;
+
+const SHINHAN_DEFAULTS: Record<string, FixtureCell> = {
+  이용일시: "2026.05.28 18:43:28",
+  접수일: "2026.05.29",
+  승인번호: "09847552  ",
+  이용카드: "5531-52**-****-1278",
+  이용자명: "(*)회사가",
+  가맹점명: "가맹점나",
+  이용금액: 113400.0,
+  이용구분: "일시불",
+  할부개월수: "",
+  이용지역: "",
+  카드구분: "신한카드",
+  결제예정일: "2026.06.15",
+};
+
+// 신한 법인이용내역 — 머리줄 1(시트 `Sheet0`, 12칸), 금액은 숫자 셀, 카드 번호는 파일이 이미 가림.
+export function shinhanFixture(rows: readonly FixtureRow[], opts: FixtureOptions & { header?: readonly string[] } = {}): Uint8Array {
+  const header = opts.header ?? SHINHAN_HEADER;
+  return writeBook([{ name: "Sheet0", rows: [[...header], ...rowsOf(header, SHINHAN_DEFAULTS, rows)] }], opts.as);
+}
+
+export const BC_HEADER = [
+  "수신정보구분코드",
+  "카드번호",
+  "카드종류",
+  "결제계좌번호",
+  "결제계좌은행명",
+  "지정자한글명",
+  "국내외사용구분",
+  "승인번호",
+  "승인일자",
+  "매출종류",
+  "금액SIGN코드",
+  "거래금액(원화)",
+  "부가세",
+  "봉사료",
+  "할부기간",
+  "매입금액(원화)",
+  "청구금액",
+  "청구수수료",
+  "실청구금액",
+  "거래금액(외화)",
+  "현지금액",
+  "현지화폐코드",
+  "외화거래일환율",
+  "외화거래국가코드",
+  "외화거래국가명",
+  "외화거래도시명",
+  "가맹점사업자번호",
+  "가맹점명",
+  "가맹점업종",
+  "가맹점우편번호",
+  "가맹점주소1",
+  "가맹점주소2",
+  "가맹점전화번호",
+  "회계코드",
+  "회계코드명",
+  "본부명",
+  "부서명",
+] as const;
+
+// 결과 객체에 남으면 안 되는 가짜 결제 계좌번호(단언용).
+export const FAKE_BC_ACCOUNT_NO = "111-222222-33-444";
+
+const BC_DEFAULTS: Record<string, FixtureCell> = {
+  수신정보구분코드: "신규",
+  카드번호: "9430-0000-0000-2942",
+  카드종류: "B",
+  결제계좌번호: FAKE_BC_ACCOUNT_NO,
+  결제계좌은행명: "은행가",
+  지정자한글명: "가명",
+  국내외사용구분: "국내",
+  승인번호: "64706307",
+  승인일자: "2026-05-14",
+  매출종류: "일시불",
+  금액SIGN코드: "",
+  "거래금액(원화)": "28,500",
+  부가세: "2,591",
+  봉사료: "0",
+  할부기간: "",
+  "매입금액(원화)": "28,500",
+  청구금액: "28,500",
+  청구수수료: "0",
+  실청구금액: "28,500",
+  "거래금액(외화)": "0",
+  현지금액: "0",
+  현지화폐코드: "",
+  외화거래일환율: "0",
+  외화거래국가코드: "",
+  외화거래국가명: "",
+  외화거래도시명: "",
+  가맹점사업자번호: "113-**-*****",
+  가맹점명: "가맹점다",
+  가맹점업종: "업종가",
+  가맹점우편번호: "00000",
+  가맹점주소1: "주소가",
+  가맹점주소2: "",
+  가맹점전화번호: "000-0000-0000",
+  회계코드: "",
+  회계코드명: "",
+  본부명: "",
+  부서명: "",
+};
+
+// 비씨 이용내역 — 머리줄 1(`Sheet1`, 37칸). 실물처럼 모든 데이터 칸을 고정폭 공백 패딩 문자열로 쓴다.
+export function bcFixture(rows: readonly FixtureRow[], opts: FixtureOptions & { header?: readonly string[] } = {}): Uint8Array {
+  const header = opts.header ?? BC_HEADER;
+  const body = rowsOf(header, BC_DEFAULTS, rows).map((row) => row.map((cell) => (cell === null ? null : String(cell).padStart(13))));
+  return writeBook([{ name: "Sheet1", rows: [[...header], ...body] }], opts.as);
+}

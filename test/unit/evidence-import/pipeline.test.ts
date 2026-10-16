@@ -96,7 +96,7 @@ describe("롯데 트레이서 — .xls", () => {
 
   it("두 단계 금액 — 파일 부가세로 공급가 = 합계 − 부가세", () => {
     const result = ok(parseWorkbook(lotteFixture([{}])));
-    const [line] = finalizeAmounts(result.lines, new Map());
+    const [line] = finalizeAmounts(result.lines, new Map(), new Map());
     expect(line).toMatchObject({ totalKrw: 204100, vatKrw: 18554, supplyKrw: 185546 });
   });
 

@@ -1,7 +1,10 @@
+import type { TaxRule } from "@/domain/code-tables/tax-rule";
 import type { TaxRates } from "@/domain/money/tax";
 import { resolveLineAmounts } from "@/domain/evidence-import/amounts";
 import { DETECT_ROWS, detectFormat } from "@/domain/evidence-import/detect";
+import { cardBc } from "@/domain/evidence-import/formats/card-bc";
 import { cardLotte } from "@/domain/evidence-import/formats/card-lotte";
+import { cardShinhan } from "@/domain/evidence-import/formats/card-shinhan";
 import { dedupeKeys, splitOffsetPairs } from "@/domain/evidence-import/key";
 import {
   EVIDENCE_IMPORT_MAX_BYTES,
@@ -17,7 +20,7 @@ import { decodeCsvText, DEFAULT_WORKBOOK_DEPS, readSheets, sniff, type SheetSour
 export { EVIDENCE_IMPORT_MAX_BYTES, EVIDENCE_IMPORT_MAX_ROWS } from "@/domain/evidence-import/limits";
 
 // 06.1-02: 증빙 가져오기 진입점. 서식 하나 = 규칙 파일 하나 + 이 배열 한 줄(D-6103). 계산서 · 현금영수증은 06.1-11.
-export const EVIDENCE_FORMATS: readonly FormatRule[] = [cardLotte];
+export const EVIDENCE_FORMATS: readonly FormatRule[] = [cardLotte, cardShinhan, cardBc];
 
 export type ParseResult = ParseSuccess | Refusal;
 
@@ -112,11 +115,19 @@ export function parseWorkbook(bytes: Uint8Array, options: ParseOptions = {}): Pa
   return { ok: true, format: rule.key, lines, rateDates, offsetPairs };
 }
 
-// 둘째 단계: 호출자(06.1-04)가 rateDates마다 읽은 세율로 등록용 줄을 만든다. 맵에 없는 날짜를 물으면 던진다(호출자 결함).
-export function finalizeAmounts(lines: readonly KeyedLine[], ratesByDate: ReadonlyMap<string, TaxRates>): FinalLine[] {
+// 둘째 단계: 호출자(06.1-04)가 rateDates마다 읽은 세율과 트랜잭션 전에 코드표에서 읽은 증빙 종류별 세금 규칙으로 등록용 줄을
+// 만든다. 역산 줄의 날짜가 세율 맵에 없거나 그 종류가 규칙 맵에 없으면 던진다(호출자 결함 — 사용자 거절이 아니다).
+export function finalizeAmounts(
+  lines: readonly KeyedLine[],
+  ratesByDate: ReadonlyMap<string, TaxRates>,
+  rulesByType: ReadonlyMap<string, TaxRule>,
+): FinalLine[] {
   return lines.map((line) => {
-    const needsRates = line.vatKrw === null && line.supplyKrw === null;
-    if (needsRates && !ratesByDate.has(line.issuedOn)) throw new Error(`세율 없음 — ${line.issuedOn}`);
-    return { ...line, ...resolveLineAmounts(line) };
+    if (line.vatKrw !== null || line.supplyKrw !== null) return { ...line, ...resolveLineAmounts(line) };
+    const rates = ratesByDate.get(line.issuedOn);
+    if (!rates) throw new Error(`세율 없음 — ${line.issuedOn}`);
+    const rule = rulesByType.get(line.evidenceType);
+    if (!rule) throw new Error(`세금 규칙 없음 — ${line.evidenceType}`);
+    return { ...line, ...resolveLineAmounts(line, rates, rule) };
   });
 }

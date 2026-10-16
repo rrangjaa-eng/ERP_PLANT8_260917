@@ -7,6 +7,7 @@ import { readWorkbookRows, zipEntryStats } from "@/lib/xlsx-server";
 import { cardLotte } from "@/domain/evidence-import/formats/card-lotte";
 import {
   encryptedFixture,
+  forgedZipFixture,
   hometaxTaxInvoiceFixture,
   LOTTE_HEADER,
   lotteFixture,
@@ -180,6 +181,22 @@ describe("손상 · 암호 · 압축 폭탄 — SheetJS 예외가 새지 않는�
 
   it("readWorkbookRows도 상한을 넘는 zip은 SheetJS에 넘기지 않고 던진다", () => {
     expect(() => readWorkbookRows(zipBombFixture(), { zipLimits: { maxEntries: 200, maxUnzippedBytes: 20_000_000 } })).toThrow("zip-limits");
+  });
+
+  // 독립 검토 P1-1 — SheetJS는 로컬 헤더 · ZIP64 칸으로 풀 크기를 정하고 중앙 디렉터리와의 차이는 다 푼 뒤에 본다.
+  for (const forgery of ["local-size", "data-descriptor", "zip64-local", "zip64-central", "zero-size-deflate", "method"] as const) {
+    it(`위조 zip(${forgery}) → zipEntryStats null · 거절 · SheetJS 읽기 호출 0`, () => {
+      const bytes = forgedZipFixture(forgery);
+      expect(bytes.length).toBeLessThan(EVIDENCE_IMPORT_MAX_BYTES);
+      expect(zipEntryStats(bytes)).toBeNull();
+      const read = vi.fn(readWorkbookRows);
+      expect(parseWorkbook(bytes, { deps: { readWorkbookRows: read } })).toMatchObject({ ok: false, kind: "not-excel", headline: "엑셀·CSV 파일 아님 · 내려받은 파일 그대로" });
+      expect(read).not.toHaveBeenCalled();
+    });
+  }
+
+  it("readWorkbookRows도 로컬 헤더 크기가 다른 zip은 SheetJS에 넘기지 않고 던진다", () => {
+    expect(() => readWorkbookRows(forgedZipFixture("local-size"), { zipLimits: { maxEntries: 200, maxUnzippedBytes: 20_000_000 } })).toThrow("zip-limits");
   });
 
   it("정상 롯데 xlsx의 zipEntryStats는 항목 수 · 풀린 크기 합", () => {

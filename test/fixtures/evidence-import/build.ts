@@ -1,3 +1,4 @@
+import { deflateRawSync } from "node:zlib";
 import * as XLSX from "xlsx";
 import * as cpexcel from "xlsx/dist/cpexcel.full.mjs";
 
@@ -152,6 +153,117 @@ export function zipBombFixture(): Uint8Array {
     if (sig === 0x02014b50 && at + 28 <= bytes.length) view.setUint32(at + 24, inflated, true);
   }
   return bytes;
+}
+
+type ZipEntry = { local: Uint8Array; name: Uint8Array; localExtra: Uint8Array; data: Uint8Array; central: Uint8Array; centralExtra: Uint8Array; comment: Uint8Array };
+
+function zipEntriesOf(bytes: Uint8Array): ZipEntry[] {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let end = bytes.length - 22;
+  while (end >= 0 && view.getUint32(end, true) !== 0x06054b50) end--;
+  const count = view.getUint16(end + 10, true);
+  let at = view.getUint32(end + 16, true);
+  const entries: ZipEntry[] = [];
+  for (let i = 0; i < count; i++) {
+    const nameLen = view.getUint16(at + 28, true);
+    const extraLen = view.getUint16(at + 30, true);
+    const commentLen = view.getUint16(at + 32, true);
+    const offset = view.getUint32(at + 42, true);
+    const localNameLen = view.getUint16(offset + 26, true);
+    const localExtraLen = view.getUint16(offset + 28, true);
+    const dataAt = offset + 30 + localNameLen + localExtraLen;
+    entries.push({
+      local: bytes.slice(offset, offset + 30),
+      name: bytes.slice(offset + 30, offset + 30 + localNameLen),
+      localExtra: bytes.slice(offset + 30 + localNameLen, dataAt),
+      data: bytes.slice(dataAt, dataAt + view.getUint32(at + 20, true)),
+      central: bytes.slice(at, at + 46),
+      centralExtra: bytes.slice(at + 46 + nameLen, at + 46 + nameLen + extraLen),
+      comment: bytes.slice(at + 46 + nameLen + extraLen, at + 46 + nameLen + extraLen + commentLen),
+    });
+    at += 46 + nameLen + extraLen + commentLen;
+  }
+  return entries;
+}
+
+function zipOf(entries: readonly ZipEntry[]): Uint8Array {
+  const parts: Uint8Array[] = [];
+  const centrals: Uint8Array[] = [];
+  let offset = 0;
+  for (const entry of entries) {
+    const local = entry.local.slice();
+    const lv = new DataView(local.buffer);
+    lv.setUint16(26, entry.name.length, true);
+    lv.setUint16(28, entry.localExtra.length, true);
+    const central = entry.central.slice();
+    const cv = new DataView(central.buffer);
+    cv.setUint16(28, entry.name.length, true);
+    cv.setUint16(30, entry.centralExtra.length, true);
+    cv.setUint16(32, entry.comment.length, true);
+    cv.setUint32(42, offset, true);
+    parts.push(local, entry.name, entry.localExtra, entry.data);
+    centrals.push(central, entry.name, entry.centralExtra, entry.comment);
+    offset += local.length + entry.name.length + entry.localExtra.length + entry.data.length;
+  }
+  const dirSize = centrals.reduce((sum, part) => sum + part.length, 0);
+  const eocd = new Uint8Array(22);
+  const ev = new DataView(eocd.buffer);
+  ev.setUint32(0, 0x06054b50, true);
+  ev.setUint16(8, entries.length, true);
+  ev.setUint16(10, entries.length, true);
+  ev.setUint32(12, dirSize, true);
+  ev.setUint32(16, offset, true);
+  const all = [...parts, ...centrals, eocd];
+  const out = new Uint8Array(all.reduce((sum, part) => sum + part.length, 0));
+  let at = 0;
+  for (const part of all) {
+    out.set(part, at);
+    at += part.length;
+  }
+  return out;
+}
+
+// ZIP64 확장 정보 필드(0x0001) — 풀린 크기 · 압축 크기 8바이트씩.
+function zip64Extra(uncompressed: number, compressed: number): Uint8Array {
+  const extra = new Uint8Array(20);
+  const view = new DataView(extra.buffer);
+  view.setUint16(0, 0x0001, true);
+  view.setUint16(2, 16, true);
+  view.setBigUint64(4, BigInt(uncompressed), true);
+  view.setBigUint64(12, BigInt(compressed), true);
+  return extra;
+}
+
+export type ZipForgery = "local-size" | "data-descriptor" | "zip64-local" | "zip64-central" | "zero-size-deflate" | "method";
+
+// 중앙 디렉터리는 작아 보이는데 SheetJS가 로컬 헤더 · ZIP64 칸 · 데이터 서술자로 크게 푸는 꼴(독립 검토 P1-1).
+// 정상 롯데 xlsx(deflate)의 첫 항목 하나만 위조한다 — 파일은 작게 둔다.
+export function forgedZipFixture(forgery: ZipForgery): Uint8Array {
+  const entries = zipEntriesOf(lotteFixture([{}], { as: "xlsx" }));
+  const first = entries[0];
+  if (!first) throw new Error("항목 없음");
+  const local = new DataView(first.local.buffer);
+  const central = new DataView(first.central.buffer);
+  if (forgery === "local-size") local.setUint32(22, local.getUint32(22, true) + 5_000_000, true);
+  if (forgery === "data-descriptor") {
+    local.setUint16(6, local.getUint16(6, true) | 0x0008, true);
+    central.setUint16(8, central.getUint16(8, true) | 0x0008, true);
+  }
+  if (forgery === "zip64-local") first.localExtra = zip64Extra(5_000_000, first.data.length);
+  if (forgery === "zip64-central") first.centralExtra = zip64Extra(5_000_000, first.data.length);
+  if (forgery === "method") {
+    local.setUint16(8, 12, true);
+    central.setUint16(10, 12, true);
+  }
+  if (forgery === "zero-size-deflate") {
+    // 풀린 크기 칸 0 + 실제로는 크게 풀리는 deflate — SheetJS 순수 JS inflate는 크기 0이면 버퍼를 끝없이 늘린다.
+    first.data = new Uint8Array(deflateRawSync(new Uint8Array(200_000)));
+    local.setUint32(18, first.data.length, true);
+    local.setUint32(22, 0, true);
+    central.setUint32(20, first.data.length, true);
+    central.setUint32(24, 0, true);
+  }
+  return zipOf(entries);
 }
 
 export const SHINHAN_HEADER = [

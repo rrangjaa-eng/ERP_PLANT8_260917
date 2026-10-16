@@ -131,10 +131,23 @@ export function cfbStreamNames(bytes: Uint8Array): string[] | null {
 }
 
 // zip 중앙 디렉터리 통계(SheetJS 없이 바이트만) — 항목 수 · 풀린 크기 합. 끝 레코드를 못 찾거나 ZIP64 표지면 null.
+// SheetJS는 로컬 헤더(와 ZIP64 칸)의 크기로 풀고 중앙 디렉터리와의 차이는 다 푼 뒤에 본다 — 그래서 항목마다 로컬 헤더를
+// 따라가 크기 · 방식이 같은지, 데이터 서술자(bit 3) · ZIP64 칸 · 풀린 크기 0인 deflate가 없는지 먼저 본다(독립 검토 P1-1).
+function hasZip64Extra(view: DataView, from: number, length: number): boolean | null {
+  let at = from;
+  const end = from + length;
+  while (at + 4 <= end) {
+    if (view.getUint16(at, true) === 0x0001) return true;
+    at += 4 + view.getUint16(at + 2, true);
+  }
+  return at === end ? false : null;
+}
+
 export function zipEntryStats(bytes: Uint8Array): { entries: number; uncompressedBytes: number } | null {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const EOCD = 0x06054b50;
   const CEN = 0x02014b50;
+  const LOC = 0x04034b50;
   const lowest = Math.max(0, bytes.length - 22 - 0xffff);
   let end = -1;
   for (let at = bytes.length - 22; at >= lowest; at--) {
@@ -153,10 +166,26 @@ export function zipEntryStats(bytes: Uint8Array): { entries: number; uncompresse
   let uncompressedBytes = 0;
   for (let i = 0; i < entries; i++) {
     if (at + 46 > end || view.getUint32(at, true) !== CEN) return null;
+    const flags = view.getUint16(at + 8, true);
+    const method = view.getUint16(at + 10, true);
+    const packed = view.getUint32(at + 20, true);
     const size = view.getUint32(at + 24, true);
-    if (size === 0xffffffff) return null;
+    const nameLen = view.getUint16(at + 28, true);
+    const extraLen = view.getUint16(at + 30, true);
+    const localAt = view.getUint32(at + 42, true);
+    if (size === 0xffffffff || packed === 0xffffffff || (flags & 0x0008) !== 0) return null;
+    if (method !== 0 && method !== 8) return null;
+    if ((method === 0 && packed !== size) || (method === 8 && size === 0 && packed > 2)) return null;
+    if (at + 46 + nameLen + extraLen > end || hasZip64Extra(view, at + 46 + nameLen, extraLen) !== false) return null;
+    if (localAt + 30 > dirOffset || view.getUint32(localAt, true) !== LOC) return null;
+    const localNameLen = view.getUint16(localAt + 26, true);
+    const localExtraLen = view.getUint16(localAt + 28, true);
+    if ((view.getUint16(localAt + 6, true) & 0x0008) !== 0 || view.getUint16(localAt + 8, true) !== method) return null;
+    if (view.getUint32(localAt + 18, true) !== packed || view.getUint32(localAt + 22, true) !== size) return null;
+    if (localAt + 30 + localNameLen + localExtraLen + packed > dirOffset) return null;
+    if (hasZip64Extra(view, localAt + 30 + localNameLen, localExtraLen) !== false) return null;
     uncompressedBytes += size;
-    at += 46 + view.getUint16(at + 28, true) + view.getUint16(at + 30, true) + view.getUint16(at + 32, true);
+    at += 46 + nameLen + extraLen + view.getUint16(at + 32, true);
   }
   return { entries, uncompressedBytes };
 }

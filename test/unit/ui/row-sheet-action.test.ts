@@ -34,4 +34,23 @@ describe("RowSheet action 자리", () => {
     expect(withUndefined).toBe(without);
     expect(without).not.toMatch(/class="[^"]*action[^"]*"/);
   });
+
+  // 06.1 SP-6107 — 줄 행동이 둘인 행(구매 요청 `신청됨`)은 같은 `action` 자리에 3차 두 줄. prop은 그대로 하나다.
+  it("3차 둘(fragment)을 주면 두 요소가 같은 action 자리 안에 순서대로 선다", () => {
+    const markup = render({
+      action: createElement(
+        "span",
+        null,
+        createElement("button", { type: "button" }, "요청 취소"),
+        createElement("button", { type: "button" }, "증빙 고르기 3"),
+      ),
+    });
+    const wrapStart = markup.search(/<div class="[^"]*action[^"]*">/);
+    expect(wrapStart).toBeGreaterThan(-1);
+    expect((markup.match(/class="[^"]*action[^"]*"/g) ?? []).length).toBe(1);
+    const first = markup.indexOf("요청 취소");
+    const second = markup.indexOf("증빙 고르기 3");
+    expect(first).toBeGreaterThan(wrapStart);
+    expect(second).toBeGreaterThan(first);
+  });
 });

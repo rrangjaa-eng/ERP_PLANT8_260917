@@ -10,9 +10,11 @@ import { TextField } from "@/ui/input/TextField";
 import { PickDialog, type PickItem, type PickManyOutcome, type PickResult, type PickRow } from "@/ui/pick-dialog/PickDialog";
 import { Num } from "@/ui/num/Num";
 import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
+import { KvList } from "@/ui/kv-list/KvList";
 import { PanelForm } from "@/ui/side-panel/PanelForm";
 import { SidePanel } from "@/ui/side-panel/SidePanel";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
+import { RowSheet } from "@/ui/table/RowSheet";
 import { Table, reconcileSelection } from "@/ui/table/Table";
 import type { CellIssue, TableColumn } from "@/ui/table/types";
 import { Toast } from "@/ui/toast/Toast";
@@ -557,5 +559,107 @@ export function GalleryPanel({ pick = false }: { pick?: boolean }) {
         ) : null}
       </PanelForm>
     </SidePanel>
+  );
+}
+
+// 06.1-03 Task 1 (Round 2 G5) — Codex가 찍을 가짜 픽스처 표본 셋. 새 컴포넌트 · 새 CSS 클래스 없이 기존 SidePanel + PanelForm + KvList ·
+// ConfirmDialog 사유 슬롯 · RowSheet 조합뿐이다. `page.tsx`가 `?panel=evidence` · `?confirm=detach` · `?sheet=two-actions`로 연 채 렌더한다.
+
+// S3 증빙 패널 — 확인 필요 줄 · 읽기 칸 · 공급가 입력 · 공개 · 붙은 문서(잠김 줄) · 이력 · 등록(06.1-07이 만들 화면의 「적용 전」 기준).
+export function EvidencePanelSample() {
+  return (
+    <SidePanel title="세금계산서 · (주)에이원" closeHref="/dev/components">
+      <PanelForm id="gallery-evidence-form" label="증빙 금액 저장" intent="edit" onSubmit={(event) => event.preventDefault()}>
+        <KvList
+          items={[
+            { label: "확인 필요", value: <StatusTag status="확인 필요" variant="text" /> },
+            { label: "날짜", value: "2026-10-02" },
+            { label: "승인번호", value: "20261002-41000012-xxxx" },
+            { label: "사업자번호", value: "123-45-67890" },
+            { label: "합계", value: <Num value={1_100_000} /> },
+          ]}
+        />
+        <TextField id="gallery-evidence-supply" name="supply" label="공급가" numberKind="krw" defaultValue="1,000,000" />
+        <KvList
+          items={[
+            { label: "세액", value: <Num value={100_000} /> },
+            { label: "공개", value: <StatusTag status="미공개" variant="text" /> },
+            { label: "붙은 문서", value: "26001-0004 · 결재 중 문서에 붙음 · 금액 잠김" },
+            { label: "이력", value: "10-02 14:02 이과장 등록 · 신한 1234" },
+            { label: "등록", value: "이과장 · 10-02 14:02" },
+          ]}
+        />
+      </PanelForm>
+    </SidePanel>
+  );
+}
+
+// S7 떼기 모달 — ConfirmDialog 사유 슬롯. 사유가 빈 동안 1차 aria-disabled + 행동 줄 왼쪽 `사유 없음 · 사유 적기`.
+export function DetachConfirmSample({ initialOpen = false }: { initialOpen?: boolean }) {
+  const [open, setOpen] = useState(initialOpen);
+  const [reason, setReason] = useState("");
+  return (
+    <>
+      <Button variant="secondary" onClick={() => setOpen(true)}>
+        증빙 떼기 열기
+      </Button>
+      <ConfirmDialog
+        open={open}
+        onClose={() => setOpen(false)}
+        title="증빙 떼기"
+        subtitle="세금계산서 · (주)에이원 · 26001-0004"
+        resultLines={["비용이 예상 1,000,000원으로"]}
+        evidenceField={<TextField id="gallery-detach-reason" label="사유" value={reason} onChange={(event) => setReason(event.target.value)} />}
+        primary={{
+          label: "증빙 떼기",
+          onConfirm: () => setOpen(false),
+          disabledReason: reason.trim() === "" ? "사유 없음 · 사유 적기" : undefined,
+        }}
+      />
+    </>
+  );
+}
+
+// G1(SP-6107) 폰 행 시트 — `action` 자리에 3차 두 줄. 줄 행동이 둘인 구매 요청 `신청됨` 행의 모양(06.1-08이 첫 적용).
+export function TwoActionsSheetSample({ initialOpen = false }: { initialOpen?: boolean }) {
+  const [open, setOpen] = useState(initialOpen);
+  return (
+    <>
+      <Button variant="secondary" onClick={() => setOpen(true)}>
+        두 3차 시트 열기
+      </Button>
+      <RowSheet
+        open={open}
+        onClose={() => setOpen(false)}
+        title="무대 설치 자재"
+        subtitle="신청됨 · 표본 거래처"
+        items={[
+          { label: "예상 금액", value: <Num value={4_200_000} /> },
+          { label: "신청", value: "박서연 · 10-02" },
+        ]}
+        action={
+          <>
+            <Button variant="tertiary" onClick={() => undefined}>
+              요청 취소
+            </Button>
+            <Button variant="tertiary" onClick={() => undefined}>
+              증빙 고르기 3
+            </Button>
+          </>
+        }
+      />
+    </>
+  );
+}
+
+export function EvidenceSamples({ confirmOpen = false, sheetOpen = false }: { confirmOpen?: boolean; sheetOpen?: boolean }) {
+  return (
+    <div className={styles.samples}>
+      <Link href="/dev/components?panel=evidence" scroll={false} className={buttonLinkClassName("secondary")}>
+        증빙 패널 열기
+      </Link>
+      <DetachConfirmSample initialOpen={confirmOpen} />
+      <TwoActionsSheetSample initialOpen={sheetOpen} />
+    </div>
   );
 }

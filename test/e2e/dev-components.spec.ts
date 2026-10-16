@@ -87,6 +87,7 @@ test.describe("로그인한 뒤", () => {
     "옆 패널",
     "고르기 목록",
     "골라내기 — 다중(SP-62-1)",
+    "증빙 표본(06.1)",
     "화면 틀",
   ];
 
@@ -99,6 +100,37 @@ test.describe("로그인한 뒤", () => {
     const words = Object.keys(STATUS_KIND);
     const badges = page.locator('[data-gallery="status-badges"] > li');
     await expect(badges).toHaveCount(words.length * 2);
+  });
+
+  // 06.1-03 SP-6101 — 증빙 기록 낱말 여섯이 상태 배지 구역에 tag · text 한 쌍씩 선다.
+  test("상태 배지 구역에 06.1 증빙 낱말 여섯이 tag · text 한 번씩 있다", async ({ page }) => {
+    const badges = page.locator('[data-gallery="status-badges"]');
+    for (const word of ["미공개", "팀 공개", "본부 공개", "붙음", "확인 필요", "카드 미등록"]) {
+      await expect(badges.getByText(word, { exact: true }), word).toHaveCount(2);
+    }
+  });
+
+  // 06.1-03 Round 2 G5 — Codex 캡처용 표본 경로 셋(`page.goto`만으로 열린 채 선다).
+  test("?panel=evidence — S3 증빙 패널 표본이 열린 채 선다(제목 · 1차 증빙 금액 저장)", async ({ page }) => {
+    await page.goto("/dev/components?panel=evidence");
+    const dialog = page.locator("dialog:modal");
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toHaveAttribute("data-ui", "side-panel");
+    await expect(dialog.getByRole("heading", { name: "세금계산서 · (주)에이원" })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: /^증빙 금액 저장/ })).toBeVisible();
+    await expect(dialog.getByLabel("공급가")).toHaveValue("1,000,000");
+  });
+
+  test("?confirm=detach — S7 떼기 모달이 열린 채 서고 사유가 빈 동안 1차는 aria-disabled + 사유 없음 · 사유 적기", async ({ page }) => {
+    await page.goto("/dev/components?confirm=detach");
+    const dialog = page.locator("dialog:modal");
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("heading", { name: "증빙 떼기" })).toBeVisible();
+    const primary = dialog.getByRole("button", { name: /^증빙 떼기/ });
+    await expect(primary).toHaveAttribute("aria-disabled", "true");
+    await expect(dialog.getByText("사유 없음 · 사유 적기").first()).toBeVisible();
+    await dialog.getByLabel("사유").fill("잘못 붙임");
+    await expect(primary).not.toHaveAttribute("aria-disabled", "true");
   });
 
   test("숫자 구역에 큰 금액 · 음수 · 외화 2행이 있다", async ({ page }) => {
@@ -638,6 +670,31 @@ test.describe("로그인한 뒤", () => {
   test("틀 3종 축소 예가 목록 · 상세 · 폼 이름으로 있다", async ({ page }) => {
     const frames = page.locator('[data-gallery="frames"] [data-gallery-frame]');
     expect(await frames.evaluateAll((els) => els.map((e) => e.getAttribute("data-gallery-frame")))).toEqual(["list", "detail", "form"]);
+  });
+});
+
+test.describe("로그인한 뒤 · 폰 375 — 시트 두 3차(SP-6107)", () => {
+  test.use({ viewport: { width: 375, height: 812 } });
+
+  test("?sheet=two-actions — 시트 안 3차 둘(요청 취소 · 증빙 고르기 3)이 위에서 아래로 서고 각 높이 44 이상", async ({ page }) => {
+    const user = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(user.email);
+    await page.getByLabel("비밀번호").fill(user.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+    await page.goto("/dev/components?sheet=two-actions");
+    const dialog = page.locator("dialog:modal");
+    await expect(dialog).toBeVisible();
+    const cancel = dialog.getByRole("button", { name: "요청 취소" });
+    const pick = dialog.getByRole("button", { name: "증빙 고르기 3" });
+    const a = await cancel.boundingBox();
+    const b = await pick.boundingBox();
+    if (!a || !b) throw new Error("3차 상자를 잴 수 없다");
+    expect(a.height).toBeGreaterThanOrEqual(44);
+    expect(b.height).toBeGreaterThanOrEqual(44);
+    expect(b.y).toBeGreaterThanOrEqual(a.y + a.height);
+    expect(await dialog.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
   });
 });
 

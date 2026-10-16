@@ -86,7 +86,10 @@
   padding: var(--s-3) var(--pad-page) var(--s-6);
 }
 
-/* §7-3 (바) ⑫ — 본문 아래 3차 한 자리(접힌 값 목록과 --s-4 떨어진다). */
+/* §7-3 (바) ⑫ — 본문 아래 3차 한 자리(접힌 값 목록과 --s-4 떨어진다). SP-6107: 줄 행동이 둘이면 3차 두 줄을 세로로 쌓는다. */
 .action {
   margin-top: var(--s-4);
+  display: grid;
+  gap: var(--s-2);
+  justify-items: start;
 }

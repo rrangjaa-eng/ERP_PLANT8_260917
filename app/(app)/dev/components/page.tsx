@@ -16,6 +16,8 @@ import { TableSkeleton } from "@/ui/table/TableSkeleton";
 import {
   AttachmentsConfirmSample,
   EditTableSample,
+  EvidencePanelSample,
+  EvidenceSamples,
   GalleryPanel,
   ModalSample,
   PanelOpener,
@@ -56,10 +58,10 @@ function serverStamp(): number {
   return Date.now();
 }
 
-export default async function ComponentsPage({ searchParams }: { searchParams: Promise<{ panel?: string }> }) {
+export default async function ComponentsPage({ searchParams }: { searchParams: Promise<{ panel?: string; confirm?: string; sheet?: string }> }) {
   await requireSession();
   if (!isDevToolsEnabled(env.APP_ENV)) notFound();
-  const { panel } = await searchParams;
+  const { panel, confirm, sheet } = await searchParams;
 
   return (
     <DetailScreen
@@ -247,6 +249,10 @@ export default async function ComponentsPage({ searchParams }: { searchParams: P
         <PickManySamples />
       </DetailScreen.Section>
 
+      <DetailScreen.Section title="증빙 표본(06.1)">
+        <EvidenceSamples confirmOpen={confirm === "detach"} sheetOpen={sheet === "two-actions"} />
+      </DetailScreen.Section>
+
       <DetailScreen.Section title="화면 틀">
         <div data-gallery="frames" className={styles.frames}>
           {FRAMES.map(({ key, name, parts }) => (
@@ -263,6 +269,7 @@ export default async function ComponentsPage({ searchParams }: { searchParams: P
       </DetailScreen.Section>
 
       {panel === "1" || panel === "pick" ? <GalleryPanel pick={panel === "pick"} /> : null}
+      {panel === "evidence" ? <EvidencePanelSample /> : null}
     </DetailScreen>
   );
 }

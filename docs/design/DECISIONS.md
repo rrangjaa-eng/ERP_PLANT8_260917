@@ -2117,3 +2117,15 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 **버린 대안**: 비활성 + 이유 문구(SYSTEM.md:1323 위반) · 옛 409 문구 「이미 결재가 시작됐습니다. 반려를 기다려 주세요」(버튼이 없으니 필요 없음) · 상태만 보고 막기(본인 승인도 셈 — 옛 지출결의 기본값과 같은 쪽, D-6602 카드에서 버림) · 멈춘 문서만 예외로 회수 허용(D-6604 카드에서 버림).
 **결정자**: 사용자 채팅 2026-10-06 21:53 KST(260907 D28, `/mnt/project-files/notes/260907-audit-full/REPORT.md:203`) · 06.6-CONTEXT(D-6601~D-6611) · 사용자 카드 2026-10-15 23:48 KST(D-6602 「허용」 · D-6604 「막기」) · D-6602 정정 카드 답 「허용 유지」 2026-10-16 00:54 KST(첫 카드 「허용」은 260907 근거 오류로 다시 물음).
 **범위**: SYSTEM.md 「제출 뒤 결재선 = 단계별 목록」 끝 줄 설명. 대체되는 확정: 05-UI-SPEC.md:54(확정 #2의 승인 뒤 회수 부분) · :306 · :310, 04.1-UI-SPEC.md:338-341(행동 줄 「기안자 · 결재 중 | 2차 `회수`」) · :556(「회수는 결재가 끝나기 전만」) — 기록 문서라 고치지 않고 이 항목이 대체한다. 구현 06.6-01(`domain/approvals` 판정 · `app/(app)/leave/status-display.ts` 결과 줄).
+
+## 2026-10-16 — 06-37(G-06-A) ARCHITECTURE §5 예외: corp_cards_issuer_last4_key 전체 유일 → 보관 안 된 행만(같은 이름 부분 유일 색인, 사용자 카드 20:42)
+
+**결정**: 마이그레이션 `0037_corp_cards_last4_live`가 법인카드 유일 제약 `corp_cards_issuer_last4_key`(발급사 · 뒤 4자리, 보관 행 포함)를 지우고(DROP CONSTRAINT) 같은 이름의 부분 유일 색인 `corp_cards_issuer_last4_key`(`issuer`, `number_last4` WHERE `archived_at IS NULL`)를 만든다 — ARCHITECTURE §5 「확장 전용(DROP 없음)」의 예외 한 건. 이름을 그대로 둬 등록 오류 변환(`domain/corp-cards` `isUniqueViolation` — 23505의 `constraint` = 색인 이름)이 그대로 `이미 등록된 카드 · 발급사와 뒤 4자리 확인`을 내고, 보관 카드 복원이 살아 있는 같은 번호 카드와 겹치면 `같은 발급사와 뒤 4자리 카드 있음 · 복원 불가`로 막는다(거래처 선례). 롤백 하한(`-- rollback-floor:`)을 두지 않는다 — corp_cards에 `ON CONFLICT`를 쓰는 곳이 없어(`repositories/corp-cards.ts` · `domain/corp-cards` · `scripts` grep 0건) 옛 리비전은 새 색인 위에서 살아 있는 카드끼리만 같은 문구로 막히고, 보관 카드와 같은 번호 등록이 될 뿐이다. 지금 제약이 모든 행의 중복을 막고 있어 색인 생성은 실패할 수 없다(데이터 가드 없음). 잠금 시간 한 쌍(`lock_timeout = '1s'` · `statement_timeout = '5s'`, 0015 · 0021 선례). 프로덕션 승격은 업무 시간 밖에 한다.
+
+**왜**: 분실 · 재발급으로 보관한 카드가 발급사 · 뒤 4자리를 붙잡아, 같은 끝 4자리로 나온 재발급 카드를 경영관리가 등록할 수 없었다. 옛 시스템(176:236-240)은 보관 안 한 카드끼리만 유일이었다 — 사용자 카드 20:42 「보관 카드 재등록 다시 허용」(260907 C02 판정 (a)).
+
+**버린 대안**: expand/contract 두 단계(먼저 색인 추가, 다음 릴리스에 제약 제거) — 위험 경로 PR이 하나 더 늘고, 같은 이름을 쓰면 제약과 색인이 함께 있을 수 없어 두 단계가 불가능하다. 다른 이름의 색인으로 바꾸기(0021 · 0030 꼴) — 등록 오류 변환과 배포 중 옛 리비전이 새 이름을 몰라 원시 SQL 오류가 화면으로 샌다.
+
+**되돌리는 법**(복구 절차): 전진 수정이 먼저다. 불가피하면 쓰기를 멈춘 상태에서 같은 발급사 · 뒤 4자리의 보관 행을 정리(살아 있는 행과 겹치지 않게)한 뒤 새 마이그레이션으로 `DROP INDEX corp_cards_issuer_last4_key` → `ALTER TABLE corp_cards ADD CONSTRAINT corp_cards_issuer_last4_key UNIQUE (issuer, number_last4)`를 적용한다 — 배포 파이프라인의 migrate Job으로 들어가며 프로덕션 DB 직접 명령이 아니다.
+
+**범위**: `db/migrations/0037_corp_cards_last4_live.sql`(+ meta) · `db/schema/corp-cards.ts` · `domain/archive` 복원 문구(`CorpCardLast4TakenError`) · `app/(app)/admin/archive/actions.ts` 복원 거부 허용 목록. 이 항목은 SYSTEM.md를 바꾸지 않는다.

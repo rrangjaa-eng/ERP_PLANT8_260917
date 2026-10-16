@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { evidenceRecords } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
@@ -65,6 +65,17 @@ export async function findExistingDedupeKeys(viewer: Viewer, keys: readonly stri
     .select({ dedupeKey: evidenceRecords.dedupeKey })
     .from(evidenceRecords)
     .where(sql`${evidenceRecords.dedupeKey} = ANY(${sql.param([...keys])}::text[])`);
+  return new Set(rows.map((row) => row.dedupeKey));
+}
+
+// 열쇠 배열 → 그중 보관된 기록의 열쇠 집합. 앞 파일 대조만 쓴다 — 보관된 한쪽에 맞춰 다른 쪽을 등록하면 살아 있는 합이 −T가 된다.
+export async function findArchivedDedupeKeys(viewer: Viewer, keys: readonly string[]): Promise<Set<string>> {
+  void viewer;
+  if (keys.length === 0) return new Set();
+  const rows = await db
+    .select({ dedupeKey: evidenceRecords.dedupeKey })
+    .from(evidenceRecords)
+    .where(and(sql`${evidenceRecords.dedupeKey} = ANY(${sql.param([...keys])}::text[])`, isNotNull(evidenceRecords.archivedAt)));
   return new Set(rows.map((row) => row.dedupeKey));
 }
 

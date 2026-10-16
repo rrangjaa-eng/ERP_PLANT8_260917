@@ -19,6 +19,7 @@ import { findCardsByLast4 } from "@/repositories/corp-cards";
 import { findBatchIdBySha, insertBatch, setBatchCounts } from "@/repositories/evidence-import-batches";
 import {
   findCardRecordsByApprovalNos,
+  findArchivedDedupeKeys,
   findExistingDedupeKeys,
   insertRecordsIgnoringDuplicates,
   type EvidenceRecordInsert,
@@ -199,9 +200,15 @@ export async function registerEvidenceFile(
   const card = rule.keyKind === "card";
   // 앞 파일 대조(사용자 결정 2026-10-16 · 양쪽 대칭): 파일 안 상쇄 쌍의 한쪽(원거래든 취소든)만 앞 파일로 이미 등록돼 있으면 다른
   // 쪽을 등록해 합을 0으로 맞추고, 둘 다 등록돼 있으면 둘 다 이미 등록, 둘 다 없으면 둘 다 등록하지 않고 상쇄 쌍으로 센다(06.1-02가
-  // 뺀 그대로). 이미 있는 열쇠는 GH-P1과 한 번에 읽는다.
+  // 뺀 그대로). 이미 있는 열쇠는 GH-P1과 한 번에 읽는다. 등록된 한쪽이 보관돼 있으면 그 쌍은 맞추지 않는다(둘 다 등록하지 않음 —
+  // 다른 쪽만 살아 합이 −T가 된다). 보관 기록도 같은 줄의 재등록은 그대로 막는다(열쇠를 차지한다).
   const existingKeys = card ? await findExistingDedupeKeys(viewer, keysToCheck(parsed, sameFile)) : new Set<string>();
-  const settledPairs = parsed.offsetLines.filter((pair) => existingKeys.has(pair.original.dedupeKey) || existingKeys.has(pair.cancel.dedupeKey));
+  const offsetKeys = parsed.offsetLines.flatMap((pair) => [pair.original.dedupeKey, pair.cancel.dedupeKey]).filter((key) => existingKeys.has(key));
+  const archivedKeys = await findArchivedDedupeKeys(viewer, offsetKeys);
+  const settledPairs = parsed.offsetLines.filter((pair) => {
+    const registered = [pair.original, pair.cancel].filter((line) => existingKeys.has(line.dedupeKey));
+    return registered.length === 2 || (registered.length === 1 && registered.every((line) => !archivedKeys.has(line.dedupeKey)));
+  });
   const missingHalves = settledPairs.flatMap((pair) => [pair.original, pair.cancel].filter((line) => !existingKeys.has(line.dedupeKey)));
   const settledAlready = settledPairs.length * 2 - missingHalves.length;
   const lines = (deps?.finalizeAmounts ?? defaultFinalizeAmounts)([...parsed.lines, ...missingHalves], ratesByDate, rulesByType);

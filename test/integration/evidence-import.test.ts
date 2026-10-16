@@ -503,6 +503,40 @@ describe("domain/evidence-import — 서식 넷 · 세율 · 카드 · A-10 · G
     expect(batch).toMatchObject({ rowCount: 3, registeredCount: 1, skippedDuplicateCount: 0 });
   });
 
+  it("(앞 파일 대조 · 보관) 앞 파일로 등록된 원거래가 보관돼 있으면 원거래 · 취소 쌍은 둘 다 등록하지 않고 상쇄 1쌍에 센다(−T 방지)", async () => {
+    const viewer = await createIntakeViewer();
+    const original = { 승인번호: "20000001", 매입일자: "2026.09.05", 매입금액: "50,000", 부가세: "4,545" };
+    await registerFixtureFile(viewer, lotteFixture([original]), "롯데_원거래.xls");
+    await db
+      .update(evidenceRecords)
+      .set({ archivedAt: new Date(), archivedBy: viewer.id })
+      .where(eq(evidenceRecords.dedupeKey, "card-lotte|2222|20000001|2026-09-05|50000"));
+
+    const result = await registerFixtureFile(
+      viewer,
+      lotteFixture([original, { 승인번호: "20000001", 매입일자: "2026.09.20", 매입금액: "-50,000", 부가세: "-4,545" }, { 승인번호: "20000003" }]),
+      "롯데_전체.xls",
+    );
+
+    expect(result).toMatchObject({ registered: 1, skippedDuplicate: 0, offsetPairs: 1 });
+    expect(await recordOf("card-lotte|2222|20000001|2026-09-20|-50000")).toBeUndefined();
+    expect((await recordsInOrder()).filter((record) => record.approvalNo === "20000001")).toHaveLength(1);
+  });
+
+  it("(보관) 보관된 앞 기록도 같은 줄의 재등록은 막는다 — 다른 바이트 파일에서 이미 등록 1", async () => {
+    const viewer = await createIntakeViewer();
+    await registerFixtureFile(viewer, lotteLines(["20000001"]), "롯데_첫.xls");
+    await db
+      .update(evidenceRecords)
+      .set({ archivedAt: new Date(), archivedBy: viewer.id })
+      .where(eq(evidenceRecords.approvalNo, "20000001"));
+
+    const result = await registerFixtureFile(viewer, lotteLines(["20000001", "20000002"]), "롯데_둘째.xls");
+
+    expect(result).toMatchObject({ registered: 1, skippedDuplicate: 1, sameFile: false });
+    expect((await recordsInOrder()).filter((record) => record.approvalNo === "20000001")).toHaveLength(1);
+  });
+
   it(`(E10) ${EVIDENCE_IMPORT_MAX_ROWS}줄 롯데 파일이 한 번에 등록된다(500줄 묶음 INSERT — 바인드 변수 한도 안)`, async () => {
     const viewer = await createIntakeViewer();
     const rows = Array.from({ length: EVIDENCE_IMPORT_MAX_ROWS }, (_, i) => ({ 승인번호: String(40_000_000 + i) }));

@@ -239,6 +239,12 @@ describe("신한 서식", () => {
     expect(() => finalizeAmounts(result.lines, ratesFor("2026-05-28"), new Map())).toThrow();
   });
 
+  it("세율의 부가세 끝처리 단위가 1 · 10이 아니면 던진다(호출자 결함 · 독립 검토 P3-4)", () => {
+    const result = ok(parseWorkbook(shinhanFixture([{}])));
+    const rates = new Map([["2026-05-28", { ...RATES, asOf: "2026-05-28", vatUnit: 100 }]]);
+    expect(() => finalizeAmounts(result.lines, rates, rulesOf(SEED_CARD_RULE))).toThrow("부가세 끝처리 단위");
+  });
+
   it("승인번호 없는 두 줄이 같은 카드 · 사용일시 · 가맹점 · 합계 → 열쇠 … · …#2, 둘 다 sameKeyCount 2", () => {
     const same = { 승인번호: "", 이용일시: "2026.05.20 09:00:00", 가맹점명: "가맹점라", 이용금액: 4500 };
     const result = ok(parseWorkbook(shinhanFixture([same, same])));

@@ -388,6 +388,11 @@ describe("grossFromSignedTotal", () => {
     });
   }
 
+  it("음수 합계가 0으로 끝처리되면 -0이 아니라 0(독립 검토 P3-1)", () => {
+    expect(Object.is(grossFromSignedTotal(-1, 0.1, 1, "truncate"), 0)).toBe(true);
+    expect(Object.is(grossFromSignedTotal(-5, 0.1, 10, "round"), 0)).toBe(true);
+  });
+
   it("양수는 grossFromTotal과 같다", () => {
     expect(grossFromSignedTotal(52_800_000, 0.1, 1, "round")).toBe(grossFromTotal(52_800_000, 0.1, 1, "round"));
     expect(grossFromSignedTotal(100_005, 0.1, 10, "truncate")).toBe(grossFromTotal(100_005, 0.1, 10, "truncate"));

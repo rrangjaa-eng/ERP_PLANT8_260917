@@ -22,11 +22,17 @@ export function vatProblem(totalKrw: number, vatKrw: number): string | null {
 // 역산 방식은 그 줄 증빙 종류의 코드표 규칙 `rule.roundingMethod ?? "round"`, 규칙이 vat_surcharge가 아니면 역산하지 않는다 —
 // 06-05 splitCardTotal과 같은 판정이다. 다만 음수 합계는 splitCardTotal이 grossFromTotal을 그대로 불러 비대칭이므로
 // grossFromSignedTotal을 쓴다.
+// 세율 설정값은 number로 온다 — 끝처리 단위로 쓰기 전에 1 · 10인지 확인한다(단언하지 않는다).
+function vatUnitOf(unit: number): RoundingUnit {
+  if (unit === 1 || unit === 10) return unit;
+  throw new Error(`부가세 끝처리 단위 ${unit} — 1 · 10만`);
+}
+
 export function resolveLineAmounts(line: ParsedLine, rates?: TaxRates, rule?: TaxRule): LineAmounts {
   if (line.supplyKrw !== null && line.vatKrw !== null) return { totalKrw: line.totalKrw, vatKrw: line.vatKrw, supplyKrw: line.supplyKrw };
   if (line.vatKrw !== null) return { totalKrw: line.totalKrw, vatKrw: line.vatKrw, supplyKrw: diffKrw(line.totalKrw, line.vatKrw) };
   if (!rates || !rule) throw new Error(`역산 세율 · 규칙 없음 — ${line.lineNo}줄`);
   if (rule.ruleKind !== "vat_surcharge") return { totalKrw: line.totalKrw, vatKrw: 0, supplyKrw: line.totalKrw };
-  const supplyKrw = grossFromSignedTotal(line.totalKrw, rates.vatRate, rates.vatUnit as RoundingUnit, rule.roundingMethod ?? "round");
+  const supplyKrw = grossFromSignedTotal(line.totalKrw, rates.vatRate, vatUnitOf(rates.vatUnit), rule.roundingMethod ?? "round");
   return { totalKrw: line.totalKrw, vatKrw: diffKrw(line.totalKrw, supplyKrw), supplyKrw };
 }

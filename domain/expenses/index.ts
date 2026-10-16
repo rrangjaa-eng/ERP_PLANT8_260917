@@ -1629,7 +1629,7 @@ export type ExpenseCodeOption = { value: string; label: string; description: str
 export async function listExpenseFormOptions(
   viewer: Viewer,
 ): Promise<{ evidence: ExpenseCodeOption[]; payment: ExpenseCodeOption[]; prepaidDueDays: number; companyBorne: string[] }> {
-  // 06-10: 선결제 칸 힌트 `증빙 기한 지급일부터 {N}일`의 N(evidence.prepaid_due_days — 06-06 loadPrepaidDueDays와 같은 설정, domain/evidence-reviews를 값 import하면 순환이라 설정을 직접 읽는다. 트랜잭션 없는 사전 조회).
+  // 06-10: 선결제 칸 힌트 `증빙 기한 지급일부터 {N}일`의 N(evidence.prepaid_due_days — 06-06 loadPrepaidDueDays와 같은 설정을 직접 읽는다. 트랜잭션 없는 사전 조회).
   const prepaidDueDays = await getSettingValue(EVIDENCE_PREPAID_DUE_DAYS);
   if (!(await can(viewer, "expenses", "write"))) return { evidence: [], payment: [], prepaidDueDays, companyBorne: [] };
   const read = (tableKey: string) => listCodeItems(viewer, { tableKey, scope: { rows: "all", includeArchived: false }, includeInactive: false });

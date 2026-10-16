@@ -9,7 +9,7 @@ import { EVIDENCE_PREPAID_DUE_DAYS, EVIDENCE_REQUIRED } from "@/domain/settings/
 import { findListPaymentStatusByIds } from "@/repositories/payment-targets";
 
 // 06-23(B-C8 · H-1 · PN-6): 기안자의 승인된 지출결의마다 증빙 신호 하나 — 05 종류 훅(expenseBlockedAfterApproval)이 「내 차례」 [막힘] 한 줄로 낸다.
-// 판정은 다시 쓰지 않는다 — 증빙 유무 = 06-03 hasEvidence(살아 있는 파일), 증빙 없음 · 지급 대기 = 06-04 evidenceGateDecision P3, 선결제 기한 = 06-06 prepaidDueInfo, 무효 = 05 listEvidenceVoidSignals.
+// 판정은 다시 쓰지 않는다 — 증빙 유무 = has-evidence ownersWithEvidence(살아 있는 파일 ∨ 살아 있는 기록 붙임 · 06.1-12), 증빙 없음 · 지급 대기 = 06-04 evidenceGateDecision P3, 선결제 기한 = 06-06 prepaidDueInfo, 무효 = 05 listEvidenceVoidSignals(살아 있는 기록 붙임이 있는 주인은 뺀다).
 // 잎 모듈만 값 import한다(@/domain/payments · @/domain/evidence-reviews index는 domain/expenses로 되돌아온다 — import 고리).
 
 export type EvidenceSignalFacts = { prepaidOverdueDays: number | null; missingUnpaid: boolean; voided: boolean };

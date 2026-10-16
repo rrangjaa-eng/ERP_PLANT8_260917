@@ -3,12 +3,12 @@ status: partial
 phase: 06-payment-evidence-cards
 source: 06-01-SUMMARY.md, 06-02-SUMMARY.md, 06-03-SUMMARY.md, 06-04-SUMMARY.md, 06-05-SUMMARY.md, 06-06-SUMMARY.md, 06-07-SUMMARY.md, 06-08-SUMMARY.md, 06-09-SUMMARY.md, 06-10-SUMMARY.md, 06-11-SUMMARY.md, 06-12-SUMMARY.md, 06-13-SUMMARY.md, 06-14-SUMMARY.md, 06-15-SUMMARY.md, 06-16-SUMMARY.md, 06-17-SUMMARY.md, 06-18-SUMMARY.md, 06-19-SUMMARY.md, 06-20-SUMMARY.md, 06-21-SUMMARY.md, 06-22-SUMMARY.md, 06-23-SUMMARY.md, 06-24-SUMMARY.md, 06-25-SUMMARY.md, 06-27-SUMMARY.md, 06-28-SUMMARY.md, 06-29-SUMMARY.md, 06-30-SUMMARY.md
 started: 2026-10-14T04:24:00Z
-updated: 2026-10-16T11:30:00Z
+updated: 2026-10-16T13:45:00Z
 ---
 
 ## Current Test
 
-[testing paused — 3 items outstanding (45·51 blocked: [테스트] PM 자격 없음, 50 → 07)]
+[testing paused — 2 items outstanding (51 blocked: UAT2 PM 자격 없음 · 코드 근거로 닫음, 50 → 07)]
 
 ## Tests
 
@@ -255,13 +255,12 @@ result: pass
 note: pass(partial): `미착수`·`카드 사용` 상태와 연결 문구 확인. 나머지 상태·`증빙 N일 경과`·`실행가 초과` 미확인(데이터 없음)
 
 ### 45. T25 승인 차수 증빙 S21
-expected: 3차 `승인 증빙 {N}` 펼침(하나 더·되돌리기), 이전 차수는 읽기 전용
-result: blocked
-blocked_by: server
+expected: 3차 `승인 증빙 {N}` 펼침(하나 더·되돌리기), 새로 고침 없이 N 갱신, 이전 차수 승인 증빙도 편집 가능(I-3 · 명세 의도로 기대 문구 정정, 2026-10-16)
+result: pass
 reported: "승인 증빙 업로드 직후 3차 라벨 개수가 1 뒤처짐(파일 2개인데 `승인 증빙 1`), 새로고침하면 `승인 증빙 2`" — 2차 I-2 (T25)
 severity: minor
 note: 진단: G-06-J(원인 미확정, 재측정 필요). 이전 차수 승인 증빙 편집 가능(I-3)은 명세상 의도, 테스트 기대 문구 정정.
-reason: "2026-10-16 재검증 못 함 — 승인 증빙은 담당 PM만 올릴 수 있는데 스테이징 [테스트] PM 로그인 자격 없음(UAT2 PM 임시 비밀번호 10/14 삭제, 재설정은 CLI만). 코드: 원인 재현 안 됨, e2e approval-reserve-evidence.spec.ts:115-119 1→2 단언 CI green(#227). 계정 비밀번호 재설정·카드 생성은 자동 권한 판정에 막혀 사용자 확인 대기"
+reverify: "2026-10-16 13:3x UTC 스테이징 라이브(새 [테스트] PM45-2 · 26011 [테스트] 재검증 UAT45, 사용자 카드 「새 PM으로 45만」·「프로젝트 만들기」): 새로 고침 없이 1차 업로드 뒤 `승인 증빙` → `승인 증빙 1`(약 4초), 2차 업로드 뒤 `승인 증빙 1` → `승인 증빙 2`(약 3초). 개수는 새로 고침 없이 따라오나 3~4초 늦음 — 2차 보고(1 뒤처짐)는 갱신 전 관찰로 설명됨. 같은 실행에서 업로드 파일 `삭제` 뒤 `되돌리기` 표시 확인. 이전 차수 편집 가능은 2차 I-3 관찰(명세 의도). 근거 /mnt/project-files/06-review/reverify/u45/measurements.json"
 
 ### 46. T26 리저브 줄 증빙 S22
 expected: `증빙` 열(맨 끝), 표 아래 펼침, 폰 행 시트 첨부 행, 엑셀 붙여넣기 1024 열 순서 유지
@@ -331,11 +330,11 @@ note: pass(partial): 표 선택 열 폭 44·막힌 행·배지 구역 확인. �
 ## Summary
 
 total: 57
-passed: 52
+passed: 53
 issues: 1
 pending: 0
 skipped: 2
-blocked: 2
+blocked: 1
 
 ## Evidence
 

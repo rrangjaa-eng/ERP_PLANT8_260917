@@ -4,7 +4,7 @@ verified: 2026-10-16T13:37:25Z
 status: human_needed
 score: 5/5 must-haves verified (갭 메우기 G-06-A~J 10/10 코드 · CI 근거로 닫힘, G-06-K는 07로 넘김)
 covered_files: [".planning/REQUIREMENTS.md",".planning/ROADMAP.md",".planning/phases/06-payment-evidence-cards/06-01-PLAN.md",".planning/phases/06-payment-evidence-cards/06-01-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-02-PLAN.md",".planning/phases/06-payment-evidence-cards/06-02-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-03-PLAN.md",".planning/phases/06-payment-evidence-cards/06-03-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-04-PLAN.md",".planning/phases/06-payment-evidence-cards/06-04-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-05-PLAN.md",".planning/phases/06-payment-evidence-cards/06-05-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-06-PLAN.md",".planning/phases/06-payment-evidence-cards/06-06-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-07-PLAN.md",".planning/phases/06-payment-evidence-cards/06-07-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-08-PLAN.md",".planning/phases/06-payment-evidence-cards/06-08-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-09-PLAN.md",".planning/phases/06-payment-evidence-cards/06-09-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-10-PLAN.md",".planning/phases/06-payment-evidence-cards/06-10-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-11-PLAN.md",".planning/phases/06-payment-evidence-cards/06-11-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-12-PLAN.md",".planning/phases/06-payment-evidence-cards/06-12-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-13-PLAN.md",".planning/phases/06-payment-evidence-cards/06-13-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-14-PLAN.md",".planning/phases/06-payment-evidence-cards/06-14-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-15-PLAN.md",".planning/phases/06-payment-evidence-cards/06-15-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-16-PLAN.md",".planning/phases/06-payment-evidence-cards/06-16-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-17-PLAN.md",".planning/phases/06-payment-evidence-cards/06-17-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-18-PLAN.md",".planning/phases/06-payment-evidence-cards/06-18-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-19-PLAN.md",".planning/phases/06-payment-evidence-cards/06-19-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-20-PLAN.md",".planning/phases/06-payment-evidence-cards/06-20-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-21-PLAN.md",".planning/phases/06-payment-evidence-cards/06-21-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-22-PLAN.md",".planning/phases/06-payment-evidence-cards/06-22-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-23-PLAN.md",".planning/phases/06-payment-evidence-cards/06-23-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-24-PLAN.md",".planning/phases/06-payment-evidence-cards/06-24-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-25-PLAN.md",".planning/phases/06-payment-evidence-cards/06-25-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-27-PLAN.md",".planning/phases/06-payment-evidence-cards/06-27-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-28-PLAN.md",".planning/phases/06-payment-evidence-cards/06-28-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-29-PLAN.md",".planning/phases/06-payment-evidence-cards/06-29-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-30-PLAN.md",".planning/phases/06-payment-evidence-cards/06-30-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-31-PLAN.md",".planning/phases/06-payment-evidence-cards/06-31-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-32-PLAN.md",".planning/phases/06-payment-evidence-cards/06-32-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-33-PLAN.md",".planning/phases/06-payment-evidence-cards/06-33-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-34-PLAN.md",".planning/phases/06-payment-evidence-cards/06-34-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-35-PLAN.md",".planning/phases/06-payment-evidence-cards/06-35-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-36-PLAN.md",".planning/phases/06-payment-evidence-cards/06-36-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-37-PLAN.md",".planning/phases/06-payment-evidence-cards/06-37-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-38-PLAN.md",".planning/phases/06-payment-evidence-cards/06-38-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-39-PLAN.md",".planning/phases/06-payment-evidence-cards/06-39-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-GAPS.md",".planning/phases/06-payment-evidence-cards/06-UAT.md","app/(app)/admin/archive/actions.ts","app/(app)/cards/link-picker.tsx","app/(app)/cards/page.tsx","app/(app)/expenses/[id]/payment-action-row.tsx","app/(app)/projects/[id]/pre-settle-check.tsx","app/(app)/projects/[id]/project-detail.module.css","app/(app)/projects/[id]/quote-table.tsx","app/(app)/projects/[id]/settlement/settlement-actions.tsx","app/(app)/projects/[id]/status-change.tsx","db/migrations/0037_corp_cards_last4_live.sql","db/schema/corp-cards.ts","db/schema/files.ts","docs/EVIDENCE-STORAGE.md","docs/design/DECISIONS.md","docs/design/SYSTEM.md","domain/action-log/record.ts","domain/archive/index.ts","domain/corp-card-usages/amounts.ts","domain/corp-card-usages/default-card.ts","domain/corp-card-usages/index.ts","domain/corp-cards/index.ts","domain/evidence-reviews/cost-basis.ts","domain/evidence/index.ts","domain/evidence/upload-checks.ts","domain/expenses/evidence-signals.ts","domain/expenses/index.ts","domain/payments/batch.ts","domain/payments/index.ts","domain/pre-settle-check/index.ts","domain/pre-settle-check/summary.ts","domain/purchase-requests/index.ts","domain/rules/register.ts","domain/settings/keys.ts","domain/settlements/index.ts","lib/gcp/storage.ts","repositories/approvals.ts","repositories/expense-evidence-reviews.ts","scripts/codex-design-review/capture.spec.ts","scripts/codex-design-review/lib.ts","scripts/codex-design-review/seeds.ts","scripts/deploy.sh","test/e2e/approval-reserve-evidence.spec.ts","test/e2e/evidence-lifecycle.spec.ts","test/e2e/management-flow.spec.ts","test/e2e/payment-batch.spec.ts","test/e2e/pm-settlement-flow.spec.ts","test/e2e/pre-settle-check.spec.ts","test/e2e/project-lifecycle.spec.ts","test/e2e/purchase-requests.spec.ts","test/e2e/settlement-approval.spec.ts","test/integration/archive.test.ts","test/integration/corp-cards.test.ts","test/integration/leak-scan.test.ts","test/integration/next-turn.test.ts","test/integration/pre-settle-check.test.ts","test/integration/purchase-requests.test.ts","test/unit/docs-limits.test.ts","test/unit/domain/card-default-order.test.ts","test/unit/domain/evidence-cost-basis.test.ts","ui/confirm-dialog/ConfirmDialog.tsx"]
-covered_digest: "v1:sha256:d102c4136338b995c7a7793e959460029b0e4f11cc7ea40f1aa695b256ce2304"
+covered_digest: "v1:sha256:58dafb7709c106a4ed4f832937b68d3c9fcb63c88ddcc196fcfc9bdce5b96339"
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
@@ -24,6 +24,7 @@ re_verification:
   gaps_remaining: []
   regressions: []
 deferred:
+
   - truth: "G-06-K — 다른 화면의 「점검 보기」(→ /projects/{id}#pre-settle-check)로 오면 포커스가 「완료 전 점검」 제목에 있다"
     addressed_in: "Phase 7"
     evidence: "06-GAPS.md G-06-K 줄 「07로 넘김 · 계획 안 함」 · 06-UAT.md test 50 deferred_to Phase 7 · /mnt/project-files/06.4-review/verify/07-input.md:27(07 계획 입력에 SYSTEM.md 규칙 한 줄 + 도착 화면 둘 + 회귀 단언으로 실림). 07-CONTEXT.md에는 아직 없음 — 07 계획 때 반영 확인 필요"
@@ -40,6 +41,7 @@ deferred:
     addressed_in: "Phase 06.5"
     evidence: "06.5-CONTEXT.md:48 D-6511 (06.5-VERIFICATION.md passed, bb53919)"
 human_verification:
+
   - test: "스테이징에서 차수 고객 승인(quote_revision) 증빙을 이미지 1장 · PDF 1장 올리고, 아무 주인 종류에 10MB 초과 파일 1개를 올려 본다"
     expected: "서명 PUT(x-goog-content-length-range) → 완료 통보 → files 행 · 보기 URL 동작. 10MB 초과는 의도 단계에서 거부"
     why_human: "CI E2E는 로컬 저장 드라이버로 돈다. 스테이징은 STORAGE_DRIVER=gcs(scripts/deploy.sh:558). 카드 전표(corp_card_usage, UAT 38) · 리저브 줄(reserve_entry, UAT 46) 업로드는 스테이징 실제 GCS에서 통과했지만, quote_revision 업로드도 2026-10-16 라이브 재검증(/mnt/project-files/06-review/reverify/u45/measurements.json — 파일 2개 업로드 · 목록 반영)에서 스테이징 GCS를 지났다. 남은 것은 이미지 · PDF 형식별 확인(측정에 형식 기록 없음)과 10MB 초과 거부 — 아직 아무도 실측하지 않았다"
@@ -177,21 +179,25 @@ ORPHANED requirements: 없음. 참고(정보): REQUIREMENTS.md 추적표가 일�
 ### Human Verification Required
 
 ### 1. 실제 GCS — quote_revision 증빙 · 10MB 초과 거부
+
 **Test:** 스테이징에서 차수 고객 승인 증빙을 이미지 · PDF로 올리고, 10MB 초과 파일을 시도한다.
 **Expected:** 서명 PUT → 완료 통보 → files 행 · 보기 URL, 초과 파일은 의도 단계 거부.
 **Why human:** CI는 로컬 드라이버. corp_card_usage(UAT 38) · reserve_entry(UAT 46) · quote_revision(u45 라이브)은 스테이징 GCS 업로드 통과 — 남은 것은 형식별(이미지 · PDF) 확인과 10MB 초과 거부.
 
 ### 2. 금지 사항 대조(원 130 + 갭 41)
+
 **Test:** 표본 밖 금지 항목의 집행 근거를 훑는다.
 **Expected:** test-tier는 테스트 · 경로 불변 근거 + CI 녹색, judgment-tier는 /review · /design-review 기록과 일치.
 **Why human:** 금지↔테스트 대응표 없음 — unverified-prohibition, human review recommended.
 
 ### 3. UAT 51(T31) · G-06-I 라이브
+
 **Test:** [테스트] PM 홈 「내 차례」.
 **Expected:** 무효 → 면제 → 지급 문서의 증빙 줄 없음, 나머지 T31 기대 항목.
 **Why human:** UAT2 PM 자격을 공개 로그 없이 재설정할 수 없어 사용자가 코드 근거(`evidence-signals.ts:52` · 통합 CI 녹색)로 닫기로 결정 — 라이브 관찰은 미실시 기록으로 남김.
 
 ### 4. G-06-B ②③ 라이브
+
 **Test:** 직전 등록 없는 사용자(개인 1장 / 개인 0 · 팀 1장)로 `/cards?new=1`.
 **Expected:** 그 카드가 골라진 채 열림, 개인 2장+면 빈칸.
 **Why human:** 계정 범위 밖. 단위 9건만.

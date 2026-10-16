@@ -70,6 +70,7 @@ import { computeExpenseTax, snapshotSupplyDiffers, storedTaxResult, taxDriftText
 import { buildExpenseDetailRows } from "@/domain/expenses/detail";
 import { BANK_TRANSFER_PAYMENT_METHOD, documentPayee, hasUsableAccount, PAYEE_ACCOUNT_MISSING_FIXABLE, type ExpensePayee } from "@/domain/expenses/payee";
 import { canSeeExpense, EXPENSE_DOCUMENT_KIND, ExpenseNotFoundError } from "@/domain/expenses/access";
+import { evidenceSourcesOf } from "@/domain/evidence/has-evidence";
 import { expenseRouteDocTeamId } from "@/domain/expenses/route-doc";
 import { expenseLineDoor, installmentSeqFor, type ExpenseLineDoor, type ExpenseLineDoorState } from "@/domain/expenses/line-door";
 import { resolveLinkedDocumentsByLineage, type LineageLine } from "@/domain/quotes/lineage";
@@ -97,7 +98,7 @@ import {
   type ExpensePreviewDto,
 } from "@/domain/expenses/dto";
 import { listCodeItems } from "@/repositories/code-tables";
-import { countActiveByOwner, listAliveByOwners, markOwnerFilesRemoved, restoreOwnerFilesRemovedAt } from "@/repositories/files";
+import { listAliveByOwners, markOwnerFilesRemoved, restoreOwnerFilesRemovedAt } from "@/repositories/files";
 import { findProjectById, findProjectInScope, lockProjectForWrite, type ProjectRow } from "@/repositories/projects";
 import { listLiveMemberProjectIds } from "@/repositories/project-members";
 import { findLatestQuoteRevision, findQuoteRevisionById, listLatestQuoteRevisionsByProjects, type QuoteRevisionRow } from "@/repositories/quote-revisions";
@@ -1430,7 +1431,9 @@ async function loadSubmitFacts(
   // 번호 문서 목록 다음에 읽는다 — 그사이 종결이 커밋돼도 그 문서는 두 목록 중 하나 이상에 든다(회차가 겹치지 않는다).
   const closedInstallments = chained ? await listClosedInstallmentsByLines(viewer, chained.chainLineIds, tx) : [];
   const door = line ? doorFor(line, numbered, row.id) : null;
-  const evidenceCount = await countActiveByOwner(viewer, EXPENSE_DOCUMENT_KIND, row.id, tx);
+  // 06.1-12(PA-SUBMITCOUNT): 증빙 건수 = 살아 있는 05 파일 + 살아 있는 증빙 붙임(같은 tx). 금액이 아니라 건수다.
+  const sources = (await evidenceSourcesOf(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerIds: [row.id] }, tx)).get(row.id);
+  const evidenceCount = (sources?.fileCount ?? 0) + (sources?.linkCount ?? 0);
   // 06.5 결정 맥락 15 · D-6507: 돈 갈 곳은 문서 지급처 칸 — 견적 줄의 거래처를 읽지 않는다. 계좌이체면 그 지급처의 계좌 유무를 같은 tx로 본다.
   const payee = documentPayee(row);
   const account = payee && row.paymentMethod === BANK_TRANSFER_PAYMENT_METHOD ? await findPayeeAccountPresence(viewer, payee, tx) : undefined;

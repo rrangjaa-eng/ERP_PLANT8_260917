@@ -24,6 +24,7 @@ import {
   submitDocument,
   ApprovalConflictError,
   NotCurrentHolderError,
+  ROUTE_BLOCKED_ASSIGN_LINE,
   ROUTE_BLOCKED_DRAFTER_LINE,
 } from "@/domain/approvals";
 import { submitLeave, getLeave, LEAVE_DOCUMENT_KIND } from "@/domain/leave";
@@ -393,7 +394,7 @@ describe("담당 소멸 뒤 고아 최종 — 막힘으로 다룬다(ENG-3 · D2
 
   // 기획본부 책임자 한 명 · 경영관리팀 소속 한 명(대표는 경영관리팀 밖). 결재선 1단 =
   // 대표 × 전사(나머지 기본값) → 대표가 1단 승인 → 2·3단 담당 둘 다 보관.
-  // 04.1-02 Task 2가 이 describe에 「기안자 회수 성공」 사례를 같은 도우미로 더한다(X-2).
+  // 04.1-02 Task 2가 이 describe에 「기안자 회수 거부(06.6)」 사례를 같은 도우미로 더한다(X-2).
   async function setupOrphanFinal() {
     const drafter = await makePerson("박서연", DEFAULT_ROLE_ID, "기획1팀");
     const divHead = await makePerson("본부장", DIVISION_HEAD_ROLE_ID, "기획1팀");
@@ -441,9 +442,8 @@ describe("담당 소멸 뒤 고아 최종 — 막힘으로 다룬다(ENG-3 · D2
     const result = await approveDocument(newMgmt, { instanceId, expectedVersion: version }, { now: NOW_2026 });
     expect(result.status).toBe("approved");
   });
-  // 04.1-02 Task 2(X-1 · X-2 · X-5): 막힌 고아 최종 문서 — 대표의 반려는 후보 0명이라 거부되고, 기안자의
-  // 가능 행동은 [회수] 하나이며 회수는 기안자 판정만이라 막힘에서도 된다.
-  it("기안자 회수 성공 — 대표 반려 거부 · 기안자 [회수] · 대표 [] · 회수 뒤 withdrawn · 1단 대표 승인 기록 보존 · document_withdraw 1건", async () => {
+  // 04.1-02 Task 2(X-1 · X-2 · X-5) → 06.6 D-6604: 막힌 고아 최종 문서 — 대표의 반려는 후보 0명이라 거부되고, 앞 승인(대표)이 있어 기안자 회수도 거부된다.
+  it("앞 승인 있는 멈춘 문서(orphan_final) 기안자 회수 거부(06.6 D-6604) — 대표 반려 거부 · 기안자 [] · 대표 [] · 단계 · version · 회수 로그 그대로", async () => {
     const { instanceId, leaveId, version, drafter, ceo } = await setupOrphanFinal();
     const stepsBefore = await stepsOf(instanceId);
 
@@ -454,33 +454,39 @@ describe("담당 소멸 뒤 고아 최종 — 막힘으로 다룬다(ENG-3 · D2
     expect((await instanceOf(instanceId)).version).toBe(version);
 
     const drafterView = await getApprovalView(drafter, { kind: LEAVE_DOCUMENT_KIND, documentId: leaveId }, { now: NOW_2026 });
-    expect(drafterView?.actions).toEqual(["withdraw"]);
+    expect(drafterView?.actions).toEqual([]);
     const ceoView = await getApprovalView(ceo, { kind: LEAVE_DOCUMENT_KIND, documentId: leaveId }, { now: NOW_2026 });
     expect(ceoView?.actions).toEqual([]);
 
-    const withdrawn = await withdrawDocument(drafter, { instanceId, expectedVersion: version }, { now: NOW_2026 });
-    expect(withdrawn).toMatchObject({ status: "withdrawn", version: version + 1 });
-    expect((await stepsOf(instanceId)).find((step) => step.stepIndex === 1)).toMatchObject({ action: "approved", actedBy: ceo.id });
+    const infoSpy = vi.spyOn(log, "info");
+    const refused = withdrawDocument(drafter, { instanceId, expectedVersion: version }, { now: NOW_2026 });
+    await expect(refused).rejects.toBeInstanceOf(ApprovalConflictError);
+    await expect(refused).rejects.toThrow(/^최대표가 \d{2}:\d{2}에 승인함 · 새로 고침$/);
+    expect(infoSpy).toHaveBeenLastCalledWith("approval.refused", expect.objectContaining({ reason: "invalid_state" }));
+    expect(await stepsOf(instanceId)).toEqual(stepsBefore);
+    expect((await instanceOf(instanceId)).version).toBe(version);
     const withdrawLogs = await db.select().from(actionLog).where(eq(actionLog.entityId, instanceId));
-    expect(withdrawLogs.filter((row) => row.actionType === "document_withdraw")).toHaveLength(1);
+    expect(withdrawLogs.filter((row) => row.actionType === "document_withdraw")).toHaveLength(0);
   });
 
-  // 04.1-05(T14 · #11 · UI-SPEC 사용자 확인 대상 #2): 멈춘 문서의 끝 줄은 기안자에게만 — 서버 표시 목록이 싣는다.
-  it("기안자 표시 목록 끝 줄에 ROUTE_BLOCKED_DRAFTER_LINE(danger)이 한 번 · 기안자 [회수] · 대표에게는 없음 · 담당 복구 뒤 사라짐", async () => {
+  // 04.1-05(T14 · #11) → 06.6 D-6604: 앞 승인 있는 멈춘 문서의 끝 줄은 기안자에게만 `담당 지정은 관리자` — 서버 표시 목록이 싣는다.
+  it("기안자 표시 목록 끝 줄에 ROUTE_BLOCKED_ASSIGN_LINE(danger)이 한 번 · DRAFTER 줄 없음 · 기안자 회수 없음 · 대표에게는 둘 다 없음 · 담당 복구 뒤 사라짐", async () => {
     const { leaveId, drafter, ceo } = await setupOrphanFinal();
-    const blockedLine = { text: ROUTE_BLOCKED_DRAFTER_LINE, tone: "danger" };
+    const blockedLine = { text: ROUTE_BLOCKED_ASSIGN_LINE, tone: "danger" };
+    const isBlockedLine = (line: { text: string }) => line.text === ROUTE_BLOCKED_ASSIGN_LINE || line.text === ROUTE_BLOCKED_DRAFTER_LINE;
 
     const drafterView = await getApprovalView(drafter, { kind: LEAVE_DOCUMENT_KIND, documentId: leaveId }, { now: NOW_2026 });
-    expect(drafterView?.endLines?.filter((line) => line.text === ROUTE_BLOCKED_DRAFTER_LINE)).toEqual([blockedLine]);
+    expect(drafterView?.endLines?.filter((line) => line.text === ROUTE_BLOCKED_ASSIGN_LINE)).toEqual([blockedLine]);
     expect(drafterView?.endLines?.at(-1)).toEqual(blockedLine);
-    expect(drafterView?.actions).toContain("withdraw");
+    expect(drafterView?.endLines?.some((line) => line.text === ROUTE_BLOCKED_DRAFTER_LINE)).toBe(false);
+    expect(drafterView?.actions).not.toContain("withdraw");
 
     const ceoView = await getApprovalView(ceo, { kind: LEAVE_DOCUMENT_KIND, documentId: leaveId }, { now: NOW_2026 });
-    expect(ceoView?.endLines?.some((line) => line.text === ROUTE_BLOCKED_DRAFTER_LINE)).toBe(false);
+    expect(ceoView?.endLines?.some(isBlockedLine)).toBe(false);
 
     await makePerson("새담당", DEFAULT_ROLE_ID, "경영관리팀");
     const restored = await getApprovalView(drafter, { kind: LEAVE_DOCUMENT_KIND, documentId: leaveId }, { now: NOW_2026 });
-    expect(restored?.endLines?.some((line) => line.text === ROUTE_BLOCKED_DRAFTER_LINE)).toBe(false);
+    expect(restored?.endLines?.some(isBlockedLine)).toBe(false);
   });
 });
 

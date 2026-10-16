@@ -84,14 +84,24 @@ describe("롯데 트레이서 — .xls", () => {
     expect(result.lines[0]?.sameKeyCount).toBe(1);
   });
 
-  // 독립 검토 P1-2 — 겹친 기간을 다시 올릴 때 06.1-04가 「원거래는 앞 파일로 이미 등록 → 취소 줄 등록」을 가를 수 있게
-  // 빠진 쌍의 두 열쇠를 넘긴다.
-  it("빠진 상쇄 쌍의 원거래 · 취소 열쇠를 offsetKeys로 넘긴다", () => {
+  // 독립 검토 P1-2 · 사용자 카드 2026-10-16 18:12Z 「앞 파일 대조」 — 원거래가 앞 파일로 이미 등록돼 있으면 06.1-04가
+  // 취소 줄을 등록한다. 그래서 빠진 쌍의 두 줄을 등록 줄과 같은 모양(열쇠 포함)으로 넘긴다.
+  it("빠진 상쇄 쌍의 원거래 · 취소 줄 전체를 offsetLines로 넘긴다", () => {
     const result = ok(parseWorkbook(lotteFixture(LOTTE_ROWS)));
-    expect(result.offsetKeys).toEqual([
-      { original: "card-lotte|2222|11112222|2026-05-01|10000", cancel: "card-lotte|2222|11112222|2026-05-01|-10000" },
-    ]);
-    expect(result.offsetKeys).toHaveLength(result.offsetPairs);
+    expect(result.offsetLines).toHaveLength(result.offsetPairs);
+    const [pair] = result.offsetLines;
+    expect(pair?.original).toMatchObject({
+      approvalNo: "11112222",
+      issuedOn: "2026-05-01",
+      totalKrw: 10000,
+      vatKrw: 909,
+      cardLast4: "2222",
+      dedupeKey: "card-lotte|2222|11112222|2026-05-01|10000",
+      baseKey: "card-lotte|2222|11112222|2026-05-01|10000",
+      sameKeyCount: 1,
+    });
+    expect(pair?.cancel).toMatchObject({ approvalNo: "11112222", totalKrw: -10000, vatKrw: -909, dedupeKey: "card-lotte|2222|11112222|2026-05-01|-10000" });
+    expect(Object.keys(pair?.cancel ?? {}).sort()).toEqual(Object.keys(result.lines[0] ?? {}).sort());
   });
 
   it("남은 줄의 열쇠는 취소 줄이 파일에 있든 없든 같다(앞 파일과 같은 #n)", () => {
@@ -101,8 +111,8 @@ describe("롯데 트레이서 — .xls", () => {
     const after = ok(parseWorkbook(lotteFixture([original, original, cancel])));
     expect(before.lines.map((line) => line.dedupeKey)).toEqual(["card-lotte|2222|11112222|2026-05-01|10000", "card-lotte|2222|11112222|2026-05-01|10000#2"]);
     expect(after.lines.map((line) => line.dedupeKey)).toEqual(["card-lotte|2222|11112222|2026-05-01|10000#2"]);
-    expect(after.offsetKeys).toEqual([
-      { original: "card-lotte|2222|11112222|2026-05-01|10000", cancel: "card-lotte|2222|11112222|2026-05-01|-10000" },
+    expect(after.offsetLines.map((pair) => [pair.original.dedupeKey, pair.cancel.dedupeKey])).toEqual([
+      ["card-lotte|2222|11112222|2026-05-01|10000", "card-lotte|2222|11112222|2026-05-01|-10000"],
     ]);
   });
 

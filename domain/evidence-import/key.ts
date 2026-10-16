@@ -31,7 +31,7 @@ export function dedupeKeys(format: EvidenceFormatKey, keyKind: "card" | "approva
 
 // 같은 카드 · 같은 승인번호 · 합이 0인 원거래 + 취소 두 줄(완전 상쇄 쌍)을 뺀다(E38 — 옛 markOffsetPairs 기본 제외).
 // 부분 취소(값이 다른 음수 줄)는 남긴다. 이미 짝지은 줄은 다시 쓰지 않는다. 끝 4자리를 못 읽은 줄은 어느 카드인지 몰라 짝짓지 않는다.
-// 뺀 쌍은 두 줄 그대로 돌려준다 — 원거래가 앞 파일로 이미 등록됐으면 취소 줄을 등록할지 06.1-04가 가른다(독립 검토 P1-2).
+// 뺀 쌍은 두 줄 그대로 돌려준다 — 원거래가 앞 파일로 이미 등록됐으면 06.1-04가 취소 줄을 등록한다(독립 검토 P1-2 · 사용자 카드 2026-10-16 18:12Z).
 export function splitOffsetPairs<T extends ParsedLine>(lines: readonly T[]): { lines: T[]; pairs: { original: T; cancel: T }[] } {
   const groups = new Map<string, number[]>();
   lines.forEach((line, at) => {

@@ -239,6 +239,22 @@ describe("신한 서식", () => {
     expect(() => finalizeAmounts(result.lines, ratesFor("2026-05-28"), new Map())).toThrow();
   });
 
+  it("빠진 취소 줄도 finalizeAmounts로 금액이 정해진다(신한 — 역산 날짜가 rateDates에 있다)", () => {
+    const result = ok(
+      parseWorkbook(
+        shinhanFixture([
+          { 이용일시: "2026.05.28 10:00:00", 이용금액: 4500 },
+          { 승인번호: "12040095", 이용일시: "2026.05.10 09:00:00", 이용금액: 12500 },
+          { 승인번호: "12040095", 이용일시: "2026.05.10 09:00:00", 이용금액: -12500 },
+        ]),
+      ),
+    );
+    expect(result.offsetPairs).toBe(1);
+    expect(result.rateDates).toEqual(["2026-05-10", "2026-05-28"]);
+    const [cancel] = finalizeAmounts(result.offsetLines.map((pair) => pair.cancel), ratesFor(...result.rateDates), rulesOf(SEED_CARD_RULE));
+    expect(cancel).toMatchObject({ totalKrw: -12500, supplyKrw: -11364, vatKrw: -1136 });
+  });
+
   it("세율의 부가세 끝처리 단위가 1 · 10이 아니면 던진다(호출자 결함 · 독립 검토 P3-4)", () => {
     const result = ok(parseWorkbook(shinhanFixture([{}])));
     const rates = new Map([["2026-05-28", { ...RATES, asOf: "2026-05-28", vatUnit: 100 }]]);

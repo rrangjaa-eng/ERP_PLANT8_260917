@@ -112,9 +112,9 @@ export function parseWorkbook(bytes: Uint8Array, options: ParseOptions = {}): Pa
 
   // 열쇠를 먼저 매긴다 — 남은 줄의 `#n`이 취소 줄이 이 파일에 들어왔는지에 따라 바뀌지 않는다(앞 파일과 같은 열쇠).
   const { lines, pairs } = splitOffsetPairs(dedupeKeys(rule.key, rule.keyKind, read.lines));
-  const offsetKeys = pairs.map((pair) => ({ original: pair.original.dedupeKey, cancel: pair.cancel.dedupeKey }));
-  const rateDates = [...new Set(lines.filter((line) => line.vatKrw === null && line.supplyKrw === null).map((line) => line.issuedOn))].sort();
-  return { ok: true, format: rule.key, lines, rateDates, offsetPairs: pairs.length, offsetKeys };
+  const pairLines = pairs.flatMap((pair) => [pair.original, pair.cancel]);
+  const rateDates = [...new Set([...lines, ...pairLines].filter((line) => line.vatKrw === null && line.supplyKrw === null).map((line) => line.issuedOn))].sort();
+  return { ok: true, format: rule.key, lines, rateDates, offsetPairs: pairs.length, offsetLines: pairs };
 }
 
 // 둘째 단계: 호출자(06.1-04)가 rateDates마다 읽은 세율과 트랜잭션 전에 코드표에서 읽은 증빙 종류별 세금 규칙으로 등록용 줄을

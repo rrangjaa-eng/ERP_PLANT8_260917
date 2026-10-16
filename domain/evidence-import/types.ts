@@ -62,6 +62,7 @@ export type FormatRule = {
 
 export type RefusalKind = "size" | "not-excel" | "encrypted" | "unknown-format" | "sales-list" | "line-errors" | "checksum" | "rows";
 export type Refusal = { ok: false; kind: RefusalKind; headline: string; lines: string[]; restCount: number };
-// `offsetKeys`: 파일 안에서 뺀 상쇄 쌍의 두 열쇠. 원거래 열쇠가 앞 파일로 이미 등록돼 있으면 06.1-04가 취소 줄을 등록한다.
-export type OffsetKeys = { original: string; cancel: string };
-export type ParseSuccess = { ok: true; format: EvidenceFormatKey; lines: KeyedLine[]; rateDates: string[]; offsetPairs: number; offsetKeys: OffsetKeys[] };
+// `offsetLines`: 파일 안에서 뺀 상쇄 쌍의 두 줄(등록 줄과 같은 모양 · 열쇠 포함). 원거래가 앞 파일로 이미 등록돼 있으면
+// 06.1-04가 취소 줄을 등록한다(사용자 카드 2026-10-16 18:12Z 「앞 파일 대조」). 역산이 필요하면 그 날짜도 rateDates에 있다.
+export type OffsetLinePair = { original: KeyedLine; cancel: KeyedLine };
+export type ParseSuccess = { ok: true; format: EvidenceFormatKey; lines: KeyedLine[]; rateDates: string[]; offsetPairs: number; offsetLines: OffsetLinePair[] };

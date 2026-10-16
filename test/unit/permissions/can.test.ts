@@ -95,8 +95,8 @@ describe("Phase 6 메뉴 키 · 정보 항목 (06-27)", () => {
     ]);
   });
 
-  it("6.1 이름(evidence로 시작하는 메뉴 · 정보 항목 키)은 없다", () => {
+  it("06.1 이름은 정해진 것뿐이다", () => {
     const keys = [...MENUS.map((menu) => menu.key), ...INFO_ITEMS.map((item) => item.key)];
-    expect(keys.filter((key) => key.startsWith("evidence"))).toEqual([]);
+    expect(keys.filter((key) => key.startsWith("evidence"))).toEqual(["evidence.intake"]);
   });
 });

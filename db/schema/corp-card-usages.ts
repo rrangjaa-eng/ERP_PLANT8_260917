@@ -42,6 +42,8 @@ export const corpCardUsages = pgTable(
     number: text("number"),
     // 06.5 D-6509(CSO-4): 지출결의 `idempotency_key`와 같은 뜻 — 재전송이면 같은 행위자의 기존 행을 돌려준다.
     idempotencyKey: text("idempotency_key"),
+    // 06.1-01(EVID-10): 카드사 승인번호 — 카드 대사 1단계가 (카드, 승인번호)로 짝을 찾는다. 이미 있는 행은 비워 둔다.
+    approvalNo: text("approval_no"),
     version: integer("version").notNull().default(1),
     source: text("source").notNull().default("demo"),
     archivedAt: timestamp("archived_at"),
@@ -67,6 +69,7 @@ export const corpCardUsages = pgTable(
     uniqueIndex("corp_card_usages_number_uniq").on(table.number),
     uniqueIndex("corp_card_usages_idempotency_key_uniq").on(table.idempotencyKey),
     index("corp_card_usages_card_used_on_idx").on(table.corpCardId, table.usedOn),
+    index("corp_card_usages_card_approval_idx").on(table.corpCardId, table.approvalNo),
     index("corp_card_usages_quote_line_idx").on(table.quoteLineId),
     index("corp_card_usages_registered_by_created_idx").on(table.registeredBy, table.createdAt),
   ],

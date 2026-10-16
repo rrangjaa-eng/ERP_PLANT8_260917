@@ -1,9 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import {
+  evidenceScopeFor,
   memoizeRowScopeForRequest,
   rowScopeFor,
   scopeFor,
   UnknownScopeEntityError,
+  type Scope,
 } from "@/domain/permissions/scope-for";
 import type { Viewer } from "@/domain/viewer";
 
@@ -253,5 +255,28 @@ describe("rowScopeFor 요청 memo", () => {
     await expect(rowScopeFor(v, "project")).rejects.toThrow("일시 오류");
     expect((await rowScopeFor(v, "project")).rows).toBe("all");
     expect(findRoleById).toHaveBeenCalledTimes(2);
+  });
+});
+
+// 06.1-01(D-6108): 증빙 행 범위 — 기존 Scope 유니온은 그대로 두고 별도 판정이 정한다.
+describe("evidenceScopeFor (06.1 증빙 행 범위)", () => {
+  const grants = (allowed: string[]) => ({
+    can: (_v: Viewer, menu: string, action: string) => Promise.resolve(allowed.includes(`${menu}:${action}`)),
+  });
+
+  it("기존 Scope.rows 유니온은 all | none 그대로다", () => {
+    expectTypeOf<Scope["rows"]>().toEqualTypeOf<"all" | "none">();
+  });
+
+  it("evidence.intake 쓰기 권한이 있으면 rows가 all이다", async () => {
+    expect(await evidenceScopeFor(viewer, grants(["evidence.intake:write"]))).toEqual({ rows: "all" });
+  });
+
+  it("evidence.intake 보기만 있으면 all이 아니다", async () => {
+    expect((await evidenceScopeFor(viewer, grants(["evidence.intake:view"]))).rows).not.toBe("all");
+  });
+
+  it("evidence.intake 쓰기 · evidence 보기가 둘 다 없으면 rows가 none이다", async () => {
+    expect(await evidenceScopeFor(viewer, grants([]))).toEqual({ rows: "none" });
   });
 });

@@ -33,3 +33,4 @@ export * from "./purchase-requests";
 export * from "./corp-card-usages";
 export * from "./files";
 export * from "./settlement-approvals";
+export * from "./evidence-records";

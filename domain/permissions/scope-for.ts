@@ -147,3 +147,17 @@ async function computeRowScope(
       return { rows: "none", includeArchived };
   }
 }
+
+// ── 06.1 증빙 행 범위(D-6108) ─────────────────────────────────────────────────
+// Scope.rows를 넓히지 않는 이유 — 기존 리포지토리가 none만 보고 나머지를 전 행으로 읽는다(셋째 값이 전 행이 된다).
+// RowScope와 따로인 이유 — 입력이 계급 view_scope가 아니라 행의 공개 범위 칸이다(RP-5).
+export type EvidenceScope = { rows: "all" } | { rows: "none" };
+
+export async function evidenceScopeFor(
+  viewer: Viewer,
+  deps?: Partial<ScopeForDeps & Pick<RowScopeDeps, "findMembershipAtDate" | "findTeamById" | "today">>,
+): Promise<EvidenceScope> {
+  const canFn = deps?.can ?? defaultCan;
+  if (await canFn(viewer, "evidence.intake", "write")) return { rows: "all" };
+  return { rows: "none" };
+}

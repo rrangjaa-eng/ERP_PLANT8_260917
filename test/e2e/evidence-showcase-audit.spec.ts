@@ -186,6 +186,23 @@ for (const width of WIDTHS) {
       const hintCount = await drop.getByText(hint, { exact: true }).count();
       check("영역 글자", route, width, hintCount, `「${hint}」 1`, hintCount === 1);
 
+      // 디자인 검토 결함 A — 2차 「파일 고르기」 라벨은 어느 폭에서도 한 줄이고 버튼 상자를 넘지 않는다(줄어드는 쪽은 안내 글자).
+      const pick = drop.getByRole("button", { name: /^파일 고르기/ });
+      const pickLines = await pick.evaluate((el) => {
+        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        let node: Node | null = walker.nextNode();
+        while (node && !(node.textContent ?? "").includes("파일 고르기")) node = walker.nextNode();
+        if (!node) return { lines: -1, sh: el.scrollHeight, ch: el.clientHeight, sw: el.scrollWidth, cw: el.clientWidth };
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        const tops = new Set(Array.from(range.getClientRects()).map((rect) => Math.round(rect.top)));
+        return { lines: tops.size, sh: el.scrollHeight, ch: el.clientHeight, sw: el.scrollWidth, cw: el.clientWidth };
+      });
+      check("「파일 고르기」 라벨 한 줄 · 상자 안", route, width, pickLines, "lines 1 · sh <= ch · sw <= cw", pickLines.lines === 1 && pickLines.sh <= pickLines.ch && pickLines.sw <= pickLines.cw);
+      const pickBox = await box(pick);
+      const dropBox = await box(drop);
+      check("「파일 고르기」 버튼이 영역 안", route, width, { pick: pickBox, drop: dropBox }, "버튼 오른쪽 끝 <= 영역 오른쪽 끝", pickBox.x + pickBox.w <= dropBox.x + dropBox.w + 1);
+
       // 조각 숫자 색(DA-20) · 링크 조각 글자 색
       const chips = await bulk.locator("[data-kind]").evaluateAll((els) =>
         els.map((el) => {
@@ -341,6 +358,9 @@ for (const width of WIDTHS) {
       check("1차 aria-disabled + aria-describedby 「사유 없음 · 사유 적기」", route, width, m, "true · [사유 없음 · 사유 적기]", m.disabled === "true" && m.described.includes("사유 없음 · 사유 적기"));
       const nativeDisabled = await dialog.locator("[disabled]").count();
       check("네이티브 disabled 수", route, width, nativeDisabled, "0", nativeDisabled === 0);
+      // 디자인 검토 결함 D — 사유 칸은 여러 줄 사유 칸(textarea)이다(SYSTEM §7-17 「사유형」, 기존 사유형 확인 넷과 같다).
+      const tag = await dialog.locator("#gallery-detach-reason").evaluate((el) => el.tagName);
+      check("사유 칸 태그", route, width, tag, "TEXTAREA", tag === "TEXTAREA");
     });
 
     test(`?sheet=two-actions @${width} — 3차 둘 높이 · 간격 --s-2 · 시트 넘침`, async () => {
@@ -349,11 +369,12 @@ for (const width of WIDTHS) {
       await expect(sheet.getByText("무대 설치 자재", { exact: true })).toBeVisible();
       await docFits(page, route, width);
       await fits(sheet, "시트 넘침 없음", route, width);
-      const a = await box(sheet.getByRole("button", { name: "요청 취소", exact: true }));
-      const b = await box(sheet.getByRole("button", { name: "증빙 고르기 3", exact: true }));
+      // 디자인 검토 결함 E — 위 = 문서를 바꾸지 않는 행동 `증빙 고르기 {N}`, 아래 = `요청 취소`(SYSTEM §7-3 (바)).
+      const a = await box(sheet.getByRole("button", { name: "증빙 고르기 3", exact: true }));
+      const b = await box(sheet.getByRole("button", { name: "요청 취소", exact: true }));
       const s2 = await tokenLength(page, "--s-2");
       const gap = Math.round((b.y - (a.y + a.h)) * 10) / 10;
-      check("3차 둘 세로 쌓기(같은 x · 둘째가 아래)", route, width, { ax: a.x, bx: b.x, ay: a.y, by: b.y }, "ax = bx · by > ay", near(a.x, b.x) && b.y > a.y);
+      check("3차 둘 세로 쌓기(같은 x · 위 `증빙 고르기 3` · 아래 `요청 취소`)", route, width, { ax: a.x, bx: b.x, ay: a.y, by: b.y }, "ax = bx · by > ay", near(a.x, b.x) && b.y > a.y);
       check("3차 둘 사이 세로 간격 = --s-2", route, width, gap, `${s2}`, near(gap, s2));
       if (width < PHONE) check("폰 3차 둘 높이 ≥ 44", route, width, { a: a.h, b: b.h }, "≥ 44 · ≥ 44", a.h >= 44 && b.h >= 44);
     });

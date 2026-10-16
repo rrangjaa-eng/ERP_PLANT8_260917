@@ -872,7 +872,7 @@ test.describe("로그인한 뒤", () => {
 test.describe("로그인한 뒤 · 폰 375 — 시트 두 3차(SP-6107)", () => {
   test.use({ viewport: { width: 375, height: 812 } });
 
-  test("?sheet=two-actions — 시트 안 3차 둘(요청 취소 · 증빙 고르기 3)이 위에서 아래로 서고 각 높이 44 이상", async ({ page }) => {
+  test("?sheet=two-actions — 시트 안 3차 둘(위 증빙 고르기 3 · 아래 요청 취소)이 위에서 아래로 서고 각 높이 44 이상", async ({ page }) => {
     const user = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
     await page.goto("/login");
     await page.getByLabel("이메일").fill(user.email);
@@ -889,7 +889,7 @@ test.describe("로그인한 뒤 · 폰 375 — 시트 두 3차(SP-6107)", () => 
     if (!a || !b) throw new Error("3차 상자를 잴 수 없다");
     expect(a.height).toBeGreaterThanOrEqual(44);
     expect(b.height).toBeGreaterThanOrEqual(44);
-    expect(b.y).toBeGreaterThanOrEqual(a.y + a.height);
+    expect(a.y).toBeGreaterThanOrEqual(b.y + b.height);
     expect(await dialog.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
   });
 });

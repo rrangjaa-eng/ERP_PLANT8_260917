@@ -667,4 +667,12 @@ describe("06.1 증빙 — 상태 낱말 · 잠김 · 링크 건수 · 폰 시트
     expect(attach).toContain("`카드 미등록` danger");
     expect(DECISIONS).toContain("SP-6103");
   });
+
+  it("§7-17-1에 고르기 목록 확장 다섯 SP-6106이 있다 — 낱말 셋 · preselect · maxSelected · 단일 거부 · limit", () => {
+    const pick = section(SYSTEM, "#### 7-17-1.", "### 7-18.");
+    expect(pick).toContain("SP-6106");
+    for (const word of ["`문서`", "`증빙`", "`카드 사용`", "`preselect`", "`maxSelected`", "`limit`", "`{ ok: false, reason, retryable }`"]) expect(pick, word).toContain(word);
+    expect(pick).toContain("새 컴포넌트는 없다");
+    expect(DECISIONS).toContain("SP-6106");
+  });
 });

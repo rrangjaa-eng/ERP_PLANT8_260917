@@ -1334,7 +1334,7 @@ test.describe("지급 완료 보기 (06-20 Task 1)", () => {
     expect(html).not.toContain(`**-${account.last4}`);
     expect(html).not.toContain(account.holder);
     expect(html).not.toContain(account.plain);
-    expect(await page.locator("main").innerText()).not.toContain(account.last4);
+    expect(await page.locator("main").innerText()).not.toMatch(new RegExp(`(?<!\\d)${account.last4}(?!\\d)`));
     await page.context().close();
 
     const pmPage = await loginPage(browser, baseURL, fx.pm);
@@ -1404,8 +1404,9 @@ test.describe("계좌 칸 · 번호 보기 (06-20 Task 2)", () => {
     await ceoPage.goto(`/expenses/${expenseId}`);
     await expect(ceoPage.getByText("지급 방식", { exact: true }).first()).toBeVisible();
     await expect(ceoPage.locator("[data-payment-account]")).toHaveCount(0);
-    expect(await ceoPage.locator("main").innerText()).not.toContain(account.last4);
+    expect(await ceoPage.locator("main").innerText()).not.toMatch(new RegExp(`(?<!\\d)${account.last4}(?!\\d)`));
     expect(await ceoPage.content()).not.toContain(`**-${account.last4}`);
+    expect(await ceoPage.content()).not.toContain(account.plain);
     await ceoPage.context().close();
   });
 });

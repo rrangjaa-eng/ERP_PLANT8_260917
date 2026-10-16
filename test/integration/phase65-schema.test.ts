@@ -293,3 +293,20 @@ describe("06.5 스키마 — 제약 검증(VALIDATE)", () => {
     expect(Object.fromEntries(rows.map((row) => [row.conname, row.convalidated]))).toEqual(Object.fromEntries(names.map((name) => [name, true])));
   });
 });
+
+// 06.5-10 D-6520(사용자 카드 10/13 23:44 KST): 금액은 공급가액 하나 — 증빙 금액 칸과 그 CHECK가 DB에서 사라졌다.
+describe("06.5 스키마 — 증빙 금액 칸 삭제(D-6520)", () => {
+  it("expenses에 evidence_amount 칸이 없다", async () => {
+    const { rows } = await db.execute<{ column_name: string }>(
+      sql`SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'expenses' AND column_name = 'evidence_amount'`,
+    );
+    expect(rows).toEqual([]);
+  });
+
+  it("expenses_evidence_amount_check 제약이 없다", async () => {
+    const { rows } = await db.execute<{ conname: string }>(
+      sql`SELECT conname FROM pg_constraint WHERE conname = 'expenses_evidence_amount_check'`,
+    );
+    expect(rows).toEqual([]);
+  });
+});

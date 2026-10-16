@@ -57,10 +57,9 @@ export const expenses = pgTable(
     updatedBy: text("updated_by").references(() => users.id),
     deletedAt: timestamp("deleted_at"),
     deletedBy: text("deleted_by"),
-    // 06-27: 선결제(06-10) · 증빙 공급가액 · 증빙일(C6 — EVID-03, 06-06) · 종결(C10 — 제출된 반려 · 회수 문서만, 06-28).
+    // 06-27: 선결제(06-10) · 증빙일(C6 — EVID-03, 06-06) · 종결(C10 — 제출된 반려 · 회수 문서만, 06-28).
     prepaid: boolean("prepaid").notNull().default(false),
     prepaidReason: text("prepaid_reason"),
-    evidenceAmount: bigint("evidence_amount", { mode: "number" }),
     evidenceDate: date("evidence_date"),
     closedAt: timestamp("closed_at"),
     closedBy: text("closed_by").references(() => users.id),
@@ -95,7 +94,6 @@ export const expenses = pgTable(
       "expenses_prepaid_reason_check",
       sql`${table.prepaid} = false OR (${table.prepaidReason} IS NOT NULL AND char_length(btrim(${table.prepaidReason})) > 0)`,
     ),
-    check("expenses_evidence_amount_check", sql`${table.evidenceAmount} IS NULL OR ${table.evidenceAmount} >= 0`),
     check(
       "expenses_closed_check",
       sql`(${table.closedAt} IS NULL AND ${table.closedBy} IS NULL AND ${table.closedReason} IS NULL) OR (${table.closedAt} IS NOT NULL AND ${table.closedBy} IS NOT NULL AND ${table.closedReason} IS NOT NULL AND char_length(btrim(${table.closedReason})) > 0 AND ${table.number} IS NOT NULL)`,

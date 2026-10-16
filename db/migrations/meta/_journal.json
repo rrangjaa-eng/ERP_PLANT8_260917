@@ -253,6 +253,13 @@
       "when": 1791953584910,
       "tag": "0035_payment_followup_validate",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1792080465200,
+      "tag": "0036_drop_expense_evidence_amount",
+      "breakpoints": true
     }
   ]
 }

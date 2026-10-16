@@ -775,3 +775,114 @@ describe("기타소득 회사 대납 맞춤(06.5 D-6501)", () => {
     expect(await readEvidence(pool)).toEqual(expected);
   });
 });
+
+// 06.5-10 D-6520(사용자 카드 10/13 23:44 KST): 금액은 공급가액 하나 — expenses.evidence_amount 칸 · CHECK를 지운다.
+// 사용자 결정 「가드 둠」 · 제출된 문서만: 지급 전(살아 있는 지급 없음) · 삭제 안 됨 · 종결 안 됨 · 번호 있음인데
+// 증빙 금액이 공급가와 다른 문서가 있으면 멈춘다. 앞 상태는 번호를 박지 않고 칸 삭제 바로 앞까지 적용한다.
+describe("증빙 금액 칸 삭제(06.5 D-6520)", () => {
+  const EXP = {
+    paid: "00000000-0000-4000-8000-0000000065a1",
+    same: "00000000-0000-4000-8000-0000000065a2",
+    deleted: "00000000-0000-4000-8000-0000000065a3",
+    closed: "00000000-0000-4000-8000-0000000065a4",
+    unpaid: "00000000-0000-4000-8000-0000000065a5",
+    draft: "00000000-0000-4000-8000-0000000065a6",
+  };
+
+  type ExpenseSeed = { id: string; number: string | null; supply: number | null; evidence: number | null; deleted?: boolean; closed?: boolean };
+
+  async function prepareBeforeDrop(seeds: ExpenseSeed[]): Promise<Pool> {
+    const pool = await createScratchDb();
+    await migrateTo(pool, countThrough("_drop_expense_evidence_amount") - 1);
+    await pool.query(`INSERT INTO users (id, name, email) VALUES ('old-drafter', '옛 기안자', 'old-drafter@example.test')`);
+    for (const seed of seeds) {
+      await pool.query(
+        `INSERT INTO expenses (id, drafter_id, number, supply_amount_krw, evidence_amount, deleted_at, closed_at, closed_by, closed_reason)
+         VALUES ($1, 'old-drafter', $2, $3, $4, $5, $6, $7, $8)`,
+        [
+          seed.id,
+          seed.number,
+          seed.supply,
+          seed.evidence,
+          seed.deleted ? new Date() : null,
+          seed.closed ? new Date() : null,
+          seed.closed ? "old-drafter" : null,
+          seed.closed ? "재기안" : null,
+        ],
+      );
+    }
+    return pool;
+  }
+
+  async function payLive(pool: Pool, expenseId: string, krw: number): Promise<void> {
+    await pool.query(
+      `INSERT INTO expense_payments (expense_id, pay_date, transfer_krw, payable_krw, diff_krw, payment_method, processed_by)
+       VALUES ($1, '2026-10-01', $2, $2, 0, 'transfer', 'old-drafter')`,
+      [expenseId, krw],
+    );
+  }
+
+  async function evidenceColumn(pool: Pool): Promise<{ column: number; check: number }> {
+    const { rows: column } = await pool.query(
+      `SELECT 1 FROM information_schema.columns WHERE table_name = 'expenses' AND column_name = 'evidence_amount'`,
+    );
+    const { rows: check } = await pool.query(`SELECT 1 FROM pg_constraint WHERE conname = 'expenses_evidence_amount_check'`);
+    return { column: column.length, check: check.length };
+  }
+
+  async function supplies(pool: Pool): Promise<Record<string, number | null>> {
+    const { rows } = await pool.query<{ id: string; supply: string | null }>(`SELECT id, supply_amount_krw AS supply FROM expenses ORDER BY id`);
+    return Object.fromEntries(rows.map((row) => [row.id, row.supply === null ? null : Number(row.supply)]));
+  }
+
+  const KEPT: ExpenseSeed[] = [
+    { id: EXP.paid, number: "26001-E0001", supply: 1_000_000, evidence: 1_100_000 },
+    { id: EXP.same, number: "26001-E0002", supply: 500_000, evidence: 500_000 },
+    { id: EXP.deleted, number: "26001-E0003", supply: 300_000, evidence: 330_000, deleted: true },
+    { id: EXP.closed, number: "26001-E0004", supply: 200_000, evidence: 220_000, closed: true },
+  ];
+
+  it("지급된 · 같은 값 · 삭제된 · 종결된 문서만 있으면 칸 · 제약이 사라지고 지출결의 행 · 공급가 · 지급 행이 그대로다(시드 없이)", async () => {
+    const pool = await prepareBeforeDrop(KEPT);
+    await payLive(pool, EXP.paid, 1_000_000);
+    const before = await supplies(pool);
+
+    await migrateTo(pool);
+
+    expect(await evidenceColumn(pool)).toEqual({ column: 0, check: 0 });
+    expect(await supplies(pool)).toEqual(before);
+    expect(Object.keys(before)).toHaveLength(4);
+    const { rows } = await pool.query<{ count: string }>(`SELECT count(*) FROM expense_payments`);
+    expect(Number(rows[0]?.count)).toBe(1);
+  });
+
+  it("(가드) 증빙 금액이 공급가와 다른 지급 전 제출 문서가 하나 있으면 건수와 함께 멈추고 칸 · 제약 · 행이 그대로다", async () => {
+    const pool = await prepareBeforeDrop([...KEPT, { id: EXP.unpaid, number: "26001-E0005", supply: 400_000, evidence: 440_000 }]);
+    await payLive(pool, EXP.paid, 1_000_000);
+    const before = await supplies(pool);
+
+    let caught: unknown;
+    try {
+      await migrateTo(pool);
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(errorText(caught)).toContain("지급 전 지출결의 1건의 증빙 금액이 공급가액과 다릅니다");
+    expect(await evidenceColumn(pool)).toEqual({ column: 1, check: 1 });
+    expect(await supplies(pool)).toEqual(before);
+    const { rows: evidence } = await pool.query<{ evidence: string }>(`SELECT evidence_amount AS evidence FROM expenses WHERE id = $1`, [EXP.unpaid]);
+    expect(Number(evidence[0]?.evidence)).toBe(440_000);
+    const { rows } = await pool.query<{ count: string }>(`SELECT count(*) FROM drizzle.__drizzle_migrations`);
+    expect(Number(rows[0]?.count)).toBe(countThrough("_drop_expense_evidence_amount") - 1);
+  });
+
+  it("(가드 · 제출만) 번호 없는 작성 중 문서(공급가 빈 칸 · 증빙 금액 있음)만 있으면 가드에 걸리지 않고 칸이 지워진다", async () => {
+    const pool = await prepareBeforeDrop([{ id: EXP.draft, number: null, supply: null, evidence: 70_000 }]);
+
+    await migrateTo(pool);
+
+    expect(await evidenceColumn(pool)).toEqual({ column: 0, check: 0 });
+    expect(await supplies(pool)).toEqual({ [EXP.draft]: null });
+  });
+});

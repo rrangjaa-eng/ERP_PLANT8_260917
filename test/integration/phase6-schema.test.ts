@@ -583,11 +583,6 @@ describe("expenses 06 칸", () => {
     await expectPgError(() => db.insert(expenses).values({ drafterId: userId, prepaid: true }), "23514", "expenses_prepaid_reason_check");
   });
 
-  it("증빙 금액이 음수면 expenses_evidence_amount_check로 거부된다", async () => {
-    const { userId } = await makeDraftExpense();
-    await expectPgError(() => db.insert(expenses).values({ drafterId: userId, evidenceAmount: -1 }), "23514", "expenses_evidence_amount_check");
-  });
-
   it("번호 없는 문서를 종결하면 expenses_closed_check로 거부된다", async () => {
     const { expenseId, userId } = await makeDraftExpense();
     await expectPgError(
@@ -597,13 +592,13 @@ describe("expenses 06 칸", () => {
     );
   });
 
-  it("번호 있는 문서의 종결 · 선결제 사유 · 증빙 금액 · 증빙일은 들어간다", async () => {
+  it("번호 있는 문서의 종결 · 선결제 사유 · 증빙일은 들어간다", async () => {
     const { userId } = await makeDraftExpense();
     const expenseId = await numberedExpense(userId);
     await expect(
       db
         .update(expenses)
-        .set({ closedAt: new Date(), closedBy: userId, closedReason: "재기안", prepaid: true, prepaidReason: "현장 선결제", evidenceAmount: 0, evidenceDate: "2026-10-01" })
+        .set({ closedAt: new Date(), closedBy: userId, closedReason: "재기안", prepaid: true, prepaidReason: "현장 선결제", evidenceDate: "2026-10-01" })
         .where(eq(expenses.id, expenseId))
         .returning({ id: expenses.id }),
     ).resolves.toHaveLength(1);

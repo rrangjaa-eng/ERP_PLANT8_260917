@@ -101,7 +101,7 @@ export async function listLiveLinksWithRecords(
 }
 
 // 그 주인 id 열을 가진 행에 거는 「살아 있는 붙임 1개 이상」 한 조건 — repositories/files.ts aliveFileExists와 같은 꼴(카드 사용 목록 `증빙` 열).
-export function liveLinkExists(viewer: Viewer, ownerKind: string, ownerId: AnyPgColumn): SQL<boolean> {
+export function liveLinkExists(viewer: Viewer, ownerKind: string | AnyPgColumn, ownerId: AnyPgColumn): SQL<boolean> {
   void viewer;
   return sql<boolean>`exists (select 1 from ${evidenceRecordLinks} where ${evidenceRecordLinks.ownerKind} = ${ownerKind} and ${evidenceRecordLinks.ownerId} = ${ownerId} and ${live()})`;
 }

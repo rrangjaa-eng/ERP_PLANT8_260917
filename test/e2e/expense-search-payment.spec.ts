@@ -153,8 +153,18 @@ test.describe("지급 완료 검색 (06.5 D-6508)", () => {
     await expect(rowOf(page, fx.lines.tracer.itemName)).toHaveCount(1);
     await expect(rowOf(page, fx.lines.retry.itemName)).toHaveCount(0);
 
-    await page.getByRole("combobox", { name: "월" }).selectOption({ index: 0 });
-    await expect(page).toHaveURL((url) => url.searchParams.get("q") === tracer.number && url.searchParams.get("status") === "지급 완료");
+    // 월 select가 바뀐 이동이 끝난 뒤 다음 goto를 해야 한다 — q · status만 보면 이동 전 주소로도 통과해 goto가 ERR_ABORTED로 끊긴다.
+    const monthSelect = page.getByRole("combobox", { name: "월" });
+    const monthBefore = await monthSelect.inputValue();
+    const monthFirst = await monthSelect.locator("option").first().getAttribute("value");
+    await monthSelect.selectOption({ index: 0 });
+    await expect(page).toHaveURL(
+      (url) =>
+        url.searchParams.get("q") === tracer.number &&
+        url.searchParams.get("status") === "지급 완료" &&
+        (monthFirst === monthBefore || url.searchParams.get("month") === monthFirst),
+    );
+    await page.waitForLoadState();
 
     await page.goto(`/expenses?${new URLSearchParams({ status: "지급 완료", q: "없는검색어zz" })}`);
     await expect(page.getByRole("textbox", { name: "검색" })).toHaveValue("없는검색어zz");

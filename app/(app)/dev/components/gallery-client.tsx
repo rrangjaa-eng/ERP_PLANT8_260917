@@ -521,6 +521,102 @@ export function PickManySamples() {
   );
 }
 
+// 06.1-03(SP-6106 · G-4) — 문서 고르기(단일 · `noun="문서"`) · 증빙 여럿 고르기(다중 · `noun="증빙"` · 상한 3) 표본. 값은 가짜 픽스처다.
+// 문서: 1위 `preselect` · 값 바뀜 2행 · 막힌 행 · 거부 행 셋(새로 고침 꼬리 · 연결 실패 · 거부 문구 없이 열린 채). 증빙: 미리 고른 하나 · 상한 · 거부 행 하나 · `넘침` 검색은 한도 20.
+const PICK_DOCUMENT_ROWS: PickRow[] = [
+  { type: "row", id: "d1", title: "행사 운영비 · 김기획", subtitle: "합계 12,000 → 12,500", amount: { krw: 12_500 }, selectable: true },
+  { type: "row", id: "d2", title: "무대 설치 · 박운영", subtitle: "표본 거래처 가", amount: { krw: 4_200_000 }, selectable: true },
+  { type: "row", id: "d3", title: "음향 장비 · 이도윤", subtitle: "표본 거래처 나", amount: { krw: 1_700_000 }, selectable: false, reason: "결재 중 문서 · 결재 끝까지 떼기 없음" },
+  { type: "row", id: "d4", title: "현수막 · 최하은", subtitle: "표본 거래처 다", amount: { krw: 540_000 }, selectable: true },
+  { type: "row", id: "d5", title: "거부 표본 · 새로 고침", subtitle: "표본 거래처 라", amount: { krw: 320_000 }, selectable: true },
+  { type: "row", id: "d6", title: "거부 표본 · 연결 실패", subtitle: "표본 거래처 마", amount: { krw: 210_000 }, selectable: true },
+  { type: "row", id: "d7", title: "거부 표본 · 열린 채", subtitle: "표본 거래처 바", amount: { krw: 110_000 }, selectable: true },
+];
+const PICK_EVIDENCE_ROWS: PickRow[] = [
+  { type: "row", id: "e1", title: "세금계산서 · 표본 거래처 가", subtitle: "10-02 · 홈택스", amount: { krw: 12_500 }, selectable: true },
+  { type: "row", id: "e2", title: "카드 사용 · 표본 가맹점 나", subtitle: "10-03 · 신한카드", amount: { krw: 88_000 }, selectable: true },
+  { type: "row", id: "e3", title: "세금계산서 · 표본 거래처 다", subtitle: "10-04 · 홈택스", amount: { krw: 330_000 }, selectable: true },
+  { type: "row", id: "e4", title: "카드 사용 · 표본 가맹점 라", subtitle: "10-05 · 롯데카드", amount: { krw: 45_000 }, selectable: true },
+  { type: "row", id: "e5", title: "거부 표본 · 새로 고침", subtitle: "10-06 · 홈택스", amount: { krw: 9_900 }, selectable: true },
+];
+
+export function EvidencePickSamples({ initial = null }: { initial?: "document" | "evidence" | null }) {
+  const [which, setWhich] = useState<"document" | "evidence" | null>(initial);
+  const [documentResult, setDocumentResult] = useState("");
+  const [evidenceResult, setEvidenceResult] = useState("");
+  const [searches, setSearches] = useState(0);
+
+  function searchDocuments(query: string): Promise<PickResult | null> {
+    setSearches((count) => count + 1);
+    if (query.trim() === "zzz") return Promise.resolve({ items: [], truncated: false });
+    return Promise.resolve({ items: PICK_DOCUMENT_ROWS, truncated: false, subtitle: "표본 프로젝트", preselect: query.trim() === "" ? ["d1"] : ["d2"] });
+  }
+
+  function pickDocument(row: PickRow): PickManyOutcome | boolean {
+    if (row.id === "d5") return { ok: false, reason: "이미 다른 문서에 붙음 · 새로 고침", retryable: false };
+    if (row.id === "d6") return { ok: false, reason: "붙이지 못함 · 다시 시도", retryable: true };
+    if (row.id === "d7") return false;
+    setDocumentResult(row.title);
+    return true;
+  }
+
+  function searchEvidence(query: string): Promise<PickResult | null> {
+    const q = query.trim();
+    if (q === "zzz") return Promise.resolve({ items: [], truncated: false });
+    return Promise.resolve({ items: PICK_EVIDENCE_ROWS, truncated: q === "넘침", limit: 20, subtitle: "표본 문서", preselect: q === "" ? ["e1"] : null });
+  }
+
+  function pickEvidence(rows: PickRow[]): Promise<PickManyOutcome> {
+    if (rows.some((row) => row.id === "e5")) return Promise.resolve({ ok: false, reason: "이미 다른 문서에 붙음 · 새로 고침", retryable: false });
+    setEvidenceResult(`붙임 · ${rows.map((row) => row.title).join(", ")}`);
+    return Promise.resolve({ ok: true });
+  }
+
+  return (
+    <>
+      <div className={styles.samples}>
+        <Button variant="secondary" onClick={() => setWhich("document")}>
+          문서 고르기 열기
+        </Button>
+        <Button variant="secondary" onClick={() => setWhich("evidence")}>
+          증빙 여럿 고르기 열기
+        </Button>
+      </div>
+      <p data-gallery="pick-document-result" data-searches={searches}>
+        {documentResult}
+      </p>
+      <p data-gallery="pick-evidence-result">{evidenceResult}</p>
+      <PickDialog
+        open={which === "document"}
+        onClose={() => setWhich(null)}
+        title="문서 고르기"
+        subtitle="표본 프로젝트"
+        searchLabel="문서 검색"
+        search={searchDocuments}
+        primaryLabel="이 문서에 붙이기"
+        noun="문서"
+        emptyNextStep={null}
+        onPick={pickDocument}
+      />
+      <PickDialog
+        mode="multiple"
+        open={which === "evidence"}
+        onClose={() => setWhich(null)}
+        title="증빙 고르기"
+        subtitle="표본 문서"
+        searchLabel="증빙 검색"
+        search={searchEvidence}
+        primaryLabel="증빙 붙이기"
+        noun="증빙"
+        emptyNextStep={null}
+        maxSelected={{ count: 3, reason: "3건 상한 · 나눠 붙이기" }}
+        resultLineMany={(rows) => (rows.length > 0 ? `고른 ${rows.length}건` : null)}
+        onPickMany={pickEvidence}
+      />
+    </>
+  );
+}
+
 export function PanelOpener() {
   return (
     <Link href="/dev/components?panel=1" scroll={false} className={buttonLinkClassName("secondary")}>

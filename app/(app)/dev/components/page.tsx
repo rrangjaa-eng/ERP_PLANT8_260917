@@ -18,6 +18,7 @@ import {
   BulkImportSamples,
   EditTableSample,
   EvidencePanelSample,
+  EvidencePickSamples,
   EvidenceSamples,
   GalleryPanel,
   ModalSample,
@@ -59,10 +60,10 @@ function serverStamp(): number {
   return Date.now();
 }
 
-export default async function ComponentsPage({ searchParams }: { searchParams: Promise<{ panel?: string; confirm?: string; sheet?: string }> }) {
+export default async function ComponentsPage({ searchParams }: { searchParams: Promise<{ panel?: string; confirm?: string; sheet?: string; pick?: string }> }) {
   await requireSession();
   if (!isDevToolsEnabled(env.APP_ENV)) notFound();
-  const { panel, confirm, sheet } = await searchParams;
+  const { panel, confirm, sheet, pick } = await searchParams;
 
   return (
     <DetailScreen
@@ -244,6 +245,7 @@ export default async function ComponentsPage({ searchParams }: { searchParams: P
 
       <DetailScreen.Section title="고르기 목록">
         <PickSamples />
+        <EvidencePickSamples initial={pick === "document" || pick === "evidence" ? pick : null} />
       </DetailScreen.Section>
 
       <DetailScreen.Section title="골라내기 — 다중(SP-62-1)">

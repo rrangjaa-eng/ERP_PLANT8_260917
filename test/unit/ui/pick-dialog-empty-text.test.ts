@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pickEmptyText, pickFootLine, pickManyPrimaryLabel } from "@/ui/pick-dialog/PickDialog";
+import { pickEmptyText, pickFootLine, pickManyCapReached, pickManyPrimaryLabel, pickOutcomeOf, pickTruncatedText } from "@/ui/pick-dialog/PickDialog";
 
 // 05 /review B2: 골라내기 빈 목록 문구의 조사 — 받침 없는 `거래처`는 `가`, 받침 있는 `줄`은 `이`.
 describe("pickEmptyText", () => {
@@ -52,5 +52,63 @@ describe("pickEmptyText — noun 지급처 (06.5 V12)", () => {
   it("두 꼴 모두 조사 `가`", () => {
     expect(pickEmptyText("지급처", "no-match")).toBe("조건에 맞는 지급처가 없습니다");
     expect(pickEmptyText("지급처", "none-selectable")).toBe("고를 수 있는 지급처가 없습니다");
+  });
+});
+
+// 06.1-03 Task 3 (SP-6106 · G-4 · RP-18) — 확장 다섯: 낱말 셋(받침 조사) · 다중 상한 · 단일 거부 결과 · 넘침 한도. 컴포넌트 상태 · 비동기 첫 조회는 E2E(dev-components) 몫이다.
+describe("pickEmptyText — noun 문서 · 증빙 · 카드 사용 (06.1 SP-6106)", () => {
+  it("마지막 글자 받침으로 조사를 고른다(문서 가 · 증빙 이 · 카드 사용 이)", () => {
+    expect(pickEmptyText("증빙", "no-match")).toBe("조건에 맞는 증빙이 없습니다");
+    expect(pickEmptyText("문서", "no-match")).toBe("조건에 맞는 문서가 없습니다");
+    expect(pickEmptyText("카드 사용", "none-selectable")).toBe("고를 수 있는 카드 사용이 없습니다");
+    expect(pickEmptyText("문서", "none-selectable")).toBe("고를 수 있는 문서가 없습니다");
+    expect(pickEmptyText("증빙", "none-selectable")).toBe("고를 수 있는 증빙이 없습니다");
+    expect(pickEmptyText("카드 사용", "no-match")).toBe("조건에 맞는 카드 사용이 없습니다");
+  });
+
+  it("기존 다섯 낱말의 두 갈래 글자는 지금과 같다", () => {
+    expect(pickEmptyText("줄", "no-match")).toBe("조건에 맞는 줄이 없습니다");
+    expect(pickEmptyText("줄", "none-selectable")).toBe("고를 수 있는 줄이 없습니다");
+    expect(pickEmptyText("거래처", "no-match")).toBe("조건에 맞는 거래처가 없습니다");
+    expect(pickEmptyText("거래처", "none-selectable")).toBe("고를 수 있는 거래처가 없습니다");
+    expect(pickEmptyText("프로젝트", "no-match")).toBe("조건에 맞는 프로젝트가 없습니다");
+    expect(pickEmptyText("프로젝트", "none-selectable")).toBe("고를 수 있는 프로젝트가 없습니다");
+    expect(pickEmptyText("사람", "no-match")).toBe("조건에 맞는 사람이 없습니다");
+    expect(pickEmptyText("사람", "none-selectable")).toBe("고를 수 있는 사람이 없습니다");
+    expect(pickEmptyText("지급처", "no-match")).toBe("조건에 맞는 지급처가 없습니다");
+    expect(pickEmptyText("지급처", "none-selectable")).toBe("고를 수 있는 지급처가 없습니다");
+  });
+});
+
+describe("pickManyCapReached — 다중 상한 (06.1 SP-6106 ⑶)", () => {
+  it("고른 수가 상한에 닿았을 때만 참이고 상한이 없으면 늘 거짓이다", () => {
+    expect(pickManyCapReached(19, 20)).toBe(false);
+    expect(pickManyCapReached(20, 20)).toBe(true);
+    expect(pickManyCapReached(3, undefined)).toBe(false);
+  });
+});
+
+describe("pickOutcomeOf — 단일 1차 결과 가르기 (06.1 SP-6106 ⑷)", () => {
+  it("undefined · true · { ok: true }는 닫고 false는 거부 없이 열어 둔다", () => {
+    expect(pickOutcomeOf(undefined)).toBe("close");
+    expect(pickOutcomeOf(true)).toBe("close");
+    expect(pickOutcomeOf({ ok: true })).toBe("close");
+    expect(pickOutcomeOf(false)).toBe("keep");
+  });
+
+  it("{ ok: false, reason, retryable }는 그 값 그대로 거부로 돌려준다", () => {
+    expect(pickOutcomeOf({ ok: false, reason: "이미 다른 문서에 붙음 · 새로 고침", retryable: false })).toEqual({
+      reject: { reason: "이미 다른 문서에 붙음 · 새로 고침", retryable: false },
+    });
+    expect(pickOutcomeOf({ ok: false, reason: "붙이지 못함 · 다시 시도", retryable: true })).toEqual({
+      reject: { reason: "붙이지 못함 · 다시 시도", retryable: true },
+    });
+  });
+});
+
+describe("pickTruncatedText — 넘침 바닥 줄 (06.1 SP-6106 ⑸)", () => {
+  it("한도를 안 주면 기존 50건 글자 그대로이고 주면 그 수가 들어간다", () => {
+    expect(pickTruncatedText(undefined)).toBe("50건 넘음 · 검색으로 좁히기");
+    expect(pickTruncatedText(20)).toBe("20건 넘음 · 검색으로 좁히기");
   });
 });

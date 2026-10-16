@@ -12,7 +12,7 @@
 **이름: 원장(元帳)** — 안 A. 색 구성은 안 C(작업대)의 그린 톤온톤을 흡수했다.
 
 **한 줄 원칙**
-> 화면 전체가 하나의 원장이다. 표·폼·패널은 흰 면 한 장에 1px 선이고, 그룹은 옅은 초록 줄 면으로 가른다. 그림자는 표 면의 옅은 한 겹과 떠 있는 요소(모달·옆 패널·시트)에만 있다.
+> 화면 전체가 하나의 원장이다. 표·패널(옆 패널 폼 포함)은 흰 면 한 장에 1px 선이고, 페이지 배치 폼은 바탕 위 한 열(흰 면은 입력 칸)이며, 그룹은 옅은 초록 줄 면으로 가른다. 그림자는 표 면의 옅은 한 겹과 떠 있는 요소(모달·옆 패널·시트)에만 있다.
 
 이 한 줄이 이 제품이 남과 다른 지점이다. 「흔한 AI 대시보드」(카드 속 카드·그라디언트·블러·보라 포인트)로 가는 길은 카드 없음 · 그라디언트·블러 없음 · 포인트 색 한 가지로 구조적으로 막고, 「관공서 사내망」(회색 격자·작은 글씨)과는 행 높이 44와 면 위계로 갈라진다.
 
@@ -95,7 +95,7 @@
 
 | 무리 | 역할 토큰 → 원시 |
 |---|---|
-| 면 | `--surface-canvas`→n-75(페이지 바탕) · `--surface-base`→n-0(표·폼·패널·모달) · `--surface-head`→n-50(표 머리글) · `--surface-foot`→n-50(합계 줄) · `--surface-group`→g-50(그룹 줄) · `--surface-actions`→n-25(패널 행동 줄) · `--surface-muted`→n-60(비활성·뼈대 행) · `--surface-selected`→g-100 |
+| 면 | `--surface-canvas`→n-75(페이지 바탕) · `--surface-base`→n-0(표·패널·모달·입력 칸·옆 패널 폼 — 페이지 배치 폼은 `--surface-canvas` 위, §0) · `--surface-head`→n-50(표 머리글) · `--surface-foot`→n-50(합계 줄) · `--surface-group`→g-50(그룹 줄) · `--surface-actions`→n-25(패널 행동 줄) · `--surface-muted`→n-60(비활성·뼈대 행) · `--surface-selected`→g-100 |
 | 글자 | `--text-strong`→n-900 · `--text-muted`→n-700 · `--text-faint`→n-600 · `--text-group`→g-800 · `--text-on-accent`→n-0 · `--text-on-tint`→g-950(편집 표 머리글 글자 — `--surface-selected` 위, §7-3 894) · `--text-link`→`--accent` |
 | 선 | `--border-surface`→n-150(표·패널·합계 면 테두리) · `--border-row`→n-100(행 사이·섹션) · `--border-strong`→n-200(합계 위) · `--border-button`→n-300(2차 버튼) · `--border-control`→n-500(입력 테두리, UQ-7 A) · `--line-w`=1px · `--underline-w-hover`=2px · `--underline-offset`=2px |
 | 강조·상태 | `--accent`→g-700 · `--accent-hover`→g-800 · `--accent-weak`→g-50 · `--status-danger`/`-weak`→red-800/red-50 · `--status-warning`/`-weak`→amber-700/amber-50 · `--status-success`→g-600 · `--status-accent`→g-700 · `--status-muted`→n-700 · `--focus`→g-700 |

@@ -61,10 +61,15 @@ describe.skipIf(!DIR)("실물 견본 — 건수만", () => {
     });
   });
 
-  it("실물 계산서 꼴 → 모르는 서식 · 세금계산서로 읽히지 않음", () => {
-    const file = sampleOf("hometax-invoice-purchase");
-    expect(file, "견본 없음 — 서식 hometax-invoice(계산서 꼴)").toBeDefined();
-    const result = parseWorkbook(new Uint8Array(readFileSync(file ?? "")));
-    expect(result.ok ? result.format : result.kind).toBe("unknown-format");
+  // 06.1-11: 견본 매입 계산서(면세) 목록은 3장, 그중 1장이 음수(수정 계산서 · 비고에 당초 승인번호)다(samples/hometax-invoice-purchase.md).
+  // 세금계산서 서식으로 읽히면 parsedSample의 서식 키 단언이 빨갛다.
+  describe("hometax-invoice 실물", () => {
+    it("서식 키(세금계산서 아님) · 줄 3 · 음수 1(원 승인번호 26자) · 승인번호 26자", () => {
+      const result = parsedSample("hometax-invoice-purchase", "hometax-invoice");
+      expect(result.lines.length).toBe(3);
+      expect(result.lines.filter((line) => line.totalKrw < 0).length).toBe(1);
+      expect(result.lines.filter((line) => line.totalKrw < 0 && line.originalApprovalNo?.length === 26).length).toBe(1);
+      expect(result.lines.every((line) => line.approvalNo?.length === 26)).toBe(true);
+    });
   });
 });

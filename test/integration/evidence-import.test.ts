@@ -30,6 +30,7 @@ import {
   FAKE_BUSINESS_NO_BAD,
   FAKE_COMPANY_BUSINESS_NO,
   hometaxCashReceiptFixture,
+  hometaxInvoiceFixture,
   hometaxTaxInvoiceFixture,
   lotteFixture,
   shinhanFixture,
@@ -664,5 +665,36 @@ describe("domain/evidence-import — 홈택스 매입 현금영수증 등록 (06
     expect(result).toMatchObject({ registered: 1, vendorCreated: 0, needsCheck: 1 });
     expect(await vendorsByDigits(FAKE_BUSINESS_NO_BAD.replaceAll("-", ""))).toHaveLength(0);
     expect(await recordsInOrder()).toMatchObject([{ vendorId: null, businessNoDigits: "1234567890", needsCheck: "사업자번호 틀림 · 거래처 확인" }]);
+  });
+});
+
+describe("domain/evidence-import — 홈택스 매입 계산서(면세) 등록 (06.1-11 Task 2)", () => {
+  it("계산서 3줄 → 기록 3(계산서 종류 · 세액 0 · 수정 계산서 음수 · 원 승인번호) · 공급자 협력사 생성(기본 종류 계산서) · 다시 올리면 이미 등록 3", async () => {
+    const viewer = await createIntakeViewer();
+    const bytes = hometaxInvoiceFixture([
+      {},
+      { 승인번호: "20260616-10260616-71160002", 공급가액: 50000 },
+      { 승인번호: "20260617-10260617-71160003", 공급가액: -10000, 비고: "당초 승인번호 (20260615-10260615-71160001)" },
+    ]);
+
+    const result = await registerFixtureFile(viewer, bytes, "계산서.xls");
+
+    expect(result).toMatchObject({ registered: 3, skippedDuplicate: 0, vendorCreated: 1, vendorRestored: 0, needsCheck: 0, nameMismatchLines: [] });
+    const created = await vendorsByDigits(FAKE_DIGITS);
+    expect(created).toMatchObject([{ name: "공급회사가", businessNo: FAKE_BUSINESS_NO, kind: "supplier", defaultEvidenceType: "invoice" }]);
+    const records = await recordsInOrder();
+    expect(records.map((record) => [record.dedupeKey, record.totalKrw, record.supplyKrw, record.vatKrw])).toEqual([
+      ["hometax-invoice|20260615-10260615-71160001", 100000, 100000, 0],
+      ["hometax-invoice|20260616-10260616-71160002", 50000, 50000, 0],
+      ["hometax-invoice|20260617-10260617-71160003", -10000, -10000, 0],
+    ]);
+    expect(records.every((record) => record.format === "hometax-invoice" && record.evidenceType === "invoice" && record.vendorId === created[0]?.id)).toBe(true);
+    expect(records[2]).toMatchObject({ originalApprovalNo: "20260615-10260615-71160001", needsCheck: null });
+
+    const again = await registerFixtureFile(viewer, bytes, "계산서.xls");
+
+    expect(again).toMatchObject({ registered: 0, skippedDuplicate: 3, sameFile: true, vendorCreated: 0 });
+    expect(await recordsInOrder()).toHaveLength(3);
+    expect(await vendorsByDigits(FAKE_DIGITS)).toHaveLength(1);
   });
 });

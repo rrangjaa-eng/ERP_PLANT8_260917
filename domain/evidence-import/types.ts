@@ -7,6 +7,7 @@ export const EVIDENCE_FORMAT_TYPES = [
   { key: "card-shinhan", evidenceType: "card_receipt" },
   { key: "card-bc", evidenceType: "card_receipt" },
   { key: "hometax-tax-invoice", evidenceType: "tax_invoice" },
+  { key: "hometax-invoice", evidenceType: "invoice" },
   { key: "hometax-cash-receipt", evidenceType: "cash_receipt" },
 ] as const;
 

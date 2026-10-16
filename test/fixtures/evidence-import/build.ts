@@ -605,3 +605,20 @@ export function hometaxCashReceiptFixture(rows: readonly FixtureRow[], opts: Hom
   ];
   return writeBook([{ name: "sheet1", rows: sheet }], opts.as);
 }
+
+// 06.1-11: 홈택스 매입 전자(수정)계산서(면세) 목록 — 세금계산서 목록과 같은 시트 · 같은 줄 위치에 띠 `매입 전자(수정) 계산서 목록조회`,
+// 머리글은 `세액` · `품목세액`을 뺀 31칸, 2행 총계는 `총 공급가액` 한 쌍(samples/hometax-invoice-purchase.md). 합계금액 = 공급가액이 기본이다.
+export function hometaxInvoiceFixture(rows: readonly FixtureRow[], opts: HometaxFixtureOptions = {}): Uint8Array {
+  const filled = rows.map((row) => {
+    if (row === null) return null;
+    const supply = "공급가액" in row ? (row.공급가액 ?? null) : 100000;
+    return { 공급자사업자등록번호: FAKE_BUSINESS_NO, 전자세금계산서분류: "계산서", 공급가액: supply, 합계금액: supply, ...row };
+  });
+  const supplySum = filled.reduce((sum, row) => (row !== null && typeof row.공급가액 === "number" ? sum + row.공급가액 : sum), 0);
+  return hometaxTaxInvoiceFixture(filled, {
+    band: "매입 전자(수정) 계산서 목록조회",
+    omit: ["세액", "품목세액"],
+    totals: [["총 공급가액", commaText(supplySum)]],
+    ...opts,
+  });
+}

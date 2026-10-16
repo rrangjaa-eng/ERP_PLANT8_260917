@@ -11,6 +11,7 @@ import {
   encryptedFixture,
   forgedZipFixture,
   hometaxCashReceiptFixture,
+  hometaxInvoiceFixture,
   hometaxTaxInvoiceFixture,
   LOTTE_HEADER,
   lotteFixture,
@@ -325,6 +326,7 @@ describe.each([
   ["card-shinhan", () => shinhanFixture([{}])],
   ["card-bc", () => bcFixture([{}])],
   ["hometax-tax-invoice", () => hometaxTaxInvoiceFixture([{}])],
+  ["hometax-invoice", () => hometaxInvoiceFixture([{}])],
   ["hometax-cash-receipt", () => hometaxCashReceiptFixture([{}])],
 ] as const)("서식 교차 표 — %s 픽스처", (key, build) => {
   it("등록 배열의 규칙 가운데 제 규칙 하나에만 맞는다", () => {

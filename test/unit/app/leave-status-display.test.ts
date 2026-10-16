@@ -77,13 +77,13 @@ describe("routeListSteps — 본인 승인(05-01 E6)", () => {
 });
 
 describe("withdrawResultLines", () => {
-  it("지금 담당이 있으면 첫 줄에 이름, 승인한 단계가 있으면 둘째 줄", () => {
+  it("승인한 단계가 있어도 결과 줄은 결재 멈춤 한 줄(06.6 D-6610)", () => {
     expect(
       withdrawResultLines([
         { state: "approved", label: "팀장" },
         { state: "current", label: "대표", holderNames: "최대표" },
       ]),
-    ).toEqual(["결재 멈춤 · 최대표의 결재함에서 빠짐", "팀장 승인 기록은 남음"]);
+    ).toEqual(["결재 멈춤 · 최대표의 결재함에서 빠짐"]);
   });
 
   it("지금 담당 · 승인 기록이 없으면 `결재 멈춤` 한 줄", () => {

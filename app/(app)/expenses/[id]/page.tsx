@@ -94,7 +94,7 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
     const payParsed = paymentView && paymentView !== "error" ? parsePayReturn(query) : null;
     const payQuery = payParsed && (await can(viewer, "expenses.payments", "write")) ? payParsed : null;
     const payReturn: PayReturn | null = payQuery
-      ? await nextUnreviewedTarget(viewer, { afterExpenseId: id, team: payQuery.team, evidence: payQuery.evidence })
+      ? await nextUnreviewedTarget(viewer, { afterExpenseId: id, team: payQuery.team, evidence: payQuery.evidence, q: payQuery.q })
           .catch((error: unknown) => {
             // 다음 확인 전을 못 읽어도 문서 화면은 선다 — `지급 대상으로`만 남는다.
             log.error("expense.next_unreviewed_failed", { expenseId: id, message: error instanceof Error ? error.message : String(error) });

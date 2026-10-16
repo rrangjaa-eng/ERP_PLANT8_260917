@@ -330,6 +330,47 @@ async function namedOrg(today: string, drafterRoleId: string) {
 }
 
 test.describe("연차 신청 폼 /leave/new (04.1-06 Task 2 · S2)", () => {
+  // 06.5-08(D-6514 · UI-SPEC V10): page 배치 폼 안 `KvList`(폼의 첫 자식이 아닌 `dl`)는 위 선 `--line-w`(1px) `--border-row` + 선 아래 `--s-3`. 폼 밖 `KvList`(연차 문서 화면)는 선이 없다.
+  for (const width of [1280, 375]) {
+    test(`폼 안 KvList 위 선 · 간격(${width}) — border-top 1px --border-row · padding-top --s-3, 폼 밖 KvList는 선 0`, async ({ browser, baseURL }) => {
+      await onStableSeoulDay(async (today) => {
+        const org = await setupLeaveOrg(today);
+        const page = await openForm(browser, baseURL, org.drafter);
+        await page.setViewportSize({ width, height: 900 });
+        const tokens = await page.evaluate(() => {
+          const probe = document.createElement("div");
+          probe.style.cssText = "border-top: 1px solid var(--border-row); padding-top: var(--s-3);";
+          document.body.append(probe);
+          const style = getComputedStyle(probe);
+          const result = { color: style.borderTopColor, padding: style.paddingTop };
+          probe.remove();
+          return result;
+        });
+        const dl = form(page).locator(":scope > dl").first();
+        await expect(dl).toBeVisible();
+        const measured = await dl.evaluate((element) => {
+          const style = getComputedStyle(element);
+          return { width: style.borderTopWidth, color: style.borderTopColor, padding: style.paddingTop, first: element.parentElement?.firstElementChild === element };
+        });
+        expect(measured.first).toBe(false);
+        expect(measured.width).toBe("1px");
+        expect(measured.color).toBe(tokens.color);
+        expect(measured.padding).toBe(tokens.padding);
+        await page.context().close();
+
+        const range = leaveWeekdayRange(today, { week: 12, weekdays: 2 });
+        const submitted = await submitLeave(org.drafter.viewer, { kind: "full_day", half: "", ...range });
+        const detail = await login(browser, baseURL, org.drafter);
+        await detail.setViewportSize({ width, height: 900 });
+        await detail.goto(`/leave/${submitted.leaveId}`);
+        const outside = detail.locator("main dl").first();
+        await expect(outside).toBeVisible();
+        expect(await outside.evaluate((element) => getComputedStyle(element).borderTopWidth)).toBe("0px");
+        await detail.context().close();
+      });
+    });
+  }
+
   test("종일 영업일 6일: 힌트 `휴일 N일 제외`(주말 + 공휴일) · 잔고 행 `이번 신청 6일` 한 자리 · 결재선 한 줄", async ({ browser, baseURL }) => {
     await onStableSeoulDay(async (today) => {
       const org = await setupLeaveOrg(today);

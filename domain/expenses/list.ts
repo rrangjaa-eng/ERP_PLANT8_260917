@@ -9,7 +9,7 @@ import { moneyFromRow } from "@/domain/money";
 import { EXPENSE_DOCUMENT_KIND, visibleExpenseScope } from "@/domain/expenses/access";
 import { EXPENSE_LIST_ROW_DTO_SPEC, type ExpenseListRowDto } from "@/domain/expenses/dto";
 import { TEAM_EXPENSE_KIND_LABELS, type TeamExpenseKind } from "@/domain/expenses";
-import { EXPENSE_GROUP_RANKS, listExpensePage, summarizeExpenseList, type ExpenseListRow as RepoRow } from "@/repositories/expenses";
+import { EXPENSE_GROUP_RANKS, listExpensePage, summarizeExpenseList, type ExpenseListRow as RepoRow, type ExpenseSearch, type ExpenseSearchField } from "@/repositories/expenses";
 import { statusStepLabel, type CurrentStep } from "@/domain/approvals";
 import { ownersWithEvidence } from "@/domain/evidence/has-evidence";
 import { loadPrepaidDueDays } from "@/domain/evidence-reviews";
@@ -22,6 +22,35 @@ export type { ExpenseListRowDto } from "@/domain/expenses/dto";
 // 정렬 · 쪽 나눔은 리포지토리 쿼리의 SQL 한 곳(ORDER BY group_rank, …, id → LIMIT)이 정하고, 이 파일은 받은 순서 그대로 머리글만 붙인다.
 
 export type ExpenseListStatus = "open" | "approved" | "all";
+
+// 06.5 D-6508(EP3-D6): 검색어 규칙 하나 — 앞뒤 공백을 떼고 빈 값이면 없음, 100자를 넘으면 앞 100자. 세 보기의 도메인 입구와 페이지(칸에 보일 값)가 같이 쓴다.
+const LIST_QUERY_MAX = 100;
+
+export function normalizeListQuery(raw: string | null | undefined): string | null {
+  const trimmed = raw?.trim() ?? "";
+  return trimmed === "" ? null : trimmed.slice(0, LIST_QUERY_MAX);
+}
+
+// 06.5 D-6508(EP2-D5 · D2): 보기마다 그 보기 화면에 보이는 문자 열만 검색한다 — 목록 = 번호 · 팀 비용 내용 · 프로젝트 이름 · 항목 · 거래처 이름 · 기안자 이름 · 직원 지급처 이름,
+// 지급 대상 · 지급 완료 = 같은 열에서 기안자 이름을 뺀 것(PaymentTargetRowDto · PaidPaymentRowDto에 기안자 칸이 없다). 열마다 DTO infoItem 그대로 —
+// 문서 칸은 expense.value, 직원 지급처 이름은 person.value가 보일 때만 남긴다(숨은 값을 건수로 떠보는 길을 막는다). 팀 이름은 대상이 아니다(ND-9).
+const SEARCH_FIELDS: Record<"list" | "paymentTargets" | "paid", readonly ExpenseSearchField[]> = {
+  list: ["number", "content", "projectName", "lineItem", "vendorName", "drafterName", "payeeUserName"],
+  paymentTargets: ["number", "content", "projectName", "lineItem", "vendorName", "payeeUserName"],
+  paid: ["number", "content", "projectName", "lineItem", "vendorName", "payeeUserName"],
+};
+
+export function searchFieldsFor(view: keyof typeof SEARCH_FIELDS, visibleItems: { expenseValue: boolean; personValue: boolean }): ExpenseSearchField[] {
+  return SEARCH_FIELDS[view].filter((field) => (field === "payeeUserName" ? visibleItems.personValue : visibleItems.expenseValue));
+}
+
+// 검색어가 있으면 그 보기의 열 × 정보 항목으로 검색 묶음을 만든다 — 없으면 undefined(조건 없음).
+export async function buildExpenseSearch(viewer: Viewer, view: keyof typeof SEARCH_FIELDS, raw: string | null | undefined): Promise<ExpenseSearch | undefined> {
+  const query = normalizeListQuery(raw);
+  if (query === null) return undefined;
+  const [expenseValue, personValue] = await Promise.all([visible(viewer, "expense.value"), visible(viewer, "person.value")]);
+  return { query, fields: searchFieldsFor(view, { expenseValue, personValue }) };
+}
 
 const VIEW_RANKS: Record<ExpenseListStatus, readonly number[]> = {
   open: [EXPENSE_GROUP_RANKS.draft, EXPENSE_GROUP_RANKS.returned, EXPENSE_GROUP_RANKS.inReview],
@@ -139,20 +168,24 @@ function toSource(row: RepoRow, currentSteps: Map<string, CurrentStep>, payment?
 
 export async function listExpenses(
   viewer: Viewer,
-  input: { status: ExpenseListStatus; page?: string | number },
+  input: { status: ExpenseListStatus; page?: string | number; q?: string | null },
   deps?: { today?: string; pageSize?: number },
 ): Promise<ExpenseList> {
   if (!(await can(viewer, "expenses", "view"))) throw new ForbiddenError("지출결의 보기 권한 없음");
   const today = deps?.today ?? seoulToday();
   const pageSize = deps?.pageSize ?? LIST_PAGE_SIZE;
   const ranks = VIEW_RANKS[input.status];
-  const [scope, amountColumn] = await Promise.all([visibleExpenseScope(viewer, { today }), visible(viewer, "expense.amount")]);
-  const summary = await summarizeExpenseList(viewer, { scope, ranks, documentKind: EXPENSE_DOCUMENT_KIND });
+  const [scope, amountColumn, search] = await Promise.all([
+    visibleExpenseScope(viewer, { today }),
+    visible(viewer, "expense.amount"),
+    buildExpenseSearch(viewer, "list", input.q),
+  ]);
+  const summary = await summarizeExpenseList(viewer, { scope, ranks, documentKind: EXPENSE_DOCUMENT_KIND, ...(search ? { search } : {}) });
   const pageCount = pageCountFrom(summary.viewCount, pageSize);
   const page = clampPage(input.page, pageCount);
   const rows =
     summary.viewCount > 0
-      ? await listExpensePage(viewer, { scope, ranks, documentKind: EXPENSE_DOCUMENT_KIND, limit: pageSize, offset: (page - 1) * pageSize })
+      ? await listExpensePage(viewer, { scope, ranks, documentKind: EXPENSE_DOCUMENT_KIND, limit: pageSize, offset: (page - 1) * pageSize, ...(search ? { search } : {}) })
       : [];
   const drafterColumn =
     scope.rowScope.rows === "all" || (scope.rowScope.rows === "limited" && scope.rowScope.by.kind !== "own") || summary.othersCount > 0;

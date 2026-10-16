@@ -107,12 +107,10 @@ test.describe("작성 중 삭제 · 문서 화면 회수 · 본인 승인 (Task 
     await expect(page.getByRole("button", { name: "지출결의 삭제" })).toBeVisible();
   });
 
-  test("팀장 승인 뒤 문서 화면 `회수` → 04.1 확인(제목 · 결과 줄) → Ctrl+Enter → 폼", async ({ browser, baseURL }) => {
+  test("승인 전 문서 화면 `회수` → 04.1 확인(제목 · 결과 줄) → Ctrl+Enter → 폼", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const page = await loginPage(browser, baseURL, fx.pm);
     const expenseId = await submitFromForm(page, fx, "retry");
-    const view = await getApprovalView(fx.lead.viewer, { kind: EXPENSE_DOCUMENT_KIND, documentId: expenseId });
-    await approveDocument(fx.lead.viewer, { instanceId: view?.instanceId ?? "", expectedVersion: view?.version ?? 0 });
 
     await page.goto(`/expenses/${expenseId}`);
     const withdraw = page.getByRole("button", { name: /^회수/ });
@@ -120,10 +118,27 @@ test.describe("작성 중 삭제 · 문서 화면 회수 · 본인 승인 (Task 
     await withdraw.click();
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByRole("heading", { name: "지출결의 회수" })).toBeVisible();
-    await expect(dialog.getByText("팀장 승인 기록은 남음 · 다시 제출 때 첫 단계부터")).toBeVisible();
+    await expect(dialog.getByText(`결재 멈춤 · ${fx.lead.name}의 결재함에서 빠짐`)).toBeVisible();
     await page.keyboard.press("Control+Enter");
     await expect(page.getByRole("button", { name: /^지출결의 다시 제출/ })).toBeVisible();
     await expect(page.locator("dl dt").first()).toHaveText("회수");
+  });
+
+  test("팀장 승인 뒤 기안자 문서 화면에 `회수` 없음(06.6 D28 · SC4)", async ({ browser, baseURL }) => {
+    const fx = await setupExpenseE2E();
+    const page = await loginPage(browser, baseURL, fx.pm);
+    const expenseId = await submitFromForm(page, fx, "retry");
+
+    await page.goto(`/expenses/${expenseId}`);
+    await waitForHydration(page.getByRole("button", { name: /^회수/ }));
+    const view = await getApprovalView(fx.lead.viewer, { kind: EXPENSE_DOCUMENT_KIND, documentId: expenseId });
+    await approveDocument(fx.lead.viewer, { instanceId: view?.instanceId ?? "", expectedVersion: view?.version ?? 0 });
+
+    await page.reload();
+    await expect(page.locator("ol li").filter({ hasText: fx.lead.name }).getByText("승인", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^회수/ })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^승인/ })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^반려/ })).toHaveCount(0);
   });
 
   test("팀장이 기안한 문서 — 제출 토스트 `본인 승인 차례` · 행동 줄 승인 + 회수(반려 없음)", async ({ browser, baseURL }) => {

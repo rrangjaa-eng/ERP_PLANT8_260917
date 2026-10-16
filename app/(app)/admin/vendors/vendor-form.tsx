@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
@@ -10,6 +10,7 @@ import { Form } from "@/ui/form/Form";
 import { Button, buttonLinkClassName } from "@/ui/button/Button";
 import { RowAction } from "@/ui/row-actions/RowActions";
 import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
+import { SidePanel, editLinkFor } from "@/ui/side-panel/SidePanel";
 import { SelectHint } from "@/ui/select/Select";
 import { DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
 import { maskTail4 } from "@/lib/mask-tail4";
@@ -453,6 +454,16 @@ function VendorCustomField({
 }
 
 // §6-1 목록 행 3차 버튼 — 되돌릴 수 있는 상태 변경이라 확인 모달 없음, 즉시 반영.
+// 06.5 OI-9 · SP-65-3(UI-SPEC V9): `?editId=`를 주소로 직접 열어 저장하면 포커스가 화면 제목으로 갔다(06.5-03 재현 2026-10-14) — 그 행 `수정` 링크로 돌린다.
+// 서버 페이지는 함수를 넘길 수 없어(RSC) 여기서 returnFocusTo를 만든다(법인카드 CorpCardPanel과 같은 꼴). 등록 패널(`editId` 없음)은 그대로.
+export function VendorPanel({ editId, title, closeHref, children }: { editId: string | null; title: string; closeHref: string; children: ReactNode }) {
+  return (
+    <SidePanel title={title} closeHref={closeHref} returnFocusTo={editId ? () => editLinkFor(editId) : undefined}>
+      {children}
+    </SidePanel>
+  );
+}
+
 export function VendorHiddenToggle({ id, hidden }: { id: string; hidden: boolean }) {
   const { execute, isExecuting } = useAction(setVendorHiddenAction);
 

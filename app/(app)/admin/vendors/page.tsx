@@ -10,11 +10,10 @@ import { VENDOR_KIND_LABELS, parseVendorSide, servesSide, type VendorSide } from
 import { maskTail4 } from "@/lib/mask-tail4";
 import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
-import { SidePanel } from "@/ui/side-panel/SidePanel";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { StaticTable } from "@/ui/table/StaticTable";
 import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
-import { VendorForm, VendorHiddenToggle, VendorDeleteButton } from "./vendor-form";
+import { VendorForm, VendorHiddenToggle, VendorDeleteButton, VendorPanel } from "./vendor-form";
 import { AccountNumberCell } from "./account-number";
 import { revealVendorAccountNumberAction } from "./actions";
 import styles from "./vendors.module.css";
@@ -122,14 +121,14 @@ export default async function VendorsPage({
       panel={
         // 쓰기 권한이 없는 계급에는 등록 폼 자체를 렌더하지 않는다 — "이유 있는 비활성" 대신 "버튼 자체가 없음"(03-UI-SPEC.md).
         canWrite && showForm ? (
-          <SidePanel key={editingVendor?.id ?? "new"} title={editingVendor ? "거래처 수정" : "거래처 등록"} closeHref={cancelHref}>
+          <VendorPanel key={editingVendor?.id ?? "new"} editId={editingVendor?.id ?? null} title={editingVendor ? "거래처 수정" : "거래처 등록"} closeHref={cancelHref}>
             <VendorForm
               evidenceTypes={evidenceTypes.map((item) => ({ value: item.value, label: item.label, description: item.description }))}
               fieldDefs={fieldDefs}
               editing={editingVendor}
               newKind={kindFilter ?? undefined}
             />
-          </SidePanel>
+          </VendorPanel>
         ) : null
       }
     >

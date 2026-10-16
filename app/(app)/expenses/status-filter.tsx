@@ -10,10 +10,29 @@ import styles from "./expenses.module.css";
 // S1은 팀 · 증빙, 06-20 S3은 팀 · 월). 같은 GET 폼이라 하나를 바꾸면 모두 함께 제출된다.
 export type FilterSelect = { name: string; label: string; value: string; options: readonly { value: string; label: string }[] };
 
-export function StatusFilter({ value, views = EXPENSE_STATUS_VIEWS, selects = [] }: { value: string; views?: readonly string[]; selects?: readonly FilterSelect[] }) {
+// 06.5-08(D-6508 · UI-SPEC V1): `searchValue`가 있으면(빈 문자열 포함) 맨 앞에 검색 칸 — Enter만 제출한다(DM-1: blur · 매 글자 제출 없음 — 검색어를 고치고 Tab으로
+// 옮기는 순간 페이지가 바뀌지 않게). 텍스트 칸이 이 폼에 하나뿐이라 버튼 없이도 Enter가 같은 GET 폼을 제출하고, select의 requestSubmit()이 `q`를 함께 싣는다.
+export function StatusFilter({
+  value,
+  views = EXPENSE_STATUS_VIEWS,
+  selects = [],
+  searchValue,
+}: {
+  value: string;
+  views?: readonly string[];
+  selects?: readonly FilterSelect[];
+  searchValue?: string;
+}) {
   const formRef = useRef<HTMLFormElement>(null);
   return (
     <form ref={formRef} method="get" aria-label="지출결의 보기" className={styles.filterForm}>
+      {searchValue === undefined ? null : (
+        <div className={`${styles.selectLabel} ${styles.searchLabel}`}>
+          <label htmlFor="expense-search">검색</label>
+          {/* 뒤로 가기 · 필터 지우기로 URL이 바뀌면 key로 새로 마운트한다(상태 select와 같은 이유). */}
+          <input key={searchValue} id="expense-search" name="q" type="text" className={styles.textInput} defaultValue={searchValue} autoComplete="off" />
+        </div>
+      )}
       <div className={styles.selectLabel}>
         <label htmlFor="expense-status">상태</label>
         <select

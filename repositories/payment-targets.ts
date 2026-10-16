@@ -3,7 +3,7 @@ import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db/client";
 import { approvalInstances, expenseEvidenceReviews, expensePayments, expenses, projects, quoteLines, teams, users, vendors } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
-import type { ExpenseRow } from "@/repositories/expenses";
+import { expenseSearchCondition, type ExpenseRow, type ExpenseSearch } from "@/repositories/expenses";
 
 // 06.5 D-6517: 직원 지급처 이름 — users를 기안자 · 처리자로 이미 조인하므로 별칭(repositories/expenses.ts와 같은 이름).
 const payeeUsers = alias(users, "payee_users");
@@ -70,8 +70,10 @@ async function selectRows(where: SQL | undefined, documentKind: string): Promise
 }
 
 // 필터 전체 행 — 예정일 오름차순 · 없음 끝 · 번호 순. 팀은 선택 인자(문서 팀).
-export async function listPaymentTargetRows(viewer: Viewer, input: { documentKind: string; teamId?: string | null }): Promise<PaymentTargetRow[]> {
-  void viewer;
+export async function listPaymentTargetRows(
+  viewer: Viewer,
+  input: { documentKind: string; teamId?: string | null; search?: ExpenseSearch },
+): Promise<PaymentTargetRow[]> {
   const conditions: SQL[] = [
     isNull(expenses.deletedAt),
     isNull(expenses.closedAt),
@@ -79,6 +81,8 @@ export async function listPaymentTargetRows(viewer: Viewer, input: { documentKin
     sql`not ${livePayment}`,
   ];
   if (input.teamId) conditions.push(sql`${docTeamId} = ${input.teamId}::uuid`);
+  // 06.5 D-6508: 검색은 여기서 거르고 보는 범위는 domain visibleRows가 그 뒤에 거른다(AND) — 같은 조건 함수 하나(repositories/expenses.ts).
+  if (input.search) conditions.push(expenseSearchCondition(viewer, input.search.query, input.search.fields));
   return selectRows(and(...conditions), input.documentKind);
 }
 
@@ -119,16 +123,17 @@ export type PaidPaymentRow = {
 
 const paidMonthOf = sql<string>`to_char(${expensePayments.payDate}, 'YYYY-MM')`;
 
-function paidConditions(input: { teamId?: string | null; month?: string | null }): SQL | undefined {
+function paidConditions(viewer: Viewer, input: { teamId?: string | null; month?: string | null; search?: ExpenseSearch }): SQL | undefined {
   const conditions: SQL[] = [isNull(expensePayments.cancelledAt), isNull(expenses.deletedAt)];
+  // 06.5 D-6508: 검색은 월 select 재료(listPaidMonthRows)에는 넣지 않는다 — 달 목록은 검색과 무관.
+  if (input.search) conditions.push(expenseSearchCondition(viewer, input.search.query, input.search.fields));
   if (input.teamId) conditions.push(sql`${docTeamId} = ${input.teamId}::uuid`);
   // 달 = 지급일 범위(달 첫날 ≤ 지급일 < 다음 달 첫날). 모양은 domain이 검사한다.
   if (input.month) conditions.push(sql`${expensePayments.payDate} >= (${input.month} || '-01')::date and ${expensePayments.payDate} < ((${input.month} || '-01')::date + interval '1 month')`);
   return and(...conditions);
 }
 
-export async function listPaidPaymentRows(viewer: Viewer, input: { teamId?: string | null; month: string }): Promise<PaidPaymentRow[]> {
-  void viewer;
+export async function listPaidPaymentRows(viewer: Viewer, input: { teamId?: string | null; month: string; search?: ExpenseSearch }): Promise<PaidPaymentRow[]> {
   const rows = await db
     .select({
       id: expenses.id,
@@ -163,20 +168,19 @@ export async function listPaidPaymentRows(viewer: Viewer, input: { teamId?: stri
     .leftJoin(vendors, eq(vendors.id, expenses.vendorId))
     .leftJoin(payeeUsers, eq(payeeUsers.id, expenses.payeeUserId))
     .leftJoin(expenseEvidenceReviews, eq(expenseEvidenceReviews.expenseId, expenses.id))
-    .where(paidConditions(input))
+    .where(paidConditions(viewer, input))
     .orderBy(desc(expensePayments.payDate), asc(expenses.number), asc(expenses.id));
   return rows.map(({ reviewStatus, ...row }) => ({ ...row, payDate: String(row.payDate), review: reviewStatus ? { status: reviewStatus } : null }));
 }
 
 // 월 select 값 재료 — 살아 있는 지급 기록의 (문서 id, 지급 달). 목록과 같은 조건(범위 조건 없음 — 06.5 카드 ③).
 export async function listPaidMonthRows(viewer: Viewer, input: { teamId?: string | null }): Promise<{ id: string; month: string }[]> {
-  void viewer;
   return db
     .select({ id: expenses.id, month: paidMonthOf })
     .from(expensePayments)
     .innerJoin(expenses, eq(expenses.id, expensePayments.expenseId))
     .leftJoin(projects, eq(projects.id, expenses.projectId))
-    .where(paidConditions({ teamId: input.teamId ?? null }));
+    .where(paidConditions(viewer, { teamId: input.teamId ?? null }));
 }
 
 // 06-20(O-17): 지급 권한자에게만 가는 계좌 칸 — 거래처 id 묶음 한 번. 평문 번호(accountNumberEncrypted)는 읽지 않는다(해제는 03 경로 하나).

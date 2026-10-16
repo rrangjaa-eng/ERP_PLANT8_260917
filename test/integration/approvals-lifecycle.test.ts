@@ -184,13 +184,25 @@ describe("회수 — 최종 승인 전만 · 끝 상태", () => {
     expect((await logsOf(submitted.instanceId)).filter((row) => row.actionType === "document_withdraw")).toHaveLength(1);
   });
 
-  it("in_review에서 기안자 회수 → withdrawn이고 이미 승인한 1단 기록은 남는다", async () => {
+  it("in_review(팀장 승인 1건)에서 기안자 회수 거부(06.6 D28) · 상태 · version · 단계 · 로그 그대로 · 팀장 회수는 not_drafter", async () => {
     const org = await makeOrg();
     const submitted = await submitLeave(org.drafter, FULL_DAY, deps);
     await approveDocument(org.lead, { instanceId: submitted.instanceId, expectedVersion: 1 }, deps);
-    await withdrawDocument(org.drafter, { instanceId: submitted.instanceId, expectedVersion: 2 }, deps);
-    expect(await instanceOf(submitted.instanceId)).toMatchObject({ status: "withdrawn", version: 3 });
-    expect((await stepsOf(submitted.instanceId))[0]).toMatchObject({ action: "approved", actedBy: org.lead.id });
+    const before = await state(submitted.instanceId, submitted.leaveId);
+    const infoSpy = vi.spyOn(log, "info");
+
+    const refused = withdrawDocument(org.drafter, { instanceId: submitted.instanceId, expectedVersion: 2 }, deps);
+    await expect(refused).rejects.toBeInstanceOf(ApprovalConflictError);
+    await expect(refused).rejects.toThrow(/^김팀장이 \d{2}:\d{2}에 승인함 · 새로 고침$/);
+    expect(infoSpy).toHaveBeenLastCalledWith("approval.refused", expect.objectContaining({ reason: "invalid_state" }));
+    expect(await state(submitted.instanceId, submitted.leaveId)).toEqual(before);
+    expect(await viewActions(org.drafter, submitted.leaveId)).toEqual([]);
+
+    await expect(
+      withdrawDocument(org.lead, { instanceId: submitted.instanceId, expectedVersion: 2 }, deps),
+    ).rejects.toBeInstanceOf(NotCurrentHolderError);
+    expect(infoSpy).toHaveBeenLastCalledWith("approval.refused", expect.objectContaining({ reason: "not_drafter" }));
+    expect(await state(submitted.instanceId, submitted.leaveId)).toEqual(before);
   });
 
   it("approved에서 회수 → `최종 승인됨 · 새로 고침`으로 거부", async () => {
@@ -308,13 +320,13 @@ describe("사건별 종결 검사(CX-B1)", () => {
 });
 
 describe("가능 행동(X-5 · CXF-B-F01)", () => {
-  it("기안자: submitted · in_review → [회수] · rejected → [다시 신청] · withdrawn · approved → [] · 1단 후보는 [승인, 반려]", async () => {
+  it("기안자: submitted → [회수] · in_review(앞 사람 승인) → [] · rejected → [다시 신청] · withdrawn · approved → [] · 1단 후보는 [승인, 반려]", async () => {
     const org = await makeOrg();
     const doc = await submitLeave(org.drafter, FULL_DAY, deps);
     expect(await viewActions(org.drafter, doc.leaveId)).toEqual(["withdraw"]);
     expect(await viewActions(org.lead, doc.leaveId)).toEqual(["approve", "reject"]);
     await approveDocument(org.lead, { instanceId: doc.instanceId, expectedVersion: 1 }, deps);
-    expect(await viewActions(org.drafter, doc.leaveId)).toEqual(["withdraw"]);
+    expect(await viewActions(org.drafter, doc.leaveId)).toEqual([]);
     await approveDocument(org.ceo, { instanceId: doc.instanceId, expectedVersion: 2 }, deps);
     expect(await viewActions(org.drafter, doc.leaveId)).toEqual([]);
 

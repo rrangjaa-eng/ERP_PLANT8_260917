@@ -61,6 +61,19 @@ test.describe("보관함 화면 (ADMN-12)", () => {
     const archiveRow = page.locator("tr", { hasText: codeLabel });
     await expect(archiveRow).toBeVisible();
 
+    // 06.5-08(D-6515 · UI-SPEC V11): 보관 시각은 KST `YYYY-MM-DD HH:mm`(UTC가 아니다) — 지금(KST) ±2분(분 단위 버림 · 왕복 지연)이고 한 줄이다.
+    const archivedText = (await archiveRow.locator("td", { hasText: /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/ }).first().innerText()).trim();
+    expect(archivedText).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+    const archivedMs = Date.parse(`${archivedText.replace(" ", "T")}:00+09:00`);
+    expect(Math.abs(Date.now() - archivedMs)).toBeLessThanOrEqual(2 * 60_000);
+    const timeCell = archiveRow.locator("td", { hasText: archivedText }).first();
+    const lineTops = await timeCell.evaluate((element) => {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      return new Set(Array.from(range.getClientRects()).map((rect) => Math.round(rect.top))).size;
+    });
+    expect(lineTops).toBe(1);
+
     // 복원 — 확인 없이 즉시 실행하고 토스트가 나온다. 다른 세션이 남긴
     // 보관 항목과 섞이지 않게 이 행으로 범위를 좁힌다. 토스트는 4초 뒤
     // 자동으로 사라지므로(§7-6) 2-워커 병렬 실행의 CPU 경합으로 서버

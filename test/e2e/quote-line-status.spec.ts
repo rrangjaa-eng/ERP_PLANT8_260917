@@ -51,9 +51,8 @@ async function approveAll(fx: ExpenseE2E, expenseId: string): Promise<void> {
 
 // 증빙 확인(06-06) 뒤 지급 완료(06-03).
 async function payExpense(payer: Person, expenseId: string): Promise<void> {
-  const [row] = await db.select({ version: expenses.version, supply: expenses.supplyAmountKrw }).from(expenses).where(eq(expenses.id, expenseId));
+  const [row] = await db.select({ version: expenses.version }).from(expenses).where(eq(expenses.id, expenseId));
   if (!row) throw new Error("지출결의 없음");
-  await db.update(expenses).set({ evidenceAmount: row.supply }).where(eq(expenses.id, expenseId));
   const confirmed = await confirmEvidence(payer.viewer, { expenseId, version: row.version });
   const preview = await previewPayable(payer.viewer, { expenseId, payDate: seoulToday() });
   if (preview.payableKrw === null || preview.payableKrw === undefined) throw new Error("지급 총액 없음");

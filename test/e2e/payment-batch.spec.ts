@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Browser, type Page } from "@playwright/test";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
-import { actionLog, expenseEvidenceReviews, expensePayments, expenses, files, projects, quoteLines, vendors } from "@/db/schema";
+import { actionLog, expenseEvidenceReviews, expensePayments, expenses, files, projects, quoteLines, settingsHistorized, vendors } from "@/db/schema";
 import { approveDocument, getApprovalView } from "@/domain/approvals";
 import { createExpenseFromLines, createTeamExpenseDraft, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import { confirmEvidence, loadPrepaidDueDays } from "@/domain/evidence-reviews";
@@ -10,11 +10,11 @@ import { completePaymentsBatch } from "@/domain/payments/batch";
 import { listAllPaymentTargets } from "@/domain/payments/targets";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { AMOUNT_HIDDEN } from "@/domain/payments/action-row";
-import { previewPayable } from "@/domain/payments";
+import { FUTURE_PAY_DATE, previewPayable } from "@/domain/payments";
 import { formatKrw } from "@/lib/format-number";
 import { encrypt } from "@/lib/crypto";
 import { seedCodeItem } from "@/repositories/code-tables";
-import { addHistorizedValue, cancelHistorizedValue, getSettingValue } from "@/domain/settings/registry";
+import { addHistorizedValue, getSettingValue } from "@/domain/settings/registry";
 import { PAYMENT_METHOD_EVIDENCE_PAIRS, TAX_VAT_RATE } from "@/domain/settings/keys";
 import { upsertSimpleValue } from "@/repositories/settings";
 import { EVIDENCE_UNCONFIRMED } from "@/domain/payments/action-row";
@@ -53,7 +53,7 @@ async function makeTeamPayer(fx: ExpenseE2E, opts: { amountHidden?: boolean } = 
   return makePerson("경영관리", role.id, await teamOf(fx), `${seoulToday().slice(0, 4)}-01-01`);
 }
 
-// 줄 하나 → 증빙 붙여 제출 → 결재선 넷 승인 → (payable이면) 지급 권한자가 증빙 금액 = 공급가로 확인 = P4 · (unreviewed면) 확인 전 = P2. 문서 id를 돌려준다.
+// 줄 하나 → 증빙 붙여 제출 → 결재선 넷 승인 → (payable이면) 지급 권한자가 확인 = P4 · (unreviewed면) 확인 전 = P2. 문서 id를 돌려준다.
 // 전역 설정(증빙 필수)을 바꾸지 않는다 — 다른 워커의 스펙(payment-single 등)과 설정을 다투지 않게 확인 기록으로 P4를 만든다.
 async function approvedTarget(fx: ExpenseE2E, key: LineKey, state: "payable" | "unreviewed" = "payable"): Promise<string> {
   return approvedLine(fx, fx.lines[key].id, state);
@@ -359,7 +359,7 @@ test.describe("지급 대상 · 일괄 지급 마감 (06-15 Task 3)", () => {
     await page.context().close();
   });
 
-  test("미래 지급일 — 내일로 처리하면 지급일 = 내일 / `2026-13-01` · `2026-02-30`은 둘 다 `날짜 형식 오류 · 2026-09-19처럼` · 모달 유지 · 지급 0건", async ({ browser, baseURL }) => {
+  test("미래 지급일 — 내일이면 대화상자 열린 채 지급일 칸 오류 `미래 지급일 · 오늘까지 날짜 고르기` · 지급 0건 → 오늘로 바꾸면 처리 / `2026-13-01` · `2026-02-30`은 둘 다 `날짜 형식 오류 · 2026-09-19처럼` · 모달 유지 · 지급 0건", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
     const a = await approvedTarget(fx, "tracer");
     const b = await approvedTarget(fx, "hold");
@@ -373,6 +373,7 @@ test.describe("지급 대상 · 일괄 지급 마감 (06-15 Task 3)", () => {
     await page.getByRole("button", { name: /^지급 완료 1/ }).click();
     const dialog = page.getByRole("dialog");
     const field = dialog.getByLabel("지급일");
+    await expect(field).toHaveAttribute("max", seoulToday());
     // type="date"는 달력에 없는 날을 값으로 받지 않는다(브라우저가 빈 값으로 정리) — 그 값이 React onChange로 오는 길을 그대로 탄다.
     for (const bad of ["2026-13-01", "2026-02-30"]) {
       await field.evaluate((element, value) => {
@@ -389,12 +390,27 @@ test.describe("지급 대상 · 일괄 지급 마감 (06-15 Task 3)", () => {
       await expect(dialog.getByText("날짜 형식 오류 · 2026-09-19처럼")).toHaveCount(0);
     }
 
+    // 06.5 D-6518(UI-SPEC V13): 서버가 묶음 맨 앞에서 거절 — 대화상자는 열린 채 지급일 칸 오류(값 유지 · 포커스 · 왼쪽 이유 자리에 다시 쓰지 않음).
     const tomorrow = addDays(seoulToday(), 1);
     await field.fill(tomorrow);
-    await dialog.getByRole("button", { name: /^지급 완료 1건/ }).click();
+    const confirm = dialog.getByRole("button", { name: /^지급 완료 1건/ });
+    await confirm.click();
+    const fieldError = dialog.getByText(FUTURE_PAY_DATE, { exact: true });
+    await expect(fieldError).toBeVisible();
+    await expect(dialog).toBeVisible();
+    await expect(field).toHaveAttribute("aria-invalid", "true");
+    await expect(field).toHaveAttribute("aria-describedby", (await fieldError.getAttribute("id")) ?? "");
+    await expect(field).toHaveValue(tomorrow);
+    await expect(field).toBeFocused();
+    await expect(dialog.getByText(FUTURE_PAY_DATE)).toHaveCount(1);
+    expect(await livePaymentCount(b)).toBe(0);
+
+    await field.fill(seoulToday());
+    await expect(fieldError).toHaveCount(0);
+    await confirm.click();
     await expect(dialog).toBeHidden();
     await expect(rowB).toHaveCount(0);
-    expect(await payDates(b)).toEqual([tomorrow]);
+    expect(await payDates(b)).toEqual([seoulToday()]);
     expect(await livePaymentCount(a)).toBe(0);
     await page.context().close();
   });
@@ -608,9 +624,15 @@ test.describe("일괄 지급 마감 (06-17)", () => {
       taxRule: { ruleKind: "vat_surcharge", roundingUnit: 1, roundingMethod: "round", minWithholdingAmount: 0, basisDate: "payment_date" },
     });
     await db.update(expenses).set({ evidenceType: typeValue }).where(eq(expenses.id, taxId));
-    const rateFrom = addDays(today, 30);
-    const payDate = addDays(today, 40);
+    // 06.5 D-6518(지급일 오늘까지): 지급일은 오늘 이하 — 지난 하루짜리 세율 창(20일 전 0.12 · 19일 전 원래 값)에 지급일을 둬 목록 지급 총액(오늘 ·
+    // 원래 세율)과 지급일 세율이 갈린다. 오늘 세율은 바뀌지 않아 다른 워커에서 같이 도는 스펙의 금액이 흔들리지 않는다(desktop은 파일 병렬).
+    // 오늘 이하 행은 cancelHistorizedValue가 거절하고 E2E는 스펙 사이에 DB를 비우지 않으므로 finally에서 이 테스트가 넣은 두 행만 직접 지운다(테스트 전용).
+    const baseRate = await getSettingValue(TAX_VAT_RATE);
+    const rateFrom = addDays(today, -20);
+    const restoreFrom = addDays(today, -19);
+    const payDate = rateFrom;
     await addHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, { effectiveFrom: rateFrom, value: 0.12 });
+    await addHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, { effectiveFrom: restoreFrom, value: baseRate });
     try {
       const payer = await makeTeamPayer(fx);
       const page = await loginPage(browser, baseURL, payer, { width: 1280, height: 900 });
@@ -663,7 +685,7 @@ test.describe("일괄 지급 마감 (06-17)", () => {
       expect(await payDates(taxId)).toEqual([payDate]);
       await page.context().close();
     } finally {
-      await cancelHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, rateFrom);
+      await db.delete(settingsHistorized).where(and(eq(settingsHistorized.key, TAX_VAT_RATE.key), inArray(settingsHistorized.effectiveFrom, [rateFrom, restoreFrom])));
     }
   });
 
@@ -851,15 +873,9 @@ test.describe("제자리 증빙 확인 · 보관 (06-17 Task 4)", () => {
     return { ...row, number: row.number, supplyAmountKrw: row.supplyAmountKrw };
   }
 
-  // 결재 통과 · 증빙 있음 · 확인 기록 없음(확인 전 P2). 증빙 금액은 픽스처가 문서 행에 직접 둔다(null이면 빈 금액 — R10-F2).
-  async function unreviewedTarget(fx: ExpenseE2E, key: LineKey, evidenceAmount: "supply" | number | null = "supply"): Promise<string> {
-    const id = await approvedTarget(fx, key, "unreviewed");
-    const doc = await docOf(id);
-    await db
-      .update(expenses)
-      .set({ evidenceAmount: evidenceAmount === "supply" ? doc.supplyAmountKrw : evidenceAmount })
-      .where(eq(expenses.id, id));
-    return id;
+  // 결재 통과 · 증빙 있음 · 확인 기록 없음(확인 전 P2).
+  async function unreviewedTarget(fx: ExpenseE2E, key: LineKey): Promise<string> {
+    return approvedTarget(fx, key, "unreviewed");
   }
 
   function transferTd(page: Page, itemName: string) {
@@ -1037,9 +1053,9 @@ test.describe("제자리 증빙 확인 · 보관 (06-17 Task 4)", () => {
   });
 
   // 06-17 「증빙 금액 초과 표시(Q-F)」를 바꾼 사례 — 06.5 D-6520으로 넘침 줄이 없다(승인액 · 실행가를 넘는 증빙 금액이 남은 문서도).
-  test("제자리 증빙 확인 — 넘침 줄 없음(06.5 D-6520): 승인액 12,000,000 · 실행가 12,250,000 · 증빙 금액 12,400,000 문서도 결과 줄은 계산 한 줄 하나 · 1차 `공급가액과 같음` → 확인됨", async ({ browser, baseURL }) => {
+  test("제자리 증빙 확인 — 넘침 줄 없음(06.5 D-6520): 승인액 12,000,000 · 실행가 12,250,000 문서도 결과 줄은 계산 한 줄 하나 · 1차 `공급가액과 같음` → 확인됨", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
-    const over = await unreviewedTarget(fx, "tracer", 12_400_000);
+    const over = await unreviewedTarget(fx, "tracer");
     await db.update(expenses).set({ supplyAmountKrw: 12_000_000 }).where(eq(expenses.id, over));
     await db.update(quoteLines).set({ executionAmountKrw: 12_250_000 }).where(eq(quoteLines.id, fx.lines.tracer.id));
     const docOver = await docOf(over);
@@ -1093,10 +1109,10 @@ test.describe("제자리 증빙 확인 · 보관 (06-17 Task 4)", () => {
     }
   });
 
-  // 06-17 「금액 빈 확인 전 → 문서 화면(R10-F2)」을 바꾼 사례 — 06.5 D-6520으로 빈 증빙 금액이 막지 않아 ≥1024는 모든 확인 전 행이 모달을 연다.
-  test("금액 빈 확인 전도 모달(06.5 D-6520) — ≥1024 3차가 `role=dialog`를 연다(문서 화면 링크 0) / 800px은 3차가 문서 화면 링크", async ({ browser, baseURL }) => {
+  // 06-17 「금액 빈 확인 전 → 문서 화면(R10-F2)」을 바꾼 사례 — 06.5 D-6520으로 증빙 금액 칸이 없어 ≥1024는 모든 확인 전 행이 모달을 연다.
+  test("확인 전 행은 모두 모달(06.5 D-6520) — ≥1024 3차가 `role=dialog`를 연다(문서 화면 링크 0) / 800px은 3차가 문서 화면 링크", async ({ browser, baseURL }) => {
     const fx = await setupExpenseE2E();
-    const empty = await unreviewedTarget(fx, "tracer", null);
+    const empty = await unreviewedTarget(fx, "tracer");
     const filled = await unreviewedTarget(fx, "hold");
     const [docEmpty, docFilled] = await Promise.all([docOf(empty), docOf(filled)]);
     const payer = await makeTeamPayer(fx);
@@ -1402,12 +1418,9 @@ async function numberOf(expenseId: string): Promise<{ number: string; supplyAmou
   return { number: row.number, supplyAmountKrw: row.supplyAmountKrw };
 }
 
-// 결재 통과 · 증빙 있음 · 확인 기록 없음(P2) — 증빙 금액 = 공급가(픽스처가 문서 행에 직접).
+// 결재 통과 · 증빙 있음 · 확인 기록 없음(P2).
 async function unreviewedDoc(fx: ExpenseE2E, key: LineKey): Promise<string> {
-  const id = await approvedTarget(fx, key, "unreviewed");
-  const { supplyAmountKrw } = await numberOf(id);
-  await db.update(expenses).set({ evidenceAmount: supplyAmountKrw }).where(eq(expenses.id, id));
-  return id;
+  return approvedTarget(fx, key, "unreviewed");
 }
 
 test.describe("문서 화면 왕복 (06-20 Task 3)", () => {
@@ -1632,7 +1645,7 @@ test.describe("지급 완료 보기 마감 (06-20 Task 4)", () => {
     const fx = await setupExpenseE2E();
     const payer = await makeTeamPayer(fx);
     const id = await paidTarget(fx, "tracer", payer);
-    // 지급 뒤 들어온 증빙 — 확인 기록을 지워 `확인 전`(P5)으로 둔다(증빙 금액은 남는다).
+    // 지급 뒤 들어온 증빙 — 확인 기록을 지워 `확인 전`(P5)으로 둔다.
     await db.delete(expenseEvidenceReviews).where(eq(expenseEvidenceReviews.expenseId, id));
     await db.update(expenses).set({ prepaid: true, prepaidReason: "해외 결제 선결제" }).where(eq(expenses.id, id));
     const { number } = await numberOf(id);

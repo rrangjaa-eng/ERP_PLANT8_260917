@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
 import { canExportBankTransferFile } from "@/domain/payments/bank-transfer";
-import { listExpenses, type ExpenseListStatus } from "@/domain/expenses/list";
+import { listExpenses, normalizeListQuery, type ExpenseListStatus } from "@/domain/expenses/list";
 import { DATE_FORMAT_ERROR } from "@/domain/expenses/draft-fields";
 import type { Viewer } from "@/domain/viewer";
 import {
@@ -61,8 +61,10 @@ function firstParam(raw: string | string[] | undefined): string | undefined {
   return Array.isArray(raw) ? raw[0] : raw;
 }
 
-function viewHref(view: ExpenseStatusView, page?: number): string {
+function viewHref(view: ExpenseStatusView, page?: number, q?: string | null): string {
   const params = new URLSearchParams({ status: view });
+  // 06.5 D-6508: 쪽 이동 · 보기 링크는 검색어를 잇는다(필터를 바꿀 때는 폼 제출이 page 없이 다시 연다).
+  if (q) params.set("q", q);
   if (page && page > 1) params.set("page", String(page));
   return `/expenses?${params.toString()}`;
 }
@@ -95,28 +97,31 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
   if (paidAllowed && firstParam(params.status) === PAID_VIEW) {
     const team = firstParam(params.team) ?? "";
     const month = firstParam(params.month) ?? "";
-    const key = [team, month, firstParam(params.page) ?? ""].join("|");
+    const q = normalizeListQuery(firstParam(params.q));
+    const key = [team, month, q ?? "", firstParam(params.page) ?? ""].join("|");
     return (
       <Suspense key={key} fallback={<PaidSkeleton />}>
-        <PaidPayments viewer={session.viewer} views={views} canPay={canPay} team={team} month={month} page={firstParam(params.page)} />
+        <PaidPayments viewer={session.viewer} views={views} canPay={canPay} team={team} month={month} q={q} page={firstParam(params.page)} />
       </Suspense>
     );
   }
   if (isPaymentTargetView(params.status, canPay)) {
     const team = firstParam(params.team) ?? "";
     const evidence = parsePaymentEvidenceFilter(firstParam(params.evidence));
-    // 필터 · 쪽마다 새로 마운트한다 — 선택 · 이유 줄 · 결과 글자는 필터를 바꾸면 비운다(S1).
-    const key = [team, evidence ?? "", firstParam(params.page) ?? ""].join("|");
+    const q = normalizeListQuery(firstParam(params.q));
+    // 필터 · 쪽마다 새로 마운트한다 — 선택 · 이유 줄 · 결과 글자는 필터를 바꾸면 비운다(S1). 검색어도 같다(DM-3 · OI-11 — 검색하면 고른 행 · 이체액 편집을 비운다).
+    const key = [team, evidence ?? "", q ?? "", firstParam(params.page) ?? ""].join("|");
     return (
       <Suspense key={key} fallback={<PaymentTargetsSkeleton />}>
-        <PaymentTargets viewer={session.viewer} views={views} team={team} evidence={evidence} page={firstParam(params.page)} />
+        <PaymentTargets viewer={session.viewer} views={views} team={team} evidence={evidence} q={q} page={firstParam(params.page)} />
       </Suspense>
     );
   }
   const view = toView(params.status);
   const page = Array.isArray(params.page) ? params.page[0] : params.page;
+  const q = normalizeListQuery(firstParam(params.q));
   const [list, canWrite] = await Promise.all([
-    listExpenses(session.viewer, { status: VIEW_STATUS[view], page }),
+    listExpenses(session.viewer, { status: VIEW_STATUS[view], page, q }),
     can(session.viewer, "expenses", "write"),
   ]);
 
@@ -135,7 +140,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
       // DR5 A — 보임 범위 안 지출결의가 하나도 없을 때만 `empty`를 넘겨 틀이 머리 1차를 숨긴다. 보기 때문에 0건이면 머리 1차가 남는다.
       primaryAction={canWrite ? newAction : undefined}
       // 걸러 낼 문서가 하나도 없으면 상태 select를 넘기지 않는다(wave10 N2 — 사용자 지시(10/5 00:55)에 따라 추천안 적용).
-      filters={list.hasAny ? <StatusFilter value={view} views={views} /> : undefined}
+      filters={list.hasAny ? <StatusFilter value={view} views={views} searchValue={q ?? ""} /> : undefined}
       summary={
         list.total && list.total.count > 0 ? (
           <section aria-label="합계" className={styles.totals}>
@@ -160,7 +165,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
             label="지출결의"
             page={list.page.page}
             pageCount={list.page.pageCount}
-            href={(target) => viewHref(view, target)}
+            href={(target) => viewHref(view, target, q)}
             rangeText={pageRangeText({ page: list.page.page, pageSize: list.page.pageSize, total: list.page.total, unit: "건" })}
           />
         ) : undefined
@@ -168,6 +173,9 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
     >
       {rows.length > 0 ? (
         <ExpensesTable rows={rows} drafterColumn={list.drafterColumn} amountColumn={list.amountColumn} />
+      ) : q ? (
+        // 06.5 D-6508(EP1-13): 문서는 있는데 검색으로 0건 — 필터 줄 · 검색어는 그대로 서고 표 자리에서 검색을 지우고 빠져나간다.
+        <ListEmpty message="조건에 맞는 건이 없습니다" action={{ label: "필터 지우기", href: viewHref(view) }} />
       ) : view === "승인" ? (
         <ListEmpty message="승인된 지출결의가 없습니다" action={{ label: "진행 중 보기", href: viewHref("진행 중") }} />
       ) : (
@@ -194,18 +202,20 @@ async function PaymentTargets({
   views,
   team,
   evidence,
+  q,
   page,
 }: {
   viewer: Viewer;
   views: string[];
   team: string;
   evidence: ReturnType<typeof parsePaymentEvidenceFilter>;
+  q: string | null;
   page: string | undefined;
 }) {
   let loaded;
   try {
     const [list, teams, canExportTransferFile] = await Promise.all([
-      listPaymentTargets(viewer, { team, evidence, page }),
+      listPaymentTargets(viewer, { team, evidence, q, page }),
       listPaymentTeamOptions(viewer),
       canExportBankTransferFile(viewer),
     ]);
@@ -221,9 +231,11 @@ async function PaymentTargets({
   const query: Record<string, string> = { status: PAYMENT_TARGET_VIEW };
   if (team) query.team = team;
   if (evidence) query.evidence = evidence;
+  if (q) query.q = q;
   return (
     <PaymentTargetsScreen
       views={views}
+      searchValue={q ?? ""}
       selects={[
         { name: "team", label: "팀", value: teams.some((option) => option.value === team) ? team : "", options: [{ value: "", label: "팀 전체" }, ...teams] },
         {
@@ -269,6 +281,7 @@ async function PaidPayments({
   canPay,
   team,
   month,
+  q,
   page,
 }: {
   viewer: Viewer;
@@ -276,15 +289,16 @@ async function PaidPayments({
   canPay: boolean;
   team: string;
   month: string;
+  q: string | null;
   page: string | undefined;
 }) {
   let loaded: [Awaited<ReturnType<typeof listPaidPayments>>, Awaited<ReturnType<typeof listPaidTeamOptions>>];
   try {
-    loaded = await Promise.all([listPaidPayments(viewer, { team, month, page }), listPaidTeamOptions(viewer)]);
+    loaded = await Promise.all([listPaidPayments(viewer, { team, month, q, page }), listPaidTeamOptions(viewer)]);
   } catch (error) {
     // C13 — 본문 자리에 한 줄 + `다시 시도`. 보기 select는 남겨 다른 보기로 옮겨 갈 수 있다.
     log.error("지급 완료 로드 실패", { error: error instanceof Error ? error.name : "unknown" });
-    return <ListScreen title="지출결의" filters={<StatusFilter value={PAID_VIEW} views={views} />} empty={<PaidLoadError />}>{null}</ListScreen>;
+    return <ListScreen title="지출결의" filters={<StatusFilter value={PAID_VIEW} views={views} searchValue={q ?? ""} />} empty={<PaidLoadError />}>{null}</ListScreen>;
   }
   const [list, teams] = loaded;
   const rows: PaidScreenRow[] = list.groups.flatMap((group) => group.rows.map((row) => ({ ...row, id: row.id ?? "", group: group.label })));
@@ -292,22 +306,29 @@ async function PaidPayments({
   const query: Record<string, string> = { status: PAID_VIEW };
   if (teamValue) query.team = teamValue;
   query.month = list.month;
+  if (q) query.q = q;
   return (
     <ListScreen
       title="지출결의"
       // 「Empty — 지급 완료」 — 이 달 · 팀에 지급 완료가 없으면 합계 줄 · 쪽 없이 한 줄 + 지급 권한자에게만 `지급 대상 보기`.
       empty={
         rows.length === 0 ? (
-          <ListEmpty
-            message="지급 완료한 건이 없습니다"
-            {...(canPay ? { action: { label: "지급 대상 보기", href: `/expenses?${new URLSearchParams({ status: PAYMENT_TARGET_VIEW })}` } } : {})}
-          />
+          q ? (
+            // 06.5 D-6508(EP1-13): 검색으로 0건 — 필터 줄 · 검색어는 그대로 서고 `필터 지우기`가 q · 팀 · 월을 기본값으로 되돌린다.
+            <ListEmpty message="조건에 맞는 건이 없습니다" action={{ label: "필터 지우기", href: `/expenses?${new URLSearchParams({ status: PAID_VIEW })}` }} />
+          ) : (
+            <ListEmpty
+              message="지급 완료한 건이 없습니다"
+              {...(canPay ? { action: { label: "지급 대상 보기", href: `/expenses?${new URLSearchParams({ status: PAYMENT_TARGET_VIEW })}` } } : {})}
+            />
+          )
         ) : undefined
       }
       filters={
         <StatusFilter
           value={PAID_VIEW}
           views={views}
+          searchValue={q ?? ""}
           selects={[
             { name: "team", label: "팀", value: teamValue, options: [{ value: "", label: "팀 전체" }, ...teams] },
             { name: "month", label: "월", value: list.month, options: list.months.map((value) => ({ value, label: value })) },

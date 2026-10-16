@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { returnValidationErrors } from "next-safe-action";
 import { authedActionClient } from "@/lib/actions/client";
-import { cancelExpensePayment, completeExpensePayment, previewPayable, saveScheduledPayDate } from "@/domain/payments";
+import { cancelExpensePayment, completeExpensePayment, FuturePayDateError, previewPayable, saveScheduledPayDate } from "@/domain/payments";
 import { confirmEvidence, SupplyCorrectionCapError, waiveEvidence } from "@/domain/evidence-reviews";
 import { TRANSFER_FRACTION, TRANSFER_NOT_NUMBER, TRANSFER_NOT_POSITIVE } from "@/domain/payments/action-row";
 import { SUPPLY_ZERO } from "@/domain/expenses";
@@ -16,7 +16,8 @@ import "./actions.registry";
 // 06-03(EXP-06 · D-604): 문서 화면 지급 액션. 입력에 지급 총액 · 공급가 역산 칸이 없다 — 서버가 다시 계산한 값만 저장한다(T-06-09).
 // expectedPayableKrw는 화면이 본 값이 낡았는지 가리는 비교값일 뿐이다.
 // 06-04(E-20 · Q6): 날짜 칸 검사 하나 — 지급일 · 미리보기 · 지급 예정일이 함께 쓴다. 달력에 있는 날짜만 DB까지 가고(05 isCalendarDate ·
-// DATE_FORMAT_ERROR — 05 scheduledPaymentDate 칸과 같은 꼴), 미래 날짜는 오류가 아니다(지급일 · 지급 예정일 모두 허용).
+// DATE_FORMAT_ERROR — 05 scheduledPaymentDate 칸과 같은 꼴). 미래 날짜는 형식 오류가 아니다 — 지급 예정일은 허용, 실제 지급일(지급 완료 ·
+// 미리보기)은 도메인이 FuturePayDateError로 거절하고 액션이 지급일 칸 오류로 옮긴다(06.5 D-6518 — 오류 종류로 가름).
 const paymentDate = z.string().refine(isCalendarDate, DATE_FORMAT_ERROR);
 
 // 「Error — 이체액 칸」 — 정수 원 · 1 이상.
@@ -32,9 +33,14 @@ const completePaymentSchema = z.object({
 });
 
 export const completeExpensePaymentAction = authedActionClient.schema(completePaymentSchema).action(async ({ parsedInput, ctx }) => {
-  const result = await completeExpensePayment(ctx.viewer, parsedInput);
-  revalidatePath(`/expenses/${parsedInput.expenseId}`);
-  return { version: result.version };
+  try {
+    const result = await completeExpensePayment(ctx.viewer, parsedInput);
+    revalidatePath(`/expenses/${parsedInput.expenseId}`);
+    return { version: result.version };
+  } catch (error) {
+    if (error instanceof FuturePayDateError) returnValidationErrors(completePaymentSchema, { payDate: { _errors: [error.message] } });
+    throw error;
+  }
 });
 
 // 지급일 · 이체액을 바꾸면 서버가 다시 계산한 지급 총액 · 차이(S5 loading). 읽기 전용 — 행동 로그 없음.
@@ -55,6 +61,7 @@ export const previewPayableAction = authedActionClient.schema(previewPayableSche
     if (error instanceof SupplyCorrectionCapError || error instanceof MoneyInputError) {
       returnValidationErrors(previewPayableSchema, { correctedSupplyAmount: { _errors: [error.message] } });
     }
+    if (error instanceof FuturePayDateError) returnValidationErrors(previewPayableSchema, { payDate: { _errors: [error.message] } });
     throw error;
   }
 });

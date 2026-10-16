@@ -97,8 +97,6 @@ async function paymentRaceSetup() {
   const payer = await makePayer();
   const staleDraft = await readyDraft(fx.otherPm, fx.lines.withVendor);
   const paid = await approvedExpenseWithEvidence(fx);
-  const [row] = await db.select({ supply: expenses.supplyAmountKrw }).from(expenses).where(eq(expenses.id, paid.expenseId));
-  await db.update(expenses).set({ evidenceAmount: row?.supply ?? null }).where(eq(expenses.id, paid.expenseId));
   const confirmed = await confirmEvidence(payer, { expenseId: paid.expenseId, version: await versionOf(paid.expenseId) });
   const preview = await previewPayable(payer, { expenseId: paid.expenseId, payDate: seoulToday() });
   if (preview.payableKrw === null || preview.payableKrw === undefined) throw new Error("지급 총액 없음");

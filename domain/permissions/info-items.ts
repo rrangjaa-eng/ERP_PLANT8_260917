@@ -80,4 +80,7 @@ export const INFO_ITEMS: InfoItemDef[] = [
   { key: "card_usage.amount", label: "법인카드 사용 금액", staffDefault: true },
   { key: "purchase_request.value", label: "구매 요청 정보", staffDefault: true },
   { key: "purchase_request.amount", label: "구매 요청 금액", staffDefault: true },
+  // 06.1(D-6112): 증빙 기록의 내용 칸과 금액 칸 — 공개된 증빙은 금액까지 다른 팀에 보이는 것이 사용자 채택이라 기본값 참.
+  { key: "evidence.value", label: "증빙 내용", staffDefault: true },
+  { key: "evidence.amount", label: "증빙 금액", staffDefault: true },
 ];

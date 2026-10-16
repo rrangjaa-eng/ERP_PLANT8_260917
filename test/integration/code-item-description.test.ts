@@ -118,9 +118,10 @@ describe("코드표 기본 제공 값 설명 시드 (D-93 「기본 제공 값�
     { tableKey: "evidence_type", value: "other_income" },
     { tableKey: "evidence_type", value: "business_income" },
     { tableKey: "evidence_type", value: "overseas_invoice" },
+    { tableKey: "evidence_type", value: "personal_card_receipt" },
   ];
 
-  it("빈 DB에 시드를 돌리면 기본 제공 값 14개 전부에 40자 이하 설명이 있다", async () => {
+  it("빈 DB에 시드를 돌리면 기본 제공 값 15개 전부에 40자 이하 설명이 있다", async () => {
     for (const tableKey of ["project_status", "quote_subcategory", "evidence_type"]) {
       const items = await listCodeItems(SYSTEM_VIEWER, tableKey, { includeInactive: true });
       for (const target of SEEDED.filter((s) => s.tableKey === tableKey)) {

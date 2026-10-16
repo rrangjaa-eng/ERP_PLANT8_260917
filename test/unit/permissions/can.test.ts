@@ -97,6 +97,6 @@ describe("Phase 6 메뉴 키 · 정보 항목 (06-27)", () => {
 
   it("06.1 이름은 정해진 것뿐이다", () => {
     const keys = [...MENUS.map((menu) => menu.key), ...INFO_ITEMS.map((item) => item.key)];
-    expect(keys.filter((key) => key.startsWith("evidence"))).toEqual(["evidence.intake"]);
+    expect(keys.filter((key) => key.startsWith("evidence"))).toEqual(["evidence", "evidence.intake", "evidence.value", "evidence.amount"]);
   });
 });

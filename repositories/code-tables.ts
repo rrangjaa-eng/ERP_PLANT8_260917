@@ -107,7 +107,16 @@ export async function setCodeItemTaxRule(viewer: Viewer, id: string, taxRule: un
 // 증빙 종류 코드표 시드가 기본 세금 규칙을 함께 심을 때만 쓴다.
 export async function seedCodeItem(
   viewer: Viewer,
-  input: { tableKey: string; value: string; label: string; sortOrder: number; taxRule?: unknown; description?: string },
+  input: {
+    tableKey: string;
+    value: string;
+    label: string;
+    sortOrder: number;
+    taxRule?: unknown;
+    description?: string;
+    privateToOwner?: boolean;
+    active?: boolean;
+  },
 ): Promise<boolean> {
   void viewer;
   const inserted = await db

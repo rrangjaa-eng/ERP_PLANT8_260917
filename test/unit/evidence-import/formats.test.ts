@@ -264,6 +264,22 @@ describe("신한 서식", () => {
   });
 });
 
+describe("상쇄 쌍 — 끝 4자리를 못 읽은 카드(독립 검토 P3-2)", () => {
+  it("끝 4자리가 없는 두 줄은 승인번호 · 반대 금액이 같아도 짝짓지 않는다", () => {
+    const masked = "5531-52**-****-****";
+    const result = ok(
+      parseWorkbook(
+        shinhanFixture([
+          { 승인번호: "12040095", 이용카드: masked, 이용금액: 20000 },
+          { 승인번호: "12040095", 이용카드: masked, 이용금액: -20000 },
+        ]),
+      ),
+    );
+    expect(result.offsetPairs).toBe(0);
+    expect(result.lines.map((line) => line.totalKrw)).toEqual([20000, -20000]);
+  });
+});
+
 describe("비씨 서식", () => {
   const BC_ROWS: FixtureRow[] = [
     {},

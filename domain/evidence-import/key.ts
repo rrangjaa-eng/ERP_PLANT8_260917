@@ -30,27 +30,29 @@ export function dedupeKeys(format: EvidenceFormatKey, keyKind: "card" | "approva
 }
 
 // 같은 카드 · 같은 승인번호 · 합이 0인 원거래 + 취소 두 줄(완전 상쇄 쌍)을 뺀다(E38 — 옛 markOffsetPairs 기본 제외).
-// 부분 취소(값이 다른 음수 줄)는 남긴다. 이미 짝지은 줄은 다시 쓰지 않는다.
-export function splitOffsetPairs<T extends ParsedLine>(lines: readonly T[]): { lines: T[]; offsetPairs: number } {
+// 부분 취소(값이 다른 음수 줄)는 남긴다. 이미 짝지은 줄은 다시 쓰지 않는다. 끝 4자리를 못 읽은 줄은 어느 카드인지 몰라 짝짓지 않는다.
+// 뺀 쌍은 두 줄 그대로 돌려준다 — 원거래가 앞 파일로 이미 등록됐으면 취소 줄을 등록할지 06.1-04가 가른다(독립 검토 P1-2).
+export function splitOffsetPairs<T extends ParsedLine>(lines: readonly T[]): { lines: T[]; pairs: { original: T; cancel: T }[] } {
   const groups = new Map<string, number[]>();
   lines.forEach((line, at) => {
-    if (line.approvalNo === null) return;
-    const group = `${line.cardLast4 ?? ""}|${line.approvalNo}`;
+    if (line.approvalNo === null || line.cardLast4 === null) return;
+    const group = `${line.cardLast4}|${line.approvalNo}`;
     groups.set(group, [...(groups.get(group) ?? []), at]);
   });
   const removed = new Set<number>();
-  let offsetPairs = 0;
+  const pairs: { original: T; cancel: T }[] = [];
   for (const ats of groups.values()) {
     if (ats.length < 2) continue;
     for (const cancel of ats) {
-      const amount = lines[cancel]?.totalKrw ?? 0;
-      if (amount >= 0 || removed.has(cancel)) continue;
-      const original = ats.find((at) => !removed.has(at) && (lines[at]?.totalKrw ?? 0) === -amount);
-      if (original === undefined) continue;
+      const cancelLine = lines[cancel];
+      if (!cancelLine || cancelLine.totalKrw >= 0 || removed.has(cancel)) continue;
+      const original = ats.find((at) => !removed.has(at) && (lines[at]?.totalKrw ?? 0) === -cancelLine.totalKrw);
+      const originalLine = original === undefined ? undefined : lines[original];
+      if (original === undefined || !originalLine) continue;
       removed.add(original);
       removed.add(cancel);
-      offsetPairs++;
+      pairs.push({ original: originalLine, cancel: cancelLine });
     }
   }
-  return { lines: lines.filter((_, at) => !removed.has(at)), offsetPairs };
+  return { lines: lines.filter((_, at) => !removed.has(at)), pairs };
 }

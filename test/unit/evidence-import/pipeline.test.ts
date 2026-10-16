@@ -84,6 +84,28 @@ describe("롯데 트레이서 — .xls", () => {
     expect(result.lines[0]?.sameKeyCount).toBe(1);
   });
 
+  // 독립 검토 P1-2 — 겹친 기간을 다시 올릴 때 06.1-04가 「원거래는 앞 파일로 이미 등록 → 취소 줄 등록」을 가를 수 있게
+  // 빠진 쌍의 두 열쇠를 넘긴다.
+  it("빠진 상쇄 쌍의 원거래 · 취소 열쇠를 offsetKeys로 넘긴다", () => {
+    const result = ok(parseWorkbook(lotteFixture(LOTTE_ROWS)));
+    expect(result.offsetKeys).toEqual([
+      { original: "card-lotte|2222|11112222|2026-05-01|10000", cancel: "card-lotte|2222|11112222|2026-05-01|-10000" },
+    ]);
+    expect(result.offsetKeys).toHaveLength(result.offsetPairs);
+  });
+
+  it("남은 줄의 열쇠는 취소 줄이 파일에 있든 없든 같다(앞 파일과 같은 #n)", () => {
+    const original = { 승인번호: "11112222", 매입일자: "2026.05.01", 매입금액: "10,000", 부가세: "909" };
+    const cancel = { 승인번호: "11112222", 매입일자: "2026.05.01", 매입금액: "-10,000", 부가세: "-909" };
+    const before = ok(parseWorkbook(lotteFixture([original, original])));
+    const after = ok(parseWorkbook(lotteFixture([original, original, cancel])));
+    expect(before.lines.map((line) => line.dedupeKey)).toEqual(["card-lotte|2222|11112222|2026-05-01|10000", "card-lotte|2222|11112222|2026-05-01|10000#2"]);
+    expect(after.lines.map((line) => line.dedupeKey)).toEqual(["card-lotte|2222|11112222|2026-05-01|10000#2"]);
+    expect(after.offsetKeys).toEqual([
+      { original: "card-lotte|2222|11112222|2026-05-01|10000", cancel: "card-lotte|2222|11112222|2026-05-01|-10000" },
+    ]);
+  });
+
   it("결과 어디에도 카드 번호 16자리가 없다", () => {
     const result = ok(parseWorkbook(lotteFixture(LOTTE_ROWS)));
     expect(JSON.stringify(result)).not.toMatch(/\d{16}/);

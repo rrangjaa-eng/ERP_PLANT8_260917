@@ -62,4 +62,6 @@ export type FormatRule = {
 
 export type RefusalKind = "size" | "not-excel" | "encrypted" | "unknown-format" | "sales-list" | "line-errors" | "checksum" | "rows";
 export type Refusal = { ok: false; kind: RefusalKind; headline: string; lines: string[]; restCount: number };
-export type ParseSuccess = { ok: true; format: EvidenceFormatKey; lines: KeyedLine[]; rateDates: string[]; offsetPairs: number };
+// `offsetKeys`: 파일 안에서 뺀 상쇄 쌍의 두 열쇠. 원거래 열쇠가 앞 파일로 이미 등록돼 있으면 06.1-04가 취소 줄을 등록한다.
+export type OffsetKeys = { original: string; cancel: string };
+export type ParseSuccess = { ok: true; format: EvidenceFormatKey; lines: KeyedLine[]; rateDates: string[]; offsetPairs: number; offsetKeys: OffsetKeys[] };

@@ -1,10 +1,10 @@
 ---
 phase: 06-payment-evidence-cards
-verified: 2026-10-16T11:02:31Z
+verified: 2026-10-16T13:37:25Z
 status: human_needed
 score: 5/5 must-haves verified (갭 메우기 G-06-A~J 10/10 코드 · CI 근거로 닫힘, G-06-K는 07로 넘김)
 covered_files: [".planning/REQUIREMENTS.md",".planning/ROADMAP.md",".planning/phases/06-payment-evidence-cards/06-01-PLAN.md",".planning/phases/06-payment-evidence-cards/06-01-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-02-PLAN.md",".planning/phases/06-payment-evidence-cards/06-02-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-03-PLAN.md",".planning/phases/06-payment-evidence-cards/06-03-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-04-PLAN.md",".planning/phases/06-payment-evidence-cards/06-04-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-05-PLAN.md",".planning/phases/06-payment-evidence-cards/06-05-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-06-PLAN.md",".planning/phases/06-payment-evidence-cards/06-06-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-07-PLAN.md",".planning/phases/06-payment-evidence-cards/06-07-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-08-PLAN.md",".planning/phases/06-payment-evidence-cards/06-08-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-09-PLAN.md",".planning/phases/06-payment-evidence-cards/06-09-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-10-PLAN.md",".planning/phases/06-payment-evidence-cards/06-10-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-11-PLAN.md",".planning/phases/06-payment-evidence-cards/06-11-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-12-PLAN.md",".planning/phases/06-payment-evidence-cards/06-12-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-13-PLAN.md",".planning/phases/06-payment-evidence-cards/06-13-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-14-PLAN.md",".planning/phases/06-payment-evidence-cards/06-14-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-15-PLAN.md",".planning/phases/06-payment-evidence-cards/06-15-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-16-PLAN.md",".planning/phases/06-payment-evidence-cards/06-16-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-17-PLAN.md",".planning/phases/06-payment-evidence-cards/06-17-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-18-PLAN.md",".planning/phases/06-payment-evidence-cards/06-18-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-19-PLAN.md",".planning/phases/06-payment-evidence-cards/06-19-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-20-PLAN.md",".planning/phases/06-payment-evidence-cards/06-20-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-21-PLAN.md",".planning/phases/06-payment-evidence-cards/06-21-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-22-PLAN.md",".planning/phases/06-payment-evidence-cards/06-22-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-23-PLAN.md",".planning/phases/06-payment-evidence-cards/06-23-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-24-PLAN.md",".planning/phases/06-payment-evidence-cards/06-24-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-25-PLAN.md",".planning/phases/06-payment-evidence-cards/06-25-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-27-PLAN.md",".planning/phases/06-payment-evidence-cards/06-27-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-28-PLAN.md",".planning/phases/06-payment-evidence-cards/06-28-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-29-PLAN.md",".planning/phases/06-payment-evidence-cards/06-29-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-30-PLAN.md",".planning/phases/06-payment-evidence-cards/06-30-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-31-PLAN.md",".planning/phases/06-payment-evidence-cards/06-31-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-32-PLAN.md",".planning/phases/06-payment-evidence-cards/06-32-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-33-PLAN.md",".planning/phases/06-payment-evidence-cards/06-33-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-34-PLAN.md",".planning/phases/06-payment-evidence-cards/06-34-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-35-PLAN.md",".planning/phases/06-payment-evidence-cards/06-35-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-36-PLAN.md",".planning/phases/06-payment-evidence-cards/06-36-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-37-PLAN.md",".planning/phases/06-payment-evidence-cards/06-37-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-38-PLAN.md",".planning/phases/06-payment-evidence-cards/06-38-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-39-PLAN.md",".planning/phases/06-payment-evidence-cards/06-39-SUMMARY.md",".planning/phases/06-payment-evidence-cards/06-GAPS.md",".planning/phases/06-payment-evidence-cards/06-UAT.md","app/(app)/admin/archive/actions.ts","app/(app)/cards/link-picker.tsx","app/(app)/cards/page.tsx","app/(app)/expenses/[id]/payment-action-row.tsx","app/(app)/projects/[id]/pre-settle-check.tsx","app/(app)/projects/[id]/project-detail.module.css","app/(app)/projects/[id]/quote-table.tsx","app/(app)/projects/[id]/settlement/settlement-actions.tsx","app/(app)/projects/[id]/status-change.tsx","db/migrations/0037_corp_cards_last4_live.sql","db/schema/corp-cards.ts","db/schema/files.ts","docs/EVIDENCE-STORAGE.md","docs/design/DECISIONS.md","docs/design/SYSTEM.md","domain/action-log/record.ts","domain/archive/index.ts","domain/corp-card-usages/amounts.ts","domain/corp-card-usages/default-card.ts","domain/corp-card-usages/index.ts","domain/corp-cards/index.ts","domain/evidence-reviews/cost-basis.ts","domain/evidence/index.ts","domain/evidence/upload-checks.ts","domain/expenses/evidence-signals.ts","domain/expenses/index.ts","domain/payments/batch.ts","domain/payments/index.ts","domain/pre-settle-check/index.ts","domain/pre-settle-check/summary.ts","domain/purchase-requests/index.ts","domain/rules/register.ts","domain/settings/keys.ts","domain/settlements/index.ts","lib/gcp/storage.ts","repositories/approvals.ts","repositories/expense-evidence-reviews.ts","scripts/codex-design-review/capture.spec.ts","scripts/codex-design-review/lib.ts","scripts/codex-design-review/seeds.ts","scripts/deploy.sh","test/e2e/approval-reserve-evidence.spec.ts","test/e2e/evidence-lifecycle.spec.ts","test/e2e/management-flow.spec.ts","test/e2e/payment-batch.spec.ts","test/e2e/pm-settlement-flow.spec.ts","test/e2e/pre-settle-check.spec.ts","test/e2e/project-lifecycle.spec.ts","test/e2e/purchase-requests.spec.ts","test/e2e/settlement-approval.spec.ts","test/integration/archive.test.ts","test/integration/corp-cards.test.ts","test/integration/leak-scan.test.ts","test/integration/next-turn.test.ts","test/integration/pre-settle-check.test.ts","test/integration/purchase-requests.test.ts","test/unit/docs-limits.test.ts","test/unit/domain/card-default-order.test.ts","test/unit/domain/evidence-cost-basis.test.ts","ui/confirm-dialog/ConfirmDialog.tsx"]
-covered_digest: "v1:sha256:b3292df3c49a79a3383a67f671dc1ba5bf09139e7bd0a4c59efcd19823134c8b"
+covered_digest: "v1:sha256:d102c4136338b995c7a7793e959460029b0e4f11cc7ea40f1aa695b256ce2304"
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
@@ -42,19 +42,13 @@ deferred:
 human_verification:
   - test: "스테이징에서 차수 고객 승인(quote_revision) 증빙을 이미지 1장 · PDF 1장 올리고, 아무 주인 종류에 10MB 초과 파일 1개를 올려 본다"
     expected: "서명 PUT(x-goog-content-length-range) → 완료 통보 → files 행 · 보기 URL 동작. 10MB 초과는 의도 단계에서 거부"
-    why_human: "CI E2E는 로컬 저장 드라이버로 돈다. 스테이징은 STORAGE_DRIVER=gcs(scripts/deploy.sh:558). 카드 전표(corp_card_usage, UAT 38) · 리저브 줄(reserve_entry, UAT 46) 업로드는 스테이징 실제 GCS에서 통과했지만, quote_revision(UAT 45 blocked)과 10MB 초과 거부는 아직 아무도 실측하지 않았다 — 이전 항목 1을 이 범위로 좁힘"
+    why_human: "CI E2E는 로컬 저장 드라이버로 돈다. 스테이징은 STORAGE_DRIVER=gcs(scripts/deploy.sh:558). 카드 전표(corp_card_usage, UAT 38) · 리저브 줄(reserve_entry, UAT 46) 업로드는 스테이징 실제 GCS에서 통과했지만, quote_revision 업로드도 2026-10-16 라이브 재검증(/mnt/project-files/06-review/reverify/u45/measurements.json — 파일 2개 업로드 · 목록 반영)에서 스테이징 GCS를 지났다. 남은 것은 이미지 · PDF 형식별 확인(측정에 형식 기록 없음)과 10MB 초과 거부 — 아직 아무도 실측하지 않았다"
   - test: "Phase 6 PLAN must_haves.prohibitions — 원 플랜 130건(test 118 · judgment 12) + 갭 플랜 06-31~39 41건(test 35 · judgment 6) 중 표본 밖 항목의 집행 근거를 사람이 훑는다"
     expected: "test-tier 각 금지에 대응 테스트 · 경로 불변 근거가 있고 CI 녹색. judgment-tier(예: 06-34 고객 승인 끄기 판정에 구매 요청 안 넣음, 06-38 선택지 B 안 함, 06-39 G-06-J 재현 전 수정 안 함)는 /review · /design-review 기록과 일치"
     why_human: "검증기가 갭 표본(ConfirmDialog.tsx · repositories/approvals.ts · safari-capture.yml · domain/settlements · domain/corp-cards · ui/ · tokens.css 미변경, 카드 사용 경로에 quote.customer-approval 없음, 0037에 DML 없음, SYSTEM.md 변경은 #237 한 PR 2줄)을 git diff로 확인했다. 나머지는 금지↔테스트 대응표가 없어 기계적으로 닫을 수 없다 — unverified-prohibition, human review recommended"
-  - test: "UAT 45(T25) / G-06-J 라이브 — [테스트] 담당 PM으로 로그인해 3차 승인 증빙을 두 번 올리고 새로 고침 없이 라벨을 본다"
-    expected: "두 번째 업로드 뒤 `승인 증빙 2`(파일 행 수와 같음), 이전 차수는 명세대로"
-    why_human: "스테이징에 [테스트] PM 로그인 자격 없음(reverify/report.md). 코드 쪽은 소스 변경 0 · e2e approval-reserve-evidence.spec.ts:115-119 1→2 단언이 #227 CI 녹색. 원인은 재현되지 않아 미확정"
   - test: "UAT 51(T31) / G-06-I 라이브 — [테스트] PM 홈 「내 차례」에서 무효 → 면제 → 지급한 문서(T26-0002 류)를 본다"
     expected: "그 문서의 `증빙 무효 · 증빙 올리기` 줄 없음. 면제 없이 지급 뒤 무효인 문서는 `증빙 무효` 유지. 경영관리 지급 묶음 · 구매 · 발행 요청 줄 · `[막힘]` · 로드 오류 `다시 시도`도 UAT 51 기대대로"
-    why_human: "PM 자격 없음. 코드 domain/expenses/evidence-signals.ts:52 `&& !status.waived` · 통합 next-turn.test.ts:770,780,901 CI 녹색"
-  - test: "G-06-A 라이브 — /admin에서 [테스트] 법인카드를 만들고 보관한 뒤 같은 발급사 · 뒤 4자리로 새 카드를 등록하고, 이어서 보관한 카드 복원을 시도한다"
-    expected: "새 카드 등록 성공. 복원은 토스트 `같은 발급사와 뒤 4자리 카드 있음`(· 복원 불가) · 보관 그대로. 보관 안 된 카드끼리 중복은 `이미 등록된 카드 · 발급사와 뒤 4자리 확인`"
-    why_human: "스테이징 카드 생성 · 보관은 사용자 확인 대기(reverify/report.md). migrate 잡(run 38887421433)은 성공 — 색인 교체가 스테이징 DB에 적용된 것은 간접 근거뿐"
+    why_human: "라이브 확인 불가 — [테스트] UAT2 PM 자격을 공개 로그 없이 재설정할 수 없어, 사용자가 UAT 51을 코드 근거로 닫기로 결정(2026-10-16). 라이브 관찰은 미실시로 남긴다(사람 확인 항목 유지 · 기록용). 코드 domain/expenses/evidence-signals.ts:52 `&& !status.waived` · 통합 next-turn.test.ts:770,780,901 CI 녹색"
   - test: "G-06-B ②③ 라이브 — 직전 등록이 없거나 직전 카드가 옵션 밖인 사용자로 /cards?new=1을 연다(개인 카드 1장 / 개인 0 · 오늘 팀 카드 1장)"
     expected: "② 개인 카드 1장이면 그 카드, ③ 개인 0 · 팀 카드 1장이면 그 팀 카드가 선택된 채 열림. 개인 카드 2장 이상이면 빈칸"
     why_human: "스테이징은 ① 갈래(직전 카드)만 확인됨. ②③은 단위 test/unit/domain/card-default-order.test.ts 9건(CI quality 녹색)뿐 — 계정 범위 밖"
@@ -63,7 +57,7 @@ human_verification:
 # Phase 6: 지급·증빙·법인카드·구매 요청 (경영관리) Verification Report
 
 **Phase Goal:** 경영관리가 결재 통과 건의 증빙을 확인해 지급 완료하며(실제 이체액 입력 → 공급가 역산), 법인카드·구매 요청·팀 비용까지 모든 나가는 돈이 견적 줄에 한 번만 연결되고, 완료(정산) 전 미결 점검이 선다. 지급일 자동 계산·마감·알림은 Phase 7이다
-**Verified:** 2026-10-16T11:02:31Z
+**Verified:** 2026-10-16T13:37:25Z
 **Status:** human_needed
 **Re-verification:** Yes — 갭 메우기(06-31~06-39) 뒤. 기준 트리 HEAD 04a227a(갭 코드는 c23ef9d까지, 그 뒤 커밋은 `.planning/` · `.claude/gates/` 문서만 — `git log c23ef9d..HEAD --stat`로 확인)
 
@@ -89,7 +83,7 @@ MVP mode: ROADMAP 06 `Mode: mvp`이나 목표가 User Story 형식이 아니다(
 
 | Gap | Plan · PR | Status | Evidence (file:line) |
 |-----|-----------|--------|----------------------|
-| G-06-A 보관 카드 재등록 | 06-37 · #238(merged_by rrangjaa-eng) | ✓ VERIFIED (코드 · CI) / 라이브 human | `db/schema/corp-cards.ts:32` 같은 이름 부분 유일 색인 `WHERE archived_at IS NULL` · `db/migrations/0037_corp_cards_last4_live.sql`(DROP CONSTRAINT + CREATE UNIQUE INDEX만, DML 없음, `_journal.json:268`) · 복원 충돌 `domain/archive/index.ts:47,233-236` → 토스트 `app/(app)/admin/archive/actions.ts:7,33` · 등록 변환 `domain/corp-cards/index.ts:173` 불변 · 통합 `corp-cards.test.ts:393,407,421` · `archive.test.ts:292` · 예외 기록 `DECISIONS.md:2129` |
+| G-06-A 보관 카드 재등록 | 06-37 · #238(merged_by rrangjaa-eng) | ✓ VERIFIED (코드 · CI · 라이브 2026-10-16 ~13:25Z) | 라이브: `/mnt/project-files/06-review/reverify/g06a/measurements.json` — 카드 A(뒤 4자리 5629) 등록 → 보관 `보관됨` → 같은 번호 카드 B `법인카드 등록됨` → 보관함 A 복원 토스트 `복원 · 실패 · 같은 발급사와 뒤 4자리 카드 있음` · A는 `보관됨` 유지(finalLive) → B 보관. 실패 뒤 그 행 동작 칸이 「—」로 바뀌는 것은 의도(`app/(app)/admin/archive/archive-table.tsx:48`). 코드: `db/schema/corp-cards.ts:32` 같은 이름 부분 유일 색인 `WHERE archived_at IS NULL` · `db/migrations/0037_corp_cards_last4_live.sql`(DROP CONSTRAINT + CREATE UNIQUE INDEX만, DML 없음, `_journal.json:268`) · 복원 충돌 `domain/archive/index.ts:47,233-236` → 토스트 `app/(app)/admin/archive/actions.ts:7,33` · 등록 변환 `domain/corp-cards/index.ts:173` 불변 · 통합 `corp-cards.test.ts:393,407,421` · `archive.test.ts:292` · 예외 기록 `DECISIONS.md:2129` |
 | G-06-B 카드 기본값 순서 | 06-33 · #225 | ✓ VERIFIED / ②③ 라이브 human | 순수 함수 `domain/corp-card-usages/default-card.ts:8-15`(①직전→②개인 1장→③팀 1장→④옵션 1장→빈칸, 개인 2장+는 빈칸) · 배선 `domain/corp-card-usages/index.ts:1557` ← 옵션 = `eligibleCards`(:172-179, `own` = 본인 · 사용일 팀, 공용 제외 :182-184) · 호출 `app/(app)/cards/page.tsx:209` · 단위 9건 `test/unit/domain/card-default-order.test.ts` |
 | G-06-C 청소 SQL 주인 종류 | 06-31 · #219 | ✓ VERIFIED | 위 SC2 |
 | G-06-D 고객 승인 전 구매 요청 | 06-34 · 06-35 · #225 | ✓ VERIFIED | 기존 규칙 재사용 `domain/purchase-requests/index.ts:211-225`(`gate(…,"quote.customer-approval")`) · 신청: 프로젝트 잠금 `:343` 뒤 tx 안 최신 차수 `:356-362` · 되돌리기 `:614` 잠금 → `:622-628` · 줄 고르기 `:996-999`(완료 잠김 먼저) · `projectBlockedReason` `:1043` → `app/(app)/cards/link-picker.tsx:56,81` · 표 `app/(app)/projects/[id]/quote-table.tsx:1164,1209-1212,1238-1240`(`tableGateReason`). 카드 사용 경로에 판정 없음(`domain/corp-card-usages/`에 `quote.customer-approval` 0). 통합 `purchase-requests.test.ts:2084` · e2e `purchase-requests.spec.ts:185,242` · `project-lifecycle.spec.ts:158,202` |
@@ -97,8 +91,8 @@ MVP mode: ROADMAP 06 `Mode: mvp`이나 목표가 User Story 형식이 아니다(
 | G-06-F 페이지 폼 면 규칙 | 06-38 · #237 | ✓ VERIFIED | `docs/design/DECISIONS.md:2121` 결정 → `docs/design/SYSTEM.md:15` §0 원칙(diff 2줄). 앱 · ui · tokens 변경 0 |
 | G-06-G 캡처 로그인 경합 | 06-32 · #219 | ✓ VERIFIED | `scripts/codex-design-review/capture.spec.ts:33-35` `__reactProps$` 키 poll 뒤 채움 · `test/` import 없음 · `.github/workflows/safari-capture.yml` 변경 0 |
 | G-06-H Ctrl+Enter 이중 실행 | 06-39 T1 · #227 | ✓ VERIFIED | `app/(app)/expenses/[id]/payment-action-row.tsx:250` · `app/(app)/projects/[id]/settlement/settlement-actions.tsx:89` `event.target.closest("dialog[open]")`이면 return. ConfirmDialog는 네이티브 `<dialog>` + `showModal()`(`ui/confirm-dialog/ConfirmDialog.tsx:201,297`)이라 `open` 속성이 선다 — 막힌 모달(사유 빈 칸) 경로도 리스너가 먼저 빠진다. ConfirmDialog 변경 0. e2e `evidence-lifecycle.spec.ts:285,311,337` · `settlement-approval.spec.ts:133`, 스테이징 DOM 실측 POST 1/지급 0(reverify report) |
-| G-06-I 면제 문서 무효 신호 | 06-39 T2 · #227 | ✓ VERIFIED / 라이브 human | `domain/expenses/evidence-signals.ts:52` `voided.has(status.id) && !status.waived` · 통합 `next-turn.test.ts:770,780,901`(+ 대조 사례). `repositories/approvals.ts` 변경 0(금지 준수) |
-| G-06-J 승인 증빙 라벨 1→2 | 06-39 T3 · #227 | ✓ VERIFIED (계획 기준: 재현 안 됨 → 단언만) / 라이브 human | `test/e2e/approval-reserve-evidence.spec.ts:115-119` 두 번째 업로드 뒤 `승인 증빙 2` — #227 CI e2e(프로덕션 빌드) 녹색. 소스 변경 0, 근본 원인 미확정 |
+| G-06-I 면제 문서 무효 신호 | 06-39 T2 · #227 | ✓ VERIFIED (코드 · CI — 사용자 결정으로 코드 근거 닫힘, 라이브 미실시) | `domain/expenses/evidence-signals.ts:52` `voided.has(status.id) && !status.waived` · 통합 `next-turn.test.ts:770,780,901`(+ 대조 사례). `repositories/approvals.ts` 변경 0(금지 준수) |
+| G-06-J 승인 증빙 라벨 1→2 | 06-39 T3 · #227 | ✓ VERIFIED (CI · 라이브 2026-10-16 ~13:40Z) | 라이브: `/mnt/project-files/06-review/reverify/u45/measurements.json` — 새 [테스트] PM · 프로젝트 26011, 새로 고침 없이 1초 폴링: 업로드 1 뒤 `승인 증빙` → `승인 증빙 1`(t≈4.1s), 업로드 2 뒤 `승인 증빙 1` → `승인 증빙 2`(t≈3.0s), 파일 수와 일치. ℹ️ 정보: 반영까지 3~4초 지연 — 원 보고(UAT 45 「1 뒤처짐」)는 새로 고침 도착 전 관찰로 설명됨, 결함 아님. CI: `test/e2e/approval-reserve-evidence.spec.ts:115-119` 두 번째 업로드 뒤 `승인 증빙 2` — #227 CI e2e(프로덕션 빌드) 녹색. 소스 변경 0, 근본 원인 미확정 |
 | G-06-K 화면 사이 해시 포커스 | — | DEFERRED → Phase 7 | 아래 Deferred |
 
 ### Deferred Items
@@ -185,38 +179,28 @@ ORPHANED requirements: 없음. 참고(정보): REQUIREMENTS.md 추적표가 일�
 ### 1. 실제 GCS — quote_revision 증빙 · 10MB 초과 거부
 **Test:** 스테이징에서 차수 고객 승인 증빙을 이미지 · PDF로 올리고, 10MB 초과 파일을 시도한다.
 **Expected:** 서명 PUT → 완료 통보 → files 행 · 보기 URL, 초과 파일은 의도 단계 거부.
-**Why human:** CI는 로컬 드라이버. corp_card_usage(UAT 38) · reserve_entry(UAT 46)는 스테이징 GCS 통과로 좁혀짐.
+**Why human:** CI는 로컬 드라이버. corp_card_usage(UAT 38) · reserve_entry(UAT 46) · quote_revision(u45 라이브)은 스테이징 GCS 업로드 통과 — 남은 것은 형식별(이미지 · PDF) 확인과 10MB 초과 거부.
 
 ### 2. 금지 사항 대조(원 130 + 갭 41)
 **Test:** 표본 밖 금지 항목의 집행 근거를 훑는다.
 **Expected:** test-tier는 테스트 · 경로 불변 근거 + CI 녹색, judgment-tier는 /review · /design-review 기록과 일치.
 **Why human:** 금지↔테스트 대응표 없음 — unverified-prohibition, human review recommended.
 
-### 3. UAT 45(T25) · G-06-J 라이브
-**Test:** [테스트] 담당 PM으로 승인 증빙 두 번 업로드.
-**Expected:** 새로 고침 없이 `승인 증빙 2`.
-**Why human:** 스테이징 PM 자격 없음. CI e2e 1→2 녹색.
-
-### 4. UAT 51(T31) · G-06-I 라이브
+### 3. UAT 51(T31) · G-06-I 라이브
 **Test:** [테스트] PM 홈 「내 차례」.
 **Expected:** 무효 → 면제 → 지급 문서의 증빙 줄 없음, 나머지 T31 기대 항목.
-**Why human:** 스테이징 PM 자격 없음. 통합 테스트 CI 녹색.
+**Why human:** UAT2 PM 자격을 공개 로그 없이 재설정할 수 없어 사용자가 코드 근거(`evidence-signals.ts:52` · 통합 CI 녹색)로 닫기로 결정 — 라이브 관찰은 미실시 기록으로 남김.
 
-### 5. G-06-A 라이브
-**Test:** [테스트] 카드 생성 → 보관 → 같은 번호 재등록 → 보관 카드 복원 시도.
-**Expected:** 재등록 성공 · 복원은 `같은 발급사와 뒤 4자리 카드 있음` 토스트로 막힘.
-**Why human:** 스테이징 카드 생성 · 보관 사용자 확인 대기.
-
-### 6. G-06-B ②③ 라이브
+### 4. G-06-B ②③ 라이브
 **Test:** 직전 등록 없는 사용자(개인 1장 / 개인 0 · 팀 1장)로 `/cards?new=1`.
 **Expected:** 그 카드가 골라진 채 열림, 개인 2장+면 빈칸.
 **Why human:** 계정 범위 밖. 단위 9건만.
 
 ### Gaps Summary
 
-차단(BLOCKER) 갭 없음. G-06-A~J 열 개가 모두 코드 · 배선 · 테스트(CI 녹색)로 닫혔고, 이전 보고의 경고 1(청소 SQL)도 G-06-C로 해소됐다. 스테이징 DOM 재검증(reverify/report.md)은 FAIL 0이다. 남은 것은 사람 확인 여섯(이전 둘 — GCS 항목은 범위를 좁힘 — 과 계정 범위로 막힌 라이브 넷)과 이관 다섯(G-06-K → 07 포함)이다. G-06-J는 원인 미확정 상태로 「재현 안 됨 → 회귀 단언만」이라는 계획 기준으로 닫혔다.
+차단(BLOCKER) 갭 없음. G-06-A~J 열 개가 모두 코드 · 배선 · 테스트(CI 녹색)로 닫혔고, 이전 보고의 경고 1(청소 SQL)도 G-06-C로 해소됐다. 스테이징 DOM 재검증(reverify/report.md)은 FAIL 0이다. G-06-A(카드 재등록 · 복원 거부)와 UAT 45 / G-06-J(라벨 1→2, 3~4초 지연은 정보)는 2026-10-16 스테이징 라이브로 닫혔다. 남은 것은 사람 확인 넷(GCS 형식 · 10MB, 금지 사항 대조, UAT 51 / G-06-I — 사용자 결정으로 코드 근거 닫힘 · 라이브 미실시, G-06-B ②③)과 이관 다섯(G-06-K → 07 포함)이다. G-06-J는 소스 변경 없이 닫혔고, 라이브 측정이 원 보고를 새로 고침 도착 전 관찰로 설명한다.
 
 ---
 
-_Verified: 2026-10-16T11:02:31Z_
+_Verified: 2026-10-16T13:37:25Z_
 _Verifier: Claude (gsd-verifier)_

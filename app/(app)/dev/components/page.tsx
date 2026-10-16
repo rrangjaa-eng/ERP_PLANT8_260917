@@ -15,7 +15,11 @@ import { StaticTable } from "@/ui/table/StaticTable";
 import { TableSkeleton } from "@/ui/table/TableSkeleton";
 import {
   AttachmentsConfirmSample,
+  BulkImportSamples,
   EditTableSample,
+  EvidencePanelSample,
+  EvidencePickSamples,
+  EvidenceSamples,
   GalleryPanel,
   ModalSample,
   PanelOpener,
@@ -56,10 +60,10 @@ function serverStamp(): number {
   return Date.now();
 }
 
-export default async function ComponentsPage({ searchParams }: { searchParams: Promise<{ panel?: string }> }) {
+export default async function ComponentsPage({ searchParams }: { searchParams: Promise<{ panel?: string; confirm?: string; sheet?: string; pick?: string }> }) {
   await requireSession();
   if (!isDevToolsEnabled(env.APP_ENV)) notFound();
-  const { panel } = await searchParams;
+  const { panel, confirm, sheet, pick } = await searchParams;
 
   return (
     <DetailScreen
@@ -241,10 +245,21 @@ export default async function ComponentsPage({ searchParams }: { searchParams: P
 
       <DetailScreen.Section title="고르기 목록">
         <PickSamples />
+        <EvidencePickSamples initial={pick === "document" || pick === "evidence" ? pick : null} />
       </DetailScreen.Section>
 
       <DetailScreen.Section title="골라내기 — 다중(SP-62-1)">
         <PickManySamples />
+      </DetailScreen.Section>
+
+      <DetailScreen.Section title="일괄 등록 — 첨부 변형(SP-6103)">
+        <div data-gallery="bulk-import">
+          <BulkImportSamples />
+        </div>
+      </DetailScreen.Section>
+
+      <DetailScreen.Section title="증빙 표본(06.1)">
+        <EvidenceSamples confirmOpen={confirm === "detach"} sheetOpen={sheet === "two-actions"} />
       </DetailScreen.Section>
 
       <DetailScreen.Section title="화면 틀">
@@ -263,6 +278,7 @@ export default async function ComponentsPage({ searchParams }: { searchParams: P
       </DetailScreen.Section>
 
       {panel === "1" || panel === "pick" ? <GalleryPanel pick={panel === "pick"} /> : null}
+      {panel === "evidence" ? <EvidencePanelSample /> : null}
     </DetailScreen>
   );
 }

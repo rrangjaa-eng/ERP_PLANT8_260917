@@ -87,6 +87,8 @@ test.describe("로그인한 뒤", () => {
     "옆 패널",
     "고르기 목록",
     "골라내기 — 다중(SP-62-1)",
+    "일괄 등록 — 첨부 변형(SP-6103)",
+    "증빙 표본(06.1)",
     "화면 틀",
   ];
 
@@ -99,6 +101,59 @@ test.describe("로그인한 뒤", () => {
     const words = Object.keys(STATUS_KIND);
     const badges = page.locator('[data-gallery="status-badges"] > li');
     await expect(badges).toHaveCount(words.length * 2);
+  });
+
+  // 06.1-03 SP-6101 — 증빙 기록 낱말 여섯이 상태 배지 구역에 tag · text 한 쌍씩 선다.
+  test("상태 배지 구역에 06.1 증빙 낱말 여섯이 tag · text 한 번씩 있다", async ({ page }) => {
+    const badges = page.locator('[data-gallery="status-badges"]');
+    for (const word of ["미공개", "팀 공개", "본부 공개", "붙음", "확인 필요", "카드 미등록"]) {
+      await expect(badges.getByText(word, { exact: true }), word).toHaveCount(2);
+    }
+  });
+
+  // 06.1-03 Task 2(SP-6103) — 첨부 영역 「엑셀 일괄 등록」 변형: 영역 · accept · 조각 색 · 0인 조각 부재 · 거절 행 버튼 0 · 실패 행에만 다시 올리기.
+  test("일괄 등록 변형 — 영역 글자 · accept · 거절 행에는 버튼이 없고 실패 행에만 다시 올리기 · 0인 조각은 없다", async ({ page }) => {
+    const bulk = page.locator('[data-gallery="bulk-import"]');
+    await expect(bulk.getByText("파일을 끌어 놓거나 Ctrl+U · 홈택스·카드사 엑셀·CSV 1MB")).toBeVisible();
+    await expect(bulk.getByTestId("attachments-input")).toHaveAttribute("accept", ".xls,.xlsx,.csv");
+    await expect(bulk.getByRole("button", { name: /^파일 고르기/ })).toBeVisible();
+    for (const key of ["size", "format", "lines"]) {
+      const row = bulk.locator(`li[data-row="${key}"]`);
+      await expect(row).toHaveAttribute("data-state", "refused");
+      await expect(row.locator("button")).toHaveCount(0);
+    }
+    await expect(bulk.locator('li[data-row="size"]')).toContainText("1.4MB · 1MB 초과 · 기간을 나눠 다시 내려받기");
+    await expect(bulk.getByRole("button", { name: "다시 올리기" })).toHaveCount(1);
+    await expect(bulk.locator('li[data-row="failed"]').getByRole("button", { name: "다시 올리기" })).toHaveCount(1);
+    await expect(bulk.locator('li[data-row="uploading"] [data-ui="bulk-progress"]')).toHaveCount(1);
+    await expect(bulk.getByText("상쇄 2쌍")).toBeVisible();
+    await expect(bulk.getByText(/상쇄 없음|짝 없음 0|상쇄 0쌍/)).toHaveCount(0);
+    await expect(bulk.locator('[aria-live="polite"]')).toHaveCount(1);
+    const long = bulk.locator('li[data-row="long"]');
+    expect(await long.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  });
+
+  // 06.1-03 Round 2 G5 — Codex 캡처용 표본 경로 셋(`page.goto`만으로 열린 채 선다).
+  test("?panel=evidence — S3 증빙 패널 표본이 열린 채 선다(제목 · 1차 증빙 금액 저장)", async ({ page }) => {
+    await page.goto("/dev/components?panel=evidence");
+    const dialog = page.locator("dialog:modal");
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toHaveAttribute("data-ui", "side-panel");
+    await expect(dialog.getByRole("heading", { name: "세금계산서 · (주)에이원" })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: /^증빙 금액 저장/ })).toBeVisible();
+    await expect(dialog.getByLabel("공급가")).toHaveValue("1,000,000");
+  });
+
+  test("?confirm=detach — S7 떼기 모달이 열린 채 서고 사유가 빈 동안 1차는 aria-disabled + 사유 없음 · 사유 적기", async ({ page }) => {
+    await page.goto("/dev/components?confirm=detach");
+    const dialog = page.locator("dialog:modal");
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("heading", { name: "증빙 떼기" })).toBeVisible();
+    const primary = dialog.getByRole("button", { name: /^증빙 떼기/ });
+    await expect(primary).toHaveAttribute("aria-disabled", "true");
+    await expect(dialog.getByText("사유 없음 · 사유 적기").first()).toBeVisible();
+    await dialog.getByLabel("사유").fill("잘못 붙임");
+    await expect(primary).not.toHaveAttribute("aria-disabled", "true");
   });
 
   test("숫자 구역에 큰 금액 · 음수 · 외화 2행이 있다", async ({ page }) => {
@@ -558,6 +613,179 @@ test.describe("로그인한 뒤", () => {
     });
   });
 
+  // 06.1-03 Task 3 — SP-6106 고르기 목록 확장 다섯(낱말 셋 · preselect · maxSelected · 단일 거부 · limit). 표본은 「고르기 목록」 절의 단추 둘이고 `?pick=document|evidence`로 연 채 렌더한다.
+  test.describe("고르기 목록 확장(SP-6106)", () => {
+    type PwPage = import("@playwright/test").Page;
+    const dialogOf = (page: PwPage) => page.locator("dialog:modal");
+    const optionOf = (page: PwPage, id: string) => dialogOf(page).locator(`[data-pick-id="${id}"]`);
+    const documentPrimary = (page: PwPage) => dialogOf(page).getByRole("button", { name: /^이 문서에 붙이기/ });
+    const evidencePrimary = (page: PwPage, count: number) => dialogOf(page).getByRole("button", { name: new RegExp(`^증빙 붙이기 ${count}(?!\\d)`) });
+    const refreshOf = (page: PwPage) => dialogOf(page).getByRole("button", { name: "새로 고침", exact: true });
+    const tokenOf = (page: PwPage, name: string, property: "backgroundColor" | "color") =>
+      page.evaluate(
+        ([token, prop]) => {
+          const probe = document.createElement("div");
+          probe.style[prop] = `var(${token})`;
+          document.body.append(probe);
+          const value = getComputedStyle(probe)[prop];
+          probe.remove();
+          return value;
+        },
+        [name, property] as const,
+      );
+
+    test("?pick=document — 검색 칸 첫 포커스 · 1위 미리 고름(700 + 왼쪽 선) · 막힌 행 aria-disabled + 2행 이유 · 검색 칸 Enter로 붙임", async ({ page }) => {
+      await page.goto("/dev/components?pick=document");
+      const dialog = dialogOf(page);
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByRole("textbox", { name: "문서 검색" })).toBeFocused();
+      const first = optionOf(page, "d1");
+      await expect(first).toHaveAttribute("aria-selected", "true");
+      await expect(first).toContainText("합계 12,000 → 12,500");
+      const paint = await first.evaluate((el) => {
+        const style = getComputedStyle(el);
+        return { weight: style.fontWeight, width: style.borderInlineStartWidth, color: style.borderInlineStartColor };
+      });
+      expect(paint.weight).toBe("700");
+      expect(paint.width).not.toBe("0px");
+      expect(paint.color).toBe(await tokenOf(page, "--accent", "color"));
+      await expect(optionOf(page, "d2")).toHaveAttribute("aria-selected", "false");
+
+      const blocked = optionOf(page, "d3");
+      await expect(blocked).toHaveAttribute("aria-disabled", "true");
+      const reason = blocked.getByText("결재 중 문서 · 결재 끝까지 떼기 없음", { exact: true });
+      await expect(reason).toBeVisible();
+      expect(await blocked.getAttribute("aria-describedby")).toBe(await reason.getAttribute("id"));
+
+      await expect(dialog.locator('input[type="radio"], input[type="checkbox"]')).toHaveCount(0);
+      await expect(documentPrimary(page)).not.toHaveAttribute("aria-disabled", "true");
+      await dialog.getByRole("textbox", { name: "문서 검색" }).press("Enter");
+      await expect(dialog).toHaveCount(0);
+      await expect(page.locator('[data-gallery="pick-document-result"]')).toHaveText("행사 운영비 · 김기획");
+    });
+
+    test("?pick=document — 검색어를 바꾼 뒤 결과의 preselect는 무시한다(처음 고름이 그대로)", async ({ page }) => {
+      await page.goto("/dev/components?pick=document");
+      const dialog = dialogOf(page);
+      const counter = page.locator('[data-gallery="pick-document-result"]');
+      await expect(optionOf(page, "d1")).toHaveAttribute("aria-selected", "true");
+      const before = Number(await counter.getAttribute("data-searches"));
+      await dialog.getByRole("textbox", { name: "문서 검색" }).fill("거부");
+      await expect(counter).toHaveAttribute("data-searches", String(before + 1));
+      await expect(optionOf(page, "d1")).toHaveAttribute("aria-selected", "true");
+      await expect(optionOf(page, "d2")).toHaveAttribute("aria-selected", "false");
+    });
+
+    test("?pick=document 서버 거부 ㉠ — 열린 채 · 바닥 거부 줄(꼬리 뺌) · 새로 고침 3차 · 1차 aria-disabled, 꼬리는 검색을 비우고 다시 받으며 다른 행을 고르면 풀린다", async ({ page }) => {
+      await page.goto("/dev/components?pick=document");
+      const dialog = dialogOf(page);
+      const search = dialog.getByRole("textbox", { name: "문서 검색" });
+      const counter = page.locator('[data-gallery="pick-document-result"]');
+      await optionOf(page, "d5").click();
+      await documentPrimary(page).click();
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByText("이미 다른 문서에 붙음", { exact: true })).toBeVisible();
+      await expect(refreshOf(page)).toHaveCount(1);
+      await expect(documentPrimary(page)).toHaveAttribute("aria-disabled", "true");
+      // 거부가 붙은 동안 검색 칸 Enter도 아무 일 없다.
+      await search.press("Enter");
+      await expect(dialog).toBeVisible();
+
+      const before = Number(await counter.getAttribute("data-searches"));
+      await refreshOf(page).click();
+      await expect(search).toHaveValue("");
+      await expect(counter).toHaveAttribute("data-searches", String(before + 1));
+      await expect(dialog.getByText("이미 다른 문서에 붙음", { exact: true })).toHaveCount(0);
+
+      // 같은 거부 뒤 다른 행을 고르면 거부 줄이 사라지고 1차가 살아난다.
+      await optionOf(page, "d5").click();
+      await documentPrimary(page).click();
+      await expect(dialog.getByText("이미 다른 문서에 붙음", { exact: true })).toBeVisible();
+      await optionOf(page, "d2").click();
+      await expect(dialog.getByText("이미 다른 문서에 붙음", { exact: true })).toHaveCount(0);
+      await expect(documentPrimary(page)).not.toHaveAttribute("aria-disabled", "true");
+    });
+
+    test("?pick=document 서버 거부 ㉡ 연결 실패 — 꼬리 없는 사유 · 새로 고침 0 · 1차는 막히지 않는다 / ㉢ false — 열린 채 · 거부 줄 없음", async ({ page }) => {
+      await page.goto("/dev/components?pick=document");
+      const dialog = dialogOf(page);
+      await optionOf(page, "d6").click();
+      await documentPrimary(page).click();
+      await expect(dialog.getByText("붙이지 못함 · 다시 시도", { exact: true })).toBeVisible();
+      await expect(refreshOf(page)).toHaveCount(0);
+      await expect(documentPrimary(page)).not.toHaveAttribute("aria-disabled", "true");
+
+      await optionOf(page, "d7").click();
+      await expect(dialog.getByText("붙이지 못함 · 다시 시도", { exact: true })).toHaveCount(0);
+      await documentPrimary(page).click();
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByText("붙이지 못함", { exact: false })).toHaveCount(0);
+      await expect(dialog.getByText("이미 다른 문서에 붙음", { exact: true })).toHaveCount(0);
+      await expect(refreshOf(page)).toHaveCount(0);
+      await expect(documentPrimary(page)).not.toHaveAttribute("aria-disabled", "true");
+    });
+
+    test("?pick=evidence — 미리 고른 하나가 체크 표시 · 결과 줄 `고른 1건` · 상한 3에서 넷째는 무반응 + 바닥 줄 상한 글자 · 1차는 막히지 않고 input 0", async ({ page }) => {
+      await page.goto("/dev/components?pick=evidence");
+      const dialog = dialogOf(page);
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByRole("textbox", { name: "증빙 검색" })).toBeFocused();
+      await expect(optionOf(page, "e1")).toHaveAttribute("aria-selected", "true");
+      const mark = (id: string) => optionOf(page, id).locator(':scope > [aria-hidden="true"]').evaluate((el) => getComputedStyle(el).backgroundColor);
+      expect(await mark("e1")).toBe(await tokenOf(page, "--native-accent", "backgroundColor"));
+      await expect(dialog.getByText("고른 1건", { exact: true })).toBeVisible();
+      await expect(evidencePrimary(page, 1)).toBeVisible();
+      await expect(dialog.locator('input[type="radio"], input[type="checkbox"]')).toHaveCount(0);
+      await expect(dialog.getByText("3건 상한 · 나눠 붙이기")).toHaveCount(0);
+
+      await optionOf(page, "e2").click();
+      await optionOf(page, "e3").click();
+      const cap = dialog.getByText("3건 상한 · 나눠 붙이기", { exact: true });
+      await expect(cap).toBeVisible();
+      await expect(dialog.getByText("고른 3건", { exact: true })).toHaveCount(0);
+      await expect(evidencePrimary(page, 3)).toBeVisible();
+      await expect(evidencePrimary(page, 3)).not.toHaveAttribute("aria-disabled", "true");
+
+      await optionOf(page, "e4").click();
+      await expect(optionOf(page, "e4")).toHaveAttribute("aria-selected", "false");
+      await expect(evidencePrimary(page, 3)).toBeVisible();
+      await expect(cap).toBeVisible();
+
+      // 고른 행 풀기는 상한과 무관하게 늘 된다.
+      await optionOf(page, "e3").click();
+      await expect(optionOf(page, "e3")).toHaveAttribute("aria-selected", "false");
+      await expect(cap).toHaveCount(0);
+      await expect(dialog.getByText("고른 2건", { exact: true })).toBeVisible();
+      await optionOf(page, "e3").click();
+
+      await evidencePrimary(page, 3).click();
+      await expect(dialog).toHaveCount(0);
+      await expect(page.locator('[data-gallery="pick-evidence-result"]')).toHaveText("붙임 · 세금계산서 · 표본 거래처 가, 카드 사용 · 표본 가맹점 나, 세금계산서 · 표본 거래처 다");
+    });
+
+    test("?pick=evidence — 상한에 닿은 채 거부가 오면 바닥 줄은 거부 글자 하나뿐이고 상한 줄은 숨는다", async ({ page }) => {
+      await page.goto("/dev/components?pick=evidence");
+      const dialog = dialogOf(page);
+      await optionOf(page, "e2").click();
+      await optionOf(page, "e5").click();
+      await expect(dialog.getByText("3건 상한 · 나눠 붙이기", { exact: true })).toBeVisible();
+      await evidencePrimary(page, 3).click();
+      await expect(dialog.getByText("이미 다른 문서에 붙음", { exact: true })).toBeVisible();
+      await expect(dialog.getByText("3건 상한 · 나눠 붙이기")).toHaveCount(0);
+      await expect(refreshOf(page)).toHaveCount(1);
+      await expect(evidencePrimary(page, 3)).toHaveAttribute("aria-disabled", "true");
+    });
+
+    test("?pick=evidence — 넘침 줄은 limit 글자(20건)이고 기본 50 글자는 쓰이지 않는다", async ({ page }) => {
+      await page.goto("/dev/components?pick=evidence");
+      const dialog = dialogOf(page);
+      await expect(dialog.getByText("건 넘음")).toHaveCount(0);
+      await dialog.getByRole("textbox", { name: "증빙 검색" }).fill("넘침");
+      await expect(dialog.getByText("20건 넘음 · 검색으로 좁히기", { exact: true })).toBeVisible();
+      await expect(dialog.getByText("50건 넘음")).toHaveCount(0);
+    });
+  });
+
   // 06-29 Task 2 — SP-8 패널 위 겹침: 목록의 Esc는 목록만 닫고 Ctrl+Enter는 패널 1차에 닿지 않는다(T-06-292).
   test("?panel=pick — 목록 Esc는 목록만 닫고 패널 입력이 남으며 Ctrl+Enter는 패널 제출로 번지지 않는다", async ({ page }) => {
     await page.goto("/dev/components?panel=pick");
@@ -638,6 +866,31 @@ test.describe("로그인한 뒤", () => {
   test("틀 3종 축소 예가 목록 · 상세 · 폼 이름으로 있다", async ({ page }) => {
     const frames = page.locator('[data-gallery="frames"] [data-gallery-frame]');
     expect(await frames.evaluateAll((els) => els.map((e) => e.getAttribute("data-gallery-frame")))).toEqual(["list", "detail", "form"]);
+  });
+});
+
+test.describe("로그인한 뒤 · 폰 375 — 시트 두 3차(SP-6107)", () => {
+  test.use({ viewport: { width: 375, height: 812 } });
+
+  test("?sheet=two-actions — 시트 안 3차 둘(위 증빙 고르기 3 · 아래 요청 취소)이 위에서 아래로 서고 각 높이 44 이상", async ({ page }) => {
+    const user = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(user.email);
+    await page.getByLabel("비밀번호").fill(user.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+    await page.goto("/dev/components?sheet=two-actions");
+    const dialog = page.locator("dialog:modal");
+    await expect(dialog).toBeVisible();
+    const cancel = dialog.getByRole("button", { name: "요청 취소" });
+    const pick = dialog.getByRole("button", { name: "증빙 고르기 3" });
+    const a = await cancel.boundingBox();
+    const b = await pick.boundingBox();
+    if (!a || !b) throw new Error("3차 상자를 잴 수 없다");
+    expect(a.height).toBeGreaterThanOrEqual(44);
+    expect(b.height).toBeGreaterThanOrEqual(44);
+    expect(a.y).toBeGreaterThanOrEqual(b.y + b.height);
+    expect(await dialog.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
   });
 });
 

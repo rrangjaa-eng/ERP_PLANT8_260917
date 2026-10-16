@@ -3,16 +3,19 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { buttonLinkClassName } from "@/ui/button/Button";
-import { Attachments, type AttachmentActions, type AttachmentFile } from "@/ui/attachments/Attachments";
+import { Attachments, type AttachmentActions, type AttachmentFile, type BulkImportRow } from "@/ui/attachments/Attachments";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { Button } from "@/ui/button/Button";
 import { TextField } from "@/ui/input/TextField";
+import dialogStyles from "@/app/(app)/approvals/decision-dialogs.module.css";
 import { PickDialog, type PickItem, type PickManyOutcome, type PickResult, type PickRow } from "@/ui/pick-dialog/PickDialog";
 import { Num } from "@/ui/num/Num";
 import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
+import { KvList } from "@/ui/kv-list/KvList";
 import { PanelForm } from "@/ui/side-panel/PanelForm";
 import { SidePanel } from "@/ui/side-panel/SidePanel";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
+import { RowSheet } from "@/ui/table/RowSheet";
 import { Table, reconcileSelection } from "@/ui/table/Table";
 import type { CellIssue, TableColumn } from "@/ui/table/types";
 import { Toast } from "@/ui/toast/Toast";
@@ -519,6 +522,102 @@ export function PickManySamples() {
   );
 }
 
+// 06.1-03(SP-6106 · G-4) — 문서 고르기(단일 · `noun="문서"`) · 증빙 여럿 고르기(다중 · `noun="증빙"` · 상한 3) 표본. 값은 가짜 픽스처다.
+// 문서: 1위 `preselect` · 값 바뀜 2행 · 막힌 행 · 거부 행 셋(새로 고침 꼬리 · 연결 실패 · 거부 문구 없이 열린 채). 증빙: 미리 고른 하나 · 상한 · 거부 행 하나 · `넘침` 검색은 한도 20.
+const PICK_DOCUMENT_ROWS: PickRow[] = [
+  { type: "row", id: "d1", title: "행사 운영비 · 김기획", subtitle: "합계 12,000 → 12,500", amount: { krw: 12_500 }, selectable: true },
+  { type: "row", id: "d2", title: "무대 설치 · 박운영", subtitle: "표본 거래처 가", amount: { krw: 4_200_000 }, selectable: true },
+  { type: "row", id: "d3", title: "음향 장비 · 이도윤", subtitle: "표본 거래처 나", amount: { krw: 1_700_000 }, selectable: false, reason: "결재 중 문서 · 결재 끝까지 떼기 없음" },
+  { type: "row", id: "d4", title: "현수막 · 최하은", subtitle: "표본 거래처 다", amount: { krw: 540_000 }, selectable: true },
+  { type: "row", id: "d5", title: "거부 표본 · 새로 고침", subtitle: "표본 거래처 라", amount: { krw: 320_000 }, selectable: true },
+  { type: "row", id: "d6", title: "거부 표본 · 연결 실패", subtitle: "표본 거래처 마", amount: { krw: 210_000 }, selectable: true },
+  { type: "row", id: "d7", title: "거부 표본 · 열린 채", subtitle: "표본 거래처 바", amount: { krw: 110_000 }, selectable: true },
+];
+const PICK_EVIDENCE_ROWS: PickRow[] = [
+  { type: "row", id: "e1", title: "세금계산서 · 표본 거래처 가", subtitle: "10-02 · 홈택스", amount: { krw: 12_500 }, selectable: true },
+  { type: "row", id: "e2", title: "카드 사용 · 표본 가맹점 나", subtitle: "10-03 · 신한카드", amount: { krw: 88_000 }, selectable: true },
+  { type: "row", id: "e3", title: "세금계산서 · 표본 거래처 다", subtitle: "10-04 · 홈택스", amount: { krw: 330_000 }, selectable: true },
+  { type: "row", id: "e4", title: "카드 사용 · 표본 가맹점 라", subtitle: "10-05 · 롯데카드", amount: { krw: 45_000 }, selectable: true },
+  { type: "row", id: "e5", title: "거부 표본 · 새로 고침", subtitle: "10-06 · 홈택스", amount: { krw: 9_900 }, selectable: true },
+];
+
+export function EvidencePickSamples({ initial = null }: { initial?: "document" | "evidence" | null }) {
+  const [which, setWhich] = useState<"document" | "evidence" | null>(initial);
+  const [documentResult, setDocumentResult] = useState("");
+  const [evidenceResult, setEvidenceResult] = useState("");
+  const [searches, setSearches] = useState(0);
+
+  function searchDocuments(query: string): Promise<PickResult | null> {
+    setSearches((count) => count + 1);
+    if (query.trim() === "zzz") return Promise.resolve({ items: [], truncated: false });
+    return Promise.resolve({ items: PICK_DOCUMENT_ROWS, truncated: false, subtitle: "표본 프로젝트", preselect: query.trim() === "" ? ["d1"] : ["d2"] });
+  }
+
+  function pickDocument(row: PickRow): PickManyOutcome | boolean {
+    if (row.id === "d5") return { ok: false, reason: "이미 다른 문서에 붙음 · 새로 고침", retryable: false };
+    if (row.id === "d6") return { ok: false, reason: "붙이지 못함 · 다시 시도", retryable: true };
+    if (row.id === "d7") return false;
+    setDocumentResult(row.title);
+    return true;
+  }
+
+  function searchEvidence(query: string): Promise<PickResult | null> {
+    const q = query.trim();
+    if (q === "zzz") return Promise.resolve({ items: [], truncated: false });
+    return Promise.resolve({ items: PICK_EVIDENCE_ROWS, truncated: q === "넘침", limit: 20, subtitle: "표본 문서", preselect: q === "" ? ["e1"] : null });
+  }
+
+  function pickEvidence(rows: PickRow[]): Promise<PickManyOutcome> {
+    if (rows.some((row) => row.id === "e5")) return Promise.resolve({ ok: false, reason: "이미 다른 문서에 붙음 · 새로 고침", retryable: false });
+    setEvidenceResult(`붙임 · ${rows.map((row) => row.title).join(", ")}`);
+    return Promise.resolve({ ok: true });
+  }
+
+  return (
+    <>
+      <div className={styles.samples}>
+        <Button variant="secondary" onClick={() => setWhich("document")}>
+          문서 고르기 열기
+        </Button>
+        <Button variant="secondary" onClick={() => setWhich("evidence")}>
+          증빙 여럿 고르기 열기
+        </Button>
+      </div>
+      <p data-gallery="pick-document-result" data-searches={searches}>
+        {documentResult}
+      </p>
+      <p data-gallery="pick-evidence-result">{evidenceResult}</p>
+      <PickDialog
+        open={which === "document"}
+        onClose={() => setWhich(null)}
+        title="문서 고르기"
+        subtitle="표본 프로젝트"
+        searchLabel="문서 검색"
+        search={searchDocuments}
+        primaryLabel="이 문서에 붙이기"
+        noun="문서"
+        emptyNextStep={null}
+        onPick={pickDocument}
+      />
+      <PickDialog
+        mode="multiple"
+        open={which === "evidence"}
+        onClose={() => setWhich(null)}
+        title="증빙 고르기"
+        subtitle="표본 문서"
+        searchLabel="증빙 검색"
+        search={searchEvidence}
+        primaryLabel="증빙 붙이기"
+        noun="증빙"
+        emptyNextStep={null}
+        maxSelected={{ count: 3, reason: "3건 상한 · 나눠 붙이기" }}
+        resultLineMany={(rows) => (rows.length > 0 ? `고른 ${rows.length}건` : null)}
+        onPickMany={pickEvidence}
+      />
+    </>
+  );
+}
+
 export function PanelOpener() {
   return (
     <Link href="/dev/components?panel=1" scroll={false} className={buttonLinkClassName("secondary")}>
@@ -558,4 +657,174 @@ export function GalleryPanel({ pick = false }: { pick?: boolean }) {
       </PanelForm>
     </SidePanel>
   );
+}
+
+// 06.1-03 Task 1 (Round 2 G5) — Codex가 찍을 가짜 픽스처 표본 셋. 새 컴포넌트 · 새 CSS 클래스 없이 기존 SidePanel + PanelForm + KvList ·
+// ConfirmDialog 사유 슬롯 · RowSheet 조합뿐이다. `page.tsx`가 `?panel=evidence` · `?confirm=detach` · `?sheet=two-actions`로 연 채 렌더한다.
+
+// S3 증빙 패널 — 확인 필요 줄 · 읽기 칸 · 공급가 입력 · 공개 · 붙은 문서(잠김 줄) · 이력 · 등록(06.1-07이 만들 화면의 「적용 전」 기준).
+export function EvidencePanelSample() {
+  return (
+    <SidePanel title="세금계산서 · (주)에이원" closeHref="/dev/components">
+      <PanelForm id="gallery-evidence-form" label="증빙 금액 저장" intent="edit" onSubmit={(event) => event.preventDefault()}>
+        <KvList
+          items={[
+            { label: "확인 필요", value: <StatusTag status="확인 필요" variant="text" /> },
+            { label: "날짜", value: "2026-10-02" },
+            { label: "승인번호", value: "20261002-41000012-xxxx" },
+            { label: "사업자번호", value: "123-45-67890" },
+            { label: "합계", value: <Num value={1_100_000} /> },
+          ]}
+        />
+        <TextField id="gallery-evidence-supply" name="supply" label="공급가" numberKind="krw" defaultValue="1,000,000" />
+        <KvList
+          items={[
+            { label: "세액", value: <Num value={100_000} /> },
+            { label: "공개", value: <StatusTag status="미공개" variant="text" /> },
+            { label: "붙은 문서", value: "26001-0004 · 결재 중 문서에 붙음 · 금액 잠김" },
+            { label: "이력", value: "10-02 14:02 이과장 등록 · 신한 1234" },
+            { label: "등록", value: "이과장 · 10-02 14:02" },
+          ]}
+        />
+      </PanelForm>
+    </SidePanel>
+  );
+}
+
+// S7 떼기 모달 — ConfirmDialog 사유 슬롯. 사유가 빈 동안 1차 aria-disabled + 행동 줄 왼쪽 `사유 없음 · 사유 적기`.
+export function DetachConfirmSample({ initialOpen = false }: { initialOpen?: boolean }) {
+  const [open, setOpen] = useState(initialOpen);
+  const [reason, setReason] = useState("");
+  return (
+    <>
+      <Button variant="secondary" onClick={() => setOpen(true)}>
+        증빙 떼기 열기
+      </Button>
+      <ConfirmDialog
+        open={open}
+        onClose={() => setOpen(false)}
+        title="증빙 떼기"
+        subtitle="세금계산서 · (주)에이원 · 26001-0004"
+        resultLines={["비용이 예상 1,000,000원으로"]}
+        evidenceField={
+          <div className={dialogStyles.reason}>
+            <label htmlFor="gallery-detach-reason">사유</label>
+            <textarea id="gallery-detach-reason" rows={2} autoComplete="off" value={reason} onChange={(event) => setReason(event.target.value)} />
+          </div>
+        }
+        primary={{
+          label: "증빙 떼기",
+          onConfirm: () => setOpen(false),
+          disabledReason: reason.trim() === "" ? "사유 없음 · 사유 적기" : undefined,
+        }}
+      />
+    </>
+  );
+}
+
+// G1(SP-6107) 폰 행 시트 — `action` 자리에 3차 두 줄. 줄 행동이 둘인 구매 요청 `신청됨` 행의 모양(06.1-08이 첫 적용).
+export function TwoActionsSheetSample({ initialOpen = false }: { initialOpen?: boolean }) {
+  const [open, setOpen] = useState(initialOpen);
+  return (
+    <>
+      <Button variant="secondary" onClick={() => setOpen(true)}>
+        두 3차 시트 열기
+      </Button>
+      <RowSheet
+        open={open}
+        onClose={() => setOpen(false)}
+        title="무대 설치 자재"
+        subtitle="신청됨 · 표본 거래처"
+        items={[
+          { label: "예상 금액", value: <Num value={4_200_000} /> },
+          { label: "신청", value: "박서연 · 10-02" },
+        ]}
+        action={
+          <>
+            <Button variant="tertiary" onClick={() => undefined}>
+              증빙 고르기 3
+            </Button>
+            <Button variant="tertiary" onClick={() => undefined}>
+              요청 취소
+            </Button>
+          </>
+        }
+      />
+    </>
+  );
+}
+
+export function EvidenceSamples({ confirmOpen = false, sheetOpen = false }: { confirmOpen?: boolean; sheetOpen?: boolean }) {
+  return (
+    <div className={styles.samples}>
+      <Link href="/dev/components?panel=evidence" scroll={false} className={buttonLinkClassName("secondary")}>
+        증빙 패널 열기
+      </Link>
+      <DetachConfirmSample initialOpen={confirmOpen} />
+      <TwoActionsSheetSample initialOpen={sheetOpen} />
+    </div>
+  );
+}
+
+// 06.1-03 Task 2(SP-6103 · G-1) — 첨부 영역 「엑셀 일괄 등록」 변형 표본. 값은 전부 가짜 픽스처다(숫자 · 파일 이름). 컴포넌트는 서버 DTO를 그리기만 하므로
+// 크기 거절 행은 호출 화면(06.1-05)이 `limits.ts`로 판정해 넘기는 모양 그대로 선다 — 거절 행에는 2차가 없고 실패 행에만 `다시 올리기`가 있다.
+const BULK_ROWS: BulkImportRow[] = [
+  {
+    key: "card",
+    state: "result",
+    fileName: "신한카드_이용내역.xls",
+    formatLabel: "신한 이용내역",
+    counts: [
+      { label: "등록", value: 162, kind: "success", href: "?state=all&batch=b1" },
+      { label: "이미 등록", value: 6, kind: "muted" },
+      { label: "상쇄", value: 2, unit: "쌍", kind: "muted" },
+      { label: "카드 사용에 붙음", value: 12, kind: "success", href: "?state=attached&batch=b1" },
+      { label: "확인 필요", value: 1, kind: "warning", href: "?state=needs-check&batch=b1" },
+      { label: "짝 없음", value: 3, kind: "warning", href: "?state=unmatched&batch=b1" },
+      { label: "카드 미등록", value: 1, kind: "danger", href: "?state=card-unknown&batch=b1" },
+      { label: "상쇄 없음", value: 0, kind: "muted" },
+    ],
+    lines: [],
+    restCount: 0,
+  },
+  {
+    key: "hometax",
+    state: "result",
+    fileName: "매입세금계산서_10월.xls",
+    formatLabel: "홈택스 매입 세금계산서",
+    counts: [
+      { label: "등록", value: 25, kind: "success", href: "?state=all&batch=b2" },
+      { label: "거래처 생성", value: 2, kind: "muted" },
+      { label: "되살림", value: 1, kind: "muted" },
+      { label: "이름 다름", value: 1, kind: "warning" },
+    ],
+    lines: ["123-45-67890 · 파일 (주)에이원 · 등록 에이원", "234-56-78901 · 파일 (주)비전 · 등록 비전크리에이티브"],
+    restCount: 3,
+  },
+  { key: "size", state: "refused", fileName: "롯데_10월.xls", headline: "1.4MB · 1MB 초과 · 기간을 나눠 다시 내려받기", lines: [], restCount: 0 },
+  { key: "format", state: "refused", fileName: "메모.txt", headline: "엑셀·CSV 파일 아님 · 내려받은 파일 그대로", lines: [], restCount: 0 },
+  {
+    key: "lines",
+    state: "refused",
+    fileName: "비씨_10월.xls",
+    headline: "거절 · 오류 12줄",
+    lines: ["14줄 · 승인일 읽지 못함", "15줄 · 승인일 읽지 못함", "21줄 · 금액 읽지 못함"],
+    restCount: 7,
+    restUnit: "줄",
+  },
+  { key: "uploading", state: "uploading", fileName: "국민카드_10월.xls" },
+  { key: "failed", state: "failed", fileName: "우리카드_10월.xls", onRetry: () => undefined },
+  {
+    key: "long",
+    state: "result",
+    fileName: "매입세금계산서_아주긴파일이름표본_주식회사플랜트에이트크리에이티브솔루션즈서울본사_2026년10월분_최종본_수정_확정_다시_진짜최종.xls",
+    formatLabel: "홈택스 매입 세금계산서",
+    counts: [{ label: "등록", value: 4, kind: "success", href: "?state=all&batch=b3" }],
+    lines: [],
+    restCount: 0,
+  },
+];
+
+export function BulkImportSamples() {
+  return <Attachments variant="bulk-import" rows={BULK_ROWS} onFiles={() => undefined} />;
 }

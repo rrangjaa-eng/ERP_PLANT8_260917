@@ -210,6 +210,44 @@ describe("06.1 스키마 — 증빙 기록(evidence_records)", () => {
   });
 });
 
+describe("06.1 스키마 — 사업자번호 · 파일 지문 · 묶음 삭제", () => {
+  it("사업자번호가 숫자 열 자리가 아니면('123456789' · '123-45-67890') CHECK로 거부되고 열 자리 숫자는 들어간다", async () => {
+    const { id } = await newRecord();
+    const setDigits = (digits: string) => db.execute(sql`update evidence_records set business_no_digits = ${digits} where id = ${id}`);
+    await expectPgError(() => setDigits("123456789"), "23514", "evidence_records_business_no_digits_check");
+    await expectPgError(() => setDigits("123-45-67890"), "23514", "evidence_records_business_no_digits_check");
+    await setDigits("1234567890");
+    const rows = await db.execute<{ digits: string | null }>(sql`select business_no_digits as digits from evidence_records where id = ${id}`);
+    expect(rows.rows[0]?.digits).toBe("1234567890");
+  });
+
+  it("묶음 파일 지문이 소문자 16진 64자가 아니면(대문자 · 63자) CHECK로 거부된다", async () => {
+    const person = await makePerson("증빙 등록", DEFAULT_ROLE_ID, null);
+    const insertWithSha = (sha: string) =>
+      db.execute(sql`
+        insert into evidence_import_batches (format, original_name, file_sha256, row_count, registered_count, skipped_duplicate_count, uploaded_by)
+        values ('card-shinhan', '카드 이용내역.xlsx', ${sha}, 1, 1, 0, ${person.id})
+      `);
+    await expectPgError(() => insertWithSha("A".repeat(64)), "23514", "evidence_import_batches_file_sha256_check");
+    await expectPgError(() => insertWithSha("a".repeat(63)), "23514", "evidence_import_batches_file_sha256_check");
+  });
+
+  // PostgreSQL 외래 키 트리거는 RESTRICT도 23503(foreign_key_violation)으로 거부한다 — RESTRICT인지는 pg_constraint.confdeltype('r')로 본다.
+  it("기록이 남아 있는 묶음은 지울 수 없다(batch_id ON DELETE restrict)", async () => {
+    const row = await recordRow();
+    await insertRecord(row);
+    await expectPgError(
+      () => db.execute(sql`delete from evidence_import_batches where id = ${row.batchId}`),
+      "23503",
+      "evidence_records_batch_id_evidence_import_batches_id_fk",
+    );
+    const fk = await db.execute<{ confdeltype: string }>(sql`
+      select confdeltype from pg_constraint where conname = 'evidence_records_batch_id_evidence_import_batches_id_fk'
+    `);
+    expect(fk.rows).toEqual([{ confdeltype: "r" }]);
+  });
+});
+
 describe("06.1 스키마 — 붙임 이력(evidence_record_links)", () => {
   it("같은 증빙에 떼지 않은 붙임 둘은 부분 유니크로 거부되고, 첫 붙임을 뗀 뒤 새 붙임은 들어간다", async () => {
     const { id, createdBy } = await newRecord();

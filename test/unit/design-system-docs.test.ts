@@ -659,4 +659,12 @@ describe("06.1 증빙 — 상태 낱말 · 잠김 · 링크 건수 · 폰 시트
     for (const id of ["SP-6101", "SP-6102", "SP-6105", "SP-6107"]) expect(DECISIONS, id).toContain(id);
     expect(DECISIONS).toContain("optgroup");
   });
+
+  it("§7-10에 엑셀 일괄 등록 변형 SP-6103이 있다 — accept · 거절 행 2차 없음 · 조각 색 표", () => {
+    expect(attach).toContain('accept=".xls,.xlsx,.csv"');
+    expect(attach).toContain("파일을 끌어 놓거나 Ctrl+U · 홈택스·카드사 엑셀·CSV 1MB");
+    expect(attach).toContain("2차 없음");
+    expect(attach).toContain("`카드 미등록` danger");
+    expect(DECISIONS).toContain("SP-6103");
+  });
 });

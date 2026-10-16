@@ -56,7 +56,8 @@ export type Finding = {
   claim: string;
   expected: string;
 };
-export type ReviewArgs = { routes: string[]; out: string; base: string; plans: string[]; sections: string[]; seed: SeedName | null };
+// `namedSections`: `--sections`에 이름을 적은 id 전부(기본 절 포함 — 처음 나온 차례 · 중복 없이). `sections`는 기본 절 + 추가 절 그대로다.
+export type ReviewArgs = { routes: string[]; out: string; base: string; plans: string[]; sections: string[]; namedSections: string[]; seed: SeedName | null };
 
 // 데이터가 있어야 보이는 화면용 시드 시나리오(seeds.ts가 구현). 이름은 이 목록만 받는다.
 export const SEED_NAMES = ["pre-settle-evidence-pending", "purchase-approval-pending", "payment-and-settlement-actions"] as const;
@@ -74,6 +75,7 @@ export function parseArgs(argv: string[], root = process.cwd()): ReviewArgs {
   const routes: string[] = [];
   const plans: string[] = [];
   const sections = [...DEFAULT_SECTIONS];
+  const namedSections: string[] = [];
   let out = "";
   let base = "origin/main";
   let seed: SeedName | null = null;
@@ -92,7 +94,13 @@ export function parseArgs(argv: string[], root = process.cwd()): ReviewArgs {
         if (!name) throw new Error(`--seed는 ${SEED_NAMES.join("·")} 중 하나여야 한다: ${value}`);
         seed = name;
       }
-      else for (const id of value.split(",").map((s) => s.trim())) if (id && !sections.includes(id)) sections.push(id);
+      else {
+        for (const id of value.split(",").map((s) => s.trim())) {
+          if (!id) continue;
+          if (!namedSections.includes(id)) namedSections.push(id);
+          if (!sections.includes(id)) sections.push(id);
+        }
+      }
     } else if (!arg.startsWith("/") || arg.startsWith("//") || arg.includes("\\")) {
       // //host·역슬래시는 URL 해석에서 다른 호스트로 풀린다 — 앱 출처 안의 경로만 받는다.
       throw new Error(`경로는 /로 시작하는 앱 안 경로여야 한다: ${arg}`);
@@ -107,7 +115,7 @@ export function parseArgs(argv: string[], root = process.cwd()): ReviewArgs {
   for (const plan of plans) {
     if (!insideMd(plan, [".planning", "docs"], root)) throw new Error(`--plan은 .planning/·docs/ 아래 .md여야 한다: ${plan}`);
   }
-  return { routes, out, base, plans, sections, seed };
+  return { routes, out, base, plans, sections, namedSections, seed };
 }
 
 // 텍스트 노드 상자 [top, bottom]들을 줄 수로 센다. 세로 중심이 이미 센 줄 안에 들면 같은 줄이다
@@ -212,13 +220,16 @@ export function screenshotName(route: string, width: number): string {
   return `${slug}-${hash}-${width}.png`;
 }
 
-export function selectSystemSections(systemMd: string, ids: string[]): string {
+const SECTION_ID_RE = /^(#{2,3}) (\d+(?:-\d+)?)\. /;
+
+// 고른 절을 네 무리로 잇는다 — ⓐ 기본 절에 없는 절(`--sections`로 더함) → ⓑ 7-3(표) → ⓒ `named`에 적은 기본 절 → ⓓ 나머지 기본 절. 무리 안은 문서 순서다.
+// 예산(SECTIONS_BUDGET_BYTES)에서 잘리는 것은 뒤 무리이므로, 더한 절이 기본 절에 밀려 한 글자도 안 실리는 일을 막는다.
+export function selectSystemSections(systemMd: string, ids: string[], named: string[] = []): string {
   const lines = systemMd.split("\n");
   const headingRe = /^(#{1,6}) /;
-  const idRe = /^(#{2,3}) (\d+(?:-\d+)?)\. /;
-  const picked: string[] = [];
+  const picked: Array<{ id: string; text: string }> = [];
   for (let i = 0; i < lines.length; i++) {
-    const match = idRe.exec(lines[i] ?? "");
+    const match = SECTION_ID_RE.exec(lines[i] ?? "");
     if (!match || !ids.includes(match[2] ?? "")) continue;
     const level = (match[1] ?? "").length;
     let end = i + 1;
@@ -227,9 +238,37 @@ export function selectSystemSections(systemMd: string, ids: string[]): string {
       if (h && (h[1] ?? "").length <= level) break;
       end++;
     }
-    picked.push(lines.slice(i, end).join("\n").trimEnd());
+    picked.push({ id: match[2] ?? "", text: lines.slice(i, end).join("\n").trimEnd() });
   }
-  return picked.join("\n\n");
+  const rank = (id: string) => (!DEFAULT_SECTIONS.includes(id) ? 0 : id === "7-3" ? 1 : named.includes(id) ? 2 : 3);
+  return [0, 1, 2, 3].flatMap((r) => picked.filter((section) => rank(section.id) === r).map((section) => section.text)).join("\n\n");
+}
+
+// 프롬프트 「SYSTEM.md 관련 절」 구간에 실제로 실린 절 id(나온 차례)와 예산 잘림 여부. DOM 실측표 구간은 세지 않는다.
+export function promptSystemSections(prompt: string): { ids: string[]; trimmed: boolean } {
+  const lines = prompt.split("\n");
+  const start = lines.indexOf("## SYSTEM.md 관련 절");
+  const end = lines.indexOf("## DOM 실측표");
+  if (start < 0 || end < start) return { ids: [], trimmed: false };
+  const block = lines.slice(start + 1, end);
+  return {
+    ids: block.flatMap((line) => {
+      const match = SECTION_ID_RE.exec(line);
+      return match ? [match[2] ?? ""] : [];
+    }),
+    trimmed: block.some((line) => line.startsWith("…(잘림: ")),
+  };
+}
+
+// 폭 1280 측정마다 화면 제목(h1)과 금액 모양(`1,234`) 첫 칸 글자 — 보고서에 남겨 측정이 실제 화면을 읽었는지 한눈에 본다.
+export function keyCellTexts(screens: ScreenMeasure[]): Array<{ route: string; title: string | null; amount: string | null }> {
+  return screens
+    .filter((s) => s.width === 1280)
+    .map((s) => ({
+      route: s.route,
+      title: s.elements.find((e) => e.kind === "heading" && (e.selector.split(" > ").at(-1) ?? "").startsWith("h1"))?.text ?? null,
+      amount: s.elements.find((e) => e.kind === "cell" && /[0-9],[0-9]{3}/.test(e.text))?.text ?? null,
+    }));
 }
 
 // 줄 단위로 maxBytes 안에 자르고, 잘랐으면 생략 바이트를 적은 표시 줄을 붙인다.
@@ -452,6 +491,8 @@ export function renderReport(input: {
   rows: Array<Finding & { measured: string }>;
   measurementsMd: string;
   codexOutputPath: string;
+  systemSections: { ids: string[]; trimmed: boolean };
+  keyTexts: Array<{ route: string; title: string | null; amount: string | null }>;
 }): string {
   const source = input.mode === "plan" ? `계획: ${input.plans.join(", ")}` : `diff 기준: ${input.base}...HEAD`;
   const lines = [
@@ -464,6 +505,8 @@ export function renderReport(input: {
     `- ${source}`,
     `- 산출물(스크린샷·measurements.json): \`${input.artifactsDir}\``,
     `- Codex 원문(비밀 가림, 커밋 안 함): \`${input.codexOutputPath}\``,
+    `- 실린 SYSTEM 절: ${input.systemSections.ids.length === 0 ? "없음" : input.systemSections.ids.join(" · ")}${input.systemSections.trimmed ? " — 끝 절 일부 잘림" : ""}`,
+    ...input.keyTexts.map((k) => `- 핵심 칸 글자(1280) ${cell(k.route)} — 제목: ${cell(k.title ?? "없음")} · 금액 칸: ${cell(k.amount ?? "없음")}`),
     "",
     "## 지적 후보",
     "",

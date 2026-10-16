@@ -11,9 +11,11 @@ import {
   crossCheck,
   envFileSecrets,
   envFileTexts,
+  keyCellTexts,
   measurementsToMarkdown,
   parseArgs,
   parseCodexFindings,
+  promptSystemSections,
   redactSecrets,
   renderReport,
   selectSystemSections,
@@ -87,7 +89,7 @@ const images = args.routes.flatMap((route) =>
 const prompt = buildPrompt({
   mode,
   changeText,
-  systemSections: selectSystemSections(readFileSync("docs/design/SYSTEM.md", "utf8"), args.sections),
+  systemSections: selectSystemSections(readFileSync("docs/design/SYSTEM.md", "utf8"), args.sections, args.namedSections),
   measurementsMd,
   images,
 });
@@ -134,6 +136,17 @@ const rows = crossCheck(parseCodexFindings(codexRaw), screens);
 assertRealPaths(args); // 캡처·codex 동안 경로가 바뀌었을 수 있다 — 쓰기 직전에 다시 본다
 writeReport(
   args.out,
-  renderReport({ mode, base: args.base, plans: args.plans, artifactsDir, codexStatus, rows, measurementsMd, codexOutputPath }),
+  renderReport({
+    mode,
+    base: args.base,
+    plans: args.plans,
+    artifactsDir,
+    codexStatus,
+    rows,
+    measurementsMd,
+    codexOutputPath,
+    systemSections: promptSystemSections(prompt),
+    keyTexts: keyCellTexts(screens),
+  }),
 );
 console.log(`보고서: ${args.out} · 지적 후보 ${rows.length}건 · ${codexStatus}`);

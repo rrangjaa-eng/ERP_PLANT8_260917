@@ -1,4 +1,4 @@
-import { pgTable, text, boolean, jsonb, timestamp, uuid, unique, check, index } from "drizzle-orm/pg-core";
+import { pgTable, text, boolean, jsonb, timestamp, uuid, uniqueIndex, check, index } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { users } from "./auth";
 import { teams } from "./org";
@@ -27,7 +27,9 @@ export const corpCards = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => [
-    unique("corp_cards_issuer_last4_key").on(table.issuer, table.numberLast4),
+    // 06-37(G-06-A · 사용자 카드 20:42 「보관 카드 재등록 다시 허용」): 보관 안 된 카드끼리만 유일(옛 176:236-240).
+    // 이름은 그대로 — 등록 오류 변환(domain/corp-cards isUniqueViolation)이 이름으로 판정한다.
+    uniqueIndex("corp_cards_issuer_last4_key").on(table.issuer, table.numberLast4).where(sql`${table.archivedAt} IS NULL`),
     check(
       "corp_cards_owner_kind_check",
       sql`(${table.kind} = 'personal' AND ${table.holderUserId} IS NOT NULL AND ${table.teamId} IS NULL) OR (${table.kind} = 'team' AND ${table.teamId} IS NOT NULL AND ${table.holderUserId} IS NULL) OR (${table.kind} = 'shared' AND ${table.holderUserId} IS NULL AND ${table.teamId} IS NULL)`,

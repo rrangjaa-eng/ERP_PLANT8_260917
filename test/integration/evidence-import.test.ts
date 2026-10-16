@@ -453,6 +453,38 @@ describe("domain/evidence-import — 서식 넷 · 세율 · 카드 · A-10 · G
     expect(await recordOf("card-lotte|2222|20000001|2026-09-20|-50000")).toMatchObject({ batchId: result.batchId, vatKrw: -4_545, supplyKrw: -45_455 });
   });
 
+  it("(앞 파일 대조 · 역순) 취소 줄만 든 파일이 먼저 등록된 뒤 원거래 · 취소 쌍이 든 파일이 오면 원거래를 등록해 합이 0이 된다", async () => {
+    const viewer = await createIntakeViewer();
+    const cancel = { 승인번호: "20000001", 매입일자: "2026.09.20", 매입금액: "-50,000", 부가세: "-4,545" };
+    await registerFixtureFile(viewer, lotteFixture([cancel]), "롯데_취소만.xls");
+
+    const result = await registerFixtureFile(
+      viewer,
+      lotteFixture([{ 승인번호: "20000001", 매입일자: "2026.09.05", 매입금액: "50,000", 부가세: "4,545" }, cancel, { 승인번호: "20000003" }]),
+      "롯데_0901-0930.xls",
+    );
+
+    expect(result).toMatchObject({ registered: 2, skippedDuplicate: 1, offsetPairs: 0 });
+    const pair = (await recordsInOrder()).filter((record) => record.approvalNo === "20000001");
+    expect(pair.map((record) => record.totalKrw).sort((a, b) => a - b)).toEqual([-50_000, 50_000]);
+    expect(await recordOf("card-lotte|2222|20000001|2026-09-05|50000")).toMatchObject({ batchId: result.batchId });
+  });
+
+  it("(앞 파일 대조) 원거래 · 취소 줄이 둘 다 앞 파일로 등록돼 있으면 쌍은 둘 다 이미 등록이고 상쇄로 세지 않는다", async () => {
+    const viewer = await createIntakeViewer();
+    const original = { 승인번호: "20000001", 매입일자: "2026.09.05", 매입금액: "50,000", 부가세: "4,545" };
+    const cancel = { 승인번호: "20000001", 매입일자: "2026.09.20", 매입금액: "-50,000", 부가세: "-4,545" };
+    await registerFixtureFile(viewer, lotteFixture([original]), "롯데_원거래.xls");
+    await registerFixtureFile(viewer, lotteFixture([cancel]), "롯데_취소.xls");
+
+    const result = await registerFixtureFile(viewer, lotteFixture([original, cancel, { 승인번호: "20000003" }]), "롯데_전체.xls");
+
+    expect(result).toMatchObject({ registered: 1, skippedDuplicate: 2, offsetPairs: 0 });
+    const pair = (await recordsInOrder()).filter((record) => record.approvalNo === "20000001");
+    expect(pair.reduce((sum, record) => sum + record.totalKrw, 0)).toBe(0);
+    expect(pair).toHaveLength(2);
+  });
+
   it("(앞 파일 대조) 원거래가 아직 등록되지 않은 상쇄 쌍은 둘 다 등록하지 않고 상쇄 1쌍에 센다", async () => {
     const viewer = await createIntakeViewer();
 

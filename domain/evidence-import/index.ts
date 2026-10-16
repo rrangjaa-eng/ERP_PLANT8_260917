@@ -121,13 +121,12 @@ function presentValues(values: readonly (string | null)[]): string[] {
   return [...new Set(values.filter((value): value is string => value !== null))];
 }
 
-// 앞 파일 대조 · GH-P1이 묻는 열쇠(카드 서식) — 상쇄 쌍의 원거래 열쇠, 같은 파일이 아니면 줄 열쇠 전부와 홑 줄의 `{baseKey}#2`.
+// 앞 파일 대조 · GH-P1이 묻는 열쇠(카드 서식) — 상쇄 쌍 두 줄의 열쇠, 같은 파일이 아니면 줄 열쇠 전부와 홑 줄의 `{baseKey}#2`.
 // 같은 파일을 다시 올리면 GH-P1을 돌리지 않는다 — 돌리면 처음 올릴 때 이미 등록한 무리를 `@` 열쇠로 또 만든다.
 function keysToCheck(parsed: ParseSuccess, sameFile: boolean): string[] {
-  const originals = parsed.offsetLines.map((pair) => pair.original.dedupeKey);
-  if (sameFile) return originals;
-  const lines = [...parsed.lines, ...parsed.offsetLines.map((pair) => pair.cancel)];
-  return [...originals, ...lines.flatMap((line) => (line.sameKeyCount === 1 ? [line.dedupeKey, `${line.baseKey}#2`] : [line.dedupeKey]))];
+  const pairLines = parsed.offsetLines.flatMap((pair) => [pair.original, pair.cancel]);
+  if (sameFile) return pairLines.map((line) => line.dedupeKey);
+  return [...parsed.lines, ...pairLines].flatMap((line) => (line.sameKeyCount === 1 ? [line.dedupeKey, `${line.baseKey}#2`] : [line.dedupeKey]));
 }
 
 // 카드 서식 줄의 사전 조회(트랜잭션 전): 끝 4자리 → 카드 후보 한 번 · 승인번호 → 앞 기록 한 번(A-10). 사유는 06.1-02 → A-10 →
@@ -198,17 +197,20 @@ export async function registerEvidenceFile(
   const fileSha256 = createHash("sha256").update(input.bytes).digest("hex");
   const sameFile = (await findBatchIdBySha(viewer, fileSha256)) !== null;
   const card = rule.keyKind === "card";
-  // 앞 파일 대조(사용자 결정 2026-10-16): 파일 안 상쇄 쌍의 원거래가 앞 파일로 이미 등록돼 있으면 취소 줄을 등록해 합을 0으로
-  // 맞춘다 — 원거래가 없으면 둘 다 등록하지 않는다(06.1-02가 뺀 그대로). 이미 있는 열쇠는 GH-P1과 한 번에 읽는다.
+  // 앞 파일 대조(사용자 결정 2026-10-16 · 양쪽 대칭): 파일 안 상쇄 쌍의 한쪽(원거래든 취소든)만 앞 파일로 이미 등록돼 있으면 다른
+  // 쪽을 등록해 합을 0으로 맞추고, 둘 다 등록돼 있으면 둘 다 이미 등록, 둘 다 없으면 둘 다 등록하지 않고 상쇄 쌍으로 센다(06.1-02가
+  // 뺀 그대로). 이미 있는 열쇠는 GH-P1과 한 번에 읽는다.
   const existingKeys = card ? await findExistingDedupeKeys(viewer, keysToCheck(parsed, sameFile)) : new Set<string>();
-  const cancels = parsed.offsetLines.filter((pair) => existingKeys.has(pair.original.dedupeKey)).map((pair) => pair.cancel);
-  const lines = (deps?.finalizeAmounts ?? defaultFinalizeAmounts)([...parsed.lines, ...cancels], ratesByDate, rulesByType);
+  const settledPairs = parsed.offsetLines.filter((pair) => existingKeys.has(pair.original.dedupeKey) || existingKeys.has(pair.cancel.dedupeKey));
+  const missingHalves = settledPairs.flatMap((pair) => [pair.original, pair.cancel].filter((line) => !existingKeys.has(line.dedupeKey)));
+  const settledAlready = settledPairs.length * 2 - missingHalves.length;
+  const lines = (deps?.finalizeAmounts ?? defaultFinalizeAmounts)([...parsed.lines, ...missingHalves], ratesByDate, rulesByType);
   const planned = card
     ? await planCardLines(viewer, rule, lines, existingKeys, { sameFile, fileSha256 })
     : lines.map((line) => ({ ...line, corpCardId: null }));
   const originalName = originalNameOf(input.fileName);
   const rowCount = parsed.lines.length + parsed.offsetLines.length * 2;
-  const offsetPairs = parsed.offsetPairs - cancels.length;
+  const offsetPairs = parsed.offsetPairs - settledPairs.length;
 
   const write = () =>
     withTransaction(async (tx) => {
@@ -224,8 +226,8 @@ export async function registerEvidenceFile(
       const counts = {
         rowCount,
         registered: inserted.length,
-        // 걸러 낸 줄 · INSERT가 건너뛴 줄은 이미 등록 — 취소 줄을 등록한 쌍의 원거래 줄도 앞 파일로 이미 등록된 줄이다.
-        skippedDuplicate: planned.length - inserted.length + cancels.length,
+        // 걸러 낸 줄 · INSERT가 건너뛴 줄은 이미 등록 — 앞 파일과 맞춘 상쇄 쌍에서 앞 파일로 이미 등록된 줄도 이미 등록이다.
+        skippedDuplicate: planned.length - inserted.length + settledAlready,
         offsetPairs,
         vendorCreated: linked.created,
         vendorRestored: linked.restored,

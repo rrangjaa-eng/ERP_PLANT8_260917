@@ -22,6 +22,15 @@ import { autoConfirmOnAttach, confirmEvidence, waiveEvidence } from "@/domain/ev
 import { expenseCostBasis } from "@/domain/evidence-reviews/cost-basis";
 import { evidenceSourcesOf, hasEvidence } from "@/domain/evidence/has-evidence";
 import { completeExpensePayment, getPaymentView, previewPayable } from "@/domain/payments";
+import { listPaidPayments, listPaymentTargets } from "@/domain/payments/targets";
+import { getPreSettleCheck } from "@/domain/pre-settle-check";
+import { createOrgUnit, createTeam } from "@/domain/org";
+import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
+import { createCorpCard } from "@/domain/corp-cards";
+import { createCardUsage, listCardUsages, precheckCardUsage, type CardUsageInput } from "@/domain/corp-card-usages";
+import { completeEvidenceUpload, requestEvidenceUpload, voidEvidence } from "@/domain/evidence";
+import { listEvidenceVoidSignals } from "@/domain/evidence/signals";
+import { listExpenseEvidenceSignals } from "@/domain/expenses/evidence-signals";
 import { GateBlockedError } from "@/domain/rules/gate";
 import { PAYMENT_METHOD_EVIDENCE_PAIRS } from "@/domain/settings/keys";
 import { upsertSimpleValue } from "@/repositories/settings";
@@ -29,6 +38,8 @@ import { withTransaction } from "@/lib/db-transaction";
 import { seoulToday } from "@/lib/dates";
 import { attachEvidence, makeEvidenceManager, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
 import { makePaymentManager, setEvidenceRequired } from "./fixtures/payments";
+import { makePerson } from "./approvals-fixtures";
+import { createMemoryStorage } from "./fakes/memory-storage";
 
 // 06.1-12(EVID-08 · EVID-09 · D-6104 · D-6105 · RP-4): 「증빙 있음」 = 살아 있는 05 파일 OR 살아 있는 증빙 기록 붙임(detached_at IS NULL).
 // 판정은 domain/evidence/has-evidence.ts 한 곳 — 제출 ⑧ · 증빙 확인 · 지급 게이트가 같은 답을 낸다. 붙임 행은 이 파일 안 지역 도우미로 넣는다
@@ -603,6 +614,138 @@ describe("자동 확인 — 지급 권한자가 결재 중 · 승인 문서에 �
     expect((await moneyColumnsOf(expenseId)).supplyAmountKrw).toBe(12_100_000);
     await expect(payNow(payer, expenseId)).resolves.toMatchObject({ version: confirmed.version + 1 });
     expect((await moneyColumnsOf(expenseId)).supplyAmountKrw).toBe(12_100_000);
+  });
+});
+
+describe("목록 · 묶음 자리 — 같은 판정 · 저장된 자동 확인 그대로 (06.1-12 Task 3)", () => {
+  async function storedApproved(fx: ExpenseFixture, payer: Viewer, lineId?: string): Promise<string> {
+    const { expenseId } = await approvedDoc(fx, payer, [REGISTRAR_FULL], lineId);
+    expect((await attachAndAutoConfirm(payer, { expenseId, links: [], canConfirm: true })).outcome).toBe("stored");
+    return expenseId;
+  }
+
+  it("지급 대상(다섯 자리 ③) — 자동 확인 저장 → P4 · 확인됨 / 기록만 · 확인 기록 없음 → P2 확인 전 / 붙임 뗌 → 증빙 없음(증빙 필수 켬)", async () => {
+    await setEvidenceRequired(true);
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    const stored = await storedApproved(fx, payer);
+    const unconfirmed = (await approvedDoc(fx, payer, [{ attachMode: "registrar", supplyKrw: 9_000_000 }], fx.lines.split)).expenseId;
+    const other = await setupExpenseProject();
+    const detached = await approvedDoc(other, payer, [REGISTRAR_FULL]);
+    await detachLinkRow(detached.linkIds[0] ?? "", payer);
+
+    const rows = (await listPaymentTargets(payer, {})).groups.flatMap((group) => group.rows);
+    expect(rows.find((row) => row.id === stored)).toMatchObject({ selectable: true, reason: null, evidenceStatus: "확인됨" });
+    expect(rows.find((row) => row.id === unconfirmed)).toMatchObject({ selectable: false, reason: "증빙 확인 전 · 증빙 확인", evidenceStatus: "확인 전" });
+    expect(rows.find((row) => row.id === detached.expenseId)).toMatchObject({ selectable: false, reason: "증빙 없음 · 기안자 박서연", evidenceStatus: "증빙 없음" });
+  });
+
+  it("지급 완료 목록(다섯 자리 ④) — 저장된 자동 확인으로 지급한 문서의 상태 낱말이 확인됨", async () => {
+    const fx = await setupExpenseProject();
+    const payer = await makePayer();
+    const expenseId = await storedApproved(fx, payer);
+    await payNow(payer, expenseId);
+
+    const rows = (await listPaidPayments(payer, {})).groups.flatMap((group) => group.rows);
+    expect(rows.find((row) => row.id === expenseId)?.evidenceStatus).toBe("확인됨");
+  });
+
+  it("완료 전 점검(다섯 자리 ⑤) — 자동 확인 저장 · 기록만 붙은 결재 통과 문서는 세지 않는다 · 결재 중 기록만 → 결재 중 · 뗀 붙임만 → 증빙 없음", async () => {
+    const payer = await makePayer();
+    const pendingOf = async (fx: ExpenseFixture) => {
+      const check = await getPreSettleCheck(fx.pm, fx.projectId);
+      return { open: check.openExpenses.rows.map((row) => ({ id: row.id, state: row.state })), pending: check.evidencePending.rows.map((row) => ({ id: row.id, state: row.state })) };
+    };
+
+    // 저장된 자동 확인(withVendor) · 기록만 · 확인 기록 없음(split) — 06-36: 결재 통과 · 증빙 있음은 확인 여부와 상관없이 세지 않는다.
+    const approvedFx = await setupExpenseProject();
+    await storedApproved(approvedFx, payer);
+    await approvedDoc(approvedFx, payer, [{ attachMode: "registrar", supplyKrw: 9_000_000 }], approvedFx.lines.split);
+    expect(await pendingOf(approvedFx)).toEqual({ open: [], pending: [] });
+
+    // 결재 중 기록만 — 증빙 있음이라 `in_review`(증빙 없음 아님).
+    const inReviewFx = await setupExpenseProject();
+    const inReview = await inReviewDoc(inReviewFx, payer, [REGISTRAR_FULL]);
+    expect(await pendingOf(inReviewFx)).toEqual({ open: [{ id: inReview.expenseId, state: "in_review" }], pending: [] });
+
+    // 뗀 붙임만 남은 결재 통과 문서 — 증빙 대기 `no_evidence`.
+    const detachedFx = await setupExpenseProject();
+    const detached = await approvedDoc(detachedFx, payer, [REGISTRAR_FULL]);
+    await detachLinkRow(detached.linkIds[0] ?? "", payer);
+    expect(await pendingOf(detachedFx)).toEqual({ open: [], pending: [{ id: detached.expenseId, state: "no_evidence" }] });
+  });
+
+  it("카드 사용 목록 `증빙` 열 — 붙임 한 행 → 참 · 떼면 거짓 · 전표 파일만 → 참(불변)", async () => {
+    const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `증빙본부-${randomUUID()}` });
+    const teamName = `증빙팀-${randomUUID()}`;
+    const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: teamName });
+    const staff = await makePerson("직원", DEFAULT_ROLE_ID, teamName);
+    const card = await createCorpCard(SYSTEM_VIEWER, { issuer: `카드사-${randomUUID().slice(0, 6)}`, numberLast4: String(1000 + Math.floor(Math.random() * 9000)), label: "팀 카드", kind: "team", teamId: team.id });
+    if (!card.id) throw new Error("카드 id 없음");
+    const input: CardUsageInput = {
+      corpCardId: card.id,
+      usedOn: seoulToday(),
+      merchantVendorId: null,
+      total: { currency: "KRW", amount: 33_000, fxRate: 1 },
+      evidenceTypeCode: "card_receipt",
+      linkKind: "team_cost",
+      memo: null,
+    };
+    const linked = await createCardUsage(staff, input, await precheckCardUsage(staff, input));
+    const fileInput: CardUsageInput = { ...input, total: { currency: "KRW", amount: 44_000, fxRate: 1 } };
+    const withFile = await createCardUsage(staff, fileInput, await precheckCardUsage(staff, fileInput));
+    const slipOf = async (id: string) =>
+      (await listCardUsages(staff, { month: seoulToday().slice(0, 7) }, seoulToday())).rows.find((row) => row.id === id)?.hasCardSlip;
+
+    expect(await slipOf(linked.id)).toBe(false);
+    const { linkId } = await insertRecordAndLink(staff, { ownerKind: "corp_card_usage", ownerId: linked.id, attachMode: "registrar", supplyKrw: 30_000, evidenceType: "card_receipt" });
+    expect(await slipOf(linked.id)).toBe(true);
+    await detachLinkRow(linkId, staff);
+    expect(await slipOf(linked.id)).toBe(false);
+
+    const storage = createMemoryStorage();
+    const declared = { size: 180_000, contentType: "image/png", sha256: randomBytes(32).toString("hex"), name: "카드 전표.png" };
+    const intent = await requestEvidenceUpload(staff, { ownerKind: "corp_card_usage", ownerId: withFile.id, ...declared }, { storage });
+    storage.put(intent.url, { size: declared.size, contentType: declared.contentType, sha256: declared.sha256 });
+    await completeEvidenceUpload(staff, { intentId: intent.intentId }, { storage });
+    expect(await slipOf(withFile.id)).toBe(true);
+  });
+
+  it("무효 신호 — 무효 파일 + 살아 있는 붙임이면 신호 없음 · 붙임을 떼면 다시 · 붙임 없는 무효 문서는 그대로", async () => {
+    const fx = await setupExpenseProject();
+    const payer = await makePayer();
+    const voider = await makeEvidenceManager("증빙무효", { attach: false, void: true });
+    const voidOnlyFile = async (expenseId: string) => {
+      const [file] = await db.select({ id: files.id }).from(files).where(and(eq(files.ownerKind, "expense"), eq(files.ownerId, expenseId), isNull(files.voidedAt)));
+      if (!file) throw new Error("파일 없음");
+      await voidEvidence(voider, { fileId: file.id, reason: "다른 건 영수증" });
+    };
+    const withLink = await newDraft(fx, fx.lines.withVendor);
+    expect((await submitReadyDraft(fx.pm, withLink)).kind).toBe("submitted");
+    await approveFresh(fx, withLink);
+    const { linkId } = await insertRecordAndLink(payer, { ownerId: withLink, attachMode: "registrar", supplyKrw: DOC_SUPPLY });
+    await voidOnlyFile(withLink);
+    const noLink = await newDraft(fx, fx.lines.split);
+    expect((await submitReadyDraft(fx.pm, noLink)).kind).toBe("submitted");
+    await approveFresh(fx, noLink);
+    await voidOnlyFile(noLink);
+
+    const signalsOf = () => listEvidenceVoidSignals(fx.pm, { ownerKind: "expense", ownerIds: [withLink, noLink] });
+    expect(await signalsOf()).toEqual([noLink]);
+    await detachLinkRow(linkId, payer);
+    expect((await signalsOf()).sort()).toEqual([withLink, noLink].sort());
+  });
+
+  it("홈 「내 차례」 증빙 신호 — 기록만 붙은 결재 통과 문서에 신호 없음 · 떼면 「증빙 없음 · 지급 대기」(회귀 고정)", async () => {
+    await setEvidenceRequired(true);
+    const fx = await setupExpenseProject();
+    const payer = await makePayer();
+    const { expenseId, linkIds } = await approvedDoc(fx, payer, [{ attachMode: "registrar", supplyKrw: 9_000_000 }]);
+    const signalOf = async () => (await listExpenseEvidenceSignals(fx.pm, { ids: [expenseId], today: seoulToday() })).get(expenseId)?.situation;
+
+    expect(await signalOf()).toBeUndefined();
+    await detachLinkRow(linkIds[0] ?? "", payer);
+    expect(await signalOf()).toBe("증빙 없음 · 지급 대기");
   });
 });
 

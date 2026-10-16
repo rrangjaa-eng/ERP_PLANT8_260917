@@ -10,7 +10,7 @@ import { buildExpenseSearch, groupExpenses, normalizeListQuery } from "@/domain/
 import { pickTaxDates, type TaxLinePart } from "@/domain/expenses/tax";
 import { TAX_UNAVAILABLE } from "@/domain/expenses/gate";
 import { PAID_PAYMENT_ROW_DTO_SPEC, PAYMENT_TARGET_ROW_DTO_SPEC, type PaidPaymentRowDto, type PaymentTargetRowDto } from "@/domain/expenses/dto";
-import { ownersWithEvidence } from "@/domain/evidence/has-evidence";
+import { evidenceSourcesOf, ownersWithEvidence } from "@/domain/evidence/has-evidence";
 import { listEvidence } from "@/domain/evidence";
 import { formatKstTime } from "@/domain/holidays/business-day";
 import { findUserNamesByIds } from "@/repositories/users";
@@ -29,7 +29,7 @@ import { clampPage, LIST_PAGE_SIZE, pageCountFrom } from "@/lib/paging";
 
 // 06-15(EXP-09 · UI-SPEC S1): 지급 대상 목록 — 결재 통과 · 지급 전 · 종결 아님 지출결의. 행마다 고를 수 있는지(selectable)와 이유는
 // 06-04 resolveExpenseActionRow(P4 = 고를 수 있음)가 정하고, 그 입력은 문서 화면(getPaymentView)과 같은 게이트 둘(payment.evidence-required ·
-// payment.method-evidence-mismatch)이다 — 이 파일은 판정을 새로 쓰지 않는다. 증빙 유무는 06-03 ownersWithEvidence 한 번(C5).
+// payment.method-evidence-mismatch)이다 — 이 파일은 판정을 새로 쓰지 않는다. 증빙 유무는 evidenceSourcesOf 한 번(C5 · 06.1-12 — 파일 또는 붙임).
 // 지급 총액은 06-03 단건 경로와 같은 규칙(pickPaymentAmount → pickTaxDates 기준일 하나 → shared.ratesFor → decidePayable, 지급일 자리 = 오늘 KST)이라
 // 같은 지급일이면 completeExpensePayment의 잠금 뒤 재계산과 같다. 문서와 무관한 사전 읽기는 요청마다 loadPaymentShared 하나(E-34).
 // 쪽 자르기는 listPaymentTargets 한 곳(E-25): 판정 → 증빙 필터 → 합계 · 총 건수 → clampPage · slice.
@@ -92,7 +92,7 @@ function reasonOf(row: PaymentTargetRow, bar: ExpenseActionBar, payableKrw: numb
 }
 
 async function judgeTargets(viewer: Viewer, rows: readonly PaymentTargetRow[], ctx: JudgeContext): Promise<JudgedPaymentTarget[]> {
-  const withEvidence = await ownersWithEvidence(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerIds: rows.map((row) => row.id) });
+  const withEvidence = await evidenceSourcesOf(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerIds: rows.map((row) => row.id) });
   const judged: JudgedPaymentTarget[] = [];
   for (const row of rows) {
     const hasLiveEvidence = withEvidence.has(row.id);

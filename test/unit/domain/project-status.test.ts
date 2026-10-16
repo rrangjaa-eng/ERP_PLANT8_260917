@@ -290,6 +290,7 @@ function codeRow(value: string, label: string, sortOrder: number, extra?: Partia
     description: null,
     sortOrder,
     active: true,
+    privateToOwner: false,
     customFields: {},
     taxRule: null,
     archivedAt: null,

@@ -24,6 +24,8 @@ export const codeItems = pgTable(
     description: text("description"),
     sortOrder: integer("sort_order").notNull().default(0),
     active: boolean("active").notNull().default(true),
+    // 증빙 종류만 쓰는 속성 — 켜진 종류는 올린 사람 · 전사 범위만 본다(06.1-05 · 06.1-14), 계약 칸이라 customFields에 넣지 않는다.
+    privateToOwner: boolean("private_to_owner").notNull().default(false),
     customFields: jsonb("custom_fields").notNull().default({}),
     taxRule: jsonb("tax_rule"),
     archivedAt: timestamp("archived_at"),

@@ -1,9 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import {
+  evidenceScopeFor,
   memoizeRowScopeForRequest,
   rowScopeFor,
   scopeFor,
   UnknownScopeEntityError,
+  type Scope,
 } from "@/domain/permissions/scope-for";
 import type { Viewer } from "@/domain/viewer";
 
@@ -253,5 +255,68 @@ describe("rowScopeFor 요청 memo", () => {
     await expect(rowScopeFor(v, "project")).rejects.toThrow("일시 오류");
     expect((await rowScopeFor(v, "project")).rows).toBe("all");
     expect(findRoleById).toHaveBeenCalledTimes(2);
+  });
+});
+
+// 06.1-01(D-6108): 증빙 행 범위 — 기존 Scope 유니온은 그대로 두고 별도 판정이 정한다.
+describe("evidenceScopeFor (06.1 증빙 행 범위)", () => {
+  const grants = (allowed: string[]) => ({
+    can: (_v: Viewer, menu: string, action: string) => Promise.resolve(allowed.includes(`${menu}:${action}`)),
+  });
+
+  it("기존 Scope.rows 유니온은 all | none 그대로다", () => {
+    expectTypeOf<Scope["rows"]>().toEqualTypeOf<"all" | "none">();
+  });
+
+  it("evidence.intake 쓰기 권한이 있으면 rows가 all이다", async () => {
+    expect(await evidenceScopeFor(viewer, grants(["evidence.intake:write"]))).toEqual({ rows: "all" });
+  });
+
+  it("evidence.intake 보기만 있으면 all이 아니다", async () => {
+    expect((await evidenceScopeFor(viewer, grants(["evidence.intake:view"]))).rows).not.toBe("all");
+  });
+
+  it("evidence.intake 쓰기 · evidence 보기가 둘 다 없으면 rows가 none이다", async () => {
+    expect(await evidenceScopeFor(viewer, grants([]))).toEqual({ rows: "none" });
+  });
+
+  const TEAM_ID = "00000000-0000-4000-8000-0000000000t1";
+  const ORG_ID = "00000000-0000-4000-8000-0000000000o1";
+  // 발령은 effectiveFrom 이후 날짜에만 잡힌다(리포지토리의 「발령일 ≤ 날짜」 규칙을 흉내 낸다).
+  function published(opts: { allowed?: string[]; teamFrom?: string | null; today?: string }) {
+    const teamFrom = opts.teamFrom === undefined ? "2026-01-01" : opts.teamFrom;
+    return {
+      ...grants(opts.allowed ?? ["evidence:view"]),
+      findMembershipAtDate: vi.fn((_v: Viewer, _userId: string, date: string) =>
+        Promise.resolve(teamFrom !== null && date >= teamFrom ? { teamId: TEAM_ID } : null),
+      ),
+      findTeamById: vi.fn((_v: Viewer, id: string) => Promise.resolve(id === TEAM_ID ? { orgUnitId: ORG_ID } : null)),
+      today: () => opts.today ?? "2026-10-16",
+    };
+  }
+
+  it("evidence 보기만 있으면 오늘 발령 팀 · 그 팀의 본부로 published다", async () => {
+    const deps = published({});
+    expect(await evidenceScopeFor(viewer, deps)).toEqual({ rows: "published", teamId: TEAM_ID, orgUnitId: ORG_ID });
+    expect(deps.findMembershipAtDate).toHaveBeenCalledWith(viewer, "u1", "2026-10-16");
+  });
+
+  it("발령 이력이 없으면 teamId · orgUnitId가 둘 다 null인 published다(임의 팀 없음)", async () => {
+    expect(await evidenceScopeFor(viewer, published({ teamFrom: null }))).toEqual({ rows: "published", teamId: null, orgUnitId: null });
+  });
+
+  it("오늘보다 뒤 발령만 있으면 teamId가 null이다", async () => {
+    expect(await evidenceScopeFor(viewer, published({ teamFrom: "2026-10-20" }))).toEqual({
+      rows: "published",
+      teamId: null,
+      orgUnitId: null,
+    });
+  });
+
+  it("evidence.intake 쓰기가 있으면 evidence 보기와 무관하게 all이고 발령 · 팀 조회를 하지 않는다", async () => {
+    const deps = published({ allowed: ["evidence.intake:write", "evidence:view"] });
+    expect(await evidenceScopeFor(viewer, deps)).toEqual({ rows: "all" });
+    expect(deps.findMembershipAtDate).not.toHaveBeenCalled();
+    expect(deps.findTeamById).not.toHaveBeenCalled();
   });
 });

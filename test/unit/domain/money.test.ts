@@ -7,6 +7,7 @@ import {
   profit,
   splitWithRemainder,
   grossFromTotal,
+  grossFromSignedTotal,
   moneyToColumns,
   normalizeMoneyInput,
   MoneyInputError,
@@ -373,5 +374,32 @@ describe("sameAmountOn", () => {
     expect(sameAmountOn("krw", krw(4_000_000), usd(3_076.92))).toBe(toKrw({ currency: "USD", amount: 3_076.92, fxRate: 1300 }) === 4_000_000);
     expect(sameAmountOn("krw", krw(4_000_000), krw(4_000_000))).toBe(true);
     expect(sameAmountOn("krw", krw(4_000_000), krw(3_999_999))).toBe(false);
+  });
+});
+
+// 06.1-02 — 부호 있는 합계 역산은 대칭이다(취소 쌍의 공급가 합 = 0 · RESEARCH Pitfall 6).
+describe("grossFromSignedTotal", () => {
+  for (const method of ["round", "truncate", "ceil"] as const) {
+    it(`${method}: grossFromSignedTotal(-x) = -grossFromSignedTotal(x) (x = 12500 · 1 · 0)`, () => {
+      for (const x of [12_500, 1, 0]) {
+        // + 0 — -0과 0을 같게 본다
+        expect(grossFromSignedTotal(-x, 0.1, 1, method) + 0).toBe(-grossFromSignedTotal(x, 0.1, 1, method) + 0);
+      }
+    });
+  }
+
+  it("음수 합계가 0으로 끝처리되면 -0이 아니라 0(독립 검토 P3-1)", () => {
+    expect(Object.is(grossFromSignedTotal(-1, 0.1, 1, "truncate"), 0)).toBe(true);
+    expect(Object.is(grossFromSignedTotal(-5, 0.1, 10, "round"), 0)).toBe(true);
+  });
+
+  it("양수는 grossFromTotal과 같다", () => {
+    expect(grossFromSignedTotal(52_800_000, 0.1, 1, "round")).toBe(grossFromTotal(52_800_000, 0.1, 1, "round"));
+    expect(grossFromSignedTotal(100_005, 0.1, 10, "truncate")).toBe(grossFromTotal(100_005, 0.1, 10, "truncate"));
+  });
+
+  it("음수를 grossFromTotal에 그대로 넘기면 비대칭이 나는 자리(올림)에서도 대칭", () => {
+    expect(grossFromTotal(-12_500, 0.1, 1, "ceil")).toBe(-11_363);
+    expect(grossFromSignedTotal(-12_500, 0.1, 1, "ceil")).toBe(-11_364);
   });
 });

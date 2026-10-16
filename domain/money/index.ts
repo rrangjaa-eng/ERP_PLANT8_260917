@@ -208,6 +208,14 @@ export function grossFromTotal(totalKrw: number, vatRate: number, unit: Rounding
   return round(raw, unit, method);
 }
 
+// 06.1-02 — 부호 있는 합계의 역산. 음수는 절댓값으로 셈하고 부호를 붙인다 — `round()`의 Math.round · Math.ceil은 음수에서
+// 대칭이 아니라(−x.5 → −x) 취소 줄의 공급가가 원거래와 정확히 반대가 되지 않는다(06.1-RESEARCH Pitfall 6).
+export function grossFromSignedTotal(totalKrw: number, vatRate: number, unit: RoundingUnit, method: RoundingMethod): number {
+  if (totalKrw >= 0) return grossFromTotal(totalKrw, vatRate, unit, method);
+  // diffKrw(0, …) — 0으로 끝처리된 음수 합계가 -0이 되지 않게(직렬화 · Object.is 비교가 엇갈린다).
+  return diffKrw(0, grossFromTotal(-totalKrw, vatRate, unit, method));
+}
+
 // 05-03(06-02와 같은 이름 · 계약) — 원 정수 합과 차이. 부호를 유지하고 빈 배열의 합은 0이다.
 export function sumKrw(values: readonly number[]): number {
   return values.reduce((total, value) => total + value, 0);

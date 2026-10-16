@@ -42,6 +42,9 @@ export class ProtectedRowError extends UserFacingError {}
 export class ArchivableRowNotFoundError extends UserFacingError {}
 // 같은 숫자 사업자번호의 살아 있는 거래처가 있어 거래처를 복원할 수 없음 — 화면이 원인을 토스트에 싣도록 따로 둔다.
 export class VendorBusinessNoTakenError extends UserFacingError {}
+// 06-37(G-06-A): 같은 발급사 · 뒤 4자리의 살아 있는 카드가 있어 보관 카드를 복원할 수 없음 — 부분 유일 색인 위반을 사용자 문구로.
+export class CorpCardLast4TakenError extends UserFacingError {}
+const CORP_CARD_LAST4_UNIQUE_INDEX = "corp_cards_issuer_last4_key";
 // 06.4 D-6416(문구 표(D3) 본인 보관 행 — `SELF_LEAVE_EDIT_ERROR` 꼴).
 export class SelfArchiveError extends UserFacingError {}
 export const SELF_ARCHIVE_MESSAGE = "본인 보관 불가 · 다른 관리자에게 요청";
@@ -228,6 +231,9 @@ export async function restore(
     reactivated = await entry.setArchived(viewer, id, false);
   } catch (error) {
     if (entity === "vendor" && isUniqueViolation(error, BUSINESS_NO_UNIQUE_INDEX)) throw (await vendorRestoreBlock(viewer, id)) ?? error;
+    if (entity === "corp_card" && isUniqueViolation(error, CORP_CARD_LAST4_UNIQUE_INDEX)) {
+      throw new CorpCardLast4TakenError("같은 발급사와 뒤 4자리 카드 있음 · 복원 불가");
+    }
     throw error;
   }
   if (!reactivated) return { restored: false };

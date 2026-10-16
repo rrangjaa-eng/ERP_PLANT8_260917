@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { users, corpCards } from "@/db/schema";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
@@ -385,5 +386,57 @@ describe("corp-cards (MAST-03, 실제 Postgres)", () => {
         holderUserId: await makeTestUser(),
       }),
     ).rejects.toBeInstanceOf(ForbiddenError);
+  });
+});
+
+describe("G-06-A — 보관 카드와 같은 발급사 · 뒤 4자리 재등록(사용자 카드 20:42)", () => {
+  it("보관한 카드와 같은 발급사 · 뒤 4자리로 새 카드를 등록할 수 있다", async () => {
+    const holderUserId = await makeTestUser();
+    const issuer = `카드사-${randomUUID()}`;
+    const numberLast4 = uniqueLast4();
+    const a = await createCorpCard(SYSTEM_VIEWER, { issuer, numberLast4, label: "분실 카드", kind: "personal", holderUserId });
+    await archive(SYSTEM_VIEWER, "corp_card", a.id);
+
+    const b = await createCorpCard(SYSTEM_VIEWER, { issuer, numberLast4, label: "재발급 카드", kind: "personal", holderUserId });
+
+    expect(b.id).not.toBe(a.id);
+    const [row] = await db.select().from(corpCards).where(eq(corpCards.id, b.id));
+    expect(row?.archivedAt).toBeNull();
+  });
+
+  it("같은 번호 카드 둘을 모두 보관한 뒤에도 세 번째로 등록할 수 있다", async () => {
+    const holderUserId = await makeTestUser();
+    const issuer = `카드사-${randomUUID()}`;
+    const numberLast4 = uniqueLast4();
+    const a = await createCorpCard(SYSTEM_VIEWER, { issuer, numberLast4, label: "1호", kind: "personal", holderUserId });
+    await archive(SYSTEM_VIEWER, "corp_card", a.id);
+    const b = await createCorpCard(SYSTEM_VIEWER, { issuer, numberLast4, label: "2호", kind: "personal", holderUserId });
+    await archive(SYSTEM_VIEWER, "corp_card", b.id);
+
+    const c = await createCorpCard(SYSTEM_VIEWER, { issuer, numberLast4, label: "3호", kind: "personal", holderUserId });
+
+    expect(new Set([a.id, b.id, c.id]).size).toBe(3);
+  });
+
+  it("보관 안 된 카드끼리는 같은 발급사 · 뒤 4자리가 지금처럼 막힌다", async () => {
+    const holderUserId = await makeTestUser();
+    const issuer = `카드사-${randomUUID()}`;
+    const numberLast4 = uniqueLast4();
+    const a = await createCorpCard(SYSTEM_VIEWER, { issuer, numberLast4, label: "1호", kind: "personal", holderUserId });
+    await archive(SYSTEM_VIEWER, "corp_card", a.id);
+    await createCorpCard(SYSTEM_VIEWER, { issuer, numberLast4, label: "2호", kind: "personal", holderUserId });
+
+    await expect(
+      createCorpCard(SYSTEM_VIEWER, { issuer, numberLast4, label: "3호", kind: "personal", holderUserId }),
+    ).rejects.toThrow(new DuplicateCorpCardError("이미 등록된 카드 · 발급사와 뒤 4자리 확인"));
+  });
+
+  it("발급사가 다르면 같은 뒤 4자리도 등록된다(회귀)", async () => {
+    const holderUserId = await makeTestUser();
+    const numberLast4 = uniqueLast4();
+    const a = await createCorpCard(SYSTEM_VIEWER, { issuer: `카드사-${randomUUID()}`, numberLast4, label: "1호", kind: "personal", holderUserId });
+    const b = await createCorpCard(SYSTEM_VIEWER, { issuer: `카드사-${randomUUID()}`, numberLast4, label: "2호", kind: "personal", holderUserId });
+
+    expect(b.id).not.toBe(a.id);
   });
 });

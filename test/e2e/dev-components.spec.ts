@@ -87,6 +87,7 @@ test.describe("로그인한 뒤", () => {
     "옆 패널",
     "고르기 목록",
     "골라내기 — 다중(SP-62-1)",
+    "일괄 등록 — 첨부 변형(SP-6103)",
     "증빙 표본(06.1)",
     "화면 틀",
   ];
@@ -108,6 +109,28 @@ test.describe("로그인한 뒤", () => {
     for (const word of ["미공개", "팀 공개", "본부 공개", "붙음", "확인 필요", "카드 미등록"]) {
       await expect(badges.getByText(word, { exact: true }), word).toHaveCount(2);
     }
+  });
+
+  // 06.1-03 Task 2(SP-6103) — 첨부 영역 「엑셀 일괄 등록」 변형: 영역 · accept · 조각 색 · 0인 조각 부재 · 거절 행 버튼 0 · 실패 행에만 다시 올리기.
+  test("일괄 등록 변형 — 영역 글자 · accept · 거절 행에는 버튼이 없고 실패 행에만 다시 올리기 · 0인 조각은 없다", async ({ page }) => {
+    const bulk = page.locator('[data-gallery="bulk-import"]');
+    await expect(bulk.getByText("파일을 끌어 놓거나 Ctrl+U · 홈택스·카드사 엑셀·CSV 1MB")).toBeVisible();
+    await expect(bulk.getByTestId("attachments-input")).toHaveAttribute("accept", ".xls,.xlsx,.csv");
+    await expect(bulk.getByRole("button", { name: /^파일 고르기/ })).toBeVisible();
+    for (const key of ["size", "format", "lines"]) {
+      const row = bulk.locator(`li[data-row="${key}"]`);
+      await expect(row).toHaveAttribute("data-state", "refused");
+      await expect(row.locator("button")).toHaveCount(0);
+    }
+    await expect(bulk.locator('li[data-row="size"]')).toContainText("1.4MB · 1MB 초과 · 기간을 나눠 다시 내려받기");
+    await expect(bulk.getByRole("button", { name: "다시 올리기" })).toHaveCount(1);
+    await expect(bulk.locator('li[data-row="failed"]').getByRole("button", { name: "다시 올리기" })).toHaveCount(1);
+    await expect(bulk.locator('li[data-row="uploading"] [data-ui="bulk-progress"]')).toHaveCount(1);
+    await expect(bulk.getByText("상쇄 2쌍")).toBeVisible();
+    await expect(bulk.getByText(/상쇄 없음|짝 없음 0|상쇄 0쌍/)).toHaveCount(0);
+    await expect(bulk.locator('[aria-live="polite"]')).toHaveCount(1);
+    const long = bulk.locator('li[data-row="long"]');
+    expect(await long.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
   });
 
   // 06.1-03 Round 2 G5 — Codex 캡처용 표본 경로 셋(`page.goto`만으로 열린 채 선다).

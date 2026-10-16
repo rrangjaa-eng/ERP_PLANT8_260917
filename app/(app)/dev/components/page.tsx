@@ -15,6 +15,7 @@ import { StaticTable } from "@/ui/table/StaticTable";
 import { TableSkeleton } from "@/ui/table/TableSkeleton";
 import {
   AttachmentsConfirmSample,
+  BulkImportSamples,
   EditTableSample,
   EvidencePanelSample,
   EvidenceSamples,
@@ -247,6 +248,12 @@ export default async function ComponentsPage({ searchParams }: { searchParams: P
 
       <DetailScreen.Section title="골라내기 — 다중(SP-62-1)">
         <PickManySamples />
+      </DetailScreen.Section>
+
+      <DetailScreen.Section title="일괄 등록 — 첨부 변형(SP-6103)">
+        <div data-gallery="bulk-import">
+          <BulkImportSamples />
+        </div>
       </DetailScreen.Section>
 
       <DetailScreen.Section title="증빙 표본(06.1)">

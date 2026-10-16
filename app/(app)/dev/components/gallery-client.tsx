@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { buttonLinkClassName } from "@/ui/button/Button";
-import { Attachments, type AttachmentActions, type AttachmentFile } from "@/ui/attachments/Attachments";
+import { Attachments, type AttachmentActions, type AttachmentFile, type BulkImportRow } from "@/ui/attachments/Attachments";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { Button } from "@/ui/button/Button";
 import { TextField } from "@/ui/input/TextField";
@@ -662,4 +662,67 @@ export function EvidenceSamples({ confirmOpen = false, sheetOpen = false }: { co
       <TwoActionsSheetSample initialOpen={sheetOpen} />
     </div>
   );
+}
+
+// 06.1-03 Task 2(SP-6103 · G-1) — 첨부 영역 「엑셀 일괄 등록」 변형 표본. 값은 전부 가짜 픽스처다(숫자 · 파일 이름). 컴포넌트는 서버 DTO를 그리기만 하므로
+// 크기 거절 행은 호출 화면(06.1-05)이 `limits.ts`로 판정해 넘기는 모양 그대로 선다 — 거절 행에는 2차가 없고 실패 행에만 `다시 올리기`가 있다.
+const BULK_ROWS: BulkImportRow[] = [
+  {
+    key: "card",
+    state: "result",
+    fileName: "신한카드_이용내역.xls",
+    formatLabel: "신한 이용내역",
+    counts: [
+      { label: "등록", value: 162, kind: "success", href: "?state=all&batch=b1" },
+      { label: "이미 등록", value: 6, kind: "muted" },
+      { label: "상쇄", value: 2, unit: "쌍", kind: "muted" },
+      { label: "카드 사용에 붙음", value: 12, kind: "success", href: "?state=attached&batch=b1" },
+      { label: "확인 필요", value: 1, kind: "warning", href: "?state=needs-check&batch=b1" },
+      { label: "짝 없음", value: 3, kind: "warning", href: "?state=unmatched&batch=b1" },
+      { label: "카드 미등록", value: 1, kind: "danger", href: "?state=card-unknown&batch=b1" },
+      { label: "상쇄 없음", value: 0, kind: "muted" },
+    ],
+    lines: [],
+    restCount: 0,
+  },
+  {
+    key: "hometax",
+    state: "result",
+    fileName: "매입세금계산서_10월.xls",
+    formatLabel: "홈택스 매입 세금계산서",
+    counts: [
+      { label: "등록", value: 25, kind: "success", href: "?state=all&batch=b2" },
+      { label: "거래처 생성", value: 2, kind: "muted" },
+      { label: "되살림", value: 1, kind: "muted" },
+      { label: "이름 다름", value: 1, kind: "warning" },
+    ],
+    lines: ["123-45-67890 · 파일 (주)에이원 · 등록 에이원", "234-56-78901 · 파일 (주)비전 · 등록 비전크리에이티브"],
+    restCount: 3,
+  },
+  { key: "size", state: "refused", fileName: "롯데_10월.xls", headline: "1.4MB · 1MB 초과 · 기간을 나눠 다시 내려받기", lines: [], restCount: 0 },
+  { key: "format", state: "refused", fileName: "메모.txt", headline: "엑셀·CSV 파일 아님 · 내려받은 파일 그대로", lines: [], restCount: 0 },
+  {
+    key: "lines",
+    state: "refused",
+    fileName: "비씨_10월.xls",
+    headline: "거절 · 오류 12줄",
+    lines: ["14줄 · 승인일 읽지 못함", "15줄 · 승인일 읽지 못함", "21줄 · 금액 읽지 못함"],
+    restCount: 7,
+    restUnit: "줄",
+  },
+  { key: "uploading", state: "uploading", fileName: "국민카드_10월.xls" },
+  { key: "failed", state: "failed", fileName: "우리카드_10월.xls", onRetry: () => undefined },
+  {
+    key: "long",
+    state: "result",
+    fileName: "매입세금계산서_아주긴파일이름표본_주식회사플랜트에이트크리에이티브솔루션즈서울본사_2026년10월분_최종본_수정_확정_다시_진짜최종.xls",
+    formatLabel: "홈택스 매입 세금계산서",
+    counts: [{ label: "등록", value: 4, kind: "success", href: "?state=all&batch=b3" }],
+    lines: [],
+    restCount: 0,
+  },
+];
+
+export function BulkImportSamples() {
+  return <Attachments variant="bulk-import" rows={BULK_ROWS} onFiles={() => undefined} />;
 }

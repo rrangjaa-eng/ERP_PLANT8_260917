@@ -1406,6 +1406,7 @@ test.describe("계좌 칸 · 번호 보기 (06-20 Task 2)", () => {
     await expect(ceoPage.locator("[data-payment-account]")).toHaveCount(0);
     expect(await ceoPage.locator("main").innerText()).not.toMatch(new RegExp(`(?<!\\d)${account.last4}(?!\\d)`));
     expect(await ceoPage.content()).not.toContain(`**-${account.last4}`);
+    expect(await ceoPage.content()).not.toContain(account.plain);
     await ceoPage.context().close();
   });
 });

@@ -71,6 +71,7 @@ import { buildExpenseDetailRows } from "@/domain/expenses/detail";
 import { BANK_TRANSFER_PAYMENT_METHOD, documentPayee, hasUsableAccount, PAYEE_ACCOUNT_MISSING_FIXABLE, type ExpensePayee } from "@/domain/expenses/payee";
 import { canSeeExpense, EXPENSE_DOCUMENT_KIND, ExpenseNotFoundError } from "@/domain/expenses/access";
 import { evidenceSourcesOf } from "@/domain/evidence/has-evidence";
+import { recheckEvidenceConfirmation } from "@/domain/evidence-reviews";
 import { expenseRouteDocTeamId } from "@/domain/expenses/route-doc";
 import { expenseLineDoor, installmentSeqFor, type ExpenseLineDoor, type ExpenseLineDoorState } from "@/domain/expenses/line-door";
 import { resolveLinkedDocumentsByLineage, type LineageLine } from "@/domain/quotes/lineage";
@@ -1136,6 +1137,8 @@ export async function submitExpense(
       }
     }
     if (tax.unavailable) throw new GateBlockedError(TAX_UNAVAILABLE);
+    // 06.1-12(카드 R2 · 재검토 2회차 N-2): 다시 올리면 앞 회차 결재 중 자동 확인을 지운다 — 게이트를 다 지난 뒤 · 상태를 바꾸기 전, 같은 tx.
+    await recheckEvidenceConfirmation(viewer, { expenseId: locked.id }, tx);
 
     const installment = locked.installment || Boolean(door?.forcedInstallment);
     const firstSubmittedAt = resubmit ? locked.submittedAt : null;

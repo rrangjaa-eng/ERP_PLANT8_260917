@@ -13,6 +13,7 @@ import {
   resolveEvidenceStatus,
   SUPPLY_CORRECTION_PAID_LOCKED,
   supplyCorrectionKind,
+  type EvidenceStatusInput,
 } from "@/domain/evidence-reviews";
 import { moneyFromRow } from "@/domain/money";
 
@@ -76,6 +77,10 @@ describe("resolveEvidenceStatus — 다섯 값 (06-06)", () => {
   });
   it("증빙 없음 → 증빙 없음(증빙 필수 off의 화면 `—`는 화면이 고른다)", () => {
     expect(resolveEvidenceStatus(base)).toBe("증빙 없음");
+  });
+  // 06.1-12(카드 R2): 자동 확인은 저장된 확인 기록 — 상태 입력에 붙임 수 같은 계산 칸을 더하지 않는다(06 K-3 선택 칸 제거).
+  it("입력 칸은 hasEvidence · prepaid · review 셋뿐 (06.1-12 카드 R2)", () => {
+    expectTypeOf<keyof EvidenceStatusInput>().toEqualTypeOf<"hasEvidence" | "prepaid" | "review">();
   });
 });
 

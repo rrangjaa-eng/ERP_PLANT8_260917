@@ -164,10 +164,13 @@ async function expenseState(viewer: Viewer, ownerId: string, tx?: DbOrTx): Promi
 const expenseDrafterRemoves = (owner: OwnerState) =>
   !owner.closed && ((owner.number === null && owner.status === null) || (owner.status !== null && EXPENSE_RETURNED_STATUSES.has(owner.status)));
 
-// 결재 통과 문서에서만 일한다(작성 중 · 결재 중 · 반려 · 회수는 문서 version을 올리지 않는다 — X-1). 확인 기록 줄은 있을 때만 지우고,
+// 승인 문서 — 확인 기록 해제 + 문서 version. 결재 중 `add` — 06.1 자동 확인만 푼다(파일이 더해지면 조건 「파일 0」이 깨진다, 06.1-12 N-1).
+// 작성 중 · 결재 중 · 반려 · 회수는 문서 version을 올리지 않는다(X-1 — 결재 중 인스턴스 version은 업로드 tx가 올린다). 승인 문서의 확인 기록 줄은 있을 때만 지우고,
 // 문서 version은 기록 유무와 상관없이 올린다 — 보지 않은 증빙은 옛 version으로 확인되지 않는다(B-1). 훅 안에서 권한 · 설정을 읽지 않는다.
 // 무효로 살아 있는 파일이 0이 되면 지급 여부와 상관없이 증빙일을 지운다(EVID-04 · 검토 I-1).
 async function expenseApprovedEvidenceChange(viewer: Viewer, owner: OwnerState, change: { kind: "add" | "void" }, tx: DbOrTx): Promise<EvidenceReviewStatus | null> {
+  // 결재 중 확인 기록은 06.1 자동 확인뿐이다(수동 확인 · 면제는 승인 뒤에만 열린다) — 상태를 가리지 않고 지운다. 돌려준 값은 업로드 로그 reviewReleased가 싣는다.
+  if (change.kind === "add" && owner.status !== null && EXPENSE_IN_REVIEW_STATUSES.has(owner.status)) return deleteReviewByExpense(viewer, owner.id, tx);
   if (owner.status !== "approved") return null;
   const released = await deleteReviewByExpense(viewer, owner.id, tx);
   const version = await bumpExpenseVersion(viewer, { expenseId: owner.id, expectedVersion: owner.version, updatedBy: viewer.id }, tx);

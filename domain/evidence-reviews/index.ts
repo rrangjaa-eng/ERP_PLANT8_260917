@@ -4,7 +4,7 @@ import { visible } from "@/domain/permissions/visible";
 import { recordAction } from "@/domain/action-log/record";
 import { GateBlockedError } from "@/domain/rules/gate";
 import { canSeeExpense, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses/access";
-import { hasEvidence } from "@/domain/evidence/has-evidence";
+import { autoConfirmEligible, evidenceSourcesOf, hasEvidence } from "@/domain/evidence/has-evidence";
 import {
   CANCEL_REASON_REQUIRED,
   SUPPLY_AMOUNT_FRACTION,
@@ -20,7 +20,7 @@ import { EVIDENCE_PREPAID_DUE_DAYS } from "@/domain/settings/keys";
 import { formatKstTime } from "@/domain/holidays/business-day";
 import { findExpenseApprovalInstance, findExpenseById, lockExpenseForUpdate } from "@/repositories/expenses";
 import { bumpExpenseVersion, findLivePayment } from "@/repositories/expense-payments";
-import { findReviewByExpense, updateCorrectedSupply, upsertReview } from "@/repositories/expense-evidence-reviews";
+import { deleteReviewByExpense, findReviewByExpense, updateCorrectedSupply, upsertReview } from "@/repositories/expense-evidence-reviews";
 import { lockProjectForWrite } from "@/repositories/projects";
 import { findExpenseQuoteLineIds, lockQuoteLines } from "@/repositories/quote-line-links";
 import { listAliveByOwners } from "@/repositories/files";
@@ -84,14 +84,13 @@ export class SupplyCorrectionCapError extends UserFacingError {
 // ── 증빙 상태 다섯 값 ──────────────────────────────────────────────────
 // 면제 기록 있음 → 면제(선결제를 이긴다) / 증빙 있음 · 확인 기록 없음 → 확인 전 / 증빙 있음 · confirmed → 확인됨 /
 // 증빙 없음 · 선결제 → 선결제 / 증빙 없음 → 증빙 없음(증빙 필수 off면 화면 값 `—` — 낱말은 화면이 고른다).
-// evidenceRecordCount는 6.1-12가 채우는 자리(K-3) — 06은 넘기지 않고 「등록이 곧 확인」(D-6117)을 짓지 않는다.
+// 자동 확인은 저장된 확인 기록 — 카드 R2(06.1-12 autoConfirmOnAttach가 붙이는 순간 확인 기록을 쓴다 · 여기 입력 칸은 늘지 않는다).
 export type EvidenceStatus = "면제" | "확인 전" | "확인됨" | "선결제" | "증빙 없음";
 
 export type EvidenceStatusInput = {
   hasEvidence: boolean;
   prepaid: boolean;
   review: { status: string } | null;
-  evidenceRecordCount?: number;
 };
 
 export function resolveEvidenceStatus(input: EvidenceStatusInput): EvidenceStatus {
@@ -319,4 +318,68 @@ export async function waiveEvidence(
     { canPay: true, amountVisible },
   );
   return { version: committed.version, evidenceStatus: resolveEvidenceStatus({ hasEvidence: false, prepaid: locked.prepaid, review: { status: "waived" } }), actionRow };
+}
+
+// ── 자동 확인(06.1-12 · RP-1 × D-6117 · D-6520 · 카드 R2 「지급 권한자만」) ─────────────────────────────
+// 결재 중 · 승인 문서는 확인 기록을 둘 수 있는 상태다(05 EXPENSE_IN_REVIEW_STATUSES + 승인). 반려 · 회수 · 작성 중은 다시 올릴 때
+// recheckEvidenceConfirmation이 잰다.
+const AUTO_CONFIRM_STATUSES: ReadonlySet<string> = new Set(["submitted", "in_review", "approved"]);
+
+const AUTO_CONFIRM_LOG = { field: "evidenceReview", auto: true } as const;
+
+export type AutoConfirmOutcome = "stored" | "released" | "skipped";
+
+// 붙이는 쪽 트랜잭션 안에서 붙임 행 · 05 훅 뒤에 부른다(훅이 승인 문서의 앞선 확인을 지우고 version을 올린 뒤라야 저장이 남는다).
+// canConfirm은 부르는 쪽이 트랜잭션 전에 읽은 can(viewer, "expenses.payments", "write") — 06-03 tx 규약(이 함수 안에 권한 · 설정 읽기 없음).
+// 조건 참 · 지급 권한자면 confirmEvidence의 「공급가액과 같음」과 같은 모양으로 쓴다: 확인 기록(전후 = 문서 공급가 · 확인자 = 붙인 사람) →
+// 승인 문서만 문서 version + 1(결재 중은 05 X-1 — 인스턴스 version은 붙이는 쪽이 올린다) → 행동 로그. 문서 금액 · 세액 칸은 쓰지 않는다(D-6520).
+// 조건이 깨졌거나 지급 권한이 없는 사람이 붙임 집합을 바꿨는데 confirmed가 남아 있으면(결재 중 앞선 자동 확인 — 재검토 2회차 N-2) 푼다.
+export async function autoConfirmOnAttach(viewer: Viewer, input: { expenseId: string; canConfirm: boolean }, tx: DbOrTx): Promise<AutoConfirmOutcome> {
+  const locked = await lockExpenseForUpdate(viewer, input.expenseId, tx);
+  if (!locked) throw new EvidenceReviewNotFoundError();
+  const instance = await findExpenseApprovalInstance(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, documentId: locked.id }, tx);
+  if (!instance || !AUTO_CONFIRM_STATUSES.has(instance.status)) return "skipped";
+  if ((await findLivePayment(viewer, locked.id, tx)) !== null) return "skipped";
+  const review = await findReviewByExpense(viewer, locked.id, tx);
+  if (review?.status === "waived") return "skipped";
+  const sources = (await evidenceSourcesOf(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerIds: [locked.id] }, tx)).get(locked.id);
+
+  if (input.canConfirm && autoConfirmEligible(sources, locked.supplyAmountKrw)) {
+    const supply = locked.supplyAmountKrw;
+    await upsertReview(viewer, { expenseId: locked.id, status: "confirmed", amountBeforeKrw: supply, amountAfterKrw: supply, waiveReason: null, reviewedBy: viewer.id }, tx);
+    if (instance.status === "approved") {
+      const version = await bumpExpenseVersion(viewer, { expenseId: locked.id, expectedVersion: locked.version, updatedBy: viewer.id }, tx);
+      if (version === null) throw new EvidenceReviewConflictError(`다른 사람이 ${formatKstTime(locked.updatedAt)}에 바꿈 · 새로 고침`);
+    }
+    await recordAction(
+      viewer,
+      { actionType: "document_update", entity: "expense", entityId: locked.id, documentId: locked.id, detail: { ...AUTO_CONFIRM_LOG, status: "confirmed" } },
+      { tx },
+    );
+    return "stored";
+  }
+  if (review?.status !== "confirmed") return "skipped";
+  await deleteReviewByExpense(viewer, locked.id, tx);
+  await recordAction(
+    viewer,
+    { actionType: "document_update", entity: "expense", entityId: locked.id, documentId: locked.id, detail: { ...AUTO_CONFIRM_LOG, status: "released" } },
+    { tx },
+  );
+  return "released";
+}
+
+// 다시 올릴 때(05 제출 tx — 잠금 · 게이트 뒤) 앞 회차 자동 확인을 푼다. 제출 때 남은 confirmed는 결재 중 자동 확인뿐이다(수동 확인 · 면제는
+// 승인 뒤에만 열리고 승인 문서는 다시 올리지 않는다). 반려 · 회수 중 지급 권한 없는 사람이 같은 금액의 다른 기록으로 바꿔도 조건은 참이라
+// 조건으로 재지 않고 지운다(재검토 2회차 N-2) — 다시 결재 중에 지급 권한자가 붙이면 autoConfirmOnAttach가, 승인 뒤에는 06 확인이 닫는다.
+// 면제는 그대로. 지웠으면 참.
+export async function recheckEvidenceConfirmation(viewer: Viewer, input: { expenseId: string }, tx: DbOrTx): Promise<boolean> {
+  const review = await findReviewByExpense(viewer, input.expenseId, tx);
+  if (review?.status !== "confirmed") return false;
+  await deleteReviewByExpense(viewer, input.expenseId, tx);
+  await recordAction(
+    viewer,
+    { actionType: "document_update", entity: "expense", entityId: input.expenseId, documentId: input.expenseId, detail: { ...AUTO_CONFIRM_LOG, status: "released" } },
+    { tx },
+  );
+  return true;
 }

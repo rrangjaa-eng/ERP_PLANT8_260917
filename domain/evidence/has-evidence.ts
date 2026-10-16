@@ -49,6 +49,13 @@ export async function evidenceSourcesOf(
   return sources;
 }
 
+// 06.1-12 자동 확인 조건(RP-1 · D-6117 × D-6520 · 카드 R2) — 조건만, 저장은 evidence-reviews. 붙임 ≥ 1 ∧ 작성자 붙임 0 ∧ 파일 0 ∧ 문서 공급가 있음 ∧
+// 붙은 기록 공급가 합 = 문서 공급가(원 정수 비교만 — 금액 산술 없음, 기록 금액은 문서 금액을 바꾸지 않는다).
+export function autoConfirmEligible(sources: EvidenceSources | undefined, docSupplyKrw: number | null): boolean {
+  if (!sources || docSupplyKrw === null) return false;
+  return sources.linkCount >= 1 && sources.authorLinkCount === 0 && sources.fileCount === 0 && sources.recordSupplyKrw === docSupplyKrw;
+}
+
 // 목록 · 집계용 묶음 판정 — 증빙(파일 또는 붙임)이 있는 주인 id 집합. 트랜잭션 콜백 안에서는 그 tx를 넘긴다(위와 같다).
 export async function ownersWithEvidence(viewer: Viewer, input: { ownerKind: string; ownerIds: readonly string[] }, tx?: DbOrTx): Promise<Set<string>> {
   return new Set((await evidenceSourcesOf(viewer, input, tx)).keys());

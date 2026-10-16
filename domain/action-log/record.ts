@@ -53,6 +53,11 @@ export const CORE_ACTION_TYPES = [
   "project_member_change",
   // 06.1-01 D-6112 · RP-2: 증빙 기록 금액 고침 · 파일이 카드 사용을 덮음(전 · 후) — 문서 공급가액과 별개인 증빙 원본 기록이라 끌 수 없다.
   "evidence_record_amount_change",
+  // 06.1-04 D-6114: 증빙 등록 권한만으로 하는 거래처 생성 · 복원 · 구분 변경 — 범용 document_create · restore · document_update는 설정으로 끌 수 있어
+  // 거래처 관리 권한 없이 거래처를 바꾸게 한 조건(로그 필수)을 보장하지 못한다(D-1106 cert_correct 선례).
+  "evidence_vendor_create",
+  "evidence_vendor_restore",
+  "evidence_vendor_kind_change",
 ] as const;
 
 export type CoreActionType = (typeof CORE_ACTION_TYPES)[number];
@@ -93,6 +98,9 @@ export const ACTION_TYPE_LABELS: Record<CoreActionType, string> = {
   evidence_waive: "증빙 면제",
   project_member_change: "프로젝트 참여자 변경",
   evidence_record_amount_change: "증빙 기록 금액 변경",
+  evidence_vendor_create: "증빙 거래처 생성",
+  evidence_vendor_restore: "증빙 거래처 복원",
+  evidence_vendor_kind_change: "증빙 거래처 구분 변경",
 };
 
 // OPS-05: Excel 내보내기·마스킹 해제·행동 로그 정리는 설정으로 못 끄는 핵심
@@ -132,6 +140,10 @@ export const ALWAYS_ON_ACTION_TYPES: CoreActionType[] = [
   "purchase_process",
   // 06.1-01 D-6112 · RP-2: 증빙 기록 금액 변경은 증빙 원본 기록이 바뀌는 돈 기록이라 끌 수 없다
   "evidence_record_amount_change",
+  // 06.1-04 D-6114: 증빙 등록이 거래처를 만들고 · 되살리고 · 구분을 올리는 기록은 거래처 관리 권한 없이 바꾸게 한 조건이라 끌 수 없다
+  "evidence_vendor_create",
+  "evidence_vendor_restore",
+  "evidence_vendor_kind_change",
 ];
 
 export class UnknownActionTypeError extends UserFacingError {}

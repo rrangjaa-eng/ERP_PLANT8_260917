@@ -117,6 +117,30 @@ export async function findVendorsByBusinessNoDigits(
     .orderBy(sql`${vendors.archivedAt} ASC NULLS FIRST`, asc(vendors.createdAt));
 }
 
+export type VendorBusinessNoListMatch = VendorBusinessNoMatch & { digits: string };
+
+// 배열판(06.1-04 B-F14) — 위 findVendorsByBusinessNoDigits와 같은 판정(숫자만 뽑은 식 · 같은 정렬)을 번호 여럿에 한 번 돈다.
+export async function findVendorsByBusinessNoDigitsList(
+  viewer: Viewer,
+  digitsList: readonly string[],
+  tx: DbOrTx = db,
+): Promise<VendorBusinessNoListMatch[]> {
+  void viewer;
+  const digits = sql<string>`regexp_replace(${vendors.businessNo}, '[^0-9]', '', 'g')`;
+  return tx
+    .select({ id: vendors.id, name: vendors.name, kind: vendors.kind, hidden: vendors.hidden, archivedAt: vendors.archivedAt, digits })
+    .from(vendors)
+    .where(sql`${digits} = ANY(${sql.param([...digitsList])}::text[])`)
+    .orderBy(sql`${vendors.archivedAt} ASC NULLS FIRST`, asc(vendors.createdAt));
+}
+
+// 06.1-04(B-F14): 증빙 등록의 거래처 자동 생성 잠금 하나 — 번호마다 잠그지 않는다(lockRouteStep 꼴). 관리 화면 저장은 이 잠금을
+// 쓰지 않고 유일 색인(23505)이 가른다 — 등록 서비스가 그때 트랜잭션을 한 번 다시 돈다.
+export async function lockVendorAutocreate(viewer: Viewer, tx: DbOrTx): Promise<void> {
+  void viewer;
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${"vendor_autocreate"}, 0))`);
+}
+
 export type VendorInsertInput = {
   name: string;
   normalizedName: string;
@@ -130,8 +154,8 @@ export type VendorInsertInput = {
   kind?: VendorKind;
 };
 
-export async function insertVendor(viewer: Viewer, input: VendorInsertInput): Promise<VendorRow> {
-  const [row] = await db
+export async function insertVendor(viewer: Viewer, input: VendorInsertInput, tx: DbOrTx = db): Promise<VendorRow> {
+  const [row] = await tx
     .insert(vendors)
     .values({
       name: input.name,
@@ -192,15 +216,15 @@ export async function setVendorHidden(viewer: Viewer, id: string, hidden: boolea
 }
 
 // 보관·복원 둘 다 조건부 UPDATE로 멱등·경합 안전을 확보한다(repositories/roles.ts와 같은 패턴).
-export async function setVendorArchived(viewer: Viewer, id: string, value: boolean): Promise<boolean> {
+export async function setVendorArchived(viewer: Viewer, id: string, value: boolean, tx: DbOrTx = db): Promise<boolean> {
   // 조건부 갱신이 실제로 바꾼 행이 있으면 참 — 범용 복원이 「이미 복원됨」 · 로그를 이 결과로 정한다(PR #149).
   const rows = value
-    ? await db
+    ? await tx
         .update(vendors)
         .set({ archivedAt: new Date(), archivedBy: viewer.id })
         .where(and(eq(vendors.id, id), isNull(vendors.archivedAt)))
         .returning({ id: vendors.id })
-    : await db
+    : await tx
         .update(vendors)
         .set({ archivedAt: null, archivedBy: null })
         .where(and(eq(vendors.id, id), isNotNull(vendors.archivedAt)))

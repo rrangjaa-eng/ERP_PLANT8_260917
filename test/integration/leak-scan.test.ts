@@ -51,6 +51,8 @@ import "@/app/(app)/certs/events/actions.registry";
 import "@/domain/certs/review";
 import "@/app/(app)/certs/submissions/[id]/actions.registry";
 import "@/app/(app)/admin/field-definitions/actions.registry";
+import "@/domain/evidence-import";
+import "@/app/(app)/expenses/evidence/actions.registry";
 import {
   createFieldDefinition,
   FIELD_DEFINITION_ADMIN_DTO_FIELDS,

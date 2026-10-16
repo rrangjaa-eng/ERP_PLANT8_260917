@@ -23,6 +23,8 @@ import { expenseCostBasis } from "@/domain/evidence-reviews/cost-basis";
 import { evidenceSourcesOf, hasEvidence } from "@/domain/evidence/has-evidence";
 import { completeExpensePayment, getPaymentView, previewPayable } from "@/domain/payments";
 import { GateBlockedError } from "@/domain/rules/gate";
+import { PAYMENT_METHOD_EVIDENCE_PAIRS } from "@/domain/settings/keys";
+import { upsertSimpleValue } from "@/repositories/settings";
 import { withTransaction } from "@/lib/db-transaction";
 import { seoulToday } from "@/lib/dates";
 import { attachEvidence, makeEvidenceManager, setupExpenseProject, submitReadyDraft, type ExpenseFixture } from "./fixtures/expenses";
@@ -601,5 +603,69 @@ describe("자동 확인 — 지급 권한자가 결재 중 · 승인 문서에 �
     expect((await moneyColumnsOf(expenseId)).supplyAmountKrw).toBe(12_100_000);
     await expect(payNow(payer, expenseId)).resolves.toMatchObject({ version: confirmed.version + 1 });
     expect((await moneyColumnsOf(expenseId)).supplyAmountKrw).toBe(12_100_000);
+  });
+});
+
+describe("제출 짝 단계 — 지급 방식 × 문서 증빙 종류 · 붙은 기록 종류 (06.1-12 Task 4 · E06 · 카드 R4)", () => {
+  // 짝 설정은 전역 값이다 — 케이스마다 끝에서 빈 목록(검사 없음, 기본값)으로 되돌린다.
+  async function setPairs(pairs: { method: string; evidence: string }[]): Promise<void> {
+    await upsertSimpleValue(SYSTEM_VIEWER, PAYMENT_METHOD_EVIDENCE_PAIRS.key, pairs, null);
+  }
+
+  async function submitStateOf(expenseId: string) {
+    const [row] = await db.select({ number: expenses.number, version: expenses.version }).from(expenses).where(eq(expenses.id, expenseId));
+    const instances = await db.select({ id: approvalInstances.id }).from(approvalInstances).where(eq(approvalInstances.documentId, expenseId));
+    return { number: row?.number ?? null, version: row?.version ?? null, instances: instances.length };
+  }
+
+  it("짝 설정에서 (계좌이체 · 현금영수증)을 빼면 제출이 지급 때와 같은 글로 막힌다 · 번호 · 결재 · version 그대로 — 짝을 되돌리면 제출된다", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    const expenseId = await newDraft(fx);
+    await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: await versionOf(expenseId), fields: { evidenceType: "cash_receipt", paymentMethod: "bank_transfer" } });
+    await insertRecordAndLink(payer, { ownerId: expenseId, attachMode: "registrar", supplyKrw: DOC_SUPPLY, evidenceType: "cash_receipt" });
+    try {
+      await setPairs([{ method: "bank_transfer", evidence: "tax_invoice" }]);
+      const before = await submitStateOf(expenseId);
+      expect(before).toMatchObject({ number: null, instances: 0 });
+      const error = await caught(submitWithoutFile(fx.pm, expenseId));
+      expect(error).toBeInstanceOf(GateBlockedError);
+      expect((error as Error).message).toBe("계좌이체 · 현금영수증 짝 아님 · 짝 설정은 관리자");
+      expect(await submitStateOf(expenseId)).toEqual(before);
+
+      await setPairs([
+        { method: "bank_transfer", evidence: "tax_invoice" },
+        { method: "bank_transfer", evidence: "cash_receipt" },
+      ]);
+      expect((await submitWithoutFile(fx.pm, expenseId)).kind).toBe("submitted");
+    } finally {
+      await setPairs([]);
+    }
+  });
+
+  it("(카드 R4) 카드 전표 기록을 붙인 반려 문서의 지급 방식을 계좌이체로 바꾸면 그 기록 종류 이름으로 막힌다 · 붙임을 떼면 제출된다", async () => {
+    const payer = await makePayer();
+    const fx = await setupExpenseProject();
+    const expenseId = await newDraft(fx);
+    await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: await versionOf(expenseId), fields: { paymentMethod: "cash" } });
+    const { linkId } = await insertRecordAndLink(payer, { ownerId: expenseId, attachMode: "registrar", supplyKrw: 33_000, evidenceType: "card_receipt" });
+    try {
+      // 계좌이체만 짝이 있다 — 현금은 짝이 하나도 없어 검사 없음. 05 파일(세금계산서 칸) + 카드 전표 기록으로 올라간다.
+      await setPairs([{ method: "bank_transfer", evidence: "tax_invoice" }]);
+      expect((await submitReadyDraft(fx.pm, expenseId)).kind).toBe("submitted");
+      await rejectFresh(fx, expenseId);
+      await saveExpenseDraft(fx.pm, { expenseId, expectedVersion: await versionOf(expenseId), fields: { paymentMethod: "bank_transfer" } });
+
+      const before = await submitStateOf(expenseId);
+      const error = await caught(submitWithoutFile(fx.pm, expenseId));
+      expect(error).toBeInstanceOf(GateBlockedError);
+      expect((error as Error).message).toBe("계좌이체 · 카드 전표 짝 아님 · 짝 설정은 관리자");
+      expect(await submitStateOf(expenseId)).toEqual(before);
+
+      await detachLinkRow(linkId, payer);
+      expect((await submitWithoutFile(fx.pm, expenseId)).kind).toBe("submitted");
+    } finally {
+      await setPairs([]);
+    }
   });
 });

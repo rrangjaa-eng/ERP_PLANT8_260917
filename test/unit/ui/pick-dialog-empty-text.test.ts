@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pickEmptyText, pickFootLine, pickManyCapReached, pickManyPrimaryLabel, pickOutcomeOf, pickTruncatedText } from "@/ui/pick-dialog/PickDialog";
+import { pickEmptyText, pickFootLine, pickManyCapReached, pickManyPrimaryLabel, pickOutcomeOf, pickRejectionClears, pickTruncatedText } from "@/ui/pick-dialog/PickDialog";
 
 // 05 /review B2: 골라내기 빈 목록 문구의 조사 — 받침 없는 `거래처`는 `가`, 받침 있는 `줄`은 `이`.
 describe("pickEmptyText", () => {
@@ -110,5 +110,23 @@ describe("pickTruncatedText — 넘침 바닥 줄 (06.1 SP-6106 ⑸)", () => {
   it("한도를 안 주면 기존 50건 글자 그대로이고 주면 그 수가 들어간다", () => {
     expect(pickTruncatedText(undefined)).toBe("50건 넘음 · 검색으로 좁히기");
     expect(pickTruncatedText(20)).toBe("20건 넘음 · 검색으로 좁히기");
+  });
+});
+
+// 디자인 검토 결함 F — 단일 거부는 「다른 고를 수 있는 행」을 가리킬 때만 걷힌다(막힌 행을 눌렀다 원래 행으로 돌아와도 1차가 풀리지 않는다).
+describe("pickRejectionClears — 단일 거부를 걷는 때 (06.1 SP-6106 ⑷)", () => {
+  const row = (id: string, selectable: boolean) => ({ type: "row" as const, id, title: id, selectable });
+
+  it("다른 고를 수 있는 행을 가리킬 때만 참이다", () => {
+    expect(pickRejectionClears("d5", row("d2", true))).toBe(true);
+    expect(pickRejectionClears(null, row("d2", true))).toBe(true);
+    // d5가 거부된 뒤 막힌 d3를 거쳐 d5로 돌아와도(거부된 행 그대로) 풀리지 않는다.
+    expect(pickRejectionClears("d5", row("d5", true))).toBe(false);
+  });
+
+  it("막힌 행 · 같은 행 · 가리키는 행 없음은 거짓이다", () => {
+    expect(pickRejectionClears("d5", row("d3", false))).toBe(false);
+    expect(pickRejectionClears("d5", row("d5", true))).toBe(false);
+    expect(pickRejectionClears("d5", null)).toBe(false);
   });
 });

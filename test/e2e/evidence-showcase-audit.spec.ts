@@ -290,6 +290,20 @@ for (const width of WIDTHS) {
         check("폰 꼬리 「새로 고침」 높이 ≥ 44", route, width, tail.h, "≥ 44", tail.h >= 44);
       }
       await docFits(page, `${route}(거부 뒤)`, width);
+
+      // 디자인 검토 결함 F — 거부(retryable 거짓)는 막힌 행을 눌렀다 원래 행으로 돌아와도 풀리지 않고, 다른 고를 수 있는 행에서만 풀린다.
+      const primaryNow = () => dialog.getByRole("button", { name: /^이 문서에 붙이기/ }).getAttribute("aria-disabled");
+      const lineNow = () => dialog.getByText("이미 다른 문서에 붙음", { exact: true }).count();
+      // aria-disabled 행은 Playwright가 「비활성」으로 보고 기다리므로 force — 실제 사용자는 눌러 볼 수 있는 행이다.
+      await dialog.locator('[data-pick-id="d3"]').click({ force: true });
+      const afterBlocked = { line: await lineNow(), primary: await primaryNow() };
+      check("거부 뒤 막힌 행 d3 누름 — 거부 줄 · 1차 aria-disabled 유지", route, width, afterBlocked, "1 · true", afterBlocked.line === 1 && afterBlocked.primary === "true");
+      await dialog.locator('[data-pick-id="d5"]').click();
+      const backToRejected = { line: await lineNow(), primary: await primaryNow() };
+      check("거부 뒤 d3를 거쳐 d5로 돌아옴 — 거부 줄 · 1차 aria-disabled 유지", route, width, backToRejected, "1 · true", backToRejected.line === 1 && backToRejected.primary === "true");
+      await dialog.locator('[data-pick-id="d2"]').click();
+      const afterOther = { line: await lineNow(), primary: await primaryNow() };
+      check("다른 고를 수 있는 행 d2 누름 — 거부 줄 0 · 1차 aria-disabled 없음", route, width, afterOther, "0 · null", afterOther.line === 0 && afterOther.primary === null);
     });
 
     test(`?pick=evidence @${width} — 미리 고름 · 고른 1건 · 상한 줄 · 1차 · limit 줄`, async () => {

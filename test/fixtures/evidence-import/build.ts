@@ -36,7 +36,8 @@ export function writeBook(sheets: readonly SheetSpec[], as: FixtureAs = "xls"): 
     XLSX.utils.book_append_sheet(book, sheet, spec.name);
   }
   if (as === "xls") return new Uint8Array(XLSX.write(book, { type: "array", bookType: "biff8" }) as ArrayBuffer);
-  if (as === "xlsx") return new Uint8Array(XLSX.write(book, { type: "array", bookType: "xlsx" }) as ArrayBuffer);
+  // 실제 엑셀이 저장한 xlsx는 deflate 압축이다 — SheetJS 기본(무압축)이면 3,000줄이 1MB를 넘어 크기 거절이 먼저 난다.
+  if (as === "xlsx") return new Uint8Array(XLSX.write(book, { type: "array", bookType: "xlsx", compression: true }) as ArrayBuffer);
   const first = sheets[0];
   if (!first) throw new Error("시트 없음");
   const text = XLSX.utils.sheet_to_csv(book.Sheets[first.name] as XLSX.WorkSheet);
@@ -277,4 +278,146 @@ export function bcFixture(rows: readonly FixtureRow[], opts: FixtureOptions & { 
   const header = opts.header ?? BC_HEADER;
   const body = rowsOf(header, BC_DEFAULTS, rows).map((row) => row.map((cell) => (cell === null ? null : String(cell).padStart(13))));
   return writeBook([{ name: "Sheet1", rows: [[...header], ...body] }], opts.as);
+}
+
+// 홈택스 매입 전자세금계산서 목록 — 머리글 33칸에 `상호` · `대표자명` · `주소` · `종사업장번호`가 두 번씩 나와 픽스처 줄은
+// 별칭(공급자상호 · 받는자상호 …)으로 적는다. [별칭, 머리글] 순서 그대로.
+export const HOMETAX_TAX_INVOICE_COLUMNS = [
+  ["작성일자", "작성일자"],
+  ["승인번호", "승인번호"],
+  ["발급일자", "발급일자"],
+  ["전송일자", "전송일자"],
+  ["공급자사업자등록번호", "공급자사업자등록번호"],
+  ["공급자종사업장번호", "종사업장번호"],
+  ["공급자상호", "상호"],
+  ["공급자대표자명", "대표자명"],
+  ["공급자주소", "주소"],
+  ["공급받는자사업자등록번호", "공급받는자사업자등록번호"],
+  ["받는자종사업장번호", "종사업장번호"],
+  ["받는자상호", "상호"],
+  ["받는자대표자명", "대표자명"],
+  ["받는자주소", "주소"],
+  ["합계금액", "합계금액"],
+  ["공급가액", "공급가액"],
+  ["세액", "세액"],
+  ["전자세금계산서분류", "전자세금계산서분류"],
+  ["전자세금계산서종류", "전자세금계산서종류"],
+  ["발급유형", "발급유형"],
+  ["비고", "비고"],
+  ["영수/청구 구분", "영수/청구 구분"],
+  ["공급자 이메일", "공급자 이메일"],
+  ["공급받는자 이메일1", "공급받는자 이메일1"],
+  ["공급받는자 이메일2", "공급받는자 이메일2"],
+  ["품목일자", "품목일자"],
+  ["품목명", "품목명"],
+  ["품목규격", "품목규격"],
+  ["품목수량", "품목수량"],
+  ["품목단가", "품목단가"],
+  ["품목공급가액", "품목공급가액"],
+  ["품목세액", "품목세액"],
+  ["품목비고", "품목비고"],
+] as const;
+
+const HOMETAX_DEFAULTS: Record<string, FixtureCell> = {
+  작성일자: "2026-06-15",
+  승인번호: "20260615-10260615-71160001",
+  발급일자: "2026-06-15",
+  전송일자: "2026-06-16",
+  공급자사업자등록번호: FAKE_BUSINESS_NO,
+  공급자종사업장번호: "",
+  공급자상호: "공급회사가",
+  공급자대표자명: "대표가",
+  공급자주소: "주소가",
+  공급받는자사업자등록번호: FAKE_COMPANY_BUSINESS_NO,
+  받는자종사업장번호: "",
+  받는자상호: "우리회사가",
+  받는자대표자명: "대표나",
+  받는자주소: "주소나",
+  합계금액: 110000,
+  공급가액: 100000,
+  세액: 10000,
+  전자세금계산서분류: "세금계산서",
+  전자세금계산서종류: "일반",
+  발급유형: "정발행",
+  비고: "",
+  "영수/청구 구분": "청구",
+  "공급자 이메일": "supplier@example.com",
+  "공급받는자 이메일1": "buyer@example.com",
+  "공급받는자 이메일2": "",
+  품목일자: "2026-06-15",
+  품목명: "품목가",
+  품목규격: "",
+  품목수량: 1,
+  품목단가: 100000,
+  품목공급가액: 100000,
+  품목세액: 10000,
+  품목비고: "",
+};
+
+export type HometaxFixtureOptions = FixtureOptions & {
+  /** 5줄 띠 글자. */
+  band?: string;
+  /** 뺄 열(별칭) — 계산서 꼴은 `세액` · `품목세액`. */
+  omit?: readonly string[];
+  /** 3줄 총계 [이름, 값] 쌍 — 기본은 줄 합(합계 · 공급가 · 세액)을 쉼표 글자로. */
+  totals?: readonly (readonly [string, FixtureCell])[];
+  /** 0행 우리 회사 사업자번호 칸 값. */
+  company?: FixtureCell;
+  /** `품목` 시트 데이터 줄 수(기본 = 데이터 줄 수). */
+  itemRows?: number;
+};
+
+function commaText(amount: number): string {
+  return amount.toLocaleString("en-US");
+}
+
+// 홈택스 매입 전자세금계산서 목록 — 시트 `세금계산서` · `품목`, 0행 우리 회사, 3줄 총계, 5줄 띠, 6줄 머리글, 7줄부터 데이터.
+// 06.1-11 계산서 꼴(`band` · `omit` · `totals`)도 같은 생성기를 쓴다.
+export function hometaxTaxInvoiceFixture(rows: readonly FixtureRow[], opts: HometaxFixtureOptions = {}): Uint8Array {
+  const columns = HOMETAX_TAX_INVOICE_COLUMNS.filter(([alias]) => !(opts.omit ?? []).includes(alias));
+  const body = rows.map((row) =>
+    columns.map(([alias]) => (row === null ? null : alias in row ? (row[alias] ?? null) : (HOMETAX_DEFAULTS[alias] ?? null))),
+  );
+  const sumOf = (alias: string) =>
+    rows.reduce((total, row) => {
+      const value = row === null ? null : alias in row ? row[alias] : HOMETAX_DEFAULTS[alias];
+      return typeof value === "number" ? total + value : total;
+    }, 0);
+  const totals = opts.totals ?? [
+    ["총 합계금액", commaText(sumOf("합계금액"))],
+    ["총 공급가액", commaText(sumOf("공급가액"))],
+    ["총 세액", commaText(sumOf("세액"))],
+  ];
+  const sheet: FixtureCell[][] = [
+    ["사업자 등록번호", opts.company === undefined ? FAKE_COMPANY_BUSINESS_NO : opts.company, "상호", "우리회사가", "대표자 명", "대표나"],
+    [],
+    totals.flatMap(([label, value]) => [label, value]),
+    [],
+    [opts.band ?? "매입 전자(수정) 세금계산서 목록조회"],
+    columns.map(([, name]) => name),
+    ...body,
+  ];
+  const itemHeader = ["승인번호", "품목순번", "공급자등록번호", "공급받는자등록번호", "일자", "품목명", "규격", "수량", "단가", "공급가액", "세액", "비고"];
+  const itemCount = opts.itemRows ?? rows.length;
+  const items: FixtureCell[][] = Array.from({ length: itemCount }, (_, i) => [
+    "20260615-10260615-71160001",
+    i + 1,
+    FAKE_BUSINESS_NO,
+    FAKE_COMPANY_BUSINESS_NO,
+    "2026-06-15",
+    "품목가",
+    "",
+    1,
+    100000,
+    100000,
+    10000,
+    "",
+  ]);
+  return writeBook(
+    [
+      { name: "세금계산서", rows: sheet },
+      { name: "품목", rows: [[], [], [], [], itemHeader, ...items] },
+    ],
+    opts.as,
+  );
 }

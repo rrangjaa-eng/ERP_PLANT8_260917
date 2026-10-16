@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import type { TaxRule } from "@/domain/code-tables/tax-rule";
 import { splitCardTotal } from "@/domain/corp-card-usages/amounts";
 import { businessNoDigitsOf, cardLast4Of, cellDate, cellKrw, isBlankRow } from "@/domain/evidence-import/cells";
-import { finalizeAmounts, parseWorkbook, type ParseResult } from "@/domain/evidence-import/registry";
+import { EVIDENCE_FORMATS, finalizeAmounts, parseWorkbook, type ParseResult } from "@/domain/evidence-import/registry";
+import { EVIDENCE_FORMAT_TYPES } from "@/domain/evidence-import/types";
 import type { TaxRates } from "@/domain/money/tax";
 import {
   bcFixture,
   FAKE_BC_ACCOUNT_NO,
+  hometaxTaxInvoiceFixture,
   lotteFixture,
   SHINHAN_HEADER,
   shinhanFixture,
@@ -332,5 +334,132 @@ describe("비씨 서식", () => {
   it("가린 가맹점사업자번호는 null(오류 아님)", () => {
     const [line] = ok(parseWorkbook(bcFixture([{}]))).lines;
     expect(line).toMatchObject({ businessNoDigits: null, cardLast4: "2942", issuedOn: "2026-05-14", merchant: "가맹점다" });
+  });
+});
+
+describe("홈택스 매입 세금계산서", () => {
+  const HOMETAX_ROWS: FixtureRow[] = [
+    {},
+    { 승인번호: "20260616-10260616-71160002", 공급자상호: "공급회사나", 합계금액: 55000, 공급가액: 50000, 세액: 5000 },
+    {
+      승인번호: "20260617-10260617-71160003",
+      전자세금계산서분류: "수정세금계산서",
+      합계금액: -11000,
+      공급가액: -10000,
+      세액: -1000,
+      비고: "당초 승인번호 (20260101-11111111-22222222)",
+    },
+  ];
+
+  it("줄 3 · 승인번호 26자 · 공급자 쪽 상호 · 사업자번호 숫자 · 증빙 종류 · 열쇠 스냅샷", () => {
+    const result = ok(parseWorkbook(hometaxTaxInvoiceFixture(HOMETAX_ROWS)));
+    expect(result.format).toBe("hometax-tax-invoice");
+    expect(result.lines).toHaveLength(3);
+    const [first, , amended] = result.lines;
+    expect(first).toMatchObject({
+      lineNo: 7,
+      evidenceType: "tax_invoice",
+      approvalNo: "20260615-10260615-71160001",
+      issuedOn: "2026-06-15",
+      nameOnDocument: "공급회사가",
+      businessNoDigits: "1234567891",
+      totalKrw: 110000,
+      supplyKrw: 100000,
+      vatKrw: 10000,
+      cardLast4: null,
+      originalApprovalNo: null,
+    });
+    expect(first?.approvalNo).toHaveLength(26);
+    expect(first?.dedupeKey).toBe("hometax-tax-invoice|20260615-10260615-71160001");
+    expect(first?.sameKeyCount).toBe(1);
+    expect(amended).toMatchObject({ originalApprovalNo: "20260101-11111111-22222222", totalKrw: -11000, supplyKrw: -10000, vatKrw: -1000 });
+    expect(result.rateDates).toEqual([]);
+  });
+
+  it("거래처를 만드는 서식이다", () => {
+    expect(EVIDENCE_FORMATS.find((rule) => rule.key === "hometax-tax-invoice")?.createsVendor).toBe(true);
+  });
+
+  it("xlsx도 같은 줄 · 같은 열쇠(E39)", () => {
+    const expected = ok(parseWorkbook(hometaxTaxInvoiceFixture(HOMETAX_ROWS))).lines;
+    expect(ok(parseWorkbook(hometaxTaxInvoiceFixture(HOMETAX_ROWS, { as: "xlsx" }))).lines).toEqual(expected);
+  });
+
+  it("csv(시트 이름 없음)도 띠 · 머리글 조건으로 읽힌다", () => {
+    const expected = ok(parseWorkbook(hometaxTaxInvoiceFixture(HOMETAX_ROWS))).lines.map((line) => line.dedupeKey);
+    expect(ok(parseWorkbook(hometaxTaxInvoiceFixture(HOMETAX_ROWS, { as: "csv-utf8" }))).lines.map((line) => line.dedupeKey)).toEqual(expected);
+  });
+
+  it("0행 사업자번호가 비거나 숫자 10자리가 아니면 모르는 서식(E18)", () => {
+    expect(parseWorkbook(hometaxTaxInvoiceFixture([{}], { company: "" }))).toMatchObject({ ok: false, kind: "unknown-format" });
+    expect(parseWorkbook(hometaxTaxInvoiceFixture([{}], { company: "723-**-*****" }))).toMatchObject({ ok: false, kind: "unknown-format" });
+  });
+
+  it("받는자 사업자번호가 우리 회사 번호와 다르면 받는 사업자 다름", () => {
+    expect(parseWorkbook(hometaxTaxInvoiceFixture([{ 공급받는자사업자등록번호: "111-11-11111" }]))).toMatchObject({ ok: false, lines: ["7줄 · 받는 사업자 다름"] });
+  });
+
+  it("공급자 번호가 우리 회사 번호면 공급자가 자사", () => {
+    expect(parseWorkbook(hometaxTaxInvoiceFixture([{ 공급자사업자등록번호: "999-99-99997" }]))).toMatchObject({ ok: false, lines: ["7줄 · 공급자가 자사"] });
+  });
+
+  it("같은 파일 안 같은 승인번호 두 줄 → 줄 오류 승인번호 겹침 · 파일 전체 거절(#2 없음)", () => {
+    expect(parseWorkbook(hometaxTaxInvoiceFixture([{}, {}]))).toEqual({ ok: false, kind: "line-errors", headline: "거절 · 오류 1줄", lines: ["8줄 · 승인번호 겹침"], restCount: 0 });
+  });
+
+  it("3줄 총계가 줄 합과 1원 다르면 총 합계금액 다름", () => {
+    const totals = [["총 합계금액", "110,001"], ["총 공급가액", "100,000"], ["총 세액", "10,000"]] as const;
+    expect(parseWorkbook(hometaxTaxInvoiceFixture([{}], { totals }))).toEqual({
+      ok: false,
+      kind: "checksum",
+      headline: "총 합계금액 다름 · 파일 110,001 · 줄 합 110,000",
+      lines: [],
+      restCount: 0,
+    });
+  });
+
+  it("띠가 매출로 시작하면 매출 목록 거절", () => {
+    expect(parseWorkbook(hometaxTaxInvoiceFixture([{}], { band: "매출 전자(수정) 세금계산서 목록조회" }))).toEqual({
+      ok: false,
+      kind: "sales-list",
+      headline: "매출 목록 · 매입 목록으로 다시 내려받기",
+      lines: [],
+      restCount: 0,
+    });
+  });
+
+  it("계산서 꼴(띠 계산서 · 세액 · 품목세액 없음 · 총 공급가액 한 쌍) → 모르는 서식", () => {
+    const bytes = hometaxTaxInvoiceFixture([{ 합계금액: 100000 }], {
+      band: "매입 전자(수정) 계산서 목록조회",
+      omit: ["세액", "품목세액"],
+      totals: [["총 공급가액", "100,000"]],
+    });
+    expect(parseWorkbook(bytes)).toMatchObject({ ok: false, kind: "unknown-format" });
+  });
+
+  it("반쪽 판별 — 띠는 세금계산서인데 세액 칸 없음 → 모르는 서식", () => {
+    expect(parseWorkbook(hometaxTaxInvoiceFixture([{}], { omit: ["세액", "품목세액"] }))).toMatchObject({ ok: false, kind: "unknown-format" });
+  });
+
+  it("반쪽 판별 — 띠는 계산서인데 세액 칸 있음 → 모르는 서식", () => {
+    expect(parseWorkbook(hometaxTaxInvoiceFixture([{}], { band: "매입 전자(수정) 계산서 목록조회" }))).toMatchObject({ ok: false, kind: "unknown-format" });
+  });
+
+  it("합계금액 ≠ 공급가액 + 세액 → 합계 맞지 않음", () => {
+    const totals = [["총 합계금액", "110,001"], ["총 공급가액", "100,000"], ["총 세액", "10,000"]] as const;
+    expect(parseWorkbook(hometaxTaxInvoiceFixture([{ 합계금액: 110001 }], { totals }))).toMatchObject({ ok: false, lines: ["7줄 · 합계 맞지 않음"] });
+  });
+
+  it("승인번호가 26자 꼴이 아니면 승인번호 읽지 못함", () => {
+    expect(parseWorkbook(hometaxTaxInvoiceFixture([{ 승인번호: "12345678" }]))).toMatchObject({ ok: false, lines: ["7줄 · 승인번호 읽지 못함"] });
+  });
+});
+
+describe("등록 배열 · 서식 → 증빙 종류 표(C-F15)", () => {
+  it("등록 서식은 정확히 넷이고 표와 1:1", () => {
+    expect(EVIDENCE_FORMATS.map((rule) => rule.key).sort()).toEqual(["card-bc", "card-lotte", "card-shinhan", "hometax-tax-invoice"]);
+    expect(EVIDENCE_FORMATS.map((rule) => ({ key: rule.key, evidenceType: rule.evidenceType })).sort((a, b) => a.key.localeCompare(b.key))).toEqual(
+      [...EVIDENCE_FORMAT_TYPES].sort((a, b) => a.key.localeCompare(b.key)),
+    );
   });
 });

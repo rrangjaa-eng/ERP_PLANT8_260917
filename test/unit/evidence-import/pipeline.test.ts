@@ -4,7 +4,18 @@ import { sizeRefusalHeadline, rowRefusalHeadline, EVIDENCE_IMPORT_MAX_BYTES, EVI
 import { finalizeAmounts, parseWorkbook, type ParseResult } from "@/domain/evidence-import/registry";
 import { sniff } from "@/domain/evidence-import/workbook";
 import { readWorkbookRows, zipEntryStats } from "@/lib/xlsx-server";
-import { encryptedFixture, lotteFixture, manyEntriesZipFixture, zipBombFixture, type FixtureRow } from "@/test/fixtures/evidence-import/build";
+import { cardLotte } from "@/domain/evidence-import/formats/card-lotte";
+import {
+  encryptedFixture,
+  hometaxTaxInvoiceFixture,
+  LOTTE_HEADER,
+  lotteFixture,
+  manyEntriesZipFixture,
+  shinhanFixture,
+  writeBook,
+  zipBombFixture,
+  type FixtureRow,
+} from "@/test/fixtures/evidence-import/build";
 
 // 06.1-02 — 바이트 → 판별 → 읽기 → 서식 규칙 → 열쇠 → 두 단계 금액(롯데 트레이서).
 
@@ -190,5 +201,56 @@ describe("픽스처 왕복(B-F22)", () => {
     expect(rows[1]).toHaveLength(22);
     expect(rows[2]?.[8]).toBe("   가맹점가   ");
     expect(rows[2]?.[9]).toBe(113400.5);
+  });
+});
+
+describe("컨테이너 · 시트 수 · 행 상한(B-F18 · P1-4)", () => {
+  it("등록 서식이 선언하지 않은 컨테이너는 SheetJS에 넘기지 않는다", () => {
+    const read = vi.fn(readWorkbookRows);
+    const formats = [{ ...cardLotte, containers: ["cfb"] as const }];
+    const result = parseWorkbook(lotteFixture([{}], { as: "xlsx" }), { formats, deps: { readWorkbookRows: read } });
+    expect(result).toMatchObject({ ok: false, kind: "unknown-format" });
+    expect(read).not.toHaveBeenCalled();
+    expect(parseWorkbook(lotteFixture([{}]), { formats })).toMatchObject({ ok: true });
+  });
+
+  it("시트 6장짜리 통합문서 → 모르는 서식", () => {
+    const sheet = { rows: [["매입내역"], [...LOTTE_HEADER]] };
+    const bytes = writeBook(Array.from({ length: 6 }, (_, i) => ({ name: `S${i}`, ...sheet })));
+    expect(parseWorkbook(bytes)).toMatchObject({ ok: false, kind: "unknown-format" });
+  });
+
+  it("홈택스 품목 시트가 상한을 넘어도 세금계산서 시트가 상한 안이면 거절되지 않는다", () => {
+    expect(parseWorkbook(hometaxTaxInvoiceFixture([{}], { itemRows: 3100 }))).toMatchObject({ ok: true, format: "hometax-tax-invoice" });
+  });
+
+  it("NUL 섞인 무작위 바이트 → 엑셀·CSV 파일 아님", () => {
+    expect(parseWorkbook(new Uint8Array([0x13, 0x00, 0x99, 0x00, 0x01, 0xfe]))).toMatchObject({ ok: false, kind: "not-excel", headline: "엑셀·CSV 파일 아님 · 내려받은 파일 그대로" });
+  });
+
+  const rowsOf = (n: number): FixtureRow[] => Array.from({ length: n }, (_, i) => ({ 승인번호: String(10000000 + i) }));
+  const over = rowsOf(3001);
+  const atLimit = rowsOf(3000);
+  for (const as of ["xls", "xlsx", "csv-utf8", "csv-euckr"] as const) {
+    it(`데이터 3001줄 ${as} → 3,001줄 거절 · 등록 줄 0`, () => {
+      expect(parseWorkbook(shinhanFixture(over, { as }))).toEqual({
+        ok: false,
+        kind: "rows",
+        headline: "3,001줄 · 3,000줄 초과 · 기간을 나눠 다시 내려받기",
+        lines: [],
+        restCount: 0,
+      });
+    });
+
+    it(`데이터 3000줄 ${as} → 통과`, () => {
+      const result = parseWorkbook(shinhanFixture(atLimit, { as }));
+      expect(result.ok ? result.lines.length : result.headline).toBe(3000);
+    });
+  }
+
+  it("데이터 2999줄 + 끝 빈 줄 5개 csv → 읽기 한도에 닿으면 거절(끝 빈 줄 fail-closed)", () => {
+    const csv = shinhanFixture(rowsOf(2999), { as: "csv-utf8" });
+    const padded = new Uint8Array([...csv, ...new TextEncoder().encode("\n\n\n\n\n")]);
+    expect(parseWorkbook(padded)).toMatchObject({ ok: false, kind: "rows" });
   });
 });

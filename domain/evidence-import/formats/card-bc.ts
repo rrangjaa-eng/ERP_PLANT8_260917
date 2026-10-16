@@ -90,7 +90,7 @@ export const cardBc: FormatRule = {
         originalApprovalNo: null,
       });
     }
-    const checksum = summaryKrw === null ? null : { file: summaryKrw, sum: sumKrw(lines.map((line) => line.totalKrw)) };
+    const checksum = summaryKrw === null ? null : { label: "총 합계금액", file: summaryKrw, sum: sumKrw(lines.map((line) => line.totalKrw)) };
     return { lines, errors, checksum };
   },
 };

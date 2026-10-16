@@ -6,6 +6,7 @@ export const EVIDENCE_FORMAT_TYPES = [
   { key: "card-lotte", evidenceType: "card_receipt" },
   { key: "card-shinhan", evidenceType: "card_receipt" },
   { key: "card-bc", evidenceType: "card_receipt" },
+  { key: "hometax-tax-invoice", evidenceType: "tax_invoice" },
 ] as const;
 
 export type EvidenceFormatKey = (typeof EVIDENCE_FORMAT_TYPES)[number]["key"];
@@ -44,7 +45,7 @@ export type SheetPreview = { name: string; rows: Rows };
 export type DetectResult = { match: true; sheetIndex: number; headerRow: number } | { match: false; salesList?: boolean };
 export type ReadContext = { headerRow: number; date1904: boolean };
 export type LineError = { lineNo: number; reason: string };
-export type FormatReadResult = { lines: ParsedLine[]; errors: LineError[]; checksum: { file: number; sum: number } | null };
+export type FormatReadResult = { lines: ParsedLine[]; errors: LineError[]; checksum: { label: string; file: number; sum: number } | null };
 
 export type FormatRule = {
   key: EvidenceFormatKey;

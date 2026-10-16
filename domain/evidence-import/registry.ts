@@ -5,6 +5,7 @@ import { DETECT_ROWS, detectFormat } from "@/domain/evidence-import/detect";
 import { cardBc } from "@/domain/evidence-import/formats/card-bc";
 import { cardLotte } from "@/domain/evidence-import/formats/card-lotte";
 import { cardShinhan } from "@/domain/evidence-import/formats/card-shinhan";
+import { hometaxTaxInvoice } from "@/domain/evidence-import/formats/hometax-tax-invoice";
 import { dedupeKeys, splitOffsetPairs } from "@/domain/evidence-import/key";
 import {
   EVIDENCE_IMPORT_MAX_BYTES,
@@ -20,7 +21,7 @@ import { decodeCsvText, DEFAULT_WORKBOOK_DEPS, readSheets, sniff, type SheetSour
 export { EVIDENCE_IMPORT_MAX_BYTES, EVIDENCE_IMPORT_MAX_ROWS } from "@/domain/evidence-import/limits";
 
 // 06.1-02: 증빙 가져오기 진입점. 서식 하나 = 규칙 파일 하나 + 이 배열 한 줄(D-6103). 계산서 · 현금영수증은 06.1-11.
-export const EVIDENCE_FORMATS: readonly FormatRule[] = [cardLotte, cardShinhan, cardBc];
+export const EVIDENCE_FORMATS: readonly FormatRule[] = [cardLotte, cardShinhan, cardBc, hometaxTaxInvoice];
 
 export type ParseResult = ParseSuccess | Refusal;
 
@@ -106,7 +107,7 @@ export function parseWorkbook(bytes: Uint8Array, options: ParseOptions = {}): Pa
   const read = rule.read(sheet.rows, { headerRow, date1904: second.book.date1904 });
   if (read.errors.length > 0) return refuseLines(read.errors);
   if (read.checksum && read.checksum.file !== read.checksum.sum) {
-    return refuse("checksum", `총 합계금액 다름 · 파일 ${read.checksum.file.toLocaleString("en-US")} · 줄 합 ${read.checksum.sum.toLocaleString("en-US")}`);
+    return refuse("checksum", `${read.checksum.label} 다름 · 파일 ${read.checksum.file.toLocaleString("en-US")} · 줄 합 ${read.checksum.sum.toLocaleString("en-US")}`);
   }
 
   const { lines: kept, offsetPairs } = splitOffsetPairs(read.lines);

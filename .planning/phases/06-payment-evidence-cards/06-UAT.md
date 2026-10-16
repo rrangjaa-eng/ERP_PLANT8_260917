@@ -1,14 +1,14 @@
 ---
-status: diagnosed
+status: partial
 phase: 06-payment-evidence-cards
 source: 06-01-SUMMARY.md, 06-02-SUMMARY.md, 06-03-SUMMARY.md, 06-04-SUMMARY.md, 06-05-SUMMARY.md, 06-06-SUMMARY.md, 06-07-SUMMARY.md, 06-08-SUMMARY.md, 06-09-SUMMARY.md, 06-10-SUMMARY.md, 06-11-SUMMARY.md, 06-12-SUMMARY.md, 06-13-SUMMARY.md, 06-14-SUMMARY.md, 06-15-SUMMARY.md, 06-16-SUMMARY.md, 06-17-SUMMARY.md, 06-18-SUMMARY.md, 06-19-SUMMARY.md, 06-20-SUMMARY.md, 06-21-SUMMARY.md, 06-22-SUMMARY.md, 06-23-SUMMARY.md, 06-24-SUMMARY.md, 06-25-SUMMARY.md, 06-27-SUMMARY.md, 06-28-SUMMARY.md, 06-29-SUMMARY.md, 06-30-SUMMARY.md
 started: 2026-10-14T04:24:00Z
-updated: 2026-10-14T06:30:00Z
+updated: 2026-10-16T11:30:00Z
 ---
 
 ## Current Test
 
-[testing complete — 2차 결과 반영, 진단 완료]
+[testing paused — 3 items outstanding (45·51 blocked: [테스트] PM 자격 없음, 50 → 07)]
 
 ## Tests
 
@@ -143,10 +143,11 @@ note: pass(partial): 저장 뒤 포커스 `지급 완료`·Esc 복귀 확인. �
 
 ### 23. T3 증빙 없음 막힘 + 짝 게이트 + 증빙 면제
 expected: `지급 완료` aria-disabled + `증빙 없음 · 기안자 {이름}`, `증빙 면제` 모달, 면제 뒤 `확인` 줄 `면제`
-result: issue
+result: pass
 reported: "15:05에 바꿈 · 새로 고침 배너가 표시(자기 변경에도 뜸)" — 2차 I-5 (T3): 같은 admin이 무효 처리한 직후 `다른 사람이 15:05에 바꿈 · 새로 고침` 배너 표시
 severity: minor
 note: 진단: 결함 G-06-H(Ctrl+Enter 이중 실행). 같은 I-5의 면제 2행 `admin 10-14`(HH:mm 없음)는 명세상 의도, 테스트 기대 문구 정정(I-5b).
+reverify: "2026-10-16 재검증(main c23ef9d, 스테이징): T26-0005 무효 모달 Ctrl+Enter → 서버 POST 1(무효만)·지급 POST 0·`다른 사람이` 0, `지급 완료` aria-disabled + `증빙 없음 · 기안자 [테스트] UAT2 PM`. 면제 모달 뒤 `면제 admin 10-16 · …`, `지급 완료` 활성. G-06-H 닫힘(06-39 #227). 미확인: 짝 불허 갈래(설정 변경 필요). 근거 /mnt/project-files/06-review/reverify/report.md"
 
 ### 24. T4 증빙 확인 / 금액 고쳐 확인
 expected: `증빙 확인 Ctrl+Enter`, 증빙 금액 바꾸기, 확인 뒤 `확인됨` + 2행, 확인 전 지급 막힘, 부가세 포함 금액 거부
@@ -255,10 +256,12 @@ note: pass(partial): `미착수`·`카드 사용` 상태와 연결 문구 확인
 
 ### 45. T25 승인 차수 증빙 S21
 expected: 3차 `승인 증빙 {N}` 펼침(하나 더·되돌리기), 이전 차수는 읽기 전용
-result: issue
+result: blocked
+blocked_by: server
 reported: "승인 증빙 업로드 직후 3차 라벨 개수가 1 뒤처짐(파일 2개인데 `승인 증빙 1`), 새로고침하면 `승인 증빙 2`" — 2차 I-2 (T25)
 severity: minor
 note: 진단: G-06-J(원인 미확정, 재측정 필요). 이전 차수 승인 증빙 편집 가능(I-3)은 명세상 의도, 테스트 기대 문구 정정.
+reason: "2026-10-16 재검증 못 함 — 승인 증빙은 담당 PM만 올릴 수 있는데 스테이징 [테스트] PM 로그인 자격 없음(UAT2 PM 임시 비밀번호 10/14 삭제, 재설정은 CLI만). 코드: 원인 재현 안 됨, e2e approval-reserve-evidence.spec.ts:115-119 1→2 단언 CI green(#227). 계정 비밀번호 재설정·카드 생성은 자동 권한 판정에 막혀 사용자 확인 대기"
 
 ### 46. T26 리저브 줄 증빙 S22
 expected: `증빙` 열(맨 끝), 표 아래 펼침, 폰 행 시트 첨부 행, 엑셀 붙여넣기 1024 열 순서 유지
@@ -289,10 +292,12 @@ note: 진단: G-06-K(명세 공백, 07로 넘김).
 
 ### 51. T31 홈 「내 차례」 Phase 6 항목
 expected: 경영관리 지급 묶음 `[오늘]`/`[대기]`, 구매·발행 요청 한 줄, PM `[막힘]`, 기안자 증빙 신호, 로드 오류 `다시 시도`
-result: issue
+result: blocked
+blocked_by: server
 reported: "증빙을 면제하고 지급까지 끝난 문서(T26-0002)가 PM 홈에 `막힘 증빙 무효 … 증빙 올리기`로 계속 표시" — 2차 I-4 (T31)
 severity: minor
 note: 진단: G-06-I(면제 문서 한정 결함).
+reason: "2026-10-16 재검증 못 함 — PM 홈 확인이 필요한데 스테이징 [테스트] PM 로그인 자격 없음. 코드: evidence-signals.ts:52 `&& !status.waived`, 통합 next-turn.test.ts:770,780,901 main(#227). 계정 비밀번호 재설정·카드 생성은 자동 권한 판정에 막혀 사용자 확인 대기"
 
 ### 52. T32 관리자 설정: Phase 6 키 · 짝 격자
 expected: `증빙 필수`·`선결제 증빙 기한`·`온라인구매 협력사`·짝 격자, 즉시 저장·재열기 유지, 320 클릭 영역 44px
@@ -326,11 +331,11 @@ note: pass(partial): 표 선택 열 폭 44·막힌 행·배지 구역 확인. �
 ## Summary
 
 total: 57
-passed: 51
-issues: 4
+passed: 52
+issues: 1
 pending: 0
 skipped: 2
-blocked: 0
+blocked: 2
 
 ## Evidence
 
@@ -344,8 +349,11 @@ blocked: 0
 
 # gaps from verification sources are planned separately — see 06-GAPS.md
 
-- truth: "정산 결재·지출결의 문서 화면에서 Ctrl+Enter는 그때 보이는 1차 하나만 실행한다 — 모달이 열려 있으면 모달 1차만(SYSTEM §7-9, payment-action-row.tsx:239)"
-  status: failed
+- gap_id: G-06-H
+  truth: "정산 결재·지출결의 문서 화면에서 Ctrl+Enter는 그때 보이는 1차 하나만 실행한다 — 모달이 열려 있으면 모달 1차만(SYSTEM §7-9, payment-action-row.tsx:239)"
+  status: resolved
+  resolved_by: 06-39-PLAN.md
+  resolved_at: 2026-10-16
   reason: "UAT T3: admin이 증빙 무효 모달에서 무효 처리한 직후 행동 줄에 `다른 사람이 15:05에 바꿈 · 새로 고침` — 같은 Ctrl+Enter가 화면 1차(지급 완료/증빙 확인)도 옛 version으로 보냄"
   severity: minor
   test: 23
@@ -360,8 +368,11 @@ blocked: 0
     - "E2E: 확인됨·지급 전 문서에서 무효 모달 Ctrl+Enter → ConflictLine 0 · 지급/확인 액션 호출 0"
     - "06.5-07(같은 파일)과 순서 조율"
 
-- truth: "증빙 면제된 지출결의에는 기안자 「내 차례」 증빙 신호(`증빙 무효` 포함)가 서지 않는다(D-603 · UI-SPEC:446 · 06-23-PLAN:36)"
-  status: failed
+- gap_id: G-06-I
+  truth: "증빙 면제된 지출결의에는 기안자 「내 차례」 증빙 신호(`증빙 무효` 포함)가 서지 않는다(D-603 · UI-SPEC:446 · 06-23-PLAN:36)"
+  status: resolved
+  resolved_by: 06-39-PLAN.md
+  resolved_at: 2026-10-16
   reason: "UAT T31: 무효 → 면제 → 지급 끝난 T26-0002가 PM 홈에 `[막힘] … 증빙 무효 · 증빙 올리기`로 계속 표시"
   severity: minor
   test: 51
@@ -375,8 +386,11 @@ blocked: 0
     - "evidence-signals.ts:52 → voided.has(status.id) && !status.waived"
     - "통합 next-turn.test.ts: 무효→면제(지급 전·뒤) → 줄 0, 대조로 면제 없는 지급 뒤 무효 → `증빙 무효` 유지"
 
-- truth: "승인 증빙을 올리면 새로 고침 없이 차수 동작 칸 3차 `승인 증빙 {N}`의 N이 파일 수와 같아진다(UI-SPEC S21)"
-  status: failed
+- gap_id: G-06-J
+  truth: "승인 증빙을 올리면 새로 고침 없이 차수 동작 칸 3차 `승인 증빙 {N}`의 N이 파일 수와 같아진다(UI-SPEC S21)"
+  status: resolved
+  resolved_by: 06-39-PLAN.md
+  resolved_at: 2026-10-16
   reason: "UAT T25: 업로드 직후 파일 2개인데 `승인 증빙 1`, 새로 고침 뒤 `승인 증빙 2` — 원인 미확정(관찰 시점이 router.refresh 전이었을 가능성 높음, 추측)"
   severity: minor
   test: 45
@@ -390,7 +404,9 @@ blocked: 0
     - "스테이징 재측정: 업로드 완료 뒤 10초 폴링으로 라벨 확인(H1 늦게 바뀜 vs H2 갱신 유실)"
     - "E2E 1→2 단언 추가(approval-reserve-evidence.spec.ts:113 뒤)"
 
-- truth: "다른 화면의 `점검 보기`(→ /projects/{id}#pre-settle-check)로 오면 포커스가 「완료 전 점검」 제목에 있다"
+- gap_id: G-06-K
+  deferred_to: "Phase 7 (06-GAPS.md)"
+  truth: "다른 화면의 `점검 보기`(→ /projects/{id}#pre-settle-check)로 오면 포커스가 「완료 전 점검」 제목에 있다"
   status: failed
   reason: "UAT T30: 정산 결재 문서의 `점검 보기` 이동 뒤 document.activeElement=BODY. 같은 화면 안 `점검 보기`는 제목 포커스(명세대로) — 화면 사이 링크는 명세 공백"
   severity: cosmetic

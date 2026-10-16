@@ -164,6 +164,12 @@
   min-width: 0;
 }
 
+/* 2차 버튼은 줄어들지 않는다 — 좁아지면 안내 글자(.bulkHint)가 줄바꿈하고 라벨은 한 줄을 지킨다(디자인 검토 결함 A). */
+.bulkDrop button {
+  flex: none;
+  white-space: nowrap;
+}
+
 .bulkList {
   margin: 0;
   padding: 0;

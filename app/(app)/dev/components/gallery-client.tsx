@@ -7,6 +7,7 @@ import { Attachments, type AttachmentActions, type AttachmentFile, type BulkImpo
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { Button } from "@/ui/button/Button";
 import { TextField } from "@/ui/input/TextField";
+import dialogStyles from "@/app/(app)/approvals/decision-dialogs.module.css";
 import { PickDialog, type PickItem, type PickManyOutcome, type PickResult, type PickRow } from "@/ui/pick-dialog/PickDialog";
 import { Num } from "@/ui/num/Num";
 import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
@@ -705,7 +706,12 @@ export function DetachConfirmSample({ initialOpen = false }: { initialOpen?: boo
         title="증빙 떼기"
         subtitle="세금계산서 · (주)에이원 · 26001-0004"
         resultLines={["비용이 예상 1,000,000원으로"]}
-        evidenceField={<TextField id="gallery-detach-reason" label="사유" value={reason} onChange={(event) => setReason(event.target.value)} />}
+        evidenceField={
+          <div className={dialogStyles.reason}>
+            <label htmlFor="gallery-detach-reason">사유</label>
+            <textarea id="gallery-detach-reason" rows={2} autoComplete="off" value={reason} onChange={(event) => setReason(event.target.value)} />
+          </div>
+        }
         primary={{
           label: "증빙 떼기",
           onConfirm: () => setOpen(false),
@@ -736,10 +742,10 @@ export function TwoActionsSheetSample({ initialOpen = false }: { initialOpen?: b
         action={
           <>
             <Button variant="tertiary" onClick={() => undefined}>
-              요청 취소
+              증빙 고르기 3
             </Button>
             <Button variant="tertiary" onClick={() => undefined}>
-              증빙 고르기 3
+              요청 취소
             </Button>
           </>
         }

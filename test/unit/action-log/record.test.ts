@@ -183,3 +183,27 @@ describe("evidence_record_amount_change (06.1 D-6112 · RP-2)", () => {
     expect(appendActionLog).toHaveBeenCalledTimes(1);
   });
 });
+
+// 06.1-04 D-6114(독립 검토 P2-1): 증빙 등록 권한만으로 하는 거래처 생성 · 복원 · 구분 변경은 그 로그가 권한을 넓혀 준 조건이라
+// 끌 수 없다 — 범용 document_create · restore · document_update는 끌 수 있게 그대로 두고 전용 종류를 쓴다(D-1106 cert_correct 선례).
+describe("evidence_vendor_* (06.1-04 D-6114)", () => {
+  const types = [
+    ["evidence_vendor_create", "증빙 거래처 생성"],
+    ["evidence_vendor_restore", "증빙 거래처 복원"],
+    ["evidence_vendor_kind_change", "증빙 거래처 구분 변경"],
+  ] as const;
+
+  it.each(types)("%s는 세 배열에 함께 있고 라벨은 「%s」", (type, label) => {
+    expect(CORE_ACTION_TYPES as readonly string[]).toContain(type);
+    expect(ALWAYS_ON_ACTION_TYPES as readonly string[]).toContain(type);
+    expect((ACTION_TYPE_LABELS as Record<string, string>)[type]).toBe(label);
+  });
+
+  it.each(types)("%s는 설정 조회 없이 기록된다(잠금 안에서 거래처마다 설정을 읽지 않는다 — P3-3)", async (type) => {
+    const appendActionLog = vi.fn().mockResolvedValue(undefined);
+    const isActionTypeEnabled = vi.fn().mockResolvedValue(false);
+    await recordAction(viewer, { actionType: type, entity: "vendor", entityId: "v1" }, { appendActionLog, isActionTypeEnabled });
+    expect(appendActionLog).toHaveBeenCalledTimes(1);
+    expect(isActionTypeEnabled).not.toHaveBeenCalled();
+  });
+});

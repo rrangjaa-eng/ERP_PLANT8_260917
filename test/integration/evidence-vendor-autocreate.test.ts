@@ -11,6 +11,8 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { businessNoProblem, normalizeVendorName } from "@/domain/vendors";
 import type { VendorKind } from "@/domain/vendors/kind";
 import { findVendorsByBusinessNoDigitsList, insertVendor, setVendorHidden } from "@/repositories/vendors";
+import { ACTION_LOG_OPTIONAL_TYPES } from "@/domain/settings/keys";
+import { upsertSimpleValue } from "@/repositories/settings";
 import { FAKE_BUSINESS_NO, FAKE_BUSINESS_NO_BAD, hometaxTaxInvoiceFixture, lotteFixture } from "@/test/fixtures/evidence-import/build";
 import { createIntakeViewer, registerFixtureFile } from "./fixtures/evidence";
 
@@ -81,7 +83,7 @@ async function waitUntilBlockedBy(client: Client, blockerPid: number): Promise<v
 }
 
 describe("증빙 등록 — 사업자번호 서식 거래처 연결 · 되살림 · 생성 (06.1-04 Task 3)", () => {
-  it("새 사업자번호 줄 → 협력사 거래처 하나 생성(상호 · 하이픈 번호 · 줄의 증빙 종류) · 기록 연결 · document_create(vendor)", async () => {
+  it("새 사업자번호 줄 → 협력사 거래처 하나 생성(상호 · 하이픈 번호 · 줄의 증빙 종류) · 기록 연결 · evidence_vendor_create", async () => {
     const viewer = await createIntakeViewer();
 
     const result = await registerFixtureFile(viewer, hometax([{}]), "홈택스.xls");
@@ -98,7 +100,7 @@ describe("증빙 등록 — 사업자번호 서식 거래처 연결 · 되살림
       archivedAt: null,
     });
     expect(await db.select().from(evidenceRecords)).toMatchObject([{ vendorId: created[0]?.id }]);
-    expect(await vendorLogs("document_create")).toMatchObject([{ entityId: created[0]?.id, actorId: viewer.id }]);
+    expect(await vendorLogs("evidence_vendor_create")).toMatchObject([{ entityId: created[0]?.id, actorId: viewer.id }]);
   });
 
   it("기존 거래처 번호가 하이픈 없이(1234567891) 있어도 파일의 123-45-67891 줄은 그 거래처에 붙고 생성은 0이다", async () => {
@@ -112,7 +114,7 @@ describe("증빙 등록 — 사업자번호 서식 거래처 연결 · 되살림
     expect(await vendorsByDigits(DIGITS)).toHaveLength(1);
   });
 
-  it("보관된 거래처만 있으면 되살려 붙이고 결과 되살림 1 · 행동 로그 restore(vendor)", async () => {
+  it("보관된 거래처만 있으면 되살려 붙이고 결과 되살림 1 · 행동 로그 evidence_vendor_restore", async () => {
     const archived = await addVendor("공급회사가", FAKE_BUSINESS_NO, "supplier");
     await archive(SYSTEM_VIEWER, "vendor", archived.id);
     const viewer = await createIntakeViewer();
@@ -122,7 +124,7 @@ describe("증빙 등록 — 사업자번호 서식 거래처 연결 · 되살림
     expect(result).toMatchObject({ registered: 1, vendorCreated: 0, vendorRestored: 1 });
     expect(await vendorsByDigits(DIGITS)).toMatchObject([{ id: archived.id, archivedAt: null }]);
     expect(await db.select().from(evidenceRecords)).toMatchObject([{ vendorId: archived.id }]);
-    expect(await vendorLogs("restore")).toMatchObject([{ entityId: archived.id, actorId: viewer.id }]);
+    expect(await vendorLogs("evidence_vendor_restore")).toMatchObject([{ entityId: archived.id, actorId: viewer.id }]);
   });
 
   it("번호는 같고 이름이 다르면(파일 (주)에이원 · 등록 에이원) 결과 줄로만 알리고 거래처 이름은 그대로다", async () => {
@@ -159,18 +161,20 @@ describe("증빙 등록 — 사업자번호 서식 거래처 연결 · 되살림
     expect(await vendorsByDigits(DIGITS)).toMatchObject([{ id: hidden.id, hidden: true, kind: "supplier" }]);
   });
 
-  it("(D31) 고객 전용(client) 거래처는 붙이면서 둘 다(both)로 올리고 document_update(vendor) 한 줄", async () => {
+  it("(D31) 고객 전용(client) 거래처는 붙이면서 둘 다(both)로 올리고 evidence_vendor_kind_change 한 줄(전 · 후 구분)", async () => {
     const client = await addVendor("공급회사가", FAKE_BUSINESS_NO, "client");
     const viewer = await createIntakeViewer();
 
-    await registerFixtureFile(viewer, hometax([{}]));
+    const result = await registerFixtureFile(viewer, hometax([{}]));
 
     expect(await vendorsByDigits(DIGITS)).toMatchObject([{ id: client.id, kind: "both" }]);
     expect(await db.select().from(evidenceRecords)).toMatchObject([{ vendorId: client.id }]);
-    expect(await vendorLogs("document_update")).toMatchObject([{ entityId: client.id }]);
+    expect(await vendorLogs("evidence_vendor_kind_change")).toMatchObject([
+      { entityId: client.id, actorId: viewer.id, detail: { batchId: result.batchId, kind: { from: "client", to: "both" } } },
+    ]);
   });
 
-  it("(D31) 고객 전용이고 숨긴 거래처는 붙이기만 하고 갈래 client 그대로 · document_update 0", async () => {
+  it("(D31) 고객 전용이고 숨긴 거래처는 붙이기만 하고 갈래 client 그대로 · 구분 변경 로그 0", async () => {
     const client = await addVendor("공급회사가", FAKE_BUSINESS_NO, "client");
     await setVendorHidden(SYSTEM_VIEWER, client.id, true);
     const viewer = await createIntakeViewer();
@@ -179,10 +183,10 @@ describe("증빙 등록 — 사업자번호 서식 거래처 연결 · 되살림
 
     expect(await vendorsByDigits(DIGITS)).toMatchObject([{ id: client.id, kind: "client", hidden: true }]);
     expect(await db.select().from(evidenceRecords)).toMatchObject([{ vendorId: client.id }]);
-    expect(await vendorLogs("document_update")).toHaveLength(0);
+    expect(await vendorLogs("evidence_vendor_kind_change")).toHaveLength(0);
   });
 
-  it("(D31) 둘 다 · 협력사 거래처는 갈래 그대로 · document_update 0", async () => {
+  it("(D31) 둘 다 · 협력사 거래처는 갈래 그대로 · 구분 변경 로그 0", async () => {
     const both = await addVendor("둘다회사", validBusinessNo(1), "both");
     const supplier = await addVendor("협력회사", validBusinessNo(2), "supplier");
     const viewer = await createIntakeViewer();
@@ -198,7 +202,46 @@ describe("증빙 등록 — 사업자번호 서식 거래처 연결 · 되살림
     const byId = new Map((await db.select().from(vendors)).map((row) => [row.id, row]));
     expect(byId.get(both.id)?.kind).toBe("both");
     expect(byId.get(supplier.id)?.kind).toBe("supplier");
-    expect(await vendorLogs("document_update")).toHaveLength(0);
+    expect(await vendorLogs("evidence_vendor_kind_change")).toHaveLength(0);
+  });
+
+  it("(D-6114) 행동 로그 설정에서 선택 종류를 모두 꺼도 생성 · 복원 · 구분 변경 로그가 남고 detail에 묶음 id가 있다", async () => {
+    const archived = await addVendor("보관회사", validBusinessNo(1), "supplier");
+    await archive(SYSTEM_VIEWER, "vendor", archived.id);
+    const client = await addVendor("고객회사", validBusinessNo(2), "client");
+    const viewer = await createIntakeViewer();
+    await upsertSimpleValue(SYSTEM_VIEWER, ACTION_LOG_OPTIONAL_TYPES.key, [], null);
+    try {
+      const result = await registerFixtureFile(
+        viewer,
+        hometax([
+          {},
+          { 공급자사업자등록번호: validBusinessNo(1), 공급자상호: "보관회사" },
+          { 공급자사업자등록번호: validBusinessNo(2), 공급자상호: "고객회사" },
+        ]),
+      );
+
+      expect(result).toMatchObject({ registered: 3, vendorCreated: 1, vendorRestored: 1 });
+      const [created] = await vendorsByDigits(DIGITS);
+      expect(await vendorLogs("evidence_vendor_create")).toMatchObject([{ entityId: created?.id, actorId: viewer.id, detail: { batchId: result.batchId } }]);
+      expect(await vendorLogs("evidence_vendor_restore")).toMatchObject([{ entityId: archived.id, actorId: viewer.id, detail: { batchId: result.batchId } }]);
+      expect(await vendorLogs("evidence_vendor_kind_change")).toMatchObject([
+        { entityId: client.id, detail: { batchId: result.batchId, kind: { from: "client", to: "both" } } },
+      ]);
+    } finally {
+      await upsertSimpleValue(SYSTEM_VIEWER, ACTION_LOG_OPTIONAL_TYPES.key, ACTION_LOG_OPTIONAL_TYPES.default ?? [], null);
+    }
+  });
+
+  it("같은 번호의 첫 줄에 상호가 없고 뒷줄에 있으면 뒷줄 상호로 만들고 두 줄 다 붙인다(260907 줄마다 판정과 같다)", async () => {
+    const viewer = await createIntakeViewer();
+
+    const result = await registerFixtureFile(viewer, hometax([{ 공급자상호: "" }, { 공급자상호: "공급회사가" }]));
+
+    expect(result).toMatchObject({ registered: 2, vendorCreated: 1 });
+    const created = await vendorsByDigits(DIGITS);
+    expect(created).toMatchObject([{ name: "공급회사가" }]);
+    expect((await db.select().from(evidenceRecords)).map((record) => record.vendorId)).toEqual([created[0]?.id, created[0]?.id]);
   });
 
   it(`(RP-7) 검증 숫자가 틀린 번호 줄은 거래처를 찾지도 만들지도 않고 vendor_id null · 사유 「${BAD_NO_CHECK}」`, async () => {
@@ -284,11 +327,11 @@ describe("증빙 등록 — 사업자번호 서식 거래처 연결 · 되살림
     const result = await registerFixtureFile(viewer, hometax([{}, { 공급자사업자등록번호: validBusinessNo(1), 공급자상호: "보관회사" }]));
 
     expect(result).toMatchObject({ registered: 2, vendorCreated: 1, vendorRestored: 1 });
-    expect(await vendorLogs("document_create")).toMatchObject([{ actorId: viewer.id }]);
-    expect(await vendorLogs("restore")).toMatchObject([{ entityId: archived.id, actorId: viewer.id }]);
+    expect(await vendorLogs("evidence_vendor_create")).toMatchObject([{ actorId: viewer.id }]);
+    expect(await vendorLogs("evidence_vendor_restore")).toMatchObject([{ entityId: archived.id, actorId: viewer.id }]);
   });
 
-  it("(E11) 등록한 파일의 거래처를 보관한 뒤 같은 파일을 다시 올리면 기록 0 · 되살림 0 · restore 로그 0 · 결과 거래처 칸 모두 0", async () => {
+  it("(E11) 등록한 파일의 거래처를 보관한 뒤 같은 파일을 다시 올리면 기록 0 · 되살림 0 · 복원 로그 0 · 결과 거래처 칸 모두 0", async () => {
     const viewer = await createIntakeViewer();
     const bytes = hometax([{}]);
     await registerFixtureFile(viewer, bytes);
@@ -300,7 +343,7 @@ describe("증빙 등록 — 사업자번호 서식 거래처 연결 · 되살림
 
     expect(again).toMatchObject({ registered: 0, skippedDuplicate: 1, sameFile: true, vendorCreated: 0, vendorRestored: 0, nameMismatchRest: 0 });
     expect(again.nameMismatchLines ?? []).toEqual([]);
-    expect(await vendorLogs("restore")).toHaveLength(0);
+    expect(await vendorLogs("evidence_vendor_restore")).toHaveLength(0);
     expect((await vendorsByDigits(DIGITS))[0]?.archivedAt).not.toBeNull();
   });
 
@@ -322,7 +365,7 @@ describe("증빙 등록 — 사업자번호 서식 거래처 연결 · 되살림
     expect(elapsed).toBeLessThan(5_000);
   });
 
-  it("(eng B-P3) 거래처 잠금을 기다리는 사이 바깥에서 같은 열쇠 기록이 커밋되고 그 거래처가 보관되면 — 등록 0 · 이미 등록 1 · 되살림 0 · restore 0", async () => {
+  it("(eng B-P3) 거래처 잠금을 기다리는 사이 바깥에서 같은 열쇠 기록이 커밋되고 그 거래처가 보관되면 — 등록 0 · 이미 등록 1 · 되살림 0 · 복원 로그 0", async () => {
     const live = await addVendor("공급회사가", FAKE_BUSINESS_NO, "supplier");
     const viewer = await createIntakeViewer();
     const lockClient = new Client({ connectionString: process.env.DATABASE_URL });
@@ -348,7 +391,7 @@ describe("증빙 등록 — 사업자번호 서식 거래처 연결 · 되살림
 
       const result = await call;
       expect(result).toMatchObject({ registered: 0, skippedDuplicate: 1, vendorCreated: 0, vendorRestored: 0 });
-      expect(await vendorLogs("restore")).toHaveLength(0);
+      expect(await vendorLogs("evidence_vendor_restore")).toHaveLength(0);
       expect((await vendorsByDigits(DIGITS))[0]?.archivedAt).not.toBeNull();
     } finally {
       await lockClient.query("ROLLBACK").catch(() => {});

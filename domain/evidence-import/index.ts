@@ -218,8 +218,9 @@ export async function registerEvidenceFile(
       // 잠금 앞에서 거르면 기다리는 사이 다른 등록이 커밋한 줄이 「새 줄」로 남아 그 사이 보관된 거래처를 되살린다. 카드 서식은 잠그지 않는다.
       if (rule.createsVendor) await lockVendorAutocreate(viewer, tx);
       const already = rule.createsVendor ? await findExistingDedupeKeys(viewer, planned.map((line) => line.dedupeKey), tx) : new Set<string>();
-      const linked = await ensureVendorsForLines(viewer, planned.filter((line) => !already.has(line.dedupeKey)), rule, tx, deps);
+      // 묶음을 먼저 만들어 거래처 로그 detail에 묶음 id를 담는다(D-6114).
       const batch = await insertBatch(viewer, { format: parsed.format, originalName, fileSha256, rowCount, uploadedBy: viewer.id }, tx);
+      const linked = await ensureVendorsForLines(viewer, planned.filter((line) => !already.has(line.dedupeKey)), rule, batch.id, tx, deps);
       const rows = linked.lines.map((line) => recordOf(line, parsed.format, batch.id, viewer));
       const insertedKeys = new Set((await insertRecordsIgnoringDuplicates(viewer, rows, tx)).map((row) => row.dedupeKey));
       const inserted = rows.filter((row) => insertedKeys.has(row.dedupeKey));

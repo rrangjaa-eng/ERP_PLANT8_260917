@@ -7,15 +7,16 @@ import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { createCodeItem } from "@/domain/code-tables";
 import { listCodeItems as repoListCodeItems } from "@/repositories/code-tables";
 import { createVendor } from "@/domain/vendors";
+import { createCorpCard } from "@/domain/corp-cards";
 import { createAccount } from "@/domain/auth/accounts";
 import { archivePerson } from "@/domain/people";
 import { findHolidayByDate } from "@/repositories/holidays";
-import { archive, restore, listArchive, ForbiddenError, ProtectedRowError } from "@/domain/archive";
+import { archive, restore, listArchive, ForbiddenError, ProtectedRowError, CorpCardLast4TakenError } from "@/domain/archive";
 import { ARCHIVABLE_TABLES, listArchivedAcrossEntities as defaultListArchivedAcrossEntities } from "@/repositories/archive";
 import { addHoliday, deleteHoliday } from "@/domain/holidays/admin";
 import { queryActionLog } from "@/domain/action-log";
 import { db } from "@/db/client";
-import { holidays, vendors } from "@/db/schema";
+import { corpCards, holidays, vendors } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { insertRole } from "@/repositories/roles";
@@ -286,6 +287,23 @@ describe("보관함 (ADMN-12, 실제 Postgres)", () => {
     const [row] = await db.select().from(vendors).where(eq(vendors.id, a.id));
     expect(row?.archivedAt).not.toBeNull();
     await db.delete(vendors).where(eq(vendors.id, taker?.id ?? ""));
+  });
+
+  it("[G-06-A] 법인카드 복원 — 같은 발급사 · 뒤 4자리의 살아 있는 카드가 있으면 복원 불가 문구로 막고 보관 그대로다 · 그 카드를 보관하면 복원된다", async () => {
+    const issuer = `카드사-${randomUUID()}`;
+    const numberLast4 = String(Math.floor(1000 + Math.random() * 9000));
+    const a = await createCorpCard(SYSTEM_VIEWER, { issuer, numberLast4, label: "분실 카드", kind: "shared" });
+    await archive(SYSTEM_VIEWER, "corp_card", a.id);
+    const b = await createCorpCard(SYSTEM_VIEWER, { issuer, numberLast4, label: "재발급 카드", kind: "shared" });
+
+    const blocked = restore(SYSTEM_VIEWER, "corp_card", a.id);
+    await expect(blocked).rejects.toThrow("같은 발급사와 뒤 4자리 카드 있음 · 복원 불가");
+    await expect(blocked).rejects.toBeInstanceOf(CorpCardLast4TakenError);
+    const [still] = await db.select().from(corpCards).where(eq(corpCards.id, a.id));
+    expect(still?.archivedAt).not.toBeNull();
+
+    await archive(SYSTEM_VIEWER, "corp_card", b.id);
+    expect(await restore(SYSTEM_VIEWER, "corp_card", a.id)).toEqual({ restored: true });
   });
 
   // quick 261002-4jn(회고 #3) — 낡은 화면 · 동시 복원의 뒤 사람은 성공이 아니라 「이미 복원됨」을 받는다.

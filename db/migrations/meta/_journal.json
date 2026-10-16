@@ -260,6 +260,13 @@
       "when": 1792080465200,
       "tag": "0036_drop_expense_evidence_amount",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1792123490953,
+      "tag": "0037_corp_cards_last4_live",
+      "breakpoints": true
     }
   ]
 }

@@ -12,6 +12,7 @@ vi.mock("@/domain/archive", async () => {
   const { UserFacingError: Facing } = await import("@/lib/actions/user-facing-error");
   return {
     VendorBusinessNoTakenError: class VendorBusinessNoTakenError extends Facing {},
+    CorpCardLast4TakenError: class CorpCardLast4TakenError extends Facing {},
     restore: () => (errors.restoreError.current ? Promise.reject(errors.restoreError.current) : Promise.resolve({ restored: true })),
   };
 });
@@ -36,7 +37,7 @@ vi.mock("@/domain/people/seat-rules", async () => {
 });
 
 const { restoreArchivedAction } = await import("@/app/(app)/admin/archive/actions");
-const { VendorBusinessNoTakenError } = await import("@/domain/archive");
+const { VendorBusinessNoTakenError, CorpCardLast4TakenError } = await import("@/domain/archive");
 const { HolidayNotRestorableError } = await import("@/domain/holidays/admin");
 const { PersonRestoreForbiddenError, PersonNotRestorableError } = await import("@/domain/people/restore");
 const { RoleGrantForbiddenError } = await import("@/domain/permissions/grant-ceiling");
@@ -48,6 +49,7 @@ describe("보관함 복원 액션 — 거부 원인 매핑", () => {
   it.each([
     ["공휴일", new HolidayNotRestorableError("지난 공휴일 · 복원 불가")],
     ["거래처", new VendorBusinessNoTakenError("같은 사업자번호 거래처 있음 · 복원 불가")],
+    ["법인카드", new CorpCardLast4TakenError("같은 발급사와 뒤 4자리 카드 있음 · 복원 불가")],
     ["사람 쓰기 없음", new PersonRestoreForbiddenError("사람 복원 권한 없음 · 시스템 관리자 · 복원 불가")],
     ["없는 사람", new PersonNotRestorableError("없는 사람 · 복원 불가")],
     ["권한 상한", new RoleGrantForbiddenError("계급 지정 권한 없음 · 시스템 관리자 · 복원 불가")],

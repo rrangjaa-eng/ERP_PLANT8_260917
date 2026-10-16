@@ -476,6 +476,7 @@ Recent decisions affecting current work:
 - Phase 5 edited: edited fields: depends_on (04.5·04.6 추가 — 실행 순서 04.5 → 04.6 → 5, 사용자 결정 2026-10-02)
 - Phase 7 edited: edited fields: success_criteria (기준 5 관리자 폼 → PanelForm 옆 패널 배치, 04.6-01)
 - Phase 6 edited: edited fields: success_criteria 1 · 3 + 06-01 plan line (06-01 Task 3, one-time user-approved wording)
+- Phase 06.1 inserted after Phase 6: 증빙 일괄 등록·공개·고르기: 경영관리 일괄 등록·선별 공개 → 기획본부가 지출결의·구매요청·법인카드 사용에 골라 붙임, 카드사 명세 대사 포함(근거 research/ERP260907-CONTEXT.md:52,69,76-77,83)
 - Phase 06.2 inserted after Phase 6: 보는 범위·참여자 — 계급별 보는 범위(전사·본부·팀·본인)·프로젝트 참여자·지출결의 1단계 = 행사 담당 팀장(D6·G34). 06.1(PR #164) 다음 번호
 - Phase 06.2 edited: edited fields: goal, success_criteria (06.2-CONTEXT·PRD §6에서)
 - Phase 06.3 inserted after Phase 6: 연차 중복·공휴일 (260907 감사 G1·G2)

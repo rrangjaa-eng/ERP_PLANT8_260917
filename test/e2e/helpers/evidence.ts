@@ -163,7 +163,11 @@ export function evidenceCell(page: Page, rowIndex: number, colIndex: number): Lo
 }
 
 // 수화 전에 준 포커스는 격자가 받지 못한다 — 그 셀이 탭 정지가 될 때까지 다시 준다(리저브 대장 · quote-edit-scope 선례).
+// tabindex=0은 서버 HTML에도 이미 있어(로빙 첫 칸) 수화 신호가 아니다 — React 속성이 붙을 때까지 먼저 기다린다(수화 전 Ctrl+S는 격자가 못 받는다).
 export async function focusGridCell(target: Locator): Promise<void> {
+  await expect
+    .poll(() => target.evaluate((element) => Object.keys(element).some((key) => key.startsWith("__reactProps$"))))
+    .toBe(true);
   await expect(async () => {
     await target.evaluate((element) => (element as HTMLElement).blur());
     await target.focus();

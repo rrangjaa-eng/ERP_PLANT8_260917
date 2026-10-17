@@ -67,6 +67,16 @@ export function evidenceVisibilityCell(input: EvidenceRecordStatusInput): Eviden
   return "edit";
 }
 
+export type EvidenceRowAction = "archive" | "restore" | null;
+
+// 행 행동(DA-7 · E41 · PA-NEG-ARC) — 보관 줄은 되살리기, 안 붙은 줄(음수 · 잠긴 줄 포함)은 보관, 붙은 줄은 없음(`떼기`는 06.1-06 —
+// 둘은 붙음 여부로 갈려 한 행에 같이 서지 않는다). 확인 필요 · 카드 미등록 낱말이 붙음을 덮어도 판정은 붙음 칸으로 한다.
+// 서버 보관 · 되살림 검사(archiveEvidenceRecord · restoreEvidenceRecord)도 이 함수로 가른다.
+export function evidenceRowAction(input: EvidenceRecordStatusInput): EvidenceRowAction {
+  if (input.archived) return "restore";
+  return input.attached ? null : "archive";
+}
+
 // 공개 칸에 보이는 글자 — 저장된 값의 라벨(UI-SPEC S2 「셀에 보이는 글자는 고른 라벨」). 본부 공개 줄은 저장 당시 본부 이름이다(DA-11 하위 —
 // 설정이 바뀌어도 그 줄은 옛 본부에 남는다). 화면은 이 글자를 받아 그리고 이름을 이어 붙이지 않는다.
 export function evidenceVisibilityLabel(input: EvidenceRecordStatusInput): string {

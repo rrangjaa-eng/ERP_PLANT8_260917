@@ -3,6 +3,7 @@ import { recordAction as defaultRecordAction } from "@/domain/action-log/record"
 import { EVIDENCE_IMPORT_MAX_ROWS } from "@/domain/evidence-import/limits";
 import { EVIDENCE_FORMATS } from "@/domain/evidence-import/registry";
 import type { FormatRule } from "@/domain/evidence-import/types";
+import { formatKstTime } from "@/domain/holidays/business-day";
 import { can, ForbiddenError } from "@/domain/permissions/can";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { projectMany, type DtoSpec } from "@/domain/permissions/project";
@@ -14,11 +15,13 @@ import { visible } from "@/domain/permissions/visible";
 import {
   evidenceKindLabel,
   evidenceRecordStatus,
+  evidenceRowAction,
   evidenceVisibilityCell,
   evidenceVisibilityLabel,
   type EvidenceRecordStatusInput,
   type EvidenceRecordVisibility,
   type EvidenceRecordWord,
+  type EvidenceRowAction,
   type EvidenceVisibilityCell,
 } from "@/domain/evidence-records/status";
 import type { Viewer } from "@/domain/viewer";
@@ -37,6 +40,7 @@ import {
   listRecordsByIdsForScope,
   listRecordsForScope,
   lockRecordsForUpdate,
+  setRecordArchivedIfVersionMatches,
   updateVisibilitiesIfVersionMatch as defaultUpdateVisibilities,
   type EvidenceProposalTarget,
   type EvidenceRecordFilters,
@@ -47,13 +51,13 @@ import {
 } from "@/repositories/evidence-records";
 import { findOrgUnitById } from "@/repositories/org-units";
 import { findMembershipsAtDate } from "@/repositories/team-memberships";
-import { findTeamsByIds } from "@/repositories/teams";
+import { findTeamsByIds, listTeams, type TeamRow } from "@/repositories/teams";
 
 // 06.1-05: 증빙 기록(06.1 일괄 등록이 만든 줄) 목록 · 단건 · 공개 범위 저장. 이름은 `…Record(s)`다 — 05의 `domain/evidence`
 // (`listEvidence` · `restoreEvidence` — 문서에 붙은 파일)와 겹치지 않는다(RP-6). 행 범위는 06.1-01 evidenceScopeFor를 요청마다
 // 한 번(트랜잭션 밖) 읽어 리포지토리 where절이 집행한다 — 화면은 거르지 않는다.
 
-export type { EvidenceRecordVisibility, EvidenceRecordWord, EvidenceVisibilityCell } from "@/domain/evidence-records/status";
+export type { EvidenceRecordVisibility, EvidenceRecordWord, EvidenceRowAction, EvidenceVisibilityCell } from "@/domain/evidence-records/status";
 
 const INTAKE_FORBIDDEN = "증빙 등록 권한 없음";
 // 화면이 만들 수 없는 요청(같은 줄 두 번 · 없는 줄 · 본부 설정 없음의 본부 공개 — PA-DIV-UNSET)은 줄 오류 없이 요청 전체를 거부한다.
@@ -89,6 +93,8 @@ export type EvidenceRecordDto = {
   statusWord: EvidenceRecordWord;
   statusDetail: string | null;
   visibilityCell: EvidenceVisibilityCell;
+  /** 행 행동 열의 3차(DA-7) — 서버 판정. 화면은 이 값대로 `보관` · `되살리기`를 그리거나 그리지 않는다. */
+  rowAction: EvidenceRowAction;
 };
 
 // 금액 셋 = 증빙 금액, 나머지 = 증빙 내용(팀 · 본부 이름이 든 상태 2행도 증빙 기록의 공개 칸이다).
@@ -114,6 +120,7 @@ export const EVIDENCE_RECORD_DTO_SPEC: DtoSpec<EvidenceRecordDto, EvidenceRecord
     { key: "statusWord", from: "statusWord", infoItem: "evidence.value" },
     { key: "statusDetail", from: "statusDetail", infoItem: "evidence.value" },
     { key: "visibilityCell", from: "visibilityCell", infoItem: "evidence.value" },
+    { key: "rowAction", from: "rowAction", infoItem: "evidence.value" },
   ],
 };
 
@@ -247,6 +254,7 @@ function sourceOf(row: EvidenceRecordListRow): EvidenceRecordDto {
     statusWord: status.word,
     statusDetail: status.detail,
     visibilityCell: evidenceVisibilityCell(input),
+    rowAction: evidenceRowAction(input),
   };
 }
 
@@ -417,9 +425,25 @@ function lockedStatusInput(row: LockedEvidenceRecord): EvidenceRecordStatusInput
   };
 }
 
-// 줄 검사 — 거부 이유(오류 셀 글자) 또는 null. 낡은 version은 그 줄의 지금 상태 낱말이 이유다(06.1-03 낱말 — 새 문구 없음).
-function rejectReason(row: LockedEvidenceRecord, item: PublishItem): string | null {
-  if (row.version !== item.version) return evidenceRecordStatus(lockedStatusInput(row)).word;
+// 줄 검사 — 거부 이유(오류 셀 글자) 또는 null. 낡은 version · 잠긴 셀 · 공개할 수 없는 줄은 그 줄의 지금 상태 낱말이 이유다(06.1-03 낱말 —
+// 새 문구 없음, E32 · P2-2 — 화면이 막아도 조작한 요청은 여기서 거부). 경영관리만 종류 줄(G15)은 미공개만 받고 그 밖은 상태 2행이 이유다
+// (RP-15 ⑴). 팀은 트랜잭션 전에 읽은 것으로 가른다(E20 · A-6 — 없는 팀 id가 FK 위반 500으로 새지 않게).
+function rejectReason(row: LockedEvidenceRecord, item: PublishItem, teamsById: ReadonlyMap<string, TeamRow>): string | null {
+  const input = lockedStatusInput(row);
+  const status = evidenceRecordStatus(input);
+  if (row.version !== item.version) return status.word;
+  const cell = evidenceVisibilityCell(input);
+  if (cell === "locked") return status.word;
+  if (cell === "readonly") {
+    const privateTypeOnly = !input.archived && !input.attached && !input.negative && input.privateTypeName !== null;
+    if (!privateTypeOnly) return status.word;
+    return item.visibility === "private" ? null : status.detail;
+  }
+  if (item.visibility !== "team") return null;
+  if (item.teamId === null) return "팀 없음";
+  const team = teamsById.get(item.teamId);
+  if (!team) return "없는 팀 · —";
+  if (team.archivedAt !== null) return `없는 팀 · ${team.name}`;
   return null;
 }
 
@@ -442,6 +466,8 @@ export async function publishEvidenceRecords(
   if (items.some((item) => !UUID.safeParse(item.id).success)) throw new UserFacingError(INVALID_REQUEST);
   const division = items.some((item) => item.visibility === "division") ? await readDivision(viewer) : null;
   if (items.some((item) => item.visibility === "division") && division === null) throw new UserFacingError(INVALID_REQUEST);
+  const teamIds = [...new Set(items.flatMap((item) => (item.visibility === "team" && item.teamId !== null && UUID.safeParse(item.teamId).success ? [item.teamId] : [])))];
+  const teamsById = new Map((await findTeamsByIds(viewer, teamIds)).map((team) => [team.id, team]));
   const update = deps?.updateVisibilitiesIfVersionMatch ?? defaultUpdateVisibilities;
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   const savedAt = new Date();
@@ -454,7 +480,7 @@ export async function publishEvidenceRecords(
     const updates: EvidenceVisibilityUpdate[] = [];
     items.forEach((item, rowIndex) => {
       const row = byId.get(item.id);
-      const reason = row ? rejectReason(row, item) : INVALID_REQUEST;
+      const reason = row ? rejectReason(row, item, teamsById) : INVALID_REQUEST;
       if (reason !== null) {
         errors.push({ rowIndex, rowId: item.id, field: "visibility", label: "공개", reason });
         return;
@@ -488,4 +514,43 @@ export async function publishEvidenceRecords(
     return count;
   });
   return { saved, savedAt: kstDateTimeOf(savedAt).slice(11) };
+}
+
+export type EvidenceTeamOption = { id: string; name: string };
+
+// 공개 칸 묶음 「다른 팀」(DA-1 · E20) — 보관 아닌 팀 전부(조직 순). 공개 칸은 증빙 등록 쓰기만 고치므로 그 권한이 없으면 빈 목록이다
+// (조직 메뉴의 행 범위와 무관 — 경영관리가 조직 메뉴 없이도 고른다).
+export async function listEvidenceTeamOptions(viewer: Viewer): Promise<EvidenceTeamOption[]> {
+  if (!(await can(viewer, "evidence.intake", "write"))) return [];
+  return (await listTeams(viewer, { scope: { rows: "all", includeArchived: false } })).map((team) => ({ id: team.id, name: team.name }));
+}
+
+export type EvidenceArchiveInput = { id: string; version: number };
+
+/** 보관 · 되살림 거부(낡은 version · 그사이 붙음 · 이미 그 상태 — PA-ARC-FAIL). 글자는 화면 결과 줄에 그대로 선다(DA-23 문구). */
+export class EvidenceArchiveConflictError extends UserFacingError {}
+
+// 보관 · 되살림(DA-7 · E41 · C2) — 확인 창 없이 바로 하고 화면이 되돌리기를 준다. 붙이기(06.1-06)도 같은 증빙 행을 잠그므로 살아 있는
+// 붙임 검사는 잠근 뒤에 한다. 되돌리기는 보관이 돌려준 version으로 되살림을 부른다.
+async function setEvidenceArchived(viewer: Viewer, input: EvidenceArchiveInput, actionType: "archive" | "restore"): Promise<EvidenceArchiveInput> {
+  if (!(await can(viewer, "evidence.intake", "write"))) throw new ForbiddenError(INTAKE_FORBIDDEN);
+  if (!UUID.safeParse(input.id).success || !Number.isInteger(input.version)) throw new UserFacingError(INVALID_REQUEST);
+  const archived = actionType === "archive";
+  return withTransaction(async (tx) => {
+    const [row] = await lockRecordsForUpdate(viewer, [input.id], tx);
+    if (!row) throw new UserFacingError(INVALID_REQUEST);
+    const conflict = new EvidenceArchiveConflictError(`다른 사람이 ${formatKstTime(row.updatedAt)}에 바꿈 · 새로 고침`);
+    if (row.version !== input.version || evidenceRowAction(lockedStatusInput(row)) !== actionType) throw conflict;
+    if (!(await setRecordArchivedIfVersionMatches(viewer, { id: input.id, version: input.version, archived }, tx))) throw conflict;
+    await defaultRecordAction(viewer, { actionType, entity: "evidence_record", entityId: input.id }, { tx });
+    return { id: input.id, version: input.version + 1 };
+  });
+}
+
+export function archiveEvidenceRecord(viewer: Viewer, input: EvidenceArchiveInput): Promise<EvidenceArchiveInput> {
+  return setEvidenceArchived(viewer, input, "archive");
+}
+
+export function restoreEvidenceRecord(viewer: Viewer, input: EvidenceArchiveInput): Promise<EvidenceArchiveInput> {
+  return setEvidenceArchived(viewer, input, "restore");
 }

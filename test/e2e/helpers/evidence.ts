@@ -1,6 +1,6 @@
 import { randomInt, randomUUID } from "node:crypto";
 import { expect, type Locator, type Page } from "@playwright/test";
-import { eq } from "drizzle-orm";
+import { asc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { evidenceImportBatches, evidenceRecordLinks, evidenceRecords, teams } from "@/db/schema";
 import { createAccount } from "@/domain/auth/accounts";
@@ -68,6 +68,28 @@ export async function clearEvidence(): Promise<void> {
   await db.delete(evidenceImportBatches);
 }
 
+/** 묶음의 증빙 기록 id(승인번호 순). */
+export async function recordIdsOf(batchId: string): Promise<string[]> {
+  const rows = await db.select({ id: evidenceRecords.id }).from(evidenceRecords).where(eq(evidenceRecords.batchId, batchId)).orderBy(asc(evidenceRecords.approvalNo));
+  return rows.map((row) => row.id);
+}
+
+/** 화면을 연 뒤 다른 사람이 그 줄을 바꾼 것처럼 version만 올린다(DA-18). */
+export async function bumpRecordVersion(id: string): Promise<void> {
+  await db.update(evidenceRecords).set({ version: sql`${evidenceRecords.version} + 1` }).where(eq(evidenceRecords.id, id));
+}
+
+/** 살아 있는 붙임 한 줄 — 붙이기(06.1-06) 전이라 붙은 줄 상태는 픽스처로 만든다. */
+export async function attachRecordFixture(id: string, attachedBy: string): Promise<void> {
+  await db.insert(evidenceRecordLinks).values({ evidenceRecordId: id, ownerKind: "expense", ownerId: randomUUID(), attachMode: "registrar", attachedBy });
+}
+
+/** 보관 아닌 팀 이름(조직 순 — 공개 칸 묶음 「다른 팀」의 순서). */
+export async function liveTeamNames(): Promise<string[]> {
+  const rows = await db.select({ name: teams.name }).from(teams).where(isNull(teams.archivedAt)).orderBy(asc(teams.sortOrder), asc(teams.name));
+  return rows.map((row) => row.name);
+}
+
 export async function teamIdByName(name: string): Promise<string> {
   const [row] = await db.select({ id: teams.id }).from(teams).where(eq(teams.name, name));
   if (!row) throw new Error(`팀 없음: ${name}`);
@@ -103,7 +125,12 @@ export function bcLines(last4: string, count: number, overrides: Record<string, 
 
 /** 생성기 바이트를 끌어 놓기 영역의 파일 입력에 넣는다(`파일 고르기`와 같은 입력). */
 export async function uploadFixture(page: Page, name: string, bytes: Uint8Array): Promise<void> {
-  await page.getByTestId("attachments-input").setInputFiles({ name, mimeType: "application/vnd.ms-excel", buffer: Buffer.from(bytes) });
+  await uploadFixtures(page, [{ name, bytes }]);
+}
+
+/** 여러 파일을 한 번에 놓는다(E32 · P3-8). */
+export async function uploadFixtures(page: Page, files: readonly { name: string; bytes: Uint8Array }[]): Promise<void> {
+  await page.getByTestId("attachments-input").setInputFiles(files.map(({ name, bytes }) => ({ name, mimeType: "application/vnd.ms-excel", buffer: Buffer.from(bytes) })));
 }
 
 export function isServerAction(request: { method: () => string; headers: () => Record<string, string> }): boolean {
@@ -128,8 +155,8 @@ export function evidenceRows(page: Page): Locator {
   return evidenceTable(page).locator("tbody tr:has(> td:nth-child(2))");
 }
 
-// 열 순서: 날짜 · 거래처·가맹점 · 공급가 · 세액 · 합계 · 공개 · 상태.
-export const EVIDENCE_COL = { date: 0, counterparty: 1, supply: 2, vat: 3, total: 4, visibility: 5, status: 6 } as const;
+// 열 순서: 날짜 · 거래처·가맹점 · 공급가 · 세액 · 합계 · 공개 · 상태 · 행 행동(편집 폭에서만 — 머리글 숨김).
+export const EVIDENCE_COL = { date: 0, counterparty: 1, supply: 2, vat: 3, total: 4, visibility: 5, status: 6, actions: 7 } as const;
 
 export function evidenceCell(page: Page, rowIndex: number, colIndex: number): Locator {
   return evidenceRows(page).nth(rowIndex).locator(":scope > td").nth(colIndex);

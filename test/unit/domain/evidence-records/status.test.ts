@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   evidenceKindLabel,
   evidenceRecordStatus,
+  evidenceRowAction,
   evidenceVisibilityCell,
   evidenceVisibilityLabel,
   type EvidenceRecordStatusInput,
@@ -89,6 +90,28 @@ describe("evidenceVisibilityCell (06.1-05 공개 셀)", () => {
     expect(evidenceVisibilityCell(input({ negative: true }))).toBe("readonly");
     expect(evidenceVisibilityCell(input({ privateTypeName: "개인카드 전표" }))).toBe("readonly");
     expect(evidenceVisibilityCell(input({ archived: true, needsCheck: "해외 이용 · 원화 금액 확인" }))).toBe("readonly");
+  });
+});
+
+// 행 행동(DA-7 · E41 · PA-NEG-ARC) — 서버가 줄마다 정하고 보관 · 되살림 검사도 이 함수로 가른다. 붙은 줄의 `떼기`는 06.1-06 몫이다.
+describe("evidenceRowAction (06.1-05 행 행동)", () => {
+  it("안 붙은 줄은 상태와 무관하게 보관 — 음수 · 확인 필요 · 카드 미등록 · 경영관리만 종류 · 공개 줄 포함", () => {
+    expect(evidenceRowAction(input({}))).toBe("archive");
+    expect(evidenceRowAction(input({ negative: true }))).toBe("archive");
+    expect(evidenceRowAction(input({ needsCheck: "해외 이용 · 원화 금액 확인" }))).toBe("archive");
+    expect(evidenceRowAction(input({ isCardFormat: true, corpCardId: null }))).toBe("archive");
+    expect(evidenceRowAction(input({ privateTypeName: "개인카드 전표" }))).toBe("archive");
+    expect(evidenceRowAction(input({ visibility: "team", teamName: "기획1팀" }))).toBe("archive");
+  });
+
+  it("붙은 줄은 행동 없음 — 확인 필요가 상태 낱말을 덮어도(붙음이 낱말에 안 보여도) 없음", () => {
+    expect(evidenceRowAction(input({ attached: true }))).toBeNull();
+    expect(evidenceRowAction(input({ attached: true, needsCheck: "해외 이용 · 원화 금액 확인" }))).toBeNull();
+  });
+
+  it("보관 줄은 되살리기", () => {
+    expect(evidenceRowAction(input({ archived: true }))).toBe("restore");
+    expect(evidenceRowAction(input({ archived: true, negative: true }))).toBe("restore");
   });
 });
 

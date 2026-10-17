@@ -11,3 +11,7 @@ registerAction({
 
 // 06.1-05 — 공개 범위 저장. 결과는 저장 줄 수 · 시각 + 화면에 보이던 저장 줄의 다시 읽은 행(EvidenceRecordDto — O-6106) 또는 거부 칸(줄 id · 이유).
 registerAction({ name: "publishEvidenceRecordsAction", menu: "evidence.intake", action: "write", dtoName: "EvidenceRecordDto" });
+
+// 06.1-05 — 증빙 보관 · 되살림(DA-7). 결과는 줄 id · 새 version 또는 충돌 글자(행 DTO 없음).
+registerAction({ name: "archiveEvidenceRecordAction", menu: "evidence.intake", action: "write", dtoName: null });
+registerAction({ name: "restoreEvidenceRecordAction", menu: "evidence.intake", action: "write", dtoName: null });

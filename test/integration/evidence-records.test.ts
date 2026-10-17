@@ -2,17 +2,19 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { evidenceRecords, orgUnits, teams } from "@/db/schema";
+import { actionLog, evidenceRecords, orgUnits, teams } from "@/db/schema";
 import { createAccount } from "@/domain/auth/accounts";
 import { createCorpCard, type CardOwnerKind } from "@/domain/corp-cards";
 import { EVIDENCE_IMPORT_MAX_ROWS } from "@/domain/evidence-import/limits";
 import {
+  archiveEvidenceRecord,
   countTodoEvidence,
   getEvidenceBatch,
   getEvidenceRecord,
   listEvidenceRecords,
   listEvidenceRecordsByIds,
   publishEvidenceRecords,
+  restoreEvidenceRecord,
   type EvidencePublishGroup,
   type EvidenceRecordList,
 } from "@/domain/evidence-records";
@@ -28,6 +30,7 @@ import * as evidenceRecordsRepo from "@/repositories/evidence-records";
 import { upsertVisibility } from "@/repositories/permissions";
 import { insertMembership } from "@/repositories/team-memberships";
 import { insertOrgUnit } from "@/repositories/org-units";
+import { insertTeam, setTeamArchived } from "@/repositories/teams";
 import { bcFixture, hometaxTaxInvoiceFixture, lotteFixture, type FixtureRow } from "@/test/fixtures/evidence-import/build";
 import {
   createIntakeViewer,
@@ -507,5 +510,161 @@ describe("domain/evidence-records — 목록 필터 · 합계 · 그룹 · 쪽 (
     expect(views.map((view) => view.id).sort()).toEqual([...ids].sort());
     for (const view of views) expect(view).toMatchObject({ statusWord: "팀 공개", statusDetail: "기획1팀", visibilityLabel: "기획1팀 공개", version: 2 });
     expect(await listEvidenceRecordsByIds(await personViewer("role-pm"), ids)).toEqual([]);
+  });
+});
+
+// 06.1-05 Task 3 — 줄마다 지금 version(픽스처가 바꾼 줄 포함)을 표에서 읽어 요청 꼴로.
+async function versionsOf(ids: readonly string[]): Promise<Map<string, number>> {
+  return new Map((await storedRows(ids)).map((row) => [row.id, row.version]));
+}
+
+function item(versions: Map<string, number>, id: string): readonly [string, number] {
+  const version = versions.get(id);
+  if (version === undefined) throw new Error(`줄 없음: ${id}`);
+  return [id, version] as const;
+}
+
+async function actionLogFor(recordId: string) {
+  return db.select().from(actionLog).where(eq(actionLog.entityId, recordId));
+}
+
+describe("domain/evidence-records — 서버가 거부하는 편집 · 보관 / 되살림 (06.1-05 Task 3)", () => {
+  it("(E20) 제안 팀이 아닌 보관 아닌 팀으로 팀 공개 → 그 팀으로 저장", async () => {
+    const intake = await createIntakeViewer();
+    await addLotteCard("8101", { kind: "shared" });
+    await registerFixtureFile(intake, lotteFixture(lotteLines("8101", ["81010001"])), "롯데.xls");
+    const [proposal] = (await listEvidenceRecords(intake)).proposals;
+    if (!proposal) throw new Error("제안 없음");
+    const other = await teamIdByName("경영관리팀");
+
+    const result = await publishEvidenceRecords(intake, { groups: [{ visibility: "team", teamId: other, items: [[proposal.id, proposal.version]] }] });
+
+    expect(result.saved).toBe(1);
+    expect((await storedRows([proposal.id]))[0]).toMatchObject({ visibility: "team", visibleTeamId: other, visibleOrgUnitId: null });
+  });
+
+  it("(E20 · A-6) 없는 팀 · 보관된 팀 · 팀 id 없는 팀 공개가 섞이면 저장 0줄 · 줄마다 오류 칸(없는 팀 · — / 없는 팀 · {이름} / 팀 없음)", async () => {
+    const intake = await createIntakeViewer();
+    await addLotteCard("8201", { kind: "shared" });
+    await registerFixtureFile(intake, lotteFixture(lotteLines("8201", ["82010001", "82010002", "82010003", "82010004"])), "롯데.xls");
+    const [good, missing, archived, noTeam] = (await listEvidenceRecords(intake)).proposals;
+    if (!good || !missing || !archived || !noTeam) throw new Error("제안 넷 없음");
+    const division = await orgUnitIdByName("기획본부");
+    const closed = await insertTeam(SYSTEM_VIEWER, { orgUnitId: division, name: `닫은 팀 ${randomUUID().slice(0, 4)}` });
+    await setTeamArchived(SYSTEM_VIEWER, closed.id, true);
+
+    const error = await rejection(
+      publishEvidenceRecords(intake, {
+        groups: [
+          { visibility: "division", items: [[good.id, good.version]] },
+          { visibility: "team", teamId: randomUUID(), items: [[missing.id, missing.version]] },
+          { visibility: "team", teamId: closed.id, items: [[archived.id, archived.version]] },
+          { visibility: "team", items: [[noTeam.id, noTeam.version]] },
+        ],
+      }),
+    );
+
+    expect(error.summary).toBe("오류 3칸 · 전부 거부");
+    expect(error.formatErrors.map((cell) => [cell.rowId, cell.reason])).toEqual([
+      [missing.id, "없는 팀 · —"],
+      [archived.id, `없는 팀 · ${closed.name}`],
+      [noTeam.id, "팀 없음"],
+    ]);
+    const stored = await storedRows([good.id, missing.id, archived.id, noTeam.id]);
+    expect(stored.every((row) => row.visibility === "private" && row.visibilitySavedAt === null && row.version === 1)).toBe(true);
+  });
+
+  it.each([
+    ["확인 필요", "확인 필요", "needsCheck"],
+    ["카드 미등록", "카드 미등록", "cardUnknown"],
+    ["붙음", "붙음", "attached"],
+    ["음수", "미공개", "negative"],
+    ["보관", "보관됨", "archived"],
+  ] as const)("(E32 · P2-2) 정상 줄과 %s 줄을 함께 보내면 저장 0줄 · 그 줄 오류 칸(이유 = 그 줄 상태 낱말 %s)", async (_label, reason, key) => {
+    const intake = await createIntakeViewer();
+    const rows = await seedStateRows(intake);
+    const versions = await versionsOf([rows.plain, rows[key]]);
+
+    const error = await rejection(publishEvidenceRecords(intake, { groups: [{ visibility: "division", items: [item(versions, rows.plain), item(versions, rows[key])] }] }));
+
+    expect(error.formatErrors.map((cell) => [cell.rowId, cell.reason])).toEqual([[rows[key], reason]]);
+    const stored = await storedRows([rows.plain]);
+    expect(stored[0]).toMatchObject({ visibility: "private", visibilitySavedAt: null });
+    expect(await versionsOf([rows.plain, rows[key]])).toEqual(versions);
+  });
+
+  it("(RP-15 ⑴) 경영관리만 종류 줄은 팀 · 본부 공개면 저장 0줄 + 오류 칸 `개인카드 전표 · 경영관리만`, 미공개면 저장되고 visibility_saved_at이 찍힌다", async () => {
+    const intake = await createIntakeViewer();
+    const rows = await seedStateRows(intake);
+    const versions = await versionsOf([rows.plain, rows.privateType]);
+    const team = await teamIdByName("기획1팀");
+
+    const asTeam = await rejection(
+      publishEvidenceRecords(intake, {
+        groups: [
+          { visibility: "division", items: [item(versions, rows.plain)] },
+          { visibility: "team", teamId: team, items: [item(versions, rows.privateType)] },
+        ],
+      }),
+    );
+    const asDivision = await rejection(publishEvidenceRecords(intake, { groups: [{ visibility: "division", items: [item(versions, rows.privateType)] }] }));
+
+    for (const error of [asTeam, asDivision]) expect(error.formatErrors.map((cell) => [cell.rowId, cell.reason])).toEqual([[rows.privateType, "개인카드 전표 · 경영관리만"]]);
+    expect((await storedRows([rows.plain, rows.privateType])).every((row) => row.visibilitySavedAt === null)).toBe(true);
+
+    const saved = await publishEvidenceRecords(intake, { groups: [{ visibility: "private", items: [item(versions, rows.privateType)] }] });
+
+    expect(saved.saved).toBe(1);
+    const [stored] = await storedRows([rows.privateType]);
+    expect(stored).toMatchObject({ visibility: "private", version: (versions.get(rows.privateType) ?? 0) + 1 });
+    expect(stored?.visibilitySavedAt).toBeInstanceOf(Date);
+  });
+
+  it("(DA-7 · E41 · C2) 안 붙은 줄 보관 → 보관 시각 · 보관한 사람 · version + 1 · 행동 로그 archive, 되살림 → 두 칸 null · version + 1 · 행동 로그 restore", async () => {
+    const intake = await createIntakeViewer();
+    const rows = await seedStateRows(intake);
+    const version = (await versionsOf([rows.negative])).get(rows.negative) ?? 0;
+
+    const archived = await archiveEvidenceRecord(intake, { id: rows.negative, version });
+
+    expect(archived).toEqual({ id: rows.negative, version: version + 1 });
+    const [afterArchive] = await storedRows([rows.negative]);
+    expect(afterArchive?.archivedAt).toBeInstanceOf(Date);
+    expect(afterArchive).toMatchObject({ archivedBy: intake.id, version: version + 1 });
+    expect((await actionLogFor(rows.negative)).map((log) => [log.actionType, log.entity, log.actorId])).toEqual([["archive", "evidence_record", intake.id]]);
+    expect((await listEvidenceRecords(intake)).rows.map((row) => row.id)).not.toContain(rows.negative);
+
+    const restored = await restoreEvidenceRecord(intake, archived);
+
+    expect(restored).toEqual({ id: rows.negative, version: version + 2 });
+    expect((await storedRows([rows.negative]))[0]).toMatchObject({ archivedAt: null, archivedBy: null, version: version + 2 });
+    expect((await actionLogFor(rows.negative)).map((log) => log.actionType).sort()).toEqual(["archive", "restore"]);
+    expect((await listEvidenceRecords(intake)).rows.map((row) => row.id)).toContain(rows.negative);
+  });
+
+  it("(DA-7) 붙은 줄 보관 · 낡은 version 보관 · 보관 아닌 줄 되살림은 거부(다른 사람이 {HH:mm}에 바꿈 · 새로 고침) — 보관 0 · 로그 0", async () => {
+    const intake = await createIntakeViewer();
+    const rows = await seedStateRows(intake);
+    const versions = await versionsOf([rows.attached, rows.plain]);
+    const conflict = /^다른 사람이 \d{2}:\d{2}에 바꿈 · 새로 고침$/;
+
+    await expect(archiveEvidenceRecord(intake, { id: rows.attached, version: versions.get(rows.attached) ?? 0 })).rejects.toThrow(conflict);
+    await expect(archiveEvidenceRecord(intake, { id: rows.plain, version: (versions.get(rows.plain) ?? 0) + 1 })).rejects.toThrow(conflict);
+    await expect(restoreEvidenceRecord(intake, { id: rows.plain, version: versions.get(rows.plain) ?? 0 })).rejects.toThrow(conflict);
+
+    const stored = await storedRows([rows.attached]);
+    expect(stored[0]).toMatchObject({ archivedAt: null, archivedBy: null, version: versions.get(rows.attached) });
+    expect(await actionLogFor(rows.attached)).toEqual([]);
+  });
+
+  it("(DA-7) 증빙 등록 쓰기가 없는 계급(기획 PM)은 보관 · 되살림 둘 다 거부", async () => {
+    const intake = await createIntakeViewer();
+    const rows = await seedStateRows(intake);
+    const versions = await versionsOf([rows.plain, rows.archived]);
+    const pm = await personViewer("role-pm");
+
+    await expect(archiveEvidenceRecord(pm, { id: rows.plain, version: versions.get(rows.plain) ?? 0 })).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(restoreEvidenceRecord(pm, { id: rows.archived, version: versions.get(rows.archived) ?? 0 })).rejects.toBeInstanceOf(ForbiddenError);
+    expect(await storedRows([rows.plain, rows.archived])).toEqual(expect.arrayContaining([expect.objectContaining({ id: rows.plain, archivedAt: null }), expect.objectContaining({ id: rows.archived, archivedBy: intake.id })]));
   });
 });

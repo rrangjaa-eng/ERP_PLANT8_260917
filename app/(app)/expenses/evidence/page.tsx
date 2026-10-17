@@ -1,7 +1,14 @@
 import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
-import { EVIDENCE_LIST_DEFAULTS, EVIDENCE_PERIOD_FILTERS, EVIDENCE_STATE_FILTERS, EVIDENCE_TYPE_FILTERS, listEvidenceRecords } from "@/domain/evidence-records";
+import {
+  EVIDENCE_LIST_DEFAULTS,
+  EVIDENCE_PERIOD_FILTERS,
+  EVIDENCE_STATE_FILTERS,
+  EVIDENCE_TYPE_FILTERS,
+  listEvidenceRecords,
+  listEvidenceTeamOptions,
+} from "@/domain/evidence-records";
 import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { EvidenceTable } from "./evidence-table";
 
@@ -22,18 +29,23 @@ export default async function EvidencePage({ searchParams }: { searchParams: Pro
   const { viewer } = await requireSession();
   if (!(await can(viewer, "evidence.intake", "write"))) notFound();
   const params = await searchParams;
-  const list = await listEvidenceRecords(viewer, {
-    state: firstParam(params.state),
-    type: firstParam(params.type),
-    period: firstParam(params.period),
-    batch: firstParam(params.batch),
-    page: firstParam(params.page),
-  });
+  // 공개 칸 묶음 「다른 팀」의 팀(보관 아닌 팀 · DA-1)은 목록과 함께 한 번 읽는다.
+  const [list, teams] = await Promise.all([
+    listEvidenceRecords(viewer, {
+      state: firstParam(params.state),
+      type: firstParam(params.type),
+      period: firstParam(params.period),
+      batch: firstParam(params.batch),
+      page: firstParam(params.page),
+    }),
+    listEvidenceTeamOptions(viewer),
+  ]);
   return (
     <ListScreen title="증빙">
       <EvidenceTable
         viewerId={viewer.id}
         list={list}
+        teams={teams}
         filterOptions={{ states: EVIDENCE_STATE_FILTERS, types: EVIDENCE_TYPE_FILTERS, periods: EVIDENCE_PERIOD_FILTERS, defaults: EVIDENCE_LIST_DEFAULTS }}
       />
     </ListScreen>

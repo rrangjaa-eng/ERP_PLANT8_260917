@@ -114,3 +114,20 @@
     min-width: var(--touch-min);
   }
 }
+
+/* 06.1-05 Task 3(DA-7 · §7-8 :1008) — 표 위 결과 줄 `증빙 보관됨` + `되돌리기` · 거부 글자 + `새로 고침`. 04.2 공휴일 · 06-09 카드 사용
+   `.undoLine` · `.undoFailed`와 같은 이름 · 같은 값(토큰만 — 다른 라우트 CSS 모듈은 import하지 않는다). */
+.undoLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+  margin: 0 0 var(--s-3);
+  font-size: var(--text-aux);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.undoFailed {
+  color: var(--status-danger);
+}

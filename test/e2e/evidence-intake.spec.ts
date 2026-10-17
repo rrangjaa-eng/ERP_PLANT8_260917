@@ -1,12 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { test, expect, type Page } from "@playwright/test";
+import { AxeBuilder } from "@axe-core/playwright";
+import { test, expect, type Page, type Route } from "@playwright/test";
 import { createTeamExpenseDraft } from "@/domain/expenses";
 import { seoulToday } from "@/lib/dates";
 import { bcFixture, hometaxTaxInvoiceFixture, lotteFixture } from "@/test/fixtures/evidence-import/build";
 import {
   addBcCard,
   addLotteCard,
+  attachRecordFixture,
   bcLines,
+  bumpRecordVersion,
   clearEvidence,
   EVIDENCE_COL,
   evidenceCell,
@@ -14,13 +17,17 @@ import {
   evidenceRows,
   evidenceTable,
   focusGridCell,
+  isServerAction,
+  liveTeamNames,
   loginAs,
   loginIntake,
   lotteLines,
   precedes,
+  recordIdsOf,
   registerFile,
   teamIdByName,
   uploadFixture,
+  uploadFixtures,
   waitForServerAction,
 } from "./helpers/evidence";
 
@@ -377,3 +384,263 @@ test("빈 상태 — 할 일 0: 저장한 줄은 자리에 남고, 다시 열면
   await expect(page.locator('[data-ui="empty-state"]').getByRole("link", { name: "전체 보기" })).toHaveAttribute("href", "/expenses/evidence?state=all");
   await expect(page.getByRole("button", { name: /^공개 범위 저장/ })).toHaveCount(0);
 });
+
+// ─── 06.1-05 Task 3 — 서버가 거부하는 편집과 치우기 ────────────────────────────────────────────────────────────
+
+function refusedRow(page: Page) {
+  return page.locator('[data-variant="bulk-import"] li[data-state="refused"]');
+}
+
+function intakeRows(page: Page) {
+  return page.locator('[data-variant="bulk-import"] li');
+}
+
+function visibilityCells(page: Page) {
+  return evidenceRows(page).locator(`:scope > td:nth-child(${EVIDENCE_COL.visibility + 1})`);
+}
+
+// 서버 액션 POST(`next-action` 머리)만 가로챈다 — 목록 다시 읽기(RSC GET)는 그대로 지난다.
+async function routeActions(page: Page, handler: (route: Route) => Promise<void>): Promise<void> {
+  await page.route(
+    (url) => url.pathname === "/expenses/evidence",
+    async (route, request) => {
+      if (!isServerAction(request)) return route.continue();
+      await handler(route);
+    },
+  );
+}
+
+// 1MB(10진) 한도를 넘는 파일 — 내용은 보지 않는다(브라우저가 크기만 재고 거절한다).
+const OVERSIZE = new Uint8Array(1_400_000);
+
+test("(DA-1) 공개 select — 제안 팀(선택됨) · 설정 본부 · 미공개 · 묶음 「다른 팀」(보관 아닌 팀 · 제안 팀 제외) → 다른 팀 고르고 Ctrl+S → 팀 공개 · 2행 그 팀", async ({ page }) => {
+  const viewer = await loginIntake(page);
+  const proposalTeam = await teamIdByName("기획1팀");
+  const card = await addLotteCard({ kind: "team", teamId: proposalTeam });
+  await registerFile(viewer, lotteFixture(lotteLines(card, 1)), "롯데_팀.xls");
+  await page.goto("/expenses/evidence");
+  await expect(evidenceRows(page)).toHaveCount(1);
+
+  await focusGridCell(evidenceCell(page, 0, EVIDENCE_COL.visibility));
+  await page.keyboard.press("Enter");
+  const select = page.getByRole("combobox", { name: "공개", exact: true });
+  await expect(select).toBeFocused();
+  await expect(select).toHaveValue(`team:${proposalTeam}`);
+  // 첫 `—`는 Select 공용 빈 값(고르지 않음 — 공개 값이 아니라 커밋하지 않는다).
+  await expect(select.locator(":scope > option")).toHaveText(["—", "기획1팀 공개", "기획본부 공개", "미공개"]);
+  const group = select.locator(":scope > optgroup");
+  await expect(group).toHaveCount(1);
+  await expect(group).toHaveAttribute("label", "다른 팀");
+  const others = (await liveTeamNames()).filter((name) => name !== "기획1팀").map((name) => `${name} 공개`);
+  expect(others).toContain("경영관리팀 공개");
+  await expect(group.locator("option")).toHaveText(others);
+
+  await select.selectOption({ label: "경영관리팀 공개" });
+  await expect(select).toHaveCount(0);
+  await expect(evidenceCell(page, 0, EVIDENCE_COL.visibility)).toHaveText("경영관리팀 공개");
+  const saved = waitForServerAction(page);
+  await focusGridCell(evidenceCell(page, 0, EVIDENCE_COL.date));
+  await page.keyboard.press("Control+s");
+  await saved;
+
+  await expect(evidenceCell(page, 0, EVIDENCE_COL.status)).toContainText("팀 공개");
+  await expect(evidenceCell(page, 0, EVIDENCE_COL.status)).toContainText("경영관리팀");
+});
+
+test("(DA-18) 화면을 연 뒤 한 줄이 바뀌면 Ctrl+S → 합계 행 `오류 1칸 · 전부 거부` · 그 칸만 오류 · 다른 줄은 그대로(저장 0줄)", async ({ page }) => {
+  const viewer = await loginIntake(page);
+  const card = await addLotteCard({ kind: "shared" });
+  const batchId = await registerFile(viewer, lotteFixture(lotteLines(card, 3)), "롯데_3.xls");
+  await page.goto("/expenses/evidence");
+  await expect(evidenceRows(page)).toHaveCount(3);
+  const [stale] = await recordIdsOf(batchId);
+  if (!stale) throw new Error("증빙 줄 없음");
+  await bumpRecordVersion(stale);
+
+  const saved = waitForServerAction(page);
+  await focusGridCell(evidenceCell(page, 0, EVIDENCE_COL.date));
+  await page.keyboard.press("Control+s");
+  await saved;
+
+  await expect(evidenceTable(page).locator("tfoot")).toContainText("오류 1칸 · 전부 거부");
+  await expect(evidenceTable(page).locator('td[aria-invalid="true"]')).toHaveCount(1);
+  await expect(visibilityCells(page).and(page.locator('[aria-invalid="true"]'))).toHaveCount(1);
+  for (let index = 0; index < 3; index++) await expect(evidenceCell(page, index, EVIDENCE_COL.status)).toHaveText("미공개");
+  // 오류 칸은 dirty 면 대신 오류 모양이다(표 규칙 — 오류가 이긴다). 보낼 줄은 셋 그대로 남는다.
+  await expect(dirtyCells(page)).toHaveCount(2);
+  await expect(page.getByRole("button", { name: /^공개 범위 저장 3/ })).toBeVisible();
+});
+
+test("(DA-2 · E2) 1.4MB 파일 → 서버를 부르지 않고 크기 거절 행(`다시 올리기` 없음) · 본문 한도 413도 같은 거절 행", async ({ page }) => {
+  await loginIntake(page);
+  await page.goto("/expenses/evidence");
+  let actionCalls = 0;
+  page.on("request", (request) => {
+    if (isServerAction(request)) actionCalls++;
+  });
+
+  await uploadFixture(page, "큰_파일.xls", OVERSIZE);
+  await expect(refusedRow(page)).toHaveCount(1);
+  await expect(refusedRow(page)).toContainText("큰_파일.xls");
+  await expect(refusedRow(page)).toContainText("1.4MB · 1MB 초과 · 기간을 나눠 다시 내려받기");
+  await expect(page.getByRole("button", { name: "다시 올리기" })).toHaveCount(0);
+  expect(actionCalls).toBe(0);
+
+  // 한도 바로 아래 파일이 multipart 머리로 한도를 넘어 Next가 413 `Body exceeded …`로 끝낸 경우 — 같은 크기 거절 행.
+  await routeActions(page, (route) => route.fulfill({ status: 413, contentType: "text/plain", body: "Body exceeded 1 MB limit.\nTo configure the body size limit for Server Actions, see: https://nextjs.org/docs" }));
+  await uploadFixture(page, "한도_바로_아래.xls", new Uint8Array(999_000));
+  await expect(refusedRow(page)).toContainText("한도_바로_아래.xls");
+  await expect(refusedRow(page)).toContainText("1.0MB · 1MB 초과 · 기간을 나눠 다시 내려받기");
+  await expect(page.getByRole("button", { name: "다시 올리기" })).toHaveCount(0);
+});
+
+test("(DA-2) 서버 5xx · 연결 끊김이면 `올리지 못함` + `다시 올리기` — 다시 올리면 결과 행", async ({ page }) => {
+  await loginIntake(page);
+  const card = await addLotteCard({ kind: "shared" });
+  await page.goto("/expenses/evidence");
+  const failed = page.locator('[data-variant="bulk-import"] li[data-state="failed"]');
+
+  await routeActions(page, (route) => route.fulfill({ status: 500, contentType: "text/plain", body: "Internal Server Error" }));
+  await uploadFixture(page, "롯데_500.xls", lotteFixture(lotteLines(card, 1)));
+  await expect(failed).toContainText("올리지 못함");
+  await expect(failed.getByRole("button", { name: "다시 올리기" })).toBeVisible();
+
+  await page.unrouteAll({ behavior: "wait" });
+  await routeActions(page, (route) => route.abort("connectionreset"));
+  await uploadFixture(page, "롯데_끊김.xls", lotteFixture(lotteLines(card, 1, {}, 11)));
+  await expect(failed).toContainText("롯데_끊김.xls");
+  await expect(failed).toContainText("올리지 못함");
+
+  await page.unrouteAll({ behavior: "wait" });
+  await failed.getByRole("button", { name: "다시 올리기" }).click();
+  await expect(resultRow(page)).toContainText("등록 1");
+  await expect(evidenceRows(page)).toHaveCount(1);
+});
+
+test("(E32 · P3-8) 정상 롯데 하나 + 1.4MB 하나를 함께 놓기 → 결과 행 둘(성공 · 거절) · 표에는 롯데 3줄만", async ({ page }) => {
+  await loginIntake(page);
+  const card = await addLotteCard({ kind: "shared" });
+  await page.goto("/expenses/evidence");
+
+  await uploadFixtures(page, [
+    { name: "롯데_정상.xls", bytes: lotteFixture(lotteLines(card, 3)) },
+    { name: "큰_파일.xls", bytes: OVERSIZE },
+  ]);
+  await expect(resultRow(page)).toContainText("등록 3");
+  await expect(refusedRow(page)).toContainText("1.4MB · 1MB 초과");
+  await expect(intakeRows(page)).toHaveCount(2);
+  await expect(evidenceRows(page)).toHaveCount(3);
+});
+
+test("(DA-21) 올리는 동안 1차는 aria-disabled `올리는 중` · 사람이 바꾼 공개 칸은 다시 읽어도 남고 · 올리는 중 놓은 둘째 파일은 첫 행 뒤에 붙는다", async ({ page }) => {
+  const viewer = await loginIntake(page);
+  const card = await addLotteCard({ kind: "shared" });
+  await registerFile(viewer, lotteFixture(lotteLines(card, 1)), "롯데_처음.xls");
+  await page.goto("/expenses/evidence");
+  await expect(evidenceRows(page)).toHaveCount(1);
+
+  // 사람이 바꾼 칸 — 제안(기획본부 공개)을 미공개로.
+  await focusGridCell(evidenceCell(page, 0, EVIDENCE_COL.visibility));
+  await page.keyboard.press("Enter");
+  await page.getByRole("combobox", { name: "공개", exact: true }).selectOption({ label: "미공개" });
+  await expect(evidenceCell(page, 0, EVIDENCE_COL.visibility)).toHaveText("미공개");
+
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await routeActions(page, async (route) => {
+    await held;
+    await route.continue();
+  });
+  await uploadFixture(page, "롯데_A.xls", lotteFixture(lotteLines(card, 2, {}, 21)));
+  const primary = page.getByRole("button", { name: /^공개 범위 저장/ });
+  await expect(primary).toHaveAttribute("aria-disabled", "true");
+  await expect(primary).toHaveAccessibleDescription("올리는 중");
+
+  await uploadFixture(page, "롯데_B.xls", lotteFixture(lotteLines(card, 1, {}, 31)));
+  await expect(intakeRows(page)).toHaveCount(2);
+  await expect(intakeRows(page).nth(0)).toContainText("롯데_A.xls");
+  await expect(intakeRows(page).nth(1)).toContainText("롯데_B.xls");
+
+  release();
+  await expect(resultRow(page)).toHaveCount(2);
+  await expect(resultRow(page).nth(0)).toContainText("롯데_A.xls");
+  await expect(resultRow(page).nth(1)).toContainText("롯데_B.xls");
+  await expect(evidenceRows(page)).toHaveCount(4);
+  await expect(visibilityCells(page).filter({ hasText: /^미공개$/ })).toHaveCount(1);
+  await expect(primary).not.toHaveAttribute("aria-disabled", "true");
+  await expect(primary).toHaveText(/^공개 범위 저장 4/);
+});
+
+test("(DA-7 · E41) 안 붙은 줄 `보관` → 확인 창 없이 표 위 `증빙 보관됨` + `되돌리기`(초점) · 할 일에서 빠짐 → 되돌리기 → 돌아옴 · Ctrl+E도 같다", async ({ page }) => {
+  const viewer = await loginIntake(page);
+  const card = await addLotteCard({ kind: "shared" });
+  await registerFile(viewer, lotteFixture(lotteLines(card, 2)), "롯데_2.xls");
+  await page.goto("/expenses/evidence");
+  await expect(evidenceRows(page)).toHaveCount(2);
+  let dialogs = 0;
+  page.on("dialog", () => dialogs++);
+
+  const archiveButtons = evidenceTable(page).getByRole("button", { name: "보관", exact: true });
+  await expect(archiveButtons).toHaveCount(2);
+  await expect(archiveButtons.first()).toHaveAttribute("tabindex", "-1");
+  await expect(page.getByRole("main").locator("kbd", { hasText: "Ctrl+E" })).toHaveCount(1);
+
+  const archived = waitForServerAction(page);
+  await evidenceCell(page, 0, EVIDENCE_COL.actions).getByRole("button", { name: "보관", exact: true }).click();
+  await archived;
+  const line = page.getByRole("status").filter({ hasText: "증빙 보관됨" });
+  await expect(line).toBeVisible();
+  const undo = line.getByRole("button", { name: "되돌리기", exact: true });
+  await expect(undo).toBeFocused();
+  await expect(evidenceRows(page)).toHaveCount(1);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  expect(dialogs).toBe(0);
+  // 행 행동 열 · 결과 줄이 선 화면 — 기본 규칙 전체(a11y 스펙과 같은 기준, 그 스펙의 증빙 화면은 빈 목록일 수 있다).
+  const axe = await new AxeBuilder({ page }).analyze();
+  expect(axe.violations.map((violation) => violation.id)).toEqual([]);
+
+  await undo.click();
+  await expect(evidenceRows(page)).toHaveCount(2);
+  await expect(line).toHaveCount(0);
+
+  // 키보드 경로 — 활성 셀 줄의 행 행동(§7-3 (차)).
+  await focusGridCell(evidenceCell(page, 0, EVIDENCE_COL.date));
+  await page.keyboard.press("Control+e");
+  await expect(page.getByRole("status").filter({ hasText: "증빙 보관됨" })).toBeVisible();
+  await expect(evidenceRows(page)).toHaveCount(1);
+});
+
+test("(DA-7) `?state=archived` 보기의 행 행동은 `되살리기`만 — 누르면 그 보기에서 빠진다 · 붙은 줄에는 `보관`이 없다", async ({ page }) => {
+  const viewer = await loginIntake(page);
+  const card = await addLotteCard({ kind: "shared" });
+  const batchId = await registerFile(viewer, lotteFixture(lotteLines(card, 3)), "롯데_3.xls");
+  const [attached] = await recordIdsOf(batchId);
+  if (!attached) throw new Error("증빙 줄 없음");
+  await attachRecordFixture(attached, viewer.id);
+
+  await page.goto("/expenses/evidence?state=all");
+  await expect(evidenceRows(page)).toHaveCount(3);
+  await expect(evidenceTable(page).getByRole("button", { name: "보관", exact: true })).toHaveCount(2);
+  const attachedRow = evidenceRows(page).filter({ hasText: "붙음" });
+  await expect(attachedRow).toHaveCount(1);
+  await expect(attachedRow.locator(`:scope > td:nth-child(${EVIDENCE_COL.actions + 1})`)).toBeEmpty();
+
+  const archived = waitForServerAction(page);
+  await evidenceTable(page).getByRole("button", { name: "보관", exact: true }).first().click();
+  await archived;
+  await expect(page.getByRole("status").filter({ hasText: "증빙 보관됨" })).toBeVisible();
+
+  await page.goto("/expenses/evidence?state=archived");
+  await expect(evidenceRows(page)).toHaveCount(1);
+  await expect(evidenceTable(page).getByRole("button", { name: "보관", exact: true })).toHaveCount(0);
+  const restore = evidenceTable(page).getByRole("button", { name: "되살리기", exact: true });
+  await expect(restore).toHaveCount(1);
+  await expect(page.getByRole("main").locator("kbd", { hasText: "Ctrl+E" })).toHaveCount(1);
+  await restore.click();
+  await expect(evidenceRows(page)).toHaveCount(0);
+  await expect(emptyMessage(page)).toHaveText("조건에 맞는 증빙이 없습니다");
+});
+

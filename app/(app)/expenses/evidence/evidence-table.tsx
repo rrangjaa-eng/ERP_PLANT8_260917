@@ -10,7 +10,7 @@ import { Num } from "@/ui/num/Num";
 import { Pagination } from "@/ui/pagination/Pagination";
 import { pageRangeText } from "@/ui/pagination/page-window";
 import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
-import { Select, type SelectOption } from "@/ui/select/Select";
+import { Select, type SelectOption, type SelectOptionGroup } from "@/ui/select/Select";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { RowSheet } from "@/ui/table/RowSheet";
 import { Table } from "@/ui/table/Table";
@@ -20,8 +20,18 @@ import { useDirtyStorage, viewerDirtyScope } from "@/ui/table/use-dirty-storage"
 import { useEditableWidth } from "@/ui/table/use-editable-width";
 import type { FooterNoticeItem } from "@/ui/table/footer-notice";
 import type { CellEditability, CellIssue, TableColumn } from "@/ui/table/types";
-import type { EvidenceListFilters, EvidenceProposal, EvidenceRecordList, EvidenceRecordView, EvidenceRecordVisibility, EvidenceRecordWord } from "@/domain/evidence-records";
-import { publishEvidenceRecordsAction } from "./actions";
+import type {
+  EvidenceListFilters,
+  EvidenceProposal,
+  EvidenceRecordList,
+  EvidenceRecordView,
+  EvidenceRecordVisibility,
+  EvidenceRecordWord,
+  EvidenceRowAction,
+  EvidenceTeamOption,
+} from "@/domain/evidence-records";
+import { ConflictLine } from "@/app/(app)/approvals/conflict-line";
+import { archiveEvidenceRecordAction, publishEvidenceRecordsAction, restoreEvidenceRecordAction } from "./actions";
 import { IntakeZone } from "./intake-zone";
 import expenseStyles from "../expenses.module.css";
 import styles from "./evidence-table.module.css";
@@ -30,6 +40,7 @@ import styles from "./evidence-table.module.css";
 // 화면은 사람이 바꾼 공개 칸을 행 id 키 편집 맵에 모아 1차 「공개 범위 저장」 한 번에 서버 제안과 함께 보낸다(전부-아니면-전무).
 // 서버 제안은 dirty 면으로 그리되 편집 맵과 따로 둔다 — 떠나기 경고 · 브라우저 보관에는 사람이 바꾼 칸만 든다(DA-4).
 // 06.1-05 Task 2 — 필터 셋(쿼리 링크 · 기본 `할 일`) · 서식 그룹 · 필터 결과 전체 합계 · 폭별 열 · 잠긴 셀 이유 · 페이지 줄 · 힌트 줄 · 빈 상태 넷 · 폰 읽기 시트.
+// 06.1-05 Task 3 — 공개 칸 「다른 팀」 묶음 · 서버 거부 칸 · 업로드 중 1차 막힘 · 행 행동(보관 · 되살리기) + 표 위 결과 줄 `되돌리기`.
 
 type Row = {
   id: string;
@@ -47,6 +58,7 @@ type Row = {
   visibilityCell: CellEditability;
   statusWord: EvidenceRecordWord;
   statusDetail: string | null;
+  rowAction: EvidenceRowAction;
 };
 
 /** 사람이 바꾼 공개 칸 — 값은 셀 안에서만 쓰는 꼴(`private` · `division` · `team:{팀 id}`), version은 바꿀 때 본 값. */
@@ -63,9 +75,17 @@ const COPY = {
   clearFilters: "필터 지우기",
   clearBatch: "묶음 지우기",
   noChange: "바뀐 칸 없음",
+  uploading: "올리는 중",
   discarded: "편집을 버렸습니다",
   invalidInput: "입력값 오류 · 값 확인",
+  otherTeams: "다른 팀",
+  archived: "증빙 보관됨",
+  undo: "되돌리기",
+  undoFailed: "되돌리기 실패 · 다시 시도",
+  unknownResult: "결과를 받지 못함 · 새로 고침",
 } as const;
+
+const ROW_ACTION_LABEL = { archive: "보관", restore: "되살리기" } as const;
 
 // 힌트 줄 — 이 화면에서 실제로 되는 키만(SYSTEM §7-3 「힌트 줄은 화면마다 실제로 되는 것만」 — 붙여넣기 `Ctrl+V`는 06.1-13이 공개 칸 붙여넣기를
 // 이을 때 더한다). 저장은 1차의 kbd가 말한다.
@@ -103,6 +123,11 @@ function statusDetailId(rowId: string): string {
   return `evidence-status-detail-${rowId}`;
 }
 
+// 거래처 · 가맹점 칸 id — 줄마다 같은 이름인 행 행동(`보관` · `되살리기`)이 그 줄을 가리킨다(견적 표 행 행동 열 선례).
+function counterpartyId(rowId: string): string {
+  return `evidence-counterparty-${rowId}`;
+}
+
 function amountText(value: number | null): string {
   return value === null ? "" : String(value);
 }
@@ -137,6 +162,7 @@ function rowFromView(view: EvidenceRecordView): Row[] {
       visibilityCell: view.visibilityCell ?? "readonly",
       statusWord: view.statusWord,
       statusDetail: view.statusDetail ?? null,
+      rowAction: view.rowAction ?? null,
     },
   ];
 }
@@ -172,8 +198,11 @@ function rootValidationMessage(errors: unknown): string | null {
   return Array.isArray(root) && typeof root[0] === "string" ? root[0] : null;
 }
 
+/** 공개 칸 선택지 — 평 선택지(제안 팀 · 설정 본부 · 미공개 · 저장된 값) + 묶음 「다른 팀」. */
+type VisibilityChoices = { options: SelectOption[]; groups: SelectOptionGroup[] };
+
 // 공개 셀 편집기 — 리저브 대장 SelectEditCell과 같은 꼴(바꾸면 곧바로 커밋, 바꾸지 않고 떠나면 커밋하지 않음).
-function VisibilityEditCell({ id, initialValue, options, onCommit, onCancel }: { id: string; initialValue: string; options: SelectOption[]; onCommit: (value: string) => void; onCancel: () => void }) {
+function VisibilityEditCell({ id, initialValue, choices, onCommit, onCancel }: { id: string; initialValue: string; choices: VisibilityChoices; onCommit: (value: string) => void; onCancel: () => void }) {
   return (
     <Select
       id={id}
@@ -182,15 +211,22 @@ function VisibilityEditCell({ id, initialValue, options, onCommit, onCancel }: {
       autoFocus
       onChange={(event) => onCommit(event.target.value)}
       onBlur={(event) => (event.currentTarget.value === initialValue ? onCancel() : onCommit(event.currentTarget.value))}
-      options={options}
+      options={choices.options}
+      groups={choices.groups}
       className={styles.cellSelect}
     />
   );
 }
 
-export type EvidenceTableProps = { viewerId: string; list: EvidenceRecordList; filterOptions: EvidenceFilterOptions };
+type ArchiveOutcome = Awaited<ReturnType<typeof archiveEvidenceRecordAction>>;
 
-export function EvidenceTable({ viewerId, list, filterOptions }: EvidenceTableProps) {
+// 표 위 결과 줄(DA-7 · E41 · PA-ARC-FAIL) — 마지막 한 건만(04.2-09 꼴). 보관 뒤 `되돌리기`가 연결 · 서버 실패로 끝나면 글자만 실패로 바뀌고
+// `되돌리기`는 남는다(SYSTEM.md:1008). 거부(충돌 · 그사이 붙음)는 서버 글자 + 3차 `새로 고침` — 그때 본 목록과 묶어 다시 받으면 지운다.
+type ArchiveLine = { kind: "archived"; record: { id: string; version: number }; undoFailed: boolean } | { kind: "conflict"; message: string; list: EvidenceRecordList };
+
+export type EvidenceTableProps = { viewerId: string; list: EvidenceRecordList; teams: readonly EvidenceTeamOption[]; filterOptions: EvidenceFilterOptions };
+
+export function EvidenceTable({ viewerId, list, teams, filterOptions }: EvidenceTableProps) {
   const router = useRouter();
   const [overlay, setOverlay] = useState<SavedOverlay | null>(null);
   const saved = overlay?.list === list ? overlay : null;
@@ -245,7 +281,8 @@ export function EvidenceTable({ viewerId, list, filterOptions }: EvidenceTablePr
         for (const cell of data.rejected.cells) if (cell.rowId) next[cell.rowId] = cell.reason;
         setCellErrors(next);
         setRejectedRowIds(Object.keys(next));
-        setRejectionSummary(data.rejected.summary);
+        // DA-18 — 합계 행 라벨 뒤(SYSTEM.md §7-3 「일괄 저장은 전부 저장 또는 전부 거부」).
+        setRejectionSummary(`오류 ${formatCount(data.rejected.cells.length)}칸 · 전부 거부`);
         setIssueSignal((signal) => signal + 1);
         return;
       }
@@ -276,8 +313,11 @@ export function EvidenceTable({ viewerId, list, filterOptions }: EvidenceTablePr
 
   const displayedIds = new Set(rows.map((row) => row.id));
 
+  // DA-21 — 끌어 놓기 영역이 파일을 올리는 동안 1차를 막는다(올린 줄이 목록에 들어오는 중이라 제안이 바뀐다).
+  const [uploading, setUploading] = useState(false);
+
   function handleSave() {
-    if (savingRef.current || isExecuting || pending === 0) return;
+    if (savingRef.current || isExecuting || pending === 0 || uploading) return;
     savingRef.current = true;
     setSavedNotice(null);
     setRejectionSummary(null);
@@ -297,16 +337,18 @@ export function EvidenceTable({ viewerId, list, filterOptions }: EvidenceTablePr
   // DR-36 — 1024 미만은 보기 전용(끌어 놓기 영역 · 표 안 공개 편집 · 1차를 그리지 않는다). 편집기가 열린 채 폭이 줄면 커밋 뒤로 미룬다.
   const editableWidth = useEditableWidth() || cellEditing;
 
-  // 공개 셀 선택지(DA-1 · DA-11 — 이 태스크 몫): `{제안 팀} 공개`(맨 위 · 기본) · `{설정 본부} 공개` · `미공개`.
-  // 저장된 값이 선택지에 없으면(저장된 팀 공개 줄) 그 값을 맨 위에 그대로 둔다(리저브 대장 `stored` 꼴).
-  function optionsFor(row: Row): SelectOption[] {
+  // 공개 셀 선택지(DA-1 · DA-11): `{제안 팀} 공개`(맨 위 · 기본) · `{설정 본부} 공개` · `미공개` · 묶음 「다른 팀」(보관 아닌 팀 — 위에 선
+  // 제안 팀 제외, 조직 순). 저장된 값이 어디에도 없으면(보관된 팀에 공개한 줄) 그 값을 맨 위에 그대로 둔다(리저브 대장 `stored` 꼴).
+  function choicesFor(row: Row): VisibilityChoices {
     const options: SelectOption[] = [];
     const proposal = proposals.get(row.id);
     if (proposal?.visibility === "team") options.push({ value: proposalValue(proposal), label: proposal.label });
     if (division) options.push({ value: "division", label: `${division.name} 공개` });
     options.push({ value: "private", label: "미공개" });
+    const others = teams.filter((team) => !options.some((option) => option.value === `team:${team.id}`)).map((team) => ({ value: `team:${team.id}`, label: `${team.name} 공개` }));
     const stored = storedValue(row);
-    return options.some((option) => option.value === stored) ? options : [{ value: stored, label: row.visibilityLabel }, ...options];
+    const listed = [...options, ...others].some((option) => option.value === stored);
+    return { options: listed ? options : [{ value: stored, label: row.visibilityLabel }, ...options], groups: others.length > 0 ? [{ label: COPY.otherTeams, options: others }] : [] };
   }
 
   function baseValue(row: Row): string {
@@ -320,7 +362,8 @@ export function EvidenceTable({ viewerId, list, filterOptions }: EvidenceTablePr
 
   function labelOf(row: Row): string {
     const value = currentValue(row);
-    return optionsFor(row).find((option) => option.value === value)?.label ?? row.visibilityLabel;
+    const { options, groups } = choicesFor(row);
+    return [...options, ...groups.flatMap((group) => group.options)].find((option) => option.value === value)?.label ?? row.visibilityLabel;
   }
 
   // `—`는 공개할 수 없는 줄(붙음 · 음수 · 경영관리만 종류 · 보관)에만 — 잠긴 줄은 지금 값을 그대로 보인다(이유는 상태 2행).
@@ -370,6 +413,76 @@ export function EvidenceTable({ viewerId, list, filterOptions }: EvidenceTablePr
     setDiscardedEdits(stored);
   }
 
+  // 행 행동(DA-7 · E41) — 확인 창 없이 바로 보관 · 되살리고 표 위 결과 줄이 되돌리기를 준다. 대기 중인 줄은 하나(다른 줄 행동은 busy).
+  const [archiveLine, setArchiveLine] = useState<ArchiveLine | null>(null);
+  // 새로 보관할 때만 `되돌리기`를 다시 그려 포커스를 준다(공휴일 delete-undo 꼴).
+  const [archiveShown, setArchiveShown] = useState(0);
+  const [rowActionPending, setRowActionPending] = useState<string | null>(null);
+  const shownArchiveLine = archiveLine?.kind === "conflict" && archiveLine.list !== list ? null : archiveLine;
+
+  // 보관한 줄은 목록에서 빠진다 — 그 줄의 편집 · 오류 칸만 버린다(다른 줄 편집은 행 id 키라 다시 받아도 남는다).
+  function dropRowEdits(rowId: string) {
+    if (rowId in edits) {
+      persistPendingRef.current = true;
+      setEdits((current) => {
+        const next = { ...current };
+        delete next[rowId];
+        return next;
+      });
+    }
+    setCellErrors((current) => {
+      if (!(rowId in current)) return current;
+      const next = { ...current };
+      delete next[rowId];
+      return next;
+    });
+  }
+
+  async function callArchive(action: typeof archiveEvidenceRecordAction, record: { id: string; version: number }): Promise<ArchiveOutcome | null> {
+    setRowActionPending(record.id);
+    try {
+      return (await action(record)) ?? null;
+    } catch {
+      return null;
+    } finally {
+      setRowActionPending(null);
+    }
+  }
+
+  async function runRowAction(row: Row) {
+    const kind = row.rowAction;
+    if (kind === null || rowActionPending !== null) return;
+    const outcome = await callArchive(kind === "archive" ? archiveEvidenceRecordAction : restoreEvidenceRecordAction, { id: row.id, version: row.version });
+    const data = outcome?.data;
+    if (data?.record) {
+      dropRowEdits(row.id);
+      if (kind === "archive") {
+        setArchiveLine({ kind: "archived", record: data.record, undoFailed: false });
+        setArchiveShown((count) => count + 1);
+      } else setArchiveLine(null);
+      router.refresh();
+      return;
+    }
+    setArchiveLine({ kind: "conflict", message: data?.conflict ?? outcome?.serverError ?? COPY.unknownResult, list });
+  }
+
+  async function undoArchive() {
+    if (archiveLine?.kind !== "archived" || rowActionPending !== null) return;
+    const record = archiveLine.record;
+    const outcome = await callArchive(restoreEvidenceRecordAction, record);
+    const data = outcome?.data;
+    if (data?.record) {
+      setArchiveLine(null);
+      router.refresh();
+      return;
+    }
+    if (data?.conflict) {
+      setArchiveLine({ kind: "conflict", message: data.conflict, list });
+      return;
+    }
+    setArchiveLine({ kind: "archived", record, undoFailed: true });
+  }
+
   // 열 우선순위(UI-SPEC S2): P1 거래처·가맹점 · 합계 · 상태 / P2 날짜 · 공개 / P3 공급가 · 세액 — 1280 미만에서 P3를 숨기고(DOM에는 남음)
   // 그 합은 합계 행 라벨 뒤에 남는다. `copyText`는 격자 Ctrl+C가 싣는 글자(힌트 줄 「복사」가 실제로 값을 싣는다).
   const columns: TableColumn<Row>[] = [
@@ -378,16 +491,16 @@ export function EvidenceTable({ viewerId, list, filterOptions }: EvidenceTablePr
       key: "counterparty",
       header: "거래처·가맹점",
       priority: "p1",
-      // DX-1 — 한 줄 말줄임 + title 전문(격자 칸 minmax(0, max-content)라 폰 320에서도 문서를 넘기지 않는다).
+      // DX-1 — 한 줄 말줄임 + title 전문(격자 칸 minmax(0, max-content)라 폰 320에서도 문서를 넘기지 않는다). id는 행 행동이 가리킨다.
       cell: (row) =>
         row.counterparty ? (
-          <span className={styles.counterpartyCell}>
+          <span id={counterpartyId(row.id)} className={styles.counterpartyCell}>
             <span className={styles.counterpartyText} title={row.counterparty}>
               {row.counterparty}
             </span>
           </span>
         ) : (
-          "—"
+          <span id={counterpartyId(row.id)}>—</span>
         ),
       secondaryLine: (row) => row.kindLine,
       copyText: (row) => row.counterparty ?? "",
@@ -413,7 +526,7 @@ export function EvidenceTable({ viewerId, list, filterOptions }: EvidenceTablePr
       copyText: visibilityText,
       editability: (row) => (editableWidth ? row.visibilityCell : "readonly"),
       editCell: (row, ctx) => (
-        <VisibilityEditCell id={`evidence-visibility-${row.id}`} initialValue={currentValue(row)} options={optionsFor(row)} onCommit={ctx.onCommit} onCancel={ctx.onCancel} />
+        <VisibilityEditCell id={`evidence-visibility-${row.id}`} initialValue={currentValue(row)} choices={choicesFor(row)} onCommit={ctx.onCommit} onCancel={ctx.onCancel} />
       ),
     },
     {
@@ -424,6 +537,33 @@ export function EvidenceTable({ viewerId, list, filterOptions }: EvidenceTablePr
       secondaryLine: (row) => (row.statusDetail ? <span id={statusDetailId(row.id)}>{row.statusDetail}</span> : null),
       copyText: (row) => row.statusWord,
     },
+    // §7-3 (차) 행 행동 열 — 머리글 숨김 · P1 밖 · 셀의 3차는 격자 로빙 밖(tabIndex -1)이고 그 줄 거래처 칸을 가리킨다. 키보드 경로는 Ctrl+E다.
+    // 안 붙은 줄은 끝에 떨어뜨린 `보관`, `보관됨` 보기는 `되살리기`만(서버 판정 rowAction). 1024 미만은 보기 전용이라 열이 없다.
+    ...(editableWidth
+      ? [
+          {
+            key: "actions",
+            header: "행동",
+            headerHidden: true,
+            priority: "p3" as const,
+            cell: (row: Row) =>
+              row.rowAction ? (
+                <RowActions noWrap>
+                  <RowAction
+                    tabIndex={-1}
+                    danger={row.rowAction === "archive"}
+                    describedBy={counterpartyId(row.id)}
+                    pending={rowActionPending === row.id}
+                    busy={rowActionPending !== null && rowActionPending !== row.id}
+                    onClick={() => void runRowAction(row)}
+                  >
+                    {ROW_ACTION_LABEL[row.rowAction]}
+                  </RowAction>
+                </RowActions>
+              ) : null,
+          },
+        ]
+      : []),
   ];
 
   const cellIssue = (row: Row, columnKey: string): CellIssue | undefined => {
@@ -439,6 +579,11 @@ export function EvidenceTable({ viewerId, list, filterOptions }: EvidenceTablePr
   // 1차는 편집 폭에서만, 목록이 완전히 비었으면 없다(DR5 — 끌어 놓기 영역의 `파일 고르기`가 첫 행동 · 할 일 0이면 `전체 보기`).
   const showPrimary = editableWidth && (rows.length > 0 || pending > 0);
   const noChange = pending === 0 && !cellEditing;
+  const primaryBlocked = uploading ? COPY.uploading : noChange ? COPY.noChange : undefined;
+
+  // 힌트 줄 — 행 행동이 선 줄이 있을 때만 그 낱말과 Ctrl+E(실제로 되는 키만).
+  const shownRowAction = rows.find((row) => row.rowAction !== null)?.rowAction ?? null;
+  const hintItems = shownRowAction ? [...HINT_ITEMS, { label: ROW_ACTION_LABEL[shownRowAction], keys: "Ctrl+E" }] : HINT_ITEMS;
 
   // 쿼리 링크 갈래 — 클라이언트 이동이라 표가 다시 마운트되지 않고 편집 맵이 남는다(리저브 대장 · 카드 사용 필터 선례). 쪽은 1로 돌아간다.
   function go(key: "state" | "type" | "period", value: string) {
@@ -468,7 +613,7 @@ export function EvidenceTable({ viewerId, list, filterOptions }: EvidenceTablePr
 
   return (
     <>
-      {editableWidth ? <IntakeZone /> : null}
+      {editableWidth ? <IntakeZone onUploadingChange={setUploading} /> : null}
 
       {list.hasAny ? (
         <div className={styles.filterRow}>
@@ -508,8 +653,8 @@ export function EvidenceTable({ viewerId, list, filterOptions }: EvidenceTablePr
             variant="primary"
             className={styles.primaryAction}
             pending={isExecuting}
-            disabled={noChange}
-            disabledReason={noChange ? COPY.noChange : undefined}
+            disabled={primaryBlocked !== undefined}
+            disabledReason={primaryBlocked}
             reasonTone="info"
             shortcut="Ctrl+S"
             onClick={handleSave}
@@ -534,6 +679,21 @@ export function EvidenceTable({ viewerId, list, filterOptions }: EvidenceTablePr
         </p>
       ) : null}
 
+      {shownArchiveLine?.kind === "archived" ? (
+        <p role="status" className={styles.undoLine}>
+          <span className={shownArchiveLine.undoFailed ? styles.undoFailed : undefined}>{shownArchiveLine.undoFailed ? COPY.undoFailed : COPY.archived}</span>
+          <RowActions>
+            <RowAction key={archiveShown} autoFocus pending={rowActionPending === shownArchiveLine.record.id} busy={rowActionPending !== null && rowActionPending !== shownArchiveLine.record.id} onClick={() => void undoArchive()}>
+              {COPY.undo}
+            </RowAction>
+          </RowActions>
+        </p>
+      ) : shownArchiveLine?.kind === "conflict" ? (
+        <p className={styles.undoLine}>
+          <ConflictLine message={shownArchiveLine.message} />
+        </p>
+      ) : null}
+
       {rows.length === 0 ? (
         <ListEmpty message={emptyState.message} action={emptyState.action} />
       ) : (
@@ -554,7 +714,7 @@ export function EvidenceTable({ viewerId, list, filterOptions }: EvidenceTablePr
           cellIssue={cellIssue}
           cellDirty={(row, columnKey) => editableWidth && columnKey === VISIBILITY && (proposals.has(row.id) || row.id in edits)}
           firstIssueSignal={issueSignal}
-          keyboard={{ onSave: () => setSaveRequests((count) => count + 1) }}
+          keyboard={{ onSave: () => setSaveRequests((count) => count + 1), onOpenRow: editableWidth ? (row) => void runRowAction(row) : undefined }}
           footerNotices={footerNotices}
           footerSuccess={savedNotice}
           footer={(notice) => (
@@ -580,7 +740,7 @@ export function EvidenceTable({ viewerId, list, filterOptions }: EvidenceTablePr
       {/* DA-14 — 힌트 줄은 페이지 줄 바로 아래 한 곳, 편집 폭에서만(1024 미만은 CSS도 숨긴다). */}
       {editableWidth && rows.length > 0 ? (
         <div className={tableStyles.hintRow}>
-          {HINT_ITEMS.map((item, index) => (
+          {hintItems.map((item, index) => (
             <span key={item.label}>
               {index > 0 ? " · " : ""}
               {item.label} <kbd>{item.keys}</kbd>

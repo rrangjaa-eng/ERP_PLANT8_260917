@@ -4,7 +4,15 @@ import { z } from "zod";
 import { authedActionClient } from "@/lib/actions/client";
 import { registerEvidenceUpload } from "@/domain/evidence-import";
 import { EVIDENCE_IMPORT_MAX_ROWS } from "@/domain/evidence-import/limits";
-import { EVIDENCE_PAGE_SIZE, getEvidenceBatch, listEvidenceRecordsByIds, publishEvidenceRecords } from "@/domain/evidence-records";
+import {
+  EVIDENCE_PAGE_SIZE,
+  EvidenceArchiveConflictError,
+  archiveEvidenceRecord,
+  getEvidenceBatch,
+  listEvidenceRecordsByIds,
+  publishEvidenceRecords,
+  restoreEvidenceRecord,
+} from "@/domain/evidence-records";
 import { SaveRejectedError } from "@/domain/quotes/lines";
 import "./actions.registry";
 
@@ -45,9 +53,32 @@ export const publishEvidenceRecordsAction = authedActionClient.schema(publishInp
     });
     return { saved: result, rows: await listEvidenceRecordsByIds(ctx.viewer, parsedInput.refresh ?? []) };
   } catch (error) {
-    // 전부-아니면-전무 거부 — 칸 좌표(줄 id)와 이유를 돌려준다(트랜잭션은 이미 되돌렸다).
+    // 전부-아니면-전무 거부 — 칸 좌표(줄 id)와 이유를 돌려준다(트랜잭션은 이미 되돌렸다). 합계 행 글자는 화면이 칸 수로 쓴다(DA-18).
     if (!(error instanceof SaveRejectedError)) throw error;
     const cells: EvidenceRejectedCell[] = error.formatErrors.map((cell) => ({ rowId: cell.rowId, reason: cell.reason }));
-    return { rejected: { summary: error.summary, cells } };
+    return { rejected: { cells } };
+  }
+});
+
+// 06.1-05(DA-7 · E41) — 보관 · 되살림 한 줄. 충돌(낡은 version · 그사이 붙음 · 이미 그 상태)은 오류가 아니라 결과다 — 화면이 그 글자와
+// `새로 고침`을 결과 줄에 세운다(PA-ARC-FAIL). 되돌리기는 보관이 돌려준 version으로 되살림을 부른다. 05 `restoreEvidenceAction`(지운 파일
+// 되돌리기)과 이름이 다르다 — 레지스트리는 같은 이름을 거부한다.
+const archiveInputSchema = z.object({ id: z.string().uuid(), version: z.number().int() });
+
+export const archiveEvidenceRecordAction = authedActionClient.schema(archiveInputSchema).action(async ({ parsedInput, ctx }) => {
+  try {
+    return { record: await archiveEvidenceRecord(ctx.viewer, parsedInput) };
+  } catch (error) {
+    if (!(error instanceof EvidenceArchiveConflictError)) throw error;
+    return { conflict: error.message };
+  }
+});
+
+export const restoreEvidenceRecordAction = authedActionClient.schema(archiveInputSchema).action(async ({ parsedInput, ctx }) => {
+  try {
+    return { record: await restoreEvidenceRecord(ctx.viewer, parsedInput) };
+  } catch (error) {
+    if (!(error instanceof EvidenceArchiveConflictError)) throw error;
+    return { conflict: error.message };
   }
 });

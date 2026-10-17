@@ -1,5 +1,5 @@
-import { and, asc, desc, eq, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
+import { and, asc, desc, eq, getTableName, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
+import { alias, type PgColumn } from "drizzle-orm/pg-core";
 import { db, type DbOrTx } from "@/db/client";
 import { codeItems, corpCards, evidenceImportBatches, evidenceRecordLinks, evidenceRecords, orgUnits, teams } from "@/db/schema";
 import type { EvidenceScope } from "@/domain/permissions/scope-for";
@@ -115,8 +115,15 @@ export async function linkRecordsToCard(viewer: Viewer, cardId: string, recordId
 
 // ─── 06.1-05: 목록 · 단건 · 제안 대상 · 공개 범위 저장 ────────────────────────────────────────────────────────
 
+// 하위 질의 안에서 바깥 증빙 행의 열을 표 이름까지 붙여 쓴다. 조인 없는 선택(잠금 질의)이면 drizzle이 선택 목록 조각의 열에서 표 이름을
+// 떼어(단일 표 선택) 하위 질의 안의 `id`가 그 하위 질의의 표(붙임 표)로 묶였다 — 붙은 줄이 안 붙음으로 읽혔다(06.1-05 Task 3).
+// 식별자 조각은 떼지 않는다.
+function outerRecordColumn(column: PgColumn): SQL {
+  return sql`${sql.identifier(getTableName(evidenceRecords))}.${sql.identifier(column.name)}`;
+}
+
 // 살아 있는 붙임(뗀 붙임은 이력 행으로 남는다)이 있나.
-const liveLinkExists = sql<boolean>`exists (select 1 from ${evidenceRecordLinks} where ${evidenceRecordLinks.evidenceRecordId} = ${evidenceRecords.id} and ${evidenceRecordLinks.detachedAt} is null)`;
+const liveLinkExists = sql<boolean>`exists (select 1 from ${evidenceRecordLinks} where ${evidenceRecordLinks.evidenceRecordId} = ${outerRecordColumn(evidenceRecords.id)} and ${evidenceRecordLinks.detachedAt} is null)`;
 // RP-15 ⑴ · G15: 증빙 종류가 「올린 사람 · 경영관리만 보기」(code_items.private_to_owner)인가 — 코드 항목이 보관이어도 뺀다.
 const privateToOwnerType = sql<boolean>`exists (select 1 from ${codeItems} where ${codeItems.tableKey} = 'evidence_type' and ${codeItems.value} = ${evidenceRecords.evidenceType} and ${codeItems.privateToOwner})`;
 
@@ -391,6 +398,8 @@ export type LockedEvidenceRecord = {
   archivedAt: Date | null;
   attached: boolean;
   privateTypeName: string | null;
+  /** 마지막으로 바뀐 시각(timestamp) — 보관 · 되살림 충돌 글자 `다른 사람이 {HH:mm}에 바꿈`의 시각. */
+  updatedAt: Date;
 };
 
 // 저장 전 잠금 — id 오름차순(겹치는 두 저장이 서로를 기다리며 멈추지 않게). 붙음 · 종류는 같은 문장의 하위 질의로 읽는다(FOR UPDATE는
@@ -409,7 +418,8 @@ export async function lockRecordsForUpdate(viewer: Viewer, ids: readonly string[
       totalKrw: evidenceRecords.totalKrw,
       archivedAt: evidenceRecords.archivedAt,
       attached: liveLinkExists,
-      privateTypeName: sql<string | null>`(select ${codeItems.label} from ${codeItems} where ${codeItems.tableKey} = 'evidence_type' and ${codeItems.value} = ${evidenceRecords.evidenceType} and ${codeItems.privateToOwner})`,
+      privateTypeName: sql<string | null>`(select ${codeItems.label} from ${codeItems} where ${codeItems.tableKey} = 'evidence_type' and ${codeItems.value} = ${outerRecordColumn(evidenceRecords.evidenceType)} and ${codeItems.privateToOwner})`,
+      updatedAt: evidenceRecords.updatedAt,
     })
     .from(evidenceRecords)
     .where(sql`${evidenceRecords.id} = ANY(${sql.param([...ids])}::uuid[])`)
@@ -443,6 +453,28 @@ export async function updateVisibilitiesIfVersionMatch(viewer: Viewer, rows: rea
     WHERE ${evidenceRecords.id} = v.id AND ${evidenceRecords.version} = v.version
     RETURNING ${evidenceRecords.id}`);
   return result.rows.map((row) => row.id);
+}
+
+// 보관 · 되살림 한 줄(DA-7 · E41) — id · version이 같고 지금 반대 상태인 줄만 바꾸고 바꿨으면 참(거짓 = 충돌). 보관 두 칸은 함께 차고 함께
+// 빈다(CHECK evidence_records 보관 짝). 잠근 뒤에 부른다 — 살아 있는 붙임 검사는 domain이 같은 잠금 안에서 한다.
+export async function setRecordArchivedIfVersionMatches(viewer: Viewer, input: { id: string; version: number; archived: boolean }, tx: DbOrTx): Promise<boolean> {
+  const rows = await tx
+    .update(evidenceRecords)
+    .set({
+      archivedAt: input.archived ? sql`now()` : null,
+      archivedBy: input.archived ? viewer.id : null,
+      version: sql`${evidenceRecords.version} + 1`,
+      updatedAt: sql`now()`,
+    })
+    .where(
+      and(
+        eq(evidenceRecords.id, input.id),
+        eq(evidenceRecords.version, input.version),
+        input.archived ? isNull(evidenceRecords.archivedAt) : isNotNull(evidenceRecords.archivedAt),
+      ),
+    )
+    .returning({ id: evidenceRecords.id });
+  return rows.length > 0;
 }
 
 // 묶음 한 행의 서식 · 원래 파일 이름 — 결과 행 1행(`{파일 이름} · {서식 이름}`)과 batch 표시가 쓴다.

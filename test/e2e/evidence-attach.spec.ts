@@ -56,8 +56,11 @@ test("S7 행 1 반려 지출결의 × 경영관리(두 키): 행 붙이기 → �
   await expect(dialog.locator("[role=combobox]")).toHaveCount(0);
 
   // 회사 전체 문서 가운데 이 문서를 번호로 좁힌 뒤 ↓ → Enter(키보드만).
+  // F-1 — 검색 응답 전에는 옛 목록(aria-busy)이 남아 그 번호가 이미 보인다. 그때 ↓는 옛 목록 첫 행으로 가고, 새 목록에서 그 행이 빠지면
+  // PickDialog가 포커스를 검색 칸으로 돌린다(SP-8 설계). 새 목록이 선 뒤에 ↓를 누른다.
   await search.fill(doc.number);
   const option = dialog.getByRole("option", { name: new RegExp(doc.number) });
+  await expect(dialog.locator("[aria-busy]")).toHaveCount(0);
   await expect(option).toBeVisible();
   await search.press("ArrowDown");
   await expect(option).toBeFocused();

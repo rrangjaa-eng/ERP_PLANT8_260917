@@ -4,7 +4,7 @@ import { asc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { evidenceImportBatches, evidenceRecordLinks, evidenceRecords, teams } from "@/db/schema";
 import { createAccount } from "@/domain/auth/accounts";
-import { createCorpCard, type CardOwnerKind } from "@/domain/corp-cards";
+import { createCorpCard, DuplicateCorpCardError, type CardOwnerKind } from "@/domain/corp-cards";
 import { registerEvidenceFile } from "@/domain/evidence-import";
 import { assignTeam } from "@/domain/org";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
@@ -99,10 +99,17 @@ export async function teamIdByName(name: string): Promise<string> {
 type CardOwner = { kind: CardOwnerKind; teamId?: string; holderUserId?: string };
 
 // 카드 한 장을 등록하고 끝 4자리를 돌려준다(케이스마다 다른 번호 — 앞 케이스의 카드와 겹치지 않게).
+// 카드는 케이스 사이에 지우지 않아 무작위 4자리가 앞 케이스 카드와 겹칠 수 있다(한 실행에 롯데 40여 장 — /qa 실측) — 겹치면 다른 번호로 다시 고른다.
 async function addCard(issuer: string, owner: CardOwner): Promise<string> {
-  const last4 = String(randomInt(1000, 10_000));
-  await createCorpCard(SYSTEM_VIEWER, { issuer, numberLast4: last4, label: `${issuer.slice(0, 2)} ${last4}`, ...owner });
-  return last4;
+  for (;;) {
+    const last4 = String(randomInt(1000, 10_000));
+    try {
+      await createCorpCard(SYSTEM_VIEWER, { issuer, numberLast4: last4, label: `${issuer.slice(0, 2)} ${last4}`, ...owner });
+      return last4;
+    } catch (error) {
+      if (!(error instanceof DuplicateCorpCardError)) throw error;
+    }
+  }
 }
 
 export function addLotteCard(owner: CardOwner): Promise<string> {

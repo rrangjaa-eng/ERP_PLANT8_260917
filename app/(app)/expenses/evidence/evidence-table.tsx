@@ -184,7 +184,12 @@ function rowFromView(view: EvidenceRecordView): Row[] {
 function AttachedLine({ attached }: { attached: NonNullable<Row["attached"]> }) {
   if (attached.pending || attached.id === null || attached.number === null) return <span>{COPY.draftOwner}</span>;
   const href = attached.kind === "expense" ? `/expenses/${attached.id}#evidence` : "/cards/purchases";
-  return <Link href={href}>{attached.number}</Link>;
+  // 링크 모양은 지출결의 목록 번호 링크(`expenseStyles.link` — `--text-link`)와 같다.
+  return (
+    <Link href={href} className={expenseStyles.link}>
+      {attached.number}
+    </Link>
+  );
 }
 
 function proposalValue(proposal: EvidenceProposal): string {

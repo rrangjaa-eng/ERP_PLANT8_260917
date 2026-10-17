@@ -10,7 +10,9 @@ import { evidenceScopeFor } from "@/domain/permissions/scope-for";
 import { SaveRejectedError, type CellFormatError } from "@/domain/quotes/lines";
 import { EVIDENCE_VISIBILITY_DIVISION_ORG_UNIT } from "@/domain/settings/keys";
 import { getSettingValue, SettingNotFoundError } from "@/domain/settings/registry";
+import { visible } from "@/domain/permissions/visible";
 import {
+  evidenceKindLabel,
   evidenceRecordStatus,
   evidenceVisibilityCell,
   evidenceVisibilityLabel,
@@ -24,17 +26,22 @@ import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { withTransaction } from "@/lib/db-transaction";
 import { seoulToday } from "@/lib/dates";
 import { kstDateTimeOf } from "@/lib/kst-date";
+import { clampPage, pageCountFrom } from "@/lib/paging";
 import {
   EVIDENCE_VISIBILITY_UPDATE_CHUNK,
+  countAndSumForScope,
   findBatchSummary,
   findRecordForScope,
+  hasAnyRecordForScope,
   listProposalTargets,
+  listRecordsByIdsForScope,
   listRecordsForScope,
   lockRecordsForUpdate,
   updateVisibilitiesIfVersionMatch as defaultUpdateVisibilities,
   type EvidenceProposalTarget,
   type EvidenceRecordFilters,
   type EvidenceRecordListRow,
+  type EvidenceRecordState,
   type EvidenceVisibilityUpdate,
   type LockedEvidenceRecord,
 } from "@/repositories/evidence-records";
@@ -122,11 +129,63 @@ export type EvidenceProposal = { id: string; version: number; visibility: "team"
 
 export type EvidenceDivision = { id: string; name: string };
 
+export type { EvidenceRecordState } from "@/repositories/evidence-records";
+
+// 필터 줄 select 셋(UI-SPEC S2 「`[상태 ▾]` 값」 · 종류 · 기간). 값은 쿼리(`?state=&type=&period=&batch=`)라 새로 고침 · 뒤로에 남는다.
+// 상태는 첫 값이 기본(`할 일` — DA-10), 종류 값은 증빙 종류 코드값(라벨로 가르지 않는다 — 수정세금계산서는 세금계산서에 든다, DA-8).
+export const EVIDENCE_STATE_FILTERS: readonly { value: EvidenceRecordState; label: string }[] = [
+  { value: "todo", label: "할 일" },
+  { value: "private", label: "미공개" },
+  { value: "published", label: "공개" },
+  { value: "attached", label: "붙음" },
+  { value: "unmatched", label: "짝 없는 카드 줄" },
+  { value: "needs-check", label: "확인 필요" },
+  { value: "card-unknown", label: "카드 미등록" },
+  { value: "archived", label: "보관됨" },
+  { value: "all", label: "전체" },
+];
+
+export const EVIDENCE_TYPE_FILTERS: readonly { value: string; label: string }[] = [
+  { value: "", label: "전체" },
+  { value: "tax_invoice", label: "세금계산서" },
+  { value: "invoice", label: "계산서" },
+  { value: "cash_receipt", label: "현금영수증" },
+  { value: "card_receipt", label: "카드" },
+];
+
+export type EvidencePeriod = "all" | "this-month" | "last-month";
+
+// O-6105: 기본 전체 — `할 일` 기본 필터가 이미 범위를 좁힌다.
+export const EVIDENCE_PERIOD_FILTERS: readonly { value: EvidencePeriod; label: string }[] = [
+  { value: "this-month", label: "이번 달" },
+  { value: "last-month", label: "지난달" },
+  { value: "all", label: "전체" },
+];
+
+/** 쿼리 그대로(검증 전) — 모르는 값은 기본값으로 읽는다. */
+export type EvidenceListQuery = { state?: string; type?: string; period?: string; batch?: string; page?: string };
+
+export type EvidenceListFilters = { state: EvidenceRecordState; type: string; period: EvidencePeriod; batch: string | null };
+
+/** 필터 기본값 — 모르는 쿼리 값은 이것으로 읽고, 화면은 이 값과 같은 쿼리를 주소에서 뺀다. */
+export const EVIDENCE_LIST_DEFAULTS: EvidenceListFilters = { state: "todo", type: "", period: "all", batch: null };
+
 export type EvidenceRecordList = {
   rows: EvidenceRecordView[];
   proposals: EvidenceProposal[];
   /** 설정 「증빙 본부 공개 대상」 — 값이 없으면 null(본부 선택지를 숨긴다 — PA-DIV-UNSET). */
   division: EvidenceDivision | null;
+  /** 읽은 필터 값(모르는 값은 기본값으로 고친 뒤). */
+  filters: EvidenceListFilters;
+  /** 범위 안에 줄이 하나라도 있나(보관 포함) — 없으면 빈 상태 `등록한 증빙이 없습니다` · 필터 줄 없음. */
+  hasAny: boolean;
+  /** 합계 행 — 필터 결과 전체(쪽과 무관). 금액은 `evidence.amount`를 볼 때만. */
+  total: { count: number; amounts: { supplyKrw: number; vatKrw: number; totalKrw: number } | null };
+  /** 서식 그룹 줄 `{서식 이름} · {건수}` — 필터 결과 기준. */
+  groups: { format: string; label: string; count: number }[];
+  page: { page: number; pageCount: number; pageSize: number; total: number };
+  /** batch 표시(DA-19) `{파일 이름}` — 등록 권한자(범위 all)에게만. */
+  batch: { id: string; fileName: string } | null;
 };
 
 function isCardFormat(format: string): boolean {
@@ -174,7 +233,7 @@ function sourceOf(row: EvidenceRecordListRow): EvidenceRecordDto {
     format: row.format,
     formatLabel: FORMAT_RULES.get(row.format)?.label ?? row.format,
     evidenceType: row.evidenceType,
-    typeLabel: row.typeLabel,
+    typeLabel: evidenceKindLabel({ evidenceType: row.evidenceType, typeLabel: row.typeLabel, originalApprovalNo: row.originalApprovalNo }),
     issuedOn: row.issuedOn,
     counterparty: row.merchant ?? row.nameOnDocument,
     businessNo: businessNoOf(row.businessNoDigits),
@@ -221,21 +280,91 @@ async function proposalsFor(viewer: Viewer, targets: readonly EvidenceProposalTa
   });
 }
 
-function repositoryFilters(): EvidenceRecordFilters {
-  return { cardFormats: CARD_FORMATS };
-}
-
-export async function listEvidenceRecords(viewer: Viewer): Promise<EvidenceRecordList> {
-  const scope = await evidenceScopeFor(viewer);
-  const filters = repositoryFilters();
-  const rows = await listRecordsForScope(viewer, scope, filters, { limit: EVIDENCE_PAGE_SIZE, offset: 0 });
-  const division = await readDivision(viewer);
-  // 제안은 공개 범위를 저장할 수 있는 사람(등록 권한 = 범위 all)에게만 — 보기 범위(published)의 줄은 이미 공개된 줄이다.
-  const proposals = scope.rows === "all" ? await proposalsFor(viewer, await listProposalTargets(viewer, scope, filters, EVIDENCE_IMPORT_MAX_ROWS), division) : [];
-  return { rows: await projectMany(viewer, rows.map(sourceOf), EVIDENCE_RECORD_DTO_SPEC), proposals, division };
-}
-
 const UUID = z.string().uuid();
+
+function monthStart(year: number, month: number): string {
+  const index = year * 12 + (month - 1);
+  return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, "0")}-01`;
+}
+
+// 기간 — 한국 날짜(seoulToday)의 달 경계, 반열린 구간 [그달 1일, 다음 달 1일).
+function issuedRangeOf(period: EvidencePeriod, today: string): EvidenceRecordFilters["issuedOn"] {
+  if (period === "all") return null;
+  const [year, month] = [Number(today.slice(0, 4)), Number(today.slice(5, 7))];
+  const start = period === "this-month" ? month : month - 1;
+  return { from: monthStart(year, start), before: monthStart(year, start + 1) };
+}
+
+function oneOf<T extends string>(options: readonly { value: T }[], raw: string | undefined, fallback: T): T {
+  return options.find((option) => option.value === raw)?.value ?? fallback;
+}
+
+function readFilters(query: EvidenceListQuery): EvidenceListFilters {
+  return {
+    state: oneOf(EVIDENCE_STATE_FILTERS, query.state, EVIDENCE_LIST_DEFAULTS.state),
+    type: oneOf(EVIDENCE_TYPE_FILTERS, query.type, EVIDENCE_LIST_DEFAULTS.type),
+    period: oneOf(EVIDENCE_PERIOD_FILTERS, query.period, EVIDENCE_LIST_DEFAULTS.period),
+    batch: query.batch !== undefined && UUID.safeParse(query.batch).success ? query.batch : null,
+  };
+}
+
+function repositoryFilters(filters: EvidenceListFilters): EvidenceRecordFilters {
+  return {
+    cardFormats: CARD_FORMATS,
+    state: filters.state,
+    evidenceType: filters.type === "" ? null : filters.type,
+    issuedOn: issuedRangeOf(filters.period, seoulToday()),
+    batchId: filters.batch,
+  };
+}
+
+// 목록 한 쪽(50건) + 필터 결과 전체의 합계 · 서식 그룹 건수 · 제안. 행 범위는 evidenceScopeFor 한 번(트랜잭션 밖)을 리포지토리 where가 집행한다.
+export async function listEvidenceRecords(viewer: Viewer, query: EvidenceListQuery = {}): Promise<EvidenceRecordList> {
+  const scope = await evidenceScopeFor(viewer);
+  const filters = readFilters(query);
+  const repoFilters = repositoryFilters(filters);
+  const [formatTotals, amountShown] = await Promise.all([countAndSumForScope(viewer, scope, repoFilters), visible(viewer, "evidence.amount")]);
+  const count = formatTotals.reduce((sum, row) => sum + row.count, 0);
+  const pageCount = pageCountFrom(count, EVIDENCE_PAGE_SIZE);
+  const page = clampPage(query.page, pageCount);
+  const [rows, division, hasAny, batch] = await Promise.all([
+    count === 0 ? Promise.resolve([]) : listRecordsForScope(viewer, scope, repoFilters, { limit: EVIDENCE_PAGE_SIZE, offset: (page - 1) * EVIDENCE_PAGE_SIZE }),
+    readDivision(viewer),
+    count > 0 ? Promise.resolve(true) : hasAnyRecordForScope(viewer, scope),
+    // 묶음(등록 묶음의 원래 파일 이름)은 등록 권한자(범위 all)만 본다.
+    scope.rows === "all" && filters.batch !== null ? findBatchSummary(viewer, filters.batch) : Promise.resolve(null),
+  ]);
+  // 제안은 공개 범위를 저장할 수 있는 사람(등록 권한 = 범위 all)에게만 — 보기 범위(published)의 줄은 이미 공개된 줄이다.
+  const proposals = scope.rows === "all" ? await proposalsFor(viewer, await listProposalTargets(viewer, scope, repoFilters, EVIDENCE_IMPORT_MAX_ROWS), division) : [];
+  const sum = (key: "supplyKrw" | "vatKrw" | "totalKrw") => formatTotals.reduce((total, row) => total + row[key], 0);
+  return {
+    rows: await projectMany(viewer, rows.map(sourceOf), EVIDENCE_RECORD_DTO_SPEC),
+    proposals,
+    division,
+    filters,
+    hasAny,
+    total: { count, amounts: amountShown ? { supplyKrw: sum("supplyKrw"), vatKrw: sum("vatKrw"), totalKrw: sum("totalKrw") } : null },
+    groups: formatTotals.map((row) => ({ format: row.format, label: FORMAT_RULES.get(row.format)?.label ?? row.format, count: row.count })),
+    page: { page, pageCount, pageSize: EVIDENCE_PAGE_SIZE, total: count },
+    batch: batch ? { id: batch.id, fileName: batch.originalName } : null,
+  };
+}
+
+// P-3 · DA-10: 지출결의 목록 필터 줄 끝 `증빙 {N}`의 N — 기본 보기 `할 일`과 같은 집합(확인 필요 포함 · 보관 · 카드 미등록 제외).
+// 등록 권한(evidence.intake 쓰기)이 없으면 null(링크 없음).
+export async function countTodoEvidence(viewer: Viewer): Promise<number | null> {
+  if (!(await can(viewer, "evidence.intake", "write"))) return null;
+  const totals = await countAndSumForScope(viewer, { rows: "all" }, repositoryFilters(EVIDENCE_LIST_DEFAULTS));
+  return totals.reduce((sum, row) => sum + row.count, 0);
+}
+
+// O-6106: 저장한 줄(한 쪽 안 — 최대 50줄)을 같은 범위로 다시 읽는다. 형식 오류 id는 뺀다.
+export async function listEvidenceRecordsByIds(viewer: Viewer, ids: readonly string[]): Promise<EvidenceRecordView[]> {
+  const valid = ids.filter((id) => UUID.safeParse(id).success).slice(0, EVIDENCE_PAGE_SIZE);
+  if (valid.length === 0) return [];
+  const rows = await listRecordsByIdsForScope(viewer, await evidenceScopeFor(viewer), valid);
+  return projectMany(viewer, rows.map(sourceOf), EVIDENCE_RECORD_DTO_SPEC);
+}
 
 // 단건 — 목록과 같은 범위. 범위 밖 · 없는 id는 null(호출부가 404). 06.1-06 · 07 · 08이 이 함수만 부른다.
 export async function getEvidenceRecord(viewer: Viewer, id: string): Promise<EvidenceRecordView | null> {

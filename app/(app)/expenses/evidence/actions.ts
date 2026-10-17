@@ -1,11 +1,10 @@
 "use server";
 
 import { z } from "zod";
-import { revalidatePath } from "next/cache";
 import { authedActionClient } from "@/lib/actions/client";
 import { registerEvidenceUpload } from "@/domain/evidence-import";
 import { EVIDENCE_IMPORT_MAX_ROWS } from "@/domain/evidence-import/limits";
-import { getEvidenceBatch, publishEvidenceRecords } from "@/domain/evidence-records";
+import { EVIDENCE_PAGE_SIZE, getEvidenceBatch, listEvidenceRecordsByIds, publishEvidenceRecords } from "@/domain/evidence-records";
 import { SaveRejectedError } from "@/domain/quotes/lines";
 import "./actions.registry";
 
@@ -28,7 +27,9 @@ const publishGroupSchema = z.object({
   items: z.array(z.tuple([z.string().uuid(), z.number().int()])),
 });
 
-const publishInputSchema = z.object({ groups: z.array(publishGroupSchema) }).superRefine((input, ctx) => {
+// O-6106: `refresh` = 저장한 줄 중 화면 한 쪽에 보이는 줄(최대 50) — 같은 범위로 다시 읽어 돌려준다. 목록은 다시 받지 않는다
+// (저장된 줄은 다음 불러오기 전까지 자리에 남고 상태 글자만 바뀐다 — `할 일` 보기에서 줄이 빠지며 표가 뛰지 않게, UI-SPEC S2 「저장」).
+const publishInputSchema = z.object({ groups: z.array(publishGroupSchema), refresh: z.array(z.string().uuid()).max(EVIDENCE_PAGE_SIZE).optional() }).superRefine((input, ctx) => {
   const ids = input.groups.flatMap((group) => group.items.map(([id]) => id));
   if (ids.length > EVIDENCE_IMPORT_MAX_ROWS) ctx.addIssue({ code: "custom", message: `${EVIDENCE_IMPORT_MAX_ROWS} 이하만 가능 · 값 확인` });
   // 같은 줄을 두 묶음에 실은 요청은 화면이 만들지 않는다 — 요청 전체 거부.
@@ -42,8 +43,7 @@ export const publishEvidenceRecordsAction = authedActionClient.schema(publishInp
     const result = await publishEvidenceRecords(ctx.viewer, {
       groups: parsedInput.groups.map((group) => ({ visibility: group.visibility, ...(group.teamId ? { teamId: group.teamId } : {}), items: group.items })),
     });
-    revalidatePath("/expenses/evidence");
-    return { saved: result };
+    return { saved: result, rows: await listEvidenceRecordsByIds(ctx.viewer, parsedInput.refresh ?? []) };
   } catch (error) {
     // 전부-아니면-전무 거부 — 칸 좌표(줄 id)와 이유를 돌려준다(트랜잭션은 이미 되돌렸다).
     if (!(error instanceof SaveRejectedError)) throw error;

@@ -7,9 +7,11 @@ import { createAccount } from "@/domain/auth/accounts";
 import { createCorpCard, type CardOwnerKind } from "@/domain/corp-cards";
 import { EVIDENCE_IMPORT_MAX_ROWS } from "@/domain/evidence-import/limits";
 import {
+  countTodoEvidence,
   getEvidenceBatch,
   getEvidenceRecord,
   listEvidenceRecords,
+  listEvidenceRecordsByIds,
   publishEvidenceRecords,
   type EvidencePublishGroup,
   type EvidenceRecordList,
@@ -23,10 +25,18 @@ import { MAX_ACTION_PAYLOAD_BYTES } from "@/lib/actions/payload-size";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { seoulToday } from "@/lib/dates";
 import * as evidenceRecordsRepo from "@/repositories/evidence-records";
+import { upsertVisibility } from "@/repositories/permissions";
 import { insertMembership } from "@/repositories/team-memberships";
 import { insertOrgUnit } from "@/repositories/org-units";
-import { lotteFixture, type FixtureRow } from "@/test/fixtures/evidence-import/build";
-import { createIntakeViewer, registerFixtureFile } from "./fixtures/evidence";
+import { bcFixture, hometaxTaxInvoiceFixture, lotteFixture, type FixtureRow } from "@/test/fixtures/evidence-import/build";
+import {
+  createIntakeViewer,
+  insertLiveLinkFixture,
+  registerFixtureFile,
+  setRecordArchivedFixture,
+  setRecordTypeFixture,
+  setRecordVisibilityFixture,
+} from "./fixtures/evidence";
 
 // 06.1-05: 증빙 기록 목록 · 제안 · 공개 범위 저장(실제 Postgres). 픽스처 카드 번호는 06.1-02 생성기 꼴 `999900001111{끝 4자리}`,
 // 롯데 한 줄 = 204,100원 · 부가세 18,554원(공급가 185,546원) · 매입일 2026-04-30.
@@ -279,6 +289,223 @@ describe("domain/evidence-records — 트레이서: 등록 → 제안 → 공개
     await registerFixtureFile(intake, lotteFixture(lotteLines("6001", ["60010001", "60010002"])), "롯데.xls");
     const admin = await personViewer("role-sysadmin");
 
-    expect((await listEvidenceRecords(admin)).rows).toHaveLength(2);
+    // 카드가 없는 끝 4자리라 두 줄 다 카드 미등록 — 기본 보기 `할 일`에 들지 않아 `전체`로 잰다(Task 2).
+    expect((await listEvidenceRecords(admin, { state: "all" })).rows).toHaveLength(2);
+  });
+});
+
+// ─── 06.1-05 Task 2: 필터 · 합계 · 서식 그룹 · 쪽 · 할 일 건수 ─────────────────────────────────────────────
+
+async function idsByApproval(batchIds: readonly string[]): Promise<Map<string, string>> {
+  const rows = await db
+    .select({ id: evidenceRecords.id, approvalNo: evidenceRecords.approvalNo })
+    .from(evidenceRecords)
+    .where(inArray(evidenceRecords.batchId, [...batchIds]));
+  return new Map(rows.map((row) => [row.approvalNo ?? "", row.id]));
+}
+
+function idOf(ids: Map<string, string>, approval: string): string {
+  const id = ids.get(approval);
+  if (!id) throw new Error(`줄 없음: ${approval}`);
+  return id;
+}
+
+async function stateIds(viewer: Viewer, query: Parameters<typeof listEvidenceRecords>[1]): Promise<string[]> {
+  return (await listEvidenceRecords(viewer, query)).rows.map((row) => row.id ?? "").sort();
+}
+
+type StateRows = Record<"plain" | "needsCheck" | "negative" | "privateType" | "published" | "attached" | "archived" | "cardUnknown", string>;
+
+// 상태 낱말마다 한 줄 — 미공개(제안 대상) · 확인 필요(해외 이용) · 음수 · 경영관리만 종류 · 팀 공개 · 붙음 · 보관 · 카드 미등록(끝 4자리 7102는 카드 없음).
+async function seedStateRows(intake: Viewer): Promise<StateRows> {
+  await addLotteCard("7101", { kind: "shared" });
+  const known = (approval: string, patch: Partial<Record<string, string>> = {}): FixtureRow => ({ 카드번호: "9999000011117101", 승인번호: approval, ...patch });
+  const { batchId } = await registerFixtureFile(
+    intake,
+    lotteFixture([
+      known("71010001"),
+      known("71010002", { 현지거래금액: "12.50" }),
+      known("71010003", { 매입금액: "-50,000", 부가세: "-4,545" }),
+      known("71010004"),
+      known("71010005"),
+      known("71010006"),
+      known("71010007"),
+      { 카드번호: "9999000011117102", 승인번호: "71020001" },
+    ]),
+    "상태.xls",
+  );
+  const ids = await idsByApproval([batchId]);
+  const rows: StateRows = {
+    plain: idOf(ids, "71010001"),
+    needsCheck: idOf(ids, "71010002"),
+    negative: idOf(ids, "71010003"),
+    privateType: idOf(ids, "71010004"),
+    published: idOf(ids, "71010005"),
+    attached: idOf(ids, "71010006"),
+    archived: idOf(ids, "71010007"),
+    cardUnknown: idOf(ids, "71020001"),
+  };
+  await setRecordTypeFixture(rows.privateType, "personal_card_receipt");
+  await setRecordVisibilityFixture(rows.published, { visibility: "team", teamId: await teamIdByName("기획1팀") });
+  await insertLiveLinkFixture(rows.attached, intake.id);
+  await setRecordArchivedFixture(rows.archived, intake.id);
+  return rows;
+}
+
+describe("domain/evidence-records — 목록 필터 · 합계 · 그룹 · 쪽 (06.1-05 Task 2)", () => {
+  it("기본 보기 = 할 일(미공개 ∪ 확인 필요) — 음수 · 경영관리만 종류 줄은 남고 공개 · 붙음 · 보관 · 카드 미등록 줄은 빠진다 · 할 일 건수도 같은 집합(DA-10)", async () => {
+    const intake = await createIntakeViewer();
+    const rows = await seedStateRows(intake);
+    const todo = [rows.plain, rows.needsCheck, rows.negative, rows.privateType].sort();
+
+    expect(await stateIds(intake, {})).toEqual(todo);
+    expect(await stateIds(intake, { state: "todo" })).toEqual(todo);
+    expect(await stateIds(intake, { state: "모르는 값" })).toEqual(todo);
+    expect((await listEvidenceRecords(intake)).filters).toEqual({ state: "todo", type: "", period: "all", batch: null });
+    expect(await countTodoEvidence(intake)).toBe(4);
+    expect(await countTodoEvidence(await personViewer("role-pm"))).toBeNull();
+  });
+
+  it("상태 필터 — 미공개 · 공개 · 붙음 · 짝 없는 카드 줄(카드 줄 · 안 붙음 · 카드 등록됨) · 확인 필요 · 카드 미등록 · 보관됨 · 전체(보관 제외)", async () => {
+    const intake = await createIntakeViewer();
+    const rows = await seedStateRows(intake);
+
+    expect(await stateIds(intake, { state: "private" })).toEqual([rows.plain, rows.negative, rows.privateType].sort());
+    expect(await stateIds(intake, { state: "published" })).toEqual([rows.published]);
+    expect(await stateIds(intake, { state: "attached" })).toEqual([rows.attached]);
+    expect(await stateIds(intake, { state: "unmatched" })).toEqual([rows.plain, rows.needsCheck, rows.negative, rows.privateType, rows.published].sort());
+    expect(await stateIds(intake, { state: "needs-check" })).toEqual([rows.needsCheck]);
+    expect(await stateIds(intake, { state: "card-unknown" })).toEqual([rows.cardUnknown]);
+    expect(await stateIds(intake, { state: "archived" })).toEqual([rows.archived]);
+    expect(await stateIds(intake, { state: "all" })).toEqual(Object.values(rows).filter((id) => id !== rows.archived).sort());
+  });
+
+  it("(DA-9) 음수 줄은 미공개 + 2행 음수 · 공개 칸 읽기 · 제안 밖 / 확인 필요 · 카드 미등록 줄은 공개 칸 잠김 · 제안 밖", async () => {
+    const intake = await createIntakeViewer();
+    const rows = await seedStateRows(intake);
+
+    const list = await listEvidenceRecords(intake, { state: "all" });
+
+    const byId = new Map(list.rows.map((row) => [row.id, row]));
+    expect(byId.get(rows.negative)).toMatchObject({ statusWord: "미공개", statusDetail: "음수 · 원거래 문서에 붙이기", visibilityCell: "readonly", totalKrw: -50_000 });
+    expect(byId.get(rows.needsCheck)).toMatchObject({ statusWord: "확인 필요", statusDetail: "해외 이용 · 원화 금액 확인", visibilityCell: "locked" });
+    expect(byId.get(rows.cardUnknown)).toMatchObject({ statusWord: "카드 미등록", visibilityCell: "locked" });
+    expect(list.proposals.map((proposal) => proposal.id)).toEqual([rows.plain]);
+  });
+
+  it("(DA-5) 비씨 취소 표시 줄의 2행은 저장된 사유 그대로 · (DA-8) 당초 승인번호가 있는 세금계산서는 종류 글자 수정세금계산서 · 종류 필터는 코드값(세금계산서에 든다)", async () => {
+    const intake = await createIntakeViewer();
+    await createCorpCard(SYSTEM_VIEWER, { issuer: "비씨카드", numberLast4: "2942", label: "비씨 2942", kind: "shared" });
+    const bc = await registerFixtureFile(intake, bcFixture([{ 승인번호: "64706309", 금액SIGN코드: "-", "거래금액(원화)": "5,500", 부가세: "500" }]), "비씨.xls");
+    const hometax = await registerFixtureFile(
+      intake,
+      hometaxTaxInvoiceFixture([
+        {},
+        {
+          승인번호: "20260620-10260620-71160002",
+          합계금액: -110000,
+          공급가액: -100000,
+          세액: -10000,
+          전자세금계산서분류: "수정세금계산서",
+          비고: "당초승인번호(20260615-10260615-71160001)",
+        },
+      ]),
+      "홈택스.xls",
+    );
+    const ids = await idsByApproval([bc.batchId, hometax.batchId]);
+    const [cancel, original, amended] = [idOf(ids, "64706309"), idOf(ids, "20260615-10260615-71160001"), idOf(ids, "20260620-10260620-71160002")];
+
+    const list = await listEvidenceRecords(intake, { state: "all" });
+
+    const byId = new Map(list.rows.map((row) => [row.id, row]));
+    expect(byId.get(cancel)).toMatchObject({ statusWord: "확인 필요", statusDetail: "취소 표시 줄 · 원거래 확인", visibilityCell: "locked" });
+    expect(byId.get(amended)).toMatchObject({ evidenceType: "tax_invoice", typeLabel: "수정세금계산서" });
+    expect(byId.get(original)).toMatchObject({ evidenceType: "tax_invoice", typeLabel: "세금계산서" });
+    expect(await stateIds(intake, { state: "all", type: "tax_invoice" })).toEqual([original, amended].sort());
+    expect(await stateIds(intake, { state: "all", type: "card_receipt" })).toEqual([cancel]);
+    expect(await stateIds(intake, { state: "all", type: "모르는 종류" })).toHaveLength(3);
+    expect((await listEvidenceRecords(intake, { state: "all", type: "모르는 종류" })).filters.type).toBe("");
+  });
+
+  it("기간 · 묶음 필터 — 한국 날짜 이번 달 · 지난달 · 전체, 묶음 id면 그 묶음만 · 묶음 표시는 원래 파일 이름", async () => {
+    const intake = await createIntakeViewer();
+    await addLotteCard("7201", { kind: "shared" });
+    const today = seoulToday();
+    const [year, month] = [Number(today.slice(0, 4)), Number(today.slice(5, 7))];
+    const lastMonth = month === 1 ? `${year - 1}.12.15` : `${year}.${String(month - 1).padStart(2, "0")}.15`;
+    const line = (approval: string, date: string): FixtureRow => ({ 카드번호: "9999000011117201", 승인번호: approval, 매입일자: date });
+    const first = await registerFixtureFile(
+      intake,
+      lotteFixture([line("72010001", today.replaceAll("-", ".")), line("72010002", lastMonth), line("72010003", "2020.01.15")]),
+      "롯데_1.xls",
+    );
+    const second = await registerFixtureFile(intake, lotteFixture([line("72010004", today.replaceAll("-", "."))]), "롯데_2.xls");
+    const ids = await idsByApproval([first.batchId, second.batchId]);
+
+    expect(await stateIds(intake, { state: "all", period: "this-month" })).toEqual([idOf(ids, "72010001"), idOf(ids, "72010004")].sort());
+    expect(await stateIds(intake, { state: "all", period: "last-month" })).toEqual([idOf(ids, "72010002")]);
+    expect(await stateIds(intake, { state: "all", period: "all" })).toHaveLength(4);
+    expect(await stateIds(intake, { state: "all", batch: second.batchId })).toEqual([idOf(ids, "72010004")]);
+    const batched = await listEvidenceRecords(intake, { state: "all", batch: first.batchId });
+    expect(batched.rows).toHaveLength(3);
+    expect(batched.batch).toEqual({ id: first.batchId, fileName: "롯데_1.xls" });
+    expect(batched.filters).toEqual({ state: "all", type: "", period: "all", batch: first.batchId });
+    expect((await listEvidenceRecords(intake, { state: "all", batch: "not-a-uuid" })).filters.batch).toBeNull();
+  });
+
+  it("합계 · 서식 그룹 · 50건 쪽 — 61건이면 1쪽 50줄이어도 합계는 61건 합, 그룹 건수는 필터 결과 기준 · 금액을 못 보면 건수만", async () => {
+    const intake = await createIntakeViewer();
+    await addLotteCard("7301", { kind: "shared" });
+    await registerFixtureFile(intake, lotteFixture(lotteLines("7301", Array.from({ length: 60 }, (_, i) => String(73_010_000 + i)))), "롯데_60.xls");
+    await registerFixtureFile(intake, hometaxTaxInvoiceFixture([{}]), "홈택스.xls");
+
+    const first = await listEvidenceRecords(intake, { state: "all" });
+
+    expect(first.rows).toHaveLength(50);
+    expect(first.page).toEqual({ page: 1, pageCount: 2, pageSize: 50, total: 61 });
+    expect(first.total).toEqual({ count: 61, amounts: { supplyKrw: 60 * 185_546 + 100_000, vatKrw: 60 * 18_554 + 10_000, totalKrw: 60 * 204_100 + 110_000 } });
+    expect(first.groups).toEqual([
+      { format: "card-lotte", label: "롯데카드 매입내역", count: 60 },
+      { format: "hometax-tax-invoice", label: "홈택스 매입 세금계산서", count: 1 },
+    ]);
+    const second = await listEvidenceRecords(intake, { state: "all", page: "2" });
+    expect(second.rows).toHaveLength(11);
+    expect(second.page.page).toBe(2);
+    expect((await listEvidenceRecords(intake, { state: "all", page: "99" })).page.page).toBe(2);
+    const invoices = await listEvidenceRecords(intake, { state: "all", type: "tax_invoice" });
+    expect(invoices.groups).toEqual([{ format: "hometax-tax-invoice", label: "홈택스 매입 세금계산서", count: 1 }]);
+    expect(invoices.total).toEqual({ count: 1, amounts: { supplyKrw: 100_000, vatKrw: 10_000, totalKrw: 110_000 } });
+
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: intake.roleId ?? "", infoItem: "evidence.amount", visible: false });
+    expect((await listEvidenceRecords(intake, { state: "all" })).total).toEqual({ count: 61, amounts: null });
+  });
+
+  it("hasAny — 범위에 줄이 하나도 없으면 거짓, 보관 줄만 있어도 참(등록한 적 있음)", async () => {
+    const intake = await createIntakeViewer();
+    expect((await listEvidenceRecords(intake)).hasAny).toBe(false);
+    await addLotteCard("7401", { kind: "shared" });
+    const { batchId } = await registerFixtureFile(intake, lotteFixture(lotteLines("7401", ["74010001"])), "롯데.xls");
+    await setRecordArchivedFixture(idOf(await idsByApproval([batchId]), "74010001"), intake.id);
+
+    const list = await listEvidenceRecords(intake);
+
+    expect(list.rows).toEqual([]);
+    expect(list.hasAny).toBe(true);
+  });
+
+  it("(O-6106) 저장한 줄을 id로 다시 읽으면 바뀐 상태 낱말 · 새 version — 형식 오류 id는 빠지고 범위 밖 사람은 0줄", async () => {
+    const intake = await createIntakeViewer();
+    const team = await teamIdByName("기획1팀");
+    await addLotteCard("7501", { kind: "team", teamId: team });
+    await registerFixtureFile(intake, lotteFixture(lotteLines("7501", ["75010001", "75010002"])), "롯데.xls");
+    const list = await listEvidenceRecords(intake);
+    await publishEvidenceRecords(intake, { groups: groupsOf(list) });
+    const ids = list.rows.map((row) => row.id ?? "");
+
+    const views = await listEvidenceRecordsByIds(intake, [...ids, "not-a-uuid"]);
+
+    expect(views.map((view) => view.id).sort()).toEqual([...ids].sort());
+    for (const view of views) expect(view).toMatchObject({ statusWord: "팀 공개", statusDetail: "기획1팀", visibilityLabel: "기획1팀 공개", version: 2 });
+    expect(await listEvidenceRecordsByIds(await personViewer("role-pm"), ids)).toEqual([]);
   });
 });

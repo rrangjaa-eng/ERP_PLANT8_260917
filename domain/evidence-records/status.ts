@@ -84,3 +84,12 @@ export function evidenceVisibilityLabel(input: EvidenceRecordStatusInput): strin
     }
   }
 }
+
+// DA-8 · E42 — 목록 2행 · 패널의 종류 글자(종류 라벨 함수는 이 하나). 당초 승인번호가 있는 세금계산서 · 계산서 줄은 수정 문서라 글자만
+// `수정세금계산서` · `수정계산서`로 바꾼다(새 태그 · 색 없음, `[종류 ▾]` 값은 그대로 — 수정세금계산서는 세금계산서에 든다).
+const AMENDED_KIND_LABELS: Readonly<Record<string, string>> = { tax_invoice: "수정세금계산서", invoice: "수정계산서" };
+
+export function evidenceKindLabel(input: { evidenceType: string; typeLabel: string | null; originalApprovalNo: string | null }): string | null {
+  if (input.originalApprovalNo !== null) return AMENDED_KIND_LABELS[input.evidenceType] ?? input.typeLabel;
+  return input.typeLabel;
+}

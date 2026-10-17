@@ -147,15 +147,67 @@ function scopeWhere(scope: EvidenceScope): SQL {
   }
 }
 
+/** `[상태 ▾]` 값(UI-SPEC S2). 기본은 todo — 값이 없거나 모르는 값이면 domain이 todo로 읽는다. */
+export type EvidenceRecordState = "todo" | "private" | "published" | "attached" | "unmatched" | "needs-check" | "card-unknown" | "archived" | "all";
+
 export type EvidenceRecordFilters = {
   /** 06.1-02 카드 서식 키(`keyKind: "card"`) — 카드 미등록 판정. */
   cardFormats: readonly string[];
+  state: EvidenceRecordState;
+  /** 증빙 종류 코드값(라벨로 가르지 않는다) — null이면 전부. */
+  evidenceType: string | null;
+  /** 한국 날짜 반열린 구간 [from, before) — null이면 전부. */
+  issuedOn: { from: string; before: string } | null;
+  batchId: string | null;
 };
 
-// 목록 조건 — 범위 + 필터. 보관 줄은 보관됨 보기에서만 나온다(C2).
+// 상태 필터 — 상태 함수(domain/evidence-records/status.ts)의 한 값 규칙을 그대로 SQL로 옮긴다(보관됨 > 카드 미등록 > 확인 필요 > 붙음 >
+// 미공개(음수 · 경영관리만 종류 포함) > 팀 · 본부 공개). `짝 없는 카드 줄`만 낱말이 아니라 UI-SPEC 정의(카드 줄 · 안 붙음 · 카드 등록됨)다.
+// 보관 줄은 보관됨 보기에서만 나온다(C2).
+function stateWhere(state: EvidenceRecordState, cardFormats: readonly string[]): SQL {
+  const live = sql`${evidenceRecords.archivedAt} is null`;
+  const cardFormat = sql`${evidenceRecords.format} = ANY(${sql.param([...cardFormats])}::text[])`;
+  const cardUnknown = sql`(${cardFormat} and ${evidenceRecords.corpCardId} is null)`;
+  const needsCheck = sql`(not ${cardUnknown} and ${evidenceRecords.needsCheck} is not null)`;
+  // 앞 갈래(카드 미등록 · 확인 필요 · 붙음)가 아닌 줄 — 낱말이 미공개 · 팀 공개 · 본부 공개 중 하나다.
+  const plain = sql`(not ${cardUnknown} and ${evidenceRecords.needsCheck} is null and not ${liveLinkExists})`;
+  const privateWord = sql`(${plain} and (${evidenceRecords.totalKrw} < 0 or ${privateToOwnerType} or ${evidenceRecords.visibility} = 'private'))`;
+  switch (state) {
+    case "todo":
+      return sql`${live} and (${privateWord} or ${needsCheck})`;
+    case "private":
+      return sql`${live} and ${privateWord}`;
+    case "published":
+      return sql`${live} and ${plain} and ${evidenceRecords.totalKrw} >= 0 and not ${privateToOwnerType} and ${evidenceRecords.visibility} <> 'private'`;
+    case "attached":
+      return sql`${live} and not ${cardUnknown} and ${evidenceRecords.needsCheck} is null and ${liveLinkExists}`;
+    case "unmatched":
+      return sql`${live} and ${cardFormat} and ${evidenceRecords.corpCardId} is not null and not ${liveLinkExists}`;
+    case "needs-check":
+      return sql`${live} and ${needsCheck}`;
+    case "card-unknown":
+      return sql`${live} and ${cardUnknown}`;
+    case "archived":
+      return sql`${evidenceRecords.archivedAt} is not null`;
+    case "all":
+      return live;
+    default: {
+      const unreachable: never = state;
+      void unreachable;
+      return sql`false`;
+    }
+  }
+}
+
+// 목록 조건 — 범위 + 상태 · 종류 · 기간 · 묶음. 합계 · 그룹 건수 · 쪽 · 제안이 모두 이 한 조건을 쓴다(합계가 쪽만 더하지 않게).
 function listWhere(scope: EvidenceScope, filters: EvidenceRecordFilters): SQL {
-  void filters;
-  return sql`(${scopeWhere(scope)}) and ${evidenceRecords.archivedAt} is null`;
+  const parts: SQL[] = [sql`(${scopeWhere(scope)})`, sql`(${stateWhere(filters.state, filters.cardFormats)})`];
+  if (filters.evidenceType !== null) parts.push(sql`${evidenceRecords.evidenceType} = ${filters.evidenceType}`);
+  if (filters.issuedOn !== null) {
+    parts.push(sql`${evidenceRecords.issuedOn} >= ${filters.issuedOn.from}::date and ${evidenceRecords.issuedOn} < ${filters.issuedOn.before}::date`);
+  }
+  if (filters.batchId !== null) parts.push(sql`${evidenceRecords.batchId} = ${filters.batchId}::uuid`);
+  return sql.join(parts, sql` and `);
 }
 
 const visibleTeam = alias(teams, "visible_team");
@@ -255,6 +307,44 @@ export async function findRecordForScope(viewer: Viewer, scope: EvidenceScope, i
   return row ?? null;
 }
 
+// O-6106: 저장한 줄을 id로 다시 읽는다(같은 범위) — 화면이 그 줄을 다음 불러오기까지 제자리에 두고 상태 글자만 바꾼다.
+export async function listRecordsByIdsForScope(viewer: Viewer, scope: EvidenceScope, ids: readonly string[]): Promise<EvidenceRecordListRow[]> {
+  void viewer;
+  if (scope.rows === "none" || ids.length === 0) return [];
+  return selectList(db)
+    .where(and(sql`${evidenceRecords.id} = ANY(${sql.param([...ids])}::uuid[])`, sql`(${scopeWhere(scope)})`))
+    .orderBy(...LIST_ORDER);
+}
+
+export type EvidenceFormatTotal = { format: string; count: number; supplyKrw: number; vatKrw: number; totalKrw: number };
+
+// DA-10 · 합계 행 · 그룹 줄: 목록과 같은 조건으로 서식마다 건수와 금액 합 셋(쪽과 무관 — 60건이면 1쪽 50줄이어도 60건 합).
+export async function countAndSumForScope(viewer: Viewer, scope: EvidenceScope, filters: EvidenceRecordFilters): Promise<EvidenceFormatTotal[]> {
+  void viewer;
+  if (scope.rows === "none") return [];
+  const rows = await db
+    .select({
+      format: evidenceRecords.format,
+      count: sql<number>`count(*)::int`,
+      supplyKrw: sql<string>`coalesce(sum(${evidenceRecords.supplyKrw}), 0)::text`,
+      vatKrw: sql<string>`coalesce(sum(${evidenceRecords.vatKrw}), 0)::text`,
+      totalKrw: sql<string>`coalesce(sum(${evidenceRecords.totalKrw}), 0)::text`,
+    })
+    .from(evidenceRecords)
+    .where(listWhere(scope, filters))
+    .groupBy(evidenceRecords.format)
+    .orderBy(asc(evidenceRecords.format));
+  return rows.map((row) => ({ format: row.format, count: Number(row.count), supplyKrw: Number(row.supplyKrw), vatKrw: Number(row.vatKrw), totalKrw: Number(row.totalKrw) }));
+}
+
+// 범위 안에 줄이 하나라도 있나(보관 포함 — 보관 줄만 있어도 등록한 적은 있다). 빈 상태 글자 · 필터 줄을 가른다.
+export async function hasAnyRecordForScope(viewer: Viewer, scope: EvidenceScope): Promise<boolean> {
+  void viewer;
+  if (scope.rows === "none") return false;
+  const [row] = await db.select({ id: evidenceRecords.id }).from(evidenceRecords).where(scopeWhere(scope)).limit(1);
+  return row !== undefined;
+}
+
 export type EvidenceProposalTarget = { id: string; version: number; cardTeamId: string | null; cardHolderUserId: string | null };
 
 // C1 · DA-4: 제안 대상 — 공개 범위를 한 번도 저장하지 않은 미공개 줄 중 공개할 수 있는 줄(붙음 · 보관 · 확인 필요 · 카드 미등록 · 음수 ·
@@ -275,6 +365,8 @@ export async function listProposalTargets(
     .where(
       and(
         listWhere(scope, filters),
+        // 보관됨 보기에서도 보관 줄은 제안하지 않는다.
+        isNull(evidenceRecords.archivedAt),
         eq(evidenceRecords.visibility, "private"),
         isNull(evidenceRecords.visibilitySavedAt),
         sql`not ${liveLinkExists}`,

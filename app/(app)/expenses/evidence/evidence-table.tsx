@@ -1,29 +1,40 @@
 "use client";
 
 import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
+import { formatCount, formatKrw } from "@/lib/format-number";
 import { Button } from "@/ui/button/Button";
+import { ListEmpty, type ListEmptyAction } from "@/ui/list-empty/ListEmpty";
 import { Num } from "@/ui/num/Num";
+import { Pagination } from "@/ui/pagination/Pagination";
+import { pageRangeText } from "@/ui/pagination/page-window";
+import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
 import { Select, type SelectOption } from "@/ui/select/Select";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
+import { RowSheet } from "@/ui/table/RowSheet";
 import { Table } from "@/ui/table/Table";
+import tableStyles from "@/ui/table/Table.module.css";
 import { Toast } from "@/ui/toast/Toast";
 import { useDirtyStorage, viewerDirtyScope } from "@/ui/table/use-dirty-storage";
 import { useEditableWidth } from "@/ui/table/use-editable-width";
 import type { FooterNoticeItem } from "@/ui/table/footer-notice";
 import type { CellEditability, CellIssue, TableColumn } from "@/ui/table/types";
-import type { EvidenceProposal, EvidenceRecordList, EvidenceRecordView, EvidenceRecordVisibility, EvidenceRecordWord } from "@/domain/evidence-records";
+import type { EvidenceListFilters, EvidenceProposal, EvidenceRecordList, EvidenceRecordView, EvidenceRecordVisibility, EvidenceRecordWord } from "@/domain/evidence-records";
 import { publishEvidenceRecordsAction } from "./actions";
 import { IntakeZone } from "./intake-zone";
+import expenseStyles from "../expenses.module.css";
 import styles from "./evidence-table.module.css";
 
 // 06.1-05(S2 · §7-3 일괄 저장 편집 표) — 증빙 목록. 상태 낱말 · 2행 · 공개 셀 단계 · 제안은 전부 서버 DTO 그대로 그리고(판정 없음),
 // 화면은 사람이 바꾼 공개 칸을 행 id 키 편집 맵에 모아 1차 「공개 범위 저장」 한 번에 서버 제안과 함께 보낸다(전부-아니면-전무).
 // 서버 제안은 dirty 면으로 그리되 편집 맵과 따로 둔다 — 떠나기 경고 · 브라우저 보관에는 사람이 바꾼 칸만 든다(DA-4).
+// 06.1-05 Task 2 — 필터 셋(쿼리 링크 · 기본 `할 일`) · 서식 그룹 · 필터 결과 전체 합계 · 폭별 열 · 잠긴 셀 이유 · 페이지 줄 · 힌트 줄 · 빈 상태 넷 · 폰 읽기 시트.
 
 type Row = {
   id: string;
   version: number;
+  format: string;
   issuedOn: string;
   counterparty: string | null;
   kindLine: string | null;
@@ -44,11 +55,60 @@ type Edit = { value: string; version: number };
 const VISIBILITY = "visibility";
 const COPY = {
   caption: "증빙 목록",
-  empty: "등록한 증빙이 없습니다",
+  emptyNone: "등록한 증빙이 없습니다",
+  emptyTodo: "할 일 증빙이 없습니다",
+  emptyUnmatched: "짝 없는 카드 줄이 없습니다",
+  emptyFiltered: "조건에 맞는 증빙이 없습니다",
+  showAll: "전체 보기",
+  clearFilters: "필터 지우기",
+  clearBatch: "묶음 지우기",
   noChange: "바뀐 칸 없음",
   discarded: "편집을 버렸습니다",
   invalidInput: "입력값 오류 · 값 확인",
 } as const;
+
+// 힌트 줄 — 이 화면에서 실제로 되는 키만(SYSTEM §7-3 「힌트 줄은 화면마다 실제로 되는 것만」 — 붙여넣기 `Ctrl+V`는 06.1-13이 공개 칸 붙여넣기를
+// 이을 때 더한다). 저장은 1차의 kbd가 말한다.
+const HINT_ITEMS = [
+  { label: "이동", keys: "Tab ↑↓←→" },
+  { label: "복사", keys: "Ctrl+C" },
+  { label: "취소", keys: "Esc" },
+  { label: "파일", keys: "Ctrl+U" },
+];
+
+/** 필터 셋의 선택지와 기본값 — domain 상수를 서버 페이지가 넘긴다(클라이언트는 domain 런타임 값을 import하지 않는다). */
+export type EvidenceFilterOptions = {
+  states: readonly { value: string; label: string }[];
+  types: readonly { value: string; label: string }[];
+  periods: readonly { value: string; label: string }[];
+  defaults: EvidenceListFilters;
+};
+
+type FilterQuery = { state: string; type: string; period: string; batch: string | null };
+
+// 기본값과 같은 쿼리는 주소에서 뺀다 — 같은 보기가 주소 하나다(새로 고침 · 뒤로에 남는다).
+function hrefWith(filters: FilterQuery, defaults: EvidenceListFilters, page = 1): string {
+  const query = new URLSearchParams();
+  if (filters.state !== defaults.state) query.set("state", filters.state);
+  if (filters.type !== defaults.type) query.set("type", filters.type);
+  if (filters.period !== defaults.period) query.set("period", filters.period);
+  if (filters.batch) query.set("batch", filters.batch);
+  if (page > 1) query.set("page", String(page));
+  const text = query.toString();
+  return text ? `/expenses/evidence?${text}` : "/expenses/evidence";
+}
+
+// 상태 2행 요소 id — 잠긴 공개 칸이 `aria-describedby`로 가리킨다(이유는 화면에 이미 있는 그 글자, §7-3 (가)).
+function statusDetailId(rowId: string): string {
+  return `evidence-status-detail-${rowId}`;
+}
+
+function amountText(value: number | null): string {
+  return value === null ? "" : String(value);
+}
+
+/** 저장한 줄(O-6106) — 저장 응답이 다시 읽은 행으로 그 목록 위에 덮는다. 목록 prop이 바뀌면(쪽 · 필터 이동 · 새로 고침) 저절로 버려진다. */
+type SavedOverlay = { list: EvidenceRecordList; rows: ReadonlyMap<string, EvidenceRecordView>; savedIds: ReadonlySet<string> };
 
 // 거래처 · 가맹점 2행 — 카드 줄은 `카드 · {카드사} {끝 4자리}`, 그 밖은 `{종류} · {사업자번호}`(UI-SPEC S2 열).
 function kindLineOf(view: EvidenceRecordView): string | null {
@@ -64,6 +124,7 @@ function rowFromView(view: EvidenceRecordView): Row[] {
     {
       id: view.id,
       version: view.version,
+      format: view.format ?? "",
       issuedOn: view.issuedOn ?? "",
       counterparty: view.counterparty ?? null,
       kindLine: kindLineOf(view),
@@ -127,12 +188,21 @@ function VisibilityEditCell({ id, initialValue, options, onCommit, onCancel }: {
   );
 }
 
-export type EvidenceTableProps = { viewerId: string; list: EvidenceRecordList };
+export type EvidenceTableProps = { viewerId: string; list: EvidenceRecordList; filterOptions: EvidenceFilterOptions };
 
-export function EvidenceTable({ viewerId, list }: EvidenceTableProps) {
-  const rows = list.rows.flatMap(rowFromView);
-  const proposals = new Map(list.proposals.map((proposal) => [proposal.id, proposal]));
+export function EvidenceTable({ viewerId, list, filterOptions }: EvidenceTableProps) {
+  const router = useRouter();
+  const [overlay, setOverlay] = useState<SavedOverlay | null>(null);
+  const saved = overlay?.list === list ? overlay : null;
+  const rows = (saved ? list.rows.map((view) => (view.id !== undefined ? (saved.rows.get(view.id) ?? view) : view)) : list.rows).flatMap(rowFromView);
+  // 저장한 줄은 더 제안하지 않는다 — 목록을 다시 받기 전까지 제안 목록(필터 결과 전체)에서 뺀다.
+  const liveProposals = saved ? list.proposals.filter((proposal) => !saved.savedIds.has(proposal.id)) : list.proposals;
+  const proposals = new Map(liveProposals.map((proposal) => [proposal.id, proposal]));
   const division = list.division;
+  const filters = list.filters;
+  const defaults = filterOptions.defaults;
+  const [sheetRowId, setSheetRowId] = useState<string | null>(null);
+  const sheetRow = rows.find((row) => row.id === sheetRowId);
 
   const [edits, setEdits] = useState<Record<string, Edit>>({});
   const [cellErrors, setCellErrors] = useState<Record<string, string>>({});
@@ -145,6 +215,8 @@ export function EvidenceTable({ viewerId, list }: EvidenceTableProps) {
   // 사람이 칸을 바꾼 순간에만 보관본을 쓴다(04-22 D-68) — 서버 값 · 제안으로 다시 그리는 경로는 켜지 않는다.
   const persistPendingRef = useRef(false);
   const savingRef = useRef(false);
+  // 보낸 순간의 목록 · 줄 id — 저장 응답이 그 목록 위에 저장한 줄을 덮는다(O-6106).
+  const sentRef = useRef<{ list: EvidenceRecordList; ids: string[] } | null>(null);
 
   const editCount = Object.keys(edits).length;
   const dirtyStorage = useDirtyStorage(viewerDirtyScope(viewerId, "evidence-records"), "visibility", editCount);
@@ -157,7 +229,7 @@ export function EvidenceTable({ viewerId, list }: EvidenceTableProps) {
 
   // 보낼 줄 = 서버 제안 전부(필터 결과 전체 — 쪽과 무관) + 사람이 바꾼 칸 중 제안 아닌 줄. N은 그 수다(DA-4).
   const sends = [
-    ...list.proposals.map((proposal) => ({ id: proposal.id, version: proposal.version, value: edits[proposal.id]?.value ?? proposalValue(proposal) })),
+    ...liveProposals.map((proposal) => ({ id: proposal.id, version: proposal.version, value: edits[proposal.id]?.value ?? proposalValue(proposal) })),
     ...Object.entries(edits).flatMap(([id, edit]) => (proposals.has(id) ? [] : [{ id, version: edit.version, value: edit.value }])),
   ];
   const pending = sends.length;
@@ -178,6 +250,16 @@ export function EvidenceTable({ viewerId, list }: EvidenceTableProps) {
         return;
       }
       if (data?.saved) {
+        // 저장한 줄은 다음 불러오기 전까지 자리에 남고 상태 글자만 바뀐다(UI-SPEC S2 「저장」 — `할 일` 보기에서 줄이 빠지며 표가 뛰지 않게).
+        const sent = sentRef.current;
+        if (sent) {
+          setOverlay((current) => {
+            const base = current?.list === sent.list ? current : null;
+            const nextRows = new Map(base?.rows);
+            for (const view of data.rows) if (view.id !== undefined) nextRows.set(view.id, view);
+            return { list: sent.list, rows: nextRows, savedIds: new Set([...(base?.savedIds ?? []), ...sent.ids]) };
+          });
+        }
         persistPendingRef.current = true;
         setEdits({});
         setCellErrors({});
@@ -192,13 +274,17 @@ export function EvidenceTable({ viewerId, list }: EvidenceTableProps) {
     },
   });
 
+  const displayedIds = new Set(rows.map((row) => row.id));
+
   function handleSave() {
     if (savingRef.current || isExecuting || pending === 0) return;
     savingRef.current = true;
     setSavedNotice(null);
     setRejectionSummary(null);
     setDiscardedEdits(null);
-    execute({ groups: groupsOf(sends) });
+    const ids = sends.map((send) => send.id);
+    sentRef.current = { list, ids };
+    execute({ groups: groupsOf(sends), refresh: ids.filter((id) => displayedIds.has(id)) });
   }
 
   // 키보드 Ctrl+S는 표가 열린 편집기를 먼저 커밋(blur)한 뒤 부른다 — 그 커밋이 반영된 다음 렌더에서 저장한다(04-30 선례 · 리저브 대장).
@@ -235,6 +321,13 @@ export function EvidenceTable({ viewerId, list }: EvidenceTableProps) {
   function labelOf(row: Row): string {
     const value = currentValue(row);
     return optionsFor(row).find((option) => option.value === value)?.label ?? row.visibilityLabel;
+  }
+
+  // `—`는 공개할 수 없는 줄(붙음 · 음수 · 경영관리만 종류 · 보관)에만 — 잠긴 줄은 지금 값을 그대로 보인다(이유는 상태 2행).
+  // 1024 미만은 보기 전용이라 서버 제안 · 편집이 아니라 저장된 값을 보인다(저장할 1차가 없는 폭).
+  function visibilityText(row: Row): string {
+    if (row.visibilityCell === "readonly") return "—";
+    return editableWidth ? labelOf(row) : row.visibilityLabel;
   }
 
   function commitVisibility(rowId: string, columnKey: string, value: string) {
@@ -277,25 +370,47 @@ export function EvidenceTable({ viewerId, list }: EvidenceTableProps) {
     setDiscardedEdits(stored);
   }
 
+  // 열 우선순위(UI-SPEC S2): P1 거래처·가맹점 · 합계 · 상태 / P2 날짜 · 공개 / P3 공급가 · 세액 — 1280 미만에서 P3를 숨기고(DOM에는 남음)
+  // 그 합은 합계 행 라벨 뒤에 남는다. `copyText`는 격자 Ctrl+C가 싣는 글자(힌트 줄 「복사」가 실제로 값을 싣는다).
   const columns: TableColumn<Row>[] = [
-    { key: "issuedOn", header: "날짜", priority: "p2", cell: (row) => <Num value={row.issuedOn.slice(5)} /> },
+    { key: "issuedOn", header: "날짜", priority: "p2", cell: (row) => <Num value={row.issuedOn.slice(5)} />, copyText: (row) => row.issuedOn },
     {
       key: "counterparty",
       header: "거래처·가맹점",
       priority: "p1",
-      cell: (row) => row.counterparty ?? "—",
+      // DX-1 — 한 줄 말줄임 + title 전문(격자 칸 minmax(0, max-content)라 폰 320에서도 문서를 넘기지 않는다).
+      cell: (row) =>
+        row.counterparty ? (
+          <span className={styles.counterpartyCell}>
+            <span className={styles.counterpartyText} title={row.counterparty}>
+              {row.counterparty}
+            </span>
+          </span>
+        ) : (
+          "—"
+        ),
       secondaryLine: (row) => row.kindLine,
+      copyText: (row) => row.counterparty ?? "",
     },
-    { key: "supplyKrw", header: "공급가", priority: "p3", align: "right", cell: (row) => <Num value={row.supplyKrw} /> },
-    { key: "vatKrw", header: "세액", priority: "p3", align: "right", cell: (row) => <Num value={row.vatKrw} /> },
-    { key: "totalKrw", header: "합계", priority: "p1", align: "right", cell: (row) => <Num value={row.totalKrw} /> },
+    { key: "supplyKrw", header: "공급가", priority: "p3", collapseBelow: 1280, align: "right", cell: (row) => <Num value={row.supplyKrw} />, copyText: (row) => amountText(row.supplyKrw) },
+    { key: "vatKrw", header: "세액", priority: "p3", collapseBelow: 1280, align: "right", cell: (row) => <Num value={row.vatKrw} />, copyText: (row) => amountText(row.vatKrw) },
+    { key: "totalKrw", header: "합계", priority: "p1", align: "right", cell: (row) => <Num value={row.totalKrw} />, copyText: (row) => amountText(row.totalKrw) },
     {
       key: VISIBILITY,
       header: "공개",
       priority: "p2",
-      // `—`는 공개할 수 없는 줄(붙음 · 음수 · 경영관리만 종류 · 보관)에만 — 잠긴 줄은 지금 값을 그대로 보인다(이유는 상태 2행).
-      cell: (row) => (row.visibilityCell === "readonly" ? "—" : labelOf(row)),
-      summary: (row) => (row.visibilityCell === "readonly" ? "—" : labelOf(row)),
+      // 잠긴 칸(확인 필요 · 카드 미등록)은 `aria-disabled` + 이유 = 상태 2행(오류 표시 없음 — §7-3 (가)). 이 플랜의 `ui/` 변경은
+      // Select 하나라 표 칸(td)이 아니라 칸 안 글자에 단다. 이유 글자가 없는 줄에는 달지 않는다(이유 없는 비활성 없음).
+      cell: (row) =>
+        editableWidth && row.visibilityCell === "locked" && row.statusDetail ? (
+          <span aria-disabled="true" aria-describedby={statusDetailId(row.id)}>
+            {visibilityText(row)}
+          </span>
+        ) : (
+          visibilityText(row)
+        ),
+      summary: visibilityText,
+      copyText: visibilityText,
       editability: (row) => (editableWidth ? row.visibilityCell : "readonly"),
       editCell: (row, ctx) => (
         <VisibilityEditCell id={`evidence-visibility-${row.id}`} initialValue={currentValue(row)} options={optionsFor(row)} onCommit={ctx.onCommit} onCancel={ctx.onCancel} />
@@ -306,7 +421,8 @@ export function EvidenceTable({ viewerId, list }: EvidenceTableProps) {
       header: "상태",
       priority: "p1",
       cell: (row) => <StatusTag status={row.statusWord} variant="text" />,
-      secondaryLine: (row) => row.statusDetail,
+      secondaryLine: (row) => (row.statusDetail ? <span id={statusDetailId(row.id)}>{row.statusDetail}</span> : null),
+      copyText: (row) => row.statusWord,
     },
   ];
 
@@ -315,24 +431,79 @@ export function EvidenceTable({ viewerId, list }: EvidenceTableProps) {
     return message ? { kind: "error", message } : undefined;
   };
 
-  const displayedIds = new Set(rows.map((row) => row.id));
   const claimedErrorCells = rejectedRowIds.filter((id) => displayedIds.has(id)).length;
   const footerNotices: FooterNoticeItem[] = [];
   if (rejectionSummary) footerNotices.push({ tone: "danger", text: rejectionSummary, replacesIssueCount: { errorCells: claimedErrorCells, conflictRows: 0 } });
   if (result.serverError) footerNotices.push({ tone: "danger", text: result.serverError });
 
-  // 1차는 편집 폭에서만, 목록이 완전히 비었으면 없다(DR5 — 끌어 놓기 영역의 `파일 고르기`가 첫 행동).
+  // 1차는 편집 폭에서만, 목록이 완전히 비었으면 없다(DR5 — 끌어 놓기 영역의 `파일 고르기`가 첫 행동 · 할 일 0이면 `전체 보기`).
   const showPrimary = editableWidth && (rows.length > 0 || pending > 0);
   const noChange = pending === 0 && !cellEditing;
+
+  // 쿼리 링크 갈래 — 클라이언트 이동이라 표가 다시 마운트되지 않고 편집 맵이 남는다(리저브 대장 · 카드 사용 필터 선례). 쪽은 1로 돌아간다.
+  function go(key: "state" | "type" | "period", value: string) {
+    router.push(hrefWith({ ...filters, [key]: value }, defaults), { scroll: false });
+  }
+
+  const filterSelects = [
+    { key: "state" as const, label: "상태", value: filters.state, options: filterOptions.states },
+    { key: "type" as const, label: "종류", value: filters.type, options: filterOptions.types },
+    { key: "period" as const, label: "기간", value: filters.period, options: filterOptions.periods },
+  ];
+
+  // 빈 상태 넷(UI-SPEC Copywriting) — 범위 안에 줄이 하나도 없으면 첫 행동은 끌어 놓기 영역이라 버튼이 없다(DR5).
+  const narrowed = filters.type !== defaults.type || filters.period !== defaults.period || filters.batch !== null;
+  const emptyState: { message: string; action?: ListEmptyAction } = !list.hasAny
+    ? { message: COPY.emptyNone }
+    : !narrowed && filters.state === "todo"
+      ? { message: COPY.emptyTodo, action: { label: COPY.showAll, href: hrefWith({ ...filters, state: "all" }, defaults) } }
+      : !narrowed && filters.state === "unmatched"
+        ? { message: COPY.emptyUnmatched, action: { label: COPY.showAll, href: hrefWith({ ...filters, state: "all" }, defaults) } }
+        : { message: COPY.emptyFiltered, action: { label: COPY.clearFilters, href: hrefWith(defaults, defaults) } };
+
+  // 합계 행 — 필터 결과 전체(쪽과 무관). 숨는 열(공급가 · 세액)의 합까지 라벨 뒤 한 줄에 둔다(SYSTEM §6-1 「숨긴 금액 열은 합계 줄에 남는다」).
+  const amounts = list.total.amounts;
+  const footerLabel = `합계 ${formatCount(list.total.count)}줄${amounts ? ` · 공급가 ${formatKrw(amounts.supplyKrw)} · 세액 ${formatKrw(amounts.vatKrw)} · 합계 ${formatKrw(amounts.totalKrw)}` : ""}`;
+  const groupLabels = new Map(list.groups.map((group) => [group.format, `${group.label} · ${formatCount(group.count)}`]));
 
   return (
     <>
       {editableWidth ? <IntakeZone /> : null}
 
-      {showPrimary ? (
+      {list.hasAny ? (
         <div className={styles.filterRow}>
-          <div className={styles.filters} />
-          <Button
+          <div className={styles.filters}>
+            {filterSelects.map((select) => (
+              <div key={select.key} className={expenseStyles.selectLabel}>
+                <label htmlFor={`evidence-filter-${select.key}`}>{select.label}</label>
+                {/* 뒤로 가기 · 빈 상태의 `전체 보기`로 URL이 바뀌면 key로 새로 마운트한다(defaultValue는 마운트 뒤 반영되지 않는다). */}
+                <select
+                  key={select.value}
+                  id={`evidence-filter-${select.key}`}
+                  className={expenseStyles.select}
+                  defaultValue={select.value}
+                  onChange={(event) => go(select.key, event.target.value)}
+                >
+                  {select.options.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ))}
+            {/* DA-19 — 결과 행 링크로 묶음이 걸리면 줄 수가 줄어든 이유(파일 이름)와 그 조건만 지우는 3차. */}
+            {list.batch ? (
+              <>
+                <span className={expenseStyles.batchResult}>{list.batch.fileName}</span>
+                <RowActions>
+                  <RowAction href={hrefWith({ ...filters, batch: null }, defaults)}>{COPY.clearBatch}</RowAction>
+                </RowActions>
+              </>
+            ) : null}
+          </div>
+          {showPrimary ? (
+            <Button
             type="button"
             variant="primary"
             className={styles.primaryAction}
@@ -344,7 +515,8 @@ export function EvidenceTable({ viewerId, list }: EvidenceTableProps) {
             onClick={handleSave}
           >
             {`공개 범위 저장${pending > 0 ? ` ${pending}` : ""}`}
-          </Button>
+            </Button>
+          ) : null}
         </div>
       ) : null}
 
@@ -362,31 +534,79 @@ export function EvidenceTable({ viewerId, list }: EvidenceTableProps) {
         </p>
       ) : null}
 
-      <Table
-        caption={COPY.caption}
-        columns={columns}
-        rows={rows}
-        getRowId={(row) => row.id}
-        enableGridKeyboard
-        rowLabel={(row) => `${row.issuedOn} ${row.counterparty ?? ""}`}
-        saveLocked={isExecuting}
-        onEditingChange={setCellEditing}
-        onCellCommit={commitVisibility}
-        cellIssue={cellIssue}
-        cellDirty={(row, columnKey) => columnKey === VISIBILITY && (proposals.has(row.id) || row.id in edits)}
-        firstIssueSignal={issueSignal}
-        emptyMessage={COPY.empty}
-        keyboard={{ onSave: () => setSaveRequests((count) => count + 1) }}
-        footerNotices={footerNotices}
-        footerSuccess={savedNotice}
-        footer={(notice) => (
-          <tr>
-            <td colSpan={columns.length} className={styles.footerCell}>
-              합계
-              {notice}
-            </td>
-          </tr>
-        )}
+      {rows.length === 0 ? (
+        <ListEmpty message={emptyState.message} action={emptyState.action} />
+      ) : (
+        <Table
+          caption={COPY.caption}
+          columns={columns}
+          rows={rows}
+          getRowId={(row) => row.id}
+          // 서식별 그룹 줄 `{서식 이름} · {건수}` — 건수는 필터 결과 기준(쪽이 아님). 줄은 리포지토리가 서식 → 날짜 내림차순으로 준다.
+          groupBy={(row) => row.format}
+          groupHeader={(row) => groupLabels.get(row.format) ?? row.format}
+          enableGridKeyboard
+          rowLabel={(row) => `${row.issuedOn} ${row.counterparty ?? ""}`}
+          onRowTap={(row) => setSheetRowId(row.id)}
+          saveLocked={isExecuting}
+          onEditingChange={setCellEditing}
+          onCellCommit={commitVisibility}
+          cellIssue={cellIssue}
+          cellDirty={(row, columnKey) => editableWidth && columnKey === VISIBILITY && (proposals.has(row.id) || row.id in edits)}
+          firstIssueSignal={issueSignal}
+          keyboard={{ onSave: () => setSaveRequests((count) => count + 1) }}
+          footerNotices={footerNotices}
+          footerSuccess={savedNotice}
+          footer={(notice) => (
+            <tr>
+              <td colSpan={columns.length} className={styles.footerCell}>
+                {footerLabel}
+                {notice}
+              </td>
+            </tr>
+          )}
+        />
+      )}
+
+      {/* DA-22 — 50건 번호 페이지(링크 갈래 — 범위 글자 · `이전` · 숫자 · `다음`). 클라이언트 이동이라 편집 맵이 남는다. */}
+      <Pagination
+        label="증빙"
+        page={list.page.page}
+        pageCount={list.page.pageCount}
+        href={(page) => hrefWith(filters, defaults, page)}
+        rangeText={pageRangeText({ page: list.page.page, pageSize: list.page.pageSize, total: list.page.total, unit: "건" })}
+      />
+
+      {/* DA-14 — 힌트 줄은 페이지 줄 바로 아래 한 곳, 편집 폭에서만(1024 미만은 CSS도 숨긴다). */}
+      {editableWidth && rows.length > 0 ? (
+        <div className={tableStyles.hintRow}>
+          {HINT_ITEMS.map((item, index) => (
+            <span key={item.label}>
+              {index > 0 ? " · " : ""}
+              {item.label} <kbd>{item.keys}</kbd>
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      {/* 1024 미만 행 탭 → 읽기 시트(KvList 줄만 · 행동 없음). 폰에서 숨는 열(날짜 · 공급가 · 세액 · 공개)을 여기서 본다. */}
+      <RowSheet
+        open={sheetRow !== undefined}
+        onClose={() => setSheetRowId(null)}
+        title={sheetRow?.counterparty ?? "—"}
+        subtitle={sheetRow ? [sheetRow.issuedOn, sheetRow.kindLine].filter((part): part is string => Boolean(part)).join(" · ") : ""}
+        items={
+          sheetRow
+            ? [
+                { label: "날짜", value: <Num value={sheetRow.issuedOn} /> },
+                { label: "공급가", value: <Num value={sheetRow.supplyKrw} /> },
+                { label: "세액", value: <Num value={sheetRow.vatKrw} /> },
+                { label: "합계", value: <Num value={sheetRow.totalKrw} /> },
+                { label: "공개", value: visibilityText(sheetRow) },
+                { label: "상태", value: sheetRow.statusDetail ? `${sheetRow.statusWord} · ${sheetRow.statusDetail}` : sheetRow.statusWord },
+              ]
+            : []
+        }
       />
 
       {discardedEdits ? (

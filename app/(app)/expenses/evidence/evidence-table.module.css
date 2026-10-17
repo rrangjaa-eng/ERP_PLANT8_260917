@@ -9,12 +9,15 @@
   margin: var(--s-4) 0 var(--s-3);
 }
 
+/* 필터 셋 · batch 표시 — 지출결의 목록 필터 폼(expenses.module.css `.filterForm`)과 같은 값. 1차가 있으면 그 왼쪽의 남은 폭을 다 쓴다. */
 .filters {
   display: flex;
+  flex: 1 1 auto;
   flex-wrap: wrap;
-  align-items: center;
-  gap: var(--s-4);
+  align-items: flex-end;
+  gap: var(--s-2) var(--s-3);
   min-width: 0;
+  max-width: 100%;
 }
 
 /* 1차 글자는 한 줄(ListScreen `.primaryAction`과 같은 규칙). */
@@ -41,6 +44,21 @@
   outline: var(--focus-w) solid var(--focus);
   outline-offset: var(--focus-offset);
   border-radius: var(--radius-control);
+}
+
+/* DX-1 거래처 · 가맹점 — 한 줄 말줄임 + title. 격자 칸 minmax(0, max-content)라 칸의 최소 폭 기여가 0이라 폰 320에서 표가 칸을 줄여
+   말줄임하고 문서를 넘기지 않는다. PC 상한은 지출결의 목록 거래처 칸과 같은 16em(카드 사용 목록 `.linkCell` · `.linkText`와 같은 선언 —
+   다른 라우트 CSS 모듈은 import하지 않는다). */
+.counterpartyCell {
+  display: grid;
+  grid-template-columns: minmax(0, max-content);
+  max-width: 16em;
+}
+
+.counterpartyText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .footerCell {
@@ -85,6 +103,12 @@
 }
 
 @media (max-width: 699.98px) {
+  /* PA-PHONE-FILTER(Round 2 G9a) — 상태 select가 필터 줄 첫 줄에 홀로 서고 종류 · 기간은 그 아래 줄로 쌓인다(지우지 않는다). */
+  .filters > :first-child {
+    flex: 1 1 100%;
+    align-items: flex-start;
+  }
+
   .restoreAction {
     min-height: var(--touch-min);
     min-width: var(--touch-min);

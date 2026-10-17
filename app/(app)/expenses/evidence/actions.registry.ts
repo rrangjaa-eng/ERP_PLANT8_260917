@@ -9,5 +9,5 @@ registerAction({
   dtoName: "EvidenceImportResultDto",
 });
 
-// 06.1-05 — 공개 범위 저장. 결과는 저장 줄 수 · 시각 또는 거부 칸(줄 id · 상태 낱말)이라 행 DTO가 없다.
-registerAction({ name: "publishEvidenceRecordsAction", menu: "evidence.intake", action: "write", dtoName: null });
+// 06.1-05 — 공개 범위 저장. 결과는 저장 줄 수 · 시각 + 화면에 보이던 저장 줄의 다시 읽은 행(EvidenceRecordDto — O-6106) 또는 거부 칸(줄 id · 이유).
+registerAction({ name: "publishEvidenceRecordsAction", menu: "evidence.intake", action: "write", dtoName: "EvidenceRecordDto" });

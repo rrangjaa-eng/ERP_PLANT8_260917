@@ -5,6 +5,7 @@ import { can } from "@/domain/permissions/can";
 import { canExportBankTransferFile } from "@/domain/payments/bank-transfer";
 import { listExpenses, normalizeListQuery, type ExpenseListStatus } from "@/domain/expenses/list";
 import { DATE_FORMAT_ERROR } from "@/domain/expenses/draft-fields";
+import { countTodoEvidence } from "@/domain/evidence-records";
 import type { Viewer } from "@/domain/viewer";
 import {
   listPaidPayments,
@@ -23,6 +24,7 @@ import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { Num } from "@/ui/num/Num";
 import { Pagination } from "@/ui/pagination/Pagination";
 import { pageRangeText } from "@/ui/pagination/page-window";
+import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
 import { SubmittedToast } from "@/app/(app)/leave/[id]/submitted-toast";
 import { DeletedToast } from "../deleted-toast";
 import { ExpensesTable, type ExpenseTableRow } from "../expenses-table";
@@ -90,7 +92,14 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
   if (!(await can(session.viewer, "expenses", "view"))) notFound();
 
   const params = await searchParams;
-  const [canPay, paidAllowed] = await Promise.all([can(session.viewer, "expenses.payments", "write"), paidViewAllowed(session.viewer)]);
+  const [canPay, paidAllowed, todoEvidence] = await Promise.all([
+    can(session.viewer, "expenses.payments", "write"),
+    paidViewAllowed(session.viewer),
+    countTodoEvidence(session.viewer),
+  ]);
+  // 06.1-05(P-3 · DA-10): 필터 줄 끝 하위 목록 `증빙 {N}` — N = 증빙 목록 기본 보기 `할 일`(확인 필요 포함)과 같은 집합, 0이면 `증빙`.
+  // 등록 권한(evidence.intake 쓰기)이 없으면 null이라 링크 DOM이 없다. 보기 셋(목록 · 지급 대상 · 지급 완료) 모두 같은 링크다 — 경영관리의 기본 보기는 지급 대상이다.
+  const evidenceLink = todoEvidence === null ? undefined : { label: todoEvidence > 0 ? `증빙 ${todoEvidence}` : "증빙", href: "/expenses/evidence" };
   // 06-20(S3 · V-1): `?status=지급 완료`는 지급 권한자 · 전사 보는 범위(대표)에게만 — 그 밖의 사람은 아래 05 기본 보기로 읽힌다.
   // 지급 권한자에게는 06-15 「모르는 값 = 지급 대상」보다 먼저 판정한다.
   const views = [...(canPay ? [PAYMENT_TARGET_VIEW] : []), ...(paidAllowed ? [PAID_VIEW] : []), ...EXPENSE_STATUS_VIEWS];
@@ -101,7 +110,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
     const key = [team, month, q ?? "", firstParam(params.page) ?? ""].join("|");
     return (
       <Suspense key={key} fallback={<PaidSkeleton />}>
-        <PaidPayments viewer={session.viewer} views={views} canPay={canPay} team={team} month={month} q={q} page={firstParam(params.page)} />
+        <PaidPayments viewer={session.viewer} views={views} canPay={canPay} team={team} month={month} q={q} page={firstParam(params.page)} evidenceLink={evidenceLink} />
       </Suspense>
     );
   }
@@ -113,7 +122,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
     const key = [team, evidence ?? "", q ?? "", firstParam(params.page) ?? ""].join("|");
     return (
       <Suspense key={key} fallback={<PaymentTargetsSkeleton />}>
-        <PaymentTargets viewer={session.viewer} views={views} team={team} evidence={evidence} q={q} page={firstParam(params.page)} />
+        <PaymentTargets viewer={session.viewer} views={views} team={team} evidence={evidence} q={q} page={firstParam(params.page)} evidenceLink={evidenceLink} />
       </Suspense>
     );
   }
@@ -140,7 +149,16 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
       // DR5 A — 보임 범위 안 지출결의가 하나도 없을 때만 `empty`를 넘겨 틀이 머리 1차를 숨긴다. 보기 때문에 0건이면 머리 1차가 남는다.
       primaryAction={canWrite ? newAction : undefined}
       // 걸러 낼 문서가 하나도 없으면 상태 select를 넘기지 않는다(wave10 N2 — 사용자 지시(10/5 00:55)에 따라 추천안 적용).
-      filters={list.hasAny ? <StatusFilter value={view} views={views} searchValue={q ?? ""} /> : undefined}
+      // 06.1-05(Round 2 G8) — 그때도 증빙 링크가 있으면 링크 하나만 든 필터 줄을 넘긴다(보이는 지출결의가 0건인 경영관리도 증빙으로 간다).
+      filters={
+        list.hasAny ? (
+          <StatusFilter value={view} views={views} searchValue={q ?? ""} endLink={evidenceLink} />
+        ) : evidenceLink ? (
+          <RowActions>
+            <RowAction href={evidenceLink.href}>{evidenceLink.label}</RowAction>
+          </RowActions>
+        ) : undefined
+      }
       summary={
         list.total && list.total.count > 0 ? (
           <section aria-label="합계" className={styles.totals}>
@@ -204,6 +222,7 @@ async function PaymentTargets({
   evidence,
   q,
   page,
+  evidenceLink,
 }: {
   viewer: Viewer;
   views: string[];
@@ -211,6 +230,7 @@ async function PaymentTargets({
   evidence: ReturnType<typeof parsePaymentEvidenceFilter>;
   q: string | null;
   page: string | undefined;
+  evidenceLink: { label: string; href: string } | undefined;
 }) {
   let loaded;
   try {
@@ -255,6 +275,7 @@ async function PaymentTargets({
       paidHref={`/expenses?${new URLSearchParams({ status: "지급 완료" })}`}
       dateError={DATE_FORMAT_ERROR}
       canExportTransferFile={canExportTransferFile}
+      evidenceLink={evidenceLink}
     />
   );
 }
@@ -283,6 +304,7 @@ async function PaidPayments({
   month,
   q,
   page,
+  evidenceLink,
 }: {
   viewer: Viewer;
   views: string[];
@@ -291,6 +313,7 @@ async function PaidPayments({
   month: string;
   q: string | null;
   page: string | undefined;
+  evidenceLink: { label: string; href: string } | undefined;
 }) {
   let loaded: [Awaited<ReturnType<typeof listPaidPayments>>, Awaited<ReturnType<typeof listPaidTeamOptions>>];
   try {
@@ -298,7 +321,7 @@ async function PaidPayments({
   } catch (error) {
     // C13 — 본문 자리에 한 줄 + `다시 시도`. 보기 select는 남겨 다른 보기로 옮겨 갈 수 있다.
     log.error("지급 완료 로드 실패", { error: error instanceof Error ? error.name : "unknown" });
-    return <ListScreen title="지출결의" filters={<StatusFilter value={PAID_VIEW} views={views} searchValue={q ?? ""} />} empty={<PaidLoadError />}>{null}</ListScreen>;
+    return <ListScreen title="지출결의" filters={<StatusFilter value={PAID_VIEW} views={views} searchValue={q ?? ""} endLink={evidenceLink} />} empty={<PaidLoadError />}>{null}</ListScreen>;
   }
   const [list, teams] = loaded;
   const rows: PaidScreenRow[] = list.groups.flatMap((group) => group.rows.map((row) => ({ ...row, id: row.id ?? "", group: group.label })));
@@ -329,6 +352,7 @@ async function PaidPayments({
           value={PAID_VIEW}
           views={views}
           searchValue={q ?? ""}
+          endLink={evidenceLink}
           selects={[
             { name: "team", label: "팀", value: teamValue, options: [{ value: "", label: "팀 전체" }, ...teams] },
             { name: "month", label: "월", value: list.month, options: list.months.map((value) => ({ value, label: value })) },

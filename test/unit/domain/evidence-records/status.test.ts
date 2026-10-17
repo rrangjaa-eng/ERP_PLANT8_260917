@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { evidenceRecordStatus, evidenceVisibilityCell, evidenceVisibilityLabel, type EvidenceRecordStatusInput } from "@/domain/evidence-records/status";
+import {
+  evidenceKindLabel,
+  evidenceRecordStatus,
+  evidenceVisibilityCell,
+  evidenceVisibilityLabel,
+  type EvidenceRecordStatusInput,
+} from "@/domain/evidence-records/status";
 
 // 06.1-05(D-6112 · SP-6101) — 증빙 기록 한 줄의 상태 낱말 · 2행. 한 값 규칙 보관됨 > 카드 미등록 > 확인 필요 > 붙음 > 미공개 > 팀 공개 >
 // 본부 공개의 첫 값 하나만 서고, 2행 규칙(DA-5 사유 그대로 · DA-9 음수 · DA-11 저장 당시 본부 · RP-15 ⑴ G15 종류)도 이 함수 하나에 있다.
@@ -92,5 +98,19 @@ describe("evidenceVisibilityLabel (06.1-05 공개 셀 글자)", () => {
     expect(evidenceVisibilityLabel(input({}))).toBe("미공개");
     expect(evidenceVisibilityLabel(input({ visibility: "team", teamName: "기획1팀" }))).toBe("기획1팀 공개");
     expect(evidenceVisibilityLabel(input({ visibility: "division", divisionName: "기획본부" }))).toBe("기획본부 공개");
+  });
+});
+
+// DA-8 · E42 — 2행 종류 글자. 당초 승인번호가 있는 세금계산서 · 계산서 줄은 `수정세금계산서` · `수정계산서`(새 태그 · 색 없음), 그 밖은 코드표 이름 그대로.
+describe("evidenceKindLabel (06.1-05 DA-8 종류 글자)", () => {
+  it("당초 승인번호가 있으면 세금계산서 → 수정세금계산서 · 계산서 → 수정계산서", () => {
+    expect(evidenceKindLabel({ evidenceType: "tax_invoice", typeLabel: "세금계산서", originalApprovalNo: "20260615-10260615-71160001" })).toBe("수정세금계산서");
+    expect(evidenceKindLabel({ evidenceType: "invoice", typeLabel: "계산서", originalApprovalNo: "20260615-10260615-71160001" })).toBe("수정계산서");
+  });
+
+  it("당초 승인번호가 없거나 다른 종류면 코드표 이름 그대로", () => {
+    expect(evidenceKindLabel({ evidenceType: "tax_invoice", typeLabel: "세금계산서", originalApprovalNo: null })).toBe("세금계산서");
+    expect(evidenceKindLabel({ evidenceType: "card_receipt", typeLabel: "카드 전표", originalApprovalNo: null })).toBe("카드 전표");
+    expect(evidenceKindLabel({ evidenceType: "cash_receipt", typeLabel: null, originalApprovalNo: null })).toBeNull();
   });
 });

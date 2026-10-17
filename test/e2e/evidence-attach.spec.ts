@@ -14,7 +14,7 @@ import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { createIntakeManager, insertLinkFixture, insertRecordFixture } from "@/test/integration/fixtures/evidence";
 import { archiveTempRoles, insertTempRole, setupExpenseE2E, submitLineExpense, type ExpenseE2E } from "./expense-fixture";
 import { loginPage, makePerson as makeLeavePerson, waitForHydration, type Person } from "./leave-org";
-import { clearEvidence, EVIDENCE_COL, evidenceCell, evidenceRows, loginAs } from "./helpers/evidence";
+import { clearEvidence, EVIDENCE_COL, evidenceCell, evidenceRows, focusGridCell, loginAs } from "./helpers/evidence";
 
 // 06.1-06 S4 · S7 — 증빙 목록 행 `붙이기` → 붙일 문서 고르기(PickDialog 단일) → 붙음 · 상태 2행 문서 번호 링크 → 문서 「증빙」 섹션 읽기 행.
 // 판정은 CI=true 프로덕션 빌드에서 한다(CLAUDE.md §5). 등록 권한자는 회사 전체 증빙을 보므로 케이스마다 증빙 표를 비우고 시작한다.
@@ -71,7 +71,10 @@ test("S7 행 1 반려 지출결의 × 경영관리(두 키): 행 붙이기 → �
   await expect(status).toContainText("붙음");
   const link = status.getByRole("link", { name: doc.number });
   await expect(link).toBeVisible();
-  await link.click();
+  // D-2 — 링크는 격자 로빙 밖(탭 정지 아님)이고 키보드 경로는 그 상태 칸에서 Enter다(지급 대상 · 리저브 대장 셀 Enter 선례).
+  await expect(link).toHaveAttribute("tabindex", "-1");
+  await focusGridCell(status);
+  await status.press("Enter");
 
   await expect(page).toHaveURL(new RegExp(`/expenses/${doc.expenseId}#evidence$`));
   const section = page.locator("#evidence + div").getByRole("table", { name: "붙은 증빙" });

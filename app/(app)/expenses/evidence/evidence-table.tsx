@@ -184,12 +184,26 @@ function rowFromView(view: EvidenceRecordView): Row[] {
 function AttachedLine({ attached }: { attached: NonNullable<Row["attached"]> }) {
   if (attached.pending || attached.id === null || attached.number === null) return <span>{COPY.draftOwner}</span>;
   const href = attached.kind === "expense" ? `/expenses/${attached.id}#evidence` : "/cards/purchases";
-  // 링크 모양은 지출결의 목록 번호 링크(`expenseStyles.link` — `--text-link`)와 같다.
+  // 링크 모양은 지출결의 목록 번호 링크(`expenseStyles.link` — `--text-link`)와 같다. 격자 로빙 밖(tabIndex -1 — §7-3 (아) 탭 정지 1개)이고
+  // 키보드 경로는 그 칸 Enter(`pressCellAction` — 지급 대상 · 리저브 대장 선례)다.
   return (
-    <Link href={href} className={expenseStyles.link}>
+    <Link href={href} className={expenseStyles.link} tabIndex={-1} data-cell-action="">
       {attached.number}
     </Link>
   );
+}
+
+// D-2 — 격자 포커스 칸(편집 칸이 아닌 상태 칸)의 Enter = 그 칸 안 `[data-cell-action]`(상태 2행 문서 번호 링크) 누르기. 표를 감싼 요소가 캡처 단계에서
+// 먼저 받는다(ui/table 무변경 — 지급 대상 H-2 · 리저브 대장 S22 선례). 조합 중 · 수정 키 · 편집 칸 안 입력은 손대지 않는다(공개 칸 Enter 편집 그대로).
+function pressCellAction(event: React.KeyboardEvent<HTMLDivElement>) {
+  if (event.key !== "Enter" || event.ctrlKey || event.altKey || event.shiftKey || event.nativeEvent.isComposing) return;
+  const target = event.target;
+  if (!(target instanceof HTMLElement) || !target.matches("td[data-grid-focus]")) return;
+  const action = target.querySelector<HTMLElement>("[data-cell-action]");
+  if (!action) return;
+  event.preventDefault();
+  event.stopPropagation();
+  action.click();
 }
 
 function proposalValue(proposal: EvidenceProposal): string {
@@ -776,6 +790,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
       {rows.length === 0 ? (
         <ListEmpty message={emptyState.message} action={emptyState.action} />
       ) : (
+        <div onKeyDownCapture={pressCellAction}>
         <Table
           caption={COPY.caption}
           columns={columns}
@@ -805,6 +820,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
             </tr>
           )}
         />
+        </div>
       )}
 
       {/* DA-22 — 50건 번호 페이지(링크 갈래 — 범위 글자 · `이전` · 숫자 · `다음`). 클라이언트 이동이라 편집 맵이 남는다. */}

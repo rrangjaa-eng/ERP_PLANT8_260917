@@ -161,3 +161,25 @@ describe("recordAction (OPS-05)", () => {
     expect(appendActionLog).toHaveBeenCalledTimes(1);
   });
 });
+
+// 06.1-01(D-6112 · RP-2): 증빙 기록 금액 고침 · 파일이 카드 사용을 덮음(전 · 후)은 끌 수 없다 — 06-06 「증빙 확인 금액 변경」과 이름이 다르다.
+describe("evidence_record_amount_change (06.1 D-6112 · RP-2)", () => {
+  it("세 배열에 함께 있고 라벨이 「증빙 기록 금액 변경」이다", () => {
+    expect(CORE_ACTION_TYPES as readonly string[]).toContain("evidence_record_amount_change");
+    expect(ALWAYS_ON_ACTION_TYPES as readonly string[]).toContain("evidence_record_amount_change");
+    expect((ACTION_TYPE_LABELS as Record<string, string>).evidence_record_amount_change).toBe("증빙 기록 금액 변경");
+  });
+
+  it("06-06의 evidence_amount_change 라벨은 그대로 「증빙 확인 금액 변경」이다", () => {
+    expect(ACTION_TYPE_LABELS.evidence_amount_change).toBe("증빙 확인 금액 변경");
+  });
+
+  it("행동 로그 설정이 꺼져 있어도 기록되고, 같은 주입으로 document_update는 기록되지 않는다", async () => {
+    const appendActionLog = vi.fn().mockResolvedValue(undefined);
+    const deps = { appendActionLog, isActionTypeEnabled: () => Promise.resolve(false) };
+    await recordAction(viewer, { actionType: "evidence_record_amount_change", entity: "evidence_record", entityId: "r1" }, deps);
+    expect(appendActionLog).toHaveBeenCalledTimes(1);
+    await recordAction(viewer, { actionType: "document_update", entity: "expense", entityId: "e1" }, deps);
+    expect(appendActionLog).toHaveBeenCalledTimes(1);
+  });
+});

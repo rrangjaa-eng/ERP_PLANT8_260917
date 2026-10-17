@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { and, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
+import { db } from "@/db/client";
+import { codeItems } from "@/db/schema";
 import { seedMasterData } from "@/domain/seed";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import {
@@ -11,6 +14,7 @@ import {
 } from "@/domain/permissions/roles";
 import { can } from "@/domain/permissions/can";
 import { insertRole } from "@/repositories/roles";
+import { setCodeItemActive } from "@/repositories/code-tables";
 import { MENUS } from "@/domain/permissions/menus";
 import { INFO_ITEMS } from "@/domain/permissions/info-items";
 import {
@@ -200,5 +204,66 @@ describe("projects.member 시드(06.2 D-6210)", () => {
     await upsertPermission(SYSTEM_VIEWER, { roleId: TEAM_LEAD_ROLE_ID, menu: "projects.member", action: "write", allowed: false });
     await seedMasterData(SYSTEM_VIEWER);
     expect(await can({ id: "viewer-lead", roleId: TEAM_LEAD_ROLE_ID }, "projects.member", "write")).toBe(false);
+  });
+});
+
+// 06.1(D-6113): 증빙 보기는 기획 PM · 팀장에게만 없을 때 켠다. 시스템 관리자는 MENUS 루프가 켠다.
+describe("evidence 시드(06.1 D-6113)", () => {
+  it("첫 시드 뒤 기획 PM · 팀장은 evidence 보기가 켜져 있고 대표 · 본부 책임자는 행이 없다 · 시스템 관리자는 evidence · evidence.intake 보기 · 쓰기가 참", async () => {
+    expect((await findPermission(SYSTEM_VIEWER, DEFAULT_ROLE_ID, "evidence", "view"))?.allowed).toBe(true);
+    expect((await findPermission(SYSTEM_VIEWER, TEAM_LEAD_ROLE_ID, "evidence", "view"))?.allowed).toBe(true);
+    expect(await findPermission(SYSTEM_VIEWER, CEO_ROLE_ID, "evidence", "view")).toBeNull();
+    expect(await findPermission(SYSTEM_VIEWER, DIVISION_HEAD_ROLE_ID, "evidence", "view")).toBeNull();
+    for (const menu of ["evidence", "evidence.intake"]) {
+      for (const action of ["view", "write"] as const) {
+        expect(await can({ id: "viewer-admin", roleId: SYSADMIN_ROLE_ID }, menu, action), `${menu}:${action}`).toBe(true);
+      }
+    }
+    expect(await can({ id: "viewer-pm", roleId: DEFAULT_ROLE_ID }, "evidence.intake", "write")).toBe(false);
+  });
+
+  it("기획 PM의 evidence 보기를 끈 뒤 시드를 다시 돌려도 꺼진 채다", async () => {
+    await upsertPermission(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, menu: "evidence", action: "view", allowed: false });
+
+    await seedMasterData(SYSTEM_VIEWER);
+
+    expect((await findPermission(SYSTEM_VIEWER, DEFAULT_ROLE_ID, "evidence", "view"))?.allowed).toBe(false);
+  });
+
+  it("정보 항목 evidence.value · evidence.amount가 staffDefault 참으로 있다", () => {
+    expect(INFO_ITEMS.filter((item) => item.key.startsWith("evidence."))).toEqual([
+      { key: "evidence.value", label: "증빙 내용", staffDefault: true },
+      { key: "evidence.amount", label: "증빙 금액", staffDefault: true },
+    ]);
+  });
+});
+
+// 06.1(G15 · RP-15 · Round 2 R6): 개인카드 전표 종류 — 「올린 사람 · 경영관리만」 속성을 켜고 종류는 꺼 둔 채 넣는다(켜는 것은 06.1-14).
+describe("개인카드 전표 증빙 종류 시드(06.1 G15)", () => {
+  async function personalCardReceipt() {
+    const [row] = await db
+      .select()
+      .from(codeItems)
+      .where(and(eq(codeItems.tableKey, "evidence_type"), eq(codeItems.value, "personal_card_receipt")));
+    return row ?? null;
+  }
+
+  it("첫 시드 뒤 personal_card_receipt가 「개인카드 전표」 · private_to_owner 참 · active 거짓으로 있고 다른 증빙 종류는 private_to_owner 거짓이다", async () => {
+    const row = await personalCardReceipt();
+    expect(row).toMatchObject({ label: "개인카드 전표", privateToOwner: true, active: false, sortOrder: 7 });
+    expect(row?.taxRule).toEqual({ ruleKind: "vat_surcharge", roundingUnit: 1, roundingMethod: "round", minWithholdingAmount: 0, basisDate: "evidence_date" });
+    const others = await db.select().from(codeItems).where(eq(codeItems.tableKey, "evidence_type"));
+    expect(others.filter((item) => item.value !== "personal_card_receipt" && item.privateToOwner)).toEqual([]);
+  });
+
+  it("관리자가 켠 종류 · 끈 속성은 시드를 다시 돌려도 그대로다(onConflictDoNothing)", async () => {
+    const row = await personalCardReceipt();
+    if (!row) throw new Error("personal_card_receipt 없음");
+    await setCodeItemActive(SYSTEM_VIEWER, row.id, true);
+    await db.update(codeItems).set({ privateToOwner: false }).where(eq(codeItems.id, row.id));
+
+    await seedMasterData(SYSTEM_VIEWER);
+
+    expect(await personalCardReceipt()).toMatchObject({ active: true, privateToOwner: false });
   });
 });

@@ -74,6 +74,8 @@ const EVIDENCE_TYPE_CODES: {
   sortOrder: number;
   taxRule: Record<string, unknown>;
   description: string;
+  privateToOwner?: boolean;
+  active?: boolean;
 }[] = [
   {
     value: "tax_invoice",
@@ -143,6 +145,22 @@ const EVIDENCE_TYPE_CODES: {
     },
   },
   { value: "overseas_invoice", label: "해외 인보이스", sortOrder: 6, description: "해외 거래처 인보이스 · 부가세 없음", taxRule: { ruleKind: "none" } },
+  // 06.1(G15 · RP-15): 꺼 둔 채 넣는다 — 보기 제한(06.1-05 · 06.1-14)이 오기 전 운영에서 목록 · 자동완성 · 카드 사용 증빙 종류에 뜨지 않게(R6). 켜는 것은 06.1-14.
+  {
+    value: "personal_card_receipt",
+    label: "개인카드 전표",
+    sortOrder: 7,
+    description: "직원 개인카드 결제 전표 · 올린 사람 · 경영관리만 봄",
+    privateToOwner: true,
+    active: false,
+    taxRule: {
+      ruleKind: "vat_surcharge",
+      roundingUnit: 1,
+      roundingMethod: "round",
+      minWithholdingAmount: 0,
+      basisDate: "evidence_date",
+    },
+  },
 ];
 
 // MAST-02: 본부·팀 최소 시드 — PROJECT.md가 실명으로 쓰는 두 본부(기획본부·
@@ -276,6 +294,8 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
       menu: "projects.member",
       action: "write" as const,
     })),
+    // 06.1(D-6113): 증빙 보기 — 기획 PM · 팀장만(본부 책임자 · 대표는 넣지 않는다). 등록(evidence.intake)은 어느 시드 계급에도 켜지 않는다.
+    ...[DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID].map((roleId) => ({ roleId, menu: "evidence", action: "view" as const })),
   ];
   for (const entry of statusDefaults) {
     await insertPermissionIfAbsent(viewer, { ...entry, allowed: true, updatedBy: null });

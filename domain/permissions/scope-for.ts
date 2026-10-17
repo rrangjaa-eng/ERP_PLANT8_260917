@@ -147,3 +147,29 @@ async function computeRowScope(
       return { rows: "none", includeArchived };
   }
 }
+
+// ── 06.1 증빙 행 범위(D-6108) ─────────────────────────────────────────────────
+// Scope.rows를 넓히지 않는 이유 — 기존 리포지토리가 none만 보고 나머지를 전 행으로 읽는다(셋째 값이 전 행이 된다).
+// RowScope와 따로인 이유 — 입력이 계급 view_scope가 아니라 행의 공개 범위 칸이다(RP-5).
+// published의 팀 · 본부는 computeRowScope와 같은 길(오늘 서울 발령 → 팀의 본부)이고 발령이 없으면 둘 다 null이다.
+// 권한 · 발령을 전역 풀로 읽으므로 트랜잭션 밖에서만 부른다(06-03 tx 규약).
+export type EvidenceScope =
+  | { rows: "all" }
+  | { rows: "published"; teamId: string | null; orgUnitId: string | null }
+  | { rows: "none" };
+
+export async function evidenceScopeFor(
+  viewer: Viewer,
+  deps?: Partial<ScopeForDeps & Pick<RowScopeDeps, "findMembershipAtDate" | "findTeamById" | "today">>,
+): Promise<EvidenceScope> {
+  const canFn = deps?.can ?? defaultCan;
+  if (await canFn(viewer, "evidence.intake", "write")) return { rows: "all" };
+  if (!(await canFn(viewer, "evidence", "view"))) return { rows: "none" };
+
+  const findMembershipAtDate = deps?.findMembershipAtDate ?? defaultFindMembershipAtDate;
+  const membership = await findMembershipAtDate(viewer, viewer.id, (deps?.today ?? seoulToday)());
+  const teamId = membership?.teamId ?? null;
+  const findTeamById = deps?.findTeamById ?? defaultFindTeamById;
+  const team = teamId ? await findTeamById(viewer, teamId) : null;
+  return { rows: "published", teamId, orgUnitId: team?.orgUnitId ?? null };
+}

@@ -51,6 +51,8 @@ export const CORE_ACTION_TYPES = [
   "evidence_waive",
   // 06.2-05 D-6223: 프로젝트 참여자 더하기 · 떼기 · 되돌리기 — 다른 팀 프로젝트 접근을 바꾸는 기록이라 끌 수 없다.
   "project_member_change",
+  // 06.1-01 D-6112 · RP-2: 증빙 기록 금액 고침 · 파일이 카드 사용을 덮음(전 · 후) — 문서 공급가액과 별개인 증빙 원본 기록이라 끌 수 없다.
+  "evidence_record_amount_change",
 ] as const;
 
 export type CoreActionType = (typeof CORE_ACTION_TYPES)[number];
@@ -90,6 +92,7 @@ export const ACTION_TYPE_LABELS: Record<CoreActionType, string> = {
   evidence_amount_change: "증빙 확인 금액 변경",
   evidence_waive: "증빙 면제",
   project_member_change: "프로젝트 참여자 변경",
+  evidence_record_amount_change: "증빙 기록 금액 변경",
 };
 
 // OPS-05: Excel 내보내기·마스킹 해제·행동 로그 정리는 설정으로 못 끄는 핵심
@@ -127,6 +130,8 @@ export const ALWAYS_ON_ACTION_TYPES: CoreActionType[] = [
   "payment_process",
   // 06.5 D-6511(06-12-review.md:76-84 I-4): 구매 처리는 카드 사용을 만드는 돈 기록이라 끌 수 없다
   "purchase_process",
+  // 06.1-01 D-6112 · RP-2: 증빙 기록 금액 변경은 증빙 원본 기록이 바뀌는 돈 기록이라 끌 수 없다
+  "evidence_record_amount_change",
 ];
 
 export class UnknownActionTypeError extends UserFacingError {}

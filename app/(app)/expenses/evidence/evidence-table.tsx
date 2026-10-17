@@ -453,6 +453,24 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
     if (row.attachBlocked !== null || rowActionPending !== null) return;
     setAttachTarget({ recordId: row.id, subtitle: row.counterparty ?? "" });
   }
+  // 붙인 뒤 새 목록이 오면 포커스 자리 — 그 행이 남으면 그 행, 「할 일」처럼 빠지면 다음 행(없으면 이전 행, 없으면 화면 제목).
+  // 붙인 순간의 행 순서를 기억해 두고, 목록(list)이 바뀐 커밋 뒤에 한 번만 옮긴다(PickDialog가 돌려준 `붙이기`는 그 행과 함께 사라진다).
+  const attachedFocusRef = useRef<{ id: string; order: string[] } | null>(null);
+  function onAttached(recordId: string) {
+    attachedFocusRef.current = { id: recordId, order: rows.map((row) => row.id) };
+    router.refresh();
+  }
+  useEffect(() => {
+    const pending = attachedFocusRef.current;
+    if (!pending) return;
+    attachedFocusRef.current = null;
+    const present = new Set(list.rows.flatMap((view) => (view.id === undefined ? [] : [view.id])));
+    const at = pending.order.indexOf(pending.id);
+    const candidates = [pending.id, ...pending.order.slice(at + 1), ...pending.order.slice(0, Math.max(at, 0)).reverse()];
+    const targetId = candidates.find((id) => present.has(id));
+    const cell = targetId ? document.getElementById(counterpartyId(targetId))?.closest<HTMLElement>("td") : null;
+    (cell ?? document.querySelector<HTMLElement>('[data-ui="screen-title"]'))?.focus();
+  }, [list]);
   const shownArchiveLine = archiveLine?.kind === "conflict" && archiveLine.list !== list ? null : archiveLine;
 
   // 보관한 줄은 목록에서 빠진다 — 그 줄의 편집 · 오류 칸만 버린다(다른 줄 편집은 행 id 키라 다시 받아도 남는다).
@@ -836,7 +854,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
           onDismiss={() => setDiscardedEdits(null)}
         />
       ) : null}
-      <PickDocumentDialog target={attachTarget} onClose={() => setAttachTarget(null)} onAttached={() => router.refresh()} />
+      <PickDocumentDialog target={attachTarget} onClose={() => setAttachTarget(null)} onAttached={onAttached} />
     </>
   );
 }

@@ -1,9 +1,25 @@
 import { Client } from "pg";
-import { describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
+import { describe, expect, it, vi } from "vitest";
 import { db, pool } from "@/db/client";
 import { evidenceImportBatches, evidenceRecords } from "@/db/schema";
-import { shinhanFixture } from "@/test/fixtures/evidence-import/build";
+import { lotteFixture, shinhanFixture } from "@/test/fixtures/evidence-import/build";
 import { createIntakeViewer, registerFixtureFile } from "./fixtures/evidence";
+
+// GH-P1(PR #252): 등록 트랜잭션 안 묶음 INSERT 앞에서 한 번 멈추게 하는 문 — 기본은 그대로 통과한다.
+const insertBatchGate = vi.hoisted(() => ({ next: null as Promise<void> | null }));
+vi.mock("@/repositories/evidence-import-batches", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/repositories/evidence-import-batches")>();
+  return {
+    ...actual,
+    insertBatch: async (...args: Parameters<typeof actual.insertBatch>) => {
+      const gate = insertBatchGate.next;
+      insertBatchGate.next = null;
+      if (gate) await gate;
+      return actual.insertBatch(...args);
+    },
+  };
+});
 
 // 06-03 tx 규약 회귀 가드(PR #75 꼴 — expense-payments-concurrency.test.ts와 같은 틀): 등록 트랜잭션이 묶음 표를 쓰는 동안 전역 풀을
 // 다시 읽으면(세율 · 권한 · 카드 · 설정) 풀 커넥션 수를 넘는 동시 등록에서 애플리케이션 교착으로 멈춘다. 풀 밖 pg Client가 묶음 표를
@@ -93,5 +109,47 @@ describe("증빙 등록 — 풀 소진 교착 회귀 가드 (06.1-04)", () => {
     expect(results.map((result) => result.skippedDuplicate).sort()).toEqual([0, 3]);
     expect(await db.select().from(evidenceRecords)).toHaveLength(3);
     expect(await db.select().from(evidenceImportBatches)).toHaveLength(2);
+  });
+
+  it("(GH-P1) 원거래만 든 파일 A가 트랜잭션 안에 있는 동안 원거래 · 취소 쌍 파일 B가 오면 B는 A 커밋 뒤에 다시 읽어 취소 줄을 등록한다 — 합 0", async () => {
+    const viewer = await createIntakeViewer();
+    const original = { 승인번호: "21000001", 매입일자: "2026.09.05", 매입금액: "50,000", 부가세: "4,545" };
+    const cancel = { 승인번호: "21000001", 매입일자: "2026.09.20", 매입금액: "-50,000", 부가세: "-4,545" };
+
+    let releaseA = () => {};
+    insertBatchGate.next = new Promise<void>((resolve) => {
+      releaseA = resolve;
+    });
+    const watcher = new Client({ connectionString: process.env.DATABASE_URL });
+    await watcher.connect();
+    let a: Promise<unknown> = Promise.resolve();
+    let b: Promise<unknown> = Promise.resolve();
+    try {
+      a = registerFixtureFile(viewer, lotteFixture([original]), "롯데_원거래.xls");
+      // A가 묶음 INSERT 앞(트랜잭션 안 · 사전 조회 끝)에 멈출 때까지.
+      for (let attempt = 0; attempt < 50 && insertBatchGate.next !== null; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(insertBatchGate.next, "A가 묶음 INSERT 문에 닿지 않았다").toBeNull();
+
+      let bSettled = false;
+      b = registerFixtureFile(viewer, lotteFixture([original, cancel]), "롯데_전체.xls").finally(() => {
+        bSettled = true;
+      });
+      // B가 끝나거나(잠금 없음) A의 잠금을 기다릴 때까지(잠금 있음).
+      let waiting = 0;
+      for (let attempt = 0; attempt < 100 && !bSettled && waiting === 0; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        const { rows } = await watcher.query<{ count: string }>("SELECT count(*)::text AS count FROM pg_locks WHERE locktype = 'advisory' AND NOT granted");
+        waiting = Number(rows[0]?.count ?? 0);
+      }
+      expect(bSettled || waiting > 0, "B가 끝나지도 잠금을 기다리지도 않았다").toBe(true);
+    } finally {
+      releaseA();
+      await watcher.end();
+    }
+    await Promise.all([a, b]);
+
+    const pair = await db.select().from(evidenceRecords).where(eq(evidenceRecords.approvalNo, "21000001"));
+    expect(pair.map((record) => record.totalKrw).sort((x, y) => x - y)).toEqual([-50_000, 50_000]);
+    expect(pair.reduce((sum, record) => sum + record.totalKrw, 0)).toBe(0);
   });
 });

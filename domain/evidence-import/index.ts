@@ -16,7 +16,8 @@ import { withTransaction } from "@/lib/db-transaction";
 import { isUniqueViolation } from "@/lib/pg-errors";
 import { listCodeItems } from "@/repositories/code-tables";
 import { findCardsByLast4 } from "@/repositories/corp-cards";
-import { findBatchIdBySha, insertBatch, setBatchCounts } from "@/repositories/evidence-import-batches";
+import type { DbOrTx } from "@/repositories/document-counters";
+import { findBatchIdBySha, insertBatch, lockEvidenceCardImport, setBatchCounts } from "@/repositories/evidence-import-batches";
 import {
   findCardRecordsByApprovalNos,
   findArchivedDedupeKeys,
@@ -28,8 +29,8 @@ import { lockVendorAutocreate } from "@/repositories/vendors";
 
 // 06.1-04: 증빙 등록 서비스 — 엑셀 파일 하나 → 권한 · 크기 · 읽기(06.1-02) · 사전 조회 · 한 트랜잭션(묶음 + 기록 + 행동 로그) · 결과.
 // 사용자가 고칠 수 있는 거절은 던지지 않고 결과 데이터 `refused`로 돌려준다(E2 — 06.1-05가 결과 행으로 그린다).
-// 06-03 tx 규약: 권한 · 세율 · 코드표 · 같은 파일 · 이미 있는 열쇠 · 카드 · 앞 기록 조회는 트랜잭션 전, 트랜잭션 안은 tx 리포지토리와 순수 함수만
-// (거래처 서식의 잠금 뒤 이미 등록 열쇠 · 거래처 조회도 tx — vendor-autocreate.ts).
+// 06-03 tx 규약: 권한 · 세율 · 코드표 · 같은 파일 조회는 트랜잭션 전, 트랜잭션 안은 tx 리포지토리와 순수 함수만(카드 서식의 잠금 뒤 이미
+// 있는 열쇠 · 카드 · 앞 기록 조회 — GH-P1 PR #252, 거래처 서식의 잠금 뒤 이미 등록 열쇠 · 거래처 조회도 tx — vendor-autocreate.ts).
 
 export const EVIDENCE_IMPORT_BATCH_ENTITY = "evidence_import_batch";
 
@@ -130,7 +131,7 @@ function keysToCheck(parsed: ParseSuccess, sameFile: boolean): string[] {
   return [...parsed.lines, ...pairLines].flatMap((line) => (line.sameKeyCount === 1 ? [line.dedupeKey, `${line.baseKey}#2`] : [line.dedupeKey]));
 }
 
-// 카드 서식 줄의 사전 조회(트랜잭션 전): 끝 4자리 → 카드 후보 한 번 · 승인번호 → 앞 기록 한 번(A-10). 사유는 06.1-02 → A-10 →
+// 카드 서식 줄의 조회(트랜잭션 안 · 카드 등록 잠금 뒤): 끝 4자리 → 카드 후보 한 번 · 승인번호 → 앞 기록 한 번(A-10). 사유는 06.1-02 → A-10 →
 // GH-P1 차례이고 먼저 선 사유를 덮지 않는다. 카드는 파일의 끝 4자리 · 카드사로만 정한다(등록자의 카드 관리 권한과 무관).
 async function planCardLines(
   viewer: Viewer,
@@ -138,9 +139,10 @@ async function planCardLines(
   lines: readonly FinalLine[],
   existingKeys: ReadonlySet<string>,
   input: { sameFile: boolean; fileSha256: string },
+  tx: DbOrTx,
 ): Promise<PlannedLine[]> {
-  const candidates = await findCardsByLast4(viewer, presentValues(lines.map((line) => line.cardLast4)));
-  const earlier = await findCardRecordsByApprovalNos(viewer, rule.key, presentValues(lines.map((line) => line.approvalNo)));
+  const candidates = await findCardsByLast4(viewer, presentValues(lines.map((line) => line.cardLast4)), tx);
+  const earlier = await findCardRecordsByApprovalNos(viewer, rule.key, presentValues(lines.map((line) => line.approvalNo)), tx);
   const flagged = flagSameApprovalOtherAmount(lines, earlier);
   const grouped = input.sameFile ? flagged : planAmbiguousGroups(flagged, existingKeys, input.fileSha256.slice(0, GROUP_SHA_PREFIX_CHARS));
   return grouped.map((line) => ({ ...line, corpCardId: resolveCardForLine(line, rule, candidates) }));
@@ -202,28 +204,34 @@ export async function registerEvidenceFile(
   // 쪽을 등록해 합을 0으로 맞추고, 둘 다 등록돼 있으면 둘 다 이미 등록, 둘 다 없으면 둘 다 등록하지 않고 상쇄 쌍으로 센다(06.1-02가
   // 뺀 그대로). 이미 있는 열쇠는 GH-P1과 한 번에 읽는다. 등록된 한쪽이 보관돼 있으면 그 쌍은 맞추지 않는다(둘 다 등록하지 않음 —
   // 다른 쪽만 살아 합이 −T가 된다). 보관 기록도 같은 줄의 재등록은 그대로 막는다(열쇠를 차지한다).
-  const existingKeys = card ? await findExistingDedupeKeys(viewer, keysToCheck(parsed, sameFile)) : new Set<string>();
-  const offsetKeys = parsed.offsetLines.flatMap((pair) => [pair.original.dedupeKey, pair.cancel.dedupeKey]).filter((key) => existingKeys.has(key));
-  const archivedKeys = await findArchivedDedupeKeys(viewer, offsetKeys);
-  const settledPairs = parsed.offsetLines.filter((pair) => {
-    const registered = [pair.original, pair.cancel].filter((line) => existingKeys.has(line.dedupeKey));
-    return registered.length === 2 || (registered.length === 1 && registered.every((line) => !archivedKeys.has(line.dedupeKey)));
-  });
-  const missingHalves = settledPairs.flatMap((pair) => [pair.original, pair.cancel].filter((line) => !existingKeys.has(line.dedupeKey)));
-  const settledAlready = settledPairs.length * 2 - missingHalves.length;
-  const lines = (deps?.finalizeAmounts ?? defaultFinalizeAmounts)([...parsed.lines, ...missingHalves], ratesByDate, rulesByType);
-  const planned = card
-    ? await planCardLines(viewer, rule, lines, existingKeys, { sameFile, fileSha256 })
-    : lines.map((line) => ({ ...line, corpCardId: null }));
+  // GH-P1(PR #252): 이 판정은 카드 등록 잠금 뒤 tx로 읽는다 — 트랜잭션 전에 읽으면 원거래만 든 파일과 쌍 파일이 겹칠 때 둘 다 서로의
+  // 줄을 못 봐 원거래만 살아 남는다. 카드 서식이 아니면 열쇠를 묻지 않는다(조회 없음 · 그대로).
+  const planLines = async (tx: DbOrTx) => {
+    const existingKeys = card ? await findExistingDedupeKeys(viewer, keysToCheck(parsed, sameFile), tx) : new Set<string>();
+    const offsetKeys = parsed.offsetLines.flatMap((pair) => [pair.original.dedupeKey, pair.cancel.dedupeKey]).filter((key) => existingKeys.has(key));
+    const archivedKeys = await findArchivedDedupeKeys(viewer, offsetKeys, tx);
+    const settledPairs = parsed.offsetLines.filter((pair) => {
+      const registered = [pair.original, pair.cancel].filter((line) => existingKeys.has(line.dedupeKey));
+      return registered.length === 2 || (registered.length === 1 && registered.every((line) => !archivedKeys.has(line.dedupeKey)));
+    });
+    const missingHalves = settledPairs.flatMap((pair) => [pair.original, pair.cancel].filter((line) => !existingKeys.has(line.dedupeKey)));
+    const lines = (deps?.finalizeAmounts ?? defaultFinalizeAmounts)([...parsed.lines, ...missingHalves], ratesByDate, rulesByType);
+    const planned: PlannedLine[] = card
+      ? await planCardLines(viewer, rule, lines, existingKeys, { sameFile, fileSha256 }, tx)
+      : lines.map((line) => ({ ...line, corpCardId: null }));
+    return { planned, settledAlready: settledPairs.length * 2 - missingHalves.length, offsetPairs: parsed.offsetPairs - settledPairs.length };
+  };
   const originalName = originalNameOf(input.fileName);
   const rowCount = parsed.lines.length + parsed.offsetLines.length * 2;
-  const offsetPairs = parsed.offsetPairs - settledPairs.length;
 
   const write = () =>
     withTransaction(async (tx) => {
+      // GH-P1: 카드 서식은 카드 등록 잠금이 첫 줄이고 줄 판정(planLines)은 그 뒤에 tx로 읽는다.
+      if (card) await lockEvidenceCardImport(viewer, tx);
       // (eng B-P3) 거래처를 만드는 서식은 거래처 잠금이 첫 줄이고, 이미 등록된 줄은 그 뒤에 걸러 새 줄만 거래처 단계로 보낸다(E11) —
-      // 잠금 앞에서 거르면 기다리는 사이 다른 등록이 커밋한 줄이 「새 줄」로 남아 그 사이 보관된 거래처를 되살린다. 카드 서식은 잠그지 않는다.
+      // 잠금 앞에서 거르면 기다리는 사이 다른 등록이 커밋한 줄이 「새 줄」로 남아 그 사이 보관된 거래처를 되살린다.
       if (rule.createsVendor) await lockVendorAutocreate(viewer, tx);
+      const { planned, settledAlready, offsetPairs } = await planLines(tx);
       const already = rule.createsVendor ? await findExistingDedupeKeys(viewer, planned.map((line) => line.dedupeKey), tx) : new Set<string>();
       // 묶음을 먼저 만들어 거래처 로그 detail에 묶음 id를 담는다(D-6114).
       const batch = await insertBatch(viewer, { format: parsed.format, originalName, fileSha256, rowCount, uploadedBy: viewer.id }, tx);
@@ -247,7 +255,7 @@ export async function registerEvidenceFile(
       return { batchId: batch.id, ...counts, nameMismatchLines: linked.nameMismatchLines };
     });
   // RP-7: 관리 화면 저장은 거래처 잠금을 쓰지 않아 조회와 생성 · 되살림 사이에 같은 번호가 살아날 수 있다 — 유일 색인 위반이면
-  // 트랜잭션을 통째로 한 번 다시 돈다(앞 시도는 롤백됐다 · 사전 조회 값은 그대로 쓴다). 두 번째 위반은 그대로 던진다.
+  // 트랜잭션을 통째로 한 번 다시 돈다(앞 시도는 롤백됐다 · 트랜잭션 전 조회 값은 그대로 쓰고 줄 판정은 tx로 다시 읽는다). 두 번째 위반은 그대로 던진다.
   const written = await write().catch((error: unknown) => {
     if (!isUniqueViolation(error, BUSINESS_NO_UNIQUE_INDEX)) throw error;
     return write();

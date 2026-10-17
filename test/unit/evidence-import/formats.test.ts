@@ -569,7 +569,7 @@ describe("홈택스 매입 현금영수증(06.1-11)", () => {
     expect(parseWorkbook(hometaxCashReceiptFixture([{}], { band: "총 사용금액 : 10,000" }))).toMatchObject({ ok: false, kind: "line-errors", lines: ["1줄 · 총 사용금액 읽지 못함"] });
   });
 
-  it("(E17 · DA-5) 취소거래 음수 — 승인거래 아닌 거래구분 줄은 거절 없이 금액 넷 음수 · 취소거래 확인 필요, 승인 줄은 확인 필요 없음", () => {
+  it("(E17 · DA-5) 취소거래 음수 — 취소거래 줄은 거절 없이 금액 넷 음수 · 취소거래 확인 필요, 승인 줄은 확인 필요 없음", () => {
     const result = ok(
       parseWorkbook(
         hometaxCashReceiptFixture([
@@ -596,6 +596,58 @@ describe("홈택스 매입 현금영수증(06.1-11)", () => {
       ok: false,
       kind: "line-errors",
       lines: ["4줄 · 거래구분 읽지 못함"],
+    });
+  });
+
+  it("(검토 P3-2) 거래구분 낱말은 공백을 지우고 맞댄다 — 승인 거래는 승인, 앞뒤 공백 취소거래는 취소", () => {
+    const result = ok(
+      parseWorkbook(hometaxCashReceiptFixture([{ 거래구분: "승인 거래" }, { 승인번호: "A10000002", 거래구분: " 취소거래 " }])),
+    );
+    expect(result.lines.map((line) => [line.totalKrw, line.needsCheck])).toEqual([
+      [10000, null],
+      [-10000, "취소거래 · 원거래 확인"],
+    ]);
+  });
+
+  it("(검토 P3-2) 승인거래 · 취소거래가 아닌 거래구분은 취소로 짐작하지 않고 거래구분 읽지 못함 · 파일 거절", () => {
+    expect(parseWorkbook(hometaxCashReceiptFixture([{}, { 승인번호: "A10000002", 거래구분: "부분취소" }]))).toMatchObject({
+      ok: false,
+      kind: "line-errors",
+      lines: ["4줄 · 거래구분 읽지 못함"],
+    });
+  });
+
+  it("(검토 P3-1) 승인거래인데 매입금액이 음수면 합계 맞지 않음 · 파일 거절", () => {
+    expect(parseWorkbook(hometaxCashReceiptFixture([{ 공급가액: -9091, 부가세: -909, 매입금액: -10000 }]))).toMatchObject({
+      ok: false,
+      kind: "line-errors",
+      lines: ["3줄 · 합계 맞지 않음"],
+    });
+  });
+
+  it("(검토 P3-1) 부가세 부호가 매입금액과 다르거나 매입금액보다 크면 부가세 맞지 않음 — 승인 · 취소 줄 모두", () => {
+    expect(parseWorkbook(hometaxCashReceiptFixture([{ 공급가액: -100, 부가세: 1100, 매입금액: 1000 }]))).toMatchObject({
+      ok: false,
+      kind: "line-errors",
+      lines: ["3줄 · 부가세 맞지 않음"],
+    });
+    expect(parseWorkbook(hometaxCashReceiptFixture([{ 거래구분: "취소거래", 공급가액: 1100, 부가세: -100, 매입금액: 1000 }]))).toMatchObject({
+      ok: false,
+      kind: "line-errors",
+      lines: ["3줄 · 부가세 맞지 않음"],
+    });
+  });
+
+  it("(검토 P3-1) 공급가액 · 봉사료 부호가 매입금액과 다르면 합계 맞지 않음", () => {
+    expect(parseWorkbook(hometaxCashReceiptFixture([{ 공급가액: 600, 부가세: 500, 봉사료: -100, 매입금액: 1000 }]))).toMatchObject({
+      ok: false,
+      kind: "line-errors",
+      lines: ["3줄 · 합계 맞지 않음"],
+    });
+    expect(parseWorkbook(hometaxCashReceiptFixture([{ 공급가액: -100, 부가세: 500, 봉사료: 600, 매입금액: 1000 }]))).toMatchObject({
+      ok: false,
+      kind: "line-errors",
+      lines: ["3줄 · 합계 맞지 않음"],
     });
   });
 

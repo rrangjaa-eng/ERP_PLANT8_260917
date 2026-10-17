@@ -1,3 +1,4 @@
+import { vatProblem } from "@/domain/evidence-import/amounts";
 import { businessNoDigitsOf, cellDate, cellKrw, cellText, isBlankRow } from "@/domain/evidence-import/cells";
 import { columnIndex, findCardHeader, rowHasAll } from "@/domain/evidence-import/detect";
 import { diffKrw, sumKrw } from "@/domain/money";
@@ -9,6 +10,7 @@ import type { FormatRule, LineError, ParsedLine, Rows } from "@/domain/evidence-
 
 export const CANCEL_CHECK = "취소거래 · 원거래 확인";
 const APPROVED = "승인거래";
+const CANCELLED = "취소거래";
 const DETECT = ["매입일시", "발급수단", "거래구분"] as const;
 const COLUMNS = ["매입일시", "가맹점사업자번호", "가맹점명", "공급가액", "부가세", "봉사료", "매입금액", "승인번호", "거래구분"] as const;
 const TOTAL_LABEL = "총 사용금액";
@@ -79,14 +81,26 @@ export const hometaxCashReceipt: FormatRule = {
         errors.push({ lineNo, reason: "금액 합 다름" });
         continue;
       }
-      // 취소 줄의 낱말 · 부호는 견본으로 확인되지 않았다(PA-CASH-CANCEL) — `승인거래`가 아닌 값은 파일을 거절하지 않고
-      // 취소 쪽 줄로 받아 사람이 확인할 때까지 공개 · 붙이기를 막는다(E17 · DA-5). 줄 단위로 부호를 정해 합계 = 공급가 + 세액을 지킨다.
-      const kind = cellText(row[col.거래구분]);
-      if (kind === "") {
+      // 취소 줄의 낱말 · 부호는 견본으로 확인되지 않았다(PA-CASH-CANCEL) — `취소거래` 줄은 파일을 거절하지 않고 음수로 받아
+      // 사람이 확인할 때까지 공개 · 붙이기를 막는다(E17 · DA-5). 공백은 지우고 맞대며(`승인 거래`), 두 낱말이 아니면 취소로 짐작하지
+      // 않고 줄 오류다(독립 검토 P3-2 — 승인 줄이 음수로 담기면 정상 꼴 파일과 열쇠가 갈려 두 번 등록된다).
+      const kind = cellText(row[col.거래구분]).replaceAll(/\s/g, "");
+      if (kind !== APPROVED && kind !== CANCELLED) {
         errors.push({ lineNo, reason: "거래구분 읽지 못함" });
         continue;
       }
-      const cancel = kind !== APPROVED;
+      const cancel = kind === CANCELLED;
+      // 부호 · 크기 검사(독립 검토 P3-1 — 카드 서식 vatProblem과 같은 규칙): 세 칸은 매입금액과 부호가 같고 매입금액보다 크지 않아야
+      // 하며, 승인 줄의 매입금액은 음수가 아니다. 부호를 짐작해 고치지 않고 줄 오류로 거절한다.
+      const vatError = vatProblem(totalKrw, vatKrw);
+      if (vatError) {
+        errors.push({ lineNo, reason: vatError });
+        continue;
+      }
+      if ((!cancel && totalKrw < 0) || vatProblem(totalKrw, supplyKrw) || vatProblem(totalKrw, serviceKrw)) {
+        errors.push({ lineNo, reason: "합계 맞지 않음" });
+        continue;
+      }
       const signed = (amountKrw: number) => (cancel && totalKrw > 0 ? diffKrw(0, amountKrw) : amountKrw);
       const signedTotalKrw = signed(totalKrw);
       // 같은 승인번호가 해 · 가맹점을 넘어 다시 나와도, 취소 줄이 원거래와 승인번호를 같이 써도 열쇠는 갈린다(E17 · PA-CASH-KEY).

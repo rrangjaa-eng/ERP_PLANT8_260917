@@ -13,6 +13,7 @@ import { registerEvidenceFile, registerEvidenceUpload } from "@/domain/evidence-
 import { EVIDENCE_IMPORT_MAX_BYTES, EVIDENCE_IMPORT_MAX_ROWS, sizeRefusalHeadline } from "@/domain/evidence-import/limits";
 import { finalizeAmounts, parseWorkbook } from "@/domain/evidence-import/registry";
 import { loadTaxRates } from "@/domain/money/tax";
+import { getEvidenceRecord, listEvidenceRecords } from "@/domain/evidence-records";
 import { can, ForbiddenError } from "@/domain/permissions/can";
 import { TAX_VAT_RATE } from "@/domain/settings/keys";
 import { addHistorizedValue } from "@/domain/settings/registry";
@@ -22,7 +23,9 @@ import type { VendorKind } from "@/domain/vendors/kind";
 import { listCodeItems } from "@/repositories/code-tables";
 import { findCardsByLast4 } from "@/repositories/corp-cards";
 import { upsertPermission } from "@/repositories/permissions";
+import { insertOrgUnit } from "@/repositories/org-units";
 import { insertRole } from "@/repositories/roles";
+import { insertTeam } from "@/repositories/teams";
 import { insertVendor } from "@/repositories/vendors";
 import {
   bcFixture,
@@ -35,7 +38,7 @@ import {
   lotteFixture,
   shinhanFixture,
 } from "@/test/fixtures/evidence-import/build";
-import { createIntakeViewer, registerFixtureFile } from "./fixtures/evidence";
+import { createIntakeViewer, createPmInTeam, insertLiveLinkFixture, registerFixtureFile, setRecordVisibilityFixture } from "./fixtures/evidence";
 
 // 06.1-04: 증빙 등록 서비스 — 파일 하나 → 권한 · 크기 · 읽기 · 한 트랜잭션(묶음 + 기록) · 결과 DTO(실제 Postgres).
 // 픽스처는 06.1-02 생성기의 가짜 값이다(카드 번호 9999000011112222 → 끝 4자리 2222, 매입일 2026-04-30, 204,100원 · 부가세 18,554원).
@@ -241,6 +244,9 @@ describe("domain/evidence-import — 트레이서: 롯데 파일 하나 → 묶�
 
 const A10_CHECK = "같은 승인번호 다른 금액 · 원거래 확인";
 const GHP1_CHECK = "같은 내용 줄 · 앞 파일과 건수 확인";
+const CANCEL_REGISTERED_CHECK = "취소 줄 등록됨 · 원거래 확인";
+const ORIGINAL_KEY = "card-lotte|2222|20000001|2026-09-05|50000";
+const CANCEL_KEY = "card-lotte|2222|20000001|2026-09-20|-50000";
 // 승인번호 없는 신한 줄 하나의 열쇠(06.1-02 baseKeyOf — 끝4 · 이용일시 · 가맹점 · 합계).
 const SHINHAN_SAME = "card-shinhan|1278|2026-05-28 18:43:28|가맹점나|113400";
 
@@ -481,6 +487,62 @@ describe("domain/evidence-import — 서식 넷 · 세율 · 카드 · A-10 · G
     const pair = (await recordsInOrder()).filter((record) => record.approvalNo === "20000001");
     expect(pair.map((record) => record.totalKrw).sort((a, b) => a - b)).toEqual([-50_000, 50_000]);
     expect(await recordOf("card-lotte|2222|20000001|2026-09-05|50000")).toMatchObject({ batchId: result.batchId });
+  });
+
+  it(`(P2-1) 앞 파일로 등록 · 팀 공개된 원거래에 뒤 파일이 취소 줄을 더하면 원거래가 「${CANCEL_REGISTERED_CHECK}」 확인 필요가 되고 팀원 목록에서 빠진다`, async () => {
+    await addCard("롯데카드", "2222");
+    const viewer = await createIntakeViewer();
+    const division = await insertOrgUnit(SYSTEM_VIEWER, { name: `취소본부-${randomUUID().slice(0, 8)}` });
+    const team = await insertTeam(SYSTEM_VIEWER, { orgUnitId: division.id, name: `취소팀-${randomUUID().slice(0, 8)}` });
+    const member = await createPmInTeam(team.id);
+    const original = { 승인번호: "20000001", 매입일자: "2026.09.05", 매입금액: "50,000", 부가세: "4,545" };
+    await registerFixtureFile(viewer, lotteFixture([original, { 승인번호: "20000002", 매입일자: "2026.09.10" }]), "롯데_0901-0915.xls");
+    const before = await recordOf(ORIGINAL_KEY);
+    if (!before) throw new Error("원거래가 서지 않았다");
+    await setRecordVisibilityFixture(before.id, { visibility: "team", teamId: team.id });
+    expect((await listEvidenceRecords(member, { state: "all" })).rows.map((row) => row.id)).toEqual([before.id]);
+
+    const result = await registerFixtureFile(viewer, lotteFixture([original, { 승인번호: "20000001", 매입일자: "2026.09.20", 매입금액: "-50,000", 부가세: "-4,545" }]), "롯데_0901-0930.xls");
+
+    expect(result).toMatchObject({ registered: 1, skippedDuplicate: 1, offsetPairs: 0 });
+    expect(await recordOf(CANCEL_KEY)).toMatchObject({ batchId: result.batchId, totalKrw: -50_000 });
+    expect(await recordOf(ORIGINAL_KEY)).toMatchObject({ needsCheck: CANCEL_REGISTERED_CHECK, version: before.version + 1, batchId: before.batchId });
+    expect((await listEvidenceRecords(member, { state: "all" })).rows).toEqual([]);
+    expect(await getEvidenceRecord(member, before.id)).toBeNull();
+    expect(await getEvidenceRecord(viewer, before.id)).toMatchObject({ statusWord: "확인 필요", statusDetail: CANCEL_REGISTERED_CHECK });
+  });
+
+  it("(P2-1) 원거래에 이미 확인 필요 사유가 있으면 그 사유를 그대로 두고, 붙은 원거래에는 세우지 않는다", async () => {
+    const viewer = await createIntakeViewer();
+    const line = (approvalNo: string, sign: "" | "-") => ({ 승인번호: approvalNo, 매입일자: sign === "" ? "2026.09.05" : "2026.09.20", 매입금액: `${sign}50,000`, 부가세: `${sign}4,545` });
+    await registerFixtureFile(viewer, lotteFixture([line("20000001", ""), line("20000002", ""), line("20000004", "")]), "롯데_원거래.xls");
+    const flagged = await recordOf(ORIGINAL_KEY);
+    const attached = await recordOf("card-lotte|2222|20000002|2026-09-05|50000");
+    if (!flagged || !attached) throw new Error("원거래가 서지 않았다");
+    await db.update(evidenceRecords).set({ needsCheck: A10_CHECK }).where(eq(evidenceRecords.id, flagged.id));
+    await insertLiveLinkFixture(attached.id, viewer.id);
+
+    const result = await registerFixtureFile(
+      viewer,
+      lotteFixture([line("20000001", ""), line("20000001", "-"), line("20000002", ""), line("20000002", "-"), line("20000004", ""), line("20000004", "-")]),
+      "롯데_전체.xls",
+    );
+
+    expect(result).toMatchObject({ registered: 3, offsetPairs: 0 });
+    expect(await recordOf(ORIGINAL_KEY)).toMatchObject({ needsCheck: A10_CHECK });
+    expect(await recordOf("card-lotte|2222|20000002|2026-09-05|50000")).toMatchObject({ needsCheck: null, version: attached.version });
+    expect(await recordOf("card-lotte|2222|20000004|2026-09-05|50000")).toMatchObject({ needsCheck: CANCEL_REGISTERED_CHECK });
+  });
+
+  it(`(P2-1 · 역순) 취소 줄이 먼저 등록된 뒤 원거래 · 취소 쌍 파일이 오면 새로 넣는 원거래에도 「${CANCEL_REGISTERED_CHECK}」`, async () => {
+    const viewer = await createIntakeViewer();
+    const cancel = { 승인번호: "20000001", 매입일자: "2026.09.20", 매입금액: "-50,000", 부가세: "-4,545" };
+    await registerFixtureFile(viewer, lotteFixture([cancel]), "롯데_취소만.xls");
+
+    const result = await registerFixtureFile(viewer, lotteFixture([{ 승인번호: "20000001", 매입일자: "2026.09.05", 매입금액: "50,000", 부가세: "4,545" }, cancel]), "롯데_전체.xls");
+
+    expect(result).toMatchObject({ registered: 1, skippedDuplicate: 1, offsetPairs: 0, needsCheck: 1 });
+    expect(await recordOf(ORIGINAL_KEY)).toMatchObject({ batchId: result.batchId, needsCheck: CANCEL_REGISTERED_CHECK });
   });
 
   it("(앞 파일 대조) 원거래 · 취소 줄이 둘 다 앞 파일로 등록돼 있으면 쌍은 둘 다 이미 등록이고 상쇄로 세지 않는다", async () => {

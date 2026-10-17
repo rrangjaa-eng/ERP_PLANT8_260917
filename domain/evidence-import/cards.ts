@@ -6,6 +6,9 @@ import type { FormatRule } from "@/domain/evidence-import/types";
 
 export const SAME_CONTENT_CHECK = "같은 내용 줄 · 앞 파일과 건수 확인";
 export const SAME_APPROVAL_OTHER_AMOUNT_CHECK = "같은 승인번호 다른 금액 · 원거래 확인";
+// /review P2-1(사용자 결정 2026-10-17 「지금 막기」): 앞 파일 대조로 한쪽만 등록된 상쇄 쌍을 맞출 때 원거래 줄에 세운다 — 취소된 거래가
+// 팀 공개로 남아 지출결의 증빙으로 붙지 않게(확인 필요 줄은 팀원 범위에서 빠진다 — repositories/evidence-records.ts scopeWhere).
+export const CANCEL_REGISTERED_CHECK = "취소 줄 등록됨 · 원거래 확인";
 
 export type CardCandidate = { id: string; issuer: string; numberLast4: string; active: boolean };
 

@@ -33,6 +33,9 @@ const COLUMNS: StaticTableColumn[] = [
 
 const ACTION_LABEL = { detach: "떼기", void: "무효 처리" } as const;
 
+// D-4 — 반복 `떼기` · `무효 처리`의 접근 이름에 줄 식별(`{종류} · {거래처}`)을 잇는다(증빙 목록 행 행동 describedBy와 같은 꼴 — §7-3).
+const titleId = (linkId: string) => `evidence-link-title-${linkId}`;
+
 export function EvidenceRecordsSection({
   items,
   lockLine,
@@ -59,14 +62,14 @@ export function EvidenceRecordsSection({
           key: item.linkId,
           cells: [
             <span key="what">
-              {titleOf(item)}
+              <span id={titleId(item.linkId)}>{titleOf(item)}</span>
               {item.pickedBy ? <span className={styles.evidencePicked}>{`${item.pickedBy} 고름 · ${item.pickedOn ?? ""}`}</span> : null}
             </span>,
             item.issuedOn,
             <Num key="total" value={item.totalKrw} />,
             item.action ? (
               <RowActions key="action" noWrap>
-                <RowAction danger onClick={() => setTarget({ linkId: item.linkId, mode: item.action === "void" ? "void" : "detach", subtitle: [titleOf(item), number].filter(Boolean).join(" · ") })}>
+                <RowAction danger describedBy={titleId(item.linkId)} onClick={() => setTarget({ linkId: item.linkId, mode: item.action === "void" ? "void" : "detach", subtitle: [titleOf(item), number].filter(Boolean).join(" · ") })}>
                   {ACTION_LABEL[item.action]}
                 </RowAction>
               </RowActions>

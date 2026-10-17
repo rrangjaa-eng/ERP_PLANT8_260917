@@ -60,7 +60,7 @@ export type Finding = {
 export type ReviewArgs = { routes: string[]; out: string; base: string; plans: string[]; sections: string[]; namedSections: string[]; seed: SeedName | null };
 
 // 데이터가 있어야 보이는 화면용 시드 시나리오(seeds.ts가 구현). 이름은 이 목록만 받는다.
-export const SEED_NAMES = ["pre-settle-evidence-pending", "purchase-approval-pending", "payment-and-settlement-actions"] as const;
+export const SEED_NAMES = ["pre-settle-evidence-pending", "purchase-approval-pending", "payment-and-settlement-actions", "evidence-intake-filled", "evidence-author-pick"] as const;
 export type SeedName = (typeof SEED_NAMES)[number];
 
 // root 아래 dirs 중 하나에 들고 .md로 끝나는 상대 경로인지 본다(.. 탈출·절대 경로·점 파일 거부).

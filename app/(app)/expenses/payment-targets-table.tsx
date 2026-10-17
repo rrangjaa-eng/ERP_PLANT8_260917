@@ -296,6 +296,8 @@ export type PaymentTargetsScreenProps = {
   dateError: string;
   // 06.5-06(결정 맥락 8 · DM-4): `이체 파일 받기` 고정 게이트 — 서버 canExportBankTransferFile 값(행 내용과 무관).
   canExportTransferFile: boolean;
+  /** 06.1-05(P-3) — 필터 줄 끝 하위 목록 `증빙 {N}`(증빙 등록 권한자만 — 없으면 undefined). */
+  evidenceLink?: { label: string; href: string };
 };
 
 export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
@@ -900,7 +902,7 @@ export function PaymentTargetsScreen(props: PaymentTargetsScreenProps) {
 
   const filters = (
     <>
-      <StatusFilter value={PAYMENT_TARGET_VIEW} views={props.views} selects={props.selects} searchValue={props.searchValue} />
+      <StatusFilter value={PAYMENT_TARGET_VIEW} views={props.views} selects={props.selects} searchValue={props.searchValue} endLink={props.evidenceLink} />
       {wide && props.canExportTransferFile ? (
         <span className={styles.transferSlot}>
           <Button

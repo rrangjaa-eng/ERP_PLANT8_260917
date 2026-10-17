@@ -110,6 +110,14 @@ describe("parseArgs", () => {
     expect(parseArgs(["/expenses/{expenseId}", "--out", "test-results/r.md", "--seed", "payment-and-settlement-actions"]).seed).toBe("payment-and-settlement-actions");
   });
 
+  it("--seed evidence-intake-filled도 받는다(06.1-05 G5 — 증빙 목록을 채운 경영관리 등록 화면)", () => {
+    expect(parseArgs(["/expenses/evidence?state=all&batch={batchId}", "--out", "test-results/r.md", "--seed", "evidence-intake-filled"]).seed).toBe("evidence-intake-filled");
+  });
+
+  it("--seed evidence-author-pick도 받는다(06.1-05 G5 — 기안자가 팀 공개 증빙을 고르는 화면)", () => {
+    expect(parseArgs(["/expenses/{expenseId}", "--out", "test-results/r.md", "--seed", "evidence-author-pick"]).seed).toBe("evidence-author-pick");
+  });
+
   it("--plan은 반복할 수 있다", () => {
     const args = parseArgs([
       "/x",

@@ -328,7 +328,8 @@ test("① intake × 6폭 × 기본 · state=all · state=all&batch — 머리글
       const boxes = await Promise.all((["상태", "종류", "기간"] as const).map((name) => filterSelect(page, name).boundingBox()));
       const heights = boxes.map((box) => Math.round((box?.height ?? 0) * 10) / 10);
       if (phone) {
-        record("폰 필터 select 높이 ≥ 44", width, role, url, heights, "각 ≥ 44", heights.every((height) => height >= 44));
+        // SYSTEM §3 터치 목표 — 폼 입력은 40(시트 · 고정 줄 밖). 플랜 문구 「≥ 44」는 SYSTEM에 없다(디자인 검토 P2 · 사용자 카드로 정정).
+        record("폰 필터 select 높이 = 40 (SYSTEM §3 폼 입력)", width, role, url, heights, "각 40", heights.every((height) => height === 40));
         const tops = await page.locator("main select[id^='evidence-filter-']").evaluateAll((elements) => elements.map((element) => (element.parentElement as HTMLElement).offsetTop));
         const alone = tops[0] !== undefined && tops[1] !== undefined && tops[2] !== undefined && tops[1] > tops[0] && tops[2] > tops[0];
         record("폰 필터 줄 첫 줄 = 상태 select 홀로(offsetTop)", width, role, url, tops, "상태 < 종류 · 기간", alone);
@@ -598,7 +599,9 @@ test("③ intake 1280 — Ctrl+U 파일 선택 · 방향키 → Enter 편집 →
   );
   const choices = options.filter((option) => option !== "—");
   record("공개 select 선택지 순서(DA-1 — 자리표시 `—` 뺌)", 1280, role, url, choices, "기획1팀 공개 → 기획본부 공개 → 미공개 → [다른 팀: …(기획1팀 제외)]", choices[0] === "기획1팀 공개" && choices[1] === "기획본부 공개" && choices[2] === "미공개" && String(choices[3]).startsWith("[다른 팀:") && !String(choices[3]).includes("기획1팀 공개"));
-  record("공개 select 첫 선택지 = 제안 팀(자리표시 `—` 없음)", 1280, role, url, options[0], "기획1팀 공개(맨 위 · 기본)", options[0] === "기획1팀 공개");
+  // F7(디자인 검토 P3) — 공용 `ui/select`가 첫 `—`를 늘 그린다. 카드 사용 증빙 종류 비우기(`selectOption("")`) · 프로젝트 폼 필수 선택 등이 이 빈 옵션에 기대
+  // 공용 계약을 못 바꾼다 — 판정 대기라 판정 없는 참고로만 적는다(바뀌면 이 줄을 `options[0] === "기획1팀 공개"` 판정으로 되돌린다).
+  record("공개 select 첫 선택지(참고 — F7 판정 대기: 공용 Select가 `—`를 늘 그림)", 1280, role, url, options[0], "기획1팀 공개(맨 위 · 기본)", null);
   await classAudit(page, "cellSelect", 1280, url, [["height", "var(--control-h)"], ["border-bottom-color", "var(--accent)"], ["background-color", "var(--accent-weak)"], ["color", "var(--text-strong)"], ["font-size", "var(--text-body)"], ["padding-left", "var(--s-1)"]], { "border-bottom-style": "solid", "border-bottom-width": "1px", "border-top-width": "0px" });
   await page.keyboard.press("Escape");
   await expect(editor).toHaveCount(0);

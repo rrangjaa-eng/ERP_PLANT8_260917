@@ -98,6 +98,7 @@ export default async function PurchasesPage({ searchParams }: { searchParams: Pr
             cancelledByName: row.cancelledByName ?? null,
             cancelReason: row.cancelReason ?? null,
             cancelBranch: list?.cancelBranches[row.id] ?? null,
+            linkedEvidenceCount: row.linkedEvidenceCount ?? 0,
           },
         ]
       : [],

@@ -1,9 +1,10 @@
+import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAccount } from "@/domain/auth/accounts";
 import { seoulToday } from "@/lib/dates";
 import { and, eq, inArray, like, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { corpCards, expenses, files, orgUnits, projectMembers, projects, quoteLines, quoteRevisions, revenueEntries, teamMemberships, teams, users, vendors } from "@/db/schema";
+import { corpCards, evidenceRecordLinks, evidenceRecords, expenses, files, orgUnits, projectMembers, projects, quoteLines, quoteRevisions, revenueEntries, teamMemberships, teams, users, vendors } from "@/db/schema";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { createVendor } from "@/domain/vendors";
 import { createProject } from "@/domain/projects";
@@ -12,6 +13,7 @@ import { createExpenseFromLines } from "@/domain/expenses";
 import { assignTeam } from "@/domain/org";
 import { CEO_ROLE_ID, DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { makePerson, teamIdByName } from "./approvals-fixtures";
+import { insertLinkFixture, insertRecordFixture } from "./fixtures/evidence";
 import { DEMO_EMAIL_LIKE, DEMO_NAME_PREFIX, main, purgeDemoData, seedDemoData } from "@/scripts/demo-data";
 
 const autoSettle = vi.hoisted(() => ({ swallow: false }));
@@ -434,4 +436,29 @@ describe("scripts/demo-data main", () => {
     await main(["seed"]);
     expect(logs.join("\n")).toContain("already seeded");
   }, 120_000);
+});
+
+describe("scripts/demo-data purge — 증빙 붙임(06.1-06 · 재검토 2회차 N-3)", () => {
+  it("견본 지출결의의 붙임 행(살아 있는 것 · 뗀 것)을 지우고 증빙 기록은 남긴다 · 같은 기록을 다른 문서에 다시 붙일 수 있다 · 견본 아닌 붙임은 그대로", async () => {
+    await seedDemoData();
+    const owner = await makePerson("붙임등록", "role-pm", "기획1팀");
+    const [anyDemoExpense] = await db.select({ id: expenses.id }).from(expenses).innerJoin(projects, eq(projects.id, expenses.projectId)).where(like(projects.name, namePrefix)).limit(1);
+    if (!anyDemoExpense) throw new Error("견본 지출결의 없음");
+    const liveRecord = await insertRecordFixture(owner);
+    const detachedRecord = await insertRecordFixture(owner);
+    const otherRecord = await insertRecordFixture(owner);
+    await insertLinkFixture({ recordId: liveRecord, ownerId: anyDemoExpense.id, attachedBy: owner.id });
+    const detachedLink = await insertLinkFixture({ recordId: detachedRecord, ownerId: anyDemoExpense.id, attachedBy: owner.id });
+    await db.update(evidenceRecordLinks).set({ detachedAt: new Date(), detachedBy: owner.id, detachReason: "다른 건 증빙" }).where(eq(evidenceRecordLinks.id, detachedLink));
+    const outsideOwner = randomUUID();
+    await insertLinkFixture({ recordId: otherRecord, ownerKind: "purchase_request", ownerId: outsideOwner, attachedBy: owner.id });
+
+    await purgeDemoData();
+
+    expect(await db.select().from(evidenceRecordLinks).where(eq(evidenceRecordLinks.ownerId, anyDemoExpense.id))).toHaveLength(0);
+    expect(await db.select({ id: evidenceRecords.id }).from(evidenceRecords).where(inArray(evidenceRecords.id, [liveRecord, detachedRecord]))).toHaveLength(2);
+    expect(await db.select().from(evidenceRecordLinks).where(eq(evidenceRecordLinks.ownerId, outsideOwner))).toHaveLength(1);
+    // 살아 있는 붙임이 남았다면 부분 유니크(evidence_record_links_live_uniq)가 이 INSERT를 막는다.
+    await insertLinkFixture({ recordId: liveRecord, ownerKind: "purchase_request", ownerId: randomUUID(), attachedBy: owner.id });
+  }, 180_000);
 });

@@ -261,6 +261,23 @@
   max-width: var(--field-w-long);
 }
 
+/* 06.1-06 — 붙은 증빙 기록 읽기 행(문서 「증빙」 섹션 · 05 첨부 영역 바로 아래). 잠김 줄은 05 첨부 영역의 잠김 줄과 같은 모양. */
+.evidenceRecords {
+  max-width: var(--field-w-long);
+}
+
+.evidencePicked {
+  display: block;
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+}
+
+.evidenceLockLine {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+}
+
 /* 문서 뼈대(`loading.tsx`) — 300ms 지연 표시: 처음 opacity 0, 300ms 뒤 한 번만 1로(길이 0 키프레임). 값 줄 = 면 색 막대 하나. */
 @keyframes appear {
   to {

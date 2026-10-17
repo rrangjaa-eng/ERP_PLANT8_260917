@@ -1,11 +1,13 @@
 import { and, asc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { db, type DbOrTx } from "@/db/client";
-import { evidenceRecordLinks, evidenceRecords } from "@/db/schema";
+import { evidenceRecordLinks, evidenceRecords, expenses, purchaseRequests, users } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 
 // 06.1-12(EVID-08 · D-6104 · D-6105): 증빙 기록 붙임 읽기. 살아 있는 붙임 = detached_at IS NULL — 06.1 「증빙 있음」 판정은 이 파일의 조건 하나다.
-// 이 모듈은 domain을 import하지 않는다. 쓰기(붙이기 · 떼기)는 06.1-06이 더한다.
+// 이 모듈은 domain을 import하지 않는다. 쓰기(붙이기 · 떼기 · 자동 떼기)는 06.1-06이 더했다 — 05 · 06 domain의 삭제 · 종결 · 취소 · 보관 tx는
+// detachLiveLinksForOwner 하나만 부른다(domain/evidence-records를 import하지 않는다 — 순환 C-F14).
 
 const live = () => isNull(evidenceRecordLinks.detachedAt);
 
@@ -104,4 +106,140 @@ export async function listLiveLinksWithRecords(
 export function liveLinkExists(viewer: Viewer, ownerKind: string | AnyPgColumn, ownerId: AnyPgColumn): SQL<boolean> {
   void viewer;
   return sql<boolean>`exists (select 1 from ${evidenceRecordLinks} where ${evidenceRecordLinks.ownerKind} = ${ownerKind} and ${evidenceRecordLinks.ownerId} = ${ownerId} and ${live()})`;
+}
+
+// ── 06.1-06 쓰기 ───────────────────────────────────────────────────────────────────────────
+
+export type EvidenceLinkOwnerKind = "expense" | "purchase_request" | "corp_card_usage";
+export type EvidenceAttachMode = "registrar" | "author" | "reconcile";
+
+export type EvidenceLinkRow = {
+  id: string;
+  evidenceRecordId: string;
+  ownerKind: string;
+  ownerId: string;
+  attachMode: string;
+  attachedBy: string;
+  attachedAt: Date;
+  detachedAt: Date | null;
+};
+
+const LINK_COLUMNS = {
+  id: evidenceRecordLinks.id,
+  evidenceRecordId: evidenceRecordLinks.evidenceRecordId,
+  ownerKind: evidenceRecordLinks.ownerKind,
+  ownerId: evidenceRecordLinks.ownerId,
+  attachMode: evidenceRecordLinks.attachMode,
+  attachedBy: evidenceRecordLinks.attachedBy,
+  attachedAt: evidenceRecordLinks.attachedAt,
+  detachedAt: evidenceRecordLinks.detachedAt,
+};
+
+// 붙임 한 행 — 부분 유니크(evidence_record_links_live_uniq)가 한 증빙 = 살아 있는 붙임 하나를 막는다(위반은 23505로 올라간다).
+export async function insertLink(
+  viewer: Viewer,
+  input: { recordId: string; ownerKind: EvidenceLinkOwnerKind; ownerId: string; attachMode: EvidenceAttachMode },
+  tx: DbOrTx,
+): Promise<EvidenceLinkRow> {
+  const [row] = await tx
+    .insert(evidenceRecordLinks)
+    .values({ evidenceRecordId: input.recordId, ownerKind: input.ownerKind, ownerId: input.ownerId, attachMode: input.attachMode, attachedBy: viewer.id })
+    .returning(LINK_COLUMNS);
+  if (!row) throw new Error("붙임 INSERT 결과 없음");
+  return row;
+}
+
+// 뗌 — 살아 있는 붙임만(조건부 UPDATE). 0행 = 이미 뗌(두 탭 · 응답 유실 재시도 — 부르는 쪽이 멱등 성공으로 끝낸다).
+export async function detachLink(viewer: Viewer, input: { linkId: string; reason: string }, tx: DbOrTx): Promise<boolean> {
+  const rows = await tx
+    .update(evidenceRecordLinks)
+    .set({ detachedAt: new Date(), detachedBy: viewer.id, detachReason: input.reason })
+    .where(and(eq(evidenceRecordLinks.id, input.linkId), live()))
+    .returning({ id: evidenceRecordLinks.id });
+  return rows.length > 0;
+}
+
+// 증빙 행을 잠근 뒤 같은 tx에서 — 그 증빙의 살아 있는 붙임(있으면 하나 — 부분 유니크).
+export async function findLiveLinkForRecordForUpdate(viewer: Viewer, recordId: string, tx: DbOrTx): Promise<EvidenceLinkRow | null> {
+  void viewer;
+  const [row] = await tx
+    .select(LINK_COLUMNS)
+    .from(evidenceRecordLinks)
+    .where(and(eq(evidenceRecordLinks.evidenceRecordId, recordId), live()))
+    .for("update");
+  return row ?? null;
+}
+
+export async function findLinkById(viewer: Viewer, linkId: string, tx: DbOrTx = db): Promise<EvidenceLinkRow | null> {
+  void viewer;
+  const [row] = await tx.select(LINK_COLUMNS).from(evidenceRecordLinks).where(eq(evidenceRecordLinks.id, linkId)).limit(1);
+  return row ?? null;
+}
+
+export type LiveLinkOwner = {
+  recordId: string;
+  linkId: string;
+  ownerKind: string;
+  ownerId: string;
+  /** 지출결의 · 구매 요청 번호(번호 없는 작성 중 지출결의 · 카드 사용은 null). 보임 판정은 부르는 domain 몫이다. */
+  ownerNumber: string | null;
+};
+
+// 증빙마다 살아 있는 붙임의 주인 — 목록 2행 · 경합 거부 글자(다른 사람이 먼저 붙임 · {문서 번호}). 작성 중 문서는 지운 문서여도 번호가 null이다.
+export async function listLiveLinkOwnersByRecords(viewer: Viewer, recordIds: readonly string[], tx: DbOrTx = db): Promise<LiveLinkOwner[]> {
+  void viewer;
+  if (recordIds.length === 0) return [];
+  return tx
+    .select({
+      recordId: evidenceRecordLinks.evidenceRecordId,
+      linkId: evidenceRecordLinks.id,
+      ownerKind: evidenceRecordLinks.ownerKind,
+      ownerId: evidenceRecordLinks.ownerId,
+      ownerNumber: sql<string | null>`case ${evidenceRecordLinks.ownerKind} when 'expense' then ${expenses.number} when 'purchase_request' then ${purchaseRequests.number} else null end`,
+    })
+    .from(evidenceRecordLinks)
+    .leftJoin(expenses, and(eq(evidenceRecordLinks.ownerKind, "expense"), eq(expenses.id, evidenceRecordLinks.ownerId)))
+    .leftJoin(purchaseRequests, and(eq(evidenceRecordLinks.ownerKind, "purchase_request"), eq(purchaseRequests.id, evidenceRecordLinks.ownerId)))
+    .where(and(inArray(evidenceRecordLinks.evidenceRecordId, [...recordIds]), live()));
+}
+
+const pickers = alias(users, "evidence_link_pickers");
+
+export type LinkedEvidenceRow = LiveLinkWithRecord & { attachedByName: string | null };
+
+// 문서 「증빙」 섹션 읽기 — 살아 있는 붙임 + 기록 칸 + 고른 사람 이름(작성자 붙임 2행). 문서 보임은 부르는 domain이 먼저 판정한다.
+export async function listLinkedEvidenceRows(viewer: Viewer, input: { ownerKind: EvidenceLinkOwnerKind; ownerId: string }): Promise<LinkedEvidenceRow[]> {
+  const rows = await listLiveLinksWithRecords(viewer, { ownerKind: input.ownerKind, ownerIds: [input.ownerId] });
+  if (rows.length === 0) return [];
+  const names = await db
+    .select({ id: pickers.id, name: pickers.name })
+    .from(pickers)
+    .where(inArray(pickers.id, [...new Set(rows.map((row) => row.attachedBy))]));
+  const nameOf = new Map(names.map((row) => [row.id, row.name]));
+  return rows.map((row) => ({ ...row, attachedByName: nameOf.get(row.attachedBy) ?? null }));
+}
+
+// PA-AUTODETACH — 문서가 사라지거나 끝날 때의 사유 글자(06.1-07 S3 이력이 자동 떼기 줄을 가릴 때 읽는다).
+export const AUTO_DETACH_REASONS = {
+  expenseDelete: "문서 삭제",
+  expenseClose: "문서 종결",
+  purchaseRequestCancel: "요청 취소",
+  cardUsageDelete: "카드 사용 삭제",
+} as const;
+
+export type AutoDetachReason = (typeof AUTO_DETACH_REASONS)[keyof typeof AUTO_DETACH_REASONS];
+
+// E22 · DB-15: 문서 삭제 · 종결 · 요청 취소 · 카드 사용 보관 tx 안에서 그 문서의 살아 있는 붙임을 한 UPDATE로 뗀다(뗀 사람 = 실행자). 증빙은
+// 풀로 돌아간다(공개 범위 그대로). 뗀 수를 돌려준다. 되살리기는 붙임을 되돌리지 않는다(증빙이 그새 다른 문서에 붙었을 수 있다).
+export async function detachLiveLinksForOwner(
+  viewer: Viewer,
+  input: { ownerKind: EvidenceLinkOwnerKind; ownerId: string; reason: AutoDetachReason },
+  tx: DbOrTx,
+): Promise<number> {
+  const rows = await tx
+    .update(evidenceRecordLinks)
+    .set({ detachedAt: new Date(), detachedBy: viewer.id, detachReason: input.reason })
+    .where(and(eq(evidenceRecordLinks.ownerKind, input.ownerKind), eq(evidenceRecordLinks.ownerId, input.ownerId), live()))
+    .returning({ id: evidenceRecordLinks.id });
+  return rows.length;
 }

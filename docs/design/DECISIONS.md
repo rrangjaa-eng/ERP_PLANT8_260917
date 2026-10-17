@@ -2169,3 +2169,11 @@ rev 9 보강 네 문장: (DR-7) 행 선택의 뜻은 체크박스 `checked` 하�
 **버린 대안**: 글은 그대로 두고 영역 높이를 늘리기(높이 96 / 72가 첨부 영역 모든 변형의 같은 값) · 안내 글 글자 크기를 줄이기(새 서체 값 금지) · 폰에도 PC 글 그대로(320에서 2줄).
 **결정자**: 사용자 카드 2026-10-17 02:43Z 「짧게 줄임」(디자인 검토 G 정지 후 오케스트레이터 전달). UI-SPEC은 `.planning`이라 고치지 않았고 06.1-03-SUMMARY 「어긋난 문장」에 기록했다.
 **범위**: `docs/design/SYSTEM.md` §7-10, `ui/attachments/Attachments.tsx`(bulk-import 갈래 안내 글 두 꼴), 쇼케이스 `/dev/components`(같은 컴포넌트라 자동 반영), 단위 · 감사 단언. 새 색 · 서체 · radius 0.
+
+## 2026-10-17 — 06.1 F7 — `ui/select` 선택 prop `hideEmptyOption` · 증빙 공개 칸만 첫 `—`를 끈다 (디자인 검토 F7)
+
+**결정**: 공용 `ui/select`에 선택 prop `hideEmptyOption`(boolean)을 더한다 — 참이면 첫 `<option value="">—</option>`를 그리지 않는다. 주지 않으면 지금 마크업 그대로다. 쓰는 곳은 증빙 목록 공개 칸 편집기(`VisibilityEditCell`) 하나 — 첫 선택지가 서버가 제안한 `{팀} 공개`가 된다.
+**이유**: 공개 칸의 `—`는 골라도 커밋되지 않는 자리표시라 맨 위에서 기본값(제안 팀)을 둘째 줄로 민다. 다른 호출부(카드 사용 증빙 종류 비우기 · 프로젝트 폼 필수 선택 등)는 빈 값에 기대므로 공용 계약은 바꾸지 않는다.
+**버린 대안**: 공용 Select에서 `—`를 통째로 빼기(빈 값에 기대는 호출부가 깨진다) · 공개 칸만 네이티브 `<select>`로 따로 그리기(같은 일 하는 부품이 둘).
+**결정자**: 사용자 카드 2026-10-17 19:53 KST 「이 칸만 끄기」.
+**범위**: `ui/select/Select.tsx`, `app/(app)/expenses/evidence/evidence-table.tsx`, 단위 `select-empty-option` · E2E `evidence-list-audit` F7 판정 · `evidence-intake` 선택지 단언. 쇼케이스 `/dev/components`는 Select 기본형만 싣고 선택 prop(`groups` · `error`)을 싣지 않아 더하지 않았다. 새 색 · 서체 · radius 0.

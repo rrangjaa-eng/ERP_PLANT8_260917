@@ -213,6 +213,7 @@ function VisibilityEditCell({ id, initialValue, choices, onCommit, onCancel }: {
       onBlur={(event) => (event.currentTarget.value === initialValue ? onCancel() : onCommit(event.currentTarget.value))}
       options={choices.options}
       groups={choices.groups}
+      hideEmptyOption
       className={styles.cellSelect}
     />
   );

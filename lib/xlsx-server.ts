@@ -4,6 +4,7 @@
 // `server-only`를 import하지 않는다 — domain/*가 부르고 테스트(Vitest node)가 그 domain을 읽는다(lib/auth.ts 머리주석 규약).
 // 대신 `xlsx` import는 이 파일(과 시험)만 하도록 eslint.config.mjs의 no-restricted-imports가 지킨다(EP2-C1).
 // 06.1-02: 읽기 함수(증빙 가져오기) — SheetJS 타입을 밖으로 내보내지 않고 평범한 값만 돌려준다.
+import { inflateRawSync } from "node:zlib";
 import * as XLSX from "xlsx";
 import * as cpexcel from "xlsx/dist/cpexcel.full.mjs";
 import { cptable } from "xlsx/dist/cpexcel.full.mjs";
@@ -143,6 +144,14 @@ function hasZip64Extra(view: DataView, from: number, length: number): boolean | 
   return at === end ? false : null;
 }
 
+function inflatesToDeclared(packed: Uint8Array, size: number): boolean {
+  try {
+    return inflateRawSync(packed, { maxOutputLength: Math.max(size, 1) }).length === size;
+  } catch {
+    return false;
+  }
+}
+
 export function zipEntryStats(bytes: Uint8Array): { entries: number; uncompressedBytes: number } | null {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const EOCD = 0x06054b50;
@@ -184,6 +193,9 @@ export function zipEntryStats(bytes: Uint8Array): { entries: number; uncompresse
     if (view.getUint32(localAt + 18, true) !== packed || view.getUint32(localAt + 22, true) !== size) return null;
     if (localAt + 30 + localNameLen + localExtraLen + packed > dirOffset) return null;
     if (hasZip64Extra(view, localAt + 30 + localNameLen, localExtraLen) !== false) return null;
+    // 크기 칸이 서로 맞아도 deflate 스트림이 선언보다 크게 풀리면 SheetJS가 스트림 끝까지 푸느라 CPU를 붙잡는다(/cso B1).
+    // 선언 크기에서 끊어 먼저 풀어 본다 — 넘치거나(예외) 미완이거나(예외) 길이가 다르면 거절. stored는 위에서 packed = size.
+    if (method === 8 && !inflatesToDeclared(bytes.subarray(localAt + 30 + localNameLen + localExtraLen, localAt + 30 + localNameLen + localExtraLen + packed), size)) return null;
     uncompressedBytes += size;
     at += 46 + nameLen + extraLen + view.getUint16(at + 32, true);
   }

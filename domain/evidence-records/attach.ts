@@ -9,6 +9,7 @@ import {
   lockEvidenceOwnerForChange,
   readEvidenceOwner,
   type EvidenceOwnerState,
+  type EvidenceOwnerView,
   type EvidenceRecordFlags,
 } from "@/domain/evidence";
 import { evidenceSourcesOf } from "@/domain/evidence/has-evidence";
@@ -40,6 +41,7 @@ import {
   insertLink,
   listLiveLinkOwnersByRecords,
   type EvidenceAttachMode,
+  type LiveLinkOwner,
   type EvidenceLinkOwnerKind,
 } from "@/repositories/evidence-record-links";
 import { CANDIDATE_LIMIT, findExpenseById, hasExpenseAttachTarget, listExpenseAttachCandidates, lockExpenseForUpdate, type ExpenseAttachCandidateRow } from "@/repositories/expenses";
@@ -58,10 +60,18 @@ const PURCHASE_REQUEST_NOT_FOUND = "없는 구매 요청 · 새로 고침";
 const PURCHASE_REQUEST_CANCELLED = "구매 요청 취소됨 · 새로 고침";
 const NONE_SELECTABLE = "붙일 수 있는 문서 없음";
 const DRAFT_OWNER_WORD = "작성 중 문서";
+const TAKEN_UNSEEN = "다른 사람이 먼저 붙임 · 새로 고침";
 
 /** 다른 문서에 이미 붙은 기록 — 끝 꼬리 ` · 새로 고침`을 PickDialog가 3차 버튼으로 뺀다(재검토 2회차 Codex C). */
 export function evidenceTakenMessage(ownerNumber: string | null): string {
   return `다른 사람이 먼저 붙임 · ${ownerNumber ?? DRAFT_OWNER_WORD} · 새로 고침`;
+}
+
+/** 경합 거부 — 기본 글자에는 번호가 없다. 번호는 트랜잭션 밖에서 그 문서를 볼 수 있을 때만 싣는다(독립 검토 P3-2 · takenMessage). */
+export class EvidenceTakenError extends UserFacingError {
+  constructor(readonly owner: LiveLinkOwner | undefined) {
+    super(owner && owner.ownerNumber !== null ? TAKEN_UNSEEN : evidenceTakenMessage(null));
+  }
 }
 
 export type AttachOwnerRef = { kind: "expense" | "purchase_request"; id: string };
@@ -115,6 +125,7 @@ function pairDecision(codes: PairCodes, paymentMethod: string | null, evidenceTy
 
 // 붙임 한 행 — 06.1-08 여러 장 붙이기 · 06.1-09 대사가 같은 도우미를 부른다. 증빙 행 잠금 → 살아 있는 붙임(같은 문서면 멱등 ·
 // 다른 문서면 경합 거부) → 상태 재검사(보관 · 확인 필요 · 카드 미등록) → INSERT. 부르는 쪽이 문서 행을 먼저 잠근다(E-49).
+// 부르는 쪽 의무(독립 검토 P3-4): 문서 잠금 뒤 권리 재판정 → 이 함수 → 지출결의면 afterEvidenceOwnerChange · autoConfirmOnAttach, 트랜잭션 밖에서 EvidenceTakenError · 23505를 takenMessage로.
 export async function attachLinkInTx(
   tx: DbOrTx,
   viewer: Viewer,
@@ -127,7 +138,7 @@ export async function attachLinkInTx(
   if (live) {
     if (live.ownerKind === input.owner.kind && live.ownerId === input.owner.id) return { created: false };
     const [owner] = await listLiveLinkOwnersByRecords(viewer, [input.recordId], tx);
-    throw new UserFacingError(evidenceTakenMessage(owner?.ownerNumber ?? null));
+    throw new EvidenceTakenError(owner);
   }
   const blocked = evidenceAttachBlockOf(word);
   if (blocked) throw new UserFacingError(blocked);
@@ -136,10 +147,39 @@ export async function attachLinkInTx(
   return { created: true };
 }
 
+// 못 보는 지출결의는 05 문서 읽기와 같은 판정(readEvidenceOwner의 범위 거부)으로 가른다 — 트랜잭션 밖에서만 부른다(06-03).
+async function canSeeLinkOwner(viewer: Viewer, owner: LiveLinkOwner): Promise<boolean> {
+  if (owner.ownerKind === "purchase_request") return canSeePurchaseRequest(viewer, { id: owner.ownerId });
+  if (owner.ownerKind !== EXPENSE_DOCUMENT_KIND) return false;
+  try {
+    await readEvidenceOwner(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: owner.ownerId });
+    return true;
+  } catch (error) {
+    if (error instanceof ExpenseNotFoundError) return false;
+    throw error;
+  }
+}
+
+/** 경합 거부 글자 — 붙은 문서를 볼 수 있을 때만 번호, 못 보면 번호 없이 같은 거부(독립 검토 P3-2). 작성 중 문서는 번호가 없어 그 낱말 그대로. */
+export async function takenMessage(viewer: Viewer, owner: LiveLinkOwner | undefined): Promise<string> {
+  if (!owner || owner.ownerNumber === null) return evidenceTakenMessage(null);
+  return (await canSeeLinkOwner(viewer, owner)) ? evidenceTakenMessage(owner.ownerNumber) : TAKEN_UNSEEN;
+}
+
 // 부분 유니크 위반(23505)이 난 트랜잭션은 중단 상태라 그 안에서 읽지 않는다 — 밖에서 살아 있는 붙임의 문서 번호를 새로 읽는다(eng B-P3).
 async function takenError(viewer: Viewer, recordId: string): Promise<UserFacingError> {
   const [owner] = await listLiveLinkOwnersByRecords(viewer, [recordId]);
-  return new UserFacingError(evidenceTakenMessage(owner?.ownerNumber ?? null));
+  return new UserFacingError(await takenMessage(viewer, owner));
+}
+
+// 못 보는 문서의 붙임은 없는 붙임과 같은 글자 — 떼기 · 미리 보기가 같은 판독을 쓴다(독립 검토 P3-6).
+async function readLinkedExpense(viewer: Viewer, ownerId: string): Promise<EvidenceOwnerView> {
+  try {
+    return await readEvidenceOwner(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId });
+  } catch (error) {
+    if (error instanceof ExpenseNotFoundError) throw new UserFacingError(LINK_NOT_FOUND);
+    throw error;
+  }
 }
 
 async function readAttachableRecord(viewer: Viewer, keys: ViewerKeys, recordId: string): Promise<EvidenceRecordFacts> {
@@ -158,6 +198,7 @@ export async function attachEvidenceRecord(viewer: Viewer, input: { recordId: st
     if (input.owner.kind === "purchase_request") return await attachToPurchaseRequest(viewer, record, input.owner.id, deps);
     return await attachToExpense(viewer, keys, record, input.owner.id, deps);
   } catch (error) {
+    if (error instanceof EvidenceTakenError) throw new UserFacingError(await takenMessage(viewer, error.owner));
     if (isUniqueViolation(error, LIVE_LINK_UNIQUE)) throw await takenError(viewer, record.id);
     throw error;
   }
@@ -235,7 +276,7 @@ export async function detachEvidenceRecord(viewer: Viewer, input: { linkId: stri
   if (link.ownerKind === "purchase_request") return detachFromPurchaseRequest(viewer, keys, { linkId: link.id, recordId: link.evidenceRecordId, requestId: link.ownerId, reason: input.reason }, deps);
   if (link.ownerKind !== EXPENSE_DOCUMENT_KIND) throw new UserFacingError(LINK_NOT_FOUND);
 
-  const before = await readEvidenceOwner(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: link.ownerId });
+  const before = await readLinkedExpense(viewer, link.ownerId);
   if (evidenceRecordRights(before, flagsOf(viewer, keys, before, false)).detach === "none") throw new UserFacingError(evidenceDetachRefusal(before));
   const reason = validateRejectReason(input.reason);
   if (link.detachedAt !== null) return { detached: false };
@@ -270,7 +311,7 @@ async function detachFromPurchaseRequest(
   input: { linkId: string; recordId: string; requestId: string; reason: string },
   deps?: EvidenceAttachDeps,
 ): Promise<{ detached: boolean }> {
-  if (!(await canSeePurchaseRequest(viewer, { id: input.requestId }))) throw new UserFacingError(PURCHASE_REQUEST_NOT_FOUND);
+  if (!(await canSeePurchaseRequest(viewer, { id: input.requestId }))) throw new UserFacingError(LINK_NOT_FOUND);
   if (!keys.intake) throw new ForbiddenError(INTAKE_FORBIDDEN);
   const reason = validateRejectReason(input.reason);
   await deps?.afterPreRead?.();
@@ -298,27 +339,32 @@ async function detachFromPurchaseRequest(
 }
 
 // PA-PREVIEW: 떼면 문서 비용 기준이 확정(증빙) → 예상(문서 공급가액)으로 바뀌는가 — 남는 05 파일 0 ∧ 다른 붙임 0인 지출결의일 때만
-// `expected`. 산술 없음 · 비용 기준 함수 · 견적 줄 실행가를 부르지 않는다. 못 보는 문서는 문서 읽기 판정과 같은 거부(eng B-P2).
+// `expected`. 산술 없음 · 비용 기준 함수 · 견적 줄 실행가를 부르지 않는다. 못 보는 문서 · 떼기 권리 없음은 떼기와 같은 거부(독립 검토 P3-1 · P3-6).
+// 금액은 문서 공급가액이라 문서 금액 항목(expense.amount)으로 투영한다 — 문서 금액의 정본은 문서 권한이다(P3-1).
 export type EvidenceDetachPreviewDto = { result: "expected" | null; amountKrw: number | null };
 
 export const EVIDENCE_DETACH_PREVIEW_DTO_SPEC: DtoSpec<EvidenceDetachPreviewDto, EvidenceDetachPreviewDto> = {
   fields: [
     { key: "result", from: "result", infoItem: "evidence.value" },
-    { key: "amountKrw", from: "amountKrw", infoItem: "evidence.amount" },
+    { key: "amountKrw", from: "amountKrw", infoItem: "expense.amount" },
   ],
 };
 
 registerDto({ name: "EvidenceDetachPreviewDto", fields: EVIDENCE_DETACH_PREVIEW_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 
 export async function previewDetach(viewer: Viewer, input: { linkId: string }): Promise<Partial<EvidenceDetachPreviewDto>> {
+  const keys = await readKeys(viewer);
   const link = UUID_SHAPE.test(input.linkId) ? await findLinkById(viewer, input.linkId) : null;
   if (!link) throw new UserFacingError(LINK_NOT_FOUND);
   const none: EvidenceDetachPreviewDto = { result: null, amountKrw: null };
   if (link.ownerKind === "purchase_request") {
-    if (!(await canSeePurchaseRequest(viewer, { id: link.ownerId }))) throw new UserFacingError(PURCHASE_REQUEST_NOT_FOUND);
+    if (!(await canSeePurchaseRequest(viewer, { id: link.ownerId }))) throw new UserFacingError(LINK_NOT_FOUND);
+    if (!keys.intake) throw new ForbiddenError(INTAKE_FORBIDDEN);
     return (await projectMany(viewer, [none], EVIDENCE_DETACH_PREVIEW_DTO_SPEC))[0] ?? {};
   }
-  const owner = await readEvidenceOwner(viewer, { ownerKind: link.ownerKind, ownerId: link.ownerId });
+  if (link.ownerKind !== EXPENSE_DOCUMENT_KIND) throw new UserFacingError(LINK_NOT_FOUND);
+  const owner = await readLinkedExpense(viewer, link.ownerId);
+  if (evidenceRecordRights(owner, flagsOf(viewer, keys, owner, false)).detach === "none") throw new UserFacingError(evidenceDetachRefusal(owner));
   const [sources, expense] = await Promise.all([
     evidenceSourcesOf(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerIds: [owner.id] }),
     findExpenseById(viewer, owner.id),
@@ -341,28 +387,51 @@ export type EvidenceAttachCandidateDto = {
   title: string;
   /** 결재 중이면 `결재 중`, 아니면 사용일 · 요청일(서울 날짜). */
   subtitle: string | null;
-  /** 지출결의 = 공급가액, 구매 요청 = 견적 원화. */
+  /** 지출결의 = 공급가액(expense.amount), 구매 요청 = 견적 원화(purchase_request.amount) — 문서 금액은 문서 권한으로(독립 검토 P3-1). */
   amountKrw: number | null;
   selectable: boolean;
   reason: string | null;
   inReview: boolean;
 };
 
-export const EVIDENCE_ATTACH_CANDIDATE_DTO_SPEC: DtoSpec<EvidenceAttachCandidateDto, EvidenceAttachCandidateDto> = {
-  fields: [
-    { key: "kind", from: "kind", infoItem: "evidence.value" },
-    { key: "id", from: "id", infoItem: "evidence.value" },
-    { key: "number", from: "number", infoItem: "evidence.value" },
-    { key: "title", from: "title", infoItem: "evidence.value" },
-    { key: "subtitle", from: "subtitle", infoItem: "evidence.value" },
-    { key: "amountKrw", from: "amountKrw", infoItem: "evidence.amount" },
-    { key: "selectable", from: "selectable", infoItem: "evidence.value" },
-    { key: "reason", from: "reason", infoItem: "evidence.value" },
-    { key: "inReview", from: "inReview", infoItem: "evidence.value" },
-  ],
-};
+// 두 종류가 한 목록에 섞이지만 금액 항목이 달라 명세를 둘 둔다(지출결의 · 구매 요청). 금액 칸 밖은 같다.
+function candidateSpec(amountItem: string): DtoSpec<EvidenceAttachCandidateDto, EvidenceAttachCandidateDto> {
+  return {
+    fields: [
+      { key: "kind", from: "kind", infoItem: "evidence.value" },
+      { key: "id", from: "id", infoItem: "evidence.value" },
+      { key: "number", from: "number", infoItem: "evidence.value" },
+      { key: "title", from: "title", infoItem: "evidence.value" },
+      { key: "subtitle", from: "subtitle", infoItem: "evidence.value" },
+      { key: "amountKrw", from: "amountKrw", infoItem: amountItem },
+      { key: "selectable", from: "selectable", infoItem: "evidence.value" },
+      { key: "reason", from: "reason", infoItem: "evidence.value" },
+      { key: "inReview", from: "inReview", infoItem: "evidence.value" },
+    ],
+  };
+}
+
+export const EVIDENCE_ATTACH_CANDIDATE_DTO_SPEC = candidateSpec("expense.amount");
+export const EVIDENCE_ATTACH_REQUEST_CANDIDATE_DTO_SPEC = candidateSpec("purchase_request.amount");
 
 registerDto({ name: "EvidenceAttachCandidateDto", fields: EVIDENCE_ATTACH_CANDIDATE_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
+registerDto({ name: "EvidenceAttachRequestCandidateDto", fields: EVIDENCE_ATTACH_REQUEST_CANDIDATE_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
+
+// 순위 순서를 지키며 종류마다 제 명세로 투영한다(노출 판정은 명세마다 항목 수만큼 — projectMany).
+async function projectCandidates(viewer: Viewer, dtos: readonly EvidenceAttachCandidateDto[]): Promise<Partial<EvidenceAttachCandidateDto>[]> {
+  const projected = new Map<EvidenceAttachCandidateDto, Partial<EvidenceAttachCandidateDto>>();
+  for (const [kind, spec] of [
+    ["expense", EVIDENCE_ATTACH_CANDIDATE_DTO_SPEC],
+    ["purchase_request", EVIDENCE_ATTACH_REQUEST_CANDIDATE_DTO_SPEC],
+  ] as const) {
+    const rows = dtos.filter((dto) => dto.kind === kind);
+    (await projectMany(viewer, rows, spec)).forEach((item, index) => {
+      const row = rows[index];
+      if (row) projected.set(row, item);
+    });
+  }
+  return dtos.map((dto) => projected.get(dto) ?? {});
+}
 
 export type EvidenceAttachCandidates = {
   /** `{종류} · {거래처} · {합계} · 후보 {n}` — 합계는 evidence.amount를 볼 수 있을 때만. */
@@ -469,7 +538,7 @@ export async function listAttachCandidates(viewer: Viewer, input: { recordId: st
   const subtitle = [record.typeLabel, record.counterparty, amountShown ? formatKrw(record.totalKrw) : null, `후보 ${kept.length}`].filter((part) => part !== null).join(" · ");
   return {
     subtitle,
-    items: await projectMany(viewer, kept.map((candidate) => candidate.dto), EVIDENCE_ATTACH_CANDIDATE_DTO_SPEC),
+    items: await projectCandidates(viewer, kept.map((candidate) => candidate.dto)),
     preselect: first && first.selectable && !first.inReview ? [first.id] : [],
     truncated,
     limit: CANDIDATE_LIMIT,

@@ -215,16 +215,18 @@ describe("정보 노출 누수 스캔 (ADMN-03)", () => {
       expect(dto?.fields.filter((field) => amounts.includes(field.key))).toHaveLength(amounts.length);
     });
 
-    // 06.1-06 — 붙일 문서 후보 · 붙은 증빙 읽기 행 · 떼기 미리 보기: 금액 칸은 증빙 금액(evidence.amount 없는 계급에 안 나감), 나머지는 증빙 내용.
-    it("EvidenceAttachCandidateDto · EvidenceLinkedItemDto · EvidenceDetachPreviewDto의 금액 칸은 evidence.amount, 나머지는 evidence.value다", () => {
-      for (const [dtoName, amountKey] of [
-        ["EvidenceAttachCandidateDto", "amountKrw"],
-        ["EvidenceLinkedItemDto", "totalKrw"],
-        ["EvidenceDetachPreviewDto", "amountKrw"],
+    // 06.1-06 — 붙은 증빙 읽기 행의 금액은 증빙 금액. 붙일 문서 후보 · 떼기 미리 보기의 금액은 문서 금액이라 문서 금액 항목(독립 검토 P3-1).
+    // 나머지 칸은 증빙 내용.
+    it("06.1-06 증빙 붙임 DTO의 금액 칸 정보 항목 · 나머지는 evidence.value다", () => {
+      for (const [dtoName, amountKey, amountItem] of [
+        ["EvidenceAttachCandidateDto", "amountKrw", "expense.amount"],
+        ["EvidenceAttachRequestCandidateDto", "amountKrw", "purchase_request.amount"],
+        ["EvidenceLinkedItemDto", "totalKrw", "evidence.amount"],
+        ["EvidenceDetachPreviewDto", "amountKrw", "expense.amount"],
       ] as const) {
         const dto = DTO_REGISTRY.find((entry) => entry.name === dtoName);
         expect(dto?.fields.length, dtoName).toBeGreaterThan(1);
-        for (const field of dto?.fields ?? []) expect(field.infoItem, `${dtoName}.${field.key}`).toBe(field.key === amountKey ? "evidence.amount" : "evidence.value");
+        for (const field of dto?.fields ?? []) expect(field.infoItem, `${dtoName}.${field.key}`).toBe(field.key === amountKey ? amountItem : "evidence.value");
       }
     });
 

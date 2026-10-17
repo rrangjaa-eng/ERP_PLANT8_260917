@@ -1228,10 +1228,17 @@ export async function deleteExpenseDraft(viewer: Viewer, input: { expenseId: str
     // 증빙 파일도 같은 시각으로 뗀다(되돌리기가 그 시각의 파일만 되살린다).
     await markOwnerFilesRemoved(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: row.id, removedBy: viewer.id, at: deleted.deletedAt ?? new Date() }, tx);
     // 06.1-06(E22): 붙은 증빙 기록은 사유와 함께 풀로 돌아간다(되살리기는 붙임을 다시 만들지 않는다 — 뗀 기록 그대로).
-    await detachLiveLinksForOwner(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: row.id, reason: AUTO_DETACH_REASONS.expenseDelete }, tx);
+    // 뗀 붙임 수는 주인 쓰기 로그 detail에 싣는다(독립 검토 P3-5 — 새 행동 종류 없음 · 0이면 칸 없음).
+    const detachedLinks = await detachLiveLinksForOwner(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: row.id, reason: AUTO_DETACH_REASONS.expenseDelete }, tx);
     await recordActionInTx(
       viewer,
-      { actionType: "document_delete", entity: "expense", entityId: row.id, documentId: row.id, detail: { kind: EXPENSE_DOCUMENT_KIND } },
+      {
+        actionType: "document_delete",
+        entity: "expense",
+        entityId: row.id,
+        documentId: row.id,
+        detail: { kind: EXPENSE_DOCUMENT_KIND, ...(detachedLinks > 0 ? { detachedEvidenceLinks: detachedLinks } : {}) },
+      },
       tx,
       gate,
     );
@@ -1406,7 +1413,7 @@ export async function closeExpense(
     const closed = await closeExpenseRow(viewer, { id: locked.id, expectedVersion: input.expectedVersion, closedBy: viewer.id, reason, now }, tx);
     if (!closed) throw new ExpenseConflictError(locked.updatedAt);
     // 06.1-06(Round 2 eng P1-1): 종결 문서의 살아 있는 붙임이 기록을 부분 유니크로 영영 묶지 않게 같은 트랜잭션에서 뗀다.
-    await detachLiveLinksForOwner(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: locked.id, reason: AUTO_DETACH_REASONS.expenseClose }, tx);
+    const detachedLinks = await detachLiveLinksForOwner(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: locked.id, reason: AUTO_DETACH_REASONS.expenseClose }, tx);
     await recordActionInTx(
       viewer,
       {
@@ -1414,7 +1421,7 @@ export async function closeExpense(
         entity: "expense",
         entityId: locked.id,
         documentId: locked.id,
-        detail: { kind: EXPENSE_DOCUMENT_KIND, from: instance.status, to: "closed", reason },
+        detail: { kind: EXPENSE_DOCUMENT_KIND, from: instance.status, to: "closed", reason, ...(detachedLinks > 0 ? { detachedEvidenceLinks: detachedLinks } : {}) },
       },
       tx,
       gate,

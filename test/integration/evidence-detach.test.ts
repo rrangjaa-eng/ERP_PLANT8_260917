@@ -172,7 +172,7 @@ describe("previewDetach (PA-PREVIEW)", () => {
     expect(await previewDetach(manager, { linkId: doc.linkId })).toEqual({ result: null, amountKrw: null });
 
     const stranger = await makePerson("남팀", "role-pm", null);
-    expect(await messageOf(previewDetach(stranger, { linkId: doc.linkId }))).toBe("없는 지출결의 · 새로 고침");
+    expect(await messageOf(previewDetach(stranger, { linkId: doc.linkId }))).toBe("없는 붙임 · 새로 고침");
   });
 
   it("05 파일이 남는 문서 → null", async () => {

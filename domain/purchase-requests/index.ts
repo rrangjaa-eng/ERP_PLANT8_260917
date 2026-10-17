@@ -70,6 +70,7 @@ import { findUserNamesByIds } from "@/repositories/users";
 import { findMembershipAtDate } from "@/repositories/team-memberships";
 import { teamAtDate } from "@/domain/org";
 import type { DbOrTx } from "@/repositories/document-counters";
+import { AUTO_DETACH_REASONS, countLiveLinksByOwners, detachLiveLinksForOwner } from "@/repositories/evidence-record-links";
 import {
   findPurchaseRequestById,
   insertPurchaseRequest,
@@ -84,6 +85,7 @@ import {
   readLockedLineFacts,
   type PurchaseRequestFilter,
   type PurchaseRequestListRow,
+  isPurchaseRequestInScope,
   type PurchaseRequestScope,
 } from "@/repositories/purchase-requests";
 
@@ -565,9 +567,17 @@ export async function cancelPurchaseRequest(
     if (locked.version !== input.version) throw new PurchaseRequestRejectedError(REQUEST_STALE);
     const version = await markPurchaseRequestCancelled(viewer, { id: pre.requestId, version: input.version, cancelledBy: viewer.id, reason }, innerTx);
     if (version === null) throw new PurchaseRequestRejectedError(REQUEST_STALE);
+    // 06.1-06(E22): 붙은 증빙 기록은 사유와 함께 풀로 돌아간다(취소 되돌리기는 붙임을 다시 만들지 않는다).
+    // 뗀 붙임 수는 주인 쓰기 로그 detail에 싣는다(독립 검토 P3-5 — 새 행동 종류 없음 · 0이면 칸 없음).
+    const detachedLinks = await detachLiveLinksForOwner(viewer, { ownerKind: "purchase_request", ownerId: pre.requestId, reason: AUTO_DETACH_REASONS.purchaseRequestCancel }, innerTx);
     await recordAction(
       viewer,
-      { actionType: "status_change", entity: PURCHASE_REQUEST_ENTITY, entityId: pre.requestId, detail: { from: "requested", to: "cancelled", ...(reason === null ? {} : { reason }) } },
+      {
+        actionType: "status_change",
+        entity: PURCHASE_REQUEST_ENTITY,
+        entityId: pre.requestId,
+        detail: { from: "requested", to: "cancelled", ...(reason === null ? {} : { reason }), ...(detachedLinks > 0 ? { detachedEvidenceLinks: detachedLinks } : {}) },
+      },
       { tx: innerTx },
     );
     return { id: pre.requestId, number: locked.number, version };
@@ -820,9 +830,11 @@ export type PurchaseRequestListItemDto = {
   cancelReason: string | null;
   /** 취소 · 구매 완료 행동이 되돌려 보내는 낙관적 동시성 값. */
   version: number;
+  /** 06.1-06(DB-15) 살아 있는 증빙 붙임 수 — 취소 확인 창 결과 줄 `붙은 증빙 {n}건은 증빙 목록으로`(클라이언트가 세지 않는다). */
+  linkedEvidenceCount: number;
 };
 
-const VALUE_KEYS = ["id", "number", "requestedOn", "itemName", "linkUrl", "requestedByName", "status", "linkKind", "version", "cancelledOn", "cancelledByName", "cancelReason"] as const;
+const VALUE_KEYS = ["id", "number", "requestedOn", "itemName", "linkUrl", "requestedByName", "status", "linkKind", "version", "cancelledOn", "cancelledByName", "cancelReason", "linkedEvidenceCount"] as const;
 const AMOUNT_KEYS = ["currency", "foreignAmount", "fxRate", "estimateKrw"] as const;
 
 export const PURCHASE_REQUEST_LIST_DTO_SPEC: DtoSpec<PurchaseRequestListItemDto, PurchaseRequestListItemDto> = {
@@ -860,7 +872,7 @@ function requestLinkLabel(row: PurchaseRequestListRow, lineNo: Map<string, numbe
   return `${row.projectName} · ${number === undefined ? row.lineItemName : `${number} ${row.lineItemName}`}`;
 }
 
-function toProjectable(row: PurchaseRequestListRow, lineNo: Map<string, number>): PurchaseRequestListItemDto {
+function toProjectable(row: PurchaseRequestListRow, lineNo: Map<string, number>, linkCounts: Map<string, number>): PurchaseRequestListItemDto {
   return {
     id: row.id,
     number: row.number,
@@ -881,6 +893,7 @@ function toProjectable(row: PurchaseRequestListRow, lineNo: Map<string, number>)
     cancelledByName: row.cancelledByName,
     cancelReason: row.cancelReason,
     version: row.version,
+    linkedEvidenceCount: linkCounts.get(row.id) ?? 0,
   };
 }
 
@@ -939,7 +952,10 @@ export async function listPurchaseRequests(viewer: Viewer, filters: PurchaseRequ
   const lineNo = await lineNumbers(viewer, rows.flatMap((row) => (row.lineRevisionId ? [row.lineRevisionId] : [])));
   // `전체` 보기는 상태 그룹 순서(신청됨 → 구매 완료 → 취소)로 놓는다 — 그룹 안은 최근 요청이 첫 줄(안정 정렬).
   const ordered = filters.status === "all" ? [...rows].sort((a, b) => STATUS_ORDER[a.status as PurchaseRequestStatusValue] - STATUS_ORDER[b.status as PurchaseRequestStatusValue]) : rows;
-  const projected = await projectMany(viewer, ordered.map((row) => toProjectable(row, lineNo)), PURCHASE_REQUEST_LIST_DTO_SPEC);
+  const linkCounts = new Map(
+    (await countLiveLinksByOwners(viewer, { ownerKind: "purchase_request", ownerIds: rows.map((row) => row.id) })).map((count) => [count.ownerId, count.linkCount]),
+  );
+  const projected = await projectMany(viewer, ordered.map((row) => toProjectable(row, lineNo, linkCounts)), PURCHASE_REQUEST_LIST_DTO_SPEC);
   const estimates = await listPurchaseRequestEstimates(viewer, { scope, filter });
   const pageCount = pageCountFrom(projected.length, LIST_PAGE_SIZE);
   const page = clampPage(filters.page, pageCount);
@@ -1063,4 +1079,17 @@ export async function purchaseRequestEntry(viewer: Viewer, lineId: string): Prom
   const row = found.rows.find((candidate) => candidate.id === lineId);
   if (!row || row.itemName === undefined) return null;
   return { project, line: { id: lineId, itemName: row.itemName, remainingKrw: row.remainingKrw ?? null, hint: row.hint ?? null } };
+}
+
+// ── 06.1-06 구매 요청 읽기 판정(증빙 기록 붙이기 · 문서 「증빙」 섹션 — RP-5) ─────────────────────────────
+
+// 06 목록 범위(listAccess) 그대로 — 붙이기 후보 질의가 같은 scope를 쓴다. 판정(can · 프로젝트 범위)은 트랜잭션 밖에서.
+export async function purchaseRequestReadScope(viewer: Viewer, today: string = seoulToday()): Promise<PurchaseRequestScope> {
+  return (await listAccess(viewer, today)).scope;
+}
+
+// 요청 하나를 그 사람이 볼 수 있나 — 06 목록과 같은 범위 조건.
+export async function canSeePurchaseRequest(viewer: Viewer, input: { id: string }): Promise<boolean> {
+  if (!UUID_SHAPE.test(input.id)) return false;
+  return isPurchaseRequestInScope(viewer, { id: input.id, scope: await purchaseRequestReadScope(viewer) });
 }

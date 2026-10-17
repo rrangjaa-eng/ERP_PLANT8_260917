@@ -12,6 +12,7 @@ import { TAX_UNAVAILABLE } from "@/domain/expenses/gate";
 import { PAID_PAYMENT_ROW_DTO_SPEC, PAYMENT_TARGET_ROW_DTO_SPEC, type PaidPaymentRowDto, type PaymentTargetRowDto } from "@/domain/expenses/dto";
 import { evidenceSourcesOf, ownersWithEvidence } from "@/domain/evidence/has-evidence";
 import { listEvidence } from "@/domain/evidence";
+import { EVIDENCE_FORMAT_TYPES } from "@/domain/evidence-import/types";
 import { formatKstTime } from "@/domain/holidays/business-day";
 import { findUserNamesByIds } from "@/repositories/users";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
@@ -35,11 +36,16 @@ import { clampPage, LIST_PAGE_SIZE, pageCountFrom } from "@/lib/paging";
 // 쪽 자르기는 listPaymentTargets 한 곳(E-25): 판정 → 증빙 필터 → 합계 · 총 건수 → clampPage · slice.
 
 // 증빙 필터(K-8) — 화면 select 값 목록은 이 열거에서만 온다. row = 「지출결의 상태 → 1차」 표의 P 상태.
+// row null = 행 상태가 아닌 증빙 출처 조건(06.1-10 `file-only` — JudgedPaymentTarget.fileOnly로 거른다).
 export const PAYMENT_EVIDENCE_FILTERS = [
   { value: "unreviewed", label: "확인 전", row: "P2" },
   { value: "missing", label: "증빙 없음", row: "P3" },
   { value: "payable", label: "지급 가능", row: "P4" },
-] as const satisfies readonly { value: string; label: string; row: ExpenseActionBar["row"] }[];
+  { value: "file-only", label: "파일만 있음", row: null },
+] as const satisfies readonly { value: string; label: string; row: ExpenseActionBar["row"] | null }[];
+
+// 파일 서식으로 들어오는 증빙 종류(06.1-10 PA-FILEONLY-SET) — 서식 규칙 모음의 가벼운 상수에서 모은다(엑셀 파서를 끌어오지 않는다, C-F15).
+const FILE_FORMAT_EVIDENCE_TYPES: ReadonlySet<string> = new Set(EVIDENCE_FORMAT_TYPES.map((format) => format.evidenceType));
 
 export type PaymentEvidenceFilter = (typeof PAYMENT_EVIDENCE_FILTERS)[number]["value"];
 
@@ -56,6 +62,8 @@ export type JudgedPaymentTarget = {
   reason: string | null;
   payableKrw: number | null;
   evidenceStatus: EvidenceStatus;
+  // 「파일만 있음」 — 파일 서식 증빙 종류 ∧ 살아 있는 파일 ≥ 1 ∧ 살아 있는 붙임 0 ∧ 면제 아님(06.1-10 · 06.1-12 묶음 읽기 결과만).
+  fileOnly: boolean;
 };
 
 type JudgeContext = { shared: PaymentShared; today: string; amountVisible: boolean };
@@ -91,6 +99,11 @@ function reasonOf(row: PaymentTargetRow, bar: ExpenseActionBar, payableKrw: numb
   return null;
 }
 
+function isFileOnly(row: PaymentTargetRow, sources: { fileCount: number; linkCount: number } | undefined): boolean {
+  if (!sources || row.evidenceType === null || !FILE_FORMAT_EVIDENCE_TYPES.has(row.evidenceType)) return false;
+  return sources.fileCount >= 1 && sources.linkCount === 0 && row.review?.status !== "waived";
+}
+
 async function judgeTargets(viewer: Viewer, rows: readonly PaymentTargetRow[], ctx: JudgeContext): Promise<JudgedPaymentTarget[]> {
   const withEvidence = await evidenceSourcesOf(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerIds: rows.map((row) => row.id) });
   const judged: JudgedPaymentTarget[] = [];
@@ -119,6 +132,7 @@ async function judgeTargets(viewer: Viewer, rows: readonly PaymentTargetRow[], c
       reason,
       payableKrw,
       evidenceStatus: resolveEvidenceStatus({ hasEvidence: hasLiveEvidence, prepaid: row.prepaid, review: row.review }),
+      fileOnly: isFileOnly(row, withEvidence.get(row.id)),
     });
   }
   return judged;
@@ -157,7 +171,8 @@ export async function listAllPaymentTargets(
   const rows = await visibleRows(viewer, await listPaymentTargetRows(viewer, { documentKind: EXPENSE_DOCUMENT_KIND, teamId, ...(search ? { search } : {}) }), today);
   const judged = await judgeTargets(viewer, rows, { shared, today, amountVisible: await visible(viewer, "expense.amount") });
   const filter = PAYMENT_EVIDENCE_FILTERS.find((candidate) => candidate.value === input.evidence);
-  return filter ? judged.filter((target) => target.bar.row === filter.row) : judged;
+  if (!filter) return judged;
+  return filter.row === null ? judged.filter((target) => target.fileOnly) : judged.filter((target) => target.bar.row === filter.row);
 }
 
 export type PaymentTargetGroup = { label: string; tone?: "warning"; rows: Partial<PaymentTargetRowDto>[] };

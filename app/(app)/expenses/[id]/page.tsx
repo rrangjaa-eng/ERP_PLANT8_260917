@@ -24,6 +24,8 @@ import { expenseStatusWord } from "../status-display";
 import { seoulMinuteOf } from "@/app/(app)/leave/status-display";
 import { SubmittedToast } from "@/app/(app)/leave/[id]/submitted-toast";
 import { ExpenseDocument } from "./expense-document";
+import type { LinkedEvidenceItem } from "./evidence-records-section";
+import { listLinkedEvidence } from "@/domain/evidence-records/linked";
 import { DeleteDraftButton } from "./delete-draft-button";
 import { CloseExpenseButton } from "./close-expense-button";
 import { ExpenseForm } from "./expense-form";
@@ -63,7 +65,8 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
     // 06-03: 지급 섹션은 결재 통과(approved — 자기 승인 포함, UA-607) 문서만. view가 null(05 C1 — 쓰기 권한 없는 기안자의 번호 없는 작성 중 문서)이거나
     // 통과 전이면 부르지 않는다(섹션 요소 0 · 오류 화면 없음).
     // 06.2-09(S6 · D-6206): 프로젝트 칸 링크는 서버가 「열 수 있음」을 판정한 때만 — 결재 차례로 문서만 보이는 사람에게 죽은 링크를 그리지 않는다.
-    const [evidenceActions, paymentView, projectOpenable] = await Promise.all([
+    // 06.1-06(E21): 붙은 증빙 기록 읽기 행 · 행 끝 행동 · 잠김 줄(서버 권리). 못 읽으면 섹션만 비운다(문서는 이미 읽기 판정을 지났다).
+    const [evidenceActions, paymentView, projectOpenable, linked] = await Promise.all([
       getEvidenceActions(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: id }),
       view?.status === "approved"
         ? getPaymentView(viewer, id).catch((error: unknown) => {
@@ -73,7 +76,27 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
           })
         : null,
       expense.projectId ? canOpenProject(viewer, expense.projectId) : false,
+      listLinkedEvidence(viewer, { kind: "expense", id }).catch(() => ({ items: [], lockLine: null })),
     ]);
+    const linkedEvidence = {
+      lockLine: linked.lockLine,
+      items: linked.items.flatMap((item): LinkedEvidenceItem[] =>
+        item.linkId && item.issuedOn !== undefined
+          ? [
+              {
+                linkId: item.linkId,
+                typeLabel: item.typeLabel ?? null,
+                counterparty: item.counterparty ?? null,
+                issuedOn: item.issuedOn,
+                totalKrw: item.totalKrw ?? null,
+                pickedBy: item.pickedBy ?? null,
+                pickedOn: item.pickedOn ?? null,
+                action: item.action ?? null,
+              },
+            ]
+          : [],
+      ),
+    };
     const documentFiles: AttachmentFile[] = evidence.flatMap((file) =>
       file.id && file.originalName && file.createdAt
         ? [
@@ -106,7 +129,7 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
         }))
       : null;
     const documentPaymentView: Partial<PaymentViewDto> | "error" | null = paymentView && paymentView !== "error" && payReturn ? { ...paymentView, payReturn } : paymentView;
-    return <ExpenseDocument expense={expense} view={view} files={documentFiles} evidenceActions={evidenceActions} maxMb={maxMb} submitted={submitted} paymentView={documentPaymentView} projectOpenable={projectOpenable} />;
+    return <ExpenseDocument expense={expense} view={view} files={documentFiles} evidenceActions={evidenceActions} linkedEvidence={linkedEvidence} maxMb={maxMb} submitted={submitted} paymentView={documentPaymentView} projectOpenable={projectOpenable} />;
   }
 
   // 작성 중 — 폼. 결재선은 제출 전 한 줄(기안자 · 문서 종류의 결재선 설정으로 해석 — 막히면 이유 한 줄).

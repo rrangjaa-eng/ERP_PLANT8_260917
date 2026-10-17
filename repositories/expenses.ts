@@ -753,3 +753,106 @@ export async function listExpenseIdsInScope(
     .where(and(inArray(expenses.id, [...input.ids]), scopeCondition(viewer, input.scope)));
   return new Set(rows.map((row) => row.id));
 }
+
+// ── 06.1-06 증빙 기록 붙이기 후보(E34 · RP-5 · RP-8) ─────────────────────────────────────────────
+
+/** 후보 한 질의의 상한 — 21째 행은 넘침 판정(PickDialog `truncated`)에만 쓰고 버린다(Round 2 P2-C1). */
+export const CANDIDATE_LIMIT = 20;
+
+export type AttachCandidateRecord = { evidenceType: string; businessNoDigits: string | null; supplyKrw: number; issuedOn: string };
+
+export type ExpenseAttachCandidateRow = {
+  id: string;
+  number: string;
+  drafterId: string;
+  drafterName: string;
+  usageDate: string | null;
+  status: string | null;
+  instanceId: string | null;
+  instanceVersion: number | null;
+  supplyAmountKrw: number | null;
+  paymentMethod: string | null;
+  evidenceType: string | null;
+  businessNo: string | null;
+  projectId: string | null;
+  projectCompleted: boolean;
+  updatedAt: Date;
+  version: number;
+  /** 취소 안 된 지급 행 있음 — findLivePayment와 같은 조건(카드 R1). */
+  paid: boolean;
+  pairOk: boolean;
+  score: number;
+};
+
+// 목록과 같은 보임 범위(scopeCondition — 06.2 rowScopeCondition 포함) ∧ 번호 있음(임시 문서는 작성자만 본다 — RP-8) ∧ 종결 아님 ∧ 검색어
+// (문서 번호 · 작성자 이름 · 지급처 이름 — 바인딩). 순위도 여기서(E34): 짝 맞음(G3 — 지급 방식이 짝 설정에 없거나 이 기록 종류와 짝) →
+// 점수 CASE 합(종류 4 · 사업자번호 숫자 2 — 기록이 빈 값이면 0 · 공급가액 1) 내림 → 사용일과 기록 날짜 차 오름(없음 맨 뒤) → id.
+// 권리 막힘(결재 중 · 지급 뒤)은 SQL로 옮기지 않는다 — 부르는 domain이 행마다 판정한다.
+export async function listExpenseAttachCandidates(
+  viewer: Viewer,
+  input: {
+    scope: ExpenseScope;
+    documentKind: string;
+    record: AttachCandidateRecord;
+    query: string | null;
+    /** 짝 설정에 짝이 하나라도 있는 지급 방식 코드(그 밖의 방식은 검사 없음). */
+    constrainedMethodCodes: readonly string[];
+    /** 그 가운데 이 기록 종류와 짝인 지급 방식 코드. */
+    pairedMethodCodes: readonly string[];
+  },
+  tx: DbOrTx = db,
+): Promise<ExpenseAttachCandidateRow[]> {
+  const digits = input.record.businessNoDigits && input.record.businessNoDigits !== "" ? input.record.businessNoDigits : null;
+  const pairOk = sql<boolean>`(${expenses.paymentMethod} is null or not (${expenses.paymentMethod} = any(${sql.param([...input.constrainedMethodCodes])}::text[])) or ${expenses.paymentMethod} = any(${sql.param([...input.pairedMethodCodes])}::text[]))`;
+  const score = sql<number>`((case when ${expenses.evidenceType} = ${input.record.evidenceType} then 4 else 0 end) + (case when ${digits}::text is not null and regexp_replace(coalesce(${vendors.businessNo}, ''), '[^0-9]', '', 'g') = ${digits}::text then 2 else 0 end) + (case when ${expenses.supplyAmountKrw} = ${input.record.supplyKrw} then 1 else 0 end))`;
+  const dayGap = sql`abs(${expenses.usageDate} - ${input.record.issuedOn}::date)`;
+  const paid = sql<boolean>`exists (select 1 from expense_payments ep where ep.expense_id = ${expenses.id} and ep.cancelled_at is null)`;
+  const conditions: SQL[] = [scopeCondition(viewer, input.scope), isNotNull(expenses.number), isNull(expenses.closedAt)];
+  if (input.query) {
+    const like = `%${input.query.replace(/[\\%_]/g, "\\$&")}%`;
+    conditions.push(sql`(${expenses.number} ilike ${like} or ${users.name} ilike ${like} or ${vendors.name} ilike ${like} or exists (select 1 from users pu where pu.id = ${expenses.payeeUserId} and pu.name ilike ${like}))`);
+  }
+  const rows = await tx
+    .select({
+      id: expenses.id,
+      number: expenses.number,
+      drafterId: expenses.drafterId,
+      drafterName: users.name,
+      usageDate: expenses.usageDate,
+      status: approvalInstances.status,
+      instanceId: approvalInstances.id,
+      instanceVersion: approvalInstances.version,
+      supplyAmountKrw: expenses.supplyAmountKrw,
+      paymentMethod: expenses.paymentMethod,
+      evidenceType: expenses.evidenceType,
+      businessNo: vendors.businessNo,
+      projectId: expenses.projectId,
+      projectCompleted: sql<boolean>`coalesce(${projects.status} = 'completed', false)`,
+      updatedAt: expenses.updatedAt,
+      version: expenses.version,
+      paid,
+      pairOk,
+      score,
+    })
+    .from(expenses)
+    .innerJoin(users, eq(users.id, expenses.drafterId))
+    .leftJoin(approvalInstances, instanceJoin(input.documentKind))
+    .leftJoin(projects, eq(projects.id, expenses.projectId))
+    .leftJoin(vendors, eq(vendors.id, expenses.vendorId))
+    .where(and(...conditions))
+    .orderBy(sql`case when ${pairOk} then 0 else 1 end`, sql`${score} desc`, sql`${dayGap} asc nulls last`, asc(expenses.id))
+    .limit(CANDIDATE_LIMIT + 1);
+  return rows.map((row) => ({ ...row, number: row.number ?? "", score: Number(row.score) }));
+}
+
+// 쪽 단위 존재 조회 — 그 사람이 볼 수 있는 번호 있는 · 종결 아닌 지출결의가 하나라도 있나(S2 `붙이기` 존재 판정 — eng B-P3).
+export async function hasExpenseAttachTarget(viewer: Viewer, input: { scope: ExpenseScope; documentKind: string }): Promise<boolean> {
+  const [row] = await db
+    .select({ id: expenses.id })
+    .from(expenses)
+    .leftJoin(approvalInstances, instanceJoin(input.documentKind))
+    .leftJoin(projects, eq(projects.id, expenses.projectId))
+    .where(and(scopeCondition(viewer, input.scope), isNotNull(expenses.number), isNull(expenses.closedAt)))
+    .limit(1);
+  return row !== undefined;
+}

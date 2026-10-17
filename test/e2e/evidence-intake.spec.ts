@@ -428,8 +428,8 @@ test("(DA-1) 공개 select — 제안 팀(선택됨) · 설정 본부 · 미공�
   const select = page.getByRole("combobox", { name: "공개", exact: true });
   await expect(select).toBeFocused();
   await expect(select).toHaveValue(`team:${proposalTeam}`);
-  // 첫 `—`는 Select 공용 빈 값(고르지 않음 — 공개 값이 아니라 커밋하지 않는다).
-  await expect(select.locator(":scope > option")).toHaveText(["—", "기획1팀 공개", "기획본부 공개", "미공개"]);
+  // F7(사용자 결정 2026-10-17 「이 칸만 끄기」) — 공개 칸은 Select 공용 빈 값 `—`를 그리지 않는다(hideEmptyOption). 첫 선택지가 제안 팀이다.
+  await expect(select.locator(":scope > option")).toHaveText(["기획1팀 공개", "기획본부 공개", "미공개"]);
   const group = select.locator(":scope > optgroup");
   await expect(group).toHaveCount(1);
   await expect(group).toHaveAttribute("label", "다른 팀");

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useEffectEvent, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { formatCount, formatKrw } from "@/lib/format-number";
@@ -33,6 +34,7 @@ import type {
 import { ConflictLine } from "@/app/(app)/approvals/conflict-line";
 import { archiveEvidenceRecordAction, publishEvidenceRecordsAction, restoreEvidenceRecordAction } from "./actions";
 import { IntakeZone } from "./intake-zone";
+import { PickDocumentDialog, type PickDocumentTarget } from "./pick-document-dialog";
 import expenseStyles from "../expenses.module.css";
 import styles from "./evidence-table.module.css";
 
@@ -59,6 +61,10 @@ type Row = {
   statusWord: EvidenceRecordWord;
   statusDetail: string | null;
   rowAction: EvidenceRowAction;
+  /** 06.1-06 — 붙은 문서(상태 2행 링크) · `붙이기` 그림 · 비활성 이유. */
+  attached: { kind: "expense" | "purchase_request"; id: string | null; number: string | null; pending: boolean } | null;
+  canAttach: boolean;
+  attachBlocked: string | null;
 };
 
 /** 사람이 바꾼 공개 칸 — 값은 셀 안에서만 쓰는 꼴(`private` · `division` · `team:{팀 id}`), version은 바꿀 때 본 값. */
@@ -83,6 +89,8 @@ const COPY = {
   undo: "되돌리기",
   undoFailed: "되돌리기 실패 · 다시 시도",
   unknownResult: "결과를 받지 못함 · 새로 고침",
+  draftOwner: "작성 중 문서",
+  attach: "붙이기",
 } as const;
 
 const ROW_ACTION_LABEL = { archive: "보관", restore: "되살리기" } as const;
@@ -163,8 +171,39 @@ function rowFromView(view: EvidenceRecordView): Row[] {
       statusWord: view.statusWord,
       statusDetail: view.statusDetail ?? null,
       rowAction: view.rowAction ?? null,
+      attached: view.attachedKind
+        ? { kind: view.attachedKind, id: view.attachedId ?? null, number: view.attachedNumber ?? null, pending: view.attachedPending === true }
+        : null,
+      canAttach: view.canAttach === true,
+      attachBlocked: view.attachBlocked ?? null,
     },
   ];
+}
+
+// 06.1-06 S2 2행 — 붙은 문서 번호 링크(지출결의 문서 · 구매 요청 목록). 번호 없는 임시 문서는 링크 없는 낱말(경영관리는 그 문서를 못 본다).
+function AttachedLine({ attached }: { attached: NonNullable<Row["attached"]> }) {
+  if (attached.pending || attached.id === null || attached.number === null) return <span>{COPY.draftOwner}</span>;
+  const href = attached.kind === "expense" ? `/expenses/${attached.id}#evidence` : "/cards/purchases";
+  // 링크 모양은 지출결의 목록 번호 링크(`expenseStyles.link` — `--text-link`)와 같다. 격자 로빙 밖(tabIndex -1 — §7-3 (아) 탭 정지 1개)이고
+  // 키보드 경로는 그 칸 Enter(`pressCellAction` — 지급 대상 · 리저브 대장 선례)다.
+  return (
+    <Link href={href} className={expenseStyles.link} tabIndex={-1} data-cell-action="">
+      {attached.number}
+    </Link>
+  );
+}
+
+// D-2 — 격자 포커스 칸(편집 칸이 아닌 상태 칸)의 Enter = 그 칸 안 `[data-cell-action]`(상태 2행 문서 번호 링크) 누르기. 표를 감싼 요소가 캡처 단계에서
+// 먼저 받는다(ui/table 무변경 — 지급 대상 H-2 · 리저브 대장 S22 선례). 조합 중 · 수정 키 · 편집 칸 안 입력은 손대지 않는다(공개 칸 Enter 편집 그대로).
+function pressCellAction(event: React.KeyboardEvent<HTMLDivElement>) {
+  if (event.key !== "Enter" || event.ctrlKey || event.altKey || event.shiftKey || event.nativeEvent.isComposing) return;
+  const target = event.target;
+  if (!(target instanceof HTMLElement) || !target.matches("td[data-grid-focus]")) return;
+  const action = target.querySelector<HTMLElement>("[data-cell-action]");
+  if (!action) return;
+  event.preventDefault();
+  event.stopPropagation();
+  action.click();
 }
 
 function proposalValue(proposal: EvidenceProposal): string {
@@ -213,6 +252,7 @@ function VisibilityEditCell({ id, initialValue, choices, onCommit, onCancel }: {
       onBlur={(event) => (event.currentTarget.value === initialValue ? onCancel() : onCommit(event.currentTarget.value))}
       options={choices.options}
       groups={choices.groups}
+      hideEmptyOption
       className={styles.cellSelect}
     />
   );
@@ -427,6 +467,30 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
   // 새로 보관할 때만 `되돌리기`를 다시 그려 포커스를 준다(공휴일 delete-undo 꼴).
   const [archiveShown, setArchiveShown] = useState(0);
   const [rowActionPending, setRowActionPending] = useState<string | null>(null);
+  // 06.1-06 S4 — 붙일 문서 고르기(행 `붙이기`). 닫히면 PickDialog가 그 행의 `붙이기`로 포커스를 돌린다.
+  const [attachTarget, setAttachTarget] = useState<PickDocumentTarget | null>(null);
+  function openAttach(row: Row) {
+    if (row.attachBlocked !== null || rowActionPending !== null) return;
+    setAttachTarget({ recordId: row.id, subtitle: row.counterparty ?? "" });
+  }
+  // 붙인 뒤 새 목록이 오면 포커스 자리 — 그 행이 남으면 그 행, 「할 일」처럼 빠지면 다음 행(없으면 이전 행, 없으면 화면 제목).
+  // 붙인 순간의 행 순서를 기억해 두고, 목록(list)이 바뀐 커밋 뒤에 한 번만 옮긴다(PickDialog가 돌려준 `붙이기`는 그 행과 함께 사라진다).
+  const attachedFocusRef = useRef<{ id: string; order: string[] } | null>(null);
+  function onAttached(recordId: string) {
+    attachedFocusRef.current = { id: recordId, order: rows.map((row) => row.id) };
+    router.refresh();
+  }
+  useEffect(() => {
+    const pending = attachedFocusRef.current;
+    if (!pending) return;
+    attachedFocusRef.current = null;
+    const present = new Set(list.rows.flatMap((view) => (view.id === undefined ? [] : [view.id])));
+    const at = pending.order.indexOf(pending.id);
+    const candidates = [pending.id, ...pending.order.slice(at + 1), ...pending.order.slice(0, Math.max(at, 0)).reverse()];
+    const targetId = candidates.find((id) => present.has(id));
+    const cell = targetId ? document.getElementById(counterpartyId(targetId))?.closest<HTMLElement>("td") : null;
+    (cell ?? document.querySelector<HTMLElement>('[data-ui="screen-title"]'))?.focus();
+  }, [list]);
   const shownArchiveLine = archiveLine?.kind === "conflict" && archiveLine.list !== list ? null : archiveLine;
 
   // 보관한 줄은 목록에서 빠진다 — 그 줄의 편집 · 오류 칸만 버린다(다른 줄 편집은 행 id 키라 다시 받아도 남는다).
@@ -543,7 +607,8 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
       header: "상태",
       priority: "p1",
       cell: (row) => <StatusTag status={row.statusWord} variant="text" />,
-      secondaryLine: (row) => (row.statusDetail ? <span id={statusDetailId(row.id)}>{row.statusDetail}</span> : null),
+      secondaryLine: (row) =>
+        row.attached ? <AttachedLine attached={row.attached} /> : row.statusDetail ? <span id={statusDetailId(row.id)}>{row.statusDetail}</span> : null,
       copyText: (row) => row.statusWord,
     },
     // §7-3 (차) 행 행동 열 — 머리글 숨김 · P1 밖 · 셀의 3차는 격자 로빙 밖(tabIndex -1)이고 그 줄 거래처 칸을 가리킨다. 키보드 경로는 Ctrl+E다.
@@ -556,8 +621,18 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
             headerHidden: true,
             priority: "p3" as const,
             cell: (row: Row) =>
-              row.rowAction ? (
+              row.rowAction || row.canAttach ? (
                 <RowActions noWrap>
+                  {row.canAttach && row.attachBlocked !== null ? (
+                    <RowAction tabIndex={-1} describedBy={counterpartyId(row.id)} disabled disabledReason={row.attachBlocked} onClick={() => undefined}>
+                      {COPY.attach}
+                    </RowAction>
+                  ) : row.canAttach ? (
+                    <RowAction tabIndex={-1} describedBy={counterpartyId(row.id)} busy={rowActionPending !== null} onClick={() => openAttach(row)}>
+                      {COPY.attach}
+                    </RowAction>
+                  ) : null}
+                  {row.rowAction ? (
                   <RowAction
                     tabIndex={-1}
                     danger={row.rowAction === "archive"}
@@ -568,6 +643,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
                   >
                     {ROW_ACTION_LABEL[row.rowAction]}
                   </RowAction>
+                  ) : null}
                 </RowActions>
               ) : null,
           },
@@ -715,6 +791,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
       {rows.length === 0 ? (
         <ListEmpty message={emptyState.message} action={emptyState.action} />
       ) : (
+        <div onKeyDownCapture={pressCellAction}>
         <Table
           caption={COPY.caption}
           columns={columns}
@@ -744,6 +821,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
             </tr>
           )}
         />
+        </div>
       )}
 
       {/* DA-22 — 50건 번호 페이지(링크 갈래 — 범위 글자 · `이전` · 숫자 · `다음`). 클라이언트 이동이라 편집 맵이 남는다. */}
@@ -798,6 +876,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
           onDismiss={() => setDiscardedEdits(null)}
         />
       ) : null}
+      <PickDocumentDialog target={attachTarget} onClose={() => setAttachTarget(null)} onAttached={onAttached} />
     </>
   );
 }

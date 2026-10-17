@@ -163,6 +163,8 @@ export type PurchaseCancelTarget = {
   quoteLinked: boolean;
   /** 부제 금액 — 못 보는 사람이면 null. */
   estimateText: string | null;
+  /** 06.1-06(DB-15) 살아 있는 증빙 붙임 수 — 1건 이상이면 결과 줄 `붙은 증빙 {n}건은 증빙 목록으로`. 패널 갈래(S13)는 싣지 않는다. */
+  linkedEvidenceCount?: number;
 };
 
 // 행 `요청 취소`(RowAction danger — 맨 끝 · 위험 색). 접근 이름 `{번호} 요청 취소`.
@@ -275,7 +277,10 @@ function PurchaseCancelDialog({ target, open, onClose, onDone }: { target: Purch
       onClose={close}
       title="구매 요청 취소"
       subtitle={[target.number, target.itemName, ...(target.estimateText ? [target.estimateText] : [])].join(" · ")}
-      resultLines={target.quoteLinked ? ["견적 줄 연결 풀림"] : []}
+      resultLines={[
+        ...(target.quoteLinked ? ["견적 줄 연결 풀림"] : []),
+        ...(target.linkedEvidenceCount ? [`붙은 증빙 ${target.linkedEvidenceCount}건은 증빙 목록으로`] : []),
+      ]}
       evidenceField={
         <div className={dialogStyles.reason}>
           <label htmlFor={fieldId}>사유</label>

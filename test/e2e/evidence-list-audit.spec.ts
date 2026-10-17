@@ -506,6 +506,8 @@ test("② intake 1280 · 1024 — 결과 행 조각 · 0 조각 없음 · 80자 
     const pieceKinds = await resultRow(page).locator("[data-kind]").evaluateAll((elements) => elements.map((element) => ({ kind: element.getAttribute("data-kind"), color: getComputedStyle(element).color })));
     record("결과 행 조각 data-kind · 색(참고)", width, role, url, pieceKinds, "06.1-03 조각 색 표", null);
 
+    // 결과 행은 업로드 응답에서 바로 서고 목록은 router.refresh 뒤에 다시 그려진다 — 줄이 보이기 전에 재면 필터 · 표가 「없음」으로 잡힌다(CI e2e (1) #252).
+    await expect(evidenceRows(page).first()).toBeVisible({ timeout: 30_000 });
     const order = await precedesAll([
       ["S1 영역", dropZone(page)],
       ["결과 행", resultRow(page)],
@@ -599,9 +601,8 @@ test("③ intake 1280 — Ctrl+U 파일 선택 · 방향키 → Enter 편집 →
   );
   const choices = options.filter((option) => option !== "—");
   record("공개 select 선택지 순서(DA-1 — 자리표시 `—` 뺌)", 1280, role, url, choices, "기획1팀 공개 → 기획본부 공개 → 미공개 → [다른 팀: …(기획1팀 제외)]", choices[0] === "기획1팀 공개" && choices[1] === "기획본부 공개" && choices[2] === "미공개" && String(choices[3]).startsWith("[다른 팀:") && !String(choices[3]).includes("기획1팀 공개"));
-  // F7(디자인 검토 P3) — 공용 `ui/select`가 첫 `—`를 늘 그린다. 카드 사용 증빙 종류 비우기(`selectOption("")`) · 프로젝트 폼 필수 선택 등이 이 빈 옵션에 기대
-  // 공용 계약을 못 바꾼다 — 판정 대기라 판정 없는 참고로만 적는다(바뀌면 이 줄을 `options[0] === "기획1팀 공개"` 판정으로 되돌린다).
-  record("공개 select 첫 선택지(참고 — F7 판정 대기: 공용 Select가 `—`를 늘 그림)", 1280, role, url, options[0], "기획1팀 공개(맨 위 · 기본)", null);
+  // F7(디자인 검토 P3 · 사용자 결정 2026-10-17 「이 칸만 끄기」) — 공개 칸만 `hideEmptyOption`으로 `—`를 끈다. 첫 선택지가 제안 팀이다.
+  record("공개 select 첫 선택지 = 제안 팀(F7 — `—` 없음)", 1280, role, url, options[0], "기획1팀 공개(맨 위 · 기본)", options[0] === "기획1팀 공개" && !options.includes("—"));
   await classAudit(page, "cellSelect", 1280, url, [["height", "var(--control-h)"], ["border-bottom-color", "var(--accent)"], ["background-color", "var(--accent-weak)"], ["color", "var(--text-strong)"], ["font-size", "var(--text-body)"], ["padding-left", "var(--s-1)"]], { "border-bottom-style": "solid", "border-bottom-width": "1px", "border-top-width": "0px" });
   await page.keyboard.press("Escape");
   await expect(editor).toHaveCount(0);

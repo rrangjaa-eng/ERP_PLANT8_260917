@@ -533,3 +533,92 @@ export function hometaxTaxInvoiceFixture(rows: readonly FixtureRow[], opts: Home
     opts.as,
   );
 }
+
+// 06.1-11: 홈택스 매입 현금영수증 목록 — 시트 1장, 0행 13열(N) 띠 `총 사용금액 : {합}(원)`, 1행 머리글 15칸, 2행부터 데이터
+// (samples/hometax-cash-receipt-purchase.md). 금액 넷은 숫자 셀, 날짜 · 승인번호 · 발급수단은 글자 셀이다.
+export const HOMETAX_CASH_RECEIPT_HEADER = [
+  "매입일시",
+  "사용자명",
+  "가맹점사업자번호",
+  "가맹점명",
+  "업종코드",
+  "업종",
+  "업태",
+  "공급가액",
+  "부가세",
+  "봉사료",
+  "매입금액",
+  "승인번호",
+  "발급수단",
+  "거래구분",
+  "공제여부",
+] as const;
+
+const CASH_RECEIPT_AMOUNTS = ["공급가액", "부가세", "봉사료", "매입금액"];
+
+export type HometaxCashReceiptFixtureOptions = FixtureOptions & {
+  /** 띠 칸 글자 — 기본은 매입금액 합을 `총 사용금액 : {쉼표 합}(원)`으로. */
+  band?: FixtureCell;
+  /** 띠 칸 열(0부터) — 기본 13(N). */
+  bandCol?: number;
+  /** 머리글 줄(0부터) — 기본 1. 띠는 늘 0행이다. */
+  headerRow?: number;
+  header?: readonly string[];
+  /** 금액 넷을 쉼표 붙은 글자로 쓴다(엑셀 재저장 꼴). */
+  amountText?: boolean;
+};
+
+export function hometaxCashReceiptFixture(rows: readonly FixtureRow[], opts: HometaxCashReceiptFixtureOptions = {}): Uint8Array {
+  const defaults: Record<string, FixtureCell> = {
+    매입일시: "2026-07-15 12:30:45",
+    사용자명: "사용자가",
+    가맹점사업자번호: FAKE_BUSINESS_NO,
+    가맹점명: "가맹점가",
+    업종코드: "123456",
+    업종: "업종가",
+    업태: "업태가",
+    공급가액: 9091,
+    부가세: 909,
+    봉사료: 0,
+    매입금액: 10000,
+    승인번호: "A10000001",
+    발급수단: "4321",
+    거래구분: "승인거래",
+    공제여부: "공제",
+  };
+  const header = opts.header ?? HOMETAX_CASH_RECEIPT_HEADER;
+  const total = rows.reduce((sum, row) => {
+    const value = row === null ? null : "매입금액" in row ? row.매입금액 : defaults.매입금액;
+    return typeof value === "number" ? sum + value : sum;
+  }, 0);
+  const bandCol = opts.bandCol ?? 13;
+  const band = opts.band === undefined ? `총 사용금액 : ${commaText(total)}(원)` : opts.band;
+  const body = rowsOf(header, defaults, rows).map((cells) =>
+    cells.map((cell, i) => (opts.amountText && typeof cell === "number" && CASH_RECEIPT_AMOUNTS.includes(header[i] ?? "") ? commaText(cell) : cell)),
+  );
+  const headerRow = opts.headerRow ?? 1;
+  const sheet: FixtureCell[][] = [
+    Array.from({ length: bandCol + 1 }, (_, i) => (i === bandCol ? band : null)),
+    ...Array.from({ length: headerRow - 1 }, () => []),
+    [...header],
+    ...body,
+  ];
+  return writeBook([{ name: "sheet1", rows: sheet }], opts.as);
+}
+
+// 06.1-11: 홈택스 매입 전자(수정)계산서(면세) 목록 — 세금계산서 목록과 같은 시트 · 같은 줄 위치에 띠 `매입 전자(수정) 계산서 목록조회`,
+// 머리글은 `세액` · `품목세액`을 뺀 31칸, 2행 총계는 `총 공급가액` 한 쌍(samples/hometax-invoice-purchase.md). 합계금액 = 공급가액이 기본이다.
+export function hometaxInvoiceFixture(rows: readonly FixtureRow[], opts: HometaxFixtureOptions = {}): Uint8Array {
+  const filled = rows.map((row) => {
+    if (row === null) return null;
+    const supply = "공급가액" in row ? (row.공급가액 ?? null) : 100000;
+    return { 공급자사업자등록번호: FAKE_BUSINESS_NO, 전자세금계산서분류: "계산서", 공급가액: supply, 합계금액: supply, ...row };
+  });
+  const supplySum = filled.reduce((sum, row) => (row !== null && typeof row.공급가액 === "number" ? sum + row.공급가액 : sum), 0);
+  return hometaxTaxInvoiceFixture(filled, {
+    band: "매입 전자(수정) 계산서 목록조회",
+    omit: ["세액", "품목세액"],
+    totals: [["총 공급가액", commaText(supplySum)]],
+    ...opts,
+  });
+}

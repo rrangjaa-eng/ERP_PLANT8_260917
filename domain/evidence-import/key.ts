@@ -1,10 +1,12 @@
-import type { EvidenceFormatKey, KeyedLine, ParsedLine } from "@/domain/evidence-import/types";
+import type { EvidenceFormatKey, FormatRule, KeyedLine, ParsedLine } from "@/domain/evidence-import/types";
 
 // 06.1-02: 중복 열쇠(dedupe key)와 같은 파일 안 완전 상쇄 쌍. 열쇠는 파일 안 값만으로 정한다(시각 · 무작위 없음) —
 // 같은 파일을 다시 올리면 같은 열쇠가 나온다(EVID-06). 접두어는 서식 키(B-F17).
 
-function baseKeyOf(format: EvidenceFormatKey, keyKind: "card" | "approval", line: ParsedLine): string {
+function baseKeyOf(format: EvidenceFormatKey, keyKind: FormatRule["keyKind"], line: ParsedLine): string {
   if (keyKind === "approval") return `${format}|${line.approvalNo ?? ""}`;
+  // 현금영수증 승인번호(9자)는 해 · 가맹점을 넘어 다시 나오고 취소 줄이 원거래와 같이 쓴다 — 날짜 · 가맹점 번호 · 부호 있는 합계까지(E17).
+  if (keyKind === "approval-dated") return `${format}|${line.approvalNo ?? ""}|${line.issuedOn}|${line.businessNoDigits ?? ""}|${line.totalKrw}`;
   const last4 = line.cardLast4 ?? "";
   // 취소 줄이 원거래와 승인번호를 같이 쓴다 — 날짜 · 부호 있는 합계까지 넣어야 취소가 원거래로 뭉개지지 않는다(Pitfall 1).
   if (line.approvalNo !== null) return `${format}|${last4}|${line.approvalNo}|${line.issuedOn}|${line.totalKrw}`;
@@ -15,7 +17,7 @@ function baseKeyOf(format: EvidenceFormatKey, keyKind: "card" | "approval", line
 // 카드 서식만 같은 파일 안 같은 열쇠에 등장 순서 꼬리표 `#2` · `#3`. `#n`은 파일을 넘는 정체가 아니므로 꼬리표 앞 열쇠
 // `baseKey`와 이 파일의 같은 baseKey 줄 수 `sameKeyCount`를 함께 싣는다 — 앞 파일과 겹친 무리의 판정은 06.1-04(GH-P1).
 // 승인번호 서식(홈택스)은 파일 안 겹침이 서식 규칙의 줄 오류라 여기 오지 않는다 — sameKeyCount는 늘 1.
-export function dedupeKeys(format: EvidenceFormatKey, keyKind: "card" | "approval", lines: readonly ParsedLine[]): KeyedLine[] {
+export function dedupeKeys(format: EvidenceFormatKey, keyKind: FormatRule["keyKind"], lines: readonly ParsedLine[]): KeyedLine[] {
   const bases = lines.map((line) => baseKeyOf(format, keyKind, line));
   const counts = new Map<string, number>();
   for (const base of bases) counts.set(base, (counts.get(base) ?? 0) + 1);

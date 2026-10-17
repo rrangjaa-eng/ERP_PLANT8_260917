@@ -234,7 +234,7 @@ function zip64Extra(uncompressed: number, compressed: number): Uint8Array {
   return extra;
 }
 
-export type ZipForgery = "local-size" | "data-descriptor" | "zip64-local" | "zip64-central" | "zero-size-deflate" | "method";
+export type ZipForgery = "local-size" | "data-descriptor" | "zip64-local" | "zip64-central" | "zero-size-deflate" | "method" | "understated-deflate";
 
 // 중앙 디렉터리는 작아 보이는데 SheetJS가 로컬 헤더 · ZIP64 칸 · 데이터 서술자로 크게 푸는 꼴(독립 검토 P1-1).
 // 정상 롯데 xlsx(deflate)의 첫 항목 하나만 위조한다 — 파일은 작게 둔다.
@@ -262,6 +262,15 @@ export function forgedZipFixture(forgery: ZipForgery): Uint8Array {
     local.setUint32(22, 0, true);
     central.setUint32(20, first.data.length, true);
     central.setUint32(24, 0, true);
+  }
+  if (forgery === "understated-deflate") {
+    // 로컬 · 중앙 크기가 서로 같고 압축 길이도 맞는데, deflate 스트림이 실제로는 선언보다 훨씬 크게 풀린다(/cso B1).
+    // SheetJS는 선언 크기에서 출력을 끊지만 스트림 끝까지 푸느라 CPU를 붙잡는다.
+    first.data = new Uint8Array(deflateRawSync(new Uint8Array(5_000_000)));
+    local.setUint32(18, first.data.length, true);
+    local.setUint32(22, 1000, true);
+    central.setUint32(20, first.data.length, true);
+    central.setUint32(24, 1000, true);
   }
   return zipOf(entries);
 }

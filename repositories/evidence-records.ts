@@ -94,18 +94,18 @@ export async function findCardRecordsByApprovalNos(viewer: Viewer, format: strin
 }
 
 // G11: 그 끝 4자리의 카드 미등록 기록(끝 4자리는 카드 서식 줄만 갖는다) — 다시 잇기가 서식 별칭으로 다시 판정한다.
-export async function findUnknownCardRecordsByLast4(viewer: Viewer, last4: string): Promise<{ id: string; format: string }[]> {
+export async function findUnknownCardRecordsByLast4(viewer: Viewer, last4: string, tx: DbOrTx = db): Promise<{ id: string; format: string }[]> {
   void viewer;
-  return db
+  return tx
     .select({ id: evidenceRecords.id, format: evidenceRecords.format })
     .from(evidenceRecords)
     .where(and(isNull(evidenceRecords.corpCardId), eq(evidenceRecords.cardLast4, last4)));
 }
 
 // G11: 아직 카드가 없는 줄만 잇는다 — 이미 이어진 줄은 옮기지 않는다(조건 corp_card_id is null). 바뀐 행 수.
-export async function linkRecordsToCard(viewer: Viewer, cardId: string, recordIds: readonly string[]): Promise<number> {
+export async function linkRecordsToCard(viewer: Viewer, cardId: string, recordIds: readonly string[], tx: DbOrTx = db): Promise<number> {
   void viewer;
-  const rows = await db
+  const rows = await tx
     .update(evidenceRecords)
     .set({ corpCardId: cardId, version: sql`${evidenceRecords.version} + 1`, updatedAt: new Date() })
     .where(and(sql`${evidenceRecords.id} = ANY(${sql.param([...recordIds])}::uuid[])`, isNull(evidenceRecords.corpCardId)))
@@ -392,6 +392,8 @@ export type LockedEvidenceRecord = {
   version: number;
   format: string;
   visibility: string;
+  visibleTeamId: string | null;
+  visibleOrgUnitId: string | null;
   corpCardId: string | null;
   needsCheck: string | null;
   totalKrw: number;
@@ -413,6 +415,8 @@ export async function lockRecordsForUpdate(viewer: Viewer, ids: readonly string[
       version: evidenceRecords.version,
       format: evidenceRecords.format,
       visibility: evidenceRecords.visibility,
+      visibleTeamId: evidenceRecords.visibleTeamId,
+      visibleOrgUnitId: evidenceRecords.visibleOrgUnitId,
       corpCardId: evidenceRecords.corpCardId,
       needsCheck: evidenceRecords.needsCheck,
       totalKrw: evidenceRecords.totalKrw,

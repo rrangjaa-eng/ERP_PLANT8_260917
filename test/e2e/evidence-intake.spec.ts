@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 import { AxeBuilder } from "@axe-core/playwright";
 import { test, expect, type Page, type Route } from "@playwright/test";
 import { createTeamExpenseDraft } from "@/domain/expenses";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { seoulToday } from "@/lib/dates";
+import { upsertPermission } from "@/repositories/permissions";
 import { bcFixture, hometaxTaxInvoiceFixture, lotteFixture } from "@/test/fixtures/evidence-import/build";
 import {
   addBcCard,
@@ -515,6 +517,20 @@ test("(DA-2) 서버 5xx · 연결 끊김이면 `올리지 못함` + `다시 올�
   await failed.getByRole("button", { name: "다시 올리기" }).click();
   await expect(resultRow(page)).toContainText("등록 1");
   await expect(evidenceRows(page)).toHaveCount(1);
+});
+
+test("(/review P3-4) 화면을 연 뒤 등록 권한이 회수되면 서버 거절 글자 그대로 거절 행 — `다시 올리기` 없음", async ({ page }) => {
+  const viewer = await loginIntake(page);
+  const card = await addLotteCard({ kind: "shared" });
+  await page.goto("/expenses/evidence");
+  if (!viewer.roleId) throw new Error("계급 없음");
+  await upsertPermission(SYSTEM_VIEWER, { roleId: viewer.roleId, menu: "evidence.intake", action: "write", allowed: false });
+
+  await uploadFixture(page, "롯데_권한.xls", lotteFixture(lotteLines(card, 1)));
+  await expect(refusedRow(page)).toContainText("롯데_권한.xls");
+  await expect(refusedRow(page)).toContainText("증빙 등록 권한 없음");
+  await expect(page.locator('[data-variant="bulk-import"] li[data-state="failed"]')).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "다시 올리기" })).toHaveCount(0);
 });
 
 test("(E32 · P3-8) 정상 롯데 하나 + 1.4MB 하나를 함께 놓기 → 결과 행 둘(성공 · 거절) · 표에는 롯데 3줄만", async ({ page }) => {

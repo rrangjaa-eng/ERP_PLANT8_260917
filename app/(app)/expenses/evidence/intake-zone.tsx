@@ -14,6 +14,9 @@ import { registerEvidenceFileAction } from "./actions";
 
 // Next 서버 액션 본문 한도 글자(`Body exceeded {한도} limit.`) — 413 text/plain 응답이면 클라이언트가 이 글자로 던진다. 크기 거절이다.
 const BODY_LIMIT_ERROR = /^Body exceeded /;
+// lib/actions/handle-server-error.ts의 일반 문구(분류 안 된 서버 오류) — 다시 올려 풀릴 수 있어 `다시 올리기`를 남긴다.
+// 그 밖의 serverError는 domain이 사용자에게 보이려고 던진 거절(권한 없음 등)이라 다시 올려도 같다(/review P3-4).
+const GENERIC_SERVER_ERROR = "처리 중 오류 · 잠시 후 다시 시도";
 
 type QueuedFile = { key: string; file: File };
 
@@ -80,19 +83,27 @@ export function IntakeZone({ onUploadingChange }: { onUploadingChange: (uploadin
     setRows((current) => current.map((one) => (one.key === key ? row : one)));
   }
 
-  // 연결 끊김 · 시간 초과 · 5xx만 `올리지 못함` + `다시 올리기`다. 본문 한도로 끝난 응답은 다시 올려도 같아 크기 거절 행이다.
+  // 연결 끊김 · 시간 초과 · 5xx만 `올리지 못함` + `다시 올리기`다. 본문 한도로 끝난 응답은 다시 올려도 같아 크기 거절 행이고,
+  // 서버가 거절 글자를 돌려준 응답(권한 없음 등)은 그 글자 그대로 거절 행이다.
   async function upload(key: string, file: File) {
     const form = new FormData();
     form.set("file", file);
     let data: RegisterResult | undefined;
+    let serverError: string | undefined;
     let bodyLimit = false;
     try {
-      data = (await registerEvidenceFileAction(form))?.data;
+      const result = await registerEvidenceFileAction(form);
+      data = result?.data;
+      serverError = result?.serverError;
     } catch (error) {
       bodyLimit = error instanceof Error && BODY_LIMIT_ERROR.test(error.message);
     }
     if (bodyLimit) {
       replaceRow(key, sizeRefusedRow(key, file));
+      return;
+    }
+    if (!data && serverError !== undefined && serverError !== GENERIC_SERVER_ERROR) {
+      replaceRow(key, { key, state: "refused", fileName: file.name, headline: serverError, lines: [], restCount: 0 });
       return;
     }
     if (!data) {

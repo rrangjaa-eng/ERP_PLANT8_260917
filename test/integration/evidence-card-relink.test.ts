@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { corpCardUsages, evidenceRecords } from "@/db/schema";
+import { corpCards, corpCardUsages, evidenceRecords } from "@/db/schema";
 import { archive, restore } from "@/domain/archive";
 import { createCorpCard, setCorpCardActive } from "@/domain/corp-cards";
 import { relinkUnknownCardRecords } from "@/domain/evidence-import/card-relink";
@@ -78,5 +78,21 @@ describe("카드 미등록 줄 다시 잇기 (06.1-04 G11)", () => {
     expect(await relinkUnknownCardRecords(SYSTEM_VIEWER, shinhanOn2222)).toEqual({ linked: 0 });
     expect(await relinkUnknownCardRecords(SYSTEM_VIEWER, shinhanOn3333)).toEqual({ linked: 0 });
     expect((await db.select().from(corpCardUsages)).length).toBe(usagesBefore);
+  });
+
+  it("(/review P3-6) 카드 저장 뒤 다시 잇기가 실패하면 카드도 남지 않는다 — 다시 저장하면 「이미 등록된 카드」 없이 저장되고 미등록 줄이 이어진다", async () => {
+    const viewer = await createIntakeViewer();
+    expect((await registerFixtureFile(viewer, lotteFixture([{ 카드번호: "9999000011116606", 승인번호: "66060001" }]))).cardUnknown).toBe(1);
+    const input = { issuer: "롯데카드", numberLast4: "6606", label: "롯데 6606", kind: "shared" as const };
+
+    await expect(
+      createCorpCard(SYSTEM_VIEWER, input, {
+        relinkUnknownCardRecords: () => Promise.reject(new Error("다시 잇기 실패")),
+      }),
+    ).rejects.toThrow("다시 잇기 실패");
+    expect(await db.select().from(corpCards).where(eq(corpCards.numberLast4, "6606"))).toEqual([]);
+
+    const card = await createCorpCard(SYSTEM_VIEWER, input);
+    expect(await recordByApproval("66060001")).toMatchObject({ corpCardId: card.id, version: 2 });
   });
 });

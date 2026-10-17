@@ -220,7 +220,7 @@ describe("손상 · 암호 · 압축 폭탄 — SheetJS 예외가 새지 않는�
   });
 
   // 독립 검토 P1-1 — SheetJS는 로컬 헤더 · ZIP64 칸으로 풀 크기를 정하고 중앙 디렉터리와의 차이는 다 푼 뒤에 본다.
-  for (const forgery of ["local-size", "data-descriptor", "zip64-local", "zip64-central", "zero-size-deflate", "method"] as const) {
+  for (const forgery of ["local-size", "data-descriptor", "zip64-local", "zip64-central", "zero-size-deflate", "method", "understated-deflate"] as const) {
     it(`위조 zip(${forgery}) → zipEntryStats null · 거절 · SheetJS 읽기 호출 0`, () => {
       const bytes = forgedZipFixture(forgery);
       expect(bytes.length).toBeLessThan(EVIDENCE_IMPORT_MAX_BYTES);

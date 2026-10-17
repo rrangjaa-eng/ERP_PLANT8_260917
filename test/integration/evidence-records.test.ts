@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { actionLog, evidenceRecords, orgUnits, teams } from "@/db/schema";
 import { createAccount } from "@/domain/auth/accounts";
@@ -173,6 +173,35 @@ describe("domain/evidence-records — 트레이서: 등록 → 제안 → 공개
     const teamRow = stored.find((row) => row.visibility === "team");
     expect(await getEvidenceRecord(intake, teamRow?.id ?? "")).toMatchObject({ statusWord: "팀 공개", statusDetail: "기획1팀", visibilityLabel: "기획1팀 공개" });
     expect(await getEvidenceRecord(intake, rest[0]?.id ?? "")).toMatchObject({ statusWord: "본부 공개", visibilityLabel: "기획본부 공개" });
+  });
+
+  it("(/cso B2) 공개 범위 저장 행동 로그 — 건수와 함께 어느 줄을 어느 팀 · 본부에 열었는지(줄 id)를 남긴다", async () => {
+    const intake = await createIntakeViewer();
+    const team = await teamIdByName("기획1팀");
+    await addLotteCard("5401", { kind: "team", teamId: team });
+    await addLotteCard("5402", { kind: "shared" });
+    await registerFixtureFile(intake, lotteFixture([...lotteLines("5401", ["54010001"]), ...lotteLines("5402", ["54020001", "54020002"])]), "롯데.xls");
+    const before = await listEvidenceRecords(intake);
+    const [kept, ...rest] = before.proposals.filter((proposal) => proposal.visibility === "division");
+    const teamProposal = before.proposals.find((proposal) => proposal.visibility === "team");
+    if (!kept || !teamProposal) throw new Error("제안 없음");
+    const groups = [...groupsOf({ ...before, proposals: before.proposals.filter((proposal) => proposal.id !== kept.id) }), { visibility: "private" as const, items: [[kept.id, kept.version] as const] }];
+
+    await publishEvidenceRecords(intake, { groups });
+
+    const logs = await db
+      .select()
+      .from(actionLog)
+      .where(and(eq(actionLog.actorId, intake.id), eq(actionLog.actionType, "document_update"), eq(actionLog.entity, "evidence_record")));
+    expect(logs).toHaveLength(1);
+    const division = await getSettingValue(EVIDENCE_VISIBILITY_DIVISION_ORG_UNIT);
+    expect(logs[0]?.detail).toEqual({
+      saved: 3,
+      private: 1,
+      team: 1,
+      division: 1,
+      records: { private: [kept.id], team: { [team]: [teamProposal.id] }, division: { [String(division)]: rest.map((one) => one.id) } },
+    });
   });
 
   it("낡은 version 한 줄이 섞이면 저장 0줄 · 그 줄 오류 칸 하나(전부-아니면-전무)", async () => {
@@ -641,6 +670,23 @@ describe("domain/evidence-records — 서버가 거부하는 편집 · 보관 / 
     expect((await storedRows([rows.negative]))[0]).toMatchObject({ archivedAt: null, archivedBy: null, version: version + 2 });
     expect((await actionLogFor(rows.negative)).map((log) => log.actionType).sort()).toEqual(["archive", "restore"]);
     expect((await listEvidenceRecords(intake)).rows.map((row) => row.id)).toContain(rows.negative);
+  });
+
+  it("(/cso B2) 공개된 줄 보관 · 되살림 행동 로그 — 그 줄이 닫고 다시 여는 범위(팀 · 본부 id)를 남긴다", async () => {
+    const intake = await createIntakeViewer();
+    const rows = await seedStateRows(intake);
+    const team = await teamIdByName("기획1팀");
+    const version = (await versionsOf([rows.published])).get(rows.published) ?? 0;
+
+    const archived = await archiveEvidenceRecord(intake, { id: rows.published, version });
+    await restoreEvidenceRecord(intake, archived);
+
+    const logs = await actionLogFor(rows.published);
+    const scope = { visibility: "team", teamId: team, orgUnitId: null };
+    expect(logs.map((log) => [log.actionType, log.detail]).sort()).toEqual([
+      ["archive", scope],
+      ["restore", scope],
+    ]);
   });
 
   it("(DA-7) 붙은 줄 보관 · 낡은 version 보관 · 보관 아닌 줄 되살림은 거부(다른 사람이 {HH:mm}에 바꿈 · 새로 고침) — 보관 0 · 로그 0", async () => {

@@ -113,6 +113,11 @@
     min-height: var(--touch-min);
     min-width: var(--touch-min);
   }
+
+  /* 복원 뒤 폰에 서는 1차 높이 44 — ListScreen `.primaryAction`과 같은 규칙(폰 터치 목표). */
+  .primaryAction {
+    min-height: var(--touch-min);
+  }
 }
 
 /* 06.1-05 Task 3(DA-7 · §7-8 :1008) — 표 위 결과 줄 `증빙 보관됨` + `되돌리기` · 거부 글자 + `새로 고침`. 04.2 공휴일 · 06-09 카드 사용

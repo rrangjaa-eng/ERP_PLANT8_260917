@@ -577,7 +577,8 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
   if (result.serverError) footerNotices.push({ tone: "danger", text: result.serverError });
 
   // 1차는 편집 폭에서만, 목록이 완전히 비었으면 없다(DR5 — 끌어 놓기 영역의 `파일 고르기`가 첫 행동 · 할 일 0이면 `전체 보기`).
-  const showPrimary = editableWidth && (rows.length > 0 || pending > 0);
+  // 1024 미만은 보기 전용이지만 복원으로 사람이 바꾼 칸이 생기면 저장할 1차가 있어야 한다(§7-3 (아) DR-24 — 막다른 상태 금지).
+  const showPrimary = editableWidth ? rows.length > 0 || pending > 0 : editCount > 0;
   const noChange = pending === 0 && !cellEditing;
   const primaryBlocked = uploading ? COPY.uploading : noChange ? COPY.noChange : undefined;
 

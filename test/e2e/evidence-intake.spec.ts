@@ -644,3 +644,32 @@ test("(DA-7) `?state=archived` 보기의 행 행동은 `되살리기`만 — 누
   await expect(emptyMessage(page)).toHaveText("조건에 맞는 증빙이 없습니다");
 });
 
+
+// 06.1-05 디자인 검토 H1 — 1024 미만(보기 전용 폭)에서 복원으로 사람이 바꾼 칸이 생기면 저장할 1차가 있어야 한다(막다른 상태 금지).
+// 1280에서 칸 하나를 `미공개`로 바꾸고 떠난 뒤 좁은 폭으로 돌아와 `복원`을 누른다.
+for (const width of [768, 375]) {
+  test(`(H1 · DR-24) ${width} — 복원으로 사람이 바꾼 칸이 생기면 1차 \`공개 범위 저장\`이 선다(바꾼 칸이 없으면 없다)${width === 375 ? " · 높이 44" : ""}`, async ({ page }) => {
+    const viewer = await loginIntake(page);
+    const card = await addLotteCard({ kind: "shared" });
+    await registerFile(viewer, lotteFixture(lotteLines(card, 3)), `롯데_H1_${width}.xls`);
+    page.on("dialog", (dialog) => void dialog.accept());
+    await page.goto("/expenses/evidence");
+    await expect(evidenceRows(page)).toHaveCount(3);
+    await focusGridCell(evidenceCell(page, 0, EVIDENCE_COL.visibility));
+    await page.keyboard.press("Enter");
+    await page.getByRole("combobox", { name: "공개", exact: true }).selectOption({ label: "미공개" });
+    await expect(page.getByRole("button", { name: /^공개 범위 저장 3/ })).toBeVisible();
+    await page.goto("/expenses");
+
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto("/expenses/evidence");
+    await expect(page.getByText("저장 안 한 편집 1칸")).toBeVisible();
+    const primary = page.getByRole("button", { name: /^공개 범위 저장/ });
+    await expect(primary).toHaveCount(0);
+
+    await page.getByRole("button", { name: "복원" }).click();
+    await expect(page.getByText("저장 안 한 편집 1칸")).toHaveCount(0);
+    await expect(primary).toBeVisible();
+    if (width === 375) expect((await primary.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+  });
+}

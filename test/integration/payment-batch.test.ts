@@ -213,12 +213,13 @@ describe("순수", () => {
     expect(BATCH_ROW_FAILED).toBe("처리 실패 · 새로 고침");
   });
 
-  it("증빙 필터 — unreviewed = P2 · missing = P3 · payable = P4, 모르는 값은 필터 없음", () => {
+  it("증빙 필터 — unreviewed = P2 · missing = P3 · payable = P4 · file-only = 출처 조건(row null), 모르는 값은 필터 없음", () => {
     expect(parsePaymentEvidenceFilter("unreviewed")).toBe("unreviewed");
     expect(PAYMENT_EVIDENCE_FILTERS.map((filter) => [filter.value, filter.row, filter.label])).toEqual([
       ["unreviewed", "P2", "확인 전"],
       ["missing", "P3", "증빙 없음"],
       ["payable", "P4", "지급 가능"],
+      ["file-only", null, "파일만 있음"],
     ]);
     expect(parsePaymentEvidenceFilter("all")).toBeNull();
     expect(parsePaymentEvidenceFilter(undefined)).toBeNull();

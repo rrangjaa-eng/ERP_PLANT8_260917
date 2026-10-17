@@ -23,6 +23,7 @@ import { SaveRejectedError } from "@/domain/quotes/lines";
 import { EVIDENCE_VISIBILITY_DIVISION_ORG_UNIT } from "@/domain/settings/keys";
 import { getSettingValue, setSettingValue } from "@/domain/settings/registry";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
+import { withTransaction } from "@/lib/db-transaction";
 import { MAX_ACTION_PAYLOAD_BYTES } from "@/lib/actions/payload-size";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { seoulToday } from "@/lib/dates";
@@ -655,6 +656,31 @@ describe("domain/evidence-records — 서버가 거부하는 편집 · 보관 / 
     const stored = await storedRows([rows.attached]);
     expect(stored[0]).toMatchObject({ archivedAt: null, archivedBy: null, version: versions.get(rows.attached) });
     expect(await actionLogFor(rows.attached)).toEqual([]);
+  });
+
+  it("(P3) 갱신 시각 updated_at(timestamp)은 DB 세션 시간대와 무관하게 UTC 시각으로 담긴다 — 세션이 Asia/Seoul이어도 충돌 글자 HH:mm이 한국 시각이다", async () => {
+    const intake = await createIntakeViewer();
+    const rows = await seedStateRows(intake);
+    const version = (await versionsOf([rows.plain])).get(rows.plain) ?? 0;
+
+    // 세션 시간대를 한국으로 두고 갱신 두 문장(공개 범위 저장 · 보관)을 쓴 뒤, 같은 잠금 질의로 읽은 updatedAt이 지금과 가까워야 한다.
+    const stampedBy = async (write: (tx: Parameters<Parameters<typeof withTransaction>[0]>[0], currentVersion: number) => Promise<unknown>, currentVersion: number): Promise<Date> =>
+      withTransaction(async (tx) => {
+        await tx.execute(sql`SET LOCAL TIME ZONE 'Asia/Seoul'`);
+        await write(tx, currentVersion);
+        const [locked] = await evidenceRecordsRepo.lockRecordsForUpdate(intake, [rows.plain], tx);
+        if (!locked) throw new Error("줄 없음");
+        return locked.updatedAt;
+      });
+
+    const afterVisibility = await stampedBy(
+      (tx, current) => evidenceRecordsRepo.updateVisibilitiesIfVersionMatch(intake, [{ id: rows.plain, version: current, visibility: "private", teamId: null, orgUnitId: null }], tx),
+      version,
+    );
+    expect(Math.abs(afterVisibility.getTime() - Date.now())).toBeLessThan(60_000);
+
+    const afterArchive = await stampedBy((tx, current) => evidenceRecordsRepo.setRecordArchivedIfVersionMatches(intake, { id: rows.plain, version: current, archived: true }, tx), version + 1);
+    expect(Math.abs(afterArchive.getTime() - Date.now())).toBeLessThan(60_000);
   });
 
   it("(DA-7) 증빙 등록 쓰기가 없는 계급(기획 PM)은 보관 · 되살림 둘 다 거부", async () => {

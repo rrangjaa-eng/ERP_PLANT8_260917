@@ -433,7 +433,8 @@ export const EVIDENCE_VISIBILITY_UPDATE_CHUNK = 500;
 export type EvidenceVisibilityUpdate = { id: string; version: number; visibility: "private" | "team" | "division"; teamId: string | null; orgUnitId: string | null };
 
 // 공개 범위 저장 한 문장(줄 수 ≤ EVIDENCE_VISIBILITY_UPDATE_CHUNK) — id · version이 같은 줄만 바꾸고 바꾼 id를 돌려준다(적으면 충돌).
-// visibility_saved_at(timestamptz)은 미공개로 저장해도 찍힌다(C1). updated_at(timestamp)은 바뀐 시각 표시용이라 비교하지 않는다.
+// visibility_saved_at(timestamptz)은 미공개로 저장해도 찍힌다(C1). updated_at(timestamp)은 바뀐 시각 표시용이라 비교하지 않는다 — 시간대 없는
+// 칸은 읽을 때 UTC로 해석하므로 쓸 때도 `at time zone 'UTC'`로 DB 세션 시간대와 무관하게 UTC 시각을 담는다(충돌 글자 HH:mm의 한국 시각 변환).
 export async function updateVisibilitiesIfVersionMatch(viewer: Viewer, rows: readonly EvidenceVisibilityUpdate[], tx: DbOrTx): Promise<string[]> {
   void viewer;
   if (rows.length === 0) return [];
@@ -448,7 +449,7 @@ export async function updateVisibilitiesIfVersionMatch(viewer: Viewer, rows: rea
         visible_org_unit_id = v.org_unit_id,
         visibility_saved_at = now(),
         version = ${evidenceRecords.version} + 1,
-        updated_at = now()
+        updated_at = (now() at time zone 'UTC')
     FROM (VALUES ${tuples}) AS v(id, version, visibility, team_id, org_unit_id)
     WHERE ${evidenceRecords.id} = v.id AND ${evidenceRecords.version} = v.version
     RETURNING ${evidenceRecords.id}`);
@@ -464,7 +465,7 @@ export async function setRecordArchivedIfVersionMatches(viewer: Viewer, input: {
       archivedAt: input.archived ? sql`now()` : null,
       archivedBy: input.archived ? viewer.id : null,
       version: sql`${evidenceRecords.version} + 1`,
-      updatedAt: sql`now()`,
+      updatedAt: sql`(now() at time zone 'UTC')`,
     })
     .where(
       and(

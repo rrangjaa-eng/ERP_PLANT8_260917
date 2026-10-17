@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type DragEvent, type MouseEvent } from "react";
+import { Fragment, useEffect, useId, useRef, useState, type DragEvent, type MouseEvent } from "react";
+import Link from "next/link";
+import { Button } from "@/ui/button/Button";
 import { Num } from "@/ui/num/Num";
 import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
 import actionStyles from "@/ui/row-actions/RowActions.module.css";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
+import type { StatusKind } from "@/ui/status-tag/status-map";
 import { prepareEvidenceFile, type PreparedEvidence } from "./prepare-file";
 import styles from "./Attachments.module.css";
 
@@ -15,6 +18,8 @@ import styles from "./Attachments.module.css";
 // 올리는 행의 메타는 `올리는 중…` 글자 하나가 신호다(완료 통보 뒤 옮기는 동안도 같다).
 // 05-09(S4 파일 행 3차): 누가 무엇을 할 수 있는지는 부모가 서버 값으로 준다(canAdd · deletableIds · voidableIds — 컴포넌트는 추론하지 않는다).
 // 무효 행 = 「무효」 태그 → 취소선 파일명(aria-describedby = 2행) → 2행 `무효 · {처리자} · MM-DD HH:mm · {사유}`, 3차는 `크게 보기`만.
+// 06.1-03(SP-6103 · G-1): `variant="bulk-import"` 갈래 — 같은 영역 모양에 accept 엑셀 · CSV, 파일 행 아래 결과 슬롯(결과 · 거절 · 업로드 중 · 실패).
+// 이 갈래는 이미지 전처리 · 서버 액션 셋을 부르지 않고 고른 File을 onFiles로 부모에게 넘긴다. 결과 행은 부모가 넘긴 데이터만 그린다(서식 · 숫자 · 크기 판정 없음).
 
 export type AttachmentFile = {
   id: string;
@@ -34,6 +39,8 @@ export type AttachmentActions = {
 };
 
 export type AttachmentsProps = {
+  /** 증빙 파일 올리기 갈래는 `variant`가 없다 — 「엑셀 일괄 등록」은 `BulkImportProps`(variant="bulk-import"). */
+  variant?: undefined;
   mode: "edit" | "read";
   files: AttachmentFile[];
   actions: AttachmentActions;
@@ -57,6 +64,27 @@ export type AttachmentsProps = {
   voidable?: { ids: readonly string[]; onVoid: (file: AttachmentFile) => void };
   /** 더할 수 없는 이유 한 줄(잠김) — 「하나 더」 자리에 그린다. */
   lockedText?: string;
+};
+
+/** 결과 행 2행의 숫자 조각 — value 0이면 그리지 않는다. `kind`는 숫자 색(상태 토큰), `href`가 있으면 조각이 3차 링크다. `unit`은 숫자 뒤 단위(`상쇄 2쌍`의 `쌍`). */
+export type BulkImportCount = { label: string; value: number; kind: StatusKind; href?: string; unit?: string };
+
+/** 결과 슬롯의 행 — 결과(서식 이름 · 조각 · 목록) · 거절(오류 셀 모양, 2차 없음) · 업로드 중(2px 진행 바) · 실패(`다시 올리기`). */
+export type BulkImportRow =
+  | { key: string; state: "result"; fileName: string; formatLabel: string | null; counts: BulkImportCount[]; lines: string[]; restCount: number; restUnit?: string }
+  | { key: string; state: "refused"; fileName: string; headline: string; lines: string[]; restCount: number; restUnit?: string }
+  | { key: string; state: "uploading"; fileName: string }
+  | { key: string; state: "failed"; fileName: string; onRetry: () => void };
+
+export type BulkImportProps = {
+  variant: "bulk-import";
+  rows: BulkImportRow[];
+  /** 고른 · 끌어 놓은 파일을 그대로 넘긴다(전처리 없음). */
+  onFiles: (files: File[]) => void;
+  /** 값이 바뀔 때마다 파일 고르기를 연다(부모 화면의 `Ctrl+U`). */
+  openSignal?: number;
+  /** 2차 `파일 고르기` 버튼 id. */
+  pickerId?: string;
 };
 
 type LocalRow = {
@@ -95,7 +123,7 @@ function Paperclip() {
   );
 }
 
-export function Attachments({
+function FileAttachments({
   mode,
   files,
   actions,
@@ -428,4 +456,159 @@ export function Attachments({
       {!canAdd && lockedText ? <p className={styles.locked}>{lockedText}</p> : null}
     </div>
   );
+}
+
+const BULK_LIST_MAX = 5;
+
+function BulkRowLines({ lines, restCount, restUnit }: { lines: string[]; restCount: number; restUnit?: string }) {
+  return (
+    <>
+      {lines.slice(0, BULK_LIST_MAX).map((line, index) => (
+        <span key={index} className={styles.bulkLine}>
+          {line}
+        </span>
+      ))}
+      {restCount > 0 ? <span className={styles.bulkLine}>{`외 ${restCount}${restUnit ?? ""}`}</span> : null}
+    </>
+  );
+}
+
+function BulkCounts({ counts }: { counts: BulkImportCount[] }) {
+  const shown = counts.filter((count) => count.value > 0);
+  if (shown.length === 0) return null;
+  return (
+    <span className={styles.bulkLine}>
+      {shown.map((count, index) => {
+        const body = (
+          <>
+            {`${count.label} `}
+            <span className={styles.bulkNum} data-kind={count.kind}>
+              {count.value}
+            </span>
+            {count.unit ?? ""}
+          </>
+        );
+        return (
+          <Fragment key={count.label}>
+            {index > 0 ? " · " : null}
+            {count.href ? (
+              <Link href={count.href} prefetch={false} className={actionStyles.action}>
+                {body}
+              </Link>
+            ) : (
+              body
+            )}
+          </Fragment>
+        );
+      })}
+    </span>
+  );
+}
+
+function BulkImportItem({ row }: { row: BulkImportRow }) {
+  return (
+    <li className={styles.bulkItem} data-state={row.state} data-row={row.key}>
+      <span className={styles.bulkTitle}>{row.state === "result" && row.formatLabel ? `${row.fileName} · ${row.formatLabel}` : row.fileName}</span>
+      {row.state === "result" ? (
+        <>
+          <BulkCounts counts={row.counts} />
+          <BulkRowLines lines={row.lines} restCount={row.restCount} restUnit={row.restUnit} />
+        </>
+      ) : null}
+      {row.state === "refused" ? (
+        <>
+          <span className={styles.bulkError}>{row.headline}</span>
+          <BulkRowLines lines={row.lines} restCount={row.restCount} restUnit={row.restUnit} />
+        </>
+      ) : null}
+      {row.state === "uploading" ? (
+        <>
+          <span className={styles.bulkLine}>올리는 중…</span>
+          <span className={styles.bulkProgress} data-ui="bulk-progress" aria-hidden="true" />
+        </>
+      ) : null}
+      {row.state === "failed" ? (
+        <>
+          <span className={styles.bulkError}>올리지 못함</span>
+          <span className={styles.bulkRetry}>
+            <Button variant="secondary" onClick={row.onRetry}>
+              다시 올리기
+            </Button>
+          </span>
+        </>
+      ) : null}
+    </li>
+  );
+}
+
+function BulkImport({ rows, onFiles, openSignal, pickerId }: BulkImportProps) {
+  const [dragging, setDragging] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const signal = useRef(openSignal);
+  useEffect(() => {
+    if (openSignal === signal.current) return;
+    signal.current = openSignal;
+    inputRef.current?.click();
+  }, [openSignal]);
+
+  function send(list: FileList | null) {
+    const files = list ? Array.from(list) : [];
+    if (files.length > 0) onFiles(files);
+  }
+
+  return (
+    <div
+      className={styles.root}
+      data-ui="attachments"
+      data-variant="bulk-import"
+      onDragOver={(event: DragEvent<HTMLElement>) => {
+        event.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={(event: DragEvent<HTMLElement>) => {
+        event.preventDefault();
+        setDragging(false);
+        send(event.dataTransfer.files);
+      }}
+    >
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".xls,.xlsx,.csv"
+        multiple
+        hidden
+        data-testid="attachments-input"
+        onChange={(event) => {
+          send(event.target.files);
+          event.target.value = "";
+        }}
+      />
+      <div className={`${styles.drop} ${styles.bulkDrop}`} data-dragging={dragging ? "true" : undefined}>
+        <span className={styles.bulkHint}>
+          <Paperclip />
+          <span className={styles.pcText}>끌어 놓거나 Ctrl+U · 엑셀·CSV 1MB</span>
+          <span className={styles.phoneText}>엑셀·CSV 1MB</span>
+        </span>
+        <Button id={pickerId} variant="secondary" shortcut="Ctrl+U" onClick={() => inputRef.current?.click()}>
+          파일 고르기
+        </Button>
+      </div>
+      <div aria-live="polite">
+        {rows.length > 0 ? (
+          <ul className={styles.bulkList}>
+            {rows.map((row) => (
+              <BulkImportItem key={row.key} row={row} />
+            ))}
+          </ul>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+export function Attachments(props: AttachmentsProps | BulkImportProps) {
+  if (props.variant === "bulk-import") return <BulkImport {...props} />;
+  return <FileAttachments {...props} />;
 }

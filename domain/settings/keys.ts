@@ -1280,6 +1280,20 @@ export const PAYMENT_METHOD_EVIDENCE_PAIRS: SettingDef<{ method: string; evidenc
 
 SETTING_DEFS.push(EVIDENCE_REQUIRED, EVIDENCE_PREPAID_DUE_DAYS, PURCHASE_ONLINE_VENDOR_NAME, PAYMENT_METHOD_EVIDENCE_PAIRS);
 
+// 06.1-05(C3 · Q2 A · E19): 증빙 「본부 공개」가 열리는 본부 하나. 기본값이 없어 일반 시드 고리가 건너뛰고 seedMasterData가 기획본부를
+// 넣는다(없을 때만 — 운영 값을 덮지 않는다). 이력형이 아니다 — 바꾸면 그 뒤 저장하는 본부 공개 줄만 새 본부로 가고, 이미 저장한 줄은
+// 저장 당시 본부(visible_org_unit_id)에 남는다. 값이 없으면 증빙 화면이 본부 선택지를 숨긴다(06.1-05 PA-DIV-UNSET).
+export const EVIDENCE_VISIBILITY_DIVISION_ORG_UNIT: SettingDef<string> = {
+  key: "evidence.visibility.division_org_unit",
+  kind: "simple",
+  schema: z.string().uuid(),
+  label: "증빙 본부 공개 대상",
+  namespace: "증빙",
+  dynamicOptions: "org_units",
+};
+
+SETTING_DEFS.push(EVIDENCE_VISIBILITY_DIVISION_ORG_UNIT);
+
 // ── 05-11 정산 결재 결재선(D-98 · UI-SPEC S13) ───────────────────────────
 // 지출결의 결재선 17키와 같은 꼴 · 같은 라벨(namespace만 다르다). 기본값은 1~3단 꺼짐 · 4단 대표 × 전사 · 자기 승인 = 본인 승인 —
 // 담당 PM이 올리고 대표가 승인한다. 3단 특정 부서는 기본값 없음(꺼진 단계라 읽기 대체 ""로 충분하다).

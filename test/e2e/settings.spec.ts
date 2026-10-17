@@ -65,11 +65,13 @@ test.describe("설정 화면 (ADMN-05, 성공 기준 4)", () => {
     const vatContainer = vatLabel.locator("xpath=..");
     await vatContainer.getByRole("button", { name: "새 이력 추가" }).click();
 
-    await page.getByLabel("적용 시작일", { exact: true }).fill("2999-01-01");
-    await page.getByLabel("값", { exact: true }).fill("0.15");
-    await page.getByRole("button", { name: "새 이력 추가" }).last().click();
+    await vatContainer.getByLabel("적용 시작일", { exact: true }).fill("2999-01-01");
+    await vatContainer.getByLabel("값", { exact: true }).fill("0.15");
+    await vatContainer.getByRole("button", { name: "새 이력 추가" }).click();
 
-    await expect(page.getByText("예정")).toBeVisible();
+    // 부가세율 묶음 안에서 태그 글자 전체만 잡는다 — 부분 글자 「예정」은 지급 예정일 힌트 · `예정 부가세` 열 머리(다른 스펙의 시험 자료)와 겹치고,
+    // 다른 묶음의 「새 이력 추가」를 `.last()`로 잘못 눌러도 그 힌트 때문에 통과하던 거짓 통과를 막는다.
+    await expect(vatContainer.getByText("예정", { exact: true })).toBeVisible();
   });
 
   test("서로 다른 이력형 설정의 「새 이력 추가」 폼 두 개를 동시에 열어도 id가 겹치지 않는다 (M-3)", async ({

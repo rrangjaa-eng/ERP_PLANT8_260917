@@ -4,6 +4,7 @@ import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { approvalInstances, approvalRoutes, approvalSteps, expenseEvidenceReviews, expensePayments, expenses, files, users } from "@/db/schema";
 import { unresolvedVoidHaving } from "@/repositories/files";
+import { liveLinkExists } from "@/repositories/evidence-record-links";
 import type { Viewer } from "@/domain/viewer";
 
 // 04.1(EXP-03·EXP-04): 결재 세 표의 리포지토리. 모든 쓰기는 호출자가 연
@@ -305,15 +306,16 @@ export type DrafterInstance = ApprovalInstanceRow & { rejecterName: string | nul
 
 // 05 /review C6: 승인 뒤 막힘 후보를 LIMIT 전에 거르는 조건 — 종류 등록(blockedAfterApprovalCandidates)이 고른다. 「증빙 무효 뒤 아직 새 증빙 없음」 하나.
 // 06-23(E-3 · R-3): 지출결의 증빙 신호 갈래 — 05 무효 조건 ∨ (지출결의 행 있음 · 살아 있는 증빙 0 · 면제 없음 · ((선결제 ∧ 살아 있는 지급 있음) ∨ (선결제 아님 ∧ 살아 있는 지급 없음))).
+// 06.1-12 /review P3-1: 증빙 = 파일 ∨ 살아 있는 기록 붙임 — 두 갈래 다 살아 있는 붙임이 있으면 후보에서 뺀다(훅의 listEvidenceVoidSignals · ownersWithEvidence와 같은 판정, 200건 상한 앞).
 // 상위 집합이다 — 증빙 필수 설정 · 선결제 기한은 보지 않고 종류 훅(listExpenseEvidenceSignals)이 판정한다. 종류 조건은 엔진의 documentKind 비교가 건다.
 export type BlockedCandidateFilter = "unresolved_evidence_void" | "expense_blocked_after_approval";
 
 function blockedCandidateSql(viewer: Viewer, filter: BlockedCandidateFilter): SQL {
   switch (filter) {
     case "unresolved_evidence_void":
-      return sql`exists (select 1 from ${files} where ${files.ownerKind} = ${approvalInstances.documentKind} and ${files.ownerId} = ${approvalInstances.documentId} and ${files.removedAt} is null group by ${files.ownerId} having ${unresolvedVoidHaving(viewer)})`;
+      return sql`(exists (select 1 from ${files} where ${files.ownerKind} = ${approvalInstances.documentKind} and ${files.ownerId} = ${approvalInstances.documentId} and ${files.removedAt} is null group by ${files.ownerId} having ${unresolvedVoidHaving(viewer)}) and not ${liveLinkExists(viewer, approvalInstances.documentKind, approvalInstances.documentId)})`;
     case "expense_blocked_after_approval":
-      return sql`(${blockedCandidateSql(viewer, "unresolved_evidence_void")} or exists (select 1 from ${expenses} where ${expenses.id} = ${approvalInstances.documentId} and ${expenses.deletedAt} is null and not exists (select 1 from ${files} where ${files.ownerKind} = ${approvalInstances.documentKind} and ${files.ownerId} = ${approvalInstances.documentId} and ${files.removedAt} is null and ${files.voidedAt} is null) and not exists (select 1 from ${expenseEvidenceReviews} where ${expenseEvidenceReviews.expenseId} = ${expenses.id} and ${expenseEvidenceReviews.status} = 'waived') and (${expenses.prepaid} = exists (select 1 from ${expensePayments} where ${expensePayments.expenseId} = ${expenses.id} and ${expensePayments.cancelledAt} is null))))`;
+      return sql`(${blockedCandidateSql(viewer, "unresolved_evidence_void")} or exists (select 1 from ${expenses} where ${expenses.id} = ${approvalInstances.documentId} and ${expenses.deletedAt} is null and not exists (select 1 from ${files} where ${files.ownerKind} = ${approvalInstances.documentKind} and ${files.ownerId} = ${approvalInstances.documentId} and ${files.removedAt} is null and ${files.voidedAt} is null) and not ${liveLinkExists(viewer, approvalInstances.documentKind, approvalInstances.documentId)} and not exists (select 1 from ${expenseEvidenceReviews} where ${expenseEvidenceReviews.expenseId} = ${expenses.id} and ${expenseEvidenceReviews.status} = 'waived') and (${expenses.prepaid} = exists (select 1 from ${expensePayments} where ${expensePayments.expenseId} = ${expenses.id} and ${expensePayments.cancelledAt} is null))))`;
   }
 }
 

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { gate } from "@/domain/rules/gate";
 import "@/domain/rules/register";
-import { buildExpenseSubmitContext, nextActionTarget, type ExpenseSubmitFacts } from "@/domain/expenses/gate";
+import { buildExpenseSubmitContext, firstExpenseSubmitBlock, methodEvidencePairsOf, nextActionTarget, type ExpenseSubmitFacts } from "@/domain/expenses/gate";
+import type { PairGateInput } from "@/domain/payments/action-row";
 
 // 05-06 Task 2(UI-SPEC S6 · Copywriting 「막힘 — 제출」) — 규칙 `expense.submit`은 ①~⑨를 순서대로 보고 첫 막힘 하나만 돌려준다.
 // 다음 한 수 대상(`nextActionTarget`)은 같은 순서 표를 읽는다. ① · ⑤ 글자는 기존 규칙(quote.customer-approval · quote.vendor-required) 결과다.
@@ -22,6 +23,8 @@ const PASSING: ExpenseSubmitFacts = {
   prepaidReason: null,
   evidenceCount: 1,
   taxUnavailable: false,
+  // 06.1-12(E06): 짝 기본값 — 빈 짝 목록(검사 없음) 하나라 기존 케이스가 그대로 지난다.
+  methodEvidencePairs: [{ pairs: [], paymentMethod: "bank_transfer", evidenceType: "tax_invoice", paymentMethodName: "계좌이체", evidenceTypeName: "세금계산서" }],
 };
 
 const UNAPPROVED = { ...PASSING.customerApproval!, revisionApproved: false };
@@ -234,5 +237,68 @@ describe("nextActionTarget — 이유와 같은 순서", () => {
 
   it("통과면 대상 없음", async () => {
     expect(await nextActionTarget(PASSING)).toBeNull();
+  });
+});
+
+// 06.1-12(E06 · RP-12 · 카드 R4) — 제출 짝 단계. 판정 몸통 · 글은 등록 규칙 payment.method-evidence-mismatch 그대로(지급 게이트와 같은 글).
+describe("지급 방식 × 증빙 종류 짝 단계 (06.1-12)", () => {
+  const PAIRS = [{ method: "bank_transfer", evidence: "tax_invoice" }];
+  const PAYMENT_NAMES = new Map([["bank_transfer", "계좌이체"]]);
+  const EVIDENCE_NAMES = new Map([
+    ["tax_invoice", "세금계산서"],
+    ["cash_receipt", "현금영수증"],
+    ["card_receipt", "카드 전표"],
+  ]);
+
+  function pairsOf(evidenceType: string | null, recordEvidenceTypes: readonly string[] = []): PairGateInput[] {
+    return methodEvidencePairsOf({ pairs: PAIRS, paymentMethod: "bank_transfer", evidenceType, recordEvidenceTypes, paymentNames: PAYMENT_NAMES, evidenceNames: EVIDENCE_NAMES });
+  }
+
+  async function blockOf(input: ExpenseSubmitFacts) {
+    return firstExpenseSubmitBlock(null, buildExpenseSubmitContext(input));
+  }
+
+  const pairSteps = (input: ExpenseSubmitFacts) => buildExpenseSubmitContext(input).steps.filter((step) => "rule" in step && step.rule === "payment.method-evidence-mismatch");
+
+  it("짝 목록에 없는 지급 방식 · 증빙 종류 → 지급 때와 같은 글 · 대상 paymentMethod", async () => {
+    const input = facts({ evidenceType: "cash_receipt", methodEvidencePairs: pairsOf("cash_receipt") });
+    expect(await blockOf(input)).toEqual({ reason: "계좌이체 · 현금영수증 짝 아님 · 짝 설정은 관리자", target: "paymentMethod" });
+  });
+
+  it("짝 목록에 있음 → 통과", async () => {
+    expect(await blockOf(facts({ methodEvidencePairs: pairsOf("tax_invoice") }))).toBeNull();
+  });
+
+  it("비활성 단계가 먼저 막는다 — 증빙 종류 비활성 → 지급 방식 비활성 → 짝", async () => {
+    const mismatch = { evidenceType: "cash_receipt", methodEvidencePairs: pairsOf("cash_receipt") };
+    expect(await blockOf(facts(mismatch, { evidenceTypeInactive: true, paymentMethodInactive: true }))).toEqual({ reason: "쓰지 않는 증빙 종류 · 증빙 종류 고르기", target: "evidenceType" });
+    expect(await blockOf(facts(mismatch, { paymentMethodInactive: true }))).toEqual({ reason: "쓰지 않는 지급 방식 · 지급 방식 고르기", target: "paymentMethod" });
+  });
+
+  it("짝 단계는 지급처 계좌 · ⑧보다 앞 — 짝이 맞고 증빙 없음 → ⑧ 그대로", async () => {
+    const mismatch = { evidenceType: "cash_receipt", methodEvidencePairs: pairsOf("cash_receipt") };
+    expect((await blockOf(facts(mismatch, { payeeAccountMissing: true, evidenceCount: 0 })))?.target).toBe("paymentMethod");
+    expect(await blockOf(facts({ methodEvidencePairs: pairsOf("tax_invoice"), evidenceCount: 0 }))).toEqual({ reason: REASONS[8], target: "evidence" });
+  });
+
+  it("(카드 R4) 문서 칸 짝은 맞고 붙은 기록 종류 하나가 짝 아님 → 그 기록 종류 이름으로 같은 글 · 대상 paymentMethod", async () => {
+    const input = facts({ methodEvidencePairs: pairsOf("tax_invoice", ["tax_invoice", "card_receipt"]) });
+    expect(await blockOf(input)).toEqual({ reason: "계좌이체 · 카드 전표 짝 아님 · 짝 설정은 관리자", target: "paymentMethod" });
+  });
+
+  it("(카드 R4) 붙은 기록 종류가 문서 칸과 같으면 단계 하나 · 붙은 기록 0 → 문서 칸 단계만", () => {
+    expect(pairSteps(facts({ methodEvidencePairs: pairsOf("tax_invoice", ["tax_invoice", "tax_invoice"]) }))).toHaveLength(1);
+    expect(pairSteps(facts({ methodEvidencePairs: pairsOf("tax_invoice") }))).toHaveLength(1);
+    expect(pairsOf("tax_invoice").map((pair) => pair.evidenceType)).toEqual(["tax_invoice"]);
+  });
+
+  it("(카드 R4) 문서 칸 다음은 문서 칸과 다른 기록 종류 — 중복 없이 코드 순 · 이름은 같은 증빙 종류 이름 표", () => {
+    const pairs = pairsOf("tax_invoice", ["card_receipt", "cash_receipt", "card_receipt", "tax_invoice"]);
+    expect(pairs.map((pair) => [pair.evidenceType, pair.evidenceTypeName])).toEqual([
+      ["tax_invoice", "세금계산서"],
+      ["card_receipt", "카드 전표"],
+      ["cash_receipt", "현금영수증"],
+    ]);
+    expect(pairs.every((pair) => pair.paymentMethodName === "계좌이체" && pair.pairs === PAIRS)).toBe(true);
   });
 });

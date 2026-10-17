@@ -16,9 +16,11 @@ import {
   envFileSecrets,
   envFileTexts,
   fillRoute,
+  keyCellTexts,
   measurementsToMarkdown,
   parseArgs,
   parseCodexFindings,
+  promptSystemSections,
   redactSecrets,
   renderReport,
   screenshotName,
@@ -106,6 +108,14 @@ describe("parseArgs", () => {
 
   it("--seed payment-and-settlement-actions도 받는다", () => {
     expect(parseArgs(["/expenses/{expenseId}", "--out", "test-results/r.md", "--seed", "payment-and-settlement-actions"]).seed).toBe("payment-and-settlement-actions");
+  });
+
+  it("--seed evidence-intake-filled도 받는다(06.1-05 G5 — 증빙 목록을 채운 경영관리 등록 화면)", () => {
+    expect(parseArgs(["/expenses/evidence?state=all&batch={batchId}", "--out", "test-results/r.md", "--seed", "evidence-intake-filled"]).seed).toBe("evidence-intake-filled");
+  });
+
+  it("--seed evidence-author-pick도 받는다(06.1-05 G5 — 기안자가 팀 공개 증빙을 고르는 화면)", () => {
+    expect(parseArgs(["/expenses/{expenseId}", "--out", "test-results/r.md", "--seed", "evidence-author-pick"]).seed).toBe("evidence-author-pick");
   });
 
   it("--plan은 반복할 수 있다", () => {
@@ -338,6 +348,103 @@ describe("selectSystemSections", () => {
   });
 });
 
+// 06.1-03 Task 4 ①-2 ⑴ (재검토 3회차 Codex B2 · Codex 4회차 B-3) — 절 차례: ⓐ `--sections`로 더한 절 → ⓑ 7-3 → ⓒ 이름을 적은 기본 절 → ⓓ 나머지 기본 절(무리 안은 문서 순서).
+describe("selectSystemSections — 무리 차례", () => {
+  const order = (text: string, ...needles: string[]) => needles.map((n) => text.indexOf(n));
+  const ascending = (values: number[]) => values.every((v, i) => v >= 0 && (i === 0 || (values[i - 1] ?? 0) < v));
+
+  // ㉠ 합성 문서
+  it("㉠ 더한 절 7-8 → 7-3 → 기본 절 3 차례로 잇는다(문서에서는 3 → 7-3 → 7-8)", () => {
+    const md = ["# 제목", "## 3. 간격", "간격 본문", "## 7. 컴포넌트", "컴포넌트 머리", "### 7-3. 표", "표 본문", "### 7-8. 시트", "시트 본문"].join("\n");
+    const out = selectSystemSections(md, [...DEFAULT_SECTIONS, "7-8"]);
+    expect(ascending(order(out, "시트 본문", "표 본문", "간격 본문"))).toBe(true);
+  });
+
+  // ㉥ 적은 기본 절
+  it("㉥ `--sections 6-1,7-8`의 namedSections는 6-1 · 7-8이고 sections는 기본 절 + 7-8 그대로이며 차례는 7-8 → 7-3 → 6-1 → 0 → 3이다", () => {
+    const args = parseArgs(["/x", "--out", ".planning/r.md", "--sections", "6-1,7-8"]);
+    expect(args.namedSections).toEqual(["6-1", "7-8"]);
+    expect(args.sections).toEqual([...DEFAULT_SECTIONS, "7-8"]);
+    const md = [
+      "# 제목",
+      "## 0. 방향",
+      "방향 본문",
+      "## 3. 간격",
+      "간격 본문",
+      "## 6. 화면",
+      "### 6-1. 목록",
+      "목록 본문",
+      "## 7. 컴포넌트",
+      "### 7-3. 표",
+      "표 본문",
+      "### 7-8. 시트",
+      "시트 본문",
+    ].join("\n");
+    const out = selectSystemSections(md, args.sections, args.namedSections);
+    expect(ascending(order(out, "시트 본문", "표 본문", "목록 본문", "방향 본문", "간격 본문"))).toBe(true);
+  });
+
+  it("namedSections는 처음 나온 차례 · 중복 없이 · 공백을 뗀다", () => {
+    const args = parseArgs(["/x", "--out", ".planning/r.md", "--sections", " 7-8 , 6-1,", "--sections", "7-8,3"]);
+    expect(args.namedSections).toEqual(["7-8", "6-1", "3"]);
+    expect(parseArgs(["/x", "--out", ".planning/r.md"]).namedSections).toEqual([]);
+  });
+
+  // ㉡ 실제 SYSTEM.md — 프롬프트에서도 더한 절이 7-3보다 앞이다
+  const system = readFileSync(resolve(process.cwd(), "docs/design/SYSTEM.md"), "utf8");
+  const args78 = parseArgs(["/x", "--out", ".planning/r.md", "--sections", "7-8"]);
+  const sections78 = selectSystemSections(system, args78.sections, args78.namedSections);
+  const prompt78 = buildPrompt({ mode: "diff", changeText: "", systemSections: sections78, measurementsMd: "M", images: [] });
+
+  it("㉡ 실제 SYSTEM.md를 `--sections 7-8`로 고르면 프롬프트에 `### 7-8. ` 줄이 `### 7-3. ` 줄보다 앞에 있다", () => {
+    const lines = prompt78.split("\n");
+    const at8 = lines.findIndex((l) => l.startsWith("### 7-8. "));
+    const at3 = lines.findIndex((l) => l.startsWith("### 7-3. "));
+    expect(at8).toBeGreaterThanOrEqual(0);
+    expect(at3).toBeGreaterThanOrEqual(0);
+    expect(at8).toBeLessThan(at3);
+  });
+
+  // ㉢ promptSystemSections
+  it("㉢ promptSystemSections — ids가 7-8 · 7-3으로 시작하고 trimmed가 참이다", () => {
+    const found = promptSystemSections(prompt78);
+    expect(found.ids.slice(0, 2)).toEqual(["7-8", "7-3"]);
+    expect(found.trimmed).toBe(true);
+  });
+
+  it("㉢ DOM 실측표 구간의 `### 7-9. 가짜` 줄은 실린 절로 세지 않는다 · 잘림이 없으면 trimmed는 거짓이다", () => {
+    const prompt = buildPrompt({ mode: "diff", changeText: "", systemSections: "### 7-8. 시트\n본문", measurementsMd: "### 7-9. 가짜\n표", images: [] });
+    const found = promptSystemSections(prompt);
+    expect(found.ids).toEqual(["7-8"]);
+    expect(found.ids).not.toContain("7-9");
+    expect(found.trimmed).toBe(false);
+    expect(promptSystemSections(buildPrompt({ mode: "diff", changeText: "", systemSections: sections78, measurementsMd: "### 7-9. 가짜\n표", images: [] })).ids).not.toContain("7-9");
+  });
+});
+
+// ㉣ 06.1-03 Task 4 ①-2 ⑵ — 폭 1280 측정마다 제목(h1) · 금액 모양 칸 글자를 보고서에 남긴다.
+describe("keyCellTexts", () => {
+  it("1280 측정의 h1 제목과 첫 금액 모양 칸을 돌려주고 375 측정은 건너뛰며 맞는 요소가 없으면 둘 다 null이다", () => {
+    const wide = screen({
+      route: "/expenses",
+      width: 1280,
+      elements: [
+        el({ selector: "main > h2.section", kind: "heading", text: "섹션 제목" }),
+        el({ selector: "main > h1.screen-title", kind: "heading", text: "지출결의 — 가 · 나" }),
+        el({ selector: "td.count", kind: "cell", text: "12" }),
+        el({ selector: "td.amount", kind: "cell", text: "12,345" }),
+        el({ selector: "td.other", kind: "cell", text: "99,999" }),
+      ],
+    });
+    const phone = screen({ route: "/expenses", width: 375, elements: [el({ selector: "main > h1.screen-title", kind: "heading", text: "폰 제목" })] });
+    const bare = screen({ route: "/empty", width: 1280, elements: [el({ selector: "main > h2.x", kind: "heading", text: "제목 아님" }), el({ selector: "td.n", kind: "cell", text: "7" })] });
+    expect(keyCellTexts([phone, wide, bare])).toEqual([
+      { route: "/expenses", title: "지출결의 — 가 · 나", amount: "12,345" },
+      { route: "/empty", title: null, amount: null },
+    ]);
+  });
+});
+
 describe("buildPrompt", () => {
   const images = [
     { route: "/admin/people", width: 375, file: "a-375.png" },
@@ -555,6 +662,8 @@ describe("renderReport · skipLine", () => {
       ],
       measurementsMd: "MEASURE",
       codexOutputPath: "test-results/codex-design-review/x/codex-output.md",
+      systemSections: { ids: [], trimmed: false },
+      keyTexts: [],
     });
     expect(report).toContain("Codex 지적은 후보다");
     expect(report).toContain("| 자동 대조 | 실측 확인 |");
@@ -584,12 +693,51 @@ describe("renderReport · skipLine", () => {
       ],
       measurementsMd: "",
       codexOutputPath: "d/codex-output.md",
+      systemSections: { ids: [], trimmed: false },
+      keyTexts: [],
     });
     expect(report).not.toContain("![");
     expect(report).not.toContain("<img");
     expect(report).not.toContain("](http");
     expect(report).not.toContain("\r");
     expect(report).not.toContain("가".repeat(400));
+  });
+
+  // ㉤ 06.1-03 Task 4 ①-2 ⑵ (Codex 4회차 B-1) — 커밋되는 보고서에 실린 SYSTEM 절과 핵심 칸 글자를 남긴다.
+  it("실린 SYSTEM 절 줄(잘림 표시 포함)과 경로마다 핵심 칸 글자 줄을 `Codex 원문` 줄 뒤에 쓴다", () => {
+    const report = renderReport({
+      mode: "diff",
+      base: "origin/main",
+      plans: [],
+      artifactsDir: "d",
+      codexStatus: "s",
+      rows: [],
+      measurementsMd: "",
+      codexOutputPath: "d/codex-output.md",
+      systemSections: { ids: ["7-8", "7-3", "0"], trimmed: true },
+      keyTexts: [{ route: "/x", title: null, amount: null }],
+    });
+    expect(report).toContain("- 실린 SYSTEM 절: 7-8 · 7-3 · 0 — 끝 절 일부 잘림");
+    expect(report).toContain("- 핵심 칸 글자(1280) /x — 제목: 없음 · 금액 칸: 없음");
+    expect(report.indexOf("- Codex 원문")).toBeLessThan(report.indexOf("- 실린 SYSTEM 절"));
+    expect(report.indexOf("- 핵심 칸 글자(1280)")).toBeLessThan(report.indexOf("## 지적 후보"));
+  });
+
+  it("잘리지 않았으면 꼬리 없이 절 목록만, 절이 없으면 `없음`, 페이지 글자의 `|`와 줄바꿈은 무력화한다", () => {
+    const report = renderReport({
+      mode: "diff",
+      base: "origin/main",
+      plans: [],
+      artifactsDir: "d",
+      codexStatus: "s",
+      rows: [],
+      measurementsMd: "",
+      codexOutputPath: "d/codex-output.md",
+      systemSections: { ids: [], trimmed: false },
+      keyTexts: [{ route: "/x", title: "가|나\n다", amount: "1,234" }],
+    });
+    expect(report).toContain("- 실린 SYSTEM 절: 없음\n");
+    expect(report).toContain("제목: 가\\|나 다 · 금액 칸: 1,234");
   });
 
   it("skipLine은 한 줄 접두어를 붙인다", () => {

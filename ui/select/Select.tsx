@@ -12,9 +12,13 @@ import styles from "./Select.module.css";
 // 설명을 컨트롤 바로 아래 한 줄로 보인다. `<option>` 안에는 넣지 않는다.
 export type SelectOption = { value: string; label: string; description?: string | null };
 
+// 06.1-05(PA-OPTGROUP) — 평 `options` 뒤에 네이티브 `<optgroup label>`으로 그리는 묶음 선택지(증빙 공개 칸 「다른 팀」).
+export type SelectOptionGroup = { label: string; options: SelectOption[] };
+
 export type SelectProps = Omit<SelectHTMLAttributes<HTMLSelectElement>, "id" | "children"> & {
   id: string;
   options: SelectOption[];
+  groups?: SelectOptionGroup[];
   error?: string;
 };
 
@@ -29,14 +33,14 @@ export function SelectHint({ id, children }: { id: string; children: ReactNode }
   );
 }
 
-export function Select({ id, options, error, className, onChange, ...rest }: SelectProps) {
+export function Select({ id, options, groups, error, className, onChange, ...rest }: SelectProps) {
   const errorId = `${id}-error`;
   const hintId = `${id}-hint`;
   // 제어·비제어 둘 다 — 제어면 `value`가, 비제어면 고른 값을 따라가는 로컬
   // 상태가 지금 값이다. 설명이 없거나 오류가 있으면 힌트가 없다(오류가 이긴다).
   const [uncontrolledValue, setUncontrolledValue] = useState(String(rest.defaultValue ?? ""));
   const currentValue = rest.value !== undefined ? String(rest.value) : uncontrolledValue;
-  const description = error ? null : options.find((option) => option.value === currentValue)?.description;
+  const description = error ? null : [...options, ...(groups ?? []).flatMap((group) => group.options)].find((option) => option.value === currentValue)?.description;
 
   return (
     <>
@@ -56,6 +60,15 @@ export function Select({ id, options, error, className, onChange, ...rest }: Sel
           <option key={option.value} value={option.value}>
             {option.label}
           </option>
+        ))}
+        {groups?.map((group) => (
+          <optgroup key={group.label} label={group.label}>
+            {group.options.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </optgroup>
         ))}
       </select>
       {error ? (

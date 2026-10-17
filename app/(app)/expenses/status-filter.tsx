@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef } from "react";
+import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
 import { EXPENSE_STATUS_VIEWS } from "./list-columns";
 import styles from "./expenses.module.css";
 
@@ -12,16 +13,20 @@ export type FilterSelect = { name: string; label: string; value: string; options
 
 // 06.5-08(D-6508 · UI-SPEC V1): `searchValue`가 있으면(빈 문자열 포함) 맨 앞에 검색 칸 — Enter만 제출한다(DM-1: blur · 매 글자 제출 없음 — 검색어를 고치고 Tab으로
 // 옮기는 순간 페이지가 바뀌지 않게). 텍스트 칸이 이 폼에 하나뿐이라 버튼 없이도 Enter가 같은 GET 폼을 제출하고, select의 requestSubmit()이 `q`를 함께 싣는다.
+// 06.1-05(P-3 · SP-6105): `endLink`가 있으면 폼 끝에 하위 목록 3차 링크(`증빙 {N}` — SYSTEM §6-1 「하위 목록」, 카드 사용 `구매 요청 {N}` 꼴).
+// 없으면 마크업은 그대로다.
 export function StatusFilter({
   value,
   views = EXPENSE_STATUS_VIEWS,
   selects = [],
   searchValue,
+  endLink,
 }: {
   value: string;
   views?: readonly string[];
   selects?: readonly FilterSelect[];
   searchValue?: string;
+  endLink?: { label: string; href: string };
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   return (
@@ -70,6 +75,11 @@ export function StatusFilter({
           </select>
         </div>
       ))}
+      {endLink ? (
+        <RowActions>
+          <RowAction href={endLink.href}>{endLink.label}</RowAction>
+        </RowActions>
+      ) : null}
     </form>
   );
 }

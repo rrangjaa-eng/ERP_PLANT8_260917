@@ -11,6 +11,7 @@ import styles from "./PickDialog.module.css";
 // 따로 선 컴포넌트다(슬롯에 검색 칸 · 선택 상태가 없다 — B5). 네이티브 <dialog> 틀(포커스 트랩 · Esc · 가림막 · 트리거 복귀)은 같다.
 // 컴포넌트는 지출결의를 모른다 — 검색 함수 · 행 · 문구는 호출처가 넘긴다. 행의 고를 수 있음 · 이유는 서버가 판정해 보낸다.
 // 06.2 SP-62-1: `mode="multiple"` — 같은 틀로 여러 사람을 한 번에 고르는 변형(프로젝트 참여자 더하기). 단일 호출부는 그대로다.
+// 06.1 SP-6106: 확장 다섯 — 낱말 셋 · `preselect` · 다중 `maxSelected` · 단일 거부 결과 · 넘침 `limit`. 모두 선택적이라 기존 호출부는 그대로다.
 
 export type PickRow = {
   type: "row";
@@ -47,6 +48,10 @@ export type PickResult = {
    * 주면 본문 고정 줄(`고를 수 있는 줄이 없습니다`)은 그리지 않는다. 안 주면 05 그대로.
    */
   noneSelectableReason?: string | null;
+  /** 06.1 SP-6106 — 서버가 정한 1위 id들. 검색어가 빈 첫 결과에서만 한 번 고른 상태로 시작한다(단일은 첫 id, 다중은 고를 수 있는 전부). */
+  preselect?: readonly string[] | null;
+  /** 06.1 SP-6106 — `truncated` 줄의 한도 글자(기본 50). */
+  limit?: number;
 };
 
 type PickDialogBaseProps = {
@@ -62,7 +67,7 @@ type PickDialogBaseProps = {
   /** 1차 라벨(`이 줄로` · `이 거래처로`) — kbd Enter가 붙는다. 다중 변형은 고른 수가 뒤에 붙는다(`참여자 더하기 2`). */
   primaryLabel: string;
   /** 검색 0건 문구의 이름(`줄` → `조건에 맞는 줄이 없습니다 · 검색 지우기`). */
-  noun: "줄" | "거래처" | "프로젝트" | "사람" | "지급처";
+  noun: "줄" | "거래처" | "프로젝트" | "사람" | "지급처" | "문서" | "증빙" | "카드 사용";
   /**
    * 06-29(SP-8) — 빈 목록 줄(`emptyDefault`)과 「고를 수 있는 줄 0」의 다음 한 수 3차. 누르면 `onSelect()` 뒤 목록만 닫는다 —
    * 연결 라디오를 바꾸는 일은 호출자 몫. 안 주면 빈 목록 줄은 05 그대로 `검색으로 찾기`. 06.2: `null`이면 다음 한 수 없이 사실만 선다.
@@ -76,8 +81,8 @@ export type PickDialogSingleProps = PickDialogBaseProps & {
   mode?: "single";
   /** 고른 행의 결과 줄(1차가 할 일을 미리 말한다) — null이면 줄 없음. */
   resultLine?: (row: PickRow | null) => string | null;
-  /** 1차를 누르거나 Enter. 거짓을 돌려주면 열린 채 남는다. */
-  onPick: (row: PickRow) => void | boolean | Promise<void | boolean>;
+  /** 1차를 누르거나 Enter. 거짓을 돌려주면 열린 채 남고, `{ ok: false, reason, retryable }`이면 다중과 같은 바닥 거부 줄이 선다(`PickManyOutcome`). */
+  onPick: (row: PickRow) => void | boolean | PickManyOutcome | Promise<void | boolean | PickManyOutcome>;
 };
 
 /** 다중 변형의 1차 결과 — 거부(`ok: false`)면 다이얼로그가 닫히지 않고 `reason`이 바닥 줄 막힘 자리에 선다. `retryable`이면 1차를 막지 않는다(연결 실패). */
@@ -89,6 +94,8 @@ export type PickDialogManyProps = PickDialogBaseProps & {
   resultLineMany: (rows: PickRow[]) => string | null;
   /** 1차를 누르거나 Enter — 고른 순서대로 전체를 넘긴다. 전부 되거나 전부 거부된다(`PickManyOutcome`). */
   onPickMany: (rows: PickRow[]) => Promise<PickManyOutcome>;
+  /** 06.1 SP-6106 — 고른 수가 `count`이면 고르지 않은 행의 토글은 무반응이고 바닥 줄에 `reason`이 막힘 톤으로 선다(1차는 막지 않는다). */
+  maxSelected?: { count: number; reason: string };
 };
 
 export type PickDialogProps = PickDialogSingleProps | PickDialogManyProps;
@@ -98,10 +105,39 @@ export function pickManyPrimaryLabel(label: string, count: number): string {
   return count > 0 ? `${label} ${count}` : label;
 }
 
-// 빈 목록 한 줄 — 받침에 맞춰 이/가를 고른다(`줄이` · `거래처가`).
+// 빈 목록 한 줄 — 낱말 마지막 글자의 받침에 맞춰 이/가를 고른다(`줄이` · `거래처가`). 완성형 한글이 아니면 `가`.
+function hasFinalConsonant(word: string): boolean {
+  const offset = word.charCodeAt(word.length - 1) - 0xac00;
+  return offset >= 0 && offset <= 11171 && offset % 28 !== 0;
+}
+
 export function pickEmptyText(noun: PickDialogProps["noun"], kind: "no-match" | "none-selectable"): string {
-  const josa = noun === "줄" || noun === "사람" ? "이" : "가";
+  const josa = hasFinalConsonant(noun) ? "이" : "가";
   return kind === "no-match" ? `조건에 맞는 ${noun}${josa} 없습니다` : `고를 수 있는 ${noun}${josa} 없습니다`;
+}
+
+// 06.1 SP-6106 ⑶ — 고른 수가 상한에 닿았나(상한이 없으면 늘 거짓).
+export function pickManyCapReached(selectedCount: number, max: number | undefined): boolean {
+  return max !== undefined && selectedCount >= max;
+}
+
+// 06.1 SP-6106 ⑷ — 단일 `onPick` 결과 가르기: 닫는다 · 열린 채(거부 문구 없음) · 거부(그 값 그대로 바닥 거부 줄).
+export type PickOutcome = "close" | "keep" | { reject: { reason: string; retryable: boolean } };
+
+export function pickOutcomeOf(result: void | boolean | PickManyOutcome): PickOutcome {
+  if (result === false) return "keep";
+  if (typeof result === "object" && result !== null && !result.ok) return { reject: { reason: result.reason, retryable: result.retryable } };
+  return "close";
+}
+
+// 06.1 SP-6106 ⑷ — 단일 거부는 가리키는 행이 거부된 행과 「다른 고를 수 있는 행」으로 바뀔 때만 걷힌다(막힌 행을 눌렀다 돌아와도 1차는 계속 막힌다).
+export function pickRejectionClears(rejectedId: string | null, next: PickRow | null): boolean {
+  return next !== null && next.selectable && next.id !== rejectedId;
+}
+
+// 06.1 SP-6106 ⑸ — 넘침 바닥 줄(`limit` 기본 50).
+export function pickTruncatedText(limit: number | undefined): string {
+  return `${limit ?? 50}건 넘음 · 검색으로 좁히기`;
 }
 
 // 바닥 줄 한 자리(E-24) — 결과 줄 > 고를 수 있는 줄 0일 때의 이유 > 고른 것 없음. 이유를 같은 뜻으로 두 줄 쓰지 않는다.
@@ -147,11 +183,19 @@ function PickDialogInner(props: PickDialogProps) {
   // 06.2 SP-62-1 — 다중: 고른 행(고른 순서 · 검색과 무관하게 남는다) · 서버 거부(체크를 바꾸면 풀린다) · `새로 고침` 뒤 첫 결과에서만 목록에 없는 고름을 뺀다.
   const [selected, setSelected] = useState<PickRow[]>([]);
   const [rejection, setRejection] = useState<{ reason: string; retryable: boolean } | null>(null);
+  const [rejectedId, setRejectedId] = useState<string | null>(null);
   const pruneOnNextResultRef = useRef(false);
+  // 06.1 SP-6106 — 미리 고르기는 첫 결과에서만(그 뒤 결과는 사용자가 바꾼 고름을 덮지 않는다). 단일은 모양이 현재 행 표시라 그 id를 따로 든다.
+  const preselectDoneRef = useRef(false);
+  const manyModeRef = useRef(props.mode === "multiple");
+  const maxCount = many?.maxSelected?.count;
+  const maxCountRef = useRef(maxCount);
+  const [preselectedId, setPreselectedId] = useState<string | null>(null);
 
   useEffect(() => {
     searchRef.current = search;
-  }, [search]);
+    maxCountRef.current = maxCount;
+  }, [search, maxCount]);
 
   // 열릴 때 — 네이티브 모달 + 검색 칸 첫 포커스. 닫히면(부모가 open을 내리면 이 컴포넌트째 사라진다) 트리거로 돌아간다.
   useEffect(() => {
@@ -176,6 +220,21 @@ function PickDialogInner(props: PickDialogProps) {
           result = null;
         }
         if (cancelled) return;
+        if (result && !preselectDoneRef.current) {
+          preselectDoneRef.current = true;
+          const ids = query.trim() === "" ? (result.preselect ?? []) : [];
+          const candidates = rowsOf(result.items).filter((row) => row.selectable && ids.includes(row.id));
+          if (!manyModeRef.current) {
+            const first = candidates.find((row) => row.id === ids[0]);
+            if (first) {
+              setActiveId(first.id);
+              setPreselectedId(first.id);
+            }
+          } else if (candidates.length > 0) {
+            const ordered = ids.flatMap((id) => candidates.filter((row) => row.id === id));
+            setSelected(ordered.slice(0, maxCountRef.current ?? ordered.length));
+          }
+        }
         if (pruneOnNextResultRef.current && result) {
           pruneOnNextResultRef.current = false;
           // 잘린 목록은 없는 사람을 알 수 없다 — 서버가 다시 판정한다.
@@ -206,7 +265,8 @@ function PickDialogInner(props: PickDialogProps) {
   const rows = rowsOf(items);
   const activeRow = rows.find((row) => row.id === activeId) ?? null;
   // 06-29(SP-8) — 목록이 오는 중 · 오류 중에는 옛 목록의 행을 고를 수 없다(1차 aria-disabled, Enter도 아무 일 없음).
-  const chosen = !many && !loading && !failed && activeRow?.selectable ? activeRow : null;
+  const rejectionBlocks = rejection !== null && !rejection.retryable;
+  const chosen = !many && !loading && !failed && !rejectionBlocks && activeRow?.selectable ? activeRow : null;
   const line = failed || !single ? null : single.resultLine?.(chosen ?? null) ?? null;
   // UX-06 — 고른 행이 없어 1차가 꺼져 있으면 결과 줄 자리에 이유 한 줄(info 톤 — 막힘이 아니라 아직 안 고른 상태).
   const idleReason = chosen ? null : `고른 ${noun} 없음`;
@@ -231,25 +291,29 @@ function PickDialogInner(props: PickDialogProps) {
   // 행에서 누른 Enter는 그 행(고를 수 있을 때만), 검색 칸 · 주 버튼은 가리키는 행을 고른다.
   async function pickChosen(only?: PickRow) {
     const target = only ?? chosen;
-    if (!target?.selectable || picking) return;
+    if (!target?.selectable || picking || rejectionBlocks) return;
     setPicking(true);
-    let keep = false;
+    let outcome: PickOutcome;
     try {
-      keep = (await single?.onPick(target)) === false;
+      outcome = pickOutcomeOf(await single?.onPick(target));
     } finally {
       setPicking(false);
     }
-    if (!keep) closeNow();
+    if (outcome === "close") closeNow();
+    else if (outcome !== "keep") {
+      setRejectedId(target.id);
+      setRejection(outcome.reject);
+    }
   }
 
   // 다중 — 고름 토글(고를 수 없는 행 · 보내는 중 · 목록이 오는 중이나 오류 중에는 무반응 — 옛 목록의 행은 단일처럼 고르지 않는다). 체크를 바꾸면 거부가 걷힌다.
   function toggleRow(row: PickRow) {
     if (!row.selectable || picking || loading || failed) return;
+    if (pickManyCapReached(selected.length, maxCount) && !selected.some((item) => item.id === row.id)) return;
     setRejection(null);
     setSelected((previous) => (previous.some((item) => item.id === row.id) ? previous.filter((item) => item.id !== row.id) : [...previous, row]));
   }
 
-  const rejectionBlocks = rejection !== null && !rejection.retryable;
   const manyReady = many !== null && !loading && !failed && selected.length > 0 && !rejectionBlocks;
 
   async function pickMany() {
@@ -274,8 +338,14 @@ function PickDialogInner(props: PickDialogProps) {
     searchInputRef.current?.focus();
   }
 
-  function focusRow(id: string) {
+  // 단일 — 가리키는 행이 다른 고를 수 있는 행으로 바뀔 때만 거부를 걷는다(다중 `toggleRow`와 같은 규칙, 막힌 행은 거부를 풀지 않는다).
+  function activate(id: string | null) {
+    if (!many && pickRejectionClears(rejectedId, rows.find((row) => row.id === id) ?? null)) setRejection(null);
     setActiveId(id);
+  }
+
+  function focusRow(id: string) {
+    activate(id);
     dialogRef.current?.querySelector<HTMLElement>(`[data-pick-id="${id}"]`)?.focus();
   }
 
@@ -285,7 +355,7 @@ function PickDialogInner(props: PickDialogProps) {
     if (next) {
       focusRow(next.id);
     } else if (delta === -1) {
-      setActiveId(null);
+      activate(null);
       searchInputRef.current?.focus();
     }
   }
@@ -300,7 +370,9 @@ function PickDialogInner(props: PickDialogProps) {
   const manyResultLine = !many || failed || selected.length === 0 ? null : many.resultLineMany(selected);
   const manyIdleReason = selected.length > 0 || noCandidates ? null : `고른 ${noun} 없음`;
   const rejectionSplit = splitRefreshTail(rejection?.reason);
-  const footLine = many ? pickFootLine(rejectionSplit.reason ?? manyResultLine, null, manyIdleReason) : pickFootLine(line, noneSelectableReason, idleReason);
+  // 06.1 SP-6106 ⑶ — 바닥 줄은 거부 줄 > 상한 줄 > 결과 줄 하나만(상한 줄은 막힘 톤이지만 1차는 막지 않는다).
+  const capLine = many?.maxSelected && !failed && pickManyCapReached(selected.length, maxCount) ? many.maxSelected.reason : null;
+  const footLine = many ? pickFootLine(rejectionSplit.reason ?? capLine ?? manyResultLine, null, manyIdleReason) : pickFootLine(line, noneSelectableReason, idleReason);
   const nextStepButton = emptyNextStep ? (
     <Button
       variant="tertiary"
@@ -445,6 +517,7 @@ function PickDialogInner(props: PickDialogProps) {
                     key={item.id}
                     row={item}
                     active={item.id === activeId}
+                    preselected={item.id === preselectedId}
                     onActivate={() => focusRow(item.id)}
                     onMove={(delta) => moveFrom(item.id, delta)}
                     onEnter={() => void (many ? pickMany() : pickChosen(item))}
@@ -456,7 +529,7 @@ function PickDialogInner(props: PickDialogProps) {
             </ul>
             {empty}
             {noneSelectable && !empty && !noneSelectableReason ? <p className={styles.empty}>{pickEmptyText(noun, "none-selectable")}</p> : null}
-            {result?.truncated ? <p className={styles.more}>50건 넘음 · 검색으로 좁히기</p> : null}
+            {result?.truncated ? <p className={styles.more}>{pickTruncatedText(result.limit)}</p> : null}
           </>
         )}
       </div>
@@ -483,7 +556,7 @@ function PickDialogInner(props: PickDialogProps) {
             {nextStepButton}
           </div>
         ) : footLine ? (
-          <p id={resultId} className={styles.resultLine}>
+          <p id={resultId} className={capLine ? `${styles.resultLine} ${styles.error}` : styles.resultLine}>
             {footLine}
           </p>
         ) : null}
@@ -514,6 +587,7 @@ function PickDialogInner(props: PickDialogProps) {
 function PickRowView({
   row,
   active,
+  preselected,
   onActivate,
   onMove,
   onEnter,
@@ -522,6 +596,8 @@ function PickRowView({
 }: {
   row: PickRow;
   active: boolean;
+  /** 06.1 SP-6106 — 서버가 미리 고른 단일 행: 아직 가리키는 행이면 현재 행 표시(700 + 왼쪽 선)로 선다. */
+  preselected: boolean;
   onActivate: () => void;
   onMove: (delta: 1 | -1) => void;
   onEnter: () => void;
@@ -537,7 +613,7 @@ function PickRowView({
       aria-disabled={row.selectable ? undefined : "true"}
       aria-describedby={row.reason ? reasonId : undefined}
       tabIndex={active ? 0 : -1}
-      className={[styles.row, row.number ? styles.numbered : "", (multi ? active : row.current) ? styles.current : "", row.selectable ? "" : styles.disabled].filter(Boolean).join(" ")}
+      className={[styles.row, row.number ? styles.numbered : "", (multi ? active : row.current || (preselected && active)) ? styles.current : "", row.selectable ? "" : styles.disabled].filter(Boolean).join(" ")}
       onClick={() => {
         onActivate();
         multi?.onToggle();

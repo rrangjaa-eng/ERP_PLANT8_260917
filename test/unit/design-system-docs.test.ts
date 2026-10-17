@@ -617,3 +617,64 @@ describe("docs/design/SYSTEM.md · DECISIONS.md — 스킨 A 개정(04.6-01)", (
     expect(line).toContain("빈 화면");
   });
 });
+
+// 06.1-03 Task 1 — SP-6101 · SP-6102 · SP-6105 · SP-6107 · G18. DECISIONS 기록 → SYSTEM 줄 → 코드 순서(CLAUDE.md §6).
+describe("06.1 증빙 — 상태 낱말 · 잠김 · 링크 건수 · 폰 시트 두 3차 (SP-6101 · 6102 · 6105 · 6107)", () => {
+  const status = section(SYSTEM, "### 7-5. 상태 태그", "### 7-6.");
+  const attach = section(SYSTEM, "### 7-10. 첨부 영역", "### 7-11.");
+  const lists = section(SYSTEM, "### 6-1. 목록 화면", "### 6-2.");
+  const table = section(SYSTEM, "### 7-3. 표", "### 7-4.");
+
+  it("§7-5에 증빙 기록 상태 낱말 여섯이 kind와 함께 있다(SP-6101)", () => {
+    for (const word of ["미공개", "팀 공개", "본부 공개", "붙음", "확인 필요", "카드 미등록"]) {
+      expect(status, word).toContain("`" + word + "`");
+    }
+  });
+
+  it("§7-5에 증빙 기록 한 값 규칙이 `보관됨`을 맨 앞에 두고, `확인 필요` ↔ `확인 전`을 가른다", () => {
+    expect(status).toContain("보관됨 > 카드 미등록 > 확인 필요 > 붙음 > 미공개 > 팀 공개 > 본부 공개");
+    expect(status).toContain("`확인 전`");
+  });
+
+  it("§7-10에 결재 중 · 완료 프로젝트 잠김 줄이 코드 글자 그대로 있다(SP-6102)", () => {
+    expect(attach).toContain("결재 중 · 증빙은 경영관리");
+    expect(attach).toContain("완료 프로젝트 · 증빙은 경영관리");
+    expect(attach).toContain("expenses.evidence_attach");
+  });
+
+  it("§6-1 「하위 목록」 불릿의 적용 목록에 `/expenses/evidence`와 건수 꼴 `증빙 {N}`이 있다(SP-6105)", () => {
+    const bullet = lists.split("\n").find((line) => line.startsWith("- **하위 목록**")) ?? "";
+    expect(bullet).toContain("`/expenses/evidence`");
+    expect(bullet).toContain("`증빙 {N}`");
+    expect(bullet).toContain("`/cards/purchases`");
+  });
+
+  it("§7-3 (바)에 줄 행동이 둘이면 3차 두 줄 예외가 있고 새 prop은 없다(SP-6107)", () => {
+    const sheet = table.slice(table.indexOf("**(바) 폰 행 시트(D-69)**"), table.indexOf("**(사) 저장 범위와 1차 버튼**"));
+    expect(sheet).toContain("3차 두 줄");
+    expect(sheet).toContain("새 prop은 없다");
+  });
+
+  it("DECISIONS에 SP-6101 · SP-6102 · SP-6105 · SP-6107과 `ui/select` `groups`(optgroup) 줄이 있다", () => {
+    for (const id of ["SP-6101", "SP-6102", "SP-6105", "SP-6107"]) expect(DECISIONS, id).toContain(id);
+    expect(DECISIONS).toContain("optgroup");
+  });
+
+  it("§7-10에 엑셀 일괄 등록 변형 SP-6103이 있다 — accept · 거절 행 2차 없음 · 조각 색 표", () => {
+    expect(attach).toContain('accept=".xls,.xlsx,.csv"');
+    expect(attach).toContain("끌어 놓거나 Ctrl+U · 엑셀·CSV 1MB");
+    expect(attach).toContain("엑셀·CSV 1MB");
+    expect(attach).not.toContain("홈택스·카드사 엑셀·CSV 1MB");
+    expect(attach).toContain("2차 없음");
+    expect(attach).toContain("`카드 미등록` danger");
+    expect(DECISIONS).toContain("SP-6103");
+  });
+
+  it("§7-17-1에 고르기 목록 확장 다섯 SP-6106이 있다 — 낱말 셋 · preselect · maxSelected · 단일 거부 · limit", () => {
+    const pick = section(SYSTEM, "#### 7-17-1.", "### 7-18.");
+    expect(pick).toContain("SP-6106");
+    for (const word of ["`문서`", "`증빙`", "`카드 사용`", "`preselect`", "`maxSelected`", "`limit`", "`{ ok: false, reason, retryable }`"]) expect(pick, word).toContain(word);
+    expect(pick).toContain("새 컴포넌트는 없다");
+    expect(DECISIONS).toContain("SP-6106");
+  });
+});

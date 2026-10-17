@@ -1,6 +1,6 @@
-import { and, eq, isNull, isNotNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, isNotNull } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
-import { db } from "@/db/client";
+import { db, type DbOrTx } from "@/db/client";
 import { corpCards } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 import type { Scope } from "@/domain/permissions/scope-for";
@@ -24,9 +24,28 @@ export async function listCorpCards(
     .orderBy(corpCards.issuer, corpCards.numberLast4);
 }
 
-export async function findCorpCardById(viewer: Viewer, id: string): Promise<CorpCardRow | null> {
-  const [row] = await db.select().from(corpCards).where(eq(corpCards.id, id)).limit(1);
+export async function findCorpCardById(viewer: Viewer, id: string, tx: DbOrTx = db): Promise<CorpCardRow | null> {
+  const [row] = await tx.select().from(corpCards).where(eq(corpCards.id, id)).limit(1);
   return row ?? null;
+}
+
+export type CorpCardCandidateRow = Pick<CorpCardRow, "id" | "issuer" | "numberLast4" | "active" | "teamId" | "holderUserId">;
+
+// 06.1-04: 등록 서비스 전용 — 카드는 파일이 정한다(CONTEXT 「이미 확정」 8번), 등록자의 관리 메뉴 권한과 무관하다.
+// 범위 판정 없이 끝 4자리로만 찾는 좁은 조회. 보관 카드는 빼고(B-F15) 비활성 카드는 담는다(사용일이 비활성화 전일 수 있다).
+export async function findCardsByLast4(viewer: Viewer, last4s: readonly string[], tx: DbOrTx = db): Promise<CorpCardCandidateRow[]> {
+  if (last4s.length === 0) return [];
+  return tx
+    .select({
+      id: corpCards.id,
+      issuer: corpCards.issuer,
+      numberLast4: corpCards.numberLast4,
+      active: corpCards.active,
+      teamId: corpCards.teamId,
+      holderUserId: corpCards.holderUserId,
+    })
+    .from(corpCards)
+    .where(and(inArray(corpCards.numberLast4, [...last4s]), isNull(corpCards.archivedAt)));
 }
 
 export async function insertCorpCard(
@@ -39,8 +58,9 @@ export async function insertCorpCard(
     holderUserId?: string | null;
     teamId?: string | null;
   },
+  tx: DbOrTx = db,
 ): Promise<CorpCardRow> {
-  const [row] = await db
+  const [row] = await tx
     .insert(corpCards)
     .values({
       issuer: input.issuer,

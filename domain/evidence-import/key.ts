@@ -1,0 +1,60 @@
+import type { EvidenceFormatKey, FormatRule, KeyedLine, ParsedLine } from "@/domain/evidence-import/types";
+
+// 06.1-02: 중복 열쇠(dedupe key)와 같은 파일 안 완전 상쇄 쌍. 열쇠는 파일 안 값만으로 정한다(시각 · 무작위 없음) —
+// 같은 파일을 다시 올리면 같은 열쇠가 나온다(EVID-06). 접두어는 서식 키(B-F17).
+
+function baseKeyOf(format: EvidenceFormatKey, keyKind: FormatRule["keyKind"], line: ParsedLine): string {
+  if (keyKind === "approval") return `${format}|${line.approvalNo ?? ""}`;
+  // 현금영수증 승인번호(9자)는 해 · 가맹점을 넘어 다시 나오고 취소 줄이 원거래와 같이 쓴다 — 날짜 · 가맹점 번호 · 부호 있는 합계까지(E17).
+  if (keyKind === "approval-dated") return `${format}|${line.approvalNo ?? ""}|${line.issuedOn}|${line.businessNoDigits ?? ""}|${line.totalKrw}`;
+  const last4 = line.cardLast4 ?? "";
+  // 취소 줄이 원거래와 승인번호를 같이 쓴다 — 날짜 · 부호 있는 합계까지 넣어야 취소가 원거래로 뭉개지지 않는다(Pitfall 1).
+  if (line.approvalNo !== null) return `${format}|${last4}|${line.approvalNo}|${line.issuedOn}|${line.totalKrw}`;
+  const usedAt = line.usedAt === null ? line.issuedOn : `${line.issuedOn} ${line.usedAt}`;
+  return `${format}|${last4}|${usedAt}|${line.merchant ?? ""}|${line.totalKrw}`;
+}
+
+// 카드 서식만 같은 파일 안 같은 열쇠에 등장 순서 꼬리표 `#2` · `#3`. `#n`은 파일을 넘는 정체가 아니므로 꼬리표 앞 열쇠
+// `baseKey`와 이 파일의 같은 baseKey 줄 수 `sameKeyCount`를 함께 싣는다 — 앞 파일과 겹친 무리의 판정은 06.1-04(GH-P1).
+// 승인번호 서식(홈택스)은 파일 안 겹침이 서식 규칙의 줄 오류라 여기 오지 않는다 — sameKeyCount는 늘 1.
+export function dedupeKeys(format: EvidenceFormatKey, keyKind: FormatRule["keyKind"], lines: readonly ParsedLine[]): KeyedLine[] {
+  const bases = lines.map((line) => baseKeyOf(format, keyKind, line));
+  const counts = new Map<string, number>();
+  for (const base of bases) counts.set(base, (counts.get(base) ?? 0) + 1);
+  const seen = new Map<string, number>();
+  return lines.map((line, at) => {
+    const baseKey = bases[at] ?? "";
+    const nth = (seen.get(baseKey) ?? 0) + 1;
+    seen.set(baseKey, nth);
+    const dedupeKey = keyKind === "card" && nth > 1 ? `${baseKey}#${nth}` : baseKey;
+    return { ...line, dedupeKey, baseKey, sameKeyCount: counts.get(baseKey) ?? 1 };
+  });
+}
+
+// 같은 카드 · 같은 승인번호 · 합이 0인 원거래 + 취소 두 줄(완전 상쇄 쌍)을 뺀다(E38 — 옛 markOffsetPairs 기본 제외).
+// 부분 취소(값이 다른 음수 줄)는 남긴다. 이미 짝지은 줄은 다시 쓰지 않는다. 끝 4자리를 못 읽은 줄은 어느 카드인지 몰라 짝짓지 않는다.
+// 뺀 쌍은 두 줄 그대로 돌려준다 — 원거래가 앞 파일로 이미 등록됐으면 06.1-04가 취소 줄을 등록한다(독립 검토 P1-2 · 사용자 카드 2026-10-16 18:12Z).
+export function splitOffsetPairs<T extends ParsedLine>(lines: readonly T[]): { lines: T[]; pairs: { original: T; cancel: T }[] } {
+  const groups = new Map<string, number[]>();
+  lines.forEach((line, at) => {
+    if (line.approvalNo === null || line.cardLast4 === null) return;
+    const group = `${line.cardLast4}|${line.approvalNo}`;
+    groups.set(group, [...(groups.get(group) ?? []), at]);
+  });
+  const removed = new Set<number>();
+  const pairs: { original: T; cancel: T }[] = [];
+  for (const ats of groups.values()) {
+    if (ats.length < 2) continue;
+    for (const cancel of ats) {
+      const cancelLine = lines[cancel];
+      if (!cancelLine || cancelLine.totalKrw >= 0 || removed.has(cancel)) continue;
+      const original = ats.find((at) => !removed.has(at) && (lines[at]?.totalKrw ?? 0) === -cancelLine.totalKrw);
+      const originalLine = original === undefined ? undefined : lines[original];
+      if (original === undefined || !originalLine) continue;
+      removed.add(original);
+      removed.add(cancel);
+      pairs.push({ original: originalLine, cancel: cancelLine });
+    }
+  }
+  return { lines: lines.filter((_, at) => !removed.has(at)), pairs };
+}

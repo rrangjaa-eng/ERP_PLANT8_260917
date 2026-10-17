@@ -110,6 +110,26 @@ describe("status-map — 낱말 → 색 한 표", () => {
     });
   });
 
+  // 06.1 SP-6101 — 증빙 기록 상태 낱말 여섯(서버가 한 값 규칙으로 고르고 클라이언트는 낱말만 받는다). `취소` · `보관됨`은 기존 낱말 그대로.
+  describe("06.1 SP-6101", () => {
+    const WORDS: [string, StatusKind][] = [
+      ["미공개", "accent"],
+      ["팀 공개", "muted"],
+      ["본부 공개", "muted"],
+      ["붙음", "success"],
+      ["확인 필요", "warning"],
+      ["카드 미등록", "danger"],
+      ["취소", "muted"],
+      ["보관됨", "muted"],
+    ];
+    for (const [word, kind] of WORDS) {
+      it(`${word} → ${kind}(표에 있다)`, () => {
+        expect(word in STATUS_KIND, `${word}이 표에 있다`).toBe(true);
+        expect(statusKind(word as StatusWord)).toBe(kind);
+      });
+    }
+  });
+
   it("Phase 6 기존 낱말은 같은 색으로 다시 쓴다(신청됨 · 증빙 없음 · 지출결의 중)", () => {
     expect(statusKind("신청됨")).toBe("muted");
     expect(statusKind("증빙 없음")).toBe("danger");

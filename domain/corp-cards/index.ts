@@ -4,8 +4,10 @@ import { scopeFor } from "@/domain/permissions/scope-for";
 import { project, type DtoSpec } from "@/domain/permissions/project";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { registerDto } from "@/domain/permissions/dto-registry";
+import { relinkUnknownCardRecords as defaultRelinkUnknownCardRecords } from "@/domain/evidence-import/card-relink";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { isUniqueViolation } from "@/lib/pg-errors";
+import { withTransaction } from "@/lib/db-transaction";
 import { findUserById as defaultFindUserById } from "@/repositories/users";
 import { findTeamById as defaultFindTeamById } from "@/repositories/teams";
 import {
@@ -117,6 +119,7 @@ export type CorpCardWriteDeps = {
   findCorpCardById: typeof repoFindCorpCardById;
   findUserById: typeof defaultFindUserById;
   findTeamById: typeof defaultFindTeamById;
+  relinkUnknownCardRecords: typeof defaultRelinkUnknownCardRecords;
 };
 
 // 등록·수정 두 경로가 같은 가드를 쓴다 — 한쪽만 막으면 다른 쪽으로 같은 값이
@@ -166,17 +169,25 @@ export async function createCorpCard(
 
   await assertOwnerNotArchived(viewer, owner, deps);
 
-  let row: CorpCardRow;
-  try {
-    row = await repoInsertCorpCard(viewer, { ...owner, kind });
-  } catch (e) {
-    if (isUniqueViolation(e, "corp_cards_issuer_last4_key")) {
-      throw new DuplicateCorpCardError("이미 등록된 카드 · 발급사와 뒤 4자리 확인");
-    }
-    throw e;
-  }
   const recordAction = deps?.recordAction ?? defaultRecordAction;
-  await recordAction(viewer, { actionType: "document_create", entity: "corp_card", entityId: row.id });
+  const relink = deps?.relinkUnknownCardRecords ?? defaultRelinkUnknownCardRecords;
+  // 카드 등록 · 행동 로그 · 다시 잇기를 한 트랜잭션으로 — 다시 잇기가 실패하면 카드도 남지 않아, 다시 저장할 때
+  // 「이미 등록된 카드」로 막히지 않는다(/review P3-6).
+  const row = await withTransaction(async (tx) => {
+    let inserted: CorpCardRow;
+    try {
+      inserted = await repoInsertCorpCard(viewer, { ...owner, kind }, tx);
+    } catch (e) {
+      if (isUniqueViolation(e, "corp_cards_issuer_last4_key")) {
+        throw new DuplicateCorpCardError("이미 등록된 카드 · 발급사와 뒤 4자리 확인");
+      }
+      throw e;
+    }
+    await recordAction(viewer, { actionType: "document_create", entity: "corp_card", entityId: inserted.id }, { tx });
+    // 06.1-04 G11: 이 끝 4자리의 「카드 미등록」 증빙 기록을 다시 잇는다(카드 마스터 저장의 부수 효과).
+    await relink(viewer, inserted.id, tx);
+    return inserted;
+  });
 
   return (await project(viewer, row, CORP_CARD_DTO_SPEC)) as CorpCardDto;
 }
@@ -230,7 +241,7 @@ export async function setCorpCardActive(
   viewer: Viewer,
   id: string,
   active: boolean,
-  deps?: Partial<Pick<CorpCardWriteDeps, "can">>,
+  deps?: Partial<Pick<CorpCardWriteDeps, "can" | "relinkUnknownCardRecords">>,
 ): Promise<CorpCardDto | null> {
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, CARDS_MENU, "write"))) {
@@ -245,6 +256,8 @@ export async function setCorpCardActive(
   }
 
   await repoSetCorpCardActive(viewer, id, active);
+  // 06.1-04 G11: 활성이 바뀌면 같은 끝 4자리 카드 중 활성 하나가 정해질 수 있다 — 카드 미등록 기록을 다시 잇는다.
+  await (deps?.relinkUnknownCardRecords ?? defaultRelinkUnknownCardRecords)(viewer, id);
   const updated = await repoFindCorpCardById(viewer, id);
   return updated ? ((await project(viewer, updated, CORP_CARD_DTO_SPEC)) as CorpCardDto) : null;
 }

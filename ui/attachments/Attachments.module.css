@@ -149,9 +149,119 @@
   text-decoration-thickness: var(--underline-w-hover);
 }
 
+/* 06.1-03(SP-6103) 「엑셀 일괄 등록」 변형 — 같은 점선 영역에 한 줄 글자 + 안의 2차 버튼. 영역 자체는 눌러 여는 버튼이 아니다. */
+.bulkDrop {
+  justify-content: space-between;
+  gap: var(--s-4);
+  text-align: left;
+  cursor: default;
+}
+
+.bulkHint {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-width: 0;
+}
+
+/* 2차 버튼은 줄어들지 않는다 — 좁아지면 안내 글자(.bulkHint)가 줄바꿈하고 라벨은 한 줄을 지킨다(디자인 검토 결함 A). */
+.bulkDrop button {
+  flex: none;
+  white-space: nowrap;
+}
+
+.bulkList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bulkItem {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: var(--s-2) 0;
+}
+
+.bulkItem + .bulkItem {
+  border-top: var(--line-w) solid var(--border-row);
+}
+
+/* 거절 · 실패 행 — 오류 셀 모양(§7-3: 면 + 좌측 선). 거절 행에는 버튼이 없다(DA-2). */
+.bulkItem[data-state="refused"],
+.bulkItem[data-state="failed"] {
+  padding-left: var(--s-2);
+  background: var(--status-danger-weak);
+  box-shadow: var(--inset-error);
+}
+
+.bulkTitle {
+  color: var(--text-strong);
+  font-size: var(--text-body);
+  overflow-wrap: anywhere;
+}
+
+.bulkLine {
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+  overflow-wrap: anywhere;
+}
+
+.bulkError {
+  color: var(--status-danger);
+  font-size: var(--text-aux);
+  overflow-wrap: anywhere;
+}
+
+.bulkRetry {
+  align-self: flex-start;
+  margin-top: var(--s-2);
+}
+
+/* 조각 숫자만 상태 색(DA-20 한 표) — 글자 나머지는 줄 색 그대로다. */
+.bulkNum[data-kind="success"] {
+  color: var(--status-success);
+}
+
+.bulkNum[data-kind="warning"] {
+  color: var(--status-warning);
+}
+
+.bulkNum[data-kind="danger"] {
+  color: var(--status-danger);
+}
+
+.bulkNum[data-kind="muted"] {
+  color: var(--status-muted);
+}
+
+.bulkNum[data-kind="accent"] {
+  color: var(--status-accent);
+}
+
+/* 업로드 중 — 행 아래 2px 진행 바(§7-10). 움직임 없는 정지된 선이다(§5 reduced-motion 대체와 같은 모양). */
+.bulkProgress {
+  display: block;
+  height: var(--focus-w);
+  margin-top: var(--s-1);
+  background: var(--accent);
+}
+
 @media (max-width: 699.98px) {
   .drop {
     height: calc(var(--s-6) * 3);
+  }
+
+  .bulkDrop button {
+    min-height: var(--touch-min);
+  }
+
+  .bulkDrop kbd {
+    display: none;
+  }
+
+  .bulkRetry button {
+    min-height: var(--touch-min);
   }
 
   .pcText {

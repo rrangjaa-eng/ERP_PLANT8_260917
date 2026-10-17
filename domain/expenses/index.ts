@@ -34,6 +34,7 @@ import {
   APPROVAL_ROUTE_EXPENSE_STEP4_SCOPE,
   APPROVAL_ROUTE_EXPENSE_STEP4_ORG_UNIT_ID,
   EVIDENCE_PREPAID_DUE_DAYS,
+  PAYMENT_METHOD_EVIDENCE_PAIRS,
   PROJECT_CUSTOMER_APPROVAL_GATE,
   PURCHASE_ONLINE_VENDOR_NAME,
 } from "@/domain/settings/keys";
@@ -70,6 +71,8 @@ import { computeExpenseTax, snapshotSupplyDiffers, storedTaxResult, taxDriftText
 import { buildExpenseDetailRows } from "@/domain/expenses/detail";
 import { BANK_TRANSFER_PAYMENT_METHOD, documentPayee, hasUsableAccount, PAYEE_ACCOUNT_MISSING_FIXABLE, type ExpensePayee } from "@/domain/expenses/payee";
 import { canSeeExpense, EXPENSE_DOCUMENT_KIND, ExpenseNotFoundError } from "@/domain/expenses/access";
+import { evidenceSourcesOf } from "@/domain/evidence/has-evidence";
+import { recheckEvidenceConfirmation } from "@/domain/evidence-reviews";
 import { expenseRouteDocTeamId } from "@/domain/expenses/route-doc";
 import { expenseLineDoor, installmentSeqFor, type ExpenseLineDoor, type ExpenseLineDoorState } from "@/domain/expenses/line-door";
 import { resolveLinkedDocumentsByLineage, type LineageLine } from "@/domain/quotes/lineage";
@@ -78,6 +81,7 @@ import {
   buildExpenseSubmitContext,
   INACTIVE_EVIDENCE_TYPE,
   INACTIVE_PAYMENT_METHOD,
+  methodEvidencePairsOf,
   nextActionTarget,
   PREPAID_REASON_REQUIRED,
   PROJECT_COMPLETED,
@@ -97,7 +101,8 @@ import {
   type ExpensePreviewDto,
 } from "@/domain/expenses/dto";
 import { listCodeItems } from "@/repositories/code-tables";
-import { countActiveByOwner, listAliveByOwners, markOwnerFilesRemoved, restoreOwnerFilesRemovedAt } from "@/repositories/files";
+import { listLiveLinksWithRecords } from "@/repositories/evidence-record-links";
+import { listAliveByOwners, markOwnerFilesRemoved, restoreOwnerFilesRemovedAt } from "@/repositories/files";
 import { findProjectById, findProjectInScope, lockProjectForWrite, type ProjectRow } from "@/repositories/projects";
 import { listLiveMemberProjectIds } from "@/repositories/project-members";
 import { findLatestQuoteRevision, findQuoteRevisionById, listLatestQuoteRevisionsByProjects, type QuoteRevisionRow } from "@/repositories/quote-revisions";
@@ -635,6 +640,24 @@ async function loadActiveCodes(viewer: Viewer): Promise<ActiveCodes> {
   return { evidence, payment };
 }
 
+// 06.1-12(E06 · RP-12): 제출 판정의 코드 사실 — 지금 쓰는 값(비활성 단계) + 짝 설정 · 코드 이름 표(짝 단계 — 지급 게이트 pairGateCtx와 같은 이름
+// 원천, 보관 · 비활성 포함). 문서와 무관한 읽기라 트랜잭션 전에 한 번(06-03 tx 규약).
+type SubmitCodes = ActiveCodes & {
+  pairs: readonly { method: string; evidence: string }[];
+  evidenceNames: ReadonlyMap<string, string>;
+  paymentNames: ReadonlyMap<string, string>;
+};
+
+async function loadSubmitCodes(viewer: Viewer): Promise<SubmitCodes> {
+  const [active, pairs, evidenceNames, paymentNames] = await Promise.all([
+    loadActiveCodes(viewer),
+    getSettingValue(PAYMENT_METHOD_EVIDENCE_PAIRS),
+    codeLabelsOf(viewer, "evidence_type"),
+    codeLabelsOf(viewer, "payment_method"),
+  ]);
+  return { ...active, pairs, evidenceNames, paymentNames };
+}
+
 // 새로 고른 값만 본다 — 이미 저장된 값(그 뒤 보관 · 비활성)은 자동 저장이 다시 보내도 막지 않고 제출 판정 ⑥이 빈 칸으로 막는다.
 async function assertActiveCodes(
   viewer: Viewer,
@@ -1059,7 +1082,7 @@ export async function submitExpense(
 
   const tax = await computeExpenseTax(viewer, row);
   const pre = projectRow ? await loadSubmitPre(viewer, projectRow) : null;
-  const codes = await loadActiveCodes(viewer);
+  const codes = await loadSubmitCodes(viewer);
   const prepared = await prepareSubmission(viewer, {
     kind: EXPENSE_DOCUMENT_KIND,
     drafterId: viewer.id,
@@ -1135,6 +1158,8 @@ export async function submitExpense(
       }
     }
     if (tax.unavailable) throw new GateBlockedError(TAX_UNAVAILABLE);
+    // 06.1-12(카드 R2 · 재검토 2회차 N-2): 다시 올리면 앞 회차 결재 중 자동 확인을 지운다 — 게이트를 다 지난 뒤 · 상태를 바꾸기 전, 같은 tx.
+    await recheckEvidenceConfirmation(viewer, { expenseId: locked.id }, tx);
 
     const installment = locked.installment || Boolean(door?.forcedInstallment);
     const firstSubmittedAt = resubmit ? locked.submittedAt : null;
@@ -1420,7 +1445,7 @@ async function loadSubmitFacts(
   projectRow: ProjectRow | null,
   pre: SubmitPre | null,
   tax: ExpenseTaxResult,
-  codes: ActiveCodes,
+  codes: SubmitCodes,
   tx?: DbOrTx,
 ): Promise<SubmitFacts> {
   const line = row.quoteLineId ? await findQuoteLineById(viewer, row.quoteLineId, tx) : null;
@@ -1430,7 +1455,11 @@ async function loadSubmitFacts(
   // 번호 문서 목록 다음에 읽는다 — 그사이 종결이 커밋돼도 그 문서는 두 목록 중 하나 이상에 든다(회차가 겹치지 않는다).
   const closedInstallments = chained ? await listClosedInstallmentsByLines(viewer, chained.chainLineIds, tx) : [];
   const door = line ? doorFor(line, numbered, row.id) : null;
-  const evidenceCount = await countActiveByOwner(viewer, EXPENSE_DOCUMENT_KIND, row.id, tx);
+  // 06.1-12(PA-SUBMITCOUNT): 증빙 건수 = 살아 있는 05 파일 + 살아 있는 증빙 붙임(같은 tx). 금액이 아니라 건수다.
+  const sources = (await evidenceSourcesOf(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerIds: [row.id] }, tx)).get(row.id);
+  const evidenceCount = (sources?.fileCount ?? 0) + (sources?.linkCount ?? 0);
+  // 06.1-12(카드 R4): 붙은 기록의 증빙 종류도 짝을 잰다 — 살아 있는 붙임 기록(같은 tx). 짝 설정 · 이름 표는 트랜잭션 전에 읽은 codes다.
+  const linkedRecords = await listLiveLinksWithRecords(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerIds: [row.id] }, tx);
   // 06.5 결정 맥락 15 · D-6507: 돈 갈 곳은 문서 지급처 칸 — 견적 줄의 거래처를 읽지 않는다. 계좌이체면 그 지급처의 계좌 유무를 같은 tx로 본다.
   const payee = documentPayee(row);
   const account = payee && row.paymentMethod === BANK_TRANSFER_PAYMENT_METHOD ? await findPayeeAccountPresence(viewer, payee, tx) : undefined;
@@ -1463,6 +1492,14 @@ async function loadSubmitFacts(
     paymentMethod: row.paymentMethod,
     evidenceTypeInactive: row.evidenceType ? !codes.evidence.has(row.evidenceType) : false,
     paymentMethodInactive: row.paymentMethod ? !codes.payment.has(row.paymentMethod) : false,
+    methodEvidencePairs: methodEvidencePairsOf({
+      pairs: codes.pairs,
+      paymentMethod: row.paymentMethod,
+      evidenceType: row.evidenceType,
+      recordEvidenceTypes: linkedRecords.map((record) => record.evidenceType),
+      paymentNames: codes.paymentNames,
+      evidenceNames: codes.evidenceNames,
+    }),
     // 06-10: 선결제 사실은 잠근 행(제출) · 겹친 행(미리보기)의 칸이다 — 새 조회 없음.
     prepaid: row.prepaid,
     prepaidReason: row.prepaidReason,
@@ -1504,9 +1541,10 @@ export async function previewExpense(viewer: Viewer, input: { expenseId: string;
   const row: ExpenseRow = { ...saved, ...toDraftColumns(draftFieldsSchema.parse(input.fields)) };
   const supply = supplyMoney(row);
 
-  const evidenceNames = await codeLabelsOf(viewer, "evidence_type");
+  // 증빙 종류 이름 표는 제출 코드 사실(짝 단계)과 같은 읽기 하나다.
+  const codes = await loadSubmitCodes(viewer);
   const tax = await computeExpenseTax(viewer, row);
-  const evidenceTypeName = row.evidenceType ? (evidenceNames.get(row.evidenceType) ?? row.evidenceType) : null;
+  const evidenceTypeName = row.evidenceType ? (codes.evidenceNames.get(row.evidenceType) ?? row.evidenceType) : null;
   const taxLine = supply ? taxLineText(tax, supply, `${evidenceTypeName ?? ""} 규칙`) : null;
 
   const { facts, line, numbered } = await loadSubmitFacts(
@@ -1515,7 +1553,7 @@ export async function previewExpense(viewer: Viewer, input: { expenseId: string;
     projectRow,
     projectRow ? await loadSubmitPre(viewer, projectRow) : null,
     tax,
-    await loadActiveCodes(viewer),
+    codes,
   );
   const decision = await gate(row, "expense.submit", buildExpenseSubmitContext(facts));
   let block: ExpenseSubmitBlock | null = null;
@@ -1591,7 +1629,7 @@ export type ExpenseCodeOption = { value: string; label: string; description: str
 export async function listExpenseFormOptions(
   viewer: Viewer,
 ): Promise<{ evidence: ExpenseCodeOption[]; payment: ExpenseCodeOption[]; prepaidDueDays: number; companyBorne: string[] }> {
-  // 06-10: 선결제 칸 힌트 `증빙 기한 지급일부터 {N}일`의 N(evidence.prepaid_due_days — 06-06 loadPrepaidDueDays와 같은 설정, domain/evidence-reviews를 값 import하면 순환이라 설정을 직접 읽는다. 트랜잭션 없는 사전 조회).
+  // 06-10: 선결제 칸 힌트 `증빙 기한 지급일부터 {N}일`의 N(evidence.prepaid_due_days — 06-06 loadPrepaidDueDays와 같은 설정을 직접 읽는다. 트랜잭션 없는 사전 조회).
   const prepaidDueDays = await getSettingValue(EVIDENCE_PREPAID_DUE_DAYS);
   if (!(await can(viewer, "expenses", "write"))) return { evidence: [], payment: [], prepaidDueDays, companyBorne: [] };
   const read = (tableKey: string) => listCodeItems(viewer, { tableKey, scope: { rows: "all", includeArchived: false }, includeInactive: false });

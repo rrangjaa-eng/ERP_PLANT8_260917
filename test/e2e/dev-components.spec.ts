@@ -114,7 +114,8 @@ test.describe("로그인한 뒤", () => {
   // 06.1-03 Task 2(SP-6103) — 첨부 영역 「엑셀 일괄 등록」 변형: 영역 · accept · 조각 색 · 0인 조각 부재 · 거절 행 버튼 0 · 실패 행에만 다시 올리기.
   test("일괄 등록 변형 — 영역 글자 · accept · 거절 행에는 버튼이 없고 실패 행에만 다시 올리기 · 0인 조각은 없다", async ({ page }) => {
     const bulk = page.locator('[data-gallery="bulk-import"]');
-    await expect(bulk.getByText("파일을 끌어 놓거나 Ctrl+U · 홈택스·카드사 엑셀·CSV 1MB")).toBeVisible();
+    // PC는 짧은 글(끌어 놓거나 Ctrl+U · …) 폰은 더 짧은 글 — 보이는 쪽 하나만 있다(기본 변형과 같은 pcText/phoneText).
+    await expect(bulk.getByText(/엑셀·CSV 1MB$/).locator("visible=true")).toHaveCount(1);
     await expect(bulk.getByTestId("attachments-input")).toHaveAttribute("accept", ".xls,.xlsx,.csv");
     await expect(bulk.getByRole("button", { name: /^파일 고르기/ })).toBeVisible();
     for (const key of ["size", "format", "lines"]) {

@@ -588,7 +588,8 @@ function BulkImport({ rows, onFiles, openSignal, pickerId }: BulkImportProps) {
       <div className={`${styles.drop} ${styles.bulkDrop}`} data-dragging={dragging ? "true" : undefined}>
         <span className={styles.bulkHint}>
           <Paperclip />
-          <span>파일을 끌어 놓거나 Ctrl+U · 홈택스·카드사 엑셀·CSV 1MB</span>
+          <span className={styles.pcText}>끌어 놓거나 Ctrl+U · 엑셀·CSV 1MB</span>
+          <span className={styles.phoneText}>엑셀·CSV 1MB</span>
         </span>
         <Button id={pickerId} variant="secondary" shortcut="Ctrl+U" onClick={() => inputRef.current?.click()}>
           파일 고르기

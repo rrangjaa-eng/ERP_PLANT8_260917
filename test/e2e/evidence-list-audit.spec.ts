@@ -423,9 +423,21 @@ test("① intake × 6폭 × 기본 · state=all · state=all&batch — 머리글
       const rowCount = await evidenceRows(page).count();
       const totals = await evidenceRows(page).evaluateAll((rows, col) => rows.map((row) => (row.querySelectorAll(":scope > td")[col] as HTMLElement | undefined)?.textContent ?? ""), EVIDENCE_COL.total);
       const sum = totals.reduce((acc, text) => acc + krw(text), 0);
-      const footMatch = /합계 (\d+)줄 · 공급가 ([\d,-]+) · 세액 ([\d,-]+) · 합계 ([\d,-]+)/.exec(footText);
-      record("합계 행 줄 수 = 표 행 수", width, role, url, `${footMatch?.[1]}/${rowCount}`, "같음", footMatch !== null && Number(footMatch[1]) === rowCount);
-      record("합계 행 합계 = 행 합계 칸 합(감사 계산)", width, role, url, `${footMatch?.[4]} / ${sum.toLocaleString("en-US")}`, "같음", footMatch !== null && krw(footMatch[4]!) === sum);
+      if (phone) {
+        // SYSTEM §7-3 폰 — 합계 행의 부제(줄 수 · 공급가 · 세액)는 숨기고 합계 금액만 한 줄(디자인 검토 H3).
+        const phoneFoot = /^합계 ([\d,-]+)$/.exec(footText.trim());
+        const footLines = await evidenceTable(page).locator("tfoot td").evaluate((cell) => {
+          const range = document.createRange();
+          range.selectNodeContents(cell);
+          return new Set(Array.from(range.getClientRects()).map((rect) => Math.round(rect.top))).size;
+        });
+        record("합계 행 폰 = 한 줄 `합계 {금액}`(부제 숨김)", width, role, url, `${footText.trim()} · ${footLines}줄`, "합계 {금액} · 1줄", phoneFoot !== null && footLines === 1);
+        record("합계 행 합계 = 행 합계 칸 합(감사 계산)", width, role, url, `${phoneFoot?.[1]} / ${sum.toLocaleString("en-US")}`, "같음", phoneFoot !== null && krw(phoneFoot[1]!) === sum);
+      } else {
+        const footMatch = /합계 (\d+)줄 · 공급가 ([\d,-]+) · 세액 ([\d,-]+) · 합계 ([\d,-]+)/.exec(footText);
+        record("합계 행 줄 수 = 표 행 수", width, role, url, `${footMatch?.[1]}/${rowCount}`, "같음", footMatch !== null && Number(footMatch[1]) === rowCount);
+        record("합계 행 합계 = 행 합계 칸 합(감사 계산)", width, role, url, `${footMatch?.[4]} / ${sum.toLocaleString("en-US")}`, "같음", footMatch !== null && krw(footMatch[4]!) === sum);
+      }
       const groupRows = evidenceTable(page).locator("tbody tr[class*='groupRow']");
       const groupTexts = await groupRows.allInnerTexts();
       const groupBg = (await groupRows.count()) > 0 ? await groupRows.first().evaluate((element) => getComputedStyle(element).backgroundColor) : "DOM 0";
@@ -827,7 +839,9 @@ test("⑧ intake 6폭 — 101줄 2쪽: 페이지 줄 범위 글자 · 이전/다
     const rows = await evidenceRows(page).count();
     record("2쪽 줄 수", width, role, url, rows, 50, rows === 50);
     const foot = (await evidenceTable(page).locator("tfoot").innerText()).replace(/\s+/g, " ");
-    record("합계 행 = 필터 결과 전체(101줄)", width, role, url, foot.slice(0, 80), "합계 101줄", /합계 101줄/.test(foot));
+    // 폰은 부제(줄 수)가 숨어 합계 금액만 남는다(H3) — 101줄 합은 PC 폭에서 글자로, 폰은 금액 한 줄로 본다.
+    if (width < 700) record("합계 행 = 필터 결과 전체(폰: 합계 금액만)", width, role, url, foot.slice(0, 80), "합계 {금액}", /^합계 [\d,-]+$/.test(foot.trim()));
+    else record("합계 행 = 필터 결과 전체(101줄)", width, role, url, foot.slice(0, 80), "합계 101줄", /합계 101줄/.test(foot));
     if (width >= 1024) {
       const order = await precedesAll([["합계 행", evidenceTable(page).locator("tfoot")], ["페이지 줄", nav], ["힌트 줄", hintRow(page)]]);
       record("페이지 줄 → 힌트 줄 순서", width, role, url, order.order.join(" → "), "합계 → 페이지 → 힌트", order.ok);

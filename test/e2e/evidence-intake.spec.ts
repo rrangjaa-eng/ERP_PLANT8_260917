@@ -701,3 +701,23 @@ test("(H2 · DR-5) 전부 거부 오류가 남은 채 1차를 누르면 서버�
   await expect(evidenceTable(page).locator('td[aria-invalid="true"]')).toBeFocused();
   expect(posts).toBe(0);
 });
+
+// 06.1-05 디자인 검토 H3 — SYSTEM §7-3 폰: 합계 행의 부제(줄 수 · 공급가 · 세액)는 폰에서 숨기고 합계(P1 금액)만 한 줄로 둔다. PC는 그대로.
+test("(H3) 375 — 합계 행은 한 줄 `합계 612,300`(부제 숨김) · 1280은 부제가 그대로 선다", async ({ page }) => {
+  const viewer = await loginIntake(page);
+  const card = await addLotteCard({ kind: "shared" });
+  await registerFile(viewer, lotteFixture(lotteLines(card, 3)), "롯데_H3.xls");
+  await page.goto("/expenses/evidence");
+  await expect(evidenceRows(page)).toHaveCount(3);
+  const footer = evidenceTable(page).locator("tfoot td");
+  await expect(footer).toContainText("합계 3줄 · 공급가");
+
+  await page.setViewportSize({ width: 375, height: 800 });
+  await expect(footer).toBeVisible();
+  const phone = await footer.evaluate((cell) => {
+    const range = document.createRange();
+    range.selectNodeContents(cell);
+    return { text: (cell as HTMLElement).innerText.replace(/\s+/g, " ").trim(), lines: new Set(Array.from(range.getClientRects()).map((rect) => Math.round(rect.top))).size };
+  });
+  expect(phone).toEqual({ text: "합계 612,300", lines: 1 });
+});

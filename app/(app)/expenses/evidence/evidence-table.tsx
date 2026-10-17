@@ -618,7 +618,15 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
 
   // 합계 행 — 필터 결과 전체(쪽과 무관). 숨는 열(공급가 · 세액)의 합까지 라벨 뒤 한 줄에 둔다(SYSTEM §6-1 「숨긴 금액 열은 합계 줄에 남는다」).
   const amounts = list.total.amounts;
-  const footerLabel = `합계 ${formatCount(list.total.count)}줄${amounts ? ` · 공급가 ${formatKrw(amounts.supplyKrw)} · 세액 ${formatKrw(amounts.vatKrw)} · 합계 ${formatKrw(amounts.totalKrw)}` : ""}`;
+  // 폰(<700)은 부제(줄 수 · 공급가 · 세액)를 숨기고 합계(P1 금액)만 한 줄로 둔다(§7-3 폰 「합계 행의 부제는 폰에서 숨긴다」) — PC 글자는 그대로.
+  const footerLabel = amounts ? (
+    <>
+      합계 <span className={styles.footerDetail}>{`${formatCount(list.total.count)}줄 · 공급가 ${formatKrw(amounts.supplyKrw)} · 세액 ${formatKrw(amounts.vatKrw)} · 합계 `}</span>
+      {formatKrw(amounts.totalKrw)}
+    </>
+  ) : (
+    `합계 ${formatCount(list.total.count)}줄`
+  );
   const groupLabels = new Map(list.groups.map((group) => [group.format, `${group.label} · ${formatCount(group.count)}`]));
 
   return (

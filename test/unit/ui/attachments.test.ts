@@ -40,7 +40,10 @@ describe("Attachments variant=bulk-import — 영역", () => {
 
   it("영역 한 줄과 2차 `파일 고르기` + kbd `Ctrl+U`가 있다", () => {
     const markup = render([]);
-    expect(markup).toContain("파일을 끌어 놓거나 Ctrl+U · 홈택스·카드사 엑셀·CSV 1MB");
+    // 디자인 검토 G(사용자 카드 2026-10-17 「짧게 줄임」) — PC 짧은 글 + 폰 더 짧은 글, 기본 변형과 같은 pcText/phoneText 자리.
+    expect(markup).toMatch(/<span class="[^"]*pcText[^"]*">끌어 놓거나 Ctrl\+U · 엑셀·CSV 1MB<\/span>/);
+    expect(markup).toMatch(/<span class="[^"]*phoneText[^"]*">엑셀·CSV 1MB<\/span>/);
+    expect(markup).not.toContain("홈택스·카드사 엑셀·CSV 1MB");
     expect(markup).toContain("파일 고르기");
     expect(markup).toMatch(/<kbd[^>]*>Ctrl\+U<\/kbd>/);
   });

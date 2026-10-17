@@ -182,9 +182,20 @@ for (const width of WIDTHS) {
       check('결과 슬롯 aria-live="polite"', route, width, live, "1", live === 1);
       const accept = (await root.locator('input[type="file"]').getAttribute("accept")) ?? "";
       check("파일 입력 accept", route, width, accept, ".xls · .xlsx · .csv 포함", [".xls", ".xlsx", ".csv"].every((ext) => accept.split(",").includes(ext)));
-      const hint = "파일을 끌어 놓거나 Ctrl+U · 홈택스·카드사 엑셀·CSV 1MB";
-      const hintCount = await drop.getByText(hint, { exact: true }).count();
-      check("영역 글자", route, width, hintCount, `「${hint}」 1`, hintCount === 1);
+      // 디자인 검토 G(사용자 카드 2026-10-17 「짧게 줄임」) — 안내 글은 PC/폰 두 꼴(pcText · phoneText)이고 보이는 쪽은 하나이며 한 줄이다.
+      const pcHint = "끌어 놓거나 Ctrl+U · 엑셀·CSV 1MB";
+      const phoneHint = "엑셀·CSV 1MB";
+      const pcCount = await drop.getByText(pcHint, { exact: true }).count();
+      const phoneCount = await drop.getByText(phoneHint, { exact: true }).count();
+      check("영역 글자 두 꼴", route, width, { pc: pcCount, phone: phoneCount }, `「${pcHint}」 1 · 「${phoneHint}」 1`, pcCount === 1 && phoneCount === 1);
+      const shown = await drop.locator(":scope > span:first-child > span:visible").evaluateAll((els) =>
+        els.map((el) => {
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          return { text: el.textContent, lines: new Set(Array.from(range.getClientRects()).map((rect) => Math.round(rect.top))).size };
+        }),
+      );
+      check("영역 안내 글 보이는 꼴 하나 · 한 줄", route, width, shown, "1개 · lines 1", shown.length === 1 && shown[0]?.lines === 1);
 
       // 디자인 검토 결함 A — 2차 「파일 고르기」 라벨은 어느 폭에서도 한 줄이고 버튼 상자를 넘지 않는다(줄어드는 쪽은 안내 글자).
       const pick = drop.getByRole("button", { name: /^파일 고르기/ });

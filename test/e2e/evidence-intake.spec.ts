@@ -721,3 +721,20 @@ test("(H3) 375 — 합계 행은 한 줄 `합계 612,300`(부제 숨김) · 1280
   });
   expect(phone).toEqual({ text: "합계 612,300", lines: 1 });
 });
+
+// 06.1-05 디자인 검토 — 일괄 등록 영역 안내 글은 어느 폭에서도 한 줄이다(06.1-03 결함 G와 같은 건 — 공용 Attachments).
+test("일괄 등록 영역 안내 글은 1280 · 1024에서 보이는 꼴 하나 · 한 줄", async ({ page }) => {
+  await loginIntake(page);
+  for (const width of [1280, 1024]) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto("/expenses/evidence");
+    const shown = await page.locator('[data-variant="bulk-import"] span[class*="bulkHint"] > span:visible').evaluateAll((els) =>
+      els.map((el) => {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        return { text: el.textContent, lines: new Set(Array.from(range.getClientRects()).map((rect) => Math.round(rect.top))).size };
+      }),
+    );
+    expect(shown, `${width}`).toEqual([{ text: "끌어 놓거나 Ctrl+U · 엑셀·CSV 1MB", lines: 1 }]);
+  }
+});

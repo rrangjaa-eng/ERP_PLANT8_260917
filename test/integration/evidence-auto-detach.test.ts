@@ -10,7 +10,7 @@ import { createCardUsage, deleteCardUsage, precheckCardUsage, precheckCardUsageR
 import { attachEvidenceRecord } from "@/domain/evidence-records/attach";
 import { closeExpense, deleteExpenseDraft, getExpense, restoreExpenseDraft } from "@/domain/expenses";
 import { createOrgUnit, createTeam } from "@/domain/org";
-import { cancelPurchaseRequest, precheckPurchaseCancel } from "@/domain/purchase-requests";
+import { cancelPurchaseRequest, listPurchaseRequests, precheckPurchaseCancel } from "@/domain/purchase-requests";
 import { PAYMENT_METHOD_EVIDENCE_PAIRS } from "@/domain/settings/keys";
 import { seoulToday } from "@/lib/dates";
 import { upsertSimpleValue } from "@/repositories/settings";
@@ -102,6 +102,23 @@ describe("자동 떼기 (06.1-06 Task 3 · E22)", () => {
     await cancelPurchaseRequest(pfx.pm, { id: created.id, version: row.version }, await precheckPurchaseCancel(pfx.pm, { id: created.id }));
     const [link] = await linksOf(recordId);
     expect(link).toMatchObject({ detachedBy: pfx.pm.id, detachReason: "요청 취소" });
+  });
+
+  it("구매 요청 목록 행 linkedEvidenceCount — 살아 있는 붙임 수(취소 확인 창 결과 줄 재료) · 뗀 붙임 · 없는 요청은 0", async () => {
+    const pfx = await purchaseProject();
+    const manager = await createIntakeManager();
+    const linked = await createRequest(pfx, pfx.onlineLine, 110_000);
+    const bare = await createRequest(pfx, pfx.onlineLine, 110_000);
+    for (let index = 0; index < 2; index += 1) {
+      await insertLinkFixture({ recordId: await insertRecordFixture(manager, { supplyKrw: 100_000, vatKrw: 10_000 }), ownerKind: "purchase_request", ownerId: linked.id, attachedBy: manager.id });
+    }
+    const detached = await insertLinkFixture({ recordId: await insertRecordFixture(manager), ownerKind: "purchase_request", ownerId: linked.id, attachedBy: manager.id });
+    await db.update(evidenceRecordLinks).set({ detachedAt: new Date(), detachedBy: manager.id, detachReason: "다른 건 증빙" }).where(eq(evidenceRecordLinks.id, detached));
+
+    const list = await listPurchaseRequests(pfx.pm, { status: "all", month: null, page: "1", keepId: null });
+    const countOf = (id: string) => list.rows.find((row) => row.id === id)?.linkedEvidenceCount;
+    expect(countOf(linked.id)).toBe(2);
+    expect(countOf(bare.id)).toBe(0);
   });
 
   it("카드 사용 삭제(보관) → 「카드 사용 삭제」로 떨어짐 · 되살리기는 붙임을 다시 만들지 않음", async () => {

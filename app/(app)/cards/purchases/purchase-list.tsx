@@ -47,6 +47,8 @@ export type PurchaseListRowView = {
   cancelReason: string | null;
   /** 06-14 `신청됨` 행에서만 서버가 준다 — 요청자 본인 `own` · 구매 권한자의 남의 요청 `others`. 없으면 `요청 취소`가 서지 않는다(Q2). */
   cancelBranch: "own" | "others" | null;
+  /** 06.1-06(DB-15) 살아 있는 증빙 붙임 수 — 취소 창 결과 줄(서버가 센다). */
+  linkedEvidenceCount: number;
 };
 
 // 06-12 S13 성공 뒤 제자리 결과 — 패널(폼)이 성공 순간 남기고, 목록이 `?done={id}`로 다시 그려질 때 읽는다(액션 응답 값 · 한 번만 포커스).
@@ -191,6 +193,7 @@ function cancelTarget(row: PurchaseListRowView): PurchaseCancelTarget | null {
     branch: row.cancelBranch,
     quoteLinked: row.quoteLinked,
     estimateText: row.estimateKrw === null ? null : formatKrw(row.estimateKrw),
+    linkedEvidenceCount: row.linkedEvidenceCount,
   };
 }
 

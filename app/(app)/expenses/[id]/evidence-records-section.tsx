@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Num } from "@/ui/num/Num";
 import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
 import { StaticTable, type StaticTableColumn } from "@/ui/table/StaticTable";
-import { DetachDialog, type DetachTarget } from "../evidence/detach-dialog";
+import { DetachDialog, previewExpectedKrw, type DetachTarget } from "../evidence/detach-dialog";
 import { EVIDENCE_LOCK_LINE_TEXT, type EvidenceLockLineCode } from "./evidence-locked-lines";
 import styles from "./expense.module.css";
 
@@ -49,9 +49,19 @@ export function EvidenceRecordsSection({
 }) {
   const router = useRouter();
   const [target, setTarget] = useState<DetachTarget | null>(null);
+  // D-5 — 미리 보기를 받는 줄(그동안 그 줄 행동은 `…`, 다른 줄 행동은 무반응). 받은 뒤에 창을 연다.
+  const [opening, setOpening] = useState<string | null>(null);
   if (items.length === 0) return null;
   const titleOf = (item: LinkedEvidenceItem) => [item.typeLabel, item.counterparty].filter(Boolean).join(" · ") || "—";
   const line = lockLine && !lockLineShownAbove ? EVIDENCE_LOCK_LINE_TEXT[lockLine] : null;
+
+  async function openDetach(item: LinkedEvidenceItem) {
+    if (opening !== null) return;
+    setOpening(item.linkId);
+    const expectedKrw = await previewExpectedKrw(item.linkId);
+    setOpening(null);
+    setTarget({ linkId: item.linkId, mode: item.action === "void" ? "void" : "detach", subtitle: [titleOf(item), number].filter(Boolean).join(" · "), expectedKrw });
+  }
 
   return (
     <div className={styles.evidenceRecords}>
@@ -69,7 +79,13 @@ export function EvidenceRecordsSection({
             <Num key="total" value={item.totalKrw} />,
             item.action ? (
               <RowActions key="action" noWrap>
-                <RowAction danger describedBy={titleId(item.linkId)} onClick={() => setTarget({ linkId: item.linkId, mode: item.action === "void" ? "void" : "detach", subtitle: [titleOf(item), number].filter(Boolean).join(" · ") })}>
+                <RowAction
+                  danger
+                  describedBy={titleId(item.linkId)}
+                  pending={opening === item.linkId}
+                  busy={opening !== null && opening !== item.linkId}
+                  onClick={() => void openDetach(item)}
+                >
                   {ACTION_LABEL[item.action]}
                 </RowAction>
               </RowActions>

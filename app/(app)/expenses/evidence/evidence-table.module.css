@@ -1,0 +1,92 @@
+/* 06.1-05 — 증빙 목록(S1 · S2). 값은 역할 토큰과 기존 표 화면(리저브 대장 reserves.module.css · ListScreen.module.css)의 값만 쓴다(새 색 · 서체 · radius 없음). */
+
+/* 필터 줄 — ListScreen `.bar`와 같은 값. 1차는 이 줄 오른쪽 끝(SYSTEM §6-1 · DA-15) — DOM 순서(필터 → 1차)가 곧 시각 순서다. */
+.filterRow {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--s-4);
+  margin: var(--s-4) 0 var(--s-3);
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-4);
+  min-width: 0;
+}
+
+/* 1차 글자는 한 줄(ListScreen `.primaryAction`과 같은 규칙). */
+.primaryAction {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* 공개 셀 편집기 — 리저브 대장 셀 편집기와 같은 모양. */
+.cellSelect {
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--control-h);
+  padding: 0 var(--s-1);
+  border: 0;
+  border-bottom: var(--line-w) solid var(--accent);
+  background: var(--accent-weak);
+  color: var(--text-strong);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+}
+
+.cellSelect:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+  border-radius: var(--radius-control);
+}
+
+.footerCell {
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  border-top: var(--line-w) solid var(--border-strong);
+  color: var(--text-strong);
+  font-weight: var(--fw-bold);
+}
+
+/* 04-04(D-68) — 저장 안 한 편집 복원 줄(리저브 대장 · 견적 원장과 같은 모양). 사람이 바꾼 칸만 든다(서버 제안은 들지 않음 — DA-4). */
+.restoreBanner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--s-2);
+  margin: var(--s-2) 0;
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+  word-break: keep-all;
+}
+
+.restoreActions {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: var(--s-2);
+}
+
+.restoreAction {
+  border: 0;
+  background: none;
+  color: var(--text-link);
+  font-size: var(--text-aux);
+  font-weight: var(--fw-medium);
+  text-decoration: underline;
+  text-decoration-thickness: var(--line-w);
+  text-underline-offset: var(--underline-offset);
+  cursor: pointer;
+}
+
+.restoreAction:hover:not([aria-disabled="true"]) {
+  text-decoration-thickness: var(--underline-w-hover);
+}
+
+@media (max-width: 699.98px) {
+  .restoreAction {
+    min-height: var(--touch-min);
+    min-width: var(--touch-min);
+  }
+}

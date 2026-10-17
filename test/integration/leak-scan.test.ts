@@ -52,6 +52,7 @@ import "@/domain/certs/review";
 import "@/app/(app)/certs/submissions/[id]/actions.registry";
 import "@/app/(app)/admin/field-definitions/actions.registry";
 import "@/domain/evidence-import";
+import "@/domain/evidence-records";
 import "@/app/(app)/expenses/evidence/actions.registry";
 import {
   createFieldDefinition,
@@ -198,6 +199,17 @@ describe("정보 노출 누수 스캔 (ADMN-03)", () => {
     it("QuoteLineDto의 거래처 이름 정보 항목이 등록돼 있다", () => {
       const dto = DTO_REGISTRY.find((entry) => entry.name === "QuoteLineDto");
       expect(dto?.fields.find((field) => field.key === "vendorName")?.infoItem).toEqual(["project.value", "vendor.value"]);
+    });
+
+    // 06.1-05 — 증빙 기록 목록 DTO: 금액 셋은 증빙 금액, 나머지(상태 2행의 팀 · 본부 이름 포함)는 증빙 내용으로 계급별 노출표를 지난다.
+    it("EvidenceRecordDto의 금액 칸은 evidence.amount, 나머지는 evidence.value다", () => {
+      const dto = DTO_REGISTRY.find((entry) => entry.name === "EvidenceRecordDto");
+      const amounts = ["supplyKrw", "vatKrw", "totalKrw"];
+      expect(dto?.fields.length).toBeGreaterThan(amounts.length);
+      for (const field of dto?.fields ?? []) {
+        expect(field.infoItem, field.key).toBe(amounts.includes(field.key) ? "evidence.amount" : "evidence.value");
+      }
+      expect(dto?.fields.filter((field) => amounts.includes(field.key))).toHaveLength(amounts.length);
     });
 
     // quick 261001-85g(ADMN-03) — 프로젝트 등록 폼 선택지(거래처 · 팀 · 사람)도 명세로 등록돼 이 스캔이 본다.

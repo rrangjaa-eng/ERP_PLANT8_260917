@@ -106,6 +106,7 @@ const ADMIN_SCREENS = [
   "/approvals",
   "/cards",
   "/expenses",
+  "/expenses/evidence",
   "/pnl",
   "/projects",
   "/admin",

@@ -9,7 +9,7 @@ import {
 } from "@/domain/permissions/roles";
 import { MENUS, PERMISSION_ACTIONS } from "@/domain/permissions/menus";
 import { INFO_ITEMS } from "@/domain/permissions/info-items";
-import { SEED_HISTORIZED_EFFECTIVE_FROM, SETTING_DEFS } from "@/domain/settings/keys";
+import { EVIDENCE_VISIBILITY_DIVISION_ORG_UNIT, SEED_HISTORIZED_EFFECTIVE_FROM, SETTING_DEFS } from "@/domain/settings/keys";
 import { seedRole } from "@/repositories/roles";
 import {
   upsertPermission,
@@ -387,6 +387,10 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
       if (inserted) settingsCount++;
     }
   }
+
+  // 06.1-05(C3): 증빙 본부 공개 대상 = 기획본부(기본값 없는 키 — 이미 값이 있으면 두지 않는다, approvals-leave.ts와 같은 꼴).
+  const planningDivision = await findOrgUnitByName(viewer, "기획본부");
+  if (planningDivision) await seedSimpleValue(viewer, EVIDENCE_VISIBILITY_DIVISION_ORG_UNIT.key, planningDivision.id);
 
   await seedApprovalsLeave(viewer);
   await seedExpenses(viewer);

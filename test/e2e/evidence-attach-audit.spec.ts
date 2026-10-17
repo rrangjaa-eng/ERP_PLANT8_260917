@@ -320,8 +320,43 @@ test("A 증빙 목록 · PickDialog — ① 경영관리(두 키)", async ({ bro
           .map((el) => `${el.tagName.toLowerCase()}«${(el.textContent ?? "").trim().slice(0, 16)}»`),
       );
       record("표 탭 정지 수(§7-3 (아) — 격자 1)", width, role, URL_ALL, { count: tabStops.length, sample: tabStops.slice(0, 6) }, 1, tabStops.length === 1);
-      const cellButtons = await rowOf(page, names.open).locator('[data-ui="row-actions"]').first().locator("button").allTextContents();
-      record("열린 행 행동 셀 3차 수(§7-3 (차) 셀마다 하나)", width, role, URL_ALL, cellButtons.map((t) => t.trim()), "1개", cellButtons.length === 1);
+      // D-3 판정(오케스트레이터 2026-10-17) — 이 목록 행 행동 셀은 §7-19 RowActions 규칙이 정한다(§7-3 (차) 「셀마다 3차 하나」는 편집 표 문서 행동 열 규칙).
+      // 「붙이기」 + 「보관」 둘은 허용하되 보관(삭제류)은 §7-19 · §7-1 772대로 danger 글자(`--status-danger`) · 맨 끝 · 앞 행동과 글자 간격 ≥ `--s-8`.
+      const cell = await rowOf(page, names.open)
+        .locator('[data-ui="row-actions"]')
+        .first()
+        .evaluate((el) => {
+          const buttons = [...el.querySelectorAll("button")];
+          const root = getComputedStyle(document.documentElement);
+          const probe = document.createElement("span");
+          probe.style.color = root.getPropertyValue("--status-danger").trim();
+          probe.style.width = root.getPropertyValue("--s-8").trim();
+          probe.style.display = "inline-block";
+          el.appendChild(probe);
+          const danger = getComputedStyle(probe).color;
+          const s8 = probe.getBoundingClientRect().width;
+          probe.remove();
+          const last = buttons.at(-1);
+          const prev = buttons.at(-2);
+          const lastText = last?.querySelector("span")?.getBoundingClientRect();
+          const prevText = prev?.querySelector("span")?.getBoundingClientRect();
+          return {
+            labels: buttons.map((b) => (b.textContent ?? "").replace("…", "").trim()),
+            lastColor: last ? getComputedStyle(last).color : null,
+            danger,
+            gap: lastText && prevText ? Math.round(lastText.left - prevText.right) : null,
+            s8,
+          };
+        });
+      record(
+        "열린 행 행동 셀(§7-19 — `붙이기` · 맨 끝 danger `보관` · 간격 ≥ --s-8)",
+        width,
+        role,
+        URL_ALL,
+        cell,
+        { labels: ["붙이기", "보관"], lastColor: "--status-danger", gap: "≥ --s-8" },
+        cell.labels.join(",") === "붙이기,보관" && cell.lastColor === cell.danger && cell.gap !== null && cell.gap >= cell.s8,
+      );
     }
     const violations = await axe(page);
     record("axe 위반(목록)", width, role, URL_ALL, violations, "[]", violations.length === 0);

@@ -506,6 +506,8 @@ test("② intake 1280 · 1024 — 결과 행 조각 · 0 조각 없음 · 80자 
     const pieceKinds = await resultRow(page).locator("[data-kind]").evaluateAll((elements) => elements.map((element) => ({ kind: element.getAttribute("data-kind"), color: getComputedStyle(element).color })));
     record("결과 행 조각 data-kind · 색(참고)", width, role, url, pieceKinds, "06.1-03 조각 색 표", null);
 
+    // 결과 행은 업로드 응답에서 바로 서고 목록은 router.refresh 뒤에 다시 그려진다 — 줄이 보이기 전에 재면 필터 · 표가 「없음」으로 잡힌다(CI e2e (1) #252).
+    await expect(evidenceRows(page).first()).toBeVisible({ timeout: 30_000 });
     const order = await precedesAll([
       ["S1 영역", dropZone(page)],
       ["결과 행", resultRow(page)],

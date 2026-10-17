@@ -68,6 +68,9 @@ export default defineConfig({
   webServer: {
     command: process.env.CI ? "pnpm build && pnpm start" : "pnpm dev",
     url: "http://127.0.0.1:3100/api/health",
+    // CI는 이 명령 안에서 프로덕션 빌드까지 하는데, 빌드가 기본 대기 60초에 닿아(10/17 visual-baseline 실측 — 빌드 끝난 직후 시간 초과)
+    // 서버가 뜨기 전에 실패한다. 빌드 시간만큼 여유를 둔다.
+    timeout: 300_000,
     reuseExistingServer: false,
     env: {
       DATABASE_URL: process.env.DATABASE_URL,

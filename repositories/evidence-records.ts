@@ -392,6 +392,8 @@ export type LockedEvidenceRecord = {
   version: number;
   format: string;
   visibility: string;
+  visibleTeamId: string | null;
+  visibleOrgUnitId: string | null;
   corpCardId: string | null;
   needsCheck: string | null;
   totalKrw: number;
@@ -413,6 +415,8 @@ export async function lockRecordsForUpdate(viewer: Viewer, ids: readonly string[
       version: evidenceRecords.version,
       format: evidenceRecords.format,
       visibility: evidenceRecords.visibility,
+      visibleTeamId: evidenceRecords.visibleTeamId,
+      visibleOrgUnitId: evidenceRecords.visibleOrgUnitId,
       corpCardId: evidenceRecords.corpCardId,
       needsCheck: evidenceRecords.needsCheck,
       totalKrw: evidenceRecords.totalKrw,

@@ -454,7 +454,7 @@ function chunked<T>(items: readonly T[], size: number): T[][] {
 }
 
 // 공개 범위 저장 — 전부-아니면-전무(E32). 권한 · 설정 본부 읽기는 트랜잭션 전(06-03 규약), 트랜잭션 안에서는 id 오름차순 잠금 → 줄 검사
-// → 500줄씩 version 조건부 갱신 → 행동 로그(건수만). 한 줄이라도 거부면 오류 칸을 모아 SaveRejectedError로 던져 롤백한다.
+// → 500줄씩 version 조건부 갱신 → 행동 로그(건수 · 범위별 줄 id). 한 줄이라도 거부면 오류 칸을 모아 SaveRejectedError로 던져 롤백한다.
 export async function publishEvidenceRecords(
   viewer: Viewer,
   input: { groups: readonly EvidencePublishGroup[] },
@@ -508,9 +508,19 @@ export async function publishEvidenceRecords(
       }
       count += changed.size;
     }
+    // 건수와 함께 어느 줄을 어느 팀 · 본부에 열었는지(줄 id) — 공개 범위를 바꾼 흔적을 되짚을 수 있게(/cso B2).
     const counts = { saved: count, private: 0, team: 0, division: 0 };
-    for (const row of updates) counts[row.visibility]++;
-    await recordAction(viewer, { actionType: "document_update", entity: "evidence_record", detail: counts }, { tx });
+    const records: { private: string[]; team: Record<string, string[]>; division: Record<string, string[]> } = { private: [], team: {}, division: {} };
+    for (const row of updates) {
+      counts[row.visibility]++;
+      if (row.visibility === "private") records.private.push(row.id);
+      else {
+        const scopeId = (row.visibility === "team" ? row.teamId : row.orgUnitId) ?? "";
+        const byScope = records[row.visibility];
+        (byScope[scopeId] ??= []).push(row.id);
+      }
+    }
+    await recordAction(viewer, { actionType: "document_update", entity: "evidence_record", detail: { ...counts, records } }, { tx });
     return count;
   });
   return { saved, savedAt: kstDateTimeOf(savedAt).slice(11) };
@@ -542,7 +552,9 @@ async function setEvidenceArchived(viewer: Viewer, input: EvidenceArchiveInput, 
     const conflict = new EvidenceArchiveConflictError(`다른 사람이 ${formatKstTime(row.updatedAt)}에 바꿈 · 새로 고침`);
     if (row.version !== input.version || evidenceRowAction(lockedStatusInput(row)) !== actionType) throw conflict;
     if (!(await setRecordArchivedIfVersionMatches(viewer, { id: input.id, version: input.version, archived }, tx))) throw conflict;
-    await defaultRecordAction(viewer, { actionType, entity: "evidence_record", entityId: input.id }, { tx });
+    // 보관이 닫고 되살림이 다시 여는 범위(/cso B2).
+    const detail = { visibility: row.visibility, teamId: row.visibleTeamId, orgUnitId: row.visibleOrgUnitId };
+    await defaultRecordAction(viewer, { actionType, entity: "evidence_record", entityId: input.id, detail }, { tx });
     return { id: input.id, version: input.version + 1 };
   });
 }

@@ -42,8 +42,8 @@ import {
   type EvidenceAttachMode,
   type EvidenceLinkOwnerKind,
 } from "@/repositories/evidence-record-links";
-import { CANDIDATE_LIMIT, findExpenseById, listExpenseAttachCandidates, lockExpenseForUpdate, type ExpenseAttachCandidateRow } from "@/repositories/expenses";
-import { listPurchaseRequestAttachCandidates, lockPurchaseRequestForUpdate, type PurchaseRequestAttachCandidateRow } from "@/repositories/purchase-requests";
+import { CANDIDATE_LIMIT, findExpenseById, hasExpenseAttachTarget, listExpenseAttachCandidates, lockExpenseForUpdate, type ExpenseAttachCandidateRow } from "@/repositories/expenses";
+import { hasPurchaseRequestAttachTarget, listPurchaseRequestAttachCandidates, lockPurchaseRequestForUpdate, type PurchaseRequestAttachCandidateRow } from "@/repositories/purchase-requests";
 
 // 06.1-06(RP-4 · RP-5 · E-49): 증빙 기록(엑셀 한 줄)을 번호 있는 지출결의 · 취소 아닌 구매 요청에 붙이고 떼기. 권리는 05 규칙표 위
 // evidenceRecordRights 하나(domain/evidence), 잠금 순서는 05 completeEvidenceUpload와 같다 — 문서(사전 판독이 승인이면 프로젝트 → 문서) →
@@ -475,4 +475,12 @@ export async function listAttachCandidates(viewer: Viewer, input: { recordId: st
     limit: CANDIDATE_LIMIT,
     noneSelectableReason: kept.length > 0 && kept.every((candidate) => !candidate.dto.selectable) ? NONE_SELECTABLE : null,
   };
+}
+
+// S2 행 `붙이기`의 대상 있음(쪽마다 한 번) — 그 사람이 볼 수 있는 번호 있는 지출결의 또는 취소 아닌 구매 요청이 하나라도 있나. 짝 · 권리는
+// 행 · 문서마다 달라 넣지 않는다(다 막혔으면 S4의 noneSelectableReason — eng B-P3).
+export async function hasAttachTarget(viewer: Viewer): Promise<boolean> {
+  const [expenseScope, requestScope] = await Promise.all([visibleExpenseScope(viewer), purchaseRequestReadScope(viewer)]);
+  if (await hasExpenseAttachTarget(viewer, { scope: expenseScope, documentKind: EXPENSE_DOCUMENT_KIND })) return true;
+  return hasPurchaseRequestAttachTarget(viewer, { scope: requestScope });
 }

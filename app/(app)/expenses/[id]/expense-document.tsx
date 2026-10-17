@@ -21,6 +21,8 @@ import { expenseStatusWord } from "../status-display";
 import type { EvidenceActions } from "@/domain/evidence";
 import type { PaymentViewDto } from "@/domain/payments";
 import { EvidenceAttachments } from "./evidence-attachments";
+import type { EvidenceLockLineCode } from "./evidence-locked-lines";
+import { EvidenceRecordsSection, type LinkedEvidenceItem } from "./evidence-records-section";
 import { EvidenceReviewBlock, PrepaidReasonLine } from "./evidence-review-section";
 import { SubmittedUndoToast } from "./submitted-undo-toast";
 import { TaxParts } from "./tax-parts";
@@ -39,6 +41,7 @@ export function ExpenseDocument({
   view,
   files,
   evidenceActions,
+  linkedEvidence,
   maxMb,
   submitted,
   paymentView = null,
@@ -48,6 +51,8 @@ export function ExpenseDocument({
   view: ApprovalView | null;
   files: AttachmentFile[];
   evidenceActions: EvidenceActions;
+  /** 06.1-06 — 붙은 증빙 기록(서버 listLinkedEvidence) · 섹션 잠김 줄 코드. */
+  linkedEvidence: { items: LinkedEvidenceItem[]; lockLine: EvidenceLockLineCode | null };
   maxMb: number;
   submitted: string | undefined;
   /** 06-03: 결재 통과 문서의 지급 섹션 DTO — 없거나 null이면 지급 섹션 · 행동 줄을 그리지 않는다(P0 · 05 C1 작성 중 문서). */
@@ -202,6 +207,12 @@ export function ExpenseDocument({
           reasonMessages={{ empty: REJECT_REASON_EMPTY_MESSAGE, tooLong: REJECT_REASON_TOO_LONG_MESSAGE, max: REJECT_REASON_MAX }}
         />
       </div>
+      <EvidenceRecordsSection
+        items={linkedEvidence.items}
+        lockLine={linkedEvidence.lockLine}
+        number={expense.number ?? null}
+        lockLineShownAbove={evidenceActions.drafterLocked || evidenceActions.completedProjectLocked}
+      />
       {review}
       <PrepaidReasonLine reason={expense.prepaidReason} />
     </DetailScreen.Section>

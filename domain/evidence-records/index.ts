@@ -50,6 +50,7 @@ import {
   type LockedEvidenceRecord,
 } from "@/repositories/evidence-records";
 import type { DbOrTx } from "@/repositories/document-counters";
+import { listLiveLinkOwnersByRecords } from "@/repositories/evidence-record-links";
 import { findOrgUnitById } from "@/repositories/org-units";
 import { findMembershipsAtDate } from "@/repositories/team-memberships";
 import { findTeamsByIds, listTeams, type TeamRow } from "@/repositories/teams";
@@ -96,6 +97,18 @@ export type EvidenceRecordDto = {
   visibilityCell: EvidenceVisibilityCell;
   /** 행 행동 열의 3차(DA-7) — 서버 판정. 화면은 이 값대로 `보관` · `되살리기`를 그리거나 그리지 않는다. */
   rowAction: EvidenceRowAction;
+  /**
+   * 06.1-06 — 붙은 문서(상태 2행 링크). 등록 권한자(범위 all)에게만 싣는다. 번호 없는 임시 지출결의면 `attachedPending`만 참이고 id · 번호는
+   * 싣지 않는다(경영관리는 그 문서를 못 본다 — Round 2 eng B-P2).
+   */
+  attachedKind: "expense" | "purchase_request" | null;
+  attachedId: string | null;
+  attachedNumber: string | null;
+  attachedPending: boolean;
+  /** 06.1-06 — 행 `붙이기`를 그린다(붙일 수 있는 상태 ∧ 볼 수 있는 대상 문서가 하나라도 있음). 짝 · 권리는 행마다 달라 S4가 판정한다. */
+  canAttach: boolean;
+  /** 06.1-06 — `붙이기` 비활성 이유(확인 필요 · 카드 미등록 — DA-13). 있으면 `붙이기`는 aria-disabled. */
+  attachBlocked: string | null;
 };
 
 // 금액 셋 = 증빙 금액, 나머지 = 증빙 내용(팀 · 본부 이름이 든 상태 2행도 증빙 기록의 공개 칸이다).
@@ -122,6 +135,12 @@ export const EVIDENCE_RECORD_DTO_SPEC: DtoSpec<EvidenceRecordDto, EvidenceRecord
     { key: "statusDetail", from: "statusDetail", infoItem: "evidence.value" },
     { key: "visibilityCell", from: "visibilityCell", infoItem: "evidence.value" },
     { key: "rowAction", from: "rowAction", infoItem: "evidence.value" },
+    { key: "attachedKind", from: "attachedKind", infoItem: "evidence.value" },
+    { key: "attachedId", from: "attachedId", infoItem: "evidence.value" },
+    { key: "attachedNumber", from: "attachedNumber", infoItem: "evidence.value" },
+    { key: "attachedPending", from: "attachedPending", infoItem: "evidence.value" },
+    { key: "canAttach", from: "canAttach", infoItem: "evidence.value" },
+    { key: "attachBlocked", from: "attachBlocked", infoItem: "evidence.value" },
   ],
 };
 
@@ -256,7 +275,39 @@ function sourceOf(row: EvidenceRecordListRow): EvidenceRecordDto {
     statusDetail: status.detail,
     visibilityCell: evidenceVisibilityCell(input),
     rowAction: evidenceRowAction(input),
+    attachedKind: null,
+    attachedId: null,
+    attachedNumber: null,
+    attachedPending: false,
+    canAttach: false,
+    attachBlocked: null,
   };
+}
+
+// 06.1-06: 붙은 문서 · `붙이기` 판정을 한 쪽(최대 50줄)에 한 번에 — 붙임 주인 읽기 한 번 + 대상 문서 있음 조회 둘(쪽마다). 등록 권한자(범위 all)만.
+// 순환 import를 피해 대상 있음 조회는 부르는 쪽이 넘긴다(domain/evidence-records/attach.ts — 지출결의 · 구매 요청 범위).
+async function withAttachFacts(viewer: Viewer, scope: Awaited<ReturnType<typeof evidenceScopeFor>>, dtos: EvidenceRecordDto[]): Promise<EvidenceRecordDto[]> {
+  if (scope.rows !== "all" || dtos.length === 0) return dtos;
+  const owners = new Map((await listLiveLinkOwnersByRecords(viewer, dtos.map((dto) => dto.id))).map((owner) => [owner.recordId, owner]));
+  const attachable = (dto: EvidenceRecordDto) => !owners.has(dto.id) && (dto.statusWord === "미공개" || dto.statusWord === "팀 공개" || dto.statusWord === "본부 공개");
+  const needsTarget = dtos.some((dto) => attachable(dto) || evidenceAttachBlockOf(dto.statusWord) !== null);
+  const [{ hasAttachTarget }, intake] = await Promise.all([import("@/domain/evidence-records/attach"), can(viewer, "evidence.intake", "write")]);
+  const target = intake && needsTarget ? await hasAttachTarget(viewer) : false;
+  return dtos.map((dto) => {
+    const owner = owners.get(dto.id);
+    const kind = owner?.ownerKind === "expense" || owner?.ownerKind === "purchase_request" ? owner.ownerKind : null;
+    const pending = kind === "expense" && owner?.ownerNumber === null;
+    const blocked = evidenceAttachBlockOf(dto.statusWord);
+    return {
+      ...dto,
+      attachedKind: kind,
+      attachedId: kind && !pending ? (owner?.ownerId ?? null) : null,
+      attachedNumber: kind && !pending ? (owner?.ownerNumber ?? null) : null,
+      attachedPending: pending,
+      canAttach: target && (attachable(dto) || (blocked !== null && blocked !== "보관됨")),
+      attachBlocked: blocked === "보관됨" ? null : blocked,
+    };
+  });
 }
 
 // 설정 본부 — 트랜잭션 밖 읽기. 값이 없으면 null(PA-DIV-UNSET).
@@ -347,7 +398,7 @@ export async function listEvidenceRecords(viewer: Viewer, query: EvidenceListQue
   const proposals = scope.rows === "all" ? await proposalsFor(viewer, await listProposalTargets(viewer, scope, repoFilters, EVIDENCE_IMPORT_MAX_ROWS), division) : [];
   const sum = (key: "supplyKrw" | "vatKrw" | "totalKrw") => formatTotals.reduce((total, row) => total + row[key], 0);
   return {
-    rows: await projectMany(viewer, rows.map(sourceOf), EVIDENCE_RECORD_DTO_SPEC),
+    rows: await projectMany(viewer, await withAttachFacts(viewer, scope, rows.map(sourceOf)), EVIDENCE_RECORD_DTO_SPEC),
     proposals,
     division,
     filters,
@@ -371,16 +422,18 @@ export async function countTodoEvidence(viewer: Viewer): Promise<number | null> 
 export async function listEvidenceRecordsByIds(viewer: Viewer, ids: readonly string[]): Promise<EvidenceRecordView[]> {
   const valid = ids.filter((id) => UUID.safeParse(id).success).slice(0, EVIDENCE_PAGE_SIZE);
   if (valid.length === 0) return [];
-  const rows = await listRecordsByIdsForScope(viewer, await evidenceScopeFor(viewer), valid);
-  return projectMany(viewer, rows.map(sourceOf), EVIDENCE_RECORD_DTO_SPEC);
+  const scope = await evidenceScopeFor(viewer);
+  const rows = await listRecordsByIdsForScope(viewer, scope, valid);
+  return projectMany(viewer, await withAttachFacts(viewer, scope, rows.map(sourceOf)), EVIDENCE_RECORD_DTO_SPEC);
 }
 
 // 단건 — 목록과 같은 범위. 범위 밖 · 없는 id는 null(호출부가 404). 06.1-06 · 07 · 08이 이 함수만 부른다.
 export async function getEvidenceRecord(viewer: Viewer, id: string): Promise<EvidenceRecordView | null> {
   if (!UUID.safeParse(id).success) return null;
-  const row = await findRecordForScope(viewer, await evidenceScopeFor(viewer), id);
+  const scope = await evidenceScopeFor(viewer);
+  const row = await findRecordForScope(viewer, scope, id);
   if (!row) return null;
-  const [view] = await projectMany(viewer, [sourceOf(row)], EVIDENCE_RECORD_DTO_SPEC);
+  const [view] = await projectMany(viewer, await withAttachFacts(viewer, scope, [sourceOf(row)]), EVIDENCE_RECORD_DTO_SPEC);
   return view ?? null;
 }
 

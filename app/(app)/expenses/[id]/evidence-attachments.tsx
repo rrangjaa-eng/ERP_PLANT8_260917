@@ -9,6 +9,7 @@ import { EVIDENCE_UPLOAD_FAILED } from "@/domain/evidence/upload-checks";
 import type { RejectMessages } from "@/app/(app)/approvals/decision-dialogs";
 import dialogStyles from "@/app/(app)/approvals/decision-dialogs.module.css";
 import { completeEvidenceUploadAction, createEvidenceViewUrlAction, removeEvidenceAction, requestEvidenceUploadAction, voidEvidenceAction } from "../actions";
+import { EVIDENCE_COMPLETED_PROJECT_LINE, EVIDENCE_DRAFTER_LOCKED_LINE } from "./evidence-locked-lines";
 
 // 05-05: `ui/attachments`에 지출결의 서버 액션 넷을 묶어 주입한다(컴포넌트는 지출결의를 모른다 — 06이 같은 컴포넌트에 다른 액션을 묶는다).
 // 폼(편집)과 문서 화면(읽기)이 같이 쓴다. 실패 이유 글자는 서버 응답 그대로이고, 응답이 없을 때만 05-04 상수 `올리지 못함 · 다시 올리기`다.
@@ -16,10 +17,6 @@ import { completeEvidenceUploadAction, createEvidenceViewUrlAction, removeEviden
 // 확인 창과 같은 모양(사유 textarea · 빈 칸이면 04.1 반려 사유 문구로 막힘)이고, 성공하면 router.refresh()만 한다(토스트 없음 —
 // 그 행이 그 자리에서 무효 행으로 바뀌고 첨부 aria-live가 읽는다).
 
-// 결재 중 기안자에게 「하나 더」 자리에 보이는 잠김 한 줄(사용자 결정 2026-10-04 — 결재 중 증빙은 경영관리가 붙인다).
-export const EVIDENCE_DRAFTER_LOCKED_LINE = "결재 중 · 증빙은 경영관리";
-// 06-11(U-4) — 완료 프로젝트의 승인 문서는 기안자에게 닫힌다(붙이기 권한자만). 같은 잠김 줄 자리.
-export const EVIDENCE_COMPLETED_PROJECT_LINE = "완료 프로젝트 · 증빙은 경영관리";
 const VOID_FAILED = "무효 처리 실패 · 다시 시도";
 
 export function EvidenceAttachments(props: {

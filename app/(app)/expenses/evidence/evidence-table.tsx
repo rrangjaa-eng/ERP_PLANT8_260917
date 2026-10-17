@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useEffectEvent, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { formatCount, formatKrw } from "@/lib/format-number";
@@ -33,6 +34,7 @@ import type {
 import { ConflictLine } from "@/app/(app)/approvals/conflict-line";
 import { archiveEvidenceRecordAction, publishEvidenceRecordsAction, restoreEvidenceRecordAction } from "./actions";
 import { IntakeZone } from "./intake-zone";
+import { PickDocumentDialog, type PickDocumentTarget } from "./pick-document-dialog";
 import expenseStyles from "../expenses.module.css";
 import styles from "./evidence-table.module.css";
 
@@ -59,6 +61,10 @@ type Row = {
   statusWord: EvidenceRecordWord;
   statusDetail: string | null;
   rowAction: EvidenceRowAction;
+  /** 06.1-06 — 붙은 문서(상태 2행 링크) · `붙이기` 그림 · 비활성 이유. */
+  attached: { kind: "expense" | "purchase_request"; id: string | null; number: string | null; pending: boolean } | null;
+  canAttach: boolean;
+  attachBlocked: string | null;
 };
 
 /** 사람이 바꾼 공개 칸 — 값은 셀 안에서만 쓰는 꼴(`private` · `division` · `team:{팀 id}`), version은 바꿀 때 본 값. */
@@ -83,6 +89,8 @@ const COPY = {
   undo: "되돌리기",
   undoFailed: "되돌리기 실패 · 다시 시도",
   unknownResult: "결과를 받지 못함 · 새로 고침",
+  draftOwner: "작성 중 문서",
+  attach: "붙이기",
 } as const;
 
 const ROW_ACTION_LABEL = { archive: "보관", restore: "되살리기" } as const;
@@ -163,8 +171,20 @@ function rowFromView(view: EvidenceRecordView): Row[] {
       statusWord: view.statusWord,
       statusDetail: view.statusDetail ?? null,
       rowAction: view.rowAction ?? null,
+      attached: view.attachedKind
+        ? { kind: view.attachedKind, id: view.attachedId ?? null, number: view.attachedNumber ?? null, pending: view.attachedPending === true }
+        : null,
+      canAttach: view.canAttach === true,
+      attachBlocked: view.attachBlocked ?? null,
     },
   ];
+}
+
+// 06.1-06 S2 2행 — 붙은 문서 번호 링크(지출결의 문서 · 구매 요청 목록). 번호 없는 임시 문서는 링크 없는 낱말(경영관리는 그 문서를 못 본다).
+function AttachedLine({ attached }: { attached: NonNullable<Row["attached"]> }) {
+  if (attached.pending || attached.id === null || attached.number === null) return <span>{COPY.draftOwner}</span>;
+  const href = attached.kind === "expense" ? `/expenses/${attached.id}#evidence` : "/cards/purchases";
+  return <Link href={href}>{attached.number}</Link>;
 }
 
 function proposalValue(proposal: EvidenceProposal): string {
@@ -427,6 +447,12 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
   // 새로 보관할 때만 `되돌리기`를 다시 그려 포커스를 준다(공휴일 delete-undo 꼴).
   const [archiveShown, setArchiveShown] = useState(0);
   const [rowActionPending, setRowActionPending] = useState<string | null>(null);
+  // 06.1-06 S4 — 붙일 문서 고르기(행 `붙이기`). 닫히면 PickDialog가 그 행의 `붙이기`로 포커스를 돌린다.
+  const [attachTarget, setAttachTarget] = useState<PickDocumentTarget | null>(null);
+  function openAttach(row: Row) {
+    if (row.attachBlocked !== null || rowActionPending !== null) return;
+    setAttachTarget({ recordId: row.id, subtitle: row.counterparty ?? "" });
+  }
   const shownArchiveLine = archiveLine?.kind === "conflict" && archiveLine.list !== list ? null : archiveLine;
 
   // 보관한 줄은 목록에서 빠진다 — 그 줄의 편집 · 오류 칸만 버린다(다른 줄 편집은 행 id 키라 다시 받아도 남는다).
@@ -543,7 +569,8 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
       header: "상태",
       priority: "p1",
       cell: (row) => <StatusTag status={row.statusWord} variant="text" />,
-      secondaryLine: (row) => (row.statusDetail ? <span id={statusDetailId(row.id)}>{row.statusDetail}</span> : null),
+      secondaryLine: (row) =>
+        row.attached ? <AttachedLine attached={row.attached} /> : row.statusDetail ? <span id={statusDetailId(row.id)}>{row.statusDetail}</span> : null,
       copyText: (row) => row.statusWord,
     },
     // §7-3 (차) 행 행동 열 — 머리글 숨김 · P1 밖 · 셀의 3차는 격자 로빙 밖(tabIndex -1)이고 그 줄 거래처 칸을 가리킨다. 키보드 경로는 Ctrl+E다.
@@ -556,8 +583,18 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
             headerHidden: true,
             priority: "p3" as const,
             cell: (row: Row) =>
-              row.rowAction ? (
+              row.rowAction || row.canAttach ? (
                 <RowActions noWrap>
+                  {row.canAttach && row.attachBlocked !== null ? (
+                    <RowAction tabIndex={-1} describedBy={counterpartyId(row.id)} disabled disabledReason={row.attachBlocked} onClick={() => undefined}>
+                      {COPY.attach}
+                    </RowAction>
+                  ) : row.canAttach ? (
+                    <RowAction tabIndex={-1} describedBy={counterpartyId(row.id)} busy={rowActionPending !== null} onClick={() => openAttach(row)}>
+                      {COPY.attach}
+                    </RowAction>
+                  ) : null}
+                  {row.rowAction ? (
                   <RowAction
                     tabIndex={-1}
                     danger={row.rowAction === "archive"}
@@ -568,6 +605,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
                   >
                     {ROW_ACTION_LABEL[row.rowAction]}
                   </RowAction>
+                  ) : null}
                 </RowActions>
               ) : null,
           },
@@ -798,6 +836,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
           onDismiss={() => setDiscardedEdits(null)}
         />
       ) : null}
+      <PickDocumentDialog target={attachTarget} onClose={() => setAttachTarget(null)} onAttached={() => router.refresh()} />
     </>
   );
 }

@@ -129,7 +129,7 @@ export async function insertRecordFixture(
 }
 
 /** 붙임 한 줄을 표에 직접(작성자 붙임 · 경합 시험 — 06.1-08 작성자 경로 전). */
-export async function insertLinkFixture(input: { recordId: string; ownerKind?: "expense" | "purchase_request"; ownerId: string; attachMode?: "registrar" | "author"; attachedBy: string }): Promise<string> {
+export async function insertLinkFixture(input: { recordId: string; ownerKind?: "expense" | "purchase_request" | "corp_card_usage"; ownerId: string; attachMode?: "registrar" | "author"; attachedBy: string }): Promise<string> {
   const [link] = await db
     .insert(evidenceRecordLinks)
     .values({ evidenceRecordId: input.recordId, ownerKind: input.ownerKind ?? "expense", ownerId: input.ownerId, attachMode: input.attachMode ?? "registrar", attachedBy: input.attachedBy })

@@ -78,6 +78,7 @@ import { kstYear } from "@/lib/kst-date";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { isUniqueViolation } from "@/lib/pg-errors";
 import { pickDefaultCardId } from "@/domain/corp-card-usages/default-card";
+import { AUTO_DETACH_REASONS, detachLiveLinksForOwner } from "@/repositories/evidence-record-links";
 
 // 06-05(EXP-07 · D-607 · D-608 · D-609): 법인카드 사용 — 본인 등록 · 팀 비용 연결 · 목록.
 //
@@ -938,6 +939,8 @@ export async function deleteCardUsage(
     if (pre.projectId) await lockProjectForLinkWrite(viewer, { projectId: pre.projectId, allowCompleted: pre.completedAllowed }, innerTx);
     const version = await archiveCardUsageRow(viewer, { id: pre.usageId, version: input.version }, innerTx);
     if (version === null) throw new CardUsageRejectedError(STALE_VERSION);
+    // 06.1-06(E22): 붙은 증빙 기록은 사유와 함께 풀로 돌아간다(되살리기는 붙임을 다시 만들지 않는다).
+    await detachLiveLinksForOwner(viewer, { ownerKind: CARD_USAGE_ENTITY, ownerId: pre.usageId, reason: AUTO_DETACH_REASONS.cardUsageDelete }, innerTx);
     await recordAction(viewer, { actionType: "document_delete", entity: CARD_USAGE_ENTITY, entityId: pre.usageId }, { tx: innerTx });
     return { version, totalKrw: pre.totalKrw };
   };

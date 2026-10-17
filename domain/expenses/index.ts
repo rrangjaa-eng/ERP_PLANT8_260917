@@ -101,7 +101,7 @@ import {
   type ExpensePreviewDto,
 } from "@/domain/expenses/dto";
 import { listCodeItems } from "@/repositories/code-tables";
-import { listLiveLinksWithRecords } from "@/repositories/evidence-record-links";
+import { AUTO_DETACH_REASONS, countLiveLinksByOwners, detachLiveLinksForOwner, listLiveLinksWithRecords } from "@/repositories/evidence-record-links";
 import { listAliveByOwners, markOwnerFilesRemoved, restoreOwnerFilesRemovedAt } from "@/repositories/files";
 import { findProjectById, findProjectInScope, lockProjectForWrite, type ProjectRow } from "@/repositories/projects";
 import { listLiveMemberProjectIds } from "@/repositories/project-members";
@@ -1227,6 +1227,8 @@ export async function deleteExpenseDraft(viewer: Viewer, input: { expenseId: str
     }
     // 증빙 파일도 같은 시각으로 뗀다(되돌리기가 그 시각의 파일만 되살린다).
     await markOwnerFilesRemoved(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: row.id, removedBy: viewer.id, at: deleted.deletedAt ?? new Date() }, tx);
+    // 06.1-06(E22): 붙은 증빙 기록은 사유와 함께 풀로 돌아간다(되살리기는 붙임을 다시 만들지 않는다 — 뗀 기록 그대로).
+    await detachLiveLinksForOwner(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: row.id, reason: AUTO_DETACH_REASONS.expenseDelete }, tx);
     await recordActionInTx(
       viewer,
       { actionType: "document_delete", entity: "expense", entityId: row.id, documentId: row.id, detail: { kind: EXPENSE_DOCUMENT_KIND } },
@@ -1403,6 +1405,8 @@ export async function closeExpense(
     if (locked.version !== input.expectedVersion) throw new ExpenseConflictError(locked.updatedAt);
     const closed = await closeExpenseRow(viewer, { id: locked.id, expectedVersion: input.expectedVersion, closedBy: viewer.id, reason, now }, tx);
     if (!closed) throw new ExpenseConflictError(locked.updatedAt);
+    // 06.1-06(Round 2 eng P1-1): 종결 문서의 살아 있는 붙임이 기록을 부분 유니크로 영영 묶지 않게 같은 트랜잭션에서 뗀다.
+    await detachLiveLinksForOwner(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: locked.id, reason: AUTO_DETACH_REASONS.expenseClose }, tx);
     await recordActionInTx(
       viewer,
       {
@@ -1711,9 +1715,13 @@ async function closeDialogFor(viewer: Viewer, row: ExpenseSummaryRow): Promise<E
   const team = isTeamCostRow(row);
   const amount = (await visible(viewer, "expense.amount")) ? numberedSupplyText(row) : null;
   const subtitle = [row.number, team ? row.content : row.itemName, amount].filter(Boolean).join(" · ");
-  if (team || row.lineNo === null) return { subtitle, resultLines: ["되돌림 없음"] };
+  // 06.1-06(DB-15): 종결하면 붙은 증빙 기록이 풀로 돌아간다 — 1건 이상일 때만 결과 줄 끝에 한 줄.
+  const [links] = await countLiveLinksByOwners(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerIds: [row.id] });
+  const linkedLine = links && links.linkCount > 0 ? [`붙은 증빙 ${links.linkCount}건은 증빙 목록으로`] : [];
+  if (team || row.lineNo === null) return { subtitle, resultLines: ["되돌림 없음", ...linkedLine] };
   const resultLines = [`견적 줄 ${row.lineNo} 문 열림 · 되돌림 없음`];
   if (row.installment) resultLines.push("회차 상한에서 빠짐");
+  resultLines.push(...linkedLine);
   return { subtitle, resultLines };
 }
 

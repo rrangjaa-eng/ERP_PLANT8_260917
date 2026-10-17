@@ -70,6 +70,7 @@ import { findUserNamesByIds } from "@/repositories/users";
 import { findMembershipAtDate } from "@/repositories/team-memberships";
 import { teamAtDate } from "@/domain/org";
 import type { DbOrTx } from "@/repositories/document-counters";
+import { AUTO_DETACH_REASONS, detachLiveLinksForOwner } from "@/repositories/evidence-record-links";
 import {
   findPurchaseRequestById,
   insertPurchaseRequest,
@@ -566,6 +567,8 @@ export async function cancelPurchaseRequest(
     if (locked.version !== input.version) throw new PurchaseRequestRejectedError(REQUEST_STALE);
     const version = await markPurchaseRequestCancelled(viewer, { id: pre.requestId, version: input.version, cancelledBy: viewer.id, reason }, innerTx);
     if (version === null) throw new PurchaseRequestRejectedError(REQUEST_STALE);
+    // 06.1-06(E22): 붙은 증빙 기록은 사유와 함께 풀로 돌아간다(취소 되돌리기는 붙임을 다시 만들지 않는다).
+    await detachLiveLinksForOwner(viewer, { ownerKind: "purchase_request", ownerId: pre.requestId, reason: AUTO_DETACH_REASONS.purchaseRequestCancel }, innerTx);
     await recordAction(
       viewer,
       { actionType: "status_change", entity: PURCHASE_REQUEST_ENTITY, entityId: pre.requestId, detail: { from: "requested", to: "cancelled", ...(reason === null ? {} : { reason }) } },

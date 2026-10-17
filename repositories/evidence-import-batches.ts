@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { evidenceImportBatches } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
@@ -22,6 +22,13 @@ export async function insertBatch(viewer: Viewer, input: EvidenceImportBatchInse
     .returning({ id: evidenceImportBatches.id });
   if (!row) throw new Error("evidence_import_batches insert가 행을 반환하지 않았습니다.");
   return row;
+}
+
+// GH-P1(PR #252): 카드 서식 등록 잠금 하나 — 앞 파일 대조(이미 있는 열쇠 · 상쇄 쌍 맞추기)는 이 잠금 뒤 tx로 다시 읽는다. 잠그지 않으면
+// 원거래만 든 파일과 원거래 · 취소 쌍 파일이 겹칠 때 둘 다 서로의 줄을 못 봐 원거래만 살아 남는다(lockVendorAutocreate 꼴).
+export async function lockEvidenceCardImport(viewer: Viewer, tx: DbOrTx): Promise<void> {
+  void viewer;
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${"evidence_card_import"}, 0))`);
 }
 
 export async function setBatchCounts(

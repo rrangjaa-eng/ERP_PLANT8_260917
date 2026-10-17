@@ -49,6 +49,7 @@ import {
   type EvidenceVisibilityUpdate,
   type LockedEvidenceRecord,
 } from "@/repositories/evidence-records";
+import type { DbOrTx } from "@/repositories/document-counters";
 import { findOrgUnitById } from "@/repositories/org-units";
 import { findMembershipsAtDate } from "@/repositories/team-memberships";
 import { findTeamsByIds, listTeams, type TeamRow } from "@/repositories/teams";
@@ -59,7 +60,7 @@ import { findTeamsByIds, listTeams, type TeamRow } from "@/repositories/teams";
 
 export type { EvidenceRecordVisibility, EvidenceRecordWord, EvidenceRowAction, EvidenceVisibilityCell } from "@/domain/evidence-records/status";
 
-const INTAKE_FORBIDDEN = "증빙 등록 권한 없음";
+export const INTAKE_FORBIDDEN = "증빙 등록 권한 없음";
 // 화면이 만들 수 없는 요청(같은 줄 두 번 · 없는 줄 · 본부 설정 없음의 본부 공개 — PA-DIV-UNSET)은 줄 오류 없이 요청 전체를 거부한다.
 // 글자는 입력 검증의 일반 문구(lib/actions/zod-error-message.ts) 그대로다.
 const INVALID_REQUEST = "입력값 오류 · 값 확인";
@@ -565,4 +566,55 @@ export function archiveEvidenceRecord(viewer: Viewer, input: EvidenceArchiveInpu
 
 export function restoreEvidenceRecord(viewer: Viewer, input: EvidenceArchiveInput): Promise<EvidenceArchiveInput> {
   return setEvidenceArchived(viewer, input, "restore");
+}
+
+// ── 06.1-06 붙이기 판정용 기록 사실(DTO 아님 — domain 안에서만) ─────────────────────────────────────────────────
+// 후보 점수 · 짝 판정 · 부제에 쓰는 기록 칸과 지금 상태 낱말. 목록과 같은 범위(evidenceScopeFor — 트랜잭션 밖 한 번). 금액은 같음 판정 ·
+// 부제(evidence.amount를 볼 수 있을 때만)에만 쓴다.
+export type EvidenceRecordFacts = {
+  id: string;
+  evidenceType: string;
+  typeLabel: string | null;
+  counterparty: string | null;
+  businessNoDigits: string | null;
+  supplyKrw: number;
+  totalKrw: number;
+  issuedOn: string;
+  statusWord: EvidenceRecordWord;
+};
+
+export async function readEvidenceRecordFacts(viewer: Viewer, id: string): Promise<EvidenceRecordFacts | null> {
+  if (!UUID.safeParse(id).success) return null;
+  const row = await findRecordForScope(viewer, await evidenceScopeFor(viewer), id);
+  if (!row) return null;
+  const source = sourceOf(row);
+  return {
+    id: row.id,
+    evidenceType: row.evidenceType,
+    typeLabel: source.typeLabel,
+    counterparty: source.counterparty,
+    businessNoDigits: row.businessNoDigits,
+    supplyKrw: row.supplyKrw,
+    totalKrw: row.totalKrw,
+    issuedOn: row.issuedOn,
+    statusWord: source.statusWord,
+  };
+}
+
+// 붙일 수 없는 상태 낱말 → 거부 글자(DA-13 — S2 행 `붙이기`의 비활성 이유와 같은 글자). 붙음은 붙임 행으로 따로 판정한다.
+const ATTACH_BLOCKED_BY_WORD: Partial<Record<EvidenceRecordWord, string>> = {
+  보관됨: "보관됨",
+  "카드 미등록": "카드 미등록 · 카드 등록은 관리자",
+  "확인 필요": "확인 필요 · 패널에서 확인 필요 풀기",
+};
+
+export function evidenceAttachBlockOf(word: EvidenceRecordWord): string | null {
+  return ATTACH_BLOCKED_BY_WORD[word] ?? null;
+}
+
+// 트랜잭션 안 증빙 행 잠금(lockRecordsForUpdate) 뒤 지금 상태 낱말 — 없는 행은 null. 잠금 뒤 재검사(C-F12 — 사전 판독 뒤 보관 · 확인 필요 ·
+// 카드 미등록으로 바뀐 줄을 막는다). 확인 필요는 기록 칸(needs_check)을 읽으므로 뒤 파일 취소가 원래 줄을 확인 필요로 바꾸면 여기서 막힌다.
+export async function lockEvidenceRecordState(viewer: Viewer, id: string, tx: DbOrTx): Promise<EvidenceRecordWord | null> {
+  const [row] = await lockRecordsForUpdate(viewer, [id], tx);
+  return row ? evidenceRecordStatus(lockedStatusInput(row)).word : null;
 }

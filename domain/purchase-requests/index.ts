@@ -84,6 +84,7 @@ import {
   readLockedLineFacts,
   type PurchaseRequestFilter,
   type PurchaseRequestListRow,
+  isPurchaseRequestInScope,
   type PurchaseRequestScope,
 } from "@/repositories/purchase-requests";
 
@@ -1063,4 +1064,17 @@ export async function purchaseRequestEntry(viewer: Viewer, lineId: string): Prom
   const row = found.rows.find((candidate) => candidate.id === lineId);
   if (!row || row.itemName === undefined) return null;
   return { project, line: { id: lineId, itemName: row.itemName, remainingKrw: row.remainingKrw ?? null, hint: row.hint ?? null } };
+}
+
+// ── 06.1-06 구매 요청 읽기 판정(증빙 기록 붙이기 · 문서 「증빙」 섹션 — RP-5) ─────────────────────────────
+
+// 06 목록 범위(listAccess) 그대로 — 붙이기 후보 질의가 같은 scope를 쓴다. 판정(can · 프로젝트 범위)은 트랜잭션 밖에서.
+export async function purchaseRequestReadScope(viewer: Viewer, today: string = seoulToday()): Promise<PurchaseRequestScope> {
+  return (await listAccess(viewer, today)).scope;
+}
+
+// 요청 하나를 그 사람이 볼 수 있나 — 06 목록과 같은 범위 조건.
+export async function canSeePurchaseRequest(viewer: Viewer, input: { id: string }): Promise<boolean> {
+  if (!UUID_SHAPE.test(input.id)) return false;
+  return isPurchaseRequestInScope(viewer, { id: input.id, scope: await purchaseRequestReadScope(viewer) });
 }

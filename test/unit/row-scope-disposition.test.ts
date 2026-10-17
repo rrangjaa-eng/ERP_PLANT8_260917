@@ -157,6 +157,8 @@ export const PROJECT_READ_DISPOSITION: readonly ProjectReadDisposition[] = [
   { file: "repositories/expenses.ts", fn: "summarizeExpenseList", reason: "지출결의 합계 — 목록과 같은 scopeCondition(06.2-08)" },
   { file: "repositories/expenses.ts", fn: "isExpenseInScope", reason: "지출결의 문서 하나(canSeeExpense) — 목록과 같은 scopeCondition(06.2-08)" },
   { file: "repositories/expenses.ts", fn: "listExpenseIdsInScope", reason: "지급 대상 id 묶음 — 문서 하나와 같은 scopeCondition을 한 질의로(06.2-08 검토 I-1)" },
+  { file: "repositories/expenses.ts", fn: "listExpenseAttachCandidates", reason: "증빙 붙이기 후보 — 목록과 같은 scopeCondition(06.2-08 · 06.1-06)" },
+  { file: "repositories/expenses.ts", fn: "hasExpenseAttachTarget", reason: "증빙 붙이기 대상 있음 — 목록과 같은 scopeCondition(06.2-08 · 06.1-06)" },
   { file: "repositories/next-turn.ts", fn: "listSettlingProjectsOfPm", reason: "「내 차례」 PM 점검 항목(06-23) — pm_user_id = 보는 사람 ∧ rowScopeCondition(projectRowScope — none이면 PM이라도 0행, 06-23 검토 낮음-1)이 행을 거른다(번호 · 이름 · id만)" },
   { file: "repositories/payment-targets.ts", fn: "selectRows", reason: "지급 대상 — 도메인 visibleRows(rowScope all 단축 · 아니면 listExpenseIdsInScope — scopeCondition 한 질의)가 거른다(06.2-08 검토 I-1)" },
   { file: "repositories/payment-targets.ts", fn: "listPaidPaymentRows", reason: "지급 완료 — 도메인 listPaidPayments: 지급 권한자 · 지출결의 전사 범위만 통과하고 모두 전부(06.5 카드 ③ · D1), 그 밖은 paidViewAllowed가 거부" },
@@ -168,6 +170,9 @@ export const PROJECT_READ_DISPOSITION: readonly ProjectReadDisposition[] = [
   { file: "repositories/purchase-requests.ts", fn: "readLockedLineFacts", reason: "구매 요청 트랜잭션 안 잠긴 줄 사실 — 트랜잭션 전 loadQuoteLineBasis(findProjectInScope) · 구매 처리 privileged" },
   { file: "repositories/purchase-requests.ts", fn: "listPurchaseRequestRows", reason: "구매 요청 목록(#10) — listAccess(자기 거름 · privileged · 지름길 K2)가 행을 거른다" },
   { file: "repositories/purchase-requests.ts", fn: "listPurchaseRequestEstimates", reason: "구매 요청 합계 — 목록과 같은 listAccess 범위" },
+  { file: "repositories/purchase-requests.ts", fn: "listPurchaseRequestAttachCandidates", reason: "증빙 붙이기 후보 — 목록과 같은 listAccess 범위(scopeCondition · 06.1-06)" },
+  { file: "repositories/purchase-requests.ts", fn: "isPurchaseRequestInScope", reason: "구매 요청 하나 읽기(canSeePurchaseRequest) — 목록과 같은 listAccess 범위(06.1-06)" },
+  { file: "repositories/purchase-requests.ts", fn: "hasPurchaseRequestAttachTarget", reason: "증빙 붙이기 대상 있음 — 목록과 같은 listAccess 범위(06.1-06)" },
   { file: "repositories/reserve-entries.ts", fn: "findProjectClientIds", reason: "리저브 저장 트랜잭션 안 클라이언트 대조 — 트랜잭션 전 listProjectIdsInScope 판정 뒤, 이름 노출 없음" },
   { file: "repositories/settlement-approvals.ts", fn: "listSettlementSummaries", reason: "정산 결재 문서(M9) — 도메인 canSeeSettlement · 결재 엔진이 거른다(ⓒ 처분표 줄)" },
 ];

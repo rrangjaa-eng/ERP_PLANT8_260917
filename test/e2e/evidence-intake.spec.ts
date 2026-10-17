@@ -673,3 +673,31 @@ for (const width of [768, 375]) {
     if (width === 375) expect((await primary.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
   });
 }
+
+// 06.1-05 디자인 검토 H2 — SYSTEM §7-3 (아) DR-5: 고정 오류(`전부 거부`)가 남은 채 1차를 누르면 서버를 부르지 않고 첫 오류 칸으로 초점이 간다.
+test("(H2 · DR-5) 전부 거부 오류가 남은 채 1차를 누르면 서버를 또 부르지 않고 첫 오류 칸에 초점", async ({ page }) => {
+  const viewer = await loginIntake(page);
+  const card = await addLotteCard({ kind: "shared" });
+  const batchId = await registerFile(viewer, lotteFixture(lotteLines(card, 3)), "롯데_H2.xls");
+  await page.goto("/expenses/evidence");
+  await expect(evidenceRows(page)).toHaveCount(3);
+  const [stale] = await recordIdsOf(batchId);
+  if (!stale) throw new Error("증빙 줄 없음");
+  await bumpRecordVersion(stale);
+
+  const rejected = waitForServerAction(page);
+  await focusGridCell(evidenceCell(page, 0, EVIDENCE_COL.date));
+  await page.keyboard.press("Control+s");
+  await rejected;
+  await expect(evidenceTable(page).locator("tfoot")).toContainText("오류 1칸 · 전부 거부");
+
+  // 초점을 오류 칸 밖으로 옮기고 1차를 누른다 — 서버 액션 POST는 0, 초점은 오류 칸.
+  let posts = 0;
+  page.on("request", (request) => {
+    if (isServerAction(request)) posts++;
+  });
+  await focusGridCell(evidenceCell(page, 1, EVIDENCE_COL.date));
+  await page.getByRole("button", { name: /^공개 범위 저장 3/ }).click();
+  await expect(evidenceTable(page).locator('td[aria-invalid="true"]')).toBeFocused();
+  expect(posts).toBe(0);
+});

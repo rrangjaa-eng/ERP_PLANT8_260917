@@ -247,6 +247,8 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
   const [discardedEdits, setDiscardedEdits] = useState<Record<string, unknown> | null>(null);
   const [issueSignal, setIssueSignal] = useState(0);
+  // 첫 오류로 가기 신호 — 값이 바뀔 때마다 표가 첫 오류 칸으로 초점을 옮긴다. 증가분은 ref에 둔다(효과에서 부르는 저장 경로가 상태를 읽어 상태를 만들지 않게).
+  const issueSignalRef = useRef(0);
   const [cellEditing, setCellEditing] = useState(false);
   // 사람이 칸을 바꾼 순간에만 보관본을 쓴다(04-22 D-68) — 서버 값 · 제안으로 다시 그리는 경로는 켜지 않는다.
   const persistPendingRef = useRef(false);
@@ -283,7 +285,8 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
         setRejectedRowIds(Object.keys(next));
         // DA-18 — 합계 행 라벨 뒤(SYSTEM.md §7-3 「일괄 저장은 전부 저장 또는 전부 거부」).
         setRejectionSummary(`오류 ${formatCount(data.rejected.cells.length)}칸 · 전부 거부`);
-        setIssueSignal((signal) => signal + 1);
+        issueSignalRef.current += 1;
+        setIssueSignal(issueSignalRef.current);
         return;
       }
       if (data?.saved) {
@@ -318,6 +321,12 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
 
   function handleSave() {
     if (savingRef.current || isExecuting || pending === 0 || uploading) return;
+    // §7-3 (아) DR-5 — 보이는 줄에 고정 오류(`전부 거부`)가 남았으면 서버를 부르지 않고 첫 오류 칸으로 간다(견적 표 goToFirstIssue 꼴).
+    if (Object.keys(cellErrors).some((id) => displayedIds.has(id))) {
+      issueSignalRef.current += 1;
+      setIssueSignal(issueSignalRef.current);
+      return;
+    }
     savingRef.current = true;
     setSavedNotice(null);
     setRejectionSummary(null);

@@ -180,6 +180,12 @@ function scopeWhere(scope: EvidenceScope): SQL {
   }
 }
 
+// 06.1-08 풀(repositories/evidence-pool.ts)이 같은 범위 번역을 쓴다 — 새 범위 판정을 짓지 않는 얇은 내보내기(RP-5).
+export function evidenceScopeCondition(viewer: Viewer, scope: EvidenceScope): SQL {
+  void viewer;
+  return scopeWhere(scope);
+}
+
 /** `[상태 ▾]` 값(UI-SPEC S2). 기본은 todo — 값이 없거나 모르는 값이면 domain이 todo로 읽는다. */
 export type EvidenceRecordState = "todo" | "private" | "published" | "attached" | "unmatched" | "needs-check" | "card-unknown" | "archived" | "all";
 

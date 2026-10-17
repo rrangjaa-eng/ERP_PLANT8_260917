@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Button } from "@/ui/button/Button";
 import { Num } from "@/ui/num/Num";
 import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
 import { StaticTable, type StaticTableColumn } from "@/ui/table/StaticTable";
 import { DetachDialog, previewExpectedKrw, type DetachTarget } from "../evidence/detach-dialog";
+import { PickEvidenceDialog } from "../evidence/pick-evidence-dialog";
 import { EVIDENCE_LOCK_LINE_TEXT, type EvidenceLockLineCode } from "./evidence-locked-lines";
 import styles from "./expense.module.css";
 
@@ -24,6 +26,9 @@ export type LinkedEvidenceItem = {
   action: "detach" | "void" | null;
 };
 
+/** 06.1-08 — 증빙 고르기 트리거. 모드가 none이거나 후보가 0이면 서버가 이 값을 null로 준다(트리거 DOM 0). */
+export type EvidencePickState = { ownerKind: "expense"; ownerId: string; mode: "registrar" | "author"; count: number };
+
 const COLUMNS: StaticTableColumn[] = [
   { key: "what", header: "증빙", priority: "p1" },
   { key: "issuedOn", header: "날짜", priority: "p2" },
@@ -41,17 +46,29 @@ export function EvidenceRecordsSection({
   lockLine,
   number,
   lockLineShownAbove,
+  pick,
 }: {
   items: LinkedEvidenceItem[];
   lockLine: EvidenceLockLineCode | null;
   number: string | null;
   lockLineShownAbove: boolean;
+  pick: EvidencePickState | null;
 }) {
   const router = useRouter();
   const [target, setTarget] = useState<DetachTarget | null>(null);
   // D-5 — 미리 보기를 받는 줄(그동안 그 줄 행동은 `…`, 다른 줄 행동은 무반응). 받은 뒤에 창을 연다.
   const [opening, setOpening] = useState<string | null>(null);
-  if (items.length === 0) return null;
+  const [picking, setPicking] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const attachedPending = useRef(false);
+  // 붙인 뒤 새로 고침으로 섹션이 바뀌면 — 포커스는 트리거, 트리거가 사라졌으면(후보 0) 새 읽기 행의 첫 행동(없으면 섹션).
+  useEffect(() => {
+    if (!attachedPending.current) return;
+    attachedPending.current = false;
+    const root = rootRef.current;
+    (root?.querySelector<HTMLElement>("[data-evidence-pick]") ?? root?.querySelector<HTMLElement>("table button") ?? root)?.focus();
+  }, [items.length, pick?.count]);
+  if (items.length === 0 && !pick) return null;
   const titleOf = (item: LinkedEvidenceItem) => [item.typeLabel, item.counterparty].filter(Boolean).join(" · ") || "—";
   const line = lockLine && !lockLineShownAbove ? EVIDENCE_LOCK_LINE_TEXT[lockLine] : null;
 
@@ -64,8 +81,13 @@ export function EvidenceRecordsSection({
   }
 
   return (
-    <div className={styles.evidenceRecords}>
-      <StaticTable
+    <div className={styles.evidenceRecords} ref={rootRef} tabIndex={-1}>
+      {pick ? (
+        <Button data-evidence-pick="" variant="tertiary" onClick={() => setPicking(true)}>
+          {`증빙 고르기 ${pick.count}`}
+        </Button>
+      ) : null}
+      {items.length > 0 ? <StaticTable
         caption="붙은 증빙"
         columns={COLUMNS}
         rows={items.map((item) => ({
@@ -92,9 +114,17 @@ export function EvidenceRecordsSection({
             ) : null,
           ],
         }))}
-      />
+      /> : null}
       {line ? <p className={styles.evidenceLockLine}>{line}</p> : null}
       <DetachDialog target={target} onClose={() => setTarget(null)} onDone={() => router.refresh()} />
+      <PickEvidenceDialog
+        target={picking && pick ? { ownerKind: pick.ownerKind, ownerId: pick.ownerId, mode: pick.mode, subtitle: [number, `후보 ${pick.count}`].filter(Boolean).join(" · ") } : null}
+        onClose={() => setPicking(false)}
+        onAttached={() => {
+          attachedPending.current = true;
+          router.refresh();
+        }}
+      />
     </div>
   );
 }

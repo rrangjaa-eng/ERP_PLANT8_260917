@@ -13,11 +13,12 @@ import {
   type EvidenceRecordFlags,
 } from "@/domain/evidence";
 import { evidenceSourcesOf } from "@/domain/evidence/has-evidence";
-import { evidenceAttachBlockOf, INTAKE_FORBIDDEN, lockEvidenceRecordState, readEvidenceRecordFacts, type EvidenceRecordFacts } from "@/domain/evidence-records";
+import { evidenceAttachBlockOf, getEvidenceRecord, INTAKE_FORBIDDEN, lockEvidenceRecordState, readEvidenceRecordFacts, type EvidenceRecordFacts } from "@/domain/evidence-records";
 import { compareCandidates, dayGapOf, type RankedCandidate } from "@/domain/evidence-records/score";
 import { autoConfirmOnAttach } from "@/domain/evidence-reviews";
 import { codeLabelsOf, EXPENSE_DOCUMENT_KIND, ExpenseNotFoundError } from "@/domain/expenses";
 import { visibleExpenseScope } from "@/domain/expenses/access";
+import { formatKstTime } from "@/domain/holidays/business-day";
 import { pairGateDecision } from "@/domain/payments/action-row";
 import type { MethodEvidencePair } from "@/domain/payments/method-evidence-pairs";
 import { can, ForbiddenError } from "@/domain/permissions/can";
@@ -34,6 +35,7 @@ import { formatKrw } from "@/lib/format-number";
 import { isUniqueViolation } from "@/lib/pg-errors";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { findLivePayment } from "@/repositories/expense-payments";
+import { lockRecordsForUpdate } from "@/repositories/evidence-records";
 import {
   detachLink,
   findLinkById,
@@ -84,27 +86,28 @@ export type EvidenceAttachDeps = {
   isActionTypeEnabled?: RecordActionDeps["isActionTypeEnabled"];
 };
 
-type ViewerKeys = { intake: boolean; attachKey: boolean; voidKey: boolean; canConfirm: boolean };
+export type ViewerKeys = { intake: boolean; attachKey: boolean; voidKey: boolean; canConfirm: boolean; expensesWrite: boolean };
 
 // 트랜잭션 전 한 번(06-03) — canConfirm은 06.1-12 autoConfirmOnAttach에 넘긴다(카드 R2 「지급 권한자만」).
-async function readKeys(viewer: Viewer): Promise<ViewerKeys> {
-  const [intake, attachKey, voidKey, canConfirm] = await Promise.all([
+export async function readKeys(viewer: Viewer): Promise<ViewerKeys> {
+  const [intake, attachKey, voidKey, canConfirm, expensesWrite] = await Promise.all([
     can(viewer, "evidence.intake", "write"),
     can(viewer, "expenses.evidence_attach", "write"),
     can(viewer, "expenses.evidence_void", "write"),
     can(viewer, "expenses.payments", "write"),
+    can(viewer, "expenses", "write"),
   ]);
-  return { intake, attachKey, voidKey, canConfirm };
+  return { intake, attachKey, voidKey, canConfirm, expensesWrite };
 }
 
-function flagsOf(viewer: Viewer, keys: ViewerKeys, owner: EvidenceOwnerState, paid: boolean): EvidenceRecordFlags {
-  return { intake: keys.intake, attachKey: keys.attachKey, voidKey: keys.voidKey, isDrafter: owner.drafterId === viewer.id, paid };
+export function flagsOf(viewer: Viewer, keys: ViewerKeys, owner: EvidenceOwnerState, paid: boolean): EvidenceRecordFlags {
+  return { intake: keys.intake, attachKey: keys.attachKey, voidKey: keys.voidKey, isDrafter: owner.drafterId === viewer.id, paid, expensesWrite: keys.expensesWrite };
 }
 
-type PairCodes = { pairs: readonly MethodEvidencePair[]; methodNames: ReadonlyMap<string, string>; typeNames: ReadonlyMap<string, string> };
+export type PairCodes = { pairs: readonly MethodEvidencePair[]; methodNames: ReadonlyMap<string, string>; typeNames: ReadonlyMap<string, string> };
 
 // 짝 설정 · 코드 이름 — 지급 게이트(06-04 pairGateCtx) · 제출 판정(06.1-12 loadSubmitCodes)과 같은 원천. 트랜잭션 전 한 번.
-async function loadPairCodes(viewer: Viewer): Promise<PairCodes> {
+export async function loadPairCodes(viewer: Viewer): Promise<PairCodes> {
   const [pairs, methodNames, typeNames] = await Promise.all([
     getSettingValue(PAYMENT_METHOD_EVIDENCE_PAIRS),
     codeLabelsOf(viewer, "payment_method"),
@@ -113,7 +116,7 @@ async function loadPairCodes(viewer: Viewer): Promise<PairCodes> {
   return { pairs, methodNames, typeNames };
 }
 
-function pairDecision(codes: PairCodes, paymentMethod: string | null, evidenceType: string) {
+export function pairDecision(codes: PairCodes, paymentMethod: string | null, evidenceType: string) {
   return pairGateDecision({
     pairs: codes.pairs,
     paymentMethod,
@@ -239,6 +242,135 @@ async function attachToExpense(viewer: Viewer, keys: ViewerKeys, record: Evidenc
     );
     return { created };
   });
+}
+
+// ── 06.1-08 여러 장 붙이기(작성자 · 경영관리 · 지출결의) ─────────────────────────────────────────────────────────
+// 한 트랜잭션에 전부-아니면-전무(E45). 차례(E-49): 문서 행(승인이면 프로젝트 → 문서) → 증빙 행 id 오름차순 → 붙임 INSERT. 문서 잠금 뒤 권리를
+// 다시 판정하고, 증빙 잠금 뒤 version(PA-STALE) · 작성자 모드 음수(A-7)를 다시 본다. 먼저 붙은 증빙은 전부 모아 글자 하나로 던진다(PA-MULTI-CONFLICT).
+// 05 훅 · 자동 확인은 반복문 밖 한 번(경영관리만 — 작성자 붙임은 자동 확인 조건에서 늘 거짓). 문서 금액 칸은 쓰지 않는다(D-6520).
+
+/** 한 번에 붙일 수 있는 증빙 수 — 풀 순위 LIMIT과 같은 값(E34 · PA-BATCH). 화면은 풀 DTO의 값을 쓴다. */
+export const ATTACH_BATCH_MAX = 20;
+export const ATTACH_BATCH_CAP_LINE = `${ATTACH_BATCH_MAX}건 상한 · 나눠 붙이기`;
+
+/** 경합 거부 글자 — `{거래처}`는 먼저 붙은 첫 증빙(id 오름차순) · `{k}`는 나머지 수(0이면 ` 외 {k}건`을 쓰지 않는다). 끝 꼬리 ` · 새로 고침`은 PickDialog가 3차로 뺀다. */
+export function evidenceBatchConflictMessage(firstCounterparty: string, others: number): string {
+  return `다른 사람이 먼저 붙임 · ${firstCounterparty}${others > 0 ? ` 외 ${others}건` : ""} · 새로 고침`;
+}
+
+export type AttachBatchInput = { evidenceIds: readonly string[]; owner: AttachOwnerRef };
+type AttachBatchMode = "author" | "registrar";
+type BatchPreRead = { id: string; version: number; evidenceType: string; counterparty: string };
+
+function staleMessage(updatedAt: Date): string {
+  return `다른 사람이 ${formatKstTime(updatedAt)}에 바꿈 · 새로 고침`;
+}
+
+function conflictMessageOf(pre: readonly BatchPreRead[], takenIds: ReadonlySet<string>): string {
+  const taken = pre.filter((item) => takenIds.has(item.id));
+  const first = taken[0];
+  return evidenceBatchConflictMessage(first?.counterparty ?? "—", Math.max(0, taken.length - 1));
+}
+
+// 이 문서가 아닌 곳에 살아 있는 붙임이 있는 증빙 id. 같은 문서에 이미 붙은 것은 멱등이라 경합이 아니다.
+function takenByOthers(owners: readonly LiveLinkOwner[], docId: string): Set<string> {
+  return new Set(owners.filter((live) => !(live.ownerKind === "expense" && live.ownerId === docId)).map((live) => live.recordId));
+}
+
+async function attachBatch(viewer: Viewer, mode: AttachBatchMode, input: AttachBatchInput, deps?: EvidenceAttachDeps): Promise<{ attached: number }> {
+  if (input.evidenceIds.length === 0) throw new UserFacingError(RECORD_NOT_FOUND);
+  if (input.evidenceIds.length > ATTACH_BATCH_MAX) throw new UserFacingError(ATTACH_BATCH_CAP_LINE);
+  const ids = [...new Set(input.evidenceIds)].sort();
+  if (!ids.every((id) => UUID_SHAPE.test(id))) throw new UserFacingError(RECORD_NOT_FOUND);
+  if (input.owner.kind !== "expense") throw new ExpenseNotFoundError();
+
+  const keys = await readKeys(viewer);
+  // 못 보는 문서는 없는 문서와 같은 거부 하나(ExpenseNotFoundError). 작성자 갈래는 기안자 본인만 — 남이면 같은 거부.
+  const before = await readEvidenceOwner(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: input.owner.id });
+  if (mode === "registrar" && !keys.intake) throw new ForbiddenError(INTAKE_FORBIDDEN);
+  if (mode === "author") {
+    if (before.drafterId !== viewer.id) throw new ExpenseNotFoundError();
+    if (!(await can(viewer, "evidence", "view"))) throw new ForbiddenError(INTAKE_FORBIDDEN);
+  }
+  const paidBefore = (await findLivePayment(viewer, before.id)) !== null;
+  const allowed = (owner: EvidenceOwnerState, paid: boolean): boolean => {
+    const rights = evidenceRecordRights(owner, flagsOf(viewer, keys, owner, paid));
+    return mode === "registrar" ? rights.attach : rights.authorAttach;
+  };
+  if (!allowed(before, paidBefore)) throw new UserFacingError(evidenceAttachRefusal(before));
+
+  const pre: BatchPreRead[] = [];
+  for (const id of ids) {
+    const view = await getEvidenceRecord(viewer, id);
+    if (!view || view.version === undefined || view.evidenceType === undefined) throw new UserFacingError(RECORD_NOT_FOUND);
+    const blocked = view.statusWord ? evidenceAttachBlockOf(view.statusWord) : null;
+    if (blocked) throw new UserFacingError(blocked);
+    pre.push({ id, version: view.version, evidenceType: view.evidenceType, counterparty: view.counterparty ?? "—" });
+  }
+  const codes = await loadPairCodes(viewer);
+  await deps?.afterPreRead?.();
+
+  try {
+    return await withTransaction(async (tx) => {
+      const owner = await lockEvidenceOwnerForChange(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: input.owner.id, before }, tx);
+      const paid = (await findLivePayment(viewer, owner.id, tx)) !== null;
+      if (!allowed(owner, paid)) throw new UserFacingError(evidenceAttachRefusal(owner));
+      const row = await lockExpenseForUpdate(viewer, owner.id, tx);
+      if (!row) throw new ExpenseNotFoundError();
+      for (const item of pre) {
+        const pair = pairDecision(codes, row.paymentMethod, item.evidenceType);
+        if (!pair.allowed) throw new UserFacingError(pair.reason);
+      }
+      const locked = await lockRecordsForUpdate(viewer, ids, tx);
+      if (locked.length !== ids.length) throw new UserFacingError(RECORD_NOT_FOUND);
+      for (const record of locked) {
+        const read = pre.find((item) => item.id === record.id);
+        if (!read || record.version !== read.version || (mode === "author" && record.totalKrw < 0)) throw new UserFacingError(staleMessage(record.updatedAt));
+      }
+      const taken = takenByOthers(await listLiveLinkOwnersByRecords(viewer, ids, tx), owner.id);
+      if (taken.size > 0) throw new UserFacingError(conflictMessageOf(pre, taken));
+      await deps?.afterLock?.();
+      const attachedIds: string[] = [];
+      for (const id of ids) {
+        const { created } = await attachLinkInTx(tx, viewer, { recordId: id, owner: { kind: "expense", id: owner.id }, mode });
+        if (created) attachedIds.push(id);
+      }
+      const firstId = attachedIds[0];
+      if (firstId === undefined) return { attached: 0 };
+      // 차례(06.1-12): 붙임 행 → 05 훅(반복문 밖 한 번) → 자동 확인(경영관리 · 지급 권한자만 저장 — 카드 R2) → 행동 로그 한 줄(PA-BATCH).
+      const released = await afterEvidenceOwnerChange(viewer, owner, { kind: "add" }, tx);
+      if (mode === "registrar") await autoConfirmOnAttach(viewer, { expenseId: owner.id, canConfirm: keys.canConfirm }, tx);
+      await recordAction(
+        viewer,
+        {
+          actionType: "document_update",
+          entity: "evidence_record",
+          entityId: firstId,
+          documentId: owner.id,
+          detail: { change: "evidence_record_attach", ownerKind: "expense", ownerId: owner.id, attachMode: mode, recordIds: attachedIds, ...(released ? { reviewReleased: released } : {}) },
+        },
+        { tx, isActionTypeEnabled: deps?.isActionTypeEnabled },
+      );
+      return { attached: attachedIds.length };
+    });
+  } catch (error) {
+    // 부분 유니크 위반은 트랜잭션이 중단 상태라 밖에서 다시 읽어 같은 글자로 던진다(잠금이 막지만 마지막 안전망).
+    if (error instanceof EvidenceTakenError || isUniqueViolation(error, LIVE_LINK_UNIQUE)) {
+      const taken = takenByOthers(await listLiveLinkOwnersByRecords(viewer, ids), input.owner.id);
+      throw new UserFacingError(taken.size > 0 ? conflictMessageOf(pre, taken) : evidenceBatchConflictMessage(pre[0]?.counterparty ?? "—", 0));
+    }
+    throw error;
+  }
+}
+
+/** 작성자 갈래 — 자기 임시 · 반려 · 회수 · 승인 지출결의에 1 ~ ATTACH_BATCH_MAX장(06.1-08 S5). */
+export function attachEvidenceAsAuthor(viewer: Viewer, input: AttachBatchInput, deps?: EvidenceAttachDeps): Promise<{ attached: number }> {
+  return attachBatch(viewer, "author", input, deps);
+}
+
+/** 경영관리 갈래 — 번호 있는 지출결의에 1 ~ ATTACH_BATCH_MAX장(06.1-06 하나 붙이기 `attachEvidenceRecord`는 그대로 둔다). */
+export function attachEvidenceBatch(viewer: Viewer, input: AttachBatchInput, deps?: EvidenceAttachDeps): Promise<{ attached: number }> {
+  return attachBatch(viewer, "registrar", input, deps);
 }
 
 // 구매 요청은 05 규칙표 밖 — 결재 · 짝 · 05 훅 없음. 06 읽기 범위(listAccess) 안 · 취소 아님 · evidence.intake. 견적 · 실행가 칸은 건드리지 않는다.

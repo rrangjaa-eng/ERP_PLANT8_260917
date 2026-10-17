@@ -2,7 +2,8 @@
 
 import { z } from "zod";
 import { authedActionClient } from "@/lib/actions/client";
-import { attachEvidenceRecord, detachEvidenceRecord, listAttachCandidates, previewDetach } from "@/domain/evidence-records/attach";
+import { ATTACH_BATCH_MAX, attachEvidenceAsAuthor, attachEvidenceBatch, attachEvidenceRecord, detachEvidenceRecord, listAttachCandidates, previewDetach } from "@/domain/evidence-records/attach";
+import { listEvidencePool } from "@/domain/evidence-records/pool";
 import "./actions.registry";
 
 // 06.1-06(RP-4 · RP-6): 증빙 기록 붙이기 · 떼기. 권한 · 범위 · 상태 · 짝 판정은 전부 domain이 한다 — 입력은 id와 검색어 · 사유뿐이다
@@ -24,3 +25,19 @@ export const detachEvidenceRecordAction = authedActionClient
 export const previewDetachAction = authedActionClient
   .schema(z.object({ linkId: z.string().uuid() }))
   .action(async ({ parsedInput, ctx }) => previewDetach(ctx.viewer, parsedInput));
+
+// 06.1-08(RP-4 · RP-5): 증빙 고르기 S5. 풀 · 여러 장 붙이기 모두 작성자 · 범위 · 상태는 서버가 다시 읽는다 — 입력은 id 배열(1 ~ 상한) · 문서 종류 · 문서 id · 검색어뿐.
+const ownerSchema = { ownerKind: z.enum(["expense", "purchase_request"]), ownerId: z.string().uuid() };
+const batchSchema = z.object({ evidenceIds: z.array(z.string().uuid()).min(1).max(ATTACH_BATCH_MAX), ...ownerSchema });
+
+export const listEvidencePoolAction = authedActionClient
+  .schema(z.object({ ...ownerSchema, query: z.string().max(100).optional() }))
+  .action(async ({ parsedInput, ctx }) => listEvidencePool(ctx.viewer, { owner: { kind: parsedInput.ownerKind, id: parsedInput.ownerId }, q: parsedInput.query ?? null }));
+
+export const attachEvidenceAsAuthorAction = authedActionClient
+  .schema(batchSchema)
+  .action(async ({ parsedInput, ctx }) => attachEvidenceAsAuthor(ctx.viewer, { evidenceIds: parsedInput.evidenceIds, owner: { kind: parsedInput.ownerKind, id: parsedInput.ownerId } }));
+
+export const attachEvidenceBatchAction = authedActionClient
+  .schema(batchSchema)
+  .action(async ({ parsedInput, ctx }) => attachEvidenceBatch(ctx.viewer, { evidenceIds: parsedInput.evidenceIds, owner: { kind: parsedInput.ownerKind, id: parsedInput.ownerId } }));

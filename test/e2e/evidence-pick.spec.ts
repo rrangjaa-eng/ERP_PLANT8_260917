@@ -340,6 +340,8 @@ test("구매 요청 목록(PC) — 내 `신청됨` 행의 `증빙 고르기 1` �
   await expect(dialog).toBeHidden();
   await expect(row.getByRole("button", { name: /증빙 고르기/ })).toHaveCount(0);
   await expect(row).toContainText("증빙 행증빙상회 · 110,000");
+  // D-2: 붙인 뒤 포커스는 body로 빠지지 않는다 — 보이는 행 행동(`요청 취소`).
+  await expect(row.getByRole("button", { name: `${number} 요청 취소` })).toBeFocused();
   await page.context().close();
 });
 

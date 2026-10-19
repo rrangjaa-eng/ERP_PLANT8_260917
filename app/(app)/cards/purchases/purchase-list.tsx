@@ -291,12 +291,14 @@ export function PurchaseList({
   }, [rows, doneId]);
   const [picking, setPicking] = useState<PurchaseListRowView | null>(null);
   const afterPick = useRef<string | null>(null);
-  // 붙인 뒤 트리거가 사라진 행 — 포커스는 그 행의 탭 자리(`{번호} 상세 보기`), 폰이 아니면 행동 칸의 다른 행동(없으면 화면 제목에 둔다).
+  // 붙인 뒤 트리거가 사라진 행 — 포커스는 보이는 행 행동(`{번호} 요청 취소`) → 폰 탭 자리(`{번호} 상세 보기`) → 화면 제목 순.
   useEffect(() => {
     const number = afterPick.current;
     if (!number) return;
     afterPick.current = null;
-    document.querySelector<HTMLElement>(`[role="button"][aria-label="${number} 상세 보기"]`)?.focus();
+    const action = Array.from(document.querySelectorAll<HTMLElement>("button")).find((button) => button.textContent?.includes(`${number} 요청 취소`) && button.getClientRects().length > 0);
+    const tap = document.querySelector<HTMLElement>(`[role="button"][aria-label="${number} 상세 보기"]`);
+    (action ?? tap ?? document.querySelector<HTMLElement>('[data-ui="screen-title"]'))?.focus();
   }, [rows]);
   const sheetTarget = sheet ? cancelTarget(sheet) : null;
   const dialog = (

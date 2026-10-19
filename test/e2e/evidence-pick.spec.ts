@@ -399,6 +399,23 @@ test("구매 요청 목록(폰 375) — 구매 완료 미배정 내 행은 시�
   await doneSheet.getByRole("button", { name: "닫기" }).click();
   await expect(doneSheet).toBeHidden();
 
+  // PR-C ISSUE-003 — 시트를 겹치지 않는다(§7-8): 고르기를 열면 읽기 시트는 닫히고, 고르기를 닫으면 읽기 시트가 다시 서고 포커스는 그 `증빙 고르기 1`.
+  await tapDone.click();
+  await expect(doneSheet).toBeVisible();
+  await doneSheet.getByRole("button", { name: "증빙 고르기 1" }).click();
+  const picker = page.getByRole("dialog", { name: "증빙 고르기" });
+  await expect(picker).toBeVisible();
+  await expect(page.locator("dialog[open]")).toHaveCount(1);
+  await expect(picker.locator("[aria-busy]")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(picker).toBeHidden();
+  await expect(doneSheet).toBeVisible();
+  await expect(page.locator("dialog[open]")).toHaveCount(1);
+  await expect(doneSheet.getByRole("button", { name: "증빙 고르기 1" })).toBeFocused();
+  await doneSheet.getByRole("button", { name: "닫기" }).click();
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  await expect(tapDone).toBeFocused();
+
   const tapOpen = page.getByRole("button", { name: `${openNumber} 상세 보기` });
   await tapOpen.click();
   const openSheet = page.getByRole("dialog", { name: "시트 신청 물건" });

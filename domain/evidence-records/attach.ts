@@ -148,7 +148,7 @@ export async function attachLinkInTx(
 }
 
 // 못 보는 지출결의는 05 문서 읽기와 같은 판정(readEvidenceOwner의 범위 거부)으로 가른다 — 트랜잭션 밖에서만 부른다(06-03).
-async function canSeeLinkOwner(viewer: Viewer, owner: LiveLinkOwner): Promise<boolean> {
+export async function canSeeLinkOwner(viewer: Viewer, owner: Pick<LiveLinkOwner, "ownerKind" | "ownerId">): Promise<boolean> {
   if (owner.ownerKind === "purchase_request") return canSeePurchaseRequest(viewer, { id: owner.ownerId });
   if (owner.ownerKind !== EXPENSE_DOCUMENT_KIND) return false;
   try {

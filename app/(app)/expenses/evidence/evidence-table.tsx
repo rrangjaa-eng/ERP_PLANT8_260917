@@ -17,11 +17,13 @@ import { RowSheet } from "@/ui/table/RowSheet";
 import { Table } from "@/ui/table/Table";
 import tableStyles from "@/ui/table/Table.module.css";
 import { Toast } from "@/ui/toast/Toast";
+import type { KvItem } from "@/ui/kv-list/KvList";
 import { useDirtyStorage, viewerDirtyScope } from "@/ui/table/use-dirty-storage";
 import { useEditableWidth } from "@/ui/table/use-editable-width";
 import type { FooterNoticeItem } from "@/ui/table/footer-notice";
 import type { CellEditability, CellIssue, TableColumn } from "@/ui/table/types";
 import type {
+  EvidenceDetailView,
   EvidenceListFilters,
   EvidenceProposal,
   EvidenceRecordList,
@@ -32,7 +34,7 @@ import type {
   EvidenceTeamOption,
 } from "@/domain/evidence-records";
 import { ConflictLine } from "@/app/(app)/approvals/conflict-line";
-import { archiveEvidenceRecordAction, publishEvidenceRecordsAction, restoreEvidenceRecordAction } from "./actions";
+import { archiveEvidenceRecordAction, getEvidenceDetailAction, publishEvidenceRecordsAction, restoreEvidenceRecordAction } from "./actions";
 import { IntakeZone } from "./intake-zone";
 import { PickDocumentDialog, type PickDocumentTarget } from "./pick-document-dialog";
 import expenseStyles from "../expenses.module.css";
@@ -43,6 +45,12 @@ import styles from "./evidence-table.module.css";
 // 서버 제안은 dirty 면으로 그리되 편집 맵과 따로 둔다 — 떠나기 경고 · 브라우저 보관에는 사람이 바꾼 칸만 든다(DA-4).
 // 06.1-05 Task 2 — 필터 셋(쿼리 링크 · 기본 `할 일`) · 서식 그룹 · 필터 결과 전체 합계 · 폭별 열 · 잠긴 셀 이유 · 페이지 줄 · 힌트 줄 · 빈 상태 넷 · 폰 읽기 시트.
 // 06.1-05 Task 3 — 공개 칸 「다른 팀」 묶음 · 서버 거부 칸 · 업로드 중 1차 막힘 · 행 행동(보관 · 되살리기) + 표 위 결과 줄 `되돌리기`.
+
+// 06.1-07 S3 — 패널(옆 패널 · 폼 · 입력 칸)은 열 때 불러온다. 이 화면의 첫 묶음에 패널의 CSS가 함께 실리면 번들러가 CSS 차례를 바꿔
+// 같은 명시도의 표 칸 편집기(.cellSelect)가 ui/select 테두리에 밀린다(evidence-list-audit ③ 실측 — 정적 import 빌드에서 이 화면 CSS가 Select 앞으로 섞임).
+// next/dynamic(Suspense)을 쓰지 않고 상세와 함께 받은 모듈의 컴포넌트를 상태로 쥔다 — Suspense 경계는 드러낼 때 React가 300ms 단위로 몰아
+// 그려 첫 열림이 360ms가 됐다(06.1-07 감사 D-2 실측: 망은 51ms에 끝나고 300ms 넘게 비었다). 서스펜드가 없으니 라우트 loading.tsx로도 올라가지 않는다.
+type EvidencePanelComponent = (typeof import("./evidence-panel"))["EvidencePanel"];
 
 type Row = {
   id: string;
@@ -279,6 +287,11 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
   const defaults = filterOptions.defaults;
   const [sheetRowId, setSheetRowId] = useState<string | null>(null);
   const sheetRow = rows.find((row) => row.id === sheetRowId);
+  // 06.1-07 S3 — 1024 이상은 옆 패널(공급가 고침 · 확인 필요 풀기), 미만은 행 시트에 같은 읽기 줄(이력 포함). 둘 다 상세를 서버에서 한 번 받는다.
+  const [panelDetail, setPanelDetail] = useState<{ detail: EvidenceDetailView; Panel: EvidencePanelComponent } | null>(null);
+  const [sheetItems, setSheetItems] = useState<{ id: string; items: KvItem[] } | null>(null);
+  // 시트(<1024)의 상세 실패 한 줄은 열린 시트 안 action 자리에 선다(§7-8 · Codex 2회차 #5 — 표 위 결과 줄은 시트 뒤에 가린다).
+  const [sheetFailure, setSheetFailure] = useState<{ id: string; message: string } | null>(null);
 
   const [edits, setEdits] = useState<Record<string, Edit>>({});
   const [cellErrors, setCellErrors] = useState<Record<string, string>>({});
@@ -556,6 +569,29 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
     setArchiveLine({ kind: "archived", record, undoFailed: true });
   }
 
+  // 06.1-07 S3 — 상세를 받아 패널(≥1024) · 행 시트(<1024)를 연다. 받지 못하면 표 위 결과 줄(보관 충돌과 같은 자리 · 꼬리 `새로 고침`).
+  async function loadDetail(rowId: string, onFail = (message: string) => setArchiveLine({ kind: "conflict", message, list })): Promise<EvidenceDetailView | null> {
+    const result = await getEvidenceDetailAction({ id: rowId }).catch(() => undefined);
+    const detail = result?.data?.detail ?? null;
+    if (!detail) onFail(result?.serverError ?? COPY.unknownResult);
+    return detail;
+  }
+  async function openPanel(row: Row) {
+    if (cellEditing || panelDetail !== null) return;
+    // 패널 청크와 상세를 함께 받는다(openSheet와 같은 꼴 — 감사 D-2).
+    const [panel, detail] = await Promise.all([import("./evidence-panel"), loadDetail(row.id)]);
+    if (detail) setPanelDetail({ detail, Panel: panel.EvidencePanel });
+  }
+  function openSheet(row: Row) {
+    setSheetRowId(row.id);
+    setSheetItems(null);
+    setSheetFailure(null);
+    const onFail = (message: string) => setSheetFailure({ id: row.id, message });
+    void Promise.all([import("./evidence-panel"), loadDetail(row.id, onFail)]).then(([panel, detail]) => {
+      if (detail) setSheetItems({ id: row.id, items: panel.evidenceReadItems(detail) });
+    });
+  }
+
   // 열 우선순위(UI-SPEC S2): P1 거래처·가맹점 · 합계 · 상태 / P2 날짜 · 공개 / P3 공급가 · 세액 — 1280 미만에서 P3를 숨기고(DOM에는 남음)
   // 그 합은 합계 행 라벨 뒤에 남는다. `copyText`는 격자 Ctrl+C가 싣는 글자(힌트 줄 「복사」가 실제로 값을 싣는다).
   const columns: TableColumn<Row>[] = [
@@ -565,16 +601,38 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
       header: "거래처·가맹점",
       priority: "p1",
       // DX-1 — 한 줄 말줄임 + title 전문(격자 칸 minmax(0, max-content)라 폰 320에서도 문서를 넘기지 않는다). id는 행 행동이 가리킨다.
-      cell: (row) =>
-        row.counterparty ? (
-          <span id={counterpartyId(row.id)} className={styles.counterpartyCell}>
-            <span className={styles.counterpartyText} title={row.counterparty}>
-              {row.counterparty}
-            </span>
+      // 06.1-07 PA-PANEL-OPEN — 이 칸이 S3 패널(≥1024) · 읽기 시트(<1024)를 여는 행 이름 버튼이다(읽기 칸이라 격자 Enter = `pressCellAction`이 누른다).
+      // 격자 로빙 밖(tabIndex -1 — §7-3 (아) 탭 정지 1개). 표 칸 role="button"은 ui/table 접힌 줄 탭과 같은 꼴(버튼 겉모양 없이 말줄임을 지킨다).
+      cell: (row) => {
+        const name = row.counterparty ? (
+          <span className={styles.counterpartyText} title={row.counterparty}>
+            {row.counterparty}
           </span>
         ) : (
-          <span id={counterpartyId(row.id)}>—</span>
-        ),
+          "—"
+        );
+        const className = styles.counterpartyCell;
+        // 1024 미만은 같은 칸이 읽기 시트를 연다 — 700~1023은 접힌 줄(ui/table 행 탭)이 없어 이것이 시트로 가는 유일한 길이다.
+        const open = () => (editableWidth ? void openPanel(row) : openSheet(row));
+        return (
+          <span
+            id={counterpartyId(row.id)}
+            className={className}
+            role="button"
+            tabIndex={-1}
+            aria-haspopup="dialog"
+            data-cell-action=""
+            onClick={open}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" && event.key !== " ") return;
+              event.preventDefault();
+              open();
+            }}
+          >
+            {name}
+          </span>
+        );
+      },
       secondaryLine: (row) => row.kindLine,
       copyText: (row) => row.counterparty ?? "",
     },
@@ -802,7 +860,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
           groupHeader={(row) => groupLabels.get(row.format) ?? row.format}
           enableGridKeyboard
           rowLabel={(row) => `${row.issuedOn} ${row.counterparty ?? ""}`}
-          onRowTap={(row) => setSheetRowId(row.id)}
+          onRowTap={openSheet}
           saveLocked={isExecuting}
           onEditingChange={setCellEditing}
           onCellCommit={commitVisibility}
@@ -845,14 +903,17 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
         </div>
       ) : null}
 
-      {/* 1024 미만 행 탭 → 읽기 시트(KvList 줄만 · 행동 없음). 폰에서 숨는 열(날짜 · 공급가 · 세액 · 공개)을 여기서 본다. */}
+      {/* 1024 미만 행 탭 → 읽기 시트(KvList 줄만 · 행동 없음). 폰에서 숨는 열(날짜 · 공급가 · 세액 · 공개)을 여기서 본다.
+          06.1-07 — 상세가 오면 S3 패널과 같은 읽기 줄(공급가 글자 · 이력 포함), 오기 전에는 표 줄 값. */}
       <RowSheet
         open={sheetRow !== undefined}
         onClose={() => setSheetRowId(null)}
         title={sheetRow?.counterparty ?? "—"}
         subtitle={sheetRow ? [sheetRow.issuedOn, sheetRow.kindLine].filter((part): part is string => Boolean(part)).join(" · ") : ""}
         items={
-          sheetRow
+          sheetRow && sheetItems?.id === sheetRow.id
+            ? sheetItems.items
+            : sheetRow
             ? [
                 { label: "날짜", value: <Num value={sheetRow.issuedOn} /> },
                 { label: "공급가", value: <Num value={sheetRow.supplyKrw} /> },
@@ -863,6 +924,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
               ]
             : []
         }
+        action={sheetRow && sheetFailure?.id === sheetRow.id ? <ConflictLine message={sheetFailure.message} /> : undefined}
       />
 
       {discardedEdits ? (
@@ -877,6 +939,9 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
         />
       ) : null}
       <PickDocumentDialog target={attachTarget} onClose={() => setAttachTarget(null)} onAttached={onAttached} />
+      {panelDetail ? (
+        <panelDetail.Panel key={panelDetail.detail.id} detail={panelDetail.detail} lineClassName={styles.undoLine} onClose={() => setPanelDetail(null)} onSaved={() => router.refresh()} />
+      ) : null}
     </>
   );
 }

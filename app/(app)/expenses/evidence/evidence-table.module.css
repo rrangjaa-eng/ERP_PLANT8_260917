@@ -114,6 +114,12 @@
     min-width: var(--touch-min);
   }
 
+  /* §3 행 탭 대상 44 — 거래처 칸 행 이름 버튼도 접힌 줄과 같은 시트를 여는 대상이다(06.1-07 감사 D-4). */
+  .counterpartyCell {
+    min-height: var(--touch-min);
+    align-content: center;
+  }
+
   /* 복원 뒤 폰에 서는 1차 높이 44 — ListScreen `.primaryAction`과 같은 규칙(폰 터치 목표). */
   .primaryAction {
     min-height: var(--touch-min);

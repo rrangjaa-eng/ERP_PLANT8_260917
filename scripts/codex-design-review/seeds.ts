@@ -11,7 +11,7 @@ import { changeProjectStatus } from "@/domain/projects/status";
 import { applyAutoSettlement } from "@/domain/projects/auto-transition";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { setCustomerApproval } from "@/domain/quotes/revisions";
-import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
+import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND, saveExpenseDraft } from "@/domain/expenses";
 import { approveDocument, getApprovalView, rejectDocument } from "@/domain/approvals";
 import { SETTLEMENT_DOCUMENT_KIND, submitSettlement } from "@/domain/settlements";
 import { findApprovalGraphByDocument } from "@/repositories/approvals";
@@ -22,6 +22,7 @@ import { createPurchaseRequest, precheckPurchaseRequest } from "@/domain/purchas
 import { saveRevenue } from "@/domain/revenue";
 import { planAccountNumberUpdate } from "@/domain/vendors";
 import { approvalBasis } from "@/repositories/quote-revisions";
+import { findExpenseById } from "@/repositories/expenses";
 import { findProjectById } from "@/repositories/projects";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertRole } from "@/repositories/roles";
@@ -30,11 +31,14 @@ import { seoulToday } from "@/lib/dates";
 import { setSettingValue } from "@/domain/settings/registry";
 import { PURCHASE_ONLINE_VENDOR_NAME } from "@/domain/settings/keys";
 import { QUOTE_SUBCATEGORY_TABLE_KEY } from "@/domain/projects/references";
-import { listCodeItems } from "@/repositories/code-tables";
+import { listCodeItems, setCodeItemActive } from "@/repositories/code-tables";
 import type { SeedName } from "./lib";
 
 // 지출결의 제출·결재·증빙 무효 준비는 test/e2e의 도우미와 같은 흐름이지만, scripts는 test를 import할 수 없어(eslint boundaries) 필요한 만큼만 다시 쓴다.
 type Person = { email: string; password: string; viewer: Viewer };
+
+// 06.1-14(G15 · 카드 R6): 06.1-01이 꺼 둔 채 시드한 보기 제한 증빙 종류.
+const PRIVATE_EVIDENCE_TYPE = "personal_card_receipt";
 
 async function makePerson(prefix: string, roleId: string, teamId: string, effectiveFrom: string): Promise<Person> {
   const email = `capture-${randomUUID()}@example.test`;
@@ -764,6 +768,66 @@ async function evidenceAuthorPick(): Promise<SeedResult> {
   return { vars: { expenseId, purchaseId }, viewer: drafter };
 }
 
+// evidence-private-type(06.1-14 · G15): 관리자 길(`setCodeItemActive` — 카드 R6 켜기 길 그대로)로 「개인카드 전표」를 켜고, 기안자가 그 증빙 종류인
+// 지출결의(프로젝트 · 견적 줄 문서)에 05 파일 하나를 올려 제출한다. viewer = 첫 결재자 = 그 팀 `role-team-lead` 사람(기본 노출 행이 깔린 시드 계급 —
+// 새 임시 계급 0). 결재자 화면에서는 남의 05 파일이 빠지고 잠김 줄 한 줄만 선다(RP-15 ⑵). vars = { expenseId }.
+async function evidencePrivateType(browser: Browser, baseURL: string | undefined): Promise<SeedResult> {
+  const today = seoulToday();
+  const suffix = randomUUID().slice(0, 6);
+  const yearStart = `${today.slice(0, 4)}-01-01`;
+  const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `캡처비공개본부-${suffix}` });
+  const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `캡처비공개팀-${suffix}` });
+  const drafter = await makePerson("기안", "role-pm", team.id, yearStart);
+  const teamLead = await makePerson("팀장", "role-team-lead", team.id, yearStart);
+  const vendor = await vendorWithAccount(`캡처거래처-${suffix}`);
+  const {
+    lineIds: [lineId],
+  } = await inProgressProjectLines({ suffix, teamId: team.id, pm: drafter, teamLead, vendorId: vendor.id }, [2_400_000]);
+  if (!lineId) throw new Error("견적 줄이 없습니다");
+
+  // 06.1-01이 꺼 둔 채 시드한 종류를 관리자 길로 켠다 — 꺼져 있으면 기안자가 고를 수 없다(assertActiveCodes).
+  const privateItem = (
+    await listCodeItems(SYSTEM_VIEWER, { tableKey: "evidence_type", scope: { rows: "all", includeArchived: false }, includeInactive: true })
+  ).find((item) => item.value === PRIVATE_EVIDENCE_TYPE);
+  if (!privateItem) throw new Error("개인카드 전표 코드 항목 없음");
+  await setCodeItemActive(SYSTEM_VIEWER, privateItem.id, true);
+
+  const created = await createExpenseFromLines(drafter.viewer, { lineIds: [lineId] });
+  const expenseId = created.created[0]?.expenseId;
+  if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
+  const draft = await findExpenseById(drafter.viewer, expenseId);
+  if (!draft) throw new Error("작성 중 문서를 찾지 못했다");
+  await saveExpenseDraft(drafter.viewer, { expenseId, expectedVersion: draft.version, fields: { evidenceType: PRIVATE_EVIDENCE_TYPE } });
+
+  // 증빙 올리기가 브라우저 경로라 올리기 · 제출만 화면으로 한다(preSettleEvidencePending 꼴).
+  const context = await browser.newContext({ baseURL });
+  try {
+    const page = await context.newPage();
+    await page.goto("/login");
+    const hydrated = (selector: () => ReturnType<typeof page.getByLabel>) =>
+      expect.poll(() => selector().evaluate((element) => Object.keys(element).some((key) => key.startsWith("__reactProps$")))).toBe(true);
+    await hydrated(() => page.getByLabel("이메일"));
+    await page.getByLabel("이메일").fill(drafter.email);
+    await page.getByLabel("비밀번호").fill(drafter.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+    await page.goto(`/expenses/${expenseId}`);
+    await expect
+      .poll(() => page.getByRole("button", { name: /^임시 저장/ }).evaluate((element) => Object.keys(element).some((key) => key.startsWith("__reactProps$"))))
+      .toBe(true);
+    await page.getByTestId("attachments-input").setInputFiles("test/e2e/assets/receipt-3000x2000.jpg");
+    await expect(page.locator('[data-ui="attachments"] li').getByText(/^\d+KB · \d{2}-\d{2}$/)).toBeVisible({ timeout: 20_000 });
+    await page.getByRole("button", { name: /^지출결의 제출/ }).click();
+    await expect(page).toHaveURL(new RegExp(`/expenses/${expenseId}\\?submitted=1$`));
+  } finally {
+    await context.close();
+  }
+
+  const view = await getApprovalView(teamLead.viewer, { kind: EXPENSE_DOCUMENT_KIND, documentId: expenseId });
+  if (!view) throw new Error("결재 인스턴스가 없습니다");
+  return { vars: { expenseId }, viewer: teamLead };
+}
+
 export function runSeed(name: SeedName, browser: Browser, baseURL: string | undefined): Promise<SeedResult> {
   switch (name) {
     case "pre-settle-evidence-pending":
@@ -776,5 +840,7 @@ export function runSeed(name: SeedName, browser: Browser, baseURL: string | unde
       return evidenceIntakeFilled(browser, baseURL);
     case "evidence-author-pick":
       return evidenceAuthorPick();
+    case "evidence-private-type":
+      return evidencePrivateType(browser, baseURL);
   }
 }

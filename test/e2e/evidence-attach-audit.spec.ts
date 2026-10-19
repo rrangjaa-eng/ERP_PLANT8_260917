@@ -399,13 +399,9 @@ test("A 증빙 목록 · PickDialog — ① 경영관리(두 키)", async ({ bro
     return cur ? { text: (cur.textContent ?? "").trim().slice(0, 40), weight: getComputedStyle(cur).fontWeight, borderLeft: getComputedStyle(cur).borderLeftColor, shadow: getComputedStyle(cur).boxShadow.slice(0, 60) } : null;
   });
   record("S4 미리 고른 현재 행(참고 — 회사 전체 문서 1위가 무엇이냐에 달림)", width, role, "S4", pre, "—", null);
-  // 06.1-08 감사 K-1(확정 결함 · ui/pick-dialog 단일 변형): 고른 행 면 `--surface-selected` 위 번호 `--text-faint` = 4.25 — tokens.css가 금지한 짝.
-  // 서버 1위가 미리 골라질 때만(1위가 결재 중 문서면 서버가 비운다) 서므로 이 케이스의 판정에서 떼어 참고 줄로 남긴다 — 결함은 보고서가 맡는다.
-  const axeAll = await axe(page);
-  const KNOWN_K1 = /^color-contrast\(1\):\S*current > \S*number \[#5f6e6a on #dce8e4 = 4\.2\d\]$/;
-  const axeOpen = axeAll.filter((v) => !KNOWN_K1.test(v));
-  record("axe K-1 재현(참고 — PickDialog 고른 번호 행 4.25 · 06.1-08 감사 확정 결함)", width, role, "S4", axeAll.filter((v) => KNOWN_K1.test(v)), "—", null);
-  record("axe 위반(S4 열림 · K-1 밖)", width, role, "S4", axeOpen, "[]", axeOpen.length === 0);
+  // K-1(고침 06.1-08): 고른 행 면 `--surface-selected` 위 번호는 `--text-muted` — axe 대비 위반 0이 판정이다.
+  const axeOpen = await axe(page);
+  record("axe 위반(S4 열림)", width, role, "S4", axeOpen, "[]", axeOpen.length === 0);
   const offDialog = await offTokens(page, "dialog[open]");
   record("토큰 밖 색 · 서체 · radius(S4)", width, role, "S4", offDialog, "[]", offDialog.length === 0);
   await shot(page, `s4-open-${width}`);
@@ -663,6 +659,7 @@ test("C 권한 없는 자격 — ③ 기안 PM · ④ evidence.intake만 · ⑤ 
       const url = `/expenses/${id}`;
       await pm.goto(url);
       const table = block(pm).getByRole("table", { name: "붙은 증빙" });
+      await table.waitFor({ state: "visible", timeout: 5000 }).catch(() => undefined);
       const visible = await table.isVisible().catch(() => false);
       const mode = await pm.evaluate(() => ({ evidenceAnchor: !!document.getElementById("evidence"), formButtons: [...document.querySelectorAll("main button")].map((b) => (b.textContent ?? "").trim()).filter((t) => /임시 저장|지출결의 제출|종결/.test(t)) }));
       record(`③ ${label} 화면 갈래(참고 — 문서 · 폼)`, width, "③기안PM", url, mode, "—", null);

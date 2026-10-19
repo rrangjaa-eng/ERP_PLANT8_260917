@@ -13,7 +13,7 @@ import {
   type EvidenceRecordFlags,
 } from "@/domain/evidence";
 import { evidenceSourcesOf } from "@/domain/evidence/has-evidence";
-import { evidenceAttachBlockOf, getEvidenceRecord, INTAKE_FORBIDDEN, lockEvidenceRecordState, readEvidenceRecordFacts, type EvidenceRecordFacts } from "@/domain/evidence-records";
+import { evidenceAttachBlockOf, INTAKE_FORBIDDEN, listEvidenceRecordsByIds, lockEvidenceRecordState, readEvidenceRecordFacts, type EvidenceRecordFacts } from "@/domain/evidence-records";
 import { compareCandidates, dayGapOf, type RankedCandidate } from "@/domain/evidence-records/score";
 import { autoConfirmOnAttach } from "@/domain/evidence-reviews";
 import { codeLabelsOf, EXPENSE_DOCUMENT_KIND, ExpenseNotFoundError } from "@/domain/expenses";
@@ -35,7 +35,7 @@ import { formatKrw } from "@/lib/format-number";
 import { isUniqueViolation } from "@/lib/pg-errors";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { findLivePayment } from "@/repositories/expense-payments";
-import { lockRecordsForUpdate } from "@/repositories/evidence-records";
+import { bumpRecordVersion, lockRecordsForUpdate } from "@/repositories/evidence-records";
 import {
   detachLink,
   findLinkById,
@@ -147,6 +147,7 @@ export async function attachLinkInTx(
   if (blocked) throw new UserFacingError(blocked);
   await hooks?.afterLock?.();
   await insertLink(viewer, { recordId: input.recordId, ownerKind: input.owner.kind, ownerId: input.owner.id, attachMode: input.mode }, tx);
+  await bumpRecordVersion(viewer, input.recordId, tx);
   return { created: true };
 }
 
@@ -283,12 +284,13 @@ type BatchCtx = { viewer: Viewer; mode: AttachBatchMode; keys: ViewerKeys; owner
 async function lockAndAttachRecords(tx: DbOrTx, ctx: BatchCtx): Promise<string[]> {
   const locked = await lockRecordsForUpdate(ctx.viewer, ctx.ids, tx);
   if (locked.length !== ctx.ids.length) throw new UserFacingError(RECORD_NOT_FOUND);
+  // 먼저 붙은 것을 version보다 먼저 본다 — 붙이기가 증빙 version을 올리므로(P3-1) 남이 먼저 붙인 줄은 낡음이 아니라 「먼저 붙임」으로 거부한다.
+  const taken = takenByOthers(await listLiveLinkOwnersByRecords(ctx.viewer, ctx.ids, tx), ctx.owner);
+  if (taken.size > 0) throw new UserFacingError(conflictMessageOf(ctx.pre, taken));
   for (const record of locked) {
     const read = ctx.pre.find((item) => item.id === record.id);
     if (!read || record.version !== read.version || (ctx.mode === "author" && record.totalKrw < 0)) throw new UserFacingError(staleMessage(record.updatedAt));
   }
-  const taken = takenByOthers(await listLiveLinkOwnersByRecords(ctx.viewer, ctx.ids, tx), ctx.owner);
-  if (taken.size > 0) throw new UserFacingError(conflictMessageOf(ctx.pre, taken));
   await ctx.deps?.afterLock?.();
   const attachedIds: string[] = [];
   for (const id of ctx.ids) {
@@ -299,9 +301,11 @@ async function lockAndAttachRecords(tx: DbOrTx, ctx: BatchCtx): Promise<string[]
 }
 
 async function preReadRecords(viewer: Viewer, ids: readonly string[]): Promise<BatchPreRead[]> {
+  // 한 번의 묶음 읽기(PR-C /review P3-3) — 거부 차례는 그대로 ids(오름차순) 차례다. 범위 밖 · 없는 id는 묶음에 없어 RECORD_NOT_FOUND.
+  const views = new Map((await listEvidenceRecordsByIds(viewer, ids)).map((view) => [view.id, view]));
   const pre: BatchPreRead[] = [];
   for (const id of ids) {
-    const view = await getEvidenceRecord(viewer, id);
+    const view = views.get(id);
     if (!view || view.version === undefined || view.evidenceType === undefined) throw new UserFacingError(RECORD_NOT_FOUND);
     const blocked = view.statusWord ? evidenceAttachBlockOf(view.statusWord) : null;
     if (blocked) throw new UserFacingError(blocked);

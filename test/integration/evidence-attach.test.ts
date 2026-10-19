@@ -8,7 +8,7 @@ import { approveDocument } from "@/domain/approvals";
 import { getEvidenceActions, evidenceRecordRights, readEvidenceOwner } from "@/domain/evidence";
 import { attachEvidenceRecord, listAttachCandidates } from "@/domain/evidence-records/attach";
 import { listLinkedEvidence } from "@/domain/evidence-records/linked";
-import { getEvidenceRecord } from "@/domain/evidence-records";
+import { archiveEvidenceRecord, EvidenceArchiveConflictError, getEvidenceRecord } from "@/domain/evidence-records";
 import { rankCandidates } from "@/domain/evidence-records/score";
 import { confirmEvidence } from "@/domain/evidence-reviews";
 import { submitExpense } from "@/domain/expenses";
@@ -498,6 +498,28 @@ describe("결재 중 · 승인 붙이기 (06.1-06 Task 2)", () => {
     const refused = await second;
     expect((refused as Error).message).toBe(`다른 사람이 먼저 붙임 · ${a.number} · 새로 고침`);
     expect(await liveLinks(recordId)).toHaveLength(1);
+  });
+
+  it("(PR-C /review P3-1) 붙이기가 증빙 행 version을 올린다 — 붙이기 커밋을 기다린 보관은 옛 version이라 거부 · 붙임 1행 · 보관 안 됨", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await createIntakeManager();
+    const doc = await createReturnedExpenseFixture(fx);
+    const recordId = await insertRecordFixture(manager);
+    const before = (await getEvidenceRecord(manager, recordId))?.version;
+    if (before === undefined) throw new Error("증빙 version 없음");
+    const gate = deferred();
+    const reached = deferred();
+    const attach = attachEvidenceRecord(manager, { recordId, owner: { kind: "expense", id: doc.expenseId } }, { afterLock: () => (reached.resolve(), gate.promise) });
+    await reached.promise;
+    const archive = caught(archiveEvidenceRecord(manager, { id: recordId, version: before }));
+    await waitForLockWaiter(pool);
+    gate.resolve();
+    expect(await attach).toEqual({ created: true });
+    expect(await archive).toBeInstanceOf(EvidenceArchiveConflictError);
+    expect(await liveLinks(recordId)).toHaveLength(1);
+    const after = await getEvidenceRecord(manager, recordId);
+    expect(after?.statusWord).toBe("붙음");
+    expect(after?.version).toBe(before + 1);
   });
 
   it("(12 P3-6) 붙이기 ↔ 지급 완료 경합: 붙이기가 문서 행을 쥔 동안 지급이 기다리고, 붙이기 커밋 뒤 지급은 그 문서 version으로 다시 판정된다", async () => {

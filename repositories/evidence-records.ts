@@ -514,6 +514,16 @@ export async function setRecordArchivedIfVersionMatches(viewer: Viewer, input: {
   return rows.length > 0;
 }
 
+// 붙임 변화를 증빙 행 version에 싣는다(PR-C /review P3-1) — 붙이기는 증빙 행을 잠그기만 해서, 그 잠금을 기다린 보관 · 플래그 문장이 문장 시작
+// 스냅샷의 「안 붙음」으로 통과했다. 행을 고치면 기다린 문장이 EPQ로 새 version을 보고 version 조건 · 화면 낡음 판정이 막는다. 잠근 뒤에 부른다.
+export async function bumpRecordVersion(viewer: Viewer, id: string, tx: DbOrTx): Promise<void> {
+  void viewer;
+  await tx
+    .update(evidenceRecords)
+    .set({ version: sql`${evidenceRecords.version} + 1`, updatedAt: sql`(now() at time zone 'UTC')` })
+    .where(eq(evidenceRecords.id, id));
+}
+
 // 묶음 한 행의 서식 · 원래 파일 이름 — 결과 행 1행(`{파일 이름} · {서식 이름}`)과 batch 표시가 쓴다.
 export async function findBatchSummary(viewer: Viewer, batchId: string): Promise<{ id: string; format: string; originalName: string } | null> {
   void viewer;

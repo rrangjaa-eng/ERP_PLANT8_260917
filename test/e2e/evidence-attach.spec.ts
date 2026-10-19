@@ -83,6 +83,46 @@ test("S7 행 1 반려 지출결의 × 경영관리(두 키): 행 붙이기 → �
 });
 
 
+test("PR-C D-1 키보드만: 격자 칸 Ctrl+E → 붙일 문서 고르기(S4) · 보관 안 됨 · 힌트 `붙이기 Ctrl+E` · Esc → 그 칸 · Ctrl+E → Enter로 붙임", async ({ page, browser, baseURL }) => {
+  test.setTimeout(120_000);
+  const fx = await setupExpenseE2E();
+  const manager = await createIntakeManager();
+  if (!manager.roleId) throw new Error("계급 없음");
+  const doc = await returnedExpense(browser, baseURL, fx);
+  await insertRecordFixture(manager, { nameOnDocument: fx.vendorName });
+  await loginAs(page, manager.roleId);
+
+  await page.goto("/expenses/evidence?state=all");
+  await expect(evidenceRows(page)).toHaveCount(1);
+  const hint = page.getByRole("main").locator("kbd", { hasText: "Ctrl+E" });
+  await expect(hint).toHaveCount(1);
+  await expect(hint.locator("xpath=..")).toContainText("붙이기");
+  const cell = evidenceCell(page, 0, EVIDENCE_COL.date);
+  await focusGridCell(cell);
+  await page.keyboard.press("Control+e");
+  const dialog = page.getByRole("dialog", { name: "붙일 문서 고르기" });
+  await expect(dialog).toBeVisible();
+  await expect(page.locator("dialog[open]")).toHaveCount(1);
+  await expect(page.getByRole("status").filter({ hasText: "증빙 보관됨" })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(evidenceRows(page)).toHaveCount(1);
+  await expect(evidenceRows(page).first().locator(":focus")).toHaveCount(1);
+
+  await page.keyboard.press("Control+e");
+  const search = dialog.getByRole("textbox", { name: "문서 번호 · 작성자 · 지급처" });
+  await expect(search).toBeFocused();
+  await search.fill(doc.number);
+  const option = dialog.getByRole("option", { name: new RegExp(doc.number) });
+  await expect(dialog.locator("[aria-busy]")).toHaveCount(0);
+  await expect(option).toBeVisible();
+  await search.press("ArrowDown");
+  await expect(option).toBeFocused();
+  await option.press("Enter");
+  await expect(dialog).toBeHidden();
+  await expect(evidenceCell(page, 0, EVIDENCE_COL.status)).toContainText("붙음");
+});
+
 // 「할 일」 보기는 붙은 기록을 빼므로 붙인 행이 새로 고침 뒤 사라진다 — 포커스는 다음 행(없으면 이전 행, 없으면 화면 제목)으로.
 async function attachFirstRowTo(page: Page, number: string): Promise<void> {
   await evidenceRows(page).first().getByRole("button", { name: "붙이기" }).click();
@@ -253,6 +293,10 @@ test("S7 행 6 반려 문서 붙은 증빙 `떼기` → 사유 비면 1차 막�
   await confirm.click();
   await expect(dialog).toHaveCount(0);
   await expect(page.getByRole("table", { name: "붙은 증빙" })).toHaveCount(0);
+  // PR-C D-2 — 뗀 뒤 포커스는 BODY로 빠지지 않는다(다시 선 `증빙 고르기` → 없으면 화면 제목, §7-17).
+  const trigger = page.locator("[data-evidence-pick]");
+  if ((await trigger.count()) > 0) await expect(trigger).toBeFocused();
+  else await expect(page.getByRole("heading", { level: 1 })).toBeFocused();
 });
 
 test("S7 행 7 결재 중 문서 → 붙은 증빙 행에 행동 없음 · 잠김 줄 `결재 중 · 떼기 없음`", async ({ page, browser, baseURL }) => {

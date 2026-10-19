@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
-import { recordAction } from "@/domain/action-log/record";
+import { recordAction, type CoreActionType } from "@/domain/action-log/record";
 import { taxRuleSchema, type TaxRule } from "@/domain/code-tables/tax-rule";
-import { CANCEL_REGISTERED_CHECK, flagSameApprovalOtherAmount, planAmbiguousGroups, resolveCardForLine } from "@/domain/evidence-import/cards";
+import { CARD_USAGE_ENTITY, cardOverwriteSplit, cardUsageOverwriteBlocks, loadCardOverwriteBasis, type CardOverwriteBasis } from "@/domain/corp-card-usages";
+import { CANCEL_REGISTERED_CHECK, flagSameApprovalOtherAmount, issuerText, planAmbiguousGroups, resolveCardForLine } from "@/domain/evidence-import/cards";
+import { ownersWithEvidence } from "@/domain/evidence/has-evidence";
+import { fileWinsPatch, planReconcile, type FileWinsPatch, type ReconcileCandidate, type ReconcileLine, type ReconcileMatch } from "@/domain/evidence-records/reconcile";
 import { EVIDENCE_IMPORT_MAX_BYTES, sizeRefusalHeadline } from "@/domain/evidence-import/limits";
 import { EVIDENCE_FORMATS, finalizeAmounts as defaultFinalizeAmounts, parseWorkbook as defaultParseWorkbook, type ParseResult } from "@/domain/evidence-import/registry";
 import type { EvidenceFormatKey, FinalLine, FormatRule, ParseSuccess, RefusalKind } from "@/domain/evidence-import/types";
@@ -15,6 +18,7 @@ import { BUSINESS_NO_UNIQUE_INDEX } from "@/domain/vendors";
 import { withTransaction } from "@/lib/db-transaction";
 import { isUniqueViolation } from "@/lib/pg-errors";
 import { listCodeItems } from "@/repositories/code-tables";
+import { applyFileWins, findReconcileCandidates, lockCardUsagesForUpdate, type ReconcileCandidateRow } from "@/repositories/corp-card-usages";
 import { findCardsByLast4 } from "@/repositories/corp-cards";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { findBatchIdBySha, insertBatch, lockEvidenceCardImport, setBatchCounts } from "@/repositories/evidence-import-batches";
@@ -26,6 +30,8 @@ import {
   insertRecordsIgnoringDuplicates,
   type EvidenceRecordInsert,
 } from "@/repositories/evidence-records";
+import { insertLinks, listLiveLinksWithRecords } from "@/repositories/evidence-record-links";
+import { findLineLinks, lockQuoteLines } from "@/repositories/quote-line-links";
 import { lockVendorAutocreate } from "@/repositories/vendors";
 
 // 06.1-04: 증빙 등록 서비스 — 엑셀 파일 하나 → 권한 · 크기 · 읽기(06.1-02) · 사전 조회 · 한 트랜잭션(묶음 + 기록 + 행동 로그) · 결과.
@@ -73,6 +79,10 @@ export type EvidenceImportCounts = {
   cardUnknown: number;
   /** 새 줄 중 `needs_check`가 선 줄. */
   needsCheck: number;
+  /** 06.1-09: 새 카드 줄 중 대사로 카드 사용에 붙은 줄(1 · 2단계). */
+  cardMatched: number;
+  /** 06.1-09: 새 카드 줄 중 카드는 정해졌는데 붙지 않은 줄 — 목록 「짝 없음」 상태와 같은 셈(확인 필요 · 음수 줄 포함). */
+  cardUnmatched: number;
   nameMismatchRest: number;
 };
 
@@ -84,6 +94,11 @@ export type RegisterEvidenceDeps = {
   finalizeAmounts: typeof defaultFinalizeAmounts;
   loadTaxRates: (asOf: string) => Promise<TaxRates>;
   findVendorsByBusinessNoDigitsList: EnsureVendorsDeps["findVendorsByBusinessNoDigitsList"];
+  /** 06.1-09 경합 시험 자리 — 견적 줄 잠금 뒤(N-8) · 카드 사용 잠금 뒤(E32) · 덮기 직전(0행). */
+  afterLineLock: () => Promise<void>;
+  afterLock: () => Promise<void>;
+  beforeApply: (tx: DbOrTx) => Promise<void>;
+  isActionTypeEnabled: (actionType: CoreActionType) => Promise<boolean>;
 };
 
 async function assertCanIntake(viewer: Viewer): Promise<void> {
@@ -172,6 +187,171 @@ function recordOf(line: PlannedLine & { vendorId: string | null }, format: Evide
   };
 }
 
+// ── 06.1-09 카드 대사(EVID-10 · E28 · E32 · D-6111 · 카드 R3) ─────────────────────────────────────
+
+const CARD_FORMAT_KEYS: ReadonlySet<string> = new Set(EVIDENCE_FORMATS.filter((format) => format.keyKind === "card").map((format) => format.key));
+
+type InsertedCardRecord = { id: string; row: EvidenceRecordInsert };
+type ReconcileFacts = { candidates: ReconcileCandidateRow[]; inputs: ReconcileCandidate[] };
+type ReconcileResult = { matched: number; unmatched: number };
+
+function sameIssuerOf(rule: FormatRule, issuer: string): boolean {
+  const text = issuerText(issuer);
+  return rule.issuerAliases.some((alias) => text.includes(issuerText(alias)));
+}
+
+// 카드 명세(카드 서식 기록)가 이미 붙은 카드 사용 — 계획과 잠근 뒤 재확인이 같은 판독을 쓴다(N-6 — 영수증 기록 · 05 파일은 세지 않는다).
+async function cardStatementOwners(viewer: Viewer, usageIds: readonly string[], tx: DbOrTx): Promise<Set<string>> {
+  const links = await listLiveLinksWithRecords(viewer, { ownerKind: "corp_card_usage", ownerIds: usageIds }, tx);
+  return new Set(links.filter((link) => CARD_FORMAT_KEYS.has(link.format)).map((link) => link.ownerId));
+}
+
+async function reconcileFacts(viewer: Viewer, rule: FormatRule, lines: readonly ReconcileLine[], tx: DbOrTx): Promise<ReconcileFacts> {
+  const targets = lines.filter((line) => line.corpCardId !== null && line.totalKrw >= 0 && line.needsCheck === null);
+  const candidates = await findReconcileCandidates(
+    viewer,
+    {
+      cardIds: presentValues(targets.map((line) => line.corpCardId)),
+      approvalNos: presentValues(targets.map((line) => line.approvalNo)),
+      usedOns: [...new Set(targets.map((line) => line.usedOn))],
+    },
+    tx,
+  );
+  const ids = candidates.map((row) => row.id);
+  // PA-HASEV: 증빙 있음 = 카드 사용의 05 전표 파일 · 살아 있는 붙임 ∪ 원 구매 요청의 증빙.
+  const withEvidence = await ownersWithEvidence(viewer, { ownerKind: "corp_card_usage", ownerIds: ids }, tx);
+  const requestIds = presentValues(candidates.map((row) => row.purchaseRequestId));
+  const requestsWithEvidence = await ownersWithEvidence(viewer, { ownerKind: "purchase_request", ownerIds: requestIds }, tx);
+  const statements = await cardStatementOwners(viewer, ids, tx);
+  const inputs = candidates.map((row) => ({
+    id: row.id,
+    version: row.version,
+    corpCardId: row.corpCardId,
+    sameIssuer: sameIssuerOf(rule, row.cardIssuer),
+    approvalNo: row.approvalNo,
+    usedOn: row.usedOn,
+    totalKrw: row.totalAmountKrw,
+    hasEvidence: withEvidence.has(row.id) || (row.purchaseRequestId !== null && requestsWithEvidence.has(row.purchaseRequestId)),
+    cardStatementAttached: statements.has(row.id),
+  }));
+  return { candidates, inputs };
+}
+
+type PlannedPair = { match: ReconcileMatch; candidate: ReconcileCandidateRow; record: InsertedCardRecord; patch: FileWinsPatch };
+
+function patchChanges(pair: PlannedPair): boolean {
+  return pair.patch.total !== null || pair.patch.card !== null;
+}
+
+// 등록 트랜잭션 안(기록 INSERT 뒤). 잠금 순서: (카드 등록 잠금 →) 견적 줄(id 순 한 호출 · N-8) → 카드 사용(id 순 한 호출). 프로젝트 행은 잠그지 않는다(T-061-907).
+// 잠근 뒤 version · 견적 줄 · 붙임이 계획과 다르면 그 짝은 짝 없음이다(E32). 덮기 막힘(holder · fixed · completed · cap)도 짝 없음 — 붙임 · 덮기 · 기록 0.
+async function reconcileCardRecords(
+  viewer: Viewer,
+  rule: FormatRule,
+  records: readonly InsertedCardRecord[],
+  basis: CardOverwriteBasis,
+  deps: Partial<RegisterEvidenceDeps> | undefined,
+  tx: DbOrTx,
+): Promise<ReconcileResult> {
+  const placed = records.filter((record) => record.row.corpCardId !== null);
+  const lines: ReconcileLine[] = placed.map((record) => ({
+    recordId: record.id,
+    corpCardId: record.row.corpCardId,
+    approvalNo: record.row.approvalNo,
+    usedOn: record.row.issuedOn,
+    totalKrw: record.row.totalKrw,
+    needsCheck: record.row.needsCheck,
+  }));
+  if (lines.length === 0) return { matched: 0, unmatched: 0 };
+  const facts = await reconcileFacts(viewer, rule, lines, tx);
+  const plan = planReconcile(lines, facts.inputs);
+  const candidateOf = new Map(facts.candidates.map((row) => [row.id, row]));
+  const recordOf = new Map(placed.map((record) => [record.id, record]));
+  let pairs: PlannedPair[] = plan.matches.flatMap((match) => {
+    const candidate = candidateOf.get(match.usageId);
+    const record = recordOf.get(match.recordId);
+    if (!candidate || !record || !record.row.corpCardId) return [];
+    const patch = fileWinsPatch(
+      { totalKrw: candidate.totalAmountKrw, corpCardId: candidate.corpCardId, cardLast4: candidate.cardLast4 },
+      { totalKrw: record.row.totalKrw, corpCardId: record.row.corpCardId, cardLast4: record.row.cardLast4 ?? "", approvalNo: record.row.approvalNo },
+    );
+    return [{ match, candidate, record, patch }];
+  });
+
+  // N-8: 합계가 바뀌는 견적 줄 연결 짝의 줄(저장된 줄 + 사슬의 현재 줄)을 카드 사용보다 먼저 잠근다 — 06 createCardUsage가 같은 현재 줄을 잡는다.
+  const lineIds = presentValues(pairs.filter((pair) => pair.patch.total !== null).map((pair) => pair.candidate.quoteLineId));
+  if (lineIds.length > 0) {
+    const chains = await findLineLinks(viewer, lineIds, tx);
+    const lockIds = [...new Set([...lineIds, ...presentValues([...chains.values()].map((links) => links.currentLineId))])];
+    await lockQuoteLines(viewer, lockIds, tx);
+    await deps?.afterLineLock?.();
+  }
+  const locked = new Map((await lockCardUsagesForUpdate(viewer, pairs.map((pair) => pair.candidate.id), tx)).map((row) => [row.id, row]));
+  await deps?.afterLock?.();
+  const statements = await cardStatementOwners(viewer, [...locked.keys()], tx);
+  pairs = pairs.filter((pair) => {
+    const row = locked.get(pair.candidate.id);
+    if (!row || row.archivedAt !== null || row.version !== pair.match.version || row.quoteLineId !== pair.candidate.quoteLineId) return false;
+    return pair.match.step === 1 ? !statements.has(row.id) : row.liveLinks === 0;
+  });
+
+  const blocks = await cardUsageOverwriteBlocks(
+    viewer,
+    pairs.filter(patchChanges).map((pair) => ({ usageId: pair.candidate.id, totalKrw: pair.patch.total?.after ?? null, corpCardId: pair.patch.card?.after.id ?? null })),
+    basis,
+    tx,
+  );
+  pairs = pairs.filter((pair) => !blocks.has(pair.candidate.id));
+  await deps?.beforeApply?.(tx);
+
+  const applied: PlannedPair[] = [];
+  for (const pair of pairs) {
+    const fillsApproval = pair.patch.approvalNo !== null && pair.patch.approvalNo !== pair.candidate.approvalNo;
+    if (!patchChanges(pair) && !fillsApproval) {
+      applied.push(pair);
+      continue;
+    }
+    const split = pair.patch.total ? cardOverwriteSplit(basis, { evidenceTypeCode: pair.candidate.evidenceTypeCode, usedOn: pair.candidate.usedOn, totalKrw: pair.patch.total.after }) : null;
+    const version = await applyFileWins(
+      viewer,
+      {
+        id: pair.candidate.id,
+        version: pair.match.version,
+        corpCardId: pair.patch.card?.after.id ?? pair.candidate.corpCardId,
+        approvalNo: pair.patch.approvalNo ?? pair.candidate.approvalNo,
+        total: split ? { totalKrw: split.totalKrw, supplyKrw: split.supplyKrw, vatKrw: split.vatKrw } : null,
+      },
+      tx,
+    );
+    if (version === null) continue;
+    applied.push(pair);
+    if (!patchChanges(pair)) continue;
+    // D-6111 · RP-2: 덮은 전 · 후는 끌 수 없는 증빙 기록 금액 변경 종류로(06 공급가액 고침 종류와 섞지 않는다).
+    await recordAction(
+      viewer,
+      {
+        actionType: "evidence_record_amount_change",
+        entity: CARD_USAGE_ENTITY,
+        entityId: pair.candidate.id,
+        detail: {
+          before: { totalKrw: pair.candidate.totalAmountKrw, supplyKrw: pair.candidate.supplyKrw, vatKrw: pair.candidate.vatKrw },
+          after: split ? { totalKrw: split.totalKrw, supplyKrw: split.supplyKrw, vatKrw: split.vatKrw } : { totalKrw: pair.candidate.totalAmountKrw, supplyKrw: pair.candidate.supplyKrw, vatKrw: pair.candidate.vatKrw },
+          cardLast4Before: pair.candidate.cardLast4,
+          cardLast4After: pair.patch.card?.after.last4 ?? pair.candidate.cardLast4,
+          evidenceRecordId: pair.record.id,
+        },
+      },
+      { tx, isActionTypeEnabled: deps?.isActionTypeEnabled },
+    );
+  }
+  await insertLinks(
+    viewer,
+    applied.map((pair) => ({ recordId: pair.record.id, ownerKind: "corp_card_usage", ownerId: pair.candidate.id, attachMode: "reconcile" })),
+    tx,
+  );
+  return { matched: applied.length, unmatched: placed.length - applied.length };
+}
+
 // 서버 액션의 파일 칸 하나(FormData `file`) → 등록. 크기는 바이트를 읽기 전에 File.size로 잰다(액션 본문 크기 미들웨어는
 // JSON 길이만 잰다 — lib/actions/payload-size.ts). 첫 방어선은 06.1-05 브라우저 사전 검사다.
 export async function registerEvidenceUpload(viewer: Viewer, file: unknown, deps?: Partial<RegisterEvidenceDeps>): Promise<EvidenceImportResult> {
@@ -198,6 +378,8 @@ export async function registerEvidenceFile(
   for (const date of parsed.rateDates) ratesByDate.set(date, await loadRates(date));
   const rulesByType = await loadEvidenceTaxRules(viewer);
 
+  // 06.1-09 대사 덮기 재료(세율 · 증빙 종류 규칙)는 트랜잭션 전에 읽는다(06-03) — deps.loadTaxRates의 날짜 셈과 섞지 않는다.
+  const overwriteBasis = rule.keyKind === "card" ? await loadCardOverwriteBasis(viewer, [...new Set([...parsed.lines, ...parsed.offsetLines.flatMap((pair) => [pair.original, pair.cancel])].map((line) => line.issuedOn))]) : null;
   const fileSha256 = createHash("sha256").update(input.bytes).digest("hex");
   const sameFile = (await findBatchIdBySha(viewer, fileSha256)) !== null;
   const card = rule.keyKind === "card";
@@ -250,10 +432,14 @@ export async function registerEvidenceFile(
       const batch = await insertBatch(viewer, { format: parsed.format, originalName, fileSha256, rowCount, uploadedBy: viewer.id }, tx);
       const linked = await ensureVendorsForLines(viewer, planned.filter((line) => !already.has(line.dedupeKey)), rule, batch.id, tx, deps);
       const rows = linked.lines.map((line) => recordOf(line, parsed.format, batch.id, viewer));
-      const insertedKeys = new Set((await insertRecordsIgnoringDuplicates(viewer, rows, tx)).map((row) => row.dedupeKey));
+      const insertedIds = new Map((await insertRecordsIgnoringDuplicates(viewer, rows, tx)).map((row) => [row.dedupeKey, row.id]));
+      const insertedKeys = new Set(insertedIds.keys());
       const inserted = rows.filter((row) => insertedKeys.has(row.dedupeKey));
       const flaggedOriginals = [...cancelOfRegisteredOriginal].filter(([cancelKey]) => insertedKeys.has(cancelKey)).map(([, originalKey]) => originalKey);
       await flagRecordsNeedsCheckByDedupeKeys(viewer, flaggedOriginals, CANCEL_REGISTERED_CHECK, tx);
+      const reconciled = overwriteBasis
+        ? await reconcileCardRecords(viewer, rule, inserted.flatMap((row) => { const id = insertedIds.get(row.dedupeKey); return id ? [{ id, row }] : []; }), overwriteBasis, deps, tx)
+        : { matched: 0, unmatched: 0 };
       const counts = {
         rowCount,
         registered: inserted.length,
@@ -264,6 +450,8 @@ export async function registerEvidenceFile(
         vendorRestored: linked.restored,
         cardUnknown: card ? inserted.filter((row) => row.corpCardId === null).length : 0,
         needsCheck: inserted.filter((row) => row.needsCheck !== null).length,
+        cardMatched: reconciled.matched,
+        cardUnmatched: reconciled.unmatched,
       };
       await setBatchCounts(viewer, batch.id, { registeredCount: counts.registered, skippedDuplicateCount: counts.skippedDuplicate }, tx);
       await recordAction(viewer, { actionType: "document_create", entity: EVIDENCE_IMPORT_BATCH_ENTITY, entityId: batch.id, detail: counts }, { tx });
@@ -289,6 +477,8 @@ export async function registerEvidenceFile(
     vendorRestored: written.vendorRestored,
     cardUnknown: written.cardUnknown,
     needsCheck: written.needsCheck,
+    cardMatched: written.cardMatched,
+    cardUnmatched: written.cardUnmatched,
     nameMismatchRest: written.nameMismatchLines.length - shownMismatch.length,
     ...projected,
   };

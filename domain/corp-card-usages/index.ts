@@ -11,7 +11,7 @@ import { taxRuleSchema, type TaxRule } from "@/domain/code-tables/tax-rule";
 import { teamAtDate } from "@/domain/org";
 import { cardUsageRights, type CardUsageRights } from "@/domain/corp-card-usages/rights";
 import { loadActorTeamScope, ProjectNotFoundError } from "@/domain/projects/status";
-import { cardExecutionCap, cardUsedOnError, isCardEvidenceRule, splitCardTotal, type CardSplit } from "@/domain/corp-card-usages/amounts";
+import { CARD_RECEIPT_CODE, cardExecutionCap, cardUsedOnError, isCardEvidenceRule, splitCardTotal, type CardSplit } from "@/domain/corp-card-usages/amounts";
 import { recentFxRate } from "@/domain/money/currency";
 import { seoulToday } from "@/lib/dates";
 import { listCodeItems } from "@/repositories/code-tables";
@@ -28,6 +28,7 @@ import { PICK_LIMIT, PICK_VENDOR_OPTION_SPEC, type PickVendorOptionDto } from "@
 import {
   findCardUsageByIdempotencyKey,
   findCardUsageForWrite,
+  findCardUsageOverwriteFacts,
   findLastCardUsageByRegistrant,
   insertCardUsage,
   isCardUsageInListScope,
@@ -55,7 +56,7 @@ import { findProjectById, findProjectInScope, type ProjectRow } from "@/reposito
 import { projectRowScope } from "@/domain/projects/visibility";
 import { findQuoteLineById, listQuoteLinesByRevisions } from "@/repositories/quote-lines";
 import { findLatestQuoteRevision, findQuoteRevisionById } from "@/repositories/quote-revisions";
-import { findLineLinks, lockQuoteLines } from "@/repositories/quote-line-links";
+import { findLineLinks, listLineVendorEvidenceTypes, lockQuoteLines } from "@/repositories/quote-line-links";
 import { findVendorById, findVendorNamesByIds } from "@/repositories/vendors";
 import { createOutOfQuoteLine } from "@/domain/quotes/lines";
 import {
@@ -79,6 +80,7 @@ import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { isUniqueViolation } from "@/lib/pg-errors";
 import { pickDefaultCardId } from "@/domain/corp-card-usages/default-card";
 import { AUTO_DETACH_REASONS, detachLiveLinksForOwner } from "@/repositories/evidence-record-links";
+import { ownersWithEvidence } from "@/domain/evidence/has-evidence";
 
 // 06-05(EXP-07 · D-607 · D-608 · D-609): 법인카드 사용 — 본인 등록 · 팀 비용 연결 · 목록.
 //
@@ -1516,7 +1518,11 @@ export async function listCardUsages(viewer: Viewer, filters: CardUsageListFilte
     ...(privileged && filters.proxyOnly ? { proxyOnly: true } : {}),
   };
   // 판정(can · 소속)은 위에서 끝내고 트랜잭션 안에서는 목록 쿼리 하나만 — lock_timeout(5s)이 잠금 대기를 끊는다(로드 오류 갈래).
-  const rows = await withTransaction((tx) => listCardUsageRows(viewer, { scope, filter }, tx));
+  const listed = await withTransaction((tx) => listCardUsageRows(viewer, { scope, filter }, tx));
+  // 06.1-09 PA-HASEV: 구매에서 생긴 건은 원 구매 요청의 증빙(파일 · 살아 있는 붙임)도 「증빙 있음」이다 — 목록 SQL 조각은 그대로, 요청 묶음 한 번.
+  const requestIds = [...new Set(listed.flatMap((row) => (row.purchaseRequestId ? [row.purchaseRequestId] : [])))];
+  const requestEvidence = await ownersWithEvidence(viewer, { ownerKind: "purchase_request", ownerIds: requestIds });
+  const rows = listed.map((row) => (row.purchaseRequestId && requestEvidence.has(row.purchaseRequestId) ? { ...row, hasCardSlip: true } : row));
   const lineNo = await lineNumbers(viewer, rows.flatMap((row) => (row.lineRevisionId ? [row.lineRevisionId] : [])));
   // 권리(O-11)는 목록당 한 번 구한 `proxy`로 행마다 같은 함수에서.
   const rightsFor = (row: CardUsageListRow) =>
@@ -1682,4 +1688,106 @@ export async function listProjectCardUsages(viewer: Viewer, projectId: string): 
     totals: totals ?? {},
     canRegister: (await cardOptionsForUsage(viewer, seoulToday())).length > 0,
   };
+}
+
+// ── 06.1-09 카드 대사 덮기 막힘(카드 R3 · P2-C4 · PA-FILEWINS-CAP) ─────────────────────────────────
+
+/** 트랜잭션 전에 읽어 두는 덮기 판정 재료 — 사용일마다 세율 · 증빙 종류 세금 규칙(보관 포함) · 남은 실행가 바탕(오늘 세율 · 쓰는 규칙). */
+export type CardOverwriteBasis = {
+  ratesByDate: ReadonlyMap<string, TaxRates>;
+  rules: ReadonlyMap<string, TaxRule>;
+  lineRules: ReadonlyMap<string, TaxRule>;
+  lineDefaultRule: TaxRule;
+  todayRates: TaxRates;
+};
+
+export async function loadCardOverwriteBasis(viewer: Viewer, usedOns: readonly string[]): Promise<CardOverwriteBasis> {
+  const items = await listCodeItems(viewer, { tableKey: "evidence_type", scope: { rows: "all", includeArchived: true }, includeInactive: true });
+  const rules = new Map<string, TaxRule>();
+  const lineRules = new Map<string, TaxRule>();
+  for (const item of items) {
+    const parsed = taxRuleSchema.safeParse(item.taxRule);
+    if (!parsed.success) continue;
+    rules.set(item.value, parsed.data);
+    // loadLineRoomBasis와 같은 판독 — 쓰는(활성 · 보관 아님) 증빙 종류만.
+    if (item.active && !item.archivedAt) lineRules.set(item.value, parsed.data);
+  }
+  const ratesByDate = new Map<string, TaxRates>();
+  for (const date of new Set(usedOns)) ratesByDate.set(date, await loadTaxRates(date));
+  return { ratesByDate, rules, lineRules, lineDefaultRule: lineRules.get(CARD_RECEIPT_CODE) ?? { ruleKind: "none" }, todayRates: await loadTaxRates(seoulToday()) };
+}
+
+// 덮을 합계의 공급가 · 세액 — 그 카드 사용의 증빙 종류 세금 규칙 + 사용일 세율(06 precheckCardUsage와 같은 판독). 막힘 판정과 쓰기가 같은 값을 쓴다.
+export function cardOverwriteSplit(basis: CardOverwriteBasis, input: { evidenceTypeCode: string; usedOn: string; totalKrw: number }): CardSplit {
+  const rates = basis.ratesByDate.get(input.usedOn);
+  if (!rates) throw new Error(`덮기 세율 없음 — ${input.usedOn}`);
+  return splitCardTotal({ money: { currency: "KRW", amount: input.totalKrw, fxRate: 1 }, rule: basis.rules.get(input.evidenceTypeCode) ?? { ruleKind: "none" } }, rates);
+}
+
+/** 덮을 값 — null은 그대로(합계 · 카드). domain/evidence-records를 import하지 않으려고 평범한 값만 받는다(C-F14). */
+export type CardOverwritePatch = { usageId: string; totalKrw: number | null; corpCardId: string | null };
+export type CardOverwriteBlock = "holder" | "fixed" | "completed" | "cap";
+
+function holderDiffers(before: { kind: string; holderUserId: string | null; teamId: string | null }, after: { kind: string; holderUserId: string | null; teamId: string | null }): boolean {
+  if (before.kind !== after.kind) return true;
+  if (before.kind === "personal") return before.holderUserId !== after.holderUserId;
+  if (before.kind === "team") return before.teamId !== after.teamId;
+  return false;
+}
+
+// 판정 차례: 보유자 다름 → 고정 연결 → 완료 프로젝트 → 실행가 초과. 견적 줄은 호출자가 카드 사용 잠금 앞에 이미 잠갔다(N-8) — 여기서는 tx로 읽기만.
+// 같은 견적 줄에 덮기가 여럿이면 앞서 통과한 덮기의 새 공급가를 다음 판정의 「다른 공급가」에 넣는다(둘이 합쳐 넘는 것을 막는다).
+export async function cardUsageOverwriteBlocks(
+  viewer: Viewer,
+  patches: readonly CardOverwritePatch[],
+  basis: CardOverwriteBasis,
+  tx: DbOrTx,
+): Promise<Map<string, CardOverwriteBlock>> {
+  const blocks = new Map<string, CardOverwriteBlock>();
+  const changed = patches.filter((patch) => patch.totalKrw !== null || patch.corpCardId !== null);
+  if (changed.length === 0) return blocks;
+  const facts = await findCardUsageOverwriteFacts(
+    viewer,
+    { usageIds: changed.map((patch) => patch.usageId), cardIds: [...new Set(changed.flatMap((patch) => (patch.corpCardId ? [patch.corpCardId] : [])))] },
+    tx,
+  );
+  const usageOf = new Map(facts.usages.map((row) => [row.id, row]));
+  const cardOf = new Map(facts.cards.map((row) => [row.id, row]));
+  const capChecks: { patch: CardOverwritePatch & { totalKrw: number }; fact: (typeof facts.usages)[number] & { quoteLineId: string } }[] = [];
+  for (const patch of changed) {
+    const fact = usageOf.get(patch.usageId);
+    if (!fact) continue;
+    const newCard = patch.corpCardId ? cardOf.get(patch.corpCardId) : undefined;
+    if (newCard && holderDiffers({ kind: fact.cardKind, holderUserId: fact.cardHolderUserId, teamId: fact.cardTeamId }, newCard)) blocks.set(patch.usageId, "holder");
+    else if (fact.registeredVia === "purchase" || fact.lineKind === "out_of_quote") blocks.set(patch.usageId, "fixed");
+    else if (fact.projectStatus === "completed") blocks.set(patch.usageId, "completed");
+    else if (patch.totalKrw !== null && fact.quoteLineId !== null) capChecks.push({ patch: { ...patch, totalKrw: patch.totalKrw }, fact: { ...fact, quoteLineId: fact.quoteLineId } });
+  }
+  if (capChecks.length === 0) return blocks;
+
+  const lineIds = [...new Set(capChecks.map((check) => check.fact.quoteLineId))];
+  const links = await findLineLinks(viewer, lineIds, tx);
+  const vendorTypes = await listLineVendorEvidenceTypes(viewer, lineIds, tx);
+  const roomBasis: LineRoomBasis = {
+    rates: basis.todayRates,
+    rules: Object.fromEntries(lineIds.map((lineId) => [lineId, basis.lineRules.get(vendorTypes.get(lineId) ?? "") ?? basis.lineDefaultRule])),
+    defaultRule: basis.lineDefaultRule,
+  };
+  const raised = new Map<string, number>();
+  for (const { patch, fact } of [...capChecks].sort((a, b) => a.patch.usageId.localeCompare(b.patch.usageId))) {
+    const lineLinks = links.get(fact.quoteLineId);
+    // 현재 줄이 없으면(빠진 줄 · 보관된 현재 줄) 실행가를 잴 수 없다 — 덮지 않는다.
+    if (!lineLinks?.currentExecution) {
+      blocks.set(patch.usageId, "cap");
+      continue;
+    }
+    const adjusted = new Map(links);
+    adjusted.set(fact.quoteLineId, { ...lineLinks, cardUsages: lineLinks.cardUsages.map((usage) => ({ ...usage, supplyKrw: raised.get(usage.id) ?? usage.supplyKrw })) });
+    const room = lineRoom({ links: adjusted, basis: roomBasis, lineId: fact.quoteLineId, exclude: { usageId: patch.usageId } });
+    const supplyKrw = cardOverwriteSplit(basis, { evidenceTypeCode: fact.evidenceTypeCode, usedOn: fact.usedOn, totalKrw: patch.totalKrw }).supplyKrw;
+    const cap = cardExecutionCap({ execution: lineLinks.currentExecution, otherSupplies: room.otherSupplies, supply: { currency: "KRW", amount: supplyKrw, fxRate: 1 }, source: "reconciliation" });
+    if (cap.exceeds) blocks.set(patch.usageId, "cap");
+    else raised.set(patch.usageId, supplyKrw);
+  }
+  return blocks;
 }

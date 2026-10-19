@@ -149,6 +149,19 @@ export async function insertLink(
   return row;
 }
 
+// 06.1-09(대사 E32): 붙임 여러 행을 한 문장 다중 VALUES로 — insertLink와 같은 칸 · 같은 부분 유니크(위반은 23505로 올라간다).
+export async function insertLinks(
+  viewer: Viewer,
+  rows: readonly { recordId: string; ownerKind: EvidenceLinkOwnerKind; ownerId: string; attachMode: EvidenceAttachMode }[],
+  tx: DbOrTx,
+): Promise<EvidenceLinkRow[]> {
+  if (rows.length === 0) return [];
+  return tx
+    .insert(evidenceRecordLinks)
+    .values(rows.map((row) => ({ evidenceRecordId: row.recordId, ownerKind: row.ownerKind, ownerId: row.ownerId, attachMode: row.attachMode, attachedBy: viewer.id })))
+    .returning(LINK_COLUMNS);
+}
+
 // 뗌 — 살아 있는 붙임만(조건부 UPDATE). 0행 = 이미 뗌(두 탭 · 응답 유실 재시도 — 부르는 쪽이 멱등 성공으로 끝낸다).
 export async function detachLink(viewer: Viewer, input: { linkId: string; reason: string }, tx: DbOrTx): Promise<boolean> {
   const rows = await tx

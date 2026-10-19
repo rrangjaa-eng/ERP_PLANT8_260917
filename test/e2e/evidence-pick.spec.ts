@@ -297,6 +297,42 @@ test("작성자 자기 떼기 — 고른 증빙 읽기 행 `떼기` → 사유 �
   await page.context().close();
 });
 
+test("PR-C D-2 작성자 자기 떼기 2건 — 첫 떼기 뒤 포커스는 남은 행 `떼기` · 마지막 떼기 뒤 다시 선 `증빙 고르기 2`", async ({ browser, baseURL }) => {
+  test.setTimeout(180_000);
+  const fx = await setupExpenseE2E();
+  const manager = await createIntakeManager();
+  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.tracer.id] });
+  const expenseId = created.created[0]?.expenseId;
+  if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
+  for (const name of ["앞뗄곳", "뒤뗄곳"]) {
+    const recordId = await insertRecordFixture(manager, { nameOnDocument: name });
+    await setRecordVisibilityFixture(recordId, { visibility: "team", teamId: fx.teamId });
+    await insertLinkFixture({ recordId, ownerId: expenseId, attachMode: "author", attachedBy: fx.pm.viewer.id });
+  }
+
+  const page = await loginPage(browser, baseURL, fx.pm);
+  await page.goto(`/expenses/${expenseId}`);
+  const rows = page.getByRole("table", { name: "붙은 증빙" }).locator("tbody tr:visible");
+  await expect(rows).toHaveCount(2);
+  async function detachFirst(): Promise<void> {
+    const detach = detachButton(page).first();
+    await waitForHydration(detach);
+    await detach.click();
+    const dialog = page.getByRole("dialog", { name: "증빙 떼기" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByLabel("사유").fill("잘못 고름");
+    await dialog.getByRole("button", { name: /^증빙 떼기/ }).click();
+    await expect(dialog).toHaveCount(0);
+  }
+  await detachFirst();
+  await expect(rows).toHaveCount(1);
+  await expect(detachButton(page)).toBeFocused();
+  await detachFirst();
+  await expect(page.getByRole("table", { name: "붙은 증빙" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "증빙 고르기 2" })).toBeFocused();
+  await page.context().close();
+});
+
 // ── 06.1-08 Task 3 — 구매 요청 목록의 `증빙 고르기` (PA-PRLINE · PA-PRSHEET · 카드 G1) ────────────────────────
 
 async function purchaseAuthor(candidateName: string): Promise<{ person: Person; teamId: string }> {

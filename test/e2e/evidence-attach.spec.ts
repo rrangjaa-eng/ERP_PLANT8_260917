@@ -293,6 +293,10 @@ test("S7 행 6 반려 문서 붙은 증빙 `떼기` → 사유 비면 1차 막�
   await confirm.click();
   await expect(dialog).toHaveCount(0);
   await expect(page.getByRole("table", { name: "붙은 증빙" })).toHaveCount(0);
+  // PR-C D-2 — 뗀 뒤 포커스는 BODY로 빠지지 않는다(다시 선 `증빙 고르기` → 없으면 화면 제목, §7-17).
+  const trigger = page.locator("[data-evidence-pick]");
+  if ((await trigger.count()) > 0) await expect(trigger).toBeFocused();
+  else await expect(page.getByRole("heading", { level: 1 })).toBeFocused();
 });
 
 test("S7 행 7 결재 중 문서 → 붙은 증빙 행에 행동 없음 · 잠김 줄 `결재 중 · 떼기 없음`", async ({ page, browser, baseURL }) => {

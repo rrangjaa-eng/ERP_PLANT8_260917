@@ -16,7 +16,7 @@ import { buildEvidenceVoidedMessage } from "@/domain/approvals/conflict-message"
 import { canSeeExpense, EXPENSE_ALREADY_CLOSED, EXPENSE_DOCUMENT_KIND, ExpenseCloseRefusedError, ExpenseConflictError, ExpenseNotFoundError } from "@/domain/expenses";
 import { EVIDENCE_FILE_DTO_SPEC, type EvidenceFileDto } from "@/domain/evidence/dto";
 import { hasEvidence } from "@/domain/evidence/has-evidence";
-import { checkEvidenceUpload, duplicateScopeKinds, EVIDENCE_DUPLICATE_HIDDEN, EVIDENCE_UPLOAD_FAILED, type EvidenceDuplicate } from "@/domain/evidence/upload-checks";
+import { checkEvidenceUpload, duplicateScopeKinds, EVIDENCE_DUPLICATE_HIDDEN, EVIDENCE_UPLOAD_FAILED, signatureMatches, type EvidenceDuplicate } from "@/domain/evidence/upload-checks";
 import {
   APPROVAL_EVIDENCE_KIND,
   denyRevisionEvidenceWrite,
@@ -59,6 +59,8 @@ const SIGNED_PUT_EXPIRES_SEC = 900;
 // 의도는 서명 PUT보다 오래 산다 — PUT 만료 직전에 시작한 느린 업로드(폰 · 큰 파일)가 끝난 뒤에도 완료 통보가 열려 있다(05 /review A10 · F7).
 const UPLOAD_GRACE_SEC = 15 * 60;
 const INTENT_TTL_MS = (SIGNED_PUT_EXPIRES_SEC + UPLOAD_GRACE_SEC) * 1000;
+// 06.1-14(E14): 서명 대조에 읽는 객체 머리 — JPEG · PNG · WEBP · HEIC · PDF 서명이 다 12바이트 안에 있다.
+const SIGNATURE_HEAD_BYTES = 16;
 const VIEW_URL_EXPIRES_SEC = 300;
 const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // PC 브라우저가 그리지 못할 수 있는 형식은 내려받기로(리뷰 Round 1 P3-6).
@@ -428,6 +430,12 @@ export async function completeEvidenceUpload(
           : null;
   if (mismatch) {
     log.warn("evidence.upload_metadata_mismatch", { intentId: intent.id, ownerKind: intent.ownerKind, ownerId: intent.ownerId, reason: mismatch });
+    await storage.delete(intent.objectKey);
+    throw new EvidenceUploadRefusedError("restart");
+  }
+  // 06.1-14(E14 · RP-14): 메타데이터가 맞아도 내용이 선언 형식이 아니면(실행 파일을 PNG로) 옮기기 전에 지우고 같은 다시 올리기로 거부한다.
+  if (!signatureMatches(await storage.readHead(intent.objectKey, SIGNATURE_HEAD_BYTES), intent.declaredContentType)) {
+    log.warn("evidence.upload_signature_mismatch", { intentId: intent.id, ownerKind: intent.ownerKind, ownerId: intent.ownerId, reason: "signature" });
     await storage.delete(intent.objectKey);
     throw new EvidenceUploadRefusedError("restart");
   }

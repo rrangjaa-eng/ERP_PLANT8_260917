@@ -1,5 +1,5 @@
 import { createHmac, hkdfSync, timingSafeEqual } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { GoogleAuth } from "google-auth-library";
 import { env, resolvedStorageDriver } from "@/lib/env";
@@ -22,6 +22,8 @@ export type ObjectStorage = {
   createSignedGet(key: string, opts: { expiresSec: number; filename: string; disposition: "inline" | "attachment" }): Promise<{ url: string }>;
   // 없으면 null.
   getMetadata(key: string): Promise<ObjectMetadata | null>;
+  // 06.1-14(E14): 객체 앞 bytes바이트(더 짧으면 그 길이) — 완료 통보의 서명 대조용. 없으면 null.
+  readHead(key: string, bytes: number): Promise<Uint8Array | null>;
   // 원본을 대상으로 복사(대상이 있으면 덮어씀 · 형식 · sha256 메타 유지)한 뒤 원본을 지운다. 원본이 없으면 오류,
   // 원본 삭제의 「없음」은 성공(두 호출이 겹쳐도 안전).
   move(fromKey: string, toKey: string): Promise<void>;
@@ -191,6 +193,25 @@ export function createLocalStorage(opts: { secret: string; dataDir: string; base
       return sidecar ? { size: sidecar.size, contentType: sidecar.contentType, sha256: sidecar.sha256 } : null;
     },
 
+    // 전체를 읽지 않고 앞 N바이트만.
+    async readHead(key, bytes) {
+      assertLocalKey(key);
+      let handle;
+      try {
+        handle = await open(objectPath(key), "r");
+      } catch (error) {
+        if (isMissing(error)) return null;
+        throw error;
+      }
+      try {
+        const buffer = Buffer.alloc(bytes);
+        const { bytesRead } = await handle.read(buffer, 0, bytes, 0);
+        return buffer.subarray(0, bytesRead);
+      } finally {
+        await handle.close();
+      }
+    },
+
     async move(fromKey, toKey) {
       assertLocalKey(fromKey);
       assertLocalKey(toKey);
@@ -331,6 +352,14 @@ export function createGcsStorage(opts: {
       if (!ok(res.status)) fail("meta", res.status);
       const body = parse<{ size?: string; contentType?: string; metadata?: { sha256?: string } }>(res);
       return { size: Number(body.size), contentType: body.contentType ?? "", sha256: body.metadata?.sha256 ?? null };
+    },
+
+    // 06.1-14(E14): 매체 다운로드 + Range 한 번. 서버가 Range를 무시하고 200으로 전체를 주면 앞 N바이트만 자른다.
+    async readHead(key, bytes) {
+      const res = await send({ op: "get", method: "GET", url: `${objectUrl(key)}?alt=media`, headers: { Range: `bytes=0-${bytes - 1}` } });
+      if (res.status === 404) return null;
+      if (res.status !== 200 && res.status !== 206) fail("get", res.status);
+      return (res.data ?? Buffer.alloc(0)).subarray(0, bytes);
     },
 
     // 같은 버킷 안 재작성(형식 · 사용자 메타가 따라간다) → 원본 삭제. 재작성이 실패하면 원본을 지우지 않는다 — 원본은

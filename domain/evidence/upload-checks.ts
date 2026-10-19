@@ -63,3 +63,35 @@ export function checkEvidenceUpload(
   if (opts.duplicates.length > 0) return { ok: false, reason: EVIDENCE_DUPLICATE_HIDDEN };
   return { ok: true };
 }
+
+// 06.1-14(E14 · RP-14 · PA-SIG-HEAD): 완료 통보가 저장소에서 읽은 머리 16바이트와 선언 형식의 서명을 대조한다 — 260907
+// sniffDocumentType(JPEG · PNG · PDF · HEIC) + 05가 받는 WEBP. HEIC/HEIF 선언은 서로 같게 본다(브라우저마다 둘을 섞어 붙인다).
+// 12바이트 미만 · 모르는 형식은 거짓. PDF 꼬리 · 사진 크기 · HEIC 변환은 가져오지 않았다(CONTEXT 「가져오지 않음」).
+const HEIF_BRANDS = new Set(["heic", "heix", "hevc", "hevx", "mif1", "msf1"]);
+
+function ascii(head: Uint8Array, from: number, to: number): string {
+  return String.fromCharCode(...head.subarray(from, to));
+}
+
+function startsWith(head: Uint8Array, prefix: readonly number[]): boolean {
+  return prefix.every((byte, i) => head[i] === byte);
+}
+
+export function signatureMatches(head: Uint8Array | null, contentType: string): boolean {
+  if (!head || head.length < 12) return false;
+  switch (contentType) {
+    case "image/jpeg":
+      return startsWith(head, [0xff, 0xd8, 0xff]);
+    case "image/png":
+      return startsWith(head, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    case "image/webp":
+      return ascii(head, 0, 4) === "RIFF" && ascii(head, 8, 12) === "WEBP";
+    case "image/heic":
+    case "image/heif":
+      return ascii(head, 4, 8) === "ftyp" && HEIF_BRANDS.has(ascii(head, 8, 12));
+    case "application/pdf":
+      return ascii(head, 0, 4) === "%PDF";
+    default:
+      return false;
+  }
+}

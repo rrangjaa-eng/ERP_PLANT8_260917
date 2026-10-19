@@ -180,6 +180,21 @@ describe("데이터 디렉터리의 객체", () => {
     expect(await storage.getMetadata(from)).toEqual(meta);
   });
 
+  // 06.1-14(E14): 완료 통보의 서명 대조 — 파일 앞 N바이트만 읽는다.
+  it("readHead는 쓴 바이트의 앞 16 · 더 짧으면 그 길이 · 없으면 null", async () => {
+    const key = incoming();
+    const bytes = Uint8Array.from({ length: 40 }, (_, i) => i);
+    await storage.writeObject(key, bytes, { ...meta, size: 40 });
+    expect(await storage.readHead(key, 16)).toEqual(Buffer.from(bytes.subarray(0, 16)));
+
+    const short = incoming();
+    await storage.writeObject(short, Buffer.from([1, 2, 3]), meta);
+    expect(await storage.readHead(short, 16)).toEqual(Buffer.from([1, 2, 3]));
+
+    expect(await storage.readHead(incoming(), 16)).toBeNull();
+    await expect(storage.readHead("../x", 16)).rejects.toThrow();
+  });
+
   it("retain은 사이드카에 retained 표식을 남기고 메타데이터는 그대로다", async () => {
     const key = `evidence/${randomUUID()}`;
     await storage.writeObject(key, Buffer.from([1, 2, 3]), meta);

@@ -188,6 +188,25 @@ describe("getMetadata · delete — 04.3 GcsRequest", () => {
   });
 });
 
+// 06.1-14(E14): 완료 통보의 서명 대조 — alt=media + Range 한 번(새 의존 0).
+describe("readHead — 앞부분 읽기", () => {
+  const mediaUrl = (key: string) => `https://storage.googleapis.com/storage/v1/b/${BUCKET}/o/${encodeURIComponent(key)}?alt=media`;
+  const head = Buffer.from("%PDF-1.4\n0123456789");
+
+  it("GET 하나 · alt=media · Range: bytes=0-15 · 206 바이트를 돌려준다", async () => {
+    const { storage, calls } = storageWith([{ status: 206, data: head.subarray(0, 16) }]);
+    await expect(storage.readHead(KEY, 16)).resolves.toEqual(head.subarray(0, 16));
+    expect(calls).toEqual([{ op: "get", method: "GET", url: mediaUrl(KEY), headers: { Range: "bytes=0-15" } }]);
+  });
+
+  it("200으로 전체가 오면 앞 16바이트만 · 404면 null · 5xx면 GcsUnavailableError", async () => {
+    const { storage } = storageWith([{ status: 200, data: head }, { status: 404 }, { status: 503 }]);
+    await expect(storage.readHead(KEY, 16)).resolves.toEqual(head.subarray(0, 16));
+    await expect(storage.readHead(KEY, 16)).resolves.toBeNull();
+    await expect(storage.readHead(KEY, 16)).rejects.toThrow("GCS get 실패: 503");
+  });
+});
+
 describe("move — JSON API rewriteTo 이어 부름 뒤 원본 DELETE(M1)", () => {
   const rewriteUrl = `https://storage.googleapis.com/storage/v1/b/${BUCKET}/o/${encodeURIComponent(KEY)}/rewriteTo/b/${BUCKET}/o/${encodeURIComponent(EVIDENCE_KEY)}`;
 

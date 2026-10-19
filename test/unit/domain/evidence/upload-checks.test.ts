@@ -8,6 +8,7 @@ import {
   EVIDENCE_UPLOAD_FAILED,
   EVIDENCE_WRONG_TYPE,
   evidenceDuplicateElsewhere,
+  signatureMatches,
 } from "@/domain/evidence/upload-checks";
 
 // 05-04(EVID-01 · UI-SPEC Copywriting 「Error — 증빙 업로드」): 업로드 의도 전 검사 — 크기 · 형식 · 중복은 순수 판정이다.
@@ -123,5 +124,56 @@ describe("duplicateScopeKinds", () => {
 
   it("표에 없는 종류 → 자기 하나", () => {
     expect(duplicateScopeKinds("something_new")).toEqual(["something_new"]);
+  });
+});
+
+// 06.1-14(E14 · RP-14 · PA-SIG-HEAD): 완료 통보가 저장소 머리 16바이트로 선언 형식의 서명을 대조한다 — 260907 sniffDocumentType 꼴 + WEBP.
+describe("signatureMatches — 머리 서명", () => {
+  const bytes = (...parts: Array<number[] | string>) =>
+    Uint8Array.from(parts.flatMap((part) => (typeof part === "string" ? [...Buffer.from(part, "latin1")] : part)));
+  const pad = (head: Uint8Array) => Uint8Array.from([...head, ...new Array<number>(Math.max(0, 16 - head.length)).fill(0)]);
+
+  const jpeg = pad(bytes([0xff, 0xd8, 0xff, 0xe0]));
+  const png = pad(bytes([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  const webp = pad(bytes("RIFF", [0x24, 0, 0, 0], "WEBPVP8 "));
+  const heic = pad(bytes([0, 0, 0, 0x18], "ftypheic"));
+  const mif1 = pad(bytes([0, 0, 0, 0x18], "ftypmif1"));
+  const pdf = pad(bytes("%PDF-1.4\n"));
+
+  it.each([
+    ["JPEG", jpeg, "image/jpeg"],
+    ["PNG", png, "image/png"],
+    ["WEBP", webp, "image/webp"],
+    ["HEIC", heic, "image/heic"],
+    ["HEIC 머리 · HEIF 선언", heic, "image/heif"],
+    ["mif1 상표 · HEIC 선언", mif1, "image/heic"],
+    ["PDF", pdf, "application/pdf"],
+  ] as const)("%s → 참", (_, head, contentType) => {
+    expect(signatureMatches(head, contentType)).toBe(true);
+  });
+
+  it.each(["heix", "hevc", "hevx", "msf1"])("HEIF 상표 %s → 참", (brand) => {
+    expect(signatureMatches(pad(bytes([0, 0, 0, 0x18], `ftyp${brand}`)), "image/heif")).toBe(true);
+  });
+
+  it("PDF 머리를 PNG로 선언하면 거짓", () => {
+    expect(signatureMatches(pdf, "image/png")).toBe(false);
+  });
+
+  it("RIFF지만 WEBP가 아니면(WAVE) 거짓", () => {
+    expect(signatureMatches(pad(bytes("RIFF", [0, 0, 0, 0], "WAVE")), "image/webp")).toBe(false);
+  });
+
+  it("ftyp 상표가 목록 밖이면(mp42) 거짓", () => {
+    expect(signatureMatches(pad(bytes([0, 0, 0, 0x18], "ftypmp42")), "image/heic")).toBe(false);
+  });
+
+  it("12바이트 미만 · null → 거짓", () => {
+    expect(signatureMatches(bytes([0xff, 0xd8, 0xff, 0xe0]), "image/jpeg")).toBe(false);
+    expect(signatureMatches(null, "image/jpeg")).toBe(false);
+  });
+
+  it("모르는 형식 → 거짓", () => {
+    expect(signatureMatches(jpeg, "text/html")).toBe(false);
   });
 });

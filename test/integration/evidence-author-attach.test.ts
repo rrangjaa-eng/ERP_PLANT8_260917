@@ -525,6 +525,30 @@ describe("구매 요청 작성자 붙이기 (E30 · PA-PRDONE — 상태 무관 
     expect(await messageOf(detachOwnEvidence(pfx.pm, { linkId: link.id, reason: "잘못 붙임" }))).toBe("없는 붙임 · 새로 고침");
     expect(await liveLinks(recordId)).toHaveLength(1);
   });
+
+  // PR-C Codex P2: 정산 최종 승인(lockProjectForWrite → 완료)이 프로젝트 행을 잡은 채 커밋 전이면, 작성자 재판정도 같은 행을 기다렸다가
+  // 완료를 보고 거부해야 한다(프로젝트 → 요청 잠금 순서). 프로젝트를 잠그지 않으면 커밋 전 옛 상태를 읽고 붙여 버린다.
+  it("정산 완료 트랜잭션이 프로젝트 행을 잡은 동안 작성자 붙이기는 그 잠금을 기다렸다가 완료 프로젝트로 거부 · 붙임 0", async () => {
+    const pfx = await purchaseProject();
+    const intake = await createIntakeManager();
+    const created = await createRequest(pfx, pfx.onlineLine);
+    const recordId = await publishTo(intake, await teamOfProject(pfx.projectId));
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT id FROM projects WHERE id = $1 FOR UPDATE", [pfx.projectId]);
+      await client.query("UPDATE projects SET status = 'completed' WHERE id = $1", [pfx.projectId]);
+      const author = caught(attachEvidenceAsAuthor(pfx.pm, { evidenceIds: [recordId], owner: { kind: "purchase_request", id: created.id } }));
+      const waited = await Promise.race([waitForLockWaiter(pool).then(() => true, () => false), author.then(() => false)]);
+      await client.query("COMMIT");
+      const refused = await author;
+      expect(waited).toBe(true);
+      expect((refused as Error).message).toBe("없는 구매 요청 · 새로 고침");
+      expect(await liveLinks(recordId)).toHaveLength(0);
+    } finally {
+      client.release();
+    }
+  });
 });
 
 describe("detachOwnEvidence — 작성자 자기 떼기 (A9 · RP-4 · D-6110)", () => {

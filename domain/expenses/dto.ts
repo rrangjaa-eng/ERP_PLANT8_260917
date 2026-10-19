@@ -162,6 +162,8 @@ export type ExpenseDetailDto = {
   // 05-10: 세율 바뀜 한 줄(번호 있는 문서에서 저장 스냅숏 ≠ 지금 기준 재계산일 때) · 살아 있는 증빙 파일(주소 없음).
   taxDriftText: string | null;
   evidenceFiles: { id: string; name: string; sizeBytes: number; contentType: string }[];
+  // 06.1-14(G15 · 카드 G-N2): 보이는 파일이 0인데 숨긴 G15 파일이 있는 문서의 잠김 행 글자(건수 · 파일 이름 없음), 아니면 null.
+  hiddenEvidenceNotice: string | null;
   scheduledPaymentDate: string | null;
   paymentMethodName: string | null;
   note: string | null;
@@ -190,6 +192,7 @@ export const EXPENSE_DETAIL_DTO_SPEC: DtoSpec<ExpenseDetailDto, ExpenseDetailDto
     { key: "taxLine", from: "taxLine", infoItem: "expense.amount" },
     { key: "taxDriftText", from: "taxDriftText", infoItem: "expense.amount" },
     { key: "evidenceFiles", from: "evidenceFiles", infoItem: "expense.value" },
+    { key: "hiddenEvidenceNotice", from: "hiddenEvidenceNotice", infoItem: "expense.value" },
     { key: "scheduledPaymentDate", from: "scheduledPaymentDate", infoItem: "expense.value" },
     { key: "paymentMethodName", from: "paymentMethodName", infoItem: "expense.value" },
     { key: "note", from: "note", infoItem: "expense.value" },

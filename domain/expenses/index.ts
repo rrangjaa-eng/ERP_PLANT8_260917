@@ -72,6 +72,7 @@ import { buildExpenseDetailRows } from "@/domain/expenses/detail";
 import { BANK_TRANSFER_PAYMENT_METHOD, documentPayee, hasUsableAccount, PAYEE_ACCOUNT_MISSING_FIXABLE, type ExpensePayee } from "@/domain/expenses/payee";
 import { canSeeExpense, EXPENSE_DOCUMENT_KIND, ExpenseNotFoundError } from "@/domain/expenses/access";
 import { evidenceSourcesOf } from "@/domain/evidence/has-evidence";
+import { fileVisibilityFor, PRIVATE_EVIDENCE_SHEET_NOTICE } from "@/domain/evidence/private-files";
 import { recheckEvidenceConfirmation } from "@/domain/evidence-reviews";
 import { expenseRouteDocTeamId } from "@/domain/expenses/route-doc";
 import { expenseLineDoor, installmentSeqFor, type ExpenseLineDoor, type ExpenseLineDoorState } from "@/domain/expenses/line-door";
@@ -426,6 +427,13 @@ async function loadExpenseDetails(viewer: Viewer, ids: string[]): Promise<Map<st
   const [evidenceNames, paymentNames] = await Promise.all([codeLabelsOf(viewer, "evidence_type"), codeLabelsOf(viewer, "payment_method")]);
   // 05-10: 살아 있는 증빙 파일(주소 없음)을 한 번의 읽기로 — 문서마다 따로 읽지 않는다.
   const aliveFiles = await listAliveByOwners(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerIds: rows.map((row) => row.id) });
+  // 06.1-14(G15 · Round 2 P1-6): 문서 증빙 종류 값마다 한 번 — 결재자 시트에 남의 「올린 사람 · 경영관리만 보기」 파일 이름이 나가지 않는다.
+  const evidenceTypes = [...new Set(rows.map((row) => row.evidenceType ?? null))];
+  const visibilities = new Map(
+    await Promise.all(
+      evidenceTypes.map(async (evidenceType) => [evidenceType, await fileVisibilityFor(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, evidenceType })] as const),
+    ),
+  );
   // 번호 있는 문서는 지금 설정 · 기준일로 다시 계산해 저장값과 다르면 세율 바뀜(문서 화면 getExpense와 같은 값 비교). 문서마다 동시에.
   const currents = await Promise.all(
     rows.map(async (row) => (supplyMoney(row) && storedTaxResult(row) !== null && row.number !== null ? computeExpenseTax(viewer, row) : null)),
@@ -440,6 +448,9 @@ async function loadExpenseDetails(viewer: Viewer, ids: string[]): Promise<Map<st
     const shown = corrected ? current : stored;
     const drift = !corrected && stored && current ? taxDriftText(stored, current) : null;
     const evidenceTypeName = row.evidenceType ? (evidenceNames.get(row.evidenceType) ?? row.evidenceType) : null;
+    const visibility = visibilities.get(row.evidenceType ?? null);
+    const ownFiles = aliveFiles.filter((file) => file.ownerId === row.id);
+    const visibleFiles = visibility ? ownFiles.filter((file) => visibility.visible(file)) : ownFiles;
     result.set(row.id, {
       number: row.number,
       projectNumber: row.projectNumber,
@@ -460,9 +471,9 @@ async function loadExpenseDetails(viewer: Viewer, ids: string[]): Promise<Map<st
       supply,
       taxLine: supply && shown ? taxLineText(shown, supply, `${evidenceTypeName ?? ""} 규칙`).text : null,
       taxDriftText: drift?.text ?? null,
-      evidenceFiles: aliveFiles
-        .filter((file) => file.ownerId === row.id)
-        .map((file) => ({ id: file.id, name: file.originalName, sizeBytes: file.sizeBytes, contentType: file.contentType })),
+      evidenceFiles: visibleFiles.map((file) => ({ id: file.id, name: file.originalName, sizeBytes: file.sizeBytes, contentType: file.contentType })),
+      // 파일이 남은 문서에는 더하지 않는다 — 시트가 파일 행을 따로 묶어 같은 라벨 행이 둘이면 approval-sheet.tsx `key={row.label}`가 겹친다.
+      hiddenEvidenceNotice: visibleFiles.length === 0 && ownFiles.length > 0 ? PRIVATE_EVIDENCE_SHEET_NOTICE : null,
       scheduledPaymentDate: row.scheduledPaymentDate,
       paymentMethodName: row.paymentMethod ? (paymentNames.get(row.paymentMethod) ?? row.paymentMethod) : null,
       note: row.note,

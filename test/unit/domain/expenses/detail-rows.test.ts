@@ -121,3 +121,26 @@ describe("buildExpenseDetailRows", () => {
     expect(buildExpenseDetailRows({ ...team, content: null }).title).toBe("지출결의 — 기획1팀");
   });
 });
+
+// 06.1-14(재검토 2회차 카드 G-N2 — 사용자 확정): G15 종류 문서에서 보이는 파일이 0이고 숨긴 파일이 있으면 증빙 자리에 잠김 행 한 줄.
+describe("buildExpenseDetailRows — 비공개 증빙 잠김 행", () => {
+  const file = { id: "f1", name: "개인카드 전표.jpg", sizeBytes: 1024, contentType: "image/jpeg" };
+
+  it("파일 0 + 잠김 글자면 지급 방식 다음 · 비고 앞에 muted 증빙 행 하나", () => {
+    const rows = buildExpenseDetailRows({ ...full, evidenceFiles: [], hiddenEvidenceNotice: "비공개 증빙 · 경영관리만" }).rows;
+    expect(rows.map((row) => row.label)).toEqual(["프로젝트", "견적 줄", "지급처", "증빙 종류", "공급가액", "공급가액", "지급 예정일", "지급 방식", "증빙", "비고"]);
+    expect(rows.find((row) => row.label === "증빙")).toEqual({ label: "증빙", value: "비공개 증빙 · 경영관리만", tone: "muted" });
+  });
+
+  it("보이는 파일이 하나라도 남으면 파일 행 하나뿐이다(잠김 행 없음 — 라벨 겹침 방지)", () => {
+    const rows = buildExpenseDetailRows({ ...full, evidenceFiles: [file], hiddenEvidenceNotice: "비공개 증빙 · 경영관리만" }).rows;
+    const evidence = rows.filter((row) => row.label === "증빙");
+    expect(evidence).toHaveLength(1);
+    expect(evidence[0]?.files).toHaveLength(1);
+  });
+
+  it("파일 0 · 잠김 글자 없음이면 증빙 행이 없다", () => {
+    expect(buildExpenseDetailRows({ ...full, evidenceFiles: [], hiddenEvidenceNotice: null }).rows.some((row) => row.label === "증빙")).toBe(false);
+    expect(buildExpenseDetailRows(full).rows.some((row) => row.label === "증빙")).toBe(false);
+  });
+});

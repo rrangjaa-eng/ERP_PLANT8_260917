@@ -4,6 +4,9 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { files, uploadIntents } from "@/db/schema";
 import { createExpenseFromLines } from "@/domain/expenses";
+import { EVIDENCE_MIN_SIZE_KB } from "@/domain/settings/keys";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { upsertSimpleValue } from "@/repositories/settings";
 import { completeEvidenceUpload, EvidenceUploadRefusedError, requestEvidenceUpload } from "@/domain/evidence";
 import { EVIDENCE_UPLOAD_FAILED } from "@/domain/evidence/upload-checks";
 import { log } from "@/lib/log";
@@ -93,5 +96,27 @@ describe("E14 서명 대조 — 완료 통보", () => {
     await completeEvidenceUpload(fx.pm, { intentId: intent.intentId }, { storage, now: NOW });
 
     expect(await fileRowsOf(expenseId)).toHaveLength(1);
+  });
+});
+
+// 06.1-14(E14 · RP-14 · PA-MIN-WHEN): 최소 용량 설정은 올리기 요청 때 선언 크기로 본다(기본 0 = 끔).
+describe("E14 최소 용량 — 올리기 요청", () => {
+  const declared = (size: number) => ({ size, contentType: "image/png", sha256: randomBytes(32).toString("hex"), name: "영수증.png" });
+
+  it("설정 20KB면 15KB 선언이 이유와 함께 막히고(의도 0) 0으로 되돌리면 통과한다", async () => {
+    const fx = await setupExpenseProject();
+    const expenseId = await draftOf(fx);
+    const storage = createMemoryStorage();
+    const owner = { ownerKind: "expense" as const, ownerId: expenseId };
+
+    await upsertSimpleValue(SYSTEM_VIEWER, EVIDENCE_MIN_SIZE_KB.key, 20, null);
+    const blocked = requestEvidenceUpload(fx.pm, { ...owner, ...declared(15 * 1024) }, { storage, now: NOW });
+    await expect(blocked).rejects.toThrow("20KB 미만 · 원본 파일로 다시");
+    const [none] = await db.select().from(uploadIntents).where(eq(uploadIntents.ownerId, expenseId));
+    expect(none).toBeUndefined();
+
+    await upsertSimpleValue(SYSTEM_VIEWER, EVIDENCE_MIN_SIZE_KB.key, 0, null);
+    const intent = await requestEvidenceUpload(fx.pm, { ...owner, ...declared(15 * 1024) }, { storage, now: NOW });
+    expect(intent.intentId).toBeTruthy();
   });
 });

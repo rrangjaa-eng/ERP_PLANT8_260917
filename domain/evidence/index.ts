@@ -7,15 +7,17 @@ import { withTransaction } from "@/lib/db-transaction";
 import { log } from "@/lib/log";
 import { getObjectStorage, type ObjectStorage } from "@/lib/gcp/storage";
 import { can, ForbiddenError } from "@/domain/permissions/can";
+import { evidenceScopeFor, rowScopeFor } from "@/domain/permissions/scope-for";
 import { project, projectMany } from "@/domain/permissions/project";
 import { getSettingValue } from "@/domain/settings/registry";
-import { EVIDENCE_MAX_SIZE_MB } from "@/domain/settings/keys";
+import { EVIDENCE_MAX_SIZE_MB, EVIDENCE_MIN_SIZE_KB } from "@/domain/settings/keys";
 import { loadActionLogGate, recordActionInTx } from "@/domain/approvals/tx-log";
 import { validateRejectReason } from "@/domain/approvals";
 import { buildEvidenceVoidedMessage } from "@/domain/approvals/conflict-message";
 import { canSeeExpense, EXPENSE_ALREADY_CLOSED, EXPENSE_DOCUMENT_KIND, ExpenseCloseRefusedError, ExpenseConflictError, ExpenseNotFoundError } from "@/domain/expenses";
 import { EVIDENCE_FILE_DTO_SPEC, type EvidenceFileDto } from "@/domain/evidence/dto";
 import { hasEvidence } from "@/domain/evidence/has-evidence";
+import { fileVisibilityFor, privateEvidenceLine, privateEvidenceTypeOf, privateFileVisible, type FileVisibility } from "@/domain/evidence/private-files";
 import { checkEvidenceUpload, duplicateScopeKinds, EVIDENCE_DUPLICATE_HIDDEN, EVIDENCE_UPLOAD_FAILED, signatureMatches, type EvidenceDuplicate } from "@/domain/evidence/upload-checks";
 import {
   APPROVAL_EVIDENCE_KIND,
@@ -39,6 +41,7 @@ import { clearEvidenceValues, deleteReviewByExpense, type EvidenceReviewStatus }
 import { bumpExpenseVersion } from "@/repositories/expense-payments";
 import { findExpenseApprovalInstance, findExpenseById, lockExpenseForUpdate } from "@/repositories/expenses";
 import { findActiveBySha, findAliveFileOfIntent, findFileById, insertFile, listActiveByOwner, markRemoved, markRestored, markVoided, type FileRow } from "@/repositories/files";
+import { listLiveLinksWithRecords } from "@/repositories/evidence-record-links";
 import { findProjectById, lockProjectForWrite } from "@/repositories/projects";
 import { findUserById } from "@/repositories/users";
 import { completeIntentIfOpen, findIntentById, insertIntent } from "@/repositories/upload-intents";
@@ -113,6 +116,8 @@ type OwnerState = {
   closed: boolean;
   // 06-11(U-4) — 프로젝트가 완료(completed)인 문서(프로젝트가 없는 팀 비용 문서는 false). 승인 뒤 기안자 추가를 닫는다.
   projectCompleted: boolean;
+  // 06.1-14(G15) — 지출결의의 문서 증빙 종류 값(그 종류의 「올린 사람 · 경영관리만 보기」가 05 파일 보임을 좁힌다). 다른 주인 종류는 없다.
+  evidenceType?: string | null;
 };
 
 type OwnerRights = { read: boolean; write: boolean };
@@ -160,6 +165,7 @@ async function expenseState(viewer: Viewer, ownerId: string, tx?: DbOrTx): Promi
     instance: instance ? { id: instance.id, version: instance.version } : null,
     closed: row.closedAt !== null,
     projectCompleted: project?.status === "completed",
+    evidenceType: row.evidenceType,
   };
 }
 
@@ -333,7 +339,8 @@ export async function requestEvidenceUpload(viewer: Viewer, raw: EvidenceUploadR
     }
   }
 
-  const maxBytes = (await getSettingValue(EVIDENCE_MAX_SIZE_MB)) * MB;
+  const [maxMb, minKb] = await Promise.all([getSettingValue(EVIDENCE_MAX_SIZE_MB), getSettingValue(EVIDENCE_MIN_SIZE_KB)]);
+  const maxBytes = maxMb * MB;
   const duplicates: EvidenceDuplicate[] = [];
   for (const file of await findActiveBySha(viewer, input.sha256, duplicateScopeKinds(input.ownerKind))) {
     if (file.ownerKind === input.ownerKind && file.ownerId === owner.id) {
@@ -352,7 +359,7 @@ export async function requestEvidenceUpload(viewer: Viewer, raw: EvidenceUploadR
     const visible = other.number !== null && (await otherRule.canSee(viewer, other));
     duplicates.push({ sameOwner: false, visibleNumber: visible ? other.number : null });
   }
-  const check = checkEvidenceUpload(input, { maxBytes, duplicates });
+  const check = checkEvidenceUpload(input, { maxBytes, minBytes: minKb * 1024, duplicates });
   if (!check.ok) throw new EvidenceCheckError(check.reason);
 
   const storage = storageOf(deps);
@@ -581,6 +588,8 @@ export async function createEvidenceViewUrl(viewer: Viewer, input: { fileId: str
   if (!file || !rule || file.removedAt !== null) return null;
   const owner = await rule.load(viewer, file.ownerId);
   if (!owner || !(await rule.canSee(viewer, owner))) return null;
+  // G15 — 남이 올린 「올린 사람 · 경영관리만 보기」 종류 파일은 주소가 없다(→ 404).
+  if (!(await visibilityOf(viewer, file.ownerKind, owner)).visible(file)) return null;
   return storageOf(deps).createSignedGet(file.objectKey, {
     expiresSec: VIEW_URL_EXPIRES_SEC,
     filename: file.originalName,
@@ -588,14 +597,47 @@ export async function createEvidenceViewUrl(viewer: Viewer, input: { fileId: str
   });
 }
 
-// 주인 문서를 볼 수 있는 사람에게만 — 삭제되지 않은 파일(무효 포함) 올린 순.
+// 06.1-14(G15 · RP-15 ⑵): 주인 하나의 파일 보임 판정 — 문서 증빙 종류가 「올린 사람 · 경영관리만 보기」면 올린 사람 · 전사 보는 범위만 본다.
+function visibilityOf(viewer: Viewer, ownerKind: string, owner: OwnerState): Promise<FileVisibility> {
+  return fileVisibilityFor(viewer, { ownerKind, evidenceType: owner.evidenceType ?? null });
+}
+
+// 주인 문서를 볼 수 있는 사람에게만 — 삭제되지 않은 파일(무효 포함) 올린 순. G15 종류는 남의 파일을 뺀다.
 export async function listEvidence(viewer: Viewer, input: { ownerKind: string; ownerId: string }): Promise<Partial<EvidenceFileDto>[]> {
   const rule = ruleFor(input.ownerKind);
   if (!rule || !UUID_SHAPE.test(input.ownerId)) return [];
   const owner = await rule.load(viewer, input.ownerId);
   if (!owner || !(await rule.canSee(viewer, owner))) return [];
-  const rows = await listActiveByOwner(viewer, input.ownerKind, input.ownerId);
-  return projectMany(viewer, rows.map(toDtoSource), EVIDENCE_FILE_DTO_SPEC);
+  const [rows, visibility] = await Promise.all([listActiveByOwner(viewer, input.ownerKind, input.ownerId), visibilityOf(viewer, input.ownerKind, owner)]);
+  return projectMany(viewer, rows.filter((row) => visibility.visible(row)).map(toDtoSource), EVIDENCE_FILE_DTO_SPEC);
+}
+
+// 06.1-14(G15 · PA-G15-NOTICE · PA-G15-LINKED): 숨긴 05 파일 · 숨긴 붙은 기록이 하나라도 있으면 문서 「증빙」 잠김 줄 글자, 아니면 null.
+export async function privateEvidenceNotice(viewer: Viewer, input: { ownerKind: string; ownerId: string }): Promise<string | null> {
+  const rule = ruleFor(input.ownerKind);
+  if (!rule || !UUID_SHAPE.test(input.ownerId)) return null;
+  const owner = await rule.load(viewer, input.ownerId);
+  if (!owner || !(await rule.canSee(viewer, owner))) return null;
+  const visibility = await visibilityOf(viewer, input.ownerKind, owner);
+  if (visibility.privateTypeName) {
+    const rows = await listActiveByOwner(viewer, input.ownerKind, owner.id);
+    if (rows.some((row) => !visibility.visible(row))) return privateEvidenceLine(visibility.privateTypeName);
+  }
+  // 붙은 기록(06.1-06 · 06.1-08 읽기와 같은 판정) — 기록 자신의 증빙 종류로 본다.
+  const links = await listLiveLinksWithRecords(viewer, { ownerKind: input.ownerKind, ownerIds: [owner.id] });
+  const scopeAll = await linkedScopeAll(viewer, links.length > 0);
+  for (const type of new Set(links.map((link) => link.evidenceType))) {
+    const item = await privateEvidenceTypeOf(viewer, type);
+    if (item?.privateToOwner && !privateFileVisible({ privateType: true, uploadedBy: null, viewerId: viewer.id, scopeAll })) return privateEvidenceLine(item.label);
+  }
+  return null;
+}
+
+// 붙은 기록의 G15 판정 입력 — 전사 보는 범위 또는 증빙 행 범위 all(06.1-01). 기록이 없으면 읽지 않는다.
+async function linkedScopeAll(viewer: Viewer, needed: boolean): Promise<boolean> {
+  if (!needed) return false;
+  const [rowScope, evidenceScope] = await Promise.all([rowScopeFor(viewer, "expense"), evidenceScopeFor(viewer)]);
+  return rowScope.rows === "all" || evidenceScope.rows === "all";
 }
 
 // 05-09: 파일 행 3차 규칙을 서버가 정한다(화면은 추론하지 않는다) — 하나 더 · 지울 수 있는 파일 · 무효 처리할 수 있는 파일 ·
@@ -609,6 +651,7 @@ export async function getEvidenceActions(viewer: Viewer, input: { ownerKind: str
   if (!rule || !UUID_SHAPE.test(input.ownerId)) return NO_EVIDENCE_ACTIONS;
   const owner = await rule.load(viewer, input.ownerId);
   if (!owner || !(await rule.canSee(viewer, owner))) return NO_EVIDENCE_ACTIONS;
+  const visibility = await visibilityOf(viewer, input.ownerKind, owner);
   if (rule.rights) {
     // 06-16 — 쓰기 권리면 하나 더 · 모든 살아 있는 파일을 지울 수 있다(무효 처리 · 결재 잠김은 없다).
     const canWrite = (await rule.rights(viewer, owner)).write;
@@ -619,7 +662,10 @@ export async function getEvidenceActions(viewer: Viewer, input: { ownerKind: str
   const canAdd = addOpen(rule, owner, adder);
   const canRemove = adder.drafter && rule.drafterRemoves(owner);
   const canVoid = rule.approved(owner) && !!rule.voidMenu && (await can(viewer, rule.voidMenu, "write"));
-  const live = canRemove || canVoid ? (await listActiveByOwner(viewer, input.ownerKind, owner.id)).filter((file) => file.voidedAt === null) : [];
+  const live =
+    canRemove || canVoid
+      ? (await listActiveByOwner(viewer, input.ownerKind, owner.id)).filter((file) => file.voidedAt === null && visibility.visible(file))
+      : [];
   return {
     canAdd,
     deletableFileIds: canRemove ? live.map((file) => file.id) : [],

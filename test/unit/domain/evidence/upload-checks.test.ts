@@ -8,6 +8,7 @@ import {
   EVIDENCE_UPLOAD_FAILED,
   EVIDENCE_WRONG_TYPE,
   evidenceDuplicateElsewhere,
+  evidenceTooSmall,
   signatureMatches,
 } from "@/domain/evidence/upload-checks";
 
@@ -124,6 +125,34 @@ describe("duplicateScopeKinds", () => {
 
   it("표에 없는 종류 → 자기 하나", () => {
     expect(duplicateScopeKinds("something_new")).toEqual(["something_new"]);
+  });
+});
+
+// 06.1-14(E14 · RP-14 · PA-MIN-WHEN): 증빙 최소 용량 설정(기본 0 = 끔) — 올리기 요청 때 선언 크기로 본다.
+// 260907 server/src/storage.ts:706-708(expense.min_file_kb, 없으면 0) · :719-739.
+describe("checkEvidenceUpload — 최소 용량", () => {
+  const KB = 1024;
+
+  it("최소 0(끔)이면 1바이트도 통과한다", () => {
+    expect(checkEvidenceUpload({ ...ok, size: 1 }, { ...tenMb, minBytes: 0 })).toEqual({ ok: true });
+  });
+
+  it("최소 20KB · 선언 19KB면 `20KB 미만 · 원본 파일로 다시`", () => {
+    expect(checkEvidenceUpload({ ...ok, size: 19 * KB }, { ...tenMb, minBytes: 20 * KB })).toEqual({ ok: false, reason: "20KB 미만 · 원본 파일로 다시" });
+    expect(evidenceTooSmall(20)).toBe("20KB 미만 · 원본 파일로 다시");
+  });
+
+  it("최소와 같은 크기는 통과한다", () => {
+    expect(checkEvidenceUpload({ ...ok, size: 20 * KB }, { ...tenMb, minBytes: 20 * KB })).toEqual({ ok: true });
+  });
+
+  it("크기 초과가 최소 용량보다 먼저다", () => {
+    expect(checkEvidenceUpload({ ...ok, size: 13_002_342 }, { ...tenMb, minBytes: 20 * KB })).toEqual({ ok: false, reason: "12.4MB · 10MB 초과 · 파일을 줄여 다시" });
+  });
+
+  it("최소 용량은 형식 · 중복보다 먼저다", () => {
+    const small = { ...ok, size: 19 * KB, contentType: "text/html" };
+    expect(checkEvidenceUpload(small, { ...tenMb, minBytes: 20 * KB })).toEqual({ ok: false, reason: "20KB 미만 · 원본 파일로 다시" });
   });
 });
 

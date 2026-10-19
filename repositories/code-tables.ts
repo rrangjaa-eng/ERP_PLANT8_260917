@@ -95,12 +95,29 @@ export async function findCodeItemById(viewer: Viewer, id: string): Promise<Code
   return row ?? null;
 }
 
+// 06.1-14(G15): 증빙 종류 코드 항목 한 행(값으로) — 보관 · 사용 꺼짐도 그대로 돌려준다(이미 저장된 값의 속성 · 이름을 읽는 자리).
+export async function findEvidenceTypeByValue(viewer: Viewer, value: string): Promise<CodeItemRow | null> {
+  void viewer;
+  const [row] = await db
+    .select()
+    .from(codeItems)
+    .where(and(eq(codeItems.tableKey, "evidence_type"), eq(codeItems.value, value)))
+    .limit(1);
+  return row ?? null;
+}
+
 // 03-06: 세금 규칙 컬럼 쓰기 — 증빙 종류(evidence_type) 항목에만 허용한다는
 // 제약은 domain 계층(setEvidenceTypeTaxRule)이 대상 항목의 table_key를 먼저
 // 확인해 지킨다. 이 함수 자체는 컬럼 쓰기만 한다.
 export async function setCodeItemTaxRule(viewer: Viewer, id: string, taxRule: unknown): Promise<void> {
   void viewer;
   await db.update(codeItems).set({ taxRule, updatedAt: new Date() }).where(eq(codeItems.id, id));
+}
+
+// 06.1-14(G15): 「올린 사람 · 경영관리만 보기」 칸 쓰기만 — 증빙 종류 항목에만 허용한다는 제약은 domain(setEvidenceTypePrivateToOwner)이 지킨다.
+export async function setCodeItemPrivateToOwner(viewer: Viewer, id: string, value: boolean): Promise<void> {
+  void viewer;
+  await db.update(codeItems).set({ privateToOwner: value, updatedAt: new Date() }).where(eq(codeItems.id, id));
 }
 
 // 멱등 시드 전용 — 이미 있으면 건드리지 않는다(onConflictDoNothing). taxRule은

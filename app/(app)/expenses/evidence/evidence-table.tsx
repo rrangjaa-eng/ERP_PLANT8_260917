@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useEffectEvent, useRef, useState } from "react";
-import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
@@ -49,9 +48,9 @@ import styles from "./evidence-table.module.css";
 
 // 06.1-07 S3 — 패널(옆 패널 · 폼 · 입력 칸)은 열 때 불러온다. 이 화면의 첫 묶음에 패널의 CSS가 함께 실리면 번들러가 CSS 차례를 바꿔
 // 같은 명시도의 표 칸 편집기(.cellSelect)가 ui/select 테두리에 밀린다(evidence-list-audit ③ 실측 — 정적 import 빌드에서 이 화면 CSS가 Select 앞으로 섞임).
-// `loading`을 주어야 next/dynamic이 제 Suspense 경계를 둔다 — 없으면 불러오는 동안 라우트 loading.tsx까지 올라가 표가 다시 마운트되고
-// 연 칸 포커스가 사라진다(evidence-panel.spec tracer 실측).
-const EvidencePanel = dynamic(() => import("./evidence-panel").then((mod) => mod.EvidencePanel), { loading: () => null });
+// next/dynamic(Suspense)을 쓰지 않고 상세와 함께 받은 모듈의 컴포넌트를 상태로 쥔다 — Suspense 경계는 드러낼 때 React가 300ms 단위로 몰아
+// 그려 첫 열림이 360ms가 됐다(06.1-07 감사 D-2 실측: 망은 51ms에 끝나고 300ms 넘게 비었다). 서스펜드가 없으니 라우트 loading.tsx로도 올라가지 않는다.
+type EvidencePanelComponent = (typeof import("./evidence-panel"))["EvidencePanel"];
 
 type Row = {
   id: string;
@@ -289,7 +288,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
   const [sheetRowId, setSheetRowId] = useState<string | null>(null);
   const sheetRow = rows.find((row) => row.id === sheetRowId);
   // 06.1-07 S3 — 1024 이상은 옆 패널(공급가 고침 · 확인 필요 풀기), 미만은 행 시트에 같은 읽기 줄(이력 포함). 둘 다 상세를 서버에서 한 번 받는다.
-  const [panelDetail, setPanelDetail] = useState<EvidenceDetailView | null>(null);
+  const [panelDetail, setPanelDetail] = useState<{ detail: EvidenceDetailView; Panel: EvidencePanelComponent } | null>(null);
   const [sheetItems, setSheetItems] = useState<{ id: string; items: KvItem[] } | null>(null);
 
   const [edits, setEdits] = useState<Record<string, Edit>>({});
@@ -577,8 +576,9 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
   }
   async function openPanel(row: Row) {
     if (cellEditing || panelDetail !== null) return;
-    const detail = await loadDetail(row.id);
-    if (detail) setPanelDetail(detail);
+    // 패널 청크와 상세를 함께 받는다(openSheet와 같은 꼴 — 감사 D-2).
+    const [panel, detail] = await Promise.all([import("./evidence-panel"), loadDetail(row.id)]);
+    if (detail) setPanelDetail({ detail, Panel: panel.EvidencePanel });
   }
   function openSheet(row: Row) {
     setSheetRowId(row.id);
@@ -934,7 +934,9 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
         />
       ) : null}
       <PickDocumentDialog target={attachTarget} onClose={() => setAttachTarget(null)} onAttached={onAttached} />
-      {panelDetail ? <EvidencePanel key={panelDetail.id} detail={panelDetail} lineClassName={styles.undoLine} onClose={() => setPanelDetail(null)} onSaved={() => router.refresh()} /> : null}
+      {panelDetail ? (
+        <panelDetail.Panel key={panelDetail.detail.id} detail={panelDetail.detail} lineClassName={styles.undoLine} onClose={() => setPanelDetail(null)} onSaved={() => router.refresh()} />
+      ) : null}
     </>
   );
 }

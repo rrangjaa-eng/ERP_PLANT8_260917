@@ -3,7 +3,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { db, pool } from "@/db/client";
 import { actionLog, codeItems, corpCardUsages, evidenceRecordLinks, evidenceRecords, projects, purchaseRequests } from "@/db/schema";
-import { cardUsageFormOptions } from "@/domain/corp-card-usages";
+import { cardUsageFormDefaults, cardUsageFormOptions } from "@/domain/corp-card-usages";
 import { createCorpCard } from "@/domain/corp-cards";
 import { attachEvidenceAsAuthor, attachEvidenceRecord, cardUsagePrefillFromEvidence, createCardUsageFromEvidence, listAttachCandidates } from "@/domain/evidence-records/attach";
 import { listEvidenceRecordsByIds } from "@/domain/evidence-records";
@@ -427,6 +427,7 @@ describe("S8 대리 등록(06.1-09 Task 3)", () => {
     const fx = await proxyFx();
     const line = await lonelyLine(fx);
     expect(await cardUsagePrefillFromEvidence(fx.manager, line.id)).toMatchObject({ corpCardId: fx.cardA.id, usedOn: line.date, totalKrw: line.total, evidenceTypeCode: "card_receipt" });
+    expect(await cardUsageFormDefaults(fx.manager, "2026-10-19", { prefill: { corpCardId: fx.cardA.id, usedOn: line.date } })).toMatchObject({ corpCardId: fx.cardA.id, usedOn: line.date });
 
     const key = randomUUID();
     const created = await createCardUsageFromEvidence(fx.manager, { evidenceId: line.id, chosen: team, idempotencyKey: key });

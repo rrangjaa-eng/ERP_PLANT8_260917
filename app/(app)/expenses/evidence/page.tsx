@@ -9,8 +9,11 @@ import {
   listEvidenceRecords,
   listEvidenceTeamOptions,
 } from "@/domain/evidence-records";
+import { loadCardUsageForEdit } from "@/domain/corp-card-usages";
+import { formatKrw } from "@/lib/format-number";
 import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { EvidenceTable } from "./evidence-table";
+import { RegisteredToast } from "./registered-toast";
 
 // 06.1-05(S1 · S2) — 증빙 목록. `evidence.intake` 쓰기가 없으면 찾을 수 없음이다(UI-SPEC 「권한·노출」 — PM · 팀장도 404). 행 범위는
 // listEvidenceRecords가 서버에서 건다(화면은 거르지 않는다). 틀은 제목만(DA-15) — 1차가 필터 줄 끝의 `aria-disabled` · `Ctrl+S` · 건수
@@ -40,8 +43,14 @@ export default async function EvidencePage({ searchParams }: { searchParams: Pro
     }),
     listEvidenceTeamOptions(viewer),
   ]);
+  // 06.1-09 S8 대리 등록 착지 — 합계는 그 카드 사용을 서버가 다시 읽어 싣는다(쿼리 글자를 그대로 보이지 않는다). 못 읽으면 토스트 없음.
+  const registeredId = firstParam(params.registered);
+  const registered = registeredId ? await loadCardUsageForEdit(viewer, registeredId) : null;
+  const registeredAmount = registered?.usage.currency === "KRW" ? registered.usage.amount : undefined;
+  const landingHref = `/expenses/evidence?state=${firstParam(params.state) ?? "unmatched"}`;
   return (
     <ListScreen title="증빙">
+      {registeredAmount !== undefined ? <RegisteredToast message={`카드 사용 등록 · ${formatKrw(registeredAmount)}`} href={landingHref} /> : null}
       <EvidenceTable
         viewerId={viewer.id}
         list={list}

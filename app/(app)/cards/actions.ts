@@ -23,6 +23,7 @@ import {
 } from "@/domain/corp-card-usages";
 import { cardUsedOnError, USED_ON_FUTURE } from "@/domain/corp-card-usages/amounts";
 import { searchLinesForCardLink, searchProjectsForCardLink } from "@/domain/corp-card-usages/link-targets";
+import { createCardUsageFromEvidence, type CardUsageChosen } from "@/domain/evidence-records/attach";
 import "./actions.registry";
 
 // 06-05(EXP-07 · D-607): 카드 사용 등록 · 서버 계산 한 줄 · 가맹점 고르기. domain/corp-card-usages만 부른다.
@@ -65,6 +66,15 @@ function fxRequired(value: { currency: string; amount: number | null; fxRate?: n
 // 06.5 D-6509: 중복 방지 키 — 등록 화면이 성공마다 새로 만든다(실패 · 거부 때는 같은 키로 다시 보낸다).
 const createCardUsageSchema = z.object({ ...cardUsageFields, idempotencyKey: z.uuid() }).superRefine(fxRequired);
 
+// 06.1-09 S8 대리 등록 — 카드 · 사용일 · 합계 · 가맹점 · 증빙 종류 칸이 없다(서버가 증빙에서 다시 읽는다). 사람이 고른 칸 · 증빙 id · 중복 방지 키뿐.
+const createCardUsageFromEvidenceSchema = z.object({
+  evidenceId: z.uuid(),
+  idempotencyKey: z.uuid(),
+  link: cardUsageFields.link,
+  memo: cardUsageFields.memo,
+  usedByUserId: cardUsageFields.usedByUserId,
+});
+
 // 06-09 수정(B-1 · D-609) — 건 id · version 필수. 공급가 · 부가세 칸은 없다(서버 재역산).
 // 결제 합계가 null이면 저장된 값 그대로(금액을 못 보는 사람의 수정 — DOM D-3).
 const updateCardUsageSchema = z
@@ -99,6 +109,25 @@ export const createCardUsageAction = authedActionClient.schema(createCardUsageSc
   const pre = await precheckCardUsage(ctx.viewer, input);
   const created = await createCardUsage(ctx.viewer, input, pre);
   revalidatePath("/cards");
+  return created;
+});
+
+function toChosen(parsedInput: z.infer<typeof createCardUsageFromEvidenceSchema>): CardUsageChosen {
+  const base = { memo: parsedInput.memo, usedByUserId: parsedInput.usedByUserId ?? null };
+  const link = parsedInput.link;
+  return link === null
+    ? { ...base, linkKind: null }
+    : link.kind === "team"
+      ? { ...base, linkKind: "team_cost" }
+      : link.kind === "line"
+        ? { ...base, linkKind: "quote_line", lineId: link.lineId }
+        : { ...base, linkKind: "out_of_quote", projectId: link.projectId, itemName: link.itemName };
+}
+
+export const createCardUsageFromEvidenceAction = authedActionClient.schema(createCardUsageFromEvidenceSchema).action(async ({ parsedInput, ctx }) => {
+  const created = await createCardUsageFromEvidence(ctx.viewer, { evidenceId: parsedInput.evidenceId, chosen: toChosen(parsedInput), idempotencyKey: parsedInput.idempotencyKey });
+  revalidatePath("/cards");
+  revalidatePath("/expenses/evidence");
   return created;
 });
 

@@ -1564,8 +1564,8 @@ export type CardUsageFormDefaults = {
   line: CardLinkLineChoice | null;
 };
 
-/** 진입 — S14 견적 줄 행(`?line=`) · S15 빈 섹션(`?project=`). */
-export type CardUsageEntry = { lineId?: string | undefined; projectId?: string | undefined };
+/** 진입 — S14 견적 줄 행(`?line=`) · S15 빈 섹션(`?project=`) · 06.1-09 S8 증빙 대리 등록(`?evidence=` — 카드 · 사용일은 파일 값, 부르는 쪽이 증빙에서 읽어 넘긴다). */
+export type CardUsageEntry = { lineId?: string | undefined; projectId?: string | undefined; prefill?: { corpCardId: string; usedOn: string } | undefined };
 
 // 사용일 = 오늘(서울) · 카드 = G-06-B 순서(직전 등록 카드가 지금 옵션에 있으면 그 카드 → 본인 개인 한 장 → 오늘 팀 카드 한 장 → 옵션 한 장 → 빈칸, default-card.ts).
 // 연결(M-4) 우선순위 = 진입 줄(고를 수 있을 때만 · 줄까지) > 진입 프로젝트(고를 수 있을 때만) > 직전 등록의 종류 + 프로젝트
@@ -1578,7 +1578,7 @@ export async function cardUsageFormDefaults(viewer: Viewer, today: string, entry
     options: eligible.map(({ card, own }) => ({ id: card.id, kind: card.kind, own })),
     lastCardId: last?.corpCardId ?? null,
   });
-  const base = { usedOn: today, corpCardId };
+  const base = entry.prefill ? { usedOn: entry.prefill.usedOn, corpCardId: entry.prefill.corpCardId } : { usedOn: today, corpCardId };
   if (entry.lineId) {
     const chosen = await cardLinkLineChoice(viewer, entry.lineId);
     if (chosen) return { ...base, linkKind: "quote_line", project: chosen.project, line: chosen.line };

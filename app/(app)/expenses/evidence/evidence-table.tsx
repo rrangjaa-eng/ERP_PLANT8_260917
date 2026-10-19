@@ -75,6 +75,8 @@ type Row = {
   attachBlocked: string | null;
   /** 06.1-09 PA-ALLBLOCKED — 완화 후보가 전부 막힌 카드 줄의 행 행동 자리 글자(버튼 아님). */
   actionBlockedReason: string | null;
+  /** 06.1-09 S8 — 완화 후보 0인 짝 없는 카드 줄 · 두 권한(서버 판정 · `canAttach`와 같이 서지 않는다 — DB-9). */
+  canProxy: boolean;
 };
 
 /** 사람이 바꾼 공개 칸 — 값은 셀 안에서만 쓰는 꼴(`private` · `division` · `team:{팀 id}`), version은 바꿀 때 본 값. */
@@ -102,6 +104,7 @@ const COPY = {
   unknownResult: "결과를 받지 못함 · 새로 고침",
   draftOwner: "작성 중 문서",
   attach: "붙이기",
+  proxy: "대리 등록",
 } as const;
 
 const ROW_ACTION_LABEL = { archive: "보관", restore: "되살리기" } as const;
@@ -188,6 +191,7 @@ function rowFromView(view: EvidenceRecordView): Row[] {
       canAttach: view.canAttach === true,
       attachBlocked: view.attachBlocked ?? null,
       actionBlockedReason: view.actionBlockedReason ?? null,
+      canProxy: view.canProxy === true,
     },
   ];
 }
@@ -687,10 +691,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
             headerHidden: true,
             priority: "p3" as const,
             cell: (row: Row) =>
-              row.actionBlockedReason && !row.rowAction ? (
-                // PA-ALLBLOCKED · SYSTEM §7-3 — 막힌 행동의 컨트롤을 그리지 않고 이유를 한 번 쓴다(글자 · 버튼 아님).
-                <span>{row.actionBlockedReason}</span>
-              ) : row.rowAction || row.canAttach ? (
+              row.rowAction || row.canAttach || row.canProxy || row.actionBlockedReason ? (
                 <RowActions noWrap>
                   {row.canAttach && row.attachBlocked !== null ? (
                     <RowAction tabIndex={-1} describedBy={counterpartyId(row.id)} disabled disabledReason={row.attachBlocked} onClick={() => undefined}>
@@ -700,6 +701,13 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
                     <RowAction tabIndex={-1} describedBy={counterpartyId(row.id)} busy={rowActionPending !== null} onClick={() => openAttach(row)}>
                       {COPY.attach}
                     </RowAction>
+                  ) : row.canProxy ? (
+                    <RowAction tabIndex={-1} describedBy={counterpartyId(row.id)} href={`/cards?new=1&evidence=${row.id}`}>
+                      {COPY.proxy}
+                    </RowAction>
+                  ) : row.actionBlockedReason ? (
+                    // PA-ALLBLOCKED · SYSTEM §7-3 — 막힌 행동(붙이기 · 대리 등록)의 컨트롤을 그리지 않고 그 자리에 이유를 한 번 쓴다(글자 · 버튼 아님). 끝의 보관은 그대로.
+                    <span>{row.actionBlockedReason}</span>
                   ) : null}
                   {row.rowAction ? (
                   <RowAction

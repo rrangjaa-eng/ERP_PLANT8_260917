@@ -200,8 +200,19 @@ function sameIssuerOf(rule: FormatRule, issuer: string): boolean {
   return rule.issuerAliases.some((alias) => text.includes(issuerText(alias)));
 }
 
+/** 카드 서식 기록인가 — 경영관리 S4 붙이기(domain/evidence-records/attach.ts)가 대사와 같은 판정을 쓴다. */
+export function isCardFormat(format: string): boolean {
+  return CARD_FORMAT_KEYS.has(format);
+}
+
+/** 그 카드 서식의 카드사 별칭이 카드 사용의 카드사와 같은가(대사 1단계와 같은 판정). 카드 서식이 아니면 거짓. */
+export function sameIssuerOfFormat(format: string, issuer: string): boolean {
+  const rule = EVIDENCE_FORMATS.find((item) => item.key === format);
+  return rule !== undefined && rule.keyKind === "card" && sameIssuerOf(rule, issuer);
+}
+
 // 카드 명세(카드 서식 기록)가 이미 붙은 카드 사용 — 계획과 잠근 뒤 재확인이 같은 판독을 쓴다(N-6 — 영수증 기록 · 05 파일은 세지 않는다).
-async function cardStatementOwners(viewer: Viewer, usageIds: readonly string[], tx: DbOrTx): Promise<Set<string>> {
+export async function cardStatementOwners(viewer: Viewer, usageIds: readonly string[], tx?: DbOrTx): Promise<Set<string>> {
   const links = await listLiveLinksWithRecords(viewer, { ownerKind: "corp_card_usage", ownerIds: usageIds }, tx);
   return new Set(links.filter((link) => CARD_FORMAT_KEYS.has(link.format)).map((link) => link.ownerId));
 }

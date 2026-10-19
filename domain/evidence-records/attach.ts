@@ -1,6 +1,17 @@
 import { recordAction, type RecordActionDeps } from "@/domain/action-log/record";
 import { validateRejectReason } from "@/domain/approvals";
 import {
+  CARD_USAGE_ENTITY,
+  cardOverwriteSplit,
+  cardSlipNotFound,
+  cardSlipOwner,
+  cardSlipRights,
+  cardUsageOverwriteBlocks,
+  denyCardSlipWrite,
+  loadCardOverwriteBasis,
+  type CardOverwriteBasis,
+} from "@/domain/corp-card-usages";
+import {
   afterEvidenceOwnerChange,
   evidenceAttachRefusal,
   evidenceDetachRefusal,
@@ -13,8 +24,10 @@ import {
   type EvidenceRecordFlags,
 } from "@/domain/evidence";
 import { evidenceSourcesOf } from "@/domain/evidence/has-evidence";
+import { cardStatementOwners, isCardFormat, sameIssuerOfFormat } from "@/domain/evidence-import";
 import { evidenceAttachBlockOf, getEvidenceRecord, INTAKE_FORBIDDEN, lockEvidenceRecordState, readEvidenceRecordFacts, type EvidenceRecordFacts } from "@/domain/evidence-records";
 import { compareCandidates, dayGapOf, type RankedCandidate } from "@/domain/evidence-records/score";
+import { fileWinsPatch, overwriteBlockReason, type FileWinsPatch } from "@/domain/evidence-records/reconcile";
 import { autoConfirmOnAttach } from "@/domain/evidence-reviews";
 import { codeLabelsOf, EXPENSE_DOCUMENT_KIND, ExpenseNotFoundError } from "@/domain/expenses";
 import { visibleExpenseScope } from "@/domain/expenses/access";
@@ -24,6 +37,7 @@ import type { MethodEvidencePair } from "@/domain/payments/method-evidence-pairs
 import { can, ForbiddenError } from "@/domain/permissions/can";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { projectMany, type DtoSpec } from "@/domain/permissions/project";
+import { evidenceScopeFor } from "@/domain/permissions/scope-for";
 import { visible } from "@/domain/permissions/visible";
 import { canSeePurchaseRequest, purchaseRequestAuthorOpen, purchaseRequestReadScope, readPurchaseRequestEvidenceFacts } from "@/domain/purchase-requests";
 import { PAYMENT_METHOD_EVIDENCE_PAIRS } from "@/domain/settings/keys";
@@ -35,7 +49,8 @@ import { formatKrw } from "@/lib/format-number";
 import { isUniqueViolation } from "@/lib/pg-errors";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { findLivePayment } from "@/repositories/expense-payments";
-import { lockRecordsForUpdate } from "@/repositories/evidence-records";
+import { applyFileWins, findCardUsageForWrite, lockCardUsageForUpdate, type CardUsageForWrite } from "@/repositories/corp-card-usages";
+import { findRecordForScope, lockRecordsForUpdate, type EvidenceRecordListRow } from "@/repositories/evidence-records";
 import {
   detachLink,
   findLinkById,
@@ -47,6 +62,7 @@ import {
   type EvidenceLinkOwnerKind,
 } from "@/repositories/evidence-record-links";
 import { CANDIDATE_LIMIT, findExpenseById, hasExpenseAttachTarget, listExpenseAttachCandidates, lockExpenseForUpdate, type ExpenseAttachCandidateRow } from "@/repositories/expenses";
+import { findLineLinks, lockQuoteLines } from "@/repositories/quote-line-links";
 import { hasPurchaseRequestAttachTarget, listPurchaseRequestAttachCandidates, lockPurchaseRequestForUpdate, type PurchaseRequestAttachCandidateRow } from "@/repositories/purchase-requests";
 
 // 06.1-06(RP-4 · RP-5 · E-49): 증빙 기록(엑셀 한 줄)을 번호 있는 지출결의 · 취소 아닌 구매 요청에 붙이고 떼기. 권리는 05 규칙표 위
@@ -194,10 +210,14 @@ async function readAttachableRecord(viewer: Viewer, keys: ViewerKeys, recordId: 
   return record;
 }
 
-export async function attachEvidenceRecord(viewer: Viewer, input: { recordId: string; owner: AttachOwnerRef }, deps?: EvidenceAttachDeps): Promise<{ created: boolean }> {
+/** 경영관리 S4 하나 붙이기의 문서 — 06.1-09에서 카드 사용이 더해졌다(여러 장 붙이기 · 작성자 갈래는 AttachOwnerRef 그대로). */
+export type RegistrarOwnerRef = AttachOwnerRef | { kind: "corp_card_usage"; id: string };
+
+export async function attachEvidenceRecord(viewer: Viewer, input: { recordId: string; owner: RegistrarOwnerRef }, deps?: EvidenceAttachDeps): Promise<{ created: boolean }> {
   const keys = await readKeys(viewer);
   const record = await readAttachableRecord(viewer, keys, input.recordId);
   try {
+    if (input.owner.kind === "corp_card_usage") return await attachToCardUsage(viewer, keys, record.id, input.owner.id, deps);
     if (input.owner.kind === "purchase_request") return await attachToPurchaseRequest(viewer, record, input.owner.id, deps);
     return await attachToExpense(viewer, keys, record, input.owner.id, deps);
   } catch (error) {
@@ -237,6 +257,98 @@ async function attachToExpense(viewer: Viewer, keys: ViewerKeys, record: Evidenc
         entityId: record.id,
         documentId: owner.id,
         detail: { change: "evidence_record_attach", ownerKind: "expense", ownerId: owner.id, ...(released ? { reviewReleased: released } : {}) },
+      },
+      { tx, isActionTypeEnabled: deps?.isActionTypeEnabled },
+    );
+    return { created };
+  });
+}
+
+// ── 06.1-09 경영관리 → 카드 사용 붙이기(D-6111 · 카드 R3 · P2-C4 · N-6 · N-8 · E32) ─────────────────────────────
+// 권리 · 범위 · 설정(덮기 기준) · 보임 칸은 트랜잭션 전에 한 번(06-03). 잠금 순서는 대사와 같다(N-8): 견적 줄(합계가 바뀔 때만 · 저장된 줄 +
+// 사슬의 현재 줄) → 카드 사용 행 → 증빙 행(attachLinkInTx) → 붙임. 잠근 뒤 version · 견적 줄 · 보관 · 카드 명세 붙음 · 기록 version을 다시 보고,
+// 덮기 막힘(holder · fixed · completed · cap)은 그 글자로 거부한다 — 붙임 · 덮기 · 기록 0. 카드 사용 붙이기에는 지급 방식 짝 판정이 없다(옛 E44 닫음).
+// 06.1-12 자동 확인 · 05 훅은 지출결의 갈래 몫이라 여기서는 부르지 않는다(카드 사용은 05 결재 문서가 아니다).
+
+type CardAttachPlan = { usage: CardUsageForWrite; record: EvidenceRecordListRow; patch: FileWinsPatch | null; basis: CardOverwriteBasis | null };
+
+function patchChangesValues(patch: FileWinsPatch | null): patch is FileWinsPatch & ({ total: NonNullable<FileWinsPatch["total"]> } | { card: NonNullable<FileWinsPatch["card"]> }) {
+  return patch !== null && (patch.total !== null || patch.card !== null);
+}
+
+async function planCardAttach(viewer: Viewer, recordId: string, usageId: string): Promise<CardAttachPlan> {
+  const owner = await cardSlipOwner(viewer, usageId);
+  if (!owner || !(await cardSlipRights(viewer, owner)).read) throw cardSlipNotFound();
+  if (owner.status !== "open") denyCardSlipWrite();
+  const usage = await findCardUsageForWrite(viewer, usageId, { includeArchived: false });
+  if (!usage) throw cardSlipNotFound();
+  const record = await findRecordForScope(viewer, await evidenceScopeFor(viewer), recordId);
+  if (!record) throw new UserFacingError(RECORD_NOT_FOUND);
+  if (!isCardFormat(record.format)) return { usage, record, patch: null, basis: null };
+  if (!sameIssuerOfFormat(record.format, usage.cardIssuer) || record.corpCardId === null) throw new UserFacingError(`카드 다름 · ${usage.cardLast4}`);
+  if ((await cardStatementOwners(viewer, [usage.id])).has(usage.id)) throw new UserFacingError(`증빙 있음 · ${usage.number}`);
+  const patch = fileWinsPatch(
+    { totalKrw: usage.totalAmountKrw, corpCardId: usage.corpCardId, cardLast4: usage.cardLast4 },
+    { totalKrw: record.totalKrw, corpCardId: record.corpCardId, cardLast4: record.cardLast4 ?? "", approvalNo: record.approvalNo },
+  );
+  if (!patchChangesValues(patch)) return { usage, record, patch, basis: null };
+  // 값을 바꾸는 쓰기는 두 금액 칸을 다 볼 수 있는 사람만(보이지 않는 금액을 덮어쓰지 않는다).
+  const [usageAmount, recordAmount] = await Promise.all([visible(viewer, "card_usage.amount"), visible(viewer, "evidence.amount")]);
+  if (!usageAmount || !recordAmount) denyCardSlipWrite();
+  return { usage, record, patch, basis: await loadCardOverwriteBasis(viewer, [usage.usedOn]) };
+}
+
+async function attachToCardUsage(viewer: Viewer, keys: ViewerKeys, recordId: string, usageId: string, deps?: EvidenceAttachDeps): Promise<{ created: boolean }> {
+  if (!keys.intake) throw new ForbiddenError(INTAKE_FORBIDDEN);
+  const { usage, record, patch, basis } = await planCardAttach(viewer, recordId, usageId);
+  await deps?.afterPreRead?.();
+
+  return withTransaction(async (tx) => {
+    if (patch?.total && usage.quoteLineId) {
+      const chains = await findLineLinks(viewer, [usage.quoteLineId], tx);
+      const current = chains.get(usage.quoteLineId)?.currentLineId;
+      await lockQuoteLines(viewer, [...new Set([usage.quoteLineId, ...(current ? [current] : [])])], tx);
+    }
+    const locked = await lockCardUsageForUpdate(viewer, usage.id, tx);
+    if (!locked || locked.archivedAt !== null || locked.version !== usage.version || locked.quoteLineId !== usage.quoteLineId) throw cardSlipNotFound();
+    if (patch && (await cardStatementOwners(viewer, [usage.id], tx)).has(usage.id)) throw new UserFacingError(`증빙 있음 · ${usage.number}`);
+    const { created } = await attachLinkInTx(tx, viewer, { recordId: record.id, owner: { kind: "corp_card_usage", id: usage.id }, mode: "registrar" }, { afterLock: deps?.afterLock });
+    if (!created) return { created };
+    const [lockedRecord] = await lockRecordsForUpdate(viewer, [record.id], tx);
+    if (!lockedRecord || lockedRecord.version !== record.version) throw new UserFacingError(RECORD_NOT_FOUND);
+
+    if (patchChangesValues(patch) && basis) {
+      const blocks = await cardUsageOverwriteBlocks(viewer, [{ usageId: usage.id, totalKrw: patch.total?.after ?? null, corpCardId: patch.card?.after.id ?? null }], basis, tx);
+      const block = blocks.get(usage.id);
+      if (block) throw new UserFacingError(overwriteBlockReason(patch, block) ?? cardSlipNotFound().message);
+      const split = patch.total ? cardOverwriteSplit(basis, { evidenceTypeCode: usage.evidenceTypeCode, usedOn: usage.usedOn, totalKrw: patch.total.after }) : null;
+      const before = { totalKrw: usage.totalAmountKrw, supplyKrw: usage.supplyKrw, vatKrw: usage.vatKrw };
+      const after = split ? { totalKrw: split.totalKrw, supplyKrw: split.supplyKrw, vatKrw: split.vatKrw } : before;
+      const version = await applyFileWins(viewer, { id: usage.id, version: usage.version, corpCardId: patch.card?.after.id ?? usage.corpCardId, approvalNo: patch.approvalNo ?? usage.approvalNo, total: split ? after : null }, tx);
+      if (version === null) throw cardSlipNotFound();
+      // D-6111 · RP-2: 덮은 전 · 후는 끌 수 없는 증빙 기록 금액 변경 종류로 — 대사와 같은 상세 꼴.
+      await recordAction(
+        viewer,
+        {
+          actionType: "evidence_record_amount_change",
+          entity: CARD_USAGE_ENTITY,
+          entityId: usage.id,
+          detail: { before, after, cardLast4Before: usage.cardLast4, cardLast4After: patch.card?.after.last4 ?? usage.cardLast4, evidenceRecordId: record.id },
+        },
+        { tx, isActionTypeEnabled: deps?.isActionTypeEnabled },
+      );
+    } else if (patch?.approvalNo && patch.approvalNo !== usage.approvalNo) {
+      // 값이 같으면 승인번호만 채운다(금액 칸 · 기록 0).
+      if ((await applyFileWins(viewer, { id: usage.id, version: usage.version, corpCardId: usage.corpCardId, approvalNo: patch.approvalNo, total: null }, tx)) === null) throw cardSlipNotFound();
+    }
+    await recordAction(
+      viewer,
+      {
+        actionType: "document_update",
+        entity: "evidence_record",
+        entityId: record.id,
+        documentId: usage.id,
+        detail: { change: "evidence_record_attach", ownerKind: "corp_card_usage", ownerId: usage.id },
       },
       { tx, isActionTypeEnabled: deps?.isActionTypeEnabled },
     );

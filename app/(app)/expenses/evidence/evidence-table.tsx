@@ -607,7 +607,7 @@ export function EvidenceTable({ viewerId, list, teams, filterOptions }: Evidence
         ) : (
           "—"
         );
-        const className = row.counterparty ? styles.counterpartyCell : undefined;
+        const className = styles.counterpartyCell;
         // 1024 미만은 같은 칸이 읽기 시트를 연다 — 700~1023은 접힌 줄(ui/table 행 탭)이 없어 이것이 시트로 가는 유일한 길이다.
         const open = () => (editableWidth ? void openPanel(row) : openSheet(row));
         return (

@@ -5,7 +5,7 @@ import { db, pool } from "@/db/client";
 import { actionLog, codeItems, corpCardUsages, evidenceRecordLinks, evidenceRecords, projects, purchaseRequests } from "@/db/schema";
 import { cardUsageFormOptions } from "@/domain/corp-card-usages";
 import { createCorpCard } from "@/domain/corp-cards";
-import { attachEvidenceAsAuthor, attachEvidenceRecord, listAttachCandidates } from "@/domain/evidence-records/attach";
+import { attachEvidenceAsAuthor, attachEvidenceRecord, cardUsagePrefillFromEvidence, createCardUsageFromEvidence, listAttachCandidates } from "@/domain/evidence-records/attach";
 import { listEvidenceRecordsByIds } from "@/domain/evidence-records";
 import { evidencePickerMode, listEvidencePool } from "@/domain/evidence-records/pool";
 import { createProject } from "@/domain/projects";
@@ -18,7 +18,8 @@ import { insertVendor } from "@/repositories/vendors";
 import { lotteFixture } from "@/test/fixtures/evidence-import/build";
 import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 import { makePerson, teamIdByName } from "./approvals-fixtures";
-import { createCardUsageFixture, createIntakeManager, insertLinkFixture, insertRecordFixture, registerFixtureFile, setRecordVisibilityFixture } from "./fixtures/evidence";
+import { createCardUsageFixture, createInReviewExpenseFixture, createIntakeManager, insertLinkFixture, insertRecordFixture, registerFixtureFile, setRecordVisibilityFixture } from "./fixtures/evidence";
+import { setupExpenseProject } from "./fixtures/expenses";
 import { deferred, waitForLockWaiter } from "./lock-race";
 
 // 06.1-09 Task 2(경영관리 길 · D-6111 · 카드 R3 · P2-C4 · N-6 · N-8): 경영관리가 카드 줄을 카드 사용에 직접 붙인다.
@@ -393,5 +394,135 @@ describe("S2 행 행동 배타 · M10 표식(06.1-09 Task 3)", () => {
     expect((await rowOf(fx.manager, s4Record)).cardReplaced).toBe(true);
     await detachLiveLinksForOwner(fx.manager, { ownerKind: "corp_card_usage", ownerId: s4.id, reason: "카드 사용 삭제" }, db);
     expect(await rowOf(fx.manager, s4Record)).toMatchObject({ attachedKind: null, cardReplaced: false });
+  });
+});
+
+// 06.1-09 Task 3 S8 — 대리 등록: 짝 없는 카드 줄(완화 후보 0)에서 카드 사용을 만들고 그 줄을 한 트랜잭션에 붙인다(C-F14 · PA-S8-KEY · PA-S8-RACE · E5 · C2).
+describe("S8 대리 등록(06.1-09 Task 3)", () => {
+  const won = (n: number) => n.toLocaleString("en-US");
+  const total = () => 300_000 + Math.floor(Math.random() * 600_000);
+  const day = () => `2026.03.${String(1 + Math.floor(Math.random() * 27)).padStart(2, "0")}`;
+
+  async function proxyFx(): Promise<Fx> {
+    const fx = await setup();
+    if (!fx.manager.roleId) throw new Error("계급 없음");
+    await upsertPermission(SYSTEM_VIEWER, { roleId: fx.manager.roleId, menu: "cards.proxy", action: "write", allowed: true });
+    return fx;
+  }
+
+  async function lonelyLine(fx: Fx, approvalNo = approval()): Promise<{ id: string; total: number; date: string; approvalNo: string }> {
+    const t = total();
+    const date = day();
+    const id = await cardRecordWith(fx, { last4: fx.cardA.last4, approvalNo, total: won(t), vat: won(Math.floor(t / 11)), date });
+    return { id, total: t, date: date.replaceAll(".", "-"), approvalNo };
+  }
+
+  async function usagesOn(cardId: string) {
+    return db.select({ id: corpCardUsages.id }).from(corpCardUsages).where(eq(corpCardUsages.corpCardId, cardId));
+  }
+
+  const team = { linkKind: "team_cost" as const, usedByUserId: null, memo: null };
+
+  it("미리 채움 = 파일 값 · 저장하면 카드 사용(K 번호 · proxy · 파일 값) + 붙임(registrar) 한 번 · 같은 키 다시 보내면 같은 행", async () => {
+    const fx = await proxyFx();
+    const line = await lonelyLine(fx);
+    expect(await cardUsagePrefillFromEvidence(fx.manager, line.id)).toMatchObject({ corpCardId: fx.cardA.id, usedOn: line.date, totalKrw: line.total, evidenceTypeCode: "card_receipt" });
+
+    const key = randomUUID();
+    const created = await createCardUsageFromEvidence(fx.manager, { evidenceId: line.id, chosen: team, idempotencyKey: key });
+    const row = await usageRow(created.id);
+    expect(row).toMatchObject({ corpCardId: fx.cardA.id, usedOn: line.date, totalAmountKrw: line.total, registeredVia: "proxy", usedByUserId: fx.pm.id, registeredBy: fx.manager.id, approvalNo: line.approvalNo, merchantVendorId: null });
+    expect(row.number).toMatch(/-K\d{4}$/);
+    expect(await liveLinks(created.id)).toEqual([{ recordId: line.id, attachMode: "registrar" }]);
+
+    const again = await createCardUsageFromEvidence(fx.manager, { evidenceId: line.id, chosen: team, idempotencyKey: key });
+    expect(again.id).toBe(created.id);
+    expect(await usagesOn(fx.cardA.id)).toHaveLength(1);
+    expect(await liveLinks(created.id)).toHaveLength(1);
+    expect(await cardUsagePrefillFromEvidence(fx.manager, line.id)).toBeNull();
+  });
+
+  it("대리 등록 권한 없음 · 증빙 등록 권한 없음 → 미리 채움 null · 저장 거부 · 카드 사용 0행", async () => {
+    const fx = await setup();
+    const line = await lonelyLine(fx);
+    expect(await cardUsagePrefillFromEvidence(fx.manager, line.id)).toBeNull();
+    expect(await messageOf(createCardUsageFromEvidence(fx.manager, { evidenceId: line.id, chosen: team, idempotencyKey: randomUUID() }))).not.toBe("(성공)");
+    expect(await messageOf(createCardUsageFromEvidence(fx.pm, { evidenceId: line.id, chosen: team, idempotencyKey: randomUUID() }))).not.toBe("(성공)");
+    expect(await usagesOn(fx.cardA.id)).toEqual([]);
+  });
+
+  it("(C2) 보관 증빙 → 미리 채움 null · 저장 거부 / 사전 판독 뒤 보관 → 잠금 뒤 재검사 거부 · 카드 사용 0행(롤백)", async () => {
+    const fx = await proxyFx();
+    const archived = await lonelyLine(fx);
+    await db.update(evidenceRecords).set({ archivedAt: new Date(), archivedBy: fx.manager.id }).where(eq(evidenceRecords.id, archived.id));
+    expect(await cardUsagePrefillFromEvidence(fx.manager, archived.id)).toBeNull();
+    expect(await messageOf(createCardUsageFromEvidence(fx.manager, { evidenceId: archived.id, chosen: team, idempotencyKey: randomUUID() }))).not.toBe("(성공)");
+
+    const late = await lonelyLine(fx);
+    const message = await messageOf(
+      createCardUsageFromEvidence(fx.manager, { evidenceId: late.id, chosen: team, idempotencyKey: randomUUID() }, {
+        afterPreRead: async () => {
+          await db.update(evidenceRecords).set({ archivedAt: new Date(), archivedBy: fx.manager.id }).where(eq(evidenceRecords.id, late.id));
+        },
+      }),
+    );
+    expect(message).toBe("보관됨");
+    expect(await usagesOn(fx.cardA.id)).toEqual([]);
+  });
+
+  it("(E5) 완화 후보가 있으면 미리 채움 null · 사전 판독 뒤 같은 승인번호 카드 사용이 생기면 `카드 사용 있음 · 붙이기로` · 새 카드 사용 0행", async () => {
+    const fx = await proxyFx();
+    const P = approval();
+    const line = await lonelyLine(fx, P);
+    const message = await messageOf(
+      createCardUsageFromEvidence(fx.manager, { evidenceId: line.id, chosen: team, idempotencyKey: randomUUID() }, {
+        afterPreRead: async () => {
+          await createCardUsageFixture(fx.pm, { corpCardId: fx.cardB.id, usedOn: "2026-04-01", totalKrw: 10_000, approvalNo: P });
+        },
+      }),
+    );
+    expect(message).toBe("카드 사용 있음 · 붙이기로");
+    expect(await usagesOn(fx.cardA.id)).toEqual([]);
+    expect(await cardUsagePrefillFromEvidence(fx.manager, line.id)).toBeNull();
+    expect(await messageOf(createCardUsageFromEvidence(fx.manager, { evidenceId: line.id, chosen: team, idempotencyKey: randomUUID() }))).toBe("카드 사용 있음 · 붙이기로");
+  });
+
+  it("(N1) 그새 다른 문서에 붙음 → `다른 사람이 먼저 붙임 · {문서 번호}`(꼬리 없음) · 저장 전에 이미 붙음도 같은 글 · 카드 사용 0행", async () => {
+    const fx = await proxyFx();
+    const expense = await createInReviewExpenseFixture(await setupExpenseProject());
+    const line = await lonelyLine(fx);
+    const message = await messageOf(
+      createCardUsageFromEvidence(fx.manager, { evidenceId: line.id, chosen: team, idempotencyKey: randomUUID() }, {
+        afterPreRead: async () => {
+          await insertLinkFixture({ recordId: line.id, ownerId: expense.expenseId, attachedBy: fx.manager.id });
+        },
+      }),
+    );
+    expect(message).toBe(`다른 사람이 먼저 붙임 · ${expense.number}`);
+    expect(await usagesOn(fx.cardA.id)).toEqual([]);
+    expect(await messageOf(createCardUsageFromEvidence(fx.manager, { evidenceId: line.id, chosen: team, idempotencyKey: randomUUID() }))).toBe(`다른 사람이 먼저 붙임 · ${expense.number}`);
+    expect(await usagesOn(fx.cardA.id)).toEqual([]);
+  });
+
+  it("(P2-C3) 같은 키 동시 저장 — 둘째는 첫째 커밋까지 기다린 뒤 같은 카드 사용 id · 카드 사용 1행 · 붙임 1행 · 원시 DB 오류 0", async () => {
+    const fx = await proxyFx();
+    const line = await lonelyLine(fx);
+    const key = randomUUID();
+    const held = deferred();
+    const reached = deferred();
+    const first = createCardUsageFromEvidence(fx.manager, { evidenceId: line.id, chosen: team, idempotencyKey: key }, {
+      afterCreate: async () => {
+        reached.resolve();
+        await held.promise;
+      },
+    });
+    await reached.promise;
+    const second = createCardUsageFromEvidence(fx.manager, { evidenceId: line.id, chosen: team, idempotencyKey: key });
+    await waitForLockWaiter(pool);
+    held.resolve();
+    const [a, b] = await Promise.all([first, second]);
+    expect(b.id).toBe(a.id);
+    expect(await usagesOn(fx.cardA.id)).toHaveLength(1);
+    expect(await liveLinks(a.id)).toEqual([{ recordId: line.id, attachMode: "registrar" }]);
   });
 });

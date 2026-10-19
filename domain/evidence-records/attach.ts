@@ -8,10 +8,15 @@ import {
   cardSlipRights,
   cardUsageOverwriteBlocks,
   cardUsageReadScope,
+  createCardUsage,
   denyCardSlipWrite,
   loadCardOverwriteBasis,
+  precheckCardUsage,
+  reusableCardUsage,
   type CardOverwriteBasis,
   type CardOverwriteBlock,
+  type CardUsageInput,
+  type CreatedCardUsage,
 } from "@/domain/corp-card-usages";
 import {
   afterEvidenceOwnerChange,
@@ -1114,4 +1119,149 @@ export async function judgeCardCandidates(viewer: Viewer, records: readonly Card
     result.set(record.id, judged.flatMap((item) => { const row = byId.get(item.id); return row ? [{ row, judged: item }] : []; }));
   }
   return result;
+}
+
+// ── 06.1-09 S8 대리 등록(C-F14 · PA-S8-KEY · PA-S8-STALE · PA-S8-RACE · E5 · C2) ─────────────────────────────────────────────
+// 짝 없는 카드 줄(완화 후보 0 — S2 `canProxy`와 같은 판정)에서 06 카드 사용을 만들고 그 줄을 한 트랜잭션에 붙인다. 카드 · 사용일 · 합계 · 증빙 종류는
+// 서버가 증빙에서 다시 읽는다(브라우저 값을 믿지 않는다). 가맹점 거래처는 채우지도 만들지도 않는다 — 260907 `server/src/card-uses.ts:1196`
+// 답하기 길이 `purchasePlace: null`로 넣고, `server/src/receipts.ts:3200`이 카드 전표에서 거래처를 만들지 않는다(한 번 쓰고 마는 가맹점이 쌓인다).
+// 파일의 가맹점 글자는 폼에 읽기 텍스트로만 보인다. 06 domain은 이 파일을 import하지 않는다(순환 없음).
+
+const CARD_USAGE_EXISTS = "카드 사용 있음 · 붙이기로";
+const CARD_PROXY_DENIED = "카드 대리 등록 권한 없음";
+const CARD_IDEMPOTENCY_UNIQUE = "corp_card_usages_idempotency_key_uniq";
+const RETRY_TAIL = " · 새로 고침";
+
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+
+/** 사람이 고르는 칸 — 사용한 사람 · 연결 · 메모뿐(카드 · 사용일 · 합계 · 가맹점 · 증빙 종류는 없다). */
+export type CardUsageChosen = DistributiveOmit<CardUsageInput, "corpCardId" | "usedOn" | "merchantVendorId" | "total" | "evidenceTypeCode" | "purchaseRequestId" | "idempotencyKey">;
+
+/** 06 등록 패널의 미리 채움(평범한 값) — `CardUsageEntry.prefill`로 넘긴다. */
+export type CardUsagePrefill = { corpCardId: string; cardLast4: string; usedOn: string; totalKrw: number; merchant: string | null; evidenceTypeCode: string };
+
+export type CardProxyDeps = {
+  /** 사전 판독 뒤 · 트랜잭션 전(E5 · C2 경합 시험 자리). */
+  afterPreRead?: () => Promise<void>;
+  /** 트랜잭션 안 06 createCardUsage 뒤(같은 키 동시 저장 시험 자리 — PA-S8-RACE). */
+  afterCreate?: () => Promise<void>;
+  isActionTypeEnabled?: RecordActionDeps["isActionTypeEnabled"];
+};
+
+type ProxyLine = { prefill: CardUsagePrefill; line: RelaxedLine };
+
+async function readProxyLine(viewer: Viewer, evidenceId: string): Promise<ProxyLine | null> {
+  const [intake, proxy] = await Promise.all([can(viewer, "evidence.intake", "write"), can(viewer, "cards.proxy", "write")]);
+  if (!intake || !proxy) return null;
+  // S2 행 행동과 같은 판정 한 자리(canProxy — 카드 등록됨 · 안 붙음 · 음수 아님 · 보관 아님 · 완화 후보 0).
+  const view = await getEvidenceRecord(viewer, evidenceId);
+  if (view?.canProxy !== true) return null;
+  const row = await findRecordForScope(viewer, await evidenceScopeFor(viewer), evidenceId);
+  if (!row || row.corpCardId === null || !isCardFormat(row.format)) return null;
+  const line = relaxedLineOf(row);
+  if (!line) return null;
+  return {
+    prefill: { corpCardId: row.corpCardId, cardLast4: row.cardLast4 ?? "", usedOn: row.issuedOn, totalKrw: row.totalKrw, merchant: row.merchant, evidenceTypeCode: row.evidenceType },
+    line,
+  };
+}
+
+export async function cardUsagePrefillFromEvidence(viewer: Viewer, evidenceId: string): Promise<CardUsagePrefill | null> {
+  return (await readProxyLine(viewer, evidenceId))?.prefill ?? null;
+}
+
+// S8 폼 오류 자리(PanelForm reason 평문)는 꼬리를 버튼으로 만들지 않고, 새로 고침하면 PA-S8-STALE 404다 — 꼬리를 뗀다(재검토 3회차 N1).
+async function proxyTakenError(viewer: Viewer, owner: LiveLinkOwner | undefined): Promise<UserFacingError> {
+  const message = await takenMessage(viewer, owner);
+  return new UserFacingError(message.endsWith(RETRY_TAIL) ? message.slice(0, -RETRY_TAIL.length) : message);
+}
+
+// 사전 판독이 null일 때의 거부 — 권한 · 붙음(06.1-06 경합 글과 같은 읽기) · 완화 후보 있음 · 그 밖(없음 · 보관 · 범위 밖).
+async function proxyRefusal(viewer: Viewer, evidenceId: string): Promise<Error> {
+  if (!(await can(viewer, "evidence.intake", "write"))) return new ForbiddenError(INTAKE_FORBIDDEN);
+  if (!(await can(viewer, "cards.proxy", "write"))) return new ForbiddenError(CARD_PROXY_DENIED);
+  const view = await getEvidenceRecord(viewer, evidenceId);
+  if (!view) return new UserFacingError(RECORD_NOT_FOUND);
+  const [owner] = await listLiveLinkOwnersByRecords(viewer, [evidenceId]);
+  if (owner) return proxyTakenError(viewer, owner);
+  if (view.canAttach === true || (view.actionBlockedReason ?? null) !== null) return new UserFacingError(CARD_USAGE_EXISTS);
+  return new UserFacingError(RECORD_NOT_FOUND);
+}
+
+// 트랜잭션 안 공통 꼬리 — 완화 후보 재조회(E5 — 새로 만든 행 제외) → 승인번호 채움 → 06.1-06 attachLinkInTx(보관 · 붙음 재검사) → 기록.
+async function attachProxyLink(tx: DbOrTx, viewer: Viewer, ctx: { evidenceId: string; usage: CreatedCardUsage; line: RelaxedLine; scope: CardUsageScope }, deps: CardProxyDeps): Promise<void> {
+  const others = await findRelaxedCandidates(viewer, { scope: ctx.scope, lines: [ctx.line], excludeIds: [ctx.usage.id] }, tx);
+  if (others.some((row) => isRelaxedHit(ctx.line, { approvalNo: row.approvalNo, usedOn: row.usedOn, totalKrw: row.totalAmountKrw }))) throw new UserFacingError(CARD_USAGE_EXISTS);
+  const { created } = await attachLinkInTx(tx, viewer, { recordId: ctx.evidenceId, owner: { kind: "corp_card_usage", id: ctx.usage.id }, mode: "registrar" });
+  if (!created) return;
+  const locked = await lockCardUsageForUpdate(viewer, ctx.usage.id, tx);
+  if (!locked || locked.archivedAt !== null) throw cardSlipNotFound();
+  if (ctx.line.approvalNo && locked.approvalNo !== ctx.line.approvalNo) {
+    if ((await fillCardUsageApprovalNo(viewer, { id: locked.id, version: locked.version, approvalNo: ctx.line.approvalNo }, tx)) === null) throw cardSlipNotFound();
+  }
+  await recordAction(
+    viewer,
+    {
+      actionType: "document_update",
+      entity: "evidence_record",
+      entityId: ctx.evidenceId,
+      documentId: ctx.usage.id,
+      detail: { change: "evidence_record_attach", ownerKind: "corp_card_usage", ownerId: ctx.usage.id, via: "card_proxy" },
+    },
+    { tx, isActionTypeEnabled: deps.isActionTypeEnabled },
+  );
+}
+
+export async function createCardUsageFromEvidence(
+  viewer: Viewer,
+  input: { evidenceId: string; chosen: CardUsageChosen; idempotencyKey: string },
+  deps: CardProxyDeps = {},
+): Promise<CreatedCardUsage> {
+  // 재전송(D-6509)은 사전 판독보다 먼저 — 이미 붙은 줄이라 미리 채움이 null이다.
+  const reused = await reusableCardUsage(viewer, input.idempotencyKey);
+  if (reused) return reused;
+  const read = await readProxyLine(viewer, input.evidenceId);
+  if (!read) throw await proxyRefusal(viewer, input.evidenceId);
+  const { prefill, line } = read;
+  const cardInput: CardUsageInput = {
+    ...input.chosen,
+    corpCardId: prefill.corpCardId,
+    usedOn: prefill.usedOn,
+    merchantVendorId: null,
+    total: { currency: "KRW", amount: prefill.totalKrw, fxRate: 1 },
+    evidenceTypeCode: prefill.evidenceTypeCode,
+    idempotencyKey: input.idempotencyKey,
+  };
+  const pre = await precheckCardUsage(viewer, cardInput);
+  const scope = await cardUsageReadScope(viewer);
+  await deps.afterPreRead?.();
+
+  const ctx = { evidenceId: input.evidenceId, line, scope };
+  try {
+    return await withTransaction(async (tx) => {
+      const usage = await createCardUsage(viewer, cardInput, pre, tx);
+      await deps.afterCreate?.();
+      await attachProxyLink(tx, viewer, { ...ctx, usage }, deps);
+      return usage;
+    });
+  } catch (error) {
+    if (error instanceof EvidenceTakenError) throw await proxyTakenError(viewer, error.owner);
+    if (isUniqueViolation(error, LIVE_LINK_UNIQUE)) {
+      const [owner] = await listLiveLinkOwnersByRecords(viewer, [input.evidenceId]);
+      throw await proxyTakenError(viewer, owner);
+    }
+    // PA-S8-RACE: 같은 키 동시 저장에서 진 쪽 — 트랜잭션 밖에서 이긴 행을 읽고, 이 줄이 그 행에 붙어 있지 않으면 새 트랜잭션에서 붙인다.
+    if (!isUniqueViolation(error, CARD_IDEMPOTENCY_UNIQUE)) throw error;
+    const winner = await reusableCardUsage(viewer, input.idempotencyKey);
+    if (!winner) throw error;
+    const [owner] = await listLiveLinkOwnersByRecords(viewer, [input.evidenceId]);
+    if (owner?.ownerKind === "corp_card_usage" && owner.ownerId === winner.id) return winner;
+    try {
+      await withTransaction((tx) => attachProxyLink(tx, viewer, { ...ctx, usage: winner }, deps));
+    } catch (attachError) {
+      if (attachError instanceof EvidenceTakenError) throw await proxyTakenError(viewer, attachError.owner);
+      throw attachError;
+    }
+    return winner;
+  }
 }

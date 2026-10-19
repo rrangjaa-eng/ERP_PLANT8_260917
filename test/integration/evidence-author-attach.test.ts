@@ -294,6 +294,20 @@ describe("작성자 모드 ↔ 05 규칙표 대조 (RP-4 — 두 번째 표 없�
   });
 });
 
+describe("PA-DONEDRAFT — 완료 프로젝트의 임시 · 반려 문서는 작성자에게 열려 있다 (05 파일 길과 같음)", () => {
+  it("프로젝트를 완료로 바꿔도 임시 · 반려 지출결의는 모드 author · 붙이기 성공", async () => {
+    const intake = await createIntakeManager();
+    const draft = await createDraftExpenseFixture(fx);
+    const returned = await createReturnedExpenseFixture(fx, { lineId: fx.lines.split });
+    await db.update(projects).set({ status: "completed" }).where(eq(projects.id, fx.projectId));
+    for (const expenseId of [draft, returned.expenseId]) {
+      expect((await evidencePickerMode(fx.pm, owner(expenseId))).mode).toBe("author");
+      const recordId = await publish(intake);
+      expect(await attachEvidenceAsAuthor(fx.pm, { evidenceIds: [recordId], owner: owner(expenseId) })).toEqual({ attached: 1 });
+    }
+  });
+});
+
 describe("attachEvidenceAsAuthor — 잠금 뒤 재판정 (A-7 · E32 · 결정적)", () => {
   it("afterPreRead에서 임시 문서를 제출하면 문서 잠금 뒤 `결재 중 · 증빙 잠김` · 붙임 0", async () => {
     const intake = await createIntakeManager();

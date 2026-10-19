@@ -179,7 +179,7 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
         throw error;
       },
     ),
-    // 06.1-08(S5): 작성 중 · 반려 · 회수 폼도 붙은 증빙 읽기 행과 증빙 고르기 트리거를 폼 아래 같은 섹션으로 그린다(폼 파일은 건드리지 않는다).
+    // 06.1-08(S5): 작성 중 · 반려 · 회수 폼도 붙은 증빙 읽기 행과 증빙 고르기 트리거를 폼 안 「증빙」 칸(05 첨부 바로 아래)에 그린다 — §6-3 칸 순서.
     listLinkedEvidence(viewer, { kind: "expense", id }).catch(() => ({ items: [], lockLine: null })),
     readEvidencePick(viewer, id),
   ]);
@@ -242,8 +242,6 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
         }
       >
         {readRows.length > 0 ? <KvList items={readRows} /> : null}
-        {/* 06.1-08: 폼 아래에 두면 폰에서 고정 행동 줄이 트리거를 덮는다(320 실측) — 폼 위에 둔다. */}
-        <EvidenceRecordsSection items={linkedItemsOf(formLinked)} lockLine={formLinked.lockLine} number={expense.number ?? null} lockLineShownAbove={false} pick={formPick} />
         <ExpenseForm
           key={expense.quoteLineId ?? expense.itemName ?? "team"}
           data={{
@@ -291,6 +289,7 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
           currencies={currencies}
           files={files}
           maxMb={maxMb}
+          evidenceRecords={<EvidenceRecordsSection items={linkedItemsOf(formLinked)} lockLine={formLinked.lockLine} number={expense.number ?? null} lockLineShownAbove={false} pick={formPick} />}
           route={
             route ? (
               <ApprovalRoute

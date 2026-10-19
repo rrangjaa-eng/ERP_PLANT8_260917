@@ -404,7 +404,8 @@ test("P1 작성자 1팀 PM — 임시 문서 「증빙」 섹션 · S5 (4폭) ·
     const triggerBeforeForm = layout.order.indexOf("트리거") >= 0 && layout.order.indexOf("트리거") < layout.order.indexOf("견적 줄");
     record("「증빙」 트리거가 폼(견적 줄) 위에 섬 — SYSTEM §6-3 순서(금액 · 증빙 종류 아래 · 결재선 위)와 다름", width, role, url, { triggerBeforeForm, order: layout.order.slice(0, 8) }, "§6-3: 견적 줄 → 금액 → 지급 예정 → 증빙 종류 → 증빙 → 결재선", !triggerBeforeForm);
     const overlap = !!layout.trigger && !!layout.bar && layout.bar.position === "fixed" && layout.trigger.bottom > layout.bar.top && layout.trigger.top < layout.bar.bottom;
-    record("트리거가 고정 행동 줄과 겹치지 않음(첫 화면)", width, role, url, { trigger: layout.trigger, bar: layout.bar, hit: layout.hit }, { overlap: false, hit: "트리거" }, !overlap && layout.hit === "트리거");
+    record("트리거가 고정 행동 줄과 겹치지 않음(첫 화면)", width, role, url, { trigger: layout.trigger, bar: layout.bar, hit: layout.hit }, { overlap: false, hit: "트리거" }, !overlap && (layout.hit === "트리거" || layout.hit === "밖"));
+    // D-1 고침: 트리거가 폼 「증빙」 칸으로 옮겨 첫 화면 밖일 수 있다(hit "밖" = 화면 밖) — 가려짐은 화면 안일 때만 판정하고, 굴린 뒤 판정은 따로 둔다.
     record("트리거를 화면 아래 끝으로 굴렸을 때 맨 위 요소 = 트리거", width, role, url, layout.hitAfterScroll, "트리거", layout.hitAfterScroll === "트리거");
     const primary = await page.locator('main [data-ui="primary-button"]:visible').count();
     record("화면 1차 버튼 ≤ 1", width, role, url, primary, "≤ 1", primary <= 1);
@@ -557,7 +558,7 @@ test("P2 문서 상태 × 작성자 — 반려 · 회수 · 승인(완료 아님
         const layout = await layoutFacts(page);
         if (layout.bar) {
           const overlap = !!layout.trigger && layout.bar.position === "fixed" && layout.trigger.bottom > layout.bar.top && layout.trigger.top < layout.bar.bottom;
-          record(`${c.label} 트리거 · 고정 행동 줄 안 겹침`, width, role, url, { trigger: layout.trigger, bar: layout.bar, hit: layout.hit, hitAfterScroll: layout.hitAfterScroll }, { overlap: false }, !overlap && layout.hit === "트리거" && layout.hitAfterScroll === "트리거");
+          record(`${c.label} 트리거 · 고정 행동 줄 안 겹침`, width, role, url, { trigger: layout.trigger, bar: layout.bar, hit: layout.hit, hitAfterScroll: layout.hitAfterScroll }, { overlap: false }, !overlap && (layout.hit === "트리거" || layout.hit === "밖") && layout.hitAfterScroll === "트리거");
         }
         const v = await axe(page);
         record(`axe 위반(${c.label})`, width, role, url, v, "[]", v.length === 0);

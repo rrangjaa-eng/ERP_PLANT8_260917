@@ -186,6 +186,17 @@ describe("evidenceStampOf — 증빙 지문 (06-06 Task 3 · 06.5 D-6520)", () =
   it("파일이 하나 늘면 다른 문자열", () => {
     expect(evidenceStampOf({ ...base, fileIds: [...base.fileIds, "d"] })).not.toBe(evidenceStampOf(base));
   });
+  // 06.1-14 독립 검토 P2-1 — 지문은 화면(클라이언트)으로 나가므로 G15로 숨긴 파일 id · 건수가 글자로 남으면 안 된다.
+  it("지문은 고정 길이 16진수라 파일 id · 건수가 드러나지 않는다", () => {
+    const ids = ["00000000-0000-4000-8000-0000000000a1", "00000000-0000-4000-8000-0000000000b2"];
+    const one = evidenceStampOf({ fileIds: ids.slice(0, 1), evidenceDate: "2026-09-17" });
+    const two = evidenceStampOf({ fileIds: ids, evidenceDate: "2026-09-17" });
+    for (const stamp of [one, two]) {
+      expect(stamp).toMatch(/^[0-9a-f]{64}$/);
+      for (const id of ids) expect(stamp).not.toContain(id);
+    }
+    expect(one).toHaveLength(two.length);
+  });
 });
 
 describe("공급가액 고침 판정 — supplyCorrectionKind (06.5 D-6520)", () => {

@@ -1,11 +1,12 @@
 import { and, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { db } from "@/db/client";
-import { codeItems, expenses } from "@/db/schema";
-import { createVisibleMemo, loadKindDetails } from "@/domain/approvals";
+import { approvalInstances, codeItems, expenses } from "@/db/schema";
+import { approveDocument, createVisibleMemo, loadKindDetails } from "@/domain/approvals";
 import { createEvidenceViewUrl, getEvidenceActions, listEvidence, privateEvidenceNotice } from "@/domain/evidence";
 import { evidenceSourcesOf, hasEvidence } from "@/domain/evidence/has-evidence";
 import { listLinkedEvidence } from "@/domain/evidence-records/linked";
+import { getPaymentView } from "@/domain/payments";
 import { EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
 import type { Viewer } from "@/domain/viewer";
 import { attachEvidence, setupExpenseProject, type ExpenseFixture } from "./fixtures/expenses";
@@ -188,5 +189,28 @@ describe("G15 붙은 증빙 기록(PA-G15-LINKED)", () => {
     expect(managed.items.map((item) => item.recordId).sort()).toEqual([privateRecord, publicRecord].sort());
 
     expect(await privateEvidenceNotice(fx.lead, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: expenseId })).toBe(`${PRIVATE_LABEL} · 경영관리만`);
+  });
+});
+
+// 06.1-14 독립 검토 P2-1 — 승인 문서의 지급 패널 보기(getPaymentView)는 클라이언트 컴포넌트로 통째로 넘어간다.
+// 증빙 지문이 파일 id를 이어 붙인 글자면 숨긴 파일 id · 건수가 RSC 페이로드로 샌다.
+describe("G15 지급 패널 보기(getPaymentView)", () => {
+  it("결재자 · 기안자의 보기 직렬화에 보이지 않는 파일 id가 없다", async () => {
+    const fx = await setupExpenseProject();
+    const manager = await createIntakeManager();
+    const { expenseId, instanceId } = await createInReviewExpenseFixture(fx);
+    const [pmFile] = await listEvidence(fx.pm, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: expenseId });
+    const managerFile = await attachEvidence(manager, expenseId, undefined, { name: "경영관리 전표.jpg" });
+    await setEvidenceType(expenseId, PRIVATE_TYPE);
+    const [instance] = await db.select({ version: approvalInstances.version }).from(approvalInstances).where(eq(approvalInstances.id, instanceId));
+    const first = await approveDocument(fx.lead, { instanceId, expectedVersion: instance?.version ?? 0 });
+    const final = await approveDocument(fx.ceo, { instanceId, expectedVersion: first.version });
+    expect(final.status).toBe("approved");
+    if (!pmFile?.id) throw new Error("기안자 파일 없음");
+
+    const lead = JSON.stringify(await getPaymentView(fx.lead, expenseId));
+    expect(lead).not.toContain(pmFile.id);
+    expect(lead).not.toContain(managerFile.id);
+    expect(JSON.stringify(await getPaymentView(fx.pm, expenseId))).not.toContain(managerFile.id);
   });
 });

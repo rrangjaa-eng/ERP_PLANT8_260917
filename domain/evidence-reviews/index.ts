@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { Viewer } from "@/domain/viewer";
 import { can, ForbiddenError } from "@/domain/permissions/can";
 import { visible } from "@/domain/permissions/visible";
@@ -101,10 +102,12 @@ export function resolveEvidenceStatus(input: EvidenceStatusInput): EvidenceStatu
 }
 
 // ── 증빙 지문(재조정 — 06-17에서 옮김) ───────────────────────────────────
-// 화면이 본 증빙(살아 있는 파일 · 증빙일)과 확인하는 순간의 증빙이 같은지 — 파일 id 정렬 + 날짜를 한 문자열로(해시 없음).
+// 화면이 본 증빙(살아 있는 파일 · 증빙일)과 확인하는 순간의 증빙이 같은지 — 파일 id 정렬 + 날짜를 한 문자열로 이어 sha256.
 // 06.5 D-6520: 금액은 공급가 하나 — 공급가 고침은 version을 올리므로 지문에 넣지 않는다(06.5-07).
+// 06.1-14 독립 검토 P2-1: 지문은 지급 패널 보기로 클라이언트에 나간다 — 이어 붙인 글자 그대로면 G15로 숨긴 파일 id · 건수가 샌다.
+// 같은지만 비교하므로(confirmEvidence) 해시로 바꿔도 판정은 그대로다.
 export function evidenceStampOf(input: { fileIds: readonly string[]; evidenceDate: string | null }): string {
-  return [[...input.fileIds].sort().join(","), input.evidenceDate ?? ""].join("|");
+  return createHash("sha256").update([[...input.fileIds].sort().join(","), input.evidenceDate ?? ""].join("|")).digest("hex");
 }
 
 // ── 증빙 게이트 입력(O-2 · CROSS R-3) ─────────────────────────────────────

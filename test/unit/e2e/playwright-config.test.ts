@@ -34,6 +34,14 @@ describe("playwright.config.ts — 규약 C4 확인증 프로젝트 격리(백�
     expect(certs?.dependencies).toEqual(["cert-setup"]);
   });
 
+  // PR #253 CI — phase6-keys가 desktop 안에서 공용 증빙 종류 `tax_invoice`를 보관하는 동안 다른 워커의 지출결의 제출이 막혔다.
+  it("공용 설정을 바꾸는 스펙(결재선 · 짝 격자)은 desktop에서 빠지고 desktop-settings에서 워커 1로 돈다", () => {
+    const shared = ["settings-approval-route.spec.ts", "phase6-keys.spec.ts"];
+    expect(byName("desktop")?.testIgnore).toEqual(expect.arrayContaining(shared));
+    expect(byName("desktop-settings")?.testMatch).toEqual(shared);
+    expect(byName("desktop-settings")?.workers).toBe(1);
+  });
+
   it("globalSetup이 통합 테스트처럼 CERT_FEATURE_ALLOWED를 켠다(webServer가 물려받는다)", () => {
     expect(process.env.CERT_FEATURE_ALLOWED).toBe("true");
   });

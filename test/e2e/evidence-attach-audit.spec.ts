@@ -14,6 +14,7 @@ import { createPurchaseRequest, precheckPurchaseRequest } from "@/domain/purchas
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { seoulToday } from "@/lib/dates";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
+import { countEvidencePool } from "@/domain/evidence-records/pool";
 import { createIntakeManager, insertLinkFixture, insertRecordFixture } from "@/test/integration/fixtures/evidence";
 import { archiveTempRoles, insertTempRole, setupExpenseE2E, submitLineExpense, type ExpenseE2E } from "./expense-fixture";
 import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
@@ -211,7 +212,9 @@ type Seed = {
 };
 let seed: Seed;
 
-test.beforeAll(async ({ browser }, testInfo) => {
+// 케이스마다 자료 한 벌(beforeEach) — A · A2가 후보를 붙여 소진하면 B의 결재 중 트리거 기대가 앞 케이스의 성공 · 실패(워커 재시작 뒤 beforeAll 재실행)에
+// 따라 갈렸다(06.1-08 감사 ③ 실측). 케이스끼리 자료를 나눠 쓰지 않는다.
+test.beforeEach(async ({ browser }, testInfo) => {
   test.setTimeout(600_000);
   const baseURL = testInfo.project.use.baseURL;
   await clearEvidence();
@@ -396,6 +399,7 @@ test("A 증빙 목록 · PickDialog — ① 경영관리(두 키)", async ({ bro
     return cur ? { text: (cur.textContent ?? "").trim().slice(0, 40), weight: getComputedStyle(cur).fontWeight, borderLeft: getComputedStyle(cur).borderLeftColor, shadow: getComputedStyle(cur).boxShadow.slice(0, 60) } : null;
   });
   record("S4 미리 고른 현재 행(참고 — 회사 전체 문서 1위가 무엇이냐에 달림)", width, role, "S4", pre, "—", null);
+  // K-1(고침 06.1-08): 고른 행 면 `--surface-selected` 위 번호는 `--text-muted` — axe 대비 위반 0이 판정이다.
   const axeOpen = await axe(page);
   record("axe 위반(S4 열림)", width, role, "S4", axeOpen, "[]", axeOpen.length === 0);
   const offDialog = await offTokens(page, "dialog[open]");
@@ -617,9 +621,13 @@ test("B 문서 화면 「증빙」 섹션 — ① 반려 · 결재 중 · 승인
     const urlR = `/expenses/${seed.inReview.expenseId}`;
     await page.goto(urlR);
     await expect(block(page).getByRole("table", { name: "붙은 증빙" })).toBeVisible();
-    const buttonsR = await block(page).getByRole("button").count();
+    // 06.1-08: 붙이기 키가 있는 경영관리는 결재 중 문서에도 `증빙 고르기 N` 트리거가 선다(후보 ≥ 1일 때) — 그 밖의 버튼은 0.
+    const poolR = await countEvidencePool({ id: seed.manager.id, roleId: seed.manager.roleId }, { kind: "expense", id: seed.inReview.expenseId });
+    const pickR = await block(page).getByRole("button", { name: /^증빙 고르기 \d+$/ }).allTextContents();
+    const buttonsR = (await block(page).getByRole("button").count()) - pickR.length;
     const locksR = await sectionLockLines(page);
-    record("결재 중 붙은 증빙 블록 버튼 0", width, role, urlR, buttonsR, 0, buttonsR === 0);
+    record("결재 중 붙은 증빙 블록 트리거 = 후보 0이면 0 · ≥ 1이면 `증빙 고르기 N` 하나", width, role, urlR, { poolR, pickR }, poolR > 0 ? [`증빙 고르기 ${poolR}`] : [], poolR > 0 ? pickR.length === 1 && pickR[0]?.trim() === `증빙 고르기 ${poolR}` : pickR.length === 0);
+    record("결재 중 붙은 증빙 블록 트리거 밖 버튼 0", width, role, urlR, buttonsR, 0, buttonsR === 0);
     record("결재 중 섹션 잠김 줄 = [`결재 중 · 떼기 없음`]", width, role, urlR, locksR, ["결재 중 · 떼기 없음"], locksR.length === 1 && locksR[0] === "결재 중 · 떼기 없음");
     const ovR = await docOverflow(page);
     record("문서 scrollWidth <= clientWidth(결재 중)", width, role, urlR, ovR.join("/"), "scrollWidth <= clientWidth", ovR[0] <= ovR[1]);
@@ -651,6 +659,7 @@ test("C 권한 없는 자격 — ③ 기안 PM · ④ evidence.intake만 · ⑤ 
       const url = `/expenses/${id}`;
       await pm.goto(url);
       const table = block(pm).getByRole("table", { name: "붙은 증빙" });
+      await table.waitFor({ state: "visible", timeout: 5000 }).catch(() => undefined);
       const visible = await table.isVisible().catch(() => false);
       const mode = await pm.evaluate(() => ({ evidenceAnchor: !!document.getElementById("evidence"), formButtons: [...document.querySelectorAll("main button")].map((b) => (b.textContent ?? "").trim()).filter((t) => /임시 저장|지출결의 제출|종결/.test(t)) }));
       record(`③ ${label} 화면 갈래(참고 — 문서 · 폼)`, width, "③기안PM", url, mode, "—", null);

@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, isNull, lt, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lt, or, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
@@ -273,6 +273,18 @@ export async function isPurchaseRequestInScope(viewer: Viewer, input: { id: stri
     .where(and(eq(purchaseRequests.id, input.id), scopeCondition(input.scope)))
     .limit(1);
   return row !== undefined;
+}
+
+// 06.1-08(PA-PRLINE): 쪽의 구매 요청 id 가운데 그 범위 안인 것만 — 질의 하나(목록 쪽마다 한 번). 범위 판정은 목록과 같은 scopeCondition.
+export async function filterPurchaseRequestIdsInScope(viewer: Viewer, input: { ids: readonly string[]; scope: PurchaseRequestScope }, tx: DbOrTx = db): Promise<string[]> {
+  void viewer;
+  if (input.ids.length === 0) return [];
+  const rows = await tx
+    .select({ id: purchaseRequests.id })
+    .from(purchaseRequests)
+    .leftJoin(projects, eq(projects.id, purchaseRequests.projectId))
+    .where(and(inArray(purchaseRequests.id, [...input.ids]), scopeCondition(input.scope)));
+  return rows.map((row) => row.id);
 }
 
 // 쪽 단위 존재 조회 — 범위 안 취소 아닌 요청이 하나라도 있나.

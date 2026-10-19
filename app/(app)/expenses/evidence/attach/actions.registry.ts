@@ -10,3 +10,12 @@ registerAction({ name: "attachEvidenceRecordAction", menu: "evidence.intake", ac
 registerAction({ name: "detachEvidenceRecordAction", menu: "evidence.intake", action: "write", dtoName: null });
 // 떼기 미리 보기(PA-PREVIEW — EvidenceDetachPreviewDto · 금액 = evidence.amount).
 registerAction({ name: "previewDetachAction", menu: "evidence.intake", action: "write", dtoName: "EvidenceDetachPreviewDto" });
+
+// 06.1-08 증빙 고르기 S5 — 풀(EvidencePoolItemDto · 금액 = evidence.amount)은 모드 판정을 domain이 한다(작성자는 evidence 보기 + 05 권리표, 경영관리는 intake).
+registerAction({ name: "listEvidencePoolAction", menu: "evidence", action: "view", dtoName: "EvidencePoolItemDto" });
+registerAction({ name: "attachEvidenceAsAuthorAction", menu: "evidence", action: "view", dtoName: null });
+registerAction({ name: "attachEvidenceBatchAction", menu: "evidence.intake", action: "write", dtoName: null });
+
+// 06.1-08 작성자 자기 떼기 · 미리 보기 — 증빙 보기 + 05 규칙표 위 작성자 칸은 domain이 판정한다.
+registerAction({ name: "detachOwnEvidenceAction", menu: "evidence", action: "view", dtoName: null });
+registerAction({ name: "previewOwnDetachAction", menu: "evidence", action: "view", dtoName: "EvidenceDetachPreviewDto" });

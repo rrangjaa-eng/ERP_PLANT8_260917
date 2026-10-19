@@ -4,19 +4,20 @@ import { useId, useRef, useState } from "react";
 import { formatKrw } from "@/lib/format-number";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import dialogStyles from "@/app/(app)/approvals/decision-dialogs.module.css";
-import { detachEvidenceRecordAction, previewDetachAction } from "./attach/actions";
+import { detachEvidenceRecordAction, detachOwnEvidenceAction, previewDetachAction, previewOwnDetachAction } from "./attach/actions";
 
 // 06.1-06 S7: 증빙 떼기(반려 · 회수) · 증빙 무효 처리(승인 뒤) — 공용 ConfirmDialog(사유 슬롯). 05 무효 처리 창과 같은 모양이고(사유 textarea ·
 // 빈 칸이면 1차 막힘), 결과 줄은 떼면 비용 기준이 확정 → 예상으로 바뀔 때만 한 줄(PA-PREVIEW — 서버 previewDetach). 성공하면 부르는 쪽이
 // router.refresh() — 그 행이 제자리에서 사라진다(토스트 없음).
 // D-5 — 창은 미리 보기를 받은 뒤에 연다(§7-17 LOADING 「해당 없음 — 이미 로드된 데이터로 연다」). 받는 동안은 부르는 쪽 트리거가 `…`다.
 
-export type DetachTarget = { linkId: string; subtitle: string; mode: "detach" | "void"; expectedKrw: number | null };
+// own = 작성자 본인 길(자기 author 붙임 — 06.1-08 A9). 같은 창 · 같은 사유 · 액션 둘만 다르다.
+export type DetachTarget = { linkId: string; subtitle: string; mode: "detach" | "void"; expectedKrw: number | null; own?: boolean };
 
 /** 떼면 비용 기준이 예상으로 바뀔 때의 예상 금액(아니면 null). 미리 보기를 받지 못하면 결과 줄 없이 연다(전과 같다). */
-export async function previewExpectedKrw(linkId: string): Promise<number | null> {
+export async function previewExpectedKrw(linkId: string, own = false): Promise<number | null> {
   try {
-    const data = (await previewDetachAction({ linkId }))?.data;
+    const data = (await (own ? previewOwnDetachAction({ linkId }) : previewDetachAction({ linkId })))?.data;
     return data?.result === "expected" && typeof data.amountKrw === "number" ? data.amountKrw : null;
   } catch {
     return null;
@@ -60,7 +61,7 @@ export function DetachDialog({ target, onClose, onDone }: { target: DetachTarget
     setFailureLine(undefined);
     let response: Awaited<ReturnType<typeof detachEvidenceRecordAction>> | undefined;
     try {
-      response = await detachEvidenceRecordAction({ linkId: target.linkId, reason: trimmed });
+      response = await (target.own ? detachOwnEvidenceAction : detachEvidenceRecordAction)({ linkId: target.linkId, reason: trimmed });
     } catch {
       response = undefined;
     }

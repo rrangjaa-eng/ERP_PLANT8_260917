@@ -64,3 +64,18 @@ export function compareCandidates(left: RankedCandidate, right: RankedCandidate)
 export function rankCandidates<T extends CandidateDocFacts>(record: CandidateRecordFacts, docs: readonly T[]): RankedCandidate<T>[] {
   return docs.map((doc) => ({ ...doc, score: scoreCandidate(record, doc), dayGap: dayGapOf(record, doc) })).sort(compareCandidates);
 }
+
+// 06.1-08(E34): 문서 하나에 붙일 증빙 목록의 순위 — 위 점수 · 열쇠를 방향만 바꿔 그대로 쓴다(새 가중치 없음). 화면 경로의 순위는
+// repositories/evidence-pool.ts SQL `ORDER BY`가 매기고, 이 함수는 그 순서의 단위 기준(통합 테스트가 같은 행으로 대조)이다.
+export type PoolRecordFacts = CandidateRecordFacts & { id: string; pairOk: boolean };
+
+export type PoolDocFacts = Pick<CandidateDocFacts, "kind" | "evidenceType" | "businessNo" | "amountKrw" | "date">;
+
+export function rankRecordsForDocument<T extends PoolRecordFacts>(doc: PoolDocFacts, records: readonly T[]): (T & { score: number; dayGap: number | null })[] {
+  const ranked = records.map((record) => {
+    const asDoc: CandidateDocFacts = { ...doc, id: record.id, pairOk: record.pairOk };
+    return { record, key: { ...asDoc, score: scoreCandidate(record, asDoc), dayGap: dayGapOf(record, asDoc) } };
+  });
+  ranked.sort((left, right) => compareCandidates(left.key, right.key));
+  return ranked.map(({ record, key }) => ({ ...record, score: key.score, dayGap: key.dayGap }));
+}

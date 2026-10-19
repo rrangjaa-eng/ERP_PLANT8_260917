@@ -56,6 +56,7 @@ import "@/domain/evidence-records";
 import "@/app/(app)/expenses/evidence/actions.registry";
 import "@/domain/evidence-records/attach";
 import "@/domain/evidence-records/linked";
+import "@/domain/evidence-records/pool";
 import "@/app/(app)/expenses/evidence/attach/actions.registry";
 import {
   createFieldDefinition,

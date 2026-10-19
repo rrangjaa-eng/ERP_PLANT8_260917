@@ -751,17 +751,40 @@ export async function readEvidenceOwner(viewer: Viewer, input: { ownerKind: stri
 }
 
 /** 사람 플래그 — 부르는 쪽이 트랜잭션 전에 can()으로 읽는다(paid = 취소 안 된 지급 행 있음, 06.1 카드 R1). */
-export type EvidenceRecordFlags = { intake: boolean; attachKey: boolean; voidKey: boolean; isDrafter: boolean; paid: boolean };
+export type EvidenceRecordFlags = {
+  intake: boolean;
+  attachKey: boolean;
+  voidKey: boolean;
+  isDrafter: boolean;
+  paid: boolean;
+  /** 06.1-08 — `expenses` 쓰기(05 adderOf 기안자 조건). 작성자 칸 둘만 쓴다. 안 넘기면 거짓. */
+  expensesWrite?: boolean;
+};
 /** 잠김 줄 코드 — 글자는 app이 그린다(05 둘 + 06.1 둘, PA-LOCKCODE). */
 export type EvidenceRecordLockLine = "in_review_author" | "in_review_no_detach" | "approved_void_only" | "completed_project_author";
-export type EvidenceRecordRights = { attach: boolean; detach: "none" | "detach" | "void"; lockLine: EvidenceRecordLockLine | null };
+/** 경영관리 칸(attach · detach) + 작성자 칸(06.1-08 authorAttach · authorDetach — 05 drafterAdds · drafterRemoves, RP-4). */
+export type EvidenceRecordRights = {
+  attach: boolean;
+  detach: "none" | "detach" | "void";
+  lockLine: EvidenceRecordLockLine | null;
+  authorAttach: boolean;
+  authorDetach: boolean;
+};
 
-const NO_RECORD_RIGHTS: EvidenceRecordRights = { attach: false, detach: "none", lockLine: null };
+type RegistrarRights = Pick<EvidenceRecordRights, "attach" | "detach" | "lockLine">;
+
+const NO_RECORD_RIGHTS: RegistrarRights = { attach: false, detach: "none", lockLine: null };
 
 // UI-SPEC S7 열 줄 — S2 행 행동 · S4 막힌 행 · 문서 「증빙」 섹션 · 서버 거부가 이 함수 하나를 쓴다. 결재 중 붙이기 · 완료 프로젝트 승인 문서
 // 붙이기는 05 addOpen의 붙이기 권한자 갈래 그대로(+ evidence.intake), 승인 · 지급 전 붙이기는 카드 R1(사용자 답 「지급 전까지 허용」 2026-10-16),
 // 승인 뒤 떼기는 05 voidEvidence와 같은 키(expenses.evidence_void)의 무효 처리, 결재 중 떼기는 아무도(D-6110).
 export function evidenceRecordRights(owner: EvidenceOwnerState, flags: EvidenceRecordFlags): EvidenceRecordRights {
+  // 작성자 칸 — 05 기안자 규칙(adderOf 기안자 = drafterId ∧ expenses 쓰기, drafterAdds · drafterRemoves) 그대로. 두 번째 표를 짓지 않는다(RP-4).
+  const author = flags.isDrafter && flags.expensesWrite === true && !owner.closed;
+  return { ...registrarRights(owner, flags), authorAttach: author && EXPENSE_RULE.drafterAdds(owner), authorDetach: author && EXPENSE_RULE.drafterRemoves(owner) };
+}
+
+function registrarRights(owner: EvidenceOwnerState, flags: EvidenceRecordFlags): RegistrarRights {
   const rule = EXPENSE_RULE;
   if (owner.closed || owner.number === null) return NO_RECORD_RIGHTS;
   if (rule.drafterRemoves(owner)) return flags.intake ? { attach: true, detach: "detach", lockLine: null } : NO_RECORD_RIGHTS;

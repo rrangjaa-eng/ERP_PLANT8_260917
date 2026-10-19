@@ -922,6 +922,8 @@ export type PurchaseRequestList = {
   totals: { count: number; estimateKrw: number | null };
   /** 06-14 행 `요청 취소` — `신청됨` 행 id → 갈래(요청자 본인 `own` · 구매 권한자의 남의 요청 `others`). 그 밖 행은 없다(Q2). */
   cancelBranches: Record<string, "own" | "others">;
+  /** 06.1-08 행 `증빙 고르기` — 내 요청 · 취소 아님 · 완료 프로젝트 줄 아님 · 붙은 증빙 0인 행 id(상태 `신청됨` 조건 없음 — 구매 완료 뒤에도 붙인다, PA-PRDONE). */
+  evidenceAuthorIds: string[];
 };
 
 // 서울 월 → [그 달 0시, 다음 달 0시) — `created_at`은 UTC 시각으로 저장된다(seoulToday(createdAt)와 같은 가정).
@@ -965,6 +967,11 @@ export async function listPurchaseRequests(viewer: Viewer, filters: PurchaseRequ
     privileged,
     anyInScope,
     totals: { count: estimates.length, estimateKrw: (await visible(viewer, "purchase_request.amount")) ? sumKrw(estimates) : null },
+    evidenceAuthorIds: rows
+      .filter((row) =>
+        purchaseRequestAuthorOpen({ requestedBy: row.requestedBy, status: row.status, projectCompleted: row.projectStatus === "completed", liveLinks: linkCounts.get(row.id) ?? 0 }, viewer.id),
+      )
+      .map((row) => row.id),
     cancelBranches: Object.fromEntries(
       rows.flatMap((row): [string, "own" | "others"][] => {
         // U1-1: 완료 프로젝트 줄 요청은 취소를 내놓지 않는다(서버도 거부).
@@ -1092,4 +1099,23 @@ export async function purchaseRequestReadScope(viewer: Viewer, today: string = s
 export async function canSeePurchaseRequest(viewer: Viewer, input: { id: string }): Promise<boolean> {
   if (!UUID_SHAPE.test(input.id)) return false;
   return isPurchaseRequestInScope(viewer, { id: input.id, scope: await purchaseRequestReadScope(viewer) });
+}
+
+// ── 06.1-08 작성자 증빙 고르기 판정(E30 · DB-10 · PA-PRDONE) ───────────────────────────────────────────────
+
+export type PurchaseRequestEvidenceFacts = { requestedBy: string; status: string; projectCompleted: boolean; liveLinks: number };
+
+// 내 요청 ∧ 취소 아님 ∧ 완료 프로젝트 줄 아님 ∧ 살아 있는 붙임 0 — 상태 `신청됨` 조건은 없다(구매 완료 뒤에도 영수증을 붙인다).
+export function purchaseRequestAuthorOpen(facts: PurchaseRequestEvidenceFacts, viewerId: string): boolean {
+  return facts.requestedBy === viewerId && facts.status !== "cancelled" && !facts.projectCompleted && facts.liveLinks === 0;
+}
+
+// 요청 한 행의 판정 재료. tx가 있으면 요청 행을 잠가 읽는다(붙이기 트랜잭션의 문서 잠금). 프로젝트 완료 여부는 요청자 본인일 때만 읽는다(값은 나가지 않는다).
+export async function readPurchaseRequestEvidenceFacts(viewer: Viewer, id: string, tx?: DbOrTx): Promise<PurchaseRequestEvidenceFacts | null> {
+  if (!UUID_SHAPE.test(id)) return null;
+  const row = tx ? await lockPurchaseRequestForUpdate(viewer, id, tx) : await findPurchaseRequestById(viewer, id);
+  if (!row) return null;
+  const project = row.requestedBy === viewer.id && row.linkKind === "quote_line" && row.projectId ? await findProjectById(viewer, row.projectId, tx) : null;
+  const [count] = row.requestedBy === viewer.id ? await countLiveLinksByOwners(viewer, { ownerKind: "purchase_request", ownerIds: [row.id] }, tx) : [];
+  return { requestedBy: row.requestedBy, status: row.status, projectCompleted: project?.status === "completed", liveLinks: count?.linkCount ?? 0 };
 }

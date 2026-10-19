@@ -60,6 +60,7 @@ function linkedItemsOf(linked: LinkedRead): LinkedEvidenceItem[] {
             pickedBy: item.pickedBy ?? null,
             pickedOn: item.pickedOn ?? null,
             action: item.action ?? null,
+            ownDetach: item.ownDetach === true,
           },
         ]
       : [],
@@ -241,6 +242,8 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
         }
       >
         {readRows.length > 0 ? <KvList items={readRows} /> : null}
+        {/* 06.1-08: 폼 아래에 두면 폰에서 고정 행동 줄이 트리거를 덮는다(320 실측) — 폼 위에 둔다. */}
+        <EvidenceRecordsSection items={linkedItemsOf(formLinked)} lockLine={formLinked.lockLine} number={expense.number ?? null} lockLineShownAbove={false} pick={formPick} />
         <ExpenseForm
           key={expense.quoteLineId ?? expense.itemName ?? "team"}
           data={{
@@ -301,7 +304,6 @@ export default async function ExpensePage({ params, searchParams }: { params: Pr
             ) : null
           }
         />
-        <EvidenceRecordsSection items={linkedItemsOf(formLinked)} lockLine={formLinked.lockLine} number={expense.number ?? null} lockLineShownAbove={false} pick={formPick} />
         {undone === "1" && resubmitting ? <SubmittedToast message="되돌리기 · 결재 멈춤" href={`/expenses/${id}`} /> : null}
       </DetailScreen>
     </div>

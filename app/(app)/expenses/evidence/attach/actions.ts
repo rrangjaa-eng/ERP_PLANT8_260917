@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import { authedActionClient } from "@/lib/actions/client";
-import { ATTACH_BATCH_MAX, attachEvidenceAsAuthor, attachEvidenceBatch, attachEvidenceRecord, detachEvidenceRecord, listAttachCandidates, previewDetach } from "@/domain/evidence-records/attach";
+import { ATTACH_BATCH_MAX, attachEvidenceAsAuthor, attachEvidenceBatch, attachEvidenceRecord, detachEvidenceRecord, detachOwnEvidence, listAttachCandidates, previewDetach } from "@/domain/evidence-records/attach";
 import { listEvidencePool } from "@/domain/evidence-records/pool";
 import "./actions.registry";
 
@@ -41,3 +41,12 @@ export const attachEvidenceAsAuthorAction = authedActionClient
 export const attachEvidenceBatchAction = authedActionClient
   .schema(batchSchema)
   .action(async ({ parsedInput, ctx }) => attachEvidenceBatch(ctx.viewer, { evidenceIds: parsedInput.evidenceIds, owner: { kind: parsedInput.ownerKind, id: parsedInput.ownerId } }));
+
+// 06.1-08 A9: 작성자 자기 떼기 — 자기 author 붙임 · 편집 가능 상태만(domain이 판정). 미리 보기는 06.1-06 previewDetach(작성자 갈래 포함).
+export const detachOwnEvidenceAction = authedActionClient
+  .schema(z.object({ linkId: z.string().uuid(), reason: z.string().max(500) }))
+  .action(async ({ parsedInput, ctx }) => detachOwnEvidence(ctx.viewer, parsedInput));
+
+export const previewOwnDetachAction = authedActionClient
+  .schema(z.object({ linkId: z.string().uuid() }))
+  .action(async ({ parsedInput, ctx }) => previewDetach(ctx.viewer, parsedInput));

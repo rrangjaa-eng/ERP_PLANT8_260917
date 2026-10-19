@@ -25,7 +25,7 @@ import { can, ForbiddenError } from "@/domain/permissions/can";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { projectMany, type DtoSpec } from "@/domain/permissions/project";
 import { visible } from "@/domain/permissions/visible";
-import { canSeePurchaseRequest, purchaseRequestReadScope } from "@/domain/purchase-requests";
+import { canSeePurchaseRequest, purchaseRequestAuthorOpen, purchaseRequestReadScope, readPurchaseRequestEvidenceFacts } from "@/domain/purchase-requests";
 import { PAYMENT_METHOD_EVIDENCE_PAIRS } from "@/domain/settings/keys";
 import { getSettingValue } from "@/domain/settings/registry";
 import type { Viewer } from "@/domain/viewer";
@@ -273,8 +273,41 @@ function conflictMessageOf(pre: readonly BatchPreRead[], takenIds: ReadonlySet<s
 }
 
 // 이 문서가 아닌 곳에 살아 있는 붙임이 있는 증빙 id. 같은 문서에 이미 붙은 것은 멱등이라 경합이 아니다.
-function takenByOthers(owners: readonly LiveLinkOwner[], docId: string): Set<string> {
-  return new Set(owners.filter((live) => !(live.ownerKind === "expense" && live.ownerId === docId)).map((live) => live.recordId));
+function takenByOthers(owners: readonly LiveLinkOwner[], doc: AttachOwnerRef): Set<string> {
+  return new Set(owners.filter((live) => !(live.ownerKind === doc.kind && live.ownerId === doc.id)).map((live) => live.recordId));
+}
+
+type BatchCtx = { viewer: Viewer; mode: AttachBatchMode; keys: ViewerKeys; owner: AttachOwnerRef; ids: readonly string[]; pre: readonly BatchPreRead[]; deps?: EvidenceAttachDeps };
+
+// 증빙 행 잠금(id 오름차순) 뒤 재검사 → 먼저 붙은 것 모으기 → 붙임 INSERT. 지출결의 · 구매 요청이 같은 몸통이다(문서 잠금은 부르는 쪽이 이미 했다 — E-49).
+async function lockAndAttachRecords(tx: DbOrTx, ctx: BatchCtx): Promise<string[]> {
+  const locked = await lockRecordsForUpdate(ctx.viewer, ctx.ids, tx);
+  if (locked.length !== ctx.ids.length) throw new UserFacingError(RECORD_NOT_FOUND);
+  for (const record of locked) {
+    const read = ctx.pre.find((item) => item.id === record.id);
+    if (!read || record.version !== read.version || (ctx.mode === "author" && record.totalKrw < 0)) throw new UserFacingError(staleMessage(record.updatedAt));
+  }
+  const taken = takenByOthers(await listLiveLinkOwnersByRecords(ctx.viewer, ctx.ids, tx), ctx.owner);
+  if (taken.size > 0) throw new UserFacingError(conflictMessageOf(ctx.pre, taken));
+  await ctx.deps?.afterLock?.();
+  const attachedIds: string[] = [];
+  for (const id of ctx.ids) {
+    const { created } = await attachLinkInTx(tx, ctx.viewer, { recordId: id, owner: ctx.owner, mode: ctx.mode });
+    if (created) attachedIds.push(id);
+  }
+  return attachedIds;
+}
+
+async function preReadRecords(viewer: Viewer, ids: readonly string[]): Promise<BatchPreRead[]> {
+  const pre: BatchPreRead[] = [];
+  for (const id of ids) {
+    const view = await getEvidenceRecord(viewer, id);
+    if (!view || view.version === undefined || view.evidenceType === undefined) throw new UserFacingError(RECORD_NOT_FOUND);
+    const blocked = view.statusWord ? evidenceAttachBlockOf(view.statusWord) : null;
+    if (blocked) throw new UserFacingError(blocked);
+    pre.push({ id, version: view.version, evidenceType: view.evidenceType, counterparty: view.counterparty ?? "—" });
+  }
+  return pre;
 }
 
 async function attachBatch(viewer: Viewer, mode: AttachBatchMode, input: AttachBatchInput, deps?: EvidenceAttachDeps): Promise<{ attached: number }> {
@@ -282,11 +315,13 @@ async function attachBatch(viewer: Viewer, mode: AttachBatchMode, input: AttachB
   if (input.evidenceIds.length > ATTACH_BATCH_MAX) throw new UserFacingError(ATTACH_BATCH_CAP_LINE);
   const ids = [...new Set(input.evidenceIds)].sort();
   if (!ids.every((id) => UUID_SHAPE.test(id))) throw new UserFacingError(RECORD_NOT_FOUND);
-  if (input.owner.kind !== "expense") throw new ExpenseNotFoundError();
-
   const keys = await readKeys(viewer);
+  return input.owner.kind === "purchase_request" ? attachBatchToRequest(viewer, mode, keys, input.owner, ids, deps) : attachBatchToExpense(viewer, mode, keys, input.owner, ids, deps);
+}
+
+async function attachBatchToExpense(viewer: Viewer, mode: AttachBatchMode, keys: ViewerKeys, doc: AttachOwnerRef, ids: readonly string[], deps?: EvidenceAttachDeps): Promise<{ attached: number }> {
   // 못 보는 문서는 없는 문서와 같은 거부 하나(ExpenseNotFoundError). 작성자 갈래는 기안자 본인만 — 남이면 같은 거부.
-  const before = await readEvidenceOwner(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: input.owner.id });
+  const before = await readEvidenceOwner(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: doc.id });
   if (mode === "registrar" && !keys.intake) throw new ForbiddenError(INTAKE_FORBIDDEN);
   if (mode === "author") {
     if (before.drafterId !== viewer.id) throw new ExpenseNotFoundError();
@@ -299,20 +334,13 @@ async function attachBatch(viewer: Viewer, mode: AttachBatchMode, input: AttachB
   };
   if (!allowed(before, paidBefore)) throw new UserFacingError(evidenceAttachRefusal(before));
 
-  const pre: BatchPreRead[] = [];
-  for (const id of ids) {
-    const view = await getEvidenceRecord(viewer, id);
-    if (!view || view.version === undefined || view.evidenceType === undefined) throw new UserFacingError(RECORD_NOT_FOUND);
-    const blocked = view.statusWord ? evidenceAttachBlockOf(view.statusWord) : null;
-    if (blocked) throw new UserFacingError(blocked);
-    pre.push({ id, version: view.version, evidenceType: view.evidenceType, counterparty: view.counterparty ?? "—" });
-  }
+  const pre = await preReadRecords(viewer, ids);
   const codes = await loadPairCodes(viewer);
   await deps?.afterPreRead?.();
 
   try {
     return await withTransaction(async (tx) => {
-      const owner = await lockEvidenceOwnerForChange(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: input.owner.id, before }, tx);
+      const owner = await lockEvidenceOwnerForChange(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: doc.id, before }, tx);
       const paid = (await findLivePayment(viewer, owner.id, tx)) !== null;
       if (!allowed(owner, paid)) throw new UserFacingError(evidenceAttachRefusal(owner));
       const row = await lockExpenseForUpdate(viewer, owner.id, tx);
@@ -321,20 +349,7 @@ async function attachBatch(viewer: Viewer, mode: AttachBatchMode, input: AttachB
         const pair = pairDecision(codes, row.paymentMethod, item.evidenceType);
         if (!pair.allowed) throw new UserFacingError(pair.reason);
       }
-      const locked = await lockRecordsForUpdate(viewer, ids, tx);
-      if (locked.length !== ids.length) throw new UserFacingError(RECORD_NOT_FOUND);
-      for (const record of locked) {
-        const read = pre.find((item) => item.id === record.id);
-        if (!read || record.version !== read.version || (mode === "author" && record.totalKrw < 0)) throw new UserFacingError(staleMessage(record.updatedAt));
-      }
-      const taken = takenByOthers(await listLiveLinkOwnersByRecords(viewer, ids, tx), owner.id);
-      if (taken.size > 0) throw new UserFacingError(conflictMessageOf(pre, taken));
-      await deps?.afterLock?.();
-      const attachedIds: string[] = [];
-      for (const id of ids) {
-        const { created } = await attachLinkInTx(tx, viewer, { recordId: id, owner: { kind: "expense", id: owner.id }, mode });
-        if (created) attachedIds.push(id);
-      }
+      const attachedIds = await lockAndAttachRecords(tx, { viewer, mode, keys, owner: { kind: "expense", id: owner.id }, ids, pre, deps });
       const firstId = attachedIds[0];
       if (firstId === undefined) return { attached: 0 };
       // 차례(06.1-12): 붙임 행 → 05 훅(반복문 밖 한 번) → 자동 확인(경영관리 · 지급 권한자만 저장 — 카드 R2) → 행동 로그 한 줄(PA-BATCH).
@@ -354,13 +369,51 @@ async function attachBatch(viewer: Viewer, mode: AttachBatchMode, input: AttachB
       return { attached: attachedIds.length };
     });
   } catch (error) {
-    // 부분 유니크 위반은 트랜잭션이 중단 상태라 밖에서 다시 읽어 같은 글자로 던진다(잠금이 막지만 마지막 안전망).
-    if (error instanceof EvidenceTakenError || isUniqueViolation(error, LIVE_LINK_UNIQUE)) {
-      const taken = takenByOthers(await listLiveLinkOwnersByRecords(viewer, ids), input.owner.id);
-      throw new UserFacingError(taken.size > 0 ? conflictMessageOf(pre, taken) : evidenceBatchConflictMessage(pre[0]?.counterparty ?? "—", 0));
-    }
-    throw error;
+    throw await batchConflictOr(error, viewer, doc, ids, pre);
   }
+}
+
+// 구매 요청 — 작성자 갈래만(경영관리는 06.1-06 S4 하나 붙이기). 05 규칙표 밖: 결재 · 짝 · 05 훅 없음, 견적 · 확정 실행가 칸은 쓰지 않는다.
+async function attachBatchToRequest(viewer: Viewer, mode: AttachBatchMode, keys: ViewerKeys, doc: AttachOwnerRef, ids: readonly string[], deps?: EvidenceAttachDeps): Promise<{ attached: number }> {
+  if (mode !== "author") throw new UserFacingError(PURCHASE_REQUEST_NOT_FOUND);
+  if (!(await can(viewer, "evidence", "view"))) throw new ForbiddenError(INTAKE_FORBIDDEN);
+  const open = (facts: Awaited<ReturnType<typeof readPurchaseRequestEvidenceFacts>>): boolean => facts !== null && purchaseRequestAuthorOpen(facts, viewer.id);
+  const before = await readPurchaseRequestEvidenceFacts(viewer, doc.id);
+  if (!open(before)) throw new UserFacingError(before?.requestedBy === viewer.id && before.status === "cancelled" ? PURCHASE_REQUEST_CANCELLED : PURCHASE_REQUEST_NOT_FOUND);
+  const pre = await preReadRecords(viewer, ids);
+  await deps?.afterPreRead?.();
+
+  try {
+    return await withTransaction(async (tx) => {
+      // 요청 행을 잠근 같은 읽기로 다시 판정한다(잠금 뒤 취소 · 완료 프로젝트 · 먼저 붙음).
+      const facts = await readPurchaseRequestEvidenceFacts(viewer, doc.id, tx);
+      if (!open(facts)) throw new UserFacingError(facts?.status === "cancelled" ? PURCHASE_REQUEST_CANCELLED : PURCHASE_REQUEST_NOT_FOUND);
+      const attachedIds = await lockAndAttachRecords(tx, { viewer, mode, keys, owner: { kind: "purchase_request", id: doc.id }, ids, pre, deps });
+      const firstId = attachedIds[0];
+      if (firstId === undefined) return { attached: 0 };
+      await recordAction(
+        viewer,
+        {
+          actionType: "document_update",
+          entity: "evidence_record",
+          entityId: firstId,
+          documentId: doc.id,
+          detail: { change: "evidence_record_attach", ownerKind: "purchase_request", ownerId: doc.id, attachMode: mode, recordIds: attachedIds },
+        },
+        { tx, isActionTypeEnabled: deps?.isActionTypeEnabled },
+      );
+      return { attached: attachedIds.length };
+    });
+  } catch (error) {
+    throw await batchConflictOr(error, viewer, doc, ids, pre);
+  }
+}
+
+// 부분 유니크 위반은 트랜잭션이 중단 상태라 밖에서 다시 읽어 같은 글자로 던진다(잠금이 막지만 마지막 안전망).
+async function batchConflictOr(error: unknown, viewer: Viewer, doc: AttachOwnerRef, ids: readonly string[], pre: readonly BatchPreRead[]): Promise<unknown> {
+  if (!(error instanceof EvidenceTakenError || isUniqueViolation(error, LIVE_LINK_UNIQUE))) return error;
+  const taken = takenByOthers(await listLiveLinkOwnersByRecords(viewer, ids), doc);
+  return new UserFacingError(taken.size > 0 ? conflictMessageOf(pre, taken) : evidenceBatchConflictMessage(pre[0]?.counterparty ?? "—", 0));
 }
 
 /** 작성자 갈래 — 자기 임시 · 반려 · 회수 · 승인 지출결의에 1 ~ ATTACH_BATCH_MAX장(06.1-08 S5). */
@@ -437,6 +490,47 @@ export async function detachEvidenceRecord(viewer: Viewer, input: { linkId: stri
   });
 }
 
+// ── 작성자 자기 떼기(06.1-08 A9 · RP-4 · PA-PRFIX) ───────────────────────────────────────────────────────────
+// 자기가 고른 author 붙임만, 편집 가능 상태(임시 · 반려 · 회수)의 지출결의에서만. 결재 중 · 승인은 05 거부 글자 그대로(D-6110 · C5 → RP-4).
+// 구매 요청 붙임은 작성자 떼기 갈래가 없다 — 없는 붙임과 같은 거부. 남의 붙임 · 경영관리 붙임도 같은 거부(정보 누설 없음).
+async function readOwnAuthorLink(viewer: Viewer, linkId: string) {
+  const link = UUID_SHAPE.test(linkId) ? await findLinkById(viewer, linkId) : null;
+  if (!link || link.ownerKind !== EXPENSE_DOCUMENT_KIND || link.attachMode !== "author" || link.attachedBy !== viewer.id) throw new UserFacingError(LINK_NOT_FOUND);
+  return link;
+}
+
+export async function detachOwnEvidence(viewer: Viewer, input: { linkId: string; reason: string }, deps?: EvidenceAttachDeps): Promise<{ detached: boolean }> {
+  const keys = await readKeys(viewer);
+  const link = await readOwnAuthorLink(viewer, input.linkId);
+  const before = await readLinkedExpense(viewer, link.ownerId);
+  if (!evidenceRecordRights(before, flagsOf(viewer, keys, before, false)).authorDetach) throw new UserFacingError(evidenceDetachRefusal(before));
+  const reason = validateRejectReason(input.reason);
+  if (link.detachedAt !== null) return { detached: false };
+  await deps?.afterPreRead?.();
+
+  return withTransaction(async (tx) => {
+    const owner = await lockEvidenceOwnerForChange(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerId: link.ownerId, before }, tx);
+    if (!evidenceRecordRights(owner, flagsOf(viewer, keys, owner, false)).authorDetach) throw new UserFacingError(evidenceDetachRefusal(owner));
+    await lockEvidenceRecordState(viewer, link.evidenceRecordId, tx);
+    await deps?.afterLock?.();
+    const detached = await detachLink(viewer, { linkId: link.id, reason }, tx);
+    if (!detached) return { detached };
+    // 편집 가능 상태라 05 훅 · 문서 version 없음(05 X-1).
+    await recordAction(
+      viewer,
+      {
+        actionType: "document_update",
+        entity: "evidence_record",
+        entityId: link.evidenceRecordId,
+        documentId: owner.id,
+        detail: { change: "evidence_record_detach", ownerKind: "expense", ownerId: owner.id, linkId: link.id, attachMode: "author", reasonLength: reason.length },
+      },
+      { tx, isActionTypeEnabled: deps?.isActionTypeEnabled },
+    );
+    return { detached };
+  });
+}
+
 async function detachFromPurchaseRequest(
   viewer: Viewer,
   keys: ViewerKeys,
@@ -496,7 +590,10 @@ export async function previewDetach(viewer: Viewer, input: { linkId: string }): 
   }
   if (link.ownerKind !== EXPENSE_DOCUMENT_KIND) throw new UserFacingError(LINK_NOT_FOUND);
   const owner = await readLinkedExpense(viewer, link.ownerId);
-  if (evidenceRecordRights(owner, flagsOf(viewer, keys, owner, false)).detach === "none") throw new UserFacingError(evidenceDetachRefusal(owner));
+  const rights = evidenceRecordRights(owner, flagsOf(viewer, keys, owner, false));
+  // 경영관리 떼기 권리가 없으면 자기 author 붙임의 작성자 떼기 권리로 본다(06.1-08) — 둘 다 없으면 떼기와 같은 거부.
+  const ownAuthor = link.attachMode === "author" && link.attachedBy === viewer.id && rights.authorDetach;
+  if (rights.detach === "none" && !ownAuthor) throw new UserFacingError(evidenceDetachRefusal(owner));
   const [sources, expense] = await Promise.all([
     evidenceSourcesOf(viewer, { ownerKind: EXPENSE_DOCUMENT_KIND, ownerIds: [owner.id] }),
     findExpenseById(viewer, owner.id),

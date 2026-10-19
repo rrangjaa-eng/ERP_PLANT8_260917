@@ -1,12 +1,18 @@
-import { test, expect, type Browser } from "@playwright/test";
+import { randomUUID } from "node:crypto";
+import { test, expect, type Browser, type Page } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { expenses } from "@/db/schema";
-import { getApprovalView, rejectDocument } from "@/domain/approvals";
-import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND } from "@/domain/expenses";
+import { expenses, projects, purchaseRequests } from "@/db/schema";
+import { approveDocument, getApprovalView, rejectDocument } from "@/domain/approvals";
+import { createExpenseFromLines, EXPENSE_DOCUMENT_KIND, submitExpense } from "@/domain/expenses";
 import { createIntakeManager, insertLinkFixture, insertRecordFixture, setRecordVisibilityFixture } from "@/test/integration/fixtures/evidence";
+import { attachEvidence } from "@/test/integration/fixtures/expenses";
+import { createOrgUnit, createTeam } from "@/domain/org";
+import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { seoulToday } from "@/lib/dates";
 import { setupExpenseE2E, submitLineExpense, type ExpenseE2E } from "./expense-fixture";
-import { loginPage, waitForHydration } from "./leave-org";
+import { loginPage, makePerson, waitForHydration, type Person } from "./leave-org";
 import { clearEvidence, loginAs } from "./helpers/evidence";
 
 // 06.1-08 S5(EVID-07 · RP-4): 작성자 증빙 고르기 — 임시 지출결의 화면 → `증빙 고르기 N` → PickDialog 다중 → 붙임 → 문서 섹션 읽기 행.
@@ -142,4 +148,231 @@ test("경영관리: 모달을 연 뒤 다른 경로로 하나가 먼저 붙으�
   await expect(options).toHaveCount(1);
   await expect(options.first()).toContainText("남는곳");
   await expect(page.getByRole("table", { name: "붙은 증빙" })).toHaveCount(0);
+});
+
+// ── 06.1-08 Task 3 — 문서 상태 × 자격 · 자기 떼기 ──────────────────────────────────────────────────────────
+
+const LOCKED_IN_REVIEW = "결재 중 · 증빙은 경영관리";
+const LOCKED_APPROVED = "승인됨 · 떼기는 증빙 무효 담당";
+const LOCKED_COMPLETED = "완료 프로젝트 · 증빙은 경영관리";
+
+// 결재 중(번호 있음) 문서 — 05 파일 한 장을 붙여 제출한다(도메인 경로). 화면 업로드를 거치지 않아 빠르다.
+async function inReviewDocument(fx: ExpenseE2E): Promise<string> {
+  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.tracer.id] });
+  const expenseId = created.created[0]?.expenseId;
+  if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
+  await attachEvidence(fx.pm.viewer, expenseId);
+  const [row] = await db.select({ version: expenses.version }).from(expenses).where(eq(expenses.id, expenseId));
+  if (!row) throw new Error("문서 없음");
+  const submitted = await submitExpense(fx.pm.viewer, { expenseId, expectedVersion: row.version });
+  if (submitted.kind !== "submitted") throw new Error("제출 안 됨");
+  return expenseId;
+}
+
+async function approvedDocument(fx: ExpenseE2E): Promise<string> {
+  const expenseId = await inReviewDocument(fx);
+  const view = await getApprovalView(fx.lead.viewer, { kind: EXPENSE_DOCUMENT_KIND, documentId: expenseId });
+  if (!view) throw new Error("결재 문서를 읽지 못했다");
+  let version = view.version;
+  let status = "submitted";
+  for (const approver of [fx.lead, fx.divisionHead, fx.mgmt, fx.ceo]) {
+    if (status === "approved") break;
+    const result = await approveDocument(approver.viewer, { instanceId: view.instanceId, expectedVersion: version });
+    version = result.version;
+    status = result.status;
+  }
+  if (status !== "approved") throw new Error(`결재 통과 안 됨: ${status}`);
+  return expenseId;
+}
+
+const pickTrigger = (page: Page) => page.getByRole("button", { name: /^증빙 고르기/ });
+const detachButton = (page: Page) => page.getByRole("button", { name: "떼기" });
+
+test("결재 중 문서 × 네 자격 — 작성자 · 팀장은 `증빙 고르기` 0 · 경영관리(키 있음)는 열면 고른 행 0 · 키 없음은 0 + 잠김 한 줄 · `떼기` 0", async ({ page, browser, baseURL }) => {
+  test.setTimeout(240_000);
+  const fx = await setupExpenseE2E();
+  const keyed = await createIntakeManager("키있음", { attach: true });
+  const keyless = await createIntakeManager("키없음", { attach: false });
+  if (!keyed.roleId || !keyless.roleId) throw new Error("계급 없음");
+  const expenseId = await inReviewDocument(fx);
+  await insertLinkFixture({ recordId: await insertRecordFixture(keyed, { nameOnDocument: "이미붙음" }), ownerId: expenseId, attachMode: "author", attachedBy: fx.pm.viewer.id });
+  const candidate = await insertRecordFixture(keyed, { nameOnDocument: fx.vendorName });
+  await setRecordVisibilityFixture(candidate, { visibility: "team", teamId: fx.teamId });
+
+  const author = await loginPage(browser, baseURL, fx.pm);
+  await author.goto(`/expenses/${expenseId}`);
+  await expect(author.getByRole("table", { name: "붙은 증빙" })).toBeVisible();
+  await expect(pickTrigger(author)).toHaveCount(0);
+  await expect(detachButton(author)).toHaveCount(0);
+  await expect(author.getByText(LOCKED_IN_REVIEW, { exact: true })).toHaveCount(1);
+  await author.context().close();
+
+  const lead = await loginPage(browser, baseURL, fx.lead);
+  await lead.goto(`/expenses/${expenseId}`);
+  await expect(lead.getByRole("table", { name: "붙은 증빙" })).toBeVisible();
+  await expect(pickTrigger(lead)).toHaveCount(0);
+  await lead.context().close();
+
+  await loginAs(page, keyless.roleId);
+  await page.goto(`/expenses/${expenseId}`);
+  await expect(page.getByRole("table", { name: "붙은 증빙" })).toBeVisible();
+  await expect(pickTrigger(page)).toHaveCount(0);
+  await expect(page.getByText(LOCKED_IN_REVIEW, { exact: true })).toHaveCount(1);
+  await expect(detachButton(page)).toHaveCount(0);
+
+  const keyedPage = await browser.newPage({ baseURL });
+  await loginAs(keyedPage, keyed.roleId);
+  await keyedPage.goto(`/expenses/${expenseId}`);
+  const trigger = keyedPage.getByRole("button", { name: /^증빙 고르기 \d+$/ });
+  await waitForHydration(trigger);
+  await expect(detachButton(keyedPage)).toHaveCount(0);
+  await trigger.click();
+  const dialog = keyedPage.getByRole("dialog", { name: "증빙 고르기" });
+  await expect(dialog.locator("[aria-busy]")).toHaveCount(0);
+  await expect(dialog.getByRole("option").first()).toBeVisible();
+  await expect(dialog.getByRole("option", { selected: true })).toHaveCount(0);
+  await keyedPage.context().close();
+});
+
+test("승인 문서 작성자 — 완료 아닌 프로젝트는 `증빙 고르기` 있음 · `떼기` 0 · `승인됨 · 떼기는 증빙 무효 담당` / 완료 프로젝트는 `증빙 고르기` 0 · `완료 프로젝트 · 증빙은 경영관리` 한 줄", async ({ browser, baseURL }) => {
+  test.setTimeout(240_000);
+  const fx = await setupExpenseE2E();
+  const manager = await createIntakeManager();
+  const expenseId = await approvedDocument(fx);
+  await insertLinkFixture({ recordId: await insertRecordFixture(manager, { nameOnDocument: "이미붙음" }), ownerId: expenseId, attachMode: "author", attachedBy: fx.pm.viewer.id });
+  const candidate = await insertRecordFixture(manager, { nameOnDocument: fx.vendorName });
+  await setRecordVisibilityFixture(candidate, { visibility: "team", teamId: fx.teamId });
+
+  const open = await loginPage(browser, baseURL, fx.pm);
+  await open.goto(`/expenses/${expenseId}`);
+  await expect(pickTrigger(open)).toHaveCount(1);
+  await expect(detachButton(open)).toHaveCount(0);
+  await expect(open.getByText(LOCKED_APPROVED, { exact: true })).toHaveCount(1);
+  await open.context().close();
+
+  await db.update(projects).set({ status: "completed" }).where(eq(projects.id, fx.projectId));
+  const closed = await loginPage(browser, baseURL, fx.pm);
+  await closed.goto(`/expenses/${expenseId}`);
+  await expect(closed.getByRole("table", { name: "붙은 증빙" })).toBeVisible();
+  await expect(pickTrigger(closed)).toHaveCount(0);
+  await expect(closed.getByText(LOCKED_COMPLETED, { exact: true })).toHaveCount(1);
+  await closed.context().close();
+});
+
+test("작성자 자기 떼기 — 고른 증빙 읽기 행 `떼기` → 사유 비면 1차 막힘 → 사유 적고 떼면 그 행이 사라지고 `증빙 고르기 1`이 다시 선다", async ({ browser, baseURL }) => {
+  test.setTimeout(180_000);
+  const fx = await setupExpenseE2E();
+  const manager = await createIntakeManager();
+  const recordId = await insertRecordFixture(manager, { nameOnDocument: fx.vendorName });
+  await setRecordVisibilityFixture(recordId, { visibility: "team", teamId: fx.teamId });
+  const created = await createExpenseFromLines(fx.pm.viewer, { lineIds: [fx.lines.tracer.id] });
+  const expenseId = created.created[0]?.expenseId;
+  if (!expenseId) throw new Error("작성 중 문서를 만들지 못했다");
+
+  const page = await loginPage(browser, baseURL, fx.pm);
+  await page.goto(`/expenses/${expenseId}`);
+  const trigger = page.getByRole("button", { name: "증빙 고르기 1" });
+  await waitForHydration(trigger);
+  await trigger.click();
+  const picker = page.getByRole("dialog", { name: "증빙 고르기" });
+  await expect(picker.locator("[aria-busy]")).toHaveCount(0);
+  await page.keyboard.press("Enter");
+  await expect(picker).toBeHidden();
+
+  const rows = page.getByRole("table", { name: "붙은 증빙" }).locator("tbody tr:visible");
+  await expect(rows).toHaveCount(1);
+  const detach = detachButton(page);
+  await waitForHydration(detach);
+  await detach.click();
+  const dialog = page.getByRole("dialog", { name: "증빙 떼기" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("사유 없음 · 사유 적기");
+  const confirm = dialog.getByRole("button", { name: /^증빙 떼기/ });
+  await expect(confirm).toHaveAttribute("aria-disabled", "true");
+  await dialog.getByLabel("사유").fill("잘못 고름");
+  await confirm.click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("table", { name: "붙은 증빙" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "증빙 고르기 1" })).toBeVisible();
+  await page.context().close();
+});
+
+// ── 06.1-08 Task 3 — 구매 요청 목록의 `증빙 고르기` (PA-PRLINE · PA-PRSHEET · 카드 G1) ────────────────────────
+
+async function purchaseAuthor(candidateName: string): Promise<{ person: Person; teamId: string }> {
+  const suffix = randomUUID().slice(0, 8);
+  const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E증빙본부-${suffix}` });
+  const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E증빙팀-${suffix}` });
+  const person = await makePerson("증빙요청", DEFAULT_ROLE_ID, team.id, `${seoulToday().slice(0, 4)}-01-01`);
+  const manager = await createIntakeManager();
+  const recordId = await insertRecordFixture(manager, { nameOnDocument: candidateName, supplyKrw: 110_000 });
+  await setRecordVisibilityFixture(recordId, { visibility: "team", teamId: team.id });
+  return { person, teamId: team.id };
+}
+
+async function ownRequest(requestedBy: string, itemName: string, status: "requested" | "purchased"): Promise<string> {
+  const number = `TCEV${randomUUID().slice(0, 6)}`;
+  await db.insert(purchaseRequests).values({
+    number,
+    linkKind: "team_cost",
+    requestedBy,
+    itemName,
+    estimateAmountKrw: 33_000,
+    ...(status === "purchased" ? { status: "purchased", completedBy: requestedBy, completedAt: new Date() } : {}),
+  });
+  return number;
+}
+
+test("구매 요청 목록(PC) — 내 `신청됨` 행의 `증빙 고르기 1` → Enter → 그 행 트리거 사라지고 품목 칸 2행 `증빙 {거래처} · {합계}`", async ({ browser, baseURL }) => {
+  test.setTimeout(120_000);
+  const author = await purchaseAuthor("행증빙상회");
+  const number = await ownRequest(author.person.viewer.id, "PC 증빙 물건", "requested");
+  const page = await loginPage(browser, baseURL, author.person);
+  await page.goto("/cards/purchases");
+  const row = page.getByRole("row").filter({ hasText: number });
+  const trigger = row.getByRole("button", { name: `${number} 증빙 고르기 1` });
+  await waitForHydration(trigger);
+  await trigger.click();
+  const dialog = page.getByRole("dialog", { name: "증빙 고르기" });
+  await expect(dialog.locator("[aria-busy]")).toHaveCount(0);
+  await expect(dialog.getByRole("option", { selected: true })).toHaveCount(1);
+  await page.keyboard.press("Enter");
+  await expect(dialog).toBeHidden();
+  await expect(row.getByRole("button", { name: /증빙 고르기/ })).toHaveCount(0);
+  await expect(row).toContainText("증빙 행증빙상회 · 110,000");
+  await page.context().close();
+});
+
+test("구매 요청 목록(폰 375) — 구매 완료 미배정 내 행은 시트에 `증빙 고르기 1` 한 줄 · `신청됨` 내 행은 위 `증빙 고르기 1` · 아래 `요청 취소` 두 줄(각 높이 ≥ 44)", async ({ browser, baseURL }) => {
+  test.setTimeout(120_000);
+  const author = await purchaseAuthor("시트증빙상회");
+  const doneNumber = await ownRequest(author.person.viewer.id, "시트 완료 물건", "purchased");
+  const openNumber = await ownRequest(author.person.viewer.id, "시트 신청 물건", "requested");
+  const page = await loginPage(browser, baseURL, author.person, { width: 375, height: 700 });
+  await page.goto("/cards/purchases?status=전체");
+
+  const tapDone = page.getByRole("button", { name: `${doneNumber} 상세 보기` });
+  await waitForHydration(tapDone);
+  await tapDone.click();
+  const doneSheet = page.getByRole("dialog", { name: "시트 완료 물건" });
+  await expect(doneSheet).toBeVisible();
+  await expect(doneSheet.getByRole("button", { name: "증빙 고르기 1" })).toHaveCount(1);
+  await expect(doneSheet.getByRole("button", { name: /요청 취소/ })).toHaveCount(0);
+  await doneSheet.getByRole("button", { name: "닫기" }).click();
+  await expect(doneSheet).toBeHidden();
+
+  const tapOpen = page.getByRole("button", { name: `${openNumber} 상세 보기` });
+  await tapOpen.click();
+  const openSheet = page.getByRole("dialog", { name: "시트 신청 물건" });
+  await expect(openSheet).toBeVisible();
+  const pick = openSheet.getByRole("button", { name: "증빙 고르기 1" });
+  const cancel = openSheet.getByRole("button", { name: `${openNumber} 요청 취소` });
+  const pickBox = await pick.boundingBox();
+  const cancelBox = await cancel.boundingBox();
+  expect(pickBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+  expect(cancelBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+  expect(pickBox?.y ?? Number.MAX_SAFE_INTEGER).toBeLessThan(cancelBox?.y ?? 0);
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
+  await page.context().close();
 });

@@ -15,3 +15,7 @@ registerAction({ name: "previewDetachAction", menu: "evidence.intake", action: "
 registerAction({ name: "listEvidencePoolAction", menu: "evidence", action: "view", dtoName: "EvidencePoolItemDto" });
 registerAction({ name: "attachEvidenceAsAuthorAction", menu: "evidence", action: "view", dtoName: null });
 registerAction({ name: "attachEvidenceBatchAction", menu: "evidence.intake", action: "write", dtoName: null });
+
+// 06.1-08 작성자 자기 떼기 · 미리 보기 — 증빙 보기 + 05 규칙표 위 작성자 칸은 domain이 판정한다.
+registerAction({ name: "detachOwnEvidenceAction", menu: "evidence", action: "view", dtoName: null });
+registerAction({ name: "previewOwnDetachAction", menu: "evidence", action: "view", dtoName: "EvidenceDetachPreviewDto" });

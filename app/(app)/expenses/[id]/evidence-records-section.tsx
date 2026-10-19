@@ -24,6 +24,7 @@ export type LinkedEvidenceItem = {
   pickedBy: string | null;
   pickedOn: string | null;
   action: "detach" | "void" | null;
+  ownDetach: boolean;
 };
 
 /** 06.1-08 — 증빙 고르기 트리거. 모드가 none이거나 후보가 0이면 서버가 이 값을 null로 준다(트리거 DOM 0). */
@@ -75,9 +76,9 @@ export function EvidenceRecordsSection({
   async function openDetach(item: LinkedEvidenceItem) {
     if (opening !== null) return;
     setOpening(item.linkId);
-    const expectedKrw = await previewExpectedKrw(item.linkId);
+    const expectedKrw = await previewExpectedKrw(item.linkId, item.ownDetach);
     setOpening(null);
-    setTarget({ linkId: item.linkId, mode: item.action === "void" ? "void" : "detach", subtitle: [titleOf(item), number].filter(Boolean).join(" · "), expectedKrw });
+    setTarget({ linkId: item.linkId, mode: item.action === "void" ? "void" : "detach", subtitle: [titleOf(item), number].filter(Boolean).join(" · "), expectedKrw, own: item.ownDetach });
   }
 
   return (

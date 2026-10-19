@@ -99,6 +99,7 @@ export const ROW_SCOPE_DISPOSITION: readonly DomainDisposition[] = [
   { file: "domain/purchase-requests/index.ts", fn: "loadPurchaseCompletion", primitive: "findProjectById", kind: "post-gate", reason: "cards.purchases write 판정 뒤 — 구매 처리 권한자 privileged(D-6220 · 목록도 전부), 줄은 요청 행이 고정(작성 때 loadQuoteLineBasis가 범위 판정)" },
   { file: "domain/purchase-requests/index.ts", fn: "loadPurchaseCompletion", primitive: "findQuoteLineById", kind: "post-gate", reason: "cards.purchases write 판정 뒤 — 구매 처리 권한자 privileged(D-6220 · 목록도 전부), 줄은 요청 행이 고정(작성 때 loadQuoteLineBasis가 범위 판정)" },
   { file: "domain/purchase-requests/index.ts", fn: "precheckPurchaseCancel", primitive: "findProjectById", kind: "post-gate", reason: "취소 권리(요청자 본인 · cards.purchases write) 판정 뒤 — 요청 행이 고정한 프로젝트의 완료 여부만 본다(값은 나가지 않고 완료면 거부, U1-1)" },
+  { file: "domain/purchase-requests/index.ts", fn: "readPurchaseRequestEvidenceFacts", primitive: "findProjectById", kind: "post-gate", reason: "요청자 본인 판정 뒤 — 요청 행이 고정한 프로젝트의 완료 여부만 본다(값은 나가지 않는다, 06.1-08)" },
   { file: "domain/purchase-requests/index.ts", fn: "loadQuoteLineBasis", primitive: "findQuoteLineById", kind: "post-gate", reason: "줄 → 차수는 프로젝트 id만 꺼낸다 — 같은 함수의 findProjectInScope 판정 전에는 값이 나가지 않는다(범위 밖 → LINK_MISSING)" },
   { file: "domain/purchase-requests/index.ts", fn: "loadQuoteLineBasis", primitive: "findQuoteRevisionById", kind: "post-gate", reason: "줄 → 차수는 프로젝트 id만 꺼낸다 — 같은 함수의 findProjectInScope 판정 전에는 값이 나가지 않는다(범위 밖 → LINK_MISSING)" },
   { file: "domain/purchase-requests/index.ts", fn: "loadQuoteLineBasis", primitive: "findLatestQuoteRevision", kind: "post-gate", reason: "같은 함수의 findProjectInScope 판정 뒤 현재 차수 id" },
@@ -173,6 +174,7 @@ export const PROJECT_READ_DISPOSITION: readonly ProjectReadDisposition[] = [
   { file: "repositories/purchase-requests.ts", fn: "listPurchaseRequestAttachCandidates", reason: "증빙 붙이기 후보 — 목록과 같은 listAccess 범위(scopeCondition · 06.1-06)" },
   { file: "repositories/purchase-requests.ts", fn: "isPurchaseRequestInScope", reason: "구매 요청 하나 읽기(canSeePurchaseRequest) — 목록과 같은 listAccess 범위(06.1-06)" },
   { file: "repositories/purchase-requests.ts", fn: "hasPurchaseRequestAttachTarget", reason: "증빙 붙이기 대상 있음 — 목록과 같은 listAccess 범위(06.1-06)" },
+  { file: "repositories/purchase-requests.ts", fn: "filterPurchaseRequestIdsInScope", reason: "구매 요청 목록 쪽의 증빙 읽기 행 — 목록과 같은 listAccess 범위(scopeCondition)로 범위 밖 id를 버린다(06.1-08)" },
   { file: "repositories/reserve-entries.ts", fn: "findProjectClientIds", reason: "리저브 저장 트랜잭션 안 클라이언트 대조 — 트랜잭션 전 listProjectIdsInScope 판정 뒤, 이름 노출 없음" },
   { file: "repositories/settlement-approvals.ts", fn: "listSettlementSummaries", reason: "정산 결재 문서(M9) — 도메인 canSeeSettlement · 결재 엔진이 거른다(ⓒ 처분표 줄)" },
 ];

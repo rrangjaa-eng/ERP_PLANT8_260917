@@ -3,6 +3,7 @@ import { EVIDENCE_FORMATS } from "@/domain/evidence-import/registry";
 import { listEvidenceRecordsByIds, type EvidenceRecordView } from "@/domain/evidence-records";
 import { ATTACH_BATCH_CAP_LINE, ATTACH_BATCH_MAX, flagsOf, loadPairCodes, pairDecision, readKeys, type PairCodes, type ViewerKeys } from "@/domain/evidence-records/attach";
 import { ExpenseNotFoundError } from "@/domain/expenses";
+import { purchaseRequestAuthorOpen, readPurchaseRequestEvidenceFacts } from "@/domain/purchase-requests";
 import { can } from "@/domain/permissions/can";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { projectMany, type DtoSpec } from "@/domain/permissions/project";
@@ -44,8 +45,15 @@ async function expenseMode(viewer: Viewer, keys: ViewerKeys, id: string): Promis
   return { mode: "none", owner };
 }
 
+// 구매 요청 — 작성자 갈래만: 증빙 보기 ∧ 내 요청 · 취소 아님 · 완료 프로젝트 줄 아님 · 붙은 증빙 0(상태 무관 — E30 · PA-PRDONE).
+async function requestMode(viewer: Viewer, id: string): Promise<EvidencePickerMode> {
+  if (!(await can(viewer, "evidence", "view"))) return "none";
+  const facts = await readPurchaseRequestEvidenceFacts(viewer, id);
+  return facts && purchaseRequestAuthorOpen(facts, viewer.id) ? "author" : "none";
+}
+
 export async function evidencePickerMode(viewer: Viewer, owner: PoolOwner): Promise<{ mode: EvidencePickerMode }> {
-  if (owner.kind !== "expense") return { mode: "none" };
+  if (owner.kind === "purchase_request") return { mode: await requestMode(viewer, owner.id) };
   return { mode: (await expenseMode(viewer, await readKeys(viewer), owner.id)).mode };
 }
 
@@ -59,8 +67,13 @@ function allowedTypesOf(codes: PairCodes, paymentMethod: string | null): readonl
 }
 
 async function contextOf(viewer: Viewer, owner: PoolOwner): Promise<PoolContext> {
+  if (owner.kind === "purchase_request") {
+    if ((await requestMode(viewer, owner.id)) !== "author") throw notFound(owner);
+    const doc = await readPoolDocFacts(viewer, owner);
+    if (!doc) throw notFound(owner);
+    return { mode: "author", doc, allowedTypes: null, codes: null, phase: null };
+  }
   const keys = await readKeys(viewer);
-  if (owner.kind !== "expense") throw notFound(owner);
   const resolved = await expenseMode(viewer, keys, owner.id);
   if (resolved.mode === "none") throw notFound(owner);
   const doc = await readPoolDocFacts(viewer, owner);
@@ -152,13 +165,21 @@ export async function listEvidencePool(viewer: Viewer, input: { owner: PoolOwner
   };
 }
 
-/** 이 문서에 붙일 수 있는 후보 수(DB-16) — 막힌 행(짝 아님) 제외. 모드가 none이면 0. */
-export async function countEvidencePool(viewer: Viewer, owner: PoolOwner): Promise<number> {
-  if (owner.kind !== "expense") return 0;
+/**
+ * 이 문서에 붙일 수 있는 후보 수(DB-16) — 막힌 행(짝 아님) 제외. 모드가 none이면 0. 구매 요청은 문서 무관(`id` 없이도 센다 — 목록 쪽마다 한 번, PA-POOLN):
+ * 증빙 보기 권한이 없으면 0, 있으면 작성자 풀의 수(짝 판정 없음).
+ */
+export async function countEvidencePool(viewer: Viewer, owner: { kind: PoolOwner["kind"]; id?: string }): Promise<number> {
+  if (owner.kind === "purchase_request") {
+    if (owner.id !== undefined && (await requestMode(viewer, owner.id)) !== "author") return 0;
+    if (owner.id === undefined && !(await can(viewer, "evidence", "view"))) return 0;
+    return countPoolForScope(viewer, await evidenceScopeFor(viewer), { author: true, cardFormats: CARD_FORMATS, allowedTypes: null });
+  }
+  if (owner.id === undefined) return 0;
   const keys = await readKeys(viewer);
   const resolved = await expenseMode(viewer, keys, owner.id);
   if (resolved.mode === "none") return 0;
-  const doc = await readPoolDocFacts(viewer, owner);
+  const doc = await readPoolDocFacts(viewer, { kind: "expense", id: owner.id });
   if (!doc) return 0;
   const codes = await loadPairCodes(viewer);
   return countPoolForScope(viewer, await evidenceScopeFor(viewer), {

@@ -35,7 +35,7 @@ import { formatKrw } from "@/lib/format-number";
 import { isUniqueViolation } from "@/lib/pg-errors";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { findLivePayment } from "@/repositories/expense-payments";
-import { lockRecordsForUpdate } from "@/repositories/evidence-records";
+import { bumpRecordVersion, lockRecordsForUpdate } from "@/repositories/evidence-records";
 import {
   detachLink,
   findLinkById,
@@ -147,6 +147,7 @@ export async function attachLinkInTx(
   if (blocked) throw new UserFacingError(blocked);
   await hooks?.afterLock?.();
   await insertLink(viewer, { recordId: input.recordId, ownerKind: input.owner.kind, ownerId: input.owner.id, attachMode: input.mode }, tx);
+  await bumpRecordVersion(viewer, input.recordId, tx);
   return { created: true };
 }
 
@@ -283,12 +284,13 @@ type BatchCtx = { viewer: Viewer; mode: AttachBatchMode; keys: ViewerKeys; owner
 async function lockAndAttachRecords(tx: DbOrTx, ctx: BatchCtx): Promise<string[]> {
   const locked = await lockRecordsForUpdate(ctx.viewer, ctx.ids, tx);
   if (locked.length !== ctx.ids.length) throw new UserFacingError(RECORD_NOT_FOUND);
+  // 먼저 붙은 것을 version보다 먼저 본다 — 붙이기가 증빙 version을 올리므로(P3-1) 남이 먼저 붙인 줄은 낡음이 아니라 「먼저 붙임」으로 거부한다.
+  const taken = takenByOthers(await listLiveLinkOwnersByRecords(ctx.viewer, ctx.ids, tx), ctx.owner);
+  if (taken.size > 0) throw new UserFacingError(conflictMessageOf(ctx.pre, taken));
   for (const record of locked) {
     const read = ctx.pre.find((item) => item.id === record.id);
     if (!read || record.version !== read.version || (ctx.mode === "author" && record.totalKrw < 0)) throw new UserFacingError(staleMessage(record.updatedAt));
   }
-  const taken = takenByOthers(await listLiveLinkOwnersByRecords(ctx.viewer, ctx.ids, tx), ctx.owner);
-  if (taken.size > 0) throw new UserFacingError(conflictMessageOf(ctx.pre, taken));
   await ctx.deps?.afterLock?.();
   const attachedIds: string[] = [];
   for (const id of ctx.ids) {

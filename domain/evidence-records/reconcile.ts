@@ -151,3 +151,47 @@ export function overwriteBlockReason(patch: FileWinsPatch, kind: OverwriteBlockK
   const piece = changePiece(patch, kind);
   return piece === null ? null : `${piece} · ${BLOCK_WORD[kind]}`;
 }
+
+// ── 3단계 사람 고르기 후보(PA-RELAX · DB-9 · N-6 · N-7 · 카드 R3 · P2-C4) ─────────────────────────────
+// 완화 후보 = (같은 승인번호 — 사용일 무관, 카드사가 다르면 막힌 행) 또는 (같은 사용일 ∧ 같은 합계 — 카드 무관). 막힘 판정은 1단계와 같은
+// 「카드 명세 붙음」(영수증 · 05 전표 파일은 막지 않는다) → 다른 카드사 → 덮기 막힘(호출자가 06 cardUsageOverwriteBlocks로 구한 종류) 차례.
+
+export type RelaxedLine = { corpCardId: string; cardLast4: string; approvalNo: string | null; usedOn: string; totalKrw: number };
+export type RelaxedCandidateInput = {
+  id: string;
+  number: string | null;
+  corpCardId: string;
+  cardLast4: string;
+  sameIssuer: boolean;
+  approvalNo: string | null;
+  usedOn: string;
+  totalKrw: number;
+  cardStatementAttached: boolean;
+  overwriteBlock: OverwriteBlockKind | null;
+};
+export type RelaxedCandidate = { id: string; patch: FileWinsPatch; blockedReason: string | null };
+
+export function isRelaxedHit(line: Pick<RelaxedLine, "approvalNo" | "usedOn" | "totalKrw">, candidate: Pick<RelaxedCandidateInput, "approvalNo" | "usedOn" | "totalKrw">): boolean {
+  if (line.approvalNo !== null && candidate.approvalNo === line.approvalNo) return true;
+  return candidate.usedOn === line.usedOn && candidate.totalKrw === line.totalKrw;
+}
+
+function relaxedBlock(candidate: RelaxedCandidateInput, patch: FileWinsPatch): string | null {
+  if (candidate.cardStatementAttached) return `증빙 있음 · ${candidate.number ?? "—"}`;
+  if (!candidate.sameIssuer) return `카드 다름 · ${candidate.cardLast4}`;
+  return candidate.overwriteBlock ? overwriteBlockReason(patch, candidate.overwriteBlock) : null;
+}
+
+/** 줄 하나의 완화 후보 — 고를 수 있는 행이 앞, 막힌 행이 맨 뒤(각 묶음 안은 들어온 차례 그대로). */
+export function relaxedCandidatesOf(line: RelaxedLine, candidates: readonly RelaxedCandidateInput[]): RelaxedCandidate[] {
+  const items = candidates
+    .filter((candidate) => isRelaxedHit(line, candidate))
+    .map((candidate) => {
+      const patch = fileWinsPatch(
+        { totalKrw: candidate.totalKrw, corpCardId: candidate.corpCardId, cardLast4: candidate.cardLast4 },
+        { totalKrw: line.totalKrw, corpCardId: line.corpCardId, cardLast4: line.cardLast4, approvalNo: line.approvalNo },
+      );
+      return { id: candidate.id, patch, blockedReason: relaxedBlock(candidate, patch) };
+    });
+  return [...items.filter((item) => item.blockedReason === null), ...items.filter((item) => item.blockedReason !== null)];
+}

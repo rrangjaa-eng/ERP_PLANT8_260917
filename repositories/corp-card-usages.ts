@@ -1,4 +1,5 @@
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { corpCardUsages, corpCards, projects, purchaseRequests, quoteLines, quoteRevisions, teams, users, vendors } from "@/db/schema";
@@ -455,7 +456,7 @@ export type CardOwnerFacts = { id: string; kind: string; holderUserId: string | 
 export async function findCardUsageOverwriteFacts(
   viewer: Viewer,
   input: { usageIds: readonly string[]; cardIds: readonly string[] },
-  tx: DbOrTx,
+  tx: DbOrTx = db,
 ): Promise<{ usages: CardUsageOverwriteFacts[]; cards: CardOwnerFacts[] }> {
   void viewer;
   const usages =
@@ -488,4 +489,76 @@ export async function findCardUsageOverwriteFacts(
           .from(corpCards)
           .where(inArray(corpCards.id, [...input.cardIds]));
   return { usages, cards };
+}
+
+// ── 06.1-09 3단계 완화 후보(PA-RELAX · DB-9 · E5) — S4 카드 사용 후보 · S2 행 행동 · S8 재조회가 같은 조건 조각 ──────────
+
+/** 완화 후보 한 행 — 막힘(카드 명세 붙음 · 다른 카드사 · 덮기 막힘)은 부르는 domain이 순수 판정으로 가른다. 연결 프로젝트는 읽지 않는다(RP-5). */
+export type RelaxedCandidateRow = {
+  id: string;
+  version: number;
+  number: string | null;
+  corpCardId: string;
+  cardIssuer: string;
+  cardLast4: string;
+  approvalNo: string | null;
+  usedOn: string;
+  totalAmountKrw: number;
+  usedByName: string | null;
+  quoteLineId: string | null;
+};
+
+export type RelaxedLineKey = { approvalNo: string | null; usedOn: string; totalKrw: number };
+
+// (같은 승인번호 — 사용일 무관) 또는 (같은 사용일 ∧ 같은 합계 — 카드 무관). 카드사 일치는 별칭 정규화가 서식 쪽이라 domain이 가른다.
+function relaxedLineCondition(line: RelaxedLineKey): SQL | undefined {
+  const sameDayTotal = and(eq(corpCardUsages.usedOn, line.usedOn), eq(corpCardUsages.totalAmountKrw, line.totalKrw));
+  return line.approvalNo === null ? sameDayTotal : or(eq(corpCardUsages.approvalNo, line.approvalNo), sameDayTotal);
+}
+
+export async function findRelaxedCandidates(
+  viewer: Viewer,
+  input: { scope: CardUsageScope; lines: readonly RelaxedLineKey[]; excludeIds?: readonly string[] },
+  tx: DbOrTx = db,
+): Promise<RelaxedCandidateRow[]> {
+  void viewer;
+  if (input.lines.length === 0) return [];
+  const usedBy = alias(users, "used_by");
+  return tx
+    .select({
+      id: corpCardUsages.id,
+      version: corpCardUsages.version,
+      number: corpCardUsages.number,
+      corpCardId: corpCardUsages.corpCardId,
+      cardIssuer: corpCards.issuer,
+      cardLast4: corpCards.numberLast4,
+      approvalNo: corpCardUsages.approvalNo,
+      usedOn: corpCardUsages.usedOn,
+      totalAmountKrw: corpCardUsages.totalAmountKrw,
+      usedByName: usedBy.name,
+      quoteLineId: corpCardUsages.quoteLineId,
+    })
+    .from(corpCardUsages)
+    .innerJoin(corpCards, eq(corpCards.id, corpCardUsages.corpCardId))
+    .leftJoin(usedBy, eq(usedBy.id, corpCardUsages.usedByUserId))
+    .where(
+      and(
+        isNull(corpCardUsages.archivedAt),
+        scopeCondition(input.scope),
+        or(...input.lines.map(relaxedLineCondition)),
+        input.excludeIds && input.excludeIds.length > 0 ? notInArray(corpCardUsages.id, [...input.excludeIds]) : undefined,
+      ),
+    )
+    .orderBy(asc(corpCardUsages.usedOn), asc(corpCardUsages.id));
+}
+
+// 작성자 붙이기(E23): 카드 사용 값은 그대로 두고 비어 있던 승인번호만 채운다 — version 조건부 · 보관 안 된 건만. 0행(null) = 낡음.
+export async function fillCardUsageApprovalNo(viewer: Viewer, input: { id: string; version: number; approvalNo: string }, tx: DbOrTx): Promise<number | null> {
+  void viewer;
+  const [row] = await tx
+    .update(corpCardUsages)
+    .set({ approvalNo: input.approvalNo, version: sql`${corpCardUsages.version} + 1`, updatedAt: new Date() })
+    .where(and(eq(corpCardUsages.id, input.id), eq(corpCardUsages.version, input.version), isNull(corpCardUsages.archivedAt)))
+    .returning({ version: corpCardUsages.version });
+  return row?.version ?? null;
 }

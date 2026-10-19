@@ -14,7 +14,7 @@ export const POOL_LIMIT = 20;
 
 /** 점수 비교용 문서 사실 — 지출결의는 공급가액 · 종류 · 거래처 사업자번호, 구매 요청은 견적 원화(종류 · 사업자번호 칸 없음). */
 export type PoolDocFacts = {
-  kind: "expense" | "purchase_request";
+  kind: "expense" | "purchase_request" | "corp_card_usage";
   evidenceType: string | null;
   businessNo: string | null;
   amountKrw: number | null;
@@ -75,6 +75,13 @@ function searchWhere(q: string | null): SQL | null {
   const amount = /^-?\d{1,15}$/.test(amountText) ? Number(amountText) : null;
   const byName = sql`(${evidenceRecords.merchant} ilike ${like} or ${evidenceRecords.nameOnDocument} ilike ${like})`;
   return amount === null ? byName : sql`(${byName} or ${evidenceRecords.totalKrw} = ${amount} or ${evidenceRecords.supplyKrw} = ${amount})`;
+}
+
+/** 06.1-09(E23 · DB-8): 카드 사용 S5 문서 조건 — 그 카드 사용의 카드와 같은 카드 줄만. `totalKrw`를 주면 합계도 같은 줄만(센 수 — 막힌 행 제외). */
+export function sameCardFilter(viewer: Viewer, cardId: string, totalKrw?: number): SQL {
+  void viewer;
+  const card = sql`${evidenceRecords.corpCardId} = ${cardId}`;
+  return totalKrw === undefined ? card : sql`${card} and ${evidenceRecords.totalKrw} = ${totalKrw}::bigint`;
 }
 
 function ownerWhere(ownerFilter: SQL | null | undefined): SQL {

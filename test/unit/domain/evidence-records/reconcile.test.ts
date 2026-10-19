@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fileWinsPatch, overwriteBlockReason, planReconcile, type ReconcileCandidate, type ReconcileLine } from "@/domain/evidence-records/reconcile";
+import { fileWinsPatch, overwriteBlockReason, planReconcile, relaxedCandidatesOf, type ReconcileCandidate, type ReconcileLine, type RelaxedCandidateInput } from "@/domain/evidence-records/reconcile";
 
 // 06.1-09(EVID-10 · E28 · PA-1TO1 · PA-STEP1 · D-6111 · 카드 R3 · P2-C4): 카드 대사 계획 — 순수 함수(DB 없음).
 // 1단계 = 같은 카드사 · 같은 승인번호 · 같은 사용일(카드 무관) · 카드 명세 안 붙음 · 합계 음수 아님, 2단계 = 같은 카드 · 사용일 · 합계 · 증빙 없음.
@@ -155,5 +155,49 @@ describe("overwriteBlockReason — 덮기 막힘 글자(카드 R3 · P2-C4)", ()
 
   it("승인번호만인 패치 → null", () => {
     expect(overwriteBlockReason({ approvalNo: "1", total: null, card: null }, "cap")).toBeNull();
+  });
+});
+
+describe("relaxedCandidatesOf — 3단계 사람 고르기 후보(PA-RELAX · DB-9 · N-6 · 카드 R3)", () => {
+  const card = { id: CARD_A, last4: "1111" };
+  const relaxLine = { corpCardId: CARD_A, cardLast4: "1111", approvalNo: "44403241", usedOn: "2026-04-30", totalKrw: 204_100 };
+  function cand(patch: Partial<RelaxedCandidateInput> = {}): RelaxedCandidateInput {
+    return { id: "u1", number: "K-26-0001", corpCardId: card.id, cardLast4: card.last4, sameIssuer: true, approvalNo: null, usedOn: "2026-04-30", totalKrw: 204_100, cardStatementAttached: false, overwriteBlock: null, ...patch };
+  }
+
+  it("같은 카드사 · 같은 승인번호면 사용일이 달라도 후보(N-7) · 같은 사용일 · 합계면 승인번호 없어도 후보 · 둘 다 아니면 빠진다", () => {
+    const result = relaxedCandidatesOf(relaxLine, [
+      cand({ id: "a", approvalNo: "44403241", usedOn: "2026-04-01", totalKrw: 1 }),
+      cand({ id: "b" }),
+      cand({ id: "c", usedOn: "2026-04-29" }),
+    ]);
+    expect(result.map((item) => item.id)).toEqual(["a", "b"]);
+  });
+
+  it("합계가 다르면 patch.total · 카드가 다르면 patch.card(같은 카드사) — 고를 수 있는 행", () => {
+    const [item] = relaxedCandidatesOf(relaxLine, [cand({ approvalNo: "44403241", totalKrw: 200_000, corpCardId: CARD_B, cardLast4: "2222" })]);
+    expect(item?.blockedReason).toBeNull();
+    expect(item?.patch.total).toEqual({ before: 200_000, after: 204_100 });
+    expect(item?.patch.card?.before.last4).toBe("2222");
+  });
+
+  it("막힌 이유 — 카드 명세 붙음 `증빙 있음 · {번호}` · 다른 카드사 `카드 다름 · {끝 4자리}` · 덮기 막힘 글자, 막힌 행은 맨 뒤", () => {
+    const result = relaxedCandidatesOf(relaxLine, [
+      cand({ id: "x", cardStatementAttached: true }),
+      cand({ id: "y", sameIssuer: false, cardLast4: "9999" }),
+      cand({ id: "z", approvalNo: "44403241", totalKrw: 200_000, overwriteBlock: "cap" }),
+      cand({ id: "ok" }),
+    ]);
+    expect(result.map((item) => [item.id, item.blockedReason])).toEqual([
+      ["ok", null],
+      ["x", "증빙 있음 · K-26-0001"],
+      ["y", "카드 다름 · 9999"],
+      ["z", "합계 200,000 → 204,100 · 실행가 초과"],
+    ]);
+  });
+
+  it("(N-6) 영수증 · 05 전표 파일만 있는 카드 사용(카드 명세 아님)은 고를 수 있다 — 덮을 값 없는 막힘 종류는 막지 않는다", () => {
+    const [item] = relaxedCandidatesOf(relaxLine, [cand({ overwriteBlock: "completed" })]);
+    expect(item?.blockedReason).toBeNull();
   });
 });

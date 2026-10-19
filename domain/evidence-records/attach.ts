@@ -7,9 +7,11 @@ import {
   cardSlipOwner,
   cardSlipRights,
   cardUsageOverwriteBlocks,
+  cardUsageReadScope,
   denyCardSlipWrite,
   loadCardOverwriteBasis,
   type CardOverwriteBasis,
+  type CardOverwriteBlock,
 } from "@/domain/corp-card-usages";
 import {
   afterEvidenceOwnerChange,
@@ -26,8 +28,8 @@ import {
 import { evidenceSourcesOf } from "@/domain/evidence/has-evidence";
 import { cardStatementOwners, isCardFormat, sameIssuerOfFormat } from "@/domain/evidence-import";
 import { evidenceAttachBlockOf, getEvidenceRecord, INTAKE_FORBIDDEN, lockEvidenceRecordState, readEvidenceRecordFacts, type EvidenceRecordFacts } from "@/domain/evidence-records";
-import { compareCandidates, dayGapOf, type RankedCandidate } from "@/domain/evidence-records/score";
-import { fileWinsPatch, overwriteBlockReason, type FileWinsPatch } from "@/domain/evidence-records/reconcile";
+import { compareCandidates, dayGapOf, scoreCandidate, type RankedCandidate } from "@/domain/evidence-records/score";
+import { fileWinsPatch, isRelaxedHit, overwriteBlockReason, relaxedCandidatesOf, type FileWinsPatch, type RelaxedCandidate, type RelaxedLine } from "@/domain/evidence-records/reconcile";
 import { autoConfirmOnAttach } from "@/domain/evidence-reviews";
 import { codeLabelsOf, EXPENSE_DOCUMENT_KIND, ExpenseNotFoundError } from "@/domain/expenses";
 import { visibleExpenseScope } from "@/domain/expenses/access";
@@ -49,7 +51,16 @@ import { formatKrw } from "@/lib/format-number";
 import { isUniqueViolation } from "@/lib/pg-errors";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { findLivePayment } from "@/repositories/expense-payments";
-import { applyFileWins, findCardUsageForWrite, lockCardUsageForUpdate, type CardUsageForWrite } from "@/repositories/corp-card-usages";
+import {
+  applyFileWins,
+  fillCardUsageApprovalNo,
+  findCardUsageForWrite,
+  findRelaxedCandidates,
+  lockCardUsageForUpdate,
+  type CardUsageForWrite,
+  type CardUsageScope,
+  type RelaxedCandidateRow,
+} from "@/repositories/corp-card-usages";
 import { findRecordForScope, lockRecordsForUpdate, type EvidenceRecordListRow } from "@/repositories/evidence-records";
 import {
   detachLink,
@@ -79,6 +90,7 @@ const PURCHASE_REQUEST_CANCELLED = "구매 요청 취소됨 · 새로 고침";
 const NONE_SELECTABLE = "붙일 수 있는 문서 없음";
 const DRAFT_OWNER_WORD = "작성 중 문서";
 const TAKEN_UNSEEN = "다른 사람이 먼저 붙임 · 새로 고침";
+const AUTHOR_CARD_WORD = "붙이기는 경영관리";
 
 /** 다른 문서에 이미 붙은 기록 — 끝 꼬리 ` · 새로 고침`을 PickDialog가 3차 버튼으로 뺀다(재검토 2회차 Codex C). */
 export function evidenceTakenMessage(ownerNumber: string | null): string {
@@ -371,6 +383,8 @@ export function evidenceBatchConflictMessage(firstCounterparty: string, others: 
 }
 
 export type AttachBatchInput = { evidenceIds: readonly string[]; owner: AttachOwnerRef };
+/** 작성자 갈래의 문서 — 06.1-09에서 카드 사용(S5 단일)이 더해졌다. 경영관리 여러 장 붙이기는 AttachOwnerRef 그대로. */
+export type AuthorAttachInput = { evidenceIds: readonly string[]; owner: RegistrarOwnerRef };
 type AttachBatchMode = "author" | "registrar";
 type BatchPreRead = { id: string; version: number; evidenceType: string; counterparty: string };
 
@@ -529,8 +543,18 @@ async function batchConflictOr(error: unknown, viewer: Viewer, doc: AttachOwnerR
 }
 
 /** 작성자 갈래 — 자기 임시 · 반려 · 회수 · 승인 지출결의에 1 ~ ATTACH_BATCH_MAX장(06.1-08 S5). */
-export function attachEvidenceAsAuthor(viewer: Viewer, input: AttachBatchInput, deps?: EvidenceAttachDeps): Promise<{ attached: number }> {
-  return attachBatch(viewer, "author", input, deps);
+export async function attachEvidenceAsAuthor(viewer: Viewer, input: AuthorAttachInput, deps?: EvidenceAttachDeps): Promise<{ attached: number }> {
+  const { owner } = input;
+  if (owner.kind !== "corp_card_usage") return attachBatch(viewer, "author", { evidenceIds: input.evidenceIds, owner }, deps);
+  const ids = [...new Set(input.evidenceIds)];
+  if (!ids.every((id) => UUID_SHAPE.test(id))) throw new UserFacingError(RECORD_NOT_FOUND);
+  try {
+    return await attachAuthorToCardUsage(viewer, ids, owner.id, deps);
+  } catch (error) {
+    if (error instanceof EvidenceTakenError) throw new UserFacingError(await takenMessage(viewer, error.owner));
+    if (isUniqueViolation(error, LIVE_LINK_UNIQUE) && ids[0]) throw await takenError(viewer, ids[0]);
+    throw error;
+  }
 }
 
 /** 경영관리 갈래 — 번호 있는 지출결의에 1 ~ ATTACH_BATCH_MAX장(06.1-06 하나 붙이기 `attachEvidenceRecord`는 그대로 둔다). */
@@ -720,8 +744,11 @@ export async function previewDetach(viewer: Viewer, input: { linkId: string }): 
 // ── 붙일 문서 후보(S4 · E34 · RP-5) ───────────────────────────────────────────────────────────────────────────
 // 순위는 SQL(ORDER BY — 짝 맞음 → 점수 → 날짜 차 → id)이 매긴다. 여기서는 두 질의(지출결의 · 구매 요청) 결과를 같은 열쇠(compareCandidates)로
 // 합쳐 20만 두고, 행마다 권리 · 짝으로 고를 수 있음 · 이유만 판정한다(메모리 판정은 막힘 여부뿐).
+/** 06.1-09 D-6111: 고르면 파일 값으로 바뀌는 카드 사용 칸(전 → 후) — 카드는 끝 4자리. 카드 사용이 아니거나 바뀔 값이 없으면 null. */
+export type CardValueChanges = { total: { before: number; after: number } | null; card: { before: string; after: string } | null };
+
 export type EvidenceAttachCandidateDto = {
-  kind: "expense" | "purchase_request";
+  kind: "expense" | "purchase_request" | "corp_card_usage";
   id: string;
   number: string;
   /** `{문서 종류} · {작성자}`. */
@@ -733,10 +760,11 @@ export type EvidenceAttachCandidateDto = {
   selectable: boolean;
   reason: string | null;
   inReview: boolean;
+  valueChanges: CardValueChanges | null;
 };
 
 // 두 종류가 한 목록에 섞이지만 금액 항목이 달라 명세를 둘 둔다(지출결의 · 구매 요청). 금액 칸 밖은 같다.
-function candidateSpec(amountItem: string): DtoSpec<EvidenceAttachCandidateDto, EvidenceAttachCandidateDto> {
+function candidateSpec(amountItem: string, changesItem = "evidence.value"): DtoSpec<EvidenceAttachCandidateDto, EvidenceAttachCandidateDto> {
   return {
     fields: [
       { key: "kind", from: "kind", infoItem: "evidence.value" },
@@ -748,15 +776,19 @@ function candidateSpec(amountItem: string): DtoSpec<EvidenceAttachCandidateDto, 
       { key: "selectable", from: "selectable", infoItem: "evidence.value" },
       { key: "reason", from: "reason", infoItem: "evidence.value" },
       { key: "inReview", from: "inReview", infoItem: "evidence.value" },
+      { key: "valueChanges", from: "valueChanges", infoItem: changesItem },
     ],
   };
 }
 
 export const EVIDENCE_ATTACH_CANDIDATE_DTO_SPEC = candidateSpec("expense.amount");
 export const EVIDENCE_ATTACH_REQUEST_CANDIDATE_DTO_SPEC = candidateSpec("purchase_request.amount");
+// 카드 사용 = 합계(card_usage.amount) · 전 → 후도 카드 사용 금액이다.
+export const EVIDENCE_ATTACH_CARD_CANDIDATE_DTO_SPEC = candidateSpec("card_usage.amount", "card_usage.amount");
 
 registerDto({ name: "EvidenceAttachCandidateDto", fields: EVIDENCE_ATTACH_CANDIDATE_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 registerDto({ name: "EvidenceAttachRequestCandidateDto", fields: EVIDENCE_ATTACH_REQUEST_CANDIDATE_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
+registerDto({ name: "EvidenceAttachCardCandidateDto", fields: EVIDENCE_ATTACH_CARD_CANDIDATE_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 
 // 순위 순서를 지키며 종류마다 제 명세로 투영한다(노출 판정은 명세마다 항목 수만큼 — projectMany).
 async function projectCandidates(viewer: Viewer, dtos: readonly EvidenceAttachCandidateDto[]): Promise<Partial<EvidenceAttachCandidateDto>[]> {
@@ -764,6 +796,7 @@ async function projectCandidates(viewer: Viewer, dtos: readonly EvidenceAttachCa
   for (const [kind, spec] of [
     ["expense", EVIDENCE_ATTACH_CANDIDATE_DTO_SPEC],
     ["purchase_request", EVIDENCE_ATTACH_REQUEST_CANDIDATE_DTO_SPEC],
+    ["corp_card_usage", EVIDENCE_ATTACH_CARD_CANDIDATE_DTO_SPEC],
   ] as const) {
     const rows = dtos.filter((dto) => dto.kind === kind);
     (await projectMany(viewer, rows, spec)).forEach((item, index) => {
@@ -820,6 +853,7 @@ function expenseCandidate(viewer: Viewer, keys: ViewerKeys, codes: PairCodes, re
       selectable: reason === null,
       reason,
       inReview,
+      valueChanges: null,
     },
   };
 }
@@ -840,8 +874,58 @@ function requestCandidate(record: EvidenceRecordFacts, row: PurchaseRequestAttac
       selectable: true,
       reason: null,
       inReview: false,
+      valueChanges: null,
     },
   };
+}
+
+// 06.1-09 S4 카드 사용 행(DB-9 · E34). 순위 열쇠는 06.1-06 compareCandidates를 그대로 쓴다 — 카드 사용은 합계로 견주므로 구매 요청과 같은 금액
+// 열쇠 꼴(문서 종류 칸은 순위에 쓰이지 않는다). 막힌 행은 pairOk 거짓으로 뒤에 두고, 합친 뒤 맨 뒤로 한 번 더 민다(카드 막힌 행 맨 뒤).
+function valueChangesOf(patch: FileWinsPatch): CardValueChanges | null {
+  if (!patch.total && !patch.card) return null;
+  return { total: patch.total, card: patch.card ? { before: patch.card.before.last4, after: patch.card.after.last4 } : null };
+}
+
+function cardSubtitle(row: RelaxedCandidateRow, changes: CardValueChanges | null): string {
+  const pieces = [
+    changes?.total ? `합계 ${formatKrw(changes.total.before)} → ${formatKrw(changes.total.after)}` : null,
+    changes?.card ? `카드 ${changes.card.before} → ${changes.card.after}` : null,
+  ].filter((piece): piece is string => piece !== null);
+  return pieces.length > 0 ? pieces.join(" · ") : `${row.usedOn.slice(5)} · ${row.cardLast4}`;
+}
+
+function cardCandidate(record: EvidenceRecordFacts, item: JudgedCardCandidate, amountsShown: boolean): Candidate & { cardBlocked: boolean } {
+  const { row, judged } = item;
+  const doc = { kind: "purchase_request" as const, id: row.id, evidenceType: null, businessNo: null, amountKrw: row.totalAmountKrw, date: row.usedOn, pairOk: judged.blockedReason === null };
+  // 금액을 못 보는 사람에게는 전 → 후를 싣지 않는다(쓰기도 RIGHTS_DENIED — planCardAttach).
+  const changes = amountsShown ? valueChangesOf(judged.patch) : null;
+  return {
+    ...doc,
+    score: scoreCandidate(record, doc),
+    dayGap: dayGapOf(record, doc),
+    cardBlocked: judged.blockedReason !== null,
+    dto: {
+      kind: "corp_card_usage",
+      id: row.id,
+      number: row.number ?? "—",
+      title: `카드 사용 · ${row.usedByName ?? "—"}`,
+      subtitle: cardSubtitle(row, changes),
+      amountKrw: row.totalAmountKrw,
+      selectable: judged.blockedReason === null,
+      reason: judged.blockedReason,
+      inReview: false,
+      valueChanges: changes,
+    },
+  };
+}
+
+async function cardCandidatesFor(viewer: Viewer, record: EvidenceRecordFacts): Promise<(Candidate & { cardBlocked: boolean })[]> {
+  const row = await findRecordForScope(viewer, await evidenceScopeFor(viewer), record.id);
+  if (!row || !isCardFormat(row.format) || row.corpCardId === null) return [];
+  const judged = (await judgeCardCandidates(viewer, [row], await cardUsageReadScope(viewer))).get(row.id) ?? [];
+  if (judged.length === 0) return [];
+  const [usageAmount, recordAmount] = await Promise.all([visible(viewer, "card_usage.amount"), visible(viewer, "evidence.amount")]);
+  return judged.map((item) => cardCandidate(record, item, usageAmount && recordAmount));
 }
 
 function distinct(values: readonly string[]): string[] {
@@ -869,12 +953,15 @@ export async function listAttachCandidates(viewer: Viewer, input: { recordId: st
     }),
     listPurchaseRequestAttachCandidates(viewer, { scope: requestScope, record, query }),
   ]);
-  const merged = [
-    ...expenseRows.slice(0, CANDIDATE_LIMIT).map((row) => expenseCandidate(viewer, keys, codes, record, row)),
-    ...requestRows.slice(0, CANDIDATE_LIMIT).map((row) => requestCandidate(record, row)),
+  const cardRows = await cardCandidatesFor(viewer, record);
+  const ranked = [
+    ...expenseRows.slice(0, CANDIDATE_LIMIT).map((row) => ({ ...expenseCandidate(viewer, keys, codes, record, row), cardBlocked: false })),
+    ...requestRows.slice(0, CANDIDATE_LIMIT).map((row) => ({ ...requestCandidate(record, row), cardBlocked: false })),
+    ...cardRows.slice(0, CANDIDATE_LIMIT),
   ].sort(compareCandidates);
+  const merged = [...ranked.filter((candidate) => !candidate.cardBlocked), ...ranked.filter((candidate) => candidate.cardBlocked)];
   const kept = merged.slice(0, CANDIDATE_LIMIT);
-  const truncated = expenseRows.length > CANDIDATE_LIMIT || requestRows.length > CANDIDATE_LIMIT || merged.length > CANDIDATE_LIMIT;
+  const truncated = expenseRows.length > CANDIDATE_LIMIT || requestRows.length > CANDIDATE_LIMIT || cardRows.length > CANDIDATE_LIMIT || merged.length > CANDIDATE_LIMIT;
   const first = kept[0]?.dto;
   const subtitle = [record.typeLabel, record.counterparty, amountShown ? formatKrw(record.totalKrw) : null, `후보 ${kept.length}`].filter((part) => part !== null).join(" · ");
   return {
@@ -893,4 +980,138 @@ export async function hasAttachTarget(viewer: Viewer): Promise<boolean> {
   const [expenseScope, requestScope] = await Promise.all([visibleExpenseScope(viewer), purchaseRequestReadScope(viewer)]);
   if (await hasExpenseAttachTarget(viewer, { scope: expenseScope, documentKind: EXPENSE_DOCUMENT_KIND })) return true;
   return hasPurchaseRequestAttachTarget(viewer, { scope: requestScope });
+}
+
+// ── 06.1-09 카드 사용 권리(RP-4 · PA-CUAUTH) — domain/evidence는 고치지 않는다 ─────────────────────────────────────
+// 경영관리(registrar) = evidence.intake ∧ 범위 안 ∧ 보관 아님. 작성자 = 05 카드 전표 쓰기 권리(06-09 수정 권리 — 완료 프로젝트 줄은 대리 등록
+// 권한자만, O-11) ∧ 등록한 사람 = 나 ∧ 구매에서 생긴 건 아님(E23) ∧ evidence 보기 ∧ 보관 아님. 팀장 · 대리 등록 권한자라도 등록한 사람이 아니면 작성자가 아니다.
+export type CardUsageRightsFacts = { drafterId: string; status: "open" | "closed"; read: boolean; slipWrite: boolean; registeredVia: string };
+export type CardUsageRightsFlags = { viewerId: string; intake: boolean; evidenceView: boolean };
+
+export function cardUsageRecordRights(facts: CardUsageRightsFacts, flags: CardUsageRightsFlags): { attach: boolean; authorAttach: boolean } {
+  const open = facts.read && facts.status === "open";
+  return {
+    attach: open && flags.intake,
+    authorAttach: open && facts.slipWrite && facts.drafterId === flags.viewerId && facts.registeredVia !== "purchase" && flags.evidenceView,
+  };
+}
+
+export type CardUsageRightsRead = { usage: CardUsageForWrite; rights: { attach: boolean; authorAttach: boolean } };
+
+// 트랜잭션 밖 한 번(06-03) — 못 보는 · 없는 카드 사용은 null(부르는 쪽이 STALE 글자 하나로 — carry-over 4).
+export async function readCardUsageRights(viewer: Viewer, usageId: string, keys?: ViewerKeys): Promise<CardUsageRightsRead | null> {
+  const owner = await cardSlipOwner(viewer, usageId);
+  if (!owner) return null;
+  const slip = await cardSlipRights(viewer, owner);
+  if (!slip.read) return null;
+  const usage = await findCardUsageForWrite(viewer, usageId, { includeArchived: true });
+  if (!usage) return null;
+  const [intake, evidenceView] = await Promise.all([keys ? Promise.resolve(keys.intake) : can(viewer, "evidence.intake", "write"), can(viewer, "evidence", "view")]);
+  const rights = cardUsageRecordRights(
+    { drafterId: owner.drafterId, status: owner.status, read: slip.read, slipWrite: slip.write, registeredVia: usage.registeredVia },
+    { viewerId: viewer.id, intake, evidenceView },
+  );
+  return { usage, rights };
+}
+
+/** 작성자 막힌 행 글자(DB-8) — 값이 다른 줄은 경영관리만 덮는다. 덮을 값이 없으면 null. */
+export function authorCardBlock(patch: FileWinsPatch): string | null {
+  if (patch.total) return `합계 ${formatKrw(patch.total.before)} → ${formatKrw(patch.total.after)} · ${AUTHOR_CARD_WORD}`;
+  if (patch.card) return `카드 ${patch.card.before.last4} → ${patch.card.after.last4} · ${AUTHOR_CARD_WORD}`;
+  return null;
+}
+
+// ── 06.1-09 작성자 → 카드 사용 붙이기(S5 · E23 · DB-8 · O-6104 닫음) ─────────────────────────────────────────────
+// 같은 카드 · 같은 합계 줄 하나만. 값은 바꾸지 않고 비어 있던 승인번호만 채운다(덮기는 경영관리 · 대사만 — applyFileWins를 부르지 않는다).
+// 잠금 순서는 경영관리 갈래와 같다(카드 사용 행 → 증빙 행 → 붙임) — 합계가 안 바뀌니 견적 줄 잠금은 없다.
+async function attachAuthorToCardUsage(viewer: Viewer, ids: readonly string[], usageId: string, deps?: EvidenceAttachDeps): Promise<{ attached: number }> {
+  const read = await readCardUsageRights(viewer, usageId);
+  if (!read || !read.rights.authorAttach || read.usage.archivedAt !== null) throw cardSlipNotFound();
+  const { usage } = read;
+  const [recordId] = ids;
+  if (ids.length !== 1 || recordId === undefined) throw new UserFacingError(RECORD_NOT_FOUND);
+  const [pre] = await preReadRecords(viewer, [recordId]);
+  const record = await findRecordForScope(viewer, await evidenceScopeFor(viewer), recordId);
+  if (!pre || !record || !isCardFormat(record.format) || record.corpCardId !== usage.corpCardId || record.totalKrw < 0) throw new UserFacingError(RECORD_NOT_FOUND);
+  const patch = fileWinsPatch(
+    { totalKrw: usage.totalAmountKrw, corpCardId: usage.corpCardId, cardLast4: usage.cardLast4 },
+    { totalKrw: record.totalKrw, corpCardId: record.corpCardId, cardLast4: record.cardLast4 ?? "", approvalNo: record.approvalNo },
+  );
+  const blocked = authorCardBlock(patch);
+  if (blocked) throw new UserFacingError(blocked);
+  if ((await cardStatementOwners(viewer, [usage.id])).has(usage.id)) throw new UserFacingError(`증빙 있음 · ${usage.number}`);
+  await deps?.afterPreRead?.();
+
+  return withTransaction(async (tx) => {
+    const locked = await lockCardUsageForUpdate(viewer, usage.id, tx);
+    if (!locked || locked.archivedAt !== null || locked.version !== usage.version) throw cardSlipNotFound();
+    if ((await cardStatementOwners(viewer, [usage.id], tx)).has(usage.id)) throw new UserFacingError(`증빙 있음 · ${usage.number}`);
+    const { created } = await attachLinkInTx(tx, viewer, { recordId, owner: { kind: "corp_card_usage", id: usage.id }, mode: "author" }, { afterLock: deps?.afterLock });
+    if (!created) return { attached: 0 };
+    const [lockedRecord] = await lockRecordsForUpdate(viewer, [recordId], tx);
+    if (!lockedRecord || lockedRecord.version !== pre.version) throw new UserFacingError(staleMessage(lockedRecord?.updatedAt ?? new Date()));
+    if (patch.approvalNo && patch.approvalNo !== usage.approvalNo) {
+      if ((await fillCardUsageApprovalNo(viewer, { id: usage.id, version: usage.version, approvalNo: patch.approvalNo }, tx)) === null) throw cardSlipNotFound();
+    }
+    await recordAction(
+      viewer,
+      {
+        actionType: "document_update",
+        entity: "evidence_record",
+        entityId: recordId,
+        documentId: usage.id,
+        detail: { change: "evidence_record_attach", ownerKind: "corp_card_usage", ownerId: usage.id, attachMode: "author", recordIds: [recordId] },
+      },
+      { tx, isActionTypeEnabled: deps?.isActionTypeEnabled },
+    );
+    return { attached: 1 };
+  });
+}
+
+// ── 06.1-09 완화 후보 판정(S4 후보 · S2 행 행동 — PA-RELAX · DB-9 · N-6 · 카드 R3 · P2-C4) ─────────────────────
+// 트랜잭션 밖(06-03): 후보 질의 한 번 → 카드 명세 붙음 한 번 → 덮기 기준(설정 · 세율) 한 번 → 줄마다 06 cardUsageOverwriteBlocks → 순수 판정.
+export type CardLineRow = Pick<EvidenceRecordListRow, "id" | "format" | "corpCardId" | "cardLast4" | "approvalNo" | "issuedOn" | "totalKrw">;
+export type JudgedCardCandidate = { row: RelaxedCandidateRow; judged: RelaxedCandidate };
+
+function relaxedLineOf(record: CardLineRow): RelaxedLine | null {
+  if (record.corpCardId === null) return null;
+  return { corpCardId: record.corpCardId, cardLast4: record.cardLast4 ?? "", approvalNo: record.approvalNo, usedOn: record.issuedOn, totalKrw: record.totalKrw };
+}
+
+export async function judgeCardCandidates(viewer: Viewer, records: readonly CardLineRow[], scope: CardUsageScope): Promise<Map<string, JudgedCardCandidate[]>> {
+  const lines = records.flatMap((record) => {
+    const line = relaxedLineOf(record);
+    return line && isCardFormat(record.format) ? [{ record, line }] : [];
+  });
+  const result = new Map<string, JudgedCardCandidate[]>();
+  if (lines.length === 0) return result;
+  const rows = await findRelaxedCandidates(viewer, { scope, lines: lines.map(({ line }) => line) });
+  const statements = await cardStatementOwners(viewer, rows.map((row) => row.id));
+  const basis = rows.length > 0 ? await loadCardOverwriteBasis(viewer, [...new Set(rows.map((row) => row.usedOn))]) : null;
+  for (const { record, line } of lines) {
+    const hits = rows.filter((row) => isRelaxedHit(line, { approvalNo: row.approvalNo, usedOn: row.usedOn, totalKrw: row.totalAmountKrw }));
+    const patches = hits.map((row) => ({ row, patch: fileWinsPatch({ totalKrw: row.totalAmountKrw, corpCardId: row.corpCardId, cardLast4: row.cardLast4 }, { ...line, totalKrw: line.totalKrw }) }));
+    const blocks =
+      basis && patches.length > 0
+        ? await cardUsageOverwriteBlocks(viewer, patches.map(({ row, patch }) => ({ usageId: row.id, totalKrw: patch.total?.after ?? null, corpCardId: patch.card?.after.id ?? null })), basis)
+        : new Map<string, CardOverwriteBlock>();
+    const judged = relaxedCandidatesOf(
+      line,
+      hits.map((row) => ({
+        id: row.id,
+        number: row.number,
+        corpCardId: row.corpCardId,
+        cardLast4: row.cardLast4,
+        sameIssuer: sameIssuerOfFormat(record.format, row.cardIssuer),
+        approvalNo: row.approvalNo,
+        usedOn: row.usedOn,
+        totalKrw: row.totalAmountKrw,
+        cardStatementAttached: statements.has(row.id),
+        overwriteBlock: blocks.get(row.id) ?? null,
+      })),
+    );
+    const byId = new Map(hits.map((row) => [row.id, row]));
+    result.set(record.id, judged.flatMap((item) => { const row = byId.get(item.id); return row ? [{ row, judged: item }] : []; }));
+  }
+  return result;
 }

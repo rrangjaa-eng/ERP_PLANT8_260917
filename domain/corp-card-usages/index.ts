@@ -341,7 +341,8 @@ async function cardEvidenceTypes(viewer: Viewer): Promise<{ options: EvidenceTyp
   const labels = new Map(items.map((item) => [item.value, item.label]));
   const options: EvidenceTypeOption[] = [];
   for (const item of items) {
-    if (!item.active || item.archivedAt) continue;
+    // 06.1-09 PA-R6-CARD(검토 카드 R6): 올린 사람만 보는 종류(개인카드 전표)는 법인카드 사용 증빙이 아니다 — 켜져 있어도 선택지 · 검증에서 뺀다(이름 표시용 labels는 그대로).
+    if (!item.active || item.archivedAt || item.privateToOwner) continue;
     const parsed = taxRuleSchema.safeParse(item.taxRule);
     if (!parsed.success || !isCardEvidenceRule(parsed.data)) continue;
     options.push({ value: item.value, label: item.label, rule: parsed.data });
@@ -1494,6 +1495,11 @@ function monthRange(month: string): { from: string; to: string } {
 
 // 범위(UA-612 · Q5): `cards.proxy` · `expenses.payments` write 권한자 · 프로젝트 보는 범위 전사(rowScopeFor rows: all) → 전부 — 06.2 K2, 260907 `O: server/src/purchases.ts:1334` /
 // 그 밖(팀장 포함) → 자기 카드 · 오늘 소속 팀 카드의 사용 + 자기가 등록한 것(공용 카드 사용은 자기 등록일 때만 — 쿼리 조건).
+/** 06.1-09(RP-5): 06 카드 사용 목록 범위 그대로 — 증빙 쪽 후보 · 행 행동이 같은 범위를 쓴다(본문 규칙 0). */
+export async function cardUsageReadScope(viewer: Viewer): Promise<CardUsageScope> {
+  return (await listAccess(viewer, seoulToday())).scope;
+}
+
 async function listAccess(viewer: Viewer, today: string): Promise<{ scope: CardUsageScope; privileged: boolean; proxy: boolean }> {
   const proxy = await can(viewer, "cards.proxy", "write");
   const privileged = proxy || (await can(viewer, "expenses.payments", "write"));
@@ -1741,7 +1747,8 @@ export async function cardUsageOverwriteBlocks(
   viewer: Viewer,
   patches: readonly CardOverwritePatch[],
   basis: CardOverwriteBasis,
-  tx: DbOrTx,
+  // 트랜잭션 밖(S4 후보 판정 — 06-03)이면 비운다 — 리포지토리가 풀로 읽는다.
+  tx?: DbOrTx,
 ): Promise<Map<string, CardOverwriteBlock>> {
   const blocks = new Map<string, CardOverwriteBlock>();
   const changed = patches.filter((patch) => patch.totalKrw !== null || patch.corpCardId !== null);

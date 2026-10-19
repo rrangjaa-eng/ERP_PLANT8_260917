@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db, pool } from "@/db/client";
-import { actionLog, approvalInstances, evidenceRecordLinks, evidenceRecords, expenseEvidenceReviews, expenses, projects, purchaseRequests } from "@/db/schema";
+import { actionLog, approvalInstances, corpCardUsages, evidenceRecordLinks, evidenceRecords, expenseEvidenceReviews, expenses, projects, purchaseRequests } from "@/db/schema";
+import { createCorpCard } from "@/domain/corp-cards";
+import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { approveDocument } from "@/domain/approvals";
 import { attachEvidenceRecord, detachEvidenceRecord } from "@/domain/evidence-records/attach";
@@ -27,7 +29,9 @@ import { insertOrgUnit } from "@/repositories/org-units";
 import { upsertSimpleValue } from "@/repositories/settings";
 import { insertTeam } from "@/repositories/teams";
 import { setupExpenseProject, type ExpenseFixture } from "./fixtures/expenses";
+import { makePerson } from "./approvals-fixtures";
 import {
+  createCardUsageFixture,
   createDraftExpenseFixture,
   createInReviewExpenseFixture,
   createIntakeManager,
@@ -305,10 +309,34 @@ describe("붙은 증빙 금액 고침 · 잠김 (06.1-07 Task 2)", () => {
     expect(after).toEqual(before);
   });
 
-  it("카드 사용에 붙은 기록(직접 INSERT) → 트랜잭션 전 거부 · 값 그대로(C8 — 06.1-09가 갈래를 연다)", async () => {
-    const manager = await createIntakeManager();
+  // 06.1-09 C8 · PA-AMT-CU: 카드 사용에 붙은 기록의 금액 고침은 기록만 바꾼다(카드 사용 행은 잠그기만 · 쓰기 0). 보관된 카드 사용이면 금액 잠김.
+  async function cardUsageWithRecord(manager: Viewer): Promise<{ usageId: string; recordId: string }> {
+    const holder = await makePerson("카드 보유자", DEFAULT_ROLE_ID, "기획1팀");
+    const card = await createCorpCard(SYSTEM_VIEWER, { issuer: `카드사-${randomUUID().slice(0, 6)}`, numberLast4: String(1000 + Math.floor(Math.random() * 9000)), label: "금액 고침", kind: "personal", holderUserId: holder.id });
+    if (!card.id) throw new Error("카드 없음");
+    const usage = await createCardUsageFixture(holder, { corpCardId: card.id, usedOn: "2026-04-30", totalKrw: 1_100_000 });
     const recordId = await record(manager);
-    await insertLinkFixture({ recordId, ownerKind: "corp_card_usage", ownerId: randomUUID(), attachedBy: manager.id });
+    await insertLinkFixture({ recordId, ownerKind: "corp_card_usage", ownerId: usage.id, attachedBy: manager.id });
+    return { usageId: usage.id, recordId };
+  }
+
+  it("(C8) 카드 사용에 붙은 기록 → 성공 · 기록 공급가 · 세액 바뀜 · 카드 사용 합계 · 공급가 · 세액 · version 그대로 · evidence_record_amount_change(entity evidence_record) 한 줄", async () => {
+    const manager = await createIntakeManager();
+    const { usageId, recordId } = await cardUsageWithRecord(manager);
+    const [before] = await db.select().from(corpCardUsages).where(eq(corpCardUsages.id, usageId));
+    await updateEvidenceAmount(manager, { id: recordId, version: 1, supplyKrw: 1_050_000 });
+    expect(await recordRow(recordId)).toMatchObject({ supplyKrw: 1_050_000, vatKrw: 50_000, totalKrw: 1_100_000, version: 2 });
+    const [after] = await db.select().from(corpCardUsages).where(eq(corpCardUsages.id, usageId));
+    expect(after).toEqual(before);
+    const logs = await db.select().from(actionLog).where(and(eq(actionLog.entityId, recordId), eq(actionLog.actionType, "evidence_record_amount_change")));
+    expect(logs).toHaveLength(1);
+    expect(logs[0]?.entity).toBe("evidence_record");
+  });
+
+  it("(C8) 보관된 카드 사용에 붙은 기록 → 「카드 사용에 붙음 · 금액 잠김」 · 값 그대로", async () => {
+    const manager = await createIntakeManager();
+    const { usageId, recordId } = await cardUsageWithRecord(manager);
+    await db.update(corpCardUsages).set({ archivedAt: new Date(), archivedBy: manager.id }).where(eq(corpCardUsages.id, usageId));
     expect(await messageOf(updateEvidenceAmount(manager, { id: recordId, version: 1, supplyKrw: 1_050_000 }))).toBe(CARD_USAGE_AMOUNT_LOCKED);
     expect(await recordRow(recordId)).toMatchObject({ supplyKrw: 1_000_000, version: 1 });
   });
